@@ -114,18 +114,19 @@ Files:
   [100%] Disable Playfield Collisions     — Toggle (inverted display)
 
 1.6 DEBUG MENU
-  [  0%] Enable Debugger                  — Placeholder (disabled). Missing: debugger integration
+  [100%] Enable Debugger                  — Opens debugger with dockable layout (Display, Console,
+                                            Registers, Disassembly, History). Breaks execution on open.
   [  0%] Open Source File...              — Placeholder (disabled)
-  [ 30%] Window submenu                   — Placeholders for Console/Registers/Disassembly/Memory/
-                                            Call Stack/History/Watch 1-4/Memory 1-4/
-                                            Breakpoints/Targets/Debug Display (all disabled)
+  [ 70%] Window submenu                   — Console, Registers, Disassembly, History: functional.
+                                            Call Stack, Memory 1-4, Watch 1-4, Breakpoints,
+                                            Targets, Debug Display: placeholder (disabled).
   [100%] Visualization submenu            — GTIA analysis modes: None/Layers/Colors/Display List
                                             + Cycle GTIA Visualization
   [ 30%] Options submenu                  — Placeholders for Auto-Reload ROMs, Randomize Memory,
                                             Break at EXE Run, Change Font (all disabled)
-  [  0%] Run/Break                        — Placeholder (disabled)
-  [  0%] Break                            — Placeholder (disabled)
-  [  0%] Step Into/Over/Out               — Placeholders (disabled)
+  [100%] Run/Break                        — F5 toggle, breaks if running, runs if stopped
+  [100%] Break                            — Immediate break
+  [100%] Step Into/Over/Out               — F11/F10/Shift+F11
   [  0%] Profile View                     — Placeholder (disabled)
   [  0%] Verifier...                      — Placeholder (disabled)
   [  0%] Performance Analyzer...          — Placeholder (disabled)
@@ -144,19 +145,43 @@ Files:
   [100%] Stop Recording                   — Tears down audio/video taps, finalizes file
                                             Status overlay shows red "REC" / orange "REC PAUSED"
 
-1.8 TOOLS MENU
-  [  0%] Disk Explorer...                 — Placeholder (disabled)
-  [  0%] Convert SAP to EXE...            — Placeholder (disabled)
-  [  0%] Export ROM set...                — Placeholder (disabled)
-  [  0%] Analyze tape decoding...         — Placeholder (disabled)
-  [  0%] First Time Setup...              — Placeholder (disabled)
-  [  0%] Keyboard Shortcuts...            — Placeholder (disabled)
-  [  0%] Compatibility Database...        — Placeholder (disabled)
-  [  0%] Advanced Configuration...        — Placeholder (disabled)
+1.8 TOOLS MENU (ui_tools.cpp — 2500+ lines, ui_menus.cpp callbacks)
+  [100%] Disk Explorer...                 — Full ImGui implementation: open disk images (file or
+                                            mounted drives), browse directories, view files
+                                            (Text/Hex/Executable/MAC/65), import/export with 8.3
+                                            filename normalization + collision detection, rename,
+                                            delete, create directory, read/write toggle with
+                                            filesystem validation, timestamp preservation.
+  [100%] Convert SAP to EXE...            — Two-step async file dialog (open SAP, save XEX),
+                                            calls ATConvertSAPToPlayer(), thread-safe callbacks.
+  [100%] Export ROM set...                — Folder picker, overwrite confirmation popup, exports
+                                            6 files (readme.html + 5 ROMs) matching Windows.
+                                            readme.html embedded via romdata/romset_readme.h.
+  [100%] Analyze tape decoding...         — Two-step async file dialog (open WAV, save analysis
+                                            WAV), validates source != dest, calls
+                                            ATLoadCassetteImage() with analysis output stream.
+  [100%] First Time Setup...              — Multi-page wizard: Welcome, Firmware scan (with
+                                            ATFirmwareAutodetect), Post-firmware, System select
+                                            (Computer/5200), Video standard (NTSC/PAL), Experience
+                                            (Authentic/Convenient), Finish (computer/5200 variants).
+                                            LoadROMs + ColdReset on all exit paths when changed.
+                                            Thread-safe firmware scan via deferred processing.
+  [ 80%] Keyboard Shortcuts...            — Read-only viewer showing all current key bindings.
+                                            Full rebinding requires a data-driven shortcut system
+                                            (future work — SDL3 build uses hardcoded shortcuts).
+  [100%] Compatibility Database...        — Full editor: New/Load/Save/SaveAs/Compile/CompileTo,
+                                            title CRUD, alias editing with rule picker (add/remove
+                                            from loaded media), tag picker with all known tags,
+                                            unsaved changes confirmation, compile-before-exit check
+                                            for external DBs. Thread-safe file dialog callbacks.
+  [100%] Advanced Configuration...        — All ATConfigVar types (Bool/Int32/Float/RGBColor),
+                                            filter, inline editing, DragFloat for floats,
+                                            ColorEdit3 for RGB, right-click Reset to Default,
+                                            undefined cvar handling.
 
 1.9 WINDOW MENU
   [100%] Adjust Window Size               — Submenu: 1x/2x/3x/4x sizes, calls SDL_SetWindowSize
-  [100%] Reset Window Layout              — Resets to 2x centered
+  [100%] Reset Window Layout              — Resets to default (1280x720)
 
 1.10 HELP MENU
   [  0%] Contents                         — Placeholder (disabled) — needs help system
@@ -380,10 +405,14 @@ Files:
   [100%] Host audio options... button     — Opens Audio Options dialog (volume, latency, etc.)
 
 3.10 DEVICES (Peripherals > Devices — IDD_CONFIGURE_DEVICES)
-  [100%] Devices page                     — Device list with firmware status, Add (categorized
-                                            catalog popup), Remove, and Settings buttons.
-                                            Settings opens per-device config dialog (ui_devconfig.cpp)
-                                            with ~40 device-specific dialogs + generic fallback.
+  [100%] Devices page                     — Hierarchical device list with firmware status, settings
+                                            blurbs, double-click to edit, right-click context menu
+                                            with XCmd extended commands (copy/paste/device-specific).
+                                            Add (categorized, sorted, with help tooltips), Remove,
+                                            Settings. ~40+ device dialogs + generic fallback.
+                                            File/folder browse buttons on all path fields.
+                                            DragonCart: full networking dialog (access, VXLAN, NAT).
+                                            Modem dialogs: custom terminal type support.
 
 3.11 KEYBOARD (Peripherals > Keyboard — IDD_CONFIGURE_KEYBOARD)
   [100%] Keyboard mode combo              — Cooked/Raw/Full Scan (mbRawKeys/mbFullRawKeys)
@@ -476,8 +505,8 @@ Files:
   [  0%] Clickable fix links           — Missing: command execution (Windows uses RTF links)
 
 3.25 REMAINING MISSING PAGES:
-  [  0%] Debugger (IDD_CONFIGURE_DEBUGGER)     — Auto-load symbols, debug link, scripts
-                                                  (ATGetDebugger returns nullptr in SDL3)
+  [ 30%] Debugger (IDD_CONFIGURE_DEBUGGER)     — Auto-load symbols, debug link, scripts
+                                                  (debugger engine functional, config page TODO)
   [ N/A] File Types (IDD_CONFIGURE_FILETYPES)  — Windows file associations
   [ N/A] Settings (IDD_CONFIGURE_SETTINGS)     — Registry/portable mode (Windows)
   [ N/A] Display 2 (IDD_CONFIGURE_DISPLAY2)    — D3D/fullscreen mode (Windows graphics API)
@@ -501,7 +530,7 @@ Files:
   [100%] IDD_DEVICE_815                   — 815 disk drive: drive pair + inversion
   [100%] IDD_DEVICE_850                   — 850 interface: SIO level, throttling, baud rates
   [100%] IDD_DEVICE_AMDC                  — Amdek AMDC-I/II: drives, DIP switches, external drives
-  [100%] IDD_DEVICE_ATR8000               — ATR8000: drive select + drive types (via Percom)
+  [100%] IDD_DEVICE_ATR8000               — ATR8000: 4 drive types (None/5.25"/8") + serial signals
   [100%] IDD_DEVICE_BLACKBOX              — Black Box: 8 DIP switches, sector size, RAM
   [100%] IDD_DEVICE_BLACKBOXFLOPPY        — Black Box Floppy: 4 slots x 3 controls
   [100%] IDD_DEVICE_COMPUTEREYES          — ComputerEyes: brightness slider
@@ -531,22 +560,28 @@ Files:
   [100%] IDD_DEVICE_SOUNDBOARD           — Sound Board: version + base address
   [100%] IDD_DEVICE_VBXE                — VBXE: core version, base address, shared memory
   [100%] IDD_DEVICE_VERONICA            — Veronica: V1/V2 version
-  [100%] IDD_DEVICE_VIDEOSTILLIMAGE     — Video Still Image: image path
+  [100%] IDD_DEVICE_VIDEOSTILLIMAGE     — Video Still Image: image path + browse
   [100%] IDD_DEVICE_XEP80               — XEP-80: joystick port
+  [100%] IDD_DRAGONCART                — DragonCart: access mode, network, VXLAN, forwarding
   [100%] Generic fallback               — EnumProperties-based editor for unknown devices
 
 
 ================================================================================
-5. DEBUGGER DIALOGS (14+ dialogs — all missing)
+5. DEBUGGER PANES & DIALOGS
 ================================================================================
 
-  [  0%] Debugger Console pane
-  [  0%] Registers pane
-  [  0%] Disassembly pane
+  Docking layout:
+  [100%] DockSpace + DockBuilder layout  — Matches Windows ATLoadDefaultPaneLayout
+  [100%] Display pane                    — Emulation texture in dockable ImGui window
+
+  Panes:
+  [100%] Console pane                    — Command input, output buffer, history, prompt
+  [100%] Registers pane                  — All CPU modes (6502/65C02/65C816/Z80/8048/6809)
+  [100%] Disassembly pane                — Live disassembly around PC, breakpoint/PC highlighting
+  [100%] History pane                    — Past executed instructions, enable button, IRQ/NMI coloring
   [  0%] Memory viewer (4 instances)
   [  0%] Watch window (4 instances)
   [  0%] Call Stack pane
-  [  0%] History pane
   [  0%] Breakpoint list + Add/Edit dialog
   [  0%] Targets pane
   [  0%] Debug Display pane
@@ -596,7 +631,7 @@ Files:
   [  0%] IDD_DISK_EXPLORER                — Filesystem browser
   [  0%] IDD_CARTRIDGE_MAPPER             — Cartridge type selection
   [  0%] IDD_COMPATIBILITY                — Compatibility warning
-  [  0%] IDD_DRAGONCART                   — DragonCart network config
+  [100%] IDD_DRAGONCART                   — DragonCart network config (access, VXLAN, forwarding)
   [  0%] IDD_CHANGE_LOG                   — Changelog viewer
   [  0%] IDD_CMDLINEHELP                  — Command-line help
   [  0%] IDD_ADVANCED_CONFIGURATION       — Advanced config variables
@@ -610,11 +645,11 @@ SUMMARY
 Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
 Menu items (leaf)             ~120          198       61%
-Standalone dialogs              8           20+      40%
+Standalone dialogs              9           20+      45%
 Configure System pages         25           28       89%
 Config page controls         ~195         ~240       81%
-Device config dialogs          ~40          ~40      ~100%
-Debugger dialogs/panes          0           14        0%
+Device config dialogs          ~41          ~41      ~100%
+Debugger dialogs/panes          6           14       43%
 Input mapping dialogs           0            9        0%
 Color/effects dialogs           1           11        9%
 Misc dialogs                    0           12+       0%
@@ -632,8 +667,12 @@ page uses combos filtered by hardware mode with [Autoselect]; full Firmware
 Manager dialog with Add/Remove/Settings/Scan/Audit/Set as Default/Use for/
 Clear. All Ease of Use reset flags respected. SIO/CIO accelerator modes,
 Axlon memory, 65C816 high memory, power-on delay all configurable. ~40
-device configuration dialogs (ui_devconfig.cpp) cover all registered device
-types with correct property encoding verified against Windows.
+device configuration dialogs (ui_devconfig.cpp + ui_devconfig_devices.cpp)
+cover all registered device types with correct property encoding verified
+against Windows. Device list shows hierarchy with child devices, settings
+blurbs, right-click context menu with XCmd extended commands, double-click
+to edit, file/folder browse buttons on all path fields, sorted Add Device
+menu with help tooltips, and DragonCart full networking dialog.
 
 Remaining major areas:
   - Debugger (14+ panes/dialogs)

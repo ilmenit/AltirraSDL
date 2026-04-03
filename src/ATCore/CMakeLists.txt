@@ -47,8 +47,9 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
     )
 endif()
 
-# Windows-only
-if(WIN32)
+# Windows-only timer service — excluded when ALTIRRA_SDL3 is ON because
+# win32_stubs.cpp provides ATCreateTimerService() as a stub.
+if(WIN32 AND NOT ALTIRRA_SDL3)
     list(APPEND ATCORE_COMMON_SOURCES
         source/timerserviceimpl_win32.cpp
     )
@@ -61,7 +62,7 @@ target_include_directories(ATCore
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/h
 )
 
-if(NOT WIN32)
+if(ALTIRRA_COMPAT_DIR)
     target_include_directories(ATCore BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()
 

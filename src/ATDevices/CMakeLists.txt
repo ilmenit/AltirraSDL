@@ -26,7 +26,7 @@ target_include_directories(ATDevices
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source
 )
 
-if(NOT WIN32)
+if(ALTIRRA_COMPAT_DIR)
     target_include_directories(ATDevices BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()
 

@@ -1090,14 +1090,19 @@ static void RenderDebugMenu(ATSimulator &sim) {
 			ATActivateUIPane(kATUIPaneId_Console, true);
 		if (ImGui::MenuItem("Registers"))
 			ATActivateUIPane(kATUIPaneId_Registers, true);
-		ImGui::MenuItem("Disassembly", nullptr, false, false);          // TODO: Phase 5
-		ImGui::MenuItem("Call Stack", nullptr, false, false);           // TODO: Phase 7
-		ImGui::MenuItem("History", nullptr, false, false);              // TODO: Phase 7
+		if (ImGui::MenuItem("Disassembly"))
+			ATActivateUIPane(kATUIPaneId_Disassembly, true);
+		if (ImGui::MenuItem("Call Stack"))
+			ATActivateUIPane(kATUIPaneId_CallStack, true);
+		if (ImGui::MenuItem("History"))
+			ATActivateUIPane(kATUIPaneId_History, true);
 		if (ImGui::BeginMenu("Memory")) {
-			ImGui::MenuItem("Memory 1", nullptr, false, false);
-			ImGui::MenuItem("Memory 2", nullptr, false, false);
-			ImGui::MenuItem("Memory 3", nullptr, false, false);
-			ImGui::MenuItem("Memory 4", nullptr, false, false);
+			for (int i = 0; i < 4; ++i) {
+				char label[16];
+				snprintf(label, sizeof(label), "Memory %d", i + 1);
+				if (ImGui::MenuItem(label))
+					ATActivateUIPane(kATUIPaneId_MemoryN + i, true);
+			}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Watch")) {
@@ -1107,7 +1112,8 @@ static void RenderDebugMenu(ATSimulator &sim) {
 			ImGui::MenuItem("Watch 4", nullptr, false, false);
 			ImGui::EndMenu();
 		}
-		ImGui::MenuItem("Breakpoints", nullptr, false, false);
+		if (ImGui::MenuItem("Breakpoints"))
+			ATActivateUIPane(kATUIPaneId_Breakpoints, true);
 		ImGui::MenuItem("Targets", nullptr, false, false);
 		ImGui::MenuItem("Debug Display", nullptr, false, false);
 		ImGui::EndMenu();

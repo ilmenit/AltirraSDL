@@ -1,37 +1,101 @@
 # Build System
 
-## Current State
+## Overview
 
-The project uses Visual Studio solution files (`.sln` / `.vcxproj`) with
-MSBuild property sheets in `src/Build/`. There is no cross-platform build
-system. The build requires Windows, Visual Studio 2022, and the Windows SDK.
+The project supports two independent build paths that coexist in the repository:
 
-## Strategy
+- **Visual Studio `.sln`** — Native Win32 build (primary on Windows)
+- **CMake** — Cross-platform build (Linux, macOS, Windows SDL, future: Android)
 
-Add a CMake build system alongside the existing Visual Studio solution. The
-`.sln` files remain the primary build system for Windows. CMake is used for
-Linux and macOS, and optionally for Windows if developers prefer it.
+The CMake build never generates or modifies `.sln`/`.vcxproj` files. Both
+build paths compile the same emulation core; they differ only in the
+frontend (Win32 native UI vs. SDL3+ImGui).
 
-**Phase 1 starts on Windows:** The CMake build is first validated on Windows,
-compiling the exact same source files as the `.sln`. This proves the CMake
-dependency graph is correct before any cross-platform code is added. Only
-after the CMake Windows build matches the `.sln` output do we proceed to
-header cleanup and Linux compilation.
+## Build Matrix
 
-CMake was chosen over Meson, Premake, or other alternatives because:
+| Platform       | OS APIs       | Frontend         | Build System |
+|----------------|---------------|------------------|--------------|
+| Windows native | Win32         | Altirra.exe      | `.sln`       |
+| Windows SDL    | Win32         | AltirraSDL (SDL3+ImGui) | CMake |
+| Linux          | POSIX + SDL3  | AltirraSDL (SDL3+ImGui) | CMake |
+| macOS          | POSIX + SDL3  | AltirraSDL (SDL3+ImGui) | CMake |
+| Android        | POSIX + SDL3  | AltirraSDL (SDL3+ImGui) | CMake + NDK |
 
-- SDL3 itself uses CMake and provides first-class `find_package` support
-- Dear ImGui integrates trivially with CMake (add sources to target)
-- CMake is the most widely supported cross-platform build system
-- IDE integration: CLion, VS Code, Visual Studio all support CMake natively
+Three independent axes control what gets compiled:
 
-## Project Structure
+1. **Host OS** — `WIN32` / `APPLE` / `ANDROID` / `UNIX` (CMake built-ins).
+   Selects system-level sources (file I/O, sockets, threading).
+2. **Frontend** — `ALTIRRA_SDL3` option. Controls whether the SDL3+ImGui
+   frontend is built.
+3. **CPU architecture** — `CMAKE_SYSTEM_PROCESSOR`. Selects SIMD sources
+   (SSE2/AVX2 vs NEON).
+
+These axes are orthogonal: Windows+SDL3 uses Win32 OS APIs but the
+SDL3+ImGui frontend.
+
+## CMake Build
+
+### Requirements
+
+- CMake 3.24+
+- C++20 compiler (GCC, Clang, or MSVC)
+- SDL3 (system-installed or via vcpkg/conan)
+- Dear ImGui (fetched automatically via FetchContent)
+
+### Quick Start
+
+```bash
+# Linux
+cmake --preset linux-release
+cmake --build build/linux-release -j$(nproc)
+./build/linux-release/src/AltirraSDL/AltirraSDL
+
+# macOS
+cmake --preset macos-release
+cmake --build build/macos-release -j$(nproc)
+
+# Windows SDL (from Developer Command Prompt or with MSVC on PATH)
+cmake --preset windows-sdl-release
+cmake --build build/windows-sdl-release --config Release
+```
+
+### CMake Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `ALTIRRA_SDL3` | ON (non-Windows), OFF (Windows) | Build the SDL3+ImGui frontend |
+
+Override on the command line:
+```bash
+# Force SDL3 build on Windows
+cmake .. -DALTIRRA_SDL3=ON
+
+# Build only libraries on Linux (no frontend)
+cmake .. -DALTIRRA_SDL3=OFF
+```
+
+### CMake Presets
+
+`CMakePresets.json` provides named configurations:
+
+| Preset | Platform | Description |
+|--------|----------|-------------|
+| `linux-debug` | Linux | Debug build with SDL3 |
+| `linux-release` | Linux | Release build with SDL3 |
+| `macos-debug` | macOS | Debug build with SDL3 |
+| `macos-release` | macOS | Release build with SDL3 |
+| `windows-sdl-debug` | Windows | Debug SDL3 build |
+| `windows-sdl-release` | Windows | Release SDL3 build |
+| `windows-libs-only` | Windows | Libraries only (use .sln for native frontend) |
+
+### Project Structure
 
 ```
-CMakeLists.txt                  (root)
+CMakeLists.txt                  (root — platform detection, ALTIRRA_SDL3 option)
+CMakePresets.json               (named build configurations)
 src/
     CMakeLists.txt              (adds subdirectories)
-    system/CMakeLists.txt       (system library)
+    system/CMakeLists.txt       (system library — platform sources selected by OS)
     ATCore/CMakeLists.txt
     ATCPU/CMakeLists.txt
     ATEmulation/CMakeLists.txt
@@ -41,328 +105,166 @@ src/
     ATNetwork/CMakeLists.txt
     ATNetworkSockets/CMakeLists.txt
     ATDebugger/CMakeLists.txt
-    ATBasic/CMakeLists.txt
-    ATCompiler/CMakeLists.txt
     ATVM/CMakeLists.txt
     Kasumi/CMakeLists.txt
     vdjson/CMakeLists.txt
-    AltirraSDL/CMakeLists.txt   (SDL3 frontend)
-    thirdparty/
-        imgui/                  (Dear ImGui sources)
-        CMakeLists.txt
+    AltirraSDL/CMakeLists.txt   (SDL3 frontend — only when ALTIRRA_SDL3=ON)
+    compat/                     (shim headers for non-MSVC: intrin.h, tchar.h)
 ```
 
-### Root CMakeLists.txt
+### Compatibility Shims
 
-```cmake
-cmake_minimum_required(VERSION 3.24)
-project(Altirra VERSION 4.40 LANGUAGES CXX)
+Non-MSVC compilers (GCC, Clang, Android NDK) need shim headers for
+MSVC-specific includes used throughout the codebase:
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+- `src/compat/intrin.h` — Maps MSVC `__cpuid()` to GCC/Clang equivalents;
+  includes `<x86intrin.h>` on x86 or `<arm_neon.h>` on ARM64.
+- `src/compat/tchar.h` — Provides `TCHAR`, `_T()`, and string functions
+  as narrow-char aliases.
 
-# Platform detection
-if(WIN32)
-    add_compile_definitions(VD_OS_WINDOWS=1)
-elseif(APPLE)
-    add_compile_definitions(VD_OS_MACOS=1)
-elseif(UNIX)
-    add_compile_definitions(VD_OS_LINUX=1)
-endif()
+These shims are injected via `ALTIRRA_COMPAT_DIR` (set only when `NOT MSVC`).
+On Windows with MSVC, the native headers are used regardless of whether the
+SDL3 frontend is being built.
 
-# Find SDL3 (SDL3_net is NOT used; ATNetworkSockets uses POSIX sockets)
-find_package(SDL3 REQUIRED)
+## Test Mode (Automated UI Testing)
 
-# Shared include paths
-set(ALTIRRA_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/src/h)
+The SDL3 build includes a test automation framework that allows external
+agents (LLM coding assistants, scripts) to interact with the ImGui UI
+programmatically via a Unix domain socket.
 
-add_subdirectory(src)
+### Activation
+
+```bash
+./AltirraSDL --test-mode
 ```
 
-### Library CMakeLists.txt Pattern
+This creates a socket at `/tmp/altirra-test-<pid>.sock`. When `--test-mode`
+is not passed, all test infrastructure is skipped (zero overhead).
 
-Each library follows the same pattern. Example for `system`:
+### Protocol
 
-```cmake
-# src/system/CMakeLists.txt
+Newline-delimited text commands in, single-line JSON responses out.
+Connect with `socat` or Python `socket.AF_UNIX`.
 
-set(SYSTEM_COMMON_SOURCES
-    source/atomic.cpp
-    source/cache.cpp
-    source/cmdline.cpp
-    source/cpuaccel.cpp
-    source/date.cpp
-    source/error.cpp
-    source/event.cpp
-    source/hash.cpp
-    source/math.cpp
-    source/memory.cpp
-    source/text.cpp
-    source/vectors.cpp
-    source/vdstl.cpp
-    source/zip.cpp
-    # ... other platform-agnostic files
-)
+### Commands
 
-if(WIN32)
-    set(SYSTEM_PLATFORM_SOURCES
-        source/file.cpp
-        source/filesys.cpp
-        source/fileasync.cpp
-        source/thread.cpp
-        source/registry.cpp
-        source/w32assist.cpp
-        source/error_win32.cpp
-        source/process.cpp
-    )
-else()
-    set(SYSTEM_PLATFORM_SOURCES
-        source/date_sdl3.cpp
-        source/debug_sdl3.cpp
-        source/error_sdl3.cpp
-        source/file_sdl3.cpp
-        source/filesys_sdl3.cpp
-        source/registry_sdl3.cpp
-        source/text_sdl3.cpp
-        source/time_sdl3.cpp
-    )
-endif()
+| Command | Description |
+|---------|-------------|
+| `ping` | Liveness check |
+| `query_state` | Full UI state: dialog flags, simulator state, visible windows |
+| `list_items [window]` | List all widgets with labels, types, positions |
+| `list_dialogs` | List available dialog names |
+| `open_dialog <name>` | Open a named dialog (e.g., `SystemConfig`) |
+| `close_dialog <name>` | Close a named dialog |
+| `click <window> <label>` | Click a widget by label (fire-and-forget, 3-frame sequence) |
+| `wait_frames [n]` | Block until N frames have rendered |
+| `screenshot <path>` | Save next frame as BMP |
+| `cold_reset` / `warm_reset` | Reset emulator |
+| `pause` / `resume` | Control emulation |
+| `boot_image <path>` | Boot a disk/cart/tape image |
+| `attach_disk <drive> <path>` | Mount disk image on drive N |
+| `load_state` / `save_state <path>` | State management |
 
-add_library(system STATIC ${SYSTEM_COMMON_SOURCES} ${SYSTEM_PLATFORM_SOURCES})
-target_include_directories(system PUBLIC ${ALTIRRA_INCLUDE_DIR})
+### Architecture
 
-if(NOT WIN32)
-    target_link_libraries(system PRIVATE SDL3::SDL3)
-endif()
-```
+The framework uses ImGui's built-in `IMGUI_ENABLE_TEST_ENGINE` hooks.
+When enabled, every widget (`Button`, `Checkbox`, `MenuItem`, etc.)
+automatically calls `ImGuiTestEngineHook_ItemAdd` and
+`ImGuiTestEngineHook_ItemInfo`. Our `ui_testmode.cpp` provides
+implementations of these hooks that build a per-frame item registry.
+No changes to UI code are required — widget tracking is automatic.
 
-### Frontend CMakeLists.txt
+### Files
 
-```cmake
-# src/AltirraSDL/CMakeLists.txt
+- `src/AltirraSDL/source/ui_testmode.h` — Public API
+- `src/AltirraSDL/source/ui_testmode.cpp` — Socket IPC, hook implementations,
+  item registry, command dispatcher
 
-add_executable(AltirraSDL
-    source/main_sdl3.cpp
-    source/display_sdl3.cpp
-    source/input_sdl3.cpp
-    source/joystick_sdl3.cpp
-    source/ui_main.cpp
-    source/ui_system.cpp
-    source/ui_disk.cpp
-    source/ui_cassette.cpp
-    # Stubs for Win32-only symbols
-    stubs/uiaccessors_stubs.cpp
-    stubs/oshelper_stubs.cpp
-    stubs/console_stubs.cpp
-    stubs/uirender_stubs.cpp
-    stubs/win32_stubs.cpp
-    stubs/device_stubs.cpp
-    # Audio output (SDL3 implementation)
-    ${CMAKE_SOURCE_DIR}/src/ATAudio/source/audiooutput_sdl3.cpp
-    # Settings persistence (shared with Windows portable mode)
-    ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
-    # All emulation core files (filtered from Altirra/source)
-    ${ALTIRRA_ALL_SOURCES}
-)
+## Windows Native Build (Visual Studio)
 
-target_link_libraries(AltirraSDL PRIVATE
-    # Core emulation
-    ATCPU
-    ATEmulation
-    ATDevices
-    ATIO
-    ATAudio
-    ATNetwork
-    ATNetworkSockets
-    ATDebugger
-    ATBasic
-    ATCompiler
-    ATVM
-    ATCore
+### Requirements
 
-    # Support libraries
-    system
-    Kasumi
-    vdjson
+- Windows 10 x64+
+- Visual Studio 2022 v17.14+ (v143 toolset)
+- Windows 11 SDK (10.0.26100.0+)
+- MADS 2.1.0+ (6502 assembler, for kernel ROM)
 
-    # External
-    SDL3::SDL3
-    imgui
-)
+### Solution Files
 
-target_include_directories(AltirraSDL PRIVATE
-    ${ALTIRRA_INCLUDE_DIR}
-    ${CMAKE_SOURCE_DIR}/src/Altirra/h  # for simulator.h, inputmanager.h, etc.
-    ${CMAKE_SOURCE_DIR}/src/thirdparty/imgui
-)
-```
+- `src/Altirra.sln` — Main emulator (32 projects)
+- `src/AltirraRMT.sln` — Raster Music Tracker plugins
+- `src/ATHelpFile.sln` — Help file
 
-### Dear ImGui Integration
+### Build Steps
 
-Dear ImGui is header/source-only (no library to link). Include it as a
-static library built from source:
+1. Open `src/Altirra.sln`, set startup project to `Altirra`
+2. First build must be **Release x64** (compiles build tools used by other configs)
+3. Then build any configuration: Debug, Profile, Release (LTCG)
 
-```cmake
-# src/thirdparty/CMakeLists.txt
-
-add_library(imgui STATIC
-    imgui/imgui.cpp
-    imgui/imgui_demo.cpp
-    imgui/imgui_draw.cpp
-    imgui/imgui_tables.cpp
-    imgui/imgui_widgets.cpp
-    imgui/backends/imgui_impl_sdl3.cpp
-    imgui/backends/imgui_impl_sdlrenderer3.cpp
-)
-
-target_include_directories(imgui PUBLIC imgui imgui/backends)
-target_link_libraries(imgui PRIVATE SDL3::SDL3)
-```
+Output goes to `out/`. Local overrides in `localconfig/active/`.
 
 ## Libraries Excluded from SDL3 Build
 
-The following libraries are **not compiled** for the SDL3 build because they
-depend heavily on Win32 / Direct3D / COM APIs:
+These libraries are Windows-only and not compiled by CMake:
 
 | Library | Reason | Replaced By |
 |---------|--------|-------------|
-| **VDDisplay** | 15+ files use GDI/D3D9 (renderers, display drivers, font rendering) | SDL3 display in AltirraSDL |
-| **Dita** | COM/shell APIs (`services.cpp`) | Not needed; SDL3 file dialogs |
-| **Riza** | Win32 audio backends (`IVDAudioOutput`) | SDL3 audio in AltirraSDL |
+| **VDDisplay** | GDI/D3D9 renderers | SDL3 display in AltirraSDL |
+| **Dita** | COM/shell APIs | SDL3 file dialogs |
+| **Riza** | Win32 audio backends | SDL3 audio in AltirraSDL |
 | **Tessa** | Win32-specific | Not needed |
-| **ATNativeUI** | Pure Win32 (HWND, dialogs, menus) | Dear ImGui |
-| **ATUI / ATUIControls** | Depends on VDDisplay renderer | Dear ImGui overlays |
-| **AltirraShell** | Win32 shell integration | Not applicable on Linux/macOS |
+| **ATNativeUI** | Win32 HWND/dialogs/menus | Dear ImGui |
+| **ATUI / ATUIControls** | Depends on VDDisplay | Dear ImGui |
+| **AltirraShell** | Win32 shell integration | Not applicable |
 | **Asuka** | Win32 build tool | Not needed (CMake handles build) |
-
-**Header-only dependencies:** The SDL3 build uses interface headers from
-`VDDisplay` (`display.h`, `compositor.h`, `renderer.h`) and `Kasumi`
-(`pixmap.h`) for type definitions. These headers are clean (no Win32 types
-in the interfaces themselves). The headers are included via
-`${ALTIRRA_INCLUDE_DIR}` but no VDDisplay source files are compiled.
+| **ATAppBase** | Win32 application framework | SDL3 main loop |
 
 ## Conditional Compilation Strategy
 
-The build system selects platform-specific source files. Within source files,
-use `#if VD_OS_WINDOWS` only when a single file must handle both platforms
-(rare). Prefer separate files.
+### File Selection by Platform
 
-### Files Selected by Platform
+The build system selects platform-specific source files at the CMake level.
+Within source files, `#if VD_OS_WINDOWS` is used only when a single file
+must handle both platforms (rare). Prefer separate `_sdl3.cpp` files.
 
-| Component | Windows | Linux/macOS |
+| Component | Windows | Non-Windows |
 |-----------|---------|-------------|
-| system/thread | `thread.cpp` | `thread.cpp` (cross-platform via `#ifdef`) |
 | system/file | `file.cpp` | `file_sdl3.cpp` |
 | system/filesys | `filesys.cpp` | `filesys_sdl3.cpp` |
-| system/fileasync | `fileasync.cpp` | `fileasync_sdl3.cpp` (sync buffered I/O for AVI writing) |
+| system/fileasync | `fileasync.cpp` | `fileasync_sdl3.cpp` |
 | system/registry | `registry.cpp` | `registry_sdl3.cpp` |
-| system/text | `text.cpp` | `text_sdl3.cpp` (wchar_t encoding) |
+| system/text | `text.cpp` | `text_sdl3.cpp` |
 | system/date | `date.cpp` | `date_sdl3.cpp` |
 | system/time | `time.cpp` | `time_sdl3.cpp` |
 | system/error | `error_win32.cpp` | `error_sdl3.cpp` |
 | system/debug | `debug.cpp` | `debug_sdl3.cpp` |
-| ATAudio output | `audiooutput.cpp`, `audiooutwaveout.cpp`, etc. | `audiooutput_sdl3.cpp` |
-| ATNetworkSockets | `worker.cpp`, `socketworker.cpp`, etc. | `worker_sdl3.cpp`, `socketworker_sdl3.cpp`, etc. (POSIX sockets) |
-| ATCore timer | `timerserviceimpl_win32.h` | `timerserviceimpl_sdl3.h` |
-| Frontend | `Altirra` project (Win32) | `AltirraSDL` project |
+| ATAudio output | `audiooutput.cpp` + WASAPI/WaveOut/XAudio2 | `audiooutput_sdl3.cpp` |
+| ATNetworkSockets | `worker.cpp`, Winsock | `worker_sdl3.cpp`, POSIX sockets |
+| Frontend | `Altirra` (.sln) | `AltirraSDL` (CMake) |
 
 ### Files Compiled on All Platforms (unchanged)
 
-All of: `ATCPU/*`, `ATEmulation/*`, `ATDevices/*`, `ATIO/*`, `ATNetwork/*`,
-`ATCompiler/*`, `ATVM/*`, `ATDebugger/*`, `vdjson/*`, `Kasumi/*`,
-`ATAudio/source/pokey*.cpp`,
-`ATAudio/source/audio{filters,sampleplayer,samplepool,samplebuffer,convolutionplayer}.cpp`
+`ATCPU/*`, `ATEmulation/*`, `ATDevices/*`, `ATIO/*`, `ATNetwork/*`,
+`ATVM/*`, `ATDebugger/*`, `vdjson/*`, `Kasumi/*`,
+`ATAudio/source/pokey*.cpp`, `ATAudio/source/audio{filters,sample*,convolution*}.cpp`
 
-**Note:** `ATBasic` contains only 6502 assembly (`.s` files) built by the
-MADS assembler, not C++ source. It is not compiled by CMake. The pre-built
-kernel binary includes the BASIC ROM (see Kernel ROM section below).
+### Architecture-Specific SIMD
 
-## Handling the Simulator
+| Module | x86_64 | ARM64 |
+|--------|--------|-------|
+| ATCore | `fft_sse2.cpp`, `fft_avx2.cpp` | `checksum_arm64.cpp`, `fft_neon.cpp` |
+| Kasumi | `region_sse2.cpp`, `resample_stages_x64.cpp` | `blt_spanutils_arm64.cpp`, `region_neon.cpp`, `resample_stages_arm64.cpp` |
+| ATIO | `audioreaderflac_x86.cpp` | `audioreaderflac_arm64.cpp` |
 
-The `ATSimulator` class lives in `src/Altirra/` which also contains all the
-Win32 UI code. For the SDL3 build, the simulator and its dependencies must be
-compilable without the Win32 UI files.
-
-Options:
-
-**Option A: Extract simulator into a library.** Move `simulator.cpp`,
-`simulator.h`, and its non-UI dependencies into a new `ATSimulator` library
-project. Both `Altirra` (Win32) and `AltirraSDL` link against it.
-
-**Option B: Include simulator sources directly in AltirraSDL.** Add
-`simulator.cpp` and selected non-UI files from `src/Altirra/source/` to the
-`AltirraSDL` build target. More pragmatic, less clean.
-
-**Option C: Compile the Altirra project as a library with UI files excluded.**
-Use CMake to build a static library from the Altirra source directory,
-excluding `ui*.cpp`, `main.cpp`, and other Win32-only files.
-
-**Recommended: Option A.** It is the cleanest separation and makes the
-architecture explicit. The original `Altirra.vcxproj` continues to build
-everything together as before.
-
-**Complexity note:** `simulator.cpp` currently includes ~80 headers,
-some of which are UI-related (`debugger.h`, `uirender.h`, `profiler.h`).
-Extracting the simulator library requires resolving these dependencies --
-typically by replacing UI-layer includes with forward declarations or
-moving them behind interfaces. This is not purely mechanical; it
-requires case-by-case analysis of each dependency. Budget accordingly.
-
-### What Goes in ATSimulator Library
-
-From `src/Altirra/source/`, the non-UI files needed by any frontend:
-
-- `simulator.cpp` -- core simulator
-- `inputmanager.cpp` -- input routing
-- `inputcontroller.cpp` -- port controllers
-- `cassette*.cpp` -- cassette emulation
-- `disk*.cpp` -- disk drive emulation
-- `cartridge*.cpp` -- cartridge handling
-- `kerneldb.cpp` -- kernel ROM database
-- `firmware*.cpp` -- firmware management
-- `savestate*.cpp` -- save/load state
-- `debugger*.cpp` (non-UI) -- debugger backend
-- Other emulation-support files
-
-Exclude: All `ui*.cpp`, `main.cpp`, `uidbg*.cpp`, `oshelper.cpp`,
-`joystick.cpp` (Win32 joystick), `videowriter.cpp` (replaced by
-`videowriter_sdl3.cpp`), `console.cpp`. Note: `aviwriter.cpp` is
-included explicitly — it is platform-portable (uses `IVDFileAsync`).
+MSVC-only x86 files (reference MASM `.asm` externals) are guarded by `if(MSVC)`.
 
 ## Kernel ROM
 
-The kernel ROM (6502 assembly) is built by `src/Kernel/Makefile` using the
-MADS assembler. MADS is a Windows tool. For cross-platform builds:
+The kernel ROM (6502 assembly) is built by `src/Kernel/Makefile` using MADS.
+Pre-built kernel binaries are committed to `src/Altirra/autogen/`. The kernel
+changes rarely.
 
-1. **Pre-built kernel**: Include the compiled kernel binary in the
-   repository. The kernel changes rarely.
-2. **MADS via Wine**: Run MADS under Wine on Linux. Add a CMake option to
-   enable/disable kernel compilation.
-3. **Cross-compile MADS**: If MADS source is available, compile it for the
-   host platform.
-
-Recommended: Option 1 for simplicity. Commit the kernel binary and only
-rebuild it on Windows when kernel source changes.
-
-## Build Commands
-
-```bash
-# Linux/macOS
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-
-# Run
-./src/AltirraSDL/AltirraSDL
-
-# Windows (CMake, optional -- .sln is primary)
-cmake .. -G "Visual Studio 17 2022" -A x64
-cmake --build . --config Release
-```
-
-## Dependencies
-
-Build dependencies on Linux:
+## Platform Dependencies
 
 ```bash
 # Debian/Ubuntu
@@ -370,14 +272,31 @@ apt install cmake build-essential libsdl3-dev
 
 # Fedora
 dnf install cmake gcc-c++ SDL3-devel
-```
 
-On macOS:
-
-```bash
+# macOS
 brew install cmake sdl3
+
+# Windows (vcpkg)
+vcpkg install sdl3:x64-windows
 ```
 
-Dear ImGui is vendored in the repository (source-only, no system package
-needed). SDL3_net is **not** required — `ATNetworkSockets` uses POSIX
-sockets directly.
+Dear ImGui is fetched automatically via CMake FetchContent (no manual
+install needed). SDL3_net is **not** required — `ATNetworkSockets` uses
+POSIX sockets (or Winsock on Windows) directly.
+
+## Future: Android
+
+The build system is prepared for Android via CMake + NDK toolchain:
+
+- `ANDROID` CMake variable triggers `VD_OS_ANDROID` definition
+- System libraries use POSIX/SDL3 sources (same as Linux)
+- SDL3 has first-class Android support
+- NDK provides ARM NEON headers natively
+- Compat shims (`intrin.h`, `tchar.h`) are applied for non-MSVC (NDK uses Clang)
+- Frontend: AltirraSDL with SDL3+ImGui (SDL3 handles Android lifecycle)
+
+To build, use the NDK toolchain with CMake:
+```bash
+cmake .. -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+         -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26
+```

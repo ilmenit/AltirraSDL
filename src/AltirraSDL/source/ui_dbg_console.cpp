@@ -269,7 +269,8 @@ void ATUIDebuggerEnsureConsolePane() {
 	if (!g_pConsolePane) {
 		auto *pane = new ATImGuiConsolePaneImpl();
 		ATUIDebuggerRegisterPane(pane);
-		pane->Release();  // registry holds a ref
+		// vdrefcounted starts at refcount 0; the vdrefptr in the registry
+		// AddRef'd to 1.  No Release() here — that would destroy the object.
 	}
 }
 

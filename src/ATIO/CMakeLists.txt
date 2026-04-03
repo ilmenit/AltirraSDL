@@ -51,7 +51,7 @@ target_include_directories(ATIO
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source
 )
 
-if(NOT WIN32)
+if(ALTIRRA_COMPAT_DIR)
     target_include_directories(ATIO BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()
 

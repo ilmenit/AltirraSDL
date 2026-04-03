@@ -106,3 +106,5 @@ void VDUIGetAcceleratorString(const VDUIAccelerator&, VDStringW& s) { s.clear();
 
 void ATUIShowDialogDiskExplorer(VDGUIHandle, IATBlockDevice*, const wchar_t*) {}
 ATUIGenericResult ATUIShowGenericDialog(const ATUIGenericDialogOptions&) { return kATUIGenericResult_Cancel; }
+
+// Test mode symbols are now provided by ui_testmode.cpp (full implementation).

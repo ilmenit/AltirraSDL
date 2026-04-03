@@ -1,6 +1,6 @@
 AltirraSDL — Build System Parity Checklist
 ==========================================
-Updated: 2026-04-01
+Updated: 2026-04-03
 Reference: PORTING/BUILD.md vs actual CMakeLists.txt files
 
 Legend:
@@ -31,18 +31,17 @@ Legend:
 
   [100%] Common sources compiled on all platforms
   [100%] thread.cpp in common sources          — Compiles cross-platform via #ifdef guards
-  [100%] Platform-specific SDL3 sources:
+  [100%] Platform-specific SDL3 sources (9 files):
            date_sdl3.cpp                       — Date/time utilities
            debug_sdl3.cpp                      — Debug helpers
            error_sdl3.cpp                      — Error handling
            file_sdl3.cpp                       — File I/O (VDFile, VDFileStream)
+           fileasync_sdl3.cpp                  — Synchronous buffered IVDFileAsync impl
+                                                 (used by aviwriter.cpp for AVI writing)
            filesys_sdl3.cpp                    — Filesystem operations
            registry_sdl3.cpp                   — Settings persistence (INI format)
            text_sdl3.cpp                       — Text encoding (wchar_t <-> UTF-8)
            time_sdl3.cpp                       — High-res timer
-  [100%] fileasync_sdl3.cpp                   — Synchronous buffered IVDFileAsync impl
-                                                using VDFile. Used by aviwriter.cpp for
-                                                video recording (AVI container writing).
   [ N/A] w32assist.cpp                        — Windows-only, not needed on SDL3
 
   BUILD.md DIVERGENCE: Doc lists thread_sdl3.cpp as a separate platform file.
@@ -60,7 +59,8 @@ Legend:
   [100%] ATIO                                 — Compiles unchanged
   [100%] ATNetwork                            — Compiles unchanged (emulated stack)
   [100%] ATDebugger                           — Compiles unchanged (backend only)
-  [100%] ATCompiler                           — Compiles unchanged
+  [ N/A] ATCompiler                           — Build tool (LZ packer, relocator),
+                                                not a runtime library. Same as Asuka.
   [100%] ATVM                                 — Compiles unchanged
   [100%] Kasumi                               — Compiles unchanged
   [100%] vdjson                               — Compiles unchanged
@@ -72,9 +72,10 @@ Legend:
 ================================================================================
 
   [100%] audiooutput_sdl3.cpp exists           — SDL3 audio output factory
-  [ 20%] Audio implementation quality          — Currently a silent stub; WriteAudio()
-                                                is empty. Needs SDL_AudioStream integration.
-                                                See AUDIO_TODO_LIST.txt for details.
+  [100%] Audio implementation quality          — Full 11-step mixing pipeline with
+                                                SDL_AudioStream integration. Handles
+                                                stereo/mono, DC removal, low-pass filter,
+                                                edge rendering, queue management, mute.
   [100%] Build integration                    — Compiled via AltirraSDL/CMakeLists.txt
                                                 (not ATAudio CMakeLists, which is correct)
 
@@ -83,11 +84,14 @@ Legend:
 5. ATNETWORKSOCKETS
 ================================================================================
 
-  [  0%] nativesockets_sdl3.cpp               — Not implemented
-  [  0%] worker_sdl3.cpp                      — Not implemented
-  [  0%] socketutils_sdl3.cpp                 — Not implemented
-  [  0%] CMakeLists.txt for ATNetworkSockets  — Not created for CMake build
-  Note: Currently uses stubs. Network emulation not functional on SDL3.
+  [100%] nativesockets_sdl3.cpp               — Socket init and public API (148 lines)
+  [100%] worker_sdl3.cpp                      — Main socket worker thread (804 lines)
+  [100%] socketworker_sdl3.cpp                — Detailed socket operations (1688 lines)
+  [100%] lookupworker_sdl3.cpp                — DNS lookup handling (197 lines)
+  [100%] vxlantunnel_sdl3.cpp                 — VXLAN tunnel implementation (138 lines)
+  [100%] socketutils_posix.cpp                — POSIX socket utilities (69 lines)
+  [100%] CMakeLists.txt for ATNetworkSockets  — In build, links system/ATCore/ATNetwork
+  Note: Full POSIX socket implementation (~3000 lines). No stubs.
 
 
 ================================================================================
@@ -98,16 +102,25 @@ Legend:
   [100%] display_sdl3.cpp                     — VDVideoDisplaySDL3
   [100%] input_sdl3.cpp                       — SDL3 keyboard/mouse → POKEY/InputManager
   [100%] joystick_sdl3.cpp                    — SDL3 gamepad → IATJoystickManager
-  [100%] UI source files (ui_main/system/disk/cassette.cpp)
-  [100%] Stub files (uiaccessors, oshelper, console, etc.)
+  [100%] videowriter_sdl3.cpp                 — Video recording support
+  [100%] UI source files (18 ImGui files):
+           ui_main.cpp, ui_menus.cpp, ui_recording.cpp, ui_cartmapper.cpp,
+           ui_system.cpp, ui_firmware.cpp, ui_disk.cpp, ui_cassette.cpp,
+           ui_display.cpp, ui_input.cpp, ui_profiles.cpp, ui_devconfig.cpp,
+           ui_devconfig_devices.cpp, ui_tools.cpp, ui_testmode.cpp,
+           ui_debugger.cpp, ui_dbg_console.cpp, ui_dbg_registers.cpp
+  [100%] IMGUI_ENABLE_TEST_ENGINE           — PUBLIC define on imgui target,
+                                               enables test engine hooks for
+                                               ui_testmode.cpp automation
+  [100%] Stub files (6): console, oshelper, uirender, uiaccessors,
+                          win32, device stubs
   [100%] uiregistry.cpp included              — For settings persistence
   [100%] Dear ImGui integration (thirdparty/imgui)
   [100%] Altirra source inclusion via glob + exclusion filters
 
   BUILD.md DIVERGENCE: Doc lists ui_settings.cpp, ui_devices.cpp,
-  ui_debugger.cpp, ui_overlay.cpp, ui_filebrowser.cpp.
-  Actual: ui_system.cpp, ui_disk.cpp, ui_cassette.cpp (different naming,
-  overlay is in ui_main.cpp, no separate filebrowser).
+  ui_overlay.cpp, ui_filebrowser.cpp. Actual naming differs (ui_system,
+  ui_disk, etc.) and scope has expanded significantly.
 
 
 ================================================================================
@@ -122,6 +135,7 @@ Legend:
   [ N/A] ATUI / ATUIControls                  — Correctly excluded
   [ N/A] AltirraShell                         — Correctly excluded
   [ N/A] Asuka                                — Correctly excluded (build tool)
+  [ N/A] ATCompiler                           — Correctly excluded (build tool)
 
 
 ================================================================================
@@ -131,13 +145,13 @@ SUMMARY
 Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
 Root CMake config                5            6       83%
-System library SDL3 files        8            9       89%
-Core emulation libraries        12           12      100%
-Audio output                     1            1      100% (stub)
-Network sockets                  0            3        0%
-Frontend sources                 9           9+      100%
-Excluded libraries (N/A)         8            8      100%
+System library SDL3 files        9            9      100%
+Core emulation libraries        11           11      100%
+Audio output                     3            3      100%
+Network sockets                  7            7      100%
+Frontend sources                26          26+      100%
+Excluded libraries (N/A)         9            9      100%
 
 Build system is functional and produces a working binary.
-Main gaps: network sockets (Phase 8), async file I/O (may not be needed).
+No functional gaps remain. All runtime libraries compile and link.
 BUILD.md has several divergences from reality (file names, C++ standard).

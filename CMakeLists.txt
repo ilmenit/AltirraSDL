@@ -6,35 +6,64 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# Match MSVC convention: _DEBUG in debug builds
-if(NOT WIN32)
-    add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
+###############################################################################
+# Platform detection
+#
+# Three independent axes:
+#   1. Host OS      — WIN32 / APPLE / ANDROID / UNIX (CMake built-ins)
+#   2. Frontend     — ALTIRRA_SDL3 option (SDL3+ImGui vs native Win32)
+#   3. CPU arch     — CMAKE_SYSTEM_PROCESSOR (x86_64, ARM64, …)
+#
+# The OS axis selects system-level sources (file I/O, sockets, threading).
+# The frontend axis selects the UI layer.  They are orthogonal: Windows+SDL3
+# uses Win32 OS APIs but the SDL3+ImGui frontend.
+#
+# Native Win32 UI is built exclusively via the Visual Studio .sln — CMake
+# never produces a native Win32 frontend.
+###############################################################################
+
+# ALTIRRA_SDL3 — build the SDL3+ImGui frontend.
+# Defaults ON for non-Windows, OFF for Windows (use .sln for native).
+# Override with -DALTIRRA_SDL3=ON to get the SDL3 build on any platform.
+if(WIN32)
+    option(ALTIRRA_SDL3 "Build SDL3+ImGui frontend" OFF)
+else()
+    option(ALTIRRA_SDL3 "Build SDL3+ImGui frontend" ON)
 endif()
 
-# Platform detection -- used in #ifdef guards throughout headers
+# Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
 if(WIN32)
     add_compile_definitions(VD_OS_WINDOWS=1)
+elseif(ANDROID)
+    add_compile_definitions(VD_OS_ANDROID=1)
 elseif(APPLE)
     add_compile_definitions(VD_OS_MACOS=1)
 elseif(UNIX)
     add_compile_definitions(VD_OS_LINUX=1)
 endif()
 
+# Match MSVC convention: _DEBUG in debug builds (MSVC defines it automatically)
+if(NOT MSVC)
+    add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
+endif()
+
 # Shared include paths
 set(ALTIRRA_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/src/h)
 
-# SDL3 is required for non-Windows platform implementations
-if(NOT WIN32)
-    find_package(SDL3 REQUIRED)
-endif()
-
-# Compatibility shims for non-Windows (intercepts bare <intrin.h>, <tchar.h>)
-if(NOT WIN32)
+# Compatibility shims for non-MSVC (intercepts bare <intrin.h>, <tchar.h>)
+# MSVC provides these natively; GCC/Clang/NDK need shims.
+if(NOT MSVC)
     set(ALTIRRA_COMPAT_DIR ${CMAKE_SOURCE_DIR}/src/compat)
 endif()
 
-# Dear ImGui (docking branch) — fetched automatically, built as static library
-if(NOT WIN32)
+# SDL3 — required when the SDL3 frontend is enabled, or on non-Windows where
+# the system libraries use SDL3 for threading/timing.
+if(ALTIRRA_SDL3 OR NOT WIN32)
+    find_package(SDL3 REQUIRED)
+endif()
+
+# Dear ImGui (docking branch) — built as static library for the SDL3 frontend
+if(ALTIRRA_SDL3)
     FetchContent_Declare(
         imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -57,8 +86,15 @@ if(NOT WIN32)
         ${imgui_SOURCE_DIR}/backends
     )
     target_link_libraries(imgui PUBLIC SDL3::SDL3)
+    # Enable test engine hooks — our ui_testmode.cpp provides the hook implementations.
+    # PUBLIC so the define propagates to AltirraSDL (which includes imgui_internal.h).
+    target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_TEST_ENGINE)
     # Suppress warnings in third-party code
-    target_compile_options(imgui PRIVATE -w)
+    if(MSVC)
+        target_compile_options(imgui PRIVATE /w)
+    else()
+        target_compile_options(imgui PRIVATE -w)
+    endif()
 endif()
 
 add_subdirectory(src)

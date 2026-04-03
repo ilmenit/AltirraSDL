@@ -75,6 +75,14 @@ add_executable(AltirraSDL
     source/ui_debugger.cpp
     source/ui_dbg_console.cpp
     source/ui_dbg_registers.cpp
+    source/ui_dbg_disassembly.cpp
+    source/ui_dbg_history.cpp
+    source/ui_dbg_memory.cpp
+    source/ui_dbg_breakpoints.cpp
+    source/ui_dbg_callstack.cpp
+
+    # Test mode (headless automated testing via stdin/stdout commands)
+    source/ui_testmode.cpp
 
     # Registry persistence (filtered out by ui* regex, so add explicitly)
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
@@ -115,9 +123,12 @@ target_include_directories(AltirraSDL PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/autogen
     # Default version.h for local/cross-platform builds
     ${CMAKE_SOURCE_DIR}/src/Altirra/autobuild_default
-    # Compat shims (intrin.h, tchar.h)
-    ${ALTIRRA_COMPAT_DIR}
 )
+
+# Compat shims (intrin.h, tchar.h) for non-MSVC compilers
+if(ALTIRRA_COMPAT_DIR)
+    target_include_directories(AltirraSDL PRIVATE ${ALTIRRA_COMPAT_DIR})
+endif()
 
 # Stubs directory MUST come before Altirra headers so that stub versions
 # of Win32-dependent headers (uiportmenus.h, at/atui/uimanager.h, etc.)
@@ -150,11 +161,32 @@ target_link_libraries(AltirraSDL PRIVATE
     imgui
 )
 
-target_compile_definitions(AltirraSDL PRIVATE
-    VD_OS_LINUX=1
-)
+# Platform-specific link libraries
+# Note: winmm and ws2_32 propagate transitively from system and ATNetworkSockets.
+if(APPLE)
+    target_link_libraries(AltirraSDL PRIVATE
+        "-framework Cocoa"
+        "-framework IOKit"
+        "-framework CoreFoundation"
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+    )
+endif()
 
-# Per-file SIMD flags for GCC
+# Platform compile definitions (match what the top-level sets globally, but
+# AltirraSDL adds its own private copy because it also gets the global one —
+# this is harmless and ensures correctness if the target is ever split out)
+if(WIN32)
+    target_compile_definitions(AltirraSDL PRIVATE VD_OS_WINDOWS=1)
+elseif(ANDROID)
+    target_compile_definitions(AltirraSDL PRIVATE VD_OS_ANDROID=1)
+elseif(APPLE)
+    target_compile_definitions(AltirraSDL PRIVATE VD_OS_MACOS=1)
+elseif(UNIX)
+    target_compile_definitions(AltirraSDL PRIVATE VD_OS_LINUX=1)
+endif()
+
+# Per-file SIMD flags for GCC/Clang (MSVC handles this via /arch: flags)
 if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
     # antic.cpp includes antic_sse2.inl which uses _tzcnt_u32 (BMI1)
     set_source_files_properties(

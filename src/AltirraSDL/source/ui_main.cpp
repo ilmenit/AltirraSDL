@@ -28,6 +28,8 @@
 #include <at/atcore/serializable.h>
 
 #include "ui_main.h"
+#include "ui_debugger.h"
+#include "ui_testmode.h"
 #include "display_sdl3_impl.h"
 #include "simulator.h"
 #include "mediamanager.h"
@@ -326,8 +328,8 @@ void ATUIRenderCompatWarning(ATSimulator &sim, ATUIState &state) {
 // =========================================================================
 // Save Frame state — file path set by dialog callback, consumed by render
 // =========================================================================
-static std::mutex g_saveFrameMutex;
-static VDStringA g_saveFramePath;
+std::mutex g_saveFrameMutex;
+VDStringA g_saveFramePath;
 
 bool g_copyFrameRequested = false;
 
@@ -928,7 +930,11 @@ static void RenderStatusOverlay(ATSimulator &sim) {
 		bool needSep = false;
 
 		if (showFPS) {
-			ImGui::Text("%.0f FPS", io.Framerate);
+			float fps = ATUIGetMeasuredFPS();
+			if (fps > 0.0f)
+				ImGui::Text("%.0f FPS", fps);
+			else
+				ImGui::Text("%.0f FPS", io.Framerate);
 			needSep = true;
 		}
 		if (paused) {
@@ -1172,6 +1178,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showAdvancedConfig)    ATUIRenderAdvancedConfig(state);
 	ATUIRenderVideoRecordingDialog(window);
 
+	// Debugger panes (dockable windows)
+	ATUIDebuggerRenderPanes(sim, state);
+
 	// Tools result popup (success/error messages from deferred tool actions)
 	if (g_showToolsResult) {
 		ImGui::OpenPopup("Tool Result");
@@ -1205,6 +1214,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 	ImGui::Render();
 	ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
+
+	// Process test mode pending actions (click state machine, deferred responses)
+	ATTestModePostRender(sim, state);
 
 	// Save Frame / Copy Frame — readback after rendering, before present
 	{

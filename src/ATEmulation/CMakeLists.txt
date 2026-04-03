@@ -21,7 +21,7 @@ target_include_directories(ATEmulation
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/h
 )
 
-if(NOT WIN32)
+if(ALTIRRA_COMPAT_DIR)
     target_include_directories(ATEmulation BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()
 

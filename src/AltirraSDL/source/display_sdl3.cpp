@@ -4,6 +4,8 @@
 #include <vd2/system/atomic.h>
 #include <vd2/VDDisplay/display.h>
 #include "display_sdl3_impl.h"
+#include "uiaccessors.h"
+#include "uitypes.h"
 
 // ============================================================
 // VDVideoDisplayFrame implementation (from VDDisplay library)
@@ -103,7 +105,7 @@ bool VDVideoDisplaySDL3::PrepareFrame() {
 		mTextureH = px.h;
 
 		if (mpTexture)
-			SDL_SetTextureScaleMode(mpTexture, SDL_SCALEMODE_LINEAR);
+			UpdateScaleMode();
 
 		// Resize conversion buffer for palettized frames
 		mConvertBuffer.resize((size_t)px.w * px.h);
@@ -157,4 +159,19 @@ void VDVideoDisplaySDL3::Present() {
 		SDL_RenderTexture(mpRenderer, mpTexture, nullptr, nullptr);
 		SDL_RenderPresent(mpRenderer);
 	}
+}
+
+void VDVideoDisplaySDL3::UpdateScaleMode() {
+	if (!mpTexture)
+		return;
+
+	const ATDisplayFilterMode fm = ATUIGetDisplayFilterMode();
+	SDL_ScaleMode mode = SDL_SCALEMODE_LINEAR;
+
+	if (fm == kATDisplayFilterMode_Point)
+		mode = SDL_SCALEMODE_NEAREST;
+	// SharpBilinear, Bicubic, AnySuitable all map to LINEAR.
+	// Sharp bilinear and bicubic would require SDL_GPU shaders.
+
+	SDL_SetTextureScaleMode(mpTexture, mode);
 }

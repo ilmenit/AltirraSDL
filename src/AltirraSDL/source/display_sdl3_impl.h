@@ -76,6 +76,10 @@ public:
 	// Legacy: upload + clear + render + present (used before ImGui integration)
 	void Present();
 
+	// Update SDL_SCALEMODE on the existing texture to match the current
+	// ATDisplayFilterMode setting.  Called when the user changes filter mode.
+	void UpdateScaleMode();
+
 	SDL_Texture* GetTexture() const { return mpTexture; }
 	int GetTextureWidth() const { return mTextureW; }
 	int GetTextureHeight() const { return mTextureH; }

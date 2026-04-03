@@ -22,6 +22,9 @@
 // Embedded ROM set readme (romset.html) for Export ROM Set
 #include "../romdata/romset_readme.h"
 
+// Embedded debugger help text (dbghelp.txt) for .help command
+#include "../romdata/dbghelp.h"
+
 struct EmbeddedROM {
 	int resourceId;
 	const unsigned char *data;
@@ -104,6 +107,13 @@ bool ATLoadMiscResource(int id, vdfastvector<uint8>& buf) {
 	if (id == IDR_ROMSETREADME) {
 		buf.resize(romset_readme_len);
 		memcpy(buf.data(), romset_readme, romset_readme_len);
+		return true;
+	}
+
+	// Debugger help text (.help command)
+	if (id == IDR_DEBUG_HELP) {
+		buf.resize(dbghelp_len);
+		memcpy(buf.data(), dbghelp, dbghelp_len);
 		return true;
 	}
 

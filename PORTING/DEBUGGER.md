@@ -31,13 +31,15 @@ registry of ImGui panes.  Provides real implementations of:
 - `ATRegisterUIPaneType()` / `ATRegisterUIPaneClass()` — pane registration
 - `ATUIDebuggerOpen()` / `ATUIDebuggerClose()` — debugger enable/disable
 - `ATUIDebuggerTick()` — called each frame to process queued commands
+- `ATUIDebuggerRenderPanes()` — renders dockspace + Display pane + all
+  debugger panes each frame
 
 **Layer 3 — ImGui Panes (`ui_dbg_*.cpp`):** Each debugger pane is an
 `ATImGuiDebuggerPane` subclass that:
 - Implements `IATDebuggerClient` for state update callbacks
 - Caches state in `OnDebuggerSystemStateUpdate()`
 - Renders from cache each frame via `Render()`
-- Uses normal `ImGui::Begin()` (persistent docking via `imgui.ini`)
+- Docks into the shared dockspace (layout persisted via `imgui.ini`)
 
 ### Initialization Sequence
 
@@ -54,6 +56,31 @@ g_sim.Shutdown()
 
 `ATInitDebugger()` calls `g_debugger.Init()` which is critical — without
 it, breakpoints don't work and the debugger won't receive simulator events.
+
+### Docking Layout
+
+When the debugger opens, a full-window ImGui DockSpace is created below the
+menu bar.  The emulation display becomes a dockable "Display" ImGui window
+(using `ImGui::Image()` with the SDL texture) instead of rendering as a
+background.  The default layout replicates Windows `ATLoadDefaultPaneLayout`
+(console.cpp:921):
+
+```
+┌──────────────────────┬────────────────────┐
+│                      │  Registers         │
+│    Display           │  Disassembly (tab) │
+│                      │  History (tab)     │
+├──────────────────────┴────────────────────┤
+│              Console (focused)             │
+└───────────────────────────────────────────┘
+```
+
+The layout is built programmatically via `ImGui::DockBuilder*()` on first
+open.  After that, ImGui's own `imgui.ini` persistence handles layout
+changes the user makes (resizing, rearranging, undocking).
+
+When the debugger is closed, the Display pane disappears and the emulation
+texture reverts to direct SDL rendering as a background.
 
 ### Console Output Routing
 
@@ -92,6 +119,9 @@ The console input is disabled (grayed out) when the simulator is running.
 When the debugger breaks, the input is re-enabled and auto-focused.
 This matches Windows `OnRunStateChanged` behavior in `uidbgconsole.cpp`.
 
+Opening the debugger automatically breaks execution so the console is
+immediately usable.
+
 ### Stub Headers
 
 Two stub headers allow cross-platform compilation of files that include
@@ -127,8 +157,11 @@ When the debugger is closed, F5/F9 retain their emulation functions
 | File | Lines | Purpose |
 |------|-------|---------|
 | `source/ui_debugger.h` | ~90 | Pane manager API, ATImGuiDebuggerPane base class |
-| `source/ui_debugger.cpp` | ~270 | Pane registry, open/close, tick, stepping commands |
-| `source/ui_dbg_console.cpp` | ~230 | Console pane (command I/O, history) |
+| `source/ui_debugger.cpp` | ~430 | Pane registry, dockspace, Display pane, open/close, tick, stepping |
+| `source/ui_dbg_console.cpp` | ~280 | Console pane (command I/O, history) |
+| `source/ui_dbg_registers.cpp` | ~210 | Registers pane (all CPU modes) |
+| `source/ui_dbg_disassembly.cpp` | ~230 | Disassembly pane (live around PC) |
+| `source/ui_dbg_history.cpp` | ~250 | CPU history pane (past instructions) |
 | `stubs/at/atnativeui/uiframe.h` | ~45 | Stub: forward decls, no windows.h |
 | `stubs/at/atui/uicommandmanager.h` | ~130 | Stub: ATUICommandManager full header |
 
@@ -141,7 +174,7 @@ When the debugger is closed, F5/F9 retain their emulation functions
 | `stubs/win32_stubs.cpp` | Removed ATGetDebugger stub; added ATUISaveFrame stub |
 | `stubs/uiaccessors_stubs.cpp` | Removed duplicate enum tables; added ATUIGetCommandManager |
 | `stubs/device_stubs.cpp` | Removed ATCPUHeatMap stubs (real cpuheatmap.cpp now compiled) |
-| `source/main_sdl3.cpp` | Added ATInitDebugger/ATShutdownDebugger, ATUIDebuggerTick(), keyboard shortcuts |
+| `source/main_sdl3.cpp` | Added ATInitDebugger/ATShutdownDebugger, ATUIDebuggerTick(), keyboard shortcuts; display rendering conditional on debugger state |
 | `source/ui_menus.cpp` | Debug menu items wired to real debugger functions |
 
 ### Reused from Windows build (compiled unchanged)
@@ -158,6 +191,7 @@ When the debugger is closed, F5/F9 retain their emulation functions
 | `verifier.cpp` | 545 | CPU verification checks |
 | `profiler.cpp` | 1,046 | Performance profiler backend |
 | `cputracer.cpp` | 472 | CPU trace collection |
+| `disasm.cpp` | 2,600+ | Disassembly engine (all CPU modes) |
 
 ### ATDebugger library (already compiled)
 
@@ -169,15 +203,16 @@ breakpoint implementation, debug targets, default symbols.
 
 | Pane | Status | File |
 |------|--------|------|
+| Display | Done | `ui_debugger.cpp` (inline) |
 | Console | Done | `ui_dbg_console.cpp` |
-| Registers | TODO | `ui_dbg_registers.cpp` |
-| Disassembly | TODO | `ui_dbg_disasm.cpp` |
+| Registers | Done | `ui_dbg_registers.cpp` |
+| Disassembly | Done | `ui_dbg_disassembly.cpp` |
+| History | Done | `ui_dbg_history.cpp` |
 | Memory (x4) | TODO | `ui_dbg_memory.cpp` |
 | Watch (x4) | TODO | `ui_dbg_watch.cpp` |
 | Call Stack | TODO | `ui_dbg_callstack.cpp` |
 | Breakpoints | TODO | `ui_dbg_breakpoints.cpp` |
 | Targets | TODO | `ui_dbg_targets.cpp` |
-| History | TODO | `ui_dbg_history.cpp` |
 | Source | TODO | `ui_dbg_source.cpp` |
 | Debug Display | TODO | `ui_dbg_debugdisplay.cpp` |
 | Printer Output | TODO | `ui_dbg_printer.cpp` |
@@ -206,7 +241,10 @@ breakpoint implementation, debug targets, default symbols.
 | Step Over (F10) | Done |
 | Step Out (Shift+F11) | Done |
 | Break at EXE Run Address | Done |
-| Window submenu | Placeholder (panes not yet created) |
+| Window > Console | Done |
+| Window > Registers | Done |
+| Window > Disassembly | Done |
+| Window > History | Done |
 | Open Source File | TODO |
 | Source File List | TODO |
 | Visualization | Partial (GTIA done, ANTIC TODO) |
@@ -222,9 +260,11 @@ breakpoint implementation, debug targets, default symbols.
 1. **debugger.cpp compiles unchanged** — only the `#include` is satisfied
    by a stub header.  No `#ifdef` in the source file.
 
-2. **ImGui docking for pane layout** — panes use normal `ImGui::Begin()`
-   so their positions persist via `imgui.ini`.  Config/modal dialogs use
-   centering + `NoSavedSettings` (per CLAUDE.md rules).
+2. **ImGui docking for pane layout** — a full-window `ImGui::DockSpace()`
+   is created when the debugger is open.  The emulation display becomes
+   a dockable "Display" pane.  Layout is initialized via `DockBuilder`
+   and persists via `imgui.ini`.  Config/modal dialogs use centering +
+   `NoSavedSettings` (per CLAUDE.md rules).
 
 3. **Console output buffering** — text is accumulated in a `std::string`
    protected by a mutex.  This allows output from debugger commands
@@ -234,3 +274,18 @@ breakpoint implementation, debug targets, default symbols.
 4. **Shared ATUICommandManager** — `uicommandmanager.cpp` from the ATUI
    library is compiled directly into the SDL3 build (no Win32 deps).
    This provides the real command manager needed by `debuggerautotest.cpp`.
+
+5. **Break on debugger open** — unlike Windows (which opens the debugger
+   without breaking), the SDL3 build breaks execution when the debugger
+   is enabled.  Since all panes share the same SDL window, the user
+   expects the console to be immediately usable.
+
+6. **Display pane vs background rendering** — when the debugger is closed,
+   the emulation texture renders directly via `SDL_RenderTexture`.  When
+   the debugger opens, this switches to an `ImGui::Image()` inside a
+   dockable window so it participates in the layout alongside other panes.
+
+7. **vdrefcounted pane lifecycle** — panes are allocated with `new`
+   (refcount 0) and stored in `vdrefptr` (refcount 1).  The creator must
+   NOT call `Release()` after registration — `vdrefcounted` starts at
+   refcount 0, not 1.

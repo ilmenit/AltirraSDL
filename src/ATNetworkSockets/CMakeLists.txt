@@ -27,8 +27,12 @@ target_include_directories(ATNetworkSockets
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/h
 )
 
-if(NOT WIN32)
+if(ALTIRRA_COMPAT_DIR)
     target_include_directories(ATNetworkSockets BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()
 
 target_link_libraries(ATNetworkSockets PUBLIC system ATCore ATNetwork)
+
+if(WIN32)
+    target_link_libraries(ATNetworkSockets PUBLIC ws2_32)
+endif()

@@ -66,7 +66,7 @@ void ATImGuiRegistersPaneImpl::OnDebuggerSystemStateUpdate(const ATDebuggerSyste
 		mFormattedState.append_sprintf("IX = %04X\n", s.mIX);
 		mFormattedState.append_sprintf("IY = %04X\n", s.mIY);
 		mFormattedState += '\n';
-		mFormattedState.append_sprintf("AF'= %02X%02X\n", s.mAltA, s.mAltF);
+		mFormattedState.append_sprintf("AF'= %02X%02X\n", s.mAltA, s.mAltF);  // matches Windows "AF' = ..." alignment
 		mFormattedState.append_sprintf("BC'= %02X%02X\n", s.mAltB, s.mAltC);
 		mFormattedState.append_sprintf("DE'= %02X%02X\n", s.mAltD, s.mAltE);
 		mFormattedState.append_sprintf("HL'= %02X%02X\n", s.mAltH, s.mAltL);
@@ -207,6 +207,7 @@ void ATUIDebuggerEnsureRegistersPane() {
 	if (!ATUIDebuggerGetPane(kATUIPaneId_Registers)) {
 		auto *pane = new ATImGuiRegistersPaneImpl();
 		ATUIDebuggerRegisterPane(pane);
-		pane->Release();
+		// vdrefcounted starts at refcount 0; the vdrefptr in the registry
+		// AddRef'd to 1.  No Release() here — that would destroy the object.
 	}
 }

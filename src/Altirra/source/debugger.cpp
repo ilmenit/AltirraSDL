@@ -5081,7 +5081,8 @@ void ATDebugger::UpdateClientSystemState(IATDebuggerClient *client) {
 		for(; it!=itEnd; ++it) {
 			IATDebuggerClient *client = *it;
 
-			client->OnDebuggerSystemStateUpdate(sysstate);
+			if (client)
+				client->OnDebuggerSystemStateUpdate(sysstate);
 		}
 	}
 }

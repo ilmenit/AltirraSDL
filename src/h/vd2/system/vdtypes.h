@@ -79,6 +79,10 @@
 		#ifndef VD_OS_WINDOWS
 			#define VD_OS_WINDOWS	1
 		#endif
+	#elif defined(__ANDROID__)
+		#ifndef VD_OS_ANDROID
+			#define VD_OS_ANDROID	1
+		#endif
 	#elif defined(__linux__)
 		#ifndef VD_OS_LINUX
 			#define VD_OS_LINUX		1
@@ -294,8 +298,8 @@ extern void VDDebugPrint(const char *format, ...);
 		#define VDASSERT(exp)		((void)0)
 		#define VDASSERTPTR(exp)	((void)0)
 	#elif defined(__GNUC__)
-		#define VDASSERT(exp)		__builtin_expect(0 != (exp), 1)
-		#define VDASSERTPTR(exp)	__builtin_expect(0 != (exp), 1)
+		#define VDASSERT(exp)		((void)0)
+		#define VDASSERTPTR(exp)	((void)0)
 	#endif
 
 	#define VDFAIL(str)			(void)(str)

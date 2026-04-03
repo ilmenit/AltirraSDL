@@ -56,8 +56,7 @@ Legend:
   [100%] VDRemoveFile                         — unlink()
   [100%] VDRenameFile                         — rename()
   [100%] VDGetModuleFileName                  — /proc/self/exe
-  [  0%] VDDirectoryIterator                  — May need SDL3 or POSIX opendir/readdir
-                                                Check if callers exist in SDL3 build
+  [100%] VDDirectoryIterator                  — POSIX opendir/readdir with wildcard filter
 
 
 ================================================================================
@@ -141,7 +140,7 @@ Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
 Threading                        5            5      100%
 File I/O                         9            9      100%
-Filesystem                       9           10       90%
+Filesystem                      10           10      100%
 Async File I/O                   1            1      100%
 Configuration storage           10           10      100%
 Text encoding                    4            4      100%
@@ -150,5 +149,4 @@ Error handling                   2            2      100%
 Debug helpers                    2            2      100%
 Atomics                          3            3      100%
 
-System library is complete for the SDL3 build.
-Remaining minor gap: VDDirectoryIterator (filesystem iteration).
+System library is complete for the SDL3 build. No remaining gaps.

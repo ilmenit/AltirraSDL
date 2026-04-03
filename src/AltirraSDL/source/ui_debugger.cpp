@@ -7,14 +7,18 @@
 #include <vd2/system/error.h>
 #include <vd2/system/vdstl.h>
 #include <at/atnativeui/uiframe.h>
+#include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include "ui_debugger.h"
 #include "ui_main.h"
 #include "console.h"
 #include "debugger.h"
 #include "simulator.h"
+#include "display_sdl3_impl.h"
 
 extern ATSimulator g_sim;
+extern VDVideoDisplaySDL3 *g_pDisplay;
 
 // =========================================================================
 // ATImGuiDebuggerPane base class
@@ -50,6 +54,7 @@ namespace {
 
 	std::vector<PaneEntry> g_debugPanes;
 	bool g_debuggerOpen = false;
+	bool g_dockLayoutApplied = false;
 
 	// Pane creator registry (populated by ATRegisterUIPaneType/Class)
 	struct PaneCreatorEntry {
@@ -89,14 +94,27 @@ void ATRegisterUIPaneClass(uint32 id, ATPaneClassCreator creator) {
 // Forward declarations for pane creation functions
 extern void ATUIDebuggerEnsureConsolePane();
 extern void ATUIDebuggerEnsureRegistersPane();
+extern void ATUIDebuggerEnsureDisassemblyPane();
+extern void ATUIDebuggerEnsureHistoryPane();
+extern void ATUIDebuggerEnsureMemoryPane(int index);
+extern void ATUIDebuggerEnsureBreakpointsPane();
+extern void ATUIDebuggerEnsureCallStackPane();
 
 static void EnsurePaneExists(uint32 id) {
 	switch (id) {
-		case kATUIPaneId_Console:    ATUIDebuggerEnsureConsolePane(); break;
-		case kATUIPaneId_Registers:  ATUIDebuggerEnsureRegistersPane(); break;
-		// Future panes will be added here as they're implemented
+		case kATUIPaneId_Console:     ATUIDebuggerEnsureConsolePane(); break;
+		case kATUIPaneId_Registers:   ATUIDebuggerEnsureRegistersPane(); break;
+		case kATUIPaneId_Disassembly: ATUIDebuggerEnsureDisassemblyPane(); break;
+		case kATUIPaneId_History:     ATUIDebuggerEnsureHistoryPane(); break;
+		case kATUIPaneId_Breakpoints: ATUIDebuggerEnsureBreakpointsPane(); break;
+		case kATUIPaneId_CallStack:   ATUIDebuggerEnsureCallStackPane(); break;
 		default:
-			fprintf(stderr, "[Debugger] ATActivateUIPane(0x%x) — no ImGui pane implemented yet\n", id);
+			// Memory pane instances: kATUIPaneId_MemoryN + 0..3
+			if (id >= kATUIPaneId_MemoryN && id <= kATUIPaneId_MemoryN + 3) {
+				ATUIDebuggerEnsureMemoryPane(id - kATUIPaneId_MemoryN);
+			} else {
+				fprintf(stderr, "[Debugger] ATActivateUIPane(0x%x) — no ImGui pane implemented yet\n", id);
+			}
 			break;
 	}
 }
@@ -194,13 +212,135 @@ void ATUIDebuggerShutdown() {
 }
 
 // =========================================================================
+// Display pane — renders emulation texture inside an ImGui dockable window
+// =========================================================================
+
+static void RenderDisplayPane() {
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+	bool open = true;
+	if (ImGui::Begin("Display", &open)) {
+		SDL_Texture *emuTex = g_pDisplay ? g_pDisplay->GetTexture() : nullptr;
+		if (emuTex) {
+			ImVec2 avail = ImGui::GetContentRegionAvail();
+			if (avail.x > 0 && avail.y > 0) {
+				// Maintain aspect ratio (Atari ~1.2:1 pixel aspect)
+				float texW = (float)g_pDisplay->GetTextureWidth();
+				float texH = (float)g_pDisplay->GetTextureHeight();
+				if (texW > 0 && texH > 0) {
+					float aspectRatio = texW / texH;
+					float drawW = avail.x;
+					float drawH = drawW / aspectRatio;
+					if (drawH > avail.y) {
+						drawH = avail.y;
+						drawW = drawH * aspectRatio;
+					}
+					// Center in available space
+					float offsetX = (avail.x - drawW) * 0.5f;
+					float offsetY = (avail.y - drawH) * 0.5f;
+					if (offsetX > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
+					if (offsetY > 0) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
+					ImGui::Image((ImTextureID)(intptr_t)emuTex, ImVec2(drawW, drawH));
+				}
+			}
+		} else {
+			ImGui::TextDisabled("(no display)");
+		}
+	}
+	ImGui::End();
+	ImGui::PopStyleVar();
+}
+
+// =========================================================================
 // Render all panes
 // =========================================================================
+
+// Apply default docking layout using ImGui DockBuilder.
+// Replicates Windows ATLoadDefaultPaneLayout (console.cpp:921):
+//   ┌──────────────────────┬────────────────────┐
+//   │                      │  Registers         │
+//   │    Display           │  Disassembly (tab) │
+//   │                      │  History (tab)     │
+//   ├──────────────────────┴────────────────────┤
+//   │              Console (focused)             │
+//   └───────────────────────────────────────────┘
+static void ApplyDefaultDockLayout() {
+	if (g_dockLayoutApplied)
+		return;
+	g_dockLayoutApplied = true;
+
+	ImGuiID dockspace_id = ImGui::GetID("DebuggerDockSpace");
+
+	// Only apply if the dockspace has no saved layout yet
+	if (ImGui::DockBuilderGetNode(dockspace_id) != nullptr)
+		return;
+
+	ImGui::DockBuilderRemoveNode(dockspace_id);
+	ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+
+	ImGuiViewport *viewport = ImGui::GetMainViewport();
+	ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
+
+	// Split: bottom for Console (35% height), top for the rest
+	ImGuiID dock_top, dock_bottom;
+	ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Down, 0.35f, &dock_bottom, &dock_top);
+
+	// Split top: left for Display, right for Registers/Disassembly/History
+	ImGuiID dock_left, dock_right;
+	ImGui::DockBuilderSplitNode(dock_top, ImGuiDir_Right, 0.45f, &dock_right, &dock_left);
+
+	// Dock panes into layout
+	ImGui::DockBuilderDockWindow("Display", dock_left);
+	ImGui::DockBuilderDockWindow("Console", dock_bottom);
+	ImGui::DockBuilderDockWindow("Registers", dock_right);
+	ImGui::DockBuilderDockWindow("Disassembly", dock_right);
+	ImGui::DockBuilderDockWindow("History", dock_right);
+
+	ImGui::DockBuilderFinish(dockspace_id);
+}
 
 void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 	if (!g_debuggerOpen)
 		return;
 
+	// Create a full-window dockspace below the menu bar.
+	// All debugger panes (including Display) dock into this space.
+	ImGuiID dockspace_id = ImGui::GetID("DebuggerDockSpace");
+	ImGuiViewport *viewport = ImGui::GetMainViewport();
+
+	float menuBarHeight = ImGui::GetFrameHeight();
+	ImVec2 dockPos(viewport->WorkPos.x, viewport->WorkPos.y + menuBarHeight);
+	ImVec2 dockSize(viewport->WorkSize.x, viewport->WorkSize.y - menuBarHeight);
+
+	ImGui::SetNextWindowPos(dockPos);
+	ImGui::SetNextWindowSize(dockSize);
+	ImGui::SetNextWindowViewport(viewport->ID);
+
+	ImGuiWindowFlags hostFlags =
+		ImGuiWindowFlags_NoTitleBar |
+		ImGuiWindowFlags_NoCollapse |
+		ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoBringToFrontOnFocus |
+		ImGuiWindowFlags_NoNavFocus |
+		ImGuiWindowFlags_NoBackground;
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+	ImGui::Begin("DebuggerDockHost", nullptr, hostFlags);
+	ImGui::PopStyleVar(3);
+
+	ImGui::DockSpace(dockspace_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+
+	ImGui::End();
+
+	// Apply default layout on first open
+	ApplyDefaultDockLayout();
+
+	// Render the Display pane (emulation texture inside a dockable window)
+	RenderDisplayPane();
+
+	// Render all debugger panes
 	for (auto& e : g_debugPanes) {
 		if (!e.pane->IsVisible())
 			continue;
@@ -244,7 +384,12 @@ void ATUIDebuggerOpen() {
 		return;
 
 	g_debuggerOpen = true;
+	g_dockLayoutApplied = false;	// reset so layout is applied on next render
 	dbg->SetEnabled(true);
+
+	// Match Windows: do NOT break on open.  The console input is greyed
+	// out while the simulator is running.  The user can break manually
+	// with F5 (Run/Break) or the menu.
 
 	// Register all existing panes as debugger clients before showing
 	// the banner (which generates console output).
@@ -256,6 +401,8 @@ void ATUIDebuggerOpen() {
 	// Console + Registers + Disassembly + History).
 	ATUIDebuggerEnsureConsolePane();
 	ATUIDebuggerEnsureRegistersPane();
+	ATUIDebuggerEnsureDisassemblyPane();
+	ATUIDebuggerEnsureHistoryPane();
 
 	dbg->ShowBannerOnce();
 }

@@ -394,10 +394,94 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.s: cmake_fo
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.s"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_registers.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.s
 
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_disassembly.cpp
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o -MF CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o.d -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_disassembly.cpp
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.i"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_disassembly.cpp > CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.i
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.s"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_disassembly.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.s
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_history.cpp
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o -MF CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o.d -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_history.cpp
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.i"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_history.cpp > CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.i
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.s"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_history.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.s
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_memory.cpp
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o -MF CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o.d -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_memory.cpp
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.i"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_memory.cpp > CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.i
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.s"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_memory.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.s
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_breakpoints.cpp
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o -MF CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o.d -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_breakpoints.cpp
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.i"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_breakpoints.cpp > CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.i
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.s"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_breakpoints.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.s
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_callstack.cpp
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_28) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o -MF CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o.d -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_callstack.cpp
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.i"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_callstack.cpp > CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.i
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.s"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_dbg_callstack.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.s
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_testmode.cpp
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_29) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o -MF CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o.d -o CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_testmode.cpp
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.i"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_testmode.cpp > CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.i
+
+src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.s"
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source/ui_testmode.cpp -o CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.s
+
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/uiregistry.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_30) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/uiregistry.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.i: cmake_force
@@ -411,7 +495,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/ATUI/source/uicommandmanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_31) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/ATUI/source/uicommandmanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.i: cmake_force
@@ -425,7 +509,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/console_stubs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_32) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o -MF CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/console_stubs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.i: cmake_force
@@ -439,7 +523,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.s: cmake_force
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/oshelper_stubs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_33) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o -MF CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/oshelper_stubs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.i: cmake_force
@@ -453,7 +537,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/oshelper_stubs.cpp.s: cmake_force
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/uirender_stubs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_28) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_34) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o -MF CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/uirender_stubs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.i: cmake_force
@@ -467,7 +551,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uirender_stubs.cpp.s: cmake_force
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/uiaccessors_stubs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_29) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_35) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o -MF CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/uiaccessors_stubs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.i: cmake_force
@@ -481,7 +565,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/uiaccessors_stubs.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/win32_stubs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_30) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_36) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o -MF CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/win32_stubs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.i: cmake_force
@@ -495,7 +579,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/win32_stubs.cpp.s: cmake_force
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/device_stubs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_31) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_37) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o -MF CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs/device_stubs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.i: cmake_force
@@ -509,7 +593,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/device_stubs.cpp.s: cmake_force
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/ATAudio/source/audiooutput_sdl3.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_32) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_38) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/ATAudio/source/audiooutput_sdl3.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.i: cmake_force
@@ -523,7 +607,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1025full.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_33) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_39) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1025full.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.i: cmake_force
@@ -537,7 +621,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1025full.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1029full.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_34) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_40) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1029full.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.i: cmake_force
@@ -551,7 +635,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1029full.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1030.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_35) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_41) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1030.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.i: cmake_force
@@ -565,7 +649,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1030full.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_36) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_42) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1030full.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.i: cmake_force
@@ -579,7 +663,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1030full.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1090.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_37) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_43) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1090.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.i: cmake_force
@@ -593,7 +677,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1090.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1400xl.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_38) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_44) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1400xl.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.i: cmake_force
@@ -607,7 +691,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1400xl.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1450xld.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_39) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_45) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/1450xld.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.i: cmake_force
@@ -621,7 +705,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/1450xld.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/820full.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_40) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_46) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/820full.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.i: cmake_force
@@ -635,7 +719,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/820full.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/850full.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_41) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_47) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/850full.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.i: cmake_force
@@ -649,7 +733,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/850full.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/antic.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_42) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_48) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -mbmi -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/antic.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.i: cmake_force
@@ -663,7 +747,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/antic.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_43) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_49) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.i: cmake_force
@@ -677,7 +761,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_filters.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_44) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_50) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_filters.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.cpp.i: cmake_force
@@ -691,7 +775,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_filters.c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_ntsc_sse2.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_45) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_51) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_ntsc_sse2.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2.cpp.i: cmake_force
@@ -705,7 +789,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_ntsc_sse2_intrin.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_46) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_52) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_ntsc_sse2_intrin.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2_intrin.cpp.i: cmake_force
@@ -719,7 +803,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_ntsc_sse2
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_pal_scalar.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_47) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_53) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_pal_scalar.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scalar.cpp.i: cmake_force
@@ -733,7 +817,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_scala
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_pal_sse2.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_48) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_54) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_pal_sse2.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.cpp.i: cmake_force
@@ -747,7 +831,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_pal_sse2_intrin.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_49) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_55) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_pal_sse2_intrin.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_intrin.cpp.i: cmake_force
@@ -761,7 +845,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_pal_sse2_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_sse2_intrin.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_50) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_56) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/artifacting_sse2_intrin.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intrin.cpp.i: cmake_force
@@ -775,7 +859,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/artifacting_sse2_intr
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/assembler.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_51) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_57) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/assembler.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.i: cmake_force
@@ -789,7 +873,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/assembler.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiomonitor.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_52) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_58) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiomonitor.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.i: cmake_force
@@ -803,7 +887,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiomonitor.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiorawsource.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_53) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_59) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiorawsource.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.i: cmake_force
@@ -817,7 +901,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiorawsource.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiosampleplayer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_54) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_60) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiosampleplayer.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp.i: cmake_force
@@ -831,7 +915,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiosampleplayer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiostocksamples.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_55) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_61) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiostocksamples.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp.i: cmake_force
@@ -845,7 +929,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiostocksamples.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiowriter.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_56) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_62) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/audiowriter.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.i: cmake_force
@@ -859,7 +943,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/audiowriter.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/autosavemanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_57) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_63) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/autosavemanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.i: cmake_force
@@ -873,7 +957,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/autosavemanager.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/bit3.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_58) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_64) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/bit3.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.i: cmake_force
@@ -887,7 +971,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bit3.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/bkptmanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_59) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_65) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/bkptmanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.i: cmake_force
@@ -901,7 +985,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/bkptmanager.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blackbox.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_60) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_66) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blackbox.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.i: cmake_force
@@ -915,7 +999,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackbox.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blackboxfloppy.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_61) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_67) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blackboxfloppy.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.i: cmake_force
@@ -929,7 +1013,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blackboxfloppy.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blockdevdiskadapter.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_62) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_68) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blockdevdiskadapter.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.cpp.i: cmake_force
@@ -943,7 +1027,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevdiskadapter.c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blockdevvirtfat32.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_63) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_69) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/blockdevvirtfat32.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp.i: cmake_force
@@ -957,7 +1041,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/blockdevvirtfat32.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/browser.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_64) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_70) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/browser.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.i: cmake_force
@@ -971,7 +1055,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/browser.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cartdetect.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_65) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_71) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cartdetect.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.i: cmake_force
@@ -985,7 +1069,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartdetect.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cartridge.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_66) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_72) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cartridge.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.i: cmake_force
@@ -999,7 +1083,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridge.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cartridgeport.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_67) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_73) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cartridgeport.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.i: cmake_force
@@ -1013,7 +1097,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cartridgeport.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cassette.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_68) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_74) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cassette.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.i: cmake_force
@@ -1027,7 +1111,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cassette.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cheatengine.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_69) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_75) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cheatengine.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.i: cmake_force
@@ -1041,7 +1125,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cheatengine.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/common_png.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_70) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_76) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/common_png.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.i: cmake_force
@@ -1055,7 +1139,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/common_png.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/compatdb.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_71) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_77) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/compatdb.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.i: cmake_force
@@ -1069,7 +1153,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatdb.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/compatedb.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_72) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_78) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/compatedb.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.i: cmake_force
@@ -1083,7 +1167,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatedb.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/compatengine.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_73) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_79) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/compatengine.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.i: cmake_force
@@ -1097,7 +1181,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/compatengine.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/constants.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_74) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_80) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/constants.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.i: cmake_force
@@ -1111,7 +1195,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/constants.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/covox.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_75) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_81) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/covox.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.i: cmake_force
@@ -1125,7 +1209,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/covox.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_76) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_82) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.i: cmake_force
@@ -1139,7 +1223,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu6502.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_77) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_83) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu6502.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.i: cmake_force
@@ -1153,7 +1237,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu6502ill.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_78) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_84) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu6502ill.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.i: cmake_force
@@ -1167,7 +1251,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu6502ill.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu65c02.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_79) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_85) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu65c02.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.i: cmake_force
@@ -1181,7 +1265,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c02.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu65c816.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_80) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_86) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpu65c816.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.i: cmake_force
@@ -1195,7 +1279,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpuheatmap.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_81) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_87) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpuheatmap.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.i: cmake_force
@@ -1209,7 +1293,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpuhookmanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_82) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_88) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cpuhookmanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.i: cmake_force
@@ -1223,7 +1307,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuhookmanager.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cputracer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_83) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_89) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cputracer.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.i: cmake_force
@@ -1237,7 +1321,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cputracer.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugdisplay.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_84) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_90) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugdisplay.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.i: cmake_force
@@ -1251,7 +1335,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugger.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_85) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_91) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugger.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.i: cmake_force
@@ -1265,7 +1349,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggerautotest.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_86) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_92) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggerautotest.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.i: cmake_force
@@ -1279,7 +1363,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggerexp.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_87) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_93) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggerexp.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.i: cmake_force
@@ -1293,7 +1377,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerexp.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggerlog.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_88) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_94) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggerlog.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.i: cmake_force
@@ -1307,7 +1391,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerlog.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggersettings.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_89) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_95) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debuggersettings.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.i: cmake_force
@@ -1321,7 +1405,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggersettings.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugtarget.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_90) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_96) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugtarget.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.i: cmake_force
@@ -1335,7 +1419,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugtarget.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/decmath.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_91) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_97) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/decmath.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.i: cmake_force
@@ -1349,7 +1433,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decmath.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/decode_png.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_92) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_98) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/decode_png.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.i: cmake_force
@@ -1363,7 +1447,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/decode_png.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devicemanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_93) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_99) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devicemanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.i: cmake_force
@@ -1377,7 +1461,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devicemanager.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devices.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_94) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_100) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devices.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.i: cmake_force
@@ -1391,7 +1475,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devices.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdcopypaste.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_95) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_101) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdcopypaste.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.i: cmake_force
@@ -1405,7 +1489,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdcopypaste.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdexploredisk.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_96) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_102) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdexploredisk.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cpp.i: cmake_force
@@ -1419,7 +1503,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdexploredisk.cp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdmountvhd.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_97) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_103) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdmountvhd.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.i: cmake_force
@@ -1433,7 +1517,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdmountvhd.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdrescandynamicdisk.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_98) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_104) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/devxcmdrescandynamicdisk.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicdisk.cpp.i: cmake_force
@@ -1447,7 +1531,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/devxcmdrescandynamicd
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/disasm.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_99) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_105) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/disasm.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.i: cmake_force
@@ -1461,7 +1545,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disasm.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/disk.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_100) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_106) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/disk.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.i: cmake_force
@@ -1475,7 +1559,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disk.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrive815.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_101) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_107) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrive815.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.i: cmake_force
@@ -1489,7 +1573,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrive815.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdriveamdc.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_102) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_108) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdriveamdc.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.i: cmake_force
@@ -1503,7 +1587,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveamdc.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdriveatr8000.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_103) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_109) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdriveatr8000.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.i: cmake_force
@@ -1517,7 +1601,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveatr8000.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivefull.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_104) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_110) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivefull.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.i: cmake_force
@@ -1531,7 +1615,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefull.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivefullbase.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_105) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_111) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivefullbase.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp.i: cmake_force
@@ -1545,7 +1629,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivefullbase.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdriveindusgt.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_106) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_112) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdriveindusgt.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.i: cmake_force
@@ -1559,7 +1643,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdriveindusgt.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivepercom.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_107) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_113) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivepercom.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.i: cmake_force
@@ -1573,7 +1657,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivepercom.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivespeedyxf.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_108) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_114) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivespeedyxf.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp.i: cmake_force
@@ -1587,7 +1671,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivespeedyxf.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivexf551.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_109) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_115) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskdrivexf551.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.i: cmake_force
@@ -1601,7 +1685,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskdrivexf551.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskinterface.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_110) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_116) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskinterface.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.i: cmake_force
@@ -1615,7 +1699,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskinterface.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskprofile.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_111) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_117) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskprofile.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.i: cmake_force
@@ -1629,7 +1713,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskprofile.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/disktrace.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_112) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_118) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/disktrace.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.i: cmake_force
@@ -1643,7 +1727,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/disktrace.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskvirtimage.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_113) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_119) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskvirtimage.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.i: cmake_force
@@ -1657,7 +1741,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimage.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskvirtimagebase.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_114) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_120) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskvirtimagebase.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp.i: cmake_force
@@ -1671,7 +1755,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagebase.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskvirtimagesdfs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_115) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_121) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/diskvirtimagesdfs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp.i: cmake_force
@@ -1685,7 +1769,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/diskvirtimagesdfs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/dragoncart.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_116) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_122) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/dragoncart.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.i: cmake_force
@@ -1699,7 +1783,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/dragoncart.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/encode_png.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_117) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_123) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/encode_png.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.i: cmake_force
@@ -1713,7 +1797,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/encode_png.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/errordecode.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_118) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_124) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/errordecode.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.i: cmake_force
@@ -1727,7 +1811,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/errordecode.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/fdc.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_119) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_125) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/fdc.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.i: cmake_force
@@ -1741,7 +1825,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/fdc.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/firmwaredetect.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_120) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_126) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/firmwaredetect.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.i: cmake_force
@@ -1755,7 +1839,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaredetect.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/firmwaremanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_121) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_127) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/firmwaremanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.i: cmake_force
@@ -1769,7 +1853,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/firmwaremanager.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtia.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_122) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_128) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtia.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.i: cmake_force
@@ -1783,7 +1867,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtia.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtiarenderer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_123) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_129) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtiarenderer.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.i: cmake_force
@@ -1797,7 +1881,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiarenderer.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtiatables.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_124) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_130) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtiatables.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.i: cmake_force
@@ -1811,7 +1895,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatables.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtiatypes.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_125) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_131) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/gtiatypes.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.i: cmake_force
@@ -1825,7 +1909,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/gtiatypes.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hlebasicloader.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_126) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_132) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hlebasicloader.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.i: cmake_force
@@ -1839,7 +1923,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlebasicloader.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hleciohook.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_127) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_133) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hleciohook.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.i: cmake_force
@@ -1853,7 +1937,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleciohook.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hlefastboothook.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_128) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_134) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hlefastboothook.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.i: cmake_force
@@ -1867,7 +1951,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefastboothook.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hlefpaccelerator.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_129) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_135) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hlefpaccelerator.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.i: cmake_force
@@ -1881,7 +1965,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hlefpaccelerator.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hleprogramloader.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_130) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_136) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hleprogramloader.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.i: cmake_force
@@ -1895,7 +1979,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleprogramloader.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hleutils.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_131) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_137) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hleutils.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.i: cmake_force
@@ -1909,7 +1993,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hleutils.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hostdevice.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_132) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_138) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hostdevice.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.i: cmake_force
@@ -1923,7 +2007,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdevice.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hostdeviceutils.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_133) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_139) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/hostdeviceutils.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.i: cmake_force
@@ -1937,7 +2021,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/hostdeviceutils.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ide.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_134) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_140) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ide.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.i: cmake_force
@@ -1951,7 +2035,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ide.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/idediskdevices.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_135) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_141) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/idediskdevices.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.i: cmake_force
@@ -1965,7 +2049,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/idediskdevices.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/iderawimage.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_136) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_142) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/iderawimage.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.i: cmake_force
@@ -1979,7 +2063,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/iderawimage.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputcontroller.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_137) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_143) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputcontroller.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.i: cmake_force
@@ -1993,7 +2077,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputcontroller.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputdefs.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_138) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_144) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputdefs.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.i: cmake_force
@@ -2007,7 +2091,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputdefs.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputmanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_139) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_145) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputmanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.i: cmake_force
@@ -2021,7 +2105,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmanager.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputmap.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_140) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_146) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/inputmap.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.i: cmake_force
@@ -2035,7 +2119,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/inputmap.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/irqcontroller.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_141) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_147) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/irqcontroller.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.i: cmake_force
@@ -2049,7 +2133,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/irqcontroller.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/karinmaxidrive.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_142) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_148) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/karinmaxidrive.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.i: cmake_force
@@ -2063,7 +2147,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/karinmaxidrive.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/kmkjzide.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_143) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_149) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/kmkjzide.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.i: cmake_force
@@ -2077,7 +2161,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/kmkjzide.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/leakdetector.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_144) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_150) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/leakdetector.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.i: cmake_force
@@ -2091,7 +2175,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/leakdetector.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/memorymanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_145) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_151) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/memorymanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.i: cmake_force
@@ -2105,7 +2189,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/memorymanager.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/mio.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_146) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_152) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/mio.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.i: cmake_force
@@ -2119,7 +2203,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mio.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/misccvars.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_147) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_153) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/misccvars.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.i: cmake_force
@@ -2133,7 +2217,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/misccvars.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/mmu.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_148) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_154) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/mmu.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.i: cmake_force
@@ -2147,7 +2231,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mmu.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/modem.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_149) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_155) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/modem.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.i: cmake_force
@@ -2161,7 +2245,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/modem.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/mpp1000e.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_150) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_156) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/mpp1000e.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.i: cmake_force
@@ -2175,7 +2259,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/mpp1000e.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/multiplexer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_151) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_157) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/multiplexer.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.i: cmake_force
@@ -2189,7 +2273,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/multiplexer.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/myide.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_152) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_158) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/myide.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.i: cmake_force
@@ -2203,7 +2287,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/myide.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/options.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_153) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_159) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/options.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.i: cmake_force
@@ -2217,7 +2301,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/options.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ostracing.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_154) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_160) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ostracing.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.i: cmake_force
@@ -2231,7 +2315,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ostracing.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/palettegenerator.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_155) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_161) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/palettegenerator.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.i: cmake_force
@@ -2245,7 +2329,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettegenerator.cpp.
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/palettesolver.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_156) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_162) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/palettesolver.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.i: cmake_force
@@ -2259,7 +2343,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/palettesolver.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pbi.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_157) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_163) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pbi.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.i: cmake_force
@@ -2273,7 +2357,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbi.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pbidisk.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_158) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_164) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pbidisk.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.i: cmake_force
@@ -2287,7 +2371,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pbidisk.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pclink.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_159) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_165) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pclink.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.i: cmake_force
@@ -2301,7 +2385,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pclink.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pia.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_160) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_166) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pia.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.i: cmake_force
@@ -2315,7 +2399,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pia.cpp.s: cmake_forc
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pocketmodem.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_161) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_167) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pocketmodem.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.i: cmake_force
@@ -2329,7 +2413,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pocketmodem.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pokeysavecompat.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_162) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_168) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pokeysavecompat.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.i: cmake_force
@@ -2343,7 +2427,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeysavecompat.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pokeytrace.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_163) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_169) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/pokeytrace.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.i: cmake_force
@@ -2357,7 +2441,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/pokeytrace.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/portmanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_164) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_170) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/portmanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.i: cmake_force
@@ -2371,7 +2455,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/portmanager.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_165) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_171) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printer.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.i: cmake_force
@@ -2385,7 +2469,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printer1020.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_166) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_172) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printer1020.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.i: cmake_force
@@ -2399,7 +2483,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printer1020font.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_167) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_173) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printer1020font.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.i: cmake_force
@@ -2413,7 +2497,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printer1020font.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printerbase.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_168) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_174) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printerbase.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.i: cmake_force
@@ -2427,7 +2511,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerbase.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printerfont.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_169) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_175) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printerfont.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.i: cmake_force
@@ -2441,7 +2525,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerfont.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printeroutput.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_170) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_176) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printeroutput.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.i: cmake_force
@@ -2455,7 +2539,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printeroutput.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printerttfencoder.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_171) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_177) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/printerttfencoder.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp.i: cmake_force
@@ -2469,7 +2553,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/printerttfencoder.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/profiler.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_172) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_178) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/profiler.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.i: cmake_force
@@ -2483,7 +2567,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/profiler.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rapidus.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_173) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_179) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rapidus.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.i: cmake_force
@@ -2497,7 +2581,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rapidus.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rs232.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_174) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_180) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rs232.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.i: cmake_force
@@ -2511,7 +2595,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rs232.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rtime8.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_175) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_181) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rtime8.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.i: cmake_force
@@ -2525,7 +2609,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rtime8.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rverter.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_176) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_182) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/rverter.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.i: cmake_force
@@ -2539,7 +2623,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/rverter.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sapconverter.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_177) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_183) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sapconverter.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.i: cmake_force
@@ -2553,7 +2637,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapconverter.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sapwriter.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_178) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_184) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sapwriter.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.i: cmake_force
@@ -2567,7 +2651,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sapwriter.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/savestate.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_179) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_185) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/savestate.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.i: cmake_force
@@ -2581,7 +2665,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestate.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/savestateio.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_180) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_186) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/savestateio.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.i: cmake_force
@@ -2595,7 +2679,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestateio.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/savestatetypes.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_181) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_187) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/savestatetypes.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.i: cmake_force
@@ -2609,7 +2693,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/savestatetypes.cpp.s:
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/scsidisk.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_182) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_188) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/scsidisk.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.i: cmake_force
@@ -2623,7 +2707,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/scsidisk.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sdrive.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_183) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_189) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sdrive.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.i: cmake_force
@@ -2637,7 +2721,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sdrive.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/settings.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_184) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_190) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/settings.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.i: cmake_force
@@ -2651,7 +2735,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/settings.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/side.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_185) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_191) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/side.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.i: cmake_force
@@ -2665,7 +2749,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/side3.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_186) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_192) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/side3.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.i: cmake_force
@@ -2679,7 +2763,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/side3.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/simeventmanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_187) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_193) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/simeventmanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.i: cmake_force
@@ -2693,7 +2777,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simeventmanager.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/simulator.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_188) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_194) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/simulator.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.i: cmake_force
@@ -2707,7 +2791,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/simulator.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sio2sd.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_189) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_195) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sio2sd.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.i: cmake_force
@@ -2721,7 +2805,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sio2sd.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/siomanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_190) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_196) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/siomanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.i: cmake_force
@@ -2735,7 +2819,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/siomanager.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/slightsid.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_191) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_197) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/slightsid.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.i: cmake_force
@@ -2749,7 +2833,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/slightsid.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/soundboard.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_192) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_198) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/soundboard.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.i: cmake_force
@@ -2763,7 +2847,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/soundboard.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/stdafx.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_193) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_199) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/stdafx.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.i: cmake_force
@@ -2777,7 +2861,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/stdafx.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sx212.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_194) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_200) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/sx212.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.i: cmake_force
@@ -2791,7 +2875,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/sx212.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/textdom.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_195) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_201) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/textdom.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.i: cmake_force
@@ -2805,7 +2889,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/textdom.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/thepill.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_196) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_202) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/thepill.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.i: cmake_force
@@ -2819,7 +2903,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/thepill.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/trace.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_197) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_203) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/trace.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.i: cmake_force
@@ -2833,7 +2917,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/trace.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracecpu.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_198) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_204) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracecpu.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.i: cmake_force
@@ -2847,7 +2931,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracecpu.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracefileencoding.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_199) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_205) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -mssse3 -mpopcnt -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracefileencoding.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp.i: cmake_force
@@ -2861,7 +2945,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileencoding.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracefileformat.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_200) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_206) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracefileformat.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.i: cmake_force
@@ -2875,7 +2959,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracefileformat.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/traceimporta800.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_201) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_207) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/traceimporta800.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.i: cmake_force
@@ -2889,7 +2973,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceimporta800.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/traceio.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_202) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_208) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/traceio.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.i: cmake_force
@@ -2903,7 +2987,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/traceio.cpp.s: cmake_
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracelogger.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_203) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_209) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracelogger.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.i: cmake_force
@@ -2917,7 +3001,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracelogger.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracenative.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_204) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_210) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracenative.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.i: cmake_force
@@ -2931,7 +3015,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracenative.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracetape.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_205) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_211) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracetape.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.i: cmake_force
@@ -2945,7 +3029,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracetape.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracevideo.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_206) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_212) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/tracevideo.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.i: cmake_force
@@ -2959,7 +3043,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/tracevideo.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ui.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_207) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_213) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ui.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.i: cmake_force
@@ -2973,7 +3057,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ui.cpp.s: cmake_force
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ultimate1mb.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_208) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_214) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/ultimate1mb.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.i: cmake_force
@@ -2987,7 +3071,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/ultimate1mb.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/updatecheck.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_209) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_215) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/updatecheck.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.i: cmake_force
@@ -3001,7 +3085,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatecheck.cpp.s: cm
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/updatefeed.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_210) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_216) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/updatefeed.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.i: cmake_force
@@ -3015,7 +3099,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/updatefeed.cpp.s: cma
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/vbxe.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_211) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_217) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/vbxe.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.i: cmake_force
@@ -3029,7 +3113,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxe.cpp.s: cmake_for
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/vbxestate.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_212) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_218) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/vbxestate.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.i: cmake_force
@@ -3043,7 +3127,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vbxestate.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/verifier.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_213) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_219) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/verifier.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.i: cmake_force
@@ -3057,7 +3141,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/verifier.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/veronica.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_214) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_220) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/veronica.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.i: cmake_force
@@ -3071,7 +3155,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/veronica.cpp.s: cmake
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/vgmplayer.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_215) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_221) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/vgmplayer.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.i: cmake_force
@@ -3085,7 +3169,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/vgmplayer.cpp.s: cmak
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/videomanager.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_216) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_222) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/videomanager.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.i: cmake_force
@@ -3099,7 +3183,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videomanager.cpp.s: c
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/videostillimage.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_217) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_223) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/videostillimage.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.i: cmake_force
@@ -3113,7 +3197,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/videostillimage.cpp.s
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/virtualscreen.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_218) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_224) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/virtualscreen.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.i: cmake_force
@@ -3127,7 +3211,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/virtualscreen.cpp.s: 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/warpos.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_219) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_225) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/warpos.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.i: cmake_force
@@ -3141,7 +3225,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/warpos.cpp.s: cmake_f
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/xelcf.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_220) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_226) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/xelcf.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.i: cmake_force
@@ -3155,7 +3239,7 @@ src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xelcf.cpp.s: cmake_fo
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/flags.make
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o: /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/xep80.cpp
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_221) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_227) "Building CXX object src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o -MF CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o.d -o CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/xep80.cpp
 
 src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/xep80.cpp.i: cmake_force
@@ -3191,6 +3275,12 @@ AltirraSDL_OBJECTS = \
 "CMakeFiles/AltirraSDL.dir/source/ui_debugger.cpp.o" \
 "CMakeFiles/AltirraSDL.dir/source/ui_dbg_console.cpp.o" \
 "CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.o" \
+"CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o" \
+"CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o" \
+"CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o" \
+"CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o" \
+"CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o" \
+"CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o" \
 "CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o" \
 "CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o" \
 "CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o" \
@@ -3416,6 +3506,12 @@ src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_to
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_debugger.cpp.o
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_console.cpp.o
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.o
+src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o
+src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o
+src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o
+src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o
+src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o
+src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/uiregistry.cpp.o
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/stubs/console_stubs.cpp.o
@@ -3636,7 +3732,7 @@ src/AltirraSDL/AltirraSDL: src/ATCore/libATCore.a
 src/AltirraSDL/AltirraSDL: src/system/libsystem.a
 src/AltirraSDL/AltirraSDL: /usr/lib64/libSDL3.so.0.4.0
 src/AltirraSDL/AltirraSDL: src/AltirraSDL/CMakeFiles/AltirraSDL.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_222) "Linking CXX executable AltirraSDL"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_228) "Linking CXX executable AltirraSDL"
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/AltirraSDL.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

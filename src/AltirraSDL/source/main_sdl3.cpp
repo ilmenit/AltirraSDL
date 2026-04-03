@@ -26,6 +26,7 @@
 #include "options.h"
 #include "ui_main.h"
 #include "ui_debugger.h"
+#include "ui_testmode.h"
 
 #include "simulator.h"
 #include "uikeyboard.h"
@@ -38,9 +39,13 @@
 #include "joystick_sdl3.h"
 #include "firmwaremanager.h"
 #include "settings.h"
+#include "uitypes.h"
+#include <at/atcore/constants.h>
+#include <algorithm>
+#include <cmath>
 
 ATSimulator g_sim;
-static VDVideoDisplaySDL3 *g_pDisplay = nullptr;
+VDVideoDisplaySDL3 *g_pDisplay = nullptr;
 SDL_Window   *g_pWindow   = nullptr;  // non-static: accessed by console_stubs.cpp for fullscreen exit
 static SDL_Renderer *g_pRenderer = nullptr;
 static IATJoystickManager *g_pJoystickMgr = nullptr;
@@ -55,13 +60,19 @@ void ATUpdateWindowedGeometry(SDL_Window *window);
 // Frame pacing — matches Windows main.cpp timing architecture
 // =========================================================================
 
-// Atari frame rates (from main.cpp ATUIUpdateSpeedTiming):
-//   NTSC:  262 scanlines * 114 clocks @ 1.7897725 MHz = ~59.9227 Hz
-//   PAL:   312 scanlines * 114 clocks @ 1.773447  MHz = ~49.8607 Hz
-//   SECAM: 312 scanlines * 114 clocks @ 1.7815    MHz = ~50.0818 Hz
-static constexpr double kFrameRate_NTSC  = 59.9227;
-static constexpr double kFrameRate_PAL   = 49.8607;
-static constexpr double kFrameRate_SECAM = 50.0818;
+// Frame period tables — mirrors Windows ATUIUpdateSpeedTiming() kPeriods[3][3].
+// Rows: Hardware / Broadcast / Integral.  Cols: NTSC / PAL / SECAM.
+static constexpr double kMasterClocks[3] = {
+	kATMasterClock_NTSC,
+	kATMasterClock_PAL,
+	kATMasterClock_SECAM,
+};
+
+static constexpr double kFramePeriods[3][3] = {
+	{ 1.0 / kATFrameRate_NTSC, 1.0 / kATFrameRate_PAL, 1.0 / kATFrameRate_SECAM },
+	{ 1.0 / 59.9400,           1.0 / 50.0000,          1.0 / 50.0 },
+	{ 1.0 / 60.0000,           1.0 / 50.0000,          1.0 / 50.0 },
+};
 
 struct FramePacer {
 	uint64_t perfFreq;          // SDL_GetPerformanceFrequency()
@@ -69,11 +80,19 @@ struct FramePacer {
 	double   targetSecsPerFrame;// seconds per emulated frame
 	int64_t  errorAccum;        // timing error in perf counter ticks (positive = ahead)
 
+	// Frame timing telemetry — independent of ImGui::GetIO().Framerate.
+	uint32_t frameCount;        // frames since last telemetry reset
+	uint64_t telemetryStart;    // perf counter at last telemetry reset
+	float    measuredFPS;       // last measured FPS (updated once per second)
+
 	void Init() {
 		perfFreq = SDL_GetPerformanceFrequency();
 		lastFrameTime = SDL_GetPerformanceCounter();
 		errorAccum = 0;
-		UpdateRate(kFrameRate_NTSC);
+		targetSecsPerFrame = kFramePeriods[0][0]; // NTSC hardware rate
+		frameCount = 0;
+		telemetryStart = lastFrameTime;
+		measuredFPS = 0.0f;
 	}
 
 	void UpdateRate(double fps) {
@@ -106,10 +125,24 @@ struct FramePacer {
 		}
 
 		lastFrameTime = SDL_GetPerformanceCounter();
+
+		// Update telemetry once per second.
+		++frameCount;
+		uint64_t telemetryElapsed = lastFrameTime - telemetryStart;
+		if (telemetryElapsed >= perfFreq) {
+			measuredFPS = (float)((double)frameCount * (double)perfFreq
+				/ (double)telemetryElapsed);
+			frameCount = 0;
+			telemetryStart = lastFrameTime;
+		}
 	}
 };
 
 static FramePacer g_pacer;
+
+float ATUIGetMeasuredFPS() {
+	return g_pacer.measuredFPS;
+}
 
 // =========================================================================
 // Event handling
@@ -118,45 +151,54 @@ static FramePacer g_pacer;
 static bool g_prevImGuiCapture = false;
 static bool g_prevImGuiMouseCapture = false;
 
+// Display destination rectangle — computed each frame by ComputeDisplayRect().
+// Declared here (before UpdateMousePosition) so mouse mapping can use it.
+static SDL_FRect g_displayRect = {0, 0, 0, 0};
+
 // Update all mouse position inputs (pad, beam, virtual stick) from pixel coords.
 // Matches Windows ATUIVideoDisplayWindow::UpdateMousePosition().
+// Mouse coordinates are remapped relative to the display destination rectangle
+// so that scaling/aspect ratio correction doesn't break light pen or paddle input.
 static void UpdateMousePosition(ATInputManager *im, float mx, float my) {
-	int winW, winH;
-	SDL_GetWindowSize(g_pWindow, &winW, &winH);
-	if (winW <= 1 || winH <= 1)
+	// Map mouse position relative to the display rect.
+	const float dw = g_displayRect.w;
+	const float dh = g_displayRect.h;
+	if (dw < 1.0f || dh < 1.0f)
 		return;
 
-	// Pad position: map window area to [-0x10000, +0x10000]
-	int padX = (int)((mx / (float)(winW - 1)) * 131072.0f - 0x10000);
-	int padY = (int)((my / (float)(winH - 1)) * 131072.0f - 0x10000);
+	const float relX = std::clamp((mx - g_displayRect.x) / dw, 0.0f, 1.0f);
+	const float relY = std::clamp((my - g_displayRect.y) / dh, 0.0f, 1.0f);
+
+	// Pad position: map display area to [-0x10000, +0x10000]
+	int padX = (int)(relX * 131072.0f - 0x10000);
+	int padY = (int)(relY * 131072.0f - 0x10000);
 	im->SetMousePadPos(padX, padY);
 
-	// Beam position: map pixel to ANTIC beam coordinates, then normalize.
+	// Beam position: map relative position to ANTIC beam coordinates.
 	{
 		ATGTIAEmulator& gtia = g_sim.GetGTIA();
 		const vdrect32 scanArea(gtia.GetFrameScanArea());
 
 		float hcyc = (float)scanArea.left
-			+ (mx + 0.5f) * (float)scanArea.width() / (float)winW - 0.5f;
+			+ (relX * (float)scanArea.width()) - 0.5f;
 		float vcyc = (float)scanArea.top
-			+ (my + 0.5f) * (float)scanArea.height() / (float)winH - 0.5f;
+			+ (relY * (float)scanArea.height()) - 0.5f;
 
 		im->SetMouseBeamPos(
 			(int)((hcyc - 128.0f) * (65536.0f / 94.0f)),
 			(int)((vcyc - 128.0f) * (65536.0f / 188.0f)));
 	}
 
-	// Virtual stick: normalized [-1, +1] with aspect ratio correction
+	// Virtual stick: normalized [-1, +1] relative to display rect center.
 	{
-		float sizeX = (float)(winW - 1);
-		float sizeY = (float)(winH - 1);
-		float normX = mx / sizeX * 2.0f - 1.0f;
-		float normY = my / sizeY * 2.0f - 1.0f;
+		float normX = relX * 2.0f - 1.0f;
+		float normY = relY * 2.0f - 1.0f;
 
-		if (sizeX > sizeY)
-			normX *= sizeX / sizeY;
-		else if (sizeY > sizeX)
-			normY *= sizeY / sizeX;
+		// Apply aspect ratio correction based on display rect proportions.
+		if (dw > dh)
+			normX *= dw / dh;
+		else if (dh > dw)
+			normY *= dh / dw;
 
 		im->SetMouseVirtualStickPos(
 			(int)(normX * 131072.0f),
@@ -417,19 +459,134 @@ static void HandleEvents() {
 }
 
 // =========================================================================
+// Display destination rectangle
+// =========================================================================
+// Ported from ATDisplayPane::ResizeDisplay() in uidisplay.cpp (lines 1992-2103).
+// Computes where the emulator frame should be rendered within the SDL window,
+// accounting for stretch mode, pixel aspect ratio, integer scaling, zoom, and pan.
+
+static SDL_FRect ComputeDisplayRect() {
+	int winW, winH;
+	SDL_GetWindowSize(g_pWindow, &winW, &winH);
+
+	float viewportW = (float)winW;
+	float viewportH = (float)winH;
+
+	float w = viewportW;
+	float h = viewportH;
+
+	if (w < 1.0f) w = 1.0f;
+	if (h < 1.0f) h = 1.0f;
+
+	const auto& gtia = g_sim.GetGTIA();
+	const ATDisplayStretchMode stretchMode = ATUIGetDisplayStretchMode();
+
+	if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
+		|| stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio)
+	{
+		int sw = 1, sh = 1;
+		bool rgb32 = false;
+		gtia.GetRawFrameFormat(sw, sh, rgb32);
+
+		const float fsw = (float)((double)sw * gtia.GetPixelAspectRatio());
+		const float fsh = (float)sh;
+		float zoom = std::min(w / fsw, h / fsh);
+
+		if (stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio && zoom > 1.0f) {
+			// Small leeway for rounding errors (matches Windows).
+			zoom = std::floor(zoom * 1.0001f);
+		}
+
+		w = fsw * zoom;
+		h = fsh * zoom;
+	} else if (stretchMode == kATDisplayStretchMode_SquarePixels
+		|| stretchMode == kATDisplayStretchMode_Integral)
+	{
+		int sw = 1, sh = 1;
+		gtia.GetFrameSize(sw, sh);
+
+		const float fsw = (float)sw;
+		const float fsh = (float)sh;
+
+		float ratio = std::floor(std::min(w / fsw, h / fsh));
+
+		if (ratio < 1.0f || stretchMode == kATDisplayStretchMode_SquarePixels) {
+			// Continuous scaling maintaining source aspect ratio.
+			if (w * fsh < h * fsw) {
+				// Width is the constraining axis.
+				h = (fsh * w) / fsw;
+			} else {
+				// Height is the constraining axis.
+				w = (fsw * h) / fsh;
+			}
+		} else {
+			w = fsw * ratio;
+			h = fsh * ratio;
+		}
+	}
+	// kATDisplayStretchMode_Unconstrained: w, h stay as viewport size.
+
+	// Apply zoom / pan (matches uidisplay.cpp lines 2063-2075).
+	const float displayZoom = ATUIGetDisplayZoom();
+	w *= displayZoom;
+	h *= displayZoom;
+
+	const vdfloat2 pan = ATUIGetDisplayPanOffset();
+	const vdfloat2 relOrigin = vdfloat2{0.5f, 0.5f} - pan;
+
+	float left   = w * (relOrigin.x - 1.0f) + viewportW * 0.5f;
+	float top    = h * (relOrigin.y - 1.0f) + viewportH * 0.5f;
+	float right  = w * relOrigin.x           + viewportW * 0.5f;
+	float bottom = h * relOrigin.y           + viewportH * 0.5f;
+
+	// Pixel-snap: distribute rounding error evenly across opposite edges
+	// to minimize sub-pixel shimmer (matches uidisplay.cpp lines 2077-2085).
+	float errL = left   - std::round(left);
+	float errR = right  - std::round(right);
+	float errT = top    - std::round(top);
+	float errB = bottom - std::round(bottom);
+
+	left   -= 0.5f * (errL + errR);
+	right  -= 0.5f * (errL + errR);
+	top    -= 0.5f * (errT + errB);
+	bottom -= 0.5f * (errT + errB);
+
+	SDL_FRect rect;
+	rect.x = left;
+	rect.y = top;
+	rect.w = right - left;
+	rect.h = bottom - top;
+
+	return rect;
+}
+
+// =========================================================================
 // Rendering
 // =========================================================================
+
+static ATDisplayFilterMode s_lastAppliedFilter = (ATDisplayFilterMode)0xFF;
 
 static void RenderAndPresent() {
 	SDL_SetRenderDrawColor(g_pRenderer, 0, 0, 0, 255);
 	SDL_RenderClear(g_pRenderer);
 
-	// Draw emulator frame texture with blending disabled.
-	// ImGui's SDLRenderer3 backend leaves SDL_BLENDMODE_BLEND active.
-	SDL_Texture *emuTex = g_pDisplay->GetTexture();
-	if (emuTex) {
-		SDL_SetTextureBlendMode(emuTex, SDL_BLENDMODE_NONE);
-		SDL_RenderTexture(g_pRenderer, emuTex, nullptr, nullptr);
+	// Update filter mode on texture if setting changed.
+	ATDisplayFilterMode curFilter = ATUIGetDisplayFilterMode();
+	if (curFilter != s_lastAppliedFilter) {
+		g_pDisplay->UpdateScaleMode();
+		s_lastAppliedFilter = curFilter;
+	}
+
+	// Draw emulator frame texture with proper scaling and aspect ratio.
+	// When the debugger is open, the Display pane renders it inside an
+	// ImGui dockable window instead.
+	if (!ATUIDebuggerIsOpen()) {
+		SDL_Texture *emuTex = g_pDisplay->GetTexture();
+		if (emuTex) {
+			g_displayRect = ComputeDisplayRect();
+			SDL_SetTextureBlendMode(emuTex, SDL_BLENDMODE_NONE);
+			SDL_RenderTexture(g_pRenderer, emuTex, nullptr, &g_displayRect);
+		}
 	}
 
 	// Draw ImGui UI on top
@@ -442,43 +599,81 @@ static void RenderAndPresent() {
 // Update frame pacer rate from current video standard
 // =========================================================================
 
-static double GetBaseFrameRate() {
-	switch (g_sim.GetVideoStandard()) {
-	case kATVideoStandard_PAL:
-	case kATVideoStandard_NTSC50:	// NTSC color at 50Hz → PAL timing
-		return kFrameRate_PAL;
-	case kATVideoStandard_SECAM:
-		return kFrameRate_SECAM;
-	case kATVideoStandard_PAL60:	// PAL color at 60Hz → NTSC timing
-	default:
-		return kFrameRate_NTSC;
-	}
+// Returns the video standard table index: 0=NTSC, 1=PAL, 2=SECAM.
+// Mirrors Windows ATUIUpdateSpeedTiming() tableIndex logic.
+static int GetVideoStandardIndex() {
+	const auto vstd = g_sim.GetVideoStandard();
+	const bool isSECAM = vstd == kATVideoStandard_SECAM;
+	const bool hz50 = vstd != kATVideoStandard_NTSC && vstd != kATVideoStandard_PAL60;
+	return isSECAM ? 2 : hz50 ? 1 : 0;
 }
 
+// Get the display refresh period (seconds) for the window's current display.
+// Returns 0 if unavailable.
+static double GetDisplayRefreshPeriod() {
+	SDL_DisplayID displayID = SDL_GetDisplayForWindow(g_pWindow);
+	if (!displayID)
+		return 0;
+
+	const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(displayID);
+	if (!mode || mode->refresh_rate <= 0.0f)
+		return 0;
+
+	// Use precise numerator/denominator if available, otherwise float.
+	if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0)
+		return (double)mode->refresh_rate_denominator / (double)mode->refresh_rate_numerator;
+
+	return 1.0 / (double)mode->refresh_rate;
+}
+
+// Update frame pacing and audio resampling to match current video standard,
+// frame rate mode, and speed settings.
+// Ported from Windows ATUIUpdateSpeedTiming() (main.cpp lines 491-553).
 static void UpdatePacerRate() {
-	double rate = GetBaseFrameRate();
+	const int tableIndex = GetVideoStandardIndex();
+	const ATFrameRateMode frameRateMode = ATUIGetFrameRateMode();
+	const double rawSecsPerFrame = kFramePeriods[frameRateMode][tableIndex];
 
-	// Apply speed modifier: 0 = 1x, 1 = 2x, 3 = 4x, 7 = 8x
-	float spd = ATUIGetSpeedModifier();
-	double speedFactor = (double)spd + 1.0;
-	if (ATUIGetSlowMotion())
-		speedFactor *= 0.25;
+	// Compute adjusted cycles per second for audio resampling.
+	// When frame rate mode changes the effective frame period (e.g. Broadcast
+	// 59.94 vs Hardware 59.9227), the audio engine must resample at a matching
+	// rate so pitch stays correct.
+	const double cyclesPerSecond = kMasterClocks[tableIndex]
+		* kFramePeriods[0][tableIndex] / rawSecsPerFrame;
 
-	if (speedFactor < 0.01) speedFactor = 0.01;
-	if (speedFactor > 100.0) speedFactor = 100.0;
-
-	g_pacer.UpdateRate(rate * speedFactor);
-
-	// Update audio output resampling rate to match speed.
-	// This mirrors Windows main.cpp line 537.
-	IATAudioOutput *audio = g_sim.GetAudioOutput();
-	if (audio) {
-		double cyclesPerSecond = g_sim.GetScheduler()->GetRate().asDouble();
-		if (cyclesPerSecond <= 0)
-			cyclesPerSecond = 1789772.5;
-
-		audio->SetCyclesPerSecond(cyclesPerSecond, 1.0 / speedFactor);
+	// Speed multiplier: modifier + 1.0, with slow motion factor.
+	// Windows skips modifier in turbo (audio rate is irrelevant at warp speed).
+	double rate = 1.0;
+	if (!g_sim.IsTurboModeEnabled()) {
+		rate = std::max(0.0, (double)ATUIGetSpeedModifier() + 1.0);
+		if (ATUIGetSlowMotion())
+			rate *= 0.5; // Windows default: g_ATCVEngineSlowmoScale = 0.5
 	}
+	rate = std::clamp(rate, 0.01, 100.0);
+
+	// Adaptive VSync: if enabled and display refresh is within 2% of the
+	// target frame rate, lock to the display refresh period instead of the
+	// emulation period.  This prevents the ~1 frame drop every ~12 seconds
+	// that occurs when a 60Hz display runs 59.92Hz NTSC content.
+	// Matches Windows ATUIUpdateSpeedTiming() lines 544-547.
+	double secsPerFrame = rawSecsPerFrame / rate;
+
+	if (ATUIGetFrameRateVSyncAdaptive()) {
+		double refreshPeriod = GetDisplayRefreshPeriod();
+		if (refreshPeriod > 0
+			&& refreshPeriod > secsPerFrame * 0.98
+			&& refreshPeriod < secsPerFrame * 1.02)
+		{
+			secsPerFrame = refreshPeriod;
+		}
+	}
+
+	g_pacer.UpdateRate(1.0 / secsPerFrame);
+
+	// Update audio output resampling rate.
+	IATAudioOutput *audio = g_sim.GetAudioOutput();
+	if (audio)
+		audio->SetCyclesPerSecond(cyclesPerSecond, 1.0 / rate);
 }
 
 // =========================================================================
@@ -545,6 +740,18 @@ static void ATRestoreWindowPlacement(SDL_Window *window) {
 int main(int argc, char *argv[]) {
 	fprintf(stderr, "[AltirraSDL] Starting...\n");
 
+	// Check for --test-mode flag (must be before SDL_Init so it's stripped from argv)
+	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "--test-mode") == 0) {
+			g_testModeEnabled = true;
+			// Remove from argv so it's not treated as a boot image path
+			for (int j = i; j < argc - 1; ++j)
+				argv[j] = argv[j + 1];
+			--argc;
+			--i;
+		}
+	}
+
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
 		fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
 		return 1;
@@ -574,6 +781,13 @@ int main(int argc, char *argv[]) {
 		SDL_DestroyWindow(g_pWindow);
 		SDL_Quit();
 		return 1;
+	}
+
+	// Initialize test mode automation (no-op if --test-mode not passed)
+	if (!ATTestModeInit()) {
+		fprintf(stderr, "[AltirraSDL] Failed to initialize test mode\n");
+		// Non-fatal — continue without test mode
+		g_testModeEnabled = false;
 	}
 
 	// Give the mouse capture system access to the window
@@ -677,6 +891,9 @@ int main(int argc, char *argv[]) {
 	while (g_running) {
 		HandleEvents();
 		if (!g_running) break;
+
+		// Process test mode commands from external agent (no-op if not in test mode)
+		ATTestModePollCommands(g_sim, g_uiState);
 
 		// Process deferred file dialog results on main thread
 		ATUIPollDeferredActions();
@@ -788,6 +1005,7 @@ int main(int argc, char *argv[]) {
 	extern void ATSocketShutdown();
 	ATSocketShutdown();
 
+	ATTestModeShutdown();
 	ATUIShutdown();
 
 	delete g_pDisplay;

@@ -193,36 +193,25 @@ pace `Advance()` calls to match.
 
 ### Strategy: SDL3 Performance Counter
 
-```cpp
-void FramePacing(ATSimulator &sim, uint64 &lastFrameTime, uint64 perfFreq) {
-    double targetFrameTime = sim.IsVideo50Hz()
-        ? 1.0 / 49.8607  // PAL
-        : 1.0 / 59.9227; // NTSC
+Frame timing uses a `FramePacer` struct with an error accumulator, ported
+from the Windows idle handler in `main.cpp`.  Exact frame rates come from
+`constants.h` (`kATFrameRate_NTSC`, `kATFrameRate_PAL`, `kATFrameRate_SECAM`).
 
-    uint64 targetTicks = (uint64)(targetFrameTime * perfFreq);
-    uint64 now = SDL_GetPerformanceCounter();
-    uint64 elapsed = now - lastFrameTime;
+Three frame rate modes are supported via a `kFramePeriods[3][3]` lookup
+table (rows = mode, cols = video standard), matching Windows
+`ATUIUpdateSpeedTiming()`:
 
-    if (elapsed < targetTicks) {
-        // Ahead of schedule -- wait
-        uint64 remaining = targetTicks - elapsed;
-        double remainingMs = (double)remaining / perfFreq * 1000.0;
+| Mode | NTSC | PAL | SECAM |
+|------|------|-----|-------|
+| Hardware | 59.9227 Hz | 49.8607 Hz | 50.0818 Hz |
+| Broadcast | 59.94 Hz | 50.00 Hz | 50.00 Hz |
+| Integral | 60.00 Hz | 50.00 Hz | 50.00 Hz |
 
-        if (remainingMs > 1.0) {
-            SDL_DelayPrecise((uint64)(remainingMs * 1000000.0)); // nanoseconds
-        }
-
-        lastFrameTime += targetTicks;  // accumulate to avoid drift
-    } else {
-        // Behind schedule -- don't wait, possibly drop frames
-        lastFrameTime = now;
-    }
-}
-```
-
-`SDL_DelayPrecise()` provides nanosecond-precision delay using platform-
-optimal mechanisms (spinning for sub-millisecond accuracy). This replaces
-the `MsgWaitForMultipleObjects` + waitable timer approach used on Windows.
+The error accumulator tracks cumulative timing drift in performance counter
+ticks (positive = ahead of schedule, need to sleep).  It clamps to ±2
+frames to prevent runaway drift after glitches.  `SDL_DelayPrecise()`
+provides nanosecond-precision delay, replacing the Windows waitable timer
+approach.
 
 ### VSync Alternative
 
@@ -320,11 +309,19 @@ src/ATAudio/source/
 
 ## Speed Control and Audio Rate Sync
 
-The main loop calls `UpdatePacerRate()` after each presented frame.  This
-function reads `ATUIGetSpeedModifier()` and `ATUIGetSlowMotion()` to compute
-a speed factor, adjusts the frame pacer rate accordingly, and calls
-`IATAudioOutput::SetCyclesPerSecond()` with the current scheduler rate and
-speed factor.  This matches the Windows idle handler (`main.cpp` line 537).
+`UpdatePacerRate()` is called after each presented frame.  It mirrors
+`ATUIUpdateSpeedTiming()` from Windows `main.cpp`:
+
+1. Reads frame rate mode (`ATUIGetFrameRateMode()`) and video standard to
+   look up `rawSecsPerFrame` from the `kFramePeriods` table.
+2. Computes `cyclesPerSecond = kMasterClocks[vstd] * kFramePeriods[0][vstd]
+   / rawSecsPerFrame` — this adjusts the audio clock so pitch stays correct
+   when the frame rate mode differs from hardware rate.
+3. Computes speed factor: `modifier + 1.0`, with 0.5x slow-motion factor
+   (matching Windows `g_ATCVEngineSlowmoScale`).  Speed modifier is skipped
+   in turbo mode.  Clamped to [0.01, 100.0].
+4. Updates `g_pacer` with the speed-adjusted frame rate.
+5. Calls `IATAudioOutput::SetCyclesPerSecond(cyclesPerSecond, 1.0/rate)`.
 
 When `ATUIGetTurbo()` or `ATUIGetTurboPulse()` is set, the main loop skips
 the frame pacer's `WaitForNextFrame()` call, allowing emulation to run as

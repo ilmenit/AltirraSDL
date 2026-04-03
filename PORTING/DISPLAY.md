@@ -109,45 +109,39 @@ public:
 
 1. GTIA calls `PostBuffer(VDVideoDisplayFrame*)` to submit a completed frame.
    The frame object contains a `VDPixmap` with raw pixel data (typically
-   32-bit XRGB) plus metadata like the frame number and screen FX settings.
+   palettized 8-bit or 32-bit XRGB) plus metadata like the frame number
+   and screen FX settings.
 
-2. `VDVideoDisplaySDL3::PostBuffer()` uploads the pixel data to an SDL
-   streaming texture and queues it for presentation:
+2. `VDVideoDisplaySDL3::PostBuffer()` queues the frame by reference-counting
+   it into `mPendingFrame`.  It does **not** upload pixels — that happens
+   later in `PrepareFrame()`.
 
-```cpp
-void VDVideoDisplaySDL3::PostBuffer(VDVideoDisplayFrame *frame) {
-    const VDPixmap& px = frame->mPixmap;
+3. `PrepareFrame()` (called from the main loop each iteration) uploads
+   the pending frame's pixel data to an SDL streaming texture.  It handles:
+   - Texture creation/destruction when frame dimensions change
+   - Pal8 → XRGB8888 palette conversion
+   - Moving consumed frames to `mPrevFrame` so GTIA can reclaim them
+     via `RevokeBuffer()`
 
-    // Update SDL texture from pixmap data
-    SDL_UpdateTexture(mpFrameTexture, nullptr, px.data, px.pitch);
-
-    mCurrentFrameNumber = frame->mFrameNumber;
-
-    // Release the frame back to the pool
-    frame->Release();
-
-    // Mark that we have a new frame to present
-    mFrameReady = true;
-}
-```
-
-3. The SDL3 implementation also handles `SetSource()` (used for static
-   content like error screens) and `RevokeBuffer()` (used to cancel a
-   queued frame, e.g., during frame skipping).
-
-4. The frontend's render loop presents the frame:
+4. The main loop's `RenderAndPresent()` drives the final rendering:
 
 ```cpp
-void VDVideoDisplaySDL3::Present(SDL_Renderer *renderer) {
-    if (!mFrameReady)
-        return;
+static void RenderAndPresent() {
+    SDL_RenderClear(g_pRenderer);
 
-    // Render emulator frame with appropriate scaling/filtering
-    SDL_FRect destRect = CalculateDestRect();
-    SDL_SetTextureScaleMode(mpFrameTexture,
-        mFilterMode == kFilterBilinear ? SDL_SCALEMODE_LINEAR
-                                       : SDL_SCALEMODE_NEAREST);
-    SDL_RenderTexture(renderer, mpFrameTexture, nullptr, &destRect);
+    // Update filter mode on texture if setting changed.
+    if (curFilter != s_lastAppliedFilter)
+        g_pDisplay->UpdateScaleMode();
+
+    SDL_Texture *emuTex = g_pDisplay->GetTexture();
+    if (emuTex) {
+        g_displayRect = ComputeDisplayRect();  // scaling/aspect/zoom/pan
+        SDL_SetTextureBlendMode(emuTex, SDL_BLENDMODE_NONE);
+        SDL_RenderTexture(g_pRenderer, emuTex, nullptr, &g_displayRect);
+    }
+
+    ATUIRenderFrame(g_sim, *g_pDisplay, g_pRenderer, g_uiState);
+    SDL_RenderPresent(g_pRenderer);
 }
 ```
 
@@ -181,22 +175,32 @@ approximately 12:7. The display must handle:
   multiple for pixel-sharp display
 - **Stretch modes**: Fit, fill, and custom destination rectangle
 
-The existing `SetDestRect()` / `SetDestRectF()` / `SetPixelSharpness()`
-methods on `IVDVideoDisplay` communicate these settings. The SDL3
-implementation applies them when calculating `destRect` for rendering.
+`ComputeDisplayRect()` in `main_sdl3.cpp` implements all scaling logic,
+ported from `ATDisplayPane::ResizeDisplay()` in `uidisplay.cpp`.  It reads
+`ATUIGetDisplayStretchMode()`, GTIA's `GetRawFrameFormat()` /
+`GetFrameSize()` / `GetPixelAspectRatio()`, plus zoom/pan settings.  All 5
+stretch modes are supported: Unconstrained, PreserveAspectRatio,
+SquarePixels, Integral, and IntegralPreserveAspectRatio.  Integer scaling
+uses `floor(zoom * 1.0001)` for rounding-error tolerance.  The resulting
+`SDL_FRect` is pixel-snapped and passed to `SDL_RenderTexture()`.
+
+The `SetDestRect()` / `SetDestRectF()` / `SetPixelSharpness()` overrides
+on `VDVideoDisplaySDL3` remain stubs — scaling is handled entirely by the
+main loop's `ComputeDisplayRect()` + `SDL_RenderTexture()` path.
 
 ### Screen Effects
 
-The Windows build supports scanline simulation, bloom, and other post-
-processing effects via shaders in the D3D9 minidriver. For the SDL3 build:
+The Windows build supports scanline simulation, bloom, distortion, screen
+masks, sharp bilinear, bicubic, gamma/color correction, and HDR via D3D9
+HLSL shaders. The SDL3 build implements these using OpenGL 3.3 GLSL shaders.
 
-**Phase 2 (minimal):** No screen effects. Clean nearest-neighbor or bilinear
-scaling only.
+See [SHADERS.md](SHADERS.md) for the full architecture, implementation
+phases, and optional librashader integration for RetroArch shader presets.
 
-**Later:** Implement effects using SDL3 GPU API (compute shaders or fragment
-shaders) if desired. The `SetScreenFX()` method on `IVDVideoDisplay` carries
-the effect configuration. Alternatively, use pre-baked scanline overlay
-textures for the most common effects.
+The `SetScreenFX()` method on `IVDVideoDisplay` carries the effect
+configuration. The `ATArtifactingParams` and `VDDScreenMaskParams` structures
+hold all tunable parameters, persisted via `settings.cpp` under `ScreenFX:`
+registry keys.
 
 ### Compositor Integration
 

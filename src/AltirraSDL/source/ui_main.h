@@ -52,6 +52,9 @@ bool ATUIProcessEvent(const SDL_Event *event);
 bool ATUIWantCaptureKeyboard();
 bool ATUIWantCaptureMouse();
 
+// Frame timing telemetry — independent FPS measurement from the frame pacer.
+float ATUIGetMeasuredFPS();
+
 void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	SDL_Renderer *renderer, ATUIState &state);
 

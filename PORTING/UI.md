@@ -336,14 +336,23 @@ void RenderDeviceConfig(ATPropertySet& props) {
 total volume (50+ dialogs). Once the first few are done, the rest are
 mechanical.
 
-**Status:** IMPLEMENTED in `ui_devconfig.cpp` (~2,200 lines). All ~40
-registered device config tags have dedicated ImGui dialogs matching
-Windows property encodings. Generic fallback via `EnumProperties()` for
-unknown devices. Property values verified against Windows: 1-based XEP80
-port, MyIDE2 cpldver=2, 815 bit-shifted id, Covox best-match range,
-BlackBox Floppy/Printer HLE enum strings, 850Full per-port baud rates,
-1400XL simplified modem (no speed/SIO/check_rate). Settings button on
-Devices page, dangling-pointer guard on device removal.
+**Status:** IMPLEMENTED in `ui_devconfig.cpp` + `ui_devconfig_devices.cpp`
+(~2,500 lines). All ~41 registered device config tags have dedicated ImGui
+dialogs matching Windows property encodings. Generic fallback via
+`EnumProperties()` for unknown devices. Property values verified against
+Windows: 1-based XEP80 port, MyIDE2 cpldver=2, 815 bit-shifted id, Covox
+best-match range, BlackBox Floppy/Printer HLE enum strings, 850Full
+per-port baud rates, 1400XL simplified modem (no speed/SIO/check_rate),
+1030 modem (SIO level but no connect_rate/check_rate), ATR8000 with
+serial signals (not Percom), BlackBox ramsize as K values (8/32/64).
+DragonCart has full networking dialog (access mode, VXLAN, NAT forwarding).
+Modem dialogs support custom terminal types. File/folder browse buttons
+on all path fields (Hard Disk, Virtual FAT, PCLink, HostFS, Custom Device,
+Video Still Image, Parallel File Writer). Device list shows hierarchy with
+child devices, settings blurbs, double-click to edit, right-click context
+menu with XCmd extended commands, sorted Add Device menu with help tooltips.
+Dongle validates 16-hex-digit mapping. Label accuracy verified against
+Windows (port notes, revision names, DIP switch text).
 
 ### 4. Disk Management
 
@@ -729,7 +738,7 @@ These are required for basic use:
 |-----------|-------|-----------|----------|
 | Input configuration | 1 | ~2700 | **DONE** |
 | Keyboard customization | 1 | ~300 | High |
-| Device configs (~40 dialogs) | 1 | ~2200 | **DONE** |
+| Device configs (~41 dialogs) | 2 | ~2500 | **DONE** |
 | Setup wizard | 1 | ~200 | Medium |
 | Cheat system | 1 | ~100 | Medium |
 | **Tier 2 total** | **~15** | **~1,600** | |
@@ -755,12 +764,11 @@ These are required for basic use:
 
 | Component | Files | Est. Lines | Priority |
 |-----------|-------|-----------|----------|
-| ~~Remaining device configs~~ | -- | -- | **DONE** (ui_devconfig.cpp) |
+| ~~Remaining device configs~~ | -- | -- | **DONE** (ui_devconfig.cpp + ui_devconfig_devices.cpp) |
+| ~~Tools menu (all 8 items)~~ | 1 | ~2,500 | **DONE** (ui_tools.cpp) |
 | Trace viewer | 1 | ~1,500 | Low |
 | Profiler | 1 | ~300 | Low |
 | Tape editor | 1 | ~800 | Low |
-| Disk explorer | 1 | ~600 | Low |
-| Compatibility DB | 1 | ~200 | Low |
 | **Tier 4 total** | **~45** | **~5,400** | |
 
 ### Summary
@@ -989,7 +997,10 @@ with the SDL3 + SDLRenderer3 backends.
 | 5 | Disk management | ~200 | Mount/unmount D1:-D8: |
 | 6 | Audio output (real) | ~200 | Replace stub with SDL3 audio |
 | 7 | Firmware manager | ~150 | ROM path config |
-| 8 | Debugger panes | ~1,500 | Console, registers, disassembly |
+| 8 | Debugger panes | ~1,500 | Console, registers, disassembly, history (done); memory, watch, call stack, breakpoints, targets, profiler, trace (TODO) |
 
 Steps 1-3 produce a usable emulator. Steps 4-7 produce a comfortable
-one. Step 8 targets power users.
+one. Step 8 targets power users. The debugger core panes (Console,
+Registers, Disassembly, History) are implemented with an ImGui DockBuilder
+layout matching Windows. The Display pane renders the emulation texture
+inside the dockspace when the debugger is open.

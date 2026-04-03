@@ -34,25 +34,22 @@ set(SYSTEM_COMMON_SOURCES
 
 if(WIN32)
     set(SYSTEM_PLATFORM_SOURCES
-        source/cpuaccel.cpp
+        # Note: cpuaccel.cpp, event.cpp, filestream.cpp, math.cpp, zip.cpp are
+        # already in SYSTEM_COMMON_SOURCES and must not be listed again here.
         source/date.cpp
         source/debug.cpp
         source/debugx86.cpp
         source/error_win32.cpp
-        source/event.cpp
         source/file.cpp
         source/fileasync.cpp
-        source/filestream.cpp
         source/filesys.cpp
         source/filewatcher.cpp
-        source/math.cpp
         source/process.cpp
         source/registry.cpp
         source/text.cpp
         source/thunk.cpp
         source/time.cpp
         source/w32assist.cpp
-        source/zip.cpp
     )
 else()
     find_package(SDL3 REQUIRED)
@@ -76,7 +73,14 @@ target_include_directories(system
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/h
 )
 
-if(NOT WIN32)
-    target_include_directories(system BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
+if(WIN32)
+    # time.cpp uses timeBeginPeriod/timeEndPeriod (winmm)
+    target_link_libraries(system PUBLIC winmm)
+else()
     target_link_libraries(system PUBLIC SDL3::SDL3)
+endif()
+
+# Compat shims for non-MSVC compilers (GCC/Clang/NDK need intrin.h, tchar.h shims)
+if(ALTIRRA_COMPAT_DIR)
+    target_include_directories(system BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()

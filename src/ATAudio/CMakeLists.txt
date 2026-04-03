@@ -11,7 +11,11 @@ set(ATAUDIO_COMMON_SOURCES
     source/stdafx.cpp
 )
 
-if(WIN32)
+# Win32 audio output backends — only for native Win32 builds.
+# The SDL3 frontend provides its own audiooutput_sdl3.cpp which defines the
+# same factory function (ATCreateAudioOutput), so these must be excluded when
+# ALTIRRA_SDL3 is ON to avoid duplicate symbol errors.
+if(WIN32 AND NOT ALTIRRA_SDL3)
     list(APPEND ATAUDIO_COMMON_SOURCES
         source/audiooutput.cpp
         source/audiooutwasapi.cpp

@@ -4906,6 +4906,54 @@ source/ui_cassette.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_cassette.cpp.s
 .PHONY : source/ui_cassette.cpp.s
 
+source/ui_dbg_breakpoints.o: source/ui_dbg_breakpoints.cpp.o
+.PHONY : source/ui_dbg_breakpoints.o
+
+# target to build an object file
+source/ui_dbg_breakpoints.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.o
+.PHONY : source/ui_dbg_breakpoints.cpp.o
+
+source/ui_dbg_breakpoints.i: source/ui_dbg_breakpoints.cpp.i
+.PHONY : source/ui_dbg_breakpoints.i
+
+# target to preprocess a source file
+source/ui_dbg_breakpoints.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.i
+.PHONY : source/ui_dbg_breakpoints.cpp.i
+
+source/ui_dbg_breakpoints.s: source/ui_dbg_breakpoints.cpp.s
+.PHONY : source/ui_dbg_breakpoints.s
+
+# target to generate assembly for a file
+source/ui_dbg_breakpoints.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_breakpoints.cpp.s
+.PHONY : source/ui_dbg_breakpoints.cpp.s
+
+source/ui_dbg_callstack.o: source/ui_dbg_callstack.cpp.o
+.PHONY : source/ui_dbg_callstack.o
+
+# target to build an object file
+source/ui_dbg_callstack.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.o
+.PHONY : source/ui_dbg_callstack.cpp.o
+
+source/ui_dbg_callstack.i: source/ui_dbg_callstack.cpp.i
+.PHONY : source/ui_dbg_callstack.i
+
+# target to preprocess a source file
+source/ui_dbg_callstack.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.i
+.PHONY : source/ui_dbg_callstack.cpp.i
+
+source/ui_dbg_callstack.s: source/ui_dbg_callstack.cpp.s
+.PHONY : source/ui_dbg_callstack.s
+
+# target to generate assembly for a file
+source/ui_dbg_callstack.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_callstack.cpp.s
+.PHONY : source/ui_dbg_callstack.cpp.s
+
 source/ui_dbg_console.o: source/ui_dbg_console.cpp.o
 .PHONY : source/ui_dbg_console.o
 
@@ -4929,6 +4977,78 @@ source/ui_dbg_console.s: source/ui_dbg_console.cpp.s
 source/ui_dbg_console.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_console.cpp.s
 .PHONY : source/ui_dbg_console.cpp.s
+
+source/ui_dbg_disassembly.o: source/ui_dbg_disassembly.cpp.o
+.PHONY : source/ui_dbg_disassembly.o
+
+# target to build an object file
+source/ui_dbg_disassembly.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.o
+.PHONY : source/ui_dbg_disassembly.cpp.o
+
+source/ui_dbg_disassembly.i: source/ui_dbg_disassembly.cpp.i
+.PHONY : source/ui_dbg_disassembly.i
+
+# target to preprocess a source file
+source/ui_dbg_disassembly.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.i
+.PHONY : source/ui_dbg_disassembly.cpp.i
+
+source/ui_dbg_disassembly.s: source/ui_dbg_disassembly.cpp.s
+.PHONY : source/ui_dbg_disassembly.s
+
+# target to generate assembly for a file
+source/ui_dbg_disassembly.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_disassembly.cpp.s
+.PHONY : source/ui_dbg_disassembly.cpp.s
+
+source/ui_dbg_history.o: source/ui_dbg_history.cpp.o
+.PHONY : source/ui_dbg_history.o
+
+# target to build an object file
+source/ui_dbg_history.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.o
+.PHONY : source/ui_dbg_history.cpp.o
+
+source/ui_dbg_history.i: source/ui_dbg_history.cpp.i
+.PHONY : source/ui_dbg_history.i
+
+# target to preprocess a source file
+source/ui_dbg_history.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.i
+.PHONY : source/ui_dbg_history.cpp.i
+
+source/ui_dbg_history.s: source/ui_dbg_history.cpp.s
+.PHONY : source/ui_dbg_history.s
+
+# target to generate assembly for a file
+source/ui_dbg_history.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_history.cpp.s
+.PHONY : source/ui_dbg_history.cpp.s
+
+source/ui_dbg_memory.o: source/ui_dbg_memory.cpp.o
+.PHONY : source/ui_dbg_memory.o
+
+# target to build an object file
+source/ui_dbg_memory.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.o
+.PHONY : source/ui_dbg_memory.cpp.o
+
+source/ui_dbg_memory.i: source/ui_dbg_memory.cpp.i
+.PHONY : source/ui_dbg_memory.i
+
+# target to preprocess a source file
+source/ui_dbg_memory.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.i
+.PHONY : source/ui_dbg_memory.cpp.i
+
+source/ui_dbg_memory.s: source/ui_dbg_memory.cpp.s
+.PHONY : source/ui_dbg_memory.s
+
+# target to generate assembly for a file
+source/ui_dbg_memory.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_memory.cpp.s
+.PHONY : source/ui_dbg_memory.cpp.s
 
 source/ui_dbg_registers.o: source/ui_dbg_registers.cpp.o
 .PHONY : source/ui_dbg_registers.o
@@ -5241,6 +5361,30 @@ source/ui_system.s: source/ui_system.cpp.s
 source/ui_system.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_system.cpp.s
 .PHONY : source/ui_system.cpp.s
+
+source/ui_testmode.o: source/ui_testmode.cpp.o
+.PHONY : source/ui_testmode.o
+
+# target to build an object file
+source/ui_testmode.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.o
+.PHONY : source/ui_testmode.cpp.o
+
+source/ui_testmode.i: source/ui_testmode.cpp.i
+.PHONY : source/ui_testmode.i
+
+# target to preprocess a source file
+source/ui_testmode.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.i
+.PHONY : source/ui_testmode.cpp.i
+
+source/ui_testmode.s: source/ui_testmode.cpp.s
+.PHONY : source/ui_testmode.s
+
+# target to generate assembly for a file
+source/ui_testmode.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_testmode.cpp.s
+.PHONY : source/ui_testmode.cpp.s
 
 source/ui_tools.o: source/ui_tools.cpp.o
 .PHONY : source/ui_tools.o
@@ -6040,9 +6184,24 @@ help:
 	@echo "... source/ui_cassette.o"
 	@echo "... source/ui_cassette.i"
 	@echo "... source/ui_cassette.s"
+	@echo "... source/ui_dbg_breakpoints.o"
+	@echo "... source/ui_dbg_breakpoints.i"
+	@echo "... source/ui_dbg_breakpoints.s"
+	@echo "... source/ui_dbg_callstack.o"
+	@echo "... source/ui_dbg_callstack.i"
+	@echo "... source/ui_dbg_callstack.s"
 	@echo "... source/ui_dbg_console.o"
 	@echo "... source/ui_dbg_console.i"
 	@echo "... source/ui_dbg_console.s"
+	@echo "... source/ui_dbg_disassembly.o"
+	@echo "... source/ui_dbg_disassembly.i"
+	@echo "... source/ui_dbg_disassembly.s"
+	@echo "... source/ui_dbg_history.o"
+	@echo "... source/ui_dbg_history.i"
+	@echo "... source/ui_dbg_history.s"
+	@echo "... source/ui_dbg_memory.o"
+	@echo "... source/ui_dbg_memory.i"
+	@echo "... source/ui_dbg_memory.s"
 	@echo "... source/ui_dbg_registers.o"
 	@echo "... source/ui_dbg_registers.i"
 	@echo "... source/ui_dbg_registers.s"
@@ -6082,6 +6241,9 @@ help:
 	@echo "... source/ui_system.o"
 	@echo "... source/ui_system.i"
 	@echo "... source/ui_system.s"
+	@echo "... source/ui_testmode.o"
+	@echo "... source/ui_testmode.i"
+	@echo "... source/ui_testmode.s"
 	@echo "... source/ui_tools.o"
 	@echo "... source/ui_tools.i"
 	@echo "... source/ui_tools.s"

@@ -74,13 +74,20 @@ Legend:
 ================================================================================
 
   [100%] VSync enabled                         — SDL_SetRenderVSync (toggleable from menu)
-  [100%] Frame pacer object                    — g_pacer with WaitForNextFrame()
-  [100%] NTSC / PAL rate detection             — Adjusts target frame time
-  [100%] Speed modifier support                — Pacer rate scales with speed setting
+  [100%] Frame pacer object                    — g_pacer with error accumulator matching
+                                                 Windows, SDL_DelayPrecise for sleep
+  [100%] NTSC / PAL / SECAM rate detection    — Exact constants from constants.h
+  [100%] Frame rate mode support              — Hardware/Broadcast/Integral via
+                                                 kFramePeriods[3][3] table, matching
+                                                 Windows ATUIUpdateSpeedTiming()
+  [100%] Speed modifier support                — Pacer rate scales with speed setting;
+                                                 modifier skipped in turbo mode
   [100%] Turbo mode frame timing               — Skips WaitForNextFrame when turbo enabled
-  [100%] Per-frame audio rate sync             — SetCyclesPerSecond called with speed factor
-  [  0%] Frame timing telemetry                — No FPS measurement independent of
-                                                 ImGui::GetIO().Framerate
+  [100%] Per-frame audio rate sync             — SetCyclesPerSecond with cyclesPerSecond
+                                                 adjusted for frame rate mode and speed
+  [100%] Frame timing telemetry                — Independent FPS counter in FramePacer
+                                                 (updated once per second). Exposed via
+                                                 ATUIGetMeasuredFPS(), used by status overlay
 
 
 ================================================================================
@@ -90,8 +97,9 @@ Legend:
   [100%] Turbo wired to simulator              — ATUISetTurbo → sim.SetTurboModeEnabled
   [100%] Turbo pulse wired                     — ATUISetTurboPulse → sim.SetTurboModeEnabled
   [100%] Speed modifier → pacer rate           — UpdatePacerRate reads ATUIGetSpeedModifier
-  [100%] Slow motion support                   — 0.25x speed factor applied
-  [100%] Audio rate adapts to speed            — SetCyclesPerSecond with 1/speedFactor
+  [100%] Slow motion support                   — 0.5x speed factor (matches Windows default)
+  [100%] Audio rate adapts to speed            — SetCyclesPerSecond with cyclesPerSecond
+                                                 accounting for frame rate mode + 1/rate
 
 
 ================================================================================
@@ -116,7 +124,7 @@ Initialization                  13           13      100%
 Event loop                       8            8      100%
 Emulation advance                5            5      100%
 Rendering                        7            7      100%
-Frame timing                     6            7       86%
+Frame timing                     8            8      100%
 Speed control                    5            5      100%
 Shutdown                         6            6      100%
 

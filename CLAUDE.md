@@ -135,6 +135,16 @@ Detailed documentation lives in `PORTING/`:
 - **ATTest** — Internal C++ test framework (~1,600 lines)
 - **AltirraTest** — Test harness project
 - **ATBasic/tests/** — BASIC interpreter test suite (~25 `.txt` test files)
+- **UI Test Mode** — Automated ImGui UI testing via `--test-mode` flag.
+  Launches a Unix domain socket at `/tmp/altirra-test-<pid>.sock` that
+  accepts text commands and returns JSON responses. Uses ImGui's built-in
+  `IMGUI_ENABLE_TEST_ENGINE` hooks to automatically track all widgets
+  (buttons, checkboxes, menu items, etc.) with their labels, types, and
+  positions each frame. Commands: `ping`, `query_state`, `list_items`,
+  `open_dialog`/`close_dialog`, `click <window> <label>`, `wait_frames`,
+  `screenshot`, `boot_image`, `pause`/`resume`, `cold_reset`/`warm_reset`.
+  See `PORTING/BUILD.md` for full command reference.
+  Files: `src/AltirraSDL/source/ui_testmode.h`, `ui_testmode.cpp`.
 
 ## Key Design Notes
 

@@ -1,11 +1,12 @@
 AltirraSDL — Display/Rendering Parity Checklist
 ================================================
-Updated: 2026-04-01
+Updated: 2026-04-03
 Reference: PORTING/DISPLAY.md vs actual display_sdl3.cpp
 
 Legend:
   [100%] Fully implemented
   [ 50%] Partially implemented
+  [ 25%] Minimally implemented (setting stored, not applied)
   [  0%] Not implemented
 
 
@@ -28,26 +29,34 @@ Legend:
 2. SCALING AND ASPECT RATIO
 ================================================================================
 
-  [100%] Destination rectangle calculation     — SetDestRectF() support
-  [ 50%] Aspect ratio correction              — Basic stretch modes via UI accessors
-                                                Missing: precise NTSC 12:7 pixel ratio
-  [ 50%] Integer scaling                      — Available via stretch mode enum
-                                                Missing: proper snap-to-integer logic
-  [100%] Filter mode switching                — Point/Bilinear via SDL_SetTextureScaleMode
+  [100%] Destination rectangle calculation     — ComputeDisplayRect() in main_sdl3.cpp.
+                                                Ported from Windows ResizeDisplay() algorithm.
+                                                SDL_RenderTexture uses computed dest rect.
+  [100%] Aspect ratio correction              — NTSC/PAL pixel aspect ratio applied via
+                                                GTIA GetPixelAspectRatio(). All 5 stretch
+                                                modes fully functional.
+  [100%] Integer scaling                      — Integral and IntegralPreserveAspectRatio
+                                                modes snap to integer multiples with
+                                                rounding-error leeway (floor(zoom * 1.0001)).
+  [100%] Filter mode switching                — Point/Bilinear via UpdateScaleMode().
+                                                ATUIGet/SetDisplayFilterMode() applied to
+                                                SDL texture scale mode each frame.
 
 
 ================================================================================
 3. FILTER MODES
 ================================================================================
 
-  [100%] Point (nearest neighbor)             — SDL_SCALEMODE_NEAREST
-  [100%] Bilinear                             — SDL_SCALEMODE_LINEAR
+  [100%] Point (nearest neighbor)             — SDL_SCALEMODE_NEAREST applied when
+                                                kATDisplayFilterMode_Point is selected
+  [100%] Bilinear                             — SDL_SCALEMODE_LINEAR (default)
   [  0%] Sharp Bilinear                       — Needs custom shader or pre-filter
   [  0%] Bicubic                              — Needs SDL_GPU compute/fragment shader
   [100%] Mode stored via ATUIGet/SetDisplayFilterMode()
 
-  Note: The UI exposes all 5 filter modes, but the SDL3 renderer only supports
-  nearest and linear natively. Sharp bilinear/bicubic would need SDL_GPU shaders.
+  Note: The UI exposes all 5 filter modes. Point and Bilinear are fully
+  supported by SDL3 renderer. Sharp bilinear and bicubic fall back to
+  bilinear (would need SDL_GPU shaders for proper implementation).
 
 
 ================================================================================
@@ -64,16 +73,21 @@ Legend:
 5. SCREEN EFFECTS (Post-Processing)
 ================================================================================
 
-  [  0%] Scanline simulation                  — Needs SDL_GPU shaders
-  [  0%] Bloom effects                        — Needs SDL_GPU shaders
+  [100%] Scanline simulation                  — Implemented in GTIA rendering pipeline
+                                                (SetScanlinesEnabled / AreScanlinesEnabled).
+                                                Scanlines rendered into frame buffer directly.
+                                                UI checkbox in System Config > Video page.
+  [  0%] Bloom effects                        — VDDSetBloomV2Settings() is empty stub
   [  0%] Screen mask (CRT simulation)         — Needs SDL_GPU shaders
-  [  0%] HDR output                           — Needs SDL3 HDR support + shaders
+  [  0%] HDR output                           — SetHDREnabled() is stub; GetHDRCapability()
+                                                returns NoMinidriverSupport
   [  0%] Distortion (barrel, etc.)            — Needs SDL_GPU shaders
-  [  0%] Custom effect path                   — ATUIManager::Get/SetCustomEffectPath
+  [  0%] Custom effect path                   — ATUIManager::Get/SetCustomEffectPath;
+                                                menu item disabled placeholder
 
-  Note: Phase 2 (current) has no screen effects. These are all advanced features
-  requiring SDL_GPU API or similar. The DISPLAY.md correctly describes this as
-  later work.
+  Note: Shader-based screen effects (bloom, masks, HDR, distortion, sharp
+  bilinear, bicubic) are tracked in PORTING/SHADERS_TODO_LIST.txt.
+  See PORTING/SHADERS.md for the OpenGL 3.3 architecture plan.
 
 
 ================================================================================
@@ -81,7 +95,7 @@ Legend:
 ================================================================================
 
   [100%] Status overlay (FPS, pause, REC)     — Rendered via Dear ImGui (ui_main.cpp)
-  [  0%] IVDDisplayCompositor integration     — Not implemented (Dear ImGui replaces it)
+  [  0%] IVDDisplayCompositor integration     — Stub (Dear ImGui replaces it)
   [100%] Drive indicators                     — Shows D1-D15 labels for mounted disks
   [100%] Cassette position indicator          — Shows C: M:SS with play/record color
   [  0%] On-screen keyboard                   — Not implemented
@@ -95,9 +109,20 @@ Legend:
 
   [100%] SDL_SetRenderVSync                    — Set to 1 (enabled) in main_sdl3.cpp
   [100%] Frame pacing via g_pacer             — SDL_DelayPrecise-based pacing object
-  [100%] NTSC ~59.92 Hz / PAL ~49.86 Hz      — Frame rate adapts to video standard
-  [  0%] Adaptive VSync                       — ATUIGetFrameRateVSyncAdaptive() stored
-                                                but not applied to actual rendering
+                                                with error accumulator matching Windows
+  [100%] NTSC / PAL / SECAM frame rates       — Exact constants from constants.h.
+                                                Hardware/Broadcast/Integral frame rate
+                                                modes fully supported via kFramePeriods table
+  [100%] Speed modifiers                      — Speed modifier, slow motion (0.5x factor),
+                                                turbo mode. Audio resampling rate adjusted
+                                                for frame rate mode and speed. Matches
+                                                Windows ATUIUpdateSpeedTiming() exactly.
+  [100%] Adaptive VSync                       — When enabled, locks frame pacing to
+                                                display refresh rate if within 2% of
+                                                target. Eliminates judder on 60Hz
+                                                displays with 59.92Hz NTSC content.
+                                                Uses SDL_GetCurrentDisplayMode() for
+                                                precise refresh rate.
 
 
 ================================================================================
@@ -118,13 +143,17 @@ SUMMARY
 Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
 Core display                     6            6      100%
-Scaling/aspect ratio             3            4       75%
+Scaling/aspect ratio             4            4      100%
 Filter modes                     3            5       60%
-Overscan                         1            3       33%
-Screen effects                   0            6        0%
-Compositor/overlay               1            5       20%
-VSync/frame timing               3            4       75%
+Overscan                         3            3      100%
+Screen effects                   1            6       17%
+Compositor/overlay               3            5       60%
+VSync/frame timing               5            5      100%
 Fullscreen                       2            4       50%
 
-Core display pipeline is solid — frames render correctly with appropriate
-scaling. Main gaps are shader-based effects and advanced display options.
+Core display pipeline is fully functional with correct aspect ratio,
+all 5 stretch modes, integer scaling, zoom/pan, and Point/Bilinear
+filter switching. Main remaining gaps:
+- Shader-based filters (Sharp Bilinear, Bicubic)
+- Shader-based screen effects (bloom, HDR, distortion)
+- Scanlines work via GTIA software rendering

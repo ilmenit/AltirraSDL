@@ -17,7 +17,7 @@ target_include_directories(ATNetwork
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/h
 )
 
-if(NOT WIN32)
+if(ALTIRRA_COMPAT_DIR)
     target_include_directories(ATNetwork BEFORE PRIVATE ${ALTIRRA_COMPAT_DIR})
 endif()
 
