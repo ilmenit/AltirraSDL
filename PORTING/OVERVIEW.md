@@ -12,9 +12,11 @@ external dependencies are introduced.
 The first round of analysis contained several errors that this document
 corrects:
 
-1. **POSIX sockets are not needed.** SDL3_net provides cross-platform TCP/UDP
-   networking with non-blocking I/O, DNS resolution, and connection management.
-   No raw POSIX or Winsock code is required for the SDL3 build.
+1. **POSIX sockets are required.** SDL3_net's higher-level API does not expose
+   `setsockopt`, `shutdown()` half-close, `getsockname`/`getpeername`, or raw
+   fd access needed by the socket worker's buffered I/O and event model. The
+   SDL3 build uses POSIX sockets directly (the exact equivalent of Winsock)
+   with `poll()` replacing `WSAEventSelect`/`WaitForMultipleObjects`.
 
 2. **IVDVideoDisplayMinidriver cannot be implemented for SDL3.** The interface
    has `HWND`, `HMONITOR`, `HDC`, and `RECT` baked into method signatures
@@ -165,7 +167,7 @@ build system file.
 |-----------|-------------|
 | `src/system/source/*_sdl3.cpp` | SDL3 implementations of system library (thread, file, filesys, fileasync, registry) |
 | `src/ATAudio/source/audiooutput_sdl3.cpp` | SDL3 audio output implementing `IATAudioOutput` |
-| `src/ATNetworkSockets/source/*_sdl3.cpp` | SDL3_net socket implementation |
+| `src/ATNetworkSockets/source/*_sdl3.cpp` | POSIX socket implementation (socket worker, bridge, DNS, VXLAN) |
 | `src/AltirraSDL/source/videowriter_sdl3.cpp` | Portable video recording (Raw/RLE/ZMBV AVI via aviwriter.cpp) |
 | `src/AltirraSDL/` | New frontend project with SDL3 main loop, Dear ImGui UI, SDL3 display, SDL3 input |
 | `CMakeLists.txt` | CMake build system for cross-platform compilation |
@@ -263,10 +265,10 @@ See [UI.md](UI.md) debugger section.
 
 ### Phase 8: Network and Remaining Features
 
-Port network device emulation using SDL3_net. Port any remaining features
-(video recording, profiler, etc.) as needed.
-
-See [NETWORK.md](NETWORK.md).
+Network socket emulation is implemented using POSIX sockets with `poll()`
+(see [NETWORK.md](NETWORK.md)). The `ATNetworkSockets` library compiles
+and links for Linux and macOS. Port any remaining features (profiler,
+etc.) as needed.
 
 **Gate:** Feature parity with Windows build.
 

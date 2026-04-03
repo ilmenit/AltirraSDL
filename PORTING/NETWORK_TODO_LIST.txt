@@ -1,6 +1,6 @@
 AltirraSDL — Network Socket Parity Checklist
 =============================================
-Updated: 2026-04-01
+Updated: 2026-04-03
 Reference: PORTING/NETWORK.md vs actual ATNetworkSockets/
 
 Legend:
@@ -10,39 +10,55 @@ Legend:
 
 
 ================================================================================
-1. SDL3_NET INTEGRATION
+1. SDL3/POSIX SOCKET INTEGRATION
 ================================================================================
 
-  [  0%] SDL3_net find_package in CMakeLists   — Not in root CMakeLists.txt
-  [  0%] nativesockets_sdl3.cpp               — Not created
-  [  0%] worker_sdl3.cpp                      — Not created
-  [  0%] socketutils_sdl3.cpp                 — Not created
-  [  0%] CMakeLists.txt for ATNetworkSockets  — No CMake build file exists
+  [100%] CMakeLists.txt for ATNetworkSockets  — Platform-selects Win32 or SDL3 sources
+  [100%] add_subdirectory in src/CMakeLists    — ATNetworkSockets added to build
+  [100%] Link in AltirraSDL/CMakeLists         — ATNetworkSockets linked, stubs removed
+  [100%] nativesockets_sdl3.cpp               — POSIX init, ATNetConnect/Listen/Bind/Lookup
+  [100%] socketworker_sdl3.cpp                — Full socket worker (poll(), POSIX sockets)
+  [100%] socketutils_posix.cpp                — ATSocketNativeAddress, ATSocketFromNativeAddress
+  [100%] lookupworker_sdl3.cpp                — DNS via getaddrinfo (UTF-8 conversion)
+  [100%] worker_sdl3.cpp                      — Bridge worker (POSIX sockets, /proc/net/route)
+  [100%] vxlantunnel_sdl3.cpp                 — VXLAN via IATDatagramSocket (clean)
+  [100%] stdafx.h guarded                     — #ifdef _WIN32 around windows.h
 
 
 ================================================================================
 2. INTERFACE IMPLEMENTATION
 ================================================================================
 
-  [  0%] IATStreamSocket (TCP)                — Not implemented for SDL3
-  [  0%] IATDatagramSocket (UDP)              — Not implemented for SDL3
-  [  0%] IATEmuNetSocketListener callbacks    — Not wired
-  [  0%] DNS resolution via NET_ResolveHostname — Not implemented
-  [  0%] VXLAN tunnel via NET_*Datagram       — Not implemented
+  [100%] IATStreamSocket (TCP)                — ATNetStreamSocket via POSIX sockets
+  [100%] IATListenSocket (TCP accept)         — ATNetListenSocket via POSIX accept()
+  [100%] IATDatagramSocket (UDP)              — ATNetDatagramSocket via POSIX recvfrom/sendto
+  [100%] IATNetLookupResult (DNS)             — ATNetLookupResult via getaddrinfo
+  [100%] IATNetSockWorker (bridge)            — ATNetSockWorker with POSIX sockets
+  [100%] IATNetSockVxlanTunnel                — ATNetSockVxlanTunnel (uses IATDatagramSocket)
+  [100%] ATSocketInit/Shutdown                — Called from main_sdl3.cpp
 
 
 ================================================================================
-3. CURRENT STATE
+3. ARCHITECTURE NOTES
 ================================================================================
 
-  The ATNetwork library (emulated Atari network stack) compiles unchanged.
-  The ATNetworkSockets bridge library has NO SDL3 implementation.
-  Network features (DrACE, modem emulation, BBS access) do not work.
+  Uses POSIX sockets (not SDL3_net) because the socket worker requires:
+  - Raw fd access for poll(), getsockname(), getpeername()
+  - setsockopt for TCP_NODELAY, SO_OOBINLINE, SO_LINGER, IPV6_V6ONLY
+  - shutdown() for half-close (SHUT_WR, SHUT_RD)
+  - Non-blocking I/O via fcntl(O_NONBLOCK)
+  - poll() for multiplexed event notification
 
-  The emulator compiles and runs without network support via stubs in
-  stubs/device_stubs.cpp that satisfy link-time symbol requirements.
+  SDL3_net's higher-level API does not expose these socket options.
+  POSIX sockets are the direct equivalent of the Winsock API used on Windows.
 
-  NETWORK.md correctly identifies this as Phase 8 (lowest priority).
+  Key Winsock → POSIX translations:
+  - SOCKET → int, INVALID_SOCKET → -1
+  - WSAEventSelect + WaitForMultipleObjects → poll() + self-pipe
+  - WSAEnumNetworkEvents → poll() revents flags
+  - closesocket → close, SD_SEND → SHUT_WR
+  - WSAGetLastError → errno, WSAEWOULDBLOCK → EAGAIN/EWOULDBLOCK
+  - GetAdaptersInfo (DNS gateway) → /proc/net/route parsing
 
 
 ================================================================================
@@ -51,8 +67,7 @@ SUMMARY
 
 Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
-SDL3_net integration             0            5        0%
-Socket interfaces                0            5        0%
+Build system integration        10           10      100%
+Socket interfaces                7            7      100%
 
-Network is entirely unimplemented. This is expected — it's a niche feature
-(modem/BBS emulation) and the emulator is fully functional without it.
+Network socket emulation is fully implemented for POSIX platforms.

@@ -25,6 +25,7 @@
 #include "input_sdl3.h"
 #include "options.h"
 #include "ui_main.h"
+#include "ui_debugger.h"
 
 #include "simulator.h"
 #include "uikeyboard.h"
@@ -40,7 +41,7 @@
 
 ATSimulator g_sim;
 static VDVideoDisplaySDL3 *g_pDisplay = nullptr;
-static SDL_Window   *g_pWindow   = nullptr;
+SDL_Window   *g_pWindow   = nullptr;  // non-static: accessed by console_stubs.cpp for fullscreen exit
 static SDL_Renderer *g_pRenderer = nullptr;
 static IATJoystickManager *g_pJoystickMgr = nullptr;
 static bool g_running = true;
@@ -197,6 +198,24 @@ static void HandleEvents() {
 				break;
 			}
 			if (!ATUIWantCaptureKeyboard()) {
+				// Debugger shortcuts take precedence when debugger is active
+				if (ATUIDebuggerIsOpen()) {
+					bool handled = true;
+					if (ev.key.key == SDLK_F5)
+						ATUIDebuggerRunStop();
+					else if (ev.key.key == SDLK_F10)
+						ATUIDebuggerStepOver();
+					else if (ev.key.key == SDLK_F11 && (ev.key.mod & SDL_KMOD_SHIFT))
+						ATUIDebuggerStepOut();
+					else if (ev.key.key == SDLK_F11)
+						ATUIDebuggerStepInto();
+					else
+						handled = false;
+
+					if (handled)
+						break;
+				}
+
 				if (ev.key.key == SDLK_F5 && (ev.key.mod & SDL_KMOD_SHIFT)) {
 					g_sim.ColdReset();
 					g_sim.Resume();
@@ -537,8 +556,9 @@ int main(int argc, char *argv[]) {
 	extern void ATRegistryLoadFromDisk();
 	ATRegistryLoadFromDisk();
 
-	const int kScale = 2;
-	g_pWindow = SDL_CreateWindow("AltirraSDL", 384*kScale, 240*kScale, SDL_WINDOW_RESIZABLE);
+	const int kDefaultWidth = 1280;
+	const int kDefaultHeight = 720;
+	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
 	if (!g_pWindow) { fprintf(stderr, "CreateWindow: %s\n", SDL_GetError()); SDL_Quit(); return 1; }
 
 	// Restore saved window size, position, and fullscreen state
@@ -559,7 +579,7 @@ int main(int argc, char *argv[]) {
 	// Give the mouse capture system access to the window
 	ATUISetMouseCaptureWindow(g_pWindow);
 
-	g_pDisplay = new VDVideoDisplaySDL3(g_pRenderer, 384*kScale, 240*kScale);
+	g_pDisplay = new VDVideoDisplaySDL3(g_pRenderer, kDefaultWidth, kDefaultHeight);
 
 	fprintf(stderr, "[AltirraSDL] Initializing simulator...\n");
 	g_sim.Init();
@@ -579,9 +599,18 @@ int main(int argc, char *argv[]) {
 
 	ATInputSDL3_Init(&g_sim.GetPokey(), g_sim.GetInputManager(), &g_sim.GetGTIA());
 
+	// Register device extended commands (copy/paste, explore disk, mount VHD, etc.)
+	extern void ATRegisterDeviceXCmds(ATDeviceManager& dm);
+	ATRegisterDeviceXCmds(*g_sim.GetDeviceManager());
+
 	// Load emulator settings using the same code path as Windows.
 	// On first run (no config file), VDRegistryKey returns defaults for all
 	// keys, which matches a fresh Windows install.
+	// Initialize network sockets (POSIX sockets, lookup worker, socket worker).
+	// Must be called before ATLoadSettings as some device init may need sockets.
+	extern bool ATSocketInit();
+	ATSocketInit();
+
 	ATLoadSettings((ATSettingsCategory)(
 		kATSettingsCategory_Hardware
 		| kATSettingsCategory_Firmware
@@ -602,6 +631,14 @@ int main(int argc, char *argv[]) {
 	// Create the native audio device now that settings have been loaded
 	// (SetApi, SetLatency, etc. may have been called during ATLoadSettings).
 	g_sim.GetAudioOutput()->InitNativeAudio();
+
+	// Initialize debugger engine (breakpoint manager, event callbacks, debug targets).
+	// Must be called after g_sim.Init() and ATLoadSettings() — the settings load
+	// may create devices whose debug targets the debugger needs to enumerate.
+	{
+		extern void ATInitDebugger();
+		ATInitDebugger();
+	}
 
 	if (argc > 1) {
 		// Push as deferred boot action so it goes through the full retry loop
@@ -643,6 +680,9 @@ int main(int argc, char *argv[]) {
 
 		// Process deferred file dialog results on main thread
 		ATUIPollDeferredActions();
+
+		// Tick the debugger engine (process queued commands)
+		ATUIDebuggerTick();
 
 		// Pause emulation when window loses focus (if enabled).
 		const bool pauseInactive = ATUIGetPauseWhenInactive() && !g_winActive;
@@ -733,7 +773,20 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "[AltirraSDL] Warning: failed to save settings on exit\n");
 	}
 
+	// Shut down debugger before simulator (matches Windows cleanup order)
+	extern void ATShutdownDebugger();
+	ATShutdownDebugger();
+	ATUIDebuggerShutdown();
+
+	// Shut down network sockets before simulator shutdown
+	extern void ATSocketPreShutdown();
+	ATSocketPreShutdown();
+
 	g_sim.Shutdown();
+
+	// Final socket cleanup after simulator is gone
+	extern void ATSocketShutdown();
+	ATSocketShutdown();
 
 	ATUIShutdown();
 

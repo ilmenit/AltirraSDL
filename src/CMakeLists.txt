@@ -9,6 +9,7 @@ add_subdirectory(ATDevices)
 add_subdirectory(ATIO)
 add_subdirectory(ATAudio)
 add_subdirectory(ATNetwork)
+add_subdirectory(ATNetworkSockets)
 add_subdirectory(ATDebugger)
 add_subdirectory(ATVM)
 

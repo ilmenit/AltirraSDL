@@ -108,6 +108,25 @@ void ATUIRenderCartridgeMapper(ATUIState &state);
 extern bool g_showFirmwareManager;
 bool ATUIFirmwareManagerHandleDrop(const char *utf8path);
 
+// Menu bar (ui_menus.cpp)
+void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, SDL_Renderer *renderer, ATUIState &state);
+void ATUIPushDeferred2(ATDeferredActionType type, const char *utf8path1, const char *utf8path2);
+bool ATUIHasQuickSaveState();
+
+// Recording (ui_recording.cpp)
+bool ATUIIsRecording();
+void ATUIStopRecording();
+void ATUIRenderVideoRecordingDialog(SDL_Window *window);
+void ATUIRenderAudioOptionsDialog(ATUIState &state);
+bool ATUIIsRecordingPaused();
+void ATUIToggleRecordingPause();
+bool ATUIIsVideoRecording();
+void ATUIShowVideoRecordingDialog();
+
+// Frame capture (ui_main.cpp)
+extern bool g_copyFrameRequested;
+void ATUISaveFrameCallback(void *, const char * const *filelist, int);
+
 // Dialog render functions (each in its own .cpp file)
 void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state);
 void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *window);

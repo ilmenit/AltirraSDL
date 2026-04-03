@@ -70,9 +70,8 @@ elseif(UNIX)
     add_compile_definitions(VD_OS_LINUX=1)
 endif()
 
-# Find SDL3
+# Find SDL3 (SDL3_net is NOT used; ATNetworkSockets uses POSIX sockets)
 find_package(SDL3 REQUIRED)
-find_package(SDL3_net REQUIRED)
 
 # Shared include paths
 set(ALTIRRA_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/src/h)
@@ -188,7 +187,6 @@ target_link_libraries(AltirraSDL PRIVATE
 
     # External
     SDL3::SDL3
-    SDL3_net::SDL3_net
     imgui
 )
 
@@ -264,7 +262,7 @@ use `#if VD_OS_WINDOWS` only when a single file must handle both platforms
 | system/error | `error_win32.cpp` | `error_sdl3.cpp` |
 | system/debug | `debug.cpp` | `debug_sdl3.cpp` |
 | ATAudio output | `audiooutput.cpp`, `audiooutwaveout.cpp`, etc. | `audiooutput_sdl3.cpp` |
-| ATNetworkSockets | `worker.cpp`, etc. | *(not yet implemented — Phase 8)* |
+| ATNetworkSockets | `worker.cpp`, `socketworker.cpp`, etc. | `worker_sdl3.cpp`, `socketworker_sdl3.cpp`, etc. (POSIX sockets) |
 | ATCore timer | `timerserviceimpl_win32.h` | `timerserviceimpl_sdl3.h` |
 | Frontend | `Altirra` project (Win32) | `AltirraSDL` project |
 
@@ -368,17 +366,18 @@ Build dependencies on Linux:
 
 ```bash
 # Debian/Ubuntu
-apt install cmake build-essential libsdl3-dev libsdl3-net-dev
+apt install cmake build-essential libsdl3-dev
 
 # Fedora
-dnf install cmake gcc-c++ SDL3-devel SDL3_net-devel
+dnf install cmake gcc-c++ SDL3-devel
 ```
 
 On macOS:
 
 ```bash
-brew install cmake sdl3 sdl3_net
+brew install cmake sdl3
 ```
 
 Dear ImGui is vendored in the repository (source-only, no system package
-needed).
+needed). SDL3_net is **not** required — `ATNetworkSockets` uses POSIX
+sockets directly.

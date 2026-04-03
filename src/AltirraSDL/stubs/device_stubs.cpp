@@ -1,6 +1,6 @@
 //	Altirra SDL3 frontend - Device and hardware stubs
-//	Stub implementations for Win32-only hardware devices, network,
-//	and IDE/VHD disk images. These are not needed for Phase 5 first-pixels.
+//	Stub implementations for Win32-only hardware devices and
+//	IDE/VHD disk images.
 
 #include <stdafx.h>
 #include <vd2/system/vdtypes.h>
@@ -12,9 +12,6 @@
 #include <at/atcore/device.h>
 #include "devicemanager.h"
 #include <at/atcore/enumparseimpl.h>
-#include <at/atnetworksockets/nativesockets.h>
-#include <at/atnetworksockets/vxlantunnel.h>
-#include <at/atnetworksockets/worker.h>
 #include "cpuheatmap.h"
 #include "cs8900a.h"
 #include "directorywatcher.h"
@@ -23,18 +20,7 @@
 #include "modem.h"
 #include "oshelper.h"
 
-// ============================================================
-// ATCPUHeatMap stubs (cpuheatmap.cpp excluded)
-// ============================================================
-
-ATCPUHeatMap::ATCPUHeatMap() = default;
-ATCPUHeatMap::~ATCPUHeatMap() = default;
-void ATCPUHeatMap::Init(ATSimulatorEventManager *) {}
-void ATCPUHeatMap::SetEarlyState(bool) {}
-void ATCPUHeatMap::PresetMemoryRange(uint32, uint32) {}
-void ATCPUHeatMap::MarkMemoryRangeHardware(uint32, uint32) {}
-void ATCPUHeatMap::ResetMemoryRange(uint32, uint32) {}
-void ATCPUHeatMap::ProcessInsn(const ATCPUEmulator&, uint8, uint16, uint16) {}
+// ATCPUHeatMap — cpuheatmap.cpp is now compiled (no Win32 deps).
 
 // ============================================================
 // ATCS8900AEmulator stubs (cs8900a.cpp excluded)
@@ -139,20 +125,6 @@ extern const ATDeviceDefinition g_ATDeviceDefIDEVHDImage = { "idevhd",   nullptr
 extern const ATDeviceDefinition g_ATDeviceDefMidiMate    = { "midimate", nullptr, L"MidiMate",      ATCreateDeviceNullStub };
 extern const ATDeviceDefinition g_ATDeviceDefPipeSerial  = { "pipeser",  nullptr, L"Pipe Serial",   ATCreateDeviceNullStub };
 
-// ============================================================
-// Network socket stubs (ATNetworkSockets not yet ported)
-// ============================================================
-
-vdrefptr<IATStreamSocket> ATNetConnect(const wchar_t*, const wchar_t*, bool) { return {}; }
-vdrefptr<IATStreamSocket> ATNetConnect(const ATSocketAddress&, bool) { return {}; }
-vdrefptr<IATListenSocket> ATNetListen(const ATSocketAddress&, bool) { return {}; }
-vdrefptr<IATListenSocket> ATNetListen(ATSocketAddressType, uint16, bool) { return {}; }
-
-void ATCreateNetSockVxlanTunnel(uint32, uint16, uint16, IATEthernetSegment*, uint32,
-	IATAsyncDispatcher*, IATNetSockVxlanTunnel** pp) { if (pp) *pp = nullptr; }
-
-void ATCreateNetSockWorker(IATEmuNetUdpStack*, IATEmuNetTcpStack*, bool,
-	uint32, uint16, IATNetSockWorker** pp) { if (pp) *pp = nullptr; }
 
 // ============================================================
 // ATGetEnumLookupTable<ATProcessEfficiencyMode> stub

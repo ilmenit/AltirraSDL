@@ -29,12 +29,10 @@ void ATCopyTextToClipboard(void *hwnd, const char *s) {}
 void ATCopyTextToClipboard(void *hwnd, const wchar_t *s) {}
 void ATLaunchURL(const wchar_t *url) {}
 
-// ============================================================
-// debugger.h stubs — debugger.cpp excluded
-// ============================================================
+// debugger.h — debugger.cpp is now compiled; ATGetDebugger()/ATGetDebuggerSymbolLookup() are real.
 
-IATDebugger *ATGetDebugger() { return nullptr; }
-IATDebuggerSymbolLookup *ATGetDebuggerSymbolLookup() { return nullptr; }
+// ATUISaveFrame — defined in main.cpp (Windows), used by debuggerautotest.cpp
+bool ATUISaveFrame(const wchar_t *path) { return false; }
 
 // settings.h — settings.cpp is now compiled; register/unregister are real.
 

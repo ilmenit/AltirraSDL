@@ -19,6 +19,9 @@
 // Embedded PCM audio samples for stock sounds (disk, speaker, printer, etc.)
 #include "../romdata/audio_samples.h"
 
+// Embedded ROM set readme (romset.html) for Export ROM Set
+#include "../romdata/romset_readme.h"
+
 struct EmbeddedROM {
 	int resourceId;
 	const unsigned char *data;
@@ -97,6 +100,13 @@ bool ATLoadKernelResourceLZPacked(int, vdfastvector<uint8>&) {
 }
 
 bool ATLoadMiscResource(int id, vdfastvector<uint8>& buf) {
+	// ROM set readme
+	if (id == IDR_ROMSETREADME) {
+		buf.resize(romset_readme_len);
+		memcpy(buf.data(), romset_readme, romset_readme_len);
+		return true;
+	}
+
 	for (const auto& sample : kEmbeddedAudioSamples) {
 		if (sample.resourceId == id) {
 			buf.resize(sample.size);

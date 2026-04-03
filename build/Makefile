@@ -260,6 +260,19 @@ ATNetwork/fast:
 .PHONY : ATNetwork/fast
 
 #=============================================================================
+# Target rules for targets named ATNetworkSockets
+
+# Build rule for target.
+ATNetworkSockets: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ATNetworkSockets
+.PHONY : ATNetworkSockets
+
+# fast build rule for target.
+ATNetworkSockets/fast:
+	$(MAKE) $(MAKESILENT) -f src/ATNetworkSockets/CMakeFiles/ATNetworkSockets.dir/build.make src/ATNetworkSockets/CMakeFiles/ATNetworkSockets.dir/build
+.PHONY : ATNetworkSockets/fast
+
+#=============================================================================
 # Target rules for targets named ATDebugger
 
 # Build rule for target.
@@ -482,6 +495,7 @@ help:
 	@echo "... ATEmulation"
 	@echo "... ATIO"
 	@echo "... ATNetwork"
+	@echo "... ATNetworkSockets"
 	@echo "... ATVM"
 	@echo "... AltirraSDL"
 	@echo "... Kasumi"

@@ -154,6 +154,30 @@ __/ATAudio/source/audiooutput_sdl3.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATAudio/source/audiooutput_sdl3.cpp.s
 .PHONY : __/ATAudio/source/audiooutput_sdl3.cpp.s
 
+__/ATUI/source/uicommandmanager.o: __/ATUI/source/uicommandmanager.cpp.o
+.PHONY : __/ATUI/source/uicommandmanager.o
+
+# target to build an object file
+__/ATUI/source/uicommandmanager.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.o
+.PHONY : __/ATUI/source/uicommandmanager.cpp.o
+
+__/ATUI/source/uicommandmanager.i: __/ATUI/source/uicommandmanager.cpp.i
+.PHONY : __/ATUI/source/uicommandmanager.i
+
+# target to preprocess a source file
+__/ATUI/source/uicommandmanager.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.i
+.PHONY : __/ATUI/source/uicommandmanager.cpp.i
+
+__/ATUI/source/uicommandmanager.s: __/ATUI/source/uicommandmanager.cpp.s
+.PHONY : __/ATUI/source/uicommandmanager.s
+
+# target to generate assembly for a file
+__/ATUI/source/uicommandmanager.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/ATUI/source/uicommandmanager.cpp.s
+.PHONY : __/ATUI/source/uicommandmanager.cpp.s
+
 __/Altirra/source/1025full.o: __/Altirra/source/1025full.cpp.o
 .PHONY : __/Altirra/source/1025full.o
 
@@ -1330,6 +1354,30 @@ __/Altirra/source/cpu65c816.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpu65c816.cpp.s
 .PHONY : __/Altirra/source/cpu65c816.cpp.s
 
+__/Altirra/source/cpuheatmap.o: __/Altirra/source/cpuheatmap.cpp.o
+.PHONY : __/Altirra/source/cpuheatmap.o
+
+# target to build an object file
+__/Altirra/source/cpuheatmap.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.o
+.PHONY : __/Altirra/source/cpuheatmap.cpp.o
+
+__/Altirra/source/cpuheatmap.i: __/Altirra/source/cpuheatmap.cpp.i
+.PHONY : __/Altirra/source/cpuheatmap.i
+
+# target to preprocess a source file
+__/Altirra/source/cpuheatmap.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.i
+.PHONY : __/Altirra/source/cpuheatmap.cpp.i
+
+__/Altirra/source/cpuheatmap.s: __/Altirra/source/cpuheatmap.cpp.s
+.PHONY : __/Altirra/source/cpuheatmap.s
+
+# target to generate assembly for a file
+__/Altirra/source/cpuheatmap.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/cpuheatmap.cpp.s
+.PHONY : __/Altirra/source/cpuheatmap.cpp.s
+
 __/Altirra/source/cpuhookmanager.o: __/Altirra/source/cpuhookmanager.cpp.o
 .PHONY : __/Altirra/source/cpuhookmanager.o
 
@@ -1401,6 +1449,54 @@ __/Altirra/source/debugdisplay.s: __/Altirra/source/debugdisplay.cpp.s
 __/Altirra/source/debugdisplay.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugdisplay.cpp.s
 .PHONY : __/Altirra/source/debugdisplay.cpp.s
+
+__/Altirra/source/debugger.o: __/Altirra/source/debugger.cpp.o
+.PHONY : __/Altirra/source/debugger.o
+
+# target to build an object file
+__/Altirra/source/debugger.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.o
+.PHONY : __/Altirra/source/debugger.cpp.o
+
+__/Altirra/source/debugger.i: __/Altirra/source/debugger.cpp.i
+.PHONY : __/Altirra/source/debugger.i
+
+# target to preprocess a source file
+__/Altirra/source/debugger.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.i
+.PHONY : __/Altirra/source/debugger.cpp.i
+
+__/Altirra/source/debugger.s: __/Altirra/source/debugger.cpp.s
+.PHONY : __/Altirra/source/debugger.s
+
+# target to generate assembly for a file
+__/Altirra/source/debugger.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debugger.cpp.s
+.PHONY : __/Altirra/source/debugger.cpp.s
+
+__/Altirra/source/debuggerautotest.o: __/Altirra/source/debuggerautotest.cpp.o
+.PHONY : __/Altirra/source/debuggerautotest.o
+
+# target to build an object file
+__/Altirra/source/debuggerautotest.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.o
+.PHONY : __/Altirra/source/debuggerautotest.cpp.o
+
+__/Altirra/source/debuggerautotest.i: __/Altirra/source/debuggerautotest.cpp.i
+.PHONY : __/Altirra/source/debuggerautotest.i
+
+# target to preprocess a source file
+__/Altirra/source/debuggerautotest.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.i
+.PHONY : __/Altirra/source/debuggerautotest.cpp.i
+
+__/Altirra/source/debuggerautotest.s: __/Altirra/source/debuggerautotest.cpp.s
+.PHONY : __/Altirra/source/debuggerautotest.s
+
+# target to generate assembly for a file
+__/Altirra/source/debuggerautotest.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/__/Altirra/source/debuggerautotest.cpp.s
+.PHONY : __/Altirra/source/debuggerautotest.cpp.s
 
 __/Altirra/source/debuggerexp.o: __/Altirra/source/debuggerexp.cpp.o
 .PHONY : __/Altirra/source/debuggerexp.o
@@ -4810,6 +4906,78 @@ source/ui_cassette.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_cassette.cpp.s
 .PHONY : source/ui_cassette.cpp.s
 
+source/ui_dbg_console.o: source/ui_dbg_console.cpp.o
+.PHONY : source/ui_dbg_console.o
+
+# target to build an object file
+source/ui_dbg_console.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_console.cpp.o
+.PHONY : source/ui_dbg_console.cpp.o
+
+source/ui_dbg_console.i: source/ui_dbg_console.cpp.i
+.PHONY : source/ui_dbg_console.i
+
+# target to preprocess a source file
+source/ui_dbg_console.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_console.cpp.i
+.PHONY : source/ui_dbg_console.cpp.i
+
+source/ui_dbg_console.s: source/ui_dbg_console.cpp.s
+.PHONY : source/ui_dbg_console.s
+
+# target to generate assembly for a file
+source/ui_dbg_console.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_console.cpp.s
+.PHONY : source/ui_dbg_console.cpp.s
+
+source/ui_dbg_registers.o: source/ui_dbg_registers.cpp.o
+.PHONY : source/ui_dbg_registers.o
+
+# target to build an object file
+source/ui_dbg_registers.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.o
+.PHONY : source/ui_dbg_registers.cpp.o
+
+source/ui_dbg_registers.i: source/ui_dbg_registers.cpp.i
+.PHONY : source/ui_dbg_registers.i
+
+# target to preprocess a source file
+source/ui_dbg_registers.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.i
+.PHONY : source/ui_dbg_registers.cpp.i
+
+source/ui_dbg_registers.s: source/ui_dbg_registers.cpp.s
+.PHONY : source/ui_dbg_registers.s
+
+# target to generate assembly for a file
+source/ui_dbg_registers.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_registers.cpp.s
+.PHONY : source/ui_dbg_registers.cpp.s
+
+source/ui_debugger.o: source/ui_debugger.cpp.o
+.PHONY : source/ui_debugger.o
+
+# target to build an object file
+source/ui_debugger.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_debugger.cpp.o
+.PHONY : source/ui_debugger.cpp.o
+
+source/ui_debugger.i: source/ui_debugger.cpp.i
+.PHONY : source/ui_debugger.i
+
+# target to preprocess a source file
+source/ui_debugger.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_debugger.cpp.i
+.PHONY : source/ui_debugger.cpp.i
+
+source/ui_debugger.s: source/ui_debugger.cpp.s
+.PHONY : source/ui_debugger.s
+
+# target to generate assembly for a file
+source/ui_debugger.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_debugger.cpp.s
+.PHONY : source/ui_debugger.cpp.s
+
 source/ui_devconfig.o: source/ui_devconfig.cpp.o
 .PHONY : source/ui_devconfig.o
 
@@ -4833,6 +5001,30 @@ source/ui_devconfig.s: source/ui_devconfig.cpp.s
 source/ui_devconfig.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_devconfig.cpp.s
 .PHONY : source/ui_devconfig.cpp.s
+
+source/ui_devconfig_devices.o: source/ui_devconfig_devices.cpp.o
+.PHONY : source/ui_devconfig_devices.o
+
+# target to build an object file
+source/ui_devconfig_devices.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_devconfig_devices.cpp.o
+.PHONY : source/ui_devconfig_devices.cpp.o
+
+source/ui_devconfig_devices.i: source/ui_devconfig_devices.cpp.i
+.PHONY : source/ui_devconfig_devices.i
+
+# target to preprocess a source file
+source/ui_devconfig_devices.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_devconfig_devices.cpp.i
+.PHONY : source/ui_devconfig_devices.cpp.i
+
+source/ui_devconfig_devices.s: source/ui_devconfig_devices.cpp.s
+.PHONY : source/ui_devconfig_devices.s
+
+# target to generate assembly for a file
+source/ui_devconfig_devices.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_devconfig_devices.cpp.s
+.PHONY : source/ui_devconfig_devices.cpp.s
 
 source/ui_disk.o: source/ui_disk.cpp.o
 .PHONY : source/ui_disk.o
@@ -4882,6 +5074,30 @@ source/ui_display.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_display.cpp.s
 .PHONY : source/ui_display.cpp.s
 
+source/ui_firmware.o: source/ui_firmware.cpp.o
+.PHONY : source/ui_firmware.o
+
+# target to build an object file
+source/ui_firmware.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_firmware.cpp.o
+.PHONY : source/ui_firmware.cpp.o
+
+source/ui_firmware.i: source/ui_firmware.cpp.i
+.PHONY : source/ui_firmware.i
+
+# target to preprocess a source file
+source/ui_firmware.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_firmware.cpp.i
+.PHONY : source/ui_firmware.cpp.i
+
+source/ui_firmware.s: source/ui_firmware.cpp.s
+.PHONY : source/ui_firmware.s
+
+# target to generate assembly for a file
+source/ui_firmware.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_firmware.cpp.s
+.PHONY : source/ui_firmware.cpp.s
+
 source/ui_input.o: source/ui_input.cpp.o
 .PHONY : source/ui_input.o
 
@@ -4930,6 +5146,30 @@ source/ui_main.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_main.cpp.s
 .PHONY : source/ui_main.cpp.s
 
+source/ui_menus.o: source/ui_menus.cpp.o
+.PHONY : source/ui_menus.o
+
+# target to build an object file
+source/ui_menus.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_menus.cpp.o
+.PHONY : source/ui_menus.cpp.o
+
+source/ui_menus.i: source/ui_menus.cpp.i
+.PHONY : source/ui_menus.i
+
+# target to preprocess a source file
+source/ui_menus.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_menus.cpp.i
+.PHONY : source/ui_menus.cpp.i
+
+source/ui_menus.s: source/ui_menus.cpp.s
+.PHONY : source/ui_menus.s
+
+# target to generate assembly for a file
+source/ui_menus.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_menus.cpp.s
+.PHONY : source/ui_menus.cpp.s
+
 source/ui_profiles.o: source/ui_profiles.cpp.o
 .PHONY : source/ui_profiles.o
 
@@ -4953,6 +5193,30 @@ source/ui_profiles.s: source/ui_profiles.cpp.s
 source/ui_profiles.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_profiles.cpp.s
 .PHONY : source/ui_profiles.cpp.s
+
+source/ui_recording.o: source/ui_recording.cpp.o
+.PHONY : source/ui_recording.o
+
+# target to build an object file
+source/ui_recording.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_recording.cpp.o
+.PHONY : source/ui_recording.cpp.o
+
+source/ui_recording.i: source/ui_recording.cpp.i
+.PHONY : source/ui_recording.i
+
+# target to preprocess a source file
+source/ui_recording.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_recording.cpp.i
+.PHONY : source/ui_recording.cpp.i
+
+source/ui_recording.s: source/ui_recording.cpp.s
+.PHONY : source/ui_recording.s
+
+# target to generate assembly for a file
+source/ui_recording.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_recording.cpp.s
+.PHONY : source/ui_recording.cpp.s
 
 source/ui_system.o: source/ui_system.cpp.o
 .PHONY : source/ui_system.o
@@ -5182,6 +5446,9 @@ help:
 	@echo "... __/ATAudio/source/audiooutput_sdl3.o"
 	@echo "... __/ATAudio/source/audiooutput_sdl3.i"
 	@echo "... __/ATAudio/source/audiooutput_sdl3.s"
+	@echo "... __/ATUI/source/uicommandmanager.o"
+	@echo "... __/ATUI/source/uicommandmanager.i"
+	@echo "... __/ATUI/source/uicommandmanager.s"
 	@echo "... __/Altirra/source/1025full.o"
 	@echo "... __/Altirra/source/1025full.i"
 	@echo "... __/Altirra/source/1025full.s"
@@ -5329,6 +5596,9 @@ help:
 	@echo "... __/Altirra/source/cpu65c816.o"
 	@echo "... __/Altirra/source/cpu65c816.i"
 	@echo "... __/Altirra/source/cpu65c816.s"
+	@echo "... __/Altirra/source/cpuheatmap.o"
+	@echo "... __/Altirra/source/cpuheatmap.i"
+	@echo "... __/Altirra/source/cpuheatmap.s"
 	@echo "... __/Altirra/source/cpuhookmanager.o"
 	@echo "... __/Altirra/source/cpuhookmanager.i"
 	@echo "... __/Altirra/source/cpuhookmanager.s"
@@ -5338,6 +5608,12 @@ help:
 	@echo "... __/Altirra/source/debugdisplay.o"
 	@echo "... __/Altirra/source/debugdisplay.i"
 	@echo "... __/Altirra/source/debugdisplay.s"
+	@echo "... __/Altirra/source/debugger.o"
+	@echo "... __/Altirra/source/debugger.i"
+	@echo "... __/Altirra/source/debugger.s"
+	@echo "... __/Altirra/source/debuggerautotest.o"
+	@echo "... __/Altirra/source/debuggerautotest.i"
+	@echo "... __/Altirra/source/debuggerautotest.s"
 	@echo "... __/Altirra/source/debuggerexp.o"
 	@echo "... __/Altirra/source/debuggerexp.i"
 	@echo "... __/Altirra/source/debuggerexp.s"
@@ -5764,24 +6040,45 @@ help:
 	@echo "... source/ui_cassette.o"
 	@echo "... source/ui_cassette.i"
 	@echo "... source/ui_cassette.s"
+	@echo "... source/ui_dbg_console.o"
+	@echo "... source/ui_dbg_console.i"
+	@echo "... source/ui_dbg_console.s"
+	@echo "... source/ui_dbg_registers.o"
+	@echo "... source/ui_dbg_registers.i"
+	@echo "... source/ui_dbg_registers.s"
+	@echo "... source/ui_debugger.o"
+	@echo "... source/ui_debugger.i"
+	@echo "... source/ui_debugger.s"
 	@echo "... source/ui_devconfig.o"
 	@echo "... source/ui_devconfig.i"
 	@echo "... source/ui_devconfig.s"
+	@echo "... source/ui_devconfig_devices.o"
+	@echo "... source/ui_devconfig_devices.i"
+	@echo "... source/ui_devconfig_devices.s"
 	@echo "... source/ui_disk.o"
 	@echo "... source/ui_disk.i"
 	@echo "... source/ui_disk.s"
 	@echo "... source/ui_display.o"
 	@echo "... source/ui_display.i"
 	@echo "... source/ui_display.s"
+	@echo "... source/ui_firmware.o"
+	@echo "... source/ui_firmware.i"
+	@echo "... source/ui_firmware.s"
 	@echo "... source/ui_input.o"
 	@echo "... source/ui_input.i"
 	@echo "... source/ui_input.s"
 	@echo "... source/ui_main.o"
 	@echo "... source/ui_main.i"
 	@echo "... source/ui_main.s"
+	@echo "... source/ui_menus.o"
+	@echo "... source/ui_menus.i"
+	@echo "... source/ui_menus.s"
 	@echo "... source/ui_profiles.o"
 	@echo "... source/ui_profiles.i"
 	@echo "... source/ui_profiles.s"
+	@echo "... source/ui_recording.o"
+	@echo "... source/ui_recording.i"
+	@echo "... source/ui_recording.s"
 	@echo "... source/ui_system.o"
 	@echo "... source/ui_system.i"
 	@echo "... source/ui_system.s"

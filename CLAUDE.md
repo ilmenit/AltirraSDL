@@ -38,7 +38,7 @@ See `PORTING/` for the full cross-platform implementation plan.
 
 ### Cross-Platform (CMake — in progress)
 
-**Requirements:** CMake 3.24+, C++17 compiler (GCC or Clang), SDL3, SDL3_net, Dear ImGui (vendored).
+**Requirements:** CMake 3.24+, C++17 compiler (GCC or Clang), SDL3, Dear ImGui (vendored).
 
 ```bash
 mkdir build && cd build
@@ -73,7 +73,7 @@ The project is organized as ~32 Visual Studio projects under `src/`, each a dist
 
 ### Platform-Dependent (Win32 on Windows, SDL3 replacements on other platforms)
 - **ATAudio** — Audio synthesis (cross-platform) + output backends (platform-specific)
-- **ATNetworkSockets** — OS socket adapter (Winsock on Windows, SDL3_net on others)
+- **ATNetworkSockets** — OS socket adapter (Winsock on Windows, POSIX sockets on others)
 - **system** — System abstraction layer (threading, file I/O, filesystem, config)
 
 ### Windows-Only (not compiled for SDL3 build)
@@ -117,15 +117,15 @@ Detailed documentation lives in `PORTING/`:
 | `AUDIO.md` | SDL3 audio output via IATAudioOutput |
 | `INPUT.md` | SDL3 event to ATInputCode translation |
 | `UI.md` | Dear ImGui replacing ATNativeUI and ATUI |
-| `NETWORK.md` | SDL3_net replacing Winsock in ATNetworkSockets |
+| `NETWORK.md` | POSIX sockets replacing Winsock in ATNetworkSockets |
 | `MAIN_LOOP.md` | SDL3 main loop replacing Win32 message pump |
 
 **Key design principles:**
 - Minimal changes to existing files (`#ifdef` guards only where platform types appear in headers)
 - New `_sdl3.cpp` files alongside existing Win32 `.cpp` files; build system selects which to compile
 - The Windows `.sln` build is always preserved and must never break
-- SDL3 is the sole platform layer for non-Windows (no raw POSIX, ALSA, etc.)
-- Only two external dependencies: SDL3/SDL3_net and Dear ImGui
+- SDL3 is the primary platform layer for non-Windows (exception: ATNetworkSockets uses POSIX sockets because SDL3_net lacks the low-level socket access required)
+- Only two external dependencies: SDL3 and Dear ImGui
 - No stubs, no placeholders. When implementing, do full implementation of functionality, aim to make implementation complete and error free.
 - We need full equivalent implementaiton to Windows Altirra. Don't ommit anything.
 - After implementation, look for errors, bugs, mistakes. Fix if spotted. If some were identified, repeat, because maybe we didn't cover everything properly.

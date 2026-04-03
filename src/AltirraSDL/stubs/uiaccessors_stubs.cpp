@@ -520,23 +520,11 @@ void ATSetVideoStandard(ATVideoStandard vs) {
 // ATUIGetManager — return our stub global
 ATUIManager& ATUIGetManager() { return g_ATUIManager; }
 
-// =========================================================================
-// Enum tables from debugger.cpp (excluded from SDL3 build)
-// =========================================================================
+// Enum tables for ATDebuggerSymbolLoadMode and ATDebuggerScriptAutoLoadMode
+// are now provided by debugger.cpp (no longer excluded from SDL3 build).
 
-#include <at/atcore/enumparseimpl.h>
-#include "debugger.h"
-
-AT_DEFINE_ENUM_TABLE_BEGIN(ATDebuggerSymbolLoadMode)
-	{ ATDebuggerSymbolLoadMode::Default, "default" },
-	{ ATDebuggerSymbolLoadMode::Disabled, "disabled" },
-	{ ATDebuggerSymbolLoadMode::Deferred, "deferred" },
-	{ ATDebuggerSymbolLoadMode::Enabled, "enabled" },
-AT_DEFINE_ENUM_TABLE_END(ATDebuggerSymbolLoadMode, ATDebuggerSymbolLoadMode::Default)
-
-AT_DEFINE_ENUM_TABLE_BEGIN(ATDebuggerScriptAutoLoadMode)
-	{ ATDebuggerScriptAutoLoadMode::Default, "default" },
-	{ ATDebuggerScriptAutoLoadMode::Disabled, "disabled" },
-	{ ATDebuggerScriptAutoLoadMode::AskToLoad, "asktoload" },
-	{ ATDebuggerScriptAutoLoadMode::Enabled, "enabled" },
-AT_DEFINE_ENUM_TABLE_END(ATDebuggerScriptAutoLoadMode, ATDebuggerScriptAutoLoadMode::Default)
+// ATUIGetCommandManager — needed by debuggerautotest.cpp.
+// ATUICommandManager implementation is now compiled from ATUI/source/uicommandmanager.cpp.
+#include <at/atui/uicommandmanager.h>
+static ATUICommandManager s_cmdMgr;
+ATUICommandManager& ATUIGetCommandManager() { return s_cmdMgr; }

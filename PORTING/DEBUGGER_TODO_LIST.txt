@@ -1,0 +1,100 @@
+DEBUGGER TODO LIST
+==================
+
+Phase 1: Enable debugger.cpp compilation               [DONE]
+  [x] Create stub header stubs/at/atnativeui/uiframe.h
+  [x] Create stub header stubs/at/atui/uicommandmanager.h
+  [x] Remove CMake exclusions for debugger.cpp, debuggerautotest.cpp, cpuheatmap.cpp
+  [x] Remove ATGetDebugger/ATGetDebuggerSymbolLookup stubs from win32_stubs.cpp
+  [x] Remove ATCPUHeatMap stubs from device_stubs.cpp
+  [x] Remove duplicate enum tables from uiaccessors_stubs.cpp
+  [x] Add ATUIGetCommandManager stub to uiaccessors_stubs.cpp
+  [x] Compile uicommandmanager.cpp from ATUI library
+  [x] Add ATConsoleCheckBreak stub
+  [x] Add ATUISaveFrame stub
+  [x] Build succeeds, ATGetDebugger() returns non-null
+
+Phase 2: ImGui pane manager infrastructure              [DONE]
+  [x] Create ui_debugger.h - base class, API declarations
+  [x] Create ui_debugger.cpp - pane registry, ATActivateUIPane, open/close, tick
+  [x] Wire ATUIDebuggerRenderPanes into ATUIRenderFrame
+  [x] Wire ATUIDebuggerTick into main loop
+  [x] Wire Debug menu (Enable Debugger, Run/Break, Step commands)
+  [x] Add debugger keyboard shortcuts (F5, F10, F11, Shift+F11)
+
+Phase 3: Console pane                                   [DONE]
+  [x] Create ui_dbg_console.cpp - ImGui console with command I/O
+  [x] Route ATConsoleWrite/Printf to ImGui buffer instead of stderr
+  [x] Command history (Up/Down arrows)
+  [x] Auto-scroll on new output
+  [x] Console pane created on debugger open
+  [x] Wire ATOpenConsole/ATCloseConsole to debugger open/close
+
+Phase 4: Registers pane                                 [DONE]
+  [x] Create ui_dbg_registers.cpp
+  [x] Display CPU state (A, X, Y, S, P, PC, flags, cycle)
+  [x] Support all CPU modes (6502, 65C816, Z80, 8048, 6809)
+  [x] Update on break/step via IATDebuggerClient
+  [x] Auto-create on debugger open (default layout)
+  [x] Menu: Debug > Window > Registers
+  [x] On-demand creation via ATActivateUIPane
+
+Phase 5: Disassembly pane                               [TODO]
+  [ ] Create ui_dbg_disasm.cpp
+  [ ] Disassemble instructions around current PC
+  [ ] PC indicator (arrow) at current instruction
+  [ ] Click gutter to toggle breakpoints
+  [ ] Context menu (Set Next Statement, Toggle Breakpoint, Go To Address)
+  [ ] IATUIDebuggerDisassemblyPane::SetPosition()
+
+Phase 6: Memory pane (x4)                               [TODO]
+  [ ] Create ui_dbg_memory.cpp
+  [ ] Hex viewer: Address | 16 bytes | ASCII
+  [ ] Inline byte editing
+  [ ] Address bar navigation
+  [ ] Memory access mode selector (CPU/ANTIC/hardware)
+  [ ] 4 independent instances
+
+Phase 7: Simple panes                                   [TODO]
+  [ ] ui_dbg_watch.cpp - expression watches (x4 instances)
+  [ ] ui_dbg_callstack.cpp - stack frame list
+  [ ] ui_dbg_breakpoints.cpp - breakpoint list/management
+  [ ] ui_dbg_targets.cpp - debug target selection
+  [ ] ui_dbg_history.cpp - execution history tree
+
+Phase 8: Specialized panes                              [TODO]
+  [ ] ui_dbg_source.cpp - source code view with breakpoints
+  [ ] ui_dbg_debugdisplay.cpp - ANTIC/GTIA register visualization
+  [ ] ui_dbg_printer.cpp - printer device output
+
+Phase 9: Debug menu completion                          [TODO]
+  [ ] Window submenu - wire to pane open/close
+  [ ] Open Source File - SDL file dialog
+  [ ] Source File List - ImGui dialog
+  [ ] Options: Auto-Reload ROMs on Cold Reset
+  [ ] Options: Randomize Memory On EXE Load
+  [ ] Options: Change Font
+  [ ] F9 - Toggle Breakpoint (when disassembly/source focused)
+
+Phase 10: Verifier and breakpoint editor                [TODO]
+  [ ] ui_dbg_verifier.cpp - 11 verification checks
+  [ ] ui_dbg_breakpoint_edit.cpp - new/edit breakpoint dialog
+  [ ] Enable cpuheatmap trap commands
+
+Phase 11: Profiler and trace viewer                     [TODO]
+  [ ] ui_dbg_profiler.cpp - timeline, statistics, call tree
+  [ ] ui_dbg_traceviewer.cpp - multi-track timeline
+  [ ] Trace settings dialog
+  [ ] Profiler boundary rule dialog
+
+Phase 12: Tool windows                                  [TODO]
+  [ ] ui_tool_tapeeditor.cpp - tape waveform editor
+  [ ] ui_tool_diskexplorer.cpp - file system browser
+
+Phase 13: Polish                                        [TODO]
+  [ ] Default pane layout (ATLoadDefaultPaneLayout)
+  [ ] Debugger settings persistence verification
+  [ ] Debug font dialog
+  [ ] Source file list dialog
+  [ ] Debug Link toggle
+  [ ] Autotest command compilation verification

@@ -18,9 +18,9 @@ Legend:
   [100%] Project version set (4.40)
   [100%] Platform detection macros (VD_OS_WINDOWS/LINUX/MACOS)
   [100%] find_package(SDL3 REQUIRED)
-  [  0%] find_package(SDL3_net REQUIRED)      — Missing from root CMakeLists.txt
-                                                Network not yet needed; add when
-                                                ATNetworkSockets SDL3 port starts
+  [ N/A] find_package(SDL3_net)               — Not needed; ATNetworkSockets uses
+                                                POSIX sockets directly (SDL3_net
+                                                lacks required low-level socket access)
   [ 50%] C++ standard                         — BUILD.md says C++17, actual is C++20
                                                 Update doc to match (C++20 is correct)
 

@@ -94,6 +94,11 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("/home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetworkSockets/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("/home/ilm/Documents/GitHub/AltirraSDL/build/src/ATDebugger/cmake_install.cmake")
 endif()
 

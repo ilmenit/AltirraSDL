@@ -33,6 +33,9 @@
 /home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetwork/CMakeFiles/ATNetwork.dir
 /home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetwork/CMakeFiles/edit_cache.dir
 /home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetwork/CMakeFiles/rebuild_cache.dir
+/home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetworkSockets/CMakeFiles/ATNetworkSockets.dir
+/home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetworkSockets/CMakeFiles/edit_cache.dir
+/home/ilm/Documents/GitHub/AltirraSDL/build/src/ATNetworkSockets/CMakeFiles/rebuild_cache.dir
 /home/ilm/Documents/GitHub/AltirraSDL/build/src/ATDebugger/CMakeFiles/ATDebugger.dir
 /home/ilm/Documents/GitHub/AltirraSDL/build/src/ATDebugger/CMakeFiles/edit_cache.dir
 /home/ilm/Documents/GitHub/AltirraSDL/build/src/ATDebugger/CMakeFiles/rebuild_cache.dir

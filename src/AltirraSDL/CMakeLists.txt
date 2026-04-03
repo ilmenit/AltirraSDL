@@ -22,12 +22,12 @@ list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/allocator\\.cpp$")   # crtdbg.
 # Exclude UI command handler files (include atnativeui/uiframe.h -> windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cmd[a-z][^/]*\\.cpp$")
 # Exclude files with Win32 UI dependencies not needed for emulation core
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/debugger\\.cpp$")          # includes atnativeui/uiframe.h
+# debugger.cpp now compiles via stub headers (stubs/at/atnativeui/uiframe.h)
+# debuggerautotest.cpp now compiles via stub headers (stubs/at/atui/uicommandmanager.h)
+# cpuheatmap.cpp has no Win32 deps (only uses console.h, cpu.h, simeventmanager.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/customdevice\\.cpp$")      # includes customdevice_win32.h
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/customdevicevmtypes\\.cpp$") # includes atui/uicommandmanager.h
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cpuheatmap\\.cpp$")        # Win32 UI visualization
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cs8900a\\.cpp$")           # Win32 UI debug path
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/debuggerautotest\\.cpp$")  # includes atui/uicommandmanager.h
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idephysdisk\\.cpp$")       # Win32 raw disk access (DeviceIoControl)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idevhdimage\\.cpp$")       # requires sizeof(wchar_t)==2 (UTF-16)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/midimate\\.cpp$")          # Win32 MIDI API (winmm.h)
@@ -57,18 +57,30 @@ add_executable(AltirraSDL
 
     # Dear ImGui UI
     source/ui_main.cpp
+    source/ui_menus.cpp
+    source/ui_recording.cpp
     source/ui_cartmapper.cpp
     source/ui_system.cpp
+    source/ui_firmware.cpp
     source/ui_disk.cpp
     source/ui_cassette.cpp
     source/ui_display.cpp
     source/ui_input.cpp
     source/ui_profiles.cpp
     source/ui_devconfig.cpp
+    source/ui_devconfig_devices.cpp
     source/ui_tools.cpp
+
+    # Debugger pane manager and panes
+    source/ui_debugger.cpp
+    source/ui_dbg_console.cpp
+    source/ui_dbg_registers.cpp
 
     # Registry persistence (filtered out by ui* regex, so add explicitly)
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
+
+    # ATUICommandManager (from ATUI library, no Win32 deps — needed by debuggerautotest.cpp)
+    ${CMAKE_SOURCE_DIR}/src/ATUI/source/uicommandmanager.cpp
 
     # Stub implementations replacing Win32-only files
     stubs/console_stubs.cpp
@@ -123,6 +135,7 @@ target_link_libraries(AltirraSDL PRIVATE
     ATIO
     ATAudio
     ATNetwork
+    ATNetworkSockets
     ATDebugger
     ATVM
     ATCore
