@@ -77,8 +77,13 @@ struct ProfileState {
 		uint32 mInsns;
 		uint32 mCycles;
 		uint32 mUnhaltedCycles;
+		uint32 mCounters[2];
 	};
 	vdfastvector<SortedRecord> mSortedRecords;
+
+	// Counter modes captured at profile build time (so CSV/table match)
+	ATProfileCounterMode mCapturedCounterModes[2] = { kATProfileCounterMode_None, kATProfileCounterMode_None };
+
 	ImGuiTableSortSpecs *mpLastSortSpecs = nullptr;
 };
 
@@ -353,6 +358,10 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 		s_profState.mpMergedFrame = mergedRaw;
 
 		if (mergedRaw) {
+			// Capture counter modes at build time
+			s_profState.mCapturedCounterModes[0] = s_profState.mSession.mCounterModes.size() > 0 ? s_profState.mSession.mCounterModes[0] : kATProfileCounterMode_None;
+			s_profState.mCapturedCounterModes[1] = s_profState.mSession.mCounterModes.size() > 1 ? s_profState.mSession.mCounterModes[1] : kATProfileCounterMode_None;
+
 			// Build sorted record list
 			for (const auto& rec : mergedRaw->mRecords) {
 				ProfileState::SortedRecord sr;
@@ -361,6 +370,8 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 				sr.mInsns = rec.mInsns;
 				sr.mCycles = rec.mCycles;
 				sr.mUnhaltedCycles = rec.mUnhaltedCycles;
+				sr.mCounters[0] = rec.mCounters[0];
+				sr.mCounters[1] = rec.mCounters[1];
 				s_profState.mSortedRecords.push_back(sr);
 			}
 
@@ -381,14 +392,11 @@ static void CopyProfileAsCsv() {
 	if (s_profState.mSortedRecords.empty())
 		return;
 
+	static const char *kCounterModeNames[] = { "Taken", "NotTaken", "PageCross", "Redundant" };
+
 	VDStringA csv;
 
-	// Header
-	csv += "Address,Calls,Insns,Cycles,%\r\n";
-
-	uint32 totalCycles = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalCycles : 1;
-
-	const auto appendQuoted = [&](const char *s) {
+	const auto appendField = [&](const char *s) {
 		if (strchr(s, ' ') || strchr(s, ',') || strchr(s, '"')) {
 			csv += '"';
 			for (const char *p = s; *p; ++p) {
@@ -400,25 +408,103 @@ static void CopyProfileAsCsv() {
 		} else {
 			csv += s;
 		}
+		csv += ',';
 	};
+
+	const auto endLine = [&] {
+		if (!csv.empty() && csv.back() == ',')
+			csv.pop_back();
+		csv += "\r\n";
+	};
+
+	// Header — matches table columns
+	appendField("Address");
+	appendField("Calls");
+	appendField("Clocks");
+	appendField("Insns");
+	appendField("Clocks%");
+	appendField("Insns%");
+	appendField("CPUClocks");
+	appendField("CPUClocks%");
+	appendField("DMA%");
+	for (int i = 0; i < 2; ++i) {
+		ATProfileCounterMode cm = s_profState.mCapturedCounterModes[i];
+		if (cm != kATProfileCounterMode_None) {
+			appendField(kCounterModeNames[cm - 1]);
+			char buf[64];
+			snprintf(buf, sizeof(buf), "%s%%", kCounterModeNames[cm - 1]);
+			appendField(buf);
+		}
+	}
+	endLine();
+
+	uint32 totalCycles = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalCycles : 1;
+	uint32 totalInsns = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalInsns : 1;
+	uint32 totalUnhaltedCycles = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalUnhaltedCycles : 1;
 
 	for (const auto& rec : s_profState.mSortedRecords) {
 		// Address with symbol
 		IATDebugger *dbg = ATGetDebugger();
 		if (dbg) {
 			VDStringA addrText = dbg->GetAddressText(rec.mAddress, false, true);
-			appendQuoted(addrText.c_str());
+			appendField(addrText.c_str());
 		} else {
 			char buf[16];
 			snprintf(buf, sizeof(buf), "$%04X", rec.mAddress);
-			csv += buf;
+			appendField(buf);
 		}
 
 		char buf[128];
-		snprintf(buf, sizeof(buf), ",%u,%u,%u,%.1f%%\r\n",
-			rec.mCalls, rec.mInsns, rec.mCycles,
-			(double)rec.mCycles * 100.0 / (double)totalCycles);
-		csv += buf;
+
+		// Calls
+		snprintf(buf, sizeof(buf), "%u", rec.mCalls);
+		appendField(buf);
+
+		// Clocks
+		snprintf(buf, sizeof(buf), "%u", rec.mCycles);
+		appendField(buf);
+
+		// Insns
+		snprintf(buf, sizeof(buf), "%u", rec.mInsns);
+		appendField(buf);
+
+		// Clocks%
+		snprintf(buf, sizeof(buf), "%.2f%%", (float)rec.mCycles / (float)totalCycles * 100.0f);
+		appendField(buf);
+
+		// Insns%
+		snprintf(buf, sizeof(buf), "%.2f%%", (float)rec.mInsns / (float)totalInsns * 100.0f);
+		appendField(buf);
+
+		// CPUClocks
+		snprintf(buf, sizeof(buf), "%u", rec.mUnhaltedCycles);
+		appendField(buf);
+
+		// CPUClocks%
+		snprintf(buf, sizeof(buf), "%.2f%%", (float)rec.mUnhaltedCycles / (float)totalUnhaltedCycles * 100.0f);
+		appendField(buf);
+
+		// DMA%
+		if (rec.mCycles)
+			snprintf(buf, sizeof(buf), "%.2f%%", 100.0f * (1.0f - (float)rec.mUnhaltedCycles / (float)rec.mCycles));
+		else
+			buf[0] = 0;
+		appendField(buf);
+
+		// Counter columns
+		for (int i = 0; i < 2; ++i) {
+			if (s_profState.mCapturedCounterModes[i] != kATProfileCounterMode_None) {
+				snprintf(buf, sizeof(buf), "%u", rec.mCounters[i]);
+				appendField(buf);
+				if (rec.mInsns)
+					snprintf(buf, sizeof(buf), "%.2f%%", (float)rec.mCounters[i] / (float)rec.mInsns * 100.0f);
+				else
+					buf[0] = 0;
+				appendField(buf);
+			}
+		}
+
+		endLine();
 	}
 
 	SDL_SetClipboardText(csv.c_str());
@@ -448,13 +534,13 @@ static void RenderBoundaryRuleDialog() {
 		sWasOpen = true;
 	}
 
-	ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Appearing);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(420, 0), ImVec2(420, FLT_MAX));
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
 	if (ImGui::Begin("Trigger On PC Address", &s_profState.mbShowBoundaryRuleDialog,
 			ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking
-			| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+			| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
 
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextUnformatted("Start frame address");
@@ -466,14 +552,16 @@ static void RenderBoundaryRuleDialog() {
 		ImGui::SetCursorPosX(160.0f);
 		ImGui::Checkbox("End frame when function returns", &sEditEndFunction);
 
-		if (!sEditEndFunction) {
-			ImGui::Spacing();
-			ImGui::AlignTextToFramePadding();
-			ImGui::TextUnformatted("End frame address (optional)");
-			ImGui::SameLine(160.0f);
-			ImGui::SetNextItemWidth(-1);
-			ImGui::InputText("##addr2", sEditAddr2, sizeof(sEditAddr2));
-		}
+		ImGui::Spacing();
+		ImGui::AlignTextToFramePadding();
+		if (sEditEndFunction)
+			ImGui::BeginDisabled();
+		ImGui::TextUnformatted("End frame address (optional)");
+		ImGui::SameLine(160.0f);
+		ImGui::SetNextItemWidth(-1);
+		ImGui::InputText("##addr2", sEditAddr2, sizeof(sEditAddr2));
+		if (sEditEndFunction)
+			ImGui::EndDisabled();
 
 		ImGui::Spacing();
 		ImGui::Separator();
@@ -591,10 +679,20 @@ static void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 					for (auto& cm : ctx.mProfileCounterModes)
 						if (cm == mode) { cm = kATProfileCounterMode_None; break; }
 				} else {
-					// Add to first free slot
-					for (auto& cm : ctx.mProfileCounterModes)
-						if (cm == kATProfileCounterMode_None) { cm = mode; break; }
+					// Add to last slot (Windows uses last slot for new entries)
+					ctx.mProfileCounterModes[std::size(ctx.mProfileCounterModes) - 1] = mode;
 				}
+
+				// Sort non-None values and pack to front (matching Windows behaviour)
+				std::sort(std::begin(ctx.mProfileCounterModes), std::end(ctx.mProfileCounterModes));
+				ATProfileCounterMode packed[2] = { kATProfileCounterMode_None, kATProfileCounterMode_None };
+				int packIdx = 0;
+				for (auto cm : ctx.mProfileCounterModes)
+					if (cm != kATProfileCounterMode_None)
+						packed[packIdx++] = cm;
+				ctx.mProfileCounterModes[0] = packed[0];
+				ctx.mProfileCounterModes[1] = packed[1];
+
 				s_profState.mbNeedsRefresh = true;
 			}
 		}
@@ -668,17 +766,46 @@ static void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 			s_profState.mpMergedFrame->mTotalInsns);
 	}
 
+	// Determine column count (base columns + dynamic counter columns)
+	// Base columns: Address, Calls, Clocks, Insns, Clocks%, Insns%, CPUClocks, CPUClocks%, DMA%
+	static const int kBaseColumnCount = 9;
+	static const char *kCounterModeNames[] = { "Taken", "NotTaken", "PageCross", "Redundant" };
+
+	int numCounterCols = 0;
+	for (int i = 0; i < 2; ++i) {
+		if (s_profState.mCapturedCounterModes[i] != kATProfileCounterMode_None)
+			numCounterCols += 2; // value + percentage
+	}
+	int totalColumns = kBaseColumnCount + numCounterCols;
+
 	ImGuiTableFlags tableFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg
 		| ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable
 		| ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit;
 
-	if (ImGui::BeginTable("##CPUProfile", 5, tableFlags)) {
+	if (ImGui::BeginTable("##CPUProfile", totalColumns, tableFlags)) {
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn("Address", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultSort, 120);
 		ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthFixed, 60);
+		ImGui::TableSetupColumn("Clocks", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 80);
 		ImGui::TableSetupColumn("Insns", ImGuiTableColumnFlags_WidthFixed, 70);
-		ImGui::TableSetupColumn("Cycles", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 80);
-		ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 60);
+		ImGui::TableSetupColumn("Clocks%", ImGuiTableColumnFlags_WidthFixed, 60);
+		ImGui::TableSetupColumn("Insns%", ImGuiTableColumnFlags_WidthFixed, 60);
+		ImGui::TableSetupColumn("CPUClocks", ImGuiTableColumnFlags_WidthFixed, 80);
+		ImGui::TableSetupColumn("CPUClocks%", ImGuiTableColumnFlags_WidthFixed, 70);
+		ImGui::TableSetupColumn("DMA%", ImGuiTableColumnFlags_WidthFixed, 50);
+
+		// Dynamic counter columns
+		for (int i = 0; i < 2; ++i) {
+			ATProfileCounterMode cm = s_profState.mCapturedCounterModes[i];
+			if (cm != kATProfileCounterMode_None) {
+				const char *name = kCounterModeNames[cm - 1];
+				char buf[64];
+				snprintf(buf, sizeof(buf), "%s", name);
+				ImGui::TableSetupColumn(buf, ImGuiTableColumnFlags_WidthFixed, 70);
+				snprintf(buf, sizeof(buf), "%s%%", name);
+				ImGui::TableSetupColumn(buf, ImGuiTableColumnFlags_WidthFixed, 60);
+			}
+		}
 		ImGui::TableHeadersRow();
 
 		// Handle sorting
@@ -687,15 +814,42 @@ static void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 			const ImGuiTableColumnSortSpecs& spec = sortSpecs->Specs[0];
 			bool ascending = (spec.SortDirection == ImGuiSortDirection_Ascending);
 
+			// Map column indices to sort keys
+			// 0=Address, 1=Calls, 2=Clocks, 3=Insns, 4=Clocks%, 5=Insns%,
+			// 6=CPUClocks, 7=CPUClocks%, 8=DMA%, 9+=counters
+			const int sortCol = spec.ColumnIndex;
+
 			std::sort(s_profState.mSortedRecords.begin(), s_profState.mSortedRecords.end(),
-				[&spec, ascending](const ProfileState::SortedRecord& a, const ProfileState::SortedRecord& b) {
+				[sortCol, ascending](const ProfileState::SortedRecord& a, const ProfileState::SortedRecord& b) {
 					int cmp = 0;
-					switch (spec.ColumnIndex) {
+					switch (sortCol) {
 						case 0: cmp = (a.mAddress < b.mAddress) ? -1 : (a.mAddress > b.mAddress) ? 1 : 0; break;
 						case 1: cmp = (a.mCalls < b.mCalls) ? -1 : (a.mCalls > b.mCalls) ? 1 : 0; break;
-						case 2: cmp = (a.mInsns < b.mInsns) ? -1 : (a.mInsns > b.mInsns) ? 1 : 0; break;
-						case 3: cmp = (a.mCycles < b.mCycles) ? -1 : (a.mCycles > b.mCycles) ? 1 : 0; break;
-						case 4: cmp = (a.mCycles < b.mCycles) ? -1 : (a.mCycles > b.mCycles) ? 1 : 0; break;
+						case 2: // Clocks (sort by cycles)
+						case 4: // Clocks% (same ordering as cycles)
+							cmp = (a.mCycles < b.mCycles) ? -1 : (a.mCycles > b.mCycles) ? 1 : 0; break;
+						case 3: // Insns
+						case 5: // Insns% (same ordering as insns)
+							cmp = (a.mInsns < b.mInsns) ? -1 : (a.mInsns > b.mInsns) ? 1 : 0; break;
+						case 6: // CPUClocks
+						case 7: // CPUClocks%
+							cmp = (a.mUnhaltedCycles < b.mUnhaltedCycles) ? -1 : (a.mUnhaltedCycles > b.mUnhaltedCycles) ? 1 : 0; break;
+						case 8: // DMA% — sort by (cycles - unhaltedCycles) / cycles
+							{
+								uint32 dmaA = a.mCycles > a.mUnhaltedCycles ? a.mCycles - a.mUnhaltedCycles : 0;
+								uint32 dmaB = b.mCycles > b.mUnhaltedCycles ? b.mCycles - b.mUnhaltedCycles : 0;
+								// Cross-multiply to avoid division: dmaA/a.mCycles vs dmaB/b.mCycles
+								uint64 lhs = (uint64)dmaA * b.mCycles;
+								uint64 rhs = (uint64)dmaB * a.mCycles;
+								cmp = (lhs < rhs) ? -1 : (lhs > rhs) ? 1 : 0;
+							}
+							break;
+						case 9:  // Counter0
+						case 10: // Counter0%
+							cmp = (a.mCounters[0] < b.mCounters[0]) ? -1 : (a.mCounters[0] > b.mCounters[0]) ? 1 : 0; break;
+						case 11: // Counter1
+						case 12: // Counter1%
+							cmp = (a.mCounters[1] < b.mCounters[1]) ? -1 : (a.mCounters[1] > b.mCounters[1]) ? 1 : 0; break;
 						default: break;
 					}
 					return ascending ? cmp < 0 : cmp > 0;
@@ -705,6 +859,8 @@ static void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 		}
 
 		uint32 totalCycles = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalCycles : 1;
+		uint32 totalInsns = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalInsns : 1;
+		uint32 totalUnhaltedCycles = s_profState.mpMergedFrame ? s_profState.mpMergedFrame->mTotalUnhaltedCycles : 1;
 
 		ImGuiListClipper clipper;
 		clipper.Begin((int)s_profState.mSortedRecords.size());
@@ -729,11 +885,32 @@ static void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 				ImGui::TableSetColumnIndex(1);
 				ImGui::Text("%u", rec.mCalls);
 				ImGui::TableSetColumnIndex(2);
-				ImGui::Text("%u", rec.mInsns);
-				ImGui::TableSetColumnIndex(3);
 				ImGui::Text("%u", rec.mCycles);
+				ImGui::TableSetColumnIndex(3);
+				ImGui::Text("%u", rec.mInsns);
 				ImGui::TableSetColumnIndex(4);
-				ImGui::Text("%.1f%%", (double)rec.mCycles * 100.0 / (double)totalCycles);
+				ImGui::Text("%.2f%%", (float)rec.mCycles / (float)totalCycles * 100.0f);
+				ImGui::TableSetColumnIndex(5);
+				ImGui::Text("%.2f%%", (float)rec.mInsns / (float)totalInsns * 100.0f);
+				ImGui::TableSetColumnIndex(6);
+				ImGui::Text("%u", rec.mUnhaltedCycles);
+				ImGui::TableSetColumnIndex(7);
+				ImGui::Text("%.2f%%", (float)rec.mUnhaltedCycles / (float)totalUnhaltedCycles * 100.0f);
+				ImGui::TableSetColumnIndex(8);
+				if (rec.mCycles)
+					ImGui::Text("%.2f%%", 100.0f * (1.0f - (float)rec.mUnhaltedCycles / (float)rec.mCycles));
+
+				// Dynamic counter columns
+				int colIdx = kBaseColumnCount;
+				for (int i = 0; i < 2; ++i) {
+					if (s_profState.mCapturedCounterModes[i] != kATProfileCounterMode_None) {
+						ImGui::TableSetColumnIndex(colIdx++);
+						ImGui::Text("%u", rec.mCounters[i]);
+						ImGui::TableSetColumnIndex(colIdx++);
+						if (rec.mInsns)
+							ImGui::Text("%.2f%%", (float)rec.mCounters[i] / (float)rec.mInsns * 100.0f);
+					}
+				}
 			}
 		}
 
@@ -992,6 +1169,8 @@ void ATImGuiTraceViewer_ResetPanelState() {
 	s_profState.mpMergedFrame.clear();
 	s_profState.mLastSelectStart = -1;
 	s_profState.mLastSelectEnd = -1;
+	s_profState.mCapturedCounterModes[0] = kATProfileCounterMode_None;
+	s_profState.mCapturedCounterModes[1] = kATProfileCounterMode_None;
 
 	s_logState.mbValid = false;
 	s_logState.mEntries.clear();

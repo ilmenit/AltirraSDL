@@ -105,7 +105,8 @@
       "WebSearch",
       "Bash(git ls-remote:*)",
       "Bash(chmod +x:*)",
-      "Bash(./build.sh --android --release)"
+      "Bash(./build.sh --android --release)",
+      "Bash(magick identify:*)"
     ]
   }
 }

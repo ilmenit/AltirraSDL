@@ -54,13 +54,18 @@ struct PrinterViewTransform {
 	float mMMPerPixel = 1;
 };
 
-// Convert a linear-space printer color (packed with 1/64 scale factor per
-// channel, matching the Windows rasterizer convention) to an sRGB ARGB8888
-// pixel value (0xAARRGGBB).
+// Convert a linear-space printer color to an sRGB pixel value suitable for
+// the ARGB8888 framebuffer.
+//
+// The linear color is produced by ConvertColor() which passes the input
+// through FromBGR8() + SRGBToLinear() + packus8(*64).  This stores the
+// channels in native byte order: byte 0 is the component that FromBGR8()
+// placed in element 0.  Using ToBGR8() (which packs elements without
+// permuting) recovers the correct 0x00RRGGBB value that matches both the
+// GL_BGRA upload and CSS #RRGGBB format.  Using ToRGB8() would apply an
+// extra permute and swap R/B.
 static uint32 LinearColorToSRGB8(uint32 linearColor) {
-	// ToRGB8() returns 0x00RRGGBB — the correct byte order for our ARGB
-	// framebuffer and for GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV upload.
-	uint32 srgb = VDColorRGB(vdfloat32x4::unpacku8(linearColor) * (1.0f / 64.0f)).LinearToSRGB().ToRGB8();
+	uint32 srgb = VDColorRGB(vdfloat32x4::unpacku8(linearColor) * (1.0f / 64.0f)).LinearToSRGB().ToBGR8();
 	return 0xFF000000 | srgb;
 }
 
@@ -617,9 +622,12 @@ static bool SavePrinterOutputAsSVG(ATPrinterGraphicalOutput& output, const char 
 
 	if (!rvectors.empty()) {
 		// Collect unique colors
+		// Collect unique colors.  ToBGR8() recovers the correct 0x00RRGGBB
+		// value from the native-order linear color (see LinearColorToSRGB8
+		// comment for the full explanation).
 		struct ColorGroup {
 			uint32 linearColor;
-			uint32 srgbRGB;		// 0x00RRGGBB for CSS #RRGGBB format
+			uint32 srgbColor;	// 0x00RRGGBB — correct for CSS #RRGGBB
 		};
 		std::vector<ColorGroup> colors;
 		std::vector<uint32> colorsSeen;
@@ -630,8 +638,7 @@ static bool SavePrinterOutputAsSVG(ATPrinterGraphicalOutput& output, const char 
 				if (c == rv.mLinearColor) { found = true; break; }
 			}
 			if (!found) {
-				// ToRGB8() returns 0x00RRGGBB — correct for CSS #RRGGBB strings
-				uint32 srgb = VDColorRGB(vdfloat32x4::unpacku8(rv.mLinearColor) * (1.0f / 64.0f)).LinearToSRGB().ToRGB8();
+				uint32 srgb = VDColorRGB(vdfloat32x4::unpacku8(rv.mLinearColor) * (1.0f / 64.0f)).LinearToSRGB().ToBGR8();
 				colors.push_back({rv.mLinearColor, srgb});
 				colorsSeen.push_back(rv.mLinearColor);
 			}
@@ -640,14 +647,14 @@ static bool SavePrinterOutputAsSVG(ATPrinterGraphicalOutput& output, const char 
 		// Sort by decreasing luminance (matching Windows)
 		std::sort(colors.begin(), colors.end(),
 			[](const ColorGroup& a, const ColorGroup& b) {
-				uint32 la = ((a.srgbRGB >> 16) & 0xFF) + ((a.srgbRGB >> 8) & 0xFF) + (a.srgbRGB & 0xFF);
-				uint32 lb = ((b.srgbRGB >> 16) & 0xFF) + ((b.srgbRGB >> 8) & 0xFF) + (b.srgbRGB & 0xFF);
+				uint32 la = ((a.srgbColor >> 16) & 0xFF) + ((a.srgbColor >> 8) & 0xFF) + (a.srgbColor & 0xFF);
+				uint32 lb = ((b.srgbColor >> 16) & 0xFF) + ((b.srgbColor >> 8) & 0xFF) + (b.srgbColor & 0xFF);
 				return la > lb;
 			});
 
 		for (const auto& cg : colors) {
 			fprintf(f, "<g style=\"stroke:#%06X; stroke-width:%d; stroke-linecap:round; fill:none\">\n",
-				cg.srgbRGB, dotRadius * 2);
+				cg.srgbColor, dotRadius * 2);
 
 			for (const auto& rv : rvectors) {
 				if (rv.mLinearColor != cg.linearColor)
@@ -733,6 +740,7 @@ public:
 
 private:
 	void RefreshOutputList();
+	void AttachToAnyOutput();
 	void AttachToTextOutput(int index);
 	void AttachToGraphicalOutput(int index);
 	void DetachFromOutput();
@@ -811,23 +819,33 @@ ATImGuiPrinterOutputPaneImpl::ATImGuiPrinterOutputPaneImpl()
 {
 	auto& mgr = static_cast<ATPrinterOutputManager&>(g_sim.GetPrinterOutputManager());
 
-	// Text output events
+	// Text output events — match Windows auto-attach behavior
 	mOnAddedOutput = [this](ATPrinterOutput&) {
 		mbOutputListDirty = true;
+		// Auto-attach if nothing is currently attached
+		if (!mpCurrentOutput && !mpCurrentGfxOutput)
+			AttachToAnyOutput();
 	};
 	mOnRemovingOutput = [this](ATPrinterOutput& output) {
-		if (mpCurrentOutput == &output)
+		if (mpCurrentOutput == &output) {
 			DetachFromOutput();
+			AttachToAnyOutput();	// re-attach to next available
+		}
 		mbOutputListDirty = true;
 	};
 
-	// Graphical output events
+	// Graphical output events — Windows always tries to attach graphical
 	mOnAddedGfxOutput = [this](ATPrinterGraphicalOutput&) {
 		mbOutputListDirty = true;
+		// Auto-attach graphical even if text is already attached (Windows behavior)
+		if (!mpCurrentGfxOutput)
+			AttachToAnyOutput();
 	};
 	mOnRemovingGfxOutput = [this](ATPrinterGraphicalOutput& output) {
-		if (mpCurrentGfxOutput == &output)
+		if (mpCurrentGfxOutput == &output) {
 			DetachFromOutput();
+			AttachToAnyOutput();	// re-attach to next available
+		}
 		mbOutputListDirty = true;
 	};
 
@@ -836,29 +854,8 @@ ATImGuiPrinterOutputPaneImpl::ATImGuiPrinterOutputPaneImpl()
 	mgr.OnAddedGraphicalOutput.Add(&mOnAddedGfxOutput);
 	mgr.OnRemovingGraphicalOutput.Add(&mOnRemovingGfxOutput);
 
-	// Auto-attach to first available output.
-	// Windows AttachToAnyOutput() prefers graphical over text.
-	RefreshOutputList();
-	if (!mOutputList.empty()) {
-		// First try graphical
-		for (int i = 0; i < (int)mOutputList.size(); ++i) {
-			if (mOutputList[i].mbIsGraphical) {
-				AttachToGraphicalOutput(mOutputList[i].mIndex);
-				mCurrentOutputIdx = i;
-				break;
-			}
-		}
-		// If no graphical, try text
-		if (mCurrentOutputIdx < 0) {
-			for (int i = 0; i < (int)mOutputList.size(); ++i) {
-				if (!mOutputList[i].mbIsGraphical) {
-					AttachToTextOutput(mOutputList[i].mIndex);
-					mCurrentOutputIdx = i;
-					break;
-				}
-			}
-		}
-	}
+	// Auto-attach to first available output
+	AttachToAnyOutput();
 }
 
 ATImGuiPrinterOutputPaneImpl::~ATImGuiPrinterOutputPaneImpl() {
@@ -897,6 +894,25 @@ void ATImGuiPrinterOutputPaneImpl::RefreshOutputList() {
 		info.mbIsGraphical = true;
 		info.mIndex = (int)i;
 		mOutputList.push_back(std::move(info));
+	}
+}
+
+void ATImGuiPrinterOutputPaneImpl::AttachToAnyOutput() {
+	// Match Windows AttachToAnyOutput(): prefer graphical, then text.
+	RefreshOutputList();
+	for (int i = 0; i < (int)mOutputList.size(); ++i) {
+		if (mOutputList[i].mbIsGraphical) {
+			AttachToGraphicalOutput(mOutputList[i].mIndex);
+			mCurrentOutputIdx = i;
+			return;
+		}
+	}
+	for (int i = 0; i < (int)mOutputList.size(); ++i) {
+		if (!mOutputList[i].mbIsGraphical) {
+			AttachToTextOutput(mOutputList[i].mIndex);
+			mCurrentOutputIdx = i;
+			return;
+		}
 	}
 }
 
@@ -945,8 +961,8 @@ void ATImGuiPrinterOutputPaneImpl::AttachToGraphicalOutput(int index) {
 		mbGfxInvalidated = true;
 	});
 
-	// Reset view — match Windows: start at minimum zoom, center on page
-	mZoomClicks = kZoomMin;
+	// Reset view — match Windows ResetView() which sets zoom to 0 (base DPI)
+	mZoomClicks = 0;
 	float basePixelsPerMM = 96.0f / 25.4f;
 	mViewPixelsPerMM = basePixelsPerMM * powf(2.0f, mZoomClicks / 5.0f);
 	mViewMMPerPixel = 1.0f / mViewPixelsPerMM;
@@ -1225,7 +1241,7 @@ void ATImGuiPrinterOutputPaneImpl::RenderGraphicalOutput() {
 		ImGui::Separator();
 
 		if (ImGui::MenuItem("Reset View")) {
-			mZoomClicks = kZoomMin;
+			mZoomClicks = 0;
 			float basePixelsPerMM = 96.0f / 25.4f;
 			mViewPixelsPerMM = basePixelsPerMM * powf(2.0f, mZoomClicks / 5.0f);
 			mViewMMPerPixel = 1.0f / mViewPixelsPerMM;
