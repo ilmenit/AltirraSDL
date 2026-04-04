@@ -201,32 +201,32 @@ breakpoint implementation, debug targets, default symbols.
 
 ## Pane Implementation Status
 
-| Pane | Status | File |
-|------|--------|------|
-| Display | Done | `ui_debugger.cpp` (inline) |
-| Console | Done | `ui_dbg_console.cpp` |
-| Registers | Done | `ui_dbg_registers.cpp` |
-| Disassembly | Done | `ui_dbg_disassembly.cpp` |
-| History | Done | `ui_dbg_history.cpp` |
-| Memory (x4) | TODO | `ui_dbg_memory.cpp` |
-| Watch (x4) | TODO | `ui_dbg_watch.cpp` |
-| Call Stack | TODO | `ui_dbg_callstack.cpp` |
-| Breakpoints | TODO | `ui_dbg_breakpoints.cpp` |
-| Targets | TODO | `ui_dbg_targets.cpp` |
-| Source | TODO | `ui_dbg_source.cpp` |
-| Debug Display | TODO | `ui_dbg_debugdisplay.cpp` |
-| Printer Output | TODO | `ui_dbg_printer.cpp` |
-| Profiler | TODO | `ui_dbg_profiler.cpp` |
-| Trace Viewer | TODO | `ui_dbg_traceviewer.cpp` |
+| Pane | Status | File | Context Menu |
+|------|--------|------|--------------|
+| Display | Done | `ui_debugger.cpp` (inline) | N/A |
+| Console | Done | `ui_dbg_console.cpp` | Missing: Copy |
+| Registers | Done | `ui_dbg_registers.cpp` | N/A |
+| Disassembly | Done | `ui_dbg_disassembly.cpp` | 4/18 items (14 missing) |
+| History | Done | `ui_dbg_history.cpp` | 1/21 items (20 missing) |
+| Memory (x4) | Done | `ui_dbg_memory.h`, `_memory.cpp`, `_memory_hexdump.cpp`, `_memory_bitmap.cpp` | Done |
+| Watch (x4) | Done | `ui_dbg_watch.cpp` | N/A |
+| Call Stack | Done | `ui_dbg_callstack.cpp` | N/A |
+| Breakpoints | Done | `ui_dbg_breakpoints.cpp` | N/A |
+| Targets | Done | `ui_dbg_targets.cpp` | N/A |
+| Source | Done | `ui_dbg_source.cpp` | 4/6 items (2 missing) |
+| Debug Display | Done | `ui_dbg_debugdisplay.cpp` | 3/6 items (3 missing) |
+| Printer Output | Done | `ui_dbg_printer.cpp` | 1/7 items (6 missing) |
+| Profiler | TODO | — | — |
+| Trace Viewer | TODO | — | — |
 
 ## Dialog Implementation Status
 
 | Dialog | Status | Notes |
 |--------|--------|-------|
 | Verifier | TODO | 11 verification checks |
-| New/Edit Breakpoint | TODO | Condition editor, command-on-hit |
+| New/Edit Breakpoint | TODO | Condition editor, command-on-hit, location type |
 | Debug Font | TODO | Font selection for console |
-| Source File List | TODO | Browse loaded source files |
+| Source File List | Done | ImGui dialog |
 | Trace Settings | TODO | Trace recording configuration |
 | Profiler Boundary Rule | TODO | Profiler configuration |
 
@@ -241,15 +241,12 @@ breakpoint implementation, debug targets, default symbols.
 | Step Over (F10) | Done |
 | Step Out (Shift+F11) | Done |
 | Break at EXE Run Address | Done |
-| Window > Console | Done |
-| Window > Registers | Done |
-| Window > Disassembly | Done |
-| Window > History | Done |
-| Open Source File | TODO |
-| Source File List | TODO |
-| Visualization | Partial (GTIA done, ANTIC TODO) |
-| Auto-Reload ROMs | TODO |
-| Randomize Memory | TODO |
+| Window > All 13 panes | Done |
+| Open Source File | Done (SDL3 file dialog) |
+| Source File List | Done |
+| Visualization (GTIA + ANTIC) | Done |
+| Auto-Reload ROMs | Done |
+| Randomize Memory | Done |
 | Change Font | TODO |
 | Profile View | TODO |
 | Verifier | TODO |
@@ -281,9 +278,12 @@ breakpoint implementation, debug targets, default symbols.
    expects the console to be immediately usable.
 
 6. **Display pane vs background rendering** — when the debugger is closed,
-   the emulation texture renders directly via `SDL_RenderTexture`.  When
-   the debugger opens, this switches to an `ImGui::Image()` inside a
-   dockable window so it participates in the layout alongside other panes.
+   the backend renders the emulation frame directly to the window.  When
+   the debugger opens, the Display pane calls
+   `ATUIGetDisplayBackend()->GetImGuiTextureID()` and renders it via
+   `ImGui::Image()` inside a dockable window, so it participates in the
+   layout alongside other panes.  This works with both the SDL\_Renderer
+   and OpenGL backends.
 
 7. **vdrefcounted pane lifecycle** — panes are allocated with `new`
    (refcount 0) and stored in `vdrefptr` (refcount 1).  The creator must

@@ -37,6 +37,9 @@ void ATImGuiRegistersPaneImpl::OnDebuggerSystemStateUpdate(const ATDebuggerSyste
 	// Format registers exactly as Windows version does (uidbgregisters.cpp:101-238)
 	mFormattedState.clear();
 
+	if (!state.mpDebugTarget)
+		return;
+
 	mFormattedState.append_sprintf("Target: %s\n", state.mpDebugTarget->GetName());
 
 	const auto dmode = state.mpDebugTarget->GetDisasmMode();
@@ -184,9 +187,11 @@ bool ATImGuiRegistersPaneImpl::Render() {
 
 	ImGui::SetNextWindowSize(ImVec2(200, 300), ImGuiCond_FirstUseEver);
 	if (!ImGui::Begin(mTitle.c_str(), &open)) {
+		mbHasFocus = false;
 		ImGui::End();
 		return open;
 	}
+	mbHasFocus = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
 	if (mbStateValid && !mFormattedState.empty()) {
 		ImGui::TextUnformatted(mFormattedState.c_str(),
@@ -194,6 +199,12 @@ bool ATImGuiRegistersPaneImpl::Render() {
 	} else {
 		ImGui::TextDisabled("(no state)");
 	}
+
+	// Escape → focus Console
+	if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+			&& !ImGui::GetIO().WantTextInput
+			&& ImGui::IsKeyPressed(ImGuiKey_Escape))
+		ATUIDebuggerFocusConsole();
 
 	ImGui::End();
 	return open;

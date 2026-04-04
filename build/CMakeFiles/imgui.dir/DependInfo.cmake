@@ -8,6 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_opengl3.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o.d"
   "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_sdl3.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdl3.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdl3.cpp.o.d"
   "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.o.d"
   "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/imgui.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui.cpp.o.d"

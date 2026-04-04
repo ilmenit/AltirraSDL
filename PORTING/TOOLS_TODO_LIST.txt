@@ -1,0 +1,135 @@
+AltirraSDL — Tools Parity Checklist
+====================================
+Created: 2026-04-04
+Reference: Windows Altirra menu_default.txt + Altirra.rc context menus
+
+Legend:
+  [100%] Fully implemented
+  [ 50%] Partially implemented
+  [  0%] Not implemented
+
+Files:
+  ui_tools.cpp       — Disk Explorer, Setup Wizard, Compat DB, Advanced Config,
+                        Keyboard Shortcuts, SAP converter, ROM export, Tape analysis
+  ui_menus.cpp       — Tools menu wiring
+
+
+================================================================================
+1. DISK EXPLORER (ui_tools.cpp — IDD_DISK_EXPLORER)
+================================================================================
+
+1.1 CORE FUNCTIONALITY
+  [100%] Open disk image via file dialog
+  [100%] Browse directory listing (name, sectors, bytes, date columns)
+  [100%] Navigate directories (double-click, ".." entry)
+  [100%] View file content (Text, Hex, Executable, MAC/65 modes)
+  [100%] Import files from host                — SDL file dialog + 8.3 normalization
+  [100%] Export files to host                  — SDL save dialog
+  [100%] Delete files and directories
+  [100%] Rename files
+  [100%] Create directory ("New Dir...")
+  [100%] Read/Write toggle with filesystem validation
+  [100%] Timestamp preservation on import/export
+  [100%] Open mounted drives from disk drive dialog
+
+1.2 CONTEXT MENU (IDR_DISK_EXPLORER_CONTEXT_MENU — 3/11 items)
+  [100%] Export...
+  [100%] Delete
+  [100%] Rename...
+  [  0%] View                                  — Open file in viewer pane
+  [  0%] New Folder                            — Create directory at current location
+  [  0%] Import File...                        — Import from host filesystem
+  [  0%] Import File as Text...                — Import with CR/LF -> Atari EOL (0x9B)
+  [  0%] Export File as Text...                — Export with Atari EOL -> CR/LF
+  [  0%] Open (partition)                      — Navigate into partition
+  [  0%] Import Disk Image (partition)         — Import disk image into partition
+  [  0%] Export Disk Image (partition)         — Export partition as disk image
+
+1.3 OPTIONS MENU (IDR_DISKEXPLORER_MENU — 0/3 items)
+  [  0%] Strict filename checking              — Radio: enforce 8.3 rules strictly
+  [  0%] Relaxed filename checking             — Radio: allow longer/mixed case names
+  [  0%] Adjust Conflicting Filenames          — Auto-rename on collision
+
+1.4 OTHER MISSING FEATURES
+  [  0%] Text import/export (CR/LF <-> Atari EOL 0x9B conversion)
+  [  0%] Partition support (open/import/export from block device partitions)
+  [  0%] "Text: wrap to GR.0 screen (38 columns)" viewer mode
+  [  0%] Settings persistence (strict filenames, adjust filenames in registry)
+  [  0%] Drag and drop (drag files out to host, drop files in from host)
+
+
+================================================================================
+2. SETUP WIZARD (ui_tools.cpp — IDD_WIZARD_*)
+================================================================================
+
+  [100%] Welcome page
+  [100%] Firmware scan page (ATFirmwareAutodetect, folder picker)
+  [100%] Post-firmware message
+  [100%] System type select (Computer/5200)
+  [100%] Video standard select (NTSC/PAL)
+  [100%] Experience level (Authentic/Convenient)
+  [100%] Finish page (computer/5200 variants)
+  [100%] LoadROMs + ColdReset on all exit paths when changed
+
+
+================================================================================
+3. COMPATIBILITY DATABASE (ui_tools.cpp — IDD_COMPATDB_EDITOR)
+================================================================================
+
+  [100%] New/Load/Save/SaveAs/Compile/CompileTo
+  [100%] Title list with CRUD
+  [100%] Alias editing with rule picker
+  [100%] Tag picker with all known tags
+  [100%] Unsaved changes confirmation
+  [100%] Compile-before-exit check
+
+
+================================================================================
+4. ADVANCED CONFIGURATION (ui_tools.cpp)
+================================================================================
+
+  [100%] All ATConfigVar types (Bool/Int32/Float/RGBColor)
+  [100%] Filter input
+  [100%] Inline editing (DragFloat, ColorEdit3, checkbox, text)
+  [100%] Right-click Reset to Default
+  [100%] Undefined cvar handling
+
+
+================================================================================
+5. KEYBOARD SHORTCUTS (ui_tools.cpp)
+================================================================================
+
+  [ 80%] Read-only viewer showing current key bindings
+  [  0%] Rebind keys (data-driven shortcut system — SDL3 uses hardcoded)
+  [  0%] Scan for Blocked Keys (IDR_KEYBOARDCUSTOMIZE_MENU)
+  [  0%] Assign Keyboard Shortcut from menu context (IDR_CUSTOMIZE_MENU)
+
+
+================================================================================
+6. OTHER TOOLS MENU ITEMS
+================================================================================
+
+  [100%] Convert SAP to EXE...      — Two-step file dialog, ATConvertSAPToPlayer()
+  [100%] Export ROM set...           — Folder picker, 6 files exported
+  [100%] Analyze Tape Decoding...   — Two-step file dialog, validates src != dest
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Category                    Implemented    Total    Coverage
+------------------------------------------------------------
+Disk Explorer core               12          12      100%
+Disk Explorer context menu        3          11       27%
+Disk Explorer options menu        0           3        0%
+Disk Explorer other features      0           5        0%
+Setup Wizard                      8           8      100%
+Compat DB                         6           6      100%
+Advanced Configuration            5           5      100%
+Keyboard Shortcuts                1           3       33%
+Other tools                       3           3      100%
+
+Disk Explorer is the main gap: file import, text conversion, partition
+support, filename checking options, and most context menu items are missing.
+Keyboard shortcut rebinding requires a data-driven system not yet designed.

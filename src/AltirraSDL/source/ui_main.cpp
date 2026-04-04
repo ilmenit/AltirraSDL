@@ -9,6 +9,9 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#include <imgui_impl_opengl3.h>
+#include "display_backend.h"
+#include "display_backend_gl33.h"
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -50,14 +53,22 @@
 #include "firmwaremanager.h"
 #include "oshelper.h"
 #include "resource.h"
+#include "display_backend.h"
 
 extern ATSimulator g_sim;
 extern ATUIKeyboardOptions g_kbdOpts;
+
+// Display backend accessor — ui_rewind.cpp and ui_screenfx.cpp use this
+// to create preview textures.  Returns nullptr until the backend is wired.
+static IDisplayBackend *s_pDisplayBackend = nullptr;
+IDisplayBackend *ATUIGetDisplayBackend() { return s_pDisplayBackend; }
+void ATUISetDisplayBackend(IDisplayBackend *backend) { s_pDisplayBackend = backend; }
 
 // Recording functions (defined in ui_recording.cpp)
 void ATUIStartAudioRecording(const wchar_t *path, bool raw);
 void ATUIStartSAPRecording(const wchar_t *path);
 void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding);
+void ATUIStartVGMRecording(const wchar_t *path);
 
 // =========================================================================
 // Deferred action queue — thread-safe handoff from file dialog callbacks
@@ -332,6 +343,7 @@ std::mutex g_saveFrameMutex;
 VDStringA g_saveFramePath;
 
 bool g_copyFrameRequested = false;
+ATUIDragDropState g_dragDropState;
 
 void ATUISaveFrameCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
@@ -596,6 +608,9 @@ void ATUIPollDeferredActions() {
 			case kATDeferred_StartRecordVideo:
 				ATUIStartVideoRecording(a.path.c_str(), (ATVideoEncoding)a.mInt);
 				break;
+			case kATDeferred_StartRecordVGM:
+				ATUIStartVGMRecording(a.path.c_str());
+				break;
 			case kATDeferred_SetCompatDBPath: {
 				extern ATOptions g_ATOptions;
 				ATOptions prev(g_ATOptions);
@@ -660,7 +675,9 @@ void ATUIPollDeferredActions() {
 // Init / Shutdown
 // =========================================================================
 
-bool ATUIInit(SDL_Window *window, SDL_Renderer *renderer) {
+static bool s_usingGLBackend = false;
+
+bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 
@@ -674,22 +691,45 @@ bool ATUIInit(SDL_Window *window, SDL_Renderer *renderer) {
 	style.WindowRounding = 4.0f;
 	style.GrabRounding = 2.0f;
 
-	if (!ImGui_ImplSDL3_InitForSDLRenderer(window, renderer)) {
-		fprintf(stderr, "[AltirraSDL] ImGui SDL3 init failed\n");
-		return false;
-	}
-	if (!ImGui_ImplSDLRenderer3_Init(renderer)) {
-		fprintf(stderr, "[AltirraSDL] ImGui SDLRenderer3 init failed\n");
-		return false;
+	s_pDisplayBackend = backend;
+
+	if (backend->GetType() == DisplayBackendType::OpenGL33) {
+		s_usingGLBackend = true;
+		auto *glBackend = static_cast<DisplayBackendGL33 *>(backend);
+		if (!ImGui_ImplSDL3_InitForOpenGL(window, glBackend->GetGLContext())) {
+			fprintf(stderr, "[AltirraSDL] ImGui SDL3/OpenGL init failed\n");
+			return false;
+		}
+		if (!ImGui_ImplOpenGL3_Init("#version 330 core")) {
+			fprintf(stderr, "[AltirraSDL] ImGui OpenGL3 init failed\n");
+			return false;
+		}
+		fprintf(stderr, "[AltirraSDL] ImGui initialized (OpenGL 3.3, docking enabled)\n");
+	} else {
+		s_usingGLBackend = false;
+		SDL_Renderer *renderer = backend->GetSDLRenderer();
+		if (!ImGui_ImplSDL3_InitForSDLRenderer(window, renderer)) {
+			fprintf(stderr, "[AltirraSDL] ImGui SDL3 init failed\n");
+			return false;
+		}
+		if (!ImGui_ImplSDLRenderer3_Init(renderer)) {
+			fprintf(stderr, "[AltirraSDL] ImGui SDLRenderer3 init failed\n");
+			return false;
+		}
+		fprintf(stderr, "[AltirraSDL] ImGui initialized (SDL_Renderer, docking enabled)\n");
 	}
 
-	fprintf(stderr, "[AltirraSDL] ImGui initialized (docking enabled)\n");
 	return true;
 }
 
 void ATUIShutdown() {
+	ATUIShutdownPaletteSolver();
 	ATUIStopRecording();
-	ImGui_ImplSDLRenderer3_Shutdown();
+	if (s_usingGLBackend) {
+		ImGui_ImplOpenGL3_Shutdown();
+	} else {
+		ImGui_ImplSDLRenderer3_Shutdown();
+	}
 	ImGui_ImplSDL3_Shutdown();
 	ImGui::DestroyContext();
 }
@@ -757,8 +797,35 @@ static void ClipboardCleanupCallback(void *userdata) {
 		SDL_DestroySurface(surface);
 }
 
-static void CopyFrameToClipboard(SDL_Renderer *renderer) {
-	SDL_Surface *surface = SDL_RenderReadPixels(renderer, nullptr);
+// Read the current framebuffer into an SDL_Surface (works for both backends).
+static SDL_Surface *ReadFramebufferToSurface(IDisplayBackend *backend) {
+	if (!backend)
+		return nullptr;
+
+	if (backend->GetType() == DisplayBackendType::SDLRenderer) {
+		return SDL_RenderReadPixels(backend->GetSDLRenderer(), nullptr);
+	}
+
+	// GL path: read via IDisplayBackend::ReadPixels into an RGBA surface
+	int w, h;
+	SDL_GetWindowSizeInPixels(backend->GetWindow(), &w, &h);
+	if (w <= 0 || h <= 0)
+		return nullptr;
+
+	SDL_Surface *surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA8888);
+	if (!surface)
+		return nullptr;
+
+	if (!backend->ReadPixels(surface->pixels, surface->pitch, 0, 0, w, h)) {
+		SDL_DestroySurface(surface);
+		return nullptr;
+	}
+
+	return surface;
+}
+
+static void CopyFrameToClipboard(IDisplayBackend *backend) {
+	SDL_Surface *surface = ReadFramebufferToSurface(backend);
 	if (!surface) {
 		fprintf(stderr, "[AltirraSDL] Copy frame: failed to read pixels: %s\n", SDL_GetError());
 		return;
@@ -1129,19 +1196,87 @@ void ATUIRenderExitConfirm(ATSimulator &sim, ATUIState &state) {
 }
 
 // =========================================================================
+// Drag-and-drop overlay — highlight drop target during file drag
+// =========================================================================
+
+void ATUIRenderDragDropOverlay() {
+	if (!g_dragDropState.active)
+		return;
+
+	ImDrawList *fg = ImGui::GetForegroundDrawList();
+	float cx = g_dragDropState.x;
+	float cy = g_dragDropState.y;
+
+	// Check which drop target the cursor is over
+	struct DropTarget {
+		ImVec2 pos, size;
+		const char *label;
+	};
+	DropTarget target = {};
+
+	ImVec2 p, s;
+	if (ATUIDiskExplorerGetDropRect(p, s)
+		&& cx >= p.x && cy >= p.y && cx <= p.x + s.x && cy <= p.y + s.y) {
+		target = {p, s, "Import to disk image"};
+	} else if (ATUIFirmwareManagerGetDropRect(p, s)
+		&& cx >= p.x && cy >= p.y && cx <= p.x + s.x && cy <= p.y + s.y) {
+		target = {p, s, "Add firmware"};
+	} else {
+		// Default: entire viewport = boot image
+		ImVec2 vp = ImGui::GetMainViewport()->Pos;
+		ImVec2 vs = ImGui::GetMainViewport()->Size;
+		target = {vp, vs, "Boot image"};
+	}
+
+	// Draw highlight border around target window
+	ImU32 borderColor = IM_COL32(80, 160, 255, 200);
+	ImU32 fillColor = IM_COL32(80, 160, 255, 30);
+	float thickness = 3.0f;
+	ImVec2 tl = target.pos;
+	ImVec2 br = ImVec2(tl.x + target.size.x, tl.y + target.size.y);
+	fg->AddRectFilled(tl, br, fillColor);
+	fg->AddRect(tl, br, borderColor, 0.0f, 0, thickness);
+
+	// Draw label tooltip near cursor
+	ImVec2 textSize = ImGui::CalcTextSize(target.label);
+	ImVec2 padding = ImVec2(8, 4);
+	ImVec2 labelPos = ImVec2(cx + 16, cy + 16);
+
+	// Keep label within viewport
+	ImVec2 vpMax = ImVec2(ImGui::GetMainViewport()->Pos.x + ImGui::GetMainViewport()->Size.x,
+		ImGui::GetMainViewport()->Pos.y + ImGui::GetMainViewport()->Size.y);
+	if (labelPos.x + textSize.x + padding.x * 2 > vpMax.x)
+		labelPos.x = cx - textSize.x - padding.x * 2 - 4;
+	if (labelPos.y + textSize.y + padding.y * 2 > vpMax.y)
+		labelPos.y = cy - textSize.y - padding.y * 2 - 4;
+
+	ImVec2 bgMin = labelPos;
+	ImVec2 bgMax = ImVec2(labelPos.x + textSize.x + padding.x * 2,
+		labelPos.y + textSize.y + padding.y * 2);
+	fg->AddRectFilled(bgMin, bgMax, IM_COL32(30, 30, 30, 220), 4.0f);
+	fg->AddRect(bgMin, bgMax, borderColor, 4.0f);
+	fg->AddText(ImVec2(labelPos.x + padding.x, labelPos.y + padding.y),
+		IM_COL32(255, 255, 255, 255), target.label);
+}
+
+// =========================================================================
 // Top-level frame render
 // =========================================================================
 
 void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
-	SDL_Renderer *renderer, ATUIState &state)
+	IDisplayBackend *backend, ATUIState &state)
 {
-	ImGui_ImplSDLRenderer3_NewFrame();
+	if (s_usingGLBackend) {
+		ImGui_ImplOpenGL3_NewFrame();
+	} else {
+		ImGui_ImplSDLRenderer3_NewFrame();
+	}
 	ImGui_ImplSDL3_NewFrame();
 	ImGui::NewFrame();
 
-	SDL_Window *window = SDL_GetRenderWindow(renderer);
+	SDL_Window *window = backend->GetWindow();
 
-	ATUIRenderMainMenu(sim, window, renderer, state);
+	ATUIRenderMainMenu(sim, window, backend, state);
 	RenderStatusOverlay(sim);
 
 	// Pick up pending cartridge mapper dialog from deferred actions
@@ -1176,7 +1311,14 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showKeyboardShortcuts) ATUIRenderKeyboardShortcuts(state);
 	if (state.showCompatDB)          ATUIRenderCompatDB(sim, state);
 	if (state.showAdvancedConfig)    ATUIRenderAdvancedConfig(state);
+	if (state.showCheater)          ATUIRenderCheater(sim, state);
+	if (state.showRewind)           ATUIRenderRewindDialog(sim, state);
+	if (state.showLightPen)         ATUIRenderLightPenDialog(sim, state);
+	if (state.showScreenEffects)    ATUIRenderScreenEffects(sim, state);
 	ATUIRenderVideoRecordingDialog(window);
+
+	// HUD overlay (drive LEDs, status, FPS, pause, errors)
+	ATUIRenderHUDOverlay();
 
 	// Debugger panes (dockable windows)
 	ATUIDebuggerRenderPanes(sim, state);
@@ -1212,8 +1354,15 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 		ImGui::EndPopup();
 	}
 
+	// Drag-and-drop visual feedback overlay
+	ATUIRenderDragDropOverlay();
+
 	ImGui::Render();
-	ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
+	if (s_usingGLBackend) {
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	} else {
+		ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), backend->GetSDLRenderer());
+	}
 
 	// Process test mode pending actions (click state machine, deferred responses)
 	ATTestModePostRender(sim, state);
@@ -1226,7 +1375,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 			savePath.swap(g_saveFramePath);
 		}
 		if (!savePath.empty()) {
-			SDL_Surface *surface = SDL_RenderReadPixels(renderer, nullptr);
+			SDL_Surface *surface = ReadFramebufferToSurface(backend);
 			if (surface) {
 				if (SDL_SaveBMP(surface, savePath.c_str()))
 					fprintf(stderr, "[AltirraSDL] Frame saved to %s\n", savePath.c_str());
@@ -1240,7 +1389,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 		if (g_copyFrameRequested) {
 			g_copyFrameRequested = false;
-			CopyFrameToClipboard(renderer);
+			CopyFrameToClipboard(backend);
 		}
 	}
 }

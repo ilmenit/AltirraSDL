@@ -385,7 +385,7 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	bool shift = (ev.mod & SDL_KMOD_SHIFT) != 0;
 	bool ctrl  = (ev.mod & SDL_KMOD_CTRL) != 0;
 
-	// Handle Break (Pause/Break key only — F8 is QuickSaveState)
+	// Handle Break (Pause/Break key — Ctrl+Pause is Debug.Break in main_sdl3.cpp)
 	if (ev.scancode == SDL_SCANCODE_PAUSE) {
 		g_inputState.mpPokey->PushBreak();
 		return;

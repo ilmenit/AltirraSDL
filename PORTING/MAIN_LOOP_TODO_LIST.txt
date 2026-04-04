@@ -129,5 +129,5 @@ Speed control                    5            5      100%
 Shutdown                         6            6      100%
 
 Main loop is fully functional with turbo, speed control, pause-when-inactive,
-file drop, and per-frame audio rate sync. Only missing: independent FPS
-telemetry (minor).
+file drop, per-frame audio rate sync, and FPS telemetry (FramePacer with
+ATUIGetMeasuredFPS). No remaining items.

@@ -17,13 +17,19 @@
 VDAssertResult VDAssert(const char *exp, const char *file, int line) {
 	fprintf(stderr, "%s(%d): Assert failed: %s\n", file, line, exp);
 	fflush(stderr);
-	return kVDAssertBreak;
+	// On Windows, __debugbreak() is a soft breakpoint that a debugger can
+	// step past.  On Linux/GCC, __builtin_trap() sends SIGILL which
+	// terminates unconditionally — even for benign asserts that the Windows
+	// build routinely continues through.  Return kVDAssertContinue so the
+	// assert is logged but execution continues, matching MSVC behaviour
+	// when no debugger is attached.
+	return kVDAssertContinue;
 }
 
 VDAssertResult VDAssertPtr(const char *exp, const char *file, int line) {
 	fprintf(stderr, "%s(%d): Assert failed: %s is not a valid pointer\n", file, line, exp);
 	fflush(stderr);
-	return kVDAssertBreak;
+	return kVDAssertContinue;
 }
 
 void VDDebugPrint(const char *format, ...) {

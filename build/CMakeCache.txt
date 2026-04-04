@@ -239,6 +239,45 @@ FETCHCONTENT_UPDATES_DISCONNECTED_IMGUI:BOOL=OFF
 //Git command line client
 GIT_EXECUTABLE:FILEPATH=/usr/bin/git
 
+//Path to a file.
+OPENGL_EGL_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a file.
+OPENGL_GLES2_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a file.
+OPENGL_GLES3_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a file.
+OPENGL_GLU_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a file.
+OPENGL_GLX_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a file.
+OPENGL_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+OPENGL_egl_LIBRARY:FILEPATH=/usr/lib64/libEGL.so
+
+//Path to a library.
+OPENGL_gles2_LIBRARY:FILEPATH=/usr/lib64/libGLESv2.so
+
+//Path to a library.
+OPENGL_gles3_LIBRARY:FILEPATH=/usr/lib64/libGLESv2.so
+
+//Path to a library.
+OPENGL_glu_LIBRARY:FILEPATH=/usr/lib64/libGLU.so
+
+//Path to a library.
+OPENGL_glx_LIBRARY:FILEPATH=/usr/lib64/libGLX.so
+
+//Path to a library.
+OPENGL_opengl_LIBRARY:FILEPATH=/usr/lib64/libOpenGL.so
+
+//Path to a file.
+OPENGL_xmesa_INCLUDE_DIR:PATH=OPENGL_xmesa_INCLUDE_DIR-NOTFOUND
+
 //The directory containing a CMake configuration file for SDL3.
 SDL3_DIR:PATH=/usr/lib64/cmake/SDL3
 
@@ -378,6 +417,34 @@ CMAKE_TAPI-ADVANCED:INTERNAL=1
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//Details about finding OpenGL
+FIND_PACKAGE_MESSAGE_DETAILS_OpenGL:INTERNAL=[/usr/lib64/libOpenGL.so][/usr/lib64/libGLX.so][/usr/include][c ][v()]
 //ADVANCED property for variable: GIT_EXECUTABLE
 GIT_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_EGL_INCLUDE_DIR
+OPENGL_EGL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_GLES2_INCLUDE_DIR
+OPENGL_GLES2_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_GLES3_INCLUDE_DIR
+OPENGL_GLES3_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_GLU_INCLUDE_DIR
+OPENGL_GLU_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_GLX_INCLUDE_DIR
+OPENGL_GLX_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_INCLUDE_DIR
+OPENGL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_egl_LIBRARY
+OPENGL_egl_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_gles2_LIBRARY
+OPENGL_gles2_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_gles3_LIBRARY
+OPENGL_gles3_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_glu_LIBRARY
+OPENGL_glu_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_glx_LIBRARY
+OPENGL_glx_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_opengl_LIBRARY
+OPENGL_opengl_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_xmesa_INCLUDE_DIR
+OPENGL_xmesa_INCLUDE_DIR-ADVANCED:INTERNAL=1
 

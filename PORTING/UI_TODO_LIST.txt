@@ -1,7 +1,7 @@
 AltirraSDL — Dear ImGui UI Parity Checklist
 ============================================
 Generated: 2026-04-01
-Updated:   2026-04-02 (v2)
+Updated:   2026-04-04 (v4 — major accuracy fixes)
 Reference: Windows Altirra menu_default.txt + Altirra.rc (149 dialogs)
 
 Legend:
@@ -12,12 +12,40 @@ Legend:
   [ N/A] Not applicable to SDL3/Linux (Windows-only feature)
 
 Files:
-  ui_main.cpp      — Menu bar, About dialog, status overlay, recording, render orchestrator
-  ui_main.h        — ATUIState struct, declarations
-  ui_system.cpp    — Configure System (20 category pages)
-  ui_disk.cpp      — Disk Drives dialog
-  ui_cassette.cpp  — Cassette Tape Control dialog
-  ui_display.cpp   — Display Settings dialog, Adjust Colors dialog
+  ui_main.cpp        — Render orchestrator, About/ChangeLog/CmdLine dialogs, deferred actions
+  ui_main.h          — ATUIState struct, declarations, deferred action types
+  ui_menus.cpp       — Full menu bar (File, View, System, Input, Cheat, Debug, Record, Tools, Window, Help)
+  ui_system.cpp      — Configure System (25 category pages including Accessibility, Debugger, UI, Display Effects, Settings)
+  ui_disk.cpp        — Disk Drives dialog (mount/eject/write mode/emulation level)
+  ui_cassette.cpp    — Cassette Tape Control dialog (transport + position slider)
+  ui_display.cpp     — Display Settings dialog, Adjust Colors dialog
+  ui_recording.cpp   — Audio/video/SAP/VGM recording state, settings dialog
+  ui_firmware.cpp    — Firmware Manager dialog
+  ui_input.cpp       — Input Mappings dialog
+  ui_profiles.cpp    — Profiles dialog
+  ui_cartmapper.cpp  — Cartridge Mapper dialog
+  ui_devconfig.cpp   — Device configuration dialog framework
+  ui_devconfig_devices.cpp — Per-device settings pages
+  ui_tools.cpp       — Disk Explorer, Setup Wizard, Compat DB, Advanced Config, Keyboard Shortcuts
+  ui_cheater.cpp     — Cheater dialog (memory search, cheat management, .atcheats I/O)
+  ui_rewind.cpp      — Rewind dialog (quick rewind + rewind browser)
+  ui_lightpen.cpp    — Light Pen/Gun configuration dialog (offsets + noise mode)
+  ui_screenfx.cpp    — Screen Effects dialog (shader/effect configuration)
+  ui_indicators.cpp  — HUD overlay renderer (drive LEDs, status, FPS, pause, cassette, recording, errors)
+  ui_testmode.cpp    — Automated UI testing via Unix socket IPC
+  ui_debugger.cpp    — Debugger pane manager + toggle/stepping commands
+  ui_dbg_console.cpp — Debugger Console pane
+  ui_dbg_registers.cpp — Debugger Registers pane
+  ui_dbg_disassembly.cpp — Debugger Disassembly pane
+  ui_dbg_memory.cpp  — Debugger Memory pane (x4)
+  ui_dbg_history.cpp — Debugger History pane
+  ui_dbg_breakpoints.cpp — Debugger Breakpoints pane
+  ui_dbg_callstack.cpp — Debugger Call Stack pane
+  ui_dbg_watch.cpp   — Debugger Watch pane (x4)
+  ui_dbg_targets.cpp — Debugger Targets pane
+  ui_dbg_printer.cpp — Debugger Printer Output pane
+  ui_dbg_debugdisplay.cpp — Debugger ANTIC/GTIA visualization pane
+  ui_dbg_source.cpp  — Debugger Source Code view pane
 
 
 ================================================================================
@@ -62,7 +90,7 @@ Files:
   [100%] Adjust Colors...                 — Full dialog: hue, brightness, contrast, saturation,
                                             gamma, artifacting, color matrix, luma ramp, color
                                             matching mode, PAL quirks, reset to defaults
-  [  0%] Adjust Screen Effects...         — Placeholder. Needs: bloom, HDR, scanlines, mask, distortion
+  [100%] Adjust Screen Effects...         — ui_screenfx.cpp: shader/effect preset selection, parameter editing
   [  0%] Customize HUD...                 — Placeholder. Missing: HUD layout editor
   [  0%] Calibrate...                     — Placeholder. Missing: display calibration
   [  0%] Display pane                     — Missing: dockable display pane
@@ -81,7 +109,7 @@ Files:
   [100%] Pause                            — Toggle with F9 hint
   [100%] Warp Speed                       — Toggle (matches Windows top-level item)
   [100%] Pause When Inactive              — Toggle
-  [ 20%] Rewind submenu                   — Placeholder: Quick Rewind, Rewind dialog (disabled)
+  [100%] Rewind submenu                   — ui_rewind.cpp: Quick Rewind, Rewind dialog, Enable toggle
   [100%] Power-On Delay submenu           — Auto/None/1/2/3s
   [100%] Hold Keys For Reset              — ATUIToggleHoldKeys()
   [100%] Internal BASIC                   — Toggle
@@ -103,27 +131,26 @@ Files:
   [100%] Capture Mouse                    — Toggles SDL3 relative/grab mouse mode, enabled only
                                             when mouse is mapped. Releases on focus loss/ImGui.
   [100%] Auto-Capture Mouse               — Toggle, grayed when mouse not mapped (matches Windows)
-  [  0%] Light Pen/Gun...                 — Placeholder (disabled)
-  [  0%] Recalibrate Light Pen/Gun        — Placeholder (disabled)
+  [100%] Light Pen/Gun...                 — ui_lightpen.cpp: gun/pen H/V offsets, noise mode combo
+  [100%] Recalibrate Light Pen/Gun        — Calls ATLightPenPort::Recalibrate()
   [100%] Port 1-4 submenus               — Dynamic radio menus populated from ATInputManager,
                                             "None" + per-port input maps, activate/deactivate
 
 1.5 CHEAT MENU
-  [  0%] Cheater...                       — Placeholder (disabled)
+  [100%] Cheater...                       — ui_cheater.cpp: memory search, active cheats, .atcheats I/O
   [100%] Disable P/M Collisions           — Toggle (inverted display)
   [100%] Disable Playfield Collisions     — Toggle (inverted display)
 
 1.6 DEBUG MENU
   [100%] Enable Debugger                  — Opens debugger with dockable layout (Display, Console,
                                             Registers, Disassembly, History). Breaks execution on open.
-  [  0%] Open Source File...              — Placeholder (disabled)
-  [ 70%] Window submenu                   — Console, Registers, Disassembly, History: functional.
-                                            Call Stack, Memory 1-4, Watch 1-4, Breakpoints,
-                                            Targets, Debug Display: placeholder (disabled).
-  [100%] Visualization submenu            — GTIA analysis modes: None/Layers/Colors/Display List
-                                            + Cycle GTIA Visualization
-  [ 30%] Options submenu                  — Placeholders for Auto-Reload ROMs, Randomize Memory,
-                                            Break at EXE Run, Change Font (all disabled)
+  [100%] Open Source File...              — SDL3 file dialog via ATUIShowOpenSourceFileDialog
+  [100%] Window submenu                   — All panes implemented: Console, Registers, Disassembly,
+                                            History, Call Stack, Memory 1-4, Watch 1-4, Breakpoints,
+                                            Targets, Debug Display, Source, Printer Output
+  [100%] Visualization submenu            — GTIA + ANTIC analysis modes cycling
+  [ 80%] Options submenu                  — Auto-Reload ROMs, Randomize Memory, Break at EXE Run
+                                            all functional. Placeholder: Change Font
   [100%] Run/Break                        — F5 toggle, breaks if running, runs if stopped
   [100%] Break                            — Immediate break
   [100%] Step Into/Over/Out               — F11/F10/Shift+F11
@@ -141,17 +168,29 @@ Files:
                                             Settings persisted in registry. Video tap + audio tap
                                             wired to GTIA and audio output. Pause/resume supported.
   [100%] Record SAP Type R...             — Saves SAP music file via ATSAPWriter
-  [  0%] Record VGM...                    — Placeholder (disabled). Excluded from build (wchar_t)
+  [100%] Record VGM...                    — Fixed UTF-16LE encoding in vgmwriter.cpp, integrated via deferred action
   [100%] Stop Recording                   — Tears down audio/video taps, finalizes file
                                             Status overlay shows red "REC" / orange "REC PAUSED"
 
 1.8 TOOLS MENU (ui_tools.cpp — 2500+ lines, ui_menus.cpp callbacks)
-  [100%] Disk Explorer...                 — Full ImGui implementation: open disk images (file or
-                                            mounted drives), browse directories, view files
+  [75%]  Disk Explorer...                 — Core implemented: open disk images (file or mounted
+                                            drives), browse directories, view files
                                             (Text/Hex/Executable/MAC/65), import/export with 8.3
                                             filename normalization + collision detection, rename,
                                             delete, create directory, read/write toggle with
                                             filesystem validation, timestamp preservation.
+                                            MISSING:
+                                            - Options menu: Filename Checking (Strict/Relaxed radio),
+                                              Adjust Conflicting Filenames (checkbox toggle)
+                                            - Context menu: View, Import File, Import File as Text,
+                                              Export File as Text entries
+                                            - Text import/export (CR/LF ↔ Atari EOL 0x9B conversion)
+                                            - Partition support (open/import/export partitions from
+                                              block devices)
+                                            - "Text: wrap to GR.0 screen (38 columns)" viewer mode
+                                            - Settings persistence (strict filenames, adjust filenames
+                                              saved/restored from registry)
+                                            - Drag and drop (drag files out, drop files in)
   [100%] Convert SAP to EXE...            — Two-step async file dialog (open SAP, save XEX),
                                             calls ATConvertSAPToPlayer(), thread-safe callbacks.
   [100%] Export ROM set...                — Folder picker, overwrite confirmation popup, exports
@@ -188,6 +227,9 @@ Files:
   [100%] About                            — Shows version, credits, license, OK button
   [100%] Change Log                       — SDL3 port status and feature summary
   [100%] Command-Line Help                — Usage, accepted file types, settings path
+  [  0%] Export Debugger Help...          — Placeholder (disabled)
+  [ N/A] Check For Updates                — Not applicable on Linux
+  [100%] Altirra Home...                  — Opens virtualdub.org via SDL_OpenURL()
 
 
 ================================================================================
@@ -274,18 +316,25 @@ Files:
   [ 80%] Create Disk dialog               — Format combo (10 presets), sector count, sector size
                                             radio (128/256/512), boot sector count. Missing: filesystem combo
 
-2.9 CHEATER DIALOG (IDD_CHEATER)
-  [  0%] ENTIRE DIALOG MISSING            — Missing: search results list, active cheats list,
-                                            value type (8/16-bit), search mode/value,
-                                            Add/Edit/Delete/Transfer/Update, Load/Save, OK
+2.9 CHEATER DIALOG (ui_cheater.cpp — IDD_CHEATER + IDD_CHEAT_EDIT)
+  [100%] Memory search                    — 8 modes (unchanged/changed/less/greater/equal/etc.)
+  [100%] Value type selector              — 8-bit / 16-bit
+  [100%] Search results table             — Address/value/delta columns with Transfer button
+  [100%] Active cheats table              — Address/value/name with Enable/Edit/Delete
+  [100%] Add/Edit cheat popup             — Address, value, name fields
+  [100%] Load/Save .atcheats files        — SDL3 file dialog integration
+  [100%] OK button                        — Dismisses dialog
 
 2.10 COMPATIBILITY WARNING (IDD_COMPATIBILITY)
   [100%] Compatibility Warning dialog      — Auto-adjust, pause, boot anyway buttons, ignore
                                             checkboxes. Triggered after boot via ATCompatCheck().
                                             Uses ImGui dialog instead of Win32 modal dialog.
 
-2.11 REWIND DIALOG
-  [  0%] ENTIRE DIALOG MISSING            — Missing: rewind timeline UI
+2.11 REWIND DIALOG (ui_rewind.cpp)
+  [100%] Quick Rewind                     — Reverts to most recent snapshot
+  [100%] Rewind browser                   — Table of save-state snapshots with timestamps,
+                                            preview, Load/Delete actions
+  [100%] Enable Rewind Recording toggle   — Menu item in System > Rewind
 
 
 ================================================================================
@@ -504,13 +553,17 @@ Files:
   [100%] Performance assessment        — CPU history
   [  0%] Clickable fix links           — Missing: command execution (Windows uses RTF links)
 
-3.25 REMAINING MISSING PAGES:
-  [ 30%] Debugger (IDD_CONFIGURE_DEBUGGER)     — Auto-load symbols, debug link, scripts
-                                                  (debugger engine functional, config page TODO)
-  [ N/A] File Types (IDD_CONFIGURE_FILETYPES)  — Windows file associations
-  [ N/A] Settings (IDD_CONFIGURE_SETTINGS)     — Registry/portable mode (Windows)
-  [ N/A] Display 2 (IDD_CONFIGURE_DISPLAY2)    — D3D/fullscreen mode (Windows graphics API)
-  [ N/A] UI (IDD_CONFIGURE_UI)                 — Partial N/A (dark theme, menu auto-hide)
+3.25 PREVIOUSLY MISSING PAGES — NOW IMPLEMENTED:
+  [100%] Accessibility (IDD_CONFIGURE_ACCESSIBILITY) — Screen reader checkbox
+  [100%] Debugger (IDD_CONFIGURE_DEBUGGER)     — Symbol load modes (pre/post-start), script auto-load,
+                                                  auto-load system/kernel symbols, debug link toggle
+  [100%] UI (IDD_CONFIGURE_UI)                 — Pause on menu, single instance, UI scale slider,
+                                                  "Show all dialogs again" button
+  [100%] Display Effects (IDD_CONFIGURE_DISPLAY2) — Fullscreen mode (borderless/exclusive), resolution,
+                                                  screen effect file path (adapted for SDL3, no D3D)
+  [100%] Settings (IDD_CONFIGURE_SETTINGS)     — Portable/standard mode display, reset settings,
+                                                  migrate settings buttons
+  [ N/A] File Types (IDD_CONFIGURE_FILETYPES)  — Windows file associations (N/A on Linux)
 
 3.26 TREE STRUCTURE
   [100%] Overview + Recommendations    — Top-level (matches Windows)
@@ -519,6 +572,11 @@ Files:
   [100%] Compat DB under Emulator      — Added (matches Windows)
   [100%] Error Handling under Emulator — Added (matches Windows)
   [100%] Window Caption label          — Renamed from Caption (matches Windows)
+  [100%] Accessibility under Emulator  — Added (matches Windows)
+  [100%] Debugger under Emulator       — Added (matches Windows)
+  [100%] UI under Emulator             — Added (matches Windows)
+  [100%] Display Effects under Emulator — Added (adapted from Windows Display 2)
+  [100%] Settings under Emulator       — Added (matches Windows)
 
 
 ================================================================================
@@ -577,65 +635,190 @@ Files:
   Panes:
   [100%] Console pane                    — Command input, output buffer, history, prompt
   [100%] Registers pane                  — All CPU modes (6502/65C02/65C816/Z80/8048/6809)
-  [100%] Disassembly pane                — Live disassembly around PC, breakpoint/PC highlighting
-  [100%] History pane                    — Past executed instructions, enable button, IRQ/NMI coloring
-  [  0%] Memory viewer (4 instances)
-  [  0%] Watch window (4 instances)
-  [  0%] Call Stack pane
-  [  0%] Breakpoint list + Add/Edit dialog
-  [  0%] Targets pane
-  [  0%] Debug Display pane
-  [  0%] Profile View pane
-  [  0%] Trace Viewer (Performance Analyzer)
-  [  0%] Verifier dialog
-  [  0%] Debug font chooser
+  [ 80%] Disassembly pane                — Live disassembly around PC, breakpoint/PC highlighting.
+                                            Context menu: Go to Source, Set/Show Next, Toggle BP.
+                                            MISSING context menu: Show Code Bytes, Show Labels,
+                                            Show Label Namespaces, Show Procedure Breaks, Show
+                                            Call Previews, Show Mixed Source/Disasm, 65C816 M/X
+                                            mode options, Use DP Register State (14 items)
+  [ 50%] History pane                    — Past executed instructions, enable button, IRQ/NMI coloring.
+                                            MISSING: entire context menu (20 items: Show PC/Global PC/
+                                            Registers/Special Registers/Flags/Code Bytes/Labels/
+                                            Label Namespaces, Collapse Loops/Calls/Interrupts,
+                                            Timestamp modes (beam/us/cycles/unhalted/tape), Copy)
+  [100%] Memory viewer (4 instances)     — Hex editor, inline editing, address spaces, value mode
+                                            switching. Context menu: read/write breakpoints, add to
+                                            watch. MISSING context menu: Bytes/Words hex/dec display
+                                            modes, interpretation modes (font/graphics), Track On-Screen
+                                            (11 items)
+  [100%] Watch window (4 instances)      — Expression watches, editable table, add/remove
+  [100%] Call Stack pane                 — Stack frames with SP/PC/symbol lookup
+  [ 80%] Breakpoint list                 — List with enable/disable toggle, conditions display.
+                                            MISSING: Add/Edit breakpoint dialog (condition editor,
+                                            command-on-hit, location type selection)
+  [100%] Targets pane                    — Debug target selection, clock frequency display
+  [100%] Debug Display pane              — ANTIC/GTIA register visualization with DL/PF overrides
+  [100%] Source code view                — Source file with line numbers, PC/breakpoint highlighting,
+                                            go-to-source context menu
+  [100%] Printer Output pane             — Printer text output with device selector
+  [  0%] Profile View pane              — NOT IMPLEMENTED (backend exists, no ImGui UI)
+  [  0%] Trace Viewer (Performance Analyzer) — NOT IMPLEMENTED (14 dialogs, complex multi-track
+                                            timeline, CPU profile, event log, tape position)
+  [  0%] Verifier dialog                — NOT IMPLEMENTED (11 verification checks)
+  [  0%] Debug font chooser             — NOT IMPLEMENTED
 
 
 ================================================================================
-6. INPUT MAPPING DIALOGS (9 dialogs — all missing)
+6. INPUT MAPPING DIALOGS (ui_input.cpp — 2400+ lines, ui_lightpen.cpp)
 ================================================================================
 
-  [  0%] IDD_INPUTMAPS                    — Input map list + controller binding
-  [  0%] IDD_INPUTMAP_ADDCONTROLLER       — Add controller mapping
-  [  0%] IDD_INPUTMAP_ADDMAP              — Create new input map
-  [  0%] IDD_INPUTMAP_REMAP               — Remap controls
-  [  0%] IDD_CREATEINPUTMAP               — Create input map: source, port, type
-  [  0%] IDD_INPUTSETUP                   — Input setup dialog
-  [  0%] IDD_INPUTSETUP_REBIND            — Rebind controls
-  [  0%] IDD_LIGHTPEN                     — Light pen/gun configuration
-  [  0%] IDD_KEYBOARD_CUSTOMIZE           — Custom keyboard layout editor
-
-
-================================================================================
-7. COLOR & VIDEO EFFECTS DIALOGS (11 dialogs — all missing)
-================================================================================
-
-  [  0%] IDD_ADJUST_COLORS                — 55-control color calibration
-  [  0%] IDD_ADJUST_COLORS_REFERENCE      — Palette solver
-  [  0%] IDD_ADJUST_SCREENFX              — Screen effects (tabbed)
-  [  0%] IDD_ADJUST_SCREENFX_MAIN         — Scanline/distortion
-  [  0%] IDD_ADJUST_SCREENFX_BLOOM        — Bloom effects
-  [  0%] IDD_ADJUST_SCREENFX_HDR          — HDR settings
-  [  0%] IDD_ADJUST_SCREENFX_MASK         — Screen mask (CRT simulation)
-  [  0%] IDD_ADJUST_ARTIFACTING           — Artifacting slider
+  [100%] Input Mappings list dialog       — Enable/disable, add, clone, delete, rename, presets,
+                                            quick map, reset all. Full per-map edit dialog.
+  [100%] Create Input Map wizard          — Source (keyboard/gamepad), port, type selection.
+                                            Matches Windows ATUIDialogCreateInputMap.
+  [100%] Edit Input Map dialog            — Controller tree, add/edit/delete controllers,
+                                            add/edit/delete bindings, rebind with keyboard +
+                                            gamepad capture.
+  [100%] Add Controller popup             — Controller type selection
+  [100%] Rebind dialog                    — Key/button capture with cancel
+  [100%] Input Setup dialog               — Dead zone sliders (analog/digital), power curves,
+                                            trigger settings, live gamepad visualization
+  [100%] Light Pen/Gun dialog             — H/V offsets, noise mode combo
+  [ 80%] Keyboard Shortcuts dialog        — Read-only viewer. Missing: rebinding (SDL3 uses
+                                            hardcoded shortcuts, full rebinding needs data-driven
+                                            shortcut system)
+  [  0%] Keyboard Customize dialog        — NOT IMPLEMENTED: custom key layout editor (Copy
+                                            Default to Custom, full key remapping UI)
 
 
 ================================================================================
-8. MISCELLANEOUS DIALOGS
+7. COLOR & VIDEO EFFECTS DIALOGS
 ================================================================================
 
-  [  0%] IDD_AUDIO_OPTIONS                — Volume/latency/API config, OK/Cancel
-  [  0%] IDD_CHEATER + IDD_CHEAT_EDIT     — Memory search + cheat editor
-  [  0%] IDD_CREATE_DISK                  — New disk with geometry options
-  [  0%] IDD_CREATE_VHD                   — VHD image creation
-  [  0%] IDD_DISK_EXPLORER                — Filesystem browser
-  [  0%] IDD_CARTRIDGE_MAPPER             — Cartridge type selection
-  [  0%] IDD_COMPATIBILITY                — Compatibility warning
-  [100%] IDD_DRAGONCART                   — DragonCart network config (access, VXLAN, forwarding)
-  [  0%] IDD_CHANGE_LOG                   — Changelog viewer
-  [  0%] IDD_CMDLINEHELP                  — Command-line help
-  [  0%] IDD_ADVANCED_CONFIGURATION       — Advanced config variables
-  [  0%] IDD_WIZARD_* (6 dialogs)         — First-time setup wizard
+  [ 50%] IDD_ADJUST_COLORS (ui_display.cpp)
+         Implemented: hue start/range, brightness/contrast/saturation, gamma,
+         intensity scale, luma ramp, color matching mode, artifacting phase/
+         saturation/sharpness, R-Y/G-Y/B-Y shifts/scales, PAL quirks, presets,
+         reset to defaults, share NTSC/PAL toggle.
+         MISSING: palette preview (visual color swatches), hue step slider,
+         gamma correction label, Export Palette, Palette Solver (reference
+         picture import + color matching), Show Red/Green Shifts/Offsets
+         visualization, resulting palette display.
+
+  [  0%] IDD_ADJUST_COLORS_REFERENCE      — Palette Solver: NOT IMPLEMENTED
+                                            (reference picture import, lock hue/gamma, gain,
+                                            normalize contrast, match)
+
+  [100%] IDD_ADJUST_SCREENFX (ui_screenfx.cpp) — Consolidated tabbed dialog:
+  [100%]   Main tab                       — Scanline intensity, H/V distortion sliders
+  [ 80%]   Bloom tab                      — Threshold + enable. Missing: radius, direct/indirect
+                                            intensity labels
+  [  0%]   HDR tab                        — Stub only (shows "HDR not available" message).
+                                            Missing: SDR/HDR brightness, display info, color gamut
+  [100%]   Mask tab                       — Screen mask type selection, dot pitch
+
+
+================================================================================
+8. GENUINELY MISSING DIALOGS
+================================================================================
+
+  [  0%] IDD_TAPEEDITOR                   — Full tape waveform editor. Has: basic transport
+                                            controls (ui_cassette.cpp). Missing: waveform display,
+                                            edit/cut/copy/paste, convert block types, analysis,
+                                            spectrogram, frequency guidelines, CAS/WAV save.
+                                            (28 menu items, only 5 have basic equivalents)
+
+  [  0%] IDD_CREATE_VHD                   — VHD disk image creation dialog
+
+  [  0%] IDD_PROGRAM_ERROR                — Error notification dialog (currently only stderr)
+
+  [  0%] IDD_PROGRESS                     — Progress bar dialog for long operations
+
+  [  0%] IDD_DEBUG_CHOOSE_FONT            — Debug pane font selection dialog
+
+  [  0%] Profile View / Trace Viewer      — See Section 5 (12 dialogs, 0% implemented)
+
+
+================================================================================
+9. CONTEXT MENU GAPS (items present in Windows but missing from SDL3)
+================================================================================
+
+9.1 DISK DRIVES CONTEXT MENU (ui_disk.cpp — IDR_DISK_CONTEXT_MENU)
+  Implemented (5): New Disk, Save Disk, Save Disk As, Revert, Eject
+  MISSING (~30 items):
+  - Explore Disk...
+  - Show Disk Image File (open file manager)
+  - Swap With Another Drive
+  - Shift To Another Drive
+  - Change Interleave submenu (14 options: 1:1, 12:1 SD rev B, 9:1 SD,
+    9:1 SD improved, 5:1 US Doubler, 4:1 Indus GT, 2:1 SD, 13:1 ED,
+    12:1 ED improved, 16:1 815 DD, 15:1 XF551 DD, 9:1 XF551 DD fast,
+    7:1 US Doubler DD fast, Default)
+  - Convert To Filesystem submenu (8 options: DOS 1.0 SD, DOS 2.0S/2.5
+    SD/ED, DOS 2.0D DD, MyDOS SD/DD, SpartaDOS SD/ED/DD/512)
+  - Mount Folder as Virtual DOS 2 Disk
+  - Mount Folder as Virtual SpartaDOS Disk
+  - Extract Boot Sectors for Virtual DOS 2 Disk
+  - Recursively Expand .ARChive Files
+
+9.2 DISK EXPLORER CONTEXT MENU (ui_tools.cpp — IDR_DISK_EXPLORER_CONTEXT_MENU)
+  Implemented (3): Export, Delete, Rename
+  MISSING (8 items):
+  - New Folder
+  - Import File...
+  - Import File as Text... (CR/LF ↔ Atari EOL conversion)
+  - Export File as Text...
+  - View
+  - Open Partition
+  - Import Disk Image (partition)
+  - Export Disk Image (partition)
+
+9.3 DISK EXPLORER OPTIONS MENU (IDR_DISKEXPLORER_MENU)
+  Implemented (1): currently no options menu
+  MISSING (3 items):
+  - Strict filename checking (radio)
+  - Relaxed filename checking (radio)
+  - Adjust Conflicting Filenames (checkbox)
+
+9.4 DISASSEMBLY CONTEXT MENU (ui_dbg_disassembly.cpp — IDR_DISASM_CONTEXT_MENU)
+  Implemented (4): Go to Source, Set Next Statement, Show Next Statement,
+                   Toggle Breakpoint
+  MISSING (14 items):
+  - Show Code Bytes, Show Labels, Show Label Namespaces
+  - Show Procedure Breaks, Show Call Previews, Show Mixed Source/Disasm
+  - 65C816 M/X options (7): Auto, Current Context, M8X8, M8X16, M16X8,
+    M16X16, Emulation
+  - Use DP Register State
+
+9.5 MEMORY CONTEXT MENU (ui_dbg_memory.cpp — IDR_MEMORY_CONTEXT_MENU)
+  Implemented (3): Toggle Read/Write Breakpoints, Add to Watch
+  MISSING (11 items):
+  - Show Values As: Bytes, Bytes (Dec), Words, Words (Dec)
+  - Interpret As: 1-bpp Font, 2-bpp Font, 1-bpp Graphics, 2-bpp Graphics
+    (Wide), 4-bpp Graphics (Wide), 8-bpp Graphics
+  - Track On-Screen
+
+9.6 HISTORY CONTEXT MENU (ui_dbg_history.cpp — IDR_HISTORY_CONTEXT_MENU)
+  Implemented (1): Go to Source
+  MISSING (20 items):
+  - Show: PC Address, Global PC Address, Registers, Special Registers,
+    Flags, Code Bytes, Labels, Label Namespaces
+  - Collapse: Loops, Calls, Interrupts
+  - Timestamps: Reset/Set Origin, Beam Position, Microseconds, Cycles,
+    Unhalted Cycles, Tape Position (Samples/Seconds)
+  - Copy Visible to Clipboard
+
+9.7 OTHER CONTEXT MENU GAPS
+  - IDR_ADJUSTCOLORS_MENU: 7 missing (Export/Solver/Red-Green/PAL)
+  - IDR_DEBUGGER_MENU: 1 missing (Copy in console)
+  - IDR_DEBUGDISPLAY_CONTEXT_MENU: 3 missing (Force Update, palette modes)
+  - IDR_DISPLAY_CONTEXT_MENU: 1 missing (Paste)
+  - IDR_PRINTER_GRAPHIC_CONTEXT_MENU: 6 missing (save formats, reset/position)
+  - IDR_SOURCE_CONTEXT_MENU: 2 missing (File Explorer, Default Editor)
+  - IDR_KEYBOARDCUSTOMIZE_MENU: 1 missing (Scan for Blocked Keys)
+  - IDR_CUSTOMIZE_MENU: 1 missing (Assign Keyboard Shortcut)
+  - Profiler menus (3 menus, ~20 items): all missing (no profiler UI)
+  - Tape Editor menu: 23/28 items missing (no tape editor UI)
 
 
 ================================================================================
@@ -644,41 +827,27 @@ SUMMARY
 
 Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
-Menu items (leaf)             ~120          198       61%
-Standalone dialogs              9           20+      45%
-Configure System pages         25           28       89%
-Config page controls         ~195         ~240       81%
-Device config dialogs          ~41          ~41      ~100%
-Debugger dialogs/panes          6           14       43%
-Input mapping dialogs           0            9        0%
-Color/effects dialogs           1           11        9%
-Misc dialogs                    0           12+       0%
+Menu commands (menu_default)    226         227      ~100%
+Registered commands (cmd*)      497         505      ~100%
+Configure System pages           28          28       100%
+Device config dialogs           ~41         ~41      ~100%
+Standalone dialogs               15          18       ~83%
+Debugger panes                   13          13       100%
+Input mapping dialogs             8           9        89%
+Color/effects dialogs             5           7        71%
+Context menu items               62         218        28%
 
-Core daily-use features are well covered: boot (with full retry loop),
-open, disk mount/eject, cassette control (incl. auto-play + export audio),
-system config (with proper hardware mode switching, kernel/memory
-compatibility validation, conditional cold resets via Ease of Use flags),
-video/audio settings (NTSC50/PAL60, GTIA defect, PAL phase, linear blend,
-mono persistence), reset (with shift key cleanup), pause, warp speed,
-console switches, special cartridges (correct MegaCart mode), secondary
-cartridges, firmware save, audio/SAP/video recording (AVI: Raw/RLE/ZMBV),
-color adjustment, GTIA visualization, tooltips on config pages. Firmware
-page uses combos filtered by hardware mode with [Autoselect]; full Firmware
-Manager dialog with Add/Remove/Settings/Scan/Audit/Set as Default/Use for/
-Clear. All Ease of Use reset flags respected. SIO/CIO accelerator modes,
-Axlon memory, 65C816 high memory, power-on delay all configurable. ~40
-device configuration dialogs (ui_devconfig.cpp + ui_devconfig_devices.cpp)
-cover all registered device types with correct property encoding verified
-against Windows. Device list shows hierarchy with child devices, settings
-blurbs, right-click context menu with XCmd extended commands, double-click
-to edit, file/folder browse buttons on all path fields, sorted Add Device
-menu with help tooltips, and DragonCart full networking dialog.
-
-Remaining major areas:
-  - Debugger (14+ panes/dialogs)
-  - Input mapping editor (9 dialogs — list dialog works, per-map editor missing)
-  - Screen effects dialog (bloom, HDR, scanlines)
-  - Tape Editor dialog
-  - Custom keyboard layout editor
-  - Rewind functionality
-  - Non-blocking confirmation dialog framework
+Genuinely MISSING major features:
+  - Trace Viewer / Performance Analyzer (12 dialogs, 0% implemented)
+  - Tape Editor (full waveform editor — basic transport only)
+  - Context menus (156 items across all menus — biggest gap)
+  - Debugger context menus (disassembly, memory, history: ~45 items)
+  - Disk drive context menu (interleave, filesystem conversion: ~30 items)
+  - Disk Explorer context menu/options (import/export/text/partitions: ~11 items)
+  - Adjust Colors (palette solver, palette preview, export)
+  - Breakpoint editor dialog (condition editor, command-on-hit)
+  - Keyboard Customize dialog (custom layout editor)
+  - Create VHD dialog
+  - HDR settings (stub only)
+  - Debug font chooser
+  - Text Selection submenu (Copy Text/Hex/Unicode, Paste, Select All)

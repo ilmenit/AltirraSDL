@@ -159,37 +159,41 @@ void ATVgmWriter::Shutdown() {
 		// fix up GD3 offset in header
 		VDWriteUnalignedLEU32(&mHeader[0x14], mBytesWrittenCount + mWriteOffset - 0x14);
 
-		// create GD3 (we need the length up front)
-		VDStringW gd3text;
-		static_assert(sizeof(gd3text[0]) == 2, "GD3 requires UTF-16");
-		gd3text += L"";	// track name (English)
-		gd3text += L'\0';
-		gd3text += L"";	// track name (original)
-		gd3text += L'\0';
-		gd3text += L"";	// game name (English)
-		gd3text += L'\0';
-		gd3text += L"";	// game name (original)
-		gd3text += L'\0';
-		gd3text += L"Atari 400/800";	// system name (English)
-		gd3text += L'\0';
-		gd3text += L"";	// system name (original)
-		gd3text += L'\0';
-		gd3text += L"";	// original track author (English)
-		gd3text += L'\0';
-		gd3text += L"";	// original track author (original)
-		gd3text += L'\0';
-		gd3text += L"";	// date of release
-		gd3text += L'\0';
-		gd3text += L"";	// name of person who converted
-		gd3text += L'\0';
-		gd3text += L"";	// notes
-		gd3text += L'\0';
+		// create GD3 in UTF-16LE (VGM standard requires UTF-16)
+		// On Windows, wchar_t is 2 bytes (native UTF-16).
+		// On Linux/macOS, wchar_t is 4 bytes, so we build UTF-16LE explicitly.
+		std::vector<uint16> gd3;
+		auto gd3AddStr = [&gd3](const wchar_t *s) {
+			while (*s) {
+				wchar_t c = *s++;
+				if (c <= 0xFFFF)
+					gd3.push_back((uint16)c);
+				else {
+					// Encode as surrogate pair
+					c -= 0x10000;
+					gd3.push_back((uint16)(0xD800 | (c >> 10)));
+					gd3.push_back((uint16)(0xDC00 | (c & 0x3FF)));
+				}
+			}
+			gd3.push_back(0);
+		};
+		gd3AddStr(L"");			// track name (English)
+		gd3AddStr(L"");			// track name (original)
+		gd3AddStr(L"");			// game name (English)
+		gd3AddStr(L"");			// game name (original)
+		gd3AddStr(L"Atari 400/800");	// system name (English)
+		gd3AddStr(L"");			// system name (original)
+		gd3AddStr(L"");			// original track author (English)
+		gd3AddStr(L"");			// original track author (original)
+		gd3AddStr(L"");			// date of release
+		gd3AddStr(L"");			// name of person who converted
+		gd3AddStr(L"");			// notes
 
 		// write GD3
 		WriteRaw("Gd3 ", 4);
 		Write(0x0100, 4);
-		Write(gd3text.size() * 2, 4);
-		WriteRaw(gd3text.data(), gd3text.size() * 2);
+		Write(gd3.size() * 2, 4);
+		WriteRaw(gd3.data(), gd3.size() * 2);
 		Flush();
 
 		// fix up file length in header

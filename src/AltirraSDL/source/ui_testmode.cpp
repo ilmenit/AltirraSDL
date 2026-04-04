@@ -276,6 +276,10 @@ static const DialogMapping kDialogMap[] = {
 	{ "KeyboardShortcuts", &ATUIState::showKeyboardShortcuts },
 	{ "CompatDB",          &ATUIState::showCompatDB },
 	{ "AdvancedConfig",    &ATUIState::showAdvancedConfig },
+	{ "Cheater",           &ATUIState::showCheater },
+	{ "LightPen",          &ATUIState::showLightPen },
+	{ "Rewind",            &ATUIState::showRewind },
+	{ "ScreenEffects",     &ATUIState::showScreenEffects },
 };
 
 static bool* FindDialogField(ATUIState &state, const std::string &name) {

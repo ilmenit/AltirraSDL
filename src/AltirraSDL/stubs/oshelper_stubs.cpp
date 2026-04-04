@@ -5,8 +5,13 @@
 
 #include <stdafx.h>
 #include <string.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vdstl.h>
+#include <vd2/system/VDString.h>
+#include <vd2/system/text.h>
 #include <vd2/Kasumi/pixmaputils.h>
 #include "oshelper.h"
 #include "resource.h"
@@ -131,4 +136,17 @@ bool ATLoadImageResource(uint32, VDPixmapBuffer&) {
 	return false;
 }
 
-void ATFileSetReadOnlyAttribute(const wchar_t*, bool) {}
+void ATFileSetReadOnlyAttribute(const wchar_t *path, bool readOnly) {
+#ifndef _WIN32
+	if (!path || !*path) return;
+	VDStringA u8 = VDTextWToU8(VDStringW(path));
+	struct stat st;
+	if (stat(u8.c_str(), &st) != 0) return;
+	mode_t mode = st.st_mode;
+	if (readOnly)
+		mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
+	else
+		mode |= S_IWUSR;
+	chmod(u8.c_str(), mode);
+#endif
+}

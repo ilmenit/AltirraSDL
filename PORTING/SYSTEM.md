@@ -132,10 +132,12 @@ default calling convention.
 The forward declarations of Win32 functions (`InitializeCriticalSection`,
 etc.) at lines 49-54 must be guarded with `#if VD_OS_WINDOWS`.
 
-### Source File: thread_sdl3.cpp
+### Source File: thread.cpp (cross-platform, NOT thread_sdl3.cpp)
 
-New file implementing VDThread, VDCriticalSection, VDSignal, VDSemaphore,
-VDRWLock, VDConditionVariable using SDL3 APIs.
+**Note:** The original plan proposed a separate `thread_sdl3.cpp` using
+SDL3 APIs.  The actual implementation uses `#ifdef VD_OS_WINDOWS` guards
+inside the existing `thread.cpp`, with pthreads on non-Windows platforms.
+No separate SDL3 thread file was created.
 
 Mapping:
 

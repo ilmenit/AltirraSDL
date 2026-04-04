@@ -22,6 +22,10 @@
 #include <at/atio/image.h>
 
 #include "display_sdl3_impl.h"
+#include "display_backend.h"
+#include "display_backend_gl33.h"
+#include "display_backend_sdl.h"
+#include "gl_funcs.h"
 #include "input_sdl3.h"
 #include "options.h"
 #include "ui_main.h"
@@ -34,12 +38,15 @@
 #include "uiaccessors.h"
 #include "inputmanager.h"
 #include "inputdefs.h"
+#include "antic.h"
 #include "gtia.h"
+#include <at/ataudio/pokey.h>
 #include "joystick.h"
 #include "joystick_sdl3.h"
 #include "firmwaremanager.h"
 #include "settings.h"
 #include "uitypes.h"
+
 #include <at/atcore/constants.h>
 #include <algorithm>
 #include <cmath>
@@ -48,6 +55,7 @@ ATSimulator g_sim;
 VDVideoDisplaySDL3 *g_pDisplay = nullptr;
 SDL_Window   *g_pWindow   = nullptr;  // non-static: accessed by console_stubs.cpp for fullscreen exit
 static SDL_Renderer *g_pRenderer = nullptr;
+static IDisplayBackend *g_pBackend = nullptr;
 static IATJoystickManager *g_pJoystickMgr = nullptr;
 static bool g_running = true;
 static bool g_winActive = true;
@@ -239,59 +247,171 @@ static void HandleEvents() {
 				ATUIReleaseMouse();
 				break;
 			}
-			if (!ATUIWantCaptureKeyboard()) {
-				// Debugger shortcuts take precedence when debugger is active
-				if (ATUIDebuggerIsOpen()) {
-					bool handled = true;
-					if (ev.key.key == SDLK_F5)
-						ATUIDebuggerRunStop();
-					else if (ev.key.key == SDLK_F10)
-						ATUIDebuggerStepOver();
-					else if (ev.key.key == SDLK_F11 && (ev.key.mod & SDL_KMOD_SHIFT))
-						ATUIDebuggerStepOut();
-					else if (ev.key.key == SDLK_F11)
-						ATUIDebuggerStepInto();
-					else
-						handled = false;
 
-					if (handled)
+			{
+				// ----------------------------------------------------------
+				// Global context shortcuts (Windows kATDefaultAccelTableGlobal)
+				// Fire regardless of ImGui focus — matches Windows
+				// TranslateAccelerator priority.
+				// ----------------------------------------------------------
+				bool globalHandled = true;
+				SDL_Keymod mod = ev.key.mod;
+
+				if (ev.key.key == SDLK_F8 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT)))
+					ATUIDebuggerRunStop();                          // Debug.RunStop
+				else if (ev.key.key == SDLK_F10 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT)))
+					ATUIDebuggerStepOver();                         // Debug.StepOver
+				else if (ev.key.key == SDLK_F11 && (mod & SDL_KMOD_SHIFT) && !(mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT)))
+					ATUIDebuggerStepOut();                          // Debug.StepOut
+				else if (ev.key.key == SDLK_F11 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT)))
+					ATUIDebuggerStepInto();                         // Debug.StepInto
+				else if (ev.key.key == SDLK_PAUSE && (mod & SDL_KMOD_CTRL))
+					ATUIDebuggerBreak();                            // Debug.Break (Ctrl+Pause)
+				// Alt+key dialog openers
+				else if ((mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_B)
+					ATUIShowBootImageDialog(g_pWindow);             // File.BootImage (Alt+B)
+				else if ((mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_O)
+					ATUIShowOpenImageDialog(g_pWindow);             // File.OpenImage (Alt+O)
+				else if ((mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_D)
+					g_uiState.showDiskManager = true;               // Disk.DrivesDialog (Alt+D)
+				else if ((mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_S)
+					g_uiState.showSystemConfig = true;              // System.Configure (Alt+S)
+				else if ((mod & SDL_KMOD_ALT) && (mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_O)
+					ATUIShowOpenSourceFileDialog(g_pWindow);        // Debug.OpenSourceFile (Alt+Shift+O)
+				else if ((mod & SDL_KMOD_ALT) && (mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_H)
+					g_uiState.showCheater = true;                   // Cheat.CheatDialog (Alt+Shift+H)
+				// Alt+1..8: Pane activation shortcuts (only when debugger is open)
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_1)
+					ATUIDebuggerFocusDisplay();
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_2)
+					ATActivateUIPane(kATUIPaneId_Console, true, true);
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_3)
+					ATActivateUIPane(kATUIPaneId_Registers, true, true);
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_4)
+					ATActivateUIPane(kATUIPaneId_Disassembly, true, true);
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_5)
+					ATActivateUIPane(kATUIPaneId_CallStack, true, true);
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_6)
+					ATActivateUIPane(kATUIPaneId_History, true, true);
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_7)
+					ATActivateUIPane(kATUIPaneId_MemoryN, true, true);
+				else if (ATUIDebuggerIsOpen() && (mod & SDL_KMOD_ALT) && !(mod & SDL_KMOD_SHIFT) && ev.key.key == SDLK_8)
+					ATActivateUIPane(kATUIPaneId_PrinterOutput, true, true);
+				else
+					globalHandled = false;
+
+				if (globalHandled)
+					break;
+
+				// ----------------------------------------------------------
+				// Debugger context shortcuts (Windows kATDefaultAccelTableDebugger)
+				// Override display-context keys (F5, F9) when debugger is open.
+				// ----------------------------------------------------------
+				if (ATUIDebuggerIsOpen()) {
+					bool dbgHandled = true;
+					if (ev.key.key == SDLK_F5 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT)))
+						ATUIDebuggerRunStop();                      // Debug.Run (F5 in debugger)
+					else if (ev.key.key == SDLK_F9 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT)))
+						ATUIDebuggerToggleBreakpoint();             // Debug.ToggleBreakpoint
+					else if (ev.key.key == SDLK_B && (mod & SDL_KMOD_CTRL) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_ALT)))
+						{ ATActivateUIPane(kATUIPaneId_Breakpoints, true, true); ATUIDebuggerShowBreakpointDialog(-1); } // Debug.NewBreakpoint (Ctrl+B)
+					else
+						dbgHandled = false;
+
+					if (dbgHandled)
 						break;
 				}
 
-				if (ev.key.key == SDLK_F5 && (ev.key.mod & SDL_KMOD_SHIFT)) {
-					g_sim.ColdReset();
-					g_sim.Resume();
-					extern ATUIKeyboardOptions g_kbdOpts;
-					if (!g_kbdOpts.mbAllowShiftOnColdReset)
-						g_sim.GetPokey().SetShiftKeyState(false, true);
-				} else if (ev.key.key == SDLK_F5 && !(ev.key.mod & SDL_KMOD_SHIFT)) {
-					g_sim.WarmReset();
-					g_sim.Resume();
-				} else if (ev.key.key == SDLK_F9) {
-					if (g_sim.IsPaused())
+				// ----------------------------------------------------------
+				// Display context shortcuts (Windows kATDefaultAccelTableDisplay)
+				// Only active when ImGui is not capturing keyboard.
+				// ----------------------------------------------------------
+				if (!ATUIWantCaptureKeyboard()) {
+					bool dispHandled = true;
+
+					if (ev.key.key == SDLK_F1 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_ALT | SDL_KMOD_CTRL))) {
+						ATUISetTurboPulse(true);                    // System.PulseWarpOn (F1 hold)
+					} else if (ev.key.key == SDLK_F1 && (mod & SDL_KMOD_SHIFT) && !(mod & (SDL_KMOD_ALT | SDL_KMOD_CTRL))) {
+						ATInputManager *pIM = g_sim.GetInputManager();
+						if (pIM) pIM->CycleQuickMaps();             // Input.CycleQuickMaps (Shift+F1)
+					} else if (ev.key.key == SDLK_F1 && (mod & SDL_KMOD_ALT) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL))) {
+						ATUIToggleHoldKeys();                       // Console.HoldKeys (Alt+F1)
+					} else if (ev.key.key == SDLK_F5 && (mod & SDL_KMOD_SHIFT) && !(mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+						g_sim.ColdReset();                          // System.ColdReset (Shift+F5)
 						g_sim.Resume();
-					else
-						g_sim.Pause();
-				} else if (ev.key.key == SDLK_F7)
-					ATUIQuickLoadState();
-				else if (ev.key.key == SDLK_F8)
-					ATUIQuickSaveState();
-				else if (ev.key.key == SDLK_RETURN &&
-					(ev.key.mod & SDL_KMOD_ALT)) {
-					bool fs = (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
-					SDL_SetWindowFullscreen(g_pWindow, !fs);
-				} else
-					ATInputSDL3_HandleKeyDown(ev.key);
+						extern ATUIKeyboardOptions g_kbdOpts;
+						if (!g_kbdOpts.mbAllowShiftOnColdReset)
+							g_sim.GetPokey().SetShiftKeyState(false, true);
+					} else if (ev.key.key == SDLK_F5 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+						g_sim.WarmReset();                          // System.WarmReset (F5)
+						g_sim.Resume();
+					} else if (ev.key.key == SDLK_F7 && (mod & SDL_KMOD_CTRL) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_ALT))) {
+						if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
+							g_sim.SetVideoStandard(kATVideoStandard_PAL);
+						else
+							g_sim.SetVideoStandard(kATVideoStandard_NTSC);
+					} else if (ev.key.key == SDLK_F8 && (mod & SDL_KMOD_SHIFT) && !(mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+						ATAnticEmulator& antic = g_sim.GetAntic();  // View.NextANTICVisMode (Shift+F8)
+						antic.SetAnalysisMode((ATAnticEmulator::AnalysisMode)
+							(((int)antic.GetAnalysisMode() + 1) % ATAnticEmulator::kAnalyzeModeCount));
+					} else if (ev.key.key == SDLK_F8 && (mod & SDL_KMOD_CTRL) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_ALT))) {
+						ATGTIAEmulator& gtia = g_sim.GetGTIA();    // View.NextGTIAVisMode (Ctrl+F8)
+						gtia.SetAnalysisMode((ATGTIAEmulator::AnalysisMode)
+							(((int)gtia.GetAnalysisMode() + 1) % ATGTIAEmulator::kAnalyzeCount));
+					} else if (ev.key.key == SDLK_F9 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+						if (g_sim.IsPaused()) g_sim.Resume();       // System.TogglePause (F9)
+						else g_sim.Pause();
+					} else if (ev.key.key == SDLK_F10 && (mod & SDL_KMOD_ALT) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL))) {
+						ATUIShowSaveFrameDialog(g_pWindow);         // Edit.SaveFrame (Alt+F10)
+					} else if (ev.key.key == SDLK_F12 && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+						ATUICaptureMouse();                         // Input.CaptureMouse (F12)
+					} else if (ev.key.key == SDLK_RETURN && (mod & SDL_KMOD_ALT)) {
+						bool fs = (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+						SDL_SetWindowFullscreen(g_pWindow, !fs);    // View.ToggleFullScreen (Alt+Enter)
+					} else if (ev.key.key == SDLK_BACKSPACE && (mod & SDL_KMOD_ALT) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL))) {
+						ATUISetSlowMotion(!ATUIGetSlowMotion());    // System.ToggleSlowMotion (Alt+Backspace)
+					} else if ((mod & SDL_KMOD_ALT) && (mod & SDL_KMOD_SHIFT) && !(mod & SDL_KMOD_CTRL)) {
+						ATPokeyEmulator& pokey = g_sim.GetPokey();
+						if (ev.key.key == SDLK_1)                  // Audio.ToggleChannel1 (Alt+Shift+1)
+							pokey.SetChannelEnabled(0, !pokey.IsChannelEnabled(0));
+						else if (ev.key.key == SDLK_2)             // Audio.ToggleChannel2 (Alt+Shift+2)
+							pokey.SetChannelEnabled(1, !pokey.IsChannelEnabled(1));
+						else if (ev.key.key == SDLK_3)             // Audio.ToggleChannel3 (Alt+Shift+3)
+							pokey.SetChannelEnabled(2, !pokey.IsChannelEnabled(2));
+						else if (ev.key.key == SDLK_4)             // Audio.ToggleChannel4 (Alt+Shift+4)
+							pokey.SetChannelEnabled(3, !pokey.IsChannelEnabled(3));
+						else if (ev.key.key == SDLK_V)             // Edit.PasteText (Alt+Shift+V)
+							ATUIPasteText();
+						else if (ev.key.key == SDLK_M)             // Edit.CopyFrame (Alt+Shift+M)
+							g_copyFrameRequested = true;
+						else
+							dispHandled = false;
+					} else
+						dispHandled = false;
+
+					if (!dispHandled)
+						ATInputSDL3_HandleKeyDown(ev.key);
+				}
 			}
 			break;
 
 		case SDL_EVENT_KEY_UP:
+			// F1 release: turn off pulse warp (System.PulseWarpOff)
+			if (ev.key.key == SDLK_F1 && !(ev.key.mod & (SDL_KMOD_SHIFT | SDL_KMOD_ALT | SDL_KMOD_CTRL)))
+				ATUISetTurboPulse(false);
+
 			if (!ATUIWantCaptureKeyboard()) {
-				// Don't forward key-up for keys consumed as hotkeys
-				// (F5, Shift+F5, F7, F8, Alt+Enter) to avoid spurious
-				// ATInputManager release events.
-				if (ev.key.key != SDLK_F5 && ev.key.key != SDLK_F7 &&
-					ev.key.key != SDLK_F8 && ev.key.key != SDLK_F9)
+				bool isHotkey = false;
+				switch (ev.key.key) {
+					case SDLK_F1: case SDLK_F5: case SDLK_F7:
+					case SDLK_F8: case SDLK_F9: case SDLK_F10:
+					case SDLK_F11: case SDLK_F12:
+						isHotkey = true;
+						break;
+					default:
+						break;
+				}
+				if (!isHotkey)
 					ATInputSDL3_HandleKeyUp(ev.key);
 			}
 			break;
@@ -412,12 +532,29 @@ static void HandleEvents() {
 				static_cast<ATJoystickManagerSDL3 *>(g_pJoystickMgr)->CloseGamepad(ev.gdevice.which);
 			break;
 
+		case SDL_EVENT_DROP_BEGIN:
+			g_dragDropState.active = true;
+			g_dragDropState.x = ev.drop.x;
+			g_dragDropState.y = ev.drop.y;
+			break;
+		case SDL_EVENT_DROP_POSITION:
+			g_dragDropState.x = ev.drop.x;
+			g_dragDropState.y = ev.drop.y;
+			break;
+		case SDL_EVENT_DROP_COMPLETE:
+			g_dragDropState.active = false;
+			break;
 		case SDL_EVENT_DROP_FILE: {
+			g_dragDropState.active = false;
 			const char *file = ev.drop.data;
 			if (file) {
-				// If firmware manager is open, route drop there (matches Windows OnDropFiles)
-				if (!ATUIFirmwareManagerHandleDrop(file)) {
-					// Otherwise boot image (matches Windows drag-and-drop behavior)
+				float dx = ev.drop.x, dy = ev.drop.y;
+				// Priority chain for file drops (matches Windows behavior):
+				// 1. Disk Explorer open + writable + cursor over it → import into disk image
+				// 2. Firmware Manager open + cursor over it → add firmware ROM
+				// 3. Otherwise → boot image (like dragging .xex/.atr/.car onto main window)
+				if (!ATUIDiskExplorerHandleDrop(file, dx, dy)
+					&& !ATUIFirmwareManagerHandleDrop(file, dx, dy)) {
 					ATUIPushDeferred(kATDeferred_BootImage, file);
 				}
 			}
@@ -425,6 +562,13 @@ static void HandleEvents() {
 		}
 
 		case SDL_EVENT_WINDOW_RESIZED:
+			ATUpdateWindowedGeometry(g_pWindow);
+			if (g_pBackend) {
+				int w, h;
+				SDL_GetWindowSizeInPixels(g_pWindow, &w, &h);
+				g_pBackend->OnResize(w, h);
+			}
+			break;
 		case SDL_EVENT_WINDOW_MOVED:
 			ATUpdateWindowedGeometry(g_pWindow);
 			break;
@@ -565,34 +709,90 @@ static SDL_FRect ComputeDisplayRect() {
 // =========================================================================
 
 static ATDisplayFilterMode s_lastAppliedFilter = (ATDisplayFilterMode)0xFF;
+static int s_lastAppliedSharpness = 0x7FFFFFFF;
+
+// Sync screen FX from GTIA → GL backend.  Called every frame.
+static void SyncScreenFXToBackend() {
+	if (!g_pBackend || !g_pBackend->SupportsScreenFX())
+		return;
+
+	// Push filter mode and sharpness changes
+	ATDisplayFilterMode curFilter = ATUIGetDisplayFilterMode();
+	if (curFilter != s_lastAppliedFilter) {
+		g_pBackend->SetFilterMode(curFilter);
+		s_lastAppliedFilter = curFilter;
+	}
+
+	int curSharpness = ATUIGetViewFilterSharpness();
+	if (curSharpness != s_lastAppliedSharpness) {
+		g_pBackend->SetFilterSharpness((float)curSharpness);
+		s_lastAppliedSharpness = curSharpness;
+	}
+
+	// Read screen FX info produced by GTIA (set via SetSourcePersistent)
+	if (g_pDisplay->HasScreenFX()) {
+		g_pBackend->UpdateScreenFX(g_pDisplay->GetLastScreenFX());
+	}
+}
+
+static int s_diagFrameCount = 0;
 
 static void RenderAndPresent() {
-	SDL_SetRenderDrawColor(g_pRenderer, 0, 0, 0, 255);
-	SDL_RenderClear(g_pRenderer);
+	g_pBackend->BeginFrame();
+
+	// Upload frame pixels to the backend
+	const void *pixels = g_pDisplay->GetFramePixels();
+	if (pixels) {
+		int pw = g_pDisplay->GetFramePixelWidth();
+		int ph = g_pDisplay->GetFramePixelHeight();
+		int pp = g_pDisplay->GetFramePixelPitch();
+		if (s_diagFrameCount < 5)
+			fprintf(stderr, "[DIAG] UploadFrame: %dx%d pitch=%d pixels=%p\n", pw, ph, pp, pixels);
+		g_pBackend->UploadFrame(pixels, pw, ph, pp);
+	} else {
+		if (s_diagFrameCount < 5)
+			fprintf(stderr, "[DIAG] No frame pixels available\n");
+	}
 
 	// Update filter mode on texture if setting changed.
 	ATDisplayFilterMode curFilter = ATUIGetDisplayFilterMode();
 	if (curFilter != s_lastAppliedFilter) {
-		g_pDisplay->UpdateScaleMode();
+		if (g_pBackend->GetType() == DisplayBackendType::SDLRenderer)
+			g_pDisplay->UpdateScaleMode();
+		g_pBackend->SetFilterMode(curFilter);
 		s_lastAppliedFilter = curFilter;
 	}
 
-	// Draw emulator frame texture with proper scaling and aspect ratio.
+	// Sync screen effects from GTIA to GL backend
+	SyncScreenFXToBackend();
+
+	// Draw emulator frame with proper scaling and aspect ratio.
 	// When the debugger is open, the Display pane renders it inside an
 	// ImGui dockable window instead.
-	if (!ATUIDebuggerIsOpen()) {
-		SDL_Texture *emuTex = g_pDisplay->GetTexture();
-		if (emuTex) {
+	bool dbgOpen = ATUIDebuggerIsOpen();
+	bool hasTex = g_pBackend->HasTexture();
+	if (s_diagFrameCount < 5)
+		fprintf(stderr, "[DIAG] RenderAndPresent: debuggerOpen=%d hasTex=%d\n", dbgOpen, hasTex);
+	if (!dbgOpen) {
+		if (hasTex) {
 			g_displayRect = ComputeDisplayRect();
-			SDL_SetTextureBlendMode(emuTex, SDL_BLENDMODE_NONE);
-			SDL_RenderTexture(g_pRenderer, emuTex, nullptr, &g_displayRect);
+			if (s_diagFrameCount < 5)
+				fprintf(stderr, "[DIAG] RenderFrame: rect=(%.1f,%.1f,%.1f,%.1f) tex=(%d,%d)\n",
+					g_displayRect.x, g_displayRect.y, g_displayRect.w, g_displayRect.h,
+					g_pBackend->GetTextureWidth(), g_pBackend->GetTextureHeight());
+			g_pBackend->RenderFrame(
+				g_displayRect.x, g_displayRect.y,
+				g_displayRect.w, g_displayRect.h,
+				g_pBackend->GetTextureWidth(),
+				g_pBackend->GetTextureHeight());
 		}
 	}
+	++s_diagFrameCount;
 
 	// Draw ImGui UI on top
-	ATUIRenderFrame(g_sim, *g_pDisplay, g_pRenderer, g_uiState);
+	ATUIRenderFrame(g_sim, *g_pDisplay, g_pBackend, g_uiState);
 
-	SDL_RenderPresent(g_pRenderer);
+	g_pBackend->Present();
 }
 
 // =========================================================================
@@ -765,19 +965,60 @@ int main(int argc, char *argv[]) {
 
 	const int kDefaultWidth = 1280;
 	const int kDefaultHeight = 720;
-	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
-	if (!g_pWindow) { fprintf(stderr, "CreateWindow: %s\n", SDL_GetError()); SDL_Quit(); return 1; }
+
+	// Try OpenGL 3.3 first, fall back to SDL_Renderer
+	bool useGL = false;
+	SDL_GLContext glContext = nullptr;
+
+	// Set GL attributes before window creation
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight,
+		SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+	if (g_pWindow) {
+		glContext = SDL_GL_CreateContext(g_pWindow);
+		if (glContext) {
+			SDL_GL_MakeCurrent(g_pWindow, glContext);
+			if (GLLoadFunctions()) {
+				useGL = true;
+				fprintf(stderr, "[AltirraSDL] OpenGL 3.3 context created successfully\n");
+			} else {
+				fprintf(stderr, "[AltirraSDL] GL function loading failed, falling back to SDL_Renderer\n");
+				SDL_GL_DestroyContext(glContext);
+				glContext = nullptr;
+			}
+		} else {
+			fprintf(stderr, "[AltirraSDL] GL context creation failed: %s\n", SDL_GetError());
+		}
+	}
+
+	// If GL failed, recreate window without OPENGL flag for SDL_Renderer
+	if (!useGL) {
+		if (g_pWindow) SDL_DestroyWindow(g_pWindow);
+		g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
+		if (!g_pWindow) { fprintf(stderr, "CreateWindow: %s\n", SDL_GetError()); SDL_Quit(); return 1; }
+	}
 
 	// Restore saved window size, position, and fullscreen state
 	ATRestoreWindowPlacement(g_pWindow);
 
-	g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
-	if (!g_pRenderer) { fprintf(stderr, "CreateRenderer: %s\n", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
+	// Create the display backend
+	if (useGL) {
+		g_pBackend = new DisplayBackendGL33(g_pWindow, glContext);
+		SDL_GL_SetSwapInterval(1);  // VSync
+	} else {
+		g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
+		if (!g_pRenderer) { fprintf(stderr, "CreateRenderer: %s\n", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
+		SDL_SetRenderVSync(g_pRenderer, 1);
+		g_pBackend = new DisplayBackendSDLRenderer(g_pWindow, g_pRenderer);
+	}
 
-	SDL_SetRenderVSync(g_pRenderer, 1);
-
-	if (!ATUIInit(g_pWindow, g_pRenderer)) {
-		SDL_DestroyRenderer(g_pRenderer);
+	if (!ATUIInit(g_pWindow, g_pBackend)) {
+		delete g_pBackend; g_pBackend = nullptr;
+		if (g_pRenderer) SDL_DestroyRenderer(g_pRenderer);
 		SDL_DestroyWindow(g_pWindow);
 		SDL_Quit();
 		return 1;
@@ -794,6 +1035,12 @@ int main(int argc, char *argv[]) {
 	ATUISetMouseCaptureWindow(g_pWindow);
 
 	g_pDisplay = new VDVideoDisplaySDL3(g_pRenderer, kDefaultWidth, kDefaultHeight);
+
+	// Tell the display whether the GL backend supports screen effects.
+	// This makes GTIA's IsScreenFXPreferred() return true, which enables
+	// accelerated screen effects (scanlines, bloom, color correction, etc.)
+	if (useGL)
+		g_pDisplay->SetScreenFXPreferred(true);
 
 	fprintf(stderr, "[AltirraSDL] Initializing simulator...\n");
 	g_sim.Init();
@@ -841,6 +1088,17 @@ int main(int argc, char *argv[]) {
 		| kATSettingsCategory_Input
 		| kATSettingsCategory_InputMaps
 	));
+
+	// Register the options update callback for accelerated screen FX.
+	// This mirrors Windows main.cpp — mbDisplayAccelScreenFX defaults to
+	// true in ATOptions, and ATLoadSettings loads the persisted value.
+	// The callback is invoked immediately (true = call now) to apply the
+	// initial value, and again whenever g_ATOptions changes at runtime.
+	ATOptionsAddUpdateCallback(true,
+		[](ATOptions& opts, const ATOptions *prevOpts, void *) {
+			g_sim.GetGTIA().SetAccelScreenFXEnabled(opts.mbDisplayAccelScreenFX);
+		}
+	);
 
 	// Create the native audio device now that settings have been loaded
 	// (SetApi, SetLatency, etc. may have been called during ATLoadSettings).
@@ -914,16 +1172,14 @@ int main(int argc, char *argv[]) {
 		ATSimulator::AdvanceResult result = g_sim.Advance(false);
 
 		// Check if a new frame arrived (GTIA called PostBuffer).
-		// We must present whenever a frame is ready, regardless of
-		// Advance() return value.  GTIA's PostBuffer and BeginFrame
-		// can both happen inside a single Advance() call — the next
-		// frame may already be in progress when Advance() returns
-		// kAdvanceResult_Running.  The original main loop called
-		// Present() on every Advance() result for this reason.
 		bool hadFrame = g_pDisplay->IsFramePending();
 		g_pDisplay->PrepareFrame();
 
 		const bool turbo = g_sim.IsTurboModeEnabled();
+
+		if (s_diagFrameCount < 5)
+			fprintf(stderr, "[DIAG] MainLoop: advance=%d hadFrame=%d running=%d paused=%d\n",
+				(int)result, hadFrame, g_sim.IsRunning(), g_sim.IsPaused());
 
 		if (hadFrame) {
 			// A frame was uploaded — present it and pace.
@@ -952,21 +1208,15 @@ int main(int argc, char *argv[]) {
 
 	g_sim.GetGTIA().SetVideoOutput(nullptr);
 
-	// Detach and destroy joystick manager before simulator shutdown
-	if (g_pJoystickMgr) {
-		g_sim.SetJoystickManager(nullptr);
-		g_pJoystickMgr->Shutdown();
-		delete g_pJoystickMgr;
-		g_pJoystickMgr = nullptr;
-	}
-
 	// Release mouse capture before shutdown
 	ATUIReleaseMouse();
 
 	// Save window placement before shutdown
 	ATSaveWindowPlacement(g_pWindow);
 
-	// Save settings before shutdown
+	// Save settings before shutdown (must happen before joystick manager
+	// is destroyed — ATSettingsExchangeInput reads joystick transforms
+	// via g_sim.GetJoystickManager())
 	extern void ATRegistryFlushToDisk();
 	try {
 		ATSaveSettings((ATSettingsCategory)(
@@ -990,6 +1240,15 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "[AltirraSDL] Warning: failed to save settings on exit\n");
 	}
 
+	// Detach and destroy joystick manager before simulator shutdown
+	// (must be after ATSaveSettings which reads joystick transforms)
+	if (g_pJoystickMgr) {
+		g_sim.SetJoystickManager(nullptr);
+		g_pJoystickMgr->Shutdown();
+		delete g_pJoystickMgr;
+		g_pJoystickMgr = nullptr;
+	}
+
 	// Shut down debugger before simulator (matches Windows cleanup order)
 	extern void ATShutdownDebugger();
 	ATShutdownDebugger();
@@ -1009,7 +1268,12 @@ int main(int argc, char *argv[]) {
 	ATUIShutdown();
 
 	delete g_pDisplay;
-	SDL_DestroyRenderer(g_pRenderer);
+	delete g_pBackend;  // destroys GL context or SDL_Renderer internally
+	g_pBackend = nullptr;
+	if (g_pRenderer) {
+		SDL_DestroyRenderer(g_pRenderer);
+		g_pRenderer = nullptr;
+	}
 	SDL_DestroyWindow(g_pWindow);
 	SDL_Quit();
 	return 0;

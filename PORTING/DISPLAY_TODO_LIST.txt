@@ -1,7 +1,7 @@
 AltirraSDL — Display/Rendering Parity Checklist
 ================================================
-Updated: 2026-04-03
-Reference: PORTING/DISPLAY.md vs actual display_sdl3.cpp
+Updated: 2026-04-04
+Reference: PORTING/DISPLAY.md vs actual display_sdl3.cpp + display_backend_gl33.cpp
 
 Legend:
   [100%] Fully implemented
@@ -47,16 +47,18 @@ Legend:
 3. FILTER MODES
 ================================================================================
 
-  [100%] Point (nearest neighbor)             — SDL_SCALEMODE_NEAREST applied when
-                                                kATDisplayFilterMode_Point is selected
-  [100%] Bilinear                             — SDL_SCALEMODE_LINEAR (default)
-  [  0%] Sharp Bilinear                       — Needs custom shader or pre-filter
-  [  0%] Bicubic                              — Needs SDL_GPU compute/fragment shader
+  [100%] Point (nearest neighbor)             — GL_NEAREST / SDL_SCALEMODE_NEAREST
+  [100%] Bilinear                             — GL_LINEAR / SDL_SCALEMODE_LINEAR
+  [100%] Sharp Bilinear                       — GL backend: FEAT_SHARP shader with
+                                                pixel-snap + sharpness-controlled blend.
+                                                SDL_Renderer fallback: bilinear.
+  [100%] Bicubic                              — GL backend: 2-pass separable cubic
+                                                filter via lookup textures + FBOs.
+                                                SDL_Renderer fallback: bilinear.
   [100%] Mode stored via ATUIGet/SetDisplayFilterMode()
 
-  Note: The UI exposes all 5 filter modes. Point and Bilinear are fully
-  supported by SDL3 renderer. Sharp bilinear and bicubic fall back to
-  bilinear (would need SDL_GPU shaders for proper implementation).
+  Note: All 5 filter modes fully implemented with the GL backend.
+  Sharp bilinear and bicubic fall back to bilinear on SDL_Renderer.
 
 
 ================================================================================
@@ -73,21 +75,39 @@ Legend:
 5. SCREEN EFFECTS (Post-Processing)
 ================================================================================
 
-  [100%] Scanline simulation                  — Implemented in GTIA rendering pipeline
-                                                (SetScanlinesEnabled / AreScanlinesEnabled).
-                                                Scanlines rendered into frame buffer directly.
-                                                UI checkbox in System Config > Video page.
-  [  0%] Bloom effects                        — VDDSetBloomV2Settings() is empty stub
-  [  0%] Screen mask (CRT simulation)         — Needs SDL_GPU shaders
+  [100%] Scanline simulation                  — GL backend: GPU-rendered scanlines via
+                                                scanline mask texture + FEAT_SCANLINES
+                                                shader. SDL_Renderer fallback: GTIA
+                                                software scanlines.
+  [100%] Bloom effects                        — GL backend: Bloom V2 with 5-level FBO
+                                                pyramid, downsample/upsample/compose passes.
+                                                VDDComputeBloomV2Parameters() from bloom.cpp.
+  [100%] Screen mask (CRT simulation)         — GL backend: aperture grille, slot mask,
+                                                dot triad via VDDisplay texture generation
+                                                + FEAT_DOT_MASK shader.
   [  0%] HDR output                           — SetHDREnabled() is stub; GetHDRCapability()
-                                                returns NoMinidriverSupport
-  [  0%] Distortion (barrel, etc.)            — Needs SDL_GPU shaders
-  [  0%] Custom effect path                   — ATUIManager::Get/SetCustomEffectPath;
-                                                menu item disabled placeholder
+                                                returns NoMinidriverSupport. Deferred.
+  [100%] Distortion (barrel, etc.)            — GL backend: CRT barrel distortion via
+                                                FEAT_DISTORTION shader + VDDisplay-
+                                                DistortionMapping.
+  [  0%] Custom effect path                   — librashader runtime present but no UI.
+                                                Menu item not yet added.
 
-  Note: Shader-based screen effects (bloom, masks, HDR, distortion, sharp
-  bilinear, bicubic) are tracked in PORTING/SHADERS_TODO_LIST.txt.
-  See PORTING/SHADERS.md for the OpenGL 3.3 architecture plan.
+  Adjust Screen Effects dialog (ui_screenfx.cpp):
+  [100%] Main tab - Scanline intensity, H/V distortion sliders
+  [ 80%] Bloom tab - Threshold + enable. Missing: radius, direct/indirect labels
+  [  0%] HDR tab - Stub only ("HDR not available" message)
+  [100%] Mask tab - Screen mask type, dot pitch
+
+  Adjust Colors dialog (ui_display.cpp — IDD_ADJUST_COLORS):
+  [ 50%] Core sliders (hue/brightness/contrast/saturation/gamma) — DONE
+  [ 50%] Missing: palette preview swatches, Export Palette, Palette Solver
+         (reference picture import + color matching), Show Red/Green
+         Shifts/Offsets visualization
+
+  Note: Full shader-based screen effects require the GL backend.
+  Detailed tracking in PORTING/SHADERS_TODO_LIST.txt (75% complete).
+  SDL_Renderer fallback shows warning in Adjust Screen Effects dialog.
 
 
 ================================================================================
@@ -107,7 +127,8 @@ Legend:
 7. VSYNC AND FRAME TIMING
 ================================================================================
 
-  [100%] SDL_SetRenderVSync                    — Set to 1 (enabled) in main_sdl3.cpp
+  [100%] VSync control                         — GL: SDL_GL_SetSwapInterval().
+                                                SDL_Renderer: SDL_SetRenderVSync().
   [100%] Frame pacing via g_pacer             — SDL_DelayPrecise-based pacing object
                                                 with error accumulator matching Windows
   [100%] NTSC / PAL / SECAM frame rates       — Exact constants from constants.h.
@@ -144,16 +165,20 @@ Category                    Implemented    Total    Coverage
 ------------------------------------------------------------
 Core display                     6            6      100%
 Scaling/aspect ratio             4            4      100%
-Filter modes                     3            5       60%
+Filter modes                     5            5      100%
 Overscan                         3            3      100%
-Screen effects                   1            6       17%
+Screen effects                   4            6       67%
 Compositor/overlay               3            5       60%
 VSync/frame timing               5            5      100%
 Fullscreen                       2            4       50%
 
-Core display pipeline is fully functional with correct aspect ratio,
-all 5 stretch modes, integer scaling, zoom/pan, and Point/Bilinear
-filter switching. Main remaining gaps:
-- Shader-based filters (Sharp Bilinear, Bicubic)
-- Shader-based screen effects (bloom, HDR, distortion)
-- Scanlines work via GTIA software rendering
+Display pipeline is fully functional with OpenGL 3.3 GPU-accelerated
+post-processing: all 5 filter modes, scanlines, bloom V2, CRT masks,
+barrel distortion, gamma/color correction. Falls back to SDL_Renderer
+(point/bilinear only) when GL is unavailable. Remaining gaps:
+- HDR output (deferred — needs platform display capabilities)
+- Custom effect path UI (librashader runtime present, no preset browser)
+- On-screen keyboard
+- Fullscreen resolution selection
+- Adjust Colors: palette preview, Export Palette, Palette Solver
+- Bloom: radius/intensity label controls

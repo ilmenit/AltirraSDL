@@ -1,6 +1,6 @@
 AltirraSDL — Build System Parity Checklist
 ==========================================
-Updated: 2026-04-03
+Updated: 2026-04-04
 Reference: PORTING/BUILD.md vs actual CMakeLists.txt files
 
 Legend:
@@ -98,12 +98,18 @@ Legend:
 6. FRONTEND (src/AltirraSDL/CMakeLists.txt)
 ================================================================================
 
-  [100%] main_sdl3.cpp                        — Entry point with frame pacing
-  [100%] display_sdl3.cpp                     — VDVideoDisplaySDL3
+  [100%] main_sdl3.cpp                        — Entry point with frame pacing,
+                                                GL-first backend selection
+  [100%] display_sdl3.cpp                     — VDVideoDisplaySDL3 (frame buffer bridge)
+  [100%] display_backend_gl33.cpp             — OpenGL 3.3 GPU post-processing backend
+  [100%] display_backend_sdl.cpp              — SDL_Renderer fallback backend
+  [100%] gl_funcs.cpp                         — GL 3.3 function loader via SDL
+  [100%] gl_helpers.cpp                       — Shader/FBO/texture utilities
+  [100%] display_librashader.cpp              — Optional librashader runtime wrapper
   [100%] input_sdl3.cpp                       — SDL3 keyboard/mouse → POKEY/InputManager
   [100%] joystick_sdl3.cpp                    — SDL3 gamepad → IATJoystickManager
   [100%] videowriter_sdl3.cpp                 — Video recording support
-  [100%] UI source files (18 ImGui files):
+  [100%] UI source files (19 ImGui files):
            ui_main.cpp, ui_menus.cpp, ui_recording.cpp, ui_cartmapper.cpp,
            ui_system.cpp, ui_firmware.cpp, ui_disk.cpp, ui_cassette.cpp,
            ui_display.cpp, ui_input.cpp, ui_profiles.cpp, ui_devconfig.cpp,
@@ -115,7 +121,11 @@ Legend:
   [100%] Stub files (6): console, oshelper, uirender, uiaccessors,
                           win32, device stubs
   [100%] uiregistry.cpp included              — For settings persistence
-  [100%] Dear ImGui integration (thirdparty/imgui)
+  [100%] Dear ImGui integration (thirdparty/imgui) — includes
+                                                imgui_impl_opengl3.cpp for GL backend
+  [100%] OpenGL dependency                    — find_package(OpenGL), link OpenGL::GL
+  [100%] VDDisplay utility sources            — screenfx.cpp, bloom.cpp, bicubic.cpp,
+                                                displaytypes.cpp compiled directly
   [100%] Altirra source inclusion via glob + exclusion filters
 
   BUILD.md DIVERGENCE: Doc lists ui_settings.cpp, ui_devices.cpp,
@@ -127,7 +137,11 @@ Legend:
 7. EXCLUDED LIBRARIES (correct — should NOT be compiled)
 ================================================================================
 
-  [ N/A] VDDisplay                            — Correctly excluded (GDI/D3D9)
+  [ N/A] VDDisplay (full library)              — Correctly excluded (GDI/D3D9 renderers)
+                                                 Note: 4 utility sources compiled directly
+                                                 into AltirraSDL: screenfx.cpp, bloom.cpp,
+                                                 bicubic.cpp, displaytypes.cpp (platform-
+                                                 agnostic texture generation, no Win32 deps)
   [ N/A] Dita                                 — Correctly excluded (COM/shell)
   [ N/A] Riza                                 — Correctly excluded (Win32 audio)
   [ N/A] Tessa                                — Correctly excluded
@@ -149,7 +163,7 @@ System library SDL3 files        9            9      100%
 Core emulation libraries        11           11      100%
 Audio output                     3            3      100%
 Network sockets                  7            7      100%
-Frontend sources                26          26+      100%
+Frontend sources                35          35+      100%
 Excluded libraries (N/A)         9            9      100%
 
 Build system is functional and produces a working binary.

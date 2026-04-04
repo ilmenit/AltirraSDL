@@ -25,8 +25,7 @@ int VDVideoDisplayFrame::Release() {
 	return n;
 }
 
-// VDDisplay global settings stubs
-void VDDSetBloomV2Settings(const VDDBloomV2Settings&) {}
+// VDDSetBloomV2Settings: real implementation now comes from VDDisplay/source/bloom.cpp
 
 VDVideoDisplaySDL3::VDVideoDisplaySDL3(SDL_Renderer *renderer, int w, int h)
 	: mpRenderer(renderer)
@@ -41,6 +40,21 @@ VDVideoDisplaySDL3::~VDVideoDisplaySDL3() {
 		SDL_DestroyTexture(mpTexture);
 }
 
+bool VDVideoDisplaySDL3::SetSourcePersistent(bool bPersistent, const VDPixmap& px, bool
+	, const VDVideoDisplayScreenFXInfo* pScreenFX
+	, IVDVideoDisplayScreenFXEngine*)
+{
+	if (pScreenFX) {
+		mLastScreenFX = *pScreenFX;
+		mHasScreenFX = true;
+	} else {
+		mHasScreenFX = false;
+	}
+	// Delegate actual frame handling to PostBuffer path — return false
+	// so GTIA falls through to PostBuffer().
+	return false;
+}
+
 void VDVideoDisplaySDL3::Destroy() {
 	delete this;
 }
@@ -51,6 +65,18 @@ void VDVideoDisplaySDL3::Reset() {
 
 void VDVideoDisplaySDL3::PostBuffer(VDVideoDisplayFrame *frame) {
 	if (!frame) return;
+
+	// Capture screen FX from the frame buffer.  GTIA sets mpScreenFX on
+	// the frame during SetFrameProperties() when hardware-accelerated
+	// post-processing is enabled (bloom, scanlines, distortion, etc.).
+	// SetSourcePersistent only handles the immediate/mid-frame path;
+	// normal end-of-frame goes through PostBuffer, so we must capture here.
+	if (frame->mpScreenFX) {
+		mLastScreenFX = *frame->mpScreenFX;
+		mHasScreenFX = true;
+	} else {
+		mHasScreenFX = false;
+	}
 
 	if (mPendingFrame) {
 		if (mPrevFrame)
@@ -82,7 +108,7 @@ void VDVideoDisplaySDL3::FlushBuffers() {
 }
 
 bool VDVideoDisplaySDL3::PrepareFrame() {
-	if (!mPendingFrame) return mpTexture != nullptr;
+	if (!mPendingFrame) return (mpTexture != nullptr) || mHasFramePixels;
 
 	const VDPixmap& px = mPendingFrame->mPixmap;
 	if (!px.data || !px.w || !px.h) {
@@ -91,39 +117,24 @@ bool VDVideoDisplaySDL3::PrepareFrame() {
 			mPrevFrame->Release();
 		mPrevFrame = mPendingFrame;
 		mPendingFrame = nullptr;
-		return mpTexture != nullptr;
+		return (mpTexture != nullptr) || mHasFramePixels;
 	}
 
-	if (!mpTexture || mTextureW != px.w || mTextureH != px.h) {
-		if (mpTexture)
-			SDL_DestroyTexture(mpTexture);
-		mpTexture = SDL_CreateTexture(mpRenderer,
-			SDL_PIXELFORMAT_XRGB8888,
-			SDL_TEXTUREACCESS_STREAMING,
-			px.w, px.h);
+	// Track texture dimensions (even when not creating SDL textures)
+	if (mTextureW != px.w || mTextureH != px.h) {
 		mTextureW = px.w;
 		mTextureH = px.h;
-
-		if (mpTexture)
-			UpdateScaleMode();
-
-		// Resize conversion buffer for palettized frames
-		mConvertBuffer.resize((size_t)px.w * px.h);
 	}
 
-	if (!mpTexture) {
-		if (mPrevFrame)
-			mPrevFrame->Release();
-		mPrevFrame = mPendingFrame;
-		mPendingFrame = nullptr;
-		return false;
-	}
+	// Always ensure conversion buffer is large enough
+	mConvertBuffer.resize((size_t)px.w * px.h);
 
+	// Convert to XRGB8888 in mConvertBuffer (used by both SDL and GL paths)
 	const void *srcData = px.data;
 	int srcPitch = (int)px.pitch;
 
-	// GTIA outputs Pal8 (palettized 8-bit) — convert to XRGB8888
 	if (px.format == nsVDPixmap::kPixFormat_Pal8 && px.palette) {
+		// GTIA outputs Pal8 (palettized 8-bit) — convert to XRGB8888
 		const uint32 *pal = px.palette;
 		uint32 *dst = mConvertBuffer.data();
 
@@ -131,14 +142,41 @@ bool VDVideoDisplaySDL3::PrepareFrame() {
 			const uint8 *src = (const uint8 *)px.data + y * px.pitch;
 			uint32 *dstRow = dst + y * px.w;
 			for (int x = 0; x < px.w; x++)
-				dstRow[x] = pal[src[x]] | 0xFF000000u;  // Force alpha to opaque
+				dstRow[x] = pal[src[x]] | 0xFF000000u;
 		}
 
 		srcData = dst;
 		srcPitch = px.w * 4;
+	} else {
+		// Copy XRGB8888 data into convert buffer for GL path
+		const int rowBytes = px.w * 4;
+		uint32 *dst = mConvertBuffer.data();
+		for (int y = 0; y < px.h; y++) {
+			memcpy(dst + y * px.w, (const uint8 *)px.data + y * px.pitch, rowBytes);
+		}
+		srcData = mConvertBuffer.data();
+		srcPitch = px.w * 4;
 	}
 
-	SDL_UpdateTexture(mpTexture, nullptr, srcData, srcPitch);
+	mHasFramePixels = true;
+
+	// SDL_Renderer path: create/update texture
+	if (mpRenderer) {
+		if (!mpTexture || mTextureW != px.w || mTextureH != px.h) {
+			if (mpTexture)
+				SDL_DestroyTexture(mpTexture);
+			mpTexture = SDL_CreateTexture(mpRenderer,
+				SDL_PIXELFORMAT_XRGB8888,
+				SDL_TEXTUREACCESS_STREAMING,
+				px.w, px.h);
+
+			if (mpTexture)
+				UpdateScaleMode();
+		}
+
+		if (mpTexture)
+			SDL_UpdateTexture(mpTexture, nullptr, srcData, srcPitch);
+	}
 
 	// Move the consumed frame to mPrevFrame so GTIA can reclaim it via
 	// RevokeBuffer().  GTIA's BeginFrame() calls RevokeBuffer() to get

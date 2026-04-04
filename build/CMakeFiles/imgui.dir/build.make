@@ -170,6 +170,20 @@ CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.s: cma
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp -o CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.s
 
+CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o: CMakeFiles/imgui.dir/flags.make
+CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o: _deps/imgui-src/backends/imgui_impl_opengl3.cpp
+CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o: CMakeFiles/imgui.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o -MF CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o.d -o CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o -c /home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_opengl3.cpp
+
+CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_opengl3.cpp > CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.i
+
+CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends/imgui_impl_opengl3.cpp -o CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.s
+
 # Object files for target imgui
 imgui_OBJECTS = \
 "CMakeFiles/imgui.dir/_deps/imgui-src/imgui.cpp.o" \
@@ -178,7 +192,8 @@ imgui_OBJECTS = \
 "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_tables.cpp.o" \
 "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_widgets.cpp.o" \
 "CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdl3.cpp.o" \
-"CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.o"
+"CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.o" \
+"CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o"
 
 # External object files for target imgui
 imgui_EXTERNAL_OBJECTS =
@@ -190,9 +205,10 @@ libimgui.a: CMakeFiles/imgui.dir/_deps/imgui-src/imgui_tables.cpp.o
 libimgui.a: CMakeFiles/imgui.dir/_deps/imgui-src/imgui_widgets.cpp.o
 libimgui.a: CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdl3.cpp.o
 libimgui.a: CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_sdlrenderer3.cpp.o
+libimgui.a: CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o
 libimgui.a: CMakeFiles/imgui.dir/build.make
 libimgui.a: CMakeFiles/imgui.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking CXX static library libimgui.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/ilm/Documents/GitHub/AltirraSDL/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX static library libimgui.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/imgui.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/imgui.dir/link.txt --verbose=$(VERBOSE)
 

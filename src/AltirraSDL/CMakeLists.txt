@@ -37,7 +37,7 @@ list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/profilerui\\.cpp$")        # W
 # stubs/uiaccessors_stubs.cpp and stub headers in stubs/.
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/startuplogger\\.cpp$")     # Win32 only (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/texteditor\\.cpp$")        # Win32 HWND/WndProc text editor widget
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/vgmwriter\\.cpp$")         # requires sizeof(wchar_t)==2 (UTF-16 VGM metadata)
+# vgmwriter.cpp is now portable (UTF-16LE encoding fixed for non-Windows)
 # Exclude ARM-only files on x86_64
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
     list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*_neon\\.cpp$")
@@ -50,6 +50,13 @@ add_executable(AltirraSDL
     source/display_sdl3.cpp
     source/input_sdl3.cpp
     source/joystick_sdl3.cpp
+
+    # Display backends (OpenGL 3.3 + SDL_Renderer fallback)
+    source/display_backend_sdl.cpp
+    source/display_backend_gl33.cpp
+    source/gl_funcs.cpp
+    source/gl_helpers.cpp
+    source/display_librashader.cpp
 
     # Video recording (AVI: Raw/RLE/ZMBV)
     source/videowriter_sdl3.cpp
@@ -65,6 +72,7 @@ add_executable(AltirraSDL
     source/ui_disk.cpp
     source/ui_cassette.cpp
     source/ui_display.cpp
+    source/ui_palette_solver.cpp
     source/ui_input.cpp
     source/ui_profiles.cpp
     source/ui_devconfig.cpp
@@ -77,9 +85,29 @@ add_executable(AltirraSDL
     source/ui_dbg_registers.cpp
     source/ui_dbg_disassembly.cpp
     source/ui_dbg_history.cpp
+    source/ui_dbg_history_format.cpp
     source/ui_dbg_memory.cpp
+    source/ui_dbg_memory_hexdump.cpp
+    source/ui_dbg_memory_bitmap.cpp
     source/ui_dbg_breakpoints.cpp
     source/ui_dbg_callstack.cpp
+    source/ui_dbg_watch.cpp
+    source/ui_dbg_targets.cpp
+    source/ui_dbg_printer.cpp
+    source/ui_dbg_debugdisplay.cpp
+    source/ui_dbg_source.cpp
+
+    # Cheater dialog
+    source/ui_cheater.cpp
+
+    # Rewind dialog
+    source/ui_rewind.cpp
+
+    # Screen effects dialog
+    source/ui_screenfx.cpp
+
+    # Light pen/gun configuration dialog
+    source/ui_lightpen.cpp
 
     # Test mode (headless automated testing via stdin/stdout commands)
     source/ui_testmode.cpp
@@ -94,10 +122,16 @@ add_executable(AltirraSDL
     stubs/console_stubs.cpp
     stubs/oshelper_stubs.cpp
     # joystick_stubs.cpp replaced by source/joystick_sdl3.cpp
-    stubs/uirender_stubs.cpp
+    source/ui_indicators.cpp
     stubs/uiaccessors_stubs.cpp
     stubs/win32_stubs.cpp
     stubs/device_stubs.cpp
+
+    # VDDisplay utility sources (screen FX texture generation, bloom, bicubic)
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/screenfx.cpp
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/bloom.cpp
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/bicubic.cpp
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/displaytypes.cpp
 
     # Audio output
     ${CMAKE_SOURCE_DIR}/src/ATAudio/source/audiooutput_sdl3.cpp
@@ -117,6 +151,8 @@ target_include_directories(AltirraSDL PRIVATE
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source
     # ATAudio headers
     ${CMAKE_SOURCE_DIR}/src/ATAudio/h
+    # VDDisplay internal headers (screenfx.h, bloom.h, bicubic.h)
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/h
     # Resource ID constants (#define IDD_*, IDR_*, etc.)
     ${CMAKE_SOURCE_DIR}/src/Altirra/res
     # Auto-generated binary blobs (pbidisk.inl, etc.)
@@ -137,6 +173,8 @@ target_include_directories(AltirraSDL BEFORE PRIVATE
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/stubs
     ${CMAKE_SOURCE_DIR}/src/Altirra/h
 )
+
+find_package(OpenGL REQUIRED)
 
 target_link_libraries(AltirraSDL PRIVATE
     # Core emulation libraries
@@ -159,6 +197,9 @@ target_link_libraries(AltirraSDL PRIVATE
 
     # Dear ImGui
     imgui
+
+    # OpenGL (for GL 3.3 display backend)
+    OpenGL::GL
 )
 
 # Platform-specific link libraries

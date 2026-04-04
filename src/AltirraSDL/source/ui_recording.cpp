@@ -18,6 +18,7 @@
 #include "audiowriter.h"
 #include "videowriter.h"
 #include "sapwriter.h"
+#include "vgmwriter.h"
 #include "simeventmanager.h"
 
 #include <algorithm>
@@ -32,6 +33,7 @@ extern ATSimulator g_sim;
 static ATAudioWriter *g_pAudioWriter = nullptr;
 static IATSAPWriter *g_pSAPWriter = nullptr;
 static IATVideoWriter *g_pVideoWriter = nullptr;
+static vdrefptr<IATVgmWriter> g_pVGMWriter;
 
 // Video recording settings dialog state
 static bool g_showVideoRecordingDialog = false;
@@ -44,7 +46,7 @@ static bool g_videoRecHalfRate = false;
 static bool g_videoRecEncodeAll = false;
 
 bool ATUIIsRecording() {
-	return g_pAudioWriter || g_pSAPWriter || g_pVideoWriter;
+	return g_pAudioWriter || g_pSAPWriter || g_pVideoWriter || g_pVGMWriter;
 }
 
 void ATUIStartAudioRecording(const wchar_t *path, bool raw) {
@@ -78,6 +80,19 @@ void ATUIStartSAPRecording(const wchar_t *path) {
 		delete g_pSAPWriter;
 		g_pSAPWriter = nullptr;
 		fprintf(stderr, "[AltirraSDL] Failed to start SAP recording\n");
+	}
+}
+
+void ATUIStartVGMRecording(const wchar_t *path) {
+	if (ATUIIsRecording()) return;
+
+	try {
+		g_pVGMWriter = ATCreateVgmWriter();
+		g_pVGMWriter->Init(path, g_sim);
+		fprintf(stderr, "[AltirraSDL] VGM recording started\n");
+	} catch (...) {
+		g_pVGMWriter = nullptr;
+		fprintf(stderr, "[AltirraSDL] Failed to start VGM recording\n");
 	}
 }
 
@@ -218,6 +233,15 @@ void ATUIStopRecording() {
 		}
 		delete g_pSAPWriter;
 		g_pSAPWriter = nullptr;
+	}
+
+	if (g_pVGMWriter) {
+		try {
+			g_pVGMWriter->Shutdown();
+		} catch (...) {
+			fprintf(stderr, "[AltirraSDL] Error finalizing VGM recording\n");
+		}
+		g_pVGMWriter = nullptr;
 	}
 
 	if (wasRecording)

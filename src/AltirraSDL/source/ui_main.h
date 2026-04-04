@@ -12,6 +12,8 @@ struct SDL_Renderer;
 union SDL_Event;
 class ATSimulator;
 class VDVideoDisplaySDL3;
+class IDisplayBackend;
+class IATBlockDevice;
 
 struct ATUIState {
 	bool requestExit = false;
@@ -41,12 +43,16 @@ struct ATUIState {
 	bool showKeyboardShortcuts = false;
 	bool showCompatDB = false;
 	bool showAdvancedConfig = false;
+	bool showCheater = false;
+	bool showLightPen = false;
+	bool showRewind = false;
+	bool showScreenEffects = false;
 
 	// System config sidebar selection
 	int systemConfigCategory = 0;
 };
 
-bool ATUIInit(SDL_Window *window, SDL_Renderer *renderer);
+bool ATUIInit(SDL_Window *window, IDisplayBackend *backend);
 void ATUIShutdown();
 bool ATUIProcessEvent(const SDL_Event *event);
 bool ATUIWantCaptureKeyboard();
@@ -56,7 +62,7 @@ bool ATUIWantCaptureMouse();
 float ATUIGetMeasuredFPS();
 
 void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
-	SDL_Renderer *renderer, ATUIState &state);
+	IDisplayBackend *backend, ATUIState &state);
 
 // Process deferred file dialog results on main thread (call each frame)
 void ATUIPollDeferredActions();
@@ -64,9 +70,18 @@ void ATUIPollDeferredActions();
 // MRU list (shared with main loop for file drop)
 void ATAddMRU(const wchar_t *path);
 
-// Quick save state (F7 load, F8 save)
+// Quick save state (menu only — no default keyboard shortcut, matches Windows)
 void ATUIQuickSaveState();
 void ATUIQuickLoadState();
+
+// File dialog openers (for keyboard shortcut wiring)
+void ATUIShowBootImageDialog(SDL_Window *window);     // Alt+B
+void ATUIShowOpenImageDialog(SDL_Window *window);     // Alt+O
+void ATUIShowOpenSourceFileDialog(SDL_Window *window); // Alt+Shift+O
+void ATUIShowSaveFrameDialog(SDL_Window *window);     // Alt+F10
+
+// Paste text from clipboard into emulator (Alt+Shift+V)
+void ATUIPasteText();
 
 // Mouse capture — SDL3 implementation (defined in uiaccessors_stubs.cpp)
 void ATUISetMouseCaptureWindow(SDL_Window *window);
@@ -91,6 +106,7 @@ enum ATDeferredActionType {
 	kATDeferred_StartRecordWAV,
 	kATDeferred_StartRecordSAP,
 	kATDeferred_StartRecordVideo,  // uses mInt for ATVideoEncoding
+	kATDeferred_StartRecordVGM,
 	kATDeferred_SetCompatDBPath,
 	kATDeferred_ConvertSAPToEXE,   // mPath = source SAP, mStr = dest XEX
 	kATDeferred_ExportROMSet,      // mPath = target folder
@@ -109,10 +125,11 @@ void ATUIRenderCartridgeMapper(ATUIState &state);
 
 // Firmware Manager — global visibility flag and drop handler (ui_system.cpp)
 extern bool g_showFirmwareManager;
-bool ATUIFirmwareManagerHandleDrop(const char *utf8path);
+bool ATUIFirmwareManagerHandleDrop(const char *utf8path, float dropX, float dropY);
+bool ATUIFirmwareManagerGetDropRect(ImVec2 &pos, ImVec2 &size); // returns true if open
 
 // Menu bar (ui_menus.cpp)
-void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, SDL_Renderer *renderer, ATUIState &state);
+void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *backend, ATUIState &state);
 void ATUIPushDeferred2(ATDeferredActionType type, const char *utf8path1, const char *utf8path2);
 bool ATUIHasQuickSaveState();
 
@@ -136,16 +153,33 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 void ATUIRenderCassetteControl(ATSimulator &sim, ATUIState &state, SDL_Window *window);
 void ATUIRenderAdjustColors(ATSimulator &sim, ATUIState &state);
 void ATUIRenderDisplaySettings(ATSimulator &sim, ATUIState &state);
+
+// Palette Solver sub-dialog (ui_palette_solver.cpp)
+void ATUIRenderPaletteSolver(ATSimulator &sim, bool &open);
+void ATUIShutdownPaletteSolver();
 void ATUIRenderInputMappings(ATSimulator &sim, ATUIState &state);
 void ATUIRenderInputSetup(ATSimulator &sim, ATUIState &state);
 void ATUIRenderProfiles(ATSimulator &sim, ATUIState &state);
 
 // Tools menu dialogs
 void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *window);
+void ATUIOpenDiskExplorerForDrive(int driveIdx, bool writable, bool autoFlush);
+void ATUIOpenDiskExplorerForBlockDevice(IATBlockDevice *dev);
+bool ATUIDiskExplorerHandleDrop(const char *utf8path, float dropX, float dropY);
+bool ATUIDiskExplorerGetDropRect(ImVec2 &pos, ImVec2 &size); // returns true if open+writable
 void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *window);
+void ATUIRenderCheater(ATSimulator &sim, ATUIState &state);
+bool ATUIOpenRewindDialog();
+void ATUIQuickRewind();
+void ATUIRenderRewindDialog(ATSimulator &sim, ATUIState &state);
+void ATUIRenderLightPenDialog(ATSimulator &sim, ATUIState &state);
 void ATUIRenderKeyboardShortcuts(ATUIState &state);
 void ATUIRenderCompatDB(ATSimulator &sim, ATUIState &state);
 void ATUIRenderAdvancedConfig(ATUIState &state);
+void ATUIRenderScreenEffects(ATSimulator &sim, ATUIState &state);
+
+// HUD overlay — drive LEDs, status messages, FPS, pause, errors
+void ATUIRenderHUDOverlay();
 
 // Device configuration dialog (ui_devconfig.cpp)
 class IATDevice;
@@ -168,6 +202,16 @@ inline bool ATUICheckEscClose() {
 	return ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
 		&& ImGui::IsKeyPressed(ImGuiKey_Escape);
 }
+
+// Drag-and-drop visual feedback state (updated by event loop, drawn by UI)
+struct ATUIDragDropState {
+	bool active = false;      // true between DROP_BEGIN and DROP_COMPLETE/DROP_FILE
+	float x = 0, y = 0;      // current cursor position during drag
+};
+extern ATUIDragDropState g_dragDropState;
+
+// Render drag-and-drop overlay (call at end of frame, after all windows)
+void ATUIRenderDragDropOverlay();
 
 // Exit confirmation — checks for dirty storage and shows discard dialog.
 // Set state.showExitConfirm = true to trigger; the render function handles

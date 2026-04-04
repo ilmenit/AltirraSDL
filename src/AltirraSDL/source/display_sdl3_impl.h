@@ -23,8 +23,10 @@ public:
 	void Reset() override;
 	void SetSourceMessage(const wchar_t*) override {}
 	bool SetSource(bool, const VDPixmap&, bool) override { return false; }
-	bool SetSourcePersistent(bool, const VDPixmap&, bool,
-		const VDVideoDisplayScreenFXInfo*, IVDVideoDisplayScreenFXEngine*) override { return false; }
+	bool SetSourcePersistent(bool bPersistent, const VDPixmap& px, bool
+		, const VDVideoDisplayScreenFXInfo* pScreenFX
+		, IVDVideoDisplayScreenFXEngine*) override;
+
 	void SetSourceSubrect(const vdrect32*) override {}
 	void SetSourceSolidColor(uint32) override {}
 	void SetReturnFocus(bool) override {}
@@ -57,7 +59,7 @@ public:
 	VDDVSyncStatus GetVSyncStatus() const override { return {}; }
 	vdrect32 GetMonitorRect() override { return {0, 0, mWidth, mHeight}; }
 	VDDMonitorInfo GetMonitorInformation() override { return {}; }
-	bool IsScreenFXPreferred() const override { return false; }
+	bool IsScreenFXPreferred() const override { return mbScreenFXPreferred; }
 	VDDHighColorAvailability GetHDRCapability() const override {
 		return VDDHighColorAvailability::NoMinidriverSupport;
 	}
@@ -84,6 +86,19 @@ public:
 	int GetTextureWidth() const { return mTextureW; }
 	int GetTextureHeight() const { return mTextureH; }
 
+	// GL path: expose converted pixel data for GPU upload
+	const void *GetFramePixels() const { return mHasFramePixels ? mConvertBuffer.data() : nullptr; }
+	int GetFramePixelWidth() const { return mTextureW; }
+	int GetFramePixelHeight() const { return mTextureH; }
+	int GetFramePixelPitch() const { return mTextureW * 4; }
+
+	// GL path: screen FX info from GTIA's SetSourcePersistent call
+	bool HasScreenFX() const { return mHasScreenFX; }
+	const VDVideoDisplayScreenFXInfo &GetLastScreenFX() const { return mLastScreenFX; }
+
+	// Set by the main loop based on whether the GL backend is active
+	void SetScreenFXPreferred(bool v) { mbScreenFXPreferred = v; }
+
 private:
 	SDL_Renderer *mpRenderer;
 	SDL_Texture  *mpTexture = nullptr;
@@ -95,6 +110,11 @@ private:
 	int mHeight;
 	int mTextureW = 0;
 	int mTextureH = 0;
+
+	bool mbScreenFXPreferred = false;
+	bool mHasScreenFX = false;
+	bool mHasFramePixels = false;
+	VDVideoDisplayScreenFXInfo mLastScreenFX {};
 
 	std::vector<uint32> mConvertBuffer;
 };

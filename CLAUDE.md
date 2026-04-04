@@ -202,7 +202,7 @@ Follow this checklist:
 The SDL3 Dear ImGui UI must replicate Windows Altirra's menus and
 dialogs faithfully — same options, same layout, same location.  Do not
 invent new dialogs, rearrange options for "convenience", or add controls
-that don't exist in the Windows version.
+that don't exist in the Windows version, until explicitly asked to do it.
 
 **Rule:** Before implementing or modifying any UI element, check what the
 Windows version shows in that exact context.  The canonical references
@@ -232,7 +232,7 @@ layout).
 1. Find the Windows equivalent (menu item, dialog, or page)
 2. Verify every option and its location
 3. Do not add options that the Windows version doesn't show in that
-   context
+   context, do it only on explicit request. 
 4. Do not omit options that the Windows version does show
 
 ### ImGui window positioning: config dialogs vs. debugger panes

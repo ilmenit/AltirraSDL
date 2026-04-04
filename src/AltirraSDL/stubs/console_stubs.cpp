@@ -137,13 +137,29 @@ bool ATIsDebugConsoleActive() {
 }
 
 // =========================================================================
-// Source window stubs (TODO: Phase 8)
+// Source window routing — delegate to ImGui source pane (ui_dbg_source.cpp)
 // =========================================================================
 
-IATSourceWindow *ATGetSourceWindow(const wchar_t*) { return nullptr; }
-IATSourceWindow *ATOpenSourceWindow(const wchar_t*) { return nullptr; }
-IATSourceWindow *ATOpenSourceWindow(const ATDebuggerSourceFileInfo&, bool) { return nullptr; }
-void ATUIShowSourceListDialog() {}
+// Defined in ui_dbg_source.cpp
+extern IATSourceWindow *ATImGuiFindSourceWindow(const wchar_t *path);
+extern IATSourceWindow *ATImGuiOpenSourceWindow(const wchar_t *path);
+extern void ATUIDebuggerShowSourceListDialog();
+
+IATSourceWindow *ATGetSourceWindow(const wchar_t *s) {
+	return ATImGuiFindSourceWindow(s);
+}
+
+IATSourceWindow *ATOpenSourceWindow(const wchar_t *s) {
+	return ATImGuiOpenSourceWindow(s);
+}
+
+IATSourceWindow *ATOpenSourceWindow(const ATDebuggerSourceFileInfo& sfi, bool) {
+	return ATImGuiOpenSourceWindow(sfi.mSourcePath.c_str());
+}
+
+void ATUIShowSourceListDialog() {
+	ATUIDebuggerShowSourceListDialog();
+}
 
 // =========================================================================
 // Pane lookup stubs (will be replaced as panes are implemented)

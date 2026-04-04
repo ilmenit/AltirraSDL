@@ -3,12 +3,14 @@
 //	Provides command input, output text buffer, and command history.
 
 #include <stdafx.h>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
 #include <stdio.h>
 #include <stdarg.h>
 #include <imgui.h>
+#include <SDL3/SDL.h>
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -32,7 +34,7 @@ void ATConsoleQueueCommand(const char *s);
 // Console text buffer — extern so console_stubs.cpp can append before pane exists
 std::mutex g_consoleMutex;
 std::string g_consoleText;
-bool g_consoleScrollToBottom = false;
+std::atomic<bool> g_consoleScrollToBottom{false};
 bool g_consoleNeedsScroll = false;
 
 // Command history
@@ -77,6 +79,7 @@ private:
 	bool mbFocusInput = true;
 	bool mbFirstRender = true;
 	bool mbRunning = false;  // tracks simulator run state for input disabling
+	std::string mRenderSnapshot;  // text copied under lock, rendered without lock
 
 	// Event delegates for prompt/run state changes
 	VDDelegate mDelPromptChanged;
@@ -151,27 +154,60 @@ bool ATImGuiConsolePaneImpl::Render() {
 	}
 
 	if (!ImGui::Begin(mTitle.c_str(), &open)) {
+		mbHasFocus = false;
 		ImGui::End();
 		return open;
 	}
+	mbHasFocus = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
 	// Output area: scrollable child region
 	const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 	if (ImGui::BeginChild("ConsoleOutput", ImVec2(0, -footerHeight), ImGuiChildFlags_None,
 			ImGuiWindowFlags_HorizontalScrollbar)) {
-		// Render all text
+		// Copy text under lock, render without lock (avoids holding mutex during ImGui rendering)
 		{
 			std::lock_guard<std::mutex> lock(g_consoleMutex);
-			if (!g_consoleText.empty())
-				ImGui::TextUnformatted(g_consoleText.c_str(), g_consoleText.c_str() + g_consoleText.size());
+			mRenderSnapshot = g_consoleText;
+
+			// Trim buffer if it grows too large (cap 256KB, trim to 128KB)
+			if (g_consoleText.size() > 256 * 1024) {
+				size_t trimTo = 128 * 1024;
+				size_t pos = g_consoleText.find('\n', g_consoleText.size() - trimTo);
+				if (pos != std::string::npos && pos + 1 < g_consoleText.size())
+					g_consoleText.erase(0, pos + 1);
+			}
+		}
+
+		if (!mRenderSnapshot.empty())
+			ImGui::TextUnformatted(mRenderSnapshot.c_str(),
+				mRenderSnapshot.c_str() + mRenderSnapshot.size());
+
+		// Ctrl+C in the output area copies all text (no text selection with TextUnformatted)
+		if (ImGui::IsWindowFocused() && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
+			if (!mRenderSnapshot.empty())
+				SDL_SetClipboardText(mRenderSnapshot.c_str());
+		}
+
+		// Right-click context menu
+		if (ImGui::BeginPopupContextWindow("ConsoleCtx")) {
+			if (ImGui::MenuItem("Copy", "Ctrl+C")) {
+				if (!mRenderSnapshot.empty())
+					SDL_SetClipboardText(mRenderSnapshot.c_str());
+			}
+			if (ImGui::MenuItem("Clear All")) {
+				std::lock_guard<std::mutex> lock(g_consoleMutex);
+				g_consoleText.clear();
+			}
+			ImGui::EndPopup();
 		}
 
 		// Auto-scroll
-		if (g_consoleNeedsScroll || g_consoleScrollToBottom) {
-			if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 20.0f || g_consoleScrollToBottom)
+		bool needsScroll = g_consoleNeedsScroll || g_consoleScrollToBottom.load();
+		if (needsScroll) {
+			if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 20.0f || g_consoleScrollToBottom.load())
 				ImGui::SetScrollHereY(1.0f);
 			g_consoleNeedsScroll = false;
-			g_consoleScrollToBottom = false;
+			g_consoleScrollToBottom.store(false);
 		}
 	}
 	ImGui::EndChild();
@@ -190,7 +226,8 @@ bool ATImGuiConsolePaneImpl::Render() {
 		ImGui::BeginDisabled();
 
 	ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue
-		| ImGuiInputTextFlags_CallbackHistory;
+		| ImGuiInputTextFlags_CallbackHistory
+		| ImGuiInputTextFlags_CallbackAlways;
 
 	ImGui::PushItemWidth(-1);
 	if (ImGui::InputText("##input", mInputBuf, sizeof(mInputBuf), inputFlags,
@@ -234,6 +271,14 @@ int ATImGuiConsolePaneImpl::InputTextCallback(ImGuiInputTextCallbackData *data) 
 }
 
 int ATImGuiConsolePaneImpl::HandleInputCallback(ImGuiInputTextCallbackData *data) {
+	// Escape in console input → focus Display (matches Windows pattern:
+	// any pane → Console, Console → Display)
+	if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways) {
+		if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+			ATUIDebuggerFocusDisplay();
+		return 0;
+	}
+
 	if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
 		const int prevPos = g_cmdHistoryPos;
 		if (data->EventKey == ImGuiKey_UpArrow) {

@@ -16,6 +16,7 @@
 #include "debugger.h"
 #include "simulator.h"
 #include "display_sdl3_impl.h"
+#include "display_backend.h"
 
 extern ATSimulator g_sim;
 extern VDVideoDisplaySDL3 *g_pDisplay;
@@ -55,6 +56,7 @@ namespace {
 	std::vector<PaneEntry> g_debugPanes;
 	bool g_debuggerOpen = false;
 	bool g_dockLayoutApplied = false;
+	uint32 g_focusedPaneId = 0;
 
 	// Pane creator registry (populated by ATRegisterUIPaneType/Class)
 	struct PaneCreatorEntry {
@@ -97,8 +99,12 @@ extern void ATUIDebuggerEnsureRegistersPane();
 extern void ATUIDebuggerEnsureDisassemblyPane();
 extern void ATUIDebuggerEnsureHistoryPane();
 extern void ATUIDebuggerEnsureMemoryPane(int index);
+extern void ATUIDebuggerEnsureWatchPane(int index);
 extern void ATUIDebuggerEnsureBreakpointsPane();
 extern void ATUIDebuggerEnsureCallStackPane();
+extern void ATUIDebuggerEnsureTargetsPane();
+extern void ATUIDebuggerEnsureDebugDisplayPane();
+extern void ATUIDebuggerEnsurePrinterOutputPane();
 
 static void EnsurePaneExists(uint32 id) {
 	switch (id) {
@@ -108,10 +114,15 @@ static void EnsurePaneExists(uint32 id) {
 		case kATUIPaneId_History:     ATUIDebuggerEnsureHistoryPane(); break;
 		case kATUIPaneId_Breakpoints: ATUIDebuggerEnsureBreakpointsPane(); break;
 		case kATUIPaneId_CallStack:   ATUIDebuggerEnsureCallStackPane(); break;
+		case kATUIPaneId_Targets:     ATUIDebuggerEnsureTargetsPane(); break;
+		case kATUIPaneId_DebugDisplay: ATUIDebuggerEnsureDebugDisplayPane(); break;
+		case kATUIPaneId_PrinterOutput: ATUIDebuggerEnsurePrinterOutputPane(); break;
 		default:
 			// Memory pane instances: kATUIPaneId_MemoryN + 0..3
 			if (id >= kATUIPaneId_MemoryN && id <= kATUIPaneId_MemoryN + 3) {
 				ATUIDebuggerEnsureMemoryPane(id - kATUIPaneId_MemoryN);
+			} else if (id >= kATUIPaneId_WatchN && id <= kATUIPaneId_WatchN + 3) {
+				ATUIDebuggerEnsureWatchPane(id - kATUIPaneId_WatchN);
 			} else {
 				fprintf(stderr, "[Debugger] ATActivateUIPane(0x%x) — no ImGui pane implemented yet\n", id);
 			}
@@ -200,6 +211,8 @@ ATImGuiDebuggerPane *ATUIDebuggerGetPane(uint32 paneId) {
 void ATUIDebuggerInit() {
 }
 
+extern void ATUIDebuggerClearSourceWindows();
+
 void ATUIDebuggerShutdown() {
 	IATDebugger *dbg = ATGetDebugger();
 	for (auto& e : g_debugPanes) {
@@ -209,6 +222,7 @@ void ATUIDebuggerShutdown() {
 	g_debugPanes.clear();
 	g_paneCreators.clear();
 	g_debuggerOpen = false;
+	ATUIDebuggerClearSourceWindows();
 }
 
 // =========================================================================
@@ -219,13 +233,14 @@ static void RenderDisplayPane() {
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 	bool open = true;
 	if (ImGui::Begin("Display", &open)) {
-		SDL_Texture *emuTex = g_pDisplay ? g_pDisplay->GetTexture() : nullptr;
-		if (emuTex) {
+		IDisplayBackend *backend = ATUIGetDisplayBackend();
+		void *texID = backend && backend->HasTexture() ? backend->GetImGuiTextureID() : nullptr;
+		if (texID) {
 			ImVec2 avail = ImGui::GetContentRegionAvail();
 			if (avail.x > 0 && avail.y > 0) {
 				// Maintain aspect ratio (Atari ~1.2:1 pixel aspect)
-				float texW = (float)g_pDisplay->GetTextureWidth();
-				float texH = (float)g_pDisplay->GetTextureHeight();
+				float texW = (float)backend->GetTextureWidth();
+				float texH = (float)backend->GetTextureHeight();
 				if (texW > 0 && texH > 0) {
 					float aspectRatio = texW / texH;
 					float drawW = avail.x;
@@ -239,7 +254,7 @@ static void RenderDisplayPane() {
 					float offsetY = (avail.y - drawH) * 0.5f;
 					if (offsetX > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
 					if (offsetY > 0) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
-					ImGui::Image((ImTextureID)(intptr_t)emuTex, ImVec2(drawW, drawH));
+					ImGui::Image((ImTextureID)texID, ImVec2(drawW, drawH));
 				}
 			}
 		} else {
@@ -340,7 +355,8 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 	// Render the Display pane (emulation texture inside a dockable window)
 	RenderDisplayPane();
 
-	// Render all debugger panes
+	// Render all debugger panes and track which one has focus
+	g_focusedPaneId = 0;
 	for (auto& e : g_debugPanes) {
 		if (!e.pane->IsVisible())
 			continue;
@@ -349,6 +365,9 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 			// Pane closed via X button
 			e.pane->SetVisible(false);
 		}
+
+		if (e.pane->HasFocus())
+			g_focusedPaneId = e.id;
 	}
 }
 
@@ -427,6 +446,34 @@ bool ATUIDebuggerIsOpen() {
 }
 
 // =========================================================================
+// Focus management
+// =========================================================================
+
+uint32 ATUIDebuggerGetFocusedPaneId() {
+	return g_focusedPaneId;
+}
+
+void ATUIDebuggerFocusConsole() {
+	ATActivateUIPane(kATUIPaneId_Console, true, true);
+}
+
+// =========================================================================
+// Source mode detection — matches Windows ATUIGetDebugSrcMode()
+// =========================================================================
+
+static ATDebugSrcMode GetDebugSrcMode() {
+	uint32 focusId = g_focusedPaneId;
+
+	if (focusId == kATUIPaneId_Disassembly)
+		return kATDebugSrcMode_Disasm;
+
+	if (focusId >= kATUIPaneId_Source)
+		return kATDebugSrcMode_Source;
+
+	return kATDebugSrcMode_Same;
+}
+
+// =========================================================================
 // Debug commands (for menu/shortcut wiring)
 // =========================================================================
 
@@ -445,7 +492,7 @@ void ATUIDebuggerRunStop() {
 		ATOpenConsole();  // no-op if already open, but ensures console exists
 		dbg->Break();
 	} else {
-		dbg->Run(kATDebugSrcMode_Same);
+		dbg->Run(GetDebugSrcMode());
 	}
 }
 
@@ -455,11 +502,31 @@ void ATUIDebuggerBreak() {
 		dbg->Break();
 }
 
+void ATUIDebuggerToggleBreakpoint() {
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg || !dbg->IsEnabled())
+		return;
+
+	// Toggle breakpoint at the current frame PC — matches Windows
+	// OnCommandDebugToggleBreakpoint which delegates to the active pane.
+	uint32 pc = dbg->GetFramePC();
+	dbg->ToggleBreakpoint(pc);
+}
+
 void ATUIDebuggerStepInto() {
 	IATDebugger *dbg = ATGetDebugger();
 	if (!dbg || !dbg->IsEnabled()) return;
+
+	ATDebugSrcMode srcMode = GetDebugSrcMode();
+
+	// If source pane is focused, delegate to source-level stepping
+	if (srcMode == kATDebugSrcMode_Source) {
+		if (ATUIDebuggerSourceStepInto())
+			return;
+	}
+
 	try {
-		dbg->StepInto(kATDebugSrcMode_Same);
+		dbg->StepInto(srcMode);
 	} catch(const MyError& e) {
 		ATConsolePrintf("%s\n", e.c_str());
 	}
@@ -468,8 +535,17 @@ void ATUIDebuggerStepInto() {
 void ATUIDebuggerStepOver() {
 	IATDebugger *dbg = ATGetDebugger();
 	if (!dbg || !dbg->IsEnabled()) return;
+
+	ATDebugSrcMode srcMode = GetDebugSrcMode();
+
+	// If source pane is focused, delegate to source-level stepping
+	if (srcMode == kATDebugSrcMode_Source) {
+		if (ATUIDebuggerSourceStepOver())
+			return;
+	}
+
 	try {
-		dbg->StepOver(kATDebugSrcMode_Same);
+		dbg->StepOver(srcMode);
 	} catch(const MyError& e) {
 		ATConsolePrintf("%s\n", e.c_str());
 	}
@@ -479,8 +555,13 @@ void ATUIDebuggerStepOut() {
 	IATDebugger *dbg = ATGetDebugger();
 	if (!dbg || !dbg->IsEnabled()) return;
 	try {
-		dbg->StepOut(kATDebugSrcMode_Same);
+		dbg->StepOut(GetDebugSrcMode());
 	} catch(const MyError& e) {
 		ATConsolePrintf("%s\n", e.c_str());
 	}
+}
+
+void ATUIDebuggerFocusDisplay() {
+	// Focus the Display pane in the debugger dockspace
+	ImGui::SetWindowFocus("Display");
 }

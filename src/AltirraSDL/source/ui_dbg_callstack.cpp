@@ -112,9 +112,11 @@ bool ATImGuiCallStackPaneImpl::Render() {
 
 	ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
 	if (!ImGui::Begin(mTitle.c_str(), &open)) {
+		mbHasFocus = false;
 		ImGui::End();
 		return open;
 	}
+	mbHasFocus = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
 	if (mbNeedsRebuild)
 		RebuildStack();
@@ -149,6 +151,12 @@ bool ATImGuiCallStackPaneImpl::Render() {
 		if (f.mbCurrent)
 			ImGui::PopStyleColor();
 	}
+
+	// Escape → focus Console
+	if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+			&& !ImGui::GetIO().WantTextInput
+			&& ImGui::IsKeyPressed(ImGuiKey_Escape))
+		ATUIDebuggerFocusConsole();
 
 	ImGui::End();
 	return open;

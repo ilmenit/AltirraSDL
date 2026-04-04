@@ -9,6 +9,7 @@
 #include <vd2/system/VDString.h>
 #include <vd2/system/function.h>
 #include <imgui.h>
+#include <at/atnativeui/uiframe.h>
 #include "console.h"
 #include "debugger.h"
 
@@ -32,6 +33,9 @@ public:
 	bool IsVisible() const { return mbVisible; }
 	void SetVisible(bool vis) { mbVisible = vis; }
 
+	// Focus tracking — set during Render() by each pane
+	bool HasFocus() const { return mbHasFocus; }
+
 	// Focus request — set by ATActivateUIPane, consumed on next render
 	void RequestFocus() { mbFocusRequested = true; }
 
@@ -48,6 +52,7 @@ protected:
 	VDStringA mTitle;
 	bool mbVisible = true;
 	bool mbFocusRequested = false;
+	bool mbHasFocus = false;
 
 	// Cached state from last OnDebuggerSystemStateUpdate
 	ATDebuggerSystemState mLastState {};
@@ -73,10 +78,17 @@ void ATUIDebuggerOpen();
 void ATUIDebuggerClose();
 bool ATUIDebuggerIsOpen();
 
+// ATActivateUIPane is declared in <at/atnativeui/uiframe.h> (included above)
+
 // Pane registration
 void ATUIDebuggerRegisterPane(ATImGuiDebuggerPane *pane);
 void ATUIDebuggerUnregisterPane(uint32 paneId);
 ATImGuiDebuggerPane *ATUIDebuggerGetPane(uint32 paneId);
+
+// Focus management
+uint32 ATUIDebuggerGetFocusedPaneId();
+void ATUIDebuggerFocusConsole();
+void ATUIDebuggerFocusDisplay();
 
 // Debug stepping commands (for menu/shortcut wiring)
 void ATUIDebuggerRunStop();
@@ -84,3 +96,15 @@ void ATUIDebuggerBreak();
 void ATUIDebuggerStepInto();
 void ATUIDebuggerStepOver();
 void ATUIDebuggerStepOut();
+void ATUIDebuggerToggleBreakpoint();
+
+// Source-level stepping (from ui_dbg_source.cpp)
+bool ATUIDebuggerSourceStepInto();
+bool ATUIDebuggerSourceStepOver();
+
+// Watch window helper (from ui_dbg_watch.cpp)
+extern void ATUIDebuggerAddToWatch(const char *expr);
+
+// Breakpoint dialog (from ui_dbg_breakpoints.cpp)
+// Pass userIdx >= 0 to edit existing, -1 for new breakpoint
+void ATUIDebuggerShowBreakpointDialog(sint32 userIdx);

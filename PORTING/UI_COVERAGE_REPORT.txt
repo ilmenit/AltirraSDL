@@ -1,0 +1,755 @@
+==============================================================================
+  AltirraSDL UI Coverage Report
+==============================================================================
+
+SUMMARY
+------------------------------------------------------------------------------
+  Category                   Total  Direct  SysCfg  WinOnly  MISSING  Accounted
+  ------------------------- ------ ------- ------- -------- -------- ----------
+  Menu Commands                227     226       —        1        0     100.0%
+  Registered Commands          505     235     262        8        0     100.0%
+  Dialogs (RC)                 149     133       —        —       16      89.3%
+  Context Menu Items           218      62       —        —      156      28.4%
+
+  Direct  = found in SDL3 source code (string literal, label, or loop/table)
+  SysCfg  = setting exposed in Configure System dialog (not a menu command)
+  WinOnly = Windows-specific (D3D, file assoc, single instance, etc.)
+  MISSING = genuinely not found — needs implementation or verification
+
+MISSING DIALOGS (in Altirra.rc but no SDL3 equivalent detected)
+------------------------------------------------------------------------------
+
+  [Debugger/Profiler] (12 dialogs)
+    IDD_DEBUG_CHOOSE_FONT
+    IDD_PROFILER_BOUNDARYRULE
+    IDD_PROFILE_CATEGORIES
+    IDD_TRACEVIEWER
+    IDD_TRACEVIEWER_CHANNELS
+    IDD_TRACEVIEWER_CPUHISTORY
+    IDD_TRACEVIEWER_CPUPROFILE
+    IDD_TRACEVIEWER_EVENTS
+    IDD_TRACEVIEWER_LOG
+    IDD_TRACEVIEWER_TIMESCALE
+    IDD_TRACE_SETTINGS
+    IDD_VERIFIER
+
+  [Tape Editor] (1 dialogs)
+    IDD_TAPEEDITOR
+
+  [Other] (3 dialogs)
+    IDD_CREATE_VHD
+    IDD_PROGRAM_ERROR
+    IDD_PROGRESS
+
+INCOMPLETE DIALOGS (dialog exists in SDL3 but has missing controls/menus)
+------------------------------------------------------------------------------
+
+  IDD_ADJUST_ARTIFACTING ""  (controls: 0/1 = 0%)
+    MISSING control: Scanline intensity                  [IDC_STATIC]
+
+  IDD_ADJUST_COLORS "Adjust Colors"  (controls: 10/20 = 50%)
+    MISSING control: Color match mode                    [IDC_STATIC]
+    MISSING control: Hue step                            [IDC_STATIC]
+    MISSING control: Gamma correction                    [IDC_STATIC]
+    MISSING control: Artifacting phase                   [IDC_STATIC]
+    MISSING control: Artifacting saturation              [IDC_STATIC]
+    MISSING control: Artifacting sharpness               [IDC_STATIC]
+    MISSING control: R-Y angle shift                     [IDC_STATIC]
+    MISSING control: G-Y angle shift                     [IDC_STATIC]
+    MISSING control: B-Y angle shift                     [IDC_STATIC]
+    MISSING control: Resulting palette                   [IDC_STATIC]
+    Associated menu IDR_ADJUSTCOLORS_MENU:
+    MISSING menu:    Export Palette...                   [ID_FILE_EXPORTPALETTE]
+    MISSING menu:    Palette Solver...                   [ID_FILE_IMPORTREFERENCEPICTURE]
+    MISSING menu:    Show Red/Green Shifts               [ID_VIEW_SHOWRGBSHIFTS]
+    MISSING menu:    Show Red/Green Relative Offsets     [ID_VIEW_SHOWRGBRELATIVEOFFSETS]
+    MISSING menu:    Shared NTSC/PAL Settings            [ID_OPTIONS_SHAREDPALETTES]
+    MISSING menu:    Separate NTSC and PAL Settings      [ID_OPTIONS_SEPARATEPALETTES]
+    MISSING menu:    Use PAL Quirks                      [ID_OPTIONS_USEPALQUIRKS]
+
+  IDD_ADJUST_COLORS_REFERENCE "Palette Solver"  (controls: 1/7 = 14%)
+    MISSING control: Lock Hue Start                      [IDC_LOCKHUESTART]
+    MISSING control: Lock Gamma Correction               [IDC_LOCKGAMMA]
+    MISSING control: Normalize Contrast                  [IDC_NORMALIZECONTRAST]
+    MISSING control: Gain                                [IDC_STATIC_GAIN]
+    MISSING control: Reset Gain                          [IDC_RESET_GAIN]
+    MISSING control: Match                               [IDC_MATCH]
+
+  IDD_ADJUST_SCREENFX_BLOOM ""  (controls: 1/4 = 25%)
+    MISSING control: Radius                              [IDC_LABEL_BLOOM_RADIUS]
+    MISSING control: Direct intensity                    [IDC_LABEL_BLOOM_DIRECT_INTENSITY]
+    MISSING control: Indirect intensity                  [IDC_LABEL_BLOOM_INDIRECT_INTENSITY]
+
+  IDD_ADJUST_SCREENFX_HDR ""  (controls: 0/7 = 0%)
+    MISSING control: SDR brightness                      [IDC_STATIC_SDRBRIGHTNESS]
+    MISSING control: HDR brightness                      [IDC_STATIC_HDRBRIGHTNESS]
+    MISSING control: Use system SDR intensity            [IDC_USESYSTEMSDR]
+    MISSING control: Display Name                        [IDC_STATIC_DISPLAYNAME]
+    MISSING control: Current Mode                        [IDC_STATIC]
+    MISSING control: Color Gamut                         [IDC_STATIC]
+    MISSING control: Capability                          [IDC_STATIC]
+
+  IDD_ADJUST_SCREENFX_MAIN ""  (controls: 0/4 = 0%)
+    MISSING control: Scanline intensity                  [IDC_STATIC]
+    MISSING control: Horizontal distortion               [IDC_LABEL_DISTORTION_X]
+    MISSING control: Vertical distortion                 [IDC_LABEL_DISTORTION_Y]
+    MISSING control: Some settings are unavailable because the current display configuration does not support shader-based screen effects. [IDC_WARNING]
+
+  IDD_ADJUST_SCREENFX_MASK ""  (controls: 0/3 = 0%)
+    MISSING control: Screen mask type                    [IDC_STATIC]
+    MISSING control: Dot pitch                           [IDC_LABEL_BLOOM_DIRECT_INTENSITY]
+    MISSING control: Hole size                           [IDC_LABEL_BLOOM_INDIRECT_INTENSITY]
+
+  IDD_AUDIO_OPTIONS "Audio options"  (controls: 6/13 = 46%)
+    MISSING control: 0 dB                                [IDC_STATIC_VOLUME]
+    MISSING control: 0 dB                                [IDC_STATIC_DRIVEVOL]
+    MISSING control: 0 dB                                [IDC_STATIC_COVOXVOL]
+    MISSING control: Audio API                           [IDC_STATIC]
+    MISSING control: 0 ms                                [IDC_STATIC_LATENCY]
+    MISSING control: 0 ms                                [IDC_STATIC_EXTRABUFFER]
+    MISSING control: The latency setting controls the delay between input and sound output. Increase it if you are hearing clicking; decrease it for better input response. [IDC_STATIC]
+
+  IDD_CARTRIDGE_MAPPER "Select Cartridge Mapper"  (controls: 1/3 = 33%)
+    MISSING control: No compatible mappers found.        [IDC_STATIC_NONEFOUND]
+    MISSING control: WARNING: This may be an Atari 2600 cartridge image! [IDC_STATIC_2600WARNING]
+
+  IDD_CHEATER "Cheater"  (controls: 8/13 = 62%)
+    MISSING control: Search mode                         [IDC_STATIC]
+    MISSING control: Search value                        [IDC_STATIC]
+    MISSING control: Value type:                         [IDC_STATIC]
+    MISSING control: Search results:                     [IDC_STATIC]
+    MISSING control: Cheats:                             [IDC_STATIC_CHEATS]
+
+  IDD_COMPATDB_EDITALIAS "Create/Edit Alias"  (controls: 0/3 = 0%)
+    MISSING control: Available signatures                [IDC_STATIC]
+    MISSING control: Signatures in alias                 [IDC_STATIC_SIGSINALIAS]
+    MISSING control: From file...                        [IDC_FROM_FILE]
+
+  IDD_COMPATDB_EDITOR "Compatibility Database Editor"  (controls: 7/11 = 64%)
+    MISSING control: Titles currently in database        [IDC_STATIC]
+    MISSING control: Aliases for title                   [IDC_STATIC_ALIASES]
+    MISSING control: Add Alias                           [IDC_ADDALIAS]
+    MISSING control: Tags for title                      [IDC_STATIC_TAGS]
+    Associated menu IDR_COMPATDBEDITOR_MENU:
+    MISSING menu:    Open...                             [ID_FILE_LOAD]
+
+  IDD_COMPATIBILITY "Compatibility Warning"  (controls: 1/3 = 33%)
+    MISSING control: Auto-adjust settings and reboot emulation [IDC_AUTOADJUST]
+    MISSING control: Pause emulation to adjust settings manually [IDC_PAUSE]
+
+  IDD_CONFIGURE_ACCELERATION ""  (controls: 17/21 = 81%)
+    MISSING control: SIO acceleration mode               [IDC_STATIC]
+    MISSING control: SIOV patch only                     [IDC_SIOACCEL_SIOV]
+    MISSING control: PBI device only (ID 7)              [IDC_SIOACCEL_PBI]
+    MISSING control: Both SIOV + PBI                     [IDC_SIOACCEL_BOTH]
+
+  IDD_CONFIGURE_ACCESSIBILITY ""  (controls: 1/2 = 50%)
+    MISSING control: Screen reader support               []
+
+  IDD_CONFIGURE_BOOT ""  (controls: 4/6 = 67%)
+    MISSING control: Current seed:                       [IDC_CURRENT_SEED]
+    MISSING control: Next seed:                          [IDC_NEXT_SEED]
+
+  IDD_CONFIGURE_CAPTION ""  (controls: 0/2 = 0%)
+    MISSING control: Use custom window caption           [IDC_CUSTOM]
+    MISSING control: Elements                            [IDC_ELEMENTS]
+
+  IDD_CONFIGURE_COMPATDB ""  (controls: 3/8 = 38%)
+    MISSING control: Compatibility Check                 [IDC_STATIC]
+    MISSING control: Databases                           [IDC_STATIC]
+    MISSING control: Muted Warnings                      [IDC_STATIC]
+    MISSING control: If you have muted compatibility warnings for specific titles, you can unmute them. [IDC_STATIC]
+    MISSING control: Unmute all title warnings           [IDC_UNMUTE_ALL]
+
+  IDD_CONFIGURE_DEBUGGER ""  (controls: 1/6 = 17%)
+    MISSING control: Pre-start symbol loading            [IDC_STATIC]
+    MISSING control: Post-start symbol loading           [IDC_STATIC]
+    MISSING control: Script auto-loading                 [IDC_STATIC]
+    MISSING control: OS symbols                          [IDC_STATIC]
+    MISSING control: Debug link                          [IDC_STATIC]
+
+  IDD_CONFIGURE_DEVICES ""  (controls: 4/6 = 67%)
+    MISSING control: Remove All                          [IDC_REMOVEALL]
+    MISSING control: More ▼                              [IDC_MORE]
+
+  IDD_CONFIGURE_DISK ""  (controls: 3/4 = 75%)
+    MISSING control: Disk drive options                  []
+
+  IDD_CONFIGURE_DISPLAY ""  (controls: 3/6 = 50%)
+    MISSING control: On-screen indicators                []
+    MISSING control: Mouse support                       []
+    MISSING control: Input feedback                      []
+
+  IDD_CONFIGURE_DISPLAY2 ""  (controls: 1/9 = 11%)
+    MISSING control: Graphics API                        [IDC_STATIC]
+    MISSING control: Enable Direct3D 9                   [IDC_GRAPHICS_D3D9]
+    MISSING control: Enable Direct3D 11                  [IDC_GRAPHICS_3D]
+    MISSING control: Rendering                           [IDC_STATIC]
+    MISSING control: Use 16-bit surfaces                 [IDC_16BIT]
+    MISSING control: Fullscreen video mode               [IDC_STATIC]
+    MISSING control: Custom effect path                  [IDC_STATIC]
+    MISSING control: Reload                              [IDC_RELOAD]
+
+  IDD_CONFIGURE_EASEOFUSE ""  (controls: 0/1 = 0%)
+    MISSING control: Automatic reset                     []
+
+  IDD_CONFIGURE_ENHANCEDTEXT ""  (controls: 0/7 = 0%)
+    MISSING control: Enhanced text mode                  [IDC_STATIC]
+    MISSING control: Standard video                      [IDC_ENHTEXT_NONE]
+    MISSING control: Enhanced video (CIO intercept)      [IDC_ENHTEXT_SW]
+    MISSING control: Set enhanced text font...           [IDC_ENHTEXTFONT]
+    MISSING control: Virtual screen size                 [IDC_STATIC]
+    MISSING control: Resize                              [IDC_RESIZE]
+    MISSING control: Current virtual screen size:        [IDC_STATIC_VSSIZE]
+
+  IDD_CONFIGURE_ERRORS ""  (controls: 1/2 = 50%)
+    MISSING control: When a fatal error occurs in a program: [IDC_STATIC]
+
+  IDD_CONFIGURE_FILETYPES ""  (controls: 0/7 = 0%)
+    MISSING control: Set File Associations (all users)... [IDC_SETFILEASSOC]
+    MISSING control: Remove File Associations (all users) [IDC_REMOVEFILEASSOC]
+    MISSING control: Set File Associations (current user only)... [IDC_SETUSERFILEASSOC]
+    MISSING control: Remove File Associations (current user only) [IDC_REMOVEUSERFILEASSOC]
+    MISSING control: System File Types                   [IDC_STATIC]
+    MISSING control: Per-User File Types                 [IDC_STATIC]
+    MISSING control: Launch Options                      [IDC_STATIC]
+
+  IDD_CONFIGURE_FLASH ""  (controls: 2/4 = 50%)
+    MISSING control: SIC! flash chip                     [IDC_STATIC]
+    MISSING control: Ultimate1MB flash                   [IDC_STATIC]
+
+  IDD_CONFIGURE_INPUT ""  (controls: 3/5 = 60%)
+    MISSING control: Input API                           []
+    MISSING control: Miscellaneous                       []
+
+  IDD_CONFIGURE_KEYBOARD ""  (controls: 2/5 = 40%)
+    MISSING control: Layout                              [IDC_STATIC]
+    MISSING control: Copy Default Layout to Custom Layout [IDC_COPY_TO_CUSTOM]
+    MISSING control: Customize...                        [IDC_CUSTOMIZE]
+
+  IDD_CONFIGURE_MEMORY ""  (controls: 2/6 = 33%)
+    MISSING control: Memory type                         []
+    MISSING control: Power-up pattern                    []
+    MISSING control: Axlon RAM disk                      []
+    MISSING control: High memory                         []
+
+  IDD_CONFIGURE_OVERVIEW ""  (controls: 0/1 = 0%)
+    MISSING control: Copy Configuration to Clipboard     [IDC_COPY]
+
+  IDD_CONFIGURE_SETTINGS ""  (controls: 1/8 = 12%)
+    MISSING control: Reset Settings                      [IDC_STATIC]
+    MISSING control: Settings Mode                       [IDC_STATIC]
+    MISSING control: Switch to Portable Mode             [IDC_SWITCH_TO_PORTABLE]
+    MISSING control: Switch to Registry Mode             [IDC_SWITCH_TO_REGISTRY]
+    MISSING control: Altirra is running in portable mode. [IDC_STATIC_PORTABLE]
+    MISSING control: Altirra is running in registry mode. [IDC_STATIC_REGISTRY]
+    MISSING control: Settings will be migrated on exit.  [IDC_STATIC_MIGRATING]
+
+  IDD_CONFIGURE_SPEED ""  (controls: 6/7 = 86%)
+    MISSING control: Integral rate (60 / 50 fps)         [IDC_RATE_INTEGRAL]
+
+  IDD_CONFIGURE_UI ""  (controls: 3/10 = 30%)
+    MISSING control: Startup                             [IDC_STATIC]
+    MISSING control: Window setup                        [IDC_STATIC]
+    MISSING control: Auto-hide menu                      [IDC_AUTOHIDEMENU]
+    MISSING control: Use dark theme                      [IDC_USE_DARK_THEME]
+    MISSING control: Efficiency mode                     [IDC_STATIC]
+    MISSING control: Confirmation dialogs                [IDC_STATIC]
+    MISSING control: Default scale (%)                   [IDC_STATIC]
+
+  IDD_CONFIGURE_VIDEO ""  (controls: 6/7 = 86%)
+    MISSING control: Artifacting mode                    [IDC_STATIC]
+
+  IDD_CONFIGURE_WORKAROUNDS ""  (controls: 0/1 = 0%)
+    MISSING control: System bugs                         []
+
+  IDD_CREATEINPUTMAP "Create Input Map"  (controls: 1/4 = 25%)
+    MISSING control: Controller type                     [IDC_STATIC]
+    MISSING control: Analog control mode                 [IDC_STATIC]
+    MISSING control: Input source                        [IDC_STATIC]
+
+  IDD_CREATE_DISK "Create new disk"  (controls: 2/8 = 25%)
+    MISSING control: Disk format                         [IDC_STATIC]
+    MISSING control: Boot sector count                   [IDC_STATIC]
+    MISSING control: 128 bytes (SD)                      [IDC_SECTOR_SIZE_128]
+    MISSING control: 256 bytes (DD)                      [IDC_SECTOR_SIZE_256]
+    MISSING control: 512 bytes                           [IDC_SECTOR_SIZE_512]
+    MISSING control: Filesystem                          [IDC_STATIC]
+
+  IDD_DEBUG_BREAKPOINT "Add/Edit Breakpoint"  (controls: 0/7 = 0%)
+    MISSING control: Location                            [IDC_STATIC]
+    MISSING control: Break on PC address                 [IDC_LOCATION_PC]
+    MISSING control: Condition                           [IDC_STATIC]
+    MISSING control: Enable only on condition            [IDC_ENABLE_CONDITION]
+    MISSING control: Action                              [IDC_STATIC]
+    MISSING control: Stop execution                      [IDC_ACTION_STOP]
+    MISSING control: Print a message                     [IDC_ACTION_TRACE]
+
+  IDD_DEBUG_MEMORYCTL ""  (controls: 0/1 = 0%)
+    MISSING control: Bytes/Row                           [IDC_STATIC]
+
+  IDD_DEVICE_1030MODEM "835/1030/XM301 Modem Options"  (controls: 1/11 = 9%)
+    MISSING control: Protocol support                    [IDC_STATIC_PROTOCOL]
+    MISSING control: Emulate Telnet protocol             [IDC_TELNET]
+    MISSING control: Permissions                         [IDC_STATIC_PERMISSIONS]
+    MISSING control: Allow outbound connections          [IDC_ALLOW_OUTBOUND]
+    MISSING control: Negotiate terminal type:            [IDC_STATIC_TERMINAL_TYPE]
+    MISSING control: Accept IPv6 connections             [IDC_ACCEPT_IPV6]
+    MISSING control: SIO emulation                       [IDC_STATIC_SIOLEVEL]
+    MISSING control: Dial proxy address                  [IDC_STATIC_DIAL_ADDRESS]
+    MISSING control: Service                             [IDC_STATIC_DIAL_SERVICE]
+    MISSING control: Network simulation                  [IDC_STATIC_DIAL_ADDRESS2]
+
+  IDD_DEVICE_1400XL "1400/1450XL Modem Options"  (controls: 1/10 = 10%)
+    MISSING control: Protocol support                    [IDC_STATIC_PROTOCOL]
+    MISSING control: Emulate Telnet protocol             [IDC_TELNET]
+    MISSING control: Permissions                         [IDC_STATIC_PERMISSIONS]
+    MISSING control: Allow outbound connections          [IDC_ALLOW_OUTBOUND]
+    MISSING control: Negotiate terminal type:            [IDC_STATIC_TERMINAL_TYPE]
+    MISSING control: Accept IPv6 connections             [IDC_ACCEPT_IPV6]
+    MISSING control: Dial proxy address                  [IDC_STATIC_DIAL_ADDRESS]
+    MISSING control: Service                             [IDC_STATIC_DIAL_SERVICE]
+    MISSING control: Network simulation                  [IDC_STATIC_DIAL_ADDRESS2]
+
+  IDD_DEVICE_815 "815 Disk Drive Options"  (controls: 1/2 = 50%)
+    MISSING control: Data inversion                      [IDC_STATIC]
+
+  IDD_DEVICE_850 "850 Options"  (controls: 1/2 = 50%)
+    MISSING control: SIO emulation                       [IDC_STATIC_SIOLEVEL]
+
+  IDD_DEVICE_AMDC "Amdek AMDC-I/II options"  (controls: 0/12 = 0%)
+    MISSING control: Internal Drive 1                    [IDC_STATIC]
+    MISSING control: SW1: Default to SD                  [IDC_DEFAULTDD1]
+    MISSING control: Internal Drive 2                    [IDC_STATIC]
+    MISSING control: External drive 1                    [IDC_STATIC]
+    MISSING control: External drive 2                    [IDC_STATIC]
+    MISSING control: SW2: Default to SD                  [IDC_DEFAULTDD2]
+    MISSING control: SW3: Default to SD                  [IDC_DEFAULTDD3]
+    MISSING control: SW4: Default to SD                  [IDC_DEFAULTDD4]
+    MISSING control: SW5/6: Starting drive ID            [IDC_STATIC]
+    MISSING control: SW8: DOS 3.0 1050 compatibility mode [IDC_SW8]
+    MISSING control: Diagnostic test jumper enabled      [IDC_JUMPER]
+    MISSING control: Enable (AMDC-II)                    [IDC_DRIVE2]
+
+  IDD_DEVICE_BLACKBOX "Black Box setup"  (controls: 1/5 = 20%)
+    MISSING control: SCSI block size                     [IDC_STATIC]
+    MISSING control: 256 bytes                           [IDC_SECTOR_SIZE_256]
+    MISSING control: 512 bytes                           [IDC_SECTOR_SIZE_512]
+    MISSING control: RAM size                            [IDC_STATIC]
+
+  IDD_DEVICE_CUSTOM "Custom device options"  (controls: 0/1 = 0%)
+    MISSING control: Config path                         []
+
+  IDD_DEVICE_DONGLE "Joystick dongle options"  (controls: 2/3 = 67%)
+    MISSING control: The mapping determines the dongle's 4-bit response to each possible 4-bit output from the joystick port. [IDC_STATIC]
+
+  IDD_DEVICE_HAPPY810 "Happy 810 Options"  (controls: 1/2 = 50%)
+    MISSING control: Autospeed mod                       [IDC_STATIC]
+
+  IDD_DEVICE_HARDDISK "Hard disk setup"  (controls: 5/15 = 33%)
+    MISSING control: Create VHD Image...                 [IDC_CREATE_VHD]
+    MISSING control: Physical Disk...                    [IDC_IDE_DISKBROWSE]
+    MISSING control: Geometry                            [IDC_STATIC_IDE_GEOMETRY]
+    MISSING control: Sectors per track                   [IDC_STATIC_IDE_SPT]
+    MISSING control: Resulting size (MB)                 [IDC_STATIC_IDE_SIZE]
+    MISSING control: LBA sector count                    [IDC_STATIC_IDE_SIZE2]
+    MISSING control: Device speed                        [IDC_STATIC_IDE_SPEED]
+    MISSING control: Solid-state (fast)                  [IDC_SPEED_FAST]
+    MISSING control: Spinning platter (slow)             [IDC_SPEED_SLOW]
+    MISSING control: More options                        [IDC_STATIC_IDE_SPEED2]
+
+  IDD_DEVICE_KMKJZIDE "KMK/JZ IDE options"  (controls: 0/1 = 0%)
+    MISSING control: PBI device ID                       [IDC_STATIC]
+
+  IDD_DEVICE_KMKJZIDEV2 "IDE Plus 2.0 options"  (controls: 1/3 = 33%)
+    MISSING control: PBI device ID                       [IDC_STATIC]
+    MISSING control: Write protect hard disks            [IDC_WRITE_PROTECT]
+
+  IDD_DEVICE_MODEM "Modem setup"  (controls: 0/10 = 0%)
+    MISSING control: Protocol support                    [IDC_STATIC_PROTOCOL]
+    MISSING control: Emulate Telnet protocol             [IDC_TELNET]
+    MISSING control: Permissions                         [IDC_STATIC_PERMISSIONS]
+    MISSING control: Allow outbound connections          [IDC_ALLOW_OUTBOUND]
+    MISSING control: Negotiate terminal type:            [IDC_STATIC_TERMINAL_TYPE]
+    MISSING control: Accept IPv6 connections             [IDC_ACCEPT_IPV6]
+    MISSING control: Reported connection speed           []
+    MISSING control: Dial proxy address                  [IDC_STATIC_DIAL_ADDRESS]
+    MISSING control: Service                             [IDC_STATIC_DIAL_SERVICE]
+    MISSING control: Network simulation                  [IDC_STATIC_DIAL_ADDRESS2]
+
+  IDD_DEVICE_NETSERIAL "Networked serial port"  (controls: 2/7 = 29%)
+    MISSING control: Connection mode                     [IDC_STATIC_IDE_IMAGEPATH4]
+    MISSING control: Connect to another port             [IDC_MODE_CONNECT]
+    MISSING control: Connect address                     [IDC_STATIC_IDE_IMAGEPATH]
+    MISSING control: Receive baud rate                   [IDC_STATIC_IDE_IMAGEPATH3]
+    MISSING control: TCP                                 [IDC_STATIC_IDE_IMAGEPATH6]
+
+  IDD_DEVICE_PARFILEWRITER "Parallel file writer"  (controls: 0/2 = 0%)
+    MISSING control: Output path                         [IDC_STATIC_IDE_IMAGEPATH]
+    MISSING control: Enable text translation             [IDC_TEXTMODE]
+
+  IDD_DEVICE_PERCOMRFD "Percom RFD-40S1 options"  (controls: 4/5 = 80%)
+    MISSING control: Starting drive ID                   [IDC_STATIC]
+
+  IDD_DEVICE_POCKETMODEM "MPP1000E / Pocket Modem Options"  (controls: 0/8 = 0%)
+    MISSING control: Protocol support                    [IDC_STATIC_PROTOCOL]
+    MISSING control: Emulate Telnet protocol             [IDC_TELNET]
+    MISSING control: Permissions                         [IDC_STATIC_PERMISSIONS]
+    MISSING control: Allow outbound connections          [IDC_ALLOW_OUTBOUND]
+    MISSING control: Negotiate terminal type:            [IDC_STATIC_TERMINAL_TYPE]
+    MISSING control: Accept IPv6 connections             [IDC_ACCEPT_IPV6]
+    MISSING control: Dial proxy address                  [IDC_STATIC_DIAL_ADDRESS]
+    MISSING control: Service                             [IDC_STATIC_DIAL_SERVICE]
+
+  IDD_DEVICE_SIDE3 "SIDE 3 Options"  (controls: 2/3 = 67%)
+    MISSING control: Show activity LED                   [IDC_ACTIVITYLED]
+
+  IDD_DEVICE_SOUNDBOARD "SoundBoard Options"  (controls: 2/3 = 67%)
+    MISSING control: Note: If Ultimate1MB emulation is enabled, the above setting will have no effect for V1.x cores. Instead, the U1MB BIOS setting will switch the SoundBoard between being disabled and $D2C0-D2FF. [IDC_STATIC]
+
+  IDD_DEVICE_SX212 "SX-212 Modem Options"  (controls: 1/12 = 8%)
+    MISSING control: Protocol support                    [IDC_STATIC_PROTOCOL]
+    MISSING control: Emulate Telnet protocol             [IDC_TELNET]
+    MISSING control: Permissions                         [IDC_STATIC_PERMISSIONS]
+    MISSING control: Allow outbound connections          [IDC_ALLOW_OUTBOUND]
+    MISSING control: Negotiate terminal type:            [IDC_STATIC_TERMINAL_TYPE]
+    MISSING control: Accept IPv6 connections             [IDC_ACCEPT_IPV6]
+    MISSING control: Connect at 1200 baud                [IDC_CONNECT_1200]
+    MISSING control: SIO emulation                       [IDC_STATIC_SIOLEVEL]
+    MISSING control: Dial proxy address                  [IDC_STATIC_DIAL_ADDRESS]
+    MISSING control: Service                             [IDC_STATIC_DIAL_SERVICE]
+    MISSING control: Network simulation                  [IDC_STATIC_DIAL_ADDRESS2]
+
+  IDD_DEVICE_VBXE "VideoBoard XE Options"  (controls: 4/5 = 80%)
+    MISSING control: Shared memory mode                  [IDC_STATIC]
+
+  IDD_DISK_EXPLORER "Disk Explorer"
+    Associated menu IDR_DISKEXPLORER_MENU:
+    MISSING menu:    Strict                              [ID_NAMECHECKING_STRICT]
+    MISSING menu:    Relaxed                             [ID_NAMECHECKING_RELAXED]
+    MISSING menu:    Adjust Conflicting Filenames        [ID_ADJUST_FILENAMES]
+
+  IDD_DRAGONCART "Dragon Cart Configuration"  (controls: 3/10 = 30%)
+    MISSING control: Local network address               [IDC_STATIC_NETADDR]
+    MISSING control: Local network mask                  [IDC_STATIC_NETMASK]
+    MISSING control: Bridging mode                       [IDC_STATIC_BRIDGING]
+    MISSING control: Forwarding address                  [IDC_STATIC_FORWARDING_ADDRESS]
+    MISSING control: Tunnel ports                        [IDC_STATIC_TUNNELPORTS]
+    MISSING control: Source port:                        [IDC_STATIC_TUNNELSRCPORT]
+    MISSING control: Target port:                        [IDC_STATIC_TUNNELTGTPORT]
+
+  IDD_EDIT_VAR "Edit Variable"  (controls: 3/4 = 75%)
+    MISSING control: Variable                            [IDC_STATIC]
+
+  IDD_FILEVIEW "File View"  (controls: 0/1 = 0%)
+    MISSING control: View mode                           [IDC_STATIC]
+
+  IDD_FIRMWARE "Firmware"  (controls: 9/10 = 90%)
+    MISSING control: Split1                              [IDC_TYPE]
+
+  IDD_FIRMWARE_EDIT "Edit Firmware Settings"  (controls: 5/6 = 83%)
+    MISSING control: [Select Type]                       [IDC_TYPE]
+
+  IDD_HDEVICE "H: device setup"  (controls: 1/8 = 12%)
+    MISSING control: H1:/H6: path                        [IDC_STATIC_HOSTPATH1]
+    MISSING control: H2:/H7: path                        [IDC_STATIC_HOSTPATH2]
+    MISSING control: H3:/H8: path                        [IDC_STATIC_HOSTPATH3]
+    MISSING control: H4:/H9: path                        [IDC_STATIC_HOSTPATH4]
+    MISSING control: Also install as D:                  [IDC_INSTALLASDISK]
+    MISSING control: Filename mode                       [IDC_STATIC_HOSTPATH5]
+    MISSING control: Use lowercase filenames             [IDC_LOWERCASENAMES]
+
+  IDD_INPUTMAP_ADDCONTROLLER "Add/Edit Controller Mapping"  (controls: 2/6 = 33%)
+    MISSING control: Controller                          [IDC_STATIC]
+    MISSING control: Condition                           [IDC_STATIC]
+    MISSING control: Flag 1                              [IDC_FLAG1]
+    MISSING control: Flag 2                              [IDC_FLAG2]
+
+  IDD_INPUTMAP_EDIT "Edit Input Map"  (controls: 5/6 = 83%)
+    MISSING control: Game controller                     [IDC_STATIC_GAMEPAD]
+
+  IDD_INPUTMAP_REBIND ""  (controls: 2/3 = 67%)
+    MISSING control: Press button or axis for input target (Shift+Esc to stop): [IDC_STATIC]
+
+  IDD_INPUT_MAPPINGS "Input Maps"  (controls: 6/8 = 75%)
+    MISSING control: Quick map                           [IDC_QUICKMAP]
+    MISSING control: Reset                               [IDC_RESET]
+
+  IDD_INPUT_SETUP "Input Setup"  (controls: 0/7 = 0%)
+    MISSING control: Input axes                          [IDC_STATIC]
+    MISSING control: Stick dead zone                     [IDC_STATIC]
+    MISSING control: Stick stiffness                     [IDC_STATIC]
+    MISSING control: Stick threshold                     [IDC_STATIC]
+    MISSING control: Trigger dead zone                   [IDC_STATIC]
+    MISSING control: Trigger stiffness                   [IDC_STATIC]
+    MISSING control: Trigger threshold                   [IDC_STATIC]
+
+  IDD_KEYBOARD_CUSTOMIZE "Customize Keyboard Mappings"  (controls: 5/11 = 45%)
+    MISSING control: Emulated Key                        [IDC_STATIC]
+    MISSING control: Search                              [IDC_STATIC]
+    MISSING control: Host Key Bindings                   [IDC_STATIC]
+    MISSING control: Host key binding                    [IDC_STATIC]
+    MISSING control: Character                           [IDC_KEYMODE_CHAR]
+    MISSING control: Virtual Key                         [IDC_KEYMODE_VK]
+    Associated menu IDR_KEYBOARDCUSTOMIZE_MENU:
+    MISSING menu:    Scan for Blocked Keys....           [ID_TOOLS_SCANFORBLOCKEDKEYS]
+
+  IDD_LIGHTPEN "Light Pen/Gun Configuration"  (controls: 3/6 = 50%)
+    MISSING control: Different hardware and games vary in light pen/gun positioning. Tweak adjustment values so that the emulation cursor matches target indicators in the game. You can also use the Recalibrate option to do this interactively. [IDC_STATIC]
+    MISSING control: Horizontal                          [IDC_STATIC]
+    MISSING control: Vertical                            [IDC_STATIC]
+
+  IDD_PCLINK "PCLink setup"  (controls: 0/4 = 0%)
+    MISSING control: PCLink allows a guest OS running under emulation to access files and directories on the host file system through the SIO interface. This requires a special guest OS driver, such as PCLINK.SYS. [IDC_STATIC]
+    MISSING control: Host path:                          [IDC_STATIC_HOSTPATH]
+    MISSING control: Allow write access                  [IDC_ALLOW_WRITES]
+    MISSING control: Set creation timestamps             [IDC_SET_TIMESTAMPS]
+
+  IDD_PROFILES "Profiles"  (controls: 4/8 = 50%)
+    MISSING control: Categories in profile               [IDC_STATIC_CATEGORIES]
+    MISSING control: Set Default                         [IDC_SETDEFAULT]
+    MISSING control: Show in Menu                        [IDC_VISIBLE]
+    MISSING control: Edit Categories                     [IDC_UPDATE]
+
+  IDD_VIDEO_RECORDING "Video Recording Options"  (controls: 3/14 = 21%)
+    MISSING control: Video compression                   [IDC_STATIC]
+    MISSING control: accurate                            [IDC_FRAMERATE_NORMAL]
+    MISSING control: NTSC TV|5:6 NTSC ratio              [IDC_FRAMERATE_NTSCRATIO]
+    MISSING control: Encoding options                    [IDC_STATIC]
+    MISSING control: Video bitrate                       [IDC_STATIC_VIDEOBITRATE]
+    MISSING control: 0 Mbps                              [IDC_VIDEOBITRATE_VALUE]
+    MISSING control: Audio bitrate                       [IDC_STATIC_AUDIOBITRATE]
+    MISSING control: 0 Mbps                              [IDC_AUDIOBITRATE_VALUE]
+    MISSING control: Aspect ratio mode                   [IDC_STATIC]
+    MISSING control: Resampling mode                     [IDC_STATIC]
+    MISSING control: Frame scaling                       [IDC_STATIC]
+
+  IDD_WIZARD_EXPERIENCE ""  (controls: 1/6 = 17%)
+    MISSING control: What type of experience do you want? [IDC_MESSAGE]
+    MISSING control: Streamlined                         [IDC_TYPE_STREAMLINED]
+    MISSING control: Run with enhancements so that the display is sharp and programs load faster. [IDC_STATIC]
+    MISSING control: Run disk and tape drives at realistic speeds, play simulated disk drive sounds, and tune the display to look like a CRT. This is like the real thing... including the load times. [IDC_STATIC]
+    MISSING control: Realism options can be tweaked later in the menu under the View and System menus. [IDC_STATIC]
+
+  IDD_WIZARD_FIRMWARE ""  (controls: 0/2 = 0%)
+    MISSING control: Long message here                   [IDC_MESSAGE]
+    MISSING control: Scan folder for firmware images...  [IDC_SCAN]
+
+  IDD_WIZARD_SELECTTYPE ""  (controls: 1/6 = 17%)
+    MISSING control: Which type of system do you want to start with? [IDC_MESSAGE]
+    MISSING control: XL/XE Home Computer                 [IDC_TYPE_COMPUTER]
+    MISSING control: Computer with a keyboard, two joystick ports, a cartridge port, and an SIO bus for peripherals including disk drives and a cassette tape recorder. [IDC_STATIC]
+    MISSING control: Cartridge-based video game console with up to four analog controllers. [IDC_STATIC]
+    MISSING control: You can change the system type later with the System | Profiles menu. [IDC_STATIC]
+
+  IDD_WIZARD_SELECTVIDEOTYPE ""  (controls: 0/6 = 0%)
+    MISSING control: Select a video standard type for the computer: [IDC_MESSAGE]
+    MISSING control: NTSC (60Hz)                         [IDC_TYPE_NTSC]
+    MISSING control: PAL (50Hz)                          [IDC_TYPE_PAL]
+    MISSING control: Used in North America, Central America, and parts of South America. NTSC runs at a faster frame rate and also is required for some color patterning tricks (artifacting). [IDC_STATIC]
+    MISSING control: Used in parts of South America and most of Europe. PAL runs at a slower frame rate but allows for more CPU time; some late games written in Europe will only run on PAL machines. [IDC_STATIC]
+    MISSING control: You can change the video standard type later in the menu under System | Video. [IDC_STATIC]
+
+CONTEXT MENU / MENU BAR GAPS (per-item analysis)
+------------------------------------------------------------------------------
+
+  IDR_ADJUSTCOLORS_MENU  (2/9 items = 22%)
+    MISSING: Export Palette...                        [ID_FILE_EXPORTPALETTE]
+    MISSING: Palette Solver...                        [ID_FILE_IMPORTREFERENCEPICTURE]
+    MISSING: Show Red/Green Shifts                    [ID_VIEW_SHOWRGBSHIFTS]
+    MISSING: Show Red/Green Relative Offsets          [ID_VIEW_SHOWRGBRELATIVEOFFSETS]
+    MISSING: Shared NTSC/PAL Settings                 [ID_OPTIONS_SHAREDPALETTES]
+    MISSING: Separate NTSC and PAL Settings           [ID_OPTIONS_SEPARATEPALETTES]
+    MISSING: Use PAL Quirks                           [ID_OPTIONS_USEPALQUIRKS]
+
+  IDR_COMPATDBEDITOR_MENU  (6/7 items = 86%)
+    MISSING: Open...                                  [ID_FILE_LOAD]
+
+  IDR_CUSTOMIZE_MENU  (0/1 items = 0%)
+    MISSING: Assign Keyboard Shortcut...              [ID_ASSIGNSHORTCUT]
+
+  IDR_DEBUGDISPLAY_CONTEXT_MENU  (3/6 items = 50%)
+    MISSING: Force Update                             [ID_CONTEXT_FORCEUPDATE]
+    MISSING: Current Register Values                  [ID_PALETTE_CURRENTREGISTERVALUES]
+    MISSING: Analysis Palette                         [ID_PALETTE_ANALYSIS]
+
+  IDR_DEBUGGER_MENU  (1/2 items = 50%)
+    MISSING: Copy                                     [ID_CONTEXT_COPY]
+
+  IDR_DISASM_CONTEXT_MENU  (4/18 items = 22%)
+    MISSING: Show Code Bytes                          [ID_CONTEXT_SHOWCODEBYTES]
+    MISSING: Show Labels                              [ID_CONTEXT_SHOWLABELS]
+    MISSING: Show Label Namespaces                    [ID_CONTEXT_SHOWLABELNAMESPACES]
+    MISSING: Show Procedure Breaks                    [ID_CONTEXT_SHOWPROCEDUREBREAKS]
+    MISSING: Show Call Previews                       [ID_CONTEXT_SHOWCALLPREVIEWS]
+    MISSING: Show Mixed Source/Disasm                 [ID_CONTEXT_SHOWMIXEDSOURCE]
+    MISSING: Auto M/X                                 [ID_65C816M_AUTO]
+    MISSING: Current M/X Context                      [ID_65C816M_CURRENTCONTEXT]
+    MISSING: M8, X8                                   [ID_65C816M_M8X8]
+    MISSING: M8, X16                                  [ID_65C816M_M8X16]
+    MISSING: M16, X8                                  [ID_65C816M_M16X8]
+    MISSING: M16, X16                                 [ID_65C816M_M16X16]
+    MISSING: Emulation                                [ID_65C816M_EMULATION]
+    MISSING: Use DP Register State                    [ID_CONTEXT_USEDPREGISTERSTATE]
+
+  IDR_DISKEXPLORER_MENU  (1/4 items = 25%)
+    MISSING: Strict                                   [ID_NAMECHECKING_STRICT]
+    MISSING: Relaxed                                  [ID_NAMECHECKING_RELAXED]
+    MISSING: Adjust Conflicting Filenames             [ID_ADJUST_FILENAMES]
+
+  IDR_DISK_CONTEXT_MENU  (4/34 items = 12%)
+    MISSING: Explore disk...                          [ID_CONTEXT_EXPLOREDISK]
+    MISSING: Revert disk                              [ID_CONTEXT_REVERTDISK]
+    MISSING: Show disk image file                     [ID_CONTEXT_SHOWDISKFILEINEXPLORER]
+    MISSING: Swap with another drive                  [ID_CONTEXT_SWAPWITHANOTHERDRIVE]
+    MISSING: Shift to another drive                   [ID_CONTEXT_ROTATETOANOTHERDRIVE]
+    MISSING: 1:1                                      [ID_CHANGEINTERLEAVE_1_1]
+    MISSING: 12:1 (810 rev. B SD)                     [ID_CHANGEINTERLEAVE_SD_12_1]
+    MISSING: 9:1 (SD)                                 [ID_CHANGEINTERLEAVE_SD_9_1]
+    MISSING: 9:1 (SD improved)                        [ID_CHANGEINTERLEAVE_SD_9_1_REV]
+    MISSING: 5:1 (US Doubler SD fast)                 [ID_CHANGEINTERLEAVE_SD_5_1]
+    MISSING: 4:1 (Indus GT SuperSynchromesh)          [ID_CHANGEINTERLEAVE_SD_4_1]
+    MISSING: 2:1 (SD)                                 [ID_CHANGEINTERLEAVE_SD_2_1]
+    MISSING: 13:1 (ED)                                [ID_CHANGEINTERLEAVE_ED_13_1]
+    MISSING: 12:1 (ED improved)                       [ID_CHANGEINTERLEAVE_ED_12_1]
+    MISSING: 16:1 (815 DD)                            [ID_CHANGEINTERLEAVE_DD_16_1]
+    MISSING: 15:1 (XF551 DD)                          [ID_CHANGEINTERLEAVE_DD_15_1]
+    MISSING: 9:1 (XF551 DD fast)                      [ID_CHANGEINTERLEAVE_DD_9_1]
+    MISSING: 7:1 (US Doubler DD fast)                 [ID_CHANGEINTERLEAVE_DD_7_1]
+    MISSING: DOS 1.0 (SD)                             [ID_CONVERTTO_DOS1_SD]
+    MISSING: DOS 2.0S/2.5 (SD/ED)                     [ID_CONVERTTO_DOS2_SDED]
+    MISSING: DOS 2.0D (DD)                            [ID_CONVERTTO_DOS2_DD]
+    MISSING: MyDOS (SD)                               [ID_CONVERTTO_MYDOS_SDED]
+    MISSING: MyDOS (DD)                               [ID_CONVERTTO_MYDOS_DD]
+    MISSING: SpartaDOS (SD/ED)                        [ID_CONVERTTO_SPARTADOS_SDED]
+    MISSING: SpartaDOS (DD)                           [ID_CONVERTTO_SPARTADOS_DD]
+    MISSING: SpartaDOS (512)                          [ID_CONVERTTO_SPARTADOS_512]
+    MISSING: Mount folder as virtual DOS 2 disk...    [ID_CONTEXT_MOUNTFOLDERDOS2]
+    MISSING: Mount folder as virtual SpartaDOS disk... [ID_CONTEXT_MOUNTFOLDERSDFS]
+    MISSING: Extract boot sectors for virtual DOS 2 disk... [ID_CONTEXT_EXTRACTBOOTSECTORS]
+    MISSING: Recursively expand all .ARChive files... [ID_CONTEXT_EXPANDARCS]
+
+  IDR_DISK_EXPLORER_CONTEXT_MENU  (3/11 items = 27%)
+    MISSING: New Folder                               [ID_DISKEXP_NEWFOLDER]
+    MISSING: Import File...                           [ID_DISKEXP_IMPORTFILE]
+    MISSING: Import File as Text...                   [ID_DISKEXP_IMPORTTEXT]
+    MISSING: Export File...                           [ID_DISKEXP_EXPORTFILE]
+    MISSING: Export File as Text...                   [ID_DISKEXP_EXPORTTEXT]
+    MISSING: Open                                     [ID_PARTITION_OPEN]
+    MISSING: Import Disk Image...                     [ID_PARTITION_IMPORT]
+    MISSING: Export Disk Image...                     [ID_PARTITION_EXPORT]
+
+  IDR_DISPLAY_CONTEXT_MENU  (4/5 items = 80%)
+    MISSING: Paste                                    [ID_DISPLAYCONTEXTMENU_PASTE]
+
+  IDR_HISTORY_CONTEXT_MENU  (1/21 items = 5%)
+    MISSING: Show PC Address                          [ID_HISTORYCONTEXTMENU_SHOWPCADDRESS]
+    MISSING: Show Global PC Address                   [ID_HISTORYCONTEXTMENU_SHOWGLOBALPCADDRESS]
+    MISSING: Show Registers                           [ID_HISTORYCONTEXTMENU_SHOWREGISTERS]
+    MISSING: Show Special Registers                   [ID_HISTORYCONTEXTMENU_SHOWSPECIALREGISTERS]
+    MISSING: Show Flags                               [ID_HISTORYCONTEXTMENU_SHOWFLAGS]
+    MISSING: Show Code Bytes                          [ID_HISTORYCONTEXTMENU_SHOWCODEBYTES]
+    MISSING: Show Labels                              [ID_HISTORYCONTEXTMENU_SHOWLABELS]
+    MISSING: Show Label Namespaces                    [ID_HISTORYCONTEXTMENU_SHOWLABELNAMESPACES]
+    MISSING: Collapse Loops                           [ID_HISTORYCONTEXTMENU_COLLAPSELOOPS]
+    MISSING: Collapse Calls                           [ID_HISTORYCONTEXTMENU_COLLAPSECALLS]
+    MISSING: Collapse Interrupts                      [ID_HISTORYCONTEXTMENU_COLLAPSEINTERRUPTS]
+    MISSING: Reset Timestamp Origin                   [ID_HISTORYCONTEXTMENU_RESETTIMESTAMPORIGIN]
+    MISSING: Set Timestamp Origin                     [ID_HISTORYCONTEXTMENU_SETTIMESTAMPORIGIN]
+    MISSING: Show Beam Position                       [ID_HISTORYCONTEXTMENU_SHOWBEAMPOSITION]
+    MISSING: Show Microseconds                        [ID_HISTORYCONTEXTMENU_SHOWMICROSECONDS]
+    MISSING: Show Cycles                              [ID_HISTORYCONTEXTMENU_SHOWCYCLES]
+    MISSING: Show Unhalted Cycles                     [ID_HISTORYCONTEXTMENU_SHOWUNHALTEDCYCLES]
+    MISSING: Show Tape Position (Samples)             [ID_HISTORYCONTEXTMENU_SHOWTAPEPOSITIONSAMPLES]
+    MISSING: Show Tape Position (Seconds)             [ID_HISTORYCONTEXTMENU_SHOWTAPEPOSITIONSECONDS]
+    MISSING: Copy Visible to Clipboard                [ID_HISTORYCONTEXTMENU_COPYVISIBLETOCLIPBOARD]
+
+  IDR_KEYBOARDCUSTOMIZE_MENU  (0/1 items = 0%)
+    MISSING: Scan for Blocked Keys....                [ID_TOOLS_SCANFORBLOCKEDKEYS]
+
+  IDR_MEMORY_CONTEXT_MENU  (7/18 items = 39%)
+    MISSING: Bytes                                    [ID_SHOWVALUESAS_BYTES]
+    MISSING: Bytes (Dec)                              [ID_SHOWVALUESAS_DECBYTES]
+    MISSING: Words                                    [ID_SHOWVALUESAS_WORDS]
+    MISSING: Words (Dec)                              [ID_SHOWVALUESAS_DECWORDS]
+    MISSING: 1-bpp Font                               [ID_CONTEXT_INTERPRET_1BPPFONT]
+    MISSING: 2-bpp Font                               [ID_CONTEXT_INTERPRET_2BPPFONT]
+    MISSING: 1-bpp Graphics                           [ID_CONTEXT_INTERPRET_1BPPGFX]
+    MISSING: 2-bpp Graphics (Wide)                    [ID_CONTEXT_INTERPRET_2BPPGFX]
+    MISSING: 4-bpp Graphics (Wide)                    [ID_CONTEXT_INTERPRET_4BPPGFX]
+    MISSING: 8-bpp Graphics                           [ID_CONTEXT_INTERPRET_8BPPGFX]
+    MISSING: Track On-Screen                          [ID_CONTEXT_ADDTOSCREENWATCH]
+
+  IDR_PERFANALYZER_LOG_MENU  (2/8 items = 25%)
+    MISSING: Copy Selected                            [ID_MENU_COPYSELECTED]
+    MISSING: Copy All                                 [ID_MENU_COPYALL]
+    MISSING: Reset Timestamp Origin                   [ID_MENU_RESETTIMESTAMPORIGIN]
+    MISSING: Set Timestamp Origin                     [ID_MENU_SETTIMESTAMPORIGIN]
+    MISSING: Beam Position                            [ID_TIMESTAMPMODE_BEAMPOSITION]
+    MISSING: Microseconds                             [ID_TIMESTAMPMODE_MICROSECONDS]
+
+  IDR_PERFANALYZER_MENU  (2/6 items = 33%)
+    MISSING: Atari800WinPLus 4.0 / Atari800 5.x Monitor Trace... [ID_IMPORT_ATARI800]
+    MISSING: Chrome Trace Event Format...             [ID_EXPORT_CHROMETRACE]
+    MISSING: Start Native Trace                       [ID_TRACE_STARTNATIVETRACE]
+    MISSING: View Memory Statistics...                [ID_TOOLS_VIEWMEMORYSTATISTICS]
+
+  IDR_PERFANALYZER_TAPE_MENU  (0/1 items = 0%)
+    MISSING: Go To Tape Editor...                     [ID_CONTEXT_GOTOTAPEEDITOR]
+
+  IDR_PRINTER_GRAPHIC_CONTEXT_MENU  (1/7 items = 14%)
+    MISSING: PNG Image (96 dpi)                       [ID_SAVEAS_PNGIMAGE96]
+    MISSING: PNG Image (300 dpi)                      [ID_SAVEAS_PNGIMAGE300]
+    MISSING: PDF Document                             [ID_SAVEAS_PDF]
+    MISSING: SVG 1.1 Document                         [ID_SAVEAS_SVG]
+    MISSING: Reset View                               [ID_CONTEXT_RESETVIEW]
+    MISSING: Set Print Position                       [ID_CONTEXT_SETPRINTPOSITION]
+
+  IDR_PROFILE_LIST_CONTEXT_MENU  (0/1 items = 0%)
+    MISSING: Copy As CSV                              [ID_COPYASCSV]
+
+  IDR_PROFILE_MODE_MENU  (0/5 items = 0%)
+    MISSING: Instruction sampling                     [ID_PROFMODE_SAMPLEINSNS]
+    MISSING: Function sampling                        [ID_PROFMODE_SAMPLEFNS]
+    MISSING: Call graph sampling                      [ID_PROFMODE_CALLGRAPH]
+    MISSING: Basic block sampling                     [ID_PROFMODE_BASICBLOCK]
+    MISSING: BASIC line sampling                      [ID_PROFMODE_SAMPLEBASIC]
+
+  IDR_PROFILE_OPTIONS_MENU  (1/8 items = 12%)
+    MISSING: Branch Taken                             [ID_COUNTER_BRANCHTAKEN]
+    MISSING: Branch Not Taken                         [ID_COUNTER_BRANCHNOTTAKEN]
+    MISSING: Page Crossing                            [ID_COUNTER_PAGECROSSING]
+    MISSING: Redundant Operation                      [ID_COUNTER_REDUNDANTOPERATION]
+    MISSING: Vertical Blank                           [ID_FRAMETRIGGER_VBLANK]
+    MISSING: PC Address...                            [ID_FRAMETRIGGER_PCADDRESS]
+    MISSING: Enable Global Addresses                  [ID_MENU_ENABLEGLOBALADDRESSES]
+
+  IDR_SOURCE_CONTEXT_MENU  (4/6 items = 67%)
+    MISSING: File Explorer                            [ID_OPENIN_FILEEXPLORER]
+    MISSING: Default Editor                           [ID_OPENIN_DEFAULTEDITOR]
+
+  IDR_TAPEEDITOR_MENU  (5/28 items = 18%)
+    MISSING: Open                                     [ID_FILE_OPEN]
+    MISSING: Reload                                   [ID_FILE_RELOAD]
+    MISSING: Save As CAS...                           [ID_FILE_SAVEASCAS]
+    MISSING: Save As WAV...                           [ID_FILE_SAVEASWAV]
+    MISSING: Undo                                     [ID_EDIT_UNDO]
+    MISSING: Redo                                     [ID_EDIT_REDO]
+    MISSING: Cut                                      [ID_EDIT_CUT]
+    MISSING: Copy                                     [ID_EDIT_COPY]
+    MISSING: Copy Decoded Data                        [ID_EDIT_COPYDECODEDDATA]
+    MISSING: Paste                                    [ID_EDIT_PASTE]
+    MISSING: Convert to Standard Block                [ID_EDIT_CONVERTTOSTANDARDBLOCK]
+    MISSING: Convert to Raw Block                     [ID_EDIT_CONVERTTORAWBLOCK]
+    MISSING: Repeat Last Analysis                     [ID_EDIT_REPEATLASTANALYSIS]
+    MISSING: Repeat Last Analysis (Flip Mode)         [ID_EDIT_REPEATLASTANALYSISFLIP]
+    MISSING: FSK Data                                 [ID_VIEW_FSKDATA]
+    MISSING: Turbo Data                               [ID_VIEW_TURBODATA]
+    MISSING: No Signal                                [ID_VIEW_NOSIGNAL]
+    MISSING: Waveform                                 [ID_VIEW_WAVEFORM]
+    MISSING: Spectrogram                              [ID_VIEW_SPECTROGRAM]
+    MISSING: Show Frequency Guidelines                [ID_VIEW_SHOWFREQUENCYGUIDELINES]
+    MISSING: Extract C: File...                       [ID_DATA_EXTRACTCFILE]
+    MISSING: Capture SIO Tape Decoding                [ID_MONITOR_CAPTURESIO]
+    MISSING: Store Waveform On Load                   [ID_OPTIONS_STOREWAVEFORM]
+

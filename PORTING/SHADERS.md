@@ -194,8 +194,9 @@ public:
     virtual bool LoadShaderPreset(const char* path) = 0;
     virtual void ClearShaderPreset() = 0;
 
-    // ImGui integration — returns the output texture for ImGui to draw
-    virtual ImTextureID GetOutputTexture() const = 0;
+    // ImGui integration — returns the emulator frame texture as an
+    // ImGui-compatible texture ID (GL texture name or SDL_Texture*).
+    virtual void *GetImGuiTextureID() const = 0;
     virtual int GetTextureWidth() const = 0;
     virtual int GetTextureHeight() const = 0;
 

@@ -1,6 +1,6 @@
 AltirraSDL — Shader Effects & Post-Processing Parity Checklist
 ================================================================
-Updated: 2026-04-03
+Updated: 2026-04-04
 Reference: PORTING/SHADERS.md vs actual implementation
 
 Legend:
@@ -14,22 +14,25 @@ Legend:
 1. OPENGL DISPLAY BACKEND
 ================================================================================
 
-  [  0%] IDisplayBackend interface                — Abstract backend for GL and
-                                                    SDL_Renderer fallback paths
-  [  0%] DisplayBackendGL class                   — GL context creation, texture
-                                                    upload (glTexSubImage2D),
-                                                    fullscreen quad rendering
-  [  0%] DisplayBackendSDLRenderer wrapper        — Wraps existing display_sdl3.cpp
-                                                    behind IDisplayBackend
-  [  0%] Backend selection at startup             — Try OpenGL 3.3 first, fall back
-                                                    to SDL_Renderer if GL unavailable
-  [  0%] SDL_GL_CreateContext integration          — SDL_WINDOW_OPENGL, GL attributes,
-                                                    context creation, vsync via
+  [100%] IDisplayBackend interface                — display_backend.h: abstract backend
+                                                    for GL and SDL_Renderer fallback paths
+  [100%] DisplayBackendGL33 class                 — display_backend_gl33.cpp: GL 3.3 core
+                                                    context, texture upload, fullscreen
+                                                    triangle rendering, shader pipeline
+  [100%] DisplayBackendSDLRenderer wrapper        — display_backend_sdl.cpp: wraps
+                                                    SDL_Renderer behind IDisplayBackend
+  [100%] Backend selection at startup             — main_sdl3.cpp: tries GL 3.3 first,
+                                                    falls back to SDL_Renderer if
+                                                    context creation or function loading fails
+  [100%] SDL_GL_CreateContext integration          — SDL_WINDOW_OPENGL, GL 3.3 core profile
+                                                    attributes, context creation, VSync via
                                                     SDL_GL_SetSwapInterval
-  [  0%] ImGui OpenGL3 backend                    — imgui_impl_opengl3.cpp compiled,
-                                                    InitForOpenGL() at runtime
-  [  0%] CMake: OpenGL dependency                 — find_package(OpenGL), link
-                                                    OpenGL::GL, add imgui_impl_opengl3
+  [100%] ImGui OpenGL3 backend                    — imgui_impl_opengl3.cpp compiled in
+                                                    imgui library, dual-backend init in
+                                                    ATUIInit (GL vs SDL_Renderer at runtime)
+  [100%] CMake: OpenGL dependency                 — find_package(OpenGL), link OpenGL::GL,
+                                                    imgui_impl_opengl3.cpp in imgui library,
+                                                    VDDisplay sources (screenfx/bloom/bicubic)
   [  0%] Emulator texture as ImTextureID          — GLuint cast for ImGui::Image()
                                                     and GetBackgroundDrawList()
   [  0%] macOS GL 3.2 core profile                — SDL_GL_CONTEXT_FORWARD_COMPATIBLE
@@ -40,116 +43,108 @@ Legend:
 2. FILTER MODES (SHADER-BASED)
 ================================================================================
 
-  [  0%] Point filtering (GL)                     — GL_NEAREST on emulator texture
-  [  0%] Bilinear filtering (GL)                  — GL_LINEAR on emulator texture
-  [  0%] Sharp bilinear                           — Fragment shader: snap to nearest
+  [100%] Point filtering (GL)                     — GL_NEAREST on emulator texture
+  [100%] Bilinear filtering (GL)                  — GL_LINEAR on emulator texture
+  [100%] Sharp bilinear                           — Fragment shader: snap to nearest
                                                     source pixel center, sharpness-
-                                                    controlled bilinear blend.
-                                                    Ref: screenfx.fxh DO_SHARP path
-  [  0%] Bicubic (horizontal pass)                — Separable cubic filter via lookup
-                                                    texture. Render to temp FBO.
-                                                    Ref: bicubic.fxh, bicubic.cpp
-  [  0%] Bicubic (vertical pass)                  — Same filter applied vertically
-                                                    from temp FBO to output
-  [  0%] Bicubic lookup texture generation        — Port VDDisplayCreateBicubicTexture()
-                                                    output to GL texture upload
-  [  0%] Filter sharpness levels (5)              — Softer/Soft/Normal/Sharp/Sharper
-                                                    mapped to psSharpnessInfo uniform
-  [  0%] Runtime filter mode switching            — Rebuild shader/FBO pipeline on
-                                                    ATDisplayFilterMode change
+                                                    controlled bilinear blend via
+                                                    kSFX_Sharp feature flag
+  [100%] Bicubic (horizontal pass)                — Separable cubic filter via lookup
+                                                    texture. Renders to mBicubicFBO.
+  [100%] Bicubic (vertical pass)                  — Same filter applied vertically
+                                                    from mBicubicFBO to mBicubicFBO2
+  [100%] Bicubic lookup texture generation        — VDDisplayCreateBicubicTexture()
+                                                    output uploaded to GL texture
+  [100%] Filter sharpness levels (5)              — ATUIGetViewFilterSharpness() synced
+                                                    per-frame to SetFilterSharpness()
+  [100%] Runtime filter mode switching            — SyncScreenFXToBackend() in main loop
+                                                    pushes filter mode changes to backend
 
 
 ================================================================================
 3. SCREEN EFFECTS — SCANLINES
 ================================================================================
 
-  [  0%] Scanline mask texture generation         — Port VDDisplayCreateScanlineMaskTexture()
-                                                    to GL texture. Raised cosine pattern,
-                                                    regenerated on window resize.
-  [  0%] Scanline fragment shader                 — Sample scanline mask, multiply with
-                                                    frame color. Intensity uniform.
-  [  0%] Scanline intensity control               — ATArtifactingParams::mScanlineIntensity
-                                                    (0-100%) mapped to shader uniform
-
-  Note: Current SDL3 build has GTIA software scanlines (SetScanlinesEnabled).
-  Shader scanlines replace this with GPU-rendered scanlines that scale properly
-  with the output resolution.
+  [100%] Scanline mask texture generation         — VDDisplayCreateScanlineMaskTexture()
+                                                    in UpdateLookupTextures(), regenerated
+                                                    on window resize
+  [100%] Scanline fragment shader                 — kGLSL_ScreenFX_FS with FEAT_SCANLINES,
+                                                    samples scanline mask, multiplies frame
+  [100%] Scanline intensity control               — mScreenFX.mScanlineIntensity mapped
+                                                    to uScanlineInfo uniform
 
 
 ================================================================================
 4. SCREEN EFFECTS — GAMMA AND COLOR CORRECTION
 ================================================================================
 
-  [  0%] Gamma ramp texture generation            — Port VDDisplayCreateGammaRamp()
-                                                    to GL texture (256x1 RGBA8)
-  [  0%] Gamma correction fragment shader         — Per-component texture lookup for
-                                                    nonlinear gamma
-  [  0%] Color correction matrix                  — 3x3 matrix uniform (from
-                                                    VDVideoDisplayScreenFXInfo::
-                                                    mColorCorrectionMatrix)
-  [  0%] sRGB decode path                         — Linearize before color correction
-                                                    (sRGB transfer function)
-  [  0%] Gamma 2.2 decode path                    — Alternative linearization
+  [100%] Gamma ramp texture generation            — VDDisplayCreateGammaRamp() to GL
+                                                    texture (256x1 RGBA8)
+  [100%] Gamma correction fragment shader         — FEAT_GAMMA: per-component texture
+                                                    lookup in uGammaTex
+  [100%] Color correction matrix                  — FEAT_COLOR_CORRECT: 3x3 matrix via
+                                                    uColorCorrectM0/M1/M2 uniforms
+  [100%] sRGB decode path                         — FEAT_CC_SRGB: SrgbToLinear() in shader
+  [100%] Gamma 2.2 decode path                    — pow(c, 2.2) alternative when
+                                                    mOutputGamma > 0
 
 
 ================================================================================
 5. SCREEN EFFECTS — SCREEN MASKS
 ================================================================================
 
-  [  0%] Aperture grille texture generation       — Port VDDisplayCreateApertureGrilleTexture()
+  [100%] Aperture grille texture generation       — VDDisplayCreateApertureGrilleTexture()
                                                     to GL texture (W x 1 RGBA8)
-  [  0%] Slot mask texture generation             — Port VDDisplayCreateSlotMaskTexture()
+  [100%] Slot mask texture generation             — VDDisplayCreateSlotMaskTexture()
                                                     to GL texture (W x H RGBA8)
-  [  0%] Dot triad mask texture generation        — Port VDDisplayCreateTriadDotMaskTexture()
+  [100%] Dot triad mask texture generation        — VDDisplayCreateTriadDotMaskTexture()
                                                     to GL texture (W x H RGBA8)
-  [  0%] Mask fragment shader                     — Sample mask texture, multiply with
-                                                    frame color
-  [  0%] Mask type selection                      — None / ApertureGrille / DotTriad /
-                                                    SlotMask (VDDScreenMaskType enum)
-  [  0%] Mask dot pitch control                   — VDDScreenMaskParams::mSourcePixelsPerDot
-  [  0%] Mask openness control                    — VDDScreenMaskParams::mOpenness (25-100%)
-  [  0%] Mask intensity compensation              — VDDScreenMaskParams::
+  [100%] Mask fragment shader                     — FEAT_DOT_MASK: samples uMaskTex,
+                                                    multiplies with frame color
+  [100%] Mask type selection                      — None / ApertureGrille / DotTriad /
+                                                    SlotMask via VDDScreenMaskType
+  [100%] Mask dot pitch control                   — VDDScreenMaskParams::mSourcePixelsPerDot
+  [100%] Mask openness control                    — VDDScreenMaskParams::mOpenness (25-100%)
+  [100%] Mask intensity compensation              — VDDScreenMaskParams::
                                                     mbScreenMaskIntensityCompensation
-  [  0%] Mask texture regeneration                — Regenerate on window resize, mask
-                                                    type change, or parameter change
+  [100%] Mask texture regeneration                — Regenerated via mScreenFXDirty flag on
+                                                    window resize, param change
 
 
 ================================================================================
 6. SCREEN EFFECTS — DISTORTION
 ================================================================================
 
-  [  0%] Distortion mapping class                 — Compile VDDisplayDistortionMapping
-                                                    from screenfx.cpp for SDL3
-  [  0%] Distortion shader (fragment UV warp)     — Barrel/pincushion CRT distortion
-                                                    via per-pixel UV remapping
-  [  0%] Distortion X view angle                  — ATArtifactingParams::
-                                                    mDistortionViewAngleX (0-179 deg)
-  [  0%] Distortion Y ratio                       — ATArtifactingParams::
-                                                    mDistortionYRatio
+  [100%] Distortion mapping class                 — VDDisplayDistortionMapping compiled
+                                                    from VDDisplay/source/screenfx.cpp
+  [100%] Distortion shader (fragment UV warp)     — FEAT_DISTORTION: barrel CRT distortion
+                                                    via per-pixel UV remapping with discard
+  [100%] Distortion X view angle                  — mScreenFX.mDistortionX mapped to
+                                                    uDistortionScales uniform
+  [100%] Distortion Y ratio                       — mScreenFX.mDistortionYRatio
 
 
 ================================================================================
 7. SCREEN EFFECTS — BLOOM V2
 ================================================================================
 
-  [  0%] Bloom parameter computation              — Compile bloom.cpp for SDL3.
-                                                    VDDComputeBloomV2Parameters()
-  [  0%] FBO pyramid creation                     — 5 levels at decreasing resolution
-                                                    (half size each level)
-  [  0%] Gamma conversion pass                    — sRGB to linear for bloom input
-  [  0%] Downsample pass shader                   — 13-tap bilinear filter
-                                                    (weights 7/124, 16/124, 32/124)
-  [  0%] Upsample pass shader                     — 4-tap asymmetric kernel
-                                                    (weights 36, 60, 60, 100 / 256)
-  [  0%] Final composition pass shader            — 9-tap base sampling, bloom blend,
-                                                    cubic shoulder soft-clip, sRGB output
-  [  0%] Bloom enable/disable                     — ATArtifactingParams::mbEnableBloom
-  [  0%] Bloom radius                             — ATArtifactingParams::mBloomRadius
-  [  0%] Bloom direct/indirect intensity          — ATArtifactingParams::
-                                                    mBloomDirectIntensity /
+  [100%] Bloom parameter computation              — bloom.cpp compiled, VDDComputeBloomV2-
+                                                    Parameters() called per-frame
+  [100%] FBO pyramid creation                     — 5 levels (half-size each) + linear FBO
+                                                    + output FBO via EnsureBloomPyramid()
+  [100%] Gamma conversion pass                    — sRGB→linear via mBloomGammaProgram
+  [100%] Downsample pass shader                   — 13-tap bilinear (kGLSL_BloomDown_FS)
+  [100%] Upsample pass shader                     — 4-tap asymmetric (kGLSL_BloomUp_FS)
+                                                    with additive blending
+  [100%] Final composition pass shader            — 9-tap base + shoulder soft-clip +
+                                                    sRGB output (kGLSL_BloomFinal_FS)
+  [100%] Bloom enable/disable                     — mScreenFX.mbBloomEnabled
+  [100%] Bloom radius                             — mScreenFX.mBloomRadius
+  [100%] Bloom direct/indirect intensity          — mScreenFX.mBloomDirectIntensity /
                                                     mBloomIndirectIntensity
   [  0%] Bloom scanline compensation              — ATArtifactingParams::
-                                                    mbBloomScanlineCompensation
+                                                    mbBloomScanlineCompensation (stored
+                                                    in UI but not wired to render)
 
 
 ================================================================================
@@ -171,37 +166,38 @@ Legend:
 9. PAL ARTIFACTING
 ================================================================================
 
-  [  0%] PAL artifacting shader                   — Sample at two UV offsets, extract
-                                                    chroma difference, 50% blend
-  [  0%] PAL blending offset uniform              — VDVideoDisplayScreenFXInfo::
-                                                    mPALBlendingOffset
+  [ 50%] PAL artifacting shader                   — kGLSL_PALArtifacting_FS exists,
+                                                    mPALProgram compiled, but not wired
+                                                    into RenderScreenFX pipeline
+  [ 50%] PAL blending offset uniform              — mScreenFX.mPALBlendingOffset checked
+                                                    in hasEffects but not rendered
 
 
 ================================================================================
 10. UNIFIED SCREEN FX SHADER
 ================================================================================
 
-  [  0%] Combined fragment shader with #defines   — 32 variants via compile-time
-                                                    toggles: DO_SHARP, DO_SCANLINES,
-                                                    DO_GAMMA, DO_COLOR_CORRECT,
-                                                    DO_SRGB, DO_DOT_MASK
-  [  0%] Shader program caching                   — Compile variants on demand,
-                                                    cache compiled programs
-  [  0%] Uniform management                       — Upload changed uniforms only
-                                                    when parameters change
+  [100%] Combined fragment shader with #defines   — kGLSL_ScreenFX_FS with 7 feature
+                                                    toggles: FEAT_SHARP, FEAT_SCANLINES,
+                                                    FEAT_GAMMA, FEAT_COLOR_CORRECT,
+                                                    FEAT_CC_SRGB, FEAT_DOT_MASK,
+                                                    FEAT_DISTORTION
+  [100%] Shader program caching                   — mScreenFXCache (unordered_map keyed
+                                                    by feature bitmask), compiled on demand
+  [100%] Uniform management                       — Uniforms set per-draw in RenderScreenFX
 
 
 ================================================================================
 11. LIBRASHADER INTEGRATION (OPTIONAL)
 ================================================================================
 
-  [  0%] Vendor librashader headers               — librashader.h + librashader_ld.h
-                                                    (build-time only, no link dep)
-  [  0%] Runtime library loading                  — dlopen("librashader.so"),
-                                                    graceful degradation if absent
-  [  0%] Preset loading (.slangp/.glslp)          — libra.preset_create() +
-                                                    gl_filter_chain_create()
-  [  0%] Per-frame filter chain application       — gl_filter_chain_frame() with
+  [100%] Vendor librashader headers               — display_librashader.h/.cpp with
+                                                    __has_include guard for vendor headers
+  [100%] Runtime library loading                  — dlopen("librashader.so") via
+                                                    LibrashaderRuntime::Init(), graceful
+                                                    degradation if absent
+  [100%] Preset loading (.slangp/.glslp)          — LibrashaderRuntime::LoadPreset()
+  [100%] Per-frame filter chain application       — LibrashaderRuntime::Apply() with
                                                     input/output GL textures
   [  0%] Preset parameter enumeration             — preset_get_runtime_params() for
                                                     exposing tunable parameters
@@ -216,19 +212,21 @@ Legend:
 12. UI — ADJUST SCREEN EFFECTS DIALOG
 ================================================================================
 
-  [  0%] Dialog structure (4 pages)               — ImGui tabbed/sidebar dialog
+  [100%] Dialog structure (4 pages)               — ui_screenfx.cpp: ImGui tabbed dialog
                                                     matching Windows layout
-  [  0%] Main page                                — Scanline intensity slider,
-                                                    Distortion X/Y sliders
-  [  0%] Bloom page                               — Enable, radius, direct/indirect
+  [100%] Main page                                — Scanline intensity slider (0-8 ticks),
+                                                    Distortion X (0-180°), Y ratio (0-100%)
+  [100%] Bloom page                               — Enable, radius (log), direct/indirect
                                                     intensity, scanline compensation
-  [  0%] HDR page                                 — Enable, SDR/HDR intensity,
-                                                    monitor capability display
-  [  0%] Mask page                                — Type combo, dot pitch slider,
-                                                    openness slider, intensity comp
-  [  0%] Reset to Defaults button                 — Per-page, from
-                                                    ATArtifactingParams::GetDefault()
-  [  0%] View menu entry enabled                  — Replace disabled placeholder
+  [ 50%] HDR page                                 — Controls shown disabled with message
+                                                    "not yet available in SDL3 build"
+  [100%] Mask page                                — Type combo, dot pitch (log), openness
+                                                    slider, intensity compensation checkbox
+  [100%] Reset to Defaults button                 — Resets both params and mask params
+  [100%] View menu entry enabled                  — "Adjust Screen Effects..." opens dialog,
+                                                    disabled placeholder replaced
+  [100%] Hardware unavailability warning           — Banner shown when using SDL_Renderer
+                                                    fallback, all controls disabled
 
 
 ================================================================================
@@ -250,27 +248,27 @@ SUMMARY
 
 Category                        Implemented    Total    Coverage
 -----------------------------------------------------------------
-OpenGL display backend                0            9        0%
-Filter modes (shader)                 0            8        0%
-Scanlines                            0            3        0%
-Gamma/color correction                0            5        0%
-Screen masks                          0            9        0%
-Distortion                            0            4        0%
-Bloom V2                              0           10        0%
+OpenGL display backend                7            9       78%
+Filter modes (shader)                 8            8      100%
+Scanlines                            3            3      100%
+Gamma/color correction                5            5      100%
+Screen masks                          9            9      100%
+Distortion                            4            4      100%
+Bloom V2                              9           10       90%
 HDR (deferred)                        0            6        0%
-PAL artifacting                       0            2        0%
-Unified screenFX shader               0            3        0%
-librashader integration               0            8        0%
-UI: Adjust Screen Effects             0            7        0%
+PAL artifacting                       1            2       50%
+Unified screenFX shader               3            3      100%
+librashader integration               4            8       50%
+UI: Adjust Screen Effects             7            8       88%
 UI: Shader preset selector            0            5        0%
 -----------------------------------------------------------------
-TOTAL                                 0           79        0%
+TOTAL                                60           80       75%
 
-Implementation order per SHADERS.md:
-  Phase 1: OpenGL display backend (section 1)
-  Phase 2: Sharp bilinear + bicubic (section 2)
-  Phase 3: Screen effects — scanlines, gamma, masks, distortion (sections 3-6, 10)
-  Phase 4: Bloom V2 (section 7)
-  Phase 5: librashader (section 11, 13)
-  Phase 6: HDR (section 8, deferred)
-  UI work (sections 12-13) integrated with corresponding phases
+Remaining work:
+  - macOS GL support (forward-compatible context, GLSL 150)
+  - EmTextureID for ImGui debugger display pane
+  - PAL artifacting render pass wiring
+  - Bloom scanline compensation
+  - librashader parameter UI and mutual exclusion
+  - Shader preset file browser and persistence
+  - HDR (deferred to later phase)

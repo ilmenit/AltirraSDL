@@ -462,15 +462,33 @@ static void ExecuteFirmwareScan(ATFirmwareManager *fwm, const VDStringW &scanDir
 	g_fwMgr.scanResultDuplicate = alreadyPresent;
 }
 
+// Last known window rect of the Firmware Manager (updated each frame during rendering).
+static ImVec2 g_fwMgrWinPos = {0, 0};
+static ImVec2 g_fwMgrWinSize = {0, 0};
+
 // Handle file drop onto firmware manager (matches Windows OnDropFiles)
-// Returns true if the drop was consumed (firmware manager is open), false otherwise.
-bool ATUIFirmwareManagerHandleDrop(const char *utf8path) {
+// Returns true if the drop was consumed (firmware manager is open and cursor is over it).
+bool ATUIFirmwareManagerHandleDrop(const char *utf8path, float dropX, float dropY) {
 	if (!g_showFirmwareManager || !utf8path)
+		return false;
+
+	// Check if drop position is within the Firmware Manager window
+	if (dropX < g_fwMgrWinPos.x || dropY < g_fwMgrWinPos.y
+		|| dropX > g_fwMgrWinPos.x + g_fwMgrWinSize.x
+		|| dropY > g_fwMgrWinPos.y + g_fwMgrWinSize.y)
 		return false;
 
 	// Feed the path through the same Add callback as the file dialog
 	const char *filelist[] = { utf8path, nullptr };
 	FirmwareAddCallback(nullptr, filelist, 0);
+	return true;
+}
+
+bool ATUIFirmwareManagerGetDropRect(ImVec2 &pos, ImVec2 &size) {
+	if (!g_showFirmwareManager || g_fwMgrWinSize.x <= 0 || g_fwMgrWinSize.y <= 0)
+		return false;
+	pos = g_fwMgrWinPos;
+	size = g_fwMgrWinSize;
 	return true;
 }
 
@@ -827,6 +845,8 @@ static void RenderFirmwareManager(ATSimulator &sim, bool &show) {
 	ImGui::SetNextWindowSize(ImVec2(600, 450), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	if (!ImGui::Begin("Firmware###FirmwareMgr", &show, ImGuiWindowFlags_NoSavedSettings)) {
+		g_fwMgrWinPos = ImGui::GetWindowPos();
+		g_fwMgrWinSize = ImGui::GetWindowSize();
 		ImGui::End();
 		// Clean up audit if window was closed via title bar X
 		if (!show && g_fwMgr.auditOpen) {
@@ -837,8 +857,13 @@ static void RenderFirmwareManager(ATSimulator &sim, bool &show) {
 		return;
 	}
 
+	// Save window rect for drop hit-testing
+	g_fwMgrWinPos = ImGui::GetWindowPos();
+	g_fwMgrWinSize = ImGui::GetWindowSize();
+
 	if (ATUICheckEscClose()) {
 		show = false;
+		g_fwMgrWinSize = {0, 0};
 		if (g_fwMgr.auditOpen) {
 			StopAuditScan();
 			g_fwMgr.auditOpen = false;

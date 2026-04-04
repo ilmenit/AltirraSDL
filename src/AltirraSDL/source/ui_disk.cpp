@@ -9,7 +9,13 @@
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
+#include <vd2/system/file.h>
+#include <vd2/system/filesys.h>
+#include <vd2/system/error.h>
 #include <at/atcore/media.h>
+#include <at/atcore/vfs.h>
+#include <at/atio/diskfs.h>
+#include <at/atio/diskfsutil.h>
 
 #include "ui_main.h"
 #include "simulator.h"
@@ -44,6 +50,17 @@ static const DiskFormatType kDiskFormatTypes[] = {
 
 static constexpr int kNumDiskFormats = (int)(sizeof(kDiskFormatTypes) / sizeof(kDiskFormatTypes[0]));
 
+// Filesystem format labels (matches Windows IDC_FILESYSTEM combo in IDD_CREATE_DISK)
+static const char *kFSFormatLabels[] = {
+	"None",
+	"DOS 2.0S/2.5",
+	"DOS 1.0",
+	"DOS 3.0",
+	"MyDOS",
+	"SpartaDOS",
+};
+static constexpr int kNumFSFormats = 6;
+
 static struct {
 	bool show = false;
 	int targetDrive = 0;
@@ -51,13 +68,40 @@ static struct {
 	int sectorCount = 720;
 	int bootSectorCount = 3;
 	int sectorSize = 128;    // actual byte value: 128, 256, or 512
+	int fsFormatIndex = 0;   // filesystem format (0=None, matches kFSFormatLabels)
 } g_createDiskState;
+
+// Check if current geometry supports the selected filesystem
+// (matches Windows ATNewDiskDialog::IsCurrentFormatSupported)
+static bool IsCreateDiskFormatSupported() {
+	int sc = g_createDiskState.sectorCount;
+	int ss = g_createDiskState.sectorSize;
+	int bs = g_createDiskState.bootSectorCount;
+
+	switch (g_createDiskState.fsFormatIndex) {
+		case 0: return true;  // None
+		case 1: // DOS 2.0S/2.5
+			if (bs != 3) return false;
+			if (ss != 128 && ss != 256) return false;
+			if (sc == 1040) return ss == 128;
+			return sc == 720;
+		case 2: // DOS 1.0
+			return sc == 720 && ss == 128;
+		case 3: // DOS 3.0
+			return (sc == 720 || sc == 1040) && ss == 128;
+		case 4: // MyDOS
+			return sc >= 720 && (ss == 128 || ss == 256);
+		case 5: // SpartaDOS
+			return sc >= 16;
+		default: return false;
+	}
+}
 
 static void RenderCreateDiskDialog() {
 	if (!g_createDiskState.show)
 		return;
 
-	ImGui::SetNextWindowSize(ImVec2(420, 260), ImGuiCond_Appearing);
+	ImGui::SetNextWindowSize(ImVec2(420, 310), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	if (!ImGui::Begin("Create Disk", &g_createDiskState.show, ImGuiWindowFlags_NoSavedSettings)) {
 		ImGui::End();
@@ -111,16 +155,56 @@ static void RenderCreateDiskDialog() {
 	if (g_createDiskState.bootSectorCount < 0) g_createDiskState.bootSectorCount = 0;
 	if (g_createDiskState.bootSectorCount > 255) g_createDiskState.bootSectorCount = 255;
 
+	// Filesystem format (matches Windows IDC_FILESYSTEM)
+	ImGui::Combo("Filesystem", &g_createDiskState.fsFormatIndex, kFSFormatLabels, kNumFSFormats);
+
+	bool formatSupported = IsCreateDiskFormatSupported();
+	if (g_createDiskState.fsFormatIndex > 0 && !formatSupported)
+		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Geometry not supported for this filesystem");
+
 	ImGui::Separator();
 
+	ImGui::BeginDisabled(!formatSupported);
 	if (ImGui::Button("Create", ImVec2(80, 0))) {
-		ATDiskInterface& di = g_sim.GetDiskInterface(g_createDiskState.targetDrive);
+		int driveIdx = g_createDiskState.targetDrive;
+		ATDiskInterface& di = g_sim.GetDiskInterface(driveIdx);
+		ATDiskEmulator& disk = g_sim.GetDiskDrive(driveIdx);
+
+		di.UnloadDisk();
 		di.CreateDisk(
 			(uint32)g_createDiskState.sectorCount,
 			(uint32)g_createDiskState.bootSectorCount,
 			(uint32)g_createDiskState.sectorSize);
+
+		// Enable drive and set write mode (matches Windows post-creation)
+		if (di.GetClientCount() < 2)
+			disk.SetEnabled(true);
+		di.SetWriteMode(kATMediaWriteMode_VRW);
+
+		// Format with selected filesystem (matches Windows)
+		if (g_createDiskState.fsFormatIndex > 0) {
+			try {
+				IATDiskImage *image = di.GetDiskImage();
+				vdautoptr<IATDiskFS> fs;
+
+				switch (g_createDiskState.fsFormatIndex) {
+					case 1: fs = ATDiskFormatImageDOS2(image); break;
+					case 2: fs = ATDiskFormatImageDOS1(image); break;
+					case 3: fs = ATDiskFormatImageDOS3(image); break;
+					case 4: fs = ATDiskFormatImageMyDOS(image); break;
+					case 5: fs = ATDiskFormatImageSDX2(image); break;
+				}
+
+				if (fs)
+					fs->Flush();
+			} catch (const MyError& e) {
+				fprintf(stderr, "[AltirraSDL] Format error: %s\n", e.c_str());
+			}
+		}
+
 		g_createDiskState.show = false;
 	}
+	ImGui::EndDisabled();
 	ImGui::SameLine();
 	if (ImGui::Button("Cancel", ImVec2(80, 0)))
 		g_createDiskState.show = false;
@@ -158,6 +242,63 @@ static void DiskSaveAsCallback(void *userdata, const char * const *filelist, int
 	}
 }
 
+// Callback for boot sector extraction save dialog
+static void BootSectorSaveCallback(void *userdata, const char * const *filelist, int) {
+	int driveIdx = (int)(intptr_t)userdata;
+	if (!filelist || !filelist[0] || driveIdx < 0 || driveIdx >= 15) return;
+
+	ATDiskInterface& di = g_sim.GetDiskInterface(driveIdx);
+	IATDiskImage *image = di.GetDiskImage();
+	if (!image) return;
+
+	try {
+		uint8 sec[384] = {0};
+		for (int i = 0; i < 3; ++i)
+			image->ReadPhysicalSector(i, &sec[i * 128], 128);
+
+		VDStringW wpath = VDTextU8ToW(filelist[0], -1);
+		VDFile f(wpath.c_str(), nsVDFile::kWrite | nsVDFile::kDenyAll | nsVDFile::kCreateAlways);
+		f.write(sec, sizeof sec);
+	} catch (const MyError& e) {
+		fprintf(stderr, "[AltirraSDL] Extract boot sectors failed: %s\n", e.c_str());
+	}
+}
+
+// Callback for mount folder as virtual disk
+struct MountFolderInfo {
+	int driveIdx;
+	bool sdfs;
+};
+
+static void MountFolderCallback(void *userdata, const char * const *filelist, int) {
+	MountFolderInfo *info = (MountFolderInfo *)userdata;
+	if (!filelist || !filelist[0] || !info) {
+		delete info;
+		return;
+	}
+
+	int driveIdx = info->driveIdx;
+	bool sdfs = info->sdfs;
+	delete info;
+
+	if (driveIdx < 0 || driveIdx >= 15) return;
+
+	VDStringW widePath = VDTextU8ToW(filelist[0], -1);
+	try {
+		ATDiskInterface& di = g_sim.GetDiskInterface(driveIdx);
+		di.MountFolder(widePath.c_str(), sdfs);
+
+		ATDiskEmulator& disk = g_sim.GetDiskDrive(driveIdx);
+		if (di.GetClientCount() < 2)
+			disk.SetEnabled(true);
+
+		fprintf(stderr, "[AltirraSDL] Mounted folder on D%d: %s (%s)\n",
+			driveIdx + 1, filelist[0], sdfs ? "SDFS" : "DOS2");
+	} catch (const MyError& e) {
+		fprintf(stderr, "[AltirraSDL] Mount folder failed on D%d: %s\n", driveIdx + 1, e.c_str());
+	}
+}
+
 static const SDL_DialogFileFilter kDiskFilters[] = {
 	{ "Disk Images", "atr;xfd;dcm;pro;atx;gz;zip;atz" },
 	{ "All Files", "*" },
@@ -168,6 +309,182 @@ static const SDL_DialogFileFilter kDiskSaveFilters[] = {
 	{ "XFD Disk Image", "xfd" },
 	{ "All Files", "*" },
 };
+
+static const SDL_DialogFileFilter kBootSectorFilters[] = {
+	{ "Boot sectors file", "bin" },
+	{ "All Files", "*" },
+};
+
+// =========================================================================
+// Convert to filesystem table (matches Windows IDR_DISK_CONTEXT_MENU)
+// =========================================================================
+
+enum ATDiskFormatFileSystem {
+	kATDiskFFS_None,
+	kATDiskFFS_DOS2,
+	kATDiskFFS_DOS1,
+	kATDiskFFS_DOS3,
+	kATDiskFFS_MyDOS,
+	kATDiskFFS_SDFS,
+};
+
+struct ConvertEntry {
+	const char *label;
+	ATDiskFormatFileSystem ffs;
+	uint32 sectorSize;
+};
+
+static const ConvertEntry kConvertTable[] = {
+	{ "DOS 1.0 (SD)",           kATDiskFFS_DOS1, 128 },
+	{ "DOS 2.0S/2.5 (SD/ED)",  kATDiskFFS_DOS2, 128 },
+	{ "DOS 2.0D (DD)",          kATDiskFFS_DOS2, 256 },
+	{ "MyDOS (SD)",             kATDiskFFS_MyDOS, 128 },
+	{ "MyDOS (DD)",             kATDiskFFS_MyDOS, 256 },
+	{ "SpartaDOS (SD/ED)",      kATDiskFFS_SDFS, 128 },
+	{ "SpartaDOS (DD)",         kATDiskFFS_SDFS, 256 },
+	{ "SpartaDOS (512)",        kATDiskFFS_SDFS, 512 },
+};
+
+static constexpr int kNumConvertFormats = (int)(sizeof(kConvertTable) / sizeof(kConvertTable[0]));
+
+// =========================================================================
+// Reinterleave helper (matches Windows ATDiskDriveDialog::Reinterleave)
+// =========================================================================
+
+static void Reinterleave(ATDiskInterface& diskIf, ATDiskInterleave interleave) {
+	IATDiskImage *img = diskIf.GetDiskImage();
+	if (!img)
+		return;
+
+	if (!img->IsSafeToReinterleave()) {
+		// TODO: confirmation dialog for protected disks
+		fprintf(stderr, "[AltirraSDL] Warning: reinterleaving disk that may not work correctly with reordered sectors\n");
+	}
+
+	img->Reinterleave(interleave);
+	diskIf.OnDiskModified();
+}
+
+// =========================================================================
+// Convert filesystem helper (matches Windows ATDiskDriveDialog::Convert)
+// =========================================================================
+
+static void ConvertFilesystem(ATDiskInterface& diskIf, ATDiskFormatFileSystem ffs, uint32 sectorSize) {
+	IATDiskImage *img = diskIf.GetDiskImage();
+	if (!img)
+		return;
+
+	try {
+		vdautoptr<IATDiskFS> fs(ATDiskMountImage(img, true));
+		if (!fs)
+			throw MyError("The disk image does not use a supported filesystem.");
+
+		vdrefptr<IATDiskImage> newImage;
+		vdautoptr<IATDiskFS> newfs;
+		uint32 diskSize;
+
+		switch (ffs) {
+			case kATDiskFFS_DOS1:
+				diskSize = 720;
+				ATCreateDiskImage(diskSize, 3, sectorSize, ~newImage);
+				newfs = ATDiskFormatImageDOS1(newImage);
+				break;
+
+			case kATDiskFFS_DOS2:
+				diskSize = ATDiskFSEstimateDOS2SectorsNeeded(*fs, sectorSize);
+				ATCreateDiskImage(diskSize, 3, sectorSize, ~newImage);
+				newfs = ATDiskFormatImageDOS2(newImage);
+				break;
+
+			case kATDiskFFS_MyDOS:
+				diskSize = ATDiskFSEstimateMyDOSSectorsNeeded(*fs, sectorSize);
+				ATCreateDiskImage(diskSize, 3, sectorSize, ~newImage);
+				newfs = ATDiskFormatImageMyDOS(newImage);
+				break;
+
+			case kATDiskFFS_SDFS:
+				diskSize = ATDiskFSEstimateSDX2SectorsNeeded(*fs, sectorSize);
+				ATCreateDiskImage(diskSize, sectorSize >= 512 ? 0 : 3, sectorSize, ~newImage);
+				newfs = ATDiskFormatImageSDX2(newImage);
+				break;
+
+			default:
+				return;
+		}
+
+		ATDiskFSCopyTree(*newfs, ATDiskFSKey::None, *fs, ATDiskFSKey::None, true);
+
+		fs = nullptr;
+		newfs->Flush();
+		newfs = nullptr;
+
+		VDStringW origName { VDFileSplitPath(diskIf.GetPath()) };
+		diskIf.LoadDisk(nullptr, origName.c_str(), newImage);
+	} catch (const MyError& e) {
+		fprintf(stderr, "[AltirraSDL] Convert filesystem failed: %s\n", e.c_str());
+	}
+}
+
+// =========================================================================
+// Expand ARCs helper (matches Windows ID_CONTEXT_EXPANDARCS)
+// =========================================================================
+
+static void ExpandARCFiles(ATDiskInterface& diskIf) {
+	if (!diskIf.IsDiskLoaded())
+		return;
+
+	IATDiskImage *img = diskIf.GetDiskImage();
+	if (!img || img->IsDynamic())
+		return;
+
+	try {
+		if (!(diskIf.GetWriteMode() & kATMediaWriteMode_AllowWrite))
+			diskIf.SetWriteMode(kATMediaWriteMode_VRWSafe);
+
+		vdautoptr<IATDiskFS> fs(ATDiskMountImage(img, false));
+		if (!fs)
+			throw MyError("The disk image does not have a recognized filesystem.");
+
+		fs->SetAllowExtend(true);
+		uint32 expanded;
+
+		try {
+			expanded = ATDiskRecursivelyExpandARCs(*fs);
+		} catch (...) {
+			try { fs->Flush(); } catch (...) {}
+			throw;
+		}
+
+		fs->Flush();
+		fprintf(stderr, "[AltirraSDL] Archives expanded: %u\n", expanded);
+	} catch (const MyError& e) {
+		fprintf(stderr, "[AltirraSDL] Expand ARCs failed: %s\n", e.c_str());
+	}
+
+	diskIf.OnDiskChanged(true);
+}
+
+// =========================================================================
+// Show disk image file in system file manager
+// =========================================================================
+
+static void ShowDiskFileInExplorer(ATDiskInterface& diskIf) {
+	const wchar_t *path = diskIf.GetPath();
+	if (!path) return;
+
+	VDStringW filePath;
+	if (!ATVFSExtractFilePath(path, &filePath))
+		return;
+
+	VDStringW dirPath = VDFileSplitPathLeft(filePath);
+	if (dirPath.empty())
+		return;
+
+	VDStringA u8dir = VDTextWToU8(dirPath);
+	VDStringA url;
+	url.sprintf("file://%s", u8dir.c_str());
+	SDL_OpenURL(url.c_str());
+}
 
 // =========================================================================
 // Emulation mode labels (matches Windows dialog order)
@@ -224,6 +541,187 @@ static int GetWriteModeIndex(ATDiskInterface& di) {
 	case kATMediaWriteMode_RW:       return 4;
 	default:                         return 1;
 	}
+}
+
+// =========================================================================
+// Context menu for per-drive "+" button
+// Matches Windows IDR_DISK_CONTEXT_MENU (uidisk.cpp lines 1128-1456)
+// =========================================================================
+
+static void RenderDiskDriveContextMenu(int driveIdx, ATDiskInterface& di,
+	ATSimulator& sim, ATUIState& state, SDL_Window *window)
+{
+	if (!ImGui::BeginPopup("##DriveCtx"))
+		return;
+
+	const bool haveDisk = di.IsDiskLoaded();
+	const bool haveNonDynamicDisk = haveDisk && !di.GetDiskImage()->IsDynamic();
+	const bool haveBackedDisk = haveDisk && di.IsDiskBacked();
+	bool canShowFile = false;
+	if (haveBackedDisk) {
+		const wchar_t *path = di.GetPath();
+		if (path)
+			canShowFile = ATVFSExtractFilePath(path, nullptr);
+	}
+
+	// --- Disk operations (matches Windows RC layout) ---
+	if (ImGui::MenuItem("New disk...", nullptr, false, true)) {
+		g_createDiskState.show = true;
+		g_createDiskState.targetDrive = driveIdx;
+	}
+
+	// Save Disk: enabled when non-dynamic disk loaded (matches Windows).
+	// If dirty and updatable, saves in place. If dirty but not updatable,
+	// falls through to Save As (matches Windows [[fallthrough]] behavior).
+	if (ImGui::MenuItem("Save disk", nullptr, false, haveNonDynamicDisk)) {
+		if (di.IsDirty()) {
+			if (di.GetDiskImage()->IsUpdatable()) {
+				try {
+					const auto writeMode = di.GetWriteMode();
+					if ((writeMode & kATMediaWriteMode_AllowWrite) && !(writeMode & kATMediaWriteMode_AutoFlush))
+						di.SetWriteMode(kATMediaWriteMode_RW);
+					di.SaveDisk();
+				} catch (const MyError& e) {
+					fprintf(stderr, "[AltirraSDL] Save disk failed: %s\n", e.c_str());
+				}
+			} else {
+				// Not updatable — fall through to Save As (matches Windows)
+				SDL_ShowSaveFileDialog(DiskSaveAsCallback,
+					(void *)(intptr_t)driveIdx, window,
+					kDiskSaveFilters, 3, nullptr);
+			}
+		}
+	}
+
+	if (ImGui::MenuItem("Save disk as...", nullptr, false, haveNonDynamicDisk)) {
+		SDL_ShowSaveFileDialog(DiskSaveAsCallback,
+			(void *)(intptr_t)driveIdx, window,
+			kDiskSaveFilters, 3, nullptr);
+	}
+
+	if (ImGui::MenuItem("Explore disk...", nullptr, false, haveDisk)) {
+		const auto writeMode = di.GetWriteMode();
+		bool writable = (writeMode & kATMediaWriteMode_AllowWrite) != 0;
+		bool autoFlush = (writeMode & kATMediaWriteMode_AutoFlush) != 0;
+		ATUIOpenDiskExplorerForDrive(driveIdx, writable, autoFlush);
+		state.showDiskExplorer = true;
+	}
+
+	ImGui::Separator();
+
+	if (ImGui::MenuItem("Revert disk", nullptr, false, haveDisk && di.CanRevert()))
+		di.RevertDisk();
+
+	if (ImGui::MenuItem("Show disk image file", nullptr, false, canShowFile))
+		ShowDiskFileInExplorer(di);
+
+	ImGui::Separator();
+
+	// --- Drive operations (submenus replace Windows two-step selection) ---
+	if (ImGui::BeginMenu("Swap with another drive")) {
+		for (int target = 0; target < 15; ++target) {
+			if (target == driveIdx) continue;
+			char label[16];
+			snprintf(label, sizeof(label), "D%d:", target + 1);
+			if (ImGui::MenuItem(label))
+				sim.SwapDrives(driveIdx, target);
+		}
+		ImGui::EndMenu();
+	}
+
+	if (ImGui::BeginMenu("Shift to another drive")) {
+		for (int target = 0; target < 15; ++target) {
+			if (target == driveIdx) continue;
+			char label[16];
+			snprintf(label, sizeof(label), "D%d:", target + 1);
+			if (ImGui::MenuItem(label)) {
+				int direction = target < driveIdx ? -1 : +1;
+				for (int j = driveIdx; j != target; j += direction)
+					sim.SwapDrives(j, j + direction);
+			}
+		}
+		ImGui::EndMenu();
+	}
+
+	// --- Change Interleave submenu (with group separators matching Windows RC) ---
+	if (ImGui::BeginMenu("Change interleave", haveNonDynamicDisk)) {
+		if (ImGui::MenuItem("Default"))
+			Reinterleave(di, kATDiskInterleave_Default);
+		if (ImGui::MenuItem("1:1"))
+			Reinterleave(di, kATDiskInterleave_1_1);
+
+		ImGui::Separator();  // SD group
+		if (ImGui::MenuItem("12:1 (810 rev. B SD)"))
+			Reinterleave(di, kATDiskInterleave_SD_12_1);
+		if (ImGui::MenuItem("9:1 (SD)"))
+			Reinterleave(di, kATDiskInterleave_SD_9_1);
+		if (ImGui::MenuItem("9:1 (SD improved)"))
+			Reinterleave(di, kATDiskInterleave_SD_9_1_REV);
+		if (ImGui::MenuItem("5:1 (US Doubler SD fast)"))
+			Reinterleave(di, kATDiskInterleave_SD_5_1);
+		if (ImGui::MenuItem("4:1 (Indus GT SuperSynchromesh)"))
+			Reinterleave(di, kATDiskInterleave_SD_4_1);
+		if (ImGui::MenuItem("2:1 (SD)"))
+			Reinterleave(di, kATDiskInterleave_SD_2_1);
+
+		ImGui::Separator();  // ED group
+		if (ImGui::MenuItem("13:1 (ED)"))
+			Reinterleave(di, kATDiskInterleave_ED_13_1);
+		if (ImGui::MenuItem("12:1 (ED improved)"))
+			Reinterleave(di, kATDiskInterleave_ED_12_1);
+
+		ImGui::Separator();  // DD group
+		if (ImGui::MenuItem("16:1 (815 DD)"))
+			Reinterleave(di, kATDiskInterleave_DD_16_1);
+		if (ImGui::MenuItem("15:1 (XF551 DD)"))
+			Reinterleave(di, kATDiskInterleave_DD_15_1);
+		if (ImGui::MenuItem("9:1 (XF551 DD fast)"))
+			Reinterleave(di, kATDiskInterleave_DD_9_1);
+		if (ImGui::MenuItem("7:1 (US Doubler DD fast)"))
+			Reinterleave(di, kATDiskInterleave_DD_7_1);
+
+		ImGui::EndMenu();
+	}
+
+	// --- Convert To Filesystem submenu ---
+	if (ImGui::BeginMenu("Convert filesystem", haveNonDynamicDisk)) {
+		for (int i = 0; i < kNumConvertFormats; ++i) {
+			if (ImGui::MenuItem(kConvertTable[i].label))
+				ConvertFilesystem(di, kConvertTable[i].ffs, kConvertTable[i].sectorSize);
+		}
+		ImGui::EndMenu();
+	}
+
+	ImGui::Separator();
+
+	// --- Virtual disk operations ---
+	// MountFolder() internally calls UnloadDisk(), so no pre-eject needed.
+	// The folder dialog is async — don't eject until the user actually picks a folder.
+	if (ImGui::MenuItem("Mount folder as virtual DOS 2 disk...")) {
+		auto *info = new MountFolderInfo{driveIdx, false};
+		SDL_ShowOpenFolderDialog(MountFolderCallback, info, window, nullptr, false);
+	}
+
+	if (ImGui::MenuItem("Mount folder as virtual SpartaDOS disk...")) {
+		auto *info = new MountFolderInfo{driveIdx, true};
+		SDL_ShowOpenFolderDialog(MountFolderCallback, info, window, nullptr, false);
+	}
+
+	if (ImGui::MenuItem("Extract boot sectors for virtual DOS 2 disk...", nullptr, false, haveDisk)) {
+		IATDiskImage *image = di.GetDiskImage();
+		if (image && image->GetBootSectorCount() == 3) {
+			SDL_ShowSaveFileDialog(BootSectorSaveCallback,
+				(void *)(intptr_t)driveIdx, window,
+				kBootSectorFilters, 2, nullptr);
+		} else {
+			fprintf(stderr, "[AltirraSDL] Disk does not have standard DOS boot sectors.\n");
+		}
+	}
+
+	if (ImGui::MenuItem("Recursively expand all .ARChive files...", nullptr, false, haveNonDynamicDisk))
+		ExpandARCFiles(di);
+
+	ImGui::EndPopup();
 }
 
 // =========================================================================
@@ -331,31 +829,7 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				ImGui::OpenPopup("##DriveCtx");
 			}
 
-			if (ImGui::BeginPopup("##DriveCtx")) {
-				if (ImGui::MenuItem("New Disk...", nullptr, false, true)) {
-					g_createDiskState.show = true;
-					g_createDiskState.targetDrive = driveIdx;
-				}
-
-				if (ImGui::MenuItem("Save Disk", nullptr, false, loaded && dirty))
-					di.SaveDisk();
-
-				if (ImGui::MenuItem("Save Disk As...", nullptr, false, loaded)) {
-					SDL_ShowSaveFileDialog(DiskSaveAsCallback,
-						(void *)(intptr_t)driveIdx, window,
-						kDiskSaveFilters, 3, nullptr);
-				}
-
-				if (ImGui::MenuItem("Revert", nullptr, false, loaded && di.CanRevert()))
-					di.RevertDisk();
-
-				ImGui::Separator();
-
-				if (ImGui::MenuItem("Eject", nullptr, false, loaded))
-					di.UnloadDisk();
-
-				ImGui::EndPopup();
-			}
+			RenderDiskDriveContextMenu(driveIdx, di, sim, state, window);
 
 			ImGui::PopID();
 		}

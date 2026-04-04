@@ -127,23 +127,40 @@ public:
 
 ```cpp
 static void RenderAndPresent() {
-    SDL_RenderClear(g_pRenderer);
+    g_pBackend->BeginFrame();
 
-    // Update filter mode on texture if setting changed.
-    if (curFilter != s_lastAppliedFilter)
-        g_pDisplay->UpdateScaleMode();
-
-    SDL_Texture *emuTex = g_pDisplay->GetTexture();
-    if (emuTex) {
-        g_displayRect = ComputeDisplayRect();  // scaling/aspect/zoom/pan
-        SDL_SetTextureBlendMode(emuTex, SDL_BLENDMODE_NONE);
-        SDL_RenderTexture(g_pRenderer, emuTex, nullptr, &g_displayRect);
+    // Upload frame pixels to the backend
+    if (g_pDisplay->GetFramePixels()) {
+        g_pBackend->UploadFrame(
+            g_pDisplay->GetFramePixels(),
+            g_pDisplay->GetFramePixelWidth(),
+            g_pDisplay->GetFramePixelHeight(),
+            g_pDisplay->GetFramePixelPitch());
     }
 
-    ATUIRenderFrame(g_sim, *g_pDisplay, g_pRenderer, g_uiState);
-    SDL_RenderPresent(g_pRenderer);
+    // When the debugger is open, the Display pane renders it inside an
+    // ImGui dockable window via backend->GetImGuiTextureID() instead.
+    if (!ATUIDebuggerIsOpen()) {
+        if (g_pBackend->HasTexture()) {
+            g_displayRect = ComputeDisplayRect();
+            g_pBackend->RenderFrame(
+                g_displayRect.x, g_displayRect.y,
+                g_displayRect.w, g_displayRect.h,
+                g_pBackend->GetTextureWidth(),
+                g_pBackend->GetTextureHeight());
+        }
+    }
+
+    ATUIRenderFrame(g_sim, *g_pDisplay, g_pBackend, g_uiState);
+    g_pBackend->Present();
 }
 ```
+
+The `IDisplayBackend::GetImGuiTextureID()` method returns the backend's
+emulator frame texture as an ImGui-compatible texture ID.  For the OpenGL
+backend this is the GL texture name; for the SDL\_Renderer backend this is
+the `SDL_Texture*`.  The debugger Display pane uses this to render the
+emulation frame inside an ImGui dockable window regardless of backend.
 
 ### Pixel Format Handling
 

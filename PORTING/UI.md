@@ -997,10 +997,12 @@ with the SDL3 + SDLRenderer3 backends.
 | 5 | Disk management | ~200 | Mount/unmount D1:-D8: |
 | 6 | Audio output (real) | ~200 | Replace stub with SDL3 audio |
 | 7 | Firmware manager | ~150 | ROM path config |
-| 8 | Debugger panes | ~1,500 | Console, registers, disassembly, history (done); memory, watch, call stack, breakpoints, targets, profiler, trace (TODO) |
+| 8 | Debugger panes | ~1,500 | All 13 panes done (Console, Registers, Disassembly, History, Memory x4, Watch x4, Call Stack, Breakpoints, Targets, Source, Debug Display, Printer Output). Remaining: Profiler, Trace Viewer, context menus |
 
 Steps 1-3 produce a usable emulator. Steps 4-7 produce a comfortable
-one. Step 8 targets power users. The debugger core panes (Console,
-Registers, Disassembly, History) are implemented with an ImGui DockBuilder
-layout matching Windows. The Display pane renders the emulation texture
-inside the dockspace when the debugger is open.
+one. Step 8 targets power users. All 13 debugger panes are implemented
+with an ImGui DockBuilder layout matching Windows. The Display pane
+renders the emulation texture inside the dockspace when the debugger is
+open. Remaining debugger work: Profiler/Trace Viewer UI (0%), Verifier
+dialog, Breakpoint editor dialog, and context menu items for disassembly
+(14 missing), memory (11 missing), and history (20 missing) panes.

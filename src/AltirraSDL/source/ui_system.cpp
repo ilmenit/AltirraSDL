@@ -37,12 +37,18 @@
 #include "inputcontroller.h"
 #include "compatengine.h"
 #include "firmwaredetect.h"
+#include "autosavemanager.h"
+#include "debugger.h"
+#include "settings.h"
+#include <at/atnativeui/genericdialog.h>
+#include <at/atui/uimanager.h>
 #include <vd2/system/file.h>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 
 extern ATSimulator g_sim;
+extern ATUIManager g_ATUIManager;
 void ATUIUpdateSpeedTiming();
 void ATUIResizeDisplay();
 void ATSyncCPUHistoryState();
@@ -89,6 +95,11 @@ enum {
 	kCat_Input,         // Emulator > Input
 	kCat_Caption,       // Emulator > Window Caption
 	kCat_Workarounds,   // Emulator > Workarounds
+	kCat_Accessibility, // Emulator > Accessibility
+	kCat_DebuggerCfg,   // Emulator > Debugger
+	kCat_UI,            // Emulator > UI
+	kCat_Display2,      // Emulator > Display Effects
+	kCat_SettingsCfg,   // Emulator > Settings
 	kCat_Count
 };
 
@@ -847,6 +858,14 @@ static void RenderSpeedCategory(ATSimulator &sim) {
 	if (ImGui::Checkbox("Pause when emulator window is inactive", &pauseInactive))
 		ATUISetPauseWhenInactive(pauseInactive);
 	ImGui::SetItemTooltip("Automatically pause the emulation when the emulator window is inactive.");
+
+	ImGui::SeparatorText("Rewind");
+
+	IATAutoSaveManager &mgr = sim.GetAutoSaveManager();
+	bool rewindEnabled = mgr.GetRewindEnabled();
+	if (ImGui::Checkbox("Enable automatic rewind recording", &rewindEnabled))
+		mgr.SetRewindEnabled(rewindEnabled);
+	ImGui::SetItemTooltip("Periodically save emulation state to allow rewinding to a previous point.");
 }
 
 // =========================================================================
@@ -2133,6 +2152,178 @@ static void RenderFlashCategory(ATSimulator &) {
 }
 
 // =========================================================================
+// Accessibility (matches Windows IDD_CONFIGURE_ACCESSIBILITY)
+// =========================================================================
+
+static void RenderAccessibilityCategory(ATSimulator &) {
+	extern ATOptions g_ATOptions;
+	ImGui::SeparatorText("Screen reader");
+	bool acc = g_ATOptions.mbAccEnabled;
+	if (ImGui::Checkbox("Enable screen reader support", &acc)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mbAccEnabled = acc;
+		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+	}
+	ImGui::SetItemTooltip("Enable accessibility features for screen reader software.");
+}
+
+// =========================================================================
+// Debugger settings (matches Windows IDD_CONFIGURE_DEBUGGER)
+// =========================================================================
+
+static void RenderDebuggerCfgCategory(ATSimulator &sim) {
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg) { ImGui::TextWrapped("Debugger not available."); return; }
+
+	ImGui::SeparatorText("Symbol loading");
+	static const char *kSymLoad[] = { "Disabled", "Deferred", "Enabled" };
+
+	int pre = (int)dbg->GetSymbolLoadMode(false);
+	if (pre < 0 || pre > 2) pre = 0;
+	if (ImGui::Combo("Pre-start", &pre, kSymLoad, 3))
+		dbg->SetSymbolLoadMode(false, (ATDebuggerSymbolLoadMode)pre);
+
+	int post = (int)dbg->GetSymbolLoadMode(true);
+	if (post < 0 || post > 2) post = 0;
+	if (ImGui::Combo("Post-start", &post, kSymLoad, 3))
+		dbg->SetSymbolLoadMode(true, (ATDebuggerSymbolLoadMode)post);
+
+	static const char *kScript[] = { "Disabled", "Ask to Load", "Enabled" };
+	int sm = (int)dbg->GetScriptAutoLoadMode();
+	if (sm < 0 || sm > 2) sm = 0;
+	if (ImGui::Combo("Script auto-load", &sm, kScript, 3))
+		dbg->SetScriptAutoLoadMode((ATDebuggerScriptAutoLoadMode)sm);
+
+	ImGui::SeparatorText("Options");
+	bool autoSys = dbg->IsAutoLoadSystemSymbolsEnabled();
+	if (ImGui::Checkbox("Auto-load standard system symbols", &autoSys))
+		dbg->SetAutoLoadSystemSymbols(autoSys);
+
+	bool autoKern = sim.IsAutoLoadKernelSymbolsEnabled();
+	if (ImGui::Checkbox("Auto-load OS ROM symbols", &autoKern))
+		sim.SetAutoLoadKernelSymbolsEnabled(autoKern);
+
+	bool debugLink = dbg->GetDebugLinkEnabled();
+	if (ImGui::Checkbox("Enable debug link device", &debugLink))
+		dbg->SetDebugLinkEnabled(debugLink);
+}
+
+// =========================================================================
+// UI (matches Windows IDD_CONFIGURE_UI)
+// =========================================================================
+
+static void RenderUICategory(ATSimulator &) {
+	extern ATOptions g_ATOptions;
+
+	ImGui::SeparatorText("Window behavior");
+	bool pauseMenu = g_ATOptions.mbPauseDuringMenu;
+	if (ImGui::Checkbox("Pause when menus are open", &pauseMenu)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mbPauseDuringMenu = pauseMenu;
+		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+	}
+
+	bool single = g_ATOptions.mbSingleInstance;
+	if (ImGui::Checkbox("Reuse program instance", &single)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mbSingleInstance = single;
+		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+	}
+
+	ImGui::SeparatorText("Appearance");
+	int scale = g_ATOptions.mThemeScale;
+	if (scale <= 0) scale = 100;
+	if (ImGui::SliderInt("UI scale (%)", &scale, 50, 300)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mThemeScale = scale;
+		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+	}
+
+	ImGui::SeparatorText("Dialogs");
+	if (ImGui::Button("Show all dialogs again"))
+		ATUIGenericDialogUndoAllIgnores();
+	ImGui::SetItemTooltip("Re-enable all dialogs dismissed with 'Don't ask again'.");
+}
+
+// =========================================================================
+// Display Effects (matches Windows IDD_CONFIGURE_DISPLAY2, SDL3-adapted)
+// =========================================================================
+
+static void RenderDisplay2Category(ATSimulator &) {
+	extern ATOptions g_ATOptions;
+
+	ImGui::SeparatorText("Full-screen mode");
+	bool borderless = g_ATOptions.mbFullScreenBorderless;
+	if (ImGui::RadioButton("Borderless windowed", borderless)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mbFullScreenBorderless = true;
+		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+	}
+	if (ImGui::RadioButton("Exclusive full-screen", !borderless)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mbFullScreenBorderless = false;
+		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+	}
+	if (!borderless) {
+		int w = (int)g_ATOptions.mFullScreenWidth, h = (int)g_ATOptions.mFullScreenHeight;
+		int hz = (int)g_ATOptions.mFullScreenRefreshRate;
+		ImGui::SetNextItemWidth(100);
+		if (ImGui::InputInt("Width", &w, 0, 0) && w > 0) {
+			ATOptions prev(g_ATOptions); g_ATOptions.mFullScreenWidth = w;
+			if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+		}
+		ImGui::SameLine(); ImGui::SetNextItemWidth(100);
+		if (ImGui::InputInt("Height", &h, 0, 0) && h > 0) {
+			ATOptions prev(g_ATOptions); g_ATOptions.mFullScreenHeight = h;
+			if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+		}
+		ImGui::SameLine(); ImGui::SetNextItemWidth(80);
+		if (ImGui::InputInt("Hz", &hz, 0, 0) && hz > 0) {
+			ATOptions prev(g_ATOptions); g_ATOptions.mFullScreenRefreshRate = hz;
+			if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+		}
+	}
+
+	ImGui::SeparatorText("Screen effects");
+	static char effectPath[512] = {};
+	static bool effectInit = false;
+	if (!effectInit) {
+		const wchar_t *p = g_ATUIManager.GetCustomEffectPath();
+		if (p) { VDStringA u8 = VDTextWToU8(VDStringW(p)); strncpy(effectPath, u8.c_str(), sizeof(effectPath)-1); }
+		effectInit = true;
+	}
+	if (ImGui::InputText("Effect file", effectPath, sizeof(effectPath))) {
+		VDStringW wp = VDTextU8ToW(VDStringA(effectPath));
+		g_ATUIManager.SetCustomEffectPath(wp.c_str(), false);
+	}
+}
+
+// =========================================================================
+// Settings (matches Windows IDD_CONFIGURE_SETTINGS)
+// =========================================================================
+
+static void RenderSettingsCfgCategory(ATSimulator &) {
+	ImGui::SeparatorText("Settings storage");
+	bool portable = ATSettingsIsInPortableMode();
+	bool migrating = ATSettingsIsMigrationScheduled();
+	bool resetting = ATSettingsIsResetPending();
+
+	ImGui::TextWrapped(portable ? "Currently using portable settings (INI file)." : "Currently using standard settings.");
+	if (migrating) ImGui::TextColored(ImVec4(1,1,0,1), "Settings migration scheduled for next startup.");
+	if (resetting) ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Settings reset scheduled for next startup.");
+
+	ImGui::Spacing();
+	bool disabled = resetting || migrating;
+	if (disabled) ImGui::BeginDisabled();
+	if (ImGui::Button("Reset all settings")) ATSettingsScheduleReset();
+	ImGui::SetItemTooltip("Reset all settings to defaults on next startup.");
+	if (ImGui::Button(portable ? "Switch to standard settings" : "Switch to portable settings (INI)"))
+		ATSettingsScheduleMigration();
+	ImGui::SetItemTooltip("Migrate settings on next startup.");
+	if (disabled) ImGui::EndDisabled();
+}
+
+// =========================================================================
 // System Configuration window — paged dialog with hierarchical sidebar
 // Matches Windows tree: Computer, Outputs, Peripherals, Media, Emulator
 // =========================================================================
@@ -2180,6 +2371,11 @@ static const TreeEntry kTreeEntries[] = {
 	{ "Input",          kCat_Input,     1 },
 	{ "Window Caption", kCat_Caption,   1 },
 	{ "Workarounds",    kCat_Workarounds, 1 },
+	{ "Accessibility",  kCat_Accessibility, 1 },
+	{ "Debugger",       kCat_DebuggerCfg, 1 },
+	{ "UI",             kCat_UI,        1 },
+	{ "Display Effects", kCat_Display2, 1 },
+	{ "Settings",       kCat_SettingsCfg, 1 },
 };
 static const int kNumTreeEntries = sizeof(kTreeEntries) / sizeof(kTreeEntries[0]);
 
@@ -2248,6 +2444,11 @@ void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 	case kCat_Input:          RenderInputCategory(sim); break;
 	case kCat_Caption:        RenderCaptionCategory(sim); break;
 	case kCat_Workarounds:    RenderWorkaroundsCategory(sim); break;
+	case kCat_Accessibility:  RenderAccessibilityCategory(sim); break;
+	case kCat_DebuggerCfg:    RenderDebuggerCfgCategory(sim); break;
+	case kCat_UI:             RenderUICategory(sim); break;
+	case kCat_Display2:       RenderDisplay2Category(sim); break;
+	case kCat_SettingsCfg:    RenderSettingsCfgCategory(sim); break;
 	}
 	ImGui::EndChild();
 

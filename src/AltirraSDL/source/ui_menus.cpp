@@ -6,6 +6,7 @@
 #include <mutex>
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include "display_backend.h"
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -28,14 +29,19 @@
 #include "gtia.h"
 #include "cartridge.h"
 #include "cassette.h"
+#include "autosavemanager.h"
+#include "oshelper.h"
 #include "disk.h"
 #include "diskinterface.h"
 #include "constants.h"
 #include "uiaccessors.h"
 #include "uiconfirm.h"
 #include "uikeyboard.h"
+#include "uiclipboard.h"
+#include "console.h"
 #include "uitypes.h"
 #include "inputmanager.h"
+#include "inputcontroller.h"
 #include "inputmap.h"
 #include "settings.h"
 #include "options.h"
@@ -48,6 +54,7 @@
 extern ATSimulator g_sim;
 extern ATUIKeyboardOptions g_kbdOpts;
 extern bool g_copyFrameRequested;  // defined in ui_main.cpp
+extern SDL_Window *g_pWindow;      // defined in main_sdl3.cpp
 
 // =========================================================================
 // MRU (Most Recently Used) list — same registry format as Windows
@@ -195,6 +202,206 @@ static const SDL_DialogFileFilter kImageFilters[] = {
 	{ "All Files", "*" },
 };
 
+// =========================================================================
+// Public functions for keyboard shortcut wiring (called from main_sdl3.cpp)
+// =========================================================================
+
+void ATUIShowBootImageDialog(SDL_Window *window) {
+	SDL_ShowOpenFileDialog(BootImageCallback, nullptr, window, kImageFilters, 2, nullptr, false);
+}
+
+void ATUIShowOpenImageDialog(SDL_Window *window) {
+	SDL_ShowOpenFileDialog(OpenImageCallback, nullptr, window, kImageFilters, 2, nullptr, false);
+}
+
+void ATUIShowOpenSourceFileDialog(SDL_Window *window) {
+	static const SDL_DialogFileFilter srcFilters[] = {
+		{ "Source Files", "s;asm;src;lst;inc;txt" },
+		{ "All Files", "*" },
+	};
+	SDL_ShowOpenFileDialog([](void *, const char * const *fl, int) {
+		if (fl && fl[0]) {
+			VDStringW wpath = VDTextU8ToW(VDStringA(fl[0]));
+			ATOpenSourceWindow(wpath.c_str());
+		}
+	}, nullptr, window, srcFilters, 2, nullptr, false);
+}
+
+void ATUIShowSaveFrameDialog(SDL_Window *window) {
+	static const SDL_DialogFileFilter filters[] = {
+		{ "BMP Images", "bmp" },
+	};
+	SDL_ShowSaveFileDialog(ATUISaveFrameCallback, nullptr, window, filters, 1, nullptr);
+}
+
+// =========================================================================
+// Paste Text — port of Windows main.cpp Paste() function
+// =========================================================================
+
+// Scancode name table for {token} parsing in paste text — matches Windows
+// main.cpp g_scancodeNameTable exactly.
+static const struct { uint8 scancode; const wchar_t *name; } kScancodeNames[] = {
+	{ 0x2C, L"tab" },
+	{ 0x34, L"back" },
+	{ 0x34, L"backspace" },
+	{ 0x34, L"bksp" },
+	{ 0x0C, L"enter" },
+	{ 0x0C, L"return" },
+	{ 0x1C, L"esc" },
+	{ 0x1C, L"escape" },
+	{ 0x27, L"fuji" },
+	{ 0x27, L"inv" },
+	{ 0x27, L"invert" },
+	{ 0x11, L"help" },
+	{ 0x76, L"clear" },
+	{ 0xB4, L"del" },
+	{ 0xB4, L"delete" },
+	{ 0xB7, L"ins" },
+	{ 0xB7, L"insert" },
+	{ 0x3C, L"caps" },
+	{ 0x86, L"left" },
+	{ 0x87, L"right" },
+	{ 0x8E, L"up" },
+	{ 0x8F, L"down" },
+};
+
+// Case-insensitive wchar_t comparison for scancode name lookup.
+static bool WcsiEqual(const wchar_t *a, size_t alen, const wchar_t *b) {
+	size_t blen = wcslen(b);
+	if (alen != blen) return false;
+	for (size_t i = 0; i < alen; ++i) {
+		wchar_t ca = a[i], cb = b[i];
+		if (ca >= L'A' && ca <= L'Z') ca += L'a' - L'A';
+		if (cb >= L'A' && cb <= L'Z') cb += L'a' - L'A';
+		if (ca != cb) return false;
+	}
+	return true;
+}
+
+void ATUIPasteText() {
+	VDStringW clipText;
+	if (!ATUIClipGetText(clipText) || clipText.empty())
+		return;
+
+	auto& pokey = g_sim.GetPokey();
+	const wchar_t *s = clipText.data();
+	size_t len = clipText.size();
+	vdfastvector<wchar_t> pasteChars;
+
+	while (len--) {
+		wchar_t c = *s++;
+		if (!c) continue;
+
+		int repeat = 1;
+		switch (c) {
+			case L'\u200B': case L'\u200C': case L'\u200D':
+			case L'\u200E': case L'\u200F': continue;
+			case L'\u2010': case L'\u2011': case L'\u2012':
+			case L'\u2013': case L'\u2014': case L'\u2015': c = L'-'; break;
+			case L'\u2018': case L'\u2019': c = L'\''; break;
+			case L'\u201C': case L'\u201D': c = L'"'; break;
+			case L'\u2026': c = L'.'; repeat = 3; break;
+			case L'\uFEFF': continue;
+		}
+		while (repeat--) pasteChars.push_back(c);
+	}
+
+	pasteChars.push_back(0);
+	wchar_t skipLT = 0;
+	uint8 scancodeModifier = 0;
+	const wchar_t *t = pasteChars.data();
+
+	while (wchar_t c = *t++) {
+		if (c == skipLT) { skipLT = 0; continue; }
+		skipLT = 0;
+
+		// {token} parsing — matches Windows main.cpp Paste() exactly.
+		// Supports: {enter}, {tab}, {esc}, {left}, {right}, {up}, {down},
+		// {fuji}, {help}, {clear}, {del}, {ins}, {caps}, {back},
+		// and modifier prefixes: {shift-X}, {ctrl-X}, {+X}, {^X}.
+		if (c == L'{') {
+			const wchar_t *start = t;
+			while (*t && *t != L'}')
+				++t;
+			if (*t != L'}')
+				break;
+
+			const wchar_t *nameStart = start;
+			size_t nameLen = (size_t)(t - start);
+			++t; // skip '}'
+
+			// Parse modifier prefixes
+			while (nameLen > 0) {
+				if (nameStart[0] == L'+') {
+					scancodeModifier |= 0x40;
+					++nameStart; --nameLen;
+					continue;
+				}
+				if (nameLen >= 6 && (WcsiEqual(nameStart, 6, L"shift-") || WcsiEqual(nameStart, 6, L"shift+"))) {
+					scancodeModifier |= 0x40;
+					nameStart += 6; nameLen -= 6;
+					continue;
+				}
+				if (nameStart[0] == L'^') {
+					scancodeModifier |= 0x80;
+					++nameStart; --nameLen;
+					continue;
+				}
+				if (nameLen >= 5 && (WcsiEqual(nameStart, 5, L"ctrl-") || WcsiEqual(nameStart, 5, L"ctrl+"))) {
+					scancodeModifier |= 0x80;
+					nameStart += 5; nameLen -= 5;
+					continue;
+				}
+				break;
+			}
+
+			// Look up scancode name
+			bool found = false;
+			for (const auto& entry : kScancodeNames) {
+				if (WcsiEqual(nameStart, nameLen, entry.name)) {
+					uint8 scancode = entry.scancode;
+					if (scancodeModifier)
+						scancode = (scancode & 0x3F) | scancodeModifier;
+					pokey.PushKey(scancode, false, true, false, true);
+					found = true;
+					break;
+				}
+			}
+
+			scancodeModifier = 0;
+			continue;
+		}
+
+		const uint8 kInvalidScancode = 0xFF;
+		uint8 scancode = kInvalidScancode;
+
+		switch (c) {
+			case L'\r': case L'\n':
+				skipLT = c ^ (L'\r' ^ L'\n');
+				scancode = 0x0C; break;
+			case L'\t': scancode = 0x2C; break;
+			case L'\x001B': scancode = 0x1C; break;
+			default:
+				if (ATUIGetDefaultScanCodeForCharacter(c, scancode)) {
+					// For control characters, inject an ESC prefix so they
+					// display as visible characters — matches Windows exactly.
+					switch (scancode) {
+						case 0x1C: case 0x8E: case 0x8F: case 0x86:
+						case 0x87: case 0x82: case 0x76: case 0x34: case 0x2C:
+							pokey.PushKey(0x1C, false, true, false, true);
+							break;
+					}
+				} else scancode = kInvalidScancode;
+				break;
+		}
+
+		if (scancode != kInvalidScancode)
+			pokey.PushKey(scancode | scancodeModifier, false, true, false, true);
+
+		scancodeModifier = 0;
+	}
+}
+
 static const SDL_DialogFileFilter kCartFilters[] = {
 	{ "Cartridge Images", "car;rom;bin" },
 	{ "All Files", "*" },
@@ -220,11 +427,11 @@ static const SDL_DialogFileFilter kCasSaveFilters[] = {
 // =========================================================================
 
 static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
-	if (ImGui::MenuItem("Boot Image...", "Ctrl+O"))
+	if (ImGui::MenuItem("Boot Image...", "Alt+B"))
 		SDL_ShowOpenFileDialog(BootImageCallback, nullptr, window, kImageFilters, 2, nullptr, false);
 
-	if (ImGui::MenuItem("Open Image..."))
-		SDL_ShowOpenFileDialog(OpenImageCallback, nullptr, window, kImageFilters, 2, nullptr, false);
+	if (ImGui::MenuItem("Open Image...", "Alt+O"))
+		ATUIShowOpenImageDialog(window);
 
 	// Recently Booted (MRU list)
 	uint32 mruCount = ATGetMRUCount();
@@ -261,7 +468,7 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 	ImGui::Separator();
 
-	if (ImGui::MenuItem("Disk Drives..."))
+	if (ImGui::MenuItem("Disk Drives...", "Alt+D"))
 		state.showDiskManager = true;
 
 	// Attach Disk submenu (matches Windows: Rotate + D1-D8)
@@ -388,10 +595,10 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		if (ImGui::MenuItem("Save State..."))
 			SDL_ShowSaveFileDialog(SaveStateCallback, nullptr, window, stateFilters, 1, nullptr);
 
-		if (ImGui::MenuItem("Quick Load State", "F7", false, g_pQuickSaveState != nullptr))
+		if (ImGui::MenuItem("Quick Load State", nullptr, false, g_pQuickSaveState != nullptr))
 			ATUIQuickLoadState();
 
-		if (ImGui::MenuItem("Quick Save State", "F8"))
+		if (ImGui::MenuItem("Quick Save State"))
 			ATUIQuickSaveState();
 	}
 
@@ -545,7 +752,7 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 // View menu
 // =========================================================================
 
-static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, SDL_Renderer *renderer) {
+static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, IDisplayBackend *backend) {
 	bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
 	if (ImGui::MenuItem("Full Screen", "Alt+Enter", isFullscreen))
 		SDL_SetWindowFullscreen(window, !isFullscreen);
@@ -669,13 +876,22 @@ static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 	ImGui::Separator();
 
-	// VSync toggle — query current state from renderer
+	// VSync toggle — works with both GL and SDL_Renderer backends
 	{
-		int vsync = 0;
-		SDL_GetRenderVSync(renderer, &vsync);
-		bool vsyncOn = (vsync != 0);
-		if (ImGui::MenuItem("Vertical Sync", nullptr, vsyncOn))
-			SDL_SetRenderVSync(renderer, vsyncOn ? 0 : 1);
+		bool vsyncOn = false;
+		if (backend->GetType() == DisplayBackendType::OpenGL33) {
+			int interval = 0;
+			SDL_GL_GetSwapInterval(&interval);
+			vsyncOn = (interval != 0);
+			if (ImGui::MenuItem("Vertical Sync", nullptr, vsyncOn))
+				SDL_GL_SetSwapInterval(vsyncOn ? 0 : 1);
+		} else {
+			int vsync = 0;
+			SDL_GetRenderVSync(backend->GetSDLRenderer(), &vsync);
+			vsyncOn = (vsync != 0);
+			if (ImGui::MenuItem("Vertical Sync", nullptr, vsyncOn))
+				SDL_SetRenderVSync(backend->GetSDLRenderer(), vsyncOn ? 0 : 1);
+		}
 	}
 
 	bool showFPS = ATUIGetShowFPS();
@@ -705,7 +921,8 @@ static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 	if (ImGui::MenuItem("Adjust Colors..."))
 		state.showAdjustColors = true;
 
-	ImGui::MenuItem("Adjust Screen Effects...", nullptr, false, false);  // placeholder — needs shader support
+	if (ImGui::MenuItem("Adjust Screen Effects..."))
+		state.showScreenEffects = true;
 	ImGui::MenuItem("Customize HUD...", nullptr, false, false);          // placeholder
 	ImGui::MenuItem("Calibrate...", nullptr, false, false);              // placeholder
 
@@ -717,28 +934,25 @@ static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 	ImGui::Separator();
 
 	// Copy/Save Frame
-	if (ImGui::MenuItem("Copy Frame to Clipboard"))
+	if (ImGui::MenuItem("Copy Frame to Clipboard", "Alt+Shift+M"))
 		g_copyFrameRequested = true;
 	ImGui::MenuItem("Copy Frame to Clipboard (True Aspect)", nullptr, false, false);  // placeholder
 
-	if (ImGui::MenuItem("Save Frame...")) {
-		static const SDL_DialogFileFilter filters[] = {
-			{ "BMP Images", "bmp" },
-		};
-		SDL_ShowSaveFileDialog(ATUISaveFrameCallback, nullptr, window, filters, 1, nullptr);
-	}
+	if (ImGui::MenuItem("Save Frame...", "Alt+F10"))
+		ATUIShowSaveFrameDialog(window);
 	ImGui::MenuItem("Save Frame (True Aspect)...", nullptr, false, false);  // placeholder
 
 	// Text Selection submenu
 	if (ImGui::BeginMenu("Text Selection")) {
-		ImGui::MenuItem("Copy Text", nullptr, false, false);          // placeholder
-		ImGui::MenuItem("Copy Escaped Text", nullptr, false, false);  // placeholder
-		ImGui::MenuItem("Copy Hex", nullptr, false, false);           // placeholder
-		ImGui::MenuItem("Copy Unicode", nullptr, false, false);       // placeholder
-		ImGui::MenuItem("Paste Text", nullptr, false, false);         // placeholder
+		ImGui::MenuItem("Copy Text", "Alt+Shift+C", false, false);        // placeholder — needs display text selection
+		ImGui::MenuItem("Copy Escaped Text", nullptr, false, false);      // placeholder
+		ImGui::MenuItem("Copy Hex", nullptr, false, false);               // placeholder
+		ImGui::MenuItem("Copy Unicode", nullptr, false, false);           // placeholder
+		if (ImGui::MenuItem("Paste Text", "Alt+Shift+V"))
+			ATUIPasteText();
 		ImGui::Separator();
-		ImGui::MenuItem("Select All", nullptr, false, false);         // placeholder
-		ImGui::MenuItem("Deselect", nullptr, false, false);           // placeholder
+		ImGui::MenuItem("Select All", "Alt+Shift+A", false, false);       // placeholder — needs display text selection
+		ImGui::MenuItem("Deselect", "Alt+Shift+D", false, false);         // placeholder — needs display text selection
 		ImGui::EndMenu();
 	}
 }
@@ -793,7 +1007,7 @@ static void RenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 		ImGui::EndMenu();
 	}
 
-	if (ImGui::MenuItem("Configure System..."))
+	if (ImGui::MenuItem("Configure System...", "Alt+S"))
 		state.showSystemConfig = true;
 
 	ImGui::Separator();
@@ -832,8 +1046,18 @@ static void RenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 
 	// Rewind submenu
 	if (ImGui::BeginMenu("Rewind")) {
-		ImGui::MenuItem("Quick Rewind", nullptr, false, false);  // placeholder
-		ImGui::MenuItem("Rewind...", nullptr, false, false);      // placeholder
+		IATAutoSaveManager &mgr = sim.GetAutoSaveManager();
+		bool rewindEnabled = mgr.GetRewindEnabled();
+
+		if (ImGui::MenuItem("Quick Rewind", nullptr, false, rewindEnabled))
+			ATUIQuickRewind();
+		if (ImGui::MenuItem("Rewind...", nullptr, false, rewindEnabled)) {
+			if (ATUIOpenRewindDialog())
+				state.showRewind = true;
+		}
+		ImGui::Separator();
+		if (ImGui::MenuItem("Enable Rewind Recording", nullptr, rewindEnabled))
+			mgr.SetRewindEnabled(!rewindEnabled);
 		ImGui::EndMenu();
 	}
 
@@ -993,7 +1217,7 @@ static void RenderInputMenu(ATSimulator &sim, ATUIState &state) {
 		state.showInputSetup = true;
 
 	// Cycle Quick Maps — cycles through maps marked as quick-cycle
-	if (ImGui::MenuItem("Cycle Quick Maps")) {
+	if (ImGui::MenuItem("Cycle Quick Maps", "Shift+F1")) {
 		if (pIM) {
 			ATInputMap *pMap = pIM->CycleQuickMaps();
 			if (pMap) {
@@ -1013,7 +1237,7 @@ static void RenderInputMenu(ATSimulator &sim, ATUIState &state) {
 	{
 		bool mouseMapped = pIM && pIM->IsMouseMapped();
 		bool captured = ATUIIsMouseCaptured();
-		if (ImGui::MenuItem("Capture Mouse", nullptr, captured, mouseMapped)) {
+		if (ImGui::MenuItem("Capture Mouse", "F12", captured, mouseMapped)) {
 			if (captured)
 				ATUIReleaseMouse();
 			else
@@ -1030,8 +1254,10 @@ static void RenderInputMenu(ATSimulator &sim, ATUIState &state) {
 
 	ImGui::Separator();
 
-	ImGui::MenuItem("Light Pen/Gun...", nullptr, false, false);          // placeholder
-	ImGui::MenuItem("Recalibrate Light Pen/Gun", nullptr, false, false); // placeholder
+	if (ImGui::MenuItem("Light Pen/Gun..."))
+		state.showLightPen = true;
+	if (ImGui::MenuItem("Recalibrate Light Pen/Gun"))
+		ATUIRecalibrateLightPen();
 
 	ImGui::Separator();
 
@@ -1052,8 +1278,9 @@ static void RenderInputMenu(ATSimulator &sim, ATUIState &state) {
 // Cheat menu
 // =========================================================================
 
-static void RenderCheatMenu(ATSimulator &sim) {
-	ImGui::MenuItem("Cheater...", nullptr, false, false);
+static void RenderCheatMenu(ATSimulator &sim, ATUIState &state) {
+	if (ImGui::MenuItem("Cheater...", "Alt+Shift+H"))
+		state.showCheater = true;
 	ImGui::Separator();
 
 	ATGTIAEmulator& gtia = sim.GetGTIA();
@@ -1082,7 +1309,8 @@ static void RenderDebugMenu(ATSimulator &sim) {
 		else
 			ATUIDebuggerOpen();
 	}
-	ImGui::MenuItem("Open Source File...", nullptr, false, false);       // TODO: Phase 8
+	if (ImGui::MenuItem("Open Source File...", "Alt+Shift+O", false, dbgEnabled))
+		ATUIShowOpenSourceFileDialog(g_pWindow);
 	ImGui::MenuItem("Source File List...", nullptr, false, false);       // TODO: Phase 8
 
 	if (ImGui::BeginMenu("Window", dbgEnabled)) {
@@ -1127,7 +1355,11 @@ static void RenderDebugMenu(ATSimulator &sim) {
 			int next = ((int)am + 1) % ATGTIAEmulator::kAnalyzeCount;
 			gtia.SetAnalysisMode((ATGTIAEmulator::AnalysisMode)next);
 		}
-		ImGui::MenuItem("Cycle ANTIC Visualization", nullptr, false, false);  // TODO
+		if (ImGui::MenuItem("Cycle ANTIC Visualization")) {
+			ATAnticEmulator& antic = sim.GetAntic();
+			int next = ((int)antic.GetAnalysisMode() + 1) % ATAnticEmulator::kAnalyzeModeCount;
+			antic.SetAnalysisMode((ATAnticEmulator::AnalysisMode)next);
+		}
 
 		ImGui::EndMenu();
 	}
@@ -1138,8 +1370,16 @@ static void RenderDebugMenu(ATSimulator &sim) {
 			if (ImGui::MenuItem("Break at EXE Run Address", nullptr, breakAtExe))
 				dbg->SetBreakOnEXERunAddrEnabled(!breakAtExe);
 		}
-		ImGui::MenuItem("Auto-Reload ROMs on Cold Reset", nullptr, false, false);  // TODO
-		ImGui::MenuItem("Randomize Memory On EXE Load", nullptr, false, false);    // TODO
+		{
+			bool autoReload = sim.IsROMAutoReloadEnabled();
+			if (ImGui::MenuItem("Auto-Reload ROMs on Cold Reset", nullptr, autoReload))
+				sim.SetROMAutoReloadEnabled(!autoReload);
+		}
+		{
+			bool randomEXE = sim.IsRandomFillEXEEnabled();
+			if (ImGui::MenuItem("Randomize Memory On EXE Load", nullptr, randomEXE))
+				sim.SetRandomFillEXEEnabled(!randomEXE);
+		}
 		ImGui::Separator();
 		ImGui::MenuItem("Change Font...", nullptr, false, false);                   // TODO
 		ImGui::EndMenu();
@@ -1147,7 +1387,7 @@ static void RenderDebugMenu(ATSimulator &sim) {
 
 	ImGui::Separator();
 
-	if (ImGui::MenuItem("Run/Break", "F5", false, dbgEnabled))
+	if (ImGui::MenuItem("Run/Break", "F5/F8", false, dbgEnabled))
 		ATUIDebuggerRunStop();
 	if (ImGui::MenuItem("Break", nullptr, false, dbgEnabled && dbgRunning))
 		ATUIDebuggerBreak();
@@ -1160,6 +1400,12 @@ static void RenderDebugMenu(ATSimulator &sim) {
 		ATUIDebuggerStepOver();
 	if (ImGui::MenuItem("Step Out", "Shift+F11", false, dbgEnabled && !dbgRunning))
 		ATUIDebuggerStepOut();
+	if (ImGui::MenuItem("Toggle Breakpoint", "F9", false, dbgEnabled && !dbgRunning))
+		ATUIDebuggerToggleBreakpoint();
+	if (ImGui::MenuItem("New Breakpoint...", "Ctrl+B", false, dbgEnabled)) {
+		ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
+		ATUIDebuggerShowBreakpointDialog(-1);
+	}
 
 	ImGui::Separator();
 
@@ -1211,7 +1457,15 @@ static void RenderRecordMenu(ATSimulator &sim, SDL_Window *window) {
 		}, nullptr, window, sapFilters, 1, nullptr);
 	}
 
-	ImGui::MenuItem("Record VGM...", nullptr, false, false);  // placeholder — excluded from build (wchar_t size)
+	if (ImGui::MenuItem("Record VGM...", nullptr, false, !recording)) {
+		static const SDL_DialogFileFilter vgmFilters[] = {
+			{ "VGM Audio", "vgm" }, { "All Files", "*" },
+		};
+		SDL_ShowSaveFileDialog([](void *, const char * const *fl, int) {
+			if (fl && fl[0])
+				ATUIPushDeferred(kATDeferred_StartRecordVGM, fl[0]);
+		}, nullptr, window, vgmFilters, 1, nullptr);
+	}
 
 	ImGui::Separator();
 
@@ -1366,22 +1620,23 @@ static void RenderHelpMenu(ATUIState &state) {
 
 	ImGui::MenuItem("Export Debugger Help...", nullptr, false, false);  // placeholder
 	ImGui::MenuItem("Check For Updates", nullptr, false, false);       // placeholder — N/A on Linux
-	ImGui::MenuItem("Altirra Home...", nullptr, false, false);         // placeholder
+	if (ImGui::MenuItem("Altirra Home..."))
+		ATLaunchURL(L"https://www.virtualdub.org/altirra.html");
 }
 
 // =========================================================================
 // Main menu bar
 // =========================================================================
 
-void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, SDL_Renderer *renderer, ATUIState &state) {
+void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *backend, ATUIState &state) {
 	if (!ImGui::BeginMainMenuBar())
 		return;
 
 	if (ImGui::BeginMenu("File")) { RenderFileMenu(sim, state, window); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("View")) { RenderViewMenu(sim, state, window, renderer); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("View")) { RenderViewMenu(sim, state, window, backend); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("System")) { RenderSystemMenu(sim, state); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Input")) { RenderInputMenu(sim, state); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Cheat")) { RenderCheatMenu(sim); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Cheat")) { RenderCheatMenu(sim, state); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Debug")) { RenderDebugMenu(sim); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Record")) { RenderRecordMenu(sim, window); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Tools")) { RenderToolsMenu(sim, state, window); ImGui::EndMenu(); }

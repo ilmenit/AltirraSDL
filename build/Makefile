@@ -311,6 +311,30 @@ AltirraSDL/fast:
 	$(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build
 .PHONY : AltirraSDL/fast
 
+_deps/imgui-src/backends/imgui_impl_opengl3.o: _deps/imgui-src/backends/imgui_impl_opengl3.cpp.o
+.PHONY : _deps/imgui-src/backends/imgui_impl_opengl3.o
+
+# target to build an object file
+_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.o
+.PHONY : _deps/imgui-src/backends/imgui_impl_opengl3.cpp.o
+
+_deps/imgui-src/backends/imgui_impl_opengl3.i: _deps/imgui-src/backends/imgui_impl_opengl3.cpp.i
+.PHONY : _deps/imgui-src/backends/imgui_impl_opengl3.i
+
+# target to preprocess a source file
+_deps/imgui-src/backends/imgui_impl_opengl3.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.i
+.PHONY : _deps/imgui-src/backends/imgui_impl_opengl3.cpp.i
+
+_deps/imgui-src/backends/imgui_impl_opengl3.s: _deps/imgui-src/backends/imgui_impl_opengl3.cpp.s
+.PHONY : _deps/imgui-src/backends/imgui_impl_opengl3.s
+
+# target to generate assembly for a file
+_deps/imgui-src/backends/imgui_impl_opengl3.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/backends/imgui_impl_opengl3.cpp.s
+.PHONY : _deps/imgui-src/backends/imgui_impl_opengl3.cpp.s
+
 _deps/imgui-src/backends/imgui_impl_sdl3.o: _deps/imgui-src/backends/imgui_impl_sdl3.cpp.o
 .PHONY : _deps/imgui-src/backends/imgui_impl_sdl3.o
 
@@ -502,6 +526,9 @@ help:
 	@echo "... imgui"
 	@echo "... system"
 	@echo "... vdjson"
+	@echo "... _deps/imgui-src/backends/imgui_impl_opengl3.o"
+	@echo "... _deps/imgui-src/backends/imgui_impl_opengl3.i"
+	@echo "... _deps/imgui-src/backends/imgui_impl_opengl3.s"
 	@echo "... _deps/imgui-src/backends/imgui_impl_sdl3.o"
 	@echo "... _deps/imgui-src/backends/imgui_impl_sdl3.i"
 	@echo "... _deps/imgui-src/backends/imgui_impl_sdl3.s"

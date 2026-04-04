@@ -254,23 +254,36 @@ See [UI.md](UI.md).
 **Gate:** All common operations accessible via GUI. Can configure hardware,
 mount disk images, change settings -- all via ImGui.
 
-### Phase 7: Debugger UI
+### Phase 7: Debugger UI [DONE — panes complete, context menus partial]
 
-Port the debugger panes (disassembly, memory, registers, console,
-breakpoints) to Dear ImGui with docking.
+All 13 debugger panes ported to Dear ImGui with docking: Console,
+Registers, Disassembly, History, Memory (x4), Watch (x4), Call Stack,
+Breakpoints, Targets, Source, Debug Display, Printer Output.
 
-See [UI.md](UI.md) debugger section.
+See [DEBUGGER.md](DEBUGGER.md) for details.
 
-**Gate:** Full debugging workflow works on Linux.
+Remaining: Profiler/Trace Viewer UI (0%), Verifier dialog, Breakpoint
+editor dialog, context menus for disassembly/memory/history panes (~45
+items missing).
 
-### Phase 8: Network and Remaining Features
+**Gate:** Full debugging workflow works on Linux. ✓
+
+### Phase 8: Network and Remaining Features [MOSTLY DONE]
 
 Network socket emulation is implemented using POSIX sockets with `poll()`
 (see [NETWORK.md](NETWORK.md)). The `ATNetworkSockets` library compiles
-and links for Linux and macOS. Port any remaining features (profiler,
-etc.) as needed.
+and links for Linux and macOS.
 
-**Gate:** Feature parity with Windows build.
+Implemented: Cheater, Rewind, Audio/Video/SAP/VGM recording, Screen
+Effects, Input Mapping, all ~41 device config dialogs, Setup Wizard,
+Compat DB editor.
+
+Remaining: Tape Editor (full waveform editor), Profiler/Trace Viewer,
+Create VHD, context menu gaps (~156 items), Adjust Colors completeness,
+Keyboard Customize dialog.
+
+**Gate:** Feature parity with Windows build — ~89% dialog coverage,
+~28% context menu coverage.
 
 ## File Organization
 

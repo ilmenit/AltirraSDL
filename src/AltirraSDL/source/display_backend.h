@@ -1,0 +1,90 @@
+//	AltirraSDL - Display backend abstraction
+//	Defines the interface for display rendering backends (SDL_Renderer or OpenGL).
+
+#pragma once
+
+#include <vd2/system/vdtypes.h>
+
+struct SDL_Renderer;
+struct SDL_Window;
+struct VDVideoDisplayScreenFXInfo;
+struct VDDScreenMaskParams;
+
+enum class DisplayBackendType {
+	SDLRenderer,
+	OpenGL33
+};
+
+class IDisplayBackend {
+public:
+	virtual ~IDisplayBackend() = default;
+
+	virtual DisplayBackendType GetType() const = 0;
+
+	// Upload emulator frame pixels (XRGB8888) to the GPU texture.
+	virtual void UploadFrame(const void *pixels, int width, int height, int pitch) = 0;
+
+	// Clear the backbuffer to black, prepare for a new frame.
+	virtual void BeginFrame() = 0;
+
+	// Render the emulator frame with active effects to the given destination rect.
+	virtual void RenderFrame(float dstX, float dstY, float dstW, float dstH,
+		int srcW, int srcH) = 0;
+
+	// Finalize and present the frame (swap buffers / SDL_RenderPresent).
+	virtual void Present() = 0;
+
+	// Read back pixels from the framebuffer for frame capture.
+	// Returns true on success.
+	virtual bool ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) = 0;
+
+	// Notify of window resize.
+	virtual void OnResize(int w, int h) = 0;
+
+	// Returns true if this backend supports GPU shader effects.
+	virtual bool SupportsScreenFX() const = 0;
+
+	// Update screen FX parameters (scanlines, bloom, masks, etc.).
+	// No-op if SupportsScreenFX() returns false.
+	virtual void UpdateScreenFX(const VDVideoDisplayScreenFXInfo &info) = 0;
+
+	// Update filter mode (point, bilinear, sharp bilinear, bicubic).
+	virtual void SetFilterMode(int mode) = 0;
+
+	// Update filter sharpness for sharp bilinear.
+	virtual void SetFilterSharpness(float sharpness) = 0;
+
+	// Returns true if external shader presets (librashader) are available.
+	virtual bool SupportsExternalShaders() const = 0;
+
+	// Load a librashader preset (.slangp / .glslp). Returns true on success.
+	virtual bool LoadShaderPreset(const char *path) = 0;
+
+	// Clear the active shader preset (restores built-in effects).
+	virtual void ClearShaderPreset() = 0;
+
+	// Returns the path of the active shader preset, or empty string.
+	virtual const char *GetShaderPresetPath() const = 0;
+
+	// Get the underlying SDL_Renderer (for ImGui SDLRenderer3 backend).
+	// Returns nullptr for the OpenGL backend.
+	virtual SDL_Renderer *GetSDLRenderer() = 0;
+
+	// Get the SDL_Window associated with this backend.
+	virtual SDL_Window *GetWindow() = 0;
+
+	// Whether the backend has a valid emulator texture to render.
+	virtual bool HasTexture() const = 0;
+	virtual int GetTextureWidth() const = 0;
+	virtual int GetTextureHeight() const = 0;
+
+	// Return the emulator frame texture as an ImGui-compatible texture ID.
+	// For OpenGL backend this is the GL texture name cast to ImTextureID.
+	// For SDL_Renderer backend this is the SDL_Texture* cast to ImTextureID.
+	virtual void *GetImGuiTextureID() const = 0;
+};
+
+// Global accessor — returns the active display backend, or nullptr if not yet
+// initialized.  Used by ui_rewind.cpp and ui_screenfx.cpp for texture creation.
+IDisplayBackend *ATUIGetDisplayBackend();
+void ATUISetDisplayBackend(IDisplayBackend *backend);

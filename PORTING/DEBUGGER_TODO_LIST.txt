@@ -55,20 +55,30 @@ Phase 5: Disassembly pane                               [DONE]
   [x] Auto-scroll to frame PC / PC / focus address on rebuild
 
 Phase 6: Memory pane (x4)                               [DONE]
-  [x] Create ui_dbg_memory.cpp
+  [x] Create ui_dbg_memory.cpp (split: .h, .cpp, _hexdump.cpp, _bitmap.cpp)
   [x] 4 independent instances (Memory 1-4 via kATUIPaneId_MemoryN)
   [x] Hex viewer: Address | bytes | ASCII interpretation
   [x] Value modes: Hex Bytes, Hex Words, Dec Bytes, Dec Words
   [x] Interpret modes: None, ATASCII, Internal (correct XOR transform)
-  [x] Inline hex byte editing with nibble-by-nibble entry
-  [x] Arrow key navigation during editing (left/right/up/down)
-  [x] Address bar navigation with expression evaluation
+  [x] Bitmap interpret modes: 1/2-bpp Font, 1/2/4/8-bpp Graphics (SDL_Texture)
+  [x] Inline editing in all value modes (hex bytes/words, dec bytes/words)
+  [x] ATASCII/Internal direct typing in interpretation column
+  [x] Selection/highlight system with dual-column highlighting + hover
+  [x] Arrow key navigation with commit-before-move
+  [x] Ctrl+Up/Down scroll without moving selection
+  [x] Enter to commit+advance, Tab to toggle hex/interp column
+  [x] Address bar navigation with expression evaluation + history dropdown
   [x] Address space selector (CPU, ANTIC, VBXE, Ext RAM, RAM, ROM, Cart, PORTB)
-  [x] Configurable columns per row
+  [x] Column preset dropdown (1-256, standard values)
+  [x] Column constraints (word mode: even, font mode: multiple of 8)
   [x] Change detection (modified bytes shown in blue)
+  [x] Bulk memory reading with wrap-around handling
   [x] Page Up/Down scrolling (address space bits preserved)
-  [x] Mouse wheel scrolling
-  [x] Right-click context menu: Toggle Read/Write Breakpoints
+  [x] Mouse wheel scrolling + Ctrl+wheel zoom (0.1x-10x)
+  [x] Context menu: Show Values As, Interpret As, Reset Zoom,
+      Toggle Read/Write Breakpoints, Add to Watch Window, Track On-Screen
+  [x] Per-pane settings persistence (view address, columns, value/interpret
+      mode, address space — saved to registry on destruction, loaded on creation)
 
 Phase 7: Simple panes                                   [PARTIAL]
   [x] ui_dbg_callstack.cpp - stack frame list with symbol lookup
@@ -87,44 +97,95 @@ Phase 7: Simple panes                                   [PARTIAL]
       [x] Enable button when CPU history tracking is off
       [x] Auto-scroll to bottom (most recent) on rebuild
       [x] Efficient batch extraction via IATDebugTargetHistory
-  [ ] ui_dbg_watch.cpp - expression watches (x4 instances)
-  [ ] ui_dbg_targets.cpp - debug target selection
+  [x] ui_dbg_watch.cpp - expression watches (x4 instances)
+  [x] ui_dbg_targets.cpp - debug target selection
 
-Phase 8: Specialized panes                              [TODO]
-  [ ] ui_dbg_source.cpp - source code view with breakpoints
-  [ ] ui_dbg_debugdisplay.cpp - ANTIC/GTIA register visualization
-  [ ] ui_dbg_printer.cpp - printer device output
+Phase 8: Specialized panes                              [DONE]
+  [x] ui_dbg_source.cpp - source code view with breakpoints
+  [x] ui_dbg_debugdisplay.cpp - ANTIC/GTIA register visualization
+  [x] ui_dbg_printer.cpp - printer device output
 
-Phase 9: Debug menu completion                          [PARTIAL]
-  [x] Window submenu - Console, Registers, Disassembly, History,
-      Memory 1-4, Call Stack, Breakpoints wired
-  [ ] Window submenu - Watch 1-4, Targets, Debug Display (disabled)
-  [ ] Open Source File - SDL file dialog
-  [ ] Source File List - ImGui dialog
-  [ ] Options: Auto-Reload ROMs on Cold Reset
-  [ ] Options: Randomize Memory On EXE Load
+Phase 9: Debug menu completion                          [MOSTLY DONE]
+  [x] Window submenu - All panes wired: Console, Registers, Disassembly,
+      History, Memory 1-4, Call Stack, Breakpoints, Watch 1-4, Targets,
+      Debug Display, Source, Printer Output
+  [x] Open Source File - SDL file dialog
+  [x] Source File List - ImGui dialog
+  [x] Options: Auto-Reload ROMs on Cold Reset
+  [x] Options: Randomize Memory On EXE Load
   [ ] Options: Change Font
-  [ ] F9 - Toggle Breakpoint (when disassembly/source focused)
+  [x] F9 - Toggle Breakpoint (ATUIDebuggerToggleBreakpoint)
+  [x] Configure System > Debugger page (symbol loading, script auto-load,
+      system/kernel symbols, debug link)
+
+Phase 9b: Context menu gaps                             [TODO]
+  Disassembly context menu (ui_dbg_disassembly.cpp) — 4/18 items:
+  [ ] Show Code Bytes toggle
+  [ ] Show Labels toggle
+  [ ] Show Label Namespaces toggle
+  [ ] Show Procedure Breaks toggle
+  [ ] Show Call Previews toggle
+  [ ] Show Mixed Source/Disasm toggle
+  [ ] 65C816 M/X mode submenu (7 items: Auto, Current Context, M8X8,
+      M8X16, M16X8, M16X16, Emulation)
+  [ ] Use DP Register State toggle
+
+  Memory context menu (ui_dbg_memory.cpp) — done:
+  [x] Show Values As submenu (Bytes, Bytes Dec, Words, Words Dec)
+  [x] Interpret As submenu (None, ATASCII, Internal, 1/2-bpp Font,
+      1/2/4/8-bpp Graphics)
+  [x] Reset Zoom
+  [x] Track On-Screen (on-screen watch overlay, 8 slots)
+
+  History context menu (ui_dbg_history.cpp) — 1/21 items:
+  [ ] Show options (PC Address, Global PC, Registers, Special Registers,
+      Flags, Code Bytes, Labels, Label Namespaces)
+  [ ] Collapse options (Loops, Calls, Interrupts)
+  [ ] Timestamp modes (Reset/Set Origin, Beam Position, Microseconds,
+      Cycles, Unhalted Cycles, Tape Position Samples/Seconds)
+  [ ] Copy Visible to Clipboard
+
+  Console context menu (ui_dbg_console.cpp) — missing Copy
+  Debug Display context menu — 3 missing (Force Update, palette modes)
+  Source context menu — 2 missing (File Explorer, Default Editor)
 
 Phase 10: Verifier and breakpoint editor                [TODO]
   [ ] ui_dbg_verifier.cpp - 11 verification checks
-  [ ] ui_dbg_breakpoint_edit.cpp - new/edit breakpoint dialog
+  [ ] Breakpoint editor dialog (add/edit) - location type (PC address),
+      condition editor (expression), action (stop/trace), command-on-hit
   [ ] Enable cpuheatmap trap commands
 
 Phase 11: Profiler and trace viewer                     [TODO]
-  [ ] ui_dbg_profiler.cpp - timeline, statistics, call tree
-  [ ] ui_dbg_traceviewer.cpp - multi-track timeline
+  [ ] ui_dbg_profiler.cpp - Profile View pane:
+      - Profile mode menu (instruction/function/call graph/basic block/BASIC sampling)
+      - Counter options (cycles/insns/branch taken/not taken/page crossing/redundant)
+      - Frame trigger (VBlank/PC address)
+      - Profile list with CSV export
+      - Global addresses toggle
+  [ ] ui_dbg_traceviewer.cpp - Performance Analyzer:
+      - Multi-track timeline (CPU history, ANTIC, POKEY, PIA events)
+      - CPU profile tab, event log tab
+      - Timescale bar
+      - Import Atari800 trace / Export Chrome trace
+      - Start Native Trace
+      - View Memory Statistics
+      - Tape position correlation
   [ ] Trace settings dialog
   [ ] Profiler boundary rule dialog
 
-Phase 12: Tool windows                                  [TODO]
-  [ ] ui_tool_tapeeditor.cpp - tape waveform editor
-  [ ] ui_tool_diskexplorer.cpp - file system browser
+Phase 12: Tape Editor                                   [TODO]
+  [ ] ui_tool_tapeeditor.cpp - Full tape waveform editor:
+      - File menu: Open, Reload, Save As CAS/WAV
+      - Edit menu: Undo/Redo, Cut/Copy/Paste/Delete,
+        Convert Standard/Raw Block, Repeat Analysis
+      - View menu: FSK/Turbo/No Signal/Waveform/Spectrogram,
+        Frequency Guidelines
+      - Data menu: Extract C: File
+      - Options: Capture SIO, Store Waveform On Load
+      - Peak waveform visualization
+  Note: Disk Explorer is already in ui_tools.cpp (not a debugger tool)
 
 Phase 13: Polish                                        [TODO]
+  [ ] Debug font dialog (IDD_DEBUG_CHOOSE_FONT)
   [ ] Debugger settings persistence verification
-  [ ] Debug font dialog
-  [ ] Source file list dialog
-  [ ] Debug Link toggle
   [ ] Autotest command compilation verification
-  [ ] Configure System > Debugger page
