@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <vector>
 #include <vd2/system/vdtypes.h>
+#include "display_librashader.h"
 
 struct SDL_Renderer;
 struct SDL_Window;
@@ -65,6 +67,15 @@ public:
 
 	// Returns the path of the active shader preset, or empty string.
 	virtual const char *GetShaderPresetPath() const = 0;
+
+	// Returns true if a shader preset is currently active.
+	virtual bool HasShaderPreset() const = 0;
+
+	// Enumerate runtime parameters of the active shader preset.
+	virtual std::vector<LibrashaderParam> GetShaderParameters() const = 0;
+
+	// Set a runtime parameter value by name.
+	virtual bool SetShaderParameter(const char *name, float value) = 0;
 
 	// Get the underlying SDL_Renderer (for ImGui SDLRenderer3 backend).
 	// Returns nullptr for the OpenGL backend.

@@ -30,6 +30,9 @@ public:
 	bool LoadShaderPreset(const char *) override { return false; }
 	void ClearShaderPreset() override {}
 	const char *GetShaderPresetPath() const override { return ""; }
+	bool HasShaderPreset() const override { return false; }
+	std::vector<LibrashaderParam> GetShaderParameters() const override { return {}; }
+	bool SetShaderParameter(const char *, float) override { return false; }
 
 	SDL_Renderer *GetSDLRenderer() override { return mpRenderer; }
 	SDL_Window *GetWindow() override { return mpWindow; }

@@ -47,6 +47,8 @@ struct ATUIState {
 	bool showLightPen = false;
 	bool showRewind = false;
 	bool showScreenEffects = false;
+	bool showShaderParams = false;
+	bool showShaderSetup = false;
 
 	// System config sidebar selection
 	int systemConfigCategory = 0;
@@ -177,6 +179,13 @@ void ATUIRenderKeyboardShortcuts(ATUIState &state);
 void ATUIRenderCompatDB(ATSimulator &sim, ATUIState &state);
 void ATUIRenderAdvancedConfig(ATUIState &state);
 void ATUIRenderScreenEffects(ATSimulator &sim, ATUIState &state);
+
+// Shader presets (ui_shader_presets.cpp)
+void ATUIShaderPresetsAutoLoad(IDisplayBackend *backend);
+void ATUIShaderPresetsPoll(IDisplayBackend *backend);
+void ATUIRenderShaderPresetMenu(IDisplayBackend *backend);
+void ATUIRenderShaderParameters(ATUIState &state);
+void ATUIRenderShaderSetupHelp(ATUIState &state);
 
 // HUD overlay — drive LEDs, status messages, FPS, pause, errors
 void ATUIRenderHUDOverlay();

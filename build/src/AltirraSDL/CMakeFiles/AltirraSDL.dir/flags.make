@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = -DIMGUI_ENABLE_TEST_ENGINE -DVD_OS_LINUX=1
 
-CXX_INCLUDES = -I/home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source -I/home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source -I/home/ilm/Documents/GitHub/AltirraSDL/src/ATAudio/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/VDDisplay/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/autogen -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/autobuild_default -I/home/ilm/Documents/GitHub/AltirraSDL/src/compat -I/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src -I/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends
+CXX_INCLUDES = -I/home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/stubs -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source -I/home/ilm/Documents/GitHub/AltirraSDL/src/AltirraSDL/source -I/home/ilm/Documents/GitHub/AltirraSDL/src/ATAudio/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/VDDisplay/h -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/autogen -I/home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/autobuild_default -I/home/ilm/Documents/GitHub/AltirraSDL/src/compat -I/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src -I/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/backends -I/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/misc/cpp
 
 CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20
 

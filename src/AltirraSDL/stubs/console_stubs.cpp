@@ -6,6 +6,7 @@
 #include <stdafx.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <SDL3/SDL.h>
@@ -24,7 +25,8 @@ extern IATUIDebuggerConsoleWindow *g_pConsoleWindow;
 // the console pane exists.
 extern std::mutex g_consoleMutex;
 extern std::string g_consoleText;
-extern bool g_consoleNeedsScroll;
+extern std::atomic<bool> g_consoleScrollToBottom;
+extern std::atomic<bool> g_consoleTextDirty;
 
 static void ConsoleAppend(const char *s) {
 	if (g_pConsoleWindow) {
@@ -35,7 +37,8 @@ static void ConsoleAppend(const char *s) {
 		// Buffer text even before console pane exists
 		std::lock_guard<std::mutex> lock(g_consoleMutex);
 		g_consoleText.append(s);
-		g_consoleNeedsScroll = true;
+		g_consoleTextDirty = true;
+		g_consoleScrollToBottom = true;
 	}
 }
 

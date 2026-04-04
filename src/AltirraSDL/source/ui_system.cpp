@@ -46,6 +46,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 extern ATSimulator g_sim;
 extern ATUIManager g_ATUIManager;
@@ -2251,12 +2252,16 @@ static void RenderUICategory(ATSimulator &) {
 
 static void RenderDisplay2Category(ATSimulator &) {
 	extern ATOptions g_ATOptions;
+	extern SDL_Window *g_pWindow;
 
 	ImGui::SeparatorText("Full-screen mode");
 	bool borderless = g_ATOptions.mbFullScreenBorderless;
 	if (ImGui::RadioButton("Borderless windowed", borderless)) {
 		ATOptions prev(g_ATOptions);
 		g_ATOptions.mbFullScreenBorderless = true;
+		g_ATOptions.mFullScreenWidth = 0;
+		g_ATOptions.mFullScreenHeight = 0;
+		g_ATOptions.mFullScreenRefreshRate = 0;
 		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
 	}
 	if (ImGui::RadioButton("Exclusive full-screen", !borderless)) {
@@ -2265,23 +2270,96 @@ static void RenderDisplay2Category(ATSimulator &) {
 		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
 	}
 	if (!borderless) {
-		int w = (int)g_ATOptions.mFullScreenWidth, h = (int)g_ATOptions.mFullScreenHeight;
-		int hz = (int)g_ATOptions.mFullScreenRefreshRate;
-		ImGui::SetNextItemWidth(100);
-		if (ImGui::InputInt("Width", &w, 0, 0) && w > 0) {
-			ATOptions prev(g_ATOptions); g_ATOptions.mFullScreenWidth = w;
-			if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+		// Enumerate available display modes for the current display
+		SDL_DisplayID displayID = g_pWindow
+			? SDL_GetDisplayForWindow(g_pWindow)
+			: SDL_GetPrimaryDisplay();
+
+		int modeCount = 0;
+		SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(displayID, &modeCount);
+
+		// Build preview string for the currently selected mode
+		char preview[64];
+		if (g_ATOptions.mFullScreenWidth == 0 && g_ATOptions.mFullScreenHeight == 0) {
+			snprintf(preview, sizeof(preview), "Desktop resolution");
+		} else if (g_ATOptions.mFullScreenRefreshRate > 0) {
+			snprintf(preview, sizeof(preview), "%u x %u @ %u Hz",
+				g_ATOptions.mFullScreenWidth, g_ATOptions.mFullScreenHeight,
+				g_ATOptions.mFullScreenRefreshRate);
+		} else {
+			snprintf(preview, sizeof(preview), "%u x %u",
+				g_ATOptions.mFullScreenWidth, g_ATOptions.mFullScreenHeight);
 		}
-		ImGui::SameLine(); ImGui::SetNextItemWidth(100);
-		if (ImGui::InputInt("Height", &h, 0, 0) && h > 0) {
-			ATOptions prev(g_ATOptions); g_ATOptions.mFullScreenHeight = h;
-			if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
+
+		ImGui::Indent();
+		ImGui::SetNextItemWidth(280);
+		if (ImGui::BeginCombo("Resolution", preview)) {
+			// "Desktop resolution" = exclusive at desktop res (w=0, h=0)
+			bool isDesktop = (g_ATOptions.mFullScreenWidth == 0 &&
+				g_ATOptions.mFullScreenHeight == 0);
+			if (ImGui::Selectable("Desktop resolution", isDesktop)) {
+				ATOptions prev(g_ATOptions);
+				g_ATOptions.mFullScreenWidth = 0;
+				g_ATOptions.mFullScreenHeight = 0;
+				g_ATOptions.mFullScreenRefreshRate = 0;
+				if (g_ATOptions != prev) {
+					g_ATOptions.mbDirty = true;
+					ATOptionsRunUpdateCallbacks(&prev);
+					ATOptionsSave();
+				}
+			}
+
+			// Deduplicated list of available modes (w, h, refresh)
+			if (modes) {
+				struct ModeEntry { int w, h; float hz; };
+				static thread_local std::vector<ModeEntry> uniqueModes;
+				uniqueModes.clear();
+
+				for (int i = 0; i < modeCount; i++) {
+					const SDL_DisplayMode *m = modes[i];
+					float hz = m->refresh_rate;
+					bool dup = false;
+					for (const auto &u : uniqueModes) {
+						if (u.w == m->w && u.h == m->h &&
+							(int)(u.hz + 0.5f) == (int)(hz + 0.5f)) {
+							dup = true;
+							break;
+						}
+					}
+					if (!dup)
+						uniqueModes.push_back({m->w, m->h, hz});
+				}
+
+				for (const auto &m : uniqueModes) {
+					char label[64];
+					snprintf(label, sizeof(label), "%d x %d @ %.0f Hz",
+						m.w, m.h, m.hz);
+
+					uint32 roundedHz = (uint32)(m.hz + 0.5f);
+					bool selected = ((uint32)m.w == g_ATOptions.mFullScreenWidth &&
+						(uint32)m.h == g_ATOptions.mFullScreenHeight &&
+						roundedHz == g_ATOptions.mFullScreenRefreshRate);
+
+					if (ImGui::Selectable(label, selected)) {
+						ATOptions prev(g_ATOptions);
+						g_ATOptions.mFullScreenWidth = (uint32)m.w;
+						g_ATOptions.mFullScreenHeight = (uint32)m.h;
+						g_ATOptions.mFullScreenRefreshRate = roundedHz;
+						if (g_ATOptions != prev) {
+							g_ATOptions.mbDirty = true;
+							ATOptionsRunUpdateCallbacks(&prev);
+							ATOptionsSave();
+						}
+					}
+				}
+			}
+
+			ImGui::EndCombo();
 		}
-		ImGui::SameLine(); ImGui::SetNextItemWidth(80);
-		if (ImGui::InputInt("Hz", &hz, 0, 0) && hz > 0) {
-			ATOptions prev(g_ATOptions); g_ATOptions.mFullScreenRefreshRate = hz;
-			if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
-		}
+		ImGui::Unindent();
+
+		if (modes)
+			SDL_free(modes);
 	}
 
 	ImGui::SeparatorText("Screen effects");

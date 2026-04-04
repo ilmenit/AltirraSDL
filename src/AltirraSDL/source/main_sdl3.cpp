@@ -367,7 +367,7 @@ static void HandleEvents() {
 						ATUICaptureMouse();                         // Input.CaptureMouse (F12)
 					} else if (ev.key.key == SDLK_RETURN && (mod & SDL_KMOD_ALT)) {
 						bool fs = (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
-						SDL_SetWindowFullscreen(g_pWindow, !fs);    // View.ToggleFullScreen (Alt+Enter)
+						ATSetFullscreen(!fs);                       // View.ToggleFullScreen (Alt+Enter)
 					} else if (ev.key.key == SDLK_BACKSPACE && (mod & SDL_KMOD_ALT) && !(mod & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL))) {
 						ATUISetSlowMotion(!ATUIGetSlowMotion());    // System.ToggleSlowMotion (Alt+Backspace)
 					} else if ((mod & SDL_KMOD_ALT) && (mod & SDL_KMOD_SHIFT) && !(mod & SDL_KMOD_CTRL)) {
@@ -877,6 +877,61 @@ static void UpdatePacerRate() {
 }
 
 // =========================================================================
+// Fullscreen mode helpers
+// =========================================================================
+
+// Apply the fullscreen display mode from g_ATOptions before entering
+// fullscreen.  Borderless mode (or exclusive with zero dimensions) uses
+// SDL3's default desktop-resolution borderless fullscreen.  Exclusive
+// mode with a specific resolution sets the closest matching display mode.
+static void ATApplyFullscreenMode(SDL_Window *window) {
+	if (g_ATOptions.mbFullScreenBorderless ||
+		(g_ATOptions.mFullScreenWidth == 0 && g_ATOptions.mFullScreenHeight == 0)) {
+		// Borderless fullscreen (desktop resolution, no mode switch)
+		SDL_SetWindowFullscreenMode(window, NULL);
+	} else {
+		// Exclusive fullscreen with a specific resolution
+		SDL_DisplayID displayID = SDL_GetDisplayForWindow(window);
+		if (displayID) {
+			SDL_DisplayMode closest = {};
+			if (SDL_GetClosestFullscreenDisplayMode(
+					displayID,
+					(int)g_ATOptions.mFullScreenWidth,
+					(int)g_ATOptions.mFullScreenHeight,
+					g_ATOptions.mFullScreenRefreshRate > 0
+						? (float)g_ATOptions.mFullScreenRefreshRate : 0.0f,
+					false,
+					&closest)) {
+				SDL_SetWindowFullscreenMode(window, &closest);
+			} else {
+				fprintf(stderr, "[AltirraSDL] No matching fullscreen mode %ux%u@%u Hz, falling back to borderless\n",
+					g_ATOptions.mFullScreenWidth, g_ATOptions.mFullScreenHeight,
+					g_ATOptions.mFullScreenRefreshRate);
+				SDL_SetWindowFullscreenMode(window, NULL);
+			}
+		}
+	}
+}
+
+// Implement ATSetFullscreen(bool) from uiaccessors.h.
+// All fullscreen transitions in the SDL3 build must go through this
+// function so that borderless vs. exclusive mode is respected.
+// Replaces the stub in uiaccessors_stubs.cpp.
+void ATSetFullscreen(bool fs) {
+	if (!g_pWindow)
+		return;
+
+	bool isFS = (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+	if (isFS == fs)
+		return;
+
+	if (fs)
+		ATApplyFullscreenMode(g_pWindow);
+
+	SDL_SetWindowFullscreen(g_pWindow, fs);
+}
+
+// =========================================================================
 // Window placement persistence
 // =========================================================================
 
@@ -929,8 +984,10 @@ static void ATRestoreWindowPlacement(SDL_Window *window) {
 	// Seed the cached windowed geometry before entering fullscreen
 	ATUpdateWindowedGeometry(window);
 
-	if (key.getBool("Fullscreen", false))
+	if (key.getBool("Fullscreen", false)) {
+		ATApplyFullscreenMode(window);
 		SDL_SetWindowFullscreen(window, true);
+	}
 }
 
 // =========================================================================
@@ -1042,6 +1099,9 @@ int main(int argc, char *argv[]) {
 	if (useGL)
 		g_pDisplay->SetScreenFXPreferred(true);
 
+	// Auto-load last librashader preset if one was saved
+	ATUIShaderPresetsAutoLoad(g_pBackend);
+
 	fprintf(stderr, "[AltirraSDL] Initializing simulator...\n");
 	g_sim.Init();
 	g_sim.LoadROMs();
@@ -1097,6 +1157,29 @@ int main(int argc, char *argv[]) {
 	ATOptionsAddUpdateCallback(true,
 		[](ATOptions& opts, const ATOptions *prevOpts, void *) {
 			g_sim.GetGTIA().SetAccelScreenFXEnabled(opts.mbDisplayAccelScreenFX);
+		}
+	);
+
+	// Re-apply fullscreen mode if settings change while already in fullscreen.
+	// In the ImGui build the settings dialog is non-modal, so the user can
+	// change fullscreen options while the emulator is fullscreen.
+	ATOptionsAddUpdateCallback(false,
+		[](ATOptions& opts, const ATOptions *prevOpts, void *) {
+			if (!g_pWindow || !prevOpts)
+				return;
+			// Only act if a fullscreen-related option actually changed
+			if (opts.mbFullScreenBorderless == prevOpts->mbFullScreenBorderless &&
+				opts.mFullScreenWidth == prevOpts->mFullScreenWidth &&
+				opts.mFullScreenHeight == prevOpts->mFullScreenHeight &&
+				opts.mFullScreenRefreshRate == prevOpts->mFullScreenRefreshRate)
+				return;
+			// If currently in fullscreen, re-apply the mode immediately
+			if (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) {
+				ATApplyFullscreenMode(g_pWindow);
+				// Force SDL3 to re-enter fullscreen with the new mode
+				SDL_SetWindowFullscreen(g_pWindow, false);
+				SDL_SetWindowFullscreen(g_pWindow, true);
+			}
 		}
 	);
 

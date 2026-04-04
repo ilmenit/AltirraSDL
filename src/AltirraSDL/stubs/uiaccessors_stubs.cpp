@@ -9,6 +9,7 @@
 //	action functions are no-ops until the ImGui UI implements them.
 
 #include <stdafx.h>
+#include <SDL3/SDL.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vectors.h>
 #include <vd2/system/VDString.h>
@@ -209,10 +210,14 @@ void ATUISetSlowMotion(bool v) { s_slowMotion = v; }
 // Fullscreen
 // =========================================================================
 
-static bool s_fullscreen = false;
-bool ATUIGetFullscreen() { return s_fullscreen; }
-bool ATUIGetDisplayFullscreen() { return s_fullscreen; }
-void ATSetFullscreen(bool v) { s_fullscreen = v; }
+// ATSetFullscreen(bool) is implemented in main_sdl3.cpp (queries SDL window state).
+// ATUIGetFullscreen/ATUIGetDisplayFullscreen query SDL directly.
+extern SDL_Window *g_pWindow;
+bool ATUIGetFullscreen() {
+	return g_pWindow && (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+bool ATUIGetDisplayFullscreen() { return ATUIGetFullscreen(); }
+// ATSetFullscreen(bool) defined in main_sdl3.cpp
 
 // =========================================================================
 // System state

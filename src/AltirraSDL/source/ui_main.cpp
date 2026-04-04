@@ -1315,6 +1315,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showRewind)           ATUIRenderRewindDialog(sim, state);
 	if (state.showLightPen)         ATUIRenderLightPenDialog(sim, state);
 	if (state.showScreenEffects)    ATUIRenderScreenEffects(sim, state);
+	if (state.showShaderParams)     ATUIRenderShaderParameters(state);
+	if (state.showShaderSetup)      ATUIRenderShaderSetupHelp(state);
+	ATUIShaderPresetsPoll(backend);
 	ATUIRenderVideoRecordingDialog(window);
 
 	// HUD overlay (drive LEDs, status, FPS, pause, errors)

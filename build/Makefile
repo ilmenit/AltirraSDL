@@ -503,6 +503,30 @@ _deps/imgui-src/imgui_widgets.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/imgui_widgets.cpp.s
 .PHONY : _deps/imgui-src/imgui_widgets.cpp.s
 
+_deps/imgui-src/misc/cpp/imgui_stdlib.o: _deps/imgui-src/misc/cpp/imgui_stdlib.cpp.o
+.PHONY : _deps/imgui-src/misc/cpp/imgui_stdlib.o
+
+# target to build an object file
+_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.o
+.PHONY : _deps/imgui-src/misc/cpp/imgui_stdlib.cpp.o
+
+_deps/imgui-src/misc/cpp/imgui_stdlib.i: _deps/imgui-src/misc/cpp/imgui_stdlib.cpp.i
+.PHONY : _deps/imgui-src/misc/cpp/imgui_stdlib.i
+
+# target to preprocess a source file
+_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.i
+.PHONY : _deps/imgui-src/misc/cpp/imgui_stdlib.cpp.i
+
+_deps/imgui-src/misc/cpp/imgui_stdlib.s: _deps/imgui-src/misc/cpp/imgui_stdlib.cpp.s
+.PHONY : _deps/imgui-src/misc/cpp/imgui_stdlib.s
+
+# target to generate assembly for a file
+_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/imgui.dir/build.make CMakeFiles/imgui.dir/_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.s
+.PHONY : _deps/imgui-src/misc/cpp/imgui_stdlib.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -550,6 +574,9 @@ help:
 	@echo "... _deps/imgui-src/imgui_widgets.o"
 	@echo "... _deps/imgui-src/imgui_widgets.i"
 	@echo "... _deps/imgui-src/imgui_widgets.s"
+	@echo "... _deps/imgui-src/misc/cpp/imgui_stdlib.o"
+	@echo "... _deps/imgui-src/misc/cpp/imgui_stdlib.i"
+	@echo "... _deps/imgui-src/misc/cpp/imgui_stdlib.s"
 .PHONY : help
 
 

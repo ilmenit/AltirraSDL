@@ -96,6 +96,9 @@ add_executable(AltirraSDL
     source/ui_dbg_printer.cpp
     source/ui_dbg_debugdisplay.cpp
     source/ui_dbg_source.cpp
+    source/ui_dbg_traceviewer.cpp
+    source/ui_dbg_traceviewer_timeline.cpp
+    source/ui_dbg_traceviewer_panels.cpp
 
     # Cheater dialog
     source/ui_cheater.cpp
@@ -105,6 +108,9 @@ add_executable(AltirraSDL
 
     # Screen effects dialog
     source/ui_screenfx.cpp
+
+    # Shader preset browser & parameter UI
+    source/ui_shader_presets.cpp
 
     # Light pen/gun configuration dialog
     source/ui_lightpen.cpp

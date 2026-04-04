@@ -202,6 +202,16 @@ void ATUIRenderScreenEffects(ATSimulator &sim, ATUIState &state) {
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
 	bool hwSupport = backend && backend->SupportsScreenFX();
 
+	// Show info note when an external shader preset is also active.
+	if (backend && backend->HasShaderPreset()) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+		ImGui::TextWrapped(
+			"A librashader preset is active and will be applied on top of "
+			"these built-in effects.");
+		ImGui::PopStyleColor();
+		ImGui::Spacing();
+	}
+
 	// Show warning banner when hardware acceleration is not available.
 	// This matches the Windows dialog's IDC_WARNING behavior.
 	if (!hwSupport) {

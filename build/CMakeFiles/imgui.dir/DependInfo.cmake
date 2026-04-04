@@ -16,6 +16,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/imgui_draw.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_draw.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_draw.cpp.o.d"
   "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/imgui_tables.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_tables.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_tables.cpp.o.d"
   "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/imgui_widgets.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_widgets.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/imgui_widgets.cpp.o.d"
+  "/home/ilm/Documents/GitHub/AltirraSDL/build/_deps/imgui-src/misc/cpp/imgui_stdlib.cpp" "CMakeFiles/imgui.dir/_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.o" "gcc" "CMakeFiles/imgui.dir/_deps/imgui-src/misc/cpp/imgui_stdlib.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

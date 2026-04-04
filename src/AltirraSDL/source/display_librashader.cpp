@@ -74,6 +74,28 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 		return false;
 	}
 
+	// Extract runtime parameter metadata from the preset BEFORE freeing it.
+	// The preset owns the parameter name/description strings, so we must
+	// copy them into our cached mParams vector here.
+	mParams.clear();
+	libra_preset_param_list_t paramList = {};
+	err = instance->preset_get_runtime_params(&preset, &paramList);
+	if (!err && paramList.length > 0) {
+		mParams.reserve(paramList.length);
+		for (size_t i = 0; i < paramList.length; i++) {
+			const auto &src = paramList.parameters[i];
+			LibrashaderParam p;
+			p.name = src.name ? src.name : "";
+			p.description = src.description ? src.description : "";
+			p.value = src.initial;
+			p.minimum = src.minimum;
+			p.maximum = src.maximum;
+			p.step = src.step;
+			mParams.push_back(std::move(p));
+		}
+		instance->preset_free_runtime_params(paramList);
+	}
+
 	// Create the GL filter chain
 	libra_gl_filter_chain_t chain = nullptr;
 	filter_chain_gl_opt_t opts = {};
@@ -92,6 +114,7 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 	if (err) {
 		fprintf(stderr, "[librashader] Failed to create filter chain for: %s\n", path);
 		instance->preset_free(&preset);
+		mParams.clear();
 		return false;
 	}
 
@@ -99,7 +122,7 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 	mFilterChain = chain;
 	mPresetPath = path;
 
-	fprintf(stderr, "[librashader] Loaded preset: %s\n", path);
+	fprintf(stderr, "[librashader] Loaded preset: %s (%zu parameters)\n", path, mParams.size());
 	return true;
 #else
 	(void)path;
@@ -116,11 +139,13 @@ void LibrashaderRuntime::ClearPreset() {
 	}
 	mFilterChain = nullptr;
 	mPresetPath.clear();
+	mParams.clear();
 #endif
 }
 
 void LibrashaderRuntime::Apply(unsigned int inputTex, unsigned int outputFBO,
-	int srcW, int srcH, int dstW, int dstH, unsigned int frameCount)
+	unsigned int outputTex, int srcW, int srcH, int dstW, int dstH,
+	unsigned int frameCount)
 {
 #if HAVE_LIBRASHADER
 	if (!mFilterChain || !mInstance)
@@ -135,24 +160,59 @@ void LibrashaderRuntime::Apply(unsigned int inputTex, unsigned int outputFBO,
 	input.width = srcW;
 	input.height = srcH;
 
-	libra_output_image_gl_t output = {};
-	output.handle = outputFBO;
-	output.format = 0x8058; // GL_RGBA8
-	output.width = dstW;
-	output.height = dstH;
-
 	libra_output_framebuffer_gl_t framebuffer = {};
 	framebuffer.fbo = outputFBO;
-	framebuffer.format = 0x8058;
+	framebuffer.texture = outputTex;
+	framebuffer.format = 0x8058; // GL_RGBA8
 	framebuffer.width = dstW;
 	framebuffer.height = dstH;
 
 	instance->gl_filter_chain_frame(&chain, frameCount,
 		input, framebuffer, nullptr, nullptr);
 #else
-	(void)inputTex; (void)outputFBO;
+	(void)inputTex; (void)outputFBO; (void)outputTex;
 	(void)srcW; (void)srcH; (void)dstW; (void)dstH;
 	(void)frameCount;
+#endif
+}
+
+std::vector<LibrashaderParam> LibrashaderRuntime::GetParameters() const {
+#if HAVE_LIBRASHADER
+	if (!mFilterChain || !mInstance || mParams.empty())
+		return mParams;
+
+	// Return a copy with current runtime values read from the filter chain.
+	libra_instance_t *instance = (libra_instance_t *)mInstance;
+	libra_gl_filter_chain_t chain = (libra_gl_filter_chain_t)mFilterChain;
+
+	std::vector<LibrashaderParam> result = mParams;
+	for (auto &p : result) {
+		float val = p.value;
+		libra_error_t err = instance->gl_filter_chain_get_param(
+			&chain, p.name.c_str(), &val);
+		if (!err)
+			p.value = val;
+	}
+	return result;
+#else
+	return {};
+#endif
+}
+
+bool LibrashaderRuntime::SetParameter(const char *name, float value) {
+#if HAVE_LIBRASHADER
+	if (!mFilterChain || !mInstance || !name)
+		return false;
+
+	libra_instance_t *instance = (libra_instance_t *)mInstance;
+	libra_gl_filter_chain_t chain = (libra_gl_filter_chain_t)mFilterChain;
+
+	libra_error_t err = instance->gl_filter_chain_set_param(
+		&chain, name, value);
+	return err == nullptr;
+#else
+	(void)name; (void)value;
+	return false;
 #endif
 }
 

@@ -105,6 +105,7 @@ extern void ATUIDebuggerEnsureCallStackPane();
 extern void ATUIDebuggerEnsureTargetsPane();
 extern void ATUIDebuggerEnsureDebugDisplayPane();
 extern void ATUIDebuggerEnsurePrinterOutputPane();
+extern void ATUIDebuggerEnsureTraceViewerPane();
 
 static void EnsurePaneExists(uint32 id) {
 	switch (id) {
@@ -117,6 +118,7 @@ static void EnsurePaneExists(uint32 id) {
 		case kATUIPaneId_Targets:     ATUIDebuggerEnsureTargetsPane(); break;
 		case kATUIPaneId_DebugDisplay: ATUIDebuggerEnsureDebugDisplayPane(); break;
 		case kATUIPaneId_PrinterOutput: ATUIDebuggerEnsurePrinterOutputPane(); break;
+		case kATUIPaneId_Profiler:   ATUIDebuggerEnsureTraceViewerPane(); break;
 		default:
 			// Memory pane instances: kATUIPaneId_MemoryN + 0..3
 			if (id >= kATUIPaneId_MemoryN && id <= kATUIPaneId_MemoryN + 3) {

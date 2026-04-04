@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <imgui.h>
+#include <imgui_stdlib.h>
 #include <SDL3/SDL.h>
 
 #include <vd2/system/vdtypes.h>
@@ -35,7 +36,7 @@ void ATConsoleQueueCommand(const char *s);
 std::mutex g_consoleMutex;
 std::string g_consoleText;
 std::atomic<bool> g_consoleScrollToBottom{false};
-bool g_consoleNeedsScroll = false;
+std::atomic<bool> g_consoleTextDirty{false};
 
 // Command history
 static std::vector<std::string> g_cmdHistory;
@@ -71,6 +72,8 @@ public:
 private:
 	static int InputTextCallback(ImGuiInputTextCallbackData *data);
 	int HandleInputCallback(ImGuiInputTextCallbackData *data);
+	static int OutputTextCallback(ImGuiInputTextCallbackData *data);
+	int HandleOutputCallback(ImGuiInputTextCallbackData *data);
 
 	void OnPromptChanged(IATDebugger *target, const char *prompt);
 	void OnRunStateChanged(IATDebugger *target, bool running);
@@ -78,7 +81,8 @@ private:
 	char mInputBuf[512] = {};
 	bool mbFocusInput = true;
 	bool mbFirstRender = true;
-	bool mbRunning = false;  // tracks simulator run state for input disabling
+	bool mbRunning = false;       // tracks simulator run state for input disabling
+	bool mbScrollToBottom = false; // request scroll on next frame
 	std::string mRenderSnapshot;  // text copied under lock, rendered without lock
 
 	// Event delegates for prompt/run state changes
@@ -121,7 +125,8 @@ ATImGuiConsolePaneImpl::~ATImGuiConsolePaneImpl() {
 void ATImGuiConsolePaneImpl::Write(const char *s) {
 	std::lock_guard<std::mutex> lock(g_consoleMutex);
 	g_consoleText.append(s);
-	g_consoleNeedsScroll = true;
+	g_consoleTextDirty = true;
+	g_consoleScrollToBottom = true;
 }
 
 void ATImGuiConsolePaneImpl::ShowEnd() {
@@ -160,57 +165,49 @@ bool ATImGuiConsolePaneImpl::Render() {
 	}
 	mbHasFocus = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
-	// Output area: scrollable child region
+	// Output area: read-only multiline text with selection support
 	const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
-	if (ImGui::BeginChild("ConsoleOutput", ImVec2(0, -footerHeight), ImGuiChildFlags_None,
-			ImGuiWindowFlags_HorizontalScrollbar)) {
-		// Copy text under lock, render without lock (avoids holding mutex during ImGui rendering)
-		{
-			std::lock_guard<std::mutex> lock(g_consoleMutex);
-			mRenderSnapshot = g_consoleText;
 
-			// Trim buffer if it grows too large (cap 256KB, trim to 128KB)
-			if (g_consoleText.size() > 256 * 1024) {
-				size_t trimTo = 128 * 1024;
-				size_t pos = g_consoleText.find('\n', g_consoleText.size() - trimTo);
-				if (pos != std::string::npos && pos + 1 < g_consoleText.size())
-					g_consoleText.erase(0, pos + 1);
-			}
+	// Copy text under lock, render without lock (avoids holding mutex during ImGui rendering)
+	if (g_consoleTextDirty.exchange(false)) {
+		std::lock_guard<std::mutex> lock(g_consoleMutex);
+		mRenderSnapshot = g_consoleText;
+		mbScrollToBottom = true;
+
+		// Trim buffer if it grows too large (cap 256KB, trim to 128KB)
+		if (g_consoleText.size() > 256 * 1024) {
+			size_t trimTo = 128 * 1024;
+			size_t pos = g_consoleText.find('\n', g_consoleText.size() - trimTo);
+			if (pos != std::string::npos && pos + 1 < g_consoleText.size())
+				g_consoleText.erase(0, pos + 1);
 		}
+	}
 
-		if (!mRenderSnapshot.empty())
-			ImGui::TextUnformatted(mRenderSnapshot.c_str(),
-				mRenderSnapshot.c_str() + mRenderSnapshot.size());
+	// Check explicit scroll-to-bottom requests (from ShowEnd())
+	if (g_consoleScrollToBottom.exchange(false))
+		mbScrollToBottom = true;
 
-		// Ctrl+C in the output area copies all text (no text selection with TextUnformatted)
-		if (ImGui::IsWindowFocused() && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
+	// Use InputTextMultiline in read-only mode — supports text selection + Ctrl+C
+	ImGuiInputTextFlags outputFlags = ImGuiInputTextFlags_ReadOnly
+		| ImGuiInputTextFlags_CallbackAlways;
+
+	ImGui::InputTextMultiline("##ConsoleOutput", &mRenderSnapshot,
+		ImVec2(-FLT_MIN, -footerHeight), outputFlags,
+		OutputTextCallback, this);
+
+	// Right-click context menu for the output area
+	if (ImGui::BeginPopupContextItem("ConsoleCtx")) {
+		if (ImGui::MenuItem("Copy All")) {
 			if (!mRenderSnapshot.empty())
 				SDL_SetClipboardText(mRenderSnapshot.c_str());
 		}
-
-		// Right-click context menu
-		if (ImGui::BeginPopupContextWindow("ConsoleCtx")) {
-			if (ImGui::MenuItem("Copy", "Ctrl+C")) {
-				if (!mRenderSnapshot.empty())
-					SDL_SetClipboardText(mRenderSnapshot.c_str());
-			}
-			if (ImGui::MenuItem("Clear All")) {
-				std::lock_guard<std::mutex> lock(g_consoleMutex);
-				g_consoleText.clear();
-			}
-			ImGui::EndPopup();
+		if (ImGui::MenuItem("Clear All")) {
+			std::lock_guard<std::mutex> lock(g_consoleMutex);
+			g_consoleText.clear();
+			mRenderSnapshot.clear();
 		}
-
-		// Auto-scroll
-		bool needsScroll = g_consoleNeedsScroll || g_consoleScrollToBottom.load();
-		if (needsScroll) {
-			if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 20.0f || g_consoleScrollToBottom.load())
-				ImGui::SetScrollHereY(1.0f);
-			g_consoleNeedsScroll = false;
-			g_consoleScrollToBottom.store(false);
-		}
+		ImGui::EndPopup();
 	}
-	ImGui::EndChild();
 
 	// Input line
 	ImGui::Separator();
@@ -263,6 +260,21 @@ bool ATImGuiConsolePaneImpl::Render() {
 
 	ImGui::End();
 	return open;
+}
+
+int ATImGuiConsolePaneImpl::OutputTextCallback(ImGuiInputTextCallbackData *data) {
+	ATImGuiConsolePaneImpl *self = (ATImGuiConsolePaneImpl *)data->UserData;
+	return self->HandleOutputCallback(data);
+}
+
+int ATImGuiConsolePaneImpl::HandleOutputCallback(ImGuiInputTextCallbackData *data) {
+	if (mbScrollToBottom) {
+		// Move cursor to end — ImGui will scroll to keep cursor visible
+		data->CursorPos = data->BufTextLen;
+		data->SelectionStart = data->SelectionEnd = data->CursorPos;
+		mbScrollToBottom = false;
+	}
+	return 0;
 }
 
 int ATImGuiConsolePaneImpl::InputTextCallback(ImGuiInputTextCallbackData *data) {

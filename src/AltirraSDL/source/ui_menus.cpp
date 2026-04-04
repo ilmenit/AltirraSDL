@@ -755,7 +755,7 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, IDisplayBackend *backend) {
 	bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
 	if (ImGui::MenuItem("Full Screen", "Alt+Enter", isFullscreen))
-		SDL_SetWindowFullscreen(window, !isFullscreen);
+		ATSetFullscreen(!isFullscreen);
 
 	ImGui::Separator();
 
@@ -923,6 +923,19 @@ static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 	if (ImGui::MenuItem("Adjust Screen Effects..."))
 		state.showScreenEffects = true;
+
+	ATUIRenderShaderPresetMenu(backend);
+
+	{
+		IDisplayBackend *be = ATUIGetDisplayBackend();
+		bool hasPreset = be && be->HasShaderPreset();
+		if (ImGui::MenuItem("Shader Parameters...", nullptr, false, hasPreset))
+			state.showShaderParams = true;
+	}
+
+	if (ImGui::MenuItem("Shader Setup..."))
+		state.showShaderSetup = true;
+
 	ImGui::MenuItem("Customize HUD...", nullptr, false, false);          // placeholder
 	ImGui::MenuItem("Calibrate...", nullptr, false, false);              // placeholder
 
@@ -1410,11 +1423,13 @@ static void RenderDebugMenu(ATSimulator &sim) {
 	ImGui::Separator();
 
 	if (ImGui::BeginMenu("Profile")) {
-		ImGui::MenuItem("Profile View", nullptr, false, false);         // TODO: Phase 11
+		if (ImGui::MenuItem("Profile View"))
+			ATActivateUIPane(kATUIPaneId_Profiler, true);
 		ImGui::EndMenu();
 	}
 	ImGui::MenuItem("Verifier...", nullptr, false, false);              // TODO: Phase 10
-	ImGui::MenuItem("Performance Analyzer...", nullptr, false, false);  // TODO: Phase 11
+	if (ImGui::MenuItem("Performance Analyzer..."))
+		ATActivateUIPane(kATUIPaneId_Profiler, true);
 }
 
 // =========================================================================

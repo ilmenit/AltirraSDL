@@ -68,6 +68,9 @@ public:
 	bool LoadShaderPreset(const char *path) override;
 	void ClearShaderPreset() override;
 	const char *GetShaderPresetPath() const override;
+	bool HasShaderPreset() const override { return mLibrashader.HasPreset(); }
+	std::vector<LibrashaderParam> GetShaderParameters() const override { return mLibrashader.GetParameters(); }
+	bool SetShaderParameter(const char *name, float value) override { return mLibrashader.SetParameter(name, value); }
 
 	SDL_Renderer *GetSDLRenderer() override { return nullptr; }
 	SDL_Window *GetWindow() override { return mpWindow; }
@@ -80,6 +83,11 @@ public:
 	SDL_GLContext GetGLContext() const { return mGLContext; }
 
 private:
+	// Inner rendering (built-in effects).  Called by RenderFrame directly,
+	// or redirected into an FBO when librashader is active.
+	void RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
+		int srcW, int srcH);
+
 	// Get or compile a screen FX shader program for the given feature flags.
 	const ScreenFXProgram &GetScreenFXProgram(uint32_t features);
 
@@ -204,4 +212,5 @@ private:
 	// librashader integration
 	LibrashaderRuntime mLibrashader;
 	uint32_t mFrameCounter = 0;
+	GLRenderTarget mLibrashaderFBO;  // intermediate FBO for librashader output
 };

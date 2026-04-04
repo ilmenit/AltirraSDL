@@ -80,6 +80,7 @@ DisplayBackendGL33::~DisplayBackendGL33() {
 	if (mBicubicFilterTexV) glDeleteTextures(1, &mBicubicFilterTexV);
 
 	// Clean up FBOs
+	mLibrashaderFBO.Destroy();
 	mBicubicFBO.Destroy();
 	mBicubicFBO2.Destroy();
 	mPALFBO.Destroy();
@@ -243,6 +244,87 @@ void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float d
 {
 	if (!mEmuTexture || srcW <= 0 || srcH <= 0)
 		return;
+
+	// When librashader is active, redirect built-in rendering into an
+	// intermediate FBO so librashader can process the result on top.
+	bool useLibrashader = mLibrashader.HasPreset();
+	int vpW = (int)dstW;
+	int vpH = (int)dstH;
+
+	if (useLibrashader) {
+		// Allocate/resize the intermediate FBO at destination size
+		if (mLibrashaderFBO.width != vpW || mLibrashaderFBO.height != vpH) {
+			mLibrashaderFBO.Destroy();
+			mLibrashaderFBO.Create(vpW, vpH, GL_RGBA8);
+		}
+
+		// Redirect all subsequent rendering into the FBO.
+		// We translate the viewport so built-in effects think they're
+		// rendering at (0,0) in the FBO rather than at (dstX,dstY).
+		mLibrashaderFBO.Bind();
+		// Override the window dimensions so viewport calculations inside
+		// RenderScreenFX use the FBO size, not the window size.
+		int savedWinW = mWinW, savedWinH = mWinH;
+		mWinW = vpW;
+		mWinH = vpH;
+
+		// Render built-in effects into the FBO at (0,0,vpW,vpH)
+		RenderFrameInner(0.0f, 0.0f, dstW, dstH, srcW, srcH);
+
+		// Restore
+		mWinW = savedWinW;
+		mWinH = savedWinH;
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		// Now apply librashader on top: FBO texture → screen
+		++mFrameCounter;
+
+		// Allocate a second FBO for librashader output
+		// (reuse mLibrashaderFBO as input, need a separate output)
+		// Actually, librashader reads from a texture and writes to an FBO,
+		// so we can't use the same FBO for both. We'll use a static second FBO.
+		static GLRenderTarget s_librashaderOut;
+		if (s_librashaderOut.width != vpW || s_librashaderOut.height != vpH) {
+			s_librashaderOut.Destroy();
+			s_librashaderOut.Create(vpW, vpH, GL_RGBA8);
+		}
+
+		mLibrashader.Apply(mLibrashaderFBO.tex, s_librashaderOut.fbo, s_librashaderOut.tex,
+			vpW, vpH, vpW, vpH, mFrameCounter);
+
+		// Restore GL state after librashader
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glDisable(GL_BLEND);
+		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_STENCIL_TEST);
+		glDisable(GL_CULL_FACE);
+		glDisable(GL_SCISSOR_TEST);
+
+		// Blit librashader output to the screen
+		int scrVpX = (int)dstX;
+		int scrVpY = savedWinH - (int)(dstY + dstH);
+		glViewport(scrVpX, scrVpY, vpW, vpH);
+		glBindVertexArray(mEmptyVAO);
+		glUseProgram(mPassthroughProgram);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, s_librashaderOut.tex);
+		glUniform1i(mPassthroughLoc_SourceTex, 0);
+
+		GLDrawFullscreenTriangle();
+
+		glUseProgram(0);
+		glBindVertexArray(0);
+		glViewport(0, 0, savedWinW, savedWinH);
+		return;
+	}
+
+	RenderFrameInner(dstX, dstY, dstW, dstH, srcW, srcH);
+}
+
+void DisplayBackendGL33::RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
+	int srcW, int srcH)
+{
 
 	// Determine if any screen effects are active
 	bool hasEffects = false;

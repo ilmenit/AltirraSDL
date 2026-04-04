@@ -5506,6 +5506,78 @@ source/ui_dbg_targets.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_targets.cpp.s
 .PHONY : source/ui_dbg_targets.cpp.s
 
+source/ui_dbg_traceviewer.o: source/ui_dbg_traceviewer.cpp.o
+.PHONY : source/ui_dbg_traceviewer.o
+
+# target to build an object file
+source/ui_dbg_traceviewer.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer.cpp.o
+.PHONY : source/ui_dbg_traceviewer.cpp.o
+
+source/ui_dbg_traceviewer.i: source/ui_dbg_traceviewer.cpp.i
+.PHONY : source/ui_dbg_traceviewer.i
+
+# target to preprocess a source file
+source/ui_dbg_traceviewer.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer.cpp.i
+.PHONY : source/ui_dbg_traceviewer.cpp.i
+
+source/ui_dbg_traceviewer.s: source/ui_dbg_traceviewer.cpp.s
+.PHONY : source/ui_dbg_traceviewer.s
+
+# target to generate assembly for a file
+source/ui_dbg_traceviewer.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer.cpp.s
+.PHONY : source/ui_dbg_traceviewer.cpp.s
+
+source/ui_dbg_traceviewer_panels.o: source/ui_dbg_traceviewer_panels.cpp.o
+.PHONY : source/ui_dbg_traceviewer_panels.o
+
+# target to build an object file
+source/ui_dbg_traceviewer_panels.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer_panels.cpp.o
+.PHONY : source/ui_dbg_traceviewer_panels.cpp.o
+
+source/ui_dbg_traceviewer_panels.i: source/ui_dbg_traceviewer_panels.cpp.i
+.PHONY : source/ui_dbg_traceviewer_panels.i
+
+# target to preprocess a source file
+source/ui_dbg_traceviewer_panels.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer_panels.cpp.i
+.PHONY : source/ui_dbg_traceviewer_panels.cpp.i
+
+source/ui_dbg_traceviewer_panels.s: source/ui_dbg_traceviewer_panels.cpp.s
+.PHONY : source/ui_dbg_traceviewer_panels.s
+
+# target to generate assembly for a file
+source/ui_dbg_traceviewer_panels.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer_panels.cpp.s
+.PHONY : source/ui_dbg_traceviewer_panels.cpp.s
+
+source/ui_dbg_traceviewer_timeline.o: source/ui_dbg_traceviewer_timeline.cpp.o
+.PHONY : source/ui_dbg_traceviewer_timeline.o
+
+# target to build an object file
+source/ui_dbg_traceviewer_timeline.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer_timeline.cpp.o
+.PHONY : source/ui_dbg_traceviewer_timeline.cpp.o
+
+source/ui_dbg_traceviewer_timeline.i: source/ui_dbg_traceviewer_timeline.cpp.i
+.PHONY : source/ui_dbg_traceviewer_timeline.i
+
+# target to preprocess a source file
+source/ui_dbg_traceviewer_timeline.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer_timeline.cpp.i
+.PHONY : source/ui_dbg_traceviewer_timeline.cpp.i
+
+source/ui_dbg_traceviewer_timeline.s: source/ui_dbg_traceviewer_timeline.cpp.s
+.PHONY : source/ui_dbg_traceviewer_timeline.s
+
+# target to generate assembly for a file
+source/ui_dbg_traceviewer_timeline.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_dbg_traceviewer_timeline.cpp.s
+.PHONY : source/ui_dbg_traceviewer_timeline.cpp.s
+
 source/ui_dbg_watch.o: source/ui_dbg_watch.cpp.o
 .PHONY : source/ui_dbg_watch.o
 
@@ -5913,6 +5985,30 @@ source/ui_screenfx.s: source/ui_screenfx.cpp.s
 source/ui_screenfx.cpp.s:
 	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_screenfx.cpp.s
 .PHONY : source/ui_screenfx.cpp.s
+
+source/ui_shader_presets.o: source/ui_shader_presets.cpp.o
+.PHONY : source/ui_shader_presets.o
+
+# target to build an object file
+source/ui_shader_presets.cpp.o:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_shader_presets.cpp.o
+.PHONY : source/ui_shader_presets.cpp.o
+
+source/ui_shader_presets.i: source/ui_shader_presets.cpp.i
+.PHONY : source/ui_shader_presets.i
+
+# target to preprocess a source file
+source/ui_shader_presets.cpp.i:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_shader_presets.cpp.i
+.PHONY : source/ui_shader_presets.cpp.i
+
+source/ui_shader_presets.s: source/ui_shader_presets.cpp.s
+.PHONY : source/ui_shader_presets.s
+
+# target to generate assembly for a file
+source/ui_shader_presets.cpp.s:
+	cd /home/ilm/Documents/GitHub/AltirraSDL/build && $(MAKE) $(MAKESILENT) -f src/AltirraSDL/CMakeFiles/AltirraSDL.dir/build.make src/AltirraSDL/CMakeFiles/AltirraSDL.dir/source/ui_shader_presets.cpp.s
+.PHONY : source/ui_shader_presets.cpp.s
 
 source/ui_system.o: source/ui_system.cpp.o
 .PHONY : source/ui_system.o
@@ -6811,6 +6907,15 @@ help:
 	@echo "... source/ui_dbg_targets.o"
 	@echo "... source/ui_dbg_targets.i"
 	@echo "... source/ui_dbg_targets.s"
+	@echo "... source/ui_dbg_traceviewer.o"
+	@echo "... source/ui_dbg_traceviewer.i"
+	@echo "... source/ui_dbg_traceviewer.s"
+	@echo "... source/ui_dbg_traceviewer_panels.o"
+	@echo "... source/ui_dbg_traceviewer_panels.i"
+	@echo "... source/ui_dbg_traceviewer_panels.s"
+	@echo "... source/ui_dbg_traceviewer_timeline.o"
+	@echo "... source/ui_dbg_traceviewer_timeline.i"
+	@echo "... source/ui_dbg_traceviewer_timeline.s"
 	@echo "... source/ui_dbg_watch.o"
 	@echo "... source/ui_dbg_watch.i"
 	@echo "... source/ui_dbg_watch.s"
@@ -6862,6 +6967,9 @@ help:
 	@echo "... source/ui_screenfx.o"
 	@echo "... source/ui_screenfx.i"
 	@echo "... source/ui_screenfx.s"
+	@echo "... source/ui_shader_presets.o"
+	@echo "... source/ui_shader_presets.i"
+	@echo "... source/ui_shader_presets.s"
 	@echo "... source/ui_system.o"
 	@echo "... source/ui_system.i"
 	@echo "... source/ui_system.s"
