@@ -365,9 +365,36 @@ add_custom_target(package_altirra
     COMMENT "Packaging AltirraSDL ${PROJECT_VERSION} -> ${ALTIRRA_PKG_DIR}"
 )
 
-# Bundle librashader shared library if found on the system
+# Bundle SDL3 shared library into the package.
+# On Windows this is always needed.  On Linux/macOS it's needed when SDL3
+# was built via FetchContent (not a system package).
+if(TARGET SDL3::SDL3-shared)
+    if(WIN32)
+        # Always bundle on Windows — there's no system SDL3.
+        set(_BUNDLE_SDL3 TRUE)
+    elseif(sdl3_POPULATED)
+        # FetchContent build — the .so/.dylib won't be in a system path.
+        set(_BUNDLE_SDL3 TRUE)
+    else()
+        # System-installed SDL3 — don't bundle, it's managed by the package manager.
+        set(_BUNDLE_SDL3 FALSE)
+    endif()
+
+    if(_BUNDLE_SDL3)
+        add_custom_command(TARGET package_altirra POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "$<TARGET_FILE:SDL3::SDL3-shared>"
+                "${ALTIRRA_PKG_DIR}/"
+            COMMENT "Bundling $<TARGET_FILE_NAME:SDL3::SDL3-shared> into package"
+        )
+    endif()
+endif()
+
+# Bundle librashader shared library if present next to the executable.
+# The build.sh --librashader step places it there; we just copy it into
+# the package directory.  Use a generator expression for the exe directory
+# so it resolves correctly on all generators (Makefiles vs MSVC).
 if(ENABLE_LIBRASHADER)
-    # Platform-specific library name
     if(WIN32)
         set(_LIBRA_NAME "librashader.dll")
     elseif(APPLE)
@@ -376,57 +403,19 @@ if(ENABLE_LIBRASHADER)
         set(_LIBRA_NAME "librashader.so")
     endif()
 
-    # Search order:
-    #   1. Project source root (user may drop the library alongside the repo)
-    #   2. Build output directory (next to the executable)
-    #   3. Platform-specific system locations
-    set(_LIBRA_SEARCH_PATHS
-        "${CMAKE_SOURCE_DIR}"
-        "${CMAKE_BINARY_DIR}"
-        "${CMAKE_BINARY_DIR}/src/AltirraSDL"
+    # Look next to the executable (works for both single-config and
+    # multi-config generators like MSVC which add Release/ etc.)
+    set(_LIBRA_PATH "$<TARGET_FILE_DIR:AltirraSDL>/${_LIBRA_NAME}")
+
+    # Use a script-mode cmake snippet (copy_if_exists.cmake) so
+    # packaging never fails just because librashader wasn't built.
+    add_custom_command(TARGET package_altirra POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            -DSRC="${_LIBRA_PATH}"
+            -DDST="${ALTIRRA_PKG_DIR}/"
+            -P "${CMAKE_SOURCE_DIR}/cmake/copy_if_exists.cmake"
+        COMMENT "Bundling ${_LIBRA_NAME} into package (if present)"
     )
-
-    if(WIN32)
-        # On Windows, also check common install locations and PATH
-        list(APPEND _LIBRA_SEARCH_PATHS
-            "$ENV{LOCALAPPDATA}/librashader"
-            "$ENV{ProgramFiles}/librashader"
-        )
-    else()
-        list(APPEND _LIBRA_SEARCH_PATHS
-            /usr/local/lib /usr/local/lib64
-            /usr/lib /usr/lib64
-        )
-    endif()
-
-    # First try find_library (handles lib prefix on Unix, .lib/.dll on Windows)
-    find_library(LIBRASHADER_LIBRARY
-        NAMES rashader librashader
-        NAMES_PER_DIR
-        PATHS ${_LIBRA_SEARCH_PATHS}
-        DOC "Path to librashader shared library (optional, for packaging)"
-    )
-
-    # Also try the exact filename (e.g. librashader.so, librashader.dll)
-    if(NOT LIBRASHADER_LIBRARY)
-        find_file(LIBRASHADER_LIBRARY
-            NAMES ${_LIBRA_NAME}
-            PATHS ${_LIBRA_SEARCH_PATHS}
-            DOC "Path to librashader shared library (optional, for packaging)"
-        )
-    endif()
-
-    if(LIBRASHADER_LIBRARY)
-        message(STATUS "librashader runtime: ${LIBRASHADER_LIBRARY} (will be bundled in package)")
-        add_custom_command(TARGET package_altirra POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy
-                "${LIBRASHADER_LIBRARY}"
-                "${ALTIRRA_PKG_DIR}/"
-            COMMENT "Bundling ${_LIBRA_NAME} into package"
-        )
-    else()
-        message(STATUS "librashader runtime: not found (shader presets will require user to install it)")
-    endif()
 endif()
 
 # Per-file SIMD flags for GCC/Clang (MSVC handles this via /arch: flags)

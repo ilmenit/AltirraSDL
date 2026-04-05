@@ -10,7 +10,7 @@
 
 #include <stdafx.h>
 #include "display_librashader.h"
-#include <stdio.h>
+#include "logging.h"
 
 // Check if librashader headers are available
 #if __has_include("../vendor/librashader/librashader_ld.h")
@@ -42,28 +42,38 @@ bool LibrashaderRuntime::Init() {
 #if defined(_WIN32)
 		{
 			DWORD err = GetLastError();
-			fprintf(stderr, "[librashader] Failed to load librashader.dll (Win32 error %lu) — shader presets disabled\n", err);
+			LOG_WARN("librashader", "Failed to load librashader.dll (Win32 error %lu)", err);
 			if (err == ERROR_MOD_NOT_FOUND)
-				fprintf(stderr, "[librashader] librashader.dll or one of its dependencies not found.\n");
+				LOG_WARN("librashader", "librashader.dll not found next to AltirraSDL.exe");
 			else if (err == ERROR_BAD_EXE_FORMAT)
-				fprintf(stderr, "[librashader] Architecture mismatch (x86 vs x64).\n");
+				LOG_ERROR("librashader", "librashader.dll architecture mismatch (x86 vs x64)");
+			else
+				LOG_WARN("librashader", "A dependency of librashader.dll may be missing");
 		}
-#elif defined(__linux__) || defined(__unix__)
-		const char *err = dlerror();
-		fprintf(stderr, "[librashader] Failed to load shared library — shader presets disabled\n");
-		if (err)
-			fprintf(stderr, "[librashader] dlopen error: %s\n", err);
-		fprintf(stderr, "[librashader] Install librashader from https://github.com/SnowflakePowered/librashader\n");
+#elif defined(__APPLE__)
+		{
+			const char *err = dlerror();
+			LOG_WARN("librashader", "Failed to load librashader.dylib");
+			if (err)
+				LOG_WARN("librashader", "dlopen error: %s", err);
+		}
 #else
-		fprintf(stderr, "[librashader] Shared library not found — shader presets disabled\n");
+		{
+			const char *err = dlerror();
+			LOG_WARN("librashader", "Failed to load librashader.so");
+			if (err)
+				LOG_WARN("librashader", "dlopen error: %s", err);
+		}
 #endif
+		LOG_INFO("librashader", "Shader presets disabled. To enable, build with: ./build.sh --librashader");
+		LOG_INFO("librashader", "Or download from: https://github.com/SnowflakePowered/librashader/releases");
 		mAvailable = false;
 		return false;
 	}
 
 	mInstance = new libra_instance_t(instance);
 	mAvailable = true;
-	fprintf(stderr, "[librashader] Loaded successfully — shader presets available\n");
+	LOG_INFO("librashader", "Loaded successfully — shader presets available");
 	return true;
 #else
 	mInitialized = true;
@@ -85,7 +95,7 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 	libra_shader_preset_t preset = nullptr;
 	libra_error_t err = instance->preset_create(path, &preset);
 	if (err) {
-		fprintf(stderr, "[librashader] Failed to load preset: %s\n", path);
+		LOG_ERROR("librashader", "Failed to load preset: %s", path);
 		instance->error_free(&err);
 		return false;
 	}
@@ -128,7 +138,7 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 		&chain);
 
 	if (err) {
-		fprintf(stderr, "[librashader] Failed to create filter chain for: %s\n", path);
+		LOG_ERROR("librashader", "Failed to create filter chain for: %s", path);
 		instance->error_free(&err);
 		instance->preset_free(&preset);
 		mParams.clear();
@@ -139,7 +149,7 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 	mFilterChain = chain;
 	mPresetPath = path;
 
-	fprintf(stderr, "[librashader] Loaded preset: %s (%zu parameters)\n", path, mParams.size());
+	LOG_INFO("librashader", "Loaded preset: %s (%zu parameters)", path, mParams.size());
 	return true;
 #else
 	(void)path;
@@ -194,7 +204,7 @@ void LibrashaderRuntime::Apply(unsigned int inputTex, unsigned int outputTex,
 		char *msg = nullptr;
 		instance->error_write(err, &msg);
 		if (msg) {
-			fprintf(stderr, "[librashader] frame error: %s\n", msg);
+			LOG_ERROR("librashader", "frame error: %s", msg);
 			instance->error_free_string(&msg);
 		}
 		instance->error_free(&err);
