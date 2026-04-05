@@ -29,6 +29,7 @@ GL_FUNC(void, glDeleteTextures, GLsizei n, const GLuint *textures)
 GL_FUNC(void, glBindTexture, GLenum target, GLuint texture)
 GL_FUNC(void, glActiveTexture, GLenum texture)
 GL_FUNC(void, glTexImage2D, GLenum target, GLint level, GLint internalformat, GLsizei w, GLsizei h, GLint border, GLenum format, GLenum type, const void *data)
+GL_FUNC(void, glTexStorage2D, GLenum target, GLsizei levels, GLenum internalformat, GLsizei w, GLsizei h)
 GL_FUNC(void, glTexSubImage2D, GLenum target, GLint level, GLint xoff, GLint yoff, GLsizei w, GLsizei h, GLenum format, GLenum type, const void *data)
 GL_FUNC(void, glTexParameteri, GLenum target, GLenum pname, GLint param)
 GL_FUNC(GLuint, glCreateShader, GLenum type)
@@ -61,6 +62,7 @@ GL_FUNC(void, glDeleteFramebuffers, GLsizei n, const GLuint *fbos)
 GL_FUNC(void, glBindFramebuffer, GLenum target, GLuint fbo)
 GL_FUNC(void, glFramebufferTexture2D, GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level)
 GL_FUNC(GLenum, glCheckFramebufferStatus, GLenum target)
+GL_FUNC(void, glBlitFramebuffer, GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter)
 GL_FUNC(void, glDrawBuffers, GLsizei n, const GLenum *bufs)
 
 #undef GL_FUNC
@@ -96,6 +98,7 @@ bool GLLoadFunctions() {
 	GL_LOAD(glBindTexture);
 	GL_LOAD(glActiveTexture);
 	GL_LOAD(glTexImage2D);
+	GL_LOAD(glTexStorage2D);
 	GL_LOAD(glTexSubImage2D);
 	GL_LOAD(glTexParameteri);
 	GL_LOAD(glCreateShader);
@@ -128,6 +131,7 @@ bool GLLoadFunctions() {
 	GL_LOAD(glBindFramebuffer);
 	GL_LOAD(glFramebufferTexture2D);
 	GL_LOAD(glCheckFramebufferStatus);
+	GL_LOAD(glBlitFramebuffer);
 	GL_LOAD(glDrawBuffers);
 
 #undef GL_LOAD

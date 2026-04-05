@@ -111,6 +111,57 @@ if(ALTIRRA_SDL3)
             "${librashader_headers_SOURCE_DIR}/include/librashader_ld.h"
             DESTINATION "${LIBRASHADER_VENDOR_DIR}"
         )
+
+        # Patch librashader_ld.h on Linux: replace the simple dlopen() call
+        # with a search function that tries the executable's directory first
+        # (for --librashader builds), then versioned sonames (for distros
+        # that don't install an unversioned symlink or ship a broken one).
+        if(UNIX AND NOT APPLE)
+            set(_LIBRA_LD_H "${LIBRASHADER_VENDOR_DIR}/librashader_ld.h")
+            file(READ "${_LIBRA_LD_H}" _LIBRA_LD_CONTENT)
+            string(REPLACE
+                "#define _LIBRASHADER_LOAD dlopen(\"librashader.so\", RTLD_LAZY)"
+                [=[
+// Patched by AltirraSDL CMakeLists.txt — search exe dir + versioned sonames.
+#include <linux/limits.h>
+#include <unistd.h>
+#include <string.h>
+static inline void *_librashader_dlopen_linux(void) {
+    // 1. Try loading from the executable's own directory
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len > 0) {
+        exe_path[len] = '\0';
+        char *slash = strrchr(exe_path, '/');
+        if (slash) {
+            static const char *local_names[] = {
+                "librashader.so", "librashader.so.2", "librashader.so.1",
+            };
+            for (size_t i = 0; i < sizeof(local_names)/sizeof(local_names[0]); i++) {
+                if ((size_t)(slash - exe_path + 1) + strlen(local_names[i]) < PATH_MAX) {
+                    strcpy(slash + 1, local_names[i]);
+                    void *h = dlopen(exe_path, RTLD_LAZY);
+                    if (h) return h;
+                }
+            }
+        }
+    }
+    // 2. Try system paths with versioned sonames
+    static const char *sys_names[] = {
+        "librashader.so.2", "librashader.so.1", "librashader.so",
+    };
+    for (size_t i = 0; i < sizeof(sys_names)/sizeof(sys_names[0]); i++) {
+        void *h = dlopen(sys_names[i], RTLD_LAZY);
+        if (h) return h;
+    }
+    return NULL;
+}
+#define _LIBRASHADER_LOAD _librashader_dlopen_linux()
+]=]
+                _LIBRA_LD_CONTENT "${_LIBRA_LD_CONTENT}")
+            file(WRITE "${_LIBRA_LD_H}" "${_LIBRA_LD_CONTENT}")
+        endif()
+
         message(STATUS "librashader headers: ${librashader_headers_SOURCE_DIR}/include")
     endif()
 

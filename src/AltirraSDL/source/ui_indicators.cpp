@@ -7,6 +7,7 @@
 //	held key/button indicators, audio scope.
 
 #include <stdafx.h>
+#include <SDL3/SDL.h>
 #include <imgui.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/refcount.h>
@@ -336,4 +337,52 @@ void ATCreateUIRenderer(IATUIRenderer **r) {
 void ATUIRenderHUDOverlay() {
 	if (g_pRendererImGui)
 		g_pRendererImGui->RenderOverlay();
+}
+
+// =========================================================================
+// Fullscreen notification — fading "Press Alt+Enter to exit full screen"
+// =========================================================================
+
+static uint64_t g_fullscreenNotifyStartTick = 0;
+static const float kFullscreenNotifyDuration = 3.0f;  // seconds visible
+static const float kFullscreenNotifyFade     = 1.0f;  // seconds to fade out
+
+void ATUIShowFullscreenNotification() {
+	g_fullscreenNotifyStartTick = SDL_GetTicks();
+}
+
+void ATUIRenderFullscreenNotification() {
+	if (g_fullscreenNotifyStartTick == 0)
+		return;
+
+	float elapsed = (float)(SDL_GetTicks() - g_fullscreenNotifyStartTick) / 1000.0f;
+	float totalDur = kFullscreenNotifyDuration + kFullscreenNotifyFade;
+	if (elapsed >= totalDur) {
+		g_fullscreenNotifyStartTick = 0;
+		return;
+	}
+
+	float alpha = 1.0f;
+	if (elapsed > kFullscreenNotifyDuration)
+		alpha = 1.0f - (elapsed - kFullscreenNotifyDuration) / kFullscreenNotifyFade;
+
+	ImDrawList *dl = ImGui::GetForegroundDrawList();
+	if (!dl) return;
+
+	const char *text = "Press Alt+Enter to exit full screen";
+	const ImVec2 vp = ImGui::GetMainViewport()->Size;
+	ImVec2 sz = ImGui::CalcTextSize(text);
+
+	float px = (vp.x - sz.x) * 0.5f;
+	float py = vp.y * 0.15f;
+	float pad = 10.0f;
+
+	uint8_t bgA = (uint8_t)(140 * alpha);
+	uint8_t fgA = (uint8_t)(255 * alpha);
+
+	dl->AddRectFilled(
+		ImVec2(px - pad, py - pad / 2),
+		ImVec2(px + sz.x + pad, py + sz.y + pad / 2),
+		IM_COL32(0, 0, 0, bgA), 4.0f);
+	dl->AddText(ImVec2(px, py), IM_COL32(255, 255, 255, fgA), text);
 }

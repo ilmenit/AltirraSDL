@@ -949,28 +949,58 @@ static void RenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 	if (ImGui::MenuItem("Adjust Colors..."))
 		state.showAdjustColors = true;
 
-	// SDL3 UI extension: Screen Effects and Shader items are grouped under a
-	// single submenu.  Windows Altirra has these as separate top-level View
-	// menu items, but because the SDL3 build adds librashader integration
-	// (Shader Preset, Shader Parameters, Shader Setup) which doesn't exist
-	// in the Windows UI, we consolidate them here to keep the menu tidy.
-	if (ImGui::BeginMenu("Adjust Screen Effects")) {
-		if (ImGui::MenuItem("Basic..."))
-			state.showScreenEffects = true;
+	// Screen Effects submenu — combines built-in effects (Basic) and
+	// librashader presets into a unified mode selector.
+	if (ImGui::BeginMenu("Screen Effects")) {
+		IDisplayBackend *be = ATUIGetDisplayBackend();
+		bool shaderAvail = be && be->SupportsExternalShaders();
+		bool hasPreset = be && be->HasShaderPreset();
+
+		// Sync mode from actual backend state
+		if (hasPreset)
+			state.screenEffectsMode = ATUIState::kSFXMode_Preset;
+
+		bool isNone = (state.screenEffectsMode == ATUIState::kSFXMode_None);
+		bool isBasic = (state.screenEffectsMode == ATUIState::kSFXMode_Basic);
+		bool isPreset = (state.screenEffectsMode == ATUIState::kSFXMode_Preset);
+
+		// (None) — disable all effects
+		if (ImGui::MenuItem("(None)", nullptr, isNone)) {
+			if (be) be->ClearShaderPreset();
+			state.screenEffectsMode = ATUIState::kSFXMode_None;
+		}
+
+		// Basic — built-in Altirra effects (scanlines, bloom, distortion, mask)
+		if (ImGui::MenuItem("Basic", nullptr, isBasic)) {
+			if (be) be->ClearShaderPreset();
+			state.screenEffectsMode = ATUIState::kSFXMode_Basic;
+		}
 
 		ImGui::Separator();
 
+		// Preset submenu — shader directory tree + Browse
+		ATUIRenderShaderPresetMenu(backend);
+		if (!shaderAvail && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("librashader not found.\nUse Shader Setup or rebuild with --librashader.");
+
+		ImGui::Separator();
+
+		// Shader Parameters — context-sensitive
+		{
+			bool canShowParams = !isNone;
+			if (ImGui::MenuItem("Shader Parameters...", nullptr, false, canShowParams)) {
+				if (isPreset)
+					state.showShaderParams = true;
+				else
+					state.showScreenEffects = true;
+			}
+			if (!canShowParams && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("Select Basic or a Preset first.");
+		}
+
+		// Shader Setup — always accessible
 		if (ImGui::MenuItem("Shader Setup..."))
 			state.showShaderSetup = true;
-
-		ATUIRenderShaderPresetMenu(backend);
-
-		{
-			IDisplayBackend *be = ATUIGetDisplayBackend();
-			bool hasPreset = be && be->HasShaderPreset();
-			if (ImGui::MenuItem("Shader Parameters...", nullptr, false, hasPreset))
-				state.showShaderParams = true;
-		}
 
 		ImGui::EndMenu();
 	}
@@ -1726,7 +1756,18 @@ static void RenderHelpMenu(ATUIState &state) {
 // Main menu bar
 // =========================================================================
 
+// Menu bar height, updated each frame.  Used by ComputeDisplayRect() in
+// main_sdl3.cpp to position the emulator display below the menu bar.
+extern float g_menuBarHeight;
+
 void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *backend, ATUIState &state) {
+	// In fullscreen mode, hide the menu bar to match Windows Altirra behaviour.
+	bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+	if (isFullscreen) {
+		g_menuBarHeight = 0.0f;
+		return;
+	}
+
 	if (!ImGui::BeginMainMenuBar())
 		return;
 
@@ -1740,6 +1781,10 @@ void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *b
 	if (ImGui::BeginMenu("Tools")) { RenderToolsMenu(sim, state, window); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Window")) { RenderWindowMenu(window); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Help")) { RenderHelpMenu(state); ImGui::EndMenu(); }
+
+	// Store the menu bar height so the display rect calculation can offset
+	// the emulator screen below the menu bar.
+	g_menuBarHeight = ImGui::GetWindowSize().y;
 
 	ImGui::EndMainMenuBar();
 

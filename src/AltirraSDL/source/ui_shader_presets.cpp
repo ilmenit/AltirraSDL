@@ -249,11 +249,15 @@ static const char *GetLibrashaderInstallHelp() {
 #if defined(__linux__)
 	return
 		"librashader setup (Linux):\n\n"
-		"1. Install the librashader shared library:\n"
-		"   - Fedora/openSUSE: available via OBS (Open Build Service)\n"
+		"1. Install the librashader shared library.\n"
+		"   Easiest: rebuild AltirraSDL with librashader included:\n"
+		"     ./build.sh --librashader\n"
+		"   This downloads and compiles librashader from source\n"
+		"   (requires Rust toolchain: https://rustup.rs).\n\n"
+		"   Alternatively, install a distro package:\n"
 		"   - Arch Linux: 'librashader' in AUR\n"
-		"   - Other: download librashader.so from GitHub Releases\n"
-		"     and place it in /usr/lib/ or /usr/local/lib/\n\n"
+		"   - Other: build from source and place librashader.so\n"
+		"     in /usr/lib/ or next to the AltirraSDL executable.\n\n"
 		"2. Download shader presets using the button below,\n"
 		"   or manually download the ZIP from:\n"
 		"   https://github.com/libretro/slang-shaders\n"
@@ -304,6 +308,7 @@ static const char *GetLibrashaderInstallHelp() {
 static bool s_downloadInProgress = false;
 static std::string s_downloadStatus;
 static std::mutex s_downloadMutex;
+static bool s_shaderTreeScanned = false;  // defined here for download thread access
 
 // Returns the default shader directory for this platform.
 static std::string GetDefaultShaderDir() {
@@ -481,39 +486,142 @@ static void DownloadShaderPackThread() {
 
 	{
 		std::lock_guard<std::mutex> lk(s_downloadMutex);
-		if (DirectoryExists(targetDir + "/crt"))
+		if (DirectoryExists(targetDir + "/crt")) {
 			s_downloadStatus = "Done! Shaders installed to:\n" + targetDir;
-		else
+			s_shaderTreeScanned = false; // trigger re-scan of shader directory
+		} else {
 			s_downloadStatus = "Something went wrong during extraction.\n"
 				"Check the contents of:\n" + destDir;
+		}
 		s_downloadInProgress = false;
 	}
 }
 
 // =========================================================================
-// View > Shader Preset submenu
+// Shader directory tree — recursive scan + cached menu
+// =========================================================================
+
+struct ShaderTreeNode {
+	std::string name;       // display name (folder name or file stem)
+	std::string fullPath;   // full path for .slangp files, empty for folders
+	bool isFolder = false;
+	std::vector<ShaderTreeNode> children;
+};
+
+static std::vector<ShaderTreeNode> s_shaderTree;
+static std::string s_shaderTreeDir;
+
+static void ScanShaderDirectoryRecursive(const std::filesystem::path &dir,
+	std::vector<ShaderTreeNode> &nodes, int depth = 0)
+{
+	if (depth > 8)
+		return;
+
+	std::error_code ec;
+	std::vector<std::filesystem::directory_entry> entries;
+	for (auto &e : std::filesystem::directory_iterator(dir, ec))
+		entries.push_back(e);
+
+	// Sort: folders first, then alphabetically
+	std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+		bool aDir = a.is_directory();
+		bool bDir = b.is_directory();
+		if (aDir != bDir) return aDir > bDir;
+		return a.path().filename().string() < b.path().filename().string();
+	});
+
+	for (auto &entry : entries) {
+		if (entry.is_directory(ec)) {
+			ShaderTreeNode folder;
+			folder.name = entry.path().filename().string();
+			folder.isFolder = true;
+			ScanShaderDirectoryRecursive(entry.path(), folder.children, depth + 1);
+			if (!folder.children.empty())
+				nodes.push_back(std::move(folder));
+		} else {
+			auto ext = entry.path().extension().string();
+			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+			if (ext == ".slangp" || ext == ".glslp") {
+				ShaderTreeNode file;
+				file.name = entry.path().stem().string();
+				file.fullPath = entry.path().string();
+				file.isFolder = false;
+				nodes.push_back(std::move(file));
+			}
+		}
+	}
+}
+
+static void ScanShaderDirectory() {
+	std::string dir = GetDefaultShaderDir() + "/slang-shaders";
+	s_shaderTree.clear();
+	s_shaderTreeDir = dir;
+	s_shaderTreeScanned = true;
+
+	std::error_code ec;
+	if (std::filesystem::is_directory(dir, ec))
+		ScanShaderDirectoryRecursive(dir, s_shaderTree);
+}
+
+static void EnsureShaderTreeScanned() {
+	if (!s_shaderTreeScanned)
+		ScanShaderDirectory();
+}
+
+static void RenderShaderTreeMenu(const std::vector<ShaderTreeNode> &nodes,
+	IDisplayBackend *backend)
+{
+	const std::string currentPath = (backend && backend->HasShaderPreset())
+		? backend->GetShaderPresetPath() : "";
+
+	for (const auto &node : nodes) {
+		if (node.isFolder) {
+			if (ImGui::BeginMenu(node.name.c_str())) {
+				RenderShaderTreeMenu(node.children, backend);
+				ImGui::EndMenu();
+			}
+		} else {
+			bool isCurrent = (!currentPath.empty() && node.fullPath == currentPath);
+			if (ImGui::MenuItem(node.name.c_str(), nullptr, isCurrent)) {
+				LoadShaderPreset(backend, node.fullPath);
+			}
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+				ImGui::SetTooltip("%s", node.fullPath.c_str());
+		}
+	}
+}
+
+// =========================================================================
+// View > Preset submenu (shader directory tree + Browse + Recent)
 // =========================================================================
 
 void ATUIRenderShaderPresetMenu(IDisplayBackend *backend) {
 	LoadRecentPresets();
+	EnsureShaderTreeScanned();
 
 	bool available = backend && backend->SupportsExternalShaders();
 	bool hasPreset = backend && backend->HasShaderPreset();
 
-	if (ImGui::BeginMenu("Shader Preset", available)) {
-		// (None) — clear preset, restore built-in effects
-		if (ImGui::MenuItem("(None)", nullptr, !hasPreset)) {
-			ClearShaderPreset(backend);
+	if (ImGui::BeginMenu("Preset", available)) {
+
+		// Shader directory tree
+		if (!s_shaderTree.empty()) {
+			RenderShaderTreeMenu(s_shaderTree, backend);
+			ImGui::Separator();
+		} else {
+			ImGui::MenuItem("(No shader packs installed)", nullptr, false, false);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("Use Shader Setup to download shader packs.");
+			ImGui::Separator();
 		}
 
-		// Browse... — open file dialog
+		// Browse... — open file dialog for manual selection
 		if (ImGui::MenuItem("Browse...")) {
 			static const SDL_DialogFileFilter kFilters[] = {
 				{ "Shader Presets (*.slangp, *.glslp)", "slangp;glslp" },
 				{ "All Files (*.*)", "*" },
 			};
 
-			// Start in the default shader dir if it exists
 			std::string defaultDir = GetDefaultShaderDir() + "/slang-shaders";
 			const char *startDir = nullptr;
 			FILE *dirTest = fopen((defaultDir + "/stock.slangp").c_str(), "r");
@@ -529,6 +637,7 @@ void ATUIRenderShaderPresetMenu(IDisplayBackend *backend) {
 		// Recent presets
 		if (!s_recentPresets.empty()) {
 			ImGui::Separator();
+			ImGui::MenuItem("Recent", nullptr, false, false);
 			for (const auto &path : s_recentPresets) {
 				const char *filename = path.c_str();
 				const char *slash = strrchr(filename, '/');
@@ -538,9 +647,8 @@ void ATUIRenderShaderPresetMenu(IDisplayBackend *backend) {
 				bool isCurrent = hasPreset && backend &&
 					path == backend->GetShaderPresetPath();
 
-				if (ImGui::MenuItem(filename, nullptr, isCurrent)) {
+				if (ImGui::MenuItem(filename, nullptr, isCurrent))
 					LoadShaderPreset(backend, path);
-				}
 
 				if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
 					ImGui::SetTooltip("%s", path.c_str());
@@ -638,11 +746,11 @@ void ATUIRenderShaderSetupHelp(ATUIState &state) {
 	if (!state.showShaderSetup)
 		return;
 
-	ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_Appearing);
+	ImGui::SetNextWindowSize(ImVec2(520, 440), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
-	if (!ImGui::Begin("Shader Preset Setup", &state.showShaderSetup,
+	if (!ImGui::Begin("Shader Setup", &state.showShaderSetup,
 		ImGuiWindowFlags_NoSavedSettings))
 	{
 		ImGui::End();
@@ -652,49 +760,88 @@ void ATUIRenderShaderSetupHelp(ATUIState &state) {
 	if (ATUICheckEscClose())
 		state.showShaderSetup = false;
 
-	// Librashader availability status
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
 	bool libAvailable = backend && backend->SupportsExternalShaders();
+	std::string shaderDir = GetDefaultShaderDir() + "/slang-shaders";
+	bool shadersInstalled = DirectoryExists(shaderDir + "/crt");
+
+	// ── Step 1: librashader status ──────────────────────────────────
+	ImGui::Text("Step 1: librashader Runtime");
+	ImGui::Spacing();
 
 	if (libAvailable) {
 		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
-			"librashader: installed and available");
+			"  Installed and available.");
 	} else {
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
-			"librashader: not found");
+			"  Not found.");
+		ImGui::Spacing();
+#if defined(__linux__)
+		ImGui::TextWrapped(
+			"  Build AltirraSDL with librashader included:\n"
+			"    ./build.sh --librashader\n\n"
+			"  This downloads and compiles librashader from source\n"
+			"  (requires Rust toolchain: https://rustup.rs).\n\n"
+			"  Alternatively, place librashader.so next to the\n"
+			"  AltirraSDL executable or in /usr/lib/.");
+#elif defined(__APPLE__)
+		ImGui::TextWrapped(
+			"  Place librashader.dylib in /usr/local/lib/\n"
+			"  or next to the AltirraSDL executable.");
+#elif defined(_WIN32)
+		ImGui::TextWrapped(
+			"  Place librashader.dll next to AltirraSDL.exe\n"
+			"  or in your system PATH.");
+#endif
 	}
 
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	// Platform-specific setup instructions
-	ImGui::TextWrapped("%s", GetLibrashaderInstallHelp());
-
-	ImGui::Spacing();
-	ImGui::Separator();
+	// ── Step 2: Shader packs ────────────────────────────────────────
+	ImGui::Text("Step 2: Shader Packs");
 	ImGui::Spacing();
 
-	// Download shader pack section
-	ImGui::Text("Quick Download");
-	ImGui::Spacing();
-
-	std::string shaderDir = GetDefaultShaderDir() + "/slang-shaders";
-	ImGui::TextWrapped("Download the official RetroArch slang-shaders collection "
-		"(~60 MB download, ~180 MB extracted) to:\n%s", shaderDir.c_str());
+	if (shadersInstalled) {
+		EnsureShaderTreeScanned();
+		int count = 0;
+		std::function<void(const std::vector<ShaderTreeNode>&)> countFiles =
+			[&](const std::vector<ShaderTreeNode> &nodes) {
+				for (auto &n : nodes) {
+					if (n.isFolder) countFiles(n.children);
+					else count++;
+				}
+			};
+		countFiles(s_shaderTree);
+		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
+			"  %d shader presets found.", count);
+		ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+			"  %s", shaderDir.c_str());
+	} else {
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+			"  No shader packs installed.");
+		ImGui::Spacing();
+		ImGui::TextWrapped(
+			"  Download the RetroArch slang-shaders collection\n"
+			"  (~60 MB download, ~180 MB extracted).");
+	}
 
 	ImGui::Spacing();
 
 	{
 		std::lock_guard<std::mutex> lk(s_downloadMutex);
 
-		ImGui::BeginDisabled(s_downloadInProgress);
+		ImGui::BeginDisabled(s_downloadInProgress || shadersInstalled);
 		if (ImGui::Button("Download Shader Pack")) {
 			s_downloadInProgress = true;
 			s_downloadStatus = "Starting download...";
 			std::thread(DownloadShaderPackThread).detach();
 		}
 		ImGui::EndDisabled();
+
+		if (shadersInstalled && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("Shader pack already installed.");
 
 		if (!s_downloadStatus.empty()) {
 			ImGui::Spacing();
@@ -716,13 +863,22 @@ void ATUIRenderShaderSetupHelp(ATUIState &state) {
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	ImGui::TextWrapped(
-		"Recommended presets for Atari emulation:\n"
-		"  crt/crt-lottes.slangp       - fast, good CRT look\n"
-		"  crt/crt-geom.slangp         - classic CRT geometry\n"
-		"  crt/crt-royale.slangp       - high quality (GPU intensive)\n"
-		"  crt/crt-hyllian.slangp      - sharp CRT simulation\n"
-		"  crt/crt-guest-advanced.slangp - highly configurable");
+	// ── Summary + recommendations ───────────────────────────────────
+	if (libAvailable && shadersInstalled) {
+		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
+			"Ready! Use View > Screen Effects > Preset to select a shader.");
+		ImGui::Spacing();
+		ImGui::TextWrapped(
+			"Recommended presets for Atari emulation:\n"
+			"  crt/crt-lottes        - fast, good CRT look\n"
+			"  crt/crt-geom          - classic CRT geometry\n"
+			"  crt/crt-hyllian       - sharp CRT simulation\n"
+			"  crt/crt-easymode      - lightweight, clean CRT\n"
+			"  crt/crt-guest-advanced - highly configurable");
+	} else {
+		ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+			"Complete both steps above to enable shader presets.");
+	}
 
 	ImGui::End();
 }

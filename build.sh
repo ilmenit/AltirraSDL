@@ -14,6 +14,7 @@
 #   ./build.sh --clean            Clean rebuild
 #   ./build.sh --native           Windows only: build libs for .sln (no SDL3)
 #   ./build.sh --jobs 8           Override parallel job count
+#   ./build.sh --librashader      Build librashader from source (needs Rust)
 #   ./build.sh --cmake "-DFOO=1"  Pass extra CMake arguments
 #   ./build.sh --help             Show this help
 #
@@ -43,6 +44,7 @@ PACKAGE=0
 SOURCE_ARCHIVE=0
 JOBS=""
 CMAKE_EXTRA_ARGS=""
+BUILD_LIBRASHADER=0
 
 # ── Parse arguments ───────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
@@ -59,6 +61,7 @@ while [ $# -gt 0 ]; do
         --source)   SOURCE_ARCHIVE=1 ;;
         --jobs)     shift; JOBS="$1" ;;
         -j*)        JOBS="${1#-j}" ;;
+        --librashader) BUILD_LIBRASHADER=1 ;;
         --cmake)    shift; CMAKE_EXTRA_ARGS="$1" ;;
         --help|-h)
             sed -n '3,/^$/{ s/^# //; s/^#//; p }' "$0"
@@ -108,10 +111,28 @@ source "$SCRIPTS_DIR/configure.sh"
 # ── Build ─────────────────────────────────────────────────────────────────
 source "$SCRIPTS_DIR/compile.sh"
 
+# ── librashader (optional) ───────────────────────────────────────────────
+if [ "$BUILD_LIBRASHADER" = "1" ]; then
+    source "$SCRIPTS_DIR/librashader.sh"
+fi
+
 # ── Package (optional) ────────────────────────────────────────────────────
 if [ "$PACKAGE" = "1" ]; then
     source "$SCRIPTS_DIR/package.sh"
 fi
 
+# ── Report output ────────────────────────────────────────────────────────
 echo ""
+if [ "$FRONTEND" = "sdl" ]; then
+    if [ "${PLATFORM}" = "windows" ]; then
+        local_type="$(echo "${BUILD_TYPE:0:1}" | tr '[:lower:]' '[:upper:]')${BUILD_TYPE:1}"
+        EXE="$BUILD_DIR/src/AltirraSDL/${local_type}/AltirraSDL.exe"
+    else
+        EXE="$BUILD_DIR/src/AltirraSDL/AltirraSDL"
+    fi
+    if [ -f "$EXE" ]; then
+        SIZE=$(du -h "$EXE" | cut -f1)
+        ok "Executable: ${C_BOLD}${EXE}${C_RESET} ($SIZE)"
+    fi
+fi
 ok "All done!"

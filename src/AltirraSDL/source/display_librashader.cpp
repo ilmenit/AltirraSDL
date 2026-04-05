@@ -39,7 +39,15 @@ bool LibrashaderRuntime::Init() {
 	// Try to load the shared library
 	libra_instance_t instance = librashader_load_instance();
 	if (!instance.instance_loaded) {
+#if defined(__linux__) || defined(__unix__)
+		const char *err = dlerror();
+		fprintf(stderr, "[librashader] Failed to load shared library — shader presets disabled\n");
+		if (err)
+			fprintf(stderr, "[librashader] dlopen error: %s\n", err);
+		fprintf(stderr, "[librashader] Install librashader from https://github.com/SnowflakePowered/librashader\n");
+#else
 		fprintf(stderr, "[librashader] Shared library not found — shader presets disabled\n");
+#endif
 		mAvailable = false;
 		return false;
 	}
@@ -173,8 +181,15 @@ void LibrashaderRuntime::Apply(unsigned int inputTex, unsigned int outputTex,
 
 	libra_error_t err = instance->gl_filter_chain_frame(&chain, frameCount,
 		input, output, &viewport, nullptr, nullptr);
-	if (err)
+	if (err) {
+		char *msg = nullptr;
+		instance->error_write(err, &msg);
+		if (msg) {
+			fprintf(stderr, "[librashader] frame error: %s\n", msg);
+			instance->error_free_string(&msg);
+		}
 		instance->error_free(&err);
+	}
 #else
 	(void)inputTex; (void)outputTex;
 	(void)srcW; (void)srcH; (void)dstW; (void)dstH;

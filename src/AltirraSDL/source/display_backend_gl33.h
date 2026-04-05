@@ -218,4 +218,5 @@ private:
 	uint32_t mFrameCounter = 0;
 	GLRenderTarget mLibrashaderFBO;     // built-in effects → librashader input
 	GLRenderTarget mLibrashaderOutFBO;  // librashader output → screen
+	GLuint mRenderTargetFBO = 0;        // restore target for sub-passes (0=screen)
 };

@@ -198,6 +198,11 @@ static bool g_prevImGuiMouseCapture = false;
 // Declared here (before UpdateMousePosition) so mouse mapping can use it.
 static SDL_FRect g_displayRect = {0, 0, 0, 0};
 
+// Menu bar height from the previous frame.  ComputeDisplayRect() uses this to
+// offset the display area below the ImGui menu bar.  Updated each frame after
+// ATUIRenderMainMenu() runs.  In fullscreen the menu is hidden and this is 0.
+float g_menuBarHeight = 0.0f;
+
 // Update all mouse position inputs (pad, beam, virtual stick) from pixel coords.
 // Matches Windows ATUIVideoDisplayWindow::UpdateMousePosition().
 // Mouse coordinates are remapped relative to the display destination rectangle
@@ -632,8 +637,13 @@ static SDL_FRect ComputeDisplayRect() {
 	int winW, winH;
 	SDL_GetWindowSize(g_pWindow, &winW, &winH);
 
+	// Reserve space for the menu bar at the top.  g_menuBarHeight is updated
+	// each frame after the menu bar is rendered (we use the previous frame's
+	// value which is stable).  In fullscreen the menu is hidden and this is 0.
+	float menuH = g_menuBarHeight;
+
 	float viewportW = (float)winW;
-	float viewportH = (float)winH;
+	float viewportH = (float)winH - menuH;
 
 	float w = viewportW;
 	float h = viewportH;
@@ -698,9 +708,9 @@ static SDL_FRect ComputeDisplayRect() {
 	const vdfloat2 relOrigin = vdfloat2{0.5f, 0.5f} - pan;
 
 	float left   = w * (relOrigin.x - 1.0f) + viewportW * 0.5f;
-	float top    = h * (relOrigin.y - 1.0f) + viewportH * 0.5f;
+	float top    = h * (relOrigin.y - 1.0f) + viewportH * 0.5f + menuH;
 	float right  = w * relOrigin.x           + viewportW * 0.5f;
-	float bottom = h * relOrigin.y           + viewportH * 0.5f;
+	float bottom = h * relOrigin.y           + viewportH * 0.5f + menuH;
 
 	// Pixel-snap: distribute rounding error evenly across opposite edges
 	// to minimize sub-pixel shimmer (matches uidisplay.cpp lines 2077-2085).
@@ -777,12 +787,7 @@ static void RenderAndPresent() {
 		int pw = g_pDisplay->GetFramePixelWidth();
 		int ph = g_pDisplay->GetFramePixelHeight();
 		int pp = g_pDisplay->GetFramePixelPitch();
-		if (s_diagFrameCount < 5)
-			fprintf(stderr, "[DIAG] UploadFrame: %dx%d pitch=%d pixels=%p\n", pw, ph, pp, pixels);
 		g_pBackend->UploadFrame(pixels, pw, ph, pp);
-	} else {
-		if (s_diagFrameCount < 5)
-			fprintf(stderr, "[DIAG] No frame pixels available\n");
 	}
 
 	// Update filter mode on texture if setting changed.
@@ -956,8 +961,10 @@ void ATSetFullscreen(bool fs) {
 	if (isFS == fs)
 		return;
 
-	if (fs)
+	if (fs) {
 		ATApplyFullscreenMode(g_pWindow);
+		ATUIShowFullscreenNotification();
+	}
 
 	SDL_SetWindowFullscreen(g_pWindow, fs);
 }
@@ -1018,6 +1025,7 @@ static void ATRestoreWindowPlacement(SDL_Window *window) {
 	if (key.getBool("Fullscreen", false)) {
 		ATApplyFullscreenMode(window);
 		SDL_SetWindowFullscreen(window, true);
+		ATUIShowFullscreenNotification();
 	}
 }
 

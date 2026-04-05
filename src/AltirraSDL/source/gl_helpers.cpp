@@ -90,7 +90,13 @@ GLuint GLCreateTexture2D(int w, int h, GLenum internalFormat, GLenum format,
 	GLuint tex;
 	glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, data);
+	// Use immutable storage (glTexStorage2D) — required by librashader which
+	// attaches textures to its own internal FBOs.  Mutable textures created
+	// with glTexImage2D cause framebuffer incompleteness in librashader's
+	// GL3.3 path on some drivers.
+	glTexStorage2D(GL_TEXTURE_2D, 1, internalFormat, w, h);
+	if (data)
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, format, type, data);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

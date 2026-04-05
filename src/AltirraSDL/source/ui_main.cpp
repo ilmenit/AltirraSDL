@@ -1541,6 +1541,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// HUD overlay (drive LEDs, status, FPS, pause, errors)
 	ATUIRenderHUDOverlay();
 
+	// Fullscreen entry notification (fading hint)
+	ATUIRenderFullscreenNotification();
+
 	// Debugger panes (dockable windows)
 	ATUIDebuggerRenderPanes(sim, state);
 

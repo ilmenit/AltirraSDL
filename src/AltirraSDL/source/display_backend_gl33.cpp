@@ -263,16 +263,22 @@ void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float d
 		// We translate the viewport so built-in effects think they're
 		// rendering at (0,0) in the FBO rather than at (dstX,dstY).
 		mLibrashaderFBO.Bind();
+		glClear(GL_COLOR_BUFFER_BIT);
 		// Override the window dimensions so viewport calculations inside
 		// RenderScreenFX use the FBO size, not the window size.
 		int savedWinW = mWinW, savedWinH = mWinH;
 		mWinW = vpW;
 		mWinH = vpH;
 
+		// Set the restore target so sub-passes (PAL, bloom, bicubic)
+		// return to this FBO instead of FBO 0 (the screen).
+		mRenderTargetFBO = mLibrashaderFBO.fbo;
+
 		// Render built-in effects into the FBO at (0,0,vpW,vpH)
 		RenderFrameInner(0.0f, 0.0f, dstW, dstH, srcW, srcH);
 
 		// Restore
+		mRenderTargetFBO = 0;
 		mWinW = savedWinW;
 		mWinH = savedWinH;
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -292,7 +298,6 @@ void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float d
 
 		// Restore GL state after librashader — some presets may enable
 		// sRGB framebuffer writes which would corrupt ImGui rendering.
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glDisable(GL_BLEND);
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_STENCIL_TEST);
@@ -301,21 +306,19 @@ void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float d
 		glDisable(GL_FRAMEBUFFER_SRGB);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-		// Blit librashader output to the screen
-		int scrVpX = (int)dstX;
-		int scrVpY = savedWinH - (int)(dstY + dstH);
-		glViewport(scrVpX, scrVpY, vpW, vpH);
-		glBindVertexArray(mEmptyVAO);
-		glUseProgram(mPassthroughProgram);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, mLibrashaderOutFBO.tex);
-		glUniform1i(mPassthroughLoc_SourceTex, 0);
-
-		GLDrawFullscreenTriangle();
-
-		glUseProgram(0);
-		glBindVertexArray(0);
+		// Blit librashader output to the screen using glBlitFramebuffer.
+		// librashader renders with standard OpenGL convention (Y=0 at bottom),
+		// while our screen uses SDL/ImGui convention (Y=0 at top).  Swapping
+		// the source Y coordinates flips the image correctly.
+		int scrX = (int)dstX;
+		int scrY = savedWinH - (int)(dstY + dstH);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, mLibrashaderOutFBO.fbo);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		glBlitFramebuffer(
+			0, vpH, vpW, 0,                          // src: flip Y (top-to-bottom)
+			scrX, scrY, scrX + vpW, scrY + vpH,      // dst: screen position
+			GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 		glViewport(0, 0, savedWinW, savedWinH);
 		return;
 	}
@@ -347,31 +350,24 @@ void DisplayBackendGL33::RenderFrameInner(float dstX, float dstY, float dstW, fl
 	bool useBicubic = (mFilterMode == kATDisplayFilterMode_Bicubic);
 	bool useSharpBilinear = (mFilterMode == kATDisplayFilterMode_SharpBilinear);
 
-	static int s_glDiag = 0;
-	if (s_glDiag < 5) {
-		fprintf(stderr, "[GL-DIAG] hasEffects=%d bicubic=%d sharpBilinear=%d gamma=%.2f scanline=%.1f filterMode=%d\n",
+	// Log whenever the rendering path changes
+	static int s_lastPath = -1;  // -1=uninit, 0=passthrough, 1=screenFX
+	int curPath = (hasEffects || useBicubic || useSharpBilinear) ? 1 : 0;
+	if (curPath != s_lastPath) {
+		fprintf(stderr, "[GL] Render path: %s (effects=%d bicubic=%d sharp=%d gamma=%.2f scanline=%.1f bloom=%d distort=%.2f mask=%d pal=%.2f fbo=%u)\n",
+			curPath ? "ScreenFX" : "Passthrough",
 			hasEffects, useBicubic, useSharpBilinear,
-			mScreenFX.mGamma, mScreenFX.mScanlineIntensity, (int)mFilterMode);
-		fprintf(stderr, "[GL-DIAG] colorCorr: [%.3f,%.3f,%.3f][%.3f,%.3f,%.3f][%.3f,%.3f,%.3f]\n",
-			mScreenFX.mColorCorrectionMatrix[0][0], mScreenFX.mColorCorrectionMatrix[0][1], mScreenFX.mColorCorrectionMatrix[0][2],
-			mScreenFX.mColorCorrectionMatrix[1][0], mScreenFX.mColorCorrectionMatrix[1][1], mScreenFX.mColorCorrectionMatrix[1][2],
-			mScreenFX.mColorCorrectionMatrix[2][0], mScreenFX.mColorCorrectionMatrix[2][1], mScreenFX.mColorCorrectionMatrix[2][2]);
-		fprintf(stderr, "[GL-DIAG] palBlend=%.2f distortion=%.2f bloom=%d maskType=%d\n",
-			mScreenFX.mPALBlendingOffset, mScreenFX.mDistortionX,
-			mScreenFX.mbBloomEnabled, (int)mScreenFX.mScreenMaskParams.mType);
+			mScreenFX.mGamma, mScreenFX.mScanlineIntensity,
+			mScreenFX.mbBloomEnabled, mScreenFX.mDistortionX,
+			(int)mScreenFX.mScreenMaskParams.mType,
+			mScreenFX.mPALBlendingOffset, mRenderTargetFBO);
+		s_lastPath = curPath;
 	}
 
 	if (hasEffects || useBicubic || useSharpBilinear) {
-		if (s_glDiag < 5)
-			fprintf(stderr, "[GL-DIAG] -> RenderScreenFX path\n");
-		++s_glDiag;
 		RenderScreenFX(dstX, dstY, dstW, dstH, srcW, srcH);
 		return;
 	}
-
-	if (s_glDiag < 5)
-		fprintf(stderr, "[GL-DIAG] -> passthrough path\n");
-	++s_glDiag;
 
 	// Simple passthrough rendering — use glViewport for destination rect
 	// and the fullscreen triangle to fill it.
@@ -693,7 +689,7 @@ void DisplayBackendGL33::RenderScreenFX(float dstX, float dstY, float dstW, floa
 
 			glUseProgram(0);
 			glBindVertexArray(0);
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glBindFramebuffer(GL_FRAMEBUFFER, mRenderTargetFBO);
 
 			// Restore the filter mode on the emulator texture
 			// Only Point and Bicubic use NEAREST; SharpBilinear uses LINEAR.
@@ -1070,7 +1066,7 @@ void DisplayBackendGL33::RenderBloomV2(int srcW, int srcH, GLuint sourceTex) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glActiveTexture(GL_TEXTURE0);
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, mRenderTargetFBO);
 	glViewport(0, 0, mWinW, mWinH);
 	glUseProgram(0);
 	glBindVertexArray(0);
@@ -1167,7 +1163,7 @@ void DisplayBackendGL33::RenderBicubic(int srcW, int srcH, int dstW, int dstH, G
 	glUniform1f(mBicubicLoc_FilterCoord, 1.0f);  // vertical axis
 	GLDrawFullscreenTriangle();
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, mRenderTargetFBO);
 	glViewport(0, 0, mWinW, mWinH);
 	glUseProgram(0);
 	glBindVertexArray(0);

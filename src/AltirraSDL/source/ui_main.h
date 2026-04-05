@@ -52,6 +52,10 @@ struct ATUIState {
 	bool showShaderParams = false;
 	bool showShaderSetup = false;
 
+	// Screen effects mode
+	enum ScreenEffectsMode { kSFXMode_None, kSFXMode_Basic, kSFXMode_Preset };
+	ScreenEffectsMode screenEffectsMode = kSFXMode_Basic;
+
 	// View menu dialogs
 	bool showCalibrate = false;
 	bool showCustomizeHud = false;
@@ -244,6 +248,10 @@ void ATUIRenderShaderSetupHelp(ATUIState &state);
 
 // HUD overlay — drive LEDs, status messages, FPS, pause, errors
 void ATUIRenderHUDOverlay();
+
+// Fullscreen notification — shows a fading "Press Alt+Enter to exit" hint
+void ATUIShowFullscreenNotification();
+void ATUIRenderFullscreenNotification();
 
 // Device configuration dialog (ui_devconfig.cpp)
 class IATDevice;
