@@ -1,30 +1,53 @@
-# SDL_MALLOC
+# SDL_malloc
 
-A macro to tag a function as an allocator.
+Allocate uninitialized memory.
 
 ## Header File
 
-Defined in [<SDL3/SDL_begin_code.h>](https://github.com/libsdl-org/SDL/blob/main/include/SDL3/SDL_begin_code.h)
+Defined in [<SDL3/SDL_stdinc.h>](https://github.com/libsdl-org/SDL/blob/main/include/SDL3/SDL_stdinc.h)
 
 ## Syntax
 
 ```c
-#define SDL_MALLOC __declspec(allocator) __desclspec(restrict)
+void * SDL_malloc(size_t size);
 ```
+
+## Function Parameters
+
+| size_t | size | the size to allocate. |
+| --- | --- | --- |
+
+## Return Value
+
+(void *) Returns a pointer to the allocated memory, or NULL if
+allocation failed.
 
 ## Remarks
 
-This is a hint to the compiler that a function is an allocator, like
-malloc(), with certain rules. A description of how GCC treats this hint
-is here:
+The allocated memory returned by this function must be freed with [SDL_free](SDL_free)().
 
-[https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html#index-malloc-function-attribute](https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html#index-malloc-function-attribute)
+If `size` is 0, it will be set to 1.
 
-On compilers without allocator tag support, this is defined to
-nothing.
+If the allocation is successful, the returned pointer is guaranteed
+to be aligned to either the *fundamental alignment*
+(`alignof(max_align_t)` in C11 and later) or
+`2 * sizeof(void *)`, whichever is smaller. Use [SDL_aligned_alloc](SDL_aligned_alloc)() if you need to
+allocate memory aligned to an alignment greater than this guarantee.
 
-Most apps don't need to, and should not, use this directly.
+## Thread Safety
+
+It is safe to call this function from any thread.
 
 ## Version
 
-This macro is available since SDL 3.2.0.
+This function is available since SDL 3.2.0.
+
+## See Also
+
+- [SDL_free](SDL_free)
+
+- [SDL_calloc](SDL_calloc)
+
+- [SDL_realloc](SDL_realloc)
+
+- [SDL_aligned_alloc](SDL_aligned_alloc)

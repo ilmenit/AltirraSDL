@@ -1,2 +1,0 @@
-/usr/bin/ar qc libATNetwork.a CMakeFiles/ATNetwork.dir/source/dhcpd.cpp.o CMakeFiles/ATNetwork.dir/source/ethernetbus.cpp.o CMakeFiles/ATNetwork.dir/source/ethernetframe.cpp.o CMakeFiles/ATNetwork.dir/source/gatewayserver.cpp.o CMakeFiles/ATNetwork.dir/source/ipstack.cpp.o CMakeFiles/ATNetwork.dir/source/socket.cpp.o CMakeFiles/ATNetwork.dir/source/stdafx.cpp.o CMakeFiles/ATNetwork.dir/source/tcp.cpp.o CMakeFiles/ATNetwork.dir/source/tcpstack.cpp.o CMakeFiles/ATNetwork.dir/source/udp.cpp.o CMakeFiles/ATNetwork.dir/source/udpstack.cpp.o
-/usr/bin/ranlib libATNetwork.a

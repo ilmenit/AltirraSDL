@@ -1,8 +1,27 @@
 cmake_minimum_required(VERSION 3.24)
 project(Altirra VERSION 4.40 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Enforce 64-bit build on Windows MSVC.
+# The native Windows x86 build uses the VS .sln with MASM assembly.
+# The CMake portable build uses C++ reference/intrinsics implementations
+# which work cleanly on x64 (matching Linux/Android behavior), but x86
+# activates MASM-dependent code paths via _M_IX86/VD_CPU_X86 that require
+# assembly files only the VS .sln provides.
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(FATAL_ERROR
+        "The CMake portable build requires a 64-bit (x64) target on Windows.\n"
+        "Use: cmake -A x64 ..\n"
+        "For 32-bit x86, use the native Visual Studio .sln build instead.")
+endif()
+
+# AT_SDL3_PORTABLE — marks this as the portable SDL3 build.
+# The native Windows build (VS .sln) never sees this define.
+# Code uses this to select portable paths: C++ reference/intrinsics instead
+# of MASM assembly, template thunks instead of dynamic JIT thunks, etc.
+add_compile_definitions(AT_SDL3_PORTABLE=1)
 
 include(FetchContent)
 
@@ -30,6 +49,31 @@ option(ALTIRRA_SDL3 "Build SDL3+ImGui frontend" ON)
 # Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
 if(WIN32)
     add_compile_definitions(VD_OS_WINDOWS=1)
+    # Prevent windows.h from defining min/max macros that break std::min/std::max.
+    # The .sln build doesn't need this because its code paths avoid the conflict;
+    # the CMake/SDL3 build compiles system library code alongside Windows headers
+    # where std::min/std::max are used.
+    add_compile_definitions(NOMINMAX)
+    add_compile_definitions(WIN32_LEAN_AND_MEAN)
+    # The codebase uses wchar_t Win32 APIs throughout (VDStringW).
+    # The .sln sets UNICODE/_UNICODE so CreateFile → CreateFileW etc.
+    add_compile_definitions(UNICODE)
+    add_compile_definitions(_UNICODE)
+    # Enable the conformant C preprocessor (/Zc:preprocessor).  The codebase
+    # uses __VA_OPT__ (e.g. in console.h's ATConsolePrintf macro), which MSVC's
+    # legacy preprocessor does not support.  This flag is safe for all C/C++ code
+    # including FetchContent dependencies — it only makes the preprocessor
+    # standards-compliant.
+    add_compile_options(/Zc:preprocessor)
+    # POSIX string functions used by AltirraSDL code — MSVC spells them with
+    # a leading underscore.  Define as macros so the same source compiles on
+    # both Windows and Linux/macOS without #ifdefs everywhere.
+    add_compile_definitions(strcasecmp=_stricmp)
+    add_compile_definitions(strncasecmp=_strnicmp)
+    # POSIX/GNU string functions with no MSVC equivalent (e.g. strcasestr).
+    # Applied per-target (not globally) to avoid leaking into FetchContent
+    # dependencies like SDL3 which compile as C, not C++.
+    set(ALTIRRA_POSIX_COMPAT_HEADER "${CMAKE_SOURCE_DIR}/src/compat/posix_string.h")
 elseif(ANDROID)
     add_compile_definitions(VD_OS_ANDROID=1)
 elseif(APPLE)
@@ -69,7 +113,74 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
                 "Run: cd android && ./setup_sdl3.sh")
         endif()
     else()
-        find_package(SDL3 REQUIRED)
+        # ── SDL3 dependency resolution ──────────────────────────────────
+        # Strategy: prefer a system/vcpkg-installed SDL3 for faster builds;
+        # if none is found, automatically fetch and build from source so
+        # the project works out-of-the-box on Windows, macOS, and Linux.
+        #
+        # To force a specific SDL3, set SDL3_DIR or CMAKE_PREFIX_PATH:
+        #   cmake --preset <preset> -DSDL3_DIR=/path/to/sdl3/cmake
+        # ────────────────────────────────────────────────────────────────
+
+        find_package(SDL3 QUIET)
+
+        if(SDL3_FOUND)
+            # ── System SDL3 found ───────────────────────────────────────
+            get_target_property(_sdl3_loc SDL3::SDL3 LOCATION)
+            message(STATUS "")
+            message(STATUS "  ┌─ SDL3 ─────────────────────────────────────")
+            message(STATUS "  │ Using system-installed SDL3")
+            message(STATUS "  │ Config:  ${SDL3_DIR}")
+            if(_sdl3_loc)
+                message(STATUS "  │ Library: ${_sdl3_loc}")
+            endif()
+            message(STATUS "  └────────────────────────────────────────────")
+            message(STATUS "")
+        else()
+            # ── Auto-fetch SDL3 from source ─────────────────────────────
+            set(ALTIRRA_SDL3_VERSION "release-3.2.8")
+            message(STATUS "")
+            message(STATUS "  ┌─ SDL3 ─────────────────────────────────────")
+            message(STATUS "  │ No system SDL3 found.")
+            message(STATUS "  │ Fetching SDL3 ${ALTIRRA_SDL3_VERSION} from GitHub...")
+            message(STATUS "  │ (first build downloads ~30 MB; subsequent builds use cache)")
+            message(STATUS "  │")
+            message(STATUS "  │ To skip this, install SDL3 and set SDL3_DIR or")
+            message(STATUS "  │ CMAKE_PREFIX_PATH to point to its cmake config.")
+            message(STATUS "  └────────────────────────────────────────────")
+            message(STATUS "")
+
+            FetchContent_Declare(
+                sdl3
+                GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+                GIT_TAG        ${ALTIRRA_SDL3_VERSION}
+                GIT_SHALLOW    TRUE
+                GIT_PROGRESS   TRUE
+            )
+
+            # Build as shared library (matches system-package behavior and
+            # avoids static-linking license complications with LGPL).
+            set(SDL_SHARED ON  CACHE BOOL "Build SDL3 shared library" FORCE)
+            set(SDL_STATIC OFF CACHE BOOL "Build SDL3 static library" FORCE)
+
+            # Disable SDL3 extras we don't need — speeds up the build.
+            set(SDL_TEST_LIBRARY OFF CACHE BOOL "Build SDL3 test library" FORCE)
+            set(SDL_TESTS        OFF CACHE BOOL "Build SDL3 tests" FORCE)
+            set(SDL_EXAMPLES     OFF CACHE BOOL "Build SDL3 examples" FORCE)
+            set(SDL_DISABLE_INSTALL ON CACHE BOOL "Skip SDL3 install rules" FORCE)
+
+            FetchContent_MakeAvailable(sdl3)
+
+            # Verify the target was created — a clear error is better than
+            # cryptic link failures later.
+            if(NOT TARGET SDL3::SDL3)
+                message(FATAL_ERROR
+                    "SDL3 FetchContent completed but SDL3::SDL3 target not found.\n"
+                    "This is unexpected — please check the CMake output above for errors.")
+            endif()
+
+            message(STATUS "  SDL3 ${ALTIRRA_SDL3_VERSION} ready (built from source)")
+        endif()
     endif()
 endif()
 

@@ -1,23 +1,41 @@
-# SDL_Log
+# SDL_log
 
-Log a message with [SDL_LOG_CATEGORY_APPLICATION](SDL_LOG_CATEGORY_APPLICATION)
-and [SDL_LOG_PRIORITY_INFO](SDL_LOG_PRIORITY_INFO).
+Compute the natural logarithm of `x`.
 
 ## Header File
 
-Defined in [<SDL3/SDL_log.h>](https://github.com/libsdl-org/SDL/blob/main/include/SDL3/SDL_log.h)
+Defined in [<SDL3/SDL_stdinc.h>](https://github.com/libsdl-org/SDL/blob/main/include/SDL3/SDL_stdinc.h)
 
 ## Syntax
 
 ```c
-void SDL_Log(const char *fmt, ...);
+double SDL_log(double x);
 ```
 
 ## Function Parameters
 
-| const char * | fmt | a printf() style message format string. |
+| double | x | floating point value. Must be greater than 0. |
 | --- | --- | --- |
-| ... | ... | additional parameters matching % tokens in thefmtstring, if any. |
+
+## Return Value
+
+(double) Returns the natural logarithm of `x`.
+
+## Remarks
+
+Domain: `0 < x <= INF`
+
+Range: `-INF <= y <= INF`
+
+It is an error for `x` to be less than or equal to 0.
+
+This function operates on double-precision floating point values, use
+[SDL_logf](SDL_logf) for single-precision floats.
+
+This function may use a different approximation across different
+versions, platforms and configurations. i.e, it can return a different
+value given the same input on different machines or operating systems,
+or if SDL is updated.
 
 ## Thread Safety
 
@@ -29,20 +47,8 @@ This function is available since SDL 3.2.0.
 
 ## See Also
 
-- [SDL_LogCritical](SDL_LogCritical)
+- [SDL_logf](SDL_logf)
 
-- [SDL_LogDebug](SDL_LogDebug)
+- [SDL_log10](SDL_log10)
 
-- [SDL_LogError](SDL_LogError)
-
-- [SDL_LogInfo](SDL_LogInfo)
-
-- [SDL_LogMessage](SDL_LogMessage)
-
-- [SDL_LogMessageV](SDL_LogMessageV)
-
-- [SDL_LogTrace](SDL_LogTrace)
-
-- [SDL_LogVerbose](SDL_LogVerbose)
-
-- [SDL_LogWarn](SDL_LogWarn)
+- [SDL_exp](SDL_exp)

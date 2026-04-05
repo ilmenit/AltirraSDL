@@ -2583,7 +2583,12 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 					uint64 fwid = fwm.GetCompatibleFirmware(fw.type);
 					bool present = (fwid && fwid >= kATFirmwareId_Custom);
 					if (present) {
-						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
+						const auto& bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+						bool darkBg = (bg.x + bg.y + bg.z) < 1.5f;
+						ImVec4 okColor = darkBg
+							? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
+							: ImVec4(0.0f, 0.5f, 0.0f, 1.0f);
+						ImGui::PushStyleColor(ImGuiCol_Text, okColor);
 						ImGui::TextUnformatted("OK");
 						ImGui::PopStyleColor();
 					} else {

@@ -18,7 +18,9 @@
 #include <stdafx.h>
 #include <string>
 #include <vector>
+#ifndef _MSC_VER
 #include <strings.h>
+#endif
 #include <vd2/system/filesys.h>
 #include <vd2/system/strutil.h>
 #include <vd2/system/text.h>

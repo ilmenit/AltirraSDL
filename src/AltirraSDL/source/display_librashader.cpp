@@ -39,7 +39,16 @@ bool LibrashaderRuntime::Init() {
 	// Try to load the shared library
 	libra_instance_t instance = librashader_load_instance();
 	if (!instance.instance_loaded) {
-#if defined(__linux__) || defined(__unix__)
+#if defined(_WIN32)
+		{
+			DWORD err = GetLastError();
+			fprintf(stderr, "[librashader] Failed to load librashader.dll (Win32 error %lu) — shader presets disabled\n", err);
+			if (err == ERROR_MOD_NOT_FOUND)
+				fprintf(stderr, "[librashader] librashader.dll or one of its dependencies not found.\n");
+			else if (err == ERROR_BAD_EXE_FORMAT)
+				fprintf(stderr, "[librashader] Architecture mismatch (x86 vs x64).\n");
+		}
+#elif defined(__linux__) || defined(__unix__)
 		const char *err = dlerror();
 		fprintf(stderr, "[librashader] Failed to load shared library — shader presets disabled\n");
 		if (err)

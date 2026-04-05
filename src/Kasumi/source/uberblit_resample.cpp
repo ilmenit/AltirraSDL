@@ -213,15 +213,18 @@ void VDPixmapGenResampleRow::Init(IVDPixmapGen *src, uint32 srcIndex, uint32 wid
 			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_SSE2,	RowFactorySharpLinear<VDResamplerSeparableTableRowStageSSE2> },
 			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_MMX,	RowFactorySharpLinear<VDResamplerSeparableTableRowStageMMX> },
 #elif defined _M_AMD64
-			// AMD64
+			// AMD64 — intrinsics-only 8-bit stages (no MASM dependency)
 			{ kVDPixType_8,			false,	nsVDPixmap::kFilterLinear,		CPUF_SUPPORTS_SSE2,	RowFactoryLinear<VDResamplerSeparableTableRowStage8SSE2> },
-			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLinear,		CPUF_SUPPORTS_SSE2,	RowFactoryLinear<VDResamplerSeparableTableRowStageSSE2> },
 			{ kVDPixType_8,			false,	nsVDPixmap::kFilterCubic,		CPUF_SUPPORTS_SSE2,	RowFactoryCubic<VDResamplerSeparableTableRowStage8SSE2> },
-			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterCubic,		CPUF_SUPPORTS_SSE2,	RowFactoryCubic<VDResamplerSeparableTableRowStageSSE2> },
 			{ kVDPixType_8,			false,	nsVDPixmap::kFilterLanczos3,	CPUF_SUPPORTS_SSE2,	RowFactoryLanczos3<VDResamplerSeparableTableRowStage8SSE2> },
-			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLanczos3,	CPUF_SUPPORTS_SSE2,	RowFactoryLanczos3<VDResamplerSeparableTableRowStageSSE2> },
 			{ kVDPixType_8,			false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_SSE2,	RowFactorySharpLinear<VDResamplerSeparableTableRowStage8SSE2> },
+#ifndef AT_SDL3_PORTABLE
+			// AMD64 — 32-bit stages using MASM assembly (VS .sln only)
+			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLinear,		CPUF_SUPPORTS_SSE2,	RowFactoryLinear<VDResamplerSeparableTableRowStageSSE2> },
+			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterCubic,		CPUF_SUPPORTS_SSE2,	RowFactoryCubic<VDResamplerSeparableTableRowStageSSE2> },
+			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLanczos3,	CPUF_SUPPORTS_SSE2,	RowFactoryLanczos3<VDResamplerSeparableTableRowStageSSE2> },
 			{ kVDPixType_8888,		false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_SSE2,	RowFactorySharpLinear<VDResamplerSeparableTableRowStageSSE2> },
+#endif // !AT_SDL3_PORTABLE
 #elif defined VD_CPU_ARM64
 			// ARM64
 			{ kVDPixType_8,			false,	nsVDPixmap::kFilterLinear,		0,					RowFactoryLinear<VDResamplerSeparableTableRowStage8NEON> },
@@ -584,15 +587,18 @@ void VDPixmapGenResampleCol::Init(IVDPixmapGen *src, uint32 srcIndex, uint32 hei
 		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_SSE2,	ColFactorySharpLinear<VDResamplerSeparableTableColStageSSE2> },
 		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_MMX,	ColFactorySharpLinear<VDResamplerSeparableTableColStageMMX> },
 #elif defined _M_AMD64
-		// AMD64
+		// AMD64 — intrinsics-only 8-bit stages (no MASM dependency)
 		{ kVDPixType_8,			false,	nsVDPixmap::kFilterLinear,		CPUF_SUPPORTS_SSE2,	ColFactoryLinear<VDResamplerSeparableTableColStage8SSE2> },
-		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLinear,		CPUF_SUPPORTS_SSE2,	ColFactoryLinear<VDResamplerSeparableTableColStageSSE2> },
 		{ kVDPixType_8,			false,	nsVDPixmap::kFilterCubic,		CPUF_SUPPORTS_SSE2,	ColFactoryCubic<VDResamplerSeparableTableColStage8SSE2> },
-		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterCubic,		CPUF_SUPPORTS_SSE2,	ColFactoryCubic<VDResamplerSeparableTableColStageSSE2> },
 		{ kVDPixType_8,			false,	nsVDPixmap::kFilterLanczos3,	CPUF_SUPPORTS_SSE2,	ColFactoryLanczos3<VDResamplerSeparableTableColStage8SSE2> },
-		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLanczos3,	CPUF_SUPPORTS_SSE2,	ColFactoryLanczos3<VDResamplerSeparableTableColStageSSE2> },
 		{ kVDPixType_8,			false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_SSE2,	ColFactorySharpLinear<VDResamplerSeparableTableColStage8SSE2> },
+#ifndef AT_SDL3_PORTABLE
+		// AMD64 — 32-bit stages using MASM assembly (VS .sln only)
+		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLinear,		CPUF_SUPPORTS_SSE2,	ColFactoryLinear<VDResamplerSeparableTableColStageSSE2> },
+		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterCubic,		CPUF_SUPPORTS_SSE2,	ColFactoryCubic<VDResamplerSeparableTableColStageSSE2> },
+		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterLanczos3,	CPUF_SUPPORTS_SSE2,	ColFactoryLanczos3<VDResamplerSeparableTableColStageSSE2> },
 		{ kVDPixType_8888,		false,	nsVDPixmap::kFilterSharpLinear,	CPUF_SUPPORTS_SSE2,	ColFactorySharpLinear<VDResamplerSeparableTableColStageSSE2> },
+#endif // !AT_SDL3_PORTABLE
 #elif defined VD_CPU_ARM64
 		// ARM64
 		{ kVDPixType_8,			false,	nsVDPixmap::kFilterLinear,		0,					ColFactoryLinear<VDResamplerSeparableTableColStage8NEON> },

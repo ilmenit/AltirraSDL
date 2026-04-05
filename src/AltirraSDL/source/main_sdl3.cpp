@@ -1059,6 +1059,10 @@ int main(int argc, char *argv[]) {
 	extern void ATRegistryLoadFromDisk();
 	ATRegistryLoadFromDisk();
 
+	// Capture whether the registry had any data before anything writes to it.
+	// Used later for first-run detection (matches Windows main.cpp:3371).
+	const bool registryHadAnything = VDRegistryAppKey("", false).isReady();
+
 	const int kDefaultWidth = 1280;
 	const int kDefaultHeight = 720;
 
@@ -1334,10 +1338,27 @@ int main(int argc, char *argv[]) {
 	// Handles all switches (--debug, --debugcmd, --hardware, --ntsc, etc.),
 	// media loading (--cart, --disk, --run, positional args), startup.atdbg,
 	// and debug suspend mode.  Returns true if any boot image was loaded.
-	if (!ATProcessCommandLineSDL3(argc, argv)) {
+	bool cmdLineHadBootImage = ATProcessCommandLineSDL3(argc, argv);
+	if (!cmdLineHadBootImage) {
 		// No boot image on command line — cold reset and start
 		g_sim.ColdReset();
 		g_sim.Resume();
+	}
+
+	// Auto-show setup wizard on first run (matches Windows uicommandline.cpp:824-840).
+	// Skip if: already shown before, command line had arguments, or registry had data
+	// (meaning the program has been run before).
+	{
+		VDRegistryAppKey key;
+		if (!key.getBool("ShownSetupWizard")) {
+			key.setBool("ShownSetupWizard", true);
+
+			bool cmdLineHadAnything = (argc > 1);
+
+			if (!cmdLineHadAnything && !registryHadAnything) {
+				g_uiState.showSetupWizard = true;
+			}
+		}
 	}
 
 	g_pacer.Init();

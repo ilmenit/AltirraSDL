@@ -18,6 +18,7 @@
 #include "display_sdl3_impl.h"
 #include "display_backend.h"
 #include "ui_textselection.h"
+#include "logging.h"
 
 extern ATSimulator g_sim;
 extern VDVideoDisplaySDL3 *g_pDisplay;
@@ -286,14 +287,17 @@ static void RenderDisplayPane() {
 // =========================================================================
 
 // Apply default docking layout using ImGui DockBuilder.
-// Replicates Windows ATLoadDefaultPaneLayout (console.cpp:921):
-//   ┌──────────────────────┬────────────────────┐
-//   │                      │  Registers         │
-//   │    Display           │  Disassembly (tab) │
-//   │                      │  History (tab)     │
-//   ├──────────────────────┴────────────────────┤
-//   │              Console (focused)             │
-//   └───────────────────────────────────────────┘
+// Extends Windows ATLoadDefaultPaneLayout (console.cpp:921) with additional
+// panes (Memory, Watch, Call Stack) in a resolution-independent layout:
+//   ┌───────────┬──────────┬────────┬──────────────┐
+//   │           │          │ Regs   │              │
+//   │  Display  │ Memory 1 ├────────┤ Disassembly  │
+//   │           │          │ CStk   │              │
+//   │           ├──────────┤────────┤              │
+//   │           │ Watch 1  │ Hist   │              │
+//   ├───────────┴──────────┴────────┴──────────────┤
+//   │                    Console                    │
+//   └──────────────────────────────────────────────┘
 static void ApplyDefaultDockLayout() {
 	if (g_dockLayoutApplied)
 		return;
@@ -301,32 +305,71 @@ static void ApplyDefaultDockLayout() {
 
 	ImGuiID dockspace_id = ImGui::GetID("DebuggerDockSpace");
 
-	// Only apply if the dockspace has no saved layout yet
-	if (ImGui::DockBuilderGetNode(dockspace_id) != nullptr)
+	// Only apply if the dockspace has no saved layout yet.
+	// DockSpace() auto-creates an empty node, so check for children
+	// to distinguish "has real layout" from "just auto-created".
+	ImGuiDockNode *node = ImGui::DockBuilderGetNode(dockspace_id);
+	LOG_INFO("DockLayout", "dockspace_id=0x%08X node=%p children=%p",
+		dockspace_id, (void*)node,
+		node ? (void*)node->ChildNodes[0] : nullptr);
+	if (node != nullptr && node->ChildNodes[0] != nullptr) {
+		LOG_INFO("DockLayout", "Skipping — saved layout exists");
 		return;
+	}
 
+	LOG_INFO("DockLayout", "Applying default layout");
 	ImGui::DockBuilderRemoveNode(dockspace_id);
 	ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
 
-	ImGuiViewport *viewport = ImGui::GetMainViewport();
-	ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
+	// Use the host window's actual size (viewport minus menu bar)
+	ImVec2 hostSize = ImGui::GetWindowSize();
+	ImGui::DockBuilderSetNodeSize(dockspace_id, hostSize);
 
-	// Split: bottom for Console (35% height), top for the rest
+	// Split: bottom for Console (~19% height), top for the rest
 	ImGuiID dock_top, dock_bottom;
-	ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Down, 0.35f, &dock_bottom, &dock_top);
+	ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Down, 0.19f, &dock_bottom, &dock_top);
 
-	// Split top: left for Display, right for Registers/Disassembly/History
-	ImGuiID dock_left, dock_right;
-	ImGui::DockBuilderSplitNode(dock_top, ImGuiDir_Right, 0.45f, &dock_right, &dock_left);
+	// Split top: Disassembly on the far right (~24% width)
+	ImGuiID dock_top_left, dock_disasm;
+	ImGui::DockBuilderSplitNode(dock_top, ImGuiDir_Right, 0.24f, &dock_disasm, &dock_top_left);
+
+	// Split remaining: Display on the left (~39% of total width)
+	// dock_top_left is ~76% of total; Display should be ~39/76 ≈ 51%
+	ImGuiID dock_display, dock_middle;
+	ImGui::DockBuilderSplitNode(dock_top_left, ImGuiDir_Left, 0.52f, &dock_display, &dock_middle);
+
+	// Split middle into: left column (Memory/Watch) and right column (Regs/CallStack/History)
+	// Memory+Watch ~26% of total, Regs column ~10.4% of total
+	// In this remaining space: Regs = 10.4/(26+10.4) ≈ 29%
+	ImGuiID dock_mem_watch, dock_regs_col;
+	ImGui::DockBuilderSplitNode(dock_middle, ImGuiDir_Right, 0.29f, &dock_regs_col, &dock_mem_watch);
+
+	// Split Memory/Watch column vertically: Memory ~71%, Watch ~29%
+	ImGuiID dock_memory, dock_watch;
+	ImGui::DockBuilderSplitNode(dock_mem_watch, ImGuiDir_Down, 0.29f, &dock_watch, &dock_memory);
+
+	// Split Registers column vertically into 3: Registers ~27%, Call Stack ~23%, History ~50%
+	ImGuiID dock_regs_top, dock_history;
+	ImGui::DockBuilderSplitNode(dock_regs_col, ImGuiDir_Down, 0.50f, &dock_history, &dock_regs_top);
+	ImGuiID dock_registers, dock_callstack;
+	ImGui::DockBuilderSplitNode(dock_regs_top, ImGuiDir_Down, 0.46f, &dock_callstack, &dock_registers);
+
+	LOG_INFO("DockLayout", "hostSize=%.0fx%.0f", hostSize.x, hostSize.y);
+	LOG_INFO("DockLayout", "dock IDs: display=0x%08X memory=0x%08X watch=0x%08X regs=0x%08X callstack=0x%08X history=0x%08X disasm=0x%08X bottom=0x%08X",
+		dock_display, dock_memory, dock_watch, dock_registers, dock_callstack, dock_history, dock_disasm, dock_bottom);
 
 	// Dock panes into layout
-	ImGui::DockBuilderDockWindow("Display", dock_left);
+	ImGui::DockBuilderDockWindow("Display", dock_display);
 	ImGui::DockBuilderDockWindow("Console", dock_bottom);
-	ImGui::DockBuilderDockWindow("Registers", dock_right);
-	ImGui::DockBuilderDockWindow("Disassembly", dock_right);
-	ImGui::DockBuilderDockWindow("History", dock_right);
+	ImGui::DockBuilderDockWindow("Memory 1", dock_memory);
+	ImGui::DockBuilderDockWindow("Watch 1", dock_watch);
+	ImGui::DockBuilderDockWindow("Registers", dock_registers);
+	ImGui::DockBuilderDockWindow("Call Stack", dock_callstack);
+	ImGui::DockBuilderDockWindow("History", dock_history);
+	ImGui::DockBuilderDockWindow("Disassembly", dock_disasm);
 
 	ImGui::DockBuilderFinish(dockspace_id);
+	LOG_INFO("DockLayout", "Finished applying default layout");
 }
 
 void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
@@ -335,7 +378,6 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 
 	// Create a full-window dockspace below the menu bar.
 	// All debugger panes (including Display) dock into this space.
-	ImGuiID dockspace_id = ImGui::GetID("DebuggerDockSpace");
 	ImGuiViewport *viewport = ImGui::GetMainViewport();
 
 	float menuBarHeight = ImGui::GetFrameHeight();
@@ -361,12 +403,17 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 	ImGui::Begin("DebuggerDockHost", nullptr, hostFlags);
 	ImGui::PopStyleVar(3);
 
+	// GetID must be called inside DebuggerDockHost's Begin/End so the
+	// ID stack is consistent between ApplyDefaultDockLayout and DockSpace.
+	ImGuiID dockspace_id = ImGui::GetID("DebuggerDockSpace");
+
+	// Apply default layout BEFORE DockSpace() — DockBuilder must configure
+	// the node tree before the dockspace is submitted for this frame.
+	ApplyDefaultDockLayout();
+
 	ImGui::DockSpace(dockspace_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
 
 	ImGui::End();
-
-	// Apply default layout on first open
-	ApplyDefaultDockLayout();
 
 	// Render the Display pane (emulation texture inside a dockable window)
 	RenderDisplayPane();
@@ -436,12 +483,15 @@ void ATUIDebuggerOpen() {
 		dbg->AddClient(e.pane, true);
 	}
 
-	// Create default panes (matches Windows ATLoadDefaultPaneLayout:
-	// Console + Registers + Disassembly + History).
+	// Create default panes — extends Windows ATLoadDefaultPaneLayout
+	// with Memory 1, Watch 1, and Call Stack for a richer default.
 	ATUIDebuggerEnsureConsolePane();
 	ATUIDebuggerEnsureRegistersPane();
 	ATUIDebuggerEnsureDisassemblyPane();
 	ATUIDebuggerEnsureHistoryPane();
+	ATUIDebuggerEnsureMemoryPane(0);
+	ATUIDebuggerEnsureWatchPane(0);
+	ATUIDebuggerEnsureCallStackPane();
 
 	dbg->ShowBannerOnce();
 }

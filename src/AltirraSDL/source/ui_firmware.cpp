@@ -210,7 +210,10 @@ struct AuditEntry {
 };
 
 // Audit background scan state
-static struct {
+// Named struct (not anonymous) so that nested types like ScanItem have
+// proper linkage — MSVC can fail to instantiate vdvector<T> templates
+// when T is defined inside an unnamed struct.
+struct AuditState {
 	std::mutex mutex;
 	std::thread thread;
 	bool cancelRequested = false;
@@ -233,7 +236,8 @@ static struct {
 	vdvector<AuditEntry> entries;
 	// Map: known firmware index -> entries[] index
 	std::unordered_map<size_t, size_t> knownIdxToEntryIdx;
-} g_audit;
+};
+static AuditState g_audit;
 
 // Build flat type list for combo (all types across all categories) — cached
 struct FwTypeComboEntry { ATFirmwareType type; const char *name; };

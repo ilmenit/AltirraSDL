@@ -1,2 +1,0 @@
-/usr/bin/ar qc libATDebugger.a CMakeFiles/ATDebugger.dir/source/breakpointsimpl.cpp.o CMakeFiles/ATDebugger.dir/source/debugdevice.cpp.o CMakeFiles/ATDebugger.dir/source/defsymbols.cpp.o CMakeFiles/ATDebugger.dir/source/historytree.cpp.o CMakeFiles/ATDebugger.dir/source/historytreebuilder.cpp.o CMakeFiles/ATDebugger.dir/source/stdafx.cpp.o CMakeFiles/ATDebugger.dir/source/symbolio.cpp.o CMakeFiles/ATDebugger.dir/source/symbols.cpp.o CMakeFiles/ATDebugger.dir/source/target.cpp.o
-/usr/bin/ranlib libATDebugger.a

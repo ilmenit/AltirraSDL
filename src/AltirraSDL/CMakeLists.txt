@@ -199,6 +199,17 @@ target_sources(AltirraSDL PRIVATE
     ${ALTIRRA_ALL_SOURCES}
 )
 
+# Re-include Win32-specific files that were excluded by the _win32.cpp filter
+# but are needed on the Windows SDL3 build.
+if(WIN32)
+    target_sources(AltirraSDL PRIVATE
+        # ATTranslateWin32ErrorToSIOError — used by hostdevice.cpp and pclink.cpp
+        # under #ifdef _WIN32 guards.
+        ${CMAKE_SOURCE_DIR}/src/Altirra/source/pclink_win32.cpp
+    )
+endif()
+
+
 target_include_directories(AltirraSDL PRIVATE
     # Public system headers
     ${ALTIRRA_INCLUDE_DIR}
@@ -284,6 +295,10 @@ endif()
 # this is harmless and ensures correctness if the target is ever split out)
 if(WIN32)
     target_compile_definitions(AltirraSDL PRIVATE VD_OS_WINDOWS=1)
+    # Force-include POSIX compat header for strcasestr etc. (MSVC only).
+    if(ALTIRRA_POSIX_COMPAT_HEADER)
+        target_compile_options(AltirraSDL PRIVATE /FI${ALTIRRA_POSIX_COMPAT_HEADER})
+    endif()
 elseif(ANDROID)
     target_compile_definitions(AltirraSDL PRIVATE VD_OS_ANDROID=1 ALTIRRA_MOBILE=1)
 elseif(APPLE)

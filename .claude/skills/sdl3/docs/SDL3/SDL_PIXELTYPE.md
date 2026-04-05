@@ -1,6 +1,6 @@
-# SDL_PIXELTYPE
+# SDL_PixelType
 
-A macro to retrieve the type of an [SDL_PixelFormat](SDL_PixelFormat).
+Pixel type.
 
 ## Header File
 
@@ -9,26 +9,25 @@ Defined in [<SDL3/SDL_pixels.h>](https://github.com/libsdl-org/SDL/blob/main/inc
 ## Syntax
 
 ```c
-#define SDL_PIXELTYPE(format)    (((format) >> 24) & 0x0F)
+typedef enum SDL_PixelType
+{
+    SDL_PIXELTYPE_UNKNOWN,
+    SDL_PIXELTYPE_INDEX1,
+    SDL_PIXELTYPE_INDEX4,
+    SDL_PIXELTYPE_INDEX8,
+    SDL_PIXELTYPE_PACKED8,
+    SDL_PIXELTYPE_PACKED16,
+    SDL_PIXELTYPE_PACKED32,
+    SDL_PIXELTYPE_ARRAYU8,
+    SDL_PIXELTYPE_ARRAYU16,
+    SDL_PIXELTYPE_ARRAYU32,
+    SDL_PIXELTYPE_ARRAYF16,
+    SDL_PIXELTYPE_ARRAYF32,
+    /* appended at the end for compatibility with sdl2-compat:  */
+    SDL_PIXELTYPE_INDEX2
+} SDL_PixelType;
 ```
-
-## Macro Parameters
-
-| format | anSDL_PixelFormatto check. |
-| --- | --- |
-
-## Return Value
-
-Returns the type of `format`.
-
-## Remarks
-
-This is usually a value from the [SDL_PixelType](SDL_PixelType) enumeration.
-
-## Thread Safety
-
-It is safe to call this macro from any thread.
 
 ## Version
 
-This macro is available since SDL 3.2.0.
+This enum is available since SDL 3.2.0.

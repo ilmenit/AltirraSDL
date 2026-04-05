@@ -1,2 +1,0 @@
-/usr/bin/ar qc libATVM.a CMakeFiles/ATVM.dir/source/compiler.cpp.o CMakeFiles/ATVM.dir/source/stdafx.cpp.o CMakeFiles/ATVM.dir/source/vm.cpp.o
-/usr/bin/ranlib libATVM.a

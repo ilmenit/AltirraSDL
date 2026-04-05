@@ -1,2 +1,0 @@
-/usr/bin/ar qc libATAudio.a CMakeFiles/ATAudio.dir/source/audioconvolutionplayer.cpp.o CMakeFiles/ATAudio.dir/source/audiofilters.cpp.o CMakeFiles/ATAudio.dir/source/audiosamplebuffer.cpp.o CMakeFiles/ATAudio.dir/source/audiosampleplayer.cpp.o CMakeFiles/ATAudio.dir/source/audiosamplepool.cpp.o CMakeFiles/ATAudio.dir/source/pokey.cpp.o CMakeFiles/ATAudio.dir/source/pokeyrenderer.cpp.o CMakeFiles/ATAudio.dir/source/pokeysavestate.cpp.o CMakeFiles/ATAudio.dir/source/pokeytables.cpp.o CMakeFiles/ATAudio.dir/source/stdafx.cpp.o
-/usr/bin/ranlib libATAudio.a

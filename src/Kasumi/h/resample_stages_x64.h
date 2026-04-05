@@ -11,6 +11,10 @@ struct VDResamplerAxis;
 //
 ///////////////////////////////////////////////////////////////////////////
 
+// These two classes delegate to MASM assembly (vdasm_resize_table_*_SSE2).
+// On the portable CMake build there is no MASM assembler, so they are excluded
+// and the generic reference implementations are used instead.
+#ifndef AT_SDL3_PORTABLE
 class VDResamplerSeparableTableRowStageSSE2 final : public VDResamplerRowStageSeparableTable32 {
 public:
 	VDResamplerSeparableTableRowStageSSE2(const IVDResamplerFilter& filter);
@@ -24,6 +28,7 @@ public:
 
 	void Process(void *dst, const void *const *src, uint32 w, sint32 phase);
 };
+#endif // !AT_SDL3_PORTABLE
 
 class VDResamplerSeparableTableRowStage8SSE2 final : public VDResamplerRowStageSeparableTable32, public IVDResamplerSeparableRowStage2 {
 public:

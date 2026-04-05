@@ -24,13 +24,14 @@ void ATUILoadRegistry(const wchar_t *path);
 void ATUISaveRegistry(const wchar_t *fnpath);
 
 // -------------------------------------------------------------------------
-// Config file path
+// Config directory and file path
 // -------------------------------------------------------------------------
 
+static VDStringA s_configDir;
 static VDStringW s_configPath;
 
-static const VDStringW& GetConfigPath() {
-	if (s_configPath.empty()) {
+VDStringA ATGetConfigDir() {
+	if (s_configDir.empty()) {
 		// XDG Base Directory: use $XDG_CONFIG_HOME or ~/.config
 		const char *xdgConfig = getenv("XDG_CONFIG_HOME");
 		VDStringA dir;
@@ -50,7 +51,14 @@ static const VDStringW& GetConfigPath() {
 		// Ensure directory exists
 		mkdir(dir.c_str(), 0755);
 
-		VDStringA filePath = dir;
+		s_configDir = dir;
+	}
+	return s_configDir;
+}
+
+static const VDStringW& GetConfigPath() {
+	if (s_configPath.empty()) {
+		VDStringA filePath = ATGetConfigDir();
 		filePath += "/settings.ini";
 		s_configPath = VDTextU8ToW(filePath);
 	}

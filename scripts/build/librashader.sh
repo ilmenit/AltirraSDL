@@ -18,8 +18,14 @@ case "$PLATFORM" in
     *)       die "Unsupported platform for librashader: $PLATFORM" ;;
 esac
 
-# Destination: next to the AltirraSDL executable
-LIBRA_DEST="$BUILD_DIR/src/AltirraSDL/$LIBRA_SO"
+# Destination: next to the AltirraSDL executable.
+# On Windows, MSVC puts the binary in a per-config subdirectory (e.g. Release/).
+if [ "$PLATFORM" = "windows" ]; then
+    _BT="$(echo "${BUILD_TYPE:0:1}" | tr '[:lower:]' '[:upper:]')${BUILD_TYPE:1}"
+    LIBRA_DEST="$BUILD_DIR/src/AltirraSDL/${_BT}/$LIBRA_SO"
+else
+    LIBRA_DEST="$BUILD_DIR/src/AltirraSDL/$LIBRA_SO"
+fi
 
 # ── Skip if already built ───────────────────────────────────────────────
 if [ -f "$LIBRA_DEST" ]; then
@@ -65,10 +71,14 @@ if ! rustup run nightly rustc --version &>/dev/null 2>&1; then
     info "Using stable Rust (nightly not found)"
 fi
 
+# Build only OpenGL + Vulkan backends.  Both use dynamic function-pointer
+# loading (glow / ash), so the resulting library has no hard DLL deps on
+# D3DX9_43.dll, dxcompiler.dll, or any other non-system library.
 (cd "$LIBRASHADER_SRC" && \
     cargo run -p librashader-build-script -- \
         --profile "$LIBRASHADER_PROFILE" \
-        $STABLE_FLAG) \
+        $STABLE_FLAG \
+        -- --no-default-features --features runtime-opengl,runtime-vulkan) \
     || die "librashader build failed.
 
 Common fixes:

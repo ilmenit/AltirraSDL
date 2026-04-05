@@ -264,3 +264,16 @@ void VDUIGetAcceleratorString(const VDUIAccelerator& accel, VDStringW& s) {
 }
 
 // Test mode symbols are now provided by ui_testmode.cpp (full implementation).
+
+// ============================================================
+// Registry persistence stubs (Windows only)
+// ============================================================
+// On Windows, the system library uses VDRegistryProviderW32 which talks to
+// the Windows registry directly ��� it persists automatically.  The SDL3
+// main loop calls ATRegistryLoadFromDisk()/ATRegistryFlushToDisk() which
+// are provided by registry_sdl3.cpp on non-Windows.  On Windows we just
+// provide no-op stubs since the registry handles persistence.
+#ifdef _WIN32
+void ATRegistryLoadFromDisk() {}
+void ATRegistryFlushToDisk() {}
+#endif

@@ -743,7 +743,15 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-	io.IniFilename = "altirrasdl_imgui.ini";
+
+	// Store imgui.ini in user config directory alongside settings.ini
+	{
+		extern VDStringA ATGetConfigDir();
+		static VDStringA s_imguiIniPath;
+		s_imguiIniPath = ATGetConfigDir();
+		s_imguiIniPath += "/altirrasdl_imgui.ini";
+		io.IniFilename = s_imguiIniPath.c_str();
+	}
 
 	ATUIUpdateSystemTheme();
 	ATUIApplyTheme();

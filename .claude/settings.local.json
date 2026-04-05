@@ -106,7 +106,10 @@
       "Bash(git ls-remote:*)",
       "Bash(chmod +x:*)",
       "Bash(./build.sh --android --release)",
-      "Bash(magick identify:*)"
+      "Bash(magick identify:*)",
+      "Bash(tail:*)",
+      "Bash(cat:*)",
+      "Bash(cd:*)"
     ]
   }
 }

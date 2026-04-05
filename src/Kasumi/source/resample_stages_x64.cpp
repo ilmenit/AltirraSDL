@@ -32,6 +32,10 @@
 #include <vd2/Kasumi/resample_kernels.h>
 #include "resample_stages_x64.h"
 
+// These two classes delegate to MASM assembly (vdasm_resize_table_*_SSE2).
+// On the portable CMake build there is no MASM assembler, so they are excluded
+// and the generic reference implementations are used instead.
+#ifndef AT_SDL3_PORTABLE
 extern "C" long VDCDECL vdasm_resize_table_col_SSE2(uint32 *out, const uint32 *const*in_table, const int *filter, int filter_width, uint32 w);
 extern "C" long VDCDECL vdasm_resize_table_row_SSE2(uint32 *out, const uint32 *in, const int *filter, int filter_width, uint32 w, long accum, long frac);
 
@@ -56,6 +60,7 @@ void VDResamplerSeparableTableColStageSSE2::Process(void *dst, const void *const
 
 	vdasm_resize_table_col_SSE2((uint32*)dst, (const uint32 *const *)src, (const int *)mFilterBank.data() + filtSize*((phase >> 8) & 0xff), filtSize, w);
 }
+#endif // !AT_SDL3_PORTABLE
 
 ///////////////////////////////////////////////////////////////////////////
 

@@ -74,6 +74,10 @@
             "name": "windows-sdl-debug",
             "displayName": "Windows Debug (SDL3 + ImGui)",
             "inherits": "base",
+            "architecture": {
+                "value": "x64",
+                "strategy": "set"
+            },
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "ALTIRRA_SDL3": "ON"
@@ -88,6 +92,10 @@
             "name": "windows-sdl-release",
             "displayName": "Windows Release (SDL3 + ImGui)",
             "inherits": "base",
+            "architecture": {
+                "value": "x64",
+                "strategy": "set"
+            },
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "ALTIRRA_SDL3": "ON"

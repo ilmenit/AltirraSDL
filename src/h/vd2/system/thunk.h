@@ -32,7 +32,7 @@
 
 #include <vd2/system/vdtypes.h>
 
-#if defined(VD_CPU_X86) || defined(VD_CPU_X64)
+#if (defined(VD_CPU_X86) || defined(VD_CPU_X64)) && !defined(AT_SDL3_PORTABLE)
 	#define VD_USE_DYNAMIC_THUNKS 1
 #else
 	#define VD_USE_DYNAMIC_THUNKS 0

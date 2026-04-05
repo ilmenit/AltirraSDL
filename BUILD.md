@@ -68,7 +68,50 @@ AltirraSDL-4.40-linux.zip
 | `--native` | Windows only: build core libraries for use with Visual Studio `.sln` |
 | `--jobs N` or `-jN` | Override parallel job count (default: all cores) |
 | `--cmake "ARGS"` | Pass extra arguments to CMake configure |
+| `--librashader` | Build librashader from source (requires Rust, see below) |
 | `--help` | Show help |
+
+---
+
+## Librashader (optional — shader presets)
+
+[librashader](https://github.com/SnowflakePowered/librashader) provides
+RetroArch-compatible shader preset support (CRT effects, scanlines, etc.).
+It is **optional** — the emulator works without it, but shader presets
+in the Screen Effects menu will be unavailable.
+
+### Building librashader
+
+```bash
+# Build AltirraSDL with librashader support
+./build.sh --librashader
+```
+
+This clones librashader, builds it from source with Rust, and places the
+shared library next to the executable. Only the **OpenGL and Vulkan**
+backends are compiled — no extra system DLLs are required.
+
+**Prerequisite:** A working [Rust toolchain](https://rustup.rs/) (`cargo`
+must be on PATH). The first build takes a few minutes; subsequent builds
+are cached.
+
+### Using a pre-built librashader
+
+If you prefer not to build from source, download a release from the
+[librashader releases page](https://github.com/SnowflakePowered/librashader/releases)
+and place the shared library next to the AltirraSDL executable:
+
+| Platform | File to place next to executable |
+|----------|----------------------------------|
+| Linux | `librashader.so` |
+| macOS | `librashader.dylib` |
+| Windows | `librashader.dll` |
+
+**Note:** Pre-built releases from upstream include all backends (D3D9,
+D3D11, D3D12, GL, Vulkan) and may require additional system libraries
+on Windows (`D3DX9_43.dll` from the legacy DirectX End-User Runtime,
+`dxcompiler.dll` from the Windows SDK). Building from source with
+`--librashader` avoids this by compiling only GL + Vulkan backends.
 
 ---
 

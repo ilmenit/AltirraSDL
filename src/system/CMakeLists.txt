@@ -51,6 +51,11 @@ if(WIN32)
         source/time.cpp
         source/w32assist.cpp
     )
+    if(ALTIRRA_SDL3)
+        # SDL3 frontend on Windows needs ATGetConfigDir() for locating
+        # the imgui.ini and other config files.
+        list(APPEND SYSTEM_PLATFORM_SOURCES source/configdir_sdl3.cpp)
+    endif()
 else()
     # On Android, SDL3 is added via add_subdirectory() in the root CMakeLists.txt,
     # so the SDL3::SDL3 target already exists — no find_package needed.
@@ -79,7 +84,8 @@ target_include_directories(system
 
 if(WIN32)
     # time.cpp uses timeBeginPeriod/timeEndPeriod (winmm)
-    target_link_libraries(system PUBLIC winmm)
+    # registry.cpp uses SHDeleteKeyA (shlwapi)
+    target_link_libraries(system PUBLIC winmm shlwapi)
 else()
     target_link_libraries(system PUBLIC SDL3::SDL3)
 endif()

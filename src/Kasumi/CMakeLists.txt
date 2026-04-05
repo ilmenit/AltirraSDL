@@ -36,17 +36,13 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[36]86)")
         source/resample_stages_x64.cpp
         source/uberblit_ycbcr_sse2_intrin.cpp
     )
-    # These files reference MASM .asm external symbols -- MSVC only
-    if(MSVC)
-        list(APPEND KASUMI_COMMON_SOURCES
-            source/blt_spanutils_x86.cpp
-            source/blt_x86.cpp
-            source/resample_stages_x86.cpp
-            source/uberblit_resample_special_x86.cpp
-            source/uberblit_swizzle_x86.cpp
-            source/uberblit_ycbcr_x86.cpp
-        )
-    endif()
+    # The VS .sln build also compiles blt_x86.cpp, resample_stages_x86.cpp,
+    # etc. which are thin wrappers calling hand-tuned MASM .asm routines.
+    # The CMake build does NOT compile those — it relies on the reference
+    # C++ implementations (always compiled above) and the intrinsics files
+    # (resample_stages_x64.cpp, uberblit_ycbcr_sse2_intrin.cpp) instead.
+    # This avoids pulling in x86 MASM assembly which only the VS toolchain
+    # can assemble, and keeps the CMake build portable across all platforms.
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
     list(APPEND KASUMI_COMMON_SOURCES
         source/blt_spanutils_arm64.cpp

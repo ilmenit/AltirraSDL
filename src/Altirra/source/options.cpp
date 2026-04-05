@@ -123,7 +123,8 @@ void ATOptionsExchange(VDRegistryKey& key, bool write, ATOptions& opts) {
 	ATOptionsExchange(key, write, "UI: Use dark theme", opts.mbDarkTheme);
 
 	// Theme mode: 0=System, 1=Light, 2=Dark.  Falls back to mbDarkTheme
-	// for settings files that predate mThemeMode.
+	// for settings files that predate mThemeMode.  On a fresh install
+	// (neither key exists), keeps the struct default of System.
 	{
 		sint32 mode = (sint32)opts.mThemeMode;
 		if (write) {
@@ -132,8 +133,9 @@ void ATOptionsExchange(VDRegistryKey& key, bool write, ATOptions& opts) {
 			mode = key.getInt("UI: Theme mode", -1);
 			if (mode >= 0 && mode <= 2)
 				opts.mThemeMode = (ATUIThemeMode)mode;
-			else
+			else if (key.getValueType("UI: Use dark theme") != VDRegistryKey::kTypeUnknown)
 				opts.mThemeMode = opts.mbDarkTheme ? ATUIThemeMode::Dark : ATUIThemeMode::Light;
+			// else: fresh install — keep default ATUIThemeMode::System
 		}
 	}
 

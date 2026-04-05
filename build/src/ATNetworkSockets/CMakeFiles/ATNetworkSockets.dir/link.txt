@@ -1,2 +1,0 @@
-/usr/bin/ar qc libATNetworkSockets.a CMakeFiles/ATNetworkSockets.dir/source/nativesockets_sdl3.cpp.o CMakeFiles/ATNetworkSockets.dir/source/lookupworker_sdl3.cpp.o CMakeFiles/ATNetworkSockets.dir/source/socketworker_sdl3.cpp.o CMakeFiles/ATNetworkSockets.dir/source/socketutils_posix.cpp.o CMakeFiles/ATNetworkSockets.dir/source/worker_sdl3.cpp.o CMakeFiles/ATNetworkSockets.dir/source/vxlantunnel_sdl3.cpp.o CMakeFiles/ATNetworkSockets.dir/source/stdafx.cpp.o
-/usr/bin/ranlib libATNetworkSockets.a

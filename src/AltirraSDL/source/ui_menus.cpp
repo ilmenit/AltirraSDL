@@ -1435,10 +1435,12 @@ static void RenderDebugMenu(ATSimulator &sim) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Watch")) {
-			ImGui::MenuItem("Watch 1", nullptr, false, false);
-			ImGui::MenuItem("Watch 2", nullptr, false, false);
-			ImGui::MenuItem("Watch 3", nullptr, false, false);
-			ImGui::MenuItem("Watch 4", nullptr, false, false);
+			for (int i = 0; i < 4; ++i) {
+				char label[16];
+				snprintf(label, sizeof(label), "Watch %d", i + 1);
+				if (ImGui::MenuItem(label))
+					ATActivateUIPane(kATUIPaneId_WatchN + i, true);
+			}
 			ImGui::EndMenu();
 		}
 		if (ImGui::MenuItem("Breakpoints"))
