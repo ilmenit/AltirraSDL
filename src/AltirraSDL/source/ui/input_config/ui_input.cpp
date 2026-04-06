@@ -28,6 +28,18 @@
 
 extern ATSimulator g_sim;
 
+// Phase 3a note: a 4-way split (tables / popups / edit-dialog / main)
+// was planned but every one of the ~30 g_edit*/g_show*/g_create*/
+// g_rebind* file-statics is referenced from at least three of those
+// four prospective files, and the const data tables (kInputCodes,
+// kTargetCodes*, kControllerTypeEntries, kControllerTypeTemplateInfo)
+// expose ~20 symbols and constexpr counts that the popups and edit
+// dialog reference.  Promoting all of that to a header is a large
+// mechanical move with little maintainability win — same call as
+// 3d (ui_tools_diskexplorer.cpp) and 3e (videowriter_sdl3.cpp).
+// File left intact; revisit only as part of a behaviour-changing
+// refactor of the input mapping UI.
+
 // =========================================================================
 // Shared helpers
 // =========================================================================
