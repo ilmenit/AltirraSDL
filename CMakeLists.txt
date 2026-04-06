@@ -82,6 +82,18 @@ elseif(UNIX)
     add_compile_definitions(VD_OS_LINUX=1)
 endif()
 
+# Suppress two large warning categories that are intentional in the codebase
+# and unfixable without churning cross-platform headers:
+#   -Wmultichar: FourCC tags like 'ATR ', 'disk' used as interface/category IDs
+#                throughout at/atcore/device.h and friends.
+#   -Wattributes: MSVC-specific [[msvc::no_unique_address]] in vdalloc.h and
+#                 'packed' on templated fields in vd2/system/binary.h — GCC/Clang
+#                 correctly ignore these; MSVC consumes them.
+# Together these account for ~99.8% of warnings on GCC/Clang builds.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Wno-multichar -Wno-attributes)
+endif()
+
 # Match MSVC convention: _DEBUG in debug builds (MSVC defines it automatically)
 if(NOT MSVC)
     add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
