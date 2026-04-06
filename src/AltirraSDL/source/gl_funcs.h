@@ -299,6 +299,14 @@ GL_FUNC(void, glDrawBuffers, GLsizei n, const GLenum *bufs)
 
 #undef GL_FUNC
 
+#ifdef __APPLE__
+// glTexStorage2D is GL 4.2 and absent from Apple's gl3.h.
+// Declare it as a proc-loaded function pointer so call sites compile unchanged.
+typedef void (GLAPIENTRY *PFN_glTexStorage2D)(GLenum target, GLsizei levels,
+        GLenum internalformat, GLsizei w, GLsizei h);
+extern PFN_glTexStorage2D glTexStorage2D;
+#endif
+
 // Load all GL function pointers via SDL_GL_GetProcAddress.
 // Must be called after SDL_GL_CreateContext. Returns true on success.
 bool GLLoadFunctions();
