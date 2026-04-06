@@ -57,9 +57,14 @@ if(WIN32)
         list(APPEND SYSTEM_PLATFORM_SOURCES source/configdir_sdl3.cpp)
     endif()
 else()
-    # On Android, SDL3 is added via add_subdirectory() in the root CMakeLists.txt,
-    # so the SDL3::SDL3 target already exists — no find_package needed.
-    if(NOT ANDROID)
+    # SDL3 may already exist as a target from the root CMakeLists.txt:
+    #   - Android:           via add_subdirectory(android/SDL3)
+    #   - Linux/macOS CI:    via FetchContent_Declare(SDL3 ...) when no
+    #                        system SDL3 is installed
+    # Only call find_package() when the target isn't already available,
+    # otherwise CMake errors out trying to locate an SDL3Config.cmake
+    # that doesn't exist (FetchContent doesn't install one).
+    if(NOT TARGET SDL3::SDL3)
         find_package(SDL3 REQUIRED)
     endif()
     set(SYSTEM_PLATFORM_SOURCES
