@@ -114,6 +114,7 @@ target_sources(AltirraSDL PRIVATE
 
     # --- ui/input_config/ : Input mapping UI ---
     source/ui/input_config/ui_input.cpp
+    source/ui/input_config/ui_input_setup.cpp
 
     # --- ui/tools/ : Advanced Config, Disk Explorer, Setup Wizard, etc. ---
     source/ui/tools/ui_tools.cpp
