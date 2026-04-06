@@ -493,25 +493,28 @@ endif()
 # so it resolves correctly on all generators (Makefiles vs MSVC).
 if(ENABLE_LIBRASHADER)
     if(WIN32)
-        set(_LIBRA_NAME "librashader.dll")
+        set(_LIBRA_GLOB "librashader.dll")
     elseif(APPLE)
-        set(_LIBRA_NAME "librashader.dylib")
+        set(_LIBRA_GLOB "librashader*.dylib")
     else()
-        set(_LIBRA_NAME "librashader.so")
+        # Match librashader.so, librashader.so.1, librashader.so.2, etc.
+        # The loader in vendor/librashader/librashader_ld.h tries all of
+        # these in order; we need to ship whichever one is present.
+        set(_LIBRA_GLOB "librashader.so*")
     endif()
 
     # Look next to the executable (works for both single-config and
     # multi-config generators like MSVC which add Release/ etc.)
-    set(_LIBRA_PATH "$<TARGET_FILE_DIR:AltirraSDL>/${_LIBRA_NAME}")
+    set(_LIBRA_GLOB_PATH "$<TARGET_FILE_DIR:AltirraSDL>/${_LIBRA_GLOB}")
 
     # Use a script-mode cmake snippet (copy_if_exists.cmake) so
     # packaging never fails just because librashader wasn't built.
     add_custom_command(TARGET package_altirra POST_BUILD
         COMMAND ${CMAKE_COMMAND}
-            -DSRC="${_LIBRA_PATH}"
-            -DDST="${ALTIRRA_PKG_DIR}/"
+            -DSRC_GLOB=${_LIBRA_GLOB_PATH}
+            -DDST=${ALTIRRA_PKG_DIR}/
             -P "${CMAKE_SOURCE_DIR}/cmake/copy_if_exists.cmake"
-        COMMENT "Bundling ${_LIBRA_NAME} into package (if present)"
+        COMMENT "Bundling ${_LIBRA_GLOB} into package (if present)"
     )
 endif()
 

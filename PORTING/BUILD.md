@@ -39,8 +39,16 @@ SDL3+ImGui frontend.
 
 - CMake 3.24+
 - C++20 compiler (GCC, Clang, or MSVC)
-- SDL3 (system-installed or via vcpkg/conan)
-- Dear ImGui (fetched automatically via FetchContent)
+- git (for FetchContent of SDL3, Dear ImGui, librashader headers)
+- SDL3 — **auto-fetched and built from source** if no system SDL3 is
+  found.  A system install (distro package, vcpkg, conan, Homebrew) is
+  optional and only used to speed up the first build.  If `find_package`
+  picks up a broken/incompatible system SDL3, pass
+  `-DALTIRRA_FETCH_SDL3=ON` (or `./build.sh --fetch-sdl3`) to force the
+  source build.
+- Dear ImGui (auto-fetched via FetchContent)
+- librashader C headers (auto-fetched via FetchContent; runtime `.so`
+  optional, see `--librashader`)
 
 ### Quick Start
 
@@ -64,6 +72,7 @@ cmake --build build/windows-sdl-release --config Release
 | Option | Default | Description |
 |--------|---------|-------------|
 | `ALTIRRA_SDL3` | ON (non-Windows), OFF (Windows) | Build the SDL3+ImGui frontend |
+| `ALTIRRA_FETCH_SDL3` | OFF | Skip `find_package(SDL3)` and always fetch SDL3 from source |
 | `ENABLE_LIBRASHADER` | ON | Fetch librashader C headers and enable shader preset support |
 
 Override on the command line:

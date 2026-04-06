@@ -46,6 +46,13 @@ include(FetchContent)
 # The native Win32 UI is built via the Visual Studio .sln, never via CMake.
 option(ALTIRRA_SDL3 "Build SDL3+ImGui frontend" ON)
 
+# ALTIRRA_FETCH_SDL3 — force-fetch SDL3 from source instead of looking
+# for a system install.  Use this when find_package(SDL3) picks up a
+# broken or incompatible system SDL3 (e.g. an old SDL3 lying around in
+# /usr/local from a previous source build).  Default OFF: prefer system
+# SDL3 when available, fall back to FetchContent when it isn't.
+option(ALTIRRA_FETCH_SDL3 "Always fetch SDL3 from source (skip find_package)" OFF)
+
 # Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
 if(WIN32)
     add_compile_definitions(VD_OS_WINDOWS=1)
@@ -134,7 +141,12 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
         #   cmake --preset <preset> -DSDL3_DIR=/path/to/sdl3/cmake
         # ────────────────────────────────────────────────────────────────
 
-        find_package(SDL3 QUIET)
+        if(ALTIRRA_FETCH_SDL3)
+            message(STATUS "ALTIRRA_FETCH_SDL3=ON — skipping find_package(SDL3)")
+            set(SDL3_FOUND FALSE)
+        else()
+            find_package(SDL3 QUIET)
+        endif()
 
         if(SDL3_FOUND)
             # ── System SDL3 found ───────────────────────────────────────
