@@ -93,6 +93,9 @@ target_sources(AltirraSDL PRIVATE
 
     # --- ui/menus/ : menu bar ---
     source/ui/menus/ui_menus.cpp
+    source/ui/menus/ui_menus_view.cpp
+    source/ui/menus/ui_menus_system.cpp
+    source/ui/menus/ui_menus_debug.cpp
 
     # --- ui/sysconfig/ : Configure System paged dialog ---
     source/ui/sysconfig/ui_system.cpp
