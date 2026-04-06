@@ -5,6 +5,7 @@
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
+#include <functional>
 #include "touch_layout.h"
 
 struct ATUIState;
@@ -64,6 +65,13 @@ struct ATMobileUIState {
 	bool fxScanlines = false;
 	bool fxBloom     = false;
 	bool fxDistortion = false;
+
+	// --- Performance preset ---
+	// 0 = Efficient, 1 = Balanced (default), 2 = Quality, 3 = Custom.
+	// Changing the preset drives the three fx* toggles + filter mode;
+	// manually flipping one of those fields switches the preset to
+	// Custom so the user can see they've left the bundle.
+	int performancePreset = 1;
 };
 
 // Initialize mobile UI (call once at startup, after ImGui init)
@@ -79,6 +87,12 @@ void ATMobileUI_SaveConfig(const ATMobileUIState &mobileState);
 // that the backend doesn't support are silently no-op.  Call on
 // startup after settings load, and whenever a toggle changes.
 void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState);
+
+// Apply a performance preset — updates the fx* toggles and filter
+// mode according to the selected preset (Efficient / Balanced /
+// Quality).  Called on preset change and at startup after
+// LoadConfig.  Preset = 3 (Custom) is a no-op.
+void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState);
 
 // Force the mobile file browser to re-enumerate its current
 // directory on the next render pass.  Called from the SDL3 event
@@ -125,3 +139,11 @@ void ATMobileUI_OpenFileBrowser(ATMobileUIState &mobileState);
 
 // Open settings
 void ATMobileUI_OpenSettings(ATMobileUIState &mobileState);
+
+// Public entry points to the mobile-style info and confirm sheet.
+// Any non-mobile code path that would normally open a desktop modal
+// can call these to get the full-screen mobile card renderer
+// instead.  Safe to call from ui_main.cpp under #ifdef ALTIRRA_MOBILE.
+void ATMobileUI_ShowInfoModal(const char *title, const char *body);
+void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
+	std::function<void()> onConfirm);

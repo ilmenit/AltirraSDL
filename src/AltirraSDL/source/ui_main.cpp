@@ -1183,7 +1183,8 @@ static void RenderAboutDialog(ATUIState &state) {
 	ImGui::TextWrapped(
 		"Atari 800/800XL/5200 emulator\n"
 		"Based on Altirra by Avery Lee\n"
-		"SDL3 + Dear ImGui cross-platform frontend\n\n"
+		"SDL3 + Dear ImGui cross-platform frontend\n"
+		"SDL Port by Jakub 'Ilmenit' Debski\n\n"
 		"Licensed under GNU GPL v2+");
 
 	ImGui::Spacing();
@@ -1601,6 +1602,12 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	ATUIDebuggerRenderPanes(sim, state);
 
 	// Tools result popup (success/error messages from deferred tool actions)
+#ifdef ALTIRRA_MOBILE
+	if (g_showToolsResult) {
+		ATMobileUI_ShowInfoModal("Tool Result", g_toolsResultMessage.c_str());
+		g_showToolsResult = false;
+	}
+#else
 	if (g_showToolsResult) {
 		ImGui::OpenPopup("Tool Result");
 		g_showToolsResult = false;
@@ -1612,8 +1619,18 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
+#endif
 
 	// Export ROM overwrite confirmation popup
+#ifdef ALTIRRA_MOBILE
+	if (g_showExportROMOverwrite) {
+		VDStringW path = g_exportROMPath;
+		ATMobileUI_ShowConfirmDialog("Overwrite Existing Files?",
+			"There are existing files with the same names that will be overwritten.\nAre you sure?",
+			[path]() { ATUIDoExportROMSet(path); });
+		g_showExportROMOverwrite = false;
+	}
+#else
 	if (g_showExportROMOverwrite) {
 		ImGui::OpenPopup("Overwrite Existing Files?");
 		g_showExportROMOverwrite = false;
@@ -1630,6 +1647,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
+#endif
 
 	// Progress dialog popup (firmware scan, background tasks)
 	ATUIRenderProgress();

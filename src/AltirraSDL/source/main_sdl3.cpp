@@ -1662,26 +1662,62 @@ int main(int argc, char *argv[]) {
 		// effect (e.g. the "Numpad -> Joystick (port 1)" preset also
 		// targets port 0 but binds kATInputCode_KeyNumpad* — useless
 		// for touch).
-		auto hasTouchBindings = [](ATInputMap *imap) -> bool {
-			bool hasDir = false, hasFire = false;
+		// ---------------------------------------------------------------
+		// Virtual joystick / fire wiring — how it works, in one place
+		// ---------------------------------------------------------------
+		// touch_controls.cpp converts finger events into five "source"
+		// input codes it feeds directly into the input manager via
+		// OnButtonDown/OnButtonUp with unit=0:
+		//
+		//   kATInputCode_JoyStick1Left  (0x2100)
+		//   kATInputCode_JoyStick1Right (0x2101)
+		//   kATInputCode_JoyStick1Up    (0x2102)
+		//   kATInputCode_JoyStick1Down  (0x2103)
+		//   kATInputCode_JoyButton0     (0x2800)
+		//
+		// For these to actually move the player / fire, ONE input map
+		// must be active that:
+		//   1. Has a Joystick controller attached to Atari physical
+		//      port 0 (HasControllerType(Joystick) && UsesPhysicalPort(0)).
+		//   2. SpecificInputUnit == -1 (accept any source unit — our
+		//      touch controller is not a registered input unit).
+		//   3. Contains direct 1:1 mappings from the five source codes
+		//      above to the joystick triggers Left/Right/Up/Down/Button0.
+		//
+		// Several built-in presets look plausible but silently fail:
+		//   "Numpad -> Joystick (port 1)"           — sources are
+		//       kATInputCode_KeyNumpad*, not JoyStick1*.
+		//   "Gamepad -> Joystick (port 1)"          — has all 5 direct
+		//       sources but also has fall-through analog-axis sources,
+		//       and std::map<ATInputMap*, bool> iteration order is by
+		//       pointer address, so this one sometimes won the tiebreak
+		//       over the properly-authored "Xbox 360 Controller" map.
+		//   "Gamepad N -> Joystick (port 1)"        — unit != -1.
+		//
+		// countTouchBindings() below counts distinct direct 1:1 source
+		// codes.  The selector requires all 5 to be present and picks
+		// the best candidate by (unit-agnostic bonus + match count),
+		// which reliably resolves to "Xbox 360 Controller -> Joystick
+		// (port 1)" on a default install.
+		//
+		// The activation MUST happen after default maps are loaded
+		// (settings.cpp runs LoadSelections) but BEFORE the main loop
+		// starts polling input.  ColdReset does NOT detach controllers
+		// from the port manager, so the activation is stable across
+		// subsequent sim resets.
+		auto countTouchBindings = [](ATInputMap *imap) -> int {
+			bool hasL=false,hasR=false,hasU=false,hasD=false,hasFire=false;
 			const uint32 m = imap->GetMappingCount();
 			for (uint32 i = 0; i < m; ++i) {
 				const auto &mapping = imap->GetMapping(i);
 				uint32 code = mapping.mInputCode & kATInputCode_IdMask;
-				if (code == kATInputCode_JoyStick1Left
-					|| code == kATInputCode_JoyStick1Right
-					|| code == kATInputCode_JoyStick1Up
-					|| code == kATInputCode_JoyStick1Down)
-				{
-					hasDir = true;
-				}
-				if ((code & 0xFFFF) >= (uint32)kATInputCode_JoyButton0
-					&& (code & 0xFFFF) <= (uint32)kATInputCode_JoyButton0 + 7)
-				{
-					hasFire = true;
-				}
+				if (code == kATInputCode_JoyStick1Left)  hasL = true;
+				if (code == kATInputCode_JoyStick1Right) hasR = true;
+				if (code == kATInputCode_JoyStick1Up)    hasU = true;
+				if (code == kATInputCode_JoyStick1Down)  hasD = true;
+				if (code == (uint32)kATInputCode_JoyButton0) hasFire = true;
 			}
-			return hasDir && hasFire;
+			return (hasL?1:0) + (hasR?1:0) + (hasU?1:0) + (hasD?1:0) + (hasFire?1:0);
 		};
 
 		for (uint32 i = 0; i < count; ++i) {
@@ -1693,14 +1729,17 @@ int main(int argc, char *argv[]) {
 			// Must target Atari physical port 0 (= joystick port 1).
 			if (!imap->UsesPhysicalPort(0))
 				continue;
-			// Must contain mappings for the codes touch_controls
-			// actually emits, otherwise activating it is pointless.
-			if (!hasTouchBindings(imap))
+			int touchMatches = countTouchBindings(imap);
+			// Must have ALL 5 direct touch source codes (4 dirs + fire),
+			// otherwise some directions/fire will silently be dead.
+			if (touchMatches < 5)
 				continue;
 			// Prefer generic (unit=-1) over a specific unit index,
 			// because our touch controller isn't registered as a
-			// specific input unit.
+			// specific input unit.  Break further ties by number of
+			// direct matches (already clamped to 5).
 			int score = (imap->GetSpecificInputUnit() == -1) ? 100 : 50;
+			score += touchMatches;
 			if (score > chosenScore) {
 				chosenScore = score;
 				chosen = imap;
@@ -1837,6 +1876,10 @@ int main(int argc, char *argv[]) {
 	// Apply visual effects toggles once, after the simulator is fully
 	// initialised and the GTIA is ready to accept param writes.
 	ATMobileUI_ApplyVisualEffects(g_mobileState);
+	// Apply performance preset so its bundled simulator knobs
+	// (FastBoot, Interlace, POKEY nonlinear mix, drive sounds)
+	// are set before the first frame.
+	ATMobileUI_ApplyPerformancePreset(g_mobileState);
 
 	// If we were killed while backgrounded last session, restore the
 	// emulator state the user was in.  Must happen AFTER firmware has

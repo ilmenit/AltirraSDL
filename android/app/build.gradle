@@ -37,6 +37,10 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            // Sign release builds with the debug keystore so we can
+            // install them directly on a developer device via adb
+            // without provisioning a production keystore.
+            signingConfig signingConfigs.debug
         }
     }
 

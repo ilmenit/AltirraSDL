@@ -191,7 +191,39 @@ bool ATTouchControls_IsActive() {
 // Event handling
 // -------------------------------------------------------------------------
 
-bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layout) {
+// Compute the fixed anchor point for D-Pad styles.  Matches the
+// inactive Analog hint position so users' thumb memory carries over.
+static void GetDPadAnchor(const ATTouchLayout &layout,
+	const ATTouchLayoutConfig &config, float &ax, float &ay)
+{
+	ATTouchRect joyPx = ATTouchLayout_ToPixels(layout.joystickZone, layout.screenW, layout.screenH);
+	float cs = (config.contentScale < 1.0f) ? 1.0f : config.contentScale;
+	float margin = 80.0f * cs;
+	float r = layout.joyMaxRadius;
+	ax = joyPx.x0 + margin;
+	ay = joyPx.y1 - margin;
+	if (ax < joyPx.x0 + r) ax = joyPx.x0 + r;
+	if (ay > joyPx.y1 - r) ay = joyPx.y1 - r;
+	if (ay < joyPx.y0 + r) ay = joyPx.y0 + r;
+}
+
+// 4-way direction mask — picks a single dominant cardinal.  |dx|>|dy|
+// ⇒ L/R, else U/D.  Sub-deadzone returns 0.
+static uint8 ComputeDirectionMask4(float dx, float dy, float deadZone) {
+	float len = sqrtf(dx * dx + dy * dy);
+	if (len < deadZone)
+		return 0;
+	if (fabsf(dx) > fabsf(dy))
+		return (dx < 0.0f) ? 0x01 : 0x02;
+	else
+		return (dy < 0.0f) ? 0x04 : 0x08;
+}
+
+bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layout,
+	const ATTouchLayoutConfig &config)
+{
+	const ATTouchJoystickStyle style = config.joystickStyle;
+	const bool isDPad = (style != ATTouchJoystickStyle::Analog);
 	if (ev.type != SDL_EVENT_FINGER_DOWN &&
 		ev.type != SDL_EVENT_FINGER_MOTION &&
 		ev.type != SDL_EVENT_FINGER_UP)
@@ -247,11 +279,32 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 		if (joyZonePx.Contains(px, py) && !s_joyActive) {
 			s_joyFinger = fid;
 			s_joyActive = true;
-			s_joyBaseX = px;
-			s_joyBaseY = py;
+			if (isDPad) {
+				// Fixed anchor at the inactive hint position so
+				// the wedge layout never moves under the finger.
+				float ax, ay;
+				GetDPadAnchor(layout, config, ax, ay);
+				s_joyBaseX = ax;
+				s_joyBaseY = ay;
+			} else {
+				s_joyBaseX = px;
+				s_joyBaseY = py;
+			}
 			s_joyCurX = px;
 			s_joyCurY = py;
+
+			uint8 newMask = 0;
+			float dx = px - s_joyBaseX;
+			float dy = py - s_joyBaseY;
+			if (style == ATTouchJoystickStyle::DPad4)
+				newMask = ComputeDirectionMask4(dx, dy, layout.joyDeadZone);
+			else if (style == ATTouchJoystickStyle::DPad8)
+				newMask = ComputeDirectionMask(dx, dy, layout.joyDeadZone);
 			s_joyDirMask = 0;
+			if (newMask) {
+				ApplyDirectionMask(newMask, 0);
+				s_joyDirMask = newMask;
+			}
 			HapticPulse(5);
 			return true;
 		}
@@ -296,16 +349,24 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 			float dx = s_joyCurX - s_joyBaseX;
 			float dy = s_joyCurY - s_joyBaseY;
 
-			// Clamp to max radius
-			float len = sqrtf(dx * dx + dy * dy);
-			if (len > layout.joyMaxRadius) {
-				dx = dx / len * layout.joyMaxRadius;
-				dy = dy / len * layout.joyMaxRadius;
-				s_joyCurX = s_joyBaseX + dx;
-				s_joyCurY = s_joyBaseY + dy;
+			if (!isDPad) {
+				// Analog: clamp to max radius and move knob with
+				// the finger.
+				float len = sqrtf(dx * dx + dy * dy);
+				if (len > layout.joyMaxRadius) {
+					dx = dx / len * layout.joyMaxRadius;
+					dy = dy / len * layout.joyMaxRadius;
+					s_joyCurX = s_joyBaseX + dx;
+					s_joyCurY = s_joyBaseY + dy;
+				}
 			}
 
-			uint8 newMask = ComputeDirectionMask(dx, dy, layout.joyDeadZone);
+			uint8 newMask;
+			if (style == ATTouchJoystickStyle::DPad4)
+				newMask = ComputeDirectionMask4(dx, dy, layout.joyDeadZone);
+			else
+				newMask = ComputeDirectionMask(dx, dy, layout.joyDeadZone);
+
 			if (newMask != s_joyDirMask) {
 				ApplyDirectionMask(newMask, s_joyDirMask);
 				s_joyDirMask = newMask;
@@ -407,6 +468,100 @@ static void DrawButton(ImDrawList *dl, const ATTouchRect &r, const char *label,
 	dl->AddText(ImVec2(tx, ty), textColor, label);
 }
 
+// Wedge index → 4-bit direction mask (bit0=L,1=R,2=U,3=D).
+// For 8 segments with startAngle=22.5° + k·45° the wedge centres
+// fall at 45° + k·45°, i.e. NE, N, NW, W, SW, S, SE, E.
+static uint8 SectorToMask8(int k) {
+	static const uint8 kTbl[8] = {
+		0x02 | 0x04,   // 0: NE = right+up
+		0x04,          // 1: N  = up
+		0x01 | 0x04,   // 2: NW = left+up
+		0x01,          // 3: W  = left
+		0x01 | 0x08,   // 4: SW = left+down
+		0x08,          // 5: S  = down
+		0x02 | 0x08,   // 6: SE = right+down
+		0x02,          // 7: E  = right
+	};
+	return kTbl[k & 7];
+}
+
+// Draw a pizza-sliced dpad.  The centre vertex of every wedge is
+// `(cx, cy)` so there is no dead square in the middle.
+//   segments = 8 → wedge boundaries at 22.5° + k·45° (cardinals lie
+//               at 0°/90°/... which is *inside* a wedge).
+//   segments = 4 → wedge boundaries at 45° + k·90° (cardinals lie at
+//               the centre of each wedge).
+static void DrawDPad(ImDrawList *dl, float cx, float cy, float radius,
+	uint8 mask, float opacity, int segments)
+{
+	ImU32 ringColor = IM_COL32(255, 255, 255, (int)(140 * opacity));
+	ImU32 edgeColor = IM_COL32(255, 255, 255, (int)(110 * opacity));
+	ImU32 idleFill  = IM_COL32(255, 255, 255, (int)( 35 * opacity));
+	ImU32 hotFill   = IM_COL32(255, 255, 255, (int)(170 * opacity));
+	ImU32 glyphColor= IM_COL32(255, 255, 255, (int)(220 * opacity));
+
+	const float kPi = 3.14159265358979323846f;
+	float step = (2.0f * kPi) / (float)segments;
+	// SDL / ImGui y axis is screen-down.  Use math angles but negate y
+	// when converting to screen coords so 0° points to the right (+x),
+	// 90° points up (−screen y), etc.
+	float startAngle = (segments == 8)
+		? (kPi / 8.0f)        // 22.5°
+		: (kPi / 4.0f);       // 45°
+
+	for (int k = 0; k < segments; ++k) {
+		float a0 = startAngle + step * (float)k;
+		float a1 = a0 + step;
+
+		ImVec2 p0(cx, cy);
+		ImVec2 p1(cx + radius * cosf(a0), cy - radius * sinf(a0));
+		ImVec2 p2(cx + radius * cosf(a1), cy - radius * sinf(a1));
+
+		// Is this wedge lit?
+		bool lit = false;
+		if (segments == 8) {
+			uint8 wantMask = SectorToMask8(k);
+			// Light wedge if the *exact* cardinal or diagonal is
+			// set.  Single-axis presses light the cardinal wedge;
+			// two-axis presses light the diagonal wedge only.
+			lit = (mask == wantMask);
+		} else {
+			// 4-way: wedge k spans [45° + k·90°, 135° + k·90°].
+			// Centres lie at 90° + k·90° = N, W, S, E.
+			static const uint8 k4[4] = {
+				0x04, // 0: N (up)
+				0x01, // 1: W (left)
+				0x08, // 2: S (down)
+				0x02, // 3: E (right)
+			};
+			lit = (mask == k4[k]);
+		}
+
+		dl->AddTriangleFilled(p0, p1, p2, lit ? hotFill : idleFill);
+		dl->AddLine(p0, p1, edgeColor, 1.5f);
+	}
+
+	// Outer ring on top.
+	dl->AddCircle(ImVec2(cx, cy), radius, ringColor, 48, 2.0f);
+
+	// Cardinal glyphs using ASCII (default ImGui font does not
+	// include Unicode arrows).
+	float gr = radius * 0.68f;
+	struct Glyph { const char *s; float dx, dy; };
+	const Glyph glyphs[4] = {
+		{ ">",  gr, 0 },
+		{ "<", -gr, 0 },
+		{ "^",  0, -gr },
+		{ "v",  0,  gr },
+	};
+	for (int i = 0; i < 4; ++i) {
+		ImVec2 ts = ImGui::CalcTextSize(glyphs[i].s);
+		dl->AddText(ImVec2(cx + glyphs[i].dx - ts.x * 0.5f,
+			cy + glyphs[i].dy - ts.y * 0.5f),
+			glyphColor, glyphs[i].s);
+	}
+}
+
 // Draw circular joystick base and knob
 static void DrawJoystick(ImDrawList *dl, float baseX, float baseY,
 	float curX, float curY, float maxRadius, float opacity)
@@ -470,7 +625,17 @@ void ATTouchControls_Render(const ATTouchLayout &layout, const ATTouchLayoutConf
 		DrawButton(dl, layout.btnFireB, "B", btnFireB, textColor, s_fireBHeld);
 
 	// --- Joystick ---
-	if (s_joyActive) {
+	const ATTouchJoystickStyle style = config.joystickStyle;
+	if (style == ATTouchJoystickStyle::DPad8 || style == ATTouchJoystickStyle::DPad4) {
+		// Pizza-sliced dpad at the fixed anchor (matches the
+		// inactive Analog hint position).  Always drawn, regardless
+		// of whether a finger is down.
+		float ax, ay;
+		GetDPadAnchor(layout, config, ax, ay);
+		int segs = (style == ATTouchJoystickStyle::DPad8) ? 8 : 4;
+		DrawDPad(dl, ax, ay, layout.joyMaxRadius,
+			s_joyActive ? s_joyDirMask : 0, alpha, segs);
+	} else if (s_joyActive) {
 		DrawJoystick(dl, s_joyBaseX, s_joyBaseY,
 			s_joyCurX, s_joyCurY,
 			layout.joyMaxRadius, alpha);

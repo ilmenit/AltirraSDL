@@ -24,8 +24,15 @@ enum class ATTouchControlSize : int {
 	Large = 2
 };
 
+enum class ATTouchJoystickStyle : int {
+	Analog = 0,   // Free-floating knob anchored at touch-down point (default).
+	DPad8  = 1,   // 8-way pizza-sliced dpad anchored at a fixed point.
+	DPad4  = 2,   // 4-way pizza-sliced dpad (cardinal snap) at a fixed point.
+};
+
 struct ATTouchLayoutConfig {
 	ATTouchControlSize controlSize = ATTouchControlSize::Medium;
+	ATTouchJoystickStyle joystickStyle = ATTouchJoystickStyle::Analog;
 	float controlOpacity = 0.5f;
 	bool hapticEnabled = true;
 	float contentScale = 1.0f;		// DPI scale factor from SDL_GetDisplayContentScale()

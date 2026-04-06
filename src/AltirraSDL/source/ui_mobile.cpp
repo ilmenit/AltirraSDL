@@ -25,6 +25,7 @@
 #include "touch_widgets.h"
 #include "simulator.h"
 #include "gtia.h"
+#include <at/ataudio/pokey.h>
 #include "diskinterface.h"
 #include "disk.h"
 #include <at/atio/diskimage.h>
@@ -68,6 +69,12 @@ void LoadMobileConfig(ATMobileUIState &mobileState) {
 	mobileState.fxScanlines         = key.getBool("FxScanlines", false);
 	mobileState.fxBloom             = key.getBool("FxBloom", false);
 	mobileState.fxDistortion        = key.getBool("FxDistortion", false);
+	mobileState.performancePreset   = key.getInt("PerformancePreset", 1);
+	if (mobileState.performancePreset < 0 || mobileState.performancePreset > 3)
+		mobileState.performancePreset = 1;
+	int js = key.getInt("JoystickStyle", (int)ATTouchJoystickStyle::Analog);
+	if (js < 0 || js > 2) js = 0;
+	mobileState.layoutConfig.joystickStyle = (ATTouchJoystickStyle)js;
 }
 
 void SaveMobileConfig(const ATMobileUIState &mobileState) {
@@ -86,6 +93,8 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {
 		key.setBool("FxScanlines",  mobileState.fxScanlines);
 		key.setBool("FxBloom",      mobileState.fxBloom);
 		key.setBool("FxDistortion", mobileState.fxDistortion);
+		key.setInt("PerformancePreset", mobileState.performancePreset);
+		key.setInt("JoystickStyle", (int)mobileState.layoutConfig.joystickStyle);
 	}
 	// Persist immediately — registry-only writes are lost if the user
 	// swipes the app away from recents before it backgrounds properly.
@@ -207,6 +216,55 @@ static void ShowInfoModal(const char *title, const char *body) {
 	s_infoModalBody  = body ? body : "";
 	s_infoModalOpen  = true;
 }
+
+// Confirm dialog — reuses the same mobile sheet renderer as the
+// info modal but shows Cancel + Confirm buttons and fires a
+// std::function on confirm.  Used by destructive hamburger actions
+// (Cold/Warm Reset, Quick Save/Load).
+#include <functional>
+static VDStringA s_confirmTitle;
+static VDStringA s_confirmBody;
+static std::function<void()> s_confirmAction;
+static bool      s_confirmActive = false;
+
+static void ShowConfirmDialog(const char *title, const char *body,
+	std::function<void()> onConfirm)
+{
+	s_confirmTitle  = title ? title : "";
+	s_confirmBody   = body  ? body  : "";
+	s_confirmAction = std::move(onConfirm);
+	s_confirmActive = true;
+}
+
+// Public forwarders — give non-mobile translation units (ui_main.cpp
+// tool/confirm popups) a way to drive the mobile sheet without
+// touching the file-local statics.
+void ATMobileUI_ShowInfoModal(const char *title, const char *body) {
+	ShowInfoModal(title, body);
+}
+void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
+	std::function<void()> onConfirm)
+{
+	ShowConfirmDialog(title, body, std::move(onConfirm));
+}
+
+// Hierarchical settings — which sub-page is currently being shown.
+// Local to ui_mobile.cpp so we don't have to pollute the public
+// ATMobileUIScreen enum with per-page entries.
+enum class ATMobileSettingsPage {
+	Home,
+	Machine,
+	Display,
+	Performance,
+	Controls,
+	SaveState,
+	Firmware,
+};
+static ATMobileSettingsPage s_settingsPage = ATMobileSettingsPage::Home;
+
+// Firmware slot currently being picked within the Firmware sub-page.
+// File scope so the header back button can close the picker.
+static ATFirmwareType s_fwPicker = kATFirmwareType_Unknown;
 
 // Supported file extensions for Atari images
 static bool IsSupportedExtension(const wchar_t *name) {
@@ -364,23 +422,92 @@ void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState) {
 	// leave everything else at the user's/default values.
 	ATArtifactingParams params = gtia.GetArtifactingParams();
 
+	// Bloom: pushed hard enough that the effect is obvious on a
+	// phone LCD.  The default-constructed params leave radius/
+	// intensity at zero so mbEnableBloom alone does nothing visible.
 	params.mbEnableBloom = mobileState.fxBloom;
+	if (mobileState.fxBloom) {
+		params.mBloomRadius            = 8.0f;
+		params.mBloomDirectIntensity   = 1.00f;
+		params.mBloomIndirectIntensity = 0.80f;
+	} else {
+		params.mBloomRadius            = 0.0f;
+		params.mBloomDirectIntensity   = 0.0f;
+		params.mBloomIndirectIntensity = 0.0f;
+	}
 
 	if (mobileState.fxDistortion) {
-		// Gentle CRT distortion — matches the desktop "slight curve"
-		// preset without being distracting on a phone.
-		if (params.mDistortionViewAngleX < 1.0f) {
-			ATArtifactingParams def = ATArtifactingParams::GetDefault();
-			params.mDistortionViewAngleX = 70.0f;
-			params.mDistortionYRatio     = 0.35f;
-			(void)def;
-		}
+		// Noticeable barrel distortion — larger than the previous
+		// "subtle" value so the curvature is actually visible on a
+		// 6" phone screen without looking cartoonish.
+		params.mDistortionViewAngleX = 85.0f;
+		params.mDistortionYRatio     = 0.50f;
 	} else {
 		params.mDistortionViewAngleX = 0.0f;
 		params.mDistortionYRatio     = 0.0f;
 	}
 
 	gtia.SetArtifactingParams(params);
+}
+
+// Apply a bundled performance preset.  Efficient turns everything
+// off and picks the cheapest filter.  Balanced keeps effects off
+// but uses a nicer filter.  Quality enables all three CRT effects.
+// Custom (3) is a no-op so the user's manual tweaks stay put.
+void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
+	int p = mobileState.performancePreset;
+	if (p < 0 || p >= 3) return;  // Custom or out of range
+
+	ATDisplayFilterMode filter = kATDisplayFilterMode_Bilinear;
+	bool fastBoot       = true;   // always on — near-free speed win
+	bool interlace      = false;  // extra frame work; off except Quality
+	bool nonlinearMix   = true;   // POKEY quality
+	bool audioMonitor   = false;  // profiler overhead, off everywhere
+	bool driveSounds    = false;  // extra audio mixing; off except Quality
+
+	switch (p) {
+	case 0: // Efficient
+		mobileState.fxScanlines  = false;
+		mobileState.fxBloom      = false;
+		mobileState.fxDistortion = false;
+		filter        = kATDisplayFilterMode_Point;
+		fastBoot      = true;
+		interlace     = false;
+		nonlinearMix  = false;   // cheaper linear mix
+		driveSounds   = false;
+		break;
+	case 1: // Balanced
+		mobileState.fxScanlines  = false;
+		mobileState.fxBloom      = false;
+		mobileState.fxDistortion = false;
+		filter        = kATDisplayFilterMode_Bilinear;
+		fastBoot      = true;
+		interlace     = false;
+		nonlinearMix  = true;
+		driveSounds   = false;
+		break;
+	case 2: // Quality
+		mobileState.fxScanlines  = true;
+		mobileState.fxBloom      = true;
+		mobileState.fxDistortion = true;
+		filter        = kATDisplayFilterMode_SharpBilinear;
+		fastBoot      = false;   // authentic boot timing
+		interlace     = true;    // high-res interlace for games that use it
+		nonlinearMix  = true;
+		driveSounds   = true;
+		break;
+	}
+
+	ATUISetDisplayFilterMode(filter);
+	ATMobileUI_ApplyVisualEffects(mobileState);
+
+	// Simulator-side knobs — match the Windows defaults where they
+	// exist and fall back to the cheapest option elsewhere.
+	g_sim.SetFastBootEnabled(fastBoot);
+	g_sim.GetGTIA().SetInterlaceEnabled(interlace);
+	g_sim.GetPokey().SetNonlinearMixingEnabled(nonlinearMix);
+	g_sim.SetAudioMonitorEnabled(audioMonitor);
+	ATUISetDriveSoundsEnabled(driveSounds);
 }
 
 // Force the file browser to re-enumerate next frame.  Used after
@@ -578,34 +705,92 @@ static void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		// Warm Reset
-		if (ImGui::Button("Warm Reset", btnSize)) {
-			sim.WarmReset();
-			ATMobileUI_CloseMenu(sim, mobileState);
-			sim.Resume();
+		// Quick Save State — with confirmation to prevent accidental
+		// overwrite of an earlier checkpoint.
+		if (ImGui::Button("Quick Save State", btnSize)) {
+			ShowConfirmDialog("Quick Save State",
+				"Overwrite the current quick save with the "
+				"emulator's state right now?",
+				[&mobileState]() {
+					try {
+						VDStringW path = QuickSaveStatePath();
+						g_sim.SaveState(path.c_str());
+						ShowInfoModal("Saved",
+							"Emulator state saved.");
+					} catch (const MyError &e) {
+						ShowInfoModal("Save Failed", e.c_str());
+					}
+				});
 		}
 		ImGui::Spacing();
 
-		// Cold Reset
-		if (ImGui::Button("Cold Reset", btnSize)) {
-			sim.ColdReset();
-			ATMobileUI_CloseMenu(sim, mobileState);
-			sim.Resume();
+		// Quick Load State — confirmation, with a distinct info
+		// dialog if no save is available.
+		if (ImGui::Button("Quick Load State", btnSize)) {
+			VDStringW path = QuickSaveStatePath();
+			if (!VDDoesPathExist(path.c_str())) {
+				ShowInfoModal("No Quick Save",
+					"There is no quick save available to load.");
+			} else {
+				ShowConfirmDialog("Quick Load State",
+					"Replace the current emulator state with the "
+					"quick save?  Any unsaved progress will be lost.",
+					[&sim, &mobileState]() {
+						VDStringW p = QuickSaveStatePath();
+						try {
+							ATImageLoadContext ctx{};
+							if (sim.Load(p.c_str(),
+								kATMediaWriteMode_RO, &ctx))
+							{
+								sim.Resume();
+								mobileState.gameLoaded = true;
+								ShowInfoModal("Loaded",
+									"Emulator state restored.");
+							}
+						} catch (const MyError &e) {
+							ShowInfoModal("Load Failed", e.c_str());
+						}
+					});
+			}
 		}
 		ImGui::Spacing();
 
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		// Virtual Keyboard (Phase 2 placeholder — disabled)
-		ImGui::BeginDisabled(true);
-		ImGui::Button("Virtual Keyboard", btnSize);
-		ImGui::EndDisabled();
+		// Warm Reset — with confirmation.
+		if (ImGui::Button("Warm Reset", btnSize)) {
+			ShowConfirmDialog("Warm Reset",
+				"Reset the emulator without clearing memory?",
+				[&sim, &mobileState]() {
+					sim.WarmReset();
+					ATMobileUI_CloseMenu(sim, mobileState);
+					sim.Resume();
+				});
+		}
+		ImGui::Spacing();
+
+		// Cold Reset — with confirmation.
+		if (ImGui::Button("Cold Reset", btnSize)) {
+			ShowConfirmDialog("Cold Reset",
+				"Power-cycle the emulator?  This clears RAM and "
+				"reboots, just like unplugging the machine.",
+				[&sim, &mobileState]() {
+					sim.ColdReset();
+					ATMobileUI_CloseMenu(sim, mobileState);
+					sim.Resume();
+				});
+		}
+		ImGui::Spacing();
+
+		ImGui::Separator();
 		ImGui::Spacing();
 
 		// Settings
-		if (ImGui::Button("Settings", btnSize))
+		if (ImGui::Button("Settings", btnSize)) {
+			s_settingsPage = ATMobileSettingsPage::Home;
 			mobileState.currentScreen = ATMobileUIScreen::Settings;
+		}
 		ImGui::Spacing();
 
 		ImGui::Separator();
@@ -963,13 +1148,32 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
 	if (ImGui::Begin("##MobileSettings", nullptr, flags)) {
-		// Header
+		// Header — back arrow, title reflects current sub-page.
 		float headerH = dp(48.0f);
-		if (ImGui::Button("<", ImVec2(dp(48.0f), headerH)))
-			mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+		if (ImGui::Button("<", ImVec2(dp(48.0f), headerH))) {
+			if (s_settingsPage == ATMobileSettingsPage::Firmware
+				&& s_fwPicker != kATFirmwareType_Unknown)
+			{
+				s_fwPicker = kATFirmwareType_Unknown;
+			} else if (s_settingsPage == ATMobileSettingsPage::Home) {
+				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+			} else {
+				s_settingsPage = ATMobileSettingsPage::Home;
+			}
+		}
 		ImGui::SameLine();
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (headerH - ImGui::GetTextLineHeight()) * 0.5f);
-		ImGui::Text("Settings");
+		const char *pageTitle = "Settings";
+		switch (s_settingsPage) {
+		case ATMobileSettingsPage::Home:        pageTitle = "Settings"; break;
+		case ATMobileSettingsPage::Machine:     pageTitle = "Machine"; break;
+		case ATMobileSettingsPage::Display:     pageTitle = "Display"; break;
+		case ATMobileSettingsPage::Performance: pageTitle = "Performance"; break;
+		case ATMobileSettingsPage::Controls:    pageTitle = "Controls"; break;
+		case ATMobileSettingsPage::SaveState:   pageTitle = "Save State"; break;
+		case ATMobileSettingsPage::Firmware:    pageTitle = "Firmware"; break;
+		}
+		ImGui::Text("%s", pageTitle);
 
 		ImGui::Separator();
 		ImGui::Spacing();
@@ -977,7 +1181,111 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		ImGui::BeginChild("SettingsScroll", ImVec2(0, 0), ImGuiChildFlags_None);
 		ATTouchDragScroll();
 
-		// ---- MACHINE ----
+		// --- Settings home: category list with subtitle previews ---
+		if (s_settingsPage == ATMobileSettingsPage::Home) {
+			auto hwLabel = [&](){
+				switch (sim.GetHardwareMode()) {
+				case kATHardwareMode_800:   return "400/800";
+				case kATHardwareMode_800XL: return "800XL";
+				case kATHardwareMode_130XE: return "130XE";
+				case kATHardwareMode_5200:  return "5200";
+				default: return "?";
+				}
+			};
+			const char *vsLabel = (sim.GetVideoStandard() == kATVideoStandard_PAL) ? "PAL" : "NTSC";
+			const char *presetLabel = "Balanced";
+			switch (mobileState.performancePreset) {
+			case 0: presetLabel = "Efficient"; break;
+			case 1: presetLabel = "Balanced"; break;
+			case 2: presetLabel = "Quality"; break;
+			case 3: presetLabel = "Custom"; break;
+			}
+
+			struct CatRow {
+				const char *title;
+				VDStringA subtitle;
+				ATMobileSettingsPage target;
+			};
+			CatRow cats[7];
+			int n = 0;
+
+			cats[n++] = { "Machine",
+				VDStringA().sprintf("%s  \xC2\xB7  %s",
+					hwLabel(), vsLabel),
+				ATMobileSettingsPage::Machine };
+
+			cats[n++] = { "Display",
+				VDStringA("Filter, visual effects"),
+				ATMobileSettingsPage::Display };
+
+			cats[n++] = { "Performance",
+				VDStringA().sprintf("Preset: %s", presetLabel),
+				ATMobileSettingsPage::Performance };
+
+			cats[n++] = { "Controls",
+				VDStringA().sprintf("Size: %s  \xC2\xB7  Haptic: %s",
+					mobileState.layoutConfig.controlSize == ATTouchControlSize::Small  ? "Small"  :
+					mobileState.layoutConfig.controlSize == ATTouchControlSize::Large  ? "Large"  : "Medium",
+					mobileState.layoutConfig.hapticEnabled ? "on" : "off"),
+				ATMobileSettingsPage::Controls };
+
+			cats[n++] = { "Save State",
+				VDStringA().sprintf("Auto-save: %s  \xC2\xB7  Restore: %s",
+					mobileState.autoSaveOnSuspend ? "on" : "off",
+					mobileState.autoRestoreOnStart ? "on" : "off"),
+				ATMobileSettingsPage::SaveState };
+
+			cats[n++] = { "Firmware",
+				s_romDir.empty()
+					? VDStringA("(not set)")
+					: VDStringA().sprintf("%s", VDTextWToU8(s_romDir).c_str()),
+				ATMobileSettingsPage::Firmware };
+
+			float rowH = dp(76.0f);
+			for (int i = 0; i < n; ++i) {
+				ImGui::PushID(i);
+				ImVec2 cursor = ImGui::GetCursorScreenPos();
+				float availW = ImGui::GetContentRegionAvail().x;
+				ImDrawList *dl = ImGui::GetWindowDrawList();
+				dl->AddRectFilled(cursor,
+					ImVec2(cursor.x + availW, cursor.y + rowH),
+					IM_COL32(30, 35, 50, 200), dp(10.0f));
+
+				if (ImGui::InvisibleButton("##cat",
+					ImVec2(availW, rowH)))
+				{
+					s_settingsPage = cats[i].target;
+				}
+
+				ImVec2 tcur(cursor.x + dp(16.0f), cursor.y + dp(12.0f));
+				dl->AddText(tcur, IM_COL32(240, 242, 248, 255),
+					cats[i].title);
+				ImVec2 scur(cursor.x + dp(16.0f), cursor.y + dp(44.0f));
+				dl->AddText(scur, IM_COL32(160, 175, 200, 255),
+					cats[i].subtitle.c_str());
+
+				// Right-side chevron
+				ImVec2 chev(cursor.x + availW - dp(28.0f),
+					cursor.y + rowH * 0.5f - dp(8.0f));
+				dl->AddText(chev, IM_COL32(160, 175, 200, 255), ">");
+
+				ImGui::Dummy(ImVec2(0, dp(10.0f)));
+				ImGui::PopID();
+			}
+
+			ImGui::Dummy(ImVec2(0, dp(16.0f)));
+			if (ImGui::Button("About", ImVec2(-1, dp(56.0f)))) {
+				mobileState.currentScreen = ATMobileUIScreen::About;
+			}
+
+			ImGui::Dummy(ImVec2(0, dp(32.0f)));
+			ImGui::EndChild();
+			ImGui::End();
+			return;
+		}
+
+		// --- Sub-page: Machine ---
+		if (s_settingsPage == ATMobileSettingsPage::Machine) {
 		ATTouchSection("Machine");
 
 		// Hardware type.  All four modes work with the built-in HLE
@@ -1058,16 +1366,7 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				sim.SetSIOPatchEnabled(sioEnabled);
 		}
 
-		// ---- RANDOMIZATION ----
-		//
-		// POKEY's random-number generator is tied to the cycle at
-		// which the game reads the RANDOM register, so two runs of
-		// the same game can produce identical RNG streams if boot
-		// timing is deterministic.  Altirra's defaults already jitter
-		// the boot cycle a bit (mbRandomizeLaunchDelay = true), but
-		// we expose both toggles so users can force it off (for
-		// speedrun consistency) or enable the stronger "randomize
-		// memory on EXE load" option.
+		// ---- RANDOMIZATION (still on Machine page) ----
 		ATTouchSection("Randomization");
 
 		{
@@ -1092,9 +1391,21 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			"program loads.  Helps flush out games that relied on "
 			"specific power-on RAM patterns.  Default: off.");
 		ImGui::PopStyleColor();
+		} // end Machine page
 
-		// ---- CONTROLS ----
+		// --- Sub-page: Controls ---
+		if (s_settingsPage == ATMobileSettingsPage::Controls) {
 		ATTouchSection("Controls");
+
+		// Joystick style
+		{
+			int js = (int)mobileState.layoutConfig.joystickStyle;
+			static const char *styles[] = { "Analog", "D-Pad 8", "D-Pad 4" };
+			if (ATTouchSegmented("Joystick Style", &js, styles, 3)) {
+				mobileState.layoutConfig.joystickStyle = (ATTouchJoystickStyle)js;
+				SaveMobileConfig(mobileState);
+			}
+		}
 
 		// Control size
 		{
@@ -1120,8 +1431,10 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			SaveMobileConfig(mobileState);
 			ATTouchControls_SetHapticEnabled(mobileState.layoutConfig.hapticEnabled);
 		}
+		} // end Controls page
 
-		// ---- SAVE STATE ----
+		// --- Sub-page: Save State ---
+		if (s_settingsPage == ATMobileSettingsPage::SaveState) {
 		ATTouchSection("Save State");
 
 		if (ATTouchToggle("Auto-save on exit / background",
@@ -1180,7 +1493,10 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		// ---- VISUAL EFFECTS ----
+		} // end Save State page
+
+		// --- Sub-page: Display (Filter + Visual Effects) ---
+		if (s_settingsPage == ATMobileSettingsPage::Display) {
 		ATTouchSection("Visual Effects");
 
 		// Warn the user up front if the current display backend can't
@@ -1203,28 +1519,29 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
+		// Manually toggling any visual effect moves the performance
+		// preset to Custom so the user can see they've left the
+		// bundle.
+		auto markCustom = [&](){ mobileState.performancePreset = 3; };
+
 		if (ATTouchToggle("Scanlines", &mobileState.fxScanlines)) {
+			markCustom();
 			SaveMobileConfig(mobileState);
-			try {
-				ATMobileUI_ApplyVisualEffects(mobileState);
-			} catch (...) { /* best-effort, never crash the UI */ }
+			try { ATMobileUI_ApplyVisualEffects(mobileState); } catch (...) {}
 		}
 
 		if (ATTouchToggle("Bloom", &mobileState.fxBloom)) {
+			markCustom();
 			SaveMobileConfig(mobileState);
-			try {
-				ATMobileUI_ApplyVisualEffects(mobileState);
-			} catch (...) {}
+			try { ATMobileUI_ApplyVisualEffects(mobileState); } catch (...) {}
 		}
 
 		if (ATTouchToggle("CRT Distortion", &mobileState.fxDistortion)) {
+			markCustom();
 			SaveMobileConfig(mobileState);
-			try {
-				ATMobileUI_ApplyVisualEffects(mobileState);
-			} catch (...) {}
+			try { ATMobileUI_ApplyVisualEffects(mobileState); } catch (...) {}
 		}
 
-		// ---- DISPLAY ----
 		ATTouchSection("Display");
 
 		// Filter mode
@@ -1245,31 +1562,231 @@ static void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					kATDisplayFilterMode_SharpBilinear,
 				};
 				ATUISetDisplayFilterMode(kModes[idx]);
+				mobileState.performancePreset = 3;  // Custom
+				SaveMobileConfig(mobileState);
 			}
 		}
+		} // end Display page
 
-		// ---- FIRMWARE ----
-		ATTouchSection("Firmware");
+		// --- Sub-page: Performance (bundled preset) ---
+		if (s_settingsPage == ATMobileSettingsPage::Performance) {
+		ATTouchSection("Performance Preset");
+
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.70f, 0.78f, 1));
+		ImGui::TextWrapped(
+			"Choose a preset that bundles visual effects and the "
+			"display filter for a consistent trade-off.  Pick "
+			"Efficient on older devices, Quality on flagships.");
+		ImGui::PopStyleColor();
+		ImGui::Spacing();
 
 		{
+			// When preset == 3 (Custom) we pass it through unchanged:
+			// ATTouchSegmented highlights the matching index or none
+			// if out of range, so Custom correctly shows no segment
+			// active while the Custom label below explains why.
+			int p = mobileState.performancePreset;
+			static const char *items[] = { "Efficient", "Balanced", "Quality" };
+			if (ATTouchSegmented("Preset", &p, items, 3)) {
+				mobileState.performancePreset = p;
+				SaveMobileConfig(mobileState);
+				ATMobileUI_ApplyPerformancePreset(mobileState);
+			}
+			if (mobileState.performancePreset == 3) {
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ImVec4(1.0f, 0.78f, 0.30f, 1));
+				ImGui::TextUnformatted(
+					"Preset: Custom (you've manually changed a visual "
+					"setting — pick a preset above to revert).");
+				ImGui::PopStyleColor();
+			}
+		}
+		} // end Performance page
+
+		// --- Sub-page: Firmware ---
+		if (s_settingsPage == ATMobileSettingsPage::Firmware) {
+		ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
+
+		auto nameForId = [&](uint64 id) -> VDStringA {
+			if (!id) return VDStringA("(internal)");
+			ATFirmwareInfo info;
+			if (fwm->GetFirmwareInfo(id, info))
+				return VDTextWToU8(info.mName);
+			return VDStringA("(unknown)");
+		};
+
+		if (s_fwPicker == kATFirmwareType_Unknown) {
+			ATTouchSection("Firmware");
+
 			if (!s_romDir.empty()) {
 				VDStringA dirU8 = VDTextWToU8(s_romDir);
 				ImGui::TextWrapped("ROM Directory: %s", dirU8.c_str());
 			} else {
 				ImGui::Text("ROM Directory: (not set)");
 			}
-
 			if (s_romScanResult >= 0)
 				ImGui::Text("Status: %d ROMs found", s_romScanResult);
 
 			ImGui::Spacing();
 			if (ImGui::Button("Select Firmware Folder", ImVec2(-1, dp(56.0f)))) {
-				// Switch to file browser in ROM folder selection mode
 				s_romFolderMode = true;
 				s_fileBrowserNeedsRefresh = true;
 				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
 			}
+
+			ImGui::Dummy(ImVec2(0, dp(16.0f)));
+			ATTouchSection("Kernel & BASIC");
+
+			// Tappable card rows for each user-selectable slot.
+			// Kept to the kernels + BASIC that mobile users actually
+			// care about — the desktop Firmware Manager covers the
+			// long tail of device ROMs.
+			struct Slot { const char *title; ATFirmwareType type; };
+			static const Slot kSlots[] = {
+				{ "OS-B (400/800)",      kATFirmwareType_Kernel800_OSB  },
+				{ "OS-A (400/800)",      kATFirmwareType_Kernel800_OSA  },
+				{ "XL/XE Kernel",        kATFirmwareType_KernelXL       },
+				{ "XEGS Kernel",         kATFirmwareType_KernelXEGS     },
+				{ "5200 Kernel",         kATFirmwareType_Kernel5200     },
+				{ "Atari BASIC",         kATFirmwareType_Basic          },
+			};
+
+			float rowH = dp(72.0f);
+			for (size_t i = 0; i < sizeof(kSlots)/sizeof(kSlots[0]); ++i) {
+				ImGui::PushID((int)i);
+				uint64 curId = fwm->GetDefaultFirmware(kSlots[i].type);
+				VDStringA curName = nameForId(curId);
+
+				ImVec2 cursor = ImGui::GetCursorScreenPos();
+				float availW = ImGui::GetContentRegionAvail().x;
+				ImDrawList *dl = ImGui::GetWindowDrawList();
+				dl->AddRectFilled(cursor,
+					ImVec2(cursor.x + availW, cursor.y + rowH),
+					IM_COL32(30, 35, 50, 200), dp(10.0f));
+
+				if (ImGui::InvisibleButton("##fwslot", ImVec2(availW, rowH)))
+					s_fwPicker = kSlots[i].type;
+
+				dl->AddText(ImVec2(cursor.x + dp(16.0f), cursor.y + dp(10.0f)),
+					IM_COL32(240, 242, 248, 255), kSlots[i].title);
+				dl->AddText(ImVec2(cursor.x + dp(16.0f), cursor.y + dp(40.0f)),
+					IM_COL32(160, 175, 200, 255), curName.c_str());
+				dl->AddText(ImVec2(cursor.x + availW - dp(28.0f),
+						cursor.y + rowH * 0.5f - dp(8.0f)),
+					IM_COL32(160, 175, 200, 255), ">");
+
+				ImGui::Dummy(ImVec2(0, dp(8.0f)));
+				ImGui::PopID();
+			}
+
+			ImGui::Dummy(ImVec2(0, dp(12.0f)));
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.70f, 0.78f, 1));
+			ImGui::TextWrapped(
+				"Tap a slot to choose which ROM to use.  Selections "
+				"apply on the next cold reset.  The built-in HLE "
+				"kernel is used as a fallback if no ROM is picked.");
+			ImGui::PopStyleColor();
+		} else {
+			// --- Firmware picker ---
+			ATFirmwareType picking = s_fwPicker;
+			const char *slotTitle = "Firmware";
+			switch (picking) {
+			case kATFirmwareType_Kernel800_OSA: slotTitle = "OS-A (400/800)"; break;
+			case kATFirmwareType_Kernel800_OSB: slotTitle = "OS-B (400/800)"; break;
+			case kATFirmwareType_KernelXL:      slotTitle = "XL/XE Kernel"; break;
+			case kATFirmwareType_KernelXEGS:    slotTitle = "XEGS Kernel"; break;
+			case kATFirmwareType_Kernel5200:    slotTitle = "5200 Kernel"; break;
+			case kATFirmwareType_Basic:         slotTitle = "Atari BASIC"; break;
+			default: break;
+			}
+			ATTouchSection(slotTitle);
+
+			if (ImGui::Button("< Back", ImVec2(dp(120.0f), dp(48.0f))))
+				s_fwPicker = kATFirmwareType_Unknown;
+
+			ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+			vdvector<ATFirmwareInfo> fwList;
+			fwm->GetFirmwareList(fwList);
+
+			uint64 curId = fwm->GetDefaultFirmware(picking);
+
+			// "Use built-in HLE" row — selecting this clears the
+			// default so the simulator falls back to the bundled
+			// HLE kernel at next cold reset.
+			{
+				float rowH = dp(64.0f);
+				ImVec2 cursor = ImGui::GetCursorScreenPos();
+				float availW = ImGui::GetContentRegionAvail().x;
+				ImDrawList *dl = ImGui::GetWindowDrawList();
+				bool selected = (curId == 0);
+				dl->AddRectFilled(cursor,
+					ImVec2(cursor.x + availW, cursor.y + rowH),
+					selected ? IM_COL32(40, 90, 160, 220)
+					         : IM_COL32(30, 35, 50, 200),
+					dp(10.0f));
+				if (ImGui::InvisibleButton("##fwhle", ImVec2(availW, rowH))) {
+					fwm->SetDefaultFirmware(picking, 0);
+					ATRegistryFlushToDisk();
+					g_sim.LoadROMs();
+					g_sim.ColdReset();
+					s_fwPicker = kATFirmwareType_Unknown;
+				}
+				dl->AddText(ImVec2(cursor.x + dp(16.0f),
+						cursor.y + rowH * 0.5f - dp(8.0f)),
+					IM_COL32(240, 242, 248, 255),
+					"Built-in HLE (fallback)");
+				ImGui::Dummy(ImVec2(0, dp(8.0f)));
+			}
+
+			int shown = 0;
+			for (const ATFirmwareInfo &info : fwList) {
+				if (info.mType != picking)
+					continue;
+				if (!info.mbVisible)
+					continue;
+				++shown;
+
+				ImGui::PushID((int)info.mId ^ (int)(info.mId >> 32));
+				float rowH = dp(64.0f);
+				ImVec2 cursor = ImGui::GetCursorScreenPos();
+				float availW = ImGui::GetContentRegionAvail().x;
+				ImDrawList *dl = ImGui::GetWindowDrawList();
+				bool selected = (curId == info.mId);
+				dl->AddRectFilled(cursor,
+					ImVec2(cursor.x + availW, cursor.y + rowH),
+					selected ? IM_COL32(40, 90, 160, 220)
+					         : IM_COL32(30, 35, 50, 200),
+					dp(10.0f));
+				if (ImGui::InvisibleButton("##fw", ImVec2(availW, rowH))) {
+					fwm->SetDefaultFirmware(picking, info.mId);
+					ATRegistryFlushToDisk();
+					g_sim.LoadROMs();
+					g_sim.ColdReset();
+					s_fwPicker = kATFirmwareType_Unknown;
+				}
+				VDStringA nm = VDTextWToU8(info.mName);
+				VDStringA ph = VDTextWToU8(info.mPath);
+				dl->AddText(ImVec2(cursor.x + dp(16.0f), cursor.y + dp(8.0f)),
+					IM_COL32(240, 242, 248, 255), nm.c_str());
+				dl->AddText(ImVec2(cursor.x + dp(16.0f), cursor.y + dp(36.0f)),
+					IM_COL32(160, 175, 200, 255), ph.c_str());
+				ImGui::Dummy(ImVec2(0, dp(8.0f)));
+				ImGui::PopID();
+			}
+
+			if (shown == 0) {
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ImVec4(0.65f, 0.70f, 0.78f, 1));
+				ImGui::TextWrapped(
+					"No ROMs of this type were found in your "
+					"firmware folder.  Tap 'Select Firmware "
+					"Folder' on the previous screen to scan "
+					"a directory containing Atari ROM images.");
+				ImGui::PopStyleColor();
+			}
 		}
+		} // end Firmware page
 
 		// Bottom padding so the last row isn't flush against the nav bar
 		ImGui::Dummy(ImVec2(0, dp(32.0f)));
@@ -1578,6 +2095,24 @@ static void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		ImGui::TextColored(ImVec4(0.85f, 0.88f, 0.94f, 1),
 			"Original Altirra Copyright (C) Avery Lee.\n"
 			"Licensed under GNU GPL v2 or later.");
+		ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+		ImGui::TextColored(ImVec4(0.95f, 0.90f, 0.70f, 1),
+			"SDL / Android port by Jakub 'Ilmenit' Debski.");
+		ImGui::Dummy(ImVec2(0, dp(4.0f)));
+
+		{
+			const char *presetLabel = "Balanced";
+			switch (mobileState.performancePreset) {
+			case 0: presetLabel = "Efficient"; break;
+			case 1: presetLabel = "Balanced"; break;
+			case 2: presetLabel = "Quality"; break;
+			case 3: presetLabel = "Custom"; break;
+			}
+			ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1),
+				"Performance preset: %s (change in Settings > "
+				"Performance).", presetLabel);
+		}
 		ImGui::Dummy(ImVec2(0, dp(12.0f)));
 
 		ImGui::TextColored(ImVec4(0.85f, 0.88f, 0.94f, 1),
@@ -1880,41 +2415,129 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 		break;
 	}
 
-	// Global info popup — rendered on top of whatever screen is
-	// active.  Used by actions that need explicit feedback (ROM
-	// scan, save-state load, errors).
-	if (s_infoModalOpen) {
-		ImGui::OpenPopup("##InfoModal");
-		s_infoModalOpen = false;
-	}
+	// Global mobile dialog sheet — serves both info popups
+	// (ShowInfoModal, single OK button) and confirmation popups
+	// (ShowConfirmDialog, Cancel + Confirm buttons).  Card-style
+	// sheet sized to the phone display, centered in the safe area.
+	const bool haveInfo    = s_infoModalOpen;
+	const bool haveConfirm = s_confirmActive;
+	if (haveInfo || haveConfirm) {
+		// Full-screen dim backdrop.  Use the BACKGROUND draw list so
+		// the rectangle renders *beneath* every ImGui window this
+		// frame — otherwise the foreground list paints over the sheet
+		// card and visibly darkens it.
+		ImGui::GetBackgroundDrawList()->AddRectFilled(
+			ImVec2(0, 0), ImGui::GetIO().DisplaySize,
+			IM_COL32(0, 0, 0, 160));
 
-	// Center modal on viewport every appearance
-	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
-		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-	ImGui::SetNextWindowSize(ImVec2(dp(380.0f), 0), ImGuiCond_Appearing);
-	if (ImGui::BeginPopupModal("##InfoModal", nullptr,
-		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
-	{
-		if (!s_infoModalTitle.empty()) {
-			ImGui::SetWindowFontScale(1.15f);
-			ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", s_infoModalTitle.c_str());
+		float insetL = (float)mobileState.layout.insets.left;
+		float insetR = (float)mobileState.layout.insets.right;
+		float insetT = (float)mobileState.layout.insets.top;
+		float insetB = (float)mobileState.layout.insets.bottom;
+		float availW = ImGui::GetIO().DisplaySize.x - insetL - insetR - dp(32.0f);
+		float sheetW = availW < dp(520.0f) ? availW : dp(520.0f);
+		if (sheetW < dp(260.0f)) sheetW = dp(260.0f);
+		float sheetH = dp(260.0f);
+		float sheetX = (ImGui::GetIO().DisplaySize.x - sheetW) * 0.5f;
+		float areaTop = insetT;
+		float areaH = ImGui::GetIO().DisplaySize.y - insetT - insetB;
+		float sheetY = areaTop + (areaH - sheetH) * 0.5f;
+		if (sheetY < insetT + dp(16.0f)) sheetY = insetT + dp(16.0f);
+
+		ImGui::SetNextWindowPos(ImVec2(sheetX, sheetY));
+		ImGui::SetNextWindowSize(ImVec2(sheetW, 0));
+
+		ImGuiStyle &style = ImGui::GetStyle();
+		float prevR = style.WindowRounding;
+		float prevB = style.WindowBorderSize;
+		style.WindowRounding = dp(14.0f);
+		style.WindowBorderSize = dp(1.0f);
+		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.12f, 0.18f, 0.98f));
+		ImGui::PushStyleColor(ImGuiCol_Border,   ImVec4(0.27f, 0.51f, 0.82f, 1.0f));
+
+		const char *winId = haveConfirm ? "##MobileConfirm" : "##MobileInfo";
+		ImGui::Begin(winId, nullptr,
+			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+			| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+			| ImGuiWindowFlags_NoSavedSettings
+			| ImGuiWindowFlags_AlwaysAutoResize);
+
+		const char *title = haveConfirm
+			? s_confirmTitle.c_str() : s_infoModalTitle.c_str();
+		const char *body  = haveConfirm
+			? s_confirmBody.c_str()  : s_infoModalBody.c_str();
+
+		ImGui::Dummy(ImVec2(0, dp(8.0f)));
+		if (title && *title) {
+			ImGui::SetWindowFontScale(1.25f);
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				ImVec4(0.40f, 0.70f, 1.00f, 1.0f));
+			ImGui::TextUnformatted(title);
+			ImGui::PopStyleColor();
 			ImGui::SetWindowFontScale(1.0f);
+			ImGui::Spacing();
 			ImGui::Separator();
 			ImGui::Spacing();
 		}
-		ImGui::PushTextWrapPos(dp(360.0f));
-		ImGui::TextUnformatted(s_infoModalBody.c_str());
+		ImGui::PushTextWrapPos(sheetW - dp(24.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.92f, 0.96f, 1));
+		ImGui::TextUnformatted(body);
+		ImGui::PopStyleColor();
 		ImGui::PopTextWrapPos();
-		ImGui::Spacing();
+		ImGui::Dummy(ImVec2(0, dp(16.0f)));
 		ImGui::Separator();
-		ImGui::Spacing();
-		float okW = dp(120.0f);
-		float avail = ImGui::GetContentRegionAvail().x;
-		if (avail > okW)
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - okW) * 0.5f);
-		if (ImGui::Button("OK", ImVec2(okW, dp(44.0f))))
-			ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
+		ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+		float btnH = dp(56.0f);
+		float rowW = ImGui::GetContentRegionAvail().x;
+		if (haveConfirm) {
+			float gap = dp(12.0f);
+			float halfW = (rowW - gap) * 0.5f;
+
+			ImGui::PushStyleColor(ImGuiCol_Button,
+				ImVec4(0.30f, 0.32f, 0.38f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+				ImVec4(0.38f, 0.40f, 0.48f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+				ImVec4(0.22f, 0.24f, 0.30f, 1));
+			if (ImGui::Button("Cancel", ImVec2(halfW, btnH))) {
+				s_confirmActive = false;
+				s_confirmAction = nullptr;
+			}
+			ImGui::PopStyleColor(3);
+
+			ImGui::SameLine(0.0f, gap);
+
+			ImGui::PushStyleColor(ImGuiCol_Button,
+				ImVec4(0.25f, 0.55f, 0.90f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+				ImVec4(0.30f, 0.62f, 0.95f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+				ImVec4(0.20f, 0.48f, 0.85f, 1));
+			if (ImGui::Button("Confirm", ImVec2(halfW, btnH))) {
+				auto act = s_confirmAction;
+				s_confirmActive = false;
+				s_confirmAction = nullptr;
+				if (act) act();
+			}
+			ImGui::PopStyleColor(3);
+		} else {
+			ImGui::PushStyleColor(ImGuiCol_Button,
+				ImVec4(0.25f, 0.55f, 0.90f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+				ImVec4(0.30f, 0.62f, 0.95f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+				ImVec4(0.20f, 0.48f, 0.85f, 1));
+			if (ImGui::Button("OK", ImVec2(-1, btnH))) {
+				s_infoModalOpen = false;
+			}
+			ImGui::PopStyleColor(3);
+		}
+
+		ImGui::End();
+		ImGui::PopStyleColor(2);
+		style.WindowRounding = prevR;
+		style.WindowBorderSize = prevB;
 	}
 }
 
@@ -1932,7 +2555,7 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 		ev.type == SDL_EVENT_FINGER_MOTION ||
 		ev.type == SDL_EVENT_FINGER_UP)
 	{
-		return ATTouchControls_HandleEvent(ev, mobileState.layout);
+		return ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig);
 	}
 
 	return false;

@@ -147,13 +147,12 @@ bool ATTouchSegmented(const char *label, int *current,
 	// "Control Size") don't collide on their per-segment ids.
 	ImGui::PushID(label);
 
-	ImGuiID id = window->GetID("##bar");
 	ImRect bb(rowMin, rowMax);
 	ImGui::ItemSize(bb, 0.0f);
-	if (!ImGui::ItemAdd(bb, id)) {
-		ImGui::PopID();
-		return false;
-	}
+	// Note: no outer ItemAdd here — each segment registers its own
+	// id via ItemAdd below so ImGui's hover/active tracking routes
+	// touch taps to the correct segment.  A single outer ItemAdd
+	// would swallow the hover for all segments and break tapping.
 
 	ImDrawList *dl = window->DrawList;
 
@@ -178,6 +177,10 @@ bool ATTouchSegmented(const char *label, int *current,
 		ImRect segBB(ImVec2(x0, barY0), ImVec2(x1, barY1));
 		ImGui::PushID(i);
 		ImGuiID segId = window->GetID("##seg");
+		// Register the segment as a hoverable item so ButtonBehavior
+		// actually routes taps to it.  ItemAdd after the bar's
+		// ItemSize does not advance the cursor.
+		ImGui::ItemAdd(segBB, segId);
 		bool segHovered, segHeld;
 		bool segPressed = ImGui::ButtonBehavior(segBB, segId,
 			&segHovered, &segHeld);
