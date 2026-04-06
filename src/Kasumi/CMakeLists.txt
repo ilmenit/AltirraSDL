@@ -43,7 +43,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[36]86)")
     # (resample_stages_x64.cpp, uberblit_ycbcr_sse2_intrin.cpp) instead.
     # This avoids pulling in x86 MASM assembly which only the VS toolchain
     # can assemble, and keeps the CMake build portable across all platforms.
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")
     list(APPEND KASUMI_COMMON_SOURCES
         source/blt_spanutils_arm64.cpp
         source/region_neon.cpp

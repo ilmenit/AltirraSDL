@@ -39,7 +39,7 @@ list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/startuplogger\\.cpp$")     # W
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/texteditor\\.cpp$")        # Win32 HWND/WndProc text editor widget
 # vgmwriter.cpp is now portable (UTF-16LE encoding fixed for non-Windows)
 # Exclude architecture-specific files for the wrong target
-if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
+if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")
     list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*_neon\\.cpp$")
     list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*_arm64\\.cpp$")
 endif()

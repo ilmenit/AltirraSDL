@@ -38,7 +38,7 @@ set(ATIO_SOURCES
 # Architecture-specific FLAC decoders
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[36]86)")
     list(APPEND ATIO_SOURCES source/audioreaderflac_x86.cpp)
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")
     list(APPEND ATIO_SOURCES source/audioreaderflac_arm64.cpp)
 endif()
 

@@ -40,7 +40,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[36]86)")
         source/fft_sse2.cpp
         source/fft_avx2.cpp
     )
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64)")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")
     list(APPEND ATCORE_COMMON_SOURCES
         source/checksum_arm64.cpp
         source/fft_neon.cpp
