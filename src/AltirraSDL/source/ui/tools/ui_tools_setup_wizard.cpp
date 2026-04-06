@@ -1,0 +1,521 @@
+//	AltirraSDL - Tools dialog (split from ui_tools.cpp, Phase 2k)
+
+#include <stdafx.h>
+#include <algorithm>
+#include <string>
+#include <mutex>
+#include <thread>
+#include <vector>
+#include <cstring>
+#include <cstdio>
+#include <imgui.h>
+#include <SDL3/SDL.h>
+#include <vd2/system/vdtypes.h>
+#include <vd2/system/VDString.h>
+#include <vd2/system/text.h>
+#include <vd2/system/file.h>
+#include <vd2/system/filesys.h>
+#include <vd2/system/error.h>
+#include <vd2/system/date.h>
+#include <vd2/system/registry.h>
+#include <vd2/system/vdstl.h>
+#include <at/atcore/configvar.h>
+#include <at/atcore/propertyset.h>
+#include <at/atcore/media.h>
+#include <at/atio/image.h>
+#include <at/atio/diskimage.h>
+#include <at/atio/cartridgeimage.h>
+#include <at/atio/cassetteimage.h>
+#include <vd2/Dita/accel.h>
+#include "ui_main.h"
+#include "accel_sdl3.h"
+#include "simulator.h"
+#include "gtia.h"
+#include "constants.h"
+#include "disk.h"
+#include "diskinterface.h"
+#include "firmwaremanager.h"
+#include "firmwaredetect.h"
+#include "compatengine.h"
+#include "settings.h"
+#include "uiaccessors.h"
+#include "uikeyboard.h"
+#include "uitypes.h"
+#include "options.h"
+#include "oshelper.h"
+
+extern ATSimulator g_sim;
+
+// =========================================================================
+// First Time Setup Wizard
+// Reference: src/Altirra/source/uisetupwizard.cpp
+// =========================================================================
+
+static struct SetupWizardState {
+	int page = 0;
+	bool wentPastFirst = false;
+	bool firmwareScanned = false;
+	int scanFound = 0;
+	int scanExisting = 0;
+	VDStringA scanMessage;
+
+	// Thread-safe: path stored by callback, processed on main thread
+	std::mutex scanMutex;
+	std::string pendingScanPath;
+
+	void Reset() {
+		page = 0;
+		wentPastFirst = false;
+		firmwareScanned = false;
+		scanFound = 0;
+		scanExisting = 0;
+		scanMessage.clear();
+		// mutex and pendingScanPath don't need reset
+	}
+} g_setupWiz;
+
+// Firmware scan logic reimplemented from uifirmwarescan.cpp
+static void ATUIDoFirmwareScan(const char *utf8path) {
+	ATFirmwareManager &fwmgr = *g_sim.GetFirmwareManager();
+	VDStringW path = VDTextU8ToW(utf8path, -1);
+	VDStringW pattern = VDMakePath(path.c_str(), L"*.*");
+
+	VDDirectoryIterator it(pattern.c_str());
+	vdvector<VDStringW> candidates;
+
+	while (it.Next()) {
+		if (it.GetAttributes() & (kVDFileAttr_System | kVDFileAttr_Hidden))
+			continue;
+		if (it.IsDirectory())
+			continue;
+		if (!ATFirmwareAutodetectCheckSize(it.GetSize()))
+			continue;
+		candidates.push_back(it.GetFullPath());
+	}
+
+	ATFirmwareInfo info;
+	vdvector<ATFirmwareInfo> detected;
+
+	for (auto &fullPath : candidates) {
+		try {
+			VDFile f(fullPath.c_str());
+			sint64 size = f.size();
+			if (!ATFirmwareAutodetectCheckSize(size))
+				continue;
+
+			uint32 size32 = (uint32)size;
+			vdblock<char> buf(size32);
+			f.read(buf.data(), (long)buf.size());
+
+			ATSpecificFirmwareType specificType;
+			sint32 knownIdx = -1;
+			if (ATFirmwareAutodetect(buf.data(), size32, info, specificType, knownIdx) == ATFirmwareDetection::SpecificImage) {
+				ATFirmwareInfo &info2 = detected.push_back();
+				info2 = std::move(info);
+				info2.mId = ATGetFirmwareIdFromPath(fullPath.c_str());
+				info2.mPath = fullPath;
+
+				if (specificType != kATSpecificFirmwareType_None && !fwmgr.GetSpecificFirmware(specificType))
+					fwmgr.SetSpecificFirmware(specificType, info2.mId);
+			}
+		} catch (const MyError &) {
+		}
+	}
+
+	size_t existing = 0;
+	for (auto &det : detected) {
+		ATFirmwareInfo info2;
+		if (fwmgr.GetFirmwareInfo(det.mId, info2)) {
+			++existing;
+			continue;
+		}
+		fwmgr.AddFirmware(det);
+	}
+
+	g_setupWiz.scanFound = (int)detected.size();
+	g_setupWiz.scanExisting = (int)existing;
+	g_setupWiz.firmwareScanned = true;
+	g_setupWiz.scanMessage.sprintf("Firmware images recognized: %d (%d already present)",
+		(int)detected.size(), (int)existing);
+}
+
+// File dialog callback — may run on background thread, so just store the path.
+// The actual scan runs on the main thread in ATUIRenderSetupWizard().
+static void FirmwareScanCallback(void *, const char * const *filelist, int) {
+	if (!filelist || !filelist[0])
+		return;
+	std::lock_guard<std::mutex> lock(g_setupWiz.scanMutex);
+	g_setupWiz.pendingScanPath = filelist[0];
+}
+
+static int GetWizPrevPage(int page) {
+	switch (page) {
+		case 0:  return -1;
+		case 5:  return 0;
+		case 10: return 5;
+		case 11: return 10;
+		case 20: return 11;
+		case 21: return 20;
+		case 30: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 20 : 21;
+		case 40: return 30;
+		case 41: return 30;
+		default: return 0;
+	}
+}
+
+static int GetWizNextPage(int page) {
+	switch (page) {
+		case 0:  return 5;
+		case 5:  return 10;
+		case 10: return 11;
+		case 11: return 20;
+		case 20: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 30 : 21;
+		case 21: return 30;
+		case 30: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 41 : 40;
+		default: return -1;
+	}
+}
+
+void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
+	// Process pending firmware scan on main thread (callback may have run on background thread)
+	{
+		std::string scanPath;
+		{
+			std::lock_guard<std::mutex> lock(g_setupWiz.scanMutex);
+			scanPath.swap(g_setupWiz.pendingScanPath);
+		}
+		if (!scanPath.empty())
+			ATUIDoFirmwareScan(scanPath.c_str());
+	}
+
+	ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+	bool open = state.showSetupWizard;
+	if (!ImGui::Begin("First Time Setup", &open,
+		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
+		if (!open) {
+			if (g_setupWiz.wentPastFirst) {
+				sim.LoadROMs();
+				sim.ColdReset();
+			}
+			g_setupWiz.Reset();
+			state.showSetupWizard = false;
+		}
+		ImGui::End();
+		return;
+	}
+
+	if (!open || ATUICheckEscClose()) {
+		if (g_setupWiz.wentPastFirst) {
+			sim.LoadROMs();
+			sim.ColdReset();
+		}
+		g_setupWiz.Reset();
+		state.showSetupWizard = false;
+		ImGui::End();
+		return;
+	}
+
+	float sidebarW = 140;
+
+	// Left sidebar: step list
+	{
+		ImGui::BeginChild("WizSteps", ImVec2(sidebarW, -40), ImGuiChildFlags_Borders);
+
+		static const struct { int pageMin; int pageMax; const char *label; } kSteps[] = {
+			{ 0, 0, "Welcome" },
+			{ 5, 9, "Appearance" },
+			{ 10, 19, "Setup firmware" },
+			{ 20, 29, "Select system" },
+			{ 30, 39, "Experience" },
+			{ 40, 49, "Finish" },
+		};
+
+		for (auto &step : kSteps) {
+			bool active = (g_setupWiz.page >= step.pageMin && g_setupWiz.page <= step.pageMax);
+			if (active) {
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.4f, 1.0f));
+				ImGui::Bullet();
+				ImGui::SameLine();
+				ImGui::TextUnformatted(step.label);
+				ImGui::PopStyleColor();
+			} else {
+				ImGui::TextUnformatted(step.label);
+			}
+		}
+
+		ImGui::EndChild();
+	}
+
+	ImGui::SameLine();
+
+	// Right content area
+	{
+		ImGui::BeginChild("WizContent", ImVec2(0, -40));
+
+		switch (g_setupWiz.page) {
+		case 0: // Welcome
+			ImGui::TextWrapped(
+				"Welcome to Altirra!\n\n"
+				"This wizard will help you configure the emulator for the first time. "
+				"To begin, click Next.\n\n"
+				"If you would like to skip the setup process, click Close to exit this "
+				"wizard and start the emulator. All of the settings here can also be set "
+				"up manually. You can also repeat the first time setup process via the "
+				"Tools menu at any time."
+			);
+			break;
+
+		case 5: { // Appearance — theme and transparency
+			ImGui::TextWrapped(
+				"Choose a visual theme for the user interface. Changes take effect "
+				"immediately so you can preview each option."
+			);
+			ImGui::Spacing();
+
+			static const char *themeLabels[] = { "Use system setting", "Light", "Dark" };
+			int themeIdx = (int)g_ATOptions.mThemeMode;
+			if (ImGui::Combo("Theme", &themeIdx, themeLabels, 3)) {
+				ATOptions prev(g_ATOptions);
+				g_ATOptions.mThemeMode = (ATUIThemeMode)themeIdx;
+				if (g_ATOptions != prev) {
+					g_ATOptions.mbDirty = true;
+					ATOptionsRunUpdateCallbacks(&prev);
+					ATOptionsSave();
+					ATUIApplyTheme();
+				}
+			}
+
+			ImGui::Spacing();
+
+			int alphaPct = (int)(g_ATOptions.mUIAlpha * 100.0f + 0.5f);
+			if (ImGui::SliderInt("Window opacity (%)", &alphaPct, 20, 100)) {
+				ATOptions prev(g_ATOptions);
+				g_ATOptions.mUIAlpha = alphaPct / 100.0f;
+				if (g_ATOptions != prev) {
+					g_ATOptions.mbDirty = true;
+					ATOptionsRunUpdateCallbacks(&prev);
+					ATOptionsSave();
+					ATUIApplyTheme();
+				}
+			}
+
+			ImGui::Spacing();
+			ImGui::TextWrapped(
+				"These settings can be changed later from Configure System > "
+				"Emulator > UI."
+			);
+			break;
+		}
+
+		case 10: { // Firmware
+			ImGui::TextWrapped(
+				"Altirra has internal replacements for all standard ROMs. However, "
+				"if you have original ROM images, you can set these up now for better "
+				"compatibility.\n\n"
+				"If you do not have ROM images or do not want to set them up now, just "
+				"click Next."
+			);
+			ImGui::Spacing();
+
+			// Firmware status table
+			ATFirmwareManager &fwm = *sim.GetFirmwareManager();
+			static const struct { ATFirmwareType type; const char *name; } kFirmware[] = {
+				{ kATFirmwareType_Kernel800_OSB, "800 OS (OS-B)" },
+				{ kATFirmwareType_KernelXL,      "XL/XE OS" },
+				{ kATFirmwareType_Basic,          "BASIC" },
+				{ kATFirmwareType_Kernel5200,     "5200 OS" },
+			};
+
+			if (ImGui::BeginTable("FWStatus", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+				ImGui::TableSetupColumn("ROM Image");
+				ImGui::TableSetupColumn("Status");
+				ImGui::TableHeadersRow();
+
+				for (auto &fw : kFirmware) {
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					ImGui::TextUnformatted(fw.name);
+					ImGui::TableNextColumn();
+					uint64 fwid = fwm.GetCompatibleFirmware(fw.type);
+					bool present = (fwid && fwid >= kATFirmwareId_Custom);
+					if (present) {
+						const auto& bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+						bool darkBg = (bg.x + bg.y + bg.z) < 1.5f;
+						ImVec4 okColor = darkBg
+							? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
+							: ImVec4(0.0f, 0.5f, 0.0f, 1.0f);
+						ImGui::PushStyleColor(ImGuiCol_Text, okColor);
+						ImGui::TextUnformatted("OK");
+						ImGui::PopStyleColor();
+					} else {
+						ImGui::TextDisabled("Not found");
+					}
+				}
+				ImGui::EndTable();
+			}
+
+			ImGui::Spacing();
+			if (ImGui::Button("Scan for firmware..."))
+				SDL_ShowOpenFolderDialog(FirmwareScanCallback, nullptr, window, nullptr, false);
+
+			if (!g_setupWiz.scanMessage.empty()) {
+				ImGui::SameLine();
+				ImGui::TextUnformatted(g_setupWiz.scanMessage.c_str());
+			}
+			break;
+		}
+
+		case 11: // Post-firmware
+			ImGui::TextWrapped(
+				"ROM image setup is complete.\n\n"
+				"If you want to set up more firmware ROM images in the future, this can "
+				"be done through the menu option System > Firmware Images."
+			);
+			break;
+
+		case 20: { // Select system
+			ImGui::TextWrapped(
+				"Select the type of system to emulate. This can be changed later from "
+				"the System menu."
+			);
+			ImGui::Spacing();
+
+			bool is5200 = (sim.GetHardwareMode() == kATHardwareMode_5200);
+			bool isComputer = !is5200;
+
+			if (ImGui::RadioButton("Computer (XL/XE)", isComputer) && !isComputer) {
+				uint32 profileId = ATGetDefaultProfileId(kATDefaultProfile_XL);
+				ATSettingsSwitchProfile(profileId);
+			}
+			if (ImGui::RadioButton("Atari 5200", is5200) && !is5200) {
+				uint32 profileId = ATGetDefaultProfileId(kATDefaultProfile_5200);
+				ATSettingsSwitchProfile(profileId);
+			}
+			break;
+		}
+
+		case 21: { // Video standard (skipped for 5200)
+			ImGui::TextWrapped(
+				"Select the video standard. NTSC (60Hz) is the North American standard. "
+				"PAL (50Hz) is the European standard.\n\n"
+				"This affects timing and color palette. Most software is designed for NTSC."
+			);
+			ImGui::Spacing();
+
+			bool isNTSC = (sim.GetVideoStandard() == kATVideoStandard_NTSC
+				|| sim.GetVideoStandard() == kATVideoStandard_PAL60);
+
+			if (ImGui::RadioButton("NTSC (60 Hz)", isNTSC) && !isNTSC)
+				ATSetVideoStandard(kATVideoStandard_NTSC);
+			if (ImGui::RadioButton("PAL (50 Hz)", !isNTSC) && isNTSC)
+				ATSetVideoStandard(kATVideoStandard_PAL);
+			break;
+		}
+
+		case 30: { // Experience level
+			ImGui::TextWrapped(
+				"Select the emulation experience level.\n\n"
+				"Authentic mode enables hardware artifacting, accurate disk timing, and "
+				"drive sounds for a more realistic experience.\n\n"
+				"Convenient mode enables SIO patches for fast loading and disables "
+				"hardware artifacts for a cleaner experience."
+			);
+			ImGui::Spacing();
+
+			bool isAuthentic = (sim.GetGTIA().GetArtifactingMode() != ATArtifactMode::None);
+
+			if (ImGui::RadioButton("Authentic", isAuthentic) && !isAuthentic) {
+				sim.GetGTIA().SetArtifactingMode(ATArtifactMode::AutoHi);
+				sim.SetCassetteSIOPatchEnabled(false);
+				sim.SetDiskSIOPatchEnabled(false);
+				sim.SetDiskAccurateTimingEnabled(true);
+				ATUISetDriveSoundsEnabled(true);
+				ATUISetDisplayFilterMode(kATDisplayFilterMode_Bilinear);
+			}
+			if (ImGui::RadioButton("Convenient", !isAuthentic) && isAuthentic) {
+				ATUISetDriveSoundsEnabled(false);
+				sim.SetCassetteSIOPatchEnabled(true);
+				sim.SetDiskSIOPatchEnabled(true);
+				sim.SetDiskAccurateTimingEnabled(false);
+				sim.GetGTIA().SetArtifactingMode(ATArtifactMode::None);
+				ATUISetDisplayFilterMode(kATDisplayFilterMode_SharpBilinear);
+				ATUISetViewFilterSharpness(+1);
+			}
+			break;
+		}
+
+		case 40: // Finish (computer)
+			ImGui::TextWrapped(
+				"Setup is now complete.\n\n"
+				"Click Finish to exit and power up the emulated computer. You can then "
+				"use the File > Boot Image... menu option to boot a disk, cartridge, or "
+				"cassette tape image, or start a program.\n\n"
+				"If you want to repeat this process in the future, the setup wizard can "
+				"be restarted via the Tools menu."
+			);
+			break;
+
+		case 41: // Finish (5200)
+			ImGui::TextWrapped(
+				"Setup is now complete.\n\n"
+				"Click Finish to exit and power up the emulated console. The 5200 needs "
+				"a cartridge to work, so select File > Boot Image... to attach and start "
+				"a cartridge image.\n\n"
+				"You will probably want to check your controller settings. The default "
+				"setup binds F2-F4, the digit key row, arrow keys, and Ctrl/Shift to "
+				"joystick 1. Alternate bindings can be selected from the Input menu or "
+				"new ones can be defined in Input > Input Mappings.\n\n"
+				"If you want to repeat this process in the future, choose Tools > First "
+				"Time Setup... from the menu."
+			);
+			break;
+		}
+
+		ImGui::EndChild();
+	}
+
+	// Bottom buttons
+	ImGui::Separator();
+	int prevPage = GetWizPrevPage(g_setupWiz.page);
+	int nextPage = GetWizNextPage(g_setupWiz.page);
+	bool canPrev = (prevPage >= 0);
+	bool canNext = (nextPage >= 0);
+
+	ImGui::BeginDisabled(!canPrev);
+	if (ImGui::Button("< Prev"))
+		g_setupWiz.page = prevPage;
+	ImGui::EndDisabled();
+
+	ImGui::SameLine();
+
+	if (canNext) {
+		if (ImGui::Button("Next >")) {
+			g_setupWiz.wentPastFirst = true;
+			g_setupWiz.page = nextPage;
+		}
+	} else {
+		if (ImGui::Button("Finish")) {
+			if (g_setupWiz.wentPastFirst) {
+				sim.LoadROMs();
+				sim.ColdReset();
+			}
+			g_setupWiz.Reset();
+			state.showSetupWizard = false;
+		}
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button("Close")) {
+		if (g_setupWiz.wentPastFirst) {
+			sim.LoadROMs();
+			sim.ColdReset();
+		}
+		g_setupWiz.Reset();
+		state.showSetupWizard = false;
+	}
+
+	ImGui::End();
+}
+
