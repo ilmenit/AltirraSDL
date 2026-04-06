@@ -29,7 +29,7 @@
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/atomic.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/text.h>
 #include <vd2/system/VDString.h>
 

@@ -15,7 +15,7 @@
 //	with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdafx.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/file.h>
 #include <at/atio/audioreader.h>
 

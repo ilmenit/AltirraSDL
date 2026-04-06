@@ -19,7 +19,7 @@
 #define f_ASUKA_UTILS_H
 
 #include <vd2/system/vdtypes.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/VDString.h>
 #include <string>
 

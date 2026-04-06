@@ -18,7 +18,7 @@
 #define INITGUID
 #include <d3dcompiler.h>
 #include <vd2/system/bitmath.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/filesys.h>
 #include <vd2/system/vdalloc.h>
 #include <vd2/Kasumi/pixmaputils.h>

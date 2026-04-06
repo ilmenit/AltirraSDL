@@ -27,7 +27,7 @@
 #define f_VD2_SYSTEM_VDSTL_ALGORITHM_H
 
 #include <algorithm>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 

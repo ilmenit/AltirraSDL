@@ -108,13 +108,13 @@
     <ClInclude Include="..\h\vd2\system\date.h" />
     <ClInclude Include="..\h\vd2\system\debug.h" />
     <ClInclude Include="..\h\vd2\system\debugx86.h" />
-    <ClInclude Include="..\h\VD2\system\Error.h" />
+    <ClInclude Include="..\h\VD2\system\error.h" />
     <ClInclude Include="..\h\vd2\system\event.h" />
     <ClInclude Include="..\h\vd2\system\file.h" />
     <ClInclude Include="..\h\vd2\system\fileasync.h" />
     <ClInclude Include="..\h\VD2\system\filesys.h" />
     <ClInclude Include="..\h\vd2\system\filewatcher.h" />
-    <ClInclude Include="..\h\VD2\system\Fraction.h" />
+    <ClInclude Include="..\h\VD2\system\fraction.h" />
     <ClInclude Include="..\h\vd2\system\function.h" />
     <ClInclude Include="..\h\vd2\system\halffloat.h" />
     <ClInclude Include="..\h\vd2\system\hash.h" />

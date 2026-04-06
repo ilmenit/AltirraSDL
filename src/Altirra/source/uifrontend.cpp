@@ -15,7 +15,7 @@
 //	with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdafx.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <at/atcore/devicesnapshot.h>
 #include <at/atcore/snapshotimpl.h>
 #include "audiowriter.h"

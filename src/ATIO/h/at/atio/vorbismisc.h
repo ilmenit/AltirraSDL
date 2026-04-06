@@ -17,7 +17,7 @@
 #ifndef f_AT_ATIO_VORBISMISC_H
 #define f_AT_ATIO_VORBISMISC_H
 
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 
 class ATVorbisException : public MyError {
 public:

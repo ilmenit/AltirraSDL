@@ -153,7 +153,7 @@ before *any* core library compiles on Linux. The changes below are small
 | `src/h/vd2/system/win32/intrin.h` | Guard `#pragma push_macro`/`pop_macro` (MSVC-only) and `<intrin.h>` include; on GCC/Clang non-Windows, include `<x86intrin.h>` or `<arm_neon.h>` by architecture |
 | `src/h/vd2/system/thread.h` | Guard Win32 forward declarations (lines 41-54) with `#if VD_OS_WINDOWS`; `#ifdef` for `VDCriticalSection` member layout, `VDSignalBase` members, `__stdcall`, `VDThreadID` width |
 | `src/h/vd2/system/atomic.h` | Extend `VD_COMPILER_CLANG` checks to include `VD_COMPILER_GCC` (~10 one-line edits); GCC hits `#error` without this |
-| `src/h/vd2/system/Error.h` | Guard `using VDExceptionPostContext = struct HWND__ *` with `#ifdef`; on non-Windows use `using VDExceptionPostContext = void *` |
+| `src/h/vd2/system/error.h` | Guard `using VDExceptionPostContext = struct HWND__ *` with `#ifdef`; on non-Windows use `using VDExceptionPostContext = void *` |
 | `src/h/vd2/system/file.h` | Replace `#error` with `typedef int VDFileHandle` for non-Windows |
 | `src/system/h/stdafx.h` | Guard `#include <windows.h>` and `#include <process.h>` with `#if VD_OS_WINDOWS` |
 | `src/ATIO/h/stdafx.h` | Guard `WINVER` define with `#if VD_OS_WINDOWS` |

@@ -18,7 +18,7 @@
 #define f_VD2_VDDISPLAY_INTERNAL_CUSTOMEFFECTUTILSD3D_H
 
 #include <windows.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/vdstl.h>
 
 struct ID3D11ShaderReflection;

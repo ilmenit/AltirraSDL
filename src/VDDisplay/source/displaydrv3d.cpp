@@ -21,7 +21,7 @@
 #include <numeric>
 #include <vd2/system/binary.h>
 #include <vd2/system/bitmath.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/time.h>
 #include <vd2/system/vdstl.h>
 #include <vd2/Kasumi/pixmap.h>

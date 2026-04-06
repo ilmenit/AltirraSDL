@@ -29,7 +29,7 @@
 
 #include <vd2/system/VDString.h>
 #include <vd2/system/filesys.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/vdstl.h>
 #include <vd2/system/w32assist.h>
 #include <vd2/system/strutil.h>

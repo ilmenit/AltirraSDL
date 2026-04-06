@@ -23,7 +23,7 @@ library includes pull in Windows-specific content transitively:
 | `src/h/vd2/system/win32/intrin.h` | MSVC-only `#pragma push_macro`/`pop_macro`, includes `<intrin.h>` | Guard pragmas with `#ifdef _MSC_VER`; on GCC/Clang use `<x86intrin.h>` (x86/x64) or `<arm_neon.h>` (ARM64) |
 | `src/h/vd2/system/thread.h` lines 41-54 | Forward-declares Win32 structs (`_RTL_CRITICAL_SECTION`) and `extern "C"` Win32 functions (`InitializeCriticalSection`, etc.); `__stdcall` on `VDThread::StaticThreadStart` | Wrap in `#if VD_OS_WINDOWS`; guard `__stdcall` with `#ifdef _MSC_VER` |
 | `src/h/vd2/system/atomic.h` | `#error not implemented` for compilers other than MSVC/Clang; MSVC inline asm in bitwise ops | Extend `VD_COMPILER_CLANG` checks to include `VD_COMPILER_GCC` (~10 locations) |
-| `src/h/vd2/system/Error.h` line 40 | `using VDExceptionPostContext = struct HWND__ *;` | On non-Windows: `using VDExceptionPostContext = void *;` |
+| `src/h/vd2/system/error.h` line 40 | `using VDExceptionPostContext = struct HWND__ *;` | On non-Windows: `using VDExceptionPostContext = void *;` |
 | `src/ATIO/h/stdafx.h` | Defines `WINVER` | Guard with `#if VD_OS_WINDOWS` |
 
 The `win32/intrin.h` fix is straightforward since GCC and Clang both provide
@@ -475,7 +475,7 @@ pool timer behavior.
 | `src/h/vd2/system/win32/intrin.h` | Guard MSVC pragmas; add `<x86intrin.h>` path for GCC/Clang (~10 lines) |
 | `src/h/vd2/system/thread.h` | `#ifdef` for `VDCriticalSection` members, `VDSignalBase` members, guard Win32 forward declarations, guard `__stdcall`, widen `VDThreadID` (~50 lines total) |
 | `src/h/vd2/system/atomic.h` | Extend `VD_COMPILER_CLANG` checks to include `VD_COMPILER_GCC` (~10 one-line edits) |
-| `src/h/vd2/system/Error.h` | Guard `HWND__` typedef; use `void*` on non-Windows (~3 lines) |
+| `src/h/vd2/system/error.h` | Guard `HWND__` typedef; use `void*` on non-Windows (~3 lines) |
 | `src/h/vd2/system/file.h` | Replace `#error` with `typedef int VDFileHandle` (~2 lines) |
 | `src/system/h/stdafx.h` | Guard `<windows.h>` and `<process.h>` includes (~10 lines) |
 | `src/ATIO/h/stdafx.h` | Guard `WINVER` define (~3 lines) |

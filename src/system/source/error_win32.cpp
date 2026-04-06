@@ -26,7 +26,7 @@
 #include <stdafx.h>
 #include <windows.h>
 
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/VDString.h>
 
 /////////////////////////////////////////////////////////////////////////////

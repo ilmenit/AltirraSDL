@@ -19,7 +19,7 @@
 //	archive for details.
 
 #include <stdafx.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/vdalloc.h>
 #include <at/atcore/propertyset.h>
 #include <at/atcore/enumparseimpl.h>

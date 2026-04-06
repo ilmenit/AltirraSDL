@@ -18,7 +18,7 @@
 #include <d3dcommon.h>
 #include <d3d10.h>
 #include <d3dcompiler.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
 #include <vd2/system/refcount.h>

@@ -17,7 +17,7 @@
 #include <stdafx.h>
 #include <vd2/system/constexpr.h>
 #include <vd2/system/cpuaccel.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <vd2/system/math.h>
 #include <at/atcore/configvar.h>
 #include <at/atio/audioreader.h>

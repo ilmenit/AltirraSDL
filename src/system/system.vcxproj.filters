@@ -194,7 +194,7 @@
     <ClInclude Include="..\h\vd2\system\debugx86.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\h\VD2\system\Error.h">
+    <ClInclude Include="..\h\VD2\system\error.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\vd2\system\event.h">
@@ -212,7 +212,7 @@
     <ClInclude Include="..\h\vd2\system\filewatcher.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\h\VD2\system\Fraction.h">
+    <ClInclude Include="..\h\VD2\system\fraction.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\vd2\system\halffloat.h">

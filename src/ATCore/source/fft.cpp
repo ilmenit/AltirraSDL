@@ -24,7 +24,7 @@
 #include <numbers>
 #include <intrin.h>
 #include <vd2/system/cpuaccel.h>
-#include <vd2/system/Error.h>
+#include <vd2/system/error.h>
 #include <at/atcore/fft.h>
 
 /////////////////////////////////////////////////////////////////////////////
