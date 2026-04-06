@@ -170,8 +170,11 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
                 GIT_PROGRESS   TRUE
             )
 
-            # Build as shared library (matches system-package behavior and
-            # avoids static-linking license complications with LGPL).
+            # Build as shared library (matches system-package behavior).
+            # SDL3 is zlib-licensed so static is legally fine, but on Linux
+            # SDL3 dlopens X11/Wayland/PulseAudio/ALSA/libdecor at runtime
+            # regardless, so a "static" SDL3 isn't truly self-contained.
+            # Shared + $ORIGIN rpath + bundled .so is the standard approach.
             set(SDL_SHARED ON  CACHE BOOL "Build SDL3 shared library" FORCE)
             set(SDL_STATIC OFF CACHE BOOL "Build SDL3 static library" FORCE)
 

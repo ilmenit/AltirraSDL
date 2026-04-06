@@ -381,9 +381,44 @@ endif()
 
 include(GNUInstallDirs)
 
+# Make the executable find a co-located libSDL3.so / libSDL3.dylib at runtime,
+# so the bundled package (see package_altirra below) is self-contained and
+# users don't need a system-installed SDL3.
+if(UNIX AND NOT APPLE)
+    set_target_properties(AltirraSDL PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN")
+elseif(APPLE)
+    set_target_properties(AltirraSDL PROPERTIES
+        BUILD_RPATH "@executable_path"
+        INSTALL_RPATH "@executable_path")
+endif()
+
 install(TARGETS AltirraSDL
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+
+# Copy the SDL3 shared library next to AltirraSDL after the build, so
+# the binary can be run straight out of the build tree (and so any IDE
+# launches "just work") without needing a system SDL3 install.  The
+# package_altirra target below also copies it into the distribution dir.
+if(TARGET SDL3::SDL3-shared AND (sdl3_POPULATED OR WIN32))
+    add_custom_command(TARGET AltirraSDL POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:SDL3::SDL3-shared>"
+            "$<TARGET_FILE_DIR:AltirraSDL>/"
+        COMMENT "Staging $<TARGET_FILE_NAME:SDL3::SDL3-shared> next to AltirraSDL"
+    )
+    # Also copy the SONAME symlink on Linux (libSDL3.so.0), since the ELF
+    # NEEDED entry refers to the soname, not the real filename.
+    if(UNIX AND NOT APPLE)
+        add_custom_command(TARGET AltirraSDL POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_SONAME_FILE:SDL3::SDL3-shared>"
+                "$<TARGET_FILE_DIR:AltirraSDL>/"
+        )
+    endif()
+endif()
 
 # Extras — custom effects, sample devices, device server scripts
 if(EXISTS "${CMAKE_SOURCE_DIR}/dist/extras")
@@ -440,6 +475,15 @@ if(TARGET SDL3::SDL3-shared)
                 "${ALTIRRA_PKG_DIR}/"
             COMMENT "Bundling $<TARGET_FILE_NAME:SDL3::SDL3-shared> into package"
         )
+        # On Linux the binary's NEEDED entry is the soname (libSDL3.so.0),
+        # not the real filename — copy the soname symlink too.
+        if(UNIX AND NOT APPLE)
+            add_custom_command(TARGET package_altirra POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy
+                    "$<TARGET_SONAME_FILE:SDL3::SDL3-shared>"
+                    "${ALTIRRA_PKG_DIR}/"
+            )
+        endif()
     endif()
 endif()
 
