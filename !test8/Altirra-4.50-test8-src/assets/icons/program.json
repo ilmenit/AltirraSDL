@@ -1,8 +1,0 @@
-{
-	"output_path": "../../src/Altirra/res/program.ico",
-	"images": [
-		{ "path": "exported/program-32.png" },
-		{ "path": "exported/program-16.png" },
-		{ "path": "exported/program-48.png" }
-	]
-}

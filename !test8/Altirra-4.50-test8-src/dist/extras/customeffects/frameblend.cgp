@@ -1,8 +1,0 @@
-#==========================================================================
-# frameblend.cgp
-#
-# Example of simple adjacent frame blending using the PREVious frame
-# facility.
-#
-shaders = "1"
-shader0 = "frameblend.fx"

@@ -1,8 +1,0 @@
-{
-	"output_path": "../../src/Altirra/res/targetoff.cur",
-	"images": [
-		{ "path": "exported/targetoff-32.png",	"hotspot_x": 15, "hotspot_y": 15 },
-		{ "path": "exported/targetoff-64.png",	"hotspot_x": 31, "hotspot_y": 31 },
-		{ "path": "exported/targetoff-128.png",	"hotspot_x": 62, "hotspot_y": 62 }
-	]
-}

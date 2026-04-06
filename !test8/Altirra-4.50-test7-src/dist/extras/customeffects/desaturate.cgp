@@ -1,9 +1,0 @@
-#==========================================================================
-# desaturate.cgp
-#
-# Simple image transform that just does a color transformation on the
-# input.
-#
-
-shaders = "1"
-shader0 = "desaturate.fx"
