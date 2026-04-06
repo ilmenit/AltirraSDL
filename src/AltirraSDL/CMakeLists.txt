@@ -152,6 +152,9 @@ target_sources(AltirraSDL PRIVATE
     source/ui/debugger/ui_dbg_traceviewer.cpp
     source/ui/debugger/ui_dbg_traceviewer_timeline.cpp
     source/ui/debugger/ui_dbg_traceviewer_panels.cpp
+    source/ui/debugger/ui_dbg_traceviewer_history_panel.cpp
+    source/ui/debugger/ui_dbg_traceviewer_profile_panel.cpp
+    source/ui/debugger/ui_dbg_traceviewer_log_panel.cpp
 
     # --- ui/tapeeditor/ : Tape Editor (waveform, editing, analysis) ---
     source/ui/tapeeditor/ui_tool_tapeeditor.cpp
