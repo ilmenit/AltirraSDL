@@ -343,6 +343,9 @@ std::mutex g_saveFrameMutex;
 VDStringA g_saveFramePath;
 
 bool g_copyFrameRequested = false;
+// Deferred clipboard capture: set when g_copyFrameRequested is consumed,
+// cleared and captured at the start of the NEXT frame before ImGui renders.
+static bool g_copyFramePending = false;
 ATUIDragDropState g_dragDropState;
 
 void ATUISaveFrameCallback(void *, const char * const *filelist, int) {
@@ -1473,6 +1476,15 @@ void ATUIRenderDragDropOverlay() {
 void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	IDisplayBackend *backend, ATUIState &state)
 {
+	// Clipboard capture — must happen BEFORE ImGui::NewFrame() so the
+	// framebuffer contains only the Atari frame, not the ImGui overlay.
+	// g_copyFramePending was set at the end of the previous frame when
+	// the menu item was clicked (ImGui had already rendered that frame).
+	if (g_copyFramePending) {
+		g_copyFramePending = false;
+		CopyFrameToClipboard(backend);
+	}
+
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_NewFrame();
 	} else {
@@ -1639,7 +1651,10 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 		if (g_copyFrameRequested) {
 			g_copyFrameRequested = false;
-			CopyFrameToClipboard(backend);
+			// Don't capture here — ImGui has already rendered onto the
+			// framebuffer this frame (menu is visible). Defer to the
+			// start of the next frame, before ImGui::NewFrame().
+			g_copyFramePending = true;
 		}
 	}
 }
