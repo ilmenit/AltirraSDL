@@ -1,4 +1,14 @@
 //	AltirraSDL - Tools dialog (split from ui_tools.cpp, Phase 2k)
+//
+//	Phase 3d note: a 4-way split was planned (convert / import / export /
+//	main) but every helper in this file references g_diskExplorer (the
+//	~640-line DiskExplorerState struct) and the import/export callbacks
+//	are tightly interleaved with the in-place file dialog state.  Promoting
+//	the entire DiskExplorerState definition to a header — the only way to
+//	let the helpers be moved verbatim — would relocate ~640 lines of
+//	struct + member functions into a public-ish header for very little
+//	maintainability win.  Like ui/media/videowriter_sdl3.cpp (3e), this
+//	file is intentionally left intact.
 
 #include <stdafx.h>
 #include <algorithm>
