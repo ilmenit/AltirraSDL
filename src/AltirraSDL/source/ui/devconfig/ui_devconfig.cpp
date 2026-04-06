@@ -18,6 +18,7 @@
 #include <at/atcore/propertyset.h>
 #include <at/atcore/device.h>
 #include "devicemanager.h"
+#include "ui_devconfig_internal.h"
 #include "ui_main.h"
 #include "ui_devconfig.h"
 #include "logging.h"
@@ -164,7 +165,6 @@ static bool DispatchDeviceDialog(const char *tag, ATPropertySet& props, ATDevice
 
 void ATUIRenderDeviceConfig(ATDeviceManager *devMgr) {
 	// Apply pending file browse results from async callbacks (thread safety)
-	extern void DevBrowseApplyPending();
 	DevBrowseApplyPending();
 
 	if (!g_devCfg.open)

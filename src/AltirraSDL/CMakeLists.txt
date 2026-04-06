@@ -109,6 +109,8 @@ target_sources(AltirraSDL PRIVATE
     # --- ui/devconfig/ : Device configuration dialogs ---
     source/ui/devconfig/ui_devconfig.cpp
     source/ui/devconfig/ui_devconfig_devices.cpp
+    source/ui/devconfig/ui_devconfig_devices_b.cpp
+    source/ui/devconfig/ui_devconfig_devices_browse.cpp
 
     # --- ui/input_config/ : Input mapping UI ---
     source/ui/input_config/ui_input.cpp
