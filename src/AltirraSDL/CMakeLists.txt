@@ -99,6 +99,8 @@ target_sources(AltirraSDL PRIVATE
 
     # --- ui/sysconfig/ : Configure System paged dialog ---
     source/ui/sysconfig/ui_system.cpp
+    source/ui/sysconfig/ui_system_pages_a.cpp
+    source/ui/sysconfig/ui_system_pages_b.cpp
 
     # --- ui/firmware/ : Firmware Manager + category ---
     source/ui/firmware/ui_firmware.cpp
