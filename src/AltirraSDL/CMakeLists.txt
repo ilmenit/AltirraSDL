@@ -164,6 +164,8 @@ target_sources(AltirraSDL PRIVATE
     source/ui/debugger/ui_dbg_watch.cpp
     source/ui/debugger/ui_dbg_targets.cpp
     source/ui/debugger/ui_dbg_printer.cpp
+    source/ui/debugger/ui_dbg_printer_png.cpp
+    source/ui/debugger/ui_dbg_printer_pdf_svg.cpp
     source/ui/debugger/ui_dbg_debugdisplay.cpp
     source/ui/debugger/ui_dbg_source.cpp
     source/ui/debugger/ui_dbg_verifier.cpp
