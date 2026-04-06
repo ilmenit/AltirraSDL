@@ -90,6 +90,7 @@ target_sources(AltirraSDL PRIVATE
 
     # --- ui/core/ : ImGui hub, main render, indicators ---
     source/ui/core/ui_main.cpp
+    source/ui/core/ui_main_aboutdialogs.cpp
     source/ui/core/ui_indicators.cpp
 
     # --- ui/menus/ : menu bar ---
