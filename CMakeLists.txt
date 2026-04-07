@@ -212,14 +212,53 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
 endif()
 
 # Dear ImGui (docking branch) — built as static library for the SDL3 frontend
+#
+# By default we FetchContent the upstream sources pinned to a known-good tag.
+# Distro packagers who need to avoid network access during build (Fedora,
+# Debian, etc.) can instead point ALTIRRA_IMGUI_SOURCE_DIR at an existing
+# ImGui source tree (e.g. /usr/include/imgui on Fedora's imgui-devel).  We
+# always compile ImGui ourselves from source — linking a pre-built distro
+# libimgui.so is intentionally unsupported, because Altirra requires
+# IMGUI_ENABLE_TEST_ENGINE (which changes ImGuiContext layout) and distro
+# packages do not set that define; mixing would cause silent ODR / memory
+# corruption at runtime.
+set(ALTIRRA_IMGUI_SOURCE_DIR "" CACHE PATH "Path to an external Dear ImGui source tree (must contain imgui.cpp, backends/, misc/cpp/). If empty, ImGui is fetched via FetchContent.")
+
 if(ALTIRRA_SDL3)
-    FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        v1.91.8-docking
-        GIT_SHALLOW    TRUE
-    )
-    FetchContent_MakeAvailable(imgui)
+    if(ALTIRRA_IMGUI_SOURCE_DIR)
+        # Validate the external tree has everything we compile below.  A clear
+        # up-front error is better than a cryptic missing-file during build.
+        foreach(_req
+                imgui.cpp
+                imgui_draw.cpp
+                imgui_tables.cpp
+                imgui_widgets.cpp
+                imgui_demo.cpp
+                imgui.h
+                imgui_internal.h
+                backends/imgui_impl_sdl3.cpp
+                backends/imgui_impl_sdlrenderer3.cpp
+                backends/imgui_impl_opengl3.cpp
+                misc/cpp/imgui_stdlib.cpp)
+            if(NOT EXISTS "${ALTIRRA_IMGUI_SOURCE_DIR}/${_req}")
+                message(FATAL_ERROR
+                    "ALTIRRA_IMGUI_SOURCE_DIR='${ALTIRRA_IMGUI_SOURCE_DIR}' is "
+                    "missing required file '${_req}'.  The directory must "
+                    "contain the full upstream Dear ImGui source layout "
+                    "(core sources, backends/, misc/cpp/).")
+            endif()
+        endforeach()
+        set(imgui_SOURCE_DIR "${ALTIRRA_IMGUI_SOURCE_DIR}")
+        message(STATUS "Dear ImGui: using external source at ${imgui_SOURCE_DIR}")
+    else()
+        FetchContent_Declare(
+            imgui
+            GIT_REPOSITORY https://github.com/ocornut/imgui.git
+            GIT_TAG        v1.91.8-docking
+            GIT_SHALLOW    TRUE
+        )
+        FetchContent_MakeAvailable(imgui)
+    endif()
 
     # librashader C headers — fetched from the librashader repo.
     # Only the include/ directory is needed (two C headers); the rest
