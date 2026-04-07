@@ -223,13 +223,13 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 
 		// (None) — disable all effects
 		if (ImGui::MenuItem("(None)", nullptr, isNone)) {
-			if (be) be->ClearShaderPreset();
+			ATUIShaderPresetsClear(be);
 			state.screenEffectsMode = ATUIState::kSFXMode_None;
 		}
 
 		// Basic — built-in Altirra effects (scanlines, bloom, distortion, mask)
 		if (ImGui::MenuItem("Basic", nullptr, isBasic)) {
-			if (be) be->ClearShaderPreset();
+			ATUIShaderPresetsClear(be);
 			state.screenEffectsMode = ATUIState::kSFXMode_Basic;
 		}
 

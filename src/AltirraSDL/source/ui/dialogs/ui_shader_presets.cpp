@@ -216,6 +216,10 @@ static void ClearShaderPreset(IDisplayBackend *backend) {
 // Auto-load on startup
 // =========================================================================
 
+void ATUIShaderPresetsClear(IDisplayBackend *backend) {
+	ClearShaderPreset(backend);
+}
+
 void ATUIShaderPresetsAutoLoad(IDisplayBackend *backend) {
 	LoadRecentPresets();
 

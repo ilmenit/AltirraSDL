@@ -45,7 +45,24 @@ void ATUpdateWindowCaption() {
 	s_lastConfigCounter = cc;
 	s_lastProfileId     = pid;
 
-	VDStringW title(AT_FULL_VERSION_STR);
+	// Build "AltirraSDL/<OS>/<arch> <version>..." instead of the
+	// shared AT_FULL_VERSION_STR (which says "Altirra/x64 ...").
+#if defined(__linux__) && defined(__ANDROID__)
+	#define AT_SDL_OS_STR L"/Android"
+#elif defined(__linux__)
+	#define AT_SDL_OS_STR L"/Linux"
+#elif defined(__APPLE__)
+	#define AT_SDL_OS_STR L"/macOS"
+#elif defined(__FreeBSD__)
+	#define AT_SDL_OS_STR L"/FreeBSD"
+#elif defined(_WIN32)
+	#define AT_SDL_OS_STR L"/Windows"
+#else
+	#define AT_SDL_OS_STR L""
+#endif
+
+	VDStringW title(L"AltirraSDL" AT_SDL_OS_STR AT_PROGRAM_PLATFORM_STR
+		L" " AT_VERSION_STR AT_VERSION_DEBUG_STR AT_VERSION_PRERELEASE_STR);
 
 	const VDStringW profileName = ATSettingsProfileGetName(pid);
 	if (!profileName.empty()) {

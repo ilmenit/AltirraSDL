@@ -242,6 +242,7 @@ void ATUISetPanZoomToolActive(bool active);
 // Shader presets (ui_shader_presets.cpp)
 void ATUIShaderPresetsAutoLoad(IDisplayBackend *backend);
 void ATUIShaderPresetsPoll(IDisplayBackend *backend);
+void ATUIShaderPresetsClear(IDisplayBackend *backend);
 void ATUIRenderShaderPresetMenu(IDisplayBackend *backend);
 void ATUIRenderShaderParameters(ATUIState &state);
 void ATUIRenderShaderSetupHelp(ATUIState &state);

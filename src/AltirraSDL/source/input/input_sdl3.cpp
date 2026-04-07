@@ -21,6 +21,7 @@
 #include <SDL3/SDL.h>
 #include <at/ataudio/pokey.h>
 #include "inputmanager.h"
+#include "inputmap.h"
 #include "inputdefs.h"
 #include "gtia.h"
 #include "simulator.h"
@@ -438,6 +439,55 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 					(int)ev.scancode, name ? name : "?", inputCode,
 					mapped ? "yes" : "no",
 					g_kbdOpts.mbAllowInputMapOverlap ? "yes" : "no");
+
+				// On the very first input-mapped key of the session, also dump
+				// the full set of enabled input maps and the controller(s) /
+				// trigger(s) that this scancode resolves to.  This separates
+				// "no map active" from "wrong map active" from "multiple maps
+				// fighting each other" in user bug reports.
+				static bool s_dumpedMaps = false;
+				if (!s_dumpedMaps) {
+					s_dumpedMaps = true;
+					ATInputManager *im = g_inputState.mpInputManager;
+					const uint32 mapCount = im->GetInputMapCount();
+					fprintf(stderr, "[input] active input maps (%u total):\n",
+						mapCount);
+					for (uint32 i = 0; i < mapCount; ++i) {
+						vdrefptr<ATInputMap> imap;
+						if (!im->GetInputMapByIndex(i, ~imap))
+							continue;
+						const bool en = im->IsInputMapEnabled(imap);
+						const wchar_t *nm = imap->GetName();
+						char nm8[256] = "?";
+						if (nm) {
+							size_t j = 0;
+							for (; j < sizeof(nm8) - 1 && nm[j]; ++j)
+								nm8[j] = (nm[j] < 0x80) ? (char)nm[j] : '?';
+							nm8[j] = 0;
+						}
+						fprintf(stderr,
+							"[input]   [%u] %s  enabled=%s  controllers=%u  mappings=%u\n",
+							i, nm8, en ? "yes" : "no",
+							imap->GetControllerCount(),
+							imap->GetMappingCount());
+						if (!en)
+							continue;
+						for (uint32 c = 0; c < imap->GetControllerCount(); ++c) {
+							const auto& ctl = imap->GetController(c);
+							fprintf(stderr,
+								"[input]       controller[%u] type=%u index=%u\n",
+								c, (unsigned)ctl.mType, ctl.mIndex);
+						}
+						for (uint32 m = 0; m < imap->GetMappingCount(); ++m) {
+							const auto& mp = imap->GetMapping(m);
+							if (mp.mInputCode == inputCode) {
+								fprintf(stderr,
+									"[input]       MATCH: inputCode=0x%x -> controllerId=%u code=0x%x\n",
+									mp.mInputCode, mp.mControllerId, mp.mCode);
+							}
+						}
+					}
+				}
 			}
 
 			g_inputState.mpInputManager->OnButtonDown(0, inputCode);
