@@ -163,8 +163,14 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		if (!ATAndroid_HasStoragePermission()) {
 			ImGui::PushStyleColor(ImGuiCol_ChildBg,
 				ImVec4(0.30f, 0.12f, 0.12f, 0.85f));
+			// Auto-size the child to its content so the "Open
+			// Settings" button is never clipped — the wrapped
+			// explanation text changes height with screen width and
+			// font scale, and a fixed 160dp box was too short on
+			// narrow phones, hiding the button under the next row.
 			ImGui::BeginChild("PermBanner",
-				ImVec2(0, dp(160.0f)), ImGuiChildFlags_Border);
+				ImVec2(0, 0),
+				ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY);
 			ImGui::Spacing();
 			ImGui::TextColored(ImVec4(1, 1, 1, 1),
 				"Storage access required");

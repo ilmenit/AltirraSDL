@@ -211,6 +211,99 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		float w = ImGui::GetContentRegionAvail().x;
 		float h = ImGui::GetContentRegionAvail().y;
 
+#ifdef __ANDROID__
+		static bool s_permGateDismissed = false;
+		// Step 1 (Android only): storage permission gate.  Without
+		// MANAGE_EXTERNAL_STORAGE the file browser cannot see ROMs in
+		// /sdcard/Download and other user folders, so the very first
+		// thing the user sees after install (the "Select ROM Folder"
+		// browser) would appear empty.  Show a dedicated permission
+		// step before the ROM-folder step with a button that jumps
+		// straight to the right Settings page; if they continue
+		// without it, the in-browser banner gives them a second
+		// chance to grant access.
+		if (!s_permGateDismissed && !ATAndroid_HasStoragePermission()) {
+			float contentH = dp(420.0f);
+			float topPad = (h - contentH) * 0.5f;
+			if (topPad < dp(40.0f)) topPad = dp(40.0f);
+			ImGui::Dummy(ImVec2(0, topPad));
+
+			{
+				const char *title = "Storage Access";
+				ImGui::SetWindowFontScale(2.0f);
+				float tw = ImGui::CalcTextSize(title).x;
+				ImGui::SetCursorPosX((w - tw) * 0.5f);
+				ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", title);
+				ImGui::SetWindowFontScale(1.0f);
+			}
+
+			ImGui::Spacing();
+
+			{
+				const char *sub = "Step 1 of 2";
+				ImVec2 ts = ImGui::CalcTextSize(sub);
+				ImGui::SetCursorPosX((w - ts.x) * 0.5f);
+				ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.82f, 1),
+					"%s", sub);
+			}
+
+			ImGui::Dummy(ImVec2(0, dp(20.0f)));
+
+			{
+				const char *body =
+					"Altirra needs \"All files access\" to read Atari "
+					"ROMs and disk images (.atr, .xex, .car, ...) "
+					"from your Downloads folder and other storage "
+					"locations.\n\n"
+					"Android only allows you to grant this from the "
+					"system Settings screen. The button below opens "
+					"that screen directly — find Altirra in the list "
+					"and enable the toggle, then return here.";
+				float wrapW = w * 0.88f;
+				float bodyX = (w - wrapW) * 0.5f;
+				ImGui::SetCursorPosX(bodyX);
+				ImGui::PushTextWrapPos(bodyX + wrapW);
+				ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.90f, 1),
+					"%s", body);
+				ImGui::PopTextWrapPos();
+			}
+
+			ImGui::Dummy(ImVec2(0, dp(28.0f)));
+
+			float pgBtnW = dp(280.0f);
+			float pgBtnH = dp(56.0f);
+
+			ImGui::SetCursorPosX((w - pgBtnW) * 0.5f);
+			ImGui::PushStyleColor(ImGuiCol_Button,
+				ImVec4(0.25f, 0.55f, 0.90f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+				ImVec4(0.30f, 0.60f, 0.95f, 1));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+				ImVec4(0.20f, 0.50f, 0.85f, 1));
+			if (ImGui::Button("Open Android Settings",
+				ImVec2(pgBtnW, pgBtnH)))
+			{
+				ATAndroid_OpenManageStorageSettings();
+			}
+			ImGui::PopStyleColor(3);
+
+			ImGui::Dummy(ImVec2(0, dp(12.0f)));
+
+			ImGui::SetCursorPosX((w - pgBtnW) * 0.5f);
+			if (ImGui::Button("Continue Without Access",
+				ImVec2(pgBtnW, pgBtnH)))
+			{
+				// Advance to the ROM-folder step.  The file browser
+				// will still show its own in-app banner so the user
+				// has another chance to grant access from there.
+				s_permGateDismissed = true;
+			}
+
+			ImGui::End();
+			return;
+		}
+#endif
+
 		// Center content vertically
 		float contentH = dp(360.0f);
 		float topPad = (h - contentH) * 0.5f;
@@ -305,13 +398,32 @@ void RenderLoadGamePrompt(ATSimulator &sim, ATUIState &uiState,
 {
 	ImGuiIO &io = ImGui::GetIO();
 
-	// Pill dimensions
+	const char *hintAscii = "or tap the menu icon for more options";
+
+	// Pill dimensions — width adapts so the hint never clips, but
+	// always stays inside the display with a comfortable side margin.
 	float btnW  = dp(220.0f);
 	float btnH  = dp(52.0f);
 	float padX  = dp(18.0f);
 	float padY  = dp(14.0f);
+	float sideMargin = dp(16.0f);
+
+	float hintSingleLineW = ImGui::CalcTextSize(hintAscii).x;
 	float pillW = btnW + padX * 2;
-	float pillH = btnH + padY * 2 + dp(20.0f);  // + room for subtitle
+	float wantedW = hintSingleLineW + padX * 2;
+	if (wantedW > pillW) pillW = wantedW;
+	float maxPillW = io.DisplaySize.x - sideMargin * 2;
+	if (pillW > maxPillW) pillW = maxPillW;
+	float minPillW = btnW + padX * 2;
+	if (pillW < minPillW) pillW = minPillW;
+
+	// Compute how tall the (potentially wrapped) hint will render so
+	// the pill always fits its content even on narrow phones where
+	// the hint must wrap to two lines.
+	float hintWrapW = pillW - padX * 2;
+	if (hintWrapW < dp(40.0f)) hintWrapW = dp(40.0f);
+	ImVec2 hintSize = ImGui::CalcTextSize(hintAscii, nullptr, false, hintWrapW);
+	float pillH = btnH + padY * 2 + dp(6.0f) + hintSize.y + dp(4.0f);
 
 	// Anchor just below the top bar so the Atari display beneath is
 	// visible.  The top bar is always reserved 56dp below the safe
@@ -344,20 +456,31 @@ void RenderLoadGamePrompt(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
 		| ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-	// Primary action button
-	ImGui::SetCursorPos(ImVec2(padX, padY));
+	// Primary action button — centered horizontally inside the pill.
+	ImGui::SetCursorPos(ImVec2((pillW - btnW) * 0.5f, padY));
 	if (ImGui::Button("Load Game", ImVec2(btnW, btnH))) {
 		s_romFolderMode = false;
 		mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
 		s_fileBrowserNeedsRefresh = true;
 	}
 
-	// Compact hint under the button
+	// Compact hint under the button — wrapped so it never clips on
+	// narrow displays, and centered when it fits on a single line.
 	{
-		const char *hintAscii = "or tap the menu icon for more options";
-		float tw = ImGui::CalcTextSize(hintAscii).x;
-		ImGui::SetCursorPosX((pillW - tw) * 0.5f);
-		ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.82f, 1), "%s", hintAscii);
+		ImGui::Dummy(ImVec2(0, dp(6.0f)));
+		if (hintSize.y <= ImGui::GetTextLineHeight() + 1.0f) {
+			ImGui::SetCursorPosX((pillW - hintSingleLineW) * 0.5f);
+			ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.82f, 1),
+				"%s", hintAscii);
+		} else {
+			ImGui::SetCursorPosX(padX);
+			ImGui::PushTextWrapPos(padX + hintWrapW);
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				ImVec4(0.70f, 0.75f, 0.82f, 1));
+			ImGui::TextWrapped("%s", hintAscii);
+			ImGui::PopStyleColor();
+			ImGui::PopTextWrapPos();
+		}
 	}
 
 	ImGui::End();

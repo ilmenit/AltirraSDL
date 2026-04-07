@@ -306,12 +306,19 @@ void ATUIRendererImGui::RenderOverlay() {
 			IM_COL32(200, 200, 200, 180), buf);
 	}
 
-	// Pause overlay
+	// Pause overlay — positioned near the bottom of the viewport so
+	// it doesn't cover the Atari display.  Use a font-height-based
+	// margin (instead of a raw pixel constant) so the overlay sits
+	// at the same visual distance from the bottom on a desktop
+	// monitor and a 3x-density Android phone, and stays clear of
+	// the typical Android navigation bar inset on mobile.
 	if (hud.showPauseOverlay && mbPaused) {
 		const char *pauseText = "PAUSED";
 		ImVec2 sz = ImGui::CalcTextSize(pauseText);
 		float px = (vp.x - sz.x) * 0.5f;
-		float py = vp.y * 0.3f;
+		float bottomMargin = sz.y * 3.0f + 16.0f;
+		float py = vp.y - sz.y - bottomMargin;
+		if (py < 0.0f) py = 0.0f;
 		dl->AddRectFilled(ImVec2(px - 8, py - 4), ImVec2(px + sz.x + 8, py + sz.y + 4),
 			IM_COL32(0, 0, 0, 160));
 		dl->AddText(ImVec2(px, py), IM_COL32(255, 255, 255, 255), pauseText);
