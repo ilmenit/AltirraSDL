@@ -1550,6 +1550,11 @@ int main(int argc, char *argv[]) {
 		HandleEvents();
 		if (!g_running) break;
 
+		// Update SDL window title from current simulator config
+		// (no-op unless config or active profile actually changed).
+		extern void ATUpdateWindowCaption();
+		ATUpdateWindowCaption();
+
 		// Process test mode commands from external agent (no-op if not in test mode)
 		ATTestModePollCommands(g_sim, g_uiState);
 

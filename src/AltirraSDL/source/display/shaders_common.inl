@@ -17,6 +17,22 @@ void main() {
 }
 )glsl";
 
+// Fullscreen triangle VS variant that does NOT flip Y in the UV output.
+// Use this when rendering into an FBO whose contents will subsequently be
+// sampled by another pass that already applies the Y flip itself — so the
+// FBO must be stored in GL's native bottom-up orientation to match
+// mEmuTexture's row-0-is-top-scanline layout after the consumer flips.
+static const char kGLSL_FullscreenTriangleVS_NoFlip[] = R"glsl(
+#version 330 core
+out vec2 vUV;
+void main() {
+	float x = float((gl_VertexID & 1) << 2) - 1.0;
+	float y = float((gl_VertexID & 2) << 1) - 1.0;
+	gl_Position = vec4(x, y, 0.0, 1.0);
+	vUV = vec2(x * 0.5 + 0.5, y * 0.5 + 0.5);
+}
+)glsl";
+
 // sRGB conversion functions (shared by multiple shaders).
 static const char kGLSL_SRGBUtils[] = R"glsl(
 vec3 SrgbToLinear(vec3 c) {

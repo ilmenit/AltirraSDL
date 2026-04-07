@@ -658,7 +658,12 @@ void DisplayBackendGL33::RenderScreenFX(float dstX, float dstY, float dstW, floa
 	if (mScreenFX.mPALBlendingOffset != 0.0f) {
 		// Compile PAL program on first use
 		if (!mPALProgram) {
-			mPALProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS, kGLSL_PALArtifacting_FS);
+			// Use NoFlip VS: the PAL pre-pass writes into mPALFBO which is later
+// sampled by the screen-FX/passthrough pass using the Y-flipping VS.
+// To make that downstream flip produce the correct orientation,
+// mPALFBO must be stored in GL's native bottom-up layout (matching
+// how mEmuTexture's row 0 is the top scanline after the consumer flip).
+mPALProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS_NoFlip, kGLSL_PALArtifacting_FS);
 			if (mPALProgram) {
 				mPALLoc_SourceTex = glGetUniformLocation(mPALProgram, "uSourceTex");
 				mPALLoc_ChromaOffset = glGetUniformLocation(mPALProgram, "uChromaOffset");
@@ -690,8 +695,12 @@ void DisplayBackendGL33::RenderScreenFX(float dstX, float dstY, float dstW, floa
 
 			// Chroma offset: mPALBlendingOffset is in scanlines (-1 or -2).
 			// Convert to UV space by dividing by source texture height.
+			// The PAL pre-pass uses the NoFlip VS, so vUV.y now increases
+			// downward in the source (top scanline at vUV.y=0).  The original
+			// offset was authored against the Y-flipped UV convention, so
+			// negate it to preserve the same logical blending direction.
 			glUniform2f(mPALLoc_ChromaOffset,
-				0.0f, mScreenFX.mPALBlendingOffset / (float)mTexH);
+				0.0f, -mScreenFX.mPALBlendingOffset / (float)mTexH);
 
 			// Signed RGB encoding flag — when the frame uses extended-range
 			// palette encoding, the shader must convert to normal [0,1] range.
