@@ -1525,7 +1525,17 @@ int main(int argc, char *argv[]) {
 	// Without this sleep, the emulator runs Advance() as fast as the
 	// CPU allows, producing frames far faster than 60 Hz.
 
+	// --- Hiccup detector state.  Catches individual main-loop iterations
+	// that exceed the frame budget and emits a per-phase breakdown so we
+	// can tell whether the stall came from event processing, emulation,
+	// frame preparation, rendering, or the pacer itself.  Rate-limited to
+	// one log line per second to avoid flooding under sustained overload. ---
+	const uint64_t hiccupPerfFreq = SDL_GetPerformanceFrequency();
+	uint64_t hiccupLastLogMs = 0;
+
 	while (g_running) {
+		const uint64_t phaseT0 = SDL_GetPerformanceCounter();
+
 		HandleEvents();
 		if (!g_running) break;
 
@@ -1537,6 +1547,8 @@ int main(int argc, char *argv[]) {
 
 		// Tick the debugger engine (process queued commands)
 		ATUIDebuggerTick();
+
+		const uint64_t phaseT1 = SDL_GetPerformanceCounter();
 
 		// Android/mobile: while backgrounded, do not advance emulation
 		// and do not render.  Just keep pumping events so we receive the
@@ -1558,13 +1570,29 @@ int main(int argc, char *argv[]) {
 			continue;
 		}
 
-		ATSimulator::AdvanceResult result = g_sim.Advance(false);
+		// Turbo frame-skip: in turbo mode, drop most frames at the GTIA
+		// framebuffer-allocation level so GTIA skips artifacting / palette
+		// correction / framebuffer writes for ~15 of every 16 frames.
+		// Matches Windows main.cpp:3180 behaviour with the default
+		// g_ATCVEngineTurboFPSDivisor=16.  Significant CPU saving in
+		// turbo mode on lower-end Linux/macOS/Android, with no effect
+		// at normal speed (turbo=false → dropFrame=false always).
+		const bool turbo = g_sim.IsTurboModeEnabled();
+		static uint32 s_turboFrameCounter = 0;
+		constexpr uint32 kTurboFPSDivisor = 16;
+		const bool dropFrame = turbo && ((++s_turboFrameCounter) % kTurboFPSDivisor) != 0;
+
+		ATSimulator::AdvanceResult result = g_sim.Advance(dropFrame);
+
+		const uint64_t phaseT2 = SDL_GetPerformanceCounter();
 
 		// Check if a new frame arrived (GTIA called PostBuffer).
 		bool hadFrame = g_pDisplay->IsFramePending();
 		g_pDisplay->PrepareFrame();
 
-		const bool turbo = g_sim.IsTurboModeEnabled();
+		const uint64_t phaseT3 = SDL_GetPerformanceCounter();
+
+		// (turbo is declared above for the dropFrame computation.)
 
 		// Toggle GL swap interval when turbo state changes.
 		// With vsync on (interval=1), SDL_GL_SwapWindow blocks at the display
@@ -1579,9 +1607,11 @@ int main(int argc, char *argv[]) {
 		if (s_diagFrameCount < 5)
 			LOG_INFO("Main", "MainLoop: advance=%d hadFrame=%d running=%d paused=%d", (int)result, hadFrame, g_sim.IsRunning(), g_sim.IsPaused());
 
+		bool didRender = false;
 		if (hadFrame) {
 			// A frame was uploaded — present it and pace.
 			RenderAndPresent();
+			didRender = true;
 
 			// Sync pacer rate and audio rate with current speed settings.
 			// Cheap — just reads a few values and updates if changed.
@@ -1594,14 +1624,43 @@ int main(int argc, char *argv[]) {
 			// GTIA is blocked but we had no frame to show.
 			// Present anyway to keep UI responsive.
 			RenderAndPresent();
+			didRender = true;
 			if (!turbo)
 				g_pacer.WaitForNextFrame();
 		} else if (result == ATSimulator::kAdvanceResult_Stopped) {
 			// Paused/stopped — render for UI, sleep to avoid busy-wait.
 			RenderAndPresent();
+			didRender = true;
 			SDL_Delay(16);
 		}
 		// kAdvanceResult_Running with no frame: loop immediately.
+
+		// --- Hiccup detection.  Measure total work (events + advance +
+		// prepare + render) excluding the pacer sleep, and compare against
+		// the frame budget.  If work exceeds budget + 8ms slack, emit a
+		// per-phase breakdown so we can identify what stalled.  Rate-limited
+		// to 1 line / sec so a sustained overload won't flood stderr.
+		//
+		// NOTE: "render" includes SDL_GL_SwapWindow which blocks on vsync
+		// and can legitimately take up to one display refresh (~16.6ms on
+		// 60Hz) — this is normal and accounted for in the threshold.
+		const uint64_t phaseT4 = SDL_GetPerformanceCounter();
+		const double totalWorkMs  = (double)(phaseT4 - phaseT0) * 1000.0 / (double)hiccupPerfFreq;
+		const double targetMs     = g_pacer.targetSecsPerFrame * 1000.0;
+		const double hiccupThresh = targetMs + 8.0;
+		if (didRender && totalWorkMs > hiccupThresh) {
+			const uint64_t nowMs = SDL_GetTicks();
+			if (nowMs - hiccupLastLogMs >= 1000) {
+				hiccupLastLogMs = nowMs;
+				const double evMs  = (double)(phaseT1 - phaseT0) * 1000.0 / (double)hiccupPerfFreq;
+				const double adMs  = (double)(phaseT2 - phaseT1) * 1000.0 / (double)hiccupPerfFreq;
+				const double prMs  = (double)(phaseT3 - phaseT2) * 1000.0 / (double)hiccupPerfFreq;
+				const double rdMs  = (double)(phaseT4 - phaseT3) * 1000.0 / (double)hiccupPerfFreq;
+				LOG_INFO("Hiccup",
+					"total=%.1fms (target=%.1f) events=%.1f advance=%.1f prepare=%.1f render+present=%.1f",
+					totalWorkMs, targetMs, evMs, adMs, prMs, rdMs);
+			}
+		}
 	}
 
 	g_sim.GetGTIA().SetVideoOutput(nullptr);

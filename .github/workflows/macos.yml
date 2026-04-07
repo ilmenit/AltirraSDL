@@ -4,9 +4,12 @@ name: macOS build
 # existing build.sh / package.sh pipeline. SDL3 is fetched and bundled by
 # the package_altirra CMake target (libSDL3.dylib next to the binary).
 #
-# Two parallel builds are produced:
-#   - macos-14 → arm64  (Apple Silicon)
-#   - macos-13 → x86_64 (Intel)
+# arm64 only: GitHub deprecated the macos-13 (Intel) runner image and
+# new jobs scheduled to it are cancelled at queue time.  Apple Silicon
+# is the present and future of macOS, and the matrix-of-one structure
+# is preserved so a future arch (e.g. macos-15-large for Rosetta x86_64,
+# or a real Intel runner if Apple/GitHub bring it back) can be added
+# back as a single line.
 #
 # The output is a .zip containing AltirraSDL.app (a real macOS bundle
 # with Info.plist + NSGameControllerUsageDescription, ad-hoc codesigned
@@ -46,8 +49,6 @@ jobs:
         include:
           - runner: macos-14
             arch: arm64
-          - runner: macos-13
-            arch: x86_64
     runs-on: ${{ matrix.runner }}
 
     steps:

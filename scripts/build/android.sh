@@ -239,7 +239,10 @@ ok "SDL3 ready"
 if [ ! -f "$ANDROID_DIR/gradlew" ]; then
     info "Gradle wrapper not found — downloading..."
 
-    GRADLE_VER="8.12"
+    # 9.3.1 is the minimum required by the Android Gradle Plugin version
+    # pinned in android/app/build.gradle (AGP's version-check plugin
+    # refuses to apply on anything older).
+    GRADLE_VER="9.3.1"
     WRAPPER_DIR="$ANDROID_DIR/gradle/wrapper"
     mkdir -p "$WRAPPER_DIR"
 

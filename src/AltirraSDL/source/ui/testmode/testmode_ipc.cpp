@@ -5,6 +5,7 @@
 
 #include <stdafx.h>
 #include "testmode_ipc.h"
+#include "logging.h"   // LOG_ERROR / LOG_INFO macros (source/app/logging.h)
 #include <stdio.h>
 #include <string.h>
 

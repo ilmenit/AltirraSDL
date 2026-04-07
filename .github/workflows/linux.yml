@@ -64,9 +64,21 @@ jobs:
             | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
             > /etc/apt/sources.list.d/kitware.list
+
+          # gcc-12 from jammy-updates.  Ubuntu 22.04's default gcc is 11,
+          # which doesn't support C++23 `if consteval` (used to be in
+          # constexpr.h before the std::is_constant_evaluated() switch).
+          # Even though the source no longer needs it, gcc-12 is still
+          # required for full C++20/23 standard-library support — gcc-11's
+          # libstdc++ has known constexpr math gaps that bite the
+          # constexpr_assert tests in src/system.
           apt-get update
-          apt-get install -y --no-install-recommends cmake
+          apt-get install -y --no-install-recommends cmake gcc-12 g++-12
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
           cmake --version
+          gcc --version
+          g++ --version
 
       - name: Install Rust (for librashader)
         shell: bash

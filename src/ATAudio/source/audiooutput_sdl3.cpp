@@ -366,6 +366,37 @@ private:
 	int    mQueueSampleMax = 0;
 	float  mFreqRatio = 1.0f;         // last applied frequency ratio
 	uint32 mDropCounter = 0;          // sustained-overflow counter (Windows hysteresis)
+
+	// --- Speed-modifier compensation (port of Windows mRepeatInc /
+	// mRepeatAccum from audiooutput.cpp:1007-1017) ---
+	//
+	// SetCyclesPerSecond receives a `repeatfactor = 1.0 / speedRate`
+	// which encodes how many times each WriteAudio chunk should be
+	// pushed to the audio device to keep audio playback at correct
+	// wallclock pace.  At normal speed (rate=1.0) repeatfactor=1.0 →
+	// inc=65536 → exactly one push per call.  At 2× speed
+	// (rate=2.0) repeatfactor=0.5 → inc=32768 → on average 0.5 pushes
+	// per call (every other call drops the chunk).  At slowmo
+	// (rate=0.5) repeatfactor=2.0 → inc=131072 → 2 pushes per call.
+	//
+	// Without this, slowmo and Configure System speed modifiers cause
+	// continuous queue underflow / overflow because POKEY's call rate
+	// no longer matches realtime sample consumption.
+	uint32 mRepeatInc = 65536;
+	uint32 mRepeatAccum = 0;
+
+	// Class-member interleave buffer for the output stage, so that we
+	// can push the same chunk multiple times to SDL3 without redoing
+	// the interleave (see write loop below).  Sized for the worst case
+	// kBufferSize samples × 2 channels.
+	alignas(16) float mInterleaveBuffer[kBufferSize * 2] {};
+
+	// --- Telemetry for the once-per-second "[Audio]" diagnostic line.
+	// Cumulative counters; we log the delta since the previous tick.
+	uint64 mTelemetryNextMs = 0;
+	uint32 mTelemetryLastUnderflow = 0;
+	uint32 mTelemetryLastOverflow = 0;
+	uint32 mTelemetryLastDrop = 0;
 };
 
 // -------------------------------------------------------------------------
@@ -421,6 +452,10 @@ void ATAudioOutputSDL3::Init(ATScheduler& scheduler) {
 	mFreqRatio = 1.0f;
 	mDropCounter = 0;
 
+	// Reset speed-modifier accumulator.  mRepeatInc is set by the
+	// SetCyclesPerSecond call below.
+	mRepeatAccum = 0;
+
 	mWritePosition = 0;
 
 	mProfileBlockStartPos = 0;
@@ -463,6 +498,10 @@ void ATAudioOutputSDL3::SetCyclesPerSecond(double cps, double repeatfactor) {
 	mTickRate = cps;
 	mMixingRate = (float)(cps / 28.0);
 	mAudioStatus.mExpectedRate = cps / 28.0;
+
+	// Apply speed-modifier compensation (matches Windows
+	// audiooutput.cpp:523).  See class member comment for details.
+	mRepeatInc = (uint32)(repeatfactor * 65536.0 + 0.5);
 
 	int newRate = (int)(cps / 28.0 + 0.5);
 	bool rateChanged = (newRate != mMixingRateInt);
@@ -873,41 +912,49 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 			++mAudioStatus.mDropCount;
 		} else {
 			// Output the filtered buffer level worth of samples.
-			// The filtered data lives at offset kFilterOffset from the start of the source buffer.
+			// The filtered data lives at offset kFilterOffset from the
+			// start of the source buffer.
 			const uint32 outputCount = mBufferLevel;
 			const float *srcLeft = mSourceBuffer[0] + kFilterOffset;
 			const float *srcRight = mbFilterStereo ? mSourceBuffer[1] + kFilterOffset : nullptr;
 
-			// Interleave and push to SDL3 in chunks
-			static constexpr uint32 kChunkSize = 1024;
-			float interleaved[kChunkSize * 2];
+			// --- Speed-modifier write count (Phase B port of Windows
+			// mRepeatAccum / mRepeatInc, audiooutput.cpp:1007-1017).
+			// At normal speed mRepeatInc = 65536 → writeCount = 1.
+			// In slowmo mRepeatInc > 65536 → writeCount can be 2+.
+			// At fast-forward (>1×) mRepeatInc < 65536 → writeCount
+			// alternates 0/1 averaging the desired write rate.
+			// Capped at 10 to bound buffer fill in pathological cases. ---
+			mRepeatAccum += mRepeatInc;
+			uint32 writeCount = mRepeatAccum >> 16;
+			mRepeatAccum &= 0xFFFF;
+			if (writeCount > 10) writeCount = 10;
 
-			uint32 remaining = outputCount;
-			uint32 offset = 0;
-
-			while (remaining > 0) {
-				uint32 n = remaining < kChunkSize ? remaining : kChunkSize;
-
+			if (writeCount > 0) {
+				// Interleave once into the class-member buffer, then
+				// push it to SDL3 writeCount times.
 				if (mbMute) {
-					memset(interleaved, 0, n * 2 * sizeof(float));
+					memset(mInterleaveBuffer, 0, outputCount * 2 * sizeof(float));
 				} else if (srcRight) {
-					for (uint32 i = 0; i < n; ++i) {
-						interleaved[i * 2    ] = srcLeft[offset + i];
-						interleaved[i * 2 + 1] = srcRight[offset + i];
+					for (uint32 i = 0; i < outputCount; ++i) {
+						mInterleaveBuffer[i * 2    ] = srcLeft[i];
+						mInterleaveBuffer[i * 2 + 1] = srcRight[i];
 					}
 				} else {
-					for (uint32 i = 0; i < n; ++i) {
-						interleaved[i * 2    ] = srcLeft[offset + i];
-						interleaved[i * 2 + 1] = srcLeft[offset + i];
+					for (uint32 i = 0; i < outputCount; ++i) {
+						mInterleaveBuffer[i * 2    ] = srcLeft[i];
+						mInterleaveBuffer[i * 2 + 1] = srcLeft[i];
 					}
 				}
 
-				SDL_PutAudioStreamData(mpStream, interleaved,
-				                       (int)(n * 2 * sizeof(float)));
-
-				offset += n;
-				remaining -= n;
+				const int byteCount = (int)(outputCount * 2 * sizeof(float));
+				for (uint32 rep = 0; rep < writeCount; ++rep) {
+					SDL_PutAudioStreamData(mpStream, mInterleaveBuffer, byteCount);
+				}
 			}
+			// writeCount == 0 → fast-forward dropped this chunk
+			// intentionally; this is the symmetric counterpart of the
+			// slowmo repeat path and is correct behaviour.
 
 			// Underflow already detected above using a more sensitive
 			// threshold (latency / 4), so no tail check needed here.
@@ -980,8 +1027,13 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 				mAudioStatus.mMeasuredMax = 0;
 			}
 
-			mAudioStatus.mTargetMin = mLatency;
-			mAudioStatus.mTargetMax = mLatency + mExtraBuffer;
+			// Report target range in BYTES to match the Windows
+			// convention (audiooutput.cpp:971-972).  Note that on
+			// SDL3 our sample format is float stereo (8 bytes/sample)
+			// so any consumer converting bytes→ms must use 8, not 4.
+			const int statusBytesPerMs = mMixingRateInt * 2 * (int)sizeof(float) / 1000;
+			mAudioStatus.mTargetMin = mLatency * statusBytesPerMs;
+			mAudioStatus.mTargetMax = (mLatency + mExtraBuffer) * statusBytesPerMs;
 			mAudioStatus.mbStereoMixing = mbFilterStereo;
 			mAudioStatus.mSamplingRate = mMixingRateInt;
 
@@ -997,6 +1049,46 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 			// used only for the drop logic check.
 			mUnderflowCount = 0;
 			mOverflowCount = 0;
+
+			// --- Once-per-second diagnostic line ---------------------------
+			// Reports:
+			//   q=<min>/<max>/<target>ms    SDL queue depth window (min/max
+			//                                over ~375 ms) vs target latency,
+			//                                in milliseconds.
+			//   ratio=<f>                    Applied SDL frequency ratio
+			//                                (1.0 = nominal; ±0.5% = clock
+			//                                recovery bending the rate).
+			//   uf=<d> of=<d> drop=<d>       Underflow/overflow/drop events
+			//                                in the last second.
+			//   in=<f>k exp=<f>k             Measured vs expected POKEY
+			//                                sample rate in samples/sec.
+			//
+			// This tells us whether the crackling is an audio-engine
+			// problem (underflows, non-unity ratio, rate mismatch) or a
+			// frame-pacing problem (flat audio stats → look at [Pace]).
+			const uint64 nowMs = SDL_GetTicks();
+			if (nowMs >= mTelemetryNextMs) {
+				mTelemetryNextMs = nowMs + 1000;
+
+				const uint32 ufDelta = mAudioStatus.mUnderflowCount - mTelemetryLastUnderflow;
+				const uint32 ofDelta = mAudioStatus.mOverflowCount  - mTelemetryLastOverflow;
+				const uint32 drDelta = mAudioStatus.mDropCount      - mTelemetryLastDrop;
+				mTelemetryLastUnderflow = mAudioStatus.mUnderflowCount;
+				mTelemetryLastOverflow  = mAudioStatus.mOverflowCount;
+				mTelemetryLastDrop      = mAudioStatus.mDropCount;
+
+				const int bps = mMixingRateInt * 2 * (int)sizeof(float);
+				const int minMs = bps > 0 ? (mAudioStatus.mMeasuredMin * 1000 / bps) : 0;
+				const int maxMs = bps > 0 ? (mAudioStatus.mMeasuredMax * 1000 / bps) : 0;
+
+				fprintf(stderr,
+					"[Audio] q=%d/%d/%d-%dms ratio=%.4f uf=%u of=%u drop=%u "
+					"in=%.0f exp=%.0f\n",
+					minMs, maxMs, mLatency, mLatency + mExtraBuffer,
+					(double)mFreqRatio,
+					ufDelta, ofDelta, drDelta,
+					mAudioStatus.mIncomingRate, mAudioStatus.mExpectedRate);
+			}
 		}
 	}
 

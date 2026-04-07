@@ -226,7 +226,13 @@ constexpr double VDCxSinPiD(double x) {
 }
 
 constexpr float VDCxSinPi(float x) {
-	if consteval {
+	// Use std::is_constant_evaluated() instead of C++23 `if consteval`
+	// so this header compiles on gcc 11 (Ubuntu 22.04 default).  Both
+	// expressions are evaluated at compile time when called from a
+	// constexpr context, but the standard guarantees that only the
+	// taken branch is instantiated, so the runtime sin() call is never
+	// reached during constant evaluation.
+	if (std::is_constant_evaluated()) {
 		return VDCxNarrowToFloat(VDCxSinPiD(x));
 	} else {
 		return VDCxNarrowToFloat(sin((double)x * 3.1415926535897932384626433832795));
@@ -277,7 +283,7 @@ constexpr double VDCxCosPiD(double x) {
 }
 
 constexpr float VDCxCosPi(float x) {
-	if consteval {
+	if (std::is_constant_evaluated()) {
 		return VDCxNarrowToFloat(VDCxCosPiD(x));
 	} else {
 		return VDCxNarrowToFloat(cos((double)x * 3.1415926535897932384626433832795));
@@ -285,7 +291,7 @@ constexpr float VDCxCosPi(float x) {
 }
 
 constexpr float VDCxSin(float v) {
-	if consteval {
+	if (std::is_constant_evaluated()) {
 		return VDCxNarrowToFloat(VDCxSinPiD(v * 0.31830988618379067153776752674503));
 	} else {
 		return sinf(v);
@@ -293,7 +299,7 @@ constexpr float VDCxSin(float v) {
 }
 
 constexpr float VDCxCos(float v) {
-	if consteval {
+	if (std::is_constant_evaluated()) {
 		return VDCxNarrowToFloat(VDCxSinPiD(v * 0.31830988618379067153776752674503));
 	} else {
 		return cosf(v);
@@ -305,7 +311,7 @@ constexpr float VDCxSincPi(float v) {
 	if (v >= -1e-8f && v <= 1e-8f)
 		return 1.0f;
 
-	if consteval {
+	if (std::is_constant_evaluated()) {
 		return VDCxNarrowToFloat(VDCxSinPiD(v) / (3.1415926535897932384626433832795 * v));
 	} else {
 		const double d = (double)v * 3.1415926535897932384626433832795;

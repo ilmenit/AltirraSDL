@@ -8,10 +8,12 @@
 #include "gtia.h"
 #include "uiaccessors.h"
 #include "app_internal.h"
+#include "logging.h"
 
 extern ATSimulator g_sim;
 extern SDL_Window *g_pWindow;
 #include <at/ataudio/audiooutput.h>
+#include <algorithm>
 
 
 // =========================================================================
@@ -44,6 +46,8 @@ void FramePacer::Init() {
 	frameCount = 0;
 	telemetryStart = lastFrameTime;
 	measuredFPS = 0.0f;
+	lateFrameCount = 0;
+	maxElapsedTicks = 0;
 }
 
 void FramePacer::UpdateRate(double fps) {
@@ -56,26 +60,64 @@ void FramePacer::WaitForNextFrame() {
 	int64_t elapsed = (int64_t)(now - lastFrameTime);
 	int64_t targetTicks = (int64_t)(targetSecsPerFrame * (double)perfFreq);
 
+	// Capture the frame start time BEFORE the sleep.  This is the
+	// critical piece: the next call's `elapsed` must include the time
+	// we spend sleeping here, otherwise the sleep duration never enters
+	// the error accumulator and the loop systematically runs too fast.
+	// Matches Windows main.cpp:3145-3146:
+	//     sint64 lastFrameDuration = curTime - lastTime;
+	//     lastTime = curTime;       // <- before the sleep
+	// Previously we captured lastFrameTime after SDL_DelayPrecise,
+	// which made elapsed on the next call reflect only the work time
+	// (not work+sleep), causing errorAccum to grow without bound and
+	// repeatedly hit the clamp.  Result was ~5% pacer drift, POKEY
+	// over-production, audio queue overflow, audible crackling.
+	lastFrameTime = now;
+
+	// Telemetry: track frames that exceeded their wall-clock budget
+	// (main loop + render took longer than one frame period).  These
+	// are the frames where emulation is falling behind realtime, which
+	// is the primary cause of audio underruns when it happens.
+	if (elapsed > targetTicks)
+		++lateFrameCount;
+	if (elapsed > maxElapsedTicks)
+		maxElapsedTicks = elapsed;
+
 	// Error accumulator: positive = we finished early, need to wait.
 	// Mirrors the Windows "error += lastFrameDuration - g_frameTicks"
 	// logic, but with inverted sign (they track lateness, we track
 	// earliness).
 	errorAccum += targetTicks - elapsed;
 
-	// Clamp error to ±2 frames to prevent runaway drift (matches the
-	// Windows g_frameErrorBound = 2 * g_frameTicks).
+	// Clamp error to ±2 frames to prevent runaway drift from clock
+	// glitches (suspend/resume, NTP step).  On reset, seed with one
+	// full frame of "early" credit so the next frame sleeps for a
+	// full period — matches Windows main.cpp:3158 which sets
+	// `error = -g_frameTicks` (one frame of negative = one frame of
+	// early in their sign convention).
 	int64_t errorBound = 2 * targetTicks;
 	if (errorAccum > errorBound || errorAccum < -errorBound)
-		errorAccum = 0;
+		errorAccum = targetTicks;
 
 	// If we're ahead of schedule, sleep.
 	if (errorAccum > 0) {
 		uint64_t waitNs = (uint64_t)((double)errorAccum / (double)perfFreq * 1e9);
-		if (waitNs > 1000000) // only bother sleeping > 1ms
-			SDL_DelayPrecise(waitNs);
-	}
 
-	lastFrameTime = SDL_GetPerformanceCounter();
+		// Sanity-cap the sleep duration.  Mirrors Windows main.cpp:3199
+		// (g_frameTimeout) which protects against monotonic-clock glitches:
+		// system suspend/resume, NTP step, VM hypervisor pause, etc., can
+		// produce a multi-second computed wait that would freeze the
+		// emulator.  Cap at min(5 frames, 1 second).
+		const uint64_t targetNs = (uint64_t)(targetSecsPerFrame * 1e9);
+		const uint64_t maxWaitNs = std::min<uint64_t>(5 * targetNs, 1000000000ULL);
+		if (waitNs > maxWaitNs) {
+			// Way off — skip the sleep entirely and let the error accumulator
+			// re-sync naturally on the next frame.
+			errorAccum = 0;
+		} else if (waitNs > 1000000) { // only bother sleeping > 1ms
+			SDL_DelayPrecise(waitNs);
+		}
+	}
 
 	// Update telemetry once per second.
 	++frameCount;
@@ -83,7 +125,40 @@ void FramePacer::WaitForNextFrame() {
 	if (telemetryElapsed >= perfFreq) {
 		measuredFPS = (float)((double)frameCount * (double)perfFreq
 			/ (double)telemetryElapsed);
+
+		// Once-per-second frame-pacing diagnostic line.  Pair with
+		// the [Audio] line emitted from audiooutput_sdl3.cpp to
+		// classify crackling causes:
+		//
+		//   lateFrames > 0 AND audio underflows > 0
+		//     → the main loop can't keep up with realtime; emulation
+		//       + rendering take longer than a frame period, so
+		//       POKEY produces audio too slowly and SDL drains faster
+		//       than we push.  Render pipeline bottleneck.
+		//
+		//   lateFrames == 0 AND audio underflows > 0
+		//     → frame pacing is healthy but the SDL audio queue is
+		//       starving anyway.  Either the OS audio server is
+		//       under-buffering, or clock recovery can't compensate
+		//       for device drift within the ±0.5% clamp.
+		//
+		//   lateFrames == 0 AND audio underflows == 0
+		//     → everything is healthy; crackling is elsewhere (e.g.
+		//       user-space audio server bug).
+		const double maxMs = (double)maxElapsedTicks * 1000.0 / (double)perfFreq;
+		const double targetMs = targetSecsPerFrame * 1000.0;
+		LOG_INFO("Pace",
+			"fps=%.1f late=%u/%u maxFrame=%.1fms target=%.2fms errAcc=%+.1fms",
+			(double)measuredFPS,
+			lateFrameCount,
+			frameCount,
+			maxMs,
+			targetMs,
+			(double)errorAccum * 1000.0 / (double)perfFreq);
+
 		frameCount = 0;
+		lateFrameCount = 0;
+		maxElapsedTicks = 0;
 		telemetryStart = lastFrameTime;
 	}
 }

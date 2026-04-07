@@ -22,6 +22,13 @@ struct FramePacer {
 	uint64_t telemetryStart;
 	float    measuredFPS;
 
+	// Telemetry: number of WaitForNextFrame calls in the current
+	// 1-second window whose elapsed time exceeded the frame budget
+	// (i.e. the main loop couldn't keep up with realtime).  Reset
+	// when the window rolls over.  Used by the [Pace] log line.
+	uint32_t lateFrameCount;
+	int64_t  maxElapsedTicks;
+
 	void Init();
 	void UpdateRate(double fps);
 	void WaitForNextFrame();
