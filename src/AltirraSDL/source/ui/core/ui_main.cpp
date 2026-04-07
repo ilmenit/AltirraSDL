@@ -61,6 +61,7 @@
 #include "compatdb.h"
 #include "uicompat.h"
 #include "logging.h"
+#include "ui_fonts.h"
 
 extern ATSimulator g_sim;
 extern ATUIKeyboardOptions g_kbdOpts;
@@ -597,60 +598,34 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 	ATUIUpdateSystemTheme();
 	ATUIApplyTheme();
 
-#ifdef ALTIRRA_MOBILE
-	// Scale ImGui for high-DPI mobile displays. All text, spacing, and
-	// widget sizes are multiplied by the display content scale so they
-	// remain finger-friendly on phones (typically 2.0-3.0x).
+	// Per-display content scale.  On mobile this is normally 2.0-3.0x for
+	// finger-friendly text; on desktop it is 1.0 unless the user runs at a
+	// scaled HiDPI resolution.  Used both for font pixel sizing and (on
+	// mobile) for widget padding via ScaleAllSizes().
+	float contentScale = 1.0f;
 	{
 		SDL_DisplayID displayID = SDL_GetDisplayForWindow(window);
 		float cs = SDL_GetDisplayContentScale(displayID);
-		if (cs < 1.0f) cs = 1.0f;
-		// Clamp to reasonable range to avoid absurd sizes on exotic devices
-		if (cs > 4.0f) cs = 4.0f;
+		if (cs >= 1.0f && cs <= 4.0f)
+			contentScale = cs;
+	}
 
-		// Try to load a real TTF so the UI doesn't use the ProggyClean
-		// bitmap font, which looks pixelated on modern phones.  The TTF
-		// is bundled in Android assets at "fonts/Roboto-Regular.ttf"
-		// and read via SDL_LoadFile (which resolves through
-		// AAssetManager on Android).
-		//
-		// We load the font at its native pixel size (baseSizePx * cs)
-		// and reset FontGlobalScale to 1.0, rather than loading at a
-		// small size and scaling up — this gives crisp glyphs instead
-		// of blurry bilinear enlargement.
-		const float kBaseFontSizeDp = 16.0f;
-		bool loadedTTF = false;
-		{
-			size_t dataSize = 0;
-			void *data = SDL_LoadFile("fonts/Roboto-Regular.ttf", &dataSize);
-			if (data && dataSize > 0) {
-				ImFontConfig cfg;
-				cfg.FontDataOwnedByAtlas = true; // ImGui frees it
-				io.Fonts->AddFontFromMemoryTTF(
-					data, (int)dataSize,
-					kBaseFontSizeDp * cs, &cfg);
-				loadedTTF = true;
-				LOG_INFO("UI", "Loaded Roboto-Regular.ttf (%zu bytes) at %.1fpx",
-					dataSize, kBaseFontSizeDp * cs);
-			} else {
-				LOG_INFO("UI", "Roboto TTF not found, falling back to default font");
-				if (data) SDL_free(data);
-			}
-		}
-
-		if (loadedTTF) {
-			io.FontGlobalScale = 1.0f;  // already rasterized at native DPI
-		} else {
-			io.FontGlobalScale = cs;    // scale the bitmap default font
-		}
-
-		// Also scale the default style so spacing, padding, and rounding
-		// match the larger font
+#ifdef ALTIRRA_MOBILE
+	// Scale spacing/padding/rounding to match the larger touch-target font.
+	{
 		ImGuiStyle &style = ImGui::GetStyle();
-		style.ScaleAllSizes(cs);
-		LOG_INFO("UI", "Mobile DPI scale: %.2f", cs);
+		style.ScaleAllSizes(contentScale);
+		LOG_INFO("UI", "Mobile DPI scale: %.2f", contentScale);
 	}
 #endif
+
+	// Discover bundled TTFs, load persisted choices, and build the initial
+	// font atlas.  Must run BEFORE the renderer backend is initialised so
+	// the backend picks up our atlas on its first NewFrame instead of
+	// shipping ProggyClean.
+	io.FontGlobalScale = 1.0f;
+	const bool usingGL = (backend->GetType() == DisplayBackendType::OpenGL33);
+	ATUIFontsInit(contentScale, usingGL);
 
 	s_pDisplayBackend = backend;
 
@@ -942,6 +917,10 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 		g_copyFramePending = false;
 		CopyFrameToClipboard(backend);
 	}
+
+	// If the user changed any font setting last frame, rebuild the atlas
+	// (and tear down the backend texture so the next NewFrame re-uploads).
+	ATUIFontsRebuildIfDirty();
 
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_NewFrame();

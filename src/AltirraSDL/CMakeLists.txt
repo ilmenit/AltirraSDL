@@ -111,6 +111,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/core/ui_main_compat.cpp
     source/ui/core/ui_main_overlays.cpp
     source/ui/core/ui_indicators.cpp
+    source/ui/core/ui_fonts.cpp
 
     # --- ui/menus/ : menu bar ---
     source/ui/menus/ui_menus.cpp
@@ -221,6 +222,10 @@ target_sources(AltirraSDL PRIVATE
 
     # SDL3 command handlers (accel_sdl3.cpp already listed in media/ group)
     source/commands_sdl3.cpp
+
+    # Generated embedded font blobs (see "Embedded fonts" section below)
+    ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_roboto.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_firamono.cpp
 
     # Stub implementations replacing Win32-only files
     stubs/console_stubs.cpp
@@ -414,6 +419,60 @@ install(TARGETS AltirraSDL
     BUNDLE  DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
+# ===========================================================================
+# Embedded fonts
+# ===========================================================================
+# Bake the default UI font (Roboto Medium) and monospace font (Fira Mono
+# Regular) into the binary as C arrays.  This guarantees the UI works on
+# any platform without requiring a fonts/ directory at runtime — Android
+# assets, sandboxed installs, packaged tarballs, and CI all behave the
+# same.  Users can still drop additional .ttf files into <exe>/fonts/ to
+# expand the family list shown in Configure System -> Fonts.
+#
+# The conversion is driven by cmake/embed_font.cmake (a -P script), so no
+# host build tool is needed and cross-compiling (Android NDK) just works.
+add_custom_command(
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/embedded_font_roboto.cpp"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fonts/Roboto/static/Roboto-Medium.ttf
+        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/embedded_font_roboto.cpp
+        -DSYMBOL=g_atFontRobotoMediumData
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_font.cmake
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Roboto/static/Roboto-Medium.ttf
+        ${CMAKE_SOURCE_DIR}/cmake/embed_font.cmake
+    VERBATIM
+    COMMENT "Embedding Roboto-Medium.ttf"
+)
+add_custom_command(
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/embedded_font_firamono.cpp"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fonts/Fira_Mono/FiraMono-Regular.ttf
+        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/embedded_font_firamono.cpp
+        -DSYMBOL=g_atFontFiraMonoRegularData
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_font.cmake
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Fira_Mono/FiraMono-Regular.ttf
+        ${CMAKE_SOURCE_DIR}/cmake/embed_font.cmake
+    VERBATIM
+    COMMENT "Embedding FiraMono-Regular.ttf"
+)
+
+# Stage bundled TTF/OTF fonts next to the binary so the Fonts page in
+# Configure System (and the default Roboto/Fira Mono load on first run)
+# can find them via SDL_GetBasePath() + "fonts/".
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
+    add_custom_command(TARGET AltirraSDL POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/fonts"
+            "$<TARGET_FILE_DIR:AltirraSDL>/fonts"
+        COMMENT "Staging bundled fonts next to AltirraSDL"
+    )
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/fonts/"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/fonts"
+    )
+endif()
+
 # Copy the SDL3 shared library next to AltirraSDL after the build, so
 # the binary can be run straight out of the build tree (and so any IDE
 # launches "just work") without needing a system SDL3 install.  The
@@ -477,6 +536,9 @@ else()
         DEPENDS AltirraSDL
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ALTIRRA_PKG_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:AltirraSDL>" "${ALTIRRA_PKG_DIR}/"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/fonts"
+            "${ALTIRRA_PKG_DIR}/fonts"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_SOURCE_DIR}/dist/extras"
             "${ALTIRRA_PKG_DIR}/extras"

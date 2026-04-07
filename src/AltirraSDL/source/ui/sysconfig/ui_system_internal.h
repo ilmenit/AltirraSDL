@@ -47,4 +47,7 @@ void RenderSettingsCfgCategory(ATSimulator &sim);
 // Firmware page lives in ui_firmware_category.cpp (ui/firmware/).
 void RenderFirmwareCategory(ATSimulator &sim);
 
+// Fonts page lives in ui_fonts.cpp (ui/core/).
+void RenderFontsCategory(ATSimulator &sim);
+
 #endif

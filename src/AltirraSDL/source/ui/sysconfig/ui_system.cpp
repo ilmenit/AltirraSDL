@@ -98,6 +98,7 @@ enum {
 	kCat_Accessibility, // Emulator > Accessibility
 	kCat_DebuggerCfg,   // Emulator > Debugger
 	kCat_UI,            // Emulator > UI
+	kCat_Fonts,         // Emulator > Fonts
 	kCat_Display2,      // Emulator > Display Effects
 	kCat_SettingsCfg,   // Emulator > Settings
 	kCat_Count
@@ -154,6 +155,7 @@ static const TreeEntry kTreeEntries[] = {
 	{ "Accessibility",  kCat_Accessibility, 1 },
 	{ "Debugger",       kCat_DebuggerCfg, 1 },
 	{ "UI",             kCat_UI,        1 },
+	{ "Fonts",          kCat_Fonts,     1 },
 	{ "Display Effects", kCat_Display2, 1 },
 	{ "Settings",       kCat_SettingsCfg, 1 },
 };
@@ -227,6 +229,7 @@ void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 	case kCat_Accessibility:  RenderAccessibilityCategory(sim); break;
 	case kCat_DebuggerCfg:    RenderDebuggerCfgCategory(sim); break;
 	case kCat_UI:             RenderUICategory(sim); break;
+	case kCat_Fonts:          RenderFontsCategory(sim); break;
 	case kCat_Display2:       RenderDisplay2Category(sim); break;
 	case kCat_SettingsCfg:    RenderSettingsCfgCategory(sim); break;
 	}
