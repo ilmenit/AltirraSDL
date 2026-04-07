@@ -374,11 +374,11 @@ void ATFLACReconstructLPC_Wide_NEON(sint32 *y, uint32 n, const sint32 *lpcCoeffs
 	}
 }
 
-VD_CPU_TARGET("aes")
+VD_CPU_TARGET("+aes")
 VDNOINLINE uint16 ATFLACUpdateCRC16_Crypto(uint16 crc16v, const void *buf, size_t n) {
 	const uint8 *__restrict p = (const uint8 *)buf;
 
-	const auto updateSmall = [=](uint8x16_t crc16, const uint8 *__restrict p, size_t n) VD_CPU_TARGET_LAMBDA("aes") -> uint8x16_t {
+	const auto updateSmall = [=](uint8x16_t crc16, const uint8 *__restrict p, size_t n) VD_CPU_TARGET_LAMBDA("+aes") -> uint8x16_t {
 		alignas(16) uint8_t buf[16] {};
 
 		memcpy(buf + 16 - n, p, n);

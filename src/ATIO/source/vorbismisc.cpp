@@ -1074,7 +1074,7 @@ uint32 ATVorbisUpdateCRC_SSSE3_CLMUL(uint32 crc, const void *src, size_t len) {
 #endif
 
 #if defined(VD_CPU_ARM64)
-VD_CPU_TARGET("crc")
+VD_CPU_TARGET("+crc")
 uint32 ATVorbisUpdateCRC_ARM64_CRC32(uint32 crc, const void *src, size_t len) {
 	// The ARM64 version is stupidly simpler than the x64 version because ARM64
 	// has a native instruction to calculate the Ethernet CRC. It has all
@@ -1096,7 +1096,7 @@ uint32 ATVorbisUpdateCRC_ARM64_CRC32(uint32 crc, const void *src, size_t len) {
 		);
 	};
 
-	const auto partialUpdate = [](uint32 crc, const void *src, size_t len) VD_CPU_TARGET_LAMBDA("crc") -> uint32 {
+	const auto partialUpdate = [](uint32 crc, const void *src, size_t len) VD_CPU_TARGET_LAMBDA("+crc") -> uint32 {
 		if (len & 8) {
 			uint64x1_t v64 = vreinterpret_u64_u8(vrbit_u8(vld1_u8((const uint8_t *)src)));
 

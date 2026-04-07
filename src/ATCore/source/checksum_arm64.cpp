@@ -205,7 +205,7 @@ void ATChecksumUpdateSHA256_Crypto(ATChecksumStateSHA256& VDRESTRICT state, cons
 
 #else
 
-VD_CPU_TARGET("sha2")
+VD_CPU_TARGET("+sha2")
 void ATChecksumUpdateSHA256_Crypto(ATChecksumStateSHA256& VDRESTRICT state, const void* src, size_t numBlocks) {
 	using namespace nsATChecksum;
 

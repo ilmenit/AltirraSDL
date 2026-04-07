@@ -598,7 +598,7 @@ uint32 VDCRC32Update_CLMUL(uint32 crc, const void *src, size_t len) {
 #endif
 
 #if defined(VD_CPU_ARM64)
-VD_CPU_TARGET("crc")
+VD_CPU_TARGET("+crc")
 uint32 VDCRC32Update_ARM64_CRC32(uint32 crc, const void *src, size_t len) {
 	// The ARM64 version is stupidly simpler than the x64 version because ARM64
 	// has a native instruction to calculate the Ethernet CRC. It has all
@@ -607,7 +607,7 @@ uint32 VDCRC32Update_ARM64_CRC32(uint32 crc, const void *src, size_t len) {
 	// extension, which is common, but technically we still need to do a runtime
 	// check.
 
-	const auto partialUpdate = [](uint32 crc, const void *src, size_t len) VD_CPU_TARGET_LAMBDA("crc") -> uint32 {
+	const auto partialUpdate = [](uint32 crc, const void *src, size_t len) VD_CPU_TARGET_LAMBDA("+crc") -> uint32 {
 		if (len & 4) {
 			crc = __crc32w(crc, VDReadUnalignedU32(src));
 			src = (const char *)src + 4;
