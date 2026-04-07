@@ -410,7 +410,93 @@ static bool HandleConsoleSwitch(SDL_Scancode sc, bool down) {
 	}
 }
 
+// Joystick-related scancodes we want accurate event traces for.  We log the
+// first N events per scancode so the stream is bounded but reveals chatter.
+static bool ATInputSDL3_IsTracedScancode(SDL_Scancode sc) {
+	switch (sc) {
+	case SDL_SCANCODE_LEFT:
+	case SDL_SCANCODE_RIGHT:
+	case SDL_SCANCODE_UP:
+	case SDL_SCANCODE_DOWN:
+	case SDL_SCANCODE_LCTRL:
+	case SDL_SCANCODE_RCTRL:
+	case SDL_SCANCODE_LSHIFT:
+	case SDL_SCANCODE_RSHIFT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+// Bounded event trace: log up to kTraceBudget events per traced scancode,
+// each as a single line with direction, repeat flag, delta since the previous
+// event on the same scancode, and — for UP events — whether a paired KEY_DOWN
+// for the same scancode is already queued immediately behind it.  A "paired"
+// DOWN within 1 ms of the UP is the direct signature of X11-style autorepeat
+// chatter; seeing "paired=no" on every UP rules that theory out entirely.
+// Once the per-scancode budget is exhausted, nothing more is logged.
+static void ATInputSDL3_TraceKeyEvent(const SDL_KeyboardEvent& ev, bool down) {
+	if (!ATInputSDL3_IsTracedScancode(ev.scancode))
+		return;
+
+	static constexpr int kTraceBudget = 12;
+	static int s_logged[SDL_SCANCODE_COUNT] = {};
+	static Uint64 s_lastTs[SDL_SCANCODE_COUNT] = {};
+
+	int &logged = s_logged[ev.scancode];
+	if (logged >= kTraceBudget)
+		return;
+	++logged;
+
+	const Uint64 last = s_lastTs[ev.scancode];
+	const Uint64 deltaUs = last ? ((ev.timestamp - last) / 1000) : 0;
+	s_lastTs[ev.scancode] = ev.timestamp;
+
+	// For UP events, peek the queue for an immediately-following KEY_DOWN on
+	// the same scancode.  SDL_PeepEvents with SDL_PEEKEVENT is non-destructive.
+	int pairedDeltaUs = -1;  // -1 = no paired DOWN found
+	if (!down) {
+		SDL_Event next;
+		if (SDL_PeepEvents(&next, 1, SDL_PEEKEVENT,
+				SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_DOWN) > 0) {
+			if (next.key.scancode == ev.scancode) {
+				const Uint64 dt = (next.key.timestamp >= ev.timestamp)
+					? (next.key.timestamp - ev.timestamp)
+					: 0;
+				pairedDeltaUs = (int)(dt / 1000);
+			}
+		}
+	}
+
+	const char *name = SDL_GetScancodeName(ev.scancode);
+	if (down) {
+		fprintf(stderr,
+			"[input-trace] DOWN sc=%d (%s) repeat=%d dt=%llu us\n",
+			(int)ev.scancode, name ? name : "?",
+			(int)ev.repeat,
+			(unsigned long long)deltaUs);
+	} else if (pairedDeltaUs >= 0) {
+		fprintf(stderr,
+			"[input-trace] UP   sc=%d (%s) dt=%llu us  paired-DOWN follows in %d us\n",
+			(int)ev.scancode, name ? name : "?",
+			(unsigned long long)deltaUs, pairedDeltaUs);
+	} else {
+		fprintf(stderr,
+			"[input-trace] UP   sc=%d (%s) dt=%llu us  no-paired-DOWN\n",
+			(int)ev.scancode, name ? name : "?",
+			(unsigned long long)deltaUs);
+	}
+
+	if (logged == kTraceBudget) {
+		fprintf(stderr,
+			"[input-trace]   (budget exhausted for sc=%d; no further events logged for this key)\n",
+			(int)ev.scancode);
+	}
+}
+
 void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
+	ATInputSDL3_TraceKeyEvent(ev, true);
+
 	extern ATUIKeyboardOptions g_kbdOpts;
 	const bool alt = (ev.mod & SDL_KMOD_ALT) != 0;
 
@@ -602,6 +688,8 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 }
 
 void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
+	ATInputSDL3_TraceKeyEvent(ev, false);
+
 	// Release through ATInputManager FIRST (matches Windows ProcessKeyUp
 	// which releases input-mapped keys before handling console switches).
 	if (g_inputState.mpInputManager) {
