@@ -128,3 +128,9 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState, SDL_Window *window);
 void RenderLoadGamePrompt(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState);
+
+// Settings sub-page functions split into their own TUs
+void RenderSettingsPage_Firmware(ATMobileUIState &mobileState);
+
+// Modal sheet renderer (mobile_dialogs.cpp)
+void RenderMobileModalSheet(const ATMobileUIState &mobileState);

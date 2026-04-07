@@ -33,6 +33,9 @@
 #include "input_sdl3.h"
 #include "touch_controls.h"
 #include "ui_mobile.h"
+#ifdef ALTIRRA_MOBILE
+#include "mobile_gamepad.h"
+#endif
 #include "options.h"
 #include "ui_main.h"
 #include "ui_debugger.h"
@@ -238,6 +241,11 @@ static void HandleEvents() {
 	while (SDL_PollEvent(&ev)) {
 		// Route touch events to mobile controls before ImGui processing
 #ifdef ALTIRRA_MOBILE
+		// Reserved gamepad buttons (Start, Back) drive the UI on
+		// mobile and never reach the emulator.  Must run before
+		// the touch handler so a gamepad press isn't shadowed.
+		if (ATMobileGamepad_HandleEvent(ev, g_sim, g_mobileState))
+			continue;
 		if (ATMobileUI_HandleEvent(ev, g_mobileState))
 			continue;
 #endif

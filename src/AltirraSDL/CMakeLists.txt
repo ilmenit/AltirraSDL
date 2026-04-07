@@ -210,6 +210,11 @@ target_sources(AltirraSDL PRIVATE
     source/ui/mobile/mobile_settings.cpp
     source/ui/mobile/mobile_disk.cpp
     source/ui/mobile/mobile_about_wizard.cpp
+    source/ui/mobile/mobile_visual_effects.cpp
+    source/ui/mobile/mobile_suspend.cpp
+    source/ui/mobile/mobile_dialogs.cpp
+    source/ui/mobile/mobile_settings_firmware.cpp
+    source/ui/mobile/mobile_gamepad.cpp
 
     # Registry persistence (filtered out by ui* regex, so add explicitly)
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
