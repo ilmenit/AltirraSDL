@@ -593,16 +593,17 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 	// game-side touch layer, regardless of which screen is now active.
 	if (isFinger && IsGameOwnedFinger(ev.tfinger.fingerID)) {
 		// Forward to touch_controls so it can run its own release
-		// bookkeeping for the joystick / console / fire buttons.
-		// Ignored if the screen is no longer the gameplay overlay —
-		// the handler is robust to that.
+		// bookkeeping for the joystick / console / fire / menu
+		// buttons.  Ignored if the screen is no longer the gameplay
+		// overlay — the handler is robust to that.
 		ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig);
 		if (ev.type == SDL_EVENT_FINGER_UP)
 			RemoveGameOwnedFinger(ev.tfinger.fingerID);
 		return true;
 	}
 
-	// If a menu/dialog is open, let ImGui handle everything
+	// If a menu/dialog is open, let ImGui handle everything (it
+	// receives the synthetic touch mouse stream from the SDL3 backend).
 	if (mobileState.currentScreen != ATMobileUIScreen::None)
 		return false;
 

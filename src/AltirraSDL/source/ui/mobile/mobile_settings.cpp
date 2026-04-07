@@ -194,6 +194,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 
 			ImGui::Dummy(ImVec2(0, dp(32.0f)));
+			ATTouchEndDragScroll();
 			ImGui::EndChild();
 			ImGui::End();
 			return;
@@ -526,6 +527,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		// Bottom padding so the last row isn't flush against the nav bar
 		ImGui::Dummy(ImVec2(0, dp(32.0f)));
 
+		ATTouchEndDragScroll();
 		ImGui::EndChild();
 	}
 	ImGui::End();

@@ -64,8 +64,13 @@ static bool s_startHeld = false;
 static bool s_selectHeld = false;
 static bool s_optionHeld = false;
 
-// Menu button tap detection — not static, accessed by ui_mobile.cpp
+// Menu button tap detection — not static, accessed by ui_mobile.cpp.
+// Set when the user has completed a press-and-release on btnMenu so the
+// menu opens on FINGER_UP (matching every other button on screen) and
+// the release event itself can never fall through onto an ImGui widget.
 bool s_menuTapped = false;
+static SDL_FingerID s_menuFinger = 0;
+static bool s_menuFingerActive = false;
 
 // -------------------------------------------------------------------------
 // Direction conversion
@@ -241,8 +246,16 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 
 	if (ev.type == SDL_EVENT_FINGER_DOWN) {
 		// --- MENU BUTTON ---
-		if (layout.btnMenu.Contains(px, py)) {
-			s_menuTapped = true;
+		// Claim the finger now but defer the actual menu-open action
+		// until FINGER_UP — that way the release event is delivered
+		// through this same handler (game-owned finger swallow) and
+		// can never reach ImGui.  Without the deferral, opening the
+		// menu on DOWN means the same touch's eventual UP arrives at
+		// ImGui as a click on whatever menu Button has scrolled
+		// under the finger.
+		if (layout.btnMenu.Contains(px, py) && !s_menuFingerActive) {
+			s_menuFinger = fid;
+			s_menuFingerActive = true;
 			HapticPulse(10);
 			return true;
 		}
@@ -422,6 +435,18 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 				s_fireBHeld = false;
 			}
 			s_fireActive = false;
+			return true;
+		}
+
+		// --- MENU BUTTON RELEASE ---
+		// Fire the menu open only if the finger ends inside the
+		// hamburger rect (slop-cancel: drag-off behaves like a touch
+		// cancel, just like every other button on the platform).
+		if (s_menuFingerActive && fid == s_menuFinger) {
+			if (layout.btnMenu.Contains(px, py))
+				s_menuTapped = true;
+			s_menuFingerActive = false;
+			s_menuFinger = 0;
 			return true;
 		}
 

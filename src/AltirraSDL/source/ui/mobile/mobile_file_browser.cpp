@@ -355,6 +355,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			ImGui::PopID();
 		}
 
+		ATTouchEndDragScroll();
 		ImGui::EndChild();
 	}
 	ImGui::End();

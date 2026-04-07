@@ -358,6 +358,7 @@ struct DragState {
 	float   dragDistSq = 0.0f;  // total distance moved during this press
 	bool    exceededSlop = false; // sticky: kept set through release frame
 	bool    clearedActive = false; // ClearActiveID already called this press
+	int     pushedColors = 0;     // style colors pushed this frame, popped in End
 };
 
 // Keep a handful of per-window states so nested scroll regions
@@ -381,6 +382,16 @@ DragState *GetDragState(ImGuiID window) {
 
 } // namespace
 
+void ATTouchEndDragScroll() {
+	ImGuiWindow *window = ImGui::GetCurrentWindow();
+	if (!window) return;
+	DragState *ds = GetDragState(window->ID);
+	if (ds->pushedColors > 0) {
+		ImGui::PopStyleColor(ds->pushedColors);
+		ds->pushedColors = 0;
+	}
+}
+
 void ATTouchDragScroll() {
 	UpdateContentScale();
 	ImGuiWindow *window = ImGui::GetCurrentWindow();
@@ -388,6 +399,12 @@ void ATTouchDragScroll() {
 
 	ImGuiIO &io = ImGui::GetIO();
 	DragState *ds = GetDragState(window->ID);
+
+	// Defensive: if a previous frame somehow left colors pushed
+	// (e.g. caller forgot ATTouchEndDragScroll), drop the count.
+	// They were already popped at end of frame by ImGui's stack
+	// rebalance, so just zero the bookkeeping.
+	ds->pushedColors = 0;
 
 	bool hovered = ImGui::IsWindowHovered(
 		ImGuiHoveredFlags_ChildWindows
@@ -431,6 +448,22 @@ void ATTouchDragScroll() {
 			ImGui::ClearActiveID();
 			ds->clearedActive = true;
 		}
+
+		// Mobile UX: a finger touching a scrollable list should NOT
+		// light up every Button / Selectable it passes over.  Touch
+		// screens have no real hover state — Material Design lists
+		// only show the press ripple on the actually-tapped item, and
+		// cancel even that as soon as a scroll begins.  We approximate
+		// this in ImGui by forcing the Hovered/Active visuals back to
+		// the resting colour for the duration of the touch.  The
+		// click itself still works because Button uses ActiveID, not
+		// the visual colour, to decide whether it fired.
+		const ImGuiStyle &style = ImGui::GetStyle();
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, style.Colors[ImGuiCol_Button]);
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive,  style.Colors[ImGuiCol_Button]);
+		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, style.Colors[ImGuiCol_Header]);
+		ImGui::PushStyleColor(ImGuiCol_HeaderActive,  style.Colors[ImGuiCol_Header]);
+		ds->pushedColors = 4;
 	} else if (!mouseDown && ds->active) {
 		// Keep exceededSlop set for THIS frame so any widget that
 		// queries ATTouchIsDraggingBeyondSlop() during the release

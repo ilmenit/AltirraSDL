@@ -424,6 +424,22 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 			// If the key IS mapped and overlap is disabled, consume it —
 			// don't send to POKEY or console switches (matches Windows).
 			bool mapped = g_inputState.mpInputManager->IsInputMapped(0, inputCode);
+
+			// One-shot diagnostic: log the first time each scancode is seen,
+			// reporting whether it is currently bound through the input map.
+			// Helps diagnose user reports of "arrow keys don't work as
+			// joystick" without polluting logs during normal play.
+			static bool s_loggedScancode[SDL_SCANCODE_COUNT] = {};
+			if (!ev.repeat && !s_loggedScancode[ev.scancode]) {
+				s_loggedScancode[ev.scancode] = true;
+				const char *name = SDL_GetScancodeName(ev.scancode);
+				fprintf(stderr,
+					"[input] first press: scancode=%d (%s) inputCode=0x%x mapped=%s overlap=%s\n",
+					(int)ev.scancode, name ? name : "?", inputCode,
+					mapped ? "yes" : "no",
+					g_kbdOpts.mbAllowInputMapOverlap ? "yes" : "no");
+			}
+
 			g_inputState.mpInputManager->OnButtonDown(0, inputCode);
 			if (mapped && !g_kbdOpts.mbAllowInputMapOverlap)
 				consumedByInputMap = true;

@@ -161,6 +161,7 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 			"  - Fira Mono font  (SIL Open Font License)");
 		ImGui::PopTextWrapPos();
 
+		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
 		// Close button pinned to the bottom

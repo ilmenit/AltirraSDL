@@ -54,6 +54,13 @@ void ATTouchSection(const char *label);
 // the children whose touches should drive the scroll.
 void ATTouchDragScroll();
 
+// Pair with ATTouchDragScroll().  Call before ImGui::End() / EndChild()
+// to pop any style state ATTouchDragScroll() pushed for the current
+// frame (used to suppress hover/active highlight on Buttons and
+// Selectables that the finger drags across — touch screens have no
+// hover and Material list scrolling never lights up items in transit).
+void ATTouchEndDragScroll();
+
 // Returns true if the widget activation (e.g. Button click) at the
 // current mouse position should be suppressed because the finger has
 // drifted beyond the tap-slop threshold.  Use to let touch-drag

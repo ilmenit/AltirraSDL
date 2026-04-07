@@ -72,29 +72,56 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
+	bool closeFromHeader = false;
 	if (ImGui::Begin("##MobileMenu", nullptr, flags)) {
-		// Install touch-drag scrolling for the hamburger panel so a
-		// short phone or landscape orientation can still reach all
-		// the menu items.
-		ATTouchDragScroll();
-
-		// Title bar with close button
-		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + dp(8.0f));
+		// Material-style app-bar header: a full-width 56dp row with a
+		// large back-arrow on the left and the app title next to it.
+		// The whole row is the close affordance — much bigger than
+		// the previous 32dp "X" in the corner and consistent with the
+		// back arrow used by every sub-screen (file browser, disk
+		// manager, settings, about).
+		const float headerH = dp(56.0f);
+		const float backW   = dp(56.0f);
+		const float headerTopY = ImGui::GetCursorPosY();
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+		ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1, 1, 1, 0.16f));
+		// Use ASCII "<" to match the back-arrow on every other mobile
+		// sub-screen (disk manager, file browser, settings).  The
+		// loaded UI font only carries Latin / Cyrillic / Greek glyph
+		// ranges, so a Unicode arrow (U+2190) would render as tofu.
+		if (ImGui::Button("<", ImVec2(backW, headerH)))
+			closeFromHeader = true;
+		ImGui::PopStyleColor(3);
+		ImGui::PopStyleVar();
+		ImGui::SameLine();
+		// Vertically centre the title text inside the 56dp header row.
+		ImGui::SetCursorPosY(headerTopY
+			+ (headerH - ImGui::GetTextLineHeight()) * 0.5f);
 		ImGui::Text("Altirra");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - dp(32.0f));
-		if (ImGui::Button("X", ImVec2(dp(32.0f), dp(32.0f))))
-			ATMobileUI_CloseMenu(sim, mobileState);
-
+		ImGui::SetCursorPosY(headerTopY + headerH);
 		ImGui::Separator();
 		ImGui::Spacing();
+
+		// Install touch-drag scrolling for the menu items area so a
+		// short phone or landscape orientation can still reach every
+		// option.  Scoped to a child window so the header bar stays
+		// pinned at the top.
+		ImGui::BeginChild("##MobileMenuItems", ImVec2(0, 0),
+			ImGuiChildFlags_None);
+		ATTouchDragScroll();
 
 		// Menu button height scaled for touch
 		float btnH = dp(56.0f);
 		ImVec2 btnSize(-1, btnH);
 
-		// Resume
+		// Resume — also serves as the default gamepad focus target so
+		// a controller user can press A immediately to dismiss the
+		// menu without D-padding first.
 		if (ImGui::Button("Resume", btnSize))
 			ATMobileUI_CloseMenu(sim, mobileState);
+		ImGui::SetItemDefaultFocus();
 		ImGui::Spacing();
 
 		// Load Game
@@ -221,8 +248,20 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		if (ImGui::Button("About", btnSize)) {
 			mobileState.currentScreen = ATMobileUIScreen::About;
 		}
+
+		ATTouchEndDragScroll();
+		ImGui::EndChild();
 	}
 	ImGui::End();
+
+	// Defer the header close-action until after End() so the click
+	// animation on the back button completes for this frame and the
+	// ImGui style stack is guaranteed balanced regardless of any
+	// future edits to the header section.
+	if (closeFromHeader) {
+		ATMobileUI_CloseMenu(sim, mobileState);
+		return;
+	}
 
 	// Tap outside menu panel to close
 	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {

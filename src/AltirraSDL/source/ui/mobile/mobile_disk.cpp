@@ -204,6 +204,7 @@ void RenderMobileDiskManager(ATSimulator &sim, ATUIState &uiState,
 			s_mobileShowAllDrives = !s_mobileShowAllDrives;
 		}
 
+		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
 		// Footer: global emulation-level segmented control
