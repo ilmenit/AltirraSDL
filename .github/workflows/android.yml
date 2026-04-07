@@ -77,12 +77,19 @@ jobs:
         shell: bash
         run: |
           set -e
-          APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          if [ ! -f "$APK" ]; then
-              echo "ERROR: expected APK not found at $APK"
+          # Modern AGP (with Gradle 9+) names release APKs differently
+          # depending on whether a signing config was applied:
+          #   - app-release-unsigned.apk  (no signing config — old AGP)
+          #   - app-release.apk           (signing config applied — new AGP)
+          # Just glob the directory and pick whichever one is there.
+          APK_DIR="android/app/build/outputs/apk/release"
+          APK=$(ls "$APK_DIR"/*.apk 2>/dev/null | head -1)
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+              echo "ERROR: no APK found in $APK_DIR"
               find android/app/build/outputs/apk -type f -name '*.apk' || true
               exit 1
           fi
+          echo "Found APK: $APK"
           # No host CMake build runs in this job, so the AltirraSDL-<ver>
           # package directory used by package.sh on the other platforms
           # doesn't exist here.  Use git describe as the version source.

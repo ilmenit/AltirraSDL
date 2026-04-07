@@ -366,13 +366,17 @@ Common fixes:
 
 if [ "$BUILD_TYPE" = "release" ]; then
     APK_DIR="$ANDROID_DIR/app/build/outputs/apk/release"
-    APK_NAME="app-release-unsigned.apk"
 else
     APK_DIR="$ANDROID_DIR/app/build/outputs/apk/debug"
-    APK_NAME="app-debug.apk"
 fi
 
-APK_PATH="$APK_DIR/$APK_NAME"
+# Modern AGP (with Gradle 9+) drops the "-unsigned" suffix when a
+# signing config is applied during the assemble task, so the APK can
+# be either app-{release,debug}.apk or app-{release,debug}-unsigned.apk
+# depending on the AGP/Gradle version.  Glob to find whichever one is
+# present and pick the first match.
+APK_PATH=$(ls "$APK_DIR"/*.apk 2>/dev/null | head -1)
+APK_NAME=$(basename "${APK_PATH:-app-${BUILD_TYPE}.apk}")
 
 if [ "${SIGN_APK:-0}" = "1" ] && [ -f "$APK_PATH" ]; then
     KEYSTORE="$HOME/.altirra-debug.jks"
@@ -428,9 +432,7 @@ Install build-tools: sdkmanager --install 'build-tools;${REQUIRED_BUILD_TOOLS}'"
         "$APK_PATH" \
         || die "APK signing failed"
 
-    # apksigner renames the file in-place; update the name for report
-    APK_NAME="app-release-unsigned.apk"
-    APK_PATH="$APK_DIR/$APK_NAME"
+    # apksigner signs in place — APK_PATH/APK_NAME are unchanged.
     ok "APK signed (debug keystore)"
 fi
 
