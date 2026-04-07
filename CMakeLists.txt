@@ -115,6 +115,10 @@ if(NOT MSVC)
     set(ALTIRRA_COMPAT_DIR ${CMAKE_SOURCE_DIR}/src/compat)
 endif()
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    add_compile_options("-flax-vector-conversions")
+endif()
+
 # SDL3 — required when the SDL3 frontend is enabled, or on non-Windows where
 # the system libraries use SDL3 for threading/timing.
 if(ALTIRRA_SDL3 OR NOT WIN32)
