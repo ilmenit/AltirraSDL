@@ -969,12 +969,49 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		}
 	}
 
-	// Pass 2: Process remaining unconsumed positional arguments as boot images
+	// Pass 2: Process remaining unconsumed positional arguments as boot images.
+	//
+	// Some launchers (notably misbehaving .desktop / AppImage integrations)
+	// word-split filenames before exec, so a single file path containing
+	// spaces such as "Flob + V1.03.car" arrives as several argv entries.
+	// To recover, when an unconsumed positional does not exist as a file on
+	// disk, try progressively joining it with the following positional args
+	// (separated by single spaces) until we find a path that does exist.
 	for (int i = 1; i < argc; ++i) {
 		if (consumed[i])
 			continue;
 
-		const char *arg = argv[i];
+		// Build the longest run of adjacent unconsumed positional args
+		// starting at i that resolves to an existing file path.  Fall back
+		// to argv[i] alone if nothing matches (preserves prior behaviour
+		// for non-existent paths so the user still gets an error log).
+		int joinEnd = i;  // inclusive index of last arg to join
+		{
+			VDStringA candidate(argv[i]);
+			VDStringW wcandidate = VDTextU8ToW(VDStringSpanA(candidate));
+			bool exists = VDDoesPathExist(wcandidate.c_str());
+			if (!exists) {
+				for (int j = i + 1; j < argc; ++j) {
+					if (consumed[j])
+						break;
+					candidate += ' ';
+					candidate += argv[j];
+					wcandidate = VDTextU8ToW(VDStringSpanA(candidate));
+					if (VDDoesPathExist(wcandidate.c_str())) {
+						joinEnd = j;
+						exists = true;
+						break;
+					}
+				}
+			}
+		}
+
+		// Compose final UTF-8 path (single arg, or joined run with spaces).
+		VDStringA pathU8(argv[i]);
+		for (int j = i + 1; j <= joinEnd; ++j) {
+			pathU8 += ' ';
+			pathU8 += argv[j];
+		}
 
 		// Treat as boot image
 		if (!haveUnloadedAllImages) {
@@ -982,7 +1019,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			haveUnloadedAllImages = true;
 		}
 
-		bool suppressColdReset = DoLoadDirect(arg, bootImageWriteMode,
+		bool suppressColdReset = DoLoadDirect(pathU8.c_str(), bootImageWriteMode,
 											  imageCartMapper, kATImageType_None,
 											  ATImageLoadContext::kLoadIndexNextFree);
 
@@ -990,6 +1027,11 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			coldResetPending = true;
 
 		hadBootImage = true;
+
+		// Consume all joined args so they aren't reprocessed.
+		for (int j = i; j <= joinEnd; ++j)
+			consumed[j] = true;
+		i = joinEnd;
 	}
 
 	// -----------------------------------------------------------------------
