@@ -483,24 +483,30 @@ jobs:
       - name: Build C example binaries
         shell: pwsh
         run: |
-          # 04_paint links SDL3. Reuse the preset build's SDL3 from
-          # build/windows-sdl-release/_deps/sdl3-build.
-          $sdl3Hint = ""
-          foreach ($cand in @(
-              "build/windows-sdl-release/_deps/sdl3-build/Release",
-              "build/windows-sdl-release/_deps/sdl3-build"
-          )) {
-              if (Test-Path $cand) {
-                  $sdl3Hint = "-DCMAKE_PREFIX_PATH=$pwd\$($cand -replace '/','\')"
-                  break
-              }
+          $ErrorActionPreference = 'Stop'
+          # 04_paint links SDL3. SDL3Config.cmake is generated at the
+          # ROOT of the FetchContent build dir (_deps/sdl3-build/),
+          # NOT in the per-config Release/ subdir — Release/ only
+          # holds the .lib/.dll. find_package(SDL3) needs the dir
+          # with the Config files, which then resolves the per-config
+          # imported target locations.
+          $sdl3BuildDir = "$pwd\build\windows-sdl-release\_deps\sdl3-build"
+          if (-not (Test-Path "$sdl3BuildDir\SDL3Config.cmake")) {
+              throw "SDL3Config.cmake not found at $sdl3BuildDir — was SDL3-shared built in the previous step?"
           }
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples `
                 -B build_c_examples -G "Visual Studio 17 2022" -A x64 `
-                $sdl3Hint
+                "-DCMAKE_PREFIX_PATH=$sdl3BuildDir"
           cmake --build build_c_examples --config Release
-          dir build_c_examples\Release\01_ping.exe build_c_examples\Release\02_peek_regs.exe `
-              build_c_examples\Release\03_input.exe build_c_examples\Release\04_paint.exe
+          # Get-ChildItem only takes one positional -Path; pass an
+          # explicit array so all four binaries are listed (and the
+          # step fails fast if any one is missing).
+          Get-ChildItem -Path @(
+              "build_c_examples\Release\01_ping.exe",
+              "build_c_examples\Release\02_peek_regs.exe",
+              "build_c_examples\Release\03_input.exe",
+              "build_c_examples\Release\04_paint.exe"
+          )
 
       - name: Smoke test
         shell: pwsh
