@@ -32,7 +32,8 @@
 // handle the same types via their own compiler builtins) — guarded on
 // _MSC_VER.
 #if defined(_MSC_VER)
-#include <immintrin.h>
+#include <intrin.h>      // _ReturnAddress etc. (needed by <ppltasks.h>)
+#include <immintrin.h>   // __m128i / __m256i (needed by <wchar.h>)
 #endif
 
 #include <stddef.h>
