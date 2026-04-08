@@ -21,6 +21,13 @@
 #include <vd2/system/file.h>
 #include <at/atio/audioreaderflac.h>
 
+// macOS x64 fix for missing _lzcnt_u32()
+#if VD_CPU_X86 || VD_CPU_X64	
+	#if defined(VD_COMPILER_CLANG)
+		#include <intrin.h>	
+	#endif	
+#endif
+
 #ifdef _MSC_VER
 #pragma runtime_checks("", off)
 #pragma check_stack(off)
@@ -233,7 +240,7 @@ VDFORCEINLINE uint32 ATAudioReaderFLAC::BitReader::GetUnaryValue() {
 #if VD_CPU_X86 || VD_CPU_X64
 	if constexpr (T_HaveLzcnt) {
 		#if defined(VD_COMPILER_CLANG)
-			accumZeroes = [](uint32 v) __attribute__((target("lzcnt"))) {
+			accumZeroes = [](uint32 v) __attribute__((target("lzcnt"))) {				
 				return _lzcnt_u32(v);
 			}(bitAccum);
 		#elif defined(VD_COMPILER_GCC)
