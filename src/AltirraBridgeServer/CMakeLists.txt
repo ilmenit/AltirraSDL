@@ -219,7 +219,11 @@ endif()
 # .sln / VS-generator path pulls the intrinsics via a different
 # include chain; the Ninja+cl bridge build does.
 if(MSVC)
-    target_compile_options(AltirraBridgeServer PRIVATE /FI intrin.h)
+    # <immintrin.h> is the umbrella header that declares __m128i,
+    # __m256i, and the _mm_* / _mm256_* intrinsic families. <intrin.h>
+    # alone is not sufficient — on SDK 10.0.26100 its include chain
+    # does not pull in the AVX types before <wchar.h> is reached.
+    target_compile_options(AltirraBridgeServer PRIVATE /FI immintrin.h)
 endif()
 
 # Per-file SIMD flags. Mirror src/AltirraSDL/CMakeLists.txt — these
