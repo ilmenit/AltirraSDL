@@ -14,6 +14,7 @@
 //	You should have received a copy of the GNU General Public License along
 //	with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#include <intrin.h>
 #include <stdafx.h>
 #include <vd2/system/binary.h>
 #include <vd2/system/cpuaccel.h>
