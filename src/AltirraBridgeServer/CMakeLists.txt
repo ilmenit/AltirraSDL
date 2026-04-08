@@ -2,12 +2,14 @@
 #
 # Speaks the same bridge protocol as `AltirraSDL --bridge`, but with no
 # Dear ImGui, no librashader, no display backend, no input layer, no UI
-# tree, no embedded fonts. SDL3 is still linked transitively because
-# the simulator's audio output (audiooutput_sdl3.cpp) requires it; the
-# main loop initialises SDL3 with `SDL_INIT_AUDIO` only and forces the
-# dummy audio driver via `SDL_HINT_AUDIO_DRIVER=dummy`. A future v2 may
-# replace audiooutput_sdl3.cpp with a true null implementation to drop
-# SDL3 entirely.
+# tree, no embedded fonts, and no SDL3. The audio mixer is compiled
+# from audiooutput_sdl3.cpp with -DALTIRRA_AUDIO_NULL, which replaces
+# the SDL_AudioStream output with a silent null backend (samples are
+# generated and discarded). Screenshot / rawscreen / render_frame are
+# unaffected: they pull XRGB8888 frames from GTIA's frame buffer via
+# ATBridgeNullVideoDisplay (ui_stubs.cpp) and encode PNG with the
+# vendored encoder in bridge_commands_render.cpp — none of which
+# touches SDL3.
 #
 # This target is opt-in via -DALTIRRA_BRIDGE_SERVER=ON, and depends on
 # the AltirraSDL target for two things:
@@ -75,7 +77,9 @@ add_executable(AltirraBridgeServer
     # provided as no-op stubs in ui_stubs.cpp instead — same trick
     # display_sdl3.cpp uses for the SDL3 frontend.
 
-    # Audio output — reuses the SDL3-backed mixer with the dummy driver
+    # Audio output — same mixer source as AltirraSDL, but compiled with
+    # -DALTIRRA_AUDIO_NULL (see target_compile_definitions below) so all
+    # SDL calls are stubbed and no device is opened.
     ${CMAKE_SOURCE_DIR}/src/ATAudio/source/audiooutput_sdl3.cpp
 
     # --- Bridge module (shared with AltirraSDL via path reference) ---
@@ -102,6 +106,7 @@ endif()
 target_compile_definitions(AltirraBridgeServer PRIVATE
     ALTIRRA_BRIDGE_ENABLED=1
     ALTIRRA_BRIDGE_HEADLESS=1
+    ALTIRRA_AUDIO_NULL=1
     # AT_SDL3_PORTABLE=1 enables the cross-platform code paths in
     # the Altirra core that the SDL3 frontend turns on. Without this,
     # several headers fall back to Win32-only paths and we get
@@ -154,6 +159,25 @@ target_include_directories(AltirraBridgeServer BEFORE PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/h
 )
 
+# Drop unused NEEDED entries (specifically libSDL3, which the `system`
+# library re-exports as PUBLIC for the AltirraSDL frontend but which
+# the headless bridge server does not actually call into — all SDL
+# symbols are replaced by std::chrono / no-op stubs). With `--as-needed`
+# the dynamic linker only records libraries that resolve a symbol the
+# binary really uses.
+if(UNIX AND NOT APPLE)
+    target_link_options(AltirraBridgeServer PRIVATE "LINKER:--as-needed")
+elseif(APPLE)
+    # ld64 equivalent of --as-needed: drop LC_LOAD_DYLIB entries for
+    # dylibs with no resolved symbols in the final image. Without this
+    # the binary would carry an unused libSDL3.dylib load command
+    # inherited from the `system` library's PUBLIC link.
+    target_link_options(AltirraBridgeServer PRIVATE "LINKER:-dead_strip_dylibs")
+endif()
+# Windows: no action needed. On Windows the `system` library does not
+# link SDL3 at all (src/system/CMakeLists.txt takes the winmm/shlwapi
+# branch), so no transitive SDL3 dependency exists to strip.
+
 target_link_libraries(AltirraBridgeServer PRIVATE
     # Core emulation libraries (same set as AltirraSDL)
     ATCPU
@@ -169,10 +193,6 @@ target_link_libraries(AltirraBridgeServer PRIVATE
     Kasumi
     vdjson
     system
-
-    # SDL3 — for the audio mixer only. SDL3_INIT_AUDIO with the dummy
-    # driver makes audio a no-op; no window, no event subsystem.
-    SDL3::SDL3
 )
 
 # Inherit CMAKE_CXX_STANDARD from the top-level project (currently 23).
