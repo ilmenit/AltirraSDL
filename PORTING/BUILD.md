@@ -74,6 +74,8 @@ cmake --build build/windows-sdl-release --config Release
 | `ALTIRRA_SDL3` | ON (non-Windows), OFF (Windows) | Build the SDL3+ImGui frontend |
 | `ALTIRRA_FETCH_SDL3` | OFF | Skip `find_package(SDL3)` and always fetch SDL3 from source |
 | `ENABLE_LIBRASHADER` | ON | Fetch librashader C headers and enable shader preset support |
+| `ALTIRRA_BRIDGE` | ON | Compile the bridge module into the `AltirraSDL` target. When ON, the frontend supports `--bridge` at runtime. When OFF, the bridge sources and the 5 surgical insertions in `main_sdl3.cpp` are omitted — the binary contains zero bridge symbols. |
+| `ALTIRRA_BRIDGE_SERVER` | OFF | Also build the standalone headless `AltirraBridgeServer` target alongside `AltirraSDL`. The server reuses every bridge source file from `src/AltirraSDL/source/bridge/` plus a per-target glue layer in `src/AltirraBridgeServer/`. See the [AltirraBridge Build Path](#altirrabridge-build-path) section. |
 
 Override on the command line:
 ```bash
@@ -138,6 +140,140 @@ MSVC-specific includes used throughout the codebase:
 These shims are injected via `ALTIRRA_COMPAT_DIR` (set only when `NOT MSVC`).
 On Windows with MSVC, the native headers are used regardless of whether the
 SDL3 frontend is being built.
+
+## AltirraBridge Build Path
+
+AltirraBridge is a JSON-over-socket scripting interface. It has
+two build surfaces: a module compiled into the `AltirraSDL`
+frontend (exposed via `AltirraSDL --bridge`) and a standalone
+headless `AltirraBridgeServer` target (same protocol, no UI).
+Both paths share the exact same C++ source files under
+`src/AltirraSDL/source/bridge/`; they differ only in `main_*.cpp`
+and which platform layer they link.
+
+### Source tree layout
+
+```
+src/AltirraSDL/source/bridge/                  (shared bridge module)
+    bridge_server.{h,cpp}                       ← listen loop + frame gate
+    bridge_protocol.{h,cpp}                     ← JSON framing + helpers
+    bridge_transport.{h,cpp}                    ← TCP / UDS / abstract UDS
+    bridge_commands_state.{h,cpp}               ← Phase 2 read commands
+    bridge_commands_write.{h,cpp}               ← Phase 3 write / input
+    bridge_commands_render.{h,cpp}              ← Phase 4 screenshot / rawscreen
+    bridge_commands_debug.{h,cpp}               ← Phase 5a introspection
+    bridge_commands_debug2.{h,cpp}              ← Phase 5b breakpoints / profiler / verifier
+    bridge_main_glue.h                          ← per-target dispatch interface
+    bridge_main_glue_sdl3.cpp                   ← SDL3-frontend BOOT/MOUNT/STATE_* glue
+
+src/AltirraBridgeServer/                        (headless target)
+    CMakeLists.txt
+    main_bridge.cpp                             ← headless main loop
+    ui_stubs.cpp                                ← no-op IATUIRenderer, null video display
+    stubs/imgui.h                               ← include-chain shim (no ImGui link)
+
+src/AltirraSDL/cmake/altirra_core_sources.cmake ← shared source-list filter
+```
+
+`src/AltirraSDL/AltirraBridge/` (outside `source/`) hosts the
+user-facing tree: SDK, docs, examples, case studies, skill. The
+CI workflow bundles it verbatim into release packages.
+
+### Frontend integration (`main_sdl3.cpp`)
+
+The bridge is wired into the SDL3 frontend via **five surgical
+insertions**, each ~3 lines, all guarded by
+`#if ALTIRRA_BRIDGE_ENABLED`:
+
+1. Argv parse: recognise `--bridge` / `--bridge=<addr>` next to
+   the existing `--test-mode` and `--headless` flags.
+2. Init: `ATBridge::Init(addrSpec)` after `ATInitDebugger()`.
+3. Per-frame poll: `ATBridge::Poll(g_sim, g_uiState)` adjacent
+   to `ATTestModePollCommands`.
+4. Frame-completed hook: `ATBridge::OnFrameCompleted(g_sim)` in
+   the frame-completed branch so the gate counter advances.
+5. Shutdown: `ATBridge::Shutdown(g_sim)` before `g_sim.Shutdown()`.
+
+Setting `-DALTIRRA_BRIDGE=OFF` removes the bridge sources from
+the `AltirraSDL` target list and the five insertions compile
+out via the preprocessor guard — the resulting binary contains
+zero bridge symbols. Verify with `nm AltirraSDL | grep -i bridge`
+on Linux or the equivalent on other platforms.
+
+### Headless target (`AltirraBridgeServer`)
+
+`src/AltirraBridgeServer/CMakeLists.txt` links:
+
+- Every file in `ALTIRRA_ALL_SOURCES` (the filtered core
+  emulation source list produced by `altirra_core_sources.cmake`,
+  shared with the `AltirraSDL` build).
+- The same 8 bridge module files listed above.
+- `bridge_main_glue_sdl3.cpp` is **replaced** by the headless
+  target's own dispatch implementations inside `main_bridge.cpp`
+  (boot, mount, state save/load called directly against the
+  simulator instead of going through the SDL3 deferred-action
+  queue).
+- `main_bridge.cpp` — minimal main loop (init SDL3 audio in
+  dummy mode, init simulator, init debugger, loop on
+  `ATBridge::Poll` + `ATSimulator::Advance`, clean shutdown).
+- `ui_stubs.cpp` — no-op `IATUIRenderer` (satisfies
+  `ATDiskInterface::Init`'s hard requirement for a non-null
+  renderer), null `IVDVideoDisplay` (so GTIA actually generates
+  frames for `SCREENSHOT`), plus misc stubs for SDL3-frontend
+  symbols the AltirraSDL `stubs/` files reference.
+
+The headless target deliberately does NOT link:
+
+- Dear ImGui
+- librashader
+- The AltirraSDL display backends (`display_sdl3.cpp`,
+  `display_librashader.cpp`)
+- The AltirraSDL input layer
+- The AltirraSDL UI tree (menus, dialogs, debug panes)
+- Embedded fonts
+
+SDL3 is still linked transitively because `audiooutput_sdl3.cpp`
+opens an SDL audio stream (with the dummy driver at startup),
+but the SDL3 video/event/gamepad subsystems are never
+initialised. A future v2 may replace `audiooutput_sdl3.cpp` with
+a true null audio implementation to drop SDL3 entirely — until
+then "headless lean SDK build" means "no UI, no display layer,
+no input, no shader, no ImGui", which is still ~30% smaller
+than the full `AltirraSDL` binary.
+
+### Cross-platform notes
+
+The bridge core compiles identically on all three desktop
+platforms plus Android:
+
+- **Transport**: Winsock on Windows (linked via `ws2_32` in the
+  target's `target_link_libraries`), POSIX sockets everywhere
+  else. Address forms `tcp:HOST:PORT` (all platforms),
+  `unix:/path` (POSIX filesystem UDS), `unix-abstract:NAME`
+  (Linux + Android only).
+- **Android**: bridge runs inside the APK; reach it from a host
+  via `adb forward tcp:PORT tcp:PORT`. All binary payload
+  commands support inline base64 so a shared filesystem is not
+  required.
+- **Winsock init**: self-contained in `bridge_transport.cpp`.
+  No other file in the bridge needs to know about `WSAStartup`.
+
+### C example binaries
+
+The SDK ships four C example programs under
+`src/AltirraSDL/AltirraBridge/sdk/c/examples/` with their own
+standalone CMake project (not part of the main build):
+
+- `01_ping.c`, `02_peek_regs.c`, `03_input.c` — libc-only.
+- `04_paint.c` — interactive SDL3 paint demo. Guarded by
+  `find_package(SDL3 CONFIG QUIET)`; if SDL3 is missing, the
+  CMake configure prints a status and skips only `04_paint`.
+
+The CI workflow (`.github/workflows/bridge-package.yml`) builds
+all four on each platform and bundles the binaries (plus the
+SDL3 runtime next to `04_paint` on Linux and Windows, brew SDL3
+dylib with `install_name_tool` fixup on macOS) into the release
+archive.
 
 ## Test Mode (Automated UI Testing)
 

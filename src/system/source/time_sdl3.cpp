@@ -5,8 +5,6 @@
 #include <chrono>
 #include <thread>
 
-#include <SDL3/SDL.h>
-
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/time.h>
 #include <vd2/system/thread.h>
@@ -14,21 +12,39 @@
 // -------------------------------------------------------------------------
 // Tick / precision timer
 // -------------------------------------------------------------------------
+//
+// Previously backed by SDL_GetTicks / SDL_GetPerformanceCounter. Switched
+// to std::chrono::steady_clock so the system library has no SDL3 call
+// sites — the headless AltirraBridgeServer target depends on this.
+// steady_clock is monotonic on all supported platforms (Linux/macOS use
+// CLOCK_MONOTONIC, Windows uses QueryPerformanceCounter), matching SDL's
+// guarantees.
+
+// Function-local static so initialisation is thread-safe (C++11 magic
+// statics) and immune to static-initialisation-order fiasco — any VD
+// timing call reaching this TU before module init is still well-defined.
+static std::chrono::steady_clock::time_point VDGetStartTime() {
+	static const auto t0 = std::chrono::steady_clock::now();
+	return t0;
+}
 
 uint32 VDGetCurrentTick() {
-	return (uint32)SDL_GetTicks();
+	using namespace std::chrono;
+	return (uint32)duration_cast<milliseconds>(steady_clock::now() - VDGetStartTime()).count();
 }
 
 uint64 VDGetCurrentTick64() {
-	return SDL_GetTicks();
+	using namespace std::chrono;
+	return (uint64)duration_cast<milliseconds>(steady_clock::now() - VDGetStartTime()).count();
 }
 
 uint64 VDGetPreciseTick() {
-	return SDL_GetPerformanceCounter();
+	using namespace std::chrono;
+	return (uint64)duration_cast<nanoseconds>(steady_clock::now() - VDGetStartTime()).count();
 }
 
 static uint64 sInitPreciseFreq() {
-	return SDL_GetPerformanceFrequency();
+	return 1000000000ULL;  // nanoseconds-per-second, matches VDGetPreciseTick
 }
 
 uint64 VDGetPreciseTicksPerSecondI() {
