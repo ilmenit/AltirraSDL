@@ -124,7 +124,13 @@ target_include_directories(AltirraBridgeServer PRIVATE
     ${ALTIRRA_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/src/Altirra/h
     ${CMAKE_SOURCE_DIR}/src/Altirra/source
-    ${CMAKE_SOURCE_DIR}/src/compat
+    # NB: src/compat is NOT added here unconditionally. It contains
+    # non-MSVC shims for <tchar.h> / <intrin.h>; on MSVC the shim
+    # tchar.h shadows the real Windows tchar.h and produces
+    # "TCHAR: redefinition; different basic types" errors. It is
+    # added conditionally below via ALTIRRA_COMPAT_DIR (only set
+    # on non-MSVC in the top-level CMakeLists.txt), mirroring how
+    # src/AltirraSDL/CMakeLists.txt handles it.
     ${ALTIRRA_SDL_DIR}/source
     ${ALTIRRA_SDL_DIR}/source/app          # logging.h, crash_report.h
     ${ALTIRRA_SDL_DIR}/source/bridge       # bridge_*.h
