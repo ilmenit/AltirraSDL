@@ -42,14 +42,20 @@ void ATBridgeRequestAppQuit() {
 // "console output" / "screenshot path" handoff between the
 // debugger console and the rendering thread. With no UI, no console,
 // and no rendering thread, they're vestigial — but the linker still
-// needs them to exist.
-std::mutex  g_consoleMutex;
-std::string g_consoleText;
-bool        g_consoleTextDirty = false;
-bool        g_consoleScrollToBottom = false;
-void*       g_pConsoleWindow = nullptr;
-std::mutex  g_saveFrameMutex;
-VDStringW   g_saveFramePath;
+// needs them to exist, **with exactly matching types** so MSVC's
+// name mangling (which encodes variable types into mangled symbols)
+// resolves. Linux/macOS Itanium ABI doesn't mangle variable types so
+// a mismatch here passes there but fails on Windows with
+// LNK2019/LNK1120. The types below must match the extern declarations
+// in src/AltirraSDL/stubs/console_stubs.cpp and win32_stubs.cpp.
+class IATUIDebuggerConsoleWindow;  // opaque — we never dereference it
+std::mutex               g_consoleMutex;
+std::string              g_consoleText;
+std::atomic<bool>        g_consoleTextDirty{false};
+std::atomic<bool>        g_consoleScrollToBottom{false};
+IATUIDebuggerConsoleWindow* g_pConsoleWindow = nullptr;
+std::mutex               g_saveFrameMutex;
+VDStringA                g_saveFramePath;  // win32_stubs.cpp uses UTF-8 path
 
 // SDL3 window pointer. uiaccessors_stubs.cpp's ATUIGetFullscreen()
 // reads this to decide whether the window is fullscreen. The bridge
@@ -63,9 +69,11 @@ SDL_Window *g_pWindow = nullptr;
 
 // Forward declarations for opaque types referenced in some
 // signatures. We don't include the real headers because they pull
-// in ImGui / SDL3 frontend chain.
+// in ImGui / SDL3 frontend chain. The type names here must match the
+// extern declarations in src/AltirraSDL/stubs/console_stubs.cpp so
+// MSVC's return-type-aware C++ mangling produces matching symbols.
 struct ATDebuggerSourceFileInfo;
-class ATSourceWindow;
+class IATSourceWindow;
 
 void ATUIDebuggerOpen() {}
 void ATUIDebuggerClose() {}
@@ -73,8 +81,8 @@ bool ATUIDebuggerIsOpen() { return false; }
 void ATUIDebuggerShowSourceListDialog() {}
 void ATUIDebuggerClosePaneById(unsigned int /*id*/) {}
 
-ATSourceWindow* ATImGuiFindSourceWindow(const wchar_t* /*path*/) { return nullptr; }
-void            ATImGuiOpenSourceWindow(const wchar_t* /*path*/) {}
+IATSourceWindow* ATImGuiFindSourceWindow(const wchar_t* /*path*/) { return nullptr; }
+IATSourceWindow* ATImGuiOpenSourceWindow(const wchar_t* /*path*/) { return nullptr; }
 
 void ATUISetPanZoomToolActive(bool /*active*/) {}
 
