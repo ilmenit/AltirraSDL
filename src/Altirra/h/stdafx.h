@@ -18,6 +18,19 @@
 #pragma once
 
 #define _SCL_SECURE_NO_WARNINGS
+
+// Windows SDK 10.0.26100 UCRT <wchar.h> contains inline functions that
+// unconditionally reference __m128i/__m256i SIMD types and the _mm_* /
+// _mm256_* intrinsic family. On certain MSVC + preset combinations the
+// include chain reaches <wchar.h> (via <tchar.h>, <math.h>, <string.h>)
+// before the intrinsic declarations are visible, producing hundreds of
+// "undeclared identifier" errors. Pulling <intrin.h> first forces the
+// declarations to be available. This is a no-op on GCC/Clang (which
+// don't ship <intrin.h>) — guarded on _MSC_VER.
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
