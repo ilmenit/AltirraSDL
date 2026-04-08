@@ -450,39 +450,42 @@ jobs:
       - name: Cache CMake FetchContent dependencies
         uses: actions/cache@v4
         with:
-          path: build/_deps
+          path: build/windows-sdl-release/_deps
           key: bridge-windows-x86_64-deps-${{ hashFiles('CMakeLists.txt', 'src/AltirraSDL/CMakeLists.txt', 'src/AltirraBridgeServer/CMakeLists.txt') }}
           restore-keys: bridge-windows-x86_64-deps-
 
       - name: Configure
         shell: pwsh
         run: |
-          # Use the Visual Studio generator, matching the main
-          # Windows build (.github/workflows/windows.yml). The Ninja
-          # + ilammy/msvc-dev-cmd path hits a Windows SDK
-          # 10.0.26100 <wchar.h> issue where UCRT inline functions
-          # reference __m128i/__m256i without the intrinsic headers
-          # being visible in the default include chain; MSBuild's
-          # x64 toolset initialises the include order correctly so
-          # the same sources build cleanly there.
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
+          # Use the same CMake preset the main Windows build uses
+          # (.github/workflows/windows.yml). Overriding with
+          # -DALTIRRA_BRIDGE_SERVER=ON adds the headless server
+          # target alongside the regular AltirraSDL target. Rolling
+          # our own cmake invocation hit a Windows SDK 10.0.26100
+          # <wchar.h> SIMD-intrinsic issue that the preset path
+          # somehow avoids; rather than chase the diff, reuse the
+          # known-working preset verbatim.
+          cmake --preset windows-sdl-release `
             -DALTIRRA_BRIDGE_SERVER=ON
 
       - name: Build AltirraBridgeServer
         shell: pwsh
-        run: cmake --build build --target AltirraBridgeServer --config Release
+        run: cmake --build build/windows-sdl-release --target AltirraBridgeServer --config Release
 
       - name: Build C example binaries
         shell: pwsh
         run: |
-          # 04_paint links SDL3. Reuse the bridge build's SDL3 from
-          # build/_deps/sdl3-build via CMAKE_PREFIX_PATH.
+          # 04_paint links SDL3. Reuse the preset build's SDL3 from
+          # build/windows-sdl-release/_deps/sdl3-build.
           $sdl3Hint = ""
-          if (Test-Path "build/_deps/sdl3-build/Release") {
-              $sdl3Hint = "-DCMAKE_PREFIX_PATH=$pwd\build\_deps\sdl3-build\Release"
-          } elseif (Test-Path "build/_deps/sdl3-build") {
-              $sdl3Hint = "-DCMAKE_PREFIX_PATH=$pwd\build\_deps\sdl3-build"
+          foreach ($cand in @(
+              "build/windows-sdl-release/_deps/sdl3-build/Release",
+              "build/windows-sdl-release/_deps/sdl3-build"
+          )) {
+              if (Test-Path $cand) {
+                  $sdl3Hint = "-DCMAKE_PREFIX_PATH=$pwd\$($cand -replace '/','\')"
+                  break
+              }
           }
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples `
                 -B build_c_examples -G "Visual Studio 17 2022" -A x64 `
@@ -497,7 +500,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $env:Path = "$env:Path"
           $proc = Start-Process -PassThru -NoNewWindow `
-              -FilePath ".\build\src\AltirraBridgeServer\Release\AltirraBridgeServer.exe" `
+              -FilePath ".\build\windows-sdl-release\src\AltirraBridgeServer\Release\AltirraBridgeServer.exe" `
               -ArgumentList "--bridge=tcp:127.0.0.1:0" `
               -RedirectStandardError "$env:TEMP\brs.log" `
               -RedirectStandardOutput "$env:TEMP\brs_stdout.log"
@@ -547,7 +550,7 @@ jobs:
           $stage = "staging\$name"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-          Copy-Item build\src\AltirraBridgeServer\Release\AltirraBridgeServer.exe $stage\
+          Copy-Item build\windows-sdl-release\src\AltirraBridgeServer\Release\AltirraBridgeServer.exe $stage\
           Copy-Item -Recurse src\AltirraSDL\AltirraBridge\sdk      $stage\sdk
           Copy-Item -Recurse src\AltirraSDL\AltirraBridge\docs     $stage\docs
           Copy-Item -Recurse src\AltirraSDL\AltirraBridge\examples $stage\examples
@@ -571,8 +574,8 @@ jobs:
           # always checks the executable directory first). With the
           # VS generator the DLL lands in a per-config subdirectory.
           $sdl3dll = @(
-              "build\_deps\sdl3-build\Release\SDL3.dll",
-              "build\_deps\sdl3-build\SDL3.dll"
+              "build\windows-sdl-release\_deps\sdl3-build\Release\SDL3.dll",
+              "build\windows-sdl-release\_deps\sdl3-build\SDL3.dll"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if ($sdl3dll) {
               Copy-Item $sdl3dll "$stage\sdk\c\examples\bin\"
