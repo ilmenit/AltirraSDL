@@ -1,0 +1,386 @@
+{
+  "version": 3,
+  "xex_path": "/home/ilm/Documents/GitHub/pyA8/examples/games/koronis_rift/koronis_rift_128k.xex",
+  "xex_sha256": "3f6d3d29267fc24dcde619b38fd5c9ca842ad9530a758ddb3b15b913d6a859a6",
+  "created": "2026-03-25T04:26:27",
+  "updated": "2026-03-25T17:14:26",
+  "pal": false,
+  "segments": [
+    {
+      "index": 0,
+      "start": "2020",
+      "end": "203A",
+      "size": 27,
+      "init_addr": null,
+      "purpose": "Game setup code - screen address pointers"
+    },
+    {
+      "index": 1,
+      "start": "0244",
+      "end": "0244",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "COLDST = $01 - prevent cold start"
+    },
+    {
+      "index": 2,
+      "start": "D301",
+      "end": "D301",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "PORTB = $FF - main memory, ROM enabled",
+      "overwritten_by": 12,
+      "destroyed": true
+    },
+    {
+      "index": 3,
+      "start": "022F",
+      "end": "022F",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "SDMCTL = $00 - disable display"
+    },
+    {
+      "index": 4,
+      "start": "D400",
+      "end": "D400",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "DMACTL = $00 - disable ANTIC DMA"
+    },
+    {
+      "index": 5,
+      "start": "0041",
+      "end": "0041",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "Unknown flag at $41"
+    },
+    {
+      "index": 6,
+      "start": "33AA",
+      "end": "37FF",
+      "size": 1110,
+      "init_addr": "33AA",
+      "purpose": "Title screen init: splash, music, keypress wait",
+      "overwritten_by": 25
+    },
+    {
+      "index": 7,
+      "start": "B504",
+      "end": "B658",
+      "size": 341,
+      "init_addr": null,
+      "purpose": "Decompressor routine at B504-B658"
+    },
+    {
+      "index": 8,
+      "start": "B500",
+      "end": "B503",
+      "size": 4,
+      "init_addr": null,
+      "purpose": "Decomp params for seg 9 data ($0F00-$1AF5)",
+      "overwritten_by": 19,
+      "destroyed": true
+    },
+    {
+      "index": 9,
+      "start": "0F00",
+      "end": "1AF5",
+      "size": 3062,
+      "init_addr": "2F90",
+      "purpose": "Display list + screen data (compressed)"
+    },
+    {
+      "index": 10,
+      "start": "0100",
+      "end": "0171",
+      "size": 114,
+      "init_addr": null,
+      "purpose": "Stack area initialization"
+    },
+    {
+      "index": 11,
+      "start": "4000",
+      "end": "7723",
+      "size": 14116,
+      "init_addr": null,
+      "purpose": "Bank data loaded to $4000-$7723 (main bank, compressed)",
+      "overwritten_by": 13,
+      "destroyed": true
+    },
+    {
+      "index": 12,
+      "start": "D301",
+      "end": "D301",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "PORTB = $E7 - switch to bank 1 (130XE)",
+      "overwrites": 2,
+      "overwritten_by": 14,
+      "destroyed": true
+    },
+    {
+      "index": 13,
+      "start": "4000",
+      "end": "7AB4",
+      "size": 15029,
+      "init_addr": null,
+      "purpose": "Bank 1 data ($4000-$7AB4)",
+      "overwrites": 11,
+      "overwritten_by": 15,
+      "destroyed": true
+    },
+    {
+      "index": 14,
+      "start": "D301",
+      "end": "D301",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "PORTB = $EB - switch to bank 2 (130XE)",
+      "overwrites": 2,
+      "overwritten_by": 16,
+      "destroyed": true
+    },
+    {
+      "index": 15,
+      "start": "4000",
+      "end": "7B89",
+      "size": 15242,
+      "init_addr": null,
+      "purpose": "Bank 2 data ($4000-$7B89)",
+      "overwrites": 11,
+      "overwritten_by": 17,
+      "destroyed": true
+    },
+    {
+      "index": 16,
+      "start": "D301",
+      "end": "D301",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "PORTB = $EF - switch to bank 3 (130XE)",
+      "overwrites": 2,
+      "overwritten_by": 21,
+      "destroyed": true
+    },
+    {
+      "index": 17,
+      "start": "4000",
+      "end": "7329",
+      "size": 13098,
+      "init_addr": null,
+      "purpose": "Bank 3 data ($4000-$7329)",
+      "overwrites": 11,
+      "overwritten_by": 23,
+      "destroyed": true
+    },
+    {
+      "index": 18,
+      "start": "7800",
+      "end": "79A2",
+      "size": 419,
+      "init_addr": null,
+      "purpose": "Init code at $7800-$79A2",
+      "overwrites": 13,
+      "overwritten_by": 25,
+      "destroyed": true
+    },
+    {
+      "index": 19,
+      "start": "B500",
+      "end": "B503",
+      "size": 4,
+      "init_addr": null,
+      "purpose": "Decomp params for seg 20 data",
+      "overwrites": 8,
+      "overwritten_by": 22,
+      "destroyed": true
+    },
+    {
+      "index": 20,
+      "start": "7B00",
+      "end": "7BBD",
+      "size": 190,
+      "init_addr": "B504",
+      "purpose": "Additional data at $7B00-$7BBD (compressed)",
+      "overwrites": 15,
+      "overwritten_by": 25,
+      "destroyed": true
+    },
+    {
+      "index": 21,
+      "start": "D301",
+      "end": "D301",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "PORTB = $FF - back to main memory",
+      "overwrites": 2
+    },
+    {
+      "index": 22,
+      "start": "B500",
+      "end": "B503",
+      "size": 4,
+      "init_addr": null,
+      "purpose": "Decomp params for seg 23 data",
+      "overwrites": 8,
+      "overwritten_by": 24,
+      "destroyed": true
+    },
+    {
+      "index": 23,
+      "start": "5000",
+      "end": "671B",
+      "size": 5916,
+      "init_addr": "7800",
+      "purpose": "Data at $5000-$671B",
+      "overwrites": 11,
+      "overwritten_by": 25,
+      "destroyed": true
+    },
+    {
+      "index": 24,
+      "start": "B500",
+      "end": "B503",
+      "size": 4,
+      "init_addr": null,
+      "purpose": "Decomp params for final segment",
+      "overwrites": 8
+    },
+    {
+      "index": 25,
+      "start": "3680",
+      "end": "87CB",
+      "size": 20812,
+      "init_addr": "B100",
+      "purpose": "Main game code $3680-$87CB (compressed, final)",
+      "overwrites": 6
+    }
+  ],
+  "run_addr": null,
+  "banking": {
+    "scheme": "rambo"
+  },
+  "labels": {
+    "33AA": {
+      "name": "title_screen_init",
+      "type": "entry_point",
+      "status": "named",
+      "comment": "Title screen INI: shows splash, plays music, waits for keypress"
+    },
+    "B504": {
+      "name": "decompress",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "LZW-style decompressor, params at B500-B503"
+    },
+    "B500": {
+      "name": "decomp_params",
+      "type": "data",
+      "status": "named",
+      "comment": "Decompressor parameters: start_lo, start_hi, end_lo, end_hi"
+    },
+    "C020": {
+      "name": "nmi_handler",
+      "type": "vector",
+      "status": "named",
+      "comment": "NMI entry: DLI dispatch + VBI chain"
+    },
+    "C02C": {
+      "name": "irq_entry",
+      "type": "vector",
+      "status": "named",
+      "comment": "IRQ entry: dispatches via VIMIRQ"
+    },
+    "C030": {
+      "name": "irq_handler",
+      "type": "vector",
+      "status": "named",
+      "comment": "IRQ handler: POKEY/PIA IRQ dispatch"
+    },
+    "C0CD": {
+      "name": "stub_pla",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "PLA stub - no-op for unused vectors"
+    },
+    "C0CE": {
+      "name": "dli_handler",
+      "type": "vector",
+      "status": "named",
+      "comment": "DLI: RTI (no-op during title screen)"
+    },
+    "C0E2": {
+      "name": "vbi_immediate",
+      "type": "vector",
+      "status": "named",
+      "comment": "VBI immediate: RTCLOK, ATRACT, color update"
+    },
+    "C255": {
+      "name": "sub_C255",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Color/attract mode subroutine"
+    },
+    "C290": {
+      "name": "os_coldstart",
+      "type": "entry_point",
+      "status": "named",
+      "comment": "OS cold/warm start code (RAM copy)"
+    },
+    "35BD": {
+      "name": "title_vbi",
+      "type": "vector",
+      "status": "named",
+      "comment": "Title screen VBI: animation + sound"
+    },
+    "36C1": {
+      "name": "title_decompress",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Title screen RLE decompressor"
+    },
+    "36F7": {
+      "name": "wait_vblank",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait for VCOUNT >= A"
+    },
+    "2FEA": {
+      "name": "title_keypress_wait",
+      "type": "jump_target",
+      "status": "named",
+      "comment": "Wait for keypress in CH register"
+    },
+    "3623": {
+      "name": "title_color_data",
+      "type": "data",
+      "status": "named"
+    },
+    "362E": {
+      "name": "title_music_data",
+      "type": "data",
+      "status": "named"
+    },
+    "36B1": {
+      "name": "title_decomp_source",
+      "type": "data",
+      "status": "named"
+    },
+    "C28A": {
+      "name": "vbi_exit",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "VBI exit: restore regs and RTI (OS XITVBV equivalent)"
+    }
+  },
+  "observations": {
+    "vectors_at_boot": {
+      "VVBLKI": "C0E2",
+      "VVBLKD": "C28A",
+      "VDSLST": "C0CE"
+    }
+  },
+  "copy_sources": []
+}

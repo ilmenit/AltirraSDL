@@ -1,0 +1,8806 @@
+{
+  "version": 3,
+  "xex_path": "/home/ilm/Documents/GitHub/pyA8/examples/games/behind_jaggi_lines/behind_jaggi_lines.xex",
+  "xex_sha256": "ab32ad190c09a0de9d0bcb6d760d658a88560d354703a7577d304a982a0e8d5e",
+  "created": "2026-03-22T19:54:40",
+  "updated": "2026-03-23T06:05:52",
+  "pal": false,
+  "segments": [
+    {
+      "index": 0,
+      "start": "3C00",
+      "end": "3C00",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "Placeholder byte at start addr",
+      "overwritten_by": 2,
+      "destroyed": true
+    },
+    {
+      "index": 1,
+      "start": "3800",
+      "end": "3BFF",
+      "size": 1024,
+      "init_addr": null,
+      "purpose": "Custom character set (128 chars)"
+    },
+    {
+      "index": 2,
+      "start": "3C00",
+      "end": "52E6",
+      "size": 5863,
+      "init_addr": null,
+      "purpose": "Game code + data: init, title screen, input, display lists",
+      "overwrites": 0
+    },
+    {
+      "index": 3,
+      "start": "52E7",
+      "end": "852F",
+      "size": 12873,
+      "init_addr": null,
+      "purpose": "Game code + data: game engine, AI, terrain, sound"
+    },
+    {
+      "index": 4,
+      "start": "8530",
+      "end": "B7E6",
+      "size": 12983,
+      "init_addr": null,
+      "purpose": "Game code + data: rendering, tables, level data"
+    },
+    {
+      "index": 5,
+      "start": "0000",
+      "end": "0000",
+      "size": 1,
+      "init_addr": null,
+      "purpose": "Padding byte"
+    }
+  ],
+  "run_addr": "3C00",
+  "banking": {
+    "scheme": "rambo"
+  },
+  "labels": {
+    "3F97": {
+      "name": "timing_get_random_3F97",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "3FE2": {
+      "name": "update_sound_3FE2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4031": {
+      "name": "render_proc_4031",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4043": {
+      "name": "display_copy_4043",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4058": {
+      "name": "display_fill_4058",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4066": {
+      "name": "pmg_fill_4066",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4278": {
+      "name": "render_fill_4278",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "430E": {
+      "name": "render_copy_430E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "432A": {
+      "name": "render_loop_432A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4394": {
+      "name": "render_loop_4394",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "43A5": {
+      "name": "render_proc_43A5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "43A9": {
+      "name": "render_proc_43A9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "44FA": {
+      "name": "math_helper_44FA",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4504": {
+      "name": "math_copy_4504",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4508": {
+      "name": "math_copy_4508",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "457F": {
+      "name": "render_fill_457F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "46ED": {
+      "name": "render_loop_46ED",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "476C": {
+      "name": "set_viewport_offset",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Add offset to viewport pointers \u2014 configures draw region"
+    },
+    "478C": {
+      "name": "pmg_fill_478C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "48BE": {
+      "name": "loop_util_48BE",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "48E2": {
+      "name": "draw_48E2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "490B": {
+      "name": "util_copy_490B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4923": {
+      "name": "render_fill_4923",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4AE7": {
+      "name": "render_copy_4AE7",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4AFA": {
+      "name": "render_copy_4AFA",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4B39": {
+      "name": "clear_hud_line",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Clear 14 bytes of HUD text buffer at $32B6"
+    },
+    "4C91": {
+      "name": "math_update_score_4C91",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4CB6": {
+      "name": "calc_4CB6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4CC8": {
+      "name": "calc_4CC8",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4CD2": {
+      "name": "calc_4CD2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4CDD": {
+      "name": "math_proc_4CDD",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "52C0": {
+      "name": "memzero",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Zero-fill memory block \u2014 X=count, dest in $CB/$CC"
+    },
+    "52E7": {
+      "name": "level_init",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Level init \u2014 terrain seed, difficulty params, reset enemy/pilot state"
+    },
+    "5988": {
+      "name": "util_copy_5988",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "598A": {
+      "name": "util_copy_598A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5997": {
+      "name": "build_screen_table",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Build screen line address table \u2014 45 ANTIC mode D rows, 96-byte stride"
+    },
+    "59A6": {
+      "name": "timing_helper_59A6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "59B4": {
+      "name": "render_loop_59B4",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "59E1": {
+      "name": "render_proc_59E1",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A0A": {
+      "name": "render_proc_5A0A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A2B": {
+      "name": "pmg_loop_5A2B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A6E": {
+      "name": "render_loop_5A6E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A9D": {
+      "name": "render_table_lookup_5A9D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5AA0": {
+      "name": "render_table_lookup_5AA0",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5AAB": {
+      "name": "render_proc_5AAB",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5AAE": {
+      "name": "pixel_shift_index",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Compute pixel bit-shift index for ANTIC mode D rendering"
+    },
+    "5AB8": {
+      "name": "render_table_lookup_5AB8",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B0C": {
+      "name": "calc_5B0C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B33": {
+      "name": "calc_5B33",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B71": {
+      "name": "math_loop_5B71",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5BB3": {
+      "name": "bit_extract_5BB3",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5BF2": {
+      "name": "render_random_perturb_5BF2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5C69": {
+      "name": "util_random_perturb_5C69",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5C7C": {
+      "name": "util_fill_5C7C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5C88": {
+      "name": "terrain_init_strips",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Initialize terrain strip rendering buffers"
+    },
+    "5C9C": {
+      "name": "render_fill_5C9C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5CBE": {
+      "name": "render_copy_5CBE",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5D1D": {
+      "name": "render_loop_5D1D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DE4": {
+      "name": "patch_display_list",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Update display list LMS addresses for scroll offset"
+    },
+    "5DEB": {
+      "name": "render_copy_5DEB",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DFA": {
+      "name": "render_copy_5DFA",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E1A": {
+      "name": "render_copy_5E1A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F0D": {
+      "name": "game_logic_helper_5F0D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F5C": {
+      "name": "game_logic_table_lookup_5F5C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F75": {
+      "name": "random_select",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Weighted random select \u2014 reads POKEY RANDOM, selects from table"
+    },
+    "5F91": {
+      "name": "util_fill_5F91",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F9F": {
+      "name": "display_fill_5F9F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5FB5": {
+      "name": "util_copy_5FB5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5FD8": {
+      "name": "calc_5FD8",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "601D": {
+      "name": "math_loop_601D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "607D": {
+      "name": "math_loop_607D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "60C6": {
+      "name": "loop_util_60C6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6215": {
+      "name": "render_util_6215",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "622F": {
+      "name": "sound_play_effect",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Play sound effect \u2014 set frequency/control for effect ID"
+    },
+    "62AB": {
+      "name": "wait_frames_62AB",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "644B": {
+      "name": "wait_frames_644B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "647D": {
+      "name": "timing_proc_647D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6495": {
+      "name": "draw_6495",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6497": {
+      "name": "draw_6497",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "64A9": {
+      "name": "render_random_perturb_64A9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "64ED": {
+      "name": "game_logic_update_score_64ED",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "652A": {
+      "name": "game_logic_helper_652A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6539": {
+      "name": "game_logic_get_random_6539",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6555": {
+      "name": "game_logic_table_lookup_6555",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "655E": {
+      "name": "game_logic_bcd_add_655E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "65A9": {
+      "name": "draw_65A9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "65C2": {
+      "name": "wait_frames_65C2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6671": {
+      "name": "render_6671",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "672A": {
+      "name": "render_672A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "68BF": {
+      "name": "sound_engine_update",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Sound engine tick \u2014 process sound effect queue"
+    },
+    "697D": {
+      "name": "pmg_draw_697D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6988": {
+      "name": "setup_game_vectors",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Install gameplay VBI/DLI vectors"
+    },
+    "6AC4": {
+      "name": "pmg_loop_6AC4",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6B04": {
+      "name": "sub_6B04",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "6B1D": {
+      "name": "loop_util_6B1D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6B35": {
+      "name": "sub_6B35",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "6B64": {
+      "name": "array_op_6B64",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6B7D": {
+      "name": "sub_6B7D",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "7B0A": {
+      "name": "build_line_table",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Build rendering line table for terrain perspective"
+    },
+    "7B2D": {
+      "name": "render_copy_7B2D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7B42": {
+      "name": "setup_gameplay_display",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Configure display list and screen memory for gameplay mode"
+    },
+    "7B4A": {
+      "name": "enable_display",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Turn on DMA (SDMCTL) and enable DLI (NMIEN)"
+    },
+    "7B52": {
+      "name": "util_fill_7B52",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7B97": {
+      "name": "render_search_7B97",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7B9E": {
+      "name": "render_search_7B9E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7BF0": {
+      "name": "render_copy_7BF0",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7C1C": {
+      "name": "mirror_charset",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Mirror charset horizontally for HUD right-side text"
+    },
+    "7C80": {
+      "name": "game_init",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Full game state init \u2014 variables, position, fuel, lives, shield"
+    },
+    "7CAA": {
+      "name": "clear_screen",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Fill screen memory $1070-$21B0 with zero"
+    },
+    "7CC7": {
+      "name": "pmg_util_7CC7",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7CD7": {
+      "name": "memcpy_block",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Block memory copy \u2014 src $B8, dest ($C2), len $C4/$C5"
+    },
+    "7CF5": {
+      "name": "render_fill_7CF5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D18": {
+      "name": "render_fill_7D18",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D27": {
+      "name": "render_fill_7D27",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D54": {
+      "name": "render_loop_7D54",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D71": {
+      "name": "render_helper_7D71",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D7E": {
+      "name": "render_helper_7D7E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D89": {
+      "name": "render_table_lookup_7D89",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7D9C": {
+      "name": "wait_n_frames",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait N frames (count in A) synced to VBI counter $0609"
+    },
+    "7DAA": {
+      "name": "wait_60",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait ~1 second (60 frames)"
+    },
+    "7DAF": {
+      "name": "wait_1",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait 1 frame"
+    },
+    "7DB7": {
+      "name": "wait_2",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait 2 frames"
+    },
+    "7DBC": {
+      "name": "wait_5",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait 5 frames"
+    },
+    "7DC1": {
+      "name": "wait_10",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait 10 frames"
+    },
+    "7DC6": {
+      "name": "wait_20",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Wait 20 frames"
+    },
+    "7DCB": {
+      "name": "calc_7DCB",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7DDF": {
+      "name": "timing_proc_7DDF",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7DF6": {
+      "name": "timing_update_score_7DF6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7E04": {
+      "name": "wait_frames_7E04",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7E0F": {
+      "name": "wait_frames_7E0F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7E1B": {
+      "name": "bit_extract_7E1B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7EF9": {
+      "name": "render_fill_7EF9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "800E": {
+      "name": "array_op_800E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8042": {
+      "name": "util_fill_8042",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "82AA": {
+      "name": "vbi_deferred",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Deferred VBI \u2014 game state updates, collision checks"
+    },
+    "83F8": {
+      "name": "update_pmg_data",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Update player-missile shape data in PMG memory"
+    },
+    "843C": {
+      "name": "terrain_init",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Fractal terrain init \u2014 fills height buffer, starts midpoint displacement"
+    },
+    "84C4": {
+      "name": "terrain_check_neighbors",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "L-shaped neighbor check \u2014 returns negative if all unresolved"
+    },
+    "84E6": {
+      "name": "terrain_subdivide",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Terrain midpoint displacement step \u2014 4 cardinal neighbors"
+    },
+    "8526": {
+      "name": "terrain_push_seed",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Push current seed to recursion stack, increment depth"
+    },
+    "8E6B": {
+      "name": "draw_8E6B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8E97": {
+      "name": "render_proc_8E97",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8E9D": {
+      "name": "render_proc_8E9D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "90BD": {
+      "name": "sound_init",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Sound system init \u2014 clear all POKEY channels"
+    },
+    "9290": {
+      "name": "queue_push",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Command queue push \u2014 circular buffer at $071B, 32 slots"
+    },
+    "92AA": {
+      "name": "entity_swap",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Entity array management \u2014 swap/deactivate game objects"
+    },
+    "9308": {
+      "name": "render_table_lookup_9308",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "931F": {
+      "name": "render_proc_931F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9344": {
+      "name": "render_proc_9344",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "94AA": {
+      "name": "queue_push_flagged",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Queue push with bit 7 set \u2014 flagged event variant"
+    },
+    "94B1": {
+      "name": "entity_load_state",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Load entity state block from ROM tables into work area"
+    },
+    "9510": {
+      "name": "sound_thrust",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Thrust engine sound"
+    },
+    "9521": {
+      "name": "sound_explosion",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Explosion sound effect"
+    },
+    "9551": {
+      "name": "sound_laser",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Laser fire sound"
+    },
+    "9568": {
+      "name": "sound_warning",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Warning alarm sound"
+    },
+    "9650": {
+      "name": "sound_pickup",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Pilot pickup sound"
+    },
+    "9661": {
+      "name": "sound_landing",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Landing approach sound"
+    },
+    "966E": {
+      "name": "sound_ambient",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Ambient wind/environment"
+    },
+    "9943": {
+      "name": "render_copy_9943",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "99A9": {
+      "name": "render_copy_99A9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9B3C": {
+      "name": "render_9B3C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9B80": {
+      "name": "render_9B80",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9C0E": {
+      "name": "render_9C0E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9CCF": {
+      "name": "mul16_signed",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "16-bit signed multiply"
+    },
+    "9DA7": {
+      "name": "div16",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "16-bit divide"
+    },
+    "9E8C": {
+      "name": "transform_vertex",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "3D vertex transform \u2014 rotation + translation through camera matrix"
+    },
+    "A0DB": {
+      "name": "compute_screen_offset",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Screen buffer offsets for terrain columns from viewer position"
+    },
+    "A157": {
+      "name": "project_x",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "3D X coordinate to screen column \u2014 perspective division"
+    },
+    "A356": {
+      "name": "terrain_render",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Main terrain rendering \u2014 iterate visible columns, transform + fill"
+    },
+    "A665": {
+      "name": "render_random_perturb_A665",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "A690": {
+      "name": "detect_pilot",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Scan terrain surface for downed pilot \u2014 check pilot_map vs viewer"
+    },
+    "A754": {
+      "name": "plot_sprite_pixel",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Plot masked sprite pixel to frame buffer with OR/AND blend"
+    },
+    "A75C": {
+      "name": "draw_A75C",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "A93F": {
+      "name": "draw_A93F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AA2F": {
+      "name": "render_random_perturb_AA2F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AB39": {
+      "name": "render_random_perturb_AB39",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AB79": {
+      "name": "render_search_AB79",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AB7E": {
+      "name": "render_search_AB7E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AC2B": {
+      "name": "draw_AC2B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AC4F": {
+      "name": "render_AC4F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AD16": {
+      "name": "draw_AD16",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AD6C": {
+      "name": "load_camera",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Copy camera pos/orientation to transform workspace"
+    },
+    "AE0A": {
+      "name": "render_copy_AE0A",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AE3E": {
+      "name": "draw_AE3E",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "AF32": {
+      "name": "fill_column_fast",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Fast vertical column fill \u2014 unrolled store sequence"
+    },
+    "B24D": {
+      "name": "rasterize_edge",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Terrain edge draw \u2014 Bresenham-style line between projected vertices"
+    },
+    "B3A7": {
+      "name": "edge_midpoint",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Terrain edge midpoint + fractal perturbation"
+    },
+    "B418": {
+      "name": "fill_terrain_column",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Fill terrain column from edge to bottom with ground color"
+    },
+    "3C00": {
+      "name": "game_start",
+      "type": "entry_point",
+      "status": "named",
+      "comment": "Main entry \u2014 hardware init, VBI/IRQ setup, title screen"
+    },
+    "840A": {
+      "name": "vbi_title_screen",
+      "type": "vector",
+      "status": "named",
+      "comment": "Title screen VBI \u2014 attract mode, color cycling"
+    },
+    "4940": {
+      "name": "irq_handler",
+      "type": "irq",
+      "status": "named",
+      "comment": "Custom IRQ \u2014 keyboard via KBCODE, IRQEN management"
+    },
+    "3800": {
+      "name": "dat_3800",
+      "type": "data",
+      "status": "auto",
+      "comment": "Custom charset \u2014 128 chars for cockpit/HUD"
+    },
+    "8059": {
+      "name": "gameplay_vbi",
+      "type": "vector",
+      "status": "named",
+      "comment": "Gameplay VBI \u2014 colors, PMG, DMA, rendering dispatch"
+    },
+    "4CF1": {
+      "name": "dli_dispatch",
+      "type": "vector",
+      "status": "named",
+      "comment": "DLI dispatcher \u2014 indexes jump table by stage counter $C8"
+    },
+    "4D0D": {
+      "name": "dli_sky",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: sky colors"
+    },
+    "4D20": {
+      "name": "dli_horizon",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: sky-to-terrain transition, PRIOR=$11"
+    },
+    "4D41": {
+      "name": "dli_ground",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: terrain ground colors"
+    },
+    "4D79": {
+      "name": "dli_hud",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: HUD transition"
+    },
+    "0900": {
+      "name": "dat_0900",
+      "type": "data",
+      "status": "auto",
+      "comment": "256-byte fractal terrain height ring buffer"
+    },
+    "0A00": {
+      "name": "pilot_map",
+      "type": "data",
+      "status": "named",
+      "comment": "256-byte pilot location tracking buffer"
+    },
+    "24BE": {
+      "name": "dat_24BE",
+      "type": "data",
+      "status": "auto",
+      "comment": "Fractal midpoint displacement recursion stack"
+    },
+    "4DD6": {
+      "name": "dli_jump_table",
+      "type": "data",
+      "status": "named",
+      "comment": "DLI stage handler address table (8 entries, lo/hi pairs)"
+    },
+    "B757": {
+      "name": "edge_adjacency",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain edge neighbor lookup table"
+    },
+    "8E00": {
+      "name": "draw_8E00",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8E0B": {
+      "name": "render_random_perturb_8E0B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8C38": {
+      "name": "render_8C38",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4441": {
+      "name": "render_4441",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8A65": {
+      "name": "draw_8A65",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8E77": {
+      "name": "draw_8E77",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "447D": {
+      "name": "draw_447D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4C85": {
+      "name": "util_copy_4C85",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8E94": {
+      "name": "render_util_8E94",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8EA2": {
+      "name": "render_proc_8EA2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9AA5": {
+      "name": "draw_9AA5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "98B1": {
+      "name": "render_copy_98B1",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "82B5": {
+      "name": "render_82B5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8EC9": {
+      "name": "render_8EC9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8CCB": {
+      "name": "render_8CCB",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "46E6": {
+      "name": "render_loop_46E6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9AE7": {
+      "name": "draw_9AE7",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "92FC": {
+      "name": "render_table_lookup_92FC",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "790A": {
+      "name": "set_pmg_positions",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Write PMG horizontal positions and sizes from tables"
+    },
+    "9119": {
+      "name": "sound_dispatch_9119",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9B22": {
+      "name": "timing_draw_9B22",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8329": {
+      "name": "bit_extract_8329",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8B2D": {
+      "name": "pmg_fill_8B2D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "652D": {
+      "name": "render_helper_652D",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8530": {
+      "name": "read_joystick",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Read joystick port and decode direction/fire"
+    },
+    "8340": {
+      "name": "draw_8340",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4548": {
+      "name": "pmg_fill_4548",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4750": {
+      "name": "render_4750",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4753": {
+      "name": "render_4753",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4956": {
+      "name": "setup_irq_vectors",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Install custom IRQ/VBI vectors"
+    },
+    "6561": {
+      "name": "game_logic_bcd_add_6561",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8F67": {
+      "name": "render_8F67",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "656B": {
+      "name": "game_logic_bcd_add_656B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "476F": {
+      "name": "render_loop_476F",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "97A9": {
+      "name": "render_97A9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "43C0": {
+      "name": "render_copy_43C0",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "99C2": {
+      "name": "render_99C2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "45C5": {
+      "name": "pmg_fill_45C5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8BDC": {
+      "name": "draw_8BDC",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "91E7": {
+      "name": "sound_set_channel",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Set individual POKEY channel frequency and control"
+    },
+    "43F5": {
+      "name": "render_fill_43F5",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8DF6": {
+      "name": "draw_8DF6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "8FF9": {
+      "name": "calc_8FF9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "47FB": {
+      "name": "util_copy_47FB",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "B202": {
+      "name": "loc_B202",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B205": {
+      "name": "loc_B205",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AE06": {
+      "name": "loc_AE06",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B208": {
+      "name": "loc_B208",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8C09": {
+      "name": "loc_8C09",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B20B": {
+      "name": "loc_B20B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "460D": {
+      "name": "loc_460D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B20E": {
+      "name": "loc_B20E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "560E": {
+      "name": "loc_560E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E17": {
+      "name": "loc_3E17",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B218": {
+      "name": "loc_B218",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9219": {
+      "name": "loc_9219",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "661A": {
+      "name": "loc_661A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "861A": {
+      "name": "loc_861A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8A1B": {
+      "name": "loc_8A1B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4A1D": {
+      "name": "loc_4A1D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A01E": {
+      "name": "loc_A01E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5626": {
+      "name": "loc_5626",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6434": {
+      "name": "loc_6434",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3C34": {
+      "name": "loc_3C34",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8636": {
+      "name": "loc_8636",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8C37": {
+      "name": "loc_8C37",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A23A": {
+      "name": "loc_A23A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "823A": {
+      "name": "loc_823A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6440": {
+      "name": "loc_6440",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4842": {
+      "name": "loc_4842",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AE44": {
+      "name": "loc_AE44",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6448": {
+      "name": "loc_6448",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4A4C": {
+      "name": "loc_4A4C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4C54": {
+      "name": "loc_4C54",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4A54": {
+      "name": "loc_4A54",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9C56": {
+      "name": "loc_9C56",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "7E59": {
+      "name": "loc_7E59",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5A5A": {
+      "name": "loc_5A5A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "7A5B": {
+      "name": "loc_7A5B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B45F": {
+      "name": "loc_B45F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8460": {
+      "name": "loc_8460",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "E462": {
+      "name": "loc_E462",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4663": {
+      "name": "loc_4663",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A264": {
+      "name": "loc_A264",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9263": {
+      "name": "loc_9263",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E64": {
+      "name": "loc_3E64",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B267": {
+      "name": "loc_B267",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9267": {
+      "name": "loc_9267",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "986E": {
+      "name": "loc_986E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "7E74": {
+      "name": "loc_7E74",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4478": {
+      "name": "loc_4478",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4C78": {
+      "name": "loc_4C78",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5C7B": {
+      "name": "loc_5C7B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4C7B": {
+      "name": "loc_4C7B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A082": {
+      "name": "loc_A082",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AC86": {
+      "name": "loc_AC86",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8887": {
+      "name": "loc_8887",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8689": {
+      "name": "loc_8689",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "C28A": {
+      "name": "loc_C28A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4A89": {
+      "name": "loc_4A89",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8A8A": {
+      "name": "loc_8A8A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9293": {
+      "name": "loc_9293",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4A9C": {
+      "name": "loc_4A9C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "449E": {
+      "name": "loc_449E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "829F": {
+      "name": "loc_829F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "589E": {
+      "name": "loc_589E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E9D": {
+      "name": "loc_3E9D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A8AB": {
+      "name": "loc_A8AB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A4AA": {
+      "name": "loc_A4AA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AAAE": {
+      "name": "loc_AAAE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8AAF": {
+      "name": "loc_8AAF",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "98B0": {
+      "name": "loc_98B0",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "88B2": {
+      "name": "loc_88B2",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B2B4": {
+      "name": "loc_B2B4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "60BB": {
+      "name": "loc_60BB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B2BE": {
+      "name": "loc_B2BE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "7EC0": {
+      "name": "loc_7EC0",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B2C3": {
+      "name": "loc_B2C3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "44C4": {
+      "name": "loc_44C4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "86CA": {
+      "name": "loc_86CA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8AD4": {
+      "name": "loc_8AD4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "7CD9": {
+      "name": "loc_7CD9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4AE1": {
+      "name": "loc_4AE1",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9EE3": {
+      "name": "loc_9EE3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "46E3": {
+      "name": "loc_46E3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "62EB": {
+      "name": "loc_62EB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "56EC": {
+      "name": "loc_56EC",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "96ED": {
+      "name": "loc_96ED",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "96F1": {
+      "name": "loc_96F1",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4AF4": {
+      "name": "loc_4AF4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "92F6": {
+      "name": "loc_92F6",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "54F6": {
+      "name": "loc_54F6",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "63F8": {
+      "name": "loc_63F8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "44F9": {
+      "name": "loc_44F9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "86FB": {
+      "name": "loc_86FB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8AF9": {
+      "name": "loc_8AF9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "88FE": {
+      "name": "loc_88FE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8101": {
+      "name": "loc_8101",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4B06": {
+      "name": "loc_4B06",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4D06": {
+      "name": "loc_4D06",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6307": {
+      "name": "loc_6307",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "470A": {
+      "name": "loc_470A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "830F": {
+      "name": "loc_830F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6512": {
+      "name": "loc_6512",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A315": {
+      "name": "loc_A315",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3F1A": {
+      "name": "loc_3F1A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B51C": {
+      "name": "loc_B51C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "811D": {
+      "name": "loc_811D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8921": {
+      "name": "loc_8921",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9123": {
+      "name": "loc_9123",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3D24": {
+      "name": "loc_3D24",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4728": {
+      "name": "loc_4728",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "412E": {
+      "name": "loc_412E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A930": {
+      "name": "loc_A930",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4733": {
+      "name": "loc_4733",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8D36": {
+      "name": "loc_8D36",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A737": {
+      "name": "loc_A737",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AF38": {
+      "name": "loc_AF38",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "913E": {
+      "name": "loc_913E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6340": {
+      "name": "loc_6340",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5743": {
+      "name": "loc_5743",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4745": {
+      "name": "loc_4745",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8147": {
+      "name": "loc_8147",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3F49": {
+      "name": "loc_3F49",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A74E": {
+      "name": "loc_A74E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "574E": {
+      "name": "loc_574E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5550": {
+      "name": "loc_5550",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A751": {
+      "name": "loc_A751",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B356": {
+      "name": "loc_B356",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AD59": {
+      "name": "loc_AD59",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8566": {
+      "name": "loc_8566",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "AB68": {
+      "name": "loc_AB68",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4768": {
+      "name": "loc_4768",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "7D6C": {
+      "name": "loc_7D6C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "796D": {
+      "name": "loc_796D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8170": {
+      "name": "loc_8170",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6376": {
+      "name": "loc_6376",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6577": {
+      "name": "loc_6577",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9177": {
+      "name": "loc_9177",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8778": {
+      "name": "loc_8778",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3F77": {
+      "name": "loc_3F77",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "497C": {
+      "name": "loc_497C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "417C": {
+      "name": "loc_417C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "577D": {
+      "name": "loc_577D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B181": {
+      "name": "loc_B181",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B184": {
+      "name": "loc_B184",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B385": {
+      "name": "loc_B385",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B187": {
+      "name": "loc_B187",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4988": {
+      "name": "loc_4988",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A189": {
+      "name": "loc_A189",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "418A": {
+      "name": "loc_418A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B18A": {
+      "name": "loc_B18A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5F8C": {
+      "name": "loc_5F8C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B18D": {
+      "name": "loc_B18D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8190": {
+      "name": "loc_8190",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B190": {
+      "name": "loc_B190",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B193": {
+      "name": "loc_B193",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B196": {
+      "name": "loc_B196",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9F99": {
+      "name": "loc_9F99",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B199": {
+      "name": "loc_B199",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "819B": {
+      "name": "loc_819B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B19C": {
+      "name": "loc_B19C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A99D": {
+      "name": "loc_A99D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "799B": {
+      "name": "loc_799B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B19F": {
+      "name": "loc_B19F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "799F": {
+      "name": "loc_799F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1A2": {
+      "name": "loc_B1A2",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "41A3": {
+      "name": "loc_41A3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "85A4": {
+      "name": "loc_85A4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1A5": {
+      "name": "loc_B1A5",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A5A5": {
+      "name": "loc_A5A5",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "85A7": {
+      "name": "loc_85A7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "69A8": {
+      "name": "loc_69A8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "45A9": {
+      "name": "loc_45A9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1A8": {
+      "name": "loc_B1A8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1AB": {
+      "name": "loc_B1AB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A5A4": {
+      "name": "loc_A5A4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "41AD": {
+      "name": "loc_41AD",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1AE": {
+      "name": "loc_B1AE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8DB0": {
+      "name": "loc_8DB0",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1B1": {
+      "name": "loc_B1B1",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "ADB3": {
+      "name": "loc_ADB3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1B4": {
+      "name": "loc_B1B4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "89B3": {
+      "name": "loc_89B3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "87B6": {
+      "name": "loc_87B6",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "41B7": {
+      "name": "loc_41B7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1B7": {
+      "name": "loc_B1B7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1BA": {
+      "name": "loc_B1BA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1BD": {
+      "name": "loc_B1BD",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "91BF": {
+      "name": "loc_91BF",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1C0": {
+      "name": "loc_B1C0",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1C3": {
+      "name": "loc_B1C3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3FC3": {
+      "name": "loc_3FC3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "65C7": {
+      "name": "loc_65C7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "47C8": {
+      "name": "loc_47C8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "63C9": {
+      "name": "loc_63C9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1C9": {
+      "name": "loc_B1C9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1C6": {
+      "name": "loc_B1C6",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1CC": {
+      "name": "loc_B1CC",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A5CA": {
+      "name": "loc_A5CA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1CF": {
+      "name": "loc_B1CF",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3DD1": {
+      "name": "loc_3DD1",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1D2": {
+      "name": "loc_B1D2",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "63D3": {
+      "name": "loc_63D3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3DD4": {
+      "name": "loc_3DD4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1D5": {
+      "name": "loc_B1D5",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "69D8": {
+      "name": "loc_69D8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1D8": {
+      "name": "loc_B1D8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "91D9": {
+      "name": "loc_91D9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1DB": {
+      "name": "loc_B1DB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "ABDC": {
+      "name": "loc_ABDC",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "79DB": {
+      "name": "loc_79DB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1DE": {
+      "name": "loc_B1DE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "89D9": {
+      "name": "loc_89D9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1E1": {
+      "name": "loc_B1E1",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1E4": {
+      "name": "loc_B1E4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1E7": {
+      "name": "loc_B1E7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "A3E7": {
+      "name": "loc_A3E7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1EA": {
+      "name": "loc_B1EA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9FEA": {
+      "name": "loc_9FEA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "55EC": {
+      "name": "loc_55EC",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1ED": {
+      "name": "loc_B1ED",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1F0": {
+      "name": "loc_B1F0",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1F3": {
+      "name": "loc_B1F3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "89F5": {
+      "name": "loc_89F5",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1F6": {
+      "name": "loc_B1F6",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9BF8": {
+      "name": "loc_9BF8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1F9": {
+      "name": "loc_B1F9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "81FA": {
+      "name": "loc_81FA",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1FC": {
+      "name": "loc_B1FC",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "B1FF": {
+      "name": "loc_B1FF",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9003": {
+      "name": "loc_9003",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B006": {
+      "name": "loc_B006",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9808": {
+      "name": "loc_9808",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4809": {
+      "name": "loc_4809",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "480B": {
+      "name": "loc_480B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "880C": {
+      "name": "loc_880C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8010": {
+      "name": "loc_8010",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A010": {
+      "name": "loc_A010",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B012": {
+      "name": "loc_B012",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4813": {
+      "name": "loc_4813",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8015": {
+      "name": "loc_8015",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B01E": {
+      "name": "loc_B01E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5822": {
+      "name": "loc_5822",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4823": {
+      "name": "loc_4823",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B02A": {
+      "name": "loc_B02A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "602C": {
+      "name": "loc_602C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "482F": {
+      "name": "loc_482F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5831": {
+      "name": "loc_5831",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9832": {
+      "name": "loc_9832",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B036": {
+      "name": "loc_B036",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A038": {
+      "name": "loc_A038",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "483D": {
+      "name": "loc_483D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "483F": {
+      "name": "loc_483F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B042": {
+      "name": "loc_B042",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5842": {
+      "name": "loc_5842",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6044": {
+      "name": "loc_6044",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4045": {
+      "name": "loc_4045",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8046": {
+      "name": "loc_8046",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9849": {
+      "name": "loc_9849",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "984C": {
+      "name": "loc_984C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "804E": {
+      "name": "loc_804E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B04E": {
+      "name": "loc_B04E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "584E": {
+      "name": "loc_584E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8052": {
+      "name": "loc_8052",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9856": {
+      "name": "loc_9856",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A058": {
+      "name": "loc_A058",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "405A": {
+      "name": "loc_405A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "605B": {
+      "name": "loc_605B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B05A": {
+      "name": "loc_B05A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A05C": {
+      "name": "loc_A05C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "485E": {
+      "name": "loc_485E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B066": {
+      "name": "loc_B066",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4068": {
+      "name": "loc_4068",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4869": {
+      "name": "loc_4869",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A06B": {
+      "name": "loc_A06B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "886B": {
+      "name": "loc_886B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A06F": {
+      "name": "loc_A06F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B072": {
+      "name": "loc_B072",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A073": {
+      "name": "loc_A073",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4075": {
+      "name": "loc_4075",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6076": {
+      "name": "loc_6076",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A075": {
+      "name": "loc_A075",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "607C": {
+      "name": "loc_607C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B07E": {
+      "name": "loc_B07E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A55": {
+      "name": "loc_9A55",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A080": {
+      "name": "loc_A080",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "887F": {
+      "name": "loc_887F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9882": {
+      "name": "loc_9882",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8882": {
+      "name": "loc_8882",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6084": {
+      "name": "loc_6084",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9887": {
+      "name": "loc_9887",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4089": {
+      "name": "loc_4089",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B08A": {
+      "name": "loc_B08A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5889": {
+      "name": "loc_5889",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "608D": {
+      "name": "loc_608D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B096": {
+      "name": "loc_B096",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5899": {
+      "name": "loc_5899",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "989F": {
+      "name": "loc_989F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0A2": {
+      "name": "loc_B0A2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "40AB": {
+      "name": "loc_40AB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "60AD": {
+      "name": "loc_60AD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0AE": {
+      "name": "loc_B0AE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A0B1": {
+      "name": "loc_A0B1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "88B0": {
+      "name": "loc_88B0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "40B6": {
+      "name": "loc_40B6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "80B8": {
+      "name": "loc_80B8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0BA": {
+      "name": "loc_B0BA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "98BA": {
+      "name": "loc_98BA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "60C5": {
+      "name": "loc_60C5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "80C5": {
+      "name": "loc_80C5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "90C7": {
+      "name": "loc_90C7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "48C8": {
+      "name": "loc_48C8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0C6": {
+      "name": "loc_B0C6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "98C5": {
+      "name": "loc_98C5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "58C8": {
+      "name": "loc_58C8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "48CC": {
+      "name": "loc_48CC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "60D0": {
+      "name": "loc_60D0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A0D2": {
+      "name": "loc_A0D2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0D2": {
+      "name": "loc_B0D2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A0D3": {
+      "name": "loc_A0D3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "60D6": {
+      "name": "loc_60D6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A0DA": {
+      "name": "loc_A0DA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "98DC": {
+      "name": "loc_98DC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0DE": {
+      "name": "loc_B0DE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "40E1": {
+      "name": "loc_40E1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "58E6": {
+      "name": "loc_58E6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A8E7": {
+      "name": "loc_A8E7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0EA": {
+      "name": "loc_B0EA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "58F4": {
+      "name": "loc_58F4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "90F5": {
+      "name": "loc_90F5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B0F6": {
+      "name": "loc_B0F6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "80F7": {
+      "name": "loc_80F7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "88F9": {
+      "name": "loc_88F9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B102": {
+      "name": "loc_B102",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8105": {
+      "name": "loc_8105",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "890A": {
+      "name": "loc_890A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "490D": {
+      "name": "loc_490D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "810D": {
+      "name": "loc_810D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B10E": {
+      "name": "loc_B10E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8913": {
+      "name": "loc_8913",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7916": {
+      "name": "loc_7916",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8119": {
+      "name": "loc_8119",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B11A": {
+      "name": "loc_B11A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "791E": {
+      "name": "loc_791E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "411F": {
+      "name": "loc_411F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9121": {
+      "name": "loc_9121",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B126": {
+      "name": "loc_B126",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4927": {
+      "name": "loc_4927",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A92C": {
+      "name": "loc_A92C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "812D": {
+      "name": "loc_812D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B132": {
+      "name": "loc_B132",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8934": {
+      "name": "loc_8934",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5934": {
+      "name": "loc_5934",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9936": {
+      "name": "loc_9936",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5936": {
+      "name": "loc_5936",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9138": {
+      "name": "loc_9138",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "693A": {
+      "name": "loc_693A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "813D": {
+      "name": "loc_813D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B13E": {
+      "name": "loc_B13E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7940": {
+      "name": "loc_7940",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4143": {
+      "name": "loc_4143",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8144": {
+      "name": "loc_8144",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7949": {
+      "name": "loc_7949",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B14A": {
+      "name": "loc_B14A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "494B": {
+      "name": "loc_494B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "414B": {
+      "name": "loc_414B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "594B": {
+      "name": "loc_594B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "794E": {
+      "name": "loc_794E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A953": {
+      "name": "loc_A953",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9955": {
+      "name": "loc_9955",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6956": {
+      "name": "loc_6956",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B156": {
+      "name": "loc_B156",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6958": {
+      "name": "loc_6958",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7958": {
+      "name": "loc_7958",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9956": {
+      "name": "loc_9956",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8957": {
+      "name": "loc_8957",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "895A": {
+      "name": "loc_895A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5956": {
+      "name": "loc_5956",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "915E": {
+      "name": "loc_915E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9161": {
+      "name": "loc_9161",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7961": {
+      "name": "loc_7961",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B162": {
+      "name": "loc_B162",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4964": {
+      "name": "loc_4964",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8166": {
+      "name": "loc_8166",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A967": {
+      "name": "loc_A967",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "496D": {
+      "name": "loc_496D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "416D": {
+      "name": "loc_416D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B16E": {
+      "name": "loc_B16E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4170": {
+      "name": "loc_4170",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4970": {
+      "name": "loc_4970",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9171": {
+      "name": "loc_9171",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "896F": {
+      "name": "loc_896F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "596F": {
+      "name": "loc_596F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8178": {
+      "name": "loc_8178",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4978": {
+      "name": "loc_4978",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A17A": {
+      "name": "loc_A17A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "497B": {
+      "name": "loc_497B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "697C": {
+      "name": "loc_697C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "797B": {
+      "name": "loc_797B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "417F": {
+      "name": "loc_417F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7978": {
+      "name": "loc_7978",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B17A": {
+      "name": "loc_B17A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8185": {
+      "name": "loc_8185",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8188": {
+      "name": "loc_8188",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "798D": {
+      "name": "loc_798D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "898E": {
+      "name": "loc_898E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4195": {
+      "name": "loc_4195",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A197": {
+      "name": "loc_A197",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8198": {
+      "name": "loc_8198",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9199": {
+      "name": "loc_9199",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7997": {
+      "name": "loc_7997",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "699C": {
+      "name": "loc_699C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A99C": {
+      "name": "loc_A99C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "919C": {
+      "name": "loc_919C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "499F": {
+      "name": "loc_499F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "49A0": {
+      "name": "loc_49A0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "999C": {
+      "name": "loc_999C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "89A4": {
+      "name": "loc_89A4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69A6": {
+      "name": "loc_69A6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91A7": {
+      "name": "loc_91A7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "59A8": {
+      "name": "loc_59A8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69AB": {
+      "name": "loc_69AB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91AD": {
+      "name": "loc_91AD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "89B0": {
+      "name": "loc_89B0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A1B2": {
+      "name": "loc_A1B2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "81B4": {
+      "name": "loc_81B4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69B5": {
+      "name": "loc_69B5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91B7": {
+      "name": "loc_91B7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "59BE": {
+      "name": "loc_59BE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A1BF": {
+      "name": "loc_A1BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "99C1": {
+      "name": "loc_99C1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "49BF": {
+      "name": "loc_49BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "41C6": {
+      "name": "loc_41C6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A1CB": {
+      "name": "loc_A1CB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69CC": {
+      "name": "loc_69CC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "79CB": {
+      "name": "loc_79CB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "81D3": {
+      "name": "loc_81D3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "79D3": {
+      "name": "loc_79D3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91D5": {
+      "name": "loc_91D5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69D6": {
+      "name": "loc_69D6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A9D7": {
+      "name": "loc_A9D7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "59D9": {
+      "name": "loc_59D9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "49D9": {
+      "name": "loc_49D9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69DB": {
+      "name": "loc_69DB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "59DE": {
+      "name": "loc_59DE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91E3": {
+      "name": "loc_91E3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69E5": {
+      "name": "loc_69E5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91E6": {
+      "name": "loc_91E6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "49E6": {
+      "name": "loc_49E6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "49ED": {
+      "name": "loc_49ED",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91EE": {
+      "name": "loc_91EE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "59EF": {
+      "name": "loc_59EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "41F0": {
+      "name": "loc_41F0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "79F1": {
+      "name": "loc_79F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "41F2": {
+      "name": "loc_41F2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "69F3": {
+      "name": "loc_69F3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "89EF": {
+      "name": "loc_89EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A9F6": {
+      "name": "loc_A9F6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "89F8": {
+      "name": "loc_89F8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "81FD": {
+      "name": "loc_81FD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A1FF": {
+      "name": "loc_A1FF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7A00": {
+      "name": "loc_7A00",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6A02": {
+      "name": "loc_6A02",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "820E": {
+      "name": "loc_820E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "920F": {
+      "name": "loc_920F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7A0F": {
+      "name": "loc_7A0F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A211": {
+      "name": "loc_A211",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5A13": {
+      "name": "loc_5A13",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A15": {
+      "name": "loc_8A15",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8216": {
+      "name": "loc_8216",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6A17": {
+      "name": "loc_6A17",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A16": {
+      "name": "loc_4A16",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A19": {
+      "name": "loc_9A19",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A18": {
+      "name": "loc_8A18",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9221": {
+      "name": "loc_9221",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A21": {
+      "name": "loc_4A21",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4224": {
+      "name": "loc_4224",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A25": {
+      "name": "loc_8A25",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A22A": {
+      "name": "loc_A22A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AA2B": {
+      "name": "loc_AA2B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7A2A": {
+      "name": "loc_7A2A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A2C": {
+      "name": "loc_9A2C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6234": {
+      "name": "loc_6234",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8235": {
+      "name": "loc_8235",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A35": {
+      "name": "loc_4A35",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8238": {
+      "name": "loc_8238",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A38": {
+      "name": "loc_9A38",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7A3B": {
+      "name": "loc_7A3B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A42": {
+      "name": "loc_9A42",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B244": {
+      "name": "loc_B244",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AA45": {
+      "name": "loc_AA45",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6A45": {
+      "name": "loc_6A45",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4247": {
+      "name": "loc_4247",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4249": {
+      "name": "loc_4249",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "424B": {
+      "name": "loc_424B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B24C": {
+      "name": "loc_B24C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A4B": {
+      "name": "loc_4A4B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AA4F": {
+      "name": "loc_AA4F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A4F": {
+      "name": "loc_4A4F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7A51": {
+      "name": "loc_7A51",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4252": {
+      "name": "loc_4252",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9253": {
+      "name": "loc_9253",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A255": {
+      "name": "loc_A255",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9256": {
+      "name": "loc_9256",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AA57": {
+      "name": "loc_AA57",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AA58": {
+      "name": "loc_AA58",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5A58": {
+      "name": "loc_5A58",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4258": {
+      "name": "loc_4258",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "825B": {
+      "name": "loc_825B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A59": {
+      "name": "loc_4A59",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7A5D": {
+      "name": "loc_7A5D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "425E": {
+      "name": "loc_425E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A5E": {
+      "name": "loc_4A5E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9260": {
+      "name": "loc_9260",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B261": {
+      "name": "loc_B261",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A61": {
+      "name": "loc_9A61",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5A64": {
+      "name": "loc_5A64",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A65": {
+      "name": "loc_4A65",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "826E": {
+      "name": "loc_826E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A6E": {
+      "name": "loc_9A6E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A272": {
+      "name": "loc_A272",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "427C": {
+      "name": "loc_427C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5A7C": {
+      "name": "loc_5A7C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B27E": {
+      "name": "loc_B27E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6A7E": {
+      "name": "loc_6A7E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A81": {
+      "name": "loc_9A81",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A82": {
+      "name": "loc_8A82",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A85": {
+      "name": "loc_8A85",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A86": {
+      "name": "loc_4A86",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A28D": {
+      "name": "loc_A28D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9A8D": {
+      "name": "loc_9A8D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "828F": {
+      "name": "loc_828F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4A91": {
+      "name": "loc_4A91",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AA94": {
+      "name": "loc_AA94",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A29A": {
+      "name": "loc_A29A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "829A": {
+      "name": "loc_829A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "929C": {
+      "name": "loc_929C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B29C": {
+      "name": "loc_B29C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B29D": {
+      "name": "loc_B29D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6A9E": {
+      "name": "loc_6A9E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AAA2": {
+      "name": "loc_AAA2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "92A4": {
+      "name": "loc_92A4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42A5": {
+      "name": "loc_42A5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AAA5": {
+      "name": "loc_AAA5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A2A6": {
+      "name": "loc_A2A6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4AA4": {
+      "name": "loc_4AA4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AA7": {
+      "name": "loc_8AA7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AAA": {
+      "name": "loc_8AAA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42B0": {
+      "name": "loc_42B0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "82B2": {
+      "name": "loc_82B2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9AB3": {
+      "name": "loc_9AB3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5AB7": {
+      "name": "loc_5AB7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6ABA": {
+      "name": "loc_6ABA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "82BB": {
+      "name": "loc_82BB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4ABA": {
+      "name": "loc_4ABA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "92C2": {
+      "name": "loc_92C2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42C3": {
+      "name": "loc_42C3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6AC3": {
+      "name": "loc_6AC3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4AC2": {
+      "name": "loc_4AC2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "52C6": {
+      "name": "loc_52C6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6AC8": {
+      "name": "loc_6AC8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "52C8": {
+      "name": "loc_52C8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8ACC": {
+      "name": "loc_8ACC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8ACF": {
+      "name": "loc_8ACF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "52D5": {
+      "name": "loc_52D5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "92D6": {
+      "name": "loc_92D6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4AD8": {
+      "name": "loc_4AD8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A2DA": {
+      "name": "loc_A2DA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6ADB": {
+      "name": "loc_6ADB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9ADA": {
+      "name": "loc_9ADA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AADD": {
+      "name": "loc_AADD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "62E1": {
+      "name": "loc_62E1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9AE2": {
+      "name": "loc_9AE2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "62E4": {
+      "name": "loc_62E4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4AE4": {
+      "name": "loc_4AE4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AAEA": {
+      "name": "loc_AAEA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B2EC": {
+      "name": "loc_B2EC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B2EB": {
+      "name": "loc_B2EB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A2EC": {
+      "name": "loc_A2EC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4AF1": {
+      "name": "loc_4AF1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AF1": {
+      "name": "loc_8AF1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "92F3": {
+      "name": "loc_92F3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AF4": {
+      "name": "loc_8AF4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B2F8": {
+      "name": "loc_B2F8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "92F9": {
+      "name": "loc_92F9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6AF9": {
+      "name": "loc_6AF9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "82FB": {
+      "name": "loc_82FB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9AFA": {
+      "name": "loc_9AFA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AAFE": {
+      "name": "loc_AAFE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6301": {
+      "name": "loc_6301",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4B03": {
+      "name": "loc_4B03",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6304": {
+      "name": "loc_6304",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A305": {
+      "name": "loc_A305",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8306": {
+      "name": "loc_8306",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B308": {
+      "name": "loc_B308",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4309": {
+      "name": "loc_4309",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9307": {
+      "name": "loc_9307",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B0D": {
+      "name": "loc_6B0D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B0F": {
+      "name": "loc_6B0F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B12": {
+      "name": "loc_8B12",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6314": {
+      "name": "loc_6314",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B16": {
+      "name": "loc_7B16",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5B16": {
+      "name": "loc_5B16",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B319": {
+      "name": "loc_B319",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B19": {
+      "name": "loc_8B19",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "431B": {
+      "name": "loc_431B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B31C": {
+      "name": "loc_B31C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4B1D": {
+      "name": "loc_4B1D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "931E": {
+      "name": "loc_931E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9B21": {
+      "name": "loc_9B21",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4B25": {
+      "name": "loc_4B25",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B26": {
+      "name": "loc_6B26",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9326": {
+      "name": "loc_9326",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B28": {
+      "name": "loc_6B28",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6328": {
+      "name": "loc_6328",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4B2A": {
+      "name": "loc_4B2A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A328": {
+      "name": "loc_A328",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B27": {
+      "name": "loc_8B27",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B31": {
+      "name": "loc_7B31",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4B38": {
+      "name": "loc_4B38",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6338": {
+      "name": "loc_6338",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B338": {
+      "name": "loc_B338",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A338": {
+      "name": "loc_A338",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4B3D": {
+      "name": "loc_4B3D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B3E": {
+      "name": "loc_6B3E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5B3F": {
+      "name": "loc_5B3F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "933F": {
+      "name": "loc_933F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "833F": {
+      "name": "loc_833F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6343": {
+      "name": "loc_6343",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B44": {
+      "name": "loc_7B44",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4344": {
+      "name": "loc_4344",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB46": {
+      "name": "loc_AB46",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B45": {
+      "name": "loc_6B45",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A348": {
+      "name": "loc_A348",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9349": {
+      "name": "loc_9349",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5B4A": {
+      "name": "loc_5B4A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A34F": {
+      "name": "loc_A34F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6351": {
+      "name": "loc_6351",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B52": {
+      "name": "loc_6B52",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9354": {
+      "name": "loc_9354",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B55": {
+      "name": "loc_7B55",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B54": {
+      "name": "loc_6B54",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB5B": {
+      "name": "loc_AB5B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A35B": {
+      "name": "loc_A35B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B5B": {
+      "name": "loc_8B5B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB5E": {
+      "name": "loc_AB5E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B360": {
+      "name": "loc_B360",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4362": {
+      "name": "loc_4362",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B362": {
+      "name": "loc_B362",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9364": {
+      "name": "loc_9364",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B364": {
+      "name": "loc_B364",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B66": {
+      "name": "loc_7B66",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5369": {
+      "name": "loc_5369",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B6D": {
+      "name": "loc_6B6D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B6F": {
+      "name": "loc_6B6F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B36F": {
+      "name": "loc_B36F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B373": {
+      "name": "loc_B373",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6374": {
+      "name": "loc_6374",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4375": {
+      "name": "loc_4375",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB75": {
+      "name": "loc_AB75",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B75": {
+      "name": "loc_7B75",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B376": {
+      "name": "loc_B376",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6379": {
+      "name": "loc_6379",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5378": {
+      "name": "loc_5378",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B7B": {
+      "name": "loc_7B7B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B7D": {
+      "name": "loc_7B7D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5B7F": {
+      "name": "loc_5B7F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A389": {
+      "name": "loc_A389",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5B8A": {
+      "name": "loc_5B8A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB8C": {
+      "name": "loc_AB8C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7B8F": {
+      "name": "loc_7B8F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5B91": {
+      "name": "loc_5B91",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB96": {
+      "name": "loc_AB96",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A396": {
+      "name": "loc_A396",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AB9C": {
+      "name": "loc_AB9C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BA3": {
+      "name": "loc_7BA3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B3A6": {
+      "name": "loc_B3A6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ABA7": {
+      "name": "loc_ABA7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BA8": {
+      "name": "loc_7BA8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "43AC": {
+      "name": "loc_43AC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63B7": {
+      "name": "loc_63B7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9BB8": {
+      "name": "loc_9BB8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "43BB": {
+      "name": "loc_43BB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ABBD": {
+      "name": "loc_ABBD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "43BF": {
+      "name": "loc_43BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63BF": {
+      "name": "loc_63BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BC1": {
+      "name": "loc_7BC1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63C4": {
+      "name": "loc_63C4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63CC": {
+      "name": "loc_63CC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5BCD": {
+      "name": "loc_5BCD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "53CD": {
+      "name": "loc_53CD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "43D0": {
+      "name": "loc_43D0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A3D2": {
+      "name": "loc_A3D2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "53D2": {
+      "name": "loc_53D2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ABD5": {
+      "name": "loc_ABD5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ABD6": {
+      "name": "loc_ABD6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5BD5": {
+      "name": "loc_5BD5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BD8": {
+      "name": "loc_7BD8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B3DA": {
+      "name": "loc_B3DA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63DC": {
+      "name": "loc_63DC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9BDC": {
+      "name": "loc_9BDC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "43E3": {
+      "name": "loc_43E3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A3E5": {
+      "name": "loc_A3E5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "53E5": {
+      "name": "loc_53E5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ABEE": {
+      "name": "loc_ABEE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BEF": {
+      "name": "loc_7BEF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BEF": {
+      "name": "loc_8BEF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63F1": {
+      "name": "loc_63F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BF2": {
+      "name": "loc_7BF2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BF2": {
+      "name": "loc_8BF2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "43F4": {
+      "name": "loc_43F4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B3FA": {
+      "name": "loc_B3FA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "63FB": {
+      "name": "loc_63FB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ABFB": {
+      "name": "loc_ABFB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "53FA": {
+      "name": "loc_53FA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7BFE": {
+      "name": "loc_7BFE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6400": {
+      "name": "loc_6400",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4402": {
+      "name": "loc_4402",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C03": {
+      "name": "loc_5C03",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3C04": {
+      "name": "loc_3C04",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C03": {
+      "name": "loc_8C03",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8406": {
+      "name": "loc_8406",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "640A": {
+      "name": "loc_640A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AC0B": {
+      "name": "loc_AC0B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C0C": {
+      "name": "loc_5C0C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "440D": {
+      "name": "loc_440D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7C12": {
+      "name": "loc_7C12",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6412": {
+      "name": "loc_6412",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4415": {
+      "name": "loc_4415",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A416": {
+      "name": "loc_A416",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5416": {
+      "name": "loc_5416",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "841B": {
+      "name": "loc_841B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C22": {
+      "name": "loc_8C22",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8423": {
+      "name": "loc_8423",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5423": {
+      "name": "loc_5423",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8425": {
+      "name": "loc_8425",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C27": {
+      "name": "loc_5C27",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AC27": {
+      "name": "loc_AC27",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7C28": {
+      "name": "loc_7C28",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "642F": {
+      "name": "loc_642F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8430": {
+      "name": "loc_8430",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7C30": {
+      "name": "loc_7C30",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5433": {
+      "name": "loc_5433",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5435": {
+      "name": "loc_5435",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "643D": {
+      "name": "loc_643D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C3E": {
+      "name": "loc_9C3E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8440": {
+      "name": "loc_8440",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B440": {
+      "name": "loc_B440",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AC42": {
+      "name": "loc_AC42",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6443": {
+      "name": "loc_6443",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4440": {
+      "name": "loc_4440",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A444": {
+      "name": "loc_A444",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7C4E": {
+      "name": "loc_7C4E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5451": {
+      "name": "loc_5451",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7C52": {
+      "name": "loc_7C52",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B459": {
+      "name": "loc_B459",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AC5C": {
+      "name": "loc_AC5C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B45C": {
+      "name": "loc_B45C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "645D": {
+      "name": "loc_645D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B45D": {
+      "name": "loc_B45D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "645E": {
+      "name": "loc_645E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7C61": {
+      "name": "loc_7C61",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C61": {
+      "name": "loc_4C61",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5461": {
+      "name": "loc_5461",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C64": {
+      "name": "loc_5C64",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AC65": {
+      "name": "loc_AC65",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4466": {
+      "name": "loc_4466",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A467": {
+      "name": "loc_A467",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3C68": {
+      "name": "loc_3C68",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B469": {
+      "name": "loc_B469",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "646A": {
+      "name": "loc_646A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A468": {
+      "name": "loc_A468",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C68": {
+      "name": "loc_8C68",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "846D": {
+      "name": "loc_846D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "446D": {
+      "name": "loc_446D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A46F": {
+      "name": "loc_A46F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B474": {
+      "name": "loc_B474",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6475": {
+      "name": "loc_6475",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C75": {
+      "name": "loc_4C75",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C78": {
+      "name": "loc_5C78",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "847A": {
+      "name": "loc_847A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "647C": {
+      "name": "loc_647C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C7C": {
+      "name": "loc_8C7C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C7E": {
+      "name": "loc_5C7E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "647F": {
+      "name": "loc_647F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8480": {
+      "name": "loc_8480",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6481": {
+      "name": "loc_6481",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C7E": {
+      "name": "loc_4C7E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4483": {
+      "name": "loc_4483",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C87": {
+      "name": "loc_4C87",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8488": {
+      "name": "loc_8488",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A488": {
+      "name": "loc_A488",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5489": {
+      "name": "loc_5489",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5C8C": {
+      "name": "loc_5C8C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B48C": {
+      "name": "loc_B48C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "848C": {
+      "name": "loc_848C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4492": {
+      "name": "loc_4492",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A493": {
+      "name": "loc_A493",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6494": {
+      "name": "loc_6494",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5498": {
+      "name": "loc_5498",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C9F": {
+      "name": "loc_8C9F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5CA0": {
+      "name": "loc_5CA0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B4A6": {
+      "name": "loc_B4A6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44A6": {
+      "name": "loc_44A6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5CA8": {
+      "name": "loc_5CA8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ACAC": {
+      "name": "loc_ACAC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7CAE": {
+      "name": "loc_7CAE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "54B4": {
+      "name": "loc_54B4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "84B5": {
+      "name": "loc_84B5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "84BA": {
+      "name": "loc_84BA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ACBA": {
+      "name": "loc_ACBA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CBA": {
+      "name": "loc_3CBA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B4BD": {
+      "name": "loc_B4BD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "64BF": {
+      "name": "loc_64BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44C1": {
+      "name": "loc_44C1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B4C2": {
+      "name": "loc_B4C2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "54C7": {
+      "name": "loc_54C7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5CC9": {
+      "name": "loc_5CC9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "64D3": {
+      "name": "loc_64D3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ACD3": {
+      "name": "loc_ACD3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "54D5": {
+      "name": "loc_54D5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44D9": {
+      "name": "loc_44D9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A4D9": {
+      "name": "loc_A4D9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CDD": {
+      "name": "loc_3CDD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B4DE": {
+      "name": "loc_B4DE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A4E0": {
+      "name": "loc_A4E0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "54E1": {
+      "name": "loc_54E1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7CE3": {
+      "name": "loc_7CE3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "84E3": {
+      "name": "loc_84E3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "64E3": {
+      "name": "loc_64E3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "84E5": {
+      "name": "loc_84E5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5CE8": {
+      "name": "loc_5CE8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4CE9": {
+      "name": "loc_4CE9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4CEA": {
+      "name": "loc_4CEA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9CEA": {
+      "name": "loc_9CEA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "64EC": {
+      "name": "loc_64EC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CEA": {
+      "name": "loc_3CEA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4CEF": {
+      "name": "loc_4CEF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44F1": {
+      "name": "loc_44F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7CF2": {
+      "name": "loc_7CF2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44F4": {
+      "name": "loc_44F4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "84F6": {
+      "name": "loc_84F6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9CF6": {
+      "name": "loc_9CF6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B4FA": {
+      "name": "loc_B4FA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "64FD": {
+      "name": "loc_64FD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6500": {
+      "name": "loc_6500",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9502": {
+      "name": "loc_9502",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8506": {
+      "name": "loc_8506",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AD0A": {
+      "name": "loc_AD0A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "950B": {
+      "name": "loc_950B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D0B": {
+      "name": "loc_9D0B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "650F": {
+      "name": "loc_650F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B511": {
+      "name": "loc_B511",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8516": {
+      "name": "loc_8516",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B518": {
+      "name": "loc_B518",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D1A": {
+      "name": "loc_7D1A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "651B": {
+      "name": "loc_651B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D1F": {
+      "name": "loc_7D1F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D20": {
+      "name": "loc_9D20",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4523": {
+      "name": "loc_4523",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8525": {
+      "name": "loc_8525",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4529": {
+      "name": "loc_4529",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "552A": {
+      "name": "loc_552A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D2B": {
+      "name": "loc_7D2B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D2C": {
+      "name": "loc_8D2C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5D2D": {
+      "name": "loc_5D2D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A52D": {
+      "name": "loc_A52D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5D2F": {
+      "name": "loc_5D2F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AD30": {
+      "name": "loc_AD30",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9531": {
+      "name": "loc_9531",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5532": {
+      "name": "loc_5532",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D2F": {
+      "name": "loc_8D2F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D35": {
+      "name": "loc_9D35",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6538": {
+      "name": "loc_6538",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "953B": {
+      "name": "loc_953B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AD3B": {
+      "name": "loc_AD3B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "853C": {
+      "name": "loc_853C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "453F": {
+      "name": "loc_453F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "853F": {
+      "name": "loc_853F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AD41": {
+      "name": "loc_AD41",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D41": {
+      "name": "loc_8D41",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B546": {
+      "name": "loc_B546",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D4A": {
+      "name": "loc_9D4A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A54B": {
+      "name": "loc_A54B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "554C": {
+      "name": "loc_554C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9550": {
+      "name": "loc_9550",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6551": {
+      "name": "loc_6551",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6554": {
+      "name": "loc_6554",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A555": {
+      "name": "loc_A555",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D56": {
+      "name": "loc_7D56",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "855C": {
+      "name": "loc_855C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B55F": {
+      "name": "loc_B55F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D5F": {
+      "name": "loc_9D5F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5560": {
+      "name": "loc_5560",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D64": {
+      "name": "loc_7D64",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AD66": {
+      "name": "loc_AD66",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4568": {
+      "name": "loc_4568",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D69": {
+      "name": "loc_7D69",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AD6B": {
+      "name": "loc_AD6B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "956C": {
+      "name": "loc_956C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "956B": {
+      "name": "loc_956B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8570": {
+      "name": "loc_8570",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4571": {
+      "name": "loc_4571",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D70": {
+      "name": "loc_8D70",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9574": {
+      "name": "loc_9574",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D74": {
+      "name": "loc_9D74",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4574": {
+      "name": "loc_4574",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D77": {
+      "name": "loc_7D77",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B57A": {
+      "name": "loc_B57A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "657C": {
+      "name": "loc_657C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D80": {
+      "name": "loc_8D80",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A581": {
+      "name": "loc_A581",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4583": {
+      "name": "loc_4583",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5583": {
+      "name": "loc_5583",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8585": {
+      "name": "loc_8585",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D88": {
+      "name": "loc_7D88",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D89": {
+      "name": "loc_9D89",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8588": {
+      "name": "loc_8588",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D8B": {
+      "name": "loc_8D8B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "458C": {
+      "name": "loc_458C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D8E": {
+      "name": "loc_8D8E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D93": {
+      "name": "loc_7D93",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B593": {
+      "name": "loc_B593",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6598": {
+      "name": "loc_6598",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9599": {
+      "name": "loc_9599",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5598": {
+      "name": "loc_5598",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D9A": {
+      "name": "loc_8D9A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7D9D": {
+      "name": "loc_7D9D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D9E": {
+      "name": "loc_9D9E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9D9F": {
+      "name": "loc_9D9F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B59F": {
+      "name": "loc_B59F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "45A1": {
+      "name": "loc_45A1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "85A2": {
+      "name": "loc_85A2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B5A3": {
+      "name": "loc_B5A3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7DA4": {
+      "name": "loc_7DA4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "859F": {
+      "name": "loc_859F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5A1": {
+      "name": "loc_A5A1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DA5": {
+      "name": "loc_8DA5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "45AA": {
+      "name": "loc_45AA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "ADAB": {
+      "name": "loc_ADAB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5AC": {
+      "name": "loc_A5AC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "85AF": {
+      "name": "loc_85AF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7DB2": {
+      "name": "loc_7DB2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DB3": {
+      "name": "loc_3DB3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5B4": {
+      "name": "loc_A5B4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9DB5": {
+      "name": "loc_9DB5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "55B6": {
+      "name": "loc_55B6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "65B8": {
+      "name": "loc_65B8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "45BD": {
+      "name": "loc_45BD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B5BF": {
+      "name": "loc_B5BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5C3": {
+      "name": "loc_A5C3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9DC5": {
+      "name": "loc_9DC5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DC6": {
+      "name": "loc_8DC6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "55C8": {
+      "name": "loc_55C8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "65C9": {
+      "name": "loc_65C9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "55CB": {
+      "name": "loc_55CB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7DCE": {
+      "name": "loc_7DCE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DCF": {
+      "name": "loc_3DCF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "55D0": {
+      "name": "loc_55D0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9DD1": {
+      "name": "loc_9DD1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B5D8": {
+      "name": "loc_B5D8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DD9": {
+      "name": "loc_8DD9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "45DA": {
+      "name": "loc_45DA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "65DC": {
+      "name": "loc_65DC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "65E1": {
+      "name": "loc_65E1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9DE1": {
+      "name": "loc_9DE1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7DE3": {
+      "name": "loc_7DE3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B5E4": {
+      "name": "loc_B5E4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "85E2": {
+      "name": "loc_85E2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "55E1": {
+      "name": "loc_55E1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "55E4": {
+      "name": "loc_55E4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5E2": {
+      "name": "loc_A5E2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DEB": {
+      "name": "loc_8DEB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9DED": {
+      "name": "loc_9DED",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5DEE": {
+      "name": "loc_5DEE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5EE": {
+      "name": "loc_A5EE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "45F1": {
+      "name": "loc_45F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "85F1": {
+      "name": "loc_85F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "45F7": {
+      "name": "loc_45F7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5F9": {
+      "name": "loc_A5F9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DFB": {
+      "name": "loc_3DFB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A5FC": {
+      "name": "loc_A5FC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9DFD": {
+      "name": "loc_9DFD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5DFF": {
+      "name": "loc_5DFF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AE00": {
+      "name": "loc_AE00",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B605": {
+      "name": "loc_B605",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6607": {
+      "name": "loc_6607",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4607": {
+      "name": "loc_4607",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E09": {
+      "name": "loc_5E09",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "660A": {
+      "name": "loc_660A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E09": {
+      "name": "loc_9E09",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5605": {
+      "name": "loc_5605",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "860E": {
+      "name": "loc_860E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E0D": {
+      "name": "loc_3E0D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5611": {
+      "name": "loc_5611",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AE13": {
+      "name": "loc_AE13",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E19": {
+      "name": "loc_9E19",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8E1A": {
+      "name": "loc_8E1A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "861D": {
+      "name": "loc_861D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E1E": {
+      "name": "loc_5E1E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B61F": {
+      "name": "loc_B61F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E1F": {
+      "name": "loc_3E1F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4622": {
+      "name": "loc_4622",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5623": {
+      "name": "loc_5623",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E25": {
+      "name": "loc_9E25",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E29": {
+      "name": "loc_7E29",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AE2B": {
+      "name": "loc_AE2B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "462C": {
+      "name": "loc_462C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8E2D": {
+      "name": "loc_8E2D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4630": {
+      "name": "loc_4630",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E31": {
+      "name": "loc_5E31",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8631": {
+      "name": "loc_8631",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6634": {
+      "name": "loc_6634",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E35": {
+      "name": "loc_9E35",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B634": {
+      "name": "loc_B634",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4637": {
+      "name": "loc_4637",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4636": {
+      "name": "loc_4636",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E39": {
+      "name": "loc_3E39",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "563D": {
+      "name": "loc_563D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8E3F": {
+      "name": "loc_8E3F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E41": {
+      "name": "loc_9E41",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4643": {
+      "name": "loc_4643",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E44": {
+      "name": "loc_7E44",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E44": {
+      "name": "loc_3E44",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6647": {
+      "name": "loc_6647",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "464B": {
+      "name": "loc_464B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E51": {
+      "name": "loc_7E51",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E51": {
+      "name": "loc_9E51",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8651": {
+      "name": "loc_8651",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4654": {
+      "name": "loc_4654",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E51": {
+      "name": "loc_3E51",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E57": {
+      "name": "loc_7E57",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6658": {
+      "name": "loc_6658",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "665B": {
+      "name": "loc_665B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E5D": {
+      "name": "loc_9E5D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "465D": {
+      "name": "loc_465D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8660": {
+      "name": "loc_8660",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E62": {
+      "name": "loc_3E62",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A664": {
+      "name": "loc_A664",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5665": {
+      "name": "loc_5665",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E66": {
+      "name": "loc_7E66",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5667": {
+      "name": "loc_5667",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8E6A": {
+      "name": "loc_8E6A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "466B": {
+      "name": "loc_466B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E6C": {
+      "name": "loc_7E6C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "666D": {
+      "name": "loc_666D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E6D": {
+      "name": "loc_9E6D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "666E": {
+      "name": "loc_666E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4670": {
+      "name": "loc_4670",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4671": {
+      "name": "loc_4671",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8675": {
+      "name": "loc_8675",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8678": {
+      "name": "loc_8678",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E79": {
+      "name": "loc_9E79",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "667A": {
+      "name": "loc_667A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A67B": {
+      "name": "loc_A67B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "467A": {
+      "name": "loc_467A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4680": {
+      "name": "loc_4680",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E81": {
+      "name": "loc_7E81",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9686": {
+      "name": "loc_9686",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4688": {
+      "name": "loc_4688",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9689": {
+      "name": "loc_9689",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A689": {
+      "name": "loc_A689",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9E89": {
+      "name": "loc_9E89",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "868C": {
+      "name": "loc_868C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "568B": {
+      "name": "loc_568B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A68F": {
+      "name": "loc_A68F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "568A": {
+      "name": "loc_568A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E8D": {
+      "name": "loc_3E8D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5692": {
+      "name": "loc_5692",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E98": {
+      "name": "loc_3E98",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E9A": {
+      "name": "loc_7E9A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "469B": {
+      "name": "loc_469B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7E9C": {
+      "name": "loc_7E9C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "66A0": {
+      "name": "loc_66A0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "46A3": {
+      "name": "loc_46A3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3EA3": {
+      "name": "loc_3EA3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EA7": {
+      "name": "loc_7EA7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3EAB": {
+      "name": "loc_3EAB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "66AD": {
+      "name": "loc_66AD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EB0": {
+      "name": "loc_7EB0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A6B2": {
+      "name": "loc_A6B2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EB2": {
+      "name": "loc_7EB2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "86B3": {
+      "name": "loc_86B3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "46B2": {
+      "name": "loc_46B2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "86B6": {
+      "name": "loc_86B6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9EB7": {
+      "name": "loc_9EB7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "56B4": {
+      "name": "loc_56B4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "56B9": {
+      "name": "loc_56B9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3EB5": {
+      "name": "loc_3EB5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EBB": {
+      "name": "loc_7EBB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9EBD": {
+      "name": "loc_9EBD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "66BE": {
+      "name": "loc_66BE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A6C1": {
+      "name": "loc_A6C1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "46C1": {
+      "name": "loc_46C1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "96C3": {
+      "name": "loc_96C3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "96C4": {
+      "name": "loc_96C4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A6C4": {
+      "name": "loc_A6C4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9EC6": {
+      "name": "loc_9EC6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "86C7": {
+      "name": "loc_86C7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "46C4": {
+      "name": "loc_46C4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9ECA": {
+      "name": "loc_9ECA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3ECC": {
+      "name": "loc_3ECC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "96CE": {
+      "name": "loc_96CE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AECF": {
+      "name": "loc_AECF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7ECF": {
+      "name": "loc_7ECF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "86D6": {
+      "name": "loc_86D6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A6DA": {
+      "name": "loc_A6DA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "96DC": {
+      "name": "loc_96DC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "46DD": {
+      "name": "loc_46DD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EDF": {
+      "name": "loc_7EDF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A6E2": {
+      "name": "loc_A6E2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "66E5": {
+      "name": "loc_66E5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3EE7": {
+      "name": "loc_3EE7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8EE9": {
+      "name": "loc_8EE9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "86EF": {
+      "name": "loc_86EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EF0": {
+      "name": "loc_7EF0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8EF2": {
+      "name": "loc_8EF2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "96F3": {
+      "name": "loc_96F3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "56F1": {
+      "name": "loc_56F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EF5": {
+      "name": "loc_7EF5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3EEF": {
+      "name": "loc_3EEF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "46F8": {
+      "name": "loc_46F8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "56F8": {
+      "name": "loc_56F8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7EFB": {
+      "name": "loc_7EFB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8EFD": {
+      "name": "loc_8EFD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "96FE": {
+      "name": "loc_96FE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3EFF": {
+      "name": "loc_3EFF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5F0F": {
+      "name": "loc_5F0F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8710": {
+      "name": "loc_8710",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5712": {
+      "name": "loc_5712",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9F15": {
+      "name": "loc_9F15",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F16": {
+      "name": "loc_8F16",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7F18": {
+      "name": "loc_7F18",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4724": {
+      "name": "loc_4724",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F29": {
+      "name": "loc_8F29",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7F2E": {
+      "name": "loc_7F2E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A72E": {
+      "name": "loc_A72E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4731": {
+      "name": "loc_4731",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A735": {
+      "name": "loc_A735",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F35": {
+      "name": "loc_8F35",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F36": {
+      "name": "loc_3F36",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "873A": {
+      "name": "loc_873A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F3E": {
+      "name": "loc_3F3E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5740": {
+      "name": "loc_5740",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4743": {
+      "name": "loc_4743",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9F45": {
+      "name": "loc_9F45",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF46": {
+      "name": "loc_AF46",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4747": {
+      "name": "loc_4747",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A745": {
+      "name": "loc_A745",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F48": {
+      "name": "loc_8F48",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7F4A": {
+      "name": "loc_7F4A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F43": {
+      "name": "loc_3F43",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A74C": {
+      "name": "loc_A74C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "474F": {
+      "name": "loc_474F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF52": {
+      "name": "loc_AF52",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F51": {
+      "name": "loc_3F51",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7F59": {
+      "name": "loc_7F59",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F5C": {
+      "name": "loc_8F5C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF5E": {
+      "name": "loc_AF5E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "875F": {
+      "name": "loc_875F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4760": {
+      "name": "loc_4760",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8762": {
+      "name": "loc_8762",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5769": {
+      "name": "loc_5769",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF6A": {
+      "name": "loc_AF6A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "576B": {
+      "name": "loc_576B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9F6F": {
+      "name": "loc_9F6F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6773": {
+      "name": "loc_6773",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF76": {
+      "name": "loc_AF76",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5777": {
+      "name": "loc_5777",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6781": {
+      "name": "loc_6781",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A782": {
+      "name": "loc_A782",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF82": {
+      "name": "loc_AF82",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F84": {
+      "name": "loc_3F84",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F86": {
+      "name": "loc_8F86",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5F8A": {
+      "name": "loc_5F8A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8F8A": {
+      "name": "loc_8F8A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "578C": {
+      "name": "loc_578C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF8E": {
+      "name": "loc_AF8E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5F95": {
+      "name": "loc_5F95",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F96": {
+      "name": "loc_3F96",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4798": {
+      "name": "loc_4798",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AF9A": {
+      "name": "loc_AF9A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "879D": {
+      "name": "loc_879D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "87A0": {
+      "name": "loc_87A0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5FA3": {
+      "name": "loc_5FA3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFA6": {
+      "name": "loc_AFA6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47A8": {
+      "name": "loc_47A8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47A9": {
+      "name": "loc_47A9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "57AA": {
+      "name": "loc_57AA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FAD": {
+      "name": "loc_3FAD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFB2": {
+      "name": "loc_AFB2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47BC": {
+      "name": "loc_47BC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFBE": {
+      "name": "loc_AFBE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5FC2": {
+      "name": "loc_5FC2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9FC3": {
+      "name": "loc_9FC3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8FC4": {
+      "name": "loc_8FC4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47C6": {
+      "name": "loc_47C6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFCA": {
+      "name": "loc_AFCA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47CC": {
+      "name": "loc_47CC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8FD0": {
+      "name": "loc_8FD0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FD3": {
+      "name": "loc_3FD3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "87D4": {
+      "name": "loc_87D4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFD6": {
+      "name": "loc_AFD6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47D8": {
+      "name": "loc_47D8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFE2": {
+      "name": "loc_AFE2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47E5": {
+      "name": "loc_47E5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47E6": {
+      "name": "loc_47E6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "47EB": {
+      "name": "loc_47EB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FEB": {
+      "name": "loc_3FEB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8FEC": {
+      "name": "loc_8FEC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5FEE": {
+      "name": "loc_5FEE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFEE": {
+      "name": "loc_AFEE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "87F0": {
+      "name": "loc_87F0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "57F1": {
+      "name": "loc_57F1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FF5": {
+      "name": "loc_3FF5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8FF8": {
+      "name": "loc_8FF8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "AFFA": {
+      "name": "loc_AFFA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8FFD": {
+      "name": "loc_8FFD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D62": {
+      "name": "loc_8D62",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5287": {
+      "name": "loc_5287",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4417": {
+      "name": "loc_4417",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4451": {
+      "name": "loc_4451",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5D50": {
+      "name": "sub_5D50",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "5D5E": {
+      "name": "loc_5D5E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5DC8": {
+      "name": "render_copy_5DC8",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DAC": {
+      "name": "render_copy_5DAC",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5D63": {
+      "name": "loc_5D63",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "5D91": {
+      "name": "draw_5D91",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DE3": {
+      "name": "loc_5DE3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5DC7": {
+      "name": "loc_5DC7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5D76": {
+      "name": "draw_5D76",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DCF": {
+      "name": "loc_5DCF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5DB3": {
+      "name": "loc_5DB3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E32": {
+      "name": "render_table_lookup_5E32",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F16": {
+      "name": "copy_5F16",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F3A": {
+      "name": "loc_5F3A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5ECE": {
+      "name": "arith_5ECE",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5F2A": {
+      "name": "loc_5F2A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5F34": {
+      "name": "loc_5F34",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5F3C": {
+      "name": "loc_5F3C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "60E1": {
+      "name": "dispatch_60E1",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "7FF2": {
+      "name": "wait_frames_7FF2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "806A": {
+      "name": "loc_806A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7FC2": {
+      "name": "loc_7FC2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7F49": {
+      "name": "loc_7F49",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8004": {
+      "name": "loc_8004",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8348": {
+      "name": "stub_8348",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9C57": {
+      "name": "bit_extract_9C57",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9C64": {
+      "name": "loc_9C64",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C6C": {
+      "name": "loc_9C6C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C74": {
+      "name": "loc_9C74",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C7C": {
+      "name": "loc_9C7C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C84": {
+      "name": "loc_9C84",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C8C": {
+      "name": "loc_9C8C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C94": {
+      "name": "loc_9C94",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C9C": {
+      "name": "loc_9C9C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6B9E": {
+      "name": "dat_6B9E",
+      "type": "data",
+      "status": "auto",
+      "comment": "Terrain rendering LUTs \u2014 perspective transform, height-to-screen"
+    },
+    "B1BF": {
+      "name": "loc_B1BF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4F49": {
+      "name": "loc_4F49",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B148": {
+      "name": "loc_B148",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6F45": {
+      "name": "loc_6F45",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "61A7": {
+      "name": "loc_61A7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "D029": {
+      "name": "stub_D029",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5082": {
+      "name": "loc_5082",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "A0DC": {
+      "name": "loc_A0DC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "610F": {
+      "name": "loc_610F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E53": {
+      "name": "loc_5E53",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3904": {
+      "name": "loc_3904",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9604": {
+      "name": "loc_9604",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "7ED1": {
+      "name": "loc_7ED1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B16D": {
+      "name": "loc_B16D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6FAD": {
+      "name": "loc_6FAD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6D19": {
+      "name": "loc_6D19",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E5D": {
+      "name": "loc_5E5D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "B192": {
+      "name": "loc_B192",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5AE7": {
+      "name": "render_proc_5AE7",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5AFA": {
+      "name": "loc_5AFA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "6D23": {
+      "name": "loc_6D23",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5AFF": {
+      "name": "loc_5AFF",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "6D2D": {
+      "name": "loc_6D2D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E8E": {
+      "name": "loc_5E8E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E9B": {
+      "name": "loc_5E9B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5EA1": {
+      "name": "sub_5EA1",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "5EE9": {
+      "name": "game_logic_proc_5EE9",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5ECD": {
+      "name": "loc_5ECD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5EC2": {
+      "name": "loc_5EC2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "60F6": {
+      "name": "dispatch_60F6",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6143": {
+      "name": "set_colors_6143",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6177": {
+      "name": "update_pmg_6177",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "61B1": {
+      "name": "set_colors_61B1",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "834B": {
+      "name": "update_pmg_colors_834B",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "83A9": {
+      "name": "loc_83A9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "83BD": {
+      "name": "render_copy_83BD",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "83C5": {
+      "name": "loc_83C5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "83BA": {
+      "name": "loc_83BA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "82A7": {
+      "name": "loc_82A7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "83CD": {
+      "name": "loc_83CD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5E45": {
+      "name": "loc_5E45",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "83D5": {
+      "name": "loc_83D5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "83DD": {
+      "name": "loc_83DD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "83F7": {
+      "name": "loc_83F7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "83EF": {
+      "name": "loc_83EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9CA0": {
+      "name": "sub_9CA0",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "9CAF": {
+      "name": "loc_9CAF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9CBB": {
+      "name": "loc_9CBB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9C59": {
+      "name": "bit_extract_9C59",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "9CCE": {
+      "name": "loc_9CCE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "610B": {
+      "name": "dli_colors_a",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: load color regs from shadow, set PRIOR=$94"
+    },
+    "6184": {
+      "name": "dli_colors_b",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: set terrain/ground color registers"
+    },
+    "61CF": {
+      "name": "dli_colors_c",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DLI: set PRIOR, load colors for cockpit section"
+    },
+    "61EF": {
+      "name": "dli_table_alt",
+      "type": "data",
+      "status": "named",
+      "comment": "Alternate DLI dispatch tables (2x8 entries)"
+    },
+    "4326": {
+      "name": "dat_4326",
+      "type": "data",
+      "status": "auto"
+    },
+    "52E3": {
+      "name": "dat_52E3",
+      "type": "data",
+      "status": "auto"
+    },
+    "49D6": {
+      "name": "dat_49D6",
+      "type": "data",
+      "status": "auto"
+    },
+    "499C": {
+      "name": "dat_499C",
+      "type": "data",
+      "status": "auto"
+    },
+    "5C85": {
+      "name": "dat_5C85",
+      "type": "data",
+      "status": "auto"
+    },
+    "5F8D": {
+      "name": "dat_5F8D",
+      "type": "data",
+      "status": "auto"
+    },
+    "A8E4": {
+      "name": "dat_A8E4",
+      "type": "data",
+      "status": "auto"
+    },
+    "5EB8": {
+      "name": "loc_5EB8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "0080": {
+      "name": "zp_ptr_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "General pointer lo \u2014 screen row addr during pixel write, direction table during transform"
+    },
+    "0081": {
+      "name": "zp_ptr_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "General pointer hi"
+    },
+    "0082": {
+      "name": "zp_column_x",
+      "type": "data",
+      "status": "named",
+      "comment": "Current column X position \u2014 saved by STX $82 in rasterize inner loop"
+    },
+    "0083": {
+      "name": "zp_proj_x_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Projected X high byte (from project_x)"
+    },
+    "0084": {
+      "name": "zp_depth_accum",
+      "type": "data",
+      "status": "named",
+      "comment": "Depth interpolation accumulator \u2014 averaged with edge samples in rasterize loop"
+    },
+    "0085": {
+      "name": "zp_proj_y_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Projected Y high byte (from project_x Y phase)"
+    },
+    "0086": {
+      "name": "zp_color_shade",
+      "type": "data",
+      "status": "named",
+      "comment": "Color/shade interpolation value \u2014 terrain color gradient during edge walk"
+    },
+    "0088": {
+      "name": "zp_grid_x",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain grid X component \u2014 combined with $8A for heightmap index"
+    },
+    "008A": {
+      "name": "zp_grid_row",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain grid row \u2014 upper nibble used for height buffer indexing"
+    },
+    "008B": {
+      "name": "zp_cam_alt_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera altitude lo \u2014 subtracted from terrain height in transform_vertex"
+    },
+    "008C": {
+      "name": "zp_cam_alt_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera altitude hi"
+    },
+    "0092": {
+      "name": "zp_dir_quadrant",
+      "type": "data",
+      "status": "named",
+      "comment": "Direction quadrant selector \u2014 bits 7-6 choose transform variant in transform_vertex"
+    },
+    "0095": {
+      "name": "zp_edge_x_arr",
+      "type": "data",
+      "status": "named",
+      "comment": "Edge sample X position array (indexed by Y) \u2014 terrain edge column positions"
+    },
+    "0096": {
+      "name": "zp_edge_x_next",
+      "type": "data",
+      "status": "named",
+      "comment": "Next-level subdivided X position (indexed by Y) \u2014 output of midpoint bisection"
+    },
+    "0097": {
+      "name": "zp_blend_row",
+      "type": "data",
+      "status": "named",
+      "comment": "Row counter for pixel blend loop in fill_column_fast phase 3"
+    },
+    "0098": {
+      "name": "zp_frac_depth",
+      "type": "data",
+      "status": "named",
+      "comment": "Fractal recursion depth \u2014 terrain subdivision stack pointer"
+    },
+    "0099": {
+      "name": "zp_frac_prev_depth",
+      "type": "data",
+      "status": "named",
+      "comment": "Previous fractal depth \u2014 compared against $98 to detect subdivision progress"
+    },
+    "009A": {
+      "name": "zp_frac_delta_x",
+      "type": "data",
+      "status": "named",
+      "comment": "Fractal delta X \u2014 step direction for terrain subdivision (+1/-1/+16/-16)"
+    },
+    "009B": {
+      "name": "zp_frac_delta_y",
+      "type": "data",
+      "status": "named",
+      "comment": "Fractal delta Y \u2014 perpendicular step for terrain subdivision"
+    },
+    "009C": {
+      "name": "zp_frac_seed_pos",
+      "type": "data",
+      "status": "named",
+      "comment": "Current seed position in terrain height buffer"
+    },
+    "009F": {
+      "name": "zp_norm_shift",
+      "type": "data",
+      "status": "named",
+      "comment": "Normalization shift count \u2014 saved by project_x, passed to/from div16"
+    },
+    "00A0": {
+      "name": "zp_disp_x_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "X displacement vector lo \u2014 camera heading projected to grid X step"
+    },
+    "00A1": {
+      "name": "zp_disp_x_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "X displacement vector hi"
+    },
+    "00A2": {
+      "name": "zp_disp_z_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Z displacement vector lo \u2014 camera heading projected to grid Z step"
+    },
+    "00A3": {
+      "name": "zp_disp_z_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Z displacement vector hi"
+    },
+    "00A8": {
+      "name": "zp_saved_x",
+      "type": "data",
+      "status": "named",
+      "comment": "Saved X register \u2014 used by terrain_render to preserve state across calls"
+    },
+    "00A9": {
+      "name": "zp_mul_result_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "16-bit multiply result lo (output of mul16_signed)"
+    },
+    "00AA": {
+      "name": "zp_mul_result_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "16-bit multiply result hi"
+    },
+    "00AB": {
+      "name": "zp_mul_cand_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Multiply multiplicand lo (input to mul16_signed)"
+    },
+    "00AC": {
+      "name": "zp_mul_cand_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Multiply multiplicand hi"
+    },
+    "00AD": {
+      "name": "zp_mul_plier",
+      "type": "data",
+      "status": "named",
+      "comment": "Multiply multiplier (8-bit input, also used as shift register)"
+    },
+    "00AE": {
+      "name": "zp_mul_sign",
+      "type": "data",
+      "status": "named",
+      "comment": "Multiply sign save \u2014 bit 7 = negate result after unsigned multiply"
+    },
+    "00AF": {
+      "name": "zp_div_divisor_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Division divisor lo (input to div16)"
+    },
+    "00B0": {
+      "name": "zp_div_divisor_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Division divisor hi \u2014 BIT $B0 tests bit 6 for normalization"
+    },
+    "00B1": {
+      "name": "zp_div_remain_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Division dividend/remainder lo"
+    },
+    "00B2": {
+      "name": "zp_div_remain_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Division dividend/remainder hi"
+    },
+    "00B3": {
+      "name": "zp_div_quotient",
+      "type": "data",
+      "status": "named",
+      "comment": "Division quotient (8-bit output of div16)"
+    },
+    "00B5": {
+      "name": "zp_terrain_idx",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain index composite \u2014 combined grid X/row for heightmap lookup"
+    },
+    "00B6": {
+      "name": "zp_temp",
+      "type": "data",
+      "status": "named",
+      "comment": "Temp \u2014 Y save during pixel write, partial result during transform"
+    },
+    "00B7": {
+      "name": "zp_grid_row_accum",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain grid row accumulator \u2014 accumulated row offset during vertex walk"
+    },
+    "00B8": {
+      "name": "zp_random_work",
+      "type": "data",
+      "status": "named",
+      "comment": "Random perturbation workspace \u2014 used in terrain fractal generation"
+    },
+    "00BC": {
+      "name": "zp_screen_ptr_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Screen pointer lo \u2014 heavy write, used in rendering copy loops"
+    },
+    "00BD": {
+      "name": "zp_screen_ptr_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Screen pointer hi"
+    },
+    "00BE": {
+      "name": "zp_screen_ptr2_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Secondary screen pointer lo \u2014 used in double-buffer/copy operations"
+    },
+    "00BF": {
+      "name": "zp_screen_ptr2_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Secondary screen pointer hi"
+    },
+    "00C0": {
+      "name": "zp_color_work",
+      "type": "data",
+      "status": "named",
+      "comment": "DLI/color workspace \u2014 R=20 W=18, used in color register programming"
+    },
+    "00C2": {
+      "name": "zp_memcpy_dst_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Memcpy destination ptr lo \u2014 most-written ZP pair, used by memcpy_block"
+    },
+    "00C3": {
+      "name": "zp_memcpy_dst_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Memcpy destination ptr hi"
+    },
+    "00C4": {
+      "name": "zp_memcpy_len_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Memcpy length lo / general workspace"
+    },
+    "00C5": {
+      "name": "zp_memcpy_len_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Memcpy length hi / general workspace"
+    },
+    "00C7": {
+      "name": "zp_render_scratch",
+      "type": "data",
+      "status": "named",
+      "comment": "Rendering scratch variable"
+    },
+    "00E1": {
+      "name": "zp_dli_vec_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "DLI indirect jump vector lo \u2014 loaded from dli_jump_table, jumped through"
+    },
+    "00E2": {
+      "name": "zp_dli_vec_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "DLI indirect jump vector hi"
+    },
+    "00E3": {
+      "name": "zp_depth_arr",
+      "type": "data",
+      "status": "named",
+      "comment": "Depth value array (indexed by Y) \u2014 terrain depth at each edge sample point"
+    },
+    "00E4": {
+      "name": "zp_depth_interp",
+      "type": "data",
+      "status": "named",
+      "comment": "Interpolated depth output (indexed by Y) \u2014 result of midpoint averaging"
+    },
+    "0603": {
+      "name": "game_ready_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Game ready/started flag \u2014 only written #$00, read by 3 procs"
+    },
+    "0604": {
+      "name": "game_active_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Game active flag \u2014 only written #$01, read by 3 procs"
+    },
+    "0605": {
+      "name": "game_phase_timer",
+      "type": "data",
+      "status": "named",
+      "comment": "Slow game phase timer \u2014 increments ~2 per 100 frames"
+    },
+    "0609": {
+      "name": "frame_counter",
+      "type": "data",
+      "status": "named",
+      "comment": "Frame counter \u2014 incremented by VBI, used by wait_n_frames for sync"
+    },
+    "060C": {
+      "name": "terrain_scroll_accum",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain scroll accumulator \u2014 smooth flight distance, ADC/SBC in terrain_render"
+    },
+    "060F": {
+      "name": "terrain_scroll_rate",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain scroll rate \u2014 speed-dependent, SBC in terrain_render for distance calc"
+    },
+    "0616": {
+      "name": "enabled_flag_0616",
+      "type": "data",
+      "status": "named",
+      "comment": "Feature enabled flag \u2014 only written #$01"
+    },
+    "061B": {
+      "name": "game_timer",
+      "type": "data",
+      "status": "named",
+      "comment": "Game timer \u2014 R=9 W=4, frequently read counter"
+    },
+    "061C": {
+      "name": "game_mode",
+      "type": "data",
+      "status": "named",
+      "comment": "Game mode / level state \u2014 R=15 W=2, most-read state variable"
+    },
+    "0622": {
+      "name": "slow_timer",
+      "type": "data",
+      "status": "named",
+      "comment": "Slow timer \u2014 incremented by VBI title screen handler"
+    },
+    "0629": {
+      "name": "game_event_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Game event flag \u2014 R=6 W=2, state_var, triggers game events"
+    },
+    "0636": {
+      "name": "dirty_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Changed/dirty flag \u2014 only written #$FF, read once (triggers redraw)"
+    },
+    "0638": {
+      "name": "score_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Score low byte \u2014 BCD, ADC with #$50 (500 points per pilot)"
+    },
+    "0639": {
+      "name": "score_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Score high byte \u2014 BCD, ADC with #$01/#$02"
+    },
+    "063B": {
+      "name": "lives_or_fuel",
+      "type": "data",
+      "status": "named",
+      "comment": "Lives or fuel counter \u2014 value 02 at runtime"
+    },
+    "063F": {
+      "name": "score_digit",
+      "type": "data",
+      "status": "named",
+      "comment": "BCD score/lives digit \u2014 BCD increment at $656B"
+    },
+    "0640": {
+      "name": "display_enabled",
+      "type": "data",
+      "status": "named",
+      "comment": "Display enabled flag \u2014 only written #$01, read by 3 procs"
+    },
+    "0641": {
+      "name": "terrain_detail",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain distance/detail level \u2014 written by terrain_render based on camera distance"
+    },
+    "0643": {
+      "name": "terrain_vis_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Terrain visibility flag \u2014 set #$80 when terrain close, $00 when far"
+    },
+    "0654": {
+      "name": "slot_available",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity slot available flag \u2014 only written #$00, read by 4 procs"
+    },
+    "065F": {
+      "name": "ent_type",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [0]: type/state \u2014 14 entries, most accessed (24 ops, 15 procs)"
+    },
+    "066D": {
+      "name": "ent_flags",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [1]: flags \u2014 low nibble = entity subtype"
+    },
+    "067B": {
+      "name": "ent_state",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [2]: secondary state (14 ops, 9 procs)"
+    },
+    "0689": {
+      "name": "ent_param_a",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [3]: parameter A"
+    },
+    "0697": {
+      "name": "ent_param_b",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [4]: parameter B"
+    },
+    "06A5": {
+      "name": "ent_param_c",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [5]: parameter C"
+    },
+    "06B3": {
+      "name": "ent_param_d",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [6]: parameter D"
+    },
+    "06C1": {
+      "name": "ent_param_e",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [7]: parameter E"
+    },
+    "06CF": {
+      "name": "ent_param_f",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [8]: parameter F"
+    },
+    "06DD": {
+      "name": "ent_param_g",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [9]: parameter G"
+    },
+    "06EB": {
+      "name": "ent_param_h",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [10]: parameter H"
+    },
+    "06F9": {
+      "name": "ent_param_i",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity attribute table [11]: parameter I"
+    },
+    "0707": {
+      "name": "ent_active_flags",
+      "type": "data",
+      "status": "named",
+      "comment": "Entity active bitmap \u2014 6 readers scan this, bits = entity type mask"
+    },
+    "071B": {
+      "name": "cmd_queue_data",
+      "type": "data",
+      "status": "named",
+      "comment": "Command queue data \u2014 32 slots, circular buffer, written by queue_push (25 writers)"
+    },
+    "073B": {
+      "name": "cmd_queue_ptr",
+      "type": "data",
+      "status": "named",
+      "comment": "Command queue head/tail \u2014 most-accessed address in game (R=26, W=27)"
+    },
+    "0751": {
+      "name": "row_addr_lo_blend",
+      "type": "data",
+      "status": "named",
+      "comment": "Screen row address table lo \u2014 for pixel blend in fill_column_fast phase 3"
+    },
+    "07A7": {
+      "name": "row_addr_hi_blend",
+      "type": "data",
+      "status": "named",
+      "comment": "Screen row address table hi \u2014 paired with $0751 for indirect screen access"
+    },
+    "289B": {
+      "name": "cam_heading_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera heading angle lo \u2014 16-bit, small changes = smooth turning"
+    },
+    "289C": {
+      "name": "cam_heading_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera heading angle hi"
+    },
+    "289D": {
+      "name": "cam_pitch_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera pitch angle lo \u2014 16-bit, controls up/down view"
+    },
+    "289E": {
+      "name": "cam_pitch_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera pitch angle hi"
+    },
+    "28A0": {
+      "name": "cam_altitude",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera altitude \u2014 height above terrain, value ~$2D during flight"
+    },
+    "28A4": {
+      "name": "flight_param",
+      "type": "data",
+      "status": "named",
+      "comment": "Flight parameter \u2014 R=11 W=7, frequently read, affects terrain render"
+    },
+    "28A5": {
+      "name": "difficulty_level",
+      "type": "data",
+      "status": "named",
+      "comment": "Difficulty/level parameter \u2014 R=14 W=1, near-constant (written once at level init)"
+    },
+    "28A9": {
+      "name": "terrain_near_dist",
+      "type": "data",
+      "status": "named",
+      "comment": "Nearest terrain distance \u2014 computed per frame, controls detail level $0641"
+    },
+    "28AC": {
+      "name": "viewport_state",
+      "type": "data",
+      "status": "named",
+      "comment": "Viewport state \u2014 R=11 W=11, rendering state counter"
+    },
+    "2843": {
+      "name": "prev_detail_level",
+      "type": "data",
+      "status": "named",
+      "comment": "Previous terrain detail level \u2014 compared with $0641 to detect changes"
+    },
+    "2844": {
+      "name": "render_state_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Rendering state flag \u2014 updated after terrain render"
+    },
+    "2882": {
+      "name": "camera_view_param",
+      "type": "data",
+      "status": "named",
+      "comment": "Camera view parameter \u2014 R=9 W=2, affects terrain render initial setup"
+    },
+    "2887": {
+      "name": "render_toggle",
+      "type": "data",
+      "status": "named",
+      "comment": "Rendering state toggle \u2014 values $00/$01, alternates per frame"
+    },
+    "2608": {
+      "name": "zbuf_columns",
+      "type": "data",
+      "status": "named",
+      "comment": "Per-column Z-buffer \u2014 212 entries, depth of nearest terrain at each screen column"
+    },
+    "2634": {
+      "name": "zbuf_sentinel_a",
+      "type": "data",
+      "status": "named",
+      "comment": "Z-buffer sentinel area A \u2014 initialized with $67 each frame for occlusion"
+    },
+    "2648": {
+      "name": "zbuf_sentinel_b",
+      "type": "data",
+      "status": "named",
+      "comment": "Z-buffer sentinel area B \u2014 initialized with $6B, 4 sub-arrays of 33 bytes"
+    },
+    "2572": {
+      "name": "work_proj_x_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Working projected X lo \u2014 copied from vertex array for current edge pair"
+    },
+    "2590": {
+      "name": "work_proj_x_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Working projected X hi"
+    },
+    "25AE": {
+      "name": "work_proj_y_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Working projected Y lo"
+    },
+    "25CC": {
+      "name": "work_proj_y_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Working projected Y hi"
+    },
+    "25EA": {
+      "name": "work_height",
+      "type": "data",
+      "status": "named",
+      "comment": "Working terrain height \u2014 for current edge pair"
+    },
+    "2270": {
+      "name": "vtx_grid_idx",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex terrain grid index \u2014 45 entries, maps vertex to heightmap position"
+    },
+    "229D": {
+      "name": "vtx_cam_x_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex camera-space X lo \u2014 45 entries, accumulated from direction deltas"
+    },
+    "22CB": {
+      "name": "vtx_cam_x_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex camera-space X hi \u2014 45 entries"
+    },
+    "22F9": {
+      "name": "vtx_cam_z_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex camera-space Z lo \u2014 45 entries, used as divisor in perspective projection"
+    },
+    "2327": {
+      "name": "vtx_cam_z_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex camera-space Z hi \u2014 45 entries"
+    },
+    "2355": {
+      "name": "vtx_height_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex scaled height lo \u2014 45 entries, terrain height after altitude subtract + shift"
+    },
+    "2382": {
+      "name": "vtx_height_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex scaled height hi \u2014 45 entries"
+    },
+    "23AF": {
+      "name": "vtx_raw_height",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex raw terrain height \u2014 45 entries, read from $0900 heightmap"
+    },
+    "23DC": {
+      "name": "vtx_screen_x_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex projected screen X lo \u2014 45 entries, output of project_x X phase"
+    },
+    "2409": {
+      "name": "vtx_screen_x_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex projected screen X hi \u2014 45 entries"
+    },
+    "2436": {
+      "name": "vtx_screen_y_lo",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex projected screen Y lo \u2014 45 entries, output of project_x Y phase"
+    },
+    "2463": {
+      "name": "vtx_screen_y_hi",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex projected screen Y hi \u2014 45 entries"
+    },
+    "2490": {
+      "name": "vtx_vis_flags",
+      "type": "data",
+      "status": "named",
+      "comment": "Vertex visibility/projection flags \u2014 45 entries: $80=behind, $40=right, $20=left, $10=projected, $00=visible"
+    },
+    "28EC": {
+      "name": "row_addr_lo_render",
+      "type": "data",
+      "status": "named",
+      "comment": "Scanline address lo table \u2014 48 entries, maps depth index to screen row address"
+    },
+    "291C": {
+      "name": "row_addr_hi_render",
+      "type": "data",
+      "status": "named",
+      "comment": "Scanline address hi table \u2014 48 entries, paired with $28EC"
+    },
+    "27E9": {
+      "name": "saved_column_x",
+      "type": "data",
+      "status": "named",
+      "comment": "Saved column X \u2014 STX at fill_terrain_column entry, LDX at exit"
+    },
+    "2728": {
+      "name": "edge_iter_y_save",
+      "type": "data",
+      "status": "named",
+      "comment": "Edge iteration Y save \u2014 STY/LDY in terrain_render edge loop"
+    },
+    "28F6": {
+      "name": "current_vtx_idx",
+      "type": "data",
+      "status": "named",
+      "comment": "Current vertex index \u2014 STX $28F6 in terrain_render, used for edge pair tracking"
+    },
+    "2708": {
+      "name": "horizon_profile",
+      "type": "data",
+      "status": "named",
+      "comment": "Horizon height profile \u2014 32 entries, vertical offset per distance band"
+    },
+    "28D0": {
+      "name": "height_delta_tab",
+      "type": "data",
+      "status": "named",
+      "comment": "Height delta table \u2014 32 entries, terrain height differences for perspective"
+    },
+    "BC00": {
+      "name": "pix_color_mask",
+      "type": "data",
+      "status": "named",
+      "comment": "Pixel color mask table \u2014 256 entries, ORA mask for plotting pixel at column X"
+    },
+    "BD00": {
+      "name": "pix_byte_offset",
+      "type": "data",
+      "status": "named",
+      "comment": "Pixel byte offset table \u2014 212 entries, byte offset within scanline (rebuilt per frame)"
+    },
+    "BE00": {
+      "name": "pix_blend_cont",
+      "type": "data",
+      "status": "named",
+      "comment": "Pixel blend continuation table \u2014 maps byte \u2192 next blend mask for ground fill"
+    },
+    "BF00": {
+      "name": "pix_blend_merge",
+      "type": "data",
+      "status": "named",
+      "comment": "Pixel blend merge table \u2014 additional bits to OR for dithered fill transitions"
+    }
+  },
+  "observations": {
+    "vectors_at_boot": {
+      "VVBLKI": "8059",
+      "VVBLKD": "C28A",
+      "VDSLST": "4CF1"
+    },
+    "snapshots": {
+      "gameplay": {
+        "frame": 731,
+        "notes": "gameplay"
+      },
+      "in_game": {
+        "frame": 1161,
+        "notes": "in_game"
+      },
+      "post_intro": {
+        "frame": 2411,
+        "notes": "post_intro"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "start": "3623",
+    "end": "36C0",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "C020",
+    "end": "C0CE",
+    "type": "code"
+  },
+  {
+    "start": "C0E2",
+    "end": "C300",
+    "type": "code"
+  }
+]

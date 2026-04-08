@@ -166,6 +166,18 @@ jobs:
 
             **Linux:** Download the `.AppImage`, `chmod +x`, and run.
             Requires glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+).
+
+            ---
+
+            ### Looking for headless / scripting?
+
+            The **AltirraBridge** package — headless emulator binary,
+            Python and C SDKs, full documentation, case studies, and
+            a Claude Code skill for AI-driven Atari work — is built
+            and released separately. See the
+            [`nightly-bridge`](https://github.com/${{ github.repository }}/releases/tag/nightly-bridge)
+            release for the latest rolling build, or look for the
+            `AltirraBridge-*.tar.gz` asset attached to this release.
           files: dist/*.AppImage
           fail_on_unmatched_files: true
 

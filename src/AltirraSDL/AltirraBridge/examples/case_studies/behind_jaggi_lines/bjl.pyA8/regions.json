@@ -1,0 +1,774 @@
+[
+  {
+    "start": "0900",
+    "end": "0AFF",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "24BE",
+    "end": "24FF",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "3800",
+    "end": "3BFF",
+    "type": "data",
+    "hint": "charset"
+  },
+  {
+    "start": "3800",
+    "end": "3800",
+    "type": "code"
+  },
+  {
+    "start": "3838",
+    "end": "383C",
+    "type": "code"
+  },
+  {
+    "start": "3900",
+    "end": "3903",
+    "type": "code"
+  },
+  {
+    "start": "3932",
+    "end": "3932",
+    "type": "code"
+  },
+  {
+    "start": "394D",
+    "end": "3968",
+    "type": "code"
+  },
+  {
+    "start": "3A00",
+    "end": "3A07",
+    "type": "code"
+  },
+  {
+    "start": "3A92",
+    "end": "3AAC",
+    "type": "code"
+  },
+  {
+    "start": "3AAE",
+    "end": "3AAE",
+    "type": "code"
+  },
+  {
+    "start": "3B74",
+    "end": "3B8A",
+    "type": "code"
+  },
+  {
+    "start": "3C00",
+    "end": "401A",
+    "type": "code"
+  },
+  {
+    "start": "401B",
+    "end": "4030",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "4031",
+    "end": "41F4",
+    "type": "code"
+  },
+  {
+    "start": "41F5",
+    "end": "4223",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "4224",
+    "end": "422F",
+    "type": "code"
+  },
+  {
+    "start": "4230",
+    "end": "4246",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "4239",
+    "end": "4239",
+    "type": "code"
+  },
+  {
+    "start": "423F",
+    "end": "4240",
+    "type": "code"
+  },
+  {
+    "start": "4247",
+    "end": "4248",
+    "type": "code"
+  },
+  {
+    "start": "4249",
+    "end": "424A",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "424B",
+    "end": "4255",
+    "type": "code"
+  },
+  {
+    "start": "4256",
+    "end": "4257",
+    "type": "data",
+    "hint": "fill_zero"
+  },
+  {
+    "start": "4258",
+    "end": "4325",
+    "type": "code"
+  },
+  {
+    "start": "4326",
+    "end": "4329",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "432A",
+    "end": "477B",
+    "type": "code"
+  },
+  {
+    "start": "477C",
+    "end": "478B",
+    "type": "data",
+    "hint": "addr_table"
+  },
+  {
+    "start": "478C",
+    "end": "47EB",
+    "type": "code"
+  },
+  {
+    "start": "47EC",
+    "end": "47FA",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "47FB",
+    "end": "4877",
+    "type": "code"
+  },
+  {
+    "start": "4878",
+    "end": "48BD",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "48BE",
+    "end": "499B",
+    "type": "code"
+  },
+  {
+    "start": "499C",
+    "end": "499E",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "499F",
+    "end": "49D5",
+    "type": "code"
+  },
+  {
+    "start": "49D6",
+    "end": "49D8",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "49D9",
+    "end": "4B43",
+    "type": "code"
+  },
+  {
+    "start": "4B44",
+    "end": "4C53",
+    "type": "data",
+    "hint": "string"
+  },
+  {
+    "start": "4B47",
+    "end": "4B47",
+    "type": "code"
+  },
+  {
+    "start": "4B65",
+    "end": "4B68",
+    "type": "code"
+  },
+  {
+    "start": "4C20",
+    "end": "4C20",
+    "type": "code"
+  },
+  {
+    "start": "4C4C",
+    "end": "4C4E",
+    "type": "code"
+  },
+  {
+    "start": "4C54",
+    "end": "4DD5",
+    "type": "code"
+  },
+  {
+    "start": "4DD6",
+    "end": "52BF",
+    "type": "data",
+    "hint": "addr_table"
+  },
+  {
+    "start": "4F4F",
+    "end": "4F53",
+    "type": "code"
+  },
+  {
+    "start": "5010",
+    "end": "5015",
+    "type": "code"
+  },
+  {
+    "start": "5055",
+    "end": "5055",
+    "type": "code"
+  },
+  {
+    "start": "5059",
+    "end": "505B",
+    "type": "code"
+  },
+  {
+    "start": "5065",
+    "end": "5068",
+    "type": "code"
+  },
+  {
+    "start": "52C0",
+    "end": "52E2",
+    "type": "code"
+  },
+  {
+    "start": "52E3",
+    "end": "52E6",
+    "type": "data",
+    "hint": "addr_table"
+  },
+  {
+    "start": "52E7",
+    "end": "5974",
+    "type": "code"
+  },
+  {
+    "start": "5975",
+    "end": "5987",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "5988",
+    "end": "5AC2",
+    "type": "code"
+  },
+  {
+    "start": "5AC3",
+    "end": "5B0B",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "5AE7",
+    "end": "5C84",
+    "type": "code"
+  },
+  {
+    "start": "5C85",
+    "end": "5C87",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "5C88",
+    "end": "5F8C",
+    "type": "code"
+  },
+  {
+    "start": "5E45",
+    "end": "5E4E",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "5F8D",
+    "end": "5F90",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "5F91",
+    "end": "5FAF",
+    "type": "code"
+  },
+  {
+    "start": "5FB0",
+    "end": "5FB4",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "5FB5",
+    "end": "61F0",
+    "type": "code"
+  },
+  {
+    "start": "61EF",
+    "end": "6214",
+    "type": "data",
+    "hint": "addr_table"
+  },
+  {
+    "start": "6215",
+    "end": "624B",
+    "type": "code"
+  },
+  {
+    "start": "624C",
+    "end": "62AA",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "625A",
+    "end": "6266",
+    "type": "code"
+  },
+  {
+    "start": "6279",
+    "end": "6280",
+    "type": "code"
+  },
+  {
+    "start": "62AB",
+    "end": "6784",
+    "type": "code"
+  },
+  {
+    "start": "6785",
+    "end": "68BE",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "684F",
+    "end": "684F",
+    "type": "code"
+  },
+  {
+    "start": "6867",
+    "end": "6868",
+    "type": "code"
+  },
+  {
+    "start": "6877",
+    "end": "6877",
+    "type": "code"
+  },
+  {
+    "start": "68BF",
+    "end": "6B9D",
+    "type": "code"
+  },
+  {
+    "start": "6B9E",
+    "end": "7909",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "6BFA",
+    "end": "6BFA",
+    "type": "code"
+  },
+  {
+    "start": "6C65",
+    "end": "6C69",
+    "type": "code"
+  },
+  {
+    "start": "6C6B",
+    "end": "6C6E",
+    "type": "code"
+  },
+  {
+    "start": "6D19",
+    "end": "6D19",
+    "type": "code"
+  },
+  {
+    "start": "6D2D",
+    "end": "6D2D",
+    "type": "code"
+  },
+  {
+    "start": "6D6C",
+    "end": "6D90",
+    "type": "code"
+  },
+  {
+    "start": "6E3A",
+    "end": "6E3A",
+    "type": "code"
+  },
+  {
+    "start": "6E55",
+    "end": "6E55",
+    "type": "code"
+  },
+  {
+    "start": "6E6D",
+    "end": "6E6D",
+    "type": "code"
+  },
+  {
+    "start": "6F28",
+    "end": "6F2B",
+    "type": "code"
+  },
+  {
+    "start": "6F43",
+    "end": "6F44",
+    "type": "code"
+  },
+  {
+    "start": "6F6A",
+    "end": "6F70",
+    "type": "code"
+  },
+  {
+    "start": "6F79",
+    "end": "6F7F",
+    "type": "code"
+  },
+  {
+    "start": "6FAD",
+    "end": "6FAD",
+    "type": "code"
+  },
+  {
+    "start": "7000",
+    "end": "7010",
+    "type": "code"
+  },
+  {
+    "start": "7027",
+    "end": "7029",
+    "type": "code"
+  },
+  {
+    "start": "7070",
+    "end": "7070",
+    "type": "code"
+  },
+  {
+    "start": "7271",
+    "end": "7278",
+    "type": "code"
+  },
+  {
+    "start": "737B",
+    "end": "7384",
+    "type": "code"
+  },
+  {
+    "start": "7473",
+    "end": "7474",
+    "type": "code"
+  },
+  {
+    "start": "751F",
+    "end": "751F",
+    "type": "code"
+  },
+  {
+    "start": "7541",
+    "end": "7542",
+    "type": "code"
+  },
+  {
+    "start": "7574",
+    "end": "757C",
+    "type": "code"
+  },
+  {
+    "start": "7676",
+    "end": "7678",
+    "type": "code"
+  },
+  {
+    "start": "7766",
+    "end": "776D",
+    "type": "code"
+  },
+  {
+    "start": "7776",
+    "end": "777B",
+    "type": "code"
+  },
+  {
+    "start": "7810",
+    "end": "7815",
+    "type": "code"
+  },
+  {
+    "start": "7827",
+    "end": "7827",
+    "type": "code"
+  },
+  {
+    "start": "783D",
+    "end": "783D",
+    "type": "code"
+  },
+  {
+    "start": "7863",
+    "end": "7865",
+    "type": "code"
+  },
+  {
+    "start": "786A",
+    "end": "786C",
+    "type": "code"
+  },
+  {
+    "start": "789A",
+    "end": "789C",
+    "type": "code"
+  },
+  {
+    "start": "78D7",
+    "end": "78F3",
+    "type": "code"
+  },
+  {
+    "start": "78F8",
+    "end": "7A63",
+    "type": "code"
+  },
+  {
+    "start": "7A64",
+    "end": "7B09",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "7A6A",
+    "end": "7A6B",
+    "type": "code"
+  },
+  {
+    "start": "7B0A",
+    "end": "8004",
+    "type": "code"
+  },
+  {
+    "start": "8005",
+    "end": "800D",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "800E",
+    "end": "8039",
+    "type": "code"
+  },
+  {
+    "start": "803A",
+    "end": "8041",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "8042",
+    "end": "8B5B",
+    "type": "code"
+  },
+  {
+    "start": "8B5C",
+    "end": "8BDB",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "8B84",
+    "end": "8B8C",
+    "type": "code"
+  },
+  {
+    "start": "8BDC",
+    "end": "8EAA",
+    "type": "code"
+  },
+  {
+    "start": "8EAB",
+    "end": "8EC8",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "8EC9",
+    "end": "900D",
+    "type": "code"
+  },
+  {
+    "start": "900E",
+    "end": "90BC",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "9066",
+    "end": "9068",
+    "type": "code"
+  },
+  {
+    "start": "90BD",
+    "end": "926F",
+    "type": "code"
+  },
+  {
+    "start": "9270",
+    "end": "928F",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "9290",
+    "end": "9368",
+    "type": "code"
+  },
+  {
+    "start": "9369",
+    "end": "94A9",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "94AA",
+    "end": "95AC",
+    "type": "code"
+  },
+  {
+    "start": "95AD",
+    "end": "964F",
+    "type": "data",
+    "hint": "string"
+  },
+  {
+    "start": "9615",
+    "end": "9616",
+    "type": "code"
+  },
+  {
+    "start": "9650",
+    "end": "970E",
+    "type": "code"
+  },
+  {
+    "start": "970F",
+    "end": "97A8",
+    "type": "data",
+    "hint": "addr_table"
+  },
+  {
+    "start": "97A9",
+    "end": "9B33",
+    "type": "code"
+  },
+  {
+    "start": "9B34",
+    "end": "9B3B",
+    "type": "data",
+    "hint": "addr_table"
+  },
+  {
+    "start": "9B3C",
+    "end": "A782",
+    "type": "code"
+  },
+  {
+    "start": "A783",
+    "end": "A8AA",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "A809",
+    "end": "A80E",
+    "type": "code"
+  },
+  {
+    "start": "A8AB",
+    "end": "A8E3",
+    "type": "code"
+  },
+  {
+    "start": "A8E4",
+    "end": "A8E6",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "A8E7",
+    "end": "AD0D",
+    "type": "code"
+  },
+  {
+    "start": "AD0E",
+    "end": "AD15",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "AD16",
+    "end": "B63A",
+    "type": "code"
+  },
+  {
+    "start": "B63B",
+    "end": "B7E6",
+    "type": "data",
+    "hint": "bytes"
+  },
+  {
+    "start": "B6AA",
+    "end": "B6AA",
+    "type": "code"
+  },
+  {
+    "start": "C28A",
+    "end": "C28F",
+    "type": "code"
+  },
+  {
+    "start": "E462",
+    "end": "E464",
+    "type": "code"
+  }
+]

@@ -1,0 +1,434 @@
+// AltirraBridgeServer — headless bridge server
+//
+// Minimal main loop that runs the Altirra emulator and serves the
+// bridge protocol over a local socket. Speaks the same protocol as
+// `AltirraSDL --bridge`, with no SDL3 main window, no Dear ImGui, no
+// librashader, no display backend, no input layer, no UI tree.
+//
+// Linker dependencies (see CMakeLists.txt):
+//   ATCPU, ATEmulation, ATDevices, ATIO, ATAudio, ATNetwork,
+//   ATNetworkSockets, ATDebugger, ATVM, ATCore, Kasumi, vdjson,
+//   system, plus the bridge module (source/bridge/*).
+//
+// SDL3 is still linked transitively through audiooutput_sdl3.cpp
+// (because the simulator unconditionally constructs an audio output
+// during Init() and the easiest way to satisfy that is to reuse the
+// existing SDL3-backed mixer with the dummy audio driver). The
+// SDL3 video / event / input subsystems are NOT initialised. A
+// future v2 may provide a true null audio output to drop SDL3
+// entirely. Until then "lean SDK build" means "no UI / no display /
+// no input / no librashader / no ImGui", which is still a major
+// reduction from full AltirraSDL.
+
+#include <stdafx.h>
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_main.h>
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
+
+#include "simulator.h"
+#include "gtia.h"
+#include "logging.h"
+#include "settings.h"            // ATSettingsCategory enum + ATSettingsLoadLastProfile
+
+#include "bridge_server.h"
+#include <vd2/VDDisplay/display.h>
+
+// Forward declarations for AltirraSDL frontend symbols we re-use.
+// These functions are defined in source/app/*.cpp / source/ui/core/*.cpp
+// in the AltirraSDL frontend, but their bodies are platform-agnostic
+// and pulled into the AltirraBridgeServer link via the explicit source
+// list in CMakeLists.txt. We declare them at file scope (NOT inside an
+// anonymous namespace) so the linker resolves them to the file-scope
+// definitions in the AltirraSDL sources we link.
+class ATDeviceManager;
+class VDStringA;
+extern VDStringA ATGetConfigDir();
+extern void      ATRegistryLoadFromDisk();
+extern void      ATInitSaveStateDeserializer();
+extern void      ATVFSInstallAtfsHandler();
+extern void      ATRegisterDevices(ATDeviceManager& dm);
+extern void      ATRegisterDeviceXCmds(ATDeviceManager& dm);
+extern bool      ATSocketInit();
+extern void      ATLoadConfigVars();
+extern void      ATOptionsLoad();
+// Debugger engine init — required by Phase 5a commands (DISASM,
+// CALLSTACK, EVAL) which go through ATGetDebugger()->GetTarget().
+// ATDebugger registers the CPU as its default debug target during
+// Init().
+extern void      ATInitDebugger();
+extern void      ATShutdownDebugger();
+// ui_stubs.cpp — headless null video display so GTIA generates frames
+// even though there's no real display backend. Required by SCREENSHOT
+// et al.
+class IVDVideoDisplay;
+extern IVDVideoDisplay *ATBridgeCreateNullVideoDisplay();
+static IVDVideoDisplay *g_pNullDisplay = nullptr;
+// ATLoadDefaultProfiles is declared in settings.h (which we include) as
+// `bool ATLoadDefaultProfiles()` — no need to redeclare here.
+
+// ATUIState is referenced by ATBridge::Poll's signature even though
+// the bridge module doesn't dereference it. The header lives in the
+// SDL3 frontend's source/ui/core/, which we deliberately do NOT
+// include here — instead, declare a stub locally.
+struct ATUIState {};
+
+// =========================================================================
+// Globals — kept minimal
+// =========================================================================
+
+ATSimulator g_sim;
+static ATUIState g_uiState;
+// g_running is intentionally NOT static — ui_stubs.cpp's
+// ATBridgeRequestAppQuit() flips it from another TU when the bridge
+// processes a QUIT command.
+std::atomic<bool> g_running { true };
+
+// =========================================================================
+// Phase 3 deferred-action glue (synchronous direct-call versions)
+//
+// The bridge module's BOOT / MOUNT / STATE_SAVE / STATE_LOAD commands
+// call these functions instead of going through the SDL3 deferred
+// action queue. In headless mode the bridge IS the only event source,
+// so we run the work synchronously between bridge polls.
+//
+// (NOTE: declared in bridge_main_glue.h. The SDL3 frontend provides a
+// different implementation in bridge_main_glue_sdl3.cpp.)
+// =========================================================================
+
+#include "bridge_main_glue.h"
+#include <vd2/system/file.h>
+#include <vd2/system/text.h>
+#include <vd2/system/VDString.h>
+#include <vd2/system/error.h>
+#include <at/atcore/media.h>
+#include <at/atio/image.h>
+#include "mediamanager.h"        // ATMediaLoadContext (full definition)
+
+bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
+	if (path.empty()) return false;
+	try {
+		ATMediaLoadContext ctx;
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
+		ctx.mOriginalPath = wpath.c_str();
+		ctx.mImageName = wpath.c_str();
+		ctx.mWriteMode = kATMediaWriteMode_RW;
+		if (!sim.Load(ctx)) {
+			LOG_ERROR("BridgeServer", "BOOT load failed: %s", path.c_str());
+			return false;
+		}
+		// Match the SDL3 frontend behaviour: cold-reset after a
+		// successful boot so the kernel finds the freshly-loaded
+		// image. Preserve pause state per the CLAUDE.md invariant
+		// (the bridge command itself only needs the boot to land;
+		// running state is the client's choice).
+		const bool wasPaused = sim.IsPaused();
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+		return true;
+	} catch (const MyError& e) {
+		LOG_ERROR("BridgeServer", "BOOT exception: %s", e.c_str());
+		return false;
+	}
+}
+
+bool ATBridgeDispatchMount(ATSimulator& sim, int drive, const std::string& path) {
+	if (path.empty() || drive < 0 || drive > 14) return false;
+	try {
+		ATMediaLoadContext ctx;
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
+		ctx.mOriginalPath = wpath.c_str();
+		ctx.mImageName = wpath.c_str();
+		ctx.mWriteMode = kATMediaWriteMode_RW;
+		// MOUNT targets a specific drive — use the cart load context
+		// to express it. Phase 1 of the headless build uses Load()
+		// which dispatches by file type; an .atr image goes to a
+		// disk drive selected by the loader. For drive-specific
+		// mounting we'd need to call lower-level disk APIs; defer
+		// to a follow-up if needed.
+		(void)drive;
+		if (!sim.Load(ctx)) {
+			LOG_ERROR("BridgeServer", "MOUNT load failed: %s", path.c_str());
+			return false;
+		}
+		return true;
+	} catch (const MyError& e) {
+		LOG_ERROR("BridgeServer", "MOUNT exception: %s", e.c_str());
+		return false;
+	}
+}
+
+bool ATBridgeDispatchStateSave(ATSimulator& sim, const std::string& path) {
+	if (path.empty()) return false;
+	try {
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
+		sim.SaveState(wpath.c_str());
+		return true;
+	} catch (const MyError& e) {
+		LOG_ERROR("BridgeServer", "STATE_SAVE exception: %s", e.c_str());
+		return false;
+	}
+}
+
+bool ATBridgeDispatchStateLoad(ATSimulator& /*sim*/, const std::string& path) {
+	if (path.empty()) return false;
+	// LoadState is more complex than SaveState — it requires a
+	// ATSaveStateReader and goes through the deserialization
+	// pipeline. Phase 1 of the headless build defers this; the
+	// command returns ok=false with a clear error so clients know
+	// to wait for v2.
+	LOG_ERROR("BridgeServer", "STATE_LOAD not yet implemented in headless build (path=%s)", path.c_str());
+	return false;
+}
+
+// =========================================================================
+// Signal handling
+// =========================================================================
+
+static void HandleSignal(int /*sig*/) {
+	g_running.store(false);
+}
+
+// =========================================================================
+// Argument parsing
+// =========================================================================
+
+namespace {
+struct Args {
+	std::string bridgeAddr = "tcp:127.0.0.1:0";
+	bool        printHelp  = false;
+};
+
+void PrintHelp() {
+	std::fprintf(stderr,
+		"AltirraBridgeServer — headless Altirra emulator + bridge server\n"
+		"\n"
+		"Usage: AltirraBridgeServer [options]\n"
+		"\n"
+		"Options:\n"
+		"  --bridge[=ADDR]   Listen address for the bridge protocol.\n"
+		"                    ADDR forms:\n"
+		"                      tcp:127.0.0.1:PORT     loopback TCP (default if no spec)\n"
+		"                      tcp                    same as tcp:127.0.0.1:0 (OS picks port)\n"
+		"                      unix:/path/to/socket   POSIX filesystem UDS\n"
+		"                      unix-abstract:NAME     Linux abstract namespace UDS\n"
+		"                    Default: tcp:127.0.0.1:0\n"
+		"  -h, --help        Show this help.\n"
+		"\n"
+		"On startup the server prints two lines on stderr:\n"
+		"  [Bridge] listening on tcp:127.0.0.1:54321\n"
+		"  [Bridge] token-file: /tmp/altirra-bridge-12345.token\n"
+		"\n"
+		"Connect with the Python or C SDK from\n"
+		"src/AltirraSDL/AltirraBridge/sdk/. The wire protocol is the\n"
+		"same as `AltirraSDL --bridge`. See AltirraBridge/docs/PROTOCOL.md.\n"
+		"\n"
+		"Settings (kernel ROM paths, video standard, etc.) are read\n"
+		"from ~/.config/altirra/settings.ini at startup, the same\n"
+		"location used by AltirraSDL. The headless server does NOT\n"
+		"write settings on exit.\n");
+}
+
+bool ParseArgs(int argc, char** argv, Args& out) {
+	for (int i = 1; i < argc; ++i) {
+		const char* a = argv[i];
+		if (std::strcmp(a, "-h") == 0 || std::strcmp(a, "--help") == 0) {
+			out.printHelp = true;
+		} else if (std::strcmp(a, "--bridge") == 0) {
+			out.bridgeAddr = "tcp:127.0.0.1:0";
+		} else if (std::strncmp(a, "--bridge=", 9) == 0) {
+			out.bridgeAddr = a + 9;
+		} else {
+			std::fprintf(stderr, "AltirraBridgeServer: unknown argument: %s\n", a);
+			return false;
+		}
+	}
+	return true;
+}
+}  // namespace
+
+// =========================================================================
+// Simulator init
+//
+// This is a stripped-down version of main_sdl3.cpp's startup sequence,
+// keeping only what's needed for the simulator to boot and run. We
+// deliberately skip:
+//   - Window/display creation
+//   - ImGui init
+//   - Joystick manager (the bridge does its own input injection)
+//   - Touch / mobile UI
+//   - Input maps (none of the SDL3 input layer is linked)
+//   - Window placement
+// =========================================================================
+
+static bool InitSimulator() {
+	// Use the same registry namespace as AltirraSDL so kernel ROM
+	// paths and other settings are inherited from the user's GUI
+	// configuration. The headless server does not write back.
+	VDRegistryAppKey::setDefaultKey("AltirraSDL");
+
+	LOG_INFO("BridgeServer", "config dir = %s", ATGetConfigDir().c_str());
+	ATRegistryLoadFromDisk();
+
+	// Pre-simulator init matching main_sdl3.cpp.
+	ATInitSaveStateDeserializer();
+	ATVFSInstallAtfsHandler();
+
+	LOG_INFO("BridgeServer", "initialising simulator...");
+	g_sim.Init();
+	g_sim.SetRandomSeed((uint32)std::rand() ^ ((uint32)std::rand() << 15));
+	g_sim.LoadROMs();
+
+	// Install a null IVDVideoDisplay so GTIA actually generates
+	// frames. With mpDisplay==nullptr, BeginFrame() bails out early
+	// and mpLastFrame is never populated, breaking SCREENSHOT /
+	// RAWSCREEN / RENDER_FRAME. The null display is a pure sink: it
+	// hangs onto the frame ref for one VBI cycle so the frame
+	// allocator can recycle it, and discards everything else.
+	// FrameSkip stays off so every frame lands in mpLastFrame.
+	g_pNullDisplay = ATBridgeCreateNullVideoDisplay();
+	g_sim.GetGTIA().SetVideoOutput(g_pNullDisplay);
+	g_sim.GetGTIA().SetFrameSkip(false);
+
+	ATRegisterDevices(*g_sim.GetDeviceManager());
+	ATRegisterDeviceXCmds(*g_sim.GetDeviceManager());
+
+	ATSocketInit();
+	ATLoadConfigVars();
+	ATOptionsLoad();
+
+	ATLoadDefaultProfiles();
+	// Load most settings categories. Skip:
+	//   - FullScreen        (window placement, meaningless without a window)
+	//   - Input / InputMaps (call into the joystick manager which is
+	//                        nullptr in headless mode and would crash
+	//                        in ATSettingsExchangeInput)
+	ATSettingsLoadLastProfile((ATSettingsCategory)(
+		kATSettingsCategory_All
+		& ~kATSettingsCategory_FullScreen
+		& ~kATSettingsCategory_Input
+		& ~kATSettingsCategory_InputMaps
+	));
+
+	// Initialize the debugger engine so Phase 5a commands
+	// (DISASM / CALLSTACK / EVAL) have a valid debug target.
+	ATInitDebugger();
+
+	g_sim.ColdReset();
+	g_sim.Resume();
+
+	return true;
+}
+
+// =========================================================================
+// Main loop
+// =========================================================================
+
+int main(int argc, char** argv) {
+	Args args;
+	if (!ParseArgs(argc, argv, args)) return 2;
+	if (args.printHelp) { PrintHelp(); return 0; }
+
+	// Force SDL3 audio to dummy mode. We initialise SDL3 with audio
+	// only — no video, no events, no gamepad. The audio output object
+	// (audiooutput_sdl3.cpp) requires SDL3 audio to be up so it can
+	// open a stream, but the dummy driver makes that stream a no-op.
+	if (SDL_GetHint(SDL_HINT_AUDIO_DRIVER) == nullptr)
+		SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+	if (!SDL_Init(SDL_INIT_AUDIO)) {
+		std::fprintf(stderr, "SDL_Init(audio) failed: %s\n", SDL_GetError());
+		return 1;
+	}
+
+	// Install signal handlers so Ctrl+C cleanly tears down the bridge.
+	std::signal(SIGINT,  HandleSignal);
+	std::signal(SIGTERM, HandleSignal);
+#ifndef _WIN32
+	std::signal(SIGPIPE, SIG_IGN);  // socket sends survive client disconnect
+#endif
+
+	if (!InitSimulator()) {
+		std::fprintf(stderr, "AltirraBridgeServer: simulator init failed\n");
+		SDL_Quit();
+		return 1;
+	}
+
+	if (!ATBridge::Init(args.bridgeAddr)) {
+		std::fprintf(stderr, "AltirraBridgeServer: bridge init failed\n");
+		SDL_Quit();
+		return 1;
+	}
+
+	LOG_INFO("BridgeServer", "entering main loop");
+
+	// NTSC frame target: ~16.68 ms. We don't pace strictly — the
+	// frame gate handles client-driven timing. Outside the gate the
+	// simulator runs at "real-time-ish" speed by sleeping briefly
+	// between frames so the bridge poll latency stays bounded.
+	using clock = std::chrono::steady_clock;
+	const auto frameDuration = std::chrono::microseconds(16680);
+	auto nextFrameDeadline = clock::now() + frameDuration;
+
+	while (g_running.load()) {
+		// 1. Process bridge commands (non-blocking, capped at 64
+		//    commands/poll).
+		ATBridge::Poll(g_sim, g_uiState);
+
+		// 2. Tick the simulator. Advance() runs until either a
+		//    frame is produced or the simulator is paused. With
+		//    SetFrameSkip(true), GTIA never blocks waiting for
+		//    display consumption.
+		ATSimulator::AdvanceResult result = g_sim.Advance(false);
+
+		// 3. Notify the frame gate that a frame completed. The
+		//    bridge decrements its frame counter here and re-pauses
+		//    the sim when the gate hits zero.
+		if (result == ATSimulator::kAdvanceResult_Running ||
+		    result == ATSimulator::kAdvanceResult_WaitingForFrame) {
+			ATBridge::OnFrameCompleted(g_sim);
+		}
+
+		// 4. Pace. When the sim is paused, sleep a bit longer so
+		//    we're not burning CPU. When running, sleep until the
+		//    next frame deadline.
+		if (result == ATSimulator::kAdvanceResult_Stopped) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			nextFrameDeadline = clock::now() + frameDuration;
+		} else {
+			auto now = clock::now();
+			if (now < nextFrameDeadline) {
+				std::this_thread::sleep_until(nextFrameDeadline);
+				nextFrameDeadline += frameDuration;
+			} else {
+				// Behind schedule — reset the deadline to avoid
+				// snowballing. The bridge gate handles deterministic
+				// timing for clients that need it.
+				nextFrameDeadline = now + frameDuration;
+			}
+		}
+	}
+
+	LOG_INFO("BridgeServer", "shutting down");
+
+	ATBridge::Shutdown(g_sim);
+	ATShutdownDebugger();
+
+	g_sim.GetGTIA().SetVideoOutput(nullptr);
+	if (g_pNullDisplay) {
+		g_pNullDisplay->Destroy();
+		g_pNullDisplay = nullptr;
+	}
+	g_sim.Shutdown();
+
+	SDL_Quit();
+	return 0;
+}

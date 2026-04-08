@@ -1,0 +1,1055 @@
+{
+  "version": 3,
+  "xex_path": "/home/ilm/Documents/GitHub/pyA8/examples/games/wizard/wizard.xex",
+  "xex_sha256": "ee62100b644a9a775753078ab697f48b625b284b60ebe114039c07fd008573da",
+  "created": "2026-03-25T04:28:44",
+  "updated": "2026-03-25T07:47:59",
+  "pal": false,
+  "segments": [
+    {
+      "index": 0,
+      "start": "1A90",
+      "end": "6DD7",
+      "size": 21320,
+      "init_addr": null,
+      "purpose": null
+    }
+  ],
+  "run_addr": "3C0A",
+  "banking": {
+    "scheme": "rambo"
+  },
+  "labels": {
+    "3C0A": {
+      "name": "entry_point",
+      "type": "entry_point",
+      "status": "named"
+    },
+    "0917": {
+      "name": "game_init",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A00": {
+      "name": "vbi_deferred",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A45": {
+      "name": "vbi_dispatch",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A48": {
+      "name": "vbi_state_attract",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A4C": {
+      "name": "vbi_state_title_input",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5A71": {
+      "name": "vbi_state_scroll",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5AAC": {
+      "name": "gameplay_wait_release",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6880": {
+      "name": "dli_handler",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6895": {
+      "name": "setup_gameplay_screen",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4100": {
+      "name": "entity_spawner",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4335": {
+      "name": "power_subtract",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1B00": {
+      "name": "entity_update_all",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "2300": {
+      "name": "entity_move",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B00": {
+      "name": "player_sprite",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B6C": {
+      "name": "player_clear",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B7B": {
+      "name": "player_calc_offset",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5B83": {
+      "name": "player_clamp_x",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6A80": {
+      "name": "player_auto_move",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5C00": {
+      "name": "player_tile_check",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1900": {
+      "name": "scroll_engine",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5880": {
+      "name": "wand_render",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5D00": {
+      "name": "sound_engine",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5700": {
+      "name": "score_display",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6400": {
+      "name": "status_bar_update",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6900": {
+      "name": "collision_handler",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4E00": {
+      "name": "charset",
+      "type": "data",
+      "status": "named"
+    },
+    "6C01": {
+      "name": "spawn_type_idx",
+      "type": "data",
+      "status": "named"
+    },
+    "6C05": {
+      "name": "wand_active",
+      "type": "data",
+      "status": "named"
+    },
+    "6C06": {
+      "name": "move_cooldown",
+      "type": "data",
+      "status": "named"
+    },
+    "6C07": {
+      "name": "game_running",
+      "type": "data",
+      "status": "named"
+    },
+    "6C0A": {
+      "name": "screen_initialized",
+      "type": "data",
+      "status": "named"
+    },
+    "6C0B": {
+      "name": "sub_state",
+      "type": "data",
+      "status": "named"
+    },
+    "6C0D": {
+      "name": "game_state",
+      "type": "data",
+      "status": "named"
+    },
+    "6C0E": {
+      "name": "dispatch_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "6C0F": {
+      "name": "dispatch_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "6C14": {
+      "name": "player_x",
+      "type": "data",
+      "status": "named"
+    },
+    "6C15": {
+      "name": "player_y",
+      "type": "data",
+      "status": "named"
+    },
+    "6C16": {
+      "name": "anim_frame",
+      "type": "data",
+      "status": "named"
+    },
+    "6C17": {
+      "name": "wand_direction",
+      "type": "data",
+      "status": "named"
+    },
+    "6C1D": {
+      "name": "target_x",
+      "type": "data",
+      "status": "named"
+    },
+    "6C1E": {
+      "name": "target_y",
+      "type": "data",
+      "status": "named"
+    },
+    "6C1F": {
+      "name": "wizard_move_dir",
+      "type": "data",
+      "status": "named"
+    },
+    "6C21": {
+      "name": "player_state",
+      "type": "data",
+      "status": "named"
+    },
+    "6C28": {
+      "name": "spell_flag",
+      "type": "data",
+      "status": "named"
+    },
+    "6C29": {
+      "name": "foul_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "6C2A": {
+      "name": "foul_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "091A": {
+      "name": "map_decoder",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "09A2": {
+      "name": "level_init",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "09AC": {
+      "name": "level_init_next",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "0B00": {
+      "name": "cursor_update",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "0ABE": {
+      "name": "map_tile_fill",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5500": {
+      "name": "gameplay_frame",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4380": {
+      "name": "death_state",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6BFF": {
+      "name": "state0_idle",
+      "type": "data",
+      "status": "named"
+    },
+    "6500": {
+      "name": "level_renderer",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1000": {
+      "name": "pmg_base",
+      "type": "data",
+      "status": "named"
+    },
+    "1300": {
+      "name": "pmg_missiles",
+      "type": "data",
+      "status": "named"
+    },
+    "1400": {
+      "name": "pmg_player0",
+      "type": "data",
+      "status": "named"
+    },
+    "1500": {
+      "name": "pmg_player1",
+      "type": "data",
+      "status": "named"
+    },
+    "1600": {
+      "name": "pmg_player2",
+      "type": "data",
+      "status": "named"
+    },
+    "1700": {
+      "name": "pmg_player3",
+      "type": "data",
+      "status": "named"
+    },
+    "B000": {
+      "name": "entity_grp1_xpos",
+      "type": "data",
+      "status": "named"
+    },
+    "B100": {
+      "name": "entity_grp1_ypos",
+      "type": "data",
+      "status": "named"
+    },
+    "B200": {
+      "name": "entity_grp1_dir",
+      "type": "data",
+      "status": "named"
+    },
+    "B300": {
+      "name": "entity_grp1_type",
+      "type": "data",
+      "status": "named"
+    },
+    "6E00": {
+      "name": "map_data",
+      "type": "data",
+      "status": "named"
+    },
+    "59B6": {
+      "name": "joy_dx_table",
+      "type": "data",
+      "status": "named"
+    },
+    "59C0": {
+      "name": "joy_dy_table",
+      "type": "data",
+      "status": "named"
+    },
+    "6B94": {
+      "name": "wand_dx",
+      "type": "data",
+      "status": "named"
+    },
+    "6B9E": {
+      "name": "wand_dy",
+      "type": "data",
+      "status": "named"
+    },
+    "5A80": {
+      "name": "gameplay_walk_mode",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5563": {
+      "name": "gameplay_subdispatch",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6A00": {
+      "name": "wand_mode",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6A30": {
+      "name": "wand_return",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6A4D": {
+      "name": "color_flash",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "192D": {
+      "name": "scroll_up",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1966": {
+      "name": "scroll_down",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1997": {
+      "name": "scroll_left",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "19C5": {
+      "name": "scroll_right",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "19F8": {
+      "name": "update_lms_sub",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1A1D": {
+      "name": "update_lms_add",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1800": {
+      "name": "scroll_edge_up",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1828": {
+      "name": "scroll_edge_down",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1847": {
+      "name": "scroll_edge_left",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "186B": {
+      "name": "scroll_edge_right",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1886": {
+      "name": "adjust_bb_add",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1893": {
+      "name": "adjust_bb_sub",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6954": {
+      "name": "wizard_special_collision",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5C5E": {
+      "name": "check_tile_at",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "2100": {
+      "name": "cursor_hit_handler",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "24FF": {
+      "name": "entity_calc_position",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "2519": {
+      "name": "entity_distance_calc",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "1F00": {
+      "name": "item_collect",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "4300": {
+      "name": "score_add",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "431F": {
+      "name": "power_add",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6300": {
+      "name": "shield_build",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5600": {
+      "name": "player_state_handler",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5653": {
+      "name": "check_activation_point",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5672": {
+      "name": "enter_tracking_mode",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "64C0": {
+      "name": "hardware_init",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6480": {
+      "name": "game_over_state",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "6C00": {
+      "name": "scroll_direction",
+      "type": "data",
+      "status": "named"
+    },
+    "6C02": {
+      "name": "game_over_timer",
+      "type": "data",
+      "status": "named"
+    },
+    "6C03": {
+      "name": "hscrol_counter",
+      "type": "data",
+      "status": "named"
+    },
+    "6C04": {
+      "name": "vscrol_counter",
+      "type": "data",
+      "status": "named"
+    },
+    "6C08": {
+      "name": "init_dispatch_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "6C09": {
+      "name": "init_dispatch_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "6C10": {
+      "name": "map_decode_counter",
+      "type": "data",
+      "status": "named"
+    },
+    "6C11": {
+      "name": "map_decode_accum",
+      "type": "data",
+      "status": "named"
+    },
+    "6C12": {
+      "name": "map_decode_save_y",
+      "type": "data",
+      "status": "named"
+    },
+    "6C13": {
+      "name": "map_decode_col",
+      "type": "data",
+      "status": "named"
+    },
+    "6C19": {
+      "name": "key_lock",
+      "type": "data",
+      "status": "named"
+    },
+    "6C1A": {
+      "name": "scroll_lock_h",
+      "type": "data",
+      "status": "named"
+    },
+    "6C1B": {
+      "name": "scroll_lock_v",
+      "type": "data",
+      "status": "named"
+    },
+    "6C1C": {
+      "name": "flash_timer",
+      "type": "data",
+      "status": "named"
+    },
+    "6C20": {
+      "name": "missile_offset",
+      "type": "data",
+      "status": "named"
+    },
+    "6C22": {
+      "name": "first_tile",
+      "type": "data",
+      "status": "named"
+    },
+    "6C23": {
+      "name": "power_gem_value",
+      "type": "data",
+      "status": "named"
+    },
+    "6C24": {
+      "name": "castle_destroyed_0",
+      "type": "data",
+      "status": "named"
+    },
+    "6C25": {
+      "name": "castle_destroyed_1",
+      "type": "data",
+      "status": "named"
+    },
+    "6C26": {
+      "name": "castle_destroyed_2",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC0": {
+      "name": "score_total_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC1": {
+      "name": "score_total_mid",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC2": {
+      "name": "score_total_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC3": {
+      "name": "score_delta_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC4": {
+      "name": "score_delta_mid",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC5": {
+      "name": "score_delta_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC7": {
+      "name": "foul_damage_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "6CC8": {
+      "name": "foul_damage_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "5100": {
+      "name": "wizard_y_tile",
+      "type": "data",
+      "status": "named"
+    },
+    "5101": {
+      "name": "wizard_x_tile",
+      "type": "data",
+      "status": "named"
+    },
+    "5102": {
+      "name": "view_offset_y",
+      "type": "data",
+      "status": "named"
+    },
+    "5103": {
+      "name": "view_offset_x",
+      "type": "data",
+      "status": "named"
+    },
+    "5104": {
+      "name": "entity_grp1_idx",
+      "type": "data",
+      "status": "named"
+    },
+    "5105": {
+      "name": "entity_grp2_idx",
+      "type": "data",
+      "status": "named"
+    },
+    "5106": {
+      "name": "entity_grp3_idx",
+      "type": "data",
+      "status": "named"
+    },
+    "5107": {
+      "name": "entity_grp4_idx",
+      "type": "data",
+      "status": "named"
+    },
+    "5109": {
+      "name": "map_col",
+      "type": "data",
+      "status": "named"
+    },
+    "510A": {
+      "name": "map_row",
+      "type": "data",
+      "status": "named"
+    },
+    "510B": {
+      "name": "spawn_timer_0",
+      "type": "data",
+      "status": "named"
+    },
+    "5110": {
+      "name": "map_x_fine",
+      "type": "data",
+      "status": "named"
+    },
+    "5111": {
+      "name": "map_y_fine",
+      "type": "data",
+      "status": "named"
+    },
+    "5112": {
+      "name": "color_pcolr0",
+      "type": "data",
+      "status": "named"
+    },
+    "5115": {
+      "name": "color_pcolr3",
+      "type": "data",
+      "status": "named"
+    },
+    "511A": {
+      "name": "difficulty",
+      "type": "data",
+      "status": "named"
+    },
+    "511B": {
+      "name": "power_hi",
+      "type": "data",
+      "status": "named"
+    },
+    "511C": {
+      "name": "power_lo",
+      "type": "data",
+      "status": "named"
+    },
+    "511D": {
+      "name": "score_update_timer",
+      "type": "data",
+      "status": "named"
+    },
+    "511E": {
+      "name": "chbase_current",
+      "type": "data",
+      "status": "named"
+    },
+    "5120": {
+      "name": "spawn_interval",
+      "type": "data",
+      "status": "named"
+    },
+    "5121": {
+      "name": "entity_count_0",
+      "type": "data",
+      "status": "named"
+    },
+    "5122": {
+      "name": "entity_count_1",
+      "type": "data",
+      "status": "named"
+    },
+    "5123": {
+      "name": "entity_count_2",
+      "type": "data",
+      "status": "named"
+    },
+    "5124": {
+      "name": "entity_count_3",
+      "type": "data",
+      "status": "named"
+    },
+    "5125": {
+      "name": "entity_count_4",
+      "type": "data",
+      "status": "named"
+    },
+    "5127": {
+      "name": "castle_power_0",
+      "type": "data",
+      "status": "named"
+    },
+    "5128": {
+      "name": "castle_power_1",
+      "type": "data",
+      "status": "named"
+    },
+    "5129": {
+      "name": "castle_power_2",
+      "type": "data",
+      "status": "named"
+    },
+    "512A": {
+      "name": "wall_hits_remaining",
+      "type": "data",
+      "status": "named"
+    },
+    "512B": {
+      "name": "entity_kill_count",
+      "type": "data",
+      "status": "named"
+    },
+    "512C": {
+      "name": "pcolr2_dynamic",
+      "type": "data",
+      "status": "named"
+    },
+    "512D": {
+      "name": "v_shield_charge",
+      "type": "data",
+      "status": "named"
+    },
+    "6B00": {
+      "name": "scroll_offsets",
+      "type": "data",
+      "status": "named"
+    },
+    "6B02": {
+      "name": "wand_shape_ptrs",
+      "type": "data",
+      "status": "named"
+    },
+    "6B17": {
+      "name": "gameplay_colors",
+      "type": "data",
+      "status": "named"
+    },
+    "6B28": {
+      "name": "anim_ptrs",
+      "type": "data",
+      "status": "named"
+    },
+    "6B30": {
+      "name": "state_dispatch_table",
+      "type": "data",
+      "status": "named"
+    },
+    "6B44": {
+      "name": "ai_direction_map",
+      "type": "data",
+      "status": "named"
+    },
+    "6B50": {
+      "name": "ai_speed_table",
+      "type": "data",
+      "status": "named"
+    },
+    "6B5C": {
+      "name": "level_dispatch_table",
+      "type": "data",
+      "status": "named"
+    },
+    "6B80": {
+      "name": "substate_dispatch_table",
+      "type": "data",
+      "status": "named"
+    },
+    "6BA8": {
+      "name": "map_view_colors",
+      "type": "data",
+      "status": "named"
+    },
+    "6BAB": {
+      "name": "castle_screen_addrs",
+      "type": "data",
+      "status": "named"
+    },
+    "6BB3": {
+      "name": "castle_map_positions",
+      "type": "data",
+      "status": "named"
+    },
+    "6BBC": {
+      "name": "entity_move_deltas",
+      "type": "data",
+      "status": "named"
+    },
+    "6BC6": {
+      "name": "entity_move_signs",
+      "type": "data",
+      "status": "named"
+    },
+    "6BDA": {
+      "name": "barrier_break_prob",
+      "type": "data",
+      "status": "named"
+    },
+    "6BDE": {
+      "name": "shield_cost",
+      "type": "data",
+      "status": "named"
+    },
+    "6BE2": {
+      "name": "entity_max_alive",
+      "type": "data",
+      "status": "named"
+    },
+    "6BE7": {
+      "name": "entity_respawn_max",
+      "type": "data",
+      "status": "named"
+    },
+    "6BEC": {
+      "name": "castle_damage_costs",
+      "type": "data",
+      "status": "named"
+    },
+    "6BF1": {
+      "name": "castle_score_rewards",
+      "type": "data",
+      "status": "named"
+    },
+    "6BF5": {
+      "name": "treasure_foul_costs",
+      "type": "data",
+      "status": "named"
+    },
+    "6BF9": {
+      "name": "castle_power_gain",
+      "type": "data",
+      "status": "named"
+    },
+    "4408": {
+      "name": "sprite_data",
+      "type": "data",
+      "status": "named"
+    },
+    "5000": {
+      "name": "map_display_list",
+      "type": "data",
+      "status": "named"
+    },
+    "6835": {
+      "name": "high_score_data",
+      "type": "data",
+      "status": "named"
+    },
+    "6849": {
+      "name": "last_score_data",
+      "type": "data",
+      "status": "named"
+    },
+    "6D80": {
+      "name": "status_bar_text",
+      "type": "data",
+      "status": "named"
+    },
+    "5D62": {
+      "name": "sound_dispatch",
+      "type": "data",
+      "status": "named"
+    },
+    "5D65": {
+      "name": "sound_init_table",
+      "type": "data",
+      "status": "named"
+    },
+    "5D8D": {
+      "name": "sound_update_table",
+      "type": "data",
+      "status": "named"
+    },
+    "5DB5": {
+      "name": "sfx_monster_approach",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DD6": {
+      "name": "sfx_castle_supply_1",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DE6": {
+      "name": "sfx_castle_supply_2",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5DFA": {
+      "name": "sfx_item_collect",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E18": {
+      "name": "sfx_tracking_hit",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E28": {
+      "name": "sfx_gem_pickup",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E3B": {
+      "name": "sfx_cursor_kill",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E4E": {
+      "name": "sfx_shield_build",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E68": {
+      "name": "sfx_treasure",
+      "type": "subroutine",
+      "status": "named"
+    },
+    "5E7D": {
+      "name": "sfx_alarm",
+      "type": "subroutine",
+      "status": "named"
+    }
+  },
+  "observations": {
+    "vectors_at_boot": {
+      "VVBLKI": "C0E2",
+      "VVBLKD": "5A00",
+      "VDSLST": "5800"
+    }
+  },
+  "copy_sources": [
+    {
+      "xex_start": "1A90",
+      "xex_end": "3C8F",
+      "runtime_start": "0400",
+      "copy_routine": "3C0A",
+      "runtime_entry": "0636"
+    }
+  ]
+}

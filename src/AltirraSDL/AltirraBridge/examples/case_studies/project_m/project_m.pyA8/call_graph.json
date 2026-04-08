@@ -1,0 +1,1196 @@
+{
+  "procedures": {
+    "3300": {
+      "entry": 13056,
+      "end": 13058,
+      "size": 3,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        13071
+      ],
+      "internal_jumps": [],
+      "callers": [
+        37393
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3303": {
+      "entry": 13059,
+      "end": 13061,
+      "size": 3,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        13531
+      ],
+      "internal_jumps": [],
+      "callers": [
+        37363
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3309": {
+      "entry": 13065,
+      "end": 13067,
+      "size": 3,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        13135
+      ],
+      "internal_jumps": [],
+      "callers": [
+        37403
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "336B": {
+      "entry": 13163,
+      "end": 13399,
+      "size": 237,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        13163,
+        13406
+      ],
+      "internal_jumps": [
+        13243,
+        13266,
+        13322
+      ],
+      "callers": [
+        13132
+      ],
+      "tail_callers": [
+        13163
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "3632": {
+      "entry": 13874,
+      "end": 13919,
+      "size": 46,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        13531
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3660": {
+      "entry": 13920,
+      "end": 14297,
+      "size": 378,
+      "exit_type": "fall_through",
+      "calls": [
+        15291,
+        15302,
+        15451,
+        35546
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        14086
+      ],
+      "callers": [],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "37DA": {
+      "entry": 14298,
+      "end": 14310,
+      "size": 13,
+      "exit_type": "jmp_tail",
+      "calls": [
+        14311
+      ],
+      "tail_calls": [
+        14298
+      ],
+      "internal_jumps": [],
+      "callers": [],
+      "tail_callers": [
+        14298
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "37E7": {
+      "entry": 14311,
+      "end": 14393,
+      "size": 83,
+      "exit_type": "rts",
+      "calls": [
+        14394,
+        15182,
+        15183,
+        15199,
+        15235,
+        15313,
+        35498,
+        35669
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14300,
+        14305
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "383A": {
+      "entry": 14394,
+      "end": 14498,
+      "size": 105,
+      "exit_type": "mixed",
+      "calls": [
+        14499,
+        14576,
+        14622,
+        14666,
+        14718
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        14411,
+        14451,
+        14482
+      ],
+      "callers": [
+        14316
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "38A3": {
+      "entry": 14499,
+      "end": 14521,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14403,
+        14567
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "38BA": {
+      "entry": 14522,
+      "end": 14575,
+      "size": 54,
+      "exit_type": "mixed",
+      "calls": [
+        14499
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        14558
+      ],
+      "callers": [
+        35895,
+        35914,
+        35933,
+        35952
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "38F0": {
+      "entry": 14576,
+      "end": 14603,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14463
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "391E": {
+      "entry": 14622,
+      "end": 14649,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14473
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "394A": {
+      "entry": 14666,
+      "end": 14693,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14479
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "397E": {
+      "entry": 14718,
+      "end": 14750,
+      "size": 33,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14421
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "399F": {
+      "entry": 14751,
+      "end": 14826,
+      "size": 76,
+      "exit_type": "jmp",
+      "calls": [
+        14827,
+        15451
+      ],
+      "tail_calls": [
+        20619
+      ],
+      "internal_jumps": [],
+      "callers": [
+        16477
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "39EB": {
+      "entry": 14827,
+      "end": 14850,
+      "size": 24,
+      "exit_type": "jmp_indirect",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14791
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "indirect_jmp"
+      ]
+    },
+    "3B4E": {
+      "entry": 15182,
+      "end": 15182,
+      "size": 1,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14356
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3B4F": {
+      "entry": 15183,
+      "end": 15198,
+      "size": 16,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14359
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3B5F": {
+      "entry": 15199,
+      "end": 15205,
+      "size": 7,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14362
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3B66": {
+      "entry": 15206,
+      "end": 15234,
+      "size": 29,
+      "exit_type": "mixed",
+      "calls": [
+        15235
+      ],
+      "tail_calls": [
+        15269
+      ],
+      "internal_jumps": [],
+      "callers": [
+        37350
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3B83": {
+      "entry": 15235,
+      "end": 15256,
+      "size": 22,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14376,
+        14383,
+        14390,
+        15222
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3BBB": {
+      "entry": 15291,
+      "end": 15301,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14015
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3BC6": {
+      "entry": 15302,
+      "end": 15312,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14018
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "3BD1": {
+      "entry": 15313,
+      "end": 15450,
+      "size": 138,
+      "exit_type": "mixed",
+      "calls": [
+        16797,
+        16890,
+        17311,
+        19511
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        15383,
+        15411
+      ],
+      "callers": [
+        14319
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3C5B": {
+      "entry": 15451,
+      "end": 15495,
+      "size": 45,
+      "exit_type": "rts",
+      "calls": [
+        16518,
+        16651
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14111,
+        14776
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3C88": {
+      "entry": 15496,
+      "end": 15892,
+      "size": 278,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        15631,
+        15760,
+        15893,
+        15960,
+        16027,
+        16084,
+        16141,
+        16203,
+        16260,
+        16324
+      ],
+      "internal_jumps": [
+        15545,
+        15691,
+        15819
+      ],
+      "callers": [
+        16390,
+        16400,
+        16413,
+        16426
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3EB8": {
+      "entry": 16056,
+      "end": 16083,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16157,
+        16276
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3EF1": {
+      "entry": 16113,
+      "end": 16140,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16213,
+        16334
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4004": {
+      "entry": 16388,
+      "end": 16395,
+      "size": 8,
+      "exit_type": "jmp",
+      "calls": [
+        15496
+      ],
+      "tail_calls": [
+        16432
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35708
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "400C": {
+      "entry": 16396,
+      "end": 16405,
+      "size": 10,
+      "exit_type": "jmp",
+      "calls": [
+        15496
+      ],
+      "tail_calls": [
+        16432
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35721
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4016": {
+      "entry": 16406,
+      "end": 16418,
+      "size": 13,
+      "exit_type": "jmp",
+      "calls": [
+        15496
+      ],
+      "tail_calls": [
+        16432
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35734
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4023": {
+      "entry": 16419,
+      "end": 16431,
+      "size": 13,
+      "exit_type": "jmp",
+      "calls": [
+        15496
+      ],
+      "tail_calls": [
+        16432
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35747
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4086": {
+      "entry": 16518,
+      "end": 16594,
+      "size": 77,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15489
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "40D3": {
+      "entry": 16595,
+      "end": 16620,
+      "size": 26,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35692
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "40ED": {
+      "entry": 16621,
+      "end": 16650,
+      "size": 30,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35676
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "410B": {
+      "entry": 16651,
+      "end": 16796,
+      "size": 146,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        16702,
+        16750,
+        16796
+      ],
+      "callers": [
+        15492,
+        35682,
+        35698,
+        35711,
+        35724,
+        35737,
+        35750
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "419D": {
+      "entry": 16797,
+      "end": 16889,
+      "size": 93,
+      "exit_type": "mixed",
+      "calls": [
+        17095,
+        17132,
+        17203,
+        17240
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        16861,
+        16875,
+        16889
+      ],
+      "callers": [
+        15337
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "41FA": {
+      "entry": 16890,
+      "end": 17038,
+      "size": 149,
+      "exit_type": "mixed",
+      "calls": [
+        17095,
+        17132,
+        17203,
+        17240,
+        19511
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        16961
+      ],
+      "callers": [
+        15444
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify",
+        "bit_skip_trick"
+      ]
+    },
+    "428F": {
+      "entry": 17039,
+      "end": 17064,
+      "size": 26,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35695
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "42A9": {
+      "entry": 17065,
+      "end": 17094,
+      "size": 30,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35679
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "42C7": {
+      "entry": 17095,
+      "end": 17131,
+      "size": 37,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16866,
+        16942
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "42EC": {
+      "entry": 17132,
+      "end": 17202,
+      "size": 71,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16872,
+        16958
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "4333": {
+      "entry": 17203,
+      "end": 17239,
+      "size": 37,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16880,
+        16932
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "4358": {
+      "entry": 17240,
+      "end": 17310,
+      "size": 71,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16886,
+        16952
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "439F": {
+      "entry": 17311,
+      "end": 17313,
+      "size": 3,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        17314
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15383
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4C37": {
+      "entry": 19511,
+      "end": 19911,
+      "size": 401,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        19629,
+        19712,
+        19830,
+        19911
+      ],
+      "callers": [
+        15366,
+        15380,
+        17013,
+        17035
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "4DC8": {
+      "entry": 19912,
+      "end": 20552,
+      "size": 641,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        20725
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "50BC": {
+      "entry": 20668,
+      "end": 20734,
+      "size": 67,
+      "exit_type": "mixed",
+      "calls": [
+        19912
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        20685
+      ],
+      "callers": [
+        35508
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "5200": {
+      "entry": 20992,
+      "end": 21093,
+      "size": 102,
+      "exit_type": "rts",
+      "calls": [
+        65535
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35523
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify",
+        "indirect_jmp"
+      ]
+    },
+    "89E4": {
+      "entry": 35300,
+      "end": 35497,
+      "size": 198,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        35392
+      ],
+      "callers": [
+        35526
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "indirect_jmp"
+      ]
+    },
+    "8AAA": {
+      "entry": 35498,
+      "end": 35545,
+      "size": 48,
+      "exit_type": "jmp_indirect",
+      "calls": [
+        20668,
+        20992,
+        35300
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14322
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "indirect_jmp"
+      ]
+    },
+    "8ADA": {
+      "entry": 35546,
+      "end": 35586,
+      "size": 41,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        14106
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8B55": {
+      "entry": 35669,
+      "end": 35966,
+      "size": 298,
+      "exit_type": "mixed",
+      "calls": [
+        14522,
+        16388,
+        16396,
+        16406,
+        16419,
+        16595,
+        16621,
+        16651,
+        17039,
+        17065,
+        35967
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        35825,
+        35966
+      ],
+      "callers": [
+        14313
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8C7F": {
+      "entry": 35967,
+      "end": 36203,
+      "size": 237,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        36204,
+        36207
+      ],
+      "internal_jumps": [
+        36014,
+        36201
+      ],
+      "callers": [
+        35669
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8DC6": {
+      "entry": 36294,
+      "end": 36369,
+      "size": 76,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17542,
+        17680
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "self_modify"
+      ]
+    },
+    "FFFF": {
+      "entry": 65535,
+      "end": 65536,
+      "size": 2,
+      "exit_type": "noreturn",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21058
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    }
+  },
+  "subsystems": {
+    "3300": "sound",
+    "3303": "render",
+    "3309": "sound",
+    "336B": "render",
+    "3632": "sound",
+    "3660": "display",
+    "37E7": "display",
+    "38F0": "util",
+    "391E": "util",
+    "394A": "util",
+    "397E": "util",
+    "3B66": "display",
+    "3C88": "math",
+    "439F": "math",
+    "4C37": "util",
+    "89E4": "math",
+    "8B55": "pmg",
+    "8C7F": "display",
+    "3B4F": "display",
+    "3B83": "render",
+    "3BBB": "init",
+    "3BC6": "init",
+    "3BD1": "render",
+    "419D": "init",
+    "42EC": "init",
+    "4333": "init",
+    "50BC": "render",
+    "5200": "render",
+    "8AAA": "render",
+    "8ADA": "init",
+    "37DA": "display",
+    "383A": "util",
+    "4004": "math",
+    "400C": "math",
+    "4016": "math",
+    "4023": "math",
+    "41FA": "init",
+    "38A3": "util",
+    "38BA": "util",
+    "399F": "util",
+    "39EB": "util",
+    "3B4E": "display",
+    "3B5F": "display",
+    "4086": "math",
+    "42C7": "init",
+    "4358": "init",
+    "3C5B": "unknown",
+    "3EB8": "unknown",
+    "3EF1": "unknown",
+    "40D3": "unknown",
+    "40ED": "unknown",
+    "410B": "unknown",
+    "428F": "unknown",
+    "42A9": "unknown",
+    "4DC8": "unknown",
+    "8DC6": "unknown",
+    "FFFF": "unknown"
+  }
+}

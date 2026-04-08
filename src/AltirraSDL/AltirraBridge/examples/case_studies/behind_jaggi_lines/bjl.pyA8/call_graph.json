@@ -1,0 +1,5764 @@
+{
+  "procedures": {
+    "3C00": {
+      "entry": 15360,
+      "end": 16153,
+      "size": 794,
+      "exit_type": "jmp",
+      "calls": [
+        16472,
+        16486,
+        17016,
+        17194,
+        17791,
+        18157,
+        18284,
+        18622,
+        18699,
+        18723,
+        21184,
+        21223,
+        24465,
+        25259,
+        25769,
+        25913,
+        26025,
+        31498,
+        31533,
+        31554,
+        31562,
+        31570,
+        31872,
+        31914,
+        31959,
+        31989,
+        32024,
+        32039,
+        32156,
+        32175,
+        32193,
+        32505,
+        32782,
+        32834,
+        33852,
+        37053,
+        37520,
+        38065,
+        40588,
+        41814,
+        43567,
+        44606,
+        44850
+      ],
+      "tail_calls": [
+        16154
+      ],
+      "internal_jumps": [
+        15652,
+        15825,
+        15828,
+        15895,
+        15972,
+        16029
+      ],
+      "callers": [],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3F97": {
+      "entry": 16279,
+      "end": 16322,
+      "size": 44,
+      "exit_type": "rts",
+      "calls": [
+        32183,
+        38058
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16182,
+        16182,
+        16260,
+        16260
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "3FE2": {
+      "entry": 16354,
+      "end": 16410,
+      "size": 57,
+      "exit_type": "rts",
+      "calls": [
+        32175
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16323,
+        16323
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4031": {
+      "entry": 16433,
+      "end": 16450,
+      "size": 18,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        37520
+      ],
+      "internal_jumps": [],
+      "callers": [
+        16187,
+        16187,
+        16326,
+        16326
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4043": {
+      "entry": 16451,
+      "end": 16471,
+      "size": 21,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16192,
+        16192,
+        16339,
+        16339
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4058": {
+      "entry": 16472,
+      "end": 16485,
+      "size": 14,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15657,
+        15657,
+        16138,
+        16138
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4066": {
+      "entry": 16486,
+      "end": 16984,
+      "size": 425,
+      "exit_type": "mixed",
+      "calls": [
+        19638,
+        19656,
+        19666,
+        31562,
+        32183,
+        32203,
+        38160,
+        38177,
+        38225
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        16686,
+        16764,
+        16778,
+        16803,
+        16813,
+        16823
+      ],
+      "callers": [
+        15543,
+        15543
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4278": {
+      "entry": 17016,
+      "end": 17165,
+      "size": 150,
+      "exit_type": "jmp_tail",
+      "calls": [
+        17166,
+        18658,
+        31772,
+        32156,
+        39235,
+        39337
+      ],
+      "tail_calls": [
+        18259
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15781,
+        15781
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "430E": {
+      "entry": 17166,
+      "end": 17189,
+      "size": 24,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17110,
+        17110,
+        33396,
+        33396
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "432A": {
+      "entry": 17194,
+      "end": 17343,
+      "size": 107,
+      "exit_type": "rts",
+      "calls": [
+        17300,
+        17317
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15606,
+        15606,
+        22426,
+        22426,
+        32257,
+        32257,
+        32277,
+        32277,
+        33095,
+        33095
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4394": {
+      "entry": 17300,
+      "end": 17316,
+      "size": 17,
+      "exit_type": "fall_through",
+      "calls": [
+        17321
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17247,
+        17247
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "43A5": {
+      "entry": 17317,
+      "end": 17320,
+      "size": 4,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17217,
+        17217
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "43A9": {
+      "entry": 17321,
+      "end": 17343,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17305,
+        17305
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "43C0": {
+      "entry": 17344,
+      "end": 17396,
+      "size": 53,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33390,
+        33390
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "43F5": {
+      "entry": 17397,
+      "end": 17472,
+      "size": 76,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33393,
+        33393
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4441": {
+      "entry": 17473,
+      "end": 17657,
+      "size": 179,
+      "exit_type": "mixed",
+      "calls": [
+        17658,
+        18287,
+        33600,
+        38058
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        17528,
+        17604,
+        17657
+      ],
+      "callers": [
+        33274,
+        33274
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "447D": {
+      "entry": 17533,
+      "end": 17538,
+      "size": 6,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        17566
+      ],
+      "internal_jumps": [],
+      "callers": [
+        33141,
+        33141
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "44FA": {
+      "entry": 17658,
+      "end": 17667,
+      "size": 10,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17625,
+        17625,
+        17705,
+        17705
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4504": {
+      "entry": 17668,
+      "end": 17735,
+      "size": 35,
+      "exit_type": "rts",
+      "calls": [
+        17658
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22402,
+        22402
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4508": {
+      "entry": 17672,
+      "end": 17735,
+      "size": 64,
+      "exit_type": "rts",
+      "calls": [
+        17658,
+        32156
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25895,
+        25895
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4548": {
+      "entry": 17736,
+      "end": 17860,
+      "size": 112,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [
+        17833
+      ],
+      "callers": [
+        33179,
+        33179,
+        33716
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "457F": {
+      "entry": 17791,
+      "end": 17803,
+      "size": 13,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        17833
+      ],
+      "callers": [
+        15553,
+        15553
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "45C5": {
+      "entry": 17861,
+      "end": 18149,
+      "size": 289,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        17933,
+        18019,
+        18147
+      ],
+      "callers": [
+        33079,
+        33079,
+        33089,
+        33089
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "46E6": {
+      "entry": 18150,
+      "end": 18156,
+      "size": 7,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33399,
+        33399
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "46ED": {
+      "entry": 18157,
+      "end": 18255,
+      "size": 99,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        18216,
+        18227,
+        18245
+      ],
+      "callers": [
+        15558,
+        15558
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4750": {
+      "entry": 18256,
+      "end": 18258,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        19097,
+        19097,
+        19127,
+        19127
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4753": {
+      "entry": 18259,
+      "end": 18283,
+      "size": 25,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        18280
+      ],
+      "callers": [
+        19083,
+        19083,
+        19162,
+        19162
+      ],
+      "tail_callers": [
+        17016
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "476C": {
+      "entry": 18284,
+      "end": 18286,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15566,
+        15566,
+        21550,
+        21550,
+        21744,
+        21744,
+        22485,
+        22485,
+        22619,
+        22619,
+        22696,
+        22696,
+        34268,
+        34268
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "476F": {
+      "entry": 18287,
+      "end": 18299,
+      "size": 13,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        18186
+      ],
+      "internal_jumps": [],
+      "callers": [
+        17590,
+        17590
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "478C": {
+      "entry": 18316,
+      "end": 18411,
+      "size": 96,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        18376
+      ],
+      "callers": [
+        33092,
+        33092,
+        42588,
+        42588
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "47FB": {
+      "entry": 18427,
+      "end": 18497,
+      "size": 71,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33402,
+        33402
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "48BE": {
+      "entry": 18622,
+      "end": 18657,
+      "size": 36,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15685,
+        15685
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "48E2": {
+      "entry": 18658,
+      "end": 18698,
+      "size": 41,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17119,
+        17119
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "490B": {
+      "entry": 18699,
+      "end": 18722,
+      "size": 24,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15750,
+        15750
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4923": {
+      "entry": 18723,
+      "end": 18751,
+      "size": 29,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15561,
+        15561,
+        16127,
+        16127
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4940": {
+      "entry": 18752,
+      "end": 18773,
+      "size": 22,
+      "exit_type": "rti",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": true,
+      "flags": []
+    },
+    "4956": {
+      "entry": 18774,
+      "end": 18811,
+      "size": 38,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        18812
+      ],
+      "internal_jumps": [],
+      "callers": [
+        33284,
+        33284
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4AE7": {
+      "entry": 19175,
+      "end": 19193,
+      "size": 19,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        19188
+      ],
+      "callers": [
+        21523,
+        21523,
+        33165,
+        33165
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4AFA": {
+      "entry": 19194,
+      "end": 19256,
+      "size": 63,
+      "exit_type": "mixed",
+      "calls": [
+        19257
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        19206
+      ],
+      "callers": [
+        21853,
+        21853,
+        21926,
+        21926
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4B39": {
+      "entry": 19257,
+      "end": 19267,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        19203,
+        19203,
+        21453,
+        21453,
+        21636,
+        21636,
+        21988,
+        21988,
+        25618,
+        25618,
+        33154,
+        33154
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4C85": {
+      "entry": 19589,
+      "end": 19600,
+      "size": 12,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        18886,
+        18886,
+        18955,
+        18955
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4C91": {
+      "entry": 19601,
+      "end": 19637,
+      "size": 37,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        32260,
+        32260,
+        33173,
+        33173,
+        33431,
+        33431
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4CB6": {
+      "entry": 19638,
+      "end": 19655,
+      "size": 18,
+      "exit_type": "jmp_tail",
+      "calls": [
+        19656,
+        19666
+      ],
+      "tail_calls": [
+        19666
+      ],
+      "internal_jumps": [],
+      "callers": [
+        16617,
+        16617
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4CC8": {
+      "entry": 19656,
+      "end": 19665,
+      "size": 10,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16580,
+        16580,
+        16594,
+        16594,
+        16775,
+        16775,
+        19641,
+        19641
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4CD2": {
+      "entry": 19666,
+      "end": 19676,
+      "size": 11,
+      "exit_type": "fall_through",
+      "calls": [
+        19677
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16600,
+        16600,
+        16606,
+        16606,
+        19647,
+        19647
+      ],
+      "tail_callers": [
+        19638
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4CDD": {
+      "entry": 19677,
+      "end": 19696,
+      "size": 20,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        19671,
+        19671
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "4CF1": {
+      "entry": 19697,
+      "end": 19717,
+      "size": 21,
+      "exit_type": "jmp_indirect",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": true,
+      "flags": [
+        "indirect_jmp"
+      ]
+    },
+    "52C0": {
+      "entry": 21184,
+      "end": 21218,
+      "size": 35,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15370
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "52E7": {
+      "entry": 21223,
+      "end": 22900,
+      "size": 1678,
+      "exit_type": "mixed",
+      "calls": [
+        17194,
+        17668,
+        18284,
+        19175,
+        19194,
+        19257,
+        22920,
+        22922,
+        22935,
+        22950,
+        22964,
+        23009,
+        23308,
+        23347,
+        23475,
+        23538,
+        23676,
+        23688,
+        23708,
+        23742,
+        23837,
+        24036,
+        24043,
+        24090,
+        24333,
+        24479,
+        24501,
+        24536,
+        25109,
+        25135,
+        31554,
+        31562,
+        31943,
+        31959,
+        32024,
+        32137,
+        32156,
+        32170,
+        32175,
+        32183,
+        32188,
+        32193,
+        32223,
+        32246,
+        32260,
+        32271,
+        32283,
+        36503,
+        36509,
+        37053,
+        37546,
+        38065,
+        38160,
+        38177,
+        38225,
+        38480
+      ],
+      "tail_calls": [
+        15412
+      ],
+      "internal_jumps": [
+        21750,
+        21840,
+        21996,
+        22030,
+        22054,
+        22252,
+        22339,
+        22350,
+        22397,
+        22686
+      ],
+      "callers": [
+        15652,
+        15652
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "bit_skip_trick"
+      ]
+    },
+    "5988": {
+      "entry": 22920,
+      "end": 22921,
+      "size": 2,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21510,
+        21510,
+        22429,
+        22429
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "598A": {
+      "entry": 22922,
+      "end": 22934,
+      "size": 13,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        31498
+      ],
+      "internal_jumps": [],
+      "callers": [
+        22856,
+        22856
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5997": {
+      "entry": 22935,
+      "end": 22949,
+      "size": 15,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        31498
+      ],
+      "internal_jumps": [],
+      "callers": [
+        21233,
+        21233,
+        21747,
+        21747
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "59A6": {
+      "entry": 22950,
+      "end": 22963,
+      "size": 14,
+      "exit_type": "rts",
+      "calls": [
+        32183
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21780,
+        21780,
+        22330,
+        22330
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "59B4": {
+      "entry": 22964,
+      "end": 23008,
+      "size": 45,
+      "exit_type": "fall_through",
+      "calls": [
+        23050,
+        25109
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21526,
+        21526,
+        22432,
+        22432
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "59E1": {
+      "entry": 23009,
+      "end": 23049,
+      "size": 41,
+      "exit_type": "rts",
+      "calls": [
+        23197,
+        23214
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21722,
+        21722
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5A0A": {
+      "entry": 23050,
+      "end": 23082,
+      "size": 33,
+      "exit_type": "rts",
+      "calls": [
+        23083,
+        23150
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22983,
+        22983,
+        23284,
+        23284,
+        24255,
+        24255
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5A2B": {
+      "entry": 23083,
+      "end": 23149,
+      "size": 67,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        23130
+      ],
+      "callers": [
+        23059,
+        23059,
+        23059,
+        23059
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5A6E": {
+      "entry": 23150,
+      "end": 23196,
+      "size": 47,
+      "exit_type": "rts",
+      "calls": [
+        23214,
+        23224
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23062,
+        23062,
+        23062,
+        23062,
+        23855,
+        23855
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5A9D": {
+      "entry": 23197,
+      "end": 23199,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23023,
+        23023,
+        23318,
+        23318,
+        23415,
+        23415,
+        24718,
+        24718
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5AA0": {
+      "entry": 23200,
+      "end": 23210,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23602,
+        23602
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5AAB": {
+      "entry": 23211,
+      "end": 23213,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23438,
+        23438
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5AAE": {
+      "entry": 23214,
+      "end": 23223,
+      "size": 10,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23029,
+        23029,
+        23035,
+        23035,
+        23041,
+        23041,
+        23179,
+        23179,
+        23179,
+        23179,
+        23323,
+        23323,
+        23328,
+        23328,
+        23333,
+        23333,
+        23615,
+        23615
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5AB8": {
+      "entry": 23224,
+      "end": 23234,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23187,
+        23187,
+        23187,
+        23187
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5AE7": {
+      "entry": 23271,
+      "end": 23307,
+      "size": 37,
+      "exit_type": "mixed",
+      "calls": [
+        23050
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        23295
+      ],
+      "callers": [
+        24154,
+        24154
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5B0C": {
+      "entry": 23308,
+      "end": 23346,
+      "size": 39,
+      "exit_type": "fall_through",
+      "calls": [
+        23197,
+        23214
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21771,
+        21771
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5B33": {
+      "entry": 23347,
+      "end": 23408,
+      "size": 62,
+      "exit_type": "rts",
+      "calls": [
+        23409
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22306,
+        22306,
+        22324,
+        22324
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5B71": {
+      "entry": 23409,
+      "end": 23474,
+      "size": 66,
+      "exit_type": "rts",
+      "calls": [
+        23197,
+        23211
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23399,
+        23399,
+        23521,
+        23521
+      ],
+      "tail_callers": [
+        23475
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5BB3": {
+      "entry": 23475,
+      "end": 23537,
+      "size": 63,
+      "exit_type": "jmp_tail",
+      "calls": [
+        23409,
+        32203
+      ],
+      "tail_calls": [
+        23409
+      ],
+      "internal_jumps": [],
+      "callers": [
+        21774,
+        21774,
+        22140,
+        22140,
+        22149,
+        22149,
+        22309,
+        22309,
+        22327,
+        22327
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5BF2": {
+      "entry": 23538,
+      "end": 23656,
+      "size": 119,
+      "exit_type": "rts",
+      "calls": [
+        23200,
+        23214,
+        23657
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21472,
+        21472
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5C69": {
+      "entry": 23657,
+      "end": 23675,
+      "size": 19,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        23675
+      ],
+      "callers": [
+        23598,
+        23598,
+        23612,
+        23612
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5C7C": {
+      "entry": 23676,
+      "end": 23684,
+      "size": 9,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21469,
+        21469,
+        21499,
+        21499
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5C88": {
+      "entry": 23688,
+      "end": 23707,
+      "size": 20,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21442,
+        21442
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5C9C": {
+      "entry": 23708,
+      "end": 23741,
+      "size": 34,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21596,
+        21596
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5CBE": {
+      "entry": 23742,
+      "end": 23836,
+      "size": 95,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21666,
+        21666
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5D1D": {
+      "entry": 23837,
+      "end": 23887,
+      "size": 51,
+      "exit_type": "rts",
+      "calls": [
+        23150
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21541,
+        21541
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5D76": {
+      "entry": 23926,
+      "end": 23952,
+      "size": 27,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23919,
+        23919
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5D91": {
+      "entry": 23953,
+      "end": 23979,
+      "size": 27,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23910,
+        23910
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5DAC": {
+      "entry": 23980,
+      "end": 24007,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23896,
+        23896
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5DC8": {
+      "entry": 24008,
+      "end": 24035,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        23893,
+        23893
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5DE4": {
+      "entry": 24036,
+      "end": 24057,
+      "size": 19,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21236,
+        21236,
+        21777,
+        21777,
+        22244,
+        22244
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5DEB": {
+      "entry": 24043,
+      "end": 24057,
+      "size": 15,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22091,
+        22091,
+        22212,
+        22212
+      ],
+      "tail_callers": [
+        33725
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5DFA": {
+      "entry": 24058,
+      "end": 24113,
+      "size": 33,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        32729,
+        32729
+      ],
+      "tail_callers": [
+        32505
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5E1A": {
+      "entry": 24090,
+      "end": 24113,
+      "size": 24,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22235,
+        22235
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5E32": {
+      "entry": 24114,
+      "end": 24132,
+      "size": 19,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33772
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5ECE": {
+      "entry": 24270,
+      "end": 24296,
+      "size": 27,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        24135,
+        24348,
+        24348
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5EE9": {
+      "entry": 24297,
+      "end": 24332,
+      "size": 36,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        24227,
+        24227
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5F0D": {
+      "entry": 24333,
+      "end": 24341,
+      "size": 9,
+      "exit_type": "rts",
+      "calls": [
+        24412
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22831,
+        22831
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5F5C": {
+      "entry": 24412,
+      "end": 24436,
+      "size": 25,
+      "exit_type": "rts",
+      "calls": [
+        24437
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        24335,
+        24335
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5F75": {
+      "entry": 24437,
+      "end": 24460,
+      "size": 24,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        24460
+      ],
+      "callers": [
+        24412,
+        24412,
+        24412,
+        24412,
+        24418,
+        24418,
+        24418,
+        24418,
+        24424,
+        24424,
+        24424,
+        24424,
+        24430,
+        24430,
+        24430,
+        24430
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5F91": {
+      "entry": 24465,
+      "end": 24478,
+      "size": 14,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15688,
+        15688
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5F9F": {
+      "entry": 24479,
+      "end": 24495,
+      "size": 17,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22405,
+        22405,
+        22753,
+        22753
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5FB5": {
+      "entry": 24501,
+      "end": 24535,
+      "size": 35,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22823,
+        22823
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "5FD8": {
+      "entry": 24536,
+      "end": 24604,
+      "size": 69,
+      "exit_type": "rts",
+      "calls": [
+        24605
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22880,
+        22880
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "601D": {
+      "entry": 24605,
+      "end": 24700,
+      "size": 96,
+      "exit_type": "rts",
+      "calls": [
+        24701
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        24597,
+        24597
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "607D": {
+      "entry": 24701,
+      "end": 24773,
+      "size": 73,
+      "exit_type": "mixed",
+      "calls": [
+        23197,
+        24774
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        24763
+      ],
+      "callers": [
+        24646,
+        24646,
+        24671,
+        24671
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "60C6": {
+      "entry": 24774,
+      "end": 24800,
+      "size": 27,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        24734,
+        24734,
+        24743,
+        24743
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6215": {
+      "entry": 25109,
+      "end": 25134,
+      "size": 26,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21529,
+        21529,
+        21621,
+        21621,
+        21693,
+        21693,
+        22611,
+        22611,
+        22964,
+        22964
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "622F": {
+      "entry": 25135,
+      "end": 25163,
+      "size": 29,
+      "exit_type": "rts",
+      "calls": [
+        32175
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22083,
+        22083,
+        22220,
+        22220
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "62AB": {
+      "entry": 25259,
+      "end": 25674,
+      "size": 416,
+      "exit_type": "mixed",
+      "calls": [
+        19257,
+        25675,
+        25725,
+        25749,
+        25751,
+        25769,
+        25837,
+        25898,
+        25941,
+        25950,
+        26050,
+        26815,
+        32198
+      ],
+      "tail_calls": [
+        25975
+      ],
+      "internal_jumps": [
+        25323,
+        25351,
+        25408,
+        25462,
+        25545,
+        25555,
+        25592,
+        25652,
+        25664,
+        25672
+      ],
+      "callers": [
+        15950,
+        15950
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "644B": {
+      "entry": 25675,
+      "end": 25724,
+      "size": 50,
+      "exit_type": "rts",
+      "calls": [
+        32175,
+        38058
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25661,
+        25661
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "647D": {
+      "entry": 25725,
+      "end": 25748,
+      "size": 24,
+      "exit_type": "rts",
+      "calls": [
+        32175,
+        38058
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25610,
+        25610
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6495": {
+      "entry": 25749,
+      "end": 25750,
+      "size": 2,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25361,
+        25361
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6497": {
+      "entry": 25751,
+      "end": 25768,
+      "size": 18,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        25652,
+        25652
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "64A9": {
+      "entry": 25769,
+      "end": 25836,
+      "size": 68,
+      "exit_type": "mixed",
+      "calls": [
+        38058,
+        43833
+      ],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15900,
+        15900,
+        16040,
+        16040,
+        25342,
+        25342
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "64ED": {
+      "entry": 25837,
+      "end": 25897,
+      "size": 61,
+      "exit_type": "fall_through",
+      "calls": [
+        17672,
+        25913
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        25874
+      ],
+      "callers": [
+        25647,
+        25647
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "652A": {
+      "entry": 25898,
+      "end": 25900,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [
+        25941
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25394,
+        25394
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "652D": {
+      "entry": 25901,
+      "end": 25912,
+      "size": 12,
+      "exit_type": "rts",
+      "calls": [
+        31646
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        36334,
+        36334
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6539": {
+      "entry": 25913,
+      "end": 25940,
+      "size": 28,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15879,
+        15879,
+        25853,
+        25853
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6555": {
+      "entry": 25941,
+      "end": 25949,
+      "size": 9,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25631,
+        25631,
+        25898,
+        25898,
+        25950,
+        25950
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "655E": {
+      "entry": 25950,
+      "end": 25952,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [
+        25941
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25405,
+        25405
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6561": {
+      "entry": 25953,
+      "end": 25962,
+      "size": 10,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        36299,
+        36299,
+        36320,
+        36320
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "656B": {
+      "entry": 25963,
+      "end": 25974,
+      "size": 12,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        36452,
+        36452
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "65A9": {
+      "entry": 26025,
+      "end": 26049,
+      "size": 25,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15892,
+        15892,
+        33420,
+        33420
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "65C2": {
+      "entry": 26050,
+      "end": 26224,
+      "size": 175,
+      "exit_type": "mixed",
+      "calls": [
+        26225,
+        38058
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        26055,
+        26138
+      ],
+      "callers": [
+        25669,
+        25669
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6671": {
+      "entry": 26225,
+      "end": 26409,
+      "size": 185,
+      "exit_type": "rts",
+      "calls": [
+        26410
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        26203,
+        26203
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "672A": {
+      "entry": 26410,
+      "end": 26500,
+      "size": 91,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        26274,
+        26274,
+        26299,
+        26299,
+        26347,
+        26347,
+        26375,
+        26375,
+        26380,
+        26380
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "68BF": {
+      "entry": 26815,
+      "end": 27004,
+      "size": 190,
+      "exit_type": "rts",
+      "calls": [
+        27005,
+        27016
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25579,
+        25579
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "697D": {
+      "entry": 27005,
+      "end": 27015,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [
+        27016
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        26897,
+        26897,
+        26902,
+        26902,
+        26907,
+        26907,
+        26912,
+        26912
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6988": {
+      "entry": 27016,
+      "end": 27331,
+      "size": 316,
+      "exit_type": "mixed",
+      "calls": [
+        27332,
+        38058
+      ],
+      "tail_calls": [
+        16323,
+        38058
+      ],
+      "internal_jumps": [
+        27048,
+        27096
+      ],
+      "callers": [
+        26976,
+        26976,
+        27008,
+        27008
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6AC4": {
+      "entry": 27332,
+      "end": 27395,
+      "size": 64,
+      "exit_type": "rts",
+      "calls": [
+        27396,
+        27421,
+        27445,
+        27492
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        27265,
+        27265
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6B04": {
+      "entry": 27396,
+      "end": 27420,
+      "size": 25,
+      "exit_type": "rts",
+      "calls": [
+        27517
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        27341,
+        27341
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6B1D": {
+      "entry": 27421,
+      "end": 27444,
+      "size": 24,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        27344,
+        27344
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6B35": {
+      "entry": 27445,
+      "end": 27491,
+      "size": 47,
+      "exit_type": "rts",
+      "calls": [
+        27517
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        27347,
+        27347
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6B64": {
+      "entry": 27492,
+      "end": 27516,
+      "size": 25,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        27350,
+        27350
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "6B7D": {
+      "entry": 27517,
+      "end": 27549,
+      "size": 33,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        27409,
+        27409,
+        27478,
+        27478
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "790A": {
+      "entry": 30986,
+      "end": 31194,
+      "size": 209,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        31195
+      ],
+      "internal_jumps": [
+        31135
+      ],
+      "callers": [
+        33066,
+        33066
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7B0A": {
+      "entry": 31498,
+      "end": 31532,
+      "size": 35,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15807,
+        15807,
+        32709,
+        32709,
+        32740,
+        32740
+      ],
+      "tail_callers": [
+        22922,
+        22935
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7B2D": {
+      "entry": 31533,
+      "end": 31553,
+      "size": 21,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15810,
+        15810
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7B42": {
+      "entry": 31554,
+      "end": 31561,
+      "size": 8,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15423,
+        15423,
+        15729,
+        15729,
+        21281,
+        21281
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7B4A": {
+      "entry": 31562,
+      "end": 31569,
+      "size": 8,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15436,
+        15436,
+        15753,
+        15753,
+        16655,
+        16655,
+        21294,
+        21294,
+        21419,
+        21419,
+        22800,
+        22800
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7B52": {
+      "entry": 31570,
+      "end": 31638,
+      "size": 69,
+      "exit_type": "rts",
+      "calls": [
+        31639,
+        31646
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15792,
+        15792
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7B97": {
+      "entry": 31639,
+      "end": 31727,
+      "size": 84,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        31605,
+        31605
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "bit_skip_trick"
+      ]
+    },
+    "7B9E": {
+      "entry": 31646,
+      "end": 31727,
+      "size": 82,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        25906,
+        25906,
+        31590,
+        31590
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "bit_skip_trick"
+      ]
+    },
+    "7BF0": {
+      "entry": 31728,
+      "end": 31771,
+      "size": 44,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        42463,
+        42463
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": [
+        "bit_skip_trick"
+      ]
+    },
+    "7C1C": {
+      "entry": 31772,
+      "end": 31871,
+      "size": 100,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        17113,
+        17113
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7C80": {
+      "entry": 31872,
+      "end": 31913,
+      "size": 42,
+      "exit_type": "jmp_tail",
+      "calls": [
+        31959
+      ],
+      "tail_calls": [
+        31959
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15485,
+        15485
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7CAA": {
+      "entry": 31914,
+      "end": 31942,
+      "size": 29,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        31959
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15682,
+        15682
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7CC7": {
+      "entry": 31943,
+      "end": 31958,
+      "size": 16,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21416,
+        21416,
+        21572,
+        21572,
+        21768,
+        21768
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7CD7": {
+      "entry": 31959,
+      "end": 31988,
+      "size": 30,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        31961
+      ],
+      "callers": [
+        15504,
+        15504,
+        15710,
+        15710,
+        15742,
+        15742,
+        21259,
+        21259,
+        21278,
+        21278,
+        31892,
+        31892
+      ],
+      "tail_callers": [
+        31872,
+        31914
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7CF5": {
+      "entry": 31989,
+      "end": 32023,
+      "size": 35,
+      "exit_type": "fall_through",
+      "calls": [
+        32024
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15691,
+        15691
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D18": {
+      "entry": 32024,
+      "end": 32038,
+      "size": 15,
+      "exit_type": "rts",
+      "calls": [
+        32113
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15532,
+        15532,
+        21333,
+        21333,
+        32005,
+        32005
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D27": {
+      "entry": 32039,
+      "end": 32083,
+      "size": 45,
+      "exit_type": "fall_through",
+      "calls": [
+        32084
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15513,
+        15513
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D54": {
+      "entry": 32084,
+      "end": 32112,
+      "size": 29,
+      "exit_type": "mixed",
+      "calls": [
+        32113,
+        32126
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        32108
+      ],
+      "callers": [
+        32065,
+        32065
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D71": {
+      "entry": 32113,
+      "end": 32125,
+      "size": 13,
+      "exit_type": "rts",
+      "calls": [
+        32126
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        32031,
+        32031,
+        32105,
+        32105
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D7E": {
+      "entry": 32126,
+      "end": 32136,
+      "size": 11,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        32094,
+        32094,
+        32119,
+        32119
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D89": {
+      "entry": 32137,
+      "end": 32155,
+      "size": 19,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22780,
+        22780
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7D9C": {
+      "entry": 32156,
+      "end": 32169,
+      "size": 14,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16098,
+        16098,
+        17055,
+        17055,
+        17097,
+        17097,
+        17116,
+        17116,
+        17122,
+        17122,
+        17135,
+        17135,
+        17702,
+        17702,
+        21488,
+        21488,
+        21561,
+        21561,
+        21588,
+        21588,
+        22109,
+        22109,
+        22230,
+        22230,
+        22241,
+        22241,
+        22665,
+        22665
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DAA": {
+      "entry": 32170,
+      "end": 32182,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16206,
+        16206,
+        16241,
+        16241,
+        21796,
+        21796,
+        21881,
+        21881,
+        21912,
+        21912,
+        21985,
+        21985,
+        22321,
+        22321
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DAF": {
+      "entry": 32175,
+      "end": 32182,
+      "size": 21,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15660,
+        15660,
+        16398,
+        16398,
+        21389,
+        21389,
+        21502,
+        21502,
+        21729,
+        21729,
+        25153,
+        25153,
+        25706,
+        25706,
+        25729,
+        25729,
+        25995,
+        25995,
+        26008,
+        26008
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DB7": {
+      "entry": 32183,
+      "end": 32187,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16223,
+        16223,
+        16317,
+        16317,
+        16342,
+        16342,
+        16783,
+        16783,
+        21480,
+        21480,
+        22290,
+        22290,
+        22844,
+        22844,
+        22952,
+        22952,
+        38177,
+        38177
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DBC": {
+      "entry": 32188,
+      "end": 32192,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21756,
+        21756,
+        21901,
+        21901
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DC1": {
+      "entry": 32193,
+      "end": 32197,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16092,
+        16092,
+        22513,
+        22513
+      ],
+      "tail_callers": [
+        32260
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DC6": {
+      "entry": 32198,
+      "end": 32202,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16329,
+        16329,
+        25621,
+        25621
+      ],
+      "tail_callers": [
+        32271
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DCB": {
+      "entry": 32203,
+      "end": 32222,
+      "size": 20,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16577,
+        16577,
+        16767,
+        16767,
+        23509,
+        23509,
+        32271,
+        32271,
+        32301,
+        32301
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DDF": {
+      "entry": 32223,
+      "end": 32245,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21960,
+        21960
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7DF6": {
+      "entry": 32246,
+      "end": 32259,
+      "size": 14,
+      "exit_type": "fall_through",
+      "calls": [
+        17194
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21866,
+        21866,
+        21904,
+        21904
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7E04": {
+      "entry": 32260,
+      "end": 32270,
+      "size": 11,
+      "exit_type": "jmp_tail",
+      "calls": [
+        19601,
+        38058
+      ],
+      "tail_calls": [
+        32193
+      ],
+      "internal_jumps": [],
+      "callers": [
+        21973,
+        21973
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7E0F": {
+      "entry": 32271,
+      "end": 32282,
+      "size": 12,
+      "exit_type": "jmp_tail",
+      "calls": [
+        17194,
+        32203
+      ],
+      "tail_calls": [
+        32198
+      ],
+      "internal_jumps": [],
+      "callers": [
+        21844,
+        21844,
+        21884,
+        21884
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7E1B": {
+      "entry": 32283,
+      "end": 32504,
+      "size": 222,
+      "exit_type": "mixed",
+      "calls": [
+        32203
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        32345,
+        32372,
+        32448
+      ],
+      "callers": [
+        22394,
+        22394
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "7EF9": {
+      "entry": 32505,
+      "end": 32753,
+      "size": 249,
+      "exit_type": "jmp_tail",
+      "calls": [
+        24058,
+        31498
+      ],
+      "tail_calls": [
+        24058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        15535,
+        15535
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "800E": {
+      "entry": 32782,
+      "end": 32825,
+      "size": 44,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15510,
+        15510
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8042": {
+      "entry": 32834,
+      "end": 32856,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15507,
+        15507
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8059": {
+      "entry": 32857,
+      "end": 33178,
+      "size": 322,
+      "exit_type": "jmp",
+      "calls": [
+        17194,
+        17533,
+        17861,
+        18316,
+        19175,
+        19257,
+        19601,
+        30986
+      ],
+      "tail_calls": [
+        33179,
+        33439
+      ],
+      "internal_jumps": [
+        33025,
+        33053,
+        33095,
+        33136,
+        33168
+      ],
+      "callers": [],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": true,
+      "flags": []
+    },
+    "82B5": {
+      "entry": 33461,
+      "end": 33576,
+      "size": 116,
+      "exit_type": "mixed",
+      "calls": [
+        33577
+      ],
+      "tail_calls": [
+        37520
+      ],
+      "internal_jumps": [
+        33551
+      ],
+      "callers": [
+        33444,
+        33444
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8329": {
+      "entry": 33577,
+      "end": 33599,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33497,
+        33497,
+        33510,
+        33510
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8340": {
+      "entry": 33600,
+      "end": 33607,
+      "size": 8,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        33551
+      ],
+      "internal_jumps": [],
+      "callers": [
+        17622,
+        17622,
+        35666,
+        35666,
+        36433,
+        36433
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "83BD": {
+      "entry": 33725,
+      "end": 33783,
+      "size": 59,
+      "exit_type": "mixed",
+      "calls": [
+        24114
+      ],
+      "tail_calls": [
+        23888,
+        24043,
+        24133,
+        24225,
+        24342
+      ],
+      "internal_jumps": [],
+      "callers": [
+        33708
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "83F8": {
+      "entry": 33784,
+      "end": 33801,
+      "size": 18,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        18824
+      ],
+      "internal_jumps": [],
+      "callers": [
+        33705,
+        33846
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "840A": {
+      "entry": 33802,
+      "end": 33851,
+      "size": 50,
+      "exit_type": "jmp",
+      "calls": [
+        33784
+      ],
+      "tail_calls": [
+        33450
+      ],
+      "internal_jumps": [],
+      "callers": [],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": true,
+      "flags": []
+    },
+    "843C": {
+      "entry": 33852,
+      "end": 33987,
+      "size": 136,
+      "exit_type": "mixed",
+      "calls": [
+        33988,
+        34022
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        33888
+      ],
+      "callers": [
+        15789,
+        15789
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "84C4": {
+      "entry": 33988,
+      "end": 34021,
+      "size": 34,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33936,
+        33936,
+        34030,
+        34030,
+        34046,
+        34046,
+        34062,
+        34062,
+        34078,
+        34078
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "84E6": {
+      "entry": 34022,
+      "end": 34085,
+      "size": 64,
+      "exit_type": "rts",
+      "calls": [
+        33988,
+        34086
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        33892,
+        33892
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8526": {
+      "entry": 34086,
+      "end": 34095,
+      "size": 10,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        34035,
+        34035,
+        34051,
+        34051,
+        34067,
+        34067
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8530": {
+      "entry": 34096,
+      "end": 35428,
+      "size": 1333,
+      "exit_type": "mixed",
+      "calls": [
+        18284,
+        35429,
+        35629,
+        35804,
+        35896,
+        36043,
+        36459,
+        36500,
+        36514,
+        36553,
+        36711,
+        36857,
+        37520,
+        42597
+      ],
+      "tail_calls": [
+        37520
+      ],
+      "internal_jumps": [
+        34150,
+        34212,
+        34215,
+        34330,
+        34358,
+        34441,
+        34506,
+        34555,
+        34680,
+        34742,
+        34951,
+        34994,
+        35070,
+        35105,
+        35251,
+        35289,
+        35317,
+        35355
+      ],
+      "callers": [
+        33302,
+        33302
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8A65": {
+      "entry": 35429,
+      "end": 35628,
+      "size": 200,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        35466,
+        35503,
+        35540,
+        35577
+      ],
+      "callers": [
+        35352,
+        35352
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8B2D": {
+      "entry": 35629,
+      "end": 35675,
+      "size": 47,
+      "exit_type": "mixed",
+      "calls": [
+        33600,
+        43833
+      ],
+      "tail_calls": [
+        16247
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35314,
+        35314
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8BDC": {
+      "entry": 35804,
+      "end": 35895,
+      "size": 92,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        36459
+      ],
+      "internal_jumps": [
+        35849,
+        35895
+      ],
+      "callers": [
+        34283,
+        34283
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8C38": {
+      "entry": 35896,
+      "end": 36042,
+      "size": 147,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35242,
+        35242
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8CCB": {
+      "entry": 36043,
+      "end": 36341,
+      "size": 299,
+      "exit_type": "mixed",
+      "calls": [
+        25901,
+        25953,
+        36352,
+        36363,
+        39362
+      ],
+      "tail_calls": [
+        36342
+      ],
+      "internal_jumps": [
+        36150,
+        36272
+      ],
+      "callers": [
+        35248,
+        35248
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8DF6": {
+      "entry": 36342,
+      "end": 36351,
+      "size": 10,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        36436,
+        36436
+      ],
+      "tail_callers": [
+        36043
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E00": {
+      "entry": 36352,
+      "end": 36362,
+      "size": 11,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        36471
+      ],
+      "internal_jumps": [],
+      "callers": [
+        36288,
+        36288,
+        36296,
+        36296,
+        36317,
+        36317,
+        36331,
+        36331
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E0B": {
+      "entry": 36363,
+      "end": 36458,
+      "size": 96,
+      "exit_type": "mixed",
+      "calls": [
+        25963,
+        33600,
+        36342,
+        36471
+      ],
+      "tail_calls": [
+        42597
+      ],
+      "internal_jumps": [],
+      "callers": [
+        36158,
+        36158
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E6B": {
+      "entry": 36459,
+      "end": 36470,
+      "size": 12,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35305,
+        35305,
+        35311,
+        35311,
+        43586,
+        43586
+      ],
+      "tail_callers": [
+        35804
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E77": {
+      "entry": 36471,
+      "end": 36499,
+      "size": 29,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        36439,
+        36439
+      ],
+      "tail_callers": [
+        36352
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E94": {
+      "entry": 36500,
+      "end": 36502,
+      "size": 3,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        19557,
+        19557,
+        34315,
+        34315,
+        34615,
+        34615
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E97": {
+      "entry": 36503,
+      "end": 36508,
+      "size": 6,
+      "exit_type": "fall_through",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22510,
+        22510,
+        22652,
+        22652
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8E9D": {
+      "entry": 36509,
+      "end": 36513,
+      "size": 5,
+      "exit_type": "fall_through",
+      "calls": [
+        37520
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        22565,
+        22565
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8EA2": {
+      "entry": 36514,
+      "end": 36522,
+      "size": 9,
+      "exit_type": "jmp_tail",
+      "calls": [
+        37520
+      ],
+      "tail_calls": [
+        37520
+      ],
+      "internal_jumps": [],
+      "callers": [
+        35027,
+        35027
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8EC9": {
+      "entry": 36553,
+      "end": 36710,
+      "size": 158,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        34220,
+        34220
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8F67": {
+      "entry": 36711,
+      "end": 36856,
+      "size": 146,
+      "exit_type": "rts",
+      "calls": [
+        36857
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        34857,
+        34857
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "8FF9": {
+      "entry": 36857,
+      "end": 36877,
+      "size": 21,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        34781,
+        34781,
+        36791,
+        36791,
+        36831,
+        36831
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "90BD": {
+      "entry": 37053,
+      "end": 37144,
+      "size": 92,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15401,
+        16159,
+        16159,
+        21750,
+        21750,
+        38589,
+        38589,
+        38589
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9119": {
+      "entry": 37145,
+      "end": 37350,
+      "size": 206,
+      "exit_type": "mixed",
+      "calls": [
+        37351,
+        37520,
+        37546,
+        37628,
+        38058,
+        38065
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        37155,
+        37182,
+        37239,
+        37311,
+        37337
+      ],
+      "callers": [
+        33447,
+        33447,
+        33447
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": [
+        "bit_skip_trick"
+      ]
+    },
+    "91E7": {
+      "entry": 37351,
+      "end": 37400,
+      "size": 50,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        37401
+      ],
+      "internal_jumps": [
+        37479
+      ],
+      "callers": [
+        37150,
+        37150,
+        37150
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9290": {
+      "entry": 37520,
+      "end": 37545,
+      "size": 26,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16148,
+        16148,
+        16216,
+        16216,
+        25988,
+        25988,
+        25992,
+        25992,
+        34306,
+        34306,
+        34310,
+        34310,
+        34346,
+        34346,
+        34350,
+        34350,
+        34378,
+        34378,
+        35127,
+        35127,
+        36511,
+        36511,
+        36516,
+        36516,
+        37273,
+        37273,
+        37273,
+        38152,
+        38152,
+        38152,
+        39635,
+        39635,
+        39639,
+        39639,
+        39706,
+        39706
+      ],
+      "tail_callers": [
+        16433,
+        33461,
+        34096,
+        36514,
+        39655
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "92AA": {
+      "entry": 37546,
+      "end": 37627,
+      "size": 82,
+      "exit_type": "mixed",
+      "calls": [
+        37640,
+        37663,
+        37700
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        37622
+      ],
+      "callers": [
+        22589,
+        22589,
+        22634,
+        22634,
+        22706,
+        22706,
+        22721,
+        22721,
+        37334,
+        37334,
+        37334
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "92FC": {
+      "entry": 37628,
+      "end": 37639,
+      "size": 12,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        37214,
+        37214,
+        37214
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9308": {
+      "entry": 37640,
+      "end": 37662,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        37584,
+        37584,
+        37584,
+        37584,
+        37619,
+        37619,
+        37619,
+        37619
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "931F": {
+      "entry": 37663,
+      "end": 37699,
+      "size": 37,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        37622,
+        37622,
+        37622,
+        37622
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9344": {
+      "entry": 37700,
+      "end": 37736,
+      "size": 37,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        37594,
+        37594,
+        37594,
+        37594
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "94AA": {
+      "entry": 38058,
+      "end": 38064,
+      "size": 7,
+      "exit_type": "jmp",
+      "calls": [],
+      "tail_calls": [
+        37523
+      ],
+      "internal_jumps": [],
+      "callers": [
+        16294,
+        16294,
+        16298,
+        16298,
+        17507,
+        17507,
+        25701,
+        25701,
+        25742,
+        25742,
+        25829,
+        25829,
+        26078,
+        26078,
+        27324,
+        27324,
+        32265,
+        32265,
+        33291,
+        33291,
+        37284,
+        37284,
+        37284,
+        42151,
+        42151,
+        43746,
+        43746,
+        43817,
+        43817,
+        43821,
+        43821,
+        43826,
+        43826,
+        43830,
+        43830
+      ],
+      "tail_callers": [
+        17736,
+        25751,
+        25769,
+        26025,
+        27016,
+        35896,
+        36342,
+        36471,
+        39589,
+        43567
+      ],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "94B1": {
+      "entry": 38065,
+      "end": 38159,
+      "size": 95,
+      "exit_type": "rts",
+      "calls": [
+        37520
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        15622,
+        15622,
+        15626,
+        15626,
+        21898,
+        21898,
+        22399,
+        22399,
+        22437,
+        22437,
+        37327,
+        37327,
+        37327
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9510": {
+      "entry": 38160,
+      "end": 38176,
+      "size": 17,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16518,
+        16518,
+        21753,
+        21753
+      ],
+      "tail_callers": [
+        38510
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9521": {
+      "entry": 38177,
+      "end": 38224,
+      "size": 48,
+      "exit_type": "rts",
+      "calls": [
+        32183,
+        38248
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16789,
+        16789,
+        22264,
+        22264
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9551": {
+      "entry": 38225,
+      "end": 38247,
+      "size": 23,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        16803,
+        16803,
+        22276,
+        22276,
+        22350,
+        22350
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9568": {
+      "entry": 38248,
+      "end": 38316,
+      "size": 69,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        38190,
+        38190
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9650": {
+      "entry": 38480,
+      "end": 38496,
+      "size": 17,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        21939,
+        21939
+      ],
+      "tail_callers": [
+        38497
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9661": {
+      "entry": 38497,
+      "end": 38509,
+      "size": 13,
+      "exit_type": "jmp_tail",
+      "calls": [],
+      "tail_calls": [
+        38480
+      ],
+      "internal_jumps": [],
+      "callers": [
+        16238,
+        16238
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "966E": {
+      "entry": 38510,
+      "end": 38670,
+      "size": 161,
+      "exit_type": "mixed",
+      "calls": [
+        37053
+      ],
+      "tail_calls": [
+        38160
+      ],
+      "internal_jumps": [
+        38637,
+        38641
+      ],
+      "callers": [
+        33455,
+        33455,
+        33455
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "97A9": {
+      "entry": 38825,
+      "end": 39088,
+      "size": 264,
+      "exit_type": "mixed",
+      "calls": [
+        39089,
+        39362,
+        39589,
+        39655,
+        39714
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        39022,
+        39088
+      ],
+      "callers": [
+        33305,
+        33305
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "98B1": {
+      "entry": 39089,
+      "end": 39336,
+      "size": 229,
+      "exit_type": "rts",
+      "calls": [
+        39362
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        39050,
+        39050
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9943": {
+      "entry": 39235,
+      "end": 39253,
+      "size": 19,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        18498
+      ],
+      "internal_jumps": [],
+      "callers": [
+        17127,
+        17127
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "99A9": {
+      "entry": 39337,
+      "end": 39361,
+      "size": 25,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        18498
+      ],
+      "internal_jumps": [],
+      "callers": [
+        17132,
+        17132
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "99C2": {
+      "entry": 39362,
+      "end": 39588,
+      "size": 227,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        36238,
+        36238,
+        38937,
+        38937,
+        39190,
+        39190,
+        39292,
+        39292
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9AA5": {
+      "entry": 39589,
+      "end": 39654,
+      "size": 66,
+      "exit_type": "mixed",
+      "calls": [
+        37520
+      ],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [],
+      "callers": [
+        38995,
+        38995
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9AE7": {
+      "entry": 39655,
+      "end": 39713,
+      "size": 59,
+      "exit_type": "mixed",
+      "calls": [
+        37520
+      ],
+      "tail_calls": [
+        37520
+      ],
+      "internal_jumps": [],
+      "callers": [
+        38982,
+        38982
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9B22": {
+      "entry": 39714,
+      "end": 39731,
+      "size": 18,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        39065,
+        39065
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9B3C": {
+      "entry": 39740,
+      "end": 39807,
+      "size": 68,
+      "exit_type": "rts",
+      "calls": [
+        39808
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        44474,
+        44474
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9B80": {
+      "entry": 39808,
+      "end": 39949,
+      "size": 142,
+      "exit_type": "mixed",
+      "calls": [
+        39950
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        39928
+      ],
+      "callers": [
+        39768,
+        39768,
+        39792,
+        39792
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9C0E": {
+      "entry": 39950,
+      "end": 40022,
+      "size": 73,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        40022
+      ],
+      "callers": [
+        39811,
+        39811,
+        39835,
+        39835
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9C59": {
+      "entry": 40025,
+      "end": 40095,
+      "size": 71,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        40123
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9CCF": {
+      "entry": 40143,
+      "end": 40350,
+      "size": 208,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        41189,
+        41189,
+        41212,
+        41212,
+        41242,
+        41242,
+        41265,
+        41265
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9DA7": {
+      "entry": 40359,
+      "end": 40587,
+      "size": 237,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        41409,
+        41409,
+        41628,
+        41628
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "9E8C": {
+      "entry": 40588,
+      "end": 41178,
+      "size": 510,
+      "exit_type": "mixed",
+      "calls": [
+        41179,
+        44396
+      ],
+      "tail_calls": [
+        40857
+      ],
+      "internal_jumps": [
+        40675,
+        40938,
+        40990,
+        41090
+      ],
+      "callers": [
+        15828,
+        15828,
+        15903,
+        15903
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A0DB": {
+      "entry": 41179,
+      "end": 41302,
+      "size": 124,
+      "exit_type": "rts",
+      "calls": [
+        40143
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        40591,
+        40591
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A157": {
+      "entry": 41303,
+      "end": 41813,
+      "size": 511,
+      "exit_type": "mixed",
+      "calls": [
+        40359
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        41353,
+        41530,
+        41572,
+        41749
+      ],
+      "callers": [
+        42000,
+        42000,
+        42046,
+        42046
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A356": {
+      "entry": 41814,
+      "end": 42596,
+      "size": 783,
+      "exit_type": "mixed",
+      "calls": [
+        18316,
+        31728,
+        38058,
+        41303,
+        42597,
+        42640,
+        44310,
+        44554,
+        45645
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        41959,
+        42154,
+        42404,
+        42405,
+        42442
+      ],
+      "callers": [
+        15838,
+        15838,
+        15913,
+        15913
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A665": {
+      "entry": 42597,
+      "end": 42639,
+      "size": 43,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        35349,
+        35349,
+        42574,
+        42574
+      ],
+      "tail_callers": [
+        36363
+      ],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A690": {
+      "entry": 42640,
+      "end": 42835,
+      "size": 197,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        43179,
+        43421
+      ],
+      "internal_jumps": [
+        42807,
+        42830,
+        42833
+      ],
+      "callers": [
+        42003,
+        42003,
+        42049,
+        42049
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A754": {
+      "entry": 42836,
+      "end": 42882,
+      "size": 9,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        43254,
+        43254,
+        43545,
+        43545,
+        43550,
+        43550,
+        43555,
+        43555,
+        43560,
+        43560,
+        44240,
+        44240
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A75C": {
+      "entry": 42844,
+      "end": 42882,
+      "size": 39,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        43940,
+        43940,
+        44014,
+        44014
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "A93F": {
+      "entry": 43327,
+      "end": 43420,
+      "size": 94,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        43250,
+        43250,
+        43492,
+        43492
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AA2F": {
+      "entry": 43567,
+      "end": 43832,
+      "size": 266,
+      "exit_type": "mixed",
+      "calls": [
+        36459,
+        38058,
+        43897,
+        43902
+      ],
+      "tail_calls": [
+        38058
+      ],
+      "internal_jumps": [
+        43694
+      ],
+      "callers": [
+        15852,
+        15852,
+        15929,
+        15929
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AB39": {
+      "entry": 43833,
+      "end": 43896,
+      "size": 64,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        43880
+      ],
+      "callers": [
+        25808,
+        25808,
+        35669,
+        35669
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AB79": {
+      "entry": 43897,
+      "end": 44074,
+      "size": 91,
+      "exit_type": "mixed",
+      "calls": [
+        42844
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        43996
+      ],
+      "callers": [
+        43725,
+        43725
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AB7E": {
+      "entry": 43902,
+      "end": 43989,
+      "size": 88,
+      "exit_type": "rts",
+      "calls": [
+        42844
+      ],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        43783,
+        43783
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AC2B": {
+      "entry": 44075,
+      "end": 44110,
+      "size": 36,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        43230,
+        43230,
+        43476,
+        43476
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AC4F": {
+      "entry": 44111,
+      "end": 44301,
+      "size": 191,
+      "exit_type": "mixed",
+      "calls": [
+        42836
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        44166
+      ],
+      "callers": [
+        43507,
+        43507
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AD16": {
+      "entry": 44310,
+      "end": 44395,
+      "size": 86,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        44377
+      ],
+      "callers": [
+        42198,
+        42198
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AD6C": {
+      "entry": 44396,
+      "end": 44553,
+      "size": 158,
+      "exit_type": "mixed",
+      "calls": [
+        39740
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        44467,
+        44550
+      ],
+      "callers": [
+        40588,
+        40588
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AE0A": {
+      "entry": 44554,
+      "end": 44605,
+      "size": 52,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        41905,
+        41905
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AE3E": {
+      "entry": 44606,
+      "end": 44849,
+      "size": 244,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        44612
+      ],
+      "callers": [
+        15833,
+        15833,
+        15908,
+        15908
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "AF32": {
+      "entry": 44850,
+      "end": 45644,
+      "size": 795,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [
+        44856,
+        45441,
+        45444,
+        45447,
+        45450,
+        45453,
+        45456,
+        45459,
+        45462,
+        45465,
+        45468,
+        45471,
+        45474,
+        45477,
+        45480,
+        45483,
+        45486,
+        45489,
+        45492,
+        45495,
+        45498,
+        45501,
+        45504,
+        45507,
+        45510,
+        45513,
+        45516,
+        45519,
+        45522,
+        45525,
+        45528,
+        45531,
+        45534,
+        45537,
+        45540,
+        45543,
+        45546,
+        45549,
+        45552,
+        45555,
+        45558,
+        45561,
+        45564,
+        45567,
+        45570,
+        45573,
+        45576,
+        45579,
+        45582,
+        45592
+      ],
+      "callers": [
+        15843,
+        15843,
+        15918,
+        15918
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "B24D": {
+      "entry": 45645,
+      "end": 45990,
+      "size": 346,
+      "exit_type": "mixed",
+      "calls": [
+        45991,
+        46104
+      ],
+      "tail_calls": [],
+      "internal_jumps": [
+        45671,
+        45748,
+        45758,
+        45763,
+        45910,
+        45957
+      ],
+      "callers": [
+        42079,
+        42079
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "B3A7": {
+      "entry": 45991,
+      "end": 46103,
+      "size": 113,
+      "exit_type": "rts",
+      "calls": [],
+      "tail_calls": [],
+      "internal_jumps": [],
+      "callers": [
+        45679,
+        45679,
+        45767,
+        45767
+      ],
+      "tail_callers": [],
+      "is_leaf": true,
+      "is_interrupt": false,
+      "flags": []
+    },
+    "B418": {
+      "entry": 46104,
+      "end": 46359,
+      "size": 256,
+      "exit_type": "mixed",
+      "calls": [],
+      "tail_calls": [
+        46364
+      ],
+      "internal_jumps": [
+        46175
+      ],
+      "callers": [
+        45954,
+        45954
+      ],
+      "tail_callers": [],
+      "is_leaf": false,
+      "is_interrupt": false,
+      "flags": []
+    }
+  },
+  "subsystems": {
+    "3C00": "pmg",
+    "3FE2": "sound",
+    "4043": "display",
+    "4058": "display",
+    "4066": "pmg",
+    "4278": "render",
+    "430E": "render",
+    "43C0": "render",
+    "43F5": "render",
+    "4441": "render",
+    "4504": "math",
+    "4508": "math",
+    "4548": "pmg",
+    "457F": "render",
+    "45C5": "pmg",
+    "4750": "render",
+    "4753": "render",
+    "478C": "pmg",
+    "47FB": "util",
+    "490B": "util",
+    "4923": "render",
+    "4940": "input",
+    "4956": "sound",
+    "4AE7": "render",
+    "4AFA": "render",
+    "4B39": "render",
+    "4C85": "util",
+    "4C91": "math",
+    "4CB6": "math",
+    "4CC8": "math",
+    "4CD2": "math",
+    "52C0": "util",
+    "52E7": "init",
+    "5988": "util",
+    "598A": "util",
+    "5997": "util",
+    "5B0C": "math",
+    "5B33": "math",
+    "5BB3": "math",
+    "5C7C": "util",
+    "5C88": "util",
+    "5C9C": "render",
+    "5CBE": "render",
+    "5D76": "render",
+    "5D91": "render",
+    "5DAC": "render",
+    "5DC8": "render",
+    "5DE4": "render",
+    "5DEB": "render",
+    "5DFA": "render",
+    "5E1A": "render",
+    "5F91": "util",
+    "5F9F": "display",
+    "5FB5": "util",
+    "5FD8": "math",
+    "622F": "sound",
+    "62AB": "timing",
+    "644B": "timing",
+    "64A9": "render",
+    "64ED": "game_logic",
+    "655E": "game_logic",
+    "6561": "game_logic",
+    "656B": "game_logic",
+    "65C2": "timing",
+    "6671": "render",
+    "672A": "render",
+    "68BF": "sound",
+    "6988": "pmg",
+    "790A": "pmg",
+    "7B0A": "util",
+    "7B2D": "render",
+    "7B42": "timing",
+    "7B4A": "timing",
+    "7B52": "util",
+    "7B97": "render",
+    "7B9E": "render",
+    "7BF0": "render",
+    "7CAA": "render",
+    "7CF5": "render",
+    "7D18": "render",
+    "7D27": "render",
+    "7D9C": "timing",
+    "7DAA": "timing",
+    "7DAF": "timing",
+    "7DB7": "timing",
+    "7DBC": "timing",
+    "7DC1": "timing",
+    "7DC6": "timing",
+    "7DCB": "math",
+    "7DF6": "timing",
+    "7E04": "timing",
+    "7E0F": "timing",
+    "7E1B": "math",
+    "7EF9": "render",
+    "8042": "util",
+    "8059": "pmg",
+    "82B5": "render",
+    "8329": "math",
+    "8340": "render",
+    "83BD": "render",
+    "83F8": "init",
+    "840A": "display",
+    "843C": "util",
+    "8530": "input",
+    "8A65": "render",
+    "8B2D": "pmg",
+    "8BDC": "render",
+    "8C38": "render",
+    "8CCB": "render",
+    "8E0B": "render",
+    "8EC9": "render",
+    "8F67": "render",
+    "8FF9": "math",
+    "90BD": "sound",
+    "91E7": "sound",
+    "9510": "sound",
+    "9521": "sound",
+    "9551": "sound",
+    "9568": "sound",
+    "9650": "sound",
+    "9661": "sound",
+    "966E": "sound",
+    "97A9": "render",
+    "98B1": "render",
+    "9943": "render",
+    "99A9": "render",
+    "99C2": "render",
+    "9B3C": "render",
+    "9B80": "render",
+    "9C0E": "render",
+    "9C59": "math",
+    "9CCF": "math",
+    "9DA7": "math",
+    "9E8C": "render",
+    "A0DB": "render",
+    "A157": "render",
+    "A356": "render",
+    "A665": "render",
+    "A690": "render",
+    "A93F": "render",
+    "AA2F": "render",
+    "AB39": "render",
+    "AB79": "render",
+    "AB7E": "render",
+    "AC4F": "render",
+    "AD6C": "render",
+    "AE0A": "render",
+    "B24D": "render",
+    "B3A7": "math",
+    "B418": "render",
+    "4CF1": "display",
+    "5AAE": "render",
+    "5F75": "game_logic",
+    "7C1C": "display",
+    "7C80": "init",
+    "7CD7": "util",
+    "84E6": "math",
+    "A754": "render",
+    "AF32": "render",
+    "3F97": "timing",
+    "59A6": "timing",
+    "59E1": "render",
+    "5A6E": "render",
+    "5B71": "math",
+    "5BF2": "render",
+    "5D1D": "render",
+    "5F5C": "game_logic",
+    "647D": "timing",
+    "652D": "render",
+    "6555": "game_logic",
+    "697D": "pmg",
+    "8DF6": "render",
+    "8E6B": "render",
+    "9119": "sound",
+    "9290": "render",
+    "94AA": "render",
+    "94B1": "render",
+    "9AA5": "render",
+    "9AE7": "render",
+    "4031": "render",
+    "5A0A": "render",
+    "5AE7": "render",
+    "5F0D": "game_logic",
+    "6497": "render",
+    "652A": "game_logic",
+    "65A9": "render",
+    "8E77": "render",
+    "8E9D": "render",
+    "8EA2": "render",
+    "59B4": "render",
+    "6215": "render",
+    "8E00": "render",
+    "432A": "render",
+    "4394": "render",
+    "46E6": "render",
+    "46ED": "render",
+    "476C": "render",
+    "476F": "render",
+    "5A2B": "pmg",
+    "601D": "math",
+    "607D": "math",
+    "6AC4": "pmg",
+    "7CC7": "pmg",
+    "84C4": "util",
+    "9B22": "timing",
+    "A75C": "render",
+    "43A5": "render",
+    "43A9": "render",
+    "44FA": "math",
+    "4CDD": "math",
+    "5A9D": "render",
+    "5AA0": "render",
+    "5AAB": "render",
+    "5AB8": "render",
+    "5C69": "util",
+    "5E32": "render",
+    "5EE9": "game_logic",
+    "6495": "render",
+    "6539": "game_logic",
+    "7D54": "render",
+    "7D71": "render",
+    "7D7E": "render",
+    "7D89": "render",
+    "7DDF": "timing",
+    "8526": "input",
+    "8E94": "render",
+    "8E97": "render",
+    "92AA": "render",
+    "92FC": "render",
+    "9308": "render",
+    "931F": "render",
+    "9344": "render",
+    "447D": "unknown",
+    "48BE": "unknown",
+    "48E2": "unknown",
+    "5ECE": "unknown",
+    "60C6": "unknown",
+    "6B04": "unknown",
+    "6B1D": "unknown",
+    "6B35": "unknown",
+    "6B64": "unknown",
+    "6B7D": "unknown",
+    "800E": "unknown",
+    "AC2B": "unknown",
+    "AD16": "unknown",
+    "AE3E": "unknown"
+  }
+}

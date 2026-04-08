@@ -1,0 +1,2065 @@
+{
+  "version": 3,
+  "xex_path": "/home/ilm/Documents/GitHub/pyA8/examples/games/project_m/Project-M-2.0.xex",
+  "xex_sha256": "1c402db55e461059e4ac4bf0660353c1cde183b16829f664512f7447098c4c26",
+  "created": "2026-03-23T17:30:34",
+  "updated": "2026-03-25T03:44:21",
+  "pal": false,
+  "segments": [
+    {
+      "index": 0,
+      "start": "4000",
+      "end": "5894",
+      "size": 6293,
+      "init_addr": "4000",
+      "purpose": null,
+      "overwritten_by": 5,
+      "destroyed": true
+    },
+    {
+      "index": 1,
+      "start": "2800",
+      "end": "2E50",
+      "size": 1617,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 2,
+      "start": "2E51",
+      "end": "2F5C",
+      "size": 268,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 3,
+      "start": "3082",
+      "end": "30BF",
+      "size": 62,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 4,
+      "start": "3100",
+      "end": "31BF",
+      "size": 192,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 5,
+      "start": "3200",
+      "end": "8E94",
+      "size": 23701,
+      "init_addr": null,
+      "purpose": null,
+      "overwrites": 0
+    },
+    {
+      "index": 6,
+      "start": "8F00",
+      "end": "90FB",
+      "size": 508,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 7,
+      "start": "9100",
+      "end": "922D",
+      "size": 302,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 8,
+      "start": "9240",
+      "end": "99F8",
+      "size": 1977,
+      "init_addr": null,
+      "purpose": null
+    },
+    {
+      "index": 9,
+      "start": "9A00",
+      "end": "BFFF",
+      "size": 9728,
+      "init_addr": null,
+      "purpose": null
+    }
+  ],
+  "run_addr": "3660",
+  "banking": {
+    "scheme": "rambo"
+  },
+  "labels": {
+    "3660": {
+      "name": "entry_point",
+      "type": "entry_point",
+      "status": "named",
+      "comment": "Main entry (RUN address)"
+    },
+    "3632": {
+      "name": "update_sound",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Write AUDF/AUDC from music state"
+    },
+    "37DA": {
+      "name": "main_loop",
+      "type": "entry_point",
+      "status": "named",
+      "comment": "Infinite render loop"
+    },
+    "37E7": {
+      "name": "render_frame",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Full frame render + input + status"
+    },
+    "383A": {
+      "name": "update_movement",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Apply turn/move velocity"
+    },
+    "3B4F": {
+      "name": "flip_display_list",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Swap double buffer DL pointer"
+    },
+    "3B5F": {
+      "name": "inc_frame_counter",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "16-bit frame counter at $10/$11"
+    },
+    "3B66": {
+      "name": "vbi_helper",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "FPS calc, fade, called from VBI"
+    },
+    "3B83": {
+      "name": "draw_hex_byte",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Draw hex value to status bar"
+    },
+    "3BBB": {
+      "name": "setup_nmi_vector",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Set FFFA/B = $91C1"
+    },
+    "3BC6": {
+      "name": "setup_irq_vector",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Set FFFE/F = $9100"
+    },
+    "3BD1": {
+      "name": "render_columns",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Main column rendering loop"
+    },
+    "3C17": {
+      "name": "column_loop",
+      "type": "branch_local",
+      "status": "named",
+      "comment": "Per-column raycast+draw iteration"
+    },
+    "419D": {
+      "name": "setup_ray",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Compute ray direction for column"
+    },
+    "41FA": {
+      "name": "advance_ray",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Step to next column angle"
+    },
+    "439F": {
+      "name": "cast_ray",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "DDA raycasting \u2014 find wall hit"
+    },
+    "4333": {
+      "name": "setup_y_step",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Configure Y step direction"
+    },
+    "42EC": {
+      "name": "setup_x_step",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Configure X step direction"
+    },
+    "4C37": {
+      "name": "perspective_project",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Column perspective projection"
+    },
+    "50BC": {
+      "name": "draw_sky_floor",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Sky/floor gradient for column"
+    },
+    "5200": {
+      "name": "draw_texture_col",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Textured wall column renderer"
+    },
+    "89E4": {
+      "name": "plot_column",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Plot column pixels to framebuffer"
+    },
+    "8AAA": {
+      "name": "draw_all_columns",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Second pass: texture+sky for all cols"
+    },
+    "8ADA": {
+      "name": "setup_buffer_ptrs_0",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Buffer 0 pointer config"
+    },
+    "8B03": {
+      "name": "setup_buffer_ptrs_1",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Buffer 1 pointer config"
+    },
+    "8B55": {
+      "name": "process_input",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Read joystick, fire, console keys"
+    },
+    "8C7F": {
+      "name": "swap_buffers",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Buffer swap + page setup"
+    },
+    "8DC6": {
+      "name": "bsp_traverse",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "BSP tree traversal for wall ordering"
+    },
+    "9100": {
+      "name": "irq_stage0",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "IRQ: PRIOR toggle, chain to stage1"
+    },
+    "9126": {
+      "name": "irq_stage1",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "IRQ: PRIOR toggle, chain to stage2"
+    },
+    "914A": {
+      "name": "irq_stage2",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "IRQ: PRIOR toggle, chain to stage3"
+    },
+    "9170": {
+      "name": "irq_stage3",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "IRQ: loop controller, dec counter"
+    },
+    "91A3": {
+      "name": "irq_bottom",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "IRQ: viewport end, set text colors"
+    },
+    "91C1": {
+      "name": "nmi_immediate",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "NMI: enable timer IRQ, reset counter"
+    },
+    "91D4": {
+      "name": "nmi_deferred",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "NMI: colors, music, frame counter"
+    },
+    "3303": {
+      "name": "rmt_player",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "RMT music player main entry"
+    },
+    "3309": {
+      "name": "rmt_silence",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Silence all audio channels"
+    },
+    "334F": {
+      "name": "rmt_stop",
+      "type": "subroutine",
+      "status": "named",
+      "comment": "Stop music and clear channels"
+    },
+    "0004": {
+      "name": "irq_scanline_ctr",
+      "type": "data",
+      "status": "named",
+      "comment": "IRQ scanline counter (16\u21920)"
+    },
+    "0012": {
+      "name": "buffer_flag",
+      "type": "data",
+      "status": "named",
+      "comment": "Double buffer: /bin/bash0 or 0"
+    },
+    "0071": {
+      "name": "viewport_first_col",
+      "type": "data",
+      "status": "named",
+      "comment": "First column (0=PAL, 5=NTSC)"
+    },
+    "0072": {
+      "name": "viewport_num_cols",
+      "type": "data",
+      "status": "named",
+      "comment": "Column count (0=PAL, B=NTSC)"
+    },
+    "000A": {
+      "name": "current_column",
+      "type": "data",
+      "status": "named",
+      "comment": "Column iteration index"
+    },
+    "000F": {
+      "name": "fps_timer",
+      "type": "data",
+      "status": "named",
+      "comment": "FPS countdown (100\u21920)"
+    },
+    "9800": {
+      "name": "display_list_0",
+      "type": "data",
+      "status": "named",
+      "comment": "Display list for buffer 0"
+    },
+    "9A00": {
+      "name": "display_list_1",
+      "type": "data",
+      "status": "named",
+      "comment": "Display list for buffer 1"
+    },
+    "9B95": {
+      "name": "status_line_1",
+      "type": "data",
+      "status": "named",
+      "comment": "Status bar text line 1"
+    },
+    "9BB5": {
+      "name": "status_line_2",
+      "type": "data",
+      "status": "named",
+      "comment": "Status bar text line 2"
+    },
+    "C000": {
+      "name": "sin_table",
+      "type": "data",
+      "status": "named",
+      "comment": "256-entry sine lookup"
+    },
+    "C400": {
+      "name": "cos_table",
+      "type": "data",
+      "status": "named",
+      "comment": "Cosine / reciprocal table"
+    },
+    "CF00": {
+      "name": "wall_dist_table",
+      "type": "data",
+      "status": "named",
+      "comment": "BSP wall distance thresholds"
+    },
+    "CF40": {
+      "name": "wall_height_table",
+      "type": "data",
+      "status": "named",
+      "comment": "Wall height for distance"
+    },
+    "F800": {
+      "name": "custom_charset",
+      "type": "data",
+      "status": "named",
+      "comment": "Custom character set (CHBASE=$F8)"
+    },
+    "8F00": {
+      "name": "col_distance",
+      "type": "data",
+      "status": "named",
+      "comment": "Per-column wall distance array"
+    },
+    "8F20": {
+      "name": "col_texture",
+      "type": "data",
+      "status": "named",
+      "comment": "Per-column texture ID array"
+    },
+    "8F40": {
+      "name": "col_texcol",
+      "type": "data",
+      "status": "named",
+      "comment": "Per-column texture column offset"
+    },
+    "3300": {
+      "name": "sub_3300",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4004": {
+      "name": "sub_4004",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4086": {
+      "name": "sub_4086",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "3C88": {
+      "name": "sub_3C88",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "410B": {
+      "name": "sub_410B",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "400C": {
+      "name": "sub_400C",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "428F": {
+      "name": "sub_428F",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4016": {
+      "name": "sub_4016",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "391E": {
+      "name": "sub_391E",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "399F": {
+      "name": "sub_399F",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "38A3": {
+      "name": "sub_38A3",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4023": {
+      "name": "sub_4023",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "42A9": {
+      "name": "sub_42A9",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "3EB8": {
+      "name": "sub_3EB8",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "38BA": {
+      "name": "sub_38BA",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "42C7": {
+      "name": "sub_42C7",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4DC8": {
+      "name": "sub_4DC8",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "394A": {
+      "name": "sub_394A",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "3B4E": {
+      "name": "sub_3B4E",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "40D3": {
+      "name": "sub_40D3",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4358": {
+      "name": "sub_4358",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "3C5B": {
+      "name": "sub_3C5B",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "39EB": {
+      "name": "sub_39EB",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "40ED": {
+      "name": "sub_40ED",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "336B": {
+      "name": "sub_336B",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "38F0": {
+      "name": "sub_38F0",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "3EF1": {
+      "name": "sub_3EF1",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "FFFF": {
+      "name": "sub_FFFF",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "397E": {
+      "name": "sub_397E",
+      "type": "subroutine",
+      "status": "auto"
+    },
+    "4D00": {
+      "name": "loc_4D00",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4402": {
+      "name": "loc_4402",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3F84": {
+      "name": "loc_3F84",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4085": {
+      "name": "loc_4085",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3706": {
+      "name": "loc_3706",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "340A": {
+      "name": "loc_340A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "440A": {
+      "name": "loc_440A",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "508B": {
+      "name": "loc_508B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3F0D": {
+      "name": "loc_3F0D",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "330F": {
+      "name": "loc_330F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3D0F": {
+      "name": "loc_3D0F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3D90": {
+      "name": "loc_3D90",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3892": {
+      "name": "loc_3892",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3613": {
+      "name": "loc_3613",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E15": {
+      "name": "loc_3E15",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3616": {
+      "name": "loc_3616",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3B99": {
+      "name": "loc_3B99",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E9B": {
+      "name": "loc_3E9B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "419C": {
+      "name": "loc_419C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "921E": {
+      "name": "loc_921E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "43A2": {
+      "name": "loc_43A2",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "9222": {
+      "name": "loc_9222",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3BA5": {
+      "name": "loc_3BA5",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "43A7": {
+      "name": "loc_43A7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "44A8": {
+      "name": "loc_44A8",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4CAD": {
+      "name": "loc_4CAD",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8CAE": {
+      "name": "loc_8CAE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4030": {
+      "name": "loc_4030",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3C33": {
+      "name": "loc_3C33",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3CB9": {
+      "name": "loc_3CB9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "33BB": {
+      "name": "loc_33BB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E3C": {
+      "name": "loc_3E3C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "413E": {
+      "name": "loc_413E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8A40": {
+      "name": "loc_8A40",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4241": {
+      "name": "loc_4241",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8DC2": {
+      "name": "loc_8DC2",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3FC4": {
+      "name": "loc_3FC4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4DC7": {
+      "name": "loc_4DC7",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "384B": {
+      "name": "loc_384B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3D4B": {
+      "name": "loc_3D4B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "50CD": {
+      "name": "loc_50CD",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3DCB": {
+      "name": "loc_3DCB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3F4B": {
+      "name": "loc_3F4B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "33D2": {
+      "name": "loc_33D2",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "43D3": {
+      "name": "loc_43D3",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3ED4": {
+      "name": "loc_3ED4",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "43D6": {
+      "name": "loc_43D6",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E58": {
+      "name": "loc_3E58",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "34DB": {
+      "name": "loc_34DB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "345B": {
+      "name": "loc_345B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "41DD": {
+      "name": "loc_41DD",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "345E": {
+      "name": "loc_345E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "38DE": {
+      "name": "loc_38DE",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8D69": {
+      "name": "loc_8D69",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "41EB": {
+      "name": "loc_41EB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8D6C": {
+      "name": "loc_8D6C",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "407B": {
+      "name": "loc_407B",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8D6F": {
+      "name": "loc_8D6F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "416E": {
+      "name": "loc_416E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8BF1": {
+      "name": "loc_8BF1",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3571": {
+      "name": "loc_3571",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3873": {
+      "name": "loc_3873",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "3E7F": {
+      "name": "loc_3E7F",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "34F5": {
+      "name": "loc_34F5",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4475": {
+      "name": "loc_4475",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4D76": {
+      "name": "loc_4D76",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "41F9": {
+      "name": "loc_41F9",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "34FB": {
+      "name": "loc_34FB",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "8C7E": {
+      "name": "loc_8C7E",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "44FF": {
+      "name": "loc_44FF",
+      "type": "jump_target",
+      "status": "auto"
+    },
+    "4000": {
+      "name": "init_routine",
+      "type": "entry_point",
+      "status": "named",
+      "comment": "INIT: copy tables to RAM under ROM"
+    },
+    "3E03": {
+      "name": "loc_3E03",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4003": {
+      "name": "loc_4003",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8E06": {
+      "name": "loc_8E06",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9207": {
+      "name": "loc_9207",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C07": {
+      "name": "loc_8C07",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3608": {
+      "name": "loc_3608",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E0A": {
+      "name": "loc_3E0A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3C0C": {
+      "name": "loc_3C0C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "920D": {
+      "name": "loc_920D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "520F": {
+      "name": "loc_520F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8E0F": {
+      "name": "loc_8E0F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E11": {
+      "name": "loc_3E11",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3814": {
+      "name": "loc_3814",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4415": {
+      "name": "loc_4415",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3E14": {
+      "name": "loc_3E14",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9217": {
+      "name": "loc_9217",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3419": {
+      "name": "loc_3419",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "361C": {
+      "name": "loc_361C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "441E": {
+      "name": "loc_441E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A1F": {
+      "name": "loc_8A1F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4220": {
+      "name": "loc_4220",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "422A": {
+      "name": "loc_422A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3C2C": {
+      "name": "loc_3C2C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "442D": {
+      "name": "loc_442D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "342C": {
+      "name": "loc_342C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A2F": {
+      "name": "loc_8A2F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4234": {
+      "name": "loc_4234",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C35": {
+      "name": "loc_8C35",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3438": {
+      "name": "loc_3438",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "403C": {
+      "name": "loc_403C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "423E": {
+      "name": "loc_423E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "523F": {
+      "name": "loc_523F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4243": {
+      "name": "loc_4243",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3448": {
+      "name": "loc_3448",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3849": {
+      "name": "loc_3849",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A49": {
+      "name": "loc_8A49",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "524C": {
+      "name": "loc_524C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A4C": {
+      "name": "loc_8A4C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C48": {
+      "name": "loc_8C48",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3455": {
+      "name": "loc_3455",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3458": {
+      "name": "loc_3458",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4059": {
+      "name": "loc_4059",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3C5A": {
+      "name": "loc_3C5A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C5C": {
+      "name": "loc_4C5C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C5B": {
+      "name": "loc_8C5B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A5F": {
+      "name": "loc_8A5F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5260": {
+      "name": "loc_5260",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4063": {
+      "name": "loc_4063",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3865": {
+      "name": "loc_3865",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A65": {
+      "name": "loc_8A65",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4465": {
+      "name": "loc_4465",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A6A": {
+      "name": "loc_8A6A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "406E": {
+      "name": "loc_406E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8C6E": {
+      "name": "loc_8C6E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A70": {
+      "name": "loc_8A70",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "446F": {
+      "name": "loc_446F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4279": {
+      "name": "loc_4279",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A85": {
+      "name": "loc_8A85",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A87": {
+      "name": "loc_8A87",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3885": {
+      "name": "loc_3885",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "448C": {
+      "name": "loc_448C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8A8D": {
+      "name": "loc_8A8D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "428E": {
+      "name": "loc_428E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "388F": {
+      "name": "loc_388F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C92": {
+      "name": "loc_4C92",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "5095": {
+      "name": "loc_5095",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4299": {
+      "name": "loc_4299",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C9A": {
+      "name": "loc_4C9A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "389B": {
+      "name": "loc_389B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4C9C": {
+      "name": "loc_4C9C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AA2": {
+      "name": "loc_8AA2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CA3": {
+      "name": "loc_8CA3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AA4": {
+      "name": "loc_8AA4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CA5": {
+      "name": "loc_3CA5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42A6": {
+      "name": "loc_42A6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CAC": {
+      "name": "loc_8CAC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AAE": {
+      "name": "loc_8AAE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42B5": {
+      "name": "loc_42B5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "50B6": {
+      "name": "loc_50B6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44B7": {
+      "name": "loc_44B7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8ABF": {
+      "name": "loc_8ABF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CC3": {
+      "name": "loc_8CC3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42C4": {
+      "name": "loc_42C4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "50C7": {
+      "name": "loc_50C7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4CC8": {
+      "name": "loc_4CC8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AC9": {
+      "name": "loc_8AC9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CCA": {
+      "name": "loc_8CCA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "36C8": {
+      "name": "loc_36C8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "36D0": {
+      "name": "loc_36D0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CD3": {
+      "name": "loc_3CD3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "38D3": {
+      "name": "loc_38D3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CD6": {
+      "name": "loc_8CD6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8AD7": {
+      "name": "loc_8AD7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "38DC": {
+      "name": "loc_38DC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "40DD": {
+      "name": "loc_40DD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CDD": {
+      "name": "loc_8CDD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CE4": {
+      "name": "loc_3CE4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CE9": {
+      "name": "loc_8CE9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "40EA": {
+      "name": "loc_40EA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "38EA": {
+      "name": "loc_38EA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4CED": {
+      "name": "loc_4CED",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "38EE": {
+      "name": "loc_38EE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "34EF": {
+      "name": "loc_34EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4CEF": {
+      "name": "loc_4CEF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CF0": {
+      "name": "loc_8CF0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "34F2": {
+      "name": "loc_34F2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "38F2": {
+      "name": "loc_38F2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "50F4": {
+      "name": "loc_50F4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "38EF": {
+      "name": "loc_38EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3CF5": {
+      "name": "loc_3CF5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44EF": {
+      "name": "loc_44EF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "40F9": {
+      "name": "loc_40F9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "44F9": {
+      "name": "loc_44F9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "36FA": {
+      "name": "loc_36FA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8CFC": {
+      "name": "loc_8CFC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "50FE": {
+      "name": "loc_50FE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "42FE": {
+      "name": "loc_42FE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D03": {
+      "name": "loc_8D03",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4108": {
+      "name": "loc_4108",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D12": {
+      "name": "loc_8D12",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4516": {
+      "name": "loc_4516",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3318": {
+      "name": "loc_3318",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "431E": {
+      "name": "loc_431E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3920": {
+      "name": "loc_3920",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3D20": {
+      "name": "loc_3D20",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D21": {
+      "name": "loc_8D21",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F20": {
+      "name": "loc_3F20",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3724": {
+      "name": "loc_3724",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4D25": {
+      "name": "loc_4D25",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3529": {
+      "name": "loc_3529",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "412A": {
+      "name": "loc_412A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F2B": {
+      "name": "loc_3F2B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "332D": {
+      "name": "loc_332D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D30": {
+      "name": "loc_8D30",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3D31": {
+      "name": "loc_3D31",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D3C": {
+      "name": "loc_8D3C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D43": {
+      "name": "loc_8D43",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F45": {
+      "name": "loc_3F45",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F4A": {
+      "name": "loc_3F4A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "394C": {
+      "name": "loc_394C",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D4F": {
+      "name": "loc_8D4F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3D52": {
+      "name": "loc_3D52",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D56": {
+      "name": "loc_8D56",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F58": {
+      "name": "loc_3F58",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3B59": {
+      "name": "loc_3B59",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "415B": {
+      "name": "loc_415B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4D5B": {
+      "name": "loc_4D5B",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D5E": {
+      "name": "loc_8D5E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4D63": {
+      "name": "loc_4D63",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3D63": {
+      "name": "loc_3D63",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3B65": {
+      "name": "loc_3B65",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4D65": {
+      "name": "loc_4D65",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B68": {
+      "name": "loc_8B68",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "436A": {
+      "name": "loc_436A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F69": {
+      "name": "loc_3F69",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "356E": {
+      "name": "loc_356E",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3370": {
+      "name": "loc_3370",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3D74": {
+      "name": "loc_3D74",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B78": {
+      "name": "loc_8B78",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F80": {
+      "name": "loc_3F80",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3B82": {
+      "name": "loc_3B82",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3982": {
+      "name": "loc_3982",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F83": {
+      "name": "loc_3F83",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B85": {
+      "name": "loc_8B85",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D86": {
+      "name": "loc_8D86",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4189": {
+      "name": "loc_4189",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "338A": {
+      "name": "loc_338A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "438A": {
+      "name": "loc_438A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "358A": {
+      "name": "loc_358A",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "358D": {
+      "name": "loc_358D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4D8F": {
+      "name": "loc_4D8F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B92": {
+      "name": "loc_8B92",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D92": {
+      "name": "loc_8D92",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "9194": {
+      "name": "loc_9194",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3F97": {
+      "name": "loc_3F97",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8D9D": {
+      "name": "loc_8D9D",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8B9F": {
+      "name": "loc_8B9F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4D9F": {
+      "name": "loc_4D9F",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DA1": {
+      "name": "loc_3DA1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FA2": {
+      "name": "loc_3FA2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "37A1": {
+      "name": "loc_37A1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "35A4": {
+      "name": "loc_35A4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "33A5": {
+      "name": "loc_33A5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DA8": {
+      "name": "loc_8DA8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "39A8": {
+      "name": "loc_39A8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "35AA": {
+      "name": "loc_35AA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "33AB": {
+      "name": "loc_33AB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BAC": {
+      "name": "loc_8BAC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3BAC": {
+      "name": "loc_3BAC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DB2": {
+      "name": "loc_3DB2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DB3": {
+      "name": "loc_8DB3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3BB5": {
+      "name": "loc_3BB5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BB9": {
+      "name": "loc_8BB9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4DBA": {
+      "name": "loc_4DBA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "4DBC": {
+      "name": "loc_4DBC",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DBE": {
+      "name": "loc_8DBE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FBE": {
+      "name": "loc_3FBE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "33C2": {
+      "name": "loc_33C2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FC3": {
+      "name": "loc_3FC3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DC5": {
+      "name": "loc_8DC5",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BCA": {
+      "name": "loc_8BCA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "35CE": {
+      "name": "loc_35CE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "41CF": {
+      "name": "loc_41CF",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FD1": {
+      "name": "loc_3FD1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BD6": {
+      "name": "loc_8BD6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "35D9": {
+      "name": "loc_35D9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DDB": {
+      "name": "loc_3DDB",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BDE": {
+      "name": "loc_8BDE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DE1": {
+      "name": "loc_3DE1",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DE2": {
+      "name": "loc_8DE2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3FE2": {
+      "name": "loc_3FE2",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DE7": {
+      "name": "loc_3DE7",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "41E8": {
+      "name": "loc_41E8",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "3DEA": {
+      "name": "loc_3DEA",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BED": {
+      "name": "loc_8BED",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "33F0": {
+      "name": "loc_33F0",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "35F3": {
+      "name": "loc_35F3",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8DF4": {
+      "name": "loc_8DF4",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "41F6": {
+      "name": "loc_41F6",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "91F9": {
+      "name": "loc_91F9",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "35FD": {
+      "name": "loc_35FD",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "8BFE": {
+      "name": "loc_8BFE",
+      "type": "branch_local",
+      "status": "auto"
+    },
+    "409B": {
+      "name": "init_tables_for_c000",
+      "type": "data",
+      "status": "named",
+      "comment": "Sine/cosine/perspective tables \u2014 INIT copies to $C000-$CFFF (RAM under OS ROM)"
+    },
+    "509B": {
+      "name": "init_data_for_f800",
+      "type": "data",
+      "status": "named",
+      "comment": "Custom charset + HW vectors \u2014 INIT copies to $F800-$FFFF (RAM under OS ROM)"
+    }
+  },
+  "observations": {
+    "vectors_at_boot": {
+      "VVBLKI": "C0E2",
+      "VVBLKD": "C28A",
+      "VDSLST": "C0CE"
+    }
+  }
+}

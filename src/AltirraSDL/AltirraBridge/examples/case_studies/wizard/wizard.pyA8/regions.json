@@ -1,0 +1,267 @@
+[
+  {
+    "start": "0780",
+    "end": "07AA",
+    "type": "code"
+  },
+  {
+    "start": "0917",
+    "end": "09B2",
+    "type": "code"
+  },
+  {
+    "start": "0A36",
+    "end": "0AD7",
+    "type": "code"
+  },
+  {
+    "start": "0B00",
+    "end": "0B40",
+    "type": "code"
+  },
+  {
+    "start": "0C08",
+    "end": "0C54",
+    "type": "code"
+  },
+  {
+    "start": "0C78",
+    "end": "0CBB",
+    "type": "code"
+  },
+  {
+    "start": "0D00",
+    "end": "0DAA",
+    "type": "code"
+  },
+  {
+    "start": "1800",
+    "end": "189F",
+    "type": "code"
+  },
+  {
+    "start": "1900",
+    "end": "1A41",
+    "type": "code"
+  },
+  {
+    "start": "1B00",
+    "end": "1C73",
+    "type": "code"
+  },
+  {
+    "start": "1F00",
+    "end": "1FB0",
+    "type": "code"
+  },
+  {
+    "start": "2100",
+    "end": "2153",
+    "type": "code"
+  },
+  {
+    "start": "2300",
+    "end": "2533",
+    "type": "code"
+  },
+  {
+    "start": "3C0A",
+    "end": "3C49",
+    "type": "code"
+  },
+  {
+    "start": "4100",
+    "end": "413F",
+    "type": "code"
+  },
+  {
+    "start": "414A",
+    "end": "414F",
+    "type": "code"
+  },
+  {
+    "start": "4165",
+    "end": "41CA",
+    "type": "code"
+  },
+  {
+    "start": "41D5",
+    "end": "41E9",
+    "type": "code"
+  },
+  {
+    "start": "423B",
+    "end": "4241",
+    "type": "code"
+  },
+  {
+    "start": "4300",
+    "end": "435E",
+    "type": "code"
+  },
+  {
+    "start": "4380",
+    "end": "4390",
+    "type": "code"
+  },
+  {
+    "start": "5200",
+    "end": "5287",
+    "type": "code"
+  },
+  {
+    "start": "5500",
+    "end": "5587",
+    "type": "code"
+  },
+  {
+    "start": "5600",
+    "end": "569A",
+    "type": "code"
+  },
+  {
+    "start": "5700",
+    "end": "57F1",
+    "type": "code"
+  },
+  {
+    "start": "5800",
+    "end": "5870",
+    "type": "code"
+  },
+  {
+    "start": "5880",
+    "end": "58B7",
+    "type": "code"
+  },
+  {
+    "start": "5A00",
+    "end": "5A6A",
+    "type": "code"
+  },
+  {
+    "start": "5A80",
+    "end": "5AA9",
+    "type": "code"
+  },
+  {
+    "start": "5AAC",
+    "end": "5AC2",
+    "type": "code"
+  },
+  {
+    "start": "5B00",
+    "end": "5BAB",
+    "type": "code"
+  },
+  {
+    "start": "5C00",
+    "end": "5CF3",
+    "type": "code"
+  },
+  {
+    "start": "5D00",
+    "end": "5D64",
+    "type": "code"
+  },
+  {
+    "start": "5DB5",
+    "end": "5DC5",
+    "type": "code"
+  },
+  {
+    "start": "5DD6",
+    "end": "5DF5",
+    "type": "code"
+  },
+  {
+    "start": "5DFA",
+    "end": "5E13",
+    "type": "code"
+  },
+  {
+    "start": "5E18",
+    "end": "5E63",
+    "type": "code"
+  },
+  {
+    "start": "5E68",
+    "end": "5E95",
+    "type": "code"
+  },
+  {
+    "start": "5EC3",
+    "end": "5F06",
+    "type": "code"
+  },
+  {
+    "start": "5F08",
+    "end": "5F3B",
+    "type": "code"
+  },
+  {
+    "start": "5F3D",
+    "end": "5F92",
+    "type": "code"
+  },
+  {
+    "start": "5FBC",
+    "end": "5FEE",
+    "type": "code"
+  },
+  {
+    "start": "6300",
+    "end": "634C",
+    "type": "code"
+  },
+  {
+    "start": "6400",
+    "end": "6466",
+    "type": "code"
+  },
+  {
+    "start": "6480",
+    "end": "64BF",
+    "type": "code"
+  },
+  {
+    "start": "6500",
+    "end": "657B",
+    "type": "code"
+  },
+  {
+    "start": "6880",
+    "end": "68CE",
+    "type": "code"
+  },
+  {
+    "start": "6900",
+    "end": "69B1",
+    "type": "code"
+  },
+  {
+    "start": "6A00",
+    "end": "6A29",
+    "type": "code"
+  },
+  {
+    "start": "6A30",
+    "end": "6A60",
+    "type": "code"
+  },
+  {
+    "start": "6A80",
+    "end": "6AFD",
+    "type": "code"
+  },
+  {
+    "start": "C28A",
+    "end": "C28F",
+    "type": "code"
+  },
+  {
+    "start": "E462",
+    "end": "E464",
+    "type": "code"
+  }
+]

@@ -1,0 +1,204 @@
+# AltirraBridgeServer — headless lean SDK target.
+#
+# Speaks the same bridge protocol as `AltirraSDL --bridge`, but with no
+# Dear ImGui, no librashader, no display backend, no input layer, no UI
+# tree, no embedded fonts. SDL3 is still linked transitively because
+# the simulator's audio output (audiooutput_sdl3.cpp) requires it; the
+# main loop initialises SDL3 with `SDL_INIT_AUDIO` only and forces the
+# dummy audio driver via `SDL_HINT_AUDIO_DRIVER=dummy`. A future v2 may
+# replace audiooutput_sdl3.cpp with a true null implementation to drop
+# SDL3 entirely.
+#
+# This target is opt-in via -DALTIRRA_BRIDGE_SERVER=ON, and depends on
+# the AltirraSDL target for two things:
+#   1. ALTIRRA_ALL_SOURCES (the filtered emulation core source list,
+#      computed in src/AltirraSDL/cmake/altirra_core_sources.cmake)
+#   2. The Win32 stub files (stubs/console_stubs.cpp, etc.) and several
+#      glue files that live under src/AltirraSDL/source/ but are
+#      themselves portable.
+
+set(ALTIRRA_SDL_DIR ${CMAKE_SOURCE_DIR}/src/AltirraSDL)
+
+add_executable(AltirraBridgeServer
+    main_bridge.cpp
+    # No-op stubs for SDL3-frontend symbols that the AltirraSDL stubs/
+    # files reference but the bridge server has no real implementation
+    # for. Includes ATBridgeRequestAppQuit (which the bridge module
+    # calls on QUIT) and ATUIPushDeferred (matched-mangled-name
+    # no-op so uiaccessors_stubs.cpp's ATUIBootImage links).
+    ui_stubs.cpp
+
+    # --- All emulation core files (filtered, shared with AltirraSDL) ---
+    ${ALTIRRA_ALL_SOURCES}
+
+    # --- Stub implementations replacing Win32-only files ---
+    # Same stubs the SDL3 frontend uses; they're plain C++ no-ops or
+    # POSIX equivalents and depend on nothing UI-related.
+    ${ALTIRRA_SDL_DIR}/stubs/console_stubs.cpp
+    ${ALTIRRA_SDL_DIR}/stubs/oshelper_stubs.cpp
+    ${ALTIRRA_SDL_DIR}/stubs/uiaccessors_stubs.cpp
+    ${ALTIRRA_SDL_DIR}/stubs/win32_stubs.cpp
+    ${ALTIRRA_SDL_DIR}/stubs/device_stubs.cpp
+
+    # --- AltirraSDL platform glue that's UI-free ---
+    # logging.h's LOG_INFO/LOG_ERROR are header-only macros, no .cpp.
+    # crash_report.cpp is intentionally NOT included — it uses
+    # ImGui::Begin/Button/etc. for the in-app crash viewer, and the
+    # bridge server has no UI. ATCrashReport* symbols are not
+    # referenced from the core emulation path.
+    # Settings persistence — same INI loader as AltirraSDL.
+    ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
+    # Save state deserializer registration.
+    ${CMAKE_SOURCE_DIR}/src/Altirra/source/savestateio.cpp
+    # NB: source/ui/core/ui_indicators.cpp is intentionally NOT
+    # included — it actively uses ImGui (ImDrawList, GetForegroundDrawList,
+    # IM_COL32) and pulling it in would force a real ImGui dependency.
+    # Instead, ui_stubs.cpp provides a minimal IATUIRenderer
+    # implementation with all methods as no-ops, plus the
+    # ATCreateUIRenderer factory.
+
+    # ATUICommandManager (from ATUI library) — referenced by debuggerautotest.cpp
+    ${CMAKE_SOURCE_DIR}/src/ATUI/source/uicommandmanager.cpp
+
+    # VDAccelTableDefinition — accelerator tables, used by command registration
+    ${CMAKE_SOURCE_DIR}/src/Dita/source/accel.cpp
+
+    # VDDisplay utility sources (still needed by some core code paths
+    # even though we don't render anything)
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/screenfx.cpp
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/bloom.cpp
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/bicubic.cpp
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/source/displaytypes.cpp
+    # NB: VDDisplay/source/display.cpp pulls in <windows.h> via
+    # w32assist.h and isn't portable. The few VDVideoDisplayFrame
+    # methods that ATFrameBuffer (in gtia.cpp) derives from are
+    # provided as no-op stubs in ui_stubs.cpp instead — same trick
+    # display_sdl3.cpp uses for the SDL3 frontend.
+
+    # Audio output — reuses the SDL3-backed mixer with the dummy driver
+    ${CMAKE_SOURCE_DIR}/src/ATAudio/source/audiooutput_sdl3.cpp
+
+    # --- Bridge module (shared with AltirraSDL via path reference) ---
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_server.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_protocol.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_transport.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_state.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_write.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_render.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_debug.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_debug2.cpp
+    # NB: bridge_main_glue_sdl3.cpp is NOT included — main_bridge.cpp
+    # provides its own ATBridgeDispatch* implementations that call the
+    # simulator directly without the SDL3 deferred-action queue.
+)
+
+# Re-include Win32-specific support that the SDL3 build also re-includes.
+if(WIN32)
+    target_sources(AltirraBridgeServer PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/Altirra/source/pclink_win32.cpp
+    )
+endif()
+
+target_compile_definitions(AltirraBridgeServer PRIVATE
+    ALTIRRA_BRIDGE_ENABLED=1
+    ALTIRRA_BRIDGE_HEADLESS=1
+    # AT_SDL3_PORTABLE=1 enables the cross-platform code paths in
+    # the Altirra core that the SDL3 frontend turns on. Without this,
+    # several headers fall back to Win32-only paths and we get
+    # compile errors. Same value as AltirraSDL's build flags.
+    AT_SDL3_PORTABLE=1
+)
+
+# Same include paths as AltirraSDL for the headers it shares. We do
+# NOT include the SDL3 frontend's source/app, source/display, etc.
+# subdirectories — main_bridge.cpp must not reach into those.
+target_include_directories(AltirraBridgeServer PRIVATE
+    # Public Altirra headers (src/h/at/*) — REQUIRED for breakpoints.h,
+    # audiomixer.h, and other core interfaces. Must come before
+    # Altirra/h to match AltirraSDL's include order.
+    ${ALTIRRA_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/src/Altirra/h
+    ${CMAKE_SOURCE_DIR}/src/Altirra/source
+    ${CMAKE_SOURCE_DIR}/src/compat
+    ${ALTIRRA_SDL_DIR}/source
+    ${ALTIRRA_SDL_DIR}/source/app          # logging.h, crash_report.h
+    ${ALTIRRA_SDL_DIR}/source/bridge       # bridge_*.h
+    # uiaccessors_stubs.cpp #includes "ui_main.h" — that header is
+    # mostly types/declarations, no SDL3 deps. We provide just the
+    # one include path needed for the stub to compile, NOT the
+    # entire SDL3 frontend source tree.
+    ${ALTIRRA_SDL_DIR}/source/ui/core
+    ${CMAKE_SOURCE_DIR}/src/ATAudio/h
+    ${CMAKE_SOURCE_DIR}/src/VDDisplay/h
+    ${CMAKE_SOURCE_DIR}/src/Altirra/res
+    ${CMAKE_SOURCE_DIR}/src/Altirra/autogen
+    ${CMAKE_SOURCE_DIR}/src/Altirra/autobuild_default
+)
+
+if(ALTIRRA_COMPAT_DIR)
+    target_include_directories(AltirraBridgeServer PRIVATE ${ALTIRRA_COMPAT_DIR})
+endif()
+
+# Stubs come BEFORE Altirra headers (same as AltirraSDL) so the stub
+# versions of Win32-dependent headers are found first.
+#
+# We also prepend our own stubs/ directory which provides a minimal
+# imgui.h shim — uiaccessors_stubs.cpp transitively #includes
+# <imgui.h> via ui_main.h, but the bridge server doesn't link Dear
+# ImGui. The shim defines just enough types (ImVec2, ImGuiKey, etc.)
+# for the include chain to compile; calling any ImGui:: function
+# from this build is a link-time error by design.
+target_include_directories(AltirraBridgeServer BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+    ${ALTIRRA_SDL_DIR}/stubs
+    ${CMAKE_SOURCE_DIR}/src/Altirra/h
+)
+
+target_link_libraries(AltirraBridgeServer PRIVATE
+    # Core emulation libraries (same set as AltirraSDL)
+    ATCPU
+    ATEmulation
+    ATDevices
+    ATIO
+    ATAudio
+    ATNetwork
+    ATNetworkSockets
+    ATDebugger
+    ATVM
+    ATCore
+    Kasumi
+    vdjson
+    system
+
+    # SDL3 — for the audio mixer only. SDL3_INIT_AUDIO with the dummy
+    # driver makes audio a no-op; no window, no event subsystem.
+    SDL3::SDL3
+)
+
+# Inherit CMAKE_CXX_STANDARD from the top-level project (currently 23).
+# Do NOT downgrade — several Altirra headers use C++23 lambda template
+# features that won't compile under C++17.
+
+# Compile definitions to match AltirraSDL's platform classification
+# (the core emulation files conditionally compile against these).
+if(WIN32)
+    target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_WINDOWS=1)
+elseif(APPLE)
+    target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_MACOS=1)
+elseif(UNIX)
+    target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_LINUX=1)
+endif()
+
+# Per-file SIMD flags. Mirror src/AltirraSDL/CMakeLists.txt — these
+# files use intrinsics that need -mbmi / -mssse3 to compile under
+# GCC/Clang on x86_64.
+if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/src/Altirra/source/antic.cpp"
+        PROPERTIES COMPILE_FLAGS "-mbmi"
+    )
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/src/Altirra/source/tracefileencoding.cpp"
+        PROPERTIES COMPILE_FLAGS "-mssse3 -mpopcnt"
+    )
+endif()

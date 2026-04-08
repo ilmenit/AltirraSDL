@@ -1,0 +1,660 @@
+name: AltirraBridge package
+
+# Builds the headless AltirraBridgeServer binary on Linux x86_64,
+# macOS arm64, and Windows x86_64. For each platform, packages the
+# binary together with the Python and C SDKs, the documentation,
+# the examples (source AND compiled C example binaries), the case
+# studies, and the Claude Code skill into a self-contained archive.
+#
+# This is independent from the main AltirraSDL releases: no GUI, no
+# fonts, no librashader, no display layer, no input layer. Use this
+# package for headless automation, CI testing, AI-driven gameplay,
+# and reverse-engineering tooling.
+#
+# Triggers:
+#   - push to main       → updates the rolling "nightly-bridge" prerelease
+#   - push of vX.Y.Z tag → attaches all-platform packages to the tagged release
+#   - pull_request       → builds + uploads artifacts (no release)
+#   - workflow_dispatch  → manual
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/AltirraSDL/AltirraBridge/**'
+      - 'src/AltirraSDL/source/bridge/**'
+      - 'src/AltirraSDL/cmake/altirra_core_sources.cmake'
+      - 'src/AltirraBridgeServer/**'
+      - '.github/workflows/bridge-package.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# ===========================================================================
+# Linux x86_64
+# ===========================================================================
+
+jobs:
+  linux:
+    name: Build (Linux x86_64)
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+      options: --user root
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          # Smaller dep set than the full AppImage build: bridge server
+          # links SDL3 only for audio (with the dummy driver), no UI.
+          apt-get install -y --no-install-recommends \
+            build-essential ninja-build git ca-certificates \
+            curl wget file zip unzip xz-utils patch pkg-config \
+            gnupg lsb-release software-properties-common \
+            python3 python3-venv \
+            libgl1-mesa-dev \
+            libasound2-dev libpulse-dev \
+            libdbus-1-dev libudev-dev \
+            tar gzip
+          # CMake >= 3.24 + gcc-12.
+          wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
+            | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
+            > /etc/apt/sources.list.d/kitware.list
+          apt-get update
+          apt-get install -y --no-install-recommends cmake gcc-12 g++-12
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DALTIRRA_BRIDGE_SERVER=ON
+
+      - name: Build AltirraBridgeServer
+        shell: bash
+        run: cmake --build build --target AltirraBridgeServer -j"$(nproc)"
+
+      - name: Build C example binaries
+        shell: bash
+        run: |
+          cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
+                -B build_c_examples -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_c_examples -j"$(nproc)"
+          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs
+
+      - name: Smoke test bridge + Python SDK + C example
+        shell: bash
+        run: |
+          set -e
+          ./build/src/AltirraBridgeServer/AltirraBridgeServer \
+            --bridge=tcp:127.0.0.1:0 >/tmp/brs.log 2>&1 &
+          BPID=$!
+          sleep 2
+          TOKFILE=$(grep -oP 'token-file: \K\S+' /tmp/brs.log | head -1)
+          if [ -z "$TOKFILE" ]; then
+            cat /tmp/brs.log; kill $BPID 2>/dev/null || true; exit 1
+          fi
+          # Python SDK end-to-end
+          PYTHONPATH=src/AltirraSDL/AltirraBridge/sdk/python python3 - <<PY
+          from altirra_bridge import AltirraBridge
+          with AltirraBridge.from_token_file("${TOKFILE}") as a:
+              assert a.ping()['ok']
+              a.frame(20)
+              png = a.screenshot()
+              assert png[:8] == b'\x89PNG\r\n\x1a\n'
+              insns = a.disasm(0xe477, 4)
+              assert 'COLDSV' in insns[0]['text']
+          print("python sdk OK")
+          PY
+          # C example (uses the same token file)
+          ./build_c_examples/01_ping "${TOKFILE}" || { echo "C ping failed"; kill $BPID; exit 1; }
+          echo "c example OK"
+          # Tell the server to quit
+          PYTHONPATH=src/AltirraSDL/AltirraBridge/sdk/python python3 -c "
+          from altirra_bridge import AltirraBridge
+          AltirraBridge.from_token_file('${TOKFILE}').quit()" 2>/dev/null || true
+          wait $BPID 2>/dev/null || true
+
+      - name: Stage package
+        shell: bash
+        run: |
+          set -e
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VER="${{ github.ref_name }}"
+          else
+            VER="$(git rev-parse --short HEAD)"
+          fi
+          NAME="AltirraBridge-${VER}-linux-x86_64"
+          STAGE="staging/${NAME}"
+          mkdir -p "${STAGE}"
+
+          # Server binary, stripped
+          cp build/src/AltirraBridgeServer/AltirraBridgeServer "${STAGE}/"
+          strip "${STAGE}/AltirraBridgeServer" || true
+          chmod +x "${STAGE}/AltirraBridgeServer"
+
+          # SDKs, docs, examples, skill, README
+          cp -a src/AltirraSDL/AltirraBridge/sdk      "${STAGE}/sdk"
+          cp -a src/AltirraSDL/AltirraBridge/docs     "${STAGE}/docs"
+          cp -a src/AltirraSDL/AltirraBridge/examples "${STAGE}/examples"
+          cp -a src/AltirraSDL/AltirraBridge/skills   "${STAGE}/skills"
+          cp -a src/AltirraSDL/AltirraBridge/README.md "${STAGE}/README.md" 2>/dev/null || true
+          find "${STAGE}/sdk" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+          find "${STAGE}/sdk" -type f -name '*.pyc' -delete
+
+          # Compiled C examples
+          mkdir -p "${STAGE}/sdk/c/examples/bin"
+          cp build_c_examples/01_ping      "${STAGE}/sdk/c/examples/bin/"
+          cp build_c_examples/02_peek_regs "${STAGE}/sdk/c/examples/bin/"
+          strip "${STAGE}/sdk/c/examples/bin/"* || true
+          chmod +x "${STAGE}/sdk/c/examples/bin/"*
+
+          # Generated PACKAGE.md
+          STAMP="$(date -u +%Y-%m-%d)"
+          cat > "${STAGE}/PACKAGE.md" <<EOF
+          # AltirraBridge — ${VER} — Linux x86_64
+
+          Built ${STAMP} from commit \`${{ github.sha }}\`.
+
+          ## Quick start
+
+              ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0 &
+              # note the token-file path printed to stderr, then:
+              PYTHONPATH=sdk/python python3 -c "
+              from altirra_bridge import AltirraBridge
+              with AltirraBridge.from_token_file('/tmp/altirra-bridge-...token') as a:
+                  a.boot('/path/to/game.xex'); a.frame(120)
+                  open('frame.png','wb').write(a.screenshot())"
+
+          ## Contents
+
+              AltirraBridgeServer        — headless emulator binary
+              sdk/python/altirra_bridge/ — Python client (stdlib only)
+              sdk/python/examples/       — Python example scripts
+              sdk/c/altirra_bridge.{h,c} — C client (libc only)
+              sdk/c/examples/            — C example sources
+              sdk/c/examples/bin/        — *prebuilt* C example binaries
+              docs/PROTOCOL.md           — wire-protocol reference
+              docs/COMMANDS.md           — per-command quick reference
+              docs/GETTING_STARTED.md    — five-minute walkthrough
+              examples/case_studies/     — RE methodology case studies
+              skills/altirra-bridge/     — Claude Code skill
+
+          ## Run a prebuilt example
+
+              ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0 &
+              ./sdk/c/examples/bin/01_ping /tmp/altirra-bridge-*.token
+
+          ## Requirements
+
+          - Linux x86_64, glibc ≥ 2.35
+            (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
+          - Python ≥ 3.9 for the Python SDK (stdlib only)
+          EOF
+
+          mkdir -p dist
+          tar -C staging -czf "dist/${NAME}.tar.gz" "${NAME}"
+          ls -lh "dist/${NAME}.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AltirraBridge-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  # ===========================================================================
+  # macOS arm64 (Apple Silicon)
+  # ===========================================================================
+
+  macos:
+    name: Build (macOS arm64)
+    runs-on: macos-14
+
+    steps:
+      - name: Install Ninja
+        run: brew install ninja
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Cache CMake FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: bridge-macos-arm64-deps-${{ hashFiles('CMakeLists.txt', 'src/AltirraSDL/CMakeLists.txt', 'src/AltirraBridgeServer/CMakeLists.txt') }}
+          restore-keys: bridge-macos-arm64-deps-
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DALTIRRA_BRIDGE_SERVER=ON \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build AltirraBridgeServer
+        shell: bash
+        run: cmake --build build --target AltirraBridgeServer -j"$(sysctl -n hw.ncpu)"
+
+      - name: Build C example binaries
+        shell: bash
+        run: |
+          cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
+                -B build_c_examples -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          cmake --build build_c_examples -j"$(sysctl -n hw.ncpu)"
+          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -e
+          ./build/src/AltirraBridgeServer/AltirraBridgeServer \
+            --bridge=tcp:127.0.0.1:0 >/tmp/brs.log 2>&1 &
+          BPID=$!
+          sleep 2
+          TOKFILE=$(grep -E 'token-file: ' /tmp/brs.log | sed 's/.*token-file: //' | head -1)
+          if [ -z "$TOKFILE" ]; then
+            cat /tmp/brs.log; kill $BPID 2>/dev/null || true; exit 1
+          fi
+          PYTHONPATH=src/AltirraSDL/AltirraBridge/sdk/python python3 - <<PY
+          from altirra_bridge import AltirraBridge
+          with AltirraBridge.from_token_file("${TOKFILE}") as a:
+              assert a.ping()['ok']
+              a.frame(20)
+              png = a.screenshot()
+              assert png[:8] == b'\x89PNG\r\n\x1a\n'
+              insns = a.disasm(0xe477, 4)
+              assert 'COLDSV' in insns[0]['text']
+          print("python sdk OK")
+          PY
+          ./build_c_examples/01_ping "${TOKFILE}" || { echo "C ping failed"; kill $BPID; exit 1; }
+          echo "c example OK"
+          PYTHONPATH=src/AltirraSDL/AltirraBridge/sdk/python python3 -c "
+          from altirra_bridge import AltirraBridge
+          AltirraBridge.from_token_file('${TOKFILE}').quit()" 2>/dev/null || true
+          wait $BPID 2>/dev/null || true
+
+      - name: Stage package
+        shell: bash
+        run: |
+          set -e
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VER="${{ github.ref_name }}"
+          else
+            VER="$(git rev-parse --short HEAD)"
+          fi
+          NAME="AltirraBridge-${VER}-macos-arm64"
+          STAGE="staging/${NAME}"
+          mkdir -p "${STAGE}"
+
+          cp build/src/AltirraBridgeServer/AltirraBridgeServer "${STAGE}/"
+          strip "${STAGE}/AltirraBridgeServer" || true
+          chmod +x "${STAGE}/AltirraBridgeServer"
+
+          cp -a src/AltirraSDL/AltirraBridge/sdk      "${STAGE}/sdk"
+          cp -a src/AltirraSDL/AltirraBridge/docs     "${STAGE}/docs"
+          cp -a src/AltirraSDL/AltirraBridge/examples "${STAGE}/examples"
+          cp -a src/AltirraSDL/AltirraBridge/skills   "${STAGE}/skills"
+          cp -a src/AltirraSDL/AltirraBridge/README.md "${STAGE}/README.md" 2>/dev/null || true
+          find "${STAGE}/sdk" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+          find "${STAGE}/sdk" -type f -name '*.pyc' -delete
+
+          mkdir -p "${STAGE}/sdk/c/examples/bin"
+          cp build_c_examples/01_ping      "${STAGE}/sdk/c/examples/bin/"
+          cp build_c_examples/02_peek_regs "${STAGE}/sdk/c/examples/bin/"
+          strip "${STAGE}/sdk/c/examples/bin/"* || true
+          chmod +x "${STAGE}/sdk/c/examples/bin/"*
+
+          STAMP="$(date -u +%Y-%m-%d)"
+          cat > "${STAGE}/PACKAGE.md" <<EOF
+          # AltirraBridge — ${VER} — macOS arm64
+
+          Built ${STAMP} from commit \`${{ github.sha }}\`.
+
+          ## Quick start
+
+              # macOS Gatekeeper note: the binary is unsigned. The
+              # first time you run it, right-click → Open, or:
+              xattr -dr com.apple.quarantine AltirraBridgeServer
+              ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0 &
+              # note the token-file path printed to stderr, then:
+              PYTHONPATH=sdk/python python3 -c "
+              from altirra_bridge import AltirraBridge
+              with AltirraBridge.from_token_file('/tmp/altirra-bridge-...token') as a:
+                  a.boot('/path/to/game.xex'); a.frame(120)
+                  open('frame.png','wb').write(a.screenshot())"
+
+          ## Contents
+
+              AltirraBridgeServer        — headless emulator binary
+              sdk/python/                — Python client (stdlib only)
+              sdk/c/altirra_bridge.{h,c} — C client (libc only)
+              sdk/c/examples/bin/        — *prebuilt* C example binaries
+              docs/                      — protocol & SDK reference
+              examples/case_studies/     — RE methodology case studies
+              skills/altirra-bridge/     — Claude Code skill
+
+          ## Requirements
+
+          - macOS 11.0 (Big Sur) or later, Apple Silicon
+          - Python ≥ 3.9 for the Python SDK (preinstalled on recent macOS)
+          EOF
+
+          mkdir -p dist
+          tar -C staging -czf "dist/${NAME}.tar.gz" "${NAME}"
+          ls -lh "dist/${NAME}.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AltirraBridge-macos-arm64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  # ===========================================================================
+  # Windows x86_64
+  # ===========================================================================
+
+  windows:
+    name: Build (Windows x86_64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Install Ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache CMake FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: bridge-windows-x86_64-deps-${{ hashFiles('CMakeLists.txt', 'src/AltirraSDL/CMakeLists.txt', 'src/AltirraBridgeServer/CMakeLists.txt') }}
+          restore-keys: bridge-windows-x86_64-deps-
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DALTIRRA_BRIDGE_SERVER=ON `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build AltirraBridgeServer
+        shell: pwsh
+        run: cmake --build build --target AltirraBridgeServer
+
+      - name: Build C example binaries
+        shell: pwsh
+        run: |
+          cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples `
+                -B build_c_examples -G Ninja `
+                -DCMAKE_BUILD_TYPE=Release `
+                -DCMAKE_C_COMPILER=cl
+          cmake --build build_c_examples
+          dir build_c_examples\01_ping.exe build_c_examples\02_peek_regs.exe
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "$env:Path"
+          $proc = Start-Process -PassThru -NoNewWindow `
+              -FilePath ".\build\src\AltirraBridgeServer\AltirraBridgeServer.exe" `
+              -ArgumentList "--bridge=tcp:127.0.0.1:0" `
+              -RedirectStandardError "$env:TEMP\brs.log" `
+              -RedirectStandardOutput "$env:TEMP\brs_stdout.log"
+          Start-Sleep -Seconds 3
+          $log = Get-Content "$env:TEMP\brs.log" -Raw
+          if ($log -match 'token-file:\s*(\S+)') {
+              $tokfile = $Matches[1]
+          } else {
+              Write-Host $log
+              Stop-Process -Id $proc.Id -Force
+              throw "no token-file in server log"
+          }
+          Write-Host "token file: $tokfile"
+          $env:PYTHONPATH = "src/AltirraSDL/AltirraBridge/sdk/python"
+          $py = @"
+          from altirra_bridge import AltirraBridge
+          with AltirraBridge.from_token_file('$tokfile') as a:
+              assert a.ping()['ok']
+              a.frame(20)
+              png = a.screenshot()
+              assert png[:8] == b'\x89PNG\r\n\x1a\n'
+              insns = a.disasm(0xe477, 4)
+              assert 'COLDSV' in insns[0]['text']
+          print("python sdk OK")
+          "@
+          $py | python -
+          if ($LASTEXITCODE -ne 0) { Stop-Process -Id $proc.Id -Force; throw "python smoke failed" }
+          .\build_c_examples\01_ping.exe $tokfile
+          if ($LASTEXITCODE -ne 0) { Stop-Process -Id $proc.Id -Force; throw "C ping failed" }
+          Write-Host "c example OK"
+          # Quit the server
+          $quit = "from altirra_bridge import AltirraBridge; AltirraBridge.from_token_file('$tokfile').quit()"
+          $quit | python - 2>$null
+          Start-Sleep -Seconds 1
+          if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+
+      - name: Stage package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ github.ref_type }}' -eq 'tag') {
+              $ver = '${{ github.ref_name }}'
+          } else {
+              $ver = (git rev-parse --short HEAD)
+          }
+          $name = "AltirraBridge-$ver-windows-x86_64"
+          $stage = "staging\$name"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          Copy-Item build\src\AltirraBridgeServer\AltirraBridgeServer.exe $stage\
+          Copy-Item -Recurse src\AltirraSDL\AltirraBridge\sdk      $stage\sdk
+          Copy-Item -Recurse src\AltirraSDL\AltirraBridge\docs     $stage\docs
+          Copy-Item -Recurse src\AltirraSDL\AltirraBridge\examples $stage\examples
+          Copy-Item -Recurse src\AltirraSDL\AltirraBridge\skills   $stage\skills
+          if (Test-Path src\AltirraSDL\AltirraBridge\README.md) {
+              Copy-Item src\AltirraSDL\AltirraBridge\README.md $stage\README.md
+          }
+          # Strip __pycache__
+          Get-ChildItem -Path $stage\sdk -Recurse -Directory -Filter __pycache__ |
+              Remove-Item -Recurse -Force
+          Get-ChildItem -Path $stage\sdk -Recurse -File -Filter *.pyc |
+              Remove-Item -Force
+
+          # Prebuilt C example binaries
+          New-Item -ItemType Directory -Force -Path "$stage\sdk\c\examples\bin" | Out-Null
+          Copy-Item build_c_examples\01_ping.exe      "$stage\sdk\c\examples\bin\"
+          Copy-Item build_c_examples\02_peek_regs.exe "$stage\sdk\c\examples\bin\"
+
+          $stamp = (Get-Date -Format 'yyyy-MM-dd')
+          $sha = '${{ github.sha }}'
+          $body = @"
+          # AltirraBridge — $ver — Windows x86_64
+
+          Built $stamp from commit ``$sha``.
+
+          ## Quick start (PowerShell)
+
+              .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
+              # In another window: read the token-file path printed
+              # to stderr, then:
+              `$env:PYTHONPATH = "sdk\python"
+              python -c "
+              from altirra_bridge import AltirraBridge
+              with AltirraBridge.from_token_file(r'C:\Users\you\AppData\Local\Temp\altirra-bridge-...token') as a:
+                  a.boot(r'C:\path\to\game.xex'); a.frame(120)
+                  open('frame.png','wb').write(a.screenshot())"
+
+          ## Contents
+
+              AltirraBridgeServer.exe    - headless emulator binary
+              sdk\python\                - Python client (stdlib only)
+              sdk\c\altirra_bridge.{h,c} - C client (libc + ws2_32)
+              sdk\c\examples\bin\        - *prebuilt* C example binaries
+              docs\                      - protocol & SDK reference
+              examples\case_studies\     - RE methodology case studies
+              skills\altirra-bridge\     - Claude Code skill
+
+          ## Run a prebuilt example
+
+              .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
+              .\sdk\c\examples\bin\01_ping.exe (token-file path)
+
+          ## Requirements
+
+          - Windows 10 / 11 x64
+          - Microsoft Visual C++ Redistributable 2015-2022 (preinstalled
+            on most Windows 10/11 systems)
+          - Python >= 3.9 for the Python SDK
+          "@
+          Set-Content -Path "$stage\PACKAGE.md" -Value $body -Encoding UTF8
+
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path $stage -DestinationPath "dist\$name.zip"
+          Get-Item "dist\$name.zip" | Format-List Length, Name
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AltirraBridge-windows-x86_64
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  # ===========================================================================
+  # Publish — pulls all three platform artifacts and attaches them
+  # ===========================================================================
+
+  publish-nightly:
+    name: Publish nightly bridge package
+    needs: [linux, macos, windows]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh dist/
+
+      - name: Update rolling nightly bridge release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-bridge
+          name: "AltirraBridge nightly"
+          prerelease: true
+          draft: false
+          body: |
+            Rolling nightly build of the **AltirraBridge** headless
+            scripting package from `main`.
+
+            Commit: `${{ github.sha }}`
+            Built: ${{ github.run_id }}
+
+            ## What this is
+
+            A headless Atari 8-bit emulator + scripting bridge,
+            packaged with Python and C client SDKs, full documentation,
+            **prebuilt C example binaries**, RE case studies, and a
+            Claude Code skill. **No GUI, no fonts, no librashader.**
+
+            Use it for automation, CI testing, AI gameplay agents,
+            and reverse-engineering tooling.
+
+            ## Downloads
+
+            | Platform        | File                                            |
+            |-----------------|-------------------------------------------------|
+            | Linux x86_64    | `AltirraBridge-*-linux-x86_64.tar.gz`           |
+            | macOS arm64     | `AltirraBridge-*-macos-arm64.tar.gz`            |
+            | Windows x86_64  | `AltirraBridge-*-windows-x86_64.zip`            |
+
+            Each archive is fully self-contained: just unpack and run.
+
+            ## Quick start
+
+                # Linux / macOS
+                tar xzf AltirraBridge-*-linux-x86_64.tar.gz
+                cd AltirraBridge-*/
+                ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0
+                # In another shell, run a prebuilt C example:
+                ./sdk/c/examples/bin/01_ping /tmp/altirra-bridge-*.token
+
+                # Windows
+                Expand-Archive AltirraBridge-*-windows-x86_64.zip
+                cd AltirraBridge-*/
+                .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
+
+            See `PACKAGE.md` inside each archive for the per-platform
+            install notes (macOS Gatekeeper, Windows Defender, etc.).
+
+            ## What this is NOT
+
+            This package does not replace the regular AltirraSDL
+            desktop builds. Those are still published separately as
+            AppImage / DMG / installer / APK by the platform-specific
+            workflows. Use those if you want the GUI emulator.
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+          fail_on_unmatched_files: true
+
+  publish-release:
+    name: Attach bridge package to tagged release
+    needs: [linux, macos, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+          fail_on_unmatched_files: true
