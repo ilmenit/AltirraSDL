@@ -21,14 +21,18 @@
 
 // Windows SDK 10.0.26100 UCRT <wchar.h> contains inline functions that
 // unconditionally reference __m128i/__m256i SIMD types and the _mm_* /
-// _mm256_* intrinsic family. On certain MSVC + preset combinations the
+// _mm256_* intrinsic family. On some MSVC + preset combinations the
 // include chain reaches <wchar.h> (via <tchar.h>, <math.h>, <string.h>)
 // before the intrinsic declarations are visible, producing hundreds of
-// "undeclared identifier" errors. Pulling <intrin.h> first forces the
-// declarations to be available. This is a no-op on GCC/Clang (which
-// don't ship <intrin.h>) — guarded on _MSC_VER.
+// "undeclared identifier" errors. Pulling <immintrin.h> first (the
+// umbrella header that declares both __m128i and __m256i) forces the
+// declarations to be available. <intrin.h> alone is not sufficient —
+// on MSVC 14.44.35207 it does not transitively declare __m256i before
+// the SDK's <wchar.h> is reached. This is a no-op on GCC/Clang (which
+// handle the same types via their own compiler builtins) — guarded on
+// _MSC_VER.
 #if defined(_MSC_VER)
-#include <intrin.h>
+#include <immintrin.h>
 #endif
 
 #include <stddef.h>
