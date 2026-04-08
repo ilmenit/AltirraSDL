@@ -678,6 +678,48 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 		return;
 	}
 
+	// Arrow keys — replicate the Windows default key map logic from
+	// uikeyboard.cpp:580-605.  The Atari keyboard encodes arrows as
+	// Ctrl+<punct> (Ctrl+- = Up/0x0E, Ctrl+= = Down/0x0F, Ctrl++ = Left/0x86,
+	// Ctrl+* = Right/0x87).  The per-combo Shift/Ctrl bits depend on
+	// mArrowKeyMode (Invert / Auto / Default), identical to the
+	// kCtrlShiftMasks table in uikeyboard.cpp.
+	//
+	// The final scan code already has the Ctrl/Shift bits baked in by the
+	// csmask, so we must PushKey() directly and return without letting the
+	// generic "ctrl |= 0x80 / shift |= 0x40" fall-through re-apply them.
+	//
+	// Alt is intentionally ignored here so that PC Alt+Arrow still produces
+	// the Atari arrow scan code (matches Windows, which registers an explicit
+	// Alt variant for every arrow mapping).  This is what lets Alt+Arrow move
+	// the cursor in BASIC on the SDL3 build, the same as the Win32 build.
+	{
+		uint8 arrowBase = 0xFF;
+		switch (ev.scancode) {
+		case SDL_SCANCODE_UP:    arrowBase = 0x0E; break;
+		case SDL_SCANCODE_DOWN:  arrowBase = 0x0F; break;
+		case SDL_SCANCODE_LEFT:  arrowBase = 0x06; break;
+		case SDL_SCANCODE_RIGHT: arrowBase = 0x07; break;
+		default: break;
+		}
+		if (arrowBase != 0xFF) {
+			// Mirrors kCtrlShiftMasks in src/Altirra/source/uikeyboard.cpp:584.
+			//                              N     S     C     C+S
+			static const uint8 kCsMasks[3][4] = {
+				/* kAKM_InvertCtrl  */ { 0x80, 0xC0, 0x00, 0x40 },
+				/* kAKM_AutoCtrl    */ { 0x80, 0x40, 0x80, 0xC0 },
+				/* kAKM_DefaultCtrl */ { 0x00, 0x40, 0x80, 0xC0 },
+			};
+			unsigned mode = (unsigned)g_kbdOpts.mArrowKeyMode;
+			if (mode >= ATUIKeyboardOptions::kAKMCount)
+				mode = ATUIKeyboardOptions::kAKM_DefaultCtrl;
+			const unsigned j = (ctrl ? 2u : 0u) | (shift ? 1u : 0u);
+			const uint8 atariArrow = arrowBase | kCsMasks[mode][j];
+			g_inputState.mpPokey->PushKey(atariArrow, ev.repeat);
+			return;
+		}
+	}
+
 	uint8 atariCode = SDLScancodeToAtari(ev.scancode, shift, ctrl);
 	if (atariCode == 0xFF) return;
 
