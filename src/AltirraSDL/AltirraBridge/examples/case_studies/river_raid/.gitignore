@@ -1,0 +1,16 @@
+# River Raid is a copyrighted commercial Atari 8-bit game.
+# The .xex binary is NOT distributed with this case study; users
+# must provide their own legally-obtained copy. This .gitignore
+# ensures the file is never accidentally committed even if a
+# contributor places it here for local analysis.
+*.xex
+*.atr
+*.bin
+*.com
+*.cas
+
+# Reassembled MADS source is derivative of the copyrighted original
+# and is similarly bound to the user's legal access. Don't commit
+# the exports/ subdirectory either.
+river_raid.pyA8/exports/
+river_raid.pyA8/snapshots/

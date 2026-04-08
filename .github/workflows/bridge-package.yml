@@ -63,9 +63,12 @@ jobs:
             curl wget file zip unzip xz-utils patch pkg-config \
             gnupg lsb-release software-properties-common \
             python3 python3-venv \
-            libgl1-mesa-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev \
+            libwayland-dev wayland-protocols libdecor-0-dev \
             libasound2-dev libpulse-dev \
-            libdbus-1-dev libudev-dev \
+            libdbus-1-dev libudev-dev libibus-1.0-dev \
             tar gzip
           # CMake >= 3.24 + gcc-12.
           wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
@@ -97,11 +100,21 @@ jobs:
       - name: Build C example binaries
         shell: bash
         run: |
+          # 04_paint links SDL3. The bridge build above already
+          # FetchContents and builds SDL3 into build/_deps/sdl3-build
+          # — point find_package at it via CMAKE_PREFIX_PATH so we
+          # reuse the same SDL3 instead of fetching twice.
+          SDL3_HINT=""
+          if [ -d build/_deps/sdl3-build ]; then
+              SDL3_HINT="-DCMAKE_PREFIX_PATH=$PWD/build/_deps/sdl3-build"
+          fi
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
                 -B build_c_examples -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release
+                -DCMAKE_BUILD_TYPE=Release \
+                $SDL3_HINT
           cmake --build build_c_examples -j"$(nproc)"
-          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs
+          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs \
+                 build_c_examples/03_input build_c_examples/04_paint
 
       - name: Smoke test bridge + Python SDK + C example
         shell: bash
@@ -165,10 +178,17 @@ jobs:
 
           # Compiled C examples
           mkdir -p "${STAGE}/sdk/c/examples/bin"
-          cp build_c_examples/01_ping      "${STAGE}/sdk/c/examples/bin/"
-          cp build_c_examples/02_peek_regs "${STAGE}/sdk/c/examples/bin/"
-          strip "${STAGE}/sdk/c/examples/bin/"* || true
-          chmod +x "${STAGE}/sdk/c/examples/bin/"*
+          for ex in 01_ping 02_peek_regs 03_input 04_paint; do
+              cp "build_c_examples/${ex}" "${STAGE}/sdk/c/examples/bin/"
+          done
+          # Bundle libSDL3.so* alongside 04_paint. The CMakeLists
+          # set RPATH=$ORIGIN on the binary, so the loader looks
+          # here first before falling back to the system.
+          if compgen -G "build/_deps/sdl3-build/libSDL3.so*" > /dev/null; then
+              cp -P build/_deps/sdl3-build/libSDL3.so* "${STAGE}/sdk/c/examples/bin/"
+          fi
+          strip "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
+          chmod +x "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
 
           # Generated PACKAGE.md
           STAMP="$(date -u +%Y-%m-%d)"
@@ -233,8 +253,8 @@ jobs:
     runs-on: macos-14
 
     steps:
-      - name: Install Ninja
-        run: brew install ninja
+      - name: Install Ninja and SDL3
+        run: brew install ninja sdl3
 
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -261,12 +281,14 @@ jobs:
       - name: Build C example binaries
         shell: bash
         run: |
+          # 04_paint links SDL3 (system install via brew above).
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
                 -B build_c_examples -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
           cmake --build build_c_examples -j"$(sysctl -n hw.ncpu)"
-          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs
+          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs \
+                 build_c_examples/03_input build_c_examples/04_paint
 
       - name: Smoke test
         shell: bash
@@ -324,10 +346,33 @@ jobs:
           find "${STAGE}/sdk" -type f -name '*.pyc' -delete
 
           mkdir -p "${STAGE}/sdk/c/examples/bin"
-          cp build_c_examples/01_ping      "${STAGE}/sdk/c/examples/bin/"
-          cp build_c_examples/02_peek_regs "${STAGE}/sdk/c/examples/bin/"
-          strip "${STAGE}/sdk/c/examples/bin/"* || true
-          chmod +x "${STAGE}/sdk/c/examples/bin/"*
+          for ex in 01_ping 02_peek_regs 03_input 04_paint; do
+              cp "build_c_examples/${ex}" "${STAGE}/sdk/c/examples/bin/"
+          done
+          # Bundle the brew SDL3 dylib next to 04_paint and rewrite
+          # its install_name to @loader_path so the loader picks
+          # the bundled copy without a system SDL3 install.
+          BREW_SDL3_LIB="$(brew --prefix sdl3)/lib"
+          if [ -e "${BREW_SDL3_LIB}/libSDL3.0.dylib" ]; then
+              cp -L "${BREW_SDL3_LIB}/libSDL3.0.dylib" \
+                    "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
+              # Find the original install_name the binary points at
+              # (looks like /opt/homebrew/opt/sdl3/lib/libSDL3.0.dylib)
+              # and rewrite it.
+              ORIG_REF="$(otool -L "${STAGE}/sdk/c/examples/bin/04_paint" \
+                          | awk '/libSDL3/ {print $1; exit}')"
+              if [ -n "${ORIG_REF}" ]; then
+                  install_name_tool -change "${ORIG_REF}" \
+                      "@loader_path/libSDL3.0.dylib" \
+                      "${STAGE}/sdk/c/examples/bin/04_paint"
+              fi
+              # Also fix the dylib's own id so it doesn't drag in
+              # the absolute brew path.
+              install_name_tool -id "@loader_path/libSDL3.0.dylib" \
+                  "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
+          fi
+          strip "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
+          chmod +x "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
 
           STAMP="$(date -u +%Y-%m-%d)"
           cat > "${STAGE}/PACKAGE.md" <<EOF
@@ -417,12 +462,20 @@ jobs:
       - name: Build C example binaries
         shell: pwsh
         run: |
+          # 04_paint links SDL3. Reuse the bridge build's SDL3 from
+          # build/_deps/sdl3-build via CMAKE_PREFIX_PATH.
+          $sdl3Hint = ""
+          if (Test-Path "build/_deps/sdl3-build") {
+              $sdl3Hint = "-DCMAKE_PREFIX_PATH=$pwd\build\_deps\sdl3-build"
+          }
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples `
                 -B build_c_examples -G Ninja `
                 -DCMAKE_BUILD_TYPE=Release `
-                -DCMAKE_C_COMPILER=cl
+                -DCMAKE_C_COMPILER=cl `
+                $sdl3Hint
           cmake --build build_c_examples
-          dir build_c_examples\01_ping.exe build_c_examples\02_peek_regs.exe
+          dir build_c_examples\01_ping.exe build_c_examples\02_peek_regs.exe `
+              build_c_examples\03_input.exe build_c_examples\04_paint.exe
 
       - name: Smoke test
         shell: pwsh
@@ -496,8 +549,16 @@ jobs:
 
           # Prebuilt C example binaries
           New-Item -ItemType Directory -Force -Path "$stage\sdk\c\examples\bin" | Out-Null
-          Copy-Item build_c_examples\01_ping.exe      "$stage\sdk\c\examples\bin\"
-          Copy-Item build_c_examples\02_peek_regs.exe "$stage\sdk\c\examples\bin\"
+          foreach ($ex in '01_ping','02_peek_regs','03_input','04_paint') {
+              Copy-Item "build_c_examples\$ex.exe" "$stage\sdk\c\examples\bin\"
+          }
+          # Bundle SDL3.dll next to 04_paint.exe so the loader finds
+          # it in the same directory (Windows DLL search order
+          # always checks the executable directory first).
+          if (Test-Path "build\_deps\sdl3-build\SDL3.dll") {
+              Copy-Item "build\_deps\sdl3-build\SDL3.dll" `
+                        "$stage\sdk\c\examples\bin\"
+          }
 
           $stamp = (Get-Date -Format 'yyyy-MM-dd')
           $sha = '${{ github.sha }}'
