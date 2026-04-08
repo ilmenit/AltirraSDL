@@ -25,14 +25,14 @@ namespace nsATGTIARenderer {
 	// We do unaligned loads from this array, so it's important that we
 	// avoid data cache unit (DCU) split penalties on older CPUs. Minimum
 	// for SSSE3 is Core 2, so we can assume at least 64 byte cache lines.
-	const __declspec(align(64)) uint64 window_table[6] = {
+	const __attribute__((align(64))) uint64 window_table[6] = {
 		0, 0, (uint64)0 - 1, (uint64)0 - 1, 0, 0
 	};
 
-	const __declspec(align(16)) uint8 color_table_preshuffle[16] = { 8, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7 };
-	const __declspec(align(16)) uint64 hires_splat_pf1[2] = { 0x0505050505050505, 0x0505050505050505 };
-	const __declspec(align(16)) uint64 hires_mask_1[2] = { 0x0f000f000f000f00, 0x0f000f000f000f00 };
-	const __declspec(align(16)) uint64 hires_mask_2[2] = { 0x0f0f00000f0f0000, 0x0f0f00000f0f0000 };
+	const __attribute__((align(16))) uint8 color_table_preshuffle[16] = { 8, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7 };
+	const __attribute__((align(16))) uint64 hires_splat_pf1[2] = { 0x0505050505050505, 0x0505050505050505 };
+	const __attribute__((align(16))) uint64 hires_mask_1[2] = { 0x0f000f000f000f00, 0x0f000f000f000f00 };
+	const __attribute__((align(16))) uint64 hires_mask_2[2] = { 0x0f0f00000f0f0000, 0x0f0f00000f0f0000 };
 }
 
 VD_CPU_TARGET("ssse3")

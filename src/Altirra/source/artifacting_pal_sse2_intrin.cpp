@@ -463,12 +463,12 @@ void ATArtifactPALChromaTwin_SSE2(uint32 *dst, const uint8 *src, uint32 n, const
 }
 
 void ATArtifactPALFinal_SSE2(uint32 *dst, const uint32 *ybuf, const uint32 *ubuf, const uint32 *vbuf, uint32 *ulbuf, uint32 *vlbuf, uint32 n) {
-	static const __declspec(align(16)) sint16 kCoeffU[]={
+	static const __attribute__((align(16))) sint16 kCoeffU[]={
 		-3182*4, -3182*4, -3182*4, -3182*4,	// -co_ug / co_ub * 16384 * 4
 		-3182*4, -3182*4, -3182*4, -3182*4
 	};
 
-	static const __declspec(align(16)) sint16 kCoeffV[]={
+	static const __attribute__((align(16))) sint16 kCoeffV[]={
 		-8346*4+0x10000, -8346*4+0x10000, -8346*4+0x10000, -8346*4+0x10000,	// -co_vg / co_vr * 16384 * 4, wrapped around
 		-8346*4+0x10000, -8346*4+0x10000, -8346*4+0x10000, -8346*4+0x10000
 	};
