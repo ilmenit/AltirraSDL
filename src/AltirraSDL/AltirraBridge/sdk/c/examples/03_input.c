@@ -1,17 +1,20 @@
 /*
- * 03_input.c — Phase 3 input injection example.
+ * 03_input.c — input injection example.
  *
  * Mirrors sdk/python/examples/03_input.py: connects, boots past
  * power-on, then drives joystick + console switches + keyboard,
  * verifying the input changes are visible in the PIA / GTIA / POKEY
  * state via the raw response strings.
  *
- * Build:
+ * Build (prebuilt binary in sdk/c/examples/bin/03_input):
  *   cc -std=c99 -I.. 03_input.c ../altirra_bridge.c -o 03_input
  *   (on Windows: cl /I.. 03_input.c ..\altirra_bridge.c ws2_32.lib)
  *
  * Run:
- *   ./03_input /tmp/altirra-bridge-<pid>.token
+ *   1. Start the bridge server (see 01_ping.c for details):
+ *          ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0
+ *   2. Pass the token-file path:
+ *          ./03_input /tmp/altirra-bridge-<pid>.token
  */
 
 #include "altirra_bridge.h"
@@ -45,8 +48,8 @@ int main(int argc, char** argv) {
     if (argc != 2) {
         fprintf(stderr, "usage: %s <token-file>\n", argv[0]);
         fprintf(stderr,
-            "  The token file path is logged on stderr by AltirraSDL\n"
-            "  when launched with --bridge.\n");
+            "  The token-file path is printed to stderr by\n"
+            "  AltirraBridgeServer (or AltirraSDL --bridge) on startup.\n");
         return 2;
     }
 

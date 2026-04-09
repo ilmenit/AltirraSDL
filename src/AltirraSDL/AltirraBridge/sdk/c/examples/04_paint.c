@@ -140,11 +140,18 @@ static int read_pixel(const unsigned char* buf, int x, int y) {
 #define SCALE         4                 /* drawing canvas scale factor */
 #define CANVAS_W      (W * SCALE)       /* 640 */
 #define CANVAS_H      (H * SCALE)       /* 384 */
-#define ATARI_W       336               /* Altirra NTSC frame size */
-#define ATARI_H       240
+/* Reserve a generous slot on the right for the live Atari frame.
+ * The actual frame size reported by RAWSCREEN depends on the server's
+ * overscan/region settings (NTSC OS screen is 336x240 but Extended /
+ * Full / PAL produce different dimensions). The example adapts at
+ * runtime — it (re)creates the texture on the first frame and on any
+ * subsequent size change, instead of silently dropping frames that
+ * don't match a hard-coded constant. */
+#define ATARI_SLOT_W  456               /* room for Full NTSC overscan */
+#define ATARI_SLOT_H  312               /* room for Full PAL  overscan */
 #define GUTTER        8
-#define WINDOW_W      (CANVAS_W + GUTTER + ATARI_W)
-#define WINDOW_H      ((CANVAS_H > ATARI_H) ? CANVAS_H : ATARI_H)
+#define WINDOW_W      (CANVAS_W + GUTTER + ATARI_SLOT_W)
+#define WINDOW_H      ((CANVAS_H > ATARI_SLOT_H) ? CANVAS_H : ATARI_SLOT_H)
 
 /* Build a 160 x 96 XRGB8888 image of the local shadow buffer. The
  * canvas texture is 160x96 logical, scaled up by the renderer. */
@@ -215,14 +222,16 @@ int main(int argc, char** argv) {
         SDL_TEXTUREACCESS_STREAMING, W, H);
     SDL_SetTextureScaleMode(canvas_tex, SDL_SCALEMODE_NEAREST);
 
-    /* Live Atari frame: 336 x 240, format matches the bridge's
-     * RAWSCREEN payload (XRGB8888 little-endian, byte order BGRX) */
-    SDL_Texture* atari_tex = SDL_CreateTexture(
-        renderer, SDL_PIXELFORMAT_XRGB8888,
-        SDL_TEXTUREACCESS_STREAMING, ATARI_W, ATARI_H);
-    SDL_SetTextureScaleMode(atari_tex, SDL_SCALEMODE_NEAREST);
+    /* Live Atari frame: format matches the bridge's RAWSCREEN
+     * payload (XRGB8888 little-endian — byte order BGRX on the
+     * wire). Dimensions are not known until we see the first
+     * frame; the texture is created / recreated lazily in the
+     * main loop whenever the reported size changes. */
+    SDL_Texture* atari_tex = NULL;
+    int          atari_tex_w = 0;
+    int          atari_tex_h = 0;
 
-    if (!canvas_tex || !atari_tex) {
+    if (!canvas_tex) {
         fprintf(stderr, "SDL_CreateTexture: %s\n", SDL_GetError());
         goto cleanup;
     }
@@ -294,9 +303,29 @@ int main(int argc, char** argv) {
         size_t         atari_len    = 0;
         unsigned int   fw = 0, fh = 0;
         if (atb_rawscreen_inline(c, &atari_pixels, &atari_len, &fw, &fh) == ATB_OK
-            && atari_pixels && fw == ATARI_W && fh == ATARI_H) {
-            SDL_UpdateTexture(atari_tex, NULL, atari_pixels,
-                              (int)(ATARI_W * 4));
+            && atari_pixels && fw > 0 && fh > 0) {
+            /* (Re)create the texture when the reported frame size
+             * changes — happens at least once on the first frame,
+             * and again if the user changes overscan/region in the
+             * server. Silently mismatching sizes is what caused
+             * the "black right pane" bug in earlier versions. */
+            if (atari_tex == NULL
+                || (int)fw != atari_tex_w
+                || (int)fh != atari_tex_h) {
+                if (atari_tex) SDL_DestroyTexture(atari_tex);
+                atari_tex = SDL_CreateTexture(
+                    renderer, SDL_PIXELFORMAT_XRGB8888,
+                    SDL_TEXTUREACCESS_STREAMING, (int)fw, (int)fh);
+                if (atari_tex) {
+                    SDL_SetTextureScaleMode(atari_tex, SDL_SCALEMODE_NEAREST);
+                    atari_tex_w = (int)fw;
+                    atari_tex_h = (int)fh;
+                }
+            }
+            if (atari_tex) {
+                SDL_UpdateTexture(atari_tex, NULL, atari_pixels,
+                                  (int)(fw * 4));
+            }
             free(atari_pixels);
         }
 
@@ -311,8 +340,21 @@ int main(int argc, char** argv) {
         SDL_FRect canvas_dst = { 0, 0, CANVAS_W, CANVAS_H };
         SDL_RenderTexture(renderer, canvas_tex, NULL, &canvas_dst);
 
-        SDL_FRect atari_dst  = { CANVAS_W + GUTTER, 0, ATARI_W, ATARI_H };
-        SDL_RenderTexture(renderer, atari_tex, NULL, &atari_dst);
+        /* Letterbox the live frame into the reserved slot while
+         * preserving its aspect ratio. */
+        if (atari_tex && atari_tex_w > 0 && atari_tex_h > 0) {
+            float sx = (float)ATARI_SLOT_W / atari_tex_w;
+            float sy = (float)ATARI_SLOT_H / atari_tex_h;
+            float s  = sx < sy ? sx : sy;
+            float draw_w = atari_tex_w * s;
+            float draw_h = atari_tex_h * s;
+            SDL_FRect atari_dst = {
+                CANVAS_W + GUTTER + (ATARI_SLOT_W - draw_w) * 0.5f,
+                (ATARI_SLOT_H - draw_h) * 0.5f,
+                draw_w, draw_h,
+            };
+            SDL_RenderTexture(renderer, atari_tex, NULL, &atari_dst);
+        }
 
         /* Tiny color swatches above the Atari frame so the user
          * can see which colour they have selected. */
@@ -322,7 +364,7 @@ int main(int argc, char** argv) {
                 (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff, 255);
             SDL_FRect swatch = {
                 .x = CANVAS_W + GUTTER + (i - 1) * 28.0f,
-                .y = ATARI_H + 8,
+                .y = ATARI_SLOT_H + 8,
                 .w = 24, .h = 24,
             };
             SDL_RenderFillRect(renderer, &swatch);

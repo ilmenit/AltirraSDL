@@ -1,19 +1,26 @@
 /*
  * 01_ping.c — minimal AltirraBridge C SDK example.
  *
- * Connects to a running AltirraSDL launched with --bridge, sends PING,
- * runs 60 frames, sends PING again, and exits.
+ * Connects to a running bridge server, sends PING, runs 60 frames,
+ * sends PING again, and exits. The smallest possible "did the
+ * socket work?" smoke test.
  *
- * Build:
- *   cc -std=c99 -I../  01_ping.c ../altirra_bridge.c -o 01_ping
+ * Build (only needed if you want to rebuild from source — the
+ * prebuilt binary lives in sdk/c/examples/bin/01_ping):
+ *   cc -std=c99 -I.. 01_ping.c ../altirra_bridge.c -o 01_ping
  *   (on Windows: cl /I.. 01_ping.c ..\altirra_bridge.c ws2_32.lib)
  *
  * Run:
- *   1. In one terminal: ./AltirraSDL --bridge
- *      It logs lines like:
- *        [bridge] listening on tcp:127.0.0.1:54321
- *        [bridge] token-file: /tmp/altirra-bridge-12345.token
- *   2. In another terminal: ./01_ping /tmp/altirra-bridge-12345.token
+ *   1. Start a bridge server in one terminal. Either the lean
+ *      headless binary shipped with this package:
+ *          ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0
+ *      …or, if you want a window, the GUI emulator with --bridge:
+ *          ./AltirraSDL --bridge
+ *      Both log two lines on stderr:
+ *          [bridge] listening on tcp:127.0.0.1:54321
+ *          [bridge] token-file: /tmp/altirra-bridge-12345.token
+ *   2. In a second terminal, pass the token-file path to this program:
+ *          ./01_ping /tmp/altirra-bridge-12345.token
  */
 
 #include "altirra_bridge.h"
@@ -25,8 +32,9 @@ int main(int argc, char** argv) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <token-file>\n", argv[0]);
 		fprintf(stderr,
-			"  The token file path is logged on stderr by AltirraSDL\n"
-			"  when launched with --bridge, e.g. /tmp/altirra-bridge-<pid>.token\n");
+			"  The token-file path is printed to stderr by\n"
+			"  AltirraBridgeServer (or AltirraSDL --bridge) on startup,\n"
+			"  e.g. /tmp/altirra-bridge-<pid>.token\n");
 		return 2;
 	}
 

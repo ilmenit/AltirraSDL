@@ -231,47 +231,18 @@ jobs:
           strip "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
           chmod +x "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
 
-          # Generated PACKAGE.md
+          # Build receipt (minimal — all user-facing docs live in README.md)
           STAMP="$(date -u +%Y-%m-%d)"
-          cat > "${STAGE}/PACKAGE.md" <<EOF
-          # AltirraBridge — ${VER} — Linux x86_64
+          cat > "${STAGE}/BUILD-INFO.txt" <<EOF
+          AltirraBridge ${VER} — Linux x86_64
+          Built ${STAMP} from commit ${{ github.sha }}
 
-          Built ${STAMP} from commit \`${{ github.sha }}\`.
+          Requirements:
+            - Linux x86_64, glibc >= 2.35
+              (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
+            - Python >= 3.9 for the Python SDK (stdlib only)
 
-          ## Quick start
-
-              ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0 &
-              # note the token-file path printed to stderr, then:
-              PYTHONPATH=sdk/python python3 -c "
-              from altirra_bridge import AltirraBridge
-              with AltirraBridge.from_token_file('/tmp/altirra-bridge-...token') as a:
-                  a.boot('/path/to/game.xex'); a.frame(120)
-                  open('frame.png','wb').write(a.screenshot())"
-
-          ## Contents
-
-              AltirraBridgeServer        — headless emulator binary
-              sdk/python/altirra_bridge/ — Python client (stdlib only)
-              sdk/python/examples/       — Python example scripts
-              sdk/c/altirra_bridge.{h,c} — C client (libc only)
-              sdk/c/examples/            — C example sources
-              sdk/c/examples/bin/        — *prebuilt* C example binaries
-              docs/PROTOCOL.md           — wire-protocol reference
-              docs/COMMANDS.md           — per-command quick reference
-              docs/GETTING_STARTED.md    — five-minute walkthrough
-              examples/case_studies/     — RE methodology case studies
-              skills/altirra-bridge/     — Claude Code skill
-
-          ## Run a prebuilt example
-
-              ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0 &
-              ./sdk/c/examples/bin/01_ping /tmp/altirra-bridge-*.token
-
-          ## Requirements
-
-          - Linux x86_64, glibc ≥ 2.35
-            (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
-          - Python ≥ 3.9 for the Python SDK (stdlib only)
+          See README.md for the full walkthrough and usage guide.
           EOF
 
           mkdir -p dist
@@ -442,38 +413,19 @@ jobs:
           chmod +x "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
 
           STAMP="$(date -u +%Y-%m-%d)"
-          cat > "${STAGE}/PACKAGE.md" <<EOF
-          # AltirraBridge — ${VER} — macOS arm64
+          cat > "${STAGE}/BUILD-INFO.txt" <<EOF
+          AltirraBridge ${VER} — macOS arm64
+          Built ${STAMP} from commit ${{ github.sha }}
 
-          Built ${STAMP} from commit \`${{ github.sha }}\`.
+          Requirements:
+            - macOS 11.0 (Big Sur) or later, Apple Silicon
+            - Python >= 3.9 for the Python SDK (preinstalled on recent macOS)
 
-          ## Quick start
+          Gatekeeper note: the binary is unsigned. On first run, either
+          right-click -> Open, or clear the quarantine attribute with:
+            xattr -dr com.apple.quarantine AltirraBridgeServer
 
-              # macOS Gatekeeper note: the binary is unsigned. The
-              # first time you run it, right-click → Open, or:
-              xattr -dr com.apple.quarantine AltirraBridgeServer
-              ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0 &
-              # note the token-file path printed to stderr, then:
-              PYTHONPATH=sdk/python python3 -c "
-              from altirra_bridge import AltirraBridge
-              with AltirraBridge.from_token_file('/tmp/altirra-bridge-...token') as a:
-                  a.boot('/path/to/game.xex'); a.frame(120)
-                  open('frame.png','wb').write(a.screenshot())"
-
-          ## Contents
-
-              AltirraBridgeServer        — headless emulator binary
-              sdk/python/                — Python client (stdlib only)
-              sdk/c/altirra_bridge.{h,c} — C client (libc only)
-              sdk/c/examples/bin/        — *prebuilt* C example binaries
-              docs/                      — protocol & SDK reference
-              examples/case_studies/     — RE methodology case studies
-              skills/altirra-bridge/     — Claude Code skill
-
-          ## Requirements
-
-          - macOS 11.0 (Big Sur) or later, Apple Silicon
-          - Python ≥ 3.9 for the Python SDK (preinstalled on recent macOS)
+          See README.md for the full walkthrough and usage guide.
           EOF
 
           mkdir -p dist
@@ -724,45 +676,18 @@ jobs:
           $stamp = (Get-Date -Format 'yyyy-MM-dd')
           $sha = '${{ github.sha }}'
           $body = @"
-          # AltirraBridge — $ver — Windows x86_64
+          AltirraBridge $ver - Windows x86_64
+          Built $stamp from commit $sha
 
-          Built $stamp from commit ``$sha``.
+          Requirements:
+            - Windows 10 / 11 x64
+            - Microsoft Visual C++ Redistributable 2015-2022 (preinstalled
+              on most Windows 10/11 systems)
+            - Python >= 3.9 for the Python SDK
 
-          ## Quick start (PowerShell)
-
-              .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
-              # In another window: read the token-file path printed
-              # to stderr, then:
-              `$env:PYTHONPATH = "sdk\python"
-              python -c "
-              from altirra_bridge import AltirraBridge
-              with AltirraBridge.from_token_file(r'C:\Users\you\AppData\Local\Temp\altirra-bridge-...token') as a:
-                  a.boot(r'C:\path\to\game.xex'); a.frame(120)
-                  open('frame.png','wb').write(a.screenshot())"
-
-          ## Contents
-
-              AltirraBridgeServer.exe    - headless emulator binary
-              sdk\python\                - Python client (stdlib only)
-              sdk\c\altirra_bridge.{h,c} - C client (libc + ws2_32)
-              sdk\c\examples\bin\        - *prebuilt* C example binaries
-              docs\                      - protocol & SDK reference
-              examples\case_studies\     - RE methodology case studies
-              skills\altirra-bridge\     - Claude Code skill
-
-          ## Run a prebuilt example
-
-              .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
-              .\sdk\c\examples\bin\01_ping.exe (token-file path)
-
-          ## Requirements
-
-          - Windows 10 / 11 x64
-          - Microsoft Visual C++ Redistributable 2015-2022 (preinstalled
-            on most Windows 10/11 systems)
-          - Python >= 3.9 for the Python SDK
+          See README.md for the full walkthrough and usage guide.
           "@
-          Set-Content -Path "$stage\PACKAGE.md" -Value $body -Encoding UTF8
+          Set-Content -Path "$stage\BUILD-INFO.txt" -Value $body -Encoding UTF8
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path $stage -DestinationPath "dist\$name.zip"
@@ -843,8 +768,9 @@ jobs:
                 cd AltirraBridge-*/
                 .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
 
-            See `PACKAGE.md` inside each archive for the per-platform
-            install notes (macOS Gatekeeper, Windows Defender, etc.).
+            See `README.md` inside each archive for the full usage
+            guide, and `BUILD-INFO.txt` for the exact version / commit
+            and per-platform install notes (macOS Gatekeeper, etc.).
 
             ## What this is NOT
 
