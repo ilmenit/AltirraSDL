@@ -269,31 +269,9 @@ void ATUIModifyResetFlag(uint32 flag, bool state) {
 ATUIRecordingStatus ATUIGetRecordingStatus() { return kATUIRecordingStatus_None; }
 
 // =========================================================================
-// Keyboard (uikeyboard.h)
+// Keyboard (uikeyboard.h) — implementations live in
+// source/input/keyboard_keymap_sdl3.cpp (port of uikeyboard.cpp lines 1-681).
 // =========================================================================
-
-static vdfastvector<uint32> s_customKeyMap;
-
-void ATUIGetCustomKeyMap(vdfastvector<uint32>& mappings) {
-	mappings = s_customKeyMap;
-}
-
-void ATUISetCustomKeyMap(const uint32 *mappings, size_t n) {
-	s_customKeyMap.assign(mappings, mappings + n);
-}
-
-void ATUIInitVirtualKeyMap(const ATUIKeyboardOptions& opts) {
-	// On SDL3, Natural/Raw modes use the hardcoded SDLScancodeToAtari() table
-	// in input_sdl3.cpp.  Custom mode uses the custom key map.  We ensure the
-	// stored map is sorted so runtime binary search works correctly.
-	if (opts.mLayoutMode == ATUIKeyboardOptions::kLM_Custom) {
-		std::sort(s_customKeyMap.begin(), s_customKeyMap.end());
-	}
-}
-
-const vdfastvector<uint32>& ATUIGetCustomKeyMapRef() {
-	return s_customKeyMap;
-}
 
 // =========================================================================
 // Port menus — SDL3 ImGui port menus are rendered inline in ui_main.cpp.
@@ -541,29 +519,8 @@ void ATUIActivateDeviceButton(uint32 idx, bool state) { UpdateDevBtnMask();
 	if (!(g_devBtnMask & (1 << idx))) return; ATDeviceManager& dm = *g_sim.GetDeviceManager();
 	for (IATDeviceButtons *db : dm.GetInterfaces<IATDeviceButtons>(false, false, false)) db->ActivateButton((ATDeviceButton)idx, state); }
 
-// Scan code lookup for text paste (extracted from uikeyboard.cpp)
-#include "uikeyboard.h"
-static const uint8 kScanMap[128] = {
-	0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-	0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-	0x21,0x5F,0x5E,0x5A,0x58,0x5D,0x5B,0x73, 0x70,0x72,0x07,0x06,0x20,0x0E,0x22,0x26,
-	0x32,0x1F,0x1E,0x1A,0x18,0x1D,0x1B,0x33, 0x35,0x30,0x42,0x02,0x36,0x0F,0x37,0x66,
-	0x75,0x7F,0x55,0x52,0x7A,0x6A,0x78,0x7D, 0x79,0x4D,0x41,0x45,0x40,0x65,0x63,0x48,
-	0x4A,0x6F,0x68,0x7E,0x6D,0x4B,0x50,0x6E, 0x56,0x6B,0x57,0x60,0x46,0x62,0x47,0x4E,
-	0x27,0x3F,0x15,0x12,0x3A,0x2A,0x38,0x3D, 0x39,0x0D,0x01,0x05,0x00,0x25,0x23,0x08,
-	0x0A,0x2F,0x28,0x3E,0x2D,0x0B,0x10,0x2E, 0x16,0x2B,0x17,0xFF,0x4F,0xFF,0x67,0xFF,
-};
-bool ATUIGetDefaultScanCodeForCharacter(uint32 c32, uint8& ch) {
-	if (c32 < 128 && kScanMap[c32] != 0xFF) { ch = kScanMap[c32]; return true; }
-	switch(c32) {
-		case 0x2665: ch=0xA0; return true; case 0x251C: ch=0xBF; return true;
-		case 0x2518: ch=0x92; return true; case 0x2524: ch=0xBA; return true;
-		case 0x2510: ch=0xAA; return true; case 0x250C: ch=0xAF; return true;
-		case 0x2500: ch=0xA8; return true; case 0x253C: ch=0xBE; return true;
-		case 0x2502: ch=0x9A; return true; case 0x2514: ch=0xA6; return true;
-		default: return false;
-	}
-}
+// ATUIGetDefaultScanCodeForCharacter is provided by
+// source/input/keyboard_keymap_sdl3.cpp.
 
 void ATUIBootImage(const wchar_t *path) {
 	if (path && *path) { VDStringA u8 = VDTextWToU8(VDStringW(path)); ATUIPushDeferred(kATDeferred_BootImage, u8.c_str()); }

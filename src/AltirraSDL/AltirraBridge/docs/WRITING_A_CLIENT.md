@@ -6,17 +6,26 @@ sockets and a JSON parser — which is every language — can drive the
 emulator natively, with no FFI, no shared libraries, no C toolchain,
 no `unsafe`, and no ABI compatibility to track.
 
-The Python and C SDKs shipped in this package are convenience
-wrappers for their respective languages. They are **not** the API.
-The API is what this document describes. A ~100-line native client
-in the language of your choice will be nicer to use than any FFI
-shim over the C SDK, and shorter to write than you probably expect.
+The Python, C, and Free Pascal SDKs shipped in this package are
+convenience wrappers for their respective languages. They are
+**not** the API. The API is what this document describes. A
+~100-line native client in the language of your choice will be
+nicer to use than any FFI shim over the C SDK, and shorter to
+write than you probably expect.
+
+> **Targeting Python, C, C++, or Free Pascal?** Don't follow this
+> guide — use the ready-made SDK at `sdk/python/`, `sdk/c/`, or
+> `sdk/pascal/` respectively. Each one hands you a typed client
+> class / struct with every command already wrapped, examples you
+> can copy from, and a dedicated README. This guide is for
+> languages we don't ship an SDK for.
 
 This guide walks through writing a minimal client from scratch. At
-the end there are three complete, runnable reference
-implementations: **Rust**, **Free Pascal**, and **Go**. Each is
-self-contained, uses only the standard library of its language, and
-fits on a single screen.
+the end there are two complete, runnable reference implementations:
+**Rust** and **Go**. Each is self-contained, uses only the standard
+library of its language, and fits on a single screen. (The approach
+ports straight to Zig, Nim, Lua, Ruby, Crystal, D, Swift, Kotlin,
+C#, Java, and every other language with sockets and a JSON parser.)
 
 ## The protocol in ten bullets
 
@@ -143,135 +152,25 @@ with a method per command, swap the substring check for `serde_json`
 parsing, and add a `Drop` impl that cleanly closes the socket. The
 whole wrapper is still well under 500 lines.
 
-## Minimal client: Free Pascal
+## Free Pascal note
 
-Single file, uses only the stdlib `Sockets` and `Classes` /
-`SysUtils` units. Cross-platform: works on Linux, macOS, and Windows
-unchanged (FPC's `Sockets` unit wraps Winsock automatically on
-Windows). Build with `fpc altirra_client.pas`.
+Free Pascal users should use the full SDK at
+[`../sdk/pascal/`](../sdk/pascal/) — it ships `TAltirraBridge`
+with every Phase 1-4 command already wrapped, exception-based
+error handling, a `TCpuState` record, a `TRawFrame` record, and
+four runnable examples (including the mouse-driven ANTIC mode D
+paint tool in `04_paint.pas`). The SDK depends on the `Sockets`
+and `Classes` / `SysUtils` RTL units only (plus SDL3-for-Pascal
+for the paint example), builds on Linux, macOS, Windows, and
+FreeBSD, and is typically what you want.
 
-```pascal
-program altirra_client;
-{$MODE OBJFPC}{$H+}
-
-// Minimal AltirraBridge client in stdlib Free Pascal.
-//
-// Usage: altirra_client <token-file>
-
-uses
-  SysUtils, Classes, Sockets;
-
-procedure Die(const Msg: String);
-begin
-  Writeln(StdErr, Msg);
-  Halt(1);
-end;
-
-function ConnectTcp(const Host: String; Port: Word): TSocket;
-var
-  Addr: TInetSockAddr;
-  Sock: TSocket;
-begin
-  Sock := fpSocket(AF_INET, SOCK_STREAM, 0);
-  if Sock = -1 then Die('socket: ' + IntToStr(SocketError));
-  Addr.sin_family := AF_INET;
-  Addr.sin_port   := htons(Port);
-  Addr.sin_addr   := StrToNetAddr(Host);
-  if fpConnect(Sock, @Addr, SizeOf(Addr)) <> 0 then
-    Die('connect: ' + IntToStr(SocketError));
-  Result := Sock;
-end;
-
-procedure SendLine(Sock: TSocket; const S: String);
-var Line: String;
-begin
-  Line := S + #10;
-  if fpSend(Sock, @Line[1], Length(Line), 0) <> Length(Line) then
-    Die('send: ' + IntToStr(SocketError));
-end;
-
-// Read one \n-terminated line. Tolerates \r\n.
-function RecvLine(Sock: TSocket): String;
-var
-  C: Char;
-  N: Integer;
-begin
-  Result := '';
-  repeat
-    N := fpRecv(Sock, @C, 1, 0);
-    if N <= 0 then Die('recv: connection closed');
-    if C = #10 then Break;
-    if C <> #13 then Result := Result + C;
-  until False;
-end;
-
-var
-  Tok: TStringList;
-  AddrLine, Token, Host: String;
-  I, LastColon: Integer;
-  Port: Word;
-  Sock: TSocket;
-  Hello: String;
-begin
-  if ParamCount <> 1 then
-  begin
-    Writeln(StdErr, 'usage: altirra_client <token-file>');
-    Halt(2);
-  end;
-
-  // Token file: two lines — "tcp:HOST:PORT" and a 32-hex token.
-  Tok := TStringList.Create;
-  try
-    Tok.LoadFromFile(ParamStr(1));
-    if Tok.Count < 2 then Die('token file: expected 2 lines');
-    AddrLine := Trim(Tok[0]);
-    Token    := Trim(Tok[1]);
-
-    if Copy(AddrLine, 1, 4) <> 'tcp:' then
-      Die('this example only handles tcp: addresses');
-    Delete(AddrLine, 1, 4);
-
-    // Find the last ':' to split "HOST:PORT" (IPv6 literals would
-    // need bracket handling; loopback IPv4 is all we need here).
-    LastColon := 0;
-    for I := Length(AddrLine) downto 1 do
-      if AddrLine[I] = ':' then
-      begin
-        LastColon := I;
-        Break;
-      end;
-    if LastColon = 0 then Die('bad address: ' + AddrLine);
-    Host := Copy(AddrLine, 1, LastColon - 1);
-    Port := StrToInt(Copy(AddrLine, LastColon + 1, MaxInt));
-  finally
-    Tok.Free;
-  end;
-
-  Sock := ConnectTcp(Host, Port);
-
-  // HELLO is mandatory and must come first.
-  SendLine(Sock, 'HELLO ' + Token);
-  Hello := RecvLine(Sock);
-  Writeln('HELLO -> ', Hello);
-  if Pos('"ok":true', Hello) = 0 then Die('authentication failed');
-
-  SendLine(Sock, 'PING');
-  Writeln('PING  -> ', RecvLine(Sock));
-
-  SendLine(Sock, 'FRAME 60');
-  Writeln('FRAME -> ', RecvLine(Sock));
-
-  SendLine(Sock, 'PING');
-  Writeln('PING  -> ', RecvLine(Sock));
-
-  CloseSocket(Sock);
-end.
-```
-
-For a production client, replace `RecvLine`'s one-byte-at-a-time
-reads with a buffered reader (e.g. a `TMemoryStream` you append
-`fpRecv` chunks into and split on `#10`), and parse responses with
-`fpjson` from the FCL instead of `Pos('"ok":true', …)`.
+If you're deliberately avoiding the SDK — for example to embed a
+tiny client in a ~100-line diagnostic program or to understand
+the protocol from first principles — read the Rust example below
+and transcribe it: the `uses SysUtils, Classes, Sockets;` setup,
+`fpSocket` / `fpConnect` / `fpSend` / `fpRecv`, and `Pos('"ok":true', Resp)`
+for the substring check map one-to-one onto `TcpStream`,
+`write_all`, `read_line`, and `contains` in the Rust version.
 
 ## Minimal client: Go
 

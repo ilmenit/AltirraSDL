@@ -342,10 +342,13 @@ const uint32 kScanCodeTable[] = {
 const int kScanCodeTableSize = (int)(sizeof(kScanCodeTable) / sizeof(kScanCodeTable[0]));
 
 // =========================================================================
-// Default key map generation (ported from uikeyboard.cpp)
-// Uses ATInputCode values (= Windows VK codes) for host keys.
+// Default key map generation — provided by source/input/keyboard_keymap_sdl3.cpp
+// (the canonical port of uikeyboard.cpp lines 1-681).  The local copy that
+// previously lived here has been removed in favor of a single source of
+// truth shared with input_sdl3.cpp at runtime.
 // =========================================================================
 
+#if 0  // legacy block kept commented for reference
 namespace {
 	enum : uint32 {
 		kShift = kATUIKeyboardMappingModifier_Shift,
@@ -725,6 +728,7 @@ void ATUIGetDefaultKeyMap(const ATUIKeyboardOptions& options, vdfastvector<uint3
 
 	std::sort(mappings.begin(), mappings.end());
 }
+#endif  // legacy block
 
 // =========================================================================
 // ImGuiKey → ATInputCode mapping table (shared with ui_input.cpp pattern)

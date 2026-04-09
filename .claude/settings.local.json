@@ -116,7 +116,8 @@
       "Bash(git push:*)",
       "Bash(xargs sed:*)",
       "Bash(git check-ignore:*)",
-      "Read(//home/ilm/.config/altirra/**)"
+      "Read(//home/ilm/.config/altirra/**)",
+      "Skill(sdl3)"
     ]
   }
 }

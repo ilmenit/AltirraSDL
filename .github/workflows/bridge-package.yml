@@ -196,10 +196,12 @@ jobs:
           set -e
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VER="${{ github.ref_name }}"
+            SLUG="${VER}"
           else
             VER="$(git rev-parse --short HEAD)"
+            SLUG="nightly"
           fi
-          NAME="AltirraBridge-${VER}-linux-x86_64"
+          NAME="AltirraBridge-${SLUG}-linux-x86_64"
           STAGE="staging/${NAME}"
           mkdir -p "${STAGE}"
 
@@ -364,10 +366,12 @@ jobs:
           set -e
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VER="${{ github.ref_name }}"
+            SLUG="${VER}"
           else
             VER="$(git rev-parse --short HEAD)"
+            SLUG="nightly"
           fi
-          NAME="AltirraBridge-${VER}-macos-arm64"
+          NAME="AltirraBridge-${SLUG}-macos-arm64"
           STAGE="staging/${NAME}"
           mkdir -p "${STAGE}"
 
@@ -635,10 +639,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ('${{ github.ref_type }}' -eq 'tag') {
               $ver = '${{ github.ref_name }}'
+              $slug = $ver
           } else {
               $ver = (git rev-parse --short HEAD)
+              $slug = 'nightly'
           }
-          $name = "AltirraBridge-$ver-windows-x86_64"
+          $name = "AltirraBridge-$slug-windows-x86_64"
           $stage = "staging\$name"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 

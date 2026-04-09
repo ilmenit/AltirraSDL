@@ -42,6 +42,12 @@ add_executable(AltirraBridgeServer
     ${ALTIRRA_SDL_DIR}/stubs/win32_stubs.cpp
     ${ALTIRRA_SDL_DIR}/stubs/device_stubs.cpp
 
+    # Keymap port — provides ATUIInitVirtualKeyMap, ATUIGet*KeyMap,
+    # ATUIGetScanCodeForVirtualKey/Character32, etc.  settings.cpp links
+    # against these symbols.  Self-contained, depends only on
+    # vd2/system + uikeyboard.h.
+    ${ALTIRRA_SDL_DIR}/source/input/keyboard_keymap_sdl3.cpp
+
     # --- AltirraSDL platform glue that's UI-free ---
     # logging.h's LOG_INFO/LOG_ERROR are header-only macros, no .cpp.
     # crash_report.cpp is intentionally NOT included — it uses

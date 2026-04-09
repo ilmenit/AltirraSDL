@@ -60,6 +60,8 @@ sdk/python/examples/        runnable Python examples
 sdk/c/altirra_bridge.{h,c}  single-file C client (libc only)
 sdk/c/examples/             C example sources
 sdk/c/examples/bin/         prebuilt C example binaries
+sdk/pascal/altirra_bridge.pas single-file Free Pascal client (rtl + rtl-extra)
+sdk/pascal/examples/        Pascal example sources
 docs/                       protocol spec and command reference
 examples/case_studies/      reverse-engineering case studies
 skills/altirra-bridge/      Claude Code skill
@@ -173,6 +175,45 @@ Compile:
 cc -std=c99 -Isdk/c myclient.c sdk/c/altirra_bridge.c -o myclient
 ```
 
+## Writing your own client — Free Pascal
+
+A full Free Pascal SDK ships in `sdk/pascal/`. Stdlib only — no
+Lazarus, no Indy, no Synapse, no FFI over the C SDK. Works on
+Linux, macOS, Windows, and FreeBSD with a stock FPC install.
+
+```pascal
+uses
+  SysUtils, altirra_bridge;
+
+var
+  Bridge: TAltirraBridge;
+  Regs:   TCpuState;
+begin
+  Bridge := TAltirraBridge.Create;
+  try
+    Bridge.ConnectTokenFile(ParamStr(1));
+    Bridge.Pause;
+    Bridge.Frame(60);
+    Regs := Bridge.Regs;
+    Writeln(Format('PC=$%.4x  A=$%.2x', [Regs.PC, Regs.A]));
+    Bridge.Joy(0, 'up', True);       // port 0, up + fire
+    Bridge.KeyPress('SPACE', False, False);
+  finally
+    Bridge.Free;
+  end;
+end.
+```
+
+Build (from `sdk/pascal/examples/`):
+
+```sh
+fpc -Fu.. 01_ping.pas -o01_ping
+```
+
+Runnable examples (1:1 ports of the C ones) live in
+`sdk/pascal/examples/`; the full API reference is in
+`sdk/pascal/README.md`.
+
 ## Writing your own client — any other language
 
 The wire protocol is just newline-delimited JSON over TCP. **Any
@@ -180,9 +221,9 @@ language with sockets and a JSON parser can drive the bridge
 natively** — no FFI, no shared library, no C toolchain needed.
 
 See [`docs/WRITING_A_CLIENT.md`](docs/WRITING_A_CLIENT.md) for the
-protocol distilled to ten bullets plus three complete working
-clients (~80 lines each, stdlib only) in **Rust**, **Free Pascal**,
-and **Go**. Adapting them to Zig, Lua, Ruby, C#, Java, Nim, etc. is
+protocol distilled to ten bullets plus two complete working
+clients (~80 lines each, stdlib only) in **Rust** and **Go**.
+Adapting them to Zig, Lua, Ruby, C#, Java, Nim, Swift, etc. is
 straightforward.
 
 ## Running it with a GUI window (optional)
@@ -226,9 +267,10 @@ shared filesystem that doesn't exist on Android.
 | `docs/GETTING_STARTED.md` | Five-minute walkthrough with more hand-holding  |
 | `docs/COMMANDS.md`        | Quick reference — every command, one line each  |
 | `docs/PROTOCOL.md`        | Full wire contract: framing, encoding, semantics|
-| `docs/WRITING_A_CLIENT.md`| Write a native client in any language (Rust, Pascal, Go worked examples) |
+| `docs/WRITING_A_CLIENT.md`| Write a native client in any language (Rust + Go worked examples; for Python / C / Pascal use the SDKs directly) |
 | `docs/EMULATOR_AS_DEVICE.md`| Three patterns for using the Atari as a display / renderer: bare-metal canvas, boot-a-xex, live graphics editor (Graph2Font-class) |
 | `sdk/python/README.md`    | Python client package overview                   |
+| `sdk/pascal/README.md`    | Free Pascal client package overview               |
 | `examples/case_studies/`  | Reverse-engineering walkthroughs using the bridge|
 | `skills/altirra-bridge/`  | Claude Code skill for AI-assisted RE workflows   |
 | `BUILD-INFO.txt`          | Package version, commit, platform requirements  |

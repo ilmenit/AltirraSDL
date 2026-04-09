@@ -1142,6 +1142,18 @@ int main(int argc, char *argv[]) {
 	// Restore saved window size, position, and fullscreen state
 	ATRestoreWindowPlacement(g_pWindow);
 
+	// Enable text input on the main window so SDL_EVENT_TEXT_INPUT events
+	// are delivered for printable characters (matches the Win32 WM_CHAR
+	// path).  This is the source of cooked-character input that the
+	// emulator routes through ATUIGetScanCodeForCharacter32 in
+	// ATInputSDL3_HandleTextInput, which is required for non-US keyboard
+	// layouts (AZERTY/QWERTZ/Dvorak), dead-key composition, IME, AltGr,
+	// and the European-character cooked map (é, à, £, ñ, ö, etc.).  On
+	// desktop platforms this is essentially free; on Android/iOS it
+	// causes the on-screen keyboard to be available, which is the
+	// expected mobile behavior for an emulator.
+	SDL_StartTextInput(g_pWindow);
+
 	// Create the display backend
 	if (useGL) {
 		g_pBackend = new DisplayBackendGL33(g_pWindow, glContext);
