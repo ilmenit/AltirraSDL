@@ -171,6 +171,34 @@ int atb_hwstate(atb_client_t* c);
 int atb_palette(atb_client_t* c, unsigned char out_rgb[768]);
 
 /*
+ * Upload a 768-byte Adobe Color Table (.act) and run the same
+ * palette-fitting solver that Windows Altirra uses in its Color
+ * Image Reference dialog. Two passes, matching=None then
+ * matching=sRGB. The server updates the active profile's NTSC (or
+ * PAL) analog decoder parameters so GTIA composites subsequent
+ * frames through a palette that approximates the supplied .act.
+ *
+ * `act_bytes` must point to exactly 768 bytes (256 * RGB). On
+ * success returns ATB_OK and, if `out_rms_error` is non-NULL,
+ * writes the solver's final per-channel standard-error there
+ * (same metric the Windows dialog reports).
+ *
+ * Runs synchronously on the server's main thread — typically
+ * 50-200 ms wall-clock depending on the .act and CPU. Persists
+ * until atb_palette_reset() or atb_cold_reset() is called.
+ */
+int atb_palette_load_act(atb_client_t* c,
+                         const unsigned char act_bytes[768],
+                         float* out_rms_error);
+
+/*
+ * Restore GTIA's factory-default NTSC and PAL color parameters,
+ * undoing any prior atb_palette_load_act(). Returns ATB_OK on
+ * success.
+ */
+int atb_palette_reset(atb_client_t* c);
+
+/*
  * Phase 3 — state write & input injection.
  *
  * The C SDK keeps these as thin command builders. They send a
@@ -181,6 +209,18 @@ int atb_palette(atb_client_t* c, unsigned char out_rgb[768]);
 
 int atb_poke(atb_client_t* c, unsigned int addr, unsigned int value);
 int atb_poke16(atb_client_t* c, unsigned int addr, unsigned int value);
+
+/*
+ * Hardware-register poke. Unlike atb_poke(), which writes the
+ * debug-safe RAM latch and has no side effects on ANTIC / GTIA /
+ * POKEY / PIA registers, atb_hwpoke() routes the write through
+ * the real CPU bus, triggering the same chip write handlers a
+ * `STA $Dxxx` instruction would on the 6502. Use this to drive
+ * ANTIC's DLIST / DMACTL / NMIEN, GTIA's colour registers, etc.
+ * from a bare-metal client that has parked the CPU via
+ * atb_boot_bare().
+ */
+int atb_hwpoke(atb_client_t* c, unsigned int addr, unsigned int value);
 
 /*
  * Write `length` bytes from `data` into RAM at `addr`. The bytes
@@ -234,6 +274,24 @@ int atb_consol(atb_client_t* c, int start, int select, int option);
  */
 int atb_boot(atb_client_t* c, const char* path);
 int atb_mount(atb_client_t* c, unsigned int drive, const char* path);
+
+/*
+ * Boot the embedded "bare-metal" stub: a 30-byte XEX shipped inside
+ * the server that disables IRQs, NMIs, BASIC, and ANTIC DMA and then
+ * parks the CPU in an infinite JMP * loop. After this returns, the
+ * client owns the machine and can POKE ANTIC $D402/$D403 directly,
+ * install a display list anywhere in RAM, enable DMACTL, and write
+ * pixel data without any OS code modifying state from under it.
+ *
+ * settle_frames: number of frames to advance after the BOOT_BARE
+ * command so the OS loader has time to jump to the stub and the
+ * stub has time to execute (SEI/CLD/STA/JMP*). Pass 180 for a
+ * reliable settle (covers both NTSC and PAL OS boot + stub run).
+ * Pass 0 to take the machine immediately without waiting.
+ *
+ * See sdk/c/examples/04_paint.c for the canonical use case.
+ */
+int atb_boot_bare(atb_client_t* c, unsigned int settle_frames);
 
 int atb_cold_reset(atb_client_t* c);
 int atb_warm_reset(atb_client_t* c);

@@ -137,6 +137,16 @@ class AltirraBridge:
             port = int(port_str)
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((host, port))
+            # Disable Nagle on the client side. The server already
+            # sets TCP_NODELAY on accept, but the option is
+            # per-direction — without this, small client writes get
+            # batched by the kernel and interact with delayed-ACK
+            # to add up to ~40 ms stalls on every request/response
+            # round-trip on localhost.
+            try:
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:
+                pass  # non-fatal; connection still works, just slower
         elif addr_spec.startswith("unix:"):
             path = addr_spec[5:]
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -291,6 +301,38 @@ class AltirraBridge:
         resp = self._cmd_ok("PALETTE")
         return bytes.fromhex(resp["data"])
 
+    def load_act_palette(self, act_bytes: bytes) -> float:
+        """Upload a 768-byte Adobe Color Table (``.act``) and run
+        the palette-fitting solver that Windows Altirra uses in its
+        Color Image Reference dialog. Two passes: matching=None,
+        then matching=sRGB. The server updates the active profile's
+        NTSC (or PAL, if currently in PAL mode) analog-decoder
+        parameters so GTIA composites subsequent frames with a
+        palette that approximates the supplied .act.
+
+        Returns the achieved per-channel standard-error of the fit
+        (roughly "how close the analog model got to the target",
+        same metric the Windows dialog reports).
+
+        Takes roughly 50-200 ms wall-clock depending on CPU and
+        complexity of the target palette. Safe to call at any
+        time; persists until the next :meth:`reset_palette` or
+        :meth:`cold_reset`.
+        """
+        if len(act_bytes) != 768:
+            raise BridgeError(
+                f"load_act_palette: expected 768 bytes, got {len(act_bytes)}")
+        import base64
+        b64 = base64.b64encode(act_bytes).decode("ascii")
+        resp = self._cmd_ok(f"PALETTE_LOAD_ACT {b64}")
+        return float(resp.get("rms_error", 0.0))
+
+    def reset_palette(self) -> dict:
+        """Restore GTIA's factory-default NTSC and PAL color
+        parameters, undoing any prior :meth:`load_act_palette`.
+        """
+        return self._cmd_ok("PALETTE_RESET")
+
     # ------------------------------------------------------------------
     # Phase 3 commands — state write & input injection
     # ------------------------------------------------------------------
@@ -306,6 +348,21 @@ class AltirraBridge:
     def poke16(self, addr: int, value: int) -> dict:
         """Write a little-endian 16-bit word at ``addr``."""
         return self._cmd_ok(f"POKE16 ${addr:x} ${value & 0xFFFF:04x}")
+
+    def hwpoke(self, addr: int, value: int) -> dict:
+        """Hardware-register poke. Unlike :meth:`poke`, which
+        writes the debug-safe RAM latch with no side effects,
+        ``hwpoke`` routes the write through the real CPU bus —
+        for addresses in the ``$D000-$D7FF`` I/O range it
+        triggers the same ANTIC / GTIA / POKEY / PIA handlers a
+        ``STA $Dxxx`` 6502 instruction would.
+
+        Use this to drive ANTIC's ``DLISTL``/``DLISTH``/``DMACTL``,
+        GTIA's colour registers, POKEY audio registers, etc. from
+        a bare-metal client that has parked the CPU via
+        :meth:`boot_bare`.
+        """
+        return self._cmd_ok(f"HWPOKE ${addr:x} ${value & 0xFF:02x}")
 
     def memload(self, addr: int, data: bytes) -> dict:
         """Load arbitrary bytes into RAM starting at ``addr``. Sent
@@ -375,6 +432,39 @@ class AltirraBridge:
         to complete before reading state.
         """
         return self._cmd_ok(f"BOOT {path}")
+
+    def boot_bare(self) -> dict:
+        """Boot a tiny embedded stub that parks the CPU and leaves
+        the machine as a blank raw-display canvas.
+
+        The server ships a 30-byte stub XEX. When loaded, it:
+
+        - disables IRQs and NMIs (no VBI, no DLI, no reset NMI)
+        - disables ANTIC DMA (screen blank)
+        - unmaps the BASIC cartridge
+        - parks the CPU in an infinite ``JMP *`` loop
+
+        After ``boot_bare()`` returns, the stub is **guaranteed**
+        to have fully loaded and be executing its park loop: the
+        server polls for the stub signature at ``$0600`` and a CPU
+        PC inside the park region before it sends the response.
+        No frame-settle handshake is required on the client side.
+
+        After this call the client owns the machine. It can POKE
+        ANTIC's ``DLISTL``/``DLISTH`` (``$D402``/``$D403``) via
+        :meth:`hwpoke`, install a display list anywhere in RAM,
+        enable DMACTL, write pixel data, and never have the OS
+        modify any of it. This is the recommended pattern for any
+        client that wants to use the emulator as a raw display
+        device — see the 04_paint example.
+
+        Typical wall-clock latency: 1-3 seconds (bounded by OS
+        cold-boot time on NTSC, which the server advances through
+        internally).
+
+        See also: :meth:`load_act_palette`, :meth:`reset_palette`.
+        """
+        return self._cmd_ok("BOOT_BARE")
 
     def mount(self, drive: int, path: str) -> dict:
         """Mount a disk image into ``drive`` (0..14, where 0=D1)."""

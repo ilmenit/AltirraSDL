@@ -380,22 +380,41 @@ int main(int argc, char** argv) {
 			ATBridge::OnFrameCompleted(g_sim);
 		}
 
-		// 4. Pace. When the sim is paused, sleep a bit longer so
-		//    we're not burning CPU. When running, sleep until the
-		//    next frame deadline.
+		// 4. Pace. When the sim is paused, poll the bridge on a
+		//    short sub-tick so command round-trips don't wait for
+		//    the next loop iteration. When running, sleep toward
+		//    the next frame deadline in short chunks, polling the
+		//    bridge between each chunk, so an arriving command is
+		//    serviced within ~1 ms even mid-frame.
+		//
+		//    Historical note: earlier versions of this loop slept
+		//    the entire 5 ms / 16.68 ms in one shot, which turned
+		//    every bridge round-trip into a ~5–16 ms stall because
+		//    the socket was only polled once per iteration. That
+		//    dominated the latency of tight paint-style loops
+		//    (memload + frame(1) + rawscreen = ~30+ ms/iter
+		//    instead of ~20 ms).
+		const auto pollTick = std::chrono::microseconds(500);
 		if (result == ATSimulator::kAdvanceResult_Stopped) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			std::this_thread::sleep_for(pollTick);
 			nextFrameDeadline = clock::now() + frameDuration;
 		} else {
 			auto now = clock::now();
-			if (now < nextFrameDeadline) {
-				std::this_thread::sleep_until(nextFrameDeadline);
-				nextFrameDeadline += frameDuration;
-			} else {
+			if (now >= nextFrameDeadline) {
 				// Behind schedule — reset the deadline to avoid
-				// snowballing. The bridge gate handles deterministic
-				// timing for clients that need it.
+				// snowballing. The bridge gate handles
+				// deterministic timing for clients that need it.
 				nextFrameDeadline = now + frameDuration;
+			} else {
+				while (now < nextFrameDeadline) {
+					auto until = nextFrameDeadline - now < pollTick
+					             ? nextFrameDeadline
+					             : now + pollTick;
+					std::this_thread::sleep_until(until);
+					ATBridge::Poll(g_sim, g_uiState);
+					now = clock::now();
+				}
+				nextFrameDeadline += frameDuration;
 			}
 		}
 	}

@@ -63,4 +63,26 @@ std::string CmdHwstate(ATSimulator& sim, const std::vector<std::string>& tokens)
 // Each entry is the 24-bit RGB value for a GTIA color index 0..255.
 std::string CmdPalette(ATSimulator& sim, const std::vector<std::string>& tokens);
 
+// PALETTE_LOAD_ACT <base64-of-768-bytes>
+//
+// Upload a 256-entry Adobe Color Table (.act) file and run the
+// same palette-fitting solver that Windows Altirra's "Color Image
+// Reference" dialog uses when you load a .act / .pal there. The
+// solver tunes the active profile's NTSC (or PAL, if currently in
+// PAL mode) analog-decoder parameters so the emulator's computed
+// palette approximates the .act as closely as the NTSC/PAL
+// circuit model allows. Two passes, first with matching=None,
+// then with matching=sRGB, exactly like Windows.
+//
+// Response: {"ok":true,"rms_error":<float>} where the value is
+// the final standard-error-per-channel of the fit (0..~256).
+std::string CmdPaletteLoadAct(ATSimulator& sim, const std::vector<std::string>& tokens);
+
+// PALETTE_RESET
+//
+// Restore the factory-default NTSC and PAL color parameters
+// (default_ntsc / default_pal presets), undoing any prior
+// PALETTE_LOAD_ACT. Response: {"ok":true}.
+std::string CmdPaletteReset(ATSimulator& sim, const std::vector<std::string>& tokens);
+
 }  // namespace ATBridge

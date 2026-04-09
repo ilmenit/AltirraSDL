@@ -18,9 +18,12 @@
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
 #include "pia.h"
+#include "palettesolver.h"      // ATCreateColorPaletteSolver — shared with Windows UI
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -531,6 +534,141 @@ std::string CmdPalette(ATSimulator& sim, const std::vector<std::string>& /*token
 	payload += HexBytes(bytes, sizeof bytes);
 	payload += "\"";
 	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// PALETTE_LOAD_ACT  <base64-of-768-bytes>
+//
+// Adobe Color Table .act loader. Mirrors Windows Altirra's Color
+// Image Reference dialog code path (src/Altirra/source/uicolors.cpp
+// OnCommandLoad / OnCommandMatch) 1:1, using the same solver, the
+// same two-pass schedule, and applying the result via the same
+// GTIA::SetColorSettings() accessor. Runs synchronously on the
+// bridge main thread, which typically takes under a second.
+//
+// The .act format is a flat 768-byte array of 256 × (R, G, B).
+// We unpack it to a 256-entry 0x00RRGGBB uint32 table, seed the
+// solver with the currently active ATColorParams, run it to
+// convergence (capped), then re-seed with matching=sRGB and run
+// again — same as Windows does on its background worker thread.
+//
+// Bounded iteration count: ~2000 passes per phase. Empirically
+// Windows converges in well under that on typical .act inputs;
+// the cap just protects against a pathological input that never
+// stops improving. See palettesolver.cpp for the algorithm.
+// ---------------------------------------------------------------------------
+
+std::string CmdPaletteLoadAct(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() < 2)
+		return JsonError("PALETTE_LOAD_ACT: usage: PALETTE_LOAD_ACT base64_of_768_bytes");
+
+	std::vector<uint8_t> rgb;
+	if (!Base64Decode(tokens[1], rgb))
+		return JsonError("PALETTE_LOAD_ACT: bad base64 payload");
+	if (rgb.size() != 768)
+		return JsonError("PALETTE_LOAD_ACT: expected 768 bytes (256 x RGB), got different size");
+
+	// Unpack RGB triples into GTIA's uint32 0x00RRGGBB layout.
+	uint32 target[256];
+	for (int i = 0; i < 256; ++i) {
+		target[i] = ((uint32)rgb[i*3 + 0] << 16)
+		          | ((uint32)rgb[i*3 + 1] <<  8)
+		          | ((uint32)rgb[i*3 + 2]);
+	}
+
+	// Snapshot the active color profile (NTSC or PAL depending on
+	// the current hardware mode). The Windows UI does this split on
+	// dialog open; we do it on each call so multiple clients don't
+	// step on each other across mode changes.
+	ATGTIAEmulator& gtia = sim.GetGTIA();
+	ATColorSettings settings = gtia.GetColorSettings();
+	const bool usePAL = settings.mbUsePALParams && gtia.IsPALMode();
+	ATColorParams initialParams = usePAL ? (ATColorParams&)settings.mPALParams
+	                                     : (ATColorParams&)settings.mNTSCParams;
+
+	// --- Solver, pass 1: matching mode None -----------------------
+	std::unique_ptr<IATColorPaletteSolver> solver(ATCreateColorPaletteSolver());
+	// Init seeds the solver with the initial params + target
+	// palette. lockHueStart/lockGamma are both false — the dialog
+	// exposes them as checkboxes but defaults both off.
+	solver->Init(initialParams, target, false, false);
+
+	ATColorParams pass1Init = initialParams;
+	pass1Init.mColorMatchingMode = ATColorMatchingMode::None;
+	solver->Reinit(pass1Init);
+
+	const int kMaxIterPerPass = 2000;
+	int iter = 0;
+	while (iter++ < kMaxIterPerPass) {
+		auto status = solver->Iterate();
+		if (status == IATColorPaletteSolver::Status::Finished)
+			break;
+	}
+
+	ATColorParams pass1Result = pass1Init;
+	solver->GetCurrentSolution(pass1Result);
+	uint32 pass1Err = solver->GetCurrentError().value_or(0);
+
+	// --- Solver, pass 2: matching mode sRGB -----------------------
+	ATColorParams pass2Init = pass1Result;
+	pass2Init.mColorMatchingMode = ATColorMatchingMode::SRGB;
+	solver->Reinit(pass2Init);
+
+	iter = 0;
+	while (iter++ < kMaxIterPerPass) {
+		auto status = solver->Iterate();
+		if (status == IATColorPaletteSolver::Status::Finished)
+			break;
+	}
+
+	ATColorParams finalResult = pass2Init;
+	solver->GetCurrentSolution(finalResult);
+	uint32 finalErr = solver->GetCurrentError().value_or(pass1Err);
+
+	// --- Apply to GTIA --------------------------------------------
+	if (usePAL) (ATColorParams&)settings.mPALParams = finalResult;
+	else        (ATColorParams&)settings.mNTSCParams = finalResult;
+	gtia.SetColorSettings(settings);
+
+	// Convert the solver's raw sum-of-squared-byte-errors into the
+	// same per-channel standard error Windows reports: sqrt(err /
+	// 719) where 719 = 240 colors × 3 channels − 1 (unbiased
+	// estimator). See uicolors.cpp:1418.
+	const float stdError = std::sqrt((float)finalErr / 719.0f);
+
+	std::string payload;
+	char buf[64];
+	std::snprintf(buf, sizeof buf, "%.6g", (double)stdError);
+	payload += "\"rms_error\":";
+	payload += buf;
+	payload += ",";
+	payload += "\"mode\":\"";
+	payload += (usePAL ? "PAL" : "NTSC");
+	payload += "\"";
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// PALETTE_RESET — restore the factory-default NTSC and PAL color
+// parameters, undoing any prior PALETTE_LOAD_ACT. We copy the
+// presets the way GTIA's own constructor does (see gtia.cpp:849),
+// preserving the names of the ATNamedColorParams wrappers so the
+// UI and save-state names stay meaningful.
+// ---------------------------------------------------------------------------
+
+std::string CmdPaletteReset(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
+	ATGTIAEmulator& gtia = sim.GetGTIA();
+	ATColorSettings settings = gtia.GetColorSettings();
+
+	const sint32 ntscIdx = ATGetColorPresetIndexByTag("default_ntsc");
+	const sint32 palIdx  = ATGetColorPresetIndexByTag("default_pal");
+	if (ntscIdx < 0 || palIdx < 0)
+		return JsonError("PALETTE_RESET: default_ntsc / default_pal preset missing");
+
+	(ATColorParams&)settings.mNTSCParams = ATGetColorPresetByIndex((uint32)ntscIdx);
+	(ATColorParams&)settings.mPALParams  = ATGetColorPresetByIndex((uint32)palIdx);
+	gtia.SetColorSettings(settings);
+	return JsonOk();
 }
 
 }  // namespace ATBridge

@@ -241,6 +241,7 @@ if(ALTIRRA_BRIDGE)
         source/bridge/bridge_commands_render.cpp
         source/bridge/bridge_commands_debug.cpp
         source/bridge/bridge_commands_debug2.cpp
+        source/bridge/bridge_bare_stub.cpp
         # Per-target glue: SDL3 routes BOOT/MOUNT/STATE_* through
         # the deferred-action queue. The headless AltirraBridgeServer
         # target provides its own implementation of these symbols.

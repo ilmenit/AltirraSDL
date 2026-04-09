@@ -29,6 +29,7 @@
 #else
 #  include <arpa/inet.h>
 #  include <netinet/in.h>
+#  include <netinet/tcp.h>
 #  include <sys/socket.h>
 #  include <sys/un.h>
 #  include <unistd.h>
@@ -269,6 +270,19 @@ int atb_connect(atb_client_t* c, const char* addrSpec) {
 			ATB_CLOSE(c->sock);
 			c->sock = ATB_INVALID_SOCK;
 			return ATB_ERR_NETWORK;
+		}
+		/* Disable Nagle on the client side. The server already sets
+		 * TCP_NODELAY on accept (see bridge_transport.cpp), but the
+		 * option is per-direction: without this, the kernel batches
+		 * client→server writes and interacts with delayed-ACK to
+		 * add up to ~40 ms stalls on small-request / large-response
+		 * patterns — which is exactly what every SDK call looks
+		 * like. Failure here is non-fatal (older stacks / sockets
+		 * that don't support the option still work, just slower). */
+		{
+			int one = 1;
+			(void)setsockopt(c->sock, IPPROTO_TCP, TCP_NODELAY,
+			                 (const char*)&one, sizeof one);
 		}
 		return ATB_OK;
 	}
@@ -550,6 +564,41 @@ int atb_palette(atb_client_t* c, unsigned char out_rgb[768]) {
 	return ATB_OK;
 }
 
+/* Forward declaration — the definition lives further down next to
+ * atb_memload, which also uses it. */
+static void atb_base64_encode(const unsigned char* data, size_t len, char* out);
+
+int atb_palette_load_act(atb_client_t* c, const unsigned char act_bytes[768],
+                         float* out_rms_error) {
+	if (!act_bytes) return ATB_ERR_BAD_ARG;
+	/* Base64-encode 768 bytes -> 1024 chars + NUL. Plus the verb and
+	 * a space: "PALETTE_LOAD_ACT <1024 chars>". */
+	const size_t b64_size = ((size_t)768 + 2) / 3 * 4 + 1; /* = 1025 */
+	const size_t cmd_size = 32 + b64_size;
+	char* cmd = (char*)malloc(cmd_size);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	int n = snprintf(cmd, 32, "PALETTE_LOAD_ACT ");
+	atb_base64_encode(act_bytes, 768, cmd + n);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	if (rc != ATB_OK) return rc;
+	if (out_rms_error) {
+		/* Parse "rms_error":NUMBER from the JSON response. */
+		const char* p = strstr(c->response, "\"rms_error\":");
+		if (p) {
+			p += 12;
+			*out_rms_error = (float)atof(p);
+		} else {
+			*out_rms_error = 0.0f;
+		}
+	}
+	return ATB_OK;
+}
+
+int atb_palette_reset(atb_client_t* c) {
+	return atb_simple_cmd(c, "PALETTE_RESET");
+}
+
 /* --------------------------------------------------------------------- */
 /* Phase 3 — state write & input injection                                */
 /* --------------------------------------------------------------------- */
@@ -563,6 +612,12 @@ int atb_poke(atb_client_t* c, unsigned int addr, unsigned int value) {
 int atb_poke16(atb_client_t* c, unsigned int addr, unsigned int value) {
 	char cmd[64];
 	snprintf(cmd, sizeof cmd, "POKE16 $%x $%x", addr & 0xFFFF, value & 0xFFFF);
+	return atb_simple_cmd(c, cmd);
+}
+
+int atb_hwpoke(atb_client_t* c, unsigned int addr, unsigned int value) {
+	char cmd[64];
+	snprintf(cmd, sizeof cmd, "HWPOKE $%x $%x", addr & 0xFFFF, value & 0xFF);
 	return atb_simple_cmd(c, cmd);
 }
 
@@ -711,6 +766,18 @@ static int atb_cmd_with_path(atb_client_t* c, const char* verb, const char* path
 
 int atb_boot(atb_client_t* c, const char* path) {
 	return atb_cmd_with_path(c, "BOOT", path);
+}
+
+int atb_boot_bare(atb_client_t* c, unsigned int settle_frames) {
+	/* The server now does the settle synchronously inside
+	 * CmdBootBare — it polls for the stub's signature bytes at
+	 * $0600 and a parked CPU PC inside the JMP * loop, and only
+	 * returns once both are true. The `settle_frames` argument is
+	 * kept for backwards-compatibility with older callers but is
+	 * ignored on servers that implement the synchronous settle
+	 * (every current build). Passing zero is fine. */
+	(void)settle_frames;
+	return atb_simple_cmd(c, "BOOT_BARE");
 }
 
 /* Like atb_cmd_with_path, but emits "VERB key=PATH" — used by Phase 4

@@ -282,18 +282,22 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "PIA")     return CmdPia(sim, tokens);
 	if (verb == "DLIST")   return CmdDlist(sim, tokens);
 	if (verb == "HWSTATE") return CmdHwstate(sim, tokens);
-	if (verb == "PALETTE") return CmdPalette(sim, tokens);
+	if (verb == "PALETTE")          return CmdPalette(sim, tokens);
+	if (verb == "PALETTE_LOAD_ACT") return CmdPaletteLoadAct(sim, tokens);
+	if (verb == "PALETTE_RESET")    return CmdPaletteReset(sim, tokens);
 
 	// ----- Phase 3: state-write and input-injection commands.
 	// All implemented in bridge_commands_write.cpp.
 	if (verb == "POKE")       return CmdPoke(sim, tokens);
 	if (verb == "POKE16")     return CmdPoke16(sim, tokens);
+	if (verb == "HWPOKE")     return CmdHwPoke(sim, tokens);
 	if (verb == "MEMDUMP")    return CmdMemDump(sim, tokens);
 	if (verb == "MEMLOAD")    return CmdMemLoad(sim, tokens);
 	if (verb == "JOY")        return CmdJoy(sim, tokens);
 	if (verb == "KEY")        return CmdKey(sim, tokens);
 	if (verb == "CONSOL")     return CmdConsol(sim, tokens);
 	if (verb == "BOOT")       return CmdBoot(sim, tokens);
+	if (verb == "BOOT_BARE")  return CmdBootBare(sim, tokens);
 	if (verb == "MOUNT")      return CmdMount(sim, tokens);
 	if (verb == "COLD_RESET") return CmdColdReset(sim, tokens);
 	if (verb == "WARM_RESET") return CmdWarmReset(sim, tokens);

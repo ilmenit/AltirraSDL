@@ -25,10 +25,13 @@
 #include <stdafx.h>
 
 #include "bridge_commands_write.h"
+#include "bridge_bare_stub.h"    // EnsureBareStubXexPath
 #include "bridge_main_glue.h"   // ATBridgeDispatch* — provided per-target
 #include "bridge_protocol.h"
 
 #include "simulator.h"
+#include "cpu.h"              // ATCPUEmulator::GetInsnPC (used by BOOT_BARE settle)
+#include "cpumemory.h"        // ATCPUEmulatorMemory::WriteByte (hardware-register path)
 #include "antic.h"
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
@@ -259,6 +262,46 @@ std::string CmdPoke(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	// I/O register write handlers (no ANTIC/GTIA/POKEY side effects).
 	// Address space 0 (kATAddressSpace_CPU) is the default.
 	sim.DebugGlobalWriteByte((uint32_t)addr, (uint8_t)value);
+
+	std::string payload;
+	AddField(payload, "addr",  Hex16(addr));
+	AddField(payload, "value", Hex8(value));
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// HWPOKE addr value
+//
+// Same parameters as POKE, but routes the write through the real
+// CPU bus (ATCPUEmulatorMemory::WriteByte) instead of the debug
+// RAM latch. For addresses in the $D000-$D7FF I/O range this
+// actually hits the ANTIC / GTIA / POKEY / PIA write handlers,
+// with the same cycle-accurate effect a running 6502 `STA` would
+// have.
+//
+// Use POKE for RAM writes that must be debug-safe (no side
+// effects). Use HWPOKE for hardware register writes from a
+// bare-metal client that has parked the CPU and wants to drive
+// ANTIC/GTIA directly — the normal case is 04_paint's
+// setup_machine writing $D400/$D402/$D403 and $D016..$D01A.
+// ---------------------------------------------------------------------------
+
+std::string CmdHwPoke(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() < 3)
+		return JsonError("HWPOKE: usage: HWPOKE addr value");
+	uint16_t addr = 0;
+	if (!ParseAddr16(tokens[1], addr))
+		return JsonError("HWPOKE: bad address (must be 0..$FFFF)");
+	uint32_t value = 0;
+	if (!ParseUint(tokens[2], value))
+		return JsonError("HWPOKE: bad value");
+	if (value > 0xFF)
+		return JsonError("HWPOKE: value > $FF");
+
+	// Real CPU bus write — dispatches to CPUWriteByte() for I/O
+	// pages, which invokes the chip's write handler.
+	sim.GetCPUMemory().WriteByte((uint16)addr, (uint8)value);
 
 	std::string payload;
 	AddField(payload, "addr",  Hex16(addr));
@@ -510,6 +553,118 @@ std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens) {
 		return JsonError("BOOT: dispatch failed");
 	std::string payload;
 	AddString(payload, "path", path);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// BOOT_BARE  —  boot an embedded tiny stub that parks the CPU
+//
+// Use case: clients that want to drive the Atari as a raw display
+// device (see 04_paint for the canonical example). The stub disables
+// IRQs, NMIs (no VBI / DLI), and ANTIC DMA, then enters an infinite
+// JMP * loop. After the stub runs the client owns the machine:
+//   - direct POKE to ANTIC $D402/$D403 installs a display list
+//   - POKE to DMACTL $D400 wakes ANTIC up
+//   - MEMLOAD writes pixel data, font data, colour tables
+//   - no VBI / DLI / OS code ever modifies these registers
+//
+// Works identically whether the kernel is the real Atari OS or
+// AltirraOS: we're not cooperating with either, we're replacing
+// them.
+//
+// Implementation: the stub bytes are embedded in the server binary
+// (see bridge_bare_stub.cpp). We write them to a cross-platform
+// per-process temp file on first call, then route through the
+// normal ATBridgeDispatchBoot() path. Subsequent calls reuse the
+// same file. See bridge_bare_stub.h for the design rationale.
+//
+// Takes no arguments. Response includes the path used, for
+// debugging / tracing only — clients should not depend on it.
+// ---------------------------------------------------------------------------
+
+std::string CmdBootBare(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
+	const std::string path = EnsureBareStubXexPath();
+	if (path.empty())
+		return JsonError("BOOT_BARE: failed to materialise stub xex");
+	if (!ATBridgeDispatchBoot(sim, path))
+		return JsonError("BOOT_BARE: dispatch failed");
+
+	// The XEX load is asynchronous from the bridge's point of
+	// view: ATBridgeDispatchBoot either queues a deferred boot
+	// (SDL3 target) or immediately calls sim.Load + sim.ColdReset
+	// (headless target). Either way, the actual "our stub code is
+	// now in $0600 and the CPU is parked in its JMP * loop" state
+	// only arrives several *hundred* frames later, once the OS
+	// cold-boot completes, the OS XEX loader runs, our stub's
+	// segment is written to RAM, and RUNAD has fired. Earlier
+	// versions of this command returned after a fixed 180-frame
+	// settle, which was NOT long enough on NTSC cold boot and
+	// caused a race where setup commands issued immediately
+	// afterward were clobbered by the still-running OS VBI.
+	//
+	// Fix: advance the simulator in small chunks and actively poll
+	// for the stub's "fully landed" signature — the known 18-byte
+	// byte sequence at $0600 and a CPU PC inside the JMP * loop at
+	// $060F..$0611. Bail out with success as soon as we see it, or
+	// return an error if we never see it within an absolute cap.
+	static constexpr uint8 kStubSig[18] = {
+		0x78, 0xD8, 0xA9, 0xFF, 0x8D, 0x01, 0xD3, 0xA9,
+		0x00, 0x8D, 0x0E, 0xD4, 0x8d, 0x00, 0xD4, 0x4C, 0x0F, 0x06,
+	};
+	// Normalise case of one hand-typed nibble above.
+	uint8 stubSig[18];
+	std::memcpy(stubSig, kStubSig, sizeof stubSig);
+	stubSig[12] = 0x8D;
+
+	auto stub_ready = [&]() -> bool {
+		// Cheap-to-read CPU PC and $0600 bytes. No allocation.
+		for (int i = 0; i < 18; ++i) {
+			if (sim.DebugGlobalReadByte((uint16)(0x0600 + i)) != stubSig[i])
+				return false;
+		}
+		const uint16 pc = sim.GetCPU().GetInsnPC();
+		// The stub parks at JMP * which is three bytes at $060F
+		// ($4C $0F $06). A CPU executing that loop will be seen
+		// at either the start of the JMP ($060F) or within its
+		// three-cycle execution window; in practice the debug
+		// snapshot reliably reads PC = $060F or $0612 (next
+		// fetch). Accept the whole $060F..$0612 window.
+		return pc >= 0x060F && pc <= 0x0612;
+	};
+
+	// Advance up to ~10 seconds of wall-clock Atari time (600 frames
+	// NTSC). OS cold boot on an 800XL typically finishes in ~300
+	// frames; XEX load + RUNAD adds another ~50. 600 gives a wide
+	// margin without being unbearable if something is wrong.
+	constexpr int kMaxSettleFrames = 600;
+	constexpr int kSettleStep      = 20;
+	int total = 0;
+	while (total < kMaxSettleFrames) {
+		// We cannot call atb_frame() from inside a command handler
+		// — that's a client-side convenience. Directly poke the
+		// sim's frame counter: resume, advance N frames, re-pause.
+		const bool wasPaused = sim.IsPaused();
+		if (wasPaused) sim.Resume();
+		for (int i = 0; i < kSettleStep; ++i)
+			sim.Advance(true);
+		if (wasPaused) sim.Pause();
+
+		total += kSettleStep;
+		if (stub_ready())
+			break;
+	}
+
+	if (!stub_ready()) {
+		return JsonError(
+			"BOOT_BARE: stub did not reach its JMP * park loop "
+			"within the settle budget — is the kernel missing or "
+			"the bootloader broken?");
+	}
+
+	std::string payload;
+	AddString(payload, "path", path);
+	AddU32   (payload, "settle_frames", (uint32_t)total);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
 }

@@ -89,13 +89,24 @@ void FramePacer::WaitForNextFrame() {
 	// earliness).
 	errorAccum += targetTicks - elapsed;
 
-	// Clamp error to ±2 frames to prevent runaway drift from clock
-	// glitches (suspend/resume, NTP step).  On reset, seed with one
-	// full frame of "early" credit so the next frame sleeps for a
-	// full period — matches Windows main.cpp:3158 which sets
-	// `error = -g_frameTicks` (one frame of negative = one frame of
-	// early in their sign convention).
-	int64_t errorBound = 2 * targetTicks;
+	// Clamp error to prevent runaway drift from clock glitches
+	// (suspend/resume, NTP step, compositor hiccups, GPU contention).
+	// On reset, seed with one full frame of "early" credit so the next
+	// frame sleeps for a full period — matches Windows main.cpp:3158
+	// which sets `error = -g_frameTicks` (one frame of negative =
+	// one frame of early in their sign convention).
+	//
+	// The bound is max(2 frames, 100 ms) to match Windows main.cpp:551:
+	//     g_frameErrorBound = max(2 * g_frameTicks, secondTime * 0.1)
+	// The 100 ms floor lets the accumulator absorb transient stalls
+	// (window moves, GC pauses, vsync jitter on high-refresh displays)
+	// without triggering a reseed that would itself cause a visible
+	// judder and briefly starve the audio queue. Earlier versions used
+	// 2*targetTicks unconditionally (~33 ms at 60 Hz), which is 3x
+	// tighter than Windows and caused spurious reseeds whenever a
+	// single loop iteration ran long.
+	const int64_t minBound = perfFreq / 10; // 100 ms, matches Windows
+	const int64_t errorBound = std::max<int64_t>(2 * targetTicks, minBound);
 	if (errorAccum > errorBound || errorAccum < -errorBound)
 		errorAccum = targetTicks;
 

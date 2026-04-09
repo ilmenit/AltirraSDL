@@ -168,6 +168,11 @@ bool ATUIHasQuickSaveState();
 // Recording (ui_recording.cpp)
 bool ATUIIsRecording();
 void ATUIStopRecording();
+// Polls CheckExceptions() on any active video/audio/SAP/VGM writer and, if
+// a background I/O error has surfaced, tears down that writer and shows a
+// modal error. Safe to call every frame; no-op when nothing is recording.
+// Parity with Windows ATUIFrontEnd::CheckRecordingExceptions().
+void ATUICheckRecordingExceptions();
 void ATUIRenderVideoRecordingDialog(SDL_Window *window);
 void ATUIRenderAudioOptionsDialog(ATUIState &state);
 bool ATUIIsRecordingPaused();

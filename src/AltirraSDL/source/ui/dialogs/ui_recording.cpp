@@ -249,6 +249,88 @@ void ATUIStopRecording() {
 }
 
 // =========================================================================
+// Background exception polling
+// =========================================================================
+//
+// Audio/video/SAP/VGM writers all perform their real I/O on background
+// threads and stash any exception internally so it can be rethrown from
+// the main thread's next CheckExceptions() call. Without polling, a
+// disk-full / permission-denied / network-drive-disconnected error during
+// recording would silently destroy the writer's output and never surface
+// to the user.
+//
+// Matches ATUIFrontEnd::CheckRecordingExceptions() in
+// src/Altirra/source/uifrontend.cpp. Called once per frame from the main
+// loop (see main_sdl3.cpp). Fully safe when nothing is recording — the
+// per-writer null checks short-circuit in the common case.
+//
+// Error reporting uses SDL_ShowSimpleMessageBox because:
+//   - it is cross-platform (Windows/macOS/Linux/Android) in a single call
+//   - it runs synchronously on the main thread, which is where we are
+//   - it does not require an ImGui frame to be in progress, so it is
+//     safe to show even if the main loop is between HandleEvents() and
+//     the ImGui NewFrame() that a dialog would normally live inside
+//
+// Each failing writer is torn down individually so that, e.g., a video
+// recording failure does not also abort an in-progress SAP capture.
+void ATUICheckRecordingExceptions() {
+	auto handle = [](const char *what, const MyError& e) {
+		LOG_ERROR("UI", "%s recording stopped: %s", what, e.c_str());
+		VDStringA title;
+		title.sprintf("%s recording stopped with an error", what);
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+			title.c_str(), e.c_str(), nullptr);
+	};
+
+	if (g_pVideoWriter) {
+		try {
+			g_pVideoWriter->CheckExceptions();
+		} catch (const MyError& e) {
+			ATGTIAEmulator& gtia = g_sim.GetGTIA();
+			gtia.RemoveVideoTap(g_pVideoWriter->AsVideoTap());
+			g_sim.GetAudioOutput()->SetAudioTap(nullptr);
+			try { g_pVideoWriter->Shutdown(); } catch (...) {}
+			delete g_pVideoWriter;
+			g_pVideoWriter = nullptr;
+			handle("Video", e);
+		}
+	}
+
+	if (g_pAudioWriter) {
+		try {
+			g_pAudioWriter->CheckExceptions();
+		} catch (const MyError& e) {
+			g_sim.GetAudioOutput()->SetAudioTap(nullptr);
+			try { g_pAudioWriter->Finalize(); } catch (...) {}
+			delete g_pAudioWriter;
+			g_pAudioWriter = nullptr;
+			handle("Audio", e);
+		}
+	}
+
+	if (g_pSAPWriter) {
+		try {
+			g_pSAPWriter->CheckExceptions();
+		} catch (const MyError& e) {
+			try { g_pSAPWriter->Shutdown(); } catch (...) {}
+			delete g_pSAPWriter;
+			g_pSAPWriter = nullptr;
+			handle("SAP", e);
+		}
+	}
+
+	if (g_pVGMWriter) {
+		try {
+			g_pVGMWriter->CheckExceptions();
+		} catch (const MyError& e) {
+			try { g_pVGMWriter->Shutdown(); } catch (...) {}
+			g_pVGMWriter = nullptr;
+			handle("VGM", e);
+		}
+	}
+}
+
+// =========================================================================
 // Recording accessors — used by ui_menus.cpp
 // =========================================================================
 

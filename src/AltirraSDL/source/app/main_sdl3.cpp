@@ -67,6 +67,7 @@
 #include "uirender.h"
 
 #include <at/atcore/constants.h>
+#include <at/atcore/configvar.h>
 #include <algorithm>
 #include <cmath>
 #include "logging.h"
@@ -95,6 +96,14 @@ static bool g_winActive = true;
 // and do not burn battery while the user cannot see us.
 static bool g_appSuspended = false;
 ATUIState g_uiState;
+
+// Turbo-mode frame drop divisor. In turbo mode we render only 1 of every N
+// frames at the GTIA framebuffer-allocation level, which lets the simulator
+// run much faster than realtime without paying the per-frame artifacting /
+// palette / upload cost. Matches the CVar name and default used by the
+// Windows frontend (src/Altirra/source/main.cpp), so an "engine.turbo_fps_
+// divisor" entry in settings behaves identically across platforms.
+static ATConfigVarInt32 g_ATCVEngineTurboFPSDivisor("engine.turbo_fps_divisor", 16);
 
 // =========================================================================
 // Fatal error reporting
@@ -591,6 +600,10 @@ static void HandleEvents() {
 
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			g_winActive = true;
+			// Match Windows uivideodisplaywindow.cpp:1693 (OnSetFocus) —
+			// re-enable input mapping when the window regains focus.
+			if (ATInputManager *im = g_sim.GetInputManager())
+				im->SetRestrictedMode(false);
 			break;
 
 		// -------- Android / mobile lifecycle --------
@@ -695,6 +708,12 @@ static void HandleEvents() {
 
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
 			g_winActive = false;
+			// Match Windows uivideodisplaywindow.cpp:1699 (OnKillFocus) —
+			// restrict input mapping BEFORE releasing keys, so that any
+			// release-time bookkeeping sees the same restricted state
+			// the Windows path uses.
+			if (ATInputManager *im = g_sim.GetInputManager())
+				im->SetRestrictedMode(true);
 			// Release pan/zoom drag state to prevent stuck drag
 			g_panZoomDragging = false;
 			g_panZoomZooming = false;
@@ -1215,6 +1234,27 @@ int main(int argc, char *argv[]) {
 	phase = "simulator init";
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Altirra: initializing simulator...");
 	g_sim.Init();
+
+	// Seed the CRT rand() generator before sampling it for the simulator's
+	// random seed. Without this, glibc/musl/MSVCRT all default to srand(1),
+	// so every launch started the simulator in the same RNG state — POKEY
+	// noise, uninitialized-memory fill patterns, and any other "randomized"
+	// hardware state were bit-identical across runs. Parity with Windows
+	// ATInitRand() in src/Altirra/source/main.cpp.
+	//
+	// Composed from SDL3's high-resolution counter plus a nanosecond
+	// wall-clock sample — both are cross-platform (Windows/macOS/Linux/
+	// Android), and the two sources jitter independently so the mixed
+	// result is well-distributed even if either source alone has low
+	// resolution on a given platform.
+	{
+		const Uint64 a = SDL_GetPerformanceCounter();
+		const Uint64 b = SDL_GetTicksNS();
+		const uint32 seed = (uint32)a ^ (uint32)(a >> 32)
+		                  ^ (uint32)(b * 2654435761u)
+		                  ^ (uint32)(b >> 32);
+		srand(seed);
+	}
 	g_sim.SetRandomSeed(rand() ^ (rand() << 15));
 	phase = "firmware load";
 	g_sim.LoadROMs();
@@ -1659,6 +1699,13 @@ int main(int argc, char *argv[]) {
 		// Process deferred file dialog results on main thread
 		ATUIPollDeferredActions();
 
+		// Surface any background I/O exceptions from active recording
+		// writers (video/audio/SAP/VGM). Parity with Windows main.cpp:3098
+		// ATUIFrontEnd::CheckRecordingExceptions(). No-op when nothing is
+		// recording; when a writer reports an error it is torn down and a
+		// modal error is shown to the user.
+		ATUICheckRecordingExceptions();
+
 		// Tick the debugger engine (process queued commands)
 		ATUIDebuggerTick();
 
@@ -1686,15 +1733,16 @@ int main(int argc, char *argv[]) {
 
 		// Turbo frame-skip: in turbo mode, drop most frames at the GTIA
 		// framebuffer-allocation level so GTIA skips artifacting / palette
-		// correction / framebuffer writes for ~15 of every 16 frames.
-		// Matches Windows main.cpp:3180 behaviour with the default
-		// g_ATCVEngineTurboFPSDivisor=16.  Significant CPU saving in
-		// turbo mode on lower-end Linux/macOS/Android, with no effect
-		// at normal speed (turbo=false → dropFrame=false always).
+		// correction / framebuffer writes for (divisor-1) of every divisor
+		// frames. Significant CPU saving in turbo mode on lower-end
+		// Linux/macOS/Android, with no effect at normal speed (turbo=false
+		// → dropFrame=false always). Matches Windows main.cpp:3180 — reads
+		// the same g_ATCVEngineTurboFPSDivisor CVar and clamps to [1,100].
 		const bool turbo = g_sim.IsTurboModeEnabled();
 		static uint32 s_turboFrameCounter = 0;
-		constexpr uint32 kTurboFPSDivisor = 16;
-		const bool dropFrame = turbo && ((++s_turboFrameCounter) % kTurboFPSDivisor) != 0;
+		const uint32 turboDivisor =
+			std::clamp<uint32>((uint32)(sint32)g_ATCVEngineTurboFPSDivisor, 1u, 100u);
+		const bool dropFrame = turbo && ((++s_turboFrameCounter) % turboDivisor) != 0;
 
 		ATSimulator::AdvanceResult result = g_sim.Advance(dropFrame);
 
@@ -1746,6 +1794,13 @@ int main(int argc, char *argv[]) {
 				g_pacer.WaitForNextFrame();
 		} else if (result == ATSimulator::kAdvanceResult_Stopped) {
 			// Paused/stopped — render for UI, sleep to avoid busy-wait.
+			// Parity with Windows main.cpp:3268 which drains pending
+			// deferred simulator events on every idle pass while not
+			// running. Normally a no-op because nothing produces deferred
+			// events while Advance() isn't running, but any path that
+			// enqueues one from a UI command handler during pause would
+			// otherwise stall until the next Advance().
+			g_sim.FlushDeferredEvents();
 			RenderAndPresent();
 			didRender = true;
 			SDL_Delay(16);

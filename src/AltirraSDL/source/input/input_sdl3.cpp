@@ -317,6 +317,18 @@ void ATInputSDL3_Init(ATPokeyEmulator *pokey, ATInputManager *inputMgr, ATGTIAEm
 		// modal capture mode has an obvious place to pair with.
 		inputMgr->SetRestrictedMode(false);
 	}
+
+	// Match Windows uivideodisplaywindow.cpp:1601-1613 (OnForceKeysUp) —
+	// explicitly clear shift/ctrl/raw-key/console state at startup so we
+	// don't depend on POKEY's constructor defaults.
+	extern ATUIKeyboardOptions g_kbdOpts;
+	if (pokey) {
+		pokey->SetShiftKeyState(false, !g_kbdOpts.mbFullRawKeys);
+		pokey->SetControlKeyState(false);
+		pokey->ReleaseAllRawKeys(!g_kbdOpts.mbFullRawKeys);
+	}
+	if (gtia)
+		gtia->SetConsoleSwitch(0x07, false);
 }
 
 // -------------------------------------------------------------------------
@@ -362,6 +374,41 @@ static bool LookupCustomKeyMap(uint32 vk, bool shift, bool ctrl, bool alt,
 // Windows WM_KEYDOWN/UP — no synchronization needed.
 static std::unordered_map<SDL_Scancode, uint32> g_customConsoleSwitches;
 
+// Custom-mapped Break key tracker — release path mirrors Windows
+// uivideodisplaywindow.cpp:2382 (SetBreakKeyState false on key-up).
+static std::unordered_map<SDL_Scancode, bool> g_customBreakKeys;
+
+// Raw keyboard mode tracker (mbRawKeys) — mirrors Windows
+// ATUIVideoDisplayWindow::mActiveKeys (uivideodisplaywindow.cpp:2344-2348).
+// Maps SDL scancode of a held key to the Atari scan code that was pushed
+// via PushRawKey, so the corresponding ReleaseRawKey can be called on
+// key-up.  Without this, raw-mode keys would stick on after release.
+static std::unordered_map<SDL_Scancode, uint8> g_rawActiveKeys;
+
+// Helper: push an Atari key.  In raw keyboard mode, calls PushRawKey and
+// records the scancode for later release; in cooked mode, calls PushKey
+// with the OS auto-repeat flag.  Mirrors the raw/cooked branch in
+// Windows ProcessVirtKey (uivideodisplaywindow.cpp:2336-2354).
+static void ATInputSDL3_PushAtariKey(SDL_Scancode sdlSc, uint8 atariCode, bool repeat) {
+	extern ATUIKeyboardOptions g_kbdOpts;
+	if (!g_inputState.mpPokey)
+		return;
+	if (g_kbdOpts.mbRawKeys) {
+		// Match Windows uivideodisplaywindow.cpp:2341 — raw mode does
+		// nothing on auto-repeat; the key is already physically held.
+		if (repeat)
+			return;
+		auto it = g_rawActiveKeys.find(sdlSc);
+		if (it != g_rawActiveKeys.end())
+			it->second = atariCode;
+		else
+			g_rawActiveKeys[sdlSc] = atariCode;
+		g_inputState.mpPokey->PushRawKey(atariCode, !g_kbdOpts.mbFullRawKeys);
+	} else {
+		g_inputState.mpPokey->PushKey(atariCode, repeat);
+	}
+}
+
 static void HandleCustomConsoleSwitch(uint32 scanCode, bool down, SDL_Scancode sdlSc) {
 	if (!g_inputState.mpGTIA)
 		return;
@@ -372,8 +419,16 @@ static void HandleCustomConsoleSwitch(uint32 scanCode, bool down, SDL_Scancode s
 	case kATUIKeyScanCode_Select: switchBit = 0x02; break;
 	case kATUIKeyScanCode_Option: switchBit = 0x04; break;
 	case kATUIKeyScanCode_Break:
-		if (down && g_inputState.mpPokey)
-			g_inputState.mpPokey->PushBreak();
+		// Match Windows uivideodisplaywindow.cpp:2382 — Break is a true
+		// hold via SetBreakKeyState(state, ...), not a one-shot pulse.
+		if (g_inputState.mpPokey) {
+			extern ATUIKeyboardOptions g_kbdOpts;
+			g_inputState.mpPokey->SetBreakKeyState(down, !g_kbdOpts.mbFullRawKeys);
+		}
+		if (down)
+			g_customBreakKeys[sdlSc] = true;
+		else
+			g_customBreakKeys.erase(sdlSc);
 		return;
 	default:
 		return;
@@ -587,7 +642,12 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 				}
 			}
 
-			g_inputState.mpInputManager->OnButtonDown(0, inputCode);
+			// Match Windows uivideodisplaywindow.cpp:2222-2230 + 2330 —
+			// input-mapped keys do NOT retrigger on OS auto-repeat.
+			// Skip the OnButtonDown call on repeat events, but still
+			// honor "consumed" so cooked POKEY input doesn't double-fire.
+			if (!ev.repeat)
+				g_inputState.mpInputManager->OnButtonDown(0, inputCode);
 			if (mapped && !g_kbdOpts.mbAllowInputMapOverlap)
 				consumedByInputMap = true;
 		}
@@ -599,8 +659,20 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	// Console switches (F2=Start, F3=Select, F4=Option)
 	// When mbEnableFunctionKeys is on, HandleConsoleSwitch returns false
 	// and F2/F3/F4 fall through to the function key POKEY path below.
-	if (HandleConsoleSwitch(ev.scancode, true))
+	// Match Windows uivideodisplaywindow.cpp:2330 — special-key down
+	// transitions only fire on the initial press, not on auto-repeat.
+	if (!ev.repeat && HandleConsoleSwitch(ev.scancode, true))
 		return;
+	if (ev.repeat) {
+		// Even on repeat, F2/F3/F4 in non-function-key mode are claimed
+		// by the console-switch path and must not fall through to POKEY.
+		extern ATUIKeyboardOptions g_kbdOpts;
+		if (!g_kbdOpts.mbEnableFunctionKeys &&
+			(ev.scancode == SDL_SCANCODE_F2 ||
+			 ev.scancode == SDL_SCANCODE_F3 ||
+			 ev.scancode == SDL_SCANCODE_F4))
+			return;
+	}
 
 	// 1200XL function keys (F1-F4) — only when mbEnableFunctionKeys is ON.
 	if (g_kbdOpts.mbEnableFunctionKeys && g_inputState.mpPokey) {
@@ -617,7 +689,7 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 			bool ctrl  = (ev.mod & SDL_KMOD_CTRL) != 0;
 			if (ctrl)  fkeyCode |= 0x80;
 			if (shift) fkeyCode |= 0x40;
-			g_inputState.mpPokey->PushKey(fkeyCode, ev.repeat);
+			ATInputSDL3_PushAtariKey(ev.scancode, fkeyCode, ev.repeat);
 			return;
 		}
 	}
@@ -656,9 +728,15 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	}
 
 	// Update POKEY shift/ctrl register state (important for software that
-	// reads these independently of key presses, e.g. raw keyboard mode)
-	g_inputState.mpPokey->SetShiftKeyState(shift, true);
-	g_inputState.mpPokey->SetControlKeyState(ctrl);
+	// reads these independently of key presses, e.g. raw keyboard mode).
+	// Match Windows uivideodisplaywindow.cpp:2258 — only on the genuine
+	// press transition, NOT on OS auto-repeat events, otherwise the shift
+	// state register is re-pulsed at the OS repeat rate and games that
+	// poll Shift as a hold see a stream of new presses.
+	if (!ev.repeat) {
+		g_inputState.mpPokey->SetShiftKeyState(shift, true);
+		g_inputState.mpPokey->SetControlKeyState(ctrl);
+	}
 
 	// Custom layout mode: use custom key map for lookup instead of
 	// hardcoded SDLScancodeToAtari() table.
@@ -669,12 +747,16 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 			if (LookupCustomKeyMap(vk, shift, ctrl, alt,
 					IsExtendedSDLKey(ev.scancode), scanCode)) {
 				if (scanCode >= kATUIKeyScanCodeFirst) {
-					HandleCustomConsoleSwitch(scanCode, true, ev.scancode);
+					// Special-key down (Start/Select/Option/Break)
+					// only on genuine press, not auto-repeat — matches
+					// Windows uivideodisplaywindow.cpp:2330.
+					if (!ev.repeat)
+						HandleCustomConsoleSwitch(scanCode, true, ev.scancode);
 				} else {
 					// Scan code from custom map already has shift/ctrl baked in.
-					// Note: Windows uses PushRawKey in raw mode, but the existing
-					// SDL3 standard path also uses PushKey for consistency.
-					g_inputState.mpPokey->PushKey((uint8)scanCode, ev.repeat);
+					// Routes through the raw/cooked helper so raw keyboard mode
+					// matches Windows ProcessVirtKey (uivideodisplaywindow.cpp:2341).
+					ATInputSDL3_PushAtariKey(ev.scancode, (uint8)scanCode, ev.repeat);
 				}
 			}
 		}
@@ -684,8 +766,11 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	// Handle Break (Pause/Break key) for Natural/Raw modes.
 	// Ctrl+Pause is Debug.Break, handled in main_sdl3.cpp before reaching here.
 	// In Custom mode, Break is routed through the custom key map above.
+	// Match Windows uivideodisplaywindow.cpp:2382 — Break is held via
+	// SetBreakKeyState(true), released by the key-up handler.  Repeats are
+	// already filtered above.
 	if (ev.scancode == SDL_SCANCODE_PAUSE) {
-		g_inputState.mpPokey->PushBreak();
+		g_inputState.mpPokey->SetBreakKeyState(true, !g_kbdOpts.mbFullRawKeys);
 		return;
 	}
 
@@ -726,7 +811,7 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 				mode = ATUIKeyboardOptions::kAKM_DefaultCtrl;
 			const unsigned j = (ctrl ? 2u : 0u) | (shift ? 1u : 0u);
 			const uint8 atariArrow = arrowBase | kCsMasks[mode][j];
-			g_inputState.mpPokey->PushKey(atariArrow, ev.repeat);
+			ATInputSDL3_PushAtariKey(ev.scancode, atariArrow, ev.repeat);
 			return;
 		}
 	}
@@ -737,7 +822,7 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	if (ctrl)  atariCode |= 0x80;
 	if (shift) atariCode |= 0x40;
 
-	g_inputState.mpPokey->PushKey(atariCode, ev.repeat);
+	ATInputSDL3_PushAtariKey(ev.scancode, atariCode, ev.repeat);
 }
 
 void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
@@ -751,6 +836,19 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 			g_inputState.mpInputManager->OnButtonUp(0, inputCode);
 	}
 
+	// Raw keyboard mode: release the matching Atari scancode if this
+	// SDL scancode is currently held.  Mirrors Windows ProcessKeyUp
+	// (uivideodisplaywindow.cpp:2280-2286).
+	{
+		extern ATUIKeyboardOptions g_kbdOpts;
+		auto it = g_rawActiveKeys.find(ev.scancode);
+		if (it != g_rawActiveKeys.end()) {
+			if (g_inputState.mpPokey)
+				g_inputState.mpPokey->ReleaseRawKey(it->second, !g_kbdOpts.mbFullRawKeys);
+			g_rawActiveKeys.erase(it);
+		}
+	}
+
 	// Release any console switches activated by custom key map, regardless of
 	// current mode — the user may have switched modes while a key was held.
 	{
@@ -761,6 +859,27 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 			g_customConsoleSwitches.erase(it);
 			return;
 		}
+	}
+
+	// Release custom-mapped Break key (mirrors Windows ProcessSpecialKey
+	// up branch — uivideodisplaywindow.cpp:2382 with state=false).
+	{
+		auto it = g_customBreakKeys.find(ev.scancode);
+		if (it != g_customBreakKeys.end()) {
+			extern ATUIKeyboardOptions g_kbdOpts;
+			if (g_inputState.mpPokey)
+				g_inputState.mpPokey->SetBreakKeyState(false, !g_kbdOpts.mbFullRawKeys);
+			g_customBreakKeys.erase(it);
+			return;
+		}
+	}
+
+	// Release Break for the standard (Natural/Raw) PAUSE path.
+	if (ev.scancode == SDL_SCANCODE_PAUSE) {
+		extern ATUIKeyboardOptions g_kbdOpts;
+		if (g_inputState.mpPokey)
+			g_inputState.mpPokey->SetBreakKeyState(false, !g_kbdOpts.mbFullRawKeys);
+		return;
 	}
 
 	// Console switches (standard F2/F3/F4 path)
@@ -819,10 +938,14 @@ void ATInputSDL3_ReleaseAllKeys() {
 		g_inputState.mpPokey->SetShiftKeyState(false, !g_kbdOpts.mbFullRawKeys);
 		g_inputState.mpPokey->SetControlKeyState(false);
 		g_inputState.mpPokey->ReleaseAllRawKeys(!g_kbdOpts.mbFullRawKeys);
+		// Also release Break in case it was held when focus was lost.
+		g_inputState.mpPokey->SetBreakKeyState(false, !g_kbdOpts.mbFullRawKeys);
 	}
 
 	// Release console switches (including any custom-mapped ones)
 	if (g_inputState.mpGTIA)
 		g_inputState.mpGTIA->SetConsoleSwitch(0x07, false);
 	g_customConsoleSwitches.clear();
+	g_customBreakKeys.clear();
+	g_rawActiveKeys.clear();
 }

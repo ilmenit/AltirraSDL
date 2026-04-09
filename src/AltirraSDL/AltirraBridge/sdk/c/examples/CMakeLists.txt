@@ -63,6 +63,25 @@ if(SDL3_FOUND)
             INSTALL_RPATH "\$ORIGIN")
     endif()
     message(STATUS "AltirraBridge examples: 04_paint enabled (SDL3 ${SDL3_VERSION})")
+
+    # Copy g2f.act next to 04_paint at build time so the example can
+    # find it via its argv[0]-relative search path. The .act ships
+    # in the SDK assets directory (../../assets relative to this
+    # CMakeLists). If the asset isn't present (e.g. user stripped
+    # it from a custom build tree) we log a note but don't fail.
+    set(_ACT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/g2f.act")
+    if(EXISTS "${_ACT_SRC}")
+        add_custom_command(TARGET 04_paint POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_ACT_SRC}"
+                "$<TARGET_FILE_DIR:04_paint>/g2f.act"
+            VERBATIM)
+        message(STATUS "AltirraBridge examples: g2f.act will be copied next to 04_paint")
+    else()
+        message(STATUS
+            "AltirraBridge examples: g2f.act not found at ${_ACT_SRC}, "
+            "04_paint will run with the default Altirra palette.")
+    endif()
 else()
     message(STATUS
         "AltirraBridge examples: SDL3 not found, skipping 04_paint. "

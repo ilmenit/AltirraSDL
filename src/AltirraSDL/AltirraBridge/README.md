@@ -227,6 +227,7 @@ shared filesystem that doesn't exist on Android.
 | `docs/COMMANDS.md`        | Quick reference — every command, one line each  |
 | `docs/PROTOCOL.md`        | Full wire contract: framing, encoding, semantics|
 | `docs/WRITING_A_CLIENT.md`| Write a native client in any language (Rust, Pascal, Go worked examples) |
+| `docs/EMULATOR_AS_DEVICE.md`| Three patterns for using the Atari as a display / renderer: bare-metal canvas, boot-a-xex, live graphics editor (Graph2Font-class) |
 | `sdk/python/README.md`    | Python client package overview                   |
 | `examples/case_studies/`  | Reverse-engineering walkthroughs using the bridge|
 | `skills/altirra-bridge/`  | Claude Code skill for AI-assisted RE workflows   |

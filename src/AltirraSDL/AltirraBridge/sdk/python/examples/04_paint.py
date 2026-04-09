@@ -69,15 +69,19 @@ H          = 96
 ROW_BYTES  = 40
 SCREEN_LEN = ROW_BYTES * H        # 3840 bytes
 
-# OS shadow registers we touch.  The OS VBI copies these into the
-# real ANTIC/GTIA registers every frame — using the shadows means
-# our settings stick across the OS's own VBI fix-up code.
-SDLSTL = 0x0230   # display list low byte  -> ANTIC DLISTL
-SDLSTH = 0x0231   # display list high byte -> ANTIC DLISTH
-COLOR0 = 0x02C4   # mode D pixel value 1   -> GTIA COLPF0
-COLOR1 = 0x02C5   # mode D pixel value 2   -> GTIA COLPF1
-COLOR2 = 0x02C6   # mode D pixel value 3   -> GTIA COLPF2
-COLOR4 = 0x02C8   # mode D pixel value 0   -> GTIA COLBK (background)
+# GTIA / ANTIC hardware registers. Because we boot the bare-metal
+# stub before touching any of these (see setup_machine below), no
+# VBI / DLI / OS code ever runs afterward, so we can poke the
+# hardware registers directly and they stay written until the
+# client overwrites them itself. This is the whole point of the
+# bare-metal boot model; see docs/EMULATOR_AS_DEVICE.md.
+ANTIC_DMACTL = 0xD400   # playfield DMA width / enable
+ANTIC_DLISTL = 0xD402   # display list address low
+ANTIC_DLISTH = 0xD403   # display list address high
+GTIA_COLPF0  = 0xD016   # mode D pixel value 1
+GTIA_COLPF1  = 0xD017   # mode D pixel value 2
+GTIA_COLPF2  = 0xD018   # mode D pixel value 3
+GTIA_COLBK   = 0xD01A   # mode D pixel value 0 (background)
 
 
 def build_display_list() -> bytes:
@@ -114,20 +118,85 @@ COLORS = [
 COLOR_BG = 0x00
 
 
-def setup_screen(bridge: AltirraBridge) -> None:
-    """One-time setup: install DL, clear screen, point OS at DL,
-    program color registers."""
-    # Pause so the OS doesn't VBI in the middle of our staging.
-    bridge.pause()
-    bridge.memload(DL_ADDR, build_display_list())
-    bridge.memload(SCREEN_ADDR, bytes(SCREEN_LEN))   # all background
-    bridge.poke(SDLSTL, DL_ADDR & 0xFF)
-    bridge.poke(SDLSTH, DL_ADDR >> 8)
-    bridge.poke(COLOR4, COLOR_BG)
-    bridge.poke(COLOR0, COLORS[0][0])
-    bridge.poke(COLOR1, COLORS[1][0])
-    bridge.poke(COLOR2, COLORS[2][0])
-    bridge.resume()
+def setup_machine(bridge: AltirraBridge) -> None:
+    """Take full control of the machine and install the custom
+    mode D display list.
+
+    Sequence:
+
+    1. ``boot_bare()`` — the server loads its embedded 30-byte
+       stub .xex, which disables IRQs, NMIs, BASIC, and ANTIC DMA,
+       then parks the CPU in ``JMP *``. Settle 180 frames so the
+       stub has actually executed.
+    2. Push the display list to ``$1000``.
+    3. Clear the 3840-byte screen buffer at ``$2000``.
+    4. Poke ANTIC's ``DLISTL``/``DLISTH`` to point at the DL.
+    5. Poke the GTIA playfield colour registers directly.
+    6. Enable playfield DMA last so ANTIC starts fetching from
+       the right address on the very next scan line.
+
+    After this returns the client owns the machine: further
+    ``memload`` writes to ``$2000`` show up in the Atari frame
+    one emulator frame later, with no OS or VBI interference.
+    """
+    bridge.boot_bare()                                # 1
+
+    bridge.memload(DL_ADDR, build_display_list())     # 2
+    bridge.memload(SCREEN_ADDR, bytes(SCREEN_LEN))    # 3
+
+    # Hardware-register writes must use hwpoke (which routes
+    # through the real CPU bus) rather than poke (which writes
+    # the debug RAM latch and has no effect on I/O registers).
+    bridge.hwpoke(ANTIC_DLISTL, DL_ADDR & 0xFF)       # 4
+    bridge.hwpoke(ANTIC_DLISTH, DL_ADDR >> 8)
+
+    bridge.hwpoke(GTIA_COLBK,  COLOR_BG)              # 5
+    bridge.hwpoke(GTIA_COLPF0, COLORS[0][0])
+    bridge.hwpoke(GTIA_COLPF1, COLORS[1][0])
+    bridge.hwpoke(GTIA_COLPF2, COLORS[2][0])
+
+    bridge.hwpoke(ANTIC_DMACTL, 0x22)                 # 6
+
+
+def try_load_act(bridge: AltirraBridge) -> None:
+    """Locate a ``g2f.act`` palette next to this script (or via
+    ``$ALTIRRA_BRIDGE_ACT``) and upload it to the server. Failure
+    is non-fatal — we just run with the default NTSC palette.
+    """
+    import os
+    candidates = []
+    env = os.environ.get("ALTIRRA_BRIDGE_ACT")
+    if env:
+        candidates.append(env)
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates += [
+        os.path.join(here, "g2f.act"),
+        os.path.join(here, "..", "assets", "g2f.act"),
+        os.path.join(here, "..", "..", "assets", "g2f.act"),
+        "g2f.act",
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                if len(data) != 768:
+                    print(f"note: {path} is {len(data)} bytes, expected 768",
+                          file=__import__("sys").stderr)
+                    return
+                err = bridge.load_act_palette(data)
+                print(f"loaded .act palette from {path} "
+                      f"(solver RMS error {err:.2f})",
+                      file=__import__("sys").stderr)
+                return
+            except Exception as e:
+                print(f"load_act_palette({path}) failed: {e}",
+                      file=__import__("sys").stderr)
+                return
+    print("note: no g2f.act palette file found — continuing with the "
+          "server's default NTSC palette. Set ALTIRRA_BRIDGE_ACT or "
+          "place g2f.act next to this script to enable it.",
+          file=__import__("sys").stderr)
 
 
 # =====================================================================

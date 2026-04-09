@@ -7,8 +7,8 @@ examples. For full request/response schemas and field semantics see
 | Group        | Commands |
 |--------------|----------|
 | [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `QUIT` |
-| [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `STATE_SAVE`, `STATE_LOAD` |
+| [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `STATE_SAVE`, `STATE_LOAD` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |
 | [Breakpoints](#breakpoints)           | `BP_SET`, `BP_CLEAR`, `BP_CLEAR_ALL`, `BP_LIST`, `WATCH_SET` |

@@ -38,6 +38,7 @@ void CleanupInjectedInput(ATSimulator& sim);
 
 std::string CmdPoke(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdPoke16(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdHwPoke(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdMemDump(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdMemLoad(ATSimulator& sim, const std::vector<std::string>& tokens);
 
@@ -46,6 +47,7 @@ std::string CmdKey(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdBootBare(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdMount(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 std::string CmdColdReset(ATSimulator& sim, const std::vector<std::string>& tokens);
