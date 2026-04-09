@@ -59,6 +59,22 @@ if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
     set_source_files_properties(source/uberblit_ycbcr_sse2_intrin.cpp PROPERTIES COMPILE_FLAGS "-mssse3")
 endif()
 
+# aarch64 NEON: resample_stages_arm64.cpp deliberately reinterprets
+# NEON vector element types (e.g. passing a uint16x8_t to
+# vqrshrun_n_s16, which is typed int16x8_t). MSVC and Apple clang
+# accept these implicitly; mainline GCC's strict NEON type checking
+# rejects them without -flax-vector-conversions. Scoped per-file so
+# other translation units keep the stricter checks.
+# (blt_spanutils_arm64.cpp and region_neon.cpp are already type-clean
+# and do not need the flag.)
+# GNU-only: Apple clang already accepts this file as-is. See the matching
+# comment in src/ATCore/CMakeLists.txt for the full rationale.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")
+    set_source_files_properties(source/resample_stages_arm64.cpp PROPERTIES
+        COMPILE_FLAGS "-flax-vector-conversions")
+endif()
+
 target_include_directories(Kasumi
     PUBLIC ${ALTIRRA_INCLUDE_DIR}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/h
