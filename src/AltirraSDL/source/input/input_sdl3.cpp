@@ -715,7 +715,23 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	// flow through SDL_EVENT_TEXT_INPUT → HandleTextInput → the cooked
 	// character map, which is the only path that can correctly respect
 	// the OS's compose / dead-key / IME state.
-	uint32 vk = SDLKeycodeToVK_Layout(ev.key);
+	//
+	// Numpad note: SDL3's default SDL_HINT_KEYCODE_OPTIONS includes
+	// `hide_numpad`, which makes numpad digit keys report ev.key == '0'..'9'
+	// (ASCII) whenever NumLock is on.  That would cause the layout path to
+	// resolve numpad digits to VK_0..VK_9 (main-row) and silently bypass
+	// the numpad-specific keymap entries (VK_NUMPAD0..9 via the existing
+	// scancode table).  Windows WM_KEYDOWN always delivers VK_NUMPAD* for
+	// numpad keys, so we gate the layout path on the scancode not being a
+	// numpad key; this forces numpad input to stay on the physical path.
+	const bool isNumpadScancode =
+		(ev.scancode >= SDL_SCANCODE_KP_DIVIDE &&
+		 ev.scancode <= SDL_SCANCODE_KP_PERIOD) ||
+		ev.scancode == SDL_SCANCODE_KP_EQUALS ||
+		ev.scancode == SDL_SCANCODE_NUMLOCKCLEAR;
+	uint32 vk = kATInputCode_None;
+	if (!isNumpadScancode)
+		vk = SDLKeycodeToVK_Layout(ev.key);
 	if (vk == kATInputCode_None)
 		vk = SDLScancodeToInputCode(ev.scancode);
 	// Numpad Enter uses VK_RETURN with the extended flag in the Windows
