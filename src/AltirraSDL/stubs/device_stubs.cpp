@@ -115,8 +115,9 @@ const ATEnumLookupTable& ATGetEnumLookupTable<ATProcessEfficiencyMode>() {
 	return sTable;
 }
 
-// ============================================================
-// ATSetProcessEfficiencyMode stub (oshelper.cpp excluded)
-// ============================================================
-
+// ATSetProcessEfficiencyMode: no-op on POSIX for now. The P2 plan is a
+// per-platform implementation (Windows: SetProcessAffinityMask; macOS:
+// pthread_set_qos_class_self_np; Linux/Android: sched_setaffinity keyed
+// off /sys/devices/system/cpu/cpu*/cpu_capacity). The enum table itself
+// now lives in source/os/oshelper_sdl3.cpp.
 void ATSetProcessEfficiencyMode(ATProcessEfficiencyMode) {}

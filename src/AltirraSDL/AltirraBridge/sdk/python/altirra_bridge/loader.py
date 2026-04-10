@@ -75,11 +75,16 @@ class XexImage:
     if no segment touched it. ``initads`` is the *list* of values
     written to INITAD ($02e2/$02e3), in load order — every entry was
     a separate jump-during-load.
+
+    ``ffff_positions`` records which data-segment indices had a
+    ``$FFFF`` marker immediately before them in the file. Needed by
+    ``asm_writer`` to reproduce the exact XEX header layout.
     """
 
-    segments: List[XexSegment] = field(default_factory=list)
-    runad:    Optional[int]    = None
-    initads:  List[int]        = field(default_factory=list)
+    segments:        List[XexSegment] = field(default_factory=list)
+    runad:           Optional[int]    = None
+    initads:         List[int]        = field(default_factory=list)
+    ffff_positions:  List[int]        = field(default_factory=list)
 
     @property
     def entry(self) -> Optional[int]:
@@ -101,6 +106,11 @@ class XexImage:
 def parse_xex(data: bytes) -> XexImage:
     """Parse an XEX byte stream and return a :class:`XexImage`.
 
+    Handles inter-segment ``$FFFF`` markers (common in multi-segment
+    files) and trailing DOS padding (``$1A`` fill).  Records which
+    data-segment indices were preceded by a ``$FFFF`` marker so
+    :mod:`asm_writer` can reproduce the exact header layout.
+
     Raises :class:`ValueError` if the file is malformed.
     """
     if not isinstance(data, (bytes, bytearray)):
@@ -112,47 +122,49 @@ def parse_xex(data: bytes) -> XexImage:
     if n < 4:
         raise ValueError("XEX too short")
 
-    # Optional $ff $ff magic — strip it once at the start.
-    if data[pos] == 0xff and data[pos + 1] == 0xff:
-        pos += 2
+    next_has_ffff = False
 
     while pos < n:
         if n - pos < 4:
-            raise ValueError(f"XEX truncated at offset {pos}")
+            break  # trailing padding — ignore
 
-        start = data[pos] | (data[pos + 1] << 8)
-        end   = data[pos + 2] | (data[pos + 3] << 8)
-        pos += 4
-
-        # An $ff $ff sentinel between segments is allowed and skipped.
-        if start == 0xffff and end == 0xffff:
+        # Check for $FFFF marker (can appear before any segment).
+        w = data[pos] | (data[pos + 1] << 8)
+        if w == 0xFFFF:
+            next_has_ffff = True
+            pos += 2
             continue
 
+        start = w
+        end = data[pos + 2] | (data[pos + 3] << 8)
+        pos += 4
+
         if end < start:
-            raise ValueError(
-                f"XEX segment with end < start at offset {pos - 4}: "
-                f"${start:04x}-${end:04x}")
+            # Treat as trailing garbage (DOS sector padding, etc.)
+            break
 
         length = end - start + 1
         if pos + length > n:
-            raise ValueError(
-                f"XEX segment ${start:04x}-${end:04x} extends past EOF "
-                f"({length} bytes needed, {n - pos} available)")
+            break  # truncated — treat as trailing padding
 
         seg_data = bytes(data[pos:pos + length])
         pos += length
 
+        # RUNAD / INITAD segments are consumed but not added to the
+        # data-segment list — same as pyA8's loader.
+        if start == RUNAD and length >= 2:
+            img.runad = seg_data[0] | (seg_data[1] << 8)
+            continue
+        if start == INITAD and length >= 2:
+            init_addr = seg_data[0] | (seg_data[1] << 8)
+            img.initads.append(init_addr)
+            continue
+
+        if next_has_ffff:
+            img.ffff_positions.append(len(img.segments))
+            next_has_ffff = False
+
         img.segments.append(XexSegment(start=start, end=end, data=seg_data))
-
-        # Check for INITAD writes inside this segment.
-        if start <= INITAD and end >= INITAD + 1:
-            off = INITAD - start
-            img.initads.append(seg_data[off] | (seg_data[off + 1] << 8))
-
-        # Check for RUNAD writes; last one wins.
-        if start <= RUNAD and end >= RUNAD + 1:
-            off = RUNAD - start
-            img.runad = seg_data[off] | (seg_data[off + 1] << 8)
 
     return img
 

@@ -1,0 +1,338 @@
+# River Raid — Technical Findings
+
+## Status
+
+- **Segments**: 3 XEX segments (main $4080-$60FF, init $0400-$0419, INITAD→$0400)
+- **Game code**: 8192 bytes at $A000-$BFFF (relocated from $4100-$60FF)
+- **Labels**: 64+ entry points identified (29 JSR targets, 35+ JMP targets)
+- **Routines**: 29 subroutines, 2 major interrupt handlers (VBI + DLI)
+- **Variables**: 70+ zero-page variables mapped, 6-slot entity table at $0500
+- **SHA-256**: `3924596cf04e1c7f97af9688a125c8a7e0b0d686dbaa40820c812cc1c406e704`
+- **Platform**: Atari 800 (48K RAM, no BASIC ROM required)
+
+## Game Overview
+
+River Raid is a vertically scrolling shooter by Carol Shaw / Activision (1982).
+The player flies a jet up a procedurally generated river, shooting enemies and
+refueling at fuel depots. The Atari 8-bit version uses a sophisticated DLI kernel
+to multiplex sprites and color the terrain per-scanline, fitting the entire game
+into exactly 8KB of code + data.
+
+The game has no OS dependency — it disables all interrupts, takes over the
+hardware directly, and runs its own VBI/DLI handlers. It was designed for the
+Atari 800 (no BASIC ROM at $A000), but runs on XL/XE machines with BASIC
+disabled.
+
+## Core Gameplay Loop
+
+The main loop runs at $AE99 and follows this per-frame sequence:
+
+1. **VCOUNT sync** ($AE99): Wait for scanline counter < $50 (top of visible area)
+2. **Frame update** ($AEA0): JSR $AFD0 — update display list, prepare next frame
+3. **Terrain scroll** ($AEB5-$AF5A): advance terrain, copy new row data into screen RAM
+4. **Entity update** ($A271-$AE85): iterate 6 entity slots, move enemies, check spawn
+5. **Collision check** ($A4E0): test player-entity and player-terrain collisions
+6. **Score update** ($A547): BCD arithmetic on score at $63/$64/$65
+7. **Input handling** ($A312): read PORTA for joystick, TRIG0 for fire button
+8. **Fuel management** ($AE90): decrement fuel counter, check for empty
+
+The loop is entered from the state machine at $A1D9 (JMP $AE99) after
+the per-frame game logic completes.
+
+## Loading Sequence
+
+| Segment | Address | Size | Purpose |
+|---------|---------|------|---------|
+| 0 | $4080-$60FF | 8320 | Main: relocator at $4086 + game code at $4100 |
+| 1 | $0400-$0419 | 26 | Init: calls relocator, enters game loop |
+| 2 | $02E2-$02E3 | 2 | INITAD vector → $0400 |
+
+The init code at $0400:
+1. Sets CASINI ($02/$03) to point at $4086
+2. JSR $4086 — the relocator
+3. Enters infinite loop via JMP ($000C) / JMP ($000A)
+
+The relocator at $4086:
+1. Copies 32 pages ($2000 bytes) from $4100 to $A000 (game code)
+2. Zero-fills $0400-$3EFF (clears the init code and lower RAM)
+3. JSR to JMP ($BFFE) → IRQ setup
+4. JMP ($BFFA) → cold start at $A000
+
+## State Machine
+
+The game state is tracked in zero-page variable $24:
+
+| State | Handler | Purpose |
+|-------|---------|---------|
+| $00 | $A197→$AE99 | Attract mode / title screen |
+| $01 | $A271 | Active gameplay |
+| $02 | $A3E9 | Player dying (explosion animation) |
+| $03 | $A15D | Game starting (init lives, clear entities) |
+
+The state machine dispatch is at $A1CE-$A1DC:
+```
+  LDX $24        ; game_state
+  BNE $A1DC      ; not attract → dispatch
+  ...
+  JMP $AE99      ; attract: run main loop
+$A1DC:
+  CPX #$02
+  ...
+```
+
+## Display Architecture
+
+### Display List ($3F00)
+
+The display list uses ANTIC mode 14 (160-pixel wide, 4-color bitmap)
+for the entire playfield — 172 scanlines of bitmap graphics:
+
+```
+$3F00: 3 × blank 8 lines (24 blank lines at top)
+$3F01: DLI trigger on 2nd blank (fires DLI at top of playfield)
+$3F03: LMS mode 14 → $3D80 (status/score area, 9 lines)
+$3F0C: LMS mode 14 → $2000 (main river area, ~160 lines)
+...
+$3FB5: JVB → $3F00 (jump-and-wait-for-VBI)
+```
+
+Screen RAM layout:
+- $3D80-$3EFF: Status bar (score, lives, fuel gauge) — 9 scan lines
+- $2000-$3C7F: Main river terrain bitmap — ~160 scan lines
+- Each mode 14 line is 48 bytes (160 pixels ÷ 4 colors × 2 bits = 40 bytes, but DMA reads 48)
+
+### DLI Kernel ($B500)
+
+The DLI handler is the most CPU-intensive part of the game, consuming
+~37% of total CPU cycles. It's a **scanline kernel** that runs on every
+display line to:
+
+1. **Multiplex sprites**: Position and color up to 6 entities using only
+   4 hardware players by changing HPOSP/COLPM registers per scanline
+2. **Set terrain colors**: Write COLPF registers per row to color the
+   river banks differently from the water
+3. **Check collisions**: Read missile-to-player collision registers (M2PL)
+   to detect hits
+
+The DLI branches at $B509 based on VCOUNT:
+- VCOUNT < $3F: Main playfield kernel (sprite multiplexer at $B510-$B60B)
+- VCOUNT >= $3F: Status bar handler (at $B72A)
+
+The main kernel loop ($B567-$B5E6) is WSYNC-locked:
+```
+$B567: STA WSYNC      ; sync to start of scanline
+$B56A: TXA            ; X = scanline within entity
+$B56B: CMP ($12),Y    ; compare to river bank position
+$B56E: BCS $B575      ; if past bank → draw entity
+$B570: INX            ; next scanline
+$B571: BNE $B567      ; loop until entity zone ends
+```
+
+### Player/Missile Graphics
+
+PMG base is at $0600 (PMBASE = $06 at $D407):
+- $0600-$06BF: Missile graphics
+- $0700-$07CF: Player 0 — the player's jet
+- $0800-$08CF: Player 1 — the player's bullet
+- $0900-$09CF: Players 2-3 — enemies and fuel depots (repositioned per-scanline by DLI)
+
+GRACTL = $03 (both players and missiles enabled).
+PRIOR = $01 (players have priority over playfield).
+
+## Entity System
+
+The game maintains 6 entity slots in parallel arrays at $0500:
+
+| Offset | Array | Purpose |
+|--------|-------|---------|
+| +$00 | entity_type[6] | Entity type (0=empty, 1-6=enemy, 7=fuel, $0E=bridge) |
+| +$06 | entity_anim[5] | Animation frame |
+| +$0B | entity_shape[6] | Shape/sprite table index |
+| +$16 | entity_xpos[6] | Horizontal position |
+| +$21 | entity_size[6] | SIZEP width value |
+
+Entity types identified:
+- **0**: Empty slot
+- **1-2**: Ship variants (left/right facing)
+- **3-4**: Helicopter variants
+- **5-6**: Jet variants
+- **7**: Fuel depot
+- **$0C**: Balloon
+- **$0E**: Bridge
+
+Entities are spawned by the terrain generator and updated each frame.
+The DLI kernel reads the entity tables to position sprites on the
+correct scanlines.
+
+## Collision Model
+
+Collisions are detected in two ways:
+
+1. **Hardware P/M collision** (DLI at $B5EA-$B5F1): The DLI reads
+   M2PL ($D00A) after rendering each entity's scanline zone. Bit 3
+   of M2PL detects missile-to-player3 hits (bullet hitting enemy).
+   Results are stored in $1A-$1E per entity slot.
+
+2. **Software river bank collision** ($B56B): The DLI compares the
+   current scanline X against the river bank position table ($0C-$15).
+   If the player sprite overlaps the bank, a collision flag is set.
+
+Collision results are processed in the main loop at $A3E9-$A4DF:
+- Entity collision → destroy entity, add score
+- Bank collision → destroy player, lose life
+- Fuel depot overlap → refuel (flag at $38 bit 7)
+
+## Fuel System
+
+- Fuel level is stored at $76 (range $FF=full to $00=empty)
+- Fuel decrements at $AE94: `DEC $32` — the drain counter at $32
+  wraps around and decrements fuel via the main loop
+- Fuel refill happens when the player overlaps a fuel depot
+  ($38 bit 7 set), incrementing $76 each frame
+- When fuel reaches $00, the player dies
+
+The fuel gauge in the status bar is drawn as colored bars in the
+screen RAM at $3D80+. The color changes (green → yellow → red) are
+managed by the status bar DLI at $B72A+.
+
+## Sound Engine
+
+The VBI handler at $B2A5 manages all sound:
+
+- **Engine sound** (channel 1, AUDF1/AUDC1): Continuous when flying,
+  frequency varies with speed
+- **Explosion sound** ($C6 timer): When $C6 > 0, plays a noise burst
+  on channel 1 (AUDF1=$40, AUDC1=$AF), timer decremented each VBI
+- **Score/refuel sounds** (channels 2-3): Short tonal effects for
+  scoring events and refueling
+
+The sound engine is simple — no music, just sound effects tied to
+game events. The VBI checks $C6 (explosion timer), $24 (game state),
+and $7A/$7B (engine sound parameters) to determine what to output.
+
+## Scoring
+
+Score is stored in BCD format across three bytes:
+- $63: high (hundred-thousands / millions)
+- $64: mid (thousands / ten-thousands)
+- $65: low (ones / tens / hundreds)
+
+The scoring routine at $A547 uses `SED` (set decimal mode) for BCD
+addition. Score values per enemy type are looked up from a table at
+$BB0B. Bridge crossing awards bonus points and increments the bridge
+counter at $2E/$62.
+
+Extra lives are awarded when the score crosses certain thresholds,
+tracked via $6A (extra_life_thresh).
+
+## Input Handling
+
+Input is read at $A312-$A33F:
+
+```
+  LDA PORTA ($D300)  ; read joystick port A
+  LDX $77            ; player_number (0 or 1)
+  BEQ $A325          ; player 1: use low nibble
+  LSR × 4            ; player 2: shift high nibble down
+  AND #$0F
+  STA $19            ; store direction
+```
+
+The joystick direction nibble:
+- $0F: centered (no input)
+- $0E: up
+- $0D: down
+- $0B: left
+- $07: right
+- Other values: diagonals
+
+Fire button is read from TRIG0/TRIG1 ($D010/$D011).
+Console switches from CONSOL ($D01F): bit 0=START, bit 1=SELECT, bit 2=OPTION.
+
+## Terrain Generation
+
+The river terrain is procedurally generated using a simple PRNG seeded
+from $A5/$A6. The terrain generator runs in the main loop and produces
+new rows at the bottom of the screen as the terrain scrolls.
+
+Key terrain parameters:
+- $0C-$15: Left bank positions for 10 visible rows
+- $52: Player-relative X position within the river
+- $53/$54: Current river width parameters (left/right edges)
+- $5A: Section type (controls river shape — straight, narrow, winding)
+
+The river banks are drawn as colored pixels in the mode 14 bitmap.
+The terrain data at $B800-$BBFF contains shape templates for the
+river banks and obstacles.
+
+## Level Progression
+
+The game has no discrete levels but difficulty increases continuously:
+
+- After each bridge crossing, enemy density and speed may increase
+- The river becomes narrower in certain sections
+- Enemy types rotate — later sections introduce faster enemies
+- The terrain_density variable ($5D) and spawn_cooldown ($5F) control
+  how frequently enemies appear
+
+The bridge counter at $2E tracks overall progress. Every few bridges,
+the game introduces harder combinations of enemies and terrain.
+
+## Performance Profile
+
+From a 600-frame profile during active gameplay:
+
+| Routine | Cycles | % of frame | Purpose |
+|---------|--------|-----------|---------|
+| DLI kernel ($B500) | 1,194,150 | 37.3% | Per-scanline sprite multiplexer |
+| Main loop wait ($AE99) | 680,000 | 21.2% | VCOUNT sync (idle wait) |
+| Hot loop ($B567) | 710,919 | 22.2% | WSYNC-locked scanline loop (inside DLI) |
+| VBI ($B2A5) | 17,713 | 0.6% | Sound + game state |
+| Terrain render ($AFF4) | 79,297 | 2.5% | Write terrain rows to screen |
+| Entity update ($B034+) | 20,893 | 0.7% | Per-entity movement |
+
+The DLI kernel dominates — it must run every scanline to maintain the
+sprite multiplexing illusion. The main loop spends most of its time
+waiting for the right VCOUNT value to start the next frame's processing.
+
+## Data Tables ($B400-$BFFF)
+
+| Address | Size | Content |
+|---------|------|---------|
+| $B48D-$B4D0 | 68 | Color tables (per-entity-type colors) |
+| $B4D1-$B4FF | 47 | Terrain row pointer table (pairs of addresses) |
+| $B776-$B7FF | 138 | Display list template + initialization data |
+| $B800-$BBFF | 1024 | Sprite/shape data tables (entity graphics) |
+| $BAB7-$BAC4 | 14 | Fuel gauge display pointers |
+| $BAC5-$BACC | 8 | Player color cycle table |
+| $BB0B-$BB23 | 25 | Score value table per entity type (BCD) |
+| $BB24-$BB2F | 12 | Entity type transition table |
+| $BB30-$BB5F | 48 | Sprite offset tables |
+| $BB60-$BB8F | 48 | Sprite height tables |
+| $BC00-$BEFF | 768 | Terrain shape templates (bank contours) |
+| $BFFA-$BFFF | 6 | 6502 vectors: cold=$A000, ?=$8000, IRQ=$A000 |
+
+## Open Questions
+
+1. **Two-player alternation**: The code at $A312 reads player number from
+   $77 and shifts PORTA accordingly, but the full two-player state save/restore
+   hasn't been traced.
+
+2. **Exact score values**: The BCD score table at $BB0B is indexed by entity
+   type, but the exact point values per enemy haven't been fully decoded.
+
+3. **Terrain PRNG algorithm**: The terrain generator uses $A5/$A6 as state
+   but the exact algorithm (and whether the river pattern repeats) hasn't
+   been fully reverse-engineered.
+
+4. **Extra life thresholds**: The threshold tracked at $6A triggers extra
+   lives but the exact score intervals haven't been confirmed.
+
+## Status
+
+- Phases 0-3: Complete (XEX parse, boot, profiling)
+- Phase 4: In progress (recursive descent, ~73% byte coverage)
+- Phase 5: In progress (variables partially mapped)
+- Phase 6: In progress (this document + notes)
+- Phase 7: Pending (MADS round-trip)
+- Phase 8: Pending (final hand-off)

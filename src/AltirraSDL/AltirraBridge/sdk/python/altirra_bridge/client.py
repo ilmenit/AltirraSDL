@@ -489,6 +489,34 @@ class AltirraBridge:
         """Load a previously-saved snapshot from ``path``. Async."""
         return self._cmd_ok(f"STATE_LOAD {path}")
 
+    def config(self, key: Optional[str] = None,
+               value: Optional[str] = None) -> dict:
+        """Query or set simulator configuration.
+
+        * ``config()`` — return all config keys.
+        * ``config("basic")`` — query one key.
+        * ``config("basic", "false")`` — set a key, return full config.
+
+        Supported keys:
+
+        * ``basic`` — ``"true"``/``"false"``: built-in BASIC enabled.
+        * ``machine`` — hardware mode: ``"800"``, ``"800XL"``,
+          ``"130XE"``, ``"XEGS"``, ``"1200XL"``, ``"1400XL"``,
+          ``"5200"``.
+        * ``memory`` — RAM size: ``"8K"`` through ``"1088K"``.
+        * ``debugbrkrun`` — ``"true"``/``"false"``: break at EXE run
+          address.
+
+        Setting ``machine`` or ``memory`` triggers a cold reset
+        (preserving pause state).  Setting ``basic`` or
+        ``debugbrkrun`` does not.
+        """
+        if key is None:
+            return self._cmd_ok("CONFIG")
+        if value is None:
+            return self._cmd_ok(f"CONFIG {key}")
+        return self._cmd_ok(f"CONFIG {key} {value}")
+
     # ------------------------------------------------------------------
     # Phase 4 commands — rendering (SCREENSHOT / RAWSCREEN / RENDER_FRAME)
     # ------------------------------------------------------------------

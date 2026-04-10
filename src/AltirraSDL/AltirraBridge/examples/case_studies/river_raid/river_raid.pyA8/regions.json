@@ -1,0 +1,105 @@
+[
+  {
+    "start": "$A000",
+    "end": "$A06F",
+    "type": "code",
+    "label": "cold_start_init"
+  },
+  {
+    "start": "$A070",
+    "end": "$A18F",
+    "type": "code",
+    "label": "title_screen_setup"
+  },
+  {
+    "start": "$A190",
+    "end": "$A270",
+    "type": "code",
+    "label": "input_wait_loop"
+  },
+  {
+    "start": "$A271",
+    "end": "$AE8F",
+    "type": "code",
+    "label": "main_game_logic"
+  },
+  {
+    "start": "$AE90",
+    "end": "$AF5A",
+    "type": "code",
+    "label": "frame_update_loop"
+  },
+  {
+    "start": "$AF5B",
+    "end": "$B0F0",
+    "type": "code",
+    "label": "rendering_subroutines"
+  },
+  {
+    "start": "$B0F1",
+    "end": "$B296",
+    "type": "code",
+    "label": "game_state_subroutines"
+  },
+  {
+    "start": "$B298",
+    "end": "$B2A4",
+    "type": "code",
+    "label": "utility_read_console"
+  },
+  {
+    "start": "$B2A5",
+    "end": "$B4FF",
+    "type": "proc",
+    "name": "vbi_handler",
+    "label": "VBI handler \u2014 sound engine + game state updates"
+  },
+  {
+    "start": "$B500",
+    "end": "$B74F",
+    "type": "proc",
+    "name": "dli_handler",
+    "label": "DLI kernel \u2014 per-scanline sprite multiplexer + terrain renderer"
+  },
+  {
+    "start": "$B750",
+    "end": "$B775",
+    "type": "code",
+    "label": "dli_status_bar"
+  },
+  {
+    "start": "$B776",
+    "end": "$B7FF",
+    "type": "data",
+    "hint": "bytes",
+    "label": "display list template / init data"
+  },
+  {
+    "start": "$B800",
+    "end": "$BBFF",
+    "type": "data",
+    "hint": "bytes",
+    "label": "sprite/terrain shape tables"
+  },
+  {
+    "start": "$BC00",
+    "end": "$BEF0",
+    "type": "data",
+    "hint": "bytes",
+    "label": "lookup tables (color, position, shape index)"
+  },
+  {
+    "start": "$BEF1",
+    "end": "$BFF9",
+    "type": "data",
+    "hint": "bytes",
+    "label": "misc data / padding"
+  },
+  {
+    "start": "$BFFA",
+    "end": "$BFFF",
+    "type": "data",
+    "hint": "addr_table",
+    "label": "6502 vectors: cold=$A000, ?=$8000, IRQ=$A000"
+  }
+]

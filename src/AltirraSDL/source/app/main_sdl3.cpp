@@ -51,6 +51,7 @@
 #include "ui_textselection.h"
 #include "ui_progress.h"
 #include "ui_emuerror.h"
+#include "ui_virtual_keyboard.h"
 
 #include "simulator.h"
 #include "uikeyboard.h"
@@ -266,6 +267,38 @@ static void HandleEvents() {
 		if (ATMobileUI_HandleEvent(ev, g_mobileState))
 			continue;
 #endif
+
+		// Virtual keyboard intercepts gamepad events when visible.
+		// Gamepad X toggles visibility; D-pad/A/LB/RB navigate and
+		// press keys when the keyboard is showing.
+		// Skip when a mobile UI screen (hamburger, file browser, etc.)
+		// is open — ImGui needs gamepad events for dialog navigation.
+		{
+			bool mobileUIActive = false;
+#ifdef ALTIRRA_MOBILE
+			mobileUIActive = (g_mobileState.currentScreen != ATMobileUIScreen::None);
+#endif
+			if (!mobileUIActive) {
+				if (ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
+					&& ev.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) {
+					g_uiState.showVirtualKeyboard = !g_uiState.showVirtualKeyboard;
+					if (!g_uiState.showVirtualKeyboard)
+						ATUIVirtualKeyboard_ReleaseAll(g_sim);
+					continue;
+				}
+				if (g_uiState.showVirtualKeyboard) {
+					if (ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
+						&& ev.gbutton.button == SDL_GAMEPAD_BUTTON_EAST) {
+						// B button closes the keyboard
+						g_uiState.showVirtualKeyboard = false;
+						ATUIVirtualKeyboard_ReleaseAll(g_sim);
+						continue;
+					}
+					if (ATUIVirtualKeyboard_HandleEvent(ev, g_sim, true))
+						continue;
+				}
+			}
+		}
 
 		ATUIProcessEvent(&ev);
 
@@ -623,6 +656,7 @@ static void HandleEvents() {
 			ATInputSDL3_ReleaseAllKeys();
 			ATUIReleaseMouse();
 			ATTouchControls_ReleaseAll();
+			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 #ifdef ALTIRRA_MOBILE
 			// Snapshot the current emulator state so if Android kills
 			// us while backgrounded (low memory, incoming call swipe,
@@ -738,6 +772,7 @@ static void HandleEvents() {
 			ATUIReleaseMouse();
 			// Release all touch controls on focus loss
 			ATTouchControls_ReleaseAll();
+			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 			break;
 
 		default:
@@ -764,6 +799,16 @@ static SDL_FRect ComputeDisplayRect() {
 
 	float viewportW = (float)winW;
 	float viewportH = (float)winH - menuH;
+
+	// Reserve space for the virtual keyboard panel if visible
+	{
+		float kbdBottom = 0, kbdRight = 0;
+		ATUIVirtualKeyboard_GetDisplayInset(
+			g_uiState.showVirtualKeyboard, g_uiState.oskPlacement,
+			&kbdBottom, &kbdRight);
+		viewportW -= kbdRight;
+		viewportH -= kbdBottom;
+	}
 
 	float w = viewportW;
 	float h = viewportH;

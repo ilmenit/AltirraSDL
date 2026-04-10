@@ -37,6 +37,7 @@
 #include "ui_testmode.h"
 #include "ui_progress.h"
 #include "ui_emuerror.h"
+#include "ui_virtual_keyboard.h"
 #include "display_sdl3_impl.h"
 #include "simulator.h"
 #include "mediamanager.h"
@@ -659,6 +660,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 }
 
 void ATUIShutdown() {
+	ATUIVirtualKeyboard_Shutdown();
 	ATUIShutdownPaletteSolver();
 	ATUIStopRecording();
 	if (s_usingGLBackend) {
@@ -1006,6 +1008,12 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// Debugger dialogs (self-managed visibility)
 	ATUIRenderVerifierDialog();
 	ATUIDebuggerRenderSourceListDialog();
+
+	// Virtual on-screen keyboard
+	if (ATUIRenderVirtualKeyboard(sim, state.showVirtualKeyboard, state.oskPlacement)) {
+		ATUIVirtualKeyboard_ReleaseAll(sim);
+		state.showVirtualKeyboard = false;
+	}
 
 	// HUD overlay (drive LEDs, status, FPS, pause, errors)
 	ATUIRenderHUDOverlay();

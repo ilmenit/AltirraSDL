@@ -35,6 +35,8 @@
 #include "gtia.h"
 #include "logging.h"
 #include "settings.h"            // ATSettingsCategory enum + ATSettingsLoadLastProfile
+#include "constants.h"           // ATHardwareMode, ATMemoryMode enums
+#include "debugger.h"            // ATGetDebugger() — for --debugbrkrun
 
 #include "bridge_server.h"
 #include <vd2/VDDisplay/display.h>
@@ -201,7 +203,12 @@ static void HandleSignal(int /*sig*/) {
 namespace {
 struct Args {
 	std::string bridgeAddr = "tcp:127.0.0.1:0";
-	bool        printHelp  = false;
+	bool        printHelp    = false;
+	// CONFIG overrides (applied after settings load, before first ColdReset)
+	bool        hasNoBasic   = false;
+	std::string machine;             // empty = use settings default
+	std::string memory;              // empty = use settings default
+	bool        debugBrkRun  = false;
 };
 
 void PrintHelp() {
@@ -218,7 +225,12 @@ void PrintHelp() {
 		"                      unix:/path/to/socket   POSIX filesystem UDS\n"
 		"                      unix-abstract:NAME     Linux abstract namespace UDS\n"
 		"                    Default: tcp:127.0.0.1:0\n"
-		"  -h, --help        Show this help.\n"
+		"  --no-basic          Disable built-in BASIC ROM.\n"
+		"  --machine=MODE      Hardware mode: 800, 800XL, 1200XL, 130XE, XEGS,\n"
+		"                        1400XL, 5200. Default: from settings.\n"
+		"  --memory=SIZE       Memory size: 8K..1088K. Default: from settings.\n"
+		"  --debugbrkrun       Enable break-on-EXE-run-address.\n"
+		"  -h, --help          Show this help.\n"
 		"\n"
 		"On startup the server prints two lines on stderr:\n"
 		"  [Bridge] listening on tcp:127.0.0.1:54321\n"
@@ -243,6 +255,14 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			out.bridgeAddr = "tcp:127.0.0.1:0";
 		} else if (std::strncmp(a, "--bridge=", 9) == 0) {
 			out.bridgeAddr = a + 9;
+		} else if (std::strcmp(a, "--no-basic") == 0) {
+			out.hasNoBasic = true;
+		} else if (std::strncmp(a, "--machine=", 10) == 0) {
+			out.machine = a + 10;
+		} else if (std::strncmp(a, "--memory=", 9) == 0) {
+			out.memory = a + 9;
+		} else if (std::strcmp(a, "--debugbrkrun") == 0) {
+			out.debugBrkRun = true;
 		} else {
 			std::fprintf(stderr, "AltirraBridgeServer: unknown argument: %s\n", a);
 			return false;
@@ -344,6 +364,60 @@ int main(int argc, char** argv) {
 	if (!InitSimulator()) {
 		std::fprintf(stderr, "AltirraBridgeServer: simulator init failed\n");
 		return 1;
+	}
+
+	// ---- Apply CLI overrides after settings load, before bridge ----
+	{
+		bool needReset = false;
+
+		if (args.hasNoBasic) {
+			g_sim.SetBASICEnabled(false);
+			needReset = true;
+		}
+
+		if (!args.machine.empty()) {
+			const char* m = args.machine.c_str();
+			bool ok = true;
+			if      (!strcasecmp(m, "800"))    g_sim.SetHardwareMode(kATHardwareMode_800);
+			else if (!strcasecmp(m, "800xl"))   g_sim.SetHardwareMode(kATHardwareMode_800XL);
+			else if (!strcasecmp(m, "1200xl"))  g_sim.SetHardwareMode(kATHardwareMode_1200XL);
+			else if (!strcasecmp(m, "130xe"))   g_sim.SetHardwareMode(kATHardwareMode_130XE);
+			else if (!strcasecmp(m, "xegs"))    g_sim.SetHardwareMode(kATHardwareMode_XEGS);
+			else if (!strcasecmp(m, "1400xl"))  g_sim.SetHardwareMode(kATHardwareMode_1400XL);
+			else if (!strcasecmp(m, "5200"))    g_sim.SetHardwareMode(kATHardwareMode_5200);
+			else { std::fprintf(stderr, "AltirraBridgeServer: unknown --machine: %s\n", m); ok = false; }
+			if (!ok) return 2;
+			needReset = true;
+		}
+
+		if (!args.memory.empty()) {
+			const char* m = args.memory.c_str();
+			bool ok = true;
+			if      (!strcasecmp(m, "8k"))    g_sim.SetMemoryMode(kATMemoryMode_8K);
+			else if (!strcasecmp(m, "16k"))   g_sim.SetMemoryMode(kATMemoryMode_16K);
+			else if (!strcasecmp(m, "24k"))   g_sim.SetMemoryMode(kATMemoryMode_24K);
+			else if (!strcasecmp(m, "32k"))   g_sim.SetMemoryMode(kATMemoryMode_32K);
+			else if (!strcasecmp(m, "40k"))   g_sim.SetMemoryMode(kATMemoryMode_40K);
+			else if (!strcasecmp(m, "48k"))   g_sim.SetMemoryMode(kATMemoryMode_48K);
+			else if (!strcasecmp(m, "52k"))   g_sim.SetMemoryMode(kATMemoryMode_52K);
+			else if (!strcasecmp(m, "64k"))   g_sim.SetMemoryMode(kATMemoryMode_64K);
+			else if (!strcasecmp(m, "128k"))  g_sim.SetMemoryMode(kATMemoryMode_128K);
+			else if (!strcasecmp(m, "256k"))  g_sim.SetMemoryMode(kATMemoryMode_256K);
+			else if (!strcasecmp(m, "320k"))  g_sim.SetMemoryMode(kATMemoryMode_320K);
+			else if (!strcasecmp(m, "576k"))  g_sim.SetMemoryMode(kATMemoryMode_576K);
+			else if (!strcasecmp(m, "1088k")) g_sim.SetMemoryMode(kATMemoryMode_1088K);
+			else { std::fprintf(stderr, "AltirraBridgeServer: unknown --memory: %s\n", m); ok = false; }
+			if (!ok) return 2;
+			needReset = true;
+		}
+
+		if (args.debugBrkRun)
+			ATGetDebugger()->SetBreakOnEXERunAddrEnabled(true);
+
+		if (needReset) {
+			g_sim.ColdReset();
+			g_sim.Resume();
+		}
 	}
 
 	if (!ATBridge::Init(args.bridgeAddr)) {

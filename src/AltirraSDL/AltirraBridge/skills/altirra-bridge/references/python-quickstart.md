@@ -89,7 +89,7 @@ a.consol(start=True, select=True)       # hold both switches
 a.consol()                              # release all three
 ```
 
-Boot, reset, save-state:
+Boot, reset, save-state, config:
 
 ```python
 a.boot("/path/to/game.xex"); a.frame(120)
@@ -98,6 +98,13 @@ a.cold_reset()                           # preserves pause state
 a.warm_reset()
 a.state_save("/tmp/save.altstate"); a.frame(1)
 a.state_load("/tmp/save.altstate"); a.frame(1)
+
+# Simulator configuration — query or set
+cfg = a.config()                         # all keys
+a.config("basic", "false")               # disable BASIC (no reset)
+a.config("machine", "800")               # set Atari 800 (triggers reset)
+a.config("memory", "48K")                # set 48K RAM (triggers reset)
+a.config("debugbrkrun", "true")          # break at EXE run address
 ```
 
 Async commands (`boot`, `mount`, `state_save`, `state_load`) are

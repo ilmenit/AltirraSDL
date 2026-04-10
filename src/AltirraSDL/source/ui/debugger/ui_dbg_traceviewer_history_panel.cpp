@@ -159,7 +159,11 @@ void RenderCPUHistory(ATImGuiTraceViewerContext& ctx) {
 				ImGui::TableSetColumnIndex(2);
 				{
 					VDStringA buf;
-					ATDisassembleInsn(buf, nullptr, cpuCh.GetDisasmMode(), he, false, false, false, true, false);
+					// decodeRefsHistory=true: we have no live IATDebugTarget, so
+					// the disassembler must use hent.mEA for indirect modes
+					// (JMP (abs), JML [dp], etc.) instead of target->DebugReadByte,
+					// which would segfault on nullptr.
+					ATDisassembleInsn(buf, nullptr, cpuCh.GetDisasmMode(), he, false, true, false, true, false);
 					ImGui::TextUnformatted(buf.c_str());
 				}
 

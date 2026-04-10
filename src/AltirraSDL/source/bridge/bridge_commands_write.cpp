@@ -36,6 +36,8 @@
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
 #include "pia.h"
+#include "constants.h"       // ATHardwareMode, ATMemoryMode enums
+#include "debugger.h"        // ATGetDebugger() — break-on-EXE-run
 
 #include <cstdint>
 #include <cstdio>
@@ -204,6 +206,95 @@ bool LookupKey(const std::string& name, uint8_t& kbcode) {
 		if (upper == e.name) { kbcode = e.kbcode; return true; }
 	}
 	return false;
+}
+
+// ---------------------------------------------------------------------------
+// CONFIG string <-> enum mapping tables.
+// ---------------------------------------------------------------------------
+
+const char* HardwareModeToStr(ATHardwareMode m) {
+	switch (m) {
+		case kATHardwareMode_800:    return "800";
+		case kATHardwareMode_800XL:  return "800XL";
+		case kATHardwareMode_1200XL: return "1200XL";
+		case kATHardwareMode_130XE:  return "130XE";
+		case kATHardwareMode_XEGS:   return "XEGS";
+		case kATHardwareMode_1400XL: return "1400XL";
+		case kATHardwareMode_5200:   return "5200";
+		default:                     return "unknown";
+	}
+}
+
+bool StrToHardwareMode(const std::string& s, ATHardwareMode& out) {
+	std::string lower;
+	lower.reserve(s.size());
+	for (char c : s) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+	if (lower == "800")    { out = kATHardwareMode_800;    return true; }
+	if (lower == "800xl")  { out = kATHardwareMode_800XL;  return true; }
+	if (lower == "1200xl") { out = kATHardwareMode_1200XL; return true; }
+	if (lower == "130xe")  { out = kATHardwareMode_130XE;  return true; }
+	if (lower == "xegs")   { out = kATHardwareMode_XEGS;   return true; }
+	if (lower == "1400xl") { out = kATHardwareMode_1400XL; return true; }
+	if (lower == "5200")   { out = kATHardwareMode_5200;   return true; }
+	return false;
+}
+
+const char* MemoryModeToStr(ATMemoryMode m) {
+	switch (m) {
+		case kATMemoryMode_8K:         return "8K";
+		case kATMemoryMode_16K:        return "16K";
+		case kATMemoryMode_24K:        return "24K";
+		case kATMemoryMode_32K:        return "32K";
+		case kATMemoryMode_40K:        return "40K";
+		case kATMemoryMode_48K:        return "48K";
+		case kATMemoryMode_52K:        return "52K";
+		case kATMemoryMode_64K:        return "64K";
+		case kATMemoryMode_128K:       return "128K";
+		case kATMemoryMode_256K:       return "256K";
+		case kATMemoryMode_320K:       return "320K";
+		case kATMemoryMode_320K_Compy: return "320K_Compy";
+		case kATMemoryMode_576K:       return "576K";
+		case kATMemoryMode_576K_Compy: return "576K_Compy";
+		case kATMemoryMode_1088K:      return "1088K";
+		default:                       return "unknown";
+	}
+}
+
+bool StrToMemoryMode(const std::string& s, ATMemoryMode& out) {
+	std::string lower;
+	lower.reserve(s.size());
+	for (char c : s) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+	if (lower == "8k")    { out = kATMemoryMode_8K;    return true; }
+	if (lower == "16k")   { out = kATMemoryMode_16K;   return true; }
+	if (lower == "24k")   { out = kATMemoryMode_24K;   return true; }
+	if (lower == "32k")   { out = kATMemoryMode_32K;   return true; }
+	if (lower == "40k")   { out = kATMemoryMode_40K;   return true; }
+	if (lower == "48k")   { out = kATMemoryMode_48K;   return true; }
+	if (lower == "52k")   { out = kATMemoryMode_52K;   return true; }
+	if (lower == "64k")   { out = kATMemoryMode_64K;   return true; }
+	if (lower == "128k")  { out = kATMemoryMode_128K;  return true; }
+	if (lower == "256k")  { out = kATMemoryMode_256K;  return true; }
+	if (lower == "320k")  { out = kATMemoryMode_320K;  return true; }
+	if (lower == "320k_compy" || lower == "320kcompy")
+	                      { out = kATMemoryMode_320K_Compy; return true; }
+	if (lower == "576k")  { out = kATMemoryMode_576K;  return true; }
+	if (lower == "576k_compy" || lower == "576kcompy")
+	                      { out = kATMemoryMode_576K_Compy; return true; }
+	if (lower == "1088k") { out = kATMemoryMode_1088K; return true; }
+	return false;
+}
+
+std::string BuildConfigPayload(ATSimulator& sim) {
+	IATDebugger* dbg = ATGetDebugger();
+	std::string payload;
+	payload += "\"basic\":";
+	payload += (sim.IsBASICEnabled() ? "true" : "false");
+	payload += ',';
+	AddString(payload, "machine", HardwareModeToStr(sim.GetHardwareMode()));
+	AddString(payload, "memory",  MemoryModeToStr(sim.GetMemoryMode()));
+	payload += "\"debugbrkrun\":";
+	payload += (dbg && dbg->IsBreakOnEXERunAddrEnabled() ? "true" : "false");
+	return payload;
 }
 
 }  // namespace
@@ -730,6 +821,108 @@ std::string CmdWarmReset(ATSimulator& sim, const std::vector<std::string>& /*tok
 	sim.WarmReset();
 	if (wasPaused) sim.Pause(); else sim.Resume();
 	return JsonOk();
+}
+
+// ---------------------------------------------------------------------------
+// CONFIG [key [value]]
+//
+// Query or modify simulator configuration.
+//   CONFIG          → returns all config keys as JSON
+//   CONFIG key      → returns just that key's value
+//   CONFIG key val  → sets the key, returns full config state
+//
+// Supported keys:
+//   basic       true/false      SetBASICEnabled / IsBASICEnabled
+//   machine     800/800XL/...   SetHardwareMode / GetHardwareMode
+//   memory      8K/16K/...      SetMemoryMode / GetMemoryMode
+//   debugbrkrun true/false      SetBreakOnEXERunAddrEnabled
+//
+// Setting machine or memory triggers a cold reset (the simulator
+// requires it — the memory layout changes). The pause state is
+// preserved per the CLAUDE.md invariant.
+// ---------------------------------------------------------------------------
+
+std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	// CONFIG with no args → return full config.
+	if (tokens.size() == 1) {
+		std::string payload = BuildConfigPayload(sim);
+		StripTrailingComma(payload);
+		return JsonOk(payload);
+	}
+
+	// Lowercase the key for case-insensitive matching.
+	std::string key;
+	key.reserve(tokens[1].size());
+	for (char c : tokens[1])
+		key += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+
+	// CONFIG key → query just that key.
+	if (tokens.size() == 2) {
+		if (key == "basic")
+			return JsonOk(std::string("\"basic\":") + (sim.IsBASICEnabled() ? "true" : "false"));
+		if (key == "machine") {
+			std::string payload;
+			AddString(payload, "machine", HardwareModeToStr(sim.GetHardwareMode()));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "memory") {
+			std::string payload;
+			AddString(payload, "memory", MemoryModeToStr(sim.GetMemoryMode()));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "debugbrkrun") {
+			IATDebugger* dbg = ATGetDebugger();
+			bool val = dbg && dbg->IsBreakOnEXERunAddrEnabled();
+			return JsonOk(std::string("\"debugbrkrun\":") + (val ? "true" : "false"));
+		}
+		return JsonError("CONFIG: unknown key '" + tokens[1] + "'");
+	}
+
+	// CONFIG key value → set.
+	const std::string& rawVal = tokens[2];
+
+	if (key == "basic") {
+		bool v = (rawVal == "true" || rawVal == "1" || rawVal == "on");
+		sim.SetBASICEnabled(v);
+	}
+	else if (key == "machine") {
+		ATHardwareMode mode;
+		if (!StrToHardwareMode(rawVal, mode))
+			return JsonError("CONFIG: unknown machine '" + rawVal +
+				"' (valid: 800, 800XL, 1200XL, 130XE, XEGS, 1400XL, 5200)");
+		const bool wasPaused = sim.IsPaused();
+		sim.SetHardwareMode(mode);
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+	}
+	else if (key == "memory") {
+		ATMemoryMode mode;
+		if (!StrToMemoryMode(rawVal, mode))
+			return JsonError("CONFIG: unknown memory mode '" + rawVal +
+				"' (valid: 8K, 16K, 24K, 32K, 40K, 48K, 52K, 64K, 128K, "
+				"256K, 320K, 320K_Compy, 576K, 576K_Compy, 1088K)");
+		const bool wasPaused = sim.IsPaused();
+		sim.SetMemoryMode(mode);
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+	}
+	else if (key == "debugbrkrun") {
+		IATDebugger* dbg = ATGetDebugger();
+		if (!dbg)
+			return JsonError("CONFIG: debugger unavailable");
+		bool v = (rawVal == "true" || rawVal == "1" || rawVal == "on");
+		dbg->SetBreakOnEXERunAddrEnabled(v);
+	}
+	else {
+		return JsonError("CONFIG: unknown key '" + tokens[1] + "'");
+	}
+
+	// Return full config after set.
+	std::string payload = BuildConfigPayload(sim);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
 }
 
 }  // namespace ATBridge

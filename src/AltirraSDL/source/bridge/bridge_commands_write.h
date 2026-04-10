@@ -56,4 +56,6 @@ std::string CmdWarmReset(ATSimulator& sim, const std::vector<std::string>& token
 std::string CmdStateSave(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdStateLoad(ATSimulator& sim, const std::vector<std::string>& tokens);
 
+std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens);
+
 }  // namespace ATBridge

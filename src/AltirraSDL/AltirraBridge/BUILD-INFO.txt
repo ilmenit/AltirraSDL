@@ -1,0 +1,10 @@
+AltirraBridge 019def9 — Linux x86_64
+Built 2026-04-09 from commit 019def95ef914b86f7caf471237a51d767e0b96b
+
+Requirements:
+  - Linux x86_64, glibc >= 2.35
+    (Ubuntu 22.04+, Debian 12+ / Raspberry Pi OS Bookworm+,
+     Fedora 36+, RHEL 9+)
+  - Python >= 3.9 for the Python SDK (stdlib only)
+
+See README.md for the full walkthrough and usage guide.

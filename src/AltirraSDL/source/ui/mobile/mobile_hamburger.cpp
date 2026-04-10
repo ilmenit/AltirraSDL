@@ -138,6 +138,17 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		}
 		ImGui::Spacing();
 
+		// Virtual Keyboard toggle
+		{
+			const char *kbdLabel = uiState.showVirtualKeyboard ? "Keyboard: ON" : "Keyboard: OFF";
+			if (ImGui::Button(kbdLabel, btnSize)) {
+				uiState.showVirtualKeyboard = !uiState.showVirtualKeyboard;
+				ATMobileUI_CloseMenu(sim, mobileState);
+				sim.Resume();
+			}
+		}
+		ImGui::Spacing();
+
 		// Audio toggle
 		{
 			const char *audioLabel = mobileState.audioMuted ? "Audio: OFF" : "Audio: ON";

@@ -60,6 +60,10 @@ struct ATUIState {
 	bool showCalibrate = false;
 	bool showCustomizeHud = false;
 
+	// Virtual on-screen keyboard
+	bool showVirtualKeyboard = false;
+	int oskPlacement = 0;  // ATOSKPlacement: 0=Auto, 1=Bottom, 2=Right
+
 	// System config sidebar selection
 	int systemConfigCategory = 0;
 };

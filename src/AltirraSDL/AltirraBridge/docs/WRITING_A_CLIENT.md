@@ -285,6 +285,8 @@ Once a round-trip works, everything else is just more verbs:
 - `REGS` / `PEEK addr [len]` / `POKE addr val` — read and write the
   running machine.
 - `BOOT path` / `COLD_RESET` / `WARM_RESET` — load software.
+- `CONFIG key [value]` — query or set simulator configuration
+  (BASIC enable, hardware mode, memory size, break-on-EXE-run).
 - `JOY port direction [trigger]` / `KEY name` / `CONSOL …` — inject
   input.
 - `SCREENSHOT inline=true` / `RAWSCREEN inline=true` — capture the

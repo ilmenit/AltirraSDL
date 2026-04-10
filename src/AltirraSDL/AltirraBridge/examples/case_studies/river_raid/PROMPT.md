@@ -228,6 +228,20 @@ You have three kinds of tools:
    - `altirra_bridge.asm_writer.emit_xex` — MADS source exporter
      that uses bridge `DISASM` for the instruction text.
 
+   The reference implementation to aspire to is
+   `/home/ilm/Documents/GitHub/pyA8/asm_writer.py` (the original
+   pyA8 toolkit for the Atari800 emulator). That asm_writer:
+   - Emits **real 6502 mnemonics** for code regions (not `.byte`)
+   - Emits `.byte`/`.word`/`.ds` directives for data regions
+   - Uses `opt h-` with bracket ORG notation for byte-exact XEX
+     headers (including `$FFFF` marker placement)
+   - Generates per-segment files with `icl` includes
+   - Wraps procedures in `.proc`/`.endp`
+   - Has built-in MADS verification (`verify()`)
+   If the `altirra_bridge.asm_writer` doesn't support a feature
+   you need, **extend it** — don't work around it by emitting
+   raw bytes manually.
+
 3. **Your own Python helper script** — create it at
    `examples/case_studies/river_raid/deep_analyze.py` (mirroring
    `examples/case_studies/behind_jaggi_lines/deep_analyze.py` from
@@ -252,6 +266,55 @@ You have three kinds of tools:
    extractor — write it. Put general-purpose utilities in the
    package (contribute them back); keep game-specific knowledge in
    your `deep_analyze.py`.
+
+## The two-audience rule: humans AND machines
+
+Your analysis produces two kinds of output. **Both must be
+complete.** Neglecting either is a failure.
+
+1. **Human-readable documents** (`findings.md`, `game_manual.md`,
+   `notes/*.md`). Prose that a second analyst reads to understand
+   the game. Contains hex addresses, tables, architecture
+   explanations.
+
+2. **Machine-readable project state** (`project.json` via the
+   `Project` object, `regions.json`, `comments.json`,
+   `call_graph.json`, `xrefs.json`). Structured data that
+   `asm_writer.emit_xex()` reads to produce the labelled,
+   commented `.asm` output.
+
+**Every label you discover goes into `proj.label(addr, name)`.
+Every comment goes into `proj.comment(addr, text)`.** Writing a
+label only in `variables.md` or `subroutine_map.md` but not in
+the Project is a bug — the `.asm` output won't have it.
+
+The `.asm` file is the **primary deliverable**, not the markdown.
+The markdown explains the analysis; the `.asm` IS the analysis
+in executable form. A reader should be able to open the `.asm`
+and see:
+
+```asm
+cold_start:
+    lda #$00                    ; disable all hardware
+    sta NMIEN
+    sta IRQEN
+    sta GRACTL
+    sta DMACTL
+```
+
+NOT:
+
+```asm
+    .byte $A9, $00              ; $A000: lda #$00
+    .byte $8D, $0E, $D4        ; $A002: sta NMIEN
+```
+
+If the `.asm` output has `.byte` where there should be mnemonics,
+the code region wasn't classified or `asm_writer` wasn't used.
+Code regions MUST be disassembled through `bridge.disasm()` and
+emitted as real 6502 instructions. Data regions (character sets,
+sprite graphics, lookup tables) MUST be emitted as `.byte` /
+`.word` / `.ds` with appropriate comments.
 
 ## Project file formats
 
@@ -412,10 +475,21 @@ cycles:
      `SDLSTL`, `SDMCTL`, …).
    - Game RAM (everything else) → anonymous for now; named in
      Phase 5 after observing runtime behaviour.
+
+   **Add every label to the Project immediately:**
+   ```python
+   proj.label(0xD40A, "WSYNC")
+   proj.label(0xA000, "cold_start")
+   proj.comment(0xA000, "disable all hardware, clear RAM")
+   proj.save()
+   ```
+   Do NOT just write labels in markdown — the Project is the
+   source of truth for the `.asm` export.
+
 5. Periodically push your accumulated labels back to Altirra as
-   a `.lab` file and `bridge.sym_load` them. Subsequent `DISASM`
-   output will then contain the symbolic names, massively
-   improving readability.
+   a `.lab` file (`proj.export_lab(path)`) and `bridge.sym_load`
+   them. Subsequent `DISASM` output will then contain the symbolic
+   names, massively improving readability.
 6. **Use `HISTORY` aggressively when static analysis stalls.**
    If you can't tell what a block does from the bytes alone, set
    a breakpoint on its entry address, advance frames until it
@@ -453,8 +527,15 @@ For every memory address the code reads or writes:
 3. Name the variable only after you have observed the behaviour.
    A name like `player_x` is a hypothesis until you confirm the
    byte actually changes when the player moves.
-4. Write everything to `notes/variables.md` in the per-range
-   table format used by the bjl reference.
+4. **Add every confirmed variable to the Project:**
+   ```python
+   proj.label(0x76, "fuel_level")
+   proj.comment(0x76, "fuel gauge: $FF=full, decrements to $00=empty")
+   ```
+5. Write everything to `notes/variables.md` in the per-range
+   table format used by the bjl reference. **The markdown table
+   and the Project labels must agree** — if a variable is in
+   `variables.md`, it must also be in `proj.labels`.
 
 ### Phase 6 — topical analysis
 
@@ -536,19 +617,59 @@ each distinct gameplay situation and pin them in the manual.
 
 This is the hard test — the binary equality check.
 
-1. Use `altirra_bridge.asm_writer.emit_xex` to produce an initial
-   MADS source file from the project's labels and disassembly.
-2. Inspect the output. The asm_writer is mechanical — it gets
-   instructions right, but it may not know about your
-   procedure-region markers, data sub-classifications, or
-   structured directives. Edit the resulting `.asm` file to:
-   - Wrap each proc region in a `.proc name ... .endp` pair
-     (MADS syntax) so the reassembled source mirrors your
-     analysis structure.
-   - Replace `.byte` runs with structured directives where
-     you've identified display lists, character sets, or
-     address tables, **without changing the bytes**.
-   - Add comments from `comments.json`.
+**What the output `.asm` must look like:**
+
+Code regions contain **real 6502 mnemonics**, not `.byte`:
+```asm
+cold_start:
+    lda #$00                    ; disable all hardware
+    sta NMIEN
+    sta IRQEN
+    sta GRACTL
+    sta DMACTL
+    tay
+    sta PBCTL
+```
+
+Data regions contain `.byte` / `.word` / `.ds` with comments:
+```asm
+sprite_shape_data:
+    .byte $00,$3C,$7E,$FF,$FF,$7E,$3C,$00  ; helicopter frame 0
+    .byte $18,$3C,$7E,$DB,$FF,$24,$24,$42  ; helicopter frame 1
+```
+
+Labels appear at every named address. Comments appear inline.
+Hardware registers and variables use symbolic equates.
+
+**Steps:**
+
+1. **Ensure the Project is complete.** Before exporting, verify
+   that `proj.labels` contains every subroutine, variable, and
+   hardware register you discovered. `proj.comments` should have
+   every inline comment. Run `proj.export_lab()` and
+   `bridge.sym_load()` so Altirra's DISASM output uses your
+   labels in operands.
+
+2. **Generate the ASM using `asm_writer`.** The current
+   `altirra_bridge.asm_writer.emit_xex()` calls `bridge.disasm()`
+   per instruction and merges labels/comments from the Project.
+
+   If the asm_writer doesn't handle your game's XEX structure
+   (e.g. inter-segment `$FFFF` markers, self-relocating code,
+   INITAD vectors), **extend the asm_writer or write a custom
+   export script** that:
+   - Uses `opt h-` and bracket ORG notation for byte-exact XEX
+     headers: `org [a($FFFF),a($start),a($end)],$start`
+   - Calls `bridge.disasm()` for code regions (real mnemonics)
+   - Emits `.byte` for data regions (using `regions.json` hints)
+   - Wraps procedures in `.proc`/`.endp`
+   - Generates equates only for addresses actually referenced
+
+   The reference implementation is
+   `/home/ilm/Documents/GitHub/pyA8/asm_writer.py` — study
+   `write_all()`, `write_main()`, `_emit_mixed()`, and
+   `write_equates()` for the full pattern.
+
 3. Run MADS:
 
        mads -o:river_raid_rebuilt.xex \
@@ -557,9 +678,11 @@ This is the hard test — the binary equality check.
    Address every error and warning. MADS is strict about
    addressing modes and forward references; fix the source,
    not the assembler.
+
 4. Verify the round-trip using any of the cross-platform methods
    from the "Hard success criteria" section. The two binaries
    must be identical.
+
 5. If they aren't, diagnose:
    - `cmake -E compare_files` will report whether they differ.
    - On POSIX, `cmp -l a b | head -20` shows the first byte
@@ -595,6 +718,17 @@ This is the hard test — the binary equality check.
 
 ## Anti-patterns to avoid
 
+- **Don't emit `.byte` where there should be instructions.** The
+  `.asm` output for code regions MUST contain real 6502 mnemonics
+  (`lda`, `sta`, `jmp`, …), not `.byte $A9, $00`. Use
+  `bridge.disasm()` or `asm_writer.emit_segment()` for code
+  regions. Only emit `.byte` for classified data regions (sprite
+  graphics, lookup tables, character sets, padding).
+- **Don't write labels only in markdown.** Every label in
+  `variables.md` or `subroutine_map.md` MUST also be in the
+  `Project` via `proj.label()`. Every comment MUST be in
+  `proj.comment()`. The markdown is documentation; the Project
+  is the machine-readable truth that drives the `.asm` export.
 - **Don't disassemble in Python.** The bridge's `DISASM` already
   wraps Altirra's real disassembler with full symbol resolution
   and illegal-opcode support. Anything you build client-side

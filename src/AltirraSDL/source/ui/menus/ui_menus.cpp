@@ -888,6 +888,23 @@ static void RenderInputMenu(ATSimulator &sim, ATUIState &state) {
 
 	ImGui::Separator();
 
+	if (ImGui::MenuItem("Virtual Keyboard",
+		ATUIGetShortcutStringForCommand("Input.VirtualKeyboard"),
+		state.showVirtualKeyboard))
+		state.showVirtualKeyboard = !state.showVirtualKeyboard;
+
+	if (ImGui::BeginMenu("Keyboard Placement")) {
+		if (ImGui::MenuItem("Auto", nullptr, state.oskPlacement == 0))
+			state.oskPlacement = 0;
+		if (ImGui::MenuItem("Bottom", nullptr, state.oskPlacement == 1))
+			state.oskPlacement = 1;
+		if (ImGui::MenuItem("Right", nullptr, state.oskPlacement == 2))
+			state.oskPlacement = 2;
+		ImGui::EndMenu();
+	}
+
+	ImGui::Separator();
+
 	if (ImGui::MenuItem("Light Pen/Gun..."))
 		state.showLightPen = true;
 	if (ImGui::MenuItem("Recalibrate Light Pen/Gun"))

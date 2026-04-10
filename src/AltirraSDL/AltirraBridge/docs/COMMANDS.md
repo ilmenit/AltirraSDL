@@ -8,7 +8,7 @@ examples. For full request/response schemas and field semantics see
 |--------------|----------|
 | [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `QUIT` |
 | [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `STATE_SAVE`, `STATE_LOAD` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `STATE_SAVE`, `STATE_LOAD`, `CONFIG` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |
 | [Breakpoints](#breakpoints)           | `BP_SET`, `BP_CLEAR`, `BP_CLEAR_ALL`, `BP_LIST`, `WATCH_SET` |
@@ -81,6 +81,32 @@ atb_key(c, "A", 1, 0);
 atb_consol(c, 1, 0, 0);
 atb_boot(c, "/path/to/game.xex"); atb_frame(c, 120);
 ```
+
+### Configuration
+
+```python
+# Query all config
+cfg = a.config()
+# {'ok': True, 'basic': False, 'machine': '800XL', 'memory': '320K', 'debugbrkrun': False}
+
+# Query one key
+a.config("machine")           # {'ok': True, 'machine': '800XL'}
+
+# Set a key (returns full config)
+a.config("basic", "false")    # no cold reset
+a.config("machine", "800")    # triggers cold reset
+a.config("memory", "48K")     # triggers cold reset
+a.config("debugbrkrun", "true")
+```
+
+Supported keys:
+
+| Key           | Values                                                          | Cold reset? |
+|---------------|-----------------------------------------------------------------|-------------|
+| `basic`       | `true`, `false`, `on`, `off`                                    | no          |
+| `machine`     | `800`, `800XL`, `1200XL`, `130XE`, `XEGS`, `1400XL`, `5200`   | yes         |
+| `memory`      | `8K`..`1088K`                                                   | yes         |
+| `debugbrkrun` | `true`, `false`, `on`, `off`                                    | no          |
 
 ## Rendering
 

@@ -24,6 +24,7 @@ What it does store
 
 * ``labels``    — ``addr -> name``        (one name per address)
 * ``comments``  — ``addr -> str``         (one comment per address)
+* ``regions``   — list of ``{start, end, type, hint?}`` dicts
 * ``notes``     — list of ``Note`` objects with start/end ranges
 * ``metadata``  — free-form dict for analyst-defined keys
 
@@ -71,6 +72,7 @@ class Project:
     source_path: Optional[str]  = None
     labels:      Dict[int, str] = field(default_factory=dict)
     comments:    Dict[int, str] = field(default_factory=dict)
+    regions:     List[dict]     = field(default_factory=list)
     notes:       List[Note]     = field(default_factory=list)
     metadata:    dict           = field(default_factory=dict)
     _path:       Optional[str]  = None  # populated by load() / save()
@@ -98,6 +100,7 @@ class Project:
             source_path=doc.get("source_path"),
             labels={_addr(k): v for k, v in doc.get("labels", {}).items()},
             comments={_addr(k): v for k, v in doc.get("comments", {}).items()},
+            regions=doc.get("regions", []),
             notes=[Note(**n) for n in doc.get("notes", [])],
             metadata=doc.get("metadata", {}),
         )
@@ -114,6 +117,7 @@ class Project:
             "source_path": self.source_path,
             "labels":      {f"${k:04x}": v for k, v in sorted(self.labels.items())},
             "comments":    {f"${k:04x}": v for k, v in sorted(self.comments.items())},
+            "regions":     self.regions,
             "notes":       [asdict(n) for n in self.notes],
             "metadata":    self.metadata,
         }
@@ -177,6 +181,35 @@ class Project:
         for n in self.notes:
             if n.covers(addr):
                 yield n
+
+    # ------------------------------------------------------------------
+    # Regions (code vs data classification)
+    # ------------------------------------------------------------------
+
+    def add_region(self, start: int, end: int, rtype: str,
+                   hint: str = "", label: str = "") -> None:
+        """Mark an address range as code or data.
+
+        ``rtype`` is ``"code"`` or ``"data"``.  For data regions,
+        ``hint`` can be ``"bytes"``, ``"string"``, ``"charset"``,
+        ``"addr_table"``, ``"display_list"``, ``"sprite"``,
+        ``"sound_table"``, ``"fill_zero"``, or any custom value.
+        """
+        r: dict = {"start": start, "end": end, "type": rtype}
+        if hint:
+            r["hint"] = hint
+        if label:
+            r["label"] = label
+        self.regions.append(r)
+
+    def region_at(self, addr: int) -> Optional[dict]:
+        """Return the region covering ``addr``, or ``None``."""
+        for r in self.regions:
+            s = r["start"] if isinstance(r["start"], int) else int(str(r["start"]).lstrip("$"), 16)
+            e = r["end"]   if isinstance(r["end"], int)   else int(str(r["end"]).lstrip("$"), 16)
+            if s <= addr <= e:
+                return r
+        return None
 
     # ------------------------------------------------------------------
     # Bridge integration

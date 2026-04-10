@@ -597,6 +597,41 @@ then `REGS` to verify the load.
 {"ok":true,"path":"/path/to/state.altstate"}
 ```
 
+#### `CONFIG`
+
+Query the full simulator configuration.
+
+```json
+{"ok":true,"basic":false,"machine":"800XL","memory":"320K","debugbrkrun":false}
+```
+
+#### `CONFIG key`
+
+Query a single config key.
+
+```json
+{"ok":true,"machine":"800XL"}
+```
+
+#### `CONFIG key value`
+
+Set a config key. Returns the full config state after the set.
+
+| Key           | Values                                                          | Notes                       |
+|---------------|-----------------------------------------------------------------|-----------------------------|
+| `basic`       | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
+| `machine`     | `800`, `800XL`, `1200XL`, `130XE`, `XEGS`, `1400XL`, `5200`   | Triggers cold reset         |
+| `memory`      | `8K`..`1088K` (see below)                                       | Triggers cold reset         |
+| `debugbrkrun` | `true`, `false`, `on`, `off`, `1`, `0`                          | Break at EXE run address    |
+
+Memory modes: `8K`, `16K`, `24K`, `32K`, `40K`, `48K`, `52K`, `64K`,
+`128K`, `256K`, `320K`, `320K_Compy`, `576K`, `576K_Compy`, `1088K`.
+
+Keys and values are case-insensitive. Setting `machine` or `memory`
+triggers a cold reset with pause-state preservation (same semantics
+as `COLD_RESET`). Setting `basic` or `debugbrkrun` does not trigger
+a reset — issue `COLD_RESET` or `BOOT` afterwards if needed.
+
 ### Phase 4 commands — rendering
 
 All Phase 4 commands return either an inline base64-encoded payload

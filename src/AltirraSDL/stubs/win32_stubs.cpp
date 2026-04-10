@@ -26,9 +26,13 @@
 // ============================================================
 // oshelper.h — SDL3 implementations
 // ============================================================
-
-void ATLoadFrame(VDPixmapBuffer& px, const wchar_t *filename) {}
-void ATLoadFrameFromMemory(VDPixmapBuffer& px, const void *mem, size_t len) {}
+//
+// ATLoadFrame, ATLoadFrameFromMemory, ATLoadKernelResource*,
+// ATLoadImageResource, ATLoadMiscResource, ATLockResource, ATSaveFrame,
+// ATFileSetReadOnlyAttribute, ATGenerateGuid, and the
+// ATProcessEfficiencyMode enum table now live in
+// source/os/oshelper_sdl3.cpp. Only the small clipboard/URL helpers that
+// predate that file remain here.
 
 void ATCopyTextToClipboard(void *hwnd, const char *s) {
 	if (s && *s) SDL_SetClipboardText(s);

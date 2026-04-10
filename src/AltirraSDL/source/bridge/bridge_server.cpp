@@ -303,6 +303,7 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "WARM_RESET") return CmdWarmReset(sim, tokens);
 	if (verb == "STATE_SAVE") return CmdStateSave(sim, tokens);
 	if (verb == "STATE_LOAD") return CmdStateLoad(sim, tokens);
+	if (verb == "CONFIG")     return CmdConfig(sim, tokens);
 
 	// Phase 4: rendering commands
 	if (verb == "SCREENSHOT")   return CmdScreenshot (sim, tokens);

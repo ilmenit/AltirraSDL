@@ -40,8 +40,10 @@
 
 #include "mobile_internal.h"
 #include "mobile_gamepad.h"
+#include "ui_virtual_keyboard.h"
 
 extern ATSimulator g_sim;
+extern ATUIState g_uiState;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 extern IDisplayBackend *ATUIGetDisplayBackend();
@@ -607,8 +609,13 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 	if (mobileState.currentScreen != ATMobileUIScreen::None)
 		return false;
 
-	// Route touch events to touch controls
+	// Route touch events to virtual keyboard first (if visible), then touch controls
 	if (isFinger) {
+		if (g_uiState.showVirtualKeyboard) {
+			if (ATUIVirtualKeyboard_HandleEvent(ev, g_sim, true))
+				return true;
+		}
+
 		bool consumed = ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig);
 		if (consumed && ev.type == SDL_EVENT_FINGER_DOWN)
 			AddGameOwnedFinger(ev.tfinger.fingerID);

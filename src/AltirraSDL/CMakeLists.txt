@@ -129,6 +129,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/dialogs/ui_keyboard_customize.cpp
     source/ui/dialogs/ui_keyboard_customize_tables.cpp
     source/ui/dialogs/ui_textselection.cpp
+    source/ui/ui_virtual_keyboard.cpp
 
     # --- ui/debugger/ : Debugger pane manager and panes ---
     source/ui/debugger/ui_debugger.cpp
@@ -195,9 +196,13 @@ target_sources(AltirraSDL PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_roboto.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_firamono.cpp
 
+    # Portable oshelper.h implementations (replaces Windows oshelper.cpp)
+    source/os/oshelper_sdl3.cpp
+
     # Stub implementations replacing Win32-only files
     stubs/console_stubs.cpp
-    stubs/oshelper_stubs.cpp
+    # oshelper_stubs.cpp is used only by the headless bridge server target;
+    # the AltirraSDL GUI target uses source/os/oshelper_sdl3.cpp instead.
     # joystick_stubs.cpp replaced by source/input/joystick_sdl3.cpp
     stubs/uiaccessors_stubs.cpp
     stubs/win32_stubs.cpp
@@ -316,6 +321,36 @@ if(NOT ANDROID)
     endif()
 endif()
 
+# ---------------------------------------------------------------------------
+# Virtual keyboard image
+# ---------------------------------------------------------------------------
+# Bake the keyboard BMP + key region JSON into C++ data arrays.
+# The script uses Python stdlib only (json, struct).
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+set(KEYBOARD_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/keyboard)
+set(KEYBOARD_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(KEYBOARD_GEN_H ${KEYBOARD_GEN_DIR}/keyboard_data.h)
+set(KEYBOARD_GEN_C ${KEYBOARD_GEN_DIR}/keyboard_data.cpp)
+set(KEYBOARD_BAKE_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_keyboard.py)
+
+add_custom_command(
+    OUTPUT ${KEYBOARD_GEN_H} ${KEYBOARD_GEN_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${KEYBOARD_GEN_DIR}
+    COMMAND ${Python3_EXECUTABLE} ${KEYBOARD_BAKE_SCRIPT}
+            ${KEYBOARD_GEN_DIR}
+            ${KEYBOARD_ASSETS_DIR}/keyboard.bmp
+            ${KEYBOARD_ASSETS_DIR}/rescaledkeys.json
+    DEPENDS ${KEYBOARD_BAKE_SCRIPT}
+            ${KEYBOARD_ASSETS_DIR}/keyboard.bmp
+            ${KEYBOARD_ASSETS_DIR}/rescaledkeys.json
+    COMMENT "Baking virtual keyboard data (BMP + JSON -> C++)"
+    VERBATIM
+)
+
+target_sources(AltirraSDL PRIVATE ${KEYBOARD_GEN_C})
+target_include_directories(AltirraSDL PRIVATE ${KEYBOARD_GEN_DIR})
+
 
 target_include_directories(AltirraSDL PRIVATE
     # Public system headers
@@ -332,6 +367,7 @@ target_include_directories(AltirraSDL PRIVATE
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/display
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/input
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/media
+    ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/ui
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/ui/core
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/ui/menus
     ${CMAKE_SOURCE_DIR}/src/AltirraSDL/source/ui/sysconfig
@@ -355,6 +391,8 @@ target_include_directories(AltirraSDL PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/autogen
     # Default version.h for local/cross-platform builds
     ${CMAKE_SOURCE_DIR}/src/Altirra/autobuild_default
+    # Vendored single-header libraries (stb_image, stb_image_write)
+    ${CMAKE_SOURCE_DIR}/src/AltirraSDL/vendor/stb
 )
 
 # Compat shims (intrin.h, tchar.h) for non-MSVC compilers

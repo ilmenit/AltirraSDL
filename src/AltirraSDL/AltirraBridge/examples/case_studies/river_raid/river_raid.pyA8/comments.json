@@ -1,0 +1,18 @@
+{
+  "$A000": "Cold start: disable NMI, IRQ, GRACTL, DMACTL; clear all hardware",
+  "$A037": "JSR $B298 \u2014 read console switches, check for cartridge presence",
+  "$A04E": "Clear RAM from $00-$3FFF",
+  "$A066": "Set up display list from template at $B776",
+  "$A06A": "Detect PAL/NTSC via $D014 bit 3",
+  "$A197": "Wait for VCOUNT >= $50 (bottom of screen)",
+  "$A19E": "Read joystick port A (PORTA $D300)",
+  "$A1B0": "Read CONSOL switches ($D01F) for START/SELECT/OPTION",
+  "$AE99": "Main frame sync: wait for VCOUNT < $50 (top of visible area)",
+  "$AEA0": "JSR $AFD0 \u2014 update display/frame",
+  "$B2A5": "VBI immediate handler: sound + game timer updates",
+  "$B500": "DLI handler: scanline kernel for sprite multiplexing + terrain colors",
+  "$B567": "WSYNC loop \u2014 critical per-scanline timing",
+  "$B750": "DLI for status bar area \u2014 position player sprites, clear collisions",
+  "$B773": "JMP XITVBV \u2014 return from VBI through OS",
+  "$BFFA": "Vector table: cold=$A000, warm=$8000, IRQ=$A000"
+}

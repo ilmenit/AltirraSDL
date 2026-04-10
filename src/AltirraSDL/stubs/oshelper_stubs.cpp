@@ -1,180 +1,80 @@
-//	Altirra SDL3 frontend - oshelper.h stub implementations
-//	On Linux, built-in AltirraOS kernel ROMs are embedded as C arrays.
-//	ATLoadKernelResource loads from these embedded blobs instead of
-//	Windows resources.
+//	Altirra headless bridge server — oshelper.h stubs.
+//
+//	The headless server doesn't load images, copy frames to clipboard,
+//	or manage windows. All real implementations live in
+//	source/os/oshelper_sdl3.cpp for the GUI build. This file provides
+//	minimal no-op / fail-safe stubs so the linker is satisfied.
 
 #include <stdafx.h>
-#include <string.h>
-#include <time.h>
-#include <stdio.h>
-#ifndef _WIN32
-#include <sys/stat.h>
-#endif
+
+#include <cstdlib>
+#include <cstring>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vdstl.h>
-#include <vd2/system/VDString.h>
-#include <vd2/system/text.h>
+#include <vd2/system/error.h>
 #include <vd2/Kasumi/pixmaputils.h>
 #include "oshelper.h"
-#include "resource.h"
 
-// Embedded ROM data (built from src/Kernel/ and src/ATBasic/ via MADS)
-#include "../romdata/kernel_rom.h"
-#include "../romdata/kernelxl_rom.h"
-#include "../romdata/nokernel_rom.h"
+// ---- Embedded resource stubs (kernel ROMs, misc data) ----
+// The headless server loads ROMs from disk via settings.ini paths.
+// These functions are called by firmwaremanager.cpp for the built-in
+// AltirraOS/BASIC but the headless build relies on external ROM files.
 
-// Embedded PCM audio samples for stock sounds (disk, speaker, printer, etc.)
-#include "../romdata/audio_samples.h"
-
-// Embedded ROM set readme (romset.html) for Export ROM Set
-#include "../romdata/romset_readme.h"
-
-// Embedded debugger help text (dbghelp.txt) for .help command
-#include "../romdata/dbghelp.h"
-
-struct EmbeddedROM {
-	int resourceId;
-	const unsigned char *data;
-	unsigned int size;
-};
-
-static const EmbeddedROM kEmbeddedROMs[] = {
-	{ IDR_KERNEL,   kernel_rom,   kernel_rom_len },
-	{ IDR_KERNELXL, kernelxl_rom, kernelxl_rom_len },
-	{ IDR_NOKERNEL, nokernel_rom, nokernel_rom_len },
-};
-
-static const EmbeddedROM kEmbeddedAudioSamples[] = {
-	{ IDR_DISK_SPIN,            audio_disk_spin,            audio_disk_spin_len },
-	{ IDR_TRACK_STEP,           audio_track_step,           audio_track_step_len },
-	{ IDR_TRACK_STEP_2,         audio_track_step_2,         audio_track_step_2_len },
-	{ IDR_TRACK_STEP_3,         audio_track_step_3,         audio_track_step_3_len },
-	{ IDR_SPEAKER_STEP,         audio_speaker_click,        audio_speaker_click_len },
-	{ IDR_1030RELAY,            audio_1030relay,            audio_1030relay_len },
-	{ IDR_PRINTER_1029_PIN,     audio_printer_1029_pin,     audio_printer_1029_pin_len },
-	{ IDR_PRINTER_1029_PLATEN,  audio_printer_1029_platen,  audio_printer_1029_platen_len },
-	{ IDR_PRINTER_1029_RETRACT, audio_printer_1029_retract, audio_printer_1029_retract_len },
-	{ IDR_PRINTER_1029_HOME,    audio_printer_1029_home,    audio_printer_1029_home_len },
-	{ IDR_PRINTER_1025_FEED,    audio_printer_1025_feed,    audio_printer_1025_feed_len },
-};
-
-static const EmbeddedROM *FindROM(int resId) {
-	for (const auto& rom : kEmbeddedROMs) {
-		if (rom.resourceId == resId)
-			return &rom;
-	}
-	return nullptr;
-}
-
-const void *ATLockResource(uint32 resId, size_t& size) {
-	const EmbeddedROM *rom = FindROM(resId);
-	if (rom) {
-		size = rom->size;
-		return rom->data;
-	}
+const void *ATLockResource(uint32 id, size_t& size) {
 	size = 0;
 	return nullptr;
 }
 
-bool ATLoadKernelResource(int resId, void *dst, uint32 offset, uint32 len, bool) {
-	const EmbeddedROM *rom = FindROM(resId);
-	if (!rom)
-		return false;
-
-	if (offset >= rom->size)
-		return false;
-
-	uint32 avail = rom->size - offset;
-	uint32 toCopy = len < avail ? len : avail;
-	memcpy(dst, rom->data + offset, toCopy);
-
-	// Zero-fill remainder if requested more than available
-	if (toCopy < len)
-		memset((char *)dst + toCopy, 0, len - toCopy);
-
-	return true;
-}
-
-bool ATLoadKernelResource(int resId, vdfastvector<uint8>& buf) {
-	const EmbeddedROM *rom = FindROM(resId);
-	if (!rom)
-		return false;
-
-	buf.resize(rom->size);
-	memcpy(buf.data(), rom->data, rom->size);
-	return true;
-}
-
-bool ATLoadKernelResourceLZPacked(int, vdfastvector<uint8>&) {
+bool ATLoadKernelResource(int id, void *dst, uint32 offset, uint32 size, bool allowPartial) {
 	return false;
 }
 
-bool ATLoadMiscResource(int id, vdfastvector<uint8>& buf) {
-	// ROM set readme
-	if (id == IDR_ROMSETREADME) {
-		buf.resize(romset_readme_len);
-		memcpy(buf.data(), romset_readme, romset_readme_len);
-		return true;
-	}
-
-	// Debugger help text (.help command)
-	if (id == IDR_DEBUG_HELP) {
-		buf.resize(dbghelp_len);
-		memcpy(buf.data(), dbghelp, dbghelp_len);
-		return true;
-	}
-
-	for (const auto& sample : kEmbeddedAudioSamples) {
-		if (sample.resourceId == id) {
-			buf.resize(sample.size);
-			memcpy(buf.data(), sample.data, sample.size);
-			return true;
-		}
-	}
+bool ATLoadKernelResource(int id, vdfastvector<uint8>& data) {
 	return false;
 }
 
-bool ATLoadImageResource(uint32, VDPixmapBuffer&) {
+bool ATLoadKernelResourceLZPacked(int id, vdfastvector<uint8>& data) {
 	return false;
 }
 
-void ATGenerateGuid(uint8 rawguid[16]) {
-#if defined(__linux__)
-	// Read from /dev/urandom for a random UUID
+bool ATLoadMiscResource(int id, vdfastvector<uint8>& data) {
+	return false;
+}
+
+bool ATLoadImageResource(uint32 id, VDPixmapBuffer& buf) {
+	return false;
+}
+
+// ---- Image load/save stubs ----
+
+void ATLoadFrame(VDPixmapBuffer& /*px*/, const wchar_t * /*filename*/) {
+	throw MyError("ATLoadFrame not available in headless mode.");
+}
+
+void ATLoadFrameFromMemory(VDPixmapBuffer& /*px*/, const void * /*mem*/, size_t /*len*/) {
+	throw MyError("ATLoadFrameFromMemory not available in headless mode.");
+}
+
+// ---- File attribute stub ----
+
+void ATFileSetReadOnlyAttribute(const wchar_t * /*path*/, bool /*readOnly*/) {
+	// No-op in headless mode.
+}
+
+// ---- GUID generation ----
+
+void ATGenerateGuid(uint8 guid[16]) {
+	// Best-effort: /dev/urandom on POSIX, rand() fallback.
+#if defined(__linux__) || defined(__APPLE__)
 	FILE *f = fopen("/dev/urandom", "rb");
 	if (f) {
-		fread(rawguid, 1, 16, f);
+		size_t n = fread(guid, 1, 16, f);
 		fclose(f);
-	} else {
-		// Fallback: use time + address-based entropy
-		memset(rawguid, 0, 16);
-		uint64 t = (uint64)time(nullptr);
-		memcpy(rawguid, &t, 8);
+		if (n == 16) return;
 	}
-#elif defined(__APPLE__)
-	arc4random_buf(rawguid, 16);
-#else
-	// Generic fallback
-	srand((unsigned)time(nullptr));
+#endif
+	// Fallback: not cryptographically secure but sufficient for
+	// VHD image creation (the only caller).
 	for (int i = 0; i < 16; ++i)
-		rawguid[i] = (uint8)(rand() & 0xFF);
-#endif
-	// Set version 4 (random) UUID bits per RFC 4122
-	rawguid[6] = (rawguid[6] & 0x0F) | 0x40;  // version 4
-	rawguid[8] = (rawguid[8] & 0x3F) | 0x80;  // variant 1
-}
-
-void ATFileSetReadOnlyAttribute(const wchar_t *path, bool readOnly) {
-#ifndef _WIN32
-	if (!path || !*path) return;
-	VDStringA u8 = VDTextWToU8(VDStringW(path));
-	struct stat st;
-	if (stat(u8.c_str(), &st) != 0) return;
-	mode_t mode = st.st_mode;
-	if (readOnly)
-		mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
-	else
-		mode |= S_IWUSR;
-	chmod(u8.c_str(), mode);
-#endif
+		guid[i] = (uint8)(std::rand() & 0xFF);
 }
