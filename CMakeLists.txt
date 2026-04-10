@@ -457,6 +457,63 @@ static inline void *_librashader_dlopen_macos(void) {
         message(STATUS "librashader headers: ${librashader_headers_SOURCE_DIR}/include")
     endif()
 
+    # SDL3_image — PNG/JPEG load/save for oshelper_sdl3.cpp.
+    # Part of the official SDL3 ecosystem; replaces the previous stb_image
+    # vendored dependency (which had known security issues).
+    set(ALTIRRA_SDL3_IMAGE_VERSION "release-3.2.4" CACHE STRING "SDL3_image git tag to fetch")
+
+    find_package(SDL3_image QUIET)
+    if(NOT TARGET SDL3_image::SDL3_image)
+        message(STATUS "")
+        message(STATUS "  ┌─ SDL3_image ──────────────────────────────────")
+        message(STATUS "  │ No system SDL3_image found.")
+        message(STATUS "  │ Fetching SDL3_image ${ALTIRRA_SDL3_IMAGE_VERSION} from GitHub...")
+        message(STATUS "  └───────────────────────────────────────────────")
+        message(STATUS "")
+
+        # Disable backends we don't need — speeds up the build and
+        # eliminates optional external dependencies (libtiff, libwebp, etc.).
+        set(SDL3IMAGE_AVIF      OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_BMP       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_GIF       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_JPG       ON  CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_JXL       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_LBM       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_PCX       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_PNG       ON  CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_PNM       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_QOI       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_SVG       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_TGA       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_TIF       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_WEBP      OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_XCF       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_XPM       OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_XV        OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_TESTS     OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_SAMPLES   OFF CACHE BOOL "" FORCE)
+        set(SDL3IMAGE_INSTALL   OFF CACHE BOOL "" FORCE)
+
+        FetchContent_Declare(
+            sdl3_image
+            GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
+            GIT_TAG        ${ALTIRRA_SDL3_IMAGE_VERSION}
+            GIT_SHALLOW    TRUE
+            # Only fetch the submodules we actually need (PNG + JPEG).
+            # Without this, FetchContent tries to clone all vendored
+            # submodules (aom, libtiff, libwebp, etc.) which adds
+            # hundreds of MB and can fail in CI.
+            GIT_SUBMODULES "external/libpng;external/zlib;external/jpeg"
+        )
+        FetchContent_MakeAvailable(sdl3_image)
+
+        if(NOT TARGET SDL3_image::SDL3_image)
+            message(FATAL_ERROR
+                "SDL3_image FetchContent completed but SDL3_image::SDL3_image target not found.")
+        endif()
+        message(STATUS "  SDL3_image ${ALTIRRA_SDL3_IMAGE_VERSION} ready (built from source)")
+    endif()
+
     add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
         ${imgui_SOURCE_DIR}/imgui_demo.cpp

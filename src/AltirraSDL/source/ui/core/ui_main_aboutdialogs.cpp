@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include "ui_main.h"
 #include "ui_main_internal.h"
+#include "buildinfo.h"
 
 void ATUIRenderCommandLineHelpDialog(ATUIState &state) {
 	ImGui::SetNextWindowSize(ImVec2(580, 520), ImGuiCond_Appearing);
@@ -175,7 +176,7 @@ void ATUIRenderChangeLogDialog(ATUIState &state) {
 }
 
 void ATUIRenderAboutDialog(ATUIState &state) {
-	ImGui::SetNextWindowSize(ImVec2(420, 220), ImGuiCond_Appearing);
+	ImGui::SetNextWindowSize(ImVec2(440, 280), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	if (!ImGui::Begin("About AltirraSDL", &state.showAboutDialog, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
 		ImGui::End();
@@ -188,7 +189,7 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 		return;
 	}
 
-	ImGui::Text("AltirraSDL");
+	ImGui::Text("AltirraSDL %s", ALTIRRA_BUILD_VERSION);
 	ImGui::Separator();
 	ImGui::TextWrapped(
 		"Atari 800/800XL/5200 emulator\n"
@@ -196,6 +197,11 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 		"SDL3 + Dear ImGui cross-platform frontend\n"
 		"SDL Port by Jakub 'Ilmenit' Debski\n\n"
 		"Licensed under GNU GPL v2+");
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::TextDisabled("Built: %s", ALTIRRA_BUILD_DATETIME);
+	ImGui::TextDisabled("Commit: %s", ALTIRRA_BUILD_COMMIT);
 
 	ImGui::Spacing();
 	float buttonWidth = 80.0f;

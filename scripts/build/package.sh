@@ -33,6 +33,19 @@ PKG_DIR=$(find "$BUILD_DIR" -maxdepth 1 -name "AltirraSDL-*" -type d | head -1)
 # Extract version from directory name (AltirraSDL-4.40 → 4.40)
 VERSION=$(basename "$PKG_DIR" | sed 's/AltirraSDL-//')
 
+# ── Generate BUILD-INFO.txt ──────────────────────────────────────────────
+COMMIT_SHORT=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT_FULL=$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE=$(date -u +%Y-%m-%d)
+ARCH=$(uname -m)
+
+cat > "$PKG_DIR/BUILD-INFO.txt" <<BUILDINFO
+AltirraSDL ${VERSION} ${COMMIT_SHORT} — ${PLATFORM} ${ARCH}
+Built ${BUILD_DATE} from commit ${COMMIT_FULL}
+BUILDINFO
+
+info "Generated BUILD-INFO.txt in package"
+
 # Archive name follows Altirra convention: AltirraSDL-<ver>-<platform>.zip
 ARCHIVE_NAME="AltirraSDL-${VERSION}-${PLATFORM}"
 

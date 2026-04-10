@@ -443,8 +443,19 @@ void ATUIFontsRebuildIfDirty() {
 	SaveToRegistry();
 }
 
-ImFont *ATUIGetFontUI()   { return g_pFontUI; }
-ImFont *ATUIGetFontMono() { return g_pFontMono; }
+ImFont *ATUIGetFontUI() {
+	if (g_pFontUI)
+		return g_pFontUI;
+	return ImGui::GetIO().FontDefault;
+}
+
+ImFont *ATUIGetFontMono() {
+	if (g_pFontMono)
+		return g_pFontMono;
+	if (g_pFontUI)
+		return g_pFontUI;
+	return ImGui::GetIO().FontDefault;
+}
 
 // =========================================================================
 // Configure System -> Emulator -> Fonts page

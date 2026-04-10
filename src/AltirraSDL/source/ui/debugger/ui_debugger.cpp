@@ -19,6 +19,7 @@
 #include "display_backend.h"
 #include "ui_textselection.h"
 #include "logging.h"
+#include "ui_fonts.h"
 
 extern ATSimulator g_sim;
 extern VDVideoDisplaySDL3 *g_pDisplay;
@@ -418,7 +419,13 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 	// Render the Display pane (emulation texture inside a dockable window)
 	RenderDisplayPane();
 
-	// Render all debugger panes and track which one has focus
+	// Render all debugger panes and track which one has focus.
+	// Push the monospace font so all debugger pane content uses it — this
+	// matches Windows Altirra where debugger panes use a fixed-width font.
+	ImFont *monoFont = ATUIGetFontMono();
+	if (monoFont)
+		ImGui::PushFont(monoFont);
+
 	g_focusedPaneId = 0;
 	for (auto& e : g_debugPanes) {
 		if (!e.pane->IsVisible())
@@ -432,6 +439,9 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 		if (e.pane->HasFocus())
 			g_focusedPaneId = e.id;
 	}
+
+	if (monoFont)
+		ImGui::PopFont();
 }
 
 // =========================================================================

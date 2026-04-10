@@ -351,6 +351,26 @@ add_custom_command(
 target_sources(AltirraSDL PRIVATE ${KEYBOARD_GEN_C})
 target_include_directories(AltirraSDL PRIVATE ${KEYBOARD_GEN_DIR})
 
+# ===========================================================================
+# Build info header — stamps version, build date/time, and git commit into
+# a generated header.  Runs at BUILD time (not configure time) so the
+# timestamp reflects the actual build.  The header is regenerated on every
+# build so the date stays current for nightly builds.
+# ===========================================================================
+set(BUILDINFO_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/buildinfo")
+set(BUILDINFO_HEADER "${BUILDINFO_DIR}/buildinfo.h")
+
+add_custom_target(generate_buildinfo ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DOUTPUT_FILE=${BUILDINFO_HEADER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DPROJECT_VER=${PROJECT_VERSION}
+        -P ${CMAKE_SOURCE_DIR}/cmake/generate_buildinfo.cmake
+    COMMENT "Generating build info header (version, date, git commit)"
+    VERBATIM
+)
+add_dependencies(AltirraSDL generate_buildinfo)
+target_include_directories(AltirraSDL PRIVATE ${BUILDINFO_DIR})
 
 target_include_directories(AltirraSDL PRIVATE
     # Public system headers
@@ -391,8 +411,6 @@ target_include_directories(AltirraSDL PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/autogen
     # Default version.h for local/cross-platform builds
     ${CMAKE_SOURCE_DIR}/src/Altirra/autobuild_default
-    # Vendored single-header libraries (stb_image, stb_image_write)
-    ${CMAKE_SOURCE_DIR}/src/AltirraSDL/vendor/stb
 )
 
 # Compat shims (intrin.h, tchar.h) for non-MSVC compilers
@@ -430,6 +448,7 @@ target_link_libraries(AltirraSDL PRIVATE
 
     # SDL3
     SDL3::SDL3
+    SDL3_image::SDL3_image
 
     # Dear ImGui
     imgui
@@ -592,6 +611,23 @@ if(TARGET SDL3::SDL3-shared AND (sdl3_POPULATED OR WIN32))
     endif()
 endif()
 
+# Stage SDL3_image shared library next to AltirraSDL (same rationale as SDL3).
+if(TARGET SDL3_image::SDL3_image-shared AND (sdl3_image_POPULATED OR WIN32))
+    add_custom_command(TARGET AltirraSDL POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:SDL3_image::SDL3_image-shared>"
+            "$<TARGET_FILE_DIR:AltirraSDL>/"
+        COMMENT "Staging $<TARGET_FILE_NAME:SDL3_image::SDL3_image-shared> next to AltirraSDL"
+    )
+    if(UNIX AND NOT APPLE)
+        add_custom_command(TARGET AltirraSDL POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_SONAME_FILE:SDL3_image::SDL3_image-shared>"
+                "$<TARGET_FILE_DIR:AltirraSDL>/"
+        )
+    endif()
+endif()
+
 # Extras — custom effects, sample devices, device server scripts
 if(EXISTS "${CMAKE_SOURCE_DIR}/dist/extras")
     install(DIRECTORY "${CMAKE_SOURCE_DIR}/dist/extras/"
@@ -681,6 +717,38 @@ if(TARGET SDL3::SDL3-shared)
             add_custom_command(TARGET package_altirra POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy
                     "$<TARGET_SONAME_FILE:SDL3::SDL3-shared>"
+                    "${ALTIRRA_PKG_DIR}/"
+            )
+        endif()
+    endif()
+endif()
+
+# Bundle SDL3_image shared library into the package (same logic as SDL3).
+if(TARGET SDL3_image::SDL3_image-shared)
+    if(WIN32)
+        set(_BUNDLE_SDL3_IMAGE TRUE)
+    elseif(sdl3_image_POPULATED)
+        set(_BUNDLE_SDL3_IMAGE TRUE)
+    else()
+        set(_BUNDLE_SDL3_IMAGE FALSE)
+    endif()
+
+    if(_BUNDLE_SDL3_IMAGE)
+        if(APPLE)
+            set(_SDL3_IMAGE_DEST "${ALTIRRA_PKG_DIR}/AltirraSDL.app/Contents/MacOS/")
+        else()
+            set(_SDL3_IMAGE_DEST "${ALTIRRA_PKG_DIR}/")
+        endif()
+        add_custom_command(TARGET package_altirra POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "$<TARGET_FILE:SDL3_image::SDL3_image-shared>"
+                "${_SDL3_IMAGE_DEST}"
+            COMMENT "Bundling $<TARGET_FILE_NAME:SDL3_image::SDL3_image-shared> into package"
+        )
+        if(UNIX AND NOT APPLE)
+            add_custom_command(TARGET package_altirra POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy
+                    "$<TARGET_SONAME_FILE:SDL3_image::SDL3_image-shared>"
                     "${ALTIRRA_PKG_DIR}/"
             )
         endif()

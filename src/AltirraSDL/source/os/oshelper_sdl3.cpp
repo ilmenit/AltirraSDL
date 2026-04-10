@@ -11,9 +11,9 @@
 //	  - Linux (glibc 2.25+ for getentropy; /dev/urandom fallback below)
 //	  - Android API 28+ (getentropy; /dev/urandom fallback below)
 //
-//	Dependency budget: SDL3 + Dear ImGui only. stb_image.h and
-//	stb_image_write.h are vendored in src/AltirraSDL/vendor/stb/ and are
-//	treated as vendored source, not an external dependency.
+//	Dependency budget: SDL3 + SDL3_image + Dear ImGui.  SDL3_image
+//	handles PNG/JPEG load/save (replaces the previous stb_image vendored
+//	dependency which had known security issues).
 //
 //	Threading contract:
 //	  Functions that call into SDL3 (SDL_IOFromFile, SDL_GetBasePath, ...)
@@ -71,30 +71,9 @@
 #include "resource.h"
 
 // ---------------------------------------------------------------------------
-// stb_image / stb_image_write — single-translation-unit implementation
+// SDL3_image — PNG/JPEG load/save
 // ---------------------------------------------------------------------------
-//
-// Both headers are header-only single files; exactly one .cpp per
-// translation unit must define the _IMPLEMENTATION macro. This file is
-// that TU. No external stb dependency is linked.
-//
-// We disable the PSD/GIF/PIC/PNM decoders we don't need — Altirra only
-// loads PNG and JPEG images (palettes, reference frames, artifacting
-// references). Shrinks the compiled size.
-
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_NO_PSD
-#define STBI_NO_TGA
-#define STBI_NO_GIF
-#define STBI_NO_HDR
-#define STBI_NO_PIC
-#define STBI_NO_PNM
-#define STB_IMAGE_STATIC
-#include <stb_image.h>
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_STATIC
-#include <stb_image_write.h>
+#include <SDL3_image/SDL_image.h>
 
 // Embedded ROM data (built from src/Kernel/ and src/ATBasic/ via MADS).
 // The romdata directory lives at src/AltirraSDL/romdata/; this file is at
@@ -321,7 +300,7 @@ bool ATLoadMiscResource(int id, vdfastvector<uint8>& data) {
 }
 
 bool ATLoadImageResource(uint32 id, VDPixmapBuffer& buf) {
-	// Embedded PNG/JPEG images are loaded via the same stb_image decode
+	// Embedded PNG/JPEG images are loaded via the same SDL3_image decode
 	// path as runtime file loads. Today no embedded image resources are
 	// registered in kEmbeddedResources (the Windows build stores them as
 	// PNG resources in the .rc); adding one is a one-line table entry
@@ -341,52 +320,61 @@ bool ATLoadImageResource(uint32 id, VDPixmapBuffer& buf) {
 }
 
 // ===========================================================================
-// Image load/save (stb_image)
+// Image load/save (SDL3_image)
 // ===========================================================================
 //
-// Byte-order pitfall: stb_image returns R,G,B,A byte order. The VD pixmap
-// format kPixFormat_XRGB8888 stores bytes as B,G,R,X on little-endian
-// (matches GDI CF_DIB / WIC GUID_WICPixelFormat32bppBGRA). The channel
-// swap below is mandatory — without it every loaded image is color-
-// inverted.
+// SDL3_image loads images into SDL_Surface, which we convert to/from the
+// VD pixmap format kPixFormat_XRGB8888 (bytes B,G,R,X on little-endian,
+// matching GDI CF_DIB / WIC GUID_WICPixelFormat32bppBGRA).
+//
+// SDL_ConvertSurface handles the pixel format conversion from whatever
+// the source image uses to our target BGRX layout, so no manual channel
+// swaps are needed.
 
-static void ATSwapRGBAtoBGRX(const uint8 *rgba, VDPixmapBuffer& px) {
-	const sint32 w = px.w;
-	const sint32 h = px.h;
-	for (sint32 y = 0; y < h; ++y) {
-		uint8 *dst = (uint8*)px.data + (sint64)px.pitch * y;
-		const uint8 *src = rgba + (size_t)y * w * 4;
-		for (sint32 x = 0; x < w; ++x) {
-			dst[0] = src[2];  // B
-			dst[1] = src[1];  // G
-			dst[2] = src[0];  // R
-			dst[3] = 0xFF;    // X (alpha ignored by kPixFormat_XRGB8888 consumers)
-			src += 4;
-			dst += 4;
+// Convert an SDL_Surface (any format) into a VDPixmapBuffer (XRGB8888).
+static void ATSurfaceToPixmap(SDL_Surface *surf, VDPixmapBuffer& px) {
+	// Convert to BGRA32 (B,G,R,A byte order on all architectures — the *32
+	// aliases specify memory byte order portably) which matches
+	// kPixFormat_XRGB8888 layout exactly (alpha channel ignored by consumers).
+	SDL_Surface *conv = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_BGRA32);
+	if (!conv)
+		throw MyError("SDL_ConvertSurface failed: %s", SDL_GetError());
+
+	try {
+		px.init(conv->w, conv->h, nsVDPixmap::kPixFormat_XRGB8888);
+		for (int y = 0; y < conv->h; ++y) {
+			const uint8 *src = (const uint8*)conv->pixels + (ptrdiff_t)conv->pitch * y;
+			uint8 *dst = (uint8*)px.data + (ptrdiff_t)px.pitch * y;
+			memcpy(dst, src, (size_t)conv->w * 4);
 		}
+	} catch(...) {
+		SDL_DestroySurface(conv);
+		throw;
 	}
+	SDL_DestroySurface(conv);
 }
 
 void ATLoadFrameFromMemory(VDPixmapBuffer& px, const void *mem, size_t len) {
 	if (!mem || len == 0 || len > (size_t)INT32_MAX)
 		throw MyError("Invalid image data.");
 
-	int w = 0, h = 0, comp = 0;
-	unsigned char *rgba = stbi_load_from_memory(
-		(const stbi_uc*)mem, (int)len, &w, &h, &comp, 4);
-	if (!rgba) {
-		const char *why = stbi_failure_reason();
-		throw MyError("Unable to decode image: %s", why ? why : "unknown");
-	}
+	SDL_IOStream *io = SDL_IOFromConstMem(mem, (size_t)len);
+	if (!io)
+		throw MyError("SDL_IOFromConstMem failed: %s", SDL_GetError());
+
+	// IMG_Load_IO auto-detects format (PNG, JPEG, BMP, etc.).
+	// closeio=true so the IOStream is freed even on error.
+	SDL_Surface *surf = IMG_Load_IO(io, true);
+	if (!surf)
+		throw MyError("Unable to decode image: %s", SDL_GetError());
 
 	try {
-		px.init(w, h, nsVDPixmap::kPixFormat_XRGB8888);
-		ATSwapRGBAtoBGRX(rgba, px);
+		ATSurfaceToPixmap(surf, px);
 	} catch(...) {
-		stbi_image_free(rgba);
+		SDL_DestroySurface(surf);
 		throw;
 	}
-	stbi_image_free(rgba);
+	SDL_DestroySurface(surf);
 }
 
 void ATLoadFrame(VDPixmapBuffer& px, const wchar_t *filename) {
@@ -403,43 +391,17 @@ void ATLoadFrame(VDPixmapBuffer& px, const wchar_t *filename) {
 	if (!io)
 		throw MyError("Cannot open %s: %s", u8.c_str(), SDL_GetError());
 
-	Sint64 sz = SDL_GetIOSize(io);
-	if (sz < 0 || sz > 256 * 1024 * 1024) {
-		SDL_CloseIO(io);
-		throw MyError("File too large or unknown size.");
+	SDL_Surface *surf = IMG_Load_IO(io, true);
+	if (!surf)
+		throw MyError("Unable to decode %s: %s", u8.c_str(), SDL_GetError());
+
+	try {
+		ATSurfaceToPixmap(surf, px);
+	} catch(...) {
+		SDL_DestroySurface(surf);
+		throw;
 	}
-
-	vdblock<uint8> buf((size_t)sz);
-	size_t total = 0;
-	while (total < (size_t)sz) {
-		size_t rd = SDL_ReadIO(io, buf.data() + total, (size_t)sz - total);
-		if (rd == 0) {
-			SDL_CloseIO(io);
-			throw MyError("Short read on %s", u8.c_str());
-		}
-		total += rd;
-	}
-	SDL_CloseIO(io);
-
-	ATLoadFrameFromMemory(px, buf.data(), (size_t)sz);
-}
-
-// stb_image_write sink: forwards bytes to an SDL_IOStream.
-// Must keep a rolling failure flag because stbi_write_png_to_func cannot
-// report mid-write errors through the callback.
-namespace {
-	struct StbWriteSink {
-		SDL_IOStream *io;
-		bool          failed;
-	};
-
-	void StbWriteSinkCb(void *context, void *data, int size) {
-		auto *s = (StbWriteSink *)context;
-		if (s->failed || size <= 0) return;
-		size_t w = SDL_WriteIO(s->io, data, (size_t)size);
-		if (w != (size_t)size)
-			s->failed = true;
-	}
+	SDL_DestroySurface(surf);
 }
 
 void ATSaveFrame(const VDPixmap& px, const wchar_t *filename) {
@@ -447,40 +409,25 @@ void ATSaveFrame(const VDPixmap& px, const wchar_t *filename) {
 		throw MyError("No filename.");
 
 	// Convert to a contiguous 32-bit BGRX buffer (via VDPixmapBlt which
-	// handles arbitrary input formats), then swap BGRX → RGBA for stb.
+	// handles arbitrary input formats).
 	VDPixmapBuffer bgrx(px.w, px.h, nsVDPixmap::kPixFormat_XRGB8888);
 	VDPixmapBlt(bgrx, px);
 
-	const sint32 w = bgrx.w;
-	const sint32 h = bgrx.h;
-	vdblock<uint8> rgba((size_t)w * h * 4);
-	for (sint32 y = 0; y < h; ++y) {
-		const uint8 *src = (const uint8*)bgrx.data + (sint64)bgrx.pitch * y;
-		uint8 *dst = rgba.data() + (size_t)y * w * 4;
-		for (sint32 x = 0; x < w; ++x) {
-			dst[0] = src[2];  // R ← B
-			dst[1] = src[1];  // G
-			dst[2] = src[0];  // B ← R
-			dst[3] = 0xFF;    // A
-			src += 4;
-			dst += 4;
-		}
-	}
+	// Create an SDL_Surface that views the BGRX pixel data (no copy).
+	// BGRA32 = B,G,R,A byte order on all architectures = kPixFormat_XRGB8888.
+	SDL_Surface *surf = SDL_CreateSurfaceFrom(
+		bgrx.w, bgrx.h, SDL_PIXELFORMAT_BGRA32,
+		bgrx.data, (int)bgrx.pitch);
+	if (!surf)
+		throw MyError("SDL_CreateSurfaceFrom failed: %s", SDL_GetError());
 
 	VDStringA u8 = VDTextWToU8(VDStringW(filename));
-	SDL_IOStream *io = SDL_IOFromFile(u8.c_str(), "wb");
-	if (!io)
-		throw MyError("Cannot open %s for writing: %s", u8.c_str(), SDL_GetError());
 
-	StbWriteSink sink{ io, false };
-	int ok = stbi_write_png_to_func(
-		&StbWriteSinkCb, &sink,
-		w, h, 4, rgba.data(), w * 4);
+	bool ok = IMG_SavePNG(surf, u8.c_str());
+	SDL_DestroySurface(surf);
 
-	SDL_CloseIO(io);
-
-	if (!ok || sink.failed)
-		throw MyError("Failed to encode/write PNG to %s", u8.c_str());
+	if (!ok)
+		throw MyError("Failed to save PNG %s: %s", u8.c_str(), SDL_GetError());
 }
 
 // ===========================================================================

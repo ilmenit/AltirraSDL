@@ -120,7 +120,11 @@
       "Skill(sdl3)",
       "Bash(mkdir -p src/AltirraSDL/vendor/stb)",
       "Bash(curl -sSL -o stb_image.h https://raw.githubusercontent.com/nothings/stb/master/stb_image.h)",
-      "Bash(curl -sSL -o stb_image_write.h https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h)"
+      "Bash(curl -sSL -o stb_image_write.h https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h)",
+      "Bash(ldd /home/ilm/Documents/GitHub/AltirraSDL/build/AltirraSDL)",
+      "Bash(ldd /home/ilm/Documents/GitHub/AltirraSDL/build/src/AltirraSDL/AltirraSDL)",
+      "Bash(ldd /home/ilm/Documents/GitHub/AltirraSDL/build/linux-release/src/AltirraSDL/AltirraSDL)",
+      "Bash(cmake --build /home/ilm/Documents/GitHub/AltirraSDL/build/linux-release --target help)"
     ]
   }
 }

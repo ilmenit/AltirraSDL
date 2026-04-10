@@ -101,23 +101,10 @@ extern const ATDeviceDefinition g_ATDeviceDefMidiMate    = { "midimate", nullptr
 extern const ATDeviceDefinition g_ATDeviceDefPipeSerial  = { "pipeser",  nullptr, L"Pipe Serial",   ATCreateDeviceNullStub };
 
 
-// ============================================================
-// ATGetEnumLookupTable<ATProcessEfficiencyMode> stub
-// (defined in oshelper.cpp which is excluded)
-// ============================================================
-
-enum class ATProcessEfficiencyMode : uint8;  // forward declaration
-
-template<>
-const ATEnumLookupTable& ATGetEnumLookupTable<ATProcessEfficiencyMode>() {
-	static const ATEnumLookupEntry sEmpty[] = { { nullptr, 0, 0 } };
-	static const ATEnumLookupTable sTable { sEmpty, 0, 0 };
-	return sTable;
-}
-
 // ATSetProcessEfficiencyMode: no-op on POSIX for now. The P2 plan is a
 // per-platform implementation (Windows: SetProcessAffinityMask; macOS:
 // pthread_set_qos_class_self_np; Linux/Android: sched_setaffinity keyed
 // off /sys/devices/system/cpu/cpu*/cpu_capacity). The enum table itself
 // now lives in source/os/oshelper_sdl3.cpp.
+enum class ATProcessEfficiencyMode : uint8;  // forward declaration
 void ATSetProcessEfficiencyMode(ATProcessEfficiencyMode) {}

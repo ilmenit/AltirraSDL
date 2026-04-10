@@ -21,7 +21,7 @@ completely different purposes.
 | $1A-$1E | collision_flags | 5 | Per-player collision status (set by DLI kernel from P/M collision regs) |
 | $1F-$22 | dli_sprite_mask | 4 | Sprite visibility mask per scanline zone |
 | $24 | game_state | 1 | Game state machine: $00=attract, $01=playing, $02=dying, $03=starting |
-| $27 | bullet_x | 1 | Player bullet horizontal position |
+| $27 | dli_status_x | 1 | Status bar player 3 horizontal position |
 | $28 | start_pressed | 1 | START button pressed flag |
 | $29 | invuln_flags | 1 | Invulnerability / death animation flags (bit 7 = dying) |
 | $2A | lives_count | 1 | Current lives remaining |
@@ -30,7 +30,7 @@ completely different purposes.
 | $31 | temp_score | 1 | Temporary score accumulator |
 | $32 | fuel_drain_ctr | 1 | Fuel drain counter (decrements, triggers fuel decrement on wrap) |
 | $38 | fuel_state | 1 | Fuel tank state (bit 7 = refueling at depot) |
-| $39 | player_screen_y | 1 | Player's screen Y position |
+| $39 | bullet_x | 1 | Bullet horizontal position |
 | $3A | scroll_position | 1 | Coarse scroll position (advances with terrain) |
 | $3B | bullet_state | 1 | Bullet active/animation state |
 | $40 | entity_timer | 1 | Entity spawn/update timer |
