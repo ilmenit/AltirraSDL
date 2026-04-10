@@ -615,8 +615,13 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 		s_closeBtnMin = ImVec2(btnX0, btnY0);
 		s_closeBtnMax = ImVec2(btnX0 + btnW, btnY1);
 
+#ifdef __ANDROID__
 		s_textInputBtnMin = ImVec2(btnX0 + btnW + btnGap, btnY0);
 		s_textInputBtnMax = ImVec2(btnX0 + btnW + btnGap + btnW, btnY1);
+#else
+		// No text input button on desktop — zero rect so hit test never matches
+		s_textInputBtnMin = s_textInputBtnMax = ImVec2(0, 0);
+#endif
 
 		float rounding = btnH * 0.2f;
 
@@ -659,6 +664,8 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 		}
 
 		// --- Text Input button (opens native mobile keyboard) ---
+		// Only shown on Android — desktop has a physical keyboard.
+#ifdef __ANDROID__
 		{
 			bool tiFocused = (s_focusedKey == kTextInputButtonIndex);
 			bool tiHover = mouseInWindow && HitTestTextInputButton(mousePos);
@@ -684,14 +691,13 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 
 			if (mouseInWindow && tiHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 				s_nativeTextInputActive = !s_nativeTextInputActive;
-#ifdef __ANDROID__
 				if (s_nativeTextInputActive)
 					SDL_StartTextInput(g_pWindow);
 				else
 					SDL_StopTextInput(g_pWindow);
-#endif
 			}
 		}
+#endif
 	}
 
 	// --- Key overlays ---
@@ -779,12 +785,19 @@ bool ATUIVirtualKeyboard_HandleEvent(const SDL_Event &ev, ATSimulator &sim, bool
 				}
 
 				if (s_focusedKey == kCloseButtonIndex) {
+#ifdef __ANDROID__
 					// From close button: right → text input, down → ESC
 					if (dir == 3)       s_focusedKey = 5;   // down → ESC
 					else if (dir == 1)  s_focusedKey = kTextInputButtonIndex;  // right → text input
 					else if (dir == 0)  s_focusedKey = 5;   // left → wrap to ESC
+#else
+					// Desktop: no text input button
+					if (dir == 3)       s_focusedKey = 5;   // down → ESC
+					else if (dir == 1)  s_focusedKey = 0;   // right → HELP
+					else if (dir == 0)  s_focusedKey = 5;   // left → ESC
+#endif
 				} else if (s_focusedKey == kTextInputButtonIndex) {
-					// From text input button: left → close, down → HELP (index 0)
+					// From text input button (Android only): left → close, down → HELP
 					if (dir == 3)       s_focusedKey = 0;   // down → HELP
 					else if (dir == 0)  s_focusedKey = kCloseButtonIndex;  // left → close
 					else if (dir == 1)  s_focusedKey = 0;   // right → wrap to HELP
