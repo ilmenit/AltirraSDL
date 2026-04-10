@@ -164,6 +164,7 @@ void FramePacer::WaitForNextFrame() {
 }
 
 FramePacer g_pacer;
+int g_desiredSwapInterval = 1;
 
 float ATUIGetMeasuredFPS() {
 	return g_pacer.measuredFPS;
@@ -232,14 +233,31 @@ void UpdatePacerRate() {
 	// Matches Windows ATUIUpdateSpeedTiming() lines 544-547.
 	double secsPerFrame = rawSecsPerFrame / rate;
 
-	if (ATUIGetFrameRateVSyncAdaptive()) {
-		double refreshPeriod = GetDisplayRefreshPeriod();
-		if (refreshPeriod > 0
-			&& refreshPeriod > secsPerFrame * 0.98
-			&& refreshPeriod < secsPerFrame * 1.02)
-		{
-			secsPerFrame = refreshPeriod;
-		}
+	// Check whether the display refresh rate is close enough to the target
+	// frame rate for VSync to work without introducing judder.  This check
+	// is independent of the adaptive-VSync user setting: adaptive VSync
+	// adjusts the *frame rate* to match the display, while this controls
+	// whether the GL swap interval blocks on vblank.
+	//
+	// When the rates are mismatched (e.g. PAL 50 Hz on a 60 Hz display),
+	// blocking VSync (swap interval 1) quantises presentation to 16.67 ms
+	// boundaries, creating a repeating 5:6 judder pattern.  Disabling it
+	// (swap interval 0) lets the frame pacer deliver even frame spacing
+	// while the desktop compositor prevents tearing — matching Windows
+	// Altirra's DXGI Present(0) + DWM behaviour in windowed mode.
+	bool rateMatch = false;
+	double refreshPeriod = GetDisplayRefreshPeriod();
+	if (refreshPeriod > 0
+		&& refreshPeriod > secsPerFrame * 0.98
+		&& refreshPeriod < secsPerFrame * 1.02)
+	{
+		rateMatch = true;
+	}
+
+	g_desiredSwapInterval = rateMatch ? 1 : 0;
+
+	if (ATUIGetFrameRateVSyncAdaptive() && rateMatch) {
+		secsPerFrame = refreshPeriod;
 	}
 
 	g_pacer.UpdateRate(1.0 / secsPerFrame);

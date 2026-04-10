@@ -473,37 +473,42 @@ static inline void *_librashader_dlopen_macos(void) {
 
         # Disable backends we don't need — speeds up the build and
         # eliminates optional external dependencies (libtiff, libwebp, etc.).
-        set(SDL3IMAGE_AVIF      OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_BMP       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_GIF       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_JPG       ON  CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_JXL       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_LBM       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_PCX       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_PNG       ON  CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_PNM       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_QOI       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_SVG       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_TGA       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_TIF       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_WEBP      OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_XCF       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_XPM       OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_XV        OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_TESTS     OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_SAMPLES   OFF CACHE BOOL "" FORCE)
-        set(SDL3IMAGE_INSTALL   OFF CACHE BOOL "" FORCE)
+        # Note: SDL3_image uses SDLIMAGE_* (not SDL3IMAGE_*) for its options.
+        set(SDLIMAGE_AVIF       OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_BMP        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_GIF        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_JPG        ON  CACHE BOOL "" FORCE)
+        set(SDLIMAGE_JXL        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_LBM        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_PCX        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_PNG        ON  CACHE BOOL "" FORCE)
+        set(SDLIMAGE_PNM        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_QOI        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_SVG        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_TGA        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_TIF        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_WEBP       OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_XCF        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_XPM        OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_XV         OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_TESTS      OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_SAMPLES    OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_INSTALL    OFF CACHE BOOL "" FORCE)
+        # Use stb backend (bundled in SDL3_image, no external deps needed).
+        # This avoids pulling in vendored libpng/zlib/libjpeg submodules.
+        set(SDLIMAGE_BACKEND_STB    ON  CACHE BOOL "" FORCE)
+        set(SDLIMAGE_BACKEND_WIC    OFF CACHE BOOL "" FORCE)
+        set(SDLIMAGE_BACKEND_IMAGEIO OFF CACHE BOOL "" FORCE)
 
         FetchContent_Declare(
             sdl3_image
             GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
             GIT_TAG        ${ALTIRRA_SDL3_IMAGE_VERSION}
             GIT_SHALLOW    TRUE
-            # Only fetch the submodules we actually need (PNG + JPEG).
-            # Without this, FetchContent tries to clone all vendored
-            # submodules (aom, libtiff, libwebp, etc.) which adds
-            # hundreds of MB and can fail in CI.
-            GIT_SUBMODULES "external/libpng;external/zlib;external/jpeg"
+            # Don't fetch any vendored submodules — we use the stb
+            # backend (SDLIMAGE_BACKEND_STB) which is bundled directly
+            # in the SDL3_image source tree, no external deps needed.
+            GIT_SUBMODULES ""
         )
         FetchContent_MakeAvailable(sdl3_image)
 

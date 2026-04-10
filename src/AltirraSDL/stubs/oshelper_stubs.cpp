@@ -13,7 +13,17 @@
 #include <vd2/system/vdstl.h>
 #include <vd2/system/error.h>
 #include <vd2/Kasumi/pixmaputils.h>
+#include <at/atcore/enumparseimpl.h>
 #include "oshelper.h"
+
+// ---- ATProcessEfficiencyMode enum table ----
+// Required by options.cpp (ATOptionsExchangeEnum). The full GUI build
+// defines this in oshelper_sdl3.cpp; the headless bridge needs it here.
+AT_DEFINE_ENUM_TABLE_BEGIN(ATProcessEfficiencyMode)
+	{ ATProcessEfficiencyMode::Default, "default" },
+	{ ATProcessEfficiencyMode::Performance, "performance" },
+	{ ATProcessEfficiencyMode::Efficiency, "efficiency" },
+AT_DEFINE_ENUM_TABLE_END(ATProcessEfficiencyMode, ATProcessEfficiencyMode::Default)
 
 // ---- Embedded resource stubs (kernel ROMs, misc data) ----
 // The headless server loads ROMs from disk via settings.ini paths.

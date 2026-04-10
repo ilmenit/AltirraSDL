@@ -1254,11 +1254,16 @@ int main(int argc, char *argv[]) {
 	// Create the display backend
 	if (useGL) {
 		g_pBackend = new DisplayBackendGL33(g_pWindow, glContext);
-		SDL_GL_SetSwapInterval(1);  // VSync
+		// VSync swap interval is managed dynamically by the main loop based
+		// on g_desiredSwapInterval (set by UpdatePacerRate).  Start with
+		// interval 0; the first UpdatePacerRate call will set the correct
+		// value before any frame is presented.
+		SDL_GL_SetSwapInterval(0);
 	} else {
 		g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
 		if (!g_pRenderer) { LOG_INFO("Main", "CreateRenderer: %s", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
-		SDL_SetRenderVSync(g_pRenderer, 1);
+		// Same as GL path: start with VSync off, main loop manages it.
+		SDL_SetRenderVSync(g_pRenderer, 0);
 		g_pBackend = new DisplayBackendSDLRenderer(g_pWindow, g_pRenderer);
 	}
 
@@ -1865,14 +1870,27 @@ int main(int argc, char *argv[]) {
 
 		// (turbo is declared above for the dropFrame computation.)
 
-		// Toggle GL swap interval when turbo state changes.
-		// With vsync on (interval=1), SDL_GL_SwapWindow blocks at the display
-		// refresh rate even in turbo mode — capping warp speed to ~60fps.
-		// Disabling it while turbo is active lets the GPU swap as fast as it can.
-		static bool s_lastTurbo = false;
-		if (turbo != s_lastTurbo) {
-			s_lastTurbo = turbo;
-			SDL_GL_SetSwapInterval(turbo ? 0 : 1);
+		// Update GL swap interval based on turbo mode and frame-rate match.
+		//
+		// Turbo: always interval 0 so the GPU can swap as fast as possible.
+		//
+		// Normal: use g_desiredSwapInterval set by UpdatePacerRate().  When
+		// the display refresh matches the emulation rate (e.g. NTSC ~60 Hz
+		// on a 60 Hz display), interval 1 gives smooth VSync lock.  When
+		// they don't match (e.g. PAL 50 Hz on 60 Hz), interval 0 lets the
+		// frame pacer control timing while the desktop compositor prevents
+		// tearing — mirroring Windows Altirra's DXGI Present(0) + DWM
+		// behaviour in windowed mode.
+		{
+			int wantInterval = turbo ? 0 : g_desiredSwapInterval;
+			static int s_lastInterval = 0;  // matches startup swap interval 0
+			if (wantInterval != s_lastInterval) {
+				s_lastInterval = wantInterval;
+				if (g_pRenderer)
+					SDL_SetRenderVSync(g_pRenderer, wantInterval);
+				else
+					SDL_GL_SetSwapInterval(wantInterval);
+			}
 		}
 
 		bool didRender = false;
