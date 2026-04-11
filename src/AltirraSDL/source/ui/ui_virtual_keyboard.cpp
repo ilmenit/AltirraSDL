@@ -718,6 +718,20 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 	ImVec2 mousePos = ImGui::GetMousePos();
 	bool mouseInWindow = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
+	// On Android (and any platform with SDL_HINT_TOUCH_MOUSE_EVENTS),
+	// SDL synthesises a mouse-button event for every finger tap.  ImGui's
+	// SDL3 backend tags those synthetic events with
+	// ImGuiMouseSource_TouchScreen via AddMouseSourceEvent().  The touch
+	// path in ATUIVirtualKeyboard_HandleEvent already handles taps via
+	// SDL_EVENT_FINGER_DOWN, so honouring the synthetic mouse click here
+	// would fire the same action twice — the visible symptom is that the
+	// ABC button toggles the native IME on, then immediately back off, so
+	// the soft keyboard appears for a single frame and disappears.  Skip
+	// the hand-rolled mouse handlers below when the click came from a
+	// touch.
+	bool ignoreSyntheticMouse =
+		(ImGui::GetIO().MouseSource == ImGuiMouseSource_TouchScreen);
+
 	// --- Close button + Text Input button (above keyboard image) ---
 	// On mobile, these are sized to match HELP/START console buttons for
 	// comfortable touch targets.  On desktop they stay compact.
@@ -786,7 +800,8 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 			if (closeFocused)
 				dl->AddRect(s_closeBtnMin, s_closeBtnMax, IM_COL32(0, 200, 255, 220), rounding, 0, 2.0f);
 
-			if (mouseInWindow && closeHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+			if (mouseInWindow && closeHover && !ignoreSyntheticMouse
+				&& ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 				s_closeRequested = true;
 		}
 
@@ -816,7 +831,8 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 			if (tiFocused)
 				dl->AddRect(s_textInputBtnMin, s_textInputBtnMax, IM_COL32(0, 200, 255, 220), rounding, 0, 2.0f);
 
-			if (mouseInWindow && tiHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+			if (mouseInWindow && tiHover && !ignoreSyntheticMouse
+				&& ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 				s_nativeTextInputActive = !s_nativeTextInputActive;
 				if (s_nativeTextInputActive)
 					SDL_StartTextInput(g_pWindow);
@@ -855,12 +871,17 @@ bool ATUIRenderVirtualKeyboard(ATSimulator &sim, bool visible, int placement) {
 			dl->AddRect(keyMin, keyMax, IM_COL32(0, 200, 255, 220), 3.0f, 0, 2.0f);
 	}
 
-	// Handle mouse click on keys (desktop)
-	if (mouseInWindow) {
+	// Handle mouse click on keys (desktop / external mouse).  Touch-tap
+	// presses are routed via the SDL_EVENT_FINGER_DOWN path in
+	// ATUIVirtualKeyboard_HandleEvent — we must not also fire here off
+	// the synthetic mouse click that SDL generates from the same touch,
+	// or the key would be pressed twice and lift events would race.
+	if (mouseInWindow && !ignoreSyntheticMouse) {
 		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && s_hoverKey >= 0)
 			PressKey(sim, s_hoverKey);
 	}
-	if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && s_pressedKey >= 0) {
+	if (!ignoreSyntheticMouse
+		&& ImGui::IsMouseReleased(ImGuiMouseButton_Left) && s_pressedKey >= 0) {
 		const ATOSKKeyDef &key = kOSKKeys[s_pressedKey];
 		if (key.flags & kOSKFlag_Toggle) {
 			HandleModifierRelease(sim, s_pressedKey);

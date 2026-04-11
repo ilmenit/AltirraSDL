@@ -1,5 +1,15 @@
 # River Raid — Subroutine Map
 
+> **2026-04-11 update:** Several "subroutines" in this table are
+> mislabelled. The most egregious are at $B05C-$B07C (claimed
+> collision routines, actually digit-rendering helper entry points)
+> and $B1C0-$B223 (claimed sound/lives display, actually state
+> manipulation and M-DMA byte clearing). Corrections noted inline
+> with **CORRECTED** tags. The original names are kept where they're
+> exposed via project.json labels (renaming would break the export
+> flow), but the descriptions are now accurate. See
+> `notes/sprites.md` "What was wrong" §11 for the full list.
+
 ## JSR Subroutines
 
 All subroutines reachable via JSR within the game code range $A000-$BFFF.
@@ -17,20 +27,20 @@ All subroutines reachable via JSR within the game code range $A000-$BFFF.
 | $B034 | draw_entity_column | Draw entity graphics into a screen column |
 | $B03B | clear_entity_column | Clear entity graphics from a screen column |
 | $B04B | advance_dst_ptr | Advance destination pointer $A3/$A4 by row pitch |
-| $B05C | check_terrain_collision | Check if player overlaps terrain (river bank) |
-| $B064 | check_entity_collision_p1 | Check entity collision for player 1 |
-| $B068 | check_entity_collision_p2 | Check entity collision for player 2 |
-| $B06E | check_all_collisions | Iterate entity slots and check collisions |
-| $B07C | process_collision_results | Handle collision outcomes (score, destroy, death) |
+| $B05C | digit_render_a | **RENAMED** (was `check_terrain_collision`). Entry point into a shared digit-rendering helper at $B086. Sets `$B1=$90`, `X=$61`, `Y=$23`, then falls through. Renders some category of digits into screen RAM. Not a collision check. |
+| $B064 | digit_render_b | **RENAMED** (was `check_entity_collision_p1`). Another entry point into the digit-rendering helper. Loads `lda #$02; bne $B086`. |
+| $B068 | digit_render_c | **RENAMED** (was `check_entity_collision_p2`). Another entry point: `lda #$50; ldy #$0C; bne $B080`. |
+| $B06E | digit_render_d | **RENAMED** (was `check_all_collisions`). Yet another digit-renderer entry point: reads `$09`, masks `#$0E`, ASLs and ADCs `#$80` to compute X (a screen RAM offset based on player number), then `ldy #$0C; bne $B082`. Probably the per-player score renderer. |
+| $B07C | digit_render_e | **RENAMED** (was `process_collision_results`). Yet another entry point: `lda #$10; ldy #$02; ldx #$63; sta $B1; lda #$03; bit invuln_flags; bmi out; sta $B2`. The shared nibble loop at $B086-$B0C5 reads `temp_ptr_lo,X` as a BCD byte, splits into high and low nibbles, and writes them to screen RAM at `$1000+Y`. The actual collision dispatch is `check_entity_collision` at $A3E9 (entities.asm). |
 | $B0C7 | spawn_entity | Try to spawn a new entity in an empty slot |
 | $B0D8 | update_entity_movement | Update entity X position based on type/direction |
 | $B0F1 | init_display_region | Initialize a display region (X = DL instruction count) |
 | $B183 | update_fuel_gauge | Update the fuel gauge display in the status bar |
 | $B194 | update_score_display | Write current score digits to status bar screen RAM |
-| $B1C0 | play_score_sound | Play a scoring sound effect (Y = duration, A = type) |
-| $B21A | update_lives_display | Update lives remaining indicator in status bar |
-| $B221 | clear_status_line | Clear a status bar line (for refresh) |
-| $B223 | write_status_text | Write text/graphics to status bar area |
+| $B1C0 | state_helper_b1c0 | **RENAMED** (was `play_score_sound`). Touches no POKEY register. Saves Y/A into $7B/$7A, branches on `$4C`/`$23` state flags, can call `update_score_display` and the M-DMA byte-clear at $B221, then falls into $B200 which stores `$FE → fuel_level` and `$00 → death_timer`. Actual purpose unverified — likely a state-transition / reset helper. |
+| $B21A | state_helper_b21a | **RENAMED** (was `update_lives_display`). Stores `$FF → frame_counter`, then `tax; bne $B200` to enter the same block as state_helper_b1c0. Does not update any visible lives counter. |
+| $B221 | clear_status_line | **CORRECTED — LABEL IS WRONG.** M-DMA byte-clear helper. Loads `lda #$00`, falls into $B223. |
+| $B223 | write_status_text | **CORRECTED — LABEL IS WRONG.** Continuation of the M-DMA clear: stores zero to 8 consecutive missile DMA bytes at `$0B01-$0B08+X`. Wipes M0/M1/M2/M3 bits in that window. Probably a bullet trail clearer. |
 | $B247 | setup_game_start | Initialize game state for a new game |
 | $B261 | reset_entities | Clear all entity slots |
 | $B298 | read_console | Read CONSOL switches ($D01F) and return decoded result |
@@ -55,7 +65,7 @@ All subroutines reachable via JSR within the game code range $A000-$BFFF.
 | $A5B7 | frame_terrain_update | Update terrain generation for current frame |
 | $A605 | terrain_gen_advance | Advance terrain generator to next row |
 | $A652 | terrain_bank_update | Update river bank positions |
-| $A688 | player_death | Handle player death — start explosion animation |
+| $A688 | player_death_hook | **RENAMED** (was `player_death`). 5-instruction hook only: `lda $09; and #$01; sta player_number; ldx #$79; jmp state_start_game`. Toggles `player_number` from bit 0 of `$09` and jumps to `state_start_game` at $A15D (which clears RAM from `$79` upward). The real death processing is scattered across `entities.asm` (the `$1B`/`$1D` read branches in `check_entity_collision`), `state_dying_update` at $A7FB, and routines those call. To find the real entry point, watchpoint the byte that decrements when an on-screen life icon visibly disappears. |
 | $A701 | main_loop_continue | Continue main loop — fuel management, return to sync |
 | $A7FB | state_dying_update | State 2: update dying animation each frame |
 | $A8C4 | death_animation | Death explosion animation frame |

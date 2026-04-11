@@ -185,9 +185,11 @@ void RenderMobileDiskManager(ATSimulator &sim, ATUIState &uiState,
 
 		// Scrollable list of drives
 		float reserveFooter = dp(140.0f);
+		// NavFlattened lets gamepad nav cross into the list without an
+		// explicit "enter child" press — see mobile_hamburger.cpp.
 		ImGui::BeginChild("DriveList",
 			ImVec2(0, ImGui::GetContentRegionAvail().y - reserveFooter),
-			ImGuiChildFlags_None);
+			ImGuiChildFlags_NavFlattened);
 		ATTouchDragScroll();
 
 		// Default: D1:-D4: (the 99% case)

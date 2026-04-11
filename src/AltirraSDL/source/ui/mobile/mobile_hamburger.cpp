@@ -108,8 +108,13 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// short phone or landscape orientation can still reach every
 		// option.  Scoped to a child window so the header bar stays
 		// pinned at the top.
+		// NavFlattened so that gamepad/keyboard nav crosses the parent
+		// → child border without an explicit "enter the list" press.
+		// Without it the user has to press A on the child window itself
+		// to focus its first item; with it, D-pad down from the back
+		// arrow lands directly on Resume.
 		ImGui::BeginChild("##MobileMenuItems", ImVec2(0, 0),
-			ImGuiChildFlags_None);
+			ImGuiChildFlags_NavFlattened);
 		ATTouchDragScroll();
 
 		// Menu button height scaled for touch

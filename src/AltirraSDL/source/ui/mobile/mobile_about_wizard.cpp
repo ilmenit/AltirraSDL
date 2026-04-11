@@ -111,9 +111,13 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		// the Close button off-screen on small phones.
 		float closeH = dp(56.0f);
 		float bottomReserve = closeH + dp(24.0f);
+		// NavFlattened so the scrollable credits area doesn't trap the
+		// gamepad cursor — without it, D-pad down from the back arrow
+		// would land on the child window itself instead of skipping
+		// over the (non-interactive) text to the Close button.
 		ImGui::BeginChild("AboutCredits",
 			ImVec2(0, ImGui::GetContentRegionAvail().y - bottomReserve),
-			ImGuiChildFlags_None);
+			ImGuiChildFlags_NavFlattened);
 		ATTouchDragScroll();
 
 		ImGui::PushTextWrapPos(w - dp(16.0f));

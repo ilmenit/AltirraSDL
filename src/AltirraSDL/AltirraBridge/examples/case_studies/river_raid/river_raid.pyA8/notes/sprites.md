@@ -6,21 +6,117 @@ and listed a stale `$0600`-based PMG layout). This note captures the
 **verified** sprite map after an empirical bridge investigation and
 should be treated as the source of truth for any future analysis.
 
-## Final sprite assignments
+> **2026-04-11 update:** A re-read of the split asm files during the
+> DUO 2-player port uncovered that **M0 and M2 are NOT cleared / idle**
+> as the original "Final sprite assignments" table claimed. Both have
+> active writers, positioning, and collision capture. The corrected
+> table below reflects this. The original "Final" table has been kept
+> for historical reference at the end of this file under the heading
+> "Original (incomplete) sprite table — what was missed". The "What was
+> wrong in the earlier analysis" section below has also been extended
+> with the newly-found mistakes. See also `DUO_DESIGN_DOC.md` §2 in
+> `/home/ilm/Documents/GitHub/river_raid_duo/`.
+
+## Final sprite assignments (corrected 2026-04-11)
 
 In **single-line PM DMA mode** (DMACTL bit 4 set), with
 **PMBASE = `$08`** (ANTIC register `$D407`), the P/M RAM regions are:
 
-| Region          | Sprite               | Role                                                                   |
-|-----------------|----------------------|------------------------------------------------------------------------|
-| `$0B00-$0BFF`   | Missiles (packed)    | **M1 = the player's bullet** (bits 2-3 of each byte). M0/M2/M3 cleared. |
-| `$0C00-$0CFF`   | P0                   | **Unused in playfield.** DMA buffer actively zeroed each frame.        |
-| `$0D00-$0DFF`   | P1                   | **Unused in playfield.** DMA buffer never written; HPOSP1 positions a blank sprite. COLPM1 is used only because missiles share it with their parent player — i.e. *it's actually the M1 bullet color.* |
-| `$0E00-$0EFF`   | P2                   | **The player's jet.** HPOSP2 ← `$57` (`player_sprite_x`).              |
-| `$0F00-$0FFF`   | P3                   | **Multiplexed enemies.** The WSYNC loop at `$B567` rewrites HPOSP3 per scanline. |
+| Region                 | Sprite               | Role                                                                   |
+|------------------------|----------------------|------------------------------------------------------------------------|
+| `$0B00-$0BFF` bits 0-1 | M0                   | **ACTIVE.** Bits set conditionally by `frame_sync.asm` at $AEF1 (`lda $0B00,X; and #$FC; ldy $C1; beq skip; ora #$03; sta $0B00,X`). Drives a moving dot whose X position comes from `$C1` (HPOSM0 ← $C1 in the DLI at $B561). Color from COLPM0 which is **cycled** every frame from `player_color_cycle[(frame_counter>>3)&7]` at frame_sync.asm. Likely the player's in-flight bullet (with M1 being the muzzle template) or an enemy projectile — exact role TBD. |
+| `$0B00-$0BFF` bits 2-3 | M1                   | **The player's bullet at-rest template** (bits 2-3 of each byte). 10-byte block at $0BCC,Y written by `draw_bullet_pmg` at $B14B. M1 inherits color from COLPM1 which is set to $1E in the river-zone DLI at $B697. |
+| `$0B00-$0BFF` bits 4-5 | M2                   | **The jet's narrow hit probe.** HPOSM2 = `player_sprite_x + 4` written every frame by the playfield DLI at $B539. M2 vs P3 collisions captured into $1C at $B5EA / $B727 and consumed by entities.asm at $A4B6 — provides a narrower (more forgiving) collision hitbox than P2's full 16-pixel sprite. The actual M2 bit writer in the DMA buffer has not yet been located in static analysis but the design implies it must exist. |
+| `$0B00-$0BFF` bits 6-7 | M3                   | **Genuinely unused.** No writers found for bits 6-7 in static analysis. HPOSM3 not positioned by the DLI. Not yet bridge-verified. |
+| `$0C00-$0CFF`          | P0                   | **Genuinely unused in playfield.** DMA buffer actively zeroed each frame by the indirect copier at $B012. HPOSP0 ← $3C = 0 hides it. P0 has no bitmap; the playfield DLI does write HPOSP0 but the source is always 0. |
+| `$0D00-$0DFF`          | P1                   | **Genuinely unused in playfield.** DMA buffer never written; HPOSP1 ← $39 positions a blank sprite. COLPM1 is used only because M1 missiles inherit color from their parent player register. |
+| `$0E00-$0EFF`          | P2                   | **The player's jet.** HPOSP2 ← `$57` (`player_sprite_x`). |
+| `$0F00-$0FFF`          | P3                   | **Multiplexed enemies.** The WSYNC loop at `$B567` rewrites HPOSP3 per scanline. |
 
 `GRACTL = $03` (both players and missiles DMA-enabled).
 `PRIOR = $01` (players front of playfield).
+
+## The M0 motion loop (newly traced 2026-04-11)
+
+`$00C1` is **not** a "terrain draw flag" (its old project.json label).
+It is the M0 sprite's X coordinate AND its visibility gate, packed
+into one byte. Three pieces of evidence:
+
+1. **HPOSM0 source.** `dli.asm:61` does `lda $C1; sta HPOSM0` every
+   frame in the playfield DLI baseline. So whatever value `$C1`
+   holds is M0's screen X.
+
+2. **DMA buffer gate.** `frame_sync.asm` at $AEF1 contains:
+   ```
+   ldx frame_ctr_copy        ; X = $C2
+   cpx #$1C
+   bcc skip                  ; only if frame_ctr_copy >= $1C
+   lda $0AFE,X               ; clear M0 bits two bytes back
+   and #$FC
+   sta $0AFE,X
+   lda $0AFF,X               ; clear M0 bits one byte back
+   and #$FC
+   sta $0AFF,X
+   lda $0B00,X               ; this byte: clear, then maybe set
+   and #$FC
+   ldy $C1
+   beq leave_clear           ; if $C1 == 0, leave M0 bits zero
+   ora #$03                  ; else set M0 bit 0-1 = $03 = M0 ON
+   leave_clear:
+   sta $0B00,X
+   ```
+   So when `$C1 != 0`, M0 has bits set at $0B00+frame_ctr_copy, with
+   the previous two bytes cleared (a fading 2-byte trail).
+
+3. **Motion loop.** `bullets_terrain.asm:6-65` reads `$C1`, branches
+   on whether M0 is currently active, advances `$C1` by `$C0`
+   (direction byte: $02 or $FE), and stops when `$22` (M0 vs PF0-1
+   collision capture) indicates the M0 dot has hit a bank or bridge.
+
+The COLPM0 register is **not** stuck at boot value as the original
+analysis assumed. `frame_sync.asm` at $AEF6 explicitly does:
+```
+lda frame_counter
+lsr / lsr / lsr
+and #$07
+tax
+lda player_color_cycle,X
+sta COLPM0
+```
+i.e. cycles through 8 hues from `player_color_cycle` ($BAC5-$BACC)
+every frame. Combined with the moving M0 dot, this produces a
+multi-color pulsing element somewhere on the screen. The exact
+on-screen meaning (bullet? enemy missile? scoring effect?) is the
+top open question for the next bridge investigation.
+
+## The M2 jet hitbox probe (newly characterized 2026-04-11)
+
+The DLI at $B534 stores `player_sprite_x` to HPOSP2 (the jet) and
+then immediately at $B539 does:
+```
+clc
+adc #$04
+sta HPOSM2
+```
+positioning M2 four pixels to the right of the jet, every frame.
+This is not a dead store. The M2 vs P3 collision (captured at $B5EA
+into `$1C` and consumed at $A4B6 by `entities.asm`) provides a
+secondary collision channel for the jet — narrower than P2's full
+16-pixel sprite, so enemies have to overlap the jet's cockpit, not
+just its wingtips, to trigger this capture.
+
+The M2 bit slice of the missile DMA buffer must therefore have bits
+set somewhere (at the jet's Y row), but no static writer has been
+found. Two hypotheses:
+
+- A writer exists in code we haven't fully traced (maybe inside the
+  jet draw routine that fills `$0E00,Y`).
+- M2 bits get there indirectly via the same `sta $0B00,X` paths
+  whose `and #$FC` happens to leave M2 bits intact when they were
+  pre-set elsewhere.
+
+A bridge runtime DMA sweep over `$0B00-$0BFF` bits 4-5 during active
+gameplay will reveal where the M2 bits live and how they get written.
 
 ## Where the bullet is drawn
 
@@ -112,14 +208,61 @@ be incorrect:
 4. **"Bullet is drawn into P1's bitmap"** — no. P1's DMA buffer is
    never written. The bullet is a **packed missile (M1)**.
 5. **"Bit 3 of M2PL detects bullet-hits-enemy"** — no. Bit 3 of M2PL
-   is *M2-vs-P3*, which under the corrected sprite map is a jet-helper
-   missile M2 touching an enemy P3. The real bullet-hit-enemy
-   collision would be `M1PL` read, which the game may or may not
-   actually check.
+   is *M2-vs-P3*, which under the corrected sprite map is the
+   jet hit-probe missile M2 touching an enemy P3. The real
+   bullet-hit-enemy detection appears to use a software bullet_x
+   range check at `entities.asm:400-450`, not a hardware collision
+   read.
 6. **"P0 = terrain marker" or "P0 = riverbank decoration"** — no.
    P0 has no visible role during gameplay. I had invented that
    explanation to account for the `HPOSP0 ← $3C` store without
    checking that `$3C = 0`.
+
+### Additional mistakes found 2026-04-11 during DUO port
+
+The original "Final sprite assignments" table claimed M0/M2/M3 were
+"cleared" / unused and described the layout as if only M1 mattered
+in the missile slot. This was wrong:
+
+7. **"M0/M2/M3 cleared"** — no. M0 has an active writer in
+   `frame_sync.asm` at $AEF1 that conditionally sets M0 bits at
+   `$0B00+frame_ctr_copy` based on `$C1`, AND COLPM0 is cycled
+   every frame from `player_color_cycle`. M2 is positioned every
+   frame at `player_sprite_x + 4` by the DLI at $B539 and its
+   collision capture into `$1C` is consumed by `entities.asm` at
+   $A4B6. Only M3 appears genuinely free in static analysis.
+8. **`$00C1` labelled `terrain_draw_flag`** — no. It is the M0
+   sprite's X position AND its visibility gate (HPOSM0 ← $C1 in
+   the DLI at $B561; the M0 bit-set in frame_sync.asm is gated by
+   `ldy $C1; beq skip`). See "The M0 motion loop" section above.
+9. **`$002A` labelled `lives_count`** — no. It is a countdown
+   timer that triggers `player_death` when exhausted. Decremented
+   every 8 frames at `entities.asm:89-103`, reset to `$25` (37) by
+   the death hook at $A6D5. The real visible lives counter is
+   somewhere else.
+10. **`$A688 player_death`** — no, this is just a 5-instruction
+    hook. It does `lda $09; and #$01; sta player_number; ldx #$79;
+    jmp state_start_game`. The real death handler is scattered
+    across `entities.asm` (the `$1B`/`$1D` read branches at
+    `check_entity_collision`), `state_dying_update` at $A7FB, and
+    several routines those call.
+11. **`$B05C check_terrain_collision`, `$B07C process_collision_results`,
+    `$B1C0 play_score_sound`, `$B21A update_lives_display`,
+    `$B221 clear_status_line`, `$B223 write_status_text`** — all
+    misnomers. The first two are entry points into a shared
+    digit-rendering helper at $B086 that reads BCD bytes from
+    `temp_ptr_lo,X` and writes screen RAM at `$1000+`. The next
+    two manipulate `fuel_level`, `lives_count`, `frame_counter`,
+    and the M-DMA buffer but touch no POKEY register and no lives
+    display. The last two are an M-DMA byte clear helper that
+    zeros 8 consecutive missile bytes at `$0B01-$0B08+X`. Real
+    purposes need bridge tracing.
+12. **`$0018 frame_counter`** — suspect. Explicitly set to `$FF`
+    by sound.asm at $B21A from a non-VBI path. Not a simple
+    monotonic counter.
+13. **`$0076 fuel_level`** — partially suspect. The routine at
+    $B200 (which $B1C0 falls into) stores `$FE` here from a
+    non-fuel code path. Either dual-purpose or mislabelled.
 
 ## Methodology
 
@@ -218,9 +361,15 @@ Two observations from the motion data:
 ## Open questions
 
 - **Where is the in-flight bullet draw code?** `$B14B` only produces
-  the at-rest 10-byte block; another path must be writing the
-  upward-moving M1 bytes at `$0BA9` and below. Setting a write
-  watchpoint on `$0BA8` during active fire is the next step.
+  the at-rest 10-byte M1 block; the moving bullet bytes at lower
+  Y addresses come from somewhere else. PARTIAL ANSWER (2026-04-11):
+  `frame_sync.asm` at $AEF1 writes M0 bits at `$0B00+frame_ctr_copy`
+  gated by `$C1`, and the motion loop in `bullets_terrain.asm:6-65`
+  drives `$C1`. The "moving bullet" the original analysis observed
+  may actually be M0, with M1 being only the muzzle template. To
+  confirm, run a frame-by-frame DMA sweep separately on M0 bits
+  (bit pair 0-1) and M1 bits (bit pair 2-3) with fire held — see
+  if it's M0 that walks upward, M1 that walks upward, or both.
 - **`$0024`** is not actually the game-state machine — runtime
   values (`$00/$48/$80`) don't match the 0/1/2/3 semantics in the
   old project.json comment, and the attract → player transition
@@ -231,14 +380,50 @@ Two observations from the motion data:
   `HPOSP1 ← $39` store at `$B54F` appears to be vestigial / dead
   since P1's bitmap is never populated.
 - **M1PL / M1PF collision reads** — the hardware collision bit for
-  bullet-hit-terrain should come through `M1PF` ($D001 read), not
-  `P1PF` as the old `$1A-$22` fan-out suggested. The DLI doesn't
-  currently read `$D001`; where does the bullet-vs-terrain check
-  actually happen?
+  bullet-hit-terrain should come through `M1PF` ($D001 read). The
+  DLI doesn't currently read `$D001`. PARTIAL ANSWER (2026-04-11):
+  bullet-vs-enemy detection appears to be a software AABB check at
+  `entities.asm:400-450` (compare `bullet_x` against
+  `entity_xpos_tbl,X`) rather than a hardware collision read. This
+  is open question O14 in the DUO design doc.
 - **What `$3C` does outside the attract state** where it's
   consistently `0`. It's probably the terrain scroll accumulator
   (per the `terrain_bank_update` comment at `$A652`) but I haven't
   captured non-zero values during active scrolling.
+- **Where do M2 bits actually get written?** The M2 hit probe
+  pattern from §"M2 jet hitbox probe" needs a bitmap somewhere in
+  `$0B00-$0BFF` bits 4-5 to ever fire. Static analysis hasn't
+  found the writer. Bridge sweep needed.
+- **What is the visible meaning of the M0 motion + COLPM0 cycle?**
+  Is it the player's bullet, an enemy bullet, an explosion, a
+  fuel-marker animation? Watch the M0 bit progression and the
+  on-screen pixel at HPOSM0 frame-by-frame to identify the visual.
+
+## Original (incomplete) sprite table — what was missed
+
+For historical reference, the original "Final sprite assignments"
+table (now superseded by the corrected version above) listed:
+
+| Region          | Sprite               | Role (as originally claimed)                                           |
+|-----------------|----------------------|------------------------------------------------------------------------|
+| `$0B00-$0BFF`   | Missiles (packed)    | M1 = the player's bullet (bits 2-3). **M0/M2/M3 cleared.** ❌          |
+| `$0C00-$0CFF`   | P0                   | Unused in playfield. Buffer zeroed each frame. ✓                       |
+| `$0D00-$0DFF`   | P1                   | Unused in playfield. ✓                                                 |
+| `$0E00-$0EFF`   | P2                   | The player's jet. ✓                                                    |
+| `$0F00-$0FFF`   | P3                   | Multiplexed enemies. ✓                                                 |
+
+The "M0/M2/M3 cleared" claim was based on inspecting only the
+explicitly-located bullet writer at $B14B (which writes M1) and not
+finding any other writers via static byte-pattern search. The
+actual writers — the M0 bit conditional in `frame_sync.asm` at
+$AEF1, and the implicit M2 writes — were missed because the
+former uses an indirect read-modify-write pattern (`lda; and; ora;
+sta` rather than a single `sta #imm`) and the latter is implicit
+(M2 bits live in the missile DMA buffer alongside M1, set somehow
+by code that hasn't been traced). The lesson for future analyses
+is to **always combine static analysis with runtime DMA sweeps**:
+the static pass tells you "where could a writer be", the runtime
+pass tells you "where bits actually live". Both are needed.
 
 ## Bridge configuration that actually works
 

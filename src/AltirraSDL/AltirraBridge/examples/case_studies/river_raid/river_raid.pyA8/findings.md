@@ -1,5 +1,33 @@
 # River Raid — Technical Findings
 
+> **2026-04-11 update — DUO port correction pass:** A re-read of the
+> split asm files in `/home/ilm/Documents/GitHub/river_raid_duo/src/`
+> while preparing a simultaneous-2P fork uncovered several wrong claims
+> in this document and the accompanying notes. Specific corrections:
+>
+> - **M0 and M2 are NOT cleared / unused.** M0 has a writer in
+>   `frame_sync.asm` at $AEF1 driving a moving dot via `$C1`, with
+>   COLPM0 cycled every frame. M2 is positioned at `player_sprite_x + 4`
+>   by the DLI at $B539 as a narrow jet hit probe.
+> - **`process_collision_results` ($B07C), `check_terrain_collision`
+>   ($B05C), `play_score_sound` ($B1C0), `update_lives_display`
+>   ($B21A), `clear_status_line`/`write_status_text` ($B221/$B223)
+>   are all misnomers.** The first two are entry points into a
+>   shared digit-rendering helper; the rest manipulate state flags
+>   and the M-DMA buffer but don't touch sound or lives display.
+> - **`lives_count = $002A`** is a countdown timer that triggers
+>   `player_death`, not a visible life count.
+> - **`player_death` at $A688** is a 5-instruction hook, not the
+>   real death handler.
+>
+> The state machine, display list, entity model, and high-level
+> architecture descriptions in this document are still substantially
+> correct. The corrections above primarily affect the sprite section
+> and the collision section. See the inline **CORRECTED** annotations
+> below, the corresponding `notes/sprites.md`, `notes/variables.md`,
+> `notes/subroutine_map.md` updates, and the top-level `project.json`
+> `notes` field for the full details.
+
 ## Status
 
 - **Segments**: 3 XEX segments (main $4080-$60FF, init $0400-$0419, INITAD→$0400)
@@ -133,13 +161,18 @@ $B571: BNE $B567      ; loop until entity zone ends
 PMG base is at `$0800` (PMBASE = `$08` at `$D407`), **single-line DMA**
 mode (DMACTL bit 4 set). Each P/M slot is 256 bytes:
 
-| Range           | Sprite           | Role in gameplay                          |
-|-----------------|------------------|-------------------------------------------|
-| `$0B00-$0BFF`   | Missiles (packed) | **M1 = player bullet** (bits 2-3), M0/M2/M3 cleared each frame |
-| `$0C00-$0CFF`   | P0                | **Unused** — DMA buffer zeroed each frame by the generic indirect copier at `$B012`; HPOSP0 ← `$3C`=0 hides it |
-| `$0D00-$0DFF`   | P1                | **Unused** — DMA buffer never written (verified by bridge write-watches + DMA sweep). HPOSP1 ← `$39` positions a blank sprite. COLPM1 is used as the *color* for the M1 bullet, since missiles share their parent player's color register. |
-| `$0E00-$0EFF`   | P2                | **The jet** (verified: HPOSP2 == `$57` in gameplay) |
-| `$0F00-$0FFF`   | P3                | Multiplexed enemies (WSYNC loop at `$B567` rewrites HPOSP3 per scanline) |
+**CORRECTED 2026-04-11 — see `notes/sprites.md` for the full corrected map.**
+
+| Range                    | Sprite                | Role in gameplay                          |
+|--------------------------|-----------------------|-------------------------------------------|
+| `$0B00-$0BFF` bits 0-1   | M0                    | **ACTIVE** — bits set conditionally by `frame_sync.asm:52-59` from `$C1`, COLPM0 cycled. Visual role TBD (in-flight bullet? enemy missile?). |
+| `$0B00-$0BFF` bits 2-3   | M1                    | **Player bullet at-rest template** at `$0BCC,Y` (`draw_bullet_pmg` at $B14B). |
+| `$0B00-$0BFF` bits 4-5   | M2                    | **Jet narrow hit probe** at `player_sprite_x + 4` (DLI at $B539). M2 vs P3 captured into `$1C`. |
+| `$0B00-$0BFF` bits 6-7   | M3                    | **Genuinely unused** (no writers found). |
+| `$0C00-$0CFF`            | P0                    | **Genuinely unused** — DMA buffer zeroed each frame by `$B012`. HPOSP0 ← `$3C`=0 hides it. |
+| `$0D00-$0DFF`            | P1                    | **Genuinely unused** — DMA buffer never written. COLPM1 is used as the *color* for the M1 bullet. |
+| `$0E00-$0EFF`            | P2                    | **The jet** (HPOSP2 == `$57` in gameplay). |
+| `$0F00-$0FFF`            | P3                    | **Multiplexed enemies** (WSYNC loop at `$B567`). |
 
 GRACTL = `$03` (both players and missiles enabled).
 PRIOR = `$01` (players have priority over playfield).
@@ -226,25 +259,42 @@ correct scanlines.
 
 ## Collision Model
 
-Collisions are detected in two ways:
+**CORRECTED 2026-04-11.** Collisions are detected in two ways:
 
 1. **Hardware P/M collision** (DLI at `$B60B` end-zone and `$B5EA-$B5F1`
-   mid-zone): The DLI reads several collision latch registers after
-   rendering and fans them into flag slots `$1A-$22`. Under the
-   verified sprite map (P2=jet, P3=multiplexed enemies, M1=bullet,
-   P0/P1 empty):
-   - `$1E = P2PL bit 0 = P2 vs P0` — jet vs (hidden) P0, dead check
-   - `$1D = P2PL bit 3 = P2 vs P3` — **jet hit enemy**
-   - `$1B = P2PF bit 0` — jet hit playfield color 0 (riverbank crash)
-   - `$20 = P1PF bit 1` — P1 vs playfield color 1; since P1 has no
-     bitmap this latch doesn't correspond to a visible collision.
-     Bullet-vs-terrain would be M1PF ($D001 read), not P1PF.
-   - Missile-vs-player collisions for the bullet hitting enemies
-     would come through M1PL rather than the P2PL read the code does.
-   The old finding that "M2PL bit 3 = bullet hits enemy" was wrong —
-   M2PL bit 3 is M2-vs-P3 (which is the jet's decorative missile M2
-   hitting an enemy P3, if M2 is even used for that). The real
-   collision story for the M1 bullet is still under investigation.
+   mid-zone): The DLI reads collision-latch registers via the dual-purpose
+   `$D000-$D00F` addresses (write = HPOS/SIZE/GRAF, read = collision)
+   and stores **entity-Y indices** (not flag bits) into RAM bytes
+   `$1A-$22`. Each byte holds either `$FF` (no hit this frame) or
+   the entity slot index that was active during the collision. Main
+   code then reads these bytes — it does NOT read hardware collision
+   registers directly. After the captures, the DLI calls `HITCLR`
+   ($D01E) at $B65F to reset the hardware latches.
+
+   The exact mapping (under the corrected sprite map: P2 = jet,
+   P3 = multiplexed enemies, M1 = bullet template, M0 = M0 motion
+   sprite, M2 = jet hit probe, P0/P1 empty):
+
+   | RAM byte | DLI source                                   | Meaning                                          |
+   |----------|----------------------------------------------|--------------------------------------------------|
+   | `$1A`    | `lda HPOSP2` = M2PF bits 0-1                 | M2 vs PF0-1 (dormant — M2 has no PF interaction) |
+   | `$1B`    | `lda HPOSM2` = P2PF bit 0                    | **JET vs PF0 = TERRAIN DEATH (bank/bridge)**     |
+   | `$1C`    | `lda M2PL` bit 3                             | M2 (jet hit probe) vs P3 (enemy)                 |
+   | `$1D`    | `lda P2PL` bit 3 (after `lsr;and #$04`)      | **JET (wide) vs ENEMY**                          |
+   | `$1E`    | `lda P2PL` bit 0                             | P2 vs P0 (dormant — P0 unused)                   |
+   | `$1F`    | `lda P3PL` bit 0                             | P3 vs P0 (dormant — P0 unused)                   |
+   | `$20`    | `lda HPOSM1` = P1PF bit 1                    | P1 vs PF1 (dormant — P1 unused)                  |
+   | `$21`    | `lda SIZEP0` = M0PL bit 2                    | M0 vs P2 (jet) — fires when M0 dot overlaps jet  |
+   | `$22`    | `lda HPOSP0` = M0PF bits 0-1                 | **M0 vs PF0-1 (M0-vs-bank/bridge hit-stop)**     |
+
+   The **actual collision-to-effect dispatcher** is `check_entity_collision`
+   at $A3E9 in `entities.asm`, which reads the `$1A-$22` bytes and
+   branches per category. The previously claimed "M2PL bit 3 = bullet
+   hits enemy" was wrong — M2PL bit 3 is the jet hit probe (M2) vs
+   enemy (P3), captured into `$1C`. **Bullet-vs-enemy** is detected
+   by a software AABB check at `entities.asm:400-450` that compares
+   `bullet_x` against `entity_xpos_tbl,X`, NOT by a hardware collision
+   register read.
 
 2. **Software river bank collision** ($B56B): The DLI compares the
    current scanline X against the river bank position table ($0C-$15).

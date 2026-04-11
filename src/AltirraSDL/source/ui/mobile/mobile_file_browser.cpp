@@ -170,7 +170,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			// narrow phones, hiding the button under the next row.
 			ImGui::BeginChild("PermBanner",
 				ImVec2(0, 0),
-				ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY);
+				ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY
+					| ImGuiChildFlags_NavFlattened);
 			ImGui::Spacing();
 			ImGui::TextColored(ImVec4(1, 1, 1, 1),
 				"Storage access required");
@@ -290,7 +291,10 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		// This gives natural touch-scroll behaviour while still letting
 		// a tap select an item.
 		float itemH = dp(56.0f);
-		ImGui::BeginChild("FileList", ImVec2(0, 0), ImGuiChildFlags_None);
+		// NavFlattened lets gamepad nav cross into the list without an
+		// explicit "enter child" press — see mobile_hamburger.cpp.
+		ImGui::BeginChild("FileList", ImVec2(0, 0),
+			ImGuiChildFlags_NavFlattened);
 
 		// Install touch drag-scroll for this child window.  Shared
 		// helper from touch_widgets.cpp — identical behaviour across

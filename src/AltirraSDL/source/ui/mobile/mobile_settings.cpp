@@ -93,7 +93,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		ImGui::BeginChild("SettingsScroll", ImVec2(0, 0), ImGuiChildFlags_None);
+		// NavFlattened lets gamepad nav cross into the list without an
+		// explicit "enter child" press — see mobile_hamburger.cpp.
+		ImGui::BeginChild("SettingsScroll", ImVec2(0, 0),
+			ImGuiChildFlags_NavFlattened);
 		ATTouchDragScroll();
 
 		// --- Settings home: category list with subtitle previews ---

@@ -1247,11 +1247,24 @@ int main(int argc, char *argv[]) {
 	// emulator routes through ATUIGetScanCodeForCharacter32 in
 	// ATInputSDL3_HandleTextInput, which is required for non-US keyboard
 	// layouts (AZERTY/QWERTZ/Dvorak), dead-key composition, IME, AltGr,
-	// and the European-character cooked map (é, à, £, ñ, ö, etc.).  On
-	// desktop platforms this is essentially free; on Android/iOS it
-	// causes the on-screen keyboard to be available, which is the
-	// expected mobile behavior for an emulator.
+	// and the European-character cooked map (é, à, £, ñ, ö, etc.).
+	//
+	// On Android we deliberately do NOT enable text input at startup.
+	// The default value of SDL_HINT_ENABLE_SCREEN_KEYBOARD is "auto",
+	// which means SDL shows the on-screen IME whenever text input is
+	// active and no physical keyboard is attached.  Activating it here
+	// would auto-show the soft keyboard at launch, and any subsequent
+	// configuration change (most visibly: a screen rotation) makes
+	// Android re-bind the editing view and re-show the IME — exactly
+	// the "keyboard appears on rotate" symptom users have reported.
+	// On Android the user explicitly opts in to the system IME via the
+	// ABC button on the Atari virtual keyboard (see
+	// ui_virtual_keyboard.cpp), and the Atari virtual keyboard itself
+	// sends raw scan codes via the POKEY API — neither path needs
+	// SDL_EVENT_TEXT_INPUT.
+#ifndef __ANDROID__
 	SDL_StartTextInput(g_pWindow);
+#endif
 
 	// Create the display backend
 	if (useGL) {
