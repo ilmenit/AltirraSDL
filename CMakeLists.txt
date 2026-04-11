@@ -53,6 +53,15 @@ option(ALTIRRA_SDL3 "Build SDL3+ImGui frontend" ON)
 # SDL3 when available, fall back to FetchContent when it isn't.
 option(ALTIRRA_FETCH_SDL3 "Always fetch SDL3 from source (skip find_package)" OFF)
 
+# ALTIRRA_SKIP_SDL3_IMAGE — build without SDL3_image entirely.  Use this
+# as an escape hatch when SDL3_image is unavailable, broken, or you just
+# want a smaller build.  Image load/save (screenshots, loading art tapes,
+# any UI that decodes PNG/JPEG at runtime) will be unavailable and the
+# corresponding entry points throw a "not supported" error, but the rest
+# of the emulator builds and runs normally.  Default OFF: SDL3_image is
+# required so feature parity with the Windows build is the default.
+option(ALTIRRA_SKIP_SDL3_IMAGE "Build without SDL3_image (disables image load/save)" OFF)
+
 # Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
 if(WIN32)
     add_compile_definitions(VD_OS_WINDOWS=1)
@@ -460,8 +469,23 @@ static inline void *_librashader_dlopen_macos(void) {
     # SDL3_image — PNG/JPEG load/save for oshelper_sdl3.cpp.
     # Part of the official SDL3 ecosystem; replaces the previous stb_image
     # vendored dependency (which had known security issues).
+    #
+    # ALTIRRA_SKIP_SDL3_IMAGE forces it off: no target is created, nothing
+    # is linked, and oshelper_sdl3.cpp compiles stub entry points that
+    # throw at runtime when the UI asks to load or save an image.
     set(ALTIRRA_SDL3_IMAGE_VERSION "release-3.2.4" CACHE STRING "SDL3_image git tag to fetch")
 
+    if(ALTIRRA_SKIP_SDL3_IMAGE)
+        message(STATUS "")
+        message(STATUS "  ┌─ SDL3_image ──────────────────────────────────")
+        message(STATUS "  │ ALTIRRA_SKIP_SDL3_IMAGE=ON")
+        message(STATUS "  │ Building without SDL3_image. Image load/save")
+        message(STATUS "  │ (screenshots, loaded art tapes, PNG/JPEG UI)")
+        message(STATUS "  │ will be unavailable at runtime.")
+        message(STATUS "  └───────────────────────────────────────────────")
+        message(STATUS "")
+        add_compile_definitions(ALTIRRA_NO_SDL3_IMAGE=1)
+    else()
     find_package(SDL3_image QUIET)
     if(NOT TARGET SDL3_image::SDL3_image)
         message(STATUS "")
@@ -518,6 +542,7 @@ static inline void *_librashader_dlopen_macos(void) {
         endif()
         message(STATUS "  SDL3_image ${ALTIRRA_SDL3_IMAGE_VERSION} ready (built from source)")
     endif()
+    endif()  # NOT ALTIRRA_SKIP_SDL3_IMAGE
 
     add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp

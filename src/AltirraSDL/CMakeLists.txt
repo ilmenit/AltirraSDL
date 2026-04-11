@@ -449,11 +449,16 @@ target_link_libraries(AltirraSDL PRIVATE
 
     # SDL3
     SDL3::SDL3
-    SDL3_image::SDL3_image
 
     # Dear ImGui
     imgui
 )
+
+# SDL3_image is optional — ALTIRRA_SKIP_SDL3_IMAGE disables it entirely.
+# oshelper_sdl3.cpp compiles stub image entry points in that case.
+if(NOT ALTIRRA_SKIP_SDL3_IMAGE)
+    target_link_libraries(AltirraSDL PRIVATE SDL3_image::SDL3_image)
+endif()
 
 # OpenGL: desktop GL on Linux/macOS/Windows, GLESv3 on Android
 if(ANDROID)
@@ -613,14 +618,20 @@ if(TARGET SDL3::SDL3-shared AND (sdl3_POPULATED OR WIN32))
 endif()
 
 # Stage SDL3_image shared library next to AltirraSDL (same rationale as SDL3).
-if(TARGET SDL3_image::SDL3_image-shared AND (sdl3_image_POPULATED OR WIN32))
+# On macOS SDL3_image is built with both VERSION and SOVERSION, so
+# TARGET_FILE is libSDL3_image.0.2.4.dylib (real file) and
+# TARGET_SONAME_FILE is libSDL3_image.0.dylib (the symlink dyld resolves
+# against the executable's LC_LOAD_DYLIB).  We must copy the SONAME file
+# too, otherwise the .app bundle is missing the name dyld looks up and
+# the binary crashes on launch with "Library not loaded".
+if(NOT ALTIRRA_SKIP_SDL3_IMAGE AND TARGET SDL3_image::SDL3_image-shared AND (sdl3_image_POPULATED OR WIN32))
     add_custom_command(TARGET AltirraSDL POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:SDL3_image::SDL3_image-shared>"
             "$<TARGET_FILE_DIR:AltirraSDL>/"
         COMMENT "Staging $<TARGET_FILE_NAME:SDL3_image::SDL3_image-shared> next to AltirraSDL"
     )
-    if(UNIX AND NOT APPLE)
+    if(UNIX)
         add_custom_command(TARGET AltirraSDL POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "$<TARGET_SONAME_FILE:SDL3_image::SDL3_image-shared>"
@@ -725,7 +736,7 @@ if(TARGET SDL3::SDL3-shared)
 endif()
 
 # Bundle SDL3_image shared library into the package (same logic as SDL3).
-if(TARGET SDL3_image::SDL3_image-shared)
+if(NOT ALTIRRA_SKIP_SDL3_IMAGE AND TARGET SDL3_image::SDL3_image-shared)
     if(WIN32)
         set(_BUNDLE_SDL3_IMAGE TRUE)
     elseif(sdl3_image_POPULATED)
@@ -746,11 +757,18 @@ if(TARGET SDL3_image::SDL3_image-shared)
                 "${_SDL3_IMAGE_DEST}"
             COMMENT "Bundling $<TARGET_FILE_NAME:SDL3_image::SDL3_image-shared> into package"
         )
-        if(UNIX AND NOT APPLE)
+        # SONAME symlink is needed on both Linux (ELF NEEDED uses soname)
+        # and macOS (LC_LOAD_DYLIB uses install_name @rpath/libSDL3_image.0.dylib).
+        if(UNIX)
+            if(APPLE)
+                set(_SDL3_IMAGE_SONAME_DEST "${_SDL3_IMAGE_DEST}")
+            else()
+                set(_SDL3_IMAGE_SONAME_DEST "${ALTIRRA_PKG_DIR}/")
+            endif()
             add_custom_command(TARGET package_altirra POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy
                     "$<TARGET_SONAME_FILE:SDL3_image::SDL3_image-shared>"
-                    "${ALTIRRA_PKG_DIR}/"
+                    "${_SDL3_IMAGE_SONAME_DEST}"
             )
         endif()
     endif()

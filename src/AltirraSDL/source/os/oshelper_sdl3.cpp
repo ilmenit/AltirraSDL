@@ -73,7 +73,13 @@
 // ---------------------------------------------------------------------------
 // SDL3_image — PNG/JPEG load/save
 // ---------------------------------------------------------------------------
+// ALTIRRA_NO_SDL3_IMAGE (set by the ALTIRRA_SKIP_SDL3_IMAGE CMake option)
+// builds without the dependency.  The image load/save entry points below
+// still exist so the rest of the codebase links unchanged, but they throw
+// a clear "not supported" error instead of decoding.
+#ifndef ALTIRRA_NO_SDL3_IMAGE
 #include <SDL3_image/SDL_image.h>
+#endif
 
 // Embedded ROM data (built from src/Kernel/ and src/ATBasic/ via MADS).
 // The romdata directory lives at src/AltirraSDL/romdata/; this file is at
@@ -331,6 +337,7 @@ bool ATLoadImageResource(uint32 id, VDPixmapBuffer& buf) {
 // the source image uses to our target BGRX layout, so no manual channel
 // swaps are needed.
 
+#ifndef ALTIRRA_NO_SDL3_IMAGE
 // Convert an SDL_Surface (any format) into a VDPixmapBuffer (XRGB8888).
 static void ATSurfaceToPixmap(SDL_Surface *surf, VDPixmapBuffer& px) {
 	// Convert to BGRA32 (B,G,R,A byte order on all architectures — the *32
@@ -429,6 +436,24 @@ void ATSaveFrame(const VDPixmap& px, const wchar_t *filename) {
 	if (!ok)
 		throw MyError("Failed to save PNG %s: %s", u8.c_str(), SDL_GetError());
 }
+#else  // ALTIRRA_NO_SDL3_IMAGE — build-time opt-out via ALTIRRA_SKIP_SDL3_IMAGE
+
+void ATLoadFrameFromMemory(VDPixmapBuffer&, const void *, size_t) {
+	throw MyError("Image loading is not available in this build "
+		"(compiled with ALTIRRA_SKIP_SDL3_IMAGE).");
+}
+
+void ATLoadFrame(VDPixmapBuffer&, const wchar_t *) {
+	throw MyError("Image loading is not available in this build "
+		"(compiled with ALTIRRA_SKIP_SDL3_IMAGE).");
+}
+
+void ATSaveFrame(const VDPixmap&, const wchar_t *) {
+	throw MyError("Image saving is not available in this build "
+		"(compiled with ALTIRRA_SKIP_SDL3_IMAGE).");
+}
+
+#endif  // ALTIRRA_NO_SDL3_IMAGE
 
 // ===========================================================================
 // File attribute helpers

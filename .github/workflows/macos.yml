@@ -136,8 +136,16 @@ jobs:
             || { echo "ERROR: AltirraSDL.app bundle missing from zip"; exit 1; }
           echo "$LISTING" | grep -qE 'AltirraSDL\.app/Contents/Info\.plist$' \
             || { echo "ERROR: Info.plist missing from .app bundle"; exit 1; }
-          echo "$LISTING" | grep -qE 'libSDL3.*\.dylib' \
-            || { echo "ERROR: libSDL3.dylib missing from zip"; exit 1; }
+          # Check for the exact SONAME filenames that the executable's
+          # LC_LOAD_DYLIB commands resolve against — not just any
+          # "libSDL3*.dylib", since SDL3_image ships as libSDL3_image.0.2.4.dylib
+          # (real file) plus a libSDL3_image.0.dylib symlink, and a previous
+          # bug shipped only the versioned real file, making the app crash
+          # at launch with "Library not loaded: @rpath/libSDL3_image.0.dylib".
+          echo "$LISTING" | grep -qE 'AltirraSDL\.app/Contents/MacOS/libSDL3\.0\.dylib$' \
+            || { echo "ERROR: libSDL3.0.dylib missing from .app bundle"; exit 1; }
+          echo "$LISTING" | grep -qE 'AltirraSDL\.app/Contents/MacOS/libSDL3_image\.0\.dylib$' \
+            || { echo "ERROR: libSDL3_image.0.dylib missing from .app bundle"; exit 1; }
           # librashader.dylib must live INSIDE the .app bundle so that
           # @executable_path resolves it at runtime and the ad-hoc
           # codesign step covers it.  Strict check — fail loudly if it's
