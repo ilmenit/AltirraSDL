@@ -169,11 +169,19 @@ def _downscale_area(src_w, src_h, src, dst_w, dst_h):
         y1 = y0 + y_ratio
         iy0 = int(math.floor(y0))
         iy1 = int(math.ceil(y1))
+        # Defensive clamp: for non-integer ratios, FP drift in
+        # (dy * y_ratio + y_ratio) can produce y1 slightly > src_h,
+        # which would push iy1 to src_h+1 and cause IndexError in the
+        # inner loop. Clamping costs nothing when the ratio is exact.
+        if iy1 > src_h:
+            iy1 = src_h
         for dx in range(dst_w):
             x0 = dx * x_ratio
             x1 = x0 + x_ratio
             ix0 = int(math.floor(x0))
             ix1 = int(math.ceil(x1))
+            if ix1 > src_w:
+                ix1 = src_w
 
             r = g = b = a = 0.0
             wsum = 0.0
