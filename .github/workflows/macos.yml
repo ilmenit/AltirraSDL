@@ -154,6 +154,11 @@ jobs:
             || { echo "ERROR: AltirraSDL.app bundle missing from zip"; exit 1; }
           echo "$LISTING" | grep -qE 'AltirraSDL\.app/Contents/Info\.plist$' \
             || { echo "ERROR: Info.plist missing from .app bundle"; exit 1; }
+          # Bundle icon (.icns) must be present in Contents/Resources
+          # or Finder/Launchpad/Dock-before-launch will show the
+          # generic app placeholder instead of the Altirra icon.
+          echo "$LISTING" | grep -qE 'AltirraSDL\.app/Contents/Resources/altirra\.icns$' \
+            || { echo "ERROR: altirra.icns missing from .app bundle"; exit 1; }
           # Check for the exact SONAME filenames that the executable's
           # LC_LOAD_DYLIB commands resolve against — not just any
           # "libSDL3*.dylib", since SDL3_image ships as libSDL3_image.0.2.4.dylib
@@ -188,6 +193,12 @@ jobs:
             || { echo "ERROR: DMG is missing the AltirraSDL.app executable"; exit 1; }
           test -f "$MOUNT_DIR/AltirraSDL.app/Contents/MacOS/libSDL3.0.dylib" \
             || { echo "ERROR: DMG is missing libSDL3.0.dylib inside the bundle"; exit 1; }
+          test -f "$MOUNT_DIR/AltirraSDL.app/Contents/Resources/altirra.icns" \
+            || { echo "ERROR: DMG is missing altirra.icns inside the bundle"; exit 1; }
+          # And sanity-check that Info.plist actually references the
+          # icon file — empty CFBundleIconFile falls back to generic.
+          grep -q 'altirra\.icns' "$MOUNT_DIR/AltirraSDL.app/Contents/Info.plist" \
+            || { echo "ERROR: Info.plist CFBundleIconFile does not reference altirra.icns"; exit 1; }
           hdiutil detach "$MOUNT_DIR" -quiet
           rm -rf "$MOUNT_DIR"
           trap - EXIT

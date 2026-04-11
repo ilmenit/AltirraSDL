@@ -30,7 +30,7 @@ completely different purposes.
 | $31 | temp_score | 1 | Temporary score accumulator |
 | $32 | fuel_drain_ctr | 1 | Fuel drain counter (decrements, triggers fuel decrement on wrap) |
 | $38 | fuel_state | 1 | Fuel tank state (bit 7 = refueling at depot) |
-| $39 | bullet_x | 1 | Bullet horizontal position. Loaded into HPOSP1 at $B54D as the playfield DLI's P1 baseline — P1's bitmap (initialised at $0818-$0887) spans the bullet's vertical travel range, so bullet_x stays fixed during flight while the bullet "moves up" by shifting which bytes in the P1 column are non-zero. Range-checked against `entity_xpos_tbl` at $A500/$A535 for bullet-hit-entity detection. |
+| $39 | bullet_x (legacy name) | 1 | Written to HPOSP1 at $B54F every frame. **P1's DMA buffer is never populated with a bullet bitmap** — verified via bridge write-watches over 180 frames. The actual bullet sprite is **M1** (packed missile DMA), drawn at `$B14B-$B15C`, positioned via `HPOSM1 = ($5B>>3)+$5C` at `$B52C`. The `HPOSP1 ← $39` store therefore has no visible effect; $39 drifts by ±1 per frame via an oscillator at `$A25B/$A25F` that is not correlated with fire input. Role not yet characterised; `bullet_x` is retained as legacy label. See `notes/sprites.md`. |
 | $3A | scroll_position | 1 | Coarse scroll position (advances with terrain) |
 | $3B | fuel_gauge_idx | 1 | Fuel-gauge row index: ASL'd at $AF0F to index fuel_gauge_ptrs ($BAB7) for per-row blits. (Was mislabelled `bullet_state`; it's never written as a bullet flag.) |
 | $40 | entity_timer | 1 | Entity spawn/update timer |
@@ -93,9 +93,11 @@ completely different purposes.
 | $0516-$051B | entity_xpos[6] | 6 | Entity horizontal position |
 | $0521-$0526 | entity_size[6] | 6 | Entity sprite width (SIZEP value) |
 | $052C-$052F | entity_misc[4] | 4 | Entity miscellaneous state |
-| $0600-$06BF | pm_missiles | 192 | Player/Missile graphics: missiles area |
-| $0700-$07CF | pm_player0 | 208 | Player 0 graphics (player's plane) |
-| $0800-$08CF | pm_player1 | 208 | Player 1 graphics (bullet) |
+| $0B00-$0BFF | pm_missiles | 256 | Packed missile DMA (single-line). **M1 (bits 2-3) = the bullet**, drawn at `$B14B-$B15C`. M0/M2/M3 cleared each frame. |
+| $0C00-$0CFF | pm_player0 | 256 | **P0 DMA — unused in gameplay.** Zeroed each frame by the generic indirect copier at `$B012`. `HPOSP0 ← $3C = 0` hides it. |
+| $0D00-$0DFF | pm_player1 | 256 | **P1 DMA — unused in gameplay.** Never written. `HPOSP1 ← $39` positions an empty sprite. COLPM1 is used because missiles inherit their parent player's colour register — i.e. it's actually the M1 bullet colour. |
+| $0E00-$0EFF | pm_player2 | 256 | **P2 DMA = the player's jet.** HPOSP2 ← `$57` (`player_sprite_x`). Verified. |
+| $0F00-$0FFF | pm_player3 | 256 | **P3 DMA = multiplexed enemies.** HPOSP3 rewritten per scanline by the WSYNC loop at `$B567`. |
 | $0900+ | pm_player2_3 | var | Player 2/3 graphics (enemies, fuel depot) |
 | $0B00-$0B07 | status_display | 8 | Status bar display data |
 | $2000-$3CFF | screen_ram | ~7424 | ANTIC mode 14 bitmap (river + terrain) |

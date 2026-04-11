@@ -167,7 +167,11 @@
     "$d40a": "WSYNC",
     "$d40b": "VCOUNT",
     "$d40e": "NMIEN",
-    "$e462": "XITVBV"
+    "$e462": "XITVBV",
+    "$005b": "m1_x_shift_src",
+    "$005c": "m1_x_base",
+    "$b14b": "draw_bullet_pmg",
+    "$b155": "draw_bullet_loop"
   },
   "comments": {
     "$000c": "left_bank_table[0]: left river-bank X position for visible row 0. Entries $0C-$15 form a 10-row table the DLI compares against the current scanline X to detect bank collisions and to color the bank pixels.",
@@ -184,10 +188,10 @@
     "$002e": "bridges_crossed: bridge counter. Tracks overall level progression; every bridge crossing awards bonus points and may raise enemy density. Companion to $62.",
     "$0032": "fuel_drain_ctr: fuel drain timer. DEC'd every frame at $AE94; when it wraps it decrements the fuel_level ($76).",
     "$0038": "fuel_state: fuel/bullet state byte. Bit 7 set while the player overlaps a fuel depot (refuel active, increments $76 each frame). Also OR'd with $80 on a bullet hit to mark score pending.",
-    "$0039": "Bullet horizontal position. Loaded into HPOSP1 at $B54D as the baseline for the whole playfield. P1's bitmap (initialised at $0818-$0887) spans the bullet's vertical travel range; the bullet 'moves up' by shifting which bytes in that column are non-zero while its X stays constant. Range-checked against entity_xpos at $A500/$A535 for bullet-hit-entity detection (sets fuel_state |= $80 + explosion timer + score on hit). Slow inc/dec at $A25B/$A25F under low-fuel conditions appears to be an attract-mode drift. Recomputed from player_x + table in the fuel/terrain reset path at $AE86.",
+    "$0039": "Written to HPOSP1 at $B54F in the playfield DLI each frame. However the P1 DMA buffer ($0D00-$0DFF) is never populated with a bullet bitmap \u2014 verified via bridge write-watches and runtime DMA sweep. The actual bullet sprite is M1 (packed missile DMA), drawn at $B14B-$B15C as 10 bytes of $0C into $0BD3-$0BDC (NTSC) / $0BCC-$0BD5 (PAL). M1's X comes from HPOSM1 = ($5B>>3)+$5C at the same DLI baseline, NOT from $39. The slow inc/dec at $A25B/$A25F oscillates $39 independent of fire input. True role of $39 is not yet characterised; `bullet_x` is a legacy label.",
     "$003a": "scroll_position: playfield scroll accumulator reset to $0C at $AE86 alongside the fuel/terrain reset path.",
     "$003b": "Fuel-gauge row index. Reset to 0 at $A671/$AF05, read at $AF0F where it's ASL'd and used to index the fuel_gauge_ptrs table at $BAB7 (2-byte pointers) before blitting the next gauge row. Not bullet state \u2014 the old 'bullet_state' label was wrong.",
-    "$003c": "Terrain scroll accumulator (low byte of 16-bit pair with $3D). Updated by terrain_bank_update at $A652 via ADC/SBC with $3E/$3F. Also read at $B557 and written to HPOSP0 as the playfield DLI's P0 baseline \u2014 P0 inherits its X from this terrain scroll state.",
+    "$003c": "Terrain scroll accumulator (low byte of 16-bit pair with $3D). Updated by terrain_bank_update at $A652 via ADC/SBC with $3E/$3F. Also written to HPOSP0 at $B559 as the playfield DLI's P0 baseline. Observed = 0 during gameplay, so P0 is hidden at X=0 in the playfield zone \u2014 P0 has no active visual role there.",
     "$003d": "Terrain scroll accumulator (high byte of 16-bit pair with $3C). Updated together with $3C at $A652.",
     "$003e": "Terrain bank delta low - added/subtracted into $3C/$3D by terrain_bank_update at $A652.",
     "$003f": "Terrain bank delta high - added/subtracted into $3C/$3D by terrain_bank_update at $A652.",
@@ -196,7 +200,7 @@
     "$0052": "Player horizontal position, river-relative (range roughly $10-$30). Converted to absolute HPOS as player_sprite_x = $52 + $26 + river_width_R at $A4E4. Joystick input updates player_sprite_x directly (inc/dec at $A47F/$A591); $52 tracks separately for river-space logic.",
     "$0053": "river_width_L: current river left edge parameter. Together with $54 defines the usable river channel for the player.",
     "$0054": "river_width_R: current river right edge parameter. Used in the player_sprite_x conversion at $A4E4.",
-    "$0057": "Player jet absolute HPOS. Written to HPOSP2 at $B534 in the playfield DLI \u2014 the jet is P2, not P0/P1 as some older notes claimed. Joystick left/right inc/dec this directly at $A47F/$A591.",
+    "$0057": "Player jet horizontal position. Written to HPOSP2 at $B534 in the playfield DLI \u2014 P2 is the jet. Joystick left/right inc/dec this directly at $A47F/$A591. VERIFIED via bridge runtime snapshot: HPOSP2 == $57 in gameplay state.",
     "$005a": "section_type: current river section style (straight, narrow, winding). Drives terrain generation.",
     "$005d": "terrain_density: enemy density for the current terrain section. Feeds the spawner at $B0C7 - higher values spawn more frequently.",
     "$005f": "spawn_cooldown: frames-until-next-spawn counter used by the entity spawner at $B0C7.",
@@ -286,8 +290,8 @@
     "$b4d1": "Terrain row pointer table: pairs of addresses (48 bytes through $B4FF) feeding the terrain row copier.",
     "$b500": "=== DLI HANDLER === save regs, branch by VCOUNT at $B509: VCOUNT<$3F -> playfield kernel at $B510, else status-bar handler at $B72A.",
     "$b509": "DLI dispatch: compares current VCOUNT to $3F and branches to the playfield or status-bar kernel accordingly.",
-    "$b510": "=== DLI PLAYFIELD KERNEL === Baselines for the whole playfield zone: clears collision/sprite-mask flags ($1A-$22); HPOSM1 = ($5B>>3)+$5C; HPOSP2 = player_sprite_x ($57, the jet); HPOSM2 = P2+4; COLPM1 = 0 (P1 hidden for the top scanlines); COLPM2 = $8E or $1E based on player_number; HPOSP1 = bullet_x ($39); HPOSM0 = $C1; HPOSP0 = $3C (terrain scroll low byte). Falls into WSYNC loop at $B567.",
-    "$b534": "DLI baseline: HPOSP2 = player_sprite_x ($57) - positions the jet (P2) for the playfield zone.",
+    "$b510": "=== DLI PLAYFIELD KERNEL === Baseline stores for the playfield zone: clears collision/sprite-mask flags $1A-$22; HPOSM1 = ($5B>>3)+$5C at $B52C (bullet X \u2014 M1 is the bullet); HPOSP2 = player_sprite_x ($57, the jet) at $B534; HPOSM2 = P2+4; COLPM1 = 0 at $B541 (bullet/P1 color hidden at top of screen, flipped to $1E at river zone $B697 \u2014 M1 shares COLPM1 with P1, which is why COLPM1 matters even though P1's bitmap is empty); HPOSP1 = bullet_x ($39) at $B54F (but P1's DMA buffer is never populated \u2014 verified); HPOSM0 = $C1; HPOSP0 = $3C (=0 in gameplay, P0 hidden). Falls into WSYNC loop at $B567 which multiplexes enemies on P3.",
+    "$b534": "DLI baseline: HPOSP2 = player_sprite_x ($57). The jet is on P2. Verified: moving $57 moves the jet sprite.",
     "$b54d": "DLI baseline: HPOSP1 = bullet_x ($39) - positions the bullet (P1) for the playfield zone.",
     "$b557": "DLI baseline: HPOSP0 = $3C (terrain scroll low byte) - P0 inherits its X from the terrain scroll accumulator.",
     "$b567": "DLI WSYNC loop: per-scanline entity multiplexer (hottest code). Only HPOSP3/COLPM3/SIZEP3 change per scanline \u2014 HPOSP0/1/2 keep their $B510 baselines.",
@@ -308,7 +312,16 @@
     "$bb30": "Sprite offset tables (48 bytes through $BB5F): per-entity offset into the shape data at $B800.",
     "$bb60": "Sprite height tables (48 bytes through $BB8F): per-entity scanline span used by the DLI multiplexer.",
     "$bc00": "Terrain bank shape templates (768 bytes through $BEFF): bank contours and obstacle masks for procedural river generation.",
-    "$bffa": "Vector table: cold=$A000 ($BFFA/$BFFB), warm=$8000 ($BFFC/$BFFD), IRQ=$A000 ($BFFE/$BFFF). Referenced by the relocator at $4086 for cold-start and IRQ setup."
+    "$bffa": "Vector table: cold=$A000 ($BFFA/$BFFB), warm=$8000 ($BFFC/$BFFD), IRQ=$A000 ($BFFE/$BFFF). Referenced by the relocator at $4086 for cold-start and IRQ setup.",
+    "$005b": "Source for HPOSM1 via the playfield DLI formula HPOSM1 = ($5B>>3)+$5C (computed at $B520-$B52C). M1 is the bullet sprite, so $5B/$5C together determine the bullet's X position.",
+    "$005c": "Base component of HPOSM1 in the playfield DLI: HPOSM1 = ($5B>>3)+$5C at $B52C. Together with $5B controls the M1 bullet X position. Separate from $39 (which writes HPOSP1 but has no visual effect because P1 has no bitmap).",
+    "$b54f": "DLI baseline: HPOSP1 = $39. P1 is positioned each frame but its DMA buffer at $0D00-$0DFF is never written to \u2014 verified by write-watchpoint and 180-frame DMA sweep. The 'bullet' the game renders is M1 (drawn at $B14B), not P1.",
+    "$b559": "DLI baseline: HPOSP0 = $3C. $3C = 0 during gameplay, so this effectively hides P0 at X=0. The P0 DMA buffer ($0C00-$0CFF) is actively zeroed each frame via the generic indirect copier at $B012, so P0 renders blank even if it were on-screen. P0 is effectively unused in the playfield zone.",
+    "$b14b": "Draws the player's bullet into missile DMA. M1 is the bullet sprite \u2014 bits 2-3 of packed missile DMA bytes ($0C = %00001100) write into the M1 slot. The routine sets X=$09 (iteration count) and Y=$09 (NTSC override to $10 at $B153 if pal_flag==0), then falls into the write loop at $B155. Verified via runtime DMA sweep: 10 bytes of $0C accumulate at $0BD3-$0BDC while fire is pulsed; zero bytes with fire released.",
+    "$b155": "Bullet draw loop body: writes $0C (M1 bit pattern, bits 2-3) into missile DMA at $0BCC+Y. dey; dex; bpl back. X counts iterations, Y indexes into the M DMA buffer. Loop writes 10 bytes total \u2014 on NTSC Y=$10..$07 hits $0BDC..$0BD3, on PAL Y=$09..$00 hits $0BD5..$0BCC.",
+    "$b697": "River-zone DLI: COLPM1 = $1E. This makes M1 (the bullet) visible at river scanlines \u2014 M1 inherits COLPM1 as its color even though P1 itself has no bitmap. The baseline COLPM1 = 0 store at $B541 keeps M1 hidden above the river.",
+    "$aef7": "Missile DMA clear loop: sta $0B00,X with X iterating full range. Called each frame to wipe missile sprites (including M1 bullet) before the per-frame draw routines repopulate them.",
+    "$a1a4": "Reads hardware TRIG0 ($D010) directly for the player fire button. Branches to $A1BF when fire is pressed (TRIG0 = 0). The game bypasses the OS STRIG0 shadow at $0284 \u2014 OS VBI is disabled because the game installs its own interrupt handlers."
   },
   "regions": [
     {

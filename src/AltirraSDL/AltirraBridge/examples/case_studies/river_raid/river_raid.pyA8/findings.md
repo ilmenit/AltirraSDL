@@ -130,14 +130,67 @@ $B571: BNE $B567      ; loop until entity zone ends
 
 ### Player/Missile Graphics
 
-PMG base is at $0600 (PMBASE = $06 at $D407):
-- $0600-$06BF: Missile graphics
-- $0700-$07CF: Player 0 — the player's jet
-- $0800-$08CF: Player 1 — the player's bullet
-- $0900-$09CF: Players 2-3 — enemies and fuel depots (repositioned per-scanline by DLI)
+PMG base is at `$0800` (PMBASE = `$08` at `$D407`), **single-line DMA**
+mode (DMACTL bit 4 set). Each P/M slot is 256 bytes:
 
-GRACTL = $03 (both players and missiles enabled).
-PRIOR = $01 (players have priority over playfield).
+| Range           | Sprite           | Role in gameplay                          |
+|-----------------|------------------|-------------------------------------------|
+| `$0B00-$0BFF`   | Missiles (packed) | **M1 = player bullet** (bits 2-3), M0/M2/M3 cleared each frame |
+| `$0C00-$0CFF`   | P0                | **Unused** — DMA buffer zeroed each frame by the generic indirect copier at `$B012`; HPOSP0 ← `$3C`=0 hides it |
+| `$0D00-$0DFF`   | P1                | **Unused** — DMA buffer never written (verified by bridge write-watches + DMA sweep). HPOSP1 ← `$39` positions a blank sprite. COLPM1 is used as the *color* for the M1 bullet, since missiles share their parent player's color register. |
+| `$0E00-$0EFF`   | P2                | **The jet** (verified: HPOSP2 == `$57` in gameplay) |
+| `$0F00-$0FFF`   | P3                | Multiplexed enemies (WSYNC loop at `$B567` rewrites HPOSP3 per scanline) |
+
+GRACTL = `$03` (both players and missiles enabled).
+PRIOR = `$01` (players have priority over playfield).
+
+The bullet is drawn by the routine at `$B14B-$B15C`:
+```
+$B14B  ldx #$09
+$B14D  ldy #$09
+$B14F  lda pal_flag ($BF)
+$B151  bne $B155           ; if PAL, skip the NTSC Y override
+$B153  ldy #$10             ; NTSC: Y = $10
+$B155  lda #$0C             ; bullet byte = %00001100 → bits 2-3 = M1
+$B157  sta $0BCC,Y          ; into missile DMA
+$B15A  dey
+$B15B  dex
+$B15C  bpl $B157            ; 10 iterations
+```
+The `$0C` pattern writes into **bits 2-3** of each missile DMA byte,
+which in the packed missile DMA layout correspond to **M1** — so only
+M1's column lights up. Scanline range is `$0BD3-$0BDC` on NTSC,
+`$0BCC-$0BD5` on PAL.
+
+M1's X position comes from the DLI baseline
+`HPOSM1 = ($5B>>3)+$5C` at `$B52C`, and its color comes from
+`COLPM1 = $1E` set at the river-zone DLI `$B697`. The `HPOSP1 ← $39`
+store at `$B54F` is mechanically present every frame but has no visual
+effect because P1 has no bitmap — the DLI still positions an
+empty P1 sprite. The role of `$39` is not fully characterised yet;
+`bullet_x` is retained as a legacy label but may not actually represent
+a bullet coordinate.
+
+### Verification methodology
+
+These sprite assignments were empirically confirmed via the bridge:
+
+1. **Exhaustive memory scan** of `$A000-$BFFF` for 3-byte store opcodes
+   (`8D/8E/8C/9D/99 xx yy`) targeting any P/M DMA or GTIA register.
+   Caught the obvious direct stores but **missed indirect stores** like
+   `sta ($a3),Y` (2-byte instructions with no absolute address).
+2. **Runtime write-watchpoints** via `bridge.watch_set(addr, mode="w")`
+   on probe addresses within each DMA buffer. Halt the sim on firing,
+   read `regs()` for PC, disassemble backward to identify the writer.
+   Caught the generic indirect copier at `$B012` and the bullet draw
+   loop at `$B155`.
+3. **ORed runtime DMA sweeps** — sample every P/M buffer each frame for
+   N frames, OR the snapshots. Isolates each sprite's bitmap. Showed
+   `....##..` bullet pattern appearing only while fire was pulsed.
+4. **Color classifier on `rawscreen()`** — distinguishes title / scroll
+   intro / gameplay by counting green (riverbank) pixels in the
+   playfield area; avoids the false positives from relying on
+   zero-page heuristics.
 
 ## Entity System
 
@@ -168,10 +221,23 @@ correct scanlines.
 
 Collisions are detected in two ways:
 
-1. **Hardware P/M collision** (DLI at $B5EA-$B5F1): The DLI reads
-   M2PL ($D00A) after rendering each entity's scanline zone. Bit 3
-   of M2PL detects missile-to-player3 hits (bullet hitting enemy).
-   Results are stored in $1A-$1E per entity slot.
+1. **Hardware P/M collision** (DLI at `$B60B` end-zone and `$B5EA-$B5F1`
+   mid-zone): The DLI reads several collision latch registers after
+   rendering and fans them into flag slots `$1A-$22`. Under the
+   verified sprite map (P2=jet, P3=multiplexed enemies, M1=bullet,
+   P0/P1 empty):
+   - `$1E = P2PL bit 0 = P2 vs P0` — jet vs (hidden) P0, dead check
+   - `$1D = P2PL bit 3 = P2 vs P3` — **jet hit enemy**
+   - `$1B = P2PF bit 0` — jet hit playfield color 0 (riverbank crash)
+   - `$20 = P1PF bit 1` — P1 vs playfield color 1; since P1 has no
+     bitmap this latch doesn't correspond to a visible collision.
+     Bullet-vs-terrain would be M1PF ($D001 read), not P1PF.
+   - Missile-vs-player collisions for the bullet hitting enemies
+     would come through M1PL rather than the P2PL read the code does.
+   The old finding that "M2PL bit 3 = bullet hits enemy" was wrong —
+   M2PL bit 3 is M2-vs-P3 (which is the jet's decorative missile M2
+   hitting an enemy P3, if M2 is even used for that). The real
+   collision story for the M1 bullet is still under investigation.
 
 2. **Software river bank collision** ($B56B): The DLI compares the
    current scanline X against the river bank position table ($0C-$15).

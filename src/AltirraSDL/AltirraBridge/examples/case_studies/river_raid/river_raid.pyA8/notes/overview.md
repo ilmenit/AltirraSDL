@@ -17,9 +17,9 @@
 | $0100-$01FF | 256 | 6502 hardware stack |
 | $0200-$03FF | 512 | OS page 2-3: repurposed as game RAM |
 | $0400-$05FF | 512 | Entity tables ($0500+), misc game state |
-| $0600-$09FF | 1024 | Player/Missile graphics (PMBASE=$06) |
-| $0A00-$0BFF | 512 | Score display / status data |
-| $0C00-$1FFF | 5120 | Available RAM (partially used for terrain gen) |
+| $0600-$0AFF | 1280 | Game scratch / score display / status data |
+| $0B00-$0FFF | 1280 | **Player/Missile graphics**, single-line DMA (PMBASE=$08). M1=bullet, P2=jet, P3=multiplexed enemies. P0/P1 unused in playfield. See `notes/sprites.md`. |
+| $1000-$1FFF | 4096 | Available RAM (partially used for terrain gen) |
 | $2000-$3CFF | 7424 | Screen RAM: mode 14 bitmap (river terrain) |
 | $3D80-$3EFF | 384 | Screen RAM: status bar (score, fuel, lives) |
 | $3F00-$3FB5 | 182 | ANTIC display list |

@@ -310,10 +310,19 @@ static bool InitSimulator() {
 	// RAWSCREEN / RENDER_FRAME. The null display is a pure sink: it
 	// hangs onto the frame ref for one VBI cycle so the frame
 	// allocator can recycle it, and discards everything else.
-	// FrameSkip stays off so every frame lands in mpLastFrame.
+	// FrameSkip MUST be true here: nothing in the bridge server's
+	// main loop calls RevokeBuffer() on the null display, so with
+	// FrameSkip=false GTIA would see GetQueuedFrames()>0 every tick
+	// and stall the simulator waiting for display consumption. That
+	// left the sim running at ~5% of real speed (~1400 cycles/frame
+	// instead of ~29829), so client a.frame(N) calls never advanced
+	// N real frames and games like river_raid never reached active
+	// gameplay. Screenshots still work because they read
+	// GTIA::mpLastFrame, which is populated regardless of whether
+	// the display queue has been consumed.
 	g_pNullDisplay = ATBridgeCreateNullVideoDisplay();
 	g_sim.GetGTIA().SetVideoOutput(g_pNullDisplay);
-	g_sim.GetGTIA().SetFrameSkip(false);
+	g_sim.GetGTIA().SetFrameSkip(true);
 
 	ATRegisterDevices(*g_sim.GetDeviceManager());
 	ATRegisterDeviceXCmds(*g_sim.GetDeviceManager());

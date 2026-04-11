@@ -265,11 +265,20 @@ endif()
 # Bake the Android launcher PNGs into:
 #   - altirra_icon_data.{h,c}  — RGBA arrays consumed by main_sdl3.cpp to
 #                                call SDL_SetWindowIcon (covers Linux
-#                                taskbar, macOS dock, Windows caption).
+#                                taskbar, macOS dock-while-running,
+#                                Windows caption).
 #   - altirra.ico              — PNG-embedded .ico referenced by the
 #                                Windows resource script for the exe /
 #                                taskbar icon (Explorer uses the embedded
 #                                .ico, not SDL_SetWindowIcon).
+#   - altirra.icns             — Apple IconSuite bundled into
+#                                AltirraSDL.app/Contents/Resources so
+#                                Finder, Launchpad, and the Dock-before-
+#                                launch all show the Altirra icon.  The
+#                                runtime SDL_SetWindowIcon path only
+#                                covers the dock tile AFTER launch; the
+#                                .icns is what replaces the generic
+#                                placeholder everywhere else.
 #
 # The script uses Python stdlib only (zlib), so it runs on every
 # GitHub-hosted runner without pip installs.  Not built on Android: the
@@ -288,16 +297,18 @@ if(NOT ANDROID)
     set(ALTIRRA_ICON_GEN_H ${ALTIRRA_ICON_GEN_DIR}/altirra_icon_data.h)
     set(ALTIRRA_ICON_GEN_C ${ALTIRRA_ICON_GEN_DIR}/altirra_icon_data.cpp)
     set(ALTIRRA_ICON_GEN_ICO ${ALTIRRA_ICON_GEN_DIR}/altirra.ico)
+    set(ALTIRRA_ICON_GEN_ICNS ${ALTIRRA_ICON_GEN_DIR}/altirra.icns)
     set(ALTIRRA_ICON_BAKE_SCRIPT
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_icon.py)
 
     add_custom_command(
-        OUTPUT ${ALTIRRA_ICON_GEN_H} ${ALTIRRA_ICON_GEN_C} ${ALTIRRA_ICON_GEN_ICO}
+        OUTPUT ${ALTIRRA_ICON_GEN_H} ${ALTIRRA_ICON_GEN_C}
+               ${ALTIRRA_ICON_GEN_ICO} ${ALTIRRA_ICON_GEN_ICNS}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${ALTIRRA_ICON_GEN_DIR}
         COMMAND ${Python3_EXECUTABLE} ${ALTIRRA_ICON_BAKE_SCRIPT}
                 ${ALTIRRA_ICON_GEN_DIR} ${ALTIRRA_ICON_SRC_PNGS}
         DEPENDS ${ALTIRRA_ICON_BAKE_SCRIPT} ${ALTIRRA_ICON_SRC_PNGS}
-        COMMENT "Baking Altirra window icon (PNG -> RGBA + .ico)"
+        COMMENT "Baking Altirra window icon (PNG -> RGBA + .ico + .icns)"
         VERBATIM
     )
 
@@ -319,6 +330,25 @@ if(NOT ANDROID)
         set_source_files_properties(${ALTIRRA_ICON_RC}
             PROPERTIES OBJECT_DEPENDS ${ALTIRRA_ICON_GEN_ICO})
         target_sources(AltirraSDL PRIVATE ${ALTIRRA_ICON_RC})
+    endif()
+
+    if(APPLE)
+        # Attach the generated .icns to the .app bundle.  CMake will
+        # copy it to AltirraSDL.app/Contents/Resources/altirra.icns at
+        # build time, and substitute ${MACOSX_BUNDLE_ICON_FILE} into
+        # Info.plist.in so CFBundleIconFile points at it.
+        #
+        # MACOSX_PACKAGE_LOCATION both (a) tells CMake where inside the
+        # bundle to drop the file and (b) tells it NOT to try to
+        # compile it — without this property an unknown extension like
+        # .icns would reach the compiler and fail.
+        set_source_files_properties(${ALTIRRA_ICON_GEN_ICNS}
+            PROPERTIES
+                MACOSX_PACKAGE_LOCATION "Resources"
+                GENERATED TRUE)
+        target_sources(AltirraSDL PRIVATE ${ALTIRRA_ICON_GEN_ICNS})
+        set_target_properties(AltirraSDL PROPERTIES
+            MACOSX_BUNDLE_ICON_FILE "altirra.icns")
     endif()
 endif()
 
