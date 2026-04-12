@@ -53,7 +53,8 @@ void VDSaveFilespecSystemData() {
 				char buf[16];
 
 				sprintf(buf, "%08x", (unsigned)id);
-				key.setString(buf, VDFileSplitPathLeft(VDStringW(fse.szFile)).c_str());
+
+				key.setString(buf, fse.szFile);
 			}
 		}
 	}

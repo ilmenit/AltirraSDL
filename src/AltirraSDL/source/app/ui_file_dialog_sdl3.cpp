@@ -40,16 +40,19 @@ namespace {
 
 		const VDStringW lastPath = VDGetLastLoadSavePath(nKey);
 		if (!lastPath.empty()) {
-			VDStringW dir;
-
 			uint32 attrs = VDFileGetAttributes(lastPath.c_str());
 
-			if (attrs != kVDFileAttr_Invalid && (attrs & kVDFileAttr_Directory)) {
+			bool isDirectory = (attrs != kVDFileAttr_Invalid && (attrs & kVDFileAttr_Directory));
+
+			VDStringW dir;
+			if (isDirectory) {
 				dir = lastPath;
 			} else {
 				dir = VDFileSplitPathLeft(lastPath);
-				if (dir.empty())
+
+				if (dir.empty()) {
 					dir = lastPath;
+				}
 			}
 
 			ctx->defaultLocationUtf8 = VDTextWToU8(VDStringSpanW(dir));
