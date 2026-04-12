@@ -30,6 +30,7 @@
 #include "diskinterface.h"
 #include "disk.h"
 #include <at/atio/diskimage.h>
+#include "options.h"
 #include "mediamanager.h"
 #include "firmwaremanager.h"
 #include "uiaccessors.h"
@@ -40,8 +41,10 @@
 #include <at/ataudio/audiooutput.h>
 
 #include "mobile_internal.h"
+#include "options.h"
 
 extern ATSimulator g_sim;
+extern ATOptions g_ATOptions;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 extern IDisplayBackend *ATUIGetDisplayBackend();
@@ -143,6 +146,10 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			if (s_diskMountTargetDrive >= 0) {
 				s_diskMountTargetDrive = -1;
 				mobileState.currentScreen = ATMobileUIScreen::DiskManager;
+			} else if (s_folderPickerMode) {
+				s_folderPickerMode = false;
+				s_folderPickerCallback = nullptr;
+				mobileState.currentScreen = s_folderPickerReturnScreen;
 			} else if (s_romFolderMode) {
 				s_romFolderMode = false;
 				mobileState.currentScreen = ATMobileUIScreen::Settings;
@@ -158,6 +165,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			snprintf(mountTitle, sizeof(mountTitle),
 				"Mount into D%d:", s_diskMountTargetDrive + 1);
 			title = mountTitle;
+		} else if (s_folderPickerMode) {
+			title = "Select Folder";
 		} else if (s_romFolderMode) {
 			title = "Select Firmware Folder";
 		} else {
@@ -461,6 +470,19 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
+		// Folder-picker mode: let user select the current directory
+		if (s_folderPickerMode) {
+			float rowBtnH = dp(44.0f);
+			if (ImGui::Button("Select This Folder", ImVec2(-1, rowBtnH))) {
+				VDStringW selectedDir = s_fileBrowserDir;
+				s_folderPickerMode = false;
+				mobileState.currentScreen = s_folderPickerReturnScreen;
+				if (s_folderPickerCallback)
+					s_folderPickerCallback(selectedDir);
+				s_folderPickerCallback = nullptr;
+			}
+		}
+
 		ImGui::Separator();
 
 		// File/directory list
@@ -528,8 +550,20 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					int drive = s_diskMountTargetDrive;
 					s_diskMountTargetDrive = -1;
 					try {
-						sim.GetDiskInterface(drive)
-							.LoadDisk(entry.fullPath.c_str());
+						ATDiskInterface& diskIf = sim.GetDiskInterface(drive);
+						ATDiskEmulator& disk = sim.GetDiskDrive(drive);
+						ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
+							? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
+						diskIf.LoadDisk(entry.fullPath.c_str());
+
+						IATDiskImage *img = diskIf.GetDiskImage();
+						if (img && !img->IsUpdatable())
+							wm = (ATMediaWriteMode)(wm & ~kATMediaWriteMode_AutoFlush);
+						diskIf.SetWriteMode(wm);
+
+						if (diskIf.GetClientCount() < 2)
+							disk.SetEnabled(true);
+						ATAddMRU(entry.fullPath.c_str());
 						VDStringA u8 = VDTextWToU8(entry.fullPath);
 						char msg[1024];
 						snprintf(msg, sizeof(msg),

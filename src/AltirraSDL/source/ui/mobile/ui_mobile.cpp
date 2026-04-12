@@ -187,6 +187,11 @@ bool s_romFolderMode = false;
 VDStringW s_romDir;
 int s_romScanResult = -1;  // -1 = no scan yet, 0+ = number of ROMs found
 
+// Folder-picker mode — used by Game Library settings to select source folders
+bool s_folderPickerMode = false;
+std::function<void(const VDStringW &)> s_folderPickerCallback;
+ATMobileUIScreen s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
+
 // Zip-as-folder browsing — when s_zipArchivePath is non-empty, the file
 // browser shows contents of that zip archive instead of the filesystem.
 // s_zipInternalDir is the current subdirectory within the zip (empty = root).
@@ -641,6 +646,10 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 	case ATMobileUIScreen::DiskManager:
 		RenderMobileDiskManager(sim, uiState, mobileState, window);
+		break;
+
+	case ATMobileUIScreen::GameBrowser:
+		RenderGameBrowser(sim, uiState, mobileState, window);
 		break;
 	}
 

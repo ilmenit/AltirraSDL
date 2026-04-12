@@ -24,9 +24,11 @@
 #include "diskinterface.h"
 #include "disk.h"
 #include <at/atio/diskimage.h>
+#include "options.h"
 #include "logging.h"
 
 extern ATSimulator g_sim;
+extern ATOptions g_ATOptions;
 
 // =========================================================================
 // Create Disk format types (matches Windows ATNewDiskDialog)
@@ -225,7 +227,20 @@ static void DiskMountCallback(void *userdata, const char * const *filelist, int)
 
 	VDStringW widePath = VDTextU8ToW(filelist[0], -1);
 	try {
-		g_sim.GetDiskInterface(driveIdx).LoadDisk(widePath.c_str());
+		ATDiskInterface& diskIf = g_sim.GetDiskInterface(driveIdx);
+		ATDiskEmulator& disk = g_sim.GetDiskDrive(driveIdx);
+		ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
+			? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
+		diskIf.LoadDisk(widePath.c_str());
+
+		IATDiskImage *img = diskIf.GetDiskImage();
+		if (img && !img->IsUpdatable())
+			wm = (ATMediaWriteMode)(wm & ~kATMediaWriteMode_AutoFlush);
+		diskIf.SetWriteMode(wm);
+
+		if (diskIf.GetClientCount() < 2)
+			disk.SetEnabled(true);
+		ATAddMRU(widePath.c_str());
 		LOG_INFO("UI", "Mounted D%d: %s", driveIdx + 1, filelist[0]);
 	} catch (...) {
 		LOG_ERROR("UI", "Failed to mount D%d: %s", driveIdx + 1, filelist[0]);
@@ -392,6 +407,7 @@ static void ConfirmDiscardIfDirty(int driveIdx, std::function<void()> onProceed)
 static void ConfirmAndEject(int driveIdx) {
 	ConfirmDiscardIfDirty(driveIdx, [driveIdx]() {
 		g_sim.GetDiskInterface(driveIdx).UnloadDisk();
+		g_sim.GetDiskDrive(driveIdx).SetEnabled(false);
 	});
 }
 
@@ -883,11 +899,17 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			ImGui::SetNextItemWidth(-FLT_MIN);
 			if (ImGui::Combo("##wm", &wmIdx, kWriteModeLabels, 5)) {
 				if (wmIdx == 0) {
-					// "Off" = eject.  Prompt if dirty (matches Windows
-					// ATDiskDriveDialog::OnSelChanged -> ConfirmEject).
+					// "Off" = eject + disable (matches Windows
+					// ATDiskDriveDialog::OnDriveWriteModeChanged mode==0).
 					if (loaded)
 						ConfirmAndEject(driveIdx);
-				} else if (loaded) {
+					else
+						sim.GetDiskDrive(driveIdx).SetEnabled(false);
+				} else {
+					// Enable drive + set mode (matches Windows
+					// OnDriveWriteModeChanged non-zero path).
+					if (di.GetClientCount() < 2)
+						sim.GetDiskDrive(driveIdx).SetEnabled(true);
 					di.SetWriteMode(kWriteModeValues[wmIdx]);
 				}
 			}

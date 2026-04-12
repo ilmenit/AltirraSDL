@@ -133,6 +133,7 @@ void RenderMobileDiskRow(ATSimulator &sim, int driveIdx,
 	if (ImGui::Button("Eject", ImVec2(btnW, btnH))) {
 		try {
 			di.UnloadDisk();
+			sim.GetDiskDrive(driveIdx).SetEnabled(false);
 		} catch (const MyError &e) {
 			ShowInfoModal("Eject Failed", e.c_str());
 		}

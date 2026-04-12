@@ -39,6 +39,8 @@
 #include "touch_controls.h"
 #include "ui_mobile.h"
 #include "mobile_gamepad.h"
+#include "mobile_internal.h"
+#include "../ui/gamelibrary/game_library.h"
 #include "ui_mode.h"
 #include "options.h"
 #include "ui_main.h"
@@ -1713,9 +1715,23 @@ int main(int argc, char *argv[]) {
 	// and debug suspend mode.  Returns true if any boot image was loaded.
 	bool cmdLineHadBootImage = ATProcessCommandLineSDL3(argc, argv);
 	if (!cmdLineHadBootImage) {
-		// No boot image on command line — cold reset and start
-		g_sim.ColdReset();
-		g_sim.Resume();
+		// In gaming mode with Game Library enabled, show the browser
+		// instead of auto-booting the Atari VM.
+		if (ATUIIsGamingMode()) {
+			GameBrowser_Init();
+			ATGameLibrary *lib = GetGameLibrary();
+			if (lib && lib->GetSettings().mbShowOnStartup) {
+				g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+				g_sim.ColdReset();
+				// Don't Resume — VM stays paused until user picks a game
+			} else {
+				g_sim.ColdReset();
+				g_sim.Resume();
+			}
+		} else {
+			g_sim.ColdReset();
+			g_sim.Resume();
+		}
 	}
 
 	// Auto-show setup wizard on first run (matches Windows uicommandline.cpp:824-840).
@@ -2032,6 +2048,8 @@ int main(int argc, char *argv[]) {
 
 	ATUIShutdownProgressSDL3();
 	ATTouchControls_Shutdown();
+
+	GameBrowser_Shutdown();
 	ATTestModeShutdown();
 	ATUIShutdown();
 

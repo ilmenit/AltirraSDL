@@ -99,34 +99,90 @@ struct GameLibrarySettings {
 
 ### 2.4 Variant Grouping
 
-Many game collections store multiple versions/formats of the same game:
+Many game collections store multiple versions/formats of the same game.
+Real-world Atari game packs follow two distinct archetypes:
 
+**Archetype A — Directory-per-game** (e.g. Archiwum Gier):
 ```
-Raid Over Moscow/
+#/Raid Over Moscow/
     Raid Over Moscow (v1).atr
     Raid Over Moscow (v1).atx
-    Raid Over Moscow (v1).cas
-    Raid Over Moscow (v1).xex
+    Raid Over Moscow (v1,b).atr
     Raid Over Moscow (v10).xex
     Raid Over Moscow (v11).xex
+#/0 Grad Nord/
+    0 Grad Nord (s1,b,v1).atr
+    0 Grad Nord (s1,b,v2).atr
+    0 Grad Nord (s2,b).atr
 ```
+Each game has its own subdirectory.  Tags are comma-separated metadata
+tokens inside parentheses: version (`v1`), side (`s1`), bootable (`b`),
+etc.
+
+**Archetype B — Flat alphabetical** (e.g. Fandal):
+```
+Binaries/Games/B/
+    Boulder Dash.png
+    Boulder Dash.xex
+    Boulder Dash (Chaos).png
+    Boulder Dash (Chaos).xex
+    Boulder Dash (FAJ Soft).png
+    Boulder Dash (FAJ Soft).xex
+Images/Games/0-9/
+    221B Baker Street.png
+    221B Baker Street - Disk 1.atr
+    221B Baker Street - Disk 2.atr
+```
+Games are flat in letter directories (0-9, A, B, ...).  Each game file
+sits next to a matching `.png` screenshot.  Parenthesized content is
+part of the game name (author, region, variant), NOT a strippable tag.
+Multi-disk games use a ` - Disk N` suffix.
 
 **Grouping rules:**
 
 1. **Strip extension** from filename to get the *base name*.
-2. **Strip trailing version/variant tags** — text matching the pattern
-   `\s*\(v?\d+\)$`, `\s*\[.*\]$`, or `\s*\(Disk \d+\)$` etc. — to get
-   the *canonical name*.
+2. **Strip trailing variant tags** to get the *canonical name*.  A
+   trailing parenthesized group `(...)` is stripped **only if every
+   comma-separated token inside is a known variant token**.  Known
+   tokens:
+   - Version: `v\d+`
+   - Side/part: `s\d+`, `p\d+`
+   - Boot: `b`
+   - Format: `cload`
+   - Memory: `128`, `320`, `64`
+   - OS: `osa`, `osb`
+   - Status: `demo`, `source`, `fixed`
+   - Video: `pal`, `ntsc`
+   - Misc: `mj`, `g`, `doc`
+
+   If **any** token is unrecognized (e.g. an author name like `Chaos`,
+   a device name like `FujiNet`, a decimal version like `0.80`), the
+   entire parenthesized group is kept as part of the canonical name.
+   This prevents incorrect grouping of distinct games that happen to
+   share a base name (e.g. `Boulder Dash (Chaos)` ≠ `Boulder Dash
+   (FAJ Soft)`).
+
+   Additionally strip:
+   - Trailing ` - Disk \d+` suffix (Fandal multi-disk pattern, 1000+
+     real files).
+   - Trailing `\[.*\]` bracket groups (rare, ~70 files in Archiwum).
+
 3. Files sharing the same canonical name **and** residing in the same
    parent directory (or same archive root) are grouped into one
    `GameEntry`.
 4. Each file becomes a `GameVariant` with a label built from the
-   stripped tag + extension (e.g. `"v1, ATR"`, `"v10, XEX"`).
+   stripped tag + extension (e.g. `"v1, ATR"`, `"s1·b·v2, ATR"`,
+   `"Disk 1, ATR"`).
 5. If only one variant exists, the label is just the extension
    (`"ATR"`, `"XEX"`).
 6. Default variant: prefer the most recent version tag, and among equal
    tags prefer Disk > Executable > Cartridge > Cassette (matching
    typical user expectation).
+
+**Coverage:** Against real collections (Archiwum Gier 48K entries,
+Fandal 19K entries), the known-token approach correctly identifies 96%
+of parenthesized variant tags while avoiding false positives on
+author/region/device names that are part of the game identity.
 
 ### 2.5 Display Name Disambiguation
 
@@ -147,13 +203,19 @@ raw filename alone is ambiguous.
 ### 2.6 Game-Art Matching
 
 Game-art images (screenshots, boxart, title screens) are matched by
-filename:
+filename.  The most common real-world pattern is **inline art** (Fandal
+collection): each game file sits next to a `.png` with the same base
+name (`Boulder Dash.xex` + `Boulder Dash.png`).  This covers ~97% of
+the Fandal collection's 7,000+ games with zero configuration.
 
 - `"Air Raid.png"` matches any `GameEntry` whose canonical name is
   `"Air Raid"`, regardless of media extension.
+- For multi-variant entries, the art matches the **canonical name**
+  (after tag stripping), so `Raid Over Moscow.png` matches all of
+  `Raid Over Moscow (v1).atr`, `Raid Over Moscow (v10).xex`, etc.
 - Supported image extensions: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.webp`.
 - Search order:
-  1. Same directory as the game file.
+  1. Same directory as the game file (handles inline art).
   2. A `media/` or `artwork/` or `images/` or `screenshots/` or
      `boxart/` subdirectory next to the game file.
   3. **(Optional, checkbox)** Cross-folder matching: scan all game

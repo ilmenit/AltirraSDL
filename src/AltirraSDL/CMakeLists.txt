@@ -181,6 +181,11 @@ target_sources(AltirraSDL PRIVATE
     source/ui/mobile/mobile_dialogs.cpp
     source/ui/mobile/mobile_settings_firmware.cpp
     source/ui/mobile/mobile_gamepad.cpp
+    source/ui/mobile/mobile_game_browser.cpp
+
+    # --- ui/gamelibrary/ : Game Library (data model, scanner, cache) ---
+    source/ui/gamelibrary/game_library.cpp
+    source/ui/gamelibrary/game_library_art.cpp
 
     # Registry persistence (filtered out by ui* regex, so add explicitly)
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp

@@ -130,6 +130,12 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::SetItemDefaultFocus();
 		ImGui::Spacing();
 
+		// Game Library
+		if (ImGui::Button("Game Library", btnSize)) {
+			mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+		}
+		ImGui::Spacing();
+
 		// Load Game
 		if (ImGui::Button("Load Game", btnSize)) {
 			s_romFolderMode = false;

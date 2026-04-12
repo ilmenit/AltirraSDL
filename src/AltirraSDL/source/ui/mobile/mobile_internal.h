@@ -51,6 +51,14 @@ extern bool s_romFolderMode;
 extern VDStringW s_romDir;
 extern int s_romScanResult;
 
+// Folder-picker mode: when set, the file browser shows only directories
+// and the "Select this folder" button. On selection, the callback is
+// invoked with the chosen path and the browser returns to the previous
+// screen stored in s_folderPickerReturnScreen.
+extern bool s_folderPickerMode;
+extern std::function<void(const VDStringW &)> s_folderPickerCallback;
+extern ATMobileUIScreen s_folderPickerReturnScreen;
+
 extern VDStringW s_zipArchivePath;
 extern VDStringW s_zipInternalDir;
 
@@ -86,6 +94,7 @@ enum class ATMobileSettingsPage {
 	Controls,
 	SaveState,
 	Firmware,
+	GameLibrary,
 };
 extern ATMobileSettingsPage s_settingsPage;
 extern ATFirmwareType s_fwPicker;
@@ -140,6 +149,15 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState, SDL_Window *window);
 void RenderLoadGamePrompt(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState);
+
+// Game Library browser (mobile_game_browser.cpp)
+void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
+	ATMobileUIState &mobileState, SDL_Window *window);
+void GameBrowser_Init();
+void GameBrowser_Shutdown();
+void GameBrowser_Invalidate();
+class ATGameLibrary;
+ATGameLibrary *GetGameLibrary();
 
 // Settings sub-page functions split into their own TUs
 void RenderSettingsPage_Firmware(ATMobileUIState &mobileState);

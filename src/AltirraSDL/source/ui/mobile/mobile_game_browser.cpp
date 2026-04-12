@@ -1,0 +1,850 @@
+//	AltirraSDL - Game Library Browser (Gaming Mode)
+//	List and grid views for the game library with gamepad/touch/keyboard nav.
+
+#include <stdafx.h>
+#include <ctime>
+#include <algorithm>
+#include <SDL3/SDL.h>
+#include <imgui.h>
+#include <vd2/system/vdtypes.h>
+#include <vd2/system/VDString.h>
+#include <vd2/system/text.h>
+
+#include "ui_mobile.h"
+#include "ui_main.h"
+#include "touch_widgets.h"
+#include "simulator.h"
+#include "mobile_internal.h"
+
+#include "../gamelibrary/game_library.h"
+#include "../gamelibrary/game_library_art.h"
+
+extern ATSimulator g_sim;
+extern VDStringA ATGetConfigDir();
+
+static ATGameLibrary *s_gameLibrary = nullptr;
+static GameArtCache *s_artCache = nullptr;
+static bool s_needsRefresh = true;
+static VDStringA s_searchFilter;
+static bool s_searchActive = false;
+static char s_searchBuf[128] = {};
+
+// Indices into the library's entries, filtered and sorted for display
+static std::vector<size_t> s_lastPlayedIndices;
+static std::vector<size_t> s_allGamesIndices;
+
+void GameBrowser_Init() {
+	if (s_gameLibrary)
+		return;
+
+	s_gameLibrary = new ATGameLibrary();
+	s_gameLibrary->SetConfigDir(ATGetConfigDir());
+	s_gameLibrary->LoadSettingsFromRegistry();
+	s_gameLibrary->LoadCache();
+	s_gameLibrary->StartScan();
+	s_needsRefresh = true;
+
+	if (!s_artCache) {
+		s_artCache = new GameArtCache();
+		s_artCache->SetCacheDir(ATGetConfigDir());
+	}
+}
+
+void GameBrowser_Shutdown() {
+	if (s_artCache) {
+		s_artCache->Shutdown();
+		delete s_artCache;
+		s_artCache = nullptr;
+	}
+
+	if (s_gameLibrary) {
+		s_gameLibrary->CancelScan();
+		delete s_gameLibrary;
+		s_gameLibrary = nullptr;
+	}
+}
+
+ATGameLibrary *GetGameLibrary() {
+	return s_gameLibrary;
+}
+
+void GameBrowser_Invalidate() {
+	s_needsRefresh = true;
+}
+
+static void RebuildFilteredIndices() {
+	if (!s_gameLibrary)
+		return;
+
+	const auto &entries = s_gameLibrary->GetEntries();
+	s_lastPlayedIndices.clear();
+	s_allGamesIndices.clear();
+
+	VDStringA filterLower;
+	for (size_t i = 0; i < s_searchFilter.size(); ++i)
+		filterLower += (char)std::tolower((unsigned char)s_searchFilter[i]);
+
+	for (size_t i = 0; i < entries.size(); ++i) {
+		const auto &entry = entries[i];
+
+		// Apply search filter
+		if (!filterLower.empty()) {
+			VDStringA nameU8 = VDTextWToU8(entry.mDisplayName);
+			VDStringA nameLower;
+			for (size_t j = 0; j < nameU8.size(); ++j)
+				nameLower += (char)std::tolower((unsigned char)nameU8[j]);
+
+			if (nameLower.find(filterLower.c_str()) == VDStringA::npos)
+				continue;
+		}
+
+		s_allGamesIndices.push_back(i);
+
+		if (entry.mLastPlayed > 0)
+			s_lastPlayedIndices.push_back(i);
+	}
+
+	// Sort last played by recency
+	std::sort(s_lastPlayedIndices.begin(), s_lastPlayedIndices.end(),
+		[&entries](size_t a, size_t b) {
+			return entries[a].mLastPlayed > entries[b].mLastPlayed;
+		});
+
+	// Cap last played to 5
+	if (s_lastPlayedIndices.size() > 5)
+		s_lastPlayedIndices.resize(5);
+
+	s_needsRefresh = false;
+}
+
+static const char *MediaTypeIcon(GameMediaType type) {
+	switch (type) {
+		case GameMediaType::Disk:       return "ATR";
+		case GameMediaType::Executable: return "XEX";
+		case GameMediaType::Cartridge:  return "CAR";
+		case GameMediaType::Cassette:   return "CAS";
+		default:                        return "???";
+	}
+}
+
+static ImU32 MediaTypeColor(GameMediaType type) {
+	switch (type) {
+		case GameMediaType::Disk:       return IM_COL32(74, 144, 217, 255);
+		case GameMediaType::Executable: return IM_COL32(123, 198, 126, 255);
+		case GameMediaType::Cartridge:  return IM_COL32(232, 168, 56, 255);
+		case GameMediaType::Cassette:   return IM_COL32(192, 132, 216, 255);
+		default:                        return IM_COL32(128, 128, 128, 255);
+	}
+}
+
+static const char *RelativeTimeStr(uint64_t timestamp) {
+	static char buf[64];
+	if (timestamp == 0) {
+		buf[0] = 0;
+		return buf;
+	}
+
+	uint64_t now = (uint64_t)std::time(nullptr);
+	if (now <= timestamp) {
+		snprintf(buf, sizeof(buf), "just now");
+		return buf;
+	}
+
+	uint64_t delta = now - timestamp;
+	if (delta < 60)
+		snprintf(buf, sizeof(buf), "%ds ago", (int)delta);
+	else if (delta < 3600)
+		snprintf(buf, sizeof(buf), "%dm ago", (int)(delta / 60));
+	else if (delta < 86400)
+		snprintf(buf, sizeof(buf), "%dh ago", (int)(delta / 3600));
+	else if (delta < 86400 * 2)
+		snprintf(buf, sizeof(buf), "yesterday");
+	else if (delta < 86400 * 7)
+		snprintf(buf, sizeof(buf), "%dd ago", (int)(delta / 86400));
+	else {
+		time_t t = (time_t)timestamp;
+		struct tm *tm = localtime(&t);
+		strftime(buf, sizeof(buf), "%b %d", tm);
+	}
+	return buf;
+}
+
+static void LaunchGame(ATSimulator &sim, ATMobileUIState &mobileState,
+	size_t entryIndex, int variantIndex)
+{
+	if (!s_gameLibrary)
+		return;
+
+	auto &entries = s_gameLibrary->GetEntries();
+	if (entryIndex >= entries.size())
+		return;
+
+	auto &entry = entries[entryIndex];
+	if (variantIndex < 0 || variantIndex >= (int)entry.mVariants.size())
+		return;
+
+	const auto &var = entry.mVariants[variantIndex];
+	VDStringA pathU8 = VDTextWToU8(var.mPath);
+	ATUIPushDeferred(kATDeferred_BootImage, pathU8.c_str());
+	mobileState.gameLoaded = true;
+	mobileState.currentScreen = ATMobileUIScreen::None;
+	s_gameLibrary->RecordPlay(entryIndex);
+	s_needsRefresh = true;
+	sim.Resume();
+}
+
+// Variant picker popup
+static bool s_variantPickerOpen = false;
+static size_t s_variantPickerEntry = 0;
+
+static void ShowVariantPicker(size_t entryIndex) {
+	s_variantPickerEntry = entryIndex;
+	s_variantPickerOpen = true;
+}
+
+static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) {
+	if (!s_variantPickerOpen || !s_gameLibrary)
+		return;
+
+	auto &entries = s_gameLibrary->GetEntries();
+	if (s_variantPickerEntry >= entries.size()) {
+		s_variantPickerOpen = false;
+		return;
+	}
+
+	auto &entry = entries[s_variantPickerEntry];
+	VDStringA titleU8 = VDTextWToU8(entry.mDisplayName);
+
+	ImGui::SetNextWindowSize(ImVec2(dp(360.0f), 0),
+		ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings;
+
+	if (ImGui::Begin(titleU8.c_str(), &s_variantPickerOpen, flags)) {
+		float btnH = dp(48.0f);
+		for (int i = 0; i < (int)entry.mVariants.size(); ++i) {
+			const auto &var = entry.mVariants[i];
+			VDStringA labelU8 = VDTextWToU8(var.mLabel);
+
+			char sizeStr[32];
+			if (var.mFileSize >= 1024 * 1024)
+				snprintf(sizeStr, sizeof(sizeStr), "%.1f MB",
+					var.mFileSize / (1024.0 * 1024.0));
+			else if (var.mFileSize >= 1024)
+				snprintf(sizeStr, sizeof(sizeStr), "%d KB",
+					(int)(var.mFileSize / 1024));
+			else
+				snprintf(sizeStr, sizeof(sizeStr), "%d B",
+					(int)var.mFileSize);
+
+			char btnLabel[256];
+			snprintf(btnLabel, sizeof(btnLabel), "%s    %s##var%d",
+				labelU8.c_str(), sizeStr, i);
+
+			ImU32 color = MediaTypeColor(var.mType);
+			ImVec2 cursor = ImGui::GetCursorScreenPos();
+			ImGui::GetWindowDrawList()->AddRectFilled(
+				cursor, ImVec2(cursor.x + dp(4.0f), cursor.y + btnH),
+				color);
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + dp(12.0f));
+
+			if (ImGui::Button(btnLabel, ImVec2(-1, btnH))) {
+				LaunchGame(sim, mobileState, s_variantPickerEntry, i);
+				s_variantPickerOpen = false;
+			}
+			if (i == 0)
+				ImGui::SetItemDefaultFocus();
+		}
+
+		ImGui::Spacing();
+		if (ImGui::Button("Cancel", ImVec2(-1, dp(40.0f))))
+			s_variantPickerOpen = false;
+	}
+	ImGui::End();
+}
+
+static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
+	size_t entryIndex, float tileW, float tileH)
+{
+	auto &entries = s_gameLibrary->GetEntries();
+	if (entryIndex >= entries.size())
+		return;
+
+	const auto &entry = entries[entryIndex];
+	GameMediaType primaryType = entry.mVariants.empty()
+		? GameMediaType::Unknown : entry.mVariants[0].mType;
+	ImU32 color = MediaTypeColor(primaryType);
+
+	VDStringA nameU8 = VDTextWToU8(entry.mDisplayName);
+	const char *badge = entry.mVariants.empty() ? "???"
+		: MediaTypeIcon(entry.mVariants[0].mType);
+
+	float imageH = tileW * 0.75f;
+	float totalH = tileH;
+
+	char btnId[256];
+	snprintf(btnId, sizeof(btnId), "##tile_%zu", entryIndex);
+
+	ImVec2 cursor = ImGui::GetCursorScreenPos();
+	ImDrawList *dl = ImGui::GetWindowDrawList();
+
+	if (ImGui::InvisibleButton(btnId, ImVec2(tileW, totalH))) {
+		if (!ATTouchIsDraggingBeyondSlop()) {
+			if (entry.mVariants.size() == 1)
+				LaunchGame(sim, mobileState, entryIndex, 0);
+			else if (entry.mVariants.size() > 1)
+				ShowVariantPicker(entryIndex);
+		}
+	}
+
+	bool hovered = ImGui::IsItemHovered();
+
+	ImVec2 imgTL = cursor;
+	ImVec2 imgBR(cursor.x + tileW, cursor.y + imageH);
+
+	// Try to show game art; fall back to color placeholder
+	int artW = 0, artH = 0;
+	ImTextureID artTex = (ImTextureID)0;
+	if (s_artCache && !entry.mArtPath.empty())
+		artTex = s_artCache->GetTexture(entry.mArtPath, &artW, &artH);
+
+	if (artTex && artW > 0 && artH > 0) {
+		// Fit image inside tile area, centered, with aspect ratio preserved
+		float srcAspect = (float)artW / (float)artH;
+		float tileAspect = tileW / imageH;
+		float drawW, drawH;
+		if (srcAspect > tileAspect) {
+			drawW = tileW;
+			drawH = tileW / srcAspect;
+		} else {
+			drawH = imageH;
+			drawW = imageH * srcAspect;
+		}
+		float ox = (tileW - drawW) * 0.5f;
+		float oy = (imageH - drawH) * 0.5f;
+
+		// Dark background behind letterboxed image
+		dl->AddRectFilled(imgTL, imgBR, IM_COL32(20, 20, 25, 255), dp(4.0f));
+
+		ImVec2 uvMin(0, 0), uvMax(1, 1);
+		dl->AddImage(artTex,
+			ImVec2(imgTL.x + ox, imgTL.y + oy),
+			ImVec2(imgTL.x + ox + drawW, imgTL.y + oy + drawH),
+			uvMin, uvMax);
+	} else {
+		// Color block placeholder
+		dl->AddRectFilled(imgTL, imgBR, color, dp(4.0f));
+
+		// Type badge centered in tile
+		ImVec2 badgeSize = ImGui::CalcTextSize(badge);
+		dl->AddText(
+			ImVec2(cursor.x + (tileW - badgeSize.x) * 0.5f,
+				cursor.y + (imageH - badgeSize.y) * 0.5f),
+			IM_COL32(255, 255, 255, 180), badge);
+	}
+
+	// Variant count badge (top-right corner)
+	if (entry.mVariants.size() > 1) {
+		char countStr[16];
+		snprintf(countStr, sizeof(countStr), "x%d",
+			(int)entry.mVariants.size());
+		ImVec2 cs = ImGui::CalcTextSize(countStr);
+		float badgePad = dp(4.0f);
+		dl->AddRectFilled(
+			ImVec2(imgBR.x - cs.x - badgePad * 2, imgTL.y),
+			ImVec2(imgBR.x, imgTL.y + cs.y + badgePad * 2),
+			IM_COL32(0, 0, 0, 180), dp(4.0f));
+		dl->AddText(
+			ImVec2(imgBR.x - cs.x - badgePad, imgTL.y + badgePad),
+			IM_COL32(255, 255, 255, 220), countStr);
+	}
+
+	// Hover/focus border
+	if (hovered) {
+		dl->AddRect(imgTL, imgBR,
+			IM_COL32(100, 180, 255, 200), dp(4.0f), 0, dp(2.0f));
+	}
+
+	// Game name below tile (centered, clipped)
+	float nameY = cursor.y + imageH + dp(4.0f);
+	ImGui::PushClipRect(ImVec2(cursor.x, nameY),
+		ImVec2(cursor.x + tileW, cursor.y + totalH), true);
+	ImVec2 nameSize = ImGui::CalcTextSize(nameU8.c_str());
+	float nameX = cursor.x + (tileW - nameSize.x) * 0.5f;
+	if (nameX < cursor.x) nameX = cursor.x;
+	dl->AddText(ImVec2(nameX, nameY),
+		IM_COL32(220, 220, 220, 255), nameU8.c_str());
+	ImGui::PopClipRect();
+}
+
+static void RenderGameRow(ATSimulator &sim, ATMobileUIState &mobileState,
+	size_t entryIndex, bool showTime)
+{
+	auto &entries = s_gameLibrary->GetEntries();
+	if (entryIndex >= entries.size())
+		return;
+
+	const auto &entry = entries[entryIndex];
+	float rowH = dp(52.0f);
+	float indicatorW = dp(6.0f);
+	float pad = dp(8.0f);
+
+	GameMediaType primaryType = entry.mVariants.empty()
+		? GameMediaType::Unknown : entry.mVariants[0].mType;
+	ImU32 color = MediaTypeColor(primaryType);
+
+	VDStringA nameU8 = VDTextWToU8(entry.mDisplayName);
+
+	// The type badge
+	const char *badge = entry.mVariants.empty() ? "???"
+		: MediaTypeIcon(entry.mVariants[0].mType);
+
+	// Build unique button label
+	char btnId[256];
+	snprintf(btnId, sizeof(btnId), "##game_%zu", entryIndex);
+
+	ImVec2 cursor = ImGui::GetCursorScreenPos();
+	float availW = ImGui::GetContentRegionAvail().x;
+
+	// Full-width selectable row
+	if (ImGui::Selectable(btnId, false, ImGuiSelectableFlags_None,
+		ImVec2(availW, rowH)))
+	{
+		if (!ATTouchIsDraggingBeyondSlop()) {
+			if (entry.mVariants.size() == 1)
+				LaunchGame(sim, mobileState, entryIndex, 0);
+			else if (entry.mVariants.size() > 1)
+				ShowVariantPicker(entryIndex);
+		}
+	}
+
+	// Draw the row content on top of the selectable
+	ImDrawList *dl = ImGui::GetWindowDrawList();
+
+	float thumbSize = rowH - dp(8.0f);
+	float thumbX = cursor.x + dp(4.0f);
+	float thumbY = cursor.y + dp(4.0f);
+	float nameStartX;
+
+	int artW = 0, artH = 0;
+	ImTextureID artTex = (ImTextureID)0;
+	if (s_artCache && !entry.mArtPath.empty())
+		artTex = s_artCache->GetTexture(entry.mArtPath, &artW, &artH);
+
+	if (artTex && artW > 0 && artH > 0) {
+		// Small square thumbnail
+		float srcAspect = (float)artW / (float)artH;
+		float drawW, drawH;
+		if (srcAspect > 1.0f) {
+			drawW = thumbSize;
+			drawH = thumbSize / srcAspect;
+		} else {
+			drawH = thumbSize;
+			drawW = thumbSize * srcAspect;
+		}
+		float ox = (thumbSize - drawW) * 0.5f;
+		float oy = (thumbSize - drawH) * 0.5f;
+
+		dl->AddRectFilled(
+			ImVec2(thumbX, thumbY),
+			ImVec2(thumbX + thumbSize, thumbY + thumbSize),
+			IM_COL32(20, 20, 25, 255), dp(2.0f));
+		dl->AddImage(artTex,
+			ImVec2(thumbX + ox, thumbY + oy),
+			ImVec2(thumbX + ox + drawW, thumbY + oy + drawH));
+
+		nameStartX = thumbX + thumbSize + pad;
+	} else {
+		// Color indicator bar + type badge
+		dl->AddRectFilled(
+			ImVec2(cursor.x, cursor.y + dp(4.0f)),
+			ImVec2(cursor.x + indicatorW, cursor.y + rowH - dp(4.0f)),
+			color, dp(2.0f));
+
+		float badgeX = cursor.x + indicatorW + pad;
+		float textYBadge = cursor.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
+		dl->AddText(ImVec2(badgeX, textYBadge),
+			IM_COL32(180, 180, 180, 255), badge);
+
+		nameStartX = badgeX + dp(40.0f);
+	}
+
+	// Game name
+	float textY = cursor.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
+	float nameX = nameStartX;
+	float rightEdge = cursor.x + availW;
+	float nameMaxX = rightEdge - dp(60.0f);
+
+	ImGui::PushClipRect(ImVec2(nameX, cursor.y),
+		ImVec2(nameMaxX, cursor.y + rowH), true);
+	dl->AddText(ImVec2(nameX, textY),
+		IM_COL32(255, 255, 255, 255), nameU8.c_str());
+	ImGui::PopClipRect();
+
+	// Right side: variant count and/or time
+	float rightX = rightEdge - dp(8.0f);
+
+	if (entry.mVariants.size() > 1) {
+		char countStr[16];
+		snprintf(countStr, sizeof(countStr), "x%d",
+			(int)entry.mVariants.size());
+		ImVec2 countSize = ImGui::CalcTextSize(countStr);
+		dl->AddText(ImVec2(rightX - countSize.x, textY),
+			IM_COL32(140, 140, 140, 255), countStr);
+		rightX -= countSize.x + dp(8.0f);
+	}
+
+	if (showTime && entry.mLastPlayed > 0) {
+		const char *timeStr = RelativeTimeStr(entry.mLastPlayed);
+		ImVec2 timeSize = ImGui::CalcTextSize(timeStr);
+		dl->AddText(ImVec2(rightX - timeSize.x, textY),
+			IM_COL32(120, 120, 120, 255), timeStr);
+	}
+}
+
+// =========================================================================
+// Main render
+// =========================================================================
+
+void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
+	ATMobileUIState &mobileState, SDL_Window *window)
+{
+	if (!s_gameLibrary) {
+		GameBrowser_Init();
+		return;
+	}
+
+	// Process art texture uploads from the background loader
+	if (s_artCache)
+		s_artCache->ProcessPending();
+
+	// Check for completed background scan
+	if (s_gameLibrary->IsScanComplete()) {
+		s_gameLibrary->ConsumeScanResults();
+		s_needsRefresh = true;
+		s_variantPickerOpen = false;
+		if (s_artCache)
+			s_artCache->Clear();
+	}
+
+	if (s_needsRefresh)
+		RebuildFilteredIndices();
+
+	ImGuiIO &io = ImGui::GetIO();
+	float insetT = (float)mobileState.layout.insets.top;
+	float insetB = (float)mobileState.layout.insets.bottom;
+	float insetL = (float)mobileState.layout.insets.left;
+	float insetR = (float)mobileState.layout.insets.right;
+
+	ImGui::SetNextWindowPos(ImVec2(insetL, insetT));
+	ImGui::SetNextWindowSize(ImVec2(
+		io.DisplaySize.x - insetL - insetR,
+		io.DisplaySize.y - insetT - insetB));
+
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+
+	if (ImGui::Begin("##GameBrowser", nullptr, flags)) {
+
+		// ── Top bar ──────────────────────────────────────────────
+		const float headerH = dp(56.0f);
+		const float backW = dp(56.0f);
+		float headerTopY = ImGui::GetCursorPosY();
+
+		// Back button (returns to hamburger or emulation)
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+		ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1, 1, 1, 0.16f));
+
+		if (ImGui::Button("<", ImVec2(backW, headerH))) {
+			if (mobileState.gameLoaded) {
+				mobileState.currentScreen = ATMobileUIScreen::None;
+				sim.Resume();
+			} else {
+				ATMobileUI_OpenMenu(sim, mobileState);
+			}
+		}
+		ImGui::PopStyleColor(3);
+		ImGui::PopStyleVar();
+
+		ImGui::SameLine();
+
+		// Title
+		ImGui::SetCursorPosY(headerTopY
+			+ (headerH - ImGui::GetTextLineHeight()) * 0.5f);
+
+		if (s_gameLibrary->IsScanning()) {
+			int found = s_gameLibrary->GetScanProgress();
+			ImGui::Text("ALTIRRA  (scanning... %d found)", found);
+		} else {
+			ImGui::Text("ALTIRRA  (%d games)",
+				(int)s_allGamesIndices.size());
+		}
+
+		// Right-side buttons: view toggle, settings gear
+		float contentW = io.DisplaySize.x - insetL - insetR;
+		float rightBtnX = contentW - dp(120.0f);
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.16f));
+
+		// View toggle
+		ImGui::SameLine(rightBtnX);
+		ImGui::SetCursorPosY(headerTopY);
+		{
+			bool isGrid = s_gameLibrary->GetSettings().mViewMode == 1;
+			const char *viewLabel = isGrid ? "=#" : "=";
+			if (ImGui::Button(viewLabel, ImVec2(dp(48.0f), headerH))) {
+				GameLibrarySettings settings = s_gameLibrary->GetSettings();
+				settings.mViewMode = isGrid ? 0 : 1;
+				s_gameLibrary->SetSettings(settings);
+				s_gameLibrary->SaveSettingsToRegistry();
+			}
+		}
+
+		// Settings gear
+		ImGui::SameLine();
+		ImGui::SetCursorPosY(headerTopY);
+		if (ImGui::Button("*##gear", ImVec2(dp(48.0f), headerH))) {
+			s_settingsPage = ATMobileSettingsPage::GameLibrary;
+			mobileState.currentScreen = ATMobileUIScreen::Settings;
+		}
+		ImGui::PopStyleColor(3);
+
+		ImGui::SetCursorPosY(headerTopY + headerH);
+
+		// Search bar (collapsible)
+		if (s_searchActive) {
+			ImGui::SetNextItemWidth(-1);
+			if (ImGui::InputText("##search", s_searchBuf,
+				sizeof(s_searchBuf)))
+			{
+				s_searchFilter = s_searchBuf;
+				s_needsRefresh = true;
+			}
+
+			// Escape clears and closes the search bar
+			if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+				s_searchBuf[0] = '\0';
+				s_searchFilter.clear();
+				s_searchActive = false;
+				s_needsRefresh = true;
+			} else if (ImGui::IsItemDeactivatedAfterEdit()
+				&& s_searchBuf[0] == '\0')
+			{
+				s_searchActive = false;
+			}
+		} else if (!s_variantPickerOpen && !ImGui::IsAnyItemActive()) {
+			// Ctrl+F opens search
+			if (ImGui::IsKeyPressed(ImGuiKey_F, false) && io.KeyCtrl) {
+				s_searchActive = true;
+				s_searchBuf[0] = '\0';
+				s_searchFilter.clear();
+				s_needsRefresh = true;
+			}
+
+			// Typing any letter opens search with that letter
+			for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k) {
+				if (ImGui::IsKeyPressed((ImGuiKey)k, false)
+					&& !io.KeyCtrl && !io.KeyAlt)
+				{
+					s_searchActive = true;
+					s_searchBuf[0] = 'a' + (k - ImGuiKey_A);
+					s_searchBuf[1] = '\0';
+					s_searchFilter = s_searchBuf;
+					s_needsRefresh = true;
+					break;
+				}
+			}
+		}
+
+		ImGui::Separator();
+
+		// ── Empty state ──────────────────────────────────────────
+		if (s_gameLibrary->GetSources().empty()
+			&& s_gameLibrary->GetEntries().empty()
+			&& !s_gameLibrary->IsScanning())
+		{
+			float windowW = io.DisplaySize.x - insetL - insetR;
+			float windowH = io.DisplaySize.y - insetT - insetB;
+			float centerX = windowW * 0.5f;
+			float centerY = windowH * 0.4f;
+
+			const char *msg1 = "No games in your library yet.";
+			ImVec2 s1 = ImGui::CalcTextSize(msg1);
+			ImGui::SetCursorPos(ImVec2(centerX - s1.x * 0.5f, centerY));
+			ImGui::TextUnformatted(msg1);
+
+			const char *msg2 = "Add a folder containing Atari games";
+			ImVec2 s2 = ImGui::CalcTextSize(msg2);
+			ImGui::SetCursorPos(ImVec2(centerX - s2.x * 0.5f,
+				centerY + dp(24.0f)));
+			ImGui::TextUnformatted(msg2);
+
+			const char *msg3 = "in Settings > Game Library.";
+			ImVec2 s3 = ImGui::CalcTextSize(msg3);
+			ImGui::SetCursorPos(ImVec2(centerX - s3.x * 0.5f,
+				centerY + dp(48.0f)));
+			ImGui::TextUnformatted(msg3);
+
+			ImVec2 btnSize(dp(240.0f), dp(48.0f));
+			ImGui::SetCursorPos(ImVec2(centerX - btnSize.x * 0.5f,
+				centerY + dp(96.0f)));
+			if (ImGui::Button("Open Settings", btnSize)) {
+				s_settingsPage = ATMobileSettingsPage::GameLibrary;
+				mobileState.currentScreen = ATMobileUIScreen::Settings;
+			}
+
+			ImGui::SetCursorPos(ImVec2(centerX - btnSize.x * 0.5f,
+				centerY + dp(160.0f)));
+			if (ImGui::Button("Boot Atari without game", btnSize)) {
+				mobileState.currentScreen = ATMobileUIScreen::None;
+				g_sim.ColdReset();
+				g_sim.Resume();
+			}
+
+			ImGui::End();
+			return;
+		}
+
+		// ── Scrollable game content ──────────────────────────────
+		ImGui::BeginChild("##GameList", ImVec2(0, 0),
+			ImGuiChildFlags_NavFlattened);
+		ATTouchDragScroll();
+
+		bool gridMode = s_gameLibrary->GetSettings().mViewMode == 1;
+
+		if (gridMode) {
+			// ── Grid View ────────────────────────────────────────
+			float contentW = ImGui::GetContentRegionAvail().x;
+			float tilePad = dp(8.0f);
+			float minTileW = dp(120.0f);
+			int cols = (int)(contentW / (minTileW + tilePad));
+			if (cols < 2) cols = 2;
+			float tileW = (contentW - tilePad * (cols - 1)) / cols;
+			float imageH = tileW * 0.75f;
+			float labelH = dp(36.0f);
+			float tileH = imageH + labelH;
+
+			// Last Played section (small, no clipper needed)
+			if (!s_lastPlayedIndices.empty()) {
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+				ImGui::TextUnformatted("LAST PLAYED");
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+
+				for (size_t i = 0; i < s_lastPlayedIndices.size(); ++i) {
+					if (i > 0 && (i % cols) != 0)
+						ImGui::SameLine(0, tilePad);
+					RenderGameTile(sim, mobileState,
+						s_lastPlayedIndices[i], tileW, tileH);
+				}
+				ImGui::Spacing();
+				ImGui::Separator();
+				ImGui::Spacing();
+			}
+
+			// All Games section with list clipper (row-based)
+			{
+				char label[64];
+				snprintf(label, sizeof(label), "ALL GAMES (%d)",
+					(int)s_allGamesIndices.size());
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+				ImGui::TextUnformatted(label);
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+
+				int rowCount = ((int)s_allGamesIndices.size() + cols - 1)
+					/ cols;
+				ImGuiListClipper clipper;
+				clipper.Begin(rowCount, tileH);
+				while (clipper.Step()) {
+					for (int row = clipper.DisplayStart;
+						row < clipper.DisplayEnd; ++row)
+					{
+						for (int col = 0; col < cols; ++col) {
+							size_t idx = (size_t)row * cols + col;
+							if (idx >= s_allGamesIndices.size())
+								break;
+							if (col > 0)
+								ImGui::SameLine(0, tilePad);
+							RenderGameTile(sim, mobileState,
+								s_allGamesIndices[idx], tileW, tileH);
+						}
+					}
+				}
+				ImGui::Spacing();
+			}
+
+		} else {
+			// ── List View ────────────────────────────────────────
+			float rowH = dp(52.0f);
+
+			// Last Played section (small, no clipper needed)
+			if (!s_lastPlayedIndices.empty()) {
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+				ImGui::TextUnformatted("LAST PLAYED");
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+
+				for (size_t idx : s_lastPlayedIndices)
+					RenderGameRow(sim, mobileState, idx, true);
+
+				ImGui::Spacing();
+				ImGui::Separator();
+				ImGui::Spacing();
+			}
+
+			// All Games section with list clipper
+			{
+				char sectionLabel[64];
+				snprintf(sectionLabel, sizeof(sectionLabel),
+					"ALL GAMES (%d)", (int)s_allGamesIndices.size());
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+				ImGui::TextUnformatted(sectionLabel);
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+
+				ImGuiListClipper clipper;
+				clipper.Begin((int)s_allGamesIndices.size(), rowH);
+				while (clipper.Step()) {
+					for (int i = clipper.DisplayStart;
+						i < clipper.DisplayEnd; ++i)
+					{
+						RenderGameRow(sim, mobileState,
+							s_allGamesIndices[i], false);
+					}
+				}
+			}
+		}
+
+		// ── Boot without game ────────────────────────────────────
+		ImGui::Spacing();
+		ImGui::Spacing();
+		if (ImGui::Button("Boot Atari without game",
+			ImVec2(-1, dp(48.0f))))
+		{
+			mobileState.currentScreen = ATMobileUIScreen::None;
+			g_sim.ColdReset();
+			g_sim.Resume();
+		}
+
+		ImGui::Spacing();
+		ATTouchEndDragScroll();
+		ImGui::EndChild();
+	}
+	ImGui::End();
+
+	// Variant picker overlay
+	RenderVariantPicker(sim, mobileState);
+}
