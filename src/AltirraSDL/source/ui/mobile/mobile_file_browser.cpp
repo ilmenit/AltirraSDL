@@ -334,6 +334,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 
 #ifdef __ANDROID__
+			const auto& volumes = ATAndroid_GetStorageVolumes();
 			for (size_t vi = 0; vi < volumes.size(); vi++) {
 				const ATAndroidVolume &vol = volumes[vi];
 
