@@ -33,6 +33,7 @@
 #include "ui_main.h"
 #include "ui_main_internal.h"
 #include "ui_mobile.h"
+#include "ui_mode.h"
 #include "ui_debugger.h"
 #include "ui_textselection.h"
 #include "accel_sdl3.h"
@@ -620,14 +621,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 			contentScale = cs;
 	}
 
-#ifdef ALTIRRA_MOBILE
-	// Scale spacing/padding/rounding to match the larger touch-target font.
-	{
-		ImGuiStyle &style = ImGui::GetStyle();
-		style.ScaleAllSizes(contentScale);
-		LOG_INFO("UI", "Mobile DPI scale: %.2f", contentScale);
-	}
-#endif
+	ATUIApplyModeStyle(contentScale);
 
 	// Discover bundled TTFs, load persisted choices, and build the initial
 	// font atlas.  Must run BEFORE the renderer backend is initialised so
@@ -1043,16 +1037,12 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 	SDL_Window *window = backend->GetWindow();
 
-#ifdef ALTIRRA_MOBILE
-	// Mobile UI: render touch controls, hamburger menu, file browser, settings
-	// instead of the desktop menu bar
-	{
+	if (ATUIIsGamingMode()) {
 		extern ATMobileUIState g_mobileState;
 		ATMobileUI_Render(sim, state, g_mobileState, window);
+	} else {
+		ATUIRenderMainMenu(sim, window, backend, state);
 	}
-#else
-	ATUIRenderMainMenu(sim, window, backend, state);
-#endif
 	RenderStatusOverlay(sim);
 
 	// Pick up pending cartridge mapper dialog from deferred actions
@@ -1126,52 +1116,52 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	ATUIDebuggerRenderPanes(sim, state);
 
 	// Tools result popup (success/error messages from deferred tool actions)
-#ifdef ALTIRRA_MOBILE
-	if (g_showToolsResult) {
-		ATMobileUI_ShowInfoModal("Tool Result", g_toolsResultMessage.c_str());
-		g_showToolsResult = false;
+	if (ATUIIsGamingMode()) {
+		if (g_showToolsResult) {
+			ATMobileUI_ShowInfoModal("Tool Result", g_toolsResultMessage.c_str());
+			g_showToolsResult = false;
+		}
+	} else {
+		if (g_showToolsResult) {
+			ImGui::OpenPopup("Tool Result");
+			g_showToolsResult = false;
+		}
+		if (ImGui::BeginPopupModal("Tool Result", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+			ImGui::TextUnformatted(g_toolsResultMessage.c_str());
+			ImGui::Spacing();
+			if (ImGui::Button("OK", ImVec2(120, 0)))
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
 	}
-#else
-	if (g_showToolsResult) {
-		ImGui::OpenPopup("Tool Result");
-		g_showToolsResult = false;
-	}
-	if (ImGui::BeginPopupModal("Tool Result", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
-		ImGui::TextUnformatted(g_toolsResultMessage.c_str());
-		ImGui::Spacing();
-		if (ImGui::Button("OK", ImVec2(120, 0)))
-			ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
-	}
-#endif
 
 	// Export ROM overwrite confirmation popup
-#ifdef ALTIRRA_MOBILE
-	if (g_showExportROMOverwrite) {
-		VDStringW path = g_exportROMPath;
-		ATMobileUI_ShowConfirmDialog("Overwrite Existing Files?",
-			"There are existing files with the same names that will be overwritten.\nAre you sure?",
-			[path]() { ATUIDoExportROMSet(path); });
-		g_showExportROMOverwrite = false;
-	}
-#else
-	if (g_showExportROMOverwrite) {
-		ImGui::OpenPopup("Overwrite Existing Files?");
-		g_showExportROMOverwrite = false;
-	}
-	if (ImGui::BeginPopupModal("Overwrite Existing Files?", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
-		ImGui::TextUnformatted("There are existing files with the same names that will be overwritten.\nAre you sure?");
-		ImGui::Spacing();
-		if (ImGui::Button("Yes", ImVec2(120, 0))) {
-			ImGui::CloseCurrentPopup();
-			ATUIDoExportROMSet(g_exportROMPath);
+	if (ATUIIsGamingMode()) {
+		if (g_showExportROMOverwrite) {
+			VDStringW path = g_exportROMPath;
+			ATMobileUI_ShowConfirmDialog("Overwrite Existing Files?",
+				"There are existing files with the same names that will be overwritten.\nAre you sure?",
+				[path]() { ATUIDoExportROMSet(path); });
+			g_showExportROMOverwrite = false;
 		}
-		ImGui::SameLine();
-		if (ImGui::Button("No", ImVec2(120, 0)))
-			ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
+	} else {
+		if (g_showExportROMOverwrite) {
+			ImGui::OpenPopup("Overwrite Existing Files?");
+			g_showExportROMOverwrite = false;
+		}
+		if (ImGui::BeginPopupModal("Overwrite Existing Files?", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+			ImGui::TextUnformatted("There are existing files with the same names that will be overwritten.\nAre you sure?");
+			ImGui::Spacing();
+			if (ImGui::Button("Yes", ImVec2(120, 0))) {
+				ImGui::CloseCurrentPopup();
+				ATUIDoExportROMSet(g_exportROMPath);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("No", ImVec2(120, 0)))
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
 	}
-#endif
 
 	// Progress dialog popup (firmware scan, background tasks)
 	ATUIRenderProgress();
@@ -1189,10 +1179,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// Main display text-mode selection: mouse drag, highlight overlay, and
 	// right-click context menu.  Runs only when the debugger is closed;
 	// the debugger Display pane already wires selection in ui_debugger.cpp.
-	// Disabled on mobile where touch events drive on-screen controls.
-#ifndef ALTIRRA_MOBILE
-	ATUIRenderMainDisplayTextSelection();
-#endif
+	// Disabled in Gaming Mode where touch events drive on-screen controls.
+	if (!ATUIIsGamingMode())
+		ATUIRenderMainDisplayTextSelection();
 
 	ImGui::Render();
 	if (s_usingGLBackend) {

@@ -128,7 +128,7 @@ void ATMobileUI_ClearSuspendState();
 // not yet completed).  True until ATMobileUI_FinishFirstRun is called.
 bool ATMobileUI_IsFirstRun();
 
-// Main render entry point — call from ATUIRenderFrame() when ALTIRRA_MOBILE
+// Main render entry point — call from ATUIRenderFrame() when in Gaming Mode
 void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState, SDL_Window *window);
 
@@ -150,7 +150,7 @@ void ATMobileUI_OpenSettings(ATMobileUIState &mobileState);
 // Public entry points to the mobile-style info and confirm sheet.
 // Any non-mobile code path that would normally open a desktop modal
 // can call these to get the full-screen mobile card renderer
-// instead.  Safe to call from ui_main.cpp under #ifdef ALTIRRA_MOBILE.
+// instead.  Safe to call from ui_main.cpp when ATUIIsGamingMode().
 void ATMobileUI_ShowInfoModal(const char *title, const char *body);
 void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
 	std::function<void()> onConfirm);

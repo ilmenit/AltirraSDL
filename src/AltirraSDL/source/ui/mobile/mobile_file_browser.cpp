@@ -15,7 +15,9 @@
 #include <vd2/system/filesys.h>
 #include <vd2/system/registry.h>
 #include <vd2/system/error.h>
+#include <vd2/system/zip.h>
 #include <at/atcore/media.h>
+#include <at/atcore/vfs.h>
 #include <at/atio/image.h>
 
 #include "ui_mobile.h"
@@ -45,8 +47,24 @@ extern void ATRegistryFlushToDisk();
 extern IDisplayBackend *ATUIGetDisplayBackend();
 
 void NavigateUp() {
-	// Never leave the filesystem tree.  If we're at "/" there's nothing
-	// to do and calling this would corrupt s_fileBrowserDir.
+	if (!s_zipArchivePath.empty()) {
+		if (s_zipInternalDir.empty()) {
+			s_zipArchivePath.clear();
+		} else {
+			VDStringW d = s_zipInternalDir;
+			while (!d.empty() && d.back() == L'/')
+				d.pop_back();
+			const wchar_t *base = d.c_str();
+			const wchar_t *lastSlash = wcsrchr(base, L'/');
+			if (lastSlash)
+				s_zipInternalDir.assign(base, (size_t)(lastSlash - base));
+			else
+				s_zipInternalDir.clear();
+		}
+		s_fileBrowserNeedsRefresh = true;
+		return;
+	}
+
 	if (s_fileBrowserDir.empty() || s_fileBrowserDir == L"/")
 		return;
 
@@ -58,15 +76,13 @@ void NavigateUp() {
 			if (i > 1)
 				parent.resize(i - 1);
 			else
-				parent.resize(1);  // keep root "/"
+				parent.resize(1);
 			s_fileBrowserDir = parent;
 			s_fileBrowserNeedsRefresh = true;
 			SaveFileBrowserDir(s_fileBrowserDir);
 			return;
 		}
 	}
-	// No '/' found — we were at something weird like "relative".
-	// Fall back to the public Downloads dir so the user can recover.
 	s_fileBrowserDir = L"/";
 	s_fileBrowserNeedsRefresh = true;
 	SaveFileBrowserDir(s_fileBrowserDir);
@@ -76,6 +92,8 @@ void NavigateUp() {
 // user who has navigated into an empty/dead folder can always get back
 // to somewhere useful.
 void JumpToDirectory(const char *u8path) {
+	s_zipArchivePath.clear();
+	s_zipInternalDir.clear();
 	s_fileBrowserDir = VDTextU8ToW(VDStringA(u8path));
 	s_fileBrowserNeedsRefresh = true;
 	SaveFileBrowserDir(s_fileBrowserDir);
@@ -120,8 +138,9 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		ImVec2 backBtnSize(dp(48.0f), headerH);
 
 		if (ImGui::Button("<", backBtnSize)) {
+			s_zipArchivePath.clear();
+			s_zipInternalDir.clear();
 			if (s_diskMountTargetDrive >= 0) {
-				// Cancelled disk mount — return to the disk manager.
 				s_diskMountTargetDrive = -1;
 				mobileState.currentScreen = ATMobileUIScreen::DiskManager;
 			} else if (s_romFolderMode) {
@@ -149,15 +168,21 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 
 		ImGui::Separator();
 
-		// Current directory — show the last two path segments so it
-		// stays compact in landscape.  The full path is available as
-		// an ImGui tooltip on hover/long-press.
 		{
-			VDStringA dirU8 = VDTextWToU8(s_fileBrowserDir);
+			VDStringA dirU8;
+			if (!s_zipArchivePath.empty()) {
+				VDStringA zipName = VDTextWToU8(
+					VDStringW(VDFileSplitPath(s_zipArchivePath.c_str())));
+				VDStringA intDir = VDTextWToU8(s_zipInternalDir);
+				if (intDir.empty())
+					dirU8.sprintf("%s/", zipName.c_str());
+				else
+					dirU8.sprintf("%s/%s/", zipName.c_str(), intDir.c_str());
+			} else {
+				dirU8 = VDTextWToU8(s_fileBrowserDir);
+			}
 			const char *display = dirU8.c_str();
 
-			// Find the last two '/' separators to extract tail.
-			// "/storage/emulated/0/Download/atari" → ".../Download/atari"
 			const char *p = dirU8.c_str() + dirU8.length();
 			int slashes = 0;
 			while (p > dirU8.c_str()) {
@@ -302,8 +327,9 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 
 			// --- ".." (Up) — first in the row for easy reach ---
 			{
-				bool atRoot = s_fileBrowserDir.empty()
-					|| s_fileBrowserDir == L"/";
+				bool atRoot = s_zipArchivePath.empty()
+					&& (s_fileBrowserDir.empty()
+						|| s_fileBrowserDir == L"/");
 				if (atRoot) {
 					ImGui::BeginDisabled();
 				}
@@ -459,6 +485,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		// every scrollable surface in the mobile UI.
 		ATTouchDragScroll();
 
+		bool insideZip = !s_zipArchivePath.empty();
+
 		for (size_t i = 0; i < s_fileBrowserEntries.size(); i++) {
 			const FileBrowserEntry &entry = s_fileBrowserEntries[i];
 			VDStringA nameU8 = VDTextWToU8(VDStringW(entry.name));
@@ -466,6 +494,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			char label[512];
 			if (entry.isDirectory)
 				snprintf(label, sizeof(label), "[DIR] %s", nameU8.c_str());
+			else if (!insideZip && IsZipFile(entry.name.c_str()))
+				snprintf(label, sizeof(label), "[ZIP] %s", nameU8.c_str());
 			else
 				snprintf(label, sizeof(label), "      %s", nameU8.c_str());
 
@@ -474,22 +504,27 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				(int)i == mobileState.selectedFileIdx,
 				ImGuiSelectableFlags_AllowOverlap, ImVec2(0, itemH));
 
-			// Suppress the activation if the finger moved — that was
-			// a scroll drag, not a tap.
 			if (activated && ATTouchIsDraggingBeyondSlop())
 				activated = false;
 
 			if (activated) {
 				if (entry.isDirectory) {
-					s_fileBrowserDir = entry.fullPath;
+					if (insideZip) {
+						s_zipInternalDir = entry.fullPath;
+					} else {
+						s_fileBrowserDir = entry.fullPath;
+						SaveFileBrowserDir(s_fileBrowserDir);
+					}
 					s_fileBrowserNeedsRefresh = true;
-					SaveFileBrowserDir(s_fileBrowserDir);
+					mobileState.selectedFileIdx = -1;
+				} else if (!insideZip && !s_romFolderMode
+					&& IsZipFile(entry.name.c_str()))
+				{
+					s_zipArchivePath = entry.fullPath;
+					s_zipInternalDir.clear();
+					s_fileBrowserNeedsRefresh = true;
 					mobileState.selectedFileIdx = -1;
 				} else if (s_diskMountTargetDrive >= 0) {
-					// Mount-into-drive path (from the mobile disk
-					// manager).  Load the image into the target
-					// drive and route back to the disk manager with
-					// a status popup.
 					int drive = s_diskMountTargetDrive;
 					s_diskMountTargetDrive = -1;
 					try {

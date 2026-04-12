@@ -38,9 +38,8 @@
 #include "input_sdl3.h"
 #include "touch_controls.h"
 #include "ui_mobile.h"
-#ifdef ALTIRRA_MOBILE
 #include "mobile_gamepad.h"
-#endif
+#include "ui_mode.h"
 #include "options.h"
 #include "ui_main.h"
 #include "ui_debugger.h"
@@ -143,9 +142,7 @@ static void ATReportFatal(const char *phase, const char *message) {
 void ATAndroidInstallStderrBridge();
 #endif
 
-#ifdef ALTIRRA_MOBILE
 ATMobileUIState g_mobileState;
-#endif
 
 // Forward declaration — defined in window placement section below
 void ATUpdateWindowedGeometry(SDL_Window *window);
@@ -271,16 +268,13 @@ static void HandleEvents() {
 
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) {
-		// Route touch events to mobile controls before ImGui processing
-#ifdef ALTIRRA_MOBILE
-		// Reserved gamepad buttons (Start, Back) drive the UI on
-		// mobile and never reach the emulator.  Must run before
-		// the touch handler so a gamepad press isn't shadowed.
-		if (ATMobileGamepad_HandleEvent(ev, g_sim, g_mobileState))
-			continue;
-		if (ATMobileUI_HandleEvent(ev, g_mobileState))
-			continue;
-#endif
+		// Route touch/gamepad events to Gaming Mode UI before ImGui
+		if (ATUIIsGamingMode()) {
+			if (ATMobileGamepad_HandleEvent(ev, g_sim, g_mobileState))
+				continue;
+			if (ATMobileUI_HandleEvent(ev, g_mobileState))
+				continue;
+		}
 
 		// Virtual keyboard intercepts gamepad events when visible.
 		// Gamepad X toggles visibility; D-pad/A/LB/RB navigate and
@@ -288,10 +282,8 @@ static void HandleEvents() {
 		// Skip when a mobile UI screen (hamburger, file browser, etc.)
 		// is open — ImGui needs gamepad events for dialog navigation.
 		{
-			bool mobileUIActive = false;
-#ifdef ALTIRRA_MOBILE
-			mobileUIActive = (g_mobileState.currentScreen != ATMobileUIScreen::None);
-#endif
+			bool mobileUIActive = ATUIIsGamingMode()
+				&& (g_mobileState.currentScreen != ATMobileUIScreen::None);
 			if (!mobileUIActive) {
 				if (ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
 					&& ev.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) {
@@ -680,12 +672,7 @@ static void HandleEvents() {
 			ATUIReleaseMouse();
 			ATTouchControls_ReleaseAll();
 			ATUIVirtualKeyboard_ReleaseAll(g_sim);
-#ifdef ALTIRRA_MOBILE
-			// Snapshot the current emulator state so if Android kills
-			// us while backgrounded (low memory, incoming call swipe,
-			// user swipe from recents) we can resume on next launch.
-			// Also flush settings so any pending config changes land
-			// on disk before we risk being killed.
+#ifdef __ANDROID__
 			ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
 			try {
 				extern void ATRegistryFlushToDisk();
@@ -701,10 +688,7 @@ static void HandleEvents() {
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: DID_ENTER_BACKGROUND — suspending render/sim");
 			g_appSuspended = true;
-#ifdef ALTIRRA_MOBILE
-			// Stop pushing audio to the device while invisible — the
-			// AudioOutput SDL3 backend queues chunks and will keep
-			// filling them if we don't mute.
+#ifdef __ANDROID__
 			if (IATAudioOutput *ao = g_sim.GetAudioOutput())
 				ao->SetMute(true);
 #endif
@@ -719,19 +703,11 @@ static void HandleEvents() {
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: DID_ENTER_FOREGROUND — resuming");
 			g_appSuspended = false;
-#ifdef ALTIRRA_MOBILE
-			// Re-enable audio output (unless the user explicitly
-			// muted via the hamburger menu).
+#ifdef __ANDROID__
 			if (IATAudioOutput *ao = g_sim.GetAudioOutput())
 				ao->SetMute(g_mobileState.audioMuted);
-			// Re-query safe insets in case rotation happened while
-			// suspended.
 			ATAndroid_InvalidateSafeInsets();
-			// Re-query storage volumes in case an SD card was
-			// inserted or removed while the app was backgrounded.
 			ATAndroid_InvalidateStorageVolumes();
-			// Refresh the file browser when returning from Settings
-			// (after a possible "All files access" grant).
 			ATMobileUI_InvalidateFileBrowser();
 #endif
 			break;
@@ -742,7 +718,7 @@ static void HandleEvents() {
 			// both inside try/catch, then request a clean exit.
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: TERMINATING — flushing settings");
-#ifdef ALTIRRA_MOBILE
+#ifdef __ANDROID__
 			ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
 #endif
 			try {
@@ -1143,12 +1119,9 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-#ifdef ALTIRRA_MOBILE
-	// Keep the screen on while the emulator is running.  On Android this
-	// maps to FLAG_KEEP_SCREEN_ON; without it the device auto-locks
-	// during gameplay because touches on the SDL window do not count as
-	// "user interaction" to the power manager.  Desktop is unaffected
-	// (this gate is mobile-only anyway).
+	// On Android, always keep the screen on.  On desktop, this is handled
+	// by ATUIApplyModeStyle() when entering Gaming Mode.
+#ifdef __ANDROID__
 	SDL_DisableScreenSaver();
 #endif
 
@@ -1306,6 +1279,13 @@ int main(int argc, char *argv[]) {
 		g_pBackend = new DisplayBackendSDLRenderer(g_pWindow, g_pRenderer);
 	}
 
+	// Load UI mode preference before ImGui init so ATUIApplyModeStyle()
+	// inside ATUIInit() sees the correct mode.
+	ATUILoadMode();
+#ifdef __ANDROID__
+	ATUISetMode(ATUIMode::Gaming);
+#endif
+
 	phase = "ImGui init";
 	if (!ATUIInit(g_pWindow, g_pBackend)) {
 		delete g_pBackend; g_pBackend = nullptr;
@@ -1437,12 +1417,12 @@ int main(int argc, char *argv[]) {
 	// Initialize touch controls (active on Android, available for testing on desktop)
 	ATTouchControls_Init(g_sim.GetInputManager(), &g_sim.GetGTIA());
 
-#ifdef ALTIRRA_MOBILE
+	// Always initialize the Gaming Mode subsystem so switching at
+	// runtime doesn't require deferred init.
 	ATMobileUI_Init();
 	ATMobileUI_LoadConfig(g_mobileState);
 	ATTouchControls_SetHapticEnabled(g_mobileState.layoutConfig.hapticEnabled);
 
-	// Query display content scale for DPI-aware touch control sizing.
 	{
 		SDL_DisplayID displayID = SDL_GetDisplayForWindow(g_pWindow);
 		float cs = SDL_GetDisplayContentScale(displayID);
@@ -1450,20 +1430,7 @@ int main(int argc, char *argv[]) {
 		if (cs > 4.0f) cs = 4.0f;
 		g_mobileState.layoutConfig.contentScale = cs;
 		LOG_INFO("Main", "Touch controls content scale: %.2f", cs);
-
-		// Raise ImGui's mouse drag threshold on touch devices so small
-		// finger jitter during a tap doesn't start a drag — scales with
-		// display DPI so it's consistent across phones and tablets.
-		ImGuiIO &io = ImGui::GetIO();
-		io.MouseDragThreshold = 8.0f * cs;
 	}
-
-	// Storage permission is requested lazily by the file browser when
-	// the user actually opens it — requesting on startup spawns the
-	// dialog before the GL surface is stable, which some Android
-	// builds handle by putting the activity through onPause/onStop
-	// right at the moment we're trying to render the first frame.
-#endif
 
 	// Register device extended commands (copy/paste, explore disk, mount VHD, etc.)
 	extern void ATRegisterDeviceXCmds(ATDeviceManager& dm);
@@ -1496,7 +1463,7 @@ int main(int argc, char *argv[]) {
 		kATSettingsCategory_All & ~kATSettingsCategory_FullScreen
 	));
 
-#ifdef ALTIRRA_MOBILE
+#ifdef __ANDROID__
 	// On first run (no saved settings), default to PAL for mobile.
 	// ATSettingsLoadLastProfile sets NTSC in ATSettingsExchangeStartupConfig;
 	// override to PAL when "Defaults inited" was just created this session
@@ -1762,10 +1729,10 @@ int main(int argc, char *argv[]) {
 			bool cmdLineHadAnything = (argc > 1);
 
 			if (!cmdLineHadAnything && !registryHadAnything) {
-#ifndef ALTIRRA_MOBILE
-				// Desktop-only: the setup wizard is a mouse/keyboard dialog
-				// and traps a mobile user on first launch.  The mobile
-				// frontend handles first-run through its own flow.
+#ifndef __ANDROID__
+				// On desktop, show the setup wizard for first-time
+				// configuration.  On Android, the mobile first-run
+				// flow handles this instead.
 				g_uiState.showSetupWizard = true;
 #endif
 			}
@@ -1776,19 +1743,12 @@ int main(int argc, char *argv[]) {
 	g_pacer.Init();
 	UpdatePacerRate();
 
-#ifdef ALTIRRA_MOBILE
-	// Apply visual effects toggles once, after the simulator is fully
-	// initialised and the GTIA is ready to accept param writes.
-	ATMobileUI_ApplyVisualEffects(g_mobileState);
-	// Apply performance preset so its bundled simulator knobs
-	// (FastBoot, Interlace, POKEY nonlinear mix, drive sounds)
-	// are set before the first frame.
-	ATMobileUI_ApplyPerformancePreset(g_mobileState);
+	if (ATUIIsGamingMode()) {
+		ATMobileUI_ApplyVisualEffects(g_mobileState);
+		ATMobileUI_ApplyPerformancePreset(g_mobileState);
+	}
 
-	// If we were killed while backgrounded last session, restore the
-	// emulator state the user was in.  Must happen AFTER firmware has
-	// loaded and the simulator is fully initialised, and BEFORE the
-	// main loop starts so the first frame shows the restored state.
+#ifdef __ANDROID__
 	{
 		bool restored = ATMobileUI_RestoreSuspendState(g_sim, g_mobileState);
 		if (restored) {

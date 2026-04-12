@@ -43,6 +43,8 @@
 #include "uitypes.h"
 #include "options.h"
 #include "oshelper.h"
+#include "ui_mode.h"
+#include "ui_mobile.h"
 
 extern ATSimulator g_sim;
 
@@ -59,6 +61,11 @@ static struct SetupWizardState {
 	int scanExisting = 0;
 	VDStringA scanMessage;
 
+	// UI mode chosen by the user (deferred until wizard closes so the
+	// desktop-style wizard dialog doesn't disappear mid-flow).
+	// -1 means "no choice made, keep current mode".
+	int pendingUIMode = -1;
+
 	// Thread-safe: path stored by callback, processed on main thread
 	std::mutex scanMutex;
 	std::string pendingScanPath;
@@ -70,6 +77,7 @@ static struct SetupWizardState {
 		scanFound = 0;
 		scanExisting = 0;
 		scanMessage.clear();
+		pendingUIMode = -1;
 		// mutex and pendingScanPath don't need reset
 	}
 } g_setupWiz;
@@ -151,7 +159,8 @@ static void FirmwareScanCallback(void *, const char * const *filelist, int) {
 static int GetWizPrevPage(int page) {
 	switch (page) {
 		case 0:  return -1;
-		case 5:  return 0;
+		case 1:  return 0;
+		case 5:  return 1;
 		case 10: return 5;
 		case 11: return 10;
 		case 20: return 11;
@@ -165,7 +174,8 @@ static int GetWizPrevPage(int page) {
 
 static int GetWizNextPage(int page) {
 	switch (page) {
-		case 0:  return 5;
+		case 0:  return 1;
+		case 1:  return 5;
 		case 5:  return 10;
 		case 10: return 11;
 		case 11: return 20;
@@ -173,6 +183,17 @@ static int GetWizNextPage(int page) {
 		case 21: return 30;
 		case 30: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 41 : 40;
 		default: return -1;
+	}
+}
+
+static void ApplyPendingUIMode(SDL_Window *window) {
+	if (g_setupWiz.pendingUIMode >= 0) {
+		ATUISetMode((ATUIMode)g_setupWiz.pendingUIMode);
+		ATUISaveMode();
+		float cs = SDL_GetDisplayContentScale(SDL_GetDisplayForWindow(window));
+		if (cs < 1.0f) cs = 1.0f;
+		if (cs > 4.0f) cs = 4.0f;
+		ATUIApplyModeStyle(cs);
 	}
 }
 
@@ -199,6 +220,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				sim.LoadROMs();
 				sim.ColdReset();
 			}
+			ApplyPendingUIMode(window);
 			g_setupWiz.Reset();
 			state.showSetupWizard = false;
 		}
@@ -211,6 +233,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			sim.LoadROMs();
 			sim.ColdReset();
 		}
+		ApplyPendingUIMode(window);
 		g_setupWiz.Reset();
 		state.showSetupWizard = false;
 		ImGui::End();
@@ -225,6 +248,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 		static const struct { int pageMin; int pageMax; const char *label; } kSteps[] = {
 			{ 0, 0, "Welcome" },
+			{ 1, 1, "Interface mode" },
 			{ 5, 9, "Appearance" },
 			{ 10, 19, "Setup firmware" },
 			{ 20, 29, "Select system" },
@@ -235,7 +259,12 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		for (auto &step : kSteps) {
 			bool active = (g_setupWiz.page >= step.pageMin && g_setupWiz.page <= step.pageMax);
 			if (active) {
-				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.4f, 1.0f));
+				const auto &bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+				bool darkBg = (bg.x + bg.y + bg.z) < 1.5f;
+				ImVec4 highlightColor = darkBg
+					? ImVec4(1.0f, 0.85f, 0.2f, 1.0f)
+					: ImVec4(0.7f, 0.5f, 0.0f, 1.0f);
+				ImGui::PushStyleColor(ImGuiCol_Text, highlightColor);
 				ImGui::Bullet();
 				ImGui::SameLine();
 				ImGui::TextUnformatted(step.label);
@@ -266,6 +295,39 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				"Tools menu at any time."
 			);
 			break;
+
+		case 1: { // Interface mode
+			ImGui::TextWrapped(
+				"Choose your preferred interface mode.\n\n"
+				"Desktop Mode provides a traditional menu bar with keyboard shortcuts, "
+				"suitable for mouse and keyboard.\n\n"
+				"Gaming Mode provides a simplified, controller-friendly interface with "
+				"large buttons and gamepad navigation, suitable for gamepads and touch "
+				"screens."
+			);
+			ImGui::Spacing();
+			ImGui::Spacing();
+
+			int sel = g_setupWiz.pendingUIMode;
+			if (sel < 0)
+				sel = (int)ATUIGetMode();
+			if (ImGui::RadioButton("Desktop Mode", sel == (int)ATUIMode::Desktop))
+				g_setupWiz.pendingUIMode = (int)ATUIMode::Desktop;
+			ImGui::TextDisabled("  Menu bar, keyboard shortcuts, mouse-driven");
+			ImGui::Spacing();
+
+			if (ImGui::RadioButton("Gaming Mode", sel == (int)ATUIMode::Gaming))
+				g_setupWiz.pendingUIMode = (int)ATUIMode::Gaming;
+			ImGui::TextDisabled("  Large buttons, gamepad/touch navigation");
+
+			ImGui::Spacing();
+			ImGui::Spacing();
+			ImGui::TextWrapped(
+				"You can switch between modes at any time from the View menu (Desktop) "
+				"or the hamburger menu (Gaming)."
+			);
+			break;
+		}
 
 		case 5: { // Appearance — theme and transparency
 			ImGui::TextWrapped(
@@ -501,6 +563,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				sim.LoadROMs();
 				sim.ColdReset();
 			}
+			ApplyPendingUIMode(window);
 			g_setupWiz.Reset();
 			state.showSetupWizard = false;
 		}
@@ -512,6 +575,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			sim.LoadROMs();
 			sim.ColdReset();
 		}
+		ApplyPendingUIMode(window);
 		g_setupWiz.Reset();
 		state.showSetupWizard = false;
 	}

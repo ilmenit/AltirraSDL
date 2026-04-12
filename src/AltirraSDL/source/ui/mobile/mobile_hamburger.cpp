@@ -38,6 +38,7 @@
 #include <at/ataudio/audiooutput.h>
 
 #include "mobile_internal.h"
+#include "ui_mode.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -264,6 +265,22 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		if (ImGui::Button("About", btnSize)) {
 			mobileState.currentScreen = ATMobileUIScreen::About;
 		}
+		ImGui::Spacing();
+
+#ifndef __ANDROID__
+		ImGui::Separator();
+		ImGui::Spacing();
+
+		if (ImGui::Button("Switch to Desktop Mode", btnSize)) {
+			ATUISetMode(ATUIMode::Desktop);
+			ATUISaveMode();
+			ATMobileUI_CloseMenu(sim, mobileState);
+			float cs = SDL_GetDisplayContentScale(SDL_GetDisplayForWindow(window));
+			if (cs < 1.0f) cs = 1.0f;
+			if (cs > 4.0f) cs = 4.0f;
+			ATUIApplyModeStyle(cs);
+		}
+#endif
 
 		ATTouchEndDragScroll();
 		ImGui::EndChild();

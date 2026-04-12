@@ -12,6 +12,7 @@
 #include <vd2/system/filesys.h>
 #include <vd2/system/unknown.h>
 #include <vd2/system/file.h>
+#include <vd2/system/zip.h>
 
 #include "ui_main.h"
 #include "ui_firmware_internal.h"
@@ -502,6 +503,47 @@ static void FirmwareScanFolderCallback(void *userdata, const char * const *filel
 
 // Execute firmware scan on main thread (called when folder dialog result arrives).
 // Non-static: also called from ui_mobile.cpp for mobile ROM folder selection.
+extern VDStringA ATGetConfigDir();
+
+static void TryRegisterFirmware(ATFirmwareManager *fwm,
+	const VDStringW &filePath, const vdfastvector<uint8> &data,
+	int &found, int &alreadyPresent)
+{
+	ATFirmwareInfo detInfo;
+	ATSpecificFirmwareType specType = kATSpecificFirmwareType_None;
+	sint32 knownIdx = -1;
+	ATFirmwareDetection det = ATFirmwareAutodetect(
+		data.data(), (uint32)data.size(), detInfo, specType, knownIdx);
+
+	if (det != ATFirmwareDetection::SpecificImage)
+		return;
+
+	uint64 fwId = ATGetFirmwareIdFromPath(filePath.c_str());
+	ATFirmwareInfo existing;
+	if (fwm->GetFirmwareInfo(fwId, existing)) {
+		++alreadyPresent;
+		return;
+	}
+
+	ATFirmwareInfo newFw;
+	newFw.mId = fwId;
+	newFw.mPath = filePath;
+	newFw.mType = detInfo.mType;
+	newFw.mName = detInfo.mName.empty()
+		? VDStringW(VDFileSplitPath(filePath.c_str()))
+		: detInfo.mName;
+	newFw.mFlags = 0;
+	newFw.mbVisible = true;
+	newFw.mbAutoselect = false;
+	fwm->AddFirmware(newFw);
+
+	if (specType != kATSpecificFirmwareType_None) {
+		if (!fwm->GetSpecificFirmware(specType))
+			fwm->SetSpecificFirmware(specType, fwId);
+	}
+	++found;
+}
+
 void ExecuteFirmwareScan(ATFirmwareManager *fwm, const VDStringW &scanDir) {
 	VDStringW pattern = scanDir;
 	if (!pattern.empty() && pattern.back() != L'/' && pattern.back() != L'\\')
@@ -513,22 +555,36 @@ void ExecuteFirmwareScan(ATFirmwareManager *fwm, const VDStringW &scanDir) {
 
 	int found = 0, alreadyPresent = 0;
 	try {
-		// First pass: collect candidate files
 		std::vector<VDStringW> candidates;
+		std::vector<VDStringW> zipFiles;
 		VDDirectoryIterator it(pattern.c_str());
 		while (it.Next()) {
 			progress.Update(0);
 			if (it.IsDirectory()) continue;
-			if (it.GetAttributes() & (kVDFileAttr_System | kVDFileAttr_Hidden)) continue;
+			if (it.GetAttributes() & (kVDFileAttr_System | kVDFileAttr_Hidden))
+				continue;
+
+			const wchar_t *ext = VDFileSplitExt(it.GetName());
+			if (ext && ext[0] == L'.'
+				&& (ext[1] == L'z' || ext[1] == L'Z')
+				&& (ext[2] == L'i' || ext[2] == L'I')
+				&& (ext[3] == L'p' || ext[3] == L'P')
+				&& ext[4] == 0)
+			{
+				zipFiles.push_back(it.GetFullPath());
+				continue;
+			}
 			if (!ATFirmwareAutodetectCheckSize(it.GetSize())) continue;
 			candidates.push_back(it.GetFullPath());
 		}
-		progress.Update(10);
+		progress.Update(5);
 
-		// Second pass: scan each file
-		const size_t n = candidates.size();
-		for (size_t i = 0; i < n; ++i) {
-			progress.Update((uint32)(10 + (i * 90) / n));
+		const size_t totalItems = candidates.size() + zipFiles.size();
+		size_t itemIdx = 0;
+
+		for (size_t i = 0; i < candidates.size(); ++i, ++itemIdx) {
+			if (totalItems > 0)
+				progress.Update((uint32)(5 + (itemIdx * 90) / totalItems));
 
 			const VDStringW &filePath = candidates[i];
 			vdfastvector<uint8> data;
@@ -541,39 +597,80 @@ void ExecuteFirmwareScan(ATFirmwareManager *fwm, const VDStringW &scanDir) {
 				f.close();
 			} catch (...) { continue; }
 
-			ATFirmwareInfo detInfo;
-			ATSpecificFirmwareType specType = kATSpecificFirmwareType_None;
-			sint32 knownIdx = -1;
-			ATFirmwareDetection det = ATFirmwareAutodetect(data.data(), (uint32)data.size(), detInfo, specType, knownIdx);
+			TryRegisterFirmware(fwm, filePath, data, found, alreadyPresent);
+		}
 
-			// Only accept SpecificImage matches (matches Windows ATUIScanForFirmware)
-			if (det == ATFirmwareDetection::SpecificImage) {
-				uint64 fwId = ATGetFirmwareIdFromPath(filePath.c_str());
-				// Check if already present
-				ATFirmwareInfo existing;
-				if (fwm->GetFirmwareInfo(fwId, existing)) {
-					++alreadyPresent;
-					continue;
-				}
-				ATFirmwareInfo newFw;
-				newFw.mId = fwId;
-				newFw.mPath = filePath;
-				newFw.mType = detInfo.mType;
-				newFw.mName = detInfo.mName.empty() ? VDStringW(VDFileSplitPath(filePath.c_str())) : detInfo.mName;
-				newFw.mFlags = 0;
-				newFw.mbVisible = true;
-				newFw.mbAutoselect = false;
-				fwm->AddFirmware(newFw);
+		if (!zipFiles.empty()) {
+			VDStringA cfgDir = ATGetConfigDir();
+			VDStringW fwDir = VDTextU8ToW(cfgDir);
+			if (!fwDir.empty() && fwDir.back() != L'/')
+				fwDir += L'/';
+			fwDir += L"firmware/";
 
-				if (specType != kATSpecificFirmwareType_None) {
-					if (!fwm->GetSpecificFirmware(specType))
-						fwm->SetSpecificFirmware(specType, fwId);
-				}
-				++found;
+			VDStringA fwDirU8 = VDTextWToU8(fwDir);
+			SDL_CreateDirectory(fwDirU8.c_str());
+
+			for (size_t zi = 0; zi < zipFiles.size(); ++zi, ++itemIdx) {
+				if (totalItems > 0)
+					progress.Update((uint32)(5 + (itemIdx * 90) / totalItems));
+
+				try {
+					VDFileStream fs(zipFiles[zi].c_str());
+					VDZipArchive zip;
+					zip.Init(&fs);
+
+					sint32 n = zip.GetFileCount();
+					for (sint32 j = 0; j < n; j++) {
+						const VDZipArchive::FileInfo &info = zip.GetFileInfo(j);
+						if (!info.mbSupported) continue;
+						if (!ATFirmwareAutodetectCheckSize(info.mUncompressedSize))
+							continue;
+
+						vdfastvector<uint8> data;
+						try {
+							bool raw = zip.ReadRawStream(j, data);
+							if (!raw)
+								zip.DecompressStream(j, data);
+						} catch (...) { continue; }
+
+						ATFirmwareInfo detInfo;
+						ATSpecificFirmwareType specType =
+							kATSpecificFirmwareType_None;
+						sint32 knownIdx = -1;
+						ATFirmwareDetection det = ATFirmwareAutodetect(
+							data.data(), (uint32)data.size(),
+							detInfo, specType, knownIdx);
+
+						if (det != ATFirmwareDetection::SpecificImage)
+							continue;
+
+						const wchar_t *leafName = VDFileSplitPath(
+							info.mDecodedFileName.c_str());
+						VDStringW extractPath = fwDir + leafName;
+
+						uint64 fwId = ATGetFirmwareIdFromPath(
+							extractPath.c_str());
+						ATFirmwareInfo existing;
+						if (fwm->GetFirmwareInfo(fwId, existing)) {
+							++alreadyPresent;
+							continue;
+						}
+
+						try {
+							VDFile out(extractPath.c_str(),
+								nsVDFile::kWrite | nsVDFile::kDenyAll
+								| nsVDFile::kCreateAlways);
+							out.write(data.data(), (long)data.size());
+							out.close();
+						} catch (...) { continue; }
+
+						TryRegisterFirmware(fwm, extractPath, data,
+							found, alreadyPresent);
+					}
+				} catch (...) { continue; }
 			}
 		}
 	} catch (const MyUserAbortError&) {
-		// User cancelled — show partial results
 	} catch (...) {}
 
 	progress.Shutdown();

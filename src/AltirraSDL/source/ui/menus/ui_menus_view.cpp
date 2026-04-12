@@ -20,6 +20,7 @@
 #include "uikeyboard.h"
 #include "accel_sdl3.h"
 #include "options.h"
+#include "ui_mode.h"
 
 extern ATSimulator g_sim;
 extern SDL_Window *g_pWindow;
@@ -300,5 +301,16 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 		if (ImGui::MenuItem("Deselect", ATUIGetShortcutStringForCommand("Edit.Deselect"), false, hasSelection))
 			ATUITextDeselect();
 		ImGui::EndMenu();
+	}
+
+	ImGui::Separator();
+
+	if (ImGui::MenuItem("Switch to Gaming Mode")) {
+		ATUISetMode(ATUIMode::Gaming);
+		ATUISaveMode();
+		float cs = SDL_GetDisplayContentScale(SDL_GetDisplayForWindow(window));
+		if (cs < 1.0f) cs = 1.0f;
+		if (cs > 4.0f) cs = 4.0f;
+		ATUIApplyModeStyle(cs);
 	}
 }

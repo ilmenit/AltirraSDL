@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <cwctype>
 #include <vector>
 #include <functional>
 #include <vd2/system/VDString.h>
@@ -49,6 +50,9 @@ extern bool s_fileBrowserNeedsRefresh;
 extern bool s_romFolderMode;
 extern VDStringW s_romDir;
 extern int s_romScanResult;
+
+extern VDStringW s_zipArchivePath;
+extern VDStringW s_zipInternalDir;
 
 extern int s_diskMountTargetDrive;
 extern bool s_mobileShowAllDrives;
@@ -93,6 +97,14 @@ extern ATFirmwareType s_fwPicker;
 void RefreshFileBrowser(const VDStringW &dir);
 void NavigateUp();
 void JumpToDirectory(const char *u8path);
+
+inline bool IsZipFile(const wchar_t *name) {
+	const wchar_t *ext = wcsrchr(name, L'.');
+	if (!ext) return false;
+	++ext;
+	return (std::towlower(ext[0]) == L'z' && std::towlower(ext[1]) == L'i'
+		&& std::towlower(ext[2]) == L'p' && ext[3] == 0);
+}
 
 // Persistence helpers (definitions in ui_mobile.cpp; promoted out of the
 // anonymous namespace because they are now called from per-screen TUs).

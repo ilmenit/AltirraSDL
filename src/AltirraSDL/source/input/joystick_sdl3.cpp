@@ -38,9 +38,8 @@
 #include "joystick_sdl3.h"
 #include "inputmanager.h"
 #include "logging.h"
-#ifdef ALTIRRA_MOBILE
 #include "mobile_gamepad.h"
-#endif
+#include "ui_mode.h"
 
 namespace {
 
@@ -500,13 +499,7 @@ IATJoystickManager::PollResult ATJoystickManagerSDL3Impl::Poll() {
 	if (mbCaptureMode || mControllers.empty())
 		return kPollResult_NoControllers;
 
-#ifdef ALTIRRA_MOBILE
-	// While the mobile UI owns the gamepad (drawer/dialog open),
-	// the player is navigating ImGui, not the emulated joystick.
-	// Drain SDL state into the per-controller "last" cache without
-	// dispatching deltas — this prevents stuck buttons or a sudden
-	// burst of fake input the moment the dialog closes.
-	if (ATMobileGamepad_IsUIOwning()) {
+	if (ATUIIsGamingMode() && ATMobileGamepad_IsUIOwning()) {
 		for (auto *ctrl : mControllers) {
 			if (ctrl->mUnit < 0)
 				continue;
@@ -531,7 +524,6 @@ IATJoystickManager::PollResult ATJoystickManagerSDL3Impl::Poll() {
 		}
 		return kPollResult_NoActivity;
 	}
-#endif
 
 	bool activity = false;
 	for (auto *ctrl : mControllers)
@@ -561,21 +553,10 @@ void ATJoystickManagerSDL3Impl::PollController(ATControllerSDL3& ctrl, bool& act
 	else
 		ReadRawJoystickState(ctrl, buttonStates, axisButtonStates, axisVals, deadVals);
 
-#ifdef ALTIRRA_MOBILE
-	// On mobile, the Start and Back buttons are reserved for the
-	// UI (cold-boot/pause and drawer toggle).  Mask them out of
-	// the per-controller button state so they can't fire as
-	// emulated 5200/joystick inputs even if the user has bound
-	// them in the input map.  Their remapped XInput indices are
-	// 7 (Start) and 6 (Back) — see kSdlGamepadButtonToXInput[].
-	if (ctrl.mbIsGamepad) {
+	if (ATUIIsGamingMode() && ctrl.mbIsGamepad) {
 		buttonStates &= ~((1u << 7) | (1u << 6));
-		// Match against the cached state too, otherwise a press
-		// while a dialog is open would be reported as released
-		// the moment the dialog closes.
 		ctrl.mLastButtons &= ~((1u << 7) | (1u << 6));
 	}
-#endif
 
 	// --- Report changes to ATInputManager ---
 

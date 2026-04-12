@@ -16,7 +16,9 @@
 #include <vd2/system/filesys.h>
 #include <vd2/system/registry.h>
 #include <vd2/system/error.h>
+#include <vd2/system/zip.h>
 #include <at/atcore/media.h>
+#include <at/atcore/vfs.h>
 #include <at/atio/image.h>
 
 #include "ui_mobile.h"
@@ -185,6 +187,12 @@ bool s_romFolderMode = false;
 VDStringW s_romDir;
 int s_romScanResult = -1;  // -1 = no scan yet, 0+ = number of ROMs found
 
+// Zip-as-folder browsing — when s_zipArchivePath is non-empty, the file
+// browser shows contents of that zip archive instead of the filesystem.
+// s_zipInternalDir is the current subdirectory within the zip (empty = root).
+VDStringW s_zipArchivePath;
+VDStringW s_zipInternalDir;
+
 // Disk-mount browser mode — when >= 0, picking a file in the browser
 // mounts it into the specified drive index instead of booting.
 // -1 means normal Load Game mode.
@@ -266,7 +274,78 @@ static bool IsSupportedExtension(const wchar_t *name) {
 	return false;
 }
 
+static void RefreshFileBrowserFromZip() {
+	s_fileBrowserEntries.clear();
+
+	try {
+		VDFileStream fs(s_zipArchivePath.c_str());
+		VDZipArchive zip;
+		zip.Init(&fs);
+
+		VDStringW prefix = s_zipInternalDir;
+		if (!prefix.empty() && prefix.back() != L'/')
+			prefix += L'/';
+
+		std::vector<VDStringW> seenDirs;
+		sint32 n = zip.GetFileCount();
+		for (sint32 i = 0; i < n; i++) {
+			const VDZipArchive::FileInfo &info = zip.GetFileInfo(i);
+			const VDStringW &rawName = info.mDecodedFileName;
+
+			if (rawName.length() <= prefix.length())
+				continue;
+			if (!prefix.empty() &&
+				wcsncmp(rawName.c_str(), prefix.c_str(), prefix.length()) != 0)
+				continue;
+
+			const wchar_t *remainder = rawName.c_str() + prefix.length();
+			const wchar_t *slash = wcschr(remainder, L'/');
+
+			if (slash) {
+				VDStringW dirName(remainder, (size_t)(slash - remainder));
+				bool already = false;
+				for (const auto &d : seenDirs) {
+					if (d == dirName) { already = true; break; }
+				}
+				if (!already) {
+					seenDirs.push_back(dirName);
+					FileBrowserEntry entry;
+					entry.name = dirName;
+					entry.fullPath = prefix + dirName;
+					entry.isDirectory = true;
+					s_fileBrowserEntries.push_back(std::move(entry));
+				}
+			} else {
+				if (*remainder == 0)
+					continue;
+				VDStringW fileName(remainder);
+				if (s_romFolderMode)
+					continue;
+				if (!IsSupportedExtension(fileName.c_str()))
+					continue;
+				FileBrowserEntry entry;
+				entry.name = fileName;
+				entry.fullPath = ATMakeVFSPathForZipFile(
+					s_zipArchivePath.c_str(), rawName.c_str());
+				entry.isDirectory = false;
+				s_fileBrowserEntries.push_back(std::move(entry));
+			}
+		}
+	} catch (...) {
+		s_zipArchivePath.clear();
+		s_zipInternalDir.clear();
+	}
+
+	std::sort(s_fileBrowserEntries.begin(), s_fileBrowserEntries.end());
+	s_fileBrowserNeedsRefresh = false;
+}
+
 void RefreshFileBrowser(const VDStringW &dir) {
+	if (!s_zipArchivePath.empty()) {
+		RefreshFileBrowserFromZip();
+		return;
+	}
+
 	s_fileBrowserEntries.clear();
 	s_fileBrowserDir = dir;
 
@@ -306,7 +385,6 @@ void RefreshFileBrowser(const VDStringW &dir) {
 			entry.isDirectory = false;
 		}
 
-		// In ROM folder mode, only show directories
 		if (ctx->romMode) {
 			if (entry.isDirectory)
 				ctx->entries->push_back(std::move(entry));
@@ -506,10 +584,16 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 	// First run: show welcome wizard on top of everything until the user
 	// picks ROMs or skips.  The wizard sets the flag itself.
+	// On desktop, the setup wizard may have already run (checking
+	// "ShownSetupWizard") — skip the mobile first-run in that case.
 	if (mobileState.currentScreen == ATMobileUIScreen::None
 		&& !IsFirstRunComplete())
 	{
-		mobileState.currentScreen = ATMobileUIScreen::FirstRunWizard;
+		VDRegistryAppKey appKey;
+		if (appKey.getBool("ShownSetupWizard", false))
+			SetFirstRunComplete();
+		else
+			mobileState.currentScreen = ATMobileUIScreen::FirstRunWizard;
 	}
 
 	// Check for menu button tap
