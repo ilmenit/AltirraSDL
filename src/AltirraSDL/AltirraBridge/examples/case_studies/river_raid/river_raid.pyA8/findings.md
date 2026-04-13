@@ -528,15 +528,20 @@ pass-through (jet2 should not destroy enemies by touching them).
    $77 and shifts PORTA accordingly, but the full two-player state save/restore
    hasn't been traced.
 
-2. **Exact score values**: The BCD score table at $BB0B is indexed by entity
-   type, but the exact point values per enemy haven't been fully decoded.
+2. **Exact score values**: The BCD score table at $BB0B is indexed NOT by
+   entity type but by the **sprite shape index** from `$050B[entity_slot]`.
+   Known: fuel station shape index $0F → $08 BCD (8 points per hit via
+   proximity probe). Confirmed by Altirra debugger execution trace
+   (2026-04-13).
 
 3. **Terrain PRNG algorithm**: The terrain generator uses $A5/$A6 as state
    but the exact algorithm (and whether the river pattern repeats) hasn't
    been fully reverse-engineered.
 
 4. **Extra life thresholds**: The threshold tracked at $6A triggers extra
-   lives but the exact score intervals haven't been confirmed.
+   lives when score_mid ($64) hundreds digit rolls over during BCD
+   addition. Extra life count capped at 9 (`cpy #$09; beq`). Trigger
+   sets `$7E = $40` (extra life display effect).
 
 5. ~~**M0 role**~~: **RESOLVED** — M0 is a fuel-depletion visual effect,
    dormant in normal play. See "DUO Implementation Discoveries" above.
@@ -546,9 +551,46 @@ pass-through (jet2 should not destroy enemies by touching them).
    M1 DMA bits. The exact HPOSM1 update path (via $5B/$5C) and its
    relationship to the fire timer ($7D) needs complete tracing.
 
-7. **Real visible lives counter**: The byte that decrements when a
-   life icon disappears on screen has not been located. $2A is a
-   death timer, not the visible count.
+7. ~~**Real visible lives counter**~~: **PARTIALLY RESOLVED** — `$2A` is
+   a death countdown timer. `play_score_sound` resets it to 0
+   (`stx $2A` with X=0). The game cycles: fuel depletes → fuel=0 →
+   `check_entity_collision` → `play_score_sound` → refuel $FE + reset
+   timer. Death triggers when the timer counts from 1→0 (every 8
+   frames). The visible lives display is driven by `update_lives_display`
+   ($B21A) which sets `fuel=$FF, lives_count=$FF`.
+
+### Collision system architecture (discovered 2026-04-13)
+
+Key architectural findings from the DUO port implementation:
+
+1. **Collision bytes $1A-$22 are ONLY consumed at fuel=0.** The DLI
+   populates them every frame, but the game's `check_entity_collision`
+   ($A3E9) only runs when `fuel_level` ($76) == 0. During normal play
+   (fuel > 0), these bytes are populated but never read. Fuel cycles
+   between $FE and 0 every ~254 frames (~5 seconds at PAL).
+
+2. **Fuel station entity type is $0F**, not $07. The entity type filter
+   in the $1C path (`cpy #$07; bcs`) has no upper bound — ALL types
+   >= $07 are valid targets. The score is looked up via
+   `score_value_table[$050B[entity_slot]]`, not by entity type directly.
+
+3. **`check_terrain_collision` ($B05C) and `process_collision_results`
+   ($B07C) are digit-rendering routines**, not collision processors.
+   They read BCD score bytes ($61-$65) and write character codes to
+   display memory ($1000+Y). The misleading names came from the
+   original reverse-engineering pass.
+
+4. **Frame execution order:** VBI (VCOUNT high) → main_frame_sync
+   (VCOUNT < $50) → frame_update → duo_per_frame → VCOUNT < $07
+   check → attract_wait (blocks until VCOUNT ≥ $50, i.e., AFTER
+   DLI) → state_dispatch → entity_dispatch → check_entity_collision.
+   The DLI fires during display (VCOUNT ~30), between duo_per_frame
+   and check_entity_collision.
+
+5. **`player_death` ($A688) is NOT triggered by enemy contact.** It is
+   only reached via the `lives_count` ($2A) timer countdown at
+   entities.asm:89-102. Normal enemy collision at fuel=0 goes through
+   `play_score_sound` which SCORES and REFUELS rather than killing.
 
 ## Status
 
@@ -558,4 +600,4 @@ pass-through (jet2 should not destroy enemies by touching them).
 - Phase 6: In progress (this document + notes)
 - Phase 7: Pending (MADS round-trip)
 - Phase 8: Pending (final hand-off)
-- **DUO port**: Phases 0-6 complete (see `/home/ilm/Documents/GitHub/river_raid_duo/`)
+- **DUO port**: Phases 0-7 (partial) complete (see `/home/ilm/Documents/GitHub/river_raid_duo/`)

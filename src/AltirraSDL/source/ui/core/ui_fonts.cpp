@@ -256,6 +256,13 @@ static const ImWchar *GetUIFontGlyphRanges() {
 		// not covered by Latin-1: ą ć ę ł ń ś ź ż ř š č etc.)
 		static const ImWchar kLatinExt[] = { 0x0100, 0x024F, 0 };
 		builder.AddRanges(kLatinExt);
+		// General Punctuation (en-dash, em-dash, smart quotes, ellipsis,
+		// bullet, trade/service marks) — common in game pack file names.
+		static const ImWchar kPunctuation[] = { 0x2000, 0x206F, 0 };
+		builder.AddRanges(kPunctuation);
+		// Letterlike Symbols (trademark ™ etc.)
+		static const ImWchar kLetterlike[] = { 0x2100, 0x214F, 0 };
+		builder.AddRanges(kLetterlike);
 		builder.BuildRanges(&ranges);
 	}
 	return ranges.Data;

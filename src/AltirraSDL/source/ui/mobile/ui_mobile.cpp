@@ -85,6 +85,11 @@ static void LoadMobileConfig(ATMobileUIState &mobileState) {
 	mobileState.interfaceScale = key.getInt("InterfaceScale", 1);
 	if (mobileState.interfaceScale < 0 || mobileState.interfaceScale > 2)
 		mobileState.interfaceScale = 1;
+#ifdef __ANDROID__
+	mobileState.showTouchControls = key.getBool("ShowTouchControls", true);
+#else
+	mobileState.showTouchControls = key.getBool("ShowTouchControls", false);
+#endif
 }
 
 void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobile_internal.h
@@ -106,6 +111,7 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobil
 		key.setInt("PerformancePreset", mobileState.performancePreset);
 		key.setInt("JoystickStyle", (int)mobileState.layoutConfig.joystickStyle);
 		key.setInt("InterfaceScale", mobileState.interfaceScale);
+		key.setBool("ShowTouchControls", mobileState.showTouchControls);
 	}
 	// Persist immediately — registry-only writes are lost if the user
 	// swipes the app away from recents before it backgrounds properly.
@@ -187,6 +193,11 @@ bool s_romFolderMode = false;
 VDStringW s_romDir;
 int s_romScanResult = -1;  // -1 = no scan yet, 0+ = number of ROMs found
 
+// Folder-picker mode — used by Game Library settings to select source folders
+bool s_folderPickerMode = false;
+std::function<void(const VDStringW &)> s_folderPickerCallback;
+ATMobileUIScreen s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
+
 // Zip-as-folder browsing — when s_zipArchivePath is non-empty, the file
 // browser shows contents of that zip archive instead of the filesystem.
 // s_zipInternalDir is the current subdirectory within the zip (empty = root).
@@ -198,6 +209,7 @@ VDStringW s_zipInternalDir;
 // -1 means normal Load Game mode.
 int s_diskMountTargetDrive = -1;
 bool s_mobileShowAllDrives = false;
+bool s_showAllFiles = false;
 
 // Generic modal info popup — every destructive / long-running action
 // in the mobile UI should give the user explicit feedback.  This is a
@@ -245,6 +257,7 @@ void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
 
 // Hierarchical settings — definition lives in mobile_internal.h.
 ATMobileSettingsPage s_settingsPage = ATMobileSettingsPage::Home;
+ATMobileUIScreen s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
 
 // Firmware slot currently being picked within the Firmware sub-page.
 // File scope so the header back button can close the picker.
@@ -263,7 +276,7 @@ static bool IsSupportedExtension(const wchar_t *name) {
 	static const wchar_t *kExtensions[] = {
 		L"xex", L"atr", L"car", L"bin", L"rom", L"cas",
 		L"dcm", L"atz", L"zip", L"gz", L"xfd", L"atx",
-		L"obx", L"com", L"exe",
+		L"obx", L"com", L"exe", L"pro", L"wav",
 		nullptr
 	};
 
@@ -321,7 +334,7 @@ static void RefreshFileBrowserFromZip() {
 				VDStringW fileName(remainder);
 				if (s_romFolderMode)
 					continue;
-				if (!IsSupportedExtension(fileName.c_str()))
+				if (!s_showAllFiles && !IsSupportedExtension(fileName.c_str()))
 					continue;
 				FileBrowserEntry entry;
 				entry.name = fileName;
@@ -389,7 +402,7 @@ void RefreshFileBrowser(const VDStringW &dir) {
 			if (entry.isDirectory)
 				ctx->entries->push_back(std::move(entry));
 		} else {
-			if (entry.isDirectory || IsSupportedExtension(entry.name.c_str()))
+			if (entry.isDirectory || s_showAllFiles || IsSupportedExtension(entry.name.c_str()))
 				ctx->entries->push_back(std::move(entry));
 		}
 
@@ -609,14 +622,18 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 	switch (mobileState.currentScreen) {
 	case ATMobileUIScreen::None:
-		// Render touch controls overlay — but hide them when the virtual
-		// keyboard is visible so they don't overlap the keyboard keys.
-		if (!uiState.showVirtualKeyboard)
-			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig);
+		// In gaming mode, None means "emulation active". If somehow
+		// we land here with no game loaded, redirect to the library.
+		if (!mobileState.gameLoaded) {
+			mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+			break;
+		}
 
-		// If no game loaded, show a styled centered "Load Game" button
-		if (!mobileState.gameLoaded)
-			RenderLoadGamePrompt(sim, uiState, mobileState);
+		// Render touch controls overlay — but hide them when the virtual
+		// keyboard is visible so they don't overlap the keyboard keys,
+		// or when the user has disabled them (default on desktop).
+		if (mobileState.showTouchControls && !uiState.showVirtualKeyboard)
+			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig);
 		break;
 
 	case ATMobileUIScreen::HamburgerMenu:
@@ -641,6 +658,10 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 	case ATMobileUIScreen::DiskManager:
 		RenderMobileDiskManager(sim, uiState, mobileState, window);
+		break;
+
+	case ATMobileUIScreen::GameBrowser:
+		RenderGameBrowser(sim, uiState, mobileState, window);
 		break;
 	}
 
@@ -717,6 +738,9 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 			// them from reaching touch controls (which are hidden).
 			return true;
 		}
+
+		if (!mobileState.showTouchControls)
+			return false;
 
 		bool consumed = ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig);
 		if (consumed && ev.type == SDL_EVENT_FINGER_DOWN)

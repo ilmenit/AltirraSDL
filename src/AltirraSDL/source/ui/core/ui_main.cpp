@@ -49,7 +49,9 @@
 #include "gtia.h"
 #include "cartridge.h"
 #include "cassette.h"
+#include "disk.h"
 #include "diskinterface.h"
+#include <at/atio/diskimage.h>
 #include "debugger.h"
 #include <algorithm>
 #include "videowriter.h"
@@ -397,8 +399,23 @@ void ATUIPollDeferredActions() {
 			}
 			case kATDeferred_AttachDisk: {
 				int idx = a.mInt;
-				if (idx >= 0 && idx < 15)
-					g_sim.GetDiskInterface(idx).LoadDisk(a.path.c_str());
+				if (idx >= 0 && idx < 15) {
+					ATDiskInterface& diskIf = g_sim.GetDiskInterface(idx);
+					ATDiskEmulator& disk = g_sim.GetDiskDrive(idx);
+					ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
+						? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
+					diskIf.LoadDisk(a.path.c_str());
+
+					IATDiskImage *img = diskIf.GetDiskImage();
+					if (img && !img->IsUpdatable())
+						wm = (ATMediaWriteMode)(wm & ~kATMediaWriteMode_AutoFlush);
+					diskIf.SetWriteMode(wm);
+
+					if (diskIf.GetClientCount() < 2)
+						disk.SetEnabled(true);
+
+					ATAddMRU(a.path.c_str());
+				}
 				break;
 			}
 			case kATDeferred_LoadState: {

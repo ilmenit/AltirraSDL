@@ -69,6 +69,18 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoBackground;
 
 	if (ImGui::Begin("##MobileAbout", nullptr, flags)) {
+		// ESC / B-button / Backspace returns to hamburger.
+		{
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back)
+				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+		}
+
 		float w = ImGui::GetContentRegionAvail().x;
 
 		ImGui::Dummy(ImVec2(0, dp(24.0f)));
@@ -403,7 +415,9 @@ void RenderLoadGamePrompt(ATSimulator &sim, ATUIState &uiState,
 {
 	ImGuiIO &io = ImGui::GetIO();
 
-	const char *hintAscii = "or tap the menu icon for more options";
+	const char *hintAscii = mobileState.showTouchControls
+		? "or tap the menu icon for more options"
+		: "press ESC or click Menu for more options";
 
 	// Pill dimensions — width adapts so the hint never clips, but
 	// always stays inside the display with a comfortable side margin.

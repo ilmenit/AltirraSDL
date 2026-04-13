@@ -19,7 +19,8 @@ enum class ATMobileUIScreen {
 	Settings,        // Full-screen settings panel
 	FirstRunWizard,  // First-boot firmware setup
 	About,           // Full-screen About panel
-	DiskManager      // Full-screen Disk Drive manager
+	DiskManager,     // Full-screen Disk Drive manager
+	GameBrowser      // Full-screen Game Library browser
 };
 
 struct ATMobileUIState {
@@ -79,6 +80,17 @@ struct ATMobileUIState {
 	// UI chrome on devices where headers and shortcut bars eat too
 	// much screen in landscape, or enlarge it for accessibility.
 	int interfaceScale = 1;
+
+	// --- On-screen touch controls ---
+	// When false the joystick, fire buttons, console keys, and
+	// hamburger icon drawn by ATTouchControls_Render are hidden.
+	// Default true on Android (primary input), false on desktop
+	// (keyboard/mouse/gamepad are the primary input).
+#ifdef __ANDROID__
+	bool showTouchControls = true;
+#else
+	bool showTouchControls = false;
+#endif
 };
 
 // Initialize mobile UI (call once at startup, after ImGui init)

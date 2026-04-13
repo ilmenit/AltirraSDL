@@ -2,6 +2,7 @@
 //	Verbatim move; helpers/state shared via mobile_internal.h.
 
 #include <stdafx.h>
+#include <ctime>
 #include <cwctype>
 #include <vector>
 #include <algorithm>
@@ -38,6 +39,7 @@
 #include <at/ataudio/audiooutput.h>
 
 #include "mobile_internal.h"
+#include "../gamelibrary/game_library.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -63,6 +65,28 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
 	if (ImGui::Begin("##MobileSettings", nullptr, flags)) {
+		// ESC / B-button / Backspace navigates back, same as "<" arrow.
+		// Skip when a modal dialog is on top (see mobile_hamburger.cpp).
+		if (!s_confirmActive && !s_infoModalOpen) {
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back) {
+				if (s_settingsPage == ATMobileSettingsPage::Firmware
+					&& s_fwPicker != kATFirmwareType_Unknown)
+				{
+					s_fwPicker = kATFirmwareType_Unknown;
+				} else if (s_settingsPage == ATMobileSettingsPage::Home) {
+					mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+				} else {
+					s_settingsPage = ATMobileSettingsPage::Home;
+				}
+			}
+		}
+
 		// Header — back arrow, title reflects current sub-page.
 		float headerH = dp(48.0f);
 		if (ImGui::Button("<", ImVec2(dp(48.0f), headerH))) {
@@ -71,7 +95,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			{
 				s_fwPicker = kATFirmwareType_Unknown;
 			} else if (s_settingsPage == ATMobileSettingsPage::Home) {
-				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+				mobileState.currentScreen = s_settingsReturnScreen;
 			} else {
 				s_settingsPage = ATMobileSettingsPage::Home;
 			}
@@ -87,6 +111,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		case ATMobileSettingsPage::Controls:    pageTitle = "Controls"; break;
 		case ATMobileSettingsPage::SaveState:   pageTitle = "Save State"; break;
 		case ATMobileSettingsPage::Firmware:    pageTitle = "Firmware"; break;
+		case ATMobileSettingsPage::GameLibrary: pageTitle = "Game Library"; break;
 		}
 		ImGui::Text("%s", pageTitle);
 
@@ -124,7 +149,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				VDStringA subtitle;
 				ATMobileSettingsPage target;
 			};
-			CatRow cats[7];
+			CatRow cats[8];
 			int n = 0;
 
 			cats[n++] = { "Machine",
@@ -146,10 +171,12 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				ATMobileSettingsPage::Performance };
 
 			cats[n++] = { "Controls",
-				VDStringA().sprintf("Size: %s  \xC2\xB7  Haptic: %s",
-					mobileState.layoutConfig.controlSize == ATTouchControlSize::Small  ? "Small"  :
-					mobileState.layoutConfig.controlSize == ATTouchControlSize::Large  ? "Large"  : "Medium",
-					mobileState.layoutConfig.hapticEnabled ? "on" : "off"),
+				mobileState.showTouchControls
+					? VDStringA().sprintf("Touch: on  \xC2\xB7  Size: %s  \xC2\xB7  Haptic: %s",
+						mobileState.layoutConfig.controlSize == ATTouchControlSize::Small  ? "Small"  :
+						mobileState.layoutConfig.controlSize == ATTouchControlSize::Large  ? "Large"  : "Medium",
+						mobileState.layoutConfig.hapticEnabled ? "on" : "off")
+					: VDStringA("Touch controls: off"),
 				ATMobileSettingsPage::Controls };
 
 			cats[n++] = { "Save State",
@@ -164,20 +191,51 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					: VDStringA().sprintf("%s", VDTextWToU8(s_romDir).c_str()),
 				ATMobileSettingsPage::Firmware };
 
+			{
+				ATGameLibrary *lib = GetGameLibrary();
+				int gameCount = lib ? (int)lib->GetEntryCount() : 0;
+				int sourceCount = lib ? (int)lib->GetSources().size() : 0;
+				cats[n++] = { "Game Library",
+					sourceCount > 0
+						? VDStringA().sprintf("%d games  \xC2\xB7  %d source%s",
+							gameCount, sourceCount,
+							sourceCount == 1 ? "" : "s")
+						: VDStringA("(no sources)"),
+					ATMobileSettingsPage::GameLibrary };
+			}
+
 			float rowH = dp(76.0f);
+			float rowGap = dp(10.0f);
 			for (int i = 0; i < n; ++i) {
 				ImGui::PushID(i);
 				ImVec2 cursor = ImGui::GetCursorScreenPos();
 				float availW = ImGui::GetContentRegionAvail().x;
 				ImDrawList *dl = ImGui::GetWindowDrawList();
-				dl->AddRectFilled(cursor,
-					ImVec2(cursor.x + availW, cursor.y + rowH),
-					IM_COL32(30, 35, 50, 200), dp(10.0f));
 
-				if (ImGui::InvisibleButton("##cat",
+				ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0, 0, 0, 0));
+				ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+				ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0, 0, 0, 0));
+				if (ImGui::Selectable("##cat",  false,
+					ImGuiSelectableFlags_None,
 					ImVec2(availW, rowH)))
 				{
 					s_settingsPage = cats[i].target;
+				}
+				ImGui::PopStyleColor(3);
+
+				bool itemHovered = ImGui::IsItemHovered();
+				bool itemFocused = ImGui::IsItemFocused();
+				ImU32 bgColor = (itemHovered || itemFocused)
+					? IM_COL32(50, 65, 100, 220)
+					: IM_COL32(30, 35, 50, 200);
+				dl->AddRectFilled(cursor,
+					ImVec2(cursor.x + availW, cursor.y + rowH),
+					bgColor, dp(10.0f));
+				if (itemFocused) {
+					dl->AddRect(cursor,
+						ImVec2(cursor.x + availW, cursor.y + rowH),
+						IM_COL32(100, 180, 255, 200), dp(10.0f),
+						0, dp(2.0f));
 				}
 
 				ImVec2 tcur(cursor.x + dp(16.0f), cursor.y + dp(12.0f));
@@ -192,7 +250,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					cursor.y + rowH * 0.5f - dp(8.0f));
 				dl->AddText(chev, IM_COL32(160, 175, 200, 255), ">");
 
-				ImGui::Dummy(ImVec2(0, dp(10.0f)));
+				ImGui::Dummy(ImVec2(0, rowGap));
 				ImGui::PopID();
 			}
 
@@ -321,6 +379,15 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		if (s_settingsPage == ATMobileSettingsPage::Controls) {
 		ATTouchSection("Controls");
 
+		// Show on-screen touch controls (joystick, fire, console keys)
+		if (ATTouchToggle("Show Touch Controls", &mobileState.showTouchControls)) {
+			SaveMobileConfig(mobileState);
+		}
+
+		// Dependent controls — only meaningful when touch controls are visible
+		if (!mobileState.showTouchControls)
+			ImGui::BeginDisabled();
+
 		// Joystick style
 		{
 			int js = (int)mobileState.layoutConfig.joystickStyle;
@@ -355,6 +422,9 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			SaveMobileConfig(mobileState);
 			ATTouchControls_SetHapticEnabled(mobileState.layoutConfig.hapticEnabled);
 		}
+
+		if (!mobileState.showTouchControls)
+			ImGui::EndDisabled();
 		} // end Controls page
 
 		// --- Sub-page: Save State ---
@@ -544,6 +614,301 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		// --- Sub-page: Firmware (extracted to mobile_settings_firmware.cpp) ---
 		if (s_settingsPage == ATMobileSettingsPage::Firmware) {
 			RenderSettingsPage_Firmware(mobileState);
+		}
+
+		// --- Sub-page: Game Library ---
+		if (s_settingsPage == ATMobileSettingsPage::GameLibrary) {
+			ATGameLibrary *lib = GetGameLibrary();
+			if (!lib) {
+				GameBrowser_Init();
+				lib = GetGameLibrary();
+			}
+
+			ATTouchSection("Game Folders");
+
+			if (lib) {
+				auto sources = lib->GetSources();
+				for (int i = 0; i < (int)sources.size(); ++i) {
+					if (sources[i].mbIsArchive)
+						continue;
+
+					ImGui::PushID(i);
+					VDStringA pathU8 = VDTextWToU8(sources[i].mPath);
+					float rowH = dp(44.0f);
+					ImVec2 cursor = ImGui::GetCursorScreenPos();
+					float availW = ImGui::GetContentRegionAvail().x;
+					float removeW = dp(40.0f);
+
+					ImGui::PushClipRect(ImVec2(cursor.x, cursor.y),
+						ImVec2(cursor.x + availW - removeW - dp(4.0f),
+							cursor.y + rowH), true);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY()
+						+ (rowH - ImGui::GetTextLineHeight()) * 0.5f);
+					ImGui::TextUnformatted(pathU8.c_str());
+					ImGui::PopClipRect();
+
+					ImGui::SameLine(availW - removeW);
+					float btnY = cursor.y + (rowH - dp(32.0f)) * 0.5f
+						- ImGui::GetCursorScreenPos().y + ImGui::GetCursorPosY();
+					ImGui::SetCursorPosY(btnY);
+					if (ImGui::Button("X##rm", ImVec2(dp(32.0f), dp(32.0f)))) {
+						sources.erase(sources.begin() + i);
+						lib->SetSources(sources);
+						lib->PurgeRemovedSourceEntries();
+						lib->SaveSettingsToRegistry();
+						lib->StartScan();
+						extern void GameBrowser_Invalidate();
+						GameBrowser_Invalidate();
+						extern void ATRegistryFlushToDisk();
+						ATRegistryFlushToDisk();
+						ImGui::PopID();
+						break;
+					}
+
+					ImGui::SetCursorPosY(cursor.y - ImGui::GetWindowPos().y
+						+ ImGui::GetScrollY() + rowH);
+					ImGui::PopID();
+				}
+			}
+
+			if (ImGui::Button("+ Add Folder", ImVec2(-1, dp(44.0f)))) {
+				s_folderPickerMode = true;
+				s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
+				s_folderPickerCallback = [](const VDStringW &path) {
+					ATGameLibrary *lib = GetGameLibrary();
+					if (!lib) return;
+					auto sources = lib->GetSources();
+					GameSource src;
+					src.mPath = path;
+					src.mbIsArchive = false;
+					sources.push_back(std::move(src));
+					lib->SetSources(std::move(sources));
+					lib->SaveSettingsToRegistry();
+					lib->StartScan();
+					extern void ATRegistryFlushToDisk();
+					ATRegistryFlushToDisk();
+				};
+				s_settingsPage = ATMobileSettingsPage::GameLibrary;
+				s_fileBrowserNeedsRefresh = true;
+				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
+			}
+
+			ImGui::Spacing();
+			ATTouchSection("Game Archives");
+
+			if (lib) {
+				auto sources = lib->GetSources();
+				for (int i = 0; i < (int)sources.size(); ++i) {
+					if (!sources[i].mbIsArchive)
+						continue;
+
+					ImGui::PushID(1000 + i);
+					VDStringA pathU8 = VDTextWToU8(sources[i].mPath);
+					float rowH = dp(44.0f);
+					ImVec2 cursor = ImGui::GetCursorScreenPos();
+					float availW = ImGui::GetContentRegionAvail().x;
+					float removeW = dp(40.0f);
+
+					ImGui::PushClipRect(ImVec2(cursor.x, cursor.y),
+						ImVec2(cursor.x + availW - removeW - dp(4.0f),
+							cursor.y + rowH), true);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY()
+						+ (rowH - ImGui::GetTextLineHeight()) * 0.5f);
+					ImGui::TextUnformatted(pathU8.c_str());
+					ImGui::PopClipRect();
+
+					ImGui::SameLine(availW - removeW);
+					float btnY = cursor.y + (rowH - dp(32.0f)) * 0.5f
+						- ImGui::GetCursorScreenPos().y + ImGui::GetCursorPosY();
+					ImGui::SetCursorPosY(btnY);
+					if (ImGui::Button("X##rm", ImVec2(dp(32.0f), dp(32.0f)))) {
+						sources.erase(sources.begin() + i);
+						lib->SetSources(sources);
+						lib->PurgeRemovedSourceEntries();
+						lib->SaveSettingsToRegistry();
+						lib->StartScan();
+						extern void GameBrowser_Invalidate();
+						GameBrowser_Invalidate();
+						extern void ATRegistryFlushToDisk();
+						ATRegistryFlushToDisk();
+						ImGui::PopID();
+						break;
+					}
+
+					ImGui::SetCursorPosY(cursor.y - ImGui::GetWindowPos().y
+						+ ImGui::GetScrollY() + rowH);
+					ImGui::PopID();
+				}
+			}
+
+			if (ImGui::Button("+ Add Archive (ZIP)", ImVec2(-1, dp(44.0f)))) {
+				s_folderPickerMode = true;
+				s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
+				s_folderPickerCallback = [](const VDStringW &path) {
+					// The user selected a folder — scan it for .zip files
+					// and add each as an archive source. If the folder
+					// itself is selected, it contains the archives.
+					ATGameLibrary *lib = GetGameLibrary();
+					if (!lib) return;
+
+					// Walk the selected folder for .zip/.gz/.atz files
+					VDStringA dirU8 = VDTextWToU8(path);
+					struct Ctx {
+						VDStringW baseDir;
+						std::vector<GameSource> newSources;
+					} ctx;
+					ctx.baseDir = path;
+					if (!ctx.baseDir.empty() && ctx.baseDir.back() != L'/')
+						ctx.baseDir += L'/';
+
+					SDL_EnumerateDirectory(dirU8.c_str(),
+						[](void *ud, const char *dirname, const char *fname)
+							-> SDL_EnumerationResult
+						{
+							auto *ctx = (Ctx *)ud;
+							VDStringW wname = VDTextU8ToW(VDStringA(fname));
+							VDStringW fullPath = ctx->baseDir + wname;
+							if (IsSupportedGameExtension(wname.c_str())) {
+								const wchar_t *ext = wcsrchr(wname.c_str(), L'.');
+								if (ext) {
+									ext++;
+									VDStringW e;
+									for (const wchar_t *p = ext; *p; ++p)
+										e += (wchar_t)std::towlower(*p);
+									if (e == L"zip" || e == L"gz"
+										|| e == L"atz" || e == L"arc")
+									{
+										GameSource src;
+										src.mPath = fullPath;
+										src.mbIsArchive = true;
+										ctx->newSources.push_back(
+											std::move(src));
+									}
+								}
+							}
+							return SDL_ENUM_CONTINUE;
+						}, &ctx);
+
+					if (!ctx.newSources.empty()) {
+						auto sources = lib->GetSources();
+						for (auto &ns : ctx.newSources)
+							sources.push_back(std::move(ns));
+						lib->SetSources(std::move(sources));
+						lib->SaveSettingsToRegistry();
+						lib->StartScan();
+						extern void ATRegistryFlushToDisk();
+						ATRegistryFlushToDisk();
+					}
+				};
+				s_settingsPage = ATMobileSettingsPage::GameLibrary;
+				s_fileBrowserNeedsRefresh = true;
+				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
+			}
+
+			ImGui::Spacing();
+			ImGui::Spacing();
+			ATTouchSection("Options");
+
+			if (lib) {
+				GameLibrarySettings settings = lib->GetSettings();
+				bool changed = false;
+
+				if (ATTouchToggle("Scan subfolders recursively",
+					&settings.mbRecursive))
+					changed = true;
+
+				if (ATTouchToggle("Match game-art from other folders",
+					&settings.mbCrossFolderArt))
+					changed = true;
+
+				{
+					static const char *sizes[] = { "Small", "Medium", "Large" };
+					if (ATTouchSegmented("Grid tile size",
+						&settings.mGridSize, sizes, 3))
+						changed = true;
+				}
+
+				{
+					static const char *sizes[] = { "Compact", "Medium", "Large" };
+					if (ATTouchSegmented("List row size",
+						&settings.mListSize, sizes, 3))
+						changed = true;
+				}
+
+				if (changed) {
+					lib->SetSettings(settings);
+					lib->SaveSettingsToRegistry();
+					extern void ATRegistryFlushToDisk();
+					ATRegistryFlushToDisk();
+				}
+			}
+
+			ImGui::Spacing();
+			ImGui::Spacing();
+			ATTouchSection("Library");
+
+			if (lib) {
+				ImGui::Text("Games found: %d",
+					(int)lib->GetEntryCount());
+
+				if (lib->GetLastScanTime() > 0) {
+					uint64_t ago = (uint64_t)std::time(nullptr)
+						- lib->GetLastScanTime();
+					if (ago < 60)
+						ImGui::Text("Last scan: just now");
+					else if (ago < 3600)
+						ImGui::Text("Last scan: %d min ago",
+							(int)(ago / 60));
+					else
+						ImGui::Text("Last scan: %d hours ago",
+							(int)(ago / 3600));
+				}
+
+				ImGui::Spacing();
+
+				if (lib->IsScanning()) {
+					ImGui::BeginDisabled();
+					ImGui::Button("Scanning...",
+						ImVec2(-1, dp(44.0f)));
+					ImGui::EndDisabled();
+				} else {
+					if (ImGui::Button("Rescan Now",
+						ImVec2(-1, dp(44.0f))))
+					{
+						lib->StartScan();
+					}
+				}
+
+				ImGui::Spacing();
+				if (ImGui::Button("Clear Play History",
+					ImVec2(-1, dp(44.0f))))
+				{
+					lib->ClearHistory();
+					GameBrowser_Invalidate();
+				}
+
+				ImGui::Spacing();
+				if (ImGui::Button("Clear Entire Library",
+					ImVec2(-1, dp(44.0f))))
+				{
+					ShowConfirmDialog(
+						"Clear Library",
+						"Remove all game sources and cached data?  "
+						"This does not delete your game files.",
+						[&mobileState]() {
+							ATGameLibrary *lib = GetGameLibrary();
+							if (!lib) return;
+							lib->SetSources({});
+							lib->GetEntries().clear();
+							lib->SaveSettingsToRegistry();
+							lib->SaveCache();
+							extern void GameBrowser_Invalidate();
+							GameBrowser_Invalidate();
+							extern void ATRegistryFlushToDisk();
+							ATRegistryFlushToDisk();
+						});
+				}
+			}
 		}
 
 		// Bottom padding so the last row isn't flush against the nav bar

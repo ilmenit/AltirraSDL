@@ -71,25 +71,25 @@ bool ATMobileGamepad_HandleEvent(const SDL_Event &ev,
 	}
 
 	if (btn == SDL_GAMEPAD_BUTTON_BACK) {
-		// Back: toggle the hamburger drawer.  When opening, leave
-		// the standard ImGui nav focus on the first item (the
-		// backend will set it on the next frame because we
-		// transitioned a window from closed to open).
 		if (mobileState.currentScreen == ATMobileUIScreen::None) {
-			ATMobileUI_OpenMenu(sim, mobileState);
-			// Engage gating immediately so the very next
-			// joystick Poll() (which may run before the next
-			// ATMobileUI_Render call) does NOT dispatch any
-			// held buttons as game input.
-			s_uiOwning = true;
+			if (mobileState.gameLoaded) {
+				ATMobileUI_OpenMenu(sim, mobileState);
+				s_uiOwning = true;
+			} else {
+				mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+				s_uiOwning = true;
+			}
 		} else if (mobileState.currentScreen == ATMobileUIScreen::HamburgerMenu) {
 			ATMobileUI_CloseMenu(sim, mobileState);
 			s_uiOwning = false;
+		} else if (mobileState.currentScreen == ATMobileUIScreen::GameBrowser) {
+			if (mobileState.gameLoaded) {
+				mobileState.currentScreen = ATMobileUIScreen::None;
+				sim.Resume();
+				s_uiOwning = false;
+			}
 		} else {
-			// Some other screen is open — back out to the
-			// hamburger drawer rather than all the way to the
-			// emulator, matching the on-screen back-arrow.
-			mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+			ATMobileUI_OpenMenu(sim, mobileState);
 		}
 		return true;
 	}

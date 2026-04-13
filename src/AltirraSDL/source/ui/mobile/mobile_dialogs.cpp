@@ -96,6 +96,24 @@ void RenderMobileModalSheet(const ATMobileUIState &mobileState) {
 	ImGui::Separator();
 	ImGui::Dummy(ImVec2(0, dp(8.0f)));
 
+	// ESC / B-button dismisses the modal (Cancel for confirm, OK for info).
+	{
+		bool dismiss = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+		if (!ImGui::IsAnyItemActive()) {
+			dismiss = dismiss
+				|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+		}
+		if (dismiss) {
+			if (haveConfirm) {
+				s_confirmActive = false;
+				s_confirmAction = nullptr;
+			} else {
+				s_infoModalOpen = false;
+			}
+		}
+	}
+
 	float btnH = dp(56.0f);
 	float rowW = ImGui::GetContentRegionAvail().x;
 	if (haveConfirm) {
