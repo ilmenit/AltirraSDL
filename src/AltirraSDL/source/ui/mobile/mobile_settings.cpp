@@ -95,7 +95,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			{
 				s_fwPicker = kATFirmwareType_Unknown;
 			} else if (s_settingsPage == ATMobileSettingsPage::Home) {
-				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+				mobileState.currentScreen = s_settingsReturnScreen;
 			} else {
 				s_settingsPage = ATMobileSettingsPage::Home;
 			}
@@ -205,17 +205,23 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 
 			float rowH = dp(76.0f);
+			float rowGap = dp(10.0f);
 			for (int i = 0; i < n; ++i) {
 				ImGui::PushID(i);
 				ImVec2 cursor = ImGui::GetCursorScreenPos();
 				float availW = ImGui::GetContentRegionAvail().x;
 				ImDrawList *dl = ImGui::GetWindowDrawList();
 
-				if (ImGui::InvisibleButton("##cat",
+				ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0, 0, 0, 0));
+				ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+				ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0, 0, 0, 0));
+				if (ImGui::Selectable("##cat",  false,
+					ImGuiSelectableFlags_None,
 					ImVec2(availW, rowH)))
 				{
 					s_settingsPage = cats[i].target;
 				}
+				ImGui::PopStyleColor(3);
 
 				bool itemHovered = ImGui::IsItemHovered();
 				bool itemFocused = ImGui::IsItemFocused();
@@ -244,7 +250,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					cursor.y + rowH * 0.5f - dp(8.0f));
 				dl->AddText(chev, IM_COL32(160, 175, 200, 255), ">");
 
-				ImGui::Dummy(ImVec2(0, dp(10.0f)));
+				ImGui::Dummy(ImVec2(0, rowGap));
 				ImGui::PopID();
 			}
 
@@ -815,9 +821,19 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					&settings.mbCrossFolderArt))
 					changed = true;
 
-				if (ATTouchToggle("Show Game Browser on startup",
-					&settings.mbShowOnStartup))
-					changed = true;
+				{
+					static const char *sizes[] = { "Small", "Medium", "Large" };
+					if (ATTouchSegmented("Grid tile size",
+						&settings.mGridSize, sizes, 3))
+						changed = true;
+				}
+
+				{
+					static const char *sizes[] = { "Compact", "Medium", "Large" };
+					if (ATTouchSegmented("List row size",
+						&settings.mListSize, sizes, 3))
+						changed = true;
+				}
 
 				if (changed) {
 					lib->SetSettings(settings);
@@ -869,6 +885,28 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				{
 					lib->ClearHistory();
 					GameBrowser_Invalidate();
+				}
+
+				ImGui::Spacing();
+				if (ImGui::Button("Clear Entire Library",
+					ImVec2(-1, dp(44.0f))))
+				{
+					ShowConfirmDialog(
+						"Clear Library",
+						"Remove all game sources and cached data?  "
+						"This does not delete your game files.",
+						[&mobileState]() {
+							ATGameLibrary *lib = GetGameLibrary();
+							if (!lib) return;
+							lib->SetSources({});
+							lib->GetEntries().clear();
+							lib->SaveSettingsToRegistry();
+							lib->SaveCache();
+							extern void GameBrowser_Invalidate();
+							GameBrowser_Invalidate();
+							extern void ATRegistryFlushToDisk();
+							ATRegistryFlushToDisk();
+						});
 				}
 			}
 		}

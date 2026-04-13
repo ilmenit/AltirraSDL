@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
@@ -15,12 +16,17 @@
 #include "touch_widgets.h"
 #include "simulator.h"
 #include "mobile_internal.h"
+#include "constants.h"
+#include "cpu.h"
+#include "versioninfo.h"
+#include "settings.h"
 
 #include "../gamelibrary/game_library.h"
 #include "../gamelibrary/game_library_art.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
+extern void ATRegistryFlushToDisk();
 
 static ATGameLibrary *s_gameLibrary = nullptr;
 static GameArtCache *s_artCache = nullptr;
@@ -28,10 +34,26 @@ static bool s_needsRefresh = true;
 static VDStringA s_searchFilter;
 static bool s_searchActive = false;
 static char s_searchBuf[128] = {};
+static bool s_searchCursorToEnd = false;
+
+static int SearchInputCallback(ImGuiInputTextCallbackData *data) {
+	if (s_searchCursorToEnd) {
+		data->CursorPos = data->BufTextLen;
+		data->SelectionStart = data->SelectionEnd = data->BufTextLen;
+		s_searchCursorToEnd = false;
+	}
+	return 0;
+}
 
 // Indices into the library's entries, filtered and sorted for display
 static std::vector<size_t> s_lastPlayedIndices;
 static std::vector<size_t> s_allGamesIndices;
+
+// Letter filter bar: which letters have games (A-Z=0..25, non-alpha=26)
+static bool s_availableLetters[27] = {};
+static int  s_letterFilterIdx = -1;  // -1 = no letter filter active
+
+static void ComputeAvailableLetters();
 
 void GameBrowser_Init() {
 	if (s_gameLibrary)
@@ -41,6 +63,7 @@ void GameBrowser_Init() {
 	s_gameLibrary->SetConfigDir(ATGetConfigDir());
 	s_gameLibrary->LoadSettingsFromRegistry();
 	s_gameLibrary->LoadCache();
+	ComputeAvailableLetters();
 	s_gameLibrary->StartScan();
 	s_needsRefresh = true;
 
@@ -72,6 +95,29 @@ void GameBrowser_Invalidate() {
 	s_needsRefresh = true;
 }
 
+static void ComputeAvailableLetters() {
+	memset(s_availableLetters, 0, sizeof(s_availableLetters));
+	if (!s_gameLibrary) return;
+	for (const auto &entry : s_gameLibrary->GetEntries()) {
+		if (entry.mDisplayName.empty()) continue;
+		wchar_t c = entry.mDisplayName[0];
+		if (c >= L'A' && c <= L'Z')
+			s_availableLetters[c - L'A'] = true;
+		else if (c >= L'a' && c <= L'z')
+			s_availableLetters[c - L'a'] = true;
+		else
+			s_availableLetters[26] = true;
+	}
+}
+
+static int LetterIdxOfEntry(const GameEntry &entry) {
+	if (entry.mDisplayName.empty()) return -1;
+	wchar_t c = entry.mDisplayName[0];
+	if (c >= L'A' && c <= L'Z') return c - L'A';
+	if (c >= L'a' && c <= L'z') return c - L'a';
+	return 26;
+}
+
 static void RebuildFilteredIndices() {
 	if (!s_gameLibrary)
 		return;
@@ -87,8 +133,11 @@ static void RebuildFilteredIndices() {
 	for (size_t i = 0; i < entries.size(); ++i) {
 		const auto &entry = entries[i];
 
-		// Apply search filter
-		if (!filterLower.empty()) {
+		// Apply letter prefix filter (exclusive with search)
+		if (s_letterFilterIdx >= 0) {
+			if (LetterIdxOfEntry(entry) != s_letterFilterIdx)
+				continue;
+		} else if (!filterLower.empty()) {
 			VDStringA nameU8 = VDTextWToU8(entry.mDisplayName);
 			VDStringA nameLower;
 			for (size_t j = 0; j < nameU8.size(); ++j)
@@ -169,8 +218,7 @@ static const char *RelativeTimeStr(uint64_t timestamp) {
 	return buf;
 }
 
-// Letter picker overlay (gamepad X button)
-static bool s_letterPickerOpen = false;
+// (Letter picker replaced by inline letter filter bar)
 
 // Variant picker popup
 static bool s_variantPickerOpen = false;
@@ -196,7 +244,7 @@ static void LaunchGame(ATSimulator &sim, ATMobileUIState &mobileState,
 	mobileState.gameLoaded = true;
 	mobileState.currentScreen = ATMobileUIScreen::None;
 	s_gameLibrary->RecordPlay(entryIndex);
-	s_letterPickerOpen = false;
+	s_letterFilterIdx = -1;
 	s_variantPickerOpen = false;
 	s_needsRefresh = true;
 	sim.Resume();
@@ -272,78 +320,54 @@ static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) 
 	ImGui::End();
 }
 
-static void JumpToLetter(char letter) {
-	s_searchActive = true;
-	s_searchBuf[0] = letter;
-	s_searchBuf[1] = '\0';
-	s_searchFilter = s_searchBuf;
-	s_needsRefresh = true;
-}
+static VDStringA BuildHardwareInfoStr(ATSimulator &sim) {
+	VDStringA info;
+	auto append = [&](const char *s) {
+		if (!info.empty()) info += " / ";
+		info += s;
+	};
 
-static void RenderLetterPicker() {
-	if (!s_letterPickerOpen)
-		return;
-
-	ImGuiIO &io = ImGui::GetIO();
-	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-
-	const int cols = 7;
-	const int totalLetters = 27;  // A-Z + #
-	const int rows = (totalLetters + cols - 1) / cols;
-
-	float btnSize = dp(56.0f);
-	float pad = dp(4.0f);
-	float gridW = cols * (btnSize + pad) - pad + dp(32.0f);
-	float gridH = rows * (btnSize + pad) - pad + dp(80.0f);
-
-	ImGui::SetNextWindowSize(ImVec2(gridW, gridH), ImGuiCond_Always);
-	ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-
-	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
-		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
-		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings
-		| ImGuiWindowFlags_NoScrollbar;
-
-	if (ImGui::Begin("##LetterPicker", &s_letterPickerOpen, flags)) {
-		ImGui::TextUnformatted("Jump to Letter");
-		ImGui::Spacing();
-
-		for (int i = 0; i < totalLetters; ++i) {
-			if (i % cols != 0)
-				ImGui::SameLine(0, pad);
-
-			char label[4];
-			char letter;
-			if (i < 26) {
-				letter = 'a' + i;
-				label[0] = 'A' + i;
-				label[1] = '\0';
-			} else {
-				letter = '#';
-				label[0] = '#';
-				label[1] = '\0';
-			}
-
-			if (ImGui::Button(label, ImVec2(btnSize, btnSize))) {
-				if (letter == '#') {
-					s_searchActive = true;
-					s_searchBuf[0] = '\0';
-					s_searchFilter.clear();
-					s_needsRefresh = true;
-				} else {
-					JumpToLetter(letter);
-				}
-				s_letterPickerOpen = false;
-			}
-			if (i == 0)
-				ImGui::SetItemDefaultFocus();
-		}
-
-		ImGui::Spacing();
-		if (ImGui::Button("Cancel", ImVec2(-1, dp(40.0f))))
-			s_letterPickerOpen = false;
+	switch (sim.GetHardwareMode()) {
+	case kATHardwareMode_800:    append("800");    break;
+	case kATHardwareMode_800XL:  append("XL");     break;
+	case kATHardwareMode_130XE:  append("XE");     break;
+	case kATHardwareMode_1200XL: append("1200XL"); break;
+	case kATHardwareMode_XEGS:   append("XEGS");   break;
+	case kATHardwareMode_5200:   append("5200");   break;
+	default: break;
 	}
-	ImGui::End();
+	switch (sim.GetVideoStandard()) {
+	case kATVideoStandard_NTSC:   append("NTSC");    break;
+	case kATVideoStandard_PAL:    append("PAL");     break;
+	case kATVideoStandard_SECAM:  append("SECAM");   break;
+	case kATVideoStandard_NTSC50: append("NTSC-50"); break;
+	case kATVideoStandard_PAL60:  append("PAL-60");  break;
+	default: break;
+	}
+	switch (sim.GetMemoryMode()) {
+	case kATMemoryMode_8K:     append("8K");     break;
+	case kATMemoryMode_16K:    append("16K");    break;
+	case kATMemoryMode_24K:    append("24K");    break;
+	case kATMemoryMode_32K:    append("32K");    break;
+	case kATMemoryMode_40K:    append("40K");    break;
+	case kATMemoryMode_48K:    append("48K");    break;
+	case kATMemoryMode_52K:    append("52K");    break;
+	case kATMemoryMode_64K:    append("64K");    break;
+	case kATMemoryMode_128K:   append("128K");   break;
+	case kATMemoryMode_256K:   append("256K Rambo"); break;
+	case kATMemoryMode_320K:   append("320K Rambo"); break;
+	case kATMemoryMode_320K_Compy: append("320K Compy"); break;
+	case kATMemoryMode_576K:   append("576K");   break;
+	case kATMemoryMode_576K_Compy: append("576K Compy"); break;
+	case kATMemoryMode_1088K:  append("1088K");  break;
+	default: break;
+	}
+	if (sim.IsUltimate1MBEnabled()) append("U1MB");
+	if (sim.GetVBXE())              append("VBXE");
+	if (sim.IsRapidusEnabled())     append("Rapidus");
+	if (sim.IsBASICEnabled())       append("BASIC");
+
+	return info;
 }
 
 static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
@@ -365,13 +389,18 @@ static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
 	float imageH = tileW * 0.75f;
 	float totalH = tileH;
 
-	char btnId[256];
-	snprintf(btnId, sizeof(btnId), "##tile_%s", nameU8.c_str());
+	char btnId[32];
+	snprintf(btnId, sizeof(btnId), "##tile_%zu", entryIndex);
 
 	ImVec2 cursor = ImGui::GetCursorScreenPos();
 	ImDrawList *dl = ImGui::GetWindowDrawList();
 
-	if (ImGui::InvisibleButton(btnId, ImVec2(tileW, totalH))) {
+	ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0, 0, 0, 0));
+	ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+	ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0, 0, 0, 0));
+	if (ImGui::Selectable(btnId, false, ImGuiSelectableFlags_None,
+		ImVec2(tileW, totalH)))
+	{
 		if (!ATTouchIsDraggingBeyondSlop()) {
 			if (entry.mVariants.size() == 1)
 				LaunchGame(sim, mobileState, entryIndex, 0);
@@ -379,6 +408,7 @@ static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
 				ShowVariantPicker(entryIndex);
 		}
 	}
+	ImGui::PopStyleColor(3);
 
 	bool hovered = ImGui::IsItemHovered() || ImGui::IsItemFocused();
 
@@ -482,9 +512,8 @@ static void RenderGameRow(ATSimulator &sim, ATMobileUIState &mobileState,
 	const char *badge = entry.mVariants.empty() ? "???"
 		: MediaTypeIcon(entry.mVariants[0].mType);
 
-	// Build unique button label using game name for stable test IDs
-	char btnId[256];
-	snprintf(btnId, sizeof(btnId), "##game_%s", nameU8.c_str());
+	char btnId[32];
+	snprintf(btnId, sizeof(btnId), "##game_%zu", entryIndex);
 
 	ImVec2 cursor = ImGui::GetCursorScreenPos();
 	float availW = ImGui::GetContentRegionAvail().x;
@@ -604,6 +633,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 	// Check for completed background scan
 	if (s_gameLibrary->IsScanComplete()) {
 		s_gameLibrary->ConsumeScanResults();
+		ComputeAvailableLetters();
 		s_needsRefresh = true;
 		s_variantPickerOpen = false;
 		if (s_artCache)
@@ -631,10 +661,10 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 	if (ImGui::Begin("##GameBrowser", nullptr, flags)) {
 
 		// ── Gamepad / keyboard back navigation ───────────────────
-		// B button, Escape, or Backspace: context-dependent back.
-		// Keyboard shortcuts only fire when no InputText is active
-		// (to avoid stealing Backspace/Escape from text editing).
-		// Skip when a modal dialog is on top (see mobile_hamburger.cpp).
+		// ESC / B / Backspace: context-dependent.
+		// If search or variant picker is active, close it.
+		// If a game was running, return to it.
+		// Otherwise this IS the home screen — do nothing.
 		bool backPressed = false;
 		if (!s_confirmActive && !s_infoModalOpen) {
 			backPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
@@ -646,140 +676,233 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		}
 
 		if (backPressed) {
-			if (s_letterPickerOpen) {
-				s_letterPickerOpen = false;
-			} else if (s_variantPickerOpen) {
+			if (s_variantPickerOpen) {
 				s_variantPickerOpen = false;
 			} else if (s_searchActive) {
 				s_searchBuf[0] = '\0';
 				s_searchFilter.clear();
 				s_searchActive = false;
+				s_letterFilterIdx = -1;
 				s_needsRefresh = true;
-			} else {
-				if (mobileState.gameLoaded) {
-					mobileState.currentScreen = ATMobileUIScreen::None;
-					sim.Resume();
-				} else {
-					ATMobileUI_OpenMenu(sim, mobileState);
-				}
-			}
-		}
-
-		// X button (GamepadFaceLeft): toggle letter picker
-		if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false)) {
-			s_letterPickerOpen = !s_letterPickerOpen;
-		}
-
-		// ── Top bar ──────────────────────────────────────────────
-		const float headerH = dp(56.0f);
-		const float backW = dp(56.0f);
-		float headerTopY = ImGui::GetCursorPosY();
-
-		// Back button (returns to hamburger or emulation)
-		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-		ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1, 1, 1, 0.16f));
-
-		if (ImGui::Button("<", ImVec2(backW, headerH))) {
-			if (mobileState.gameLoaded) {
+			} else if (s_letterFilterIdx >= 0) {
+				s_letterFilterIdx = -1;
+				s_needsRefresh = true;
+			} else if (mobileState.gameLoaded) {
 				mobileState.currentScreen = ATMobileUIScreen::None;
 				sim.Resume();
-			} else {
-				ATMobileUI_OpenMenu(sim, mobileState);
 			}
 		}
-		ImGui::PopStyleColor(3);
-		ImGui::PopStyleVar();
 
-		ImGui::SameLine();
-
-		// Title
-		ImGui::SetCursorPosY(headerTopY
-			+ (headerH - ImGui::GetTextLineHeight()) * 0.5f);
-
-		if (s_gameLibrary->IsScanning()) {
-			int found = s_gameLibrary->GetScanProgress();
-			ImGui::Text("ALTIRRA  (scanning... %d found)", found);
-		} else {
-			ImGui::Text("ALTIRRA  (%d games)",
-				(int)s_allGamesIndices.size());
-		}
-
-		// Right-side buttons: view toggle, settings gear
-		float contentW = io.DisplaySize.x - insetL - insetR;
-		float rightBtnX = contentW - dp(120.0f);
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.16f));
-
-		// View toggle
-		ImGui::SameLine(rightBtnX);
-		ImGui::SetCursorPosY(headerTopY);
+		// ── Row 1: Hardware info ─────────────────────────────────
 		{
-			bool isGrid = s_gameLibrary->GetSettings().mViewMode == 1;
-			const char *viewLabel = isGrid ? "=#" : "=";
-			if (ImGui::Button(viewLabel, ImVec2(dp(48.0f), headerH))) {
-				GameLibrarySettings settings = s_gameLibrary->GetSettings();
-				settings.mViewMode = isGrid ? 0 : 1;
-				s_gameLibrary->SetSettings(settings);
-				s_gameLibrary->SaveSettingsToRegistry();
+			VDStringA hwInfo = BuildHardwareInfoStr(sim);
+			int gameCount = (int)s_allGamesIndices.size();
+			ImGui::TextColored(ImVec4(0.55f, 0.60f, 0.70f, 1.0f),
+				"ALTIRRA  %s  (%d game%s)",
+				hwInfo.c_str(), gameCount, gameCount == 1 ? "" : "s");
+
+			if (s_gameLibrary->IsScanning()) {
+				int found = s_gameLibrary->GetScanProgress();
+				VDStringA status = s_gameLibrary->GetScanStatus();
+				if (status.empty())
+					ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f),
+						"Scanning... %d found", found);
+				else
+					ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f),
+						"Scanning %s... %d found",
+						status.c_str(), found);
 			}
 		}
 
-		// Settings gear
-		ImGui::SameLine();
-		ImGui::SetCursorPosY(headerTopY);
-		if (ImGui::Button("*##gear", ImVec2(dp(48.0f), headerH))) {
-			s_settingsPage = ATMobileSettingsPage::GameLibrary;
-			mobileState.currentScreen = ATMobileUIScreen::Settings;
-		}
-		ImGui::PopStyleColor(3);
+		// ── Row 2: Action buttons ────────────────────────────────
+		const auto &libSettings = s_gameLibrary->GetSettings();
+		float btnH = dp(44.0f);
+		{
+			ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.20f, 0.45f, 0.78f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(0.25f, 0.52f, 0.85f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(0.16f, 0.40f, 0.72f, 1.0f));
 
-		ImGui::SetCursorPosY(headerTopY + headerH);
+			if (ImGui::Button("Boot Game", ImVec2(0, btnH))) {
+				s_romFolderMode = false;
+				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
+				s_fileBrowserNeedsRefresh = true;
+			}
 
-		// Search bar (collapsible)
-		if (s_searchActive) {
-			ImGui::SetNextItemWidth(-1);
-			if (ImGui::InputText("##search", s_searchBuf,
-				sizeof(s_searchBuf)))
+			ImGui::SameLine();
+			if (ImGui::Button("Boot Empty", ImVec2(0, btnH))) {
+				mobileState.gameLoaded = true;
+				mobileState.currentScreen = ATMobileUIScreen::None;
+				sim.ColdReset();
+				sim.Resume();
+			}
+
+			ImGui::PopStyleColor(3);
+
+			ImGui::SameLine();
 			{
-				s_searchFilter = s_searchBuf;
-				s_needsRefresh = true;
-			}
-
-			// Escape clears and closes the search bar
-			if (!s_confirmActive && !s_infoModalOpen
-				&& ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-				s_searchBuf[0] = '\0';
-				s_searchFilter.clear();
-				s_searchActive = false;
-				s_needsRefresh = true;
-			} else if (ImGui::IsItemDeactivatedAfterEdit()
-				&& s_searchBuf[0] == '\0')
-			{
-				s_searchActive = false;
-			}
-		} else if (!s_variantPickerOpen && !ImGui::IsAnyItemActive()) {
-			// Ctrl+F opens search
-			if (ImGui::IsKeyPressed(ImGuiKey_F, false) && io.KeyCtrl) {
-				s_searchActive = true;
-				s_searchBuf[0] = '\0';
-				s_searchFilter.clear();
-				s_needsRefresh = true;
-			}
-
-			// Typing any letter opens search with that letter
-			for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k) {
-				if (ImGui::IsKeyPressed((ImGuiKey)k, false)
-					&& !io.KeyCtrl && !io.KeyAlt)
+				bool isGrid = libSettings.mViewMode == 1;
+				float viewW = dp(60.0f);
+				if (ImGui::Button(isGrid ? "Grid##view" : "List##view",
+					ImVec2(viewW, btnH)))
 				{
-					s_searchActive = true;
-					s_searchBuf[0] = 'a' + (k - ImGuiKey_A);
-					s_searchBuf[1] = '\0';
+					GameLibrarySettings settings = libSettings;
+					settings.mViewMode = isGrid ? 0 : 1;
+					s_gameLibrary->SetSettings(settings);
+					s_gameLibrary->SaveSettingsToRegistry();
+				}
+			}
+
+			ImGui::SameLine();
+			if (ImGui::Button("Settings", ImVec2(0, btnH))) {
+				s_settingsPage = ATMobileSettingsPage::Home;
+				s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
+				mobileState.currentScreen = ATMobileUIScreen::Settings;
+			}
+		}
+
+		// ── Row 3: Letter filter bar + search (fixed, not scrolled) ──
+		static bool s_focusLetterBar = false;
+		bool letterBarHasFocus = false;
+		{
+			if (s_focusLetterBar) {
+				ImGui::SetKeyboardFocusHere(0);
+				s_focusLetterBar = false;
+			}
+
+			// 27 letter buttons + search button + padding must fit
+			// the available width.  Compute button size to fit.
+			float availW = ImGui::GetContentRegionAvail().x;
+			float letterPad = dp(1.0f);
+			int totalBtns = 28;  // 27 letters + 1 search
+			float letterBtnSz = (availW - letterPad * (totalBtns - 1))
+				/ totalBtns;
+			if (letterBtnSz < dp(16.0f)) letterBtnSz = dp(16.0f);
+			if (letterBtnSz > dp(32.0f)) letterBtnSz = dp(32.0f);
+
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, dp(3.0f));
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+
+			for (int i = 0; i < 27; ++i) {
+				if (i > 0)
+					ImGui::SameLine(0, letterPad);
+
+				char label[8];
+				if (i < 26) {
+					label[0] = 'A' + i;
+					label[1] = '\0';
+				} else {
+					label[0] = '$';
+					label[1] = '\0';
+				}
+
+				bool avail = s_availableLetters[i];
+				bool active = (s_letterFilterIdx == i);
+
+				if (!avail)
+					ImGui::BeginDisabled();
+				if (active) {
+					ImGui::PushStyleColor(ImGuiCol_Button,
+						ImVec4(0.25f, 0.55f, 0.90f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+						ImVec4(0.30f, 0.60f, 0.95f, 1.0f));
+				}
+
+				char btnId[8];
+				snprintf(btnId, sizeof(btnId), "%s##L%d", label, i);
+				if (ImGui::Button(btnId, ImVec2(letterBtnSz, letterBtnSz))) {
+					if (active) {
+						s_letterFilterIdx = -1;
+					} else {
+						s_letterFilterIdx = i;
+						s_searchBuf[0] = '\0';
+						s_searchFilter.clear();
+						s_searchActive = false;
+					}
+					s_needsRefresh = true;
+				}
+				if (ImGui::IsItemFocused())
+					letterBarHasFocus = true;
+
+				if (active)
+					ImGui::PopStyleColor(2);
+				if (!avail)
+					ImGui::EndDisabled();
+			}
+
+			ImGui::PopStyleVar(2);
+
+			// Search button / bar
+			static bool s_focusSearchInput = false;
+			ImGui::SameLine(0, dp(6.0f));
+			if (s_searchActive) {
+				if (s_focusSearchInput) {
+					ImGui::SetKeyboardFocusHere(0);
+					s_focusSearchInput = false;
+				}
+				float searchW = ImGui::GetContentRegionAvail().x;
+				if (searchW < dp(80.0f)) searchW = dp(80.0f);
+				ImGui::SetNextItemWidth(searchW);
+				if (ImGui::InputText("##search", s_searchBuf,
+					sizeof(s_searchBuf),
+					ImGuiInputTextFlags_CallbackAlways,
+					SearchInputCallback))
+				{
+					s_letterFilterIdx = -1;
 					s_searchFilter = s_searchBuf;
 					s_needsRefresh = true;
-					break;
+				}
+				if (ImGui::IsItemFocused() || ImGui::IsItemActive())
+					letterBarHasFocus = true;
+
+				if (!s_confirmActive && !s_infoModalOpen
+					&& ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+					s_searchBuf[0] = '\0';
+					s_searchFilter.clear();
+					s_searchActive = false;
+					s_needsRefresh = true;
+				} else if (ImGui::IsItemDeactivatedAfterEdit()
+					&& s_searchBuf[0] == '\0')
+				{
+					s_searchActive = false;
+				}
+			} else {
+				if (ImGui::Button("?##search", ImVec2(letterBtnSz, letterBtnSz))) {
+					s_searchActive = true;
+					s_focusSearchInput = true;
+					s_searchBuf[0] = '\0';
+					s_searchFilter.clear();
+					s_letterFilterIdx = -1;
+					s_needsRefresh = true;
+				}
+				if (ImGui::IsItemFocused())
+					letterBarHasFocus = true;
+
+				if (!s_variantPickerOpen && !ImGui::IsAnyItemActive()) {
+					if (ImGui::IsKeyPressed(ImGuiKey_F, false) && io.KeyCtrl) {
+						s_searchActive = true;
+						s_focusSearchInput = true;
+						s_searchBuf[0] = '\0';
+						s_searchFilter.clear();
+						s_letterFilterIdx = -1;
+						s_needsRefresh = true;
+					}
+
+					// Type any letter to open search with that letter
+					for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k) {
+						if (ImGui::IsKeyPressed((ImGuiKey)k, false)
+							&& !io.KeyCtrl && !io.KeyAlt)
+						{
+							s_searchActive = true;
+							s_focusSearchInput = true;
+							s_searchCursorToEnd = true;
+							s_searchBuf[0] = 'a' + (k - ImGuiKey_A);
+							s_searchBuf[1] = '\0';
+							s_searchFilter = s_searchBuf;
+							s_letterFilterIdx = -1;
+							s_needsRefresh = true;
+							break;
+						}
+					}
 				}
 			}
 		}
@@ -818,12 +941,14 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				centerY + dp(96.0f)));
 			if (ImGui::Button("Open Settings", btnSize)) {
 				s_settingsPage = ATMobileSettingsPage::GameLibrary;
+				s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
 				mobileState.currentScreen = ATMobileUIScreen::Settings;
 			}
 
 			ImGui::SetCursorPos(ImVec2(centerX - btnSize.x * 0.5f,
 				centerY + dp(160.0f)));
 			if (ImGui::Button("Boot Atari without game", btnSize)) {
+				mobileState.gameLoaded = true;
 				mobileState.currentScreen = ATMobileUIScreen::None;
 				g_sim.ColdReset();
 				g_sim.Resume();
@@ -834,19 +959,43 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		}
 
 		// ── Scrollable game content ──────────────────────────────
+		// No NavFlattened — keeps PgUp/PgDown confined to the
+		// list.  Header→list: only from the letter bar (last row).
+		// List→header: ImGui handles naturally via cross-window
+		// nav scoring (child→parent).
+		static bool s_focusGameList = false;
+		if (letterBarHasFocus
+			&& !s_variantPickerOpen
+			&& (ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false)))
+		{
+			s_focusGameList = true;
+		}
+
 		ImGui::BeginChild("##GameList", ImVec2(0, 0),
-			ImGuiChildFlags_NavFlattened);
+			ImGuiChildFlags_None);
 		ATTouchDragScroll();
 
-		bool gridMode = s_gameLibrary->GetSettings().mViewMode == 1;
+		if (s_focusGameList) {
+			ImGuiContext &g = *GImGui;
+			ImGui::FocusWindow(ImGui::GetCurrentWindow());
+			ImGui::SetKeyboardFocusHere(0);
+			s_focusGameList = false;
+		}
+
+		bool gridMode = libSettings.mViewMode == 1;
 
 		if (gridMode) {
 			// ── Grid View ────────────────────────────────────────
+			static const float kGridMinTile[] = { 120.0f, 160.0f, 220.0f };
+			int gridSz = libSettings.mGridSize;
+			if (gridSz < 0 || gridSz > 2) gridSz = 1;
+
 			float contentW = ImGui::GetContentRegionAvail().x;
 			float tilePad = dp(8.0f);
-			float minTileW = dp(120.0f);
+			float minTileW = dp(kGridMinTile[gridSz]);
 			int cols = (int)(contentW / (minTileW + tilePad));
-			if (cols < 2) cols = 2;
+			if (cols < 1) cols = 1;
 			float tileW = (contentW - tilePad * (cols - 1)) / cols;
 			float imageH = tileW * 0.75f;
 			float labelH = dp(36.0f);
@@ -854,6 +1003,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 			// Last Played section (small, no clipper needed)
 			if (!s_lastPlayedIndices.empty()) {
+				ImGui::PushID("lp");
 				ImGui::PushStyleColor(ImGuiCol_Text,
 					ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
 				ImGui::TextUnformatted("LAST PLAYED");
@@ -866,6 +1016,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					RenderGameTile(sim, mobileState,
 						s_lastPlayedIndices[i], tileW, tileH);
 				}
+				ImGui::PopID();
 				ImGui::Spacing();
 				ImGui::Separator();
 				ImGui::Spacing();
@@ -884,8 +1035,10 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 				int rowCount = ((int)s_allGamesIndices.size() + cols - 1)
 					/ cols;
+				float spacing = ImGui::GetStyle().ItemSpacing.y;
 				ImGuiListClipper clipper;
-				clipper.Begin(rowCount, tileH);
+				clipper.Begin(rowCount, tileH + spacing);
+				clipper.IncludeItemsByIndex(0, 1);
 				while (clipper.Step()) {
 					for (int row = clipper.DisplayStart;
 						row < clipper.DisplayEnd; ++row)
@@ -906,10 +1059,14 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 		} else {
 			// ── List View ────────────────────────────────────────
-			float rowH = dp(52.0f);
+			static const float kListRowH[] = { 52.0f, 72.0f, 96.0f };
+			int listSz = libSettings.mListSize;
+			if (listSz < 0 || listSz > 2) listSz = 0;
+			float rowH = dp(kListRowH[listSz]);
 
 			// Last Played section (small, no clipper needed)
 			if (!s_lastPlayedIndices.empty()) {
+				ImGui::PushID("lp");
 				ImGui::PushStyleColor(ImGuiCol_Text,
 					ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
 				ImGui::TextUnformatted("LAST PLAYED");
@@ -919,6 +1076,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				for (size_t idx : s_lastPlayedIndices)
 					RenderGameRow(sim, mobileState, idx, true);
 
+				ImGui::PopID();
 				ImGui::Spacing();
 				ImGui::Separator();
 				ImGui::Spacing();
@@ -935,8 +1093,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				ImGui::PopStyleColor();
 				ImGui::Spacing();
 
+				float spacing = ImGui::GetStyle().ItemSpacing.y;
 				ImGuiListClipper clipper;
-				clipper.Begin((int)s_allGamesIndices.size(), rowH);
+				clipper.Begin((int)s_allGamesIndices.size(), rowH + spacing);
 				while (clipper.Step()) {
 					for (int i = clipper.DisplayStart;
 						i < clipper.DisplayEnd; ++i)
@@ -948,18 +1107,40 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		// ── Boot without game ────────────────────────────────────
 		ImGui::Spacing();
-		ImGui::Spacing();
-		if (ImGui::Button("Boot Atari without game",
-			ImVec2(-1, dp(48.0f))))
+
+		// Detect Up-at-top: two-frame check using NavId + scroll.
+		// Frame N: Up pressed → record NavId and scroll position.
+		// Frame N+1: if both are unchanged, nav truly failed → exit
+		// to header.  A scroll change means ImGui is revealing an
+		// off-screen row (clipper boundary), so we must not exit.
 		{
-			mobileState.currentScreen = ATMobileUIScreen::None;
-			g_sim.ColdReset();
-			g_sim.Resume();
+			static ImGuiID s_navIdOnUp = 0;
+			static float s_scrollOnUp = 0.0f;
+			static bool s_checkUpExit = false;
+			ImGuiContext &g = *GImGui;
+
+			if (s_checkUpExit) {
+				s_checkUpExit = false;
+				float scrollNow = ImGui::GetScrollY();
+				if (g.NavId == s_navIdOnUp
+					&& fabsf(scrollNow - s_scrollOnUp) < 1.0f)
+				{
+					s_focusLetterBar = true;
+				}
+			}
+
+			bool upPressed = ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false);
+			if (upPressed
+				&& !s_searchActive && !s_variantPickerOpen)
+			{
+				s_navIdOnUp = g.NavId;
+				s_scrollOnUp = ImGui::GetScrollY();
+				s_checkUpExit = true;
+			}
 		}
 
-		ImGui::Spacing();
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 	}
@@ -967,5 +1148,4 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 	// Overlays
 	RenderVariantPicker(sim, mobileState);
-	RenderLetterPicker();
 }

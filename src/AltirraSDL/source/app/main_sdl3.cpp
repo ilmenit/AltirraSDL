@@ -277,14 +277,17 @@ static void HandleEvents() {
 			if (ATMobileUI_HandleEvent(ev, g_mobileState))
 				continue;
 
-			// ESC on the idle screen opens the hamburger menu,
-			// mirroring the BACK gamepad button.  Other screens
-			// handle ESC internally via ImGui::IsKeyPressed.
+			// ESC on the emulation screen opens the hamburger (pause menu).
+			// If somehow on None with no game, return to the library.
 			if (ev.type == SDL_EVENT_KEY_DOWN
 				&& ev.key.key == SDLK_ESCAPE
 				&& g_mobileState.currentScreen == ATMobileUIScreen::None)
 			{
-				ATMobileUI_OpenMenu(g_sim, g_mobileState);
+				if (g_mobileState.gameLoaded) {
+					ATMobileUI_OpenMenu(g_sim, g_mobileState);
+				} else {
+					g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+				}
 				continue;
 			}
 		}
@@ -1742,19 +1745,12 @@ int main(int argc, char *argv[]) {
 	// and debug suspend mode.  Returns true if any boot image was loaded.
 	bool cmdLineHadBootImage = ATProcessCommandLineSDL3(argc, argv);
 	if (!cmdLineHadBootImage) {
-		// In gaming mode with Game Library enabled, show the browser
-		// instead of auto-booting the Atari VM.
+		// In gaming mode, Game Library is the home screen.
+		// The emulator stays paused until the user picks a game.
 		if (ATUIIsGamingMode()) {
 			GameBrowser_Init();
-			ATGameLibrary *lib = GetGameLibrary();
-			if (lib && lib->GetSettings().mbShowOnStartup) {
-				g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
-				g_sim.ColdReset();
-				// Don't Resume — VM stays paused until user picks a game
-			} else {
-				g_sim.ColdReset();
-				g_sim.Resume();
-			}
+			g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+			g_sim.ColdReset();
 		} else {
 			g_sim.ColdReset();
 			g_sim.Resume();

@@ -660,9 +660,15 @@ void ATGameLibrary::LoadSettingsFromRegistry() {
 		return;
 
 	mSettings.mbRecursive = key.getBool("Recursive", true);
-	mSettings.mbCrossFolderArt = key.getBool("CrossFolderArt", false);
+	mSettings.mbCrossFolderArt = key.getBool("CrossFolderArt", true);
 	mSettings.mbShowOnStartup = key.getBool("ShowOnStartup", true);
 	mSettings.mViewMode = key.getInt("ViewMode", 1);
+	mSettings.mGridSize = key.getInt("GridSize", 1);
+	if (mSettings.mGridSize < 0 || mSettings.mGridSize > 2)
+		mSettings.mGridSize = 1;
+	mSettings.mListSize = key.getInt("ListSize", 0);
+	if (mSettings.mListSize < 0 || mSettings.mListSize > 2)
+		mSettings.mListSize = 0;
 
 	int sourceCount = key.getInt("SourceCount", 0);
 	mSources.clear();
@@ -691,6 +697,8 @@ void ATGameLibrary::SaveSettingsToRegistry() const {
 	key.setBool("CrossFolderArt", mSettings.mbCrossFolderArt);
 	key.setBool("ShowOnStartup", mSettings.mbShowOnStartup);
 	key.setInt("ViewMode", mSettings.mViewMode);
+	key.setInt("GridSize", mSettings.mGridSize);
+	key.setInt("ListSize", mSettings.mListSize);
 
 	key.setInt("SourceCount", (int)mSources.size());
 	for (int i = 0; i < (int)mSources.size(); ++i) {
@@ -714,6 +722,10 @@ void ATGameLibrary::StartScan() {
 	mScanComplete.store(false, std::memory_order_release);
 	mScanCancel.store(false, std::memory_order_release);
 	mScanProgress.store(0, std::memory_order_release);
+	{
+		std::lock_guard<std::mutex> lock(mScanMutex);
+		mScanStatus.clear();
+	}
 	mScanning.store(true, std::memory_order_release);
 
 	mScanThread = std::thread([this]() { ScanThread(); });
@@ -725,6 +737,11 @@ void ATGameLibrary::CancelScan() {
 		mScanThread.join();
 	}
 	mScanning.store(false, std::memory_order_release);
+}
+
+VDStringA ATGameLibrary::GetScanStatus() const {
+	std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mScanMutex));
+	return mScanStatus;
 }
 
 void ATGameLibrary::ConsumeScanResults() {
@@ -766,6 +783,13 @@ void ATGameLibrary::ScanThread() {
 		if (mScanCancel.load(std::memory_order_acquire))
 			return;
 
+		{
+			VDStringA srcU8 = VDTextWToU8(src.mPath);
+			const char *name = strrchr(srcU8.c_str(), '/');
+			std::lock_guard<std::mutex> lock(mScanMutex);
+			mScanStatus = name ? (name + 1) : srcU8.c_str();
+		}
+
 		if (src.mbIsArchive) {
 			ScanArchive(src.mPath, allEntries, allImages);
 		} else {
@@ -776,6 +800,10 @@ void ATGameLibrary::ScanThread() {
 	if (mScanCancel.load(std::memory_order_acquire))
 		return;
 
+	{
+		std::lock_guard<std::mutex> lock(mScanMutex);
+		mScanStatus = "grouping variants...";
+	}
 	GroupVariants(allEntries);
 	DisambiguateNames(allEntries);
 	MatchArt(allEntries, allImages);
@@ -788,6 +816,7 @@ void ATGameLibrary::ScanThread() {
 	{
 		std::lock_guard<std::mutex> lock(mScanMutex);
 		mScanResults = std::move(allEntries);
+		mScanStatus.clear();
 	}
 	mScanComplete.store(true, std::memory_order_release);
 }

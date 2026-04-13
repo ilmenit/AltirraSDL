@@ -100,6 +100,7 @@ enum class ATMobileSettingsPage {
 	GameLibrary,
 };
 extern ATMobileSettingsPage s_settingsPage;
+extern ATMobileUIScreen s_settingsReturnScreen;
 extern ATFirmwareType s_fwPicker;
 
 // -------------------------------------------------------------------------

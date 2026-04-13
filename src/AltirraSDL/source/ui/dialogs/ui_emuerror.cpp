@@ -13,6 +13,8 @@
 
 #include "ui_emuerror.h"
 #include "ui_main.h"
+#include "ui_mode.h"
+#include "touch_widgets.h"
 #include "simulator.h"
 #include "constants.h"
 #include "cpu.h"
@@ -240,19 +242,10 @@ void ATShutdownEmuErrorHandlerSDL3() {
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// ImGui dialog render (called each frame from ATUIRenderFrame)
+// Desktop-mode ImGui dialog render
 ///////////////////////////////////////////////////////////////////////////
 
-void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
-	// Check if debug action was requested last frame
-	if (g_emuErrorRequestDebugger) {
-		g_emuErrorRequestDebugger = false;
-		ATUIDebuggerOpen();
-	}
-
-	if (!g_showEmuError)
-		return;
-
+static void RenderEmuErrorDesktop(ATSimulator &sim) {
 	if (g_emuErrorNeedOpen) {
 		ImGui::OpenPopup("Program Error");
 		g_emuErrorNeedOpen = false;
@@ -269,22 +262,18 @@ void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
 			"You can try changing one of these options and restarting:");
 		ImGui::Spacing();
 
-		// Hardware
 		ImGui::BeginDisabled(!g_enHardware);
 		ImGui::Checkbox("Change hardware mode to XL/XE", &g_chkHardware);
 		ImGui::EndDisabled();
 
-		// Firmware
 		ImGui::BeginDisabled(!g_enFirmware);
 		ImGui::Checkbox("Change firmware to Default", &g_chkFirmware);
 		ImGui::EndDisabled();
 
-		// Memory
 		ImGui::BeginDisabled(!g_enMemory);
 		ImGui::Checkbox("Change memory to 320K", &g_chkMemory);
 		ImGui::EndDisabled();
 
-		// Video
 		ImGui::BeginDisabled(!g_enVideo);
 		if (g_newPALMode)
 			ImGui::Checkbox("Change video standard to PAL", &g_chkVideo);
@@ -292,22 +281,18 @@ void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
 			ImGui::Checkbox("Change video standard to NTSC", &g_chkVideo);
 		ImGui::EndDisabled();
 
-		// BASIC
 		ImGui::BeginDisabled(!g_enBasic);
 		ImGui::Checkbox("Disable BASIC", &g_chkBasic);
 		ImGui::EndDisabled();
 
-		// CPU
 		ImGui::BeginDisabled(!g_enCPU);
 		ImGui::Checkbox("Disable CPU diagnostics (use 6502)", &g_chkCPU);
 		ImGui::EndDisabled();
 
-		// Debugging
 		ImGui::BeginDisabled(!g_enDebugging);
 		ImGui::Checkbox("Disable debugging options", &g_chkDebugging);
 		ImGui::EndDisabled();
 
-		// Disk I/O
 		ImGui::BeginDisabled(!g_enDiskIO);
 		ImGui::Checkbox("Enable accurate floppy disk timing", &g_chkDiskIO);
 		ImGui::EndDisabled();
@@ -316,7 +301,6 @@ void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		// Buttons — Debug | Warm Reset | Restart (default) | Pause
 		if (ImGui::Button("Debug", ImVec2(100, 0))) {
 			g_showEmuError = false;
 			g_emuErrorRequestDebugger = true;
@@ -343,11 +327,9 @@ void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
 		ImGui::SameLine();
 		if (ImGui::Button("Pause", ImVec2(100, 0))) {
 			g_showEmuError = false;
-			// Sim is already paused
 			ImGui::CloseCurrentPopup();
 		}
 
-		// ESC closes as Pause
 		if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
 			g_showEmuError = false;
 			ImGui::CloseCurrentPopup();
@@ -355,4 +337,210 @@ void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
 
 		ImGui::EndPopup();
 	}
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Gaming-mode card-style dialog render
+///////////////////////////////////////////////////////////////////////////
+
+static float GamingDP(float v) {
+	ImGuiIO &io = ImGui::GetIO();
+	float fs = io.Fonts->Fonts.Size > 0
+		? io.Fonts->Fonts[0]->FontSize : 13.0f;
+	float scale = (fs / 16.0f) * io.FontGlobalScale;
+	if (scale < 0.5f) scale = 0.5f;
+	if (scale > 5.0f) scale = 5.0f;
+	return v * scale;
+}
+
+static void RenderEmuErrorGaming(ATSimulator &sim) {
+	ImGuiIO &io = ImGui::GetIO();
+
+	// Dim backdrop
+	ImGui::GetBackgroundDrawList()->AddRectFilled(
+		ImVec2(0, 0), io.DisplaySize,
+		IM_COL32(0, 0, 0, 160));
+
+	float sheetW = GamingDP(520.0f);
+	if (sheetW > io.DisplaySize.x - GamingDP(32.0f))
+		sheetW = io.DisplaySize.x - GamingDP(32.0f);
+	if (sheetW < GamingDP(300.0f))
+		sheetW = GamingDP(300.0f);
+
+	ImGui::SetNextWindowPos(
+		ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+		ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+	ImGui::SetNextWindowSize(ImVec2(sheetW, 0));
+	ImGui::SetNextWindowFocus();
+
+	ImGuiStyle &style = ImGui::GetStyle();
+	float prevR = style.WindowRounding;
+	float prevB = style.WindowBorderSize;
+	style.WindowRounding = GamingDP(14.0f);
+	style.WindowBorderSize = GamingDP(1.0f);
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.12f, 0.18f, 0.98f));
+	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.27f, 0.51f, 0.82f, 1.0f));
+
+	ImGui::Begin("##GamingEmuError", nullptr,
+		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings
+		| ImGuiWindowFlags_AlwaysAutoResize);
+
+	ImGui::BeginChild("##EmuErrorScroll", ImVec2(0, 0),
+		ImGuiChildFlags_NavFlattened | ImGuiChildFlags_AutoResizeY);
+	ATTouchDragScroll();
+
+	// Title
+	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
+	ImGui::SetWindowFontScale(1.25f);
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.70f, 1.00f, 1.0f));
+	ImGui::TextUnformatted("Program Error");
+	ImGui::PopStyleColor();
+	ImGui::SetWindowFontScale(1.0f);
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	// Description
+	ImGui::PushTextWrapPos(sheetW - GamingDP(24.0f));
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.92f, 0.96f, 1));
+	ImGui::TextUnformatted(
+		"The emulated computer has stopped due to a program error.\n"
+		"You can try changing these options and restarting:");
+	ImGui::PopStyleColor();
+	ImGui::PopTextWrapPos();
+	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
+
+	// Compatibility toggles using ATTouchToggle
+	if (!g_enHardware) ImGui::BeginDisabled();
+	ATTouchToggle("Change hardware to XL/XE", &g_chkHardware);
+	if (!g_enHardware) ImGui::EndDisabled();
+
+	if (!g_enFirmware) ImGui::BeginDisabled();
+	ATTouchToggle("Change firmware to Default", &g_chkFirmware);
+	if (!g_enFirmware) ImGui::EndDisabled();
+
+	if (!g_enMemory) ImGui::BeginDisabled();
+	ATTouchToggle("Change memory to 320K", &g_chkMemory);
+	if (!g_enMemory) ImGui::EndDisabled();
+
+	if (!g_enVideo) ImGui::BeginDisabled();
+	ATTouchToggle(g_newPALMode
+		? "Change video to PAL" : "Change video to NTSC",
+		&g_chkVideo);
+	if (!g_enVideo) ImGui::EndDisabled();
+
+	if (!g_enBasic) ImGui::BeginDisabled();
+	ATTouchToggle("Disable BASIC", &g_chkBasic);
+	if (!g_enBasic) ImGui::EndDisabled();
+
+	if (!g_enCPU) ImGui::BeginDisabled();
+	ATTouchToggle("Disable CPU diagnostics", &g_chkCPU);
+	if (!g_enCPU) ImGui::EndDisabled();
+
+	if (!g_enDebugging) ImGui::BeginDisabled();
+	ATTouchToggle("Disable debugging options", &g_chkDebugging);
+	if (!g_enDebugging) ImGui::EndDisabled();
+
+	if (!g_enDiskIO) ImGui::BeginDisabled();
+	ATTouchToggle("Use accurate disk timing", &g_chkDiskIO);
+	if (!g_enDiskIO) ImGui::EndDisabled();
+
+	ImGui::Dummy(ImVec2(0, GamingDP(12.0f)));
+	ImGui::Separator();
+	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
+
+	// Action buttons — two rows of two, matching Gaming Mode style
+	float btnH = GamingDP(56.0f);
+	float rowW = ImGui::GetContentRegionAvail().x;
+	float gap = GamingDP(12.0f);
+	float halfW = (rowW - gap) * 0.5f;
+
+	// Row 1: Restart (primary) | Warm Reset
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.25f, 0.55f, 0.90f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(0.30f, 0.62f, 0.95f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(0.20f, 0.48f, 0.85f, 1));
+	if (ImGui::Button("Restart", ImVec2(halfW, btnH))) {
+		g_showEmuError = false;
+		ApplyChanges(sim);
+		sim.ColdReset();
+		sim.Resume();
+	}
+	ImGui::PopStyleColor(3);
+
+	ImGui::SameLine(0.0f, gap);
+
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.30f, 0.32f, 0.38f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(0.38f, 0.40f, 0.48f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(0.22f, 0.24f, 0.30f, 1));
+	if (ImGui::Button("Warm Reset", ImVec2(halfW, btnH))) {
+		g_showEmuError = false;
+		sim.WarmReset();
+		sim.Resume();
+	}
+	ImGui::PopStyleColor(3);
+
+	ImGui::Dummy(ImVec2(0, gap));
+
+	// Row 2: Debug | Pause
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.30f, 0.32f, 0.38f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(0.38f, 0.40f, 0.48f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(0.22f, 0.24f, 0.30f, 1));
+	if (ImGui::Button("Debug", ImVec2(halfW, btnH))) {
+		g_showEmuError = false;
+		g_emuErrorRequestDebugger = true;
+	}
+	ImGui::PopStyleColor(3);
+
+	ImGui::SameLine(0.0f, gap);
+
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.30f, 0.32f, 0.38f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(0.38f, 0.40f, 0.48f, 1));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(0.22f, 0.24f, 0.30f, 1));
+	if (ImGui::Button("Pause", ImVec2(halfW, btnH))) {
+		g_showEmuError = false;
+	}
+	ImGui::PopStyleColor(3);
+
+	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
+
+	// ESC / B-button closes as Pause
+	{
+		bool dismiss = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+		if (!ImGui::IsAnyItemActive()) {
+			dismiss = dismiss
+				|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+		}
+		if (dismiss)
+			g_showEmuError = false;
+	}
+
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
+
+	ImGui::End();
+	ImGui::PopStyleColor(2);
+	style.WindowRounding = prevR;
+	style.WindowBorderSize = prevB;
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Public entry point (called each frame from ATUIRenderFrame)
+///////////////////////////////////////////////////////////////////////////
+
+void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
+	if (g_emuErrorRequestDebugger) {
+		g_emuErrorRequestDebugger = false;
+		ATUIDebuggerOpen();
+	}
+
+	if (!g_showEmuError)
+		return;
+
+	if (ATUIIsGamingMode())
+		RenderEmuErrorGaming(sim);
+	else
+		RenderEmuErrorDesktop(sim);
 }

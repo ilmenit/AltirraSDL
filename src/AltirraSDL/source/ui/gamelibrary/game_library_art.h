@@ -61,7 +61,7 @@ private:
 		SDL_Surface *mSurface = nullptr;
 	};
 
-	static constexpr size_t kMaxCacheSize = 128;
+	static constexpr size_t kMaxCacheSize = 512;
 	static constexpr int kMaxUploadsPerFrame = 4;
 
 	std::unordered_map<std::wstring, size_t> mKeyToIndex;

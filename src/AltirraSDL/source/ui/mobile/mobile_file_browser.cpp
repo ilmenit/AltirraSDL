@@ -158,7 +158,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					s_romFolderMode = false;
 					mobileState.currentScreen = ATMobileUIScreen::Settings;
 				} else {
-					ATMobileUI_CloseMenu(sim, mobileState);
+					mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
 				}
 			}
 		}
@@ -181,7 +181,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				s_romFolderMode = false;
 				mobileState.currentScreen = ATMobileUIScreen::Settings;
 			} else {
-				ATMobileUI_CloseMenu(sim, mobileState);
+				mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
 			}
 		}
 		ImGui::SameLine();
@@ -622,7 +622,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					VDStringA pathU8 = VDTextWToU8(VDStringW(entry.fullPath));
 					ATUIPushDeferred(kATDeferred_BootImage, pathU8.c_str());
 					mobileState.gameLoaded = true;
-					ATMobileUI_CloseMenu(sim, mobileState);
+					mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
 					sim.Resume();
 				}
 			}

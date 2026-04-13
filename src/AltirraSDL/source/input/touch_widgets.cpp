@@ -40,13 +40,16 @@ void UpdateContentScale() {
 // with a blue accent).
 constexpr ImU32 kColAccent        = IM_COL32(64, 140, 230, 255);
 constexpr ImU32 kColAccentDim     = IM_COL32(64, 140, 230, 140);
-constexpr ImU32 kColRowHover      = IM_COL32(255, 255, 255, 20);
+constexpr ImU32 kColRowHover      = IM_COL32(255, 255, 255, 50);
+constexpr ImU32 kColRowFocus      = IM_COL32(100, 180, 255, 200);
 constexpr ImU32 kColTrackOff      = IM_COL32(60, 64, 80, 255);
 constexpr ImU32 kColTrackOn       = IM_COL32(64, 140, 230, 255);
 constexpr ImU32 kColThumb         = IM_COL32(240, 240, 245, 255);
 constexpr ImU32 kColSegBgInactive = IM_COL32(45, 50, 65, 255);
+constexpr ImU32 kColSegBgHover    = IM_COL32(60, 70, 95, 255);
 constexpr ImU32 kColSegBgActive   = IM_COL32(64, 140, 230, 255);
 constexpr ImU32 kColSegBorder     = IM_COL32(90, 100, 120, 255);
+constexpr ImU32 kColSegFocus      = IM_COL32(100, 180, 255, 200);
 constexpr ImU32 kColText          = IM_COL32(230, 232, 240, 255);
 constexpr ImU32 kColTextMuted     = IM_COL32(170, 180, 200, 255);
 constexpr ImU32 kColTextOnAccent  = IM_COL32(255, 255, 255, 255);
@@ -87,11 +90,15 @@ bool ATTouchToggle(const char *label, bool *value) {
 	bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 	if (pressed) *value = !*value;
 
+	bool focused = ImGui::IsItemFocused();
+
 	ImDrawList *dl = window->DrawList;
 
-	// Row hover tint
-	if (hovered || held)
+	// Row hover/focus tint
+	if (hovered || held || focused)
 		dl->AddRectFilled(rowMin, rowMax, kColRowHover, dp(6.0f));
+	if (focused)
+		dl->AddRect(rowMin, rowMax, kColRowFocus, dp(6.0f), 0, dp(2.0f));
 
 	// Label on the left, vertically centered
 	ImVec2 ts = ImGui::CalcTextSize(label);
@@ -187,6 +194,7 @@ bool ATTouchSegmented(const char *label, int *current,
 		ImGui::PopID();
 
 		bool active = (*current == i);
+		bool segFocused = ImGui::IsItemFocused();
 
 		// Rounded corners only on the ends of the bar
 		ImDrawFlags cornerFlags =
@@ -194,9 +202,15 @@ bool ATTouchSegmented(const char *label, int *current,
 			| (isLast ? (ImDrawFlags_RoundCornersTopRight | ImDrawFlags_RoundCornersBottomRight) : 0);
 		if (!isFirst && !isLast) cornerFlags |= ImDrawFlags_RoundCornersNone;
 
-		dl->AddRectFilled(segBB.Min, segBB.Max,
-			active ? kColSegBgActive : kColSegBgInactive,
+		ImU32 segBg = active ? kColSegBgActive
+			: (segHovered || segFocused) ? kColSegBgHover
+			: kColSegBgInactive;
+		dl->AddRectFilled(segBB.Min, segBB.Max, segBg,
 			rounding, cornerFlags);
+
+		if (segFocused)
+			dl->AddRect(segBB.Min, segBB.Max, kColSegFocus,
+				rounding, cornerFlags, dp(2.0f));
 
 		// Label
 		ImVec2 ts = ImGui::CalcTextSize(items[i]);
@@ -276,6 +290,12 @@ bool ATTouchSlider(const char *label, int *value, int minv, int maxv,
 
 	bool hovered, held;
 	bool pressed = ImGui::ButtonBehavior(hitBB, id, &hovered, &held);
+	bool focused = ImGui::IsItemFocused();
+
+	if (hovered || focused)
+		dl->AddRectFilled(rowMin, rowMax, kColRowHover, dp(6.0f));
+	if (focused)
+		dl->AddRect(rowMin, rowMax, kColRowFocus, dp(6.0f), 0, dp(2.0f));
 
 	float t = (float)(*value - minv) / (float)(maxv - minv);
 	if (t < 0.0f) t = 0.0f;
@@ -414,6 +434,16 @@ void ATTouchDragScroll() {
 
 	if (mouseDown && hovered) {
 		if (!ds->active) {
+			// Don't capture drag if the press is on the scrollbar —
+			// let ImGui handle it natively.  The scrollbar occupies the
+			// rightmost ScrollbarSize pixels of the window.
+			if (window->ScrollbarY) {
+				float scrollbarLeft = window->InnerRect.Max.x;
+				if (io.MousePos.x >= scrollbarLeft) {
+					ds->active = false;
+					goto skip_drag;
+				}
+			}
 			ds->active = true;
 			ds->scrollY = ImGui::GetScrollY();
 			ds->pressAnchor = io.MousePos;
@@ -475,6 +505,7 @@ void ATTouchDragScroll() {
 		// Note: exceededSlop intentionally NOT reset here.  It is
 		// reset when the next press begins.
 	}
+skip_drag: ;
 }
 
 bool ATTouchIsDraggingBeyondSlop() {

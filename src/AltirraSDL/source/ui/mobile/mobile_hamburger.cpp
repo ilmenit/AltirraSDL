@@ -145,17 +145,10 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::SetItemDefaultFocus();
 		ImGui::Spacing();
 
-		// Game Library
+		// Game Library — returns to the library home screen
 		if (ImGui::Button("Game Library", btnSize)) {
+			sim.Pause();
 			mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
-		}
-		ImGui::Spacing();
-
-		// Load Game
-		if (ImGui::Button("Load Game", btnSize)) {
-			s_romFolderMode = false;
-			mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
-			s_fileBrowserNeedsRefresh = true;
 		}
 		ImGui::Spacing();
 
@@ -275,6 +268,7 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// Settings
 		if (ImGui::Button("Settings", btnSize)) {
 			s_settingsPage = ATMobileSettingsPage::Home;
+			s_settingsReturnScreen = ATMobileUIScreen::HamburgerMenu;
 			mobileState.currentScreen = ATMobileUIScreen::Settings;
 		}
 		ImGui::Spacing();

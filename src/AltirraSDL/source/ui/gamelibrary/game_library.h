@@ -44,9 +44,11 @@ struct GameSource {
 
 struct GameLibrarySettings {
 	bool mbRecursive      = true;
-	bool mbCrossFolderArt = false;
+	bool mbCrossFolderArt = true;
 	bool mbShowOnStartup  = true;
-	int  mViewMode        = 1;
+	int  mViewMode        = 1;     // 0=list, 1=grid
+	int  mGridSize        = 1;     // 0=small, 1=medium, 2=large
+	int  mListSize        = 0;     // 0=small, 1=medium, 2=large
 };
 
 struct CachedSourceInfo {
@@ -94,6 +96,7 @@ public:
 	bool IsScanComplete() const { return mScanComplete.load(std::memory_order_acquire); }
 	bool IsScanning() const { return mScanning.load(std::memory_order_acquire); }
 	int  GetScanProgress() const { return mScanProgress.load(std::memory_order_acquire); }
+	VDStringA GetScanStatus() const;
 	void ConsumeScanResults();
 
 	uint64_t GetLastScanTime() const { return mLastScanTime; }
@@ -126,5 +129,6 @@ private:
 	std::atomic<bool>       mScanning{false};
 	std::atomic<bool>       mScanCancel{false};
 	std::atomic<int>        mScanProgress{0};
+	VDStringA               mScanStatus;
 	std::vector<GameEntry>  mScanResults;
 };

@@ -257,6 +257,7 @@ void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
 
 // Hierarchical settings — definition lives in mobile_internal.h.
 ATMobileSettingsPage s_settingsPage = ATMobileSettingsPage::Home;
+ATMobileUIScreen s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
 
 // Firmware slot currently being picked within the Firmware sub-page.
 // File scope so the header back button can close the picker.
@@ -621,52 +622,18 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 	switch (mobileState.currentScreen) {
 	case ATMobileUIScreen::None:
+		// In gaming mode, None means "emulation active". If somehow
+		// we land here with no game loaded, redirect to the library.
+		if (!mobileState.gameLoaded) {
+			mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+			break;
+		}
+
 		// Render touch controls overlay — but hide them when the virtual
 		// keyboard is visible so they don't overlap the keyboard keys,
 		// or when the user has disabled them (default on desktop).
 		if (mobileState.showTouchControls && !uiState.showVirtualKeyboard)
 			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig);
-
-		// If no game loaded, show a styled centered "Load Game" button
-		if (!mobileState.gameLoaded)
-			RenderLoadGamePrompt(sim, uiState, mobileState);
-
-		// When touch controls are hidden (desktop default), render a
-		// small ImGui menu button so mouse users can open the hamburger.
-		// Touch users have the on-screen hamburger icon instead.
-		if (!mobileState.showTouchControls) {
-			float btnH = dp(36.0f);
-			float padX = dp(12.0f);
-			float btnW = ImGui::CalcTextSize("Menu").x + padX * 2.0f;
-			float border = 1.0f;
-			float winW = btnW + border * 2.0f;
-			float winH = btnH + border * 2.0f;
-			float margin = dp(8.0f);
-			float insetT = (float)mobileState.layout.insets.top;
-			float insetR = (float)mobileState.layout.insets.right;
-			ImGui::SetNextWindowPos(
-				ImVec2(io.DisplaySize.x - insetR - winW - margin,
-					insetT + margin));
-			ImGui::SetNextWindowSize(ImVec2(winW, winH));
-			ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.12f, 0.18f, 0.80f));
-			ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.4f, 0.6f, 0.5f));
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, dp(6.0f));
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, border);
-			ImGui::Begin("##DesktopMenuBtn", nullptr,
-				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
-				| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
-				| ImGuiWindowFlags_NoScrollbar);
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.15f));
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.25f));
-			if (ImGui::Button("Menu", ImVec2(btnW, btnH)))
-				ATMobileUI_OpenMenu(sim, mobileState);
-			ImGui::PopStyleColor(3);
-			ImGui::End();
-			ImGui::PopStyleVar(3);
-			ImGui::PopStyleColor(2);
-		}
 		break;
 
 	case ATMobileUIScreen::HamburgerMenu:

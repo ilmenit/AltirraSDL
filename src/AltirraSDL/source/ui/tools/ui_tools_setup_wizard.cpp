@@ -45,8 +45,11 @@
 #include "oshelper.h"
 #include "ui_mode.h"
 #include "ui_mobile.h"
+#include "mobile_internal.h"
+#include "../gamelibrary/game_library.h"
 
 extern ATSimulator g_sim;
+extern ATMobileUIState g_mobileState;
 
 // =========================================================================
 // First Time Setup Wizard
@@ -69,6 +72,7 @@ static struct SetupWizardState {
 	// Thread-safe: path stored by callback, processed on main thread
 	std::mutex scanMutex;
 	std::string pendingScanPath;
+	std::string pendingLibFolderPath;
 
 	void Reset() {
 		page = 0;
@@ -78,7 +82,6 @@ static struct SetupWizardState {
 		scanExisting = 0;
 		scanMessage.clear();
 		pendingUIMode = -1;
-		// mutex and pendingScanPath don't need reset
 	}
 } g_setupWiz;
 
@@ -156,11 +159,26 @@ static void FirmwareScanCallback(void *, const char * const *filelist, int) {
 	g_setupWiz.pendingScanPath = filelist[0];
 }
 
+static void LibFolderCallback(void *, const char * const *filelist, int) {
+	if (!filelist || !filelist[0])
+		return;
+	std::lock_guard<std::mutex> lock(g_setupWiz.scanMutex);
+	g_setupWiz.pendingLibFolderPath = filelist[0];
+}
+
+static bool IsGamingModeSelected() {
+	int sel = g_setupWiz.pendingUIMode;
+	if (sel < 0)
+		sel = (int)ATUIGetMode();
+	return sel == (int)ATUIMode::Gaming;
+}
+
 static int GetWizPrevPage(int page) {
 	switch (page) {
 		case 0:  return -1;
 		case 1:  return 0;
-		case 5:  return 1;
+		case 2:  return 1;
+		case 5:  return IsGamingModeSelected() ? 2 : 1;
 		case 10: return 5;
 		case 11: return 10;
 		case 20: return 11;
@@ -175,7 +193,8 @@ static int GetWizPrevPage(int page) {
 static int GetWizNextPage(int page) {
 	switch (page) {
 		case 0:  return 1;
-		case 1:  return 5;
+		case 1:  return IsGamingModeSelected() ? 2 : 5;
+		case 2:  return 5;
 		case 5:  return 10;
 		case 10: return 11;
 		case 11: return 20;
@@ -194,6 +213,14 @@ static void ApplyPendingUIMode(SDL_Window *window) {
 		if (cs < 1.0f) cs = 1.0f;
 		if (cs > 4.0f) cs = 4.0f;
 		ATUIApplyModeStyle(cs);
+
+		if (ATUIIsGamingMode()) {
+			GameBrowser_Init();
+			g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+			ATMobileUI_ApplyVisualEffects(g_mobileState);
+			ATMobileUI_ApplyPerformancePreset(g_mobileState);
+			g_sim.Pause();
+		}
 	}
 }
 
@@ -207,6 +234,31 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		}
 		if (!scanPath.empty())
 			ATUIDoFirmwareScan(scanPath.c_str());
+	}
+
+	// Process pending game library folder on main thread
+	{
+		std::string libPath;
+		{
+			std::lock_guard<std::mutex> lock(g_setupWiz.scanMutex);
+			libPath.swap(g_setupWiz.pendingLibFolderPath);
+		}
+		if (!libPath.empty()) {
+			GameBrowser_Init();
+			ATGameLibrary *lib = GetGameLibrary();
+			if (lib) {
+				auto sources = lib->GetSources();
+				GameSource src;
+				src.mPath = VDTextU8ToW(libPath.c_str(), -1);
+				src.mbIsArchive = false;
+				sources.push_back(src);
+				lib->SetSources(std::move(sources));
+				lib->SaveSettingsToRegistry();
+				lib->StartScan();
+				extern void ATRegistryFlushToDisk();
+				ATRegistryFlushToDisk();
+			}
+		}
 	}
 
 	ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_Appearing);
@@ -246,17 +298,20 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 	{
 		ImGui::BeginChild("WizSteps", ImVec2(sidebarW, -40), ImGuiChildFlags_Borders);
 
-		static const struct { int pageMin; int pageMax; const char *label; } kSteps[] = {
-			{ 0, 0, "Welcome" },
-			{ 1, 1, "Interface mode" },
-			{ 5, 9, "Appearance" },
-			{ 10, 19, "Setup firmware" },
-			{ 20, 29, "Select system" },
-			{ 30, 39, "Experience" },
-			{ 40, 49, "Finish" },
+		static const struct { int pageMin; int pageMax; const char *label; bool gamingOnly; } kSteps[] = {
+			{ 0, 0, "Welcome", false },
+			{ 1, 1, "Interface mode", false },
+			{ 2, 4, "Game Library", true },
+			{ 5, 9, "Appearance", false },
+			{ 10, 19, "Setup firmware", false },
+			{ 20, 29, "Select system", false },
+			{ 30, 39, "Experience", false },
+			{ 40, 49, "Finish", false },
 		};
 
 		for (auto &step : kSteps) {
+			if (step.gamingOnly && !IsGamingModeSelected())
+				continue;
 			bool active = (g_setupWiz.page >= step.pageMin && g_setupWiz.page <= step.pageMax);
 			if (active) {
 				const auto &bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
@@ -300,7 +355,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			ImGui::TextWrapped(
 				"Choose your preferred interface mode.\n\n"
 				"Desktop Mode provides a traditional menu bar with keyboard shortcuts, "
-				"suitable for mouse and keyboard.\n\n"
+				"suitable for mouse and keyboard, software development and debugging.\n\n"
 				"Gaming Mode provides a simplified, controller-friendly interface with "
 				"large buttons and gamepad navigation, suitable for gamepads and touch "
 				"screens."
@@ -326,6 +381,75 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				"You can switch between modes at any time from the View menu (Desktop) "
 				"or the hamburger menu (Gaming)."
 			);
+			break;
+		}
+
+		case 2: { // Game Library (Gaming Mode only)
+			ImGui::TextWrapped(
+				"Gaming Mode uses a Game Library as your home screen. Add folders "
+				"containing your Atari game files (.atr, .xex, .car, .cas, etc.) "
+				"to browse and play them.\n\n"
+				"You can also add more folders later from Settings > Game Library."
+			);
+			ImGui::Spacing();
+
+			GameBrowser_Init();
+			ATGameLibrary *lib = GetGameLibrary();
+			if (lib) {
+				if (lib->IsScanComplete())
+					lib->ConsumeScanResults();
+
+				const auto &sources = lib->GetSources();
+				if (!sources.empty()) {
+					if (ImGui::BeginTable("LibSources", 2,
+						ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+					{
+						ImGui::TableSetupColumn("Folder", ImGuiTableColumnFlags_WidthStretch);
+						ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 60);
+						ImGui::TableHeadersRow();
+						for (size_t i = 0; i < sources.size(); ++i) {
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							VDStringA pathU8 = VDTextWToU8(sources[i].mPath);
+							ImGui::TextUnformatted(pathU8.c_str());
+							ImGui::TableNextColumn();
+							char removeId[32];
+							snprintf(removeId, sizeof(removeId),
+								"Remove##ls%d", (int)i);
+							if (ImGui::SmallButton(removeId)) {
+								auto mut = sources;
+								mut.erase(mut.begin() + i);
+								lib->SetSources(std::move(mut));
+								lib->SaveSettingsToRegistry();
+								extern void ATRegistryFlushToDisk();
+								ATRegistryFlushToDisk();
+							}
+						}
+						ImGui::EndTable();
+					}
+					ImGui::Spacing();
+				}
+
+				if (lib->IsScanning()) {
+					int found = lib->GetScanProgress();
+					ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f),
+						"Scanning... %d games found", found);
+				} else if (!sources.empty()) {
+					size_t count = lib->GetEntryCount();
+					ImGui::Text("%d game%s in your library.",
+						(int)count, count == 1 ? "" : "s");
+				}
+			}
+
+			ImGui::Spacing();
+			if (ImGui::Button("Add Folder..."))
+				SDL_ShowOpenFolderDialog(LibFolderCallback, nullptr,
+					window, nullptr, false);
+
+			ImGui::Spacing();
+			ImGui::Spacing();
+			ImGui::TextDisabled(
+				"If you don't have game files yet, skip this step.");
 			break;
 		}
 
@@ -509,29 +633,52 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		}
 
 		case 40: // Finish (computer)
-			ImGui::TextWrapped(
-				"Setup is now complete.\n\n"
-				"Click Finish to exit and power up the emulated computer. You can then "
-				"use the File > Boot Image... menu option to boot a disk, cartridge, or "
-				"cassette tape image, or start a program.\n\n"
-				"If you want to repeat this process in the future, the setup wizard can "
-				"be restarted via the Tools menu."
-			);
+			if (IsGamingModeSelected()) {
+				ImGui::TextWrapped(
+					"Setup is now complete.\n\n"
+					"Click Finish to enter Gaming Mode. The Game Library will be your "
+					"home screen — browse and launch your Atari games from there.\n\n"
+					"You can add or remove game folders at any time from Settings > "
+					"Game Library.\n\n"
+					"To repeat this process, switch to Desktop Mode and choose "
+					"Tools > First Time Setup..."
+				);
+			} else {
+				ImGui::TextWrapped(
+					"Setup is now complete.\n\n"
+					"Click Finish to exit and power up the emulated computer. You can then "
+					"use the File > Boot Image... menu option to boot a disk, cartridge, or "
+					"cassette tape image, or start a program.\n\n"
+					"If you want to repeat this process in the future, the setup wizard can "
+					"be restarted via the Tools menu."
+				);
+			}
 			break;
 
 		case 41: // Finish (5200)
-			ImGui::TextWrapped(
-				"Setup is now complete.\n\n"
-				"Click Finish to exit and power up the emulated console. The 5200 needs "
-				"a cartridge to work, so select File > Boot Image... to attach and start "
-				"a cartridge image.\n\n"
-				"You will probably want to check your controller settings. The default "
-				"setup binds F2-F4, the digit key row, arrow keys, and Ctrl/Shift to "
-				"joystick 1. Alternate bindings can be selected from the Input menu or "
-				"new ones can be defined in Input > Input Mappings.\n\n"
-				"If you want to repeat this process in the future, choose Tools > First "
-				"Time Setup... from the menu."
-			);
+			if (IsGamingModeSelected()) {
+				ImGui::TextWrapped(
+					"Setup is now complete.\n\n"
+					"Click Finish to enter Gaming Mode. The 5200 needs a cartridge to "
+					"work — use \"Boot Game\" in the Game Library to attach and start "
+					"a cartridge image.\n\n"
+					"To repeat this process, switch to Desktop Mode and choose "
+					"Tools > First Time Setup..."
+				);
+			} else {
+				ImGui::TextWrapped(
+					"Setup is now complete.\n\n"
+					"Click Finish to exit and power up the emulated console. The 5200 needs "
+					"a cartridge to work, so select File > Boot Image... to attach and start "
+					"a cartridge image.\n\n"
+					"You will probably want to check your controller settings. The default "
+					"setup binds F2-F4, the digit key row, arrow keys, and Ctrl/Shift to "
+					"joystick 1. Alternate bindings can be selected from the Input menu or "
+					"new ones can be defined in Input > Input Mappings.\n\n"
+					"If you want to repeat this process in the future, choose Tools > First "
+					"Time Setup... from the menu."
+				);
+			}
 			break;
 		}
 
