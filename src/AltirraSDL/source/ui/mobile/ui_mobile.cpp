@@ -85,6 +85,11 @@ static void LoadMobileConfig(ATMobileUIState &mobileState) {
 	mobileState.interfaceScale = key.getInt("InterfaceScale", 1);
 	if (mobileState.interfaceScale < 0 || mobileState.interfaceScale > 2)
 		mobileState.interfaceScale = 1;
+#ifdef __ANDROID__
+	mobileState.showTouchControls = key.getBool("ShowTouchControls", true);
+#else
+	mobileState.showTouchControls = key.getBool("ShowTouchControls", false);
+#endif
 }
 
 void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobile_internal.h
@@ -106,6 +111,7 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobil
 		key.setInt("PerformancePreset", mobileState.performancePreset);
 		key.setInt("JoystickStyle", (int)mobileState.layoutConfig.joystickStyle);
 		key.setInt("InterfaceScale", mobileState.interfaceScale);
+		key.setBool("ShowTouchControls", mobileState.showTouchControls);
 	}
 	// Persist immediately — registry-only writes are lost if the user
 	// swipes the app away from recents before it backgrounds properly.
@@ -203,6 +209,7 @@ VDStringW s_zipInternalDir;
 // -1 means normal Load Game mode.
 int s_diskMountTargetDrive = -1;
 bool s_mobileShowAllDrives = false;
+bool s_showAllFiles = false;
 
 // Generic modal info popup — every destructive / long-running action
 // in the mobile UI should give the user explicit feedback.  This is a
@@ -268,7 +275,7 @@ static bool IsSupportedExtension(const wchar_t *name) {
 	static const wchar_t *kExtensions[] = {
 		L"xex", L"atr", L"car", L"bin", L"rom", L"cas",
 		L"dcm", L"atz", L"zip", L"gz", L"xfd", L"atx",
-		L"obx", L"com", L"exe",
+		L"obx", L"com", L"exe", L"pro", L"wav",
 		nullptr
 	};
 
@@ -326,7 +333,7 @@ static void RefreshFileBrowserFromZip() {
 				VDStringW fileName(remainder);
 				if (s_romFolderMode)
 					continue;
-				if (!IsSupportedExtension(fileName.c_str()))
+				if (!s_showAllFiles && !IsSupportedExtension(fileName.c_str()))
 					continue;
 				FileBrowserEntry entry;
 				entry.name = fileName;
@@ -394,7 +401,7 @@ void RefreshFileBrowser(const VDStringW &dir) {
 			if (entry.isDirectory)
 				ctx->entries->push_back(std::move(entry));
 		} else {
-			if (entry.isDirectory || IsSupportedExtension(entry.name.c_str()))
+			if (entry.isDirectory || s_showAllFiles || IsSupportedExtension(entry.name.c_str()))
 				ctx->entries->push_back(std::move(entry));
 		}
 
@@ -615,13 +622,51 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 	switch (mobileState.currentScreen) {
 	case ATMobileUIScreen::None:
 		// Render touch controls overlay — but hide them when the virtual
-		// keyboard is visible so they don't overlap the keyboard keys.
-		if (!uiState.showVirtualKeyboard)
+		// keyboard is visible so they don't overlap the keyboard keys,
+		// or when the user has disabled them (default on desktop).
+		if (mobileState.showTouchControls && !uiState.showVirtualKeyboard)
 			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig);
 
 		// If no game loaded, show a styled centered "Load Game" button
 		if (!mobileState.gameLoaded)
 			RenderLoadGamePrompt(sim, uiState, mobileState);
+
+		// When touch controls are hidden (desktop default), render a
+		// small ImGui menu button so mouse users can open the hamburger.
+		// Touch users have the on-screen hamburger icon instead.
+		if (!mobileState.showTouchControls) {
+			float btnH = dp(36.0f);
+			float padX = dp(12.0f);
+			float btnW = ImGui::CalcTextSize("Menu").x + padX * 2.0f;
+			float border = 1.0f;
+			float winW = btnW + border * 2.0f;
+			float winH = btnH + border * 2.0f;
+			float margin = dp(8.0f);
+			float insetT = (float)mobileState.layout.insets.top;
+			float insetR = (float)mobileState.layout.insets.right;
+			ImGui::SetNextWindowPos(
+				ImVec2(io.DisplaySize.x - insetR - winW - margin,
+					insetT + margin));
+			ImGui::SetNextWindowSize(ImVec2(winW, winH));
+			ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.12f, 0.18f, 0.80f));
+			ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.4f, 0.6f, 0.5f));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, dp(6.0f));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, border);
+			ImGui::Begin("##DesktopMenuBtn", nullptr,
+				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+				| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+				| ImGuiWindowFlags_NoScrollbar);
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.15f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.25f));
+			if (ImGui::Button("Menu", ImVec2(btnW, btnH)))
+				ATMobileUI_OpenMenu(sim, mobileState);
+			ImGui::PopStyleColor(3);
+			ImGui::End();
+			ImGui::PopStyleVar(3);
+			ImGui::PopStyleColor(2);
+		}
 		break;
 
 	case ATMobileUIScreen::HamburgerMenu:
@@ -726,6 +771,9 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 			// them from reaching touch controls (which are hidden).
 			return true;
 		}
+
+		if (!mobileState.showTouchControls)
+			return false;
 
 		bool consumed = ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig);
 		if (consumed && ev.type == SDL_EVENT_FINGER_DOWN)

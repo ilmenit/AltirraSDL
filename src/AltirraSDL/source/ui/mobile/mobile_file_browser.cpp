@@ -136,6 +136,33 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
 	if (ImGui::Begin("##FileBrowser", nullptr, flags)) {
+		// ESC / B-button / Backspace navigates back (same as "<" arrow).
+		if (!s_confirmActive && !s_infoModalOpen) {
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back) {
+				s_zipArchivePath.clear();
+				s_zipInternalDir.clear();
+				if (s_diskMountTargetDrive >= 0) {
+					s_diskMountTargetDrive = -1;
+					mobileState.currentScreen = ATMobileUIScreen::DiskManager;
+				} else if (s_folderPickerMode) {
+					s_folderPickerMode = false;
+					s_folderPickerCallback = nullptr;
+					mobileState.currentScreen = s_folderPickerReturnScreen;
+				} else if (s_romFolderMode) {
+					s_romFolderMode = false;
+					mobileState.currentScreen = ATMobileUIScreen::Settings;
+				} else {
+					ATMobileUI_CloseMenu(sim, mobileState);
+				}
+			}
+		}
+
 		// Header bar
 		float headerH = dp(48.0f);
 		ImVec2 backBtnSize(dp(48.0f), headerH);
@@ -335,6 +362,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			};
 
 			// --- ".." (Up) — first in the row for easy reach ---
+			// Minimum width so the button is a comfortable touch target
+			// even though the label is only two characters.
 			{
 				bool atRoot = s_zipArchivePath.empty()
 					&& (s_fileBrowserDir.empty()
@@ -342,7 +371,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				if (atRoot) {
 					ImGui::BeginDisabled();
 				}
-				if (ImGui::Button("..", ImVec2(0, shortcutH)))
+				float upW = dp(64.0f);
+				if (ImGui::Button("..##up", ImVec2(upW, shortcutH)))
 					NavigateUp();
 				if (atRoot) {
 					ImGui::EndDisabled();
@@ -422,6 +452,19 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				if (ImGui::Button("/", ImVec2(dp(40.0f), shortcutH)))
 					JumpToDirectory("/");
 				popActiveStyle(active);
+			}
+
+			// --- "All" toggle (show all files vs. supported only) ---
+			if (!s_romFolderMode && !s_folderPickerMode) {
+				float allW = ImGui::CalcTextSize("All (*)").x
+					+ style.FramePadding.x * 2.0f;
+				sameLineIfFits(allW);
+				pushActiveStyle(s_showAllFiles);
+				if (ImGui::Button("All (*)", ImVec2(0, shortcutH))) {
+					s_showAllFiles = !s_showAllFiles;
+					s_fileBrowserNeedsRefresh = true;
+				}
+				popActiveStyle(s_showAllFiles);
 			}
 		}
 

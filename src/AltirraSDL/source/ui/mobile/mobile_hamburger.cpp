@@ -73,6 +73,21 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
+	// ESC / B-button / Backspace closes the hamburger menu, matching
+	// the BACK gamepad button and the "<" header arrow.
+	// Skip when a modal dialog is showing on top — ESC should dismiss
+	// the modal first (handled by mobile_dialogs.cpp), not the menu.
+	bool closeFromBack = false;
+	if (!s_confirmActive && !s_infoModalOpen) {
+		bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+		if (!ImGui::IsAnyItemActive()) {
+			back = back
+				|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+		}
+		if (back) closeFromBack = true;
+	}
+
 	bool closeFromHeader = false;
 	if (ImGui::Begin("##MobileMenu", nullptr, flags)) {
 		// Material-style app-bar header: a full-width 56dp row with a
@@ -297,7 +312,7 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 	// animation on the back button completes for this frame and the
 	// ImGui style stack is guaranteed balanced regardless of any
 	// future edits to the header section.
-	if (closeFromHeader) {
+	if (closeFromHeader || closeFromBack) {
 		ATMobileUI_CloseMenu(sim, mobileState);
 		return;
 	}

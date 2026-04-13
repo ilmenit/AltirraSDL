@@ -170,6 +170,18 @@ void RenderMobileDiskManager(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoBackground;
 
 	if (ImGui::Begin("##MobileDiskMgr", nullptr, flags)) {
+		// ESC / B-button / Backspace returns to hamburger.
+		if (!s_confirmActive && !s_infoModalOpen) {
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back)
+				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+		}
+
 		// Header
 		float headerH = dp(48.0f);
 		if (ImGui::Button("<", ImVec2(dp(48.0f), headerH)))

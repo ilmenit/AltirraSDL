@@ -276,6 +276,17 @@ static void HandleEvents() {
 				continue;
 			if (ATMobileUI_HandleEvent(ev, g_mobileState))
 				continue;
+
+			// ESC on the idle screen opens the hamburger menu,
+			// mirroring the BACK gamepad button.  Other screens
+			// handle ESC internally via ImGui::IsKeyPressed.
+			if (ev.type == SDL_EVENT_KEY_DOWN
+				&& ev.key.key == SDLK_ESCAPE
+				&& g_mobileState.currentScreen == ATMobileUIScreen::None)
+			{
+				ATMobileUI_OpenMenu(g_sim, g_mobileState);
+				continue;
+			}
 		}
 
 		// Virtual keyboard intercepts gamepad events when visible.
@@ -341,29 +352,44 @@ static void HandleEvents() {
 			}
 
 			{
+				// When a gaming mode screen is open, ImGui owns all
+				// keyboard input for navigation (arrows, enter, etc.).
+				// Skip accelerator dispatch and game input so keys
+				// don't double-fire.
+				bool gamingScreenOpen = ATUIIsGamingMode()
+					&& g_mobileState.currentScreen != ATMobileUIScreen::None;
+
 				// Accelerator table dispatch (matches Windows ATUIActivateVirtKeyMapping)
 				// Priority: Global → Debugger → Display
-				bool handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Global);
+				bool handled = false;
+				if (!gamingScreenOpen) {
+					handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Global);
 
-				if (!handled && ATUIDebuggerIsOpen())
-					handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Debugger);
+					if (!handled && ATUIDebuggerIsOpen())
+						handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Debugger);
 
-				if (!handled && !ATUIWantCaptureKeyboard())
-					handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Display);
+					if (!handled && !ATUIWantCaptureKeyboard())
+						handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Display);
+				}
 
 				if (!handled && !ATUIWantCaptureKeyboard())
 					ATInputSDL3_HandleKeyDown(ev.key);
 			}
 			break;
 
-		case SDL_EVENT_KEY_UP:
+		case SDL_EVENT_KEY_UP: {
 			// Dispatch key-up through accel tables (handles PulseWarpOff on F1 release).
 			// Check all contexts symmetrically with key-down dispatch.
-			ATUISDLActivateAccelKey(ev.key, true, kATUIAccelContext_Global);
-			if (ATUIDebuggerIsOpen())
-				ATUISDLActivateAccelKey(ev.key, true, kATUIAccelContext_Debugger);
-			if (!ATUIWantCaptureKeyboard())
-				ATUISDLActivateAccelKey(ev.key, true, kATUIAccelContext_Display);
+			// Skip when a gaming mode screen owns the keyboard (matches KEY_DOWN guard).
+			bool gamingScreenOpenUp = ATUIIsGamingMode()
+				&& g_mobileState.currentScreen != ATMobileUIScreen::None;
+			if (!gamingScreenOpenUp) {
+				ATUISDLActivateAccelKey(ev.key, true, kATUIAccelContext_Global);
+				if (ATUIDebuggerIsOpen())
+					ATUISDLActivateAccelKey(ev.key, true, kATUIAccelContext_Debugger);
+				if (!ATUIWantCaptureKeyboard())
+					ATUISDLActivateAccelKey(ev.key, true, kATUIAccelContext_Display);
+			}
 
 			if (!ATUIWantCaptureKeyboard()) {
 				// Suppress emulator key-up for keys bound in accel tables
@@ -373,6 +399,7 @@ static void HandleEvents() {
 					ATInputSDL3_HandleKeyUp(ev.key);
 			}
 			break;
+		}
 
 		case SDL_EVENT_TEXT_INPUT:
 			if (!ATUIWantCaptureKeyboard())

@@ -380,7 +380,7 @@ static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
 		}
 	}
 
-	bool hovered = ImGui::IsItemHovered();
+	bool hovered = ImGui::IsItemHovered() || ImGui::IsItemFocused();
 
 	ImVec2 imgTL = cursor;
 	ImVec2 imgBR(cursor.x + tileW, cursor.y + imageH);
@@ -634,11 +634,15 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// B button, Escape, or Backspace: context-dependent back.
 		// Keyboard shortcuts only fire when no InputText is active
 		// (to avoid stealing Backspace/Escape from text editing).
-		bool backPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
-		if (!ImGui::IsAnyItemActive()) {
-			backPressed = backPressed
-				|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
-				|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+		// Skip when a modal dialog is on top (see mobile_hamburger.cpp).
+		bool backPressed = false;
+		if (!s_confirmActive && !s_infoModalOpen) {
+			backPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				backPressed = backPressed
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
 		}
 
 		if (backPressed) {
@@ -745,7 +749,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 
 			// Escape clears and closes the search bar
-			if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+			if (!s_confirmActive && !s_infoModalOpen
+				&& ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
 				s_searchBuf[0] = '\0';
 				s_searchFilter.clear();
 				s_searchActive = false;

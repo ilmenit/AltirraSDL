@@ -65,6 +65,28 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
 	if (ImGui::Begin("##MobileSettings", nullptr, flags)) {
+		// ESC / B-button / Backspace navigates back, same as "<" arrow.
+		// Skip when a modal dialog is on top (see mobile_hamburger.cpp).
+		if (!s_confirmActive && !s_infoModalOpen) {
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back) {
+				if (s_settingsPage == ATMobileSettingsPage::Firmware
+					&& s_fwPicker != kATFirmwareType_Unknown)
+				{
+					s_fwPicker = kATFirmwareType_Unknown;
+				} else if (s_settingsPage == ATMobileSettingsPage::Home) {
+					mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+				} else {
+					s_settingsPage = ATMobileSettingsPage::Home;
+				}
+			}
+		}
+
 		// Header — back arrow, title reflects current sub-page.
 		float headerH = dp(48.0f);
 		if (ImGui::Button("<", ImVec2(dp(48.0f), headerH))) {
@@ -149,10 +171,12 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				ATMobileSettingsPage::Performance };
 
 			cats[n++] = { "Controls",
-				VDStringA().sprintf("Size: %s  \xC2\xB7  Haptic: %s",
-					mobileState.layoutConfig.controlSize == ATTouchControlSize::Small  ? "Small"  :
-					mobileState.layoutConfig.controlSize == ATTouchControlSize::Large  ? "Large"  : "Medium",
-					mobileState.layoutConfig.hapticEnabled ? "on" : "off"),
+				mobileState.showTouchControls
+					? VDStringA().sprintf("Touch: on  \xC2\xB7  Size: %s  \xC2\xB7  Haptic: %s",
+						mobileState.layoutConfig.controlSize == ATTouchControlSize::Small  ? "Small"  :
+						mobileState.layoutConfig.controlSize == ATTouchControlSize::Large  ? "Large"  : "Medium",
+						mobileState.layoutConfig.hapticEnabled ? "on" : "off")
+					: VDStringA("Touch controls: off"),
 				ATMobileSettingsPage::Controls };
 
 			cats[n++] = { "Save State",
@@ -186,14 +210,26 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				ImVec2 cursor = ImGui::GetCursorScreenPos();
 				float availW = ImGui::GetContentRegionAvail().x;
 				ImDrawList *dl = ImGui::GetWindowDrawList();
-				dl->AddRectFilled(cursor,
-					ImVec2(cursor.x + availW, cursor.y + rowH),
-					IM_COL32(30, 35, 50, 200), dp(10.0f));
 
 				if (ImGui::InvisibleButton("##cat",
 					ImVec2(availW, rowH)))
 				{
 					s_settingsPage = cats[i].target;
+				}
+
+				bool itemHovered = ImGui::IsItemHovered();
+				bool itemFocused = ImGui::IsItemFocused();
+				ImU32 bgColor = (itemHovered || itemFocused)
+					? IM_COL32(50, 65, 100, 220)
+					: IM_COL32(30, 35, 50, 200);
+				dl->AddRectFilled(cursor,
+					ImVec2(cursor.x + availW, cursor.y + rowH),
+					bgColor, dp(10.0f));
+				if (itemFocused) {
+					dl->AddRect(cursor,
+						ImVec2(cursor.x + availW, cursor.y + rowH),
+						IM_COL32(100, 180, 255, 200), dp(10.0f),
+						0, dp(2.0f));
 				}
 
 				ImVec2 tcur(cursor.x + dp(16.0f), cursor.y + dp(12.0f));
@@ -337,6 +373,15 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		if (s_settingsPage == ATMobileSettingsPage::Controls) {
 		ATTouchSection("Controls");
 
+		// Show on-screen touch controls (joystick, fire, console keys)
+		if (ATTouchToggle("Show Touch Controls", &mobileState.showTouchControls)) {
+			SaveMobileConfig(mobileState);
+		}
+
+		// Dependent controls — only meaningful when touch controls are visible
+		if (!mobileState.showTouchControls)
+			ImGui::BeginDisabled();
+
 		// Joystick style
 		{
 			int js = (int)mobileState.layoutConfig.joystickStyle;
@@ -371,6 +416,9 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			SaveMobileConfig(mobileState);
 			ATTouchControls_SetHapticEnabled(mobileState.layoutConfig.hapticEnabled);
 		}
+
+		if (!mobileState.showTouchControls)
+			ImGui::EndDisabled();
 		} // end Controls page
 
 		// --- Sub-page: Save State ---

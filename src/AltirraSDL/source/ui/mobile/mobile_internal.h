@@ -65,6 +65,9 @@ extern VDStringW s_zipInternalDir;
 extern int s_diskMountTargetDrive;
 extern bool s_mobileShowAllDrives;
 
+// When true, the file browser shows all files regardless of extension
+extern bool s_showAllFiles;
+
 // -------------------------------------------------------------------------
 // Modal info / confirmation sheet state
 // -------------------------------------------------------------------------
