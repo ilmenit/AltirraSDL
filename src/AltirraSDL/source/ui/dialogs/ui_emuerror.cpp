@@ -354,6 +354,8 @@ static float GamingDP(float v) {
 }
 
 static void RenderEmuErrorGaming(ATSimulator &sim) {
+	g_emuErrorNeedOpen = false;
+
 	ImGuiIO &io = ImGui::GetIO();
 
 	// Dim backdrop
@@ -367,10 +369,21 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 	if (sheetW < GamingDP(300.0f))
 		sheetW = GamingDP(300.0f);
 
+	// Window height: 8 toggle rows (56dp each) + header + footer,
+	// capped to fit the screen.  Content is static so no per-frame
+	// measurement is needed.
+	float toggleAreaH  = GamingDP(56.0f) * 8.0f;
+	float headerAreaH  = GamingDP(130.0f);
+	float footerAreaH  = GamingDP(170.0f);
+	float desiredH = headerAreaH + toggleAreaH + footerAreaH;
+	float maxH = io.DisplaySize.y - GamingDP(48.0f);
+	float windowH = desiredH < maxH ? desiredH : maxH;
+	if (windowH < GamingDP(300.0f)) windowH = GamingDP(300.0f);
+
 	ImGui::SetNextWindowPos(
 		ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
 		ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-	ImGui::SetNextWindowSize(ImVec2(sheetW, 0));
+	ImGui::SetNextWindowSize(ImVec2(sheetW, windowH));
 	ImGui::SetNextWindowFocus();
 
 	ImGuiStyle &style = ImGui::GetStyle();
@@ -385,13 +398,10 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings
-		| ImGuiWindowFlags_AlwaysAutoResize);
+		| ImGuiWindowFlags_NoScrollbar
+		| ImGuiWindowFlags_NoScrollWithMouse);
 
-	ImGui::BeginChild("##EmuErrorScroll", ImVec2(0, 0),
-		ImGuiChildFlags_NavFlattened | ImGuiChildFlags_AutoResizeY);
-	ATTouchDragScroll();
-
-	// Title
+	// Title (non-scrolling header)
 	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
 	ImGui::SetWindowFontScale(1.25f);
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.70f, 1.00f, 1.0f));
@@ -402,7 +412,6 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	// Description
 	ImGui::PushTextWrapPos(sheetW - GamingDP(24.0f));
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.92f, 0.96f, 1));
 	ImGui::TextUnformatted(
@@ -412,7 +421,22 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 	ImGui::PopTextWrapPos();
 	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
 
-	// Compatibility toggles using ATTouchToggle
+	// Buttons are 2 rows × (56dp + 12dp gap) + 8dp pad = ~140dp.
+	// Reserve that space so buttons always stay visible at the bottom,
+	// and the toggle list gets the remaining height as a scroll area.
+	float btnAreaH = GamingDP(56.0f) * 2.0f + GamingDP(12.0f) * 2.0f
+		+ GamingDP(8.0f);
+	float separatorH = GamingDP(28.0f);
+	float childH = ImGui::GetContentRegionAvail().y
+		- btnAreaH - separatorH;
+	if (childH < GamingDP(100.0f))
+		childH = GamingDP(100.0f);
+
+	// Scrollable child for the 8 compatibility toggles
+	ImGui::BeginChild("##EmuErrorToggles", ImVec2(0, childH),
+		ImGuiChildFlags_NavFlattened);
+	ATTouchDragScroll();
+
 	if (!g_enHardware) ImGui::BeginDisabled();
 	ATTouchToggle("Change hardware to XL/XE", &g_chkHardware);
 	if (!g_enHardware) ImGui::EndDisabled();
@@ -447,11 +471,14 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 	ATTouchToggle("Use accurate disk timing", &g_chkDiskIO);
 	if (!g_enDiskIO) ImGui::EndDisabled();
 
-	ImGui::Dummy(ImVec2(0, GamingDP(12.0f)));
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
+
+	// Separator + action buttons (non-scrolling footer)
+	ImGui::Dummy(ImVec2(0, GamingDP(4.0f)));
 	ImGui::Separator();
 	ImGui::Dummy(ImVec2(0, GamingDP(8.0f)));
 
-	// Action buttons — two rows of two, matching Gaming Mode style
 	float btnH = GamingDP(56.0f);
 	float rowW = ImGui::GetContentRegionAvail().x;
 	float gap = GamingDP(12.0f);
@@ -516,9 +543,6 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 		if (dismiss)
 			g_showEmuError = false;
 	}
-
-	ATTouchEndDragScroll();
-	ImGui::EndChild();
 
 	ImGui::End();
 	ImGui::PopStyleColor(2);
