@@ -554,6 +554,10 @@ static void RenderEmuErrorGaming(ATSimulator &sim) {
 // Public entry point (called each frame from ATUIRenderFrame)
 ///////////////////////////////////////////////////////////////////////////
 
+bool ATUIIsEmuErrorDialogOpen() {
+	return g_showEmuError;
+}
+
 void ATUIRenderEmuErrorDialog(ATSimulator &sim) {
 	if (g_emuErrorRequestDebugger) {
 		g_emuErrorRequestDebugger = false;

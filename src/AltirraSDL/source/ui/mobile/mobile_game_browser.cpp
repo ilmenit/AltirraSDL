@@ -784,71 +784,139 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				s_focusLetterBar = false;
 			}
 
-			// 27 letter buttons + search button + padding must fit
-			// the available width.  Compute button size to fit.
-			float availW = ImGui::GetContentRegionAvail().x;
-			float letterPad = dp(1.0f);
-			int totalBtns = 28;  // 27 letters + 1 search
-			float letterBtnSz = (availW - letterPad * (totalBtns - 1))
-				/ totalBtns;
-			if (letterBtnSz < dp(16.0f)) letterBtnSz = dp(16.0f);
-			if (letterBtnSz > dp(32.0f)) letterBtnSz = dp(32.0f);
-
-			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, dp(3.0f));
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-
-			for (int i = 0; i < 27; ++i) {
-				if (i > 0)
-					ImGui::SameLine(0, letterPad);
-
-				char label[8];
-				if (i < 26) {
-					label[0] = 'A' + i;
-					label[1] = '\0';
-				} else {
-					label[0] = '$';
-					label[1] = '\0';
+#ifdef __ANDROID__
+			// On mobile, use a combo selector — letter buttons are too
+			// small for finger input.
+			{
+				const char *preview = "All";
+				char previewBuf[4] = {};
+				if (s_letterFilterIdx >= 0 && s_letterFilterIdx < 26) {
+					previewBuf[0] = 'A' + s_letterFilterIdx;
+					preview = previewBuf;
+				} else if (s_letterFilterIdx == 26) {
+					preview = "$";
 				}
 
-				bool avail = s_availableLetters[i];
-				bool active = (s_letterFilterIdx == i);
-
-				if (!avail)
-					ImGui::BeginDisabled();
-				if (active) {
-					ImGui::PushStyleColor(ImGuiCol_Button,
-						ImVec4(0.25f, 0.55f, 0.90f, 1.0f));
-					ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-						ImVec4(0.30f, 0.60f, 0.95f, 1.0f));
-				}
-
-				char btnId[8];
-				snprintf(btnId, sizeof(btnId), "%s##L%d", label, i);
-				if (ImGui::Button(btnId, ImVec2(letterBtnSz, letterBtnSz))) {
-					if (active) {
+				float comboW = dp(100.0f);
+				ImGui::SetNextItemWidth(comboW);
+				if (ImGui::BeginCombo("##LetterFilter", preview)) {
+					if (ImGui::Selectable("All",
+						s_letterFilterIdx == -1))
+					{
 						s_letterFilterIdx = -1;
-					} else {
-						s_letterFilterIdx = i;
-						s_searchBuf[0] = '\0';
-						s_searchFilter.clear();
-						s_searchActive = false;
+						s_needsRefresh = true;
 					}
-					s_needsRefresh = true;
+					for (int i = 0; i < 27; ++i) {
+						bool avail = s_availableLetters[i];
+						if (!avail) ImGui::BeginDisabled();
+						char label[4];
+						if (i < 26) {
+							label[0] = 'A' + i;
+							label[1] = '\0';
+						} else {
+							label[0] = '$';
+							label[1] = '\0';
+						}
+						if (ImGui::Selectable(label,
+							s_letterFilterIdx == i))
+						{
+							s_letterFilterIdx = i;
+							s_searchBuf[0] = '\0';
+							s_searchFilter.clear();
+							s_searchActive = false;
+							s_needsRefresh = true;
+						}
+						if (!avail) ImGui::EndDisabled();
+					}
+					ImGui::EndCombo();
 				}
 				if (ImGui::IsItemFocused())
 					letterBarHasFocus = true;
 
-				if (active)
-					ImGui::PopStyleColor(2);
-				if (!avail)
-					ImGui::EndDisabled();
+				ImGui::SameLine(0, dp(6.0f));
 			}
+#else
+			// On desktop, use letter buttons that wrap to the next row
+			// when they don't fit the available width.
+			{
+				float letterPad = dp(2.0f);
+				float letterBtnSz = dp(26.0f);
+				float maxX = ImGui::GetWindowPos().x
+					+ ImGui::GetWindowContentRegionMax().x;
 
-			ImGui::PopStyleVar(2);
+				ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,
+					dp(3.0f));
+				ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+					ImVec2(0, 0));
+
+				for (int i = 0; i < 27; ++i) {
+					if (i > 0) {
+						float lastRight = ImGui::GetItemRectMax().x;
+						if (lastRight + letterPad + letterBtnSz
+							<= maxX)
+							ImGui::SameLine(0, letterPad);
+					}
+
+					char label[8];
+					if (i < 26) {
+						label[0] = 'A' + i;
+						label[1] = '\0';
+					} else {
+						label[0] = '$';
+						label[1] = '\0';
+					}
+
+					bool avail = s_availableLetters[i];
+					bool active = (s_letterFilterIdx == i);
+
+					if (!avail)
+						ImGui::BeginDisabled();
+					if (active) {
+						ImGui::PushStyleColor(ImGuiCol_Button,
+							ImVec4(0.25f, 0.55f, 0.90f, 1.0f));
+						ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+							ImVec4(0.30f, 0.60f, 0.95f, 1.0f));
+					}
+
+					char btnId[8];
+					snprintf(btnId, sizeof(btnId), "%s##L%d",
+						label, i);
+					if (ImGui::Button(btnId,
+						ImVec2(letterBtnSz, letterBtnSz)))
+					{
+						if (active) {
+							s_letterFilterIdx = -1;
+						} else {
+							s_letterFilterIdx = i;
+							s_searchBuf[0] = '\0';
+							s_searchFilter.clear();
+							s_searchActive = false;
+						}
+						s_needsRefresh = true;
+					}
+					if (ImGui::IsItemFocused())
+						letterBarHasFocus = true;
+
+					if (active)
+						ImGui::PopStyleColor(2);
+					if (!avail)
+						ImGui::EndDisabled();
+				}
+
+				ImGui::PopStyleVar(2);
+
+				// Search button on the same wrapping row
+				{
+					float lastRight = ImGui::GetItemRectMax().x;
+					if (lastRight + dp(6.0f) + dp(26.0f) <= maxX)
+						ImGui::SameLine(0, dp(6.0f));
+				}
+			}
+#endif
 
 			// Search button / bar
 			static bool s_focusSearchInput = false;
-			ImGui::SameLine(0, dp(6.0f));
+			float searchBtnSz = dp(26.0f);
 			if (s_searchActive) {
 				if (s_focusSearchInput) {
 					ImGui::SetKeyboardFocusHere(0);
@@ -881,7 +949,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					s_searchActive = false;
 				}
 			} else {
-				if (ImGui::Button("?##search", ImVec2(letterBtnSz, letterBtnSz))) {
+				if (ImGui::Button("?##search", ImVec2(searchBtnSz, searchBtnSz))) {
 					s_searchActive = true;
 					s_focusSearchInput = true;
 					s_searchBuf[0] = '\0';

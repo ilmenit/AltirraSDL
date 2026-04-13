@@ -11,3 +11,7 @@ void ATShutdownEmuErrorHandlerSDL3();
 
 // Render the error dialog popup (call each frame from ATUIRenderFrame).
 void ATUIRenderEmuErrorDialog(ATSimulator &sim);
+
+// Returns true while the error dialog is visible (used to suppress
+// touch controls that would otherwise overlay the dialog).
+bool ATUIIsEmuErrorDialogOpen();

@@ -43,6 +43,7 @@
 #include "mobile_internal.h"
 #include "mobile_gamepad.h"
 #include "ui_virtual_keyboard.h"
+#include "ui_emuerror.h"
 
 extern ATSimulator g_sim;
 extern ATUIState g_uiState;
@@ -615,9 +616,10 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 	// Tell the joystick layer whether the gamepad belongs to the UI
 	// this frame.  Also factors in the modal sheet so dialogs that
-	// pop up over the emulator (e.g. confirm) capture the gamepad.
+	// pop up over the emulator (e.g. confirm/error) capture the gamepad.
 	const bool uiOwns = (mobileState.currentScreen != ATMobileUIScreen::None)
-		|| s_infoModalOpen || s_confirmActive;
+		|| s_infoModalOpen || s_confirmActive
+		|| ATUIIsEmuErrorDialogOpen();
 	ATMobileGamepad_SetUIOwning(uiOwns);
 
 	switch (mobileState.currentScreen) {
@@ -631,8 +633,10 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 
 		// Render touch controls overlay — but hide them when the virtual
 		// keyboard is visible so they don't overlap the keyboard keys,
-		// or when the user has disabled them (default on desktop).
-		if (mobileState.showTouchControls && !uiState.showVirtualKeyboard)
+		// when the error dialog is open, or when the user has disabled
+		// them (default on desktop).
+		if (mobileState.showTouchControls && !uiState.showVirtualKeyboard
+			&& !ATUIIsEmuErrorDialogOpen())
 			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig);
 		break;
 
