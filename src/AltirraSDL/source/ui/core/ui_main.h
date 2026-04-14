@@ -100,6 +100,10 @@ void ATUIShowOpenImageDialog(SDL_Window *window);     // Alt+O
 void ATUIShowOpenSourceFileDialog(SDL_Window *window); // Alt+Shift+O
 void ATUIShowSaveFrameDialog(SDL_Window *window);     // Alt+F10
 
+// Capture the current display framebuffer as an SDL surface (caller frees).
+struct SDL_Surface;
+SDL_Surface *ATUIReadFramebuffer();
+
 // Paste text from clipboard into emulator (Alt+Shift+V)
 void ATUIPasteText();
 

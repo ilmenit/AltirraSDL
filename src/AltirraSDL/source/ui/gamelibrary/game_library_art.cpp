@@ -4,8 +4,6 @@
 #include <stdafx.h>
 #include <algorithm>
 #include <cstring>
-#include <sys/stat.h>
-
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
@@ -148,7 +146,7 @@ void GameArtCache::SetCacheDir(const VDStringA &configDir) {
 	if (!mThumbDir.empty() && mThumbDir.back() != '/')
 		mThumbDir += '/';
 	mThumbDir += "thumbnails";
-	mkdir(mThumbDir.c_str(), 0755);
+	SDL_CreateDirectory(mThumbDir.c_str());
 }
 
 VDStringA GameArtCache::GetThumbPath(const VDStringW &artPath) const {

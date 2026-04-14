@@ -160,6 +160,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 void GameBrowser_Init();
 void GameBrowser_Shutdown();
 void GameBrowser_Invalidate();
+int  GameBrowser_FindCurrentEntry();
+bool GameBrowser_HasCurrentGame();
+void GameBrowser_ClearArtCache();
 class ATGameLibrary;
 ATGameLibrary *GetGameLibrary();
 

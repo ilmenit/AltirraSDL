@@ -32,6 +32,7 @@ extern void ATRegistryFlushToDisk();
 static ATGameLibrary *s_gameLibrary = nullptr;
 static GameArtCache *s_artCache = nullptr;
 static bool s_needsRefresh = true;
+static VDStringW s_currentGameVariantPath;
 static VDStringA s_searchFilter;
 static bool s_searchActive = false;
 static char s_searchBuf[128] = {};
@@ -94,6 +95,28 @@ ATGameLibrary *GetGameLibrary() {
 
 void GameBrowser_Invalidate() {
 	s_needsRefresh = true;
+}
+
+int GameBrowser_FindCurrentEntry() {
+	if (s_currentGameVariantPath.empty() || !s_gameLibrary)
+		return -1;
+	auto &entries = s_gameLibrary->GetEntries();
+	for (size_t i = 0; i < entries.size(); ++i) {
+		for (auto &v : entries[i].mVariants) {
+			if (v.mPath == s_currentGameVariantPath)
+				return (int)i;
+		}
+	}
+	return -1;
+}
+
+bool GameBrowser_HasCurrentGame() {
+	return !s_currentGameVariantPath.empty();
+}
+
+void GameBrowser_ClearArtCache() {
+	if (s_artCache)
+		s_artCache->Clear();
 }
 
 static void ComputeAvailableLetters() {
@@ -244,6 +267,7 @@ static void LaunchGame(ATSimulator &sim, ATMobileUIState &mobileState,
 	ATUIPushDeferred(kATDeferred_BootImage, pathU8.c_str());
 	mobileState.gameLoaded = true;
 	mobileState.currentScreen = ATMobileUIScreen::None;
+	s_currentGameVariantPath = var.mPath;
 	s_gameLibrary->RecordPlay(entryIndex);
 	s_letterFilterIdx = -1;
 	s_variantPickerOpen = false;

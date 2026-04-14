@@ -1,9 +1,8 @@
 # River Raid — Technical Findings
 
-> **2026-04-11 update — DUO port correction pass:** A re-read of the
-> split asm files in `/home/ilm/Documents/GitHub/river_raid_duo/src/`
-> while preparing a simultaneous-2P fork uncovered several wrong claims
-> in this document and the accompanying notes. Specific corrections:
+> **2026-04-11 update — correction pass:** A deeper re-read of the
+> split asm files uncovered several wrong claims in this document
+> and the accompanying notes. Specific corrections:
 >
 > - **M0 and M2 are NOT cleared / unused.** M0 has a writer in
 >   `frame_sync.asm` at $AEF1 driving a moving dot via `$C1`, with
@@ -165,7 +164,7 @@ mode (DMACTL bit 4 set). Each P/M slot is 256 bytes:
 
 | Range                    | Sprite                | Role in gameplay                          |
 |--------------------------|-----------------------|-------------------------------------------|
-| `$0B00-$0BFF` bits 0-1   | M0                    | **ACTIVE** — bits set conditionally by `frame_sync.asm:52-59` from `$C1`, COLPM0 cycled. Visual role TBD (in-flight bullet? enemy missile?). |
+| `$0B00-$0BFF` bits 0-1   | M0                    | **ACTIVE** — dual role: (1) fuel bar in status panel at `$AEC8-$AEF9`, COLPM0 color-cycled; (2) death-effect dot at fuel=0 via `$A5CA-$A607`. |
 | `$0B00-$0BFF` bits 2-3   | M1                    | **Player bullet at-rest template** at `$0BCC,Y` (`draw_bullet_pmg` at $B14B). |
 | `$0B00-$0BFF` bits 4-5   | M2                    | **Jet narrow hit probe** at `player_sprite_x + 4` (DLI at $B539). M2 vs P3 captured into `$1C`. |
 | `$0B00-$0BFF` bits 6-7   | M3                    | **Genuinely unused** (no writers found). |
@@ -314,9 +313,16 @@ Collision results are processed in the main loop at $A3E9-$A4DF:
   ($38 bit 7 set), incrementing $76 each frame
 - When fuel reaches $00, the player dies
 
-The fuel gauge in the status bar is drawn as colored bars in the
-screen RAM at $3D80+. The color changes (green → yellow → red) are
-managed by the status bar DLI at $B72A+.
+The fuel gauge visual has two layers:
+1. **Frame/labels**: ANTIC mode 6 custom text characters (chars 7-14)
+   drawn in COLPF3 (black) showing "E 1/2 F" with a rectangular border.
+   Interior rows have empty ($00) bitmap, letting the bar show through.
+2. **Bar**: M0 (Missile 0) bits drawn at `$AEC8-$AEF9` in the missile
+   DMA buffer at `$0B00 + frame_ctr_copy`. COLPM0 cycles through
+   `player_color_cycle` ($1E-$BE = yellow-to-green). HPOSM0 is set
+   from `$C1` which tracks the fuel bar's horizontal position —
+   moves leftward as fuel depletes. With PRIOR=$04, the black PF3
+   frame has priority over M0, creating the bordered gauge effect.
 
 ## Sound Engine
 
@@ -435,31 +441,60 @@ waiting for the right VCOUNT value to start the next frame's processing.
 | $BC00-$BEFF | 768 | Terrain shape templates (bank contours) |
 | $BFFA-$BFFF | 6 | 6502 vectors: cold=$A000, ?=$8000, IRQ=$A000 |
 
-## DUO Implementation Discoveries (2026-04-12)
+## Extended Analysis Discoveries (2026-04-12)
 
-> The following findings were made during the simultaneous 2-player
-> (DUO) port at `/home/ilm/Documents/GitHub/river_raid_duo/`. They
-> resolve several open questions and reveal previously undocumented
-> mechanics.
+> The following findings were made during deeper reverse-engineering
+> of the game mechanics. They resolve several open questions and
+> reveal previously undocumented mechanics.
 
-### M0 is dormant in normal gameplay — resolved
+### M0 has two roles: fuel bar (normal play) + death effect (fuel=0)
 
-The M0 bit writer at `frame_sync.asm:$AEF1` and the M0 motion loop
-at `bullets_terrain.asm:$A5CA-$A607` are both **gated by
-`fuel_level == 0` or `invuln_flags bit 7`**. During normal play
-(fuel > 0, not dying), M0 never receives bitmap data and `$C1`
-stays at 0. M0 is a **fuel-depletion visual effect** (a moving dot
-that appears when fuel runs out), NOT a bullet or enemy projectile.
-The at-rest template at `$0BCC` (M1 bits) is the muzzle flash; M0
-has no role in normal bullet mechanics.
+M0 serves **dual purpose** depending on fuel state:
+
+**Role 1 — Fuel bar indicator** (normal gameplay, fuel > 0):
+The code at `$AEC8-$AEF9` in `frame_sync.asm` runs every frame:
+
+```
+$AEC8: lda frame_counter    ; animate color
+$AECA: lsr; lsr; lsr
+$AECD: and #$07             ; index 0-7
+$AECF: tax
+$AED0: lda player_color_cycle,X  ; $1E,$2E,$3E,$4E,$6E,$7E,$9E,$BE
+$AED3: sta COLPM0           ; cycle P0/M0 through yellow-green
+
+$AED6: ldx frame_ctr_copy   ; $C2 = current Y scanline offset
+$AED8: cpx #$1C
+$AEDA: bcc skip             ; only draw at Y >= $1C
+
+$AEDC-$AEEF: clear M0 bits (and #$FC) at 3 consecutive missile
+             DMA bytes ($0AFE+X, $0AFF+X, $0B00+X)
+
+$AEF1: ldy $C1              ; M0 X position / alive flag
+$AEF3: beq skip             ; if $C1=0, no bar (empty fuel)
+$AEF5: ora #$03             ; SET M0 bits 0-1
+$AEF7: sta $0B00,X          ; draw M0 at current scanline
+```
+
+`$C1` holds the HPOSM0 value. During normal play, `$C1` is driven
+by the fuel system — its value moves leftward (toward "E") as fuel
+depletes. The DLI sets `HPOSM0 = $C1` at `$B561`, positioning the
+bar horizontally inside the "E 1/2 F" gauge frame. The gauge frame
+itself is rendered as custom text characters (chars 7-14) in ANTIC
+mode 6 using COLPF3 (black). With PRIOR=$04, PF3 has priority over
+P0/M0, so the black frame borders cover the bar but the bar shows
+through the empty character interior rows.
+
+**Role 2 — Death/fuel-depletion effect** (fuel = 0):
+The motion loop at `bullets_terrain.asm:$A5CA-$A607` is gated by
+`lda fuel_level; bne terrain_gen_advance` — it only runs when
+fuel=0 or invuln. When active, it uses `$C0` (direction) and `$C1`
+(position) to animate a moving dot across the screen.
 
 ### SIZEM initialized to $01 at $A116
 
 `init.asm:$A116` executes `inx; stx SIZEM` where X wraps from
 $FF→$00 then increments to $01. This sets M0 to double width
 (SIZEM bits 0-1 = 01). M1/M2/M3 stay normal width (bits 2-7 = 0).
-Irrelevant in normal play (M0 dormant) but critical for the DUO
-port where M0 carries bullet2.
 
 ### Player movement uses velocity + sub-pixel accumulation
 
@@ -510,17 +545,59 @@ bitmap at those scanlines transient.
 
 Bridge runtime sampling across 60 frames of active gameplay
 confirmed ZP bytes $CC through $EF are consistently $00. This
-36-byte range is safe for new variables. The DUO port uses
-$CC-$DB for player 2 state (position, bullet, velocity, fuel).
+36-byte range is safe for new variables.
 
 ### Collision captures $1F and $21 activate with P0 bitmap
 
-When P0 carries a sprite (DUO jet2), the DLI captures at
-`$1F` (P3PL bit 0 = enemy vs P0) and `$21` (M0PL bit 2 = M0 vs P2)
-begin firing. The `$1F` consumer in `entities.asm` at `$A4C1`
-destroys the enemy on contact. The `$21` consumer at `$A42E`
-triggers entity hit processing. Both had to be NOP'd for DUO
-pass-through (jet2 should not destroy enemies by touching them).
+When P0 carries a sprite, the DLI captures at `$1F` (P3PL bit 0 =
+enemy vs P0) and `$21` (M0PL bit 2 = M0 vs P2) begin firing. The
+`$1F` consumer in `entities.asm` at `$A4C1` destroys the enemy on
+contact. The `$21` consumer at `$A42E` triggers entity hit processing.
+
+### Status panel architecture (2026-04-13)
+
+The bottom panel uses three ANTIC mode 6 (20-column text) lines at
+screen RAM $1000-$103B, rendered with CHBASE=$08 (charset at $0800,
+set by DLI at $B6AF). Custom characters loaded at init from $BF2E→$0818
+(chars 3-16) and $BF9E→$08D0 (chars 26-28).
+
+**ANTIC mode 6 color mapping** (verified from Altirra source
+`antic.cpp:1044-1049`): screen byte bits 7-6 select from 4 foreground
+color registers; background is always COLBK.
+
+| Bits 7-6 | Foreground | Register |
+|----------|------------|----------|
+| 00 | COLPF0 | $D016 |
+| 01 | COLPF1 | $D017 |
+| 10 | COLPF2 | $D018 |
+| 11 | COLPF3 | $D019 |
+
+At the text lines (after playfield DLI exit, before status-bar DLI):
+- COLPF0 = $1E (yellow) — set at DLI $B68B, flashed to $06 when fuel < $80
+- COLPF1 = $8E (blue) — set at DLI $B68F
+- COLPF2 = $1E (yellow) — set at DLI $B697
+- COLPF3 = $00 (black) — set at DLI $B680 (X=0 via all paths to loc_B66B)
+- COLBK = $06 (dark gray) — set at DLI $B6BA
+
+Score digit rendering uses offset in $B1 to encode color into screen
+bytes: P1 score offset $10 (PF0=yellow), P2/HI offset $50 (PF1=blue),
+bridge number offset $90 (PF2=yellow), game number uses $D0+digit (PF3=black).
+
+**Fuel gauge frame**: custom chars 7-14 (5 per text line × 2 lines)
+in PF3 (black). Interior rows are empty ($00 bitmap), letting the M0
+fuel bar show through. With PRIOR=$04 (set at $B6B7), PF3 has priority
+over players/missiles — black frame covers M0 bar at border pixels.
+
+**Lives display**: custom char 28 ($9C, PF2=yellow) = jet icon shape
+at $1033+X. Count driven by `$6A` (visible lives, 0-9).
+
+**Score rendering**: shared digit-render routine at $B086, entered via
+4 entry points ($B05C, $B068, $B06E, $B07C) with different X/Y/$B1
+parameters. Reads BCD bytes from ZP, writes character codes to $1000+Y.
+
+**Scrolling text**: mode.h 6 (HSCROL-enabled) at $3FB2, using
+CHBASE=$06 (set by status-bar DLI at $B72A). LMS address at $3FB3
+advanced by VBI for scroll effect.
 
 ## Open Questions
 
@@ -543,8 +620,9 @@ pass-through (jet2 should not destroy enemies by touching them).
    addition. Extra life count capped at 9 (`cpy #$09; beq`). Trigger
    sets `$7E = $40` (extra life display effect).
 
-5. ~~**M0 role**~~: **RESOLVED** — M0 is a fuel-depletion visual effect,
-   dormant in normal play. See "DUO Implementation Discoveries" above.
+5. ~~**M0 role**~~: **RESOLVED** — M0 has dual purpose: fuel bar indicator
+   during normal play ($AEC8-$AEF9), and death-effect dot when fuel=0
+   ($A5CA-$A607). See "Extended Analysis Discoveries" above.
 
 6. **In-flight bullet mechanism**: Bullet1's visual upward motion is
    achieved through HPOSM1 changes + terrain scroll, NOT by moving
@@ -561,7 +639,7 @@ pass-through (jet2 should not destroy enemies by touching them).
 
 ### Collision system architecture (discovered 2026-04-13)
 
-Key architectural findings from the DUO port implementation:
+Key architectural findings from extended analysis:
 
 1. **Collision bytes $1A-$22 are ONLY consumed at fuel=0.** The DLI
    populates them every frame, but the game's `check_entity_collision`
@@ -581,10 +659,10 @@ Key architectural findings from the DUO port implementation:
    original reverse-engineering pass.
 
 4. **Frame execution order:** VBI (VCOUNT high) → main_frame_sync
-   (VCOUNT < $50) → frame_update → duo_per_frame → VCOUNT < $07
+   (VCOUNT < $50) → frame_update → jet_draw → VCOUNT < $07
    check → attract_wait (blocks until VCOUNT ≥ $50, i.e., AFTER
    DLI) → state_dispatch → entity_dispatch → check_entity_collision.
-   The DLI fires during display (VCOUNT ~30), between duo_per_frame
+   The DLI fires during display (VCOUNT ~30), between the jet draw
    and check_entity_collision.
 
 5. **`player_death` ($A688) is NOT triggered by enemy contact.** It is
@@ -600,4 +678,4 @@ Key architectural findings from the DUO port implementation:
 - Phase 6: In progress (this document + notes)
 - Phase 7: Pending (MADS round-trip)
 - Phase 8: Pending (final hand-off)
-- **DUO port**: Phases 0-7 (partial) complete (see `/home/ilm/Documents/GitHub/river_raid_duo/`)
+- **Extended analysis**: M0 dual-role resolved, status panel architecture documented, fuel bar mechanism traced

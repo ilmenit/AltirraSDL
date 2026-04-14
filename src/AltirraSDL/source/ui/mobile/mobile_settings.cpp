@@ -41,6 +41,11 @@
 #include "mobile_internal.h"
 #include "../gamelibrary/game_library.h"
 
+#ifndef ALTIRRA_NO_SDL3_IMAGE
+#include <SDL3_image/SDL_image.h>
+#endif
+#include <at/atcore/md5.h>
+
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
@@ -877,6 +882,123 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					{
 						lib->StartScan();
 					}
+				}
+
+				ImGui::Spacing();
+				{
+					bool canSet = mobileState.gameLoaded
+						&& GameBrowser_HasCurrentGame();
+					if (!canSet)
+						ImGui::BeginDisabled();
+					if (ImGui::Button("Set Current Frame as Game Art",
+						ImVec2(-1, dp(44.0f))))
+					{
+						int eidx = GameBrowser_FindCurrentEntry();
+						if (eidx >= 0) {
+							extern SDL_Surface *ATUIReadFramebuffer();
+							SDL_Surface *frame = ATUIReadFramebuffer();
+							if (frame) {
+								auto &entry =
+									lib->GetEntries()[eidx];
+								VDStringA keyU8 = VDTextWToU8(
+									entry.mVariants[0].mPath);
+								ATMD5Digest digest = ATComputeMD5(
+									keyU8.c_str(), keyU8.size());
+								char hex[33];
+								for (int i = 0; i < 16; ++i)
+									snprintf(hex + i * 2, 3, "%02x",
+										digest.digest[i]);
+
+								VDStringA configDir =
+									ATGetConfigDir();
+								VDStringA artDir = configDir;
+								artDir += "/custom_art";
+								SDL_CreateDirectory(artDir.c_str());
+
+								VDStringA pngPath = artDir;
+								pngPath += '/';
+								pngPath += hex;
+								pngPath += ".png";
+
+								SDL_Surface *rgba =
+									SDL_ConvertSurface(frame,
+										SDL_PIXELFORMAT_RGBA32);
+								SDL_DestroySurface(frame);
+
+#ifndef ALTIRRA_NO_SDL3_IMAGE
+								if (rgba
+									&& IMG_SavePNG(rgba,
+										pngPath.c_str()))
+								{
+									SDL_DestroySurface(rgba);
+
+									VDStringA thumbDir = configDir;
+									thumbDir += "/thumbnails";
+
+									// Delete old art's thumbnail.
+									if (!entry.mArtPath.empty()) {
+										VDStringA oldU8 =
+											VDTextWToU8(
+												entry.mArtPath);
+										ATMD5Digest od =
+											ATComputeMD5(
+												oldU8.c_str(),
+												oldU8.size());
+										char oh[33];
+										for (int j = 0; j < 16; ++j)
+											snprintf(oh + j * 2, 3,
+												"%02x",
+												od.digest[j]);
+										VDStringA oldThumb =
+											thumbDir;
+										oldThumb += '/';
+										oldThumb += oh;
+										oldThumb += ".png";
+										SDL_RemovePath(
+											oldThumb.c_str());
+									}
+
+									VDStringW artPathW =
+										VDTextU8ToW(
+											pngPath.c_str(), -1);
+
+									// Delete new art's thumbnail
+									// so it regenerates.
+									VDStringA newU8 =
+										VDTextWToU8(artPathW);
+									ATMD5Digest nd = ATComputeMD5(
+										newU8.c_str(),
+										newU8.size());
+									char nh[33];
+									for (int j = 0; j < 16; ++j)
+										snprintf(nh + j * 2, 3,
+											"%02x",
+											nd.digest[j]);
+									VDStringA newThumb = thumbDir;
+									newThumb += '/';
+									newThumb += nh;
+									newThumb += ".png";
+									SDL_RemovePath(
+										newThumb.c_str());
+
+									entry.mArtPath =
+										std::move(artPathW);
+									lib->SaveCache();
+									GameBrowser_ClearArtCache();
+									GameBrowser_Invalidate();
+								} else {
+									if (rgba)
+										SDL_DestroySurface(rgba);
+								}
+#else
+								if (rgba)
+									SDL_DestroySurface(rgba);
+#endif
+							}
+						}
+					}
+					if (!canSet)
+						ImGui::EndDisabled();
 				}
 
 				ImGui::Spacing();

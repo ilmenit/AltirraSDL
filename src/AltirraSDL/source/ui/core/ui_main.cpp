@@ -808,6 +808,10 @@ static SDL_Surface *ReadFramebufferToSurface(IDisplayBackend *backend) {
 	return surface;
 }
 
+SDL_Surface *ATUIReadFramebuffer() {
+	return ReadFramebufferToSurface(ATUIGetDisplayBackend());
+}
+
 static void CopyFrameToClipboard(IDisplayBackend *backend) {
 	SDL_Surface *surface = ReadFramebufferToSurface(backend);
 	if (!surface) {
