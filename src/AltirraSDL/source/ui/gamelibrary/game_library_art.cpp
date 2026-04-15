@@ -378,15 +378,17 @@ void GameArtCache::UploadSurface(CacheEntry &entry, SDL_Surface *surf) {
 	DestroyEntry(entry);
 
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL33;
+	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL;
 
 	entry.mWidth = surf->w;
 	entry.mHeight = surf->h;
 
 	if (useGL) {
-		entry.mGLTexture = GLCreateTexture2D(
-			surf->w, surf->h, GL_RGBA8, GL_BGRA,
-			GL_UNSIGNED_INT_8_8_8_8_REV, nullptr, true);
+		// Surface conversion (GameArtCache::ConvertToARGB8888) emits the
+		// same XRGB8888 byte layout the emulator uses; route through the
+		// per-profile XRGB8888 helper.
+		entry.mGLTexture = GLCreateXRGB8888Texture(
+			surf->w, surf->h, true, nullptr);
 
 		if (!entry.mGLTexture) {
 			entry.mState = EntryState::Failed;
@@ -399,8 +401,7 @@ void GameArtCache::UploadSurface(CacheEntry &entry, SDL_Surface *surf) {
 			memcpy(&buf[y * surf->w], src + y * surf->pitch, surf->w * 4);
 
 		glBindTexture(GL_TEXTURE_2D, entry.mGLTexture);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, surf->w, surf->h,
-			GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf.data());
+		GLUploadXRGB8888(surf->w, surf->h, buf.data(), 0);
 
 		entry.mTexID = (ImTextureID)(intptr_t)entry.mGLTexture;
 	} else {

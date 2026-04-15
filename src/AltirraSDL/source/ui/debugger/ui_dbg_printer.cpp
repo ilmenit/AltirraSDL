@@ -63,9 +63,10 @@ struct PrinterViewTransform {
 // through FromBGR8() + SRGBToLinear() + packus8(*64).  This stores the
 // channels in native byte order: byte 0 is the component that FromBGR8()
 // placed in element 0.  Using ToBGR8() (which packs elements without
-// permuting) recovers the correct 0x00RRGGBB value that matches both the
-// GL_BGRA upload and CSS #RRGGBB format.  Using ToRGB8() would apply an
-// extra permute and swap R/B.
+// permuting) recovers the correct 0x00RRGGBB value (byte layout
+// B,G,R,X) — the same XRGB8888 layout GLCreateXRGB8888Texture /
+// GLUploadXRGB8888 expect, and the one CSS #RRGGBB encodes.  Using
+// ToRGB8() would apply an extra permute and swap R/B.
 static uint32 LinearColorToSRGB8(uint32 linearColor) {
 	uint32 srgb = VDColorRGB(vdfloat32x4::unpacku8(linearColor) * (1.0f / 64.0f)).LinearToSRGB().ToBGR8();
 	return 0xFF000000 | srgb;
@@ -649,7 +650,7 @@ void ATImGuiPrinterOutputPaneImpl::DestroyGraphicalTexture() {
 
 void *ATImGuiPrinterOutputPaneImpl::GetGraphicalImTextureID() const {
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	if (backend && backend->GetType() == DisplayBackendType::OpenGL33)
+	if (backend && backend->GetType() == DisplayBackendType::OpenGL)
 		return (void *)(intptr_t)mGLTexture;
 	return (void *)(intptr_t)mpSDLTexture;
 }
@@ -696,22 +697,23 @@ void ATImGuiPrinterOutputPaneImpl::UpdateGraphicalTexture(uint32 w, uint32 h) {
 
 	// Upload to texture
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL33;
+	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL;
 
 	if (useGL) {
+		// Printer output framebuffer is XRGB8888 (see RenderPrinterOutput
+		// + the cursor draw above writing 0xFF808080); route through the
+		// per-profile XRGB8888 helper.
 		if (!mGLTexture || mTexW != (int)w || mTexH != (int)h) {
 			if (mGLTexture)
 				glDeleteTextures(1, &mGLTexture);
 
 			mTexW = (int)w;
 			mTexH = (int)h;
-			mGLTexture = GLCreateTexture2D(mTexW, mTexH,
-				GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-				mFramebuffer.data(), true);
+			mGLTexture = GLCreateXRGB8888Texture(mTexW, mTexH, true,
+				mFramebuffer.data());
 		} else {
 			glBindTexture(GL_TEXTURE_2D, mGLTexture);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mTexW, mTexH,
-				GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, mFramebuffer.data());
+			GLUploadXRGB8888(mTexW, mTexH, mFramebuffer.data(), 0);
 		}
 	} else {
 		if (!mpSDLTexture || mTexW != (int)w || mTexH != (int)h) {

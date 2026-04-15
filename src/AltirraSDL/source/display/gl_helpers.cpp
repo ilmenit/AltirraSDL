@@ -4,11 +4,46 @@
 #include "gl_helpers.h"
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 #include "logging.h"
 
+// ---------------------------------------------------------------------------
+// Shader preamble
+// ---------------------------------------------------------------------------
+// Fragment shaders on GLES 3.0 MUST declare a default precision for
+// float/int/sampler2D; Desktop GL tolerates precision qualifiers but
+// doesn't require them.  We always emit them on GLES and keep Desktop
+// free of them to avoid any "precision qualifier in #version 330"
+// compatibility concerns.  The string is returned as a single constant
+// pointer per (profile, shader-type) combination so callers can splice
+// it directly in front of the shader body.
+
+static const char kPreamble_Desktop33[] =
+	"#version 330 core\n";
+
+static const char kPreamble_ES30_VS[] =
+	"#version 300 es\n"
+	"precision highp float;\n"
+	"precision highp int;\n";
+
+static const char kPreamble_ES30_FS[] =
+	"#version 300 es\n"
+	"precision highp float;\n"
+	"precision highp int;\n"
+	"precision highp sampler2D;\n";
+
+const char *GLGetShaderPreamble(GLenum shaderType) {
+	if (GLGetActiveProfile() == GLProfile::ES30)
+		return (shaderType == GL_FRAGMENT_SHADER) ? kPreamble_ES30_FS
+		                                          : kPreamble_ES30_VS;
+	return kPreamble_Desktop33;
+}
+
 GLuint GLCompileShader(GLenum type, const char *source) {
+	const char *preamble = GLGetShaderPreamble(type);
+	const char *sources[2] = { preamble, source };
 	GLuint shader = glCreateShader(type);
-	glShaderSource(shader, 1, &source, nullptr);
+	glShaderSource(shader, 2, sources, nullptr);
 	glCompileShader(shader);
 
 	GLint status;
@@ -24,8 +59,18 @@ GLuint GLCompileShader(GLenum type, const char *source) {
 }
 
 GLuint GLCompileShaderMulti(GLenum type, const char *const *sources, int count) {
+	const char *preamble = GLGetShaderPreamble(type);
+
+	// Build [preamble, sources[0], sources[1], ...] in a local array so we
+	// make exactly one glShaderSource call (matches pre-refactor behaviour).
+	std::vector<const char *> all;
+	all.reserve(count + 1);
+	all.push_back(preamble);
+	for (int i = 0; i < count; ++i)
+		all.push_back(sources[i]);
+
 	GLuint shader = glCreateShader(type);
-	glShaderSource(shader, count, sources, nullptr);
+	glShaderSource(shader, (GLsizei)all.size(), all.data(), nullptr);
 	glCompileShader(shader);
 
 	GLint status;
@@ -101,6 +146,80 @@ GLuint GLCreateTexture2D(int w, int h, GLenum internalFormat, GLenum format,
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	return tex;
+}
+
+// ---------------------------------------------------------------------------
+// XRGB8888 pixel upload
+// ---------------------------------------------------------------------------
+// Per-profile selection of the pixel transfer format.  On Desktop we use
+// the native BGRA/REV path; on GLES we pick RGBA/UNSIGNED_BYTE and the
+// texture has R↔B swizzle applied so the shader sees correct channels.
+
+static void GLGetXRGB8888TransferParams(GLenum *outFormat, GLenum *outType) {
+	if (GLGetActiveProfile() == GLProfile::ES30) {
+		*outFormat = GL_RGBA;
+		*outType   = GL_UNSIGNED_BYTE;
+	} else {
+		*outFormat = GL_BGRA;
+		*outType   = GL_UNSIGNED_INT_8_8_8_8_REV;
+	}
+}
+
+GLuint GLCreateXRGB8888Texture(int w, int h, bool linear, const void *data) {
+	GLuint tex;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+
+	if (GLGetActiveProfile() == GLProfile::ES30) {
+		// GLES samples RGBA-ordered memory as (R,G,B,A).  The source is
+		// BGRX, so we remap the sampler's R←B and B←R to restore RGB
+		// order.  A and G are identity.  Swizzle state is per-texture
+		// and persists for this texture's lifetime.
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_BLUE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, GL_GREEN);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_RED);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ALPHA);
+	}
+
+	if (data)
+		GLUploadXRGB8888(w, h, data, 0);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	return tex;
+}
+
+void GLUploadXRGB8888(int w, int h, const void *data, int pitch) {
+	GLenum format, type;
+	GLGetXRGB8888TransferParams(&format, &type);
+
+	if (pitch > 0 && pitch != w * 4)
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 4);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, format, type, data);
+	if (pitch > 0 && pitch != w * 4)
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+}
+
+void GLSetFramebufferSRGB(bool enable) {
+	// GLES 3.0 has no framebuffer-wide sRGB toggle — sRGB encoding is
+	// controlled per-attachment by the texture's internal format.  Since
+	// all our bloom/screen-FX textures are GL_RGBA8 (linear), nothing
+	// needs to be disabled on GLES.  Desktop GL does expose the toggle
+	// and some librashader presets flip it on; we must restore a known
+	// state before ImGui rendering.
+	if (GLGetActiveProfile() == GLProfile::ES30)
+		return;
+#ifdef GL_FRAMEBUFFER_SRGB
+	if (enable)
+		glEnable(GL_FRAMEBUFFER_SRGB);
+	else
+		glDisable(GL_FRAMEBUFFER_SRGB);
+#else
+	(void)enable;
+#endif
 }
 
 GLuint GLCreateFBO(int w, int h, GLenum internalFormat, GLuint *outTex) {

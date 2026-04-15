@@ -95,7 +95,7 @@ static ImTextureID EnsureTexture() {
 	s_texH = rgba->h;
 
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	s_useGL = backend && backend->GetType() == DisplayBackendType::OpenGL33;
+	s_useGL = backend && backend->GetType() == DisplayBackendType::OpenGL;
 
 	if (s_useGL) {
 		s_glTexture = GLCreateTexture2D(

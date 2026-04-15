@@ -13,8 +13,19 @@ struct VDVideoDisplayScreenFXInfo;
 struct VDDScreenMaskParams;
 
 enum class DisplayBackendType {
+	// SDL3's built-in renderer.  Picks the platform's best 2D path
+	// automatically (D3D11/D3D12 on Windows, Metal on macOS, GLES/Vulkan
+	// on Android, etc.), but exposes no custom-shader entry point, so
+	// built-in screen effects and librashader presets are unavailable
+	// through this backend.
 	SDLRenderer,
-	OpenGL33
+
+	// AltirraSDL's own GL backend.  The same class (DisplayBackendGL)
+	// handles either Desktop OpenGL 3.3 Core (Windows/Linux/macOS) or
+	// OpenGL ES 3.0 (Android/iOS) — chosen at context-creation time via
+	// GLProfile.  Both paths provide the full screen-FX pipeline and,
+	// where the runtime library is present, librashader.
+	OpenGL,
 };
 
 class IDisplayBackend {

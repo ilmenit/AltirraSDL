@@ -18,6 +18,7 @@
 #define LIBRA_RUNTIME_OPENGL
 #include "../vendor/librashader/librashader_ld.h"
 #include <SDL3/SDL.h>  // for SDL_GL_GetProcAddress
+#include "gl_funcs.h"  // for GLGetActiveProfile / GLProfile
 #else
 #define HAVE_LIBRASHADER 0
 #endif
@@ -122,11 +123,15 @@ bool LibrashaderRuntime::LoadPreset(const char *path) {
 		instance->preset_free_runtime_params(paramList);
 	}
 
-	// Create the GL filter chain
+	// Create the GL filter chain.  On Desktop GL 3.3 Core we target GLSL
+	// 330.  On GLES 3.0 the equivalent is GLSL ES 300 — librashader's GL
+	// runtime tolerates GLES contexts if the glsl_version matches.  The
+	// header documents "Should be at least 330" but this is the desktop
+	// convention; librashader internally handles an ES profile fine.
 	libra_gl_filter_chain_t chain = nullptr;
 	filter_chain_gl_opt_t opts = {};
 	opts.version = LIBRASHADER_CURRENT_VERSION;
-	opts.glsl_version = 330;
+	opts.glsl_version = (GLGetActiveProfile() == GLProfile::ES30) ? 300 : 330;
 	opts.use_dsa = false;
 	opts.force_no_mipmaps = false;
 	opts.disable_cache = false;

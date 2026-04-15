@@ -1,5 +1,15 @@
-//	AltirraSDL - OpenGL 3.3 display backend
+//	AltirraSDL - OpenGL display backend
 //	GPU-accelerated post-processing: screen effects, bloom, bicubic filtering.
+//
+//	Handles either of two profiles (selected at context-creation time):
+//	  - Desktop OpenGL 3.3 Core     (Windows, Linux, macOS)
+//	  - OpenGL ES 3.0               (Android, iOS)
+//
+//	The class body is profile-agnostic: shader sources are shared and
+//	the profile preamble (#version / precision) is prepended by
+//	GLCompileShader based on GLGetActiveProfile().  XRGB8888 uploads
+//	go through GLCreateXRGB8888Texture / GLUploadXRGB8888, which apply
+//	R↔B texture swizzle on GLES to compensate for GLES' lack of GL_BGRA.
 
 #pragma once
 
@@ -44,12 +54,12 @@ struct ScreenFXProgram {
 	ScreenFXUniforms uniforms;
 };
 
-class DisplayBackendGL33 final : public IDisplayBackend {
+class DisplayBackendGL final : public IDisplayBackend {
 public:
-	DisplayBackendGL33(SDL_Window *window, SDL_GLContext glContext);
-	~DisplayBackendGL33() override;
+	DisplayBackendGL(SDL_Window *window, SDL_GLContext glContext);
+	~DisplayBackendGL() override;
 
-	DisplayBackendType GetType() const override { return DisplayBackendType::OpenGL33; }
+	DisplayBackendType GetType() const override { return DisplayBackendType::OpenGL; }
 
 	void UploadFrame(const void *pixels, int width, int height, int pitch) override;
 	void BeginFrame() override;

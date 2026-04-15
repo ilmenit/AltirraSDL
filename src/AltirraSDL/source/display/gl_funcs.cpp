@@ -6,8 +6,20 @@
 #include <stdio.h>
 #include "logging.h"
 
-// Define all function pointer globals
-#ifndef __APPLE__
+// Active GL profile set by GLLoadFunctions().  Consulted by shader
+// compile helpers and texture upload helpers to choose GLSL version
+// strings and pixel transfer formats.
+namespace {
+	GLProfile g_activeProfile = GLProfile::Desktop33;
+}
+
+GLProfile GLGetActiveProfile() { return g_activeProfile; }
+void GLSetActiveProfile(GLProfile profile) { g_activeProfile = profile; }
+
+// Define all function pointer globals.
+// macOS: framework exports symbols directly (no indirection).
+// Android: GLESv3 library exports symbols directly (no indirection).
+#if !defined(__APPLE__) && !defined(__ANDROID__)
 #define GL_FUNC(ret, name, ...) PFN_##name name = nullptr;
 #else
 #define GL_FUNC(ret, name, ...)
@@ -77,16 +89,17 @@ GL_FUNC(void, glDrawBuffers, GLsizei n, const GLenum *bufs)
 PFN_glTexStorage2D glTexStorage2D = nullptr;
 #endif
 
-bool GLLoadFunctions() {
+bool GLLoadFunctions(GLProfile profile) {
 	bool ok = true;
+	g_activeProfile = profile;
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__ANDROID__)
 #define GL_LOAD(name) do { \
 	name = (PFN_##name)SDL_GL_GetProcAddress(#name); \
 	if (!name) { LOG_ERROR("GL", "Failed to load: %s", #name); ok = false; } \
 } while(0)
 #else
-#define GL_LOAD(name) /* macOS: framework provides 'name' directly */
+#define GL_LOAD(name) /* system headers/linker provide 'name' directly */
 #endif
 
 	GL_LOAD(glEnable);
@@ -103,9 +116,11 @@ bool GLLoadFunctions() {
 	GL_LOAD(glGetError);
 	GL_LOAD(glGetString);
 	GL_LOAD(glGetIntegerv);
-	// glPolygonMode is optional — not available on macOS core profile.
-	// ImGui uses it for wireframe debug mode; silently skip if missing.
-#ifndef __APPLE__
+	// glPolygonMode is optional — absent on macOS core profile AND on
+	// GLES 3.0.  ImGui uses it for wireframe debug mode only; silently
+	// skip if missing.  Nothing in AltirraSDL's own rendering depends on
+	// it, so a null pointer is safe.
+#if !defined(__APPLE__) && !defined(__ANDROID__)
 	glPolygonMode = (PFN_glPolygonMode)SDL_GL_GetProcAddress("glPolygonMode");
 #endif
 	GL_LOAD(glColorMask);

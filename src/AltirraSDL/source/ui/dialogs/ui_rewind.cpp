@@ -54,7 +54,7 @@ static ImTextureID UpdatePreviewTexture(int saveIndex, const VDPixmap *px) {
 	}
 
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL33;
+	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL;
 
 	bool needsAlloc = (s_previewTexW != px->w || s_previewTexH != px->h);
 	if (useGL)
@@ -69,9 +69,10 @@ static ImTextureID UpdatePreviewTexture(int saveIndex, const VDPixmap *px) {
 		s_previewLastIndex = -1; // force upload
 
 		if (useGL) {
-			s_previewGLTexture = GLCreateTexture2D(
-				px->w, px->h, GL_RGBA8, GL_BGRA,
-				GL_UNSIGNED_INT_8_8_8_8_REV, nullptr, false);
+			// Rewind preview pixels are XRGB8888 — same byte layout as
+			// the live emulator frame, fed by the rewind ring buffer.
+			s_previewGLTexture = GLCreateXRGB8888Texture(
+				px->w, px->h, false, nullptr);
 			if (!s_previewGLTexture)
 				return (ImTextureID)nullptr;
 		} else {
@@ -96,8 +97,7 @@ static ImTextureID UpdatePreviewTexture(int saveIndex, const VDPixmap *px) {
 				memcpy(&buf[y * px->w], src + y * px->pitch, px->w * 4);
 			}
 			glBindTexture(GL_TEXTURE_2D, s_previewGLTexture);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, px->w, px->h,
-				GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, buf.data());
+			GLUploadXRGB8888(px->w, px->h, buf.data(), 0);
 		} else if (s_previewSDLTexture) {
 			void *pixels = nullptr;
 			int pitch = 0;

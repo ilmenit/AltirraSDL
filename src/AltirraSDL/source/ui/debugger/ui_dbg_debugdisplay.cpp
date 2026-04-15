@@ -171,7 +171,7 @@ void ATImGuiDebugDisplayPaneImpl::UpdateTexture() {
 		return;
 
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL33;
+	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL;
 
 	// Convert Pal8 → ARGB8888 into a temporary buffer
 	std::vector<uint32> pixelBuf(kDisplayW * kDisplayH, 0xFF000000u);
@@ -191,15 +191,14 @@ void ATImGuiDebugDisplayPaneImpl::UpdateTexture() {
 	}
 
 	if (useGL) {
+		// Debugger display pane: convert palette → XRGB8888 in pixelBuf
+		// then route through the per-profile XRGB8888 helper.
 		if (!mGLTexture) {
-			mGLTexture = GLCreateTexture2D(
-				kDisplayW, kDisplayH,
-				GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-				pixelBuf.data(), false);
+			mGLTexture = GLCreateXRGB8888Texture(
+				kDisplayW, kDisplayH, false, pixelBuf.data());
 		} else {
 			glBindTexture(GL_TEXTURE_2D, mGLTexture);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kDisplayW, kDisplayH,
-				GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixelBuf.data());
+			GLUploadXRGB8888(kDisplayW, kDisplayH, pixelBuf.data(), 0);
 		}
 	} else {
 		if (!mpTexture) {

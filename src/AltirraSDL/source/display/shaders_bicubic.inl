@@ -17,8 +17,6 @@
 //	texelFetch() for the point samples p1, p3, p4.
 
 static const char kGLSL_Bicubic_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 

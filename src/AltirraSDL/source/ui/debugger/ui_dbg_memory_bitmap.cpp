@@ -144,7 +144,7 @@ void ATImGuiMemoryPaneImpl::GenerateBitmapRow(
 
 void *ATImGuiMemoryPaneImpl::GetBitmapImTextureID() const {
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	if (backend && backend->GetType() == DisplayBackendType::OpenGL33) {
+	if (backend && backend->GetType() == DisplayBackendType::OpenGL) {
 		return (void *)(intptr_t)mBitmapGLTexture;
 	}
 	return (void *)(intptr_t)mpBitmapTexture;
@@ -193,7 +193,7 @@ void ATImGuiMemoryPaneImpl::UpdateBitmapTexture(int rowCount) {
 	int totalH = rawH * rowCount;
 
 	IDisplayBackend *backend = ATUIGetDisplayBackend();
-	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL33;
+	bool useGL = backend && backend->GetType() == DisplayBackendType::OpenGL;
 
 	if (useGL) {
 		// ---- OpenGL path ----
@@ -209,10 +209,10 @@ void ATImGuiMemoryPaneImpl::UpdateBitmapTexture(int rowCount) {
 			mBitmapTexW = allocW;
 			mBitmapTexH = allocH;
 
-			mBitmapGLTexture = GLCreateTexture2D(
-				mBitmapTexW, mBitmapTexH,
-				GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-				nullptr, false);	// nearest filtering for pixel art
+			// GenerateBitmapRow emits XRGB8888 pixels — same byte
+			// layout the emulator uses.  Nearest filtering for pixel art.
+			mBitmapGLTexture = GLCreateXRGB8888Texture(
+				mBitmapTexW, mBitmapTexH, false, nullptr);
 
 			if (!mBitmapGLTexture) return;
 		}
@@ -233,8 +233,7 @@ void ATImGuiMemoryPaneImpl::UpdateBitmapTexture(int rowCount) {
 
 		// Upload to GL texture
 		glBindTexture(GL_TEXTURE_2D, mBitmapGLTexture);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rawW, totalH,
-			GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixelBuf.data());
+		GLUploadXRGB8888(rawW, totalH, pixelBuf.data(), 0);
 
 	} else {
 		// ---- SDL_Renderer path ----

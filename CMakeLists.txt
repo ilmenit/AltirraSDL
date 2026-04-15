@@ -578,6 +578,15 @@ static inline void *_librashader_dlopen_macos(void) {
     # Enable test engine hooks — our ui_testmode.cpp provides the hook implementations.
     # PUBLIC so the define propagates to AltirraSDL (which includes imgui_internal.h).
     target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_TEST_ENGINE)
+    # On Android (and iOS, when we get there) the GL context is OpenGL ES 3.0.
+    # ImGui's imgui_impl_opengl3.cpp picks its API flavour at compile time
+    # via this define — without it, the backend would try to call entry
+    # points that don't exist in GLES (glPolygonMode etc.) and link-fail
+    # against system libGLESv3.  On desktop the default (Desktop GL) path
+    # is correct.
+    if(ANDROID)
+        target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)
+    endif()
     # Suppress warnings in third-party code
     if(MSVC)
         target_compile_options(imgui PRIVATE /w)

@@ -11,8 +11,6 @@
 //	  #define FEAT_DISTORTION       - CRT barrel distortion (UV warp)
 
 static const char kGLSL_ScreenFX_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 
@@ -152,8 +150,6 @@ void main() {
 // PAL artifacting fragment shader.
 // Samples at two UV offsets and blends chroma (luminance-preserving).
 static const char kGLSL_PALArtifacting_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 

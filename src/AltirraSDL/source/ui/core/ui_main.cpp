@@ -645,23 +645,31 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 	// the backend picks up our atlas on its first NewFrame instead of
 	// shipping ProggyClean.
 	io.FontGlobalScale = 1.0f;
-	const bool usingGL = (backend->GetType() == DisplayBackendType::OpenGL33);
+	const bool usingGL = (backend->GetType() == DisplayBackendType::OpenGL);
 	ATUIFontsInit(contentScale, usingGL);
 
 	s_pDisplayBackend = backend;
 
-	if (backend->GetType() == DisplayBackendType::OpenGL33) {
+	if (backend->GetType() == DisplayBackendType::OpenGL) {
 		s_usingGLBackend = true;
-		auto *glBackend = static_cast<DisplayBackendGL33 *>(backend);
+		auto *glBackend = static_cast<DisplayBackendGL *>(backend);
 		if (!ImGui_ImplSDL3_InitForOpenGL(window, glBackend->GetGLContext())) {
 			LOG_ERROR("UI", "ImGui SDL3/OpenGL init failed");
 			return false;
 		}
-		if (!ImGui_ImplOpenGL3_Init("#version 330 core")) {
+		// Pass the GLSL version that matches the active GL profile.
+		// ImGui uses this string verbatim as the shader header, so it
+		// must agree with the context — otherwise the ImGui draw shaders
+		// either fail to compile or fall back to the wrong feature set.
+		const char *imguiGlslVersion = (GLGetActiveProfile() == GLProfile::ES30)
+			? "#version 300 es" : "#version 330 core";
+		if (!ImGui_ImplOpenGL3_Init(imguiGlslVersion)) {
 			LOG_ERROR("UI", "ImGui OpenGL3 init failed");
 			return false;
 		}
-		LOG_INFO("UI", "ImGui initialized (OpenGL 3.3, docking enabled)");
+		LOG_INFO("UI", "ImGui initialized (%s, docking enabled)",
+			GLGetActiveProfile() == GLProfile::ES30
+				? "OpenGL ES 3.0" : "OpenGL 3.3 Core");
 	} else {
 		s_usingGLBackend = false;
 		SDL_Renderer *renderer = backend->GetSDLRenderer();

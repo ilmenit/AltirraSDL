@@ -1,11 +1,52 @@
-//	AltirraSDL - OpenGL 3.3 core function declarations
+//	AltirraSDL - OpenGL / OpenGL ES 3.0 function declarations
 //	Loaded at runtime via SDL_GL_GetProcAddress.
+//
+//	Covers two profiles that share the same Altirra display backend:
+//	  - Desktop OpenGL 3.3 Core         (Windows, Linux, macOS)
+//	  - OpenGL ES 3.0                   (Android, iOS)
+//	Both profiles expose the same subset of entry points we depend on
+//	(textures, shaders, VAOs, FBOs, glBlitFramebuffer, glTexStorage2D,
+//	glDrawBuffers, texture swizzle).  Profile-only entry points
+//	(glPolygonMode is desktop-only) are loaded optionally and the
+//	backend avoids relying on them.
 
 #pragma once
+
+// Profile of the active GL context.  Set once on successful context
+// creation (see TryCreatePreferredGLContext in main_sdl3.cpp) and read
+// by shader compilation / texture upload helpers / librashader init to
+// emit the right GLSL version header and pick a compatible pixel
+// transfer format.  Defaults to Desktop33 so pre-init reads are safe.
+enum class GLProfile {
+	Desktop33,   // OpenGL 3.3 Core
+	ES30,        // OpenGL ES 3.0
+};
+
+// Active profile accessors.  GLLoadFunctions() calls GLSetActiveProfile()
+// after a successful load so downstream code observes a consistent value.
+GLProfile GLGetActiveProfile();
+void GLSetActiveProfile(GLProfile profile);
 
 // Include the standard GL type definitions
 #if defined(__APPLE__)
 	#include <OpenGL/gl3.h>
+#elif defined(__ANDROID__)
+	// Android NDK ships the GLES 3.x headers; reuse them so our typedefs
+	// match whatever the toolchain links against.  GLES3 is a strict
+	// superset of GLES2 for the symbols we use.
+	#include <GLES3/gl3.h>
+	// Backfill desktop-only constants that gl_helpers.cpp's profile-switch
+	// code references.  These appear in dead branches at runtime on GLES
+	// (the profile check returns early) but must compile cleanly.  Values
+	// are the standard GL spec assignments, identical across all profiles
+	// that do define them, so a stray cross-profile use would still match
+	// what desktop drivers expect.
+	#ifndef GL_BGRA
+		#define GL_BGRA                       0x80E1
+	#endif
+	#ifndef GL_UNSIGNED_INT_8_8_8_8_REV
+		#define GL_UNSIGNED_INT_8_8_8_8_REV   0x8367
+	#endif
 #else
 	// Minimal GL type definitions for platforms without system GL headers
 	#ifndef __gl_h_
@@ -144,14 +185,26 @@
 	#define GL_PACK_ROW_LENGTH                0x0D02
 	#define GL_PACK_ALIGNMENT                 0x0D05
 
+	// Texture swizzle (GL 3.3 Core / GLES 3.0 — available on both profiles).
+	// Used by the XRGB8888 upload path on GLES to remap R↔B so shaders see
+	// correct colour channels even though the pixel transfer format is
+	// GL_RGBA / GL_UNSIGNED_BYTE (GLES has no GL_BGRA core path).
+	#define GL_TEXTURE_SWIZZLE_R              0x8E42
+	#define GL_TEXTURE_SWIZZLE_G              0x8E43
+	#define GL_TEXTURE_SWIZZLE_B              0x8E44
+	#define GL_TEXTURE_SWIZZLE_A              0x8E45
+
 	#endif // __gl_h_
 #endif // __APPLE__
 
-// Function pointer type declarations
-#ifndef __APPLE__
+// Function pointer type declarations.
+// On macOS the system GL framework exports these directly.
+// On Android the GLES3 headers typedef the very same PFN_* macros, so our
+// typedef block would collide — use the system headers there too.
+#if !defined(__APPLE__) && !defined(__ANDROID__)
 #define GL_FUNC(ret, name, ...) typedef ret (GLAPIENTRY *PFN_##name)(__VA_ARGS__);
 #else
-#define GL_FUNC(ret, name, ...)  /* macOS: framework provides these directly */
+#define GL_FUNC(ret, name, ...)  /* symbols provided by system headers */
 #endif
 #ifndef GLAPIENTRY
 	#ifdef _WIN32
@@ -233,8 +286,11 @@ GL_FUNC(void, glDrawBuffers, GLsizei n, const GLenum *bufs)
 
 #undef GL_FUNC
 
-// Global function pointers — loaded by GLLoadFunctions()
-#ifndef __APPLE__
+// Global function pointers — loaded by GLLoadFunctions().
+// On macOS and Android the platform headers/linker already provide the
+// symbols as direct extern functions, so we don't create indirection
+// pointers (that would shadow the real entry points).
+#if !defined(__APPLE__) && !defined(__ANDROID__)
 #define GL_FUNC(ret, name, ...) extern PFN_##name name;
 #else
 #define GL_FUNC(ret, name, ...)
@@ -308,5 +364,9 @@ extern PFN_glTexStorage2D glTexStorage2D;
 #endif
 
 // Load all GL function pointers via SDL_GL_GetProcAddress.
-// Must be called after SDL_GL_CreateContext. Returns true on success.
-bool GLLoadFunctions();
+// Must be called after SDL_GL_CreateContext.  The active profile tells
+// the loader which entry points are mandatory vs optional — e.g.
+// glPolygonMode is absent on GLES 3.0 and on macOS core profile, so it
+// is loaded opportunistically and never hard-required.
+// Returns true if every mandatory entry point resolved.
+bool GLLoadFunctions(GLProfile profile);

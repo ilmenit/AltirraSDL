@@ -18,7 +18,7 @@
 
 // Forward declaration — actual librashader types are only used internally
 // in display_librashader.cpp when the headers are available.
-class DisplayBackendGL33;
+class DisplayBackendGL;
 
 // Runtime parameter metadata for a loaded shader preset.
 struct LibrashaderParam {

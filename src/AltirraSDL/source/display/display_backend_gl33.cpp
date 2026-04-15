@@ -1,5 +1,6 @@
-//	AltirraSDL - OpenGL 3.3 display backend implementation
+//	AltirraSDL - OpenGL display backend implementation
 //	GPU-accelerated post-processing: screen effects, bloom V2, bicubic, PAL.
+//	One class — two profiles: Desktop GL 3.3 Core and OpenGL ES 3.0.
 
 #include <stdafx.h>
 #include "display_backend_gl33.h"
@@ -27,7 +28,7 @@
 // Construction / destruction
 // ============================================================================
 
-DisplayBackendGL33::DisplayBackendGL33(SDL_Window *window, SDL_GLContext glContext)
+DisplayBackendGL::DisplayBackendGL(SDL_Window *window, SDL_GLContext glContext)
 	: mpWindow(window)
 	, mGLContext(glContext)
 {
@@ -55,19 +56,19 @@ DisplayBackendGL33::DisplayBackendGL33(SDL_Window *window, SDL_GLContext glConte
 	mLibrashader.Init();
 }
 
-bool DisplayBackendGL33::LoadShaderPreset(const char *path) {
+bool DisplayBackendGL::LoadShaderPreset(const char *path) {
 	return mLibrashader.LoadPreset(path);
 }
 
-void DisplayBackendGL33::ClearShaderPreset() {
+void DisplayBackendGL::ClearShaderPreset() {
 	mLibrashader.ClearPreset();
 }
 
-const char *DisplayBackendGL33::GetShaderPresetPath() const {
+const char *DisplayBackendGL::GetShaderPresetPath() const {
 	return mLibrashader.GetPresetPath().c_str();
 }
 
-DisplayBackendGL33::~DisplayBackendGL33() {
+DisplayBackendGL::~DisplayBackendGL() {
 	SDL_GL_MakeCurrent(mpWindow, mGLContext);
 
 	mLibrashader.Shutdown();
@@ -113,7 +114,7 @@ DisplayBackendGL33::~DisplayBackendGL33() {
 // Program compilation
 // ============================================================================
 
-void DisplayBackendGL33::CompilePassthroughProgram() {
+void DisplayBackendGL::CompilePassthroughProgram() {
 	mPassthroughProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS, kGLSL_PassthroughFS);
 	if (mPassthroughProgram) {
 		mPassthroughLoc_SourceTex = glGetUniformLocation(mPassthroughProgram, "uSourceTex");
@@ -121,7 +122,7 @@ void DisplayBackendGL33::CompilePassthroughProgram() {
 }
 
 
-const ScreenFXProgram &DisplayBackendGL33::GetScreenFXProgram(uint32_t features) {
+const ScreenFXProgram &DisplayBackendGL::GetScreenFXProgram(uint32_t features) {
 	auto it = mScreenFXCache.find(features);
 	if (it != mScreenFXCache.end())
 		return it->second;
@@ -136,32 +137,14 @@ const ScreenFXProgram &DisplayBackendGL33::GetScreenFXProgram(uint32_t features)
 	if (features & kSFX_DotMask)      preamble += "#define FEAT_DOT_MASK\n";
 	if (features & kSFX_Distortion)   preamble += "#define FEAT_DISTORTION\n";
 
-	// Compile: vertex shader is the display quad VS, fragment is preamble + screenfx
+	// Profile preamble (#version + precision) is injected by
+	// GLCompileShaderMulti; we only pass the feature-define preamble and
+	// the shader body here.  Order of source strings is:
+	//   [profile-preamble] [feature-defines] [screenfx body]
 	const char *fsSources[2] = { preamble.c_str(), kGLSL_ScreenFX_FS };
 
-	// The ScreenFX shader already has #version 330 core, so we skip a separate
-	// version line. But the preamble needs to go AFTER the #version line.
-	// Since the shader source already starts with #version, we prepend defines
-	// before it by splitting. Actually, the #version must be first. Let's build
-	// the full source with version first, then defines, then shader body.
-	std::string fullFS = "#version 330 core\n" + preamble;
-
-	// Strip the #version line from the embedded shader source (the preamble
-	// already includes it, so we skip the one in kGLSL_ScreenFX_FS).
-	const char *body = kGLSL_ScreenFX_FS;
-	{
-		const char *p = body;
-		while (*p == '\n' || *p == '\r' || *p == ' ') p++;
-		if (strncmp(p, "#version", 8) == 0) {
-			while (*p && *p != '\n') p++;
-			if (*p == '\n') p++;
-			body = p;
-		}
-	}
-	fullFS += body;
-
 	GLuint vs = GLCompileShader(GL_VERTEX_SHADER, kGLSL_FullscreenTriangleVS);
-	GLuint fs = GLCompileShader(GL_FRAGMENT_SHADER, fullFS.c_str());
+	GLuint fs = GLCompileShaderMulti(GL_FRAGMENT_SHADER, fsSources, 2);
 
 	ScreenFXProgram prog;
 	if (vs && fs) {
@@ -202,7 +185,7 @@ const ScreenFXProgram &DisplayBackendGL33::GetScreenFXProgram(uint32_t features)
 // Frame upload
 // ============================================================================
 
-void DisplayBackendGL33::UploadFrame(const void *pixels, int width, int height, int pitch) {
+void DisplayBackendGL::UploadFrame(const void *pixels, int width, int height, int pitch) {
 	if (!pixels || width <= 0 || height <= 0)
 		return;
 
@@ -211,8 +194,9 @@ void DisplayBackendGL33::UploadFrame(const void *pixels, int width, int height, 
 		if (mEmuTexture)
 			glDeleteTextures(1, &mEmuTexture);
 
-		mEmuTexture = GLCreateTexture2D(width, height, GL_RGBA8, GL_BGRA,
-			GL_UNSIGNED_INT_8_8_8_8_REV, nullptr, false);
+		// GLCreateXRGB8888Texture picks the right pixel format per GL
+		// profile (BGRA/REV on desktop, RGBA/UBYTE+swizzle on GLES).
+		mEmuTexture = GLCreateXRGB8888Texture(width, height, false, nullptr);
 		mTexW = width;
 		mTexH = height;
 
@@ -225,23 +209,20 @@ void DisplayBackendGL33::UploadFrame(const void *pixels, int width, int height, 
 
 	// Upload pixel data
 	glBindTexture(GL_TEXTURE_2D, mEmuTexture);
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 4);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
-		GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+	GLUploadXRGB8888(width, height, pixels, pitch);
 }
 
 // ============================================================================
 // Frame rendering
 // ============================================================================
 
-void DisplayBackendGL33::BeginFrame() {
+void DisplayBackendGL::BeginFrame() {
 	SDL_GetWindowSizeInPixels(mpWindow, &mWinW, &mWinH);
 	glViewport(0, 0, mWinW, mWinH);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float dstH,
+void DisplayBackendGL::RenderFrame(float dstX, float dstY, float dstW, float dstH,
 	int srcW, int srcH)
 {
 	if (!mEmuTexture || srcW <= 0 || srcH <= 0)
@@ -317,7 +298,7 @@ void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float d
 		glDisable(GL_STENCIL_TEST);
 		glDisable(GL_CULL_FACE);
 		glDisable(GL_SCISSOR_TEST);
-		glDisable(GL_FRAMEBUFFER_SRGB);
+		GLSetFramebufferSRGB(false);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
 		// Blit librashader output to the screen.  librashader output is
@@ -339,7 +320,7 @@ void DisplayBackendGL33::RenderFrame(float dstX, float dstY, float dstW, float d
 	RenderFrameInner(dstX, dstY, dstW, dstH, srcW, srcH);
 }
 
-void DisplayBackendGL33::RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
+void DisplayBackendGL::RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
 	int srcW, int srcH)
 {
 
@@ -406,11 +387,11 @@ void DisplayBackendGL33::RenderFrameInner(float dstX, float dstY, float dstW, fl
 	glViewport(0, 0, mWinW, mWinH);
 }
 
-void DisplayBackendGL33::Present() {
+void DisplayBackendGL::Present() {
 	SDL_GL_SwapWindow(mpWindow);
 }
 
-bool DisplayBackendGL33::ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) {
+bool DisplayBackendGL::ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) {
 	if (!dst || w <= 0 || h <= 0)
 		return false;
 
@@ -433,7 +414,7 @@ bool DisplayBackendGL33::ReadPixels(void *dst, int dstPitch, int x, int y, int w
 	return true;
 }
 
-void DisplayBackendGL33::OnResize(int w, int h) {
+void DisplayBackendGL::OnResize(int w, int h) {
 	mWinW = w;
 	mWinH = h;
 	// Lookup textures (scanline mask, etc.) need regeneration on resize
@@ -444,7 +425,7 @@ void DisplayBackendGL33::OnResize(int w, int h) {
 // Filter mode
 // ============================================================================
 
-void DisplayBackendGL33::SetFilterMode(int mode) {
+void DisplayBackendGL::SetFilterMode(int mode) {
 	mFilterMode = mode;
 
 	if (!mEmuTexture)
@@ -466,7 +447,7 @@ void DisplayBackendGL33::SetFilterMode(int mode) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
 }
 
-void DisplayBackendGL33::SetFilterSharpness(float sharpness) {
+void DisplayBackendGL::SetFilterSharpness(float sharpness) {
 	mFilterSharpness = sharpness;
 }
 
@@ -474,14 +455,14 @@ void DisplayBackendGL33::SetFilterSharpness(float sharpness) {
 // Screen effects
 // ============================================================================
 
-void DisplayBackendGL33::UpdateScreenFX(const VDVideoDisplayScreenFXInfo &info) {
+void DisplayBackendGL::UpdateScreenFX(const VDVideoDisplayScreenFXInfo &info) {
 	if (!(mScreenFX == info)) {
 		mScreenFX = info;
 		mScreenFXDirty = true;
 	}
 }
 
-void DisplayBackendGL33::UpdateLookupTextures() {
+void DisplayBackendGL::UpdateLookupTextures() {
 	if (!mScreenFXDirty || mTexW <= 0 || mTexH <= 0)
 		return;
 	mScreenFXDirty = false;
@@ -579,28 +560,26 @@ void DisplayBackendGL33::UpdateLookupTextures() {
 
 		if (maskW > 0 && maskH > 0) {
 			// The mask generation functions (VDDisplayCreate*Texture) produce
-			// uint32 pixels in D3D BGRA convention (0x00RRGGBB on little-endian).
-			// Upload as GL_BGRA so the channels map correctly to the GL_RGBA8
-			// internal format.
+			// uint32 pixels in D3D XRGB8888 convention (byte order B,G,R,X in
+			// memory).  GLCreateXRGB8888Texture / GLUploadXRGB8888 pick the
+			// correct pixel transfer format per profile; D3D9 uses POINT
+			// filtering for the mask (pass linear=false) to preserve sharp
+			// phosphor boundaries.
 			if (!mMaskTexture || mMaskTexW != maskW || mMaskTexH != maskH) {
 				if (mMaskTexture) glDeleteTextures(1, &mMaskTexture);
-				// D3D9 uses POINT filtering for the mask texture — pass false
-				// for linear to use GL_NEAREST.  This preserves sharp phosphor
-				// boundaries and matches the Windows rendering exactly.
-				mMaskTexture = GLCreateTexture2D(maskW, maskH, GL_RGBA8, GL_BGRA,
-					GL_UNSIGNED_BYTE, mLookupBuffer.data(), false);
+				mMaskTexture = GLCreateXRGB8888Texture(maskW, maskH, false,
+					mLookupBuffer.data());
 				mMaskTexW = maskW;
 				mMaskTexH = maskH;
 			} else {
 				glBindTexture(GL_TEXTURE_2D, mMaskTexture);
-				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, maskW, maskH,
-					GL_BGRA, GL_UNSIGNED_BYTE, mLookupBuffer.data());
+				GLUploadXRGB8888(maskW, maskH, mLookupBuffer.data(), 0);
 			}
 		}
 	}
 }
 
-void DisplayBackendGL33::RenderScreenFX(float dstX, float dstY, float dstW, float dstH,
+void DisplayBackendGL::RenderScreenFX(float dstX, float dstY, float dstW, float dstH,
 	int srcW, int srcH)
 {
 	// Regenerate lookup textures if needed
@@ -890,7 +869,7 @@ mPALProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS_NoFlip, kGLSL_PALArtifa
 // Bloom V2
 // ============================================================================
 
-void DisplayBackendGL33::EnsureBloomPyramid(int baseW, int baseH) {
+void DisplayBackendGL::EnsureBloomPyramid(int baseW, int baseH) {
 	if (mBloomBaseW == baseW && mBloomBaseH == baseH)
 		return;
 
@@ -960,7 +939,7 @@ void DisplayBackendGL33::EnsureBloomPyramid(int baseW, int baseH) {
 	}
 }
 
-void DisplayBackendGL33::RenderBloomV2(int srcW, int srcH, GLuint sourceTex) {
+void DisplayBackendGL::RenderBloomV2(int srcW, int srcH, GLuint sourceTex) {
 	EnsureBloomPyramid(mWinW, mWinH);
 
 	if (!mBloomGammaProgram || !mBloomDownProgram || !mBloomUpProgram || !mBloomFinalProgram)
@@ -1097,7 +1076,7 @@ void DisplayBackendGL33::RenderBloomV2(int srcW, int srcH, GLuint sourceTex) {
 // Bicubic filter
 // ============================================================================
 
-void DisplayBackendGL33::RenderBicubic(int srcW, int srcH, int dstW, int dstH, GLuint sourceTex) {
+void DisplayBackendGL::RenderBicubic(int srcW, int srcH, int dstW, int dstH, GLuint sourceTex) {
 	if (dstW <= 0 || dstH <= 0)
 		return;
 
@@ -1190,7 +1169,7 @@ void DisplayBackendGL33::RenderBicubic(int srcW, int srcH, int dstW, int dstH, G
 	glBindVertexArray(0);
 }
 
-void DisplayBackendGL33::DrawFullscreen(GLuint program) {
+void DisplayBackendGL::DrawFullscreen(GLuint program) {
 	glBindVertexArray(mEmptyVAO);
 	glUseProgram(program);
 	GLDrawFullscreenTriangle();

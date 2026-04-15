@@ -3,8 +3,6 @@
 
 // Bloom pass 1: sRGB to linear gamma conversion.
 static const char kGLSL_BloomGamma_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 uniform sampler2D uSourceTex;
@@ -25,8 +23,6 @@ void main() {
 // From Jiminez, "Next Generation Post Processing in Call of Duty: Advanced Warfare"
 // Weights: corners 7/124, edges 16/124, center 32/124.
 static const char kGLSL_BloomDown_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 uniform sampler2D uSourceTex;
@@ -64,8 +60,6 @@ void main() {
 // Output alpha contains the blend factor for additive blending with the
 // previous pyramid level.
 static const char kGLSL_BloomUp_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 uniform sampler2D uSourceTex;
@@ -95,8 +89,6 @@ void main() {
 
 // Bloom final composition: upsample + base filter + shoulder soft-clip + sRGB.
 static const char kGLSL_BloomFinal_FS[] = R"glsl(
-#version 330 core
-
 in vec2 vUV;
 out vec4 fragColor;
 uniform sampler2D uSourceTex;     // bloom pyramid (finest level)

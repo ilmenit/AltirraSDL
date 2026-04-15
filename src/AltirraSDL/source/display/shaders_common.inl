@@ -1,11 +1,16 @@
 //	AltirraSDL - Common GLSL shader sources
 //	Fullscreen triangle vertex shader and sRGB conversion utilities.
+//
+//	Each shader body is stored WITHOUT a `#version` line — the profile
+//	preamble is prepended at compile time by GLCompileShader (see
+//	gl_helpers.cpp).  This lets one source tree compile under
+//	both Desktop GL 3.3 Core (#version 330 core) and OpenGL ES 3.0
+//	(#version 300 es + precision qualifiers).
 
 // Fullscreen triangle vertex shader.
 // Generates a triangle that covers [-1,+1] clip space from gl_VertexID.
 // UV output covers [0,1] with Y=0 at top (matching SDL/ImGui convention).
 static const char kGLSL_FullscreenTriangleVS[] = R"glsl(
-#version 330 core
 out vec2 vUV;
 void main() {
 	// Generate oversized triangle from vertex ID (0,1,2)
@@ -23,7 +28,6 @@ void main() {
 // FBO must be stored in GL's native bottom-up orientation to match
 // mEmuTexture's row-0-is-top-scanline layout after the consumer flips.
 static const char kGLSL_FullscreenTriangleVS_NoFlip[] = R"glsl(
-#version 330 core
 out vec2 vUV;
 void main() {
 	float x = float((gl_VertexID & 1) << 2) - 1.0;
@@ -50,7 +54,6 @@ vec3 LinearToSrgb(vec3 c) {
 
 // Simple passthrough fragment shader — texture sampling only.
 static const char kGLSL_PassthroughFS[] = R"glsl(
-#version 330 core
 in vec2 vUV;
 out vec4 fragColor;
 uniform sampler2D uSourceTex;

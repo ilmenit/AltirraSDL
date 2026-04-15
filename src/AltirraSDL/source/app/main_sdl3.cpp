@@ -1189,14 +1189,37 @@ int main(int argc, char *argv[]) {
 	const int kDefaultWidth = 1280;
 	const int kDefaultHeight = 720;
 
-	// Try OpenGL 3.3 first, fall back to SDL_Renderer
+	// Backend selection policy:
+	//   1. Try the platform's "best fit" GL profile — Desktop 3.3 Core on
+	//      Windows/Linux/macOS, OpenGL ES 3.0 on Android/iOS.  Both paths
+	//      light up the full DisplayBackendGL feature set (screen FX,
+	//      bicubic, bloom, librashader where the runtime is present).
+	//   2. If GL/GLES context creation fails for any reason (driver bug,
+	//      headless display, sandbox), fall back to SDL_Renderer — no
+	//      custom shaders, but the emulator still renders correctly.
+	// The choice is silent and automatic; the user does not pick a
+	// backend.  IDisplayBackend::SupportsScreenFX / SupportsExternalShaders
+	// gate UI surfaces (Visual Effects menu, Load Shader Preset...) so
+	// a fallback session simply hides the unavailable items.
+
 	bool useGL = false;
 	SDL_GLContext glContext = nullptr;
+	GLProfile glProfile = GLProfile::Desktop33;
 
-	// Set GL attributes before window creation
+	// Pick the preferred GL profile per platform.  Only ONE profile is
+	// attempted: requesting Desktop Core on Android, or ES on a desktop
+	// driver, would either fail outright or silently mislead.
+#if defined(__ANDROID__) || (defined(__APPLE__) && defined(TARGET_OS_IOS) && TARGET_OS_IOS)
+	glProfile = GLProfile::ES30;
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
+	glProfile = GLProfile::Desktop33;
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
 	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight,
@@ -1205,9 +1228,14 @@ int main(int argc, char *argv[]) {
 		glContext = SDL_GL_CreateContext(g_pWindow);
 		if (glContext) {
 			SDL_GL_MakeCurrent(g_pWindow, glContext);
-			if (GLLoadFunctions()) {
+			// GLLoadFunctions stores the active profile internally; all
+			// downstream code (shader compile, texture upload, librashader)
+			// reads it via GLGetActiveProfile().
+			if (GLLoadFunctions(glProfile)) {
 				useGL = true;
-				LOG_INFO("Main", "OpenGL 3.3 context created successfully");
+				LOG_INFO("Main", "%s context created successfully",
+					glProfile == GLProfile::ES30
+						? "OpenGL ES 3.0" : "OpenGL 3.3 Core");
 			} else {
 				LOG_ERROR("Main", "GL function loading failed, falling back to SDL_Renderer");
 				SDL_GL_DestroyContext(glContext);
@@ -1218,11 +1246,15 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	// If GL failed, recreate window without OPENGL flag for SDL_Renderer
+	// If GL failed, recreate window without OPENGL flag for SDL_Renderer.
+	// SDL_Renderer is a true safety net: it picks the platform's best
+	// 2D backend (D3D11/12 on Windows, Metal on macOS, GLES/Vulkan on
+	// Android) but cannot run our screen FX / librashader pipeline.
 	if (!useGL) {
 		if (g_pWindow) SDL_DestroyWindow(g_pWindow);
 		g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
 		if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
+		LOG_INFO("Main", "Falling back to SDL_Renderer (screen FX and librashader unavailable)");
 	}
 
 	// Set the window/taskbar/dock icon from the baked RGBA data.
@@ -1297,7 +1329,7 @@ int main(int argc, char *argv[]) {
 
 	// Create the display backend
 	if (useGL) {
-		g_pBackend = new DisplayBackendGL33(g_pWindow, glContext);
+		g_pBackend = new DisplayBackendGL(g_pWindow, glContext);
 		// VSync swap interval is managed dynamically by the main loop based
 		// on g_desiredSwapInterval (set by UpdatePacerRate).  Start with
 		// interval 0; the first UpdatePacerRate call will set the correct
@@ -1368,9 +1400,13 @@ int main(int argc, char *argv[]) {
 		SDL_GetWindowSizeInPixels(g_pWindow, &pxW, &pxH);
 		if (pxW <= 0) pxW = kDefaultWidth;
 		if (pxH <= 0) pxH = kDefaultHeight;
+		const char *backendName = "SDL_Renderer";
+		if (useGL)
+			backendName = (glProfile == GLProfile::ES30)
+				? "OpenGL ES 3.0" : "OpenGL 3.3 Core";
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 			"Altirra: display backend = %s, window pixel size = %dx%d",
-			useGL ? "OpenGL 3.3" : "SDL_Renderer", pxW, pxH);
+			backendName, pxW, pxH);
 		g_pDisplay = new VDVideoDisplaySDL3(g_pRenderer, pxW, pxH);
 	}
 
