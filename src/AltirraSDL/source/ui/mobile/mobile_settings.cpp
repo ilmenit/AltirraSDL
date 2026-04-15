@@ -549,6 +549,18 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			try { ATMobileUI_ApplyVisualEffects(mobileState); } catch (...) {}
 		}
 
+		if (ATTouchToggle("Aperture Grille", &mobileState.fxApertureGrille)) {
+			markCustom();
+			SaveMobileConfig(mobileState);
+			try { ATMobileUI_ApplyVisualEffects(mobileState); } catch (...) {}
+		}
+
+		if (ATTouchToggle("Vignette", &mobileState.fxVignette)) {
+			markCustom();
+			SaveMobileConfig(mobileState);
+			try { ATMobileUI_ApplyVisualEffects(mobileState); } catch (...) {}
+		}
+
 		ATTouchSection("Interface");
 
 		// Interface scale — lets the user shrink the chrome on

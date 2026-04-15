@@ -1,6 +1,8 @@
 //	AltirraSDL - Adjust Screen Effects dialog
-//	4-tab ImGui dialog matching the Windows version's layout:
-//	  Main (scanlines, distortion), Bloom, HDR, Mask.
+//	5-tab ImGui dialog matching the Windows version's layout:
+//	  Main (scanlines, distortion), Bloom, HDR, Mask, Vignette.
+//	The Vignette tab is SDL3-exclusive; the radial-darkening stage
+//	lives alongside the other built-in effects in the GL backend.
 //
 //	The dialog is accessible from View > Adjust Screen Effects.
 //	When the SDL_Renderer fallback is active (no GL), the menu item is
@@ -71,15 +73,41 @@ static void RenderMainPage(ATGTIAEmulator &gtia, ATArtifactingParams &params, bo
 		}
 	}
 
-	// Distortion Y ratio (0-100%)
+	// Distortion Y ratio (0-200%; values >100% pull the top/bottom
+	// edges into a more pronounced barrel than the horizontal curve)
 	{
 		float ratio = params.mDistortionYRatio * 100.0f;
 		ImGui::Text("Distortion Y Ratio: %.0f%%", ratio);
-		if (ImGui::SliderFloat("##DistortionY", &ratio, 0.0f, 100.0f, "")) {
+		if (ImGui::SliderFloat("##DistortionY", &ratio, 0.0f, 200.0f, "")) {
 			params.mDistortionYRatio = ratio / 100.0f;
 			changed = true;
 		}
 	}
+}
+
+static void RenderVignettePage(ATArtifactingParams &params, bool &changed) {
+	if (ImGui::Checkbox("Enable Vignette", &params.mbEnableVignette))
+		changed = true;
+
+	ImGui::BeginDisabled(!params.mbEnableVignette);
+
+	// Intensity 0..100%: 100% darkens the corners completely.
+	{
+		float intensity = params.mVignetteIntensity * 100.0f;
+		ImGui::Text("Intensity: %.0f%%", intensity);
+		if (ImGui::SliderFloat("##VignetteIntensity", &intensity, 0.0f, 100.0f, "")) {
+			params.mVignetteIntensity = intensity / 100.0f;
+			changed = true;
+		}
+	}
+
+	ImGui::EndDisabled();
+
+	ImGui::Spacing();
+	ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+		"Adds a radial darkening toward the corners to mimic the\n"
+		"uneven phosphor brightness of a real CRT.  A slight amount\n"
+		"(~18%%) is enabled by default.");
 }
 
 static void RenderBloomPage(ATArtifactingParams &params, bool &changed) {
@@ -286,6 +314,11 @@ void ATUIRenderScreenEffects(ATSimulator &sim, ATUIState &state) {
 		if (ImGui::BeginTabItem("Mask")) {
 			ImGui::Spacing();
 			RenderMaskPage(maskParams, maskChanged);
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Vignette")) {
+			ImGui::Spacing();
+			RenderVignettePage(params, changed);
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();

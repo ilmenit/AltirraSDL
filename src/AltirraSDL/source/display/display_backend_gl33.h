@@ -32,6 +32,7 @@ enum ScreenFXFeature : uint32_t {
 	kSFX_CC_SRGB        = 1 << 4,
 	kSFX_DotMask        = 1 << 5,
 	kSFX_Distortion     = 1 << 6,
+	kSFX_Vignette       = 1 << 7,
 };
 
 // Uniform locations for a compiled screen effects program.
@@ -47,6 +48,7 @@ struct ScreenFXUniforms {
 	GLint uColorCorrectM2 = -1;
 	GLint uDistortionScales = -1;
 	GLint uImageUVSize = -1;
+	GLint uVignetteIntensity = -1;
 };
 
 struct ScreenFXProgram {

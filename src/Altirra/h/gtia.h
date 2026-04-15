@@ -123,6 +123,11 @@ struct ATArtifactingParams {
 	// Ratio of vertical distortion to horizontal distortion.
 	float mDistortionYRatio;
 
+	// Vignette (radial edge darkening).  Intensity 0..1 darkens the
+	// corners smoothly; 0 is disabled regardless of mbEnableVignette.
+	bool mbEnableVignette;
+	float mVignetteIntensity;
+
 	bool mbEnableBloom;
 	bool mbBloomScanlineCompensation;
 	float mBloomRadius;

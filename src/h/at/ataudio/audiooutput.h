@@ -109,6 +109,20 @@ public:
 		const float *left,
 		const float *right,
 		uint32 count, bool pushAudio, bool pushStereoAsAudio, uint64 timestamp) = 0;
+
+	// Returns the current estimate of total pipeline depth in bytes
+	// (everything we've committed that has not yet been played).  The
+	// returned value is in the audio engine's output format (S16 stereo
+	// at GetAudioStatus().mSamplingRate), i.e. 4 bytes per frame.
+	//
+	// Returns 0xFFFFFFFFu (UINT32_MAX) if the implementation does not
+	// track this quantity.  The Windows backends do not override this;
+	// they have no consumer of the signal, because Windows Altirra does
+	// not do active clock recovery.  The SDL3 backend overrides it to
+	// return the same quantity that drives its internal rate-control
+	// check, so the SDL3 frame pacer can use it for closed-loop sync
+	// (see main_pacer.cpp).
+	virtual uint32 GetPipelineLatencyBytes() { return 0xFFFFFFFFu; }
 };
 
 IATAudioOutput *ATCreateAudioOutput();

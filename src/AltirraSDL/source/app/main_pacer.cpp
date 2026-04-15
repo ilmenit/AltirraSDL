@@ -48,6 +48,139 @@ void FramePacer::Init() {
 	measuredFPS = 0.0f;
 	lateFrameCount = 0;
 	maxElapsedTicks = 0;
+	clockRecoveryFactor = 1.0;
+}
+
+// =========================================================================
+// Active clock recovery — deliberate divergence from Windows Altirra
+// =========================================================================
+//
+// This is not a straight port of Windows behaviour.  Windows Altirra
+// paces the emulator purely off wallclock (via a waitable timer + DXGI
+// Present), accepts that the audio queue will drift anywhere inside its
+// [mLatencyTargetMin, mLatencyTargetMin + mLatencyTargetMax] window,
+// and lives with the resulting 80–260 ms A/V offset at default
+// settings.  That's fine on Windows because WaveOut / DirectSound /
+// WASAPI all expose exact hardware-side buffer-level accounting and
+// their Write() calls block when the pipeline is full, so the queue
+// stays bounded without any feedback loop.
+//
+// On SDL3 we don't have either guarantee:
+//   - SDL_PutAudioStreamData never blocks.
+//   - SDL_GetAudioStreamQueued only sees stream-input bytes, missing
+//     SDL's per-device buffer, the backend client/server buffers, and
+//     the device FIFO — anywhere from 20 ms on native PipeWire to
+//     multiple seconds on PulseAudio with default tlength.
+//
+// audiooutput_sdl3.cpp reconstructs a Windows-equivalent "bytes pending
+// downstream" signal by tracking cumulative pushes minus wallclock-
+// extrapolated consumption.  That fixes *accounting* (the signal is
+// right) but not *drift*: any difference between the emulator's idea of
+// real-time and the device's crystal-actual consumption rate is still
+// absorbed by the audio queue wandering inside its target window.
+//
+// Active clock recovery closes the remaining loop.  We read the
+// pipeline depth once per frame, compare to the user's configured
+// latency target (mLatency), and nudge the frame period by a tiny
+// proportional correction:
+//
+//   correction = clamp(Kp * (pending - target) / target,
+//                     -kMaxCorrection, +kMaxCorrection)
+//
+// The correction goes directly onto targetSecsPerFrame for this frame,
+// so the pacer's existing sleep/error-accumulator logic naturally
+// tightens or relaxes the frame rate in response.  Faster emulator =
+// more POKEY samples per wallclock second = queue fills.  Slower
+// emulator = queue drains.
+//
+// Why the ±0.5 % clamp:
+//   - 0.5 % pitch shift is ≈ 8.6 cents.  Perceptibility of constant
+//     pitch shifts below ~10 cents is very poor even for trained
+//     listeners; on emulator-synthesised POKEY voices (square waves,
+//     noise) it is essentially inaudible.  Confirmed by the same
+//     reasoning in Mednafen, Dolphin, PCSX2, and other emulators that
+//     apply exactly this technique.
+//   - The correction is *constant within a frame*, not a ramp.  There
+//     is no vibrato-style modulation that the ear is far more
+//     sensitive to than slow detuning.
+//   - Proportional-only control (no integral term) rules out limit-
+//     cycle oscillation from integrator windup.  The audio engine's
+//     own push-doubling on underflow and drop-hysteresis on overflow
+//     handle large/fast deviations (startup, stalls, overflow);
+//     clock recovery only needs to handle steady-state drift.
+//
+// Why this is a "feature" divergence, not a bug compat fix:
+//   - Windows users do not get this tighter pacing.
+//   - A user switching between the Windows build and this SDL3 build
+//     *will* notice the SDL3 build feels ~80 ms snappier at default
+//     settings (lower A/V offset, less audio lag on input).
+//   - If that difference ever becomes a problem, this function can be
+//     disabled by simply not calling it from WaitForNextFrame, and
+//     behaviour reverts to Windows-parity.
+//
+// Fallback paths (clockRecoveryFactor left at 1.0):
+//   - Audio output not yet created, or dummy driver.
+//   - Audio output reports UINT32_MAX (signal unavailable — Windows
+//     build would hit this if this code ever ran there).
+//   - Sampling rate not yet known (pre-InitNativeAudio).
+//   - User has latency set to 0 (degenerate target).
+void FramePacer::ComputeClockRecovery() {
+	IATAudioOutput *audio = g_sim.GetAudioOutput();
+	if (!audio) {
+		clockRecoveryFactor = 1.0;
+		return;
+	}
+
+	const uint32 pendingBytes = audio->GetPipelineLatencyBytes();
+	if (pendingBytes == 0xFFFFFFFFu) {
+		// Signal unavailable — fall back to pure wallclock pacing.
+		clockRecoveryFactor = 1.0;
+		return;
+	}
+
+	const ATUIAudioStatus status = audio->GetAudioStatus();
+	const uint32 samplingRate = (uint32)status.mSamplingRate;
+	const int latencyMs = audio->GetLatency();
+
+	if (samplingRate == 0 || latencyMs <= 0) {
+		clockRecoveryFactor = 1.0;
+		return;
+	}
+
+	// Target is the same quantity as audiooutput_sdl3's
+	// mLatencyTargetMin — the lower rail of the accepting-push window.
+	// We want the queue pinned at this rail, not wandering upward
+	// toward min+max.
+	const uint32 targetBytes =
+		((uint32)latencyMs * samplingRate + 500u) / 1000u * 4u;
+
+	if (targetBytes == 0) {
+		clockRecoveryFactor = 1.0;
+		return;
+	}
+
+	// Signed deviation expressed as a fraction of target.
+	// -1.0 = queue empty, 0.0 = at target, +1.0 = at 2× target, etc.
+	const double deviation =
+		(double)((int64_t)pendingBytes - (int64_t)targetBytes)
+		/ (double)targetBytes;
+
+	// Proportional control.  With kGain == kMaxCorrection, the
+	// correction saturates at |deviation| == 1.0, i.e. at queue=0 or
+	// queue=2×target.  Smaller deviations give proportionally smaller
+	// corrections, so steady-state at near-target error gives
+	// near-zero pitch shift.
+	constexpr double kMaxCorrection = 0.005; // ±0.5 %  (±8.6 cents)
+	constexpr double kGain = kMaxCorrection;
+
+	double correction = kGain * deviation;
+	if (correction >  kMaxCorrection) correction =  kMaxCorrection;
+	if (correction < -kMaxCorrection) correction = -kMaxCorrection;
+
+	// deviation > 0 means queue is too full → emulator ran slightly
+	// fast → we want a *longer* frame (slower pacing) → factor > 1.
+	// deviation < 0 means the opposite.  Sign matches directly.
+	clockRecoveryFactor = 1.0 + correction;
 }
 
 void FramePacer::UpdateRate(double fps) {
@@ -56,9 +189,20 @@ void FramePacer::UpdateRate(double fps) {
 
 // Called after a frame is complete.  Sleeps to maintain correct rate.
 void FramePacer::WaitForNextFrame() {
+	// Read audio-pipeline depth and update clockRecoveryFactor for
+	// this frame.  See ComputeClockRecovery for full rationale — this
+	// is a deliberate divergence from Windows Altirra, enabled only on
+	// the SDL3 build where the audio backend has no blocking Write()
+	// and no exact hardware-side buffer accounting.  When the audio
+	// output doesn't expose the feedback signal (dummy driver, pre-
+	// init, etc.) the factor is left at 1.0 and this is a no-op.
+	ComputeClockRecovery();
+
 	uint64_t now = SDL_GetPerformanceCounter();
 	int64_t elapsed = (int64_t)(now - lastFrameTime);
-	int64_t targetTicks = (int64_t)(targetSecsPerFrame * (double)perfFreq);
+	int64_t targetTicks =
+		(int64_t)(targetSecsPerFrame * clockRecoveryFactor
+		          * (double)perfFreq);
 
 	// Capture the frame start time BEFORE the sleep.  This is the
 	// critical piece: the next call's `elapsed` must include the time

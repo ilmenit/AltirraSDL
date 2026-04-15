@@ -531,6 +531,8 @@ void ATSettingsExchangeView(bool write, VDRegistryKey& key) {
 		key.setInt("ScreenFX: Bloom V2 indirect intensity", (int)(0.5f + aparams.mBloomIndirectIntensity * 100.0f));
 		key.setInt("ScreenFX: Distortion X View Angle", (int)(0.5f + aparams.mDistortionViewAngleX));
 		key.setInt("ScreenFX: Distortion Y Ratio", (int)(0.5f + aparams.mDistortionYRatio * 100.0f));
+		key.setBool("ScreenFX: Vignette enable", aparams.mbEnableVignette);
+		key.setInt("ScreenFX: Vignette intensity", (int)(0.5f + aparams.mVignetteIntensity * 100.0f));
 		key.setBool("ScreenFX: Enable HDR", aparams.mbEnableHDR);
 
 		VDStringA s;
@@ -581,8 +583,13 @@ void ATSettingsExchangeView(bool write, VDRegistryKey& key) {
 			aparams.mDistortionViewAngleX = (float)disX;
 
 		int disY = key.getInt("ScreenFX: Distortion Y Ratio", -1);
-		if (disY >= 0 && disY <= 100)
+		if (disY >= 0 && disY <= 200)
 			aparams.mDistortionYRatio = (float)disY / 100.0f;
+
+		aparams.mbEnableVignette = key.getBool("ScreenFX: Vignette enable", aparams.mbEnableVignette);
+		int vig = key.getInt("ScreenFX: Vignette intensity", -1);
+		if (vig >= 0 && vig <= 100)
+			aparams.mVignetteIntensity = (float)vig / 100.0f;
 
 		aparams.mbEnableHDR = key.getBool("ScreenFX: Enable HDR", aparams.mbEnableHDR);
 

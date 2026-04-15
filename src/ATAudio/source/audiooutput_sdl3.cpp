@@ -297,6 +297,13 @@ public:
 	                uint32 count, bool pushAudio, bool pushStereoAsMono,
 	                uint64 timestamp) override;
 
+	// Clock-recovery feedback signal for the SDL3 frame pacer.  Exposes
+	// the same value used internally for the rate-control check so the
+	// pacer can close the loop around it.  See main_pacer.cpp for the
+	// consumer and CLAUDE.md for why we deliberately diverge from
+	// Windows here.
+	uint32 GetPipelineLatencyBytes() override { return ComputePendingBytes(); }
+
 	// IATAudioMixer
 	void AddSyncAudioSource(IATSyncAudioSource* src) override;
 	void RemoveSyncAudioSource(IATSyncAudioSource* src) override;
@@ -385,7 +392,16 @@ private:
 	double mTickRate = 1;
 	float mMixingRate = 0;              // POKEY mixing rate = cps / 28
 	uint32 mSamplingRate = 48000;       // Device output rate (set in InitNativeAudio)
-	int mLatency = 80;                  // Matches Windows settings.cpp default
+	// SDL3 default latency: 30 ms (Windows default is 80 ms).  This is a
+	// deliberate divergence enabled by the active clock-recovery loop in
+	// main_pacer.cpp — with the queue pinned tightly to the target by
+	// the frame-pacer feedback loop, a target around a PipeWire quantum
+	// is reliable.  See FramePacer::ComputeClockRecovery for the full
+	// rationale.  This member initialiser is a fallback for the rare
+	// path where ATLoadSettings never runs; the normal load sequence
+	// either takes the user's explicit INI value or (if absent) applies
+	// the 30 ms default from main_sdl3.cpp's post-load override.
+	int mLatency = 30;
 	int mExtraBuffer = 100;             // Matches Windows settings.cpp default
 	bool mbMute = false;
 	bool mbFilterStereo = false;
@@ -975,6 +991,41 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 	uint64 timestamp)
 {
 	VDASSERT(mBufferLevel + count <= kBufferSize);
+
+	// ---- Step 0: Dynamic sampling-rate adaptation ----
+	// Mirrors Windows audiooutput.cpp:838-844, which re-reads the
+	// backend's mixing rate on every call and rebuilds the resampler
+	// if the device changed format underneath it (primarily a WASAPI
+	// mix-format change in the Windows build).
+	//
+	// On SDL3 the equivalent condition is device migration: if SDL
+	// re-binds our logical stream to a new physical device with a
+	// different rate, the stream's src-side *may* be reconciled by
+	// the implementation.  In practice SDL leaves the src format
+	// alone on a bound playback stream (SDL_SetAudioStreamFormat
+	// docs: "the side of the stream bound to a device cannot be
+	// changed (... dst_spec for playback devices)") so this branch
+	// is a no-op in the common case.  It exists so (a) the code
+	// structure mirrors Windows, and (b) if we later wire up
+	// SDL_EVENT_AUDIO_DEVICE_REMOVED / _ADDED handling that re-
+	// configures the stream's src format, the rate change flows
+	// through exactly this path — including the latency-clock
+	// checkpoint, which must be done at the *old* rate.
+#ifndef ALTIRRA_AUDIO_NULL
+	if (mpStream) {
+		SDL_AudioSpec currentSrc{};
+		if (SDL_GetAudioStreamFormat(mpStream, &currentSrc, nullptr)
+		    && currentSrc.freq > 0
+		    && (uint32)currentSrc.freq != mSamplingRate)
+		{
+			const uint32 oldRate = mSamplingRate;
+			mSamplingRate = (uint32)currentSrc.freq;
+			RetargetLatencyClock(oldRate);
+			RecomputeResamplingRate();
+			RecomputeBuffering();
+		}
+	}
+#endif
 
 	// ---- Step 1: Determine stereo requirements ----
 	bool needMono = false;

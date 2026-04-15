@@ -9,6 +9,7 @@
 //	  #define FEAT_CC_SRGB          - sRGB linearization (else gamma 2.2)
 //	  #define FEAT_DOT_MASK         - Screen dot/aperture/slot mask
 //	  #define FEAT_DISTORTION       - CRT barrel distortion (UV warp)
+//	  #define FEAT_VIGNETTE         - Radial edge darkening
 
 static const char kGLSL_ScreenFX_FS[] = R"glsl(
 in vec2 vUV;
@@ -47,6 +48,10 @@ uniform vec3 uColorCorrectM2;    // row 2 of 3x3 matrix
 #ifdef FEAT_DISTORTION
 uniform vec3 uDistortionScales;  // x=scaleX, y=scaleY, z=sqRadius
 uniform vec4 uImageUVSize;       // xy=image UV size, zw=image UV offset
+#endif
+
+#ifdef FEAT_VIGNETTE
+uniform float uVignetteIntensity;  // 0 = off, 1 = full darkening at corners
 #endif
 
 // sRGB utilities (only needed for color correction)
@@ -161,6 +166,19 @@ void main() {
 	// Scanline mask multiplication (gamma-corrected mask already baked)
 	vec3 scanMask = texture(uScanlineTex, uvScanMask).rgb;
 	c *= scanMask;
+#endif
+
+#ifdef FEAT_VIGNETTE
+	// Radial edge darkening.  vUV is the post-distortion screen UV; we
+	// want vignetting aligned to the physical screen so the corners
+	// always darken regardless of barrel warp.  dot(v,v)*4 is 1.0 at an
+	// edge midpoint and 2.0 at a corner; uVignetteIntensity scales how
+	// aggressively the corner is darkened.
+	{
+		vec2 vc = vUV - vec2(0.5);
+		float vd = dot(vc, vc) * 4.0;
+		c *= clamp(1.0 - uVignetteIntensity * vd, 0.0, 1.0);
+	}
 #endif
 
 	fragColor = vec4(c, 1.0);

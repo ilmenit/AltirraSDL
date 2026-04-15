@@ -77,6 +77,8 @@ static void LoadMobileConfig(ATMobileUIState &mobileState) {
 	mobileState.fxScanlines         = key.getBool("FxScanlines", false);
 	mobileState.fxBloom             = key.getBool("FxBloom", false);
 	mobileState.fxDistortion        = key.getBool("FxDistortion", false);
+	mobileState.fxApertureGrille    = key.getBool("FxApertureGrille", false);
+	mobileState.fxVignette          = key.getBool("FxVignette", true);
 	mobileState.performancePreset   = key.getInt("PerformancePreset", 1);
 	if (mobileState.performancePreset < 0 || mobileState.performancePreset > 3)
 		mobileState.performancePreset = 1;
@@ -107,9 +109,11 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobil
 		key.setBool("HapticEnabled", mobileState.layoutConfig.hapticEnabled);
 		key.setBool("AutoSaveOnSuspend",  mobileState.autoSaveOnSuspend);
 		key.setBool("AutoRestoreOnStart", mobileState.autoRestoreOnStart);
-		key.setBool("FxScanlines",  mobileState.fxScanlines);
-		key.setBool("FxBloom",      mobileState.fxBloom);
-		key.setBool("FxDistortion", mobileState.fxDistortion);
+		key.setBool("FxScanlines",      mobileState.fxScanlines);
+		key.setBool("FxBloom",          mobileState.fxBloom);
+		key.setBool("FxDistortion",     mobileState.fxDistortion);
+		key.setBool("FxApertureGrille", mobileState.fxApertureGrille);
+		key.setBool("FxVignette",       mobileState.fxVignette);
 		key.setInt("PerformancePreset", mobileState.performancePreset);
 		key.setInt("JoystickStyle", (int)mobileState.layoutConfig.joystickStyle);
 		key.setInt("InterfaceScale", mobileState.interfaceScale);

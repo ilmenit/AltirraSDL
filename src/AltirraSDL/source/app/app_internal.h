@@ -29,9 +29,25 @@ struct FramePacer {
 	uint32_t lateFrameCount;
 	int64_t  maxElapsedTicks;
 
+	// Active clock-recovery multiplier applied to targetSecsPerFrame
+	// each frame.  1.0 = pure wallclock pacing.  ComputeClockRecovery()
+	// nudges this within ±0.5 % based on audio-pipeline-depth error.
+	// See the long comment at ComputeClockRecovery in main_pacer.cpp
+	// for why we do this (and why it deliberately diverges from
+	// Windows Altirra).
+	//
+	// In-class init so the factor is a safe 1.0 even if
+	// WaitForNextFrame() is ever called before Init() (it isn't today,
+	// but the other pacer members are uninitialised on purpose to match
+	// Windows; adding a defensive init only here preserves that shape
+	// while removing the one footgun that would degenerate into
+	// targetTicks == 0 and spin the main loop).
+	double   clockRecoveryFactor = 1.0;
+
 	void Init();
 	void UpdateRate(double fps);
 	void WaitForNextFrame();
+	void ComputeClockRecovery();
 };
 
 extern FramePacer g_pacer;

@@ -9,6 +9,7 @@
 #include "simulator.h"
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
+#include <vd2/VDDisplay/displaytypes.h>
 #include "uiaccessors.h"
 #include "uitypes.h"
 #include "constants.h"
@@ -32,9 +33,9 @@ void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState) {
 
 	params.mbEnableBloom = mobileState.fxBloom;
 	if (mobileState.fxBloom) {
-		params.mBloomRadius            = 8.0f;
+		params.mBloomRadius            = 0.20f;
 		params.mBloomDirectIntensity   = 1.00f;
-		params.mBloomIndirectIntensity = 0.80f;
+		params.mBloomIndirectIntensity = 0.70f;
 	} else {
 		params.mBloomRadius            = 0.0f;
 		params.mBloomDirectIntensity   = 0.0f;
@@ -42,14 +43,32 @@ void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState) {
 	}
 
 	if (mobileState.fxDistortion) {
-		params.mDistortionViewAngleX = 85.0f;
-		params.mDistortionYRatio     = 0.50f;
+		params.mDistortionViewAngleX = 35.0f;
+		params.mDistortionYRatio     = 0.90f;
 	} else {
 		params.mDistortionViewAngleX = 0.0f;
 		params.mDistortionYRatio     = 0.0f;
 	}
 
+	params.mbEnableVignette = mobileState.fxVignette;
+	if (mobileState.fxVignette && params.mVignetteIntensity <= 0.0f)
+		params.mVignetteIntensity = 0.18f;
+
 	gtia.SetArtifactingParams(params);
+
+	VDDScreenMaskParams maskParams = gtia.GetScreenMaskParams();
+	if (mobileState.fxApertureGrille) {
+		auto defaults = ATGTIAEmulator::GetDefaultScreenMaskParams();
+		maskParams.mType = VDDScreenMaskType::ApertureGrille;
+		if (maskParams.mSourcePixelsPerDot <= 0.0f)
+			maskParams.mSourcePixelsPerDot = defaults.mSourcePixelsPerDot;
+		if (maskParams.mOpenness <= 0.0f)
+			maskParams.mOpenness = defaults.mOpenness;
+		maskParams.mbScreenMaskIntensityCompensation = defaults.mbScreenMaskIntensityCompensation;
+	} else {
+		maskParams.mType = VDDScreenMaskType::None;
+	}
+	gtia.SetScreenMaskParams(maskParams);
 }
 
 // Apply a bundled performance preset.  Efficient turns everything
@@ -69,9 +88,11 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 
 	switch (p) {
 	case 0: // Efficient
-		mobileState.fxScanlines  = false;
-		mobileState.fxBloom      = false;
-		mobileState.fxDistortion = false;
+		mobileState.fxScanlines      = false;
+		mobileState.fxBloom          = false;
+		mobileState.fxDistortion     = false;
+		mobileState.fxApertureGrille = false;
+		mobileState.fxVignette       = false;
 		filter        = kATDisplayFilterMode_Point;
 		fastBoot      = true;
 		interlace     = false;
@@ -79,9 +100,11 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 		driveSounds   = false;
 		break;
 	case 1: // Balanced
-		mobileState.fxScanlines  = false;
-		mobileState.fxBloom      = false;
-		mobileState.fxDistortion = false;
+		mobileState.fxScanlines      = false;
+		mobileState.fxBloom          = false;
+		mobileState.fxDistortion     = false;
+		mobileState.fxApertureGrille = false;
+		mobileState.fxVignette       = true;
 		filter        = kATDisplayFilterMode_Bilinear;
 		fastBoot      = true;
 		interlace     = false;
@@ -89,9 +112,11 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 		driveSounds   = false;
 		break;
 	case 2: // Quality
-		mobileState.fxScanlines  = true;
-		mobileState.fxBloom      = true;
-		mobileState.fxDistortion = true;
+		mobileState.fxScanlines      = true;
+		mobileState.fxBloom          = true;
+		mobileState.fxDistortion     = true;
+		mobileState.fxApertureGrille = true;
+		mobileState.fxVignette       = true;
 		filter        = kATDisplayFilterMode_SharpBilinear;
 		fastBoot      = false;
 		interlace     = true;

@@ -136,6 +136,7 @@ const ScreenFXProgram &DisplayBackendGL::GetScreenFXProgram(uint32_t features) {
 	if (features & kSFX_CC_SRGB)      preamble += "#define FEAT_CC_SRGB\n";
 	if (features & kSFX_DotMask)      preamble += "#define FEAT_DOT_MASK\n";
 	if (features & kSFX_Distortion)   preamble += "#define FEAT_DISTORTION\n";
+	if (features & kSFX_Vignette)     preamble += "#define FEAT_VIGNETTE\n";
 
 	// Profile preamble (#version + precision) is injected by
 	// GLCompileShaderMulti; we only pass the feature-define preamble and
@@ -167,6 +168,7 @@ const ScreenFXProgram &DisplayBackendGL::GetScreenFXProgram(uint32_t features) {
 		u.uColorCorrectM2 = glGetUniformLocation(prog.program, "uColorCorrectM2");
 		u.uDistortionScales = glGetUniformLocation(prog.program, "uDistortionScales");
 		u.uImageUVSize = glGetUniformLocation(prog.program, "uImageUVSize");
+		u.uVignetteIntensity = glGetUniformLocation(prog.program, "uVignetteIntensity");
 
 		// Bind texture units
 		glUseProgram(prog.program);
@@ -626,6 +628,9 @@ void DisplayBackendGL::RenderScreenFX(float dstX, float dstY, float dstW, float 
 	if (mScreenFX.mDistortionX > 0.0f)
 		features |= kSFX_Distortion;
 
+	if (mScreenFX.mVignetteIntensity > 0.0f)
+		features |= kSFX_Vignette;
+
 	// The source texture for the final render pass.  Each pre-pass
 	// (PAL, bicubic, bloom) produces an intermediate that replaces the source.
 	GLuint sourceTex = mEmuTexture;
@@ -839,6 +844,10 @@ mPALProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS_NoFlip, kGLSL_PALArtifa
 		dm.Init(mScreenFX.mDistortionX, mScreenFX.mDistortionYRatio,
 			dstW / dstH);
 		glUniform3f(u.uDistortionScales, dm.mScaleX, dm.mScaleY, dm.mSqRadius);
+	}
+
+	if ((features & kSFX_Vignette) && u.uVignetteIntensity >= 0) {
+		glUniform1f(u.uVignetteIntensity, mScreenFX.mVignetteIntensity);
 	}
 
 	GLDrawFullscreenTriangle();

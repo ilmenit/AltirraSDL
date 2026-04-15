@@ -1531,6 +1531,41 @@ int main(int argc, char *argv[]) {
 		kATSettingsCategory_All & ~kATSettingsCategory_FullScreen
 	));
 
+	// SDL3-specific audio-latency default (deliberate divergence from
+	// Windows Altirra).
+	//
+	// settings.cpp defaults "Audio: Latency" to 80 ms when the INI key
+	// is absent — that's the Windows-appropriate value because the Win32
+	// audio backends (WaveOut / DirectSound / WASAPI) provide exact
+	// hardware-side buffer accounting plus blocking Write(), so 80 ms is
+	// a reliable floor.  The SDL3 build has neither and instead uses
+	// active clock recovery (see FramePacer::ComputeClockRecovery in
+	// main_pacer.cpp) to pin the audio queue tight to whatever target
+	// the user picks.  That feedback loop makes much smaller targets
+	// reliable, so for SDL3 we override the absent-key default to 30 ms
+	// (≈ 1.5 × a PipeWire quantum, ≈ 50 ms tighter A/V offset than
+	// Windows out of the box).
+	//
+	// We ONLY apply this when the user has no explicit setting in their
+	// INI.  If the key is present — even if the user wrote "80" on
+	// purpose — we respect it.  This is why we check the registry type
+	// directly instead of comparing the loaded value: getInt returns
+	// the fallback default indistinguishably from a stored value, so we
+	// would otherwise unable to tell "user chose 80" from "no setting
+	// exists, fell back to 80".
+	{
+		const uint32 profileId = ATSettingsGetCurrentProfileId();
+		VDStringA path;
+		path.sprintf("Profiles\\%08X", profileId);
+		VDRegistryAppKey profileKey(path.c_str(), false);
+		if (profileKey.getValueType("Audio: Latency")
+		    == VDRegistryKey::kTypeUnknown)
+		{
+			if (IATAudioOutput *ao = g_sim.GetAudioOutput())
+				ao->SetLatency(30);
+		}
+	}
+
 #ifdef __ANDROID__
 	// On first run (no saved settings), default to PAL for mobile.
 	// ATSettingsLoadLastProfile sets NTSC in ATSettingsExchangeStartupConfig;

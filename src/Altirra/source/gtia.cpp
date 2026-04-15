@@ -121,11 +121,15 @@ bool ATColorParams::IsSimilar(const ATColorParams& other) const {
 ATArtifactingParams ATArtifactingParams::GetDefault() {
 	ATArtifactingParams params = {};
 	params.mScanlineIntensity = 0.75f;
-	params.mbEnableBloom = false;
+	params.mDistortionViewAngleX = 35.0f;
+	params.mDistortionYRatio = 0.90f;
+	params.mbEnableVignette = true;
+	params.mVignetteIntensity = 0.18f;
+	params.mbEnableBloom = true;
 	params.mbBloomScanlineCompensation = true;
-	params.mBloomRadius = 0.86f;
-	params.mBloomDirectIntensity = 0.80f;
-	params.mBloomIndirectIntensity = 0.40f;
+	params.mBloomRadius = 0.20f;
+	params.mBloomDirectIntensity = 1.00f;
+	params.mBloomIndirectIntensity = 0.70f;
 	params.mSDRIntensity = 200.0f;
 	params.mHDRIntensity = 350.0f;
 	params.mbUseSystemSDR = false;
@@ -2086,6 +2090,8 @@ bool ATGTIAEmulator::BeginFrame(uint32 frameNumber, uint32 y, bool force, bool d
 
 			fb->mScreenFX.mDistortionX = ap.mDistortionViewAngleX;
 			fb->mScreenFX.mDistortionYRatio = ap.mDistortionYRatio;
+			fb->mScreenFX.mVignetteIntensity = ap.mbEnableVignette
+				? std::max(0.0f, ap.mVignetteIntensity) : 0.0f;
 
 			if (mFrameProperties.mbAccelScreenMask)
 				fb->mScreenFX.mScreenMaskParams = mpImpl->mScreenMaskParams;

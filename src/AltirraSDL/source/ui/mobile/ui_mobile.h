@@ -66,6 +66,8 @@ struct ATMobileUIState {
 	bool fxScanlines = false;
 	bool fxBloom     = false;
 	bool fxDistortion = false;
+	bool fxApertureGrille = false;
+	bool fxVignette = true;
 
 	// --- Performance preset ---
 	// 0 = Efficient, 1 = Balanced (default), 2 = Quality, 3 = Custom.

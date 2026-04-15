@@ -41,6 +41,9 @@ struct VDVideoDisplayScreenFXInfo {
 	float mDistortionX = 0;
 	float mDistortionYRatio = 0;
 
+	// Radial vignette intensity (0 = off, 1 = full darkening at corners).
+	float mVignetteIntensity = 0;
+
 	bool mbSignedRGBEncoding = false;
 	float mHDRIntensity = 0;
 
