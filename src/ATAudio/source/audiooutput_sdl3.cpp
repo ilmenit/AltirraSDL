@@ -320,6 +320,22 @@ private:
 	void RecomputeBuffering();
 	void RecomputeResamplingRate();
 
+	// Downstream-pipeline-depth tracking.  See the comment block at
+	// mBytesWritten for rationale.  These implement the Windows-style
+	// EstimateHWBufferLevel semantic — "bytes we've committed to the
+	// output pipeline minus bytes the device must have played by now"
+	// — on top of SDL3's narrower SDL_GetAudioStreamQueued.
+	//
+	// ComputePendingBytes is non-const: if the wallclock-based estimate
+	// overshoots mBytesWritten it re-baselines so we don't spend the
+	// next N calls chasing a phantom deficit.
+	uint32 ComputePendingBytes();
+	bool   StreamPut(const void *data, uint32 bytes);
+	void   ResetLatencyClock();
+	void   PauseLatencyClock();
+	void   ResumeLatencyClock();
+	void   RetargetLatencyClock(uint32 oldSamplingRate);
+
 	// Buffer sizing — matches Windows ATAudioOutput exactly
 	enum {
 		kBufferSize = 1536,
@@ -387,6 +403,51 @@ private:
 	uint32 mLatencyTargetMax = 0;       // bytes
 	uint32 mMinLevel = 0xFFFFFFFFU;     // windowed queue min (bytes)
 	uint32 mMaxLevel = 0;               // windowed queue max (bytes)
+
+	// Downstream-pipeline-depth accounting.
+	//
+	// SDL3's SDL_GetAudioStreamQueued() reports only the bytes sitting
+	// in the stream's *input* queue — bytes we have Put but that SDL
+	// has not yet consumed via its internal Get-side drain.  Once the
+	// device thread pulls a chunk from the stream, those bytes drop
+	// out of the queued count even though they are still buffered
+	// downstream: SDL's per-device output staging buffer, the backend
+	// client buffer (PipeWire SHM, PulseAudio tlength, ALSA period
+	// ring), the backend server buffer, and finally the device FIFO.
+	// Those hidden stages can be anywhere from ~20 ms (native PipeWire
+	// at a small quantum) to several seconds (PulseAudio defaults on
+	// some distros).
+	//
+	// The Windows backends (WaveOut, DirectSound, WASAPI) instead
+	// expose EstimateHWBufferLevel, which returns the TOTAL downstream
+	// byte count — everything we've committed that hasn't been played
+	// yet.  The rate-control logic in InternalWriteAudio was written
+	// against that semantic: drive the aggregate latency into
+	// [mLatencyTargetMin, mLatencyTargetMin+mLatencyTargetMax] by
+	// doubling writes on underflow, skipping on overflow, and dropping
+	// blocks when the running minimum stays above target for 10 check
+	// windows.
+	//
+	// To restore the same semantic on top of SDL3 we reconstruct the
+	// count ourselves: track cumulative bytes fed to the stream, and
+	// subtract bytes the device must have consumed by now based on
+	// wallclock elapsed since the stream was resumed.  SDL's audio
+	// thread, when a stream is bound to a playback device, drains our
+	// stream at exactly the stream's src-side rate (that's what
+	// SDL_AudioStream is for — the rate-matching happens inside the
+	// stream), so `elapsed * mSamplingRate * 4` is the correct estimate
+	// of what has left our pipeline on a wallclock schedule.  At 1.0x
+	// emulation speed we produce at the same rate; turbo/slowmo are
+	// compensated by mRepeatInc so the net push rate is still
+	// mSamplingRate.
+	//
+	// Pause/resume freezes and restarts the elapsed-time accumulator
+	// so a paused device doesn't appear to be draining.  Sampling-rate
+	// changes checkpoint the elapsed bytes at the old rate before
+	// switching, via RetargetLatencyClock().
+	uint64 mBytesWritten = 0;           // cumulative SDL_PutAudioStreamData bytes since last reset
+	uint64 mBytesConsumedBase = 0;      // bytes the device consumed in previously-closed intervals
+	uint64 mConsumeStartNs = 0;         // SDL_GetTicksNS() at current running interval start; 0 = clock stopped
 
 	// Status / profiling
 	ATUIAudioStatus mAudioStatus {};
@@ -543,6 +604,12 @@ void ATAudioOutputSDL3::InitNativeAudio() {
 	RecomputeBuffering();
 	RecomputeResamplingRate();
 
+	// Start the pipeline-depth clock from a clean slate now that the
+	// final mSamplingRate is known.  ResetLatencyClock honours mPauseCount
+	// — if we are starting up already paused, the clock stays stopped and
+	// will be started by the matching Resume() call.
+	ResetLatencyClock();
+
 	// Only start the stream if no outstanding Pause() request. Windows
 	// ReinitAudio has the same guard (audiooutput.cpp:1113-1114).
 	if (!mPauseCount)
@@ -601,6 +668,172 @@ void ATAudioOutputSDL3::RecomputeResamplingRate() {
 }
 
 // -------------------------------------------------------------------------
+// Pipeline-depth accounting — see the comment at mBytesWritten for the
+// full design rationale.  These methods are the only writers of
+// mBytesWritten / mBytesConsumedBase / mConsumeStartNs.  The emulator is
+// single-threaded (WriteAudio, Pause, Resume, InitNativeAudio all run on
+// the main thread), so no synchronisation is needed.  SDL_GetTicksNS is
+// thread-safe and monotonic.
+// -------------------------------------------------------------------------
+
+// Internal helper: fold the currently-running interval (if any) into
+// mBytesConsumedBase and stop the clock.  Idempotent — safe to call when
+// the clock is already stopped.
+void ATAudioOutputSDL3::PauseLatencyClock() {
+	if (!mConsumeStartNs)
+		return;
+
+#ifndef ALTIRRA_AUDIO_NULL
+	const uint64 now = SDL_GetTicksNS();
+	const uint64 elapsedNs = now - mConsumeStartNs;
+
+	// Compute (elapsedNs * samplingRate * 4) / 1e9 in uint64 without
+	// overflow by splitting elapsedNs into whole seconds and a
+	// sub-second remainder.  Each sub-product fits in 64 bits for any
+	// realistic session length (the seconds branch tolerates ~10^13
+	// seconds ≈ 3×10^5 years at 48 kHz stereo).
+	const uint64 bytesPerSec = (uint64)mSamplingRate * 4ULL;
+	const uint64 secs  = elapsedNs / 1000000000ULL;
+	const uint64 subNs = elapsedNs % 1000000000ULL;
+	mBytesConsumedBase += secs * bytesPerSec
+	                    + (subNs * bytesPerSec) / 1000000000ULL;
+#endif
+	mConsumeStartNs = 0;
+}
+
+// Restart the clock at the current wallclock instant.  No-op if already
+// running.  Safe to call regardless of mPauseCount, but the caller is
+// responsible for matching pause semantics (Resume() is the correct
+// site; InitNativeAudio uses ResetLatencyClock instead).
+void ATAudioOutputSDL3::ResumeLatencyClock() {
+	if (mConsumeStartNs)
+		return;
+#ifndef ALTIRRA_AUDIO_NULL
+	mConsumeStartNs = SDL_GetTicksNS();
+#endif
+}
+
+// Drop all accumulated state and start fresh.  Called when the stream
+// is (re)created or its format changes in a way that invalidates
+// previous cumulative counts.  If the emulator is currently paused
+// (mPauseCount > 0), the clock is left stopped and will be restarted
+// by the matching Resume().
+void ATAudioOutputSDL3::ResetLatencyClock() {
+	mBytesWritten      = 0;
+	mBytesConsumedBase = 0;
+	mConsumeStartNs    = 0;
+
+	if (!mPauseCount)
+		ResumeLatencyClock();
+}
+
+// Checkpoint elapsed bytes at the old sampling rate, then continue
+// accumulating at the new rate.  Only matters if the sampling rate
+// actually changes mid-session — today's code sets mSamplingRate once
+// in InitNativeAudio, but the hook is wired for forward compatibility
+// with the Windows pattern of re-checking GetMixingRate() every call
+// (audiooutput.cpp:838-844).
+void ATAudioOutputSDL3::RetargetLatencyClock(uint32 oldSamplingRate) {
+	if (!mConsumeStartNs || oldSamplingRate == mSamplingRate)
+		return;
+
+#ifndef ALTIRRA_AUDIO_NULL
+	const uint64 now = SDL_GetTicksNS();
+	const uint64 elapsedNs = now - mConsumeStartNs;
+	const uint64 bytesPerSec = (uint64)oldSamplingRate * 4ULL;
+	const uint64 secs  = elapsedNs / 1000000000ULL;
+	const uint64 subNs = elapsedNs % 1000000000ULL;
+	mBytesConsumedBase += secs * bytesPerSec
+	                    + (subNs * bytesPerSec) / 1000000000ULL;
+	mConsumeStartNs = now;
+#else
+	(void)oldSamplingRate;
+#endif
+}
+
+// Returns the Windows-EstimateHWBufferLevel-equivalent pipeline depth:
+// bytes we have committed to the output pipeline minus bytes the device
+// must have played by now.  Returns zero if the clock is stopped
+// (pre-InitNativeAudio or while paused), which correctly makes the
+// rate-control check a no-op — we cannot be overflowing a device that
+// isn't running.
+//
+// If the wallclock-based consumption estimate overshoots mBytesWritten
+// we re-baseline the clock.  This is the correct semantic recovery for
+// three scenarios where the naive `elapsed × rate` formula would lie:
+//
+//   (1) Startup lag.  The clock is armed in InitNativeAudio, but the
+//       emulator may not call WriteAudio for hundreds of ms to multiple
+//       seconds while it loads the ROM and enters the main loop.
+//       Without the re-baseline, `consumed` accrues a phantom deficit
+//       and every subsequent call takes the underflow branch (double
+//       write) until mBytesWritten catches up — dumping the full
+//       deficit worth of audio into SDL at once.  2 s of startup lag
+//       produced 2 s of audio backlog; this is exactly the regression
+//       you hit.
+//
+//   (2) Main-loop stalls (long GC, disk flush, scheduler preemption).
+//       While WriteAudio is paused but the SDL clock is running, the
+//       device has also starved — it cannot have consumed more than we
+//       fed it before the stall.
+//
+//   (3) Device-side prebuffer / underrun at the OS layer (some
+//       backends prefill a hardware buffer before starting playback).
+//       Wallclock advances, actual playback hasn't caught up.  The
+//       re-baseline settles us onto the correct slope.
+//
+// In steady state (producer rate == device consumption rate) the
+// re-baseline never fires — mBytesWritten stays comfortably above
+// consumed by exactly mLatencyTargetMin.
+uint32 ATAudioOutputSDL3::ComputePendingBytes() {
+	uint64 consumed = mBytesConsumedBase;
+
+#ifndef ALTIRRA_AUDIO_NULL
+	if (mConsumeStartNs) {
+		const uint64 now = SDL_GetTicksNS();
+		const uint64 elapsedNs = now - mConsumeStartNs;
+		const uint64 bytesPerSec = (uint64)mSamplingRate * 4ULL;
+		const uint64 secs  = elapsedNs / 1000000000ULL;
+		const uint64 subNs = elapsedNs % 1000000000ULL;
+		consumed += secs * bytesPerSec
+		          + (subNs * bytesPerSec) / 1000000000ULL;
+	}
+#endif
+
+	if (consumed > mBytesWritten) {
+		// See function header — our estimate ran ahead of reality.
+		// Pin the baseline to the only hard upper bound we have
+		// (the device cannot have played more than we fed it) and
+		// restart the interval so the next call starts counting
+		// from a fresh, realistic anchor.
+		mBytesConsumedBase = mBytesWritten;
+#ifndef ALTIRRA_AUDIO_NULL
+		if (mConsumeStartNs)
+			mConsumeStartNs = SDL_GetTicksNS();
+#endif
+		return 0;
+	}
+
+	const uint64 diff = mBytesWritten - consumed;
+	return diff > 0xFFFFFFFFULL ? 0xFFFFFFFFU : (uint32)diff;
+}
+
+// Single point of SDL_PutAudioStreamData + write-counter bookkeeping.
+// If the call fails (out of memory, stream in an invalid state) we skip
+// the bookkeeping so the pending estimate stays accurate — next call
+// will correctly see a lower-than-expected pending and push harder.
+bool ATAudioOutputSDL3::StreamPut(const void *data, uint32 bytes) {
+	if (!mpStream || !bytes)
+		return true;
+
+	if (!SDL_PutAudioStreamData(mpStream, data, (int)bytes))
+		return false;
+
+	mBytesWritten += bytes;
+	return true;
+}
+
+// -------------------------------------------------------------------------
 // Mix levels, pause/resume
 // -------------------------------------------------------------------------
 
@@ -619,6 +852,7 @@ void ATAudioOutputSDL3::Pause() {
 	if (!mPauseCount++) {
 		if (mpStream)
 			SDL_PauseAudioStreamDevice(mpStream);
+		PauseLatencyClock();
 	}
 }
 
@@ -626,6 +860,7 @@ void ATAudioOutputSDL3::Resume() {
 	if (!--mPauseCount) {
 		if (mpStream)
 			SDL_ResumeAudioStreamDevice(mpStream);
+		ResumeLatencyClock();
 	}
 }
 
@@ -1041,17 +1276,14 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 	VDASSERT(mResampleAccum < (uint64)mOutputBuffer16.size() << (32+4));
 
 	// ---- Status window + drop hysteresis ----
-	// Use SDL_GetAudioStreamQueued as a proxy for the hardware-side buffer
-	// level.  This is PUT-side bytes (bytes we've fed the stream minus
-	// bytes SDL has drained toward the device), which is noisier than
-	// Windows's EstimateHWBufferLevel but is the only feedback SDL3 gives
-	// us.  Windowed min/max over mCheckCounter calls smooths it out.
-	uint32 bytes = 0;
-	if (mpStream) {
-		int queued = SDL_GetAudioStreamQueued(mpStream);
-		if (queued > 0)
-			bytes = (uint32)queued;
-	}
+	// `bytes` is the total downstream pipeline depth, reconstructed from
+	// wallclock + cumulative Put counts.  This is the SDL3 replacement
+	// for Windows's EstimateHWBufferLevel — see the comment block at
+	// mBytesWritten for why SDL_GetAudioStreamQueued by itself is not
+	// sufficient.  ComputePendingBytes returns zero while the clock is
+	// stopped (pre-InitNativeAudio and while paused), which correctly
+	// suppresses the overflow branch in those states.
+	uint32 bytes = ComputePendingBytes();
 
 	if (mMinLevel > bytes)
 		mMinLevel = bytes;
@@ -1118,7 +1350,7 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 		++mAudioStatus.mUnderflowCount;
 		++mUnderflowCount;
 
-		SDL_PutAudioStreamData(mpStream, mOutputBuffer16.data(), (int)(resampleCount * 4));
+		StreamPut(mOutputBuffer16.data(), resampleCount * 4);
 
 		mDropCounter = 0;
 		dropBlock = false;
@@ -1138,7 +1370,7 @@ void ATAudioOutputSDL3::InternalWriteAudio(
 				repeats = 10;
 
 			while (repeats--)
-				SDL_PutAudioStreamData(mpStream, mOutputBuffer16.data(), (int)(resampleCount * 4));
+				StreamPut(mOutputBuffer16.data(), resampleCount * 4);
 		} else {
 			++mOverflowCount;
 			++mAudioStatus.mOverflowCount;
