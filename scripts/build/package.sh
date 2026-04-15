@@ -91,18 +91,24 @@ if [ "${PLATFORM}" = "macos" ] && command -v hdiutil &>/dev/null; then
     # -srcfolder is the already-populated package directory.
     # -format UDZO is zlib-compressed (good balance of size vs. mount speed).
     # -ov overwrites any existing file at the destination (from previous run).
-    # -quiet suppresses hdiutil's progress bars in CI logs, but not errors.
-    hdiutil create \
+    # Intentionally NOT using -quiet: when hdiutil fails on a CI runner
+    # (disk pressure, xattr quirks, transient APFS issues) we need the real
+    # error in the log. Progress bars are harmless noise in comparison.
+    #
+    # Failure is non-fatal: the .zip produced above is the primary macOS
+    # artifact. Losing the .dmg convenience is not worth failing the whole
+    # release pipeline. Record a warning and carry on.
+    if hdiutil create \
         -volname "AltirraSDL ${VERSION}" \
         -srcfolder "$PKG_DIR" \
         -format UDZO \
         -ov \
-        -quiet \
-        "$DMG_PATH" \
-        || die "hdiutil create failed"
-
-    SIZE=$(du -h "$DMG_PATH" | cut -f1)
-    ok "Disk image:     ${C_BOLD}${DMG_PATH}${C_RESET} ($SIZE)"
+        "$DMG_PATH"; then
+        SIZE=$(du -h "$DMG_PATH" | cut -f1)
+        ok "Disk image:     ${C_BOLD}${DMG_PATH}${C_RESET} ($SIZE)"
+    else
+        warn "hdiutil create failed — .zip is still available as the primary artifact"
+    fi
 fi
 
 # ── Source archive (optional, enabled by SOURCE_ARCHIVE=1) ────────────────

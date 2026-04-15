@@ -214,7 +214,13 @@ typedef	struct VDGUIHandleType *VDGUIHandle;
 // Clang follows on Windows for ABI compatibility, but then warns on
 // no_unique_address which means we can't just stick both of them in. So
 // thanks to both these compilers being annoying, we need yet another macro.
-#ifdef VD_COMPILER_GCC
+//
+// AltirraSDL: upstream test9 uses msvc::no_unique_address for everything
+// that isn't GCC, but Clang on non-Windows (Linux, macOS, Android NDK)
+// neither needs the MSVC ABI variant nor always recognizes it — under
+// -Werror the unknown-attribute warning breaks the build. Use the
+// standard attribute for Clang on non-Windows too.
+#if defined(VD_COMPILER_GCC) || (defined(VD_COMPILER_CLANG) && !defined(_WIN32))
 	#define VD_NO_UNIQUE_ADDRESS	[[no_unique_address]]
 #else
 	#define VD_NO_UNIQUE_ADDRESS	[[msvc::no_unique_address]]
