@@ -1,0 +1,23 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/h/vd2/system/zip.h	2026-03-30 18:27:20.306983085 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/zip.h	2026-04-15 05:41:51.589971200 +0200
+@@ -29,11 +29,7 @@
+ // Rest in peace, Phil Katz.
+ 
+ #include <string.h>
+-#ifdef _MSC_VER
+-	#include <intrin.h>
+-#elif defined(__x86_64__) || defined(__i386__)
+-	#include <x86intrin.h>
+-#endif
++#include <intrin.h>
+ #include <vd2/system/vdtypes.h>
+ #include <vd2/system/binary.h>
+ #include <vd2/system/error.h>
+@@ -77,7 +73,6 @@
+ 
+ 	uint32	mReadValidEnd = 0;
+ 	uint64	mReadLimitRemaining = 0;
+-	bool	mbTailAdded = false;
+ 	IVDStream *mpSrc = nullptr;
+ 	uint8	mReadBuffer[kBufferSize + kHeaderSize];
+ };

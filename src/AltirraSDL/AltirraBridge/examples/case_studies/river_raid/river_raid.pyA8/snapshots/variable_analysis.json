@@ -1,0 +1,884 @@
+{
+  "meta": {
+    "game": "River Raid (Activision, 1983)",
+    "platform": "Atari 8-bit",
+    "code_range": "$A000-$BFFF",
+    "analysis_method": "Memory diffing via AltirraBridge + disassembly analysis",
+    "notes": [
+      "Game bypasses Atari OS almost entirely: takes over ANTIC, DLI, VBI, POKEY.",
+      "Display uses ANTIC mode $0E (160-pixel 4-color) with DLI-based kernel at $B500.",
+      "The disassembler shows OS symbolic names for zero-page (e.g. DOSINI, ICSTAZ) -- these are NOT OS usage; the game repurposes those bytes as game variables.",
+      "PMBASE area is $0600-$09FF (player/missile graphics)."
+    ]
+  },
+
+  "zero_page_vars": {
+    "$00": {
+      "name": "sprite_gfx_ptr_lo",
+      "purpose": "Low byte of pointer to current sprite graphics data for DLI rendering",
+      "evidence": "Used in DLI kernel at $B590 as indirect pointer base: lda ($00),Y"
+    },
+    "$01": {
+      "name": "sprite_gfx_ptr_hi",
+      "purpose": "High byte of sprite graphics pointer",
+      "evidence": "Paired with $00 for indirect addressing in DLI"
+    },
+    "$02": {
+      "name": "sprite2_gfx_ptr_lo",
+      "purpose": "Low byte of second sprite graphics pointer",
+      "evidence": "Used at $B5B2 with lda ($02),Y for second entity rendering"
+    },
+    "$04": {
+      "name": "scanline_x_pos",
+      "purpose": "Current entity X position during DLI scanline rendering",
+      "evidence": "Set at $B575 from computed entity X, used for horizontal positioning"
+    },
+    "$05": {
+      "name": "scroll_position_fine",
+      "purpose": "Fine vertical scroll position (increments +12 per 60-frame test, i.e. +1 per ~5 frames)",
+      "evidence": "Always changes in all tests with consistent positive delta proportional to frame count; linked to $C2 which tracks identically"
+    },
+    "$06": {
+      "name": "dli_scanline_counter",
+      "purpose": "DLI scanline counter - tracks which scan line of the playfield we're rendering",
+      "evidence": "Used at $B562/$B565 in DLI kernel: ldy $06; iny; sty $06"
+    },
+    "$07": {
+      "name": "entity_flags_temp",
+      "purpose": "Temporary storage for entity attribute flags during DLI rendering",
+      "evidence": "Loaded from entity table $42,Y at $B584, tested with BIT at $B5D2"
+    },
+    "$09": {
+      "name": "current_sector",
+      "purpose": "Current river sector/zone index (0-based, increments as terrain changes)",
+      "evidence": "Widely referenced: $AF80 tests bit 0 for bank selection, $B06E uses ($09 AND $0E)*2+$80 as screen buffer page, $B247 tests bit 0 for double-buffering swap"
+    },
+    "$0A": {
+      "name": "entity_scan_temp",
+      "purpose": "Temporary for DLI entity scanning loop",
+      "evidence": "Used in DLI at $B660: stx $0A, later restored for entity count tracking"
+    },
+    "$0B": {
+      "name": "color_pf1_temp",
+      "purpose": "Temporary color register value for playfield 1 during DLI",
+      "evidence": "At $B5F4: lda $0B; sta COLPF1. Set from entity rendering"
+    },
+    "$0C-$14": {
+      "name": "scanline_row_table",
+      "purpose": "Array of 9 scanline row counters for playfield rendering - each byte tracks the vertical position within a playfield row",
+      "evidence": "All 9 bytes change together with identical deltas (+12 per 60 frames). Initialized from $BAE1 table at $B0F1. DLI uses them at $B56B: cmp $0C,Y to determine when entities appear on screen"
+    },
+    "$15": {
+      "name": "scroll_row_bottom",
+      "purpose": "Bottom-most visible row scroll counter (slightly different rate from $0C-$14)",
+      "evidence": "Changes in all tests but with larger initial delta (+44 vs +12 in 'up' test) suggesting it tracks the bottom edge"
+    },
+    "$16": {
+      "name": "scroll_row_top",
+      "purpose": "Top-most visible row scroll counter, offset from $05",
+      "evidence": "Always changes with $05-like delta (+12/frame-batch), offset by a constant from $05"
+    },
+    "$17": {
+      "name": "init_flag",
+      "purpose": "Initialization complete flag (set to $FF at init end)",
+      "evidence": "Set at $B0F9 after init loop: stx $17 (with X=$FF after decrementing past 0)"
+    },
+    "$18": {
+      "name": "distance_counter",
+      "purpose": "Distance/frame counter - increments steadily as the game progresses (half rate of $05)",
+      "evidence": "Always increases: +6 per 60 frames (half the delta of $05). Used in scoring/distance tracking"
+    },
+    "$19": {
+      "name": "random_seed_or_timer",
+      "purpose": "Pseudo-random or timing value that fluctuates each test",
+      "evidence": "Changes in most tests with irregular deltas (-1, -3, +4, -8, +6), suggesting randomness or timing-dependent state"
+    },
+    "$1A-$22": {
+      "name": "collision_register_shadows",
+      "purpose": "Shadow copies of GTIA collision registers, refreshed each DLI frame",
+      "evidence": "DLI at $B510-$B525 sets $1A-$22 to $FF. Later, conditional stores from hardware collision registers at $B5E0-$B720 clear individual bits. Post-frame code tests these for hit detection"
+    },
+    "$23": {
+      "name": "game_state_flags",
+      "purpose": "Bit-packed game state: bit 2 = bridge zone flag, bit 7 = scroll direction or death state",
+      "evidence": "Tested at $AFD0 (AND #$04, EOR #$D6 for color), at $B1C8 (AND #$04 for sector boundary), at $B1D0 (BIT = BMI for bit 7)"
+    },
+    "$24": {
+      "name": "sound_state",
+      "purpose": "Sound effect state machine variable",
+      "evidence": "Tested at $B2BA: lda $24; cmp #$02; bcc $B2CE to determine sound channel routing"
+    },
+    "$26": {
+      "name": "terrain_gen_counter_lo",
+      "purpose": "Low byte of terrain generation position counter",
+      "evidence": "Used in VBI at $B450+ for terrain scrolling: ldy $26; dey; loaded/stored in terrain generation logic"
+    },
+    "$27": {
+      "name": "terrain_gen_position",
+      "purpose": "Terrain generation write position into screen buffer",
+      "evidence": "At $B470+: sta $27; used at $B750: lda $27; sta HPOSP3 for river bank positioning"
+    },
+    "$29": {
+      "name": "game_active_flag",
+      "purpose": "Game active/paused flag. Bit 7 = game over or paused state",
+      "evidence": "Tested at $B086: BIT $29; BMI $B0C6 to skip score rendering when game not active"
+    },
+    "$2C": {
+      "name": "enemy_spawn_timer",
+      "purpose": "Timer for enemy/obstacle spawning - changes intermittently",
+      "evidence": "Changes only in 'up' and 'idle' tests with irregular values, suggesting event-triggered updates"
+    },
+    "$2E": {
+      "name": "sector_boundary_flag",
+      "purpose": "Non-zero when at a sector boundary, triggers terrain recalculation",
+      "evidence": "Tested at $B1CC: lda $2E; beq $B1D9 to control sector transition behavior"
+    },
+    "$2F": {
+      "name": "scroll_sub_position",
+      "purpose": "Sub-pixel scroll position - wraps around irregularly",
+      "evidence": "Changes every test with non-monotonic pattern, consistent with fine scroll tracking"
+    },
+    "$31": {
+      "name": "engine_sound_counter",
+      "purpose": "Engine/throttle sound effect countdown timer",
+      "evidence": "At $B41C: lda $31; beq skip; dec $31; lsr; bcc skip; changes engine sound register"
+    },
+    "$32": {
+      "name": "terrain_offset",
+      "purpose": "Current terrain rendering offset within sector",
+      "evidence": "Changes every test with mixed positive/negative deltas, consistent with terrain position tracking"
+    },
+    "$34-$36": {
+      "name": "bullet_state",
+      "purpose": "$34=bullet Y position, $35=bullet active flag ($FF=active, $00=none), $36=bullet direction/speed",
+      "evidence": "$35 goes $00->$FF on 'up' (first shot fires), back to $00 on 'idle' (bullet expired). $34/$36 change with bullet lifecycle"
+    },
+    "$39": {
+      "name": "player2_hpos",
+      "purpose": "Horizontal position for player 1 (second player sprite, used for bullet or dual-purpose)",
+      "evidence": "DLI at $B54D: lda $39; sta HPOSP1"
+    },
+    "$3A": {
+      "name": "distance_counter_2",
+      "purpose": "Second distance counter, tracks identically to $40 - possibly display-related copy",
+      "evidence": "Always changes with exact same delta as $40 in every test"
+    },
+    "$3C": {
+      "name": "player0_hpos",
+      "purpose": "Horizontal position for player 0 sprite (the jet)",
+      "evidence": "DLI at $B557: lda $3C; sta HPOSP0"
+    },
+    "$40": {
+      "name": "display_scroll_counter",
+      "purpose": "Display scroll counter - mirrors $3A, used for screen update timing",
+      "evidence": "Identical deltas to $3A in every test, always increasing"
+    },
+    "$42-$4B": {
+      "name": "entity_attribute_array",
+      "purpose": "Array of entity attribute bytes (type/state flags) indexed by entity slot",
+      "evidence": "DLI reads at $B584: lda $42,Y for entity flags. Individual slots change when entities spawn ($43=$40 in idle, $47=$40 on right, $49=$40 on fire, etc.)"
+    },
+    "$4C": {
+      "name": "prev_game_state",
+      "purpose": "Previous frame's game state flags - compared with $23 for edge detection",
+      "evidence": "At $B1C4: lda $4C; eor $23; and #$04 to detect sector boundary transitions"
+    },
+    "$4D": {
+      "name": "bridge_countdown",
+      "purpose": "Bridge/checkpoint countdown - decrements as bridges are passed or destroyed",
+      "evidence": "Decrements by 1 in 'up', 'idle', 'down' tests (every ~120 frames), consistent with bridge spacing"
+    },
+    "$4E": {
+      "name": "bridge_counter_2",
+      "purpose": "Secondary bridge counter, tracks similar to $4D with slight offset",
+      "evidence": "Changes in parallel with $4D but also affected by firing, suggesting bridge-related game logic"
+    },
+    "$4F": {
+      "name": "terrain_bank_select",
+      "purpose": "Terrain data bank selector (0 or non-zero) for double-buffered terrain",
+      "evidence": "Tested at $AFF4: lda $4F; bne $AFEC and at $B034: ldy $4F; beq $B03B for conditional terrain offset"
+    },
+    "$52": {
+      "name": "player_x_position",
+      "purpose": "Player jet horizontal position in game coordinates (range ~$14-$2C, center ~$20)",
+      "evidence": "Memory diffing confirms: decreases when moving left, increases when moving right. Changes slowly (1 unit per several frames)"
+    },
+    "$53": {
+      "name": "fuel_bar_left_edge",
+      "purpose": "Left edge X coordinate of the fuel bar display",
+      "evidence": "Increases steadily as fuel is consumed (bar shrinks from left), correlates with distance traveled"
+    },
+    "$54": {
+      "name": "fuel_bar_right_edge",
+      "purpose": "Right edge X coordinate of the fuel bar display",
+      "evidence": "Decreases as fuel depletes (bar shrinks from right), anti-correlates with $53"
+    },
+    "$56": {
+      "name": "lives_remaining",
+      "purpose": "Number of lives remaining (1-based: 1 = last life)",
+      "evidence": "Used at $B223: ldx $56; dex; beq return, and in score display logic at $B22E to control high-score table writes"
+    },
+    "$57": {
+      "name": "player_sprite_hpos",
+      "purpose": "Horizontal position register value for player sprite (written to HPOSP2 in DLI)",
+      "evidence": "DLI at $B532: lda $57; sta HPOSP2"
+    },
+    "$5A": {
+      "name": "scroll_direction",
+      "purpose": "Vertical scroll direction flag - toggles between 1 and 2",
+      "evidence": "Alternates: 1->2 on 'up', 2->1 on 'idle', 1->2 on 'down'. Controls terrain scroll direction"
+    },
+    "$5B": {
+      "name": "missile_hpos_base",
+      "purpose": "Base horizontal position for missiles (shifted right 3 and offset to $5C for HPOSM1)",
+      "evidence": "DLI at $B527: lda $5B; lsr; lsr; lsr; clc; adc #$5C; sta HPOSM1"
+    },
+    "$5D": {
+      "name": "lives_display",
+      "purpose": "Lives display value (decrements as lives are lost, format: $11=initial, $10, $0F...)",
+      "evidence": "Memory diffing shows slow decrement (-1 per ~120 frames in some tests), consistent with display countdown"
+    },
+    "$5E": {
+      "name": "scanline_count",
+      "purpose": "Number of scanlines to render per terrain row (set to 6 at $B1FA)",
+      "evidence": "At $B1F8: lda #$06; sta $5E. Controls terrain row height in rendering"
+    },
+    "$5F": {
+      "name": "difficulty_level",
+      "purpose": "Current difficulty level or game phase indicator",
+      "evidence": "Decreases infrequently ($0D->$07 in 'up' test), consistent with difficulty ramping"
+    },
+    "$60": {
+      "name": "terrain_read_index",
+      "purpose": "Circular buffer read index for terrain data (range $01-$50, wraps)",
+      "evidence": "At $B194: ldx $60; cpx #$50; bcc ok; ldx #$4E. Incremented at $B1BD: inx; stx $60"
+    },
+    "$66-$69": {
+      "name": "terrain_seed_current",
+      "purpose": "Current terrain generation LFSR seed (4 bytes). Copied to/from $AA-$AC random state",
+      "evidence": "At $B194-$B1BA: saved to $AD-$B0, then $AA-$AC copied in. At $B1E8-$B1F6: restored from $AD-$B0. Part of terrain PRNG system"
+    },
+    "$6B-$74": {
+      "name": "terrain_seed_alternate",
+      "purpose": "Alternate terrain generation seed for double-buffered terrain (mirrors $60-$69 structure)",
+      "evidence": "At $B247 swap routine: exchanges $60-$6A with $6B-$74 when sector bit toggles"
+    },
+    "$76": {
+      "name": "fuel_level",
+      "purpose": "Current fuel level (decrements steadily; 0 = empty = game over)",
+      "evidence": "Monotonically decreasing in every test: -6 per 60 frames. Checked at $B696: lda $76; beq (fuel empty). Central game mechanic"
+    },
+    "$77": {
+      "name": "double_buffer_flag",
+      "purpose": "Double-buffer bank flag (0 or 1) - swapped each sector by $B247",
+      "evidence": "At $B247: lda $09; and #$01; eor $77; sta $77. DLI at $B544: ldx $77; bne for color selection"
+    },
+    "$79": {
+      "name": "explosion_timer",
+      "purpose": "Explosion/death animation timer",
+      "evidence": "Tested at $B690: ldy $79; beq skip for explosion color handling"
+    },
+    "$7A": {
+      "name": "sound_param_a",
+      "purpose": "Sound parameter A passed to VBI sound routine",
+      "evidence": "At $B1C2: sta $7A, then read in VBI at $B2D2: ldx $7A; beq skip for sound frequency control"
+    },
+    "$7B": {
+      "name": "sound_param_b",
+      "purpose": "Sound parameter B for sound routine pitch/channel selection",
+      "evidence": "At $B1C0: sty $7B, then read at $B2D0: lda $7B for sound generation"
+    },
+    "$80-$8F": {
+      "name": "checksum_table",
+      "purpose": "Copy-protection checksum table (16 bytes) - initialized at boot, verified by $B298",
+      "evidence": "At $A037: jsr $B298 which sums $80-$8E with EOR $A0. Boot code at $A03A compares against $0090,Y"
+    },
+    "$90-$9F": {
+      "name": "checksum_expected",
+      "purpose": "Expected checksum values for copy protection verification",
+      "evidence": "Written at $B291: sta $0090,Y from $B298 computation during game init"
+    },
+    "$A0": {
+      "name": "checksum_xor_key",
+      "purpose": "XOR key for checksum computation",
+      "evidence": "At $B29F: eor $A0 inside the checksum accumulation loop"
+    },
+    "$A1-$A2": {
+      "name": "source_ptr",
+      "purpose": "General-purpose source pointer for terrain data / graphics copy operations",
+      "evidence": "Used throughout rendering: at $B012 lda ($A1),Y for terrain source; at $B261 sta $A1 for score comparison. $A2 used as high byte or page counter"
+    },
+    "$A3-$A4": {
+      "name": "screen_ptr",
+      "purpose": "Screen buffer destination pointer (points into $2000-$3F00 screen RAM area)",
+      "evidence": "Used at $AFFF: sta ($A3),Y for screen writes; at $B04D: adc $A3 to advance through screen buffer. $A4 steadily decreases as screen fills bottom-to-top"
+    },
+    "$A5": {
+      "name": "score_write_index",
+      "purpose": "Write index into score display area at $3F04",
+      "evidence": "At $B0D8: ldx $A5; then sta $3F04,X; inc $A5. Steadily increases as score digits are written"
+    },
+    "$A6": {
+      "name": "distance_write_index",
+      "purpose": "Write index for distance/bridge counter display at $3F04",
+      "evidence": "At $B0C7: ldx $A6; then sta $3F04,X; inc $A6. Parallel to $A5 for different display field"
+    },
+    "$AA-$AC": {
+      "name": "prng_state",
+      "purpose": "3-byte pseudo-random number generator state (LFSR)",
+      "evidence": "At $B183: shifts/XORs $AB, rotates into $AA/$AC/$AB - classic LFSR. Highly volatile values across all tests confirm randomness"
+    },
+    "$AD-$B0": {
+      "name": "terrain_seed_save",
+      "purpose": "Save area for terrain seed during sector transitions",
+      "evidence": "At $B19E-$B1AA: $66-$69 saved to $AD-$B0. At $B1E8-$B1F6: restored from $AD-$B0"
+    },
+    "$B1": {
+      "name": "sound_frequency",
+      "purpose": "Sound frequency/pitch value for POKEY audio register writes",
+      "evidence": "At $B05C: lda #$90; sta $B1 (explosion sound). At $B082: sta $B1 for various sound effects. Steadily changes reflecting audio pitch tracking"
+    },
+    "$B2": {
+      "name": "digit_render_count",
+      "purpose": "Counter for number of score digits to render",
+      "evidence": "At $B08A: sta $B2; then $B0A3: dec $B2; bne loop"
+    },
+    "$B3": {
+      "name": "score_overflow",
+      "purpose": "Score overflow or bonus indicator",
+      "evidence": "Changes only in 'idle' test ($00->$07), suggesting periodic event like distance bonus"
+    },
+    "$B4": {
+      "name": "screen_row_offset",
+      "purpose": "Accumulated screen row byte offset for display list rendering",
+      "evidence": "At $B057: adc $B4; sta $B4 - accumulates the number of bytes per rendered row"
+    },
+    "$B6": {
+      "name": "terrain_row_height",
+      "purpose": "Current terrain row height in scanlines (saved/restored during terrain fill)",
+      "evidence": "At $AFFA: sty $B6 (save Y), at $B004: lda $B6 (restore). Also decreases over time suggesting terrain parameter"
+    },
+    "$B7": {
+      "name": "fuel_burn_rate_or_position",
+      "purpose": "Fuel consumption rate or fuel bar screen position (decreases over time)",
+      "evidence": "Decreases in most tests, more slowly than $76. Pattern suggests derived fuel display metric"
+    },
+    "$B9": {
+      "name": "random_terrain_param",
+      "purpose": "Random terrain parameter - cycles through values for river width/shape",
+      "evidence": "Changes in most tests with large irregular deltas, consistent with terrain randomization"
+    },
+    "$BA-$BC": {
+      "name": "terrain_data_ptr",
+      "purpose": "$BA/$BB = pointer to terrain shape data, $BC = byte count per row",
+      "evidence": "At $B01A: ldy $BC; dey; lda ($BA),Y copies terrain data. At $B024-$B02D: $BA += $BC to advance"
+    },
+    "$BD-$BE": {
+      "name": "terrain_data_extra",
+      "purpose": "Additional terrain generation parameters",
+      "evidence": "Change only in 'up' test, suggesting they're set once during terrain init"
+    },
+    "$BF": {
+      "name": "vbi_skip_flag",
+      "purpose": "Flag to skip portions of VBI terrain update",
+      "evidence": "At $B740: lda $BF; bne skip - controls whether VBI processes terrain"
+    },
+    "$C1": {
+      "name": "missile0_hpos",
+      "purpose": "Horizontal position for missile 0",
+      "evidence": "DLI at $B552: lda $C1; sta HPOSM0"
+    },
+    "$C2": {
+      "name": "master_scroll_counter",
+      "purpose": "Master vertical scroll counter - identical to $05, possibly the primary copy",
+      "evidence": "Changes in perfect lockstep with $05 in every test with identical deltas"
+    },
+    "$C3": {
+      "name": "scroll_direction_signed",
+      "purpose": "Signed scroll direction indicator (+1 = down, -1/$FF = up)",
+      "evidence": "Goes $00->$FF on up, $FF->$01 on idle (down), $01->$FF on down. Classic signed direction variable"
+    },
+    "$C4-$C5": {
+      "name": "terrain_init_params",
+      "purpose": "Terrain initialization parameters set during first scroll",
+      "evidence": "Change only once (in 'up' test), then stable. Set during initial terrain setup"
+    },
+    "$C6": {
+      "name": "bullet_sound_timer",
+      "purpose": "Countdown timer for bullet firing sound effect",
+      "evidence": "VBI at $B2A6: lda $C6; beq skip; dec $C6; then writes POKEY AUDF1/AUDC1"
+    },
+    "$C7": {
+      "name": "init_phase",
+      "purpose": "Initialization phase counter",
+      "evidence": "Set to 0 at $B101, incremented at $B121 during init. VBI at $B430: lda $C7; bne skip"
+    },
+    "$C8-$CA": {
+      "name": "fuel_display_params",
+      "purpose": "Fuel bar display parameters (positions/colors for the fuel gauge rendering)",
+      "evidence": "$C8/$C9 change together with $53/$54 (fuel bar edges). $CA changes intermittently, possibly fuel color threshold"
+    }
+  },
+
+  "ram_vars": {
+    "$0500-$050A": {
+      "name": "entity_slot_0",
+      "purpose": "Entity table slot 0 (11 bytes) - properties for first enemy/object",
+      "size": 11,
+      "fields": "Bytes 7-8 appear to be Y/screen position, byte 9 = type/identifier, byte 10 = flags. First 7 bytes are often zero for inactive entities"
+    },
+    "$050B-$0515": {
+      "name": "entity_slot_1",
+      "purpose": "Entity table slot 1",
+      "size": 11
+    },
+    "$0516-$0520": {
+      "name": "entity_slot_2",
+      "purpose": "Entity table slot 2",
+      "size": 11
+    },
+    "$0521-$052B": {
+      "name": "entity_slot_3",
+      "purpose": "Entity table slot 3",
+      "size": 11
+    },
+    "$052C-$0536": {
+      "name": "entity_slot_4",
+      "purpose": "Entity table slot 4 (5th and final entity slot)",
+      "size": 11
+    },
+    "$0600-$06BF": {
+      "name": "pm_player0_graphics",
+      "purpose": "Player/Missile graphics area for Player 0 (the jet sprite)",
+      "size": 192
+    },
+    "$06C0-$06FF": {
+      "name": "pm_missiles",
+      "purpose": "Player/Missile graphics for all 4 missiles",
+      "size": 64
+    },
+    "$0700-$07CF": {
+      "name": "pm_player1_graphics",
+      "purpose": "Player/Missile graphics for Player 1 (bullet or enemy)",
+      "size": 208
+    },
+    "$0800-$08CF": {
+      "name": "pm_player2_graphics",
+      "purpose": "Player/Missile graphics for Player 2",
+      "size": 208
+    },
+    "$0900-$09CF": {
+      "name": "pm_player3_graphics",
+      "purpose": "Player/Missile graphics for Player 3",
+      "size": 208
+    },
+    "$0B00": {
+      "name": "score_digit_0",
+      "purpose": "Score display - leftmost digit (hundred-thousands)",
+      "size": 1
+    },
+    "$0B01-$0B08": {
+      "name": "high_score_table",
+      "purpose": "High score table entries (8 bytes), indexed by life/game number",
+      "size": 8
+    },
+    "$0EBC-$0EBD": {
+      "name": "pm_collision_buffer",
+      "purpose": "Player-missile collision detection buffer",
+      "size": 2
+    },
+    "$1000-$103C": {
+      "name": "score_display_buffer",
+      "purpose": "Screen buffer for score/status display line (written by $B07C+ digit renderer)",
+      "size": 60
+    },
+    "$2000-$3EFF": {
+      "name": "playfield_screen_ram",
+      "purpose": "Double-buffered playfield graphics (ANTIC mode $0E, 40 bytes/row, ~96 rows x 2 banks)",
+      "size": 7936
+    },
+    "$3F00-$3FB7": {
+      "name": "display_list",
+      "purpose": "ANTIC display list: 8 blank + DLI + 4 blank + mode $0E rows with LMS at $28A0 and $3000. JVB back to $3F00",
+      "size": 184
+    },
+    "$3F04-$3FA9": {
+      "name": "display_list_score_area",
+      "purpose": "Score/bridge counter display area embedded in display list (written by $B0C7/$B0D8)",
+      "size": 166
+    }
+  },
+
+  "subroutines": {
+    "$AF5B": {
+      "name": "render_fuel_bar",
+      "purpose": "Renders the fuel bar gauge to screen memory at $1033. Uses $6A (fuel level) to determine bar length, fills with $9C (fuel color) then $00 (empty) up to 9 bytes",
+      "calls": [],
+      "called_by": ["main_loop"],
+      "reads": ["$6A", "$7E"],
+      "writes": ["$1033-$103B"]
+    },
+    "$AF80": {
+      "name": "setup_entity_rendering",
+      "purpose": "Sets up rendering parameters for current sector's entities. Tests $09 bit 0 to select between two sprite sets, loads entity shape pointers from $B494 table into $66-$69 and $60/$6B",
+      "calls": ["$B068", "$B06E"],
+      "called_by": ["main_loop"],
+      "reads": ["$09", "$B494-$B4AB"],
+      "writes": ["$66-$69", "$71-$74", "$60", "$6B", "$100B", "$1012"]
+    },
+    "$AFD0": {
+      "name": "update_bridge_color",
+      "purpose": "Computes color for bridge/checkpoint zones. XORs $23 flags with $D6, checks entity count ($4E) and position ($0C+X) against threshold $5C to modify color",
+      "calls": [],
+      "called_by": ["DLI_kernel"],
+      "reads": ["$23", "$4E", "$0C"],
+      "writes": ["COLPF0 ($D016)"]
+    },
+    "$AFEC": {
+      "name": "fill_terrain_solid",
+      "purpose": "Fills a terrain row with solid pattern $AA (alternating bits = solid terrain). Entry point for solid riverbank fill",
+      "calls": ["$B04B"],
+      "called_by": ["terrain_renderer"],
+      "reads": ["$A3-$A4"],
+      "writes": ["screen_ram via ($A3),Y"]
+    },
+    "$AFF0": {
+      "name": "fill_terrain_full",
+      "purpose": "Fills terrain row with $FF pattern (fully solid). Used for bridge/obstacle sections",
+      "calls": ["$B04B"],
+      "called_by": ["terrain_renderer"],
+      "reads": ["$A3-$A4"],
+      "writes": ["screen_ram via ($A3),Y"]
+    },
+    "$AFF4": {
+      "name": "fill_terrain_conditional",
+      "purpose": "Conditionally fills terrain - checks $4F bank flag: if set uses $AA (solid), else $55 (half-density). Auto-selects terrain density",
+      "calls": ["$B04B", "$AFEC"],
+      "called_by": ["terrain_renderer"],
+      "reads": ["$4F", "$A3-$A4", "$B6"],
+      "writes": ["screen_ram via ($A3),Y"]
+    },
+    "$B00F": {
+      "name": "copy_terrain_from_source",
+      "purpose": "Copies terrain shape data from source pointer ($A1) to screen buffer ($A3). Y bytes copied in reverse order",
+      "calls": [],
+      "called_by": ["terrain_renderer"],
+      "reads": ["($A1),Y"],
+      "writes": ["($A3),Y"]
+    },
+    "$B01A": {
+      "name": "copy_terrain_multi_row",
+      "purpose": "Copies multiple terrain rows from pointer ($BA/$BB) with $BC bytes per row. Advances source pointer after each row copy, then calls $B04B to advance screen pointer",
+      "calls": ["$B04B"],
+      "called_by": ["terrain_renderer"],
+      "reads": ["$BA-$BC", "($BA),Y"],
+      "writes": ["($A3),Y", "$BA"]
+    },
+    "$B034": {
+      "name": "copy_terrain_2byte_banked",
+      "purpose": "Copies 2-byte terrain tile from source ($A1) to screen ($A3), with bank offset ($4F non-zero adds $10 to source address)",
+      "calls": [],
+      "called_by": ["terrain_renderer"],
+      "reads": ["$4F", "($A1),Y"],
+      "writes": ["($A3),Y"]
+    },
+    "$B03B": {
+      "name": "copy_terrain_2byte",
+      "purpose": "Copies exactly 2 bytes from ($A1) to ($A3), then advances screen pointer by 2",
+      "calls": ["$B04B"],
+      "called_by": ["$B034", "terrain_renderer"],
+      "reads": ["($A1),Y"],
+      "writes": ["($A3),Y"]
+    },
+    "$B04B": {
+      "name": "advance_screen_ptr",
+      "purpose": "Advances screen pointer $A3/$A4 by A bytes, also adds A to $B4 row offset accumulator. Core utility for terrain rendering",
+      "calls": [],
+      "called_by": ["$AFEC", "$AFF0", "$AFF4", "$B01A", "$B03B"],
+      "reads": ["$A3", "$A4", "$B4"],
+      "writes": ["$A3", "$A4", "$B4"]
+    },
+    "$B05C": {
+      "name": "start_explosion_sound",
+      "purpose": "Initiates explosion sound effect: sets frequency $B1=$90, X=$61 (POKEY channel), Y=$23 (duration). Falls through to score rendering setup",
+      "calls": ["$B086 (falls through)"],
+      "called_by": ["collision_handler"],
+      "reads": [],
+      "writes": ["$B1"]
+    },
+    "$B064": {
+      "name": "render_score_small",
+      "purpose": "Renders 2-digit score value to display. Loads A=#$02 (2 digits) then branches to $B086",
+      "calls": ["$B086"],
+      "called_by": ["score_display"],
+      "reads": ["$29"],
+      "writes": ["$1000,Y"]
+    },
+    "$B068": {
+      "name": "render_lives_display",
+      "purpose": "Renders lives/status display: A=#$50 (sprite data), Y=#$0C (12 scanlines). Sets up rendering at X=$63 (page $06)",
+      "calls": ["$B086"],
+      "called_by": ["$AF80"],
+      "reads": ["$63+"],
+      "writes": ["$1000,Y"]
+    },
+    "$B06E": {
+      "name": "render_score_dynamic",
+      "purpose": "Renders dynamically-sized score. Computes source page from sector ($09 AND $0E)*2+$80, sets Y=#$0C (12 lines), A=#$D0 (sprite page)",
+      "calls": ["$B086"],
+      "called_by": ["$AF80"],
+      "reads": ["$09"],
+      "writes": ["$1000,Y"]
+    },
+    "$B07C": {
+      "name": "render_score_mini",
+      "purpose": "Renders small 2-line score element: A=#$10 (16 bytes), Y=#$02 (2 rows)",
+      "calls": ["$B086"],
+      "called_by": ["score_display"],
+      "reads": [],
+      "writes": ["$1000,Y"]
+    },
+    "$B0C7": {
+      "name": "write_distance_digits",
+      "purpose": "Writes 4 distance/bridge counter digits to display list area $3F04. Reads BCD digits from table at $B0E9, writes to $3F04+$A6, increments $A6",
+      "calls": [],
+      "called_by": ["main_loop"],
+      "reads": ["$A6", "$B0E9-$B0EC"],
+      "writes": ["$3F04+", "$A6"]
+    },
+    "$B0D8": {
+      "name": "write_score_digits",
+      "purpose": "Writes 4 score digits to display list area $3F04. Reads from table at $B0ED, writes to $3F04+$A5, increments $A5",
+      "calls": [],
+      "called_by": ["main_loop"],
+      "reads": ["$A5", "$B0ED-$B0F0"],
+      "writes": ["$3F04+", "$A5"]
+    },
+    "$B0F1": {
+      "name": "game_init",
+      "purpose": "Full game initialization. Loads initial variable values from $BAE1 table into $4D-$54. Clears pages $0B-$0F and $20-$3E. Sets $C7 init flag. Clears game state variables $2B-$4C",
+      "calls": [],
+      "called_by": ["$A000 (game start)"],
+      "reads": ["$BAE1-$BAEC"],
+      "writes": ["$4D-$54", "$0B00-$0FFF", "$2000-$3EFF", "$2B-$4C", "$17", "$C7", "$A1-$A2"]
+    },
+    "$B183": {
+      "name": "prng_step",
+      "purpose": "Advances the 3-byte LFSR pseudo-random number generator. Shifts $AB left 5, XORs with $AB, shifts into carry, rotates through $AA/$AC/$AB",
+      "calls": [],
+      "called_by": ["terrain_generator", "$B194"],
+      "reads": ["$AA-$AC"],
+      "writes": ["$AA-$AC"]
+    },
+    "$B194": {
+      "name": "advance_terrain_sector",
+      "purpose": "Advances to next terrain sector. Saves current PRNG seed ($66-$69) to $AD-$B0, loads new seed from PRNG ($AA-$AC) into $66-$69. Clamps terrain index $60 to range [0,$50). Stores player X ($52) into $69",
+      "calls": [],
+      "called_by": ["$B1C0"],
+      "reads": ["$60", "$66-$69", "$AA-$AC", "$52"],
+      "writes": ["$AD-$B0", "$66-$69", "$60"]
+    },
+    "$B1C0": {
+      "name": "handle_sector_transition",
+      "purpose": "Manages terrain sector boundary transitions. Saves sound params ($7A/$7B). Compares current vs previous game state ($4C vs $23) for bit 2 changes. Calls $B194 to advance or $B1DD to retreat terrain sector. Always sets $5E=#$06 (row height)",
+      "calls": ["$B194"],
+      "called_by": ["main_loop"],
+      "reads": ["$23", "$2E", "$4C", "$60"],
+      "writes": ["$7A", "$7B", "$5E", "$60", "$66-$69"]
+    },
+    "$B21A": {
+      "name": "reset_score_display",
+      "purpose": "Resets the score display area: sets $18=#$FF (max distance), X=#$FF, branches to $B200 for full score reset",
+      "calls": [],
+      "called_by": ["game_over_handler"],
+      "reads": [],
+      "writes": ["$18"]
+    },
+    "$B221": {
+      "name": "clear_high_score_row",
+      "purpose": "Clears a high score table row: writes A=#$00 to $0B01+X through $0B08+X. Uses $56 (lives) as index, clamped to max $1B",
+      "calls": [],
+      "called_by": ["score_handler"],
+      "reads": ["$56"],
+      "writes": ["$0B01-$0B08"]
+    },
+    "$B223": {
+      "name": "write_score_to_table",
+      "purpose": "Writes current score value (in A) to high score table at $0B01-$0B08 indexed by $56. Clamps index to $1B maximum",
+      "calls": [],
+      "called_by": ["score_handler"],
+      "reads": ["$56"],
+      "writes": ["$0B01-$0B08"]
+    },
+    "$B247": {
+      "name": "swap_terrain_buffers",
+      "purpose": "Double-buffer swap for terrain rendering. Tests $09 bit 0; if changed, toggles $77 flag and swaps all 11 bytes between $60-$6A and $6B-$75 (terrain state for two river banks)",
+      "calls": [],
+      "called_by": ["main_loop"],
+      "reads": ["$09", "$77", "$60-$6A", "$6B-$75"],
+      "writes": ["$77", "$60-$6A", "$6B-$75"]
+    },
+    "$B261": {
+      "name": "check_and_insert_score",
+      "purpose": "Compares 3-byte score at ($A1) against current high at ($A3). If greater or equal, copies score and generates checksum entries using $B298. Writes to $0090,Y",
+      "calls": ["$B298"],
+      "called_by": ["game_over_handler"],
+      "reads": ["($A1),Y", "($A3),Y", "$09"],
+      "writes": ["($A3),Y", "$0090+Y"]
+    },
+    "$B298": {
+      "name": "compute_checksum",
+      "purpose": "Copy-protection checksum computation. Sums $80-$8E with running XOR against $A0. Returns accumulated value in A. Used for both boot verification and score integrity",
+      "calls": [],
+      "called_by": ["$A037 (boot)", "$B261"],
+      "reads": ["$80-$8E", "$A0"],
+      "writes": []
+    },
+    "$B480": {
+      "name": "vbi_deferred_exit",
+      "purpose": "Deferred VBI exit stub. The instruction at $B480 is a NOP (opcode $04), followed by JMP XITVBV ($E462) to return from vertical blank interrupt",
+      "calls": ["XITVBV ($E462)"],
+      "called_by": ["VBI_handler"],
+      "reads": [],
+      "writes": []
+    }
+  },
+
+  "data_regions": [
+    {
+      "start": "$B0E9",
+      "end": "$B0F0",
+      "type": "lookup_table",
+      "description": "Score/distance digit display data. 4+4 bytes: $B0E9-$B0EC = distance display digits (30 00 4E 0E), $B0ED-$B0F0 = score display digits (20 00 4E 0E)"
+    },
+    {
+      "start": "$B400",
+      "end": "$B47F",
+      "type": "code",
+      "description": "VBI (Vertical Blank Interrupt) handler continuation - terrain scrolling, color register updates, and display list manipulation. Runs every frame."
+    },
+    {
+      "start": "$B480",
+      "end": "$B48C",
+      "type": "code",
+      "description": "VBI exit stubs and IRQ handler (disables IRQ at $B488: sta IRQEN, then RTI)"
+    },
+    {
+      "start": "$B48D",
+      "end": "$B4B3",
+      "type": "lookup_table",
+      "description": "Entity parameter table. Contains terrain seed values and entity shape pointers used by $AF80 to configure each sector's sprite set. 8 groups of 4 bytes for PRNG seeds, plus size/count parameters"
+    },
+    {
+      "start": "$B4B4",
+      "end": "$B4BF",
+      "type": "lookup_table",
+      "description": "Entity type flags table - 12 bytes of 00/01 values indicating entity properties (shootable, moving, fuel depot, etc.)"
+    },
+    {
+      "start": "$B4C0",
+      "end": "$B4D1",
+      "type": "lookup_table",
+      "description": "Speed/timing table - 18 ascending values ($0C to $DE then $00) used for difficulty-scaled timing. Likely scroll speed or enemy speed per difficulty level"
+    },
+    {
+      "start": "$B4D2",
+      "end": "$B4DF",
+      "type": "pointer_table",
+      "description": "Terrain shape data pointers - pairs of addresses pointing into $B900+ terrain shape definitions. 7 entries: $B94C, $B91A, $B94C, $B9E9, $B9F4, $B9FF, $BA0A"
+    },
+    {
+      "start": "$B4E0",
+      "end": "$B4FF",
+      "type": "lookup_table",
+      "description": "Terrain width/shape parameters. First 8 bytes = terrain widths (30,40,50,60,...). Next 8 = terrain type flags (04,04,04,04,08,08,...). Last 8 = color indices (1C,1C,06,06,...)"
+    },
+    {
+      "start": "$B500",
+      "end": "$B727",
+      "type": "code",
+      "description": "DLI (Display List Interrupt) kernel - the main rendering engine. Runs on every scanline group. Sets player/missile positions, reads entity tables, handles collision register shadows, manages color cycling per scanline. The heart of the graphics engine."
+    },
+    {
+      "start": "$B728",
+      "end": "$B77F",
+      "type": "code",
+      "description": "Second DLI handler / bottom-of-screen handler at $B72A. Handles score area rendering, missile positions for bottom HUD, and VBI exit"
+    },
+    {
+      "start": "$B780",
+      "end": "$B7FF",
+      "type": "lookup_table",
+      "description": "Color and position tables for DLI kernel. Includes HPOS values for river banks, color cycling values ($B7B0+), entity color palettes ($B7C0+), terrain row heights ($B7D0+), and scroll position table ($B7E0+). Last bytes at $B7F0+ are signed direction vectors"
+    },
+    {
+      "start": "$B800",
+      "end": "$B81F",
+      "type": "sprite_data",
+      "description": "River bank edge sprite patterns. Two 16-byte sets of 4-color mode patterns (AA/55/6A/BF patterns) for left and right riverbank edges"
+    },
+    {
+      "start": "$B820",
+      "end": "$B8FF",
+      "type": "character_data",
+      "description": "Text/character display data for title screen and HUD. Contains encoded text strings: 'RIVER RAID' at $B860, 'COPYRIGHT' at $B883, 'PRESS START KEY' at $B8B6, 'USE JOYSTICK' at $B8C8. Character set uses custom encoding (not ATASCII)"
+    },
+    {
+      "start": "$B900",
+      "end": "$B9FF",
+      "type": "terrain_shape_data",
+      "description": "Terrain shape definitions - encoded river/island patterns used by terrain generator. Contains compact shape data that the rendering routines expand into screen-width terrain rows"
+    },
+    {
+      "start": "$BA00",
+      "end": "$BADF",
+      "type": "sprite_data",
+      "description": "Entity sprite graphics data - jet, helicopter, ship, bridge, fuel depot shapes. Each sprite is typically 8-12 bytes tall in 4-color PM graphics format"
+    },
+    {
+      "start": "$BAE0",
+      "end": "$BAEC",
+      "type": "init_data",
+      "description": "Game initialization values table - 13 bytes loaded into $4D-$59 at game start by $B0F1. Contains initial values for lives, fuel, player position, entity counters"
+    },
+    {
+      "start": "$BB00",
+      "end": "$BBFF",
+      "type": "lookup_table",
+      "description": "Entity behavior/position lookup tables. Includes entity spawn positions ($BB10+), movement patterns, and collision box dimensions. Indexed by entity type"
+    },
+    {
+      "start": "$BC00",
+      "end": "$BDFF",
+      "type": "terrain_shape_data",
+      "description": "Extended terrain shape data - wider/more complex terrain patterns for later game sectors. Dense 2-bit-per-pixel patterns for 4-color terrain rendering"
+    },
+    {
+      "start": "$BE00",
+      "end": "$BEFF",
+      "type": "terrain_shape_data",
+      "description": "Additional terrain patterns for advanced sectors. Contains repeating AA/55 patterns suggesting alternating riverbank textures"
+    },
+    {
+      "start": "$BF00",
+      "end": "$BFFF",
+      "type": "mixed_data",
+      "description": "Sprite animation frames and miscellaneous lookup data. Contains compact encoded sprite shapes for animated entities (helicopter rotor positions, ship movement, explosion frames)"
+    }
+  ],
+
+  "system_architecture": {
+    "display_method": "Custom DLI kernel (no OS display handler). ANTIC mode $0E (160x4-color) with DLI at $B500 managing per-scanline entity rendering",
+    "display_list_address": "$3F00",
+    "screen_ram": "$2000-$3EFF (double-buffered, switched via $09/$77)",
+    "pm_base": "$0600 (PMBASE = $06)",
+    "vbi_handler": "$B2A5 (immediate VBI) -> handles sound, then falls through to terrain/scroll update at $B400+",
+    "dli_handler": "$B500 (VDSLST) -> main rendering kernel, entity positioning, collision shadow capture",
+    "irq_handler": "$B485 -> disables IRQEN and returns (minimal IRQ stub)",
+    "terrain_generation": "LFSR PRNG at $B183 seeds terrain. Sector-based: each sector uses saved PRNG state in $66-$69. Double-buffered swap at $B247",
+    "entity_system": "5 entity slots at $0500 (11 bytes each). Entity types stored in $42-$4B. DLI reads entity Y positions from $0C-$14 to determine scanline rendering",
+    "scoring": "Score written to $0B01-$0B08. Display digits rendered by $B0C7/$B0D8 to $3F04+. Checksum protection via $B298",
+    "sound": "4 POKEY channels managed in VBI at $B2A5+. $C6 = bullet sound timer, $31 = engine sound, $24 = sound state machine",
+    "copy_protection": "Checksum at $B298 sums $80-$8E XOR $A0. Verified at boot ($A037) and used for score integrity ($B261)"
+  }
+}

@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/tracefileencoding.cpp	2026-01-01 00:52:32.539993100 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/tracefileencoding.cpp	2026-04-15 05:41:48.370897100 +0200
+@@ -158,7 +158,7 @@
+ 
+ 	if (VDCheckAllExtensionsEnabled(VDCPUF_SUPPORTS_POPCNT | CPUF_SUPPORTS_SSSE3)) {
+ 		if (rowSize == 24) {
+-			[=, this, &codecData, &outputSize] VD_CPU_TARGET_LAMBDA("ssse3, popcnt") {
++			[=, this, &codecData, &outputSize] VD_CPU_TARGET_LAMBDA("ssse3,popcnt") {
+ 				uint8 *dst = codecData.data();
+ 				__m128i vzero = _mm_setzero_si128();
+ 

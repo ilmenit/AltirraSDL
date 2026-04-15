@@ -1,0 +1,608 @@
+{
+  "ok": true,
+  "total_cycles": 3201120,
+  "total_insns": 535027,
+  "count": 100,
+  "hot": [
+    {
+      "addr": "$b567",
+      "cycles": 710919,
+      "insns": 7892,
+      "calls": 0
+    },
+    {
+      "addr": "$ae99",
+      "cycles": 300852,
+      "insns": 68951,
+      "calls": 0
+    },
+    {
+      "addr": "$ae9e",
+      "cycles": 226380,
+      "insns": 68951,
+      "calls": 0
+    },
+    {
+      "addr": "$b5d0",
+      "cycles": 156425,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$ae9c",
+      "cycles": 152531,
+      "insns": 68951,
+      "calls": 0
+    },
+    {
+      "addr": "$b5cb",
+      "cycles": 84215,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$b570",
+      "cycles": 59717,
+      "insns": 7484,
+      "calls": 0
+    },
+    {
+      "addr": "$b5e6",
+      "cycles": 54292,
+      "insns": 5159,
+      "calls": 0
+    },
+    {
+      "addr": "$afff",
+      "cycles": 54077,
+      "insns": 6912,
+      "calls": 0
+    },
+    {
+      "addr": "$b5dd",
+      "cycles": 53773,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$b5cd",
+      "cycles": 51495,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$a197",
+      "cycles": 44868,
+      "insns": 9738,
+      "calls": 0
+    },
+    {
+      "addr": "$b75a",
+      "cycles": 43650,
+      "insns": 630,
+      "calls": 0
+    },
+    {
+      "addr": "$b5df",
+      "cycles": 37374,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$b002",
+      "cycles": 34820,
+      "insns": 6912,
+      "calls": 0
+    },
+    {
+      "addr": "$b5e5",
+      "cycles": 34382,
+      "insns": 5159,
+      "calls": 0
+    },
+    {
+      "addr": "$a19c",
+      "cycles": 33446,
+      "insns": 9738,
+      "calls": 0
+    },
+    {
+      "addr": "$b56b",
+      "cycles": 31568,
+      "insns": 7892,
+      "calls": 0
+    },
+    {
+      "addr": "$b5e3",
+      "cycles": 28140,
+      "insns": 5247,
+      "calls": 0
+    },
+    {
+      "addr": "$b5e2",
+      "cycles": 27168,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$b117",
+      "cycles": 24984,
+      "insns": 3592,
+      "calls": 0
+    },
+    {
+      "addr": "$b56a",
+      "cycles": 24426,
+      "insns": 7892,
+      "calls": 0
+    },
+    {
+      "addr": "$b571",
+      "cycles": 22945,
+      "insns": 7484,
+      "calls": 0
+    },
+    {
+      "addr": "$a19a",
+      "cycles": 22369,
+      "insns": 9738,
+      "calls": 0
+    },
+    {
+      "addr": "$b5d3",
+      "cycles": 18413,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$b56e",
+      "cycles": 18230,
+      "insns": 7892,
+      "calls": 0
+    },
+    {
+      "addr": "$b001",
+      "cycles": 17963,
+      "insns": 6912,
+      "calls": 0
+    },
+    {
+      "addr": "$b5d7",
+      "cycles": 16206,
+      "insns": 1626,
+      "calls": 0
+    },
+    {
+      "addr": "$b014",
+      "cycles": 15125,
+      "insns": 2322,
+      "calls": 0
+    },
+    {
+      "addr": "$b5d5",
+      "cycles": 13872,
+      "insns": 5166,
+      "calls": 0
+    },
+    {
+      "addr": "$b012",
+      "cycles": 12617,
+      "insns": 2322,
+      "calls": 0
+    },
+    {
+      "addr": "$b11a",
+      "cycles": 12480,
+      "insns": 3593,
+      "calls": 0
+    },
+    {
+      "addr": "$b75d",
+      "cycles": 10260,
+      "insns": 630,
+      "calls": 0
+    },
+    {
+      "addr": "$b74b",
+      "cycles": 10080,
+      "insns": 90,
+      "calls": 0
+    },
+    {
+      "addr": "$b5f3",
+      "cycles": 9756,
+      "insns": 320,
+      "calls": 0
+    },
+    {
+      "addr": "$b119",
+      "cycles": 8363,
+      "insns": 3593,
+      "calls": 0
+    },
+    {
+      "addr": "$b748",
+      "cycles": 7830,
+      "insns": 90,
+      "calls": 0
+    },
+    {
+      "addr": "$b61f",
+      "cycles": 7812,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b017",
+      "cycles": 7368,
+      "insns": 2322,
+      "calls": 0
+    },
+    {
+      "addr": "$b770",
+      "cycles": 7290,
+      "insns": 90,
+      "calls": 0
+    },
+    {
+      "addr": "$b645",
+      "cycles": 7018,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b05b",
+      "cycles": 6926,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$af32",
+      "cycles": 6806,
+      "insns": 1204,
+      "calls": 0
+    },
+    {
+      "addr": "$af34",
+      "cycles": 6692,
+      "insns": 1204,
+      "calls": 0
+    },
+    {
+      "addr": "$b5da",
+      "cycles": 6576,
+      "insns": 1626,
+      "calls": 0
+    },
+    {
+      "addr": "$b66b",
+      "cycles": 5736,
+      "insns": 90,
+      "calls": 0
+    },
+    {
+      "addr": "$b5b0",
+      "cycles": 5574,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b763",
+      "cycles": 5490,
+      "insns": 630,
+      "calls": 0
+    },
+    {
+      "addr": "$b65f",
+      "cycles": 5104,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b58d",
+      "cycles": 5066,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b016",
+      "cycles": 4975,
+      "insns": 2322,
+      "calls": 0
+    },
+    {
+      "addr": "$b60d",
+      "cycles": 4948,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b0df",
+      "cycles": 4877,
+      "insns": 652,
+      "calls": 0
+    },
+    {
+      "addr": "$b5b3",
+      "cycles": 4837,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b0ce",
+      "cycles": 4610,
+      "insns": 652,
+      "calls": 0
+    },
+    {
+      "addr": "$b055",
+      "cycles": 4598,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b582",
+      "cycles": 4598,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b57d",
+      "cycles": 4488,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b630",
+      "cycles": 4466,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b590",
+      "cycles": 4126,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b006",
+      "cycles": 4067,
+      "insns": 525,
+      "calls": 0
+    },
+    {
+      "addr": "$b00e",
+      "cycles": 4061,
+      "insns": 525,
+      "calls": 0
+    },
+    {
+      "addr": "$b5ea",
+      "cycles": 3988,
+      "insns": 320,
+      "calls": 0
+    },
+    {
+      "addr": "$af38",
+      "cycles": 3921,
+      "insns": 1204,
+      "calls": 0
+    },
+    {
+      "addr": "$b635",
+      "cycles": 3828,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b611",
+      "cycles": 3828,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b65b",
+      "cycles": 3828,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b0dc",
+      "cycles": 3771,
+      "insns": 652,
+      "calls": 0
+    },
+    {
+      "addr": "$b0cb",
+      "cycles": 3739,
+      "insns": 652,
+      "calls": 0
+    },
+    {
+      "addr": "$b5bf",
+      "cycles": 3498,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b04f",
+      "cycles": 3498,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b057",
+      "cycles": 3498,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b04b",
+      "cycles": 3477,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b059",
+      "cycles": 3458,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b5a5",
+      "cycles": 3454,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b5c3",
+      "cycles": 3429,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b04d",
+      "cycles": 3426,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b766",
+      "cycles": 3420,
+      "insns": 630,
+      "calls": 0
+    },
+    {
+      "addr": "$b051",
+      "cycles": 3384,
+      "insns": 887,
+      "calls": 0
+    },
+    {
+      "addr": "$b5e8",
+      "cycles": 3366,
+      "insns": 320,
+      "calls": 0
+    },
+    {
+      "addr": "$b5a3",
+      "cycles": 3366,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b597",
+      "cycles": 3208,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b627",
+      "cycles": 3190,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b64e",
+      "cycles": 3190,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b639",
+      "cycles": 3190,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b76b",
+      "cycles": 3150,
+      "insns": 630,
+      "calls": 0
+    },
+    {
+      "addr": "$b585",
+      "cycles": 3084,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$b760",
+      "cycles": 3060,
+      "insns": 630,
+      "calls": 0
+    },
+    {
+      "addr": "$b5b7",
+      "cycles": 3009,
+      "insns": 327,
+      "calls": 0
+    },
+    {
+      "addr": "$af37",
+      "cycles": 2718,
+      "insns": 1204,
+      "calls": 0
+    },
+    {
+      "addr": "$b734",
+      "cycles": 2657,
+      "insns": 90,
+      "calls": 0
+    },
+    {
+      "addr": "$b0e4",
+      "cycles": 2635,
+      "insns": 652,
+      "calls": 0
+    },
+    {
+      "addr": "$b041",
+      "cycles": 2614,
+      "insns": 326,
+      "calls": 0
+    },
+    {
+      "addr": "$b046",
+      "cycles": 2580,
+      "insns": 326,
+      "calls": 0
+    },
+    {
+      "addr": "$b662",
+      "cycles": 2552,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b61b",
+      "cycles": 2552,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b633",
+      "cycles": 2552,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b656",
+      "cycles": 2552,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b642",
+      "cycles": 2552,
+      "insns": 319,
+      "calls": 0
+    },
+    {
+      "addr": "$b610",
+      "cycles": 2552,
+      "insns": 319,
+      "calls": 0
+    }
+  ]
+}

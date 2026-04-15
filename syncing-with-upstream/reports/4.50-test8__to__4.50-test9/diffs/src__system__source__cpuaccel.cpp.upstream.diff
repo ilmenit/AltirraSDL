@@ -1,0 +1,72 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/system/source/cpuaccel.cpp	2024-12-21 02:12:25.048001400 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/system/source/cpuaccel.cpp	2026-04-15 05:41:51.977643500 +0200
+@@ -36,6 +36,14 @@
+ };
+ 
+ #if VD_CPU_X86 || VD_CPU_X64
++
++#ifdef VD_COMPILER_GCC
++	#include <cpuid.h>
++	#define vdcpuid(p, v) __cpuid((v), (p)[0], (p)[1], (p)[2], (p)[3])
++#else
++	#define vdcpuid(p, v) __cpuid((p), (v))
++#endif
++
+ // This code used to use IsProcessorFeaturePresent(), but this function is somewhat
+ // suboptimal in Win64 -- for one thing, it doesn't return true for MMX, at least
+ // on Vista 64.
+@@ -44,11 +52,11 @@
+ 	long flags = 0;
+ 
+ 	int cpuInfo[4];
+-	__cpuid(cpuInfo, 0);
++	vdcpuid(cpuInfo, 0);
+ 	if (cpuInfo[0] == 0)
+ 		return flags;
+ 
+-	__cpuid(cpuInfo, 1);
++	vdcpuid(cpuInfo, 1);
+ 
+ 	if (cpuInfo[3] & (1 << 23))
+ 		flags |= CPUF_SUPPORTS_MMX;
+@@ -109,7 +117,7 @@
+ 			}
+ 
+ 			// check OSXSAVE and AVX bits
+-			if ((cpuInfo[2] & ((1 << 27) | (1 << 28))) == ((1 << 27) | (1 << 28))) {
++			if ((cpuInfo[2] & ((1 << 27) | (1 << 28))) == ((1 << 27) | (1 << 28))) [&] VD_CPU_TARGET_LAMBDA("xsave") {
+ 				if ((_xgetbv(0) & 0x06) == 0x06) {
+ 					flags |= CPUF_SUPPORTS_AVX;
+ 
+@@ -134,14 +142,14 @@
+ 						}
+ 					}
+ 				}
+-			}
++			}();
+ 		}
+ 	}
+ 
+ 	// check for AMD extensions
+-	__cpuid(cpuInfo, 0x80000000);
++	vdcpuid(cpuInfo, 0x80000000);
+ 	if ((unsigned)cpuInfo[0] >= 0x80000001U) {
+-		__cpuid(cpuInfo, 0x80000001);
++		vdcpuid(cpuInfo, 0x80000001);
+ 
+ 		if (cpuInfo[3] & (1 << 22))
+ 			flags |= CPUF_SUPPORTS_INTEGER_SSE;
+@@ -196,11 +204,11 @@
+ 	#endif
+ 
+ 	if (g_lCPUExtensionsEnabled & CPUF_SUPPORTS_AVX) {
+-#ifdef VD_COMPILER_CLANG
++#ifdef VD_COMPILER_CLANG_OR_GCC
+ 		[] VD_CPU_TARGET("avx") {
+ #endif
+ 		_mm256_zeroupper();
+-#ifdef VD_COMPILER_CLANG
++#ifdef VD_COMPILER_CLANG_OR_GCC
+ 		}();
+ #endif
+ 	}

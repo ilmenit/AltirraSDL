@@ -1,0 +1,232 @@
+[
+ {
+  "ctx": 0,
+  "parent": 0,
+  "addr": "$0000",
+  "calls": 0,
+  "excl_cycles": 698839,
+  "excl_insns": 198590,
+  "incl_cycles": 918235,
+  "incl_insns": 248744
+ },
+ {
+  "ctx": 1,
+  "parent": 0,
+  "addr": "$0000",
+  "calls": 0,
+  "excl_cycles": 0,
+  "excl_insns": 0,
+  "incl_cycles": 0,
+  "incl_insns": 0
+ },
+ {
+  "ctx": 2,
+  "parent": 0,
+  "addr": "$0000",
+  "calls": 0,
+  "excl_cycles": 0,
+  "excl_insns": 0,
+  "incl_cycles": 20103,
+  "incl_insns": 5969
+ },
+ {
+  "ctx": 3,
+  "parent": 0,
+  "addr": "$0000",
+  "calls": 0,
+  "excl_cycles": 0,
+  "excl_insns": 0,
+  "incl_cycles": 1195732,
+  "incl_insns": 90945
+ },
+ {
+  "ctx": 4,
+  "parent": 3,
+  "addr": "$c018",
+  "calls": 120,
+  "excl_cycles": 1582,
+  "excl_insns": 360,
+  "incl_cycles": 1195732,
+  "incl_insns": 90945
+ },
+ {
+  "ctx": 5,
+  "parent": 4,
+  "addr": "$b500",
+  "calls": 120,
+  "excl_cycles": 1194150,
+  "excl_insns": 90585,
+  "incl_cycles": 1194150,
+  "incl_insns": 90585
+ },
+ {
+  "ctx": 6,
+  "parent": 2,
+  "addr": "$c018",
+  "calls": 60,
+  "excl_cycles": 2390,
+  "excl_insns": 600,
+  "incl_cycles": 20103,
+  "incl_insns": 5969
+ },
+ {
+  "ctx": 7,
+  "parent": 6,
+  "addr": "$b2a5",
+  "calls": 60,
+  "excl_cycles": 15386,
+  "excl_insns": 4752,
+  "incl_cycles": 17713,
+  "incl_insns": 5369
+ },
+ {
+  "ctx": 8,
+  "parent": 7,
+  "addr": "$afd0",
+  "calls": 60,
+  "excl_cycles": 2327,
+  "excl_insns": 617,
+  "incl_cycles": 2327,
+  "incl_insns": 617
+ },
+ {
+  "ctx": 9,
+  "parent": 0,
+  "addr": "$b0d8",
+  "calls": 116,
+  "excl_cycles": 13595,
+  "excl_insns": 2784,
+  "incl_cycles": 13595,
+  "incl_insns": 2784
+ },
+ {
+  "ctx": 10,
+  "parent": 0,
+  "addr": "$b0c7",
+  "calls": 112,
+  "excl_cycles": 12587,
+  "excl_insns": 2688,
+  "incl_cycles": 12587,
+  "incl_insns": 2688
+ },
+ {
+  "ctx": 11,
+  "parent": 0,
+  "addr": "$aff4",
+  "calls": 242,
+  "excl_cycles": 69094,
+  "excl_insns": 13847,
+  "incl_cycles": 79297,
+  "incl_insns": 16259
+ },
+ {
+  "ctx": 12,
+  "parent": 11,
+  "addr": "$b04b",
+  "calls": 240,
+  "excl_cycles": 10203,
+  "excl_insns": 2412,
+  "incl_cycles": 10203,
+  "incl_insns": 2412
+ },
+ {
+  "ctx": 13,
+  "parent": 0,
+  "addr": "$b034",
+  "calls": 227,
+  "excl_cycles": 20893,
+  "excl_insns": 4778,
+  "incl_cycles": 20893,
+  "incl_insns": 4778
+ },
+ {
+  "ctx": 14,
+  "parent": 0,
+  "addr": "$aff0",
+  "calls": 114,
+  "excl_cycles": 24275,
+  "excl_insns": 5487,
+  "incl_cycles": 28986,
+  "incl_insns": 6633
+ },
+ {
+  "ctx": 15,
+  "parent": 14,
+  "addr": "$b04b",
+  "calls": 114,
+  "excl_cycles": 4711,
+  "excl_insns": 1146,
+  "incl_cycles": 4711,
+  "incl_insns": 1146
+ },
+ {
+  "ctx": 16,
+  "parent": 0,
+  "addr": "$afd0",
+  "calls": 57,
+  "excl_cycles": 2210,
+  "excl_insns": 593,
+  "incl_cycles": 2210,
+  "incl_insns": 593
+ },
+ {
+  "ctx": 17,
+  "parent": 0,
+  "addr": "$b00f",
+  "calls": 114,
+  "excl_cycles": 27742,
+  "excl_insns": 6498,
+  "incl_cycles": 27742,
+  "incl_insns": 6498
+ },
+ {
+  "ctx": 18,
+  "parent": 0,
+  "addr": "$af5b",
+  "calls": 57,
+  "excl_cycles": 8185,
+  "excl_insns": 2508,
+  "incl_cycles": 8185,
+  "incl_insns": 2508
+ },
+ {
+  "ctx": 19,
+  "parent": 0,
+  "addr": "$b05c",
+  "calls": 57,
+  "excl_cycles": 8159,
+  "excl_insns": 2508,
+  "incl_cycles": 8159,
+  "incl_insns": 2508
+ },
+ {
+  "ctx": 20,
+  "parent": 0,
+  "addr": "$b07c",
+  "calls": 57,
+  "excl_cycles": 10555,
+  "excl_insns": 3306,
+  "incl_cycles": 10555,
+  "incl_insns": 3306
+ },
+ {
+  "ctx": 21,
+  "parent": 0,
+  "addr": "$b183",
+  "calls": 83,
+  "excl_cycles": 4610,
+  "excl_insns": 996,
+  "incl_cycles": 4610,
+  "incl_insns": 996
+ },
+ {
+  "ctx": 22,
+  "parent": 0,
+  "addr": "$b01a",
+  "calls": 14,
+  "excl_cycles": 2577,
+  "excl_insns": 603,
+  "incl_cycles": 2577,
+  "incl_insns": 603
+ }
+]

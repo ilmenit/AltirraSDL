@@ -1,0 +1,37 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/int128.h	2022-02-01 04:26:20.361980200 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/int128.h	2026-04-15 05:41:51.386006000 +0200
+@@ -359,16 +359,26 @@
+ 	q[1] = x.q[1];
+ }
+ 
+-#ifdef _M_AMD64
+-	inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
+-		vduint128 result;
+-		result.q[0] = _umul128(x, y, &result.q[1]);
+-		return result;
+-	}
+-	uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
++#if defined(VD_CPU_X64)
++	#ifdef VD_COMPILER_GCC
++		inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
++			unsigned __int128 v = (unsigned __int128)x * y;
++			vduint128 result;
++			result.q[0] = (uint64)v;
++			result.q[1] = (uint64)(v >> 64);
++			return result;
++		}
++	#else
++		inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
++			vduint128 result;
++			result.q[0] = _umul128(x, y, &result.q[1]);
++			return result;
++		}
++	#endif
+ #else
+ 	vduint128 VDCDECL VDUMul64x64To128(uint64 x, uint64 y);
+-	uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
+ #endif
+ 
++uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
++
+ #endif

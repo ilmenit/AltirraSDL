@@ -1,0 +1,97 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/h/vd2/system/int128.h	2026-03-31 08:53:13.745171789 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/int128.h	2026-04-15 05:41:51.386006000 +0200
+@@ -31,26 +31,20 @@
+ struct vdint128;
+ struct vduint128;
+ 
+-#if defined(_M_AMD64) || defined(__x86_64__)
+-	#ifdef _MSC_VER
+-		extern "C" unsigned __int64 __shiftleft128(unsigned __int64 low, unsigned __int64 high, unsigned char shift);
+-		extern "C" unsigned __int64 __shiftright128(unsigned __int64 low, unsigned __int64 high, unsigned char shift);
+-		#pragma intrinsic(__shiftleft128)
+-		#pragma intrinsic(__shiftright128)
+-	#else
+-		inline uint64 __shiftleft128(uint64 low, uint64 high, unsigned char shift) {
+-			return (shift == 0) ? high : (high << shift) | (low >> (64 - shift));
+-		}
+-		inline uint64 __shiftright128(uint64 low, uint64 high, unsigned char shift) {
+-			return (shift == 0) ? low : (low >> shift) | (high << (64 - shift));
+-		}
+-	#endif
++#ifdef _M_AMD64
++	extern "C" unsigned __int64 __shiftleft128(unsigned __int64 low, unsigned __int64 high, unsigned char shift);
++	extern "C" unsigned __int64 __shiftright128(unsigned __int64 low, unsigned __int64 high, unsigned char shift);
++
++	#pragma intrinsic(__shiftleft128)
++	#pragma intrinsic(__shiftright128)
+ 
+ 	void vdasm_uint128_add(uint64 dst[2], const uint64 x[2], const uint64 y[2]);
+ 	void vdasm_uint128_sub(uint64 dst[2], const uint64 x[2], const uint64 y[2]);
+ #else
+-	void vdasm_uint128_add(uint64 dst[2], const uint64 x[2], const uint64 y[2]);
+-	void vdasm_uint128_sub(uint64 dst[2], const uint64 x[2], const uint64 y[2]);
++	extern "C" {
++		void __cdecl vdasm_uint128_add(uint64 dst[2], const uint64 x[2], const uint64 y[2]);
++		void __cdecl vdasm_uint128_sub(uint64 dst[2], const uint64 x[2], const uint64 y[2]);
++	}
+ #endif
+ 
+ struct vdint128 {
+@@ -82,13 +76,10 @@
+ 		q[1] = 0;
+ 	}
+ 
+-#if defined(_WIN32) || defined(_WIN64)
+-	// On Windows, unsigned long is 32-bit so it differs from uint64
+ 	vdint128(unsigned long x) {
+ 		q[0] = x;
+ 		q[1] = 0;
+ 	}
+-#endif
+ 
+ 	vdint128(sint64 hi, uint64 lo) {
+ 		q[0] = lo;
+@@ -368,25 +359,26 @@
+ 	q[1] = x.q[1];
+ }
+ 
+-#if defined(_M_AMD64)
+-	inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
+-		vduint128 result;
+-		result.q[0] = _umul128(x, y, &result.q[1]);
+-		return result;
+-	}
+-	uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
+-#elif defined(__x86_64__) || defined(__aarch64__)
+-	inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
+-		unsigned __int128 r = (unsigned __int128)(unsigned long long)x * (unsigned long long)y;
+-		vduint128 result;
+-		result.q[0] = (uint64)(unsigned long long)r;
+-		result.q[1] = (uint64)((unsigned long long)(r >> 64));
+-		return result;
+-	}
+-	uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
++#if defined(VD_CPU_X64)
++	#ifdef VD_COMPILER_GCC
++		inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
++			unsigned __int128 v = (unsigned __int128)x * y;
++			vduint128 result;
++			result.q[0] = (uint64)v;
++			result.q[1] = (uint64)(v >> 64);
++			return result;
++		}
++	#else
++		inline vduint128 VDUMul64x64To128(uint64 x, uint64 y) {
++			vduint128 result;
++			result.q[0] = _umul128(x, y, &result.q[1]);
++			return result;
++		}
++	#endif
+ #else
+ 	vduint128 VDCDECL VDUMul64x64To128(uint64 x, uint64 y);
+-	uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
+ #endif
+ 
++uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
++
+ #endif

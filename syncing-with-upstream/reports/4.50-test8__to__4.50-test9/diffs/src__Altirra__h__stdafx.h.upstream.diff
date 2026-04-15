@@ -1,0 +1,12 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/h/stdafx.h	2021-05-24 00:07:08.786214800 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/h/stdafx.h	2026-04-15 05:41:47.079947100 +0200
+@@ -17,6 +17,9 @@
+ 
+ #pragma once
+ 
++#define WINVER 0x0A00
++#define _WIN32_WINNT 0x0A00
++
+ #define _SCL_SECURE_NO_WARNINGS
+ #include <stddef.h>
+ #include <string.h>

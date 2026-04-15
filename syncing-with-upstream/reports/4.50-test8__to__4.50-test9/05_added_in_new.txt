@@ -1,0 +1,4 @@
+src/Altirra/h/printerexport.h
+src/Altirra/h/printerrasterizer.h
+src/Altirra/source/printerexport.cpp
+src/Altirra/source/printerrasterizer.cpp

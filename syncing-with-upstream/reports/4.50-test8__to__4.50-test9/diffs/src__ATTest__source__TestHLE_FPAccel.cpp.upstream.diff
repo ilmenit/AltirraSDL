@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATTest/source/TestHLE_FPAccel.cpp	2026-04-06 02:10:14.486855800 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATTest/source/TestHLE_FPAccel.cpp	2026-04-15 05:41:50.319573500 +0200
+@@ -42,7 +42,6 @@
+ 
+ int ATTestHelper_HLE_FPAccel(bool bench, bool check) {
+ 	using namespace ATKernelSymbols;
+-	using AccelFn = void(*)(IATFPAccelContext& ctx);
+ 
+ 	int errors = 0;
+ 

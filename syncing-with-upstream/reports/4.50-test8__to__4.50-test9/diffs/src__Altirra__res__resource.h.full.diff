@@ -1,0 +1,359 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res/resource.h	2026-02-16 06:23:56.472344000 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/res/resource.h	2026-04-15 05:41:47.386087700 +0200
+@@ -36,7 +36,6 @@
+ #define IDD_INPUTMAP_REBIND             138
+ #define IDR_HISTORY_CONTEXT_MENU        139
+ #define IDD_SERIAL_PORTS                140
+-#define IDD_DEVICE_850                  140
+ #define IDD_LIGHTPEN                    142
+ #define IDR_DEBUG_HELP                  143
+ #define IDD_CHEATER                     144
+@@ -98,8 +97,6 @@
+ #define IDR_NOMIO                       199
+ #define IDR_NOBLACKBOX                  200
+ #define IDR_TRACK_STEP_3                201
+-#define IDD_DEVICE_VERONICA             202
+-#define IDD_DEVICE_SOUNDBOARD           203
+ #define IDD_INPUT_SETUP                 204
+ #define IDD_KEYBOARD_CUSTOMIZE          205
+ #define IDR_PROFILE_OPTIONS_MENU        206
+@@ -108,11 +105,8 @@
+ #define IDD_PROFILE_CATEGORIES          209
+ #define IDD_CONFIGURE_SETTINGS          210
+ #define IDD_DEVICE_POCKETMODEM          211
+-#define IDD_DEVICE_CORVUS               212
+ #define IDD_CONFIGURE_MEDIADEFAULTS     213
+ #define IDD_DEVICE_VERONICA1            214
+-#define IDD_DEVICE_MYIDE2               214
+-#define IDD_DEVICE_DONGLE               215
+ #define IDD_WIZARD                      216
+ #define IDD_WIZARD_SELECTTYPE           218
+ #define IDD_COMPATDB_EDITOR             219
+@@ -123,10 +117,8 @@
+ #define IDR_COMPATDBEDITOR_MENU         224
+ #define IDR_ROMSETREADME                225
+ #define IDR_COMPATDBEDITOR_ACCEL        226
+-#define IDD_DEVICE_DISKDRIVEFULL        227
+ #define IDR_MENU1                       228
+ #define IDR_PROFILE_LIST_CONTEXT_MENU   228
+-#define IDD_DEVICE_VBXE                 229
+ #define IDR_RAPIDUSFLASH                229
+ #define IDD_TRACEVIEWER                 230
+ #define IDR_RAPIDUSPBI16                230
+@@ -150,7 +142,6 @@
+ #define IDD_CREATEINPUTMAP              243
+ #define IDD_ADVANCED_CONFIGURATION      244
+ #define IDD_EDIT_VAR                    245
+-#define IDD_DEVICE_SIDE3                246
+ #define IDR_CUSTOMIZE_MENU              247
+ #define IDD_DIALOG6                     248
+ #define IDD_TAPEEDITOR                  248
+@@ -188,6 +179,7 @@
+ #define IDD_FIRMWARE_KNOWN              273
+ #define IDD_TRACEVIEWER_LOG             274
+ #define IDR_PERFANALYZER_LOG_MENU       275
++#define IDR_TAPECONTROL_MENU            276
+ #define IDI_DISK                        500
+ #define IDI_TAPE                        501
+ #define IDI_XEX                         502
+@@ -454,7 +446,6 @@
+ #define IDC_GUN_HSPIN                   1109
+ #define IDC_HVALUE                      1110
+ #define IDC_ACCEPT_IPV7                 1110
+-#define IDC_EXTENDED_BAUD_RATES         1110
+ #define IDC_GUN_HVALUE                  1110
+ #define IDC_VVALUE                      1111
+ #define IDC_RESULTS                     1111
+@@ -585,11 +576,6 @@
+ #define IDC_LINEWRAPMODE                1198
+ #define IDC_LUMA_RAMP                   1198
+ #define IDC_VIEWMODE                    1198
+-#define IDC_VERSION                     1198
+-#define IDC_REVISION                    1198
+-#define IDC_DRIVESELECT                 1198
+-#define IDC_SERIALPORT_SIGNAL1          1198
+-#define IDC_COREVERSION                 1198
+ #define IDC_VIDEO_RATE                  1198
+ #define IDC_TURBOTYPE                   1198
+ #define IDC_AUDIOAPI                    1198
+@@ -606,8 +592,6 @@
+ #define IDC_ERRORMODE                   1198
+ #define IDC_TYPE_FIXED                  1199
+ #define IDC_U1MB_FLASH                  1199
+-#define IDC_DEVICE_ID                   1199
+-#define IDC_SERIALPORT_SIGNAL2          1199
+ #define IDC_COMBO3                      1199
+ #define IDC_LUMA_RAMP2                  1199
+ #define IDC_COLORMATCHING_MODE          1199
+@@ -662,9 +646,7 @@
+ #define IDC_ENDFUNCTION                 1217
+ #define IDC_VISIBLE                     1217
+ #define IDC_PAUSE_ON_MENU               1217
+-#define IDC_ENABLE_SDX                  1217
+ #define IDC_IGNORETHISTITLE             1217
+-#define IDC_VBXE_SHAREDMEM              1217
+ #define IDC_TRACE_HISTORY               1217
+ #define IDC_AXLON_ALIASING              1217
+ #define IDC_FASTBOOT                    1217
+@@ -677,13 +659,9 @@
+ #define IDC_ENABLE_BLOOM                1217
+ #define IDC_AUTOLOADOSSYMBOLS           1217
+ #define IDC_AUTOLOADSYSTEMSYMBOLS       1217
+-#define IDC_DEFAULTDD1                  1217
+-#define IDC_HOTRELOAD                   1217
+ #define IDC_LOCKHUESTART                1217
+ #define IDC_USERAWINPUT                 1217
+ #define IDC_RANDOMIZELAUNCHDELAY        1217
+-#define IDC_AUTOSPEED                   1217
+-#define IDC_ACTIVITYLED                 1217
+ #define IDC_AUTOCHECK                   1217
+ #define IDC_BOOLOPT                     1217
+ #define IDC_NOISE                       1217
+@@ -692,7 +670,6 @@
+ #define IDC_FSKSPEEDCOMPENSATION        1217
+ #define IDC_INTENSITY_COMPENSATION      1217
+ #define IDC_ACCESS_NONE                 1218
+-#define IDC_WRITE_PROTECT               1218
+ #define IDC_CHECK2                      1218
+ #define IDC_IGNOREALL                   1218
+ #define IDC_TRACE_VIDEO                 1218
+@@ -706,29 +683,24 @@
+ #define IDC_PAUSE_ON_MENU2              1218
+ #define IDC_USE_DARK_THEME              1218
+ #define IDC_AUTOLOADOSROMSYMBOLS        1218
+-#define IDC_DEFAULTDD2                  1218
+ #define IDC_HIDETARGETPOINTER           1218
+ #define IDC_LOCKGAMMA                   1218
+ #define IDC_USERAWINPUT2                1218
+ #define IDC_IMMEDIATEPOTS               1218
+ #define IDC_ACTIVITYLED2                1218
+ #define IDC_ENABLESDX                   1218
+-#define IDC_RECOVERY                    1218
+ #define IDC_SEAMLESSCUSTOMREFRESH       1218
+ #define IDC_ACTION_STOP                 1218
+ #define IDC_CROSSTALKREDUCTION          1218
+ #define IDC_ALLOWUSAGE                  1218
+-#define IDC_ALLOWUNSAFE                 1218
+ #define IDC_ACCESS_HOSTONLY             1219
+ #define IDC_TRACE_VIDEO2                1219
+ #define IDC_TRACE_BASIC                 1219
+ #define IDC_WRITE_PROTECT2              1219
+-#define IDC_NVRAM_PROTECT               1219
+ #define IDC_ENABLE_FLOATINGIOBUS        1219
+ #define IDC_SIOPATCH_C                  1219
+ #define IDC_CTIA3                       1219
+ #define IDC_SCANLINES                   1219
+-#define IDC_DEFAULTDD3                  1219
+ #define IDC_CHECK3                      1219
+ #define IDC_AUTOHIDEPOINTER             1219
+ #define IDC_LOCKGAMMA2                  1219
+@@ -748,7 +720,6 @@
+ #define IDC_AUDIOMONITOR                1220
+ #define IDC_SCANLINES2                  1220
+ #define IDC_PERITEL                     1220
+-#define IDC_DEFAULTDD4                  1220
+ #define IDC_NORMALIZECONTRAST2          1220
+ #define IDC_IGNORENONHUE0LUMA           1220
+ #define IDC_HIDETARGETPOINTER2          1220
+@@ -797,7 +768,6 @@
+ #define IDC_SCALE                       1230
+ #define IDC_FORWARDING_ADDRESS          1230
+ #define IDC_SEARCH                      1230
+-#define IDC_MAPPING                     1230
+ #define IDC_QUICKSEARCH                 1230
+ #define IDC_AUDIO_CH8                   1230
+ #define IDC_AUDIO_SCH4                  1230
+@@ -953,20 +923,14 @@
+ #define IDC_TYPE_COMPUTER               1289
+ #define IDC_TYPE_5200                   1290
+ #define IDC_STEPS_LIST                  1290
+-#define IDD_DEVICE_KMKJZIDEV2           1290
+ #define IDD_OPTIONS_COMPAT              1291
+ #define IDC_TYPE_NTSC                   1291
+ #define IDD_CONFIGURE_COMPATDB          1291
+-#define IDD_DEVICE_COVOX                1292
+ #define IDC_TYPE_PAL                    1292
+ #define IDC_TYPE_STREAMLINED            1293
+ #define IDD_DEVICE_KMKJZIDEV3           1293
+-#define IDD_DEVICE_KMKJZIDE             1293
+ #define IDC_TYPE_AUTHENTIC              1294
+-#define IDD_DEVICE_ATR8000              1294
+-#define IDC_CHANNELS                    1295
+ #define IDD_DEVICE_PERCOMX              1295
+-#define IDD_DEVICE_PERCOMAT             1295
+ #define IDD_TRACEVIEWER_CHANNELS        1296
+ #define IDD_TRACEVIEWER_TIMESCALE       1297
+ #define IDD_TRACEVIEWER_EVENTS          1298
+@@ -999,22 +963,16 @@
+ #define IDD_CONFIGURE_SYSTEM1           1314
+ #define IDD_CONFIGURE_BOOT              1314
+ #define IDC_COMPAT_INTERNAL             1315
+-#define IDC_DRIVETYPE1                  1315
+ #define IDD_CONFIGURE_VIDEO1            1315
+ #define IDD_CONFIGURE_KEYBOARD          1315
+ #define IDC_COMPAT_EXTERNAL             1316
+-#define IDC_DRIVETYPE2                  1316
+-#define IDC_VBXEBASE_D600               1316
+ #define IDD_CONFIGURE_CAPTION           1316
+-#define IDC_DRIVETYPE3                  1317
+ #define IDC_RADIO2                      1317
+-#define IDC_VBXEBASE_D700               1317
+ #define IDC_SCROLLBAR1                  1317
+ #define IDC_HSCROLLBAR                  1317
+ #define IDD_CONFIGURE_DISK1             1317
+ #define IDD_CONFIGURE_DISPLAY           1317
+ #define IDC_LOCATION_READ               1317
+-#define IDC_DRIVETYPE4                  1318
+ #define IDC_CUSTOM1                     1318
+ #define IDC_TOOLBAR                     1318
+ #define IDD_CONFIGURE_DEBUGGER          1318
+@@ -1025,7 +983,6 @@
+ #define IDC_SIOACCEL_SIOV               1319
+ #define IDC_ENHTEXT_NONE                1319
+ #define IDD_ADJUST_SCREENFX             1319
+-#define IDC_INVERTMODE_ACCURATE         1319
+ #define IDC_LOCATION_PC                 1319
+ #define IDC_MODE_LISTEN                 1319
+ #define IDC_HARDWARE_TYPE               1320
+@@ -1034,7 +991,6 @@
+ #define IDD_CONFIGURE_SYSTEM2           1320
+ #define IDD_CONFIGURE_ASSESSMENT        1320
+ #define IDC_RADIO3                      1320
+-#define IDC_INVERTMODE_COMPATIBLE       1320
+ #define IDC_LOCATION_WRITE              1320
+ #define IDC_MODE_CONNECT                1320
+ #define IDC_VIDEO_STANDARD              1321
+@@ -1042,20 +998,16 @@
+ #define IDC_ENHTEXT_SW                  1321
+ #define IDD_CONFIGURE_OVERVIEW          1321
+ #define IDC_ARTIFACTMODE                1322
+-#define IDD_DEVICE_AMDC                 1322
+ #define IDC_VIDEO_STANDARD2             1322
+ #define IDC_GTIA_DEFECT                 1322
+ #define IDC_FRAMEBLENDING               1323
+ #define IDD_DEVICE_CORVUS1              1323
+-#define IDD_DEVICE_XEP80                1323
+ #define IDC_ACCURATESECTORTIMING        1324
+ #define IDC_FRAMEBLENDING2              1324
+ #define IDC_FRAMEBLENDINGLINEAR         1324
+ #define IDD_DEVICE_DONGLE1              1324
+-#define IDD_DEVICE_CUSTOM               1324
+ #define IDC_SHOWSECTORCOUNTER           1325
+ #define IDC_STEREO                      1325
+-#define IDD_DEVICE_PERCOMRFD            1325
+ #define IDC_ARTIFACTMODE2               1325
+ #define IDC_DEINTERLACEMODE             1325
+ #define IDC_DRIVESOUNDS                 1326
+@@ -1072,20 +1024,15 @@
+ #define IDC_STEREOASMONO                1328
+ #define IDC_AUTOREWIND                  1329
+ #define IDD_DEVICE_DISKDRIVEFULL1       1329
+-#define IDD_DEVICE_HAPPY810             1329
+ #define IDC_SERIALNOISE2                1329
+ #define IDC_SPEAKERFILTER               1329
+ #define IDC_LOADDATAASAUDIO             1330
+-#define IDD_DEVICE_815                  1330
+ #define IDC_RANDOMIZESTARTPOS           1331
+ #define IDD_DEVICE_VIRTFAT32            1331
+-#define IDD_DEVICE_HDVIRTFAT32          1331
+ #define IDC_TURBOINVERT                 1332
+-#define IDD_DEVICE_PARFILEWRITER        1332
+ #define IDC_ENABLEBASIC                 1333
+ #define IDC_AUTOBOOT2                   1333
+ #define IDC_AUTOBASICBOOT               1333
+-#define IDD_DEVICE_COMPUTEREYES         1333
+ #define IDC_BASIC                       1334
+ #define IDC_TURBOINVERT2                1334
+ #define IDC_TURBOPREFILTER              1334
+@@ -1147,14 +1094,19 @@
+ #define IDC_GAMMA_WARNING               1353
+ #define IDC_RSS_FEED                    1353
+ #define IDC_WARNING_NOTENABLED          1353
+-#define IDC_HELP_DEVICE                 1353
+ #define IDC_SYSLINK_DISPEFFECTS         1353
+ #define IDD_CFGPROP_INTEDIT             1353
+ #define IDD_CFGPROP_EDIT                1353
+ #define IDC_SEEHELP                     1353
++#define IDC_SYSLINK                     1353
+ #define IDC_REFERENCE_VIEW              1354
++#define IDD_CFGPROP_BOOLCHOICE          1354
++#define IDD_CFGPROP_STATICTEXT          1355
+ #define IDC_LABEL_DISTORTION_X          1356
++#define IDD_CFGPROP_STATICTEXT1         1356
++#define IDD_CFGPROP_SYSLINK             1356
+ #define IDC_LABEL_DISTORTION_Y          1357
++#define IDD_CFGPROP_SYSLINK2            1357
+ #define IDC_LABEL                       1358
+ #define IDC_LABEL_BLOOM_THRESHOLD       1358
+ #define IDC_LABEL_BLOOM_RADIUS          1359
+@@ -1168,11 +1120,7 @@
+ #define IDC_AUDIOBITRATE_VALUE          1365
+ #define IDC_STATIC_VIDEOBITRATE         1366
+ #define IDC_STATIC_AUDIOBITRATE         1367
+-#define IDC_SW7                         1368
+-#define IDC_SW8                         1369
+-#define IDC_JUMPER                      1370
+ #define IDC_CHECK4                      1371
+-#define IDC_DRIVE2                      1371
+ #define IDC_USESYSTEMSDR                1371
+ #define IDC_REWIND                      1371
+ #define IDC_POTNOISE                    1371
+@@ -1182,7 +1130,6 @@
+ #define IDC_STATIC_ALIASES              1373
+ #define IDC_STATIC_TAGS                 1374
+ #define IDC_STATIC_SIGSINALIAS          1375
+-#define IDC_FDCTYPE                     1376
+ #define IDC_POLL_DIRECTORIES            1377
+ #define IDC_GAIN                        1378
+ #define IDC_STATIC_GAIN                 1379
+@@ -1194,9 +1141,6 @@
+ #define IDC_CURRENT_SEED                1385
+ #define IDC_NEXT_SEED                   1386
+ #define IDC_SLIDER1                     1387
+-#define IDC_AUTOSPEEDRATE               1387
+-#define IDC_STATIC_AUTOSPEEDRATE        1388
+-#define IDC_BASEADDRESS                 1389
+ #define IDC_STATIC_PARENT               1390
+ #define IDC_STATIC_SIZEMB               1391
+ #define IDC_STATIC_SIZESECTORS          1392
+@@ -1205,7 +1149,6 @@
+ #define IDC_STATIC_HDRBRIGHTNESS        1395
+ #define IDC_HDRWARNING                  1396
+ #define IDC_CUSTOM2                     1397
+-#define IDC_TEXTMODE                    1398
+ #define IDC_STATIC_VALUE                1399
+ #define IDC_STATIC_LAYOUTRECT           1400
+ #define IDC_BPS                         1401
+@@ -1238,6 +1181,7 @@
+ #define IDC_STATIC_DISPLAYNAME          1427
+ #define IDC_CURRENT_MODE2               1428
+ #define IDC_CAPABILITY                  1428
++#define IDC_STATICTEXT                  1428
+ #define ID_FILTERMODE_POINT             40023
+ #define ID_FILTERMODE_BILINEAR          40024
+ #define ID_FILTERMODE_BICUBIC           40025
+@@ -1569,6 +1513,11 @@
+ #define ID_CONTEXT_SETPRINTPOSITION     40807
+ #define ID_SAVEAS_SVG1                  40808
+ #define ID_SAVEAS_SVG                   40809
++#define ID_FILE_NEWTAPE                 40810
++#define ID_FILE_OPENTAPE                40811
++#define ID_FILE_SAVETAPE                40812
++#define ID_FILE_SAVEAS40813             40813
++#define ID_FILE_UNLOAD                  40814
+ #define ID_INPUT_PORT1_NONE             45000
+ #define ID_INPUT_PORT2_NONE             45100
+ #define ID_INPUT_PORT3_NONE             45200
+@@ -1582,9 +1531,9 @@
+ #ifdef APSTUDIO_INVOKED
+ #ifndef APSTUDIO_READONLY_SYMBOLS
+ #define _APS_NO_MFC                     1
+-#define _APS_NEXT_RESOURCE_VALUE        276
+-#define _APS_NEXT_COMMAND_VALUE         40810
+-#define _APS_NEXT_CONTROL_VALUE         1428
++#define _APS_NEXT_RESOURCE_VALUE        277
++#define _APS_NEXT_COMMAND_VALUE         40815
++#define _APS_NEXT_CONTROL_VALUE         1429
+ #define _APS_NEXT_SYMED_VALUE           113
+ #endif
+ #endif

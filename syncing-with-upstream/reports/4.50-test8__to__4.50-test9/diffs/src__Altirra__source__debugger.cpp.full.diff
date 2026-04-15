@@ -1,0 +1,72 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugger.cpp	2026-04-03 13:26:43.503886136 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/debugger.cpp	2026-04-15 05:41:47.802265500 +0200
+@@ -4345,7 +4345,7 @@
+ 		return;
+ 	}
+ 
+-	typedef vdfastvector<std::pair<const char *, const AliasList *> > SortedAliases;
++	typedef vdvector<std::pair<const char *, const AliasList *> > SortedAliases;
+ 	SortedAliases sortedAliases;
+ 	sortedAliases.reserve(mAliases.size());
+ 
+@@ -5081,8 +5081,7 @@
+ 		for(; it!=itEnd; ++it) {
+ 			IATDebuggerClient *client = *it;
+ 
+-			if (client)
+-				client->OnDebuggerSystemStateUpdate(sysstate);
++			client->OnDebuggerSystemStateUpdate(sysstate);
+ 		}
+ 	}
+ }
+@@ -5683,7 +5682,7 @@
+ 			throw MyError("Invalid numeric switch argument: -%s:%s", sw.mpName, s);
+ 
+ 		if (v < sw.mMinVal || v > sw.mMaxVal)
+-			throw MyError("Numeric switch argument out of range: -%s:%d", sw.mpName, v);
++			throw MyError("Numeric switch argument out of range: -%s:%ld", sw.mpName, v);
+ 
+ 		sw.mbValid = true;
+ 		sw.mValue = v;
+@@ -5791,7 +5790,7 @@
+ 		throw MyError("Invalid numeric argument: %s", s);
+ 
+ 	if (v < nu.mMinVal || v > nu.mMaxVal)
+-		throw MyError("Numeric argument out of range: %d", v);
++		throw MyError("Numeric argument out of range: %ld", v);
+ 
+ 	nu.mbValid = true;
+ 	nu.mValue = v;
+@@ -6097,10 +6096,12 @@
+ 
+ 		if (!node->Evaluate(v, g_debugger.GetEvalContext()))
+ 			throw MyError("Cannot evaluate '%s' in this context.", s);
++
++		lval = v;
+ 	}
+ 
+-	if (v < nu.mMinVal || v > nu.mMaxVal)
+-		throw MyError("Numeric argument out of range: %d", v);
++	if (lval < nu.mMinVal || lval > nu.mMaxVal)
++		throw MyError("Numeric argument out of range: %ld", lval);
+ 
+ 	nu.mbValid = true;
+ 	nu.mValue = v;
+@@ -12358,7 +12359,7 @@
+ 	// update paragraph count in ATR header
+ 	VDWriteUnalignedLEU16(diskImage.data() + 2, (uint16)((diskImage.size() - 0x10) >> 4));
+ 
+-	f.write(diskImage.data(), (long)diskImage.size());
++	f.write(diskImage.data(), (sint32)diskImage.size());
+ 
+ 	ATConsolePrintf("Booter written to: %s\n", name->c_str());
+ }
+@@ -13835,7 +13836,7 @@
+ 		else
+ 			throw MyError("Unsupported hook address for FP acceleration.");
+ 	} else {
+-		vdfastvector<std::pair<uint32, bool>> hooks;
++		vdvector<std::pair<uint32, bool>> hooks;
+ 		accel->ListHooks(hooks);
+ 
+ 		std::sort(hooks.begin(), hooks.end());

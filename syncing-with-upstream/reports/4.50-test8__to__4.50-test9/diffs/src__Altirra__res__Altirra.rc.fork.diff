@@ -1,0 +1,33 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/res/Altirra.rc	2026-04-06 02:10:13.998151700 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res/Altirra.rc	2026-02-16 06:23:56.406490400 +0100
+@@ -572,18 +572,6 @@
+     END
+ END
+ 
+-IDR_TAPECONTROL_MENU MENU
+-BEGIN
+-    POPUP "&File"
+-    BEGIN
+-        MENUITEM "&New",                        ID_FILE_NEW
+-        MENUITEM "&Load...",                    ID_FILE_LOAD
+-        MENUITEM "&Save",                       ID_FILE_SAVE
+-        MENUITEM "Save As...",                  ID_FILE_SAVEAS
+-        MENUITEM "&Unload",                     ID_FILE_UNLOAD
+-    END
+-END
+-
+ 
+ /////////////////////////////////////////////////////////////////////////////
+ //
+@@ -802,10 +790,9 @@
+ END
+ 
+ IDD_TAPE_CONTROL DIALOGEX 0, 0, 251, 96
+-STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
++STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+ EXSTYLE WS_EX_TOOLWINDOW
+ CAPTION "Cassette Tape Control"
+-MENU IDR_TAPECONTROL_MENU
+ FONT 8, "MS Shell Dlg", 400, 0, 0x1
+ BEGIN
+     CTEXT           "There is no tape in the cassette tape drive.",IDC_PEAK_IMAGE,7,7,237,40,SS_CENTERIMAGE,WS_EX_TRANSPARENT

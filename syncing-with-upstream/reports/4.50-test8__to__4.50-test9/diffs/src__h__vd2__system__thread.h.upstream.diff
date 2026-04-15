@@ -1,0 +1,86 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/thread.h	2025-11-11 05:05:26.763713800 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/thread.h	2026-04-15 05:41:51.415031400 +0200
+@@ -38,21 +38,6 @@
+ typedef uint32 VDThreadId;
+ typedef uint32 VDProcessId;
+ 
+-#if defined(__MINGW32__) || defined(__MINGW64__)
+-	struct _CRITICAL_SECTION;
+-	typedef _CRITICAL_SECTION VDCriticalSectionW32;
+-#else
+-	struct _RTL_CRITICAL_SECTION;
+-	typedef _RTL_CRITICAL_SECTION VDCriticalSectionW32;
+-#endif
+-
+-extern "C" void __declspec(dllimport) __stdcall InitializeCriticalSection(VDCriticalSectionW32 *lpCriticalSection);
+-extern "C" void __declspec(dllimport) __stdcall LeaveCriticalSection(VDCriticalSectionW32 *lpCriticalSection);
+-extern "C" void __declspec(dllimport) __stdcall EnterCriticalSection(VDCriticalSectionW32 *lpCriticalSection);
+-extern "C" void __declspec(dllimport) __stdcall DeleteCriticalSection(VDCriticalSectionW32 *lpCriticalSection);
+-extern "C" unsigned long __declspec(dllimport) __stdcall WaitForSingleObject(void *hHandle, unsigned long dwMilliseconds);
+-extern "C" int __declspec(dllimport) __stdcall ReleaseSemaphore(void *hSemaphore, long lReleaseCount, long *lpPreviousCount);
+-
+ VDThreadID VDGetCurrentThreadID();
+ VDProcessId VDGetCurrentProcessId();
+ uint32 VDGetLogicalProcessorCount();
+@@ -154,29 +139,19 @@
+ 		inline operator bool() const { return false; }
+ 	};
+ 
+-	VDCriticalSection() {
+-		InitializeCriticalSection((VDCriticalSectionW32 *)&csect);
+-	}
+-
+-	~VDCriticalSection() {
+-		DeleteCriticalSection((VDCriticalSectionW32 *)&csect);
+-	}
++	VDCriticalSection();
++	~VDCriticalSection();
+ 
+ 	void operator++() {
+-		EnterCriticalSection((VDCriticalSectionW32 *)&csect);
++		Lock();
+ 	}
+ 
+ 	void operator--() {
+-		LeaveCriticalSection((VDCriticalSectionW32 *)&csect);
++		Unlock();
+ 	}
+ 
+-	void Lock() {
+-		EnterCriticalSection((VDCriticalSectionW32 *)&csect);
+-	}
+-
+-	void Unlock() {
+-		LeaveCriticalSection((VDCriticalSectionW32 *)&csect);
+-	}
++	void Lock();
++	void Unlock();
+ };
+ 
+ // 'vdsynchronized' keyword
+@@ -251,21 +226,10 @@
+ 
+ 	void Reset(int count);
+ 
+-	void Wait() {
+-		WaitForSingleObject(mKernelSema, 0xFFFFFFFFU);
+-	}
+-
+-	bool Wait(int timeout) {
+-		return 0 == WaitForSingleObject(mKernelSema, timeout);
+-	}
+-
+-	bool TryWait() {
+-		return 0 == WaitForSingleObject(mKernelSema, 0);
+-	}
+-
+-	void Post() {
+-		ReleaseSemaphore(mKernelSema, 1, NULL);
+-	}
++	void Wait();
++	bool Wait(int timeout);
++	bool TryWait();
++	void Post();
+ 
+ private:
+ 	void *mKernelSema;

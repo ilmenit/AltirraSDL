@@ -1,0 +1,39 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/file.h	2025-09-26 07:16:56.378743100 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/h/vd2/system/file.h	2026-03-30 20:38:00.090563200 +0200
+@@ -38,10 +38,10 @@
+ 
+ struct VDDate;
+ 
+-#ifdef WIN32
++#if defined(WIN32) || defined(_WIN32)
+ 	typedef void *VDFileHandle;				// this needs to match wtypes.h definition for HANDLE
+ #else
+-	#error No operating system target declared??
++	typedef int VDFileHandle;				// POSIX file descriptor
+ #endif
+ 
+ namespace nsVDFile {
+@@ -77,7 +77,11 @@
+ 
+ class VDFile {
+ protected:
++#if defined(WIN32) || defined(_WIN32)
+ 	VDFileHandle	mhFile = nullptr;
++#else
++	VDFileHandle	mhFile = -1;
++#endif
+ 	vdautoptr2<wchar_t>	mpFilename;
+ 	sint64			mFilePosition = 0;
+ 
+@@ -86,7 +90,11 @@
+ 	const VDFile& operator=(const VDFile& f);
+ 
+ public:
++#if defined(WIN32) || defined(_WIN32)
+ 	VDFile() : mhFile(NULL) {}
++#else
++	VDFile() : mhFile(-1) {}
++#endif
+ 	VDFile(const char *pszFileName, uint32 flags = nsVDFile::kRead | nsVDFile::kDenyWrite | nsVDFile::kOpenExisting);
+ 	VDFile(const wchar_t *pwszFileName, uint32 flags = nsVDFile::kRead | nsVDFile::kDenyWrite | nsVDFile::kOpenExisting);
+ 	VDFile(VDFileHandle h);

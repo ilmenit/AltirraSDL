@@ -1,0 +1,32 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/binary.h	2025-06-13 03:48:25.188445700 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/binary.h	2026-04-15 05:41:51.244629500 +0200
+@@ -139,13 +139,28 @@
+ 						(((uint64)value & 0x000000000000FF00) << 40) +
+ 						(((uint64)value & 0x00000000000000FF) << 56));
+ 	}
++
++	inline uint32 VDRotateLeftU32(uint32 value, int bits) {
++		return bits ? (value << bits ) | (value >> (32-bits)) : value;
++	}
++
++	inline uint32 VDRotateRightU32(uint32 value, int bits) {
++		return bits ? (value >> bits ) | (value << (32-bits)) : value;
++	}
+ #endif
+ 
+-#if defined(__clang__) || defined(__GNUC__)
++#ifdef VD_COMPILER_CLANG_OR_GCC
++#ifdef VD_COMPILER_GCC
++template<typename T>
++struct __attribute__((packed)) VDUnalignedHelper {
++	T v;
++};
++#else
+ template<typename T>
+ struct VDUnalignedHelper {
+ 	T v __attribute__((packed));
+ };
++#endif
+ 
+ inline uint16 VDReadUnalignedU16(const void *p) { return ((VDUnalignedHelper<uint16> __attribute__((may_alias)) *)p)->v; }
+ inline sint16 VDReadUnalignedS16(const void *p) { return ((VDUnalignedHelper<sint16> __attribute__((may_alias)) *)p)->v; }

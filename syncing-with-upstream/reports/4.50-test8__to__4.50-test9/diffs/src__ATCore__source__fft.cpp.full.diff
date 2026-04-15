@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/ATCore/source/fft.cpp	2026-04-06 07:33:25.959263292 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATCore/source/fft.cpp	2026-04-15 05:41:50.005360900 +0200
+@@ -24,7 +24,7 @@
+ #include <numbers>
+ #include <intrin.h>
+ #include <vd2/system/cpuaccel.h>
+-#include <vd2/system/error.h>
++#include <vd2/system/Error.h>
+ #include <at/atcore/fft.h>
+ 
+ /////////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,121 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/vdtypes.h	2025-06-13 03:48:25.257025200 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/h/vd2/system/vdtypes.h	2026-04-04 13:06:46.180788269 +0200
+@@ -54,22 +54,46 @@
+ 		#endif
+ 
+ 		#define VD_COMPILER_MSVC_VC8_OR_LATER 1
++	#elif defined(__GNUC__)
++		#define VD_COMPILER_GCC		__GNUC__
+ 	#endif
+ #endif
+ 
+ #ifndef VD_CPU_DETECTED
+ 	#define VD_CPU_DETECTED
+ 
+-	#if defined(_M_AMD64)
++	#if defined(_M_AMD64) || defined(__x86_64__)
+ 		#define VD_CPU_AMD64	1
+ 		#define VD_CPU_X64		1
+ 	#elif defined(_M_IX86) || defined(__i386__)
+ 		#define VD_CPU_X86		1
+-	#elif defined(_M_ARM64)
++	#elif defined(_M_ARM64) || defined(__aarch64__)
+ 		#define VD_CPU_ARM64	1
+ 	#endif
+ #endif
+ 
++#ifndef VD_OS_DETECTED
++	#define VD_OS_DETECTED
++
++	#if defined(_WIN32)
++		#ifndef VD_OS_WINDOWS
++			#define VD_OS_WINDOWS	1
++		#endif
++	#elif defined(__ANDROID__)
++		#ifndef VD_OS_ANDROID
++			#define VD_OS_ANDROID	1
++		#endif
++	#elif defined(__linux__)
++		#ifndef VD_OS_LINUX
++			#define VD_OS_LINUX		1
++		#endif
++	#elif defined(__APPLE__)
++		#ifndef VD_OS_MACOS
++			#define VD_OS_MACOS		1
++		#endif
++	#endif
++#endif
++
+ #ifndef VD_PTR_SIZE
+ 	#if defined(VD_CPU_AMD64) || defined(VD_CPU_ARM64)
+ 		#define VD_PTR_SIZE		8
+@@ -153,6 +177,27 @@
+ 	#define VDCDECL				__cdecl
+ 	#define VD_CPU_TARGET(exts)	[[gnu::target(exts)]]
+ 	#define VD_CPU_TARGET_LAMBDA(exts)	__attribute__((target(exts)))
++#elif defined(VD_COMPILER_GCC)
++	// __cdecl is not a keyword on GCC/Linux; define as empty
++	#ifndef __cdecl
++		#define __cdecl
++	#endif
++	// __declspec is MSVC-specific; on GCC, discard it
++	// (alignment hints like __declspec(align(16)) become unaligned, which is safe)
++	#ifndef __declspec
++		#define __declspec(x)
++	#endif
++
++	#define VDINTERFACE
++	#define VDNORETURN			__attribute__((noreturn))
++	#define VDPUREFUNC			__attribute__((pure))
++	#define VDRESTRICT			__restrict
++	#define VDNOINLINE			__attribute__((noinline))
++	#define VDFORCEINLINE		inline __attribute__((always_inline))
++	#define VDALIGN(alignment)	__attribute__((aligned(alignment)))
++	#define VDCDECL
++	#define VD_CPU_TARGET(exts)	[[gnu::target(exts)]]
++	#define VD_CPU_TARGET_LAMBDA(exts)	__attribute__((target(exts)))
+ #else
+ 	#define VDINTERFACE
+ 	#define VDNORETURN
+@@ -187,6 +232,8 @@
+ 	#else
+ 		#define VDBREAK		__asm__ volatile ("int3" : : )
+ 	#endif
++#elif defined(VD_COMPILER_GCC)
++	#define VDBREAK		__builtin_trap()
+ #else
+ 	#define VDBREAK		*(volatile char *)0 = *(volatile char *)0
+ #endif
+@@ -236,7 +283,11 @@
+ 	#define VDINLINEASSERT(exp)			((exp)||(VDAssertHelper<__LINE__>(#exp, __FILE__),false))
+ 	#define VDINLINEASSERTFALSE(exp)	((exp)&&(VDAssertHelper<__LINE__>("!("#exp")", __FILE__),true))
+ 
+-	#define	VDNEVERHERE			do { if (VDAssert( "[never here]", __FILE__, __LINE__ )) VDBREAK; __assume(false); } while(false)
++	#if defined(VD_COMPILER_MSVC)
++		#define	VDNEVERHERE		do { if (VDAssert( "[never here]", __FILE__, __LINE__ )) VDBREAK; __assume(false); } while(false)
++	#else
++		#define	VDNEVERHERE		do { if (VDAssert( "[never here]", __FILE__, __LINE__ )) VDBREAK; __builtin_unreachable(); } while(false)
++	#endif
+ 
+ 	#define VDDEBUG(...)		VDDebugPrint(__VA_ARGS__)
+ 
+@@ -247,8 +298,8 @@
+ 		#define VDASSERT(exp)		((void)0)
+ 		#define VDASSERTPTR(exp)	((void)0)
+ 	#elif defined(__GNUC__)
+-		#define VDASSERT(exp)		__builtin_expect(0 != (exp), 1)
+-		#define VDASSERTPTR(exp)	__builtin_expect(0 != (exp), 1)
++		#define VDASSERT(exp)		((void)0)
++		#define VDASSERTPTR(exp)	((void)0)
+ 	#endif
+ 
+ 	#define VDFAIL(str)			(void)(str)
+@@ -260,7 +311,7 @@
+ 
+ 	#if defined(VD_COMPILER_MSVC)
+ 		#define	VDNEVERHERE			__assume(false)
+-	#elif defined(VD_COMPILER_CLANG)
++	#elif defined(VD_COMPILER_CLANG) || defined(VD_COMPILER_GCC)
+ 		#define	VDNEVERHERE			__builtin_unreachable()
+ 	#else
+ 		#define	VDNEVERHERE			VDASSERT(false)

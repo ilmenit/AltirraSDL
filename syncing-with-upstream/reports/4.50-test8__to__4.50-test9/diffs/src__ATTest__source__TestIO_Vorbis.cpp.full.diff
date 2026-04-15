@@ -1,0 +1,38 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/ATTest/source/TestIO_Vorbis.cpp	2026-04-06 07:33:25.961069600 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATTest/source/TestIO_Vorbis.cpp	2026-04-15 05:41:50.351073600 +0200
+@@ -18,7 +18,7 @@
+ #include <windows.h>
+ #include <mmsystem.h>
+ #include <combaseapi.h>
+-#include <vd2/system/error.h>
++#include <vd2/system/Error.h>
+ #include <vd2/system/file.h>
+ #include <vd2/system/time.h>
+ #include <vd2/system/vdalloc.h>
+@@ -36,7 +36,7 @@
+ 		throw MyError("File too big");
+ 
+ 	vdblock<uint8> data((size_t)fileSize);
+-	f.read(data.data(), (long)fileSize);
++	f.read(data.data(), (sint32)fileSize);
+ 	f.close();
+ 
+ 	vdautoptr dec { new ATVorbisDecoder };
+@@ -101,7 +101,7 @@
+ 		throw MyError("File too big");
+ 
+ 	vdblock<uint8> data((size_t)fileSize);
+-	f.read(data.data(), (long)fileSize);
++	f.read(data.data(), (sint32)fileSize);
+ 	f.close();
+ 
+ 	vdblock<sint16> buf(16384);
+@@ -149,7 +149,7 @@
+ 		throw MyError("File too big");
+ 
+ 	vdblock<uint8> data((size_t)fileSize);
+-	f.read(data.data(), (long)fileSize);
++	f.read(data.data(), (sint32)fileSize);
+ 	f.close();
+ 
+ 	vdblock<sint16> buf(16384);

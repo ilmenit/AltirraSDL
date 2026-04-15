@@ -1,0 +1,107 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/vdtypes.h	2025-06-13 03:48:25.257025200 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/vdtypes.h	2026-04-15 05:41:51.566099500 +0200
+@@ -46,14 +46,16 @@
+ 
+ 	#if defined(__clang__)
+ 		#define VD_COMPILER_CLANG
++		#define VD_COMPILER_CLANG_OR_GCC
++	#elif defined(__GNUC__)
++		#define VD_COMPILER_GCC
++		#define VD_COMPILER_CLANG_OR_GCC
+ 	#elif defined(_MSC_VER)
+ 		#define VD_COMPILER_MSVC	_MSC_VER
+ 
+ 		#if _MSC_VER < 1911
+ 			#error Visual Studio 2017 15.3 or newer is required.
+ 		#endif
+-
+-		#define VD_COMPILER_MSVC_VC8_OR_LATER 1
+ 	#endif
+ #endif
+ 
+@@ -80,6 +82,16 @@
+ 
+ ///////////////////////////////////////////////////////////////////////////
+ //
++//	platform
++//
++///////////////////////////////////////////////////////////////////////////
++
++#ifdef WIN32
++	#define VD_PLATFORM_WINDOWS
++#endif
++
++///////////////////////////////////////////////////////////////////////////
++//
+ //	types
+ //
+ ///////////////////////////////////////////////////////////////////////////
+@@ -107,7 +119,7 @@
+ 
+ #define VD64(x) INT64_C(x)
+ 	
+-typedef	struct __VDGUIHandle *VDGUIHandle;
++typedef	struct VDGUIHandleType *VDGUIHandle;
+ 
+ // enforce wchar_t under Visual C++
+ 
+@@ -132,7 +144,6 @@
+ #if defined(VD_COMPILER_MSVC)
+ 	#define VDINTERFACE			__declspec(novtable)
+ 	#define VDNORETURN			__declspec(noreturn)
+-	#define VDPUREFUNC
+ 	#define VDRESTRICT			__restrict
+ 
+ 	#define VDNOINLINE			__declspec(noinline)
+@@ -142,10 +153,9 @@
+ 	#define VDCDECL				__cdecl
+ 	#define VD_CPU_TARGET(exts)
+ 	#define VD_CPU_TARGET_LAMBDA(exts)
+-#elif defined(VD_COMPILER_CLANG)
++#elif defined(VD_COMPILER_CLANG_OR_GCC)
+ 	#define VDINTERFACE
+ 	#define VDNORETURN			__attribute__((noreturn))
+-	#define VDPUREFUNC			__attribute__((pure))
+ 	#define VDRESTRICT			__restrict
+ 	#define VDNOINLINE			__attribute__((noinline))
+ 	#define VDFORCEINLINE		inline __attribute__((always_inline))
+@@ -156,13 +166,22 @@
+ #else
+ 	#define VDINTERFACE
+ 	#define VDNORETURN
+-	#define VDPUREFUNC
+ 	#define VDRESTRICT
+ 	#define VDFORCEINLINE
+ 	#define VDALIGN(alignment)
+ 	#define VDCDECL
+ #endif
+ 
++// MSVC ignores no_unique_address, but requires msvc::no_unique_address.
++// Clang follows on Windows for ABI compatibility, but then warns on
++// no_unique_address which means we can't just stick both of them in. So
++// thanks to both these compilers being annoying, we need yet another macro.
++#ifdef VD_COMPILER_GCC
++	#define VD_NO_UNIQUE_ADDRESS	[[no_unique_address]]
++#else
++	#define VD_NO_UNIQUE_ADDRESS	[[msvc::no_unique_address]]
++#endif
++
+ ///////////////////////////////////////////////////////////////////////////
+ //
+ //	debug support
+@@ -243,13 +262,8 @@
+ #else
+ 	#define VDASSERT_ENABLED 0
+ 
+-	#if defined(_MSC_VER)
+-		#define VDASSERT(exp)		((void)0)
+-		#define VDASSERTPTR(exp)	((void)0)
+-	#elif defined(__GNUC__)
+-		#define VDASSERT(exp)		__builtin_expect(0 != (exp), 1)
+-		#define VDASSERTPTR(exp)	__builtin_expect(0 != (exp), 1)
+-	#endif
++	#define VDASSERT(exp)		((void)0)
++	#define VDASSERTPTR(exp)	((void)0)
+ 
+ 	#define VDFAIL(str)			(void)(str)
+ 	#define VDVERIFY(exp)		(void)(exp)

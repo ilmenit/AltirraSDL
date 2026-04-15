@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/trace.cpp	2026-01-01 02:48:00.722354900 +0100
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/trace.cpp	2026-03-31 14:47:31.345980122 +0200
+@@ -16,6 +16,7 @@
+ //	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ 
+ #include <stdafx.h>
++#include <cfloat>
+ #include <at/atcpu/history.h>
+ #include "trace.h"
+ 

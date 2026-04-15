@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATCore/source/decmath.cpp	2026-04-06 02:10:14.431559000 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/ATCore/source/decmath.cpp	2026-04-06 09:18:44.937044464 +0200
+@@ -20,6 +20,7 @@
+ //	archive for details.
+ 
+ #include <stdafx.h>
++#include <cmath>
+ #include <at/atcore/decmath.h>
+ 
+ bool ATDecFloat::SetDouble(double v) {

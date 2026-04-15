@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/tracetape.cpp	2026-01-01 02:48:00.772027600 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/tracetape.cpp	2026-04-15 05:41:48.402803700 +0200
+@@ -16,6 +16,7 @@
+ //	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ 
+ #include <stdafx.h>
++#include <float.h>
+ #include "tracetape.h"
+ 
+ ATTraceChannelTape::ATTraceChannelTape(uint64 tickOffset, double tickScale, const wchar_t *name, bool turbo, double samplesPerSec)

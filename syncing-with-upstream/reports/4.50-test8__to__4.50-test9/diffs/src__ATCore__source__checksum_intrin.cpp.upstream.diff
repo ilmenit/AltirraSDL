@@ -1,0 +1,20 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATCore/source/checksum_intrin.cpp	2023-07-05 04:39:24.278411300 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATCore/source/checksum_intrin.cpp	2026-04-15 05:41:49.905173900 +0200
+@@ -98,7 +98,7 @@
+ 		__m128i v3 = _mm_loadu_si128((const __m128i *)(src2 + 48));
+ 
+ 		if constexpr(T_SSSE3) {
+-#ifdef VD_COMPILER_CLANG
++#ifdef VD_COMPILER_CLANG_OR_GCC
+ 			const auto pshufb = [](__m128i a, __m128i b) __attribute__((target("ssse3"))) {
+ 				return _mm_shuffle_epi8(a, b);
+ 			};
+@@ -131,7 +131,7 @@
+ 			__m128i back7;
+ 
+ 			if constexpr(T_SSSE3) {
+-#ifdef VD_COMPILER_CLANG
++#ifdef VD_COMPILER_CLANG_OR_GCC
+ 				const auto alignr4 = [](__m128i a, __m128i b) __attribute__((target("ssse3"))) {
+ 					return _mm_alignr_epi8(a, b, 4);
+ 				};

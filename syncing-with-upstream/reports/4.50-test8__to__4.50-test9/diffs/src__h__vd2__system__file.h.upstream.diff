@@ -1,0 +1,54 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/file.h	2025-09-26 07:16:56.378743100 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/file.h	2026-04-15 05:41:51.341105100 +0200
+@@ -38,10 +38,12 @@
+ 
+ struct VDDate;
+ 
+-#ifdef WIN32
+-	typedef void *VDFileHandle;				// this needs to match wtypes.h definition for HANDLE
++#ifdef VD_PLATFORM_WINDOWS
++	using VDFileHandle = void *;				// this needs to match wtypes.h definition for HANDLE
++	static constexpr VDFileHandle kFileHandleNull = nullptr;
+ #else
+-	#error No operating system target declared??
++	using VDFileHandle = int;
++	static constexpr VDFileHandle kFileHandleNull = -1;
+ #endif
+ 
+ namespace nsVDFile {
+@@ -77,16 +79,16 @@
+ 
+ class VDFile {
+ protected:
+-	VDFileHandle	mhFile = nullptr;
++	VDFileHandle	mhFile = kFileHandleNull;
+ 	vdautoptr2<wchar_t>	mpFilename;
+ 	sint64			mFilePosition = 0;
+ 
+ private:
+-	VDFile(const VDFile&);
+-	const VDFile& operator=(const VDFile& f);
++	VDFile(const VDFile&) = delete;
++	const VDFile& operator=(const VDFile& f) = delete;
+ 
+ public:
+-	VDFile() : mhFile(NULL) {}
++	VDFile() = default;
+ 	VDFile(const char *pszFileName, uint32 flags = nsVDFile::kRead | nsVDFile::kDenyWrite | nsVDFile::kOpenExisting);
+ 	VDFile(const wchar_t *pwszFileName, uint32 flags = nsVDFile::kRead | nsVDFile::kDenyWrite | nsVDFile::kOpenExisting);
+ 	VDFile(VDFileHandle h);
+@@ -131,10 +133,10 @@
+ 	static bool enableExtendValid();
+ 
+ 	sint64	size() const;
+-	void	read(void *buffer, long length);
+-	long	readData(void *buffer, long length);
+-	void	write(const void *buffer, long length);
+-	long	writeData(const void *buffer, long length);
++	void	read(void *buffer, sint32 length);
++	sint32	readData(void *buffer, sint32 length);
++	void	write(const void *buffer, sint32 length);
++	sint32	writeData(const void *buffer, sint32 length);
+ 	bool	seekNT(sint64 newPos, nsVDFile::eSeekMode mode = nsVDFile::kSeekStart);
+ 	void	seek(sint64 newPos, nsVDFile::eSeekMode mode = nsVDFile::kSeekStart);
+ 	bool	skipNT(sint64 delta);

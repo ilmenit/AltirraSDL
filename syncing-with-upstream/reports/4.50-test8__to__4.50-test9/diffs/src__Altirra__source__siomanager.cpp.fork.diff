@@ -1,0 +1,47 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/siomanager.cpp	2026-03-03 06:51:06.085747400 +0100
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/siomanager.cpp	2026-04-05 00:56:11.365203525 +0200
+@@ -67,7 +67,7 @@
+ 		rw.Transfer("command_buffer_index", &mCommandBufferIndex);
+ 		rw.TransferArray("command_buffer", mCommandBuffer);
+ 
+-		if constexpr (rw.IsReader) {
++		if constexpr (T::IsReader) {
+ 			if (mCommandBufferIndex > 5)
+ 				throw ATInvalidSaveStateException();
+ 		}
+@@ -78,6 +78,8 @@
+ 	uint8 mCommandBuffer[5] {};
+ };
+ 
++class ATSaveStateSioCommandStep; // forward declaration for ATSaveStateSioActiveCommand
++
+ class ATSaveStateSioActiveCommand final : public ATSnapExchangeObject<ATSaveStateSioActiveCommand, "ATSaveStateSioActiveCommand"> {
+ public:
+ 	template<typename T>
+@@ -97,7 +99,7 @@
+ 		rw.Transfer("command_frame_end_time", &mCommandFrameEndTime);
+ 		rw.Transfer("command_deassert_time", &mCommandDeassertTime);
+ 
+-		if constexpr (rw.IsReader) {
++		if constexpr (T::IsReader) {
+ 			if (mTransferIndex > ATSIOManager::kMaxTransferSize)
+ 				throw ATInvalidSaveStateException();
+ 		}
+@@ -133,7 +135,7 @@
+ 		uint32 arg1 = 0;
+ 		uint32 arg2 = 0;
+ 
+-		if constexpr (rw.IsWriter) {
++		if constexpr (T::IsWriter) {
+ 			stepType = mStep.mType;
+ 			arg1 = 0;
+ 			arg2 = 0;
+@@ -177,7 +179,7 @@
+ 		rw.Transfer("arg2", &arg2);
+ 		rw.Transfer("transfer_data", &mTransferData);
+ 
+-		if constexpr (rw.IsReader) {
++		if constexpr (T::IsReader) {
+ 			mStep.mType = stepType;
+ 
+ 			switch(stepType) {

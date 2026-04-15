@@ -1,0 +1,51 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/idevhdimage.cpp	2024-01-17 06:17:45.767662000 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/idevhdimage.cpp	2026-04-15 05:41:47.992631600 +0200
+@@ -93,7 +93,7 @@
+ }
+ 
+ template<class T>
+-void ATSwapEndianArray(T *p, uint32 n) {
++void ATSwapEndianArray(T *p, size_t n) {
+ 	while(n--)
+ 		ATSwapEndian(*p++);
+ }
+@@ -324,10 +324,10 @@
+ 		mBlockAllocTable.resize(blockCount);
+ 
+ 		mFile.seek(mDynamicHeader.mTableOffset);
+-		mFile.read(mBlockAllocTable.data(), (long)mBlockAllocTable.size() * sizeof(mBlockAllocTable[0]));
++		mFile.read(mBlockAllocTable.data(), (sint32)(mBlockAllocTable.size() * sizeof(mBlockAllocTable[0])));
+ 
+ 		// swizzle the BAT
+-		ATSwapEndianArray(mBlockAllocTable.data(), (long)mBlockAllocTable.size());
++		ATSwapEndianArray(mBlockAllocTable.data(), mBlockAllocTable.size());
+ 
+ 		// validate the BAT
+ 		for(uint32 i=0; i<blockCount; ++i) {
+@@ -787,7 +787,7 @@
+ 	} else {
+ 		// yes it is -- read in the bitmap from the new block
+ 		mFile.seek((sint64)sectorOffset << 9);
+-		mFile.read(mCurrentBlockBitmap.data(), (long)(mCurrentBlockBitmap.size() * sizeof(mCurrentBlockBitmap[0])));
++		mFile.read(mCurrentBlockBitmap.data(), (sint32)(mCurrentBlockBitmap.size() * sizeof(mCurrentBlockBitmap[0])));
+ 		mbCurrentBlockAllocated = true;
+ 		mCurrentBlockDataOffset = ((sint64)sectorOffset << 9) + mBlockBitmapSize;
+ 	}
+@@ -800,7 +800,7 @@
+ 	if (mbCurrentBlockBitmapDirty) {
+ 		uint32 sectorOffset = mBlockAllocTable[mCurrentBlock];
+ 		mFile.seek((uint64)sectorOffset << 9);
+-		mFile.write(mCurrentBlockBitmap.data(), (long)(mCurrentBlockBitmap.size() * sizeof(mCurrentBlockBitmap[0])));
++		mFile.write(mCurrentBlockBitmap.data(), (sint32)(mCurrentBlockBitmap.size() * sizeof(mCurrentBlockBitmap[0])));
+ 		mbCurrentBlockBitmapDirty = false;
+ 	}
+ }
+@@ -836,7 +836,7 @@
+ 
+ 	// Write the new block bitmap.
+ 	mFile.seek(newBlockBitmapLoc);
+-	mFile.write(mCurrentBlockBitmap.data(), (long)(mCurrentBlockBitmap.size() * sizeof(mCurrentBlockBitmap[0])));
++	mFile.write(mCurrentBlockBitmap.data(), (sint32)(mCurrentBlockBitmap.size() * sizeof(mCurrentBlockBitmap[0])));
+ 
+ 	// Zero the data; technically not needed with NTFS since the bitmap is always at least
+ 	// as big as the footer and NTFS zeroes new space, but we might be running on FAT32

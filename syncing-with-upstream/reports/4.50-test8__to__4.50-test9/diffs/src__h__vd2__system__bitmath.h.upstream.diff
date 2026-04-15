@@ -1,0 +1,55 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/bitmath.h	2025-09-14 23:26:06.234123900 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/bitmath.h	2026-04-15 05:41:51.269464400 +0200
+@@ -74,17 +74,27 @@
+ ///////////////////////////////////////////////////////////////////////////////
+ 
+ inline int VDFindLowestSetBit(uint32 v) {
++#ifdef VD_COMPILER_GCC
++	return v ? __builtin_ctz(v) : 32;
++#else
+ 	unsigned long index;
+ 	return _BitScanForward(&index, v) ? index : 32;
++#endif
+ }
+ 
+ inline int VDFindHighestSetBit(uint32 v) {
++#ifdef VD_COMPILER_GCC
++	return v ? 31 - __builtin_clz(v) : -1;
++#else
+ 	unsigned long index;
+ 	return _BitScanReverse(&index, v) ? index : -1;
++#endif
+ }
+ 
+ inline int VDFindLowestSetBitFast(uint32 v) {
+-	#if defined(VD_CPU_X86) || defined(VD_CPU_AMD64)
++	#ifdef VD_COMPILER_GCC
++		return __builtin_ctz(v);
++	#elif defined(VD_CPU_X86) || defined(VD_CPU_AMD64)
+ 		return _tzcnt_u32(v);
+ 	#else
+ 		unsigned long index;
+@@ -95,13 +105,19 @@
+ }
+ 
+ inline int VDFindHighestSetBitFast(uint32 v) {
+-	unsigned long index;
+-	_BitScanReverse(&index, v);
+-	return index;
++	#ifdef VD_COMPILER_GCC
++		return 31 - __builtin_clz(v);
++	#else
++		unsigned long index;
++		_BitScanReverse(&index, v);
++		return index;
++	#endif
+ }
+ 
+ inline int VDFindLowestSetBitFast64(uint64 v) {
+-	#if defined(VD_CPU_AMD64)
++	#ifdef VD_COMPILER_GCC
++		return __builtin_ctzll(v);
++	#elif defined(VD_CPU_AMD64)
+ 		return _tzcnt_u64(v);
+ 	#elif defined(VD_CPU_ARM64)
+ 		#ifdef VD_COMPILER_MSVC

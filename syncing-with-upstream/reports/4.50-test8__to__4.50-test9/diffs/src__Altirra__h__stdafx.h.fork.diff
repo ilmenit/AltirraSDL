@@ -1,0 +1,27 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/h/stdafx.h	2021-05-24 00:07:08.786214800 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/h/stdafx.h	2026-04-08 20:47:50.858299619 +0200
+@@ -18,6 +18,24 @@
+ #pragma once
+ 
+ #define _SCL_SECURE_NO_WARNINGS
++
++// Windows SDK 10.0.26100 UCRT <wchar.h> contains inline functions that
++// unconditionally reference __m128i/__m256i SIMD types and the _mm_* /
++// _mm256_* intrinsic family. On some MSVC + preset combinations the
++// include chain reaches <wchar.h> (via <tchar.h>, <math.h>, <string.h>)
++// before the intrinsic declarations are visible, producing hundreds of
++// "undeclared identifier" errors. Pulling <immintrin.h> first (the
++// umbrella header that declares both __m128i and __m256i) forces the
++// declarations to be available. <intrin.h> alone is not sufficient —
++// on MSVC 14.44.35207 it does not transitively declare __m256i before
++// the SDK's <wchar.h> is reached. This is a no-op on GCC/Clang (which
++// handle the same types via their own compiler builtins) — guarded on
++// _MSC_VER.
++#if defined(_MSC_VER)
++#include <intrin.h>      // _ReturnAddress etc. (needed by <ppltasks.h>)
++#include <immintrin.h>   // __m128i / __m256i (needed by <wchar.h>)
++#endif
++
+ #include <stddef.h>
+ #include <string.h>
+ #include <stdio.h>

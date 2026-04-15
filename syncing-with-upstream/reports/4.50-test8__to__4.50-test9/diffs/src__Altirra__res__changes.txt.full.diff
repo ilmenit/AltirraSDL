@@ -1,0 +1,37 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res/changes.txt	2026-03-29 05:02:28.997897800 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/res/changes.txt	2026-04-15 05:41:47.350307500 +0200
+@@ -4,6 +4,8 @@
+    [features added]
+    * AltirraOS: Math pack rewritten to better match standard math pack results and for TurboBasic XL compatibility.
+    * Cartridge: The CAR header checksum is now ignored if it is zero.
++   * Cartridge: The!Cart emulation now supports mode 37 (MegaCart 4M) from newest CPLD firmware.
++   * Cassette: Tape Control dialog is now resizable and has options to load/save/unload tapes.
+    * Command Line: Added /cmd and /cmd1 switches for invoking UI commands from the command line.
+    * Custom Devices: Added Condition, SerialPort, and PrinterPort classes.
+    * Custom Devices: Global variables can now have initializers.
+@@ -26,19 +28,25 @@
+ 
+    [bugs fixed]
+    * AltirraOS: Fixed screen corruption in screen editor when moving cursor with a Get Byte call. (3.46)
++   * AltirraOS: Fixed incorrect orientation byte from some line flushes in P: handler. (3.49)
++   * AltirraOS: Fixed occasional bogus timeout errors in SIO routines. (3.49)
+    * Cartridge: Added DCart to cartridge type autodetection list.
+    * Command Line: Fixed 5200 cartridges not loading if passed on the command line without /cart.
+    * Devices: Fixed Rapidus $4000-7FFF fast read shadow not toggling reliably on PORTB extended RAM accesses.
+    * Devices: Standard device emulators now support SIO timeouts where implemented by the original devices.
+    * Devices: Fixed erroneous control signal inputs on 850 full emulation serial port 1.
+    * Disk: Adjusted XF551 style high speed timing on generic emulation profile and split XF551/USD high speed timings.
++   * Disk: Standard disk emulator now turns on motor on disk change for 1050 and Indus GT profiles to emulate density detection.
++   * Disk: Fixed Percom AT-88/AT-88SPD not saving 1795 FDC setting.
+    * Disk Explorer: Fixed MAC/65 decoder mis-decoding some constants.
+    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.
+    * Recorder: SAP recorder now uses prescribed text for unknown author/title.
++   * SAP: Fixed converter causing player to swap channels when repeating a stereo type R file.
+    * UI: 65C816 linear memory setting is now disabled when Rapidus is enabled since Rapidus settings take precedence.
+    * UI: An error is now reported interactively if a single instance launch fails because the existing instance is running elevated as admin.
+    * UI: Reset Window Layout wasn't resetting undocked panes.
+    * UI: Layout restore is more robust at fixing panes that are off-screen or unreasonably small.
++   * VBXE: GTIA size mode 2 lockup bug is no longer emulated when VBXE is active.
+ 
+ Version 4.40 [December 31, 2025]
+    [changes]

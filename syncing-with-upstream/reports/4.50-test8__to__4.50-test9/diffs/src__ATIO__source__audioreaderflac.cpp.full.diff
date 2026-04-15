@@ -1,0 +1,56 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/ATIO/source/audioreaderflac.cpp	2026-03-30 21:59:25.593069621 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATIO/source/audioreaderflac.cpp	2026-04-15 05:41:50.038327300 +0200
+@@ -15,13 +15,14 @@
+ //	with this program. If not, see <http://www.gnu.org/licenses/>.
+ 
+ #include <stdafx.h>
++#include <intrin.h>
+ #include <vd2/system/binary.h>
+ #include <vd2/system/cpuaccel.h>
+ #include <vd2/system/error.h>
+ #include <vd2/system/file.h>
+ #include <at/atio/audioreaderflac.h>
+ 
+-#ifdef _MSC_VER
++#ifdef VD_COMPILER_MSVC
+ #pragma runtime_checks("", off)
+ #pragma check_stack(off)
+ #pragma optimize("gt", on)
+@@ -232,12 +233,10 @@
+ 
+ #if VD_CPU_X86 || VD_CPU_X64
+ 	if constexpr (T_HaveLzcnt) {
+-		#if defined(VD_COMPILER_CLANG)
++		#ifdef VD_COMPILER_CLANG_OR_GCC
+ 			accumZeroes = [](uint32 v) __attribute__((target("lzcnt"))) {
+ 				return _lzcnt_u32(v);
+ 			}(bitAccum);
+-		#elif defined(VD_COMPILER_GCC)
+-			accumZeroes = __builtin_clz(bitAccum);
+ 		#else
+ 			accumZeroes = _lzcnt_u32(bitAccum);
+ 		#endif
+@@ -245,10 +244,11 @@
+ #endif
+ 	{
+ 		unsigned long oneBitPos;
+-#ifdef _MSC_VER
+-		_BitScanReverse(&oneBitPos, bitAccum);
+-#else
++
++#ifdef VD_COMPILER_GCC
+ 		oneBitPos = 31 - __builtin_clz(bitAccum);
++#else
++		_BitScanReverse(&oneBitPos, bitAccum);
+ #endif
+ 
+ #if VD_CPU_ARM64
+@@ -1292,7 +1292,7 @@
+ 	return mCRC16 == 0;
+ }
+ 
+-#ifdef _MSC_VER
++#ifdef VD_COMPILER_MSVC
+ #pragma optimize("", on)
+ #pragma runtime_checks("", restore)
+ #pragma check_stack()

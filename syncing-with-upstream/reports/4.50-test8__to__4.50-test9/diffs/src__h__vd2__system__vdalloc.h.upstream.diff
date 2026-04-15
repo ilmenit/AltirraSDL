@@ -1,0 +1,24 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/vdalloc.h	2026-01-01 02:48:01.858881600 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/vdalloc.h	2026-04-15 05:41:51.502748500 +0200
+@@ -26,11 +26,8 @@
+ #ifndef f_VD2_SYSTEM_VDALLOC_H
+ #define f_VD2_SYSTEM_VDALLOC_H
+ 
+-#ifdef _MSC_VER
+-	#pragma once
+-#endif
+-
+ #include <type_traits>
++#include <vd2/system/vdtypes.h>
+ #include <stdlib.h>
+ 
+ class IVDRefCount;
+@@ -219,7 +216,7 @@
+ 
+ template<typename T, class Deleter = vddefaultdelete<T>> class vduniqueptr {
+ protected:
+-	[[no_unique_address,msvc::no_unique_address]] Deleter deleter;
++	VD_NO_UNIQUE_ADDRESS Deleter deleter;
+ 	T *ptr = nullptr;
+ 
+ public:

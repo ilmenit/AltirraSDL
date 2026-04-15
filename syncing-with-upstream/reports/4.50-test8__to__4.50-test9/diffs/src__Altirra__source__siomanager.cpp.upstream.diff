@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/siomanager.cpp	2026-03-03 06:51:06.085747400 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/siomanager.cpp	2026-04-15 05:41:48.258618000 +0200
+@@ -78,6 +78,8 @@
+ 	uint8 mCommandBuffer[5] {};
+ };
+ 
++class ATSaveStateSioCommandStep;
++
+ class ATSaveStateSioActiveCommand final : public ATSnapExchangeObject<ATSaveStateSioActiveCommand, "ATSaveStateSioActiveCommand"> {
+ public:
+ 	template<typename T>

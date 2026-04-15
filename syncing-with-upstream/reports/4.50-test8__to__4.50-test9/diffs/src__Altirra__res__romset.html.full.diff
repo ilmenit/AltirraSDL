@@ -1,0 +1,18 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res/romset.html	2026-03-29 05:02:29.063096500 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/res/romset.html	2026-04-15 05:41:47.415038400 +0200
+@@ -161,6 +161,15 @@
+       For newer versions listed below, the version of the emulator that the AltirraOS version first appeared in is also noted.
+     </p>
+     <ul class="verhistory">
++    <li>Version 3.49 (Altirra 4.50-test9)</li>
++    <ul>
++      <li>Fixed occasional issue with bogus SIO timeout due to race condition.</li>
++      <li>Fixed incorrect orientation value occasionally sent to printer by P: handler.</li>
++    </ul>
++    <li>Version 3.48 (Altirra 4.50-test8)</li>
++    <ul>
++      <li>Math pack: Additional minor optimizations to FMUL and FDIV.</li>
++    </ul>
+     <li>Version 3.47 (Altirra 4.50-test7)</li>
+     <ul>
+       <li>Math pack: Fixed undocumented normalization entry point ($DC00) using one too many mantissa bytes.</li>

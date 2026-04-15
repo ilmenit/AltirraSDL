@@ -1,0 +1,22 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/ATCore/source/configvar.cpp	2026-04-05 01:04:54.623390975 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATCore/source/configvar.cpp	2026-04-15 05:41:49.940865200 +0200
+@@ -19,8 +19,7 @@
+ //	archive for details.
+ 
+ #include <stdafx.h>
+-#include <cmath>
+-using std::isfinite;
++#include <math.h>
+ #include <vd2/system/bitmath.h>
+ #include <vd2/system/hash.h>
+ #include <vd2/system/registry.h>
+@@ -213,9 +212,7 @@
+ }
+ 
+ template void ATConfigVarT<ATConfigVarType::Bool, bool>::operator=(const bool&);
+-template void ATConfigVarT<ATConfigVarType::Int32, sint32>::operator=(const sint32&);
+ template void ATConfigVarT<ATConfigVarType::Float, float>::operator=(const float&);
+-template void ATConfigVarT<ATConfigVarType::RGBColor, uint32>::operator=(const uint32&);
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+ 

@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/date.h	2025-06-13 03:48:25.228791600 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/h/vd2/system/date.h	2026-03-30 21:35:28.901818730 +0200
+@@ -26,6 +26,7 @@
+ #ifndef f_VD2_SYSTEM_DATE_H
+ #define f_VD2_SYSTEM_DATE_H
+ 
++#include <cmath>
+ #include <vd2/system/vdtypes.h>
+ 
+ class VDStringW;

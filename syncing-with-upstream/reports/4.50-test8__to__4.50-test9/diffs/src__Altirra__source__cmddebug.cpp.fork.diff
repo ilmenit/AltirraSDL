@@ -1,0 +1,20 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/cmddebug.cpp	2026-04-06 02:10:14.160076700 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cmddebug.cpp	2022-10-29 06:29:42.876712700 +0200
+@@ -177,7 +177,7 @@
+ 	}
+ 
+ 	template<bool T_PreStart, ATDebuggerSymbolLoadMode T_Mode>
+-	constexpr ATUICommand MakeSymbolLoadCommand(const ATUICommandName& name) {
++	constexpr ATUICommand MakeSymbolLoadCommand(const char *name) {
+ 		return ATUICommand {
+ 			name,
+ 			[] {
+@@ -192,7 +192,7 @@
+ 	}
+ 
+ 	template<ATDebuggerScriptAutoLoadMode T_Mode>
+-	constexpr ATUICommand MakeScriptLoadCommand(const ATUICommandName& name) {
++	constexpr ATUICommand MakeScriptLoadCommand(const char *name) {
+ 		return ATUICommand {
+ 			name,
+ 			[] {

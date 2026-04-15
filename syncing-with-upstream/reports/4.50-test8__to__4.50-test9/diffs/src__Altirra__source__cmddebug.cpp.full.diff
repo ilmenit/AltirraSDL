@@ -1,0 +1,29 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cmddebug.cpp	2022-10-29 06:29:42.876712700 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/cmddebug.cpp	2026-04-15 05:41:47.643413200 +0200
+@@ -32,7 +32,7 @@
+ void ATUIShowDialogNewBreakpoint();
+ 
+ void OnCommandDebuggerOpenSourceFile() {
+-	VDStringW fn(VDGetLoadFileName('src ', ATUIGetNewPopupOwner(), L"Load source file", L"All files (*.*)\0*.*\0", NULL));
++	VDStringW fn(VDGetLoadFileName("src "_vdfcctypeid, ATUIGetNewPopupOwner(), L"Load source file", L"All files (*.*)\0*.*\0", NULL));
+ 
+ 	if (!fn.empty()) {
+ 		ATOpenSourceWindow(fn.c_str());
+@@ -177,7 +177,7 @@
+ 	}
+ 
+ 	template<bool T_PreStart, ATDebuggerSymbolLoadMode T_Mode>
+-	constexpr ATUICommand MakeSymbolLoadCommand(const char *name) {
++	constexpr ATUICommand MakeSymbolLoadCommand(const ATUICommandName& name) {
+ 		return ATUICommand {
+ 			name,
+ 			[] {
+@@ -192,7 +192,7 @@
+ 	}
+ 
+ 	template<ATDebuggerScriptAutoLoadMode T_Mode>
+-	constexpr ATUICommand MakeScriptLoadCommand(const char *name) {
++	constexpr ATUICommand MakeScriptLoadCommand(const ATUICommandName& name) {
+ 		return ATUICommand {
+ 			name,
+ 			[] {

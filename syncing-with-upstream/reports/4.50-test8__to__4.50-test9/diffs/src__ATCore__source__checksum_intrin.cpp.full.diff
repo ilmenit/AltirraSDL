@@ -1,0 +1,38 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/ATCore/source/checksum_intrin.cpp	2026-03-30 21:42:58.780508051 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATCore/source/checksum_intrin.cpp	2026-04-15 05:41:49.905173900 +0200
+@@ -26,17 +26,7 @@
+ #include <vd2/system/cpuaccel.h>
+ #include <at/atcore/checksum.h>
+ #include <at/atcore/internal/checksum.h>
+-#ifdef _MSC_VER
+ #include <intrin.h>
+-#else
+-#include <x86intrin.h>
+-// _rotr is MSVC-only; provide equivalent for GCC/Clang
+-#ifndef _rotr
+-static inline uint32_t _rotr(uint32_t v, int shift) { return (v >> shift) | (v << (32 - shift)); }
+-#endif
+-#pragma GCC push_options
+-#pragma GCC target("ssse3,sse4.1")
+-#endif
+ 
+ void ATChecksumUpdateSHA256_Scalar(ATChecksumStateSHA256& VDRESTRICT state, const void *src, size_t numBlocks) {
+ 	using namespace nsATChecksum;
+@@ -108,7 +98,7 @@
+ 		__m128i v3 = _mm_loadu_si128((const __m128i *)(src2 + 48));
+ 
+ 		if constexpr(T_SSSE3) {
+-#if defined(VD_COMPILER_CLANG) || defined(VD_COMPILER_GCC)
++#ifdef VD_COMPILER_CLANG_OR_GCC
+ 			const auto pshufb = [](__m128i a, __m128i b) __attribute__((target("ssse3"))) {
+ 				return _mm_shuffle_epi8(a, b);
+ 			};
+@@ -141,7 +131,7 @@
+ 			__m128i back7;
+ 
+ 			if constexpr(T_SSSE3) {
+-#if defined(VD_COMPILER_CLANG) || defined(VD_COMPILER_GCC)
++#ifdef VD_COMPILER_CLANG_OR_GCC
+ 				const auto alignr4 = [](__m128i a, __m128i b) __attribute__((target("ssse3"))) {
+ 					return _mm_alignr_epi8(a, b, 4);
+ 				};

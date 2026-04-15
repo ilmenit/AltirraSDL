@@ -1,0 +1,185 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/cmdcassette.cpp	2024-12-13 07:15:51.752668300 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/cmdcassette.cpp	2026-04-15 05:41:47.614265000 +0200
+@@ -18,6 +18,7 @@
+ #include <vd2/system/file.h>
+ #include <vd2/Dita/services.h>
+ #include <at/atio/cassetteimage.h>
++#include <at/atnativeui/genericdialog.h>
+ #include <at/atui/uicommandmanager.h>
+ #include "cassette.h"
+ #include "cmdhelpers.h"
+@@ -30,49 +31,143 @@
+ void ATUIShowTapeControlDialog(VDGUIHandle hParent, ATCassetteEmulator& cassette);
+ void ATUIShowDialogTapeEditor();
+ 
++////////////////////////////////////////////////////////////////////////////////
++
++extern constexpr ATUICommandName g_ATUICmdNameCassetteLoadNew("Cassette.LoadNew");
++extern constexpr ATUICommandName g_ATUICmdNameCassetteLoad("Cassette.Load");
++extern constexpr ATUICommandName g_ATUICmdNameCassetteSave("Cassette.Save");
++extern constexpr ATUICommandName g_ATUICmdNameCassetteSaveAs("Cassette.SaveAs");
++extern constexpr ATUICommandName g_ATUICmdNameCassetteUnload("Cassette.Unload");
++
++////////////////////////////////////////////////////////////////////////////////
++
+ void OnCommandCassetteLoadNew() {
+ 	g_sim.GetCassette().LoadNew();
+ }
+ 
+-void OnCommandCassetteLoad() {
+-	VDStringW fn(VDGetLoadFileName('cass', ATUIGetNewPopupOwner(), L"Load cassette tape", g_ATUIFileFilter_LoadTape, nullptr));
++bool ATUICommandCassetteConfirmDiscard(ATUICommandContext& ctx) {
++	ATCassetteEmulator& cas = g_sim.GetCassette();
++
++	if (!cas.IsLoaded())
++		return true;
++
++	if (!cas.IsImageDirty())
++		return true;
++
++	if (ctx.mbQuiet)
++		return true;
++
++	return ATUIConfirm(ATUIGetNewPopupOwner(), "DiscardTape", L"The current tape has not been saved. Continue anyway?", L"Unsaved tape");
++}
+ 
+-	if (!fn.empty()) {
+-		ATCassetteEmulator& cas = g_sim.GetCassette();
+-		cas.Load(fn.c_str());
+-		cas.Play();
++void OnCommandCassetteLoad(ATUICommandContext& ctx) {
++	if (!ATUICommandCassetteConfirmDiscard(ctx)) {
++		ctx.MarkCompleted(false);
++		return;
+ 	}
++
++	VDStringW fn;
++	
++	if (!ctx.GetArg(0, fn)) {
++		fn = VDGetLoadFileName("cass"_vdfcctypeid, ATUIGetNewPopupOwner(), L"Load cassette tape", g_ATUIFileFilter_LoadTape, nullptr);
++
++		if (!fn.empty())
++			ctx.SetArg(0, fn.c_str());
++	}
++
++	if (fn.empty()) {
++		ctx.MarkCompleted(false);
++		return;
++	}
++
++	ATCassetteEmulator& cas = g_sim.GetCassette();
++	cas.Load(fn.c_str());
++	cas.Play();
+ }
+ 
+-void OnCommandCassetteUnload() {
++void OnCommandCassetteUnload(ATUICommandContext& ctx) {
++	if (!ATUICommandCassetteConfirmDiscard(ctx))
++		return;
++
+ 	g_sim.GetCassette().Unload();
+ }
+ 
+-void OnCommandCassetteSave() {
++void OnCommandCassetteSaveAs(ATUICommandContext& ctx) {
+ 	ATCassetteEmulator& cas = g_sim.GetCassette();
+-	if (!cas.IsLoaded())
++	if (!cas.IsLoaded()) {
++		ctx.MarkCompleted(false);
++		return;
++	}
++
++	VDStringW fn;
++	
++	if (!ctx.GetArg(0, fn)) {
++		fn = VDGetSaveFileName("cass"_vdfcctypeid, ATUIGetNewPopupOwner(), L"Save cassette tape", g_ATUIFileFilter_SaveTape, L"cas");
++
++		if (!fn.empty())
++			ctx.SetArg(0, fn.c_str());
++	}
++
++	if (fn.empty()) {
++		ctx.MarkCompleted(false);
+ 		return;
++	}
+ 
+-	VDStringW fn(VDGetSaveFileName('cass', ATUIGetNewPopupOwner(), L"Save cassette tape", g_ATUIFileFilter_SaveTape, L"cas"));
++	VDFileStream f(fn.c_str(), nsVDFile::kWrite | nsVDFile::kDenyAll | nsVDFile::kSequential | nsVDFile::kCreateAlways);
++
++	ATSaveCassetteImageCAS(f, cas.GetImage());
++	cas.SetImagePersistent(fn.c_str());
++	cas.SetImageClean();
++}
+ 
+-	if (fn.empty())
++void OnCommandCassetteSave(ATUICommandContext& ctx) {
++	ATCassetteEmulator& cas = g_sim.GetCassette();
++	if (!cas.IsLoaded()) {
++		ctx.MarkCompleted(false);
+ 		return;
++	}
++
++	VDStringW fn;
++
++	if (cas.IsLoaded())
++		fn = cas.GetPath();
++
++	if (fn.empty()) {
++		fn = VDGetSaveFileName("cass"_vdfcctypeid, ATUIGetNewPopupOwner(), L"Save cassette tape", g_ATUIFileFilter_SaveTape, L"cas");
++
++		if (fn.empty()) {
++			ctx.MarkCompleted(false);
++			return;
++		}
++	}
+ 
+ 	VDFileStream f(fn.c_str(), nsVDFile::kWrite | nsVDFile::kDenyAll | nsVDFile::kSequential | nsVDFile::kCreateAlways);
+ 
+ 	ATSaveCassetteImageCAS(f, cas.GetImage());
++	cas.SetImagePersistent(fn.c_str());
+ 	cas.SetImageClean();
+ }
+ 
+-void OnCommandCassetteExportAudioTape() {
++void OnCommandCassetteExportAudioTape(ATUICommandContext& ctx) {
+ 	ATCassetteEmulator& cas = g_sim.GetCassette();
+-	if (!cas.IsLoaded())
++	if (!cas.IsLoaded()) {
++		ctx.MarkCompleted(false);
+ 		return;
++	}
+ 
+-	VDStringW fn(VDGetSaveFileName('casa', ATUIGetNewPopupOwner(), L"Export cassette tape audio", g_ATUIFileFilter_SaveTapeAudio, L"wav"));
++	VDStringW fn;
++	
++	if (!ctx.GetArg(0, fn)) {
++		fn = VDGetSaveFileName("casa"_vdfcctypeid, ATUIGetNewPopupOwner(), L"Export cassette tape audio", g_ATUIFileFilter_SaveTapeAudio, L"wav");
+ 
+-	if (fn.empty())
++		if (!fn.empty())
++			ctx.SetArg(0, fn.c_str());
++	}
++
++	if (fn.empty()) {
++		ctx.MarkCompleted(false);
+ 		return;
++	}
+ 
+ 	VDFileStream f(fn.c_str(), nsVDFile::kWrite | nsVDFile::kDenyAll | nsVDFile::kSequential | nsVDFile::kCreateAlways);
+ 
+@@ -230,10 +325,11 @@
+ 	}
+ 
+ 	static constexpr ATUICommand kATCommandsCassette[] = {
+-		{ "Cassette.LoadNew", OnCommandCassetteLoadNew, nullptr },
+-		{ "Cassette.Load", OnCommandCassetteLoad, nullptr },
+-		{ "Cassette.Unload", OnCommandCassetteUnload, IsCassetteLoaded },
+-		{ "Cassette.Save", OnCommandCassetteSave, IsCassetteLoaded },
++		{ g_ATUICmdNameCassetteLoadNew, OnCommandCassetteLoadNew, nullptr },
++		{ g_ATUICmdNameCassetteLoad, OnCommandCassetteLoad, nullptr },
++		{ g_ATUICmdNameCassetteUnload, OnCommandCassetteUnload, IsCassetteLoaded },
++		{ g_ATUICmdNameCassetteSave, OnCommandCassetteSave, IsCassetteLoaded },
++		{ g_ATUICmdNameCassetteSaveAs, OnCommandCassetteSaveAs, IsCassetteLoaded },
+ 		{ "Cassette.ExportAudioTape", OnCommandCassetteExportAudioTape, IsCassetteLoaded },
+ 		{ "Cassette.TapeControlDialog", OnCommandCassetteTapeControlDialog, nullptr },
+ 		{ "Cassette.TapeEditorDialog", OnCommandCassetteTapeEditorDialog },

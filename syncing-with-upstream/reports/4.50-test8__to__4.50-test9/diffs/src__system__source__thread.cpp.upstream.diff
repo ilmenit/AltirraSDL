@@ -1,0 +1,51 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/system/source/thread.cpp	2025-11-11 05:05:26.832567400 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/system/source/thread.cpp	2026-04-15 05:41:52.029341700 +0200
+@@ -198,8 +198,23 @@
+ 
+ ///////////////////////////////////////////////////////////////////////////
+ 
+-void VDCriticalSection::StructCheck() {
+-	VDASSERTCT(sizeof(CritSec) == sizeof(CRITICAL_SECTION));
++VDCriticalSection::VDCriticalSection() {
++	static_assert(sizeof(CritSec) == sizeof(CRITICAL_SECTION));
++	static_assert(alignof(CritSec) >= alignof(CRITICAL_SECTION));
++
++	InitializeCriticalSection((CRITICAL_SECTION *)&csect);
++}
++
++VDCriticalSection::~VDCriticalSection() {
++	DeleteCriticalSection((CRITICAL_SECTION *)&csect);
++}
++
++void VDCriticalSection::Lock() {
++	EnterCriticalSection((CRITICAL_SECTION *)&csect);
++}
++
++void VDCriticalSection::Unlock() {
++	LeaveCriticalSection((CRITICAL_SECTION *)&csect);
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////
+@@ -306,6 +321,22 @@
+ 		ReleaseSemaphore(mKernelSema, count, NULL);
+ }
+ 
++void VDSemaphore::Wait() {
++	WaitForSingleObject(mKernelSema, 0xFFFFFFFFU);
++}
++
++bool VDSemaphore::Wait(int timeout) {
++	return 0 == WaitForSingleObject(mKernelSema, timeout);
++}
++
++bool VDSemaphore::TryWait() {
++	return 0 == WaitForSingleObject(mKernelSema, 0);
++}
++
++void VDSemaphore::Post() {
++	ReleaseSemaphore(mKernelSema, 1, NULL);
++}
++
+ ///////////////////////////////////////////////////////////////////////////////
+ 
+ void VDRWLock::LockExclusive() noexcept {

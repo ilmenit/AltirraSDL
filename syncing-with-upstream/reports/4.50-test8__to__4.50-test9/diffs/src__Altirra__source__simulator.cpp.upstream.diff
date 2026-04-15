@@ -1,0 +1,27 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/simulator.cpp	2026-01-18 05:32:58.243725400 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/Altirra/source/simulator.cpp	2026-04-15 05:41:48.224732900 +0200
+@@ -5357,6 +5357,13 @@
+ 	}
+ }
+ 
++// offsetof() is conditionally supported starting with C++17 and works fine, but
++// Clang still warns on it.
++#ifdef VD_COMPILER_CLANG
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Winvalid-offsetof"
++#endif
++
+ void ATSimulator::RecreateMemLayerPOKEY() {
+ 	mpMemMan->DeleteLayerPtr(&mpMemLayerPOKEY);
+ 
+@@ -5388,6 +5395,10 @@
+ 	mpMemMan->EnableLayer(mpMemLayerPOKEY, true);
+ }
+ 
++#ifdef VD_COMPILER_CLANG
++#pragma clang diagnostic pop
++#endif
++
+ void ATSimulator::ShutdownMemoryMap() {
+ 	if (mpUltimate1MB) {
+ 		mpUltimate1MB->SetROMLayers(

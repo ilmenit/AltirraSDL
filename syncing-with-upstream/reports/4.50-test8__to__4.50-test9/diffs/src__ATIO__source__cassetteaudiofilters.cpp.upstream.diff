@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATIO/source/cassetteaudiofilters.cpp	2025-01-20 08:22:59.020485100 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATIO/source/cassetteaudiofilters.cpp	2026-04-15 05:41:50.079916900 +0200
+@@ -52,7 +52,7 @@
+ 	void minMax16x2_SSE2(const sint16 * VDRESTRICT src, uint32 n, sint32& minvL, sint32& maxvL, sint32& minvR, sint32& maxvR) {
+ 		// We do unaligned loads from this array, so it's important that we
+ 		// avoid data cache unit (DCU) split penalties on older CPUs.
+-		static const __declspec(align(64)) uint64 window_table[6] = {
++		alignas(64) static const uint64 window_table[6] = {
+ 			0, 0, (uint64)0 - 1, (uint64)0 - 1, 0, 0
+ 		};
+ 

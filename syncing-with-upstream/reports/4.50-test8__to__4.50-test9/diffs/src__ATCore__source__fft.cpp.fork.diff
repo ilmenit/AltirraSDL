@@ -1,0 +1,20 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATCore/source/fft.cpp	2026-03-29 05:02:29.502930300 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/ATCore/source/fft.cpp	2026-04-06 07:33:25.959263292 +0200
+@@ -24,7 +24,7 @@
+ #include <numbers>
+ #include <intrin.h>
+ #include <vd2/system/cpuaccel.h>
+-#include <vd2/system/Error.h>
++#include <vd2/system/error.h>
+ #include <at/atcore/fft.h>
+ 
+ /////////////////////////////////////////////////////////////////////////////
+@@ -532,7 +532,7 @@
+ 	allocator.ReserveWorkspace(sizeof(float) * (N + 16) * (imdct ? 2 : 1));
+ }
+ 
+-void ATFFTBase::BindImpl(ATFFTAllocator& allocator) {
++void ATFFTBase::BindImpl(const ATFFTAllocator& allocator) {
+ 	mpWorkArea = (float *)allocator.GetWorkspace(0);
+ 
+ 	size_t numStages = mNumRadix4Stages + mNumRadix2Stages + 1;

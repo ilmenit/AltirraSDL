@@ -1,0 +1,12 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/debugger.cpp	2026-01-01 02:48:00.140086100 +0100
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/debugger.cpp	2026-04-03 13:26:43.503886136 +0200
+@@ -5081,7 +5081,8 @@
+ 		for(; it!=itEnd; ++it) {
+ 			IATDebuggerClient *client = *it;
+ 
+-			client->OnDebuggerSystemStateUpdate(sysstate);
++			if (client)
++				client->OnDebuggerSystemStateUpdate(sysstate);
+ 		}
+ 	}
+ }

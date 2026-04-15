@@ -1,0 +1,821 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/vdalloc.h	2026-01-01 02:48:01.858881600 +0100
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/h/vd2/system/vdalloc.h	2026-04-07 12:44:30.202948734 +0200
+@@ -1,405 +1,413 @@
+-//	VirtualDub - Video processing and capture application
+-//	System library component
+-//	Copyright (C) 1998-2004 Avery Lee, All Rights Reserved.
+-//
+-//	Beginning with 1.6.0, the VirtualDub system library is licensed
+-//	differently than the remainder of VirtualDub.  This particular file is
+-//	thus licensed as follows (the "zlib" license):
+-//
+-//	This software is provided 'as-is', without any express or implied
+-//	warranty.  In no event will the authors be held liable for any
+-//	damages arising from the use of this software.
+-//
+-//	Permission is granted to anyone to use this software for any purpose,
+-//	including commercial applications, and to alter it and redistribute it
+-//	freely, subject to the following restrictions:
+-//
+-//	1.	The origin of this software must not be misrepresented; you must
+-//		not claim that you wrote the original software. If you use this
+-//		software in a product, an acknowledgment in the product
+-//		documentation would be appreciated but is not required.
+-//	2.	Altered source versions must be plainly marked as such, and must
+-//		not be misrepresented as being the original software.
+-//	3.	This notice may not be removed or altered from any source
+-//		distribution.
+-
+-#ifndef f_VD2_SYSTEM_VDALLOC_H
+-#define f_VD2_SYSTEM_VDALLOC_H
+-
+-#ifdef _MSC_VER
+-	#pragma once
+-#endif
+-
+-#include <type_traits>
+-#include <stdlib.h>
+-
+-class IVDRefCount;
+-class IVDRefUnknown;
+-
+-// Why don't I use STL auto_ptr?  Two reasons.  First, auto_ptr has
+-// the overhead of an ownership flag, and second, auto_ptr can't
+-// be used with malloc() blocks.  So think of these as auto_ptr
+-// objects, but not quite....
+-
+-#pragma warning(push)
+-#pragma warning(disable: 4284)		// operator-> must return pointer to UDT
+-
+-class vdautoblockptr {
+-	vdautoblockptr(const vdautoblockptr&) = delete;
+-	vdautoblockptr& operator=(const vdautoblockptr&) = delete;
+-protected:
+-	void *ptr;
+-
+-public:
+-	explicit vdautoblockptr(void *p = 0) : ptr(p) {}
+-	~vdautoblockptr() { free(ptr); }
+-
+-	vdautoblockptr& operator=(void *src) { free(ptr); ptr = src; return *this; }
+-
+-	operator void*() const { return ptr; }
+-
+-	void from(vdautoblockptr& src) { free(ptr); ptr=src.ptr; src.ptr=0; }
+-	void *get() const { return ptr; }
+-	void *release() { void *v = ptr; ptr = NULL; return v; }
+-};
+-
+-template<class T> class vdautoptr2 {
+-	vdautoptr2(const vdautoptr2&) = delete;
+-	vdautoptr2& operator=(const vdautoptr2&) = delete;
+-protected:
+-	T *ptr;
+-
+-public:
+-	explicit vdautoptr2(T *p = 0) : ptr(p) {}
+-
+-	vdautoptr2(vdautoptr2&& other)
+-		: ptr(other.ptr)
+-	{
+-		other.ptr = nullptr;
+-	}
+-
+-	~vdautoptr2() { free((void *)ptr); }
+-
+-	vdautoptr2<T>& operator=(T *src) { free((void *)ptr); ptr = src; return *this; }
+-
+-	vdautoptr2& operator=(vdautoptr2&& other) {
+-		if (ptr) {
+-			free(ptr);
+-			ptr = nullptr;
+-		}
+-
+-		ptr = other.ptr;
+-		other.ptr = nullptr;
+-
+-		return *this;
+-	}
+-
+-	operator T*() const { return ptr; }
+-	T& operator*() const { return *ptr; }
+-	T *operator->() const { return ptr; }
+-
+-	vdautoptr2<T>& from(vdautoptr2<T>& src) { free((void *)ptr); ptr=src.ptr; src.ptr=0; }
+-	T *get() const { return ptr; }
+-	T *release() { T *v = ptr; ptr = NULL; return v; }
+-};
+-
+-template<class T> class vdautoptr {
+-protected:
+-	T *ptr;
+-
+-public:
+-	vdautoptr(const vdautoptr&) = delete;
+-	vdautoptr& operator=(vdautoptr&) = delete;
+-
+-	vdnothrow vdautoptr(std::nullptr_t) noexcept : ptr(nullptr) {}
+-	vdnothrow explicit vdautoptr(T *p = nullptr) noexcept : ptr(p) {}
+-
+-	vdnothrow vdautoptr(vdautoptr&& src) noexcept : ptr(src.ptr) {
+-		src.ptr = nullptr;
+-	}
+-
+-	template<class U, typename = std::enable_if<std::is_convertible_v<U, T>>>
+-	vdnothrow vdautoptr(vdautoptr<U>&& src) noexcept : ptr(src.release()) {
+-	}
+-
+-	~vdautoptr() {
+-		static_assert(!std::is_base_of<IVDRefCount, T>::value && !std::is_base_of<IVDRefUnknown, T>::value,
+-			"vdautoptr<T> cannot be used on reference counted classes. Use vdrefptr<T> instead.");
+-		delete ptr;
+-	}
+-
+-	vdnothrow vdautoptr& operator=(vdautoptr&& src) noexcept {
+-		delete ptr;
+-		ptr = nullptr;
+-
+-		ptr = src.ptr;
+-		src.ptr = nullptr;
+-
+-		return *this;
+-	}
+-
+-	template<typename U> requires std::is_convertible_v<U*, T*>
+-	vdnothrow vdautoptr& operator=(vdautoptr<U>&& src) noexcept {
+-		delete ptr;
+-		ptr = src.release();
+-
+-		return *this;
+-	}
+-
+-	vdautoptr<T>& operator=(T *src) { delete ptr; ptr = src; return *this; }
+-
+-	operator T*() const { return ptr; }
+-	T& operator*() const { return *ptr; }
+-	T *operator->() const { return ptr; }
+-
+-	T** operator~() {
+-		if (ptr) {
+-			delete ptr;
+-			ptr = NULL;
+-		}
+-
+-		return &ptr;
+-	}
+-
+-	void from(vdautoptr<T>& src) { delete ptr; ptr=src.ptr; src.ptr=0; }
+-	T *get() const { return ptr; }
+-	T *release() { T *v = ptr; ptr = NULL; return v; }
+-
+-	void reset() {
+-		if (ptr) {
+-			delete ptr;
+-			ptr = NULL;
+-		}
+-	}
+-
+-	void swap(vdautoptr<T>& other) {
+-		T *p = other.ptr;
+-		other.ptr = ptr;
+-		ptr = p;
+-	}
+-};
+-
+-template<class T>
+-vdautoptr<T> vdmakeautoptr(T *p) { return vdautoptr<T>(p); }
+-
+-template<class T> class vdautoarrayptr {
+-protected:
+-	T *ptr;
+-
+-public:
+-	explicit vdautoarrayptr(T *p = 0) : ptr(p) {}
+-	~vdautoarrayptr() { delete[] ptr; }
+-
+-	vdautoarrayptr<T>& operator=(T *src) { delete[] ptr; ptr = src; return *this; }
+-
+-	T& operator[](int offset) const { return ptr[offset]; }
+-
+-	void from(vdautoarrayptr<T>& src) { delete[] ptr; ptr=src.ptr; src.ptr=0; }
+-	T *get() const { return ptr; }
+-	T *release() { T *v = ptr; ptr = NULL; return v; }
+-};
+-
+-///////////////////////////////////////////////////////////////////////////
+-
+-template<typename T>
+-concept VDClassType = std::is_class_v<T>;
+-
+-template<class T>
+-class vddeleterholder {
+-	T deleter;
+-};
+-
+-template<VDClassType T>
+-class vddeleterholder<T> : public T {};
+-
+-template<class T>
+-struct vddefaultdelete {
+-	static void operator()(T* p) { delete p; }
+-};
+-
+-template<typename T, class Deleter = vddefaultdelete<T>> class vduniqueptr {
+-protected:
+-	[[no_unique_address,msvc::no_unique_address]] Deleter deleter;
+-	T *ptr = nullptr;
+-
+-public:
+-	vduniqueptr(const vduniqueptr&) = delete;
+-	vduniqueptr& operator=(vduniqueptr&) = delete;
+-
+-	vdnothrow vduniqueptr(std::nullptr_t) noexcept {}
+-	vdnothrow explicit vduniqueptr(T *p = nullptr) noexcept
+-		: ptr(p)
+-	{
+-	}
+-
+-	vdnothrow vduniqueptr(vduniqueptr&& src) noexcept
+-		: ptr(src.ptr)
+-	{
+-		src.ptr = nullptr;
+-	}
+-
+-	template<class U, typename = std::enable_if<std::is_convertible_v<U, T>>>
+-	vdnothrow vduniqueptr(vduniqueptr<U>&& src) noexcept
+-		: ptr(src.release())
+-	{
+-	}
+-
+-	~vduniqueptr() {
+-		get_deleter()(ptr);
+-	}
+-
+-	vdnothrow vduniqueptr& operator=(vduniqueptr&& src) noexcept {
+-		get_deleter()(ptr);
+-		ptr = nullptr;
+-
+-		ptr = src.ptr;
+-		src.ptr = nullptr;
+-
+-		return *this;
+-	}
+-
+-	explicit operator bool() const { return ptr != nullptr; }
+-	T& operator*() const { return *ptr; }
+-	T *operator->() const { return ptr; }
+-
+-	T** operator~() {
+-		if (ptr) {
+-			get_deleter()(ptr);
+-			ptr = NULL;
+-		}
+-
+-		return &ptr;
+-	}
+-
+-	T *get() const { return ptr; }
+-
+-	Deleter& get_deleter() {
+-		return deleter;
+-	}
+-
+-	const Deleter& get_deleter() const {
+-		return deleter;
+-	}
+-
+-	T *release() { T *v = ptr; ptr = nullptr; return v; }
+-
+-	void reset(std::nullptr_t = nullptr) {
+-		if (ptr) {
+-			get_deleter()(ptr);
+-			ptr = NULL;
+-		}
+-	}
+-
+-	void reset(T *src) {
+-		static_assert(!std::is_base_of<IVDRefCount, T>::value && !std::is_base_of<IVDRefUnknown, T>::value,
+-			"vdautoptr<T> cannot be used on reference counted classes. Use vdrefptr<T> instead.");
+-
+-		get_deleter()(ptr);
+-		ptr = src;
+-	}
+-
+-	void swap(vduniqueptr<T>& other) {
+-		T *p = other.ptr;
+-		other.ptr = ptr;
+-		ptr = p;
+-	}
+-};
+-
+-template<class T, class... Args>
+-vduniqueptr<T> vdmakeunique(Args&&... args) {
+-	return vduniqueptr<T>(new T(std::forward<Args>(args)...));
+-}
+-
+-///////////////////////////////////////////////////////////////////////////
+-
+-struct vdsafedelete_t {};
+-extern vdsafedelete_t vdsafedelete;
+-
+-template<class T>
+-inline vdsafedelete_t& operator<<=(vdsafedelete_t& x, T *& p) {
+-	if (p) {
+-		delete p;
+-		p = 0;
+-	}
+-
+-	return x;
+-}
+-
+-template<class T>
+-inline vdsafedelete_t& operator,(vdsafedelete_t& x, T *& p) {
+-	if (p) {
+-		delete p;
+-		p = 0;
+-	}
+-
+-	return x;
+-}
+-
+-template<class T, size_t N>
+-inline vdsafedelete_t& operator<<=(vdsafedelete_t& x, T *(&p)[N]) {
+-	for(size_t i=0; i<N; ++i) {
+-		if (p[i]) {
+-			delete p[i];
+-			p[i] = 0;
+-		}
+-	}
+-
+-	return x;
+-}
+-
+-template<class T, size_t N>
+-inline vdsafedelete_t& operator,(vdsafedelete_t& x, T *(&p)[N]) {
+-	for(size_t i=0; i<N; ++i) {
+-		if (p[i]) {
+-			delete p[i];
+-			p[i] = 0;
+-		}
+-	}
+-
+-	return x;
+-}
+-
+-///////////////////////////////////////////////////////////////////////////
+-
+-template<typename EF>
+-class vdscopeexit {
+-public:
+-	template<typename Fn>
+-	explicit vdscopeexit(Fn&& fn)
+-		: mExitFn(std::forward<Fn>(fn))
+-	{
+-	}
+-
+-	vdscopeexit(vdscopeexit&& other)
+-		noexcept(std::is_nothrow_move_constructible_v<EF>)
+-		: mExitFn(std::move(other.mExitFn))
+-		, mbActive(other.mbActive)
+-	{
+-		other.mbActive = false;
+-	}
+-
+-	vdscopeexit(const vdscopeexit&) = delete;
+-
+-	~vdscopeexit() noexcept {
+-		if (mbActive)
+-			mExitFn();
+-	}
+-
+-	vdscopeexit& operator=(const vdscopeexit&) = delete;
+-
+-	void release() {
+-		mbActive = false;
+-	}
+-
+-private:
+-	EF mExitFn;
+-	bool mbActive = true;
+-};
+-
+-template<typename EF> vdscopeexit(EF) -> vdscopeexit<EF>;
+-
+-///////////////////////////////////////////////////////////////////////////
+-
+-#pragma warning(pop)
+-
+-#endif
++//	VirtualDub - Video processing and capture application
++//	System library component
++//	Copyright (C) 1998-2004 Avery Lee, All Rights Reserved.
++//
++//	Beginning with 1.6.0, the VirtualDub system library is licensed
++//	differently than the remainder of VirtualDub.  This particular file is
++//	thus licensed as follows (the "zlib" license):
++//
++//	This software is provided 'as-is', without any express or implied
++//	warranty.  In no event will the authors be held liable for any
++//	damages arising from the use of this software.
++//
++//	Permission is granted to anyone to use this software for any purpose,
++//	including commercial applications, and to alter it and redistribute it
++//	freely, subject to the following restrictions:
++//
++//	1.	The origin of this software must not be misrepresented; you must
++//		not claim that you wrote the original software. If you use this
++//		software in a product, an acknowledgment in the product
++//		documentation would be appreciated but is not required.
++//	2.	Altered source versions must be plainly marked as such, and must
++//		not be misrepresented as being the original software.
++//	3.	This notice may not be removed or altered from any source
++//		distribution.
++
++#ifndef f_VD2_SYSTEM_VDALLOC_H
++#define f_VD2_SYSTEM_VDALLOC_H
++
++#ifdef _MSC_VER
++	#pragma once
++#endif
++
++#include <type_traits>
++#include <stdlib.h>
++
++class IVDRefCount;
++class IVDRefUnknown;
++
++// Why don't I use STL auto_ptr?  Two reasons.  First, auto_ptr has
++// the overhead of an ownership flag, and second, auto_ptr can't
++// be used with malloc() blocks.  So think of these as auto_ptr
++// objects, but not quite....
++
++#pragma warning(push)
++#pragma warning(disable: 4284)		// operator-> must return pointer to UDT
++
++class vdautoblockptr {
++	vdautoblockptr(const vdautoblockptr&) = delete;
++	vdautoblockptr& operator=(const vdautoblockptr&) = delete;
++protected:
++	void *ptr;
++
++public:
++	explicit vdautoblockptr(void *p = 0) : ptr(p) {}
++	~vdautoblockptr() { free(ptr); }
++
++	vdautoblockptr& operator=(void *src) { free(ptr); ptr = src; return *this; }
++
++	operator void*() const { return ptr; }
++
++	void from(vdautoblockptr& src) { free(ptr); ptr=src.ptr; src.ptr=0; }
++	void *get() const { return ptr; }
++	void *release() { void *v = ptr; ptr = NULL; return v; }
++};
++
++template<class T> class vdautoptr2 {
++	vdautoptr2(const vdautoptr2&) = delete;
++	vdautoptr2& operator=(const vdautoptr2&) = delete;
++protected:
++	T *ptr;
++
++public:
++	explicit vdautoptr2(T *p = 0) : ptr(p) {}
++
++	vdautoptr2(vdautoptr2&& other)
++		: ptr(other.ptr)
++	{
++		other.ptr = nullptr;
++	}
++
++	~vdautoptr2() { free((void *)ptr); }
++
++	vdautoptr2<T>& operator=(T *src) { free((void *)ptr); ptr = src; return *this; }
++
++	vdautoptr2& operator=(vdautoptr2&& other) {
++		if (ptr) {
++			free(ptr);
++			ptr = nullptr;
++		}
++
++		ptr = other.ptr;
++		other.ptr = nullptr;
++
++		return *this;
++	}
++
++	operator T*() const { return ptr; }
++	T& operator*() const { return *ptr; }
++	T *operator->() const { return ptr; }
++
++	vdautoptr2<T>& from(vdautoptr2<T>& src) { free((void *)ptr); ptr=src.ptr; src.ptr=0; }
++	T *get() const { return ptr; }
++	T *release() { T *v = ptr; ptr = NULL; return v; }
++};
++
++template<class T> class vdautoptr {
++protected:
++	T *ptr;
++
++public:
++	vdautoptr(const vdautoptr&) = delete;
++	vdautoptr& operator=(vdautoptr&) = delete;
++
++	vdnothrow vdautoptr(std::nullptr_t) noexcept : ptr(nullptr) {}
++	vdnothrow explicit vdautoptr(T *p = nullptr) noexcept : ptr(p) {}
++
++	vdnothrow vdautoptr(vdautoptr&& src) noexcept : ptr(src.ptr) {
++		src.ptr = nullptr;
++	}
++
++	template<class U, typename = std::enable_if<std::is_convertible_v<U, T>>>
++	vdnothrow vdautoptr(vdautoptr<U>&& src) noexcept : ptr(src.release()) {
++	}
++
++	~vdautoptr() {
++		static_assert(!std::is_base_of<IVDRefCount, T>::value && !std::is_base_of<IVDRefUnknown, T>::value,
++			"vdautoptr<T> cannot be used on reference counted classes. Use vdrefptr<T> instead.");
++		delete ptr;
++	}
++
++	vdnothrow vdautoptr& operator=(vdautoptr&& src) noexcept {
++		delete ptr;
++		ptr = nullptr;
++
++		ptr = src.ptr;
++		src.ptr = nullptr;
++
++		return *this;
++	}
++
++	template<typename U> requires std::is_convertible_v<U*, T*>
++	vdnothrow vdautoptr& operator=(vdautoptr<U>&& src) noexcept {
++		delete ptr;
++		ptr = src.release();
++
++		return *this;
++	}
++
++	vdautoptr<T>& operator=(T *src) { delete ptr; ptr = src; return *this; }
++
++	operator T*() const { return ptr; }
++	T& operator*() const { return *ptr; }
++	T *operator->() const { return ptr; }
++
++	T** operator~() {
++		if (ptr) {
++			delete ptr;
++			ptr = NULL;
++		}
++
++		return &ptr;
++	}
++
++	void from(vdautoptr<T>& src) { delete ptr; ptr=src.ptr; src.ptr=0; }
++	T *get() const { return ptr; }
++	T *release() { T *v = ptr; ptr = NULL; return v; }
++
++	void reset() {
++		if (ptr) {
++			delete ptr;
++			ptr = NULL;
++		}
++	}
++
++	void swap(vdautoptr<T>& other) {
++		T *p = other.ptr;
++		other.ptr = ptr;
++		ptr = p;
++	}
++};
++
++template<class T>
++vdautoptr<T> vdmakeautoptr(T *p) { return vdautoptr<T>(p); }
++
++template<class T> class vdautoarrayptr {
++protected:
++	T *ptr;
++
++public:
++	explicit vdautoarrayptr(T *p = 0) : ptr(p) {}
++	~vdautoarrayptr() { delete[] ptr; }
++
++	vdautoarrayptr<T>& operator=(T *src) { delete[] ptr; ptr = src; return *this; }
++
++	T& operator[](int offset) const { return ptr[offset]; }
++
++	void from(vdautoarrayptr<T>& src) { delete[] ptr; ptr=src.ptr; src.ptr=0; }
++	T *get() const { return ptr; }
++	T *release() { T *v = ptr; ptr = NULL; return v; }
++};
++
++///////////////////////////////////////////////////////////////////////////
++
++template<typename T>
++concept VDClassType = std::is_class_v<T>;
++
++template<class T>
++class vddeleterholder {
++	T deleter;
++};
++
++template<VDClassType T>
++class vddeleterholder<T> : public T {};
++
++template<class T>
++struct vddefaultdelete {
++	// Note: this was originally `static void operator()(T*)`, which is a
++	// C++23 feature (P1169). GCC < 13 (e.g. the GCC 12 shipped with
++	// Raspberry Pi OS Bookworm) rejects it outright, and older Clang
++	// versions do likewise. A non-static const call operator is valid in
++	// every C++ standard since C++98 and is codegen-identical here because
++	// the deleter is empty and stored with [[no_unique_address]] inside
++	// vduniqueptr, so there is no size or performance cost. Matches the
++	// signature of std::default_delete.
++	void operator()(T* p) const { delete p; }
++};
++
++template<typename T, class Deleter = vddefaultdelete<T>> class vduniqueptr {
++protected:
++	[[no_unique_address,msvc::no_unique_address]] Deleter deleter;
++	T *ptr = nullptr;
++
++public:
++	vduniqueptr(const vduniqueptr&) = delete;
++	vduniqueptr& operator=(vduniqueptr&) = delete;
++
++	vdnothrow vduniqueptr(std::nullptr_t) noexcept {}
++	vdnothrow explicit vduniqueptr(T *p = nullptr) noexcept
++		: ptr(p)
++	{
++	}
++
++	vdnothrow vduniqueptr(vduniqueptr&& src) noexcept
++		: ptr(src.ptr)
++	{
++		src.ptr = nullptr;
++	}
++
++	template<class U, typename = std::enable_if<std::is_convertible_v<U, T>>>
++	vdnothrow vduniqueptr(vduniqueptr<U>&& src) noexcept
++		: ptr(src.release())
++	{
++	}
++
++	~vduniqueptr() {
++		get_deleter()(ptr);
++	}
++
++	vdnothrow vduniqueptr& operator=(vduniqueptr&& src) noexcept {
++		get_deleter()(ptr);
++		ptr = nullptr;
++
++		ptr = src.ptr;
++		src.ptr = nullptr;
++
++		return *this;
++	}
++
++	explicit operator bool() const { return ptr != nullptr; }
++	T& operator*() const { return *ptr; }
++	T *operator->() const { return ptr; }
++
++	T** operator~() {
++		if (ptr) {
++			get_deleter()(ptr);
++			ptr = NULL;
++		}
++
++		return &ptr;
++	}
++
++	T *get() const { return ptr; }
++
++	Deleter& get_deleter() {
++		return deleter;
++	}
++
++	const Deleter& get_deleter() const {
++		return deleter;
++	}
++
++	T *release() { T *v = ptr; ptr = nullptr; return v; }
++
++	void reset(std::nullptr_t = nullptr) {
++		if (ptr) {
++			get_deleter()(ptr);
++			ptr = NULL;
++		}
++	}
++
++	void reset(T *src) {
++		static_assert(!std::is_base_of<IVDRefCount, T>::value && !std::is_base_of<IVDRefUnknown, T>::value,
++			"vdautoptr<T> cannot be used on reference counted classes. Use vdrefptr<T> instead.");
++
++		get_deleter()(ptr);
++		ptr = src;
++	}
++
++	void swap(vduniqueptr<T>& other) {
++		T *p = other.ptr;
++		other.ptr = ptr;
++		ptr = p;
++	}
++};
++
++template<class T, class... Args>
++vduniqueptr<T> vdmakeunique(Args&&... args) {
++	return vduniqueptr<T>(new T(std::forward<Args>(args)...));
++}
++
++///////////////////////////////////////////////////////////////////////////
++
++struct vdsafedelete_t {};
++extern vdsafedelete_t vdsafedelete;
++
++template<class T>
++inline vdsafedelete_t& operator<<=(vdsafedelete_t& x, T *& p) {
++	if (p) {
++		delete p;
++		p = 0;
++	}
++
++	return x;
++}
++
++template<class T>
++inline vdsafedelete_t& operator,(vdsafedelete_t& x, T *& p) {
++	if (p) {
++		delete p;
++		p = 0;
++	}
++
++	return x;
++}
++
++template<class T, size_t N>
++inline vdsafedelete_t& operator<<=(vdsafedelete_t& x, T *(&p)[N]) {
++	for(size_t i=0; i<N; ++i) {
++		if (p[i]) {
++			delete p[i];
++			p[i] = 0;
++		}
++	}
++
++	return x;
++}
++
++template<class T, size_t N>
++inline vdsafedelete_t& operator,(vdsafedelete_t& x, T *(&p)[N]) {
++	for(size_t i=0; i<N; ++i) {
++		if (p[i]) {
++			delete p[i];
++			p[i] = 0;
++		}
++	}
++
++	return x;
++}
++
++///////////////////////////////////////////////////////////////////////////
++
++template<typename EF>
++class vdscopeexit {
++public:
++	template<typename Fn>
++	explicit vdscopeexit(Fn&& fn)
++		: mExitFn(std::forward<Fn>(fn))
++	{
++	}
++
++	vdscopeexit(vdscopeexit&& other)
++		noexcept(std::is_nothrow_move_constructible_v<EF>)
++		: mExitFn(std::move(other.mExitFn))
++		, mbActive(other.mbActive)
++	{
++		other.mbActive = false;
++	}
++
++	vdscopeexit(const vdscopeexit&) = delete;
++
++	~vdscopeexit() noexcept {
++		if (mbActive)
++			mExitFn();
++	}
++
++	vdscopeexit& operator=(const vdscopeexit&) = delete;
++
++	void release() {
++		mbActive = false;
++	}
++
++private:
++	EF mExitFn;
++	bool mbActive = true;
++};
++
++template<typename EF> vdscopeexit(EF) -> vdscopeexit<EF>;
++
++///////////////////////////////////////////////////////////////////////////
++
++#pragma warning(pop)
++
++#endif

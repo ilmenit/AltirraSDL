@@ -1,0 +1,16 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/system/source/math.cpp	2026-03-31 08:53:29.853289567 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/system/source/math.cpp	2026-04-15 05:41:52.014099900 +0200
+@@ -159,11 +159,9 @@
+ 		}
+ 	}
+ #elif defined(VD_CPU_AMD64)
+-	#if defined(VD_COMPILER_CLANG) || defined(VD_COMPILER_GCC)
++	#if defined(VD_COMPILER_CLANG_OR_GCC)
+ 		sint64 VDFractionScale64(uint64 a, uint32 b, uint32 c, uint32& remainder) {
+-			unsigned __int128 v = (unsigned __int128)(unsigned long long)a * b;
+-			remainder = (uint32)((unsigned long long)(v % c));
+-			return (sint64)(unsigned long long)(v / c);
++			return (sint64)(((__uint128_t)a * b) / c);
+ 		}
+ 	#else
+ 		sint64 VDFractionScale64(uint64 a, uint32 b, uint32 c, uint32& remainder) {

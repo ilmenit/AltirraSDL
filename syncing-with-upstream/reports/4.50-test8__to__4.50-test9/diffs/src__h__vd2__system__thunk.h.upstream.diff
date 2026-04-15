@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/thunk.h	2021-05-24 00:07:15.669857300 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/thunk.h	2026-04-15 05:41:51.447194000 +0200
+@@ -32,7 +32,7 @@
+ 
+ #include <vd2/system/vdtypes.h>
+ 
+-#if defined(VD_CPU_X86) || defined(VD_CPU_X64)
++#if (defined(VD_CPU_X86) || defined(VD_CPU_X64)) && !defined(VD_COMPILER_GCC)
+ 	#define VD_USE_DYNAMIC_THUNKS 1
+ #else
+ 	#define VD_USE_DYNAMIC_THUNKS 0

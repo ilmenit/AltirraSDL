@@ -1,0 +1,417 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATTest/source/TestHLE_FPAccel.cpp	2026-04-06 02:10:14.486855800 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/ATTest/source/TestHLE_FPAccel.cpp	2026-03-29 05:02:29.664110100 +0200
+@@ -164,21 +164,6 @@
+ 			return v;
+ 		}
+ 
+-		ATDecFloat Rand5ByteMag() {
+-			ATDecFloat v;
+-
+-			v.mSignExp = 0x3C + (RandByte() & 0x87);
+-
+-			do {
+-				v.mMantissa[0] = RandBCDByte();
+-			} while(v.mMantissa[0] == 0);
+-
+-			for(int i = 1; i < 5; ++i)
+-				v.mMantissa[i] = RandBCDByte();
+-
+-			return v;
+-		}
+-
+ 		uint8 RandByte() {
+ 			uint8 v = (uint8)mSeed;
+ 
+@@ -222,7 +207,7 @@
+ 	const auto invoke = [&](uint16 addr, bool trace = false) -> bool {
+ 		cpu->Jump(addr);
+ 		cpu->SetS(0xFD);
+-		cpu->SetP(0x1);
++		cpu->SetP(0);
+ 
+ 		ram[0x600] = 0x02;
+ 		ram[0x1FF] = 0x05;
+@@ -462,16 +447,14 @@
+ 	//==========================================================================
+ 	ATTestTrace("Testing FADD");
+ 
+-	const auto testFADD = [&](const ATDecFloat& fvalx, const ATDecFloat& fvaly, const ATDecFloatOpt& fvalr) {
++	const auto testFADD = [&](const ATDecFloat& fvalx, const ATDecFloat& fvaly, const ATDecFloat& fvalr) {
+ 		for(int i=0; i<2; ++i) {
+ 			memcpy(&ram[FR0], &fvalx, 6);
+ 			memcpy(&ram[FR1], &fvaly, 6);
+ 
+-			ram[FR0 - 2] = 0x50;
+-			ram[FR0 - 1] = 0x51;
+-			//ram[FR0 + 6] = 0x52;	skipped -- modified by stock math pack
+-			ram[FR0 + 7] = 0x53;
+-			ram[FR1 + 6] = 0x54;
++			ram[FR0 + 6] = 0x55;
++			ram[FR0 + 7] = 0x55;
++			ram[FR1 + 6] = 0x55;
+ 			ram[FR1 + 7] = 0x55;
+ 
+ 			if (i)
+@@ -479,20 +462,11 @@
+ 			else
+ 				invoke(FADD);
+ 
+-			auto fvalz = ctx.GetResult();
++			ATDecFloat fvalz;
++			memcpy(&fvalz, &ram[FR0], sizeof fvalz);
+ 
+-			if (check) {
+-				if (fvalz != fvalr)
+-					throw ATTestAssertionException("FADD accel=%d failed for %s + %s: expected %s, was %s", i, fvalx.ToString().c_str(), fvaly.ToString().c_str(), fvalr.ToString().c_str(), fvalz.ToString().c_str());
+-
+-				if (ram[FR0 - 2] != 0x50 ||
+-					ram[FR0 - 1] != 0x51 ||
+-//					ram[FR0 + 6] != 0x52 ||
+-					ram[FR0 + 7] != 0x53 ||
+-					ram[FR1 + 6] != 0x54 ||
+-					ram[FR1 + 7] != 0x55)
+-					throw ATTestAssertionException("FADD accel=%d failed for %s + %s: variable corruption detected", i, fvalx.ToString().c_str(), fvaly.ToString().c_str());
+-			}
++			if (check && fvalz != fvalr)
++				throw ATTestAssertionException("FADD accel=%d failed for %s + %s: expected %s, was %s", i, fvalx.ToString().c_str(), fvaly.ToString().c_str(), fvalr.ToString().c_str(), fvalz.ToString().c_str());
+ 		}
+ 	};
+ 
+@@ -517,38 +491,15 @@
+ 
+ 		// test normalization
+ 		testFADD(ATDecFloat::FromDouble(9999999999.0), ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(10000000000.0));
+-		testFADD(ATDecFloat::FromDouble(2345678912.0), ATDecFloat::FromDouble(8000000000.0), ATDecFloat::FromDouble(10345678900.0));
+ 
+ 		// test underflow to zero
+-		testFADD(ATDecFloat::FromDouble(1.0002e-96), ATDecFloat::FromDouble(-1.001e-96), ATDecFloat::FromDouble(0));
+-		testFADD(ATDecFloat::FromDouble(-1.0002e-96), ATDecFloat::FromDouble(1.001e-96), ATDecFloat::FromDouble(0));
++		testFADD(ATDecFloat::FromDouble(1.0002e-98), ATDecFloat::FromDouble(-1.001e-98), ATDecFloat::FromDouble(0));
++		testFADD(ATDecFloat::FromDouble(-1.0002e-98), ATDecFloat::FromDouble(1.001e-98), ATDecFloat::FromDouble(0));
+ 
+ 		// test truncation behavior
+ 		testFADD(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(0.000000009999999999), ATDecFloat::FromDouble(1.0));
+ 		testFADD(ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(-0.000000009999999999), ATDecFloat::FromDouble(-1.0));
+ 
+-		// test overflow
+-		testFADD(ATDecFloat::FromDouble(99e+94), ATDecFloat::FromDouble(99e+94), ATDecFloat::FromDouble(198e+94));
+-		testFADD(ATDecFloat::FromDouble(-99e+94), ATDecFloat::FromDouble(-99e+94), ATDecFloat::FromDouble(-198e+94));
+-		testFADD(ATDecFloat::FromDouble(99e+96), ATDecFloat::FromDouble(99e+96), {});
+-		testFADD(ATDecFloat::FromDouble(-99e+96), ATDecFloat::FromDouble(-99e+96), {});
+-
+-		testFADD(ATDecFloat::FromDouble(5e+97), ATDecFloat::FromDouble(4e+97), ATDecFloat::FromDouble(9e+97));
+-		testFADD(ATDecFloat::FromDouble(-5e+97), ATDecFloat::FromDouble(-4e+97), ATDecFloat::FromDouble(-9e+97));
+-		testFADD(ATDecFloat::FromDouble(5e+97), ATDecFloat::FromDouble(5e+97), {});
+-		testFADD(ATDecFloat::FromDouble(-5e+97), ATDecFloat::FromDouble(-5e+97), {});
+-
+-		// test negative zero (since Atari BASIC can pass it via VAL()).
+-		constexpr ATDecFloat negZero { 0x80, { 0x00, 0x00, 0x00, 0x00, 0x00 } };
+-
+-		testFADD(negZero, ATDecFloat::FromDouble(0), ATDecFloat::FromDouble(0));
+-		testFADD(negZero, ATDecFloat::FromDouble(1), ATDecFloat::FromDouble(1));
+-		testFADD(negZero, ATDecFloat::FromDouble(-1), ATDecFloat::FromDouble(-1));
+-		testFADD(ATDecFloat::FromDouble(0), negZero, ATDecFloat::FromDouble(0));
+-		testFADD(ATDecFloat::FromDouble(1), negZero, ATDecFloat::FromDouble(1));
+-		testFADD(ATDecFloat::FromDouble(-1), negZero, ATDecFloat::FromDouble(-1));
+-		testFADD(negZero, negZero, ATDecFloat::FromDouble(0));
+-
+ 		{
+ 			BCDRandGen rg;
+ 
+@@ -561,49 +512,16 @@
+ 
+ 				invoke(FADD);
+ 
+-				const auto valr1 = ctx.GetResult();
+-
+-				memcpy(&ram[FR0], &valx, 6);
+-				memcpy(&ram[FR1], &valy, 6);
+-
+-				ATAccelFADD(ctx);
+-
+-				const auto valr2 = ctx.GetResult();
+-
+-				if (check && valr1 != valr2)
+-					throw ATTestAssertionException("FADD differ for %s + %s: unaccel %s, accel %s", valx.ToString().c_str(), valy.ToString().c_str(), valr1.ToString().c_str(), valr2.ToString().c_str());
+-			}
+-		}
+-	} catch(const ATTestAssertionException& e) {
+-		puts(e.c_str());
+-		++errors;
+-	}
+-
+-	ATTestTrace("Testing FADD (small scale)");
+-
+-	try {
+-		auto timeScope = makeTimeScope();
+-
+-		{
+-			BCDRandGen rg;
+-
+-			for(int i=0; i<100000; ++i) {
+-				ATDecFloat valx = rg.Rand5ByteMag();
+-				ATDecFloat valy = rg.Rand5ByteMag();
+-
+-				memcpy(&ram[FR0], &valx, 6);
+-				memcpy(&ram[FR1], &valy, 6);
+-
+-				invoke(FADD);
+-
+-				const auto valr1 = ctx.GetResult();
++				ATDecFloat valr1;
++				memcpy(&valr1, &ram[FR0], 6);
+ 
+ 				memcpy(&ram[FR0], &valx, 6);
+ 				memcpy(&ram[FR1], &valy, 6);
+ 
+ 				ATAccelFADD(ctx);
+ 
+-				const auto valr2 = ctx.GetResult();
++				ATDecFloat valr2;
++				memcpy(&valr2, &ram[FR0], 6);
+ 
+ 				if (check && valr1 != valr2)
+ 					throw ATTestAssertionException("FADD differ for %s + %s: unaccel %s, accel %s", valx.ToString().c_str(), valy.ToString().c_str(), valr1.ToString().c_str(), valr2.ToString().c_str());
+@@ -615,150 +533,6 @@
+ 	}
+ 
+ 	//==========================================================================
+-	ATTestTrace("Testing FSUB");
+-
+-	const auto testFSUB = [&](const ATDecFloat& fvalx, const ATDecFloat& fvaly, const ATDecFloatOpt& fvalr) {
+-		for(int i=0; i<2; ++i) {
+-			memcpy(&ram[FR0], &fvalx, 6);
+-			memcpy(&ram[FR1], &fvaly, 6);
+-
+-			ram[FR0 - 2] = 0x50;
+-			ram[FR0 - 1] = 0x51;
+-			//ram[FR0 + 6] = 0x52;	skipped -- modified by stock math pack
+-			ram[FR0 + 7] = 0x53;
+-			ram[FR1 + 6] = 0x54;
+-			ram[FR1 + 7] = 0x55;
+-
+-			if (i)
+-				ATAccelFSUB(ctx);
+-			else
+-				invoke(FSUB);
+-
+-			auto fvalz = ctx.GetResult();
+-
+-			if (check) {
+-				if (fvalz != fvalr)
+-					throw ATTestAssertionException("FSUB accel=%d failed for %s - %s: expected %s, was %s", i, fvalx.ToString().c_str(), fvaly.ToString().c_str(), fvalr.ToString().c_str(), fvalz.ToString().c_str());
+-
+-				if (ram[FR0 - 2] != 0x50 ||
+-					ram[FR0 - 1] != 0x51 ||
+-//					ram[FR0 + 6] != 0x52 ||
+-					ram[FR0 + 7] != 0x53 ||
+-					ram[FR1 + 6] != 0x54 ||
+-					ram[FR1 + 7] != 0x55)
+-					throw ATTestAssertionException("FSUB accel=%d failed for %s - %s: variable corruption detected", i, fvalx.ToString().c_str(), fvaly.ToString().c_str());
+-			}
+-		}
+-	};
+-
+-	try {
+-		auto timeScope = makeTimeScope();
+-
+-		testFSUB(ATDecFloat::FromDouble(0.0), ATDecFloat::FromDouble(0.0), ATDecFloat::FromDouble(0.0));
+-		testFSUB(ATDecFloat::FromDouble(0.0), ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(1.0));
+-		testFSUB(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(0.0), ATDecFloat::FromDouble(1.0));
+-		testFSUB(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(2.0));
+-		testFSUB(ATDecFloat::FromDouble(0.0), ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(-1.0));
+-		testFSUB(ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(0.0), ATDecFloat::FromDouble(-1.0));
+-		testFSUB(ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(-2.0));
+-		testFSUB(ATDecFloat::FromDouble(99.0), ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(100.0));
+-		testFSUB(ATDecFloat::FromDouble(-99.0), ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(-100.0));
+-		testFSUB(ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(0.0));
+-		testFSUB(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(0.0));
+-
+-		// test denormalization
+-		testFSUB(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(0.00000001), ATDecFloat::FromDouble(0.99999999));
+-		testFSUB(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(0.99999999), ATDecFloat::FromDouble(0.00000001));
+-
+-		// test normalization
+-		testFSUB(ATDecFloat::FromDouble(9999999999.0), ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(10000000000.0));
+-		testFSUB(ATDecFloat::FromDouble(2345678912.0), ATDecFloat::FromDouble(-8000000000.0), ATDecFloat::FromDouble(10345678900.0));
+-
+-		// test underflow to zero
+-		testFSUB(ATDecFloat::FromDouble(1.0002e-96), ATDecFloat::FromDouble(1.001e-96), ATDecFloat::FromDouble(0));
+-		testFSUB(ATDecFloat::FromDouble(-1.0002e-96), ATDecFloat::FromDouble(-1.001e-96), ATDecFloat::FromDouble(0));
+-
+-		// test truncation behavior
+-		testFSUB(ATDecFloat::FromDouble(1.0), ATDecFloat::FromDouble(-0.000000009999999999), ATDecFloat::FromDouble(1.0));
+-		testFSUB(ATDecFloat::FromDouble(-1.0), ATDecFloat::FromDouble(0.000000009999999999), ATDecFloat::FromDouble(-1.0));
+-
+-		// test overflow
+-		testFSUB(ATDecFloat::FromDouble(99e+94), ATDecFloat::FromDouble(-99e+94), ATDecFloat::FromDouble(198e+94));
+-		testFSUB(ATDecFloat::FromDouble(-99e+94), ATDecFloat::FromDouble(99e+94), ATDecFloat::FromDouble(-198e+94));
+-		testFSUB(ATDecFloat::FromDouble(99e+96), ATDecFloat::FromDouble(-99e+96), {});
+-		testFSUB(ATDecFloat::FromDouble(-99e+96), ATDecFloat::FromDouble(99e+96), {});
+-
+-		testFSUB(ATDecFloat::FromDouble(5e+97), ATDecFloat::FromDouble(-4e+97), ATDecFloat::FromDouble(9e+97));
+-		testFSUB(ATDecFloat::FromDouble(-5e+97), ATDecFloat::FromDouble(4e+97), ATDecFloat::FromDouble(-9e+97));
+-		testFSUB(ATDecFloat::FromDouble(5e+97), ATDecFloat::FromDouble(-5e+97), {});
+-		testFSUB(ATDecFloat::FromDouble(-5e+97), ATDecFloat::FromDouble(5e+97), {});
+-
+-		{
+-			BCDRandGen rg;
+-
+-			for(int i=0; i<100000; ++i) {
+-				ATDecFloat valx = rg();
+-				ATDecFloat valy = rg();
+-
+-				memcpy(&ram[FR0], &valx, 6);
+-				memcpy(&ram[FR1], &valy, 6);
+-
+-				invoke(FSUB);
+-
+-				const auto valr1 = ctx.GetResult();
+-
+-				memcpy(&ram[FR0], &valx, 6);
+-				memcpy(&ram[FR1], &valy, 6);
+-
+-				ATAccelFSUB(ctx);
+-
+-				const auto valr2 = ctx.GetResult();
+-
+-				if (check && valr1 != valr2)
+-					throw ATTestAssertionException("FSUB differ for %s - %s: unaccel %s, accel %s", valx.ToString().c_str(), valy.ToString().c_str(), valr1.ToString().c_str(), valr2.ToString().c_str());
+-			}
+-		}
+-	} catch(const ATTestAssertionException& e) {
+-		puts(e.c_str());
+-		++errors;
+-	}
+-
+-	ATTestTrace("Testing FSUB (small scale)");
+-
+-	try {
+-		auto timeScope = makeTimeScope();
+-
+-		{
+-			BCDRandGen rg;
+-
+-			for(int i=0; i<100000; ++i) {
+-				ATDecFloat valx = rg.Rand5ByteMag();
+-				ATDecFloat valy = rg.Rand5ByteMag();
+-
+-				memcpy(&ram[FR0], &valx, 6);
+-				memcpy(&ram[FR1], &valy, 6);
+-
+-				invoke(FSUB);
+-
+-				const auto valr1 = ctx.GetResult();
+-
+-				memcpy(&ram[FR0], &valx, 6);
+-				memcpy(&ram[FR1], &valy, 6);
+-
+-				ATAccelFSUB(ctx);
+-
+-				const auto valr2 = ctx.GetResult();
+-
+-				if (check && valr1 != valr2)
+-					throw ATTestAssertionException("FSUB differ for %s + %s: unaccel %s, accel %s", valx.ToString().c_str(), valy.ToString().c_str(), valr1.ToString().c_str(), valr2.ToString().c_str());
+-			}
+-		}
+-	} catch(const ATTestAssertionException& e) {
+-		puts(e.c_str());
+-		++errors;
+-	}
+-
+-	//==========================================================================
+ 	ATTestTrace("Testing FMUL");
+ 
+ 	const auto testFMUL = [&](double valx, double valy, double valr) {
+@@ -1124,73 +898,9 @@
+ 	//==========================================================================
+ 	ATTestTrace("Testing NORMALIZE");
+ 
+-	const auto testNORMALIZE = [&](uint8 v0, uint8 v1, uint8 v2, uint8 v3, uint8 v4, uint8 v5, bool trace = false) {
+-		ATDecFloat fvalx;
+-		fvalx.mSignExp = v0;
+-		fvalx.mMantissa[0] = v1;
+-		fvalx.mMantissa[1] = v2;
+-		fvalx.mMantissa[2] = v3;
+-		fvalx.mMantissa[3] = v4;
+-		fvalx.mMantissa[4] = v5;
+-
+-		ctx.SetFR0(fvalx);
+-		invoke(NORMALIZE, trace);
+-
+-		auto fvalr1 = ctx.GetResult();
+-
+-		ctx.SetFR0(fvalx);
+-		ATAccelNORMALIZE(ctx);
+-
+-		auto fvalr2 = ctx.GetResult();
+-
+-		if (check && fvalr1 != fvalr2) {
+-			throw ATTestAssertionException("NORMALIZE differs for %02X %02X %02X %02X %02X %02X: unaccel %s, accel %s"
+-				, v0
+-				, v1
+-				, v2
+-				, v3
+-				, v4
+-				, v5
+-				, fvalr1.ToString().c_str()
+-				, fvalr2.ToString().c_str()
+-			);
+-		}
+-	};
+-
+ 	try {
+ 		auto timeScope = makeTimeScope();
+ 
+-		testNORMALIZE(0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+-		testNORMALIZE(0x40, 0x00, 0x00, 0x00, 0x00, 0x00);
+-		testNORMALIZE(0xC0, 0x00, 0x00, 0x00, 0x00, 0x00);
+-
+-		testNORMALIZE(0x40, 0x12, 0x34, 0x56, 0x78, 0x91);
+-		testNORMALIZE(0xC0, 0x12, 0x34, 0x56, 0x78, 0x91);
+-		testNORMALIZE(0x40, 0x00, 0x12, 0x34, 0x56, 0x78);
+-		testNORMALIZE(0xC0, 0x00, 0x12, 0x34, 0x56, 0x78);
+-		testNORMALIZE(0x40, 0x00, 0x00, 0x12, 0x34, 0x56);
+-		testNORMALIZE(0xC0, 0x00, 0x00, 0x12, 0x34, 0x56);
+-		testNORMALIZE(0x40, 0x00, 0x00, 0x00, 0x12, 0x34);
+-		testNORMALIZE(0xC0, 0x00, 0x00, 0x00, 0x12, 0x34);
+-		testNORMALIZE(0x40, 0x00, 0x00, 0x00, 0x00, 0x01);
+-		testNORMALIZE(0xC0, 0x00, 0x00, 0x00, 0x00, 0x01);
+-
+-		// test max non-underflow
+-		testNORMALIZE(0x0F, 0x00, 0x12, 0x34, 0x56, 0x78);
+-		testNORMALIZE(0x8F, 0x00, 0x12, 0x34, 0x56, 0x78);
+-
+-		// test underflow to zero
+-		testNORMALIZE(0x10, 0x00, 0x12, 0x34, 0x56, 0x78);
+-		testNORMALIZE(0x90, 0x00, 0x12, 0x34, 0x56, 0x78);
+-
+-		// test max non-overflow
+-		testNORMALIZE(0x70, 0x00, 0x12, 0x34, 0x56, 0x78);
+-		testNORMALIZE(0xF0, 0x00, 0x12, 0x34, 0x56, 0x78);
+-
+-		// test overflow
+-		testNORMALIZE(0x70, 0x12, 0x34, 0x56, 0x78, 0x91);
+-		testNORMALIZE(0xF0, 0x12, 0x34, 0x56, 0x78, 0x91);
+-
+ 		{
+ 			BCDRandGen rg;
+ 
+@@ -1219,16 +929,7 @@
+ 					ATDecFloatOpt valr2 = ctx.GetResult();
+ 
+ 					if (check && valr1 != valr2) {
+-						throw ATTestAssertionException("NORMALIZE[%d] differs for %02X %02X %02X %02X %02X %02X: unaccel %s, accel %s"
+-							, i
+-							, valx.mSignExp
+-							, valx.mMantissa[0]
+-							, valx.mMantissa[1]
+-							, valx.mMantissa[2]
+-							, valx.mMantissa[3]
+-							, valx.mMantissa[4]
+-							, valr1.ToString().c_str()
+-							, valr2.ToString().c_str());
++						throw ATTestAssertionException("NORMALIZE[%d] differs for %s: unaccel %s, accel %s", i, valx.ToString().c_str(), valr1.ToString().c_str(), valr2.ToString().c_str());
+ 					}
+ 				}
+ 			}

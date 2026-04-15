@@ -1,0 +1,33 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/res/resource.h	2026-04-06 02:10:14.082507600 +0200
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/res/resource.h	2026-02-16 06:23:56.472344000 +0100
+@@ -188,7 +188,6 @@
+ #define IDD_FIRMWARE_KNOWN              273
+ #define IDD_TRACEVIEWER_LOG             274
+ #define IDR_PERFANALYZER_LOG_MENU       275
+-#define IDR_TAPECONTROL_MENU            276
+ #define IDI_DISK                        500
+ #define IDI_TAPE                        501
+ #define IDI_XEX                         502
+@@ -1570,11 +1569,6 @@
+ #define ID_CONTEXT_SETPRINTPOSITION     40807
+ #define ID_SAVEAS_SVG1                  40808
+ #define ID_SAVEAS_SVG                   40809
+-#define ID_FILE_NEWTAPE                 40810
+-#define ID_FILE_OPENTAPE                40811
+-#define ID_FILE_SAVETAPE                40812
+-#define ID_FILE_SAVEAS40813             40813
+-#define ID_FILE_UNLOAD                  40814
+ #define ID_INPUT_PORT1_NONE             45000
+ #define ID_INPUT_PORT2_NONE             45100
+ #define ID_INPUT_PORT3_NONE             45200
+@@ -1588,8 +1582,8 @@
+ #ifdef APSTUDIO_INVOKED
+ #ifndef APSTUDIO_READONLY_SYMBOLS
+ #define _APS_NO_MFC                     1
+-#define _APS_NEXT_RESOURCE_VALUE        277
+-#define _APS_NEXT_COMMAND_VALUE         40815
++#define _APS_NEXT_RESOURCE_VALUE        276
++#define _APS_NEXT_COMMAND_VALUE         40810
+ #define _APS_NEXT_CONTROL_VALUE         1428
+ #define _APS_NEXT_SYMED_VALUE           113
+ #endif

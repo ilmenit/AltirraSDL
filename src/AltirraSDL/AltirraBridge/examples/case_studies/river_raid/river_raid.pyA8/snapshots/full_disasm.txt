@@ -1,0 +1,4329 @@
+$a000          lda #$00
+$a002          sta NMIEN    [$D40E]
+$a005          sta IRQEN    [$D20E]
+$a008          sta GRACTL   [$D01D]
+$a00b          sta DMACTL   [$D400]
+$a00e          tay
+$a00f          sta PBCTL    [$D303]
+$a012          sta HPOSP0,Y [$D00F]
+$a015          sta DMACTL,Y [$D40F]
+$a018          sta AUDF1,Y  [$D20F]
+$a01b          sta PORTA,Y  [$D30F]
+$a01e          iny
+$a01f          bne $A012
+$a021          ldx #$38
+$a023          stx PACTL    [$D302]
+$a026          sta PORTA    [$D300]
+$a029          ldx #$3C
+$a02b          stx PACTL    [$D302]
+$a02e          ldx #$03
+$a030          stx SKCTL    [$D20F]
+$a033          ldy #$0F
+$a035          sty $A0      [$A0]
+$a037          jsr $B298    [$B298] = $A9
+$a03a          cmp $0090,Y  [$009F] = $00
+$a03d          beq $A043
+$a03f          ldy #$00
+$a041          beq $A048
+$a043          dey
+$a044          bpl $A035
+$a046          ldy #$A0
+$a048          lda #$00
+$a04a          sta $00      [$00]
+$a04c          sta $01      [$01]
+$a04e          sta ($00),Y  [$B90F]
+$a050          iny
+$a051          bne $A04E
+$a053          inc $01      [$01]
+$a055          ldx $01      [$01] = $B9
+$a057          cpx #$40
+$a059          bcc $A04E
+$a05b          ldx #$03
+$a05d          lda $B776,X  [$B780] = $06
+$a060          sta $3F00,X  [$3F0A]
+$a063          dex
+$a064          bpl $A05D
+$a066          ldy #$0E
+$a068          ldx #$2E
+$a06a          lda PAL      [$D014] = $01
+$a06d          and #$0E
+$a06f          sta $BF      [$BF]
+$a071          bne $A077
+$a073          ldy #$1D
+$a075          ldx #$2F
+$a077          stx $CB      [$CB]
+$a079          ldx #$0E
+$a07b          lda $B77A,Y  [$B789] = $50
+$a07e          sta $3FA9,X  [$3FB3]
+$a081          dey
+$a082          dex
+$a083          bpl $A07B
+$a085          lda #$0E
+$a087          ldx #$A3
+$a089          sta $3F05,X  [$3F0F]
+$a08c          dex
+$a08d          bne $A089
+$a08f          stx $A8      [$A8]
+$a091          sta $A7      [$A7]
+$a093          lda #$4E
+$a095          sta $3F06    [$3F06]
+$a098          sta $3F57    [$3F57]
+$a09b          stx $3F04    [$3F04]
+$a09e          stx $3F58    [$3F58]
+$a0a1          ldx #$30
+$a0a3          stx $3F07    [$3F07]
+$a0a6          ldx #$20
+$a0a8          stx $3F05    [$3F05]
+$a0ab          stx $3F08    [$3F08]
+$a0ae          ldx #$30
+$a0b0          stx $3F59    [$3F59]
+$a0b3          ldy #$02
+$a0b5          sty $A5      [$A5]
+$a0b7          ldy #$53
+$a0b9          sty $A6      [$A6]
+$a0bb          lda #$00
+$a0bd          sta DLISTL   [$D402]
+$a0c0          lda #$3F
+$a0c2          sta DLISTH   [$D403]
+$a0c5          lda #$00
+$a0c7          sta VDSLST   [$0200]
+$a0ca          lda #$B5
+$a0cc          sta VDSLST+1 [$0201]
+$a0cf          ldx #$B2
+$a0d1          stx VVBLKI+1 [$0223]
+$a0d4          ldy #$A5
+$a0d6          sty VVBLKI   [$0222]
+$a0d9          lda #$85
+$a0db          sta VIMIRQ   [$0216]
+$a0de          lda #$B4
+$a0e0          sta VIMIRQ+1 [$0217]
+$a0e3          lda #$08
+$a0e5          sta PMBASE   [$D407]
+$a0e8          lda #$B9
+$a0ea          sta $01      [$01]
+$a0ec          lda #$B7
+$a0ee          sta CASINI+1 [$03]
+$a0f0          ldx #$3B
+$a0f2          lda $BB70,X  [$BB7A] = $00
+$a0f5          sta $1000,X  [$100A]
+$a0f8          dex
+$a0f9          bpl $A0F2
+$a0fb          ldx #$08
+$a0fd          lda $E000,X  [$E00A] = $18
+$a100          sta $0800,X  [$080A]
+$a103          lda $E100,X  [$E10A] = $3C
+$a106          sta $0900,X  [$090A]
+$a109          sta $0600,X  [$060A]
+$a10c          lda $E300,X  [$E30A] = $3C
+$a10f          sta $0700,X  [$070A]
+$a112          inx
+$a113          bne $A0FD
+$a115          inx
+$a116          stx SIZEM    [$D00C]
+$a119          ldx #$3F
+$a11b          lda $BEEE,X  [$BEF8] = $27
+$a11e          sta $06C0,X  [$06CA]
+$a121          dex
+$a122          bpl $A11B
+$a124          ldx #$6F
+$a126          lda $BF2E,X  [$BF38] = $92
+$a129          sta $0818,X  [$0822]
+$a12c          dex
+$a12d          bpl $A126
+$a12f          ldx #$17
+$a131          lda $BF9E,X  [$BFA8] = $AE
+$a134          sta $08D0,X  [$08DA]
+$a137          dex
+$a138          bpl $A131
+$a13a          ldx #$2F
+$a13c          lda $BFB6,X  [$BFC0] = $38
+$a13f          sta $07D0,X  [$07DA]
+$a142          dex
+$a143          bpl $A13C
+$a145          lda #$9B
+$a147          sta $A1      [$A1]
+$a149          lda #$A1
+$a14b          sta $A2      [$A2]
+$a14d          ldy #$00
+$a14f          lda #$FF
+$a151          ldx $6000    [$6000] = $C0
+$a154          cpx #$47
+$a156          beq $A15A
+$a158          nop
+$a159          nop
+$a15a          cli
+$a15b          ldx #$09
+$a15d          lda #$00
+$a15f          sta $00,X    [$0A]
+$a161          inx
+$a162          bpl $A15F
+$a164          ldx #$29
+$a166          jsr $B0F1    [$B0F1] = $BD
+$a169          jsr $AF80    [$AF80] = $A5
+$a16c          ldy ICBLLZ   [$28] = $01
+$a16e          bne $A17E
+$a170          inc ICBLLZ   [$28]
+$a172          lda #$01
+$a174          sta ICAX1Z   [$2A]
+$a176          lda #$FF
+$a178          sta DELTAR   [$76]
+$a17a          ldx #$40
+$a17c          bne $A18D
+$a17e          bit ICBLHZ   [$29] = $81
+$a180          bmi $A18B
+$a182          jsr $AF5B    [$AF5B] = $A2
+$a185          jsr $B05C    [$B05C] = $A9
+$a188          jsr $B07C    [$B07C] = $A9
+$a18b          ldx #$C0
+$a18d          lda VCOUNT   [$D40B] = $00
+$a190          cmp #$78
+$a192          bne $A18D
+$a194          stx NMIEN    [$D40E]
+$a197          lda VCOUNT   [$D40B] = $00
+$a19a          cmp #$50
+$a19c          bcc $A197
+$a19e          ldx PORTA    [$D300] = $FF
+$a1a1          inx
+$a1a2          bne $A1BF
+$a1a4          lda TRIG0    [$D010] = $01
+$a1a7          beq $A1BF
+$a1a9          lda TRIG1    [$D011] = $01
+$a1ac          beq $A1BF
+$a1ae          lda #$08
+$a1b0          sta CONSOL   [$D01F]
+$a1b3          lda CONSOL   [$D01F] = $07
+$a1b6          lsr
+$a1b7          bcc $A1BF
+$a1b9          lsr
+$a1ba          bcc $A1BF
+$a1bc          lsr
+$a1bd          bcs $A1C5
+$a1c0          brk
+$a1c1          sty DELTAC+1 [$78]
+$a1c3          sty ICBALZ   [$24]
+$a1c5          lda SKSTAT   [$D20F] = $FF
+$a1c8          and #$04
+$a1ca          bne $A1CE
+$a1cc          sta DELTAC+1 [$78]
+$a1ce          ldx ICBALZ   [$24] = $00
+$a1d0          bne $A1DC
+$a1d2          tax
+$a1d3          bne $A1F5
+$a1d5          lda #$03
+$a1d7          sta ICBALZ   [$24]
+$a1d9          jmp $AE99    [$AE99] = $AD
+$a1dc          cpx #$02
+$a1de          bcc $A1F0
+$a1e0          beq $A1E9
+$a1e2          tax
+$a1e3          beq $A1D9
+$a1e5          dec ICBALZ   [$24]
+$a1e7          bne $A1D9
+$a1e9          tax
+$a1ea          bne $A1D9
+$a1ec          dec ICBALZ   [$24]
+$a1ee          bne $A1F5
+$a1f0          tax
+$a1f1          beq $A1F5
+$a1f3          dec ICBALZ   [$24]
+$a1f5          lda DELTAC+1 [$78] = $00
+$a1f7          bmi $A1D9
+$a1f9          lda $18      [$18] = $07
+$a1fb          eor BUFRHI   [$33] = $00
+$a1fd          sta $B1      [$B1]
+$a1ff          lda $18      [$18] = $07
+$a201          and #$0F
+$a203          bne $A21B
+$a205          lda RANDOM   [$D20A] = $D8
+$a208          and #$0F
+$a20a          cmp #$0B
+$a20c          bcc $A210
+$a20e          sbc #$05
+$a210          tax
+$a211          cpx DRKMSK   [$4E] = $0A
+$a213          beq $A21B
+$a215          lda CRITIC,X [$4C] = $84
+$a217          ora #$40
+$a219          sta CRITIC,X [$4C]
+$a21b          lda #$0F
+$a21d          ldx BUFRFL   [$38] = $00
+$a21f          cpx #$08
+$a221          bcs $A229
+$a223          cpx #$04
+$a225          bcc $A229
+$a227          lda #$03
+$a229          and $18      [$18] = $07
+$a22b          bne $A26C
+$a22d          lda $50      [$50] = $FF
+$a22f          bpl $A261
+$a231          bit ICBLHZ   [$29] = $81
+$a233          bmi $A239
+$a235          lda DELTAR   [$76] = $FF
+$a237          bne $A261
+$a239          bit SOUNDR   [$41] = $00
+$a23b          bpl $A24F
+$a23d          lda XMTDON   [$3A] = $08
+$a23f          cmp #$1A
+$a241          bcc $A261
+$a243          bit $50      [$50] = $FF
+$a245          bpl $A261
+$a247          bit ICHIDZ   [$20] = $FF
+$a249          bmi $A253
+$a24b          inc $50      [$50]
+$a24d          bpl $A261
+$a24f          lda ICAX5Z   [$2E] = $00
+$a251          bne $A261
+$a253          lda BUFRFL   [$38] = $00
+$a255          and #$7F
+$a257          cmp #$06
+$a259          bcs $A25F
+$a25b          inc RECVDN   [$39]
+$a25d          bcc $A261
+$a25f          dec RECVDN   [$39]
+$a261          lda #$03
+$a263          ldx BUFRFL   [$38] = $00
+$a265          bmi $A26A
+$a267          lda $BAAF,X  [$BAB9] = $15
+$a26a          sta BUFRFL   [$38]
+$a26c          ldx ATRACT   [$4D] = $0A
+$a26e          jmp $A2EE    [$A2EE] = $E0
+$a271          ldy $0500,X  [$050A] = $00
+$a274          cpy #$0E
+$a276          bcs $A2ED
+$a278          cpy #$0C
+$a27a          bcs $A28F
+$a27c          lda #$01
+$a27e          cpy #$07
+$a280          bcs $A284
+$a282          lda #$07
+$a284          and $18      [$18] = $07
+$a286          bne $A28F
+$a288          lda $BB24,Y  [$BB33] = $00
+$a28b          sta $0500,X  [$050A]
+$a28e          tay
+$a28f          bit ICBLHZ   [$29] = $81
+$a291          bmi $A297
+$a293          lda DELTAR   [$76] = $FF
+$a295          bne $A2ED
+$a297          lda $60      [$60] = $01
+$a299          lsr
+$a29a          beq $A2ED
+$a29c          cpy #$07
+$a29e          beq $A2CA
+$a2a0          bcc $A2ED
+$a2a2          cpy #$0C
+$a2a4          bne $A2AC
+$a2a6          lda $18      [$18] = $07
+$a2a8          and #$02
+$a2aa          bne $A2ED
+$a2ac          txa
+$a2ad          eor $B1      [$B1] = $06
+$a2af          ror
+$a2b0          bcs $A2ED
+$a2b2          lda CRITIC,X [$4C] = $84
+$a2b4          rol
+$a2b5          bpl $A2ED
+$a2b7          ror
+$a2b8          ror
+$a2b9          bcc $A2C5
+$a2bb          rol
+$a2bc          bit $B964    [$B964] = $10
+$a2bf          bne $A2CA
+$a2c1          eor #$18
+$a2c3          bne $A2C8
+$a2c5          rol
+$a2c6          and #$EF
+$a2c8          sta CRITIC,X [$4C]
+$a2ca          lda CRITIC,X [$4C] = $84
+$a2cc          and #$08
+$a2ce          bne $A2DE
+$a2d0          lda $0516,X  [$0520] = $00
+$a2d3          clc
+$a2d4          adc #$01
+$a2d6          cmp #$D5
+$a2d8          bcc $A2EA
+$a2da          lda #$2C
+$a2dc          bne $A2EA
+$a2de          lda $0516,X  [$0520] = $00
+$a2e1          sec
+$a2e2          sbc #$01
+$a2e4          cmp #$2C
+$a2e6          bcs $A2EA
+$a2e8          lda #$D4
+$a2ea          sta $0516,X  [$0520]
+$a2ed          inx
+$a2ee          cpx #$0B
+$a2f0          bcs $A2F5
+$a2f2          jmp $A271    [$A271] = $BC
+$a2f5          ldx ICAX1Z   [$2A] = $FE
+$a2f7          beq $A312
+$a2f9          lda $18      [$18] = $07
+$a2fb          and #$07
+$a2fd          bne $A312
+$a2ff          dex
+$a300          bne $A310
+$a302          dex
+$a303          lda ICBLHZ   [$29] = $81
+$a305          bmi $A310
+$a307          ora #$80
+$a309          sta ICBLHZ   [$29]
+$a30b          stx ICAX1Z   [$2A]
+$a30d          jmp $A688    [$A688] = $A5
+$a310          stx ICAX1Z   [$2A]
+$a312          lda $19      [$19] = $0F
+$a314          asl
+$a315          asl
+$a316          asl
+$a317          asl
+$a318          sta $B9      [$B9]
+$a31a          lda PORTA    [$D300] = $FF
+$a31d          ldx DELTAC   [$77] = $00
+$a31f          beq $A325
+$a321          lsr
+$a322          lsr
+$a323          lsr
+$a324          lsr
+$a325          and #$0F
+$a327          sta $19      [$19]
+$a329          cmp #$0F
+$a32b          bne $A332
+$a32d          lda TRIG0,X  [$D01A] = $0F
+$a330          bne $A33F
+$a332          lda DELTAR   [$76] = $FF
+$a334          sec
+$a335          sbc #$2F
+$a337          bne $A33F
+$a339          sta DELTAR   [$76]
+$a33b          ldx #$40
+$a33d          stx SAVMSC+1 [$59]
+$a33f          ldx DELTAR   [$76] = $FF
+$a341          bmi $A35C
+$a344          slo ($4C,X)  [$7C01] = $00
+$a346          sbc #$A3
+$a348          cpx #$30
+$a34a          bcc $A3B9
+$a34c          bne $A358
+$a34e          ldy #$80
+$a350          sty $052C    [$052C]
+$a353          ldy RAMTOP   [$6A] = $04
+$a355          dey
+$a356          sty RAMTOP   [$6A]
+$a358          dec DELTAR   [$76]
+$a35a          bne $A3B9
+$a35c          inx
+$a35d          beq $A3B9
+$a35f          txa
+$a360          and #$07
+$a362          bne $A36A
+$a364          ldy OLDADR   [$5E] = $00
+$a366          beq $A36A
+$a368          dec OLDADR   [$5E]
+$a36a          dec DELTAR   [$76]
+$a36c          bmi $A3B9
+$a36e          lda $75      [$75] = $04
+$a370          beq $A375
+$a372          jsr $B247    [$B247] = $A5
+$a375          lda #$01
+$a377          sta KEYDEF   [$79]
+$a379          lda RAMTOP   [$6A] = $04
+$a37b          bne $A3BC
+$a37d          lda #$63
+$a37f          jsr $B261    [$B261] = $85
+$a382          lda #$6E
+$a384          jsr $B261    [$B261] = $85
+$a387          lda $09      [$09] = $00
+$a389          lsr
+$a38a          bcs $A392
+$a38c          jsr $B06E    [$B06E] = $A5
+$a38f          jmp $A3B1    [$A3B1] = $20
+$a392          lda DELTAC   [$77] = $00
+$a394          beq $A399
+$a396          jsr $B247    [$B247] = $A5
+$a399          ldx #$03
+$a39b          lda $BB8F,X  [$BB99] = $00
+$a39e          eor #$C0
+$a3a0          sta $1033,X  [$103D]
+$a3a3          dex
+$a3a4          bpl $A39B
+$a3a6          lda #$50
+$a3a8          sta $B1      [$B1]
+$a3aa          ldx #$6C
+$a3ac          ldy #$37
+$a3ae          jsr $B064    [$B064] = $A9
+$a3b1          jsr $B21A    [$B21A] = $A9
+$a3b4          lda #$20
+$a3b6          sta $3FB3    [$3FB3]
+$a3b9          jmp $A3E6    [$A3E6] = $4C
+$a3bc          ldx #$12
+$a3be          jsr $B0F1    [$B0F1] = $BD
+$a3c1          lda VCOUNT   [$D40B] = $00
+$a3c4          cmp #$50
+$a3c6          bcc $A3C1
+$a3c8          lda TOADR    [$66] = $E3
+$a3ca          sta $AA      [$AA]
+$a3cc          lda TOADR+1  [$67] = $D4
+$a3ce          sta $AB      [$AB]
+$a3d0          lda $68      [$68] = $F7
+$a3d2          sta $AC      [$AC]
+$a3d4          lda $69      [$69] = $20
+$a3d6          sta LMARGN   [$52]
+$a3d8          clc
+$a3d9          adc #$26
+$a3db          adc ROWCRS   [$54] = $36
+$a3dd          sta DINDEX   [$57]
+$a3df          bit ICBLHZ   [$29] = $81
+$a3e1          bpl $A3E6
+$a3e3          jsr $B21A    [$B21A] = $A9
+$a3e6          jmp $A5B7    [$A5B7] = $A0
+$a3e9          ldx $1D      [$1D] = $FF
+$a3eb          bmi $A424
+$a3ed          lda $0500,X  [$050A] = $00
+$a3f0          cmp #$07
+$a3f2          bcc $A424
+$a3f4          cmp #$0E
+$a3f6          bcc $A3FC
+$a3f8          bne $A40A
+$a3fa          inc ICAX5Z   [$2E]
+$a3fc          ldy #$1F
+$a3fe          lda #$01
+$a400          jsr $B1C0    [$B1C0] = $84
+$a403          ldx $1D      [$1D] = $FF
+$a405          lda #$03
+$a407          jmp $A4E0    [$A4E0] = $9D
+$a40a          lda OLDCOL   [$5B] = $FF
+$a40c          adc #$01
+$a40e          ldx #$04
+$a410          bcc $A418
+$a412          lda #$FF
+$a414          sta OLDCOL+1 [$5C]
+$a416          ldx #$03
+$a418          sta OLDCOL   [$5B]
+$a41a          cpx COLINC   [$7A] = $00
+$a41c          beq $A424
+$a41e          stx COLINC   [$7A]
+$a420          lda #$08
+$a422          sta SWPFLG   [$7B]
+$a424          ldx $1E      [$1E] = $FF
+$a426          bmi $A42E
+$a428          ldx $50      [$50] = $FF
+$a42a          cpx #$11
+$a42c          bcs $A436
+$a42e          ldx ICDNOZ   [$21] = $FF
+$a430          bpl $A436
+$a432          ldx $1B      [$1B] = $FF
+$a434          bmi $A43F
+$a436          ldy #$1F
+$a438          lda #$01
+$a43a          jsr $B1C0    [$B1C0] = $84
+$a43d          bne $A3E6
+$a43f          lda OLDCOL+1 [$5C] = $FF
+$a441          sec
+$a442          sbc #$20
+$a444          bcs $A453
+$a446          ldy OLDCOL   [$5B] = $FF
+$a448          bne $A451
+$a44a          lda #$02
+$a44c          ldy #$23
+$a44e          jmp $A43A    [$A43A] = $20
+$a451          dec OLDCOL   [$5B]
+$a453          sta OLDCOL+1 [$5C]
+$a455          ldx #$09
+$a457          lda $19      [$19] = $0F
+$a459          tay
+$a45a          and #$0C
+$a45c          eor #$0C
+$a45e          bne $A466
+$a460          sta ICAX2Z   [$2B]
+$a462          sta SAVMSC   [$58]
+$a464          beq $A495
+$a466          lda ICAX2Z   [$2B] = $00
+$a468          clc
+$a469          adc #$08
+$a46b          bcs $A46F
+$a46d          sta ICAX2Z   [$2B]
+$a46f          dex
+$a470          tya
+$a471          and #$08
+$a473          beq $A483
+$a475          dex
+$a476          bcs $A47F
+$a478          lda SAVMSC   [$58] = $00
+$a47a          sec
+$a47b          sbc ICAX2Z   [$2B] = $00
+$a47d          bcs $A493
+$a47f          dec DINDEX   [$57]
+$a481          bne $A493
+$a483          bcs $A491
+$a485          lda SAVMSC   [$58] = $00
+$a487          bit $B9      [$B9] = $F0
+$a489          bpl $A48D
+$a48b          lda #$FF
+$a48d          adc ICAX2Z   [$2B] = $00
+$a48f          bcc $A493
+$a491          inc DINDEX   [$57]
+$a493          sta SAVMSC   [$58]
+$a495          stx OLDADR   [$5E]
+$a497          ldx SAVMSC+1 [$59] = $80
+$a499          tya
+$a49a          lsr
+$a49b          bcs $A4A4
+$a49d          txa
+$a49e          adc #$02
+$a4a0          bcc $A4B4
+$a4a2          bcs $A4B6
+$a4a4          lsr
+$a4a5          bcc $A4AD
+$a4a7          txa
+$a4a8          asl
+$a4a9          bcc $A49D
+$a4ab          beq $A4B6
+$a4ad          txa
+$a4ae          cmp #$41
+$a4b0          bcc $A4B6
+$a4b2          sbc #$02
+$a4b4          sta SAVMSC+1 [$59]
+$a4b6          ldx $1C      [$1C] = $FF
+$a4b8          bmi $A4C1
+$a4ba          ldy $0500,X  [$050A] = $00
+$a4bd          cpy #$07
+$a4bf          bcs $A4DE
+$a4c1          ldx $1F      [$1F] = $FF
+$a4c3          bmi $A4DB
+$a4c5          ldy $50      [$50] = $FF
+$a4c7          cpy #$11
+$a4c9          bcc $A4DB
+$a4cb          ldy $0500,X  [$050A] = $00
+$a4ce          cpy #$08
+$a4d0          bcc $A4DB
+$a4d2          lda #$02
+$a4d4          sta $0500,X  [$050A]
+$a4d7          lda #$17
+$a4da          nop $8D4C,X  [$8D56] = $00
+$a4dd          lda $A9      [$A9] = $FF
+$a4df          kil
+$a4e0          sta $0500,X  [$050A]
+$a4e3          ldy $050B,X  [$0515] = $0E
+$a4e6          lda #$17
+$a4e8          sta $7C      [$7C]
+$a4ea          cpy #$0E
+$a4ec          bne $A547
+$a4ee          sta CHKSUM   [$31]
+$a4f0          lda PALNTS   [$62] = $01
+$a4f2          sed
+$a4f3          adc #$00
+$a4f5          sta PALNTS   [$62]
+$a4f7          lda $61      [$61] = $00
+$a4f9          adc #$00
+$a4fb          cld
+$a4fc          sta $61      [$61]
+$a4fe          inc ICAX5Z   [$2E]
+$a500          lda $0516,X  [$0520] = $00
+$a503          sec
+$a504          sbc #$08
+$a506          cmp RECVDN   [$39] = $01
+$a508          bcs $A521
+$a50a          lda $0516,X  [$0520] = $00
+$a50d          adc #$1F
+$a50f          cmp RECVDN   [$39] = $01
+$a511          bcc $A521
+$a513          lda BUFRFL   [$38] = $00
+$a515          ora #$80
+$a517          sta BUFRFL   [$38]
+$a519          lda #$37
+$a51b          sta $7C      [$7C]
+$a51d          ldy #$10
+$a51f          bne $A547
+$a521          lda $61      [$61] = $00
+$a523          bne $A52B
+$a525          lda PALNTS   [$62] = $01
+$a527          cmp #$05
+$a529          bcc $A547
+$a52b          lda BUFRFL   [$38] = $00
+$a52d          cmp #$06
+$a52f          bcs $A53C
+$a531          lda $0516,X  [$0520] = $00
+$a534          sec
+$a535          sbc RECVDN   [$39] = $01
+$a537          cmp #$29
+$a539          jmp $A543    [$A543] = $B0
+$a53c          lda RECVDN   [$39] = $01
+$a53e          sbc $0516,X  [$0520] = $00
+$a541          cmp #$41
+$a543          bcs $A547
+$a545          inc $50      [$50]
+$a547          sed
+$a548          lda ADRESS   [$64] = $00
+$a54a          and #$F0
+$a54c          sta $B1      [$B1]
+$a54e          lda $BB0B,Y  [$BB1A] = $08
+$a551          clc
+$a552          adc ADRESS+1 [$65] = $00
+$a554          sta ADRESS+1 [$65]
+$a556          lda ADRESS   [$64] = $00
+$a558          adc #$00
+$a55a          sta ADRESS   [$64]
+$a55c          lda LOGCOL   [$63] = $00
+$a55e          adc #$00
+$a560          sta LOGCOL   [$63]
+$a562          cld
+$a563          bcc $A574
+$a565          lda #$99
+$a567          sta LOGCOL   [$63]
+$a569          sta ADRESS   [$64]
+$a56b          sta ADRESS+1 [$65]
+$a56d          lda #$00
+$a56f          sta RAMTOP   [$6A]
+$a571          jmp $A436    [$A436] = $A0
+$a574          lda ADRESS   [$64] = $00
+$a576          and #$F0
+$a578          cmp $B1      [$B1] = $06
+$a57a          beq $A589
+$a57c          ldy RAMTOP   [$6A] = $04
+$a57e          cpy #$09
+$a580          beq $A589
+$a582          iny
+$a583          sty RAMTOP   [$6A]
+$a585          lda #$40
+$a587          sta COUNTR   [$7E]
+$a589          ldx #$01
+$a58b          bne $A5AA
+$a58d          lda $1A      [$1A] = $FF
+$a58f          bpl $A589
+$a591          lda COLCRS+1 [$56] = $01
+$a593          cmp #$1C
+$a595          bcc $A59D
+$a597          sbc #$06
+$a599          tax
+$a59a          jmp $A5AA    [$A5AA] = $8A
+$a59d          ldx DELTAC   [$77] = $00
+$a59f          lda TRIG0,X  [$D01A] = $0F
+$a5a2          bne $A589
+$a5a4          ldx #$0F
+$a5a6          stx $7D      [$7D]
+$a5a8          ldx #$A9
+$a5aa          txa
+$a5ab          pha
+$a5ac          jsr $B221    [$B221] = $A9
+$a5af          pla
+$a5b0          sta COLCRS+1 [$56]
+$a5b2          lda #$20
+$a5b4          jsr $B223    [$B223] = $A6
+$a5b7          ldy #$00
+$a5b9          ldx HOLD1    [$51] = $0B
+$a5bb          cpx #$0B
+$a5bd          bcs $A605
+$a5bf          lda $0500,X  [$050A] = $00
+$a5c2          cmp #$0A
+$a5c4          beq $A5CA
+$a5c6          cmp #$0B
+$a5c8          bne $A605
+$a5ca          lda $C1      [$C1] = $00
+$a5cc          bne $A5FD
+$a5ce          bit ICBLHZ   [$29] = $81
+$a5d0          bmi $A5D6
+$a5d2          lda DELTAR   [$76] = $FF
+$a5d4          bne $A605
+$a5d6          lda DOSINI,X [$16] = $52
+$a5d8          sbc #$3C
+$a5da          cmp #$1C
+$a5dc          bcc $A607
+$a5de          sta $C2      [$C2]
+$a5e0          lda #$09
+$a5e2          sta COUNTR+1 [$7F]
+$a5e4          ldy $0516,X  [$0520] = $00
+$a5e7          dey
+$a5e8          dey
+$a5e9          dey
+$a5ea          lda CRITIC,X [$4C] = $84
+$a5ec          ldx #$FE
+$a5ee          and #$08
+$a5f0          bne $A5F8
+$a5f2          ldx #$02
+$a5f4          tya
+$a5f5          adc #$09
+$a5f7          tay
+$a5f8          stx $C0      [$C0]
+$a5fa          jmp $A605    [$A605] = $84
+$a5fd          ldx ICCOMZ   [$22] = $FF
+$a5ff          bpl $A605
+$a601          clc
+$a602          adc $C0      [$C0] = $00
+$a604          tay
+$a605          sty $C1      [$C1]
+$a607          ldy #$00
+$a609          lda $50      [$50] = $FF
+$a60b          bmi $A671
+$a60d          bne $A62A
+$a60f          lda XMTDON   [$3A] = $08
+$a611          cmp #$19
+$a613          bcc $A671
+$a615          sbc #$06
+$a617          sta $40      [$40]
+$a619          sty $3D      [$3D]
+$a61b          lda RECVDN   [$39] = $01
+$a61d          ldx BUFRFL   [$38] = $00
+$a61f          cpx #$06
+$a621          bcs $A625
+$a623          adc #$09
+$a625          sbc #$04
+$a627          jmp $A652    [$A652] = $85
+$a62a          tax
+$a62b          sec
+$a62c          sbc #$11
+$a62e          bcs $A657
+$a630          lda $40      [$40] = $08
+$a632          adc $B4AF,X  [$B4B9] = $00
+$a635          sta $40      [$40]
+$a637          lda $3D      [$3D] = $00
+$a639          ldx BUFRFL   [$38] = $00
+$a63b          cpx #$06
+$a63d          bcs $A64A
+$a63f          adc $3F      [$3F] = $00
+$a641          sta $3D      [$3D]
+$a643          lda $3C      [$3C] = $00
+$a645          adc $3E      [$3E] = $00
+$a647          jmp $A652    [$A652] = $85
+$a64a          sbc $3F      [$3F] = $00
+$a64c          sta $3D      [$3D]
+$a64e          lda $3C      [$3C] = $00
+$a650          sbc $3E      [$3E] = $00
+$a652          sta $3C      [$3C]
+$a654          iny
+$a655          bne $A65E
+$a657          lsr
+$a658          lsr
+$a659          lsr
+$a65a          clc
+$a65b          adc #$02
+$a65d          tay
+$a65e          ldx $50      [$50] = $FF
+$a660          inx
+$a663          bcc $A66F
+$a665          ldx #$00
+$a667          ldy #$00
+$a669          lda DELTAR   [$76] = $FF
+$a66b          beq $A66F
+$a66d          ldx #$FF
+$a66f          stx $50      [$50]
+$a671          sty CHKSNT   [$3B]
+$a673          ldy #$00
+$a675          lda #$08
+$a677          sta CONSOL   [$D01F]
+$a67a          lda CONSOL   [$D01F] = $07
+$a67d          lsr
+$a67e          bcs $A693
+$a680          lda #$02
+$a682          sta $C6      [$C6]
+$a684          sty ICBLHZ   [$29]
+$a686          sty ICAX1Z   [$2A]
+$a688          lda $09      [$09] = $00
+$a68a          and #$01
+$a68c          sta DELTAC   [$77]
+$a68e          ldx #$79
+$a690          jmp $A15D    [$A15D] = $A9
+$a693          lsr
+$a694          bcc $A699
+$a696          lsr
+$a697          bcs $A6DC
+$a699          dec ICBAHZ   [$25]
+$a69b          bpl $A6DE
+$a69d          ldx $09      [$09] = $00
+$a69f          inx
+$a6a0          cpx #$08
+$a6a2          bcc $A6A6
+$a6a4          ldx #$00
+$a6a6          stx $09      [$09]
+$a6a8          txa
+$a6a9          clc
+$a6aa          adc #$D1
+$a6ac          sty $102A    [$102A]
+$a6af          sta $102B    [$102B]
+$a6b2          lda #$00
+$a6b4          sta DELTAC+1 [$78]
+$a6b6          sta ICBLHZ   [$29]
+$a6b8          sta RAMTOP   [$6A]
+$a6ba          sta $75      [$75]
+$a6bc          sta DELTAC   [$77]
+$a6be          ldx #$02
+$a6c0          stx $C6      [$C6]
+$a6c2          sta LOGCOL,X [$6D]
+$a6c4          sta BITMSK,X [$78]
+$a6c6          dex
+$a6c7          bpl $A6C2
+$a6c9          sta COUNTR+1 [$7F]
+$a6cb          stx $50      [$50]
+$a6cd          jsr $AF80    [$AF80] = $A5
+$a6d0          jsr $AF5B    [$AF5B] = $A2
+$a6d3          jsr $B21A    [$B21A] = $A9
+$a6d6          ldx #$25
+$a6d8          stx ICAX1Z   [$2A]
+$a6da          ldy #$1E
+$a6dc          sty ICBAHZ   [$25]
+$a6de          lda DELTAR   [$76] = $FF
+$a6e0          bmi $A6ED
+$a6e2          cmp #$2F
+$a6e4          bne $A6FD
+$a6e6          lda #$09
+$a6e8          sta OLDADR   [$5E]
+$a6ea          jmp $AE99    [$AE99] = $AD
+$a6ed          bit ICBLHZ   [$29] = $81
+$a6ef          bpl $A6EA
+$a6f1          lda #$80
+$a6f3          ldx $09      [$09] = $00
+$a6f5          cpx #$04
+$a6f7          bcc $A6FB
+$a6f9          lda #$FE
+$a6fb          sta SAVMSC+1 [$59]
+$a6fd          lda #$02
+$a6ff          sta $A9      [$A9]
+$a701          dec $A9      [$A9]
+$a703          bmi $A6EA
+$a705          lda SAVMSC+1 [$59] = $80
+$a707          cmp #$FE
+$a709          bcs $A711
+$a70b          adc STATUS   [$30] = $00
+$a70d          sta STATUS   [$30]
+$a70f          bcc $A701
+$a711          ldy #$00
+$a713          lda $60      [$60] = $01
+$a715          cmp #$09
+$a717          bcs $A71B
+$a719          ldy #$06
+$a71b          sty $B5      [$B5]
+$a71d          inc CIOCHR   [$2F]
+$a71f          lda CIOCHR   [$2F] = $08
+$a721          cmp #$20
+$a723          bcs $A72B
+$a725          bit ICSTAZ   [$23] = $84
+$a727          bpl $A756
+$a729          bmi $A759
+$a72b          ldx #$00
+$a72d          stx CIOCHR   [$2F]
+$a72f          stx $36      [$36]
+$a731          stx $052D    [$052D]
+$a734          lda ICSTAZ   [$23] = $84
+$a736          and #$04
+$a738          ora #$10
+$a73a          sta ICSTAZ   [$23]
+$a73c          ldx OLDADR+1 [$5F] = $0D
+$a73e          stx ICAX3Z   [$2C]
+$a740          dec OLDROW   [$5A]
+$a742          beq $A75C
+$a744          ldx OLDCHR   [$5D] = $11
+$a746          dex
+$a747          bne $A756
+$a749          stx ICAX5Z   [$2E]
+$a74b          lda $60      [$60] = $01
+$a74d          lsr
+$a74e          lda #$80
+$a750          bcs $A754
+$a752          lda #$84
+$a754          sta ICSTAZ   [$23]
+$a756          jsr $B183    [$B183] = $A5
+$a759          jmp $A7FB    [$A7FB] = $A5
+$a75c          dec OLDCHR   [$5D]
+$a75e          bne $A767
+$a760          jsr $B194    [$B194] = $A6
+$a763          ldx #$10
+$a765          stx OLDCHR   [$5D]
+$a767          jsr $B183    [$B183] = $A5
+$a76a          ldx OLDCHR   [$5D] = $11
+$a76c          dex
+$a76d          bne $A781
+$a76f          stx ICAX4Z   [$2D]
+$a771          lda #$0D
+$a773          sta OLDADR+1 [$5F]
+$a775          lda $60      [$60] = $01
+$a777          lsr
+$a778          bcc $A77D
+$a77a          dec $052D    [$052D]
+$a77d          lda #$36
+$a77f          bne $A7E0
+$a781          lda $60      [$60] = $01
+$a783          lsr
+$a784          lda #$07
+$a786          bcs $A7DC
+$a788          lda ICAX4Z   [$2D] = $00
+$a78a          dex
+$a78b          bne $A793
+$a78d          cmp #$C0
+$a78f          beq $A79E
+$a791          bne $A7B2
+$a793          asl
+$a794          eor ICAX4Z   [$2D] = $00
+$a796          bmi $A7AC
+$a798          lda $AA      [$AA] = $E3
+$a79a          and #$30
+$a79c          bne $A7B6
+$a79e          lda ICAX4Z   [$2D] = $00
+$a7a0          and #$80
+$a7a2          bne $A7A6
+$a7a4          ora #$40
+$a7a6          sta ICAX4Z   [$2D]
+$a7a8          lda #$00
+$a7aa          beq $A7DC
+$a7ac          lda #$C0
+$a7ae          bit ICAX4Z   [$2D] = $00
+$a7b0          bvs $A7B4
+$a7b2          lda #$00
+$a7b4          sta ICAX4Z   [$2D]
+$a7b6          ldy #$0F
+$a7b8          lda $AA      [$AA] = $E3
+$a7ba          and #$0F
+$a7bc          cmp #$02
+$a7be          bcs $A7C2
+$a7c0          adc #$02
+$a7c2          bit ICAX4Z   [$2D] = $00
+$a7c4          bpl $A7C7
+$a7c6          dey
+$a7c7          ldx $60      [$60] = $01
+$a7c9          cpx #$14
+$a7cb          bcs $A7CE
+$a7cd          dey
+$a7ce          ldx $B5      [$B5] = $06
+$a7d0          beq $A7D4
+$a7d2          ldy #$08
+$a7d4          sty $B1      [$B1]
+$a7d6          cmp $B1      [$B1] = $06
+$a7d8          bcc $A7DC
+$a7da          lda $B1      [$B1] = $06
+$a7dc          sta OLDADR+1 [$5F]
+$a7de          asl
+$a7df          asl
+$a7e0          ldy #$02
+$a7e2          sty OLDROW   [$5A]
+$a7e4          sta BFENLO   [$34]
+$a7e6          sec
+$a7e7          sbc ROWCRS   [$54] = $36
+$a7e9          beq $A7FB
+$a7eb          bcc $A7F3
+$a7ed          cmp #$20
+$a7f0          ora ($D0,X)  [$0000] = $00
+$a7f2          nop $C9      [$C9] = $00
+$a7f4          cpx #$A9
+$a7f6          inc $0069,X  [$0073]
+$a7f9          sta BFENHI   [$35]
+$a7fb          lda BFENHI   [$35] = $00
+$a7fd          beq $A826
+$a7ff          bpl $A809
+$a801          lda BFENLO   [$34] = $00
+$a803          cmp ROWCRS   [$54] = $36
+$a805          bcs $A80F
+$a807          bcc $A815
+$a809          lda ROWCRS   [$54] = $36
+$a80b          cmp BFENLO   [$34] = $00
+$a80d          bcc $A815
+$a80f          lda #$00
+$a811          sta BFENHI   [$35]
+$a813          beq $A826
+$a815          lda ROWCRS   [$54] = $36
+$a817          clc
+$a818          adc BFENHI   [$35] = $00
+$a81a          sta ROWCRS   [$54]
+$a81c          lda RMARGN   [$53] = $14
+$a81e          sec
+$a81f          sbc BFENHI   [$35] = $00
+$a821          sec
+$a822          sbc BFENHI   [$35] = $00
+$a824          sta RMARGN   [$53]
+$a826          bit ICSTAZ   [$23] = $84
+$a828          bpl $A83A
+$a82a          lda #$00
+$a82c          sta $C3      [$C3]
+$a82e          ldx CIOCHR   [$2F] = $08
+$a830          lda $BA8F,X  [$BA99] = $01
+$a833          clc
+$a834          adc LMARGN   [$52] = $21
+$a836          tax
+$a837          jmp $A96A    [$A96A] = $86
+$a83a          lda $052D    [$052D] = $00
+$a83d          beq $A84F
+$a83f          ldx LMARGN   [$52] = $21
+$a841          cpx #$18
+$a843          bcs $A848
+$a845          inx
+$a846          bne $A837
+$a848          cpx #$29
+$a84a          bcc $A84F
+$a84c          dex
+$a84d          bne $A837
+$a84f          ldx #$01
+$a851          ldy #$40
+$a853          lda $60      [$60] = $01
+$a855          cmp #$03
+$a857          bcs $A85F
+$a859          ldx #$1C
+$a85b          ldy #$24
+$a85d          bne $A885
+$a85f          lsr
+$a860          bcc $A86D
+$a862          lda $052D    [$052D] = $00
+$a865          bne $A86D
+$a867          lda $60      [$60] = $01
+$a869          cmp #$0A
+$a86b          bcs $A871
+$a86d          ldy #$28
+$a86f          bne $A883
+$a871          cmp #$14
+$a873          bcs $A879
+$a875          ldx #$0D
+$a877          ldy #$34
+$a879          lda $36      [$36] = $00
+$a87b          beq $A885
+$a87d          bmi $A883
+$a87f          ldy #$28
+$a881          bne $A885
+$a883          ldx #$19
+$a885          stx $C4      [$C4]
+$a887          sty $C5      [$C5]
+$a889          lda $AC      [$AC] = $F7
+$a88b          and #$0F
+$a88d          ldy $C3      [$C3] = $00
+$a88f          bne $A89E
+$a891          cmp #$08
+$a893          lda #$01
+$a895          bcs $A899
+$a897          lda #$FF
+$a899          sta $C3      [$C3]
+$a89b          jmp $A8C4    [$A8C4] = $A5
+$a89e          cmp #$08
+$a8a0          bcs $A8A5
+$a8a2          jmp $A96C    [$A96C] = $24
+$a8a5          cmp #$0D
+$a8a7          bne $A8B1
+$a8a9          lda $C3      [$C3] = $00
+$a8ab          eor #$FE
+$a8ad          sta $C3      [$C3]
+$a8af          bne $A8C4
+$a8b1          cmp #$0F
+$a8b3          bne $A8C4
+$a8b5          ldx #$0E
+$a8b7          bit ICAX4Z   [$2D] = $00
+$a8b9          bpl $A8BC
+$a8bb          dex
+$a8bc          cpx OLDADR+1 [$5F] = $0D
+$a8be          bcc $A8A2
+$a8c0          cpx ICAX3Z   [$2C] = $00
+$a8c2          bcc $A8A2
+$a8c4          lda ROWCRS   [$54] = $36
+$a8c6          cmp BFENLO   [$34] = $00
+$a8c8          bcs $A8CC
+$a8ca          lda BFENLO   [$34] = $00
+$a8cc          sta $C9      [$C9]
+$a8ce          lda #$40
+$a8d0          sec
+$a8d1          sbc $C9      [$C9] = $00
+$a8d3          asl
+$a8d4          sta $C8      [$C8]
+$a8d6          ldx DRKMSK   [$4E] = $0A
+$a8d8          lda $C3      [$C3] = $00
+$a8da          bpl $A929
+$a8dc          lda LMARGN   [$52] = $21
+$a8de          cmp $C4      [$C4] = $00
+$a8e0          bcs $A8E5
+$a8e2          jmp $A95F    [$A95F] = $A5
+$a8e5          cpx #$0B
+$a8e7          bcs $A923
+$a8e9          lda $050B,X  [$0515] = $0E
+$a8ec          cmp #$08
+$a8ee          bcc $A923
+$a8f0          lda LMARGN   [$52] = $21
+$a8f2          bit ICAX4Z   [$2D] = $00
+$a8f4          bpl $A906
+$a8f6          bit $37      [$37] = $00
+$a8f8          bpl $A8FE
+$a8fa          adc #$7F
+$a8fc          bne $A90C
+$a8fe          lda $C8      [$C8] = $00
+$a900          lsr
+$a901          clc
+$a902          adc LMARGN   [$52] = $21
+$a904          bne $A90C
+$a906          clc
+$a907          adc $C8      [$C8] = $00
+$a909          clc
+$a90a          adc $C9      [$C9] = $00
+$a90c          sta $B7      [$B7]
+$a90e          lda $0516,X  [$0520] = $00
+$a911          sec
+$a912          sbc #$17
+$a914          clc
+$a915          adc $B5      [$B5] = $06
+$a917          ldy $0521,X  [$052B] = $00
+$a91a          beq $A91F
+$a91c          clc
+$a91d          adc #$08
+$a91f          cmp $B7      [$B7] = $57
+$a921          bcs $A95F
+$a923          ldx LMARGN   [$52] = $21
+$a925          dex
+$a926          jmp $A96A    [$A96A] = $86
+$a929          lda LMARGN   [$52] = $21
+$a92b          cmp $C5      [$C5] = $00
+$a92d          bcs $A95F
+$a92f          cpx #$0B
+$a931          bcs $A967
+$a933          lda $050B,X  [$0515] = $0E
+$a936          cmp #$08
+$a938          bcc $A967
+$a93a          lda LMARGN   [$52] = $21
+$a93c          bit ICAX4Z   [$2D] = $00
+$a93e          bpl $A94A
+$a940          bit $37      [$37] = $00
+$a942          bpl $A94D
+$a944          adc #$3F
+$a946          adc $C9      [$C9] = $00
+$a948          bne $A94D
+$a94a          clc
+$a94b          adc $C9      [$C9] = $00
+$a94d          clc
+$a94e          adc #$02
+$a950          sta $B7      [$B7]
+$a952          lda $0516,X  [$0520] = $00
+$a955          sec
+$a956          sbc #$20
+$a958          sec
+$a959          sbc $B5      [$B5] = $06
+$a95b          cmp $B7      [$B7] = $57
+$a95d          bcs $A967
+$a95f          lda $C3      [$C3] = $00
+$a961          eor #$FE
+$a963          sta $C3      [$C3]
+$a965          bne $A96C
+$a967          ldx LMARGN   [$52] = $21
+$a969          inx
+$a96a          stx LMARGN   [$52]
+$a96c          bit ICSTAZ   [$23] = $84
+$a96e          bmi $A9D7
+$a970          lda CIOCHR   [$2F] = $08
+$a972          bne $A9D7
+$a974          lda $AC      [$AC] = $F7
+$a977          jsr $5DF0    [$5DF0] = $01
+$a97a          lda $60      [$60] = $01
+$a97c          lsr
+$a97d          bcc $A989
+$a97f          lda $AA      [$AA] = $E3
+$a981          and #$07
+$a983          tax
+$a984          lda $BBCC,X  [$BBD6] = $04
+$a987          bpl $A9A4
+$a989          ldx OLDADR+1 [$5F] = $0D
+$a98b          cpx ICAX3Z   [$2C] = $00
+$a98d          bcc $A991
+$a98f          ldx ICAX3Z   [$2C] = $00
+$a991          cpx #$02
+$a993          bcc $A9D7
+$a995          bit ICAX4Z   [$2D] = $00
+$a997          bpl $A9A1
+$a999          cpx #$05
+$a99b          bcc $A9D7
+$a99d          txa
+$a99e          adc #$0A
+$a9a0          tax
+$a9a1          lda $BBD4,X  [$BBDE] = $07
+$a9a4          sta $BD      [$BD]
+$a9a6          lda $BBB2,X  [$BBBC] = $08
+$a9a9          sta $BC      [$BC]
+$a9ab          tax
+$a9ac          lda $BBEB,X  [$BBF5] = $1E
+$a9af          sta $BE      [$BE]
+$a9b1          ldy LMARGN   [$52] = $21
+$a9b3          lda $AC      [$AC] = $F7
+$a9b5          and #$80
+$a9b7          bmi $A9BF
+$a9b9          cpy #$29
+$a9bb          bcc $A9C5
+$a9bd          bcs $A9C3
+$a9bf          cpy #$18
+$a9c1          bcs $A9C5
+$a9c3          eor #$80
+$a9c5          clc
+$a9c6          adc #$01
+$a9c8          sta $36      [$36]
+$a9ca          txa
+$a9cb          asl
+$a9cc          tax
+$a9cd          lda $BBF0,X  [$BBFA] = $5A
+$a9d0          sta $BA      [$BA]
+$a9d2          lda $BBF1,X  [$BBFB] = $BC
+$a9d5          sta $BB      [$BB]
+$a9d7          lda $3F04    [$3F04] = $80
+$a9da          sec
+$a9db          sbc #$30
+$a9dd          sta $3F04    [$3F04]
+$a9e0          bcs $A9F4
+$a9e2          ldx $3F05    [$3F05] = $3D
+$a9e5          dex
+$a9e6          cpx #$20
+$a9e8          bcs $A9EC
+$a9ea          ldx #$3E
+$a9ec          cpx #$2F
+$a9ee          bne $A9F1
+$a9f0          dex
+$a9f1          stx $3F05    [$3F05]
+$a9f4          ldy $A7      [$A7] = $00
+$a9f6          beq $AA05
+$a9f8          ldy #$00
+$a9fa          sty $3F07    [$3F07]
+$a9fd          sty $A7      [$A7]
+$a9ff          jsr $B0C7    [$B0C7] = $A0
+$aa02          jmp $AA7A    [$AA7A] = $A9
+$aa05          ldy $A8      [$A8] = $00
+$aa07          beq $AA16
+$aa09          ldy #$00
+$aa0b          sty $3F07    [$3F07]
+$aa0e          sty $A8      [$A8]
+$aa10          jsr $B0D8    [$B0D8] = $A0
+$aa13          jmp $AA7A    [$AA7A] = $A9
+$aa16          lda $A5      [$A5] = $09
+$aa18          cmp #$A2
+$aa1a          bcc $AA45
+$aa1c          lda #$02
+$aa1e          sta $A5      [$A5]
+$aa20          lda #$0E
+$aa22          sta $A7      [$A7]
+$aa24          sta $3FA6    [$3FA6]
+$aa27          sta $3FA7    [$3FA7]
+$aa2a          sta $3FA8    [$3FA8]
+$aa2d          ldx #$4E
+$aa2f          stx $3F06    [$3F06]
+$aa32          ldx #$30
+$aa34          stx $3F07    [$3F07]
+$aa37          ldx #$20
+$aa39          stx $3F08    [$3F08]
+$aa3c          jsr $B0C7    [$B0C7] = $A0
+$aa3f          jsr $B0C7    [$B0C7] = $A0
+$aa42          jmp $AA77    [$AA77] = $20
+$aa45          jsr $B0D8    [$B0D8] = $A0
+$aa48          lda $A6      [$A6] = $5B
+$aa4a          cmp #$A2
+$aa4c          bcc $AA77
+$aa4e          lda #$02
+$aa50          sta $A6      [$A6]
+$aa52          lda #$0E
+$aa54          sta $A8      [$A8]
+$aa56          sta $3FA6    [$3FA6]
+$aa59          sta $3FA7    [$3FA7]
+$aa5c          sta $3FA8    [$3FA8]
+$aa5f          ldx #$4E
+$aa61          stx $3F06    [$3F06]
+$aa64          ldx #$30
+$aa66          stx $3F07    [$3F07]
+$aa69          ldx #$30
+$aa6b          stx $3F08    [$3F08]
+$aa6e          jsr $B0D8    [$B0D8] = $A0
+$aa71          jsr $B0D8    [$B0D8] = $A0
+$aa74          jmp $AA7A    [$AA7A] = $A9
+$aa77          jsr $B0C7    [$B0C7] = $A0
+$aa7a          lda #$B8
+$aa7c          sta $A2      [$A2]
+$aa7e          lda $3F04    [$3F04] = $80
+$aa81          sta $A3      [$A3]
+$aa83          lda $3F05    [$3F05] = $3D
+$aa86          sta $A4      [$A4]
+$aa88          lda #$00
+$aa8a          sta $B4      [$B4]
+$aa8c          lda LMARGN   [$52] = $21
+$aa8e          bit ICAX4Z   [$2D] = $00
+$aa90          bmi $AA95
+$aa92          clc
+$aa93          adc ROWCRS   [$54] = $36
+$aa95          tax
+$aa96          lsr
+$aa97          lsr
+$aa98          tay
+$aa99          dey
+$aa9a          bit ICAX4Z   [$2D] = $00
+$aa9c          bmi $AAB9
+$aa9e          lda $36      [$36] = $00
+$aaa0          bpl $AAB9
+$aaa2          lda CIOCHR   [$2F] = $08
+$aaa4          cmp $BE      [$BE] = $00
+$aaa6          bcs $AAB9
+$aaa8          tya
+$aaa9          pha
+$aaaa          ldy $BD      [$BD] = $00
+$aaac          jsr $AFF4    [$AFF4] = $A5
+$aaaf          jsr $B01A    [$B01A] = $A4
+$aab2          pla
+$aab3          sec
+$aab4          sbc $BC      [$BC] = $00
+$aab6          sbc $BD      [$BD] = $00
+$aab8          tay
+$aab9          jsr $AFF4    [$AFF4] = $A5
+$aabc          jsr $B034    [$B034] = $A4
+$aabf          lda RMARGN   [$53] = $14
+$aac1          bit ICAX4Z   [$2D] = $00
+$aac3          bpl $AB37
+$aac5          ldy ROWCRS   [$54] = $36
+$aac7          cpy #$06
+$aac9          bcs $AAD2
+$aacb          adc ROWCRS   [$54] = $36
+$aacd          adc ROWCRS   [$54] = $36
+$aacf          jmp $AB37    [$AB37] = $86
+$aad2          stx $B7      [$B7]
+$aad4          lsr
+$aad5          clc
+$aad6          adc $B7      [$B7] = $57
+$aad8          tax
+$aad9          lsr
+$aada          lsr
+$aadb          sec
+$aadc          sbc $B4      [$B4] = $30
+$aade          tay
+$aadf          jsr $AFF0    [$AFF0] = $A9
+$aae2          adc #$02
+$aae4          ldy ROWCRS   [$54] = $36
+$aae6          cpy #$08
+$aae8          bcs $AAEC
+$aaea          adc #$10
+$aaec          jsr $B03B    [$B03B] = $85
+$aaef          stx $B7      [$B7]
+$aaf1          lda ROWCRS   [$54] = $36
+$aaf3          asl
+$aaf4          adc $B7      [$B7] = $57
+$aaf6          tax
+$aaf7          lsr
+$aaf8          lsr
+$aaf9          sec
+$aafa          sbc $B4      [$B4] = $30
+$aafc          tay
+$aafd          dey
+$aafe          lda ROWCRS   [$54] = $36
+$ab00          cmp #$08
+$ab02          bcs $AB0C
+$ab04          jsr $AFEC    [$AFEC] = $A9
+$ab07          clc
+$ab08          adc #$10
+$ab0a          bne $AB31
+$ab0c          lda $36      [$36] = $00
+$ab0e          beq $AB2E
+$ab11          rla $BEC5    [$BEC5] = $55
+$ab14          bcs $AB2E
+$ab16          lda $BD      [$BD] = $00
+$ab18          sec
+$ab19          sbc $B4      [$B4] = $30
+$ab1b          sta $B7      [$B7]
+$ab1d          tya
+$ab1e          sec
+$ab1f          sbc $B7      [$B7] = $57
+$ab21          sbc $BC      [$BC] = $00
+$ab23          pha
+$ab24          ldy $B7      [$B7] = $57
+$ab26          jsr $AFF4    [$AFF4] = $A5
+$ab29          jsr $B01A    [$B01A] = $A4
+$ab2c          pla
+$ab2d          tay
+$ab2e          jsr $AFF4    [$AFF4] = $A5
+$ab31          jsr $B03B    [$B03B] = $85
+$ab34          lda RMARGN   [$53] = $14
+$ab36          lsr
+$ab37          stx $B7      [$B7]
+$ab39          clc
+$ab3a          adc $B7      [$B7] = $57
+$ab3c          tax
+$ab3d          lsr
+$ab3e          lsr
+$ab3f          sec
+$ab40          sbc $B4      [$B4] = $30
+$ab42          tay
+$ab43          jsr $AFF0    [$AFF0] = $A9
+$ab46          adc #$02
+$ab48          jsr $B034    [$B034] = $A4
+$ab4b          lda #$30
+$ab4d          sec
+$ab4e          sbc $B4      [$B4] = $30
+$ab50          tay
+$ab51          bit ICAX4Z   [$2D] = $00
+$ab53          bmi $AB73
+$ab55          lda $36      [$36] = $00
+$ab57          beq $AB73
+$ab59          bmi $AB73
+$ab5b          lda CIOCHR   [$2F] = $08
+$ab5d          cmp $BE      [$BE] = $00
+$ab5f          bcs $AB73
+$ab61          tya
+$ab62          sec
+$ab63          sbc $BD      [$BD] = $00
+$ab65          sbc $BC      [$BC] = $00
+$ab67          tay
+$ab68          iny
+$ab69          jsr $AFF4    [$AFF4] = $A5
+$ab6c          jsr $B01A    [$B01A] = $A4
+$ab6f          lda $BD      [$BD] = $00
+$ab71          tay
+$ab72          dey
+$ab73          jsr $AFF4    [$AFF4] = $A5
+$ab76          lda COLRSH   [$4F] = $00
+$ab78          beq $AB7C
+$ab7a          dec COLRSH   [$4F]
+$ab7c          inc XMTDON   [$3A]
+$ab7e          inc $40      [$40]
+$ab80          inc $C2      [$C2]
+$ab82          inc DOSINI   [$0C]
+$ab84          inc DOSINI+1 [$0D]
+$ab86          inc APPMHI   [$0E]
+$ab88          inc APPMHI+1 [$0F]
+$ab8a          inc POKMSK   [$10]
+$ab8c          inc BRKKEY   [$11]
+$ab8e          inc RTCLOK   [$12]
+$ab90          inc RTCLOK+1 [$13]
+$ab92          inc RTCLOK+2 [$14]
+$ab94          inc BUFADR   [$15]
+$ab96          inc BUFADR+1 [$16]
+$ab98          bne $ABE1
+$ab9a          ldx ATRACT   [$4D] = $0A
+$ab9c          cpx #$0B
+$ab9e          bcs $ABE1
+$aba0          ldx #$09
+$aba2          lda DOSINI,X [$16] = $52
+$aba4          sta DOSINI+1,X [$17]
+$aba6          lda $0516,X  [$0520] = $00
+$aba9          sta $0517,X  [$0521]
+$abac          lda CRITIC,X [$4C] = $84
+$abae          sta $43,X    [$4D]
+$abb0          lda $0500,X  [$050A] = $00
+$abb3          sta $0501,X  [$050B]
+$abb6          lda $050B,X  [$0515] = $0E
+$abb9          sta $050C,X  [$0516]
+$abbc          lda $0521,X  [$052B] = $00
+$abbf          sta $0522,X  [$052C]
+$abc2          dex
+$abc3          bmi $ABC9
+$abc5          cpx ATRACT   [$4D] = $0A
+$abc7          bcs $ABA2
+$abc9          lda BUFRHI   [$33] = $00
+$abcb          eor #$01
+$abcd          sta BUFRHI   [$33]
+$abcf          inc ATRACT   [$4D]
+$abd1          ldx HOLD1    [$51] = $0B
+$abd3          cpx #$0B
+$abd5          bcs $ABD9
+$abd7          inc HOLD1    [$51]
+$abd9          ldx DRKMSK   [$4E] = $0A
+$abdb          cpx #$0B
+$abdd          bcs $ABE1
+$abdf          inc DRKMSK   [$4E]
+$abe1          ldx DRKMSK   [$4E] = $0A
+$abe3          cpx #$0B
+$abe5          bcs $ABF3
+$abe7          ldy BUFRLO   [$32] = $0F
+$abe9          dey
+$abea          bmi $ABEF
+$abec          jmp $AE94    [$AE94] = $C6
+$abef          ldy #$0B
+$abf1          sty DRKMSK   [$4E]
+$abf3          lda CIOCHR   [$2F] = $08
+$abf5          and #$0F
+$abf7          bne $ABFD
+$abf9          ldx ATRACT   [$4D] = $0A
+$abfb          bne $AC00
+$abfd          jmp $AE96    [$AE96] = $4C
+$ac00          dex
+$ac01          stx ATRACT   [$4D]
+$ac03          stx DRKMSK   [$4E]
+$ac05          lda #$00
+$ac07          sta $B8      [$B8]
+$ac09          lda ICSTAZ   [$23] = $84
+$ac0b          sta CRITIC,X [$4C]
+$ac0d          bpl $AC23
+$ac0f          and #$04
+$ac11          ora #$D2
+$ac13          sta DOSVEC+1 [$0B]
+$ac15          lda #$07
+$ac17          sta $B8      [$B8]
+$ac19          ldy #$0E
+$ac1b          lda ROWCRS   [$54] = $36
+$ac1d          sec
+$ac1e          sbc #$06
+$ac20          jmp $AD37    [$AD37] = $A6
+$ac23          ldy #$01
+$ac25          lda CIOCHR   [$2F] = $08
+$ac27          beq $AC3E
+$ac29          lda $60      [$60] = $01
+$ac2b          sec
+$ac2c          sbc #$08
+$ac2e          bmi $AC3B
+$ac30          cmp #$20
+$ac32          bcs $AC62
+$ac34          asl
+$ac35          asl
+$ac36          asl
+$ac37          cmp $AB      [$AB] = $D4
+$ac39          bcs $AC62
+$ac3b          jmp $AD37    [$AD37] = $A6
+$ac3e          dey
+$ac3f          lda OLDCHR   [$5D] = $11
+$ac41          clc
+$ac42          adc OLDROW   [$5A] = $01
+$ac44          cmp #$12
+$ac46          bcs $AC3B
+$ac48          lda $60      [$60] = $01
+$ac4a          cmp $CB      [$CB] = $2F
+$ac4c          bcc $AC50
+$ac4e          lda $CB      [$CB] = $2F
+$ac50          eor #$FF
+$ac52          sec
+$ac53          adc #$3F
+$ac55          asl
+$ac56          cmp $AB      [$AB] = $D4
+$ac58          bcc $AC62
+$ac5a          bit $AA      [$AA] = $E3
+$ac5c          bvs $ACB9
+$ac5e          ldy #$0F
+$ac60          bne $AC8C
+$ac62          lda $AB      [$AB] = $D4
+$ac64          and #$07
+$ac66          tax
+$ac67          ldy $BB1C,X  [$BB26] = $03
+$ac6a          ldx $60      [$60] = $01
+$ac6c          cpy #$07
+$ac6e          bne $AC76
+$ac70          cpx #$05
+$ac72          bcs $AC84
+$ac74          ldy #$0D
+$ac76          cpy #$0C
+$ac78          bne $AC84
+$ac7a          lda CIOCHR   [$2F] = $08
+$ac7c          bne $AC82
+$ac7e          cpx #$03
+$ac80          bcs $AC84
+$ac82          ldy #$08
+$ac84          cpy #$0D
+$ac86          bne $AC8C
+$ac88          lda #$05
+$ac8a          sta $B8      [$B8]
+$ac8c          lda OLDADR+1 [$5F] = $0D
+$ac8e          cmp ICAX3Z   [$2C] = $00
+$ac90          bne $ACBC
+$ac92          sta $B3      [$B3]
+$ac94          lda $60      [$60] = $01
+$ac97          bcc $ACC2
+$ac99          lda #$3F
+$ac9b          ldx $B8      [$B8] = $00
+$ac9d          beq $ACA1
+$ac9f          lda #$37
+$aca1          sbc $B5      [$B5] = $06
+$aca3          sta $B1      [$B1]
+$aca5          lda $AA      [$AA] = $E3
+$aca7          and #$3F
+$aca9          clc
+$acaa          adc $B5      [$B5] = $06
+$acac          cmp $B1      [$B1] = $06
+$acae          bcc $ACB2
+$acb0          lda $B1      [$B1] = $06
+$acb2          clc
+$acb3          adc ROWCRS   [$54] = $36
+$acb5          bit $AA      [$AA] = $E3
+$acb7          bmi $AD29
+$acb9          jmp $AD37    [$AD37] = $A6
+$acbc          bcs $ACC0
+$acbe          lda ICAX3Z   [$2C] = $00
+$acc0          sta $B3      [$B3]
+$acc2          ldx #$0E
+$acc4          bit ICAX4Z   [$2D] = $00
+$acc6          bpl $ACC9
+$acc8          dex
+$acc9          cpx $B3      [$B3] = $00
+$accb          bcs $ACD5
+$accd          cpy #$07
+$accf          beq $ACD5
+$acd1          ldy #$01
+$acd3          bne $AD37
+$acd5          ldx OLDCHR   [$5D] = $11
+$acd7          dex
+$acd8          bne $ACE0
+$acda          inc $B5      [$B5]
+$acdc          inc $B5      [$B5]
+$acde          bne $ACEC
+$ace0          ldx #$0D
+$ace2          bit ICAX4Z   [$2D] = $00
+$ace4          bpl $ACE8
+$ace6          ldx #$0A
+$ace8          cpx $B3      [$B3] = $00
+$acea          bcs $ACF6
+$acec          cpy #$0D
+$acee          bne $ACF6
+$acf0          lda #$00
+$acf2          sta $B8      [$B8]
+$acf4          ldy #$08
+$acf6          lda $B3      [$B3] = $00
+$acf8          asl
+$acf9          asl
+$acfa          beq $AD10
+$acfc          bit ICAX4Z   [$2D] = $00
+$acfe          bpl $AD10
+$ad00          eor #$FF
+$ad02          adc #$41
+$ad04          ldx $AA      [$AA] = $E3
+$ad06          stx $37      [$37]
+$ad08          bpl $AD1D
+$ad0a          eor #$FF
+$ad0c          adc #$80
+$ad0e          bne $AD14
+$ad10          bit $AA      [$AA] = $E3
+$ad12          bmi $AD19
+$ad14          sec
+$ad15          adc $B5      [$B5] = $06
+$ad17          bne $AD37
+$ad19          eor #$FF
+$ad1b          adc #$81
+$ad1d          cpy #$0F
+$ad1f          sbc #$08
+$ad21          sbc $B5      [$B5] = $06
+$ad23          ldx $B8      [$B8] = $00
+$ad25          beq $AD29
+$ad27          sbc #$08
+$ad29          cpy #$0F
+$ad2b          beq $AD37
+$ad2d          pha
+$ad2e          ldx DRKMSK   [$4E] = $0A
+$ad30          lda CRITIC,X [$4C] = $84
+$ad32          ora #$08
+$ad34          sta CRITIC,X [$4C]
+$ad36          pla
+$ad37          ldx DRKMSK   [$4E] = $0A
+$ad39          clc
+$ad3a          adc #$20
+$ad3c          sta $CA      [$CA]
+$ad3e          lda LMARGN   [$52] = $21
+$ad40          bit $052D    [$052D] = $00
+$ad43          bpl $AD51
+$ad45          cmp #$18
+$ad47          bcs $AD4B
+$ad49          lda #$18
+$ad4b          cmp #$28
+$ad4d          bcc $AD51
+$ad4f          lda #$28
+$ad51          clc
+$ad52          adc $CA      [$CA] = $00
+$ad54          sta $0516,X  [$0520]
+$ad57          tya
+$ad58          sta $0500,X  [$050A]
+$ad5b          sta $050B,X  [$0515]
+$ad5e          cmp #$08
+$ad60          bne $AD88
+$ad62          lda HOLD1    [$51] = $0B
+$ad64          cmp #$0B
+$ad66          bcc $AD88
+$ad68          lda OLDCHR   [$5D] = $11
+$ad6a          cmp #$0E
+$ad6c          bcs $AD88
+$ad6e          lda $AC      [$AC] = $F7
+$ad70          and #$70
+$ad72          bne $AD88
+$ad74          lda $60      [$60] = $01
+$ad76          cmp #$0D
+$ad78          bcc $AD88
+$ad7a          lda #$0A
+$ad7c          sta $0500,X  [$050A]
+$ad7f          sta $050B,X  [$0515]
+$ad82          lda #$00
+$ad84          sta $C1      [$C1]
+$ad86          stx HOLD1    [$51]
+$ad88          lda $BB60,Y  [$BB6F] = $17
+$ad8b          clc
+$ad8c          adc #$04
+$ad8e          sta BUFRLO   [$32]
+$ad90          lda $BBA2,Y  [$BBB1] = $00
+$ad93          sta $0521,X  [$052B]
+$ad96          lda #$61
+$ad98          sec
+$ad99          sbc BUFRLO   [$32] = $0F
+$ad9b          sta DOSINI,X [$16]
+$ad9d          lda CIOCHR   [$2F] = $08
+$ad9f          ora BUFRFL   [$38] = $00
+$ada1          beq $ADA6
+$ada3          jmp $AE94    [$AE94] = $C6
+$ada6          bit ICSTAZ   [$23] = $84
+$ada8          bpl $ADCD
+$adaa          lda #$0B
+$adac          sta XMTDON   [$3A]
+$adae          ldx #$05
+$adb0          lda #$00
+$adb2          sta SOUNDR   [$41]
+$adb4          sta $3F      [$3F]
+$adb6          lda #$02
+$adb8          sta $3E      [$3E]
+$adba          lda $AA      [$AA] = $E3
+$adbc          and #$7F
+$adbe          cmp #$40
+$adc0          bcc $ADC3
+$adc2          inx
+$adc3          stx BUFRFL   [$38]
+$adc5          clc
+$adc6          adc #$40
+$adc8          sta RECVDN   [$39]
+$adca          jmp $AE94    [$AE94] = $C6
+$adcd          ldx DRKMSK   [$4E] = $0A
+$adcf          lda $0500,X  [$050A] = $00
+$add2          cmp #$08
+$add4          bcc $ADA3
+$add6          lda $60      [$60] = $01
+$add8          cmp #$07
+$adda          bcc $ADA3
+$addc          lda OLDCHR   [$5D] = $11
+$adde          cmp #$05
+$ade0          bcc $ADA3
+$ade2          cmp #$0E
+$ade4          bcs $ADA3
+$ade6          lda $AC      [$AC] = $F7
+$ade8          and #$C0
+$adea          bne $ADA3
+$adec          ldx OLDADR+1 [$5F] = $0D
+$adee          cpx ICAX3Z   [$2C] = $00
+$adf0          bcc $ADF4
+$adf2          ldx ICAX3Z   [$2C] = $00
+$adf4          cpx #$02
+$adf6          bcc $ADA3
+$adf8          cpx #$0E
+$adfa          bcs $ADA3
+$adfc          lda $AC      [$AC] = $F7
+$adfe          lsr
+$adff          lsr
+$ae00          lsr
+$ae01          ldy $60      [$60] = $01
+$ae03          cpy #$0A
+$ae05          bne $AE09
+$ae07          eor #$07
+$ae09          and #$06
+$ae0b          bne $AE17
+$ae0d          bit ICAX4Z   [$2D] = $00
+$ae0f          bmi $AE17
+$ae11          cpx #$08
+$ae13          bcs $AE17
+$ae15          lda #$08
+$ae17          tay
+$ae18          lda $B7F4,Y  [$B803] = $55
+$ae1b          sta $3E      [$3E]
+$ae1d          lda $B7F5,Y  [$B804] = $6A
+$ae20          sta $3F      [$3F]
+$ae23          ora ICBALZ   [$24] = $00
+$ae25          and $1610    [$1610] = $00
+$ae28          lda $36      [$36] = $00
+$ae2a          bne $AE94
+$ae2c          cpx #$0B
+$ae2e          bcs $AE94
+$ae30          cpx #$04
+$ae32          bcc $AE94
+$ae34          lda $AC      [$AC] = $F7
+$ae36          lsr
+$ae37          bcc $AE3A
+$ae39          iny
+$ae3a          lda #$4C
+$ae3c          bne $AE83
+$ae3e          lda $60      [$60] = $01
+$ae40          lsr
+$ae41          lda $BFE4,X  [$BFEE] = $86
+$ae44          bcc $AE6C
+$ae46          lda $AC      [$AC] = $F7
+$ae48          and #$1F
+$ae4a          cmp #$10
+$ae4c          bcc $AE59
+$ae4e          adc #$57
+$ae50          ldx $36      [$36] = $00
+$ae52          beq $AE56
+$ae54          bpl $AE5E
+$ae56          iny
+$ae57          bpl $AE63
+$ae59          ldx $36      [$36] = $00
+$ae5b          bpl $AE63
+$ae5d          iny
+$ae5e          eor #$FF
+$ae60          sec
+$ae61          adc #$78
+$ae63          clc
+$ae64          adc LMARGN   [$52] = $21
+$ae66          clc
+$ae67          adc #$20
+$ae69          jmp $AE86    [$AE86] = $85
+$ae6c          cmp #$50
+$ae6e          bcc $AE79
+$ae70          ldx $36      [$36] = $00
+$ae72          beq $AE76
+$ae74          bpl $AE7E
+$ae76          iny
+$ae77          bpl $AE83
+$ae79          ldx $36      [$36] = $00
+$ae7b          bpl $AE83
+$ae7d          iny
+$ae7e          eor #$FF
+$ae80          sec
+$ae81          adc #$98
+$ae83          clc
+$ae84          adc #$30
+$ae86          sta RECVDN   [$39]
+$ae88          sty BUFRFL   [$38]
+$ae8a          lda #$0C
+$ae8c          sta XMTDON   [$3A]
+$ae8e          lda #$FF
+$ae90          sta $50      [$50]
+$ae92          sta SOUNDR   [$41]
+$ae94          dec BUFRLO   [$32]
+$ae96          jmp $A701    [$A701] = $C6
+$ae99          lda VCOUNT   [$D40B] = $00
+$ae9c          cmp #$50
+$ae9e          bcs $AE99
+$aea0          jsr $AFD0    [$AFD0] = $A5
+$aea3          lda XMTDON   [$3A] = $08
+$aea5          cmp #$BC
+$aea7          bcc $AEAF
+$aea9          ldy #$00
+$aeab          sty BUFRFL   [$38]
+$aead          sty XMTDON   [$3A]
+$aeaf          sta $A3      [$A3]
+$aeb1          lda #$0D
+$aeb3          sta $A4      [$A4]
+$aeb5          lda BUFRFL   [$38] = $00
+$aeb7          asl
+$aeb8          tax
+$aeb9          lda $B4D1,X  [$B4DB] = $F4
+$aebc          sta $A1      [$A1]
+$aebe          lda $B4D2,X  [$B4DC] = $B9
+$aec1          sta $A2      [$A2]
+$aec3          ldy #$0A
+$aec5          jsr $B00F    [$B00F] = $98
+$aec8          lda $18      [$18] = $07
+$aeca          lsr
+$aecb          lsr
+$aecc          lsr
+$aecd          and #$07
+$aecf          tax
+$aed0          lda $BAC5,X  [$BACF] = $00
+$aed3          sta COLPM0   [$D012]
+$aed6          ldx $C2      [$C2] = $08
+$aed8          cpx #$1C
+$aeda          bcc $AEFA
+$aedc          lda $0AFE,X  [$0B08] = $00
+$aedf          and #$FC
+$aee1          sta $0AFE,X  [$0B08]
+$aee4          lda $0AFF,X  [$0B09] = $00
+$aee7          and #$FC
+$aee9          sta $0AFF,X  [$0B09]
+$aeec          lda $0B00,X  [$0B0A] = $00
+$aeef          and #$FC
+$aef1          ldy $C1      [$C1] = $00
+$aef3          beq $AEF7
+$aef5          ora #$03
+$aef7          sta $0B00,X  [$0B0A]
+$aefa          lda $40      [$40] = $08
+$aefc          cmp #$BC
+$aefe          bcc $AF09
+$af00          ldy #$FF
+$af02          sty $50      [$50]
+$af04          iny
+$af05          sty CHKSNT   [$3B]
+$af07          sty $40      [$40]
+$af09          sta $A3      [$A3]
+$af0b          lda #$0C
+$af0d          sta $A4      [$A4]
+$af0f          lda CHKSNT   [$3B] = $00
+$af11          asl
+$af12          tax
+$af13          lda $BAB7,X  [$BAC1] = $46
+$af16          sta $A1      [$A1]
+$af18          lda $BAB8,X  [$BAC2] = $BA
+$af1b          sta $A2      [$A2]
+$af1d          ldy #$0F
+$af1f          jsr $B00F    [$B00F] = $98
+$af22          ldy #$0D
+$af24          lda OLDADR   [$5E] = $00
+$af26          asl
+$af27          tax
+$af28          lda $BACD,X  [$BAD7] = $34
+$af2b          sta $A1      [$A1]
+$af2d          lda $BACE,X  [$BAD8] = $B9
+$af30          sta $A2      [$A2]
+$af32          lda ($A1),Y  [$B81D] = $AB
+$af34          sta $0EAA,Y  [$0EB9]
+$af37          dey
+$af38          bpl $AF32
+$af3a          lda VCOUNT   [$D40B] = $00
+$af3d          cmp #$07
+$af3f          bcs $AF52
+$af41          lda ICAX1Z   [$2A] = $FE
+$af43          bne $AF48
+$af45          jsr $AF5B    [$AF5B] = $A2
+$af48          jsr $B05C    [$B05C] = $A9
+$af4b          lda DELTAC   [$77] = $00
+$af4d          bne $AF55
+$af4f          jsr $B07C    [$B07C] = $A9
+$af52          jmp $A197    [$A197] = $AD
+$af55          jsr $B068    [$B068] = $A9
+$af58          jmp $A197    [$A197] = $AD
+$af5b          ldx #$00
+$af5d          ldy RAMTOP   [$6A] = $04
+$af5f          beq $AF75
+$af61          lda COUNTR   [$7E] = $00
+$af63          beq $AF6C
+$af65          and #$08
+$af67          beq $AF6C
+$af69          dey
+$af6a          beq $AF75
+$af6c          lda #$9C
+$af6e          sta $1033,X  [$103D]
+$af71          inx
+$af72          dey
+$af73          bne $AF6E
+$af75          lda #$00
+$af77          sta $1033,X  [$103D]
+$af7a          inx
+$af7b          cpx #$09
+$af7d          bcc $AF77
+$af7f          rts
+$af80          lda $09      [$09] = $00
+$af82          ror
+$af83          bcs $AF8E
+$af85          jsr $B06E    [$B06E] = $A5
+$af88          lda #$DB
+$af8a          ldx #$D0
+$af8c          bne $AF95
+$af8e          jsr $B068    [$B068] = $A9
+$af91          lda #$4F
+$af93          ldx #$50
+$af95          sta $100B    [$100B]
+$af98          stx $1012    [$1012]
+$af9b          lda $09      [$09] = $00
+$af9d          lsr
+$af9e          tax
+$af9f          lda $B494,X  [$B49E] = $7F
+$afa2          sta TOADR    [$66]
+$afa4          sta $71      [$71]
+$afa6          lda $B498,X  [$B4A2] = $20
+$afa9          sta TOADR+1  [$67]
+$afab          sta $72      [$72]
+$afad          lda $B49C,X  [$B4A6] = $14
+$afb0          sta $68      [$68]
+$afb2          sta $73      [$73]
+$afb4          lda $B4A0,X  [$B4AA] = $20
+$afb7          sta $69      [$69]
+$afb9          sta $74      [$74]
+$afbc          ldy $B4      [$B4] = $30
+$afbe          sta $60      [$60]
+$afc0          sta BUFCNT   [$6B]
+$afc2          lda $B4A8,X  [$B4B2] = $00
+$afc5          sta PALNTS   [$62]
+$afc7          sta BUFSTR+1 [$6D]
+$afc9          lda #$00
+$afcb          sta $61      [$61]
+$afcd          sta BUFSTR   [$6C]
+$afcf          rts
+$afd0          lda ICSTAZ   [$23] = $84
+$afd2          and #$04
+$afd4          eor #$D6
+$afd6          ldx DRKMSK   [$4E] = $0A
+$afd8          cpx #$0B
+$afda          bcs $AFE8
+$afdc          ldy CRITIC,X [$4C] = $84
+$afde          bpl $AFE8
+$afe0          ldy DOSINI,X [$16] = $52
+$afe2          cpy #$5C
+$afe4          bcs $AFE8
+$afe6          eor #$04
+$afe8          sta COLPF0   [$D016]
+$afeb          rts
+$afec          lda #$AA
+$afee          bne $AFFA
+$aff0          lda #$FF
+$aff2          bne $AFFA
+$aff4          lda COLRSH   [$4F] = $00
+$aff6          bne $AFEC
+$aff8          lda #$55
+$affa          sty $B6      [$B6]
+$affc          dey
+$affd          bmi $B009
+$afff          sta ($A3),Y  [$3DBF]
+$b001          dey
+$b002          bpl $AFFF
+$b004          lda $B6      [$B6] = $14
+$b006          jsr $B04B    [$B04B] = $48
+$b009          txa
+$b00a          and #$03
+$b00c          asl
+$b00d          asl
+$b00e          rts
+$b00f          tya
+$b010          bmi $B019
+$b012          lda ($A1),Y  [$B81D] = $AB
+$b014          sta ($A3),Y  [$3DBF]
+$b016          dey
+$b017          bpl $B012
+$b019          rts
+$b01a          ldy $BC      [$BC] = $00
+$b01c          dey
+$b01d          lda ($BA),Y  [$000F] = $08
+$b01f          sta ($A3),Y  [$3DBF]
+$b021          dey
+$b022          bpl $B01D
+$b024          lda $BA      [$BA] = $00
+$b026          clc
+$b027          adc $BC      [$BC] = $00
+$b029          sta $BA      [$BA]
+$b02b          bcc $B02F
+$b02d          inc $BB      [$BB]
+$b02f          lda $BC      [$BC] = $00
+$b031          jmp $B04B    [$B04B] = $48
+$b034          ldy COLRSH   [$4F] = $00
+$b036          beq $B03B
+$b038          clc
+$b039          adc #$10
+$b03b          sta $A1      [$A1]
+$b03d          ldy #$01
+$b03f          lda ($A1),Y  [$B81D] = $AB
+$b041          sta ($A3),Y  [$3DBF]
+$b043          dey
+$b044          lda ($A1),Y  [$B81D] = $AB
+$b046          sta ($A3),Y  [$3DBF]
+$b048          dey
+$b049          lda #$02
+$b04b          pha
+$b04c          clc
+$b04d          adc $A3      [$A3] = $B0
+$b04f          sta $A3      [$A3]
+$b051          bcc $B055
+$b053          inc $A4      [$A4]
+$b055          pla
+$b056          clc
+$b057          adc $B4      [$B4] = $30
+$b059          sta $B4      [$B4]
+$b05b          rts
+$b05c          lda #$90
+$b05e          sta $B1      [$B1]
+$b060          ldx #$61
+$b062          ldy #$23
+$b064          lda #$02
+$b066          bne $B086
+$b068          lda #$50
+$b06a          ldy #$0C
+$b06c          bne $B080
+$b06e          lda $09      [$09] = $00
+$b070          and #$0E
+$b072          asl
+$b073          adc #$80
+$b075          tax
+$b076          lda #$D0
+$b078          ldy #$0C
+$b07a          bne $B082
+$b07c          lda #$10
+$b07e          ldy #$02
+$b080          ldx #$63
+$b082          sta $B1      [$B1]
+$b084          lda #$03
+$b086          bit ICBLHZ   [$29] = $81
+$b088          bmi $B0C6
+$b08a          sta $B2      [$B2]
+$b08c          lda $00,X    [$0A] = $00
+$b08e          lsr
+$b08f          lsr
+$b090          lsr
+$b091          lsr
+$b092          bne $B0AF
+$b094          sta $1000,Y  [$100F]
+$b097          iny
+$b098          lda $00,X    [$0A] = $00
+$b09a          and #$0F
+$b09c          bne $B0BA
+$b09e          sta $1000,Y  [$100F]
+$b0a1          iny
+$b0a2          inx
+$b0a3          dec $B2      [$B2]
+$b0a5          bne $B08C
+$b0a7          beq $B0C6
+$b0a9          lda $00,X    [$0A] = $00
+$b0ab          lsr
+$b0ac          lsr
+$b0ad          lsr
+$b0ae          lsr
+$b0af          clc
+$b0b0          adc $B1      [$B1] = $06
+$b0b2          sta $1000,Y  [$100F]
+$b0b5          iny
+$b0b6          lda $00,X    [$0A] = $00
+$b0b8          and #$0F
+$b0ba          clc
+$b0bb          adc $B1      [$B1] = $06
+$b0bd          sta $1000,Y  [$100F]
+$b0c0          iny
+$b0c1          inx
+$b0c2          dec $B2      [$B2]
+$b0c4          bne $B0A9
+$b0c6          rts
+$b0c7          ldy #$03
+$b0c9          ldx $A6      [$A6] = $5B
+$b0cb          lda $B0E9,Y  [$B0F8] = $F8
+$b0ce          sta $3F04,X  [$3F0E]
+$b0d1          inx
+$b0d2          dey
+$b0d3          bpl $B0CB
+$b0d5          inc $A6      [$A6]
+$b0d7          rts
+$b0d8          ldy #$03
+$b0da          ldx $A5      [$A5] = $09
+$b0dc          lda $B0ED,Y  [$B0FC] = $0B
+$b0df          sta $3F04,X  [$3F0E]
+$b0e2          inx
+$b0e3          dey
+$b0e4          bpl $B0DC
+$b0e6          inc $A5      [$A5]
+$b0e8          rts
+$b0e9          bmi $B0EB
+$b0eb          lsr $200E    [$200E]
+$b0ee          brk
+$b0ef          lsr $BD0E    [$BD0E]
+$b0f2          sbc ($BA,X)  [$0000] = $00
+$b0f4          sta ATRACT,X [$57]
+$b0f6          dex
+$b0f7          bpl $B0F1
+$b0f9          stx $17      [$17]
+$b0fb          ldx #$0B
+$b0fd          lda #$00
+$b0ff          sta $A1      [$A1]
+$b101          sta $C7      [$C7]
+$b103          ldy #$BC
+$b105          stx $A2      [$A2]
+$b107          sta ($A1),Y  [$B81D]
+$b109          dey
+$b10a          bne $B107
+$b10c          inx
+$b10d          cpx #$10
+$b10f          bcc $B103
+$b111          lda #$00
+$b113          ldx #$20
+$b115          stx $A2      [$A2]
+$b117          sta ($A1),Y  [$B81D]
+$b119          iny
+$b11a          bne $B117
+$b11c          inx
+$b11d          cpx #$3F
+$b11f          bcc $B115
+$b121          inc $C7      [$C7]
+$b123          lda #$00
+$b126          and ($95,X)  [$0000] = $00
+$b128          anc #$CA
+$b12a          bpl $B127
+$b12c          inx
+$b12d          sta $0500,X  [$050A]
+$b130          inx
+$b131          bne $B12D
+$b133          ldy #$06
+$b135          lda $BF      [$BF] = $00
+$b137          bne $B13B
+$b139          ldy #$12
+$b13b          ldx #$06
+$b13d          lda #$FF
+$b13f          sta $0EDB,Y  [$0EEA]
+$b142          lda #$FC
+$b144          sta $0FDB,Y  [$0FEA]
+$b147          dey
+$b148          dex
+$b149          bpl $B13D
+$b14b          ldx #$09
+$b14d          ldy #$09
+$b14f          lda $BF      [$BF] = $00
+$b151          bne $B155
+$b153          ldy #$10
+$b155          lda #$0C
+$b157          sta $0BCC,Y  [$0BDB]
+$b15a          dey
+$b15b          dex
+$b15c          bpl $B157
+$b15e          lda #$17
+$b160          sta BUFRLO   [$32]
+$b162          lda #$0E
+$b164          sta $0515    [$0515]
+$b167          lda #$4A
+$b169          sta BUFADR+1 [$16]
+$b16b          lda $60      [$60] = $01
+$b16d          lsr
+$b16e          lda #$D6
+$b170          bcs $B174
+$b172          lda #$D2
+$b174          sta DOSVEC+1 [$0B]
+$b176          and #$84
+$b178          sta $4C      [$4C]
+$b17a          sta ICSTAZ   [$23]
+$b17c          lda #$0A
+$b17e          sta ATRACT   [$4D]
+$b180          sta DRKMSK   [$4E]
+$b182          rts
+$b183          lda $AB      [$AB] = $D4
+$b185          asl
+$b186          asl
+$b187          asl
+$b188          asl
+$b189          asl
+$b18a          eor $AB      [$AB] = $D4
+$b18c          asl
+$b18d          rol $AA      [$AA]
+$b18f          rol $AC      [$AC]
+$b191          rol $AB      [$AB]
+$b193          rts
+$b194          ldx $60      [$60] = $01
+$b196          cpx #$50
+$b198          bcc $B19C
+$b19a          ldx #$4E
+$b19c          lda TOADR    [$66] = $E3
+$b19e          sta $AD      [$AD]
+$b1a0          lda TOADR+1  [$67] = $D4
+$b1a2          sta $AE      [$AE]
+$b1a4          lda $68      [$68] = $F7
+$b1a6          sta $AF      [$AF]
+$b1a8          lda $69      [$69] = $20
+$b1aa          sta $B0      [$B0]
+$b1ac          lda $AA      [$AA] = $E3
+$b1ae          sta TOADR    [$66]
+$b1b0          lda $AB      [$AB] = $D4
+$b1b2          sta TOADR+1  [$67]
+$b1b4          lda $AC      [$AC] = $F7
+$b1b6          sta $68      [$68]
+$b1b8          lda LMARGN   [$52] = $21
+$b1ba          sta $69      [$69]
+$b1bc          inx
+$b1bd          stx $60      [$60]
+$b1bf          rts
+$b1c0          sty SWPFLG   [$7B]
+$b1c2          sta COLINC   [$7A]
+$b1c4          lda $4C      [$4C] = $84
+$b1c6          eor ICSTAZ   [$23] = $84
+$b1c8          and #$04
+$b1ca          beq $B1F8
+$b1cc          lda ICAX5Z   [$2E] = $00
+$b1ce          beq $B1D9
+$b1d0          bit ICSTAZ   [$23] = $84
+$b1d2          bpl $B1F8
+$b1d4          jsr $B194    [$B194] = $A6
+$b1d7          bne $B1F8
+$b1d9          bit ICSTAZ   [$23] = $84
+$b1db          bmi $B1F8
+$b1dd          ldx $60      [$60] = $01
+$b1df          dex
+$b1e0          cpx #$4E
+$b1e2          bne $B1E6
+$b1e4          ldx #$50
+$b1e6          stx $60      [$60]
+$b1e8          lda $AD      [$AD] = $00
+$b1ea          sta TOADR    [$66]
+$b1ec          lda $AE      [$AE] = $00
+$b1ee          sta TOADR+1  [$67]
+$b1f0          lda $AF      [$AF] = $00
+$b1f2          sta $68      [$68]
+$b1f4          lda $B0      [$B0] = $00
+$b1f6          sta $69      [$69]
+$b1f8          lda #$06
+$b1fa          sta OLDADR   [$5E]
+$b1fc          lda #$FE
+$b1fe          ldx #$00
+$b200          sta DELTAR   [$76]
+$b202          stx ICAX1Z   [$2A]
+$b204          jsr $B221    [$B221] = $A9
+$b207          lda #$0B
+$b209          sta HOLD1    [$51]
+$b20b          ldx $C2      [$C2] = $08
+$b20d          lda $0B00,X  [$0B0A] = $00
+$b210          and #$FC
+$b212          sta $0B00,X  [$0B0A]
+$b215          lda #$01
+$b217          sta COLCRS+1 [$56]
+$b219          rts
+$b21a          lda #$FF
+$b21c          sta $18      [$18]
+$b21e          tax
+$b21f          bne $B200
+$b221          lda #$00
+$b223          ldx COLCRS+1 [$56] = $01
+$b225          dex
+$b226          beq $B246
+$b228          cpx #$1B
+$b22a          bcs $B22E
+$b22c          ldx #$1B
+$b22e          sta $0B01,X  [$0B0B]
+$b231          sta $0B02,X  [$0B0C]
+$b234          sta $0B03,X  [$0B0D]
+$b237          sta $0B04,X  [$0B0E]
+$b23a          sta $0B05,X  [$0B0F]
+$b23d          sta $0B06,X  [$0B10]
+$b240          sta $0B07,X  [$0B11]
+$b243          sta $0B08,X  [$0B12]
+$b246          rts
+$b247          lda $09      [$09] = $00
+$b249          and #$01
+$b24b          beq $B260
+$b24d          eor DELTAC   [$77] = $00
+$b24f          sta DELTAC   [$77]
+$b251          ldx #$0A
+$b253          lda $60,X    [$6A] = $04
+$b255          pha
+$b256          lda BUFCNT,X [$75] = $04
+$b258          sta $60,X    [$6A]
+$b25a          pla
+$b25b          sta BUFCNT,X [$75]
+$b25d          dex
+$b25e          bpl $B253
+$b260          rts
+$b261          sta $A1      [$A1]
+$b263          lda #$00
+$b265          sta $A2      [$A2]
+$b267          sta $A4      [$A4]
+$b269          lda $09      [$09] = $00
+$b26b          and #$0E
+$b26d          asl
+$b26e          adc #$80
+$b270          sta $A3      [$A3]
+$b272          ldy #$00
+$b274          lda ($A1),Y  [$B81D] = $AB
+$b276          cmp ($A3),Y  [$3DBF] = $55
+$b278          bcc $B297
+$b27a          bne $B281
+$b27c          iny
+$b27d          cpy #$03
+$b27f          bcc $B274
+$b281          ldy #$02
+$b283          lda ($A1),Y  [$B81D] = $AB
+$b285          sta ($A3),Y  [$3DBF]
+$b287          dey
+$b288          bpl $B283
+$b28a          ldy #$0F
+$b28c          sty $A0      [$A0]
+$b28e          jsr $B298    [$B298] = $A9
+$b291          sta $0090,Y  [$009F]
+$b294          dey
+$b295          bpl $B28C
+$b297          rts
+$b298          lda #$00
+$b29a          ldx #$0E
+$b29c          clc
+$b29d          adc $80,X    [$8A] = $00
+$b29f          eor $A0      [$A0] = $00
+$b2a1          dex
+$b2a2          bpl $B29D
+$b2a4          rts
+$b2a5          cld
+$b2a8          beq $B2BA
+$b2aa          dec $C6      [$C6]
+$b2ac          lda #$40
+$b2ae          sta AUDF1    [$D200]
+$b2b1          lda #$AF
+$b2b3          sta AUDC1    [$D201]
+$b2b6          ldx #$00
+$b2b8          beq $B2C5
+$b2ba          lda ICBALZ   [$24] = $00
+$b2bc          cmp #$02
+$b2be          bcc $B2CE
+$b2c0          ldx #$00
+$b2c2          stx AUDC1    [$D201]
+$b2c5          stx AUDC2    [$D203]
+$b2c8          stx AUDC3    [$D205]
+$b2cb          jmp $B3D8    [$B3D8] = $8E
+$b2ce          ldy #$39
+$b2d0          lda SWPFLG   [$7B] = $00
+$b2d2          ldx COLINC   [$7A] = $00
+$b2d4          beq $B2F9
+$b2d6          dex
+$b2d7          beq $B2E1
+$b2d9          ldy #$1F
+$b2db          cpx #$02
+$b2dd          bcs $B2E6
+$b2df          ldy #$11
+$b2e1          sec
+$b2e2          ror
+$b2e3          tax
+$b2e4          bne $B2EE
+$b2e6          beq $B2EA
+$b2e8          ldy #$3F
+$b2ea          clc
+$b2eb          adc #$A0
+$b2ed          tax
+$b2ee          dec SWPFLG   [$7B]
+$b2f0          bne $B34C
+$b2f2          lda #$00
+$b2f4          sta COLINC   [$7A]
+$b2f6          jmp $B34C    [$B34C] = $8C
+$b2f9          lda DELTAR   [$76] = $FF
+$b2fb          bne $B34F
+$b2fd          lda OLDCOL   [$5B] = $FF
+$b2ff          cmp #$40
+$b301          bcs $B32C
+$b303          ldy SWPFLG   [$7B] = $00
+$b305          bne $B309
+$b307          ldy #$3F
+$b309          dey
+$b30a          sty SWPFLG   [$7B]
+$b30c          ldx OLDCOL+1 [$5C] = $FF
+$b30e          stx RAMLO    [$04]
+$b310          cmp #$04
+$b312          bcs $B321
+$b314          rol RAMLO    [$04]
+$b316          rol
+$b317          rol RAMLO    [$04]
+$b319          rol
+$b31a          eor #$FF
+$b31c          adc #$20
+$b31e          asl
+$b31f          bne $B326
+$b321          cpy #$1C
+$b323          bcc $B32C
+$b325          tya
+$b326          asl
+$b327          tay
+$b328          ldx #$AF
+$b32a          bne $B34C
+$b32c          lda SAVMSC+1 [$59] = $80
+$b32e          lsr
+$b32f          lsr
+$b330          lsr
+$b331          lsr
+$b332          eor #$FF
+$b334          sec
+$b335          adc #$1F
+$b337          tay
+$b338          lda $052C    [$052C] = $00
+$b33b          cmp #$1B
+$b33d          bcc $B343
+$b33f          dec $052C    [$052C]
+$b342          tay
+$b343          lda $19      [$19] = $0F
+$b345          and #$03
+$b347          tax
+$b348          lda $B4AC,X  [$B4B6] = $01
+$b34b          tax
+$b34c          sty AUDF1    [$D200]
+$b34f          stx AUDC1    [$D201]
+$b352          ldx $7C      [$7C] = $00
+$b354          beq $B367
+$b356          dec $7C      [$7C]
+$b358          txa
+$b359          lsr
+$b35a          clc
+$b35b          adc #$04
+$b35d          and #$0F
+$b35f          adc #$80
+$b361          tax
+$b362          lda RANDOM   [$D20A] = $D8
+$b365          ora #$18
+$b367          ldy COUNTR+1 [$7F] = $00
+$b369          beq $B37E
+$b36b          dec COUNTR+1 [$7F]
+$b36d          bit ICBLHZ   [$29] = $81
+$b36f          bmi $B37E
+$b371          tya
+$b372          clc
+$b373          adc #$46
+$b375          tax
+$b376          eor #$0E
+$b378          adc #$04
+$b37a          and #$0F
+$b37c          asl
+$b37d          asl
+$b37e          sta AUDF2    [$D202]
+$b381          stx AUDC2    [$D203]
+$b384          ldx #$00
+$b386          lda $7D      [$7D] = $00
+$b388          beq $B399
+$b38a          dec $7D      [$7D]
+$b38c          eor #$FF
+$b38e          sec
+$b38f          adc #$1C
+$b391          asl
+$b392          sta RAMLO    [$04]
+$b394          asl
+$b395          adc RAMLO    [$04] = $FF
+$b397          ldx #$A8
+$b399          ldy COUNTR   [$7E] = $00
+$b39b          beq $B3B0
+$b39d          dey
+$b39e          sty COUNTR   [$7E]
+$b3a0          tya
+$b3a1          and #$0F
+$b3a3          clc
+$b3a4          adc #$A0
+$b3a6          tax
+$b3a7          tya
+$b3a8          lsr
+$b3a9          lsr
+$b3aa          lsr
+$b3ab          lsr
+$b3ac          tay
+$b3ad          lda $B4E1,Y  [$B4F0] = $1C
+$b3b0          sta AUDF3    [$D204]
+$b3b3          stx AUDC3    [$D205]
+$b3b6          ldx #$00
+$b3b8          bit ICBLHZ   [$29] = $81
+$b3ba          bmi $B3D8
+$b3bc          lda $50      [$50] = $FF
+$b3be          bmi $B3D8
+$b3c0          beq $B3D8
+$b3c2          cmp #$11
+$b3c4          bcs $B3CE
+$b3c6          tax
+$b3c7          lda $B4C0,X  [$B4CA] = $4A
+$b3ca          ldx #$AC
+$b3cc          bne $B3D5
+$b3ce          ldx #$8C
+$b3d0          lda RANDOM   [$D20A] = $D8
+$b3d3          ora #$20
+$b3d5          sta AUDF4    [$D206]
+$b3d8          stx AUDC4    [$D207]
+$b3db          inc $18      [$18]
+$b3dd          bne $B3F2
+$b3df          inc ICBLHZ   [$29]
+$b3e1          lda ICBLHZ   [$29] = $81
+$b3e3          and #$C7
+$b3e5          sta ICBLHZ   [$29]
+$b3e7          and #$07
+$b3e9          bne $B3F2
+$b3eb          inc DELTAC+1 [$78]
+$b3ed          bne $B3F2
+$b3ef          sec
+$b3f0          ror DELTAC+1 [$78]
+$b3f2          ldy #$3F
+$b3f4          ldx #$C0
+$b3f6          lda DELTAC+1 [$78] = $00
+$b3f8          rol
+$b3f9          lda #$03
+$b3fb          bcc $B402
+$b3fd          lda #$00
+$b3ff          tay
+$b400          ldx #$40
+$b402          sta GRACTL   [$D01D]
+$b405          stx NMIEN    [$D40E]
+$b408          sty DMACTL   [$D400]
+$b40b          ldx #$01
+$b40d          stx PRIOR    [$D01B]
+$b410          dex
+$b411          stx HPOSP3   [$D003]
+$b414          ldx #$84
+$b416          lda ICBALZ   [$24] = $00
+$b418          cmp #$02
+$b41a          bcs $B427
+$b41c          lda CHKSUM   [$31] = $00
+$b41e          beq $B427
+$b420          dec CHKSUM   [$31]
+$b423          bcc $B427
+$b425          ldx #$42
+$b427          stx COLPF2   [$D018]
+$b42a          lda #$20
+$b42c          sta COLPF1   [$D017]
+$b42f          jsr $AFD0    [$AFD0] = $A5
+$b432          lda $C7      [$C7] = $01
+$b434          bne $B441
+$b436          lda #$00
+$b438          sta COLPF0   [$D016]
+$b43b          sta COLPF1   [$D017]
+$b43e          sta COLPF2   [$D018]
+$b441          lda #$00
+$b443          sta DLISTL   [$D402]
+$b446          lda #$3F
+$b448          sta DLISTH   [$D403]
+$b44b          lda #$44
+$b44d          ldx #$E7
+$b44f          ldy ICAX1Z   [$2A] = $FE
+$b451          beq $B478
+$b453          ldy $27      [$27] = $F9
+$b455          dey
+$b456          tya
+$b457          ldx $3FB3    [$3FB3] = $4E
+$b45a          ldy $26      [$26] = $00
+$b45c          dey
+$b45d          bpl $B478
+$b45f          inx
+$b460          cpx #$D7
+$b462          bcc $B466
+$b464          ldx #$4B
+$b466          cpx #$9B
+$b468          bcs $B474
+$b46a          cpx #$7E
+$b46c          bcc $B474
+$b46e          bne $B476
+$b470          lda #$EC
+$b472          bne $B476
+$b474          lda #$00
+$b476          ldy #$07
+$b478          sta $27      [$27]
+$b47a          stx $3FB3    [$3FB3]
+$b47d          sty $26      [$26]
+$b47f          sty HSCROL   [$D404]
+$b482          jmp XITVBV   [$E462] = $4C
+$b485          pha
+$b486          lda #$00
+$b488          sta IRQEN    [$D20E]
+$b48b          pla
+$b48c          rti
+$b48d          sty FR0+2    [$D6]
+$b48f          dec $1A,X    [$24]
+$b491          rol $26      [$26]
+$b493          nop FR1+3    [$E3] = $00
+$b495          jsr $B480    [$B480] = $04
+$b498          nop $83,X    [$8D] = $00
+$b49a          cmp (BUFSTR+1,X) [$0000] = $00
+$b49c          isb $B5,X    [$BF]
+$b49e          rra $20C0,X  [$20CA] = $00
+$b4a1          and (ICHIDZ,X) [$00FE] = $00
+$b4a3          and ($01,X)  [$08D6] = $8E
+$b4a5          ora RTCLOK+2 [$14] = $08
+$b4a7          kil
+$b4a8          ora (RAMLO+1,X) [$0808] = $00
+$b4aa          jsr $0050    [$0050] = $FF
+$b4ad          sax ($86,X)  [$0000]
+$b4af          sty $00      [$00]
+$b4b1          brk
+$b4b2          brk
+$b4b3          brk
+$b4b4          ora ($00,X)  [$D600] = $FF
+$b4b6          ora ($00,X)  [$D600] = $FF
+$b4b8          ora ($00,X)  [$D600] = $FF
+$b4ba          ora ($00,X)  [$D600] = $FF
+$b4bc          ora ($01,X)  [$08D6] = $8E
+$b4be          ora ($01,X)  [$08D6] = $8E
+$b4c0          nop $110E    [$110E] = $00
+$b4c3          ora $19,X    [$23] = $84
+$b4c5          asl $2B24,X  [$2B2E]
+$b4c8          nop $3E,X    [$48] = $00
+$b4ca          lsr
+$b4cb          eor $806B,Y  [$807A] = $00
+$b4ce          txs
+$b4cf          lda $00DE,Y  [$00ED] = $00
+$b4d2          lda $B94C,Y  [$B95B] = $40
+$b4d5          nop
+$b4d6          lda $B94C,Y  [$B95B] = $40
+$b4d9          sbc #$B9
+$b4db          nop $B9,X    [$C3] = $00
+$b4dd          isb $0AB9,X  [$0AC3]
+$b4e0          tsx
+$b4e1          bmi $B523
+$b4e3          bvc $B545
+$b4e5          nop RAMLO    [$04] = $FF
+$b4e7          nop RAMLO    [$04] = $FF
+$b4e9          php
+$b4ea          php
+$b4eb          php
+$b4ec          php
+$b4ed          php
+$b4ee          php
+$b4ef          nop $061C,X  [$0626] = $78
+$b4f2          asl TRAMSZ   [$06]
+$b4f4          asl TRAMSZ   [$06]
+$b4f6          nop RAMLO    [$04] = $FF
+$b4f8          nop $FF      [$FF] = $00
+$b4fa          isb $FFFF,X  [$0009]
+$b4fd          isb $FFFF,X  [$0009]
+$b500          cld
+$b501          pha
+$b502          txa
+$b503          pha
+$b504          tya
+$b505          pha
+$b506          lda VCOUNT   [$D40B] = $00
+$b509          cmp #$3F
+$b50b          bcc $B510
+$b50d          jmp $B72A    [$B72A] = $A2
+$b510          lda #$FF
+$b512          sta $1A      [$1A]
+$b514          sta $1B      [$1B]
+$b516          sta $1C      [$1C]
+$b518          sta $1D      [$1D]
+$b51a          sta $1E      [$1E]
+$b51c          sta ICHIDZ   [$20]
+$b51e          sta WSYNC    [$D40A]
+$b521          sta ICDNOZ   [$21]
+$b523          sta ICCOMZ   [$22]
+$b525          sta $1F      [$1F]
+$b527          lda OLDCOL   [$5B] = $FF
+$b529          lsr
+$b52a          lsr
+$b52b          lsr
+$b52c          clc
+$b52d          adc #$5C
+$b52f          sta HPOSM1   [$D005]
+$b532          lda DINDEX   [$57] = $7C
+$b534          sta HPOSP2   [$D002]
+$b537          clc
+$b538          adc #$04
+$b53a          sta HPOSM2   [$D006]
+$b53d          lda #$00
+$b53f          sta COLPM1   [$D013]
+$b542          lda #$8E
+$b544          ldx DELTAC   [$77] = $00
+$b546          bne $B54A
+$b548          lda #$1E
+$b54a          sta COLPM2   [$D014]
+$b54d          lda RECVDN   [$39] = $01
+$b54f          sta HPOSP1   [$D001]
+$b552          lda $C1      [$C1] = $00
+$b554          sta HPOSM0   [$D004]
+$b557          lda $3C      [$3C] = $00
+$b559          sta HPOSP0   [$D000]
+$b55c          ldy ATRACT   [$4D] = $0A
+$b55e          ldx #$5D
+$b560          bne $B565
+$b562          ldy TRAMSZ   [$06] = $0B
+$b564          iny
+$b565          sty TRAMSZ   [$06]
+$b567          sta WSYNC    [$D40A]
+$b56a          txa
+$b56b          cmp DOSINI,Y [$001B] = $FF
+$b56e          bcs $B575
+$b570          inx
+$b571          bne $B567
+$b573          beq $B5E3
+$b575          stx RAMLO    [$04]
+$b577          inx
+$b578          beq $B5E3
+$b57a          lda $0516,Y  [$0525] = $00
+$b57d          sta HPOSP3   [$D003]
+$b580          lda #$00
+$b582          sta $0EBC,X  [$0EC6]
+$b585          sta $0EBD,X  [$0EC7]
+$b588          lda CRITIC,Y [$0051] = $0B
+$b58b          sta $07      [$07]
+$b58d          sta WSYNC    [$D40A]
+$b590          and #$08
+$b592          beq $B596
+$b594          lda #$10
+$b596          clc
+$b597          adc $0500,Y  [$050F] = $00
+$b59a          tay
+$b59b          lda $BB40,Y  [$BB4F] = $65
+$b59e          sta $00      [$00]
+$b5a0          inx
+$b5a1          beq $B5E3
+$b5a3          ldy TRAMSZ   [$06] = $0B
+$b5a5          lda $0521,Y  [$0530] = $00
+$b5a8          sta SIZEP3   [$D00B]
+$b5ab          lda DOSINI,Y [$001B] = $FF
+$b5ae          sta RAMLO+1  [$05]
+$b5b0          sta WSYNC    [$D40A]
+$b5b3          lda $050B,Y  [$051A] = $00
+$b5b6          tay
+$b5b7          lda $BB30,Y  [$BB3F] = $98
+$b5ba          sta CASINI   [$02]
+$b5bc          lda RAMLO+1  [$05] = $51
+$b5be          clc
+$b5c1          las $E538    [$E538] = $C9
+$b5c4          nop $E8      [$E8] = $00
+$b5c6          beq $B5E3
+$b5c8          tay
+$b5c9          bmi $B562
+$b5cb          lda ($00),Y  [$B90F] = $00
+$b5cd          sta $0EBC,X  [$0EC6]
+$b5d0          sta WSYNC    [$D40A]
+$b5d3          bit $07      [$07] = $84
+$b5d5          bpl $B5DD
+$b5d7          lda $B4E5,Y  [$B4F4] = $06
+$b5da          sta COLPF0   [$D016]
+$b5dd          lda (CASINI),Y [$B7DE] = $14
+$b5df          sta COLPM3   [$D015]
+$b5e2          inx
+$b5e3          beq $B60B
+$b5e5          dey
+$b5e6          bpl $B5CB
+$b5e8          ldy TRAMSZ   [$06] = $0B
+$b5ea          lda M2PL     [$D00A] = $00
+$b5ed          and #$08
+$b5ef          beq $B5F3
+$b5f1          sty $1C      [$1C]
+$b5f3          sta WSYNC    [$D40A]
+$b5f6          bit $07      [$07] = $84
+$b5f8          bpl $B602
+$b5fa          lda DOSVEC+1 [$0B] = $D6
+$b5fc          sta COLPF0   [$D016]
+$b5ff          jmp $B60A    [$B60A] = $E8
+$b602          lda P3PL     [$D00F] = $00
+$b605          lsr
+$b606          bcc $B60A
+$b608          sty $1F      [$1F]
+$b60a          inx
+$b60b          beq $B66B
+$b60d          lda P2PL     [$D00E] = $00
+$b610          lsr
+$b611          bcc $B615
+$b613          sty $1E      [$1E]
+$b615          and #$04
+$b617          beq $B61B
+$b619          sty $1D      [$1D]
+$b61b          lda P3PF     [$D007] = $00
+$b61e          lsr
+$b61f          sta WSYNC    [$D40A]
+$b622          eor CRITIC,Y [$0051] = $0B
+$b625          and #$01
+$b627          eor CRITIC,Y [$0051] = $0B
+$b62a          sta CRITIC,Y [$0051]
+$b62d          inx
+$b62e          beq $B66B
+$b630          lda M0PL     [$D008] = $00
+$b633          and #$04
+$b635          beq $B639
+$b637          sty ICDNOZ   [$21]
+$b639          lda M0PF     [$D000] = $00
+$b63c          and #$03
+$b63e          beq $B642
+$b640          sty ICCOMZ   [$22]
+$b642          lda P1PF     [$D005] = $00
+$b645          sta WSYNC    [$D40A]
+$b648          and #$02
+$b64a          beq $B64E
+$b64c          sty ICHIDZ   [$20]
+$b64e          lda P2PF     [$D006] = $00
+$b651          lsr
+$b652          bcc $B656
+$b654          sty $1B      [$1B]
+$b656          lda M2PF     [$D002] = $00
+$b659          and #$03
+$b65b          beq $B65F
+$b65d          sty $1A      [$1A]
+$b65f          sta HITCLR   [$D01E]
+$b662          iny
+$b663          inx
+$b664          beq $B669
+$b666          jmp $B565    [$B565] = $84
+$b669          stx DOSVEC   [$0A]
+$b66b          sta WSYNC    [$D40A]
+$b66e          stx HPOSP1   [$D001]
+$b671          stx HPOSP0   [$D000]
+$b674          stx HPOSM0   [$D004]
+$b677          stx COLPF3   [$D019]
+$b67a          lda #$3E
+$b67c          sta DMACTL   [$D400]
+$b67f          lda #$1E
+$b681          sta COLPM1   [$D013]
+$b684          ldx #$1E
+$b686          stx COLPF0   [$D016]
+$b689          lda #$8E
+$b68b          sta COLPF1   [$D017]
+$b68e          ldy KEYDEF   [$79] = $01
+$b690          beq $B697
+$b692          ldy DELTAC   [$77] = $00
+$b694          beq $B697
+$b696          tax
+$b697          stx COLPF2   [$D018]
+$b69a          lda DELTAR   [$76] = $FF
+$b69c          beq $B6AD
+$b69e          ora ICBLHZ   [$29] = $81
+$b6a0          bmi $B6AD
+$b6a2          lda $18      [$18] = $07
+$b6a4          and #$30
+$b6a6          bne $B6AD
+$b6a8          lda #$06
+$b6aa          sta COLPF0,Y [$D025]
+$b6ad          lda #$08
+$b6af          sta CHBASE   [$D409]
+$b6b2          lda #$04
+$b6b4          sta WSYNC    [$D40A]
+$b6b7          sta PRIOR    [$D01B]
+$b6ba          lda #$06
+$b6bc          sta COLBK    [$D01A]
+$b6bf          ldy TRAMSZ   [$06] = $0B
+$b6c1          cpy #$0B
+$b6c3          bcs $B727
+$b6c5          lda #$0A
+$b6c7          ldx DOSVEC   [$0A] = $00
+$b6c9          sta DOSVEC   [$0A]
+$b6cb          beq $B727
+$b6cd          lda P3PF     [$D007] = $00
+$b6d0          lsr
+$b6d1          eor CRITIC,Y [$0051] = $0B
+$b6d4          and #$01
+$b6d6          eor CRITIC,Y [$0051] = $0B
+$b6d9          sta CRITIC,Y [$0051]
+$b6dc          lda M0PL     [$D008] = $00
+$b6df          and #$04
+$b6e1          beq $B6E5
+$b6e3          sty ICDNOZ   [$21]
+$b6e5          lda M0PF     [$D000] = $00
+$b6e8          and #$03
+$b6ea          beq $B6EE
+$b6ec          sty ICCOMZ   [$22]
+$b6ee          lda M2PF     [$D002] = $00
+$b6f1          and #$03
+$b6f3          beq $B6F7
+$b6f5          sty $1A      [$1A]
+$b6f7          lda P2PF     [$D006] = $00
+$b6fa          lsr
+$b6fb          bcc $B6FF
+$b6fd          sty $1B      [$1B]
+$b6ff          lda P2PL     [$D00E] = $00
+$b702          lsr
+$b703          bcc $B707
+$b705          sty $1E      [$1E]
+$b707          and #$04
+$b709          beq $B70D
+$b70b          sty $1D      [$1D]
+$b70d          lda P3PL     [$D00F] = $00
+$b710          lsr
+$b711          bcc $B715
+$b713          sty $1F      [$1F]
+$b715          lda P1PF     [$D005] = $00
+$b718          and #$02
+$b71a          beq $B71E
+$b71c          sty ICHIDZ   [$20]
+$b71e          lda M2PL     [$D00A] = $00
+$b721          and #$08
+$b723          beq $B727
+$b725          sty $1C      [$1C]
+$b727          jmp XITVBV   [$E462] = $4C
+$b72a          ldx #$00
+$b72c          lda #$3F
+$b72e          sta DMACTL   [$D400]
+$b731          sta WSYNC    [$D40A]
+$b734          lda #$0C
+$b736          sta COLPF0   [$D016]
+$b739          stx COLBK    [$D01A]
+$b73c          lda #$06
+$b73e          sta CHBASE   [$D409]
+$b741          lda $BF      [$BF] = $00
+$b743          bne $B74B
+$b745          sta WSYNC    [$D40A]
+$b748          sta WSYNC    [$D40A]
+$b74b          ldx #$03
+$b74d          stx SIZEP3   [$D00B]
+$b750          lda $27      [$27] = $F9
+$b752          sta HPOSP3   [$D003]
+$b755          adc #$15
+$b757          tay
+$b758          ldx #$06
+$b75a          sta WSYNC    [$D40A]
+$b75d          sty HPOSP2   [$D002]
+$b760          lda $B48D,X  [$B497] = $B4
+$b763          sta COLPM3   [$D015]
+$b766          sta COLPM2   [$D014]
+$b769          dey
+$b76a          dex
+$b76b          bpl $B75A
+$b76d          sta WSYNC    [$D40A]
+$b770          sta HITCLR   [$D01E]
+$b773          jmp XITVBV   [$E462] = $4C
+$b776          bvs $B768
+$b778          bmi $B7C8
+$b77a          bpl $B7C2
+$b77c          brk
+$b77d          bpl $B77F
+$b77f          asl TRAMSZ   [$06]
+$b781          ldy #$00
+$b784          asr #$B8
+$b786          eor ($00,X)  [$D600] = $FF
+$b788          rla $4650,X  [$465A] = $85
+$b78b          brk
+$b78c          bpl $B7BE
+$b78e          asl TRAMSZ   [$06]
+$b790          bne $B7B2
+$b792          lsr CASSBT,X [$55]
+$b794          clv
+$b795          eor ($00,X)  [$D600] = $FF
+$b797          rla $0C0C,X  [$0C16] = $00
+$b79a          nop $0C0C    [$0C0C] = $00
+$b79d          nop $4848    [$4848] = $0D
+$b7a0          pha
+$b7a1          pha
+$b7a2          pha
+$b7a3          pha
+$b7a4          nop $0C0C    [$0C0C] = $00
+$b7a7          nop $0C0C    [$0C0C] = $00
+$b7aa          pha
+$b7ab          pha
+$b7ac          pha
+$b7ad          pha
+$b7ae          pha
+$b7af          pha
+$b7b0          bcs $B762
+$b7b2          bcs $B734
+$b7b4          nop #$B0
+$b7b6          bcs $B7E2
+$b7b8          rol
+$b7b9          rol
+$b7ba          bcs $B76C
+$b7bc          bcs $B76E
+$b7be          asl $B0,X    [$BA]
+$b7c0          bcs $B7EC
+$b7c2          rol
+$b7c3          rol
+$b7c4          ldy $9CAC    [$9CAC] = $00
+$b7c7          shy $8C8C,X  [$8C96] = $00
+$b7ca          tay
+$b7cb          tay
+$b7cc          kil
+$b7cd          kil
+$b7ce          brk
+$b7cf          brk
+$b7d0          brk
+$b7d1          brk
+$b7d2          kil
+$b7d3          nop RTCLOK+2,X [$1E] = $FF
+$b7d5          kil
+$b7d6          kil
+$b7d7          nop RTCLOK+2,X [$1E] = $FF
+$b7d9          clc
+$b7da          clc
+$b7db          kil
+$b7dc          kil
+$b7dd          nop RTCLOK+2,X [$1E] = $FF
+$b7df          kil
+$b7e0          kil
+$b7e1          kil
+$b7e2          kil
+$b7e3          kil
+$b7e4          kil
+$b7e5          kil
+$b7e6          kil
+$b7e7          kil
+$b7e8          clc
+$b7e9          plp
+$b7ea          nop
+$b7eb          lsr
+$b7ec          ror
+$b7ed          nop
+$b7ee          txs
+$b7ef          tax
+$b7f0          tsx
+$b7f1          dex
+$b7f2          nop
+$b7f3          nop $8001,X  [$800B] = $00
+$b7f6          brk
+$b7f7          nop #$01
+$b7f9          brk
+$b7fa          kil
+$b7fb          brk
+$b7fc          nop $00      [$00] = $00
+$b7fe          isb $AAFF,X  [$AB09]
+$b801          isb $55AA,X  [$55B4]
+$b804          ror
+$b805          lax $95EA,Y  [$95F9] = $00
+$b808          nop
+$b809          lax $A5FA    [$A5FA] = $4C
+$b80c          lsr $AB,X    [$B5]
+$b80e          inc $AAA9,X  [$AAB3]
+$b811          isb $AAAA,X  [$AAB4]
+$b814          tax
+$b815          lax $AAEA,Y  [$AAF9] = $38
+$b818          tax
+$b819          lax $AAFA    [$AAFA] = $E5
+$b81c          tax
+$b81d          lxa #$FE
+$b81f          tax
+$b820          brk
+$b821          brk
+$b822          brk
+$b823          brk
+$b824          brk
+$b825          brk
+$b826          brk
+$b827          brk
+$b828          brk
+$b829          brk
+$b82a          brk
+$b82b          brk
+$b82c          brk
+$b82d          brk
+$b82e          brk
+$b82f          brk
+$b830          brk
+$b831          brk
+$b832          brk
+$b833          brk
+$b834          brk
+$b835          brk
+$b836          brk
+$b837          brk
+$b838          rla $3F3F,X  [$3F49] = $0E
+$b83b          rla $073F,X  [$0749] = $18
+$b83e          and (ICAX4Z,X) [$0000] = $00
+$b840          and $00      [$00] = $00
+$b842          rla $2536    [$2536] = $00
+$b845          kil
+$b846          rla $3F3F,X  [$3F49] = $0E
+$b849          rla $003F,X  [$0049] = $00
+$b84c          brk
+$b84d          brk
+$b84e          brk
+$b84f          brk
+$b850          brk
+$b851          brk
+$b852          brk
+$b853          brk
+$b854          brk
+$b855          brk
+$b856          brk
+$b857          brk
+$b858          brk
+$b859          brk
+$b85a          brk
+$b85b          brk
+$b85c          brk
+$b85d          brk
+$b85e          brk
+$b85f          brk
+$b860          brk
+$b861          brk
+$b862          brk
+$b863          brk
+$b864          brk
+$b865          kil
+$b866          ora #$16
+$b868          ora RTCLOK   [$12] = $08
+$b86a          brk
+$b86b          kil
+$b86c          ora ($09,X)  [$0808] = $00
+$b86e          nop $19      [$19] = $0F
+$b870          nop
+$b871          brk
+$b872          kil
+$b873          and DDEVIC,Y [$030F] = $00
+$b876          and (BUFRLO,X) [$0000] = $00
+$b878          rla ICAX3Z   [$002C] = $00
+$b87b          slo (ICBLLZ),Y [$8110] = $00
+$b87d          and ($37,X)  [$0000] = $00
+$b87f          brk
+$b880          brk
+$b881          brk
+$b882          brk
+$b883          slo (CIOCHR,X) [$0801] = $00
+$b885          bmi $B8C0
+$b887          kil
+$b888          and #$27
+$b88a          plp
+$b88b          nop $00,X    [$0A] = $00
+$b88d          rla $3D3C,Y  [$3D4B] = $00
+$b890          nop
+$b891          clc
+$b892          rla $3D3C,Y  [$3D4B] = $00
+$b895          rol $0000,X  [$000A]
+$b898          brk
+$b899          slo $1D1C,Y  [$1D2B] = $00
+$b89c          asl $001F,X  [$0029]
+$b89f          brk
+$b8a0          brk
+$b8a1          brk
+$b8a2          brk
+$b8a3          brk
+$b8a4          brk
+$b8a5          brk
+$b8a6          brk
+$b8a7          brk
+$b8a8          brk
+$b8ab          brk
+$b8ac          brk
+$b8ad          brk
+$b8ae          brk
+$b8af          brk
+$b8b0          brk
+$b8b1          brk
+$b8b2          brk
+$b8b3          brk
+$b8b4          brk
+$b8b5          brk
+$b8b6          bpl $B8EA
+$b8b8          and BUFRHI   [$33] = $00
+$b8ba          rla ($00),Y  [$B90F] = $00
+$b8bc          slo (RTCLOK+2),Y [$0817] = $00
+$b8be          ora (RTCLOK,X) [$FFFF] = $C0
+$b8c0          nop $00,X    [$0A] = $00
+$b8c2          anc #$25
+$b8c4          and $0000,Y  [$000F] = $08
+$b8c7          brk
+$b8c8          brk
+$b8c9          ora BUFRHI,X [$3D] = $00
+$b8cb          and $00      [$00] = $00
+$b8cd          rol
+$b8ce          rla $3339    [$3339] = $00
+$b8d1          nop ICBLHZ,X [$33] = $00
+$b8d3          rla (ICAX2Z,X) [$0000] = $00
+$b8d5          brk
+$b8d6          rla $0000,Y  [$000F] = $08
+$b8d9          brk
+$b8da          brk
+$b8db          brk
+$b8dc          brk
+$b8dd          brk
+$b8de          brk
+$b8df          brk
+$b8e0          brk
+$b8e1          brk
+$b8e2          brk
+$b8e3          brk
+$b8e4          brk
+$b8e5          brk
+$b8e6          brk
+$b8e7          brk
+$b8e8          brk
+$b8e9          brk
+$b8ea          brk
+$b8eb          brk
+$b8ec          brk
+$b8ed          brk
+$b8ee          slo $1D1C,Y  [$1D2B] = $00
+$b8f1          asl $001F,X  [$0029]
+$b8f4          brk
+$b8f5          brk
+$b8f6          brk
+$b8f7          brk
+$b8f8          brk
+$b8f9          brk
+$b8fa          brk
+$b8fb          brk
+$b8fc          brk
+$b8fd          brk
+$b8fe          brk
+$b8ff          isb $0000,X  [$000A]
+$b902          brk
+$b903          brk
+$b904          brk
+$b905          brk
+$b906          brk
+$b907          brk
+$b908          brk
+$b909          brk
+$b90a          brk
+$b90b          brk
+$b90c          brk
+$b90d          brk
+$b90e          brk
+$b90f          brk
+$b910          brk
+$b911          brk
+$b912          brk
+$b913          brk
+$b914          brk
+$b915          brk
+$b916          brk
+$b917          brk
+$b918          brk
+$b919          brk
+$b91a          brk
+$b91b          brk
+$b91c          nop $48,X    [$52] = $21
+$b91e          nop ICAX1Z,X [$34] = $00
+$b920          nop #$2A
+$b922          ldy $1A      [$1A] = $FF
+$b924          adc ($8C,X)  [$0000] = $00
+$b926          rla ($C4,X)  [$0000] = $00
+$b928          ora $9229,Y  [$9238] = $00
+$b92b          txa
+$b92c          eor $94      [$94] = $00
+$b92e          txa
+$b92f          rol
+$b930          sta (CKEY),Y [$000F]
+$b932          bit RTCLOK   [$12] = $08
+$b934          kil
+$b935          nop ICCOMZ,X [$2C] = $00
+$b937          ora ($44),Y  [$000F] = $08
+$b939          nop #$48
+$b93b          sta (RTCLOK+2,X) [$FFFF]
+$b93d          kil
+$b93e          dey
+$b93f          kil
+$b940          pha
+$b941          nop SOUNDR,X [$4B] = $00
+$b943          bit $88      [$88] = $00
+$b945          kil
+$b946          nop SOUNDR,X [$4B] = $00
+$b948          kil
+$b949          sty POKMSK   [$10]
+$b94b          php
+$b94c          brk
+$b94d          brk
+$b94e          brk
+$b94f          nop RTCLOK   [$12] = $08
+$b951          pha
+$b952          kil
+$b953          nop WARMST   [$08] = $00
+$b955          bpl $B99B
+$b957          bpl $B97D
+$b959          kil
+$b95a          bit $40      [$40] = $08
+$b95c          kil
+$b95d          pha
+$b95e          jsr $4004    [$4004] = $00
+$b961          brk
+$b962          brk
+$b963          brk
+$b964          bpl $B964
+$b966          dec $DE      [$DE]
+$b968          dec $DEDE,X  [$DEE8]
+$b96b          inc $DEC6,X  [$DED0]
+$b96e          dec $C6DE    [$C6DE]
+$b971          inc $D6C6,X  [$D6D0]
+$b974          dec FR0+2,X  [$E0]
+$b976          inc $DEDE,X  [$DEE8]
+$b979          dec $C6DE    [$C6DE]
+$b97c          nop $FC7C,X  [$FC86] = $02
+$b97f          inc $78FF,X  [$7909]
+$b982          bmi $B994
+$b984          bpl $B9B6
+$b986          sec
+$b987          sre $C6FF    [$C6FF] = $AD
+$b98a          nop #$0E
+$b98c          nop $8E      [$8E] = $00
+$b98e          isb $9FFF,X  [$A009]
+$b991          asl $1C04    [$1C04]
+$b994          slo APPMHI   [$0E] = $08
+$b996          nop $8E      [$8E] = $00
+$b998          isb $9FFF,X  [$A009]
+$b99b          asl $0704    [$0704]
+$b99e          nop $3F3E,X  [$3F48] = $0E
+$b9a1          rra $1EFF,X  [$1F09] = $00
+$b9a4          nop $0808    [$0808] = $00
+$b9a7          nop $F21C    [$F21C] = $E9
+$b9aa          isb $0163,X  [$016D]
+$b9ad          bvs $B9CF
+$b9af          adc ($FF),Y  [$000F] = $08
+$b9b1          isb $70F9,X  [$7103]
+$b9b4          jsr $E038    [$E038] = $00
+$b9b7          bvs $B9D9
+$b9b9          adc ($FF),Y  [$000F] = $08
+$b9bb          isb $70F9,X  [$7103]
+$b9be          jsr $38E0    [$38E0] = $00
+$b9c1          brk
+$b9c2          bit ICBALZ   [$24] = $00
+$b9c4          isb $FFFF,X  [$0009]
+$b9c7          isb $FFFF,X  [$0009]
+$b9ca          isb $FFFF,X  [$0009]
+$b9cd          isb $FFFF,X  [$0009]
+$b9d0          isb $FFFF,X  [$0009]
+$b9d3          brk
+$b9d4          brk
+$b9d5          clc
+$b9d6          clc
+$b9d7          clc
+$b9d8          bit ICBALZ   [$24] = $00
+$b9da          bit ICBALZ   [$24] = $00
+$b9dc          bit $3C      [$3C] = $00
+$b9de          ror $FF7E,X  [$FF88]
+$b9e1          isb $FFFF,X  [$0009]
+$b9e4          isb $7EFF,X  [$7F09]
+$b9e7          ror $003C,X  [$0046]
+$b9ea          brk
+$b9eb          clc
+$b9ec          slo $7E18,X  [$7E22] = $00
+$b9ef          isb $2AFF,X  [$2B09]
+$b9f2          nop #$2A
+$b9f4          brk
+$b9f5          brk
+$b9f6          clc
+$b9f7          slo $7E18,X  [$7E22] = $00
+$b9fa          isb $54FF,X  [$5509]
+$b9fd          ora (ROWCRS,X) [$0D00] = $00
+$b9ff          brk
+$ba00          brk
+$ba01          clc
+$ba02          sed
+$ba03          clc
+$ba04          ror $FFFF,X  [$0009]
+$ba07          rol
+$ba08          nop #$2A
+$ba0a          brk
+$ba0b          brk
+$ba0c          clc
+$ba0d          sed
+$ba0e          clc
+$ba0f          ror $FFFF,X  [$0009]
+$ba12          nop $01,X    [$0B] = $D6
+$ba14          nop $00,X    [$0A] = $00
+$ba16          brk
+$ba17          brk
+$ba18          brk
+$ba19          brk
+$ba1a          brk
+$ba1b          brk
+$ba1c          brk
+$ba1d          brk
+$ba1e          clc
+$ba1f          brk
+$ba20          brk
+$ba21          brk
+$ba22          brk
+$ba23          brk
+$ba24          brk
+$ba25          brk
+$ba26          brk
+$ba27          clc
+$ba28          clc
+$ba29          clc
+$ba2a          clc
+$ba2b          brk
+$ba2c          brk
+$ba2d          brk
+$ba2e          brk
+$ba2f          brk
+$ba30          brk
+$ba31          brk
+$ba32          clc
+$ba33          nop $3C3C,X  [$3C46] = $00
+$ba36          nop $0018,X  [$0022] = $FF
+$ba39          brk
+$ba3a          brk
+$ba3b          brk
+$ba3c          brk
+$ba3d          brk
+$ba3e          clc
+$ba3f          nop $3C3C,X  [$3C46] = $00
+$ba42          nop $3C3C,X  [$3C46] = $00
+$ba45          clc
+$ba46          brk
+$ba47          brk
+$ba48          brk
+$ba49          brk
+$ba4a          brk
+$ba4b          clc
+$ba4c          nop $7E3C,X  [$7E46] = $00
+$ba4f          ror $7E7E,X  [$7E88]
+$ba52          nop $183C,X  [$1846] = $00
+$ba55          brk
+$ba56          brk
+$ba57          brk
+$ba58          brk
+$ba59          nop $7E7E,X  [$7E88] = $00
+$ba5c          isb $FFFF,X  [$0009]
+$ba5f          isb $FFFF,X  [$0009]
+$ba62          ror $3C7E,X  [$3C88]
+$ba65          php
+$ba66          php
+$ba67          php
+$ba68          nop $7F3E,X  [$7F48] = $00
+$ba6b          rra $496B,X  [$4975] = $A2
+$ba6e          php
+$ba6f          nop $2A3E,X  [$2A48] = $00
+$ba72          brk
+$ba73          php
+$ba74          php
+$ba75          php
+$ba76          clc
+$ba77          nop $3E3E,X  [$3E48] = $55
+$ba7a          rol $080A    [$080A]
+$ba7d          clc
+$ba7e          nop CDTMF5,X [$0238] = $00
+$ba81          php
+$ba82          php
+$ba83          php
+$ba84          nop $3E1E    [$3E1E] = $55
+$ba87          rol $283A,X  [$2844]
+$ba8a          php
+$ba8b          nop $3A1E    [$3A1E] = $00
+$ba8e          jsr $0100    [$0100] = $00
+$ba91          isb $00FF,X  [$0109]
+$ba94          ora ($00,X)  [$D600] = $FF
+$ba96          brk
+$ba97          ora ($00,X)  [$D600] = $FF
+$ba99          ora ($FF,X)  [$0000] = $00
+$ba9b          brk
+$ba9c          isb $FFFF,X  [$0009]
+$ba9f          brk
+$baa0          ora ($01,X)  [$08D6] = $8E
+$baa2          brk
+$baa3          ora ($FF,X)  [$0000] = $00
+$baa5          isb $0000,X  [$000A]
+$baa8          isb $0000,X  [$000A]
+$baab          brk
+$baac          ora ($01,X)  [$08D6] = $8E
+$baae          brk
+$baaf          brk
+$bab0          brk
+$bab1          ora (CASINI,X) [$0808] = $00
+$bab3          ora RAMLO    [$04] = $FF
+$bab5          slo TRAMSZ   [$06] = $0B
+$bab7          brk
+$bab8          lda $BA15,Y  [$BA24] = $00
+$babb          slo $2BBA,X  [$2BC4] = $00
+$babe          tsx
+$babf          sec
+$bac0          tsx
+$bac1          lsr $BA      [$BA]
+$bac3          eor $BA,X    [$C4] = $00
+$bac5          asl $3E2E,X  [$3E38]
+$bac8          lsr $7E6E    [$7E6E]
+$bacb          shx $00BE,Y  [$00CD] = $00
+$bace          lda $B900,Y  [$B90F] = $00
+$bad1          jmp $34B9    [$34B9] = $00
+$bad4          lda $B91C,Y  [$B92B] = $8A
+$bad7          nop $B9,X    [$C3] = $00
+$bad9          jmp $81B9    [$81B9] = $00
+$badc          tsx
+$badd          rra ($BA),Y  [$000F] = $08
+$badf          adc $BA      [$BA] = $00
+$bae1          anc #$0B
+$bae3          kil
+$bae4          isb $200B,X  [$2015]
+$bae7          nop $36,X    [$40] = $08
+$bae9          brk
+$baea          ora ($7C,X)  [$0000] = $00
+$baec          brk
+$baed          inc $FF01,X  [$FF0B]
+$baf0          isb BRKKEY,X [$001B]
+$baf3          ora $0001    [$0001] = $B9
+$baf6          brk
+$baf7          brk
+$baf8          brk
+$baf9          brk
+$bafa          brk
+$bafb          brk
+$bafc          brk
+$bafd          brk
+$bafe          nop $01      [$01] = $B9
+$bb00          brk
+$bb01          brk
+$bb02          brk
+$bb03          brk
+$bb04          brk
+$bb05          brk
+$bb06          brk
+$bb07          brk
+$bb08          brk
+$bb09          nop $80      [$80] = $00
+$bb0b          brk
+$bb0c          brk
+$bb0d          brk
+$bb0e          brk
+$bb0f          brk
+$bb10          brk
+$bb11          brk
+$bb12          bpl $BB1A
+$bb14          asl BUFADR   [$15]
+$bb16          ora TRAMSZ,X [$10] = $08
+$bb18          slo ($50,X)  [$FF01] = $20
+$bb1a          php
+$bb1b          adc DOSINI+1,X [$17] = $FF
+$bb1d          php
+$bb1e          ora $0708    [$0708] = $00
+$bb21          ora $0C08    [$0C08] = $00
+$bb24          brk
+$bb25          ora (CASINI+1,X) [$0808] = $00
+$bb27          nop RAMLO+1  [$05] = $51
+$bb29          asl $00      [$00]
+$bb2b          slo $09      [$09] = $00
+$bb2d          php
+$bb2e          anc #$0A
+$bb30          brk
+$bb31          brk
+$bb32          brk
+$bb33          brk
+$bb34          brk
+$bb35          brk
+$bb36          brk
+$bb37          cpy $B0      [$B0] = $00
+$bb39          bcs $BAF5
+$bb3c          cpx #$CA
+$bb3e          dcp $0098    [$0098]
+$bb41          brk
+$bb42          jmp $1C34    [$1C34] = $00
+$bb45          nop $4C,X    [$56] = $01
+$bb47          sta $8B      [$8B]
+$bb49          sta $8B,X    [$95]
+$bb4b          sta FR0+1,X  [$DF]
+$bb4d          adc $65C1,X  [$65CB] = $00
+$bb50          brk
+$bb51          brk
+$bb52          jmp $1C34    [$1C34] = $00
+$bb55          nop $4C,X    [$56] = $01
+$bb57          lax $AD      [$AD] = $00
+$bb59          lax $AD,Y    [$BC] = $00
+$bb5b          lax FR0+1,Y  [$E4] = $00
+$bb5d          sha $65C1,Y  [$65D0] = $00
+$bb60          slo RAMLO+1,X [$0F] = $08
+$bb62          ora RAMLO+1  [$05] = $51
+$bb64          ora RAMLO+1  [$05] = $51
+$bb66          ora RAMLO+1  [$05] = $51
+$bb68          ora #$09
+$bb6a          ora #$09
+$bb6c          slo ($07),Y  [$0093] = $00
+$bb6e          slo ($17),Y  [$080E] = $18
+$bb70          brk
+$bb71          nop
+$bb72          brk
+$bb73          brk
+$bb74          brk
+$bb75          brk
+$bb76          brk
+$bb77          brk
+$bb78          bpl $BB7A
+$bb7a          brk
+$bb7b          sre $0000,Y  [$000F] = $08
+$bb7e          brk
+$bb7f          brk
+$bb80          brk
+$bb81          brk
+$bb82          bvc $BB84
+$bb84          brk
+$bb85          isb FR1+1    [$E1]
+$bb87          sbc $C7E5    [$C7E5] = $6A
+$bb8a          iny
+$bb8b          cmp #$C8
+$bb8d          dex
+$bb8e          brk
+$bb8f          sax ($84,X)  [$0000]
+$bb91          sta $86      [$86]
+$bb93          brk
+$bb94          brk
+$bb95          brk
+$bb96          sta ($00),Y  [$B90F]
+$bb98          brk
+$bb99          brk
+$bb9a          brk
+$bb9b          cmp ($00),Y  [$B90F] = $00
+$bb9d          sbx #$CC
+$bb9f          cmp $CECC    [$CECC] = $3E
+$bba2          brk
+$bba3          brk
+$bba4          brk
+$bba5          brk
+$bba6          brk
+$bba7          brk
+$bba8          brk
+$bba9          brk
+$bbaa          brk
+$bbab          brk
+$bbac          brk
+$bbad          brk
+$bbae          brk
+$bbaf          ora (CASINI+1,X) [$0808] = $00
+$bbb1          brk
+$bbb2          ora WARMST   [$08] = $00
+$bbb4          slo (RAMLO,X) [$0808] = $00
+$bbb6          ora TRAMSZ   [$06] = $0B
+$bbb8          asl WARMST   [$08]
+$bbba          php
+$bbbb          asl
+$bbbc          php
+$bbbd          php
+$bbbe          asl
+$bbbf          asl
+$bbc0          asl
+$bbc1          asl
+$bbc2          slo (RAMLO+1,X) [$0808] = $00
+$bbc4          asl WARMST   [$08]
+$bbc6          php
+$bbc7          php
+$bbc8          asl
+$bbc9          asl
+$bbca          asl
+$bbcb          asl
+$bbcc          slo RAMLO    [$04] = $FF
+$bbce          php
+$bbcf          asl TRAMSZ   [$06]
+$bbd1          nop RAMLO+1  [$05] = $51
+$bbd3          nop RAMLO    [$04] = $FF
+$bbd5          nop RAMLO    [$04] = $FF
+$bbd7          nop RAMLO    [$04] = $FF
+$bbd9          nop RAMLO+1  [$05] = $51
+$bbdb          nop RAMLO+1  [$05] = $51
+$bbdd          nop $07      [$07] = $84
+$bbdf          php
+$bbe0          asl WARMST   [$08]
+$bbe2          ora #$0A
+$bbe4          slo BUFADR+1,X [$20] = $FF
+$bbe6          ora RTCLOK+2,X [$1E] = $FF
+$bbe8          slo (BUFADR),Y [$5217] = $91
+$bbea          slo (RTCLOK),Y [$0817] = $00
+$bbec          nop BUFADR,X [$1F] = $FF
+$bbee          nop $140C    [$140C] = $00
+$bbf1          asl $160E    [$160E]
+$bbf4          asl $1E,X    [$28]
+$bbf6          asl $BC      [$BC]
+$bbf8          rol
+$bbf9          ldy $BC5A,X  [$BC64] = $5A
+$bbfc          ldx $BEBC,Y  [$BECB] = $85
+$bbff          ldy $BD12,X  [$BD1C] = $6A
+$bc02          kil
+$bc03          lda $BDC2,X  [$BDCC] = $55
+$bc06          asl
+$bc07          tax
+$bc08          tax
+$bc09          kil
+$bc0a          tax
+$bc0b          lda #$42
+$bc0d          ldx #$A5
+$bc0f          kil
+$bc10          ldx #$95
+$bc12          bvc $BB96
+$bc14          sta $50,X    [$5A]
+$bc16          asl
+$bc17          eor $50,X    [$5A] = $01
+$bc19          rol
+$bc1a          eor ROWCRS,X [$5E] = $00
+$bc1c          and #$55
+$bc1e          nop ICBAHZ,X [$2F] = $08
+$bc20          eor COLCRS,X [$5F] = $0D
+$bc22          and COLCRS   [$55] = $00
+$bc24          eor BUFADR,X [$1F] = $FF
+$bc26          eor COLCRS,X [$5F] = $0D
+$bc28          ora COLCRS,X [$5F] = $0D
+$bc2a          tax
+$bc2b          tax
+$bc2c          tax
+$bc2d          lax $AA6A,Y  [$AA79] = $B0
+$bc30          tax
+$bc31          sbc $AA5A,X  [$AA64] = $A2
+$bc34          tax
+$bc35          sbc COLCRS+1,X [$60] = $01
+$bc37          tax
+$bc38          nop
+$bc39          sbc COLCRS,X [$5F] = $0D
+$bc3b          tax
+$bc3c          isb $55D5,Y  [$55E4]
+$bc3f          ror
+$bc40          isb $55D5,X  [$55DF]
+$bc43          nop
+$bc44          lax $55D5,Y  [$55E4] = $60
+$bc47          nop
+$bc48          lax $5555,Y  [$5564] = $A2
+$bc4b          lsr $AF,X    [$B9]
+$bc4d          eor COLCRS,X [$5F] = $0D
+$bc4f          eor $AD,X    [$B7] = $57
+$bc51          eor COLCRS,X [$5F] = $0D
+$bc53          eor BUFSTR+1,X [$77] = $00
+$bc55          eor COLCRS,X [$5F] = $0D
+$bc57          eor OLDCHR,X [$67] = $D4
+$bc59          eor $AA,X    [$B4] = $30
+$bc5b          tsx
+$bc5c          ldx $AAAA    [$AAAA] = $A4
+$bc5f          ror
+$bc60          tsx
+$bc61          ldx $A9AA    [$A9AA] = $BC
+$bc64          nop
+$bc65          ldx $AAAF,Y  [$AABE] = $B0
+$bc68          lda #$5A
+$bc6a          lax $AAAB,Y  [$AABA] = $F4
+$bc6d          lda #$5A
+$bc6f          lax $EAAB    [$EAAB] = $EC
+$bc72          lda OLDROW   [$5A] = $01
+$bc74          lax $EAAB    [$EAAB] = $EC
+$bc77          lda COLCRS+1 [$56] = $01
+$bc79          lxa #$AA
+$bc7b          nop
+$bc7c          lda COLCRS+1 [$56] = $01
+$bc7e          lxa #$AA
+$bc80          nop
+$bc81          lda COLCRS+1 [$56] = $01
+$bc83          lda #$AA
+$bc85          tsx
+$bc86          lda COLCRS+1 [$56] = $01
+$bc88          lda #$AA
+$bc8a          ldx $56A5,Y  [$56B4] = $0B
+$bc8d          lda RAMTOP   [$6A] = $04
+$bc8f          ldx $95      [$95] = $00
+$bc91          lsr $A5,X    [$AF]
+$bc94          ldx $95      [$95] = $00
+$bc96          eor $95,X    [$9F] = $00
+$bc98          nop
+$bc99          stx $95,Y    [$A4]
+$bc9b          eor $95,X    [$9F] = $00
+$bc9d          nop
+$bc9e          sta $95,X    [$9F]
+$bca0          eor COLCRS,X [$5F] = $0D
+$bca2          nop
+$bca3          sta $95,X    [$9F]
+$bca5          eor COLCRS,X [$5F] = $0D
+$bca7          nop
+$bca8          sta $95,X    [$9F]
+$bcaa          eor COLCRS,X [$5F] = $0D
+$bcac          lsr COLCRS,X [$5F]
+$bcae          eor COLCRS,X [$5F] = $0D
+$bcb0          eor COLCRS+1,X [$60] = $01
+$bcb2          eor COLCRS,X [$5F] = $0D
+$bcb4          eor COLCRS,X [$5F] = $0D
+$bcb6          lsr COLCRS,X [$5F]
+$bcb8          eor COLCRS,X [$5F] = $0D
+$bcba          eor COLCRS+1,X [$60] = $01
+$bcbc          eor COLCRS,X [$5F] = $0D
+$bcbe          tax
+$bcbf          tax
+$bcc0          tax
+$bcc1          tax
+$bcc2          tax
+$bcc3          brk
+$bcc4          ror
+$bcc5          tax
+$bcc6          tax
+$bcc7          ldx #$AA
+$bcc9          ora (OLDROW,X) [$0000] = $00
+$bccb          tax
+$bccc          tax
+$bccd          nop #$A8
+$bccf          ora (OLDROW,X) [$0000] = $00
+$bcd1          tay
+$bcd2          tax
+$bcd3          asl
+$bcd4          tay
+$bcd5          ora COLCRS+1 [$56] = $01
+$bcd7          tay
+$bcd8          plp
+$bcd9          asl
+$bcda          tay
+$bcdb          ora COLCRS+1 [$56] = $01
+$bcdd          tax
+$bcde          php
+$bcdf          rol
+$bce0          ldy #$15
+$bce2          lsr $AA,X    [$B4]
+$bce4          nop #$6A
+$bce6          brk
+$bce7          eor COLCRS,X [$5F] = $0D
+$bce9          tax
+$bcea          sta (RAMTOP,X) [$0420]
+$bcec          ora (COLCRS,X) [$010D] = $00
+$bcee          eor $AA,X    [$B4] = $30
+$bcf0          ora (SAVMSC,X) [$0001] = $B9
+$bcf2          ora COLCRS   [$55] = $00
+$bcf4          eor RAMTOP,X [$74] = $20
+$bcf6          ora SAVMSC   [$58] = $00
+$bcf8          ora COLCRS,X [$5F] = $0D
+$bcfa          eor SAVMSC,X [$62] = $01
+$bcfc          ora ROWCRS,X [$5E] = $00
+$bcfe          eor COLCRS,X [$5F] = $0D
+$bd00          eor SAVMSC,X [$62] = $01
+$bd02          ora ROWCRS,X [$5E] = $00
+$bd04          eor COLCRS,X [$5F] = $0D
+$bd06          eor ROWCRS,X [$5E] = $00
+$bd08          eor COLCRS,X [$5F] = $0D
+$bd0a          eor COLCRS,X [$5F] = $0D
+$bd0c          eor ROWCRS,X [$5E] = $00
+$bd0e          eor COLCRS,X [$5F] = $0D
+$bd10          eor COLCRS,X [$5F] = $0D
+$bd12          eor COLCRS,X [$5F] = $0D
+$bd14          eor $95,X    [$9F] = $00
+$bd16          eor COLCRS,X [$5F] = $0D
+$bd18          eor COLCRS,X [$5F] = $0D
+$bd1a          ror
+$bd1b          eor RAMTOP,X [$74] = $20
+$bd1d          lda #$55
+$bd1f          eor COLCRS,X [$5F] = $0D
+$bd21          eor $AA,X    [$B4] = $30
+$bd23          tax
+$bd24          tax
+$bd25          tax
+$bd26          lax $ABEA    [$ABEA] = $30
+$bd29          eor $AA,X    [$B4] = $30
+$bd2b          tax
+$bd2c          tax
+$bd2d          tax
+$bd2e          lax $ABAA    [$ABAA] = $17
+$bd31          cmp RAMTOP,X [$74] = $20
+$bd33          tax
+$bd34          tax
+$bd35          tax
+$bd36          lax $ABAA    [$ABAA] = $17
+$bd39          sbc RAMTOP,X [$74] = $20
+$bd3b          tax
+$bd3c          tax
+$bd3d          tax
+$bd3e          lax $ABAA,Y  [$ABB9] = $9D
+$bd41          isb $AA5A,X  [$AA64]
+$bd44          nop
+$bd45          tax
+$bd46          ldx $AFAA,Y  [$AFB9] = $85
+$bd49          isb $AA5A,X  [$AA64]
+$bd4c          nop
+$bd4d          tax
+$bd4e          ldx $AFAA,Y  [$AFB9] = $85
+$bd51          isb $AB5A,X  [$AB64]
+$bd54          nop
+$bd55          tax
+$bd56          nop
+$bd57          tax
+$bd58          lax $56FF    [$56FF] = $4C
+$bd5b          lax $AAEA    [$AAEA] = $69
+$bd5e          nop
+$bd5f          tax
+$bd60          lax $55FD    [$55FD] = $FF
+$bd63          lax $AAAA    [$AAAA] = $A4
+$bd66          nop
+$bd67          tax
+$bd68          lax $55FD    [$55FD] = $FF
+$bd6b          lda $ABAA,X  [$ABB4] = $01
+$bd6e          nop
+$bd6f          tax
+$bd70          lax $55F5    [$55F5] = $06
+$bd73          adc $AA,X    [$B4] = $30
+$bd75          lxa #$AA
+$bd77          tax
+$bd78          lax $55F5,Y  [$5604] = $98
+$bd7b          adc RAMTOP,X [$74] = $20
+$bd7d          lxa #$AA
+$bd7f          tax
+$bd80          lax $55F5,Y  [$5604] = $98
+$bd83          eor RAMTOP,X [$74] = $20
+$bd85          lda #$AA
+$bd87          tax
+$bd88          lax $55D5,Y  [$55E4] = $60
+$bd8b          eor OLDROW,X [$64] = $00
+$bd8d          lda RAMTOP   [$6A] = $04
+$bd8f          tax
+$bd90          lax $5555,Y  [$5564] = $A2
+$bd93          eor OLDROW,X [$64] = $00
+$bd95          sta OLDROW,X [$64]
+$bd97          tax
+$bd98          lax $5555,Y  [$5564] = $A2
+$bd9b          eor COLCRS+1,X [$60] = $01
+$bd9d          eor COLCRS,X [$5F] = $0D
+$bd9f          tax
+$bda0          lda $5555,X  [$555F] = $E8
+$bda3          eor COLCRS+1,X [$60] = $01
+$bda5          eor COLCRS,X [$5F] = $0D
+$bda7          nop
+$bda8          lda $5555,X  [$555F] = $E8
+$bdab          eor COLCRS,X [$5F] = $0D
+$bdad          eor COLCRS,X [$5F] = $0D
+$bdaf          lsr $B5,X    [$BF]
+$bdb1          eor COLCRS,X [$5F] = $0D
+$bdb3          eor COLCRS,X [$5F] = $0D
+$bdb5          eor COLCRS,X [$5F] = $0D
+$bdb7          eor $B5,X    [$BF] = $00
+$bdb9          eor COLCRS,X [$5F] = $0D
+$bdbb          eor COLCRS,X [$5F] = $0D
+$bdbd          eor COLCRS,X [$5F] = $0D
+$bdbf          eor $75,X    [$7F] = $00
+$bdc1          eor COLCRS,X [$5F] = $0D
+$bdc3          eor COLCRS,X [$5F] = $0D
+$bdc5          eor COLCRS,X [$5F] = $0D
+$bdc7          adc #$55
+$bdc9          eor COLCRS,X [$5F] = $0D
+$bdcb          eor COLCRS,X [$5F] = $0D
+$bdcd          nop
+$bdce          tax
+$bdcf          eor OLDROW,X [$64] = $00
+$bdd1          tax
+$bdd2          sta COLCRS,X [$5F]
+$bdd4          eor COLCRS,X [$5F] = $0D
+$bdd6          tax
+$bdd7          tax
+$bdd8          tax
+$bdd9          tax
+$bdda          tax
+$bddb          tax
+$bddc          tax
+$bddd          tax
+$bdde          eor COLCRS,X [$5F] = $0D
+$bde0          nop
+$bde1          tax
+$bde2          tax
+$bde3          tax
+$bde4          tax
+$bde5          tax
+$bde6          tax
+$bde7          lda #$55
+$bde9          eor COLCRS+1,X [$60] = $01
+$bdec          tax
+$bded          tax
+$bdee          tax
+$bdef          tax
+$bdf0          tax
+$bdf1          lda COLCRS   [$55] = $00
+$bdf3          eor COLCRS+1,X [$60] = $01
+$bdf5          tax
+$bdf6          tax
+$bdf7          tax
+$bdf8          tax
+$bdf9          tax
+$bdfa          tax
+$bdfb          lda COLCRS   [$55] = $00
+$bdfd          eor COLCRS,X [$5F] = $0D
+$bdff          tax
+$be00          tax
+$be01          tax
+$be02          tax
+$be03          tax
+$be04          tax
+$be05          ora COLCRS,X [$5F] = $0D
+$be07          eor COLCRS,X [$5F] = $0D
+$be09          ror
+$be0a          tax
+$be0b          tax
+$be0c          tax
+$be0d          tax
+$be0e          tax
+$be0f          ora COLCRS,X [$5F] = $0D
+$be11          eor COLCRS,X [$5F] = $0D
+$be13          ror
+$be14          tax
+$be15          tax
+$be16          tax
+$be17          tax
+$be18          tay
+$be19          ora COLCRS,X [$5F] = $0D
+$be1b          eor COLCRS,X [$5F] = $0D
+$be1d          nop
+$be1e          tax
+$be1f          tax
+$be20          tax
+$be21          tax
+$be22          tay
+$be23          eor COLCRS,X [$5F] = $0D
+$be25          eor COLCRS,X [$5F] = $0D
+$be27          nop
+$be28          tax
+$be29          tax
+$be2a          tax
+$be2b          tax
+$be2c          tay
+$be2d          eor COLCRS,X [$5F] = $0D
+$be2f          eor COLCRS,X [$5F] = $0D
+$be31          eor $AA,X    [$B4] = $30
+$be33          tax
+$be34          tax
+$be35          tax
+$be36          ldy #$55
+$be38          eor COLCRS,X [$5F] = $0D
+$be3a          eor COLCRS,X [$5F] = $0D
+$be3c          ror
+$be3d          tax
+$be3e          tax
+$be3f          tax
+$be40          ldx #$AA
+$be42          ldy #$01
+$be44          eor COLCRS,X [$5F] = $0D
+$be46          ror
+$be47          tax
+$be48          tax
+$be49          tax
+$be4a          nop #$AA
+$be4c          ldy #$05
+$be4e          eor COLCRS,X [$5F] = $0D
+$be50          nop
+$be51          tax
+$be52          tay
+$be53          rol
+$be54          txa
+$be55          tax
+$be56          ldy #$15
+$be58          eor COLCRS,X [$5F] = $0D
+$be5a          lsr $AA,X    [$B4]
+$be5c          tax
+$be5d          rol
+$be5e          txa
+$be5f          tax
+$be60          nop #$15
+$be62          eor COLCRS,X [$5F] = $0D
+$be64          lsr $AA,X    [$B4]
+$be66          tax
+$be67          asl
+$be68          asl
+$be69          tax
+$be6a          nop #$55
+$be6c          eor COLCRS,X [$5F] = $0D
+$be6e          lsr $AA,X    [$B4]
+$be70          tax
+$be71          txa
+$be72          rol
+$be73          tax
+$be74          sta (COLCRS,X) [$010D]
+$be76          eor COLCRS,X [$5F] = $0D
+$be78          eor $AA,X    [$B4] = $30
+$be7a          tax
+$be7b          nop #$2A
+$be7d          tax
+$be7e          ora (COLCRS,X) [$010D] = $00
+$be80          eor COLCRS,X [$5F] = $0D
+$be82          eor COUNTR,X [$88] = $00
+$be84          tax
+$be85          nop #$AA
+$be87          tax
+$be88          ora COLCRS   [$55] = $00
+$be8a          eor COLCRS,X [$5F] = $0D
+$be8c          eor OLDADR+1,X [$69] = $20
+$be8e          tax
+$be8f          nop #$AA
+$be91          tax
+$be92          ora COLCRS   [$55] = $00
+$be94          eor COLCRS,X [$5F] = $0D
+$be96          eor DINDEX,X [$61] = $00
+$be98          tax
+$be99          nop #$6A
+$be9b          tay
+$be9c          ora COLCRS,X [$5F] = $0D
+$be9e          eor COLCRS,X [$5F] = $0D
+$bea0          eor DINDEX,X [$61] = $00
+$bea2          nop
+$bea3          sta (OLDROW,X) [$0000]
+$bea5          tay
+$bea6          ora COLCRS,X [$5F] = $0D
+$bea8          eor COLCRS,X [$5F] = $0D
+$beaa          eor COLCRS,X [$5F] = $0D
+$beac          nop
+$bead          sta (COLCRS+1,X) [$0001]
+$beaf          tay
+$beb0          eor COLCRS,X [$5F] = $0D
+$beb2          eor COLCRS,X [$5F] = $0D
+$beb4          eor COLCRS,X [$5F] = $0D
+$beb6          nop
+$beb7          sta (COLCRS,X) [$010D]
+$beb9          ldy #$55
+$bebb          eor COLCRS,X [$5F] = $0D
+$bebd          eor COLCRS,X [$5F] = $0D
+$bebf          eor COLINC,X [$84] = $00
+$bec1          sta COLCRS   [$55]
+$bec3          adc (COLCRS,X) [$010D] = $00
+$bec5          eor COLCRS,X [$5F] = $0D
+$bec7          eor COLCRS,X [$5F] = $0D
+$bec9          eor COUNTR,X [$88] = $00
+$becb          sta COLCRS   [$55]
+$becd          eor $5555,Y  [$5564] = $A2
+$bed0          eor COLCRS,X [$5F] = $0D
+$bed2          eor COLCRS,X [$5F] = $0D
+$bed4          lsr $5515,X  [$551F]
+$bed7          eor COLCRS,X [$5F] = $0D
+$bed9          eor COLCRS,X [$5F] = $0D
+$bedb          eor COLCRS,X [$5F] = $0D
+$bedd          eor OLDADR+1,X [$69] = $20
+$bedf          ora COLCRS,X [$5F] = $0D
+$bee1          eor COLCRS,X [$5F] = $0D
+$bee3          eor COLCRS,X [$5F] = $0D
+$bee5          eor COLCRS,X [$5F] = $0D
+$bee7          eor DINDEX,X [$61] = $00
+$bee9          ora COLCRS,X [$5F] = $0D
+$beeb          eor COLCRS,X [$5F] = $0D
+$beed          eor $00,X    [$0A] = $00
+$beef          brk
+$bef0          brk
+$bef1          brk
+$bef2          brk
+$bef3          rts
+$bef4          rts
+$bef5          cpy #$74
+$bef7          rol $27      [$27]
+$bef9          and ICBALZ   [$24] = $00
+$befb          brk
+$befc          brk
+$befd          brk
+$befe          rti
+$beff          cpy #$C0
+$bf01          rti
+$bf02          rti
+$bf03          brk
+$bf04          brk
+$bf05          brk
+$bf06          brk
+$bf07          brk
+$bf08          brk
+$bf09          ora (CASINI+1,X) [$0808] = $00
+$bf0b          asl DOSINI   [$0C]
+$bf0d          brk
+$bf0e          rla $ED61    [$ED61] = $A2
+$bf11          lda #$E9
+$bf13          and #$2D
+$bf15          brk
+$bf16          beq $BF29
+$bf19          lsr OLDCOL+1,X [$66]
+$bf1b          cli
+$bf1c          bvc $BF1E
+$bf1e          inc $3A80,X  [$3A8A]
+$bf21          ldx #$BA
+$bf23          txa
+$bf24          tsx
+$bf25          brk
+$bf26          brk
+$bf27          brk
+$bf28          sbc #$AD
+$bf2a          lax $E9AB    [$E9AB] = $8D
+$bf2d          brk
+$bf2e          brk
+$bf2f          isb $B5      [$B5]
+$bf31          sbc $B7      [$B7] = $57
+$bf33          lda FR1+4,X  [$EE] = $00
+$bf35          brk
+$bf36          brk
+$bf37          rla $9292,Y  [$92A1] = $00
+$bf3a          kil
+$bf3b          kil
+$bf3c          las $0000    [$0000] = $00
+$bf3f          stx $50D8    [$50D8]
+$bf42          lsr $DA,X    [$E4]
+$bf44          stx $0000    [$0000]
+$bf47          cpx #$80
+$bf49          cpy #$80
+$bf4b          nop #$E0
+$bf4d          brk
+$bf4e          rra $4C4C,X  [$4C56] = $36
+$bf51          jmp $404C    [$404C] = $00
+$bf54          rti
+$bf55          sre $00FF    [$00FF] = $00
+$bf58          brk
+$bf59          brk
+$bf5a          brk
+$bf5b          brk
+$bf5c          brk
+$bf5d          brk
+$bf5e          isb $0808,X  [$0812]
+$bf61          pha
+$bf62          cpy #$43
+$bf64          lsr $EC      [$EC]
+$bf66          isb $1919,X  [$1923]
+$bf69          ora $0119,Y  [$0128] = $00
+$bf6c          ora ($F1,X)  [$0000] = $00
+$bf6e          pha
+$bf6f          pha
+$bf70          lsr $4848    [$4848]
+$bf73          sre $7F40    [$7F40] = $00
+$bf76          brk
+$bf77          brk
+$bf78          brk
+$bf79          brk
+$bf7a          brk
+$bf7b          brk
+$bf7c          brk
+$bf7d          isb $3718,X  [$3722]
+$bf80          adc ($C7,X)  [$0000] = $00
+$bf82          nop $07      [$07] = $84
+$bf84          brk
+$bf85          isb $8181,X  [$818B]
+$bf88          sbc ($81,X)  [$0000] = $00
+$bf8a          sta ($81,X)  [$0000]
+$bf8c          ora ($FF,X)  [$0000] = $00
+$bf8e          brk
+$bf8f          brk
+$bf90          inc $EEA2    [$EEA2]
+$bf93          dey
+$bf94          stx $0000    [$0000]
+$bf97          nop $6666,X  [$6670] = $00
+$bf9a          ror TOADR    [$66]
+$bf9c          nop $0000,X  [$000A] = $00
+$bf9f          brk
+$bfa0          cpx $AC      [$AC] = $F7
+$bfa2          cpx $84      [$84] = $00
+$bfa4          stx $0000    [$0000]
+$bfa7          brk
+$bfa8          ldx $E4A4    [$E4A4] = $00
+$bfab          ldy $AE      [$AE] = $00
+$bfad          brk
+$bfae          php
+$bfaf          php
+$bfb0          nop $6B3E,X  [$6B48] = $00
+$bfb3          eor #$1C
+$bfb5          rol
+$bfb6          brk
+$bfb7          nop $0C66,X  [$0C70] = $00
+$bfba          clc
+$bfbb          bmi $C03B
+$bfbd          brk
+$bfbe          brk
+$bfbf          clc
+$bfc0          sec
+$bfc1          clc
+$bfc2          clc
+$bfc3          clc
+$bfc4          ror $0000,X  [$000A]
+$bfc7          nop $3E66,X  [$3E70] = $55
+$bfca          asl DOSINI   [$0C]
+$bfcc          sec
+$bfcd          brk
+$bfce          brk
+$bfcf          nop $3C66,X  [$3C70] = $00
+$bfd2          ror TOADR    [$66]
+$bfd4          nop $0000,X  [$000A] = $00
+$bfd7          ror $180C,X  [$1816]
+$bfda          nop $3C66    [$3C66] = $00
+$bfdd          brk
+$bfde          brk
+$bfdf          brk
+$bfe0          brk
+$bfe1          brk
+$bfe2          brk
+$bfe3          clc
+$bfe4          clc
+$bfe5          brk
+$bfe6          stx RAMLO,Y  [$13]
+$bfe8          sty $8E10    [$8E10]
+$bfeb          nop $207C    [$207C] = $00
+$bfee          stx RTCLOK+2 [$14]
+$bff0          jmp ($FF30)  [$0303] = $00
+$bff3          isb $FFFF,X  [$0009]
+$bff6          isb $FFFF,X  [$0009]
+$bff9          isb $A000,X  [$A00A]
+$bffc          brk
+$bffd          nop #$00
+$bfff          ldy #$11

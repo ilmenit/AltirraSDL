@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/vd2/system/zip.h	2025-09-14 23:26:06.287064200 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/vd2/system/zip.h	2026-04-15 05:41:51.589971200 +0200
+@@ -73,7 +73,6 @@
+ 
+ 	uint32	mReadValidEnd = 0;
+ 	uint64	mReadLimitRemaining = 0;
+-	bool	mbTailAdded = false;
+ 	IVDStream *mpSrc = nullptr;
+ 	uint8	mReadBuffer[kBufferSize + kHeaderSize];
+ };

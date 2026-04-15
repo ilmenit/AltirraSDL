@@ -1,0 +1,10 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/ATCore/source/configvar.cpp	2024-10-21 02:26:15.505802000 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATCore/source/configvar.cpp	2026-04-15 05:41:49.940865200 +0200
+@@ -19,6 +19,7 @@
+ //	archive for details.
+ 
+ #include <stdafx.h>
++#include <math.h>
+ #include <vd2/system/bitmath.h>
+ #include <vd2/system/hash.h>
+ #include <vd2/system/registry.h>

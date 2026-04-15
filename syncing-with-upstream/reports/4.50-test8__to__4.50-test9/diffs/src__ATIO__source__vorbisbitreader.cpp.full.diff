@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/AltirraSDL/src/ATIO/source/vorbisbitreader.cpp	2026-03-30 22:02:51.619809428 +0200
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/ATIO/source/vorbisbitreader.cpp	2026-04-15 05:41:50.117353100 +0200
+@@ -15,7 +15,7 @@
+ //	with this program. If not, see <http://www.gnu.org/licenses/>.
+ 
+ #include "stdafx.h"
+-#include <cmath>
++#include <math.h>
+ #include <at/atio/vorbisbitreader.h>
+ 
+ // Read Vorbis-encoded floats. These use a different representation from IEEE floats.

@@ -1,0 +1,11 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/simulator.cpp	2026-01-18 05:32:58.243725400 +0100
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/simulator.cpp	2026-04-05 00:56:15.207254436 +0200
+@@ -4177,7 +4177,7 @@
+ 
+ 		rw.Transfer("front_end", &mpFrontEnd);
+ 
+-		if constexpr (rw.IsReader) {
++		if constexpr (T::IsReader) {
+ 			// if aliasing is specified, there must be more than two bits
+ 			if (mbXmemAliasing && VDCountBits8(mXmemPortbMask) < 3)
+ 				throw ATInvalidSaveStateException();

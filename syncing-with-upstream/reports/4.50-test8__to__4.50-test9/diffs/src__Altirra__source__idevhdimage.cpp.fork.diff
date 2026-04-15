@@ -1,0 +1,129 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/Altirra/source/idevhdimage.cpp	2024-01-17 06:17:45.767662000 +0100
++++ /home/ilm/Documents/GitHub/AltirraSDL/src/Altirra/source/idevhdimage.cpp	2026-04-05 00:09:08.932946607 +0200
+@@ -28,6 +28,10 @@
+ #include "idevhdimage.h"
+ #include "oshelper.h"
+ 
++#if !defined(_WIN32)
++#include <vd2/system/text.h>
++#endif
++
+ static_assert(sizeof(ATVHDFooter) == 512);
+ static_assert(sizeof(ATVHDParentLocator) == 24);
+ static_assert(sizeof(ATVHDDynamicDiskHeader) == 1024);
+@@ -364,12 +368,26 @@
+ 				if (!locator.mLength || locator.mLength > 1*1024*1024 || (locator.mLength & 1))
+ 					continue;
+ 
+-				// read in the data
++				// read in the data (VHD stores paths as UTF-16LE)
++				mFile.seek(locator.mOffset);
++#if defined(_WIN32)
++				// On Windows, wchar_t is 2 bytes (UTF-16LE) — direct read
+ 				parentPath.clear();
+ 				parentPath.resize(locator.mLength >> 1);
+-
+-				mFile.seek(locator.mOffset);
+ 				mFile.read(&parentPath[0], locator.mLength);
++#else
++				// On Linux, wchar_t is 4 bytes — read UTF-16LE and expand
++				{
++					uint32 u16len = locator.mLength >> 1;
++					vdblock<uint16> u16buf(u16len);
++					mFile.read(u16buf.data(), locator.mLength);
++
++					parentPath.clear();
++					parentPath.resize(u16len);
++					for (uint32 i = 0; i < u16len; ++i)
++						parentPath[i] = (wchar_t)u16buf[i];
++				}
++#endif
+ 
+ 				if (locator.mCode == ATVHDParentLocator::kCodeWindowsRelPath) {
+ 					lastSeenRelPath = parentPath;
+@@ -496,25 +514,30 @@
+ 		mDynamicHeader.mBlockSize = mBlockSize;
+ 
+ 		// if this is a differencing disk, set the parent information
+-		static_assert(sizeof(wchar_t) == 2);
+-		VDStringW parentAbsPath;
+-		VDStringW parentRelPath;
++		// VHD format stores parent paths as UTF-16LE (2 bytes per code unit).
++		// On Windows wchar_t==2 so we can write VDStringW directly; on Linux
++		// wchar_t==4 so we need to convert to uint16 buffers first.
++		vdblock<uint16> parentRelU16;
++		vdblock<uint16> parentAbsU16;
+ 
+ 		if (parent) {
+ 			memcpy(mDynamicHeader.mParentUniqueId, parent->GetUID(), 16);
+ 			mDynamicHeader.mParentTimestamp = parent->GetVHDTimestamp();
+ 
+-			vdwcslcpy((wchar_t *)mDynamicHeader.mParentUnicodeName, parent->GetAbsPath(), vdcountof(mDynamicHeader.mParentUnicodeName));
++			// Copy parent name into dynamic header (UTF-16LE, uint16[256])
++			const wchar_t *absPath = parent->GetAbsPath();
++			for (size_t i = 0; i < vdcountof(mDynamicHeader.mParentUnicodeName) - 1 && absPath[i]; ++i)
++				mDynamicHeader.mParentUnicodeName[i] = (uint16)absPath[i];
+ 
+ 			// compute absolute and relative paths
+-			parentAbsPath = parent->GetAbsPath();
+-			parentRelPath = VDFileGetRelativePath(VDFileSplitPathLeft(mAbsPath).c_str(), parentAbsPath.c_str(), true);
++			VDStringW parentAbsPath(parent->GetAbsPath());
++			VDStringW parentRelPath(VDFileGetRelativePath(VDFileSplitPathLeft(mAbsPath).c_str(), parentAbsPath.c_str(), true));
+ 
+ 			// allocate space for the locators, rounded up to sectors
+ 			ATVHDParentLocator *nextLocator = mDynamicHeader.mParentLocators;
+ 
+ 			if (!parentRelPath.empty()) {
+-				uint32 relLocatorSize = (uint32)parentRelPath.size() * 2;
++				uint32 relLocatorSize = (uint32)parentRelPath.size() * 2;  // UTF-16LE byte count
+ 				uint32 relLocatorCapacity = (relLocatorSize + 511) & ~511;
+ 
+ 				nextLocator->mCode = ATVHDParentLocator::kCodeWindowsRelPath;
+@@ -522,13 +545,16 @@
+ 				nextLocator->mSpace = relLocatorCapacity;
+ 				nextLocator->mOffset = headerSize;
+ 
+-				parentRelPath.resize(relLocatorCapacity >> 1, 0);
++				// Build UTF-16LE buffer with sector-aligned padding
++				parentRelU16.resize(relLocatorCapacity >> 1, 0);
++				for (size_t i = 0; i < parentRelPath.size(); ++i)
++					parentRelU16[i] = (uint16)parentRelPath[i];
+ 
+ 				headerSize += relLocatorCapacity;
+ 			}
+ 
+ 			if (!parentAbsPath.empty()) {
+-				uint32 absLocatorSize = parentAbsPath.size() * 2;
++				uint32 absLocatorSize = (uint32)parentAbsPath.size() * 2;
+ 				uint32 absLocatorCapacity = (absLocatorSize + 511) & ~511;
+ 
+ 				nextLocator->mCode = ATVHDParentLocator::kCodeWindowsAbsPath;
+@@ -536,7 +562,9 @@
+ 				nextLocator->mSpace = absLocatorCapacity;
+ 				nextLocator->mOffset = headerSize;
+ 
+-				parentAbsPath.resize(absLocatorCapacity >> 1, 0);
++				parentAbsU16.resize(absLocatorCapacity >> 1, 0);
++				for (size_t i = 0; i < parentAbsPath.size(); ++i)
++					parentAbsU16[i] = (uint16)parentAbsPath[i];
+ 
+ 				headerSize += absLocatorCapacity;
+ 			} else {
+@@ -555,12 +583,12 @@
+ 		ATSwapEndian(rawDynamicHeader);
+ 		mFile.write(&rawDynamicHeader, sizeof(rawDynamicHeader));
+ 
+-		// write out locators (without null terminators, but with capacity padding)
+-		if (!parentRelPath.empty())
+-			mFile.write(parentRelPath.data(), parentRelPath.size() * 2);
++		// write out locators as UTF-16LE (without null terminators, but with capacity padding)
++		if (!parentRelU16.empty())
++			mFile.write(parentRelU16.data(), parentRelU16.size() * sizeof(uint16));
+ 
+-		if (!parentAbsPath.empty())
+-			mFile.write(parentAbsPath.data(), parentAbsPath.size() * 2);
++		if (!parentAbsU16.empty())
++			mFile.write(parentAbsU16.data(), parentAbsU16.size() * sizeof(uint16));
+ 
+ 		// write out the BAT
+ 		vdblock<uint32> batBuf(16384);

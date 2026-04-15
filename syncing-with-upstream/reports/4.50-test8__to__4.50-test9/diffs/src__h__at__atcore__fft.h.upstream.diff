@@ -1,0 +1,20 @@
+--- /home/ilm/Documents/GitHub/Altirra-4.50-test8-src/src/h/at/atcore/fft.h	2024-12-13 07:15:52.083862800 +0100
++++ /home/ilm/Documents/GitHub/Altirra-4.50-test9-src/src/h/at/atcore/fft.h	2026-04-15 05:41:50.768517400 +0200
+@@ -147,7 +147,7 @@
+ 	void InitImpl(ATFFTAllocator& allocator, uint32 N, bool imdct, bool optimizeForSpeed);
+ 
+ 	void ReserveImpl(ATFFTAllocator& allocator, uint32 N, bool imdct, bool optimizeForSpeed);
+-	void BindImpl(ATFFTAllocator& allocator);
++	void BindImpl(const ATFFTAllocator& allocator);
+ 
+ 	void ForwardImpl(float *dst, const float *src);
+ 	void InverseImpl(float *dst, const float *src);
+@@ -204,7 +204,7 @@
+ 	}
+ 
+ 	void Reserve(ATFFTAllocator& allocator, bool optimizeForSpeed) requires T_SharedAllocator {
+-		ReserveImpl(allocator, N, optimizeForSpeed);
++		ReserveImpl(allocator, N, false, optimizeForSpeed);
+ 	}
+ 
+ 	void Bind(const ATFFTAllocator& allocator) requires T_SharedAllocator {
