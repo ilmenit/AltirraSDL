@@ -1,31 +1,43 @@
 # River Raid — Technical Findings
 
-> **2026-04-11 update — correction pass:** A deeper re-read of the
-> split asm files uncovered several wrong claims in this document
-> and the accompanying notes. Specific corrections:
+> **2026-04-14 correction — missile roles were backwards:** Runtime
+> inspection (Altirra cheat search + breakpoint tracing) proved that
+> earlier claims about M1 and M2 were swapped. Specifically:
 >
-> - **M0 and M2 are NOT cleared / unused.** M0 has a writer in
->   `frame_sync.asm` at $AEF1 driving a moving dot via `$C1`, with
->   COLPM0 cycled every frame. M2 is positioned at `player_sprite_x + 4`
->   by the DLI at $B539 as a narrow jet hit probe.
-> - **`process_collision_results` ($B07C), `check_terrain_collision`
->   ($B05C), `play_score_sound` ($B1C0), `update_lives_display`
->   ($B21A), `clear_status_line`/`write_status_text` ($B221/$B223)
->   are all misnomers.** The first two are entry points into a
->   shared digit-rendering helper; the rest manipulate state flags
->   and the M-DMA buffer but don't touch sound or lives display.
-> - **`lives_count = $002A`** is a countdown timer that triggers
->   `player_death`, not a visible life count.
-> - **`player_death` at $A688** is a 5-instruction hook, not the
->   real death handler.
+> - **M1 is the FUEL GAUGE BAR**, not the bullet. The 10-byte M1
+>   stripe at `$0BCC-$0BD5` drawn by the routine at `$B14B` (case
+>   study called this `draw_bullet_pmg` — **misnamed**, it writes the
+>   fuel-bar stripe, not the bullet) appears in the status-panel Y
+>   range. Its horizontal position is derived from fuel level every
+>   frame by the playfield DLI at `$B523`: `HPOSM1 = (fuel_level >> 3)
+>   + $5C` (the `$5C` in the formula is an **immediate literal**, not
+>   the fuel_drain_ctr byte at `$005C`). As fuel drops from `$FF` to
+>   `$00` the bar slides left across 31 pixels of horizontal travel.
+> - **M2 is the bullet**, drawn at a moving Y via the routine at
+>   `$B223` which writes `$20` (M2 bit) to `$0B01+$56 .. $0B08+$56`
+>   each frame. HPOSM2 is set to `player_sprite_x + 4` in the DLI;
+>   as `$56` is decremented by `handle_bullet_fire`, the bitmap rises
+>   up the screen. `$1A` captures M2-vs-PF (terrain) and drives
+>   bullet reset at `entities.asm:$A58D`.
+> - **The 50-byte block at `$AEC8-$AEF9`** previously labelled "fuel
+>   bar indicator" is a separate M0 animation (COLPM0 colour cycle +
+>   M0 dots drawn at `$0B00 + frame_ctr_copy` gated by `$C1`) — the
+>   actual effect is uncharacterised and may be a decorative dot or
+>   low-fuel warning, not the fuel gauge.
 >
-> The state machine, display list, entity model, and high-level
-> architecture descriptions in this document are still substantially
-> correct. The corrections above primarily affect the sprite section
-> and the collision section. See the inline **CORRECTED** annotations
-> below, the corresponding `notes/sprites.md`, `notes/variables.md`,
-> `notes/subroutine_map.md` updates, and the top-level `project.json`
-> `notes` field for the full details.
+> The correct mental model: **M1 = fuel bar, M2 = bullet, M0 = TBD
+> decorative/warning effect, M3 = unused.** See the sprite table in
+> the "Player/Missile Graphics" section below for the full map.
+>
+> **Earlier 2026-04-11 corrections** still apply: `process_collision_results`,
+> `check_terrain_collision`, `play_score_sound`, `update_lives_display`,
+> `clear_status_line`/`write_status_text` are all misnomers;
+> `lives_count = $002A` is a countdown timer; `player_death` at `$A688`
+> is a 5-instruction hook (jumps to state_start_game).
+>
+> **Earlier 2026-04-14 correction** still applies: `$5B` is the real
+> fuel level (cheat-search verified), `$76` is some other counter of
+> unknown purpose. See the "Fuel System" section.
 
 ## Status
 
@@ -160,55 +172,80 @@ $B571: BNE $B567      ; loop until entity zone ends
 PMG base is at `$0800` (PMBASE = `$08` at `$D407`), **single-line DMA**
 mode (DMACTL bit 4 set). Each P/M slot is 256 bytes:
 
-**CORRECTED 2026-04-11 — see `notes/sprites.md` for the full corrected map.**
+**CORRECTED 2026-04-14 — M1 and M2 roles were previously swapped.**
 
 | Range                    | Sprite                | Role in gameplay                          |
 |--------------------------|-----------------------|-------------------------------------------|
-| `$0B00-$0BFF` bits 0-1   | M0                    | **ACTIVE** — dual role: (1) fuel bar in status panel at `$AEC8-$AEF9`, COLPM0 color-cycled; (2) death-effect dot at fuel=0 via `$A5CA-$A607`. |
-| `$0B00-$0BFF` bits 2-3   | M1                    | **Player bullet at-rest template** at `$0BCC,Y` (`draw_bullet_pmg` at $B14B). |
-| `$0B00-$0BFF` bits 4-5   | M2                    | **Jet narrow hit probe** at `player_sprite_x + 4` (DLI at $B539). M2 vs P3 captured into `$1C`. |
+| `$0B00-$0BFF` bits 0-1   | M0                    | Some decorative/warning effect driven by the `$AEC8-$AEF9` block: COLPM0 color-cycled through yellow/green (`player_color_cycle`, `$BAC5`), M0 dots drawn at `$0B00 + frame_ctr_copy`, gated by `$C1` as an X position. **Exact gameplay role unverified** — NOT the fuel bar (that's M1) and NOT a reliable death-effect interpretation. |
+| `$0B00-$0BFF` bits 2-3   | M1                    | **Fuel gauge bar.** 10-byte stripe written to `$0BCC-$0BD5` (PAL) / `$0BD3-$0BDC` (NTSC) by the routine at `$B14B` (misnamed `draw_bullet_pmg` — it draws the fuel bar). Falls in the status-panel Y range. HPOSM1 is computed every playfield DLI as `(fuel_level >> 3) + $5C` (literal) at `$B523`; bar slides left as fuel drops. COLPM1 set to `$1E` at river-zone DLI `$B697`. |
+| `$0B00-$0BFF` bits 4-5   | M2                    | **Player bullet.** Bitmap written at moving Y via `$B223` (loop stores `$20` = M2 bit 5 to `$0B01+$56 .. $0B08+$56`); as `$56` is decremented by `handle_bullet_fire` each frame, the bullet stripe migrates upward. HPOSM2 = `player_sprite_x + 4` at DLI `$B539`. `$1A` captures M2-vs-PF (terrain hit → bullet reset at `entities.asm:$A58D`). `$1C` captures M2-vs-P3 (bullet-hits-enemy). |
 | `$0B00-$0BFF` bits 6-7   | M3                    | **Genuinely unused** (no writers found). |
 | `$0C00-$0CFF`            | P0                    | **Genuinely unused** — DMA buffer zeroed each frame by `$B012`. HPOSP0 ← `$3C`=0 hides it. |
-| `$0D00-$0DFF`            | P1                    | **Genuinely unused** — DMA buffer never written. COLPM1 is used as the *color* for the M1 bullet. |
+| `$0D00-$0DFF`            | P1                    | **Genuinely unused** — DMA buffer never written. COLPM1 is consumed by M1 (the fuel bar colour). |
 | `$0E00-$0EFF`            | P2                    | **The jet** (HPOSP2 == `$57` in gameplay). |
 | `$0F00-$0FFF`            | P3                    | **Multiplexed enemies** (WSYNC loop at `$B567`). |
 
 GRACTL = `$03` (both players and missiles enabled).
 PRIOR = `$01` (players have priority over playfield).
 
-Active-player-mode bullet motion is empirically confirmed: with fire
-held, the M1 DMA band top edge migrates from `$0BCC → $0BA9 → $0BA3`
-at roughly 2 scanlines per frame, i.e. the bullet visibly travels
-upward from the jet toward the top of the screen. The `$B14B` routine
-only writes the 10-byte at-rest template; a second writer (not yet
-traced) emits the in-flight bullet at a descending Y offset each frame.
+**Bullet motion (CORRECTED — uses M2, not M1):** the in-flight bullet
+is drawn on M2 by the routine at `$B1C0` / `$B223`. Each frame the game
+calls `handle_bullet_fire` with X = new bullet position; the helper
+clears M2 bits at the previous `$56` position then writes `$20` (M2 bit
+5) to 8 consecutive bytes at `$0B01+X .. $0B08+X`, then stores X to
+`$56`. X migrates downward (toward lower addresses = higher on the
+screen) by 6 each frame. HPOSM2 stays at `player_sprite_x + 4` so the
+bullet column is always 4 px right of the jet centre. `$1A` captures
+M2 vs playfield (terrain); when fired, `entities.asm:$A58D` resets the
+bullet to the at-rest position. **The `M1 DMA band migrates from
+$0BCC → $0BA9 → $0BA3` observation in earlier revisions was a
+misinterpretation — that motion is the M2 bullet stripe on different
+DMA bytes, with M1 being a separate (fuel-bar) stripe at the fixed
+`$0BCC-$0BD5` status-panel Y range.**
 
-The at-rest bullet is drawn by the routine at `$B14B-$B15C`:
+**Fuel bar (M1) bitmap** is written by the routine at `$B14B-$B15C`
+(misnamed `draw_bullet_pmg` in the case-study labels — actually draws
+the fuel bar, not the bullet):
 ```
 $B14B  ldx #$09
 $B14D  ldy #$09
 $B14F  lda pal_flag ($BF)
 $B151  bne $B155           ; if PAL, skip the NTSC Y override
 $B153  ldy #$10             ; NTSC: Y = $10
-$B155  lda #$0C             ; bullet byte = %00001100 → bits 2-3 = M1
-$B157  sta $0BCC,Y          ; into missile DMA
+$B155  lda #$0C             ; $0C = %00001100 → bits 2-3 = M1
+$B157  sta $0BCC,Y          ; M1 stripe in missile DMA
 $B15A  dey
 $B15B  dex
 $B15C  bpl $B157            ; 10 iterations
 ```
-The `$0C` pattern writes into **bits 2-3** of each missile DMA byte,
-which in the packed missile DMA layout correspond to **M1** — so only
-M1's column lights up. Scanline range is `$0BD3-$0BDC` on NTSC,
-`$0BCC-$0BD5` on PAL.
+Writes 10 bytes of `$0C` into missile DMA at `$0BCC-$0BD5` (PAL) /
+`$0BD3-$0BDC` (NTSC) — all in the status-panel Y range.
 
-M1's X position comes from the DLI baseline
-`HPOSM1 = ($5B>>3)+$5C` at `$B52C`, and its color comes from
-`COLPM1 = $1E` set at the river-zone DLI `$B697`. The `HPOSP1 ← $39`
-store at `$B54F` is mechanically present every frame but has no visual
-effect because P1 has no bitmap — the DLI still positions an
-empty P1 sprite. The role of `$39` is not fully characterised yet;
-`bullet_x` is retained as a legacy label but may not actually represent
-a bullet coordinate.
+**Fuel bar X-position formula** comes from the playfield DLI baseline
+at `$B523-$B52C`:
+```
+   lda fuel_level     ; $5B
+   lsr; lsr; lsr      ; fuel_level >> 3
+   clc
+   adc #$5C           ; literal constant, NOT address $005C
+   sta HPOSM1
+```
+So `HPOSM1 = (fuel_level >> 3) + $5C` (constant offset). Fuel `$FF`
+→ HPOSM1 `$7B`; fuel `$00` → HPOSM1 `$5C`. The bar shifts 31 pixels
+leftward as the tank empties. COLPM1 is `$00` in the early DLI
+(hiding M1 above the status bar) and set to `$1E` (yellow) at the
+river-zone DLI `$B697` so M1 is only visible in the status-panel
+band. The "F 1/2 E" custom glyphs (chars 7-14, PF3 black, set by
+`$B680`) have interior blank scanlines — M1 shows through only
+those rows, producing the bar-inside-gauge appearance. `PRIOR=$04`
+at `$B6B7` makes playfield have priority over players/missiles,
+so the black glyph borders cover M1 at the frame pixels.
+
+**The `HPOSP1 ← $39`** store at `$B54F` is mechanically present every
+frame but has no visual effect because P1 has no bitmap — the DLI
+still positions an empty P1 sprite. The role of `$39` is not fully
+characterised yet; `bullet_x` is retained as a legacy label but may
+not actually represent a bullet coordinate.
 
 ### Verification methodology
 
@@ -271,29 +308,29 @@ correct scanlines.
    ($D01E) at $B65F to reset the hardware latches.
 
    The exact mapping (under the corrected sprite map: P2 = jet,
-   P3 = multiplexed enemies, M1 = bullet template, M0 = M0 motion
-   sprite, M2 = jet hit probe, P0/P1 empty):
+   P3 = multiplexed enemies, **M1 = fuel bar, M2 = player bullet**,
+   M0 = uncharacterised decorative effect, M3 = unused, P0/P1 empty):
 
    | RAM byte | DLI source                                   | Meaning                                          |
    |----------|----------------------------------------------|--------------------------------------------------|
-   | `$1A`    | `lda HPOSP2` = M2PF bits 0-1                 | M2 vs PF0-1 (dormant — M2 has no PF interaction) |
-   | `$1B`    | `lda HPOSM2` = P2PF bit 0                    | **JET vs PF0 = TERRAIN DEATH (bank/bridge)**     |
-   | `$1C`    | `lda M2PL` bit 3                             | M2 (jet hit probe) vs P3 (enemy)                 |
-   | `$1D`    | `lda P2PL` bit 3 (after `lsr;and #$04`)      | **JET (wide) vs ENEMY**                          |
-   | `$1E`    | `lda P2PL` bit 0                             | P2 vs P0 (dormant — P0 unused)                   |
-   | `$1F`    | `lda P3PL` bit 0                             | P3 vs P0 (dormant — P0 unused)                   |
-   | `$20`    | `lda HPOSM1` = P1PF bit 1                    | P1 vs PF1 (dormant — P1 unused)                  |
-   | `$21`    | `lda SIZEP0` = M0PL bit 2                    | M0 vs P2 (jet) — fires when M0 dot overlaps jet  |
-   | `$22`    | `lda HPOSP0` = M0PF bits 0-1                 | **M0 vs PF0-1 (M0-vs-bank/bridge hit-stop)**     |
+   | `$1A`    | `lda HPOSP2` = M2PF bits 0-1                 | **M2 vs PF0-1 = BULLET vs TERRAIN-BANK.** Drives bullet reset at `entities.asm:$A58D` (`lda $1A; bpl loc_A589`). |
+   | `$1B`    | `lda HPOSM2` = P2PF bit 0                    | **JET vs PF0 = TERRAIN DEATH (bank/bridge).** |
+   | `$1C`    | `lda M2PL` bit 3                             | **M2 vs P3 = BULLET vs ENEMY.** M2 is the bullet (not a hit probe); when the moving bullet stripe overlaps an enemy, M2PL bit 3 fires and the entity slot is captured. Consumed at `entities.asm:$A4B6`. |
+   | `$1D`    | `lda P2PL` bit 3 (after `lsr;and #$04`)      | **JET (wide) vs ENEMY.** |
+   | `$1E`    | `lda P2PL` bit 0                             | P2 vs P0 (dormant — P0 unused). |
+   | `$1F`    | `lda P3PL` bit 0                             | P3 vs P0 (dormant — P0 unused). |
+   | `$20`    | `lda HPOSM1` = P1PF bit 1                    | M1 (fuel bar) vs PF1. Fires when the fuel bar stripe overlaps the playfield colour-1 region, but the consumer path at `entities.asm` doesn't use this for gameplay-meaningful logic. Effectively dormant. |
+   | `$21`    | `lda SIZEP0` = M0PL bit 2                    | M0 vs P2 (jet). Fires when the M0 decorative dot overlaps the jet. |
+   | `$22`    | `lda HPOSP0` = M0PF bits 0-1                 | M0 vs PF0-1. Fires when the M0 decorative dot overlaps terrain. Consumed at `bullets_terrain.asm:$A5FD` to stop the M0 motion loop. |
 
    The **actual collision-to-effect dispatcher** is `check_entity_collision`
    at $A3E9 in `entities.asm`, which reads the `$1A-$22` bytes and
-   branches per category. The previously claimed "M2PL bit 3 = bullet
-   hits enemy" was wrong — M2PL bit 3 is the jet hit probe (M2) vs
-   enemy (P3), captured into `$1C`. **Bullet-vs-enemy** is detected
-   by a software AABB check at `entities.asm:400-450` that compares
-   `bullet_x` against `entity_xpos_tbl,X`, NOT by a hardware collision
-   register read.
+   branches per category. Under the corrected model, **bullet-vs-enemy
+   hits DO use a hardware collision register** (M2PL bit 3 → `$1C`),
+   contrary to an earlier claim that bullet hits were software-only.
+   The software AABB check at `entities.asm:400-450` (which compares
+   `bullet_x` against `entity_xpos_tbl,X`) runs in parallel and
+   likely handles a wider hit box or a secondary scoring path.
 
 2. **Software river bank collision** ($B56B): The DLI compares the
    current scanline X against the river bank position table ($0C-$15).
@@ -306,12 +343,85 @@ Collision results are processed in the main loop at $A3E9-$A4DF:
 
 ## Fuel System
 
-- Fuel level is stored at $76 (range $FF=full to $00=empty)
-- Fuel decrements at $AE94: `DEC $32` — the drain counter at $32
-  wraps around and decrements fuel via the main loop
-- Fuel refill happens when the player overlaps a fuel depot
-  ($38 bit 7 set), incrementing $76 each frame
-- When fuel reaches $00, the player dies
+> **2026-04-14 CORRECTION:** The case study previously labeled `$76`
+> as `fuel_level`. This was wrong — it was inherited from a partial
+> static analysis. **Verified via Altirra cheat search (2026-04-14):
+> the actual fuel level is at `$5B`.** Freezing `$5B` stops fuel
+> from decreasing; freezing `$76` has no effect on fuel. The
+> `$76` byte is some other counter (purpose TBD). The previous
+> `m1_x_shift_src` label on `$5B` was also wrong.
+
+### The real fuel logic
+
+**Fuel storage**: `$5B` (range `$FF`=full to `$00`=empty).
+Companion drain counter at `$5C`.
+
+**Fuel drain** — runs every frame in `check_entity_collision` when
+no collision fires. Code path at `entities.asm:$A43F`:
+
+```
+$A43F: lda $5C        ; drain counter (companion to $5B)
+$A441: sec; sbc #$20  ; subtract $20
+$A444: bcs $A453      ; if no borrow, just store back (no drain this frame)
+$A446: ldy $5B        ; load fuel
+$A448: bne $A451      ; fuel != 0 → drain
+$A44A: lda #$02
+$A44C: ldy #$23
+$A44E: jmp $A43A      ; fuel = 0 → death sound (jsr play_score_sound w/ death params)
+$A451: dec $5B        ; ← drain fuel by 1
+$A453: sta $5C        ; update drain counter
+```
+
+So the drain happens when `$5C - $20` borrows. `$5C` accumulates
+over multiple frames; each "tick" of the borrow chain costs 1 fuel.
+When `$5B` reaches 0, the next frame's drain triggers the death sound.
+
+**Fuel refill** — runs only while jet body (`$1D` collision) overlaps
+an entity of type **> `$0E`** (fuel depots are types `$0F+`, not `$07`!).
+Code path at `entities.asm:$A40A`:
+
+```
+$A40A: lda $5B        ; current fuel
+$A40C: adc #$01       ; +1 (carry was set from cmp #$0E)
+$A40E: ldx #$04       ; sound type 4
+$A410: bcc $A418      ; no overflow → store
+$A412: lda #$FF       ; overflow → clamp fuel to $FF
+$A414: sta $5C        ; reset drain counter
+$A417: ldx #$03       ; sound type 3
+$A418: sta $5B        ; ← STORE NEW FUEL
+$A41A: cpx $7A
+$A41C: beq $A424      ; sound already set → skip
+$A41E: stx $7A        ; refuel SOUND TYPE = $03 or $04
+$A420: lda #$08
+$A422: sta $7B        ; sound duration
+```
+
+So flying over a fuel depot increments `$5B` by 1 per frame and
+triggers the refuel tick sound via `$7A=3/4` (consumed by VBI engine
+sound dispatcher).
+
+### Corrected entity type ranges
+
+| Type range | Behavior on jet-body collision (`$1D`) |
+|------------|----------------------------------------|
+| `$00`      | Empty slot |
+| `$01-$06`  | Enemies (ships, helicopters, jets) — handled by other collision paths |
+| `$07-$0D`  | Enemies (additional variants) — falls through `cmp #$07/bcc; cmp #$0E/bcc` to `$A3FC`: plays score sound and destroys the enemy. **This was previously misidentified as the fuel-depot path.** |
+| `$0E`      | Bridge — `inc bridges_crossed`, falls through to `$A3FC` |
+| `$0F+`     | **Fuel depots** — falls to `$A40A`: increments fuel `$5B` by 1 per frame |
+
+The previous claim "type `$07` = fuel depot" was wrong.
+
+### Verification
+- **Cheat search**: Altirra's memory cheat finder identified `$5B`
+  by matching "value decreases over time" against the on-screen
+  fuel gauge. Freezing `$5B` halts fuel drain.
+- **Breakpoint at `$A418`**: fires every frame while jet1 flies
+  over a fuel depot — confirmed user-side 2026-04-14.
+- **Breakpoint at `$A3FC`**: only fires on jet-body collision with
+  enemies (types `$07-$0E`), confirming the type-range correction.
+
+### Fuel gauge display
 
 The fuel gauge visual has two layers:
 1. **Frame/labels**: ANTIC mode 6 custom text characters (chars 7-14)
@@ -323,6 +433,9 @@ The fuel gauge visual has two layers:
    from `$C1` which tracks the fuel bar's horizontal position —
    moves leftward as fuel depletes. With PRIOR=$04, the black PF3
    frame has priority over M0, creating the bordered gauge effect.
+
+The bar's X position (`$C1`) is driven indirectly from `$5B` —
+exact relationship still being traced.
 
 ## Sound Engine
 
@@ -447,12 +560,13 @@ waiting for the right VCOUNT value to start the next frame's processing.
 > of the game mechanics. They resolve several open questions and
 > reveal previously undocumented mechanics.
 
-### M0 has two roles: fuel bar (normal play) + death effect (fuel=0)
+### M0 — decorative animation (exact role TBD)
 
-M0 serves **dual purpose** depending on fuel state:
-
-**Role 1 — Fuel bar indicator** (normal gameplay, fuel > 0):
-The code at `$AEC8-$AEF9` in `frame_sync.asm` runs every frame:
+**REVISION 2026-04-14:** an earlier revision of this document claimed
+M0 was the fuel bar. That was wrong — **M1 is the fuel bar** (see the
+"Player/Missile Graphics" and "Fuel System" sections). The code at
+`$AEC8-$AEF9` runs every frame but drives a separate M0 animation
+whose gameplay function is not yet characterised:
 
 ```
 $AEC8: lda frame_counter    ; animate color
@@ -460,7 +574,7 @@ $AECA: lsr; lsr; lsr
 $AECD: and #$07             ; index 0-7
 $AECF: tax
 $AED0: lda player_color_cycle,X  ; $1E,$2E,$3E,$4E,$6E,$7E,$9E,$BE
-$AED3: sta COLPM0           ; cycle P0/M0 through yellow-green
+$AED3: sta COLPM0           ; cycle COLPM0 through yellow-green
 
 $AED6: ldx frame_ctr_copy   ; $C2 = current Y scanline offset
 $AED8: cpx #$1C
@@ -469,26 +583,21 @@ $AEDA: bcc skip             ; only draw at Y >= $1C
 $AEDC-$AEEF: clear M0 bits (and #$FC) at 3 consecutive missile
              DMA bytes ($0AFE+X, $0AFF+X, $0B00+X)
 
-$AEF1: ldy $C1              ; M0 X position / alive flag
-$AEF3: beq skip             ; if $C1=0, no bar (empty fuel)
+$AEF1: ldy $C1              ; M0 X position (or visibility gate)
+$AEF3: beq skip             ; if $C1=0, don't set M0
 $AEF5: ora #$03             ; SET M0 bits 0-1
 $AEF7: sta $0B00,X          ; draw M0 at current scanline
 ```
 
-`$C1` holds the HPOSM0 value. During normal play, `$C1` is driven
-by the fuel system — its value moves leftward (toward "E") as fuel
-depletes. The DLI sets `HPOSM0 = $C1` at `$B561`, positioning the
-bar horizontally inside the "E 1/2 F" gauge frame. The gauge frame
-itself is rendered as custom text characters (chars 7-14) in ANTIC
-mode 6 using COLPF3 (black). With PRIOR=$04, PF3 has priority over
-P0/M0, so the black frame borders cover the bar but the bar shows
-through the empty character interior rows.
-
-**Role 2 — Death/fuel-depletion effect** (fuel = 0):
-The motion loop at `bullets_terrain.asm:$A5CA-$A607` is gated by
-`lda fuel_level; bne terrain_gen_advance` — it only runs when
-fuel=0 or invuln. When active, it uses `$C0` (direction) and `$C1`
-(position) to animate a moving dot across the screen.
+`$C1` controls HPOSM0 (via DLI baseline at `$B561`). It tracks
+`frame_ctr_copy`, producing a moving M0 dot that traverses the screen
+vertically. The M0 motion loop in `bullets_terrain.asm:$A5CA-$A607`
+(gated by `lda fuel_level; bne ...`) appears to be a separate effect
+that activates on fuel=0 or invulnerability states, using `$C0`
+(direction) and `$C1` (position). The exact visual / gameplay role
+(decorative? low-fuel warning? death fragments?) is still unverified
+— this section has been flagged as "in need of bridge-verification"
+across multiple revisions.
 
 ### SIZEM initialized to $01 at $A116
 
@@ -637,20 +746,20 @@ advanced by VBI for scroll effect.
    frames). The visible lives display is driven by `update_lives_display`
    ($B21A) which sets `fuel=$FF, lives_count=$FF`.
 
-### Collision system architecture (discovered 2026-04-13)
+### Collision system architecture (corrected 2026-04-14)
 
 Key architectural findings from extended analysis:
 
-1. **Collision bytes $1A-$22 are ONLY consumed at fuel=0.** The DLI
-   populates them every frame, but the game's `check_entity_collision`
-   ($A3E9) only runs when `fuel_level` ($76) == 0. During normal play
-   (fuel > 0), these bytes are populated but never read. Fuel cycles
-   between $FE and 0 every ~254 frames (~5 seconds at PAL).
+1. **`check_entity_collision` ($A3E9) runs every frame**, not only at
+   fuel=0 as previously claimed. The previous claim was based on the
+   wrong fuel-level address ($76 instead of $5B). The drain code at
+   `$A43F` (which decrements `$5B`) is reached every frame as the
+   fall-through path of `check_entity_collision`.
 
-2. **Fuel station entity type is $0F**, not $07. The entity type filter
-   in the $1C path (`cpy #$07; bcs`) has no upper bound — ALL types
-   >= $07 are valid targets. The score is looked up via
-   `score_value_table[$050B[entity_slot]]`, not by entity type directly.
+2. **Fuel depots are entity type `$0F+`**, NOT `$07`. The previous
+   claim was wrong. Types `$07-$0D` are enemies that kill the jet
+   on `$1D` (jet body) collision; type `$0E` is the bridge; types
+   `$0F+` trigger the refuel path at `$A40A`.
 
 3. **`check_terrain_collision` ($B05C) and `process_collision_results`
    ($B07C) are digit-rendering routines**, not collision processors.
@@ -665,10 +774,19 @@ Key architectural findings from extended analysis:
    The DLI fires during display (VCOUNT ~30), between the jet draw
    and check_entity_collision.
 
-5. **`player_death` ($A688) is NOT triggered by enemy contact.** It is
-   only reached via the `lives_count` ($2A) timer countdown at
-   entities.asm:89-102. Normal enemy collision at fuel=0 goes through
-   `play_score_sound` which SCORES and REFUELS rather than killing.
+5. **`play_score_sound` ($B1C0) at `$B200` does NOT refuel.** It sets
+   `$76 = $FE` and `$2A = $00`, but `$76` is not the fuel level
+   ($5B is). The role of `$76` and the `$B200` write is still TBD.
+
+6. **The real refuel mechanism**: jet body (`$1D`) overlaps an entity
+   of type `$0F+` → `check_entity_collision` at `$A3E9` falls through
+   `cmp #$0E/bne` to `$A40A` → `lda $5B; adc #$01; sta $5B` increments
+   fuel by 1 per frame. Sound type `$03`/`$04` written to `$7A`
+   triggers the refuel tick sound via the VBI sound engine.
+
+7. **The real drain mechanism**: same path's fall-through at `$A43F`
+   subtracts `$20` from `$5C` each frame; on borrow, `$5B` decrements
+   by 1. When `$5B` reaches 0, the next drain triggers death sound.
 
 ## Status
 

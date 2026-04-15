@@ -162,7 +162,27 @@ void GameBrowser_Shutdown();
 void GameBrowser_Invalidate();
 int  GameBrowser_FindCurrentEntry();
 bool GameBrowser_HasCurrentGame();
+// True when the currently-booted game maps to a library entry that
+// has no cover art yet — i.e. the hamburger-menu quick action would
+// do something useful.  False when no game is booted, the booted file
+// isn't in the library, or the entry already has art (in which case
+// the user can still replace it from the Game Library settings page).
+bool GameBrowser_CurrentEntryNeedsArt();
+// Capture the current emulator frame and install it as the library
+// entry's cover art.  Returns an empty string on success, or a user-
+// facing error message on failure (no current game, no framebuffer,
+// PNG save failed, etc.).  Shared by the Game Library settings page
+// and the hamburger menu so both paths use the same save location
+// (config_dir/custom_art/<md5>.png) and the same thumbnail-invalidate
+// logic.
+VDStringA GameBrowser_SetCurrentFrameAsArt();
 void GameBrowser_ClearArtCache();
+// Called by the file browser after a Boot Game launch.  Records the
+// current variant path (so the "currently playing" badge works) and,
+// if the user has enabled "Add booted games to library", also appends
+// the file (or its archive) as a library source and creates an entry
+// so it shows up in Last Played on the next open.
+void GameBrowser_OnBootedGame(const VDStringW &variantPath);
 class ATGameLibrary;
 ATGameLibrary *GetGameLibrary();
 

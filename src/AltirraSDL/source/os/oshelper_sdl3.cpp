@@ -415,16 +415,26 @@ void ATSaveFrame(const VDPixmap& px, const wchar_t *filename) {
 	if (!filename)
 		throw MyError("No filename.");
 
-	// Convert to a contiguous 32-bit BGRX buffer (via VDPixmapBlt which
-	// handles arbitrary input formats).
-	VDPixmapBuffer bgrx(px.w, px.h, nsVDPixmap::kPixFormat_XRGB8888);
-	VDPixmapBlt(bgrx, px);
+	// Convert to a tightly-packed 24-bit BGR buffer (no alpha) via
+	// VDPixmapBlt, which handles arbitrary input formats.  Matches the
+	// Windows ATSaveFrame flow (Altirra/source/oshelper.cpp).
+	//
+	// Previous versions used XRGB8888 + SDL_PIXELFORMAT_BGRA32.  The X
+	// byte is undefined after VDPixmapBlt, and BGRA32 treats that byte
+	// as an alpha channel — IMG_SavePNG then wrote a PNG with garbage
+	// (often zero) alpha, so any consumer that honours the PNG's alpha
+	// (ImGui's AddImage in the Game Library browser being the obvious
+	// one) rendered the image blended against the dark backdrop,
+	// darkening or washing out every colour.
+	VDPixmapBuffer bgr(px.w, px.h, nsVDPixmap::kPixFormat_RGB888);
+	VDPixmapBlt(bgr, px);
 
-	// Create an SDL_Surface that views the BGRX pixel data (no copy).
-	// BGRA32 = B,G,R,A byte order on all architectures = kPixFormat_XRGB8888.
+	// SDL_PIXELFORMAT_BGR24 is an array-order format with bytes B,G,R —
+	// the same layout as VirtualDub's kPixFormat_RGB888.  The resulting
+	// PNG has no alpha channel at all, so loaders see fully-opaque RGB.
 	SDL_Surface *surf = SDL_CreateSurfaceFrom(
-		bgrx.w, bgrx.h, SDL_PIXELFORMAT_BGRA32,
-		bgrx.data, (int)bgrx.pitch);
+		bgr.w, bgr.h, SDL_PIXELFORMAT_BGR24,
+		bgr.data, (int)bgr.pitch);
 	if (!surf)
 		throw MyError("SDL_CreateSurfaceFrom failed: %s", SDL_GetError());
 

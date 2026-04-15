@@ -11,6 +11,7 @@
 #include <SDL3/SDL.h>
 
 #include <vd2/system/file.h>
+#include <vd2/system/filesys.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
 #include <vd2/system/zip.h>
@@ -369,14 +370,136 @@ void ATGameLibrary::SetConfigDir(const VDStringA &configDir) {
 // JSON cache load
 // =========================================================================
 
-bool ATGameLibrary::LoadCache() {
-	if (mCachePath.empty())
+// Low-level parse of a JSON cache buffer into freshly-built output
+// containers.  Leaves member state untouched on failure so the caller
+// (LoadCache) can try another path without corrupting live data.
+static bool ParseCacheDocument(const void *buf, size_t size,
+	std::vector<GameEntry> &outEntries,
+	std::vector<CachedSourceInfo> &outCachedSources,
+	uint64_t &outLastScanTime)
+{
+	VDJSONDocument doc;
+	VDJSONReader reader;
+	if (!reader.Parse(buf, size, doc))
 		return false;
 
-	VDStringW cachePath = VDTextU8ToW(mCachePath);
+	auto root = doc.Root();
+	if (!root.IsObject())
+		return false;
 
+	auto version = root[L"version"];
+	if (!version.IsInt() || version.AsInt64() != 1)
+		return false;
+
+	outLastScanTime = 0;
+	auto lastScanTime = root[L"lastScanTime"];
+	if (lastScanTime.IsInt())
+		outLastScanTime = (uint64_t)lastScanTime.AsInt64();
+
+	outCachedSources.clear();
+	auto sources = root[L"scannedSources"];
+	if (sources.IsArray()) {
+		for (const auto &src : sources.AsArray()) {
+			CachedSourceInfo csi;
+			auto path = src[L"path"];
+			if (path.IsString())
+				csi.mPath = path.AsString();
+			auto mtime = src[L"lastScanMtime"];
+			if (mtime.IsInt())
+				csi.mLastScanMtime = (uint64_t)mtime.AsInt64();
+			outCachedSources.push_back(std::move(csi));
+		}
+	}
+
+	outEntries.clear();
+	auto games = root[L"games"];
+	if (games.IsArray()) {
+		for (const auto &g : games.AsArray()) {
+			GameEntry entry;
+
+			auto displayName = g[L"displayName"];
+			if (displayName.IsString())
+				entry.mDisplayName = displayName.AsString();
+
+			auto artPath = g[L"artPath"];
+			if (artPath.IsString())
+				entry.mArtPath = artPath.AsString();
+
+			auto lastPlayed = g[L"lastPlayed"];
+			if (lastPlayed.IsInt())
+				entry.mLastPlayed = (uint64_t)lastPlayed.AsInt64();
+
+			auto playCount = g[L"playCount"];
+			if (playCount.IsInt())
+				entry.mPlayCount = (uint32_t)playCount.AsInt64();
+
+			auto variants = g[L"variants"];
+			if (variants.IsArray()) {
+				for (const auto &v : variants.AsArray()) {
+					GameVariant var;
+
+					auto vPath = v[L"path"];
+					if (vPath.IsString())
+						var.mPath = vPath.AsString();
+
+					auto archivePath = v[L"archivePath"];
+					if (archivePath.IsString())
+						var.mArchivePath = archivePath.AsString();
+
+					auto type = v[L"type"];
+					if (type.IsString())
+						var.mType = MediaTypeFromString(type.AsString());
+
+					auto fileSize = v[L"fileSize"];
+					if (fileSize.IsInt())
+						var.mFileSize = (uint64_t)fileSize.AsInt64();
+
+					auto modTime = v[L"modTime"];
+					if (modTime.IsInt())
+						var.mModTime = (uint64_t)modTime.AsInt64();
+
+					auto label = v[L"label"];
+					if (label.IsString())
+						var.mLabel = label.AsString();
+
+					entry.mVariants.push_back(std::move(var));
+				}
+			}
+
+			// Rebuild canonical name and parent dir from first variant.
+			if (!entry.mVariants.empty()) {
+				const VDStringW &path = entry.mVariants[0].mPath;
+				const wchar_t *lastSlash = wcsrchr(path.c_str(), L'/');
+				if (lastSlash)
+					entry.mParentDir.assign(path.c_str(),
+						lastSlash - path.c_str());
+
+				const wchar_t *fname = lastSlash
+					? lastSlash + 1 : path.c_str();
+				VDStringW baseName(fname);
+				const wchar_t *dot = wcsrchr(baseName.c_str(), L'.');
+				if (dot) baseName.resize(dot - baseName.c_str());
+				entry.mCanonicalName = ExtractCanonicalName(baseName);
+			}
+
+			outEntries.push_back(std::move(entry));
+		}
+	}
+
+	return true;
+}
+
+// Try to read + parse the JSON cache at the given path.  Returns
+// true if the file exists, is well-formed, and was successfully
+// decoded into the output parameters.  Empty/oversized/corrupt files
+// return false without touching the outputs.
+static bool TryLoadCacheFile(const VDStringW &path,
+	std::vector<GameEntry> &outEntries,
+	std::vector<CachedSourceInfo> &outCachedSources,
+	uint64_t &outLastScanTime)
+{
 	try {
-		VDFileStream fs(cachePath.c_str());
+		VDFileStream fs(path.c_str());
 		sint64 size = fs.Length();
 		if (size <= 0 || size > 64 * 1024 * 1024)
 			return false;
@@ -384,133 +507,62 @@ bool ATGameLibrary::LoadCache() {
 		std::vector<uint8_t> buf((size_t)size);
 		fs.Read(buf.data(), (sint32)size);
 
-		VDJSONDocument doc;
-		VDJSONReader reader;
-		if (!reader.Parse(buf.data(), buf.size(), doc))
-			return false;
-
-		auto root = doc.Root();
-		if (!root.IsObject())
-			return false;
-
-		auto version = root[L"version"];
-		if (!version.IsInt() || version.AsInt64() != 1)
-			return false;
-
-		auto lastScanTime = root[L"lastScanTime"];
-		if (lastScanTime.IsInt())
-			mLastScanTime = (uint64_t)lastScanTime.AsInt64();
-
-		// Load cached source info
-		mCachedSources.clear();
-		auto sources = root[L"scannedSources"];
-		if (sources.IsArray()) {
-			for (const auto &src : sources.AsArray()) {
-				CachedSourceInfo csi;
-				auto path = src[L"path"];
-				if (path.IsString())
-					csi.mPath = path.AsString();
-				auto mtime = src[L"lastScanMtime"];
-				if (mtime.IsInt())
-					csi.mLastScanMtime = (uint64_t)mtime.AsInt64();
-				mCachedSources.push_back(std::move(csi));
-			}
-		}
-
-		// Load game entries
-		mEntries.clear();
-		auto games = root[L"games"];
-		if (games.IsArray()) {
-			for (const auto &g : games.AsArray()) {
-				GameEntry entry;
-
-				auto displayName = g[L"displayName"];
-				if (displayName.IsString())
-					entry.mDisplayName = displayName.AsString();
-
-				auto artPath = g[L"artPath"];
-				if (artPath.IsString())
-					entry.mArtPath = artPath.AsString();
-
-				auto lastPlayed = g[L"lastPlayed"];
-				if (lastPlayed.IsInt())
-					entry.mLastPlayed = (uint64_t)lastPlayed.AsInt64();
-
-				auto playCount = g[L"playCount"];
-				if (playCount.IsInt())
-					entry.mPlayCount = (uint32_t)playCount.AsInt64();
-
-				auto variants = g[L"variants"];
-				if (variants.IsArray()) {
-					for (const auto &v : variants.AsArray()) {
-						GameVariant var;
-
-						auto vPath = v[L"path"];
-						if (vPath.IsString())
-							var.mPath = vPath.AsString();
-
-						auto archivePath = v[L"archivePath"];
-						if (archivePath.IsString())
-							var.mArchivePath = archivePath.AsString();
-
-						auto type = v[L"type"];
-						if (type.IsString())
-							var.mType = MediaTypeFromString(type.AsString());
-
-						auto fileSize = v[L"fileSize"];
-						if (fileSize.IsInt())
-							var.mFileSize = (uint64_t)fileSize.AsInt64();
-
-						auto modTime = v[L"modTime"];
-						if (modTime.IsInt())
-							var.mModTime = (uint64_t)modTime.AsInt64();
-
-						auto label = v[L"label"];
-						if (label.IsString())
-							var.mLabel = label.AsString();
-
-						entry.mVariants.push_back(std::move(var));
-					}
-				}
-
-				// Rebuild canonical name and parent dir from first variant
-				if (!entry.mVariants.empty()) {
-					const VDStringW &path = entry.mVariants[0].mPath;
-					const wchar_t *lastSlash = wcsrchr(path.c_str(), L'/');
-					if (lastSlash)
-						entry.mParentDir.assign(path.c_str(), lastSlash - path.c_str());
-
-					const wchar_t *fname = lastSlash ? lastSlash + 1 : path.c_str();
-					VDStringW baseName(fname);
-					const wchar_t *dot = wcsrchr(baseName.c_str(), L'.');
-					if (dot) baseName.resize(dot - baseName.c_str());
-					entry.mCanonicalName = ExtractCanonicalName(baseName);
-				}
-
-				mEntries.push_back(std::move(entry));
-			}
-		}
-
-		return true;
+		return ParseCacheDocument(buf.data(), buf.size(),
+			outEntries, outCachedSources, outLastScanTime);
 	} catch (...) {
-		mEntries.clear();
-		mCachedSources.clear();
 		return false;
 	}
+}
+
+bool ATGameLibrary::LoadCache() {
+	mMainFileValid = false;
+	if (mCachePath.empty())
+		return false;
+
+	VDStringW cachePath = VDTextU8ToW(mCachePath);
+	VDStringW bakPath   = cachePath;
+	bakPath += L".bak";
+
+	std::vector<GameEntry>        tmpEntries;
+	std::vector<CachedSourceInfo> tmpSources;
+	uint64_t                       tmpLastScanTime = 0;
+
+	// Main file is the authoritative state.  Try it first.
+	if (TryLoadCacheFile(cachePath, tmpEntries, tmpSources, tmpLastScanTime)) {
+		mEntries       = std::move(tmpEntries);
+		mCachedSources = std::move(tmpSources);
+		mLastScanTime  = tmpLastScanTime;
+		mMainFileValid = true;
+		return true;
+	}
+
+	// Main was missing, truncated, or corrupt — fall back to the .bak
+	// snapshot written by the previous SaveCache.  Leave mMainFileValid
+	// false so the next SaveCache *won't* overwrite the good .bak with
+	// the known-bad main file during rotation.
+	if (TryLoadCacheFile(bakPath, tmpEntries, tmpSources, tmpLastScanTime)) {
+		mEntries       = std::move(tmpEntries);
+		mCachedSources = std::move(tmpSources);
+		mLastScanTime  = tmpLastScanTime;
+		// mMainFileValid stays false.
+		return true;
+	}
+
+	mEntries.clear();
+	mCachedSources.clear();
+	return false;
 }
 
 // =========================================================================
 // JSON cache save
 // =========================================================================
 
-bool ATGameLibrary::SaveCache() const {
-	if (mCachePath.empty())
-		return false;
-
-	VDStringW cachePath = VDTextU8ToW(mCachePath);
-
+// Serialise the current library state to the given filesystem path.
+// Fresh file every call (kCreateAlways), JSON format matching the
+// schema understood by ParseCacheDocument.
+bool ATGameLibrary::WriteCacheFile(const VDStringW &path) const {
 	try {
-		VDFileStream fs(cachePath.c_str(),
+		VDFileStream fs(path.c_str(),
 			nsVDFile::kWrite | nsVDFile::kDenyAll | nsVDFile::kCreateAlways);
 		VDJSONStreamOutput streamOutput(fs);
 		VDJSONWriter writer;
@@ -589,6 +641,58 @@ bool ATGameLibrary::SaveCache() const {
 	}
 }
 
+bool ATGameLibrary::SaveCache() const {
+	if (mCachePath.empty())
+		return false;
+
+	// Crash-safe save:
+	//   1. Serialise JSON into gamelibrary.json.tmp
+	//   2. If the current main file is known-good, copy it to
+	//      gamelibrary.json.bak so a future LoadCache has a fallback
+	//      (we deliberately skip this step when the main file was
+	//      loaded from .bak this session — overwriting the .bak with
+	//      a known-corrupt main would destroy our only recoverable
+	//      state).
+	//   3. Atomically rename the temp file over the main file.
+	//
+	// A crash at any point leaves either the old main file (steps 1/2)
+	// or both a good main and a good .bak (step 3) — never a truncated
+	// main with no recoverable backup.
+
+	VDStringW cachePath = VDTextU8ToW(mCachePath);
+	VDStringW tmpPath   = cachePath;
+	tmpPath += L".tmp";
+	VDStringW bakPath   = cachePath;
+	bakPath += L".bak";
+
+	if (!WriteCacheFile(tmpPath)) {
+		// Best-effort cleanup; failures here are harmless.
+		VDStringA tmpU8 = VDTextWToU8(tmpPath);
+		SDL_RemovePath(tmpU8.c_str());
+		return false;
+	}
+
+	VDStringA cacheU8 = VDTextWToU8(cachePath);
+	VDStringA tmpU8   = VDTextWToU8(tmpPath);
+	VDStringA bakU8   = VDTextWToU8(bakPath);
+
+	// Rotate the current main -> .bak, but only if we trust main.
+	if (mMainFileValid && VDDoesPathExist(cachePath.c_str()))
+		SDL_CopyFile(cacheU8.c_str(), bakU8.c_str());
+
+	if (!SDL_RenamePath(tmpU8.c_str(), cacheU8.c_str())) {
+		// Rename failed (extremely unusual within the same directory).
+		// Leave the temp in place so the next attempt can either reuse
+		// or overwrite it.  The main file is still whatever it was
+		// before — the .bak may already have been refreshed above,
+		// which is fine: next successful save keeps them in sync.
+		return false;
+	}
+
+	mMainFileValid = true;
+	return true;
+}
+
 // =========================================================================
 // Play history
 // =========================================================================
@@ -601,6 +705,315 @@ void ATGameLibrary::RecordPlay(size_t entryIndex) {
 	entry.mLastPlayed = (uint64_t)std::time(nullptr);
 	entry.mPlayCount++;
 	SaveCache();
+}
+
+int ATGameLibrary::FindEntryByVariantPath(const VDStringW &path) const {
+	if (path.empty())
+		return -1;
+	for (size_t i = 0; i < mEntries.size(); ++i) {
+		for (const auto &var : mEntries[i].mVariants) {
+			if (var.mPath == path)
+				return (int)i;
+		}
+	}
+	return -1;
+}
+
+// Build a single-variant entry in-place from a real filesystem path.
+// Mirrors the file-handling branch of ScanFolder's callback: stat the
+// file, classify the extension, build canonical name + variant label.
+static bool BuildEntryForFile(const VDStringW &path, GameEntry &outEntry) {
+	if (path.empty())
+		return false;
+
+	VDStringA pathU8 = VDTextWToU8(path);
+	SDL_PathInfo info;
+	if (!SDL_GetPathInfo(pathU8.c_str(), &info))
+		return false;
+	if (info.type != SDL_PATHTYPE_FILE)
+		return false;
+
+	const wchar_t *lastSlash = wcsrchr(path.c_str(), L'/');
+	VDStringW fname = lastSlash ? VDStringW(lastSlash + 1) : path;
+	if (fname.empty())
+		return false;
+
+	if (!IsSupportedGameExtension(fname.c_str()))
+		return false;
+
+	const wchar_t *ext = wcsrchr(fname.c_str(), L'.');
+	if (!ext) return false;
+	ext++;
+
+	GameMediaType mediaType = ClassifyExtension(ext);
+	if (mediaType == GameMediaType::Unknown)
+		return false;
+
+	VDStringW baseName(fname.c_str());
+	const wchar_t *dot = wcsrchr(baseName.c_str(), L'.');
+	if (dot) baseName.resize(dot - baseName.c_str());
+
+	VDStringW canonical = ExtractCanonicalName(baseName);
+
+	VDStringW parentDir;
+	if (lastSlash)
+		parentDir.assign(path.c_str(), lastSlash - path.c_str());
+
+	GameVariant var;
+	var.mPath = path;
+	var.mType = mediaType;
+	var.mFileSize = (uint64_t)info.size;
+	var.mModTime = (uint64_t)info.modify_time;
+
+	// Single-variant entry: label is just the uppercase extension.
+	VDStringW label;
+	for (const wchar_t *p = ext; *p; ++p)
+		label += (wchar_t)std::towupper(*p);
+	var.mLabel = std::move(label);
+
+	outEntry = GameEntry{};
+	outEntry.mCanonicalName = std::move(canonical);
+	outEntry.mParentDir = parentDir;
+	outEntry.mDisplayName = CleanDisplayName(outEntry.mCanonicalName);
+	outEntry.mVariants.push_back(std::move(var));
+
+	// Best-effort same-folder art match: look for <base>.{png,jpg,...}
+	// next to the file so the auto-added entry has cover art on first
+	// display (scanner's cross-folder MatchArt runs only on full rescans).
+	VDStringA parentU8 = VDTextWToU8(parentDir);
+	if (!parentU8.empty()) {
+		struct ArtCtx {
+			VDStringW lowerBase;
+			VDStringW match;
+		} actx;
+		for (size_t i = 0; i < outEntry.mCanonicalName.size(); ++i)
+			actx.lowerBase += (wchar_t)std::towlower(outEntry.mCanonicalName[i]);
+
+		SDL_EnumerateDirectory(parentU8.c_str(),
+			[](void *ud, const char *dirname, const char *fname)
+				-> SDL_EnumerationResult
+			{
+				auto *c = (ArtCtx *)ud;
+				if (!c->match.empty())
+					return SDL_ENUM_CONTINUE;
+				VDStringW wname = VDTextU8ToW(VDStringA(fname));
+				if (!IsSupportedImageExtension(wname.c_str()))
+					return SDL_ENUM_CONTINUE;
+				VDStringW base(wname);
+				const wchar_t *d = wcsrchr(base.c_str(), L'.');
+				if (d) base.resize(d - base.c_str());
+				VDStringW baseLower;
+				for (size_t i = 0; i < base.size(); ++i)
+					baseLower += (wchar_t)std::towlower(base[i]);
+				if (baseLower == c->lowerBase) {
+					VDStringA full(dirname);
+					if (!full.empty() && full.back() != '/')
+						full += '/';
+					full += fname;
+					c->match = VDTextU8ToW(full);
+				}
+				return SDL_ENUM_CONTINUE;
+			}, &actx);
+
+		if (!actx.match.empty())
+			outEntry.mArtPath = std::move(actx.match);
+	}
+	return true;
+}
+
+bool ATGameLibrary::ScanFile(const VDStringW &path,
+	std::vector<GameEntry> &outEntries)
+{
+	GameEntry entry;
+	if (!BuildEntryForFile(path, entry))
+		return false;
+	outEntries.push_back(std::move(entry));
+	mScanProgress.fetch_add(1, std::memory_order_relaxed);
+	return true;
+}
+
+int ATGameLibrary::AddBootedGame(const VDStringW &path, bool addToLibrary) {
+	if (path.empty())
+		return -1;
+
+	// Already in the library?  Just bump play history.
+	int existing = FindEntryByVariantPath(path);
+	if (existing >= 0) {
+		RecordPlay((size_t)existing);
+		return existing;
+	}
+
+	if (!addToLibrary)
+		return -1;
+
+	// We're about to mutate mSources and mEntries.  Join the background
+	// scanner first so it can't race on the vector while we resize it
+	// (mSources has no mutex; the existing SetSources/StartScan pattern
+	// races in the same way and we avoid it here).  If the scan has
+	// already produced results but the UI hasn't consumed them yet,
+	// fold them in now so we don't throw them away on cancel.  Remember
+	// whether a scan was in flight so we can restart it on exit — we
+	// don't want booting a game to drop the "Scanning..." indicator
+	// halfway through a first-time scan.
+	bool wasScanning = IsScanning();
+	if (mScanComplete.load(std::memory_order_acquire)) {
+		ConsumeScanResults();
+		wasScanning = false;  // scan finished; no need to restart.
+	}
+	CancelScan();
+
+	// Re-check after consume — scan results may have added the game.
+	existing = FindEntryByVariantPath(path);
+	if (existing >= 0) {
+		RecordPlay((size_t)existing);
+		if (wasScanning)
+			StartScan();
+		return existing;
+	}
+
+	// Try to add as a standalone file entry.  Extract the archive path
+	// if this is a VFS (zip://...) reference so we can register the
+	// archive itself as an archive source.
+	VDStringW basePath, subPath;
+	ATVFSProtocol proto = ATParseVFSPath(path.c_str(), basePath, subPath);
+	bool isInsideArchive = (proto == kATVFSProtocol_Zip
+		|| proto == kATVFSProtocol_GZip);
+
+	if (isInsideArchive) {
+		// Reject unrecognised extensions — the scanner ignores them
+		// inside archives too, so a stub would never get merged.
+		const wchar_t *lastSlashSub = wcsrchr(subPath.c_str(), L'/');
+		VDStringW fname = lastSlashSub ? VDStringW(lastSlashSub + 1) : subPath;
+		const wchar_t *ext = wcsrchr(fname.c_str(), L'.');
+		if (!ext) {
+			if (wasScanning) StartScan();
+			return -1;
+		}
+		GameMediaType mediaType = ClassifyExtension(ext + 1);
+		if (mediaType == GameMediaType::Unknown) {
+			if (wasScanning) StartScan();
+			return -1;
+		}
+
+		// Register the archive as a source if it isn't already, then
+		// build a minimal stub entry so the play history is recorded
+		// immediately.  When the background scan finishes, the scanner
+		// rebuilds the full entry from the archive and MergePlayHistory
+		// preserves the stub's lastPlayed/playCount via path match.
+		bool alreadySource = false;
+		for (const auto &s : mSources) {
+			if (s.mbIsArchive && s.mPath == basePath) {
+				alreadySource = true;
+				break;
+			}
+		}
+		if (!alreadySource) {
+			GameSource src;
+			src.mPath = basePath;
+			src.mbIsArchive = true;
+			mSources.push_back(std::move(src));
+			SaveSettingsToRegistry();
+		}
+
+		VDStringW baseName = fname;
+		const wchar_t *dot = wcsrchr(baseName.c_str(), L'.');
+		if (dot) baseName.resize(dot - baseName.c_str());
+
+		GameVariant var;
+		var.mPath = path;
+		var.mArchivePath = basePath;
+		var.mType = mediaType;
+
+		VDStringW upperExt;
+		for (const wchar_t *p = ext + 1; *p; ++p)
+			upperExt += (wchar_t)std::towupper(*p);
+		var.mLabel = std::move(upperExt);
+
+		GameEntry stub;
+		stub.mCanonicalName = ExtractCanonicalName(baseName);
+		stub.mDisplayName = CleanDisplayName(stub.mCanonicalName);
+		stub.mParentDir = basePath;
+		stub.mLastPlayed = (uint64_t)std::time(nullptr);
+		stub.mPlayCount = 1;
+		stub.mVariants.push_back(std::move(var));
+		mEntries.push_back(std::move(stub));
+
+		std::sort(mEntries.begin(), mEntries.end(),
+			[](const GameEntry &a, const GameEntry &b) {
+				return a.mDisplayName < b.mDisplayName;
+			});
+
+		SaveCache();
+		StartScan();
+		return FindEntryByVariantPath(path);
+	}
+
+	GameEntry entry;
+	if (!BuildEntryForFile(path, entry)) {
+		if (wasScanning)
+			StartScan();
+		return -1;
+	}
+
+	entry.mLastPlayed = (uint64_t)std::time(nullptr);
+	entry.mPlayCount = 1;
+
+	// If the file is already covered by an existing folder source (or
+	// would be on a recursive scan), don't add a redundant file source —
+	// the inline entry below will be replaced by the scanner's version
+	// on the next rescan and play history is preserved via
+	// MergePlayHistory.
+	auto fileUnderFolderSource = [this, &path]() -> bool {
+		for (const auto &s : mSources) {
+			if (s.mbIsArchive || s.mbIsFile)
+				continue;
+			const VDStringW &sp = s.mPath;
+			if (path.size() > sp.size()
+				&& wcsncmp(path.c_str(), sp.c_str(), sp.size()) == 0
+				&& (path[sp.size()] == L'/' || path[sp.size()] == L'\\'))
+			{
+				if (mSettings.mbRecursive)
+					return true;
+				// Non-recursive: only covered when directly inside.
+				const wchar_t *tail = path.c_str() + sp.size() + 1;
+				if (!wcschr(tail, L'/') && !wcschr(tail, L'\\'))
+					return true;
+			}
+		}
+		return false;
+	};
+
+	bool alreadyCovered = fileUnderFolderSource();
+	if (!alreadyCovered) {
+		bool alreadySource = false;
+		for (const auto &s : mSources) {
+			if (s.mbIsFile && s.mPath == path) {
+				alreadySource = true;
+				break;
+			}
+		}
+		if (!alreadySource) {
+			GameSource src;
+			src.mPath = path;
+			src.mbIsFile = true;
+			mSources.push_back(std::move(src));
+			SaveSettingsToRegistry();
+		}
+	}
+
+	mEntries.push_back(std::move(entry));
+
+	// Keep the alphabetical-by-display-name invariant that the scanner
+	// produces, so the new entry slots into its natural position.
+	std::sort(mEntries.begin(), mEntries.end(),
+		[](const GameEntry &a, const GameEntry &b) {
+			return a.mDisplayName < b.mDisplayName;
+		});
+
+	SaveCache();
+	if (wasScanning)
+		StartScan();
+	return FindEntryByVariantPath(path);
 }
 
 void ATGameLibrary::ClearHistory() {
@@ -632,7 +1045,10 @@ void ATGameLibrary::PurgeRemovedSourceEntries() {
 			[this](const GameEntry &entry) -> bool {
 				for (const auto &var : entry.mVariants) {
 					for (const auto &src : mSources) {
-						if (src.mbIsArchive) {
+						if (src.mbIsFile) {
+							if (var.mPath == src.mPath)
+								return false;
+						} else if (src.mbIsArchive) {
 							if (var.mArchivePath == src.mPath)
 								return false;
 						} else {
@@ -662,6 +1078,7 @@ void ATGameLibrary::LoadSettingsFromRegistry() {
 	mSettings.mbRecursive = key.getBool("Recursive", true);
 	mSettings.mbCrossFolderArt = key.getBool("CrossFolderArt", true);
 	mSettings.mbShowOnStartup = key.getBool("ShowOnStartup", true);
+	mSettings.mbAddBootedToLibrary = key.getBool("AddBootedToLibrary", true);
 	mSettings.mViewMode = key.getInt("ViewMode", 1);
 	mSettings.mGridSize = key.getInt("GridSize", 1);
 	if (mSettings.mGridSize < 0 || mSettings.mGridSize > 2)
@@ -677,12 +1094,15 @@ void ATGameLibrary::LoadSettingsFromRegistry() {
 		pathKey.sprintf("Source%d.Path", i);
 		VDStringA archKey;
 		archKey.sprintf("Source%d.IsArchive", i);
+		VDStringA fileKey;
+		fileKey.sprintf("Source%d.IsFile", i);
 
 		VDStringW path;
 		if (key.getString(pathKey.c_str(), path)) {
 			GameSource src;
 			src.mPath = std::move(path);
 			src.mbIsArchive = key.getBool(archKey.c_str(), false);
+			src.mbIsFile = key.getBool(fileKey.c_str(), false);
 			mSources.push_back(std::move(src));
 		}
 	}
@@ -696,6 +1116,7 @@ void ATGameLibrary::SaveSettingsToRegistry() const {
 	key.setBool("Recursive", mSettings.mbRecursive);
 	key.setBool("CrossFolderArt", mSettings.mbCrossFolderArt);
 	key.setBool("ShowOnStartup", mSettings.mbShowOnStartup);
+	key.setBool("AddBootedToLibrary", mSettings.mbAddBootedToLibrary);
 	key.setInt("ViewMode", mSettings.mViewMode);
 	key.setInt("GridSize", mSettings.mGridSize);
 	key.setInt("ListSize", mSettings.mListSize);
@@ -706,9 +1127,12 @@ void ATGameLibrary::SaveSettingsToRegistry() const {
 		pathKey.sprintf("Source%d.Path", i);
 		VDStringA archKey;
 		archKey.sprintf("Source%d.IsArchive", i);
+		VDStringA fileKey;
+		fileKey.sprintf("Source%d.IsFile", i);
 
 		key.setString(pathKey.c_str(), mSources[i].mPath.c_str());
 		key.setBool(archKey.c_str(), mSources[i].mbIsArchive);
+		key.setBool(fileKey.c_str(), mSources[i].mbIsFile);
 	}
 }
 
@@ -790,7 +1214,9 @@ void ATGameLibrary::ScanThread() {
 			mScanStatus = name ? (name + 1) : srcU8.c_str();
 		}
 
-		if (src.mbIsArchive) {
+		if (src.mbIsFile) {
+			ScanFile(src.mPath, allEntries);
+		} else if (src.mbIsArchive) {
 			ScanArchive(src.mPath, allEntries, allImages);
 		} else {
 			ScanFolder(src.mPath, mSettings.mbRecursive, allEntries, allImages);
@@ -1057,6 +1483,24 @@ void ATGameLibrary::GroupVariants(std::vector<GameEntry> &entries) {
 		}
 	}
 
+	// Dedupe variants by path within each entry — an auto-added file
+	// source may sit under a folder source that also picks up the file,
+	// so the same physical game ends up in the group twice.
+	for (auto &entry : grouped) {
+		if (entry.mVariants.size() <= 1)
+			continue;
+		std::sort(entry.mVariants.begin(), entry.mVariants.end(),
+			[](const GameVariant &a, const GameVariant &b) {
+				return a.mPath < b.mPath;
+			});
+		entry.mVariants.erase(
+			std::unique(entry.mVariants.begin(), entry.mVariants.end(),
+				[](const GameVariant &a, const GameVariant &b) {
+					return a.mPath == b.mPath;
+				}),
+			entry.mVariants.end());
+	}
+
 	// For single-variant entries, simplify the label to just the extension
 	for (auto &entry : grouped) {
 		if (entry.mVariants.size() == 1) {
@@ -1242,6 +1686,17 @@ void ATGameLibrary::MergePlayHistory(std::vector<GameEntry> &newEntries,
 				const auto &old = oldEntries[it->second];
 				entry.mLastPlayed = old.mLastPlayed;
 				entry.mPlayCount = old.mPlayCount;
+				// Preserve user-set art (stored under custom_art/)
+				// across rescans — MatchArt never rediscovers it
+				// because the custom_art dir isn't a scanned source.
+				// Scanner-matched art (next-to-file images) is
+				// allowed to refresh normally.
+				if (!old.mArtPath.empty()
+					&& wcsstr(old.mArtPath.c_str(),
+						L"/custom_art/") != nullptr)
+				{
+					entry.mArtPath = old.mArtPath;
+				}
 				break;
 			}
 		}

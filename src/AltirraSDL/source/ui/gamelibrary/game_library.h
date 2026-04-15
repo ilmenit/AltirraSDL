@@ -40,15 +40,17 @@ struct GameEntry {
 struct GameSource {
 	VDStringW mPath;
 	bool      mbIsArchive = false;
+	bool      mbIsFile    = false;   // standalone file entry (auto-added booted games)
 };
 
 struct GameLibrarySettings {
-	bool mbRecursive      = true;
-	bool mbCrossFolderArt = true;
-	bool mbShowOnStartup  = true;
-	int  mViewMode        = 1;     // 0=list, 1=grid
-	int  mGridSize        = 1;     // 0=small, 1=medium, 2=large
-	int  mListSize        = 0;     // 0=small, 1=medium, 2=large
+	bool mbRecursive           = true;
+	bool mbCrossFolderArt      = true;
+	bool mbShowOnStartup       = true;
+	bool mbAddBootedToLibrary  = true;   // Auto-add booted games (not already in library) to the library + Recently Played
+	int  mViewMode             = 1;      // 0=list, 1=grid
+	int  mGridSize             = 1;      // 0=small, 1=medium, 2=large
+	int  mListSize             = 0;      // 0=small, 1=medium, 2=large
 };
 
 struct CachedSourceInfo {
@@ -77,6 +79,19 @@ public:
 	void RecordPlay(size_t entryIndex);
 	void ClearHistory();
 
+	// Called by the UI when the user boots a file outside the library.
+	// If the file already matches a library variant, the play history for
+	// that entry is bumped and the existing index is returned.  Otherwise,
+	// if addToLibrary is true (from GameLibrarySettings.mbAddBootedToLibrary),
+	// a single-variant entry is created, persisted, and added as a source
+	// so it survives across scans.  Returns the entry index or -1 if the
+	// file extension is not recognized / could not be added.
+	int  AddBootedGame(const VDStringW &path, bool addToLibrary);
+
+	// Lookup helper: returns the index of the entry with a variant whose
+	// mPath matches the given path, or -1 if none.
+	int  FindEntryByVariantPath(const VDStringW &path) const;
+
 	const std::vector<GameEntry>& GetEntries() const { return mEntries; }
 	std::vector<GameEntry>& GetEntries() { return mEntries; }
 	size_t GetEntryCount() const { return mEntries.size(); }
@@ -102,11 +117,15 @@ public:
 	uint64_t GetLastScanTime() const { return mLastScanTime; }
 
 private:
+	bool WriteCacheFile(const VDStringW &path) const;
+
 	void ScanThread();
 	void ScanFolder(const VDStringW &path, bool recursive,
 		std::vector<GameEntry> &outEntries, std::vector<VDStringW> &outImages);
 	void ScanArchive(const VDStringW &path,
 		std::vector<GameEntry> &outEntries, std::vector<VDStringW> &outImages);
+	bool ScanFile(const VDStringW &path,
+		std::vector<GameEntry> &outEntries);
 	void GroupVariants(std::vector<GameEntry> &entries);
 	void DisambiguateNames(std::vector<GameEntry> &entries);
 	void MatchArt(std::vector<GameEntry> &entries,
@@ -116,6 +135,14 @@ private:
 
 	VDStringA mConfigDir;
 	VDStringA mCachePath;
+
+	// True when the last successful LoadCache/SaveCache operated on
+	// the primary cache file (not the .bak fallback).  SaveCache uses
+	// this to decide whether to rotate the current main file into the
+	// .bak slot — we must *not* overwrite a good .bak with a known-
+	// corrupt main or we lose the only recoverable state.  Mutable so
+	// SaveCache can stay const.
+	mutable bool            mMainFileValid = false;
 
 	std::vector<GameEntry>  mEntries;
 	std::vector<GameSource> mSources;

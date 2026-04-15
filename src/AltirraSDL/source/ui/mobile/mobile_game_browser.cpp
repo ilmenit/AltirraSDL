@@ -5,11 +5,15 @@
 #include <ctime>
 #include <algorithm>
 #include <SDL3/SDL.h>
+#ifndef ALTIRRA_NO_SDL3_IMAGE
+#include <SDL3_image/SDL_image.h>
+#endif
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
+#include <at/atcore/md5.h>
 
 #include "ui_mobile.h"
 #include "ui_main.h"
@@ -18,9 +22,15 @@
 #include "mobile_internal.h"
 #include "constants.h"
 #include "cpu.h"
+#include "gtia.h"
 #include "versioninfo.h"
 #include "settings.h"
 #include "ui_mode.h"
+#include "oshelper.h"
+#include <vd2/system/error.h>
+#include <vd2/Kasumi/pixmap.h>
+#include <vd2/Kasumi/pixmapops.h>
+#include <vd2/Kasumi/pixmaputils.h>
 
 #include "../gamelibrary/game_library.h"
 #include "../gamelibrary/game_library_art.h"
@@ -117,6 +127,124 @@ bool GameBrowser_HasCurrentGame() {
 void GameBrowser_ClearArtCache() {
 	if (s_artCache)
 		s_artCache->Clear();
+}
+
+bool GameBrowser_CurrentEntryNeedsArt() {
+	if (!s_gameLibrary)
+		return false;
+	int eidx = GameBrowser_FindCurrentEntry();
+	if (eidx < 0)
+		return false;  // not in library — setting art isn't meaningful.
+	const auto &entries = s_gameLibrary->GetEntries();
+	if ((size_t)eidx >= entries.size())
+		return false;
+	return entries[eidx].mArtPath.empty();
+}
+
+VDStringA GameBrowser_SetCurrentFrameAsArt() {
+#ifdef ALTIRRA_NO_SDL3_IMAGE
+	return VDStringA("Image saving is not available in this build.");
+#else
+	if (!s_gameLibrary)
+		return VDStringA("Game library is not initialised.");
+
+	int eidx = GameBrowser_FindCurrentEntry();
+	if (eidx < 0)
+		return VDStringA("No currently-booted game is in the library.");
+
+	auto &entries = s_gameLibrary->GetEntries();
+	if ((size_t)eidx >= entries.size() || entries[eidx].mVariants.empty())
+		return VDStringA("Library entry is invalid.");
+
+	// Pull the clean emulator frame directly from GTIA rather than the
+	// SDL framebuffer — the latter contains the hamburger menu / settings
+	// panel that's on top of the game when this action is triggered.
+	VDPixmapBuffer pxbuf;
+	VDPixmap px;
+	if (!g_sim.GetGTIA().GetLastFrameBuffer(pxbuf, px) || !px.data)
+		return VDStringA("No emulator frame is available yet.");
+
+	auto &entry = entries[eidx];
+
+	// Content-addressed filename: MD5 of the primary variant path so the
+	// PNG is stable across restarts and doesn't depend on the display
+	// name (which may change with library scans).  Matches the existing
+	// "Save Screenshot as Game Art" path in mobile_settings.cpp — both
+	// UIs call this helper to keep the save format in sync.
+	VDStringA keyU8 = VDTextWToU8(entry.mVariants[0].mPath);
+	ATMD5Digest digest = ATComputeMD5(keyU8.c_str(), keyU8.size());
+	char hex[33];
+	for (int i = 0; i < 16; ++i)
+		snprintf(hex + i * 2, 3, "%02x", digest.digest[i]);
+
+	VDStringA configDir = ATGetConfigDir();
+	VDStringA artDir = configDir;
+	artDir += "/custom_art";
+	SDL_CreateDirectory(artDir.c_str());
+
+	VDStringA pngPath = artDir;
+	pngPath += '/';
+	pngPath += hex;
+	pngPath += ".png";
+
+	VDStringW pngPathW = VDTextU8ToW(pngPath.c_str(), -1);
+	try {
+		ATSaveFrame(px, pngPathW.c_str());
+	} catch (const MyError &e) {
+		return VDStringA(e.c_str());
+	}
+
+	// Invalidate the old-art thumbnail (if any) and the new-art thumbnail
+	// so the thumbnail cache regenerates from the new source on next open.
+	VDStringA thumbDir = configDir;
+	thumbDir += "/thumbnails";
+
+	auto purgeThumb = [&thumbDir](const VDStringA &artU8) {
+		ATMD5Digest d = ATComputeMD5(artU8.c_str(), artU8.size());
+		char h[33];
+		for (int j = 0; j < 16; ++j)
+			snprintf(h + j * 2, 3, "%02x", d.digest[j]);
+		VDStringA tp = thumbDir;
+		tp += '/';
+		tp += h;
+		tp += ".png";
+		SDL_RemovePath(tp.c_str());
+	};
+
+	if (!entry.mArtPath.empty())
+		purgeThumb(VDTextWToU8(entry.mArtPath));
+	purgeThumb(pngPath);
+
+	entry.mArtPath = std::move(pngPathW);
+	s_gameLibrary->SaveCache();
+	GameBrowser_ClearArtCache();
+	s_needsRefresh = true;
+	return VDStringA();  // success
+#endif
+}
+
+void GameBrowser_OnBootedGame(const VDStringW &variantPath) {
+	// Make sure the library exists so we can add to it and so the
+	// "currently playing" marker persists across the next browser open.
+	if (!s_gameLibrary)
+		GameBrowser_Init();
+
+	s_currentGameVariantPath = variantPath;
+	s_needsRefresh = true;
+
+	if (!s_gameLibrary || variantPath.empty())
+		return;
+
+	bool addToLibrary = s_gameLibrary->GetSettings().mbAddBootedToLibrary;
+	s_gameLibrary->AddBootedGame(variantPath, addToLibrary);
+
+	// The settings-registry write from AddBootedGame lives in the in-memory
+	// provider until flushed.  Match the other Game Library callbacks which
+	// flush the registry explicitly so the source survives a crash.
+	if (addToLibrary)
+		ATRegistryFlushToDisk();
+
+	s_letterFilterIdx = -1;
 }
 
 static void ComputeAvailableLetters() {

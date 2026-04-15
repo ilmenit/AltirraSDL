@@ -152,6 +152,35 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		}
 		ImGui::Spacing();
 
+		// Save Screenshot as Game Art — quick-action shortcut, shown
+		// only when the booted game is in the library and has no cover
+		// art yet.  Same label and behaviour as the "Save Screenshot
+		// as Game Art" button on the Game Library settings page, which
+		// is the authoritative path for replacing art that's already
+		// set.
+		//
+		// We deliberately do NOT auto-close the menu on success — the
+		// user opened the hamburger on purpose (which paused the game)
+		// and resuming behind their back breaks that intent.  Since
+		// GameBrowser_CurrentEntryNeedsArt() re-evaluates every frame,
+		// the button disappears from the menu on the next render once
+		// the entry has art, and the user can dismiss the info modal
+		// and tap Resume (or back) when they're ready.
+		if (mobileState.gameLoaded
+			&& GameBrowser_CurrentEntryNeedsArt())
+		{
+			if (ImGui::Button("Save Screenshot as Game Art", btnSize)) {
+				VDStringA err = GameBrowser_SetCurrentFrameAsArt();
+				if (!err.empty())
+					ShowInfoModal("Save Game Art Failed", err.c_str());
+				else
+					ShowInfoModal("Game Art Saved",
+						"The current screenshot is now the cover "
+						"art for this game.");
+			}
+			ImGui::Spacing();
+		}
+
 		// Disk Drives — mobile-friendly full-screen manager
 		if (ImGui::Button("Disk Drives", btnSize)) {
 			mobileState.currentScreen = ATMobileUIScreen::DiskManager;

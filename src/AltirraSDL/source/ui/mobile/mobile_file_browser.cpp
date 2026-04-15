@@ -622,7 +622,14 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					VDStringA pathU8 = VDTextWToU8(VDStringW(entry.fullPath));
 					ATUIPushDeferred(kATDeferred_BootImage, pathU8.c_str());
 					mobileState.gameLoaded = true;
-					mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+					// Record this as the "currently playing" variant and,
+					// when the user has opted in, add the file/archive to
+					// the library + Last Played list.
+					GameBrowser_OnBootedGame(entry.fullPath);
+					// Close the browser and drop back to the emulator so
+					// the user lands directly on the booted game (they can
+					// still reopen the library via the menu button).
+					mobileState.currentScreen = ATMobileUIScreen::None;
 					sim.Resume();
 				}
 			}

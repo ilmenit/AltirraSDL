@@ -634,7 +634,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			if (lib) {
 				auto sources = lib->GetSources();
 				for (int i = 0; i < (int)sources.size(); ++i) {
-					if (sources[i].mbIsArchive)
+					if (sources[i].mbIsArchive || sources[i].mbIsFile)
 						continue;
 
 					ImGui::PushID(i);
@@ -811,6 +811,54 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 
 			ImGui::Spacing();
+			ATTouchSection("Game Files");
+
+			if (lib) {
+				auto sources = lib->GetSources();
+				for (int i = 0; i < (int)sources.size(); ++i) {
+					if (!sources[i].mbIsFile)
+						continue;
+
+					ImGui::PushID(2000 + i);
+					VDStringA pathU8 = VDTextWToU8(sources[i].mPath);
+					float rowH = dp(44.0f);
+					ImVec2 cursor = ImGui::GetCursorScreenPos();
+					float availW = ImGui::GetContentRegionAvail().x;
+					float removeW = dp(40.0f);
+
+					ImGui::PushClipRect(ImVec2(cursor.x, cursor.y),
+						ImVec2(cursor.x + availW - removeW - dp(4.0f),
+							cursor.y + rowH), true);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY()
+						+ (rowH - ImGui::GetTextLineHeight()) * 0.5f);
+					ImGui::TextUnformatted(pathU8.c_str());
+					ImGui::PopClipRect();
+
+					ImGui::SameLine(availW - removeW);
+					float btnY = cursor.y + (rowH - dp(32.0f)) * 0.5f
+						- ImGui::GetCursorScreenPos().y + ImGui::GetCursorPosY();
+					ImGui::SetCursorPosY(btnY);
+					if (ImGui::Button("X##rm", ImVec2(dp(32.0f), dp(32.0f)))) {
+						sources.erase(sources.begin() + i);
+						lib->SetSources(sources);
+						lib->PurgeRemovedSourceEntries();
+						lib->SaveSettingsToRegistry();
+						lib->StartScan();
+						extern void GameBrowser_Invalidate();
+						GameBrowser_Invalidate();
+						extern void ATRegistryFlushToDisk();
+						ATRegistryFlushToDisk();
+						ImGui::PopID();
+						break;
+					}
+
+					ImGui::SetCursorPosY(cursor.y - ImGui::GetWindowPos().y
+						+ ImGui::GetScrollY() + rowH);
+					ImGui::PopID();
+				}
+			}
+
+			ImGui::Spacing();
 			ImGui::Spacing();
 			ATTouchSection("Options");
 
@@ -824,6 +872,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 				if (ATTouchToggle("Match game-art from other folders",
 					&settings.mbCrossFolderArt))
+					changed = true;
+
+				if (ATTouchToggle("Add booted games to library",
+					&settings.mbAddBootedToLibrary))
 					changed = true;
 
 				{
@@ -890,112 +942,17 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						&& GameBrowser_HasCurrentGame();
 					if (!canSet)
 						ImGui::BeginDisabled();
-					if (ImGui::Button("Set Current Frame as Game Art",
+					if (ImGui::Button("Save Screenshot as Game Art",
 						ImVec2(-1, dp(44.0f))))
 					{
-						int eidx = GameBrowser_FindCurrentEntry();
-						if (eidx >= 0) {
-							extern SDL_Surface *ATUIReadFramebuffer();
-							SDL_Surface *frame = ATUIReadFramebuffer();
-							if (frame) {
-								auto &entry =
-									lib->GetEntries()[eidx];
-								VDStringA keyU8 = VDTextWToU8(
-									entry.mVariants[0].mPath);
-								ATMD5Digest digest = ATComputeMD5(
-									keyU8.c_str(), keyU8.size());
-								char hex[33];
-								for (int i = 0; i < 16; ++i)
-									snprintf(hex + i * 2, 3, "%02x",
-										digest.digest[i]);
-
-								VDStringA configDir =
-									ATGetConfigDir();
-								VDStringA artDir = configDir;
-								artDir += "/custom_art";
-								SDL_CreateDirectory(artDir.c_str());
-
-								VDStringA pngPath = artDir;
-								pngPath += '/';
-								pngPath += hex;
-								pngPath += ".png";
-
-								SDL_Surface *rgba =
-									SDL_ConvertSurface(frame,
-										SDL_PIXELFORMAT_RGBA32);
-								SDL_DestroySurface(frame);
-
-#ifndef ALTIRRA_NO_SDL3_IMAGE
-								if (rgba
-									&& IMG_SavePNG(rgba,
-										pngPath.c_str()))
-								{
-									SDL_DestroySurface(rgba);
-
-									VDStringA thumbDir = configDir;
-									thumbDir += "/thumbnails";
-
-									// Delete old art's thumbnail.
-									if (!entry.mArtPath.empty()) {
-										VDStringA oldU8 =
-											VDTextWToU8(
-												entry.mArtPath);
-										ATMD5Digest od =
-											ATComputeMD5(
-												oldU8.c_str(),
-												oldU8.size());
-										char oh[33];
-										for (int j = 0; j < 16; ++j)
-											snprintf(oh + j * 2, 3,
-												"%02x",
-												od.digest[j]);
-										VDStringA oldThumb =
-											thumbDir;
-										oldThumb += '/';
-										oldThumb += oh;
-										oldThumb += ".png";
-										SDL_RemovePath(
-											oldThumb.c_str());
-									}
-
-									VDStringW artPathW =
-										VDTextU8ToW(
-											pngPath.c_str(), -1);
-
-									// Delete new art's thumbnail
-									// so it regenerates.
-									VDStringA newU8 =
-										VDTextWToU8(artPathW);
-									ATMD5Digest nd = ATComputeMD5(
-										newU8.c_str(),
-										newU8.size());
-									char nh[33];
-									for (int j = 0; j < 16; ++j)
-										snprintf(nh + j * 2, 3,
-											"%02x",
-											nd.digest[j]);
-									VDStringA newThumb = thumbDir;
-									newThumb += '/';
-									newThumb += nh;
-									newThumb += ".png";
-									SDL_RemovePath(
-										newThumb.c_str());
-
-									entry.mArtPath =
-										std::move(artPathW);
-									lib->SaveCache();
-									GameBrowser_ClearArtCache();
-									GameBrowser_Invalidate();
-								} else {
-									if (rgba)
-										SDL_DestroySurface(rgba);
-								}
-#else
-								if (rgba)
-									SDL_DestroySurface(rgba);
-#endif
-							}
-						}
+						VDStringA err = GameBrowser_SetCurrentFrameAsArt();
+						if (!err.empty())
+							ShowInfoModal("Save Game Art Failed",
+								err.c_str());
+						else
+							ShowInfoModal("Game Art Saved",
+								"The current screenshot is now the "
+								"cover art for this game.");
 					}
 					if (!canSet)
 						ImGui::EndDisabled();
