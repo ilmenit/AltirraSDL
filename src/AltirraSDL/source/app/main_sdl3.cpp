@@ -2168,22 +2168,13 @@ int main(int argc, char *argv[]) {
 
 	// Save settings before shutdown (must happen before joystick manager
 	// is destroyed — ATSettingsExchangeInput reads joystick transforms
-	// via g_sim.GetJoystickManager())
-	extern void ATRegistryFlushToDisk();
-	try {
-		// Match Windows main.cpp:4044 — save every registered category
-		// except FullScreen.  Covers Devices, MountedImages, and NVRAM.
-		ATSaveSettings((ATSettingsCategory)(
-			kATSettingsCategory_All & ~kATSettingsCategory_FullScreen
-		));
-		// Persist the per-dialog "last used directory" map before the
-		// registry is flushed to settings.ini.
-		extern void VDSaveFilespecSystemData();
-		VDSaveFilespecSystemData();
-		ATRegistryFlushToDisk();
-	} catch (...) {
-		LOG_ERROR("Main", "failed to save settings on exit");
-	}
+	// via g_sim.GetJoystickManager()).  ATPersistAllForSuspend wraps the
+	// four-step save (ATSaveSettings → game library cache →
+	// VDSaveFilespecSystemData → ATRegistryFlushToDisk) in per-step
+	// try/catch, so a failure in one step does not skip the others.
+	// Using the same helper as the TERMINATING path keeps clean exit
+	// and forced-shutdown behaviour in lockstep.
+	ATPersistAllForSuspend();
 
 	// Detach and destroy joystick manager before simulator shutdown
 	// (must be after ATSaveSettings which reads joystick transforms)
