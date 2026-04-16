@@ -1222,14 +1222,33 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 		if (gridMode) {
 			// ── Grid View ────────────────────────────────────────
-			static const float kGridMinTile[] = { 120.0f, 160.0f, 220.0f };
+			//
+			// Drive the column count directly from `mGridSize` so each
+			// step is guaranteed to render visibly distinct tiles.  The
+			// previous implementation picked a per-size minimum tile
+			// width and let integer truncation in
+			// `cols = contentW / (minTileW + pad)` decide the column
+			// count — on common portrait phone widths (≈360–480 dp) the
+			// `Medium` and `Large` minimums collapsed to the same
+			// column count and rendered identical tiles, while `Small`
+			// landed one column larger and looked like a "medium" tile.
+			//
+			// The new approach: derive an "approximate max columns"
+			// from a baseline minimum tile width, then subtract a
+			// width-scaled step per gridSz so wider screens take
+			// proportionally larger jumps.  This keeps Small > Medium >
+			// Large in column count on every reasonable screen size.
 			int gridSz = libSettings.mGridSize;
 			if (gridSz < 0 || gridSz > 2) gridSz = 1;
 
 			float contentW = ImGui::GetContentRegionAvail().x;
 			float tilePad = dp(8.0f);
-			float minTileW = dp(kGridMinTile[gridSz]);
-			int cols = (int)(contentW / (minTileW + tilePad));
+			const float baselineMin = dp(110.0f);
+			int approxCols = (int)(contentW / (baselineMin + tilePad));
+			if (approxCols < 3) approxCols = 3;
+			int step = approxCols / 3;
+			if (step < 1) step = 1;
+			int cols = approxCols - gridSz * step;
 			if (cols < 1) cols = 1;
 			float tileW = (contentW - tilePad * (cols - 1)) / cols;
 			float imageH = tileW * 0.75f;

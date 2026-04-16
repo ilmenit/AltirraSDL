@@ -998,6 +998,10 @@ int ATGameLibrary::AddBootedGame(const VDStringW &path, bool addToLibrary) {
 			src.mbIsFile = true;
 			mSources.push_back(std::move(src));
 			SaveSettingsToRegistry();
+			// Flush so a process kill before the next regular save
+			// (clean exit / suspend) does not lose the source list.
+			extern void ATRegistryFlushToDisk();
+			try { ATRegistryFlushToDisk(); } catch (...) {}
 		}
 	}
 

@@ -40,6 +40,7 @@
 
 #include "mobile_internal.h"
 #include "../gamelibrary/game_library.h"
+#include "settings.h"
 
 #ifndef ALTIRRA_NO_SDL3_IMAGE
 #include <SDL3_image/SDL_image.h>
@@ -50,6 +51,24 @@ extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 extern IDisplayBackend *ATUIGetDisplayBackend();
+
+// Write-through helper for mobile setting pages that mutate simulator
+// or UI state (HardwareMode, VideoStandard, MemoryMode, BASIC, SIO,
+// randomization, display filter mode, ...).  These categories are
+// otherwise only serialised by the clean-exit ATSaveSettings call,
+// which the OS rarely lets a backgrounded mobile app reach — so each
+// edit must persist immediately.
+static void ATPersistMobileEdit(uint32 categoryMask) {
+	try {
+		ATSaveSettings((ATSettingsCategory)categoryMask);
+	} catch (...) {
+		// Best effort; lifecycle handler will retry at suspend.
+	}
+	try {
+		ATRegistryFlushToDisk();
+	} catch (...) {
+	}
+}
 
 void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState, SDL_Window *window)
@@ -302,6 +321,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			if (ATTouchSegmented("Hardware", &curIdx, labels, kNumHw)) {
 				sim.SetHardwareMode(kHw[curIdx].mode);
 				sim.ColdReset();
+				// Hardware mode change can also reset memory mode in
+				// the simulator (e.g. switching to 5200 forces 16K).
+				// Save Hardware so all coupled defaults stick.
+				ATPersistMobileEdit(kATSettingsCategory_Hardware);
 			}
 		}
 
@@ -309,8 +332,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		{
 			int current = (sim.GetVideoStandard() == kATVideoStandard_PAL) ? 0 : 1;
 			static const char *items[] = { "PAL", "NTSC" };
-			if (ATTouchSegmented("Video Standard", &current, items, 2))
+			if (ATTouchSegmented("Video Standard", &current, items, 2)) {
 				sim.SetVideoStandard(current == 0 ? kATVideoStandard_PAL : kATVideoStandard_NTSC);
+				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+			}
 		}
 
 		// Memory Size
@@ -336,22 +361,28 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				kMemModes[0].label, kMemModes[1].label, kMemModes[2].label,
 				kMemModes[3].label, kMemModes[4].label, kMemModes[5].label,
 			};
-			if (ATTouchSegmented("Memory Size", &curIdx, labels, count))
+			if (ATTouchSegmented("Memory Size", &curIdx, labels, count)) {
 				sim.SetMemoryMode(kMemModes[curIdx].mode);
+				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+			}
 		}
 
 		// BASIC toggle
 		{
 			bool basicEnabled = sim.IsBASICEnabled();
-			if (ATTouchToggle("BASIC Enabled", &basicEnabled))
+			if (ATTouchToggle("BASIC Enabled", &basicEnabled)) {
 				sim.SetBASICEnabled(basicEnabled);
+				ATPersistMobileEdit(kATSettingsCategory_StartupConfig);
+			}
 		}
 
 		// SIO Patch toggle
 		{
 			bool sioEnabled = sim.IsSIOPatchEnabled();
-			if (ATTouchToggle("SIO Patch", &sioEnabled))
+			if (ATTouchToggle("SIO Patch", &sioEnabled)) {
 				sim.SetSIOPatchEnabled(sioEnabled);
+				ATPersistMobileEdit(kATSettingsCategory_Acceleration);
+			}
 		}
 
 		// ---- RANDOMIZATION (still on Machine page) ----
@@ -359,8 +390,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 		{
 			bool randomLaunch = sim.IsRandomProgramLaunchDelayEnabled();
-			if (ATTouchToggle("Randomize launch delay", &randomLaunch))
+			if (ATTouchToggle("Randomize launch delay", &randomLaunch)) {
 				sim.SetRandomProgramLaunchDelayEnabled(randomLaunch);
+				ATPersistMobileEdit(kATSettingsCategory_Boot);
+			}
 		}
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.70f, 0.78f, 1));
 		ImGui::TextWrapped(
@@ -370,8 +403,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 		{
 			bool randomFill = sim.IsRandomFillEXEEnabled();
-			if (ATTouchToggle("Randomize memory on EXE load", &randomFill))
+			if (ATTouchToggle("Randomize memory on EXE load", &randomFill)) {
 				sim.SetRandomFillEXEEnabled(randomFill);
+				ATPersistMobileEdit(kATSettingsCategory_Boot);
+			}
 		}
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.70f, 0.78f, 1));
 		ImGui::TextWrapped(
@@ -597,6 +632,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				ATUISetDisplayFilterMode(kModes[idx]);
 				mobileState.performancePreset = 3;  // Custom
 				SaveMobileConfig(mobileState);
+				// Filter mode lives in the View settings category, not
+				// in mobile-only registry — persist that too so the
+				// choice survives a process kill.
+				ATPersistMobileEdit(kATSettingsCategory_View);
 			}
 		}
 		} // end Display page

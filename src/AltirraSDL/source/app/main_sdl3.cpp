@@ -254,6 +254,56 @@ static void UpdateMousePosition(ATInputManager *im, float mx, float my) {
 	}
 }
 
+#ifdef __ANDROID__
+// Persist every piece of mutable state that lives only in memory:
+//   * ATSaveSettings — converts simulator + UI state (HardwareMode,
+//     VideoStandard, MemoryMode, BASIC enabled, SIO patch, display
+//     filter mode, etc.) into registry values.  Without this step the
+//     suspend-time ATRegistryFlushToDisk only persists what was already
+//     in the registry, dropping every Machine/Display page change.
+//   * Game library cache — scan results and play history that are
+//     normally written by RecordPlay/scan completion but not on a
+//     mid-session background.
+//   * VDSaveFilespecSystemData — per-dialog "last used directory" map
+//     written separately from the main registry, matched to clean exit.
+//   * ATRegistryFlushToDisk — finally serialise the in-memory registry
+//     to settings.ini so a process kill preserves everything above.
+//
+// Each step has its own try/catch so a failure in any one does not skip
+// the others — the final flush always attempts to run.  Mirrors the
+// clean-exit save sequence in main_sdl3.cpp:2094-2104.
+static void ATPersistAllForSuspend() {
+	try {
+		ATSaveSettings((ATSettingsCategory)(
+			kATSettingsCategory_All & ~kATSettingsCategory_FullScreen
+		));
+	} catch (...) {
+		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+			"Altirra: ATSaveSettings failed during suspend");
+	}
+	try {
+		if (ATGameLibrary *lib = GetGameLibrary())
+			lib->SaveCache();
+	} catch (...) {
+		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+			"Altirra: game library SaveCache failed during suspend");
+	}
+	try {
+		extern void VDSaveFilespecSystemData();
+		VDSaveFilespecSystemData();
+	} catch (...) {
+		// Best-effort; failure here only loses the file-dialog history.
+	}
+	try {
+		extern void ATRegistryFlushToDisk();
+		ATRegistryFlushToDisk();
+	} catch (...) {
+		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+			"Altirra: registry flush failed during suspend");
+	}
+}
+#endif
+
 static void HandleEvents() {
 	// Detect when ImGui starts capturing keyboard (e.g. menu opened)
 	// and release all held emulator keys to prevent stuck input.
@@ -706,13 +756,11 @@ static void HandleEvents() {
 			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 #ifdef __ANDROID__
 			ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
-			try {
-				extern void ATRegistryFlushToDisk();
-				ATRegistryFlushToDisk();
-			} catch (...) {
-				SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-					"Altirra: registry flush failed on background");
-			}
+			// Persist Machine/Display/Acceleration/Boot/View state plus
+			// the game library cache — they are not held in the registry
+			// until ATSaveSettings runs, and the OS will likely kill the
+			// process without ever returning to the clean-exit path.
+			ATPersistAllForSuspend();
 #endif
 			break;
 
@@ -746,13 +794,14 @@ static void HandleEvents() {
 
 		case SDL_EVENT_TERMINATING:
 			// Last chance before the OS kills the process.  Snapshot
-			// the emulator state (mobile only) and flush settings,
-			// both inside try/catch, then request a clean exit.
+			// the emulator state (mobile only) and persist every piece
+			// of mutable settings + cache state to disk.
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: TERMINATING — flushing settings");
 #ifdef __ANDROID__
 			ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
-#endif
+			ATPersistAllForSuspend();
+#else
 			try {
 				extern void ATRegistryFlushToDisk();
 				ATRegistryFlushToDisk();
@@ -760,6 +809,7 @@ static void HandleEvents() {
 				SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
 					"Altirra: settings flush failed on terminate");
 			}
+#endif
 			g_running = false;
 			break;
 
