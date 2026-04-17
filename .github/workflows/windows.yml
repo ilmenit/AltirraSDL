@@ -167,6 +167,21 @@ jobs:
           name: AltirraSDL-windows-x86_64
           path: dist
 
+      # Force-move the rolling `nightly` tag to the commit that was just
+      # built so GitHub regenerates the "Source code (zip/tar.gz)"
+      # archives from the current `main`. Same-SHA idempotent across
+      # workflows — see linux.yml for the full rationale.
+      - name: Move nightly tag to current commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
+            -f "sha=${GITHUB_SHA}" -F "force=true" \
+          || gh api --method POST \
+               "repos/${GITHUB_REPOSITORY}/git/refs" \
+               -f "ref=refs/tags/nightly" -f "sha=${GITHUB_SHA}"
+
       - name: Attach Windows zip to rolling nightly release
         uses: softprops/action-gh-release@v2
         with:

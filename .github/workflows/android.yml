@@ -122,10 +122,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - uses: actions/download-artifact@v4
         with:
           name: AltirraSDL-android-arm64-v8a
@@ -155,6 +151,21 @@ jobs:
           else
               echo "No existing nightly release; nothing to clean."
           fi
+
+      # Force-move the rolling `nightly` tag to the commit that was just
+      # built so GitHub regenerates the "Source code (zip/tar.gz)"
+      # archives from the current `main`. Same-SHA idempotent across
+      # workflows — see linux.yml for the full rationale.
+      - name: Move nightly tag to current commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
+            -f "sha=${GITHUB_SHA}" -F "force=true" \
+          || gh api --method POST \
+               "repos/${GITHUB_REPOSITORY}/git/refs" \
+               -f "ref=refs/tags/nightly" -f "sha=${GITHUB_SHA}"
 
       - name: Attach APK to rolling nightly release
         uses: softprops/action-gh-release@v2

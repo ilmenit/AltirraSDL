@@ -766,6 +766,23 @@ jobs:
       - name: List artifacts
         run: ls -lh dist/
 
+      # Force-move the rolling `nightly-bridge` tag to the commit that
+      # was just built so GitHub regenerates the "Source code
+      # (zip/tar.gz)" archives from the current `main`. Gated on all
+      # three platform builds succeeding via `needs:` above. PATCH
+      # updates the ref if it exists; the POST fallback creates it on a
+      # first-ever run.
+      - name: Move nightly-bridge tag to current commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly-bridge" \
+            -f "sha=${GITHUB_SHA}" -F "force=true" \
+          || gh api --method POST \
+               "repos/${GITHUB_REPOSITORY}/git/refs" \
+               -f "ref=refs/tags/nightly-bridge" -f "sha=${GITHUB_SHA}"
+
       - name: Update rolling nightly bridge release
         uses: softprops/action-gh-release@v2
         with:

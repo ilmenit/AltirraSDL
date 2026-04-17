@@ -578,6 +578,22 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		// bundle.
 		auto markCustom = [&](){ mobileState.performancePreset = 3; };
 
+		// PAL/NTSC Artifacting — shares state with the desktop UI's
+		// Configure System > Outputs > Artifacting combo.  ON sets
+		// AutoHi (matches the Setup Wizard "Authentic" path at
+		// ui_tools_setup_wizard.cpp:616); OFF sets None.  Persisted by
+		// settings.cpp under "GTIA: Artifacting mode"
+		// (kATSettingsCategory_View).
+		{
+			ATGTIAEmulator &gtia = sim.GetGTIA();
+			bool artifactingOn = (gtia.GetArtifactingMode() != ATArtifactMode::None);
+			if (ATTouchToggle("PAL/NTSC Artifacting", &artifactingOn)) {
+				gtia.SetArtifactingMode(artifactingOn
+					? ATArtifactMode::AutoHi : ATArtifactMode::None);
+				ATPersistMobileEdit(kATSettingsCategory_View);
+			}
+		}
+
 		if (ATTouchToggle("Scanlines", &mobileState.fxScanlines)) {
 			markCustom();
 			SaveMobileConfig(mobileState);

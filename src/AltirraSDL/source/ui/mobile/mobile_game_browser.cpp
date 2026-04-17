@@ -61,11 +61,25 @@ static int SearchInputCallback(ImGuiInputTextCallbackData *data) {
 static std::vector<size_t> s_lastPlayedIndices;
 static std::vector<size_t> s_allGamesIndices;
 
-// Letter filter bar: which letters have games (A-Z=0..25, non-alpha=26)
+// Letter filter state.  `s_availableLetters` tracks which letters have
+// at least one library entry (A-Z=0..25, non-alpha=26); the picker grid
+// only shows tiles for letters that are actually populated so the user
+// never taps a dead button.  `s_letterFilterIdx` is -1 when no letter
+// filter is active.
 static bool s_availableLetters[27] = {};
-static int  s_letterFilterIdx = -1;  // -1 = no letter filter active
+static int  s_letterFilterIdx = -1;
+
+// Full-screen letter picker modal (replaces the old combo/inline bar).
+// Opens when the user taps the "Letter" pill on the toolbar; shows an
+// "All" tile + one big tile per populated letter + Cancel, all big
+// enough to hit with a finger and navigable by D-pad / arrow keys.
+static bool s_letterPickerOpen = false;
+// One-shot focus flag set when the modal closes so keyboard/gamepad
+// nav returns to the pill that opened it.
+static bool s_focusLetterPill = false;
 
 static void ComputeAvailableLetters();
+static void RenderLetterPickerModal(ImGuiIO &io);
 
 void GameBrowser_Init() {
 	if (s_gameLibrary)
@@ -78,6 +92,13 @@ void GameBrowser_Init() {
 	ComputeAvailableLetters();
 	s_gameLibrary->StartScan();
 	s_needsRefresh = true;
+
+	// Defensive: ensure the letter picker modal is not "stuck open" from
+	// a prior session.  It can only be opened from the Row 3 pill and is
+	// always closed by tile / Cancel / ESC, but an unexpected crash mid-
+	// modal would otherwise leave it open on next launch.
+	s_letterPickerOpen = false;
+	s_focusLetterPill  = false;
 
 	if (!s_artCache) {
 		s_artCache = new GameArtCache();
@@ -387,7 +408,176 @@ static const char *RelativeTimeStr(uint64_t timestamp) {
 	return buf;
 }
 
-// (Letter picker replaced by inline letter filter bar)
+// Full-screen letter picker.  The old implementations (a combo on
+// Android, an inline button row on desktop) were either too cramped for
+// finger taps or fell off narrow windows; this modal replaces both with
+// a dim-backdropped sheet containing an "All" tile plus one big tile
+// per letter that has games, laid out in a grid.  Nav:
+//   - Tap / click / A button   → apply filter, close
+//   - ESC / B / Cancel tile    → close without changing
+//   - Arrow keys / D-pad       → move between tiles
+// Closing the modal restores focus to the pill that opened it.
+static void RenderLetterPickerModal(ImGuiIO &io) {
+	if (!s_letterPickerOpen) return;
+
+	const ATMobilePalette &pal = ATMobileGetPalette();
+
+	// No separate dim backdrop: the modalBg palette colour is opaque
+	// (alpha ≈ 250/255) and the sheet fills the whole window, so a dim
+	// rect drawn on BackgroundDrawList would render below every window
+	// — including the browser whose content we're trying to cover —
+	// and be invisible.  The sheet's own WindowBg does the job.
+
+	// Sheet covers the full window so the tiles are as big as possible
+	// on phones.  On wide desktop windows we could cap the width, but
+	// a consistent full-screen picker also avoids the "click outside
+	// to cancel" problem — the user either picks a tile or taps Cancel.
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	ImGui::SetNextWindowSize(io.DisplaySize);
+
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings
+		| ImGuiWindowFlags_NoScrollbar;
+
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ATMobileCol(pal.modalBg));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+		ImVec2(dp(16.0f), dp(16.0f)));
+
+	// ESC / gamepad B closes without changing.  Check BEFORE Begin so
+	// the key is not consumed by a child input.  s_focusLetterPill is
+	// set so the caller re-focuses the trigger pill next frame.
+	bool closed = false;
+	auto close = [&]() {
+		s_letterPickerOpen = false;
+		s_focusLetterPill = true;
+		closed = true;
+	};
+
+	if (ImGui::Begin("##LetterPickerSheet", nullptr, flags)) {
+		// When the modal first appears, explicitly steal focus so
+		// gamepad / keyboard nav routes into the tile grid rather than
+		// staying on the (now-covered) pill that triggered us.  Touch
+		// and mouse don't rely on focus so this is a no-op for them,
+		// but it fixes a subtle issue where pressing A on the pill
+		// opened the modal yet the next A press would still click the
+		// pill underneath.
+		if (ImGui::IsWindowAppearing())
+			ImGui::SetWindowFocus();
+
+		if (!s_confirmActive && !s_infoModalOpen) {
+			if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)
+				|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
+			{
+				close();
+			}
+		}
+
+		// Title.  Palette-aware so it reads on both themes.
+		ImGui::PushStyleColor(ImGuiCol_Text,
+			ATMobileCol(pal.textTitle));
+		ImGui::TextUnformatted("Filter by letter");
+		ImGui::PopStyleColor();
+		ImGui::PushStyleColor(ImGuiCol_Text,
+			ATMobileCol(pal.textMuted));
+		ImGui::TextUnformatted("Pick a letter to narrow the game list.");
+		ImGui::PopStyleColor();
+		ImGui::Spacing();
+
+		// Grid geometry: tiles are square so rotation / landscape work
+		// without fiddling.  Column count auto-fits to window width so
+		// phones get a comfortable 4-5 cols, tablets / landscape 7-9.
+		float tileSz  = dp(64.0f);
+		float tilePad = dp(8.0f);
+		float availW  = ImGui::GetContentRegionAvail().x;
+		int   cols    = (int)((availW + tilePad) / (tileSz + tilePad));
+		if (cols < 3) cols = 3;
+
+		// Scrollable child in case a future device adds enough letters
+		// that the grid overflows (currently the max is 27 tiles plus
+		// "All", which fits, but clipping with ScrollY here is free).
+		// Reserve dp(72) for the Cancel row; clamp so a very short
+		// landscape window can't produce a negative / zero-height
+		// child (which would make tiles un-clickable).
+		float childH = ImGui::GetContentRegionAvail().y - dp(72.0f);
+		if (childH < dp(80.0f)) childH = dp(80.0f);
+		ImGui::BeginChild("##LetterPickerGrid", ImVec2(0, childH),
+			ImGuiChildFlags_None, ImGuiWindowFlags_NoSavedSettings);
+
+		// Build the list of tiles: "All" first, then every available
+		// letter.  Empty letters are simply skipped (not shown as
+		// disabled) so there are no dead targets to mis-tap.
+		struct Tile { int idx; const char *label; };
+		char letterLabels[27][2];
+		for (int i = 0; i < 26; ++i) {
+			letterLabels[i][0] = (char)('A' + i);
+			letterLabels[i][1] = '\0';
+		}
+		letterLabels[26][0] = '$';
+		letterLabels[26][1] = '\0';
+
+		std::vector<Tile> tiles;
+		tiles.push_back({ -1, "All" });
+		for (int i = 0; i < 27; ++i) {
+			if (s_availableLetters[i])
+				tiles.push_back({ i, letterLabels[i] });
+		}
+
+		int defaultFocusIdx = 0;
+		for (int i = 0; i < (int)tiles.size(); ++i) {
+			if (tiles[i].idx == s_letterFilterIdx) {
+				defaultFocusIdx = i;
+				break;
+			}
+		}
+
+		for (int i = 0; i < (int)tiles.size(); ++i) {
+			if (i > 0 && (i % cols) != 0)
+				ImGui::SameLine(0, tilePad);
+
+			const Tile &t = tiles[i];
+			bool active = (t.idx == s_letterFilterIdx);
+			ATTouchButtonStyle style = active
+				? ATTouchButtonStyle::Accent
+				: ATTouchButtonStyle::Neutral;
+
+			char btnId[16];
+			snprintf(btnId, sizeof(btnId), "%s##Ltp%d", t.label,
+				t.idx);
+
+			if (ATTouchButton(btnId, ImVec2(tileSz, tileSz), style)) {
+				s_letterFilterIdx = t.idx;
+				// Selecting a letter clears an in-progress search so
+				// the two filters never fight each other (same
+				// invariant the toolbar used to enforce).
+				s_searchBuf[0] = '\0';
+				s_searchFilter.clear();
+				s_searchActive = false;
+				s_needsRefresh = true;
+				close();
+			}
+			if (i == defaultFocusIdx && !closed)
+				ImGui::SetItemDefaultFocus();
+		}
+		ImGui::EndChild();
+
+		// Cancel row — always visible at the bottom so the user has an
+		// unambiguous "dismiss" path that doesn't rely on a keyboard.
+		// Neutral (not Subtle) so the button reads as a tappable surface
+		// on touch; Subtle was almost invisible against the modalBg.
+		ImGui::Spacing();
+		if (ATTouchButton("Cancel", ImVec2(-1, dp(48.0f)),
+			ATTouchButtonStyle::Neutral))
+		{
+			close();
+		}
+	}
+	ImGui::End();
+
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor();
+}
 
 // Variant picker popup
 static bool s_variantPickerOpen = false;
@@ -848,8 +1038,12 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// If search or variant picker is active, close it.
 		// If a game was running, return to it.
 		// Otherwise this IS the home screen — do nothing.
+		//
+		// When the letter picker modal is open it owns the back key —
+		// we must not also process it here, otherwise a single ESC
+		// press would close the modal AND pop the browser.
 		bool backPressed = false;
-		if (!s_confirmActive && !s_infoModalOpen) {
+		if (!s_confirmActive && !s_infoModalOpen && !s_letterPickerOpen) {
 			backPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
 			if (!ImGui::IsAnyItemActive()) {
 				backPressed = backPressed
@@ -876,14 +1070,62 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		// ── Row 1: Hardware info ─────────────────────────────────
+		// ── Row 1: Hardware info + top-right app chrome ──────────
+		// Settings (and Exit Gaming Mode on desktop) are app-level
+		// actions, not part of the "pick and boot a game" flow, so they
+		// sit right-aligned on the info row rather than competing with
+		// Boot Game / Boot Empty on Row 2.  This also frees Row 2 to
+		// fit comfortably in portrait orientation without clipping.
 		const ATMobilePalette &palBrowser = ATMobileGetPalette();
 		{
 			VDStringA hwInfo = BuildHardwareInfoStr(sim);
 			int gameCount = (int)s_allGamesIndices.size();
+
+			// Measure chrome buttons up front so we can right-align.
+			const float chromeH   = dp(36.0f);
+			const float chromePad = dp(16.0f);
+			float settingsW = ImGui::CalcTextSize("Settings").x
+				+ chromePad * 2;
+#ifndef __ANDROID__
+			float exitW = ImGui::CalcTextSize("Exit Gaming Mode").x
+				+ chromePad * 2;
+			float chromeW = settingsW + dp(6.0f) + exitW;
+#else
+			float chromeW = settingsW;
+#endif
+
+			float rowY = ImGui::GetCursorPosY();
 			ImGui::TextColored(ATMobileCol(palBrowser.textMuted),
 				"ALTIRRA  %s  (%d game%s)",
 				hwInfo.c_str(), gameCount, gameCount == 1 ? "" : "s");
+
+			// Right-align chrome on the same line as the info text.
+			// GetContentRegionMax() is window-relative (same coordinate
+			// space as SetCursorPos), which is what we need here.
+			float rightX = ImGui::GetContentRegionMax().x - chromeW;
+			ImGui::SameLine(0, 0);
+			ImGui::SetCursorPos(ImVec2(rightX, rowY));
+			if (ATTouchButton("Settings##chrome",
+				ImVec2(settingsW, chromeH)))
+			{
+				s_settingsPage = ATMobileSettingsPage::Home;
+				s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
+				mobileState.currentScreen = ATMobileUIScreen::Settings;
+			}
+#ifndef __ANDROID__
+			ImGui::SameLine(0, dp(6.0f));
+			if (ATTouchButton("Exit Gaming Mode##chrome",
+				ImVec2(exitW, chromeH)))
+			{
+				ATUISetMode(ATUIMode::Desktop);
+				ATUISaveMode();
+				float cs = SDL_GetDisplayContentScale(
+					SDL_GetDisplayForWindow(window));
+				if (cs < 1.0f) cs = 1.0f;
+				if (cs > 4.0f) cs = 4.0f;
+				ATUIApplyModeStyle(cs);
+			}
+#endif
 
 			if (s_gameLibrary->IsScanning()) {
 				int found = s_gameLibrary->GetScanProgress();
@@ -898,7 +1140,11 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		// ── Row 2: Action buttons ────────────────────────────────
+		// ── Row 2: Launch actions ────────────────────────────────
+		// Only the two hero actions live here now.  Grid/List, the
+		// letter filter, and search moved to Row 3 so this row stays
+		// comfortable in portrait orientation; Settings / Exit Gaming
+		// Mode moved to the Row 1 chrome.
 		const auto &libSettings = s_gameLibrary->GetSettings();
 		float btnH = dp(48.0f);
 		{
@@ -920,29 +1166,39 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				sim.ColdReset();
 				sim.Resume();
 			}
+		}
 
-			ImGui::SameLine();
+		// ── Row 3: View & Filter ─────────────────────────────────
+		// `Grid | List | Letter pill | Search` — one compact toolbar
+		// that stays on a single line in both portrait and landscape.
+		// The letter pill opens a full-screen grid picker (defined
+		// below) instead of the cramped inline row / combo that the
+		// previous revisions used; tiles are finger-sized and the grid
+		// only shows letters that actually have games.
+		static bool s_focusLetterBar = false;
+		bool letterBarHasFocus = false;
+		{
+			// Grid / List segmented toggle (kept identical to before so
+			// muscle memory carries over).  Treated as a single logical
+			// unit — both halves always share a row.
 			{
-				// Two-button segmented toggle so both view modes stay
-				// visible — the previous "flip the label" button hid
-				// the choice the user was about to make.  The Accent
-				// variant indicates the currently active mode.
 				bool isGrid = libSettings.mViewMode == 1;
 				float viewW = dp(56.0f);
+				float viewH = dp(36.0f);
 				auto setMode = [&](int mode) {
 					GameLibrarySettings settings = libSettings;
 					settings.mViewMode = mode;
 					s_gameLibrary->SetSettings(settings);
 					s_gameLibrary->SaveSettingsToRegistry();
 				};
-				if (ATTouchButton("Grid##view", ImVec2(viewW, btnH),
+				if (ATTouchButton("Grid##view", ImVec2(viewW, viewH),
 					isGrid ? ATTouchButtonStyle::Accent
 					       : ATTouchButtonStyle::Neutral))
 				{
 					if (!isGrid) setMode(1);
 				}
 				ImGui::SameLine(0, dp(2.0f));
-				if (ATTouchButton("List##view", ImVec2(viewW, btnH),
+				if (ATTouchButton("List##view", ImVec2(viewW, viewH),
 					!isGrid ? ATTouchButtonStyle::Accent
 					        : ATTouchButtonStyle::Neutral))
 				{
@@ -950,189 +1206,69 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 
-			ImGui::SameLine();
-			if (ATTouchButton("Settings", ImVec2(0, btnH))) {
-				s_settingsPage = ATMobileSettingsPage::Home;
-				s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
-				mobileState.currentScreen = ATMobileUIScreen::Settings;
-			}
-
-#ifndef __ANDROID__
-			ImGui::SameLine();
-			if (ATTouchButton("Exit Gaming Mode", ImVec2(0, btnH))) {
-				ATUISetMode(ATUIMode::Desktop);
-				ATUISaveMode();
-				float cs = SDL_GetDisplayContentScale(SDL_GetDisplayForWindow(window));
-				if (cs < 1.0f) cs = 1.0f;
-				if (cs > 4.0f) cs = 4.0f;
-				ATUIApplyModeStyle(cs);
-			}
-#endif
-		}
-
-		// ── Row 3: Letter filter bar + search (fixed, not scrolled) ──
-		static bool s_focusLetterBar = false;
-		bool letterBarHasFocus = false;
-		{
-			if (s_focusLetterBar) {
-				ImGui::SetKeyboardFocusHere(0);
-				s_focusLetterBar = false;
-			}
-
-#ifdef __ANDROID__
-			// On mobile, use a combo selector — letter buttons are too
-			// small for finger input.
+			// Letter filter pill.  Label reflects the current state so
+			// the user never has to open the picker just to see what's
+			// filtered.  Explicit ##id so the hash stays stable when
+			// the visible label changes between "All" / "A" / etc.
+			//
+			// Focus return: both s_focusLetterPill (set when the modal
+			// closes) and s_focusLetterBar (set by the list when Up is
+			// pressed at the top row) land on THIS widget rather than
+			// the Grid button — the pill is what the user conceptually
+			// "came from" in both cases, so SetKeyboardFocusHere(0)
+			// must fire immediately before ATTouchButton for the pill,
+			// not at the top of Row 3.
+			ImGui::SameLine(0, dp(8.0f));
 			{
-				const char *preview = "All";
-				char previewBuf[4] = {};
-				if (s_letterFilterIdx >= 0 && s_letterFilterIdx < 26) {
-					previewBuf[0] = 'A' + s_letterFilterIdx;
-					preview = previewBuf;
-				} else if (s_letterFilterIdx == 26) {
-					preview = "$";
+				char pillLabel[32];
+				if (s_letterFilterIdx < 0)
+					snprintf(pillLabel, sizeof(pillLabel),
+						"Letter: All##letterpill");
+				else if (s_letterFilterIdx < 26)
+					snprintf(pillLabel, sizeof(pillLabel),
+						"Letter: %c##letterpill",
+						'A' + s_letterFilterIdx);
+				else
+					snprintf(pillLabel, sizeof(pillLabel),
+						"Letter: $##letterpill");
+
+				if (s_focusLetterPill || s_focusLetterBar) {
+					// Bring the browser window to the front (in case
+					// the letter picker sheet was just closed — its
+					// window may still own focus) and focus the pill
+					// specifically.  SetWindowFocus() with no arg
+					// targets the current window, i.e. the browser.
+					ImGui::SetWindowFocus();
+					ImGui::SetKeyboardFocusHere(0);
+					s_focusLetterPill = false;
+					s_focusLetterBar = false;
 				}
 
-				float comboW = dp(100.0f);
-				ImGui::SetNextItemWidth(comboW);
-				if (ImGui::BeginCombo("##LetterFilter", preview)) {
-					if (ImGui::Selectable("All",
-						s_letterFilterIdx == -1))
-					{
-						s_letterFilterIdx = -1;
-						s_needsRefresh = true;
-					}
-					for (int i = 0; i < 27; ++i) {
-						bool avail = s_availableLetters[i];
-						if (!avail) ImGui::BeginDisabled();
-						char label[4];
-						if (i < 26) {
-							label[0] = 'A' + i;
-							label[1] = '\0';
-						} else {
-							label[0] = '$';
-							label[1] = '\0';
-						}
-						if (ImGui::Selectable(label,
-							s_letterFilterIdx == i))
-						{
-							s_letterFilterIdx = i;
-							s_searchBuf[0] = '\0';
-							s_searchFilter.clear();
-							s_searchActive = false;
-							s_needsRefresh = true;
-						}
-						if (!avail) ImGui::EndDisabled();
-					}
-					ImGui::EndCombo();
+				// Fix the pill width against the longest possible label
+				// so the adjacent Search control doesn't hop by a few
+				// pixels when the user switches between "All" (long)
+				// and "A" (short).
+				float pillH = dp(36.0f);
+				float pillW = ImGui::CalcTextSize("Letter: All").x
+					+ dp(32.0f);
+				ATTouchButtonStyle pillStyle = (s_letterFilterIdx >= 0)
+					? ATTouchButtonStyle::Accent
+					: ATTouchButtonStyle::Neutral;
+				if (ATTouchButton(pillLabel, ImVec2(pillW, pillH),
+					pillStyle))
+				{
+					s_letterPickerOpen = true;
 				}
 				if (ImGui::IsItemFocused())
 					letterBarHasFocus = true;
-
-				ImGui::SameLine(0, dp(6.0f));
 			}
-#else
-			// Base chip colours so inactive letters AND the search
-			// button adopt the same segmented-bar surface as the rest
-			// of Gaming Mode on both themes (ImGui's default Button is
-			// tinted blue regardless of theme and looked out of place
-			// against the palette-aware cards).  Popped at the end of
-			// the search-button block below.
-			ImGui::PushStyleColor(ImGuiCol_Button,
-				ATMobileCol(palBrowser.segBgInactive));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-				ATMobileCol(palBrowser.segBgHover));
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-				ATMobileCol(palBrowser.accentPressed));
-			ImGui::PushStyleColor(ImGuiCol_Text,
-				ATMobileCol(palBrowser.text));
 
-			// On desktop, use letter buttons that wrap to the next row
-			// when they don't fit the available width.
-			{
-				float letterPad = dp(2.0f);
-				float letterBtnSz = dp(26.0f);
-				float maxX = ImGui::GetWindowPos().x
-					+ ImGui::GetWindowContentRegionMax().x;
-
-				ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,
-					dp(3.0f));
-				ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-					ImVec2(0, 0));
-
-				for (int i = 0; i < 27; ++i) {
-					if (i > 0) {
-						float lastRight = ImGui::GetItemRectMax().x;
-						if (lastRight + letterPad + letterBtnSz
-							<= maxX)
-							ImGui::SameLine(0, letterPad);
-					}
-
-					char label[8];
-					if (i < 26) {
-						label[0] = 'A' + i;
-						label[1] = '\0';
-					} else {
-						label[0] = '$';
-						label[1] = '\0';
-					}
-
-					bool avail = s_availableLetters[i];
-					bool active = (s_letterFilterIdx == i);
-
-					if (!avail)
-						ImGui::BeginDisabled();
-					if (active) {
-						ImGui::PushStyleColor(ImGuiCol_Button,
-							ATMobileCol(palBrowser.accent));
-						ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-							ATMobileCol(palBrowser.accentHover));
-						ImGui::PushStyleColor(ImGuiCol_Text,
-							ATMobileCol(palBrowser.textOnAccent));
-					}
-
-					char btnId[8];
-					snprintf(btnId, sizeof(btnId), "%s##L%d",
-						label, i);
-					if (ImGui::Button(btnId,
-						ImVec2(letterBtnSz, letterBtnSz)))
-					{
-						if (active) {
-							s_letterFilterIdx = -1;
-						} else {
-							s_letterFilterIdx = i;
-							s_searchBuf[0] = '\0';
-							s_searchFilter.clear();
-							s_searchActive = false;
-						}
-						s_needsRefresh = true;
-					}
-					if (ImGui::IsItemFocused())
-						letterBarHasFocus = true;
-
-					if (active)
-						ImGui::PopStyleColor(3);
-					if (!avail)
-						ImGui::EndDisabled();
-				}
-
-				// Base chip colours stay pushed through the search
-				// button below so it matches the letter bar visually.
-				ImGui::PopStyleVar(2);
-
-				// Search button on the same wrapping row
-				{
-					float lastRight = ImGui::GetItemRectMax().x;
-					if (lastRight + dp(6.0f) + dp(26.0f) <= maxX)
-						ImGui::SameLine(0, dp(6.0f));
-				}
-			}
-			// Note: base chip colours are popped at the end of the
-			// Search block below.
-#endif
-
-			// Search button / bar
+			// Search button / bar.  Behaviour is unchanged from the
+			// previous implementation; only the geometry is tightened
+			// so it fits on the same row as the other Row 3 controls.
 			static bool s_focusSearchInput = false;
-			float searchBtnSz = dp(26.0f);
+			ImGui::SameLine(0, dp(8.0f));
+			float searchBtnSz = dp(36.0f);
 			if (s_searchActive) {
 				if (s_focusSearchInput) {
 					ImGui::SetKeyboardFocusHere(0);
@@ -1165,7 +1301,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					s_searchActive = false;
 				}
 			} else {
-				if (ImGui::Button("?##search", ImVec2(searchBtnSz, searchBtnSz))) {
+				if (ATTouchButton("Search##search",
+					ImVec2(0, searchBtnSz)))
+				{
 					s_searchActive = true;
 					s_focusSearchInput = true;
 					s_searchBuf[0] = '\0';
@@ -1176,8 +1314,12 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				if (ImGui::IsItemFocused())
 					letterBarHasFocus = true;
 
-				if (!s_variantPickerOpen && !ImGui::IsAnyItemActive()) {
-					if (ImGui::IsKeyPressed(ImGuiKey_F, false) && io.KeyCtrl) {
+				if (!s_variantPickerOpen && !s_letterPickerOpen
+					&& !ImGui::IsAnyItemActive())
+				{
+					if (ImGui::IsKeyPressed(ImGuiKey_F, false)
+						&& io.KeyCtrl)
+					{
 						s_searchActive = true;
 						s_focusSearchInput = true;
 						s_searchBuf[0] = '\0';
@@ -1186,7 +1328,11 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 						s_needsRefresh = true;
 					}
 
-					// Type any letter to open search with that letter
+					// Type any letter (no modifier) to open search
+					// pre-filled with that letter — unchanged from the
+					// previous behaviour.  Suppressed while the letter
+					// picker is open so the letter goes to the modal's
+					// quick-jump instead of bouncing into search.
 					for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k) {
 						if (ImGui::IsKeyPressed((ImGuiKey)k, false)
 							&& !io.KeyCtrl && !io.KeyAlt)
@@ -1204,11 +1350,6 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					}
 				}
 			}
-
-#ifndef __ANDROID__
-			// Pop the 4 base chip colours pushed before the letter bar.
-			ImGui::PopStyleColor(4);
-#endif
 		}
 
 		ImGui::Separator();
@@ -1473,4 +1614,5 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 	// Overlays
 	RenderVariantPicker(sim, mobileState);
+	RenderLetterPickerModal(io);
 }

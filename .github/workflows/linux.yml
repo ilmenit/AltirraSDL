@@ -197,6 +197,25 @@ jobs:
       - name: List downloaded artifacts
         run: ls -lh dist/
 
+      # Force-move the rolling `nightly` tag to the commit that was just
+      # built so GitHub regenerates the "Source code (zip/tar.gz)"
+      # archives from the current `main`. Runs only after `appimage`
+      # builds succeeded (see `needs:` above). `github.sha` is identical
+      # across every workflow triggered by the same push, so concurrent
+      # PATCHes from multiple workflows converge on the same target SHA
+      # (idempotent, no race). PATCH updates the ref if it exists; the
+      # POST fallback creates it on a first-ever run.
+      - name: Move nightly tag to current commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
+            -f "sha=${GITHUB_SHA}" -F "force=true" \
+          || gh api --method POST \
+               "repos/${GITHUB_REPOSITORY}/git/refs" \
+               -f "ref=refs/tags/nightly" -f "sha=${GITHUB_SHA}"
+
       - name: Update rolling nightly release
         uses: softprops/action-gh-release@v2
         with:
