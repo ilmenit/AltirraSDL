@@ -769,9 +769,15 @@ func expireLoop() {
 - **`Dockerfile`** and **`docker-compose.yml`** for container
   operators; image size ~10 MB.
 - **`altirra-lobby.service`** systemd unit for VPS operators.
-- **One-click deploy buttons** in the README: *Deploy to Render*,
-  *Deploy to Railway*, *Deploy to fly.io* — each free-tier
-  compatible, no billing card required.
+- **One-click deploy buttons** in the README: *Deploy to Koyeb*
+  (recommended default), *Deploy to Railway*, *Deploy to fly.io*,
+  *Deploy to Render* — each free-tier compatible, no billing card
+  required.  **Koyeb is the recommended default** because its free
+  "Eco" tier (512 MB / 0.1 vCPU / 100 GB egress / month) keeps the
+  instance always-on with no aggressive sleep, so the in-memory
+  session table survives indefinitely between requests.  Render and
+  fly.io spin free instances down on idle, which makes the first
+  `GET /v1/sessions` of the day slow.
 - **Operator quickstart** in `server/altirra-lobby/README.md`
   covering all of the above on one page.
 
@@ -785,6 +791,45 @@ listening on :8080, max sessions 1000, ttl 90s
 ```
 
 That is the entire setup.  The operator now has a lobby.
+
+**Dedicated repository.**  The reference server lives in its own
+GitHub repository (`altirra-sdl-lobby`) as a sibling to the
+`AltirraSDL` repo, *not* as a subdirectory.  The separation is
+deliberate:
+
+- **PaaS ergonomics.**  Koyeb, Railway, Render, and fly.io all expect
+  the service at the repository root with its own `Dockerfile` and
+  `go.mod`.  Sibling repo = "fork, click Deploy, you're in the
+  federation" with zero config.  A subdirectory deploy works but
+  adds friction that defeats the whole pitch.
+- **Release cadence.**  The emulator ships feature releases; the
+  lobby protocol is stable for months at a time.  Decoupled versioning
+  avoids accidental coupling.
+- **License clarity.**  The server is small and Go-stdlib-only; keeping
+  it separate removes any question about GPL transitivity for people
+  who want to fork only the server.
+- **Contributor surface.**  Someone who wants to host a node clones
+  ~150 lines, not a 520 K-line emulator.
+- **CI isolation.**  The server repo can publish tagged Docker images
+  to `ghcr.io` on every release without touching the emulator's CI.
+
+Minimal layout of `altirra-sdl-lobby/`:
+
+```
+altirra-sdl-lobby/
+  main.go              # ~150 lines, stdlib only
+  go.mod
+  Dockerfile           # FROM scratch + static binary
+  README.md            # deploy buttons: Koyeb, Railway, fly.io, Docker
+  lobby.example.toml   # peer config (optional federation metadata)
+  .github/workflows/
+    build.yml          # cross-compile release binaries
+    docker.yml         # push image to ghcr.io
+```
+
+The Altirra main repo references the lobby repo from this design
+document and from `community-lobbies.md`; the two projects are
+otherwise independent.
 
 **No server-to-server protocol.**  Lobbies do not talk to each other.
 Federation happens entirely in the client, which queries every URL in
