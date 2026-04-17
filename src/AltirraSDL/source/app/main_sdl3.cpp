@@ -1012,7 +1012,16 @@ static void SyncScreenFXToBackend() {
 	// When all accel effects are disabled, mpScreenFX is null and
 	// HasScreenFX() returns false — we must still push a default (all-off)
 	// state to the backend so it stops rendering stale effects.
-	if (g_pDisplay->HasScreenFX()) {
+	//
+	// When the user picks View > Screen Effects > (None), bypass the GTIA
+	// FX entirely and push an identity state regardless of what the core
+	// produced this frame — the ATArtifactingParams values are retained
+	// in GTIA so the user's bloom/distortion/etc. settings survive the
+	// None → Basic round trip.
+	const bool effectsDisabled =
+		(g_uiState.screenEffectsMode == ATUIState::kSFXMode_None);
+
+	if (!effectsDisabled && g_pDisplay->HasScreenFX()) {
 		g_pBackend->UpdateScreenFX(g_pDisplay->GetLastScreenFX());
 	} else {
 		// Push an all-off state so the backend stops rendering stale effects.
@@ -1565,6 +1574,14 @@ int main(int argc, char *argv[]) {
 		ATLoadConfigVars();
 	}
 	ATOptionsLoad();
+
+	// Re-apply the ImGui theme now that g_ATOptions.mThemeMode reflects
+	// the user's saved choice.  ATUIInit() above already called
+	// ATUIApplyTheme() once, but at that point the options were still at
+	// their compile-time defaults (Light), so a persisted Dark selection
+	// never took effect on startup — the options page would show "Dark"
+	// while the UI rendered Light until the user toggled it manually.
+	ATUIApplyTheme();
 
 	// Load default profiles and then restore the last active profile.
 	// Windows does this at main.cpp:3941-3979.  ATSettingsLoadLastProfile()

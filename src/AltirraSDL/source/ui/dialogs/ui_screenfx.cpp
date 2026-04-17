@@ -49,6 +49,8 @@ static void RenderMainPage(ATGTIAEmulator &gtia, ATArtifactingParams &params, bo
 		}
 	}
 
+	ImGui::BeginDisabled(!gtia.AreScanlinesEnabled());
+
 	// Scanline intensity: ticks 0-8, displayed as percentage
 	{
 		int tick = (int)(params.mScanlineIntensity * 8.0f + 0.5f);
@@ -61,14 +63,47 @@ static void RenderMainPage(ATGTIAEmulator &gtia, ATArtifactingParams &params, bo
 		}
 	}
 
+	ImGui::EndDisabled();
+
 	ImGui::Spacing();
 
-	// Distortion X view angle (0-180 degrees)
+	// Distortion enable — the renderer treats mDistortionViewAngleX == 0
+	// as "off" (gtia.cpp: `distortionEnabled = ap.mDistortionViewAngleX > 0`).
+	// Track the last enabled X/Y so toggling doesn't wipe the user's
+	// tuned values.  Defaults match ATArtifactingParams::GetDefault().
+	// Y is saved as-is — Y=0 is a legitimate "horizontal-only" distortion.
+	static float sSavedDistortionX = 35.0f;
+	static float sSavedDistortionY = 0.90f;
+
+	bool distortionEnabled = params.mDistortionViewAngleX > 0.0f;
+	if (ImGui::Checkbox("Enable Distortion", &distortionEnabled)) {
+		if (distortionEnabled) {
+			params.mDistortionViewAngleX = sSavedDistortionX > 0.0f ? sSavedDistortionX : 35.0f;
+			params.mDistortionYRatio     = sSavedDistortionY;
+		} else {
+			// Only capture on an active → inactive transition; guards
+			// against a no-op second disable clobbering the saved pair
+			// with (0, 0).
+			if (params.mDistortionViewAngleX > 0.0f) {
+				sSavedDistortionX = params.mDistortionViewAngleX;
+				sSavedDistortionY = params.mDistortionYRatio;
+			}
+			params.mDistortionViewAngleX = 0.0f;
+			params.mDistortionYRatio     = 0.0f;
+		}
+		changed = true;
+	}
+
+	ImGui::BeginDisabled(!distortionEnabled);
+
+	// Distortion X view angle (0-120 degrees)
 	{
 		float angle = params.mDistortionViewAngleX;
 		ImGui::Text("Distortion X View Angle: %.0f\u00B0", angle);
-		if (ImGui::SliderFloat("##DistortionX", &angle, 0.0f, 180.0f, "")) {
+		if (ImGui::SliderFloat("##DistortionX", &angle, 0.0f, 120.0f, "")) {
 			params.mDistortionViewAngleX = angle;
+			if (angle > 0.0f)
+				sSavedDistortionX = angle;
 			changed = true;
 		}
 	}
@@ -80,9 +115,14 @@ static void RenderMainPage(ATGTIAEmulator &gtia, ATArtifactingParams &params, bo
 		ImGui::Text("Distortion Y Ratio: %.0f%%", ratio);
 		if (ImGui::SliderFloat("##DistortionY", &ratio, 0.0f, 200.0f, "")) {
 			params.mDistortionYRatio = ratio / 100.0f;
+			// Slider is reachable only when distortion is enabled, so the
+			// current Y — including 0 — is the user's live preference.
+			sSavedDistortionY = params.mDistortionYRatio;
 			changed = true;
 		}
 	}
+
+	ImGui::EndDisabled();
 }
 
 static void RenderVignettePage(ATArtifactingParams &params, bool &changed) {
