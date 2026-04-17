@@ -79,7 +79,8 @@ static bool s_letterPickerOpen = false;
 static bool s_focusLetterPill = false;
 
 static void ComputeAvailableLetters();
-static void RenderLetterPickerModal(ImGuiIO &io);
+static void RenderLetterPickerModal(ImGuiIO &io,
+	const ATMobileUIState &mobileState);
 
 void GameBrowser_Init() {
 	if (s_gameLibrary)
@@ -417,7 +418,9 @@ static const char *RelativeTimeStr(uint64_t timestamp) {
 //   - ESC / B / Cancel tile    → close without changing
 //   - Arrow keys / D-pad       → move between tiles
 // Closing the modal restores focus to the pill that opened it.
-static void RenderLetterPickerModal(ImGuiIO &io) {
+static void RenderLetterPickerModal(ImGuiIO &io,
+	const ATMobileUIState &mobileState)
+{
 	if (!s_letterPickerOpen) return;
 
 	const ATMobilePalette &pal = ATMobileGetPalette();
@@ -428,12 +431,21 @@ static void RenderLetterPickerModal(ImGuiIO &io) {
 	// — including the browser whose content we're trying to cover —
 	// and be invisible.  The sheet's own WindowBg does the job.
 
-	// Sheet covers the full window so the tiles are as big as possible
-	// on phones.  On wide desktop windows we could cap the width, but
-	// a consistent full-screen picker also avoids the "click outside
-	// to cancel" problem — the user either picks a tile or taps Cancel.
-	ImGui::SetNextWindowPos(ImVec2(0, 0));
-	ImGui::SetNextWindowSize(io.DisplaySize);
+	// Sheet covers the safe area so the tiles are as big as possible on
+	// phones while staying clear of the Android status bar and gesture
+	// nav.  Earlier this used the full io.DisplaySize, which pushed the
+	// title under the status bar and the Cancel row under the home-bar
+	// on devices with display cutouts or bottom gesture insets.  Match
+	// the inset math used by the Game Library / File Browser / Settings
+	// screens so the whole mobile UI feels consistent.
+	float insetT = (float)mobileState.layout.insets.top;
+	float insetB = (float)mobileState.layout.insets.bottom;
+	float insetL = (float)mobileState.layout.insets.left;
+	float insetR = (float)mobileState.layout.insets.right;
+	ImGui::SetNextWindowPos(ImVec2(insetL, insetT));
+	ImGui::SetNextWindowSize(ImVec2(
+		io.DisplaySize.x - insetL - insetR,
+		io.DisplaySize.y - insetT - insetB));
 
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
@@ -1614,5 +1626,5 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 	// Overlays
 	RenderVariantPicker(sim, mobileState);
-	RenderLetterPickerModal(io);
+	RenderLetterPickerModal(io, mobileState);
 }

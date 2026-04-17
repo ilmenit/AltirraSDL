@@ -43,6 +43,7 @@
 #include "mobile_internal.h"
 #include "mobile_gamepad.h"
 #include "ui_virtual_keyboard.h"
+#include "../gamelibrary/game_library.h"
 #include "ui_emuerror.h"
 
 extern ATSimulator g_sim;
@@ -204,6 +205,13 @@ int s_romScanResult = -1;  // -1 = no scan yet, 0+ = number of ROMs found
 bool s_folderPickerMode = false;
 std::function<void(const VDStringW &)> s_folderPickerCallback;
 ATMobileUIScreen s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
+
+// Archive-file-picker mode — used by Game Library settings to select a
+// single archive file (ZIP/ATZ/GZ/ARC) as a game source.  Tapping a ZIP
+// selects it rather than entering it.
+bool s_archiveFilePickerMode = false;
+std::function<void(const VDStringW &)> s_archiveFilePickerCallback;
+ATMobileUIScreen s_archiveFilePickerReturnScreen = ATMobileUIScreen::Settings;
 
 // Zip-as-folder browsing — when s_zipArchivePath is non-empty, the file
 // browser shows contents of that zip archive instead of the filesystem.
@@ -408,6 +416,15 @@ void RefreshFileBrowser(const VDStringW &dir) {
 		if (ctx->romMode) {
 			if (entry.isDirectory)
 				ctx->entries->push_back(std::move(entry));
+		} else if (s_archiveFilePickerMode) {
+			// Only directories and archive files are selectable/visible
+			// when the user is picking a ZIP archive — hide stray games
+			// so the list is focused on the task.
+			if (entry.isDirectory
+				|| IsArchiveExtension(entry.name.c_str()))
+			{
+				ctx->entries->push_back(std::move(entry));
+			}
 		} else {
 			if (entry.isDirectory || s_showAllFiles || IsSupportedExtension(entry.name.c_str()))
 				ctx->entries->push_back(std::move(entry));

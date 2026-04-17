@@ -794,6 +794,13 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			if (ATTouchButton("+ Add Folder", ImVec2(-1, dp(44.0f)),
 				ATTouchButtonStyle::Accent))
 			{
+				// Drop any sticky zip-browsing state so the folder
+				// picker opens on the real filesystem, and make sure
+				// no other picker mode is still armed.
+				s_zipArchivePath.clear();
+				s_zipInternalDir.clear();
+				s_archiveFilePickerMode = false;
+				s_archiveFilePickerCallback = nullptr;
 				s_folderPickerMode = true;
 				s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
 				s_folderPickerCallback = [](const VDStringW &path) {
@@ -868,63 +875,42 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			if (ATTouchButton("+ Add Archive (ZIP)",
 				ImVec2(-1, dp(44.0f)), ATTouchButtonStyle::Accent))
 			{
-				s_folderPickerMode = true;
-				s_folderPickerReturnScreen = ATMobileUIScreen::Settings;
-				s_folderPickerCallback = [](const VDStringW &path) {
-					// The user selected a folder — scan it for .zip files
-					// and add each as an archive source. If the folder
-					// itself is selected, it contains the archives.
+				// Archive-file-picker mode — the user selects a single
+				// archive file (.zip/.atz/.gz/.arc).  Tapping the archive
+				// does NOT enter it; the callback receives the ZIP's path.
+				// Clear any leftover zip-browsing state so the picker
+				// opens on the real filesystem, not a zip the user had
+				// drilled into during a prior Load Game session, and
+				// make sure no other picker mode is still armed.
+				s_zipArchivePath.clear();
+				s_zipInternalDir.clear();
+				s_folderPickerMode = false;
+				s_folderPickerCallback = nullptr;
+				s_archiveFilePickerMode = true;
+				s_archiveFilePickerReturnScreen =
+					ATMobileUIScreen::Settings;
+				s_archiveFilePickerCallback =
+					[](const VDStringW &archivePath)
+				{
 					ATGameLibrary *lib = GetGameLibrary();
 					if (!lib) return;
 
-					// Walk the selected folder for .zip/.gz/.atz files
-					VDStringA dirU8 = VDTextWToU8(path);
-					struct Ctx {
-						VDStringW baseDir;
-						std::vector<GameSource> newSources;
-					} ctx;
-					ctx.baseDir = path;
-					if (!ctx.baseDir.empty() && ctx.baseDir.back() != L'/')
-						ctx.baseDir += L'/';
-
-					SDL_EnumerateDirectory(dirU8.c_str(),
-						[](void *ud, const char *dirname, const char *fname)
-							-> SDL_EnumerationResult
-						{
-							auto *ctx = (Ctx *)ud;
-							VDStringW wname = VDTextU8ToW(VDStringA(fname));
-							VDStringW fullPath = ctx->baseDir + wname;
-							if (IsSupportedGameExtension(wname.c_str())) {
-								const wchar_t *ext = wcsrchr(wname.c_str(), L'.');
-								if (ext) {
-									ext++;
-									VDStringW e;
-									for (const wchar_t *p = ext; *p; ++p)
-										e += (wchar_t)std::towlower(*p);
-									if (e == L"zip" || e == L"gz"
-										|| e == L"atz" || e == L"arc")
-									{
-										GameSource src;
-										src.mPath = fullPath;
-										src.mbIsArchive = true;
-										ctx->newSources.push_back(
-											std::move(src));
-									}
-								}
-							}
-							return SDL_ENUM_CONTINUE;
-						}, &ctx);
-
-					if (!ctx.newSources.empty()) {
-						auto sources = lib->GetSources();
-						for (auto &ns : ctx.newSources)
-							sources.push_back(std::move(ns));
-						lib->SetSources(std::move(sources));
-						lib->SaveSettingsToRegistry();
-						lib->StartScan();
-						extern void ATRegistryFlushToDisk();
-						ATRegistryFlushToDisk();
+					// Skip if this archive is already in the list.
+					auto sources = lib->GetSources();
+					for (const auto &s : sources) {
+						if (s.mbIsArchive && s.mPath == archivePath)
+							return;
 					}
+
+					GameSource src;
+					src.mPath = archivePath;
+					src.mbIsArchive = true;
+					sources.push_back(std::move(src));
+					lib->SetSources(std::move(sources));
+					lib->SaveSettingsToRegistry();
+					lib->StartScan();
+					extern void ATRegistryFlushToDisk();
+					ATRegistryFlushToDisk();
 				};
 				s_settingsPage = ATMobileSettingsPage::GameLibrary;
 				s_fileBrowserNeedsRefresh = true;

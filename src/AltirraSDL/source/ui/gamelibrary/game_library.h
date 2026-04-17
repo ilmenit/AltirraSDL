@@ -61,6 +61,7 @@ struct CachedSourceInfo {
 GameMediaType ClassifyExtension(const wchar_t *ext);
 bool IsSupportedGameExtension(const wchar_t *name);
 bool IsSupportedImageExtension(const wchar_t *name);
+bool IsArchiveExtension(const wchar_t *name);
 VDStringW ExtractCanonicalName(const VDStringW &baseNameNoExt);
 VDStringW CleanDisplayName(const VDStringW &name);
 VDStringW BuildVariantLabel(const VDStringW &baseNameNoExt,

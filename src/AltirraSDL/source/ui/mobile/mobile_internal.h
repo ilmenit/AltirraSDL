@@ -59,6 +59,16 @@ extern bool s_folderPickerMode;
 extern std::function<void(const VDStringW &)> s_folderPickerCallback;
 extern ATMobileUIScreen s_folderPickerReturnScreen;
 
+// Archive-file-picker mode: when set, the file browser lets the user
+// navigate directories and tap a single archive file (.zip/.atz/.gz/.arc)
+// to select it.  Tapping a ZIP does NOT enter the archive; it invokes
+// the callback with the ZIP's full path and returns to
+// s_archiveFilePickerReturnScreen.  Directories still navigate normally
+// so the user can browse to the archive's location.
+extern bool s_archiveFilePickerMode;
+extern std::function<void(const VDStringW &)> s_archiveFilePickerCallback;
+extern ATMobileUIScreen s_archiveFilePickerReturnScreen;
+
 extern VDStringW s_zipArchivePath;
 extern VDStringW s_zipInternalDir;
 

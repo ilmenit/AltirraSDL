@@ -42,6 +42,7 @@
 
 #include "mobile_internal.h"
 #include "options.h"
+#include "../gamelibrary/game_library.h"
 
 extern ATSimulator g_sim;
 extern ATOptions g_ATOptions;
@@ -114,6 +115,24 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		ATAndroid_RequestStoragePermission();
 		SetPermissionAsked();
 	}
+
+	// Detect "permission just granted" transitions every frame.  Relying
+	// on SDL_EVENT_DID_ENTER_FOREGROUND is unreliable for the
+	// MANAGE_EXTERNAL_STORAGE flow: some OEM skins/overlays grant access
+	// without fully backgrounding the app, or fire the foreground event
+	// before the user has actually returned.  Polling the JNI call each
+	// frame (it is cheap) catches every grant scenario.  When the state
+	// flips from denied → granted, force a re-enumeration so the
+	// previously-hidden files in /sdcard/Download (and other user
+	// folders) show up without the user having to navigate away and
+	// back or re-open the browser.
+	{
+		static bool s_prevStoragePermission = true;
+		bool curPerm = ATAndroid_HasStoragePermission();
+		if (curPerm && !s_prevStoragePermission)
+			s_fileBrowserNeedsRefresh = true;
+		s_prevStoragePermission = curPerm;
+	}
 #endif
 	if (s_fileBrowserNeedsRefresh)
 		RefreshFileBrowser(s_fileBrowserDir);
@@ -163,6 +182,11 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					s_folderPickerMode = false;
 					s_folderPickerCallback = nullptr;
 					mobileState.currentScreen = s_folderPickerReturnScreen;
+				} else if (s_archiveFilePickerMode) {
+					s_archiveFilePickerMode = false;
+					s_archiveFilePickerCallback = nullptr;
+					s_fileBrowserNeedsRefresh = true;
+					mobileState.currentScreen = s_archiveFilePickerReturnScreen;
 				} else if (s_romFolderMode) {
 					s_romFolderMode = false;
 					mobileState.currentScreen = ATMobileUIScreen::Settings;
@@ -186,6 +210,11 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				s_folderPickerMode = false;
 				s_folderPickerCallback = nullptr;
 				mobileState.currentScreen = s_folderPickerReturnScreen;
+			} else if (s_archiveFilePickerMode) {
+				s_archiveFilePickerMode = false;
+				s_archiveFilePickerCallback = nullptr;
+				s_fileBrowserNeedsRefresh = true;
+				mobileState.currentScreen = s_archiveFilePickerReturnScreen;
 			} else if (s_romFolderMode) {
 				s_romFolderMode = false;
 				mobileState.currentScreen = ATMobileUIScreen::Settings;
@@ -203,6 +232,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			title = mountTitle;
 		} else if (s_folderPickerMode) {
 			title = "Select Folder";
+		} else if (s_archiveFilePickerMode) {
+			title = "Select ZIP Archive";
 		} else if (s_romFolderMode) {
 			title = "Select Firmware Folder";
 		} else {
@@ -477,7 +508,9 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 
 			// --- "All" toggle (show all files vs. supported only) ---
-			if (!s_romFolderMode && !s_folderPickerMode) {
+			if (!s_romFolderMode && !s_folderPickerMode
+				&& !s_archiveFilePickerMode)
+			{
 				float allW = ImGui::CalcTextSize("All (*)").x
 					+ dp(16.0f) * 2.0f;
 				sameLineIfFits(allW);
@@ -554,6 +587,50 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 
 		ImGui::Separator();
 
+		// Banner: when browsing inside a ZIP the rows look like a
+		// normal folder listing, which can mislead the user into
+		// thinking they're still on disk.  Render a distinctive
+		// accent-tinted strip naming the archive so the context is
+		// unmistakable, and hint that "..//back" exits the archive.
+		if (!s_zipArchivePath.empty()) {
+			const ATMobilePalette &zbPal = ATMobileGetPalette();
+			ImVec4 bannerBg = ATMobileCol(zbPal.accent);
+			bannerBg.w = zbPal.dark ? 0.25f : 0.14f;
+			ImGui::PushStyleColor(ImGuiCol_ChildBg, bannerBg);
+			ImGui::PushStyleColor(ImGuiCol_Border,
+				ATMobileCol(zbPal.accent));
+			ImGui::BeginChild("ZipBanner", ImVec2(0, 0),
+				ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY
+					| ImGuiChildFlags_NavFlattened);
+			VDStringA zipName = VDTextWToU8(
+				VDStringW(VDFileSplitPath(s_zipArchivePath.c_str())));
+			VDStringA intDir = VDTextWToU8(s_zipInternalDir);
+			ImGui::Spacing();
+			ImGui::TextColored(ATMobileCol(zbPal.accent),
+				"Inside archive: %s", zipName.c_str());
+			if (!intDir.empty()) {
+				ImGui::PushStyleColor(ImGuiCol_Text,
+					ATMobileCol(zbPal.textMuted));
+				ImGui::Text("  /%s", intDir.c_str());
+				ImGui::PopStyleColor();
+			}
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				ATMobileCol(zbPal.textMuted));
+			const char *hint;
+			if (s_diskMountTargetDrive >= 0)
+				hint = "Tap a disk image to mount it, or use "
+					"\"<\" / \"..\" to leave the archive.";
+			else
+				hint = "Tap a game to boot it, or use \"<\" / "
+					"\"..\" to leave the archive.";
+			ImGui::TextWrapped("%s", hint);
+			ImGui::PopStyleColor();
+			ImGui::Spacing();
+			ImGui::EndChild();
+			ImGui::PopStyleColor(2);
+			ImGui::Spacing();
+		}
+
 		// File/directory list
 		// Touch scrolling: ImGui's default Selectable + child-scroll
 		// interaction swallows the first press and highlights the row,
@@ -582,21 +659,45 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			const FileBrowserEntry &entry = s_fileBrowserEntries[i];
 			VDStringA nameU8 = VDTextWToU8(VDStringW(entry.name));
 
+			// A ZIP behaves as a *container* (tap = drill into it) only in
+			// the modes where drilling actually makes sense: normal Load
+			// Game and Disk-Mount both browse the archive to pick an
+			// entry inside.  In archive-file-picker mode a ZIP is a leaf
+			// selection.  In folder-picker and ROM-folder modes the user
+			// is picking a filesystem folder, so a ZIP is not a valid
+			// target at all — don't signal it as navigable with [ZIP] /
+			// chevron / drill-in tap.
+			bool zipAsContainer = !insideZip
+				&& !s_archiveFilePickerMode
+				&& !s_folderPickerMode
+				&& !s_romFolderMode
+				&& IsZipFile(entry.name.c_str());
+
 			char label[512];
 			if (entry.isDirectory)
 				snprintf(label, sizeof(label), "[DIR] %s", nameU8.c_str());
-			else if (!insideZip && IsZipFile(entry.name.c_str()))
+			else if (zipAsContainer)
 				snprintf(label, sizeof(label), "[ZIP] %s", nameU8.c_str());
 			else
 				snprintf(label, sizeof(label), "      %s", nameU8.c_str());
 
+			// Make the "tap opens the archive" contract explicit so the
+			// user doesn't expect a direct boot.  Only shown outside of
+			// an already-opened ZIP and only in modes that actually
+			// drill into the archive on tap.
+			const char *subtitle = nullptr;
+			if (zipAsContainer) {
+				subtitle = (s_diskMountTargetDrive >= 0)
+					? "Archive — tap to browse contents"
+					: "Archive — tap to open contents";
+			}
+
 			ImGui::PushID((int)i);
 			bool activated = ATTouchListItem(
 				label,
-				nullptr,
+				subtitle,
 				(int)i == mobileState.selectedFileIdx,
-				entry.isDirectory
-					|| (!insideZip && IsZipFile(entry.name.c_str())));
+				entry.isDirectory || zipAsContainer);
 			// ATTouchListItem already suppresses activation during
 			// a drag-scroll beyond the tap-slop, so no extra check
 			// is required here.
@@ -611,9 +712,29 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					}
 					s_fileBrowserNeedsRefresh = true;
 					mobileState.selectedFileIdx = -1;
+				} else if (s_archiveFilePickerMode
+					&& IsArchiveExtension(entry.name.c_str()))
+				{
+					// User is picking a single archive file as a library
+					// source.  Invoke the callback with the archive's
+					// full path and return to the caller screen.
+					VDStringW selectedPath = entry.fullPath;
+					auto cb = std::move(s_archiveFilePickerCallback);
+					s_archiveFilePickerMode = false;
+					s_archiveFilePickerCallback = nullptr;
+					s_fileBrowserNeedsRefresh = true;
+					mobileState.currentScreen =
+						s_archiveFilePickerReturnScreen;
+					if (cb)
+						cb(selectedPath);
+					mobileState.selectedFileIdx = -1;
 				} else if (!insideZip && !s_romFolderMode
+					&& !s_archiveFilePickerMode
+					&& !s_folderPickerMode
 					&& IsZipFile(entry.name.c_str()))
 				{
+					// Drill into the archive in Load Game and Disk-Mount
+					// flows; other modes don't reach this branch.
 					s_zipArchivePath = entry.fullPath;
 					s_zipInternalDir.clear();
 					s_fileBrowserNeedsRefresh = true;
@@ -646,7 +767,9 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 						ShowInfoModal("Mount Failed", e.c_str());
 					}
 					mobileState.currentScreen = ATMobileUIScreen::DiskManager;
-				} else if (!s_romFolderMode) {
+				} else if (!s_romFolderMode && !s_archiveFilePickerMode
+					&& !s_folderPickerMode)
+				{
 					mobileState.selectedFileIdx = (int)i;
 					VDStringA pathU8 = VDTextWToU8(VDStringW(entry.fullPath));
 					ATUIPushDeferred(kATDeferred_BootImage, pathU8.c_str());

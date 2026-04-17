@@ -70,7 +70,7 @@ bool IsSupportedGameExtension(const wchar_t *name) {
 	return false;
 }
 
-static bool IsArchiveExtension(const wchar_t *name) {
+bool IsArchiveExtension(const wchar_t *name) {
 	const wchar_t *ext = wcsrchr(name, L'.');
 	if (!ext) return false;
 	ext++;
