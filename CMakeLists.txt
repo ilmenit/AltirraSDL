@@ -216,6 +216,13 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
             find_package(SDL3 QUIET)
         endif()
 
+        # Track how SDL3 was resolved so downstream dependencies
+        # (SDL3_image) can avoid mixing a FetchContent SDL3 with a
+        # system SDL3_image that transitively links the system SDL3 —
+        # a mismatch that trips CMake with "INTERFACE_SDL3_SHARED
+        # property does not agree".
+        set(ALTIRRA_SDL3_FETCHED FALSE)
+
         if(SDL3_FOUND)
             # ── System SDL3 found ───────────────────────────────────────
             get_target_property(_sdl3_loc SDL3::SDL3 LOCATION)
@@ -298,6 +305,7 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
             endif()
 
             message(STATUS "  SDL3 ${ALTIRRA_SDL3_VERSION} ready (built from source)")
+            set(ALTIRRA_SDL3_FETCHED TRUE)
         endif()
     endif()
 endif()
@@ -540,7 +548,24 @@ static inline void *_librashader_dlopen_macos(void) {
         message(STATUS "")
         add_compile_definitions(ALTIRRA_NO_SDL3_IMAGE=1)
     else()
-    find_package(SDL3_image QUIET)
+    # If SDL3 came from FetchContent, we MUST NOT use a system
+    # SDL3_image — its exported target pulls in the system SDL3 as a
+    # shared dep, and CMake then rejects the configure with
+    # "INTERFACE_SDL3_SHARED property ... does not agree".  Fetch
+    # SDL3_image from source in that case so both libraries agree on
+    # SDL3_SHARED.  Same story if the user forced a static SDL3: most
+    # distros ship only a shared SDL3_image that won't link against it.
+    option(ALTIRRA_FETCH_SDL3_IMAGE "Always fetch SDL3_image from source (skip find_package)" OFF)
+    if(ALTIRRA_SDL3_FETCHED OR ALTIRRA_STATIC_SDL3 OR ALTIRRA_FETCH_SDL3_IMAGE)
+        if(ALTIRRA_FETCH_SDL3_IMAGE)
+            message(STATUS "ALTIRRA_FETCH_SDL3_IMAGE=ON — skipping find_package(SDL3_image)")
+        else()
+            message(STATUS "SDL3 was fetched/static — skipping find_package(SDL3_image) to keep SDL3_SHARED consistent")
+        endif()
+        set(SDL3_image_FOUND FALSE)
+    else()
+        find_package(SDL3_image QUIET)
+    endif()
     if(NOT TARGET SDL3_image::SDL3_image)
         message(STATUS "")
         message(STATUS "  ┌─ SDL3_image ──────────────────────────────────")
