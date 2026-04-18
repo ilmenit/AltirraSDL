@@ -251,7 +251,7 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
             message(STATUS "")
         else()
             # ── Auto-fetch SDL3 from source ─────────────────────────────
-            set(ALTIRRA_SDL3_VERSION "release-3.2.8")
+            set(ALTIRRA_SDL3_VERSION "release-3.2.30")
             message(STATUS "")
             message(STATUS "  ┌─ SDL3 ─────────────────────────────────────")
             message(STATUS "  │ No system SDL3 found.")
