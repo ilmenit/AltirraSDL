@@ -37,6 +37,7 @@
 #include "gl_funcs.h"
 #include "input_sdl3.h"
 #include "touch_controls.h"
+#include "touch_widgets.h"
 #include "ui_mobile.h"
 #include "mobile_gamepad.h"
 #include "mobile_internal.h"
@@ -323,6 +324,18 @@ static void HandleEvents() {
 
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) {
+		// Stamp a "recent touch" timestamp for the momentum-scroll
+		// widgets in touch_widgets.cpp.  Done unconditionally (before
+		// any consumer gets the event) so the indicator flips true
+		// regardless of which handler ultimately owns the finger.
+		if (ev.type == SDL_EVENT_FINGER_DOWN
+			|| ev.type == SDL_EVENT_FINGER_MOTION
+			|| ev.type == SDL_EVENT_FINGER_UP
+			|| ev.type == SDL_EVENT_FINGER_CANCELED)
+		{
+			ATTouchNotifyFingerEvent();
+		}
+
 		// Route touch/gamepad events to Gaming Mode UI before ImGui
 		if (ATUIIsGamingMode()) {
 			if (ATMobileGamepad_HandleEvent(ev, g_sim, g_mobileState))

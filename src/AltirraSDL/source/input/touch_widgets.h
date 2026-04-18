@@ -213,3 +213,15 @@ void ATTouchEndDragScroll();
 // scrolling take precedence over a Button that was pressed down
 // before the drag started.
 bool ATTouchIsDraggingBeyondSlop();
+
+// Call from the top-level SDL event pump whenever a SDL_EVENT_FINGER_*
+// event is seen — including events that subsequently get consumed by
+// the touch-controls / hamburger / file-browser dispatchers.  This
+// stamps a "recent touch" timestamp that ATTouchDragScroll() uses as a
+// reliable touch indicator in addition to ImGui's MouseSource flag.
+// On Android the synthetic mouse events do not always carry
+// SDL_TOUCH_MOUSEID in a form that ImGui's SDL3 backend tags as
+// TouchScreen on the first frame, so relying solely on MouseSource
+// causes the momentum path to silently no-op.  The timestamp path is
+// version-independent.
+void ATTouchNotifyFingerEvent();

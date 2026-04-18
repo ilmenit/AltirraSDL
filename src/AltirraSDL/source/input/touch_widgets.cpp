@@ -584,6 +584,39 @@ bool ATTouchSlider(const char *label, int *value, int minv, int maxv,
 
 namespace {
 
+// Momentum scroll tunables.  Values are in dp (logical pixels) where
+// noted — the dp() helper rescales for HiDPI.  Only the decay rate is
+// dimensionless.
+//
+// kInertiaDecayPerSec controls the flick "glide distance".  With 6.0,
+// velocity decays to ~2% of the release value in ~0.65s — close to the
+// feel of Material scroll lists without being floaty.
+constexpr float kInertiaDecayPerSec       = 6.0f;
+constexpr float kMinFlingVelocityDpPerSec = 120.0f; // release below this = no inertia
+constexpr float kStopVelocityDpPerSec     = 40.0f;  // inertia halts when |v| drops below
+constexpr float kVelocitySampleWinSec     = 0.060f; // fit window
+constexpr int   kVelocitySampleCount      = 8;
+constexpr float kExternalScrollTolerance  = 2.0f;   // px: external change cancels inertia
+
+// Any FINGER event (down/motion/up) seen in the last kRecentTouchWindow
+// seconds counts as "touch input is active on this device".  The window
+// covers the gap between the SDL finger event and the subsequent
+// synthetic-mouse press/motion events in the ImGui event queue, plus a
+// generous safety margin so a finger that hovers for a moment before
+// pressing is still classified correctly.
+constexpr float kRecentTouchWindowSec     = 1.0f;
+
+// Seconds-of-ImGui-time at which the most recent FINGER_* event was
+// received.  Stamped by ATTouchNotifyFingerEvent(); read by
+// ATTouchDragScroll() to decide whether the current drag originated
+// from a touch surface.  Negative sentinel = "never seen a finger".
+static float s_recentTouchStamp = -1000.0f;
+
+struct VelSample {
+	float t;       // seconds (ImGui::GetTime)
+	float scrollY; // absolute scroll position at sample time
+};
+
 struct DragState {
 	ImGuiID window = 0;
 	bool    active = false;
@@ -593,6 +626,14 @@ struct DragState {
 	bool    exceededSlop = false; // sticky: kept set through release frame
 	bool    clearedActive = false; // ClearActiveID already called this press
 	int     pushedColors = 0;     // style colors pushed this frame, popped in End
+
+	// --- Momentum scrolling (touch input only) ---
+	VelSample samples[kVelocitySampleCount]{};
+	int       sampleCount = 0;
+	int       sampleHead  = 0;    // next write index (ring buffer)
+	float     velocity    = 0.0f; // px/s; sign matches scrollY direction
+	bool      inInertia   = false;
+	bool      touchInput  = false; // was the current/last drag from a touch?
 };
 
 // Keep a handful of per-window states so nested scroll regions
@@ -608,13 +649,62 @@ DragState *GetDragState(ImGuiID window) {
 	for (auto &s : s_dragStates)
 		if (s.window == 0) { s.window = window; return &s; }
 	// Recycle slot 0 if we somehow overflowed
+	s_dragStates[0] = DragState{};
 	s_dragStates[0].window = window;
-	s_dragStates[0].active = false;
-	s_dragStates[0].dragDistSq = 0.0f;
 	return &s_dragStates[0];
 }
 
+void PushVelocitySample(DragState *ds, float t, float scrollY) {
+	ds->samples[ds->sampleHead] = { t, scrollY };
+	ds->sampleHead = (ds->sampleHead + 1) % kVelocitySampleCount;
+	if (ds->sampleCount < kVelocitySampleCount)
+		++ds->sampleCount;
+}
+
+// Least-squares fit of scrollY vs. time over the newest samples that
+// fall inside the velocity window.  Returns px/s.  The 60ms window
+// naturally averages out a single near-stationary sample at the very
+// end of a drag (the finger-lift deceleration artifact), so a slow
+// release after a quick flick still produces a reasonable velocity.
+float EstimateVelocity(const DragState &ds, float nowT) {
+	if (ds.sampleCount < 2) return 0.0f;
+
+	float sumT = 0, sumY = 0, sumTT = 0, sumTY = 0;
+	int n = 0;
+
+	// Walk from newest to oldest.
+	int idx = ds.sampleHead;
+	for (int i = 0; i < ds.sampleCount; ++i) {
+		idx = (idx - 1 + kVelocitySampleCount) % kVelocitySampleCount;
+		const VelSample &s = ds.samples[idx];
+		float dt = s.t - nowT; // <= 0
+		if (-dt > kVelocitySampleWinSec) break;
+		sumT += dt; sumY += s.scrollY;
+		sumTT += dt * dt; sumTY += dt * s.scrollY;
+		++n;
+	}
+	if (n < 2) return 0.0f;
+	float denom = (float)n * sumTT - sumT * sumT;
+	if (std::fabs(denom) < 1e-6f) return 0.0f;
+	return ((float)n * sumTY - sumT * sumY) / denom;
+}
+
+void ResetVelocityState(DragState *ds) {
+	ds->velocity = 0.0f;
+	ds->inInertia = false;
+	ds->sampleCount = 0;
+	ds->sampleHead = 0;
+}
+
 } // namespace
+
+void ATTouchNotifyFingerEvent() {
+	// Use ImGui::GetTime() so the stamp shares the same clock as the
+	// drag-scroll logic.  Called from the SDL event pump on every
+	// FINGER_DOWN/MOTION/UP, including events that end up consumed by
+	// the on-screen touch controls.
+	s_recentTouchStamp = (float)ImGui::GetTime();
+}
 
 void ATTouchEndDragScroll() {
 	ImGuiWindow *window = ImGui::GetCurrentWindow();
@@ -645,8 +735,23 @@ void ATTouchDragScroll() {
 		| ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
 	bool mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+	const bool mouseClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+	const float nowT = (float)ImGui::GetTime();
+
+	// Flywheel-catch: ANY fresh press (inside this window, on or off
+	// the scrollbar) cancels an in-progress inertia glide, so the user
+	// can grab the list mid-fling and the scrollbar keeps working.
+	// Runs before the scrollbar short-circuit below so the glide
+	// doesn't silently continue while the user is dragging the bar.
+	bool caughtInertia = false;
+	if (mouseClicked && hovered && ds->inInertia) {
+		ds->inInertia = false;
+		ds->velocity = 0.0f;
+		caughtInertia = true;
+	}
 
 	if (mouseDown && hovered) {
+		bool justActivated = false;
 		if (!ds->active) {
 			// Don't capture drag if the press is on the scrollbar —
 			// let ImGui handle it natively.  The scrollbar occupies the
@@ -664,13 +769,61 @@ void ATTouchDragScroll() {
 			ds->dragDistSq = 0.0f;
 			ds->exceededSlop = false;
 			ds->clearedActive = false;
+			ds->sampleCount = 0;
+			ds->sampleHead = 0;
+			// Only arm inertia if this press originated on a touch
+			// surface.  Desktop mouse drag keeps its existing 1:1
+			// behaviour with no fling on release.
+			//
+			// Detection uses two signals OR'd together:
+			//  1. ImGui's MouseSource flag, set by the SDL3 backend
+			//     when a synthetic mouse event carries
+			//     SDL_TOUCH_MOUSEID.  Reliable on desktop; on Android
+			//     the tag arrives but can lag behind the first frame
+			//     of the press in some SDL versions.
+			//  2. A recent FINGER_* event stamp.  main_sdl3.cpp calls
+			//     ATTouchNotifyFingerEvent() at the top of its SDL
+			//     event pump for every FINGER event (down/motion/up)
+			//     regardless of who ultimately consumes it, so this
+			//     flips true as soon as the physical touch arrives,
+			//     independent of how SDL synthesises the mouse side.
+			bool touchByImGui =
+				(io.MouseSource == ImGuiMouseSource_TouchScreen);
+			bool touchByFinger = (nowT - s_recentTouchStamp)
+				< kRecentTouchWindowSec;
+			ds->touchInput = touchByImGui || touchByFinger;
+			justActivated = true;
+
+			// If this press caught an in-flight glide, treat it as a
+			// pure "stop the scroll" gesture and suppress the item
+			// that would otherwise activate on release.  We can't
+			// clear ActiveID on this frame (the item hasn't been
+			// submitted yet) — instead we pre-set exceededSlop and
+			// leave clearedActive=false, so the drag-frame block
+			// runs ClearActiveID next frame after the item has
+			// latched the press.
+			if (caughtInertia)
+				ds->exceededSlop = true;
 		}
-		// Integrate finger delta into the scroll accumulator.
-		ds->scrollY -= io.MouseDelta.y;
-		float maxY = ImGui::GetScrollMaxY();
-		if (ds->scrollY < 0.0f)  ds->scrollY = 0.0f;
-		if (ds->scrollY > maxY)  ds->scrollY = maxY;
-		ImGui::SetScrollY(ds->scrollY);
+		// Skip delta integration on the activation frame.  ImGui's
+		// MouseDelta is computed against the previous frame's cursor
+		// position, which for a fresh touch can be anywhere (the
+		// synthetic mouse warps to the finger on FINGER_DOWN).  The
+		// next frame has a valid delta.
+		if (!justActivated) {
+			ds->scrollY -= io.MouseDelta.y;
+			float maxY = ImGui::GetScrollMaxY();
+			if (ds->scrollY < 0.0f)  ds->scrollY = 0.0f;
+			if (ds->scrollY > maxY)  ds->scrollY = maxY;
+			ImGui::SetScrollY(ds->scrollY);
+		}
+
+		// Record one velocity sample per frame (including the
+		// activation frame, which seeds the ring with the starting
+		// position).  The estimator picks the newest samples within
+		// a ~60ms window, so the exact frame rate doesn't matter.
+		if (ds->touchInput)
+			PushVelocitySample(ds, nowT, ds->scrollY);
 
 		// Accumulate total drag distance squared so the tap-slop
 		// check can veto a click-through activation further down
@@ -709,15 +862,57 @@ void ATTouchDragScroll() {
 		ImGui::PushStyleColor(ImGuiCol_HeaderActive,  style.Colors[ImGuiCol_Header]);
 		ds->pushedColors = 4;
 	} else if (!mouseDown && ds->active) {
-		// Keep exceededSlop set for THIS frame so any widget that
-		// queries ATTouchIsDraggingBeyondSlop() during the release
-		// frame still sees the drag.  Reset on the next press in the
-		// `if (!ds->active)` branch above.
+		// Release: compute fling velocity from the sample ring and
+		// enter inertia if the user was flinging (exceeded slop AND
+		// the fit velocity is above kMinFlingVelocity).  Otherwise
+		// just stop.  Keep exceededSlop set for THIS frame so any
+		// widget that queries ATTouchIsDraggingBeyondSlop() during
+		// the release frame still sees the drag — it's reset on the
+		// next press in the `if (!ds->active)` branch above.
+		if (ds->touchInput && ds->exceededSlop) {
+			float v = EstimateVelocity(*ds, nowT);
+			float minFling = dp(kMinFlingVelocityDpPerSec);
+			if (std::fabs(v) >= minFling) {
+				ds->velocity = v;
+				ds->inInertia = true;
+			} else {
+				ds->velocity = 0.0f;
+				ds->inInertia = false;
+			}
+		} else {
+			ds->velocity = 0.0f;
+			ds->inInertia = false;
+		}
 		ds->active = false;
 		ds->dragDistSq = 0.0f;
 		ds->clearedActive = false;
-		// Note: exceededSlop intentionally NOT reset here.  It is
-		// reset when the next press begins.
+		ds->sampleCount = 0;
+		ds->sampleHead = 0;
+	} else if (ds->inInertia) {
+		// Advance the inertia glide.  If something external (keyboard
+		// nav, programmatic SetScrollY) moved the scroll position
+		// since our last write, honour that and cancel the glide.
+		float actual = ImGui::GetScrollY();
+		if (std::fabs(actual - ds->scrollY) > kExternalScrollTolerance) {
+			ResetVelocityState(ds);
+			goto skip_drag;
+		}
+		float dt = io.DeltaTime;
+		if (dt > 0.05f) dt = 0.05f;  // clamp pathological spikes
+		ds->scrollY += ds->velocity * dt;
+		float maxY = ImGui::GetScrollMaxY();
+		bool hitEdge = false;
+		if (ds->scrollY < 0.0f)  { ds->scrollY = 0.0f;  hitEdge = true; }
+		if (ds->scrollY > maxY)  { ds->scrollY = maxY;  hitEdge = true; }
+		if (hitEdge) ds->velocity = 0.0f;
+		ds->velocity *= std::exp(-kInertiaDecayPerSec * dt);
+		ImGui::SetScrollY(ds->scrollY);
+
+		float stop = dp(kStopVelocityDpPerSec);
+		if (std::fabs(ds->velocity) < stop) {
+			ds->velocity = 0.0f;
+			ds->inInertia = false;
+		}
 	}
 skip_drag: ;
 }
