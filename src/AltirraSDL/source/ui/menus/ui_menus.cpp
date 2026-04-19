@@ -1192,6 +1192,7 @@ void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *b
 	if (ImGui::BeginMenu("Debug")) { ATUIRenderDebugMenu(sim); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Record")) { RenderRecordMenu(sim, window); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Tools")) { RenderToolsMenu(sim, state, window); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Online Play")) { ATUIRenderOnlineMenu(); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Window")) { RenderWindowMenu(window); ImGui::EndMenu(); }
 	if (ImGui::BeginMenu("Help")) { RenderHelpMenu(state); ImGui::EndMenu(); }
 

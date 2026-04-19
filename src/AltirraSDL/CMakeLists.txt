@@ -83,6 +83,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/menus/ui_menus_view.cpp
     source/ui/menus/ui_menus_system.cpp
     source/ui/menus/ui_menus_debug.cpp
+    source/ui/menus/ui_menus_online.cpp
 
     # --- ui/sysconfig/ : Configure System paged dialog ---
     source/ui/sysconfig/ui_system.cpp
@@ -280,11 +281,22 @@ if(ALTIRRA_NETPLAY)
         source/netplay/lockstep.cpp
         source/netplay/coordinator.cpp
         source/netplay/netplay_glue.cpp
+        source/netplay/netplay_input.cpp
         source/netplay/http_minimal.cpp
         source/netplay/lobby_client.cpp
         source/netplay/lobby_config.cpp
         source/netplay/lan_discovery.cpp
         source/netplay/platform_notify.cpp
+
+        # Online Play UI — Phase 11
+        source/ui/netplay/ui_netplay_state.cpp
+        source/ui/netplay/ui_netplay_widgets.cpp
+        source/ui/netplay/ui_netplay_lobby_worker.cpp
+        source/ui/netplay/ui_netplay_screens.cpp
+        source/ui/netplay/ui_netplay_desktop.cpp
+        source/ui/netplay/ui_netplay_actions.cpp
+        source/ui/netplay/ui_netplay_activity.cpp
+        source/ui/netplay/ui_netplay.cpp
     )
     if(WIN32)
         target_sources(AltirraSDL PRIVATE

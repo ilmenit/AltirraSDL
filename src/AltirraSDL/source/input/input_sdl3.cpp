@@ -44,6 +44,9 @@
 #include "simulator.h"
 #include "uiaccessors.h"
 #include "uikeyboard.h"
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "../netplay/netplay_input.h"
+#endif
 
 // Declared in uiaccessors_stubs.cpp — provides read-only access to the sorted
 // custom key map without copying.
@@ -387,6 +390,15 @@ static void ATInputSDL3_PushAtariKey(SDL_Scancode sdlSc, uint8 atariCode, bool r
 	extern ATUIKeyboardOptions g_kbdOpts;
 	if (!g_inputState.mpPokey)
 		return;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	// Netplay: forward keyboard edges into the lockstep pipeline
+	// instead of pushing straight to POKEY, so both peers see the
+	// same Atari key events on the same emulated frame.
+	if (ATNetplayInput::IsSuppressingLocalInput()) {
+		if (!repeat) ATNetplayInput::OnLocalKeyDown(atariCode);
+		return;
+	}
+#endif
 	if (g_kbdOpts.mbRawKeys) {
 		// Match Windows uivideodisplaywindow.cpp:2341 — raw mode does
 		// nothing on auto-repeat; the key is already physically held.
@@ -427,6 +439,19 @@ static void HandleSpecialScanCode(uint32 scanCode, bool down, SDL_Scancode sdlSc
 	default:
 		return;
 	}
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	// Netplay: forward the switch edge to the lockstep pipeline
+	// rather than driving GTIA directly.
+	if (ATNetplayInput::IsSuppressingLocalInput()) {
+		ATNetplayInput::OnLocalConsoleSwitch(switchBit, down);
+		if (down)
+			g_customConsoleSwitches[sdlSc] = switchBit;
+		else
+			g_customConsoleSwitches.erase(sdlSc);
+		return;
+	}
+#endif
 
 	g_inputState.mpGTIA->SetConsoleSwitch(switchBit, down);
 
@@ -666,8 +691,15 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 	// HandleKeyUp updates the same state on shift/ctrl release so the
 	// POKEY register cannot latch past the physical key release.
 	if (!ev.repeat) {
-		g_inputState.mpPokey->SetShiftKeyState(shift, true);
-		g_inputState.mpPokey->SetControlKeyState(ctrl);
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (ATNetplayInput::IsSuppressingLocalInput()) {
+			ATNetplayInput::OnLocalShiftCtrlState(shift, ctrl);
+		} else
+#endif
+		{
+			g_inputState.mpPokey->SetShiftKeyState(shift, true);
+			g_inputState.mpPokey->SetControlKeyState(ctrl);
+		}
 	}
 
 	// Exclude Ctrl/Shift from POKEY when bound by input maps (e.g. Left
@@ -821,13 +853,27 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 		case SDL_SCANCODE_LSHIFT:
 		case SDL_SCANCODE_RSHIFT: {
 			const SDL_Keymod m = SDL_GetModState();
-			g_inputState.mpPokey->SetShiftKeyState((m & SDL_KMOD_SHIFT) != 0, true);
+			const bool shift = (m & SDL_KMOD_SHIFT) != 0;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (ATNetplayInput::IsSuppressingLocalInput()) {
+				ATNetplayInput::OnLocalShiftCtrlState(shift,
+					(m & SDL_KMOD_CTRL) != 0);
+			} else
+#endif
+			g_inputState.mpPokey->SetShiftKeyState(shift, true);
 			break;
 		}
 		case SDL_SCANCODE_LCTRL:
 		case SDL_SCANCODE_RCTRL: {
 			const SDL_Keymod m = SDL_GetModState();
-			g_inputState.mpPokey->SetControlKeyState((m & SDL_KMOD_CTRL) != 0);
+			const bool ctrl = (m & SDL_KMOD_CTRL) != 0;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (ATNetplayInput::IsSuppressingLocalInput()) {
+				ATNetplayInput::OnLocalShiftCtrlState(
+					(m & SDL_KMOD_SHIFT) != 0, ctrl);
+			} else
+#endif
+			g_inputState.mpPokey->SetControlKeyState(ctrl);
 			break;
 		}
 		default:
@@ -861,6 +907,11 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 	{
 		auto it = g_customConsoleSwitches.find(ev.scancode);
 		if (it != g_customConsoleSwitches.end()) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (ATNetplayInput::IsSuppressingLocalInput()) {
+				ATNetplayInput::OnLocalConsoleSwitch(it->second, false);
+			} else
+#endif
 			if (g_inputState.mpGTIA)
 				g_inputState.mpGTIA->SetConsoleSwitch(it->second, false);
 			g_customConsoleSwitches.erase(it);
@@ -940,8 +991,15 @@ void ATInputSDL3_HandleTextInput(const char *text) {
 
 		uint32 scanCode = 0;
 		if (ATUIGetScanCodeForCharacter32(ch, scanCode)) {
-			if (scanCode < kATUIKeyScanCodeFirst)
+			if (scanCode < kATUIKeyScanCodeFirst) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (ATNetplayInput::IsSuppressingLocalInput()) {
+					ATNetplayInput::OnLocalKeyDown((uint8)scanCode);
+					continue;
+				}
+#endif
 				g_inputState.mpPokey->PushKey((uint8)scanCode, false);
+			}
 		}
 	}
 }

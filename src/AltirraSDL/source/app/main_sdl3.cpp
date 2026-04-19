@@ -52,6 +52,7 @@
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_glue.h"
+#include "ui/netplay/ui_netplay.h"
 #endif
 #endif
 #include "ui_textselection.h"
@@ -84,6 +85,7 @@
 #include <algorithm>
 #include <cmath>
 #include "logging.h"
+#include <at/atcore/logging.h>
 #include "app_internal.h"
 
 #ifdef __ANDROID__
@@ -1226,6 +1228,21 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	// Route ATLogChannel output (atcore/logging.h) to stderr so netplay
+	// and other subsystem traces are visible in the terminal.  The core
+	// library defaults to no-op sinks — without wiring these, channels
+	// that users explicitly enable (via menus or toggled on by default,
+	// like NETPLAY) emit nothing.
+	ATLogSetWriteCallbacks(
+		[](ATLogChannel *ch, const char *s) {
+			std::fprintf(stderr, "[%s] %s\n", ch->GetName(), s);
+		},
+		[](ATLogChannel *ch, const char *fmt, va_list ap) {
+			std::fprintf(stderr, "[%s] ", ch->GetName());
+			std::vfprintf(stderr, fmt, ap);
+			std::fputc('\n', stderr);
+		});
+
 	// On Android, always keep the screen on.  On desktop, this is handled
 	// by ATUIApplyModeStyle() when entering Gaming Mode.
 #ifdef __ANDROID__
@@ -2042,6 +2059,7 @@ int main(int argc, char *argv[]) {
 		// that CanAdvanceThisTick() reflects the freshly-drained peer
 		// input state for this tick.
 		ATNetplayGlue::Poll(SDL_GetTicks());
+		ATNetplayUI_Poll(SDL_GetTicks());
 #endif
 
 		// Process deferred file dialog results on main thread
@@ -2070,7 +2088,16 @@ int main(int argc, char *argv[]) {
 		}
 
 		// Pause emulation when window loses focus (if enabled).
-		const bool pauseInactive = ATUIGetPauseWhenInactive() && !g_winActive;
+		// Suppressed during an active netplay session: if the joiner
+		// stops advancing because their window is in the background
+		// the host stalls on peer-silence, desyncs, and the joiner
+		// sees a frozen black screen (no GTIA frames completed since
+		// the snapshot apply).  Netplay MUST keep ticking while both
+		// peers are connected.
+		bool pauseInactive = ATUIGetPauseWhenInactive() && !g_winActive;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (ATNetplayGlue::IsActive()) pauseInactive = false;
+#endif
 
 		if (pauseInactive) {
 			// Window inactive — render for UI responsiveness, sleep.
@@ -2098,11 +2125,26 @@ int main(int argc, char *argv[]) {
 		// simulator this tick.  The main loop keeps running — we
 		// still render UI, still pace — we just don't Advance.  Next
 		// iteration polls the socket again and re-evaluates.
+		if (ATNetplayGlue::IsLockstepping()) {
+			// Capture local SDL input state and push to the
+			// coordinator (keyed D frames ahead per the lockstep
+			// invariant).
+			ATNetplayGlue::SubmitLocalInput();
+		}
+
 		if (ATNetplayGlue::IsLockstepping() &&
 		    !ATNetplayGlue::CanAdvanceThisTick()) {
 			RenderAndPresent();
 			if (!turbo) g_pacer.WaitForNextFrame();
 			continue;
+		}
+
+		if (ATNetplayGlue::IsLockstepping()) {
+			// Both peers' inputs for the upcoming frame are
+			// available — drive the netplay-owned controller
+			// ports with them so the sim's joystick reads
+			// reflect (host, joiner) in lockstep.
+			ATNetplayGlue::ApplyFrameInputsToSim();
 		}
 #endif
 

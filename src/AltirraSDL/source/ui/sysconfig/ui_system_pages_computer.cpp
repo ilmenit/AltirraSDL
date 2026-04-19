@@ -13,6 +13,10 @@
 #include "ui_main.h"
 #include "ui_system_internal.h"
 #include "simulator.h"
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "netplay/netplay_glue.h"
+#endif
 #include "constants.h"
 #include "cpu.h"
 #include "firmwaremanager.h"
@@ -820,9 +824,18 @@ void RenderSpeedCategory(ATSimulator &sim) {
 	ImGui::Separator();
 
 	bool pauseInactive = ATUIGetPauseWhenInactive();
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	const bool netplayLocksPause = ATNetplayGlue::IsActive();
+#else
+	const bool netplayLocksPause = false;
+#endif
+	if (netplayLocksPause) ImGui::BeginDisabled();
 	if (ImGui::Checkbox("Pause when emulator window is inactive", &pauseInactive))
 		ATUISetPauseWhenInactive(pauseInactive);
-	ImGui::SetItemTooltip("Automatically pause the emulation when the emulator window is inactive.");
+	ImGui::SetItemTooltip(netplayLocksPause
+		? "Disabled while Playing Online — stalling the sim would freeze the peer."
+		: "Automatically pause the emulation when the emulator window is inactive.");
+	if (netplayLocksPause) ImGui::EndDisabled();
 
 	ImGui::SeparatorText("Rewind");
 

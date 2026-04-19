@@ -6,7 +6,15 @@
 
 #include "protocol.h"
 
+#include <at/atcore/logging.h>
+
 #include <cstring>
+
+// Single shared channel for every netplay subsystem.  Default ON
+// (unlike most Altirra log channels) so users can copy diagnostics
+// straight from the terminal when a session misbehaves.  Kept
+// deliberately sparse: one line per state transition, none per frame.
+ATLogChannel g_ATLCNetplay(true, true, "NETPLAY", "Netplay session");
 
 namespace ATNetplay {
 
@@ -73,6 +81,11 @@ bool Coordinator::BeginHost(uint16_t localPort,
 	mRole = Role::Host;
 	mPhase = Phase::WaitingForJoiner;
 	mLastError = "";
+	g_ATLCNetplay("host: listening on UDP port %u (cart=\"%s\" private=%s delay=%u)",
+		(unsigned)mTransport.BoundPort(),
+		cartName ? cartName : "(none)",
+		mHasEntryCode ? "yes" : "no",
+		(unsigned)mInputDelay);
 	return true;
 }
 
@@ -114,6 +127,7 @@ bool Coordinator::BeginJoin(const char* hostAddress,
 	mPhase = Phase::Handshaking;
 	mLastError = "";
 
+	g_ATLCNetplay("joiner: resolved \"%s\", sending Hello", hostAddress);
 	SendHello();
 	return true;
 }
@@ -201,6 +215,10 @@ void Coordinator::Poll(uint64_t nowMs) {
 	}
 	// Lockstep: detect desync transition.
 	if (mPhase == Phase::Lockstepping && mLoop.IsDesynced()) {
+		g_ATLCNetplay("DESYNC detected at frame %lld (role=%s, delay=%u)",
+			(long long)mLoop.DesyncFrame(),
+			mRole == Role::Host ? "host" : "joiner",
+			(unsigned)mInputDelay);
 		SendBye(kByeDesyncDetected);
 		mPhase = Phase::Desynced;
 	}
@@ -246,6 +264,14 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	// Hello accepted.  Lock in the peer.
 	mPeer = from;
 	mPeerKnown = true;
+	{
+		char handle[kHandleLen + 1] = {};
+		std::memcpy(handle, hello.playerHandle, kHandleLen);
+		char ep[32] = {};
+		from.Format(ep, sizeof ep);
+		g_ATLCNetplay("host: accepted joiner \"%s\" from %s",
+			handle, ep);
+	}
 
 	if (mSnapTxBuffer.empty()) {
 		// The app hasn't uploaded the snapshot yet.  Defer sending
@@ -296,6 +322,9 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t /*nowMs*/)
 	// Prepare receiver.
 	mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes);
 	mPhase = Phase::ReceivingSnapshot;
+	g_ATLCNetplay("joiner: Welcome accepted (snapshot=%u bytes / %u chunks, delay=%u)",
+		(unsigned)w.snapshotBytes, (unsigned)w.snapshotChunks,
+		(unsigned)w.inputDelayFrames);
 
 	// If the snapshot is zero-length (edge case: nothing to ship),
 	// move straight to SnapshotReady.
@@ -318,6 +347,7 @@ void Coordinator::HandleRejectFromHost(const NetReject& r) {
 		case kRejectHostRejected:   mLastError = "host rejected: manual decline"; break;
 		default:                    mLastError = "host rejected: unknown reason"; break;
 	}
+	g_ATLCNetplay("joiner: %s (reason code %u)", mLastError, (unsigned)r.reason);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +365,7 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t /*nowMs*/) {
 
 	if (mSnapRx.IsComplete()) {
 		mPhase = Phase::SnapshotReady;
+		g_ATLCNetplay("joiner: snapshot download complete, applying…");
 	}
 }
 
@@ -346,6 +377,8 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 		// to Lockstepping when it calls AcknowledgeSnapshotApplied.
 		mLoop.Begin(Slot::Host, mInputDelay);
 		mPhase = Phase::Lockstepping;
+		g_ATLCNetplay("host: snapshot delivered, entering Lockstepping (delay=%u frames)",
+			(unsigned)mInputDelay);
 	} else if (mSnapTx.GetStatus() == SnapshotSender::Status::Failed) {
 		FailWith("snapshot upload failed (retry budget exhausted)");
 	}
@@ -377,6 +410,8 @@ void Coordinator::AcknowledgeSnapshotApplied() {
 	if (mPhase != Phase::SnapshotReady) return;
 	mLoop.Begin(Slot::Joiner, mInputDelay);
 	mPhase = Phase::Lockstepping;
+	g_ATLCNetplay("joiner: snapshot applied, entering Lockstepping (delay=%u frames)",
+		(unsigned)mInputDelay);
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +444,16 @@ void Coordinator::PumpLockstepSend() {
 void Coordinator::HandleBye(const NetBye& b) {
 	// Peer said goodbye; treat as clean exit unless they flagged
 	// desync.
+	const char *reasonStr = "clean";
+	switch (b.reason) {
+		case kByeCleanExit:       reasonStr = "clean";         break;
+		case kByeDesyncDetected:  reasonStr = "desync";        break;
+		case kByeTimeout:         reasonStr = "timeout";       break;
+		case kByeVersionMismatch: reasonStr = "ver-mismatch";  break;
+		default:                  reasonStr = "unknown";       break;
+	}
+	g_ATLCNetplay("%s: peer said Bye (%s)",
+		mRole == Role::Host ? "host" : "joiner", reasonStr);
 	if (b.reason == kByeDesyncDetected && mPhase == Phase::Lockstepping) {
 		mPhase = Phase::Desynced;
 		mLastError = "peer reported desync";
@@ -482,6 +527,10 @@ void Coordinator::SendReject(uint32_t reason, const Endpoint& to) {
 void Coordinator::FailWith(const char* msg) {
 	mLastError = msg;
 	mPhase = Phase::Failed;
+	g_ATLCNetplay("%s session failed: %s",
+		mRole == Role::Host ? "host" :
+		mRole == Role::Joiner ? "joiner" : "idle",
+		msg ? msg : "(no reason)");
 }
 
 } // namespace ATNetplay

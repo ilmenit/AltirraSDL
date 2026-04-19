@@ -49,6 +49,11 @@
 extern ATSimulator g_sim;
 extern ATUIState g_uiState;
 extern VDStringA ATGetConfigDir();
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "../netplay/ui_netplay.h"
+#include "../netplay/ui_netplay_widgets.h"
+#endif
 extern void ATRegistryFlushToDisk();
 extern IDisplayBackend *ATUIGetDisplayBackend();
 
@@ -640,10 +645,25 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 	// Tell the joystick layer whether the gamepad belongs to the UI
 	// this frame.  Also factors in the modal sheet so dialogs that
 	// pop up over the emulator (e.g. confirm/error) capture the gamepad.
-	const bool uiOwns = (mobileState.currentScreen != ATMobileUIScreen::None)
+	bool uiOwns = (mobileState.currentScreen != ATMobileUIScreen::None)
 		|| s_infoModalOpen || s_confirmActive
 		|| ATUIIsEmuErrorDialogOpen();
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (ATNetplayUI_IsActive()) uiOwns = true;
+#endif
 	ATMobileGamepad_SetUIOwning(uiOwns);
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	// Netplay overlay renders on top of any mobile screen when active.
+	// We set the SDL3 safe-area insets so the sheet body respects
+	// display cutouts / gesture nav on Android.
+	if (ATNetplayUI_IsActive()) {
+		ATNetplayUI::ATNetplayUI_SetSafeAreaInsets(
+			insets.top, insets.bottom, insets.left, insets.right);
+		ATNetplayUI_RenderMobile(sim, uiState, mobileState, window);
+		return;
+	}
+#endif
 
 	switch (mobileState.currentScreen) {
 	case ATMobileUIScreen::None:

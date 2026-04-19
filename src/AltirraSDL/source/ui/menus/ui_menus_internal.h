@@ -21,5 +21,6 @@ void ATUIMenuShortcutContextMenu(const char *command);
 void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, IDisplayBackend *backend);
 void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state);
 void ATUIRenderDebugMenu(ATSimulator &sim);
+void ATUIRenderOnlineMenu();
 
 #endif

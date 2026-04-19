@@ -39,6 +39,9 @@
 
 #include "mobile_internal.h"
 #include "ui_mode.h"
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "../netplay/ui_netplay.h"
+#endif
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -309,6 +312,22 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 			mobileState.currentScreen = ATMobileUIScreen::About;
 		}
 		ImGui::Spacing();
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		ImGui::Separator();
+		ImGui::Spacing();
+		if (ATTouchButton("Online — Browse", btnSize,
+		                  ATTouchButtonStyle::Accent)) {
+			ATNetplayUI_OpenBrowser();
+			ATMobileUI_CloseMenu(sim, mobileState);
+		}
+		ImGui::Spacing();
+		if (ATTouchButton("Online — Host Games", btnSize)) {
+			ATNetplayUI_OpenMyHostedGames();
+			ATMobileUI_CloseMenu(sim, mobileState);
+		}
+		ImGui::Spacing();
+#endif
 
 #ifndef __ANDROID__
 		ImGui::Separator();

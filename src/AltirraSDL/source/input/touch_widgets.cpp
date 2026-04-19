@@ -340,9 +340,15 @@ bool ATTouchSegmented(const char *label, int *current,
 	ImDrawList *dl = window->DrawList;
 	auto A = [](uint32 col) { return (uint32)ImGui::GetColorU32(col); };
 
-	// Label on top
-	dl->AddText(ImVec2(rowMin.x + padLR, rowMin.y),
-		A(pal.textMuted), label);
+	// Label on top — strip the "##..." ID suffix per ImGui convention
+	// so callers can pass "##id" for a label-less widget.
+	{
+		const char *labelEnd = RenderedLabelEnd(label);
+		if (label && labelEnd > label) {
+			dl->AddText(ImVec2(rowMin.x + padLR, rowMin.y),
+				A(pal.textMuted), label, labelEnd);
+		}
+	}
 
 	// Bar below
 	float barY0 = rowMin.y + labelH + gapY;
@@ -484,9 +490,15 @@ bool ATTouchSlider(const char *label, int *value, int minv, int maxv,
 	ImDrawList *dl = window->DrawList;
 	auto A = [](uint32 col) { return (uint32)ImGui::GetColorU32(col); };
 
-	// Label on top
-	dl->AddText(ImVec2(rowMin.x + padLR, rowMin.y),
-		A(pal.textMuted), label);
+	// Label on top — strip the "##..." ID suffix per ImGui convention
+	// so callers can pass "##id" for a label-less widget.
+	{
+		const char *labelEnd = RenderedLabelEnd(label);
+		if (label && labelEnd > label) {
+			dl->AddText(ImVec2(rowMin.x + padLR, rowMin.y),
+				A(pal.textMuted), label, labelEnd);
+		}
+	}
 
 	// Track
 	float trackX0 = rowMin.x + padLR + thumbR;

@@ -158,6 +158,9 @@ enum ATDeferredActionType {
 	kATDeferred_ConvertSAPToEXE,   // mPath = source SAP, mStr = dest XEX
 	kATDeferred_ExportROMSet,      // mPath = target folder
 	kATDeferred_AnalyzeTapeDecode, // mPath = source WAV, mStr = dest WAV
+	kATDeferred_NetplayHostSnapshot,   // path = gameId; serialise sim + feed host coordinator
+	kATDeferred_NetplayJoinerApply,    // path = temp file with received snapshot bytes
+	kATDeferred_NetplayHostBoot,       // path = image path; simple load + cold-reset + resume (no compat gate)
 };
 
 // Push a deferred action (thread-safe — may be called from file dialog callbacks)

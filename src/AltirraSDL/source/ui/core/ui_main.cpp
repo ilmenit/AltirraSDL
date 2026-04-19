@@ -31,6 +31,11 @@
 #include <at/atcore/serializable.h>
 
 #include "ui_main.h"
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "../netplay/ui_netplay.h"
+#include "../netplay/ui_netplay_state.h"
+#include "../netplay/ui_netplay_actions.h"
+#endif
 #include "ui_main_internal.h"
 #include "ui_mobile.h"
 #include "ui_mode.h"
@@ -69,6 +74,7 @@
 #include "compatdb.h"
 #include "uicompat.h"
 #include "logging.h"
+#include <at/atcore/logging.h>
 #include "ui_fonts.h"
 
 extern ATSimulator g_sim;
@@ -529,6 +535,309 @@ void ATUIPollDeferredActions() {
 				g_showToolsResult = true;
 				break;
 			}
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			case kATDeferred_NetplayHostSnapshot: {
+				// a.path carries the offer id (re-using the string
+				// slot to avoid extending the struct).  Boot step (if
+				// any) was enqueued before us so the sim is loaded by
+				// the time we run here.
+				extern void ATNetplayUI_SubmitHostSnapshotForGame(const char *gameId);
+				VDStringA u8OfferId = VDTextWToU8(a.path);
+				ATNetplayUI_SubmitHostSnapshotForGame(u8OfferId.c_str());
+				break;
+			}
+			case kATDeferred_NetplayHostBoot: {
+				// Netplay-only boot path: no compat-dialog gate (we
+				// must Resume even if the title is flagged, otherwise
+				// the snapshot captures a paused sim and both sides
+				// end up with a frozen screen after Lockstepping).
+				//
+				// Unlike kATDeferred_BootImage, we carry two strings:
+				//   a.path  = offer id (UTF-16 encoded UTF-8)
+				//   a.path2 = game image path
+				// so failures can be routed back to the specific offer
+				// row via ATNetplayUI_HostBootFailed().
+				extern ATOptions g_ATOptions;
+				extern void ATNetplayUI_HostBootFailed(const char *,
+					const char *);
+
+				VDStringA gameIdU8 = VDTextWToU8(a.path);
+				const VDStringW &imagePath = a.path2;
+
+				if (imagePath.empty()) {
+					ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
+						"internal: empty image path");
+					break;
+				}
+
+				// Step 1: save the user's pre-session simulator state
+				// into an in-memory snapshot so we can restore it
+				// exactly when the session ends.  Altirra settings.ini
+				// on disk is never touched — only the live sim mutates.
+				if (!ATNetplayUI::SaveSessionRestorePoint()) {
+					ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
+						"could not capture pre-session state; session refused");
+					break;
+				}
+
+				// Step 2: apply the offer's machine preset (hardware
+				// mode, memory, video, firmware).  This must happen
+				// before UnloadAll+Load so the load uses the correct
+				// hardware.
+				{
+					ATNetplayUI::HostedGame *hg =
+						ATNetplayUI::FindHostedGame(std::string(gameIdU8.c_str()));
+					ATNetplayUI::MachinePreset preset =
+						hg ? hg->preset : ATNetplayUI::MachinePreset::XLXE_NTSC;
+					std::string err = ATNetplayUI::ApplyPreset(preset);
+					if (!err.empty()) {
+						ATNetplayUI::RestoreSessionRestorePoint();
+						ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
+							err.c_str());
+						break;
+					}
+				}
+
+				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
+
+				ATCartLoadContext cartCtx {};
+				cartCtx.mbReturnOnUnknownMapper = true;
+
+				ATImageLoadContext imgCtx {};
+				imgCtx.mpCartLoadContext = &cartCtx;
+
+				ATMediaLoadContext mctx;
+				mctx.mOriginalPath = imagePath;
+				mctx.mImageName    = imagePath;
+				mctx.mWriteMode    = g_ATOptions.mDefaultWriteMode;
+				mctx.mbStopOnModeIncompatibility   = true;
+				mctx.mbStopAfterImageLoaded        = true;
+				mctx.mbStopOnMemoryConflictBasic   = true;
+				mctx.mbStopOnIncompatibleDiskFormat = false;
+				mctx.mpImageLoadContext            = &imgCtx;
+
+				// Retry loop mirroring kATDeferred_BootImage
+				// (ui_main.cpp:271-323).  We auto-resolve mode and
+				// BASIC conflicts silently — for netplay there's no
+				// user to answer a dialog and the peer is waiting on
+				// the other end of the handshake.
+				bool loadSuccess = false;
+				VDStringA failReason;
+				int safety = 10;
+				for (;;) {
+					try {
+						if (g_sim.Load(mctx)) {
+							loadSuccess = true;
+							break;
+						}
+					} catch (const MyError &e) {
+						failReason = e.c_str();
+						break;
+					}
+
+					if (!--safety) { failReason = "retry budget exhausted"; break; }
+
+					if (mctx.mbStopAfterImageLoaded)
+						mctx.mbStopAfterImageLoaded = false;
+
+					if (mctx.mbMode5200Required) {
+						mctx.mbMode5200Required = false;
+						if (g_sim.GetHardwareMode() != kATHardwareMode_5200) {
+							if (!ATUISwitchHardwareMode(nullptr,
+							        kATHardwareMode_5200, true)) {
+								failReason = "could not switch to 5200 mode";
+								break;
+							}
+						}
+						continue;
+					} else if (mctx.mbModeComputerRequired) {
+						mctx.mbModeComputerRequired = false;
+						if (g_sim.GetHardwareMode() == kATHardwareMode_5200) {
+							if (!ATUISwitchHardwareMode(nullptr,
+							        kATHardwareMode_800XL, true)) {
+								failReason = "could not switch to computer mode";
+								break;
+							}
+						}
+						continue;
+					} else if (mctx.mbMemoryConflictBasic) {
+						// Silently disable BASIC — most common and
+						// safe auto-resolution; netplay host cannot
+						// show a dialog mid-handshake.
+						mctx.mbStopOnMemoryConflictBasic = false;
+						mctx.mbMemoryConflictBasic       = false;
+						g_sim.SetBASICEnabled(false);
+						continue;
+					} else if (mctx.mbIncompatibleDiskFormat) {
+						mctx.mbIncompatibleDiskFormat       = false;
+						mctx.mbStopOnIncompatibleDiskFormat = false;
+						continue;
+					}
+
+					// Unknown cart mapper, or some other load failure
+					// we don't auto-resolve.  There's no user dialog
+					// path for netplay.
+					if (imgCtx.mLoadType == kATImageType_Cartridge)
+						failReason = "cartridge mapper not recognised";
+					else if (failReason.empty())
+						failReason = "image could not be loaded";
+					break;
+				}
+
+				if (!loadSuccess) {
+					// Restore the user's pre-session state before
+					// surfacing the error — otherwise they're left
+					// with whatever partial state Load left behind.
+					ATNetplayUI::RestoreSessionRestorePoint();
+					ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
+						failReason.empty()
+						    ? "image could not be loaded"
+						    : failReason.c_str());
+					break;
+				}
+
+				ATAddMRU(imagePath.c_str());
+				g_sim.ColdReset();
+
+				// If the image was loaded via an HLE program/BASIC
+				// loader (xex/exe/com/bin binaries, BASIC .bas files),
+				// the loader lives on the frontend side and injects
+				// bytes during boot via SIO hooks.  That state is NOT
+				// part of the savestate, so if we snapshot now the
+				// joiner receives a blank RAM + no loader → nothing
+				// boots → black screen on the peer.
+				//
+				// Workaround: run the sim until the HLE loader reports
+				// IsLaunchPending()=false (i.e. bytes delivered into
+				// RAM and the OS has jumped to the program) or until a
+				// bounded safety cap.  Then capture, so the snapshot
+				// contains the actual program in RAM and the joiner
+				// can resume from there.
+				{
+					extern ATLogChannel g_ATLCNetplay;
+					ATHLEProgramLoader *prog = g_sim.GetProgramLoader();
+					IATBlobImage *basicDummy = nullptr; (void)basicDummy;
+					// BASIC loader accessor isn't exposed on the
+					// simulator; current usage only matters for xex.
+					if (prog && prog->IsLaunchPending()) {
+						g_sim.Resume();
+						const int kMaxBootFrames = 1800;  // 30 s @ 60 Hz
+						int f = 0;
+						for (; f < kMaxBootFrames; ++f) {
+							g_sim.Advance(false);
+							if (!prog->IsLaunchPending()) break;
+						}
+						g_sim.Pause();
+						g_ATLCNetplay("host boot: HLE loader drained "
+							"after %d frames (still pending=%d)",
+							f, prog->IsLaunchPending() ? 1 : 0);
+					} else {
+						g_sim.Pause();
+					}
+					VDStringA imgU8 = VDTextWToU8(imagePath);
+					g_ATLCNetplay("host boot: \"%s\" loaded (hw=%d mem=%d vid=%d), "
+						"paused for snapshot capture",
+						imgU8.c_str(),
+						(int)g_sim.GetHardwareMode(),
+						(int)g_sim.GetMemoryMode(),
+						(int)g_sim.GetVideoStandard());
+				}
+				// Deliberately do NOT Resume here.  If we did, the
+				// host sim would free-run for K frames during the
+				// snapshot transfer (the sim is not gated by the
+				// lockstep loop until Lockstepping is reached).  That
+				// drift means the snapshot — captured in the next
+				// deferred action a few lines later — represents a
+				// different frame than the host is on by the time
+				// Lockstepping begins, and the rolling hash desyncs
+				// immediately.  Keeping paused until the host coord
+				// enters Lockstepping (done in
+				// ReconcileHostedGames) makes both sides start from
+				// exactly the snapshot state.
+				g_sim.Pause();
+				break;
+			}
+			case kATDeferred_NetplayJoinerApply: {
+				// a.path is the temp file containing the snapshot
+				// bytes we received from the host.  Load it, Resume,
+				// then ack the coordinator so it advances to
+				// Lockstepping.  On failure we MUST tear down the
+				// join and notify the user — otherwise the coord sits
+				// in SnapshotReady forever and the Waiting modal
+				// hangs with no explanation.
+				//
+				// Like the host side, we save the user's pre-session
+				// state first so the session-end hook can restore the
+				// emulator to exactly how they left it.
+				extern void ATNetplayUI_JoinerSnapshotApplied();
+				extern void ATNetplayUI_JoinerSnapshotFailed(const char *);
+				extern ATLogChannel g_ATLCNetplay;
+
+				g_ATLCNetplay("joiner apply: pre-state "
+					"running=%d paused=%d hw=%d mem=%d vid=%d",
+					g_sim.IsRunning() ? 1 : 0,
+					g_sim.IsPaused()  ? 1 : 0,
+					(int)g_sim.GetHardwareMode(),
+					(int)g_sim.GetMemoryMode(),
+					(int)g_sim.GetVideoStandard());
+
+				if (!ATNetplayUI::SaveSessionRestorePoint()) {
+					ATNetplayUI_JoinerSnapshotFailed(
+						"could not capture pre-session state");
+					break;
+				}
+
+				VDStringA reason;
+				bool ok = false;
+				try {
+					ATImageLoadContext ctx {};
+					if (g_sim.Load(a.path.c_str(),
+					        kATMediaWriteMode_RO, &ctx)) {
+						g_ATLCNetplay("joiner apply: Load OK, "
+							"post-Load running=%d paused=%d "
+							"hw=%d mem=%d vid=%d",
+							g_sim.IsRunning() ? 1 : 0,
+							g_sim.IsPaused()  ? 1 : 0,
+							(int)g_sim.GetHardwareMode(),
+							(int)g_sim.GetMemoryMode(),
+							(int)g_sim.GetVideoStandard());
+						g_sim.Resume();
+						g_ATLCNetplay("joiner apply: after Resume "
+							"running=%d paused=%d",
+							g_sim.IsRunning() ? 1 : 0,
+							g_sim.IsPaused()  ? 1 : 0);
+						ok = true;
+					} else {
+						// Most common causes here are OS/BASIC ROM
+						// refString mismatches (host has firmware X,
+						// joiner has firmware Y) — the savestate
+						// loader sets mbKernelMismatchDetected and
+						// returns false.  We can't inspect that
+						// directly, but the generic message is
+						// still actionable.
+						reason = "host's firmware / hardware config "
+						         "is not available on this machine";
+					}
+				} catch (const MyError &e) {
+					reason = e.c_str();
+				} catch (...) {
+					reason = "unknown error while applying snapshot";
+				}
+
+				if (ok) {
+					ATNetplayUI_JoinerSnapshotApplied();
+				} else {
+					// Restore so the user gets back to exactly what
+					// they were doing before they clicked Join.
+					ATNetplayUI::RestoreSessionRestorePoint();
+					ATNetplayUI_JoinerSnapshotFailed(
+						reason.empty() ? "snapshot apply failed"
+						               : reason.c_str());
+				}
+				// Temp file is deleted by the UI after either ack.
+				break;
+			}
+#endif
 			}
 		} catch (const MyError& e) {
 			g_toolsResultMessage = VDStringA("Error: ") + e.c_str();
@@ -705,10 +1014,17 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 		LOG_INFO("UI", "ImGui initialized (SDL_Renderer, docking enabled)");
 	}
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	ATNetplayUI_Initialize(window);
+#endif
+
 	return true;
 }
 
 void ATUIShutdown() {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	ATNetplayUI_Shutdown();
+#endif
 	ATUIVirtualKeyboard_Shutdown();
 	ATUIShutdownPaletteSolver();
 	ATUIStopRecording();
@@ -1143,6 +1459,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showShaderSetup)      ATUIRenderShaderSetupHelp(state);
 	if (state.showCalibrate)        ATUIRenderCalibrationDialog(state);
 	if (state.showCustomizeHud)     ATUIRenderCustomizeHudDialog(state);
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	ATNetplayUI_RenderDesktop(sim, state, window);
+#endif
 	ATUIShaderPresetsPoll(backend);
 	ATUIRenderVideoRecordingDialog(window);
 

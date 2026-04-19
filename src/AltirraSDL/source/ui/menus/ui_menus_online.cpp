@@ -1,0 +1,45 @@
+//	AltirraSDL - Online Play menu (top-level menu entry)
+//
+//	Mirrors Windows Altirra's convention of a top-level menu for
+//	feature clusters.  Items:
+//	  - Browse Hosted Games… → Opens the Online Browser
+//	  - Host a Game…         → If a cart is booted, goes straight to
+//	                           HostSetup.  Otherwise opens Browser so
+//	                           the user can boot something first.
+//	  - Preferences…         → Preferences → Netplay
+//	  - End Session          → Shown only while a netplay session is
+//	                           active.
+
+#include <stdafx.h>
+
+#include <imgui.h>
+
+#include "ui_menus_internal.h"
+#include "ui/netplay/ui_netplay.h"
+#include "ui/netplay/ui_netplay_state.h"
+#include "netplay/netplay_glue.h"
+
+void ATUIRenderOnlineMenu() {
+	bool inSession = ATNetplayGlue::IsActive();
+
+	if (ImGui::MenuItem("Browse Hosted Games...")) {
+		ATNetplayUI_OpenBrowser();
+	}
+
+	if (ImGui::MenuItem("Host Games...")) {
+		ATNetplayUI_OpenMyHostedGames();
+	}
+
+	ImGui::Separator();
+
+	if (ImGui::MenuItem("Preferences...")) {
+		ATNetplayUI_OpenPrefs();
+	}
+
+	if (inSession) {
+		ImGui::Separator();
+		if (ImGui::MenuItem("End Session")) {
+			ATNetplayUI_EndSession();
+		}
+	}
+}

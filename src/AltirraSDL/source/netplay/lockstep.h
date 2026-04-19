@@ -122,6 +122,11 @@ public:
 	// pre-first-packet silence.
 	bool PeerTimedOut(uint64_t nowMs, uint64_t timeoutMs) const;
 
+	// Monotonic-ms timestamp of the last peer input packet we
+	// processed, or 0 if none has ever arrived.  Exposed for the
+	// in-session HUD so it can render a live "packet age" readout.
+	uint64_t LastPeerRecvMs() const { return mLastPeerRecvMs; }
+
 	// Test hook: at emulation frame `frame` (not wall frame!), flip
 	// one bit of the data fed to the LOCAL rolling hash without
 	// touching the wire bytes.  Used by the selftest to confirm

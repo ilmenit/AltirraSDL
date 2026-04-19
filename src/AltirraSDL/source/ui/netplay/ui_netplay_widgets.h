@@ -1,0 +1,139 @@
+//	AltirraSDL - Online Play reusable widgets
+//
+//	DRY primitives that both the Desktop menu-bar build and the
+//	Gaming Mode full-screen flow consume.  Each widget is a thin
+//	ImGui wrapper that delegates styling to the existing
+//	`touch_widgets.h` API (ATTouchButton, ATMobileGetPalette, etc.)
+//	so there is a single source of truth for look-and-feel across
+//	both modes.
+//
+//	Why not just call touch_widgets directly?  Because the shapes
+//	here are netplay-specific:
+//	  - SessionTile     — one row in the Online browser grid.
+//	                      Pulls art from ATGameLibrary / GameArtCache,
+//	                      overlays peer handle, region, visibility,
+//	                      and a padlock badge for private sessions.
+//	  - StatusBadge     — phase label for the waiting panel (colour +
+//	                      icon + spinner).
+//	  - LobbyLine       — one row in a small lobby-listing dropdown.
+//	  - BeginSheet      — opens a mode-appropriate container (centred
+//	                      ImGui modal in Desktop; full-screen card
+//	                      with safe-area insets in Gaming Mode).
+//	  - BeginScreenGrid — common grid layout respecting safe-area
+//	                      insets and keyboard/gamepad nav focus.
+//
+//	All widgets are pure functions — no static state — so they compile
+//	and link identically on Windows, macOS, Linux, and Android.
+
+#pragma once
+
+#include <imgui.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+namespace ATNetplay { struct LobbySession; }
+
+namespace ATNetplayUI {
+
+// -----------------------------------------------------------------------
+// Mode-aware container helpers.  Both must be followed by
+// EndSheet()/EndScreenGrid() exactly once.
+// -----------------------------------------------------------------------
+
+// Opens a sheet for the current UI mode:
+//   Desktop      — centred modal window with NoSavedSettings.
+//   Gaming Mode  — full-screen card with safe-area inset padding and
+//                  a translucent backdrop that dims the emulator.
+//
+// `title` is the window title; `open` is the "X" close-button flag
+// (nullable ⇒ no close button).  `minSize`/`maxSize` are hints in
+// logical pixels (content-scaled by the caller of the mode layer).
+//
+// Returns true if the sheet is open and the caller should draw its
+// body; false otherwise.  Matches ImGui::Begin semantics.
+bool BeginSheet(const char *title, bool *open,
+                const ImVec2 &minSize,
+                const ImVec2 &maxSize);
+void EndSheet();
+
+// Full-bleed grid container — sized to the available client area
+// minus safe-area insets on Gaming Mode, sized to the parent's
+// content region on Desktop.  Returns the tile size that ComputeTile
+// below produces for `columns`.
+ImVec2 BeginScreenGrid(int columns,
+                       float minTileWidthPx,
+                       float tileAspect);
+void EndScreenGrid();
+
+// -----------------------------------------------------------------------
+// Reusable widgets
+// -----------------------------------------------------------------------
+
+// Renders one tile inside BeginScreenGrid().  `artTexId` is a
+// SDL_Texture* pointer reinterpreted as a 64-bit handle (matches the
+// convention used by Game Library mobile browser).  Pass 0 / nullptr
+// when no art exists; a placeholder icon is drawn instead.
+//
+// Returns true on the frame the user activates the tile (click /
+// Enter / gamepad A).
+struct TileInfo {
+	const char *title       = "";      // cart name — bold top line
+	const char *subtitle    = nullptr; // peer handle — small line
+	const char *region      = nullptr; // optional "global" / "eu"
+	uint32_t    playerCount = 0;
+	uint32_t    maxPlayers  = 0;
+	bool        isPrivate   = false;   // padlock badge
+	bool        isSelected  = false;   // accent border if true
+	uintptr_t   artTexId    = 0;       // SDL_Texture* or nullptr
+	ImVec2      artSize     = ImVec2(0, 0);
+};
+
+bool SessionTile(const TileInfo &info, const ImVec2 &size);
+
+// Status indicator used by the Waiting panel.  `severity` controls the
+// colour (0=accent/neutral, 1=warning, 2=danger, 3=success) and
+// `showSpinner` adds a rotating dot train.
+void StatusBadge(const char *label, int severity, bool showSpinner);
+
+// Renders the peer handle + region + padlock tag inline — used by
+// SessionTile internally, and by the Waiting panel to echo the peer.
+void PeerChip(const char *handle, const char *region, bool isPrivate);
+
+// -----------------------------------------------------------------------
+// Keyboard / gamepad navigation helpers.
+// -----------------------------------------------------------------------
+
+// Wraps the pattern: on the first frame a screen is visible, push
+// focus to the given widget so keyboard / gamepad nav picks it up.
+// The caller passes a small integer key unique per-widget so the
+// focus-on-first-frame fires at most once per screen appearance.
+void FocusOnceNextFrame(int tag);
+
+// True if a focus request for `tag` is pending this frame.  The
+// widget immediately after this check should call
+// ImGui::SetKeyboardFocusHere().
+bool ConsumeFocusRequest(int tag);
+
+// -----------------------------------------------------------------------
+// Safe-area / scale helpers.
+// -----------------------------------------------------------------------
+
+// Returns the content rect inside the main window minus the platform
+// safe-area insets.  On Android this avoids the status bar + rounded
+// screen corners + gesture pill.  On desktop returns the full client
+// area.
+ImVec2 GetSafeOrigin();
+ImVec2 GetSafeSize();
+
+// Called by the mobile render path each frame with the current
+// safe-area insets.  Desktop leaves all zero.
+void ATNetplayUI_SetSafeAreaInsets(int top, int bottom,
+                                   int left, int right);
+
+// DPI-scaled pixel-per-dp helper (mirrors the one inside
+// touch_widgets but exposed for netplay sizing).
+float  Dp(float dp);
+
+} // namespace ATNetplayUI

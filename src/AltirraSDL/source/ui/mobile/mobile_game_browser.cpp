@@ -35,6 +35,10 @@
 #include "../gamelibrary/game_library.h"
 #include "../gamelibrary/game_library_art.h"
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "../netplay/ui_netplay.h"
+#endif
+
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
@@ -1175,12 +1179,21 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			const float chromePad = dp(16.0f);
 			float settingsW = ImGui::CalcTextSize("Settings").x
 				+ chromePad * 2;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			float onlineW = ImGui::CalcTextSize("Online Play").x
+				+ chromePad * 2;
+#else
+			float onlineW = 0.0f;
+#endif
 #ifndef __ANDROID__
 			float exitW = ImGui::CalcTextSize("Exit Gaming Mode").x
 				+ chromePad * 2;
 			float chromeW = settingsW + dp(6.0f) + exitW;
 #else
 			float chromeW = settingsW;
+#endif
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			chromeW += onlineW + dp(6.0f);
 #endif
 
 			float rowY = ImGui::GetCursorPosY();
@@ -1194,6 +1207,18 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			float rightX = ImGui::GetContentRegionMax().x - chromeW;
 			ImGui::SameLine(0, 0);
 			ImGui::SetCursorPos(ImVec2(rightX, rowY));
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (ATTouchButton("Online Play##chrome",
+				ImVec2(onlineW, chromeH),
+				ATTouchButtonStyle::Accent))
+			{
+				// Go to My Hosted Games first — that's the primary
+				// entry point for the offer-list UX.  The browser is
+				// reachable from there with one tap.
+				ATNetplayUI_OpenMyHostedGames();
+			}
+			ImGui::SameLine(0, dp(6.0f));
+#endif
 			if (ATTouchButton("Settings##chrome",
 				ImVec2(settingsW, chromeH)))
 			{
