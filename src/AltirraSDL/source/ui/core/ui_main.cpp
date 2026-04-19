@@ -35,6 +35,7 @@
 #include "../netplay/ui_netplay.h"
 #include "../netplay/ui_netplay_state.h"
 #include "../netplay/ui_netplay_actions.h"
+#include "netplay/netplay_input.h"
 #endif
 #include "ui_main_internal.h"
 #include "ui_mobile.h"
@@ -50,6 +51,9 @@
 #include "ui_virtual_keyboard.h"
 #include "display_sdl3_impl.h"
 #include "simulator.h"
+#include "hleprogramloader.h"
+#include "cpu.h"
+#include "simeventmanager.h"
 #include "mediamanager.h"
 #include "gtia.h"
 #include "cartridge.h"
@@ -699,41 +703,71 @@ void ATUIPollDeferredActions() {
 				ATAddMRU(imagePath.c_str());
 				g_sim.ColdReset();
 
-				// If the image was loaded via an HLE program/BASIC
-				// loader (xex/exe/com/bin binaries, BASIC .bas files),
-				// the loader lives on the frontend side and injects
-				// bytes during boot via SIO hooks.  That state is NOT
-				// part of the savestate, so if we snapshot now the
-				// joiner receives a blank RAM + no loader → nothing
-				// boots → black screen on the peer.
+				// For HLE-loaded images (xex/exe/com/bin) the loader
+				// lives on the frontend side and works in two phases:
+				//   1. StartLoad sets IsLaunchPending=false and
+				//      installs a CPU hook at $01FE (trap address).
+				//   2. Each kernel RTS lands back at $01FE, the hook
+				//      fires, next segment is streamed into RAM.
+				//   3. After the last segment, the hook is REMOVED
+				//      and the CPU jumps to the program's run
+				//      address.  The loader fires
+				//      kATSimEvent_EXERunSegment at that exact moment
+				//      (hleprogramloader.cpp:601).
 				//
-				// Workaround: run the sim until the HLE loader reports
-				// IsLaunchPending()=false (i.e. bytes delivered into
-				// RAM and the OS has jumped to the program) or until a
-				// bounded safety cap.  Then capture, so the snapshot
-				// contains the actual program in RAM and the joiner
-				// can resume from there.
+				// CPU hooks are NOT part of the savestate, so if we
+				// capture before phase 3 completes the joiner lands
+				// at PC=$01FE with no hook registered and crashes on
+				// stack garbage.  Drain until EXERunSegment fires so
+				// the hook has self-cleaned and the CPU is in user
+				// program space.
+				//
+				// For non-HLE paths (disk / cart / 5200) no loader
+				// exists and EXERunSegment never fires — that's fine;
+				// we just pause immediately.
 				{
 					extern ATLogChannel g_ATLCNetplay;
 					ATHLEProgramLoader *prog = g_sim.GetProgramLoader();
-					IATBlobImage *basicDummy = nullptr; (void)basicDummy;
-					// BASIC loader accessor isn't exposed on the
-					// simulator; current usage only matters for xex.
-					if (prog && prog->IsLaunchPending()) {
+					g_ATLCNetplay("host boot: pre-drain prog=%p "
+						"pending=%d imgType=%d",
+						(void*)prog,
+						prog ? (prog->IsLaunchPending() ? 1 : 0) : -1,
+						(int)imgCtx.mLoadType);
+
+					if (prog) {
+						// Arm a one-shot flag via the sim event manager:
+						// set on EXERunSegment, which only fires from
+						// the loader's OnLoadContinue last branch where
+						// the $01FE hook is unset and the CPU jumps to
+						// the real run address.
+						bool launched = false;
+						uint32 cbId = 0;
+						if (auto *em = g_sim.GetEventManager()) {
+							cbId = em->AddEventCallback(
+								kATSimEvent_EXERunSegment,
+								[&launched] { launched = true; });
+						}
+
 						g_sim.Resume();
 						const int kMaxBootFrames = 1800;  // 30 s @ 60 Hz
 						int f = 0;
 						for (; f < kMaxBootFrames; ++f) {
 							g_sim.Advance(false);
-							if (!prog->IsLaunchPending()) break;
+							if (launched) break;
 						}
 						g_sim.Pause();
+
+						if (auto *em = g_sim.GetEventManager())
+							em->RemoveEventCallback(cbId);
+
 						g_ATLCNetplay("host boot: HLE loader drained "
-							"after %d frames (still pending=%d)",
-							f, prog->IsLaunchPending() ? 1 : 0);
+							"after %d frames (launched=%d, still pending=%d)",
+							f, launched ? 1 : 0,
+							prog->IsLaunchPending() ? 1 : 0);
 					} else {
 						g_sim.Pause();
 					}
+
 					VDStringA imgU8 = VDTextWToU8(imagePath);
 					g_ATLCNetplay("host boot: \"%s\" loaded (hw=%d mem=%d vid=%d), "
 						"paused for snapshot capture",
@@ -773,6 +807,11 @@ void ATUIPollDeferredActions() {
 				extern void ATNetplayUI_JoinerSnapshotFailed(const char *);
 				extern ATLogChannel g_ATLCNetplay;
 
+				// Arm the sim-event diagnostic logger BEFORE the first
+				// Advance so the first bad event on the joiner (which
+				// fires before BeginSession() runs) gets captured.
+				ATNetplayInput::AttachEventLogger();
+
 				g_ATLCNetplay("joiner apply: pre-state "
 					"running=%d paused=%d hw=%d mem=%d vid=%d",
 					g_sim.IsRunning() ? 1 : 0,
@@ -787,20 +826,44 @@ void ATUIPollDeferredActions() {
 					break;
 				}
 
+				// Unload the joiner's pre-session media BEFORE applying
+				// the host's snapshot.  Symmetry with the host's
+				// kATDeferred_NetplayHostBoot path (UnloadAll before
+				// Load).  Without this, disks / cartridges / cassettes
+				// the user had mounted pre-session stay attached and
+				// the savestate's device manager state layers on top,
+				// producing inconsistent phantom devices that don't
+				// exist on the host — a guaranteed lockstep desync
+				// source even when the RAM / CPU / GTIA state is
+				// identical.  The pre-session restore point captures
+				// the media so EndSession's RestoreSessionRestorePoint
+				// brings it all back.
+				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
+
 				VDStringA reason;
 				bool ok = false;
 				try {
 					ATImageLoadContext ctx {};
 					if (g_sim.Load(a.path.c_str(),
 					        kATMediaWriteMode_RO, &ctx)) {
-						g_ATLCNetplay("joiner apply: Load OK, "
-							"post-Load running=%d paused=%d "
-							"hw=%d mem=%d vid=%d",
-							g_sim.IsRunning() ? 1 : 0,
-							g_sim.IsPaused()  ? 1 : 0,
-							(int)g_sim.GetHardwareMode(),
-							(int)g_sim.GetMemoryMode(),
-							(int)g_sim.GetVideoStandard());
+						{
+							ATCPUEmulator &cpu = g_sim.GetCPU();
+							g_ATLCNetplay("joiner apply: Load OK, "
+								"post-Load running=%d paused=%d "
+								"hw=%d mem=%d vid=%d "
+								"PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%02X",
+								g_sim.IsRunning() ? 1 : 0,
+								g_sim.IsPaused()  ? 1 : 0,
+								(int)g_sim.GetHardwareMode(),
+								(int)g_sim.GetMemoryMode(),
+								(int)g_sim.GetVideoStandard(),
+								(unsigned)cpu.GetInsnPC(),
+								(unsigned)cpu.GetA(),
+								(unsigned)cpu.GetX(),
+								(unsigned)cpu.GetY(),
+								(unsigned)cpu.GetS(),
+								(unsigned)cpu.GetP());
+						}
 						g_sim.Resume();
 						g_ATLCNetplay("joiner apply: after Resume "
 							"running=%d paused=%d",

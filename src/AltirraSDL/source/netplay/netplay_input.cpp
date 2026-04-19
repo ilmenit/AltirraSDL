@@ -7,15 +7,20 @@
 #include "packets.h"  // NetInput
 
 #include "simulator.h"
+#include "simeventmanager.h"
 #include "inputmanager.h"
 #include "inputdefs.h"
 #include "devicemanager.h"
+#include "cpu.h"
 #include "input/input_sdl3.h"  // ATInputSDL3_ReleaseAllKeys
 
 #include <at/atcore/deviceport.h>
 #include <at/ataudio/pokey.h>
+#include <at/atcore/logging.h>
 
 #include "gtia.h"
+
+extern ATLogChannel g_ATLCNetplay;
 
 #include <SDL3/SDL.h>
 
@@ -49,6 +54,50 @@ IATDeviceControllerPort *g_port[2] = { nullptr, nullptr };
 
 bool g_active        = false;
 bool g_wasRestricted = false;
+
+// Pre-session CPU debug-flag snapshot.  Netplay demands the two peers
+// execute the same opcode stream — if one peer has e.g.
+// IllegalInsnsEnabled=false it traps on illegal opcodes that the other
+// peer executes fine.  On BeginSession we force all three flags to
+// gameplay-friendly values and restore the user's prior settings on
+// EndSession.
+bool g_cpuIllegalSaved = true;
+bool g_cpuStopOnBRKSaved = false;
+bool g_cpuPathBrkSaved = false;
+
+// Sim-event diagnostic hook: logs "interesting" simulator events (CPU
+// traps, verifier failures, abnormal DMA, illegal instructions) while
+// a netplay session is active.  Lets us pinpoint the exact root cause
+// of a runaway-CPU or trap on either peer.
+class NetplaySimEventLogger final : public IATSimulatorCallback {
+public:
+	void OnSimulatorEvent(ATSimulatorEvent ev) override {
+		// AbnormalDMA is noise — fires many times per second in normal
+		// games and does NOT reach the emu-error handler (debugger.cpp
+		// early-returns for it).  Filter it out so the rest of the
+		// "bad event" signal is visible.
+		const char *name = nullptr;
+		switch (ev) {
+			case kATSimEvent_CPUIllegalInsn:    name = "CPUIllegalInsn";    break;
+			case kATSimEvent_VerifierFailure:   name = "VerifierFailure";   break;
+			case kATSimEvent_CPUStackBreakpoint:name = "CPUStackBreakpoint";break;
+			case kATSimEvent_CPUPCBreakpoint:   name = "CPUPCBreakpoint";   break;
+			case kATSimEvent_CPUNewPath:        name = "CPUNewPath";        break;
+			case kATSimEvent_ReadBreakpoint:    name = "ReadBreakpoint";    break;
+			case kATSimEvent_WriteBreakpoint:   name = "WriteBreakpoint";   break;
+			case kATSimEvent_ColdReset:         name = "ColdReset";         break;
+			case kATSimEvent_WarmReset:         name = "WarmReset";         break;
+			default: return;
+		}
+		ATCPUEmulator &cpu = g_sim.GetCPU();
+		g_ATLCNetplay("sim event: %s at PC=%04X (A=%02X X=%02X Y=%02X S=%02X)",
+			name, (unsigned)cpu.GetInsnPC(),
+			(unsigned)cpu.GetA(), (unsigned)cpu.GetX(),
+			(unsigned)cpu.GetY(), (unsigned)cpu.GetS());
+	}
+};
+NetplaySimEventLogger g_simEventLogger;
+bool g_simEventHooked = false;
 SDL_Gamepad *g_padCache = nullptr;
 
 // Capture-side event state.
@@ -125,6 +174,26 @@ void BeginSession() {
 		im->SetRestrictedMode(true);
 	}
 
+	// Force CPU debug flags to gameplay-safe values so the two peers
+	// don't diverge on a game that uses illegal 6502 opcodes, BRK, or
+	// path-trace breakpoints.  Save prior values for EndSession restore.
+	{
+		ATCPUEmulator &cpu = g_sim.GetCPU();
+		g_cpuIllegalSaved   = cpu.AreIllegalInsnsEnabled();
+		g_cpuStopOnBRKSaved = cpu.GetStopOnBRK();
+		g_cpuPathBrkSaved   = cpu.IsPathBreakEnabled();
+		cpu.SetIllegalInsnsEnabled(true);  // games use undocumented ops
+		cpu.SetStopOnBRK(false);
+		cpu.SetPathBreakEnabled(false);
+		g_ATLCNetplay("input: CPU flags forced to gameplay-safe "
+			"(was illegal=%d stopOnBRK=%d pathBrk=%d)",
+			g_cpuIllegalSaved ? 1 : 0,
+			g_cpuStopOnBRKSaved ? 1 : 0,
+			g_cpuPathBrkSaved ? 1 : 0);
+	}
+
+	AttachEventLogger();
+
 	ATDeviceManager *dm = g_sim.GetDeviceManager();
 	if (dm) {
 		if (auto *pm = dm->GetService<IATDevicePortManager>()) {
@@ -166,6 +235,16 @@ void EndSession() {
 	if (ATInputManager *im = g_sim.GetInputManager())
 		im->SetRestrictedMode(g_wasRestricted);
 
+	// Restore the user's pre-session CPU debug flags.
+	{
+		ATCPUEmulator &cpu = g_sim.GetCPU();
+		cpu.SetIllegalInsnsEnabled(g_cpuIllegalSaved);
+		cpu.SetStopOnBRK(g_cpuStopOnBRKSaved);
+		cpu.SetPathBreakEnabled(g_cpuPathBrkSaved);
+	}
+
+	DetachEventLogger();
+
 	ReleaseGamepad();
 	ResetKeyQueue();
 	g_active = false;
@@ -173,6 +252,21 @@ void EndSession() {
 
 bool IsActive()                { return g_active; }
 bool IsSuppressingLocalInput() { return g_active; }
+
+void AttachEventLogger() {
+	if (g_simEventHooked) return;
+	if (auto *em = g_sim.GetEventManager()) {
+		em->AddCallback(&g_simEventLogger);
+		g_simEventHooked = true;
+	}
+}
+
+void DetachEventLogger() {
+	if (!g_simEventHooked) return;
+	if (auto *em = g_sim.GetEventManager())
+		em->RemoveCallback(&g_simEventLogger);
+	g_simEventHooked = false;
+}
 
 void OnLocalKeyDown(uint8_t atariScanCode) {
 	if (!g_active) return;

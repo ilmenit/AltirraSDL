@@ -16,6 +16,7 @@
 #include "simulator.h"
 #include "firmwaremanager.h"
 #include "constants.h"
+#include "cpu.h"
 #include "uiaccessors.h"  // ATUISwitchHardwareMode
 
 #include <at/atio/image.h>       // ATStateLoadContext
@@ -138,7 +139,15 @@ HostedGameState PhaseToHostedGameState(ATNetplayGlue::Phase p, bool enabled,
 void PostLobbyCreate(HostedGame& o) {
 	std::string section;
 	ATNetplay::LobbyEndpoint ep = FirstHttpLobby(section);
-	if (ep.host.empty()) return;
+	if (ep.host.empty()) {
+		g_ATLCNetplay("lobby Create skipped for \"%s\": "
+			"no HTTP lobby endpoint configured",
+			o.gameName.c_str());
+		return;
+	}
+	g_ATLCNetplay("lobby Create posting for \"%s\" → %s:%u (section \"%s\")",
+		o.gameName.c_str(), ep.host.c_str(), (unsigned)ep.port,
+		section.c_str());
 
 	LobbyRequest req{};
 	req.op       = LobbyOp::Create;
@@ -514,14 +523,24 @@ void SubmitHostSnapshotForGame(const char *gameId) {
 	if (!o) return;
 	if (!ATNetplayGlue::HostExists(gameId)) return;
 
-	g_ATLCNetplay("host snapshot: capturing for \"%s\" "
-		"(running=%d paused=%d hw=%d mem=%d vid=%d)",
-		gameId,
-		g_sim.IsRunning() ? 1 : 0,
-		g_sim.IsPaused()  ? 1 : 0,
-		(int)g_sim.GetHardwareMode(),
-		(int)g_sim.GetMemoryMode(),
-		(int)g_sim.GetVideoStandard());
+	{
+		ATCPUEmulator &cpu = g_sim.GetCPU();
+		g_ATLCNetplay("host snapshot: capturing for \"%s\" "
+			"(running=%d paused=%d hw=%d mem=%d vid=%d "
+			"PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%02X)",
+			gameId,
+			g_sim.IsRunning() ? 1 : 0,
+			g_sim.IsPaused()  ? 1 : 0,
+			(int)g_sim.GetHardwareMode(),
+			(int)g_sim.GetMemoryMode(),
+			(int)g_sim.GetVideoStandard(),
+			(unsigned)cpu.GetInsnPC(),
+			(unsigned)cpu.GetA(),
+			(unsigned)cpu.GetX(),
+			(unsigned)cpu.GetY(),
+			(unsigned)cpu.GetS(),
+			(unsigned)cpu.GetP());
+	}
 
 	try {
 		// Mirror ATSimulator::SaveState (simulator.cpp:3870) but write

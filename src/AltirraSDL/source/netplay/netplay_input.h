@@ -26,6 +26,16 @@ void BeginSession();
 void EndSession();
 bool IsActive();
 
+// Attach / detach the diagnostic sim-event logger independently of
+// BeginSession.  The main loop uses BeginSession only when
+// lockstep is actually active — but the interesting events often
+// fire BEFORE that (during the joiner's first Advance right after
+// ApplySnapshot, or the host's drain loop).  Call
+// AttachEventLogger earlier in those paths so the first bad event
+// gets captured.  Detach is automatic on EndSession too.
+void AttachEventLogger();
+void DetachEventLogger();
+
 // True while BeginSession has been called and EndSession hasn't.
 // Consumed by input_sdl3 / joystick_sdl3 to gate their normal paths.
 bool IsSuppressingLocalInput();

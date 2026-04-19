@@ -105,10 +105,18 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 					o->lobbyToken       = r.create.token;
 					o->lastHeartbeatMs  = nowMs;
 					o->lastError.clear();
+					g_ATLCNetplay("lobby Create OK for \"%s\" "
+						"sessionId=%s",
+						o->gameName.c_str(),
+						r.create.sessionId.c_str());
 				} else {
 					o->lastError = r.error.empty()
 						? "Lobby announce failed"
 						: ("Lobby announce failed: " + r.error);
+					g_ATLCNetplay("lobby Create FAILED for \"%s\": %s",
+						o->gameName.c_str(),
+						r.error.empty() ? "(no detail)"
+						                : r.error.c_str());
 					// Do NOT transition the offer to Failed just
 					// because the listing failed — the coordinator is
 					// still bound, direct P2P still works.  Just
@@ -117,11 +125,22 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 				return;
 			}
 			if (r.op == ATNetplayUI::LobbyOp::Heartbeat) {
-				// Silently ignore; ReconcileHostedGames arms the next
-				// heartbeat on its own cadence.
+				// ReconcileHostedGames arms the next heartbeat on its
+				// own cadence; only log failures so we surface lobby
+				// outages without spamming every 30 s tick.
+				if (!r.ok) {
+					g_ATLCNetplay("lobby Heartbeat FAILED: %s",
+						r.error.empty() ? "(no detail)"
+						                : r.error.c_str());
+				}
 				return;
 			}
 			if (r.op == ATNetplayUI::LobbyOp::Delete) {
+				if (!r.ok) {
+					g_ATLCNetplay("lobby Delete FAILED: %s",
+						r.error.empty() ? "(no detail)"
+						                : r.error.c_str());
+				}
 				return;
 			}
 			if (r.op != ATNetplayUI::LobbyOp::List) return;
@@ -129,6 +148,9 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 				st.browser.statusLine = r.error.empty()
 					? "Lobby unreachable"
 					: r.error;
+				g_ATLCNetplay("lobby List FAILED: %s",
+					r.error.empty() ? "(no detail)"
+					                : r.error.c_str());
 				return;
 			}
 			// Merge by sessionId so multiple lobbies de-dup.  Filter

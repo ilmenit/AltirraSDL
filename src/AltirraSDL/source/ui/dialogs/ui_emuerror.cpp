@@ -21,6 +21,9 @@
 #include "options.h"
 #include "debugger.h"
 
+#include <at/atcore/logging.h>
+extern ATLogChannel g_ATLCNetplay;
+
 // Debugger open/close from ui_debugger.cpp
 extern void ATUIDebuggerOpen();
 
@@ -200,6 +203,26 @@ void ATEmuErrorHandlerSDL3::OnDebuggerOpen(IATDebugger *, ATDebuggerOpenEvent *e
 		return;
 
 	extern ATOptions g_ATOptions;
+
+	// Log CPU state so the user / devs can diagnose mysterious
+	// "game stopped" moments — especially during netplay sessions
+	// where a fault on one peer freezes both sides.
+	{
+		ATCPUEmulator &cpu = mpSim->GetCPU();
+		g_ATLCNetplay(
+			"emu error: PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%02X "
+			"mode=%d illegal=%d stopOnBRK=%d pathBrk=%d",
+			(unsigned)cpu.GetInsnPC(),
+			(unsigned)cpu.GetA(),
+			(unsigned)cpu.GetX(),
+			(unsigned)cpu.GetY(),
+			(unsigned)cpu.GetS(),
+			(unsigned)cpu.GetP(),
+			(int)cpu.GetCPUMode(),
+			cpu.AreIllegalInsnsEnabled() ? 1 : 0,
+			cpu.GetStopOnBRK() ? 1 : 0,
+			cpu.IsPathBreakEnabled() ? 1 : 0);
+	}
 
 	switch (g_ATOptions.mErrorMode) {
 		case kATErrorMode_Dialog:
