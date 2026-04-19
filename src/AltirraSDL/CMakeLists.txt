@@ -266,6 +266,50 @@ if(ALTIRRA_BRIDGE)
 endif()
 
 # ---------------------------------------------------------------------------
+# Netplay
+# ---------------------------------------------------------------------------
+# Lockstep UDP netplay — see NETPLAY_DESIGN_PLAN.md.  Currently the wire
+# protocol only; transport, coordinator, lobby client, and UI land in
+# subsequent phases.  Default ON; disable with -DALTIRRA_NETPLAY=OFF.
+option(ALTIRRA_NETPLAY "Build the AltirraSDL netplay module" ON)
+if(ALTIRRA_NETPLAY)
+    target_sources(AltirraSDL PRIVATE
+        source/netplay/protocol.cpp
+        source/netplay/transport.cpp
+        source/netplay/snapshot_channel.cpp
+        source/netplay/lockstep.cpp
+        source/netplay/coordinator.cpp
+        source/netplay/netplay_glue.cpp
+        source/netplay/http_minimal.cpp
+        source/netplay/lobby_client.cpp
+        source/netplay/lobby_config.cpp
+        source/netplay/lan_discovery.cpp
+        source/netplay/platform_notify.cpp
+    )
+    if(WIN32)
+        target_sources(AltirraSDL PRIVATE
+            source/netplay/platform_notify_win32.cpp)
+        target_compile_definitions(AltirraSDL PRIVATE
+            ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+    elseif(APPLE)
+        target_sources(AltirraSDL PRIVATE
+            source/netplay/platform_notify_macos.mm)
+        target_link_libraries(AltirraSDL PRIVATE
+            "-framework UserNotifications"
+            "-framework Foundation")
+        target_compile_definitions(AltirraSDL PRIVATE
+            ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+    elseif(UNIX)
+        target_sources(AltirraSDL PRIVATE
+            source/netplay/platform_notify_linux.cpp)
+        target_link_libraries(AltirraSDL PRIVATE dl)
+        target_compile_definitions(AltirraSDL PRIVATE
+            ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+    endif()
+    target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_NETPLAY_ENABLED=1)
+endif()
+
+# ---------------------------------------------------------------------------
 # Window/taskbar icon
 # ---------------------------------------------------------------------------
 # Bake the Android launcher PNGs into:

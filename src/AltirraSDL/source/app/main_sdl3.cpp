@@ -49,6 +49,10 @@
 #include "ui_testmode.h"
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "netplay/netplay_glue.h"
+#endif
 #endif
 #include "ui_textselection.h"
 #include "ui_progress.h"
@@ -2030,6 +2034,16 @@ int main(int argc, char *argv[]) {
 		ATBridge::Poll(g_sim, g_uiState);
 #endif
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		// Drive the netplay coordinator (no-op when no session exists).
+		// Drains the UDP socket, runs the handshake / snapshot transfer
+		// state machine, and emits outgoing input packets.  Must run
+		// BEFORE the pause-inactive check and the Advance() call so
+		// that CanAdvanceThisTick() reflects the freshly-drained peer
+		// input state for this tick.
+		ATNetplayGlue::Poll(SDL_GetTicks());
+#endif
+
 		// Process deferred file dialog results on main thread
 		ATUIPollDeferredActions();
 
@@ -2078,7 +2092,28 @@ int main(int argc, char *argv[]) {
 			std::clamp<uint32>((uint32)(sint32)g_ATCVEngineTurboFPSDivisor, 1u, 100u);
 		const bool dropFrame = turbo && ((++s_turboFrameCounter) % turboDivisor) != 0;
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		// If we're in an active netplay session and the peer hasn't
+		// delivered their input for the current emu frame, stall the
+		// simulator this tick.  The main loop keeps running — we
+		// still render UI, still pace — we just don't Advance.  Next
+		// iteration polls the socket again and re-evaluates.
+		if (ATNetplayGlue::IsLockstepping() &&
+		    !ATNetplayGlue::CanAdvanceThisTick()) {
+			RenderAndPresent();
+			if (!turbo) g_pacer.WaitForNextFrame();
+			continue;
+		}
+#endif
+
 		ATSimulator::AdvanceResult result = g_sim.Advance(dropFrame);
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		// After the emulator has advanced one frame, update the
+		// lockstep loop's frame counter + rolling hash.  No-op
+		// outside lockstep.
+		ATNetplayGlue::OnFrameAdvanced();
+#endif
 
 		const uint64_t phaseT2 = SDL_GetPerformanceCounter();
 
@@ -2244,6 +2279,12 @@ int main(int argc, char *argv[]) {
 
 	ATUIShutdownProgressSDL3();
 	ATTouchControls_Shutdown();
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	// Best-effort: send a clean Bye to the peer and free the
+	// coordinator.  Safe to call with no active session.
+	ATNetplayGlue::Shutdown();
+#endif
 
 	GameBrowser_Shutdown();
 	ATTestModeShutdown();
