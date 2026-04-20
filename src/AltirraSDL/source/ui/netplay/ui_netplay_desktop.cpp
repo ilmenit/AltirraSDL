@@ -23,8 +23,14 @@
 #include <vd2/system/registry.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
+#include <vd2/system/filesys.h>
+
+#include "simulator.h"
+#include "firmwaremanager.h"
 
 #include <imgui.h>
+
+extern ATSimulator g_sim;
 
 extern SDL_Window *g_pWindow;
 extern VDStringA ATGetConfigDir();
@@ -705,6 +711,107 @@ namespace {
 	MachineConfig s_addConfig;
 	bool          s_addConfigSeeded = false;
 
+	// Firmware dropdown cache.  Built lazily on first dialog open;
+	// each entry caches the firmware's CRC32 so we don't re-read the
+	// ROM bytes every frame.  Index 0 is a sentinel meaning
+	// "Altirra default for the hardware mode" (CRC = 0 in the
+	// MachineConfig → ApplyMachineConfig does GetFirmwareOfType).
+	struct FirmwareChoice {
+		uint64_t    id;
+		uint32_t    crc32;
+		std::string label;   // "Name (filename) [CRC32]"
+	};
+	std::vector<FirmwareChoice> s_kernelChoices;
+	std::vector<FirmwareChoice> s_basicChoices;
+	bool                        s_firmwareChoicesLoaded = false;
+
+	void ReloadFirmwareChoices() {
+		s_kernelChoices.clear();
+		s_basicChoices.clear();
+		s_kernelChoices.push_back({
+			0, 0,
+			std::string("(Altirra default for hardware)")});
+		s_basicChoices.push_back({
+			0, 0,
+			std::string("(None)")});
+
+		ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
+		if (!fwm) { s_firmwareChoicesLoaded = true; return; }
+
+		vdvector<ATFirmwareInfo> fwList;
+		fwm->GetFirmwareList(fwList);
+		for (const auto& fw : fwList) {
+			if (!fw.mbVisible) continue;
+
+			const uint32_t crc = ComputeFirmwareCRC32(fw.mId);
+			VDStringA nameU8 = VDTextWToU8(fw.mName);
+
+			char buf[384];
+			if (!fw.mPath.empty()) {
+				VDStringA fnU8 = VDTextWToU8(
+					VDStringW(VDFileSplitPath(fw.mPath.c_str())));
+				std::snprintf(buf, sizeof buf, "%s (%s) [%08X]",
+					nameU8.c_str(), fnU8.c_str(), crc);
+			} else {
+				std::snprintf(buf, sizeof buf, "%s (internal) [%08X]",
+					nameU8.c_str(), crc);
+			}
+
+			FirmwareChoice c;
+			c.id    = fw.mId;
+			c.crc32 = crc;
+			c.label = buf;
+
+			if (ATIsKernelFirmwareType(fw.mType))
+				s_kernelChoices.push_back(std::move(c));
+			else if (fw.mType == kATFirmwareType_Basic)
+				s_basicChoices.push_back(std::move(c));
+		}
+		s_firmwareChoicesLoaded = true;
+	}
+
+	// Render a firmware combo that writes the chosen entry's CRC32
+	// into *crcOut.  If the current CRC has no matching entry (user
+	// selected a firmware that was later uninstalled), a synthetic
+	// "(not installed: [XXXXXXXX])" label is inserted so the UI
+	// reflects the persisted value rather than silently snapping to
+	// the default.
+	void FirmwareCombo(const char *label,
+			const std::vector<FirmwareChoice>& choices,
+			uint32_t *crcOut) {
+		char synth[64];
+		const char *selectedLabel = choices.empty()
+			? "(no firmware manager)" : choices[0].label.c_str();
+
+		int matchIdx = -1;
+		for (size_t i = 0; i < choices.size(); ++i) {
+			if (choices[i].crc32 == *crcOut) {
+				matchIdx = (int)i;
+				selectedLabel = choices[i].label.c_str();
+				break;
+			}
+		}
+		if (matchIdx < 0 && *crcOut != 0) {
+			std::snprintf(synth, sizeof synth,
+				"(not installed: [%08X])", *crcOut);
+			selectedLabel = synth;
+		} else if (matchIdx < 0) {
+			matchIdx = 0;
+		}
+
+		ImGui::PushItemWidth(440);
+		if (ImGui::BeginCombo(label, selectedLabel)) {
+			for (size_t i = 0; i < choices.size(); ++i) {
+				bool sel = ((int)i == matchIdx);
+				if (ImGui::Selectable(choices[i].label.c_str(), sel))
+					*crcOut = choices[i].crc32;
+				if (sel) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::PopItemWidth();
+	}
+
 	static const SDL_DialogFileFilter kAddOfferFilters[] = {
 		{ "Game images",
 		  "atr;xex;bin;car;rom;a52;a8s;exe;com;ucf;pro;xfd;atx;dcm;zip;cas" },
@@ -762,6 +869,9 @@ void DesktopAddOffer() {
 		// always starts with a config they can actually boot.
 		s_addConfig = CaptureCurrentMachineConfig();
 		s_addConfigSeeded = true;
+	}
+	if (!s_firmwareChoicesLoaded) {
+		ReloadFirmwareChoices();
 	}
 
 	CenterNext(ImVec2(720, 540));
@@ -912,18 +1022,18 @@ void DesktopAddOffer() {
 			&s_addConfig.sioPatchEnabled);
 
 		ImGui::Spacing();
-		ImGui::TextDisabled("Firmware (by CRC32):");
-		if (s_addConfig.kernelCRC32)
-			ImGui::Text("  OS kernel:   [%08X]", s_addConfig.kernelCRC32);
-		else
-			ImGui::Text("  OS kernel:   (default)");
-		if (s_addConfig.basicCRC32)
-			ImGui::Text("  BASIC:       [%08X]", s_addConfig.basicCRC32);
-		else
-			ImGui::Text("  BASIC:       (none)");
+		ImGui::TextDisabled("Firmware (shipped by CRC32 — joiner must have a matching entry)");
+		FirmwareCombo("OS kernel", s_kernelChoices,
+			&s_addConfig.kernelCRC32);
+		FirmwareCombo("BASIC",     s_basicChoices,
+			&s_addConfig.basicCRC32);
 
 		if (ImGui::Button("Copy from current emulator")) {
 			s_addConfig = CaptureCurrentMachineConfig();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Refresh firmware list")) {
+			ReloadFirmwareChoices();
 		}
 		ImGui::SameLine();
 		ImGui::TextDisabled("  %s", MachineConfigSummary(s_addConfig));
