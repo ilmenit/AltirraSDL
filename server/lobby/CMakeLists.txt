@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 
+# When configured standalone (cmake -S server/lobby), we need our
+# own project() call.  When included from the top-level AltirraSDL
+# build via add_subdirectory(), the parent already owns project()
+# and a nested call here would be redundant — but harmless.
+if(NOT PROJECT_NAME)
+    project(altirra-lobby LANGUAGES CXX)
+endif()
+
 # The lobby server is a small standalone C++ binary.  It doesn't link
 # any AltirraSDL code — only the shared protocol headers in
 # src/AltirraSDL/source/netplay/ (lobby_protocol.h, json_cursor.h).
