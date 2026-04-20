@@ -1,0 +1,7 @@
+altirra-lobby
+/altirra-lobby-*
+*.test
+*.out
+coverage.out
+.DS_Store
+altirra-sdl-lobby
