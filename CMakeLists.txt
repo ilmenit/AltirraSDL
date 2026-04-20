@@ -678,44 +678,11 @@ endif()
 add_subdirectory(src)
 
 ###############################################################################
-# Optional: build the reference lobby server (Go).
+# Reference lobby server (C++).
 #
-# AltirraSDL ships with the source of the matchmaking lobby in
-# server/lobby/ so anyone can run their own — see server/lobby/README.md.
-# Building it is off by default because Go isn't part of the normal
-# AltirraSDL toolchain; turn on with -DALTIRRA_BUILD_LOBBY=ON when you
-# want the binary alongside AltirraSDL (e.g. for the deploy repo CI).
+# AltirraSDL ships the source of its matchmaking lobby at server/lobby/
+# so anyone can run their own — see server/lobby/README.md.  Built by
+# default as a normal C++ target: no external toolchain required
+# (cpp-httplib is vendored in the tree).
 ###############################################################################
-option(ALTIRRA_BUILD_LOBBY
-    "Build the reference altirra-lobby server (requires a Go toolchain)" OFF)
-
-if(ALTIRRA_BUILD_LOBBY)
-    find_program(GO_EXECUTABLE go)
-    if(NOT GO_EXECUTABLE)
-        message(FATAL_ERROR
-            "ALTIRRA_BUILD_LOBBY=ON but no `go` binary found on PATH.\n"
-            "Install Go (https://go.dev/dl/) or set -DALTIRRA_BUILD_LOBBY=OFF.")
-    endif()
-
-    set(_lobby_src_dir "${CMAKE_SOURCE_DIR}/server/lobby")
-    set(_lobby_out "${CMAKE_BINARY_DIR}/altirra-lobby")
-
-    # Collect .go files as dependencies so incremental rebuilds pick up
-    # source edits without a manual clean.
-    file(GLOB _lobby_sources
-        "${_lobby_src_dir}/*.go"
-        "${_lobby_src_dir}/go.mod"
-        "${_lobby_src_dir}/go.sum")
-
-    add_custom_command(
-        OUTPUT "${_lobby_out}"
-        COMMAND ${GO_EXECUTABLE} build -o "${_lobby_out}" .
-        WORKING_DIRECTORY "${_lobby_src_dir}"
-        DEPENDS ${_lobby_sources}
-        COMMENT "Building altirra-lobby (Go)"
-        VERBATIM)
-
-    # Target name differs from the output filename so CMake doesn't
-    # flag a self-dependency in the generated Makefile.
-    add_custom_target(altirra-lobby-build ALL DEPENDS "${_lobby_out}")
-endif()
+add_subdirectory(server/lobby)

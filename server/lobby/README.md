@@ -1,9 +1,11 @@
-# altirra-lobby — reference lobby server
+# altirra-lobby — reference lobby server (C++)
 
 This is the reference session-directory server for AltirraSDL
 netplay. It is **part of the AltirraSDL source tree** so the server
-and client evolve together — protocol / field / rate-limit changes
-are a single atomic commit across both sides.
+and client evolve together — protocol, field names, TTL values and
+rate-limit parameters are defined exactly once in
+`src/AltirraSDL/source/netplay/lobby_protocol.h`, which both this
+server and the client `#include`.
 
 Anyone can run their own lobby and point clients at it via
 `~/.config/altirra/lobby.ini`:
@@ -20,30 +22,45 @@ The default community lobby is hosted on Oracle Always-Free
 infrastructure at `http://158.180.27.70:8080` — see the sibling
 deployment repo `github.com/ilmenit/altirra-sdl-lobby` for the
 automation that runs it (Dockerfile, systemd unit, CI auto-deploy).
-That deployment repo is infra-only; the Go source lives **here**.
+That deployment repo is infra-only; the server source lives here.
 
 ## Build
 
-Standalone (no CMake involvement):
+Via the AltirraSDL CMake build (binary lands in the CMake build
+directory as `server/lobby/altirra-lobby`):
 
 ```bash
-cd server/lobby
-go build -o altirra-lobby .
-```
-
-Via the AltirraSDL CMake build (requires the Go toolchain):
-
-```bash
-cmake -S . -B build -DALTIRRA_BUILD_LOBBY=ON
+cmake -S . -B build
 cmake --build build --target altirra-lobby
-# binary ends up in build/altirra-lobby
 ```
+
+Standalone (no AltirraSDL build wiring), as the Dockerfile does:
+
+```bash
+# Run from the repo root so shared headers resolve.
+cmake -B build/lobby-only -DCMAKE_BUILD_TYPE=Release .
+cmake --build build/lobby-only --target altirra-lobby
+```
+
+## Dependencies
+
+One vendored third-party dependency: `cpp-httplib` (single-header,
+vendored at `vendor/cpp-httplib/httplib.h`, MIT-licensed, upstream
+`github.com/yhirose/cpp-httplib` v0.18.5). The project otherwise
+keeps a "two external deps only" discipline (SDL3 + Dear ImGui for
+the client); cpp-httplib is a deliberate, scoped exception for the
+server only — the client's HTTP client lives in `http_minimal.cpp`
+and has no overlap.
+
+Everything else is stdlib.
 
 ## Run
 
 ```bash
-./altirra-lobby                   # binds :8080 by default
-PORT=9000 ./altirra-lobby         # override port via env
+./altirra-lobby
+BIND=:9000 ./altirra-lobby        # override bind address
+PORT=9000  ./altirra-lobby        # just the port
+TTL_SECONDS=60 ./altirra-lobby    # shorter session TTL
 ```
 
 Hit `/healthz` to confirm it's alive:
@@ -54,47 +71,77 @@ curl -sS http://localhost:8080/healthz   # → ok sessions=0
 
 ## API
 
-- `POST /v1/session`              — Create a session, returns `{sessionId, token, ttlSeconds}`.
-- `GET  /v1/sessions`             — List active sessions.
-- `POST /v1/session/<id>/heartbeat` — Keep-alive (token-gated).
-- `DELETE /v1/session/<id>`       — Remove (token-gated, header `X-Session-Token`).
-- `GET  /healthz`                 — Liveness.
+- `POST /v1/session` — Create a session, returns
+  `{sessionId, token, ttlSeconds}`. Validated fields: `cartName`
+  (1..64), `hostHandle` (1..32), `hostEndpoint` (host:port),
+  `playerCount` (1..maxPlayers), `maxPlayers` (2..8),
+  `protocolVersion` (>0), optional `region` (≤32), optional
+  `visibility` ("public"|"private"), optional `requiresCode` (only
+  meaningful when visibility is "private"), optional `cartArtHash`
+  (≤64 hex chars).
+- `GET /v1/sessions` — List active sessions (newest-first,
+  capped at 500).
+- `GET /v1/session/{id}` — Fetch a single session.
+- `POST /v1/session/{id}/heartbeat` — Keep-alive; body carries
+  `{token, playerCount}`. Bad token → 401, unknown id → 404.
+- `DELETE /v1/session/{id}` — Remove; `X-Session-Token` header
+  required. Bad token → 401, unknown id → 404.
+- `GET /healthz` — Liveness (also exercises the session-store mutex,
+  so a deadlocked store fails its health check).
 
-See `server.go` for the full schema and behaviour. The server is
-intentionally stateless — sessions live in-memory, 90 s TTL, sweeper
-runs every 30 s.
+Error responses: `{"error": "<message>"}`.
 
-## Protocol version coupling
+CORS: reads are open; writes refuse requests that carry an `Origin`
+header (prevents browser-initiated CSRF while allowing native
+clients through).
 
-The client-side equivalent types live in:
-- `src/AltirraSDL/source/netplay/lobby_client.{h,cpp}` — typed facade.
-- `src/AltirraSDL/source/netplay/lobby_config.{h,cpp}` — `lobby.ini` parser.
+Rate limit: per-source-IP token bucket, burst 120, refill 1/s. 429
+on exhaust, `Retry-After: 1`.
 
-When changing any field on the wire (e.g. adding a `cartArtHash`),
-update **both** sides in the same commit. There is no backward
-compatibility wire negotiation — this is a single-community protocol
-and the client will be rebuilt with the server change.
+## Protocol-version coupling
+
+Wire field names and sizes come from:
+- `src/AltirraSDL/source/netplay/lobby_protocol.h` — constants
+  (TTL, rate limit, visibility literals, route paths) and JSON field
+  names. Included by this server AND by the client in
+  `lobby_client.cpp`.
+- `src/AltirraSDL/source/netplay/json_cursor.h` — tiny JSON reader
+  shared by both sides.
+
+When changing any field on the wire, edit these files and both ends
+rebuild atomically. There is no backward-compatibility wire
+negotiation — this is a single-community protocol.
 
 ## Tests
 
 ```bash
-cd server/lobby
-go test ./...
+cmake --build build --target altirra-lobby-test
+ctest --test-dir build
 ```
 
-The tests exercise the full HTTP surface against an in-process
-instance (no external network required).
+Coverage: `/healthz`, Create happy path, Create validation (empty
+cart, bad endpoint), Heartbeat good token, Heartbeat bad token,
+Delete good token, Delete bad token, TTL expiry (via
+`ExpireOnce` with a faked clock), rate limit 429, browser-origin
+guard on writes.
 
 ## Deploying to production
 
 The `github.com/ilmenit/altirra-sdl-lobby` repo (separate) owns:
 
 - Oracle Cloud infrastructure (reserved IP, VM shape).
-- `Dockerfile`, `altirra-lobby.service` for Oracle host.
-- GitHub Actions deploy workflow (SSH + systemd restart).
+- GitHub Actions deploy workflow.
+- Terraform / Ansible / whatever automation is in use there.
 
-That repo builds the binary from **this** source tree — check its
-README for the exact pull mechanism (submodule / sparse checkout /
-CI clone). The copies of `Dockerfile` and `altirra-lobby.service`
-that ship here are the current production-matching references; the
-deploy repo should stay in sync with them.
+That repo clones **this** repo and invokes `docker build -f
+server/lobby/Dockerfile .` from the AltirraSDL root. The
+Dockerfile + `altirra-lobby.service` that ship here are the
+current production-matching references.
+
+## History
+
+This server was originally written in Go (≈500 LoC). Rewritten in
+C++23 in 2026 so client and server share a single toolchain, a
+single protocol header (no cross-language schema drift), and a
+smaller deployable binary. The Go source was removed once this
+version passed functional parity.

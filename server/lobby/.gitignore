@@ -1,7 +1,6 @@
+# Build artefacts when users invoke `cmake -B build/lobby .` directly
+# in this subdirectory.
 altirra-lobby
-/altirra-lobby-*
-*.test
-*.out
-coverage.out
-.DS_Store
-altirra-sdl-lobby
+altirra-lobby-test
+*.o
+*.obj
