@@ -113,8 +113,19 @@ struct HostedGame {
 
 	// Runtime fields (not persisted) ------------------------------------
 	HostedGameState  state          = HostedGameState::Draft;
-	std::string lobbySessionId;
-	std::string lobbyToken;
+
+	// Per-lobby registration.  One entry per enabled HTTP lobby the
+	// offer was announced to.  Keyed by the lobby's section name from
+	// lobby.ini so heartbeats and deletes can target each lobby
+	// independently — one slow lobby doesn't block the others, and
+	// joiners from any lobby can still find the game.
+	struct LobbyRegistration {
+		std::string section;     // lobby.ini [section] key
+		std::string sessionId;   // returned by POST /v1/session
+		std::string token;       // required for heartbeat/delete
+	};
+	std::vector<LobbyRegistration> lobbyRegistrations;
+
 	uint16_t    boundPort      = 0;
 	uint64_t    lastHeartbeatMs = 0;
 	std::string lastError;

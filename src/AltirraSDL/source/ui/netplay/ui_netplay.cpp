@@ -111,32 +111,64 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			}
 
 			// -- Create: route by tag to the HostedGame that fired it.
+			// Multi-lobby hosting: each enabled HTTP lobby in
+			// lobby.ini gets its own Create request, so this handler
+			// may fire multiple times per offer.  We append one
+			// LobbyRegistration per successful lobby; failures for one
+			// lobby don't affect the others (the coordinator is
+			// already bound, and joiners from any lobby that accepted
+			// the Create can still connect).
 			if (r.op == ATNetplayUI::LobbyOp::Create) {
 				ATNetplayUI::HostedGame* o =
 					ATNetplayUI::FindHostedGameByTag(r.tag);
 				if (!o) return;
 				if (r.ok) {
-					o->lobbySessionId   = r.create.sessionId;
-					o->lobbyToken       = r.create.token;
-					o->lastHeartbeatMs  = nowMs;
+					ATNetplayUI::HostedGame::LobbyRegistration reg;
+					reg.section   = r.sourceLobby;
+					reg.sessionId = r.create.sessionId;
+					reg.token     = r.create.token;
+					// De-dup on section (a quick Enable/Disable/Enable
+					// cycle could leave a stale entry).
+					bool replaced = false;
+					for (auto& e : o->lobbyRegistrations) {
+						if (e.section == reg.section) {
+							e = std::move(reg);
+							replaced = true;
+							break;
+						}
+					}
+					if (!replaced)
+						o->lobbyRegistrations.push_back(std::move(reg));
+
+					o->lastHeartbeatMs = nowMs;
+					// Only clear lastError if no OTHER lobby is still
+					// showing a failure — but for v1 we just clear on
+					// any success; the next Heartbeat batch will resurface
+					// per-lobby issues if they persist.
 					o->lastError.clear();
 					g_ATLCNetplay("lobby Create OK for \"%s\" "
-						"sessionId=%s",
+						"(section \"%s\") sessionId=%s",
 						o->gameName.c_str(),
+						r.sourceLobby.c_str(),
 						r.create.sessionId.c_str());
 				} else {
-					o->lastError = "Listing failed: "
+					// Per-lobby failure: surface the error but do NOT
+					// disable the offer — successful Creates on other
+					// lobbies are still reachable.  Prefix with the
+					// lobby section so the user knows which one.
+					char prefix[96];
+					std::snprintf(prefix, sizeof prefix,
+						"Lobby \"%s\" listing failed: ",
+						r.sourceLobby.empty() ? "?" : r.sourceLobby.c_str());
+					o->lastError = std::string(prefix)
 						+ st.lobbyHealth.lastError;
-					g_ATLCNetplay("lobby Create FAILED for \"%s\": "
-						"status=%d raw=\"%s\"",
+					g_ATLCNetplay("lobby Create FAILED for \"%s\" "
+						"(section \"%s\"): status=%d raw=\"%s\"",
 						o->gameName.c_str(),
+						r.sourceLobby.c_str(),
 						r.httpStatus,
 						r.error.empty() ? "(no detail)"
 						                : r.error.c_str());
-					// Do NOT transition the offer to Failed just
-					// because the listing failed — the coordinator is
-					// still bound, direct P2P still works.  Just
-					// surface the error.
 				}
 				return;
 			}
@@ -184,14 +216,19 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			st.browser.consecutiveFailures = 0;
 			st.browser.nextRetryMs = 0;
 			// Merge by sessionId so multiple lobbies de-dup.  Filter
-			// out our own hostedGames (by matching lobbySessionId) so we
-			// don't see our own hosts in the Browse list.
+			// out our own hostedGames by matching against any of the
+			// per-lobby registrations — a game hosted on N lobbies
+			// appears N times in the merged list and we want all
+			// copies filtered.
 			for (auto& s : r.sessions) {
 				bool isOwn = false;
 				for (auto& own : st.hostedGames) {
-					if (own.lobbySessionId == s.sessionId) {
-						isOwn = true; break;
+					for (const auto& reg : own.lobbyRegistrations) {
+						if (reg.sessionId == s.sessionId) {
+							isOwn = true; break;
+						}
 					}
+					if (isOwn) break;
 				}
 				if (isOwn) continue;
 				bool found = false;

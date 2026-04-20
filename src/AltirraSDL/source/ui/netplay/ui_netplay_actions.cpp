@@ -69,34 +69,56 @@ ATGameLibrary& LibrarySingleton() {
 
 namespace {
 
-// Pick the first enabled HTTP lobby from the user's lobby.ini (or
-// the built-in defaults if the file is missing).  Returns an endpoint
-// with host="" on failure.
-ATNetplay::LobbyEndpoint FirstHttpLobby(std::string& sectionOut) {
-	const auto& entries = GetConfiguredLobbies();
-	for (const auto& e : entries) {
+// Parse "http://host:port[/...]" into a LobbyEndpoint.  Returns empty
+// host on malformed input.
+ATNetplay::LobbyEndpoint EndpointFromUrl(const std::string& urlIn) {
+	ATNetplay::LobbyEndpoint ep;
+	std::string url = urlIn;
+	const std::string prefix = "http://";
+	if (url.compare(0, prefix.size(), prefix) == 0)
+		url.erase(0, prefix.size());
+	size_t slash = url.find('/');
+	if (slash != std::string::npos) url.resize(slash);
+	size_t colon = url.rfind(':');
+	if (colon != std::string::npos) {
+		ep.host.assign(url, 0, colon);
+		ep.port = (uint16_t)std::atoi(url.c_str() + colon + 1);
+	} else {
+		ep.host = url;
+		ep.port = 80;
+	}
+	ep.timeoutMs = 5000;
+	return ep;
+}
+
+// Every enabled HTTP lobby from the user's lobby.ini.  Hosting fans
+// out Create / Heartbeat / Delete across all of them so a game shows
+// up on every lobby the user has configured.
+struct EnabledHttpLobby {
+	std::string                section;
+	ATNetplay::LobbyEndpoint   endpoint;
+};
+std::vector<EnabledHttpLobby> AllEnabledHttpLobbies() {
+	std::vector<EnabledHttpLobby> out;
+	for (const auto& e : GetConfiguredLobbies()) {
 		if (!e.enabled) continue;
 		if (e.kind != ATNetplay::LobbyKind::Http) continue;
-		ATNetplay::LobbyEndpoint ep;
-		std::string url = e.url;
-		const std::string prefix = "http://";
-		if (url.compare(0, prefix.size(), prefix) == 0)
-			url.erase(0, prefix.size());
-		size_t slash = url.find('/');
-		if (slash != std::string::npos) url.resize(slash);
-		size_t colon = url.rfind(':');
-		if (colon != std::string::npos) {
-			ep.host.assign(url, 0, colon);
-			ep.port = (uint16_t)std::atoi(url.c_str() + colon + 1);
-		} else {
-			ep.host = url;
-			ep.port = 80;
-		}
-		ep.timeoutMs = 5000;
-		sectionOut = e.section;
-		return ep;
+		ATNetplay::LobbyEndpoint ep = EndpointFromUrl(e.url);
+		if (ep.host.empty()) continue;
+		out.push_back({e.section, ep});
 	}
-	return ATNetplay::LobbyEndpoint{};
+	return out;
+}
+
+// Pick the first enabled HTTP lobby — used by paths that inherently
+// target one lobby (e.g. Browse's per-lobby List is already fanned
+// out by the worker; this is for single-shot callers).  Returns an
+// endpoint with host="" on failure.
+ATNetplay::LobbyEndpoint FirstHttpLobby(std::string& sectionOut) {
+	auto all = AllEnabledHttpLobbies();
+	if (all.empty()) return ATNetplay::LobbyEndpoint{};
+	sectionOut = all.front().section;
+	return all.front().endpoint;
 }
 
 // 16-byte SDBM/FNV-style fold of the cleartext entry code.  Matches
@@ -137,24 +159,27 @@ HostedGameState PhaseToHostedGameState(ATNetplayGlue::Phase p, bool enabled,
 	return current;
 }
 
-// Post a Create request for one offer.  Fills lobbySessionId on the
-// result path (see ATNetplayUI_Poll).
+// Shared by PostLobbyCreate: build the offer-stable tag that
+// ATNetplayUI_Poll uses to route Create results back to the offer.
+uint32_t OfferTag(const HostedGame& o) {
+	uint32_t t = 0;
+	for (unsigned char c : o.id) t = t * 31u + c;
+	return t ? t : 1;
+}
+
+// Post a Create request for this offer to EVERY enabled HTTP lobby.
+// Each Create result lands in ATNetplayUI_Poll, which appends a
+// LobbyRegistration keyed by the sourceLobby (section name).  A
+// lobby that fails (network error, 5xx) simply yields no
+// registration — the other lobbies still accept the game.
 void PostLobbyCreate(HostedGame& o) {
-	std::string section;
-	ATNetplay::LobbyEndpoint ep = FirstHttpLobby(section);
-	if (ep.host.empty()) {
+	auto lobbies = AllEnabledHttpLobbies();
+	if (lobbies.empty()) {
 		g_ATLCNetplay("lobby Create skipped for \"%s\": "
-			"no HTTP lobby endpoint configured",
+			"no HTTP lobbies configured in lobby.ini",
 			o.gameName.c_str());
 		return;
 	}
-	g_ATLCNetplay("lobby Create posting for \"%s\" → %s:%u (section \"%s\")",
-		o.gameName.c_str(), ep.host.c_str(), (unsigned)ep.port,
-		section.c_str());
-
-	LobbyRequest req{};
-	req.op       = LobbyOp::Create;
-	req.endpoint = ep;
 
 	ATNetplay::LobbyCreateRequest cr;
 	cr.cartName        = o.gameName;
@@ -170,33 +195,54 @@ void PostLobbyCreate(HostedGame& o) {
 	cr.requiresCode    = o.isPrivate;
 	cr.cartArtHash     = o.cartArtHash;
 
-	req.createReq = cr;
+	const uint32_t tag = OfferTag(o);
 
-	// Tag the lobby result so ATNetplayUI_Poll can find the offer.
-	// We stash the first 8 bytes of the gameId in req.tag by hashing.
-	uint32_t tag = 0;
-	for (unsigned char c : o.id) tag = tag * 31u + c;
-	req.tag = tag ? tag : 1;
-	GetWorker().Post(std::move(req), section);
-	o.lastHeartbeatMs = 0;  // arm first heartbeat
+	for (const auto& L : lobbies) {
+		g_ATLCNetplay("lobby Create posting for \"%s\" -> %s:%u "
+			"(section \"%s\")",
+			o.gameName.c_str(),
+			L.endpoint.host.c_str(), (unsigned)L.endpoint.port,
+			L.section.c_str());
+
+		LobbyRequest req{};
+		req.op        = LobbyOp::Create;
+		req.endpoint  = L.endpoint;
+		req.createReq = cr;
+		req.tag       = tag;
+		GetWorker().Post(std::move(req), L.section);
+	}
+	o.lastHeartbeatMs = 0;    // arm first heartbeat
+	// Wipe stale registrations from a previous session; Create
+	// responses will repopulate as they arrive.
+	o.lobbyRegistrations.clear();
 }
 
-// Post a Delete request for one offer.  Clears local session id + token.
+// Post a Delete for this offer to every lobby it was registered with,
+// then clear the local state.  Lobbies that never accepted a Create
+// (or whose Create response was lost) have no entry here and are
+// skipped — the lobby's 90 s TTL will garbage-collect them.
 void PostLobbyDelete(HostedGame& o) {
-	if (!o.lobbySessionId.empty() && !o.lobbyToken.empty()) {
-		std::string section;
-		ATNetplay::LobbyEndpoint ep = FirstHttpLobby(section);
-		if (!ep.host.empty()) {
-			LobbyRequest req{};
-			req.op        = LobbyOp::Delete;
-			req.endpoint  = ep;
-			req.sessionId = o.lobbySessionId;
-			req.token     = o.lobbyToken;
-			GetWorker().Post(std::move(req), section);
+	auto lobbies = AllEnabledHttpLobbies();
+
+	for (const auto& reg : o.lobbyRegistrations) {
+		if (reg.sessionId.empty() || reg.token.empty()) continue;
+		// Find the matching endpoint for this registration's section.
+		// If the user removed the lobby from lobby.ini between
+		// Create and Delete, we skip cleanly — the TTL handles it.
+		const ATNetplay::LobbyEndpoint *ep = nullptr;
+		for (const auto& L : lobbies) {
+			if (L.section == reg.section) { ep = &L.endpoint; break; }
 		}
+		if (!ep) continue;
+
+		LobbyRequest req{};
+		req.op        = LobbyOp::Delete;
+		req.endpoint  = *ep;
+		req.sessionId = reg.sessionId;
+		req.token     = reg.token;
+		GetWorker().Post(std::move(req), reg.section);
 	}
-	o.lobbySessionId.clear();
-	o.lobbyToken.clear();
+	o.lobbyRegistrations.clear();
 }
 
 // Kick off an actual host coordinator for this offer, binding an
@@ -481,22 +527,30 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			o.state = HostedGameState::Suspended;
 		}
 
-		// Periodic heartbeat while coordinator is running.
-		if (coordRunning && !o.lobbySessionId.empty()
-		    && !o.lobbyToken.empty()) {
+		// Periodic heartbeat to every lobby this offer is registered
+		// with.  A slow/dead lobby here doesn't block the others
+		// because each Heartbeat request is independent.
+		if (coordRunning && !o.lobbyRegistrations.empty()) {
 			const uint64_t kHeartbeatMs = 30000;
 			if (o.lastHeartbeatMs == 0
 			    || nowMs - o.lastHeartbeatMs >= kHeartbeatMs) {
-				std::string section;
-				ATNetplay::LobbyEndpoint ep = FirstHttpLobby(section);
-				if (!ep.host.empty()) {
+				auto lobbies = AllEnabledHttpLobbies();
+				const int playerCount = (p == P::Lockstepping) ? 2 : 1;
+				for (const auto& reg : o.lobbyRegistrations) {
+					if (reg.sessionId.empty() || reg.token.empty())
+						continue;
+					const ATNetplay::LobbyEndpoint *ep = nullptr;
+					for (const auto& L : lobbies) {
+						if (L.section == reg.section) { ep = &L.endpoint; break; }
+					}
+					if (!ep) continue;
 					LobbyRequest req{};
 					req.op          = LobbyOp::Heartbeat;
-					req.endpoint    = ep;
-					req.sessionId   = o.lobbySessionId;
-					req.token       = o.lobbyToken;
-					req.playerCount = (p == P::Lockstepping) ? 2 : 1;
-					GetWorker().Post(std::move(req), section);
+					req.endpoint    = *ep;
+					req.sessionId   = reg.sessionId;
+					req.token       = reg.token;
+					req.playerCount = playerCount;
+					GetWorker().Post(std::move(req), reg.section);
 				}
 				o.lastHeartbeatMs = nowMs;
 			}
