@@ -200,24 +200,40 @@ void VDLazyTimer::SetPeriodicFn(const vdfunction<void()>& fn, uint32 delay) {
 	mpFn = fn;
 	mbPeriodic = true;
 	mTimerId = 1;
-	mbTimerRunning = true;
+
+	auto running = std::make_shared<std::atomic<bool>>(true);
+	mpTimerRunning = running;
 
 	uint32 ms = delay;
-	mTimerThread = std::thread([this, ms]() {
-		while (mbTimerRunning.load(std::memory_order_relaxed)) {
+	vdfunction<void()> f = fn;
+	mTimerThread = std::thread([running, f, ms]() {
+		while (running->load(std::memory_order_relaxed)) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-			if (!mbTimerRunning.load(std::memory_order_relaxed))
+			if (!running->load(std::memory_order_relaxed))
 				break;
-			if (mpFn)
-				mpFn();
+			f();
 		}
 	});
 }
 
 void VDLazyTimer::Stop() {
-	mbTimerRunning = false;
-	if (mTimerThread.joinable())
-		mTimerThread.join();
+	if (mpTimerRunning)
+		mpTimerRunning->store(false, std::memory_order_release);
+
+	if (mTimerThread.joinable()) {
+		if (mTimerThread.get_id() == std::this_thread::get_id()) {
+			// Called from the timer callback itself (e.g. OnFlushTimerFire).
+			// Cannot join — detach and let the thread exit naturally after
+			// the callback returns.  The shared_ptr<atomic<bool>> captured
+			// by the thread keeps the running flag alive even if this
+			// VDLazyTimer is destroyed before the thread finishes.
+			mTimerThread.detach();
+		} else {
+			mTimerThread.join();
+		}
+	}
+
+	mpTimerRunning.reset();
 	mTimerId = 0;
 }
 

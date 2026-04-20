@@ -37,7 +37,6 @@
 #include "gl_funcs.h"
 #include "input_sdl3.h"
 #include "touch_controls.h"
-#include "touch_widgets.h"
 #include "ui_mobile.h"
 #include "mobile_gamepad.h"
 #include "mobile_internal.h"
@@ -81,6 +80,7 @@
 #include <cmath>
 #include "logging.h"
 #include "app_internal.h"
+#include "macos_menubar.h"
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -324,18 +324,6 @@ static void HandleEvents() {
 
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) {
-		// Stamp a "recent touch" timestamp for the momentum-scroll
-		// widgets in touch_widgets.cpp.  Done unconditionally (before
-		// any consumer gets the event) so the indicator flips true
-		// regardless of which handler ultimately owns the finger.
-		if (ev.type == SDL_EVENT_FINGER_DOWN
-			|| ev.type == SDL_EVENT_FINGER_MOTION
-			|| ev.type == SDL_EVENT_FINGER_UP
-			|| ev.type == SDL_EVENT_FINGER_CANCELED)
-		{
-			ATTouchNotifyFingerEvent();
-		}
-
 		// Route touch/gamepad events to Gaming Mode UI before ImGui
 		if (ATUIIsGamingMode()) {
 			if (ATMobileGamepad_HandleEvent(ev, g_sim, g_mobileState))
@@ -402,6 +390,13 @@ static void HandleEvents() {
 			break;
 
 		case SDL_EVENT_KEY_DOWN:
+			// Cmd+Return toggles fullscreen (macOS green-button equivalent)
+			if (ev.key.scancode == SDL_SCANCODE_RETURN && (ev.key.mod & SDL_KMOD_GUI)) {
+				bool isFS = (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+				ATSetFullscreen(!isFS);
+				break;
+			}
+
 			// Right-Alt releases mouse capture (matches Windows behavior)
 			if (ATUIIsMouseCaptured() && ev.key.scancode == SDL_SCANCODE_RALT) {
 				ATUIReleaseMouse();
@@ -1620,12 +1615,10 @@ int main(int argc, char *argv[]) {
 	// a reliable floor.  The SDL3 build has neither and instead uses
 	// active clock recovery (see FramePacer::ComputeClockRecovery in
 	// main_pacer.cpp) to pin the audio queue tight to whatever target
-	// the user picks.  That feedback loop makes smaller targets reliable,
-	// so for SDL3 we override the absent-key default to 60 ms — ~20 ms
-	// tighter than Windows out of the box, while leaving enough headroom
-	// to absorb late frames (100 ms errorAccum bound) and backend-side
-	// staging on PulseAudio / ALSA without underruns.  Users who want to
-	// push lower can set it explicitly via Host audio options...
+	// the user picks.  That feedback loop makes much smaller targets
+	// reliable, so for SDL3 we override the absent-key default to 30 ms
+	// (≈ 1.5 × a PipeWire quantum, ≈ 50 ms tighter A/V offset than
+	// Windows out of the box).
 	//
 	// We ONLY apply this when the user has no explicit setting in their
 	// INI.  If the key is present — even if the user wrote "80" on
@@ -1643,7 +1636,7 @@ int main(int argc, char *argv[]) {
 		    == VDRegistryKey::kTypeUnknown)
 		{
 			if (IATAudioOutput *ao = g_sim.GetAudioOutput())
-				ao->SetLatency(60);
+				ao->SetLatency(30);
 		}
 	}
 
@@ -1861,6 +1854,11 @@ int main(int argc, char *argv[]) {
 		ATUIInitDefaultAccelTables();
 		ATUILoadAccelTables();
 	}
+
+	// macOS: install native NSMenu bar (replaces ImGui menu bar).
+	// Must be called after SDL window creation and command/accel table init.
+	// On non-Apple platforms ATMacMenuBarInit() is an inline no-op.
+	ATMacMenuBarInit();
 
 	// Create the native audio device now that settings have been loaded
 	// (SetApi, SetLatency, etc. may have been called during ATLoadSettings).
@@ -2247,6 +2245,7 @@ int main(int argc, char *argv[]) {
 
 	GameBrowser_Shutdown();
 	ATTestModeShutdown();
+	ATMacMenuBarShutdown();
 	ATUIShutdown();
 
 	delete g_pDisplay;

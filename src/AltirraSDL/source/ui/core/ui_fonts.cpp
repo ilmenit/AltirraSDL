@@ -67,10 +67,10 @@ static std::vector<VDStringA> s_monoFamilies;  // distinct, monospaced
 namespace {
 	constexpr const char *kDefaultUIFamily   = "Roboto";
 	constexpr const char *kDefaultUIWeight   = "Medium";
-	constexpr int         kDefaultUISize     = 16;   // points
+	constexpr int         kDefaultUISize     = 11;   // points
 	constexpr const char *kDefaultMonoFamily = "Fira Mono";
 	constexpr const char *kDefaultMonoWeight = "Regular";
-	constexpr int         kDefaultMonoSize   = 14;
+	constexpr int         kDefaultMonoSize   = 10;
 }
 
 static VDStringA s_uiFamily(kDefaultUIFamily);
@@ -318,6 +318,9 @@ static void RebuildAtlas() {
 
 	const float uiPx   = (float)s_uiSize   * s_contentScale * 96.0f / 72.0f;
 	const float monoPx = (float)s_monoSize * s_contentScale * 96.0f / 72.0f;
+
+	LOG_INFO("UI", "Font rebuild: uiSize=%d monoSize=%d contentScale=%.2f uiPx=%.1f monoPx=%.1f FontGlobalScale=%.2f",
+		s_uiSize, s_monoSize, s_contentScale, uiPx, monoPx, ImGui::GetIO().FontGlobalScale);
 
 	const ATFontFile *uiFile   = PickFontFile(s_uiFamily.c_str(),   s_uiWeight.c_str());
 	const ATFontFile *monoFile = PickFontFile(s_monoFamily.c_str(), s_monoWeight.c_str());

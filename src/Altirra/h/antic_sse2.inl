@@ -70,13 +70,7 @@ inline void ATAnticSetRefreshCycles_SSE2(uint8 *dmaPattern) {
 		uint16 freeMask = ~(_mm_movemask_epi8(_mm_slli_epi16(*dp16, 7)) | imask);
 
 		if (freeMask) {
-#ifdef VD_COMPILER_GCC
-			// GCC 15.2 doesn't allow TZCNT usage without BMI for non-zero parameters, unlike
-			// Clang/ICC.
 			((uint8 *)dp16)[__builtin_ctz(freeMask)] |= 0x01;
-#else
-			((uint8 *)dp16)[_tzcnt_u32(freeMask)] |= 0x01;
-#endif
 			break;
 		}
 

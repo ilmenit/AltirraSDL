@@ -34,6 +34,7 @@
 #if !defined(VD_OS_WINDOWS) && !defined(_WIN32)
 #include <thread>
 #include <atomic>
+#include <memory>
 #endif
 
 class VDFunctionThunkInfo;
@@ -127,7 +128,7 @@ protected:
 	VDFunctionThunkInfo	*mpThunk = nullptr;
 #else
 	std::thread			mTimerThread;
-	std::atomic<bool>	mbTimerRunning { false };
+	std::shared_ptr<std::atomic<bool>>	mpTimerRunning;
 #endif
 	vdfunction<void()>	mpFn;
 };

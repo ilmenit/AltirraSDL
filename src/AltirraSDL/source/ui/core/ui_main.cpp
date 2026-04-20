@@ -665,7 +665,10 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 	// font atlas.  Must run BEFORE the renderer backend is initialised so
 	// the backend picks up our atlas on its first NewFrame instead of
 	// shipping ProggyClean.
-	io.FontGlobalScale = 1.0f;
+	// Fonts are rasterised at contentScale × logical-pt-size for crisp
+	// glyphs on HiDPI, then scaled back to logical coordinates so they
+	// appear at the intended point size.
+	io.FontGlobalScale = 1.0f / contentScale;
 	const bool usingGL = (backend->GetType() == DisplayBackendType::OpenGL);
 	ATUIFontsInit(contentScale, usingGL);
 

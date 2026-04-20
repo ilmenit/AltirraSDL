@@ -83,6 +83,8 @@ target_sources(AltirraSDL PRIVATE
     source/ui/menus/ui_menus_view.cpp
     source/ui/menus/ui_menus_system.cpp
     source/ui/menus/ui_menus_debug.cpp
+    # macOS native menu bar (NSMenu) — see the APPLE section below for the
+    # custom-compiled .mm object file that gets linked in.
 
     # --- ui/sysconfig/ : Configure System paged dialog ---
     source/ui/sysconfig/ui_system.cpp
@@ -513,6 +515,94 @@ if(APPLE)
         "-framework CoreAudio"
         "-framework AudioToolbox"
     )
+
+    # -----------------------------------------------------------------------
+    # Native macOS menu bar (macos_menubar.mm — Objective-C++)
+    # -----------------------------------------------------------------------
+    # macOS Cocoa headers use Clang blocks (^{}) which GCC doesn't support.
+    # When the main CXX compiler is GCC, compile the .mm with Clang instead.
+    # To maintain ABI compatibility with GCC-compiled code, we use
+    # -nostdinc++ and point Clang at GCC's libstdc++ headers.
+    #
+    # When the CXX compiler is already Clang, we just add the .mm normally.
+    # -----------------------------------------------------------------------
+    set(MACOS_MENUBAR_SRC
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/ui/menus/macos_menubar.mm")
+    set(MACOS_MENUBAR_OBJ
+        "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/AltirraSDL.dir/source/ui/menus/macos_menubar.mm.o")
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # Find Clang for Objective-C++ compilation
+        find_program(CLANG_CXX
+            NAMES clang++
+            PATHS /usr/local/opt/llvm/bin /usr/bin
+            NO_DEFAULT_PATH)
+        if(NOT CLANG_CXX)
+            find_program(CLANG_CXX NAMES clang++)
+        endif()
+        if(NOT CLANG_CXX)
+            message(FATAL_ERROR "Clang is required on macOS for Objective-C++ (Cocoa). "
+                "Install Xcode Command Line Tools or Homebrew LLVM.")
+        endif()
+
+        # Find GCC's libstdc++ include paths for ABI compatibility.
+        # Ask GCC where its internal include path is, then derive the
+        # C++ standard library headers from it.
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} -dumpversion
+            OUTPUT_VARIABLE GCC_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} -dumpmachine
+            OUTPUT_VARIABLE GCC_MACHINE OUTPUT_STRIP_TRAILING_WHITESPACE)
+        # Use -print-sysroot or parse verbose output to find the base.
+        # Homebrew GCC installs headers in /usr/local/include/c++/<ver>/.
+        # Fallback: extract from the compiler's real path.
+        get_filename_component(_GCC_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        get_filename_component(_GCC_PREFIX "${_GCC_BIN_DIR}" DIRECTORY)
+        set(GCC_CXX_VER_INCLUDE "${_GCC_PREFIX}/include/c++/${GCC_VERSION}")
+        set(GCC_CXX_TRIPLE_INCLUDE "${GCC_CXX_VER_INCLUDE}/${GCC_MACHINE}")
+        if(NOT EXISTS "${GCC_CXX_VER_INCLUDE}/string")
+            message(FATAL_ERROR
+                "Cannot find GCC's libstdc++ headers at ${GCC_CXX_VER_INCLUDE}. "
+                "Needed for Clang/GCC ABI compatibility in macos_menubar.mm.")
+        endif()
+
+        # Generate a response file at build time containing all include
+        # and define flags from the AltirraSDL target.  We use
+        # file(GENERATE) which evaluates generator expressions, so imported
+        # targets' INTERFACE_INCLUDE_DIRECTORIES (SDL3, imgui) resolve
+        # correctly — unlike get_target_property() at configure time.
+        set(_MM_RSP "${CMAKE_CURRENT_BINARY_DIR}/macos_menubar_flags.rsp")
+        file(GENERATE OUTPUT "${_MM_RSP}" CONTENT
+            "$<$<BOOL:$<TARGET_PROPERTY:AltirraSDL,INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:AltirraSDL,INCLUDE_DIRECTORIES>,\n-I>>\n$<$<BOOL:$<TARGET_PROPERTY:AltirraSDL,COMPILE_DEFINITIONS>>:-D$<JOIN:$<TARGET_PROPERTY:AltirraSDL,COMPILE_DEFINITIONS>,\n-D>>\n")
+
+        add_custom_command(
+            OUTPUT "${MACOS_MENUBAR_OBJ}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/AltirraSDL.dir/source/ui/menus"
+            COMMAND "${CLANG_CXX}" -ObjC++ -std=c++23 -O2
+                -nostdinc++
+                -isystem "${GCC_CXX_VER_INCLUDE}"
+                -isystem "${GCC_CXX_TRIPLE_INCLUDE}"
+                "@${_MM_RSP}"
+                -DVD_OS_MACOS=1
+                -DGL_SILENCE_DEPRECATION=1
+                -DAT_SDL3_PORTABLE=1
+                -Wno-unknown-attributes
+                -c "${MACOS_MENUBAR_SRC}"
+                -o "${MACOS_MENUBAR_OBJ}"
+            DEPENDS "${MACOS_MENUBAR_SRC}"
+            COMMENT "Compiling macos_menubar.mm with Clang (GCC libstdc++ ABI)"
+            VERBATIM
+        )
+        # Link the pre-compiled object into the target
+        target_sources(AltirraSDL PRIVATE "${MACOS_MENUBAR_OBJ}")
+        set_source_files_properties("${MACOS_MENUBAR_OBJ}"
+            PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    else()
+        # Clang is the CXX compiler — just add the .mm file normally
+        target_sources(AltirraSDL PRIVATE "${MACOS_MENUBAR_SRC}")
+    endif()
 endif()
 
 # Platform compile definitions (match what the top-level sets globally, but
@@ -864,11 +954,6 @@ endif()
 
 # Per-file SIMD flags for GCC/Clang (MSVC handles this via /arch: flags)
 if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
-    # antic.cpp includes antic_sse2.inl which uses _tzcnt_u32 (BMI1)
-    set_source_files_properties(
-        "${CMAKE_SOURCE_DIR}/src/Altirra/source/antic.cpp"
-        PROPERTIES COMPILE_FLAGS "-mbmi"
-    )
     # tracefileencoding.cpp uses SSSE3 + popcnt intrinsics
     set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/src/Altirra/source/tracefileencoding.cpp"
