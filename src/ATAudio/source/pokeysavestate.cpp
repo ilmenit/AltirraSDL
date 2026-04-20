@@ -85,8 +85,33 @@ void ATSaveStatePokeyInternal::Exchange(T& rw) {
 				throw ATInvalidSaveStateException();
 		}
 
+		// SAVESTATE ROUND-TRIP BUG FIX (AltirraSDL netplay, 2026-04-19)
+		//
+		// The upstream bound here used to be `c > 3`, matching the
+		// "normal" path in pokey.cpp (~line 1859) where
+		// `mCounterBorrow[channel] = ticksLeft` with `ticksLeft ∈
+		// [0,3]`.  But pokey.cpp line ~1920 (the hi-linked-timer
+		// borrow-land path for linked 16-bit timers) writes
+		// `mCounterBorrow[channel] = ticksLeft + 3` — legitimately
+		// setting the counter to values up to 6.  The serializer
+		// would happily write a 4/5/6 to disk, and the deserializer
+		// would then reject the state as "invalid" on load.
+		//
+		// In single-player Altirra this almost never bites because
+		// users rarely save a state during the sub-cycle window the
+		// hi-linked borrow occupies.  Netplay snapshot capture DOES
+		// hit it regularly: the host pauses the sim between Load()
+		// and serialize, and games like World Karate Championship
+		// (music driver running 16-bit linked channels) sit in the
+		// borrow window when we pause.  Joiner then gets a valid zip
+		// that fails its own deserializer — "The saved state data is
+		// invalid." blocking every netplay session.
+		//
+		// Fix: widen the valid range to [0,6] to match what the
+		// serializer can actually produce.  Any future widening in
+		// pokey.cpp MUST bump this bound too.
 		for(const auto& c : mTimerBorrowCounters) {
-			if (c > 3)
+			if (c > 6)
 				throw ATInvalidSaveStateException();
 		}
 

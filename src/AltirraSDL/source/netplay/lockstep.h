@@ -97,9 +97,14 @@ public:
 	bool GetInputsForCurrentFrame(NetInput& outP1, NetInput& outP2) const;
 
 	// Called after the simulator has advanced exactly one frame.
-	// Updates the rolling hash using the inputs that were just
-	// applied, possibly flags desync, and bumps CurrentFrame().
-	void OnFrameAdvanced();
+	// `simStateHash` is the caller-computed 32-bit hash of the post-
+	// apply simulator state (see netplay_simhash.h).  Stored as our
+	// local hash for this frame and compared against any peer hash
+	// already on file for the same frame; mismatch flags desync.
+	// Bumps CurrentFrame().  The old API signature (no arg) is kept
+	// for selftests via the default value — real callers must pass a
+	// real hash or the desync detector is a no-op.
+	void OnFrameAdvanced(uint32_t simStateHash = 0);
 
 	// Build the outgoing input packet describing our own last R
 	// frames of local input plus the highest peer frame we've
@@ -163,7 +168,6 @@ private:
 	Slot     mSlot = Slot::Host;
 	uint32_t mInputDelay = 3;
 	uint32_t mCurrentFrame = 0;       // next emu frame to apply
-	uint64_t mRollingHash = kFnvOffset;
 
 	int64_t  mDesyncFrame = -1;       // -1 = no desync yet
 	int64_t  mDesyncInjectFrame = -1; // test hook; -1 = disabled

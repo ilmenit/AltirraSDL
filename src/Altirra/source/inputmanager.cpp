@@ -350,6 +350,31 @@ void ATInputManager::SetRestrictedMode(bool restricted) {
 	mbRestrictedMode = restricted;
 }
 
+void ATInputManager::SetPortRedirect(int srcPortIdx, IATDeviceControllerPort *dstPort) {
+	// Install / uninstall matches the semantics requested by the caller
+	// regardless of prior state: a null dstPort clears any existing
+	// redirect on matching controllers; a non-null dstPort installs
+	// (or swaps to) the new target.
+
+	// First undo any prior redirect on controllers that match the old
+	// source but not the new one, or any that are currently redirected
+	// (so the new target replaces cleanly).
+	for (ControllerInfo& ci : mInputControllers) {
+		if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == mPortRedirectSrc)
+			ci.mpInputController->SetRedirectPort(nullptr);
+	}
+
+	mPortRedirectSrc = dstPort ? srcPortIdx : -1;
+	mpPortRedirectDst = dstPort;
+
+	if (dstPort) {
+		for (ControllerInfo& ci : mInputControllers) {
+			if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == srcPortIdx)
+				ci.mpInputController->SetRedirectPort(dstPort);
+		}
+	}
+}
+
 bool ATInputManager::IsInputMapped(int unit, uint32 inputCode) const {
 	return mMappings.find(inputCode) != mMappings.end()
 		|| mMappings.find(inputCode | kATInputCode_SpecificUnit | (unit << kATInputCode_UnitShift)) != mMappings.end();
@@ -1696,6 +1721,16 @@ void ATInputManager::RebuildMappings() {
 
 		trigger.mpController->SetDigitalTrigger(id, true);
 	}
+
+	// If a port redirect is installed (netplay), re-apply it to the
+	// freshly-built controllers so newly-loaded input maps also have
+	// their port-1 output captured instead of driving the real port.
+	if (mPortRedirectSrc >= 0 && mpPortRedirectDst) {
+		for (ControllerInfo& ci : mInputControllers) {
+			if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == mPortRedirectSrc)
+				ci.mpInputController->SetRedirectPort(mpPortRedirectDst);
+		}
+	}
 }
 
 void ATInputManager::ActivateMappings(uint32 id, bool state) {
@@ -2326,5 +2361,33 @@ bool ATInputManager::IsTriggerRestricted(const Trigger& trigger) const {
 	if (!mbRestrictedMode)
 		return false;
 
-	return (trigger.mId & 0xff00) != kATInputTrigger_UILeft;
+	// UI triggers always pass through restricted mode.
+	if ((trigger.mId & 0xff00) == kATInputTrigger_UILeft)
+		return false;
+
+	// Triggers whose controller has been redirected to a capture proxy
+	// (netplay) are allowed through for controller-port-writing trigger
+	// classes: their writes land in the capture buffer rather than
+	// the real hardware port, so they can't cause the "double fire"
+	// that restricted mode exists to prevent. This lets the full
+	// ATInputManager pipeline (custom key bindings, touch controls,
+	// secondary gamepads, etc.) feed local port-1 input into netplay
+	// instead of being silenced.
+	//
+	// Console (0x02xx), Keyboard (0x03xx), Flag (0x09xx) and similar
+	// trigger classes bypass the controller port -- e.g. the Console
+	// controller writes directly to GTIA via IATInputConsoleCallback
+	// -- so redirecting the controller port does NOT divert those
+	// writes. They must remain restricted, and netplay feeds console
+	// and keyboard state through its separate OnLocalConsoleSwitch /
+	// OnLocalKeyDown paths.
+	if (trigger.mpController && trigger.mpController->IsRedirected()) {
+		const uint32 cls = trigger.mId & kATInputTrigger_ClassMask;
+		// Allow: Button0 (0x0000), directions (0x0100), 5200 keypad
+		// (0x0400, writes to 5200 port), axis (0x0800, paddles etc).
+		if (cls == 0x0000 || cls == 0x0100 || cls == 0x0400 || cls == 0x0800)
+			return false;
+	}
+
+	return true;
 }

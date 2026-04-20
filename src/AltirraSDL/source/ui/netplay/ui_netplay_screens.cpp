@@ -636,9 +636,9 @@ void RenderMyHostedGames() {
 		for (auto& o : st.hostedGames) {
 			ImGui::PushID(o.id.c_str());
 
-			char subtitle[160];
-			std::snprintf(subtitle, sizeof subtitle, "%s · %s · %s",
-				MachinePresetLabel(o.preset),
+			char subtitle[200];
+			std::snprintf(subtitle, sizeof subtitle, "%s \xC2\xB7 %s \xC2\xB7 %s",
+				MachineConfigSummary(o.config),
 				o.isPrivate ? "Private" : "Public",
 				OfferStateLabelMobile(o.state));
 			bool tapped = ATTouchListItem(o.gameName.c_str(), subtitle,
@@ -701,8 +701,8 @@ int       s_mobileAddSource = 0;
 bool      s_mobileAddPrivate = false;
 char      s_mobileAddCode[32] = {};
 int       s_mobileLibrarySel = -1;
-MachinePreset s_mobileAddPreset = MachinePreset::XLXE_NTSC;
-bool          s_mobileAddPresetSeeded = false;
+MachineConfig s_mobileAddConfig;
+bool          s_mobileAddConfigSeeded = false;
 
 void MobileAddOfferFileCallback(void*, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
@@ -720,9 +720,9 @@ const SDL_DialogFileFilter kMobileAddOfferFilters[] = {
 void RenderAddOffer() {
 	State& st = GetState();
 	(void)st;
-	if (!s_mobileAddPresetSeeded) {
-		s_mobileAddPreset = st.prefs.lastAddPreset;
-		s_mobileAddPresetSeeded = true;
+	if (!s_mobileAddConfigSeeded) {
+		s_mobileAddConfig = CaptureCurrentMachineConfig();
+		s_mobileAddConfigSeeded = true;
 	}
 	bool open = true;
 	if (!BeginSheet("Add Game to Host", &open,
@@ -809,17 +809,18 @@ void RenderAddOffer() {
 
 	ImGui::Spacing();
 
-	// Machine preset — three touch-friendly segmented options.  The
-	// preset is applied only during a session; it never touches the
-	// user's saved Altirra configuration.
+	// Machine configuration — applied only during a session; never
+	// touches the user's saved Altirra configuration.  Gaming Mode
+	// uses touch widgets that mirror the Desktop dialog.
 	ATTouchMutedText("Machine:");
-	int presetIdx = (int)s_mobileAddPreset;
-	const char *presetItems[] = {
-		"XL/XE (PAL)", "XL/XE (NTSC)", "Atari 5200"
-	};
-	if (ATTouchSegmented("##preset", &presetIdx, presetItems, 3)) {
-		s_mobileAddPreset = (MachinePreset)presetIdx;
+	ATTouchMutedText(MachineConfigSummary(s_mobileAddConfig));
+	if (ATTouchButton("Copy from current emulator",
+	                  ImVec2(Dp(260), Dp(40)),
+	                  ATTouchButtonStyle::Neutral)) {
+		s_mobileAddConfig = CaptureCurrentMachineConfig();
 	}
+	ATTouchToggle("BASIC enabled", &s_mobileAddConfig.basicEnabled);
+	ATTouchToggle("SIO full-speed", &s_mobileAddConfig.sioPatchEnabled);
 
 	ImGui::Spacing();
 	ATTouchToggle("Private (require entry code)", &s_mobileAddPrivate);
@@ -852,10 +853,10 @@ void RenderAddOffer() {
 			o.gameName  = stagedName;
 			o.isPrivate = s_mobileAddPrivate;
 			o.entryCode = s_mobileAddCode;
-			o.preset    = s_mobileAddPreset;
+			o.config    = s_mobileAddConfig;
 			o.enabled   = true;
 			s.hostedGames.push_back(std::move(o));
-			s.prefs.lastAddPreset = s_mobileAddPreset;
+			s.prefs.lastAddConfig = s_mobileAddConfig;
 			SaveToRegistry();
 			EnableHostedGame(s.hostedGames.back().id);
 			s_mobilePickedPath.clear();

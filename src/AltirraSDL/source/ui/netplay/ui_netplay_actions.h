@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <string>
 
-#include "ui_netplay_state.h"  // MachinePreset
+#include "ui_netplay_state.h"  // MachineConfig
 
 class ATGameLibrary;
 
@@ -84,8 +84,8 @@ void SubmitHostSnapshotForGame(const char *gameId);
 // setup.  When a peer connects, the host:
 //   1. Saves the live sim state via SaveSessionRestorePoint() (a full
 //      in-memory savestate).  If this fails, the session is refused.
-//   2. Applies the MachinePreset (hardware, memory, video, firmware)
-//      via ApplyPreset().
+//   2. Applies the MachineConfig (hardware, memory, video, firmware)
+//      via ApplyMachineConfig().
 //   3. Loads the hosted game image + ColdReset + Resume.
 // When the session ends (clean or error), RestoreSessionRestorePoint()
 // puts the live sim back to exactly how the user left it — menu state,
@@ -109,14 +109,14 @@ void RestoreSessionRestorePoint();
 // loop to detect session-end edges and trigger RestoreSessionRestorePoint.
 bool HasSessionRestorePoint();
 
-// Apply a MachinePreset to the live simulator (hardware mode, memory
-// mode, video standard, BASIC enable, OS/BASIC firmware IDs).  Does
-// NOT Load a game image; that's the caller's job (NetplayHostBoot).
-// Returns empty string on success; on failure, a short human reason
-// (missing built-in firmware, unsupported combination).  Settings are
-// always read from / written to the live simulator, never to
-// settings.ini on disk.
-std::string ApplyPreset(MachinePreset p);
+// Apply a MachineConfig to the live simulator (hardware mode, memory
+// mode, video standard, CPU mode, BASIC enable, SIO patch, firmware
+// resolved by CRC32).  Does NOT Load a game image; that's the
+// caller's job (NetplayHostBoot).  Returns empty string on success;
+// on failure, a short human reason (missing firmware, unsupported
+// combination).  Settings are always read from / written to the
+// live simulator, never to settings.ini on disk.
+std::string ApplyMachineConfig(const MachineConfig& cfg);
 
 // --- Back-compat shims for the old single-session Host Setup screen ----
 //

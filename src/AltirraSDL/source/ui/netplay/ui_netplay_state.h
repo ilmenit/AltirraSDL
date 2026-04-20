@@ -27,6 +27,9 @@
 #include "netplay/lobby_client.h"
 #include "netplay/platform_notify.h"
 
+#include "constants.h"  // ATHardwareMode, ATMemoryMode, ATVideoStandard
+#include "cpu.h"        // ATCPUMode
+
 namespace ATNetplayUI {
 
 // Which screen the user is currently looking at.  The per-mode
@@ -70,23 +73,26 @@ enum class HostedGameState : uint8_t {
 	Failed,       // last attempt failed; held locally so user can retry
 };
 
-// Machine presets — a small fixed set of hardware configurations the
-// user can pick from when adding a hosted game.  Deliberately minimal
-// for v1 so both peers always agree on what the host will boot; no
-// custom combinations, no user firmware selection — all presets use
-// the built-in AltirraOS + AltirraBASIC so a fresh install of Altirra
-// can host or join any listed game without any ROM setup.
-//
-// Any game that needs more than this (VBXE, custom firmware,
-// U1MB, etc.) must wait for custom presets (v2).
-enum class MachinePreset : uint8_t {
-	XLXE_PAL  = 0,   // 800XL / 320K Rambo / PAL   / BASIC off
-	XLXE_NTSC = 1,   // 800XL / 320K Rambo / NTSC  / BASIC off
-	A5200     = 2,   // 5200  /  16K       / NTSC  / (no BASIC)
-};
+// Full machine configuration per hosted game.  Serialised to the
+// lobby Welcome packet so the joiner can reproduce the exact same
+// hardware the host cold-boots.  Firmware is identified by CRC32 of
+// the loaded ROM bytes; both peers must have a matching-CRC entry in
+// their ATFirmwareManager or the joiner refuses.
+struct MachineConfig {
+	ATHardwareMode  hardwareMode    = kATHardwareMode_800XL;
+	ATMemoryMode    memoryMode      = kATMemoryMode_320K;
+	ATVideoStandard videoStandard   = kATVideoStandard_NTSC;
+	ATCPUMode       cpuMode         = kATCPUMode_6502;
+	bool            basicEnabled    = false;
+	bool            sioPatchEnabled = true;   // full-speed SIO
 
-// The last-valid preset (inclusive) — used for registry clamping.
-constexpr uint8_t kMachinePresetMax = 2;
+	// CRC32 of the installed firmware ROM bytes; 0 = unset / not
+	// required.  Captured on the host from the currently-selected
+	// firmware at Add-Game time; verified on the joiner against
+	// ATFirmwareManager::GetFirmwareByRefString(L"[XXXXXXXX]", ...).
+	uint32_t        kernelCRC32     = 0;
+	uint32_t        basicCRC32      = 0;
+};
 
 struct HostedGame {
 	// Persistent fields --------------------------------------------------
@@ -98,10 +104,10 @@ struct HostedGame {
 	std::string entryCode;         // cleartext; hashed at StartHost time
 	bool        enabled   = true;  // user toggle; when false stays Draft
 
-	// Machine preset applied to the simulator before booting the game
-	// for a joined peer.  Default XLXE_NTSC matches the most common
-	// Atari 8-bit baseline.
-	MachinePreset preset = MachinePreset::XLXE_NTSC;
+	// Full machine configuration applied before cold-booting the
+	// game for a joined peer.  Captured from the current sim at
+	// Add-Game time unless the user picks explicit values.
+	MachineConfig config;
 
 	// Runtime fields (not persisted) ------------------------------------
 	HostedGameState  state          = HostedGameState::Draft;
@@ -122,9 +128,18 @@ struct HostedGame {
 	uint8_t     lastPhase = 0;
 };
 
-// Human-readable label for a preset — used in the Add Game picker
-// and the Host Games row summary.  Caller must not free.
-const char *MachinePresetLabel(MachinePreset p);
+// One-line human-readable summary of a MachineConfig — used in the
+// Host Games row subtitle.  Returns static storage; caller must copy
+// before calling again.  Format: "800XL · 320K · NTSC · BASIC off".
+const char *MachineConfigSummary(const MachineConfig& c);
+
+// Snapshot the currently-running simulator's config as a MachineConfig,
+// with firmware CRC32s computed from the loaded ROM bytes.
+MachineConfig CaptureCurrentMachineConfig();
+
+// CRC32 of the firmware ROM bytes for the given firmware id.  Returns
+// 0 if the id is unknown or the firmware can't be loaded.
+uint32_t ComputeFirmwareCRC32(uint64_t firmwareId);
 
 // High-level "is the user busy" flag that drives the suspension of
 // every hosted game the user didn't explicitly start.
@@ -174,10 +189,17 @@ struct Prefs {
 	// no lobby is reachable; normal path is the browser.
 	bool        advancedManualIp = false;
 
-	// Last MachinePreset the user picked in the Add Game dialog.  Used
-	// as the default for the next Add Game so serial hosts don't have
-	// to re-pick PAL every time.
-	MachinePreset lastAddPreset = MachinePreset::XLXE_NTSC;
+	// Last MachineConfig the user saved from the Add Game dialog, so
+	// serial hosts don't have to re-pick hardware every time.  Not
+	// serialised to the registry — rebuilt on the next Add Game from
+	// the first hosted game's config, or from the live sim.
+	MachineConfig lastAddConfig;
+
+	// Whether the in-session overlay HUD (LIVE / FRAME / Peer / Disconnect)
+	// is rendered.  Some users want a clean screen during recordings;
+	// others want the diagnostic always visible.  Defaults ON — new
+	// users need the feedback to understand what netplay is doing.
+	bool showSessionHUD = true;
 };
 
 // Ephemeral state — cleared on Shutdown().
@@ -229,6 +251,12 @@ struct Browser {
 
 	// Non-empty while a refresh is in flight.  The UI shows a spinner.
 	bool        refreshInFlight = false;
+
+	// Exponential backoff on List failures.  Cleared on success.
+	// Doubles on every failure (capped) so a lobby that 429s or
+	// times out doesn't spin-retry at main-loop speed.
+	uint64_t    nextRetryMs = 0;
+	uint32_t    consecutiveFailures = 0;
 
 	// Human-readable status line ("12 sessions" / "Lobby unreachable").
 	std::string statusLine;

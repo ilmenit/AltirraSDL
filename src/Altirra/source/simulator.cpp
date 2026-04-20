@@ -2137,6 +2137,27 @@ void ATSimulator::SetLockedRandomSeed(uint32 seed) {
 	mpPrivateData->mLockedRandomSeed = seed;
 }
 
+void ATSimulator::ReseedNetplayRandomState(uint32 masterSeed) {
+	// Mirror the ColdReset seeding path (simulator.cpp:2189-2196) but
+	// WITHOUT touching hardware state: only the RNG fields that leak
+	// wallclock entropy across peers.  Called from netplay glue at
+	// BeginSession on both host and joiner — after the host has booted
+	// and captured its snapshot, and after the joiner has Load()ed it.
+	// The snapshot round-trip restores CPU + RAM deterministically; this
+	// call patches the fields that the snapshot format does NOT carry:
+	//   - mRandomSeed (simulator RNG base — not serialized)
+	//   - g_ATRandomizationSeeds.* (derived per-subsystem seeds)
+	//   - mFloatingInputs.mRandomSeed (PIA floating-input LFSR — each
+	//     process originally seeded from rand() at main.cpp:3893)
+	//   - mFloatingInputs.mFloatTimers (PIA decay-timer schedule)
+	if (masterSeed == 0) masterSeed = 1;   // 0 would disable downstream
+	mpPrivateData->mRandomSeed = masterSeed;
+	ATSetRandomizationSeeds(masterSeed);
+	mpPrivateData->mFloatingInputs.mRandomSeed = g_ATRandomizationSeeds.mPIAFloatingInputs;
+	memset(mpPrivateData->mFloatingInputs.mFloatTimers, 0,
+		sizeof mpPrivateData->mFloatingInputs.mFloatTimers);
+}
+
 bool ATSimulator::GetPotNoiseEnabled() const {
 	return mpPrivateData->mPortManager.GetPotNoiseEnabled();
 }

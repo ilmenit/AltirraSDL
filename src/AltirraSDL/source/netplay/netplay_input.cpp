@@ -21,8 +21,6 @@
 
 extern ATLogChannel g_ATLCNetplay;
 
-#include <SDL3/SDL.h>
-
 #include <cstring>
 
 extern ATSimulator g_sim;
@@ -54,6 +52,72 @@ IATDeviceControllerPort *g_port[2] = { nullptr, nullptr };
 bool g_active        = false;
 bool g_wasRestricted = false;
 
+// ---------------------------------------------------------------------------
+// Port-1 capture proxy.
+//
+// During netplay we install this as a redirect target on every
+// ATPortInputController bound to port index 0 (port 1 in user-facing
+// terms).  All local port-1 input -- arrow keys, user-bound keyboard
+// mappings, any attached gamepad (via ATInputManager's standard
+// mappings), the Gaming-Mode on-screen touch joypad -- flows through
+// the full ATInputManager pipeline, lands on this proxy instead of
+// the real hardware port, and is harvested by PollLocal() each frame.
+//
+// Net effect: on the joiner side, local port-1 input does NOT drive
+// the real port 1 -- it is captured, sent across the wire, and shows
+// up as the peer's port-2 input after the lockstep delay.  Real port
+// 1 on the joiner is driven by what the host sends over the wire.
+// ---------------------------------------------------------------------------
+
+class NetplayCapturePort final : public IATDeviceControllerPort {
+public:
+	void AddRef() override { ++mRefs; }
+	// Singleton: never actually freed, but keep the count consistent
+	// so debug asserts on refcount balance hold.
+	void Release() override { --mRefs; }
+
+	bool IsPotNoiseEnabled() const override { return false; }
+	void SetEnabled(bool /*enabled*/) override {}
+	void SetDirOutputMask(uint8 /*mask*/) override {}
+
+	void SetDirInput(uint8 mask) override {
+		mDirMask = mask;
+	}
+
+	void SetDirInputBits(uint8 newSignals, uint8 changeMask) override {
+		mDirMask = (mDirMask & ~changeMask) | (newSignals & changeMask);
+	}
+
+	void SetOnDirOutputChanged(uint8, vdfunction<void()>, bool /*callNow*/) override {}
+
+	uint8 GetCurrentDirOutput() const override { return 0x0F; }
+
+	void SetTriggerDown(bool down) override {
+		mTrigger = down;
+	}
+
+	void ResetPotPosition(bool /*potB*/) override {}
+	void SetPotPosition(bool /*potB*/, sint32 /*pos*/) override {}
+	void SetPotHiresPosition(bool /*potB*/, sint32 /*hiPos*/, bool /*grounded*/) override {}
+	uint32 GetCyclesToBeamPosition(int, int) const override { return 1; }
+
+	// Snapshot of the captured state for PollLocal.
+	uint8 GetDirMask() const { return mDirMask; }
+	bool  GetTriggerDown() const { return mTrigger; }
+
+	void Reset() {
+		mDirMask = 0x0F;  // all high = no direction
+		mTrigger = false;
+	}
+
+private:
+	int mRefs = 1;
+	uint8 mDirMask = 0x0F;  // Active-low: 0x0F = neutral, bit clear = pressed.
+	bool mTrigger = false;
+};
+
+NetplayCapturePort g_capturePort;
+
 // Pre-session CPU debug-flag snapshot.  Netplay demands the two peers
 // execute the same opcode stream — if one peer has e.g.
 // IllegalInsnsEnabled=false it traps on illegal opcodes that the other
@@ -70,7 +134,6 @@ bool g_cpuPathBrkSaved = false;
 // times per frame for some games — cheap individually, but gratuitous
 // per-frame overhead when netplay is active).  The CPU register dump
 // in ATEmuErrorHandlerSDL3 covers real trap diagnostics already.
-SDL_Gamepad *g_padCache = nullptr;
 
 // Capture-side event state.
 struct KeyEvent { uint8_t scan; };
@@ -98,34 +161,6 @@ uint8_t g_lastKeyScan[2] = { 0, 0 };
 // OnLocalConsoleSwitch sets/clears bits here; PollLocal reads them.
 uint8_t g_localConsoleMask = 0;
 
-// Cached "no gamepad" result so PollLocal doesn't burn a syscall +
-// a small heap alloc (SDL_GetGamepads) every frame when the user has
-// no gamepad attached.  Bumped when a DEVICE_ADDED event arrives via
-// OnGamepadHotplug (called by the SDL event loop).
-bool g_padTried = false;
-
-SDL_Gamepad *AcquireGamepad() {
-	if (g_padCache) return g_padCache;
-	if (g_padTried) return nullptr;
-	int count = 0;
-	SDL_JoystickID *ids = SDL_GetGamepads(&count);
-	g_padTried = true;  // mark tried even if alloc fails
-	if (!ids) return nullptr;
-	for (int i = 0; i < count && !g_padCache; ++i) {
-		g_padCache = SDL_OpenGamepad(ids[i]);
-	}
-	SDL_free(ids);
-	return g_padCache;
-}
-
-void ReleaseGamepad() {
-	if (g_padCache) {
-		SDL_CloseGamepad(g_padCache);
-		g_padCache = nullptr;
-	}
-	g_padTried = false;
-}
-
 void ResetKeyQueue() {
 	g_keyHead = g_keyTail = g_keyCount = 0;
 	g_shiftHeld = g_ctrlHeld = false;
@@ -151,8 +186,23 @@ void BeginSession() {
 		// leak into the normal input manager's port controllers
 		// (which merge with ours via the port manager).
 		im->ReleaseButtons(kATInputCode_JoyClass, 0xFFFF);
+
+		// Restricted mode silences console triggers, keyboard
+		// triggers, paddle pot writes, and any other non-UI input
+		// path that would otherwise double-fire locally.  Joystick
+		// controllers on port 0 are exempted via the port-redirect
+		// escape hatch below (IsTriggerRestricted checks
+		// IsRedirected()), so they flow through ATInputManager's
+		// full pipeline into our capture proxy.
 		g_wasRestricted = false;  // documented default (see input_sdl3.cpp:329)
 		im->SetRestrictedMode(true);
+
+		// Capture everything that would write to port 1 (port index 0).
+		// This covers ATJoystickController, ATPaddleController's
+		// trigger, ATDrivingController, and any other
+		// ATPortInputController the user has mapped onto port 1.
+		g_capturePort.Reset();
+		im->SetPortRedirect(0, &g_capturePort);
 	}
 
 	// Force CPU debug flags to gameplay-safe values so the two peers
@@ -213,8 +263,19 @@ void EndSession() {
 	if (ATGTIAEmulator *gtia = &g_sim.GetGTIA())
 		gtia->SetConsoleSwitch(0x07, false);
 
-	if (ATInputManager *im = g_sim.GetInputManager())
+	if (ATInputManager *im = g_sim.GetInputManager()) {
+		im->SetPortRedirect(0, nullptr);
+		// Release every tracked input code, not just joystick-class:
+		// during the session, non-joy input codes (e.g. a keyboard key
+		// bound to fire/direction) can have activated mappings for
+		// port-writing triggers via the redirect escape hatch. A
+		// narrow JoyClass release would leave those mappings with a
+		// stale mbTriggerActivated=true, silently swallowing the next
+		// fresh press after the session ends.
+		im->ReleaseButtons(0, 0xFFFFFFFF);
 		im->SetRestrictedMode(g_wasRestricted);
+	}
+	g_capturePort.Reset();
 
 	// Restore the user's pre-session CPU debug flags.
 	{
@@ -226,7 +287,6 @@ void EndSession() {
 
 	DetachEventLogger();
 
-	ReleaseGamepad();
 	ResetKeyQueue();
 	g_active = false;
 }
@@ -270,45 +330,20 @@ ATNetplay::NetInput PollLocal() {
 	ATNetplay::NetInput in{};
 	if (!g_active) return in;
 
-	// --- stick + trigger (polling) ---
-	const bool *ks = SDL_GetKeyboardState(nullptr);
-	if (ks) {
-		if (ks[SDL_SCANCODE_UP])    in.stickDir |= kDirUp;
-		if (ks[SDL_SCANCODE_DOWN])  in.stickDir |= kDirDown;
-		if (ks[SDL_SCANCODE_LEFT])  in.stickDir |= kDirLeft;
-		if (ks[SDL_SCANCODE_RIGHT]) in.stickDir |= kDirRight;
-		if (ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_SPACE]
-		    || ks[SDL_SCANCODE_LSHIFT])
-			in.buttons |= kBtnTrigger;
-	}
-
-	SDL_Gamepad *pad = AcquireGamepad();
-	if (pad) {
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP))    in.stickDir |= kDirUp;
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN))  in.stickDir |= kDirDown;
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT))  in.stickDir |= kDirLeft;
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) in.stickDir |= kDirRight;
-
-		constexpr Sint16 kDead = 16384;
-		Sint16 lx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-		Sint16 ly = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
-		if (lx < -kDead) in.stickDir |= kDirLeft;
-		if (lx >  kDead) in.stickDir |= kDirRight;
-		if (ly < -kDead) in.stickDir |= kDirUp;
-		if (ly >  kDead) in.stickDir |= kDirDown;
-
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH)
-		 || SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST)
-		 || SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST)
-		 || SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH))
-			in.buttons |= kBtnTrigger;
-
-		// Gamepad Start/Select as Start/Select.  No gamepad mapping
-		// for Option — Atari Option is rarely needed mid-game.
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_START))
-			in.buttons |= kBtnStart;
-		if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK))
-			in.buttons |= kBtnSelect;
+	// --- stick + trigger: read the port-1 capture proxy ---
+	// ATInputManager has already translated keyboard, gamepad, touch
+	// joypad, and user-bound custom mappings through its full trigger
+	// pipeline and deposited the resulting dir/trigger state on
+	// g_capturePort.  We just harvest it here.  The proxy uses the
+	// Atari hardware convention: active-low dir mask (bit clear =
+	// direction held), 4 bits (U/D/L/R in PIA ordering).
+	{
+		const uint8 dir = g_capturePort.GetDirMask();
+		if (!(dir & 0x01)) in.stickDir |= kDirUp;     // bit 0 = up
+		if (!(dir & 0x02)) in.stickDir |= kDirDown;   // bit 1 = down
+		if (!(dir & 0x04)) in.stickDir |= kDirLeft;   // bit 2 = left
+		if (!(dir & 0x08)) in.stickDir |= kDirRight;  // bit 3 = right
+		if (g_capturePort.GetTriggerDown()) in.buttons |= kBtnTrigger;
 	}
 
 	// --- console switches: latched shadow set by OnLocalConsoleSwitch ---

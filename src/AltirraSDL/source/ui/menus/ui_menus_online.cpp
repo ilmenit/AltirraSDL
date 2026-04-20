@@ -32,6 +32,18 @@ void ATUIRenderOnlineMenu() {
 
 	ImGui::Separator();
 
+	// Session HUD toggle: controls the top-right "LIVE / FRAME / Peer"
+	// overlay.  Always visible so the user can find it, but it only
+	// does anything while a session is active.
+	{
+		auto& st = ATNetplayUI::GetState();
+		bool showHud = st.prefs.showSessionHUD;
+		if (ImGui::MenuItem("Show Session HUD", nullptr, showHud)) {
+			st.prefs.showSessionHUD = !showHud;
+			ATNetplayUI::SaveToRegistry();
+		}
+	}
+
 	if (ImGui::MenuItem("Preferences...")) {
 		ATNetplayUI_OpenPrefs();
 	}

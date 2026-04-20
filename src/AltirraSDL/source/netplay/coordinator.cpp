@@ -222,6 +222,29 @@ void Coordinator::Poll(uint64_t nowMs) {
 		SendBye(kByeDesyncDetected);
 		mPhase = Phase::Desynced;
 	}
+
+	// Lockstep: peer-silence timeout.  With the lockstep design the
+	// game naturally pauses on both sides when peer packets stop
+	// arriving (our gate won't open), so there's no crash — but if
+	// the peer genuinely died or dropped off the network we'd otherwise
+	// sit frozen forever.  After kPeerTimeoutMs of silence, declare
+	// the session dead, tell them we're leaving (best-effort), and
+	// transition to Ended.  The UI surfaces this via the HUD
+	// "Peer: Xms ago" readout, so the user has ~10 s of visible
+	// warning before we give up.
+	if (mPhase == Phase::Lockstepping) {
+		constexpr uint64_t kPeerTimeoutMs = 10000;
+		if (mLoop.PeerTimedOut(nowMs, kPeerTimeoutMs)) {
+			g_ATLCNetplay("%s: peer silent for >%llu ms — timing out "
+				"(last packet %llu ms ago)",
+				mRole == Role::Host ? "host" : "joiner",
+				(unsigned long long)kPeerTimeoutMs,
+				(unsigned long long)(nowMs - mLoop.LastPeerRecvMs()));
+			SendBye(kByeTimeout);
+			mPhase = Phase::Ended;
+			mLastError = "peer timed out";
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -423,9 +446,9 @@ void Coordinator::HandleInputPacket(const NetInputPacket& pkt, uint64_t nowMs) {
 	mLoop.OnPeerInputPacket(pkt, nowMs);
 }
 
-void Coordinator::OnFrameAdvanced() {
+void Coordinator::OnFrameAdvanced(uint32_t simStateHash) {
 	if (mPhase != Phase::Lockstepping) return;
-	mLoop.OnFrameAdvanced();
+	mLoop.OnFrameAdvanced(simStateHash);
 	// Send the outgoing packet IMMEDIATELY rather than deferring it
 	// to the next Poll().  The peer is likely already stalled waiting
 	// for this frame's input — deferring would cost them a full render

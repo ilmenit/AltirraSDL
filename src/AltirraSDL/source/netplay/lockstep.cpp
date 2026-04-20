@@ -14,12 +14,6 @@ constexpr uint32_t kRingMask = LockstepLoop::kRingSize - 1;
 static_assert((LockstepLoop::kRingSize & kRingMask) == 0,
               "kRingSize must be a power of two");
 
-// Fold one byte into an FNV-1a 64 rolling accumulator.
-inline void FnvFold(uint64_t& h, uint8_t b) {
-	h ^= (uint64_t)b;
-	h *= LockstepLoop::kFnvPrime;
-}
-
 } // anonymous
 
 // ---------------------------------------------------------------------------
@@ -104,7 +98,6 @@ void LockstepLoop::Begin(Slot slot, uint32_t inputDelay) {
 	mSlot = slot;
 	mInputDelay = inputDelay;
 	mCurrentFrame = 0;
-	mRollingHash = kFnvOffset;
 	mDesyncFrame = -1;
 	// mDesyncInjectFrame left as set by SetDesyncInjectFrame()
 	mLastPeerRecvMs = 0;
@@ -196,42 +189,23 @@ bool LockstepLoop::GetInputsForCurrentFrame(NetInput& outP1, NetInput& outP2) co
 	return true;
 }
 
-void LockstepLoop::OnFrameAdvanced() {
-	// Compute the hash contribution for the frame we just applied.
+void LockstepLoop::OnFrameAdvanced(uint32_t simStateHash) {
+	// Precondition: caller checked CanAdvance() before the sim advance.
+	// Violating that would leave our hash stream diverged from the
+	// peer's, so bail without bumping rather than baking in permanent
+	// divergence.
 	NetInput p1 {}, p2 {};
-	if (!GetInputsForCurrentFrame(p1, p2)) {
-		// Caller's contract was to check CanAdvance() before the
-		// emulator advance; violating that would leave the hash stream
-		// diverged from the peer's.  Rather than silently bump the
-		// frame counter (and bake in that divergence forever), bail
-		// without advancing — the next tick will retry this frame.
-		return;
-	}
+	if (!GetInputsForCurrentFrame(p1, p2)) return;
 
-	// Test hook: corrupt ONE bit of the LOCAL hash input without
-	// touching the wire bytes (p1/p2 as sent to peer are untouched).
-	// Mirrors the Go PoC's --desync-at flag.
-	uint8_t p1b0 = p1.stickDir;
+	// Test hook: flip one bit of the LOCAL hash without touching wire
+	// bytes.  Simulates the peer diverging from us at `frame`; lets the
+	// selftest exercise the detection path deterministically.
+	uint32_t myHashLow = simStateHash;
 	if (mDesyncInjectFrame >= 0 && (uint32_t)mDesyncInjectFrame == mCurrentFrame) {
-		p1b0 ^= 0x01;
+		myHashLow ^= 0x00000001u;
+		if (myHashLow == 0) myHashLow = 0x00000002u;   // keep non-zero
 	}
 
-	// Fold (frameLE u32, p1.raw4, p2.raw4) in canonical order.  Same
-	// 12 bytes per frame as the Go PoC.
-	FnvFold(mRollingHash, (uint8_t)( mCurrentFrame        & 0xFF));
-	FnvFold(mRollingHash, (uint8_t)((mCurrentFrame >>  8) & 0xFF));
-	FnvFold(mRollingHash, (uint8_t)((mCurrentFrame >> 16) & 0xFF));
-	FnvFold(mRollingHash, (uint8_t)((mCurrentFrame >> 24) & 0xFF));
-	FnvFold(mRollingHash, p1b0);
-	FnvFold(mRollingHash, p1.buttons);
-	FnvFold(mRollingHash, p1.keyScan);
-	FnvFold(mRollingHash, p1.extFlags);
-	FnvFold(mRollingHash, p2.stickDir);
-	FnvFold(mRollingHash, p2.buttons);
-	FnvFold(mRollingHash, p2.keyScan);
-	FnvFold(mRollingHash, p2.extFlags);
-
-	const uint32_t myHashLow = (uint32_t)mRollingHash;
 	PutLocalHash(mCurrentFrame, myHashLow);
 
 	// Apply-time desync check: did peer's hash for this frame arrive

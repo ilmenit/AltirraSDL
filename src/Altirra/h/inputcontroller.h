@@ -112,6 +112,22 @@ public:
 	void Detach();
 	virtual void ColdReset() {}
 
+	// Returns the port index passed to Attach(), or -1 if not attached.
+	int GetAttachedPortIndex() const { return mPortIndex; }
+
+	// Temporarily redirect writes so that SetDirInput / SetTriggerDown /
+	// SetPotPosition / etc. go to |proxy| instead of the real hardware
+	// port. The real port is neutralized (stick centered, trigger up,
+	// pots at rest) while the redirect is active so it stops driving
+	// the underlying hardware. Pass nullptr to restore.
+	//
+	// Used by netplay to capture local port-1 input into a buffer
+	// without letting it also affect the local port-1 hardware.
+	void SetRedirectPort(IATDeviceControllerPort *proxy);
+
+	// True while SetRedirectPort has installed a proxy.
+	bool IsRedirected() const { return mpRealControllerPort != nullptr; }
+
 	virtual void Tick() {}
 
 	virtual bool IsActive() const { return true; }
@@ -144,7 +160,12 @@ protected:
 	virtual void OnPortOutputChanged(uint8 outputState) {}
 
 	vdrefptr<IATDeviceControllerPort> mpControllerPort;
+	// When non-null, the controller has been redirected: mpControllerPort
+	// holds the proxy and mpRealControllerPort holds the real (neutralized)
+	// port. When null, mpControllerPort is the real port.
+	vdrefptr<IATDeviceControllerPort> mpRealControllerPort;
 	uint8 mPortOutputState {};
+	int mPortIndex = -1;
 
 	uint8 mMultiMask {};
 };

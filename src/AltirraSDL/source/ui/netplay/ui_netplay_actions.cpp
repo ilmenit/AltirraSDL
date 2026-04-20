@@ -9,6 +9,7 @@
 
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
+#include "netplay/netplay_simhash.h"
 
 #include "ui/gamelibrary/game_library.h"
 #include "ui/core/ui_main.h"
@@ -21,6 +22,7 @@
 
 #include <at/atio/image.h>       // ATStateLoadContext
 #include <at/atcore/serializable.h>
+#include <at/atcore/media.h>     // kATMediaWriteMode_RO
 
 #include "savestateio.h"
 
@@ -525,6 +527,8 @@ void SubmitHostSnapshotForGame(const char *gameId) {
 
 	{
 		ATCPUEmulator &cpu = g_sim.GetCPU();
+		ATNetplay::SimHashBreakdown br{};
+		ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
 		g_ATLCNetplay("host snapshot: capturing for \"%s\" "
 			"(running=%d paused=%d hw=%d mem=%d vid=%d "
 			"PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%02X)",
@@ -540,6 +544,17 @@ void SubmitHostSnapshotForGame(const char *gameId) {
 			(unsigned)cpu.GetY(),
 			(unsigned)cpu.GetS(),
 			(unsigned)cpu.GetP());
+		// Pre-save breakdown.  Compare line-by-line with the
+		// post-self-load breakdown printed below: any subsystem whose
+		// hash changes is a lossy round-trip in Altirra's save format,
+		// independent of netplay.
+		g_ATLCNetplay("host pre-save breakdown: "
+			"total=%08x cpu=%08x "
+			"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
+			"gtia=%08x antic=%08x pokey=%08x schedTick=%08x",
+			br.total, br.cpuRegs,
+			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
+			br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
 	}
 
 	try {
@@ -570,6 +585,123 @@ void SubmitHostSnapshotForGame(const char *gameId) {
 		auto bytes = mem.GetBuffer();
 		g_ATLCNetplay("host snapshot: serialised %zu bytes for \"%s\"",
 			bytes.size(), gameId);
+
+		// DETERMINISTIC-LOCKSTEP HOST ROUND-TRIP (2026-04-20)
+		//
+		// Force the HOST's own sim through the EXACT same zip → JSON →
+		// deserialize → ApplySnapshot pipeline the joiner uses.  The
+		// goal is that after this call, the host's live sim state is
+		// bit-identical to the joiner's post-Load state — any field
+		// that the serializer cannot round-trip losslessly is lossy
+		// IDENTICALLY on both sides, so a deterministic lockstep
+		// holds from frame 0.
+		//
+		// Why not just call g_sim.ApplySnapshot(*snapshot, nullptr)
+		// directly on the in-memory object?  Because that skips the
+		// JSON encode/decode step.  Live IATSerializable objects
+		// carry references that the zip/JSON pair externalises (e.g.
+		// memory buffers become `memory.bin` file entries) — only
+		// going through the actual zip bytes guarantees the host's
+		// post-state matches the joiner's post-state bit for bit.
+		// We observed WKC frame-0 desync with direct ApplySnapshot:
+		// host/joiner's GTIA/ANTIC/POKEY/CPU/RAM hashes still
+		// differed because JSON precision / buffer reference vs
+		// in-memory reference paths produce subtly different states.
+		//
+		// We write to a temp file and Load() because that is bit-
+		// exactly what the joiner does (see ui_netplay.cpp ~line 230
+		// writing netplay_inbound.astate, and the joiner's
+		// kATDeferred_NetplayJoinerApply calling g_sim.Load()).  Any
+		// future hardening of the zip-deserialize path auto-applies
+		// to both sides symmetrically.
+		{
+			VDStringA tmpPath = ATGetConfigDir();
+			if (!tmpPath.empty() && tmpPath.back() != '/'
+			                     && tmpPath.back() != '\\')
+				tmpPath.push_back('/');
+			tmpPath.append("netplay_host_selfload.astate");
+
+			try {
+				{
+					VDFileStream fs(
+						VDTextU8ToW(tmpPath.c_str(), -1).c_str(),
+						nsVDFile::kWrite | nsVDFile::kCreateAlways
+						| nsVDFile::kDenyAll);
+					fs.Write(bytes.data(), (sint32)bytes.size());
+				}
+				if (!g_sim.Load(VDTextU8ToW(tmpPath.c_str(), -1).c_str(),
+				                kATMediaWriteMode_RO, nullptr)) {
+					g_ATLCNetplay("host self-load: Load() returned false");
+				} else {
+					ATCPUEmulator &cpu = g_sim.GetCPU();
+					ATNetplay::SimHashBreakdown br{};
+					ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
+					g_ATLCNetplay("host self-load: OK post-Load "
+						"PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%02X",
+						(unsigned)cpu.GetInsnPC(),
+						(unsigned)cpu.GetA(),
+						(unsigned)cpu.GetX(),
+						(unsigned)cpu.GetY(),
+						(unsigned)cpu.GetS(),
+						(unsigned)cpu.GetP());
+					g_ATLCNetplay("host self-load breakdown: "
+						"total=%08x cpu=%08x "
+						"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
+						"gtia=%08x antic=%08x pokey=%08x schedTick=%08x",
+						br.total, br.cpuRegs,
+						br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
+						br.gtiaRegs, br.anticRegs, br.pokeyRegs,
+						br.schedTick);
+
+					// Cross-peer post-Load byte diff: re-serialise the
+					// sim right after self-Load and dump to disk so we
+					// can compare with the joiner's post-Load snapshot
+					// byte-for-byte.  The JSON-content hash is stable
+					// (no zip timestamp noise) and IS comparable across
+					// peers; if it matches the joiner's, post-Load
+					// state is identical and divergence is during
+					// execution.  If it differs, diff the unzipped
+					// savestate.json to find the non-round-tripping
+					// field.
+					{
+						vdfastvector<uint8_t> buf;
+						if (ATNetplay::SerializeSimToSnapshotBytes(g_sim, buf)) {
+							uint32_t jh = ATNetplay::HashSavestateJsonInSnapshot(
+								buf.data(), buf.size());
+							g_ATLCNetplay("host post-Load re-serialise: "
+								"%zu bytes, savestate.json FNV=%08x",
+								buf.size(), jh);
+							VDStringA dumpPath = ATGetConfigDir();
+							if (!dumpPath.empty() && dumpPath.back() != '/'
+							                      && dumpPath.back() != '\\')
+								dumpPath.push_back('/');
+							dumpPath.append("netplay_host_post_load.astate");
+							try {
+								VDFileStream fs(
+									VDTextU8ToW(dumpPath.c_str(), -1).c_str(),
+									nsVDFile::kWrite | nsVDFile::kCreateAlways
+									| nsVDFile::kDenyAll);
+								fs.Write(buf.data(), (sint32)buf.size());
+							} catch (...) {
+								g_ATLCNetplay("host post-Load dump: "
+									"write failed (continuing)");
+							}
+						} else {
+							g_ATLCNetplay("host post-Load re-serialise: "
+								"FAILED");
+						}
+					}
+				}
+			} catch (const MyError &e) {
+				g_ATLCNetplay("host self-load: FAILED: %s", e.c_str());
+				// If the host cannot re-load its own snapshot, the
+				// joiner almost certainly can't either — surface the
+				// error via the offer row.
+				o->lastError = std::string(
+					"host self-load failed: ") + e.c_str();
+			}
+		}
+
 		ATNetplayGlue::SubmitHostSnapshot(gameId,
 			bytes.data(), bytes.size());
 	} catch (const MyError& e) {
@@ -666,61 +798,94 @@ void RestoreSessionRestorePoint() {
 	g_restoreSnapInfo = nullptr;
 }
 
-std::string ApplyPreset(MachinePreset p) {
+namespace {
+
+// Look up a firmware by CRC32 under the kernel-family type filter.
+// Returns 0 if no match.  Uses the ATFirmwareManager "[XXXXXXXX]"
+// ref-string path (firmwaremanager.cpp:605-626).
+uint64 FindKernelByCRC(ATFirmwareManager& fwm, uint32_t crc32) {
+	if (crc32 == 0) return 0;
+	wchar_t ref[16];
+	swprintf(ref, 16, L"[%08X]", crc32);
+	return fwm.GetFirmwareByRefString(ref,
+		[](ATFirmwareType t) {
+			return ATIsKernelFirmwareType(t);
+		});
+}
+
+uint64 FindBasicByCRC(ATFirmwareManager& fwm, uint32_t crc32) {
+	if (crc32 == 0) return 0;
+	wchar_t ref[16];
+	swprintf(ref, 16, L"[%08X]", crc32);
+	return fwm.GetFirmwareByRefString(ref,
+		[](ATFirmwareType t) { return t == kATFirmwareType_Basic; });
+}
+
+} // anonymous
+
+std::string ApplyMachineConfig(const MachineConfig& cfg) {
 	ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
 	if (!fwm) return "firmware manager unavailable";
 
-	// All presets use Altirra's built-in ROMs so a fresh install with
-	// no user firmware configured still works.  These IDs are fixed
-	// constants in firmwaremanager.h, not user-installed custom
-	// firmware, so GetFirmwareInfo always resolves them.
-	const uint64 kKernelXL   = kATFirmwareId_Kernel_LLEXL;
-	const uint64 kKernel5200 = kATFirmwareId_5200_LLE;
-	const uint64 kBasic      = kATFirmwareId_Basic_ATBasic;
-
-	ATHardwareMode  hw   = kATHardwareMode_800XL;
-	ATMemoryMode    mem  = kATMemoryMode_320K;
-	ATVideoStandard vid  = kATVideoStandard_NTSC;
-	bool            basicEnable = false;
-	uint64          kernelId    = kKernelXL;
-
-	switch (p) {
-		case MachinePreset::XLXE_PAL:
-			hw = kATHardwareMode_800XL; mem = kATMemoryMode_320K;
-			vid = kATVideoStandard_PAL; basicEnable = false;
-			kernelId = kKernelXL;
-			break;
-		case MachinePreset::XLXE_NTSC:
-			hw = kATHardwareMode_800XL; mem = kATMemoryMode_320K;
-			vid = kATVideoStandard_NTSC; basicEnable = false;
-			kernelId = kKernelXL;
-			break;
-		case MachinePreset::A5200:
-			hw = kATHardwareMode_5200; mem = kATMemoryMode_16K;
-			vid = kATVideoStandard_NTSC; basicEnable = false;
-			kernelId = kKernel5200;
-			break;
-		default:
-			return "unknown machine preset";
+	// Resolve firmware by CRC32 first so we fail fast before touching
+	// hardware state.  Zero CRC = "use Altirra's default for this
+	// hardware mode" — we resolve that via GetFirmwareOfType after
+	// the hardware switch.
+	uint64 kernelId = FindKernelByCRC(*fwm, cfg.kernelCRC32);
+	if (cfg.kernelCRC32 != 0 && kernelId == 0) {
+		char buf[96];
+		std::snprintf(buf, sizeof buf,
+			"OS firmware with CRC32 %08X is not installed",
+			cfg.kernelCRC32);
+		return buf;
+	}
+	uint64 basicId = FindBasicByCRC(*fwm, cfg.basicCRC32);
+	if (cfg.basicCRC32 != 0 && basicId == 0) {
+		char buf[96];
+		std::snprintf(buf, sizeof buf,
+			"BASIC firmware with CRC32 %08X is not installed",
+			cfg.basicCRC32);
+		return buf;
 	}
 
 	// Hardware first — ATUISwitchHardwareMode resets per-hardware
 	// defaults (memory mode, kernel etc.) so everything else must be
-	// set afterwards.  Pass pause=true so the sim doesn't run between
-	// the hardware switch and the explicit overrides below.
-	if (g_sim.GetHardwareMode() != hw) {
-		if (!ATUISwitchHardwareMode(nullptr, hw, /*switchProfile*/ true)) {
+	// set afterwards.
+	if (g_sim.GetHardwareMode() != cfg.hardwareMode) {
+		if (!ATUISwitchHardwareMode(nullptr, cfg.hardwareMode,
+				/*switchProfile*/ true)) {
 			return "could not switch hardware mode";
 		}
 	}
 
-	g_sim.SetMemoryMode(mem);
-	g_sim.SetVideoStandard(vid);
+	g_sim.SetMemoryMode(cfg.memoryMode);
+	g_sim.SetVideoStandard(cfg.videoStandard);
+	g_sim.SetCPUMode(cfg.cpuMode, g_sim.GetCPUSubCycles());
 	ATUIUpdateSpeedTiming();
 
-	g_sim.SetKernel(kernelId);
-	g_sim.SetBasic(kBasic);
-	g_sim.SetBASICEnabled(basicEnable);
+	// If CRC was 0 (unset), fall back to the hardware's default
+	// firmware type.  This mirrors what ATUISwitchHardwareMode does
+	// internally but is explicit for documentation.
+	if (kernelId == 0 && cfg.kernelCRC32 == 0) {
+		ATFirmwareType defType;
+		switch (cfg.hardwareMode) {
+			case kATHardwareMode_5200:   defType = kATFirmwareType_Kernel5200; break;
+			case kATHardwareMode_800:    defType = kATFirmwareType_Kernel800_OSB; break;
+			case kATHardwareMode_XEGS:   defType = kATFirmwareType_KernelXEGS; break;
+			case kATHardwareMode_1200XL: defType = kATFirmwareType_Kernel1200XL; break;
+			default:                     defType = kATFirmwareType_KernelXL; break;
+		}
+		kernelId = fwm->GetFirmwareOfType(defType, true);
+	}
+	if (kernelId) g_sim.SetKernel(kernelId);
+
+	if (basicId == 0 && cfg.basicCRC32 == 0) {
+		basicId = fwm->GetFirmwareOfType(kATFirmwareType_Basic, true);
+	}
+	if (basicId) g_sim.SetBasic(basicId);
+
+	g_sim.SetBASICEnabled(cfg.basicEnabled);
+	g_sim.SetSIOPatchEnabled(cfg.sioPatchEnabled);
 
 	return {};
 }

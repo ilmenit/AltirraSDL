@@ -141,7 +141,7 @@ public:
 	bool GetInputsForCurrentFrame(NetInput& p1, NetInput& p2) const {
 		return mLoop.GetInputsForCurrentFrame(p1, p2);
 	}
-	void OnFrameAdvanced();
+	void OnFrameAdvanced(uint32_t simStateHash);
 
 	// ---- termination ------------------------------------------------------
 

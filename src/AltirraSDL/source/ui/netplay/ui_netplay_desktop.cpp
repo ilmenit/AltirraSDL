@@ -636,7 +636,7 @@ void DesktopMyHostedGames() {
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(o.gameName.c_str());
 			ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.70f, 1.0f),
-				"  %s", MachinePresetLabel(o.preset));
+				"  %s", MachineConfigSummary(o.config));
 			if (!o.lastError.empty()) {
 				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f),
 					"  %s", o.lastError.c_str());
@@ -699,11 +699,11 @@ namespace {
 	bool      s_addPrivate = false;
 	char      s_addEntryCode[32] = {};
 	int       s_librarySel = -1;
-	// Default new games to the last preset the user picked (persisted
-	// in prefs.lastAddPreset).  Seeded from prefs on first use via
-	// s_addPresetSeeded.
-	MachinePreset s_addPreset = MachinePreset::XLXE_NTSC;
-	bool          s_addPresetSeeded = false;
+	// Seeded from the current emulator config on first Add-Game open;
+	// the user can override via the Machine Config section or reset
+	// via the "Copy from current emulator" button.
+	MachineConfig s_addConfig;
+	bool          s_addConfigSeeded = false;
 
 	static const SDL_DialogFileFilter kAddOfferFilters[] = {
 		{ "Game images",
@@ -736,11 +736,11 @@ namespace {
 		o.gameName     = name;
 		o.isPrivate    = s_addPrivate;
 		o.entryCode    = s_addEntryCode;
-		o.preset       = s_addPreset;
+		o.config       = s_addConfig;
 		o.enabled      = true;
 		o.state        = HostedGameState::Draft;
 		st.hostedGames.push_back(std::move(o));
-		st.prefs.lastAddPreset = s_addPreset;
+		st.prefs.lastAddConfig = s_addConfig;
 		SaveToRegistry();
 		EnableHostedGame(st.hostedGames.back().id);
 
@@ -757,9 +757,11 @@ namespace {
 }
 
 void DesktopAddOffer() {
-	if (!s_addPresetSeeded) {
-		s_addPreset = GetState().prefs.lastAddPreset;
-		s_addPresetSeeded = true;
+	if (!s_addConfigSeeded) {
+		// Seed from the current emulator so the host's Add-Game
+		// always starts with a config they can actually boot.
+		s_addConfig = CaptureCurrentMachineConfig();
+		s_addConfigSeeded = true;
 	}
 
 	CenterNext(ImVec2(720, 540));
@@ -858,21 +860,74 @@ void DesktopAddOffer() {
 
 	ImGui::Separator();
 
-	// Machine preset — the hardware config applied for this session
-	// only.  Never modifies the user's Altirra settings; when the
-	// session ends, the emulator returns to exactly how it was.
-	ImGui::Text("Machine:");
-	ImGui::SameLine();
-	int presetIdx = (int)s_addPreset;
-	ImGui::RadioButton("XL/XE (PAL)##preset",  &presetIdx, (int)MachinePreset::XLXE_PAL);
-	ImGui::SameLine();
-	ImGui::RadioButton("XL/XE (NTSC)##preset", &presetIdx, (int)MachinePreset::XLXE_NTSC);
-	ImGui::SameLine();
-	ImGui::RadioButton("Atari 5200##preset",   &presetIdx, (int)MachinePreset::A5200);
-	s_addPreset = (MachinePreset)presetIdx;
-	ImGui::TextDisabled(
-		"  The preset is applied only while the session is running. "
-		"Your normal emulator configuration is saved and restored.");
+	// Machine configuration — applied only while the session is
+	// running.  Never modifies Altirra's persistent settings.  The
+	// joiner receives this over the wire and must match firmware by
+	// CRC32.
+	if (ImGui::CollapsingHeader("Machine configuration",
+			ImGuiTreeNodeFlags_DefaultOpen)) {
+		static const ATHardwareMode kHWVals[] = {
+			kATHardwareMode_800, kATHardwareMode_800XL,
+			kATHardwareMode_1200XL, kATHardwareMode_130XE,
+			kATHardwareMode_1400XL, kATHardwareMode_XEGS,
+			kATHardwareMode_5200,
+		};
+		static const char *kHWLabels[] = {
+			"Atari 800", "Atari 800XL", "Atari 1200XL",
+			"Atari 130XE", "Atari 1400XL", "Atari XEGS",
+			"Atari 5200",
+		};
+		int hwIdx = 1;
+		for (int i = 0; i < 7; ++i)
+			if (kHWVals[i] == s_addConfig.hardwareMode) { hwIdx = i; break; }
+		ImGui::PushItemWidth(220);
+		if (ImGui::Combo("Hardware", &hwIdx, kHWLabels, 7))
+			s_addConfig.hardwareMode = kHWVals[hwIdx];
+		ImGui::PopItemWidth();
+
+		static const ATVideoStandard kVSVals[] = {
+			kATVideoStandard_NTSC, kATVideoStandard_PAL,
+			kATVideoStandard_SECAM, kATVideoStandard_NTSC50,
+			kATVideoStandard_PAL60,
+		};
+		static const char *kVSLabels[] = {
+			"NTSC", "PAL", "SECAM", "NTSC50", "PAL60",
+		};
+		const bool is5200 = (s_addConfig.hardwareMode == kATHardwareMode_5200);
+		int vsIdx = 0;
+		for (int i = 0; i < 5; ++i)
+			if (kVSVals[i] == s_addConfig.videoStandard) { vsIdx = i; break; }
+		ImGui::BeginDisabled(is5200);
+		ImGui::PushItemWidth(220);
+		if (ImGui::Combo("Video standard", &vsIdx, kVSLabels, 5))
+			s_addConfig.videoStandard = kVSVals[vsIdx];
+		ImGui::PopItemWidth();
+		ImGui::EndDisabled();
+
+		ImGui::BeginDisabled(is5200);
+		ImGui::Checkbox("BASIC enabled", &s_addConfig.basicEnabled);
+		ImGui::EndDisabled();
+
+		ImGui::Checkbox("SIO full-speed acceleration",
+			&s_addConfig.sioPatchEnabled);
+
+		ImGui::Spacing();
+		ImGui::TextDisabled("Firmware (by CRC32):");
+		if (s_addConfig.kernelCRC32)
+			ImGui::Text("  OS kernel:   [%08X]", s_addConfig.kernelCRC32);
+		else
+			ImGui::Text("  OS kernel:   (default)");
+		if (s_addConfig.basicCRC32)
+			ImGui::Text("  BASIC:       [%08X]", s_addConfig.basicCRC32);
+		else
+			ImGui::Text("  BASIC:       (none)");
+
+		if (ImGui::Button("Copy from current emulator")) {
+			s_addConfig = CaptureCurrentMachineConfig();
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("  %s", MachineConfigSummary(s_addConfig));
+	}
 
 	ImGui::Separator();
 	ImGui::Checkbox("Private (require entry code)", &s_addPrivate);

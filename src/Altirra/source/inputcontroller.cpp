@@ -162,6 +162,7 @@ ATPortInputController::~ATPortInputController() {
 void ATPortInputController::Attach(IATDevicePortManager& portMgr, int portIndex, int multiIndex) {
 	portMgr.AllocControllerPort(portIndex, ~mpControllerPort);
 
+	mPortIndex = portIndex;
 	mMultiMask = multiIndex < 0 ? 0 : 1 << multiIndex;
 
 	mpControllerPort->SetOnDirOutputChanged(0, [this] { UpdateOutput(); }, false);
@@ -170,9 +171,46 @@ void ATPortInputController::Attach(IATDevicePortManager& portMgr, int portIndex,
 }
 
 void ATPortInputController::Detach() {
+	// Ensure a redirect is torn down before releasing refs, so we restore
+	// the real port's neutral state rather than leaving stale input held.
+	if (mpRealControllerPort)
+		SetRedirectPort(nullptr);
+
 	if (mpControllerPort) {
 		OnDetach();
 		mpControllerPort = nullptr;
+	}
+
+	mPortIndex = -1;
+}
+
+void ATPortInputController::SetRedirectPort(IATDeviceControllerPort *proxy) {
+	if (proxy) {
+		if (mpRealControllerPort)
+			return;  // already redirected
+		if (!mpControllerPort)
+			return;
+
+		// Park the real port in a neutral state so it stops driving
+		// hardware while we hold the redirect.
+		mpControllerPort->SetDirInput(0x0F);
+		mpControllerPort->SetTriggerDown(false);
+		mpControllerPort->ResetPotPosition(false);
+		mpControllerPort->ResetPotPosition(true);
+
+		mpRealControllerPort = mpControllerPort;
+		mpControllerPort = proxy;
+	} else {
+		if (!mpRealControllerPort)
+			return;  // not redirected
+
+		// Swap the real port back in. We don't try to restore the
+		// previously-held stick/trigger state on the real port:
+		// ATInputManager::ReleaseButtons (called by netplay EndSession)
+		// drops any held inputs, and the next user interaction will
+		// push fresh state through the full controller pipeline.
+		mpControllerPort = mpRealControllerPort;
+		mpRealControllerPort = nullptr;
 	}
 }
 
@@ -200,11 +238,27 @@ void ATPortInputController::SetPotHiPosition(bool second, int pos, bool grounded
 }
 
 void ATPortInputController::SetOutputMonitorMask(uint8 mask) {
-	mpControllerPort->SetDirOutputMask(mask);
+	// The real port owns the dir-output-changed callback (registered
+	// in Attach), so its monitor mask is what determines when the
+	// callback fires. Route the mask to the real port while redirected.
+	IATDeviceControllerPort *port = mpRealControllerPort
+		? (IATDeviceControllerPort *)mpRealControllerPort
+		: mpControllerPort.get();
+	if (port)
+		port->SetDirOutputMask(mask);
 }
 
 void ATPortInputController::UpdateOutput() {
-	mPortOutputState = mpControllerPort->GetCurrentDirOutput();
+	// When redirected, the callback that invoked us was fired by the
+	// real port reacting to real hardware; read from that same port
+	// so mPortOutputState reflects actual bus state rather than the
+	// proxy's stub 0x0F.
+	IATDeviceControllerPort *port = mpRealControllerPort
+		? (IATDeviceControllerPort *)mpRealControllerPort
+		: mpControllerPort.get();
+	if (!port)
+		return;
+	mPortOutputState = port->GetCurrentDirOutput();
 	OnPortOutputChanged(mPortOutputState);
 }
 

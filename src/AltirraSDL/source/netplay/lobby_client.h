@@ -67,7 +67,11 @@ struct LobbyEndpoint {
 	// HTTP transport.
 	std::string host       = "92.5.13.40";
 	uint16_t    port       = 8080;
-	uint32_t    timeoutMs  = 5000;
+	// Fail fast — the lobby is optional infrastructure (peers can
+	// still connect via direct IP).  A 5 s wait on every Create /
+	// Heartbeat / List when the lobby is down made sessions feel
+	// broken even though the coordinator was listening fine.
+	uint32_t    timeoutMs  = 2000;
 };
 
 class LobbyClient {

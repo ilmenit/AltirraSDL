@@ -77,8 +77,14 @@ static void tick(LockstepLoop& host, LockstepLoop& joiner,
 	//    inputs.
 
 	// 3. Apply at most one emu frame.
-	if (host.CanAdvance())   host.OnFrameAdvanced();
-	if (joiner.CanAdvance()) joiner.OnFrameAdvanced();
+	// Both peers apply the SAME deterministic sim-state hash so a
+	// clean run converges; the desync-inject hook flips a bit on
+	// the local side only.  Non-zero encoding avoids the "0 =
+	// no-hash" wire sentinel.
+	const uint32_t syntheticHash = 0xA0000000u ^ (host.CurrentFrame() + 1);
+	if (host.CanAdvance())   host.OnFrameAdvanced(syntheticHash);
+	const uint32_t syntheticHash2 = 0xA0000000u ^ (joiner.CurrentFrame() + 1);
+	if (joiner.CanAdvance()) joiner.OnFrameAdvanced(syntheticHash2);
 
 	// 4. Emit outgoing packets; peer consumes in their next step 2.
 	ferryPackets(host, joiner, nowMs);
@@ -162,16 +168,16 @@ static void testWarmupAdvances() {
 	CHECK(host.CanAdvance());
 	CHECK(joiner.CanAdvance());
 
-	host.OnFrameAdvanced();
-	joiner.OnFrameAdvanced();
+	host.OnFrameAdvanced(0xDEADBEEFu);
+	joiner.OnFrameAdvanced(0xDEADBEEFu);
 	CHECK(host.CurrentFrame() == 1);
 	CHECK(joiner.CurrentFrame() == 1);
 
 	// Frames 0, 1, 2 are the warm-up.  Frame 3 needs real input.
 	CHECK(host.CanAdvance());
-	host.OnFrameAdvanced();
+	host.OnFrameAdvanced(0xDEADBEEFu);
 	CHECK(host.CanAdvance());
-	host.OnFrameAdvanced();
+	host.OnFrameAdvanced(0xDEADBEEFu);
 	CHECK(host.CurrentFrame() == 3);
 	// No one has submitted input for frame 3 yet.
 	CHECK(!host.CanAdvance());
@@ -203,8 +209,8 @@ static void testCanonicalSlotOrdering() {
 
 	CHECK(host.CanAdvance());
 	CHECK(joiner.CanAdvance());
-	host.OnFrameAdvanced();
-	joiner.OnFrameAdvanced();
+	host.OnFrameAdvanced(0xCAFEBABEu);
+	joiner.OnFrameAdvanced(0xCAFEBABEu);
 
 	// If ordering is canonical, neither side sees a desync from a
 	// trivial slot permutation.  Run another frame to let the

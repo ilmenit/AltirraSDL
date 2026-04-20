@@ -36,6 +36,7 @@
 #include "../netplay/ui_netplay_state.h"
 #include "../netplay/ui_netplay_actions.h"
 #include "netplay/netplay_input.h"
+#include "netplay/netplay_simhash.h"
 #endif
 #include "ui_main_internal.h"
 #include "ui_mobile.h"
@@ -584,16 +585,16 @@ void ATUIPollDeferredActions() {
 					break;
 				}
 
-				// Step 2: apply the offer's machine preset (hardware
-				// mode, memory, video, firmware).  This must happen
-				// before UnloadAll+Load so the load uses the correct
-				// hardware.
+				// Step 2: apply the offer's machine config (hardware,
+				// memory, video, CPU, firmware by CRC32).  Must
+				// happen before UnloadAll+Load so the load uses the
+				// correct hardware.
 				{
 					ATNetplayUI::HostedGame *hg =
 						ATNetplayUI::FindHostedGame(std::string(gameIdU8.c_str()));
-					ATNetplayUI::MachinePreset preset =
-						hg ? hg->preset : ATNetplayUI::MachinePreset::XLXE_NTSC;
-					std::string err = ATNetplayUI::ApplyPreset(preset);
+					ATNetplayUI::MachineConfig cfg =
+						hg ? hg->config : ATNetplayUI::MachineConfig{};
+					std::string err = ATNetplayUI::ApplyMachineConfig(cfg);
 					if (!err.empty()) {
 						ATNetplayUI::RestoreSessionRestorePoint();
 						ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
@@ -848,6 +849,9 @@ void ATUIPollDeferredActions() {
 					        kATMediaWriteMode_RO, &ctx)) {
 						{
 							ATCPUEmulator &cpu = g_sim.GetCPU();
+							ATNetplay::SimHashBreakdown br{};
+							ATNetplay::ComputeSimStateHashBreakdown(
+								g_sim, br);
 							g_ATLCNetplay("joiner apply: Load OK, "
 								"post-Load running=%d paused=%d "
 								"hw=%d mem=%d vid=%d "
@@ -863,6 +867,59 @@ void ATUIPollDeferredActions() {
 								(unsigned)cpu.GetY(),
 								(unsigned)cpu.GetS(),
 								(unsigned)cpu.GetP());
+							g_ATLCNetplay("joiner apply breakdown: "
+								"total=%08x cpu=%08x "
+								"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
+								"gtia=%08x antic=%08x pokey=%08x "
+								"schedTick=%08x",
+								br.total, br.cpuRegs,
+								br.ramBank0, br.ramBank1,
+								br.ramBank2, br.ramBank3,
+								br.gtiaRegs, br.anticRegs,
+								br.pokeyRegs, br.schedTick);
+
+							// Cross-peer post-Load byte diff:
+							// re-serialise AFTER Load and dump to disk
+							// so we can compare against the host's
+							// post-Load snapshot.  See host side in
+							// ui_netplay_actions.cpp for details.
+							{
+								extern VDStringA ATGetConfigDir();
+								vdfastvector<uint8_t> buf;
+								if (ATNetplay::SerializeSimToSnapshotBytes(
+										g_sim, buf)) {
+									uint32_t jh = ATNetplay::
+										HashSavestateJsonInSnapshot(
+											buf.data(), buf.size());
+									g_ATLCNetplay(
+										"joiner post-Load re-serialise: "
+										"%zu bytes, savestate.json "
+										"FNV=%08x", buf.size(), jh);
+									VDStringA dumpPath = ATGetConfigDir();
+									if (!dumpPath.empty()
+									    && dumpPath.back() != '/'
+									    && dumpPath.back() != '\\')
+										dumpPath.push_back('/');
+									dumpPath.append(
+										"netplay_joiner_post_load.astate");
+									try {
+										VDFileStream fs(
+											VDTextU8ToW(dumpPath.c_str(),
+												-1).c_str(),
+											nsVDFile::kWrite
+											| nsVDFile::kCreateAlways
+											| nsVDFile::kDenyAll);
+										fs.Write(buf.data(),
+											(sint32)buf.size());
+									} catch (...) {
+										g_ATLCNetplay("joiner post-Load "
+											"dump: write failed");
+									}
+								} else {
+									g_ATLCNetplay("joiner post-Load "
+										"re-serialise: FAILED");
+								}
+							}
 						}
 						g_sim.Resume();
 						g_ATLCNetplay("joiner apply: after Resume "

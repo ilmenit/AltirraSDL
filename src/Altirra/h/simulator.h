@@ -377,6 +377,14 @@ public:
 	uint32 GetLockedRandomSeed() const;
 	void SetLockedRandomSeed(uint32 seed);
 
+	// Netplay determinism: force mRandomSeed, the derived per-subsystem
+	// randomization seeds, and the PIA floating-input RNG state to a
+	// well-known value WITHOUT a ColdReset (which would clear RAM).
+	// Called on both peers at the lockstep-entry edge so PIA floating
+	// inputs — which are not serialized in the savestate — stop
+	// diverging across peers that seeded from independent rand() calls.
+	void ReseedNetplayRandomState(uint32 masterSeed);
+
 	bool GetPotNoiseEnabled() const;
 	void SetPotNoiseEnabled(bool enabled);
 

@@ -146,13 +146,26 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			if (r.op != ATNetplayUI::LobbyOp::List) return;
 			if (!r.ok) {
 				st.browser.statusLine = r.error.empty()
-					? "Lobby unreachable"
-					: r.error;
+					? "Lobby unreachable — use Direct IP in Preferences"
+					: ("Lobby: " + r.error
+					   + " — try Direct IP in Preferences");
 				g_ATLCNetplay("lobby List FAILED: %s",
 					r.error.empty() ? "(no detail)"
 					                : r.error.c_str());
+				// Exponential backoff: 10s, 20s, 40s, 60s cap.
+				// Without this, a 429 (which returns instantly) would
+				// trigger another List next frame — burning tokens
+				// faster than the server can refill them.
+				++st.browser.consecutiveFailures;
+				uint32_t n = st.browser.consecutiveFailures;
+				uint64_t backoffMs = 10000ull << (n > 3 ? 3 : (n - 1));
+				if (backoffMs > 60000ull) backoffMs = 60000ull;
+				st.browser.lastFetchMs = nowMs;
+				st.browser.nextRetryMs = nowMs + backoffMs;
 				return;
 			}
+			st.browser.consecutiveFailures = 0;
+			st.browser.nextRetryMs = 0;
 			// Merge by sessionId so multiple lobbies de-dup.  Filter
 			// out our own hostedGames (by matching lobbySessionId) so we
 			// don't see our own hosts in the Browse list.
@@ -182,9 +195,12 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 	// Auto-refresh cadence while the browser is visible.
 	const uint64_t kAutoRefreshMs = 10000;
 	if (st.screen == ATNetplayUI::Screen::Browser) {
-		if (st.browser.refreshRequested ||
-		    (st.browser.lastFetchMs == 0) ||
-		    (nowMs - st.browser.lastFetchMs) >= kAutoRefreshMs) {
+		const bool backoffActive =
+			st.browser.nextRetryMs != 0 && nowMs < st.browser.nextRetryMs;
+		const bool userAsked = st.browser.refreshRequested;
+		const bool timeForAuto = (st.browser.lastFetchMs == 0)
+		    || (nowMs - st.browser.lastFetchMs) >= kAutoRefreshMs;
+		if (userAsked || (!backoffActive && timeForAuto)) {
 			if (!st.browser.refreshInFlight) {
 				st.browser.items.clear();
 				ATNetplayUI::ATNetplayUI_EnqueueBrowserRefresh();
@@ -297,6 +313,7 @@ static ImVec4 StatusColorWarn() {
 
 void RenderInSessionHUD() {
 	if (!ATNetplayGlue::IsLockstepping()) return;
+	if (!GetState().prefs.showSessionHUD) return;
 
 	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
 	const uint32_t frame = ATNetplayGlue::CurrentFrame();
@@ -326,6 +343,21 @@ void RenderInSessionHUD() {
 			ImGui::PopStyleColor();
 			ImGui::SameLine();
 			ImGui::Text("@ frame %lld", (long long)desyncFrame);
+		} else if (peerAgeMs > 500 && peerAgeMs < UINT64_MAX / 4) {
+			// Peer is late.  The game is paused on both sides (our
+			// gate is closed waiting for their input).  Show a
+			// countdown to the 10 s timeout so the user knows how
+			// long we'll wait before declaring the peer dead.
+			constexpr uint64_t kTimeoutMs = 10000;
+			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorWarn());
+			if (peerAgeMs >= kTimeoutMs) {
+				ImGui::TextUnformatted("TIMEOUT");
+			} else {
+				const uint64_t remainS = (kTimeoutMs - peerAgeMs + 999) / 1000;
+				ImGui::Text("WAITING  (timeout in %llus)",
+					(unsigned long long)remainS);
+			}
+			ImGui::PopStyleColor();
 		} else {
 			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorGood());
 			ImGui::TextUnformatted("LIVE");

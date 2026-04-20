@@ -6,6 +6,7 @@
 
 #include "coordinator.h"
 #include "netplay_input.h"
+#include "netplay_simhash.h"
 
 #include "simulator.h"
 #include <at/atcore/logging.h>
@@ -135,8 +136,45 @@ void Poll(uint64_t nowMs) {
 	// Edge-drive the input injector's lifecycle off the aggregate
 	// lockstep state.  BeginSession allocates controller ports and
 	// puts the input manager in restricted mode; EndSession reverses.
+	//
+	// On the host, ALSO guarantee the simulator is Resume()d at this
+	// edge.  The host's sim was paused by kATDeferred_NetplayHostBoot
+	// so snapshot capture got a frozen frame; there's a separate
+	// Resume path in ReconcileHostedGames at the Lockstepping edge,
+	// but field evidence (2026-04-20) is that it races against the
+	// lockstep-entry notification — the sim can still be paused when
+	// the first frames need to apply, so Advance() returns Stopped,
+	// no frames are produced, no local hash is computed, and the
+	// joiner (whose sim IS running) sees its frame-0 hash diverge
+	// against nothing and flags a false-positive desync at frame 0.
+	// Resuming here — the canonical "lockstep is live" transition —
+	// is belt-and-braces and cheap (Resume is idempotent).
 	const bool lock = IsLockstepping();
 	if (lock && !ATNetplayInput::IsActive()) {
+		if (g_sim.IsPaused()) {
+			g_ATLCNetplay("lockstep entry: sim was paused, resuming");
+			g_sim.Resume();
+		}
+
+		// Normalize RNG state across peers.  The PIA floating-input
+		// RNG seed (and the per-subsystem seeds derived from
+		// mRandomSeed) are NOT round-tripped through the savestate,
+		// so each peer otherwise carries the rand()-derived seed its
+		// process happened to pick at startup (main.cpp:3893).  That
+		// invisible divergence is the source of the drift we saw in
+		// the 2026-04-20 post-Load byte-diff investigation: memory
+		// and CPU regs were bit-identical after Load, yet the PIA
+		// floating-input LFSR produced different bits for
+		// non-driven port bits on the two machines, which leaks into
+		// PIA reads and from there into game state within a few
+		// frames.  Using a constant here (not a per-session value)
+		// is deliberate: both peers reach this line once lockstep
+		// engages, and we want the same seed on both.
+		constexpr uint32_t kNetplayMasterSeed = 0xA7C0BEEFu;
+		g_sim.ReseedNetplayRandomState(kNetplayMasterSeed);
+		g_ATLCNetplay("lockstep entry: reseeded RNG (master=0x%08X)",
+			kNetplayMasterSeed);
+
 		ATNetplayInput::BeginSession();
 		g_ATLCNetplay("input: BeginSession (sim running=%d paused=%d)",
 			g_sim.IsRunning() ? 1 : 0, g_sim.IsPaused() ? 1 : 0);
@@ -189,16 +227,84 @@ bool CanAdvanceThisTick() {
 	return true;
 }
 
+namespace {
+
+// Dump a per-subsystem state-hash breakdown on first desync detection.
+// Both peers log their own breakdown; comparing the logs pinpoints the
+// first-diverging subsystem (CPU, RAM bank, GTIA/ANTIC/POKEY registers,
+// or scheduler tick count).  This is the payoff for running the cheap
+// per-frame sim-state hash in the first place.
+void LogDesyncBreakdownOnce(ATNetplay::Coordinator *c) {
+	if (!c) return;
+	static void *s_lastCoord = nullptr;
+	static int64_t s_lastFrame = -1;
+	if (!c->Loop().IsDesynced()) {
+		if ((void*)c == s_lastCoord) { s_lastCoord = nullptr; s_lastFrame = -1; }
+		return;
+	}
+	const int64_t f = c->Loop().DesyncFrame();
+	if ((void*)c == s_lastCoord && s_lastFrame == f) return;
+	s_lastCoord = (void*)c;
+	s_lastFrame = f;
+
+	ATNetplay::SimHashBreakdown br{};
+	ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
+	g_ATLCNetplay("desync breakdown @frame %lld: "
+		"total=%08x cpu=%08x "
+		"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
+		"gtia=%08x antic=%08x pokey=%08x schedTick=%08x",
+		(long long)f,
+		br.total, br.cpuRegs,
+		br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
+		br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
+	g_ATLCNetplay("  (peer should log a matching line; compare "
+		"subsystem-by-subsystem to localize the first divergence)");
+}
+
+} // anonymous
+
 void OnFrameAdvanced() {
+	ATNetplay::Coordinator *c = nullptr;
 	for (auto& s : g_hosts) {
 		if (s.coord && s.coord->GetPhase() == CoordPhase::Lockstepping) {
-			s.coord->OnFrameAdvanced();
-			return;
+			c = s.coord.get(); break;
 		}
 	}
-	if (g_joiner && g_joiner->GetPhase() == CoordPhase::Lockstepping) {
-		g_joiner->OnFrameAdvanced();
+	if (!c && g_joiner &&
+	    g_joiner->GetPhase() == CoordPhase::Lockstepping) {
+		c = g_joiner.get();
 	}
+	if (!c) return;
+
+	// Hash the sim state we just committed.  Must run BEFORE any
+	// further sim mutation and AFTER a full emu frame boundary —
+	// main_sdl3.cpp gates this call on hadFrame exactly for that.
+	const uint32_t h = ATNetplay::ComputeSimStateHash(g_sim);
+
+	// Snapshot-round-trip diagnostic: log a full breakdown on BOTH
+	// peers for the first lockstep frame of every session.  Without
+	// this, the side that detects desync logs its breakdown (via
+	// LogDesyncBreakdownOnce below) and sends Bye before the other
+	// side computes its own breakdown, so we never see both halves
+	// of the comparison.  Printing unconditionally on frame 0 means
+	// both peers always log — a side-by-side diff of the breakdowns
+	// localizes the first diverging subsystem immediately.
+	const uint32_t curFrame = c->Loop().CurrentFrame();
+	if (curFrame == 0) {
+		ATNetplay::SimHashBreakdown br{};
+		ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
+		g_ATLCNetplay("frame0 breakdown (role=%s): "
+			"total=%08x cpu=%08x "
+			"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
+			"gtia=%08x antic=%08x pokey=%08x schedTick=%08x",
+			c == g_joiner.get() ? "joiner" : "host",
+			br.total, br.cpuRegs,
+			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
+			br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
+	}
+
+	c->OnFrameAdvanced(h);
+	LogDesyncBreakdownOnce(c);
 }
 
 namespace {

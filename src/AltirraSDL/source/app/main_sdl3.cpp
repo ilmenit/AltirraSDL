@@ -2168,18 +2168,38 @@ int main(int argc, char *argv[]) {
 
 		ATSimulator::AdvanceResult result = g_sim.Advance(dropFrame);
 
-#ifdef ALTIRRA_NETPLAY_ENABLED
-		// After the emulator has advanced one frame, update the
-		// lockstep loop's frame counter + rolling hash.  No-op
-		// outside lockstep.
-		ATNetplayGlue::OnFrameAdvanced();
-#endif
-
 		const uint64_t phaseT2 = SDL_GetPerformanceCounter();
 
 		// Check if a new frame arrived (GTIA called PostBuffer).
 		bool hadFrame = g_pDisplay->IsFramePending();
 		g_pDisplay->PrepareFrame();
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		// CRITICAL for lockstep determinism: advance the lockstep
+		// frame counter ONLY when a full emulated frame completed
+		// (GTIA produced output).
+		//
+		// ATSimulator::Advance runs up to g_ATSimScanlinesPerAdvance
+		// (32) scanlines per call — so a full 262-line NTSC frame
+		// takes ~9 Advance calls.  And Advance can return
+		// kAdvanceResult_WaitingForFrame with ZERO work done when
+		// GTIA::BeginFrame can't start (display-consumer busy).  If
+		// we call OnFrameAdvanced per Advance call, peer A's extra
+		// no-op due to a transient display block bumps its lockstep
+		// counter but not its sim state, while peer B's counter bumps
+		// WITH sim progress — both counters match, but sim states
+		// diverge.  The input-hash check can't catch it (inputs are
+		// still identical), so the desync detector stays silent while
+		// the games drift apart on screen.
+		//
+		// Tying OnFrameAdvanced to hadFrame means one lockstep tick =
+		// one emu frame on both peers, regardless of how Advance is
+		// internally chunked or how many no-op WaitingForFrame calls
+		// occurred.
+		if (hadFrame) {
+			ATNetplayGlue::OnFrameAdvanced();
+		}
+#endif
 
 		const uint64_t phaseT3 = SDL_GetPerformanceCounter();
 

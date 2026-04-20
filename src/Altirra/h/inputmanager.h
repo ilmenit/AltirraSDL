@@ -37,6 +37,7 @@ class ATScheduler;
 class VDRegistryKey;
 class ATLightPenPort;
 class IATDevicePortManager;
+class IATDeviceControllerPort;
 
 enum ATInputControllerType : uint32;
 
@@ -246,6 +247,21 @@ public:
 	/// UI triggers only. All other triggers are forced off.
 	void SetRestrictedMode(bool restricted);
 
+	/// Redirect port output for all controllers bound to srcPortIdx into
+	/// |dstPort| (a caller-owned proxy IATDeviceControllerPort) instead
+	/// of the real hardware port. The real port is neutralized while the
+	/// redirect is active. Pass nullptr as dstPort to remove the redirect.
+	///
+	/// Used by netplay: the local player always maps to port 1 in the
+	/// user's own config, but on the wire that input may become port 1
+	/// or port 2 depending on the peer's role (host vs joiner). Capture
+	/// into a buffer, send, then re-apply to the real ports in the
+	/// correct order — without also double-driving the local port 1.
+	///
+	/// The redirect survives RebuildMappings(), so LoadMaps/ActivateInputMap
+	/// called while a netplay session is active still get captured.
+	void SetPortRedirect(int srcPortIdx, IATDeviceControllerPort *dstPort);
+
 	bool IsInputMapped(int unit, uint32 inputCode) const;
 	bool IsMouseMapped() const { return mbMouseMapped; }
 	bool IsMouseAbsoluteMode() const { return mbMouseAbsMode; }
@@ -333,6 +349,11 @@ protected:
 	// after fresh config" report on Linux Mint.  Keep the default here so
 	// the field is safe regardless of which frontend instantiates us.
 	bool mbRestrictedMode = false;
+	// Netplay port-capture state: when mPortRedirectSrc >= 0,
+	// controllers bound to that port index are redirected to
+	// mpPortRedirectDst. Re-applied after every RebuildMappings.
+	int mPortRedirectSrc = -1;
+	IATDeviceControllerPort *mpPortRedirectDst = nullptr;
 	int m5200ControllerIndex;
 	bool mb5200PotsEnabled;
 	bool mb5200Mode;
