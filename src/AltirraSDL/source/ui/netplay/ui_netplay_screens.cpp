@@ -128,8 +128,7 @@ void RenderNickname() {
 // -------------------------------------------------------------------
 
 void EnqueueBrowserRefresh() {
-	std::vector<ATNetplay::LobbyEntry> lobbies;
-	ATNetplay::GetDefaultLobbies(lobbies);
+	const std::vector<ATNetplay::LobbyEntry>& lobbies = GetConfiguredLobbies();
 	for (const auto& e : lobbies) {
 		if (!e.enabled) continue;
 		if (e.kind != ATNetplay::LobbyKind::Http) continue;  // LAN handled separately

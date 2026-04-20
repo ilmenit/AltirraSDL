@@ -69,11 +69,11 @@ ATGameLibrary& LibrarySingleton() {
 
 namespace {
 
-// Pick the first enabled HTTP lobby from lobby.ini defaults.  Returns
-// an endpoint with host="" on failure.
+// Pick the first enabled HTTP lobby from the user's lobby.ini (or
+// the built-in defaults if the file is missing).  Returns an endpoint
+// with host="" on failure.
 ATNetplay::LobbyEndpoint FirstHttpLobby(std::string& sectionOut) {
-	std::vector<ATNetplay::LobbyEntry> entries;
-	ATNetplay::GetDefaultLobbies(entries);
+	const auto& entries = GetConfiguredLobbies();
 	for (const auto& e : entries) {
 		if (!e.enabled) continue;
 		if (e.kind != ATNetplay::LobbyKind::Http) continue;

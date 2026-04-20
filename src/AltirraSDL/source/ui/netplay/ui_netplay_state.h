@@ -30,6 +30,8 @@
 #include "constants.h"  // ATHardwareMode, ATMemoryMode, ATVideoStandard
 #include "cpu.h"        // ATCPUMode
 
+namespace ATNetplay { struct LobbyEntry; }
+
 namespace ATNetplayUI {
 
 // Which screen the user is currently looking at.  The per-mode
@@ -146,6 +148,17 @@ uint32_t ComputeFirmwareCRC32(uint64_t firmwareId);
 // "getaddrinfo: Name or service not known" etc. become the kind of
 // sentence we want on a tooltip, not a stderr log line.
 std::string FriendlyLobbyError(const std::string& rawError, int httpStatus);
+
+// Load the user's lobby configuration from
+// $configDir/lobby.ini, writing the built-in defaults the first
+// time (so users can freely edit the URL, add mirrors, etc.).
+// Falls back to in-memory defaults if the file can't be read/parsed.
+// Cached after first call — call ReloadLobbyConfig to re-read.
+const std::vector<ATNetplay::LobbyEntry>& GetConfiguredLobbies();
+
+// Force a re-read of lobby.ini.  Call if the user edited the file
+// out-of-band and wants the change to take effect without restart.
+void ReloadLobbyConfig();
 
 // High-level "is the user busy" flag that drives the suspension of
 // every hosted game the user didn't explicitly start.

@@ -11,8 +11,14 @@
 #include <vd2/system/VDString.h>
 #include <vd2/system/zip.h>
 #include <vd2/system/vdstl.h>
+#include <vd2/system/file.h>
+#include <vd2/system/filesys.h>
+#include <vd2/system/text.h>
+
+#include "netplay/lobby_config.h"
 
 extern ATSimulator g_sim;
+extern VDStringA ATGetConfigDir();
 
 #include <cstdio>
 #include <cstdlib>
@@ -339,6 +345,77 @@ std::string FriendlyLobbyError(const std::string& raw, int httpStatus) {
 	return std::string("Lobby error: ") + raw;
 }
 
+namespace {
+
+std::vector<ATNetplay::LobbyEntry> s_lobbyCache;
+bool s_lobbyCacheLoaded = false;
+
+// Build the full path to $configDir/lobby.ini.
+VDStringA LobbyIniPath() {
+	VDStringA p = ATGetConfigDir();
+	if (!p.empty() && p.back() != '/' && p.back() != '\\')
+		p.push_back('/');
+	p.append("lobby.ini");
+	return p;
+}
+
+void LoadLobbyConfigIntoCache() {
+	s_lobbyCache.clear();
+	const VDStringA path = LobbyIniPath();
+	const std::wstring wpath = VDTextU8ToW(path.c_str(), -1).c_str();
+
+	// First-run: write the default lobby.ini so users can discover it
+	// and edit without needing documentation.  Read failure on a
+	// subsequent run is silently accepted — the user may be running
+	// from read-only media.
+	if (!VDDoesPathExist(wpath.c_str())) {
+		try {
+			VDFileStream fs(wpath.c_str(),
+				nsVDFile::kWrite | nsVDFile::kCreateAlways
+				| nsVDFile::kDenyAll);
+			fs.Write(ATNetplay::kDefaultLobbyIni,
+				(sint32)std::strlen(ATNetplay::kDefaultLobbyIni));
+		} catch (...) {
+			// Fall through — we'll just use in-memory defaults.
+		}
+	}
+
+	// Read the file.  If anything goes wrong, fall back to defaults.
+	std::string contents;
+	try {
+		VDFileStream fs(wpath.c_str(),
+			nsVDFile::kRead | nsVDFile::kOpenExisting | nsVDFile::kDenyNone);
+		sint64 sz = fs.Length();
+		if (sz > 0 && sz < 128 * 1024) {
+			contents.resize((size_t)sz);
+			fs.Read(contents.data(), (long)sz);
+		}
+	} catch (...) {
+		contents.clear();
+	}
+
+	if (!contents.empty()) {
+		ATNetplay::ParseLobbyIni(contents.data(), contents.size(),
+			s_lobbyCache, nullptr);
+	}
+	if (s_lobbyCache.empty()) {
+		ATNetplay::GetDefaultLobbies(s_lobbyCache);
+	}
+	s_lobbyCacheLoaded = true;
+}
+
+} // anonymous
+
+const std::vector<ATNetplay::LobbyEntry>& GetConfiguredLobbies() {
+	if (!s_lobbyCacheLoaded) LoadLobbyConfigIntoCache();
+	return s_lobbyCache;
+}
+
+void ReloadLobbyConfig() {
+	s_lobbyCacheLoaded = false;
+	LoadLobbyConfigIntoCache();
+}
+
 HostedGame* FindHostedGame(const std::string& id) {
 	if (id.empty()) return nullptr;
 	for (auto& o : g_state.hostedGames)
@@ -360,6 +437,10 @@ std::string GenerateHostedGameId() {
 void Initialize() {
 	if (g_initialized) return;
 	g_initialized = true;
+
+	// Warm the lobby-config cache so $configDir/lobby.ini is created
+	// on first run even before the user opens a netplay window.
+	(void)GetConfiguredLobbies();
 
 	VDRegistryAppKey key("Netplay", true);
 
