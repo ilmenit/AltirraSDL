@@ -203,12 +203,11 @@ void DesktopBrowser() {
 
 	// Activity banner when the user is hosting / in session — the
 	// session list below filters out the user's own hostedGames, so
-	// without this the Browser looks empty and the "End Session"
-	// button has no context.
+	// without this the Browser looks empty.
 	if (st.activity == UserActivity::InSession) {
 		ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1),
 			"You're currently playing online.  Open Host Games to "
-			"see the match details or end the session.");
+			"see the match details or stop hosting.");
 		if (ImGui::Button("Open Host Games", ImVec2(160, 0))) {
 			Navigate(Screen::MyHostedGames);
 		}
@@ -223,12 +222,6 @@ void DesktopBrowser() {
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Preferences...")) Navigate(Screen::Prefs);
-	ImGui::SameLine();
-	if (ATNetplayGlue::IsActive()) {
-		if (ImGui::Button("End Session")) {
-			StopHostingAction();
-		}
-	}
 
 	ImGui::SameLine();
 	// Red-ish colour if the last response was an error; otherwise dim.
@@ -240,10 +233,20 @@ void DesktopBrowser() {
 		ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), " %s",
 			br.statusLine.c_str());
 	} else {
-		ImGui::TextDisabled(" %s",
-			br.statusLine.empty()
-			? (br.refreshInFlight ? "Refreshing..." : "")
-			: br.statusLine.c_str());
+		// Prefer aggregate stats (set after first /v1/stats reply
+		// completes) — gives "12 sessions • 4 in play • 7 hosts" instead
+		// of just the visible-list count, which may differ from total
+		// when own-offer filtering / playing-state hide rows.
+		const auto& a = st.aggregateStats;
+		if (a.lastUpdateMs != 0) {
+			ImGui::TextDisabled(" %d sessions  ·  %d in play  ·  %d hosts",
+				a.sessions, a.playing, a.hosts);
+		} else {
+			ImGui::TextDisabled(" %s",
+				br.statusLine.empty()
+				? (br.refreshInFlight ? "Refreshing..." : "")
+				: br.statusLine.c_str());
+		}
 	}
 
 	ImGui::Separator();
@@ -263,23 +266,73 @@ void DesktopBrowser() {
 		ImGui::TableSetupColumn("Protocol",   ImGuiTableColumnFlags_WidthFixed,   70.0f);
 		ImGui::TableHeadersRow();
 
+		const bool dark = ATUIIsDarkTheme();
+		const ImVec4 cIncompat = dark ? ImVec4(1.00f, 0.55f, 0.45f, 1.0f)
+		                              : ImVec4(0.80f, 0.10f, 0.10f, 1.0f);
+		const ImVec4 cPlaying  = dark ? ImVec4(0.70f, 0.70f, 0.70f, 1.0f)
+		                              : ImVec4(0.45f, 0.45f, 0.45f, 1.0f);
+		const ImVec4 cDim      = dark ? ImVec4(0.65f, 0.65f, 0.65f, 1.0f)
+		                              : ImVec4(0.40f, 0.40f, 0.40f, 1.0f);
+
 		for (size_t i = 0; i < br.items.size(); ++i) {
 			const auto& s = br.items[i];
+
+			char missingCRC[16] = {};
+			JoinCompat compat = CheckJoinCompat(s.kernelCRC32, s.basicCRC32,
+				missingCRC);
+			const bool playing = (s.state == "playing");
+			const bool joinable = !playing && compat != JoinCompat::MissingKernel
+			                              && compat != JoinCompat::MissingBasic;
+
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			// Full-row selectable on the first column.
 			ImGui::PushID((int)i);
 			bool selected = ((int)i == br.selectedIdx);
 			ImGuiSelectableFlags sf = ImGuiSelectableFlags_SpanAllColumns |
 			                          ImGuiSelectableFlags_AllowDoubleClick;
+			// Game cell: cart name on top, sub-line below with OS/BASIC/HW
+			// and a colour reflecting compat.
+			ImVec4 nameCol = playing  ? cPlaying
+			               : !joinable ? cIncompat
+			               : ImGui::GetStyleColorVec4(ImGuiCol_Text);
+			ImGui::PushStyleColor(ImGuiCol_Text, nameCol);
 			if (ImGui::Selectable(s.cartName.c_str(), selected, sf)) {
 				br.selectedIdx = (int)i;
-				if (ImGui::IsMouseDoubleClicked(0)) {
+				if (ImGui::IsMouseDoubleClicked(0) && joinable) {
 					st.session.joinTarget = s;
 					Navigate(s.requiresCode ? Screen::JoinPrompt
 					                        : Screen::JoinConfirm);
 				}
 			}
+			ImGui::PopStyleColor();
+			// Tooltip belongs on the Selectable (full-row hover area
+			// thanks to SpanAllColumns).  Must be set before any
+			// subsequent item is submitted, otherwise IsItemHovered
+			// would refer to that later item instead.
+			if (ImGui::IsItemHovered()) {
+				if (compat == JoinCompat::MissingKernel)
+					ImGui::SetTooltip("Missing OS firmware [%s] — install it "
+						"in System → Firmware to join.", missingCRC);
+				else if (compat == JoinCompat::MissingBasic)
+					ImGui::SetTooltip("Missing BASIC firmware [%s] — install "
+						"it in System → Firmware to join.", missingCRC);
+				else if (playing)
+					ImGui::SetTooltip("This session is in play — wait for it "
+						"to end or pick another.");
+			}
+
+			// Sub-row: firmware + hardware summary, dim font.
+			char sub[160];
+			const char *hw = s.hardwareMode.empty() ? "?" : s.hardwareMode.c_str();
+			if (!s.kernelCRC32.empty() || !s.basicCRC32.empty()) {
+				std::snprintf(sub, sizeof sub, "  OS [%s] · BASIC [%s] · %s",
+					s.kernelCRC32.empty() ? "any"   : s.kernelCRC32.c_str(),
+					s.basicCRC32.empty()  ? "off"   : s.basicCRC32.c_str(),
+					hw);
+			} else {
+				std::snprintf(sub, sizeof sub, "  %s", hw);
+			}
+			ImGui::TextColored(cDim, "%s", sub);
 			ImGui::PopID();
 
 			ImGui::TableNextColumn();
@@ -288,7 +341,10 @@ void DesktopBrowser() {
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(s.region.c_str());
 			ImGui::TableNextColumn();
-			ImGui::Text("%d/%d", s.playerCount, s.maxPlayers);
+			if (playing)
+				ImGui::TextColored(cPlaying, "in play");
+			else
+				ImGui::Text("%d/%d", s.playerCount, s.maxPlayers);
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(s.requiresCode ? "Private" : "Public");
 			ImGui::TableNextColumn();
@@ -298,16 +354,37 @@ void DesktopBrowser() {
 	}
 
 	ImGui::Separator();
-	bool canJoin = br.selectedIdx >= 0
-	               && br.selectedIdx < (int)br.items.size()
-	               && !ATNetplayGlue::IsActive();
+	const ImVec4 cIncompat = ATUIIsDarkTheme()
+		? ImVec4(1.00f, 0.55f, 0.45f, 1.0f)
+		: ImVec4(0.80f, 0.10f, 0.10f, 1.0f);
+	// Determine selected-row joinability up front so the button text can
+	// explain *why* it's disabled.
+	const ATNetplay::LobbySession *sel = (br.selectedIdx >= 0 &&
+	                           br.selectedIdx < (int)br.items.size())
+		? &br.items[br.selectedIdx] : nullptr;
+	JoinCompat selCompat = JoinCompat::Unknown;
+	if (sel) selCompat = CheckJoinCompat(sel->kernelCRC32, sel->basicCRC32);
+	const bool selPlaying = sel && sel->state == "playing";
+	const bool selOk = sel && !selPlaying
+		&& selCompat != JoinCompat::MissingKernel
+		&& selCompat != JoinCompat::MissingBasic;
+	bool canJoin = sel && selOk && !ATNetplayGlue::IsActive();
 	ImGui::BeginDisabled(!canJoin);
 	if (ImGui::Button("Join", ImVec2(140, 0))) {
-		st.session.joinTarget = br.items[br.selectedIdx];
+		st.session.joinTarget = *sel;
 		Navigate(st.session.joinTarget.requiresCode
 			? Screen::JoinPrompt : Screen::JoinConfirm);
 	}
 	ImGui::EndDisabled();
+	if (sel && !canJoin && !ATNetplayGlue::IsActive()) {
+		ImGui::SameLine();
+		if (selPlaying)
+			ImGui::TextDisabled("(in play)");
+		else if (selCompat == JoinCompat::MissingKernel)
+			ImGui::TextColored(cIncompat, "(missing OS firmware)");
+		else if (selCompat == JoinCompat::MissingBasic)
+			ImGui::TextColored(cIncompat, "(missing BASIC firmware)");
+	}
 	ImGui::SameLine();
 	if (ImGui::Button("Close", ImVec2(120, 0))) Navigate(Screen::Closed);
 
@@ -487,6 +564,65 @@ void DesktopJoinConfirm() {
 	ImGui::End();
 }
 
+// "<Peer> wants to join <Game>" — Allow / Deny modal raised by
+// ReconcileHostedGames when the user runs prompt-me and a Hello passes
+// validation.  Auto-declines after 20 s so an AFK host doesn't strand
+// the joiner.  Dismissing the dialog without choosing also rejects.
+void DesktopAcceptJoinPrompt() {
+	State& st = GetState();
+	const std::string gid = st.session.pendingAcceptGameId;
+	if (gid.empty()) {
+		Navigate(Screen::MyHostedGames);
+		return;
+	}
+
+	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+	constexpr uint64_t kAutoDeclineMs = 20000;
+	const uint64_t elapsed = nowMs > st.session.pendingAcceptStartedMs
+		? nowMs - st.session.pendingAcceptStartedMs : 0;
+	if (elapsed >= kAutoDeclineMs) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+		// ReconcileHostedGames will clear pendingAccept* + Navigate next tick.
+		return;
+	}
+	const uint64_t remainS = (kAutoDeclineMs - elapsed + 999) / 1000;
+
+	CenterNext(ImVec2(440, 220));
+	bool open = true;
+	if (!ImGui::Begin("Join request##netplay", &open,
+		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
+		ImGui::End();
+		if (!open) {
+			ATNetplayGlue::HostRejectPending(gid.c_str());
+		}
+		return;
+	}
+
+	const char *handle = st.session.pendingAcceptHandle.empty()
+		? "Someone" : st.session.pendingAcceptHandle.c_str();
+	const char *gameName = st.session.pendingAcceptGameName.c_str();
+	ImGui::TextWrapped("%s wants to join your game:", handle);
+	ImGui::Spacing();
+	ImGui::TextColored(ImVec4(0.8f, 0.95f, 0.8f, 1.0f), "  %s", gameName);
+	ImGui::Spacing();
+	ImGui::TextDisabled("Auto-decline in %llus", (unsigned long long)remainS);
+
+	ImGui::Separator();
+	if (ImGui::Button("Allow", ImVec2(140, 0))) {
+		ATNetplayGlue::HostAcceptPending(gid.c_str());
+		// ReconcileHostedGames clears state + Navigate next tick.
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Deny", ImVec2(140, 0))) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+	}
+
+	if (!open) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+	}
+	ImGui::End();
+}
+
 void DesktopWaiting() {
 	State& st = GetState();
 
@@ -551,7 +687,6 @@ void DesktopPrefs() {
 		return;
 	}
 
-	ImGui::SeparatorText("Nickname");
 	static char nameBuf[32] = {};
 	static bool seeded = false;
 	if (!seeded) {
@@ -559,34 +694,64 @@ void DesktopPrefs() {
 			st.prefs.nickname.c_str());
 		seeded = true;
 	}
-	ImGui::PushItemWidth(260);
-	if (ImGui::InputText("Nickname", nameBuf, sizeof nameBuf))
-		st.prefs.nickname = nameBuf;
-	ImGui::PopItemWidth();
-	ImGui::Checkbox("Anonymous (random nickname each session)",
-		&st.prefs.isAnonymous);
 
-	ImGui::SeparatorText("Accept incoming joins");
-	int acc = (int)st.prefs.acceptMode;
-	ImGui::RadioButton("Auto-accept",  &acc, 0); ImGui::SameLine();
-	ImGui::RadioButton("Prompt me",    &acc, 1); ImGui::SameLine();
-	ImGui::RadioButton("Review each",  &acc, 2);
-	st.prefs.acceptMode = (AcceptMode)acc;
+	if (ImGui::BeginTabBar("##netplay_prefs_tabs")) {
+		if (ImGui::BeginTabItem("General")) {
+			ImGui::Spacing();
+			ImGui::PushItemWidth(260);
+			if (ImGui::InputText("Nickname", nameBuf, sizeof nameBuf))
+				st.prefs.nickname = nameBuf;
+			ImGui::PopItemWidth();
+			ImGui::Checkbox("Anonymous (random nickname each session)",
+				&st.prefs.isAnonymous);
 
-	ImGui::SeparatorText("Notifications");
-	ImGui::Checkbox("Flash window",        &st.prefs.notif.flashWindow);
-	ImGui::Checkbox("System notification", &st.prefs.notif.systemNotify);
-	ImGui::Checkbox("Chime",               &st.prefs.notif.playChime);
-	ImGui::Checkbox("Steal focus on attention",
-		&st.prefs.focusOnAttention);
+			ImGui::Spacing();
+			ImGui::SeparatorText("In-session HUD");
+			ImGui::Checkbox("Show HUD overlay (LIVE / frame / peer / Disconnect)",
+				&st.prefs.showSessionHUD);
+			ImGui::EndTabItem();
+		}
 
-	ImGui::SeparatorText("Input delay");
-	ImGui::SliderInt("LAN (frames)",      &st.prefs.defaultInputDelayLan, 1, 10);
-	ImGui::SliderInt("Internet (frames)", &st.prefs.defaultInputDelayInternet, 1, 10);
+		if (ImGui::BeginTabItem("Hosting")) {
+			ImGui::Spacing();
+			ImGui::SeparatorText("When someone joins");
+			int acc = (int)st.prefs.acceptMode;
+			ImGui::RadioButton("Auto-accept",  &acc, 0); ImGui::SameLine();
+			ImGui::RadioButton("Prompt me",    &acc, 1);
+			st.prefs.acceptMode = (AcceptMode)acc;
+			ImGui::TextDisabled(st.prefs.acceptMode == AcceptMode::PromptMe
+				? "  A modal asks you Allow / Deny.  Auto-declines after 20 s."
+				: "  Joiners enter immediately, no confirmation.");
 
-	ImGui::SeparatorText("Advanced");
-	ImGui::Checkbox("Show manual-IP join",
-		&st.prefs.advancedManualIp);
+			ImGui::Spacing();
+			ImGui::SeparatorText("Notifications on incoming join");
+			ImGui::Checkbox("Flash window",        &st.prefs.notif.flashWindow);
+			ImGui::Checkbox("System notification", &st.prefs.notif.systemNotify);
+			ImGui::Checkbox("Chime",               &st.prefs.notif.playChime);
+			ImGui::Checkbox("Steal focus on attention",
+				&st.prefs.focusOnAttention);
+
+			ImGui::Spacing();
+			ImGui::SeparatorText("Default input delay");
+			ImGui::TextDisabled("  Buffer for the joiner's input — bigger absorbs more jitter, costs feel.");
+			ImGui::SliderInt("LAN (frames)",      &st.prefs.defaultInputDelayLan, 1, 10);
+			ImGui::SliderInt("Internet (frames)", &st.prefs.defaultInputDelayInternet, 1, 10);
+			ImGui::EndTabItem();
+		}
+
+		if (ImGui::BeginTabItem("Joining")) {
+			ImGui::Spacing();
+			ImGui::TextDisabled("Nothing to configure here yet.");
+			ImGui::Spacing();
+			ImGui::TextWrapped(
+				"When you join someone else's game, the host's settings "
+				"(input delay, machine config) take precedence so both "
+				"sides stay in lockstep.");
+			ImGui::EndTabItem();
+		}
+
+		ImGui::EndTabBar();
+	}
 
 	ImGui::Separator();
 	if (ImGui::Button("Done", ImVec2(120, 0))) {
@@ -639,11 +804,15 @@ ImVec4 OfferStateColour(HostedGameState s) {
 	return dark ? ImVec4(1, 1, 1, 1) : ImVec4(0, 0, 0, 1);
 }
 
-const char *ActivityBannerText(UserActivity a, size_t gameCount) {
+const char *ActivityBannerText(UserActivity a,
+                               size_t gameCount, size_t enabledCount) {
 	switch (a) {
 		case UserActivity::Idle:
-			if (gameCount == 0) return "Add a game to start hosting.";
-			return "Ready — your games are listed on the lobby.";
+			if (gameCount == 0)   return "Add a game to start hosting.";
+			if (enabledCount == 0) return "All your games are off — toggle "
+				"On to list one on the lobby.";
+			if (enabledCount == 1) return "1 game listed on the lobby.";
+			return "Listed on the lobby — peers can see and join.";
 		case UserActivity::PlayingLocal:
 			return "You're playing single-player — hosted games are paused "
 				"until you stop.";
@@ -674,12 +843,18 @@ void DesktopMyHostedGames() {
 	MaybePingLobby(nowMs);
 	ImGui::Separator();
 
-	// Activity banner.
-	ImVec4 bc = (st.activity == UserActivity::Idle)
+	// Activity banner.  Colour depends on whether anything is actually
+	// listable: green only when at least one game is enabled and idle.
+	size_t enabledCount = 0;
+	for (const auto& o : st.hostedGames) if (o.enabled) ++enabledCount;
+	const bool listed = (st.activity == UserActivity::Idle && enabledCount > 0);
+	ImVec4 bc = listed
 		? ImVec4(0.55f, 0.85f, 0.55f, 1)
-		: ImVec4(0.95f, 0.75f, 0.4f, 1);
+		: ImVec4(0.85f, 0.85f, 0.85f, 1);
+	if (st.activity != UserActivity::Idle)
+		bc = ImVec4(0.95f, 0.75f, 0.4f, 1);
 	ImGui::TextColored(bc, "%s",
-		ActivityBannerText(st.activity, st.hostedGames.size()));
+		ActivityBannerText(st.activity, st.hostedGames.size(), enabledCount));
 
 	ImGui::Separator();
 
@@ -1220,6 +1395,7 @@ bool DesktopDispatch() {
 		case Screen::JoinPrompt:   DesktopJoinPrompt();  break;
 		case Screen::JoinConfirm:  DesktopJoinConfirm(); break;
 		case Screen::Waiting:      DesktopWaiting();     break;
+		case Screen::AcceptJoinPrompt: DesktopAcceptJoinPrompt(); break;
 		case Screen::Prefs:        DesktopPrefs();       break;
 		case Screen::Error:        DesktopError();       break;
 		default: break;

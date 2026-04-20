@@ -458,7 +458,8 @@ void Initialize() {
 	g_state.prefs.defaultInputDelayLan      = key.getInt("InputDelayLan", 3);
 	g_state.prefs.defaultInputDelayInternet = key.getInt("InputDelayNet", 4);
 	g_state.prefs.focusOnAttention = key.getBool("FocusOnAttention", false);
-	g_state.prefs.advancedManualIp = key.getBool("AdvancedManualIp", false);
+	// Legacy: scrub the dead "Show manual-IP join" checkbox.
+	key.removeValue("AdvancedManualIp");
 
 	VDStringA code;
 	if (key.getString("LastEntryCode", code)) {
@@ -476,7 +477,7 @@ void Initialize() {
 	if (g_state.prefs.defaultInputDelayLan > 10)  g_state.prefs.defaultInputDelayLan = 10;
 	if (g_state.prefs.defaultInputDelayInternet < 1)  g_state.prefs.defaultInputDelayInternet = 4;
 	if (g_state.prefs.defaultInputDelayInternet > 10) g_state.prefs.defaultInputDelayInternet = 10;
-	if ((int)g_state.prefs.acceptMode < 0 || (int)g_state.prefs.acceptMode > 2)
+	if ((int)g_state.prefs.acceptMode < 0 || (int)g_state.prefs.acceptMode > 1)
 		g_state.prefs.acceptMode = AcceptMode::AutoAccept;
 
 	LoadOffers(key);
@@ -493,7 +494,6 @@ void SaveToRegistry() {
 	key.setInt   ("InputDelayLan",    g_state.prefs.defaultInputDelayLan);
 	key.setInt   ("InputDelayNet",    g_state.prefs.defaultInputDelayInternet);
 	key.setBool  ("FocusOnAttention", g_state.prefs.focusOnAttention);
-	key.setBool  ("AdvancedManualIp", g_state.prefs.advancedManualIp);
 	key.setString("LastEntryCode",    g_state.prefs.lastEntryCode.c_str());
 	key.setBool  ("ShowSessionHUD",   g_state.prefs.showSessionHUD);
 

@@ -9,6 +9,7 @@
 
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
+#include "netplay/lobby_protocol.h"
 #include "netplay/netplay_simhash.h"
 #include "netplay/packets.h"
 
@@ -195,6 +196,28 @@ void PostLobbyCreate(HostedGame& o) {
 	cr.requiresCode    = o.isPrivate;
 	cr.cartArtHash     = o.cartArtHash;
 
+	// v2: pre-flight firmware fields so joiners can colour-code the
+	// Browser without round-tripping a handshake.  CRCs are 8-char
+	// uppercase hex; empty means "no constraint" (joiner accepts any).
+	auto hexCRC = [](uint32_t c, std::string& out) {
+		if (!c) { out.clear(); return; }
+		char buf[12];
+		std::snprintf(buf, sizeof buf, "%08X", c);
+		out = buf;
+	};
+	hexCRC(o.config.kernelCRC32, cr.kernelCRC32);
+	hexCRC(o.config.basicCRC32,  cr.basicCRC32);
+	switch (o.config.hardwareMode) {
+		case kATHardwareMode_800:    cr.hardwareMode = "800";    break;
+		case kATHardwareMode_800XL:  cr.hardwareMode = "800XL";  break;
+		case kATHardwareMode_1200XL: cr.hardwareMode = "1200XL"; break;
+		case kATHardwareMode_XEGS:   cr.hardwareMode = "XEGS";   break;
+		case kATHardwareMode_5200:   cr.hardwareMode = "5200";   break;
+		case kATHardwareMode_130XE:  cr.hardwareMode = "130XE";  break;
+		case kATHardwareMode_1400XL: cr.hardwareMode = "1400XL"; break;
+		default:                     cr.hardwareMode = "XL/XE";  break;
+	}
+
 	const uint32_t tag = OfferTag(o);
 
 	for (const auto& L : lobbies) {
@@ -331,6 +354,12 @@ void StartCoordForHostedGame(HostedGame& o) {
 	o.lastError.clear();
 	o.state = HostedGameState::Listed;
 
+	// Honour the user's accept-mode preference: prompt-me holds every
+	// arriving Hello in the coordinator until the host clicks Allow /
+	// Deny in the modal that ReconcileHostedGames raises.
+	const bool prompt = (GetState().prefs.acceptMode == AcceptMode::PromptMe);
+	ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), prompt);
+
 	PostLobbyCreate(o);
 }
 
@@ -427,6 +456,48 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		RestoreSessionRestorePoint();
 	}
 
+	// 1b. Pending-accept detection — when the user runs prompt-me and
+	//     a Hello passes validation, the coord stays in WaitingForJoiner
+	//     with HasPendingDecision() set.  Surface that to the UI by
+	//     populating st.session.pendingAccept* and navigating to the
+	//     modal.  Idempotent — once we've captured a pending id we
+	//     don't re-navigate every tick.
+	if (st.session.pendingAcceptGameId.empty()) {
+		for (auto& o : st.hostedGames) {
+			if (!ATNetplayGlue::HostHasPendingDecision(o.id.c_str()))
+				continue;
+			char handle[40] = {};
+			ATNetplayGlue::HostPendingJoinerHandle(o.id.c_str(),
+				handle, sizeof handle);
+			st.session.pendingAcceptGameId   = o.id;
+			st.session.pendingAcceptHandle   = handle;
+			st.session.pendingAcceptGameName = o.gameName;
+			st.session.pendingAcceptStartedMs = nowMs;
+			char msg[160];
+			std::snprintf(msg, sizeof msg,
+				"%s wants to join %s",
+				handle[0] ? handle : "Someone",
+				o.gameName.c_str());
+			ATNetplayUI_Notify("Join request", msg);
+			Navigate(Screen::AcceptJoinPrompt);
+			break;
+		}
+	} else {
+		// Pending was set in a previous tick; clear it if the coord
+		// no longer reports a pending decision (host clicked Allow/Deny
+		// already, or the offer was disabled / torn down).
+		const std::string& gid = st.session.pendingAcceptGameId;
+		if (!ATNetplayGlue::HostHasPendingDecision(gid.c_str())) {
+			st.session.pendingAcceptGameId.clear();
+			st.session.pendingAcceptHandle.clear();
+			st.session.pendingAcceptGameName.clear();
+			st.session.pendingAcceptStartedMs = 0;
+			if (st.screen == Screen::AcceptJoinPrompt) {
+				if (!Back()) Navigate(Screen::MyHostedGames);
+			}
+		}
+	}
+
 	// 2. Per-offer reconciliation: sync coordinator / lobby to the
 	//    (activity, enabled) tuple.
 	for (auto& o : st.hostedGames) {
@@ -450,6 +521,11 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		// remove the offer from the lobby (so third-party browsers
 		// don't see it as joinable).
 		uint8_t newPhase = (uint8_t)p;
+		// Capture pre-update phase so the heartbeat block below can
+		// detect "we just changed state" — without this, lastPhase
+		// gets updated in this if-block and the later edge test
+		// would always evaluate false.
+		const uint8_t prevPhase = o.lastPhase;
 		if (newPhase != o.lastPhase) {
 			bool nowHandshake =
 				newPhase == (uint8_t)P::Handshaking ||
@@ -483,11 +559,13 @@ void ReconcileHostedGames(uint64_t nowMs) {
 				ATUIPushDeferred(kATDeferred_NetplayHostSnapshot,
 					o.id.c_str(), 0);
 
-				// Remove this offer from the lobby so additional
-				// browsers won't see it.  Keep the coordinator
-				// running — the connected peer talks to it on the
-				// bound UDP port directly.
-				PostLobbyDelete(o);
+				// v2: don't delete the listing — flip its state to
+				// "playing" on the next heartbeat instead.  That keeps
+				// the lobby visibly active (Browser greys it as
+				// "In session" rather than hiding it) while still
+				// preventing third parties from trying to connect.
+				// The state transition is sent below in the heartbeat
+				// fan-out.
 
 				char msg[160];
 				std::snprintf(msg, sizeof msg,
@@ -520,11 +598,33 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		bool wantRunning = o.enabled &&
 			(st.activity == UserActivity::Idle || thisInSession);
 
+		// Coords in Ended/Desynced/Failed are *technically* alive (the
+		// FindHost/HostExists check returns true) but the protocol is
+		// terminal and the socket no longer accepts handshakes.  If we
+		// still want this offer listed, recycle: tear the dead one
+		// down and start a fresh coord.  Without this the lobby would
+		// keep showing the row as "waiting" after a session ended,
+		// but joiners hitting it would time out.
+		const bool coordTerminal = coordRunning &&
+			(p == P::Ended || p == P::Desynced || p == P::Failed);
+
 		if (wantRunning && !coordRunning) {
+			StartCoordForHostedGame(o);
+		} else if (wantRunning && coordTerminal) {
+			StopCoordForHostedGame(o);
 			StartCoordForHostedGame(o);
 		} else if (!wantRunning && coordRunning && !thisInSession) {
 			StopCoordForHostedGame(o);
 			o.state = HostedGameState::Suspended;
+		}
+
+		// Keep prompt-accept aligned with the user's current pref.
+		// Cheap and idempotent; avoids a stale "auto-accept" on a coord
+		// that was started before the user flipped to Prompt me.
+		if (coordRunning) {
+			const bool prompt =
+				(st.prefs.acceptMode == AcceptMode::PromptMe);
+			ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), prompt);
 		}
 
 		// Periodic heartbeat to every lobby this offer is registered
@@ -532,10 +632,21 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		// because each Heartbeat request is independent.
 		if (coordRunning && !o.lobbyRegistrations.empty()) {
 			const uint64_t kHeartbeatMs = 30000;
+			// Edge: as soon as we transition into / out of a session
+			// phase, send an immediate heartbeat with the new state so
+			// the lobby's "in play" indicator updates promptly instead
+			// of waiting up to 30 s for the next periodic tick.
+			// Compare against prevPhase (lastPhase has already been
+			// updated above to newPhase by the time we reach here).
+			const bool stateEdge = (newPhase != prevPhase) &&
+				(o.lastHeartbeatMs != 0);
 			if (o.lastHeartbeatMs == 0
-			    || nowMs - o.lastHeartbeatMs >= kHeartbeatMs) {
+			    || nowMs - o.lastHeartbeatMs >= kHeartbeatMs
+			    || stateEdge) {
 				auto lobbies = AllEnabledHttpLobbies();
 				const int playerCount = (p == P::Lockstepping) ? 2 : 1;
+				const char *state = thisInSession
+					? ATLobby::kStatePlaying : ATLobby::kStateWaiting;
 				for (const auto& reg : o.lobbyRegistrations) {
 					if (reg.sessionId.empty() || reg.token.empty())
 						continue;
@@ -550,6 +661,7 @@ void ReconcileHostedGames(uint64_t nowMs) {
 					req.sessionId   = reg.sessionId;
 					req.token       = reg.token;
 					req.playerCount = playerCount;
+					req.state       = state;
 					GetWorker().Post(std::move(req), reg.section);
 				}
 				o.lastHeartbeatMs = nowMs;
@@ -775,6 +887,54 @@ uint64 FindBasicByCRC(ATFirmwareManager& fwm, uint32_t crc32) {
 }
 
 } // anonymous
+
+JoinCompat CheckJoinCompat(const std::string& kernelHex,
+                           const std::string& basicHex,
+                           char *outMissingCRCHex) {
+	if (outMissingCRCHex) outMissingCRCHex[0] = 0;
+
+	auto parseHex = [](const std::string& s, uint32_t& out) -> bool {
+		if (s.size() != 8) return false;
+		uint32_t v = 0;
+		for (char c : s) {
+			v <<= 4;
+			if      (c >= '0' && c <= '9') v |= (c - '0');
+			else if (c >= 'a' && c <= 'f') v |= (c - 'a' + 10);
+			else if (c >= 'A' && c <= 'F') v |= (c - 'A' + 10);
+			else return false;
+		}
+		out = v;
+		return true;
+	};
+
+	uint32_t kCrc = 0, bCrc = 0;
+	const bool haveK = parseHex(kernelHex, kCrc);
+	const bool haveB = parseHex(basicHex,  bCrc);
+
+	// No constraint at all → host pre-dates v2 schema; we don't know.
+	if (!haveK && basicHex.empty()) return JoinCompat::Unknown;
+
+	ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
+	if (!fwm) return JoinCompat::Unknown;
+
+	if (haveK) {
+		uint64 id = FindKernelByCRC(*fwm, kCrc);
+		if (!id) {
+			if (outMissingCRCHex)
+				std::snprintf(outMissingCRCHex, 9, "%08X", kCrc);
+			return JoinCompat::MissingKernel;
+		}
+	}
+	if (haveB) {
+		uint64 id = FindBasicByCRC(*fwm, bCrc);
+		if (!id) {
+			if (outMissingCRCHex)
+				std::snprintf(outMissingCRCHex, 9, "%08X", bCrc);
+			return JoinCompat::MissingBasic;
+		}
+	}
+	return JoinCompat::Compatible;
+}
 
 std::string ApplyMachineConfig(const MachineConfig& cfg) {
 	ATFirmwareManager *fwm = g_sim.GetFirmwareManager();

@@ -7,7 +7,7 @@
 //	                           HostSetup.  Otherwise opens Browser so
 //	                           the user can boot something first.
 //	  - Preferences…         → Preferences → Netplay
-//	  - End Session          → Shown only while a netplay session is
+//	  - Stop Hosting         → Shown only while a netplay session is
 //	                           active.
 
 #include <stdafx.h>
@@ -50,7 +50,7 @@ void ATUIRenderOnlineMenu() {
 
 	if (inSession) {
 		ImGui::Separator();
-		if (ImGui::MenuItem("End Session")) {
+		if (ImGui::MenuItem("Stop Hosting")) {
 			ATNetplayUI_EndSession();
 		}
 	}

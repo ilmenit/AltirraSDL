@@ -42,6 +42,7 @@ enum class LobbyOp {
 	Create,
 	Heartbeat,
 	Delete,
+	Stats,
 };
 
 struct LobbyRequest {
@@ -51,6 +52,7 @@ struct LobbyRequest {
 	std::string                   sessionId;   // heartbeat/delete
 	std::string                   token;       // heartbeat/delete
 	int                           playerCount = 1;  // heartbeat
+	std::string                   state;       // heartbeat: "" | "waiting" | "playing"
 	uint32_t                      tag = 0;     // caller cookie (round-trip)
 };
 
@@ -64,6 +66,7 @@ struct LobbyResult {
 	// Populated depending on op:
 	std::vector<ATNetplay::LobbySession> sessions;  // List
 	ATNetplay::LobbyCreateResponse       create;    // Create
+	ATNetplay::LobbyStats                stats;     // Stats
 	std::string                          sourceLobby;  // section name
 };
 

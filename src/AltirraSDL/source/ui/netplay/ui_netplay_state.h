@@ -53,6 +53,7 @@ enum class Screen {
 	JoinPrompt,       // Enter entry code (private session)
 	JoinConfirm,      // Confirm ROM / TOS before joining public
 	Waiting,          // Host is waiting for a joiner; joiner is waiting for snapshot
+	AcceptJoinPrompt, // Host's "<peer> wants to join <game>" Allow/Deny modal
 	Prefs,            // Preferences → Netplay
 	DesyncReport,     // Post-desync "something went wrong" card
 	Error,            // Generic error sheet (LastError())
@@ -179,13 +180,13 @@ enum class UserActivity : uint8_t {
 	InSession,     // a peer joined one of our hostedGames OR we joined someone
 };
 
-// Host-side "accept incoming join" policy — mirrors §9 of the design
-// document.  Auto-accept is the happy path; prompt-me pops a modal
-// with a 20 s timer so an AFK host doesn't block the joiner forever.
+// Host-side "accept incoming join" policy.  Auto-accept is the happy
+// path; prompt-me pops a modal with a 20 s timer so an AFK host
+// doesn't block the joiner forever (after the timer the join is
+// auto-declined and the joiner sees a clean rejection).
 enum class AcceptMode : uint8_t {
 	AutoAccept,
 	PromptMe,
-	ReviewEach,   // Same as PromptMe but without the 20 s auto-decline
 };
 
 struct Prefs {
@@ -214,10 +215,6 @@ struct Prefs {
 	// this so a serial host doesn't have to re-type the same code
 	// every session.  Joiners never persist codes.
 	std::string lastEntryCode;
-
-	// Advanced manual IP fallback.  Exposed only in Preferences when
-	// no lobby is reachable; normal path is the browser.
-	bool        advancedManualIp = false;
 
 	// Last MachineConfig the user saved from the Add Game dialog, so
 	// serial hosts don't have to re-pick hardware every time.  Not
@@ -258,6 +255,14 @@ struct Session {
 	// Monotonic ms timestamp of the last notification so we don't spam
 	// the user with chimes if peers bounce on and off quickly.
 	uint64_t    lastNotifyMs = 0;
+
+	// Pending-accept dialog state.  Populated by ReconcileHostedGames
+	// when a HostedGame coord raises HasPendingDecision; cleared when
+	// the user clicks Allow/Deny or the 20 s auto-decline fires.
+	std::string pendingAcceptGameId;
+	std::string pendingAcceptHandle;
+	std::string pendingAcceptGameName;
+	uint64_t    pendingAcceptStartedMs = 0;
 
 	// -- Active hosting state ---------------------------------------
 	// Populated when the host has actually called StartHost() and
@@ -312,12 +317,35 @@ struct LobbyHealth {
 	int         lastStatus = 0;
 };
 
+// Aggregated /v1/stats across every enabled HTTP lobby in lobby.ini.
+// Updated as Stats results land in the worker pump; values are summed
+// across federated lobbies so the footer "12 sessions • 4 in play"
+// reflects the whole network from the user's POV.
+struct AggregateStats {
+	int      sessions = 0;
+	int      waiting  = 0;
+	int      playing  = 0;
+	int      hosts    = 0;
+	uint64_t lastUpdateMs = 0;  // 0 = never
+	// In-flight bookkeeping: number of lobbies we've posted Stats to
+	// for the current refresh cycle, and a running accumulator that
+	// resets on the first Stats result of a new cycle.  Without this
+	// tracking we'd add the new cycle's totals on top of the previous
+	// cycle's instead of replacing them.
+	int      pendingResponses = 0;
+	int      acc_sessions = 0;
+	int      acc_waiting  = 0;
+	int      acc_playing  = 0;
+	int      acc_hosts    = 0;
+};
+
 struct State {
-	Screen      screen      = Screen::Closed;
-	Prefs       prefs;
-	Session     session;
-	Browser     browser;
-	LobbyHealth lobbyHealth;
+	Screen         screen      = Screen::Closed;
+	Prefs          prefs;
+	Session        session;
+	Browser        browser;
+	LobbyHealth    lobbyHealth;
+	AggregateStats aggregateStats;
 
 	// My Hosted Games — the user's advertised hostedGames.  Persisted across
 	// runs; runtime fields (state/port/tokens) reset each launch.

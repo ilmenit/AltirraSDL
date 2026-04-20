@@ -36,6 +36,7 @@ namespace ATNetplayUI {
 // Screen dispatcher implemented in ui_netplay_screens.cpp.
 bool ATNetplayUI_DispatchScreen();
 void ATNetplayUI_EnqueueBrowserRefresh();
+void ATNetplayUI_EnqueueStatsRefresh();
 
 namespace {
 
@@ -193,6 +194,28 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 				}
 				return;
 			}
+			if (r.op == ATNetplayUI::LobbyOp::Stats) {
+				// Sum results across federated lobbies.  pendingResponses
+				// was set when the cycle was kicked off; each landing
+				// result accumulates and the last one (counter→0)
+				// publishes the cycle's totals to the live counters.
+				auto& a = st.aggregateStats;
+				if (r.ok) {
+					a.acc_sessions += r.stats.sessions;
+					a.acc_waiting  += r.stats.waiting;
+					a.acc_playing  += r.stats.playing;
+					a.acc_hosts    += r.stats.hosts;
+				}
+				if (a.pendingResponses > 0) --a.pendingResponses;
+				if (a.pendingResponses == 0) {
+					a.sessions = a.acc_sessions;
+					a.waiting  = a.acc_waiting;
+					a.playing  = a.acc_playing;
+					a.hosts    = a.acc_hosts;
+					a.lastUpdateMs = nowMs;
+				}
+				return;
+			}
 			if (r.op != ATNetplayUI::LobbyOp::List) return;
 			if (!r.ok) {
 				st.browser.statusLine = st.lobbyHealth.lastError
@@ -258,6 +281,11 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			if (!st.browser.refreshInFlight) {
 				st.browser.items.clear();
 				ATNetplayUI::ATNetplayUI_EnqueueBrowserRefresh();
+				// Piggy-back stats fan-out on the same cadence: one
+				// extra cheap GET /v1/stats per lobby per refresh.
+				// Within Oracle Free Tier rate limits (60/min cap;
+				// browse=6/min, stats=6/min, well under).
+				ATNetplayUI::ATNetplayUI_EnqueueStatsRefresh();
 				st.browser.refreshRequested = false;
 			}
 		}

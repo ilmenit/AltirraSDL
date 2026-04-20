@@ -42,6 +42,12 @@ struct LobbySession {
 	std::string cartArtHash;    // optional hex
 	std::string createdAt;      // RFC3339
 	std::string lastSeen;       // RFC3339
+
+	// Lobby v2 — firmware pre-flight + session state.
+	std::string kernelCRC32;    // 8-char hex; empty = no constraint
+	std::string basicCRC32;     // 8-char hex or empty (BASIC off)
+	std::string hardwareMode;   // "800XL" / "5200" / "1200XL" / etc.
+	std::string state;          // "waiting" (joinable) | "playing" (in session)
 };
 
 struct LobbyCreateRequest {
@@ -55,12 +61,25 @@ struct LobbyCreateRequest {
 	std::string visibility     = "public";  // or "private"
 	bool        requiresCode   = false;
 	std::string cartArtHash;    // may be empty
+	std::string kernelCRC32;    // may be empty
+	std::string basicCRC32;     // may be empty
+	std::string hardwareMode;   // may be empty
 };
 
 struct LobbyCreateResponse {
 	std::string sessionId;
 	std::string token;
 	int         ttlSeconds = 0;
+};
+
+// v2 aggregate stats returned from GET /v1/stats.  The Browser shows
+// this in a single status footer so users can see whether the lobby is
+// alive ("5 sessions — 3 in play") without enumerating the full list.
+struct LobbyStats {
+	int sessions = 0;
+	int waiting  = 0;
+	int playing  = 0;
+	int hosts    = 0;
 };
 
 struct LobbyEndpoint {
@@ -95,10 +114,18 @@ public:
 	bool List(std::vector<LobbySession>& out);
 
 	// Returns true on HTTP 200.  `playerCount` must be <= session's
-	// maxPlayers; server silently ignores out-of-range values.
+	// maxPlayers; server silently ignores out-of-range values.  Empty
+	// `state` leaves the server-side state unchanged; otherwise pass
+	// "waiting" or "playing" to transition (piggy-backed on the normal
+	// 30 s heartbeat cadence — no extra requests).
 	bool Heartbeat(const std::string& sessionId,
 	               const std::string& token,
-	               int playerCount);
+	               int playerCount,
+	               const std::string& state = {});
+
+	// v2: GET /v1/stats → aggregate counts.  One small JSON object;
+	// cheap enough for the Browser to call once per 10 s refresh.
+	bool Stats(LobbyStats& out);
 
 	// Returns true on HTTP 204.  Safe to call more than once for the
 	// same id; second call returns 404 which we surface as a success

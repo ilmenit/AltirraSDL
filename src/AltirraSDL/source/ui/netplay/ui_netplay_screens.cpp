@@ -127,33 +127,65 @@ void RenderNickname() {
 // Online browser
 // -------------------------------------------------------------------
 
+// Parse "http://host:port[/...]" into a LobbyEndpoint.  Shared by the
+// browser-refresh and stats-refresh fan-out paths.
+static ATNetplay::LobbyEndpoint EndpointForLobby(const ATNetplay::LobbyEntry& e) {
+	ATNetplay::LobbyEndpoint ep;
+	std::string url = e.url;
+	const std::string prefix = "http://";
+	if (url.compare(0, prefix.size(), prefix) == 0) url.erase(0, prefix.size());
+	size_t slash = url.find('/');
+	if (slash != std::string::npos) url.resize(slash);
+	size_t colon = url.rfind(':');
+	if (colon != std::string::npos) {
+		ep.host.assign(url, 0, colon);
+		ep.port = (uint16_t)std::atoi(url.c_str() + colon + 1);
+	} else {
+		ep.host = url;
+		ep.port = 80;
+	}
+	ep.timeoutMs = 5000;
+	return ep;
+}
+
 void EnqueueBrowserRefresh() {
 	const std::vector<ATNetplay::LobbyEntry>& lobbies = GetConfiguredLobbies();
 	for (const auto& e : lobbies) {
 		if (!e.enabled) continue;
 		if (e.kind != ATNetplay::LobbyKind::Http) continue;  // LAN handled separately
-		// Parse "http://host:port" into endpoint.
-		ATNetplay::LobbyEndpoint ep;
-		std::string url = e.url;
-		const std::string prefix = "http://";
-		if (url.compare(0, prefix.size(), prefix) == 0) url.erase(0, prefix.size());
-		size_t slash = url.find('/');
-		if (slash != std::string::npos) url.resize(slash);
-		size_t colon = url.rfind(':');
-		if (colon != std::string::npos) {
-			ep.host.assign(url, 0, colon);
-			ep.port = (uint16_t)std::atoi(url.c_str() + colon + 1);
-		} else {
-			ep.host = url;
-			ep.port = 80;
-		}
-		ep.timeoutMs = 5000;
-
 		LobbyRequest req{};
 		req.op = LobbyOp::List;
-		req.endpoint = ep;
+		req.endpoint = EndpointForLobby(e);
 		GetWorker().Post(std::move(req), e.section);
 	}
+}
+
+// v2: fan a Stats request out to every enabled HTTP lobby; the result
+// pump (ui_netplay.cpp) sums them into State::aggregateStats so the
+// Browser footer reflects the whole network.  No-ops if a previous
+// cycle's responses haven't all landed yet — without that guard a
+// late response from an earlier cycle would fall into the new cycle's
+// accumulator and double-count.
+void EnqueueStatsRefresh() {
+	auto& a = GetState().aggregateStats;
+	if (a.pendingResponses > 0) return;
+
+	const std::vector<ATNetplay::LobbyEntry>& lobbies = GetConfiguredLobbies();
+	int posted = 0;
+	for (const auto& e : lobbies) {
+		if (!e.enabled) continue;
+		if (e.kind != ATNetplay::LobbyKind::Http) continue;
+		LobbyRequest req{};
+		req.op = LobbyOp::Stats;
+		req.endpoint = EndpointForLobby(e);
+		GetWorker().Post(std::move(req), e.section);
+		++posted;
+	}
+	a.pendingResponses = posted;
+	a.acc_sessions = 0;
+	a.acc_waiting  = 0;
+	a.acc_playing  = 0;
+	a.acc_hosts    = 0;
 }
 
 void RenderBrowser() {
@@ -516,8 +548,8 @@ void RenderPrefs() {
 	ImGui::Spacing();
 	ATTouchSection("Accept incoming joins");
 	int acc = (int)st.prefs.acceptMode;
-	const char *accItems[] = { "Auto-accept", "Prompt me", "Review each" };
-	if (ATTouchSegmented("##acc", &acc, accItems, 3)) {
+	const char *accItems[] = { "Auto-accept", "Prompt me" };
+	if (ATTouchSegmented("##acc", &acc, accItems, 2)) {
 		st.prefs.acceptMode = (AcceptMode)acc;
 	}
 
@@ -535,11 +567,6 @@ void RenderPrefs() {
 		&st.prefs.defaultInputDelayLan, 1, 10, "%d frames");
 	ATTouchSlider("Internet (frames)",
 		&st.prefs.defaultInputDelayInternet, 1, 10, "%d frames");
-
-	ImGui::Spacing();
-	ATTouchSection("Advanced");
-	ATTouchToggle("Show manual-IP join (offline fallback)",
-		&st.prefs.advancedManualIp);
 
 	ImGui::Spacing();
 	ImGui::Separator();
@@ -908,6 +935,10 @@ bool ATNetplayUI_DispatchScreen() {
 // Exposed to the menu/refresh path.
 void ATNetplayUI_EnqueueBrowserRefresh() {
 	EnqueueBrowserRefresh();
+}
+
+void ATNetplayUI_EnqueueStatsRefresh() {
+	EnqueueStatsRefresh();
 }
 
 } // namespace ATNetplayUI

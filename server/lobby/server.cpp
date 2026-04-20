@@ -134,6 +134,18 @@ struct Session {
 	std::string createdAt;         // ISO-8601
 	int64_t     lastSeenMs     = 0;  // monotonic ms
 	std::string token;             // never serialised in List/Get
+
+	// v2 firmware pre-flight: joiners check their ATFirmwareManager
+	// against these CRCs before even attempting to connect.  Stored
+	// as 8-char uppercase hex strings (empty means "no constraint").
+	std::string kernelCRC32;
+	std::string basicCRC32;
+	std::string hardwareMode;      // "800XL" / "5200" / etc.
+
+	// v2 session state: "waiting" = joinable, "playing" = in session
+	// (kept in the listing so the lobby looks alive, but Browser greys
+	// it out and suppresses Join).  Hosts update via heartbeat.
+	std::string state;             // "waiting" | "playing"
 };
 
 struct Config {
@@ -210,14 +222,16 @@ public:
 		s.token      = NewToken();
 		s.createdAt  = IsoNow();
 		s.lastSeenMs = NowMs();
+		if (s.state.empty()) s.state = kStateWaiting;
 		mItems[s.id] = s;
 		return s;
 	}
 
-	// Heartbeat: verify token, update lastSeen + playerCount if valid.
+	// Heartbeat: verify token, update lastSeen + playerCount + state.
+	// Empty `newState` is treated as "no change".
 	// Returns: 200 (ok), 401 (bad token), 404 (no such session).
 	int Heartbeat(const std::string& id, const std::string& token,
-	              int newPlayerCount) {
+	              int newPlayerCount, const std::string& newState) {
 		std::lock_guard<std::mutex> lk(mMu);
 		auto it = mItems.find(id);
 		if (it == mItems.end()) return 404;
@@ -227,7 +241,33 @@ public:
 		    newPlayerCount <= it->second.maxPlayers) {
 			it->second.playerCount = newPlayerCount;
 		}
+		if (newState == kStateWaiting || newState == kStatePlaying) {
+			it->second.state = newState;
+		}
 		return 200;
+	}
+
+	// Aggregate stats for /v1/stats.  Cheap O(N) walk under the same
+	// lock List uses; with kListCap=500 this is microseconds.
+	struct Stats {
+		int sessions = 0;
+		int waiting  = 0;
+		int playing  = 0;
+		int hosts    = 0;   // unique hostHandle count
+	};
+	Stats ComputeStats() const {
+		std::lock_guard<std::mutex> lk(mMu);
+		Stats s;
+		s.sessions = (int)mItems.size();
+		std::unordered_map<std::string, int> hostSeen;
+		for (const auto& kv : mItems) {
+			if (kv.second.state == kStatePlaying) ++s.playing;
+			else                                  ++s.waiting;
+			if (!kv.second.hostHandle.empty())
+				hostSeen[kv.second.hostHandle] = 1;
+		}
+		s.hosts = (int)hostSeen.size();
+		return s;
 	}
 
 	int Delete(const std::string& id, const std::string& token) {
@@ -316,6 +356,18 @@ void WriteSessionJson(JsonBuilder& b, const Session& s) {
 	if (!s.cartArtHash.empty()) {
 		b.key(Field::kCartArtHash); b.str(s.cartArtHash);  b.raw(',');
 	}
+	if (!s.kernelCRC32.empty()) {
+		b.key(Field::kKernelCRC32); b.str(s.kernelCRC32);  b.raw(',');
+	}
+	if (!s.basicCRC32.empty()) {
+		b.key(Field::kBasicCRC32);  b.str(s.basicCRC32);   b.raw(',');
+	}
+	if (!s.hardwareMode.empty()) {
+		b.key(Field::kHardwareMode); b.str(s.hardwareMode); b.raw(',');
+	}
+	b.key(Field::kState);           b.str(s.state.empty() ? kStateWaiting
+	                                                       : s.state);
+	b.raw(',');
 	b.key(Field::kCreatedAt);       b.str(s.createdAt);    b.raw(',');
 	// lastSeen is the server's monotonic clock; we emit an ISO time
 	// for debug inspection — clients don't parse it.
@@ -346,11 +398,16 @@ struct CreateReq {
 	int         maxPlayers      = 0;
 	int         protocolVersion = 0;
 	bool        requiresCode    = false;
+	// v2 firmware pre-flight + hardware tag.
+	std::string kernelCRC32;
+	std::string basicCRC32;
+	std::string hardwareMode;
 };
 
 struct HeartbeatReq {
 	std::string token;
 	int         playerCount = 0;
+	std::string state;          // optional; "" = no change
 };
 
 bool ParseCreate(const std::string& body, CreateReq& r,
@@ -373,6 +430,9 @@ bool ParseCreate(const std::string& body, CreateReq& r,
 		else if (key == Field::kRegion)          c.parseString(r.region);
 		else if (key == Field::kVisibility)      c.parseString(r.visibility);
 		else if (key == Field::kCartArtHash)     c.parseString(r.cartArtHash);
+		else if (key == Field::kKernelCRC32)     c.parseString(r.kernelCRC32);
+		else if (key == Field::kBasicCRC32)      c.parseString(r.basicCRC32);
+		else if (key == Field::kHardwareMode)    c.parseString(r.hardwareMode);
 		else if (key == Field::kPlayerCount)     c.parseInt(r.playerCount);
 		else if (key == Field::kMaxPlayers)      c.parseInt(r.maxPlayers);
 		else if (key == Field::kProtocolVersion) c.parseInt(r.protocolVersion);
@@ -404,6 +464,7 @@ bool ParseHeartbeat(const std::string& body, HeartbeatReq& r,
 		if (!c.match(':'))       { errOut = "invalid json"; return false; }
 		if      (key == Field::kToken)       c.parseString(r.token);
 		else if (key == Field::kPlayerCount) c.parseInt(r.playerCount);
+		else if (key == Field::kState)       c.parseString(r.state);
 		else { if (!c.parseNull() && !c.skipValue()) {
 			errOut = "invalid json"; return false;
 		} }
@@ -442,6 +503,22 @@ std::string ValidateCreate(CreateReq& r) {
 		return "cartArtHash: <=64 hex chars";
 	for (char c : r.cartArtHash)
 		if (!IsHexChar(c)) return "cartArtHash: hex digits only";
+
+	// v2 fields — all optional, but if present must be well-formed.
+	auto checkCRCHex = [](const std::string& s, const char *name)
+	    -> std::string {
+		if (s.empty()) return {};
+		if (s.size() != 8) return std::string(name) + ": 8 hex chars required";
+		for (char c : s) if (!IsHexChar(c))
+			return std::string(name) + ": hex digits only";
+		return {};
+	};
+	if (auto e = checkCRCHex(r.kernelCRC32, "kernelCRC32"); !e.empty())
+		return e;
+	if (auto e = checkCRCHex(r.basicCRC32, "basicCRC32"); !e.empty())
+		return e;
+	if ((int)r.hardwareMode.size() > kHardwareModeMax)
+		return "hardwareMode: <=16 chars";
 	return {};
 }
 
@@ -559,6 +636,24 @@ void Install(httplib::Server& srv, Store& store) {
 			res.set_content(buf, "text/plain; charset=utf-8");
 		});
 
+	// v2: aggregate stats — single small JSON object the Browser
+	// fetches once per refresh tick to render the "X sessions • Y in
+	// play • Z hosts" footer.  Cheap O(N) walk under the same lock
+	// List takes; no per-user presence tracking required.
+	srv.Get(kPathStats,
+		[&store](const httplib::Request&, httplib::Response& res) {
+			Store::Stats st = store.ComputeStats();
+			JsonBuilder b;
+			b.raw('{');
+			b.key(Field::kSessionCount); b.num(st.sessions); b.raw(',');
+			b.key(Field::kWaitingCount); b.num(st.waiting);  b.raw(',');
+			b.key(Field::kPlayingCount); b.num(st.playing);  b.raw(',');
+			b.key(Field::kHostCount);    b.num(st.hosts);
+			b.raw('}');
+			res.status = 200;
+			res.set_content(std::move(b.s), "application/json");
+		});
+
 	srv.Get(kPathSessions,
 		[&store](const httplib::Request&, httplib::Response& res) {
 			auto list = store.List();
@@ -594,6 +689,9 @@ void Install(httplib::Server& srv, Store& store) {
 			in.visibility   = r.visibility;
 			in.requiresCode = r.requiresCode;
 			in.cartArtHash  = r.cartArtHash;
+			in.kernelCRC32  = r.kernelCRC32;
+			in.basicCRC32   = r.basicCRC32;
+			in.hardwareMode = r.hardwareMode;
 
 			Session s = store.Create(in);
 			if (s.id.empty()) {
@@ -636,7 +734,8 @@ void Install(httplib::Server& srv, Store& store) {
 			if (!ParseHeartbeat(req.body, hr, err)) {
 				WriteErr(res, 400, err); return true;
 			}
-			int code = store.Heartbeat(id, hr.token, hr.playerCount);
+			int code = store.Heartbeat(id, hr.token, hr.playerCount,
+			                           hr.state);
 			if (code == 200) {
 				JsonBuilder b;
 				b.raw('{');

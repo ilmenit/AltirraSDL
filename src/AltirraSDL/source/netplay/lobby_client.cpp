@@ -196,6 +196,10 @@ bool ReadSession(JsonCursor& c, LobbySession& s) {
 		else if (key == "cartArtHash")    c.parseString(s.cartArtHash);
 		else if (key == "createdAt")      c.parseString(s.createdAt);
 		else if (key == "lastSeen")       c.parseString(s.lastSeen);
+		else if (key == "kernelCRC32")    c.parseString(s.kernelCRC32);
+		else if (key == "basicCRC32")     c.parseString(s.basicCRC32);
+		else if (key == "hardwareMode")   c.parseString(s.hardwareMode);
+		else if (key == "state")          c.parseString(s.state);
 		else if (key == "playerCount")    c.parseInt(s.playerCount);
 		else if (key == "maxPlayers")     c.parseInt(s.maxPlayers);
 		else if (key == "protocolVersion") c.parseInt(s.protocolVersion);
@@ -335,6 +339,9 @@ bool LobbyClient::Create(const LobbyCreateRequest& req,
 	AppendKV(body, "visibility",      req.visibility,      first);
 	AppendKV(body, "requiresCode",    req.requiresCode,    first);
 	AppendKV(body, "cartArtHash",     req.cartArtHash,     first);
+	AppendKV(body, "kernelCRC32",     req.kernelCRC32,     first);
+	AppendKV(body, "basicCRC32",      req.basicCRC32,      first);
+	AppendKV(body, "hardwareMode",    req.hardwareMode,    first);
 	body.push_back('}');
 
 	HttpRequest hr;
@@ -406,13 +413,15 @@ bool LobbyClient::List(std::vector<LobbySession>& out) {
 
 bool LobbyClient::Heartbeat(const std::string& sessionId,
                             const std::string& token,
-                            int playerCount) {
+                            int playerCount,
+                            const std::string& state) {
 	std::string body;
 	body.reserve(128);
 	body.push_back('{');
 	bool first = true;
 	AppendKV(body, "token",       token,       first);
 	AppendKV(body, "playerCount", playerCount, first);
+	if (!state.empty()) AppendKV(body, "state", state, first);
 	body.push_back('}');
 
 	std::string path = "/v1/session/";
@@ -463,6 +472,50 @@ bool LobbyClient::Delete(const std::string& sessionId,
 	}
 	FormatHttpError(mLastError, resp);
 	return false;
+}
+
+bool LobbyClient::Stats(LobbyStats& out) {
+	out = LobbyStats{};
+	HttpRequest hr;
+	hr.method    = "GET";
+	hr.host      = mEp.host.c_str();
+	hr.port      = mEp.port;
+	hr.path      = "/v1/stats";
+	hr.timeoutMs = mEp.timeoutMs;
+
+	HttpResponse resp;
+	HttpRequestSync(hr, resp); mLastStatus = resp.status;
+	if (resp.status != 200) {
+		FormatHttpError(mLastError, resp);
+		return false;
+	}
+	JsonCursor c{(const char*)resp.body.data(),
+	             (const char*)resp.body.data() + resp.body.size()};
+	if (!c.match('{')) { mLastError = "expected JSON object"; return false; }
+	if (c.match('}')) { mLastError.clear(); return true; }
+	for (;;) {
+		std::string key;
+		if (!c.parseString(key)) {
+			mLastError = "malformed stats response"; return false;
+		}
+		if (!c.match(':')) {
+			mLastError = "malformed stats response"; return false;
+		}
+		if      (key == "sessions") c.parseInt(out.sessions);
+		else if (key == "waiting")  c.parseInt(out.waiting);
+		else if (key == "playing")  c.parseInt(out.playing);
+		else if (key == "hosts")    c.parseInt(out.hosts);
+		else { if (!c.parseNull() && !c.skipValue()) {
+			mLastError = "malformed stats response"; return false;
+		} }
+		if (!c.ok) { mLastError = "malformed stats response"; return false; }
+		if (c.match(',')) continue;
+		if (c.match('}')) break;
+		mLastError = "malformed stats response";
+		return false;
+	}
+	mLastError.clear();
+	return true;
 }
 
 } // namespace ATNetplay

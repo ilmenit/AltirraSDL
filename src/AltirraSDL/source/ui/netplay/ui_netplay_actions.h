@@ -128,4 +128,24 @@ void StartHostingAction();
 // session, and stops any join.
 void StopHostingAction();
 
+// --- Lobby v2 pre-flight ------------------------------------------------
+//
+// Compute compatibility of a lobby session against the joiner's
+// installed firmware.  The lobby publishes the host's kernel + BASIC
+// CRC32s so we can colour-code the Browser without having to round-trip
+// a handshake.
+
+enum class JoinCompat : uint8_t {
+	Unknown,        // host pre-dates v2 schema (no CRCs published)
+	Compatible,     // both required CRCs resolve in our firmware mgr
+	MissingKernel,  // OS ROM not installed locally
+	MissingBasic,   // BASIC ROM not installed locally
+};
+
+// outMissingCRCHex (optional, capacity >= 9) receives the offending
+// CRC as 8-char uppercase hex when the result is MissingKernel/Basic.
+JoinCompat CheckJoinCompat(const std::string& kernelCRC32Hex,
+                           const std::string& basicCRC32Hex,
+                           char *outMissingCRCHex = nullptr);
+
 } // namespace ATNetplayUI

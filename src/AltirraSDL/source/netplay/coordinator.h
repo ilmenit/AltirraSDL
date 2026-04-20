@@ -148,6 +148,31 @@ public:
 	}
 	void OnFrameAdvanced(uint32_t simStateHash);
 
+	// ---- prompt-accept gate ----------------------------------------------
+	//
+	// When enabled (host only), an arriving Hello that passes all the
+	// usual validation (protocol, CRCs, TOS, entry code) does NOT
+	// auto-progress to SendingSnapshot.  Instead the coordinator sits
+	// in WaitingForJoiner with a "pending decision" flag set; the host
+	// UI polls for it, shows an Allow/Deny modal, and calls
+	// AcceptPendingJoiner() or RejectPendingJoiner() to resume the
+	// handshake.  Off by default.
+	void SetPromptAccept(bool enable) { mPromptAccept = enable; }
+
+	bool HasPendingDecision() const { return mHasPendingDecision; }
+
+	// NUL-terminated joiner handle for the currently-pending Hello;
+	// empty string when no decision is pending.  Buffer is owned by
+	// the coordinator; copy if you need to keep it.
+	const char* PendingJoinerHandle() const { return mPendingDecisionHandle; }
+
+	// Resolve the pending Hello.  No-op when nothing is pending.  After
+	// Accept, the host enters SendingSnapshot (or holds for the upload
+	// bytes).  After Reject, the host returns to WaitingForJoiner and
+	// can accept a different Hello later.
+	void AcceptPendingJoiner();
+	void RejectPendingJoiner();
+
 	// ---- termination ------------------------------------------------------
 
 	// Send a NetBye and transition to Ended.  Idempotent.
@@ -226,6 +251,14 @@ private:
 	bool     mHostHasPendingJoiner = false;
 	Endpoint mPendingJoiner;
 	uint8_t  mPendingJoinerEntryCode[kEntryCodeHashLen] = {};
+
+	// Prompt-accept gate (host only).  When mPromptAccept is true and
+	// a valid Hello arrives, we stash it here and wait for the UI to
+	// call AcceptPendingJoiner() or RejectPendingJoiner().
+	bool     mPromptAccept       = false;
+	bool     mHasPendingDecision = false;
+	Endpoint mPendingDecisionPeer;
+	char     mPendingDecisionHandle[kHandleLen + 1] = {};
 
 	// Snapshot channels (only one is active at a time).
 	std::vector<uint8_t> mSnapTxBuffer;   // host's copy of what we're uploading

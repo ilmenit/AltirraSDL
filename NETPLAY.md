@@ -84,6 +84,26 @@ HTTP lobby in your `lobby.ini`, not just the first.
    title. First frame is synchronised — you'll see the boot
    animation on both screens at the same emulated tick.
 
+### Controlling who joins
+
+By default AltirraSDL auto-accepts every join request that passes
+basic validation (matching firmware CRCs, correct entry code).  To
+require manual approval, open **Online Play → Preferences → Hosting**
+and switch **When someone joins** to **Prompt me**.  From then on,
+each incoming joiner raises a modal:
+
+```
+Eve wants to join your game:
+  Joust
+
+Auto-decline in 17s            [Allow]  [Deny]
+```
+
+Closing the dialog or letting the 20-second timer elapse counts as
+Deny — the joiner sees a clean "host rejected: manual decline"
+rather than hanging in "Connecting…".  The host's listing stays up
+for the next attempt.
+
 ---
 
 ## Pointing at a different lobby
@@ -342,6 +362,11 @@ the joiner has imported. The joiner opens **System → Configure
 System → Firmware** and imports the exact same ROM the host uses
 (or picks a firmware both peers already have in common in the host's
 Add-Game dialog).
+
+In the Browser, sessions whose firmware you don't have are coloured
+red with the OS / BASIC CRC sub-line, and the **Join** button is
+disabled with a hint like `(missing OS firmware)`. Hover the row to
+see the exact CRC32 you need to import.
 
 **"Frame 0 desync detected"**
 

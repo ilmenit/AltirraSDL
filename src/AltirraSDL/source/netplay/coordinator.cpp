@@ -286,6 +286,30 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		}
 	}
 
+	// Hello passed validation.  If prompt-accept is enabled, stash the
+	// peer in the pending-decision slot and wait for the UI to call
+	// AcceptPendingJoiner / RejectPendingJoiner.  We stay in
+	// WaitingForJoiner so a Reject can return to listening cleanly.
+	if (mPromptAccept && !mHasPendingDecision) {
+		mHasPendingDecision = true;
+		mPendingDecisionPeer = from;
+		std::memset(mPendingDecisionHandle, 0,
+			sizeof mPendingDecisionHandle);
+		std::memcpy(mPendingDecisionHandle, hello.playerHandle,
+			kHandleLen);
+		char ep[32] = {};
+		from.Format(ep, sizeof ep);
+		g_ATLCNetplay("host: incoming join from \"%s\" at %s — "
+			"awaiting host decision",
+			mPendingDecisionHandle, ep);
+		return;
+	}
+	if (mPromptAccept && mHasPendingDecision) {
+		// We're already prompting the host about somebody else.  Drop
+		// duplicate Hellos until that decision resolves.
+		return;
+	}
+
 	// Hello accepted.  Lock in the peer.
 	mPeer = from;
 	mPeerKnown = true;
@@ -313,6 +337,51 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	mPhase = Phase::SendingSnapshot;
 	SendWelcome();
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
+}
+
+// ---------------------------------------------------------------------------
+// Prompt-accept gate
+// ---------------------------------------------------------------------------
+
+void Coordinator::AcceptPendingJoiner() {
+	if (!mHasPendingDecision) return;
+	if (mPhase != Phase::WaitingForJoiner) {
+		// Phase moved out from under us (timeout, End, etc.).  Drop
+		// the decision silently.
+		mHasPendingDecision = false;
+		return;
+	}
+
+	// Adopt the pending peer and run the same path the auto-accept
+	// branch takes (see HandleHelloFromJoiner).
+	mPeer      = mPendingDecisionPeer;
+	mPeerKnown = true;
+	mHasPendingDecision = false;
+
+	char ep[32] = {};
+	mPeer.Format(ep, sizeof ep);
+	g_ATLCNetplay("host: accepted joiner \"%s\" from %s (manual approval)",
+		mPendingDecisionHandle, ep);
+
+	if (mSnapTxBuffer.empty()) {
+		mHostHasPendingJoiner = true;
+		mPendingJoiner = mPeer;
+		mPhase = Phase::SendingSnapshot;
+		return;
+	}
+
+	mPhase = Phase::SendingSnapshot;
+	SendWelcome();
+	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
+}
+
+void Coordinator::RejectPendingJoiner() {
+	if (!mHasPendingDecision) return;
+	g_ATLCNetplay("host: rejected joiner \"%s\" (manual decline)",
+		mPendingDecisionHandle);
+	SendReject(kRejectHostRejected, mPendingDecisionPeer);
+	mHasPendingDecision = false;
+	// Stay in WaitingForJoiner — another peer may arrive.
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +567,12 @@ void Coordinator::HandleBye(const NetBye& b) {
 void Coordinator::End(uint32_t byeReason) {
 	if (mPhase == Phase::Idle || mPhase == Phase::Ended || mPhase == Phase::Failed)
 		return;
+	// Tell a still-pending joiner that we're not coming — without this
+	// they sit in "Connecting…" until their own handshake timeout fires.
+	if (mHasPendingDecision) {
+		SendReject(kRejectHostRejected, mPendingDecisionPeer);
+		mHasPendingDecision = false;
+	}
 	SendBye(byeReason);
 	mPhase = Phase::Ended;
 }

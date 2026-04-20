@@ -78,14 +78,30 @@ curl -sS http://localhost:8080/healthz   # → ok sessions=0
   `protocolVersion` (>0), optional `region` (≤32), optional
   `visibility` ("public"|"private"), optional `requiresCode` (only
   meaningful when visibility is "private"), optional `cartArtHash`
-  (≤64 hex chars).
+  (≤64 hex chars), optional **v2** `kernelCRC32` / `basicCRC32`
+  (8-char hex; published so joiners can pre-flight firmware before
+  attempting to connect), optional **v2** `hardwareMode`
+  ("800XL"|"5200"|…, ≤16 chars).
 - `GET /v1/sessions` — List active sessions (newest-first,
-  capped at 500).
+  capped at 500). Each entry now carries an additional
+  **v2** `state` field: `"waiting"` (joinable) or `"playing"`
+  (in session — kept in the listing so the lobby looks alive but
+  joiners suppress Join). Hosts also publish their CRC / hardware
+  fields here when set.
 - `GET /v1/session/{id}` — Fetch a single session.
 - `POST /v1/session/{id}/heartbeat` — Keep-alive; body carries
-  `{token, playerCount}`. Bad token → 401, unknown id → 404.
+  `{token, playerCount}` plus optional **v2** `state`
+  ("waiting"|"playing") for the host to flip in/out of session
+  visibility on its 30-second heartbeat cadence — no extra requests
+  needed. Bad token → 401, unknown id → 404.
 - `DELETE /v1/session/{id}` — Remove; `X-Session-Token` header
   required. Bad token → 401, unknown id → 404.
+- **v2** `GET /v1/stats` — Aggregate counts:
+  `{sessions, waiting, playing, hosts}`. Single small JSON object
+  the Browser fetches once per refresh cycle so it can render a
+  "12 sessions • 4 in play • 7 hosts" footer without enumerating
+  the full list. O(N) under the same lock List takes; cheap with
+  `kListCap = 500`.
 - `GET /healthz` — Liveness (also exercises the session-store mutex,
   so a deadlocked store fails its health check).
 

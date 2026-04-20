@@ -130,6 +130,26 @@ const char* HostLastError(const char* gameId);
 // coordinator so it can stream it to the joiner.  No-op for unknown id.
 void SubmitHostSnapshot(const char* gameId, const uint8_t* data, size_t len);
 
+// --- Prompt-accept (host) -------------------------------------------------
+//
+// When enabled, an arriving Hello passes validation and then waits for
+// the host UI to call HostAcceptPending() / HostRejectPending().  The
+// UI polls HostHasPendingDecision() each tick and shows an Allow/Deny
+// modal when it flips true.  Off by default — auto-accept is the v1
+// happy path.
+
+void HostSetPromptAccept(const char* gameId, bool enable);
+bool HostHasPendingDecision(const char* gameId);
+
+// Copy the pending joiner's handle into outBuf (NUL-terminated, capped
+// at outBufSize).  Returns false (and writes "") if no decision is
+// pending or the offer is unknown.
+bool HostPendingJoinerHandle(const char* gameId,
+                             char* outBuf, size_t outBufSize);
+
+void HostAcceptPending(const char* gameId);
+void HostRejectPending(const char* gameId);
+
 // --- Joiner (single) -------------------------------------------------------
 
 bool StartJoin(const char* hostAddress,

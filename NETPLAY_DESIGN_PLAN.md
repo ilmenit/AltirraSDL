@@ -597,25 +597,42 @@ Four steps light up in order; current step shows a spinner + a
 one-line detail ("12/24 chunks").  On error, the step turns red and
 the detail becomes the reason.  No more infinite hangs.
 
-### 7.6 Peer-accept UX — [planned]
+### 7.6 Peer-accept UX — [done]
 
-`Prefs::acceptMode` already exists with three values (AutoAccept,
-PromptMe, ReviewEach) but the code currently always auto-accepts.
-Wire the modal:
+`Prefs::acceptMode` is two-valued: `AutoAccept` (default) and
+`PromptMe`.  When `PromptMe` is set, the host coordinator holds a
+validated `NetHello` in a pending-decision slot (`Coordinator::
+HasPendingDecision`) instead of auto-progressing into
+`SendingSnapshot`.  `ReconcileHostedGames` polls the slot; when it
+flips true, the host UI populates `session.pendingAccept*` and
+navigates to the new `Screen::AcceptJoinPrompt`:
 
 ```
- ┌─ Join Request ────────────────────────────┐
- │ Eve (EU, 42 ms) wants to join your         │
- │ Joust session.                              │
+ ┌─ Join request ────────────────────────────┐
+ │ Eve wants to join your game:              │
+ │   Joust                                    │
+ │                                             │
+ │ Auto-decline in 17s                        │
  │                                             │
  │ ──────────────────────────────────────────  │
- │ Auto-decline in 20 s            [Reject]   │
- │                                  [Accept]  │
+ │ [Allow]                          [Deny]    │
  └─────────────────────────────────────────────┘
 ```
 
-`ReviewEach` omits the countdown.  Paired with the notifications
-already live in §7.7.
+Allow → `HostAcceptPending(gameId)` → coord transitions to
+`SendingSnapshot` and the existing boot+snapshot edge in
+ReconcileHostedGames fires.  Deny / window-X / 20 s elapsed →
+`HostRejectPending(gameId)` → coord sends `kRejectHostRejected`
+and stays Listed for the next attempt.  Pref change is propagated to
+running coords every reconcile tick (cheap, idempotent
+`SetPromptAccept`).  Paired with the notifications already live in
+§7.7 ("`<peer>` wants to join `<game>`" toast / chime).
+
+We deliberately dropped the originally-planned `ReviewEach` value:
+it was just `PromptMe` without the timeout, and "prompt forever" is
+a foot-gun that strands joiners when the host is AFK.  Two values
+are easier to explain in the radio group and never leave the joiner
+without a verdict.
 
 ### 7.7 Host notifications — [done]
 
@@ -702,21 +719,50 @@ port      = 26101
 ```
 POST   /v1/session        { cartName, hostHandle, hostEndpoint, region,
                             playerCount, maxPlayers, protocolVersion,
-                            visibility, requiresCode, cartArtHash }
-                          → { sessionId, ttlSeconds }
-GET    /v1/sessions       → [sessions]
-POST   /v1/session/{id}/heartbeat
+                            visibility, requiresCode, cartArtHash,
+                            kernelCRC32, basicCRC32, hardwareMode }
+                          → { sessionId, token, ttlSeconds }
+GET    /v1/sessions       → [sessions]   ; each entry adds state +
+                                          ; kernelCRC32 + basicCRC32 +
+                                          ; hardwareMode
+GET    /v1/stats          → { sessions, waiting, playing, hosts }
+POST   /v1/session/{id}/heartbeat        ; body: { token, playerCount,
+                                          ;        state? }
 DELETE /v1/session/{id}
 ```
 
-(Future v2+: `POST /v1/session/{id}/join` for rendezvous /
+(Future v3: `POST /v1/session/{id}/join` for rendezvous /
 hole-punching; same schema plus `joinerEndpoint`.)
 
+**v2 additions** (everything pre-handshake the joiner needs to make a
+sensible UI decision):
+
+- `kernelCRC32` / `basicCRC32` (8-char hex strings, optional).  The
+  Browser passes them to `ATFirmwareManager` via `CheckJoinCompat`;
+  rows whose CRCs aren't installed locally are coloured red and the
+  Join button is disabled with a "missing OS firmware [XXXXXXXX]"
+  hint — instead of the user joining, downloading a snapshot, then
+  hitting the same error after the handshake.
+- `hardwareMode` ("800XL", "5200", …) — sub-row label so the joiner
+  sees the host's machine type at a glance.
+- `state` ("waiting" | "playing") — hosts no longer Delete on
+  connect; they flip state to `"playing"` on the next heartbeat.
+  The Browser keeps the row visible with an "in play" label and the
+  Join button suppressed.  Net effect: the lobby looks alive even
+  when nothing's open right now ("12 sessions • 4 in play • 7 hosts"
+  in the footer is much more reassuring than "0 sessions").
+- `GET /v1/stats` — single small JSON the Browser fetches once per
+  10 s refresh cycle; aggregated client-side across every enabled
+  HTTP lobby in `lobby.ini` (federated sum of `sessions`, `waiting`,
+  `playing`, `hosts`).  Free-tier rate-limit budget impact: 6 List
+  + 6 Stats + 2 Heartbeat = 14 req/min per browsing user, well under
+  the 60 req/min ceiling.
+
 **Lobby never sees game traffic.**  Inputs, snapshots, media — all
-peer-to-peer.  Lobby is a session directory + TTL expiry, nothing
-more.  Reference server: ~150 lines of Go stdlib, deployed to Oracle
-Cloud Frankfurt, auto-deploy on push to `main` in the
-`altirra-sdl-lobby` repo.
+peer-to-peer.  Lobby is a session directory + TTL expiry + aggregate
+stats, nothing more.  Reference server: ~800 lines of C++ on
+cpp-httplib, deployed to Oracle Cloud Frankfurt, auto-deploy on push
+to `main` in the `altirra-sdl-lobby` repo.
 
 ### NAT reality
 
@@ -801,8 +847,8 @@ that makes the next step testable":
 4. **Connect-flow progress steps (§7.5)** — wire the visible
    phase-by-phase modal on the joiner.  Replaces the infinite
    "Connecting…" hang with actionable status.
-5. **Peer-accept modal (§7.6)** — wire PromptMe / ReviewEach to
-   actually prompt; add 20 s countdown.
+5. **Peer-accept modal (§7.6)** — done.  PromptMe holds Hello in
+   coord, host UI raises Allow/Deny modal with 20 s auto-decline.
 6. **In-session HUD (§7.8)** — top-right overlay + disconnect
    button.  Low risk, high UX value.
 7. **Phase 8 — real input capture + inject.**  Replaces

@@ -18,7 +18,11 @@ namespace ATLobby {
 
 // Wire protocol version.  Increment when changing field names or
 // adding a required field.
-inline constexpr int kProtocolVersion = 1;
+//
+// v2 — added kernelCRC32, basicCRC32, hardwareMode (firmware pre-flight),
+//      state (waiting|playing — playing sessions stay listed but
+//      non-joinable), and GET /v1/stats endpoint.
+inline constexpr int kProtocolVersion = 2;
 
 // Session TTL in seconds.  Clients should heartbeat well inside this
 // window; 30 s is the configured cadence on the client side.
@@ -49,6 +53,8 @@ inline constexpr int kCartNameMax      = 64;
 inline constexpr int kHostHandleMax    = 32;
 inline constexpr int kRegionMax        = 32;
 inline constexpr int kCartArtHashMax   = 64;
+inline constexpr int kHardwareModeMax  = 16;   // "800XL", "5200", "1200XL" etc.
+inline constexpr int kStateMax         = 16;   // "waiting" / "playing"
 inline constexpr int kMinPlayers       = 2;
 inline constexpr int kMaxPlayersLimit  = 8;
 
@@ -60,6 +66,7 @@ inline constexpr int kMaxRequestBodyBytes = 8 * 1024;
 // Route paths.
 // -------------------------------------------------------------------
 inline constexpr const char *kPathHealthz         = "/healthz";
+inline constexpr const char *kPathStats           = "/v1/stats";
 inline constexpr const char *kPathSessions        = "/v1/sessions";
 inline constexpr const char *kPathSession         = "/v1/session";
 // Dynamic ID suffix; the server pattern-matches on kPathSession + "/"
@@ -91,6 +98,18 @@ namespace Field {
     inline constexpr const char *kCreatedAt       = "createdAt";
     inline constexpr const char *kLastSeen        = "lastSeen";
 
+    // v2: firmware pre-flight + session state.
+    inline constexpr const char *kKernelCRC32     = "kernelCRC32";  // hex string, 8 chars
+    inline constexpr const char *kBasicCRC32      = "basicCRC32";   // hex string, 8 chars; "" if BASIC off
+    inline constexpr const char *kHardwareMode    = "hardwareMode"; // "800XL" | "5200" | etc.
+    inline constexpr const char *kState           = "state";        // "waiting" | "playing"
+
+    // v2: /v1/stats response.
+    inline constexpr const char *kSessionCount    = "sessions";
+    inline constexpr const char *kWaitingCount    = "waiting";
+    inline constexpr const char *kPlayingCount    = "playing";
+    inline constexpr const char *kHostCount       = "hosts";
+
     // Error response.
     inline constexpr const char *kError           = "error";
 }
@@ -98,5 +117,9 @@ namespace Field {
 // Visibility values.
 inline constexpr const char *kVisibilityPublic  = "public";
 inline constexpr const char *kVisibilityPrivate = "private";
+
+// Session state values.
+inline constexpr const char *kStateWaiting = "waiting";
+inline constexpr const char *kStatePlaying = "playing";
 
 } // namespace ATLobby

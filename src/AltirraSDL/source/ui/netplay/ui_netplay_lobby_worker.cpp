@@ -81,10 +81,13 @@ void LobbyWorker::ThreadMain() {
 				break;
 			case LobbyOp::Heartbeat:
 				out.ok = client.Heartbeat(q.req.sessionId, q.req.token,
-					q.req.playerCount);
+					q.req.playerCount, q.req.state);
 				break;
 			case LobbyOp::Delete:
 				out.ok = client.Delete(q.req.sessionId, q.req.token);
+				break;
+			case LobbyOp::Stats:
+				out.ok = client.Stats(out.stats);
 				break;
 		}
 		if (!out.ok) out.error = client.LastError();

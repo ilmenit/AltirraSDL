@@ -424,6 +424,45 @@ void SubmitHostSnapshot(const char* gameId, const uint8_t* data, size_t len) {
 	h->coord->SubmitSnapshotForUpload(data, len);
 }
 
+void HostSetPromptAccept(const char* gameId, bool enable) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return;
+	h->coord->SetPromptAccept(enable);
+}
+
+bool HostHasPendingDecision(const char* gameId) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return false;
+	return h->coord->HasPendingDecision();
+}
+
+bool HostPendingJoinerHandle(const char* gameId,
+                             char* outBuf, size_t outBufSize) {
+	if (outBuf && outBufSize) outBuf[0] = 0;
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return false;
+	if (!h->coord->HasPendingDecision()) return false;
+	const char* src = h->coord->PendingJoinerHandle();
+	if (outBuf && outBufSize) {
+		size_t n = 0;
+		while (src[n] && n + 1 < outBufSize) { outBuf[n] = src[n]; ++n; }
+		outBuf[n] = 0;
+	}
+	return true;
+}
+
+void HostAcceptPending(const char* gameId) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return;
+	h->coord->AcceptPendingJoiner();
+}
+
+void HostRejectPending(const char* gameId) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return;
+	h->coord->RejectPendingJoiner();
+}
+
 // -------------------------------------------------------------------
 // Joiner
 // -------------------------------------------------------------------
