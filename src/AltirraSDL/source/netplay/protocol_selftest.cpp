@@ -30,13 +30,15 @@ static int fails = 0;
 
 static void testWireSizes() {
 	CHECK(kWireHelloSize    == 90);
-	CHECK(kWireWelcomeSize  == 88);
+	CHECK(kWireBootCfgSize  == 40);
+	CHECK(kWireWelcomeSize  == 128);
 	CHECK(kWireRejectSize   == 8);
 	CHECK(kWireInputPktSize == 36);
 	CHECK(kWireByeSize      == 8);
 	CHECK(kWireChunkHdrSize == 16);
 	CHECK(kWireAckSize      == 8);
 	CHECK(kRedundancyR      == 5);
+	CHECK(kProtocolVersion  == 3);
 }
 
 static void testMagicAnchors() {
@@ -59,7 +61,7 @@ static void testMagicAnchors() {
 
 static void testHelloRoundTrip() {
 	NetHello in;
-	in.protocolVersion = 2;
+	in.protocolVersion = kProtocolVersion;
 	in.flags = 0x1234;
 	for (size_t i = 0; i < kSessionNonceLen; ++i) in.sessionNonce[i] = (uint8_t)(0x10 + i);
 	in.osRomHash = 0xDEADBEEFCAFEF00DULL;
@@ -75,7 +77,7 @@ static void testHelloRoundTrip() {
 	NetHello out;
 	CHECK(DecodeHello(buf, n, out) == DecodeResult::Ok);
 	CHECK(out.magic == kMagicHello);
-	CHECK(out.protocolVersion == 2);
+	CHECK(out.protocolVersion == kProtocolVersion);
 	CHECK(out.flags == 0x1234);
 	CHECK(std::memcmp(out.sessionNonce, in.sessionNonce, kSessionNonceLen) == 0);
 	CHECK(out.osRomHash == 0xDEADBEEFCAFEF00DULL);
@@ -95,6 +97,19 @@ static void testWelcomeRoundTrip() {
 	in.snapshotBytes = 65536;
 	in.snapshotChunks = 55;
 	in.settingsHash = 0xABCDEF0011223344ULL;
+	// BootConfig (v3)
+	in.boot.hardwareMode    = 1;          // 800XL
+	in.boot.memoryMode      = 7;          // 64K
+	in.boot.videoStandard   = 0;          // NTSC
+	in.boot.basicEnabled    = 1;
+	in.boot.cpuMode         = 0;          // 6502
+	in.boot.sioAcceleration = 1;
+	in.boot.kernelCRC32     = 0x1F9CD270u;
+	in.boot.basicCRC32      = 0x7D684184u;
+	in.boot.masterSeed      = 0xDEADBEEFu;
+	in.boot.bootFrames      = 0;
+	in.boot.gameFileCRC32   = 0xCAFEBABEu;
+	std::memcpy(in.boot.gameExtension, ".atr\0\0\0\0", 8);
 
 	uint8_t buf[kMaxDatagramSize];
 	size_t n = EncodeWelcome(in, buf, sizeof(buf));
@@ -108,6 +123,18 @@ static void testWelcomeRoundTrip() {
 	CHECK(out.snapshotBytes == 65536);
 	CHECK(out.snapshotChunks == 55);
 	CHECK(out.settingsHash == 0xABCDEF0011223344ULL);
+	CHECK(out.boot.hardwareMode    == 1);
+	CHECK(out.boot.memoryMode      == 7);
+	CHECK(out.boot.videoStandard   == 0);
+	CHECK(out.boot.basicEnabled    == 1);
+	CHECK(out.boot.cpuMode         == 0);
+	CHECK(out.boot.sioAcceleration == 1);
+	CHECK(out.boot.kernelCRC32     == 0x1F9CD270u);
+	CHECK(out.boot.basicCRC32      == 0x7D684184u);
+	CHECK(out.boot.masterSeed      == 0xDEADBEEFu);
+	CHECK(out.boot.bootFrames      == 0);
+	CHECK(out.boot.gameFileCRC32   == 0xCAFEBABEu);
+	CHECK(std::memcmp(out.boot.gameExtension, ".atr\0\0\0\0", 8) == 0);
 }
 
 static void testRejectRoundTrip() {

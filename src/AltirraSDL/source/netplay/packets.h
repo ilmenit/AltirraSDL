@@ -176,4 +176,11 @@ constexpr size_t kWireAckSize       = 8;
 // Maximum UDP datagram we need to send at once; chunks are the biggest.
 constexpr size_t kMaxDatagramSize = kWireChunkHdrSize + kSnapshotChunkSize;
 
+// Compile-time guard against NetWelcome layout drift.  The v3 wire
+// layout is 88 base bytes + 40 BootConfig bytes = 128.  Anyone adding
+// a field to NetBootConfig must also bump kProtocolVersion and update
+// EncodeWelcome/DecodeWelcome in protocol.cpp.
+static_assert(kWireBootCfgSize == 40, "NetBootConfig wire layout drift");
+static_assert(kWireWelcomeSize == 128, "NetWelcome wire layout drift");
+
 } // namespace ATNetplay
