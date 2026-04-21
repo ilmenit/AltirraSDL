@@ -663,6 +663,13 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 		ATNetplayUI_RenderMobile(sim, uiState, mobileState, window);
 		return;
 	}
+	// Even when the Online Play overlay is closed, the in-session
+	// HUD ("LIVE / Frame / Peer / Disconnect") needs to render during
+	// Lockstepping so the user can see connection health and end the
+	// session.  RenderMobile early-returns on Closed for the dispatch
+	// half, and the HUD is cheap to call every frame (internal no-op
+	// when not Lockstepping).
+	ATNetplayUI_RenderMobile(sim, uiState, mobileState, window);
 #endif
 
 	switch (mobileState.currentScreen) {

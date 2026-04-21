@@ -229,13 +229,12 @@ void Coordinator::Poll(uint64_t nowMs) {
 	// game naturally pauses on both sides when peer packets stop
 	// arriving (our gate won't open), so there's no crash — but if
 	// the peer genuinely died or dropped off the network we'd otherwise
-	// sit frozen forever.  After kPeerTimeoutMs of silence, declare
-	// the session dead, tell them we're leaving (best-effort), and
-	// transition to Ended.  The UI surfaces this via the HUD
-	// "Peer: Xms ago" readout, so the user has ~10 s of visible
-	// warning before we give up.
+	// sit frozen forever.  The UI now shows an interactive "peer
+	// unresponsive" prompt at ~3 s; this long backstop only fires if
+	// the user dismissed the prompt and then walked away.  Auto-
+	// termination without user consent is explicitly unwanted.
 	if (mPhase == Phase::Lockstepping) {
-		constexpr uint64_t kPeerTimeoutMs = 10000;
+		constexpr uint64_t kPeerTimeoutMs = 600000;  // 10 minutes
 		if (mLoop.PeerTimedOut(nowMs, kPeerTimeoutMs)) {
 			g_ATLCNetplay("%s: peer silent for >%llu ms — timing out "
 				"(last packet %llu ms ago)",

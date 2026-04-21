@@ -73,7 +73,8 @@ void LobbyStatusIndicator(uint64_t nowMs) {
 		uint64_t age = (nowMs >= h.lastOkMs) ? nowMs - h.lastOkMs : 0;
 		uint64_t sec = age / 1000;
 		std::snprintf(buf, sizeof buf,
-			"Lobby: reachable  (%llus ago)", (unsigned long long)sec);
+			"Lobby reachable  (checked %llus ago)",
+			(unsigned long long)sec);
 		label = buf;
 	} else if (haveFail) {
 		// Red — most recent result was a failure.
@@ -82,15 +83,15 @@ void LobbyStatusIndicator(uint64_t nowMs) {
 			? "unreachable" : h.lastError.c_str();
 		std::snprintf(buf, sizeof buf, "Lobby: %s", reason);
 		label = buf;
+	} else {
+		label = "Connecting to the lobby...";
 	}
 
-	// ASCII-only marker — the bundled default ImGui font doesn't
-	// carry full Unicode glyph coverage, so U+25CF et al. render as
-	// "?" boxes.  Use bracketed letters for status and rely on
-	// colour to carry the signal.
-	const char *marker = okIsNewer ? "[OK]" : (haveFail ? "[!!]" : "[..]");
-	ImGui::TextColored(dotCol, "%s", marker);
-	ImGui::SameLine();
+	// Coloured bullet (•, U+2022) in the General Punctuation range —
+	// guaranteed to be in the font atlas per ui_fonts.cpp's glyph-
+	// range builder.  Colour carries the green/red/grey signal.
+	ImGui::TextColored(dotCol, "\xE2\x80\xA2");
+	ImGui::SameLine(0.0f, 6.0f);
 	if (okIsNewer)
 		ImGui::TextUnformatted(label);
 	else if (haveFail)
@@ -561,9 +562,9 @@ void DesktopJoinConfirm() {
 	ImGui::TextUnformatted(st.session.joinTarget.cartName.c_str());
 	ImGui::Spacing();
 	ImGui::TextWrapped(
-		"The host will send a snapshot of their running emulator so both "
-		"sides start from the same point. Your current game will be "
-		"replaced.");
+		"The host will send their game file and hardware settings. "
+		"Both sides cold-boot from that so the session starts "
+		"identically. Your current game will be replaced.");
 
 	ImGui::Separator();
 	if (ImGui::Button("Join", ImVec2(120, 0))) StartJoiningAction();
@@ -731,7 +732,7 @@ void DesktopPrefs() {
 	State& st = GetState();
 	CenterNext(ImVec2(520, 480));
 	bool open = true;
-	if (!ImGui::Begin("Netplay Preferences##netplay", &open,
+	if (!ImGui::Begin("Online Play Preferences##netplay", &open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
 		if (!open) Back();
@@ -779,14 +780,19 @@ void DesktopPrefs() {
 			ImGui::Checkbox("Flash window",        &st.prefs.notif.flashWindow);
 			ImGui::Checkbox("System notification", &st.prefs.notif.systemNotify);
 			ImGui::Checkbox("Chime",               &st.prefs.notif.playChime);
-			ImGui::Checkbox("Steal focus on attention",
-				&st.prefs.focusOnAttention);
+			// "Steal focus on attention" toggle intentionally removed —
+			// the pref is a dead field (no runtime code reads it).
 
 			ImGui::Spacing();
 			ImGui::SeparatorText("Default input delay");
 			ImGui::TextDisabled("  Buffer for the joiner's input — bigger absorbs more jitter, costs feel.");
 			ImGui::SliderInt("LAN (frames)",      &st.prefs.defaultInputDelayLan, 1, 10);
 			ImGui::SliderInt("Internet (frames)", &st.prefs.defaultInputDelayInternet, 1, 10);
+
+			ImGui::Spacing();
+			ImGui::SeparatorText("Display");
+			ImGui::Checkbox("Show game art in Online Play",
+				&st.prefs.showBrowserArt);
 			ImGui::EndTabItem();
 		}
 
@@ -1503,7 +1509,7 @@ void DesktopError() {
 	State& st = GetState();
 	CenterNext(ImVec2(420, 180));
 	bool open = true;
-	if (!ImGui::Begin("Netplay Error##netplay", &open,
+	if (!ImGui::Begin("Online Play Error##netplay", &open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
 		if (!open) Navigate(Screen::Browser);
@@ -1529,6 +1535,15 @@ bool DesktopDispatch() {
 	switch (st.screen) {
 		case Screen::Closed:       return false;
 		case Screen::Nickname:     DesktopNickname();    break;
+		case Screen::OnlinePlayHub:
+			// The hub screen is Gaming-Mode-only.  If we land here
+			// in Desktop (mode switched mid-flight, or the worker
+			// nav stack recovers into Hub) pop to Host Games — the
+			// desktop menu bar already exposes Browse/Preferences
+			// separately so a hub would be redundant.
+			Navigate(Screen::MyHostedGames);
+			DesktopMyHostedGames();
+			break;
 		case Screen::Browser:      DesktopBrowser();     break;
 		case Screen::MyHostedGames:DesktopMyHostedGames(); break;
 		case Screen::AddGame:     DesktopAddOffer();    break;

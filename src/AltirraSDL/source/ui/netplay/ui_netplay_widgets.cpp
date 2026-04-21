@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <unordered_map>
@@ -121,39 +123,36 @@ bool BeginSheet(const char *title, bool *open,
 	const ImVec2 safeO = GetSafeOrigin();
 	const ImVec2 safeS = GetSafeSize();
 
-	// Pick a size that respects both the caller's min/max and the
-	// available safe area, with comfortable margin.
-	ImVec2 size = minSize;
+	// Gaming Mode: full-bleed screen that fills the safe area.  Mirrors
+	// the Settings / Game Library pattern — no centered card, no dim
+	// backdrop, no ImGui title bar (the caller draws a back-arrow
+	// header via ScreenHeader() instead).  Backing rect is painted to
+	// the background draw list so the window layer stays transparent.
 	if (gaming) {
-		// Full-bleed card: inset by dp(16) from safe area.
-		float margin = Dp(16.0f);
-		size = ImVec2(
-			std::max(minSize.x, safeS.x - 2 * margin),
-			std::max(minSize.y, safeS.y - 2 * margin));
-		size.x = std::min(size.x, maxSize.x);
-		size.y = std::min(size.y, maxSize.y);
-
-		ImVec2 pos = ImVec2(
-			safeO.x + (safeS.x - size.x) * 0.5f,
-			safeO.y + (safeS.y - size.y) * 0.5f);
-
-		// Dim backdrop behind the sheet.
-		const ImU32 dim = IM_COL32(0, 0, 0, 160);
+		const ATMobilePalette &p = ATMobileGetPalette();
 		ImGui::GetBackgroundDrawList()->AddRectFilled(
-			safeO, ImVec2(safeO.x + safeS.x, safeO.y + safeS.y), dim);
+			safeO,
+			ImVec2(safeO.x + safeS.x, safeO.y + safeS.y),
+			p.windowBg);
 
-		ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
-		ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+		ImGui::SetNextWindowPos(safeO, ImGuiCond_Always);
+		ImGui::SetNextWindowSize(safeS, ImGuiCond_Always);
 		const ImGuiWindowFlags flags =
 			ImGuiWindowFlags_NoSavedSettings |
 			ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoCollapse |
 			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoTitleBar |
 			ImGuiWindowFlags_NoBringToFrontOnFocus |
+			ImGuiWindowFlags_NoBackground |
 			ImGuiWindowFlags_NoDocking;
 		bool opened = ImGui::Begin(title, open, flags);
 		if (opened) g_sheetKind = SheetKind::MobileSheet;
 		else { ImGui::End(); g_sheetKind = SheetKind::None; }
+		// BeginSheet size arguments are unused in Gaming Mode — the
+		// sheet always fills the safe area.  Silence unused-parameter
+		// fires.
+		(void)minSize; (void)maxSize;
 		return opened;
 	}
 
@@ -235,13 +234,30 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 	ImDrawList *dl = ImGui::GetWindowDrawList();
 	ImVec2 pos = ImGui::GetCursorScreenPos();
 
-	char idBuf[64];
-	std::snprintf(idBuf, sizeof idBuf, "##tile_%d_%p",
-		g_gridItemIdx, (void*)info.title);
+	// Prefer a stable identity (sessionId) so keyboard/gamepad focus
+	// survives lobby refreshes.  Fall back to grid index + title
+	// pointer for callers that don't supply one.
+	char idBuf[128];
+	if (info.idKey && *info.idKey) {
+		std::snprintf(idBuf, sizeof idBuf, "##tile_%s", info.idKey);
+	} else {
+		std::snprintf(idBuf, sizeof idBuf, "##tile_%d_%p",
+			g_gridItemIdx, (void*)info.title);
+	}
 
-	// InvisibleButton gives us hover/active state + keyboard focus.
+	// Use Selectable (not InvisibleButton) for the hit area — it
+	// registers with ImGui's nav system as a true list item, so
+	// arrow-key / gamepad Down from an adjacent button (Refresh,
+	// Back) lands on the first tile reliably.  InvisibleButton works
+	// for mouse/touch but loses to Selectable for 2-D nav scoring
+	// inside grids.  Mirrors the Game Library's RenderGameTile.
 	ImGui::PushID(idBuf);
-	bool clicked = ImGui::InvisibleButton("tile_btn", size);
+	ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0, 0, 0, 0));
+	ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+	ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0, 0, 0, 0));
+	bool clicked = ImGui::Selectable("##tile_btn", false,
+		ImGuiSelectableFlags_None, size);
+	ImGui::PopStyleColor(3);
 	const bool hovered = ImGui::IsItemHovered();
 	const bool focused = ImGui::IsItemFocused();
 
@@ -289,19 +305,9 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 			p.textMuted, glyph);
 	}
 
-	// Padlock badge in top-right corner of art.
-	if (info.isPrivate) {
-		float sz = Dp(22.0f);
-		ImVec2 bMin = ImVec2(artMax.x - sz - Dp(4), artMin.y + Dp(4));
-		ImVec2 bMax = ImVec2(artMax.x - Dp(4), artMin.y + Dp(4) + sz);
-		dl->AddRectFilled(bMin, bMax, p.warning, Dp(4));
-		const char *glyph = "P";  // short stand-in; icon font not guaranteed
-		ImVec2 glyphSz = ImGui::CalcTextSize(glyph);
-		dl->AddText(
-			ImVec2((bMin.x + bMax.x - glyphSz.x) * 0.5f,
-			       (bMin.y + bMax.y - glyphSz.y) * 0.5f),
-			p.textOnAccent, glyph);
-	}
+	// Private visibility is surfaced as a full-text pill in the
+	// bottom-right corner (see the end of this function), not as a
+	// cryptic "P" glyph over the art.
 
 	// Bottom text area.
 	ImVec2 txt = ImVec2(rmin.x + Dp(10), rmin.y + artH + Dp(4));
@@ -319,18 +325,22 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 		std::snprintf(buf, sizeof buf, "Region: %s", info.region);
 		dl->AddText(txt, p.textMuted, buf);
 	}
-	// Players chip — drawn at the bottom-right of the card.
-	if (info.maxPlayers > 0) {
-		char chip[32];
-		std::snprintf(chip, sizeof chip, "%u/%u",
-			info.playerCount, info.maxPlayers);
+	// Visibility pill in the bottom-right corner — only drawn for
+	// private sessions (public is the default; flagging every public
+	// tile would just be visual noise).  Full "Private" text reads
+	// clearer than a "P" glyph and matches the Public/Private badge
+	// pattern used on the Host Games row.  Players count is
+	// intentionally omitted: v1 netplay is always 2-player.
+	if (info.isPrivate) {
+		const char *chip = "Private";
 		ImVec2 cSz = ImGui::CalcTextSize(chip);
 		float pad = Dp(6);
 		ImVec2 cMin = ImVec2(rmax.x - cSz.x - pad * 2 - Dp(8),
 		                     rmax.y - cSz.y - pad * 2 - Dp(6));
 		ImVec2 cMax = ImVec2(rmax.x - Dp(8), rmax.y - Dp(6));
-		dl->AddRectFilled(cMin, cMax, p.segBgInactive, Dp(4));
-		dl->AddText(ImVec2(cMin.x + pad, cMin.y + pad), p.textMuted, chip);
+		dl->AddRectFilled(cMin, cMax, p.warning, Dp(4));
+		dl->AddText(ImVec2(cMin.x + pad, cMin.y + pad),
+			p.textOnAccent, chip);
 	}
 
 	ImGui::PopID();
@@ -344,13 +354,24 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 
 void StatusBadge(const char *label, int severity, bool showSpinner) {
 	const ATMobilePalette &p = ATMobileGetPalette();
-	uint32_t fg = p.textOnAccent;
-	uint32_t bg = p.accent;
+	// Severity 0 (neutral — "Draft", "Public", etc.) renders as an
+	// outlined chip using the inactive-segment background + muted
+	// text, so it reads as a passive status tag rather than an
+	// accent-coloured button.  Severity 1-3 keep semantic fills
+	// (amber / red / green) that are visually distinct from the blue
+	// accent buttons in both dark and light themes.
+	uint32_t fg;
+	uint32_t bg;
+	uint32_t border = 0;
 	switch (severity) {
-		case 1: bg = p.warning; break;
-		case 2: bg = p.danger;  break;
-		case 3: bg = p.success; break;
-		default: break;
+		case 1: bg = p.warning; fg = p.textOnAccent; break;
+		case 2: bg = p.danger;  fg = p.textOnAccent; break;
+		case 3: bg = p.success; fg = p.textOnAccent; break;
+		default:
+			bg     = p.segBgInactive;
+			fg     = p.textMuted;
+			border = p.cardBorder;
+			break;
 	}
 	ImDrawList *dl = ImGui::GetWindowDrawList();
 	const float padX = Dp(10), padY = Dp(6);
@@ -361,6 +382,8 @@ void StatusBadge(const char *label, int severity, bool showSpinner) {
 	ImVec2 bmax = ImVec2(cur.x + textSz.x + padX * 2 + dotsW,
 	                     cur.y + textSz.y + padY * 2);
 	dl->AddRectFilled(bmin, bmax, bg, Dp(12.0f));
+	if (border)
+		dl->AddRect(bmin, bmax, border, Dp(12.0f), 0, 1.0f);
 	dl->AddText(ImVec2(bmin.x + padX, bmin.y + padY), fg, label);
 
 	if (showSpinner) {
@@ -381,6 +404,188 @@ void StatusBadge(const char *label, int severity, bool showSpinner) {
 // ---------------------------------------------------------------------
 // PeerChip — inline peer handle with optional region + padlock marker.
 // ---------------------------------------------------------------------
+
+// ---------------------------------------------------------------------
+// Toast queue — in-memory FIFO of transient banners drawn at the top
+// of the screen.  Lives at TU scope so the render function can consume
+// whatever the rest of the module pushed since the last frame.
+// ---------------------------------------------------------------------
+namespace {
+struct Toast {
+	std::string   text;
+	ToastSeverity severity;
+	uint64_t      startMs;
+	uint64_t      durationMs;
+};
+std::vector<Toast> g_toasts;
+constexpr size_t kMaxToasts = 4;
+}  // namespace
+
+void PushToast(const char *text, ToastSeverity severity,
+               uint64_t durationMs) {
+	if (!text || !*text) return;
+	// De-dup: if the last toast in the queue is the same text with the
+	// same severity, reset its timer instead of stacking a duplicate.
+	// Prevents notification spam when a tick fires the same event
+	// repeatedly (e.g. session-end restore triggering twice on an edge).
+	if (!g_toasts.empty()) {
+		Toast& tail = g_toasts.back();
+		if (tail.severity == severity && tail.text == text) {
+			tail.startMs    = (uint64_t)SDL_GetTicks();
+			tail.durationMs = durationMs;
+			return;
+		}
+	}
+	if (g_toasts.size() >= kMaxToasts) {
+		// Drop the oldest rather than refuse — latest events are
+		// usually the most relevant.
+		g_toasts.erase(g_toasts.begin());
+	}
+	Toast t;
+	t.text       = text;
+	t.severity   = severity;
+	t.startMs    = (uint64_t)SDL_GetTicks();
+	t.durationMs = durationMs;
+	g_toasts.push_back(std::move(t));
+}
+
+void ClearToasts() { g_toasts.clear(); }
+
+void RenderToasts() {
+	if (g_toasts.empty()) return;
+
+	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+	// Sweep expired entries before rendering.  Also drop entries the
+	// user clicked through (handled below).
+	for (auto it = g_toasts.begin(); it != g_toasts.end(); ) {
+		if (nowMs >= it->startMs + it->durationMs)
+			it = g_toasts.erase(it);
+		else
+			++it;
+	}
+	if (g_toasts.empty()) return;
+
+	const ATMobilePalette &p = ATMobileGetPalette();
+	const ImVec2 safeO = GetSafeOrigin();
+	const ImVec2 safeS = GetSafeSize();
+
+	// Position: top-centre of the safe area, 12dp inset from the top.
+	const float maxW  = std::min(safeS.x - Dp(24), Dp(520));
+	const float gap   = Dp(8);
+	float y = safeO.y + Dp(12);
+
+	ImDrawList *dl = ImGui::GetForegroundDrawList();
+
+	for (size_t i = 0; i < g_toasts.size(); ++i) {
+		const Toast& t = g_toasts[i];
+
+		uint32_t bg, fg;
+		switch (t.severity) {
+			case ToastSeverity::Success: bg = p.success; fg = p.textOnAccent; break;
+			case ToastSeverity::Warning: bg = p.warning; fg = p.textOnAccent; break;
+			case ToastSeverity::Danger:  bg = p.danger;  fg = p.textOnAccent; break;
+			case ToastSeverity::Info:
+			default:                     bg = p.cardBg;  fg = p.text;          break;
+		}
+
+		// Measure + compute fade alpha (fade-in over first 180ms,
+		// fade-out over the last 350ms).
+		const float padX = Dp(16), padY = Dp(10);
+		ImVec2 ts = ImGui::CalcTextSize(t.text.c_str(),
+			nullptr, false, maxW - padX * 2);
+		float lineH = ts.y + padY * 2;
+		float x = safeO.x + (safeS.x - maxW) * 0.5f;
+		ImVec2 rmin(x, y);
+		ImVec2 rmax(x + maxW, y + lineH);
+
+		uint64_t elapsed  = nowMs - t.startMs;
+		uint64_t remain   = t.durationMs > elapsed ? t.durationMs - elapsed : 0;
+		float alphaIn  = std::min(1.0f, elapsed / 180.0f);
+		float alphaOut = std::min(1.0f, remain  / 350.0f);
+		float alpha    = std::min(alphaIn, alphaOut);
+
+		auto applyAlpha = [alpha](uint32_t col) -> uint32_t {
+			unsigned a = (unsigned)std::round((col >> 24 & 0xFF) * alpha);
+			return (col & 0x00FFFFFFu) | (a << 24);
+		};
+
+		dl->AddRectFilled(rmin, rmax, applyAlpha(bg), Dp(10));
+		// Subtle outline for info toasts (which use the card bg and
+		// could otherwise disappear on a dark theme).
+		if (t.severity == ToastSeverity::Info) {
+			dl->AddRect(rmin, rmax,
+				applyAlpha(p.cardBorder), Dp(10), 0, 1.0f);
+		}
+		// Wrap text at the pill's inner width.  AddText with
+		// wrap_width honours \n too, so multi-line strings work.
+		dl->PushClipRect(
+			ImVec2(rmin.x + padX, rmin.y),
+			ImVec2(rmax.x - padX, rmax.y), true);
+		dl->AddText(nullptr, 0.0f,
+			ImVec2(rmin.x + padX, rmin.y + padY),
+			applyAlpha(fg), t.text.c_str(), nullptr,
+			maxW - padX * 2);
+		dl->PopClipRect();
+
+		y += lineH + gap;
+	}
+
+	// No click-to-dismiss: toasts live on the foreground draw list,
+	// not an ImGui window, so they don't own input.  A click handler
+	// here would eat clicks meant for widgets underneath (Prefs
+	// toggles, list rows, etc.).  Auto-dismiss by the per-toast
+	// duration is enough — severities with shorter action windows
+	// (Success) use 3 s, longer context (Danger/Desync) uses 6 s.
+}
+
+// ---------------------------------------------------------------------
+// ScreenHeader — shared back-arrow + title bar used by every Gaming
+// Mode Online Play screen.  Desktop falls through to the ImGui
+// window title bar, so this is a no-op there.
+// ---------------------------------------------------------------------
+bool ScreenHeader(const char *title) {
+	if (!ATUIIsGamingMode()) return false;
+
+	const ATMobilePalette &p = ATMobileGetPalette();
+	const float headerH = Dp(52.0f);
+	bool backPressed = false;
+
+	// "<" back button — Subtle style (no card background) so it reads
+	// as a header affordance, not a primary action.
+	ImGui::PushID("##onlinePlayHeader");
+	if (ATTouchButton("<", ImVec2(Dp(48.0f), headerH),
+	                  ATTouchButtonStyle::Subtle)) {
+		backPressed = true;
+	}
+	ImGui::SameLine(0, Dp(8));
+
+	// Vertically centre the title inside the header row.
+	float cursorY = ImGui::GetCursorPosY();
+	float offY = (headerH - ImGui::GetTextLineHeight()) * 0.5f;
+	ImGui::SetCursorPosY(cursorY + offY);
+	ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textTitle));
+	ImGui::TextUnformatted(title ? title : "");
+	ImGui::PopStyleColor();
+	ImGui::SetCursorPosY(cursorY + headerH);
+	ImGui::PopID();
+
+	// Hardware back (Escape / Gamepad B) — consistent with Settings.
+	// Skip when an InputText / other text widget is actively
+	// capturing text; Escape there means "cancel edit", not "leave
+	// the screen".  WantTextInput is set by ImGui whenever a text
+	// field is focused this frame.
+	const ImGuiIO &io = ImGui::GetIO();
+	const bool escKey = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+	const bool padB   = ImGui::IsKeyPressed(
+		ImGuiKey_GamepadFaceRight, false);
+	if (!backPressed && !io.WantTextInput && (escKey || padB)) {
+		backPressed = true;
+	}
+
+	ImGui::Separator();
+	ImGui::Spacing();
+	return backPressed;
+}
 
 // ---------------------------------------------------------------------
 // LobbyStatusBanner — honest reachability header for Gaming Mode.
@@ -407,7 +612,7 @@ void LobbyStatusBanner(bool allowRetry) {
 		uint64_t age = (nowMs >= h.lastOkMs) ? nowMs - h.lastOkMs : 0;
 		uint64_t sec = age / 1000;
 		std::snprintf(line, sizeof line,
-			"[OK]  Lobby reachable — listed  (checked %llus ago)",
+			"Lobby reachable — listed  (checked %llus ago)",
 			(unsigned long long)sec);
 	} else if (haveFail) {
 		bg   = p.danger;
@@ -415,14 +620,18 @@ void LobbyStatusBanner(bool allowRetry) {
 		const char *reason = h.lastError.empty()
 			? "unreachable" : h.lastError.c_str();
 		std::snprintf(line, sizeof line,
-			"[!!]  Lobby unreachable — %s", reason);
+			"Lobby unreachable — %s", reason);
 	} else {
 		bg   = p.segBgInactive;
 		text = p.textMuted;
-		std::snprintf(line, sizeof line, "[..]  Lobby: checking...");
+		std::snprintf(line, sizeof line,
+			"Connecting to the lobby...");
 	}
 
-	// Pill background spanning the full content width.
+	// Pill background spanning the full content width.  Text is
+	// clipped to the pill interior so unbounded error strings (DNS
+	// failures, long HTTP bodies) can't spill past the rounded
+	// rectangle.
 	ImDrawList *dl = ImGui::GetWindowDrawList();
 	ImVec2 cur = ImGui::GetCursorScreenPos();
 	float w = ImGui::GetContentRegionAvail().x;
@@ -431,19 +640,47 @@ void LobbyStatusBanner(bool allowRetry) {
 	ImVec2 bmin = cur;
 	ImVec2 bmax = ImVec2(cur.x + w, cur.y + lineH);
 	dl->AddRectFilled(bmin, bmax, bg, Dp(8.0f));
+	dl->PushClipRect(
+		ImVec2(bmin.x + padX, bmin.y),
+		ImVec2(bmax.x - padX, bmax.y), true);
 	dl->AddText(ImVec2(bmin.x + padX, bmin.y + padY), text, line);
+	dl->PopClipRect();
 	ImGui::Dummy(ImVec2(w, lineH));
 
 	if (allowRetry && !okIsNewer && haveFail) {
 		// Offer a manual retry beneath the banner when the last poll
-		// failed.  The worker's backoff logic will still throttle, but
-		// users appreciate an explicit "try again" affordance.
-		if (ATTouchButton("Retry", ImVec2(Dp(160), Dp(40)),
+		// failed.  5-second cooldown between clicks so a user mashing
+		// Retry can't bypass the worker's backoff and rate-limit the
+		// Oracle Free Tier lobby (60 req/min global, 6/min per-
+		// endpoint).  During cooldown the button renders disabled
+		// and shows the remaining seconds.
+		static uint64_t s_lastRetryMs = 0;
+		constexpr uint64_t kCooldownMs = 5000;
+		const uint64_t elapsed =
+			(nowMs >= s_lastRetryMs) ? nowMs - s_lastRetryMs : 0;
+		const bool onCooldown =
+			(s_lastRetryMs != 0) && (elapsed < kCooldownMs);
+
+		char label[32];
+		if (onCooldown) {
+			const uint64_t remainS =
+				(kCooldownMs - elapsed + 999) / 1000;
+			std::snprintf(label, sizeof label,
+				"Retry (%llus)",
+				(unsigned long long)remainS);
+		} else {
+			std::snprintf(label, sizeof label, "Retry");
+		}
+
+		ImGui::BeginDisabled(onCooldown);
+		if (ATTouchButton(label, ImVec2(Dp(160), Dp(40)),
 		                  ATTouchButtonStyle::Neutral)) {
 			State& st = GetState();
 			st.browser.refreshRequested = true;
 			st.browser.nextRetryMs = 0;
+			s_lastRetryMs = nowMs;
 		}
+		ImGui::EndDisabled();
 	}
 	ImGui::Spacing();
 }

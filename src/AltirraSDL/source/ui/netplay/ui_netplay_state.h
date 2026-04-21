@@ -46,6 +46,7 @@ enum class Screen {
 	Closed,
 
 	Nickname,         // First-time handle prompt
+	OnlinePlayHub,    // Hub: Host Games / Browse / Preferences cards
 	Browser,          // Online sessions grid (browse peers)
 	MyHostedGames,    // List of this user's own hosted hostedGames
 	AddGame,         // Add-an-offer picker (Library / File)

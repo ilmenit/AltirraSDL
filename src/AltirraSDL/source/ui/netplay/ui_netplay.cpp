@@ -24,7 +24,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <unordered_set>
 
 #include <at/atcore/logging.h>
 extern ATLogChannel g_ATLCNetplay;
@@ -223,8 +225,13 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			}
 			if (r.op != ATNetplayUI::LobbyOp::List) return;
 			if (!r.ok) {
+				// The lobby banner already paints the friendly error;
+				// keep the browser status line informative but
+				// actionable — a "Retry" button lives right above
+				// this line, so point users there instead of inventing
+				// a Direct-IP option that doesn't exist in the UI.
 				st.browser.statusLine = st.lobbyHealth.lastError
-					+ " - use Direct IP in Preferences";
+					+ " — tap Retry to try again.";
 				g_ATLCNetplay("lobby List FAILED: status=%d raw=\"%s\"",
 					r.httpStatus,
 					r.error.empty() ? "(no detail)"
@@ -243,6 +250,27 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			}
 			st.browser.consecutiveFailures = 0;
 			st.browser.nextRetryMs = 0;
+
+			// In-place reconcile: retire entries whose sessionId is no
+			// longer listed by *this* lobby, update/insert the rest.
+			// Only items tagged with the responding lobby are touched —
+			// entries from other federated lobbies keep their place.
+			// This replaces the previous "clear items before refresh"
+			// path that caused the list to visibly blink to "Loading
+			// sessions..." every 10 s even when nothing had changed.
+			std::unordered_set<std::string> presentIds;
+			presentIds.reserve(r.sessions.size() * 2);
+			for (const auto& s : r.sessions) presentIds.insert(s.sessionId);
+
+			auto& items = st.browser.items;
+			items.erase(
+				std::remove_if(items.begin(), items.end(),
+					[&](const ATNetplay::LobbySession& e) {
+						return e.sourceLobby == r.sourceLobby
+						    && presentIds.find(e.sessionId) == presentIds.end();
+					}),
+				items.end());
+
 			// Merge by sessionId so multiple lobbies de-dup.  Filter
 			// out our own hostedGames by matching against any of the
 			// per-lobby registrations — a game hosted on N lobbies
@@ -259,6 +287,7 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 					if (isOwn) break;
 				}
 				if (isOwn) continue;
+				s.sourceLobby = r.sourceLobby;
 				bool found = false;
 				for (auto& exist : st.browser.items) {
 					if (exist.sessionId == s.sessionId) {
@@ -274,25 +303,34 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			st.browser.lastFetchMs = nowMs;
 		});
 
-	// Auto-refresh cadence while the browser is visible.
+	// Honour an explicit refresh request (Retry button, hub-open
+	// priming, Browser auto-cadence) from any screen.  Previously
+	// this was gated on `screen == Browser`, which meant a user who
+	// opened Online Play and stayed on the hub never saw the first
+	// poll complete — the lobby banner was stuck on "checking..."
+	// because the flag sat unacted.
 	const uint64_t kAutoRefreshMs = 10000;
-	if (st.screen == ATNetplayUI::Screen::Browser) {
-		const bool backoffActive =
-			st.browser.nextRetryMs != 0 && nowMs < st.browser.nextRetryMs;
-		const bool userAsked = st.browser.refreshRequested;
-		const bool timeForAuto = (st.browser.lastFetchMs == 0)
-		    || (nowMs - st.browser.lastFetchMs) >= kAutoRefreshMs;
-		if (userAsked || (!backoffActive && timeForAuto)) {
-			if (!st.browser.refreshInFlight) {
-				st.browser.items.clear();
-				ATNetplayUI::ATNetplayUI_EnqueueBrowserRefresh();
-				// Piggy-back stats fan-out on the same cadence: one
-				// extra cheap GET /v1/stats per lobby per refresh.
-				// Within Oracle Free Tier rate limits (60/min cap;
-				// browse=6/min, stats=6/min, well under).
-				ATNetplayUI::ATNetplayUI_EnqueueStatsRefresh();
-				st.browser.refreshRequested = false;
-			}
+	const bool backoffActive =
+		st.browser.nextRetryMs != 0 && nowMs < st.browser.nextRetryMs;
+	const bool userAsked = st.browser.refreshRequested;
+	const bool onBrowser = (st.screen == ATNetplayUI::Screen::Browser);
+	const bool timeForAuto = onBrowser &&
+		((st.browser.lastFetchMs == 0)
+		 || (nowMs - st.browser.lastFetchMs) >= kAutoRefreshMs);
+	if (userAsked || (!backoffActive && timeForAuto)) {
+		if (!st.browser.refreshInFlight) {
+			// Do not wipe items here — the response handler reconciles
+			// per-lobby (entries gone from the new response are retired,
+			// entries still present are updated in-place).  A pre-wipe
+			// caused the list to visibly flash "Loading sessions…" every
+			// 10 s even when the set hadn't changed.
+			ATNetplayUI::ATNetplayUI_EnqueueBrowserRefresh();
+			// Piggy-back stats fan-out on the same cadence: one
+			// extra cheap GET /v1/stats per lobby per refresh.
+			// Within Oracle Free Tier rate limits (60/min cap;
+			// browse=6/min, stats=6/min, well under).
+			ATNetplayUI::ATNetplayUI_EnqueueStatsRefresh();
+			st.browser.refreshRequested = false;
 		}
 	}
 
@@ -358,11 +396,25 @@ void ATNetplayUI_OpenPrefs() {
 }
 
 void ATNetplayUI_OpenMyHostedGames() {
+	// Historical name — this is the single "open Online Play" entry
+	// point shared by the main menu, the hamburger menu, and the
+	// Gaming Mode boot-row button.
+	//
+	//   Gaming Mode → lands on the Online Play hub (Host / Browse /
+	//                 Preferences cards) per the nested-navigation
+	//                 pattern that matches Settings.
+	//   Desktop     → lands directly on Host Games (the traditional
+	//                 desktop entry; the menu bar already has Browse
+	//                 / Preferences entries, so a hub would be
+	//                 redundant).
 	auto& st = ATNetplayUI::GetState();
-	if (st.prefs.nickname.empty() && !st.prefs.isAnonymous)
+	if (st.prefs.nickname.empty() && !st.prefs.isAnonymous) {
 		ATNetplayUI::Navigate(ATNetplayUI::Screen::Nickname);
-	else
+	} else if (ATUIIsGamingMode()) {
+		ATNetplayUI::Navigate(ATNetplayUI::Screen::OnlinePlayHub);
+	} else {
 		ATNetplayUI::Navigate(ATNetplayUI::Screen::MyHostedGames);
+	}
 }
 
 void ATNetplayUI_EndSession() {
@@ -405,15 +457,112 @@ static ImVec4 StatusColorWarn() {
 }
 
 void RenderInSessionHUD() {
+	// One-shot "you are live" toast on lockstep entry so both host
+	// and joiner get positive confirmation that the session started,
+	// even with the HUD disabled.  Re-arms when lockstep drops.
+	static bool s_liveToastShown = false;
+	if (ATNetplayGlue::IsLockstepping() && !s_liveToastShown) {
+		PushToast("Connected — you are playing online.",
+			ToastSeverity::Success, 3000);
+		s_liveToastShown = true;
+	}
+	if (!ATNetplayGlue::IsLockstepping()) s_liveToastShown = false;
+
+	// Always poll desync state even when the HUD is hidden — we want
+	// the one-shot toast regardless of the user's HUD preference so
+	// they can see that something went wrong without the diagnostics
+	// overlay enabled.
+	static bool s_desyncToastShown = false;
+	{
+		int64_t df = -1;
+		const bool desyncedNow = ATNetplayGlue::IsLockstepping()
+			&& ATNetplayGlue::IsDesynced(&df);
+		if (desyncedNow && !s_desyncToastShown) {
+			char msg[128];
+			std::snprintf(msg, sizeof msg,
+				"Desync detected at frame %lld — ending session.",
+				(long long)df);
+			PushToast(msg, ToastSeverity::Danger, 6000);
+			s_desyncToastShown = true;
+		}
+		if (!ATNetplayGlue::IsLockstepping()) {
+			// Arm the toast for the next session.
+			s_desyncToastShown = false;
+		}
+	}
+
 	if (!ATNetplayGlue::IsLockstepping()) return;
-	if (!GetState().prefs.showSessionHUD) return;
 
 	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+	const uint64_t peerAgeMs = ATNetplayGlue::MsSinceLastPeerPacket(nowMs);
+
+	// Peer-unresponsive prompt.  The coordinator used to auto-end at
+	// 10 s; users reported that as abrupt and — worse — it fired even
+	// when the remote player had deliberately paused.  Now: at 3 s of
+	// silence we show a modal on *both* sides (either peer's pause
+	// freezes the other) with Keep Waiting / End Session.  The modal
+	// auto-dismisses if the peer comes back.  A single per-session
+	// "dismiss" latch lets a user click Keep Waiting and not see the
+	// dialog re-pop every frame; we re-arm once the peer returns.
+	static bool s_peerStallDismissed = false;
+	if (peerAgeMs < 3000 || peerAgeMs >= UINT64_MAX / 4) {
+		s_peerStallDismissed = false;
+	}
+	const bool showStall = (peerAgeMs >= 3000)
+		&& (peerAgeMs < UINT64_MAX / 4)
+		&& !s_peerStallDismissed;
+	if (showStall) {
+		const char *kStallId = "Peer unresponsive##netplay_stall";
+		if (!ImGui::IsPopupOpen(kStallId)) ImGui::OpenPopup(kStallId);
+		ImGui::SetNextWindowPos(
+			ImGui::GetMainViewport()->GetCenter(),
+			ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowSize(ImVec2(420, 0),
+			ImGuiCond_Appearing);
+		if (ImGui::BeginPopupModal(kStallId, nullptr,
+				ImGuiWindowFlags_NoSavedSettings
+				| ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::PushTextWrapPos(400);
+			ImGui::TextUnformatted(
+				"The other player has stopped sending input — they may "
+				"have paused the game, tabbed away, or lost the network "
+				"connection.  The game will stay paused until they "
+				"return.");
+			ImGui::Spacing();
+			ImGui::Text("No input received for %llu seconds.",
+				(unsigned long long)(peerAgeMs / 1000));
+			ImGui::PopTextWrapPos();
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Spacing();
+			const float bw = (ImGui::GetContentRegionAvail().x - 10.0f) * 0.5f;
+			if (ImGui::Button("Keep Waiting", ImVec2(bw, 0))) {
+				s_peerStallDismissed = true;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine(0, 10);
+			ImGui::PushStyleColor(ImGuiCol_Button,
+				ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered));
+			if (ImGui::Button("End Session", ImVec2(bw, 0))) {
+				ATNetplayGlue::DisconnectActive();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::PopStyleColor();
+			ImGui::EndPopup();
+		}
+	} else {
+		// Peer came back — close any lingering popup.
+		if (ImGui::IsPopupOpen("Peer unresponsive##netplay_stall")) {
+			ImGui::CloseCurrentPopup();
+		}
+	}
+
+	if (!GetState().prefs.showSessionHUD) return;
+
 	const uint32_t frame = ATNetplayGlue::CurrentFrame();
 	const uint32_t delay = ATNetplayGlue::CurrentInputDelay();
 	int64_t desyncFrame = -1;
 	const bool desynced = ATNetplayGlue::IsDesynced(&desyncFrame);
-	const uint64_t peerAgeMs = ATNetplayGlue::MsSinceLastPeerPacket(nowMs);
 
 	const ImGuiViewport* vp = ImGui::GetMainViewport();
 	const float pad = 10.0f;
@@ -438,18 +587,12 @@ void RenderInSessionHUD() {
 			ImGui::Text("@ frame %lld", (long long)desyncFrame);
 		} else if (peerAgeMs > 500 && peerAgeMs < UINT64_MAX / 4) {
 			// Peer is late.  The game is paused on both sides (our
-			// gate is closed waiting for their input).  Show a
-			// countdown to the 10 s timeout so the user knows how
-			// long we'll wait before declaring the peer dead.
-			constexpr uint64_t kTimeoutMs = 10000;
+			// gate is closed waiting for their input).  We no longer
+			// auto-terminate — see the Peer Unresponsive dialog below,
+			// which appears at ~3 s and lets the user choose.
 			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorWarn());
-			if (peerAgeMs >= kTimeoutMs) {
-				ImGui::TextUnformatted("TIMEOUT");
-			} else {
-				const uint64_t remainS = (kTimeoutMs - peerAgeMs + 999) / 1000;
-				ImGui::Text("WAITING  (timeout in %llus)",
-					(unsigned long long)remainS);
-			}
+			ImGui::Text("WAITING  (%llus)",
+				(unsigned long long)(peerAgeMs / 1000));
 			ImGui::PopStyleColor();
 		} else {
 			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorGood());
@@ -488,12 +631,16 @@ void ATNetplayUI_RenderDesktop(ATSimulator &, ATUIState &, SDL_Window *) {
 	if (ATUIIsGamingMode()) return;
 	ATNetplayUI::DesktopDispatch();
 	ATNetplayUI::RenderInSessionHUD();
+	// Toasts paint on the foreground draw list so they float above
+	// every Online Play window without caller bookkeeping.
+	ATNetplayUI::RenderToasts();
 }
 
 bool ATNetplayUI_RenderMobile(ATSimulator &, ATUIState &,
                               ATMobileUIState &, SDL_Window *) {
 	bool r = ATNetplayUI::ATNetplayUI_DispatchScreen();
 	ATNetplayUI::RenderInSessionHUD();
+	ATNetplayUI::RenderToasts();
 	return r;
 }
 

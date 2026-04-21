@@ -26,6 +26,7 @@
 #include "ui_netplay_actions.h"
 
 #include "input/touch_widgets.h"
+#include "ui/core/ui_mode.h"
 
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
@@ -70,6 +71,12 @@ void RenderNickname() {
 		return;
 	}
 
+	if (ScreenHeader("Choose a Nickname")) {
+		// Nickname is the first-time gate — "back" means "close
+		// Online Play" since there's no screen behind it to pop to.
+		Navigate(Screen::Closed);
+	}
+
 	ATTouchSection("Your nickname");
 	ATTouchMutedText(
 		"Other players will see this when you host or join a game.  "
@@ -111,9 +118,12 @@ void RenderNickname() {
 		if (anon) st.prefs.nickname.clear();
 		else      st.prefs.nickname = buf;
 		SaveToRegistry();
-		// Fall through to the browser.
-		Navigate(Screen::Browser);
-		// Request a browser refresh now that we have identity.
+		// Fall through to the natural landing screen for the mode
+		// (hub in Gaming Mode, host-games in Desktop).
+		Navigate(ATUIIsGamingMode()
+			? Screen::OnlinePlayHub : Screen::MyHostedGames);
+		// Request a browser refresh now that we have identity so
+		// the hub's subtitle counts reflect reality on first visit.
 		st.browser.refreshRequested = true;
 	}
 	ImGui::EndDisabled();
@@ -193,47 +203,33 @@ void RenderBrowser() {
 	Browser& br = st.browser;
 
 	bool open = true;
-	if (!BeginSheet("Online Play", &open,
+	if (!BeginSheet("Browse Hosted Games", &open,
 	                ImVec2(Dp(560), Dp(420)),
 	                ImVec2(Dp(1100), Dp(800)))) {
 		return;
 	}
 
-	// Header row: title + refresh + prefs + host button.
+	if (ScreenHeader("Browse Hosted Games")) {
+		Back();
+	}
+
+	// One visible action in the sub-header: Refresh.  Host / Prefs
+	// live on the Online Play hub, which is one back-tap away.
 	const ATMobilePalette &p = ATMobileGetPalette();
-	ImGui::PushFont(nullptr);
-
-	ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.text));
-	ImGui::TextUnformatted("Browse hosted games");
-	ImGui::PopStyleColor();
-
-	ImGui::SameLine();
-	const char *line = br.statusLine.empty()
-		? (br.refreshInFlight ? "Refreshing…" : "")
-		: br.statusLine.c_str();
-	ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textMuted));
-	ImGui::Text("  %s", line);
-	ImGui::PopStyleColor();
-
-	// Top-right action bar.
-	float rightBtnW = Dp(96);
-	ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX()
-		- rightBtnW * 3 - Dp(20));
-	if (ATTouchButton("Refresh", ImVec2(rightBtnW, Dp(40)),
+	if (ATTouchButton("Refresh", ImVec2(Dp(140), Dp(40)),
 	                  ATTouchButtonStyle::Neutral)) {
 		br.refreshRequested = true;
 	}
-	ImGui::SameLine(0, Dp(6));
-	if (ATTouchButton("Prefs", ImVec2(rightBtnW, Dp(40)),
-	                  ATTouchButtonStyle::Neutral)) {
-		Navigate(Screen::Prefs);
+	ImGui::SameLine(0, Dp(10));
+	const char *line = br.statusLine.empty()
+		? (br.refreshInFlight ? "Refreshing…" : "")
+		: br.statusLine.c_str();
+	if (line && *line) {
+		ImGui::AlignTextToFramePadding();
+		ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textMuted));
+		ImGui::TextUnformatted(line);
+		ImGui::PopStyleColor();
 	}
-	ImGui::SameLine(0, Dp(6));
-	if (ATTouchButton("Host", ImVec2(rightBtnW, Dp(40)),
-	                  ATTouchButtonStyle::Accent)) {
-		Navigate(Screen::HostSetup);
-	}
-	ImGui::PopFont();
 
 	ImGui::Spacing();
 	ImGui::Separator();
@@ -244,10 +240,18 @@ void RenderBrowser() {
 	// empty when the lobby is unreachable.
 	LobbyStatusBanner(/*allowRetry*/ true);
 
-	// Grid of tiles.
-	ImVec2 avail = ImGui::GetContentRegionAvail();
-	ImGui::BeginChild("##sessions", avail, false,
-		ImGuiWindowFlags_HorizontalScrollbar);
+	// Tiles render directly in the sheet window — no BeginChild.
+	// Earlier attempts (NavFlattened child, then a separate-scope
+	// child with manual FocusWindow + SetKeyboardFocusHere) both
+	// failed to route DownArrow from Refresh into the first tile:
+	// ImGui's native nav processed Down on the current frame and
+	// couldn't find a candidate across the child boundary (cursor
+	// vanished), while the manual hop applied too late and was
+	// clobbered by the nav cycle's clear.  With the tiles in the
+	// same window as Refresh, native nav scoring finds the first
+	// tile as the "downward" target on its own — zero custom
+	// steering needed.  Drag-scroll uses the sheet window's own
+	// scrollbar (ImGui auto-shows when content overflows).
 	ATTouchDragScroll();
 
 	if (br.items.empty()) {
@@ -256,7 +260,13 @@ void RenderBrowser() {
 			: "No sessions right now.  Host one!");
 	} else {
 		if (st.prefs.showBrowserArt) PumpArtCache();
-		BeginScreenGrid(/*columns*/ 4, /*minTileWidth*/ Dp(220),
+		// Grid sizing: aim for ~240dp tiles on tablets / desktop, but
+		// collapse to a single column on narrow portrait screens so
+		// tiles never render at zero width (the old code passed
+		// ImVec2(0,0) assuming the grid internally dictated size,
+		// which left rows collapsed into a left-hand sliver).
+		const ImVec2 tileSize = BeginScreenGrid(/*columns*/ 4,
+			/*minTileWidth*/ Dp(240),
 			/*aspect*/ 0.85f);
 		for (size_t i = 0; i < br.items.size(); ++i) {
 			const auto& s = br.items[i];
@@ -268,15 +278,14 @@ void RenderBrowser() {
 			ti.maxPlayers   = (uint32_t)s.maxPlayers;
 			ti.isPrivate    = s.requiresCode;
 			ti.isSelected   = ((int)i == br.selectedIdx);
+			ti.idKey        = s.sessionId.c_str();
 			if (st.prefs.showBrowserArt) {
 				int aw = 0, ah = 0;
 				ti.artTexId = LookupArtByGameName(
 					s.cartName.c_str(), &aw, &ah);
 				ti.artSize = ImVec2((float)aw, (float)ah);
 			}
-			if (SessionTile(ti, ImGui::GetContentRegionAvail().x > 0
-			                ? ImVec2(0, 0)  // unused — grid dictates size
-			                : ImVec2(Dp(220), Dp(200)))) {
+			if (SessionTile(ti, tileSize)) {
 				br.selectedIdx = (int)i;
 				st.session.joinTarget = s;
 				Navigate(s.requiresCode ? Screen::JoinPrompt
@@ -287,7 +296,6 @@ void RenderBrowser() {
 	}
 
 	ATTouchEndDragScroll();
-	ImGui::EndChild();
 
 	if (!open) Navigate(Screen::Closed);
 
@@ -305,6 +313,10 @@ void RenderHostSetup() {
 	                ImVec2(Dp(420), Dp(360)),
 	                ImVec2(Dp(640), Dp(520))))
 		return;
+
+	if (ScreenHeader("Host a Game")) {
+		Back();
+	}
 
 	ATTouchSection("Visibility");
 	int vis = st.session.hostingPrivate ? 1 : 0;
@@ -400,6 +412,10 @@ void RenderJoinPrompt() {
 	                ImVec2(Dp(520), Dp(340))))
 		return;
 
+	if (ScreenHeader("Enter Join Code")) {
+		Back();
+	}
+
 	ATTouchSection("Private session");
 	PeerChip(st.session.joinTarget.hostHandle.c_str(),
 	         st.session.joinTarget.region.c_str(),
@@ -449,6 +465,10 @@ void RenderJoinConfirm() {
 	                ImVec2(Dp(600), Dp(480))))
 		return;
 
+	if (ScreenHeader("Join Session")) {
+		Back();
+	}
+
 	ATTouchSection("Confirm");
 	PeerChip(st.session.joinTarget.hostHandle.c_str(),
 	         st.session.joinTarget.region.c_str(),
@@ -457,9 +477,9 @@ void RenderJoinConfirm() {
 
 	ImGui::Spacing();
 	ATTouchMutedText(
-		"The host will send a snapshot of their running emulator so "
-		"both sides start from the same point.  Your current game "
-		"will be replaced.");
+		"The host will send their game file and hardware settings. "
+		"Both sides cold-boot from that so the session starts "
+		"identically.  Your current game will be replaced.");
 
 	ImGui::Spacing();
 	ImGui::Separator();
@@ -485,21 +505,63 @@ void RenderJoinConfirm() {
 
 void RenderWaiting() {
 	State& st = GetState();
+
+	// Auto-dismiss once Lockstepping is reached — the game is now
+	// running on both sides and the user needs to see the emulator,
+	// not this sheet on top of it.  Mirrors DesktopWaiting.
+	if (ATNetplayGlue::IsLockstepping()) {
+		Navigate(Screen::Closed);
+		return;
+	}
+
+	// If the joiner's coordinator hit a terminal phase, stop sitting
+	// on "Waiting for peer…" and let the user dismiss / retry.
+	const ATNetplayGlue::Phase jp = ATNetplayGlue::JoinPhase();
+	const bool joinFailed = (jp == ATNetplayGlue::Phase::Failed ||
+	                         jp == ATNetplayGlue::Phase::Ended  ||
+	                         jp == ATNetplayGlue::Phase::Desynced);
+
 	bool open = true;
 	if (!BeginSheet("Waiting", &open,
 	                ImVec2(Dp(420), Dp(300)),
 	                ImVec2(Dp(620), Dp(460))))
 		return;
 
+	if (ScreenHeader(joinFailed ? "Could not join" : "Connecting")) {
+		// Back cancels host/join and returns to the previous screen.
+		// Stop coordinators first so the worker thread doesn't keep
+		// retrying in the background.
+		ATNetplayGlue::DisconnectActive();
+		Back();
+	}
+
 	// The label depends on whether we're hosting or joining + the
-	// coordinator's phase.  Pull phase via the glue module.
+	// coordinator's phase.  While handshaking we say so explicitly —
+	// "Waiting for peer…" was misleading for joiners whose wrong
+	// entry code triggered a silent reject retry in the background.
 	const char *label = "Waiting for peer…";
 	int severity = 0;
 	bool spin = true;
-	if (ATNetplayGlue::IsLockstepping()) {
-		label = "Playing Online";
-		severity = 3;
+	if (joinFailed) {
+		const char *err = ATNetplayGlue::JoinLastError();
+		label = (err && *err) ? err : "Connection failed.";
+		severity = 2;
 		spin = false;
+	} else {
+		switch (jp) {
+			case ATNetplayGlue::Phase::Handshaking:
+				label = st.session.joinTarget.requiresCode
+					? "Verifying join code with host…"
+					: "Contacting host…";
+				break;
+			case ATNetplayGlue::Phase::ReceivingSnapshot:
+				label = "Downloading game from host…";
+				break;
+			case ATNetplayGlue::Phase::SnapshotReady:
+				label = "Starting game…";
+				break;
+			default: break;
+		}
 	}
 	StatusBadge(label, severity, spin);
 
@@ -512,17 +574,46 @@ void RenderWaiting() {
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::Spacing();
-	float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
-	if (ATTouchButton("Cancel", ImVec2(btnW, Dp(48)),
-	                  ATTouchButtonStyle::Danger)) {
-		StopHostingAction();
-		Navigate(Screen::Browser);
-	}
-	ImGui::SameLine(0, Dp(10));
-	if (ATTouchButton("Minimise", ImVec2(btnW, Dp(48)),
-	                  ATTouchButtonStyle::Neutral)) {
-		// Hide the sheet — coordinator keeps running in the background.
-		Navigate(Screen::Closed);
+
+	// Terminal-failure layout: surface a specific "Change Code" button
+	// for bad-code rejects so the common mistake takes one tap to fix
+	// instead of a back-out and re-navigate through the Browser.
+	const bool badCode = joinFailed && st.session.joinTarget.requiresCode
+		&& std::strstr(ATNetplayGlue::JoinLastError(),
+		               "Incorrect join code") != nullptr;
+
+	if (badCode) {
+		float bw = (ImGui::GetContentRegionAvail().x - Dp(20)) / 3.0f;
+		if (ATTouchButton("Cancel", ImVec2(bw, Dp(48)),
+		                  ATTouchButtonStyle::Neutral)) {
+			ATNetplayGlue::DisconnectActive();
+			Navigate(Screen::Browser);
+		}
+		ImGui::SameLine(0, Dp(10));
+		if (ATTouchButton("Change Code", ImVec2(bw, Dp(48)),
+		                  ATTouchButtonStyle::Accent)) {
+			ATNetplayGlue::DisconnectActive();
+			Navigate(Screen::JoinPrompt);
+		}
+		ImGui::SameLine(0, Dp(10));
+		if (ATTouchButton("Try Again", ImVec2(bw, Dp(48)),
+		                  ATTouchButtonStyle::Neutral)) {
+			ATNetplayGlue::DisconnectActive();
+			StartJoiningAction();
+		}
+	} else {
+		float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
+		if (ATTouchButton("Cancel", ImVec2(btnW, Dp(48)),
+		                  ATTouchButtonStyle::Danger)) {
+			StopHostingAction();
+			Navigate(Screen::Browser);
+		}
+		ImGui::SameLine(0, Dp(10));
+		if (ATTouchButton("Minimise", ImVec2(btnW, Dp(48)),
+		                  ATTouchButtonStyle::Neutral)) {
+			// Hide the sheet — coordinator keeps running in the background.
+			Navigate(Screen::Closed);
+		}
 	}
 
 	if (!open) Navigate(Screen::Closed);
@@ -536,16 +627,22 @@ void RenderWaiting() {
 void RenderPrefs() {
 	State& st = GetState();
 	bool open = true;
-	if (!BeginSheet("Netplay Preferences", &open,
+	if (!BeginSheet("Online Play Preferences", &open,
 	                ImVec2(Dp(480), Dp(520)),
 	                ImVec2(Dp(720), Dp(780))))
 		return;
 
-	// Pin the Done button; scroll the body so portrait orientation
-	// doesn't bury the commit action below the keyboard / gesture bar.
-	const float footerH = Dp(48) + Dp(16);
+	if (ScreenHeader("Preferences")) {
+		SaveToRegistry();
+		Back();
+	}
+
+	// Scroll the body so portrait orientation doesn't bury options
+	// below the keyboard / gesture bar.  No Done button needed —
+	// the back arrow commits on exit (same as Settings).
 	ImGui::BeginChild("##prefsBody",
-		ImVec2(0, -footerH), false, 0);
+		ImGui::GetContentRegionAvail(),
+		ImGuiChildFlags_NavFlattened, 0);
 	ATTouchDragScroll();
 
 	ATTouchSection("Nickname");
@@ -574,11 +671,18 @@ void RenderPrefs() {
 
 	ImGui::Spacing();
 	ATTouchSection("Notifications");
+	// Platform-applicable notifications only.  SDL_FlashWindow is a
+	// no-op on Android (no window-manager taskbar), and the "Steal
+	// focus" toggle isn't consumed by any runtime code yet — hide
+	// both on mobile so the sheet only exposes options that actually
+	// fire in Gaming Mode (system notification + chime are both
+	// honoured on Linux / macOS / Windows / Android when a backend
+	// is present).
+#ifndef __ANDROID__
 	ATTouchToggle("Flash window", &st.prefs.notif.flashWindow);
+#endif
 	ATTouchToggle("System notification", &st.prefs.notif.systemNotify);
 	ATTouchToggle("Chime", &st.prefs.notif.playChime);
-	ATTouchToggle("Steal focus on attention",
-		&st.prefs.focusOnAttention);
 
 	ImGui::Spacing();
 	ATTouchSection("Input delay");
@@ -595,13 +699,6 @@ void RenderPrefs() {
 
 	ATTouchEndDragScroll();
 	ImGui::EndChild();
-
-	ImGui::Separator();
-	if (ATTouchButton("Done", ImVec2(-FLT_MIN, Dp(48)),
-	                  ATTouchButtonStyle::Accent)) {
-		SaveToRegistry();
-		Back();
-	}
 
 	if (!open) { SaveToRegistry(); Back(); }
 	EndSheet();
@@ -644,6 +741,10 @@ void RenderMyHostedGames() {
 	                ImVec2(Dp(1100), Dp(800))))
 		return;
 
+	if (ScreenHeader("Host Games")) {
+		Back();
+	}
+
 	// Honest lobby-reachability banner.  Colour + text reflect the
 	// last List result, not just the activity state — a green "listed"
 	// message while the server is unreachable would be misleading.
@@ -654,8 +755,10 @@ void RenderMyHostedGames() {
 		ATTouchMutedText("Single-player active — hosted games suspended.");
 	}
 
-	// Top toolbar.
-	float btnW = Dp(200);
+	// Single primary action.  Browse / Preferences have moved to the
+	// Online Play hub, which is one back-tap away; surfacing them
+	// again here would just clutter the sub-screen.
+	float btnW = Dp(220);
 	bool atCap = (st.hostedGames.size() >= State::kMaxHostedGames);
 	ImGui::BeginDisabled(atCap);
 	if (ATTouchButton("+ Add Game", ImVec2(btnW, Dp(44)),
@@ -664,25 +767,19 @@ void RenderMyHostedGames() {
 		Navigate(Screen::AddGame);
 	}
 	ImGui::EndDisabled();
-	ImGui::SameLine(0, Dp(8));
-	if (ATTouchButton("Browse Hosted Games", ImVec2(btnW, Dp(44)),
-	                  ATTouchButtonStyle::Neutral)) {
-		Navigate(Screen::Browser);
-	}
-	ImGui::SameLine(0, Dp(8));
-	if (ATTouchButton("Preferences", ImVec2(btnW, Dp(44)),
-	                  ATTouchButtonStyle::Neutral)) {
-		Navigate(Screen::Prefs);
-	}
 
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	// Leave room for the pinned footer (Host-all + Close).
-	const float hostFooterH = Dp(48) + Dp(16);
-	ImGui::BeginChild("##hostedGames",
-		ImVec2(0, -hostFooterH), false, 0);
+	// No BeginChild — list items render directly in the sheet so
+	// native arrow-key / gamepad nav flows cleanly between
+	// "+ Add Game", the per-game row buttons, and the "Host all"
+	// toggle below.  A child window would make each cross-boundary
+	// hop (Up from first row → Add Game, Down from last row →
+	// Host all) route through ImGui's unreliable cross-window nav
+	// scoring, producing the "focus stuck on frame border" behaviour
+	// users reported.  The sheet window provides its own scrollbar.
 	ATTouchDragScroll();
 
 	if (st.hostedGames.empty()) {
@@ -793,10 +890,11 @@ void RenderMyHostedGames() {
 	}
 
 	ATTouchEndDragScroll();
-	ImGui::EndChild();
 
-	// Pinned footer: Host-all tri-state master + Close.  Mirrors
-	// Desktop's bottom-bar pattern so both modes feel the same.
+	// Host-all tri-state master — rendered at the bottom of the
+	// scroll area (no longer pinned) so arrow-key nav can reach it
+	// from the last list item.  Users scroll down to find it; on
+	// short lists both are on screen at once anyway.
 	ImGui::Separator();
 	if (!st.hostedGames.empty()) {
 		int enCount = 0;
@@ -818,11 +916,6 @@ void RenderMyHostedGames() {
 			}
 		}
 		if (mixed) ImGui::PopStyleVar();
-		ImGui::SameLine();
-	}
-	if (ATTouchButton("Close", ImVec2(Dp(160), Dp(44)),
-	                  ATTouchButtonStyle::Neutral)) {
-		Navigate(Screen::Closed);
 	}
 
 	if (!open) Navigate(Screen::Closed);
@@ -868,6 +961,10 @@ void RenderAddOffer() {
 	                ImVec2(Dp(1100), Dp(800))))
 		return;
 
+	if (ScreenHeader("Add Game to Host")) {
+		Back();
+	}
+
 	int src = s_mobileAddSource;
 	const char *srcItems[] = { "From Library", "From File" };
 	if (ATTouchSegmented("##src", &src, srcItems, 2)) {
@@ -887,7 +984,7 @@ void RenderAddOffer() {
 
 		ImVec2 avail = ImGui::GetContentRegionAvail();
 		ImGui::BeginChild("##lib", ImVec2(avail.x, avail.y - Dp(200)),
-			false, 0);
+			ImGuiChildFlags_NavFlattened, 0);
 		ATTouchDragScroll();
 		for (size_t i = 0; i < entries.size(); ++i) {
 			const auto& e = entries[i];
@@ -1029,6 +1126,235 @@ void RenderAddOffer() {
 }
 
 // -------------------------------------------------------------------
+// Accept-join prompt (Gaming Mode) — host's "Allow / Deny" modal
+// when acceptMode = PromptMe and a peer requests to join.  Auto-
+// declines after 20 s so an AFK host doesn't block the joiner.
+// -------------------------------------------------------------------
+void RenderAcceptJoinPrompt() {
+	State& st = GetState();
+	const std::string gid = st.session.pendingAcceptGameId;
+	if (gid.empty()) {
+		Navigate(Screen::MyHostedGames);
+		return;
+	}
+	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+	constexpr uint64_t kAutoDeclineMs = 20000;
+	const uint64_t elapsed = nowMs > st.session.pendingAcceptStartedMs
+		? nowMs - st.session.pendingAcceptStartedMs : 0;
+	if (elapsed >= kAutoDeclineMs) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+		return;
+	}
+	const uint64_t remainS = (kAutoDeclineMs - elapsed + 999) / 1000;
+
+	bool open = true;
+	if (!BeginSheet("Join request", &open,
+	                ImVec2(Dp(420), Dp(280)),
+	                ImVec2(Dp(640), Dp(440))))
+		return;
+
+	// Back here behaves like Deny — a peer is waiting, silently
+	// dismissing the prompt would leave them hanging.
+	if (ScreenHeader("Join request")) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+	}
+
+	const char *handle = st.session.pendingAcceptHandle.empty()
+		? "Someone" : st.session.pendingAcceptHandle.c_str();
+	const char *gameName = st.session.pendingAcceptGameName.c_str();
+
+	ATTouchSection(handle);
+	ATTouchMutedText("wants to join your game:");
+	ATTouchMutedText(gameName);
+	ImGui::Spacing();
+	// Transparency: make it explicit that Allow replaces the current
+	// emulator session.  A restore-point is captured automatically
+	// so the user gets their prior state back when the online
+	// session ends, but they should know before clicking Allow.
+	ATTouchMutedText(
+		"Accepting will replace your current emulator game with "
+		"this one for the online session.  Your game is saved "
+		"automatically and restored when the session ends.");
+	ImGui::Spacing();
+	char countdown[48];
+	std::snprintf(countdown, sizeof countdown,
+		"Auto-decline in %llus", (unsigned long long)remainS);
+	ATTouchMutedText(countdown);
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	float bW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
+	if (ATTouchButton("Deny", ImVec2(bW, Dp(48)),
+	                  ATTouchButtonStyle::Danger)) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+	}
+	ImGui::SameLine(0, Dp(10));
+	if (ATTouchButton("Allow", ImVec2(bW, Dp(48)),
+	                  ATTouchButtonStyle::Accent)) {
+		ATNetplayGlue::HostAcceptPending(gid.c_str());
+	}
+
+	if (!open) {
+		ATNetplayGlue::HostRejectPending(gid.c_str());
+	}
+	EndSheet();
+}
+
+// -------------------------------------------------------------------
+// Error sheet (Gaming Mode) — shared terminal screen for failures
+// that the action handlers raise via `Navigate(Screen::Error)`.
+// Without this, Gaming Mode's dispatcher would hit `default: break`
+// and leave the user stuck on whatever screen navigated away.
+// -------------------------------------------------------------------
+void RenderError() {
+	State& st = GetState();
+	bool open = true;
+	if (!BeginSheet("Online Play Error", &open,
+	                ImVec2(Dp(420), Dp(260)),
+	                ImVec2(Dp(640), Dp(460))))
+		return;
+
+	if (ScreenHeader("Something went wrong")) {
+		st.session.lastError.clear();
+		Back();
+	}
+
+	ImGui::Spacing();
+	ATTouchSection("Error");
+	const char *msg = st.session.lastError.empty()
+		? "An unknown error occurred."
+		: st.session.lastError.c_str();
+	ImGui::PushTextWrapPos(0.0f);
+	ATTouchMutedText(msg);
+	ImGui::PopTextWrapPos();
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+	if (ATTouchButton("OK", ImVec2(-FLT_MIN, Dp(48)),
+	                  ATTouchButtonStyle::Accent)) {
+		st.session.lastError.clear();
+		Back();
+	}
+
+	if (!open) { st.session.lastError.clear(); Back(); }
+	EndSheet();
+}
+
+// -------------------------------------------------------------------
+// Online Play hub (Gaming Mode entry) — three hero cards that drill
+// into Host Games, Browse Hosted Games, and Preferences.  Matches the
+// Settings hub → detail pattern users already know from Gaming Mode.
+// -------------------------------------------------------------------
+void RenderOnlinePlayHub() {
+	State& st = GetState();
+
+	bool open = true;
+	if (!BeginSheet("Online Play", &open,
+	                ImVec2(Dp(560), Dp(420)),
+	                ImVec2(Dp(1100), Dp(800))))
+		return;
+
+	// Kick an implicit refresh only when the hub is *appearing* for
+	// the first time this visit, and only if the cached listing is
+	// stale or has never been fetched.  The earlier per-frame
+	// "items.empty()" trigger fired every ~60ms while the lobby was
+	// genuinely empty, producing a rate-limit flood on the Oracle
+	// Free Tier server (60 req/min cap, 6 req/min per endpoint).
+	// Gating on IsWindowAppearing + a 30 s freshness window means
+	// the hub kicks at most one poll per visit, and zero polls when
+	// the user re-enters within the auto-refresh cadence.
+	if (ImGui::IsWindowAppearing() && !st.browser.refreshInFlight
+	    && st.browser.nextRetryMs == 0) {
+		const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+		const bool stale = (st.browser.lastFetchMs == 0)
+			|| (nowMs - st.browser.lastFetchMs > 30000);
+		if (stale) st.browser.refreshRequested = true;
+	}
+
+	if (ScreenHeader("Online Play")) {
+		Back();
+	}
+
+	// Reachability pill + user-activity hint.  Users should know the
+	// state of the lobby before they tap into any sub-screen.
+	LobbyStatusBanner(/*allowRetry*/ true);
+	if (st.activity == UserActivity::InSession) {
+		ATTouchMutedText("Playing — other hosted games suspended.");
+	} else if (st.activity == UserActivity::PlayingLocal) {
+		ATTouchMutedText(
+			"Single-player active — hosted games suspended.");
+	}
+	ImGui::Spacing();
+
+	// Scroll the cards so the list stays usable on very short safe-
+	// area heights (landscape phone with nav gestures).
+	ImGui::BeginChild("##hubBody", ImGui::GetContentRegionAvail(),
+		ImGuiChildFlags_NavFlattened, 0);
+	ATTouchDragScroll();
+
+	// Count enabled hosted games so the Host card can show a
+	// live "n listed" subtitle — matching the Settings-hub
+	// convention where each card carries a summary of current state.
+	int enabledCount = 0;
+	for (const auto& o : st.hostedGames) if (o.enabled) ++enabledCount;
+
+	char hostSub[96];
+	if (enabledCount == 0 && st.hostedGames.empty()) {
+		std::snprintf(hostSub, sizeof hostSub,
+			"Pick games to share with friends.");
+	} else if (enabledCount == 0) {
+		std::snprintf(hostSub, sizeof hostSub,
+			"%zu game%s in draft — none listed.",
+			st.hostedGames.size(),
+			st.hostedGames.size() == 1 ? "" : "s");
+	} else {
+		std::snprintf(hostSub, sizeof hostSub,
+			"%d listed on the lobby.", enabledCount);
+	}
+
+	char browseSub[96];
+	if (st.browser.items.empty()) {
+		std::snprintf(browseSub, sizeof browseSub,
+			"See who's hosting right now.");
+	} else {
+		std::snprintf(browseSub, sizeof browseSub,
+			"%zu session%s available.",
+			st.browser.items.size(),
+			st.browser.items.size() == 1 ? "" : "s");
+	}
+
+	// On the first visible frame, steer focus to the first card so
+	// keyboard / gamepad users land on an actionable item without
+	// needing to Tab.  IsWindowAppearing goes true exactly on the
+	// first frame the window is shown.
+	const bool firstFrame = ImGui::IsWindowAppearing();
+	if (firstFrame) ImGui::SetKeyboardFocusHere();
+
+	if (ATTouchListItem("Host Games", hostSub, false, true)) {
+		Navigate(Screen::MyHostedGames);
+	}
+	ImGui::Spacing();
+	if (ATTouchListItem("Browse Hosted Games", browseSub, false, true)) {
+		EnqueueBrowserRefresh();
+		Navigate(Screen::Browser);
+	}
+	ImGui::Spacing();
+	if (ATTouchListItem("Preferences",
+		"Nickname, notifications, input delay, art.", false, true)) {
+		Navigate(Screen::Prefs);
+	}
+
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
+
+	if (!open) Navigate(Screen::Closed);
+	EndSheet();
+}
+
+// -------------------------------------------------------------------
 // Screen dispatcher
 // -------------------------------------------------------------------
 
@@ -1040,21 +1366,26 @@ bool ATNetplayUI_DispatchScreen() {
 	if (st.screen == Screen::Closed) return false;
 
 	switch (st.screen) {
-		case Screen::Nickname:     RenderNickname();    break;
-		case Screen::Browser:      RenderBrowser();     break;
-		case Screen::MyHostedGames:RenderMyHostedGames();break;
-		case Screen::AddGame:     RenderAddOffer();    break;
-		case Screen::HostSetup:    RenderHostSetup();   break;
-		case Screen::JoinPrompt:   RenderJoinPrompt();  break;
-		case Screen::JoinConfirm:  RenderJoinConfirm(); break;
-		case Screen::Waiting:      RenderWaiting();     break;
-		case Screen::Prefs:        RenderPrefs();       break;
+		case Screen::Nickname:      RenderNickname();       break;
+		case Screen::OnlinePlayHub: RenderOnlinePlayHub();  break;
+		case Screen::Browser:       RenderBrowser();        break;
+		case Screen::MyHostedGames: RenderMyHostedGames();  break;
+		case Screen::AddGame:       RenderAddOffer();       break;
+		case Screen::HostSetup:     RenderHostSetup();      break;
+		case Screen::JoinPrompt:    RenderJoinPrompt();     break;
+		case Screen::JoinConfirm:   RenderJoinConfirm();    break;
+		case Screen::Waiting:       RenderWaiting();        break;
+		case Screen::Prefs:             RenderPrefs();            break;
+		case Screen::Error:             RenderError();            break;
+		case Screen::AcceptJoinPrompt:  RenderAcceptJoinPrompt(); break;
 		default: break;
 	}
 
-	// Global Escape-to-back handler.  Matches other dialogs: press
-	// Escape to pop; no-op if the back-stack is empty.
-	if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+	// Global Escape-to-back handler for Desktop.  Gaming Mode has
+	// ScreenHeader() on every screen which owns Escape/Gamepad-B, so
+	// handling it here would double-pop the back-stack.
+	if (!ATUIIsGamingMode() &&
+	    ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
 		if (!Back()) Navigate(Screen::Closed);
 	}
 	return true;

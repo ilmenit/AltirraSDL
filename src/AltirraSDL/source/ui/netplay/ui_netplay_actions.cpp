@@ -6,6 +6,7 @@
 #include "ui_netplay_state.h"
 #include "ui_netplay_lobby_worker.h"
 #include "ui_netplay.h"
+#include "ui_netplay_widgets.h"
 
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
@@ -454,6 +455,11 @@ void ReconcileHostedGames(uint64_t nowMs) {
 	    st.activity != UserActivity::InSession &&
 	    HasSessionRestorePoint()) {
 		RestoreSessionRestorePoint();
+		// In-app feedback so the user knows their prior emulator
+		// state came back.  Platform notifications don't cover this
+		// since nothing "arrived" — the session simply ended.
+		PushToast("Session ended — your previous game was restored.",
+			ToastSeverity::Info, 4000);
 	}
 
 	// 1b. Pending-accept detection — when the user runs prompt-me and
@@ -493,7 +499,15 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			st.session.pendingAcceptGameName.clear();
 			st.session.pendingAcceptStartedMs = 0;
 			if (st.screen == Screen::AcceptJoinPrompt) {
-				if (!Back()) Navigate(Screen::MyHostedGames);
+				// Back() pops to the caller's previous screen if the
+				// back-stack has an entry (they opened Online Play
+				// first, then the prompt interrupted), or sets
+				// screen=Closed when empty (the prompt interrupted
+				// them outside Online Play — Settings, Game Library,
+				// mid-game).  Returning to Closed restores whatever
+				// mobile screen they were on, which is less jarring
+				// than force-dragging them into Host Games.
+				Back();
 			}
 		}
 	}
@@ -572,6 +586,17 @@ void ReconcileHostedGames(uint64_t nowMs) {
 					"A peer is connecting to %s…",
 					o.gameName.c_str());
 				ATNetplayUI_Notify("Peer connecting", msg);
+
+				// In-app toast so the host sees the event even when
+				// no platform-notify backend is available (Android
+				// foreground, Wayland without libnotify, etc.) and
+				// even when they're buried in Settings / Game Library
+				// and would otherwise miss the window-flash cue.
+				char toast[192];
+				std::snprintf(toast, sizeof toast,
+					"Peer joined — switching to %s.",
+					o.gameName.c_str());
+				PushToast(toast, ToastSeverity::Success, 4000);
 			}
 
 			// Edge: host coord just entered Lockstepping.  The host

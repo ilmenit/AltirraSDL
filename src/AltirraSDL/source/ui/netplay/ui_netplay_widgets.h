@@ -88,6 +88,13 @@ struct TileInfo {
 	bool        isSelected  = false;   // accent border if true
 	uintptr_t   artTexId    = 0;       // SDL_Texture* or nullptr
 	ImVec2      artSize     = ImVec2(0, 0);
+
+	// Stable identity for ImGui focus tracking.  If set, SessionTile
+	// derives its widget ID from this string instead of the title
+	// pointer + grid index (which both change across lobby refreshes,
+	// causing the keyboard/gamepad cursor to jump home every 10 s).
+	// Pass the sessionId from the lobby entry here.
+	const char *idKey       = nullptr;
 };
 
 bool SessionTile(const TileInfo &info, const ImVec2 &size);
@@ -101,6 +108,44 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size);
 // If `allowRetry` is true and health is red, a "Retry" touch button
 // is appended that re-arms the Browser refresh queue.
 void LobbyStatusBanner(bool allowRetry);
+
+// -----------------------------------------------------------------------
+// Transient toast — a non-intrusive single-line banner that fades in at
+// the top of the screen, auto-dismisses after `durationMs`, and stacks
+// beneath any prior toasts still on screen.  Used for events where the
+// user deserves in-app feedback but an interrupting modal would be
+// overkill: "peer joined — switching to <game>", "session ended, your
+// game is restored", "host declined your request", etc.
+//
+// Severity maps to palette colours (info/success/warning/danger).
+// Toasts render above every other Online Play UI — including the
+// netplay overlay — so they are visible even when the user is
+// browsing Settings / Game Library / the emulator canvas.
+// -----------------------------------------------------------------------
+enum class ToastSeverity {
+	Info,     // neutral surface, textMuted on card
+	Success,  // green pill
+	Warning,  // amber pill
+	Danger,   // red pill
+};
+
+void PushToast(const char *text,
+               ToastSeverity severity = ToastSeverity::Info,
+               uint64_t durationMs = 4000);
+void RenderToasts();
+void ClearToasts();
+
+// Draws the Gaming-Mode screen header: a "<" back-arrow button
+// (48x48 dp Subtle) plus the centred title text, matching the
+// pattern used by Settings / About.  No-op on Desktop (the ImGui
+// window chrome already carries the title and a close button).
+//
+// Returns `true` on the frame the back-arrow is activated (by
+// mouse / touch / Enter / gamepad A).  The caller is expected to
+// call `Back()` / `Navigate(...)` in response.  Also handles the
+// Escape / Gamepad B hardware-back keys so every screen pops
+// consistently without per-screen wiring.
+bool ScreenHeader(const char *title);
 
 // Resolve a hosted game's display name (typically a filename with
 // extension, e.g. "Boulder Dash (1986).xex") to an ImTextureID

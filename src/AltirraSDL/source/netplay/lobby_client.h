@@ -48,6 +48,12 @@ struct LobbySession {
 	std::string basicCRC32;     // 8-char hex or empty (BASIC off)
 	std::string hardwareMode;   // "800XL" / "5200" / "1200XL" / etc.
 	std::string state;          // "waiting" (joinable) | "playing" (in session)
+
+	// UI-owned: which configured lobby (section name) this session was
+	// learned from.  Never set by the HTTP parser; the UI stamps it on
+	// entries as they arrive so a subsequent response from the same
+	// lobby can retire entries that vanished without a full list wipe.
+	std::string sourceLobby;
 };
 
 struct LobbyCreateRequest {

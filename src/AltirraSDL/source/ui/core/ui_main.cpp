@@ -731,6 +731,16 @@ void ATUIPollDeferredActions() {
 						(int)g_sim.GetVideoStandard());
 				}
 				g_sim.Pause();
+				// Gaming Mode: mark the mobile state as "game loaded"
+				// so that once Online Play's overlay dismisses on
+				// Lockstepping, the emulator view shows up (mobile
+				// router treats None+!gameLoaded as "redirect to the
+				// Game Library").
+				if (ATUIIsGamingMode()) {
+					extern ATMobileUIState g_mobileState;
+					g_mobileState.gameLoaded = true;
+					g_mobileState.currentScreen = ATMobileUIScreen::None;
+				}
 				break;
 			}
 			case kATDeferred_NetplayJoinerApply: {
@@ -822,6 +832,16 @@ void ATUIPollDeferredActions() {
 				}
 
 				if (ok) {
+					// Gaming Mode: same as the host side — mark
+					// mobile state as game-loaded so the emulator
+					// view takes over once the Online Play overlay
+					// dismisses on Lockstepping.
+					if (ATUIIsGamingMode()) {
+						extern ATMobileUIState g_mobileState;
+						g_mobileState.gameLoaded = true;
+						g_mobileState.currentScreen =
+							ATMobileUIScreen::None;
+					}
 					ATNetplayUI_JoinerSnapshotApplied();
 				} else {
 					ATNetplayUI::RestoreSessionRestorePoint();
