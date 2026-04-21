@@ -23,4 +23,9 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state);
 void ATUIRenderDebugMenu(ATSimulator &sim);
 void ATUIRenderOnlineMenu();
 
+// Process deferred file dialog results (source file open, SAP/tape save
+// dialogs).  Must run on the main thread every frame.  Called from
+// ATUIRenderMainMenu() on all platforms.
+void ATUIProcessDeferredMenuDialogs(SDL_Window *window);
+
 #endif

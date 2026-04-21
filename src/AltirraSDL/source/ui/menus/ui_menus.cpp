@@ -215,6 +215,10 @@ void ATUIQuickLoadState() {
 	}
 }
 
+bool ATUIHasQuickSaveState() {
+	return g_pQuickSaveState != nullptr;
+}
+
 // =========================================================================
 // File dialog filters
 // =========================================================================
@@ -1173,35 +1177,11 @@ static void RenderHelpMenu(ATUIState &state) {
 // main_sdl3.cpp to position the emulator display below the menu bar.
 extern float g_menuBarHeight;
 
-void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *backend, ATUIState &state) {
-	// In fullscreen mode, hide the menu bar to match Windows Altirra behaviour.
-	bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
-	if (isFullscreen) {
-		g_menuBarHeight = 0.0f;
-		return;
-	}
-
-	if (!ImGui::BeginMainMenuBar())
-		return;
-
-	if (ImGui::BeginMenu("File")) { RenderFileMenu(sim, state, window); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("View")) { ATUIRenderViewMenu(sim, state, window, backend); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("System")) { ATUIRenderSystemMenu(sim, state); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Input")) { RenderInputMenu(sim, state); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Cheat")) { RenderCheatMenu(sim, state); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Debug")) { ATUIRenderDebugMenu(sim); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Record")) { RenderRecordMenu(sim, window); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Tools")) { RenderToolsMenu(sim, state, window); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Online Play")) { ATUIRenderOnlineMenu(); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Window")) { RenderWindowMenu(window); ImGui::EndMenu(); }
-	if (ImGui::BeginMenu("Help")) { RenderHelpMenu(state); ImGui::EndMenu(); }
-
-	// Store the menu bar height so the display rect calculation can offset
-	// the emulator screen below the menu bar.
-	g_menuBarHeight = ImGui::GetWindowSize().y;
-
-	ImGui::EndMainMenuBar();
-
+// Process deferred file dialog results.  Must run on the main thread every
+// frame regardless of whether the ImGui menu bar is rendered (e.g. on macOS
+// the native menu bar replaces the ImGui one, but dialogs still need
+// processing).
+void ATUIProcessDeferredMenuDialogs(SDL_Window *window) {
 	// Process deferred source file open (must run on main thread).
 	{
 		std::lock_guard<std::mutex> lock(g_pendingSourceMutex);
@@ -1233,4 +1213,45 @@ void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *b
 			ATUIShowSaveFileDialog('casa', TapeAnalysisSaveCallback, nullptr, window, kWAVFilters, 2);
 		}
 	}
+}
+
+void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *backend, ATUIState &state) {
+#ifdef VD_OS_MACOS
+	// On macOS, the native NSMenu bar replaces the ImGui menu bar.
+	// No ImGui rendering needed — the display fills the entire window.
+	g_menuBarHeight = 0.0f;
+#else
+	// In fullscreen mode, hide the menu bar to match Windows Altirra behaviour.
+	bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+	if (isFullscreen) {
+		g_menuBarHeight = 0.0f;
+		ATUIProcessDeferredMenuDialogs(window);
+		return;
+	}
+
+	if (!ImGui::BeginMainMenuBar()) {
+		ATUIProcessDeferredMenuDialogs(window);
+		return;
+	}
+
+	if (ImGui::BeginMenu("File")) { RenderFileMenu(sim, state, window); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("View")) { ATUIRenderViewMenu(sim, state, window, backend); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("System")) { ATUIRenderSystemMenu(sim, state); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Input")) { RenderInputMenu(sim, state); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Cheat")) { RenderCheatMenu(sim, state); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Debug")) { ATUIRenderDebugMenu(sim); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Record")) { RenderRecordMenu(sim, window); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Tools")) { RenderToolsMenu(sim, state, window); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Online Play")) { ATUIRenderOnlineMenu(); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Window")) { RenderWindowMenu(window); ImGui::EndMenu(); }
+	if (ImGui::BeginMenu("Help")) { RenderHelpMenu(state); ImGui::EndMenu(); }
+
+	// Store the menu bar height so the display rect calculation can offset
+	// the emulator screen below the menu bar.
+	g_menuBarHeight = ImGui::GetWindowSize().y;
+
+	ImGui::EndMainMenuBar();
+#endif
+
+	ATUIProcessDeferredMenuDialogs(window);
 }
