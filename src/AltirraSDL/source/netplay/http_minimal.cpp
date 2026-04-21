@@ -359,7 +359,8 @@ void HttpRequestSync(const HttpRequest& in, HttpResponse& out) {
 	out.statusText = statusText;
 
 	// Walk header lines between eolOfStatus+2 and headerEnd.
-	ssize_t contentLength = -1;
+	// int64_t (not POSIX ssize_t) — MSVC's <sys/types.h> doesn't provide ssize_t.
+	int64_t contentLength = -1;
 	bool chunked = false;
 	size_t hpos = eolOfStatus + 2;
 	while (hpos < headerEnd) {
@@ -399,7 +400,7 @@ void HttpRequestSync(const HttpRequest& in, HttpResponse& out) {
 		appendBody((const uint8_t*)raw.data() + bodyStart, haveBody);
 
 	if (contentLength >= 0) {
-		while ((ssize_t)out.body.size() < contentLength) {
+		while ((int64_t)out.body.size() < contentLength) {
 			uint64_t now = MonotonicMs();
 			if (now - startMs >= deadline) { out.error = "recv body timeout"; HTTP_CLOSE(s); return; }
 			uint32_t left = (uint32_t)(deadline - (now - startMs));
