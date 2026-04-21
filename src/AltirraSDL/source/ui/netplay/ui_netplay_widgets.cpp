@@ -7,8 +7,19 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <SDL3/SDL.h>
+
 #include "input/touch_widgets.h"
 #include "ui/core/ui_mode.h"
+#include "ui_netplay_state.h"
+#include "../mobile/mobile_internal.h"
+#include "../gamelibrary/game_library.h"
+#include "../gamelibrary/game_library_art.h"
+
+#include <vd2/system/text.h>
+
+#include <cctype>
+#include <cwctype>
 
 #include <algorithm>
 #include <cmath>
@@ -299,6 +310,15 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 		txt.y += ImGui::GetTextLineHeightWithSpacing();
 		dl->AddText(txt, p.textMuted, info.subtitle);
 	}
+	// Region line — rendered below the handle when the host published
+	// one.  "global" / "eu" / "us" etc.  Matches Desktop's Region
+	// column.
+	if (info.region && *info.region) {
+		txt.y += ImGui::GetTextLineHeightWithSpacing();
+		char buf[64];
+		std::snprintf(buf, sizeof buf, "Region: %s", info.region);
+		dl->AddText(txt, p.textMuted, buf);
+	}
 	// Players chip — drawn at the bottom-right of the card.
 	if (info.maxPlayers > 0) {
 		char chip[32];
@@ -361,6 +381,147 @@ void StatusBadge(const char *label, int severity, bool showSpinner) {
 // ---------------------------------------------------------------------
 // PeerChip — inline peer handle with optional region + padlock marker.
 // ---------------------------------------------------------------------
+
+// ---------------------------------------------------------------------
+// LobbyStatusBanner — honest reachability header for Gaming Mode.
+// Green when the most recent lobby poll succeeded, red on failure,
+// neutral grey before the first response.  Mirrors Desktop's
+// LobbyStatusIndicator so the two modes tell the same story.
+// ---------------------------------------------------------------------
+void LobbyStatusBanner(bool allowRetry) {
+	const ATMobilePalette &p = ATMobileGetPalette();
+	const LobbyHealth& h = GetState().lobbyHealth;
+	const uint64_t nowMs = SDL_GetTicks();
+
+	const bool haveOk   = (h.lastOkMs   != 0);
+	const bool haveFail = (h.lastFailMs != 0);
+	const bool okIsNewer = haveOk && (!haveFail || h.lastOkMs >= h.lastFailMs);
+
+	uint32_t bg   = p.segBgInactive;
+	uint32_t text = p.text;
+	char line[192];
+
+	if (okIsNewer) {
+		bg   = p.success;
+		text = p.textOnAccent;
+		uint64_t age = (nowMs >= h.lastOkMs) ? nowMs - h.lastOkMs : 0;
+		uint64_t sec = age / 1000;
+		std::snprintf(line, sizeof line,
+			"[OK]  Lobby reachable — listed  (checked %llus ago)",
+			(unsigned long long)sec);
+	} else if (haveFail) {
+		bg   = p.danger;
+		text = p.textOnAccent;
+		const char *reason = h.lastError.empty()
+			? "unreachable" : h.lastError.c_str();
+		std::snprintf(line, sizeof line,
+			"[!!]  Lobby unreachable — %s", reason);
+	} else {
+		bg   = p.segBgInactive;
+		text = p.textMuted;
+		std::snprintf(line, sizeof line, "[..]  Lobby: checking...");
+	}
+
+	// Pill background spanning the full content width.
+	ImDrawList *dl = ImGui::GetWindowDrawList();
+	ImVec2 cur = ImGui::GetCursorScreenPos();
+	float w = ImGui::GetContentRegionAvail().x;
+	float padX = Dp(14), padY = Dp(8);
+	float lineH = ImGui::GetTextLineHeight() + padY * 2;
+	ImVec2 bmin = cur;
+	ImVec2 bmax = ImVec2(cur.x + w, cur.y + lineH);
+	dl->AddRectFilled(bmin, bmax, bg, Dp(8.0f));
+	dl->AddText(ImVec2(bmin.x + padX, bmin.y + padY), text, line);
+	ImGui::Dummy(ImVec2(w, lineH));
+
+	if (allowRetry && !okIsNewer && haveFail) {
+		// Offer a manual retry beneath the banner when the last poll
+		// failed.  The worker's backoff logic will still throttle, but
+		// users appreciate an explicit "try again" affordance.
+		if (ATTouchButton("Retry", ImVec2(Dp(160), Dp(40)),
+		                  ATTouchButtonStyle::Neutral)) {
+			State& st = GetState();
+			st.browser.refreshRequested = true;
+			st.browser.nextRetryMs = 0;
+		}
+	}
+	ImGui::Spacing();
+}
+
+// ---------------------------------------------------------------------
+// Game-art lookup — match by basename against the Game Library index.
+// ---------------------------------------------------------------------
+namespace {
+// Lowercase, strip trailing extension, and strip any trailing
+// parenthesised tag (like Game Library's ExtractCanonicalName does)
+// so "World Karate Championship (v1,128).xex" reduces to
+// "world karate championship".
+std::wstring CanonicalBasename(const wchar_t *name) {
+	std::wstring s = name ? name : L"";
+	// Strip last extension.
+	size_t dot = s.find_last_of(L'.');
+	if (dot != std::wstring::npos) s.erase(dot);
+	// Strip trailing " (...)" groups.  Game Library applies the same
+	// rule when building canonical names, so the two keys line up.
+	while (!s.empty() && s.back() == L' ') s.pop_back();
+	while (!s.empty() && s.back() == L')') {
+		size_t op = s.find_last_of(L'(');
+		if (op == std::wstring::npos) break;
+		// Refuse to strip if '(' is at the very start — that isn't a
+		// disambiguation tag.
+		if (op == 0) break;
+		s.erase(op);
+		while (!s.empty() && s.back() == L' ') s.pop_back();
+	}
+	for (auto& c : s) c = (wchar_t)std::towlower(c);
+	return s;
+}
+} // anonymous
+
+uintptr_t LookupArtByGameName(const char *gameName, int *outW, int *outH) {
+	if (outW) *outW = 0;
+	if (outH) *outH = 0;
+	if (!gameName || !*gameName) return 0;
+
+	ATGameLibrary *lib = GetGameLibrary();
+	GameArtCache *cache = GetGameArtCache();
+	if (!lib || !cache) return 0;
+
+	VDStringW wname = VDTextU8ToW(gameName, -1);
+	std::wstring key = CanonicalBasename(wname.c_str());
+	if (key.empty()) return 0;
+
+	const auto& entries = lib->GetEntries();
+	for (const auto& e : entries) {
+		if (e.mArtPath.empty()) continue;
+		// First try the precomputed canonical name.  When that's empty
+		// (older cache entries), fall back to the display name + any
+		// variant basename so we don't miss legitimate matches.
+		std::wstring cand = CanonicalBasename(e.mCanonicalName.c_str());
+		if (cand == key) {
+			return (uintptr_t)cache->GetTexture(e.mArtPath, outW, outH);
+		}
+		cand = CanonicalBasename(e.mDisplayName.c_str());
+		if (cand == key) {
+			return (uintptr_t)cache->GetTexture(e.mArtPath, outW, outH);
+		}
+		for (const auto& v : e.mVariants) {
+			const wchar_t *p = v.mPath.c_str();
+			const wchar_t *slash = nullptr;
+			for (const wchar_t *q = p; *q; ++q)
+				if (*q == L'/' || *q == L'\\') slash = q;
+			const wchar_t *base = slash ? slash + 1 : p;
+			if (CanonicalBasename(base) == key) {
+				return (uintptr_t)cache->GetTexture(e.mArtPath, outW, outH);
+			}
+		}
+	}
+	return 0;
+}
+
+void PumpArtCache() {
+	if (GameArtCache *c = GetGameArtCache()) c->ProcessPending();
+}
 
 void PeerChip(const char *handle, const char *region, bool isPrivate) {
 	const ATMobilePalette &p = ATMobileGetPalette();

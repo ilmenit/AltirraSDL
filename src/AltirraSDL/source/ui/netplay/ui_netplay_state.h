@@ -155,6 +155,22 @@ MachineConfig CaptureCurrentMachineConfig();
 // 0 if the id is unknown or the firmware can't be loaded.
 uint32_t ComputeFirmwareCRC32(uint64_t firmwareId);
 
+// Resolve a firmware CRC32 back to a short human-readable name
+// ("AltirraOS-XL", "Original XL", ...) by scanning the installed
+// firmware list.  Returns "" for crc=0 (meaning the offer doesn't
+// pin a specific ROM), or "Unknown" when no local firmware matches.
+// Thread-affine: callers on the UI thread only.
+const char *FirmwareNameForCRC(uint32_t crc);
+
+// Stable fingerprint of a HostedGame — combines the image path with
+// every joiner-visible MachineConfig knob (hardware mode, memory,
+// video standard, CPU mode, BASIC enable, SIO patch, kernel/BASIC
+// CRCs).  Used to reject duplicate Add-Game entries.  Deliberately
+// excludes Name, privacy, and entry code — two listings of the same
+// game (one public, one private) are a legitimate use case.
+std::string HostedGameSignature(const std::string& path,
+                                const MachineConfig& c);
+
 // Translate a raw http_minimal / lobby_client error string + HTTP
 // status into user-friendly text.  Raw "recv() failed", "HTTP 429",
 // "getaddrinfo: Name or service not known" etc. become the kind of
@@ -227,6 +243,12 @@ struct Prefs {
 	// others want the diagnostic always visible.  Defaults ON — new
 	// users need the feedback to understand what netplay is doing.
 	bool showSessionHUD = true;
+
+	// Show Game Library cover art next to rows in Browser + Host
+	// Games.  Matched by basename (filename stem of the hosted cart
+	// against the local library index).  Defaults ON — art provides
+	// strong visual identity on mobile / Gaming Mode screens.
+	bool showBrowserArt = true;
 };
 
 // Ephemeral state — cleared on Shutdown().

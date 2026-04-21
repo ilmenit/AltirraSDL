@@ -239,6 +239,11 @@ void RenderBrowser() {
 	ImGui::Separator();
 	ImGui::Spacing();
 
+	// Reachability banner — mirrors Host Games so joiners see the same
+	// honest green/red state.  Retry offered because the grid below is
+	// empty when the lobby is unreachable.
+	LobbyStatusBanner(/*allowRetry*/ true);
+
 	// Grid of tiles.
 	ImVec2 avail = ImGui::GetContentRegionAvail();
 	ImGui::BeginChild("##sessions", avail, false,
@@ -250,6 +255,7 @@ void RenderBrowser() {
 			? "Loading sessions…"
 			: "No sessions right now.  Host one!");
 	} else {
+		if (st.prefs.showBrowserArt) PumpArtCache();
 		BeginScreenGrid(/*columns*/ 4, /*minTileWidth*/ Dp(220),
 			/*aspect*/ 0.85f);
 		for (size_t i = 0; i < br.items.size(); ++i) {
@@ -262,6 +268,12 @@ void RenderBrowser() {
 			ti.maxPlayers   = (uint32_t)s.maxPlayers;
 			ti.isPrivate    = s.requiresCode;
 			ti.isSelected   = ((int)i == br.selectedIdx);
+			if (st.prefs.showBrowserArt) {
+				int aw = 0, ah = 0;
+				ti.artTexId = LookupArtByGameName(
+					s.cartName.c_str(), &aw, &ah);
+				ti.artSize = ImVec2((float)aw, (float)ah);
+			}
 			if (SessionTile(ti, ImGui::GetContentRegionAvail().x > 0
 			                ? ImVec2(0, 0)  // unused — grid dictates size
 			                : ImVec2(Dp(220), Dp(200)))) {
@@ -529,6 +541,13 @@ void RenderPrefs() {
 	                ImVec2(Dp(720), Dp(780))))
 		return;
 
+	// Pin the Done button; scroll the body so portrait orientation
+	// doesn't bury the commit action below the keyboard / gesture bar.
+	const float footerH = Dp(48) + Dp(16);
+	ImGui::BeginChild("##prefsBody",
+		ImVec2(0, -footerH), false, 0);
+	ATTouchDragScroll();
+
 	ATTouchSection("Nickname");
 	static char nameBuf[32] = {};
 	if (ConsumeFocusRequest(5001)) {
@@ -569,8 +588,15 @@ void RenderPrefs() {
 		&st.prefs.defaultInputDelayInternet, 1, 10, "%d frames");
 
 	ImGui::Spacing();
+	ATTouchSection("Display");
+	ATTouchToggle("Show game art in Online Play",
+		&st.prefs.showBrowserArt);
+	ATTouchToggle("Show in-session HUD", &st.prefs.showSessionHUD);
+
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
+
 	ImGui::Separator();
-	ImGui::Spacing();
 	if (ATTouchButton("Done", ImVec2(-FLT_MIN, Dp(48)),
 	                  ATTouchButtonStyle::Accent)) {
 		SaveToRegistry();
@@ -618,11 +644,15 @@ void RenderMyHostedGames() {
 	                ImVec2(Dp(1100), Dp(800))))
 		return;
 
-	ATTouchSection(st.activity == UserActivity::Idle
-		? "Listed on the lobby"
-		: (st.activity == UserActivity::InSession
-		   ? "Playing — other hostedGames suspended"
-		   : "Single-player — hostedGames suspended"));
+	// Honest lobby-reachability banner.  Colour + text reflect the
+	// last List result, not just the activity state — a green "listed"
+	// message while the server is unreachable would be misleading.
+	LobbyStatusBanner(/*allowRetry*/ true);
+	if (st.activity == UserActivity::InSession) {
+		ATTouchMutedText("Playing — other hosted games suspended.");
+	} else if (st.activity == UserActivity::PlayingLocal) {
+		ATTouchMutedText("Single-player active — hosted games suspended.");
+	}
 
 	// Top toolbar.
 	float btnW = Dp(200);
@@ -649,8 +679,10 @@ void RenderMyHostedGames() {
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	ImGui::BeginChild("##hostedGames", ImGui::GetContentRegionAvail(),
-		false, 0);
+	// Leave room for the pinned footer (Host-all + Close).
+	const float hostFooterH = Dp(48) + Dp(16);
+	ImGui::BeginChild("##hostedGames",
+		ImVec2(0, -hostFooterH), false, 0);
 	ATTouchDragScroll();
 
 	if (st.hostedGames.empty()) {
@@ -658,27 +690,77 @@ void RenderMyHostedGames() {
 			"You haven't added any games yet.  Tap + Add Game to pick "
 			"one from your library or from a file.");
 	} else {
+		if (st.prefs.showBrowserArt) PumpArtCache();
 		std::string pendingToggle, pendingRemove;
 		for (auto& o : st.hostedGames) {
 			ImGui::PushID(o.id.c_str());
 
-			char subtitle[200];
-			std::snprintf(subtitle, sizeof subtitle, "%s \xC2\xB7 %s \xC2\xB7 %s",
+			// Cover art thumbnail — matched by basename against the
+			// Game Library.  Rendered as its own row above the list
+			// item so the ATTouchListItem's fixed-height card layout
+			// stays intact (the row's clip rect would otherwise hide
+			// anything mounted to its left on SameLine).
+			if (st.prefs.showBrowserArt) {
+				int aw = 0, ah = 0;
+				uintptr_t tex = LookupArtByGameName(
+					o.gameName.c_str(), &aw, &ah);
+				if (tex && aw > 0 && ah > 0) {
+					float thumbH = Dp(44);
+					float thumbW = thumbH * (float)aw / (float)ah;
+					if (thumbW > Dp(72)) thumbW = Dp(72);
+					ImGui::Image((ImTextureID)tex,
+						ImVec2(thumbW, thumbH));
+				}
+			}
+
+			// Subtitle: single-line hardware summary + visibility.
+			// Firmware sub-line is drawn below separately (the list
+			// item's subtitle slot is single-line only).
+			char subtitle[160];
+			std::snprintf(subtitle, sizeof subtitle,
+				"%s \xC2\xB7 %s",
 				MachineConfigSummary(o.config),
-				o.isPrivate ? "Private" : "Public",
-				OfferStateLabelMobile(o.state));
+				o.isPrivate ? "Private" : "Public");
 			bool tapped = ATTouchListItem(o.gameName.c_str(), subtitle,
 				false, false);
 			(void)tapped;  // tile tap is currently a no-op; actions below
+
+			// Firmware identification sub-line — shown only when the
+			// offer pins at least one CRC.  Matches Desktop's row.
+			if (o.config.kernelCRC32 || o.config.basicCRC32) {
+				const char *osName =
+					FirmwareNameForCRC(o.config.kernelCRC32);
+				const char *bsName =
+					FirmwareNameForCRC(o.config.basicCRC32);
+				char fw[224];
+				int n = 0;
+				if (o.config.kernelCRC32) {
+					n += std::snprintf(fw + n, sizeof fw - n,
+						"OS: %s (%08X)",
+						*osName ? osName : "Unknown",
+						o.config.kernelCRC32);
+				}
+				if (o.config.basicCRC32) {
+					n += std::snprintf(fw + n, sizeof fw - n,
+						"%sBASIC: %s (%08X)",
+						n ? "  \xC2\xB7  " : "",
+						*bsName ? bsName : "Unknown",
+						o.config.basicCRC32);
+				}
+				ATTouchMutedText(fw);
+			}
 
 			if (!o.lastError.empty()) {
 				ATTouchMutedText(o.lastError.c_str());
 			}
 
-			// Severity badge + quick actions.
+			// Severity badge for lobby state + visibility badge.
 			StatusBadge(OfferStateLabelMobile(o.state),
 				OfferStateSeverity(o.state),
 				o.state == HostedGameState::Handshaking);
+			ImGui::SameLine();
+			StatusBadge(o.isPrivate ? "Private" : "Public",
+				o.isPrivate ? 1 : 0, false);
 
 			ImGui::SameLine();
 			const char *enLabel = o.enabled ? "Disable" : "Enable";
@@ -712,6 +794,36 @@ void RenderMyHostedGames() {
 
 	ATTouchEndDragScroll();
 	ImGui::EndChild();
+
+	// Pinned footer: Host-all tri-state master + Close.  Mirrors
+	// Desktop's bottom-bar pattern so both modes feel the same.
+	ImGui::Separator();
+	if (!st.hostedGames.empty()) {
+		int enCount = 0;
+		for (const auto& o : st.hostedGames) if (o.enabled) ++enCount;
+		const bool allEnabled = (enCount == (int)st.hostedGames.size());
+		const bool anyEnabled = (enCount > 0);
+		const bool mixed      = anyEnabled && !allEnabled;
+		if (mixed)
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+				ImGui::GetStyle().Alpha * 0.6f);
+		bool toggle = allEnabled;
+		if (ATTouchToggle("Host all", &toggle)) {
+			const bool target = !allEnabled;
+			for (auto& o : st.hostedGames) {
+				if (o.enabled != target) {
+					target ? EnableHostedGame(o.id)
+					       : DisableHostedGame(o.id);
+				}
+			}
+		}
+		if (mixed) ImGui::PopStyleVar();
+		ImGui::SameLine();
+	}
+	if (ATTouchButton("Close", ImVec2(Dp(160), Dp(44)),
+	                  ATTouchButtonStyle::Neutral)) {
+		Navigate(Screen::Closed);
+	}
 
 	if (!open) Navigate(Screen::Closed);
 	EndSheet();
@@ -872,7 +984,23 @@ void RenderAddOffer() {
 	if (ATTouchButton("Add Game", ImVec2(bW, Dp(48)),
 	                  ATTouchButtonStyle::Accent)) {
 		State& s = GetState();
-		if (s.hostedGames.size() < State::kMaxHostedGames) {
+		// Reject duplicates — same image path + same machine config.
+		// Shares the signature function with the Desktop Add flow so
+		// both modes enforce the same rule.
+		const std::string sig =
+			HostedGameSignature(stagedPath, s_mobileAddConfig);
+		bool dup = false;
+		for (const auto& existing : s.hostedGames) {
+			if (HostedGameSignature(existing.gamePath, existing.config)
+			    == sig) { dup = true; break; }
+		}
+		if (dup) {
+			s.session.lastError =
+				"This game is already added to hosting with this "
+				"configuration — change the machine config or remove "
+				"the existing entry first.";
+			Navigate(Screen::Error);
+		} else if (s.hostedGames.size() < State::kMaxHostedGames) {
 			HostedGame o;
 			o.id        = GenerateHostedGameId();
 			o.gamePath  = stagedPath;

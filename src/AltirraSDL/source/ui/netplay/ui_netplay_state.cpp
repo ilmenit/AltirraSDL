@@ -281,6 +281,37 @@ uint32_t ComputeFirmwareCRC32(uint64_t firmwareId) {
 	return VDCRCTable::CRC32.CRC(buf.data(), buf.size());
 }
 
+const char *FirmwareNameForCRC(uint32_t crc) {
+	if (crc == 0) return "";
+	ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
+	if (!fwm) return "Unknown";
+
+	vdvector<ATFirmwareInfo> fwList;
+	fwm->GetFirmwareList(fwList);
+	for (const auto& fw : fwList) {
+		if (!fw.mbVisible) continue;
+		if (ComputeFirmwareCRC32(fw.mId) != crc) continue;
+		static thread_local std::string out;
+		out = VDTextWToU8(fw.mName).c_str();
+		return out.c_str();
+	}
+	return "Unknown";
+}
+
+std::string HostedGameSignature(const std::string& path,
+                                const MachineConfig& c) {
+	char buf[384];
+	std::snprintf(buf, sizeof buf,
+		"%s|hw=%d|mem=%d|vs=%d|cpu=%d|basic=%d|sio=%d"
+		"|kc=%08X|bc=%08X",
+		path.c_str(),
+		(int)c.hardwareMode, (int)c.memoryMode,
+		(int)c.videoStandard, (int)c.cpuMode,
+		c.basicEnabled ? 1 : 0, c.sioPatchEnabled ? 1 : 0,
+		c.kernelCRC32, c.basicCRC32);
+	return buf;
+}
+
 MachineConfig CaptureCurrentMachineConfig() {
 	MachineConfig c;
 	c.hardwareMode    = g_sim.GetHardwareMode();
@@ -470,7 +501,8 @@ void Initialize() {
 	// uses MachineConfig fields captured from the live sim instead.
 	key.removeValue("LastAddPreset");
 
-	g_state.prefs.showSessionHUD = key.getBool("ShowSessionHUD", true);
+	g_state.prefs.showSessionHUD  = key.getBool("ShowSessionHUD", true);
+	g_state.prefs.showBrowserArt  = key.getBool("ShowBrowserArt", true);
 
 	// Clamp values that may have come from a corrupted registry write.
 	if (g_state.prefs.defaultInputDelayLan < 1)   g_state.prefs.defaultInputDelayLan = 3;
@@ -496,6 +528,7 @@ void SaveToRegistry() {
 	key.setBool  ("FocusOnAttention", g_state.prefs.focusOnAttention);
 	key.setString("LastEntryCode",    g_state.prefs.lastEntryCode.c_str());
 	key.setBool  ("ShowSessionHUD",   g_state.prefs.showSessionHUD);
+	key.setBool  ("ShowBrowserArt",   g_state.prefs.showBrowserArt);
 
 	SaveOffers(key);
 }

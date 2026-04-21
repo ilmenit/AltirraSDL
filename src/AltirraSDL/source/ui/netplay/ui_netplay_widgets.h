@@ -92,6 +92,31 @@ struct TileInfo {
 
 bool SessionTile(const TileInfo &info, const ImVec2 &size);
 
+// Single-line lobby reachability banner — mirrors Desktop's
+// LobbyStatusIndicator but sized/coloured for Gaming Mode section
+// headers.  Renders an "[OK]/[!!]/[..] Lobby: <status>" line; colour
+// is green when the last List succeeded, red after a failure, dim
+// while waiting for the first response.
+//
+// If `allowRetry` is true and health is red, a "Retry" touch button
+// is appended that re-arms the Browser refresh queue.
+void LobbyStatusBanner(bool allowRetry);
+
+// Resolve a hosted game's display name (typically a filename with
+// extension, e.g. "Boulder Dash (1986).xex") to an ImTextureID
+// pointing at the cover art found in the Game Library — matched by
+// canonical basename.  Returns 0 when no match / art cache / library
+// is available.  When non-zero, `outW` and `outH` receive the texture
+// dimensions in pixels.  Cheap to call per row; the cache de-dupes
+// loads and only uploads once per image.  Must be called from the UI
+// thread.
+uintptr_t LookupArtByGameName(const char *gameName, int *outW, int *outH);
+
+// Drives the shared GameArtCache upload queue — call once per frame
+// from any screen that paints art thumbnails.  Safe no-op when the
+// cache is not initialised.
+void PumpArtCache();
+
 // Status indicator used by the Waiting panel.  `severity` controls the
 // colour (0=accent/neutral, 1=warning, 2=danger, 3=success) and
 // `showSpinner` adds a rotating dot train.

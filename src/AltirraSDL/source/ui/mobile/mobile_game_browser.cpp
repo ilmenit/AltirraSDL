@@ -125,6 +125,10 @@ void GameBrowser_Shutdown() {
 	}
 }
 
+GameArtCache *GetGameArtCache() {
+	return s_artCache;
+}
+
 ATGameLibrary *GetGameLibrary() {
 	return s_gameLibrary;
 }
@@ -1179,21 +1183,12 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			const float chromePad = dp(16.0f);
 			float settingsW = ImGui::CalcTextSize("Settings").x
 				+ chromePad * 2;
-#ifdef ALTIRRA_NETPLAY_ENABLED
-			float onlineW = ImGui::CalcTextSize("Online Play").x
-				+ chromePad * 2;
-#else
-			float onlineW = 0.0f;
-#endif
 #ifndef __ANDROID__
 			float exitW = ImGui::CalcTextSize("Exit Gaming Mode").x
 				+ chromePad * 2;
 			float chromeW = settingsW + dp(6.0f) + exitW;
 #else
 			float chromeW = settingsW;
-#endif
-#ifdef ALTIRRA_NETPLAY_ENABLED
-			chromeW += onlineW + dp(6.0f);
 #endif
 
 			float rowY = ImGui::GetCursorPosY();
@@ -1207,18 +1202,6 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			float rightX = ImGui::GetContentRegionMax().x - chromeW;
 			ImGui::SameLine(0, 0);
 			ImGui::SetCursorPos(ImVec2(rightX, rowY));
-#ifdef ALTIRRA_NETPLAY_ENABLED
-			if (ATTouchButton("Online Play##chrome",
-				ImVec2(onlineW, chromeH),
-				ATTouchButtonStyle::Accent))
-			{
-				// Go to My Hosted Games first — that's the primary
-				// entry point for the offer-list UX.  The browser is
-				// reachable from there with one tap.
-				ATNetplayUI_OpenMyHostedGames();
-			}
-			ImGui::SameLine(0, dp(6.0f));
-#endif
 			if (ATTouchButton("Settings##chrome",
 				ImVec2(settingsW, chromeH)))
 			{
@@ -1272,6 +1255,16 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
 				s_fileBrowserNeedsRefresh = true;
 			}
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			ImGui::SameLine();
+			if (ATTouchButton("Online Play", ImVec2(0, btnH))) {
+				// Go to My Hosted Games first — that's the primary
+				// entry point for the offer-list UX.  The browser is
+				// reachable from there with one tap.
+				ATNetplayUI_OpenMyHostedGames();
+			}
+#endif
 
 			ImGui::SameLine();
 			if (ATTouchButton("Boot Empty", ImVec2(0, btnH))) {

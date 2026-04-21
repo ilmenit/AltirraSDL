@@ -197,6 +197,13 @@ void GameBrowser_OnBootedGame(const VDStringW &variantPath);
 class ATGameLibrary;
 ATGameLibrary *GetGameLibrary();
 
+// Art cache accessor — shared between the Gaming-Mode Game Browser
+// and the Online Play screens (so netplay rows can reuse textures
+// already loaded for the library grid instead of double-caching).
+// Returns nullptr before GameBrowser_Init().
+class GameArtCache;
+GameArtCache *GetGameArtCache();
+
 // Lookup helpers used by the Disk Drives screen to surface a
 // "Select" button that re-opens the variant picker for multi-disk
 // entries.  Return -1 / 0 when the path / index isn't in the library.

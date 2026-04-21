@@ -923,32 +923,11 @@ namespace {
 		s_firmwareChoicesLoaded = true;
 	}
 
-	// Resolve a firmware CRC32 back to the human-readable name shipped
-	// by ATFirmwareManager, using the caches built by ReloadFirmwareChoices.
-	// Returns a pointer to the bare firmware name ("AltirraOS-XL" etc.)
-	// or "Unknown" if the CRC isn't installed locally, or an empty string
-	// when the CRC is 0 (meaning "default for hardware / not pinned").
-	const char *FirmwareNameForCRC(uint32_t crc) {
-		if (crc == 0) return "";
-		auto scan = [crc](const std::vector<FirmwareChoice>& v) -> const char * {
-			for (const auto& c : v) {
-				if (c.crc32 != 0 && c.crc32 == crc) {
-					const std::string& s = c.label;
-					size_t end = s.find(" (");
-					if (end == std::string::npos) end = s.find(" [");
-					if (end == std::string::npos) end = s.size();
-					static thread_local std::string out;
-					out.assign(s, 0, end);
-					return out.c_str();
-				}
-			}
-			return nullptr;
-		};
-		if (auto *n = scan(s_kernelChoices)) return n;
-		if (auto *n = scan(s_basicChoices))  return n;
-		return "Unknown";
-	}
 } // anonymous
+
+// FirmwareNameForCRC moved to ui_netplay_state.cpp so Gaming Mode
+// can reuse it without dragging in the desktop firmware-dropdown
+// cache.
 
 void DesktopMyHostedGames() {
 	State& st = GetState();
@@ -1218,24 +1197,7 @@ namespace {
 		s_pickedPathPending = true;
 	}
 
-	// Stable signature covering the hosted-game fields that define
-	// whether two entries would actually boot the same peer experience:
-	// the image path + every joiner-visible machine-config knob.  Name,
-	// privacy, and entry code are excluded — the user may legitimately
-	// want one public and one private listing of the same game.
-	std::string HostedGameSignature(const std::string& path,
-	                                const MachineConfig& c) {
-		char buf[384];
-		std::snprintf(buf, sizeof buf,
-			"%s|hw=%d|mem=%d|vs=%d|cpu=%d|basic=%d|sio=%d"
-			"|kc=%08X|bc=%08X",
-			path.c_str(),
-			(int)c.hardwareMode, (int)c.memoryMode,
-			(int)c.videoStandard, (int)c.cpuMode,
-			c.basicEnabled ? 1 : 0, c.sioPatchEnabled ? 1 : 0,
-			c.kernelCRC32, c.basicCRC32);
-		return buf;
-	}
+	// HostedGameSignature moved to ui_netplay_state.cpp.
 
 	// Lazy singleton to avoid pulling Game Library init/shutdown into
 	// this TU.  Reuses the user's configured library if available.
