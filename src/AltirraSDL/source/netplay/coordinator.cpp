@@ -257,9 +257,11 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
                                         const Endpoint& from,
                                         uint64_t /*nowMs*/) {
 	if (mPhase != Phase::WaitingForJoiner) {
-		// Already handshaking with someone — ignore duplicate Hellos
-		// from strangers.  A future v1.x could send a "host full"
-		// reject; for v1.0 silence is fine.
+		// Host is already past the listening phase (handshake in
+		// progress, snapshot streaming, or in lockstep).  Tell the
+		// joiner we're full so they get a clear message instead of
+		// hanging in "Connecting…" until their handshake timeout.
+		SendReject(kRejectHostFull, from);
 		return;
 	}
 
@@ -432,15 +434,15 @@ void Coordinator::HandleRejectFromHost(const NetReject& r) {
 	if (mPhase != Phase::Handshaking) return;
 	mPhase = Phase::Failed;
 	switch (r.reason) {
-		case kRejectOsMismatch:     mLastError = "host rejected: OS ROM mismatch"; break;
-		case kRejectBasicMismatch:  mLastError = "host rejected: BASIC ROM mismatch"; break;
-		case kRejectVersionSkew:    mLastError = "host rejected: protocol version mismatch"; break;
-		case kRejectTosNotAccept:   mLastError = "host rejected: terms of service not accepted"; break;
-		case kRejectHostFull:       mLastError = "host rejected: host full"; break;
-		case kRejectHostNotReady:   mLastError = "host rejected: host not ready"; break;
-		case kRejectBadEntryCode:   mLastError = "host rejected: wrong entry code"; break;
-		case kRejectHostRejected:   mLastError = "host rejected: manual decline"; break;
-		default:                    mLastError = "host rejected: unknown reason"; break;
+		case kRejectOsMismatch:     mLastError = "OS ROM does not match the host's. Install the matching firmware and try again."; break;
+		case kRejectBasicMismatch:  mLastError = "BASIC ROM does not match the host's. Install the matching firmware and try again."; break;
+		case kRejectVersionSkew:    mLastError = "Protocol version mismatch — your Altirra build is incompatible with the host's."; break;
+		case kRejectTosNotAccept:   mLastError = "Host requires terms-of-service acceptance."; break;
+		case kRejectHostFull:       mLastError = "The session is full."; break;
+		case kRejectHostNotReady:   mLastError = "Host is not ready to accept joiners yet."; break;
+		case kRejectBadEntryCode:   mLastError = "Incorrect join code. Ask the host for the right code and try again."; break;
+		case kRejectHostRejected:   mLastError = "The host declined your request to join."; break;
+		default:                    mLastError = "Host rejected the connection (unknown reason)."; break;
 	}
 	g_ATLCNetplay("joiner: %s (reason code %u)", mLastError, (unsigned)r.reason);
 }

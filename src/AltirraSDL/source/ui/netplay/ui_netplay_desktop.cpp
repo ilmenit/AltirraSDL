@@ -256,14 +256,13 @@ void DesktopBrowser() {
 		ImGuiTableFlags_Resizable | ImGuiTableFlags_SortTristate |
 		ImGuiTableFlags_ScrollY   | ImGuiTableFlags_Sortable;
 	ImVec2 tableSize(0, ImGui::GetContentRegionAvail().y - 50);
-	if (ImGui::BeginTable("##lobby", 6, tflags, tableSize)) {
+	if (ImGui::BeginTable("##lobby", 5, tflags, tableSize)) {
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn("Game",       ImGuiTableColumnFlags_WidthStretch, 2.0f);
 		ImGui::TableSetupColumn("Host",       ImGuiTableColumnFlags_WidthStretch, 1.2f);
 		ImGui::TableSetupColumn("Region",     ImGuiTableColumnFlags_WidthFixed,   80.0f);
 		ImGui::TableSetupColumn("Players",    ImGuiTableColumnFlags_WidthFixed,   70.0f);
 		ImGui::TableSetupColumn("Visibility", ImGuiTableColumnFlags_WidthFixed,   90.0f);
-		ImGui::TableSetupColumn("Protocol",   ImGuiTableColumnFlags_WidthFixed,   70.0f);
 		ImGui::TableHeadersRow();
 
 		const bool dark = ATUIIsDarkTheme();
@@ -347,8 +346,6 @@ void DesktopBrowser() {
 				ImGui::Text("%d/%d", s.playerCount, s.maxPlayers);
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(s.requiresCode ? "Private" : "Public");
-			ImGui::TableNextColumn();
-			ImGui::Text("v%d", s.protocolVersion);
 		}
 		ImGui::EndTable();
 	}
@@ -634,12 +631,53 @@ void DesktopWaiting() {
 		return;
 	}
 
-	CenterNext(ImVec2(420, 220));
+	// If the joiner-side coordinator has reached a terminal phase,
+	// surface why instead of sitting on "Connecting…" forever.
+	const ATNetplayGlue::Phase jp = ATNetplayGlue::JoinPhase();
+	const bool joinFailed = (jp == ATNetplayGlue::Phase::Failed ||
+	                         jp == ATNetplayGlue::Phase::Ended  ||
+	                         jp == ATNetplayGlue::Phase::Desynced);
+
+	CenterNext(ImVec2(440, 240));
 	bool open = true;
-	if (!ImGui::Begin("Connecting##netplay", &open,
+	const char *title = joinFailed
+		? "Could not join##netplay"
+		: "Connecting##netplay";
+	if (!ImGui::Begin(title, &open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
-		if (!open) Navigate(Screen::Closed);
+		if (!open) {
+			if (joinFailed) ATNetplayGlue::StopJoin();
+			Navigate(Screen::Closed);
+		}
+		return;
+	}
+
+	if (joinFailed) {
+		const char *raw = ATNetplayGlue::JoinLastError();
+		const std::string msg = (raw && *raw) ? raw : "Connection failed.";
+		ImVec4 col = ATUIIsDarkTheme()
+			? ImVec4(1.0f, 0.55f, 0.45f, 1.0f)
+			: ImVec4(0.80f, 0.10f, 0.10f, 1.0f);
+		ImGui::TextColored(col, "Could not join the game.");
+		ImGui::Spacing();
+		ImGui::TextWrapped("%s", msg.c_str());
+		ImGui::Spacing();
+		ImGui::Separator();
+		if (ImGui::Button("Close", ImVec2(120, 0))) {
+			ATNetplayGlue::StopJoin();
+			Navigate(Screen::Closed);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Back to Browse", ImVec2(150, 0))) {
+			ATNetplayGlue::StopJoin();
+			Navigate(Screen::Browser);
+		}
+		if (!open) {
+			ATNetplayGlue::StopJoin();
+			Navigate(Screen::Closed);
+		}
+		ImGui::End();
 		return;
 	}
 
@@ -736,17 +774,6 @@ void DesktopPrefs() {
 			ImGui::TextDisabled("  Buffer for the joiner's input — bigger absorbs more jitter, costs feel.");
 			ImGui::SliderInt("LAN (frames)",      &st.prefs.defaultInputDelayLan, 1, 10);
 			ImGui::SliderInt("Internet (frames)", &st.prefs.defaultInputDelayInternet, 1, 10);
-			ImGui::EndTabItem();
-		}
-
-		if (ImGui::BeginTabItem("Joining")) {
-			ImGui::Spacing();
-			ImGui::TextDisabled("Nothing to configure here yet.");
-			ImGui::Spacing();
-			ImGui::TextWrapped(
-				"When you join someone else's game, the host's settings "
-				"(input delay, machine config) take precedence so both "
-				"sides stay in lockstep.");
 			ImGui::EndTabItem();
 		}
 

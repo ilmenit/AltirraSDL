@@ -97,14 +97,19 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 		(ATNetplayUI::GetWorker().InFlightCount() > 0);
 	ATNetplayUI::GetWorker().Poll(
 		[&](ATNetplayUI::LobbyResult& r) {
-			// Record cross-window lobby reachability — every op
-			// updates this so Browse and Host Games show a consistent
-			// status without each window polling on its own.
-			if (r.ok) {
+			// Record cross-window lobby reachability — every op except
+			// Stats updates this so Browse and Host Games show a
+			// consistent status without each window polling on its
+			// own.  Stats is a best-effort enhancement (older lobbies
+			// 404 on /v1/stats); failures there must not poison the
+			// global health banner.
+			const bool affectsHealth =
+				(r.op != ATNetplayUI::LobbyOp::Stats);
+			if (affectsHealth && r.ok) {
 				st.lobbyHealth.lastOkMs   = nowMs;
 				st.lobbyHealth.lastStatus = r.httpStatus;
 				st.lobbyHealth.lastError.clear();
-			} else {
+			} else if (affectsHealth) {
 				st.lobbyHealth.lastFailMs = nowMs;
 				st.lobbyHealth.lastStatus = r.httpStatus;
 				st.lobbyHealth.lastError  =
