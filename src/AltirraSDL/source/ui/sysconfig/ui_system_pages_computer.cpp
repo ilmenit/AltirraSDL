@@ -701,7 +701,46 @@ void RenderAccelerationCategory(ATSimulator &sim) {
 	bool cioH = sim.GetCIOPatchEnabled('H');
 	if (ImGui::Checkbox("H: (Host device CIO)", &cioH))
 		sim.SetCIOPatchEnabled('H', cioH);
-	ImGui::SetItemTooltip("Intercept and accelerate CIO transfers to the host device.");
+	ImGui::SetItemTooltip(
+		"Intercept and accelerate CIO transfers to the host device.\n\n"
+		"Requires the Host Device (H:) entry to be added in Configure "
+		"System \xe2\x86\x92 Devices \xe2\x86\x92 Add Device \xe2\x86\x92 "
+		"HLE Devices \xe2\x86\x92 Host device (H:), with at least one "
+		"host path configured.");
+
+	// Shortcut to the H: device's configure dialog if it's installed.
+	// The canonical entry point stays Configure System \xe2\x86\x92 Devices,
+	// but this saves a round-trip for the common "change a path and go"
+	// case.  Disabled (with a hint) when no HostDevice entry exists.
+	{
+		IATDevice *hostDev = nullptr;
+		ATDeviceManager *devMgrH = sim.GetDeviceManager();
+		if (devMgrH) {
+			for (IATDevice *dev : devMgrH->GetDevices(true, true, true)) {
+				ATDeviceInfo info;
+				dev->GetDeviceInfo(info);
+				if (info.mpDef && info.mpDef->mpTag
+					&& !strcmp(info.mpDef->mpTag, "hostfs")) {
+					hostDev = dev;
+					break;
+				}
+			}
+		}
+
+		ImGui::SameLine();
+		ImGui::BeginDisabled(hostDev == nullptr);
+		if (ImGui::Button("Configure H:..."))
+			ATUIOpenDeviceConfig(hostDev, devMgrH);
+		ImGui::EndDisabled();
+		if (hostDev == nullptr)
+			ImGui::SetItemTooltip(
+				"Add Host Device (H:) from Configure System "
+				"\xe2\x86\x92 Devices first.");
+		else
+			ImGui::SetItemTooltip(
+				"Open the Host Device (H:) configuration dialog "
+				"to set host paths and options.");
+	}
 
 	bool cioP = sim.GetCIOPatchEnabled('P');
 	if (ImGui::Checkbox("P: (Printer CIO)", &cioP))
