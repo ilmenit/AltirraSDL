@@ -550,6 +550,15 @@ void ATMobileUI_CloseMenu(ATSimulator &sim, ATMobileUIState &mobileState) {
 		sim.Resume();
 }
 
+extern ATMobileUIState g_mobileState;
+
+void ATMobileUI_SwitchToGameBrowser() {
+	// Safe to set unconditionally — outside Gaming Mode the mobile
+	// render path isn't invoked so currentScreen is inert.  Callers
+	// that need the gating use ATUIIsGamingMode() themselves.
+	g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+}
+
 
 // -------------------------------------------------------------------------
 // File browser
@@ -657,11 +666,19 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 	// Netplay overlay renders on top of any mobile screen when active.
 	// We set the SDL3 safe-area insets so the sheet body respects
 	// display cutouts / gesture nav on Android.
+	//
+	// Exception: when the main Game Browser is running in picker mode
+	// (netplay's "Pick from Library" handoff), we still render netplay
+	// for its toasts + HUD, but fall through to the mobile screen
+	// switch so the browser is visible underneath.  Without this the
+	// early-return below would skip the switch(currentScreen) block
+	// entirely and the user would see the bare emulator canvas instead
+	// of the library picker.
 	if (ATNetplayUI_IsActive()) {
 		ATNetplayUI::ATNetplayUI_SetSafeAreaInsets(
 			insets.top, insets.bottom, insets.left, insets.right);
 		ATNetplayUI_RenderMobile(sim, uiState, mobileState, window);
-		return;
+		if (!GameBrowser_IsPickerActive()) return;
 	}
 	// Even when the Online Play overlay is closed, the in-session
 	// HUD ("LIVE / Frame / Peer / Disconnect") needs to render during

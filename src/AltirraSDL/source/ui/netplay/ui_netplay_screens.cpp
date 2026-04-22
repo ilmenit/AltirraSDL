@@ -34,7 +34,8 @@
 
 #include "ui/gamelibrary/game_library.h"
 #include "ui/gamelibrary/game_library_art.h"
-#include "ui/mobile/mobile_internal.h"  // GetGameArtCache
+#include "ui/mobile/mobile_internal.h"  // GetGameArtCache, GameBrowser_OpenPicker
+#include "ui/mobile/ui_mobile.h"        // ATMobileUI_SwitchToGameBrowser
 #include "ui_file_dialog_sdl3.h"
 #include <SDL3/SDL_dialog.h>
 
@@ -1039,7 +1040,39 @@ void RenderAddOffer() {
 		if (ATTouchButton("Pick from Library…",
 		                  ImVec2(bW, Dp(48)),
 		                  ATTouchButtonStyle::Neutral)) {
-			Navigate(Screen::LibraryPicker);
+			if (ATUIIsGamingMode()) {
+				// Gaming Mode — delegate the full Game Library UI
+				// (grid/list toggle, letter pill, search, cover art)
+				// to the main mobile Game Browser by flipping it into
+				// picker mode.  Zero UI duplication between the "boot
+				// a game" and "pick a game to host" flows — one
+				// renderer, one code path, one set of visuals.
+				GameBrowser_OpenPicker(
+					[](const VDStringW& path, int entryIdx,
+					   int variantIdx, const VDStringW& displayName,
+					   const VDStringW& variantLabel)
+					{
+						VDStringA pU8 = VDTextWToU8(path);
+						VDStringA nU8 = VDTextWToU8(displayName);
+						VDStringA lU8 = VDTextWToU8(variantLabel);
+						OfferDraft& d = GetState().offerDraft;
+						d.path.assign(pU8.c_str(), pU8.size());
+						d.displayName.assign(nU8.c_str(), nU8.size());
+						d.source = OfferSource::Library;
+						d.variantLabel.assign(lU8.c_str(), lU8.size());
+						d.libraryEntryIdx = entryIdx;
+						d.libraryVariantIdx = variantIdx;
+						// Hand control back to the netplay AddGame
+						// sheet — its BeginSheet backdrop will cover
+						// the Game Browser surface on the next frame.
+					},
+					/*onCancel*/ nullptr,
+					"Pick a game to host");
+				ATMobileUI_SwitchToGameBrowser();
+			} else {
+				// Desktop — use the dedicated table-based modal.
+				Navigate(Screen::LibraryPicker);
+			}
 		}
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Pick a File…",
@@ -1879,6 +1912,15 @@ void RenderOnlinePlayHub() {
 bool ATNetplayUI_DispatchScreen() {
 	State& st = GetState();
 	if (st.screen == Screen::Closed) return false;
+
+	// While the Gaming-Mode Game Browser is running in picker mode
+	// (netplay's "Pick from Library" handoff), skip drawing netplay
+	// sheets so the browser is fully visible.  Return true so the
+	// caller still considers netplay "active" — the in-session HUD
+	// and toasts continue rendering, and the screen stack is
+	// preserved so the AddGame sheet reappears once the picker hands
+	// back a result.
+	if (GameBrowser_IsPickerActive() && ATUIIsGamingMode()) return true;
 
 	switch (st.screen) {
 		case Screen::Nickname:      RenderNickname();       break;

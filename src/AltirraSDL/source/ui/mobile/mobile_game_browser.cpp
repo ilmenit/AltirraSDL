@@ -607,6 +607,61 @@ static size_t s_variantPickerEntry = 0;
 // Drives "Select" button to LoadDisk() without resetting the session.
 static std::function<void(const VDStringW &)> s_variantPickerSwapCb;
 
+// ── External-picker mode ──────────────────────────────────────────
+// When the Game Browser is opened by an external screen (currently
+// netplay's "Pick from Library" flow) it runs as a picker instead of
+// a launcher: tapping a tile fires `s_pickerCb` with the chosen
+// variant's path / indices / name / label rather than booting the
+// simulator.  The Boot Game / Online Play / Boot Empty toolbar is
+// replaced by a banner + Cancel button so the user sees they're in a
+// picker context.  Variant picker, grid/list toggle, letter pill,
+// search all stay live — the full library UX is reused.
+static bool s_pickerMode = false;
+static GameBrowserPickFn s_pickerCb;
+static std::function<void()> s_pickerCancelCb;
+static std::string s_pickerBanner;
+// Screen value in effect BEFORE the picker was opened.  Restored when
+// the picker closes so a user who opened Online Play → Add Game →
+// Pick from Library mid-session returns to the running emulator
+// (currentScreen == None) instead of being stranded in the library
+// browser after the netplay overlay finally closes.
+static ATMobileUIScreen s_pickerReturnScreen = ATMobileUIScreen::None;
+
+extern ATMobileUIState g_mobileState;
+
+void GameBrowser_OpenPicker(GameBrowserPickFn onPick,
+	std::function<void()> onCancel, const char *bannerText)
+{
+	s_pickerReturnScreen = g_mobileState.currentScreen;
+	s_pickerMode = true;
+	s_pickerCb = std::move(onPick);
+	s_pickerCancelCb = std::move(onCancel);
+	s_pickerBanner.assign(bannerText ? bannerText : "");
+	s_needsRefresh = true;
+}
+
+bool GameBrowser_IsPickerActive() { return s_pickerMode; }
+
+void GameBrowser_ClosePicker() {
+	const bool wasActive = s_pickerMode;
+	s_pickerMode = false;
+	s_pickerCb = nullptr;
+	s_pickerCancelCb = nullptr;
+	s_pickerBanner.clear();
+	s_variantPickerOpen = false;
+	if (wasActive) {
+		g_mobileState.currentScreen = s_pickerReturnScreen;
+	}
+}
+
+// Clean cancel — fires the cancel callback (if any), then tears
+// picker state down.  Safe to call even when no callback was set.
+static void CancelPicker() {
+	auto cb = std::move(s_pickerCancelCb);
+	GameBrowser_ClosePicker();
+	if (cb) cb();
+}
+
 static void LaunchGame(ATSimulator &sim, ATMobileUIState &mobileState,
 	size_t entryIndex, int variantIndex)
 {
@@ -622,6 +677,22 @@ static void LaunchGame(ATSimulator &sim, ATMobileUIState &mobileState,
 		return;
 
 	const auto &var = entry.mVariants[variantIndex];
+
+	// Picker mode: don't boot — hand off to the external callback
+	// (netplay Add-Game flow).  Drains picker state before firing so
+	// the callback can safely open other screens.
+	if (s_pickerMode && s_pickerCb) {
+		VDStringW pickPath  = var.mPath;
+		VDStringW pickName  = entry.mDisplayName;
+		VDStringW pickLabel = var.mLabel;
+		int pickEntry   = (int)entryIndex;
+		int pickVariant = variantIndex;
+		auto cb = std::move(s_pickerCb);
+		GameBrowser_ClosePicker();  // also clears s_variantPickerOpen
+		cb(pickPath, pickEntry, pickVariant, pickName, pickLabel);
+		return;
+	}
+
 	VDStringA pathU8 = VDTextWToU8(var.mPath);
 	ATUIPushDeferred(kATDeferred_BootImage, pathU8.c_str());
 	mobileState.gameLoaded = true;
@@ -1161,6 +1232,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			} else if (s_letterFilterIdx >= 0) {
 				s_letterFilterIdx = -1;
 				s_needsRefresh = true;
+			} else if (s_pickerMode) {
+				// Picker mode: back exits the picker without booting.
+				CancelPicker();
 			} else if (mobileState.gameLoaded) {
 				mobileState.currentScreen = ATMobileUIScreen::None;
 				sim.Resume();
@@ -1173,8 +1247,40 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// sit right-aligned on the info row rather than competing with
 		// Boot Game / Boot Empty on Row 2.  This also frees Row 2 to
 		// fit comfortably in portrait orientation without clipping.
+		//
+		// Picker mode swaps this row out for a banner + Cancel button —
+		// the user is explicitly picking a game for an external flow
+		// (e.g. netplay "Pick from Library"), so Settings / Exit Gaming
+		// Mode / Boot actions don't apply.
 		const ATMobilePalette &palBrowser = ATMobileGetPalette();
-		{
+		const auto &libSettings = s_gameLibrary->GetSettings();
+		const float btnH = dp(48.0f);
+
+		if (s_pickerMode) {
+			// Banner + Cancel — analogous to the Settings / Exit chrome
+			// but framed as a picker context.  Cancel also fires on
+			// ESC / Gamepad-B through the back-handler above.
+			const float chromeH = dp(36.0f);
+			const float chromePad = dp(16.0f);
+			float cancelW = ImGui::CalcTextSize("Cancel").x
+				+ chromePad * 2;
+
+			float rowY = ImGui::GetCursorPosY();
+			ImGui::TextColored(ATMobileCol(palBrowser.textTitle),
+				"%s", s_pickerBanner.empty()
+					? "Pick a game"
+					: s_pickerBanner.c_str());
+
+			float rightX = ImGui::GetContentRegionMax().x - cancelW;
+			ImGui::SameLine(0, 0);
+			ImGui::SetCursorPos(ImVec2(rightX, rowY));
+			if (ATTouchButton("Cancel##pickchrome",
+				ImVec2(cancelW, chromeH),
+				ATTouchButtonStyle::Subtle))
+			{
+				CancelPicker();
+			}
+		} else {
 			VDStringA hwInfo = BuildHardwareInfoStr(sim);
 			int gameCount = (int)s_allGamesIndices.size();
 
@@ -1241,10 +1347,10 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// Only the two hero actions live here now.  Grid/List, the
 		// letter filter, and search moved to Row 3 so this row stays
 		// comfortable in portrait orientation; Settings / Exit Gaming
-		// Mode moved to the Row 1 chrome.
-		const auto &libSettings = s_gameLibrary->GetSettings();
-		float btnH = dp(48.0f);
-		{
+		// Mode moved to the Row 1 chrome.  Hidden in picker mode —
+		// tapping a tile hands off to the picker callback instead of
+		// booting.
+		if (!s_pickerMode) {
 			// Boot Game is the hero action — accent gradient.  Every
 			// other button uses the neutral card-gradient style so the
 			// bar reads as a cohesive surface with one stand-out.

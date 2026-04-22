@@ -160,6 +160,13 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState);
 // Open the hamburger menu (pauses emulation)
 void ATMobileUI_OpenMenu(ATSimulator &sim, ATMobileUIState &mobileState);
 
+// Navigate the global Gaming-Mode screen stack to the Game Library
+// browser.  Exposed so external flows — netplay "Pick from Library",
+// share-sheet handlers, etc. — can hand control to the browser
+// without touching `g_mobileState` directly.  Does nothing if not in
+// Gaming Mode.
+void ATMobileUI_SwitchToGameBrowser();
+
 // Close the hamburger menu (resumes emulation if not explicitly paused)
 void ATMobileUI_CloseMenu(ATSimulator &sim, ATMobileUIState &mobileState);
 

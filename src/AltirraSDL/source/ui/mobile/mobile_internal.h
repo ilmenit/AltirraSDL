@@ -222,6 +222,32 @@ void GameBrowser_ShowVariantPickerForSwap(int entryIdx,
 void GameBrowser_RenderOverlays(ATSimulator &sim,
 	ATMobileUIState &mobileState);
 
+// Put the Game Browser into "picker mode" — the full Game Library UI
+// (grid/list toggle, A-Z letter pill, search, cover-art grid) is
+// reused, but tapping a game does not boot it.  Instead `onPick` is
+// invoked with the chosen variant path + library indices + display
+// name + variant label, and the caller decides what to do (netplay
+// Add-Game, attach-to-multicart, etc.).
+//
+//   onPick     - called once on commit; picker then clears itself.
+//   onCancel   - called if the user backs out (Cancel button / ESC /
+//                Gamepad-B); nullable.
+//   bannerText - small label rendered in place of the Boot Game /
+//                Boot Empty toolbar so the user knows they're in
+//                a picker, not the normal browse flow.  Nullable.
+//
+// Use `GameBrowser_IsPickerActive()` to query and
+// `GameBrowser_ClosePicker()` to dismiss without firing callbacks
+// (e.g. when the owner screen closes while the picker is still up).
+using GameBrowserPickFn = std::function<void(
+	const VDStringW& path, int entryIdx, int variantIdx,
+	const VDStringW& displayName, const VDStringW& variantLabel)>;
+
+void GameBrowser_OpenPicker(GameBrowserPickFn onPick,
+	std::function<void()> onCancel, const char *bannerText);
+bool GameBrowser_IsPickerActive();
+void GameBrowser_ClosePicker();
+
 // Settings sub-page functions split into their own TUs
 void RenderSettingsPage_Firmware(ATMobileUIState &mobileState);
 
