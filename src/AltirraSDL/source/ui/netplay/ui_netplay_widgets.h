@@ -32,12 +32,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
+
+#include "ui_netplay_state.h"   // SpecLineToken + MachineConfig
 
 namespace ATNetplay { struct LobbySession; }
 
 namespace ATNetplayUI {
-
-struct MachineConfig;  // defined in ui_netplay_state.h
 
 // Machine Configuration form — hardware / video / BASIC / SIO +
 // firmware combos + "Copy from current emulator".  Identical layout
@@ -108,6 +109,19 @@ struct TileInfo {
 	// causing the keyboard/gamepad cursor to jump home every 10 s).
 	// Pass the sessionId from the lobby entry here.
 	const char *idKey       = nullptr;
+
+	// Machine spec line — "hardware | video | memory | OS | BASIC"
+	// — rendered below the subtitle.  Tokens flagged `missing`
+	// paint in a theme-aware red; the rest stay muted.  Empty
+	// vector = don't draw a spec line at all (hub cards, etc.).
+	std::vector<SpecLineToken> specTokens;
+
+	// True when any spec token is missing.  The tile renders a
+	// "Missing firmware" overlay and the caller must treat it as
+	// non-joinable (the Join path is gated on this flag at the
+	// call site, not inside SessionTile — SessionTile just signals
+	// the click; filtering lives in the browser loop).
+	bool                       specMissing = false;
 };
 
 bool SessionTile(const TileInfo &info, const ImVec2 &size);

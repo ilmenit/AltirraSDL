@@ -162,13 +162,16 @@ void TestCreateAndList() {
 		"list contains created id");
 }
 
-// The list endpoint must echo every schema field the host supplied on
-// create — kernelCRC32 / basicCRC32 / hardwareMode — and must also
-// include the keys (as empty strings) when the host omitted them.
-// The "?" hardwareMode bug in the desktop browser was caused by an
-// older server silently dropping these keys on GET /v1/sessions, so
-// this test locks the schema contract in place.
-void TestListEchoesFirmwareFields() {
+// The list endpoint must echo every machine-spec field the host
+// supplied on create — kernelCRC32 / basicCRC32 / hardwareMode /
+// videoStandard / memoryMode — and must also include the keys (as
+// empty strings) when the host omitted them.  The "?" hardwareMode
+// bug in the desktop browser was caused by an older server silently
+// dropping these keys on GET /v1/sessions, so this test locks the
+// schema contract in place.  `videoStandard` + `memoryMode` were
+// added alongside `hardwareMode` so the Browser can render a full
+// machine spec row (hardware | video | memory | OS | BASIC).
+void TestListEchoesMachineFields() {
 	++g_testsRun;
 	Fixture f;
 	auto c = f.client();
@@ -187,7 +190,9 @@ void TestListEchoesFirmwareFields() {
 	b.key(Field::kProtocolVersion); b.num(1);                 b.raw(',');
 	b.key(Field::kKernelCRC32);     b.str("1F9CD270");        b.raw(',');
 	b.key(Field::kBasicCRC32);      b.str("F0202FB3");        b.raw(',');
-	b.key(Field::kHardwareMode);    b.str("800XL");
+	b.key(Field::kHardwareMode);    b.str("800XL");           b.raw(',');
+	b.key(Field::kVideoStandard);   b.str("PAL");             b.raw(',');
+	b.key(Field::kMemoryMode);      b.str("320K");
 	b.raw('}');
 
 	auto r = c.Post(kPathSession, b.s, "application/json");
@@ -205,6 +210,10 @@ void TestListEchoesFirmwareFields() {
 		"list body contains basicCRC32 value");
 	T_EXPECT(body.find("\"hardwareMode\":\"800XL\"")    != std::string::npos,
 		"list body contains hardwareMode value");
+	T_EXPECT(body.find("\"videoStandard\":\"PAL\"")     != std::string::npos,
+		"list body contains videoStandard value");
+	T_EXPECT(body.find("\"memoryMode\":\"320K\"")       != std::string::npos,
+		"list body contains memoryMode value");
 
 	// Also verify the keys are present (as empty strings) when the
 	// host omitted them — the schema contract is "key always appears".
@@ -223,9 +232,13 @@ void TestListEchoesFirmwareFields() {
 		"list body contains empty kernelCRC32 key");
 	T_EXPECT(body2.find("\"basicCRC32\":\"\"")   != std::string::npos,
 		"list body contains empty basicCRC32 key");
-	T_EXPECT(body2.find("\"hardwareMode\":\"\"") != std::string::npos,
+	T_EXPECT(body2.find("\"hardwareMode\":\"\"")  != std::string::npos,
 		"list body contains empty hardwareMode key");
-	T_EXPECT(body2.find("\"cartArtHash\":\"\"")  != std::string::npos,
+	T_EXPECT(body2.find("\"videoStandard\":\"\"") != std::string::npos,
+		"list body contains empty videoStandard key");
+	T_EXPECT(body2.find("\"memoryMode\":\"\"")    != std::string::npos,
+		"list body contains empty memoryMode key");
+	T_EXPECT(body2.find("\"cartArtHash\":\"\"")   != std::string::npos,
 		"list body contains empty cartArtHash key");
 }
 
@@ -397,7 +410,7 @@ void TestOriginBlockedOnPost() {
 int RunAll() {
 	TestHealthz();
 	TestCreateAndList();
-	TestListEchoesFirmwareFields();
+	TestListEchoesMachineFields();
 	TestCreateValidation();
 	TestHeartbeatBadToken();
 	TestHeartbeatOk();

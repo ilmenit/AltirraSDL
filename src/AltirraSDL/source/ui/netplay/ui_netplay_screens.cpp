@@ -294,11 +294,35 @@ void RenderBrowser() {
 					s.cartName.c_str(), &aw, &ah);
 				ti.artSize = ImVec2((float)aw, (float)ah);
 			}
+			// Populate the machine spec row + missing-firmware flag so
+			// the tile renders "130XE | PAL | 320K | OS Rev. 2 |
+			// Basic Rev. C" with the correct token painted red when
+			// the joiner can't satisfy a firmware CRC.
+			JoinCompat compat = CheckJoinCompat(
+				s.kernelCRC32, s.basicCRC32);
+			SpecLine sl = BuildSpecLineFromSession(s, compat);
+			ti.specTokens  = sl.tokens;
+			ti.specMissing = sl.hasMissingFirmware;
+
 			if (SessionTile(ti, tileSize)) {
 				br.selectedIdx = (int)i;
-				st.session.joinTarget = s;
-				Navigate(s.requiresCode ? Screen::JoinPrompt
-				                        : Screen::JoinConfirm);
+				// Block Join on missing firmware.  The tile still
+				// registers the click (users get the hover feedback
+				// + selection) but the navigation is suppressed and
+				// a toast explains why.
+				if (ti.specMissing) {
+					PushToast("Install the required firmware in "
+						"System \xE2\x86\x92 Firmware to join.",
+						ToastSeverity::Warning, 3500);
+				} else if (s.state == "playing") {
+					PushToast("This session is in play — wait for it "
+						"to end or pick another.",
+						ToastSeverity::Info, 3000);
+				} else {
+					st.session.joinTarget = s;
+					Navigate(s.requiresCode ? Screen::JoinPrompt
+					                        : Screen::JoinConfirm);
+				}
 			}
 		}
 		EndScreenGrid();
@@ -865,42 +889,21 @@ void RenderMyHostedGames() {
 				}
 			}
 
-			// Subtitle: single-line hardware summary + visibility.
-			// Firmware sub-line is drawn below separately (the list
-			// item's subtitle slot is single-line only).
-			char subtitle[160];
+			// Subtitle: the shared spec line — "hardware | video |
+			// memory | OS | BASIC" — plus Public/Private.  Matches
+			// the joiner's Browse Hosted Games row so the two views
+			// read identically.  Host-own tokens are never "missing"
+			// (we own the firmware we picked).
+			const std::string specStr =
+				SpecLineJoin(BuildSpecLineFromConfig(o.config));
+			char subtitle[240];
 			std::snprintf(subtitle, sizeof subtitle,
 				"%s \xC2\xB7 %s",
-				MachineConfigSummary(o.config),
+				specStr.c_str(),
 				o.isPrivate ? "Private" : "Public");
 			bool tapped = ATTouchListItem(o.gameName.c_str(), subtitle,
 				false, false);
 			(void)tapped;  // tile tap is currently a no-op; actions below
-
-			// Firmware identification sub-line — shown only when the
-			// offer pins at least one CRC.  Matches Desktop's row.
-			if (o.config.kernelCRC32 || o.config.basicCRC32) {
-				const char *osName =
-					FirmwareNameForCRC(o.config.kernelCRC32);
-				const char *bsName =
-					FirmwareNameForCRC(o.config.basicCRC32);
-				char fw[224];
-				int n = 0;
-				if (o.config.kernelCRC32) {
-					n += std::snprintf(fw + n, sizeof fw - n,
-						"OS: %s (%08X)",
-						*osName ? osName : "Unknown",
-						o.config.kernelCRC32);
-				}
-				if (o.config.basicCRC32) {
-					n += std::snprintf(fw + n, sizeof fw - n,
-						"%sBASIC: %s (%08X)",
-						n ? "  \xC2\xB7  " : "",
-						*bsName ? bsName : "Unknown",
-						o.config.basicCRC32);
-				}
-				ATTouchMutedText(fw);
-			}
 
 			if (!o.lastError.empty()) {
 				ATTouchMutedText(o.lastError.c_str());

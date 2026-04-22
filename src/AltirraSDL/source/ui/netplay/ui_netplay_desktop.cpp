@@ -68,6 +68,32 @@ ImVec4 EmphasisBad() {
 		? ImVec4(0.70f, 0.15f, 0.10f, 1.0f)
 		: ImVec4(1.00f, 0.70f, 0.60f, 1.0f);
 }
+// Render a SpecLine as a single horizontal line of coloured tokens
+// separated by " | ".  Tokens flagged `missing` are painted with the
+// theme-aware red (matches the row-name incompatible colour); all
+// other tokens and the separators use `cDim`.  Caller controls the
+// leading indent by calling this right after a `TextColored` that
+// emitted no newline, or by leaving a blank first column — the
+// function draws exactly one line and advances the ImGui cursor to
+// the next line on exit.
+void RenderSpecLine(const SpecLine& sl, const ImVec4& cDim) {
+	const bool dark = ATUIIsDarkTheme();
+	const ImVec4 cBad = dark ? ImVec4(1.00f, 0.55f, 0.45f, 1.0f)
+	                         : ImVec4(0.80f, 0.10f, 0.10f, 1.0f);
+	// Leading two-space indent to match the previous "  OS […] · …"
+	// sub-row convention.
+	ImGui::TextColored(cDim, "  ");
+	for (size_t i = 0; i < sl.tokens.size(); ++i) {
+		ImGui::SameLine(0, 0);
+		const auto& tk = sl.tokens[i];
+		ImGui::TextColored(tk.missing ? cBad : cDim, "%s", tk.text.c_str());
+		if (i + 1 < sl.tokens.size()) {
+			ImGui::SameLine(0, 0);
+			ImGui::TextColored(cDim, " | ");
+		}
+	}
+}
+
 ImVec4 EmphasisWarning() {
 	return IsImGuiLightTheme()
 		? ImVec4(0.65f, 0.45f, 0.05f, 1.0f)
@@ -351,22 +377,11 @@ void DesktopBrowser() {
 						"to end or pick another.");
 			}
 
-			// Sub-row: firmware + hardware summary, dim font.
-			char sub[160];
-			// Empty = older lobby server didn't echo the field.  Say
-			// "unknown" so users can distinguish "server silent" from
-			// a legitimately under-specified offer.
-			const char *hw = s.hardwareMode.empty()
-				? "unknown hardware" : s.hardwareMode.c_str();
-			if (!s.kernelCRC32.empty() || !s.basicCRC32.empty()) {
-				std::snprintf(sub, sizeof sub, "  OS [%s] · BASIC [%s] · %s",
-					s.kernelCRC32.empty() ? "any"   : s.kernelCRC32.c_str(),
-					s.basicCRC32.empty()  ? "off"   : s.basicCRC32.c_str(),
-					hw);
-			} else {
-				std::snprintf(sub, sizeof sub, "  %s", hw);
-			}
-			ImGui::TextColored(cDim, "%s", sub);
+			// Sub-row: "hardware | video | memory | OS | BASIC".
+			// Tokens whose firmware the joiner is missing are painted
+			// red; everything else stays dim.  Replaces the old raw-hex
+			// "OS [crc] · BASIC [crc] · 130XE" line.
+			RenderSpecLine(BuildSpecLineFromSession(s, compat), cDim);
 
 			// Open (Public/Private)
 			ImGui::TableNextColumn();
@@ -1141,35 +1156,10 @@ void DesktopMyHostedGames() {
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(o.gameName.c_str());
 			const ImVec4 cDim = ImVec4(0.65f, 0.65f, 0.70f, 1.0f);
-			const ImVec4 cWarn = ImVec4(1.0f, 0.70f, 0.45f, 1.0f);
-			ImGui::TextColored(cDim, "  %s", MachineConfigSummary(o.config));
-			if (o.config.kernelCRC32 != 0 || o.config.basicCRC32 != 0) {
-				char fwBuf[192];
-				auto fmt = [](char *dst, size_t cap, const char *tag,
-						uint32_t crc, bool *missingOut) {
-					if (crc == 0) {
-						std::snprintf(dst, cap, "%s: default", tag);
-						if (missingOut) *missingOut = false;
-						return;
-					}
-					const char *name = FirmwareNameForCRC(crc);
-					const bool missing = (name && std::strcmp(name, "Unknown") == 0);
-					if (missingOut) *missingOut = missing;
-					if (missing)
-						std::snprintf(dst, cap, "%s: (%08X — not installed)",
-							tag, crc);
-					else
-						std::snprintf(dst, cap, "%s: %s (%08X)",
-							tag, name && *name ? name : "Unknown", crc);
-				};
-				char osBuf[96], baBuf[96];
-				bool osMiss = false, baMiss = false;
-				fmt(osBuf, sizeof osBuf, "OS",    o.config.kernelCRC32, &osMiss);
-				fmt(baBuf, sizeof baBuf, "BASIC", o.config.basicCRC32,  &baMiss);
-				std::snprintf(fwBuf, sizeof fwBuf, "  %s  ·  %s", osBuf, baBuf);
-				ImGui::TextColored((osMiss || baMiss) ? cWarn : cDim,
-					"%s", fwBuf);
-			}
+			// Same spec line shape the joiner sees in Browse Hosted
+			// Games, so the two views align visually.  Host-side
+			// tokens are never "missing" (we own this firmware).
+			RenderSpecLine(BuildSpecLineFromConfig(o.config), cDim);
 			if (!o.lastError.empty()) {
 				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f),
 					"  %s", o.lastError.c_str());

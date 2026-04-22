@@ -81,13 +81,19 @@ curl -sS http://localhost:8080/healthz   # → ok sessions=0
   (≤64 hex chars), optional **v2** `kernelCRC32` / `basicCRC32`
   (8-char hex; published so joiners can pre-flight firmware before
   attempting to connect), optional **v2** `hardwareMode`
-  ("800XL"|"5200"|…, ≤16 chars).
+  ("800XL"|"5200"|…, ≤16 chars), optional **v2** `videoStandard`
+  ("NTSC"|"PAL"|…, ≤8 chars) and `memoryMode` ("320K"|"1088K"|…,
+  ≤8 chars) so the browser can render a full machine spec row.
 - `GET /v1/sessions` — List active sessions (newest-first,
   capped at 500). Each entry now carries an additional
   **v2** `state` field: `"waiting"` (joinable) or `"playing"`
   (in session — kept in the listing so the lobby looks alive but
-  joiners suppress Join). Hosts also publish their CRC / hardware
-  fields here when set.
+  joiners suppress Join). The **v2** schema always includes
+  `kernelCRC32`, `basicCRC32`, `hardwareMode`, `videoStandard`,
+  `memoryMode`, and `cartArtHash`
+  (empty string when the host didn't set them) so clients never
+  have to distinguish "server silent" from "host placed no
+  constraint".
 - `GET /v1/session/{id}` — Fetch a single session.
 - `POST /v1/session/{id}/heartbeat` — Keep-alive; body carries
   `{token, playerCount}` plus optional **v2** `state`

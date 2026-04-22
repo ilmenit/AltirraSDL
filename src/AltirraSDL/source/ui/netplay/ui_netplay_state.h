@@ -157,6 +157,65 @@ struct HostedGame {
 // before calling again.  Format: "800XL · 320K · NTSC · BASIC off".
 const char *MachineConfigSummary(const MachineConfig& c);
 
+// Short wire-format labels for the three machine enums — also used on
+// the host side to populate the lobby's hardwareMode / videoStandard /
+// memoryMode fields so joiners can render the spec row without having
+// to map enum values themselves.  Returns static / literal storage.
+const char *HardwareModeShort (ATHardwareMode  m);
+const char *MemoryModeShort   (ATMemoryMode    m);
+const char *VideoStandardShort(ATVideoStandard v);
+
+// ---------------------------------------------------------------------
+// Browser / Host Games spec line — shared formatting for the
+// "hardware | video | memory | OS | BASIC" sub-row rendered below the
+// cart name in both the joiner's Browser and the host's own Hosted
+// Games list.
+//
+// The builder normalises raw wire / config values into display tokens:
+//   - CRC==0 or empty-hex → "default OS" / "BASIC off".
+//   - CRC present + FirmwareNameForCRC resolves → friendly name.
+//   - CRC present + lookup fails → "[XXXXXXXX]" (raw hex).
+//   - Empty video/memory (old host) → "?" (doesn't collapse the column,
+//     keeps vertical alignment across rows).
+//
+// `missing` on a token marks that specific slot as "joiner doesn't have
+// this firmware installed" so the row renderer can colour just that
+// token red.  It is only ever set on the session-side builder, and only
+// when the caller's JoinCompat agrees (MissingKernel for OS,
+// MissingBasic for BASIC).  The host-own builder never marks tokens as
+// missing — hosts by definition have their own firmware.
+// ---------------------------------------------------------------------
+
+// Forward-decl so we don't have to #include "ui_netplay_actions.h"
+// here and risk the header cycle (actions.h already pulls us in).
+enum class JoinCompat : uint8_t;
+
+struct SpecLineToken {
+	std::string text;
+	bool        missing = false;
+};
+
+struct SpecLine {
+	// Always five tokens in fixed order:
+	//   [0] hardware  (e.g. "130XE")
+	//   [1] video     (e.g. "PAL")
+	//   [2] memory    (e.g. "320K")
+	//   [3] OS        (name / "default OS" / "[hex]")
+	//   [4] BASIC     (name / "BASIC off" / "[hex]")
+	std::vector<SpecLineToken> tokens;
+	bool hasMissingFirmware = false;
+};
+
+SpecLine BuildSpecLineFromSession(const ATNetplay::LobbySession& s,
+                                  JoinCompat compat);
+SpecLine BuildSpecLineFromConfig (const MachineConfig& c);
+
+// Concatenate a SpecLine's tokens with " | " separators.  Callers that
+// render into a single-colour widget (mobile muted text, debug log
+// lines) use this; callers that want per-token colouring walk the
+// tokens directly.
+std::string SpecLineJoin(const SpecLine& sl);
+
 // Snapshot the currently-running simulator's config as a MachineConfig,
 // with firmware CRC32s computed from the loaded ROM bytes.
 MachineConfig CaptureCurrentMachineConfig();

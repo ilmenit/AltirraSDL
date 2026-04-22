@@ -720,11 +720,15 @@ port      = 26101
 POST   /v1/session        { cartName, hostHandle, hostEndpoint, region,
                             playerCount, maxPlayers, protocolVersion,
                             visibility, requiresCode, cartArtHash,
-                            kernelCRC32, basicCRC32, hardwareMode }
+                            kernelCRC32, basicCRC32, hardwareMode,
+                            videoStandard, memoryMode }
                           → { sessionId, token, ttlSeconds }
-GET    /v1/sessions       → [sessions]   ; each entry adds state +
-                                          ; kernelCRC32 + basicCRC32 +
-                                          ; hardwareMode
+GET    /v1/sessions       → [sessions]   ; each entry always carries
+                                          ; state, cartArtHash,
+                                          ; kernelCRC32, basicCRC32,
+                                          ; hardwareMode, videoStandard,
+                                          ; memoryMode (empty string when
+                                          ; unset — fixed schema)
 GET    /v1/stats          → { sessions, waiting, playing, hosts }
 POST   /v1/session/{id}/heartbeat        ; body: { token, playerCount,
                                           ;        state? }
@@ -743,8 +747,11 @@ sensible UI decision):
   Join button is disabled with a "missing OS firmware [XXXXXXXX]"
   hint — instead of the user joining, downloading a snapshot, then
   hitting the same error after the handshake.
-- `hardwareMode` ("800XL", "5200", …) — sub-row label so the joiner
-  sees the host's machine type at a glance.
+- `hardwareMode` ("800XL", "5200", …), `videoStandard` ("NTSC", "PAL",
+  …) and `memoryMode` ("320K", "1088K", …) — feed the Browser's
+  machine spec row ("130XE | PAL | 320K | OS Rev. 2 | Basic Rev. C")
+  so the joiner sees the host's full hardware configuration at a
+  glance instead of raw CRC32 hex.
 - `state` ("waiting" | "playing") — hosts no longer Delete on
   connect; they flip state to `"playing"` on the next heartbeat.
   The Browser keeps the row visible with an "in play" label and the
@@ -798,7 +805,7 @@ whichever friend can port-forward hosts.
 | Hosted offers — persistence, multi-offer, activity suspension | ✅ |
 | Platform notifications + chime | ✅ |
 | Peer-connect notification + own-offer filter in Browser | ✅ |
-| Lobby v2 deployed | ✅ `07b98c1` |
+| Lobby v2 deployed | ✅ `07b98c1` (schema-always-emit fix: `0bdd9bb`) |
 
 ### Known bugs to fix before real-world play
 

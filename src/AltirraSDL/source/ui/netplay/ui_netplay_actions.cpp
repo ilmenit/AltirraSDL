@@ -235,16 +235,9 @@ void PostLobbyCreate(HostedGame& o) {
 	};
 	hexCRC(o.config.kernelCRC32, cr.kernelCRC32);
 	hexCRC(o.config.basicCRC32,  cr.basicCRC32);
-	switch (o.config.hardwareMode) {
-		case kATHardwareMode_800:    cr.hardwareMode = "800";    break;
-		case kATHardwareMode_800XL:  cr.hardwareMode = "800XL";  break;
-		case kATHardwareMode_1200XL: cr.hardwareMode = "1200XL"; break;
-		case kATHardwareMode_XEGS:   cr.hardwareMode = "XEGS";   break;
-		case kATHardwareMode_5200:   cr.hardwareMode = "5200";   break;
-		case kATHardwareMode_130XE:  cr.hardwareMode = "130XE";  break;
-		case kATHardwareMode_1400XL: cr.hardwareMode = "1400XL"; break;
-		default:                     cr.hardwareMode = "XL/XE";  break;
-	}
+	cr.hardwareMode  = HardwareModeShort(o.config.hardwareMode);
+	cr.videoStandard = VideoStandardShort(o.config.videoStandard);
+	cr.memoryMode    = MemoryModeShort(o.config.memoryMode);
 
 	const uint32_t tag = OfferTag(o);
 

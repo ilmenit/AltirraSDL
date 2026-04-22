@@ -199,6 +199,8 @@ bool ReadSession(JsonCursor& c, LobbySession& s) {
 		else if (key == "kernelCRC32")    c.parseString(s.kernelCRC32);
 		else if (key == "basicCRC32")     c.parseString(s.basicCRC32);
 		else if (key == "hardwareMode")   c.parseString(s.hardwareMode);
+		else if (key == "videoStandard")  c.parseString(s.videoStandard);
+		else if (key == "memoryMode")     c.parseString(s.memoryMode);
 		else if (key == "state")          c.parseString(s.state);
 		else if (key == "playerCount")    c.parseInt(s.playerCount);
 		else if (key == "maxPlayers")     c.parseInt(s.maxPlayers);
@@ -342,6 +344,8 @@ bool LobbyClient::Create(const LobbyCreateRequest& req,
 	AppendKV(body, "kernelCRC32",     req.kernelCRC32,     first);
 	AppendKV(body, "basicCRC32",      req.basicCRC32,      first);
 	AppendKV(body, "hardwareMode",    req.hardwareMode,    first);
+	AppendKV(body, "videoStandard",   req.videoStandard,   first);
+	AppendKV(body, "memoryMode",      req.memoryMode,      first);
 	body.push_back('}');
 
 	HttpRequest hr;

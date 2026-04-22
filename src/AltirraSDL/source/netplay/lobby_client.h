@@ -47,6 +47,8 @@ struct LobbySession {
 	std::string kernelCRC32;    // 8-char hex; empty = no constraint
 	std::string basicCRC32;     // 8-char hex or empty (BASIC off)
 	std::string hardwareMode;   // "800XL" / "5200" / "1200XL" / etc.
+	std::string videoStandard;  // "NTSC" / "PAL" / … — may be empty (old hosts)
+	std::string memoryMode;     // "320K" / "1088K" / … — may be empty (old hosts)
 	std::string state;          // "waiting" (joinable) | "playing" (in session)
 
 	// UI-owned: which configured lobby (section name) this session was
@@ -70,6 +72,8 @@ struct LobbyCreateRequest {
 	std::string kernelCRC32;    // may be empty
 	std::string basicCRC32;     // may be empty
 	std::string hardwareMode;   // may be empty
+	std::string videoStandard;  // may be empty
+	std::string memoryMode;     // may be empty
 };
 
 struct LobbyCreateResponse {

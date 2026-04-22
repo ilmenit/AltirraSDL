@@ -141,6 +141,8 @@ struct Session {
 	std::string kernelCRC32;
 	std::string basicCRC32;
 	std::string hardwareMode;      // "800XL" / "5200" / etc.
+	std::string videoStandard;     // "NTSC" / "PAL" / "SECAM" / etc.
+	std::string memoryMode;        // "320K" / "1088K" / etc.
 
 	// v2 session state: "waiting" = joinable, "playing" = in session
 	// (kept in the listing so the lobby looks alive, but Browser greys
@@ -359,10 +361,12 @@ void WriteSessionJson(JsonBuilder& b, const Session& s) {
 	// which produced the "?" hardwareMode bug in the desktop browser
 	// when the server silently dropped the keys on older deployments.
 	// Empty string = "no constraint / unknown"; that's unambiguous.
-	b.key(Field::kCartArtHash);  b.str(s.cartArtHash);  b.raw(',');
-	b.key(Field::kKernelCRC32);  b.str(s.kernelCRC32);  b.raw(',');
-	b.key(Field::kBasicCRC32);   b.str(s.basicCRC32);   b.raw(',');
-	b.key(Field::kHardwareMode); b.str(s.hardwareMode); b.raw(',');
+	b.key(Field::kCartArtHash);   b.str(s.cartArtHash);   b.raw(',');
+	b.key(Field::kKernelCRC32);   b.str(s.kernelCRC32);   b.raw(',');
+	b.key(Field::kBasicCRC32);    b.str(s.basicCRC32);    b.raw(',');
+	b.key(Field::kHardwareMode);  b.str(s.hardwareMode);  b.raw(',');
+	b.key(Field::kVideoStandard); b.str(s.videoStandard); b.raw(',');
+	b.key(Field::kMemoryMode);    b.str(s.memoryMode);    b.raw(',');
 	b.key(Field::kState);           b.str(s.state.empty() ? kStateWaiting
 	                                                       : s.state);
 	b.raw(',');
@@ -400,6 +404,8 @@ struct CreateReq {
 	std::string kernelCRC32;
 	std::string basicCRC32;
 	std::string hardwareMode;
+	std::string videoStandard;
+	std::string memoryMode;
 };
 
 struct HeartbeatReq {
@@ -431,6 +437,8 @@ bool ParseCreate(const std::string& body, CreateReq& r,
 		else if (key == Field::kKernelCRC32)     c.parseString(r.kernelCRC32);
 		else if (key == Field::kBasicCRC32)      c.parseString(r.basicCRC32);
 		else if (key == Field::kHardwareMode)    c.parseString(r.hardwareMode);
+		else if (key == Field::kVideoStandard)   c.parseString(r.videoStandard);
+		else if (key == Field::kMemoryMode)      c.parseString(r.memoryMode);
 		else if (key == Field::kPlayerCount)     c.parseInt(r.playerCount);
 		else if (key == Field::kMaxPlayers)      c.parseInt(r.maxPlayers);
 		else if (key == Field::kProtocolVersion) c.parseInt(r.protocolVersion);
@@ -517,6 +525,10 @@ std::string ValidateCreate(CreateReq& r) {
 		return e;
 	if ((int)r.hardwareMode.size() > kHardwareModeMax)
 		return "hardwareMode: <=16 chars";
+	if ((int)r.videoStandard.size() > kVideoStandardMax)
+		return "videoStandard: <=" + std::to_string(kVideoStandardMax) + " chars";
+	if ((int)r.memoryMode.size() > kMemoryModeMax)
+		return "memoryMode: <=" + std::to_string(kMemoryModeMax) + " chars";
 	return {};
 }
 
@@ -687,9 +699,11 @@ void Install(httplib::Server& srv, Store& store) {
 			in.visibility   = r.visibility;
 			in.requiresCode = r.requiresCode;
 			in.cartArtHash  = r.cartArtHash;
-			in.kernelCRC32  = r.kernelCRC32;
-			in.basicCRC32   = r.basicCRC32;
-			in.hardwareMode = r.hardwareMode;
+			in.kernelCRC32   = r.kernelCRC32;
+			in.basicCRC32    = r.basicCRC32;
+			in.hardwareMode  = r.hardwareMode;
+			in.videoStandard = r.videoStandard;
+			in.memoryMode    = r.memoryMode;
 
 			Session s = store.Create(in);
 			if (s.id.empty()) {

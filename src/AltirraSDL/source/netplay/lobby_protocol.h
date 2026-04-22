@@ -21,7 +21,11 @@ namespace ATLobby {
 //
 // v2 — added kernelCRC32, basicCRC32, hardwareMode (firmware pre-flight),
 //      state (waiting|playing — playing sessions stay listed but
-//      non-joinable), and GET /v1/stats endpoint.
+//      non-joinable), and GET /v1/stats endpoint.  Also publishes
+//      videoStandard ("NTSC"/"PAL"/…) and memoryMode ("320K", "576K", …)
+//      so the Browser can show the host's full machine spec before
+//      anyone commits to joining.  New keys are additive and default
+//      to empty strings, so the version number stays at 2.
 inline constexpr int kProtocolVersion = 2;
 
 // Session TTL in seconds.  Clients should heartbeat well inside this
@@ -55,6 +59,8 @@ inline constexpr int kRegionMax        = 32;
 inline constexpr int kCartArtHashMax   = 64;
 inline constexpr int kHardwareModeMax  = 16;   // "800XL", "5200", "1200XL" etc.
 inline constexpr int kStateMax         = 16;   // "waiting" / "playing"
+inline constexpr int kVideoStandardMax = 8;    // "NTSC", "PAL", "NTSC50", "PAL60", "SECAM"
+inline constexpr int kMemoryModeMax    = 8;    // "8K", "16K", "320K", "1088K", etc.
 inline constexpr int kMinPlayers       = 2;
 inline constexpr int kMaxPlayersLimit  = 8;
 
@@ -102,6 +108,8 @@ namespace Field {
     inline constexpr const char *kKernelCRC32     = "kernelCRC32";  // hex string, 8 chars
     inline constexpr const char *kBasicCRC32      = "basicCRC32";   // hex string, 8 chars; "" if BASIC off
     inline constexpr const char *kHardwareMode    = "hardwareMode"; // "800XL" | "5200" | etc.
+    inline constexpr const char *kVideoStandard   = "videoStandard"; // "NTSC" | "PAL" | …
+    inline constexpr const char *kMemoryMode      = "memoryMode";    // "320K" | "1088K" | …
     inline constexpr const char *kState           = "state";        // "waiting" | "playing"
 
     // v2: /v1/stats response.

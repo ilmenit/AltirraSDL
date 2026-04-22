@@ -3,6 +3,7 @@
 #include <stdafx.h>
 
 #include "ui_netplay_state.h"
+#include "ui_netplay_actions.h"   // JoinCompat enumerator values
 
 #include "simulator.h"
 #include "firmwaremanager.h"
@@ -233,7 +234,6 @@ static void SaveOffers(VDRegistryAppKey& key) {
 	}
 }
 
-namespace {
 const char *HardwareModeShort(ATHardwareMode m) {
 	switch (m) {
 		case kATHardwareMode_800:    return "800";
@@ -276,7 +276,6 @@ const char *VideoStandardShort(ATVideoStandard v) {
 		default:                      return "?";
 	}
 }
-} // anonymous
 
 const char *MachineConfigSummary(const MachineConfig& c) {
 	static char buf[96];
@@ -314,6 +313,136 @@ const char *FirmwareNameForCRC(uint32_t crc) {
 		return out.c_str();
 	}
 	return "Unknown";
+}
+
+namespace {
+// Shared token resolver for OS / BASIC.  `crcHex` is the 8-char hex the
+// host advertised (empty when host didn't pin a ROM; hosts with the
+// default-for-hardware firmware emit empty).  `label` is "default OS"
+// or "BASIC off" for the zero / empty case.  `missingSlot` is true when
+// the caller's JoinCompat says *this specific slot* is missing — in
+// that case we also flag `tok.missing` so the renderer paints it red.
+SpecLineToken ResolveFirmwareToken(const std::string& crcHex,
+                                   const char *defaultLabel,
+                                   bool missingSlot) {
+	SpecLineToken tok;
+	if (crcHex.empty()) {
+		tok.text = defaultLabel;
+		return tok;
+	}
+	// Parse hex → uint32_t for FirmwareNameForCRC.
+	uint32_t crc = 0;
+	for (char ch : crcHex) {
+		crc <<= 4;
+		if      (ch >= '0' && ch <= '9') crc |= (uint32_t)(ch - '0');
+		else if (ch >= 'a' && ch <= 'f') crc |= (uint32_t)(ch - 'a' + 10);
+		else if (ch >= 'A' && ch <= 'F') crc |= (uint32_t)(ch - 'A' + 10);
+		else { crc = 0; break; }
+	}
+	if (crc == 0) {
+		// Malformed hex — show the raw string so we don't silently lie.
+		tok.text = "[" + crcHex + "]";
+		tok.missing = missingSlot;
+		return tok;
+	}
+	const char *name = FirmwareNameForCRC(crc);
+	if (name && *name && std::strcmp(name, "Unknown") != 0) {
+		tok.text = name;
+		return tok;
+	}
+	// Firmware not installed locally.  Fall back to the hex — and mark
+	// missing only when the compat caller confirmed this slot is the
+	// one blocking the join.
+	char buf[12];
+	std::snprintf(buf, sizeof buf, "[%.*s]",
+		(int)crcHex.size(), crcHex.c_str());
+	tok.text = buf;
+	tok.missing = missingSlot;
+	return tok;
+}
+} // anonymous
+
+SpecLine BuildSpecLineFromSession(const ATNetplay::LobbySession& s,
+                                  JoinCompat compat) {
+	SpecLine out;
+	out.tokens.reserve(5);
+
+	auto push = [&](const std::string& t, bool missing = false) {
+		SpecLineToken tk; tk.text = t; tk.missing = missing;
+		out.tokens.push_back(std::move(tk));
+	};
+
+	push(s.hardwareMode.empty()  ? "?" : s.hardwareMode);
+	push(s.videoStandard.empty() ? "?" : s.videoStandard);
+	push(s.memoryMode.empty()    ? "?" : s.memoryMode);
+	out.tokens.push_back(ResolveFirmwareToken(
+		s.kernelCRC32, "default OS",
+		compat == JoinCompat::MissingKernel));
+	out.tokens.push_back(ResolveFirmwareToken(
+		s.basicCRC32,  "BASIC off",
+		compat == JoinCompat::MissingBasic));
+
+	out.hasMissingFirmware =
+		out.tokens[3].missing || out.tokens[4].missing;
+	return out;
+}
+
+SpecLine BuildSpecLineFromConfig(const MachineConfig& c) {
+	SpecLine out;
+	out.tokens.reserve(5);
+
+	auto push = [&](const char *t) {
+		SpecLineToken tk; tk.text = t; out.tokens.push_back(std::move(tk));
+	};
+
+	push(HardwareModeShort(c.hardwareMode));
+	push(VideoStandardShort(c.videoStandard));
+	push(MemoryModeShort(c.memoryMode));
+
+	// OS slot: CRC=0 → default; CRC present → friendly name or hex.
+	{
+		SpecLineToken tk;
+		if (c.kernelCRC32 == 0) {
+			tk.text = "default OS";
+		} else {
+			const char *name = FirmwareNameForCRC(c.kernelCRC32);
+			if (name && *name && std::strcmp(name, "Unknown") != 0) {
+				tk.text = name;
+			} else {
+				char buf[12];
+				std::snprintf(buf, sizeof buf, "[%08X]", c.kernelCRC32);
+				tk.text = buf;
+			}
+		}
+		out.tokens.push_back(std::move(tk));
+	}
+	// BASIC slot.
+	{
+		SpecLineToken tk;
+		if (!c.basicEnabled || c.basicCRC32 == 0) {
+			tk.text = c.basicEnabled ? "default BASIC" : "BASIC off";
+		} else {
+			const char *name = FirmwareNameForCRC(c.basicCRC32);
+			if (name && *name && std::strcmp(name, "Unknown") != 0) {
+				tk.text = name;
+			} else {
+				char buf[12];
+				std::snprintf(buf, sizeof buf, "[%08X]", c.basicCRC32);
+				tk.text = buf;
+			}
+		}
+		out.tokens.push_back(std::move(tk));
+	}
+	return out;
+}
+
+std::string SpecLineJoin(const SpecLine& sl) {
+	std::string out;
+	for (size_t i = 0; i < sl.tokens.size(); ++i) {
+		if (i) out += " | ";
+		out += sl.tokens[i].text;
+	}
+	return out;
 }
 
 std::string HostedGameSignature(const std::string& path,

@@ -279,10 +279,23 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 	                : (info.isSelected ? p.cardBgHoverTop : p.cardBgTop);
 	ATMobileDrawGradientRect(rmin, rmax, bgTop, bg, Dp(10.0f));
 
-	// Border (thicker for selected / focused).
-	uint32_t border = (info.isSelected || focused) ? p.accent : p.cardBorder;
-	dl->AddRect(rmin, rmax, border, Dp(10.0f), 0,
-		(info.isSelected || focused) ? Dp(2.0f) : 1.0f);
+	// Border (thicker for selected / focused).  Incompatible tiles
+	// (joiner missing required firmware) pre-empt the selected /
+	// focused colour with a danger border so the user sees the
+	// "can't join this one" signal even when they're navigating
+	// across tiles with the gamepad.
+	uint32_t border;
+	float    borderThickness = 1.0f;
+	if (info.specMissing) {
+		border = p.danger;
+		borderThickness = Dp(2.0f);
+	} else if (info.isSelected || focused) {
+		border = p.accent;
+		borderThickness = Dp(2.0f);
+	} else {
+		border = p.cardBorder;
+	}
+	dl->AddRect(rmin, rmax, border, Dp(10.0f), 0, borderThickness);
 
 	// Art area on top — 60% of tile height.
 	float artH = size.y * 0.60f;
@@ -333,6 +346,27 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 		std::snprintf(buf, sizeof buf, "Region: %s", info.region);
 		dl->AddText(txt, p.textMuted, buf);
 	}
+	// Spec line — "hw | video | memory | OS | BASIC" — with per-token
+	// colouring so a missing firmware paints just that token red
+	// instead of the whole line.  The tokens come pre-resolved from
+	// BuildSpecLineFromSession, including the JoinCompat-driven
+	// `missing` flag.
+	if (!info.specTokens.empty()) {
+		txt.y += ImGui::GetTextLineHeightWithSpacing();
+		float x = txt.x;
+		for (size_t i = 0; i < info.specTokens.size(); ++i) {
+			const auto& tk = info.specTokens[i];
+			uint32_t col = tk.missing ? p.danger : p.textMuted;
+			dl->AddText(ImVec2(x, txt.y), col, tk.text.c_str());
+			ImVec2 sz = ImGui::CalcTextSize(tk.text.c_str());
+			x += sz.x;
+			if (i + 1 < info.specTokens.size()) {
+				const char *sep = " | ";
+				dl->AddText(ImVec2(x, txt.y), p.textMuted, sep);
+				x += ImGui::CalcTextSize(sep).x;
+			}
+		}
+	}
 	// Visibility pill in the bottom-right corner — only drawn for
 	// private sessions (public is the default; flagging every public
 	// tile would just be visual noise).  Full "Private" text reads
@@ -347,6 +381,23 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 		                     rmax.y - cSz.y - pad * 2 - Dp(6));
 		ImVec2 cMax = ImVec2(rmax.x - Dp(8), rmax.y - Dp(6));
 		dl->AddRectFilled(cMin, cMax, p.warning, Dp(4));
+		dl->AddText(ImVec2(cMin.x + pad, cMin.y + pad),
+			p.textOnAccent, chip);
+	}
+	// "Missing firmware" overlay pill — takes the bottom-left corner so
+	// it doesn't collide with the Private chip.  Only drawn when the
+	// tile's spec line flagged any token as missing; pairs with the
+	// danger-coloured border so the signal reads from both the row
+	// outline and the pill text.
+	if (info.specMissing) {
+		const char *chip = "Missing firmware";
+		ImVec2 cSz = ImGui::CalcTextSize(chip);
+		float pad = Dp(6);
+		ImVec2 cMin = ImVec2(rmin.x + Dp(8),
+		                     rmax.y - cSz.y - pad * 2 - Dp(6));
+		ImVec2 cMax = ImVec2(cMin.x + cSz.x + pad * 2,
+		                     rmax.y - Dp(6));
+		dl->AddRectFilled(cMin, cMax, p.danger, Dp(4));
 		dl->AddText(ImVec2(cMin.x + pad, cMin.y + pad),
 			p.textOnAccent, chip);
 	}
