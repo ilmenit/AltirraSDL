@@ -102,6 +102,48 @@ toggled on desktop.
   counts. List and grid views at three sizes. The Windows build has
   no equivalent browser — it relies on the OS file manager.
 
+### Online play (netplay)
+
+Two-player lockstep netplay over the internet or LAN — a fork-only
+feature with no upstream equivalent. Because the core is cycle
+deterministic, both peers show pixel-identical frames indefinitely
+once the game boots.
+
+- **Lockstep determinism** — both peers cold-boot the same game from
+  the same master seed and advance frame-by-frame, each waiting for
+  the other's input for frame N before committing it. Default input
+  delay is 4 frames (~66 ms).
+- **Matchmaking via a lightweight HTTP lobby** — hosts advertise
+  "I'm hosting Joust at 1.2.3.4:26100" to a session directory; the
+  joiner then connects directly to the host's UDP port (the lobby
+  doesn't proxy traffic). A public community lobby is configured out
+  of the box.
+- **Federated lobbies** — `~/.config/altirra/lobby.ini` lists any
+  number of lobby servers; Browse merges entries from all enabled
+  ones and Host announces to all of them. LAN discovery via UDP
+  broadcast is supported alongside HTTP lobbies.
+- **Reference lobby server** ships in-tree ([`server/lobby/`](server/lobby/))
+  — ~400 KB stripped C++ binary, in-memory state, no database, with
+  a Dockerfile and a hardened systemd unit. A $5/month VPS hosts
+  hundreds of concurrent sessions; a single `docker run` is enough
+  for LAN play.
+- **Game file transfer on connect** — the host ships the XEX / ATR /
+  CAR bytes (up to ~32 MB) to the joiner as part of the handshake,
+  so the joiner doesn't need the ROM in their own library.
+- **Machine-config lock** — kernel ROM CRC32, BASIC ROM CRC32,
+  hardware model (800 / XL / XE / 5200), memory, and video standard
+  are frozen into the host's `NetBootConfig` and verified on the
+  joiner. Sessions whose firmware you don't have are flagged in the
+  Browse list with the exact CRC32 to import.
+- **Public or private offers** — per-offer entry code; hosts can
+  choose **auto-accept** or **prompt on each join** with a 20-second
+  modal (Allow / Deny / timeout).
+- **HTTPS** supported via a reverse proxy (nginx example included);
+  the lobby reads `X-Forwarded-For` so per-IP rate limiting still
+  works correctly behind a proxy.
+
+See [NETPLAY.md](NETPLAY.md) for the full user and operator guide.
+
 ### AltirraBridge: JSON-over-socket scripting / automation
 
 A local IPC server exposed by the SDL build that lets tools drive the
@@ -180,10 +222,6 @@ Altirra is licensed under the **GNU General Public License v2 (GPLv2)**, with a 
   systemd, and behind an HTTPS reverse proxy).
 - [server/lobby/README.md](server/lobby/README.md) — lobby server
   build / API reference / protocol coupling with the client.
-- [NETPLAY_DESIGN_PLAN.md](NETPLAY_DESIGN_PLAN.md) — protocol-level
-  design: packet formats, lockstep determinism rationale.
-- [PORTING/](PORTING/) — SDL3 port design docs (system library,
-  display, audio, input, UI, network, main loop).
 
 ## Links
 
