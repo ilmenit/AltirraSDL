@@ -197,7 +197,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 			case kMagicBye: {
 				NetBye b;
 				if (DecodeBye(mRxBuf, n, b) != DecodeResult::Ok) continue;
-				HandleBye(b);
+				HandleBye(b, from);
 				break;
 			}
 			default:
@@ -254,7 +254,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 
 void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
                                         const Endpoint& from,
-                                        uint64_t /*nowMs*/) {
+                                        uint64_t nowMs) {
 	if (mPhase != Phase::WaitingForJoiner) {
 		// Host is already past the listening phase (handshake in
 		// progress, snapshot streaming, or in lockstep).  Tell the
@@ -287,27 +287,39 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		}
 	}
 
-	// Hello passed validation.  If prompt-accept is enabled, stash the
-	// peer in the pending-decision slot and wait for the UI to call
-	// AcceptPendingJoiner / RejectPendingJoiner.  We stay in
-	// WaitingForJoiner so a Reject can return to listening cleanly.
-	if (mPromptAccept && !mHasPendingDecision) {
-		mHasPendingDecision = true;
-		mPendingDecisionPeer = from;
-		std::memset(mPendingDecisionHandle, 0,
-			sizeof mPendingDecisionHandle);
-		std::memcpy(mPendingDecisionHandle, hello.playerHandle,
-			kHandleLen);
+	// Hello passed validation.  If prompt-accept is enabled, enqueue
+	// the joiner and wait for the UI to call AcceptPendingJoiner(i)
+	// or RejectPendingJoiner(i).  Duplicate Hellos from the same
+	// endpoint (the joiner retransmits every ~500 ms while waiting)
+	// refresh the arrival timestamp and nothing else.  We stay in
+	// WaitingForJoiner until an Accept picks one entry, so a Reject on
+	// any single row can return to listening cleanly.
+	if (mPromptAccept) {
+		for (auto& e : mPendingDecisions) {
+			if (e.peer.Equals(from)) {
+				// Refresh arrivedMs (we keep the oldest for the UI
+				// "Requested Xs ago" display) — actually keep the
+				// first arrival time; retransmits are not new requests.
+				return;
+			}
+		}
+		if (mPendingDecisions.size() >= kMaxPendingDecisions) {
+			// Queue is full.  Bounce the joiner with HostFull so they
+			// get a clear error instead of a silent timeout.
+			SendReject(kRejectHostFull, from);
+			return;
+		}
+		PendingDecision pd;
+		pd.peer = from;
+		std::memset(pd.handle, 0, sizeof pd.handle);
+		std::memcpy(pd.handle, hello.playerHandle, kHandleLen);
+		pd.arrivedMs = nowMs;
+		mPendingDecisions.push_back(pd);
 		char ep[32] = {};
 		from.Format(ep, sizeof ep);
 		g_ATLCNetplay("host: incoming join from \"%s\" at %s — "
-			"awaiting host decision",
-			mPendingDecisionHandle, ep);
-		return;
-	}
-	if (mPromptAccept && mHasPendingDecision) {
-		// We're already prompting the host about somebody else.  Drop
-		// duplicate Hellos until that decision resolves.
+			"awaiting host decision (queue depth %zu)",
+			pd.handle, ep, mPendingDecisions.size());
 		return;
 	}
 
@@ -344,25 +356,45 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 // Prompt-accept gate
 // ---------------------------------------------------------------------------
 
-void Coordinator::AcceptPendingJoiner() {
-	if (!mHasPendingDecision) return;
+const char* Coordinator::PendingJoinerHandle(size_t i) const {
+	if (i >= mPendingDecisions.size()) return "";
+	return mPendingDecisions[i].handle;
+}
+
+uint64_t Coordinator::PendingArrivedMs(size_t i) const {
+	if (i >= mPendingDecisions.size()) return 0;
+	return mPendingDecisions[i].arrivedMs;
+}
+
+void Coordinator::AcceptPendingJoiner(size_t i) {
+	if (i >= mPendingDecisions.size()) return;
 	if (mPhase != Phase::WaitingForJoiner) {
 		// Phase moved out from under us (timeout, End, etc.).  Drop
-		// the decision silently.
-		mHasPendingDecision = false;
+		// the queue silently.
+		mPendingDecisions.clear();
 		return;
 	}
 
-	// Adopt the pending peer and run the same path the auto-accept
-	// branch takes (see HandleHelloFromJoiner).
-	mPeer      = mPendingDecisionPeer;
+	// Tell every other queued joiner that the host chose someone else
+	// so they stop waiting.  Use kRejectHostFull to match the message
+	// they would have got if they'd arrived after a silent auto-accept.
+	for (size_t k = 0; k < mPendingDecisions.size(); ++k) {
+		if (k == i) continue;
+		SendReject(kRejectHostFull, mPendingDecisions[k].peer);
+	}
+
+	PendingDecision chosen = mPendingDecisions[i];
+	mPendingDecisions.clear();
+
+	// Adopt the accepted peer and run the same path the auto-accept
+	// branch used to (see HandleHelloFromJoiner).
+	mPeer      = chosen.peer;
 	mPeerKnown = true;
-	mHasPendingDecision = false;
 
 	char ep[32] = {};
 	mPeer.Format(ep, sizeof ep);
 	g_ATLCNetplay("host: accepted joiner \"%s\" from %s (manual approval)",
-		mPendingDecisionHandle, ep);
+		chosen.handle, ep);
 
 	if (mSnapTxBuffer.empty()) {
 		mHostHasPendingJoiner = true;
@@ -376,13 +408,15 @@ void Coordinator::AcceptPendingJoiner() {
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
 }
 
-void Coordinator::RejectPendingJoiner() {
-	if (!mHasPendingDecision) return;
+void Coordinator::RejectPendingJoiner(size_t i) {
+	if (i >= mPendingDecisions.size()) return;
+	const PendingDecision& pd = mPendingDecisions[i];
 	g_ATLCNetplay("host: rejected joiner \"%s\" (manual decline)",
-		mPendingDecisionHandle);
-	SendReject(kRejectHostRejected, mPendingDecisionPeer);
-	mHasPendingDecision = false;
-	// Stay in WaitingForJoiner — another peer may arrive.
+		pd.handle);
+	SendReject(kRejectHostRejected, pd.peer);
+	mPendingDecisions.erase(mPendingDecisions.begin() + i);
+	// Stay in WaitingForJoiner — another entry may still be queued and
+	// new peers can still arrive.
 }
 
 // ---------------------------------------------------------------------------
@@ -437,7 +471,7 @@ void Coordinator::HandleRejectFromHost(const NetReject& r) {
 		case kRejectBasicMismatch:  mLastError = "BASIC ROM does not match the host's. Install the matching firmware and try again."; break;
 		case kRejectVersionSkew:    mLastError = "Protocol version mismatch — your Altirra build is incompatible with the host's."; break;
 		case kRejectTosNotAccept:   mLastError = "Host requires terms-of-service acceptance."; break;
-		case kRejectHostFull:       mLastError = "The session is full."; break;
+		case kRejectHostFull:       mLastError = "The host chose another player, or is handling too many requests right now."; break;
 		case kRejectHostNotReady:   mLastError = "Host is not ready to accept joiners yet."; break;
 		case kRejectBadEntryCode:   mLastError = "Incorrect join code. Ask the host for the right code and try again."; break;
 		case kRejectHostRejected:   mLastError = "The host declined your request to join."; break;
@@ -544,7 +578,28 @@ void Coordinator::PumpLockstepSend() {
 // Bye / termination
 // ---------------------------------------------------------------------------
 
-void Coordinator::HandleBye(const NetBye& b) {
+void Coordinator::HandleBye(const NetBye& b, const Endpoint& from) {
+	// Host-side special case: a Bye from a joiner that's only *queued*
+	// (not yet the locked-in peer) means that joiner cancelled before
+	// we got around to accepting them.  Just drop them from the queue —
+	// do not end the listening phase.  Without this the host's whole
+	// offer would collapse the moment any queued peer gave up waiting.
+	if (mRole == Role::Host && mPhase == Phase::WaitingForJoiner) {
+		for (size_t k = 0; k < mPendingDecisions.size(); ++k) {
+			if (mPendingDecisions[k].peer.Equals(from)) {
+				char ep[32] = {};
+				from.Format(ep, sizeof ep);
+				g_ATLCNetplay("host: queued joiner \"%s\" at %s cancelled "
+					"before decision",
+					mPendingDecisions[k].handle, ep);
+				mPendingDecisions.erase(mPendingDecisions.begin() + k);
+				return;
+			}
+		}
+		// Bye from a stranger while listening — ignore.
+		return;
+	}
+
 	// Peer said goodbye; treat as clean exit unless they flagged
 	// desync.
 	const char *reasonStr = "clean";
@@ -568,12 +623,14 @@ void Coordinator::HandleBye(const NetBye& b) {
 void Coordinator::End(uint32_t byeReason) {
 	if (mPhase == Phase::Idle || mPhase == Phase::Ended || mPhase == Phase::Failed)
 		return;
-	// Tell a still-pending joiner that we're not coming — without this
-	// they sit in "Connecting…" until their own handshake timeout fires.
-	if (mHasPendingDecision) {
-		SendReject(kRejectHostRejected, mPendingDecisionPeer);
-		mHasPendingDecision = false;
+	// Tell every still-queued joiner that we're not coming — without
+	// this they sit in "Connecting…" until their own handshake timeout
+	// fires.  Use kRejectHostFull; the session is ending from under
+	// them, not a per-peer rejection.
+	for (const auto& pd : mPendingDecisions) {
+		SendReject(kRejectHostFull, pd.peer);
 	}
+	mPendingDecisions.clear();
 	SendBye(byeReason);
 	mPhase = Phase::Ended;
 }

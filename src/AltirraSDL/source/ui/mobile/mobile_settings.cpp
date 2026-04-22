@@ -42,6 +42,9 @@
 #include "../gamelibrary/game_library.h"
 #include "settings.h"
 #include "options.h"
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "../netplay/ui_netplay_state.h"
+#endif
 
 #ifndef ALTIRRA_NO_SDL3_IMAGE
 #include <SDL3_image/SDL_image.h>
@@ -117,7 +120,15 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				{
 					s_fwPicker = kATFirmwareType_Unknown;
 				} else if (s_settingsPage == ATMobileSettingsPage::Home) {
-					mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+					mobileState.currentScreen = s_settingsReturnScreen;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+					if (s_settingsReturnToNetplayHub) {
+						s_settingsReturnToNetplayHub = false;
+						ATNetplayUI::SaveToRegistry();
+						ATNetplayUI::Navigate(
+							ATNetplayUI::Screen::OnlinePlayHub);
+					}
+#endif
 				} else {
 					s_settingsPage = ATMobileSettingsPage::Home;
 				}
@@ -135,6 +146,14 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				s_fwPicker = kATFirmwareType_Unknown;
 			} else if (s_settingsPage == ATMobileSettingsPage::Home) {
 				mobileState.currentScreen = s_settingsReturnScreen;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (s_settingsReturnToNetplayHub) {
+					s_settingsReturnToNetplayHub = false;
+					ATNetplayUI::SaveToRegistry();
+					ATNetplayUI::Navigate(
+						ATNetplayUI::Screen::OnlinePlayHub);
+				}
+#endif
 			} else {
 				s_settingsPage = ATMobileSettingsPage::Home;
 			}
@@ -152,6 +171,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		case ATMobileSettingsPage::SaveState:   pageTitle = "Save State"; break;
 		case ATMobileSettingsPage::Firmware:    pageTitle = "Firmware"; break;
 		case ATMobileSettingsPage::GameLibrary: pageTitle = "Game Library"; break;
+		case ATMobileSettingsPage::OnlinePlay:  pageTitle = "Online Play"; break;
 		}
 		ImGui::Text("%s", pageTitle);
 
@@ -189,7 +209,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				VDStringA subtitle;
 				ATMobileSettingsPage target;
 			};
-			CatRow cats[9];
+			CatRow cats[10];
 			int n = 0;
 
 			cats[n++] = { "Machine",
@@ -254,6 +274,28 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						: VDStringA("(no sources)"),
 					ATMobileSettingsPage::GameLibrary };
 			}
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			{
+				const auto &prefs = ATNetplayUI::GetState().prefs;
+				VDStringA sub;
+				if (!prefs.nickname.empty()) {
+					sub.sprintf("%s  \xC2\xB7  LAN %d / Net %d frames",
+						prefs.nickname.c_str(),
+						prefs.defaultInputDelayLan,
+						prefs.defaultInputDelayInternet);
+				} else if (prefs.isAnonymous) {
+					sub.sprintf("Anonymous  \xC2\xB7  LAN %d / Net %d frames",
+						prefs.defaultInputDelayLan,
+						prefs.defaultInputDelayInternet);
+				} else {
+					sub = "Nickname, notifications, input delay";
+				}
+				cats[n++] = { "Online Play", sub,
+					ATMobileSettingsPage::OnlinePlay };
+			}
+#endif
+
 
 			float rowH = dp(76.0f);
 			float rowGap = dp(10.0f);
@@ -1169,6 +1211,19 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 							lib->GetEntries().clear();
 							lib->SaveSettingsToRegistry();
 							lib->SaveCache();
+							// Scrub the rotated backup and any stale
+							// crash-recovery tempfile.  Without this the
+							// previous cache (with the full library) stays
+							// on disk as <cache>.bak and could be recovered
+							// by a future LoadCache fallback, resurrecting
+							// the library the user just chose to clear.
+							VDStringA cacheDir = ATGetConfigDir();
+							if (!cacheDir.empty() && cacheDir.back() != '/')
+								cacheDir += '/';
+							VDStringA bakPath = cacheDir + "gamelibrary.json.bak";
+							VDStringA tmpPath = cacheDir + "gamelibrary.json.tmp";
+							SDL_RemovePath(bakPath.c_str());
+							SDL_RemovePath(tmpPath.c_str());
 							extern void GameBrowser_Invalidate();
 							GameBrowser_Invalidate();
 							extern void ATRegistryFlushToDisk();
@@ -1177,6 +1232,23 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 		}
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		// --- Sub-page: Online Play (shortcut from the hub, plus a card
+		// in the Home grid).  Renders the same option body used by the
+		// old netplay Preferences sheet so both entry points stay in
+		// sync.  SaveToRegistry() fires on every back path: pressing
+		// Back bubbles up through the handler at the top of this
+		// function, which resolves to either HamburgerMenu or the
+		// Online Play hub depending on s_settingsReturnToNetplayHub.
+		// We persist on every frame that the page is open rather than
+		// only on exit so that gamepad users who background the app
+		// from this page don't lose their edit.
+		if (s_settingsPage == ATMobileSettingsPage::OnlinePlay) {
+			ATNetplayUI::RenderOnlinePlayPrefsBody();
+			ATNetplayUI::SaveToRegistry();
+		}
+#endif
 
 		// Bottom padding so the last row isn't flush against the nav bar
 		ImGui::Dummy(ImVec2(0, dp(32.0f)));

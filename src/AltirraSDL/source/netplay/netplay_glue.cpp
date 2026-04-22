@@ -63,6 +63,14 @@ std::vector<HostSlot>                    g_hosts;
 std::unique_ptr<ATNetplay::Coordinator>  g_joiner;
 int                                      g_joinerTerminalTicks = 0;
 
+// After the joiner coordinator self-tears-down (two-tick terminal
+// grace), the UI still needs to show WHY the session ended — otherwise
+// a rejected joiner's Waiting screen drops back to the generic default
+// label and the reject message is lost.  Cache the last terminal phase
+// and last error string at teardown; cleared on the next BeginJoin.
+Phase                                    g_lastJoinPhase  = Phase::None;
+std::string                              g_lastJoinError;
+
 // Find by id.  Returns nullptr if not present.
 HostSlot* FindHost(const char* gameId) {
 	if (!gameId || !*gameId) return nullptr;
@@ -132,7 +140,14 @@ void Poll(uint64_t nowMs) {
 			++it;
 		}
 	}
-	// Joiner.
+	// Joiner.  Before the two-tick teardown nukes the coordinator,
+	// snapshot its terminal phase + last error so the Waiting screen
+	// can keep surfacing "you were rejected" after the reset.
+	if (g_joiner && IsTerminal(g_joiner->GetPhase())) {
+		g_lastJoinPhase = ToGluePhase(g_joiner->GetPhase());
+		const char *err = g_joiner->LastError();
+		g_lastJoinError = err ? err : "";
+	}
 	PollCoord(g_joiner, g_joinerTerminalTicks, nowMs);
 
 	// Edge-drive the input injector's lifecycle off the aggregate
@@ -206,34 +221,7 @@ void Poll(uint64_t nowMs) {
 		g_ATLCNetplay("input: EndSession");
 	}
 
-	// Once-per-second lockstep heartbeat: sim running state, local
-	// frame counter and lockstep gate state.  This is deliberately
-	// rate-limited so the log stays short enough to paste into a
-	// bug report.
-	static uint64_t s_lastHeartbeatMs = 0;
-	if (lock && nowMs - s_lastHeartbeatMs >= 1000) {
-		s_lastHeartbeatMs = nowMs;
-		ATNetplay::Coordinator *c = nullptr;
-		for (auto& s : g_hosts) {
-			if (s.coord && s.coord->GetPhase() == CoordPhase::Lockstepping) {
-				c = s.coord.get(); break;
-			}
-		}
-		if (!c && g_joiner
-		      && g_joiner->GetPhase() == CoordPhase::Lockstepping)
-			c = g_joiner.get();
-		if (c) {
-			uint64_t last = c->Loop().LastPeerRecvMs();
-			g_ATLCNetplay("heartbeat: frame=%u gate=%s "
-				"sim running=%d paused=%d peerAgeMs=%llu",
-				(unsigned)c->Loop().CurrentFrame(),
-				c->CanAdvance() ? "open" : "closed",
-				g_sim.IsRunning() ? 1 : 0,
-				g_sim.IsPaused()  ? 1 : 0,
-				(unsigned long long)(last == 0 ? 0 : nowMs - last));
-		}
-	}
-	if (!lock) s_lastHeartbeatMs = 0;
+	// (Lockstep heartbeat log removed — too noisy for normal runs.)
 }
 
 bool CanAdvanceThisTick() {
@@ -452,37 +440,49 @@ void HostSetPromptAccept(const char* gameId, bool enable) {
 	h->coord->SetPromptAccept(enable);
 }
 
+size_t HostPendingCount(const char* gameId) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return 0;
+	return h->coord->PendingDecisionCount();
+}
+
 bool HostHasPendingDecision(const char* gameId) {
+	return HostPendingCount(gameId) != 0;
+}
+
+bool HostPendingAt(const char* gameId, size_t i,
+                   char* outHandle, size_t outHandleSize,
+                   uint64_t* outArrivedMs) {
+	if (outHandle && outHandleSize) outHandle[0] = 0;
+	if (outArrivedMs) *outArrivedMs = 0;
 	HostSlot* h = FindHost(gameId);
 	if (!h || !h->coord) return false;
-	return h->coord->HasPendingDecision();
+	if (i >= h->coord->PendingDecisionCount()) return false;
+	const char* src = h->coord->PendingJoinerHandle(i);
+	if (outHandle && outHandleSize) {
+		size_t n = 0;
+		while (src[n] && n + 1 < outHandleSize) { outHandle[n] = src[n]; ++n; }
+		outHandle[n] = 0;
+	}
+	if (outArrivedMs) *outArrivedMs = h->coord->PendingArrivedMs(i);
+	return true;
 }
 
 bool HostPendingJoinerHandle(const char* gameId,
                              char* outBuf, size_t outBufSize) {
-	if (outBuf && outBufSize) outBuf[0] = 0;
-	HostSlot* h = FindHost(gameId);
-	if (!h || !h->coord) return false;
-	if (!h->coord->HasPendingDecision()) return false;
-	const char* src = h->coord->PendingJoinerHandle();
-	if (outBuf && outBufSize) {
-		size_t n = 0;
-		while (src[n] && n + 1 < outBufSize) { outBuf[n] = src[n]; ++n; }
-		outBuf[n] = 0;
-	}
-	return true;
+	return HostPendingAt(gameId, 0, outBuf, outBufSize, nullptr);
 }
 
-void HostAcceptPending(const char* gameId) {
+void HostAcceptPending(const char* gameId, size_t i) {
 	HostSlot* h = FindHost(gameId);
 	if (!h || !h->coord) return;
-	h->coord->AcceptPendingJoiner();
+	h->coord->AcceptPendingJoiner(i);
 }
 
-void HostRejectPending(const char* gameId) {
+void HostRejectPending(const char* gameId, size_t i) {
 	HostSlot* h = FindHost(gameId);
 	if (!h || !h->coord) return;
-	h->coord->RejectPendingJoiner();
+	h->coord->RejectPendingJoiner(i);
 }
 
 // -------------------------------------------------------------------
@@ -499,6 +499,11 @@ bool StartJoin(const char* hostAddress,
 		g_joiner->End();
 		g_joiner.reset();
 	}
+	// Fresh attempt: clear any cached "last failed" state from a
+	// prior join so the Waiting screen doesn't flash a stale error.
+	g_lastJoinPhase = Phase::None;
+	g_lastJoinError.clear();
+	g_joinerTerminalTicks = 0;
 	g_joiner = std::make_unique<ATNetplay::Coordinator>();
 	bool ok = g_joiner->BeginJoin(hostAddress, playerHandle,
 		osRomHash, basicRomHash, acceptTos, entryCodeHash);
@@ -510,15 +515,29 @@ bool StartJoin(const char* hostAddress,
 }
 
 void StopJoin() {
-	if (!g_joiner) return;
-	g_joiner->End();
-	g_joiner.reset();
+	// Explicit user dismiss: wipe both the live coordinator AND the
+	// cached failure state so the Waiting screen closes cleanly.
+	if (g_joiner) {
+		g_joiner->End();
+		g_joiner.reset();
+	}
 	g_joinerTerminalTicks = 0;
+	g_lastJoinPhase = Phase::None;
+	g_lastJoinError.clear();
 }
 
 bool JoinExists()         { return g_joiner != nullptr; }
-Phase JoinPhase()         { return g_joiner ? ToGluePhase(g_joiner->GetPhase()) : Phase::None; }
-const char* JoinLastError() { return g_joiner ? g_joiner->LastError() : ""; }
+Phase JoinPhase() {
+	if (g_joiner) return ToGluePhase(g_joiner->GetPhase());
+	return g_lastJoinPhase;
+}
+const char* JoinLastError() {
+	if (g_joiner) {
+		const char *err = g_joiner->LastError();
+		if (err && *err) return err;
+	}
+	return g_lastJoinError.c_str();
+}
 
 void GetReceivedSnapshot(const uint8_t** data, size_t* len) {
 	if (!g_joiner) { if (data) *data = nullptr; if (len) *len = 0; return; }
@@ -570,6 +589,11 @@ void DisconnectActive() {
 		if (s.coord) s.coord->End();
 	}
 	if (g_joiner) g_joiner->End();
+	// Treat this as an explicit user dismiss on the joiner side — we
+	// don't want the cached rejection to reappear on the Waiting screen
+	// after the user chose to leave.
+	g_lastJoinPhase = Phase::None;
+	g_lastJoinError.clear();
 }
 
 } // namespace ATNetplayGlue

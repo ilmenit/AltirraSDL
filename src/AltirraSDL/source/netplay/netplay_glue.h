@@ -133,22 +133,42 @@ void SubmitHostSnapshot(const char* gameId, const uint8_t* data, size_t len);
 // --- Prompt-accept (host) -------------------------------------------------
 //
 // When enabled, an arriving Hello passes validation and then waits for
-// the host UI to call HostAcceptPending() / HostRejectPending().  The
-// UI polls HostHasPendingDecision() each tick and shows an Allow/Deny
-// modal when it flips true.  Off by default — auto-accept is the v1
-// happy path.
+// the host UI to call HostAcceptPending(i) / HostRejectPending(i).  The
+// coordinator keeps a FIFO queue of pending joiners so a second peer
+// can line up while the host is deliberating on the first.  The UI
+// iterates HostPendingCount() each tick and renders a row per entry.
 
 void HostSetPromptAccept(const char* gameId, bool enable);
-bool HostHasPendingDecision(const char* gameId);
 
-// Copy the pending joiner's handle into outBuf (NUL-terminated, capped
-// at outBufSize).  Returns false (and writes "") if no decision is
-// pending or the offer is unknown.
+// Number of joiners currently queued awaiting the host's decision.
+// 0 when no offer is registered under gameId.
+size_t HostPendingCount(const char* gameId);
+
+// Convenience: HostPendingCount(gameId) != 0.
+bool   HostHasPendingDecision(const char* gameId);
+
+// Read the i-th queued pending entry.  outHandle (NUL-terminated,
+// capped at outHandleSize) receives the joiner's handle.  outArrivedMs
+// (may be null) receives the host-local clock ms at which the entry
+// was first enqueued — callers use it to render a "Requested Xs ago"
+// timer.  Returns false (and writes "") if the index is out of range
+// or the offer is unknown.
+bool HostPendingAt(const char* gameId, size_t i,
+                   char* outHandle, size_t outHandleSize,
+                   uint64_t* outArrivedMs);
+
+// Back-compat single-slot accessor — equivalent to HostPendingAt(0,…)
+// without the timestamp.  New callers should use HostPendingAt.
 bool HostPendingJoinerHandle(const char* gameId,
                              char* outBuf, size_t outBufSize);
 
-void HostAcceptPending(const char* gameId);
-void HostRejectPending(const char* gameId);
+// Accept the i-th queued entry (default 0): coordinator rejects every
+// other queued peer with kRejectHostFull and proceeds to Snapshot send.
+void HostAcceptPending(const char* gameId, size_t i = 0);
+
+// Reject the i-th queued entry (default 0): coordinator sends
+// kRejectHostRejected to just that peer and leaves the rest queued.
+void HostRejectPending(const char* gameId, size_t i = 0);
 
 // --- Joiner (single) -------------------------------------------------------
 

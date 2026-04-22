@@ -559,10 +559,22 @@ void RenderInSessionHUD() {
 
 	if (!GetState().prefs.showSessionHUD) return;
 
-	const uint32_t frame = ATNetplayGlue::CurrentFrame();
 	const uint32_t delay = ATNetplayGlue::CurrentInputDelay();
 	int64_t desyncFrame = -1;
 	const bool desynced = ATNetplayGlue::IsDesynced(&desyncFrame);
+	const bool peerKnown = peerAgeMs < UINT64_MAX / 4;
+	const bool peerLate  = peerKnown && peerAgeMs > 500;
+
+	// Status category drives the dot colour and short label.
+	enum class Status { Live, Waiting, Desync };
+	Status status = Status::Live;
+	if (desynced)       status = Status::Desync;
+	else if (peerLate)  status = Status::Waiting;
+
+	const ImVec4 dotColor =
+		status == Status::Desync  ? StatusColorBad()  :
+		status == Status::Waiting ? StatusColorWarn() :
+		                            StatusColorGood();
 
 	const ImGuiViewport* vp = ImGui::GetMainViewport();
 	const float pad = 10.0f;
@@ -578,47 +590,92 @@ void RenderInSessionHUD() {
 	                       | ImGuiWindowFlags_NoNav
 	                       | ImGuiWindowFlags_NoMove;
 
+	// Shared status dot — drawn via ImDrawList rather than a glyph so
+	// we don't depend on the bundled font covering U+25CF.  Reserves a
+	// square of em-height on the current line and paints a filled
+	// circle centred in it; the caller follows with SameLine + label.
+	auto drawDot = [&](const ImVec4& col) {
+		const float h = ImGui::GetTextLineHeight();
+		const float r = h * 0.32f;
+		ImVec2 p0 = ImGui::GetCursorScreenPos();
+		ImVec2 c(p0.x + h * 0.5f, p0.y + h * 0.5f);
+		ImGui::GetWindowDrawList()->AddCircleFilled(
+			c, r, ImGui::GetColorU32(col));
+		ImGui::Dummy(ImVec2(h, h));
+	};
+
+	const bool gaming = ATUIIsGamingMode();
+
+	if (gaming) {
+		// Ultra-minimal mobile pill.  No disconnect button (hamburger
+		// → Online Play → End Session handles that); no frame or delay
+		// readouts (users don't need them, and every pixel over the
+		// game is expensive on a phone).  Two states:
+		//   ● 35ms  — peer packets arriving normally
+		//   ● Off   — peer silent or desynced
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+		if (ImGui::Begin("##netplay_hud", nullptr,
+		                 flags | ImGuiWindowFlags_NoInputs)) {
+			drawDot(dotColor);
+			ImGui::SameLine(0, 6);
+			if (status == Status::Live && peerKnown) {
+				ImGui::Text("%llums",
+					(unsigned long long)peerAgeMs);
+			} else {
+				ImGui::TextUnformatted("Off");
+			}
+		}
+		ImGui::End();
+		ImGui::PopStyleVar();
+		return;
+	}
+
+	// Desktop: single-row status pill, followed by a compact metrics
+	// line and a small Disconnect button.  Frame counter is intentionally
+	// omitted on the happy path — it's not actionable and dominates the
+	// readout.  DESYNC surfaces the frame inline because it is.
 	if (ImGui::Begin("##netplay_hud", nullptr, flags)) {
-		if (desynced) {
+		drawDot(dotColor);
+		ImGui::SameLine(0, 6);
+
+		switch (status) {
+		case Status::Desync:
 			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorBad());
-			ImGui::TextUnformatted("DESYNC");
+			ImGui::Text("DESYNC  @ frame %lld", (long long)desyncFrame);
 			ImGui::PopStyleColor();
-			ImGui::SameLine();
-			ImGui::Text("@ frame %lld", (long long)desyncFrame);
-		} else if (peerAgeMs > 500 && peerAgeMs < UINT64_MAX / 4) {
-			// Peer is late.  The game is paused on both sides (our
-			// gate is closed waiting for their input).  We no longer
-			// auto-terminate — see the Peer Unresponsive dialog below,
-			// which appears at ~3 s and lets the user choose.
+			break;
+		case Status::Waiting:
 			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorWarn());
-			ImGui::Text("WAITING  (%llus)",
+			ImGui::Text("Waiting  (%llus)",
 				(unsigned long long)(peerAgeMs / 1000));
 			ImGui::PopStyleColor();
-		} else {
-			ImGui::PushStyleColor(ImGuiCol_Text, StatusColorGood());
-			ImGui::TextUnformatted("LIVE");
-			ImGui::PopStyleColor();
+			break;
+		case Status::Live:
+			ImGui::TextUnformatted("Live");
+			break;
 		}
 
-		ImGui::Text("Frame: %u", (unsigned)frame);
-		ImGui::Text("Delay: %u f", (unsigned)delay);
-
-		if (peerAgeMs >= UINT64_MAX / 4) {
-			ImGui::TextUnformatted("Peer:  —");
+		// Metrics row: peer packet age + input delay frames.  Dimmed
+		// so the status line reads first.  ASCII only — the bundled
+		// font atlas doesn't cover non-Latin-1 glyphs.
+		ImGui::PushStyleColor(ImGuiCol_Text,
+			ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		if (!peerKnown) {
+			ImGui::Text("peer --   %uf", (unsigned)delay);
 		} else {
-			// Colour the age line red once we're past a plausible
-			// "they're lagging" threshold so the user gets an at-a-
-			// glance health read without a graph.
-			const bool slow = peerAgeMs > 500;
-			if (slow) ImGui::PushStyleColor(ImGuiCol_Text, StatusColorWarn());
-			ImGui::Text("Peer:  %llu ms ago",
-				(unsigned long long)peerAgeMs);
-			if (slow) ImGui::PopStyleColor();
+			ImGui::Text("%llu ms   %uf",
+				(unsigned long long)peerAgeMs, (unsigned)delay);
 		}
+		ImGui::PopStyleColor();
 
-		ImGui::Spacing();
-		if (ImGui::Button("Disconnect##netplay_hud",
-		                  ImVec2(-FLT_MIN, 0))) {
+		// Compact Disconnect — no longer full-width, just enough to
+		// read the label.  Sits on the metrics row's right edge.
+		ImGui::SameLine();
+		const float btnW = ImGui::CalcTextSize("Disconnect").x
+		                 + ImGui::GetStyle().FramePadding.x * 2.0f;
+		const float avail = ImGui::GetContentRegionAvail().x;
+		if (avail > btnW) ImGui::SameLine(0, avail - btnW);
+		if (ImGui::SmallButton("Disconnect##netplay_hud")) {
 			ATNetplayGlue::DisconnectActive();
 		}
 	}

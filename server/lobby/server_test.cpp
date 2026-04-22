@@ -162,6 +162,73 @@ void TestCreateAndList() {
 		"list contains created id");
 }
 
+// The list endpoint must echo every schema field the host supplied on
+// create — kernelCRC32 / basicCRC32 / hardwareMode — and must also
+// include the keys (as empty strings) when the host omitted them.
+// The "?" hardwareMode bug in the desktop browser was caused by an
+// older server silently dropping these keys on GET /v1/sessions, so
+// this test locks the schema contract in place.
+void TestListEchoesFirmwareFields() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+
+	// Build a create body with the three firmware/hardware fields set
+	// explicitly.  Do it inline rather than extend MakeCreateBody so
+	// the surface of that helper stays minimal.
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kCartName);        b.str("Joust");           b.raw(',');
+	b.key(Field::kHostHandle);      b.str("alice");           b.raw(',');
+	b.key(Field::kHostEndpoint);    b.str("1.2.3.4:12345");   b.raw(',');
+	b.key(Field::kRegion);          b.str("eu");              b.raw(',');
+	b.key(Field::kPlayerCount);     b.num(1);                 b.raw(',');
+	b.key(Field::kMaxPlayers);      b.num(2);                 b.raw(',');
+	b.key(Field::kProtocolVersion); b.num(1);                 b.raw(',');
+	b.key(Field::kKernelCRC32);     b.str("1F9CD270");        b.raw(',');
+	b.key(Field::kBasicCRC32);      b.str("F0202FB3");        b.raw(',');
+	b.key(Field::kHardwareMode);    b.str("800XL");
+	b.raw('}');
+
+	auto r = c.Post(kPathSession, b.s, "application/json");
+	T_EXPECT(r,                     "create response present");
+	T_EXPECT_EQ_INT(r->status, 201, "create status");
+
+	auto list = c.Get(kPathSessions);
+	T_EXPECT(list,                     "list response present");
+	T_EXPECT_EQ_INT(list->status, 200, "list status");
+
+	const std::string& body = list->body;
+	T_EXPECT(body.find("\"kernelCRC32\":\"1F9CD270\"")  != std::string::npos,
+		"list body contains kernelCRC32 value");
+	T_EXPECT(body.find("\"basicCRC32\":\"F0202FB3\"")   != std::string::npos,
+		"list body contains basicCRC32 value");
+	T_EXPECT(body.find("\"hardwareMode\":\"800XL\"")    != std::string::npos,
+		"list body contains hardwareMode value");
+
+	// Also verify the keys are present (as empty strings) when the
+	// host omitted them — the schema contract is "key always appears".
+	Fixture f2;
+	auto c2 = f2.client();
+	auto r2 = c2.Post(kPathSession,
+		MakeCreateBody("Asteroids","bob","5.6.7.8:1"),
+		"application/json");
+	T_EXPECT(r2,                     "plain create response present");
+	T_EXPECT_EQ_INT(r2->status, 201, "plain create status");
+	auto list2 = c2.Get(kPathSessions);
+	T_EXPECT(list2,                     "plain list response present");
+	T_EXPECT_EQ_INT(list2->status, 200, "plain list status");
+	const std::string& body2 = list2->body;
+	T_EXPECT(body2.find("\"kernelCRC32\":\"\"")  != std::string::npos,
+		"list body contains empty kernelCRC32 key");
+	T_EXPECT(body2.find("\"basicCRC32\":\"\"")   != std::string::npos,
+		"list body contains empty basicCRC32 key");
+	T_EXPECT(body2.find("\"hardwareMode\":\"\"") != std::string::npos,
+		"list body contains empty hardwareMode key");
+	T_EXPECT(body2.find("\"cartArtHash\":\"\"")  != std::string::npos,
+		"list body contains empty cartArtHash key");
+}
+
 void TestCreateValidation() {
 	++g_testsRun;
 	Fixture f;
@@ -330,6 +397,7 @@ void TestOriginBlockedOnPost() {
 int RunAll() {
 	TestHealthz();
 	TestCreateAndList();
+	TestListEchoesFirmwareFields();
 	TestCreateValidation();
 	TestHeartbeatBadToken();
 	TestHeartbeatOk();

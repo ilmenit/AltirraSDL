@@ -176,6 +176,12 @@ void ATMobileUI_OpenFileBrowser(ATMobileUIState &mobileState);
 // Open settings
 void ATMobileUI_OpenSettings(ATMobileUIState &mobileState);
 
+// Open Settings directly on the Online Play preferences page with
+// Back wired to return to the Online Play hub overlay.  Called by
+// the Online Play hub's "Preferences" shortcut so the gaming-mode
+// config tree stays the single place for every settings category.
+void ATMobileUI_OpenOnlinePlaySettings();
+
 // Public entry points to the mobile-style info and confirm sheet.
 // Any non-mobile code path that would normally open a desktop modal
 // can call these to get the full-screen mobile card renderer

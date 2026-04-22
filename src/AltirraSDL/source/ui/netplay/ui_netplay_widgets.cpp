@@ -362,7 +362,7 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 
 void StatusBadge(const char *label, int severity, bool showSpinner) {
 	const ATMobilePalette &p = ATMobileGetPalette();
-	// Severity 0 (neutral — "Draft", "Public", etc.) renders as an
+	// Severity 0 (neutral — "Off", "Public", etc.) renders as an
 	// outlined chip using the inactive-segment background + muted
 	// text, so it reads as a passive status tag rather than an
 	// accent-coloured button.  Severity 1-3 keep semantic fills

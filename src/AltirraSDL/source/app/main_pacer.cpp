@@ -83,17 +83,28 @@ void FramePacer::Init() {
 //
 // Active clock recovery closes the remaining loop.  We read the
 // pipeline depth once per frame, compare to the user's configured
-// latency target (mLatency), and nudge the frame period by a tiny
-// proportional correction:
+// latency target (mLatency), and compute a tiny proportional
+// correction:
 //
 //   correction = clamp(Kp * (pending - target) / target,
 //                     -kMaxCorrection, +kMaxCorrection)
 //
-// The correction goes directly onto targetSecsPerFrame for this frame,
-// so the pacer's existing sleep/error-accumulator logic naturally
-// tightens or relaxes the frame rate in response.  Faster emulator =
-// more POKEY samples per wallclock second = queue fills.  Slower
-// emulator = queue drains.
+// The correction is consumed by UpdatePacerRate(), which multiplies
+// the audio-resample rate passed to SetCyclesPerSecond() by
+// clockRecoveryFactor.  The pacer's targetSecsPerFrame is left
+// untouched.  Faster resampler consumption rate = fewer output
+// samples per emulator cycle = SDL queue drains.  Slower = queue
+// fills.  Same sign as the previous "modify frame period" placement;
+// different axis.
+//
+// Why audio-rate rather than frame-period: on a display whose refresh
+// matches the emulation rate (e.g. 50 Hz monitor + PAL Integral), the
+// compositor enforces the video cadence and any correction applied to
+// the frame period is absorbed as a periodic extra sleep that pushes
+// the next Present past its vblank — one repeated display frame every
+// ~1 / (fps × correction) seconds.  At factor ≈ 1.002 this is a
+// visible scroll judder every ~10 s.  The audio-rate path has no such
+// interaction with the display clock.
 //
 // Why the ±0.5 % clamp:
 //   - 0.5 % pitch shift is ≈ 8.6 cents.  Perceptibility of constant
@@ -191,20 +202,21 @@ void FramePacer::UpdateRate(double fps) {
 
 // Called after a frame is complete.  Sleeps to maintain correct rate.
 void FramePacer::WaitForNextFrame() {
-	// Read audio-pipeline depth and update clockRecoveryFactor for
-	// this frame.  See ComputeClockRecovery for full rationale — this
-	// is a deliberate divergence from Windows Altirra, enabled only on
-	// the SDL3 build where the audio backend has no blocking Write()
-	// and no exact hardware-side buffer accounting.  When the audio
-	// output doesn't expose the feedback signal (dummy driver, pre-
-	// init, etc.) the factor is left at 1.0 and this is a no-op.
+	// Read audio-pipeline depth and update clockRecoveryFactor for the
+	// NEXT main-loop iteration.  The factor is *not* applied here to
+	// the frame period any more; it is consumed by UpdatePacerRate(),
+	// which scales the audio-resample rate it passes to
+	// SetCyclesPerSecond().  The one-frame lag between measurement and
+	// application is harmless: the control loop is far slower than one
+	// frame, and keeping the factor off targetSecsPerFrame is what
+	// prevents the steady drift from becoming periodic video judder
+	// (see long comment at ComputeClockRecovery for history).
 	ComputeClockRecovery();
 
 	uint64_t now = SDL_GetPerformanceCounter();
 	int64_t elapsed = (int64_t)(now - lastFrameTime);
 	int64_t targetTicks =
-		(int64_t)(targetSecsPerFrame * clockRecoveryFactor
-		          * (double)perfFreq);
+		(int64_t)(targetSecsPerFrame * (double)perfFreq);
 
 	// Capture the frame start time BEFORE the sleep.  This is the
 	// critical piece: the next call's `elapsed` must include the time
@@ -438,7 +450,35 @@ void UpdatePacerRate() {
 	g_pacer.UpdateRate(1.0 / secsPerFrame);
 
 	// Update audio output resampling rate.
+	//
+	// Apply the active clock-recovery correction here, to the audio
+	// resample rate — NOT to targetSecsPerFrame.  Rationale:
+	//
+	//   - Video pacing must match the display/compositor cadence.  When
+	//     the user runs on a refresh rate that matches the emulation
+	//     frame rate (e.g. PAL/Integral on a 50 Hz display → vsync=1),
+	//     the compositor enforces the frame cadence; any correction we
+	//     put on targetSecsPerFrame is silently absorbed as repeated
+	//     or dropped vblanks, which the user sees as scroll judder
+	//     every ~1 / (50 × factorError) seconds.  Empirically observed
+	//     as a ~10 s beat in River Raid at factor ≈ 1.002.
+	//   - Audio queue drift, the thing clock recovery is meant to fix,
+	//     is a function of the resample ratio alone.  SetCyclesPerSecond
+	//     feeds mExpectedRate/mSamplingRate in audiooutput_sdl3.cpp, so
+	//     scaling cyclesPerSecond by the factor directly moves the
+	//     resampler's consumption rate relative to POKEY's real output
+	//     rate, which is exactly the knob that drains or fills the
+	//     downstream SDL queue.
+	//
+	// Sign/magnitude are identical to the old placement — factor > 1
+	// ⇒ resampler consumes input faster ⇒ fewer output samples per
+	// emulator cycle ⇒ queue drains.  Magnitude is clamped at ±0.5 %
+	// (≈ ±8.6 cents) in ComputeClockRecovery, so the induced pitch
+	// shift on POKEY output is inaudible; see the inaudibility
+	// argument on that function.
 	IATAudioOutput *audio = g_sim.GetAudioOutput();
 	if (audio)
-		audio->SetCyclesPerSecond(cyclesPerSecond, 1.0 / rate);
+		audio->SetCyclesPerSecond(
+			cyclesPerSecond * g_pacer.clockRecoveryFactor,
+			1.0 / rate);
 }

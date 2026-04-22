@@ -278,6 +278,7 @@ void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
 // Hierarchical settings — definition lives in mobile_internal.h.
 ATMobileSettingsPage s_settingsPage = ATMobileSettingsPage::Home;
 ATMobileUIScreen s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
+bool s_settingsReturnToNetplayHub = false;
 
 // Firmware slot currently being picked within the Firmware sub-page.
 // File scope so the header back button can close the picker.
@@ -871,4 +872,14 @@ void ATMobileUI_OpenFileBrowser(ATMobileUIState &mobileState) {
 
 void ATMobileUI_OpenSettings(ATMobileUIState &mobileState) {
 	mobileState.currentScreen = ATMobileUIScreen::Settings;
+}
+
+void ATMobileUI_OpenOnlinePlaySettings() {
+	// Remember whichever mobile screen the user was on before the
+	// netplay overlay opened, so back from Settings returns them to
+	// it (usually None = emulator, HamburgerMenu, or GameBrowser).
+	s_settingsReturnScreen = g_mobileState.currentScreen;
+	s_settingsReturnToNetplayHub = true;
+	s_settingsPage = ATMobileSettingsPage::OnlinePlay;
+	g_mobileState.currentScreen = ATMobileUIScreen::Settings;
 }

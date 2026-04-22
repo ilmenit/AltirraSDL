@@ -353,18 +353,16 @@ void WriteSessionJson(JsonBuilder& b, const Session& s) {
 	b.key(Field::kProtocolVersion); b.num(s.protocolVer);  b.raw(',');
 	b.key(Field::kVisibility);      b.str(s.visibility);   b.raw(',');
 	b.key(Field::kRequiresCode);    b.boolean(s.requiresCode); b.raw(',');
-	if (!s.cartArtHash.empty()) {
-		b.key(Field::kCartArtHash); b.str(s.cartArtHash);  b.raw(',');
-	}
-	if (!s.kernelCRC32.empty()) {
-		b.key(Field::kKernelCRC32); b.str(s.kernelCRC32);  b.raw(',');
-	}
-	if (!s.basicCRC32.empty()) {
-		b.key(Field::kBasicCRC32);  b.str(s.basicCRC32);   b.raw(',');
-	}
-	if (!s.hardwareMode.empty()) {
-		b.key(Field::kHardwareMode); b.str(s.hardwareMode); b.raw(',');
-	}
+	// Always emit the firmware / hardware / art-hash fields, even when
+	// empty.  Clients treat the keys as part of the schema contract;
+	// conditional omission forces them to guess "missing vs. empty",
+	// which produced the "?" hardwareMode bug in the desktop browser
+	// when the server silently dropped the keys on older deployments.
+	// Empty string = "no constraint / unknown"; that's unambiguous.
+	b.key(Field::kCartArtHash);  b.str(s.cartArtHash);  b.raw(',');
+	b.key(Field::kKernelCRC32);  b.str(s.kernelCRC32);  b.raw(',');
+	b.key(Field::kBasicCRC32);   b.str(s.basicCRC32);   b.raw(',');
+	b.key(Field::kHardwareMode); b.str(s.hardwareMode); b.raw(',');
 	b.key(Field::kState);           b.str(s.state.empty() ? kStateWaiting
 	                                                       : s.state);
 	b.raw(',');

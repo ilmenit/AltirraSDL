@@ -152,26 +152,38 @@ public:
 	//
 	// When enabled (host only), an arriving Hello that passes all the
 	// usual validation (protocol, CRCs, TOS, entry code) does NOT
-	// auto-progress to SendingSnapshot.  Instead the coordinator sits
-	// in WaitingForJoiner with a "pending decision" flag set; the host
-	// UI polls for it, shows an Allow/Deny modal, and calls
-	// AcceptPendingJoiner() or RejectPendingJoiner() to resume the
-	// handshake.  Off by default.
+	// auto-progress to SendingSnapshot.  Instead the coordinator keeps
+	// a FIFO queue of pending joiners; the host UI polls it, shows an
+	// Allow / Deny card per entry, and calls AcceptPendingJoiner(i) or
+	// RejectPendingJoiner(i) to resume the handshake.  Off by default.
 	void SetPromptAccept(bool enable) { mPromptAccept = enable; }
 
-	bool HasPendingDecision() const { return mHasPendingDecision; }
+	// How many joiners are currently queued awaiting a decision.
+	size_t PendingDecisionCount() const { return mPendingDecisions.size(); }
 
-	// NUL-terminated joiner handle for the currently-pending Hello;
-	// empty string when no decision is pending.  Buffer is owned by
-	// the coordinator; copy if you need to keep it.
-	const char* PendingJoinerHandle() const { return mPendingDecisionHandle; }
+	// Convenience (back-compat): true iff at least one entry is queued.
+	bool HasPendingDecision() const { return !mPendingDecisions.empty(); }
 
-	// Resolve the pending Hello.  No-op when nothing is pending.  After
-	// Accept, the host enters SendingSnapshot (or holds for the upload
-	// bytes).  After Reject, the host returns to WaitingForJoiner and
-	// can accept a different Hello later.
-	void AcceptPendingJoiner();
-	void RejectPendingJoiner();
+	// NUL-terminated joiner handle for the i-th queued pending Hello.
+	// Returns "" when i is out of range.  Buffer is owned by the
+	// coordinator; copy if you need to keep it.
+	const char* PendingJoinerHandle(size_t i = 0) const;
+
+	// Host-local wall-clock time (milliseconds, from the nowMs passed
+	// to Poll) when the i-th entry first arrived.  0 when i is out of
+	// range.  The UI uses this to render a "Requested Xs ago" timer.
+	uint64_t PendingArrivedMs(size_t i = 0) const;
+
+	// Resolve the i-th queued Hello.  No-op when the index is out of
+	// range or nothing is pending.
+	//
+	// Accept(i) adopts that peer, rejects every other queued entry
+	// with kRejectHostFull, and proceeds to SendingSnapshot (or holds
+	// for the upload bytes).  Reject(i) sends kRejectHostRejected to
+	// that one peer and removes it from the queue; the host stays in
+	// WaitingForJoiner so the next queued entry can be decided.
+	void AcceptPendingJoiner(size_t i = 0);
+	void RejectPendingJoiner(size_t i = 0);
 
 	// ---- termination ------------------------------------------------------
 
@@ -212,7 +224,7 @@ private:
 	void HandleInputPacket(const NetInputPacket& pkt, uint64_t nowMs);
 	void HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs);
 	void HandleSnapAck(const NetSnapAck& a);
-	void HandleBye(const NetBye& b);
+	void HandleBye(const NetBye& b, const Endpoint& from);
 
 	void SendHello();
 	void SendWelcome();
@@ -253,12 +265,18 @@ private:
 	uint8_t  mPendingJoinerEntryCode[kEntryCodeHashLen] = {};
 
 	// Prompt-accept gate (host only).  When mPromptAccept is true and
-	// a valid Hello arrives, we stash it here and wait for the UI to
-	// call AcceptPendingJoiner() or RejectPendingJoiner().
+	// a valid Hello arrives, we enqueue it and wait for the UI to call
+	// AcceptPendingJoiner(i) / RejectPendingJoiner(i).  Cap to a small
+	// number so a misbehaving peer can't balloon our memory or drown
+	// the host's decision list.
+	struct PendingDecision {
+		Endpoint peer;
+		char     handle[kHandleLen + 1] = {};
+		uint64_t arrivedMs = 0;   // host-local clock from Poll(nowMs)
+	};
+	static constexpr size_t kMaxPendingDecisions = 8;
 	bool     mPromptAccept       = false;
-	bool     mHasPendingDecision = false;
-	Endpoint mPendingDecisionPeer;
-	char     mPendingDecisionHandle[kHandleLen + 1] = {};
+	std::vector<PendingDecision> mPendingDecisions;
 
 	// Snapshot channels (only one is active at a time).
 	std::vector<uint8_t> mSnapTxBuffer;   // host's copy of what we're uploading

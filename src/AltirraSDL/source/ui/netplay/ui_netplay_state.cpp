@@ -149,6 +149,17 @@ static void LoadOffers(VDRegistryAppKey& key) {
 		std::snprintf(kn, sizeof kn, "Game%d_basicCRC", i);
 		o.config.basicCRC32 = (uint32_t)key.getInt(kn, 0);
 
+		// CRC cache — invalidated at use time if the outer file's
+		// mtime stamp no longer matches.  Stamp is 64 bits stored as
+		// two 32-bit halves since registry has no int64 accessor.
+		std::snprintf(kn, sizeof kn, "Game%d_fileCRC", i);
+		o.gameFileCRC32 = (uint32_t)key.getInt(kn, 0);
+		std::snprintf(kn, sizeof kn, "Game%d_fileStampLo", i);
+		uint32_t stampLo = (uint32_t)key.getInt(kn, 0);
+		std::snprintf(kn, sizeof kn, "Game%d_fileStampHi", i);
+		uint32_t stampHi = (uint32_t)key.getInt(kn, 0);
+		o.gameFileStamp = ((uint64_t)stampHi << 32) | stampLo;
+
 		// Drop obviously-invalid slots (no path or no name).
 		if (o.gamePath.empty() || o.gameName.empty()) continue;
 		if (o.id.empty()) o.id = GenerateHostedGameId();
@@ -164,6 +175,7 @@ static void SaveOffers(VDRegistryAppKey& key) {
 		"_preset",  // legacy — scrub on save
 		"_hwMode", "_memMode", "_videoStd", "_cpuMode",
 		"_basicEnabled", "_sioPatch", "_kernelCRC", "_basicCRC",
+		"_fileCRC", "_fileStampLo", "_fileStampHi",
 	};
 
 	// First, strip stale Game<N>_* keys left over from previous saves.
@@ -212,6 +224,12 @@ static void SaveOffers(VDRegistryAppKey& key) {
 		key.setInt(kn, (int)o.config.kernelCRC32);
 		std::snprintf(kn, sizeof kn, "Game%d_basicCRC", i);
 		key.setInt(kn, (int)o.config.basicCRC32);
+		std::snprintf(kn, sizeof kn, "Game%d_fileCRC", i);
+		key.setInt(kn, (int)o.gameFileCRC32);
+		std::snprintf(kn, sizeof kn, "Game%d_fileStampLo", i);
+		key.setInt(kn, (int)(uint32_t)(o.gameFileStamp & 0xFFFFFFFFu));
+		std::snprintf(kn, sizeof kn, "Game%d_fileStampHi", i);
+		key.setInt(kn, (int)(uint32_t)(o.gameFileStamp >> 32));
 	}
 }
 
@@ -481,8 +499,11 @@ void Initialize() {
 		g_state.prefs.nickname.assign(handle.c_str(), handle.size());
 	}
 	g_state.prefs.isAnonymous     = key.getBool("Anonymous", false);
-	g_state.prefs.acceptMode      = (AcceptMode)key.getInt("AcceptMode",
-		(int)AcceptMode::AutoAccept);
+	// Legacy: the old AcceptMode pref (auto-accept vs prompt) was
+	// removed because silent auto-accept is too intrusive.  Every
+	// incoming join now prompts.  Scrub the stale key so a future
+	// reader can't mistake it for a live setting.
+	key.removeValue("AcceptMode");
 	g_state.prefs.notif.flashWindow  = key.getBool("NotifyFlash", true);
 	g_state.prefs.notif.systemNotify = key.getBool("NotifySystem", true);
 	g_state.prefs.notif.playChime    = key.getBool("NotifyChime", true);
@@ -509,8 +530,6 @@ void Initialize() {
 	if (g_state.prefs.defaultInputDelayLan > 10)  g_state.prefs.defaultInputDelayLan = 10;
 	if (g_state.prefs.defaultInputDelayInternet < 1)  g_state.prefs.defaultInputDelayInternet = 4;
 	if (g_state.prefs.defaultInputDelayInternet > 10) g_state.prefs.defaultInputDelayInternet = 10;
-	if ((int)g_state.prefs.acceptMode < 0 || (int)g_state.prefs.acceptMode > 1)
-		g_state.prefs.acceptMode = AcceptMode::AutoAccept;
 
 	LoadOffers(key);
 }
@@ -519,7 +538,6 @@ void SaveToRegistry() {
 	VDRegistryAppKey key("Netplay", true);
 	key.setString("Handle",           g_state.prefs.nickname.c_str());
 	key.setBool  ("Anonymous",        g_state.prefs.isAnonymous);
-	key.setInt   ("AcceptMode",       (int)g_state.prefs.acceptMode);
 	key.setBool  ("NotifyFlash",      g_state.prefs.notif.flashWindow);
 	key.setBool  ("NotifySystem",     g_state.prefs.notif.systemNotify);
 	key.setBool  ("NotifyChime",      g_state.prefs.notif.playChime);

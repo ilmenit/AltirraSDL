@@ -17,6 +17,7 @@
 #include "ui/gamelibrary/game_library.h"
 #include "ui/core/ui_main.h"
 #include "ui/mobile/mobile_internal.h"   // GetGameLibrary, GameBrowser_Init
+#include "ui/mobile/ui_mobile.h"        // ATMobileUIState, ATMobileUIScreen
 
 #include "simulator.h"
 #include "firmwaremanager.h"
@@ -27,6 +28,7 @@
 #include <at/atio/image.h>       // ATStateLoadContext
 #include <at/atcore/serializable.h>
 #include <at/atcore/media.h>     // kATMediaWriteMode_RO
+#include <at/atcore/vfs.h>       // ATVFSOpenFileView for zip:// paths
 
 #include "savestateio.h"
 
@@ -44,9 +46,11 @@ extern void ATUIUpdateSpeedTiming();
 #include <vd2/system/text.h>
 #include <vd2/system/refcount.h>
 #include <vd2/system/zip.h>
+#include <vd2/system/date.h>
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
+extern ATMobileUIState g_mobileState;
 
 #include <algorithm>
 #include <cstdio>
@@ -169,15 +173,15 @@ HostedGameState PhaseToHostedGameState(ATNetplayGlue::Phase p, bool enabled,
                              HostedGameState current) {
 	using P = ATNetplayGlue::Phase;
 	switch (p) {
-		case P::None:              return enabled ? current : HostedGameState::Draft;
-		case P::Idle:              return HostedGameState::Draft;
-		case P::WaitingForJoiner:  return HostedGameState::Listed;
+		case P::None:              return enabled ? current : HostedGameState::Off;
+		case P::Idle:              return HostedGameState::Off;
+		case P::WaitingForJoiner:  return HostedGameState::Open;
 		case P::Handshaking:
 		case P::SendingSnapshot:
 		case P::ReceivingSnapshot:
 		case P::SnapshotReady:     return HostedGameState::Handshaking;
 		case P::Lockstepping:      return HostedGameState::Playing;
-		case P::Ended:             return enabled ? HostedGameState::Listed : HostedGameState::Draft;
+		case P::Ended:             return enabled ? HostedGameState::Open : HostedGameState::Off;
 		case P::Desynced:
 		case P::Failed:            return HostedGameState::Failed;
 	}
@@ -312,20 +316,55 @@ void ExtractExtensionInto(const std::string& path, char out[8]) {
 	std::memcpy(out, ext.data(), n);
 }
 
-// Compute CRC32 over the bytes of a file on disk.  Returns 0 on I/O
-// failure or if the file is empty / implausibly large.  Used both at
-// StartHost time (to stamp BootConfig.gameFileCRC32 for the joiner's
-// cache lookup) and when hashing firmware ROMs elsewhere.
-static uint32_t CRC32OfFile(const std::string& path) {
-	if (path.empty()) return 0;
+// mtime stamp of the outer OS file behind a VFS path.  For plain
+// paths this is the file itself; for zip:// and similar it's the
+// outer archive.  Zero on failure (treated as "uncacheable").
+static uint64_t OuterFileStamp(const std::string& vfsPath) {
+	if (vfsPath.empty()) return 0;
+	VDStringW wpath = VDTextU8ToW(vfsPath.c_str(), -1);
+	VDStringW basePath, subPath;
+	ATVFSProtocol proto = ATParseVFSPath(wpath.c_str(), basePath, subPath);
+	const wchar_t *osPath = (proto == kATVFSProtocol_File)
+		? wpath.c_str() : basePath.c_str();
+	if (!osPath || !*osPath) return 0;
 	try {
-		VDFileStream fs(VDTextU8ToW(path.c_str(), -1).c_str(),
-			nsVDFile::kRead | nsVDFile::kOpenExisting | nsVDFile::kDenyNone);
+		VDFile f(osPath, nsVDFile::kRead | nsVDFile::kOpenExisting
+			| nsVDFile::kDenyNone);
+		return f.getLastWriteTime().mTicks;
+	} catch (...) {
+		return 0;
+	}
+}
+
+// Compute CRC32 over the bytes of a hosted game file.  Uses the
+// persisted CRC cache on HostedGame when the outer-file mtime stamp
+// still matches, so relaunching or re-enabling a hosted ZIP entry
+// doesn't re-decompress multi-MB archives.  Returns 0 on I/O failure
+// or if the file is empty / implausibly large.
+static uint32_t CRC32OfHostedGame(const HostedGame& o) {
+	if (o.gamePath.empty()) return 0;
+
+	uint64_t stamp = OuterFileStamp(o.gamePath);
+	if (stamp != 0 && o.gameFileStamp == stamp && o.gameFileCRC32 != 0)
+		return o.gameFileCRC32;
+
+	try {
+		vdrefptr<ATVFSFileView> view;
+		ATVFSOpenFileView(VDTextU8ToW(o.gamePath.c_str(), -1).c_str(),
+			false, ~view);
+		if (!view) return 0;
+		IVDRandomAccessStream& fs = view->GetStream();
 		sint64 sz = fs.Length();
 		if (sz <= 0 || sz > 32 * 1024 * 1024) return 0;
+		fs.Seek(0);
 		std::vector<uint8_t> buf((size_t)sz);
-		fs.Read(buf.data(), (long)buf.size());
-		return VDCRCTable::CRC32.CRC(buf.data(), buf.size());
+		fs.Read(buf.data(), (sint32)buf.size());
+		uint32_t crc = VDCRCTable::CRC32.CRC(buf.data(), buf.size());
+		if (stamp != 0) {
+			o.gameFileCRC32 = crc;
+			o.gameFileStamp = stamp;
+		}
+		return crc;
 	} catch (...) {
 		return 0;
 	}
@@ -344,7 +383,7 @@ ATNetplay::NetBootConfig BuildBootConfig(const HostedGame& o) {
 	bc.basicCRC32      = o.config.basicCRC32;
 	bc.masterSeed      = kNetplayMasterSeed;
 	bc.bootFrames      = 0;
-	bc.gameFileCRC32   = CRC32OfFile(o.gamePath);
+	bc.gameFileCRC32   = CRC32OfHostedGame(o);
 	ExtractExtensionInto(o.gamePath, bc.gameExtension);
 	return bc;
 }
@@ -376,13 +415,14 @@ void StartCoordForHostedGame(HostedGame& o) {
 	}
 	o.boundPort = ATNetplayGlue::HostBoundPort(o.id.c_str());
 	o.lastError.clear();
-	o.state = HostedGameState::Listed;
+	o.state = HostedGameState::Open;
 
-	// Honour the user's accept-mode preference: prompt-me holds every
-	// arriving Hello in the coordinator until the host clicks Allow /
-	// Deny in the modal that ReconcileHostedGames raises.
-	const bool prompt = (GetState().prefs.acceptMode == AcceptMode::PromptMe);
-	ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), prompt);
+	// Always prompt the host on incoming joins — the coordinator holds
+	// every arriving Hello until the host clicks Allow / Deny in the
+	// modal that ReconcileHostedGames raises.  Auto-accept was removed
+	// because a peer should never be able to slip onto the user's
+	// machine without an explicit confirmation.
+	ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), true);
 
 	PostLobbyCreate(o);
 }
@@ -438,7 +478,7 @@ void DisableHostedGame(const std::string& gameId) {
 	if (!o) return;
 	o->enabled = false;
 	StopCoordForHostedGame(*o);
-	o->state = HostedGameState::Draft;
+	o->state = HostedGameState::Off;
 	SaveToRegistry();
 }
 
@@ -485,54 +525,112 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			ToastSeverity::Info, 4000);
 	}
 
-	// 1b. Pending-accept detection — when the user runs prompt-me and
-	//     a Hello passes validation, the coord stays in WaitingForJoiner
-	//     with HasPendingDecision() set.  Surface that to the UI by
-	//     populating st.session.pendingAccept* and navigating to the
-	//     modal.  Idempotent — once we've captured a pending id we
-	//     don't re-navigate every tick.
-	if (st.session.pendingAcceptGameId.empty()) {
-		for (auto& o : st.hostedGames) {
-			if (!ATNetplayGlue::HostHasPendingDecision(o.id.c_str()))
-				continue;
-			char handle[40] = {};
-			ATNetplayGlue::HostPendingJoinerHandle(o.id.c_str(),
-				handle, sizeof handle);
-			st.session.pendingAcceptGameId   = o.id;
-			st.session.pendingAcceptHandle   = handle;
-			st.session.pendingAcceptGameName = o.gameName;
-			st.session.pendingAcceptStartedMs = nowMs;
-			char msg[160];
-			std::snprintf(msg, sizeof msg,
-				"%s wants to join %s",
-				handle[0] ? handle : "Someone",
-				o.gameName.c_str());
-			ATNetplayUI_Notify("Join request", msg);
-			Navigate(Screen::AcceptJoinPrompt);
-			break;
+	// Stamp the joiner-side "waiting since" clock on the None → non-None
+	// edge; clear it when the joiner returns to None (or reaches a
+	// terminal phase) so a retry starts fresh.
+	{
+		using P = ATNetplayGlue::Phase;
+		const P jp = ATNetplayGlue::JoinPhase();
+		const bool active = (jp != P::None && jp != P::Idle);
+		if (active && st.session.joinStartedMs == 0) {
+			st.session.joinStartedMs = nowMs;
+		} else if (!active && st.session.joinStartedMs != 0) {
+			st.session.joinStartedMs = 0;
 		}
-	} else {
-		// Pending was set in a previous tick; clear it if the coord
-		// no longer reports a pending decision (host clicked Allow/Deny
-		// already, or the offer was disabled / torn down).
-		const std::string& gid = st.session.pendingAcceptGameId;
-		if (!ATNetplayGlue::HostHasPendingDecision(gid.c_str())) {
-			st.session.pendingAcceptGameId.clear();
-			st.session.pendingAcceptHandle.clear();
-			st.session.pendingAcceptGameName.clear();
-			st.session.pendingAcceptStartedMs = 0;
-			if (st.screen == Screen::AcceptJoinPrompt) {
-				// Back() pops to the caller's previous screen if the
-				// back-stack has an entry (they opened Online Play
-				// first, then the prompt interrupted), or sets
-				// screen=Closed when empty (the prompt interrupted
-				// them outside Online Play — Settings, Game Library,
-				// mid-game).  Returning to Closed restores whatever
-				// mobile screen they were on, which is less jarring
-				// than force-dragging them into Host Games.
-				Back();
+	}
+
+	// 1b. Pending-accept queue — every tick we pull the full coord
+	//     queue across all hosted games and mirror it into
+	//     st.session.pendingRequests.  The UI renders one row per
+	//     entry, each with its own arrival time for the "Requested Xs
+	//     ago" counter.  Auto-decline, Allow, Deny are driven by the
+	//     AcceptJoinPrompt screen; this loop only does mirroring.
+	{
+		std::vector<Session::PendingJoinRequest> next;
+		for (auto& o : st.hostedGames) {
+			const size_t n = ATNetplayGlue::HostPendingCount(o.id.c_str());
+			for (size_t i = 0; i < n; ++i) {
+				char handle[40] = {};
+				uint64_t arrivedMs = 0;
+				if (!ATNetplayGlue::HostPendingAt(o.id.c_str(), i,
+						handle, sizeof handle, &arrivedMs)) continue;
+				Session::PendingJoinRequest r;
+				r.hostedGameId = o.id;
+				r.gameName     = o.gameName;
+				r.handle       = handle;
+				r.arrivedMs    = arrivedMs;
+				next.push_back(std::move(r));
 			}
 		}
+
+		const bool wasEmpty = st.session.pendingRequests.empty();
+		const bool isEmpty  = next.empty();
+
+		// On any new entry (wasn't there last tick), fire a
+		// per-request notification so an AFK host sees each arrival.
+		if (!isEmpty) {
+			for (const auto& r : next) {
+				bool already = false;
+				for (const auto& p : st.session.pendingRequests) {
+					if (p.hostedGameId == r.hostedGameId
+					    && p.handle       == r.handle
+					    && p.arrivedMs    == r.arrivedMs) {
+						already = true; break;
+					}
+				}
+				if (already) continue;
+				char msg[160];
+				std::snprintf(msg, sizeof msg,
+					"%s wants to join %s",
+					r.handle.empty() ? "Someone" : r.handle.c_str(),
+					r.gameName.c_str());
+				ATNetplayUI_Notify("Join request", msg);
+			}
+		}
+
+		st.session.pendingRequests = std::move(next);
+
+		if (wasEmpty && !isEmpty) {
+			// 0 → N: save the user's current context so a full reject
+			// can put them back exactly where they were, pause the sim
+			// so nothing else steals attention, and navigate to the
+			// prompt screen (the Gaming-Mode overlay also renders on
+			// top, but flipping screen here covers the Desktop build
+			// and keeps the back-stack consistent).
+			st.session.promptSavedScreen = st.screen;
+			st.session.promptSavedMobile = (int)g_mobileState.currentScreen;
+			st.session.promptSavedValid  = true;
+			if (!g_sim.IsPaused()) {
+				g_sim.Pause();
+				st.session.promptPausedSim = true;
+			} else {
+				st.session.promptPausedSim = false;
+			}
+			Navigate(Screen::AcceptJoinPrompt);
+		} else if (!wasEmpty && isEmpty) {
+			// Last entry resolved — reject-all, joiner-cancel, accept,
+			// or auto-decline timeout.  If we're still on the prompt
+			// screen (Accept navigates away on its own), put the user
+			// back where they were.  Otherwise just tear down our
+			// saved-context bookkeeping; the Accept path is responsible
+			// for RestoreSessionRestorePoint when its session ends.
+			if (st.screen == Screen::AcceptJoinPrompt) {
+				if (st.session.promptSavedValid) {
+					st.screen = st.session.promptSavedScreen;
+							g_mobileState.currentScreen =
+						(ATMobileUIScreen)st.session.promptSavedMobile;
+				} else {
+					Back();
+				}
+			}
+			if (st.session.promptPausedSim && g_sim.IsPaused()) {
+				g_sim.Resume();
+			}
+			st.session.promptPausedSim = false;
+			st.session.promptSavedValid = false;
+		}
+		// N → M with both non-empty: nothing to do; the prompt just
+		// re-renders the refreshed list on its next frame.
 	}
 
 	// 2. Per-offer reconciliation: sync coordinator / lobby to the
@@ -663,16 +761,14 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			StartCoordForHostedGame(o);
 		} else if (!wantRunning && coordRunning && !thisInSession) {
 			StopCoordForHostedGame(o);
-			o.state = HostedGameState::Suspended;
+			o.state = HostedGameState::Paused;
 		}
 
-		// Keep prompt-accept aligned with the user's current pref.
-		// Cheap and idempotent; avoids a stale "auto-accept" on a coord
-		// that was started before the user flipped to Prompt me.
+		// Always prompt on incoming joins — idempotent per-frame sync so
+		// a coord that was started before the user flipped some future
+		// setting still picks up the correct gate.
 		if (coordRunning) {
-			const bool prompt =
-				(st.prefs.acceptMode == AcceptMode::PromptMe);
-			ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), prompt);
+			ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), true);
 		}
 
 		// Periodic heartbeat to every lobby this offer is registered
@@ -773,7 +869,7 @@ void StartHostingAction() {
 		o.isPrivate    = st.session.hostingPrivate;
 		o.entryCode    = st.session.hostingEntryCode;
 		o.enabled      = true;
-		o.state        = HostedGameState::Draft;
+		o.state        = HostedGameState::Off;
 		st.hostedGames.push_back(std::move(o));
 		id = st.hostedGames.back().id;
 	}
@@ -799,18 +895,36 @@ void SubmitHostGameFileForGame(const char *gameId) {
 
 	// Read the game file bytes straight off disk (no savestate).  The
 	// joiner will cold-boot from these bytes + our BootConfig.
+	// Use ATVFSOpenFileView so zip://outer!inner virtual paths from the
+	// Game Library ZIP scan resolve to the inner file, not a raw open.
 	try {
-		VDFileStream fs(VDTextU8ToW(o->gamePath.c_str(), -1).c_str(),
-			nsVDFile::kRead | nsVDFile::kOpenExisting | nsVDFile::kDenyNone);
+		vdrefptr<ATVFSFileView> view;
+		ATVFSOpenFileView(VDTextU8ToW(o->gamePath.c_str(), -1).c_str(),
+			false, ~view);
+		if (!view) {
+			o->lastError = "cannot open game file";
+			return;
+		}
+		IVDRandomAccessStream& fs = view->GetStream();
 		sint64 sz = fs.Length();
 		if (sz <= 0 || sz > 32 * 1024 * 1024) {
 			o->lastError = "game file is empty or too large";
 			return;
 		}
+		fs.Seek(0);
 		std::vector<uint8_t> bytes((size_t)sz);
-		fs.Read(bytes.data(), (long)bytes.size());
+		fs.Read(bytes.data(), (sint32)bytes.size());
 
 		uint32_t crc = VDCRCTable::CRC32.CRC(bytes.data(), bytes.size());
+
+		// Refresh the CRC cache while we have the bytes in hand — this
+		// is the one path that always reads the file end-to-end.
+		uint64_t stamp = OuterFileStamp(o->gamePath);
+		if (stamp != 0) {
+			o->gameFileCRC32 = crc;
+			o->gameFileStamp = stamp;
+		}
+
 		g_ATLCNetplay("host: shipping game file \"%s\" (%zu bytes, "
 			"CRC32=%08X) for \"%s\"",
 			o->gamePath.c_str(), bytes.size(), crc, gameId);

@@ -39,11 +39,40 @@ extern VDStringA ATGetConfigDir();
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <cstring>
+#include <unordered_map>
+#include <vector>
 
 namespace ATNetplayUI {
 
 namespace {
+
+// Theme-aware semantic colours.  The Desktop UI runs against both the
+// ImGui dark and light themes; hardcoded pastel accents (light green,
+// peach, pale yellow) that looked fine on the dark backdrop wash out
+// to near-invisible on the light-theme white.  These helpers pick the
+// right shade for the current theme.
+bool IsImGuiLightTheme() {
+	const ImVec4 t = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+	// Dark themes paint text near white (sum ~3.0); light themes paint
+	// text near black (sum ~0.0).  A midpoint of 1.2 separates them
+	// robustly for every built-in theme and any custom tweak.
+	return (t.x + t.y + t.z) < 1.2f;
+}
+ImVec4 EmphasisGood() {
+	return IsImGuiLightTheme()
+		? ImVec4(0.10f, 0.45f, 0.18f, 1.0f)
+		: ImVec4(0.60f, 0.95f, 0.65f, 1.0f);
+}
+ImVec4 EmphasisBad() {
+	return IsImGuiLightTheme()
+		? ImVec4(0.70f, 0.15f, 0.10f, 1.0f)
+		: ImVec4(1.00f, 0.70f, 0.60f, 1.0f);
+}
+ImVec4 EmphasisWarning() {
+	return IsImGuiLightTheme()
+		? ImVec4(0.65f, 0.45f, 0.05f, 1.0f)
+		: ImVec4(1.00f, 0.85f, 0.40f, 1.0f);
+}
 
 void CenterNext(ImVec2 size) {
 	ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
@@ -207,7 +236,7 @@ void DesktopBrowser() {
 	// session list below filters out the user's own hostedGames, so
 	// without this the Browser looks empty.
 	if (st.activity == UserActivity::InSession) {
-		ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1),
+		ImGui::TextColored(EmphasisWarning(),
 			"You're currently playing online.  Open Host Games to "
 			"see the match details or stop hosting.");
 		if (ImGui::Button("Open Host Games", ImVec2(160, 0))) {
@@ -324,7 +353,11 @@ void DesktopBrowser() {
 
 			// Sub-row: firmware + hardware summary, dim font.
 			char sub[160];
-			const char *hw = s.hardwareMode.empty() ? "?" : s.hardwareMode.c_str();
+			// Empty = older lobby server didn't echo the field.  Say
+			// "unknown" so users can distinguish "server silent" from
+			// a legitimately under-specified offer.
+			const char *hw = s.hardwareMode.empty()
+				? "unknown hardware" : s.hardwareMode.c_str();
 			if (!s.kernelCRC32.empty() || !s.basicCRC32.empty()) {
 				std::snprintf(sub, sizeof sub, "  OS [%s] · BASIC [%s] · %s",
 					s.kernelCRC32.empty() ? "any"   : s.kernelCRC32.c_str(),
@@ -443,11 +476,9 @@ void DesktopHostSetup() {
 	ImGui::Text("Game:");
 	ImGui::SameLine();
 	if (hasGame) {
-		ImGui::TextColored(ImVec4(0.8f, 0.95f, 0.8f, 1.0f), "%s",
-			bootedBase.c_str());
+		ImGui::TextColored(EmphasisGood(), "%s", bootedBase.c_str());
 	} else {
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.6f, 1.0f),
-			"(no game booted)");
+		ImGui::TextColored(EmphasisBad(), "(no game booted)");
 	}
 	ImGui::SameLine();
 	if (ImGui::SmallButton("Boot a Game...")) {
@@ -575,63 +606,128 @@ void DesktopJoinConfirm() {
 	ImGui::End();
 }
 
-// "<Peer> wants to join <Game>" — Allow / Deny modal raised by
-// ReconcileHostedGames when the user runs prompt-me and a Hello passes
-// validation.  Auto-declines after 20 s so an AFK host doesn't strand
-// the joiner.  Dismissing the dialog without choosing also rejects.
+// "<Peer> wants to join <Game>" — Allow / Deny dialog raised by
+// ReconcileHostedGames whenever a queued join is awaiting a decision.
+// One row per queued joiner; each has its own 20 s auto-decline and
+// its own "Requested Xs ago" counter.  Dismissing the dialog rejects
+// every queued entry — a peer should never be left hanging.
 void DesktopAcceptJoinPrompt() {
 	State& st = GetState();
-	const std::string gid = st.session.pendingAcceptGameId;
-	if (gid.empty()) {
+	if (st.session.pendingRequests.empty()) {
 		Navigate(Screen::MyHostedGames);
 		return;
 	}
 
 	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
 	constexpr uint64_t kAutoDeclineMs = 20000;
-	const uint64_t elapsed = nowMs > st.session.pendingAcceptStartedMs
-		? nowMs - st.session.pendingAcceptStartedMs : 0;
-	if (elapsed >= kAutoDeclineMs) {
-		ATNetplayGlue::HostRejectPending(gid.c_str());
-		// ReconcileHostedGames will clear pendingAccept* + Navigate next tick.
-		return;
-	}
-	const uint64_t remainS = (kAutoDeclineMs - elapsed + 999) / 1000;
 
-	CenterNext(ImVec2(440, 220));
+	// Collect auto-decline rejects to fire after the render pass; the
+	// coord queue always shifts down so index 0 for that offer is the
+	// correct target for successive auto-rejects of the same offer.
+	std::vector<std::string> autoRejectOffers;
+	for (const auto& r : st.session.pendingRequests) {
+		const uint64_t elapsed = nowMs > r.arrivedMs ? nowMs - r.arrivedMs : 0;
+		if (elapsed >= kAutoDeclineMs) autoRejectOffers.push_back(r.hostedGameId);
+	}
+
+	CenterNext(ImVec2(520, 380));
 	bool open = true;
-	if (!ImGui::Begin("Join request##netplay", &open,
+	if (!ImGui::Begin("Join requests##netplay", &open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
 		if (!open) {
-			ATNetplayGlue::HostRejectPending(gid.c_str());
+			for (const auto& r : st.session.pendingRequests) {
+				ATNetplayGlue::HostRejectPending(r.hostedGameId.c_str(), 0);
+			}
 		}
 		return;
 	}
 
-	const char *handle = st.session.pendingAcceptHandle.empty()
-		? "Someone" : st.session.pendingAcceptHandle.c_str();
-	const char *gameName = st.session.pendingAcceptGameName.c_str();
-	ImGui::TextWrapped("%s wants to join your game:", handle);
-	ImGui::Spacing();
-	ImGui::TextColored(ImVec4(0.8f, 0.95f, 0.8f, 1.0f), "  %s", gameName);
-	ImGui::Spacing();
-	ImGui::TextDisabled("Auto-decline in %llus", (unsigned long long)remainS);
-
-	ImGui::Separator();
-	if (ImGui::Button("Allow", ImVec2(140, 0))) {
-		ATNetplayGlue::HostAcceptPending(gid.c_str());
-		// ReconcileHostedGames clears state + Navigate next tick.
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("Deny", ImVec2(140, 0))) {
-		ATNetplayGlue::HostRejectPending(gid.c_str());
+	// Per-offer indices so each row's Allow/Deny hits the right slot
+	// in that offer's coord queue.
+	std::vector<size_t> perOfferIdx(st.session.pendingRequests.size(), 0);
+	{
+		std::unordered_map<std::string, size_t> seen;
+		for (size_t i = 0; i < st.session.pendingRequests.size(); ++i) {
+			const auto& r = st.session.pendingRequests[i];
+			perOfferIdx[i] = seen[r.hostedGameId]++;
+		}
 	}
 
-	if (!open) {
-		ATNetplayGlue::HostRejectPending(gid.c_str());
+	enum class ActionKind { None, Accept, Reject, RejectAll };
+	ActionKind action = ActionKind::None;
+	std::string actionGameId;
+	size_t actionIdx = 0;
+
+	for (size_t i = 0; i < st.session.pendingRequests.size(); ++i) {
+		const auto& r = st.session.pendingRequests[i];
+		const uint64_t elapsed = nowMs > r.arrivedMs ? nowMs - r.arrivedMs : 0;
+		const uint64_t elapsedS = elapsed / 1000;
+		const uint64_t remainMs = elapsed < kAutoDeclineMs
+			? kAutoDeclineMs - elapsed : 0;
+		const uint64_t remainS  = (remainMs + 999) / 1000;
+
+		ImGui::PushID((int)i);
+		const char *handle = r.handle.empty() ? "Someone" : r.handle.c_str();
+		ImGui::TextWrapped("%s wants to join your game:", handle);
+		ImGui::TextColored(EmphasisGood(), "  %s", r.gameName.c_str());
+		ImGui::TextDisabled("Requested %llus ago · auto-decline in %llus",
+			(unsigned long long)elapsedS,
+			(unsigned long long)remainS);
+		if (ImGui::Button("Allow", ImVec2(140, 0))) {
+			action = ActionKind::Accept;
+			actionGameId = r.hostedGameId;
+			actionIdx = perOfferIdx[i];
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Deny", ImVec2(140, 0))) {
+			action = ActionKind::Reject;
+			actionGameId = r.hostedGameId;
+			actionIdx = perOfferIdx[i];
+		}
+		ImGui::Separator();
+		ImGui::PopID();
 	}
+
+	if (st.session.pendingRequests.size() > 1) {
+		if (ImGui::Button("Deny all", ImVec2(-FLT_MIN, 0))) {
+			action = ActionKind::RejectAll;
+		}
+	}
+
+	ImGui::Spacing();
+	ImGui::TextDisabled(
+		"Accepting replaces your current emulator game with the "
+		"hosted one for the online session.  Your game is saved "
+		"automatically and restored when the session ends.");
+
+	if (!open) action = ActionKind::RejectAll;
 	ImGui::End();
+
+	// Apply deferred actions.
+	for (const auto& gid : autoRejectOffers) {
+		ATNetplayGlue::HostRejectPending(gid.c_str(), 0);
+	}
+	switch (action) {
+		case ActionKind::Accept:
+			ATNetplayGlue::HostAcceptPending(actionGameId.c_str(), actionIdx);
+			st.session.promptSavedValid = false;
+			if (st.session.promptPausedSim && g_sim.IsPaused()) {
+				g_sim.Resume();
+			}
+			st.session.promptPausedSim = false;
+			break;
+		case ActionKind::Reject:
+			ATNetplayGlue::HostRejectPending(actionGameId.c_str(), actionIdx);
+			break;
+		case ActionKind::RejectAll:
+			for (const auto& r : st.session.pendingRequests) {
+				ATNetplayGlue::HostRejectPending(r.hostedGameId.c_str(), 0);
+			}
+			break;
+		case ActionKind::None:
+			break;
+	}
 }
 
 void DesktopWaiting() {
@@ -652,11 +748,19 @@ void DesktopWaiting() {
 	                         jp == ATNetplayGlue::Phase::Ended  ||
 	                         jp == ATNetplayGlue::Phase::Desynced);
 
+	const char *jerr = ATNetplayGlue::JoinLastError();
+	const bool declined = joinFailed && jerr &&
+		std::strstr(jerr, "declined") != nullptr;
+	const bool hostBusy = joinFailed && jerr &&
+		std::strstr(jerr, "chose another") != nullptr;
+
 	CenterNext(ImVec2(440, 240));
 	bool open = true;
-	const char *title = joinFailed
-		? "Could not join##netplay"
-		: "Connecting##netplay";
+	const char *title =
+		  declined ? "Join request declined##netplay"
+		: hostBusy ? "Another player was chosen##netplay"
+		: joinFailed ? "Could not join##netplay"
+		: "Joining session##netplay";
 	if (!ImGui::Begin(title, &open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
@@ -668,24 +772,39 @@ void DesktopWaiting() {
 	}
 
 	if (joinFailed) {
-		const char *raw = ATNetplayGlue::JoinLastError();
-		const std::string msg = (raw && *raw) ? raw : "Connection failed.";
+		const std::string msg = (jerr && *jerr) ? jerr : "Connection failed.";
 		ImVec4 col = ATUIIsDarkTheme()
 			? ImVec4(1.0f, 0.55f, 0.45f, 1.0f)
 			: ImVec4(0.80f, 0.10f, 0.10f, 1.0f);
-		ImGui::TextColored(col, "Could not join the game.");
+		const char *headline =
+			  declined ? "The host declined your request to join."
+			: hostBusy ? "The host picked a different player for this game."
+			: "Could not join the game.";
+		ImGui::TextColored(col, "%s", headline);
 		ImGui::Spacing();
 		ImGui::TextWrapped("%s", msg.c_str());
+		if (!st.session.joinTarget.hostHandle.empty() ||
+		    !st.session.joinTarget.cartName.empty()) {
+			ImGui::Spacing();
+			ImGui::TextDisabled("Host: %s   Game: %s",
+				st.session.joinTarget.hostHandle.c_str(),
+				st.session.joinTarget.cartName.c_str());
+		}
 		ImGui::Spacing();
 		ImGui::Separator();
-		if (ImGui::Button("Close", ImVec2(120, 0))) {
+		if (ImGui::Button("Try Again", ImVec2(120, 0))) {
 			ATNetplayGlue::StopJoin();
-			Navigate(Screen::Closed);
+			StartJoiningAction();
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Back to Browse", ImVec2(150, 0))) {
 			ATNetplayGlue::StopJoin();
 			Navigate(Screen::Browser);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Close", ImVec2(120, 0))) {
+			ATNetplayGlue::StopJoin();
+			Navigate(Screen::Closed);
 		}
 		if (!open) {
 			ATNetplayGlue::StopJoin();
@@ -759,7 +878,7 @@ void DesktopPrefs() {
 
 			ImGui::Spacing();
 			ImGui::SeparatorText("In-session HUD");
-			ImGui::Checkbox("Show HUD overlay (LIVE / frame / peer / Disconnect)",
+			ImGui::Checkbox("Show in-session HUD",
 				&st.prefs.showSessionHUD);
 			ImGui::EndTabItem();
 		}
@@ -767,13 +886,7 @@ void DesktopPrefs() {
 		if (ImGui::BeginTabItem("Hosting")) {
 			ImGui::Spacing();
 			ImGui::SeparatorText("When someone joins");
-			int acc = (int)st.prefs.acceptMode;
-			ImGui::RadioButton("Auto-accept",  &acc, 0); ImGui::SameLine();
-			ImGui::RadioButton("Prompt me",    &acc, 1);
-			st.prefs.acceptMode = (AcceptMode)acc;
-			ImGui::TextDisabled(st.prefs.acceptMode == AcceptMode::PromptMe
-				? "  A modal asks you Allow / Deny.  Auto-declines after 20 s."
-				: "  Joiners enter immediately, no confirmation.");
+			ImGui::TextDisabled("  A modal asks you Allow / Deny.  Auto-declines after 20 s.");
 
 			ImGui::Spacing();
 			ImGui::SeparatorText("Notifications on incoming join");
@@ -816,11 +929,11 @@ void DesktopPrefs() {
 // Map HostedGameState → short label + colour for the status cell.
 const char *OfferStateLabel(HostedGameState s) {
 	switch (s) {
-		case HostedGameState::Draft:       return "Draft";
-		case HostedGameState::Listed:      return "Listed";
+		case HostedGameState::Off:         return "Off";
+		case HostedGameState::Open:        return "Open";
 		case HostedGameState::Handshaking: return "Connecting";
 		case HostedGameState::Playing:     return "Playing";
-		case HostedGameState::Suspended:   return "Suspended";
+		case HostedGameState::Paused:      return "Paused";
 		case HostedGameState::Failed:      return "Failed";
 	}
 	return "?";
@@ -828,10 +941,10 @@ const char *OfferStateLabel(HostedGameState s) {
 ImVec4 OfferStateColour(HostedGameState s) {
 	const bool dark = ATUIIsDarkTheme();
 	switch (s) {
-		case HostedGameState::Draft:
+		case HostedGameState::Off:
 			return dark ? ImVec4(0.70f, 0.70f, 0.70f, 1)
 			            : ImVec4(0.45f, 0.45f, 0.45f, 1);
-		case HostedGameState::Listed:
+		case HostedGameState::Open:
 			return dark ? ImVec4(0.55f, 0.85f, 0.55f, 1)
 			            : ImVec4(0.10f, 0.55f, 0.15f, 1);
 		case HostedGameState::Handshaking:
@@ -840,7 +953,7 @@ ImVec4 OfferStateColour(HostedGameState s) {
 		case HostedGameState::Playing:
 			return dark ? ImVec4(0.40f, 0.85f, 1.00f, 1)
 			            : ImVec4(0.10f, 0.40f, 0.70f, 1);
-		case HostedGameState::Suspended:
+		case HostedGameState::Paused:
 			return dark ? ImVec4(0.85f, 0.70f, 0.40f, 1)
 			            : ImVec4(0.60f, 0.40f, 0.10f, 1);
 		case HostedGameState::Failed:
@@ -856,9 +969,9 @@ const char *ActivityBannerText(UserActivity a,
 		case UserActivity::Idle:
 			if (gameCount == 0)   return "Add a game to start hosting.";
 			if (enabledCount == 0) return "All your games are off — toggle "
-				"On to list one on the lobby.";
-			if (enabledCount == 1) return "1 game listed on the lobby.";
-			return "Listed on the lobby — peers can see and join.";
+				"Host to open one on the lobby.";
+			if (enabledCount == 1) return "1 game open on the lobby.";
+			return "Open on the lobby — peers can see and join.";
 		case UserActivity::PlayingLocal:
 			return "You're playing single-player — hosted games are paused "
 				"until you stop.";
@@ -1256,7 +1369,7 @@ namespace {
 		o.entryCode    = s_addEntryCode;
 		o.config       = s_addConfig;
 		o.enabled      = true;
-		o.state        = HostedGameState::Draft;
+		o.state        = HostedGameState::Off;
 		st.hostedGames.push_back(std::move(o));
 		st.prefs.lastAddConfig = s_addConfig;
 		SaveToRegistry();

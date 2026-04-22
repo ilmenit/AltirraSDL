@@ -109,9 +109,16 @@ enum class ATMobileSettingsPage {
 	SaveState,
 	Firmware,
 	GameLibrary,
+	OnlinePlay,
 };
 extern ATMobileSettingsPage s_settingsPage;
 extern ATMobileUIScreen s_settingsReturnScreen;
+// Set by the Online Play hub when the user taps the Preferences
+// shortcut, so that pressing Back on the Settings home page not only
+// restores `s_settingsReturnScreen` but also reopens the Online Play
+// hub overlay the user came from.  Cleared by the Settings back
+// handlers once consumed.
+extern bool s_settingsReturnToNetplayHub;
 extern ATFirmwareType s_fwPicker;
 
 // -------------------------------------------------------------------------

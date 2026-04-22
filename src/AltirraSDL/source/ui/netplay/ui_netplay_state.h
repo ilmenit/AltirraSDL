@@ -70,11 +70,11 @@ enum class Screen {
 // -----------------------------------------------------------------------
 
 enum class HostedGameState : uint8_t {
-	Draft,        // configured locally, not posted to lobby
-	Listed,       // posted; UDP port bound; waiting for peer
+	Off,          // configured locally, not posted to lobby
+	Open,         // posted; UDP port bound; waiting for peer
 	Handshaking,  // peer connected; loading game; snapshot in flight
 	Playing,      // coordinator in Lockstepping
-	Suspended,    // unlisted because the user is busy elsewhere
+	Paused,       // unlisted because the user is busy elsewhere
 	Failed,       // last attempt failed; held locally so user can retry
 };
 
@@ -107,15 +107,23 @@ struct HostedGame {
 	std::string cartArtHash;       // optional, hex
 	bool        isPrivate = false;
 	std::string entryCode;         // cleartext; hashed at StartHost time
-	bool        enabled   = true;  // user toggle; when false stays Draft
+	bool        enabled   = true;  // user toggle; when false stays Off
 
 	// Full machine configuration applied before cold-booting the
 	// game for a joined peer.  Captured from the current sim at
 	// Add-Game time unless the user picks explicit values.
 	MachineConfig config;
 
+	// Cached CRC32 of the game-file bytes, keyed by the outer-file
+	// mtime tick stamp.  Zero stamp means "not cached yet".  Mutable
+	// because it's a transparent cache — recomputed when the outer
+	// file changes on disk, invisible to logical state.  Persisted so
+	// we don't re-decompress on every launch / host-enable.
+	mutable uint32_t gameFileCRC32 = 0;
+	mutable uint64_t gameFileStamp = 0;
+
 	// Runtime fields (not persisted) ------------------------------------
-	HostedGameState  state          = HostedGameState::Draft;
+	HostedGameState  state          = HostedGameState::Off;
 
 	// Per-lobby registration.  One entry per enabled HTTP lobby the
 	// offer was announced to.  Keyed by the lobby's section name from
@@ -198,22 +206,16 @@ enum class UserActivity : uint8_t {
 	InSession,     // a peer joined one of our hostedGames OR we joined someone
 };
 
-// Host-side "accept incoming join" policy.  Auto-accept is the happy
-// path; prompt-me pops a modal with a 20 s timer so an AFK host
-// doesn't block the joiner forever (after the timer the join is
-// auto-declined and the joiner sees a clean rejection).
-enum class AcceptMode : uint8_t {
-	AutoAccept,
-	PromptMe,
-};
+// Incoming-join policy: always prompt the host with a modal carrying
+// a 20 s auto-decline timer (after which the join is rejected and the
+// joiner gets a clean "host declined" message).  Auto-accept used to
+// be an option but was removed — a peer should never be able to slip
+// onto the user's machine without explicit confirmation.
 
 struct Prefs {
 	// Persistent identity.
 	std::string nickname;          // "" ⇒ nickname prompt pending
 	bool        isAnonymous = false;  // true ⇒ random nickname each session
-
-	// Accept mode for incoming join requests.
-	AcceptMode  acceptMode = AcceptMode::AutoAccept;
 
 	// Notification triple — each toggle matches a field on
 	// ATNetplay::NotifyPrefs that platform_notify.cpp consumes.
@@ -280,13 +282,42 @@ struct Session {
 	// the user with chimes if peers bounce on and off quickly.
 	uint64_t    lastNotifyMs = 0;
 
-	// Pending-accept dialog state.  Populated by ReconcileHostedGames
-	// when a HostedGame coord raises HasPendingDecision; cleared when
-	// the user clicks Allow/Deny or the 20 s auto-decline fires.
-	std::string pendingAcceptGameId;
-	std::string pendingAcceptHandle;
-	std::string pendingAcceptGameName;
-	uint64_t    pendingAcceptStartedMs = 0;
+	// Pending-accept queue.  Rebuilt every tick by ReconcileHostedGames
+	// from the coordinator's per-offer queue so the UI can render one
+	// row per queued joiner.  Each entry carries its own arrival time
+	// so every row drives its own "Requested Xs ago" counter and its
+	// own 20 s auto-decline.
+	struct PendingJoinRequest {
+		std::string hostedGameId;   // which offer the joiner is hitting
+		std::string gameName;       // copy at enqueue time for display
+		std::string handle;         // joiner's player handle (NUL-term)
+		uint64_t    arrivedMs = 0;  // host-local SDL_GetTicks ms
+	};
+	std::vector<PendingJoinRequest> pendingRequests;
+
+	// Snapshot of where the user was when the first request arrived,
+	// so "Deny all" (or every request being declined / cancelled) can
+	// put them back instead of leaving them stranded on the prompt.
+	// Captured by ReconcileHostedGames on the 0 → N transition.  The
+	// Accept path is handled separately via SessionRestorePoint.
+	bool             promptSavedValid  = false;
+	Screen           promptSavedScreen = Screen::Closed;
+	// Gaming-Mode mobile-shell screen (g_mobileState.currentScreen)
+	// at the moment the prompt was raised.  Stored as int to avoid
+	// pulling the mobile UI header into this one — the value is a
+	// plain ATMobileUIScreen cast.
+	int              promptSavedMobile = 0;
+	// True iff we called g_sim.Pause() when the prompt went up (so we
+	// only Resume() what we paused — the user may have been paused
+	// explicitly via hamburger menu before the prompt arrived).
+	bool             promptPausedSim   = false;
+
+	// Timestamp of the first tick where the joiner coordinator had a
+	// non-idle phase (host-local ms via SDL_GetTicks).  Cleared when
+	// the joiner returns to None.  Used to render "(Xs waiting)" on
+	// the Connecting screen so the joiner gets feedback during a host
+	// that's taking a long time to approve.
+	uint64_t         joinStartedMs     = 0;
 
 	// -- Active hosting state ---------------------------------------
 	// Populated when the host has actually called StartHost() and
@@ -413,7 +444,7 @@ struct State {
 	// a new one.
 	std::string editingGameId;
 
-	// User activity — drives the Listed ↔ Suspended transitions.  Read
+	// User activity — drives the Open ↔ Paused transitions.  Read
 	// by ReconcileHostedGames() each frame.
 	UserActivity activity = UserActivity::Idle;
 
@@ -450,7 +481,7 @@ State& GetState();
 // Safe to call more than once.
 void Initialize();
 
-// Save Prefs to the registry (Netplay/Handle, Netplay/AcceptMode, etc.).
+// Save Prefs to the registry (Netplay/Handle, etc.).
 // Called from Shutdown() and every time a pref changes via the
 // Preferences sheet.
 void SaveToRegistry();
@@ -474,5 +505,14 @@ std::string GenerateAnonymousNickname();
 // back to the anon generator.  The rendered name is cached for the
 // session so the lobby never sees a flicker.
 const std::string& ResolvedNickname();
+
+// Render the Online Play preferences body (sections + controls, no
+// window/sheet wrapping).  Extracted out of RenderPrefs() so the
+// Gaming-Mode Settings "Online Play" page and the old netplay Prefs
+// sheet share exactly the same option list.  The caller is
+// responsible for the surrounding scroll container and for calling
+// SaveToRegistry() when the screen closes; widgets inside only
+// mutate the in-memory Prefs struct.
+void RenderOnlinePlayPrefsBody();
 
 } // namespace ATNetplayUI
