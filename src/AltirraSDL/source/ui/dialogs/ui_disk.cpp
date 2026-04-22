@@ -17,6 +17,7 @@
 #include <at/atcore/vfs.h>
 #include <at/atio/diskfs.h>
 #include <at/atio/diskfsutil.h>
+#include <at/atio/image.h>
 
 #include "ui_main.h"
 #include "ui_confirm_dialog.h"
@@ -231,15 +232,17 @@ static void DiskMountCallback(void *userdata, const char * const *filelist, int)
 		ATDiskEmulator& disk = g_sim.GetDiskDrive(driveIdx);
 		ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
 			? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
-		diskIf.LoadDisk(widePath.c_str());
 
-		IATDiskImage *img = diskIf.GetDiskImage();
-		if (img && !img->IsUpdatable())
-			wm = (ATMediaWriteMode)(wm & ~kATMediaWriteMode_AutoFlush);
-		diskIf.SetWriteMode(wm);
+		// Route through ATSimulator::Load to match Windows
+		// (uidisk.cpp:1060-1065).  See the note on the matching call in
+		// ui_main.cpp kATDeferred_AttachDisk for why the 1-arg
+		// ATDiskInterface::LoadDisk path silently flags images as
+		// non-updatable (every Flush then remounts VRW).
+		ATImageLoadContext ctx;
+		ctx.mLoadType  = kATImageType_Disk;
+		ctx.mLoadIndex = driveIdx;
+		g_sim.Load(widePath.c_str(), wm, &ctx);
 
-		if (diskIf.GetClientCount() < 2)
-			disk.SetEnabled(true);
 		ATAddMRU(widePath.c_str());
 		LOG_INFO("UI", "Mounted D%d: %s", driveIdx + 1, filelist[0]);
 	} catch (...) {
@@ -247,13 +250,35 @@ static void DiskMountCallback(void *userdata, const char * const *filelist, int)
 	}
 }
 
-static void DiskSaveAsCallback(void *userdata, const char * const *filelist, int) {
+static void DiskSaveAsCallback(void *userdata, const char * const *filelist, int filter) {
 	int driveIdx = (int)(intptr_t)userdata;
 	if (!filelist || !filelist[0] || driveIdx < 0 || driveIdx >= 15) return;
 
+	// Map filter index to format, matching Windows uidisk.cpp:1306-1325.
+	// Indices must stay in sync with kDiskSaveFilters[] below.
+	ATDiskImageFormat format = kATDiskImageFormat_ATR;
+	switch (filter) {
+		case 0: format = kATDiskImageFormat_ATR; break;
+		case 1: format = kATDiskImageFormat_ATX; break;
+		case 2: format = kATDiskImageFormat_P2;  break;
+		case 3: format = kATDiskImageFormat_P3;  break;
+		case 4: format = kATDiskImageFormat_DCM; break;
+		case 5: format = kATDiskImageFormat_XFD; break;
+		default: break;  // -1 (unreported) or "All Files" → ATR
+	}
+
 	VDStringW widePath = VDTextU8ToW(filelist[0], -1);
 	try {
-		g_sim.GetDiskInterface(driveIdx).SaveDiskAs(widePath.c_str(), kATDiskImageFormat_ATR);
+		ATDiskInterface& diskIf = g_sim.GetDiskInterface(driveIdx);
+		diskIf.SaveDiskAs(widePath.c_str(), format);
+
+		// If the disk was in VRW (AllowWrite but not AutoFlush), promote to
+		// R/W so subsequent edits land in the newly-saved file.  Matches
+		// Windows uidisk.cpp:1330-1333.
+		const auto writeMode = diskIf.GetWriteMode();
+		if ((writeMode & kATMediaWriteMode_AllowWrite) && !(writeMode & kATMediaWriteMode_AutoFlush))
+			diskIf.SetWriteMode(kATMediaWriteMode_RW);
+
 		LOG_INFO("UI", "Saved D%d as: %s", driveIdx + 1, filelist[0]);
 	} catch (...) {
 		LOG_ERROR("UI", "Failed to save D%d: %s", driveIdx + 1, filelist[0]);
@@ -321,10 +346,16 @@ static const SDL_DialogFileFilter kDiskFilters[] = {
 	{ "All Files", "*" },
 };
 
+// Order MUST match DiskSaveAsCallback filter-index switch (matches
+// Windows uidisk.cpp:1291-1297 filter order).
 static const SDL_DialogFileFilter kDiskSaveFilters[] = {
-	{ "ATR Disk Image", "atr" },
-	{ "XFD Disk Image", "xfd" },
-	{ "All Files", "*" },
+	{ "Atari disk image (*.atr)",            "atr" },
+	{ "VAPI protected disk image (*.atx)",   "atx" },
+	{ "APE protected disk image v2 (*.pro)", "pro" },
+	{ "APE protected disk image v3 (*.pro)", "pro" },
+	{ "DiskComm compressed image (*.dcm)",   "dcm" },
+	{ "XFormer disk image (*.xfd)",          "xfd" },
+	{ "All Files",                           "*"   },
 };
 
 static const SDL_DialogFileFilter kBootSectorFilters[] = {
@@ -678,7 +709,7 @@ static void RenderDiskDriveContextMenu(int driveIdx, ATDiskInterface& di,
 				// Not updatable — fall through to Save As (matches Windows)
 				ATUIShowSaveFileDialog('disk', DiskSaveAsCallback,
 					(void *)(intptr_t)driveIdx, window,
-					kDiskSaveFilters, 3);
+					kDiskSaveFilters, (int)(sizeof(kDiskSaveFilters)/sizeof(kDiskSaveFilters[0])));
 			}
 		}
 	}
@@ -686,7 +717,7 @@ static void RenderDiskDriveContextMenu(int driveIdx, ATDiskInterface& di,
 	if (ImGui::MenuItem("Save disk as...", nullptr, false, haveNonDynamicDisk)) {
 		ATUIShowSaveFileDialog('disk', DiskSaveAsCallback,
 			(void *)(intptr_t)driveIdx, window,
-			kDiskSaveFilters, 3);
+			kDiskSaveFilters, (int)(sizeof(kDiskSaveFilters)/sizeof(kDiskSaveFilters[0])));
 	}
 
 	if (ImGui::MenuItem("Explore disk...", nullptr, false, haveDisk)) {

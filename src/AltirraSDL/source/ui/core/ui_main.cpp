@@ -404,15 +404,24 @@ void ATUIPollDeferredActions() {
 					ATDiskEmulator& disk = g_sim.GetDiskDrive(idx);
 					ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
 						? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
-					diskIf.LoadDisk(a.path.c_str());
 
-					IATDiskImage *img = diskIf.GetDiskImage();
-					if (img && !img->IsUpdatable())
-						wm = (ATMediaWriteMode)(wm & ~kATMediaWriteMode_AutoFlush);
-					diskIf.SetWriteMode(wm);
-
-					if (diskIf.GetClientCount() < 2)
-						disk.SetEnabled(true);
+					// Route through ATSimulator::Load to match Windows
+					// (uidisk.cpp:1060-1065).  The 1-arg
+					// ATDiskInterface::LoadDisk(path) path forwards
+					// view->GetFileName() — a basename — as imagePath to
+					// ATDiskImage::Load, which then trips diskimage.cpp:547
+					// (`wcscmp(origPath, imagePath)` non-zero → mImageFormat
+					// = None → IsUpdatable() false → every Flush falls back
+					// to VRW and shows "remounted virtual read/write due to
+					// write error").  ATSimulator::Load leaves mImageName
+					// empty so ATLoadDiskImage receives imagePath = nullptr
+					// and the check doesn't fire.  Load also applies the
+					// IsUpdatable → AutoFlush mask, SetWriteMode, and drive
+					// SetEnabled internally (simulator.cpp:2980-2998).
+					ATImageLoadContext ctx;
+					ctx.mLoadType  = kATImageType_Disk;
+					ctx.mLoadIndex = idx;
+					g_sim.Load(a.path.c_str(), wm, &ctx);
 
 					ATAddMRU(a.path.c_str());
 				}
