@@ -256,11 +256,43 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					mobileState.autoRestoreOnStart ? "on" : "off"),
 				ATMobileSettingsPage::SaveState };
 
-			cats[n++] = { "Firmware",
-				s_romDir.empty()
-					? VDStringA("(not set)")
-					: VDStringA().sprintf("%s", VDTextWToU8(s_romDir).c_str()),
-				ATMobileSettingsPage::Firmware };
+			{
+				ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
+				ATFirmwareType kernelType = kATFirmwareType_KernelXL;
+				switch (g_sim.GetHardwareMode()) {
+				case kATHardwareMode_800:
+					kernelType = kATFirmwareType_Kernel800_OSB;
+					break;
+				case kATHardwareMode_5200:
+					kernelType = kATFirmwareType_Kernel5200;
+					break;
+				case kATHardwareMode_XEGS:
+					kernelType = kATFirmwareType_KernelXEGS;
+					break;
+				default:
+					kernelType = kATFirmwareType_KernelXL;
+					break;
+				}
+
+				auto shortName = [&](uint64 id) -> VDStringA {
+					if (!id)
+						return VDStringA("Built-in HLE");
+					ATFirmwareInfo info;
+					if (fwm && fwm->GetFirmwareInfo(id, info))
+						return VDTextWToU8(info.mName);
+					return VDStringA("(unknown)");
+				};
+
+				uint64 kId = fwm ? fwm->GetDefaultFirmware(kernelType) : 0;
+				VDStringA sub = shortName(kId);
+				if (kernelType != kATFirmwareType_Kernel5200) {
+					uint64 bId = fwm ? fwm->GetDefaultFirmware(kATFirmwareType_Basic) : 0;
+					sub.append_sprintf("  \xC2\xB7  BASIC: %s",
+						shortName(bId).c_str());
+				}
+				cats[n++] = { "Firmware", sub,
+					ATMobileSettingsPage::Firmware };
+			}
 
 			{
 				ATGameLibrary *lib = GetGameLibrary();

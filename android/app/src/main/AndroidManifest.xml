@@ -23,6 +23,12 @@
     <!-- Haptic feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Netplay lobby and peer connections.  Without INTERNET, Android
+         denies socket(AF_INET, SOCK_STREAM, ...) with EPERM and the
+         lobby reports "socket() failed". -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- OpenGL ES 3.0 required (maps to our GL 3.3 core backend) -->
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
 
