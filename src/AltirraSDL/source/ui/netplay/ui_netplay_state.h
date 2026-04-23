@@ -141,6 +141,14 @@ struct HostedGame {
 	uint64_t    lastHeartbeatMs = 0;
 	std::string lastError;
 
+	// Lobby-observed session liveness — populated from the /v1/sessions
+	// poll response so the My Hosted Games list can render a live
+	// "N/M players · up 5m" subtitle instead of the bare handle.  All
+	// three are best-effort; zero means "unknown / not reported yet".
+	uint32_t    currentPlayers = 0;
+	uint32_t    maxPlayers     = 0;
+	uint64_t    hostStartedAtMs = 0;
+
 	// NAT-PMP / PCP router-assisted port mapping acquired at Create
 	// time.  Stored so the session-Delete path can release the
 	// mapping politely instead of waiting for the router's lease
@@ -428,6 +436,17 @@ struct Browser {
 	// Selected row index (-1 ⇒ none).  Keyboard/gamepad nav writes
 	// this; touch taps ignore it and call Join() directly.
 	int         selectedIdx = -1;
+
+	// Search/filter state — mirrors the Library Picker UX (text input +
+	// A-Z alphabet pills).  `searchBuf` is user-typed free text matched
+	// case-insensitive against the handle and cart name;
+	// `letterFilter` < 0 is "All", 0..25 selects 'A'..'Z'.  Scroll
+	// position is captured before a refresh so the list doesn't jump
+	// back to the top when new data lands.
+	char        searchBuf[96] = {0};
+	int         letterFilter = -1;
+	float       savedScrollY = 0.0f;
+	bool        restoreScrollPending = false;
 };
 
 // Cross-window lobby reachability signal.  Every lobby HTTP op

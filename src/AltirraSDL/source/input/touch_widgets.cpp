@@ -4,11 +4,21 @@
 #include <stdafx.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <SDL3/SDL.h>
 #include "touch_widgets.h"
 #include "options.h"
+
+// Forward declaration — provided by ui/mobile/mobile_dialogs.cpp via
+// mobile_internal.h.  We can't include the header here because it
+// defines a conflicting file-local `dp(float)` inline helper.
+void ShowInfoModal(const char *title, const char *body);
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
 
 // The mobile UI's dp() helper is a static file-local in ui_mobile.cpp.
 // We replicate a tiny version here that reads the current DPI scale
@@ -1257,4 +1267,340 @@ void ATTouchSection(const char *label) {
 	ImGui::PopStyleColor();
 	ImGui::Separator();
 	ImGui::Dummy(ImVec2(0, dp(4.0f)));
+}
+
+// =========================================================================
+// Shared Gaming-Mode primitives — promoted from ui_netplay_widgets so the
+// hamburger / settings / library screens can reuse the same layout pieces.
+// =========================================================================
+
+namespace {
+
+int  s_insetTop    = 0;
+int  s_insetBottom = 0;
+int  s_insetLeft   = 0;
+int  s_insetRight  = 0;
+int  s_imeHeight   = 0;
+
+float TouchCurrentScale() {
+	UpdateContentScale();
+	return s_contentScale;
+}
+
+} // namespace
+
+float ATTouchDp(float d) { return d * TouchCurrentScale(); }
+
+void ATTouchSetSafeAreaInsets(int top, int bottom, int left, int right) {
+	s_insetTop    = top;
+	s_insetBottom = bottom;
+	s_insetLeft   = left;
+	s_insetRight  = right;
+}
+
+void ATTouchSetImeHeight(int px) { s_imeHeight = px > 0 ? px : 0; }
+int  ATTouchGetImeHeight()       { return s_imeHeight; }
+
+ImVec2 ATTouchSafeOrigin() {
+	const ImGuiViewport *vp = ImGui::GetMainViewport();
+	return ImVec2(vp->WorkPos.x + (float)s_insetLeft,
+	              vp->WorkPos.y + (float)s_insetTop);
+}
+
+ImVec2 ATTouchSafeSize() {
+	const ImGuiViewport *vp = ImGui::GetMainViewport();
+	const int extraBottom = s_insetBottom + s_imeHeight;
+	float w = vp->WorkSize.x - (float)(s_insetLeft + s_insetRight);
+	float h = vp->WorkSize.y - (float)(s_insetTop  + extraBottom);
+	// Clamp to non-negative so call sites (toast layout, modal centre,
+	// HUD positioning) don't propagate negative widths/heights into
+	// ImGui sizing when an aggressive IME height or over-reported
+	// insets temporarily exceed the viewport.
+	if (w < 0.0f) w = 0.0f;
+	if (h < 0.0f) h = 0.0f;
+	return ImVec2(w, h);
+}
+
+// -------------------------------------------------------------------------
+// ScreenHeader.
+// -------------------------------------------------------------------------
+bool ATTouchScreenHeader(const char *title) {
+	// Only draws in Gaming Mode — desktop has its own title bar.
+	// We cannot include ui_mode.h from here (layering), so we detect
+	// "mobile" by the presence of non-zero insets or by the IME
+	// height; callers in Desktop won't invoke this helper anyway, but
+	// for safety also permit plain desktop usage.
+	const ATMobilePalette &p = ATMobileGetPalette();
+	const float headerH = ATTouchDp(52.0f);
+	bool backPressed = false;
+
+	ImGui::PushID("##atTouchScreenHeader");
+	if (ATTouchButton("<", ImVec2(ATTouchDp(48.0f), headerH),
+	                  ATTouchButtonStyle::Subtle)) {
+		backPressed = true;
+	}
+	ImGui::SameLine(0, ATTouchDp(8.0f));
+
+	float cursorY = ImGui::GetCursorPosY();
+	float offY = (headerH - ImGui::GetTextLineHeight()) * 0.5f;
+	ImGui::SetCursorPosY(cursorY + offY);
+	ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textTitle));
+	ImGui::TextUnformatted(title ? title : "");
+	ImGui::PopStyleColor();
+	ImGui::SetCursorPosY(cursorY + headerH);
+	ImGui::PopID();
+
+	const ImGuiIO &io = ImGui::GetIO();
+	const bool escKey = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+	const bool padB   = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+	if (!backPressed && !io.WantTextInput && (escKey || padB)) {
+		backPressed = true;
+	}
+
+	ImGui::Separator();
+	ImGui::Spacing();
+	return backPressed;
+}
+
+// -------------------------------------------------------------------------
+// Toast queue.
+// -------------------------------------------------------------------------
+namespace {
+struct TouchToast {
+	std::string          text;
+	ATTouchToastSeverity severity;
+	uint64_t             startMs;
+	uint64_t             durationMs;
+};
+std::vector<TouchToast> g_toasts;
+constexpr size_t kMaxToasts = 4;
+} // namespace
+
+void ATTouchPushToast(const char *text, ATTouchToastSeverity severity,
+                      uint64_t durationMs) {
+	if (!text || !*text) return;
+	if (!g_toasts.empty()) {
+		TouchToast &tail = g_toasts.back();
+		if (tail.severity == severity && tail.text == text) {
+			tail.startMs    = (uint64_t)SDL_GetTicks();
+			tail.durationMs = durationMs;
+			return;
+		}
+	}
+	if (g_toasts.size() >= kMaxToasts) {
+		g_toasts.erase(g_toasts.begin());
+	}
+	TouchToast t;
+	t.text       = text;
+	t.severity   = severity;
+	t.startMs    = (uint64_t)SDL_GetTicks();
+	t.durationMs = durationMs;
+	g_toasts.push_back(std::move(t));
+}
+
+void ATTouchClearToasts() { g_toasts.clear(); }
+
+void ATTouchRenderToasts() {
+	if (g_toasts.empty()) return;
+
+	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+	for (auto it = g_toasts.begin(); it != g_toasts.end(); ) {
+		if (nowMs >= it->startMs + it->durationMs)
+			it = g_toasts.erase(it);
+		else
+			++it;
+	}
+	if (g_toasts.empty()) return;
+
+	const ATMobilePalette &p = ATMobileGetPalette();
+	const ImVec2 safeO = ATTouchSafeOrigin();
+	const ImVec2 safeS = ATTouchSafeSize();
+	// Guard against a collapsed safe area (aggressive IME height,
+	// over-reported insets) — skip drawing rather than emit negative-
+	// width rects that ImGui treats as garbage.
+	if (safeS.x < ATTouchDp(80) || safeS.y < ATTouchDp(40)) return;
+
+	const float maxW = std::min(safeS.x - ATTouchDp(24), ATTouchDp(520));
+	const float gap  = ATTouchDp(8);
+	float y = safeO.y + ATTouchDp(12);
+
+	ImDrawList *dl = ImGui::GetForegroundDrawList();
+
+	for (size_t i = 0; i < g_toasts.size(); ++i) {
+		const TouchToast &t = g_toasts[i];
+
+		uint32_t bg, fg;
+		switch (t.severity) {
+			case ATTouchToastSeverity::Success: bg = p.success; fg = p.textOnAccent; break;
+			case ATTouchToastSeverity::Warning: bg = p.warning; fg = p.textOnAccent; break;
+			case ATTouchToastSeverity::Danger:  bg = p.danger;  fg = p.textOnAccent; break;
+			case ATTouchToastSeverity::Info:
+			default:                            bg = p.cardBg;  fg = p.text;          break;
+		}
+
+		const float padX = ATTouchDp(16), padY = ATTouchDp(10);
+		ImVec2 ts = ImGui::CalcTextSize(t.text.c_str(), nullptr, false,
+			maxW - padX * 2);
+		float lineH = ts.y + padY * 2;
+		float x = safeO.x + (safeS.x - maxW) * 0.5f;
+		ImVec2 rmin(x, y);
+		ImVec2 rmax(x + maxW, y + lineH);
+
+		uint64_t elapsed = nowMs - t.startMs;
+		uint64_t remain  = t.durationMs > elapsed ? t.durationMs - elapsed : 0;
+		float alphaIn  = std::min(1.0f, elapsed / 180.0f);
+		float alphaOut = std::min(1.0f, remain  / 350.0f);
+		float alpha    = std::min(alphaIn, alphaOut);
+
+		auto applyAlpha = [alpha](uint32_t col) -> uint32_t {
+			unsigned a = (unsigned)std::round((col >> 24 & 0xFF) * alpha);
+			return (col & 0x00FFFFFFu) | (a << 24);
+		};
+
+		dl->AddRectFilled(rmin, rmax, applyAlpha(bg), ATTouchDp(10));
+		if (t.severity == ATTouchToastSeverity::Info) {
+			dl->AddRect(rmin, rmax, applyAlpha(p.cardBorder),
+				ATTouchDp(10), 0, 1.0f);
+		}
+		dl->PushClipRect(
+			ImVec2(rmin.x + padX, rmin.y),
+			ImVec2(rmax.x - padX, rmax.y), true);
+		dl->AddText(nullptr, 0.0f,
+			ImVec2(rmin.x + padX, rmin.y + padY),
+			applyAlpha(fg), t.text.c_str(), nullptr,
+			maxW - padX * 2);
+		dl->PopClipRect();
+
+		y += lineH + gap;
+	}
+}
+
+void ATTouchPushFeedback(const char *title, const char *body,
+                         ATTouchToastSeverity severity, bool blocking,
+                         uint64_t durationMs) {
+	if (blocking) {
+		// Forward to ShowInfoModal — the netplay toast system remains
+		// available for non-blocking notifications.
+		ShowInfoModal(title ? title : "",
+			body ? body : (title ? title : ""));
+		return;
+	}
+	// Non-blocking: compose "title — body" into one toast.  If either
+	// is empty, fall back to the other.
+	std::string text;
+	if (title && *title && body && *body) {
+		text.reserve(std::strlen(title) + std::strlen(body) + 4);
+		text.append(title);
+		text.append(" — ");
+		text.append(body);
+	} else if (title && *title) {
+		text.assign(title);
+	} else if (body && *body) {
+		text.assign(body);
+	}
+	if (!text.empty())
+		ATTouchPushToast(text.c_str(), severity, durationMs);
+}
+
+// -------------------------------------------------------------------------
+// ATTouchInputTextScrollAware — InputText that parks itself above the IME.
+// -------------------------------------------------------------------------
+namespace {
+struct ScrollAwareSlot {
+	ImGuiID id = 0;
+	bool    wasActive = false;
+};
+// Keep per-widget previous-active state so SetScrollHereY fires on the
+// exact frame the widget goes 0→1 active.  Capped size — widgets
+// dropped from the map simply re-arm the scroll on next activation.
+std::vector<ScrollAwareSlot> g_scrollSlots;
+
+ScrollAwareSlot &GetScrollSlot(ImGuiID id) {
+	for (auto &s : g_scrollSlots)
+		if (s.id == id) return s;
+	if (g_scrollSlots.size() >= 32)
+		g_scrollSlots.erase(g_scrollSlots.begin());
+	g_scrollSlots.push_back(ScrollAwareSlot{id, false});
+	return g_scrollSlots.back();
+}
+} // namespace
+
+bool ATTouchInputTextScrollAware(const char *label, char *buf, size_t bufSize,
+                                 ImGuiInputTextFlags flags) {
+	bool changed = ImGui::InputText(label, buf, bufSize, flags);
+	const ImGuiID id = ImGui::GetItemID();
+	ScrollAwareSlot &slot = GetScrollSlot(id);
+	const bool nowActive = ImGui::IsItemActive();
+	if (nowActive && !slot.wasActive) {
+		// First frame active: park the focused input at 25% from the
+		// top of the scrollable host so the on-screen keyboard does
+		// not cover it.
+		ImGui::SetScrollHereY(0.25f);
+	}
+	slot.wasActive = nowActive;
+	return changed;
+}
+
+bool ATTouchInputTextWithHintScrollAware(const char *label, const char *hint,
+                                         char *buf, size_t bufSize,
+                                         ImGuiInputTextFlags flags) {
+	bool changed = ImGui::InputTextWithHint(label, hint, buf, bufSize, flags);
+	const ImGuiID id = ImGui::GetItemID();
+	ScrollAwareSlot &slot = GetScrollSlot(id);
+	const bool nowActive = ImGui::IsItemActive();
+	if (nowActive && !slot.wasActive)
+		ImGui::SetScrollHereY(0.25f);
+	slot.wasActive = nowActive;
+	return changed;
+}
+
+// -------------------------------------------------------------------------
+// ATTouchEmptyState — vertically-centred empty-state block.
+// -------------------------------------------------------------------------
+void ATTouchEmptyState(const char *title, const char *body,
+                       const char *ctaLabel, void (*onCta)(void *userData),
+                       void *userData) {
+	const ATMobilePalette &pal = ATMobileGetPalette();
+	ImVec2 avail = ImGui::GetContentRegionAvail();
+
+	// Rough measure: title line + body (up to 3 lines) + cta button.
+	float titleH = title && *title
+		? ImGui::GetTextLineHeight() * 1.4f : 0.0f;
+	float bodyH  = body && *body
+		? ImGui::GetTextLineHeight() * 3.0f : 0.0f;
+	float ctaH   = ctaLabel && *ctaLabel
+		? ATTouch::kButtonHeightNormal : 0.0f;
+	float pad    = ATTouchDp(12.0f);
+	float contentH = titleH + bodyH + (ctaH > 0 ? ctaH + pad : 0.0f);
+
+	float spacer = (avail.y - contentH) * 0.5f;
+	if (spacer < ATTouchDp(12.0f)) spacer = ATTouchDp(12.0f);
+	ImGui::Dummy(ImVec2(0, spacer));
+
+	if (title && *title) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.textTitle));
+		float tw = ImGui::CalcTextSize(title).x;
+		float ox = (avail.x - tw) * 0.5f;
+		if (ox > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ox);
+		ImGui::TextUnformatted(title);
+		ImGui::PopStyleColor();
+	}
+	if (body && *body) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.textMuted));
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextWrapped("%s", body);
+		ImGui::PopTextWrapPos();
+		ImGui::PopStyleColor();
+	}
+	if (ctaLabel && *ctaLabel && onCta) {
+		ImGui::Dummy(ImVec2(0, pad));
+		float bw = ATTouchDp(220.0f);
+		float ox = (avail.x - bw) * 0.5f;
+		if (ox > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ox);
+		if (ATTouchButton(ctaLabel,
+				ImVec2(bw, ATTouchDp(ATTouch::kButtonHeightNormal)),
+				ATTouchButtonStyle::Accent)) {
+			onCta(userData);
+		}
+	}
 }

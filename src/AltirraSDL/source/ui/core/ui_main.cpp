@@ -12,6 +12,7 @@
 #include <imgui_impl_opengl3.h>
 #include "display_backend.h"
 #include "display_backend_gl33.h"
+#include "../../input/touch_widgets.h"
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -1581,6 +1582,13 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// Disabled in Gaming Mode where touch events drive on-screen controls.
 	if (!ATUIIsGamingMode())
 		ATUIRenderMainDisplayTextSelection();
+
+	// Frame-level toast render.  Must fire after every UI path has
+	// submitted its windows so toasts paint on the foreground draw
+	// list above the overlay, the emulator canvas, and any modal —
+	// and, critically, remain visible after the Online Play overlay
+	// closes (e.g. "session ended — your previous game was restored").
+	ATTouchRenderToasts();
 
 	ImGui::Render();
 	if (s_usingGLBackend) {

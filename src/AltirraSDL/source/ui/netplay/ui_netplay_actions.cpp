@@ -579,6 +579,10 @@ void DisableHostedGame(const std::string& gameId) {
 	o->enabled = false;
 	StopCoordForHostedGame(*o);
 	o->state = HostedGameState::Off;
+	// Clear liveness fields so the list no longer claims "up Xm" for a
+	// disabled row.  Re-armed on the next heartbeat when re-enabled.
+	o->currentPlayers  = 0;
+	o->hostStartedAtMs = 0;
 	SaveToRegistry();
 }
 
@@ -891,6 +895,15 @@ void ReconcileHostedGames(uint64_t nowMs) {
 				const int playerCount = (p == P::Lockstepping) ? 2 : 1;
 				const char *state = thisInSession
 					? ATLobby::kStatePlaying : ATLobby::kStateWaiting;
+				// Mirror into the HostedGame so the UI can render a
+				// live "N/M players · up 5m" subtitle without reaching
+				// into the lobby worker.  maxPlayers mirrors the
+				// CreateRequest default of 2 (same constant used at
+				// BuildCreateRequest).
+				o.currentPlayers = (uint32_t)playerCount;
+				o.maxPlayers     = 2;
+				if (o.hostStartedAtMs == 0)
+					o.hostStartedAtMs = nowMs;
 				for (const auto& reg : o.lobbyRegistrations) {
 					if (reg.sessionId.empty() || reg.token.empty())
 						continue;

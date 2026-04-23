@@ -762,7 +762,8 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 						snprintf(msg, sizeof(msg),
 							"Mounted into D%d:\n\n%s",
 							drive + 1, u8.c_str());
-						ShowInfoModal("Disk Mounted", msg);
+						ATTouchPushFeedback("Disk Mounted", msg,
+							ATTouchToastSeverity::Success);
 					} catch (const MyError &e) {
 						ShowInfoModal("Mount Failed", e.c_str());
 					}

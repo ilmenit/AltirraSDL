@@ -72,6 +72,27 @@ bool BeginSheet(const char *title, bool *open,
                 const ImVec2 &maxSize);
 void EndSheet();
 
+// Opens the scrollable body region of a sheet.  Renders as an ImGui
+// child window with NavFlattened + ATTouchDragScroll armed — so
+// touch swipe-to-scroll, gamepad nav, and mouse-wheel all behave
+// identically to the Gaming-Mode Settings screen.
+//
+// Pass `reserveBottomDp > 0` to pin a footer row of that logical-
+// pixel height at the bottom of the sheet.  The body child consumes
+// the remaining vertical space; action-bar buttons (Cancel / Accept)
+// rendered *after* EndScreenBody() therefore stay visible even when
+// the body overflows.  Pass 0 (default) when no footer is needed.
+//
+// The ScreenHeader() row — rendered before BeginScreenBody() — is
+// painted directly on the sheet window, outside the child, so it
+// also stays pinned to the top.  Together the three parts give every
+// Online Play screen the fixed-top / scrolling-middle / fixed-bottom
+// layout users expect from a mobile app.
+//
+// Must be paired with EndScreenBody() exactly once.
+void BeginScreenBody(float reserveBottomDp = 0.0f);
+void EndScreenBody();
+
 // Full-bleed grid container — sized to the available client area
 // minus safe-area insets on Gaming Mode, sized to the parent's
 // content region on Desktop.  Returns the tile size that ComputeTile
@@ -197,6 +218,16 @@ void StatusBadge(const char *label, int severity, bool showSpinner);
 // Renders the peer handle + region + padlock tag inline — used by
 // SessionTile internally, and by the Waiting panel to echo the peer.
 void PeerChip(const char *handle, const char *region, bool isPrivate);
+
+// Render two spec token lists side-by-side for the Join Confirm screen.
+// Tokens present in both lists (same text, case-insensitive) paint in
+// the muted body colour; tokens that differ (including locally missing
+// firmware / hardware mismatches) paint in the palette warning colour
+// so the joiner sees at a glance which knobs the host's config
+// overrides.  `localLabel` / `remoteLabel` label the two columns
+// (e.g. "Your emulator" / "Host's session").
+void SpecLineRenderDiff(const SpecLine& local, const SpecLine& remote,
+	const char *localLabel, const char *remoteLabel);
 
 // -----------------------------------------------------------------------
 // Keyboard / gamepad navigation helpers.

@@ -4,6 +4,7 @@
 
 #include "ui_netplay_state.h"
 #include "ui_netplay_actions.h"   // JoinCompat enumerator values
+#include "ui_netplay_widgets.h"   // FocusOnceNextFrame / ConsumeFocusRequest
 
 #include "simulator.h"
 #include "firmwaremanager.h"
@@ -701,6 +702,15 @@ void Shutdown() {
 	g_initialized = false;
 }
 
+// Per-screen focus tag constants used by FocusOnceNextFrame /
+// ConsumeFocusRequest — defined alongside Navigate so the set of
+// focus-on-open screens is visible at a glance.
+static constexpr int kFocusTagBrowser         = 4001;
+static constexpr int kFocusTagPrefs           = 4002;
+static constexpr int kFocusTagAddOffer        = 4003;
+static constexpr int kFocusTagMyHostedGames   = 4004;
+static constexpr int kFocusTagAcceptJoin      = 4005;
+
 void Navigate(Screen next) {
 	if (next == Screen::Closed) {
 		g_state.backStack.clear();
@@ -710,6 +720,19 @@ void Navigate(Screen next) {
 	if (g_state.screen != Screen::Closed)
 		g_state.backStack.push_back(g_state.screen);
 	g_state.screen = next;
+
+	// Steer keyboard/gamepad focus to the screen's primary control on
+	// the first frame it renders, so Tab/arrow keys / gamepad nav all
+	// land somewhere sensible without a mouse click.  The per-screen
+	// renderers consume these tags via ConsumeFocusRequest.
+	switch (next) {
+		case Screen::Browser:          FocusOnceNextFrame(kFocusTagBrowser);       break;
+		case Screen::Prefs:            FocusOnceNextFrame(kFocusTagPrefs);         break;
+		case Screen::AddGame:          FocusOnceNextFrame(kFocusTagAddOffer);      break;
+		case Screen::MyHostedGames:    FocusOnceNextFrame(kFocusTagMyHostedGames); break;
+		case Screen::AcceptJoinPrompt: FocusOnceNextFrame(kFocusTagAcceptJoin);    break;
+		default: break;
+	}
 }
 
 bool Back() {

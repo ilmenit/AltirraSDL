@@ -176,9 +176,10 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 				if (!err.empty())
 					ShowInfoModal("Save Game Art Failed", err.c_str());
 				else
-					ShowInfoModal("Game Art Saved",
+					ATTouchPushFeedback("Game Art Saved",
 						"The current screenshot is now the cover "
-						"art for this game.");
+						"art for this game.",
+						ATTouchToastSeverity::Success);
 			}
 			ImGui::Spacing();
 		}
@@ -225,8 +226,9 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 					try {
 						VDStringW path = QuickSaveStatePath();
 						g_sim.SaveState(path.c_str());
-						ShowInfoModal("Saved",
-							"Emulator state saved.");
+						ATTouchPushFeedback("Saved",
+							"Emulator state saved.",
+							ATTouchToastSeverity::Success);
 					} catch (const MyError &e) {
 						ShowInfoModal("Save Failed", e.c_str());
 					}
@@ -254,8 +256,9 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 							{
 								sim.Resume();
 								mobileState.gameLoaded = true;
-								ShowInfoModal("Loaded",
-									"Emulator state restored.");
+								ATTouchPushFeedback("Loaded",
+									"Emulator state restored.",
+									ATTouchToastSeverity::Success);
 							}
 						} catch (const MyError &e) {
 							ShowInfoModal("Load Failed", e.c_str());

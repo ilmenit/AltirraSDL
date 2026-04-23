@@ -225,3 +225,90 @@ bool ATTouchIsDraggingBeyondSlop();
 // causes the momentum path to silently no-op.  The timestamp path is
 // version-independent.
 void ATTouchNotifyFingerEvent();
+
+// -------------------------------------------------------------------------
+// Shared Gaming-Mode primitives (promoted from ui_netplay_widgets so they
+// are reachable from the hamburger/settings/library screens too).
+// -------------------------------------------------------------------------
+
+namespace ATTouch {
+constexpr float kButtonHeightLarge   = 56.0f; // hero / menu items
+constexpr float kButtonHeightNormal  = 48.0f; // primary footer actions
+constexpr float kButtonHeightSmall   = 40.0f; // inline / tertiary
+constexpr float kFooterReserveSingle = 72.0f;
+constexpr float kFooterReserveDouble = 144.0f;
+}
+
+// DPI-scaled pixel-per-dp helper.  Returns `dp` multiplied by the
+// current content scale (same logic used by the older ATNetplayUI::Dp).
+float ATTouchDp(float dp);
+
+// Safe-area insets control.  The mobile main-loop calls SetSafeAreaInsets
+// each frame with the platform-reported notch/gesture margins; Desktop
+// leaves zeros.  Origin/Size return the content rect inside the main
+// viewport minus those insets.
+void  ATTouchSetSafeAreaInsets(int top, int bottom, int left, int right);
+ImVec2 ATTouchSafeOrigin();
+ImVec2 ATTouchSafeSize();
+
+// On-screen keyboard (IME) height hint.  Android reports the soft-
+// keyboard height via SDL events; the touch UI uses this to shrink the
+// effective safe-area bottom so pinned footers stay visible and
+// ATTouchInputTextScrollAware can park focused inputs above the IME.
+// Desktop leaves this zero.
+void  ATTouchSetImeHeight(int px);
+int   ATTouchGetImeHeight();
+
+// Shared screen header: 48×52dp "<" back button + centred title.  No-op
+// on Desktop (ImGui window chrome handles the title).  Returns true on
+// the frame the user activates the back affordance (mouse, touch, Enter,
+// Gamepad A) — and intercepts Escape / Gamepad B as hardware back keys.
+bool ATTouchScreenHeader(const char *title);
+
+// Transient toast API.  See the older PushToast/RenderToasts/ClearToasts
+// contract: the ToastSeverity value maps to palette colours, toasts
+// stack with a per-entry fade and auto-dismiss, and RenderToasts should
+// be called once per frame *outside* any modal / overlay window so the
+// toast stays visible when the overlay is Closed.
+enum class ATTouchToastSeverity {
+	Info,     // neutral surface, textMuted on card
+	Success,  // green pill
+	Warning,  // amber pill
+	Danger,   // red pill
+};
+
+void ATTouchPushToast(const char *text,
+	ATTouchToastSeverity severity = ATTouchToastSeverity::Info,
+	uint64_t durationMs = 4000);
+void ATTouchRenderToasts();
+void ATTouchClearToasts();
+
+// Unified feedback API — routes either to a transient toast
+// (blocking=false) or the ShowInfoModal dialog (blocking=true).  Intended
+// replacement for the scattered ShowInfoModal success-path calls in the
+// mobile shell; errors / confirmations that require acknowledgement stay
+// on ShowInfoModal directly.
+void ATTouchPushFeedback(const char *title, const char *body,
+	ATTouchToastSeverity severity = ATTouchToastSeverity::Info,
+	bool blocking = false, uint64_t durationMs = 4000);
+
+// InputText wrapper that, on the frame the widget first becomes active,
+// scrolls the focused input into view (roughly the upper third of the
+// scrollable host) so the on-screen keyboard does not cover it.  Drop-in
+// replacement for ImGui::InputText for Gaming-Mode single-line inputs.
+bool ATTouchInputTextScrollAware(const char *label, char *buf, size_t bufSize,
+	ImGuiInputTextFlags flags = 0);
+
+// Same as ATTouchInputTextScrollAware but renders a placeholder hint when
+// the buffer is empty — drop-in replacement for ImGui::InputTextWithHint.
+bool ATTouchInputTextWithHintScrollAware(const char *label, const char *hint,
+	char *buf, size_t bufSize, ImGuiInputTextFlags flags = 0);
+
+// Render a vertically-centred empty state inside the current child
+// window: large muted title, wrapped body text, and an optional CTA
+// button (ATTouchButton Accent) that calls `onCta` when pressed.  The
+// container's current content region drives the vertical centering so
+// this can slot into BeginScreenBody() directly.
+void ATTouchEmptyState(const char *title, const char *body,
+	const char *ctaLabel, void (*onCta)(void *userData),
+	void *userData = nullptr);

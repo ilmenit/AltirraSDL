@@ -611,7 +611,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			try {
 				VDStringW path = QuickSaveStatePath();
 				sim.SaveState(path.c_str());
-				ShowInfoModal("Saved", "Emulator state saved.");
+				ATTouchPushFeedback("Saved", "Emulator state saved.",
+					ATTouchToastSeverity::Success);
 			} catch (const MyError &e) {
 				ShowInfoModal("Save Failed", e.c_str());
 			}
@@ -627,7 +628,9 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					if (sim.Load(path.c_str(), kATMediaWriteMode_RO, &ctx)) {
 						sim.Resume();
 						mobileState.gameLoaded = true;
-						ShowInfoModal("Loaded", "Emulator state restored.");
+						ATTouchPushFeedback("Loaded",
+							"Emulator state restored.",
+							ATTouchToastSeverity::Success);
 					}
 				} catch (const MyError &e) {
 					ShowInfoModal("Load Failed", e.c_str());
@@ -1208,9 +1211,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 							ShowInfoModal("Save Game Art Failed",
 								err.c_str());
 						else
-							ShowInfoModal("Game Art Saved",
+							ATTouchPushFeedback("Game Art Saved",
 								"The current screenshot is now the "
-								"cover art for this game.");
+								"cover art for this game.",
+								ATTouchToastSeverity::Success);
 					}
 					if (!canSet)
 						ImGui::EndDisabled();

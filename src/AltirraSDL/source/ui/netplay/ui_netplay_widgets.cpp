@@ -86,26 +86,21 @@ int    g_gridItemIdx    = 0;
 // Scale / safe-area
 // ---------------------------------------------------------------------
 
-float Dp(float d) { return d * CurrentScale(); }
+float Dp(float d) { return ATTouchDp(d); }
 
-ImVec2 GetSafeOrigin() {
-	const ImGuiViewport *vp = ImGui::GetMainViewport();
-	return ImVec2(vp->WorkPos.x + (float)g_insetLeft,
-	              vp->WorkPos.y + (float)g_insetTop);
-}
+ImVec2 GetSafeOrigin() { return ATTouchSafeOrigin(); }
 
-ImVec2 GetSafeSize() {
-	const ImGuiViewport *vp = ImGui::GetMainViewport();
-	return ImVec2(vp->WorkSize.x - (float)(g_insetLeft + g_insetRight),
-	              vp->WorkSize.y - (float)(g_insetTop  + g_insetBottom));
-}
+ImVec2 GetSafeSize()   { return ATTouchSafeSize(); }
 
-// Exported so the mobile render path can update each frame.
+// Exported so the mobile render path can update each frame.  Forwards
+// to the shared touch-widget state so the hamburger / settings layer
+// consults the same insets.
 void ATNetplayUI_SetSafeAreaInsets(int top, int bottom, int left, int right) {
 	g_insetTop    = top;
 	g_insetBottom = bottom;
 	g_insetLeft   = left;
 	g_insetRight  = right;
+	ATTouchSetSafeAreaInsets(top, bottom, left, right);
 }
 
 // ---------------------------------------------------------------------
@@ -187,6 +182,26 @@ void EndSheet() {
 	if (g_sheetKind == SheetKind::None) return;
 	ImGui::End();
 	g_sheetKind = SheetKind::None;
+}
+
+// ---------------------------------------------------------------------
+// BeginScreenBody / EndScreenBody — shared "scrollable middle" helper.
+// Mirrors the Gaming-Mode Settings layout (mobile_settings.cpp): a
+// NavFlattened ImGui child window whose cursor integrates with touch
+// drag-scroll, leaving ScreenHeader() above and any action-bar buttons
+// below pinned outside the scroll area.
+// ---------------------------------------------------------------------
+void BeginScreenBody(float reserveBottomDp) {
+	const float reservePx = reserveBottomDp > 0.0f ? Dp(reserveBottomDp)
+	                                               : 0.0f;
+	ImGui::BeginChild("##netplayBody", ImVec2(0.0f, -reservePx),
+		ImGuiChildFlags_NavFlattened, 0);
+	ATTouchDragScroll();
+}
+
+void EndScreenBody() {
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
 }
 
 // ---------------------------------------------------------------------
@@ -289,7 +304,14 @@ bool SessionTile(const TileInfo &info, const ImVec2 &size) {
 	if (info.specMissing) {
 		border = p.danger;
 		borderThickness = Dp(2.0f);
-	} else if (info.isSelected || focused) {
+	} else if (focused) {
+		// Use the shared rowFocus token so the gamepad/keyboard focus
+		// ring on SessionTile matches the one Game Library and Settings
+		// use for row selection — single visual language across the
+		// whole Gaming-Mode surface.
+		border = p.rowFocus;
+		borderThickness = Dp(2.0f);
+	} else if (info.isSelected) {
 		border = p.accent;
 		borderThickness = Dp(2.0f);
 	} else {
@@ -465,137 +487,38 @@ void StatusBadge(const char *label, int severity, bool showSpinner) {
 // ---------------------------------------------------------------------
 
 // ---------------------------------------------------------------------
-// Toast queue — in-memory FIFO of transient banners drawn at the top
-// of the screen.  Lives at TU scope so the render function can consume
-// whatever the rest of the module pushed since the last frame.
+// Toast queue — implementation lives in input/touch_widgets.cpp so the
+// hamburger / settings / library screens can consume the same API.  The
+// ATNetplayUI::PushToast / ClearToasts / RenderToasts surface below is
+// preserved as a thin forwarder so the ~40 existing call sites compile
+// unchanged.
 // ---------------------------------------------------------------------
 namespace {
-struct Toast {
-	std::string   text;
-	ToastSeverity severity;
-	uint64_t      startMs;
-	uint64_t      durationMs;
-};
-std::vector<Toast> g_toasts;
-constexpr size_t kMaxToasts = 4;
-}  // namespace
+// Map the netplay ToastSeverity to the shared ATTouchToastSeverity
+// without leaking the mapping into multiple headers.
+ATTouchToastSeverity ToTouchSeverity(ToastSeverity s) {
+	switch (s) {
+		case ToastSeverity::Success: return ATTouchToastSeverity::Success;
+		case ToastSeverity::Warning: return ATTouchToastSeverity::Warning;
+		case ToastSeverity::Danger:  return ATTouchToastSeverity::Danger;
+		case ToastSeverity::Info:
+		default:                     return ATTouchToastSeverity::Info;
+	}
+}
+} // namespace
 
 void PushToast(const char *text, ToastSeverity severity,
                uint64_t durationMs) {
-	if (!text || !*text) return;
-	// De-dup: if the last toast in the queue is the same text with the
-	// same severity, reset its timer instead of stacking a duplicate.
-	// Prevents notification spam when a tick fires the same event
-	// repeatedly (e.g. session-end restore triggering twice on an edge).
-	if (!g_toasts.empty()) {
-		Toast& tail = g_toasts.back();
-		if (tail.severity == severity && tail.text == text) {
-			tail.startMs    = (uint64_t)SDL_GetTicks();
-			tail.durationMs = durationMs;
-			return;
-		}
-	}
-	if (g_toasts.size() >= kMaxToasts) {
-		// Drop the oldest rather than refuse — latest events are
-		// usually the most relevant.
-		g_toasts.erase(g_toasts.begin());
-	}
-	Toast t;
-	t.text       = text;
-	t.severity   = severity;
-	t.startMs    = (uint64_t)SDL_GetTicks();
-	t.durationMs = durationMs;
-	g_toasts.push_back(std::move(t));
+	ATTouchPushToast(text, ToTouchSeverity(severity), durationMs);
 }
 
-void ClearToasts() { g_toasts.clear(); }
+void ClearToasts() { ATTouchClearToasts(); }
 
-void RenderToasts() {
-	if (g_toasts.empty()) return;
+void RenderToasts() { ATTouchRenderToasts(); }
 
-	const uint64_t nowMs = (uint64_t)SDL_GetTicks();
-	// Sweep expired entries before rendering.  Also drop entries the
-	// user clicked through (handled below).
-	for (auto it = g_toasts.begin(); it != g_toasts.end(); ) {
-		if (nowMs >= it->startMs + it->durationMs)
-			it = g_toasts.erase(it);
-		else
-			++it;
-	}
-	if (g_toasts.empty()) return;
-
-	const ATMobilePalette &p = ATMobileGetPalette();
-	const ImVec2 safeO = GetSafeOrigin();
-	const ImVec2 safeS = GetSafeSize();
-
-	// Position: top-centre of the safe area, 12dp inset from the top.
-	const float maxW  = std::min(safeS.x - Dp(24), Dp(520));
-	const float gap   = Dp(8);
-	float y = safeO.y + Dp(12);
-
-	ImDrawList *dl = ImGui::GetForegroundDrawList();
-
-	for (size_t i = 0; i < g_toasts.size(); ++i) {
-		const Toast& t = g_toasts[i];
-
-		uint32_t bg, fg;
-		switch (t.severity) {
-			case ToastSeverity::Success: bg = p.success; fg = p.textOnAccent; break;
-			case ToastSeverity::Warning: bg = p.warning; fg = p.textOnAccent; break;
-			case ToastSeverity::Danger:  bg = p.danger;  fg = p.textOnAccent; break;
-			case ToastSeverity::Info:
-			default:                     bg = p.cardBg;  fg = p.text;          break;
-		}
-
-		// Measure + compute fade alpha (fade-in over first 180ms,
-		// fade-out over the last 350ms).
-		const float padX = Dp(16), padY = Dp(10);
-		ImVec2 ts = ImGui::CalcTextSize(t.text.c_str(),
-			nullptr, false, maxW - padX * 2);
-		float lineH = ts.y + padY * 2;
-		float x = safeO.x + (safeS.x - maxW) * 0.5f;
-		ImVec2 rmin(x, y);
-		ImVec2 rmax(x + maxW, y + lineH);
-
-		uint64_t elapsed  = nowMs - t.startMs;
-		uint64_t remain   = t.durationMs > elapsed ? t.durationMs - elapsed : 0;
-		float alphaIn  = std::min(1.0f, elapsed / 180.0f);
-		float alphaOut = std::min(1.0f, remain  / 350.0f);
-		float alpha    = std::min(alphaIn, alphaOut);
-
-		auto applyAlpha = [alpha](uint32_t col) -> uint32_t {
-			unsigned a = (unsigned)std::round((col >> 24 & 0xFF) * alpha);
-			return (col & 0x00FFFFFFu) | (a << 24);
-		};
-
-		dl->AddRectFilled(rmin, rmax, applyAlpha(bg), Dp(10));
-		// Subtle outline for info toasts (which use the card bg and
-		// could otherwise disappear on a dark theme).
-		if (t.severity == ToastSeverity::Info) {
-			dl->AddRect(rmin, rmax,
-				applyAlpha(p.cardBorder), Dp(10), 0, 1.0f);
-		}
-		// Wrap text at the pill's inner width.  AddText with
-		// wrap_width honours \n too, so multi-line strings work.
-		dl->PushClipRect(
-			ImVec2(rmin.x + padX, rmin.y),
-			ImVec2(rmax.x - padX, rmax.y), true);
-		dl->AddText(nullptr, 0.0f,
-			ImVec2(rmin.x + padX, rmin.y + padY),
-			applyAlpha(fg), t.text.c_str(), nullptr,
-			maxW - padX * 2);
-		dl->PopClipRect();
-
-		y += lineH + gap;
-	}
-
-	// No click-to-dismiss: toasts live on the foreground draw list,
-	// not an ImGui window, so they don't own input.  A click handler
-	// here would eat clicks meant for widgets underneath (Prefs
-	// toggles, list rows, etc.).  Auto-dismiss by the per-toast
-	// duration is enough — severities with shorter action windows
-	// (Success) use 3 s, longer context (Danger/Desync) uses 6 s.
-}
+// Toast implementation now lives in touch_widgets.cpp; the PushToast /
+// ClearToasts / RenderToasts functions above are thin forwarders that
+// translate the netplay ToastSeverity enum.
 
 // ---------------------------------------------------------------------
 // ScreenHeader — shared back-arrow + title bar used by every Gaming
@@ -604,46 +527,7 @@ void RenderToasts() {
 // ---------------------------------------------------------------------
 bool ScreenHeader(const char *title) {
 	if (!ATUIIsGamingMode()) return false;
-
-	const ATMobilePalette &p = ATMobileGetPalette();
-	const float headerH = Dp(52.0f);
-	bool backPressed = false;
-
-	// "<" back button — Subtle style (no card background) so it reads
-	// as a header affordance, not a primary action.
-	ImGui::PushID("##onlinePlayHeader");
-	if (ATTouchButton("<", ImVec2(Dp(48.0f), headerH),
-	                  ATTouchButtonStyle::Subtle)) {
-		backPressed = true;
-	}
-	ImGui::SameLine(0, Dp(8));
-
-	// Vertically centre the title inside the header row.
-	float cursorY = ImGui::GetCursorPosY();
-	float offY = (headerH - ImGui::GetTextLineHeight()) * 0.5f;
-	ImGui::SetCursorPosY(cursorY + offY);
-	ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textTitle));
-	ImGui::TextUnformatted(title ? title : "");
-	ImGui::PopStyleColor();
-	ImGui::SetCursorPosY(cursorY + headerH);
-	ImGui::PopID();
-
-	// Hardware back (Escape / Gamepad B) — consistent with Settings.
-	// Skip when an InputText / other text widget is actively
-	// capturing text; Escape there means "cancel edit", not "leave
-	// the screen".  WantTextInput is set by ImGui whenever a text
-	// field is focused this frame.
-	const ImGuiIO &io = ImGui::GetIO();
-	const bool escKey = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-	const bool padB   = ImGui::IsKeyPressed(
-		ImGuiKey_GamepadFaceRight, false);
-	if (!backPressed && !io.WantTextInput && (escKey || padB)) {
-		backPressed = true;
-	}
-
-	ImGui::Separator();
-	ImGui::Spacing();
-	return backPressed;
+	return ATTouchScreenHeader(title);
 }
 
 // ---------------------------------------------------------------------
@@ -732,12 +616,32 @@ void LobbyStatusBanner(bool allowRetry) {
 		}
 
 		ImGui::BeginDisabled(onCooldown);
-		if (ATTouchButton(label, ImVec2(Dp(160), Dp(40)),
+		ImVec2 btnMin = ImGui::GetCursorScreenPos();
+		const float btnW = Dp(160);
+		const float btnH = Dp(ATTouch::kButtonHeightSmall);
+		if (ATTouchButton(label,
+		                  ImVec2(btnW, btnH),
 		                  ATTouchButtonStyle::Neutral)) {
 			State& st = GetState();
 			st.browser.refreshRequested = true;
 			st.browser.nextRetryMs = 0;
 			s_lastRetryMs = nowMs;
+		}
+		// Thin progress line under the button label showing how much of
+		// the cooldown has elapsed — gives the user a visual sense of
+		// how long before the button re-arms without having to read the
+		// seconds-remaining text.
+		if (onCooldown) {
+			const float frac =
+				(float)elapsed / (float)kCooldownMs;
+			const float lineH = Dp(2.0f);
+			const ATMobilePalette &p = ATMobileGetPalette();
+			ImDrawList *dl = ImGui::GetWindowDrawList();
+			ImVec2 pMin(btnMin.x + Dp(6),  btnMin.y + btnH - lineH - Dp(6));
+			ImVec2 pMax(btnMin.x + btnW - Dp(6), pMin.y + lineH);
+			dl->AddRectFilled(pMin, pMax, p.segBorder, Dp(1.0f));
+			ImVec2 fMax(pMin.x + (pMax.x - pMin.x) * frac, pMax.y);
+			dl->AddRectFilled(pMin, fMax, p.accent, Dp(1.0f));
 		}
 		ImGui::EndDisabled();
 	}
@@ -836,6 +740,66 @@ void PeerChip(const char *handle, const char *region, bool isPrivate) {
 		ImGui::TextUnformatted("[private]");
 		ImGui::PopStyleColor();
 	}
+}
+
+// ---------------------------------------------------------------------
+// SpecLineRenderDiff — Join Confirm side-by-side spec viewer.
+// Tokens present in both lists (text match, case-insensitive) paint in
+// the muted body colour; tokens that differ paint in the palette's
+// warning colour (same path used to flag missing firmware on the
+// Browser tile) so the joiner sees which knobs will change when they
+// accept the host's config.
+// ---------------------------------------------------------------------
+void SpecLineRenderDiff(const SpecLine& local, const SpecLine& remote,
+                        const char *localLabel, const char *remoteLabel) {
+	const ATMobilePalette &p = ATMobileGetPalette();
+	auto lower = [](const std::string& s) -> std::string {
+		std::string r; r.reserve(s.size());
+		for (char c : s) r.push_back((c >= 'A' && c <= 'Z')
+			? (char)(c + 32) : c);
+		return r;
+	};
+	auto tokenMatches = [&](size_t i, const SpecLine& a, const SpecLine& b) {
+		if (i >= a.tokens.size()) return false;
+		if (i >= b.tokens.size()) return false;
+		return lower(a.tokens[i].text) == lower(b.tokens[i].text);
+	};
+
+	auto renderCol = [&](const char *label, const SpecLine& mine,
+	                     const SpecLine& other)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textSection));
+		ImGui::TextUnformatted(label);
+		ImGui::PopStyleColor();
+		for (size_t i = 0; i < mine.tokens.size(); ++i) {
+			const SpecLineToken& tk = mine.tokens[i];
+			const bool mismatch = tk.missing
+				|| !tokenMatches(i, mine, other);
+			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(
+				mismatch ? p.warning : p.textMuted));
+			ImGui::TextUnformatted(tk.text.c_str());
+			ImGui::PopStyleColor();
+		}
+	};
+
+	const float colW = (ImGui::GetContentRegionAvail().x - Dp(12.0f)) * 0.5f;
+	ImGui::BeginGroup();
+	{
+		ImGui::BeginChild("##specDiffLocal",
+			ImVec2(colW, 0), ImGuiChildFlags_AutoResizeY);
+		renderCol(localLabel ? localLabel : "Local", local, remote);
+		ImGui::EndChild();
+	}
+	ImGui::EndGroup();
+	ImGui::SameLine(0, Dp(12.0f));
+	ImGui::BeginGroup();
+	{
+		ImGui::BeginChild("##specDiffRemote",
+			ImVec2(colW, 0), ImGuiChildFlags_AutoResizeY);
+		renderCol(remoteLabel ? remoteLabel : "Remote", remote, local);
+		ImGui::EndChild();
+	}
+	ImGui::EndGroup();
 }
 
 // -------------------------------------------------------------------
@@ -1008,7 +972,8 @@ bool TouchOptionPicker(const char *title,
 		ImGui::EndChild();
 
 		ImGui::Spacing();
-		if (ATTouchButton("Cancel", ImVec2(-FLT_MIN, Dp(48)),
+		if (ATTouchButton("Cancel",
+			ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
 			ATTouchButtonStyle::Subtle))
 		{
 			ImGui::CloseCurrentPopup();
@@ -1162,13 +1127,13 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 
 		ImGui::Spacing();
 		if (ATTouchButton("Copy from current emulator",
-			ImVec2(-FLT_MIN, Dp(48)),
+			ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
 			ATTouchButtonStyle::Neutral))
 		{
 			cfg = CaptureCurrentMachineConfig();
 		}
 		if (ATTouchButton("Refresh firmware list",
-			ImVec2(-FLT_MIN, Dp(44)),
+			ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightSmall)),
 			ATTouchButtonStyle::Subtle))
 		{
 			ReloadMachineConfigFirmwareChoices();

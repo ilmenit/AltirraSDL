@@ -17,6 +17,7 @@
 #include "ui/core/ui_main.h"
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_picker.h"
+#include "input/touch_widgets.h"
 
 #include <vd2/system/file.h>
 #include <vd2/system/VDString.h>
@@ -518,10 +519,12 @@ void RenderInSessionHUD() {
 					"Resynchronizing with peer…");
 			}
 
-			const ImGuiViewport* vp = ImGui::GetMainViewport();
+			const ImVec2 safeO = ATTouchSafeOrigin();
+			const ImVec2 safeS = ATTouchSafeSize();
 			const float w = 420.0f;
 			ImGui::SetNextWindowPos(
-				ImVec2(vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + 24.0f),
+				ImVec2(safeO.x + safeS.x * 0.5f,
+				       safeO.y + ATTouchDp(12.0f)),
 				ImGuiCond_Always, ImVec2(0.5f, 0.0f));
 			ImGui::SetNextWindowSize(ImVec2(w, 0), ImGuiCond_Always);
 			ImGui::PushStyleColor(ImGuiCol_WindowBg,
@@ -593,8 +596,13 @@ void RenderInSessionHUD() {
 	if (showStall) {
 		const char *kStallId = "Peer unresponsive##netplay_stall";
 		if (!ImGui::IsPopupOpen(kStallId)) ImGui::OpenPopup(kStallId);
+		// Centre within the platform safe area so notches / gesture
+		// pills don't clip the modal on mobile.
+		const ImVec2 stallO = ATTouchSafeOrigin();
+		const ImVec2 stallS = ATTouchSafeSize();
 		ImGui::SetNextWindowPos(
-			ImGui::GetMainViewport()->GetCenter(),
+			ImVec2(stallO.x + stallS.x * 0.5f,
+			       stallO.y + stallS.y * 0.5f),
 			ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 		ImGui::SetNextWindowSize(ImVec2(420, 0),
 			ImGuiCond_Appearing);
@@ -655,10 +663,10 @@ void RenderInSessionHUD() {
 		status == Status::Waiting ? StatusColorWarn() :
 		                            StatusColorGood();
 
-	const ImGuiViewport* vp = ImGui::GetMainViewport();
+	const ImVec2 hudO = ATTouchSafeOrigin();
+	const ImVec2 hudS = ATTouchSafeSize();
 	const float pad = 10.0f;
-	ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - pad,
-	           vp->WorkPos.y + pad);
+	ImVec2 pos(hudO.x + hudS.x - pad, hudO.y + pad);
 	ImGui::SetNextWindowPos(pos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
 
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration
@@ -893,16 +901,17 @@ void ATNetplayUI_RenderDesktop(ATSimulator &, ATUIState &, SDL_Window *) {
 	ATNetplayUI::DesktopDispatch();
 	ATNetplayUI::RenderInSessionHUD();
 	ATNetplayUI::RenderDesktopEmoteButton();
-	// Toasts paint on the foreground draw list so they float above
-	// every Online Play window without caller bookkeeping.
-	ATNetplayUI::RenderToasts();
+	// Note: toasts are now painted at the top-level frame loop via
+	// ATTouchRenderToasts() so they remain visible even when the
+	// Online Play overlay is Closed (e.g. "session ended — your
+	// previous game was restored").
 }
 
 bool ATNetplayUI_RenderMobile(ATSimulator &, ATUIState &,
                               ATMobileUIState &, SDL_Window *) {
 	bool r = ATNetplayUI::ATNetplayUI_DispatchScreen();
 	ATNetplayUI::RenderInSessionHUD();
-	ATNetplayUI::RenderToasts();
+	// See note above — toast rendering is hoisted to the frame loop.
 	return r;
 }
 
