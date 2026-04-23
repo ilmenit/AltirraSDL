@@ -912,6 +912,23 @@ void ReconcileHostedGames(uint64_t nowMs) {
 						if (L.section == reg.section) { ep = &L.endpoint; break; }
 					}
 					if (!ep) continue;
+
+					// v4 two-sided punch: keep the coordinator's
+					// relay context fresh so the auto-fallback can
+					// engage against THIS lobby if a later joiner
+					// attempt times out.  Idempotent — the coord
+					// just memcpy's the sessionId + resolves the
+					// lobby endpoint on each call.
+					{
+						char lobbyHostPort[128];
+						std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
+							"%s:%u", ep->host.c_str(),
+							(unsigned)ATLobby::kReflectorPortDefault);
+						ATNetplayGlue::HostSetRelayContext(
+							o.id.c_str(),
+							reg.sessionId.c_str(),
+							lobbyHostPort);
+					}
 					LobbyRequest req{};
 					req.op          = LobbyOp::Heartbeat;
 					req.endpoint    = *ep;
@@ -919,6 +936,10 @@ void ReconcileHostedGames(uint64_t nowMs) {
 					req.token       = reg.token;
 					req.playerCount = playerCount;
 					req.state       = state;
+					// Tag so the result handler can route peer-hints
+					// carried in the heartbeat response back to this
+					// HostedGame's coordinator (via HostIngestPeerHint).
+					req.tag         = OfferTag(o);
 					GetWorker().Post(std::move(req), reg.section);
 				}
 				o.lastHeartbeatMs = nowMs;
@@ -1101,6 +1122,51 @@ void StartJoiningAction() {
 		Navigate(Screen::Error);
 		return;
 	}
+
+	// v4 two-sided punch: arm the relay context and POST our own
+	// candidates to the lobby so the host can fire outbound NetPunch
+	// probes before our Hello spray arrives.  Routed by the session's
+	// sourceLobby so we hit the same lobby that surfaced the session.
+	if (!st.session.joinTarget.sessionId.empty()) {
+		auto lobbies = AllEnabledHttpLobbies();
+		const ATNetplay::LobbyEndpoint *ep = nullptr;
+		for (const auto& L : lobbies) {
+			if (L.section == st.session.joinTarget.sourceLobby) {
+				ep = &L.endpoint; break;
+			}
+		}
+		if (!ep && !lobbies.empty()) ep = &lobbies.front().endpoint;
+		if (ep) {
+			char lobbyHostPort[128];
+			std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
+				"%s:%u", ep->host.c_str(),
+				(unsigned)ATLobby::kReflectorPortDefault);
+			ATNetplayGlue::JoinerSetRelayContext(
+				st.session.joinTarget.sessionId.c_str(),
+				lobbyHostPort);
+
+			char cands[512] = "";
+			ATNetplayGlue::JoinerBuildLocalCandidates(cands, sizeof cands);
+			char nonceHex[33] = "";
+			ATNetplayGlue::JoinerGetSessionNonceHex(nonceHex);
+			if (cands[0]) {
+				LobbyRequest req{};
+				req.op        = LobbyOp::PeerHint;
+				req.endpoint  = *ep;
+				req.sessionId = st.session.joinTarget.sessionId;
+				req.token     = nonceHex;               // nonce hex
+				req.state     = ResolvedNickname();     // joiner handle
+				req.createReq.candidates.clear();
+				req.createReq.candidates.push_back(cands);
+				GetWorker().Post(std::move(req), ep->host);
+				g_ATLCNetplay("joiner: posting peer-hint to %s:%u "
+					"(nonce=%s cands=\"%s\")",
+					ep->host.c_str(), (unsigned)ep->port,
+					nonceHex, cands);
+			}
+		}
+	}
+
 	Navigate(Screen::Waiting);
 }
 

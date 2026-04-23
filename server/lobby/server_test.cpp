@@ -394,6 +394,143 @@ void TestRateLimit() {
 	T_EXPECT(got429 >= 4, "further requests rate-limited");
 }
 
+// v4 two-sided punch: POST peer-hint and expect it delivered to the
+// host in the next heartbeat response.  A second heartbeat without
+// another POST must return an empty hints array (single-delivery
+// semantics).
+void TestPeerHintPostAndDeliver() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	auto r = c.Post(kPathSession,
+		MakeCreateBody("g","h","1.2.3.4:1"), "application/json");
+	T_EXPECT_EQ_INT(r->status, 201, "create ok");
+	std::string id, tok; int ttl = 0;
+	ReadCreateRespJson(r->body, id, tok, ttl);
+
+	// Post the hint.
+	JsonBuilder hb;
+	hb.raw('{');
+	hb.key(Field::kJoinerHandle); hb.str("bob"); hb.raw(',');
+	hb.key(Field::kSessionNonce);
+	hb.str("0123456789abcdef0123456789abcdef"); hb.raw(',');
+	hb.key(Field::kCandidates);
+	hb.str("10.0.0.2:5000;203.0.113.5:5000");
+	hb.raw('}');
+	auto rh = c.Post((std::string(kPathSession) + "/" + id
+		+ kPathPeerHintSuffix).c_str(), hb.s, "application/json");
+	T_EXPECT(rh, "hint response");
+	T_EXPECT_EQ_INT(rh->status, 200, "hint accepted");
+
+	// First heartbeat must deliver the hint.
+	JsonBuilder bb;
+	bb.raw('{');
+	bb.key(Field::kToken);       bb.str(tok); bb.raw(',');
+	bb.key(Field::kPlayerCount); bb.num(1);
+	bb.raw('}');
+	auto r2 = c.Post((std::string(kPathSession) + "/" + id
+		+ kPathHeartbeatSuffix).c_str(), bb.s, "application/json");
+	T_EXPECT_EQ_INT(r2->status, 200, "hb ok");
+	T_EXPECT(r2->body.find("\"sessionNonce\":\"0123456789abcdef0123456789abcdef\"")
+		!= std::string::npos, "hint delivered in hb (nonce)");
+	T_EXPECT(r2->body.find("\"joinerHandle\":\"bob\"") != std::string::npos,
+		"hint delivered (handle)");
+	T_EXPECT(r2->body.find("203.0.113.5:5000") != std::string::npos,
+		"hint delivered (candidates)");
+
+	// Second heartbeat — no new hints posted — must return empty
+	// array (single-delivery).
+	auto r3 = c.Post((std::string(kPathSession) + "/" + id
+		+ kPathHeartbeatSuffix).c_str(), bb.s, "application/json");
+	T_EXPECT_EQ_INT(r3->status, 200, "hb2 ok");
+	T_EXPECT(r3->body.find("\"hints\":[]") != std::string::npos,
+		"no repeated hint on 2nd hb");
+}
+
+void TestPeerHintSizeLimits() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	auto r = c.Post(kPathSession,
+		MakeCreateBody("g","h","1.2.3.4:1"), "application/json");
+	std::string id, tok; int ttl = 0;
+	ReadCreateRespJson(r->body, id, tok, ttl);
+
+	// Oversize candidates.
+	std::string big(kPeerHintCandidatesMax + 1, 'x');
+	JsonBuilder hb;
+	hb.raw('{');
+	hb.key(Field::kCandidates); hb.str(big);
+	hb.raw('}');
+	auto rh = c.Post((std::string(kPathSession) + "/" + id
+		+ kPathPeerHintSuffix).c_str(), hb.s, "application/json");
+	T_EXPECT_EQ_INT(rh->status, 400, "oversize candidates rejected");
+
+	// Bad-length nonce.
+	JsonBuilder hb2;
+	hb2.raw('{');
+	hb2.key(Field::kCandidates); hb2.str("1.2.3.4:5"); hb2.raw(',');
+	hb2.key(Field::kSessionNonce); hb2.str("deadbeef");  // 8 chars, not 32
+	hb2.raw('}');
+	auto rh2 = c.Post((std::string(kPathSession) + "/" + id
+		+ kPathPeerHintSuffix).c_str(), hb2.s, "application/json");
+	T_EXPECT_EQ_INT(rh2->status, 400, "bad nonce length rejected");
+}
+
+void TestPeerHintUnknownSession() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	JsonBuilder hb;
+	hb.raw('{');
+	hb.key(Field::kCandidates); hb.str("1.2.3.4:5");
+	hb.raw('}');
+	auto rh = c.Post((std::string(kPathSession)
+		+ "/does-not-exist" + kPathPeerHintSuffix).c_str(),
+		hb.s, "application/json");
+	T_EXPECT_EQ_INT(rh->status, 404, "unknown session → 404");
+}
+
+// v4 relay table: registering two peers for the same session allows
+// LookupOther to find each side from the other; expiration works.
+void TestRelayTableRegisterAndLookup() {
+	++g_testsRun;
+	uint8_t sid[16] = { 1,2,3,4,5,6,7,8, 9,10,11,12,13,14,15,16 };
+	RelayTable rt;
+	sockaddr_in hostA{};  hostA.sin_family = AF_INET;
+	hostA.sin_port = htons(30000); hostA.sin_addr.s_addr = htonl(0x01020304u);
+	sockaddr_in joinB{};  joinB.sin_family = AF_INET;
+	joinB.sin_port = htons(40000); joinB.sin_addr.s_addr = htonl(0x05060708u);
+	int64_t now = 100000;
+	rt.Register(sid, kRelayRoleHost,   hostA, now);
+	rt.Register(sid, kRelayRoleJoiner, joinB, now);
+
+	sockaddr_in peer{};
+	T_EXPECT(rt.LookupOther(sid, kRelayRoleHost,   hostA, now, peer),
+		"host sees joiner");
+	T_EXPECT_EQ_INT(peer.sin_port, htons(40000), "peer port = joiner");
+	T_EXPECT(rt.LookupOther(sid, kRelayRoleJoiner, joinB, now, peer),
+		"joiner sees host");
+	T_EXPECT_EQ_INT(peer.sin_port, htons(30000), "peer port = host");
+
+	// Expire via Prune.
+	int pruned = rt.Prune(now + kRelayPeerIdleMs + 1);
+	T_EXPECT_EQ_INT(pruned, 1, "expired entry pruned");
+	T_EXPECT_EQ_INT((int)rt.Size(), 0, "relay table empty");
+}
+
+void TestRelayLookupOtherFailsWithOneSide() {
+	++g_testsRun;
+	uint8_t sid[16] = { 2,3,4,5,6,7,8,9, 10,11,12,13,14,15,16,17 };
+	RelayTable rt;
+	sockaddr_in hostA{};  hostA.sin_family = AF_INET;
+	hostA.sin_port = htons(30000); hostA.sin_addr.s_addr = htonl(0x01020304u);
+	rt.Register(sid, kRelayRoleHost, hostA, 500);
+	sockaddr_in peer{};
+	T_EXPECT(!rt.LookupOther(sid, kRelayRoleHost, hostA, 500, peer),
+		"no joiner yet → lookup fails");
+}
+
 void TestOriginBlockedOnPost() {
 	++g_testsRun;
 	Fixture f;
@@ -419,6 +556,11 @@ int RunAll() {
 	TestExpireSweeps();
 	TestRateLimit();
 	TestOriginBlockedOnPost();
+	TestPeerHintPostAndDeliver();
+	TestPeerHintSizeLimits();
+	TestPeerHintUnknownSession();
+	TestRelayTableRegisterAndLookup();
+	TestRelayLookupOtherFailsWithOneSide();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",
 		g_testsRun, g_testsFail);

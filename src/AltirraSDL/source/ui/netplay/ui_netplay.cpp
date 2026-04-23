@@ -209,14 +209,35 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 				return;
 			}
 			if (r.op == ATNetplayUI::LobbyOp::Heartbeat) {
-				// ReconcileHostedGames arms the next heartbeat on its
-				// own cadence; only log failures so we surface lobby
-				// outages without spamming every 30 s tick.
 				if (!r.ok) {
 					g_ATLCNetplay("lobby Heartbeat FAILED: status=%d raw=\"%s\"",
 						r.httpStatus,
 						r.error.empty() ? "(no detail)"
 						                : r.error.c_str());
+				}
+				// v4 two-sided punch: hand any buffered joiner hints
+				// to the host coordinator so it can fire outbound
+				// NetPunch probes and pre-open its NAT pinhole before
+				// the joiner's Hello spray arrives.  Routed by tag
+				// (set in ReconcileHostedGames's heartbeat Post) so
+				// multi-offer hosts don't cross-feed hints.
+				if (r.ok && !r.hints.empty()) {
+					ATNetplayUI::HostedGame* o =
+						ATNetplayUI::FindHostedGameByTag(r.tag);
+					if (o) {
+						for (const auto& h : r.hints) {
+							g_ATLCNetplay("lobby Heartbeat: peer-hint "
+								"\"%s\" nonce=%s cands=\"%s\" (age %dms)",
+								h.joinerHandle.c_str(),
+								h.nonceHex.c_str(),
+								h.candidates.c_str(),
+								h.ageMs);
+							ATNetplayGlue::HostIngestPeerHint(
+								o->id.c_str(),
+								h.nonceHex.c_str(),
+								h.candidates.c_str());
+						}
+					}
 				}
 				return;
 			}

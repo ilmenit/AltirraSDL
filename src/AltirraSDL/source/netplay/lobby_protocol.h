@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace ATLobby {
@@ -78,6 +79,11 @@ inline constexpr const char *kPathSession         = "/v1/session";
 // Dynamic ID suffix; the server pattern-matches on kPathSession + "/"
 // + <id> [+ "/heartbeat"] and the client does the same string build.
 inline constexpr const char *kPathHeartbeatSuffix = "/heartbeat";
+// v4 two-sided punch: joiner POSTs its own candidates here before
+// spraying Hello.  The lobby buffers them on the session and hands
+// them to the host on the next heartbeat so the host can fire
+// outbound UDP probes to the joiner, pre-opening its NAT pinhole.
+inline constexpr const char *kPathPeerHintSuffix  = "/peer-hint";
 
 // Header name carrying the session's delete token.
 inline constexpr const char *kHeaderSessionToken = "X-Session-Token";
@@ -135,9 +141,37 @@ namespace Field {
     // either side.
     inline constexpr const char *kCandidates      = "candidates";
 
+    // v4 two-sided punch: peer-hint request + heartbeat response.
+    // The joiner sends { joinerHandle, sessionNonce (32 hex chars),
+    // candidates "ip:port;ip:port;..." }; the lobby stores it on the
+    // session and hands it to the host on the next heartbeat as an
+    // array under "hints" (each element: { sessionNonce, joinerHandle,
+    // candidates, ageMs }).  Old clients ignore unknown fields.
+    inline constexpr const char *kJoinerHandle    = "joinerHandle";
+    inline constexpr const char *kSessionNonce    = "sessionNonce";
+    inline constexpr const char *kAgeMs           = "ageMs";
+    inline constexpr const char *kHints           = "hints";
+
     // Error response.
     inline constexpr const char *kError           = "error";
 }
+
+// v4 two-sided punch: server-side limits.
+inline constexpr int    kPeerHintCandidatesMax = 512;
+inline constexpr int    kPeerHintNonceHexLen   = 32;
+inline constexpr int    kPeerHintTtlMs         = 30 * 1000;
+inline constexpr size_t kPeerHintCap           = 8;
+
+// v4 UDP relay-fallback limits (server-side, applies on kReflectorPort).
+// After kRelayFallbackAfterMs of unsuccessful direct punch, each peer
+// sends a single 'ASGR' register packet to the reflector and switches
+// to wrapping its UDP traffic in 'ASDF' frames addressed to the server,
+// which forwards the inner bytes to the other side's observed
+// endpoint.  TTL is intentionally short so crashed peers don't keep
+// relay slots alive indefinitely.
+inline constexpr int kRelayFallbackAfterMs = 10000;
+inline constexpr int kRelayFailTimeoutMs   = 25000;
+inline constexpr int kRelayPeerIdleMs      = 30000;
 
 // Visibility values.
 inline constexpr const char *kVisibilityPublic  = "public";

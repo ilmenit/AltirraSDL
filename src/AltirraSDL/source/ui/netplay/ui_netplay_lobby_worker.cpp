@@ -232,8 +232,12 @@ void LobbyWorker::ThreadMain() {
 				break;
 			}
 			case LobbyOp::Heartbeat:
-				out.ok = client.Heartbeat(q.req.sessionId, q.req.token,
-					q.req.playerCount, q.req.state);
+				// v4: collect peer hints alongside the regular
+				// heartbeat result so the host can drive
+				// Coordinator::IngestPeerHint on the next UI tick.
+				out.ok = client.HeartbeatWithHints(
+					q.req.sessionId, q.req.token,
+					q.req.playerCount, q.req.state, out.hints);
 				break;
 			case LobbyOp::Delete:
 				out.ok = client.Delete(q.req.sessionId, q.req.token);
@@ -241,6 +245,18 @@ void LobbyWorker::ThreadMain() {
 			case LobbyOp::Stats:
 				out.ok = client.Stats(out.stats);
 				break;
+			case LobbyOp::PeerHint: {
+				// req.sessionId  = target host's lobby session id
+				// req.token      = joiner sessionNonce hex (32 chars)
+				// req.state      = joiner handle
+				// req.createReq.candidates[0] = candidates
+				std::string cands;
+				if (!q.req.createReq.candidates.empty())
+					cands = q.req.createReq.candidates.front();
+				out.ok = client.PostPeerHint(q.req.sessionId,
+					q.req.state, q.req.token, cands);
+				break;
+			}
 		}
 		if (!out.ok) out.error = client.LastError();
 		out.httpStatus = client.LastStatus();

@@ -241,4 +241,47 @@ void DisconnectActive();
 // Returns true iff the packet was handed to the socket.
 bool SendEmote(uint8_t iconId);
 
+// --- v4 NAT traversal ------------------------------------------------------
+
+// Configure the coordinator for a given host offer with its lobby
+// session id + lobby host:port so the auto-relay fallback can engage
+// if the direct punch doesn't land.  Safe to call on unknown gameId
+// (no-op).  `sessionIdHex` is the lobby sessionId (UUID string);
+// `lobbyHostPort` is typically "lobby.example.com:8081".
+void HostSetRelayContext(const char* gameId,
+                         const char* sessionIdHex,
+                         const char* lobbyHostPort);
+
+// Joiner version.  Must be called after StartJoin so the coordinator
+// already exists.  Same field semantics.
+void JoinerSetRelayContext(const char* sessionIdHex,
+                           const char* lobbyHostPort);
+
+// Write the joiner coordinator's per-attempt sessionNonce as 32 hex
+// chars + NUL into `out33`.  Returns false if no joiner exists (in
+// which case out33 is left untouched).  Used by the UI to POST the
+// nonce to the lobby so the host can match up the subsequent hello
+// spray with the hint.
+bool JoinerGetSessionNonceHex(char out33[33]);
+
+// The joiner's bound UDP port, or 0 if no joiner exists.  Used to
+// build the candidate string for the peer-hint POST.
+uint16_t JoinerBoundPort();
+
+// Enumerate the joiner's own LAN IPv4 addresses and format a
+// semicolon-separated "ip:port;ip:port;..." candidate string into
+// `out` of size `outSize`.  Appends loopback at the end so the host
+// can still punch on same-box tests.  Returns the number of chars
+// written (not counting NUL).  Writes "" and returns 0 when no
+// joiner exists or enumeration fails.
+size_t JoinerBuildLocalCandidates(char* out, size_t outSize);
+
+// Feed a peer-hint received via heartbeat to the host coordinator.
+// `nonceHex` is 32 hex chars (joiner's sessionNonce); `candidates`
+// is the semicolon-separated "ip:port;ip:port;..." list.  No-op if
+// gameId is unknown.
+void HostIngestPeerHint(const char* gameId,
+                        const char* nonceHex,
+                        const char* candidates);
+
 } // namespace ATNetplayGlue

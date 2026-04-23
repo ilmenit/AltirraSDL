@@ -125,9 +125,25 @@ bool IsEndpoint(const std::string& s) {
 	return port > 0 && port < 65536;
 }
 
+// Forward declaration: v4 relay-table pruning helper.  The real
+// class + accessor are defined below (after the Store / Sweeper
+// plumbing) but Sweeper::Run() needs to call Prune() periodically.
+int RelayPruneNow(int64_t nowMs);
+
 // -----------------------------------------------------------------
 // Session store
 // -----------------------------------------------------------------
+
+// v4 two-sided punch: one buffered joiner hint awaiting delivery to
+// the host on its next heartbeat.  The lobby stores up to kPeerHintCap
+// per session; entries older than kPeerHintTtlMs are pruned before
+// being served or on every heartbeat/list call.
+struct PendingHint {
+	std::string nonceHex;    // 32-char hex, joiner's sessionNonce
+	std::string handle;      // joiner handle (≤32 chars, informational)
+	std::string candidates;  // "ip:port;ip:port;..." (≤512 chars)
+	int64_t     arrivedMs = 0;
+};
 
 struct Session {
 	std::string id;
@@ -138,6 +154,8 @@ struct Session {
 	// should try (LAN, srflx/public, loopback).  Empty for old clients
 	// — they only publish hostEndpoint.  See lobby_protocol.h comment.
 	std::string candidates;
+	// v4 two-sided punch: hints posted by joiners awaiting pickup.
+	std::vector<PendingHint> pendingHints;
 	std::string region;
 	int         playerCount    = 1;
 	int         maxPlayers     = 2;
@@ -293,6 +311,53 @@ public:
 		if (it->second.token != token) return 401;
 		mItems.erase(it);
 		return 204;
+	}
+
+	// v4 two-sided punch: append a hint to a session.  Returns 404 if
+	// no such session, 400 if the hint list is full AND replacement
+	// would overflow (we drop the oldest instead, so this never returns
+	// 400 in practice — kept as an escape hatch).  On success, the hint
+	// is stored with arrivedMs = now.
+	int AppendHint(const std::string& id, PendingHint hint) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mItems.find(id);
+		if (it == mItems.end()) return 404;
+		hint.arrivedMs = NowMs();
+		auto& v = it->second.pendingHints;
+		// Dedupe by nonce: a joiner retransmitting its hint (e.g. its
+		// first POST was rate-limited) replaces the existing entry in
+		// place rather than stacking N copies of the same candidates.
+		for (auto& existing : v) {
+			if (!hint.nonceHex.empty() && existing.nonceHex == hint.nonceHex) {
+				existing = std::move(hint);
+				return 200;
+			}
+		}
+		if (v.size() >= kPeerHintCap) {
+			v.erase(v.begin());  // drop oldest
+		}
+		v.push_back(std::move(hint));
+		return 200;
+	}
+
+	// v4: drain all non-expired hints from a session (called under the
+	// Store lock on every heartbeat before replying).  `out` is cleared
+	// before appending.  Returns true iff the session exists.
+	bool DrainHints(const std::string& id, int64_t nowMs,
+	                std::vector<PendingHint>& out) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mItems.find(id);
+		if (it == mItems.end()) return false;
+		auto& v = it->second.pendingHints;
+		out.clear();
+		int64_t cutoff = nowMs - (int64_t)kPeerHintTtlMs;
+		for (auto& h : v) {
+			if (h.arrivedMs >= cutoff) out.push_back(h);
+		}
+		// Hints are single-delivery: clear after handing them to the
+		// host so the next heartbeat doesn't re-deliver stale rows.
+		v.clear();
+		return true;
 	}
 
 	bool Get(const std::string& id, Session& out) const {
@@ -473,6 +538,58 @@ bool ParseCreate(const std::string& body, CreateReq& r,
 		errOut = "invalid json";
 		return false;
 	}
+}
+
+// v4 peer-hint request body.
+struct PeerHintReq {
+	std::string joinerHandle;
+	std::string sessionNonce;   // 32 hex chars
+	std::string candidates;     // "ip:port;ip:port;..."
+};
+
+bool ParsePeerHint(const std::string& body, PeerHintReq& r,
+                   std::string& errOut) {
+	if (body.size() > (size_t)kMaxRequestBodyBytes) {
+		errOut = "invalid json: body too large";
+		return false;
+	}
+	JsonCursor c{body.data(), body.data() + body.size()};
+	if (!c.match('{')) { errOut = "invalid json"; return false; }
+	if (c.match('}')) return true;
+	for (;;) {
+		std::string key;
+		if (!c.parseString(key)) { errOut = "invalid json"; return false; }
+		if (!c.match(':'))       { errOut = "invalid json"; return false; }
+		if      (key == Field::kJoinerHandle) c.parseString(r.joinerHandle);
+		else if (key == Field::kSessionNonce) c.parseString(r.sessionNonce);
+		else if (key == Field::kCandidates)   c.parseString(r.candidates);
+		else { if (!c.parseNull() && !c.skipValue()) {
+			errOut = "invalid json"; return false;
+		} }
+		if (!c.ok) { errOut = "invalid json"; return false; }
+		if (c.match(',')) continue;
+		if (c.match('}')) return true;
+		errOut = "invalid json"; return false;
+	}
+}
+
+std::string ValidatePeerHint(const PeerHintReq& r) {
+	if (r.candidates.empty())
+		return "candidates: required";
+	if ((int)r.candidates.size() > kPeerHintCandidatesMax)
+		return "candidates: <=" +
+			std::to_string(kPeerHintCandidatesMax) + " chars";
+	if ((int)r.joinerHandle.size() > kHostHandleMax)
+		return "joinerHandle: <=" +
+			std::to_string(kHostHandleMax) + " chars";
+	if (!r.sessionNonce.empty()) {
+		if ((int)r.sessionNonce.size() != kPeerHintNonceHexLen)
+			return "sessionNonce: exactly 32 hex chars required";
+		for (char c : r.sessionNonce)
+			if (!IsHexChar(c))
+				return "sessionNonce: hex digits only";
+	}
+	return {};
 }
 
 bool ParseHeartbeat(const std::string& body, HeartbeatReq& r,
@@ -775,15 +892,68 @@ void Install(httplib::Server& srv, Store& store) {
 			int code = store.Heartbeat(id, hr.token, hr.playerCount,
 			                           hr.state);
 			if (code == 200) {
+				// v4: drain buffered peer-hints into the response so
+				// the host can pick them up without a separate
+				// polling endpoint.  Single-delivery — hints are
+				// cleared from the session by DrainHints().
+				std::vector<PendingHint> hints;
+				store.DrainHints(id, NowMs(), hints);
 				JsonBuilder b;
 				b.raw('{');
 				b.key(Field::kTTLSeconds);
 				b.num(store.Cfg().ttlSeconds);
+				b.raw(',');
+				b.key(Field::kHints);
+				b.raw('[');
+				int64_t nowMs = NowMs();
+				for (size_t i = 0; i < hints.size(); ++i) {
+					if (i) b.raw(',');
+					const auto& h = hints[i];
+					b.raw('{');
+					b.key(Field::kSessionNonce);
+					b.str(h.nonceHex);         b.raw(',');
+					b.key(Field::kJoinerHandle);
+					b.str(h.handle);           b.raw(',');
+					b.key(Field::kCandidates);
+					b.str(h.candidates);       b.raw(',');
+					b.key(Field::kAgeMs);
+					long long age = (long long)(nowMs - h.arrivedMs);
+					if (age < 0) age = 0;
+					b.num(age);
+					b.raw('}');
+				}
+				b.raw(']');
 				b.raw('}');
 				res.status = 200;
 				res.set_content(std::move(b.s), "application/json");
 			} else if (code == 404) WriteErr(res, 404, "no such session");
 			else                    WriteErr(res, 401, "bad token");
+			return true;
+		}
+		if (req.method == "POST" && suffix == kPathPeerHintSuffix) {
+			PeerHintReq ph;
+			std::string err;
+			if (!ParsePeerHint(req.body, ph, err)) {
+				WriteErr(res, 400, err); return true;
+			}
+			err = ValidatePeerHint(ph);
+			if (!err.empty()) { WriteErr(res, 400, err); return true; }
+			PendingHint h;
+			h.nonceHex   = ph.sessionNonce;
+			h.handle     = ph.joinerHandle;
+			h.candidates = ph.candidates;
+			int code = store.AppendHint(id, std::move(h));
+			if (code == 404) {
+				WriteErr(res, 404, "no such session");
+				return true;
+			}
+			JsonBuilder b;
+			b.raw('{');
+			b.key(Field::kTTLSeconds);
+			b.num(kPeerHintTtlMs / 1000);
+			b.raw('}');
+			res.status = 200;
+			res.set_content(std::move(b.s), "application/json");
 			return true;
 		}
 		if (req.method == "DELETE" && suffix.empty()) {
@@ -851,6 +1021,7 @@ private:
 			int64_t now = NowMs();
 			mStore.ExpireOnce(now);
 			mStore.Rate().Prune(now, kRateBucketKeepMillis);
+			RelayPruneNow(now);
 		}
 	}
 	Store&                   mStore;
@@ -883,6 +1054,135 @@ Config LoadConfig() {
 	if (const char *v = std::getenv("RATE_BURST"))
 		cfg.rateBurst = std::atoi(v);
 	return cfg;
+}
+
+// -----------------------------------------------------------------
+// v4 Relay table (for UDP relay fallback after direct punch fails).
+// -----------------------------------------------------------------
+//
+// Stateless-ish forwarder: keyed on the 16-byte session id (first
+// 16 bytes of the UUIDv4 returned by Create(), hex-decoded without
+// dashes).  Each entry holds the observed UDP endpoint of the host
+// and the joiner as they arrive via 'ASGR' register packets.  On
+// 'ASDF' receipt the server looks up the other side and forwards
+// the inner bytes to its last-observed endpoint.  Entries expire
+// after kRelayPeerIdleMs of silence from that side so a crashed peer
+// doesn't keep the slot alive forever.
+//
+// Kept in its own thread with its own mutex so the HTTP handler
+// mutex never contends with the hot relay path.  Access volume is
+// ~60 packets/s per active session.
+
+// Must match the client-side magics/roles in packets.h.  Duplicated
+// here so server.cpp stays independent of the SDL3 client tree:
+// 'A' 'S' 'D' 'R' — reflector (existing).
+// 'A' 'S' 'D' 'F' — relay data  (v4).
+// 'A' 'S' 'G' 'R' — relay register (v4).
+constexpr size_t  kWireRelayHeaderSize   = 4 + 16 + 1 + 3;  // 24
+constexpr size_t  kWireRelayRegisterSize = kWireRelayHeaderSize;
+constexpr uint8_t kRelayRoleHost   = 0;
+constexpr uint8_t kRelayRoleJoiner = 1;
+
+struct RelayEndpoint {
+	bool        known = false;
+	sockaddr_in addr{};
+	int64_t     lastSeenMs = 0;
+};
+
+struct RelayPair {
+	RelayEndpoint host;
+	RelayEndpoint joiner;
+};
+
+class RelayTable {
+public:
+	using Key = std::string;  // raw 16 bytes
+
+	static Key MakeKey(const uint8_t sid[16]) {
+		return std::string(reinterpret_cast<const char*>(sid), 16);
+	}
+
+	void Register(const uint8_t sid[16], uint8_t role,
+	              const sockaddr_in& from, int64_t nowMs) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto& pair = mByKey[MakeKey(sid)];
+		RelayEndpoint& slot = (role == kRelayRoleHost)
+			? pair.host : pair.joiner;
+		slot.known      = true;
+		slot.addr       = from;
+		slot.lastSeenMs = nowMs;
+	}
+
+	bool LookupOther(const uint8_t sid[16], uint8_t senderRole,
+	                 const sockaddr_in& from, int64_t nowMs,
+	                 sockaddr_in& outOther) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mByKey.find(MakeKey(sid));
+		if (it == mByKey.end()) return false;
+		auto& pair = it->second;
+		RelayEndpoint& me    = (senderRole == kRelayRoleHost)
+			? pair.host : pair.joiner;
+		RelayEndpoint& other = (senderRole == kRelayRoleHost)
+			? pair.joiner : pair.host;
+		me.known      = true;
+		me.addr       = from;
+		me.lastSeenMs = nowMs;
+		if (!other.known) return false;
+		if (nowMs - other.lastSeenMs > kRelayPeerIdleMs) return false;
+		outOther = other.addr;
+		return true;
+	}
+
+	bool IsRegisteredFromSource(const uint8_t sid[16], uint8_t role,
+	                            const sockaddr_in& from, int64_t nowMs) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mByKey.find(MakeKey(sid));
+		if (it == mByKey.end()) return false;
+		auto& pair = it->second;
+		const RelayEndpoint& slot = (role == kRelayRoleHost)
+			? pair.host : pair.joiner;
+		if (!slot.known) return false;
+		if (nowMs - slot.lastSeenMs > kRelayPeerIdleMs) return false;
+		return slot.addr.sin_addr.s_addr == from.sin_addr.s_addr
+		    && slot.addr.sin_port        == from.sin_port;
+	}
+
+	int Prune(int64_t nowMs) {
+		std::lock_guard<std::mutex> lk(mMu);
+		int n = 0;
+		for (auto it = mByKey.begin(); it != mByKey.end(); ) {
+			auto& p = it->second;
+			int64_t maxSeen = 0;
+			if (p.host.known   && p.host.lastSeenMs   > maxSeen)
+				maxSeen = p.host.lastSeenMs;
+			if (p.joiner.known && p.joiner.lastSeenMs > maxSeen)
+				maxSeen = p.joiner.lastSeenMs;
+			if (maxSeen == 0 ||
+			    nowMs - maxSeen > kRelayPeerIdleMs) {
+				it = mByKey.erase(it);
+				++n;
+			} else ++it;
+		}
+		return n;
+	}
+
+	size_t Size() const {
+		std::lock_guard<std::mutex> lk(mMu);
+		return mByKey.size();
+	}
+
+private:
+	mutable std::mutex                 mMu;
+	std::unordered_map<Key, RelayPair> mByKey;
+};
+
+RelayTable& Relay() {
+	static RelayTable t;
+	return t;
+}
+
+int RelayPruneNow(int64_t nowMs) {
+	return Relay().Prune(nowMs);
 }
 
 }  // anonymous
@@ -950,11 +1250,16 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 	struct RateEntry { int64_t windowSec = 0; int count = 0; };
 	std::unordered_map<uint32_t, RateEntry> rateTable;
 
-	uint8_t buf[64];
+	// Must fit an ASDF frame carrying an Altirra snapshot chunk
+	// (~1232 B inner) plus our 24-byte relay header.  Reflector
+	// (8-byte req) and punch (20 B) are well under this.
+	constexpr size_t kRxBufSize = 1500;
+	std::vector<uint8_t> rxBuf(kRxBufSize);
+	uint8_t* buf = rxBuf.data();
 	while (!stop.load(std::memory_order_relaxed)) {
 		sockaddr_in from {};
 		socklen_t fromLen = sizeof from;
-		int n = ::recvfrom(s, (char*)buf, (int)sizeof buf, 0,
+		int n = ::recvfrom(s, (char*)buf, (int)kRxBufSize, 0,
 			(sockaddr*)&from, &fromLen);
 		if (n < 0) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
@@ -962,11 +1267,45 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 			break;
 		}
 		if (n < 8) continue;
+		int64_t nowMs = NowMs();
+
+		// v4: decide packet family before rate-limiting so we can
+		// bypass the 20 pps cap for relay traffic from registered
+		// peers (lockstep runs at 60 Hz in each direction).
+		if (buf[0] == 'A' && buf[1] == 'S' &&
+		    buf[2] == 'G' && buf[3] == 'R') {
+			if (n < (int)kWireRelayRegisterSize) continue;
+			uint8_t sid[16];
+			std::memcpy(sid, buf + 4, 16);
+			uint8_t role = buf[20];
+			if (role != kRelayRoleHost && role != kRelayRoleJoiner)
+				continue;
+			Relay().Register(sid, role, from, nowMs);
+			continue;  // one-shot register, no reply
+		}
+		if (buf[0] == 'A' && buf[1] == 'S' &&
+		    buf[2] == 'D' && buf[3] == 'F') {
+			if (n < (int)kWireRelayHeaderSize) continue;
+			uint8_t sid[16];
+			std::memcpy(sid, buf + 4, 16);
+			uint8_t role = buf[20];
+			if (role != kRelayRoleHost && role != kRelayRoleJoiner)
+				continue;
+			sockaddr_in other{};
+			if (!Relay().LookupOther(sid, role, from, nowMs, other))
+				continue;
+			// Forward the inner bytes (after our 24-B header).
+			// Per-IP rate cap bypass: registered peer, live slot.
+			::sendto(s, (const char*)(buf + kWireRelayHeaderSize),
+				(int)(n - (int)kWireRelayHeaderSize), 0,
+				(const sockaddr*)&other, sizeof other);
+			continue;
+		}
 		if (buf[0] != 'A' || buf[1] != 'S' ||
 		    buf[2] != 'D' || buf[3] != 'R') continue;
 
 		// Per-IP rate check.
-		int64_t nowSec = NowMs() / 1000;
+		int64_t nowSec = nowMs / 1000;
 		uint32_t key   = from.sin_addr.s_addr;
 		auto& re = rateTable[key];
 		if (re.windowSec != nowSec) {

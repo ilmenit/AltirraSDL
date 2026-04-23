@@ -46,6 +46,7 @@
 #include "transport.h"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace ATNetplay {
@@ -233,6 +234,51 @@ public:
 	// true iff the packet was actually handed to the socket.
 	bool SendEmote(uint8_t iconId);
 
+	// ---- desync diagnostics ---------------------------------------------
+	//
+	// Hand the coordinator a freshly-computed per-subsystem state hash
+	// breakdown for a specific frame.  The coordinator forwards it to
+	// the peer (so the peer can log a precise DIFF on receipt) and
+	// caches it locally (so when the peer's own breakdown arrives for
+	// the same frame, we log a DIFF here too).  Called by the glue on
+	// desync detection and on the first lockstep frame of a session.
+	// No-op when no peer is known.  Both sides may call this for any
+	// frame; packets carrying the same frame are idempotent.
+	void SubmitLocalSimHashDiag(const NetSimHashDiag& d);
+
+	// ---- v4 NAT traversal --------------------------------------------
+	//
+	// Configure the lobby's relay endpoint and this session's 16-byte
+	// identifier (first 16 bytes of the lobby sessionId UUID, hex-
+	// decoded, no dashes).  Needed before the auto-relay fallback can
+	// engage; passing an empty/invalid sessionId disables relay.  The
+	// UI calls this once — on the host immediately after
+	// LobbyClient::Create returns, on the joiner before BeginJoinMulti.
+	// `lobbyHostPort` is "host:port" (typically kReflectorPortDefault,
+	// 8081) and resolved once here.  Safe to call multiple times.
+	void SetRelayContext(const uint8_t sessionIdBytes16[16],
+	                     const char* lobbyHostPort);
+
+	// Host-side: called by the heartbeat thread each time the lobby
+	// returns a peer-hint.  `nonce16` is the joiner's sessionNonce
+	// (may be all-zero for pre-v4 joiners), `candidatesSemicolonList`
+	// is the joiner's advertised "ip:port;ip:port;..." candidate set.
+	// Queues NetPunch targets for each candidate; the initial burst
+	// and subsequent sustain probes are driven from Poll() so the
+	// caller doesn't need a monotonic clock.  Safe to call repeatedly
+	// with the same nonce — we dedupe on nonce+endpoint.
+	void IngestPeerHint(const uint8_t nonce16[kSessionNonceLen],
+	                    const char* candidatesSemicolonList);
+
+	// True once relay fallback has taken over the UDP path for this
+	// session.  UI can surface a "Relay active" badge after this flips.
+	bool IsRelayActive() const { return mPeerPath == PeerPath::Relay; }
+
+	// Copy out our own per-attempt sessionNonce (16 bytes) so the UI
+	// can include it in the peer-hint POST before BeginJoinMulti.
+	// Valid after BeginJoin/BeginJoinMulti and until End().
+	void GetSessionNonce(uint8_t out[kSessionNonceLen]) const;
+
 	// ---- termination ------------------------------------------------------
 
 	// Send a NetBye and transition to Ended.  Idempotent.
@@ -276,6 +322,12 @@ private:
 	void HandleResyncStart(const NetResyncStart& s, uint64_t nowMs);
 	void HandleResyncDone(const NetResyncDone& d, uint64_t nowMs);
 	void HandleEmote(const NetEmote& e);
+	void HandleSimHashDiag(const NetSimHashDiag& d);
+	// If we have both a local and a peer diag for the same frame, log
+	// a DIFF line naming every subsystem whose hash disagrees.  Fires
+	// once per (frame) pair; a second call with identical frame is a
+	// no-op.  Called from SubmitLocalSimHashDiag and HandleSimHashDiag.
+	void MaybeLogSimHashDiff();
 
 	// Resync: begin a host-initiated mid-session savestate transfer.
 	// Called from Poll() when the host detects a local desync or when
@@ -446,13 +498,128 @@ private:
 	static constexpr uint64_t kResyncStartRetryMs = 500;
 	uint64_t mResyncStartLastSentMs = 0;
 
+	// ResyncDone retransmit (joiner side).  AcknowledgeResyncApplied
+	// flips mAwaitingHostResyncAck; Poll() re-emits NetResyncDone every
+	// kResyncDoneRetryMs until we see a peer input packet (proof the
+	// host received the Done and returned to Lockstepping).  Without
+	// this, a single lost UDP packet strands the host in Resyncing
+	// forever: the joiner is already advancing and sending input, but
+	// the host drops those packets at HandleInputPacket's phase check
+	// so no recovery signal reaches it.
+	static constexpr uint64_t kResyncDoneRetryMs = 250;
+	bool     mAwaitingHostResyncAck = false;
+	uint64_t mResyncDoneLastSentMs  = 0;
+
+	// Overall Phase::Resyncing deadline.  Stamped by BeginHostResync
+	// and BeginJoinerResync; Poll() aborts the session if the phase
+	// persists past this budget.  The 10-minute peer-silence timeout
+	// at the bottom of Poll() only runs in Lockstepping so can't
+	// rescue a stuck resync; this deadline fills that gap.  Sized for
+	// a multi-MB savestate over a slow link plus a few retransmit
+	// cycles.
+	static constexpr uint64_t kResyncOverallTimeoutMs = 15000;
+	uint64_t mResyncStartMs = 0;
+
 	// One-shot guard so the DESYNC-detected log only fires once per
 	// lockstep session rather than every tick until the resync handler
 	// clears the flag.
 	bool mDesyncLogged = false;
 
+	// Cached per-subsystem hash breakdowns for the most recent frame
+	// the glue submitted (local) and the most recent one we received
+	// from the peer.  MaybeLogSimHashDiff() logs a DIFF only when both
+	// are for the same frame; a second call with the same frame is
+	// suppressed by mLastDiffLoggedFrame so a retransmit or a
+	// re-submission of the same breakdown doesn't spam the log.
+	NetSimHashDiag mLocalDiag{};
+	NetSimHashDiag mPeerDiag{};
+	bool     mLocalDiagSet = false;
+	bool     mPeerDiagSet  = false;
+	int64_t  mLastDiffLoggedFrame = -1;
+
+	// v4 two-sided punch + relay fallback state ---------------------
+
+	enum class PeerPath : uint8_t { Direct, Relay };
+	PeerPath mPeerPath = PeerPath::Direct;
+
+	bool    mHasRelaySessionId = false;
+	uint8_t mRelaySessionId[16] = {};
+	bool    mLobbyRelayKnown = false;
+	Endpoint mLobbyRelayEndpoint;
+	bool    mRelayRegistered = false;
+	uint64_t mRelayRegisteredMs = 0;
+
+	// Monotonic wall-clock (Poll's nowMs) when the current handshake
+	// phase started.  Used by the relay-fallback timer.  Set by
+	// BeginJoin / BeginJoinMulti / BeginHost.  0 until first Poll.
+	uint64_t mPhaseStartMs = 0;
+
+	// Host-side: NetPunch targets learned from peer-hints.  We burst
+	// a few probes immediately and then sustain one per target every
+	// kPunchSustainIntervalMs for kPunchSustainDurationMs.  Deduped
+	// on (nonce, endpoint); a repeated hint with the same nonce just
+	// refreshes the entries.
+	struct PunchTarget {
+		uint8_t  nonce[kSessionNonceLen] = {};
+		Endpoint ep;
+		uint64_t firstSentMs = 0;
+		uint64_t lastSentMs  = 0;
+		int      sentCount   = 0;
+	};
+	std::vector<PunchTarget> mPunchTargets;
+	// Persistent flag: at least one peer-hint has ever been delivered
+	// during this WaitingForJoiner phase.  The relay-fallback gate
+	// checks this instead of mPunchTargets-non-empty because punch
+	// targets are pruned after the 4 s sustain window; without a
+	// persistent flag the host would miss the 10 s relay trigger if
+	// the hint happened to arrive slightly earlier than that.
+	bool mHostHasSeenHint = false;
+	static constexpr int      kPunchBurstInitialCount = 5;
+	static constexpr uint64_t kPunchSustainIntervalMs = 500;
+	static constexpr uint64_t kPunchSustainDurationMs = 4000;
+	static constexpr uint64_t kRelayFallbackAfterMs   = 10000;
+	static constexpr uint64_t kRelayFailTimeoutMs     = 25000;
+
+	// Diagnostics: per-candidate inbound counters populated by Poll()
+	// when drained packets are from one of our candidates (joiner
+	// side).  Rendered in the structured FailWith message.
+	struct CandidateStat {
+		Endpoint ep;
+		std::string display;     // as passed on the command line
+		int rxPackets = 0;
+		int rxRejects = 0;
+	};
+	std::vector<CandidateStat> mCandidateStats;
+	int mPunchProbesReceived = 0;
+	int mRelayFramesReceived = 0;
+
+	// Stats book-keeping — increment helpers.
+	void BumpCandidateRx(const Endpoint& from, bool isReject);
+
+	// Send a packet to `peer`.  If the session has transitioned to
+	// relay mode, the bytes are wrapped in a 24-byte 'ASDF' header
+	// and dispatched to the lobby's reflector endpoint instead.  The
+	// server strips the header and forwards inner bytes to the other
+	// peer's registered srflx.
+	bool WrapAndSend(const uint8_t* bytes, size_t n, const Endpoint& peer);
+
+	// Role-appropriate relay register.  kRelayRoleHost for hosts,
+	// kRelayRoleJoiner for joiners.  One-shot: no-op on subsequent
+	// calls (mRelayRegistered guard).
+	void SendRelayRegister();
+
+	// Send NetPunch probes to each target that is still inside its
+	// sustain window.  Called from Poll().
+	void PumpPunchProbes(uint64_t nowMs);
+
+	// Auto-relay fallback evaluator — called from Poll() while in
+	// Handshaking/WaitingForJoiner.  Flips mPeerPath to Relay and
+	// fires the register + a first wrapped Hello via lobby.
+	void MaybeEngageRelay(uint64_t nowMs);
+
 	// Diagnostics.
 	const char* mLastError = "";
+	std::string mLastErrorOwned;  // backing store for structured msgs
 
 public:
 	// Queries for the UI banner.

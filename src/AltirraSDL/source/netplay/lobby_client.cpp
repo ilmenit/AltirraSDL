@@ -430,6 +430,16 @@ bool LobbyClient::Heartbeat(const std::string& sessionId,
                             const std::string& token,
                             int playerCount,
                             const std::string& state) {
+	std::vector<LobbySessionHint> discard;
+	return HeartbeatWithHints(sessionId, token, playerCount, state, discard);
+}
+
+bool LobbyClient::HeartbeatWithHints(const std::string& sessionId,
+                                     const std::string& token,
+                                     int playerCount,
+                                     const std::string& state,
+                                     std::vector<LobbySessionHint>& outHints) {
+	outHints.clear();
 	std::string body;
 	body.reserve(128);
 	body.push_back('{');
@@ -442,6 +452,85 @@ bool LobbyClient::Heartbeat(const std::string& sessionId,
 	std::string path = "/v1/session/";
 	path += sessionId;
 	path += "/heartbeat";
+
+	HttpRequest hr;
+	hr.method      = "POST";
+	hr.host        = mEp.host.c_str();
+	hr.port        = mEp.port;
+	hr.path        = path.c_str();
+	hr.contentType = "application/json";
+	hr.body        = (const uint8_t*)body.data();
+	hr.bodyLen     = body.size();
+	hr.timeoutMs   = mEp.timeoutMs;
+
+	HttpResponse resp;
+	HttpRequestSync(hr, resp); mLastStatus = resp.status;
+	if (resp.status != 200) {
+		FormatHttpError(mLastError, resp);
+		return false;
+	}
+
+	// Parse the response body for the optional v4 "hints" array.
+	// Old servers return {"ttlSeconds":N} with no hints key — we
+	// tolerate that and return an empty vector.
+	JsonCursor c{(const char*)resp.body.data(),
+	             (const char*)resp.body.data() + resp.body.size()};
+	if (c.match('{') && !c.match('}')) {
+		for (;;) {
+			std::string key;
+			if (!c.parseString(key)) break;
+			if (!c.match(':'))       break;
+			if (key == "hints") {
+				if (!c.match('[')) { c.skipValue(); }
+				else if (c.match(']')) { /* empty array */ }
+				else {
+					for (;;) {
+						LobbySessionHint h;
+						if (!c.match('{')) { c.skipValue(); break; }
+						for (;;) {
+							std::string hk;
+							if (!c.parseString(hk)) break;
+							if (!c.match(':'))      break;
+							if      (hk == "sessionNonce") c.parseString(h.nonceHex);
+							else if (hk == "joinerHandle") c.parseString(h.joinerHandle);
+							else if (hk == "candidates")   c.parseString(h.candidates);
+							else if (hk == "ageMs")        c.parseInt(h.ageMs);
+							else { if (!c.parseNull() && !c.skipValue()) break; }
+							if (c.match(',')) continue;
+							c.match('}'); break;
+						}
+						outHints.push_back(std::move(h));
+						if (c.match(',')) continue;
+						c.match(']'); break;
+					}
+				}
+			} else {
+				c.skipValue();
+			}
+			if (c.match(',')) continue;
+			c.match('}'); break;
+		}
+	}
+	mLastError.clear();
+	return true;
+}
+
+bool LobbyClient::PostPeerHint(const std::string& sessionId,
+                               const std::string& joinerHandle,
+                               const std::string& sessionNonceHex,
+                               const std::string& candidates) {
+	std::string body;
+	body.reserve(256);
+	body.push_back('{');
+	bool first = true;
+	AppendKV(body, "joinerHandle", joinerHandle,    first);
+	AppendKV(body, "sessionNonce", sessionNonceHex, first);
+	AppendKV(body, "candidates",   candidates,      first);
+	body.push_back('}');
+
+	std::string path = "/v1/session/";
+	path += sessionId;
+	path += "/peer-hint";
 
 	HttpRequest hr;
 	hr.method      = "POST";

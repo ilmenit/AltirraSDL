@@ -37,6 +37,36 @@ constexpr uint32_t kMagicResyncDone   = 0x44504E41u; // 'ANPD'
 // Online-play communication icon ("emote").  Unreliable fire-and-forget;
 // a lost packet just means the peer misses one reaction.
 constexpr uint32_t kMagicEmote        = 0x45504E41u; // 'ANPE'
+// Per-subsystem simulator-state hash breakdown, exchanged on desync
+// detection (and on the first lockstep frame of every session) so each
+// peer can log which subsystem diverged instead of relying on the user
+// to collect and diff two debug logs.  Unreliable one-shot; dropping
+// one just means the affected peer logs its own breakdown only.
+constexpr uint32_t kMagicSimHashDiag  = 0x48504E41u; // 'ANPH'
+
+// v4 two-sided punch / relay protocol magics.  These live OUTSIDE the
+// 'ANP' family so the host's Poll() dispatch can tell a punch-probe
+// apart from a Hello (otherwise the spray-in-both-directions would
+// read as doubled join attempts), and so the lobby's UDP reflector
+// port can distinguish ASDF/ASGR from 'ASDR' probes without
+// disturbing the existing stateless reflector path.
+//
+// kMagicPunch: host → joiner probe to pre-open its own NAT pinhole
+//   after it learns a joiner's srflx via the lobby's peer-hint
+//   delivery.  Payload: sessionNonce[16].  Joiner silently drops
+//   probes whose nonce doesn't match any in-flight join attempt.
+//   Distinct from Hello so it is never mis-parsed as a join.
+//
+// kMagicRelayData:  'ASDF' — sent TO the lobby.  Wraps a whole
+//   inner Altirra packet inside a 24-byte header.  The server
+//   forwards the inner bytes to the other peer's observed srflx.
+//
+// kMagicRelayRegister: 'ASGR' — sent ONCE by each peer to the lobby
+//   when the direct punch phase times out.  Lets the server learn
+//   this peer's reachable srflx and pair it with the other side.
+constexpr uint32_t kMagicPunch         = 0x5050414Eu; // 'NAPP'
+constexpr uint32_t kMagicRelayData     = 0x46445341u; // 'ASDF'
+constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 
 // Protocol constants.
 // v1 = Go PoC, v2 adds entryCodeHash, v3 replaces savestate transfer
@@ -199,6 +229,42 @@ struct NetEmote {
 	uint8_t  reserved[3] = {};
 };
 
+// v4: relay peer role carried in ASGR/ASDF headers so the server can
+// pair host and joiner into a single relay entry keyed on sessionId.
+enum : uint8_t {
+	kRelayRoleHost   = 0,
+	kRelayRoleJoiner = 1,
+};
+
+// NetPunch — host → joiner probe (20 bytes).  Magic + 16-byte
+// session nonce that must match a nonce carried in a NetHello sent
+// during the same join attempt, else the joiner drops it.
+struct NetPunch {
+	uint32_t magic = kMagicPunch;
+	uint8_t  sessionNonce[kSessionNonceLen] = {};
+};
+
+// NetRelayRegister — peer → lobby (24 bytes).  One-shot packet.
+// The server reads the source sockaddr and records it as the
+// (sessionId, role) endpoint.  No reply.
+struct NetRelayRegister {
+	uint32_t magic = kMagicRelayRegister;
+	uint8_t  sessionId[16] = {};   // first 16 bytes of UUID (dashes stripped, hex-decoded)
+	uint8_t  role = 0;             // kRelayRoleHost / kRelayRoleJoiner
+	uint8_t  reserved[3] = {};
+};
+
+// NetRelayData — peer → lobby (24-byte header + inner packet).  The
+// server looks up the other side's endpoint and forwards the inner
+// bytes verbatim.  Inner is an arbitrary Altirra UDP packet (Hello,
+// Welcome, Input, Chunk, etc.).  The server does not parse inner.
+struct NetRelayDataHeader {
+	uint32_t magic = kMagicRelayData;
+	uint8_t  sessionId[16] = {};
+	uint8_t  role = 0;             // sender's role
+	uint8_t  reserved[3] = {};
+};
+
 // NetResyncDone — joiner → host.  Confirms the savestate applied
 // cleanly; host then exits Resyncing and both peers resume lockstep.
 // 12 bytes.
@@ -206,6 +272,33 @@ struct NetResyncDone {
 	uint32_t magic = kMagicResyncDone;
 	uint32_t epoch = 0;
 	uint32_t resumeFrame = 0;     // echo of host's resumeFrame
+};
+
+// NetSimHashDiag — either direction.  Per-subsystem sim-state hash
+// breakdown for `frame`, shipped when a peer has reason to suspect its
+// local state has diverged (desync detected, or the first lockstep
+// frame of a session).  Receiver compares against its own breakdown
+// for the same frame and logs a precise DIFF line naming the
+// first-diverging subsystem(s).
+//
+// 56 bytes.  The subsystem set must stay in sync with
+// ATNetplay::SimHashBreakdown — any new field there needs a companion
+// field here AND a kProtocolVersion bump (a mismatched receiver would
+// silently drop the packet on wire-size check, losing diagnostics).
+struct NetSimHashDiag {
+	uint32_t magic      = kMagicSimHashDiag;
+	uint32_t frame      = 0;        // lockstep frame the breakdown is for
+	uint32_t flags      = 0;        // reserved; must be 0
+	uint32_t total      = 0;
+	uint32_t cpuRegs    = 0;
+	uint32_t ramBank0   = 0;
+	uint32_t ramBank1   = 0;
+	uint32_t ramBank2   = 0;
+	uint32_t ramBank3   = 0;
+	uint32_t gtiaRegs   = 0;
+	uint32_t anticRegs  = 0;
+	uint32_t pokeyRegs  = 0;
+	uint32_t schedTick  = 0;
 };
 
 // Wire sizes.  Must match protocol.cpp.
@@ -221,6 +314,10 @@ constexpr size_t kWireAckSize       = 8;
 constexpr size_t kWireResyncStartSize = 24;
 constexpr size_t kWireResyncDoneSize  = 12;
 constexpr size_t kWireEmoteSize       = 8;
+constexpr size_t kWireSimHashDiagSize = 4 * 13;   // 52
+constexpr size_t kWirePunchSize         = 4 + kSessionNonceLen;   // 20
+constexpr size_t kWireRelayHeaderSize   = 4 + 16 + 1 + 3;         // 24
+constexpr size_t kWireRelayRegisterSize = kWireRelayHeaderSize;   // 24
 
 // Maximum UDP datagram we need to send at once; chunks are the biggest.
 constexpr size_t kMaxDatagramSize = kWireChunkHdrSize + kSnapshotChunkSize;
@@ -237,5 +334,6 @@ static_assert(kWireWelcomeSize == 128, "NetWelcome wire layout drift");
 // structs above.
 static_assert(kWireResyncStartSize == 4 * 6, "NetResyncStart wire drift");
 static_assert(kWireResyncDoneSize  == 4 * 3, "NetResyncDone wire drift");
+static_assert(kWireSimHashDiagSize == 4 * 13, "NetSimHashDiag wire drift");
 
 } // namespace ATNetplay

@@ -43,6 +43,12 @@ enum class LobbyOp {
 	Heartbeat,
 	Delete,
 	Stats,
+	// v4 two-sided punch: joiner-side POST to announce own candidates
+	// to the lobby so the host can pre-open its NAT pinhole.  Uses
+	// req.sessionId (target host's session), req.token (joiner's
+	// sessionNonce hex), req.state (joiner handle), req.createReq.
+	// candidates (joiner candidates, first element used).
+	PeerHint,
 };
 
 struct LobbyRequest {
@@ -68,6 +74,11 @@ struct LobbyResult {
 	ATNetplay::LobbyCreateResponse       create;    // Create
 	ATNetplay::LobbyStats                stats;     // Stats
 	std::string                          sourceLobby;  // section name
+
+	// v4 two-sided punch: hints delivered by the lobby on a Heartbeat
+	// response (pre-v4 servers always leave this empty).  The main
+	// thread hands each one to Coordinator::IngestPeerHint().
+	std::vector<ATNetplay::LobbySessionHint> hints;
 
 	// NAT-PMP / PCP port mapping acquired during a Create op (empty
 	// protocol string when no mapping was granted).  The main thread

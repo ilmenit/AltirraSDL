@@ -69,6 +69,44 @@ DecodeResult DecodeResyncDone(const uint8_t* buf, size_t len, NetResyncDone& out
 size_t EncodeEmote(const NetEmote& e, uint8_t* buf, size_t bufSize);
 DecodeResult DecodeEmote(const uint8_t* buf, size_t len, NetEmote& out);
 
+// --- NetSimHashDiag (per-subsystem hash breakdown exchange) ---------------
+size_t EncodeSimHashDiag(const NetSimHashDiag& d, uint8_t* buf, size_t bufSize);
+DecodeResult DecodeSimHashDiag(const uint8_t* buf, size_t len, NetSimHashDiag& out);
+
+// --- NetPunch (v4 two-sided punch) -----------------------------------------
+size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize);
+DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out);
+
+// --- NetRelayRegister / NetRelayDataHeader (v4 UDP relay) ------------------
+size_t EncodeRelayRegister(const NetRelayRegister& r,
+                           uint8_t* buf, size_t bufSize);
+DecodeResult DecodeRelayRegister(const uint8_t* buf, size_t len,
+                                 NetRelayRegister& out);
+
+// Encode a relay frame: 24-byte header + inner payload.  Inner is
+// caller-owned; the encoder copies `innerLen` bytes into `buf` after
+// the header.  Returns total bytes written, or 0 if bufSize is too
+// small.  Header fields (sessionId / role) come from `h`.
+size_t EncodeRelayFrame(const NetRelayDataHeader& h,
+                        const uint8_t* inner, size_t innerLen,
+                        uint8_t* buf, size_t bufSize);
+
+// Decode a relay frame.  On success `outHeader` holds the header and
+// (outInner, outInnerLen) points into `buf` at the inner payload.
+// Returns TooShort / BadMagic if not a valid ASDF frame.  The caller
+// must copy inner bytes before reusing `buf`.
+DecodeResult DecodeRelayFrame(const uint8_t* buf, size_t len,
+                              NetRelayDataHeader& outHeader,
+                              const uint8_t*& outInner,
+                              size_t& outInnerLen);
+
+// --- UUID helpers (v4) -----------------------------------------------------
+// Parse a lobby session UUID (any of "<32 hex>", "8-4-4-4-12", or
+// prefix thereof) into 16 raw bytes.  Returns true iff exactly 32
+// hex digits were parsed.  Used by both sides to derive the 16-byte
+// relay session key the server uses in its RelayTable.
+bool UuidHexToBytes16(const char* s, uint8_t out[16]);
+
 // --- handle/cart string helpers (null-terminated UTF-8) --------------------
 // Truncates or zero-pads to fit the fixed-size wire field.
 void HandleFromString(const char* s, uint8_t out[kHandleLen]);

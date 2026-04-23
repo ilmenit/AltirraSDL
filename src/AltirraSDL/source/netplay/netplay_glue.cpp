@@ -6,6 +6,7 @@
 
 #include "coordinator.h"
 #include "packets.h"
+#include "protocol.h"
 #include "netplay_input.h"
 #include "netplay_savestate.h"
 #include "netplay_simhash.h"
@@ -343,11 +344,32 @@ bool CanAdvanceThisTick() {
 
 namespace {
 
-// Dump a per-subsystem state-hash breakdown on first desync detection.
-// Both peers log their own breakdown; comparing the logs pinpoints the
-// first-diverging subsystem (CPU, RAM bank, GTIA/ANTIC/POKEY registers,
-// or scheduler tick count).  This is the payoff for running the cheap
-// per-frame sim-state hash in the first place.
+// Convert a SimHashBreakdown (internal diagnostic type) into a
+// NetSimHashDiag (wire type).  Kept local so the netplay module's
+// packet layer doesn't depend on netplay_simhash.h.
+ATNetplay::NetSimHashDiag BreakdownToDiag(uint32_t frame,
+                                          const ATNetplay::SimHashBreakdown& br) {
+	ATNetplay::NetSimHashDiag d;
+	d.frame     = frame;
+	d.total     = br.total;
+	d.cpuRegs   = br.cpuRegs;
+	d.ramBank0  = br.ramBank0;
+	d.ramBank1  = br.ramBank1;
+	d.ramBank2  = br.ramBank2;
+	d.ramBank3  = br.ramBank3;
+	d.gtiaRegs  = br.gtiaRegs;
+	d.anticRegs = br.anticRegs;
+	d.pokeyRegs = br.pokeyRegs;
+	d.schedTick = br.schedTick;
+	return d;
+}
+
+// Dump a per-subsystem state-hash breakdown on first desync detection
+// AND ship it to the peer.  Each peer logs its own breakdown locally;
+// the peer-exchange path in Coordinator then logs a field-by-field
+// DIFF line when both sides' breakdowns for the same frame are in
+// hand, so a single log now pinpoints the first-diverging subsystem
+// without requiring the user to collect and diff two logs.
 void LogDesyncBreakdownOnce(ATNetplay::Coordinator *c) {
 	if (!c) return;
 	static void *s_lastCoord = nullptr;
@@ -371,8 +393,11 @@ void LogDesyncBreakdownOnce(ATNetplay::Coordinator *c) {
 		br.total, br.cpuRegs,
 		br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
 		br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
-	g_ATLCNetplay("  (peer should log a matching line; compare "
-		"subsystem-by-subsystem to localize the first divergence)");
+
+	// Ship to peer.  When their HandleSimHashDiag fires it triggers a
+	// "simhash diff @frame N" log with a DIFF/MATCH line per
+	// subsystem, on both sides.
+	c->SubmitLocalSimHashDiag(BreakdownToDiag((uint32_t)f, br));
 }
 
 } // anonymous
@@ -415,6 +440,14 @@ void OnFrameAdvanced() {
 			br.total, br.cpuRegs,
 			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
 			br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
+		// Ship to peer so the coordinator can log a DIFF line naming
+		// the first-diverging subsystem if the cold-boot state
+		// already disagrees on frame 0.  That case is the
+		// "immediately starts in desynchronized state" symptom: two
+		// peers start at the same frame with different RAM / scheduler
+		// tick / PIA-LFSR state that the current normalization hacks
+		// don't cover.
+		c->SubmitLocalSimHashDiag(BreakdownToDiag(curFrame, br));
 	}
 
 	c->OnFrameAdvanced(h);
@@ -731,6 +764,101 @@ bool SendEmote(uint8_t iconId) {
 	ATNetplay::Coordinator *c = ActiveLockstep();
 	if (!c) return false;
 	return c->SendEmote(iconId);
+}
+
+// --- v4 NAT traversal -----------------------------------------------------
+
+void HostSetRelayContext(const char* gameId,
+                         const char* sessionIdHex,
+                         const char* lobbyHostPort) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return;
+	uint8_t sid[16] = {};
+	if (!sessionIdHex ||
+	    !ATNetplay::UuidHexToBytes16(sessionIdHex, sid)) return;
+	h->coord->SetRelayContext(sid, lobbyHostPort);
+}
+
+void JoinerSetRelayContext(const char* sessionIdHex,
+                           const char* lobbyHostPort) {
+	if (!g_joiner) return;
+	uint8_t sid[16] = {};
+	if (!sessionIdHex ||
+	    !ATNetplay::UuidHexToBytes16(sessionIdHex, sid)) return;
+	g_joiner->SetRelayContext(sid, lobbyHostPort);
+}
+
+bool JoinerGetSessionNonceHex(char out33[33]) {
+	if (!g_joiner) return false;
+	uint8_t n[ATNetplay::kSessionNonceLen];
+	g_joiner->GetSessionNonce(n);
+	static const char kHex[] = "0123456789abcdef";
+	for (size_t i = 0; i < ATNetplay::kSessionNonceLen; ++i) {
+		out33[i*2]   = kHex[(n[i] >> 4) & 0xF];
+		out33[i*2+1] = kHex[ n[i]       & 0xF];
+	}
+	out33[32] = '\0';
+	return true;
+}
+
+uint16_t JoinerBoundPort() {
+	return g_joiner ? g_joiner->BoundPort() : 0;
+}
+
+size_t JoinerBuildLocalCandidates(char* out, size_t outSize) {
+	if (!out || outSize == 0) return 0;
+	out[0] = '\0';
+	uint16_t port = JoinerBoundPort();
+	if (!port) return 0;
+	std::vector<std::string> ips;
+	ATNetplay::Transport::EnumerateLocalIPv4s(ips);
+	std::string built;
+	for (const auto& ip : ips) {
+		if (!built.empty()) built.push_back(';');
+		char ep[64];
+		std::snprintf(ep, sizeof ep, "%s:%u", ip.c_str(), (unsigned)port);
+		built += ep;
+	}
+	// Always append loopback last — same-box tests otherwise lose the
+	// only candidate the host's punch can actually reach.
+	char loop[32];
+	std::snprintf(loop, sizeof loop, "127.0.0.1:%u", (unsigned)port);
+	if (!built.empty()) built.push_back(';');
+	built += loop;
+	if (built.size() + 1 > outSize) built.resize(outSize - 1);
+	std::memcpy(out, built.data(), built.size());
+	out[built.size()] = '\0';
+	return built.size();
+}
+
+void HostIngestPeerHint(const char* gameId,
+                        const char* nonceHex,
+                        const char* candidates) {
+	HostSlot* h = FindHost(gameId);
+	if (!h || !h->coord) return;
+	uint8_t nonce[ATNetplay::kSessionNonceLen] = {};
+	if (nonceHex && *nonceHex) {
+		// Parse exactly 32 hex chars (16 bytes).  Short / malformed
+		// nonces fall back to all-zero so the legacy handle-based
+		// host-side dedupe path still works.
+		size_t parsed = 0;
+		uint8_t acc = 0;
+		for (const char* p = nonceHex; *p && parsed < 32; ++p) {
+			char c = *p;
+			int v;
+			if      (c >= '0' && c <= '9') v = c - '0';
+			else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+			else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+			else break;
+			if ((parsed & 1) == 0) acc = (uint8_t)(v << 4);
+			else nonce[parsed / 2] = (uint8_t)(acc | (uint8_t)v);
+			++parsed;
+		}
+	}
+	// The coordinator defers the initial burst + sustain timer
+	// bookkeeping to its next Poll() (one frame away at 60 Hz), so
+	// we don't need to supply a monotonic clock here.
+	h->coord->IngestPeerHint(nonce, candidates);
 }
 
 } // namespace ATNetplayGlue

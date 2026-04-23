@@ -93,6 +93,16 @@ struct LobbyCreateResponse {
 	int         ttlSeconds = 0;
 };
 
+// v4 two-sided punch: a single joiner hint, either sent up by a
+// joiner (PostPeerHint) or delivered down to a host in the body of
+// its next heartbeat response (Heartbeat out-param).
+struct LobbySessionHint {
+	std::string nonceHex;    // 32 hex chars, joiner's sessionNonce
+	std::string joinerHandle;
+	std::string candidates;  // "ip:port;ip:port;..."
+	int         ageMs = 0;   // server-reported ms since joiner POST
+};
+
 // v2 aggregate stats returned from GET /v1/stats.  The Browser shows
 // this in a single status footer so users can see whether the lobby is
 // alive ("5 sessions — 3 in play") without enumerating the full list.
@@ -143,6 +153,29 @@ public:
 	               const std::string& token,
 	               int playerCount,
 	               const std::string& state = {});
+
+	// Same as Heartbeat, but also returns any buffered peer hints the
+	// lobby has for this session (v4 two-sided punch).  Safe to call
+	// against a pre-v4 server: it simply returns with `outHints`
+	// empty.  Use this from the host's heartbeat thread; pass each
+	// hint to Coordinator::IngestPeerHint().
+	bool HeartbeatWithHints(const std::string& sessionId,
+	                        const std::string& token,
+	                        int playerCount,
+	                        const std::string& state,
+	                        std::vector<LobbySessionHint>& outHints);
+
+	// v4 two-sided punch: the joiner POSTs its own reachable endpoints
+	// (LAN + srflx + loopback) plus its sessionNonce to the lobby
+	// BEFORE spraying NetHello.  The lobby then hands the hint to the
+	// host on the host's next heartbeat so the host can fire outbound
+	// NetPunch probes and pre-open its NAT pinhole.  Returns true on
+	// HTTP 200.  `sessionNonceHex` must be 32 lowercase hex chars.
+	// `candidates` is the usual semicolon-separated "ip:port;..." list.
+	bool PostPeerHint(const std::string& sessionId,
+	                  const std::string& joinerHandle,
+	                  const std::string& sessionNonceHex,
+	                  const std::string& candidates);
 
 	// v2: GET /v1/stats → aggregate counts.  One small JSON object;
 	// cheap enough for the Browser to call once per 10 s refresh.

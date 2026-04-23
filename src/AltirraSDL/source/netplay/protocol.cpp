@@ -342,6 +342,47 @@ DecodeResult DecodeResyncDone(const uint8_t* buf, size_t len, NetResyncDone& out
 }
 
 // ---------------------------------------------------------------------------
+// NetSimHashDiag (52 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodeSimHashDiag(const NetSimHashDiag& d, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireSimHashDiagSize) return 0;
+	put_u32(buf +  0, kMagicSimHashDiag);
+	put_u32(buf +  4, d.frame);
+	put_u32(buf +  8, d.flags);
+	put_u32(buf + 12, d.total);
+	put_u32(buf + 16, d.cpuRegs);
+	put_u32(buf + 20, d.ramBank0);
+	put_u32(buf + 24, d.ramBank1);
+	put_u32(buf + 28, d.ramBank2);
+	put_u32(buf + 32, d.ramBank3);
+	put_u32(buf + 36, d.gtiaRegs);
+	put_u32(buf + 40, d.anticRegs);
+	put_u32(buf + 44, d.pokeyRegs);
+	put_u32(buf + 48, d.schedTick);
+	return kWireSimHashDiagSize;
+}
+
+DecodeResult DecodeSimHashDiag(const uint8_t* buf, size_t len, NetSimHashDiag& out) {
+	if (len < kWireSimHashDiagSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicSimHashDiag) return DecodeResult::BadMagic;
+	out.frame     = get_u32(buf +  4);
+	out.flags     = get_u32(buf +  8);
+	out.total     = get_u32(buf + 12);
+	out.cpuRegs   = get_u32(buf + 16);
+	out.ramBank0  = get_u32(buf + 20);
+	out.ramBank1  = get_u32(buf + 24);
+	out.ramBank2  = get_u32(buf + 28);
+	out.ramBank3  = get_u32(buf + 32);
+	out.gtiaRegs  = get_u32(buf + 36);
+	out.anticRegs = get_u32(buf + 40);
+	out.pokeyRegs = get_u32(buf + 44);
+	out.schedTick = get_u32(buf + 48);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // String helpers
 // ---------------------------------------------------------------------------
 
@@ -417,6 +458,113 @@ DecodeResult DecodeEmote(const uint8_t* buf, size_t len, NetEmote& out) {
 	out.reserved[1] = buf[6];
 	out.reserved[2] = buf[7];
 	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetPunch (20 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWirePunchSize) return 0;
+	put_u32(buf + 0, kMagicPunch);
+	std::memcpy(buf + 4, p.sessionNonce, kSessionNonceLen);
+	return kWirePunchSize;
+}
+
+DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out) {
+	if (len < kWirePunchSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicPunch) return DecodeResult::BadMagic;
+	std::memcpy(out.sessionNonce, buf + 4, kSessionNonceLen);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetRelayRegister (24 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodeRelayRegister(const NetRelayRegister& r,
+                           uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireRelayRegisterSize) return 0;
+	put_u32(buf + 0, kMagicRelayRegister);
+	std::memcpy(buf + 4, r.sessionId, 16);
+	buf[20] = r.role;
+	buf[21] = buf[22] = buf[23] = 0;
+	return kWireRelayRegisterSize;
+}
+
+DecodeResult DecodeRelayRegister(const uint8_t* buf, size_t len,
+                                 NetRelayRegister& out) {
+	if (len < kWireRelayRegisterSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicRelayRegister) return DecodeResult::BadMagic;
+	std::memcpy(out.sessionId, buf + 4, 16);
+	out.role = buf[20];
+	out.reserved[0] = buf[21];
+	out.reserved[1] = buf[22];
+	out.reserved[2] = buf[23];
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetRelayData header + frame (24 bytes + inner)
+// ---------------------------------------------------------------------------
+
+size_t EncodeRelayFrame(const NetRelayDataHeader& h,
+                        const uint8_t* inner, size_t innerLen,
+                        uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireRelayHeaderSize + innerLen) return 0;
+	put_u32(buf + 0, kMagicRelayData);
+	std::memcpy(buf + 4, h.sessionId, 16);
+	buf[20] = h.role;
+	buf[21] = buf[22] = buf[23] = 0;
+	if (innerLen > 0) {
+		std::memcpy(buf + kWireRelayHeaderSize, inner, innerLen);
+	}
+	return kWireRelayHeaderSize + innerLen;
+}
+
+DecodeResult DecodeRelayFrame(const uint8_t* buf, size_t len,
+                              NetRelayDataHeader& outHeader,
+                              const uint8_t*& outInner,
+                              size_t& outInnerLen) {
+	if (len < kWireRelayHeaderSize) return DecodeResult::TooShort;
+	outHeader.magic = get_u32(buf);
+	if (outHeader.magic != kMagicRelayData) return DecodeResult::BadMagic;
+	std::memcpy(outHeader.sessionId, buf + 4, 16);
+	outHeader.role = buf[20];
+	outHeader.reserved[0] = buf[21];
+	outHeader.reserved[1] = buf[22];
+	outHeader.reserved[2] = buf[23];
+	outInner = buf + kWireRelayHeaderSize;
+	outInnerLen = len - kWireRelayHeaderSize;
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// UUID parse → 16 bytes
+// ---------------------------------------------------------------------------
+
+bool UuidHexToBytes16(const char* s, uint8_t out[16]) {
+	if (!s) return false;
+	int nibblesSeen = 0;
+	uint8_t acc = 0;
+	for (const char* p = s; *p; ++p) {
+		char c = *p;
+		if (c == '-' || c == ' ' || c == '\t') continue;
+		int v;
+		if      (c >= '0' && c <= '9') v = c - '0';
+		else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+		else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+		else return false;
+		if ((nibblesSeen & 1) == 0) acc = (uint8_t)(v << 4);
+		else {
+			if (nibblesSeen / 2 >= 16) return false;
+			out[nibblesSeen / 2] = (uint8_t)(acc | (uint8_t)v);
+		}
+		++nibblesSeen;
+	}
+	return nibblesSeen == 32;
 }
 
 } // namespace ATNetplay

@@ -3,22 +3,16 @@ name: Windows build
 # Builds AltirraSDL for Windows x64 using the windows-sdl-release CMake
 # preset and the existing build.sh / package.sh pipeline. SDL3 is linked
 # statically into AltirraSDL.exe by default (ALTIRRA_STATIC_SDL3=ON), so
-# the resulting zip is self-contained (AltirraSDL.exe + extras/, plus
-# librashader.dll when the vendored prebuilt is present).
+# the resulting zip is self-contained (AltirraSDL.exe + extras/ +
+# librashader.dll).
 #
-# librashader.dll strategy: VENDORED, NOT BUILT IN CI.
-#   Upstream librashader stopped publishing prebuilt binaries after
-#   v0.5.1 and the pinned version (v0.10.1, in scripts/build/librashader.sh)
-#   is ABI-incompatible with v0.5.1, so there is no upstream prebuilt we
-#   can use.  Building it from source in CI requires the Rust toolchain
-#   and adds 5–8 minutes on the first run plus an ongoing risk of cargo
-#   breakage.  Instead, the workflow looks for a developer-provided
-#   prebuilt at vendor/librashader-prebuilt/librashader.dll committed to
-#   the repo: if present it is copied next to AltirraSDL.exe before the
-#   package step (so package_altirra bundles it into the zip); if
-#   absent, the workflow logs a ::warning:: and ships the zip without
-#   slang shader support.  To refresh: build librashader v0.10.1 locally
-#   on a Windows machine and commit the resulting .dll.
+# librashader.dll is built from source via Rust (same as linux.yml /
+# macos.yml).  windows-latest ships with rustup + cargo preinstalled, so
+# no toolchain install step is needed.  The librashader source clone and
+# its cargo target directory are cached under build/_deps/librashader-src
+# keyed on the pinned version, so after the first run a cache hit makes
+# the step nearly free; scripts/build/librashader.sh additionally
+# short-circuits when librashader.dll is already next to AltirraSDL.exe.
 #
 # Triggers:
 #   - push to main       → updates the rolling "nightly" prerelease
@@ -68,6 +62,11 @@ jobs:
         run: |
           cmake --version
           where cl.exe || true
+          # windows-latest ships rustup + a stable toolchain preinstalled.
+          # Just confirm they're on PATH; fail loudly if the runner image
+          # ever changes and we silently fall back to "no librashader".
+          rustc --version
+          cargo --version
 
       # Cache the FetchContent _deps tree (SDL3 source + intermediate
       # objects).  Keyed on top-level CMake files so a CMake change
@@ -81,41 +80,27 @@ jobs:
           restore-keys: |
             windows-deps-
 
-      - name: Build AltirraSDL
+      # Per-arch cache for the librashader source clone and its cargo
+      # target directory.  Keyed on the pinned version so a bump in
+      # scripts/build/librashader.sh invalidates the cache.  First run
+      # builds from scratch (~5–8 min); subsequent runs are nearly free
+      # because librashader.sh short-circuits when librashader.dll is
+      # already next to AltirraSDL.exe.
+      - name: Cache librashader source + target
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/librashader-src
+          key: librashader-v0.10.1-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build, librashader, and package
         shell: bash
         run: |
           set -e
           chmod +x ./build.sh ./scripts/build/*.sh || true
-          # No --librashader: librashader.dll is vendored, not built in CI.
-          # We invoke the build (configure + compile) here without --package
-          # so that we can drop the vendored librashader.dll into the build
-          # tree before package_altirra runs and picks it up.
-          ./build.sh --release
-
-      - name: Stage vendored librashader.dll (if present)
-        shell: bash
-        run: |
-          set -e
-          VENDOR_DLL="vendor/librashader-prebuilt/librashader.dll"
-          DEST_DIR="build/windows-sdl-release/src/AltirraSDL/Release"
-          if [ -f "$VENDOR_DLL" ]; then
-              echo "Found vendored librashader.dll: $VENDOR_DLL"
-              ls -lh "$VENDOR_DLL"
-              mkdir -p "$DEST_DIR"
-              cp "$VENDOR_DLL" "$DEST_DIR/librashader.dll"
-              echo "Staged at: $DEST_DIR/librashader.dll"
-          else
-              echo "::warning title=librashader::No vendored librashader.dll found at $VENDOR_DLL — Windows zip will ship without slang shader support. Build librashader v0.10.1 locally and commit the resulting .dll to enable shaders."
-          fi
-
-      - name: Package
-        shell: bash
-        run: |
-          set -e
-          # Just runs package_altirra now: AltirraSDL.exe is already
-          # compiled and librashader.dll (if vendored) is already next
-          # to it.  package_altirra will bundle whatever it finds.
-          ./build.sh --release --package
+          # --librashader: build librashader.dll from source via cargo
+          #                and drop it next to AltirraSDL.exe so that
+          #                package_altirra bundles it into the zip.
+          ./build.sh --release --librashader --package
 
       - name: Inspect zip
         shell: bash
@@ -138,13 +123,12 @@ jobs:
           else
             echo "OK: no SDL3.dll in zip (SDL3 linked statically into AltirraSDL.exe)"
           fi
-          # librashader is best-effort on Windows; just report whether
-          # it ended up in the zip, don't fail the workflow if it didn't.
-          if echo "$LISTING" | grep -q 'librashader.dll'; then
-            echo "OK: librashader.dll bundled (slang shaders supported)"
-          else
-            echo "::warning title=librashader::librashader.dll absent from zip — slang shaders disabled in this artifact"
-          fi
+          # librashader is now built from source in CI (same as linux/macos),
+          # so its absence means the cargo build silently dropped it; fail
+          # loudly rather than shipping a shader-less zip.
+          echo "$LISTING" | grep -q 'librashader.dll' \
+            || { echo "ERROR: librashader.dll missing from zip (cargo build regressed?)"; exit 1; }
+          echo "OK: librashader.dll bundled (slang shaders supported)"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
