@@ -296,6 +296,17 @@ private:
 	void PumpSnapshotSender(uint64_t nowMs);
 	void PumpLockstepSend();
 
+	// Populate a NetHello with all current joiner-side state
+	// (protocol version, ROM hashes, handle, entry code, **and the
+	// per-attempt session nonce**) so the four call sites that emit
+	// a Hello — BeginJoin, BeginJoinMulti's initial spray, the Poll
+	// retransmit spray, and plain SendHello — stay in sync.
+	void FillHello(NetHello& h) const;
+
+	// Seed mSessionNonce from a cryptographic-quality source.  Called
+	// once per join attempt from BeginJoin / BeginJoinMulti.
+	void GenerateSessionNonce();
+
 	// Transport.
 	Transport mTransport;
 	Endpoint  mPeer;                 // set once we learn the peer's addr
@@ -311,6 +322,23 @@ private:
 	uint64_t              mHelloStartMs  = 0;
 	static constexpr uint64_t kHelloRetryMs    = 250;
 	static constexpr uint64_t kHelloTimeoutMs  = 15000;
+
+	// Per-attempt random nonce (16 bytes) that rides in every Hello we
+	// emit during a single StartJoin.  The host uses it to recognise
+	// Hellos arriving from multiple network paths (LAN / srflx / NAT
+	// hairpin / loopback) as belonging to the *same* joiner, instead of
+	// treating each source endpoint as a distinct join attempt.
+	// Generated once per join; unchanged across retransmits and across
+	// all sprayed candidates.  Filled via GenerateSessionNonce().
+	uint8_t mSessionNonce[kSessionNonceLen] = {};
+
+	// Remembered reason from the last NetReject we received while the
+	// multi-candidate spray still had other candidates in flight.  We
+	// only transition to Phase::Failed when *every* candidate has
+	// rejected (or timed out), and we use this reason so the user sees
+	// the host-supplied cause rather than a generic "timeout".
+	uint32_t mLastRejectReason = 0;
+	bool     mHaveLastRejectReason = false;
 
 	// Phase + role.
 	Phase mPhase = Phase::Idle;
@@ -344,7 +372,25 @@ private:
 	// number so a misbehaving peer can't balloon our memory or drown
 	// the host's decision list.
 	struct PendingDecision {
+		// Primary source endpoint — the first path on which this
+		// joiner's Hello arrived.  The Welcome reply goes here.
 		Endpoint peer;
+
+		// Additional source endpoints observed for the *same* joiner
+		// (same sessionNonce, or same handle for legacy clients).
+		// The v3 spray has the joiner fire Hellos to multiple host
+		// candidates in parallel; each arrives on a different source
+		// endpoint on our side (LAN NIC / loopback / NAT hairpin).
+		// We coalesce them into one UI row and remember the rest so
+		// we can avoid sending a spurious Reject to ourselves when
+		// the user accepts, and so the UI shows one joiner, not N.
+		std::vector<Endpoint> altPeers;
+
+		// Joiner-generated per-attempt nonce (zero for v1.0 clients
+		// that don't populate it; we then dedupe on handle instead).
+		uint8_t  sessionNonce[kSessionNonceLen] = {};
+		bool     hasSessionNonce = false;
+
 		char     handle[kHandleLen + 1] = {};
 		uint64_t arrivedMs = 0;   // host-local clock from Poll(nowMs)
 	};

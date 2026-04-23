@@ -9,6 +9,7 @@
 #include <at/atcore/logging.h>
 
 #include <cstring>
+#include <random>
 
 // Single shared channel for every netplay subsystem.  Default ON
 // (unlike most Altirra log channels) so users can copy diagnostics
@@ -128,6 +129,13 @@ bool Coordinator::BeginJoin(const char* hostAddress,
 	mRole = Role::Joiner;
 	mPhase = Phase::Handshaking;
 	mLastError = "";
+	mHaveLastRejectReason = false;
+	mLastRejectReason = 0;
+
+	// Fresh nonce for this attempt — even the single-candidate path
+	// uses it so the host's new dedupe logic doesn't have to special-
+	// case legacy callers within our own binary.
+	GenerateSessionNonce();
 
 	g_ATLCNetplay("joiner: resolved \"%s\", sending Hello", hostAddress);
 	SendHello();
@@ -211,20 +219,19 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 	mLastError = "";
 	mHelloStartMs = 0;  // set on first Poll tick
 	mLastHelloMs  = 0;
+	mHaveLastRejectReason = false;
+	mLastRejectReason = 0;
+
+	// One nonce for the whole spray — every candidate gets the same
+	// bytes so the host collapses them into one pending decision.
+	GenerateSessionNonce();
 
 	g_ATLCNetplay("joiner: multi-candidate (%u), spraying Hello",
 		(unsigned)mHelloCandidates.size());
 
 	// Initial spray to every candidate immediately.
 	NetHello h;
-	h.magic = kMagicHello;
-	h.protocolVersion = kProtocolVersion;
-	h.flags = 0;
-	h.osRomHash = mOsRomHash;
-	h.basicRomHash = mBasicRomHash;
-	std::memcpy(h.playerHandle, mPlayerHandle, kHandleLen);
-	h.acceptTos = mAcceptTos ? 1u : 0u;
-	std::memcpy(h.entryCodeHash, mEntryCodeHash, kEntryCodeHashLen);
+	FillHello(h);
 	size_t n = EncodeHello(h, mTxBuf, sizeof mTxBuf);
 	if (n) {
 		for (const auto& ep : mHelloCandidates) {
@@ -290,14 +297,46 @@ void Coordinator::Poll(uint64_t nowMs) {
 				// Only accept a Reject from the host we asked — an
 				// arbitrary bystander sending a Reject to our
 				// ephemeral port mustn't be able to abort the join.
-				// For multi-candidate, lock mPeer on the rejecter
-				// the same way Welcome does; the handler then sets
-				// Phase::Failed with the host-supplied reason.
+				// For the v3 candidate spray, a Reject is
+				// **per-path**, not terminal: when the host runs
+				// our new dedupe logic they won't send us a Reject
+				// on alt-paths for our own join at all, but older
+				// hosts (and any path-specific rejects) must not
+				// short-circuit a Welcome that's still in flight on
+				// another candidate.  Remove just the rejecting
+				// endpoint from the spray set; only when the last
+				// candidate rejects do we transition to Failed.
 				if (!mHelloCandidates.empty() &&
 				    mPhase == Phase::Handshaking) {
+					bool matched = false;
+					for (auto it = mHelloCandidates.begin();
+					     it != mHelloCandidates.end(); ++it) {
+						if (it->Equals(from)) {
+							mHelloCandidates.erase(it);
+							matched = true;
+							break;
+						}
+					}
+					mLastRejectReason = rj.reason;
+					mHaveLastRejectReason = true;
+
+					char fmt[64];
+					from.Format(fmt, sizeof fmt);
+					if (!mHelloCandidates.empty()) {
+						// Still candidates in flight — keep waiting
+						// for a Welcome on any of them.
+						g_ATLCNetplay("joiner: Reject from %s (reason %u); "
+							"%u candidate(s) still pending",
+							fmt, (unsigned)rj.reason,
+							(unsigned)mHelloCandidates.size());
+						(void)matched;
+						break;
+					}
+					// Exhausted: every sprayed candidate rejected.
+					// Lock mPeer on the last rejecter so the error
+					// surfaces with the host-supplied reason.
 					mPeer = from;
 					mPeerKnown = true;
-					mHelloCandidates.clear();
 				}
 				HandleRejectFromHost(rj);
 				break;
@@ -359,25 +398,30 @@ void Coordinator::Poll(uint64_t nowMs) {
 		if (mHelloStartMs == 0) mHelloStartMs = nowMs;
 		if (nowMs - mHelloStartMs >= kHelloTimeoutMs) {
 			g_ATLCNetplay("joiner: handshake timeout after %ums, "
-				"no host responded (candidates tried: %u)",
+				"no host responded (candidates tried: %u, "
+				"last-seen reject reason: %s)",
 				(unsigned)(nowMs - mHelloStartMs),
-				(unsigned)mHelloCandidates.size());
-			FailWith("Could not reach host — please check the host is "
-				"online and try again.  If the host is behind a "
-				"restrictive NAT, they may need to port-forward their "
-				"UDP port.");
+				(unsigned)mHelloCandidates.size(),
+				mHaveLastRejectReason ? "yes" : "none");
+			if (mHaveLastRejectReason) {
+				// Some path explicitly rejected us during the spray
+				// and then the rest timed out.  Surface the host's
+				// reason — it's more informative than a generic
+				// "couldn't reach host".
+				NetReject synth{};
+				synth.reason = mLastRejectReason;
+				HandleRejectFromHost(synth);
+			} else {
+				FailWith("Could not reach host — please check the host is "
+					"online and try again.  If the host is behind a "
+					"restrictive NAT, they may need to port-forward their "
+					"UDP port.");
+			}
 			mHelloCandidates.clear();
 		} else if (nowMs - mLastHelloMs >= kHelloRetryMs) {
 			mLastHelloMs = nowMs;
 			NetHello h;
-			h.magic = kMagicHello;
-			h.protocolVersion = kProtocolVersion;
-			h.flags = 0;
-			h.osRomHash = mOsRomHash;
-			h.basicRomHash = mBasicRomHash;
-			std::memcpy(h.playerHandle, mPlayerHandle, kHandleLen);
-			h.acceptTos = mAcceptTos ? 1u : 0u;
-			std::memcpy(h.entryCodeHash, mEntryCodeHash, kEntryCodeHashLen);
+			FillHello(h);
 			size_t nn = EncodeHello(h, mTxBuf, sizeof mTxBuf);
 			if (nn) {
 				for (const auto& ep : mHelloCandidates) {
@@ -504,20 +548,60 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 
 	// Hello passed validation.  If prompt-accept is enabled, enqueue
 	// the joiner and wait for the UI to call AcceptPendingJoiner(i)
-	// or RejectPendingJoiner(i).  Duplicate Hellos from the same
-	// endpoint (the joiner retransmits every ~500 ms while waiting)
-	// refresh the arrival timestamp and nothing else.  We stay in
-	// WaitingForJoiner until an Accept picks one entry, so a Reject on
-	// any single row can return to listening cleanly.
+	// or RejectPendingJoiner(i).  We stay in WaitingForJoiner until
+	// an Accept picks one entry, so a Reject on any single row can
+	// return to listening cleanly.
+	//
+	// Dedupe key: the joiner's per-attempt session nonce, when
+	// present.  A single joiner's v3 candidate spray reaches us on
+	// multiple source endpoints (LAN NIC / loopback / NAT hairpin),
+	// each with its own (ip,port) but all carrying the same nonce —
+	// we must collapse them into one pending row, not three.  v1.0
+	// clients send a zero nonce; we fall back to handle-based match
+	// for those.  Endpoint-based match is used only as a final
+	// fallback for simple retransmits when neither nonce nor handle
+	// matches anything.
 	if (mPromptAccept) {
-		for (auto& e : mPendingDecisions) {
-			if (e.peer.Equals(from)) {
-				// Refresh arrivedMs (we keep the oldest for the UI
-				// "Requested Xs ago" display) — actually keep the
-				// first arrival time; retransmits are not new requests.
-				return;
-			}
+		bool helloNonceNonZero = false;
+		for (size_t k = 0; k < kSessionNonceLen; ++k) {
+			if (hello.sessionNonce[k] != 0) { helloNonceNonZero = true; break; }
 		}
+
+		for (auto& e : mPendingDecisions) {
+			bool sameJoiner = false;
+			if (helloNonceNonZero && e.hasSessionNonce) {
+				sameJoiner = (std::memcmp(e.sessionNonce,
+					hello.sessionNonce, kSessionNonceLen) == 0);
+			} else {
+				// Legacy path: match on handle.  False positive
+				// risk (two users with identical nicknames) is
+				// bounded — both get merged into one row but the
+				// host still reaches a valid joiner.  New clients
+				// always carry a nonce, so this only fires for
+				// v1.0 peers.
+				sameJoiner = (std::memcmp(e.handle, hello.playerHandle,
+					kHandleLen) == 0);
+			}
+			if (!sameJoiner) continue;
+
+			// Same joiner.  If this is a new source endpoint, add
+			// it to altPeers so we remember not to Reject it on
+			// accept.  Don't touch arrivedMs — "requested Xs ago"
+			// stays anchored to the first arrival.
+			if (e.peer.Equals(from)) return;
+			for (const auto& alt : e.altPeers) {
+				if (alt.Equals(from)) return;
+			}
+			e.altPeers.push_back(from);
+
+			char ep[32] = {};
+			from.Format(ep, sizeof ep);
+			g_ATLCNetplay("host: additional path for \"%s\" at %s "
+				"(now %zu path(s); queue depth unchanged)",
+				e.handle, ep, 1 + e.altPeers.size());
+			return;
+		}
+
 		if (mPendingDecisions.size() >= kMaxPendingDecisions) {
 			// Queue is full.  Bounce the joiner with HostFull so they
 			// get a clear error instead of a silent timeout.
@@ -526,15 +610,17 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		}
 		PendingDecision pd;
 		pd.peer = from;
+		std::memcpy(pd.sessionNonce, hello.sessionNonce, kSessionNonceLen);
+		pd.hasSessionNonce = helloNonceNonZero;
 		std::memset(pd.handle, 0, sizeof pd.handle);
 		std::memcpy(pd.handle, hello.playerHandle, kHandleLen);
 		pd.arrivedMs = nowMs;
-		mPendingDecisions.push_back(pd);
+		mPendingDecisions.push_back(std::move(pd));
 		char ep[32] = {};
 		from.Format(ep, sizeof ep);
 		g_ATLCNetplay("host: incoming join from \"%s\" at %s — "
 			"awaiting host decision (queue depth %zu)",
-			pd.handle, ep, mPendingDecisions.size());
+			mPendingDecisions.back().handle, ep, mPendingDecisions.size());
 		return;
 	}
 
@@ -593,12 +679,21 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	// Tell every other queued joiner that the host chose someone else
 	// so they stop waiting.  Use kRejectHostFull to match the message
 	// they would have got if they'd arrived after a silent auto-accept.
+	// Important: Reject reaches each peer on **every** path we observed
+	// them on, otherwise their v3 spray would simply keep retransmitting
+	// on the unrejected candidates and time out instead of failing
+	// promptly.  We do *not* Reject the chosen row's altPeers — those
+	// are the chosen joiner themselves, and Welcome on chosen.peer is
+	// all they need (their own spray stops when Welcome arrives).
 	for (size_t k = 0; k < mPendingDecisions.size(); ++k) {
 		if (k == i) continue;
 		SendReject(kRejectHostFull, mPendingDecisions[k].peer);
+		for (const auto& alt : mPendingDecisions[k].altPeers) {
+			SendReject(kRejectHostFull, alt);
+		}
 	}
 
-	PendingDecision chosen = mPendingDecisions[i];
+	PendingDecision chosen = std::move(mPendingDecisions[i]);
 	mPendingDecisions.clear();
 
 	// Adopt the accepted peer and run the same path the auto-accept
@@ -628,7 +723,13 @@ void Coordinator::RejectPendingJoiner(size_t i) {
 	const PendingDecision& pd = mPendingDecisions[i];
 	g_ATLCNetplay("host: rejected joiner \"%s\" (manual decline)",
 		pd.handle);
+	// Reject on every path we saw this joiner on, for the same reason
+	// the accept branch does: otherwise the joiner's v3 spray keeps
+	// hammering the unrejected candidates until the hard timeout.
 	SendReject(kRejectHostRejected, pd.peer);
+	for (const auto& alt : pd.altPeers) {
+		SendReject(kRejectHostRejected, alt);
+	}
 	mPendingDecisions.erase(mPendingDecisions.begin() + i);
 	// Stay in WaitingForJoiner — another entry may still be queued and
 	// new peers can still arrive.
@@ -880,6 +981,9 @@ void Coordinator::End(uint32_t byeReason) {
 	// them, not a per-peer rejection.
 	for (const auto& pd : mPendingDecisions) {
 		SendReject(kRejectHostFull, pd.peer);
+		for (const auto& alt : pd.altPeers) {
+			SendReject(kRejectHostFull, alt);
+		}
 	}
 	mPendingDecisions.clear();
 	SendBye(byeReason);
@@ -907,22 +1011,41 @@ bool Coordinator::SendEmote(uint8_t iconId) {
 // Packet senders
 // ---------------------------------------------------------------------------
 
-void Coordinator::SendHello() {
-	NetHello h;
+void Coordinator::FillHello(NetHello& h) const {
 	h.magic = kMagicHello;
 	h.protocolVersion = kProtocolVersion;
 	h.flags = 0;
-	// sessionNonce: all zero for v1.0 — the field is reserved for
-	// future control-packet auth.  Leaving it zero costs nothing now
-	// and mirrors the Go PoC.
+	// Per-attempt session nonce — lets the host recognise Hellos from
+	// the v3 candidate spray (LAN / srflx / loopback / hairpin) as the
+	// same joiner rather than N distinct join requests.  Hosts running
+	// v1.0 ignore it; new hosts dedupe on it and fall back to handle
+	// when a peer left it zero.
+	std::memcpy(h.sessionNonce, mSessionNonce, kSessionNonceLen);
 	h.osRomHash = mOsRomHash;
 	h.basicRomHash = mBasicRomHash;
 	std::memcpy(h.playerHandle, mPlayerHandle, kHandleLen);
 	h.acceptTos = mAcceptTos ? 1u : 0u;
 	std::memcpy(h.entryCodeHash, mEntryCodeHash, kEntryCodeHashLen);
+}
 
+void Coordinator::SendHello() {
+	NetHello h;
+	FillHello(h);
 	size_t n = EncodeHello(h, mTxBuf, sizeof mTxBuf);
 	if (n && mPeerKnown) mTransport.SendTo(mTxBuf, n, mPeer);
+}
+
+void Coordinator::GenerateSessionNonce() {
+	// std::random_device seeds a 32-bit engine; draw 4x to fill 16 B.
+	// Not cryptographically strong, but the nonce only needs to be
+	// collision-resistant within a host's pending-decision window
+	// (<= kMaxPendingDecisions * a few seconds) — 128 bits is ample.
+	std::random_device rd;
+	std::mt19937 eng(rd());
+	for (size_t i = 0; i < kSessionNonceLen; i += 4) {
+		uint32_t v = eng();
+		std::memcpy(mSessionNonce + i, &v, 4);
+	}
 }
 
 void Coordinator::SendWelcome() {
