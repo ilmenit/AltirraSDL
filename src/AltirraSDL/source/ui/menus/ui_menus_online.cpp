@@ -17,7 +17,9 @@
 #include "ui_menus_internal.h"
 #include "ui/netplay/ui_netplay.h"
 #include "ui/netplay/ui_netplay_state.h"
+#include "ui/emotes/emote_netplay.h"
 #include "netplay/netplay_glue.h"
+#include "settings.h"
 
 void ATUIRenderOnlineMenu() {
 	bool inSession = ATNetplayGlue::IsActive();
@@ -41,6 +43,20 @@ void ATUIRenderOnlineMenu() {
 		if (ImGui::MenuItem("Show Session HUD", nullptr, showHud)) {
 			st.prefs.showSessionHUD = !showHud;
 			ATNetplayUI::SaveToRegistry();
+		}
+
+		// Emoticons toggle: mirrors the Configure System → Online Play
+		// "Send communication icons" checkbox and, when enabled, shows
+		// the on-screen picker button during an active session in every
+		// mode (Desktop, Gaming Mode, touch).  Receive stays on its own
+		// Configure System page; the menu surfaces Send because it is
+		// the direction tied to the visible on-screen button.
+		{
+			bool showEmotes = ATEmoteNetplay::GetSendEnabled();
+			if (ImGui::MenuItem("Show Emoticons", nullptr, showEmotes)) {
+				ATEmoteNetplay::SetSendEnabled(!showEmotes);
+				ATSaveSettings(kATSettingsCategory_Environment);
+			}
 		}
 	}
 

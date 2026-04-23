@@ -15,6 +15,8 @@
 
 #include "ui/core/ui_mode.h"
 #include "ui/core/ui_main.h"
+#include "ui/emotes/emote_netplay.h"
+#include "ui/emotes/emote_picker.h"
 
 #include <vd2/system/file.h>
 #include <vd2/system/VDString.h>
@@ -800,12 +802,97 @@ void RenderInSessionHUD() {
 	ImGui::PopStyleColor(3);
 }
 
+// Desktop on-screen emote button.  Gaming Mode already draws the
+// touch-target version inside ATTouchControls_Render; Desktop had no
+// equivalent, so the emote picker was only reachable via F1 / R3 or the
+// menu command.  Mirrors the mobile button's visibility rules
+// (lockstepping + Send Emotes enabled) and renders on the foreground
+// draw list so it floats over the game view regardless of other
+// windows.  Positioned at bottom-right of the viewport work area to
+// avoid the top-right session HUD and the menu bar.
+static void RenderDesktopEmoteButton() {
+	if (ATUIIsGamingMode()) return;
+	if (!ATNetplayGlue::IsLockstepping()) return;
+	if (!ATEmoteNetplay::GetSendEnabled()) return;
+	if (ATEmotePicker::IsOpen()) return;
+
+	const ImGuiViewport* vp = ImGui::GetMainViewport();
+	const float pad = 16.0f;
+	const float sz  = 52.0f;
+
+	ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - pad - sz,
+	           vp->WorkPos.y + vp->WorkSize.y - pad - sz);
+	ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2(sz, sz), ImGuiCond_Always);
+
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration
+	                       | ImGuiWindowFlags_NoSavedSettings
+	                       | ImGuiWindowFlags_NoFocusOnAppearing
+	                       | ImGuiWindowFlags_NoNav
+	                       | ImGuiWindowFlags_NoMove
+	                       | ImGuiWindowFlags_NoBackground;
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+	if (ImGui::Begin("##netplay_emote_btn", nullptr, flags)) {
+		// Button body.
+		ImGui::PushStyleColor(ImGuiCol_Button,
+			ImVec4(0.08f, 0.09f, 0.12f, 0.82f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+			ImVec4(0.16f, 0.20f, 0.28f, 0.95f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+			ImVec4(0.24f, 0.32f, 0.44f, 1.00f));
+		ImGui::PushStyleColor(ImGuiCol_Border,
+			ImVec4(1.00f, 1.00f, 1.00f, 0.18f));
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,  8.0f);
+
+		const bool clicked =
+			ImGui::Button("##netplay_emote_btn_inner", ImVec2(sz, sz));
+
+		// Speech-bubble glyph drawn procedurally — matches the mobile
+		// button so the visual identity is consistent between modes
+		// without depending on an emoji font.
+		ImVec2 p = ImGui::GetItemRectMin();
+		ImVec2 q = ImGui::GetItemRectMax();
+		float cx = 0.5f * (p.x + q.x);
+		float cy = 0.5f * (p.y + q.y);
+		float w = (q.x - p.x) * 0.55f;
+		float h = (q.y - p.y) * 0.45f;
+		ImU32 glyph = IM_COL32(240, 240, 244, 230);
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		dl->AddRect(ImVec2(cx - w * 0.5f, cy - h * 0.5f),
+		            ImVec2(cx + w * 0.5f, cy + h * 0.3f),
+		            glyph, 4.0f, 0, 2.0f);
+		dl->AddTriangleFilled(
+			ImVec2(cx - w * 0.15f, cy + h * 0.3f),
+			ImVec2(cx + w * 0.15f, cy + h * 0.3f),
+			ImVec2(cx - w * 0.05f, cy + h * 0.55f),
+			glyph);
+		float dr = 1.8f;
+		dl->AddCircleFilled(ImVec2(cx - w * 0.22f, cy - h * 0.1f), dr, glyph);
+		dl->AddCircleFilled(ImVec2(cx,             cy - h * 0.1f), dr, glyph);
+		dl->AddCircleFilled(ImVec2(cx + w * 0.22f, cy - h * 0.1f), dr, glyph);
+
+		ImGui::PopStyleVar(2);
+		ImGui::PopStyleColor(4);
+
+		if (clicked) ATEmotePicker::Open();
+
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetTooltip("Send emoticon (F1 / R3)");
+		}
+	}
+	ImGui::End();
+	ImGui::PopStyleVar();
+}
+
 } // namespace ATNetplayUI
 
 void ATNetplayUI_RenderDesktop(ATSimulator &, ATUIState &, SDL_Window *) {
 	if (ATUIIsGamingMode()) return;
 	ATNetplayUI::DesktopDispatch();
 	ATNetplayUI::RenderInSessionHUD();
+	ATNetplayUI::RenderDesktopEmoteButton();
 	// Toasts paint on the foreground draw list so they float above
 	// every Online Play window without caller bookkeeping.
 	ATNetplayUI::RenderToasts();

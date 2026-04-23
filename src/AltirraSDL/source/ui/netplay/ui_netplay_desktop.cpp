@@ -17,6 +17,8 @@
 #include "netplay/netplay_glue.h"
 #include "ui/core/ui_main.h"
 #include "ui/gamelibrary/game_library.h"
+#include "ui/emotes/emote_netplay.h"
+#include "settings.h"
 #include "ui_file_dialog_sdl3.h"
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_timer.h>
@@ -895,6 +897,31 @@ void DesktopPrefs() {
 			ImGui::SeparatorText("In-session HUD");
 			ImGui::Checkbox("Show in-session HUD",
 				&st.prefs.showSessionHUD);
+
+			// Emoticons toggle.  Duplicates the Configure System →
+			// Online Play "Send communication icons" option so the user
+			// can find it in the Online Play dialog (same place as the
+			// HUD toggle and the matching menu entry).  When enabled,
+			// the on-screen emote button is visible during a session
+			// in Desktop mode too — not just Gaming Mode.
+			{
+				bool sendEmotes = ATEmoteNetplay::GetSendEnabled();
+				if (ImGui::Checkbox(
+						"Show Emoticons (send communication icons)",
+						&sendEmotes))
+				{
+					ATEmoteNetplay::SetSendEnabled(sendEmotes);
+					ATSaveSettings(kATSettingsCategory_Environment);
+				}
+				bool recvEmotes = ATEmoteNetplay::GetReceiveEnabled();
+				if (ImGui::Checkbox(
+						"Receive Emoticons from the other player",
+						&recvEmotes))
+				{
+					ATEmoteNetplay::SetReceiveEnabled(recvEmotes);
+					ATSaveSettings(kATSettingsCategory_Environment);
+				}
+			}
 			ImGui::EndTabItem();
 		}
 
