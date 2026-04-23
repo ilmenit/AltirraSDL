@@ -1,5 +1,6 @@
-# Build artefacts when users invoke `cmake -B build/lobby .` directly
-# in this subdirectory.
+# Build artefacts when users invoke `cmake -B build .` directly in
+# this subdirectory.
+build/
 altirra-lobby
 altirra-lobby-test
 *.o

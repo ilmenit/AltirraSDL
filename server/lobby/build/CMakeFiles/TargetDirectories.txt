@@ -1,5 +1,0 @@
-/home/ilm/Documents/GitHub/AltirraSDL/server/lobby/build/CMakeFiles/altirra-lobby.dir
-/home/ilm/Documents/GitHub/AltirraSDL/server/lobby/build/CMakeFiles/altirra-lobby-test.dir
-/home/ilm/Documents/GitHub/AltirraSDL/server/lobby/build/CMakeFiles/test.dir
-/home/ilm/Documents/GitHub/AltirraSDL/server/lobby/build/CMakeFiles/edit_cache.dir
-/home/ilm/Documents/GitHub/AltirraSDL/server/lobby/build/CMakeFiles/rebuild_cache.dir

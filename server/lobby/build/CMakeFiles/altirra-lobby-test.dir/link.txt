@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/altirra-lobby-test.dir/link.d "CMakeFiles/altirra-lobby-test.dir/server_test.cpp.o" -o altirra-lobby-test
