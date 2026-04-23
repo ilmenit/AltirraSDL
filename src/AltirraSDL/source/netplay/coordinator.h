@@ -234,6 +234,18 @@ public:
 	// true iff the packet was actually handed to the socket.
 	bool SendEmote(uint8_t iconId);
 
+	// ---- desync diagnostics ---------------------------------------------
+	//
+	// Hand the coordinator a freshly-computed per-subsystem state hash
+	// breakdown for a specific frame.  The coordinator forwards it to
+	// the peer (so the peer can log a precise DIFF on receipt) and
+	// caches it locally (so when the peer's own breakdown arrives for
+	// the same frame, we log a DIFF here too).  Called by the glue on
+	// desync detection and on the first lockstep frame of a session.
+	// No-op when no peer is known.  Both sides may call this for any
+	// frame; packets carrying the same frame are idempotent.
+	void SubmitLocalSimHashDiag(const NetSimHashDiag& d);
+
 	// ---- v4 NAT traversal --------------------------------------------
 	//
 	// Configure the lobby's relay endpoint and this session's 16-byte
@@ -310,6 +322,12 @@ private:
 	void HandleResyncStart(const NetResyncStart& s, uint64_t nowMs);
 	void HandleResyncDone(const NetResyncDone& d, uint64_t nowMs);
 	void HandleEmote(const NetEmote& e);
+	void HandleSimHashDiag(const NetSimHashDiag& d);
+	// If we have both a local and a peer diag for the same frame, log
+	// a DIFF line naming every subsystem whose hash disagrees.  Fires
+	// once per (frame) pair; a second call with identical frame is a
+	// no-op.  Called from SubmitLocalSimHashDiag and HandleSimHashDiag.
+	void MaybeLogSimHashDiff();
 
 	// Resync: begin a host-initiated mid-session savestate transfer.
 	// Called from Poll() when the host detects a local desync or when
@@ -480,10 +498,44 @@ private:
 	static constexpr uint64_t kResyncStartRetryMs = 500;
 	uint64_t mResyncStartLastSentMs = 0;
 
+	// ResyncDone retransmit (joiner side).  AcknowledgeResyncApplied
+	// flips mAwaitingHostResyncAck; Poll() re-emits NetResyncDone every
+	// kResyncDoneRetryMs until we see a peer input packet (proof the
+	// host received the Done and returned to Lockstepping).  Without
+	// this, a single lost UDP packet strands the host in Resyncing
+	// forever: the joiner is already advancing and sending input, but
+	// the host drops those packets at HandleInputPacket's phase check
+	// so no recovery signal reaches it.
+	static constexpr uint64_t kResyncDoneRetryMs = 250;
+	bool     mAwaitingHostResyncAck = false;
+	uint64_t mResyncDoneLastSentMs  = 0;
+
+	// Overall Phase::Resyncing deadline.  Stamped by BeginHostResync
+	// and BeginJoinerResync; Poll() aborts the session if the phase
+	// persists past this budget.  The 10-minute peer-silence timeout
+	// at the bottom of Poll() only runs in Lockstepping so can't
+	// rescue a stuck resync; this deadline fills that gap.  Sized for
+	// a multi-MB savestate over a slow link plus a few retransmit
+	// cycles.
+	static constexpr uint64_t kResyncOverallTimeoutMs = 15000;
+	uint64_t mResyncStartMs = 0;
+
 	// One-shot guard so the DESYNC-detected log only fires once per
 	// lockstep session rather than every tick until the resync handler
 	// clears the flag.
 	bool mDesyncLogged = false;
+
+	// Cached per-subsystem hash breakdowns for the most recent frame
+	// the glue submitted (local) and the most recent one we received
+	// from the peer.  MaybeLogSimHashDiff() logs a DIFF only when both
+	// are for the same frame; a second call with the same frame is
+	// suppressed by mLastDiffLoggedFrame so a retransmit or a
+	// re-submission of the same breakdown doesn't spam the log.
+	NetSimHashDiag mLocalDiag{};
+	NetSimHashDiag mPeerDiag{};
+	bool     mLocalDiagSet = false;
+	bool     mPeerDiagSet  = false;
+	int64_t  mLastDiffLoggedFrame = -1;
 
 	// v4 two-sided punch + relay fallback state ---------------------
 

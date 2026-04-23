@@ -69,6 +69,10 @@ DecodeResult DecodeResyncDone(const uint8_t* buf, size_t len, NetResyncDone& out
 size_t EncodeEmote(const NetEmote& e, uint8_t* buf, size_t bufSize);
 DecodeResult DecodeEmote(const uint8_t* buf, size_t len, NetEmote& out);
 
+// --- NetSimHashDiag (per-subsystem hash breakdown exchange) ---------------
+size_t EncodeSimHashDiag(const NetSimHashDiag& d, uint8_t* buf, size_t bufSize);
+DecodeResult DecodeSimHashDiag(const uint8_t* buf, size_t len, NetSimHashDiag& out);
+
 // --- NetPunch (v4 two-sided punch) -----------------------------------------
 size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize);
 DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out);

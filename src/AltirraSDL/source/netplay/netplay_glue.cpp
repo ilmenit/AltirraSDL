@@ -344,11 +344,32 @@ bool CanAdvanceThisTick() {
 
 namespace {
 
-// Dump a per-subsystem state-hash breakdown on first desync detection.
-// Both peers log their own breakdown; comparing the logs pinpoints the
-// first-diverging subsystem (CPU, RAM bank, GTIA/ANTIC/POKEY registers,
-// or scheduler tick count).  This is the payoff for running the cheap
-// per-frame sim-state hash in the first place.
+// Convert a SimHashBreakdown (internal diagnostic type) into a
+// NetSimHashDiag (wire type).  Kept local so the netplay module's
+// packet layer doesn't depend on netplay_simhash.h.
+ATNetplay::NetSimHashDiag BreakdownToDiag(uint32_t frame,
+                                          const ATNetplay::SimHashBreakdown& br) {
+	ATNetplay::NetSimHashDiag d;
+	d.frame     = frame;
+	d.total     = br.total;
+	d.cpuRegs   = br.cpuRegs;
+	d.ramBank0  = br.ramBank0;
+	d.ramBank1  = br.ramBank1;
+	d.ramBank2  = br.ramBank2;
+	d.ramBank3  = br.ramBank3;
+	d.gtiaRegs  = br.gtiaRegs;
+	d.anticRegs = br.anticRegs;
+	d.pokeyRegs = br.pokeyRegs;
+	d.schedTick = br.schedTick;
+	return d;
+}
+
+// Dump a per-subsystem state-hash breakdown on first desync detection
+// AND ship it to the peer.  Each peer logs its own breakdown locally;
+// the peer-exchange path in Coordinator then logs a field-by-field
+// DIFF line when both sides' breakdowns for the same frame are in
+// hand, so a single log now pinpoints the first-diverging subsystem
+// without requiring the user to collect and diff two logs.
 void LogDesyncBreakdownOnce(ATNetplay::Coordinator *c) {
 	if (!c) return;
 	static void *s_lastCoord = nullptr;
@@ -372,8 +393,11 @@ void LogDesyncBreakdownOnce(ATNetplay::Coordinator *c) {
 		br.total, br.cpuRegs,
 		br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
 		br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
-	g_ATLCNetplay("  (peer should log a matching line; compare "
-		"subsystem-by-subsystem to localize the first divergence)");
+
+	// Ship to peer.  When their HandleSimHashDiag fires it triggers a
+	// "simhash diff @frame N" log with a DIFF/MATCH line per
+	// subsystem, on both sides.
+	c->SubmitLocalSimHashDiag(BreakdownToDiag((uint32_t)f, br));
 }
 
 } // anonymous
@@ -416,6 +440,14 @@ void OnFrameAdvanced() {
 			br.total, br.cpuRegs,
 			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
 			br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
+		// Ship to peer so the coordinator can log a DIFF line naming
+		// the first-diverging subsystem if the cold-boot state
+		// already disagrees on frame 0.  That case is the
+		// "immediately starts in desynchronized state" symptom: two
+		// peers start at the same frame with different RAM / scheduler
+		// tick / PIA-LFSR state that the current normalization hacks
+		// don't cover.
+		c->SubmitLocalSimHashDiag(BreakdownToDiag(curFrame, br));
 	}
 
 	c->OnFrameAdvanced(h);

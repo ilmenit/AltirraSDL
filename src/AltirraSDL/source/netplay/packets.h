@@ -37,6 +37,12 @@ constexpr uint32_t kMagicResyncDone   = 0x44504E41u; // 'ANPD'
 // Online-play communication icon ("emote").  Unreliable fire-and-forget;
 // a lost packet just means the peer misses one reaction.
 constexpr uint32_t kMagicEmote        = 0x45504E41u; // 'ANPE'
+// Per-subsystem simulator-state hash breakdown, exchanged on desync
+// detection (and on the first lockstep frame of every session) so each
+// peer can log which subsystem diverged instead of relying on the user
+// to collect and diff two debug logs.  Unreliable one-shot; dropping
+// one just means the affected peer logs its own breakdown only.
+constexpr uint32_t kMagicSimHashDiag  = 0x48504E41u; // 'ANPH'
 
 // v4 two-sided punch / relay protocol magics.  These live OUTSIDE the
 // 'ANP' family so the host's Poll() dispatch can tell a punch-probe
@@ -268,6 +274,33 @@ struct NetResyncDone {
 	uint32_t resumeFrame = 0;     // echo of host's resumeFrame
 };
 
+// NetSimHashDiag — either direction.  Per-subsystem sim-state hash
+// breakdown for `frame`, shipped when a peer has reason to suspect its
+// local state has diverged (desync detected, or the first lockstep
+// frame of a session).  Receiver compares against its own breakdown
+// for the same frame and logs a precise DIFF line naming the
+// first-diverging subsystem(s).
+//
+// 56 bytes.  The subsystem set must stay in sync with
+// ATNetplay::SimHashBreakdown — any new field there needs a companion
+// field here AND a kProtocolVersion bump (a mismatched receiver would
+// silently drop the packet on wire-size check, losing diagnostics).
+struct NetSimHashDiag {
+	uint32_t magic      = kMagicSimHashDiag;
+	uint32_t frame      = 0;        // lockstep frame the breakdown is for
+	uint32_t flags      = 0;        // reserved; must be 0
+	uint32_t total      = 0;
+	uint32_t cpuRegs    = 0;
+	uint32_t ramBank0   = 0;
+	uint32_t ramBank1   = 0;
+	uint32_t ramBank2   = 0;
+	uint32_t ramBank3   = 0;
+	uint32_t gtiaRegs   = 0;
+	uint32_t anticRegs  = 0;
+	uint32_t pokeyRegs  = 0;
+	uint32_t schedTick  = 0;
+};
+
 // Wire sizes.  Must match protocol.cpp.
 constexpr size_t kWireHelloSize     = 4 + 2 + 2 + kSessionNonceLen + 8 + 8 + kHandleLen + 2 + kEntryCodeHashLen;   // 90
 constexpr size_t kWireBootCfgSize   = 1 + 1 + 1 + 1 + 1 + 1 + 2 + 4 + 4 + 4 + 2 + 2 + 4 + 8 + 4;                   // 40
@@ -281,6 +314,7 @@ constexpr size_t kWireAckSize       = 8;
 constexpr size_t kWireResyncStartSize = 24;
 constexpr size_t kWireResyncDoneSize  = 12;
 constexpr size_t kWireEmoteSize       = 8;
+constexpr size_t kWireSimHashDiagSize = 4 * 13;   // 52
 constexpr size_t kWirePunchSize         = 4 + kSessionNonceLen;   // 20
 constexpr size_t kWireRelayHeaderSize   = 4 + 16 + 1 + 3;         // 24
 constexpr size_t kWireRelayRegisterSize = kWireRelayHeaderSize;   // 24
@@ -300,5 +334,6 @@ static_assert(kWireWelcomeSize == 128, "NetWelcome wire layout drift");
 // structs above.
 static_assert(kWireResyncStartSize == 4 * 6, "NetResyncStart wire drift");
 static_assert(kWireResyncDoneSize  == 4 * 3, "NetResyncDone wire drift");
+static_assert(kWireSimHashDiagSize == 4 * 13, "NetSimHashDiag wire drift");
 
 } // namespace ATNetplay

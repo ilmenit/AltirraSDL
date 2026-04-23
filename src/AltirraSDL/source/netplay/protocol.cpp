@@ -342,6 +342,47 @@ DecodeResult DecodeResyncDone(const uint8_t* buf, size_t len, NetResyncDone& out
 }
 
 // ---------------------------------------------------------------------------
+// NetSimHashDiag (52 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodeSimHashDiag(const NetSimHashDiag& d, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireSimHashDiagSize) return 0;
+	put_u32(buf +  0, kMagicSimHashDiag);
+	put_u32(buf +  4, d.frame);
+	put_u32(buf +  8, d.flags);
+	put_u32(buf + 12, d.total);
+	put_u32(buf + 16, d.cpuRegs);
+	put_u32(buf + 20, d.ramBank0);
+	put_u32(buf + 24, d.ramBank1);
+	put_u32(buf + 28, d.ramBank2);
+	put_u32(buf + 32, d.ramBank3);
+	put_u32(buf + 36, d.gtiaRegs);
+	put_u32(buf + 40, d.anticRegs);
+	put_u32(buf + 44, d.pokeyRegs);
+	put_u32(buf + 48, d.schedTick);
+	return kWireSimHashDiagSize;
+}
+
+DecodeResult DecodeSimHashDiag(const uint8_t* buf, size_t len, NetSimHashDiag& out) {
+	if (len < kWireSimHashDiagSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicSimHashDiag) return DecodeResult::BadMagic;
+	out.frame     = get_u32(buf +  4);
+	out.flags     = get_u32(buf +  8);
+	out.total     = get_u32(buf + 12);
+	out.cpuRegs   = get_u32(buf + 16);
+	out.ramBank0  = get_u32(buf + 20);
+	out.ramBank1  = get_u32(buf + 24);
+	out.ramBank2  = get_u32(buf + 28);
+	out.ramBank3  = get_u32(buf + 32);
+	out.gtiaRegs  = get_u32(buf + 36);
+	out.anticRegs = get_u32(buf + 40);
+	out.pokeyRegs = get_u32(buf + 44);
+	out.schedTick = get_u32(buf + 48);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // String helpers
 // ---------------------------------------------------------------------------
 

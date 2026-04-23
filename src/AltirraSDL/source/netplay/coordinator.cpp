@@ -461,6 +461,12 @@ void Coordinator::Poll(uint64_t nowMs) {
 				HandleEmote(e);
 				break;
 			}
+			case kMagicSimHashDiag: {
+				NetSimHashDiag d;
+				if (DecodeSimHashDiag(mRxBuf, n, d) != DecodeResult::Ok) continue;
+				HandleSimHashDiag(d);
+				break;
+			}
 			default:
 				// Unknown magic — silently ignore (could be from a
 				// different version or a stray packet).
@@ -598,6 +604,45 @@ void Coordinator::Poll(uint64_t nowMs) {
 			g_ATLCNetplay("host: re-sent ResyncStart (epoch %u, no chunks acked yet)",
 				(unsigned)mResyncEpoch);
 		}
+	}
+
+	// Joiner resync: retransmit NetResyncDone until the host's first
+	// post-resync input packet arrives (which flips
+	// mAwaitingHostResyncAck off in HandleInputPacket).  Fires only
+	// after AcknowledgeResyncApplied has put us back in Lockstepping
+	// — the one emit inline there is not guaranteed to survive UDP.
+	if (mAwaitingHostResyncAck && mRole == Role::Joiner &&
+	    mPhase == Phase::Lockstepping && mPeerKnown &&
+	    nowMs - mResyncDoneLastSentMs >= kResyncDoneRetryMs) {
+		NetResyncDone d;
+		d.magic       = kMagicResyncDone;
+		d.epoch       = mResyncEpoch;
+		d.resumeFrame = mResyncResumeFrame;
+		size_t nn = EncodeResyncDone(d, mTxBuf, sizeof mTxBuf);
+		if (nn) {
+			WrapAndSend(mTxBuf, nn, mPeer);
+			mResyncDoneLastSentMs = nowMs;
+			g_ATLCNetplay("joiner: re-sent ResyncDone (epoch %u, awaiting host input)",
+				(unsigned)mResyncEpoch);
+		}
+	}
+
+	// Overall Phase::Resyncing deadline.  If we're stuck here past the
+	// budget — chunks dropping, Done packets all lost, or the app
+	// never called SubmitResyncCapture / AcknowledgeResyncApplied —
+	// bail so the UI can surface the failure instead of showing a
+	// frozen progress bar forever.  The 10-minute peer-silence
+	// watchdog below only runs in Lockstepping and cannot rescue
+	// this case.
+	if (mPhase == Phase::Resyncing && mResyncStartMs != 0 &&
+	    nowMs - mResyncStartMs >= kResyncOverallTimeoutMs) {
+		g_ATLCNetplay("%s: resync timed out after %llu ms (epoch %u) — terminating",
+			mRole == Role::Host ? "host" : "joiner",
+			(unsigned long long)(nowMs - mResyncStartMs),
+			(unsigned)mResyncEpoch);
+		SendBye(kByeDesyncDetected);
+		mPhase = Phase::Desynced;
+		mLastError = "resync timed out";
 	}
 
 	// Lockstep: peer-silence timeout.  With the lockstep design the
@@ -1012,6 +1057,15 @@ void Coordinator::AcknowledgeSnapshotApplied() {
 
 void Coordinator::HandleInputPacket(const NetInputPacket& pkt, uint64_t nowMs) {
 	if (mPhase != Phase::Lockstepping) return;
+	// Post-resync handshake: a peer input packet from the post-resync
+	// timeline (baseFrame at or past the agreed resume point) proves
+	// the host got our Done and returned to Lockstepping.  Stop
+	// retransmitting.  Guard on baseFrame so a stale pre-resync
+	// packet that happened to arrive after we resumed doesn't wrongly
+	// clear the flag while the host is still stuck.
+	if (mAwaitingHostResyncAck && pkt.baseFrame >= mResyncResumeFrame) {
+		mAwaitingHostResyncAck = false;
+	}
 	mLoop.OnPeerInputPacket(pkt, nowMs);
 }
 
@@ -1250,6 +1304,7 @@ void Coordinator::BeginHostResync(uint64_t nowMs) {
 	mSnapTxBuffer.clear();
 	mResyncTxBuffer.clear();
 	mNeedsResyncCapture = true;
+	mResyncStartMs = nowMs;
 	mPhase = Phase::Resyncing;
 
 	g_ATLCNetplay("host: initiating resync epoch=%u resumeFrame=%u",
@@ -1317,7 +1372,7 @@ void Coordinator::HandleResyncStart(const NetResyncStart& s, uint64_t nowMs) {
 	BeginJoinerResync(s, nowMs);
 }
 
-void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t /*nowMs*/) {
+void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t nowMs) {
 	mResyncEpoch       = s.epoch;
 	mResyncResumeFrame = s.resumeFrame;
 	mResyncSeedHash    = s.seedHash;
@@ -1328,6 +1383,7 @@ void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t /*nowMs*/)
 
 	mSnapRx.Begin(s.stateChunks, s.stateBytes);
 	mNeedsResyncApply = false;
+	mResyncStartMs = nowMs;
 	mPhase = Phase::Resyncing;
 
 	g_ATLCNetplay("joiner: resync incoming (epoch=%u, %u bytes / %u chunks, "
@@ -1357,6 +1413,15 @@ void Coordinator::AcknowledgeResyncApplied() {
 	d.resumeFrame = mResyncResumeFrame;
 	size_t n = EncodeResyncDone(d, mTxBuf, sizeof mTxBuf);
 	if (n && mPeerKnown) WrapAndSend(mTxBuf, n, mPeer);
+
+	// Arm the Poll-driven retransmit.  If this first Done is lost the
+	// host is stuck in Resyncing with no recovery signal — joiner
+	// input packets get dropped there on the phase check — so we keep
+	// re-sending every kResyncDoneRetryMs until we see host input.
+	// mResyncDoneLastSentMs left at 0 so the very next Poll fires a
+	// duplicate Done immediately; after that, pacing takes over.
+	mAwaitingHostResyncAck = true;
+	mResyncDoneLastSentMs  = 0;
 
 	mPhase = Phase::Lockstepping;
 	g_ATLCNetplay("joiner: resync applied, resumed at frame %u (epoch %u)",
@@ -1397,6 +1462,76 @@ namespace ATNetplay {
 void Coordinator::HandleEmote(const NetEmote& e) {
 	if (mPhase != Phase::Lockstepping) return;
 	ATEmoteNetplay::OnReceivedFromPeer(e.iconId);
+}
+
+// ---------------------------------------------------------------------------
+// SimHashDiag (per-subsystem hash exchange on desync / session start)
+// ---------------------------------------------------------------------------
+
+void Coordinator::SubmitLocalSimHashDiag(const NetSimHashDiag& d) {
+	// Cache locally first so a peer packet that already arrived (race
+	// across the wire) can be matched against us without waiting for
+	// another Submit call.
+	mLocalDiag    = d;
+	mLocalDiagSet = true;
+
+	// Emit to the peer.  Unreliable one-shot — if it drops, the peer
+	// falls back to its own local-only breakdown log and the DIFF line
+	// simply doesn't appear on that peer.  Safer than adding retry
+	// state for a purely diagnostic channel.
+	if (mPeerKnown) {
+		size_t n = EncodeSimHashDiag(d, mTxBuf, sizeof mTxBuf);
+		if (n) WrapAndSend(mTxBuf, n, mPeer);
+	}
+
+	MaybeLogSimHashDiff();
+}
+
+void Coordinator::HandleSimHashDiag(const NetSimHashDiag& d) {
+	mPeerDiag    = d;
+	mPeerDiagSet = true;
+	MaybeLogSimHashDiff();
+}
+
+void Coordinator::MaybeLogSimHashDiff() {
+	if (!mLocalDiagSet || !mPeerDiagSet) return;
+	if (mLocalDiag.frame != mPeerDiag.frame) {
+		// Out-of-order breakdown pair (e.g. our desync-frame log
+		// crossed the peer's session-start frame-0 log in flight).
+		// Nothing actionable to log until both sides agree on the
+		// frame in question.
+		return;
+	}
+	if ((int64_t)mLocalDiag.frame == mLastDiffLoggedFrame) return;
+	mLastDiffLoggedFrame = (int64_t)mLocalDiag.frame;
+
+	// Field-by-field diff.  Label each line with "MATCH" or "DIFF" so
+	// a grep on DIFF localizes the first diverging subsystem at a
+	// glance.  Intentionally verbose — this is what users will copy-
+	// paste into bug reports, and a single-line summary hides which
+	// subsystem tipped over.
+	const char* role =
+		mRole == Role::Host   ? "host" :
+		mRole == Role::Joiner ? "joiner" : "idle";
+	g_ATLCNetplay("simhash diff @frame %u (%s vs peer):",
+		(unsigned)mLocalDiag.frame, role);
+
+	auto cmp = [](const char* label, uint32_t ours, uint32_t theirs) {
+		g_ATLCNetplay("  %-9s %s  ours=%08x  theirs=%08x",
+			label,
+			ours == theirs ? "MATCH" : "DIFF ",
+			ours, theirs);
+	};
+	cmp("total",     mLocalDiag.total,     mPeerDiag.total);
+	cmp("cpu",       mLocalDiag.cpuRegs,   mPeerDiag.cpuRegs);
+	cmp("ram0",      mLocalDiag.ramBank0,  mPeerDiag.ramBank0);
+	cmp("ram1",      mLocalDiag.ramBank1,  mPeerDiag.ramBank1);
+	cmp("ram2",      mLocalDiag.ramBank2,  mPeerDiag.ramBank2);
+	cmp("ram3",      mLocalDiag.ramBank3,  mPeerDiag.ramBank3);
+	cmp("gtia",      mLocalDiag.gtiaRegs,  mPeerDiag.gtiaRegs);
+	cmp("antic",     mLocalDiag.anticRegs, mPeerDiag.anticRegs);
+	cmp("pokey",     mLocalDiag.pokeyRegs, mPeerDiag.pokeyRegs);
+	cmp("schedTick", mLocalDiag.schedTick, mPeerDiag.schedTick);
 }
 
 void Coordinator::FailWith(const char* msg) {
