@@ -681,8 +681,27 @@ add_subdirectory(src)
 # Reference lobby server (C++).
 #
 # AltirraSDL ships the source of its matchmaking lobby at server/lobby/
-# so anyone can run their own — see server/lobby/README.md.  Built by
-# default as a normal C++ target: no external toolchain required
-# (cpp-httplib is vendored in the tree).
+# so anyone can run their own — see server/lobby/README.md.
+#
+# The lobby is a Linux server binary (Docker / systemd / Oracle Cloud
+# deployment) that uses POSIX sockets directly for its UDP reflector
+# and has no functional overlap with the emulator itself.  Production
+# deploys configure it standalone against server/lobby/CMakeLists.txt
+# and never pull it in via this top-level CMake, so building it as
+# part of the AltirraSDL `all` target just breaks the Windows build
+# for no benefit.  Keep it opt-in: pass -DALTIRRA_BUILD_LOBBY=ON to
+# build it from the AltirraSDL tree (useful for local development of
+# the lobby protocol).
 ###############################################################################
-add_subdirectory(server/lobby)
+option(ALTIRRA_BUILD_LOBBY
+    "Build the reference lobby server (server/lobby/; Linux/macOS only)"
+    OFF)
+if(ALTIRRA_BUILD_LOBBY)
+    if(WIN32)
+        message(FATAL_ERROR
+            "ALTIRRA_BUILD_LOBBY=ON is not supported on Windows: "
+            "server/lobby/server.cpp uses POSIX sockets.  Build the "
+            "lobby under WSL or use server/lobby/Dockerfile instead.")
+    endif()
+    add_subdirectory(server/lobby)
+endif()
