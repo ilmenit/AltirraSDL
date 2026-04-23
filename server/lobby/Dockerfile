@@ -27,6 +27,13 @@ RUN printf 'cmake_minimum_required(VERSION 3.24)\n'                       \
 FROM alpine:3.20
 RUN apk add --no-cache libstdc++
 COPY --from=build /build/server/lobby/altirra-lobby /altirra-lobby
+# 8080/tcp: HTTP lobby API.
+# 8081/udp: UDP reflector (STUN-lite) — clients send an 8-byte
+# request, the reflector echoes a 24-byte response with the
+# observed source endpoint.  See nat_discovery.h for the wire
+# format.  Default reflector port is kReflectorPortDefault in
+# lobby_protocol.h; override with UDP_REFLECTOR_PORT=0 to disable.
 EXPOSE 8080
+EXPOSE 8081/udp
 USER 65532:65532
 ENTRYPOINT ["/altirra-lobby"]
