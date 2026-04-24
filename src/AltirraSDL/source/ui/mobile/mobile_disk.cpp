@@ -153,8 +153,20 @@ void RenderMobileDiskRow(ATSimulator &sim, int driveIdx,
 					ATDiskInterface &tgt =
 						g_sim.GetDiskInterface(drive);
 					try {
-						tgt.LoadDisk(variantPath.c_str());
-						g_sim.GetDiskDrive(drive).SetEnabled(true);
+						// Route through ATSimulator::Load (matches
+						// Windows uidisk.cpp:1060-1065).  The 1-arg
+						// ATDiskInterface::LoadDisk path flags images
+						// as non-updatable; see ui_main.cpp
+						// kATDeferred_AttachDisk for the full note.
+						// The Side button is only shown when the drive
+						// already has a disk mounted, so inheriting the
+						// current write mode keeps the same R/O vs.
+						// R/W vs. VRW choice the user had.
+						ATImageLoadContext ctx;
+						ctx.mLoadType  = kATImageType_Disk;
+						ctx.mLoadIndex = drive;
+						g_sim.Load(variantPath.c_str(),
+							tgt.GetWriteMode(), &ctx);
 					} catch (const MyError &e) {
 						ShowInfoModal("Mount Failed", e.c_str());
 					}

@@ -747,15 +747,17 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 						ATDiskEmulator& disk = sim.GetDiskDrive(drive);
 						ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
 							? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
-						diskIf.LoadDisk(entry.fullPath.c_str());
 
-						IATDiskImage *img = diskIf.GetDiskImage();
-						if (img && !img->IsUpdatable())
-							wm = (ATMediaWriteMode)(wm & ~kATMediaWriteMode_AutoFlush);
-						diskIf.SetWriteMode(wm);
+						// Route through ATSimulator::Load to match Windows
+						// (uidisk.cpp:1060-1065).  See ui_main.cpp
+						// kATDeferred_AttachDisk for why the 1-arg
+						// ATDiskInterface::LoadDisk path mis-flags images
+						// as non-updatable.
+						ATImageLoadContext ctx;
+						ctx.mLoadType  = kATImageType_Disk;
+						ctx.mLoadIndex = drive;
+						sim.Load(entry.fullPath.c_str(), wm, &ctx);
 
-						if (diskIf.GetClientCount() < 2)
-							disk.SetEnabled(true);
 						ATAddMRU(entry.fullPath.c_str());
 						VDStringA u8 = VDTextWToU8(entry.fullPath);
 						char msg[1024];
