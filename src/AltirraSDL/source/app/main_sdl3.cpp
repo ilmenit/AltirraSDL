@@ -2305,39 +2305,92 @@ int main(int argc, char *argv[]) {
 		}
 #endif
 
-		// ── Emulation advance loop ────────────────────────────────
+		// ── Emulation advance (paced on WASM) ─────────────────────
 		//
 		// Each Advance() call runs at most g_ATSimScanlinesPerAdvance
 		// (default 32) scanlines.  A full NTSC frame is 262 lines, so
 		// producing one displayed frame takes ~9 Advance() calls.
 		//
-		// On native the OUTER while(g_running) loop spins Advance()
-		// until a frame completes, then the pacer sleeps until the
-		// next display-refresh slot.  Under WASM we have exactly one
-		// tick invocation per browser requestAnimationFrame — if we
-		// only made a single Advance call per rAF, we'd run at
-		// ~60/9 ≈ 7 Hz emulated (the "VERY slow" user symptom).
+		// On NATIVE the outer while(g_running) loop + g_pacer handle
+		// timing: the loop spins Advance() until hadFrame, then
+		// g_pacer.WaitForNextFrame() sleeps until the next target
+		// frame.  That gives cycle-accurate Hardware / Broadcast /
+		// Integral pacing driven by g_pacer.targetSecsPerFrame.
 		//
-		// Spin Advance() inside the tick until the display has a
-		// frame to present, GTIA stalls, or we exceed the per-tick
-		// time budget (14 ms — under one 60 Hz frame so we never
-		// miss an rAF slot).
+		// On WASM there is exactly one tick invocation per browser
+		// requestAnimationFrame (~60 Hz on most displays, 120+ Hz on
+		// gaming monitors, sub-1 Hz when the tab is hidden).  We
+		// cannot sleep inside the tick (that would burn the rAF
+		// slot), so we instead use a real-time accumulator:
+		//
+		//   - Measure real time elapsed since the previous tick.
+		//   - When the accumulated real time >= targetSecsPerFrame,
+		//     emulate one frame and subtract the target period.
+		//   - Otherwise, skip the Advance() call this tick — the
+		//     render section further down still presents so UI
+		//     stays responsive.
+		//
+		// This reuses the exact targetSecsPerFrame the native pacer
+		// would apply, so Config → Speed (Hardware / Integral /
+		// Broadcast), video standard (NTSC / PAL / SECAM), the speed
+		// modifier, and slow motion all work identically on WASM.
+		// Turbo bypasses the accumulator and emulates every rAF so
+		// fast-forward still speeds up as much as the browser allows.
 		ATSimulator::AdvanceResult result = ATSimulator::kAdvanceResult_Running;
 		bool hadFrame = false;
 #ifdef __EMSCRIPTEN__
-		const uint64_t tickStartMs = SDL_GetTicks();
-		constexpr uint64_t tickBudgetMs = 14;
-		for (;;) {
-			result = g_sim.Advance(dropFrame);
-			hadFrame = g_pDisplay->IsFramePending();
-			if (hadFrame) break;
-			if (result == ATSimulator::kAdvanceResult_WaitingForFrame) break;
-			if (result == ATSimulator::kAdvanceResult_Stopped)          break;
-			// Budget guard: under a heavy game (turbo mode off) this
-			// should be unreached on any modern device, but it keeps
-			// the tick bounded if the runtime ever hits a pathological
-			// slow path so the rAF loop stays responsive.
-			if (SDL_GetTicks() - tickStartMs > tickBudgetMs) break;
+		bool doEmulate = turbo;
+		{
+			// Real-time accumulator carried across ticks.  Static
+			// locals are zeroed on first entry, which gives us the
+			// right behaviour: initial delta == 0, no emulation until
+			// the second tick measures real elapsed time.
+			static uint64_t s_wasmLastRealMs = 0;
+			static double   s_wasmAccumMs   = 0.0;
+
+			const uint64_t nowMs = SDL_GetTicks();
+			if (s_wasmLastRealMs == 0) s_wasmLastRealMs = nowMs;
+			double deltaMs = (double)(nowMs - s_wasmLastRealMs);
+			s_wasmLastRealMs = nowMs;
+
+			// Cap runaway deltas (tab backgrounded for a while,
+			// throttled to 1 Hz, then regains focus).  Without this
+			// the accumulator would suddenly hold many seconds of
+			// real time and the emulator would try to catch up all
+			// at once, freezing the tab for a visible moment.
+			if (deltaMs > 250.0) deltaMs = 250.0;
+			s_wasmAccumMs += deltaMs;
+
+			// targetSecsPerFrame is set by UpdatePacerRate from the
+			// user's Speed settings and video standard.  Defaults:
+			// NTSC Hardware 1/59.9227 s, NTSC Integral 1/60 s, PAL
+			// Hardware 1/49.8607 s, PAL Integral 1/50 s.
+			const double targetMs = g_pacer.targetSecsPerFrame * 1000.0;
+
+			if (!turbo && targetMs > 0.0 && s_wasmAccumMs >= targetMs) {
+				doEmulate = true;
+				s_wasmAccumMs -= targetMs;
+				// Drop stale accumulation so an unusually long stall
+				// doesn't produce a burst of frames afterwards.
+				if (s_wasmAccumMs > targetMs * 3.0) s_wasmAccumMs = 0.0;
+				if (s_wasmAccumMs < 0.0)            s_wasmAccumMs = 0.0;
+			}
+		}
+
+		if (doEmulate) {
+			// Spin Advance() until a frame completes or the per-tick
+			// budget is exhausted.  Budget < one 60 Hz slot so the
+			// tick can't overshoot into the next rAF.
+			const uint64_t advStartMs = SDL_GetTicks();
+			constexpr uint64_t tickBudgetMs = 14;
+			for (;;) {
+				result = g_sim.Advance(dropFrame);
+				hadFrame = g_pDisplay->IsFramePending();
+				if (hadFrame) break;
+				if (result == ATSimulator::kAdvanceResult_WaitingForFrame) break;
+				if (result == ATSimulator::kAdvanceResult_Stopped)          break;
+				if (SDL_GetTicks() - advStartMs > tickBudgetMs) break;
+			}
 		}
 #else
 		result = g_sim.Advance(dropFrame);
@@ -2444,6 +2497,19 @@ int main(int argc, char *argv[]) {
 			SDL_Delay(16);
 #endif
 		}
+
+#ifdef __EMSCRIPTEN__
+		// Paced-skip slots (the accumulator wasn't ready yet) leave
+		// didRender == false because none of the three cases above
+		// hit.  On native the outer while loop would just spin back
+		// into Advance() — on WASM we only get one tick per rAF, so
+		// we must still present something, otherwise dialogs, file
+		// manager animation, touch controls, and the emulator HUD
+		// all freeze during the "gap" rAFs.
+		if (!didRender) {
+			RenderAndPresent();
+		}
+#endif
 		(void)didRender;
 		// kAdvanceResult_Running with no frame: loop immediately.
 	};
