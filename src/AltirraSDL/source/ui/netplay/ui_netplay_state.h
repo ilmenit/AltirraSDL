@@ -263,7 +263,19 @@ uint32_t ComputeFirmwareCRC32(uint64_t firmwareId);
 // firmware list.  Returns "" for crc=0 (meaning the offer doesn't
 // pin a specific ROM), or "Unknown" when no local firmware matches.
 // Thread-affine: callers on the UI thread only.
-const char *FirmwareNameForCRC(uint32_t crc);
+// Resolve a 32-bit CRC to a user-readable firmware name.  Prefers a
+// locally-installed ROM (whatever the user configured in Firmware
+// Manager); falls back to Altirra's built-in ATKnownFirmware table so
+// ROMs the user hasn't installed (yet) still render as
+// "Atari 400/800 OS-B NTSC" instead of "[0e86d61d]".  Returns
+// "Unknown" when the CRC is in neither place.
+//
+// `outInstalledLocally` (optional): set to true iff the returned name
+// came from the user's installed firmware list; false for the
+// known-table fallback or "Unknown".  Browser rows use this to paint
+// the token red when the host needs a ROM the user doesn't have.
+const char *FirmwareNameForCRC(uint32_t crc,
+                               bool *outInstalledLocally = nullptr);
 
 // Stable fingerprint of a HostedGame — combines the image path with
 // every joiner-visible MachineConfig knob (hardware mode, memory,

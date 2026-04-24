@@ -8,6 +8,7 @@
 
 #include "simulator.h"
 #include "firmwaremanager.h"
+#include "firmwaredetect.h"     // ATFirmwareGetKnownByIndex fallback
 
 #include <vd2/system/registry.h>
 #include <vd2/system/VDString.h>
@@ -300,20 +301,44 @@ uint32_t ComputeFirmwareCRC32(uint64_t firmwareId) {
 	return VDCRCTable::CRC32.CRC(buf.data(), buf.size());
 }
 
-const char *FirmwareNameForCRC(uint32_t crc) {
+const char *FirmwareNameForCRC(uint32_t crc, bool *outInstalledLocally) {
+	if (outInstalledLocally) *outInstalledLocally = false;
 	if (crc == 0) return "";
-	ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
-	if (!fwm) return "Unknown";
 
-	vdvector<ATFirmwareInfo> fwList;
-	fwm->GetFirmwareList(fwList);
-	for (const auto& fw : fwList) {
-		if (!fw.mbVisible) continue;
-		if (ComputeFirmwareCRC32(fw.mId) != crc) continue;
+	// Prefer a locally-installed firmware: its display name is what the
+	// user configured in the Firmware Manager, so returning that keeps
+	// the browser row consistent with the rest of the UI.
+	if (ATFirmwareManager *fwm = g_sim.GetFirmwareManager()) {
+		vdvector<ATFirmwareInfo> fwList;
+		fwm->GetFirmwareList(fwList);
+		for (const auto& fw : fwList) {
+			if (!fw.mbVisible) continue;
+			if (ComputeFirmwareCRC32(fw.mId) != crc) continue;
+			static thread_local std::string out;
+			out = VDTextWToU8(fw.mName).c_str();
+			if (outInstalledLocally) *outInstalledLocally = true;
+			return out.c_str();
+		}
+	}
+
+	// Fall back to Altirra's built-in ATKnownFirmware table
+	// (firmwaredetect.cpp).  This covers the "host advertised a
+	// well-known ROM I don't have installed" case — the browser row
+	// can then show "Atari 400/800 OS-B NTSC" in red instead of an
+	// opaque "[0e86d61d]", so the user knows exactly which firmware
+	// to install rather than having to look up the CRC elsewhere.
+	for (size_t i = 0; ; ++i) {
+		const ATKnownFirmware *kfw = ATFirmwareGetKnownByIndex(i);
+		if (!kfw) break;
+		if (kfw->mCRC != crc) continue;
 		static thread_local std::string out;
-		out = VDTextWToU8(fw.mName).c_str();
+		const int wlen = kfw->mpDesc ? (int)std::wcslen(kfw->mpDesc) : 0;
+		out = VDTextWToU8(kfw->mpDesc, wlen).c_str();
+		// outInstalledLocally stays false — we found a description,
+		// but the ROM itself isn't in the user's installed list.
 		return out.c_str();
 	}
+
 	return "Unknown";
 }
 
@@ -347,14 +372,20 @@ SpecLineToken ResolveFirmwareToken(const std::string& crcHex,
 		tok.missing = missingSlot;
 		return tok;
 	}
-	const char *name = FirmwareNameForCRC(crc);
+	bool local = false;
+	const char *name = FirmwareNameForCRC(crc, &local);
 	if (name && *name && std::strcmp(name, "Unknown") != 0) {
 		tok.text = name;
+		// Name came from the built-in known-firmware table (ROM not
+		// installed locally) — still mark red if compat says this
+		// slot is the one blocking the join, so the user sees both
+		// "which ROM is needed" AND "I'm missing it".
+		if (!local) tok.missing = missingSlot;
 		return tok;
 	}
-	// Firmware not installed locally.  Fall back to the hex — and mark
-	// missing only when the compat caller confirmed this slot is the
-	// one blocking the join.
+	// Firmware neither installed locally nor in the built-in known
+	// table.  Fall back to the hex — and mark missing only when the
+	// compat caller confirmed this slot is the one blocking the join.
 	char buf[12];
 	std::snprintf(buf, sizeof buf, "[%.*s]",
 		(int)crcHex.size(), crcHex.c_str());
