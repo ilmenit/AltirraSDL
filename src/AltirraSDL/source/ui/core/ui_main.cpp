@@ -9,9 +9,13 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#ifndef ALTIRRA_WASM
 #include <imgui_impl_opengl3.h>
+#endif
 #include "display_backend.h"
+#ifndef ALTIRRA_WASM
 #include "display_backend_gl33.h"
+#endif
 #include "../../input/touch_widgets.h"
 
 #include <vd2/system/vdtypes.h>
@@ -1010,6 +1014,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 
 	s_pDisplayBackend = backend;
 
+#ifndef ALTIRRA_WASM
 	if (backend->GetType() == DisplayBackendType::OpenGL) {
 		s_usingGLBackend = true;
 		auto *glBackend = static_cast<DisplayBackendGL *>(backend);
@@ -1031,6 +1036,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 			GLGetActiveProfile() == GLProfile::ES30
 				? "OpenGL ES 3.0" : "OpenGL 3.3 Core");
 	} else {
+#endif // !ALTIRRA_WASM
 		s_usingGLBackend = false;
 		SDL_Renderer *renderer = backend->GetSDLRenderer();
 		if (!ImGui_ImplSDL3_InitForSDLRenderer(window, renderer)) {
@@ -1042,7 +1048,9 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 			return false;
 		}
 		LOG_INFO("UI", "ImGui initialized (SDL_Renderer, docking enabled)");
+#ifndef ALTIRRA_WASM
 	}
+#endif // !ALTIRRA_WASM
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 	ATNetplayUI_Initialize(window);
@@ -1059,7 +1067,9 @@ void ATUIShutdown() {
 	ATUIShutdownPaletteSolver();
 	ATUIStopRecording();
 	if (s_usingGLBackend) {
+#ifndef ALTIRRA_WASM
 		ImGui_ImplOpenGL3_Shutdown();
+#endif
 	} else {
 		ImGui_ImplSDLRenderer3_Shutdown();
 	}
@@ -1416,7 +1426,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	ATUIFontsRebuildIfDirty();
 
 	if (s_usingGLBackend) {
+#ifndef ALTIRRA_WASM
 		ImGui_ImplOpenGL3_NewFrame();
+#endif
 	} else {
 		ImGui_ImplSDLRenderer3_NewFrame();
 	}
@@ -1601,7 +1613,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 	ImGui::Render();
 	if (s_usingGLBackend) {
+#ifndef ALTIRRA_WASM
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#endif
 	} else {
 		ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), backend->GetSDLRenderer());
 	}

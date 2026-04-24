@@ -32,9 +32,11 @@
 #if ALTIRRA_HAS_BAKED_ICON
 #include "altirra_icon_data.h"
 #endif
+#ifndef ALTIRRA_WASM
 #include "display_backend_gl33.h"
-#include "display_backend_sdl.h"
 #include "gl_funcs.h"
+#endif
+#include "display_backend_sdl.h"
 #include "input_sdl3.h"
 #include "touch_controls.h"
 #include "ui_mobile.h"
@@ -48,16 +50,13 @@
 #include "ui_testmode.h"
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
-
-#ifdef ALTIRRA_NETPLAY_ENABLED
+#endif
 #include "netplay/netplay_glue.h"
 #include "ui/netplay/ui_netplay.h"
 #include "ui/emotes/emote_picker.h"
 #include "ui/emotes/emote_assets.h"
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_overlay.h"
-#endif
-#endif
 #include "ui_textselection.h"
 #include "ui_progress.h"
 #include "ui_emuerror.h"
@@ -1305,6 +1304,9 @@ int main(int argc, char *argv[]) {
 
 	bool useGL = false;
 	SDL_GLContext glContext = nullptr;
+#ifndef ALTIRRA_WASM
+	// On WASM, SDL_Renderer (WebGL2 via SDL3) is the only rendering path.
+	// Direct OpenGL context creation is skipped entirely.
 	GLProfile glProfile = GLProfile::Desktop33;
 
 	// Pick the preferred GL profile per platform.  Only ONE profile is
@@ -1357,6 +1359,11 @@ int main(int argc, char *argv[]) {
 		if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
 		LOG_INFO("Main", "Falling back to SDL_Renderer (screen FX and librashader unavailable)");
 	}
+#else // ALTIRRA_WASM
+	// WASM: skip OpenGL context creation entirely; use SDL_Renderer (WebGL2).
+	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
+	if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
+#endif // ALTIRRA_WASM
 
 	// Set the window/taskbar/dock icon from the baked RGBA data.
 	// The largest image is the primary surface; smaller sizes are
@@ -1429,6 +1436,7 @@ int main(int argc, char *argv[]) {
 #endif
 
 	// Create the display backend
+#ifndef ALTIRRA_WASM
 	if (useGL) {
 		g_pBackend = new DisplayBackendGL(g_pWindow, glContext);
 		// VSync swap interval is managed dynamically by the main loop based
@@ -1443,6 +1451,13 @@ int main(int argc, char *argv[]) {
 		SDL_SetRenderVSync(g_pRenderer, 0);
 		g_pBackend = new DisplayBackendSDLRenderer(g_pWindow, g_pRenderer);
 	}
+#else // ALTIRRA_WASM
+	// WASM always uses SDL_Renderer (WebGL2 via SDL3).
+	g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
+	if (!g_pRenderer) { LOG_INFO("Main", "CreateRenderer: %s", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
+	SDL_SetRenderVSync(g_pRenderer, 0);
+	g_pBackend = new DisplayBackendSDLRenderer(g_pWindow, g_pRenderer);
+#endif // ALTIRRA_WASM
 
 	// Load UI mode preference before ImGui init so ATUIApplyModeStyle()
 	// inside ATUIInit() sees the correct mode.
@@ -1510,9 +1525,11 @@ int main(int argc, char *argv[]) {
 		if (pxW <= 0) pxW = kDefaultWidth;
 		if (pxH <= 0) pxH = kDefaultHeight;
 		const char *backendName = "SDL_Renderer";
+#ifndef ALTIRRA_WASM
 		if (useGL)
 			backendName = (glProfile == GLProfile::ES30)
 				? "OpenGL ES 3.0" : "OpenGL 3.3 Core";
+#endif
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 			"Altirra: display backend = %s, window pixel size = %dx%d",
 			backendName, pxW, pxH);
@@ -1522,8 +1539,10 @@ int main(int argc, char *argv[]) {
 	// Tell the display whether the GL backend supports screen effects.
 	// This makes GTIA's IsScreenFXPreferred() return true, which enables
 	// accelerated screen effects (scanlines, bloom, color correction, etc.)
+#ifndef ALTIRRA_WASM
 	if (useGL)
 		g_pDisplay->SetScreenFXPreferred(true);
+#endif
 
 	// Auto-load last librashader preset if one was saved
 	ATUIShaderPresetsAutoLoad(g_pBackend);

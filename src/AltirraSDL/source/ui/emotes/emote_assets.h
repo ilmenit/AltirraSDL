@@ -7,6 +7,8 @@
 #include <imgui.h>
 #include <stdint.h>
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 namespace ATEmotes {
 
 constexpr int kCount = 16;
@@ -27,3 +29,14 @@ bool IsReady();
 ImTextureID GetTexture(int iconId, int *outW = nullptr, int *outH = nullptr);
 
 } // namespace ATEmotes
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+namespace ATEmotes {
+    inline void Initialize()                                    {}
+    inline void Shutdown()                                      {}
+    inline bool IsReady()                                       { return false; }
+    inline ImTextureID GetTexture(int, int* = nullptr, int* = nullptr) { return (ImTextureID)nullptr; }
+} // namespace ATEmotes
+
+#endif // ALTIRRA_NETPLAY_ENABLED

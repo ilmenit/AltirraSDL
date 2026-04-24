@@ -68,6 +68,11 @@ void VDCPUCleanupExtensions();
 
 #if VD_CPU_X86 || VD_CPU_X64
 extern "C" bool MMX_enabled, ISSE_enabled, SSE2_enabled;
+#elif !defined(VD_CPU_ARM64)
+// Non-x86/non-ARM64 targets (e.g. WebAssembly) have no x86 SIMD extensions.
+static constexpr bool MMX_enabled = false;
+static constexpr bool ISSE_enabled = false;
+static constexpr bool SSE2_enabled = false;
 #endif
 
 #endif

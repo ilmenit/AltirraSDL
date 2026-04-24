@@ -14,9 +14,7 @@
 #include "ui_system_internal.h"
 #include "simulator.h"
 
-#ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_glue.h"
-#endif
 #include "constants.h"
 #include "cpu.h"
 #include "firmwaremanager.h"

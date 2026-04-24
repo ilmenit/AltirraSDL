@@ -353,7 +353,7 @@ void ATCassetteDecoderTurbo::Process(const sint16 *samples, uint32 n, float *ade
 #else
 	[[maybe_unused]] float hpf[16];
 
-	if constexpr (T_PreFilter == PrefilterType::HP_FIR) {
+	if constexpr (T_PreFilter == PreFilterType::HP_FIR) {
 		memcpy(hpf, mHPFWindow, sizeof hpf);
 	}
 #endif

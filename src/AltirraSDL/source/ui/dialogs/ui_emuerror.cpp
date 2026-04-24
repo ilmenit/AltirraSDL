@@ -22,7 +22,9 @@
 #include "debugger.h"
 
 #include <at/atcore/logging.h>
+#ifdef ALTIRRA_NETPLAY_ENABLED
 extern ATLogChannel g_ATLCNetplay;
+#endif
 
 // Debugger open/close from ui_debugger.cpp
 extern void ATUIDebuggerOpen();
@@ -209,6 +211,7 @@ void ATEmuErrorHandlerSDL3::OnDebuggerOpen(IATDebugger *, ATDebuggerOpenEvent *e
 	// where a fault on one peer freezes both sides.
 	{
 		ATCPUEmulator &cpu = mpSim->GetCPU();
+#ifdef ALTIRRA_NETPLAY_ENABLED
 		g_ATLCNetplay(
 			"emu error: PC=%04X A=%02X X=%02X Y=%02X S=%02X P=%02X "
 			"mode=%d illegal=%d stopOnBRK=%d pathBrk=%d",
@@ -222,6 +225,7 @@ void ATEmuErrorHandlerSDL3::OnDebuggerOpen(IATDebugger *, ATDebuggerOpenEvent *e
 			cpu.AreIllegalInsnsEnabled() ? 1 : 0,
 			cpu.GetStopOnBRK() ? 1 : 0,
 			cpu.IsPathBreakEnabled() ? 1 : 0);
+#endif // ALTIRRA_NETPLAY_ENABLED
 	}
 
 	switch (g_ATOptions.mErrorMode) {

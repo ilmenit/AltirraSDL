@@ -243,9 +243,6 @@ const char *ConsumeArg(int argc, char **argv, int &i,
 // ---------------------------------------------------------------------------
 
 bool ATProcessCommandLineSDL3(int argc, char **argv) {
-	if (argc <= 1)
-		return false;
-
 	// State variables matching Windows ATUICommandLineProcessor
 	bool coldResetPending = false;
 	bool debugModeSuspend = false;
@@ -1033,6 +1030,35 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			consumed[j] = true;
 		i = joinEnd;
 	}
+
+	// WebAssembly smoke mode: with no explicit startup media, auto-boot a
+	// pre-bundled image from the virtual filesystem to validate startup.
+#if defined(ALTIRRA_WASM_SMOKE_BOOT_PATH)
+	if (!hadBootImage && argc <= 1) {
+		const VDStringW smokePathW = VDTextU8ToW(VDStringSpanA(ALTIRRA_WASM_SMOKE_BOOT_PATH));
+		if (!VDDoesPathExist(smokePathW.c_str())) {
+			LOG_WARN("CmdLine", "WASM smoke media not found in VFS: %s", ALTIRRA_WASM_SMOKE_BOOT_PATH);
+		} else {
+			if (!haveUnloadedAllImages) {
+				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
+				haveUnloadedAllImages = true;
+			}
+
+			const bool suppressColdReset = DoLoadDirect(
+				ALTIRRA_WASM_SMOKE_BOOT_PATH,
+				bootImageWriteMode,
+				imageCartMapper,
+				kATImageType_Program,
+				-1);
+
+			if (!suppressColdReset)
+				coldResetPending = true;
+
+			hadBootImage = true;
+			LOG_INFO("CmdLine", "WASM smoke auto-boot: %s", ALTIRRA_WASM_SMOKE_BOOT_PATH);
+		}
+	}
+#endif
 
 	// -----------------------------------------------------------------------
 	// Post-processing (matches Windows PostSequenceCleanup at line 782-867)

@@ -50,10 +50,6 @@ target_sources(AltirraSDL PRIVATE
     # --- display/ : SDL display + GL backends + shaders ---
     source/display/display_sdl3.cpp
     source/display/display_backend_sdl.cpp
-    source/display/display_backend_gl33.cpp
-    source/display/gl_funcs.cpp
-    source/display/gl_helpers.cpp
-    source/display/display_librashader.cpp
 
     # --- input/ : SDL input, joystick, touch ---
     source/input/input_sdl3.cpp
@@ -191,15 +187,6 @@ target_sources(AltirraSDL PRIVATE
     source/ui/gamelibrary/game_library.cpp
     source/ui/gamelibrary/game_library_art.cpp
 
-    # --- ui/emotes/ : Online Play communication icons ---
-    source/ui/emotes/emote_assets.cpp
-    source/ui/emotes/emote_overlay.cpp
-    source/ui/emotes/emote_picker.cpp
-    source/ui/emotes/emote_netplay.cpp
-
-    # --- ui/sysconfig/ : Online Play settings page ---
-    source/ui/sysconfig/ui_system_pages_netplay.cpp
-
     # Registry persistence (filtered out by ui* regex, so add explicitly)
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
 
@@ -241,6 +228,17 @@ target_sources(AltirraSDL PRIVATE
     ${ALTIRRA_ALL_SOURCES}
 )
 
+# GL display backend and helpers — not used on WASM (SDL_Renderer is the only
+# rendering path there; direct GL calls conflict with Emscripten's WebGL stubs).
+if(NOT ALTIRRA_WASM)
+    target_sources(AltirraSDL PRIVATE
+        source/display/display_backend_gl33.cpp
+        source/display/gl_funcs.cpp
+        source/display/gl_helpers.cpp
+        source/display/display_librashader.cpp
+    )
+endif()
+
 # Re-include Win32-specific files that were excluded by the _win32.cpp filter
 # but are needed on the Windows SDL3 build.
 if(WIN32)
@@ -259,6 +257,10 @@ endif()
 # Winsock (ws2_32) propagates transitively from `system` and ATNetworkSockets,
 # so no explicit link is needed on Windows.
 option(ALTIRRA_BRIDGE "Build the AltirraBridge scripting server" ON)
+if(ALTIRRA_WASM AND ALTIRRA_BRIDGE)
+    message(WARNING "ALTIRRA_BRIDGE is not yet supported for ALTIRRA_WASM; forcing OFF.")
+    set(ALTIRRA_BRIDGE OFF CACHE BOOL "Build the AltirraBridge scripting server" FORCE)
+endif()
 if(ALTIRRA_BRIDGE)
     target_sources(AltirraSDL PRIVATE
         source/bridge/bridge_server.cpp
@@ -285,6 +287,10 @@ endif()
 # protocol only; transport, coordinator, lobby client, and UI land in
 # subsequent phases.  Default ON; disable with -DALTIRRA_NETPLAY=OFF.
 option(ALTIRRA_NETPLAY "Build the AltirraSDL netplay module" ON)
+if(ALTIRRA_WASM AND ALTIRRA_NETPLAY)
+    message(WARNING "ALTIRRA_NETPLAY is not yet supported for ALTIRRA_WASM; forcing OFF.")
+    set(ALTIRRA_NETPLAY OFF CACHE BOOL "Build the AltirraSDL netplay module" FORCE)
+endif()
 if(ALTIRRA_NETPLAY)
     target_sources(AltirraSDL PRIVATE
         source/netplay/protocol.cpp
@@ -313,6 +319,15 @@ if(ALTIRRA_NETPLAY)
         source/ui/netplay/ui_netplay_actions.cpp
         source/ui/netplay/ui_netplay_activity.cpp
         source/ui/netplay/ui_netplay.cpp
+
+        # Emote system (icon picker, overlay, netplay send/receive)
+        source/ui/emotes/emote_assets.cpp
+        source/ui/emotes/emote_overlay.cpp
+        source/ui/emotes/emote_picker.cpp
+        source/ui/emotes/emote_netplay.cpp
+
+        # Online Play settings page (references emote/netplay symbols)
+        source/ui/sysconfig/ui_system_pages_netplay.cpp
     )
     if(WIN32)
         target_sources(AltirraSDL PRIVATE
@@ -573,7 +588,7 @@ target_include_directories(AltirraSDL BEFORE PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/h
 )
 
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT ALTIRRA_WASM)
     find_package(OpenGL REQUIRED)
 endif()
 
@@ -606,9 +621,34 @@ if(NOT ALTIRRA_SKIP_SDL3_IMAGE)
     target_link_libraries(AltirraSDL PRIVATE SDL3_image::SDL3_image)
 endif()
 
-# OpenGL: desktop GL on Linux/macOS/Windows, GLESv3 on Android
+# OpenGL: desktop GL on Linux/macOS/Windows, GLESv3 on Android, and
+# Emscripten/WebGL via link flags in ALTIRRA_WASM mode.
 if(ANDROID)
     target_link_libraries(AltirraSDL PRIVATE GLESv3 EGL android log)
+elseif(ALTIRRA_WASM)
+    set(ALTIRRA_WASM_SMOKE_MEDIA
+        "${CMAKE_SOURCE_DIR}/src/AltirraSDL/AltirraBridge/examples/case_studies/wizard/wizard.xex"
+        CACHE FILEPATH
+        "Bundled media used for wasm smoke boot (embedded into virtual FS)")
+
+    if(EXISTS "${ALTIRRA_WASM_SMOKE_MEDIA}")
+        target_link_options(AltirraSDL PRIVATE
+            "SHELL:--embed-file ${ALTIRRA_WASM_SMOKE_MEDIA}@/media/wizard.xex"
+        )
+        target_compile_definitions(AltirraSDL PRIVATE
+            ALTIRRA_WASM_SMOKE_BOOT_PATH=\"/media/wizard.xex\"
+        )
+    else()
+        message(WARNING
+            "ALTIRRA_WASM_SMOKE_MEDIA not found at '${ALTIRRA_WASM_SMOKE_MEDIA}'. "
+            "Wasm smoke auto-boot will be disabled.")
+    endif()
+
+    target_link_options(AltirraSDL PRIVATE
+        "SHELL:-sUSE_WEBGL2=1"
+        "SHELL:-sASYNCIFY=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH=1"
+    )
 else()
     target_link_libraries(AltirraSDL PRIVATE OpenGL::GL)
 endif()
@@ -733,7 +773,11 @@ elseif(APPLE)
     # [[msvc::no_unique_address]] annotation in vdalloc.h.
     target_compile_options(AltirraSDL PRIVATE -Wno-unknown-attributes)
 elseif(UNIX)
-    target_compile_definitions(AltirraSDL PRIVATE VD_OS_LINUX=1)
+    if(ALTIRRA_WASM)
+        target_compile_definitions(AltirraSDL PRIVATE VD_OS_LINUX=1 ALTIRRA_WASM=1)
+    else()
+        target_compile_definitions(AltirraSDL PRIVATE VD_OS_LINUX=1)
+    endif()
 endif()
 
 # ===========================================================================

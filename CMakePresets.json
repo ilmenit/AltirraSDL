@@ -15,6 +15,16 @@
             }
         },
         {
+            "name": "emscripten-base",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+                "ALTIRRA_SDL3": "ON",
+                "ALTIRRA_WASM": "ON"
+            }
+        },
+        {
             "name": "linux-debug",
             "displayName": "Linux Debug (SDL3)",
             "inherits": "base",
@@ -119,6 +129,32 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
+        },
+        {
+            "name": "wasm-debug",
+            "displayName": "WebAssembly Debug (Emscripten)",
+            "inherits": "emscripten-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "$env{EMSDK}",
+                "rhs": ""
+            }
+        },
+        {
+            "name": "wasm-release",
+            "displayName": "WebAssembly Release (Emscripten)",
+            "inherits": "emscripten-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "$env{EMSDK}",
+                "rhs": ""
+            }
         }
     ],
     "buildPresets": [
@@ -149,6 +185,14 @@
         {
             "name": "windows-libs-only",
             "configurePreset": "windows-libs-only"
+        },
+        {
+            "name": "wasm-debug",
+            "configurePreset": "wasm-debug"
+        },
+        {
+            "name": "wasm-release",
+            "configurePreset": "wasm-release"
         }
     ]
 }

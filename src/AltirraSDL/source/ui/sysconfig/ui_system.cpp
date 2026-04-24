@@ -234,7 +234,11 @@ void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 	case kCat_Fonts:          RenderFontsCategory(sim); break;
 	case kCat_Display2:       RenderDisplay2Category(sim); break;
 	case kCat_SettingsCfg:    RenderSettingsCfgCategory(sim); break;
-	case kCat_OnlinePlay:     RenderOnlinePlayCategory(sim); break;
+	case kCat_OnlinePlay:
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		RenderOnlinePlayCategory(sim);
+#endif
+		break;
 	}
 	ImGui::EndChild();
 

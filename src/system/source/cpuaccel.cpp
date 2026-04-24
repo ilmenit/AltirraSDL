@@ -50,7 +50,9 @@
 long g_lCPUExtensionsEnabled;
 
 extern "C" {
+#if VD_CPU_X86 || VD_CPU_X64
 	bool FPU_enabled, MMX_enabled, ISSE_enabled, SSE2_enabled;
+#endif
 };
 
 #if VD_CPU_X86 || VD_CPU_X64

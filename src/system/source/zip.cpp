@@ -2195,7 +2195,11 @@ VDNOINLINE void VDInflateStream<T_Enhanced>::InflateBlock() {
 						copyOffset += 16;
 					} while(copyOffset < 0);
 #else
-#error Unaligned access not implemented
+					do {
+						memcpy(&copyDstEnd[copyOffset], &copySrcEnd[copyOffset], 16);
+
+						copyOffset += 16;
+					} while(copyOffset < 0);
 #endif
 				} else if (dist == 1) {
 					// Repeating with dist 1 -- memset

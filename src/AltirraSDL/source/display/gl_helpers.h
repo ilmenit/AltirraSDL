@@ -2,8 +2,33 @@
 
 #pragma once
 
-#include "gl_funcs.h"
-#include <vector>
+#ifdef ALTIRRA_WASM
+// -----------------------------------------------------------------------
+// WASM stubs: the GL display backend is not compiled for WebAssembly.
+// All GL helper entry points and GL constants/functions used by UI code
+// are provided as inline no-ops so callers link without change.
+// -----------------------------------------------------------------------
+#include <stdint.h>
+typedef unsigned int GLuint;
+typedef unsigned int GLenum;
+
+// GL constants used by UI files that include gl_helpers.h
+#define GL_TEXTURE_2D 0x0DE1u
+#define GL_RGBA       0x1908u
+#define GL_RGBA8      0x8058u
+#define GL_UNSIGNED_BYTE 0x1401u
+
+// Raw GL function stubs
+inline void glDeleteTextures(int, const GLuint*) {}
+inline void glBindTexture(GLenum, GLuint) {}
+
+// gl_helpers.h public API stubs
+inline GLuint GLCreateTexture2D(int, int, GLenum, GLenum, GLenum,
+	const void *, bool = true) { return 0; }
+inline GLuint GLCreateXRGB8888Texture(int, int, bool, const void *) { return 0; }
+inline void   GLUploadXRGB8888(int, int, const void *, int = 0) {}
+
+#else  // !ALTIRRA_WASM
 
 // ---------------------------------------------------------------------------
 // Shader preamble helpers
@@ -101,3 +126,5 @@ struct GLRenderTarget {
 // Draw a fullscreen triangle using the empty VAO.
 // Assumes the VAO is already bound.
 void GLDrawFullscreenTriangle();
+
+#endif // ALTIRRA_WASM

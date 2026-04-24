@@ -12,7 +12,9 @@
 #include <stdafx.h>
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#ifndef ALTIRRA_WASM
 #include <imgui_impl_opengl3.h>
+#endif
 #include <imgui_impl_sdlrenderer3.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -444,7 +446,9 @@ void ATUIFontsRebuildIfDirty() {
 	// Tear down the current backend texture so the next NewFrame uploads
 	// a fresh one built from the new atlas.
 	if (s_usingGLBackend) {
+#ifndef ALTIRRA_WASM
 		ImGui_ImplOpenGL3_DestroyFontsTexture();
+#endif
 	} else {
 		ImGui_ImplSDLRenderer3_DestroyFontsTexture();
 	}

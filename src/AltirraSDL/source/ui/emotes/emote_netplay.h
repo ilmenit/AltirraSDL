@@ -14,6 +14,8 @@
 
 #include <stdint.h>
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 namespace ATEmoteNetplay {
 
 // Called from the main loop after ATEmotes::Initialize() has run.
@@ -41,3 +43,19 @@ bool GetReceiveEnabled();
 void SetReceiveEnabled(bool v);
 
 } // namespace ATEmoteNetplay
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+namespace ATEmoteNetplay {
+    inline void Initialize()                    {}
+    inline void Shutdown()                      {}
+    inline bool Send(int)                       { return false; }
+    inline void Process(uint64_t)               {}
+    inline void OnReceivedFromPeer(uint8_t)     {}
+    inline bool GetSendEnabled()                { return false; }
+    inline void SetSendEnabled(bool)            {}
+    inline bool GetReceiveEnabled()             { return false; }
+    inline void SetReceiveEnabled(bool)         {}
+} // namespace ATEmoteNetplay
+
+#endif // ALTIRRA_NETPLAY_ENABLED

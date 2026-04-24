@@ -166,7 +166,7 @@ void ATFFT_DIT_Radix8_Scalar(float *dst0, const float *y0, const uint32 *order0,
 	}
 }
 
-void ATFFT_DIT_R2C_Scalar(float *dst0, const float *src0, const float *w, int N) {
+void ATFFT_DIT_R2C_Scalar(float *dst0, const float *src0, const float *w, size_t N) {
 	float *__restrict dst = dst0;
 	const float *__restrict src = src0;
 	const float *__restrict w2 = w + 2;
@@ -176,7 +176,7 @@ void ATFFT_DIT_R2C_Scalar(float *dst0, const float *src0, const float *w, int N)
 	dst[0] = rz + iz;
 	dst[1] = rz - iz;
 
-	for(int i=2; i<N/2; i += 2) {
+	for(int i=2; i<(int)(N/2); i += 2) {
 		float r0 = src[i];
 		float i0 = src[i+1];
 		float r1 = src[N-i];
@@ -205,7 +205,7 @@ void ATFFT_DIT_R2C_Scalar(float *dst0, const float *src0, const float *w, int N)
 	dst[N/2+1] = -src[N/2+1];
 }
 
-void ATFFT_DIF_C2R_Scalar(float *dst0, float *x, const float *w, int N) {
+void ATFFT_DIF_C2R_Scalar(float *dst0, const float *x, const float *w, size_t N) {
 	float *__restrict dst = dst0;
 
 	float rz = x[0];
@@ -218,7 +218,7 @@ void ATFFT_DIF_C2R_Scalar(float *dst0, float *x, const float *w, int N) {
 
 	w += 2;
 
-	for(int i=2; i<N/2; i += 2) {
+	for(int i=2; i<(int)(N/2); i += 2) {
 		float r0 = x[i];
 		float i0 = x[i+1];
 		float r1 = x[N-i];

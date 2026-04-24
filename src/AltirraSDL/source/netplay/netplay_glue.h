@@ -34,6 +34,8 @@
 
 namespace ATNetplay { enum class CoordPhase; struct NetBootConfig; }
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 namespace ATNetplayGlue {
 
 // Phase mirror of ATNetplay::Coordinator::Phase so the UI can consume
@@ -285,3 +287,29 @@ void HostIngestPeerHint(const char* gameId,
                         const char* candidates);
 
 } // namespace ATNetplayGlue
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+// Inline no-op stubs so non-netplay translation units compile and link
+// without the netplay module (e.g. WASM builds).
+namespace ATNetplayGlue {
+    inline bool IsActive()                          { return false; }
+    inline bool IsLockstepping()                    { return false; }
+    inline void Poll(uint64_t)                      {}
+    inline bool CanAdvanceThisTick()                { return true; }
+    inline void OnFrameAdvanced()                   {}
+    inline void SubmitLocalInput()                  {}
+    inline void ApplyFrameInputsToSim()             {}
+    inline void Shutdown()                          {}
+    inline void DisconnectActive()                  {}
+    inline bool SendEmote(uint8_t)                  { return false; }
+    inline bool IsDesynced(int64_t* = nullptr)      { return false; }
+    inline bool IsResyncing(uint32_t* = nullptr, uint32_t* = nullptr,
+                             uint32_t* = nullptr, uint32_t* = nullptr) { return false; }
+    inline uint32_t CurrentFrame()                  { return 0; }
+    inline uint32_t CurrentInputDelay()             { return 0; }
+    inline uint64_t MsSinceLastPeerPacket(uint64_t) { return UINT64_MAX / 2; }
+    inline const char* LockstepOfferId()            { return ""; }
+} // namespace ATNetplayGlue
+
+#endif // ALTIRRA_NETPLAY_ENABLED

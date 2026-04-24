@@ -35,9 +35,11 @@
 #if defined(VD_CPU_X86) || defined(VD_CPU_X64)
 #define ATFFT_USE_SSE2
 #define ATFFT_USE_RADIX_4
-#else
+#elif defined(VD_CPU_ARM64) && !defined(__EMSCRIPTEN__)
+// ARM64 uses NEON intrinsics; exclude on Emscripten (WebAssembly has no NEON).
 #define ATFFT_USE_NEON
 #define ATFFT_USE_RADIX_4
+// else: scalar fallback (e.g. WASM)
 #endif
 
 enum class ATFFTTableType : uint8 {

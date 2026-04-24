@@ -15,11 +15,14 @@
 #include <imgui.h>
 
 #include "ui_menus_internal.h"
+#include "netplay/netplay_glue.h"
+#include "settings.h"
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 #include "ui/netplay/ui_netplay.h"
 #include "ui/netplay/ui_netplay_state.h"
 #include "ui/emotes/emote_netplay.h"
-#include "netplay/netplay_glue.h"
-#include "settings.h"
 
 void ATUIRenderOnlineMenu() {
 	bool inSession = ATNetplayGlue::IsActive();
@@ -71,3 +74,8 @@ void ATUIRenderOnlineMenu() {
 		}
 	}
 }
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+void ATUIRenderOnlineMenu() {}
+
+#endif // ALTIRRA_NETPLAY_ENABLED

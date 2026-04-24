@@ -93,6 +93,23 @@ endif()
 # required so feature parity with the Windows build is the default.
 option(ALTIRRA_SKIP_SDL3_IMAGE "Build without SDL3_image (disables image load/save)" OFF)
 
+# ALTIRRA_WASM — enable browser/WebAssembly build mode.
+#
+# This switch is intended for Emscripten toolchain builds only. It does
+# not select the toolchain itself; configure with emcmake / Emscripten
+# presets and then use this flag to gate Altirra-specific feature toggles.
+option(ALTIRRA_WASM "Enable WebAssembly/browser build mode (Emscripten)" OFF)
+if(ALTIRRA_WASM)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        message(FATAL_ERROR
+            "ALTIRRA_WASM=ON requires the Emscripten toolchain.\n"
+            "Configure with emcmake (or an Emscripten preset) and rerun CMake.")
+    endif()
+
+    message(STATUS "ALTIRRA_WASM=ON (Emscripten web build mode)")
+    add_compile_definitions(ALTIRRA_WASM=1)
+endif()
+
 # Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
 if(WIN32)
     add_compile_definitions(VD_OS_WINDOWS=1)
@@ -365,6 +382,10 @@ if(ALTIRRA_SDL3)
     # (librashader.so/.dll/.dylib) is loaded at runtime via dlopen —
     # no link-time dependency.
     option(ENABLE_LIBRASHADER "Enable librashader shader preset support" ON)
+    if(ALTIRRA_WASM AND ENABLE_LIBRASHADER)
+        message(WARNING "ENABLE_LIBRASHADER is not supported for ALTIRRA_WASM; forcing OFF.")
+        set(ENABLE_LIBRASHADER OFF CACHE BOOL "Enable librashader shader preset support" FORCE)
+    endif()
     if(ENABLE_LIBRASHADER)
         FetchContent_Declare(
             librashader_headers
@@ -646,9 +667,17 @@ static inline void *_librashader_dlopen_macos(void) {
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
         ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
     )
+    # On WASM the GL display backend is excluded — only the SDL_Renderer path
+    # is used.  imgui_impl_opengl3.cpp must NOT be compiled: its direct
+    # glXxx calls conflict with the Emscripten WebGL stubs compiled into
+    # SDL3 (symbol type mismatch at wasm-ld).
+    if(NOT ALTIRRA_WASM)
+        target_sources(imgui PRIVATE
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+        )
+    endif()
     target_include_directories(imgui PUBLIC
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
@@ -664,7 +693,7 @@ static inline void *_librashader_dlopen_macos(void) {
     # points that don't exist in GLES (glPolygonMode etc.) and link-fail
     # against system libGLESv3.  On desktop the default (Desktop GL) path
     # is correct.
-    if(ANDROID)
+    if(ANDROID OR ALTIRRA_WASM)
         target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)
     endif()
     # Suppress warnings in third-party code
