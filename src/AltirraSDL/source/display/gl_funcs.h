@@ -22,10 +22,69 @@ enum class GLProfile {
 	ES30,        // OpenGL ES 3.0
 };
 
+#if defined(ALTIRRA_WASM)
+
+// -----------------------------------------------------------------------
+// WASM: the GL display backend is entirely excluded from the build
+// (display_backend_gl33.cpp, gl_funcs.cpp, gl_helpers.cpp, and
+// display_librashader.cpp do not compile under ALTIRRA_WASM — see
+// src/AltirraSDL/CMakeLists.txt).  Rendering goes exclusively through
+// SDL_Renderer on WebGL2.
+//
+// To let the rest of the code compile unchanged (main_sdl3.cpp,
+// ui_main.cpp, ui_fonts.cpp, and every dialog that caches a texture via
+// the GL path), we provide inline no-op stubs for every public GL entry
+// point the non-GL-backend call sites reference.  The returns are
+// harmless (0/false) and the runtime `useGL = false` branch in those
+// call sites ensures the stubs are never actually exercised — they
+// exist purely to satisfy the linker.
+// -----------------------------------------------------------------------
+
+inline GLProfile GLGetActiveProfile()                  { return GLProfile::Desktop33; }
+inline void      GLSetActiveProfile(GLProfile /*p*/)   {}
+inline bool      GLLoadFunctions(GLProfile /*p*/)      { return false; }
+
+// GL type + constant stubs used by call sites that include gl_funcs.h
+// transitively through gl_helpers.h.  Values and widths match the
+// standard GL spec so any misused constant would still behave
+// correctly if the WASM target ever gained a real GL path.
+typedef unsigned int  GLenum;
+typedef unsigned int  GLuint;
+typedef int           GLint;
+typedef int           GLsizei;
+typedef unsigned char GLubyte;
+typedef unsigned int  GLbitfield;
+typedef float         GLfloat;
+typedef unsigned char GLboolean;
+
+#ifndef GL_TEXTURE_2D
+#  define GL_TEXTURE_2D        0x0DE1u
+#endif
+#ifndef GL_RGBA
+#  define GL_RGBA              0x1908u
+#endif
+#ifndef GL_RGBA8
+#  define GL_RGBA8             0x8058u
+#endif
+#ifndef GL_UNSIGNED_BYTE
+#  define GL_UNSIGNED_BYTE     0x1401u
+#endif
+
+// Raw GL function stubs used directly by GL call sites (glBindTexture /
+// glDeleteTextures in dialogs that tear down their own textures).
+inline void glDeleteTextures(GLsizei, const GLuint*)   {}
+inline void glBindTexture(GLenum, GLuint)              {}
+
+#else
+
 // Active profile accessors.  GLLoadFunctions() calls GLSetActiveProfile()
 // after a successful load so downstream code observes a consistent value.
 GLProfile GLGetActiveProfile();
 void GLSetActiveProfile(GLProfile profile);
+
+#endif // ALTIRRA_WASM
+
+#if !defined(ALTIRRA_WASM)
 
 // Include the standard GL type definitions
 #if defined(__APPLE__)
@@ -370,3 +429,5 @@ extern PFN_glTexStorage2D glTexStorage2D;
 // is loaded opportunistically and never hard-required.
 // Returns true if every mandatory entry point resolved.
 bool GLLoadFunctions(GLProfile profile);
+
+#endif // !ALTIRRA_WASM

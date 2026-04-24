@@ -2195,7 +2195,16 @@ VDNOINLINE void VDInflateStream<T_Enhanced>::InflateBlock() {
 						copyOffset += 16;
 					} while(copyOffset < 0);
 #else
-#error Unaligned access not implemented
+					// Scalar fallback — used on WebAssembly (and any other
+					// target without a vector intrinsic that handles
+					// unaligned 16-byte copies).  memcpy is always safe for
+					// unaligned accesses and modern compilers lower this to
+					// the same sequence the intrinsic paths emit.
+					do {
+						memcpy(&copyDstEnd[copyOffset], &copySrcEnd[copyOffset], 16);
+
+						copyOffset += 16;
+					} while(copyOffset < 0);
 #endif
 				} else if (dist == 1) {
 					// Repeating with dist 1 -- memset

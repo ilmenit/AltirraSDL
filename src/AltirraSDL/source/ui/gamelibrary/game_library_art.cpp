@@ -207,7 +207,11 @@ void GameArtCache::SaveThumb(const VDStringA &thumbPath, SDL_Surface *surf) {
 // =========================================================================
 
 GameArtCache::GameArtCache() {
+#if !defined(__EMSCRIPTEN__)
 	mLoaderThread = std::thread([this]() { LoaderThread(); });
+#endif
+	// WASM: no background thread — ProcessPending drains mLoadQueue
+	// cooperatively, a few items per frame.  See ProcessPending.
 }
 
 GameArtCache::~GameArtCache() {
@@ -215,11 +219,13 @@ GameArtCache::~GameArtCache() {
 }
 
 void GameArtCache::Shutdown() {
+#if !defined(__EMSCRIPTEN__)
 	if (mLoaderThread.joinable()) {
 		mShutdownFlag.store(true, std::memory_order_release);
 		mLoaderCV.notify_one();
 		mLoaderThread.join();
 	}
+#endif
 
 	Clear();
 
@@ -278,6 +284,50 @@ ImTextureID GameArtCache::GetTexture(const VDStringW &artPath, int *outW, int *o
 
 void GameArtCache::ProcessPending() {
 	++mFrameCounter;
+
+#if defined(__EMSCRIPTEN__)
+	// WASM has no loader thread — load up to a small budget of queued
+	// items inline on the main thread, then hand them to the result
+	// pipeline below as usual.  The budget keeps frame cost bounded
+	// when a newly opened library view queues dozens of thumbnails on
+	// the same frame.
+	{
+		constexpr int kWasmLoadsPerFrame = 2;
+		int loaded = 0;
+		while (loaded < kWasmLoadsPerFrame) {
+			std::wstring key;
+			{
+				std::lock_guard<std::mutex> lock(mQueueMutex);
+				if (mLoadQueue.empty())
+					break;
+				key = std::move(mLoadQueue.back());
+				mLoadQueue.pop_back();
+			}
+
+			VDStringW artPath(key.c_str(), (uint32)key.size());
+			VDStringA thumbPath = GetThumbPath(artPath);
+			SDL_Surface *surf = LoadCachedThumb(thumbPath);
+			if (!surf) {
+				surf = LoadArtImage(artPath);
+				if (surf) {
+					SDL_Surface *scaled = ScaleDown(surf, 320, 240);
+					if (scaled) {
+						SDL_DestroySurface(surf);
+						surf = scaled;
+					}
+					SaveThumb(thumbPath, surf);
+				}
+			}
+
+			std::lock_guard<std::mutex> lock(mQueueMutex);
+			LoadResult r;
+			r.mKey     = std::move(key);
+			r.mSurface = surf;
+			mResultQueue.push_back(std::move(r));
+			++loaded;
+		}
+	}
+#endif
 
 	std::vector<LoadResult> results;
 	{

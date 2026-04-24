@@ -48,12 +48,12 @@ target_sources(AltirraSDL PRIVATE
     source/app/ui_file_dialog_sdl3.cpp
 
     # --- display/ : SDL display + GL backends + shaders ---
+    # Note: the GL backend sources (display_backend_gl33.cpp, gl_funcs.cpp,
+    # gl_helpers.cpp, display_librashader.cpp) are added below — they are
+    # excluded on WASM builds because direct glXxx calls conflict with
+    # Emscripten's WebGL stubs.  See the "if(NOT ALTIRRA_WASM)" block below.
     source/display/display_sdl3.cpp
     source/display/display_backend_sdl.cpp
-    source/display/display_backend_gl33.cpp
-    source/display/gl_funcs.cpp
-    source/display/gl_helpers.cpp
-    source/display/display_librashader.cpp
 
     # --- input/ : SDL input, joystick, touch ---
     source/input/input_sdl3.cpp
@@ -191,14 +191,9 @@ target_sources(AltirraSDL PRIVATE
     source/ui/gamelibrary/game_library.cpp
     source/ui/gamelibrary/game_library_art.cpp
 
-    # --- ui/emotes/ : Online Play communication icons ---
-    source/ui/emotes/emote_assets.cpp
-    source/ui/emotes/emote_overlay.cpp
-    source/ui/emotes/emote_picker.cpp
-    source/ui/emotes/emote_netplay.cpp
-
-    # --- ui/sysconfig/ : Online Play settings page ---
-    source/ui/sysconfig/ui_system_pages_netplay.cpp
+    # Emote / Online Play source files previously listed here moved into
+    # the ALTIRRA_NETPLAY block below — they reference netplay symbols and
+    # must not be compiled when netplay is disabled (WASM).
 
     # Registry persistence (filtered out by ui* regex, so add explicitly)
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
@@ -241,6 +236,27 @@ target_sources(AltirraSDL PRIVATE
     ${ALTIRRA_ALL_SOURCES}
 )
 
+# GL display backend, GL helper layer, and librashader glue — excluded on
+# WASM because their direct glXxx calls conflict with Emscripten's WebGL
+# stubs (symbol-type mismatches at wasm-ld).  AltirraSDL on WASM renders
+# through SDL_Renderer (WebGL2) exclusively.
+if(NOT ALTIRRA_WASM)
+    target_sources(AltirraSDL PRIVATE
+        source/display/display_backend_gl33.cpp
+        source/display/gl_funcs.cpp
+        source/display/gl_helpers.cpp
+        source/display/display_librashader.cpp
+    )
+else()
+    # WASM-only bridge: JS/C glue for user uploads, library refresh, and
+    # IDBFS flush.  See src/AltirraSDL/source/app/wasm_bridge.{h,cpp} for
+    # the public surface.  Compiled only under ALTIRRA_WASM so native
+    # builds don't pull in <emscripten.h>.
+    target_sources(AltirraSDL PRIVATE
+        source/app/wasm_bridge.cpp
+    )
+endif()
+
 # Re-include Win32-specific files that were excluded by the _win32.cpp filter
 # but are needed on the Windows SDL3 build.
 if(WIN32)
@@ -259,6 +275,10 @@ endif()
 # Winsock (ws2_32) propagates transitively from `system` and ATNetworkSockets,
 # so no explicit link is needed on Windows.
 option(ALTIRRA_BRIDGE "Build the AltirraBridge scripting server" ON)
+if(ALTIRRA_WASM AND ALTIRRA_BRIDGE)
+    message(WARNING "ALTIRRA_BRIDGE is not supported for ALTIRRA_WASM; forcing OFF.")
+    set(ALTIRRA_BRIDGE OFF CACHE BOOL "Build the AltirraBridge scripting server" FORCE)
+endif()
 if(ALTIRRA_BRIDGE)
     target_sources(AltirraSDL PRIVATE
         source/bridge/bridge_server.cpp
@@ -285,6 +305,10 @@ endif()
 # protocol only; transport, coordinator, lobby client, and UI land in
 # subsequent phases.  Default ON; disable with -DALTIRRA_NETPLAY=OFF.
 option(ALTIRRA_NETPLAY "Build the AltirraSDL netplay module" ON)
+if(ALTIRRA_WASM AND ALTIRRA_NETPLAY)
+    message(WARNING "ALTIRRA_NETPLAY is not supported for ALTIRRA_WASM; forcing OFF.")
+    set(ALTIRRA_NETPLAY OFF CACHE BOOL "Build the AltirraSDL netplay module" FORCE)
+endif()
 if(ALTIRRA_NETPLAY)
     target_sources(AltirraSDL PRIVATE
         source/netplay/protocol.cpp
@@ -313,6 +337,15 @@ if(ALTIRRA_NETPLAY)
         source/ui/netplay/ui_netplay_actions.cpp
         source/ui/netplay/ui_netplay_activity.cpp
         source/ui/netplay/ui_netplay.cpp
+
+        # Emote system (icon picker, overlay, netplay send/receive)
+        source/ui/emotes/emote_assets.cpp
+        source/ui/emotes/emote_overlay.cpp
+        source/ui/emotes/emote_picker.cpp
+        source/ui/emotes/emote_netplay.cpp
+
+        # Online Play settings page (references emote/netplay symbols)
+        source/ui/sysconfig/ui_system_pages_netplay.cpp
     )
     if(WIN32)
         target_sources(AltirraSDL PRIVATE
@@ -573,7 +606,7 @@ target_include_directories(AltirraSDL BEFORE PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/h
 )
 
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT ALTIRRA_WASM)
     find_package(OpenGL REQUIRED)
 endif()
 
@@ -606,9 +639,77 @@ if(NOT ALTIRRA_SKIP_SDL3_IMAGE)
     target_link_libraries(AltirraSDL PRIVATE SDL3_image::SDL3_image)
 endif()
 
-# OpenGL: desktop GL on Linux/macOS/Windows, GLESv3 on Android
+# OpenGL: desktop GL on Linux/macOS/Windows, GLESv3 on Android, and
+# Emscripten/WebGL via link flags in ALTIRRA_WASM mode (no GL link needed).
 if(ANDROID)
     target_link_libraries(AltirraSDL PRIVATE GLESv3 EGL android log)
+elseif(ALTIRRA_WASM)
+    # ----------------------------------------------------------------------
+    # Emscripten link flags.
+    #
+    #   -sUSE_WEBGL2=1            — WebGL2 for SDL_Renderer's GL backend.
+    #   -sALLOW_MEMORY_GROWTH=1   — grow heap on demand; the startup
+    #                                memory footprint is modest, but game
+    #                                images and art thumbnails can push
+    #                                well past 64 MB and we don't want an
+    #                                OOM abort.
+    #   -sINITIAL_MEMORY=64MB     — start with 64 MB so early boot does
+    #                                not thrash growAllocations.
+    #   -sSTACK_SIZE=1MB          — default (64 KB) is too small for the
+    #                                emulator's deep call chains.
+    #   -sEXPORTED_RUNTIME_METHODS=...  — FS / IDBFS / ccall / cwrap /
+    #                                UTF-8 helpers used by the JS shell.
+    #   -sEXPORTED_FUNCTIONS=...        — C entry points called from JS:
+    #                                     _main plus the wasm_bridge.cpp
+    #                                     exports (added in a later
+    #                                     phase; declared here so JS can
+    #                                     reference them without --
+    #                                     WARN_UNRESOLVED_SYMBOLS).
+    #   -lidbfs.js                — bundle the IDBFS filesystem plugin
+    #                                so the Module.FS mount succeeds.
+    #   -sENVIRONMENT=web         — strip the shell/node runtime glue;
+    #                                this build is browser-only.
+    #   -sASYNCIFY=0              — explicitly off; we use
+    #                                emscripten_set_main_loop instead.
+    #   -sDISABLE_EXCEPTION_CATCHING=0 — debug builds keep C++
+    #                                exceptions catchable; release
+    #                                builds override this below.
+    # ----------------------------------------------------------------------
+    target_link_options(AltirraSDL PRIVATE
+        "SHELL:-sUSE_WEBGL2=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH=1"
+        "SHELL:-sINITIAL_MEMORY=64MB"
+        "SHELL:-sSTACK_SIZE=1MB"
+        "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8']"
+        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut']"
+        "SHELL:-lidbfs.js"
+        "SHELL:-sENVIRONMENT=web"
+        "SHELL:-sASYNCIFY=0"
+        "SHELL:-sFORCE_FILESYSTEM=1"
+    )
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_link_options(AltirraSDL PRIVATE
+            "SHELL:-sDISABLE_EXCEPTION_CATCHING=1"
+        )
+    else()
+        target_link_options(AltirraSDL PRIVATE
+            "SHELL:-sNO_DISABLE_EXCEPTION_CATCHING=1"
+        )
+    endif()
+
+    # Set the final suffix so we produce AltirraSDL.js (plus .wasm side-file).
+    # Emscripten defaults to .js for executables anyway, but be explicit.
+    set_target_properties(AltirraSDL PROPERTIES SUFFIX ".js")
+
+    # Generate the browser shell (index.html) from the template.
+    set(ALTIRRA_WASM_INDEX_TEMPLATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wasm_index.html.in")
+    set(ALTIRRA_WASM_INDEX_OUTPUT
+        "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+    if(EXISTS "${ALTIRRA_WASM_INDEX_TEMPLATE}")
+        configure_file("${ALTIRRA_WASM_INDEX_TEMPLATE}"
+            "${ALTIRRA_WASM_INDEX_OUTPUT}" @ONLY)
+    endif()
 else()
     target_link_libraries(AltirraSDL PRIVATE OpenGL::GL)
 endif()
@@ -817,7 +918,13 @@ add_custom_command(
 # Stage bundled TTF/OTF fonts next to the binary so the Fonts page in
 # Configure System (and the default Roboto/Fira Mono load on first run)
 # can find them via SDL_GetBasePath() + "fonts/".
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
+#
+# Skipped under ALTIRRA_WASM: the default UI fonts are already embedded
+# into the wasm blob via embedded_font_roboto.cpp / embedded_font_firamono.cpp,
+# and a browser build has no OS-side "fonts/" directory to read from.
+# Copying 4+ MB of TTFs next to AltirraSDL.js would just bloat the
+# deployable package.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fonts" AND NOT ALTIRRA_WASM)
     add_custom_command(TARGET AltirraSDL POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/fonts"

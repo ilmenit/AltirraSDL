@@ -9,9 +9,16 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#ifndef ALTIRRA_WASM
+// imgui_impl_opengl3 + DisplayBackendGL are excluded from the WASM
+// build.  Every call site below is already inside a runtime
+// `if (s_usingGLBackend)` check, which is always false on WASM —
+// but we also gate the translation unit with `#ifndef ALTIRRA_WASM`
+// so the linker never needs the GL symbols either.
 #include <imgui_impl_opengl3.h>
-#include "display_backend.h"
 #include "display_backend_gl33.h"
+#endif
+#include "display_backend.h"
 #include "../../input/touch_widgets.h"
 
 #include <vd2/system/vdtypes.h>
@@ -1010,6 +1017,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 
 	s_pDisplayBackend = backend;
 
+#ifndef ALTIRRA_WASM
 	if (backend->GetType() == DisplayBackendType::OpenGL) {
 		s_usingGLBackend = true;
 		auto *glBackend = static_cast<DisplayBackendGL *>(backend);
@@ -1030,7 +1038,9 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 		LOG_INFO("UI", "ImGui initialized (%s, docking enabled)",
 			GLGetActiveProfile() == GLProfile::ES30
 				? "OpenGL ES 3.0" : "OpenGL 3.3 Core");
-	} else {
+	} else
+#endif
+	{
 		s_usingGLBackend = false;
 		SDL_Renderer *renderer = backend->GetSDLRenderer();
 		if (!ImGui_ImplSDL3_InitForSDLRenderer(window, renderer)) {
@@ -1058,9 +1068,12 @@ void ATUIShutdown() {
 	ATUIVirtualKeyboard_Shutdown();
 	ATUIShutdownPaletteSolver();
 	ATUIStopRecording();
+#ifndef ALTIRRA_WASM
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_Shutdown();
-	} else {
+	} else
+#endif
+	{
 		ImGui_ImplSDLRenderer3_Shutdown();
 	}
 	ImGui_ImplSDL3_Shutdown();
@@ -1415,9 +1428,12 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// (and tear down the backend texture so the next NewFrame re-uploads).
 	ATUIFontsRebuildIfDirty();
 
+#ifndef ALTIRRA_WASM
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_NewFrame();
-	} else {
+	} else
+#endif
+	{
 		ImGui_ImplSDLRenderer3_NewFrame();
 	}
 	ImGui_ImplSDL3_NewFrame();
@@ -1600,9 +1616,12 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	ATTouchRenderToasts();
 
 	ImGui::Render();
+#ifndef ALTIRRA_WASM
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-	} else {
+	} else
+#endif
+	{
 		ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), backend->GetSDLRenderer());
 	}
 

@@ -916,6 +916,12 @@ static void AuditScanThreadFunc() {
 
 // Stop any running audit scan and join the thread
 static void StopAuditScan() {
+#if defined(__EMSCRIPTEN__)
+	// No background thread on WASM — audit runs synchronously.
+	// Just clear the cancel flag for consistency.
+	std::lock_guard<std::mutex> lock(g_audit.mutex);
+	g_audit.cancelRequested = false;
+#else
 	if (g_audit.thread.joinable()) {
 		{
 			std::lock_guard<std::mutex> lock(g_audit.mutex);
@@ -923,6 +929,7 @@ static void StopAuditScan() {
 		}
 		g_audit.thread.join();
 	}
+#endif
 }
 
 // Start the audit: build the known firmware list (fast, main thread), then launch scan thread
@@ -981,8 +988,17 @@ static void StartAudit(ATFirmwareManager *fwm) {
 		item.name = VDTextWToU8(fw.mName);
 	}
 
+#if defined(__EMSCRIPTEN__)
+	// WASM: run the scan inline — there are at most a couple of dozen
+	// firmware files on a browser user's /persist/firmware mount, each
+	// a few KB, so CRC-scanning them all completes in well under one
+	// frame.  No cancellation UI is needed because the call returns
+	// before the next frame repaints.
+	AuditScanThreadFunc();
+#else
 	// Launch background scan thread
 	g_audit.thread = std::thread(AuditScanThreadFunc);
+#endif
 }
 
 static void RenderFirmwareAudit(ATFirmwareManager *fwm) {

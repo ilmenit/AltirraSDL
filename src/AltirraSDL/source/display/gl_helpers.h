@@ -5,6 +5,45 @@
 #include "gl_funcs.h"
 #include <vector>
 
+#if defined(ALTIRRA_WASM)
+
+// -----------------------------------------------------------------------
+// WASM: see gl_funcs.h for the rationale.  gl_helpers.cpp is excluded
+// from the build, so every public helper is provided here as an inline
+// no-op / empty stub.  All call sites (game library art, debugger
+// bitmap/memory views, rewind thumbnails, virtual keyboard, etc.) are
+// runtime-gated by `useGL = false` under WASM, so these stubs exist
+// purely to satisfy the linker.
+// -----------------------------------------------------------------------
+
+inline const char *GLGetShaderPreamble(GLenum /*shaderType*/)            { return ""; }
+inline GLuint GLCompileShader(GLenum /*type*/, const char * /*source*/)  { return 0; }
+inline GLuint GLCompileShaderMulti(GLenum, const char *const *, int)     { return 0; }
+inline GLuint GLLinkProgram(GLuint, GLuint)                              { return 0; }
+inline GLuint GLCreateProgram(const char *, const char *)                { return 0; }
+inline GLuint GLCreateProgramMultiFS(const char *, const char *const *, int) { return 0; }
+inline GLuint GLCreateTexture2D(int, int, GLenum, GLenum, GLenum,
+                                const void *, bool = true)               { return 0; }
+inline GLuint GLCreateXRGB8888Texture(int, int, bool, const void *)      { return 0; }
+inline void   GLUploadXRGB8888(int, int, const void *, int = 0)          {}
+inline void   GLSetFramebufferSRGB(bool)                                 {}
+inline GLuint GLCreateFBO(int, int, GLenum, GLuint *outTex)              { if (outTex) *outTex = 0; return 0; }
+
+struct GLRenderTarget {
+	GLuint fbo = 0;
+	GLuint tex = 0;
+	int width = 0;
+	int height = 0;
+
+	void Create(int, int, GLenum) {}
+	void Destroy()                {}
+	void Bind() const             {}
+};
+
+inline void GLDrawFullscreenTriangle() {}
+
+#else // !ALTIRRA_WASM
+
 // ---------------------------------------------------------------------------
 // Shader preamble helpers
 // ---------------------------------------------------------------------------
@@ -101,3 +140,5 @@ struct GLRenderTarget {
 // Draw a fullscreen triangle using the empty VAO.
 // Assumes the VAO is already bound.
 void GLDrawFullscreenTriangle();
+
+#endif // !ALTIRRA_WASM

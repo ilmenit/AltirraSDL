@@ -15,6 +15,9 @@
 #include <imgui.h>
 
 #include "ui_menus_internal.h"
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 #include "ui/netplay/ui_netplay.h"
 #include "ui/netplay/ui_netplay_state.h"
 #include "ui/emotes/emote_netplay.h"
@@ -71,3 +74,12 @@ void ATUIRenderOnlineMenu() {
 		}
 	}
 }
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+// Stub Online menu for builds without the netplay module (e.g. WASM).
+// The menu entry is suppressed by ATUIMenus — leaving the symbol
+// present avoids a missing-reference link error.
+void ATUIRenderOnlineMenu() {}
+
+#endif // ALTIRRA_NETPLAY_ENABLED

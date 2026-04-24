@@ -82,8 +82,10 @@ struct PaletteSolverState {
 
 	void StopSolver() {
 		solverStopRequested = true;
+#if !defined(__EMSCRIPTEN__)
 		if (solverThread.joinable())
 			solverThread.join();
+#endif
 		solverRunning = false;
 		solverStopRequested = false;
 	}
@@ -408,9 +410,11 @@ void ATUIRenderPaletteSolver(ATSimulator &sim, bool &open) {
 		if (!canMatch)
 			ImGui::BeginDisabled();
 		if (ImGui::Button("Match")) {
+#if !defined(__EMSCRIPTEN__)
 			// Join any previously finished thread before re-using the handle
 			if (s_solver.solverThread.joinable())
 				s_solver.solverThread.join();
+#endif
 
 			// Snapshot initial params on main thread (Bug #4: never read g_sim on bg thread)
 			ATGTIAEmulator& gtia = sim.GetGTIA();
@@ -433,7 +437,18 @@ void ATUIRenderPaletteSolver(ATSimulator &sim, bool &open) {
 			s_solver.statusText.clear();
 			s_solver.solverRunning = true;
 			s_solver.solverStopRequested = false;
+#if defined(__EMSCRIPTEN__)
+			// WASM: run the solver synchronously on the main thread.
+			// Palette matching is a one-shot dev tool that takes tens
+			// of seconds at worst; freezing the UI while it runs is
+			// acceptable on the browser target, which cannot spawn
+			// pthreads.  A future refinement would be to call
+			// solver.Iterate() incrementally from the render function
+			// — good enough for the initial port.
+			SolverThreadFunc();
+#else
 			s_solver.solverThread = std::thread(SolverThreadFunc);
+#endif
 		}
 		if (!canMatch)
 			ImGui::EndDisabled();

@@ -12,7 +12,12 @@
 #include <stdafx.h>
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#ifndef ALTIRRA_WASM
+// imgui_impl_opengl3 is excluded from the WASM build (SDL_Renderer is
+// the only rendering path in-browser); the font-texture drop call
+// below is gated accordingly.
 #include <imgui_impl_opengl3.h>
+#endif
 #include <imgui_impl_sdlrenderer3.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -443,9 +448,12 @@ void ATUIFontsRebuildIfDirty() {
 
 	// Tear down the current backend texture so the next NewFrame uploads
 	// a fresh one built from the new atlas.
+#ifndef ALTIRRA_WASM
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_DestroyFontsTexture();
-	} else {
+	} else
+#endif
+	{
 		ImGui_ImplSDLRenderer3_DestroyFontsTexture();
 	}
 

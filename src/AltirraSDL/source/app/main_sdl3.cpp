@@ -10,6 +10,17 @@
 
 #include <stdafx.h>
 #include <SDL3/SDL.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// Forward declarations of the per-tick drains added for the browser
+// build — the WASM single-threaded scheduler (src/system/source/time_sdl3.cpp)
+// and the JS upload/boot bridge (wasm_bridge.cpp).  Both are main-thread
+// only; they are invoked from the tick lambda inside main().
+extern "C" void VDWASMTimerTick();
+extern void ATWasmBridgeTick();
+#endif
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL_main.h>
 #include <stdio.h>
@@ -32,7 +43,14 @@
 #if ALTIRRA_HAS_BAKED_ICON
 #include "altirra_icon_data.h"
 #endif
+#ifndef ALTIRRA_WASM
+// The GL display backend is excluded from the WASM build — direct glXxx
+// calls conflict with Emscripten's WebGL stubs at link time.  See
+// src/AltirraSDL/CMakeLists.txt for the source-level exclusion; every
+// call site in this file that references DisplayBackendGL, GL_* or
+// SDL_GL_* is wrapped in `#ifndef ALTIRRA_WASM` below.
 #include "display_backend_gl33.h"
+#endif
 #include "display_backend_sdl.h"
 #include "gl_funcs.h"
 #include "input_sdl3.h"
@@ -48,15 +66,24 @@
 #include "ui_testmode.h"
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
+#endif
 
-#ifdef ALTIRRA_NETPLAY_ENABLED
+// Netplay and emote headers are included unconditionally.  When their
+// modules are compiled in, the real namespace / functions are visible;
+// when they are disabled (e.g. WASM build), each header exposes inline
+// no-op stubs under `#ifndef ALTIRRA_NETPLAY_ENABLED` that satisfy the
+// call sites in this file without `#ifdef` clutter.  See netplay_glue.h
+// for the rationale.
 #include "netplay/netplay_glue.h"
-#include "ui/netplay/ui_netplay.h"
 #include "ui/emotes/emote_picker.h"
 #include "ui/emotes/emote_assets.h"
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_overlay.h"
-#endif
+#ifdef ALTIRRA_NETPLAY_ENABLED
+// ui_netplay.h has no stubs; its only call site
+// (ATNetplayUI_Poll, below) is already inside an
+// `#ifdef ALTIRRA_NETPLAY_ENABLED` block.
+#include "ui/netplay/ui_netplay.h"
 #endif
 #include "ui_textselection.h"
 #include "ui_progress.h"
@@ -1307,6 +1334,7 @@ int main(int argc, char *argv[]) {
 	SDL_GLContext glContext = nullptr;
 	GLProfile glProfile = GLProfile::Desktop33;
 
+#ifndef ALTIRRA_WASM
 	// Pick the preferred GL profile per platform.  Only ONE profile is
 	// attempted: requesting Desktop Core on Android, or ES on a desktop
 	// driver, would either fail outright or silently mislead.
@@ -1357,6 +1385,18 @@ int main(int argc, char *argv[]) {
 		if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
 		LOG_INFO("Main", "Falling back to SDL_Renderer (screen FX and librashader unavailable)");
 	}
+#else // ALTIRRA_WASM
+	// WASM: no GL context creation.  SDL_Renderer on WebGL2 is the only
+	// rendering path in-browser; librashader and screen FX are already
+	// compiled out (see src/AltirraSDL/CMakeLists.txt).  Suppress the
+	// unused-variable warning on glProfile/glContext — the values are
+	// carried through to later logging code unchanged.
+	(void)glProfile;
+	(void)glContext;
+	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight,
+		SDL_WINDOW_RESIZABLE);
+	if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
+#endif // ALTIRRA_WASM
 
 	// Set the window/taskbar/dock icon from the baked RGBA data.
 	// The largest image is the primary surface; smaller sizes are
@@ -1428,7 +1468,8 @@ int main(int argc, char *argv[]) {
 	SDL_StartTextInput(g_pWindow);
 #endif
 
-	// Create the display backend
+	// Create the display backend.
+#ifndef ALTIRRA_WASM
 	if (useGL) {
 		g_pBackend = new DisplayBackendGL(g_pWindow, glContext);
 		// VSync swap interval is managed dynamically by the main loop based
@@ -1436,7 +1477,9 @@ int main(int argc, char *argv[]) {
 		// interval 0; the first UpdatePacerRate call will set the correct
 		// value before any frame is presented.
 		SDL_GL_SetSwapInterval(0);
-	} else {
+	} else
+#endif
+	{
 		g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
 		if (!g_pRenderer) { LOG_INFO("Main", "CreateRenderer: %s", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
 		// Same as GL path: start with VSync off, main loop manages it.
@@ -2042,9 +2085,28 @@ int main(int argc, char *argv[]) {
 	// Without this sleep, the emulator runs Advance() as fast as the
 	// CPU allows, producing frames far faster than 60 Hz.
 
-	while (g_running) {
+	// --- Tick body ----------------------------------------------------
+	// Extracted to a capture-free lambda so the browser target
+	// (Emscripten) can drive it via `emscripten_set_main_loop` while
+	// native targets keep the same code path inside an explicit while
+	// loop.  Every `continue` inside the body became `return;`
+	// (equivalent semantics — skip the rest of this iteration and come
+	// back at the next tick) and the sole `break` (the
+	// `if (!g_running) break;` right after HandleEvents) became
+	// `if (!g_running) return;`.  `g_pacer.WaitForNextFrame()` calls
+	// are skipped on WASM because the browser's requestAnimationFrame
+	// already paces us at the display refresh rate — calling the pacer's
+	// SDL_DelayPrecise on top would produce a long stall instead.
+	//
+	// Capture list is intentionally empty (`[]`): under WASM the
+	// emscripten_set_main_loop path throws an unwind exception out of
+	// main() that destroys its stack frame, so any captured reference
+	// would dangle.  Every symbol the body references is either a
+	// global, a file-static, a function, or a static-local inside
+	// the lambda itself.
+	auto tickBody = []() {
 		HandleEvents();
-		if (!g_running) break;
+		if (!g_running) return;
 
 		// Update SDL window title from current simulator config
 		// (no-op unless config or active profile actually changed).
@@ -2072,6 +2134,19 @@ int main(int argc, char *argv[]) {
 		ATNetplayUI_Poll(SDL_GetTicks());
 #endif
 
+#ifdef __EMSCRIPTEN__
+		// Drain the WASM-only timer scheduler (replaces the detached
+		// std::thread-based VDLazyTimer path on native — see
+		// src/system/source/time_sdl3.cpp).  Must be called every tick
+		// before anything that might register or cancel a timer.
+		// Drain any pending upload / boot / library-refresh requests
+		// posted by the JS shell via ATWasmOnFileUploaded (see
+		// wasm_bridge.cpp).  Safe to call every tick; no-op when the
+		// queue is empty.  Forward-declared at file scope above.
+		VDWASMTimerTick();
+		ATWasmBridgeTick();
+#endif
+
 		// Process deferred file dialog results on main thread
 		ATUIPollDeferredActions();
 
@@ -2091,8 +2166,14 @@ int main(int argc, char *argv[]) {
 		// be checked BEFORE pauseInactive so we take the cheap path and
 		// avoid even the no-op RenderAndPresent call.
 		if (g_appSuspended) {
+#ifndef __EMSCRIPTEN__
+			// On WASM the browser already throttles hidden-tab rAF to
+			// ~1 Hz, so the equivalent of this sleep happens outside
+			// our loop.  SDL_Delay would block the single JS thread
+			// unnecessarily.
 			SDL_Delay(100);
-			continue;
+#endif
+			return;
 		}
 
 		// Pause emulation when window loses focus (if enabled).
@@ -2110,8 +2191,10 @@ int main(int argc, char *argv[]) {
 		if (pauseInactive) {
 			// Window inactive — render for UI responsiveness, sleep.
 			RenderAndPresent();
+#ifndef __EMSCRIPTEN__
 			SDL_Delay(16);
-			continue;
+#endif
+			return;
 		}
 
 		// Turbo frame-skip: in turbo mode, drop most frames at the GTIA
@@ -2157,8 +2240,10 @@ int main(int argc, char *argv[]) {
 				// red.  Retry next iteration.
 				if (!ATNetplayGlue::CanAdvanceThisTick()) {
 					RenderAndPresent();
+#ifndef __EMSCRIPTEN__
 					if (!turbo) g_pacer.WaitForNextFrame();
-					continue;
+#endif
+					return;
 				}
 				// Gate opened inside the fast-poll budget —
 				// resubmit local input (currentFrame may have
@@ -2220,6 +2305,7 @@ int main(int argc, char *argv[]) {
 		// frame pacer control timing while the desktop compositor prevents
 		// tearing — mirroring Windows Altirra's DXGI Present(0) + DWM
 		// behaviour in windowed mode.
+#ifndef __EMSCRIPTEN__
 		{
 			int wantInterval = turbo ? 0 : g_desiredSwapInterval;
 			static int s_lastInterval = 0;  // matches startup swap interval 0
@@ -2231,6 +2317,7 @@ int main(int argc, char *argv[]) {
 					SDL_GL_SetSwapInterval(wantInterval);
 			}
 		}
+#endif
 
 		bool didRender = false;
 		if (hadFrame) {
@@ -2249,15 +2336,19 @@ int main(int argc, char *argv[]) {
 			UpdatePacerRate();
 
 			// In turbo mode, skip frame pacing to run as fast as possible.
+#ifndef __EMSCRIPTEN__
 			if (!turbo)
 				g_pacer.WaitForNextFrame();
+#endif
 		} else if (result == ATSimulator::kAdvanceResult_WaitingForFrame) {
 			// GTIA is blocked but we had no frame to show.
 			// Present anyway to keep UI responsive.
 			RenderAndPresent();
 			didRender = true;
+#ifndef __EMSCRIPTEN__
 			if (!turbo)
 				g_pacer.WaitForNextFrame();
+#endif
 		} else if (result == ATSimulator::kAdvanceResult_Stopped) {
 			// Paused/stopped — render for UI, sleep to avoid busy-wait.
 			// Parity with Windows main.cpp:3268 which drains pending
@@ -2269,10 +2360,42 @@ int main(int argc, char *argv[]) {
 			g_sim.FlushDeferredEvents();
 			RenderAndPresent();
 			didRender = true;
+#ifndef __EMSCRIPTEN__
 			SDL_Delay(16);
+#endif
 		}
+		(void)didRender;
 		// kAdvanceResult_Running with no frame: loop immediately.
+	};
+
+#ifdef __EMSCRIPTEN__
+	// WASM: hand the tick over to the browser's requestAnimationFrame
+	// scheduler.  emscripten_set_main_loop_arg stashes the lambda
+	// state pointer in a stable runtime slot, so `tickBody` is safe to
+	// capture even though main() will formally return when the first
+	// rAF dispatch schedules the next tick.  simulate_infinite_loop=1
+	// throws an unwind exception that prevents the native shutdown
+	// code below from executing — the browser owns the process until
+	// the tab closes.
+	static auto s_wasmTickFn = tickBody;
+	emscripten_set_main_loop_arg(
+		[](void* arg) {
+			auto& fn = *static_cast<decltype(&s_wasmTickFn)>(arg);
+			if (!g_running) {
+				emscripten_cancel_main_loop();
+				return;
+			}
+			fn();
+		},
+		&s_wasmTickFn,
+		0,    // fps=0 → sync to browser rAF (typically 60 Hz)
+		1     // simulate_infinite_loop=1 → throw out of main
+	);
+#else
+	while (g_running) {
+		tickBody();
 	}
+#endif
 
 #ifdef ALTIRRA_BRIDGE_ENABLED
 	// Drop any bridge client, release injected input, free the

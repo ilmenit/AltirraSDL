@@ -35,8 +35,15 @@
 #if defined(VD_CPU_X86) || defined(VD_CPU_X64)
 #define ATFFT_USE_SSE2
 #define ATFFT_USE_RADIX_4
-#else
+#elif defined(VD_CPU_ARM64) && !defined(__EMSCRIPTEN__)
+// ARM64 uses NEON intrinsics; WebAssembly has no NEON so on Emscripten
+// we fall through to the scalar radix path below.
 #define ATFFT_USE_NEON
+#define ATFFT_USE_RADIX_4
+#else
+// Scalar fallback — used on Emscripten/WebAssembly and any target without
+// a supported SIMD ISA.  The scalar path is always built and is correct;
+// this just avoids pulling in NEON/SSE intrinsic headers that don't exist.
 #define ATFFT_USE_RADIX_4
 #endif
 

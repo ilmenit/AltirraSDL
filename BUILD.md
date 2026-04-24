@@ -336,6 +336,8 @@ cmake --build build/windows-sdl-release --config Release
 | `windows-sdl-debug` | Windows | Debug (SDL3) |
 | `windows-sdl-release` | Windows | Release (SDL3) |
 | `windows-libs-only` | Windows | Core libraries only (no frontend) |
+| `wasm-debug` | Browser (Emscripten) | Debug |
+| `wasm-release` | Browser (Emscripten) | Release |
 
 ### Package Target
 
@@ -585,6 +587,121 @@ py release.py    # From VS Developer Command Prompt
 Requires Python 3.10+, 7-zip, AdvanceCOMP. Produces:
 - `Altirra-<ver>.zip` — Binary distribution
 - `Altirra-<ver>-src.7z` — Source archive
+
+---
+
+## WebAssembly Build (experimental, browser target)
+
+AltirraSDL can be compiled to WebAssembly via Emscripten for browser-
+based hosting — useful for embedding the emulator on an Atari 8-bit
+archive page ("click to run this game"), running in classrooms that
+disallow installs, or smoke-testing a commit from a URL.
+
+**Status:** experimental. Netplay, AltirraBridge scripting, and
+librashader are automatically disabled (browser has no UDP sockets,
+no OS-level scripting endpoint, and Emscripten's WebGL stubs are
+incompatible with librashader's direct GL calls). Rendering goes
+through SDL3's `SDL_Renderer` on WebGL2 — screen FX / CRT shaders are
+not available. Everything else works, including the full Desktop UI,
+System Configuration sidebar, debugger, game library, and mobile /
+touch UI on mobile browsers.
+
+### Prerequisites
+
+- **Emscripten SDK** — tested against emsdk `5.0.6`.
+  Install via:
+
+  ```bash
+  git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+  cd ~/emsdk
+  ./emsdk install 5.0.6
+  ./emsdk activate 5.0.6
+  ```
+
+- **CMake ≥ 3.24**, Python 3, a POSIX shell.
+- Any 64-bit host (Linux, macOS, Windows with WSL or native
+  PowerShell); Emscripten cross-compiles from all three.
+
+### Build
+
+```bash
+source ~/emsdk/emsdk_env.sh   # puts emcc / emcmake on PATH
+
+cmake --preset wasm-release
+cmake --build --preset wasm-release -j"$(nproc)"
+```
+
+Build outputs land in `build/wasm-release/src/AltirraSDL/`:
+
+- `AltirraSDL.js`   — Emscripten loader (~1 MB)
+- `AltirraSDL.wasm` — compiled emulator (~10–20 MB)
+- `index.html`      — auto-generated browser shell with upload UI
+
+### Run locally
+
+Browsers refuse to fetch `.wasm` over `file://`, so serve the output
+directory from any static HTTP server:
+
+```bash
+python3 -m http.server 8080 -d build/wasm-release/src/AltirraSDL
+# then open http://localhost:8080/
+```
+
+Or via Emscripten's convenience runner:
+
+```bash
+emrun --no_browser --port 8080 build/wasm-release/src/AltirraSDL/
+```
+
+### Using the site
+
+1. Wait for "Running" in the header bar (first load compiles the
+   wasm; subsequent loads are cache hits).
+2. Click **Upload Game…** to pick an `.xex` / `.atr` / `.car` / `.cas`
+   / `.zip` — file contents are written into the browser's per-origin
+   IndexedDB (`/persist/games/…` in the virtual filesystem) and
+   persist across reloads.
+3. Click **Upload Firmware…** if you want to use a real OS-B ROM
+   rather than the built-in replacement kernel. Firmware uploads go
+   to `/persist/firmware/`.
+4. **Save Library** flushes the virtual filesystem to IndexedDB —
+   normally this happens automatically after every upload, but the
+   button is there for belt-and-suspenders.
+5. Drag-and-drop works anywhere on the canvas.
+
+### Hosting
+
+The bundle is three static files (`index.html`, `AltirraSDL.js`,
+`AltirraSDL.wasm`), no server-side code, no special headers. It works
+out of the box on GitHub Pages, Netlify, S3 + CloudFront, a local
+Nginx, a `python3 -m http.server`, or any other static host.
+
+A CI workflow (`.github/workflows/wasm.yml`) automatically:
+
+- Builds `wasm-release` on every push to `main`, `net-play`, and
+  `WASM-target` (and on PRs / tags).
+- Packages the three files into `AltirraSDL-<version>-wasm.zip` and
+  attaches it to the rolling `nightly` GitHub Release.
+- Deploys the bundle to GitHub Pages on every `main` push — see
+  https://ilmenit.github.io/AltirraSDL/
+
+Enabling GitHub Pages is a one-time repo setting: **Settings → Pages
+→ Source: GitHub Actions** (no branch required — the workflow
+uploads a Pages artifact directly).
+
+### Limitations
+
+- No netplay (the browser cannot open UDP sockets and the design
+  requires COOP/COEP headers which most static hosts don't set).
+- No librashader / CRT shader presets (Emscripten's WebGL stubs
+  don't link against librashader's direct GL calls).
+- No AltirraBridge scripting server (no OS-level IPC endpoint).
+- Single-threaded: long background scans (palette solver, large
+  game library) run on the main loop via a per-frame budget rather
+  than a worker thread; they take a few extra frames but don't
+  freeze the UI.
+- Audio requires a user gesture to start (browser autoplay policy)
+  — the first click on the canvas unblocks the AudioContext.
 
 ---
 

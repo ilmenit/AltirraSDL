@@ -826,6 +826,56 @@ void ATCassetteAudioCrosstalkCanceller::ProcessBlock() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#if defined(__EMSCRIPTEN__)
+
+// -------------------------------------------------------------------------
+// WASM pass-through implementation.
+//
+// The native implementation uses a triple-buffer queue filled by a
+// dedicated worker thread.  On the browser target we cannot spawn
+// pthreads without COOP/COEP headers and -pthread, so we bypass the
+// queue entirely and decode inline in ReadAudio().  Cassette audio
+// decoding is modest CPU (a few KB/s after FSK filtering), so running
+// it on the main thread during the audio pump is well within budget.
+// -------------------------------------------------------------------------
+
+ATCassetteAudioThreadedQueue::ATCassetteAudioThreadedQueue(IATCassetteAudioSource& source)
+	: VDThread("Cassette Audio Worker")
+	, mSource(source)
+{
+	// No thread to start.  mBlocks* state left default — ReadAudio
+	// below does not touch it on WASM.
+}
+
+ATCassetteAudioThreadedQueue::~ATCassetteAudioThreadedQueue() {
+	// No thread to tear down.
+}
+
+uint32 ATCassetteAudioThreadedQueue::ReadAudio(sint16 (*dst)[2], uint32 n) {
+	if (mbStreamEnded)
+		return 0;
+
+	uint32 read = 0;
+	try {
+		read = mSource.ReadAudio(dst, n);
+	} catch (VDException& e) {
+		mException = std::move(e);
+		mbStreamEnded = true;
+		throw;
+	}
+
+	if (read == 0)
+		mbStreamEnded = true;
+
+	return read;
+}
+
+void ATCassetteAudioThreadedQueue::ThreadRun() {
+	// Never called on WASM — the constructor doesn't start a thread.
+}
+
+#else // !__EMSCRIPTEN__
+
 ATCassetteAudioThreadedQueue::ATCassetteAudioThreadedQueue(IATCassetteAudioSource& source)
 	: VDThread("Cassette Audio Worker")
 	, mSource(source)
@@ -938,3 +988,5 @@ void ATCassetteAudioThreadedQueue::ThreadRun() {
 			blockIndex = 0;
 	}
 }
+
+#endif // __EMSCRIPTEN__

@@ -234,7 +234,14 @@ void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 	case kCat_Fonts:          RenderFontsCategory(sim); break;
 	case kCat_Display2:       RenderDisplay2Category(sim); break;
 	case kCat_SettingsCfg:    RenderSettingsCfgCategory(sim); break;
-	case kCat_OnlinePlay:     RenderOnlinePlayCategory(sim); break;
+	case kCat_OnlinePlay:
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		RenderOnlinePlayCategory(sim);
+#endif
+		// When netplay is disabled the sidebar entry should already be
+		// suppressed by the caller; the empty break keeps the switch
+		// exhaustive so the compiler doesn't warn about a missing case.
+		break;
 	}
 	ImGui::EndChild();
 

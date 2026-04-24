@@ -9,6 +9,15 @@
 #include <vd2/system/time.h>
 #include <vd2/system/thread.h>
 
+#if defined(__EMSCRIPTEN__)
+// WASM single-threaded timer scheduler — see the VDLazyTimer block at the
+// bottom of this file.  Needs vector / mutex / function / algorithm.
+#include <vector>
+#include <mutex>
+#include <functional>
+#include <algorithm>
+#endif
+
 // -------------------------------------------------------------------------
 // Tick / precision timer
 // -------------------------------------------------------------------------
@@ -102,11 +111,21 @@ bool VDCallbackTimer::Init3(IVDTimerCallback *pCB, uint32 period_100ns, uint32 /
 	mTimerPeriodAdjustment = 0;
 	mTimerPeriodDelta      = 0;
 
+#if defined(__EMSCRIPTEN__)
+	// WASM is single-threaded; VDCallbackTimer has no callers in the
+	// AltirraSDL build tree (it's used by the Windows-only UI / native
+	// audio pumps), so there's no scheduler to wire up.  Return false
+	// with the accuracy reset so any hypothetical future caller gets a
+	// clean "timer unavailable" signal instead of a silent no-op.
+	mTimerAccuracy = 0;
+	return false;
+#else
 	if (ThreadStart())
 		return true;
 
 	Shutdown();
 	return false;
+#endif
 }
 
 void VDCallbackTimer::Shutdown() {
@@ -174,6 +193,136 @@ VDLazyTimer::~VDLazyTimer() {
 	Stop();
 }
 
+#if defined(__EMSCRIPTEN__)
+
+// -------------------------------------------------------------------------
+// WASM single-threaded VDLazyTimer
+//
+// The native backend uses detached std::threads that sleep_for(ms) and
+// then fire the callback.  That cannot work in a browser build without
+// -pthread, and even with pthreads it would be overkill: VDLazyTimer
+// callbacks are infrequent, non-real-time things like "close this
+// virtual-disk file N ms after the last access" or "pulse a UI status
+// line".
+//
+// Under WASM we instead register the delay + callback in a process-
+// wide list.  The main loop (main_sdl3.cpp) calls VDWASMTimerTick()
+// once per frame; it walks the list and fires any due callbacks
+// inline.  Periodic timers rearm themselves after firing.
+//
+// This scheduler is strictly single-threaded and all accesses happen
+// on the main thread — the std::mutex below is belt-and-suspenders
+// for any hypothetical future concurrent access and compiles to a
+// no-op in practice.
+// -------------------------------------------------------------------------
+
+namespace {
+	struct WASMTimerEntry {
+		uint32                  mTimerId    = 0;   // matches VDLazyTimer::mTimerId
+		uint32                  mPeriodMs   = 0;
+		uint64                  mNextFireMs = 0;   // absolute ms
+		bool                    mbPeriodic  = false;
+		vdfunction<void()>      mFn;
+	};
+
+	std::mutex                          g_wasmTimerMutex;
+	std::vector<WASMTimerEntry>         g_wasmTimerList;
+	uint32                              g_wasmTimerNextId = 1;
+
+	uint32 WASMTimer_Register(const vdfunction<void()>& fn, uint32 delayMs, bool periodic) {
+		std::lock_guard<std::mutex> lk(g_wasmTimerMutex);
+		WASMTimerEntry e;
+		e.mTimerId    = g_wasmTimerNextId++;
+		e.mPeriodMs   = delayMs;
+		e.mNextFireMs = (uint64)VDGetCurrentTick64() + delayMs;
+		e.mbPeriodic  = periodic;
+		e.mFn         = fn;
+		g_wasmTimerList.push_back(std::move(e));
+		return e.mTimerId;
+	}
+
+	void WASMTimer_Unregister(uint32 id) {
+		if (!id) return;
+		std::lock_guard<std::mutex> lk(g_wasmTimerMutex);
+		g_wasmTimerList.erase(
+			std::remove_if(g_wasmTimerList.begin(), g_wasmTimerList.end(),
+				[id](const WASMTimerEntry& e) { return e.mTimerId == id; }),
+			g_wasmTimerList.end());
+	}
+}
+
+// Drain due timers.  Called once per main-loop tick from main_sdl3.cpp
+// under __EMSCRIPTEN__.  Callback invocation is done on a copy of the
+// entry so that a callback which re-registers or stops itself doesn't
+// invalidate the iteration.  Extern "C" linkage keeps the symbol
+// addressable from the wider build without pulling a header in just
+// for this one call.
+extern "C" void VDWASMTimerTick() {
+	const uint64 now = VDGetCurrentTick64();
+
+	// Snapshot the list under the lock, then invoke each callback
+	// unlocked so a callback that calls Stop() / another SetOneShot
+	// can safely mutate g_wasmTimerList.
+	std::vector<WASMTimerEntry> fireNow;
+	{
+		std::lock_guard<std::mutex> lk(g_wasmTimerMutex);
+		for (auto it = g_wasmTimerList.begin(); it != g_wasmTimerList.end(); ) {
+			if (it->mNextFireMs <= now) {
+				fireNow.push_back(*it);
+				if (it->mbPeriodic) {
+					it->mNextFireMs = now + it->mPeriodMs;
+					++it;
+				} else {
+					it = g_wasmTimerList.erase(it);
+				}
+			} else {
+				++it;
+			}
+		}
+	}
+
+	for (const auto& e : fireNow) {
+		if (e.mFn) e.mFn();
+	}
+}
+
+void VDLazyTimer::SetOneShot(IVDTimerCallback *pCB, uint32 delay) {
+	SetOneShotFn([=]() { pCB->TimerCallback(); }, delay);
+}
+
+void VDLazyTimer::SetOneShotFn(const vdfunction<void()>& fn, uint32 delay) {
+	Stop();
+	mpFn       = fn;
+	mbPeriodic = false;
+	mTimerId   = WASMTimer_Register(fn, delay, false);
+}
+
+void VDLazyTimer::SetPeriodic(IVDTimerCallback *pCB, uint32 delay) {
+	SetPeriodicFn([=]() { pCB->TimerCallback(); }, delay);
+}
+
+void VDLazyTimer::SetPeriodicFn(const vdfunction<void()>& fn, uint32 delay) {
+	Stop();
+	mpFn       = fn;
+	mbPeriodic = true;
+	mTimerId   = WASMTimer_Register(fn, delay, true);
+}
+
+void VDLazyTimer::Stop() {
+	if (mTimerId) {
+		WASMTimer_Unregister(mTimerId);
+		mTimerId = 0;
+	}
+	// mTimerThread / mpTimerRunning are not used on the WASM backend —
+	// they remain default-constructed.
+}
+
+// Unused on WASM (the header provides it for the native backends that
+// route through a Win32 timer proc).  Empty stub keeps the vtable happy.
+void VDLazyTimer::StaticTimeCallback(VDZHWND, VDZUINT, VDZUINT_PTR, VDZDWORD) {}
+
+#else // !__EMSCRIPTEN__
+
 void VDLazyTimer::SetOneShot(IVDTimerCallback *pCB, uint32 delay) {
 	SetOneShotFn([=]() { pCB->TimerCallback(); }, delay);
 }
@@ -239,3 +388,5 @@ void VDLazyTimer::Stop() {
 
 // StaticTimeCallback is unused on non-Windows
 void VDLazyTimer::StaticTimeCallback(VDZHWND, VDZUINT, VDZUINT_PTR, VDZDWORD) {}
+
+#endif // __EMSCRIPTEN__

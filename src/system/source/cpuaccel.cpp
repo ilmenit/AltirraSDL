@@ -50,7 +50,14 @@
 long g_lCPUExtensionsEnabled;
 
 extern "C" {
+#if VD_CPU_X86 || VD_CPU_X64
+	// These x86 SIMD flags are only meaningful on x86/x64.  On other
+	// architectures (ARM64 NEON, WebAssembly scalar), the corresponding
+	// header (cpuaccel.h) provides compile-time-constant stubs in the
+	// global namespace so dependent code compiles and dead-code-
+	// eliminates cleanly.
 	bool FPU_enabled, MMX_enabled, ISSE_enabled, SSE2_enabled;
+#endif
 };
 
 #if VD_CPU_X86 || VD_CPU_X64

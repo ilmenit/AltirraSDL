@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 namespace ATEmoteOverlay {
 
 // Inbound (received from peer) — top-left, slide from left.
@@ -33,3 +35,16 @@ void Clear();
 void Render(uint64_t nowMs);
 
 } // namespace ATEmoteOverlay
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+// Inline no-op stubs for builds without the netplay module (e.g. WASM).
+// See netplay_glue.h for the rationale.
+namespace ATEmoteOverlay {
+    inline void Show(int, uint64_t)         {}
+    inline void ShowOutbound(int, uint64_t) {}
+    inline void Clear()                     {}
+    inline void Render(uint64_t)            {}
+} // namespace ATEmoteOverlay
+
+#endif // ALTIRRA_NETPLAY_ENABLED

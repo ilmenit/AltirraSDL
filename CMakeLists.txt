@@ -93,6 +93,36 @@ endif()
 # required so feature parity with the Windows build is the default.
 option(ALTIRRA_SKIP_SDL3_IMAGE "Build without SDL3_image (disables image load/save)" OFF)
 
+# ALTIRRA_WASM — browser/WebAssembly build (Emscripten).
+#
+# When ON, the build produces AltirraSDL.js + AltirraSDL.wasm + a
+# generated index.html shell intended for hosting on any static web
+# server (no COOP/COEP headers required).  The build is explicitly
+# single-threaded: pthreads are NOT used, and every std::thread /
+# VDThread site under SDL3 frontend code is compiled with a
+# synchronous or main-loop-cooperative replacement.  Direct OpenGL
+# paths (librashader, GL display backend, imgui_impl_opengl3) are
+# excluded because their raw glXxx calls conflict with Emscripten's
+# WebGL stubs; rendering goes through SDL_Renderer on WebGL2 instead.
+#
+# Opt in via -DALTIRRA_WASM=ON or the wasm-* presets.  The option is
+# only valid with the Emscripten toolchain (configured via emcmake or
+# CMAKE_TOOLCHAIN_FILE pointing at Emscripten.cmake); we fail loudly
+# if someone tries to enable it on a native toolchain so nothing
+# silently produces a broken build.
+option(ALTIRRA_WASM "Build for browser/WebAssembly via Emscripten" OFF)
+if(ALTIRRA_WASM)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        message(FATAL_ERROR
+            "ALTIRRA_WASM=ON requires the Emscripten toolchain.\n"
+            "Configure with emcmake (or a wasm-* preset) and rerun CMake.\n"
+            "  source ~/emsdk/emsdk_env.sh\n"
+            "  cmake --preset wasm-release")
+    endif()
+    message(STATUS "ALTIRRA_WASM=ON (Emscripten browser build)")
+    add_compile_definitions(ALTIRRA_WASM=1)
+endif()
+
 # Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
 if(WIN32)
     add_compile_definitions(VD_OS_WINDOWS=1)
@@ -365,6 +395,10 @@ if(ALTIRRA_SDL3)
     # (librashader.so/.dll/.dylib) is loaded at runtime via dlopen —
     # no link-time dependency.
     option(ENABLE_LIBRASHADER "Enable librashader shader preset support" ON)
+    if(ALTIRRA_WASM AND ENABLE_LIBRASHADER)
+        message(WARNING "ENABLE_LIBRASHADER is not supported for ALTIRRA_WASM; forcing OFF.")
+        set(ENABLE_LIBRASHADER OFF CACHE BOOL "Enable librashader shader preset support" FORCE)
+    endif()
     if(ENABLE_LIBRASHADER)
         FetchContent_Declare(
             librashader_headers
@@ -646,9 +680,16 @@ static inline void *_librashader_dlopen_macos(void) {
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
         ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
     )
+    # imgui_impl_opengl3.cpp is omitted on WASM builds — its direct glXxx
+    # calls conflict with Emscripten's WebGL stubs (symbol-type mismatches
+    # at wasm-ld).  AltirraSDL on WASM renders via SDL_Renderer only.
+    if(NOT ALTIRRA_WASM)
+        target_sources(imgui PRIVATE
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+        )
+    endif()
     target_include_directories(imgui PUBLIC
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
@@ -664,7 +705,7 @@ static inline void *_librashader_dlopen_macos(void) {
     # points that don't exist in GLES (glPolygonMode etc.) and link-fail
     # against system libGLESv3.  On desktop the default (Desktop GL) path
     # is correct.
-    if(ANDROID)
+    if(ANDROID OR ALTIRRA_WASM)
         target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)
     endif()
     # Suppress warnings in third-party code

@@ -22,7 +22,9 @@
 #include "debugger.h"
 
 #include <at/atcore/logging.h>
+#ifdef ALTIRRA_NETPLAY_ENABLED
 extern ATLogChannel g_ATLCNetplay;
+#endif
 
 // Debugger open/close from ui_debugger.cpp
 extern void ATUIDebuggerOpen();
@@ -204,9 +206,12 @@ void ATEmuErrorHandlerSDL3::OnDebuggerOpen(IATDebugger *, ATDebuggerOpenEvent *e
 
 	extern ATOptions g_ATOptions;
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
 	// Log CPU state so the user / devs can diagnose mysterious
 	// "game stopped" moments — especially during netplay sessions
-	// where a fault on one peer freezes both sides.
+	// where a fault on one peer freezes both sides.  When the netplay
+	// module is compiled out (e.g. WASM), the channel does not exist
+	// and the diagnostic line is omitted.
 	{
 		ATCPUEmulator &cpu = mpSim->GetCPU();
 		g_ATLCNetplay(
@@ -223,6 +228,7 @@ void ATEmuErrorHandlerSDL3::OnDebuggerOpen(IATDebugger *, ATDebuggerOpenEvent *e
 			cpu.GetStopOnBRK() ? 1 : 0,
 			cpu.IsPathBreakEnabled() ? 1 : 0);
 	}
+#endif
 
 	switch (g_ATOptions.mErrorMode) {
 		case kATErrorMode_Dialog:

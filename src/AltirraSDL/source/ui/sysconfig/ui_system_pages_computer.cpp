@@ -14,9 +14,10 @@
 #include "ui_system_internal.h"
 #include "simulator.h"
 
-#ifdef ALTIRRA_NETPLAY_ENABLED
+// Always include — the header exposes inline no-op stubs when
+// ALTIRRA_NETPLAY_ENABLED is not defined so the call sites below
+// compile on every build flavour (see netplay_glue.h).
 #include "netplay/netplay_glue.h"
-#endif
 #include "constants.h"
 #include "cpu.h"
 #include "firmwaremanager.h"

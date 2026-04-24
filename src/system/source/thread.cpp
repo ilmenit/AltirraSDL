@@ -248,6 +248,16 @@ unsigned __stdcall VDThread::StaticThreadStart(void *pThisAsVoid) {
 bool VDThread::ThreadStart() {
 	VDASSERT(!isThreadAttached());
 
+#if defined(__EMSCRIPTEN__)
+	// WASM is built without -pthread, so pthread_create is not available
+	// at link time.  Every SDL3-frontend site that previously spawned a
+	// VDThread is gated at a higher layer with its own __EMSCRIPTEN__
+	// branch (synchronous or main-loop-cooperative work), so this path
+	// should not fire in practice.  Return false so that any caller
+	// which forgot to gate itself produces a clean "thread not started"
+	// outcome instead of a link-time undefined-reference.
+	return false;
+#else
 	if (!isThreadAttached()) {
 		pthread_t thread;
 		if (pthread_create(&thread, nullptr, StaticThreadStart, this) == 0) {
@@ -258,6 +268,7 @@ bool VDThread::ThreadStart() {
 	}
 
 	return false;
+#endif
 }
 
 void VDThread::ThreadDetach() {
@@ -269,7 +280,9 @@ void VDThread::ThreadDetach() {
 
 void VDThread::ThreadWait() {
 	if (isThreadAttached()) {
+#if !defined(__EMSCRIPTEN__)
 		pthread_join((pthread_t)mhThread, nullptr);
+#endif
 		ThreadDetach();
 		mThreadID = 0;
 	}
@@ -287,7 +300,12 @@ bool VDThread::isThreadActive() {
 }
 
 bool VDThread::IsCurrentThread() const {
+#if defined(__EMSCRIPTEN__)
+	// Single-threaded wasm build: every call is from "the" thread.
+	return true;
+#else
 	return pthread_equal(pthread_self(), (pthread_t)mhThread);
+#endif
 }
 
 void *VDThread::StaticThreadStart(void *pThisAsVoid) {

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AltirraSDL @PROJECT_VERSION@ — WebAssembly</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111;
+      color: #ddd;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    header {
+      width: 100%;
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      padding: 8px 12px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    h1 {
+      font-size: 0.95rem;
+      color: #7db2ff;
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    header button {
+      background: #2a2a2a;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    header button:hover { background: #333; }
+    header button:disabled {
+      color: #555;
+      border-color: #2a2a2a;
+      cursor: not-allowed;
+    }
+    #status {
+      flex: 1;
+      text-align: right;
+      font-size: 0.8rem;
+      color: #9fd89f;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #canvas-wrap {
+      position: relative;
+      margin-top: 12px;
+    }
+    canvas {
+      display: block;
+      width: 800px;
+      height: 600px;
+      max-width: 100vw;
+      background: #000;
+      outline: none;
+    }
+    #drop-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border: 3px dashed #7db2ff;
+      background: rgba(125, 178, 255, 0.12);
+      color: #7db2ff;
+      font-size: 1.2rem;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    #drop-overlay.active { display: flex; }
+    #log {
+      width: 800px;
+      max-width: 100vw;
+      height: 120px;
+      margin-top: 8px;
+      overflow-y: auto;
+      white-space: pre;
+      background: #000;
+      border: 1px solid #333;
+      color: #aaa;
+      padding: 6px;
+      font-size: 0.75rem;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+    }
+    #log.hidden { display: none; }
+    .log-toggle {
+      font-size: 0.75rem;
+      color: #666;
+      cursor: pointer;
+      user-select: none;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AltirraSDL @PROJECT_VERSION@</h1>
+    <button id="btn-upload-game" disabled>Upload Game…</button>
+    <button id="btn-upload-firmware" disabled>Upload Firmware…</button>
+    <button id="btn-save-library" disabled>Save Library</button>
+    <div id="status">Loading…</div>
+  </header>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="drop-overlay">Drop files here to upload</div>
+  </div>
+
+  <div class="log-toggle" id="log-toggle">▸ Show log</div>
+  <div id="log" class="hidden"></div>
+
+  <!-- File input elements (hidden; driven by toolbar buttons). -->
+  <input type="file" id="file-game" accept=".xex,.atr,.atx,.cas,.car,.rom,.bin,.zip,.sap"
+         multiple hidden>
+  <input type="file" id="file-firmware" accept=".rom,.bin" multiple hidden>
+
+  <script>
+  (() => {
+    // ───────────────────────────────────────────────────────────────────────
+    //  DOM handles
+    // ───────────────────────────────────────────────────────────────────────
+    const canvas      = document.getElementById('canvas');
+    const statusEl    = document.getElementById('status');
+    const logEl       = document.getElementById('log');
+    const logToggle   = document.getElementById('log-toggle');
+    const dropOverlay = document.getElementById('drop-overlay');
+    const btnGame     = document.getElementById('btn-upload-game');
+    const btnFirmware = document.getElementById('btn-upload-firmware');
+    const btnSave     = document.getElementById('btn-save-library');
+    const fileGame    = document.getElementById('file-game');
+    const fileFw      = document.getElementById('file-firmware');
+    const cacheBust   = Date.now().toString();
+
+    function appendLog(line) {
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    logToggle.addEventListener('click', () => {
+      logEl.classList.toggle('hidden');
+      logToggle.textContent =
+        logEl.classList.contains('hidden') ? '▸ Show log' : '▾ Hide log';
+    });
+
+    // ───────────────────────────────────────────────────────────────────────
+    //  IDBFS persistence helpers (populated once runtime is ready)
+    // ───────────────────────────────────────────────────────────────────────
+    async function syncFsIn() {
+      return new Promise((resolve) => {
+        Module.FS.syncfs(true, (err) => {
+          if (err) appendLog('[fs] syncfs(in) failed: ' + err);
+          resolve();
+        });
+      });
+    }
+    async function syncFsOut() {
+      return new Promise((resolve) => {
+        Module.FS.syncfs(false, (err) => {
+          if (err) appendLog('[fs] syncfs(out) failed: ' + err);
+          resolve();
+        });
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    //  Upload handling
+    //
+    //  v1: write bytes into /persist/<games|firmware>/<basename>, flush to
+    //  IndexedDB, and report success.  Boot integration is wired up in a
+    //  later phase via an exported C function (ATWasmOnFileUploaded).
+    // ───────────────────────────────────────────────────────────────────────
+    async function readFileAsBytes(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(new Uint8Array(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function sanitize(name) {
+      // Strip any path components a browser might hand us; collapse any
+      // character that could confuse Emscripten's VFS path parser.
+      const base = name.replace(/^.*[\\\/]/, '');
+      return base.replace(/[^A-Za-z0-9._\- ]/g, '_');
+    }
+
+    async function uploadFiles(files, kind) {
+      if (!Module || !Module.FS) {
+        appendLog('[upload] runtime not ready');
+        return;
+      }
+      const dir = (kind === 'firmware') ? '/persist/firmware' : '/persist/games';
+      try { Module.FS.mkdirTree(dir); } catch (e) {}
+
+      // Keep track of the first successfully-written game so the main
+      // tick can cold-boot it after this handler returns.  Firmware
+      // uploads don't auto-boot (users configure them in the Firmware
+      // page); games do, which matches the "drag-drop to play" UX.
+      let wrote = 0;
+      let firstGamePath = null;
+      const lastWrittenPaths = [];
+
+      for (const f of files) {
+        try {
+          const bytes = await readFileAsBytes(f);
+          const path  = dir + '/' + sanitize(f.name);
+          Module.FS.writeFile(path, bytes);
+          appendLog('[upload] wrote ' + path + ' (' + bytes.length + ' bytes)');
+          wrote++;
+          lastWrittenPaths.push(path);
+          if (kind !== 'firmware' && !firstGamePath)
+            firstGamePath = path;
+        } catch (err) {
+          appendLog('[upload] failed for ' + f.name + ': ' + err);
+        }
+      }
+
+      if (wrote > 0) {
+        // Persist to IndexedDB before handing control to the emulator
+        // so a crash during boot doesn't lose the upload.
+        await syncFsOut();
+        statusEl.textContent = 'Uploaded ' + wrote + ' file(s)';
+
+        // Notify the native bridge.  Booting the first game uploaded
+        // is the common case; the rest (and every firmware upload)
+        // goes through the non-boot branch so the emulator picks the
+        // file up on its next library refresh.
+        try {
+          if (Module._ATWasmOnFileUploaded) {
+            for (const p of lastWrittenPaths) {
+              const bootFlag = (p === firstGamePath) ? 1 : 0;
+              const lenBytes = Module.lengthBytesUTF8(p) + 1;
+              const cstr = Module._malloc(lenBytes);
+              Module.stringToUTF8(p, cstr, lenBytes);
+              Module._ATWasmOnFileUploaded(cstr, bootFlag);
+              Module._free(cstr);
+            }
+          }
+        } catch (err) {
+          appendLog('[upload] bridge call failed: ' + err);
+        }
+      }
+    }
+
+    btnGame.addEventListener('click',     () => fileGame.click());
+    btnFirmware.addEventListener('click', () => fileFw.click());
+    btnSave.addEventListener('click', async () => {
+      await syncFsOut();
+      statusEl.textContent = 'Library saved';
+    });
+
+    fileGame.addEventListener('change', (e) => {
+      uploadFiles(Array.from(e.target.files), 'game');
+      e.target.value = '';
+    });
+    fileFw.addEventListener('change', (e) => {
+      uploadFiles(Array.from(e.target.files), 'firmware');
+      e.target.value = '';
+    });
+
+    // Drag-drop: accept files anywhere on the canvas area.
+    ['dragenter', 'dragover'].forEach((evt) => {
+      canvas.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropOverlay.classList.add('active');
+      });
+    });
+    ['dragleave', 'drop'].forEach((evt) => {
+      canvas.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropOverlay.classList.remove('active');
+      });
+    });
+    canvas.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        uploadFiles(Array.from(e.dataTransfer.files), 'game');
+      }
+    });
+
+    // ───────────────────────────────────────────────────────────────────────
+    //  Emscripten Module configuration
+    // ───────────────────────────────────────────────────────────────────────
+    window.Module = {
+      canvas: canvas,
+      noInitialRun: false,
+      print:    (t) => appendLog('[stdout] ' + t),
+      printErr: (t) => appendLog('[stderr] ' + t),
+      setStatus: (t) => { statusEl.textContent = t || 'Running'; },
+      locateFile: (path) => {
+        if (path && path.endsWith('.wasm'))
+          return path + '?v=' + cacheBust;
+        return path;
+      },
+      preRun: [function () {
+        // Mount IDBFS at /persist for per-origin persistence.  Subdirs
+        // /persist/games and /persist/firmware are created lazily when
+        // an upload lands.  FS.syncfs(true) copies IndexedDB contents
+        // into the memory-backed view so in-emulator code sees them.
+        try {
+          Module.FS.mkdir('/persist');
+          Module.FS.mount(Module.IDBFS, {}, '/persist');
+        } catch (e) {
+          appendLog('[fs] mount error: ' + e);
+        }
+        Module.addRunDependency('idbfs-populate');
+        Module.FS.syncfs(true, (err) => {
+          if (err) appendLog('[fs] initial syncfs failed: ' + err);
+          try { Module.FS.mkdirTree('/persist/games'); } catch (e) {}
+          try { Module.FS.mkdirTree('/persist/firmware'); } catch (e) {}
+          Module.removeRunDependency('idbfs-populate');
+        });
+      }],
+      onRuntimeInitialized: () => {
+        statusEl.textContent = 'Running';
+        btnGame.disabled = false;
+        btnFirmware.disabled = false;
+        btnSave.disabled = false;
+        canvas.focus();
+      },
+      totalDependencies: 0,
+      monitorRunDependencies: (left) => {
+        Module.totalDependencies =
+          Math.max(Module.totalDependencies, left);
+        if (left) {
+          statusEl.textContent = 'Preparing… (' +
+            (Module.totalDependencies - left) + '/' +
+            Module.totalDependencies + ')';
+        }
+      },
+    };
+
+    window.addEventListener('error', (ev) => {
+      appendLog('[onerror] ' + ev.message +
+                ' (' + (ev.filename || '?') + ':' + (ev.lineno || '?') + ')');
+    });
+
+    // Load the generated Emscripten JS glue.
+    const script = document.createElement('script');
+    script.src = 'AltirraSDL.js?v=' + cacheBust;
+    script.onerror = () => appendLog('[script] failed to load AltirraSDL.js');
+    document.body.appendChild(script);
+  })();
+  </script>
+</body>
+</html>

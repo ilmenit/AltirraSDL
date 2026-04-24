@@ -43,7 +43,12 @@ void RenderDebuggerCfgCategory(ATSimulator &sim);
 void RenderUICategory(ATSimulator &sim);
 void RenderDisplay2Category(ATSimulator &sim);
 void RenderSettingsCfgCategory(ATSimulator &sim);
+#ifdef ALTIRRA_NETPLAY_ENABLED
+// Defined in ui_system_pages_netplay.cpp, which is only compiled when
+// the netplay module is enabled.  The sysconfig sidebar's kCat_OnlinePlay
+// branch is guarded by the same macro.
 void RenderOnlinePlayCategory(ATSimulator &sim);
+#endif
 
 // Firmware page lives in ui_firmware_category.cpp (ui/firmware/).
 void RenderFirmwareCategory(ATSimulator &sim);

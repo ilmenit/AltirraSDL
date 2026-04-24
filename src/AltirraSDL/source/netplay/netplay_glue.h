@@ -34,6 +34,8 @@
 
 namespace ATNetplay { enum class CoordPhase; struct NetBootConfig; }
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 namespace ATNetplayGlue {
 
 // Phase mirror of ATNetplay::Coordinator::Phase so the UI can consume
@@ -285,3 +287,45 @@ void HostIngestPeerHint(const char* gameId,
                         const char* candidates);
 
 } // namespace ATNetplayGlue
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+// -----------------------------------------------------------------------
+// Inline no-op stubs.
+//
+// When the netplay module is compiled out (ALTIRRA_NETPLAY=OFF — the
+// WASM build forces this, since the browser has no UDP sockets and no
+// COOP/COEP setup for pthread-backed coordinators), main_sdl3.cpp and
+// a handful of UI files still reference ATNetplayGlue:: symbols in
+// code paths that are naturally unreachable when the feature is off.
+//
+// Rather than litter those call sites with `#ifdef ALTIRRA_NETPLAY_ENABLED`
+// guards, the stubs below give every entry point a constant-folding
+// "netplay not active" answer.  Netplay-aware code paths become dead
+// branches the compiler eliminates; the one-line cost is negligible
+// and keeps main_sdl3.cpp readable across all build flavours.
+//
+// None of these stubs has side effects or touches global state.
+// -----------------------------------------------------------------------
+
+namespace ATNetplayGlue {
+    inline bool     IsActive()                      { return false; }
+    inline bool     IsLockstepping()                { return false; }
+    inline void     Poll(uint64_t)                  {}
+    inline bool     CanAdvanceThisTick()            { return true; }
+    inline void     OnFrameAdvanced()               {}
+    inline void     SubmitLocalInput()              {}
+    inline void     ApplyFrameInputsToSim()         {}
+    inline void     Shutdown()                      {}
+    inline void     DisconnectActive()              {}
+    inline bool     SendEmote(uint8_t)              { return false; }
+    inline bool     IsDesynced(int64_t* = nullptr)  { return false; }
+    inline bool     IsResyncing(uint32_t* = nullptr, uint32_t* = nullptr,
+                                uint32_t* = nullptr, uint32_t* = nullptr) { return false; }
+    inline uint32_t CurrentFrame()                  { return 0; }
+    inline uint32_t CurrentInputDelay()             { return 0; }
+    inline uint64_t MsSinceLastPeerPacket(uint64_t) { return UINT64_MAX / 2; }
+    inline const char* LockstepOfferId()            { return ""; }
+} // namespace ATNetplayGlue
+
+#endif // ALTIRRA_NETPLAY_ENABLED

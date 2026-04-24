@@ -7,6 +7,8 @@
 
 #pragma once
 
+#ifdef ALTIRRA_NETPLAY_ENABLED
+
 namespace ATEmotePicker {
 
 // Toggle the picker.  No-op if netplay is not lockstepping or the
@@ -25,3 +27,16 @@ bool IsOpen();
 void Render();
 
 } // namespace ATEmotePicker
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+// Inline no-op stubs for builds without the netplay module (e.g. WASM).
+// See netplay_glue.h for the rationale.
+namespace ATEmotePicker {
+    inline void Open()      {}
+    inline void Close()     {}
+    inline bool IsOpen()    { return false; }
+    inline void Render()    {}
+} // namespace ATEmotePicker
+
+#endif // ALTIRRA_NETPLAY_ENABLED

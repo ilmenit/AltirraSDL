@@ -1156,14 +1156,33 @@ void ATGameLibrary::StartScan() {
 	}
 	mScanning.store(true, std::memory_order_release);
 
+#if defined(__EMSCRIPTEN__)
+	// WASM: run the scan inline on the main thread.  The library on a
+	// browser build lives under the IndexedDB-backed virtual filesystem
+	// (/persist/games) with at most a few dozen entries, so a synchronous
+	// scan completes well under one frame.  Running it on a background
+	// thread would require -pthread + SharedArrayBuffer — see
+	// docs/BUILD.md "WebAssembly Build".
+	ScanThread();
+	// Consume the results synchronously so callers see the refreshed
+	// entry list immediately (mirrors what ConsumeScanResults does on
+	// desktop after the thread completes).
+	ConsumeScanResults();
+#else
 	mScanThread = std::thread([this]() { ScanThread(); });
+#endif
 }
 
 void ATGameLibrary::CancelScan() {
+#if defined(__EMSCRIPTEN__)
+	// No background thread to cancel — StartScan is synchronous on WASM.
+	mScanCancel.store(true, std::memory_order_release);
+#else
 	if (mScanThread.joinable()) {
 		mScanCancel.store(true, std::memory_order_release);
 		mScanThread.join();
 	}
+#endif
 	mScanning.store(false, std::memory_order_release);
 }
 
