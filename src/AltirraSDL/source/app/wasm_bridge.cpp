@@ -33,6 +33,13 @@
 // SDL3 build already pulls in for the file-dialog Open flow.
 extern void ATUIBootImage(const wchar_t *path);
 
+// ATUIDoFirmwareScan: setup wizard's per-directory firmware scanner.
+// Walks the given path, auto-detects every recognised image by CRC,
+// and registers the results with the live firmware manager.  Exposed
+// (non-static) specifically so the WASM bridge can invoke it after
+// the user uploads a firmware file.
+extern void ATUIDoFirmwareScan(const char *utf8path);
+
 // -----------------------------------------------------------------------
 // Pending-request queue
 // -----------------------------------------------------------------------
@@ -80,6 +87,15 @@ EM_JS(void, _altirra_wasm_sync_fs_out, (), {
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSyncFSOut() {
 	_altirra_wasm_sync_fs_out();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmRescanFirmware() {
+	// The Setup Wizard scanner takes a UTF-8 folder path and registers
+	// every recognised firmware image it finds underneath.  Running it
+	// on the dedicated /home/web_user/firmware upload directory keeps
+	// the firmware manager in sync with what the user has dropped in.
+	ATUIDoFirmwareScan("/home/web_user/firmware");
 }
 
 // -----------------------------------------------------------------------

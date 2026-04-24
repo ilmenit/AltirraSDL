@@ -681,7 +681,7 @@ elseif(ALTIRRA_WASM)
         "SHELL:-sINITIAL_MEMORY=64MB"
         "SHELL:-sSTACK_SIZE=1MB"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8']"
-        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut']"
+        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut','_ATWasmOnFilePicked','_ATWasmRescanFirmware']"
         "SHELL:-lidbfs.js"
         "SHELL:-sENVIRONMENT=web"
         "SHELL:-sASYNCIFY=0"

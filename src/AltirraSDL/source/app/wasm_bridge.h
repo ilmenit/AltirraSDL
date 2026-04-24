@@ -42,6 +42,14 @@ extern "C" void ATWasmOnFileUploaded(const char* vfsPath, int bootNow);
 // request a flush at shutdown too.  Safe to call multiple times.
 extern "C" void ATWasmSyncFSOut();
 
+// Re-scan the firmware directory (/home/web_user/firmware) so any
+// files the user has uploaded since the last scan become visible to
+// the firmware manager.  JS calls this once at startup (after the
+// initial IDBFS sync completes) and again after every successful
+// firmware upload.  Internally this just forwards to the Setup
+// Wizard's existing ATUIDoFirmwareScan helper.
+extern "C" void ATWasmRescanFirmware();
+
 #else // !__EMSCRIPTEN__
 
 inline void ATWasmBridgeTick() {}

@@ -350,6 +350,13 @@
       box-shadow: 0 20px 60px rgba(125, 178, 255, 0.35);
     }
 
+    /* Pick-mode tint so the user can see the overlay is acting as a
+       native file picker (called from an Altirra menu command) rather
+       than its normal library-management role. */
+    #fm-backdrop.pick #fm { border-color: #c29b3a; }
+    #fm-backdrop.pick .fm-header { background: #2b2415; }
+    #fm-backdrop.pick .fm-header h2 { color: #e6c269; }
+
     /* Inline delete-confirm */
     .fm-row .confirm {
       background: #4a1d1d;
@@ -517,6 +524,20 @@
     let activeCategory = CATEGORIES[0];
     let selectedPath   = null;
     let runtimeReady   = false;
+
+    // Pick-mode state.  When the native file-dialog path routes through
+    // the overlay (see ui_file_dialog_sdl3.cpp's ALTIRRA_WASM branch),
+    // the picker enters either 'open' or 'save' mode.  In pick mode a
+    // row click / Enter returns the chosen path to C via
+    // Module._ATWasmOnFilePicked instead of booting.  Closing the
+    // overlay sends a NULL pick so the pending SDL callback fires with
+    // "user cancelled" semantics.
+    //
+    //   null        — normal library-management mode
+    //   'open'      — Altirra native dialog: pick an existing file
+    //   'save'      — Altirra native dialog: choose a filename to write
+    let pickMode = null;
+    let pickSaveExt = '';  // suggested extension for save mode
 
     // ───────────────────────────────────────────────────────────────────
     //  Utilities
@@ -701,6 +722,20 @@
       if (wrote > 0) {
         await syncFsOut();
         toast('Uploaded ' + wrote + ' file' + (wrote===1?'':'s'));
+
+        // If any uploaded file landed in Firmware, rescan so the
+        // Setup Wizard / Firmware page / cold-boot path all see it.
+        const touchedFirmware =
+          (forceCategory && forceCategory.id === 'firmware') ||
+          lastWrittenPaths.some(p => p.includes('/firmware/'));
+        if (touchedFirmware && Module._ATWasmRescanFirmware) {
+          try {
+            Module._ATWasmRescanFirmware();
+          } catch (err) {
+            appendLog('[fw] rescan failed: ' + err);
+          }
+        }
+
         if (firstBootable) {
           bridgeBoot(firstBootable.path);
         } else {
@@ -799,15 +834,59 @@
         ? rows.filter(r => r.name.toLowerCase().includes(q))
         : rows;
 
+      // ── Save mode banner: filename input + save button ────────────
+      // Rendered above the file list so existing filenames are visible
+      // while the user types; overwrite-confirm happens on submit.
+      if (pickMode === 'save') {
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex; gap:8px; padding:10px 14px; '
+          + 'border-bottom:1px solid #2a2a2a; background:#1a1a1a;';
+        const suggested = 'untitled' + (pickSaveExt ? '.' + pickSaveExt : '');
+        bar.innerHTML =
+          '<input type="text" id="fm-savename" class="fm-search" ' +
+          'style="flex:1;" placeholder="filename" value="' + suggested + '">' +
+          '<button id="fm-savebtn" class="primary" style="background:#3a598a;' +
+          'border:1px solid #4872ad;color:#fff;padding:4px 14px;border-radius:3px;' +
+          'font-size:0.8rem;cursor:pointer;">Save</button>';
+        fmList.appendChild(bar);
+        const input = bar.querySelector('#fm-savename');
+        const btn   = bar.querySelector('#fm-savebtn');
+        const doSave = () => {
+          const raw = (input.value || '').trim();
+          if (!raw) { toast('Enter a filename', 'error'); return; }
+          const safe = sanitize(raw);
+          if (!safe)  { toast('Invalid filename', 'error'); return; }
+          // Ensure the extension hint is applied if the user typed none.
+          let finalName = safe;
+          if (pickSaveExt && !finalName.toLowerCase()
+                  .endsWith('.' + pickSaveExt.toLowerCase())) {
+            finalName += '.' + pickSaveExt;
+          }
+          try { Module.FS.mkdirTree(activeCategory.dir); } catch (e) {}
+          const outPath = activeCategory.dir + '/' + finalName;
+          completePick(outPath);
+        };
+        btn.addEventListener('click', doSave);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); doSave(); }
+        });
+        setTimeout(() => input.select(), 20);
+      }
+
       if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'fm-empty';
         const main = rows.length === 0
           ? 'No ' + activeCategory.label.toLowerCase() + ' yet'
           : 'No matches for "' + q + '"';
+        const hint = pickMode === 'save'
+          ? 'Type a name above and press Save'
+          : (pickMode === 'open'
+              ? 'Upload a file or pick from another category'
+              : 'Drop files here or click Upload');
         empty.innerHTML =
           '<div>' + main + '</div>' +
-          '<div class="hint">Drop files here or click Upload</div>';
+          '<div class="hint">' + hint + '</div>';
         fmList.appendChild(empty);
         updateSummary(rows);
         return;
@@ -825,58 +904,81 @@
         const actions = document.createElement('div');
         actions.className = 'actions';
 
-        if (activeCategory.primary) {
-          const primary = document.createElement('button');
-          primary.className = 'primary';
-          primary.textContent = activeCategory.primary;
-          primary.addEventListener('click', (e) => {
+        // Pick-mode ('open'): primary button becomes Select; everything
+        // else is hidden so the UX is clearly a chooser, not a library.
+        if (pickMode === 'open') {
+          const pickBtn = document.createElement('button');
+          pickBtn.className = 'primary';
+          pickBtn.textContent = 'Select';
+          pickBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            bridgeBoot(r.path);
+            completePick(r.path);
           });
-          actions.appendChild(primary);
+          actions.appendChild(pickBtn);
+        } else if (pickMode === 'save') {
+          // Save mode: click fills the name field (overwrite flow).
+          const useBtn = document.createElement('button');
+          useBtn.textContent = 'Use name';
+          useBtn.title = 'Copy this filename into the save field';
+          useBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const input = document.getElementById('fm-savename');
+            if (input) { input.value = r.name; input.focus(); input.select(); }
+          });
+          actions.appendChild(useBtn);
+        } else {
+          // Normal library-management mode.
+          if (activeCategory.primary) {
+            const primary = document.createElement('button');
+            primary.className = 'primary';
+            primary.textContent = activeCategory.primary;
+            primary.addEventListener('click', (e) => {
+              e.stopPropagation();
+              bridgeBoot(r.path);
+            });
+            actions.appendChild(primary);
+          }
+
+          const dl = document.createElement('button');
+          dl.textContent = '⬇';
+          dl.title = 'Download';
+          dl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            downloadFile(r.path);
+          });
+          actions.appendChild(dl);
+
+          const rn = document.createElement('button');
+          rn.textContent = '✎';
+          rn.title = 'Rename';
+          rn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renameFile(r.path);
+          });
+          actions.appendChild(rn);
+
+          const del = document.createElement('button');
+          del.className = 'danger';
+          del.textContent = '🗑';
+          del.title = 'Delete';
+          del.addEventListener('click', (e) => {
+            e.stopPropagation();
+            del.style.display = 'none';
+            const confirm = document.createElement('button');
+            confirm.className = 'confirm';
+            confirm.textContent = 'Confirm delete';
+            confirm.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              deleteFile(r.path);
+            });
+            actions.appendChild(confirm);
+            setTimeout(() => {
+              confirm.remove();
+              del.style.display = '';
+            }, 4000);
+          });
+          actions.appendChild(del);
         }
-
-        const dl = document.createElement('button');
-        dl.textContent = '⬇';
-        dl.title = 'Download';
-        dl.addEventListener('click', (e) => {
-          e.stopPropagation();
-          downloadFile(r.path);
-        });
-        actions.appendChild(dl);
-
-        const rn = document.createElement('button');
-        rn.textContent = '✎';
-        rn.title = 'Rename';
-        rn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          renameFile(r.path);
-        });
-        actions.appendChild(rn);
-
-        const del = document.createElement('button');
-        del.className = 'danger';
-        del.textContent = '🗑';
-        del.title = 'Delete';
-        del.addEventListener('click', (e) => {
-          e.stopPropagation();
-          // Inline confirm: swap the button for a confirm pill.
-          del.style.display = 'none';
-          const confirm = document.createElement('button');
-          confirm.className = 'confirm';
-          confirm.textContent = 'Confirm delete';
-          confirm.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            deleteFile(r.path);
-          });
-          actions.appendChild(confirm);
-          setTimeout(() => {
-            // Revert after 4s if not confirmed.
-            confirm.remove();
-            del.style.display = '';
-          }, 4000);
-        });
-        actions.appendChild(del);
 
         row.innerHTML =
           '<span class="icon">' + icon + '</span>' +
@@ -890,7 +992,14 @@
           renderList();
         });
         row.addEventListener('dblclick', () => {
-          if (activeCategory.primary) bridgeBoot(r.path);
+          if (pickMode === 'open') {
+            completePick(r.path);
+          } else if (pickMode === 'save') {
+            const input = document.getElementById('fm-savename');
+            if (input) { input.value = r.name; input.focus(); input.select(); }
+          } else if (activeCategory.primary) {
+            bridgeBoot(r.path);
+          }
         });
 
         fmList.appendChild(row);
@@ -913,6 +1022,15 @@
     }
 
     function renderFm() {
+      // Update title to reflect pick-mode state so the user
+      // understands why the overlay looks different (Select/Save
+      // buttons instead of the usual library actions).
+      const titleEl = document.getElementById('fm-title');
+      if (titleEl) {
+        if (pickMode === 'open')      titleEl.textContent = 'Select a file';
+        else if (pickMode === 'save') titleEl.textContent = 'Save as…';
+        else                          titleEl.textContent = 'Files';
+      }
       renderSidebar();
       renderList();
     }
@@ -933,12 +1051,54 @@
       // tries to scroll the search field into view.
       setTimeout(() => fmSearch.focus(), 50);
     }
+
+    // If a native file dialog is pending when the overlay closes, send
+    // an empty path back so the Altirra callback fires with "cancelled"
+    // semantics.  Without this the emulator would block forever waiting
+    // for a file that never arrives.
+    function cancelPendingPick() {
+      if (!pickMode) return;
+      pickMode = null;
+      pickSaveExt = '';
+      fmBackdrop.classList.remove('pick');
+      if (Module && Module._ATWasmOnFilePicked) {
+        const empty = Module._malloc(1);
+        Module.stringToUTF8('', empty, 1);
+        Module._ATWasmOnFilePicked(empty);
+        Module._free(empty);
+      }
+    }
+
     function closeFm() {
+      cancelPendingPick();
       fmBackdrop.classList.remove('open');
       canvas.focus();
     }
 
-    btnFiles .addEventListener('click', () => openFm());
+    // Completes a pending native dialog by handing the chosen VFS path
+    // back to C.  Used by row-click in 'open' mode and by the Save
+    // button in 'save' mode.
+    function completePick(vfsPath) {
+      if (!pickMode) return;
+      pickMode = null;
+      pickSaveExt = '';
+      fmBackdrop.classList.remove('pick');
+      if (Module && Module._ATWasmOnFilePicked) {
+        const lenBytes = Module.lengthBytesUTF8(vfsPath) + 1;
+        const cstr = Module._malloc(lenBytes);
+        Module.stringToUTF8(vfsPath, cstr, lenBytes);
+        Module._ATWasmOnFilePicked(cstr);
+        Module._free(cstr);
+      }
+      // Close without re-cancelling (pickMode is already cleared).
+      fmBackdrop.classList.remove('open');
+      canvas.focus();
+    }
+
+    btnFiles .addEventListener('click', () => {
+      cancelPendingPick();   // user opens library from the toolbar
+      openFm();
+    });
     fmClose  .addEventListener('click', closeFm);
     fmBackdrop.addEventListener('click', (e) => {
       if (e.target === fmBackdrop) closeFm();
@@ -952,6 +1112,36 @@
         closeFm();
       }
     });
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Pick-mode entry point.  Called from C via EM_JS when the
+    //  emulator wants to present a native file picker.
+    //
+    //    kind = 0 → open  (user picks an existing file)
+    //    kind = 1 → save  (user types a filename, we synthesise a path)
+    //
+    //  filters is a ';'-separated list of extensions ("xex;atr;car").
+    //  Currently informational only — the category gating already
+    //  picks sensible views; filters could be used to grey out
+    //  non-matching rows in a future iteration.
+    // ───────────────────────────────────────────────────────────────────
+    window.altirraOpenFilePicker = function(nKey, category, filters, kind) {
+      pickMode = (kind === 1) ? 'save' : 'open';
+      pickSaveExt = '';
+      if (pickMode === 'save' && filters) {
+        // Pick the first concrete extension from the filter list.
+        const firstExt = (filters.split(';')
+                                 .find(s => s && s !== '*') || '')
+                         .trim();
+        if (firstExt && firstExt !== '*') {
+          pickSaveExt = firstExt.replace(/^\*?\./, '');
+        }
+      }
+      fmBackdrop.classList.add('pick');
+      openFm(category);
+      // Render runs from openFm → refresh to apply pick-mode visuals.
+      renderFm();
+    };
 
     // ───────────────────────────────────────────────────────────────────
     //  Upload button inside overlay
@@ -1080,6 +1270,16 @@
         runtimeReady = true;
         btnFiles.disabled = false;
         canvas.focus();
+        // Ensure any firmware files that persisted across reloads are
+        // visible to the emulator: run one scan after the emulator
+        // finishes its own init so the Setup Wizard / Firmware page
+        // see them without the user needing to click Scan.
+        try {
+          if (Module._ATWasmRescanFirmware)
+            Module._ATWasmRescanFirmware();
+        } catch (err) {
+          appendLog('[fw] startup rescan failed: ' + err);
+        }
       },
       totalDependencies: 0,
       monitorRunDependencies: (left) => {
