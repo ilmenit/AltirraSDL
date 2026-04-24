@@ -2305,10 +2305,44 @@ int main(int argc, char *argv[]) {
 		}
 #endif
 
-		ATSimulator::AdvanceResult result = g_sim.Advance(dropFrame);
-
-		// Check if a new frame arrived (GTIA called PostBuffer).
-		bool hadFrame = g_pDisplay->IsFramePending();
+		// ── Emulation advance loop ────────────────────────────────
+		//
+		// Each Advance() call runs at most g_ATSimScanlinesPerAdvance
+		// (default 32) scanlines.  A full NTSC frame is 262 lines, so
+		// producing one displayed frame takes ~9 Advance() calls.
+		//
+		// On native the OUTER while(g_running) loop spins Advance()
+		// until a frame completes, then the pacer sleeps until the
+		// next display-refresh slot.  Under WASM we have exactly one
+		// tick invocation per browser requestAnimationFrame — if we
+		// only made a single Advance call per rAF, we'd run at
+		// ~60/9 ≈ 7 Hz emulated (the "VERY slow" user symptom).
+		//
+		// Spin Advance() inside the tick until the display has a
+		// frame to present, GTIA stalls, or we exceed the per-tick
+		// time budget (14 ms — under one 60 Hz frame so we never
+		// miss an rAF slot).
+		ATSimulator::AdvanceResult result = ATSimulator::kAdvanceResult_Running;
+		bool hadFrame = false;
+#ifdef __EMSCRIPTEN__
+		const uint64_t tickStartMs = SDL_GetTicks();
+		constexpr uint64_t tickBudgetMs = 14;
+		for (;;) {
+			result = g_sim.Advance(dropFrame);
+			hadFrame = g_pDisplay->IsFramePending();
+			if (hadFrame) break;
+			if (result == ATSimulator::kAdvanceResult_WaitingForFrame) break;
+			if (result == ATSimulator::kAdvanceResult_Stopped)          break;
+			// Budget guard: under a heavy game (turbo mode off) this
+			// should be unreached on any modern device, but it keeps
+			// the tick bounded if the runtime ever hits a pathological
+			// slow path so the rAF loop stays responsive.
+			if (SDL_GetTicks() - tickStartMs > tickBudgetMs) break;
+		}
+#else
+		result = g_sim.Advance(dropFrame);
+		hadFrame = g_pDisplay->IsFramePending();
+#endif
 		g_pDisplay->PrepareFrame();
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
