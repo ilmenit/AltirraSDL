@@ -64,6 +64,7 @@ extern "C" void ATWasmSyncFSOut();
 #include "options.h"
 #include "ui_main.h"
 #include "ui_debugger.h"
+#include "debugger.h"   // IATDebugger + ATDebuggerSymbolLoadMode (used in the __EMSCRIPTEN__ startup block below)
 #include "ui_testmode.h"
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
@@ -1959,6 +1960,33 @@ int main(int argc, char *argv[]) {
 		extern void ATInitDebugger();
 		ATInitDebugger();
 	}
+
+#ifdef __EMSCRIPTEN__
+	// WASM: silently skip the debugger's symbol + script auto-load
+	// when the emulator cold-boots a game.
+	//
+	// By default Altirra looks for companion files next to the booted
+	// image — for example, booting `foo.xex` triggers open() of
+	// `foo.lst`, `foo.lab`, `foo.atdbg`, `foo.atdbg2` so that any
+	// attached debug symbols become available automatically.  Those
+	// files almost never exist in the browser's virtual filesystem
+	// (users upload the game image alone), and the debugger's file
+	// open call throws VDException("No such file or directory") which
+	// propagates out of the deferred-boot handler and aborts the
+	// emulator.
+	//
+	// Desktop users can still enable symbol auto-load from Configure
+	// System → Debugger if they manually upload a .lst/.lab companion
+	// alongside the game.
+	{
+		IATDebugger *dbg = ATGetDebugger();
+		if (dbg) {
+			dbg->SetSymbolLoadMode(false, ATDebuggerSymbolLoadMode::Disabled);
+			dbg->SetSymbolLoadMode(true,  ATDebuggerSymbolLoadMode::Disabled);
+			dbg->SetScriptAutoLoadMode(ATDebuggerScriptAutoLoadMode::Disabled);
+		}
+	}
+#endif
 
 	// Register emulation error handler (matches Windows main.cpp:4007).
 	// Must be after debugger init so OnDebuggerOpen event is available.
