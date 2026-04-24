@@ -734,6 +734,10 @@ void ATSettingsExchangeInput(bool write, VDRegistryKey& key) {
 
 		if (g_sim.GetHardwareMode() == kATHardwareMode_5200)
 			defaultController = kATInputControllerType_5200Controller;
+#ifdef ALTIRRA_WASM
+		else
+			defaultController = kATInputControllerType_Joystick;
+#endif
 
 		g_sim.GetInputManager()->LoadSelections(key, defaultController);
 	}

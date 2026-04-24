@@ -45,6 +45,11 @@ upstream does is taken away — and most of them are only interesting
   Windows `.sln` build is still preserved upstream-identical; this
   fork contributes the SDL3 + Dear ImGui frontend that lets the same
   emulation core run everywhere SDL3 does.
+- **Experimental WebAssembly target (Emscripten)** for browser-based
+  smoke testing and debugging. This currently focuses on development
+  workflow rather than end-user packaging. The build emits
+  `AltirraSDL.js/.wasm` and an auto-generated `index.html` shell for
+  quick local testing.
 - **Portable settings** stored as a plain INI at
   `~/.config/altirra/settings.ini` (same format as Windows portable
   mode). No registry, no hidden state.
@@ -215,7 +220,8 @@ Altirra is licensed under the **GNU General Public License v2 (GPLv2)**, with a 
 ## Documentation
 
 - [BUILD.md](BUILD.md) — building AltirraSDL from source on Linux,
-  macOS, Windows (CMake) and Android.
+  macOS, Windows (CMake), Android, and experimental WebAssembly
+  (Emscripten).
 - [NETPLAY.md](NETPLAY.md) — playing online: host a game, join a
   game, point at a different lobby, and step-by-step instructions
   for running your own lobby server (localhost, Docker, VPS with

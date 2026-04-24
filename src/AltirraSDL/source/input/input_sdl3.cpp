@@ -486,6 +486,10 @@ static bool ATInputSDL3_IsTracedScancode(SDL_Scancode sc) {
 	}
 }
 
+#ifndef ALTIRRA_INPUT_TRACE
+#define ALTIRRA_INPUT_TRACE 0
+#endif
+
 // Bounded event trace: log up to kTraceBudget events per traced scancode,
 // each as a single line with direction, repeat flag, delta since the previous
 // event on the same scancode, and — for UP events — whether a paired KEY_DOWN
@@ -494,6 +498,7 @@ static bool ATInputSDL3_IsTracedScancode(SDL_Scancode sc) {
 // chatter; seeing "paired=no" on every UP rules that theory out entirely.
 // Once the per-scancode budget is exhausted, nothing more is logged.
 static void ATInputSDL3_TraceKeyEvent(const SDL_KeyboardEvent& ev, bool down) {
+#if ALTIRRA_INPUT_TRACE
 	if (!ATInputSDL3_IsTracedScancode(ev.scancode))
 		return;
 
@@ -550,6 +555,10 @@ static void ATInputSDL3_TraceKeyEvent(const SDL_KeyboardEvent& ev, bool down) {
 			"[input-trace]   (budget exhausted for sc=%d; no further events logged for this key)\n",
 			(int)ev.scancode);
 	}
+#else
+	(void)ev;
+	(void)down;
+#endif
 }
 
 void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
@@ -570,10 +579,8 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 			// don't send to POKEY or console switches (matches Windows).
 			bool mapped = g_inputState.mpInputManager->IsInputMapped(0, inputCode);
 
-			// One-shot diagnostic: log the first time each scancode is seen,
-			// reporting whether it is currently bound through the input map.
-			// Helps diagnose user reports of "arrow keys don't work as
-			// joystick" without polluting logs during normal play.
+			// Optional one-shot diagnostics for key-map issues.
+#if ALTIRRA_INPUT_TRACE
 			static bool s_loggedScancode[SDL_SCANCODE_COUNT] = {};
 			if (!ev.repeat && !s_loggedScancode[ev.scancode]) {
 				s_loggedScancode[ev.scancode] = true;
@@ -584,18 +591,12 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 					mapped ? "yes" : "no",
 					g_kbdOpts.mbAllowInputMapOverlap ? "yes" : "no");
 
-				// On the very first input-mapped key of the session, also dump
-				// the full set of enabled input maps and the controller(s) /
-				// trigger(s) that this scancode resolves to.  This separates
-				// "no map active" from "wrong map active" from "multiple maps
-				// fighting each other" in user bug reports.
 				static bool s_dumpedMaps = false;
 				if (!s_dumpedMaps) {
 					s_dumpedMaps = true;
 					ATInputManager *im = g_inputState.mpInputManager;
 					const uint32 mapCount = im->GetInputMapCount();
-					fprintf(stderr, "[input] active input maps (%u total):\n",
-						mapCount);
+					fprintf(stderr, "[input] active input maps (%u total):\n", mapCount);
 					for (uint32 i = 0; i < mapCount; ++i) {
 						vdrefptr<ATInputMap> imap;
 						if (!im->GetInputMapByIndex(i, ~imap))
@@ -633,6 +634,7 @@ void ATInputSDL3_HandleKeyDown(const SDL_KeyboardEvent& ev) {
 					}
 				}
 			}
+#endif
 
 			// Windows uivideodisplaywindow.cpp:2225 forwards every press to
 			// OnButtonDown, including OS auto-repeats — matched here.

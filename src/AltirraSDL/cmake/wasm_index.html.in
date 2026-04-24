@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AltirraSDL - WebAssembly</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111;
+      color: #ddd;
+      font-family: monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      margin: 12px 0 8px;
+      font-size: 1rem;
+      color: #7db2ff;
+    }
+    canvas {
+      display: block;
+      width: 800px;
+      height: 600px;
+      max-width: 100vw;
+      max-height: calc(100vh - 220px);
+      background: #000;
+    }
+    #status {
+      margin: 8px;
+      font-size: 0.85rem;
+      color: #9fd89f;
+    }
+    #log {
+      width: 800px;
+      max-width: 100vw;
+      height: 140px;
+      overflow-y: auto;
+      white-space: pre;
+      background: #000;
+      border: 1px solid #333;
+      color: #aaa;
+      padding: 6px;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>AltirraSDL - WebAssembly</h1>
+  <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="status">Loading...</div>
+  <div id="log"></div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const cacheBust = Date.now().toString();
+
+    function appendLog(text) {
+      logEl.textContent += text + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      print: (text) => appendLog('[stdout] ' + text),
+      printErr: (text) => appendLog('[stderr] ' + text),
+      setStatus: (text) => {
+        statusEl.textContent = text || 'Running';
+      },
+      locateFile: (path) => {
+        if (path && path.endsWith('.wasm'))
+          return path + '?v=' + cacheBust;
+        return path;
+      },
+      totalDependencies: 0,
+      monitorRunDependencies: (left) => {
+        Module.totalDependencies = Math.max(Module.totalDependencies, left);
+        if (left) {
+          Module.setStatus(
+            'Preparing... (' + (Module.totalDependencies - left) + '/' +
+            Module.totalDependencies + ')'
+          );
+        }
+      },
+      onRuntimeInitialized: () => {
+        statusEl.textContent = 'Running';
+      }
+    };
+
+    window.onerror = (msg, src, line) => {
+      appendLog('[onerror] ' + msg + ' (' + src + ':' + line + ')');
+    };
+
+    const script = document.createElement('script');
+    script.src = 'AltirraSDL.js?v=' + cacheBust;
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>

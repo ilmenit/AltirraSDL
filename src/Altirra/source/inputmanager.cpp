@@ -1238,6 +1238,7 @@ void ATInputManager::LoadSelections(VDRegistryKey& key, ATInputControllerType de
 
 	bool foundActive = true;
 	bool foundQuick = true;
+	bool hasActiveSelection = false;
 
 	for(int mapType = 0; mapType < 2; ++mapType) {
 		VDStringW mapNames;
@@ -1257,6 +1258,9 @@ void ATInputManager::LoadSelections(VDRegistryKey& key, ATInputControllerType de
 				token = parser;
 				parser.clear();
 			}
+
+			if (!token.empty() && mapType == 0)
+				hasActiveSelection = true;
 
 			mapStateLookup[VDStringW(token)] |= (uint8)(1 << mapType);
 		}
@@ -1279,7 +1283,7 @@ void ATInputManager::LoadSelections(VDRegistryKey& key, ATInputControllerType de
 
 	// If there was no setting for active maps, look for the first input map with the specified
 	// default controller type. We sort by name so the result is deterministic.
-	if (!foundActive && defaultControllerType) {
+	if ((!foundActive || !hasActiveSelection) && defaultControllerType) {
 		vdfastvector<ATInputMap *> sortedMaps;
 		sortedMaps.reserve(mInputMaps.size());
 

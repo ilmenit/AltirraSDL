@@ -648,7 +648,17 @@ elseif(ALTIRRA_WASM)
         "SHELL:-sUSE_WEBGL2=1"
         "SHELL:-sASYNCIFY=1"
         "SHELL:-sALLOW_MEMORY_GROWTH=1"
+        "SHELL:-sNO_DISABLE_EXCEPTION_CATCHING=1"
     )
+
+    # Generate a simple browser shell so users can run the WASM build
+    # immediately with emrun/python -m http.server without manual setup.
+    set(ALTIRRA_WASM_INDEX_TEMPLATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wasm_index.html.in")
+    set(ALTIRRA_WASM_INDEX_OUTPUT
+        "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+    configure_file("${ALTIRRA_WASM_INDEX_TEMPLATE}"
+        "${ALTIRRA_WASM_INDEX_OUTPUT}" @ONLY)
 else()
     target_link_libraries(AltirraSDL PRIVATE OpenGL::GL)
 endif()

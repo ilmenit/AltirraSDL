@@ -335,7 +335,60 @@ cmake --build build/windows-sdl-release --config Release
 | `macos-release` | macOS | Release |
 | `windows-sdl-debug` | Windows | Debug (SDL3) |
 | `windows-sdl-release` | Windows | Release (SDL3) |
+| `wasm-debug` | Emscripten/WebAssembly | Debug |
+| `wasm-release` | Emscripten/WebAssembly | Release |
 | `windows-libs-only` | Windows | Core libraries only (no frontend) |
+
+### WebAssembly Build (Emscripten, experimental)
+
+This target cross-compiles AltirraSDL to WebAssembly for browser-based
+testing and development.
+
+Prerequisites:
+
+- Emscripten SDK installed (tested with 5.0.6)
+- `emsdk_env.sh` available in your shell
+
+Build using presets:
+
+```bash
+# from repo root
+source ~/emsdk/emsdk_env.sh
+
+cmake --preset wasm-debug
+cmake --build --preset wasm-debug -- -j$(nproc)
+```
+
+Output files:
+
+- `build/wasm-debug/src/AltirraSDL/AltirraSDL.js`
+- `build/wasm-debug/src/AltirraSDL/AltirraSDL.wasm`
+- `build/wasm-debug/src/AltirraSDL/index.html` (auto-generated shell page)
+
+Notes:
+
+- Current WASM smoke boot embeds `wizard.xex` into the virtual filesystem.
+- WASM currently uses the SDL renderer path (no direct OpenGL backend).
+- Netplay and bridge server are forced off in `ALTIRRA_WASM` builds.
+
+Run in a local HTTP server (required for browser WASM):
+
+```bash
+source ~/emsdk/emsdk_env.sh
+cd build/wasm-debug/src/AltirraSDL
+emrun --no_browser --port 8080 .
+```
+
+Then open:
+
+- `http://localhost:8080/index.html`
+
+Troubleshooting:
+
+- If browser output shows an exception-catching abort, verify link flags
+    include `-sNO_DISABLE_EXCEPTION_CATCHING=1`.
+- If keyboard joystick mapping appears inactive on first run, clear or
+    remove stale input selections in `~/.config/altirra/settings.ini`.
 
 ### Package Target
 

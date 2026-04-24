@@ -1044,12 +1044,37 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 				haveUnloadedAllImages = true;
 			}
 
+			// Smoke boot media may not include optional debugger sidecar files
+			// (e.g. .lst/.lab/.atdbg). Temporarily disable auto-load to avoid
+			// startup aborts when those files are absent in the WASM VFS.
+			IATDebugger *dbg = ATGetDebugger();
+			ATDebuggerSymbolLoadMode preStartSymMode = ATDebuggerSymbolLoadMode::Default;
+			ATDebuggerSymbolLoadMode postStartSymMode = ATDebuggerSymbolLoadMode::Default;
+			ATDebuggerScriptAutoLoadMode scriptMode = ATDebuggerScriptAutoLoadMode::Default;
+			const bool restoreDebugModes = (dbg != nullptr);
+
+			if (restoreDebugModes) {
+				preStartSymMode = dbg->GetSymbolLoadMode(false);
+				postStartSymMode = dbg->GetSymbolLoadMode(true);
+				scriptMode = dbg->GetScriptAutoLoadMode();
+
+				dbg->SetSymbolLoadMode(false, ATDebuggerSymbolLoadMode::Disabled);
+				dbg->SetSymbolLoadMode(true, ATDebuggerSymbolLoadMode::Disabled);
+				dbg->SetScriptAutoLoadMode(ATDebuggerScriptAutoLoadMode::Disabled);
+			}
+
 			const bool suppressColdReset = DoLoadDirect(
 				ALTIRRA_WASM_SMOKE_BOOT_PATH,
 				bootImageWriteMode,
 				imageCartMapper,
 				kATImageType_Program,
 				-1);
+
+			if (restoreDebugModes) {
+				dbg->SetSymbolLoadMode(false, preStartSymMode);
+				dbg->SetSymbolLoadMode(true, postStartSymMode);
+				dbg->SetScriptAutoLoadMode(scriptMode);
+			}
 
 			if (!suppressColdReset)
 				coldResetPending = true;
