@@ -678,7 +678,13 @@ elseif(ALTIRRA_WASM)
     target_link_options(AltirraSDL PRIVATE
         "SHELL:-sUSE_WEBGL2=1"
         "SHELL:-sALLOW_MEMORY_GROWTH=1"
-        "SHELL:-sINITIAL_MEMORY=64MB"
+        # 128 MB initial avoids early memory-growth transitions (each
+        # grow call causes a brief stall while the heap is copied).
+        # The wasm itself is ~7 MB, emulator RAM a few MB, SDL/ImGui a
+        # few MB — so the first interesting workload (game library
+        # thumbnails, uploaded image) still has headroom before the
+        # first grow happens.
+        "SHELL:-sINITIAL_MEMORY=128MB"
         "SHELL:-sSTACK_SIZE=1MB"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8']"
         "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut','_ATWasmOnFilePicked','_ATWasmRescanFirmware']"
@@ -686,14 +692,17 @@ elseif(ALTIRRA_WASM)
         "SHELL:-sENVIRONMENT=web"
         "SHELL:-sASYNCIFY=0"
         "SHELL:-sFORCE_FILESYSTEM=1"
-        # ASSERTIONS=1 turns cryptic "Aborted(undefined)" browser errors
-        # into "Aborted: <actual reason>" with a short stack summary.
-        # Adds roughly 200 KB to the wasm blob and a few % CPU overhead —
-        # worth every byte while the port is being debugged.  Once the
-        # WASM target is stable, drop this back to ASSERTIONS=0 to
-        # shrink the download.
-        "SHELL:-sASSERTIONS=1"
     )
+
+    # Debug builds keep ASSERTIONS on so the "Aborted: <reason>"
+    # error includes a useful stack on crashes.  Release claws back
+    # the few percent CPU and the ~200 KB of instrumentation code —
+    # the global -O3 / -flto pass is applied at the top-level
+    # CMakeLists.txt so it covers ATCPU, ATEmulation and friends too,
+    # not just this target.
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_link_options(AltirraSDL PRIVATE "SHELL:-sASSERTIONS=1")
+    endif()
     # Exception catching — always enabled, both Debug and Release.
     #
     # Altirra's file-load / media / disk / firmware paths throw

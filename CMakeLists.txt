@@ -121,6 +121,35 @@ if(ALTIRRA_WASM)
     endif()
     message(STATUS "ALTIRRA_WASM=ON (Emscripten browser build)")
     add_compile_definitions(ALTIRRA_WASM=1)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Release-build performance pass — applied globally (add_compile/
+    # link_options at project scope) so it covers ATCPU, ATEmulation,
+    # ATIO, Kasumi, etc. as well as the AltirraSDL frontend target.
+    # Without these the default emsdk Release build is -O2 with no LTO,
+    # which leaves the hot emulator inner loop (CPU → ANTIC → GTIA →
+    # POKEY) significantly underoptimised.
+    #
+    #   -O3        LLVM IR-level optimizations.  Typically 10–25 %
+    #              faster than -O2 on tight emulator dispatch loops.
+    #   -flto      Whole-program LLVM LTO.  Inlines across TU
+    #              boundaries — where most of the "CPU ticks → ANTIC
+    #              ticks → GTIA ticks" call chain collapses.
+    #              Emscripten requires matching -flto on both
+    #              compile and link, so we set it as both
+    #              add_compile_options and add_link_options.
+    #   -msimd128  Enables the wasm SIMD proposal.  The header-level
+    #              guards (fft.h, cpuaccel.h) still force scalar
+    #              fallbacks for our hand-written SSE2/NEON paths, so
+    #              this only benefits loops the compiler auto-
+    #              vectorises (ImGui pixel fills, audio resampling,
+    #              palette rasters).
+    #
+    # Debug builds skip these so crashes still have readable stacks.
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(-O3 -flto -msimd128)
+        add_link_options(-O3 -flto)
+    endif()
 endif()
 
 # Platform compile definitions — belt-and-suspenders with vdtypes.h auto-detect
