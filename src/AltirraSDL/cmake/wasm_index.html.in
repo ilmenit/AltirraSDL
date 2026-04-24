@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AltirraSDL @PROJECT_VERSION@ — WebAssembly</title>
   <style>
+    /* ───────────────────────────────────────────────────────────────
+       Base reset + layout shell
+       ─────────────────────────────────────────────────────────────── */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
     body {
@@ -16,8 +19,9 @@
       flex-direction: column;
       overflow: hidden;
     }
+    button { font: inherit; }
 
-    /* ── Top bar ────────────────────────────────────────────────── */
+    /* ── Top bar ─────────────────────────────────────────────────── */
     header {
       flex: 0 0 auto;
       width: 100%;
@@ -35,22 +39,24 @@
       margin: 0;
       flex: 0 0 auto;
     }
-    header button {
+    header button,
+    header .btn {
       background: #2a2a2a;
       color: #ddd;
       border: 1px solid #444;
-      padding: 4px 10px;
+      padding: 4px 12px;
       font-size: 0.85rem;
       cursor: pointer;
       border-radius: 3px;
+      line-height: 1.3;
     }
-    header button:hover { background: #333; }
+    header button:hover:not(:disabled),
+    header .btn:hover { background: #353535; border-color: #555; }
     header button:disabled {
       color: #555;
       border-color: #2a2a2a;
       cursor: not-allowed;
     }
-    /* Status pushes everything after it (log toggle) to the right. */
     #status {
       flex: 1 1 auto;
       text-align: right;
@@ -73,11 +79,11 @@
     }
     .log-toggle:hover { color: #ddd; border-color: #444; }
 
-    /* ── Canvas area — fills all remaining space, letterboxes ───── */
+    /* ── Canvas area ─────────────────────────────────────────────── */
     #canvas-wrap {
       flex: 1 1 auto;
       position: relative;
-      min-height: 0;          /* allow shrinking below content size */
+      min-height: 0;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -85,10 +91,6 @@
     }
     canvas {
       display: block;
-      /* Maintain an Atari 4:3 aspect; scale to fit available area
-         without cropping.  The GPU framebuffer stays at whatever the
-         SDL_Renderer backbuffer was created at (typically 800x600);
-         the browser's CSS layer rescales that to the computed size. */
       max-width: 100%;
       max-height: 100%;
       aspect-ratio: 4 / 3;
@@ -111,7 +113,7 @@
     }
     #drop-overlay.active { display: flex; }
 
-    /* ── Log panel — hidden by default, bottom of viewport ──────── */
+    /* ── Log panel ───────────────────────────────────────────────── */
     #log {
       flex: 0 0 auto;
       width: 100%;
@@ -127,14 +129,277 @@
       font-family: "SF Mono", Menlo, Consolas, monospace;
     }
     #log.hidden { display: none; }
+
+    /* ───────────────────────────────────────────────────────────────
+       File manager overlay
+       ─────────────────────────────────────────────────────────────── */
+    #fm-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(2px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #fm-backdrop.open { display: flex; }
+
+    #fm {
+      width: min(960px, 90vw);
+      height: min(640px, 85vh);
+      background: #1c1c1c;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      color: #e0e0e0;
+    }
+
+    /* Header row: title + toolbar + close */
+    .fm-header {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #2a2a2a;
+      background: #222;
+    }
+    .fm-header h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #7db2ff;
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    .fm-actions {
+      display: flex;
+      gap: 6px;
+      flex: 1 1 auto;
+      padding-left: 16px;
+    }
+    .fm-actions button {
+      background: #2d2d2d;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .fm-actions button:hover:not(:disabled) { background: #383838; }
+    .fm-actions button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .fm-search {
+      flex: 0 1 220px;
+      background: #121212;
+      border: 1px solid #333;
+      color: #ddd;
+      padding: 4px 8px;
+      font-size: 0.8rem;
+      border-radius: 3px;
+    }
+    .fm-search:focus { outline: none; border-color: #5a7aad; }
+    .fm-close {
+      background: transparent !important;
+      border: none !important;
+      color: #888 !important;
+      font-size: 1.1rem;
+      padding: 2px 8px !important;
+      cursor: pointer;
+    }
+    .fm-close:hover { color: #fff !important; }
+
+    /* Body: sidebar + list */
+    .fm-body {
+      flex: 1 1 auto;
+      display: flex;
+      min-height: 0;
+    }
+    .fm-sidebar {
+      flex: 0 0 200px;
+      border-right: 1px solid #2a2a2a;
+      padding: 8px 0;
+      overflow-y: auto;
+      background: #181818;
+    }
+    .fm-cat {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 14px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: #bbb;
+      user-select: none;
+      border-left: 3px solid transparent;
+    }
+    .fm-cat:hover { background: #222; color: #fff; }
+    .fm-cat.active {
+      background: #23303e;
+      color: #fff;
+      border-left-color: #7db2ff;
+    }
+    .fm-cat .icon { flex: 0 0 auto; }
+    .fm-cat .label { flex: 1 1 auto; }
+    .fm-cat .count {
+      flex: 0 0 auto;
+      font-size: 0.75rem;
+      color: #777;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* File list */
+    .fm-list {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      position: relative;
+    }
+    .fm-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #666;
+      font-size: 0.9rem;
+      gap: 10px;
+      padding: 30px;
+      text-align: center;
+    }
+    .fm-empty .hint {
+      font-size: 0.8rem;
+      color: #555;
+    }
+    .fm-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto auto auto;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #242424;
+      font-size: 0.85rem;
+    }
+    .fm-row:hover { background: #232323; }
+    .fm-row.selected { background: #23303e; }
+    .fm-row .icon { font-size: 1rem; text-align: center; }
+    .fm-row .name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fm-row .size,
+    .fm-row .mtime {
+      color: #888;
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .fm-row .actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    .fm-row:hover .actions,
+    .fm-row.selected .actions { opacity: 1; }
+    .fm-row .actions button {
+      background: #333;
+      color: #ddd;
+      border: 1px solid #4a4a4a;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .fm-row .actions button.primary {
+      background: #3a598a;
+      border-color: #4872ad;
+      color: #fff;
+      font-weight: 600;
+    }
+    .fm-row .actions button:hover { background: #4a4a4a; }
+    .fm-row .actions button.primary:hover { background: #4872ad; }
+    .fm-row .actions button.danger:hover {
+      background: #6d2a2a;
+      border-color: #8a3a3a;
+    }
+
+    /* Footer summary */
+    .fm-footer {
+      flex: 0 0 auto;
+      padding: 6px 14px;
+      border-top: 1px solid #2a2a2a;
+      background: #181818;
+      font-size: 0.75rem;
+      color: #888;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Drop target highlight when dragging onto the overlay */
+    #fm-backdrop.drag #fm {
+      border-color: #7db2ff;
+      box-shadow: 0 20px 60px rgba(125, 178, 255, 0.35);
+    }
+
+    /* Inline delete-confirm */
+    .fm-row .confirm {
+      background: #4a1d1d;
+      color: #f3b6b6;
+      border: 1px solid #7a2a2a;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .fm-row .confirm:hover { background: #6d2a2a; }
+
+    /* Small toast notifications */
+    #toasts {
+      position: fixed;
+      top: 52px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 200;
+      pointer-events: none;
+    }
+    .toast {
+      background: #1f1f1f;
+      border: 1px solid #3a3a3a;
+      color: #ddd;
+      padding: 8px 14px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      opacity: 0;
+      transform: translateY(-8px);
+      animation: toast-in 0.2s forwards, toast-out 0.25s 3.2s forwards;
+      pointer-events: auto;
+    }
+    .toast.error { border-color: #7a3a3a; color: #f3b6b6; }
+    .toast.ok    { border-color: #3a7a3a; color: #b6f3b6; }
+    @keyframes toast-in {
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes toast-out {
+      to { opacity: 0; transform: translateY(-8px); }
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>AltirraSDL @PROJECT_VERSION@</h1>
-    <button id="btn-upload-game" disabled>Upload Game…</button>
-    <button id="btn-upload-firmware" disabled>Upload Firmware…</button>
-    <button id="btn-save-library" disabled>Save Library</button>
+    <button id="btn-files" disabled>📁 Files…</button>
     <div id="status">Loading…</div>
     <div class="log-toggle" id="log-toggle" role="button" tabindex="0">▸ Show log</div>
   </header>
@@ -146,50 +411,128 @@
 
   <div id="log" class="hidden"></div>
 
-  <!-- File input elements (hidden; driven by toolbar buttons). -->
-  <input type="file" id="file-game" accept=".xex,.atr,.atx,.cas,.car,.rom,.bin,.zip,.sap"
-         multiple hidden>
-  <input type="file" id="file-firmware" accept=".rom,.bin" multiple hidden>
+  <!-- File manager modal ------------------------------------------------ -->
+  <div id="fm-backdrop" role="dialog" aria-modal="true" aria-labelledby="fm-title">
+    <div id="fm">
+      <div class="fm-header">
+        <h2 id="fm-title">Files</h2>
+        <div class="fm-actions">
+          <button id="fm-upload">📁 Upload…</button>
+          <button id="fm-connect" title="Requires Chromium/Safari 15.4+">＋ Connect Folder</button>
+          <input type="search" id="fm-search" class="fm-search" placeholder="Search…">
+        </div>
+        <button class="fm-close" id="fm-close" title="Close (Esc)">✕</button>
+      </div>
+      <div class="fm-body">
+        <div class="fm-sidebar" id="fm-sidebar"></div>
+        <div class="fm-list" id="fm-list"></div>
+      </div>
+      <div class="fm-footer">
+        <span id="fm-summary">—</span>
+        <span>Drag and drop files anywhere to upload</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container --------------------------------------------------- -->
+  <div id="toasts"></div>
+
+  <!-- Hidden native file picker used by the toolbar Upload button ------- -->
+  <input type="file" id="fm-filepicker" multiple hidden>
 
   <script>
   (() => {
-    // ───────────────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────
     //  Persistence root
     //
-    //  We mount IDBFS at /home/web_user — the same path Emscripten sets
-    //  $HOME to by default.  That single mount covers:
-    //
-    //    /home/web_user/.config/altirra/settings.ini   (emulator settings,
-    //       computed by registry_sdl3.cpp via $HOME or $XDG_CONFIG_HOME)
-    //    /home/web_user/games/*                        (uploaded cartridges)
-    //    /home/web_user/firmware/*                     (uploaded OS ROMs)
-    //
-    //  Using a single mount means one syncfs flush persists everything
-    //  (settings + uploads) to the per-origin IndexedDB in one shot.
-    // ───────────────────────────────────────────────────────────────────────
-    const PERSIST_ROOT  = '/home/web_user';
-    const GAMES_DIR     = PERSIST_ROOT + '/games';
-    const FIRMWARE_DIR  = PERSIST_ROOT + '/firmware';
+    //  IDBFS is mounted at /home/web_user (same as $HOME in Emscripten's
+    //  default runtime).  One mount covers emulator settings AND every
+    //  file the user uploads, so a single FS.syncfs flush persists
+    //  everything.
+    // ───────────────────────────────────────────────────────────────────
+    const ROOT = '/home/web_user';
 
-    // ───────────────────────────────────────────────────────────────────────
+    // Each category has:
+    //   dir   – absolute VFS directory it owns
+    //   exts  – extension list that auto-routes here on upload
+    //   primary – label + verb for the "primary" per-item button
+    //   icon  – emoji icon
+    //   label – sidebar label
+    const CATEGORIES = [
+      { id:'games',       dir: ROOT+'/games',       exts:['xex','com','exe'],
+        primary:'▶ Boot',   icon:'🎮', label:'Games' },
+      { id:'disks',       dir: ROOT+'/disks',       exts:['atr','atx','xfd','pro','dcm'],
+        primary:'▶ Boot',   icon:'💾', label:'Disks' },
+      { id:'cassettes',   dir: ROOT+'/cassettes',   exts:['cas','wav'],
+        primary:'▶ Boot',   icon:'📼', label:'Cassettes' },
+      { id:'cartridges',  dir: ROOT+'/cartridges',  exts:['car','a52'],
+        primary:'▶ Boot',   icon:'💿', label:'Cartridges' },
+      { id:'firmware',    dir: ROOT+'/firmware',    exts:['rom','bin'],
+        primary:'▶ Boot',   icon:'🎛', label:'Firmware',
+        note:'Future: set as Kernel / BASIC ROM' },
+      { id:'archives',    dir: ROOT+'/archives',    exts:['zip'],
+        primary:'▶ Boot',   icon:'📦', label:'Archives' },
+      { id:'screenshots', dir: ROOT+'/screenshots', exts:['png','jpg','jpeg'],
+        primary:null,       icon:'📷', label:'Screenshots' },
+      { id:'states',      dir: ROOT+'/states',      exts:['altstate','atstate2','sav'],
+        primary:'▶ Load',   icon:'🗂', label:'State saves' },
+      { id:'other',       dir: ROOT+'/other',       exts:null,
+        primary:null,       icon:'⋯',  label:'Other' },
+    ];
+
+    // Which category wins when a file extension matches more than one
+    // (e.g. .rom can be firmware OR cartridge).  Firmware wins for .rom
+    // because it's the more common case — user uploads an OS-B image
+    // and doesn't want it filed as a cartridge.
+    function categoryForExt(ext) {
+      for (const c of CATEGORIES) {
+        if (c.exts && c.exts.includes(ext))
+          return c;
+      }
+      return CATEGORIES.find(c => c.id === 'other');
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     //  DOM handles
-    // ───────────────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────
     const canvas      = document.getElementById('canvas');
     const statusEl    = document.getElementById('status');
     const logEl       = document.getElementById('log');
     const logToggle   = document.getElementById('log-toggle');
     const dropOverlay = document.getElementById('drop-overlay');
     const canvasWrap  = document.getElementById('canvas-wrap');
-    const btnGame     = document.getElementById('btn-upload-game');
-    const btnFirmware = document.getElementById('btn-upload-firmware');
-    const btnSave     = document.getElementById('btn-save-library');
-    const fileGame    = document.getElementById('file-game');
-    const fileFw      = document.getElementById('file-firmware');
+    const btnFiles    = document.getElementById('btn-files');
+    const fmBackdrop  = document.getElementById('fm-backdrop');
+    const fmSidebar   = document.getElementById('fm-sidebar');
+    const fmList      = document.getElementById('fm-list');
+    const fmSummary   = document.getElementById('fm-summary');
+    const fmUpload    = document.getElementById('fm-upload');
+    const fmConnect   = document.getElementById('fm-connect');
+    const fmSearch    = document.getElementById('fm-search');
+    const fmClose     = document.getElementById('fm-close');
+    const fmFilePicker= document.getElementById('fm-filepicker');
+    const toasts      = document.getElementById('toasts');
     const cacheBust   = Date.now().toString();
 
+    let activeCategory = CATEGORIES[0];
+    let selectedPath   = null;
+    let runtimeReady   = false;
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Utilities
+    // ───────────────────────────────────────────────────────────────────
     function appendLog(line) {
       logEl.textContent += line + '\n';
       logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function toast(msg, kind='ok') {
+      const el = document.createElement('div');
+      el.className = 'toast ' + kind;
+      el.textContent = msg;
+      toasts.appendChild(el);
+      // Auto-remove after animation out.  Animation timings sum to 3.45s.
+      setTimeout(() => el.remove(), 3700);
     }
 
     function toggleLog() {
@@ -202,17 +545,34 @@
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
     });
 
-    // ───────────────────────────────────────────────────────────────────────
-    //  IDBFS persistence helpers
-    // ───────────────────────────────────────────────────────────────────────
-    async function syncFsIn() {
-      return new Promise((resolve) => {
-        Module.FS.syncfs(true, (err) => {
-          if (err) appendLog('[fs] syncfs(in) failed: ' + err);
-          resolve();
-        });
-      });
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+      return (n/(1024*1024)).toFixed(1) + ' MB';
     }
+
+    function fmtTime(ms) {
+      const age = Date.now() - ms;
+      if (age < 60*1000) return 'just now';
+      if (age < 60*60*1000) return Math.floor(age/60000) + ' min ago';
+      if (age < 24*60*60*1000) return Math.floor(age/3600000) + ' h ago';
+      const d = new Date(ms);
+      return d.toLocaleDateString();
+    }
+
+    function extOf(name) {
+      const i = name.lastIndexOf('.');
+      return i < 0 ? '' : name.substring(i+1).toLowerCase();
+    }
+
+    function sanitize(name) {
+      const base = name.replace(/^.*[\\\/]/, '');
+      return base.replace(/[^A-Za-z0-9._\- ]/g, '_');
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  IDBFS flush (out direction: VFS → IndexedDB)
+    // ───────────────────────────────────────────────────────────────────
     async function syncFsOut() {
       return new Promise((resolve) => {
         Module.FS.syncfs(false, (err) => {
@@ -222,97 +582,418 @@
       });
     }
 
-    // ───────────────────────────────────────────────────────────────────────
-    //  Upload handling
+    // ───────────────────────────────────────────────────────────────────
+    //  VFS helpers
+    // ───────────────────────────────────────────────────────────────────
+    function ensureCategoryDirs() {
+      for (const c of CATEGORIES) {
+        try { Module.FS.mkdirTree(c.dir); } catch (e) {}
+      }
+    }
+
+    function listCategory(cat) {
+      if (!runtimeReady) return [];
+      try {
+        const entries = Module.FS.readdir(cat.dir)
+          .filter(n => n !== '.' && n !== '..');
+        const rows = [];
+        for (const n of entries) {
+          const p = cat.dir + '/' + n;
+          let st = null;
+          try { st = Module.FS.stat(p); } catch (e) { continue; }
+          // Skip directories; we show a flat file list per category.
+          if (!Module.FS.isFile(st.mode)) continue;
+          rows.push({
+            name:  n,
+            path:  p,
+            size:  st.size,
+            mtime: st.mtime ? st.mtime.getTime() : Date.now(),
+          });
+        }
+        rows.sort((a,b) => b.mtime - a.mtime);
+        return rows;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function countCategory(cat) {
+      return listCategory(cat).length;
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  C bridge — Boot path
+    // ───────────────────────────────────────────────────────────────────
+    function bridgeBoot(path) {
+      if (!Module._ATWasmOnFileUploaded) {
+        toast('Runtime not ready', 'error');
+        return;
+      }
+      try {
+        const lenBytes = Module.lengthBytesUTF8(path) + 1;
+        const cstr = Module._malloc(lenBytes);
+        Module.stringToUTF8(path, cstr, lenBytes);
+        Module._ATWasmOnFileUploaded(cstr, 1 /* bootNow */);
+        Module._free(cstr);
+        toast('Booting ' + pathBasename(path));
+        closeFm();
+        canvas.focus();
+      } catch (e) {
+        toast('Boot failed: ' + e, 'error');
+      }
+    }
+
+    function pathBasename(p) {
+      const i = p.lastIndexOf('/');
+      return i < 0 ? p : p.substring(i+1);
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Upload
     //
-    //  Writes the file bytes into the IDBFS-backed tree, flushes to
-    //  IndexedDB, and notifies the native bridge via
-    //  Module._ATWasmOnFileUploaded so the emulator can cold-boot the
-    //  first game (or merely see new firmware).
-    // ───────────────────────────────────────────────────────────────────────
+    //  Auto-categorization by extension.  When the user clicks Upload
+    //  from the file manager we sort files into their appropriate
+    //  category dirs and boot the first game.  When files are dropped
+    //  on the canvas we do the same; when dropped on the overlay we
+    //  route everything to the currently-selected category (so the user
+    //  can force an extension into a different category if they want).
+    // ───────────────────────────────────────────────────────────────────
     async function readFileAsBytes(file) {
       return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => resolve(new Uint8Array(reader.result));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsArrayBuffer(file);
+        const r = new FileReader();
+        r.onload  = () => resolve(new Uint8Array(r.result));
+        r.onerror = () => reject(r.error);
+        r.readAsArrayBuffer(file);
       });
     }
 
-    function sanitize(name) {
-      // Strip any path components a browser might hand us; collapse any
-      // character that could confuse Emscripten's VFS path parser.
-      const base = name.replace(/^.*[\\\/]/, '');
-      return base.replace(/[^A-Za-z0-9._\- ]/g, '_');
-    }
-
-    async function uploadFiles(files, kind) {
-      if (!Module || !Module.FS) {
-        appendLog('[upload] runtime not ready');
+    // forceCategory: if provided, all files go into this category's dir.
+    // Otherwise files are auto-categorized by extension.
+    async function uploadFiles(files, forceCategory) {
+      if (!runtimeReady) {
+        toast('Runtime not ready', 'error');
         return;
       }
-      const dir = (kind === 'firmware') ? FIRMWARE_DIR : GAMES_DIR;
-      try { Module.FS.mkdirTree(dir); } catch (e) {}
+      ensureCategoryDirs();
 
       let wrote = 0;
-      let firstGamePath = null;
-      const lastWrittenPaths = [];
-
+      let firstBootable = null;
       for (const f of files) {
         try {
           const bytes = await readFileAsBytes(f);
-          const path  = dir + '/' + sanitize(f.name);
+          const safe  = sanitize(f.name);
+          const cat   = forceCategory
+                          ? forceCategory
+                          : categoryForExt(extOf(safe));
+          // mkdir -p again in case a force-category dir hasn't been made.
+          try { Module.FS.mkdirTree(cat.dir); } catch (e) {}
+          const path = cat.dir + '/' + safe;
           Module.FS.writeFile(path, bytes);
-          appendLog('[upload] wrote ' + path + ' (' + bytes.length + ' bytes)');
           wrote++;
-          lastWrittenPaths.push(path);
-          if (kind !== 'firmware' && !firstGamePath)
-            firstGamePath = path;
-        } catch (err) {
-          appendLog('[upload] failed for ' + f.name + ': ' + err);
+          if (!firstBootable && cat.primary)
+            firstBootable = { path, cat };
+          appendLog('[upload] ' + path + ' (' + fmtBytes(bytes.length) + ')');
+        } catch (e) {
+          toast('Upload failed: ' + f.name + ' (' + e + ')', 'error');
         }
       }
 
       if (wrote > 0) {
         await syncFsOut();
-        statusEl.textContent = 'Uploaded ' + wrote + ' file(s)';
-
-        try {
-          if (Module._ATWasmOnFileUploaded) {
-            for (const p of lastWrittenPaths) {
-              const bootFlag = (p === firstGamePath) ? 1 : 0;
-              const lenBytes = Module.lengthBytesUTF8(p) + 1;
-              const cstr = Module._malloc(lenBytes);
-              Module.stringToUTF8(p, cstr, lenBytes);
-              Module._ATWasmOnFileUploaded(cstr, bootFlag);
-              Module._free(cstr);
-            }
-          }
-        } catch (err) {
-          appendLog('[upload] bridge call failed: ' + err);
+        toast('Uploaded ' + wrote + ' file' + (wrote===1?'':'s'));
+        if (firstBootable) {
+          bridgeBoot(firstBootable.path);
+        } else {
+          // Non-bootable batch (e.g. screenshots) — just refresh view.
+          renderFm();
         }
       }
     }
 
-    btnGame.addEventListener('click',     () => fileGame.click());
-    btnFirmware.addEventListener('click', () => fileFw.click());
-    btnSave.addEventListener('click', async () => {
-      await syncFsOut();
-      statusEl.textContent = 'Library saved';
+    // ───────────────────────────────────────────────────────────────────
+    //  Download — read file bytes from VFS, hand to browser as a Blob
+    // ───────────────────────────────────────────────────────────────────
+    function downloadFile(path) {
+      try {
+        const bytes = Module.FS.readFile(path);
+        const blob  = new Blob([bytes], { type: 'application/octet-stream' });
+        const url   = URL.createObjectURL(blob);
+        const a     = document.createElement('a');
+        a.href      = url;
+        a.download  = pathBasename(path);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // Revoke the object URL on the next task to let the browser
+        // finish the download handshake first.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        toast('Download failed: ' + e, 'error');
+      }
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Delete — with inline confirm
+    // ───────────────────────────────────────────────────────────────────
+    async function deleteFile(path) {
+      try {
+        Module.FS.unlink(path);
+        await syncFsOut();
+        toast('Deleted ' + pathBasename(path));
+        renderFm();
+      } catch (e) {
+        toast('Delete failed: ' + e, 'error');
+      }
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Rename — prompt() is ugly but fine for now; can be replaced with
+    //  inline edit later.
+    // ───────────────────────────────────────────────────────────────────
+    async function renameFile(path) {
+      const oldName = pathBasename(path);
+      const dir     = path.substring(0, path.lastIndexOf('/'));
+      const newName = prompt('Rename to:', oldName);
+      if (!newName || newName === oldName) return;
+      const safe    = sanitize(newName);
+      if (!safe) { toast('Invalid name', 'error'); return; }
+      const newPath = dir + '/' + safe;
+      try {
+        Module.FS.rename(path, newPath);
+        await syncFsOut();
+        toast('Renamed to ' + safe);
+        renderFm();
+      } catch (e) {
+        toast('Rename failed: ' + e, 'error');
+      }
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Render — sidebar + list
+    // ───────────────────────────────────────────────────────────────────
+    function renderSidebar() {
+      fmSidebar.innerHTML = '';
+      for (const c of CATEGORIES) {
+        const count = runtimeReady ? countCategory(c) : 0;
+        const row = document.createElement('div');
+        row.className = 'fm-cat' + (c === activeCategory ? ' active' : '');
+        row.innerHTML =
+          '<span class="icon">' + c.icon + '</span>' +
+          '<span class="label">' + c.label + '</span>' +
+          '<span class="count">' + count + '</span>';
+        row.addEventListener('click', () => {
+          activeCategory = c;
+          selectedPath = null;
+          fmSearch.value = '';
+          renderFm();
+        });
+        fmSidebar.appendChild(row);
+      }
+    }
+
+    function renderList() {
+      fmList.innerHTML = '';
+      const rows = listCategory(activeCategory);
+      const q = (fmSearch.value || '').toLowerCase().trim();
+      const filtered = q
+        ? rows.filter(r => r.name.toLowerCase().includes(q))
+        : rows;
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'fm-empty';
+        const main = rows.length === 0
+          ? 'No ' + activeCategory.label.toLowerCase() + ' yet'
+          : 'No matches for "' + q + '"';
+        empty.innerHTML =
+          '<div>' + main + '</div>' +
+          '<div class="hint">Drop files here or click Upload</div>';
+        fmList.appendChild(empty);
+        updateSummary(rows);
+        return;
+      }
+
+      let totalBytes = 0;
+      for (const r of filtered) totalBytes += r.size;
+
+      for (const r of filtered) {
+        const row = document.createElement('div');
+        row.className = 'fm-row' + (r.path === selectedPath ? ' selected' : '');
+        row.dataset.path = r.path;
+
+        const icon    = activeCategory.icon;
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        if (activeCategory.primary) {
+          const primary = document.createElement('button');
+          primary.className = 'primary';
+          primary.textContent = activeCategory.primary;
+          primary.addEventListener('click', (e) => {
+            e.stopPropagation();
+            bridgeBoot(r.path);
+          });
+          actions.appendChild(primary);
+        }
+
+        const dl = document.createElement('button');
+        dl.textContent = '⬇';
+        dl.title = 'Download';
+        dl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadFile(r.path);
+        });
+        actions.appendChild(dl);
+
+        const rn = document.createElement('button');
+        rn.textContent = '✎';
+        rn.title = 'Rename';
+        rn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          renameFile(r.path);
+        });
+        actions.appendChild(rn);
+
+        const del = document.createElement('button');
+        del.className = 'danger';
+        del.textContent = '🗑';
+        del.title = 'Delete';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          // Inline confirm: swap the button for a confirm pill.
+          del.style.display = 'none';
+          const confirm = document.createElement('button');
+          confirm.className = 'confirm';
+          confirm.textContent = 'Confirm delete';
+          confirm.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            deleteFile(r.path);
+          });
+          actions.appendChild(confirm);
+          setTimeout(() => {
+            // Revert after 4s if not confirmed.
+            confirm.remove();
+            del.style.display = '';
+          }, 4000);
+        });
+        actions.appendChild(del);
+
+        row.innerHTML =
+          '<span class="icon">' + icon + '</span>' +
+          '<span class="name">' + r.name + '</span>' +
+          '<span class="size">' + fmtBytes(r.size) + '</span>' +
+          '<span class="mtime">' + fmtTime(r.mtime) + '</span>';
+        row.appendChild(actions);
+
+        row.addEventListener('click', () => {
+          selectedPath = r.path;
+          renderList();
+        });
+        row.addEventListener('dblclick', () => {
+          if (activeCategory.primary) bridgeBoot(r.path);
+        });
+
+        fmList.appendChild(row);
+      }
+
+      updateSummary(filtered, totalBytes);
+    }
+
+    function updateSummary(rows, totalBytes) {
+      if (!rows || rows.length === 0) {
+        fmSummary.textContent = '—';
+        return;
+      }
+      if (totalBytes === undefined) {
+        totalBytes = rows.reduce((a,r) => a + r.size, 0);
+      }
+      fmSummary.textContent =
+        rows.length + ' item' + (rows.length===1?'':'s') +
+        ' · ' + fmtBytes(totalBytes) + ' total';
+    }
+
+    function renderFm() {
+      renderSidebar();
+      renderList();
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Open / close overlay
+    // ───────────────────────────────────────────────────────────────────
+    function openFm(categoryId) {
+      if (!runtimeReady) { toast('Still loading…', 'error'); return; }
+      if (categoryId) {
+        const c = CATEGORIES.find(c => c.id === categoryId);
+        if (c) activeCategory = c;
+      }
+      renderFm();
+      fmBackdrop.classList.add('open');
+      fmSearch.value = '';
+      // Delay focus so the CSS transition settles before the browser
+      // tries to scroll the search field into view.
+      setTimeout(() => fmSearch.focus(), 50);
+    }
+    function closeFm() {
+      fmBackdrop.classList.remove('open');
+      canvas.focus();
+    }
+
+    btnFiles .addEventListener('click', () => openFm());
+    fmClose  .addEventListener('click', closeFm);
+    fmBackdrop.addEventListener('click', (e) => {
+      if (e.target === fmBackdrop) closeFm();
     });
 
-    fileGame.addEventListener('change', (e) => {
-      uploadFiles(Array.from(e.target.files), 'game');
-      e.target.value = '';
+    // Close on Escape (but only when overlay is open).
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (fmBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        closeFm();
+      }
     });
-    fileFw.addEventListener('change', (e) => {
-      uploadFiles(Array.from(e.target.files), 'firmware');
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Upload button inside overlay
+    // ───────────────────────────────────────────────────────────────────
+    fmUpload.addEventListener('click', () => fmFilePicker.click());
+    fmFilePicker.addEventListener('change', (e) => {
+      // When user clicks Upload from inside the overlay, route everything
+      // into the currently-selected category.  This is the "I want this
+      // .rom filed as a firmware" escape hatch.
+      uploadFiles(Array.from(e.target.files), activeCategory);
       e.target.value = '';
     });
 
-    // Drag-drop anywhere on the canvas area — including the letterbox
-    // margins around it — feels more forgiving than forcing the user to
-    // hit the video rectangle precisely.
+    // ───────────────────────────────────────────────────────────────────
+    //  Search — live-filter the current category
+    // ───────────────────────────────────────────────────────────────────
+    fmSearch.addEventListener('input', () => renderList());
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Connect Folder (File System Access API) — stub for now
+    //
+    //  Step 4 in the WASM port plan.  The button is visible everywhere
+    //  for discoverability but only works in Chromium/Safari 15.4+ where
+    //  showDirectoryPicker exists.
+    // ───────────────────────────────────────────────────────────────────
+    if (typeof window.showDirectoryPicker !== 'function') {
+      fmConnect.disabled = true;
+      fmConnect.title = 'Folder connection requires Chromium or Safari 15.4+';
+    } else {
+      fmConnect.title = 'Mount a real folder from your computer (coming soon)';
+      fmConnect.addEventListener('click', () => {
+        toast('Connect Folder lands in a follow-up — folder API is available here', 'ok');
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Drag & drop
+    //  - Over the canvas area: auto-categorize uploads (covers the case
+    //    where the user drops before opening the overlay).
+    //  - Over the overlay: route uploads into the currently-selected
+    //    category so the user can force a file's category.
+    // ───────────────────────────────────────────────────────────────────
     ['dragenter', 'dragover'].forEach((evt) => {
       canvasWrap.addEventListener(evt, (e) => {
         e.preventDefault();
@@ -327,27 +1008,42 @@
     });
     canvasWrap.addEventListener('drop', (e) => {
       if (e.dataTransfer && e.dataTransfer.files.length) {
-        uploadFiles(Array.from(e.dataTransfer.files), 'game');
+        uploadFiles(Array.from(e.dataTransfer.files)); // auto-categorize
       }
     });
 
-    // ───────────────────────────────────────────────────────────────────────
-    //  Auto-flush on page hide.  Browsers fire `pagehide` (and
-    //  `visibilitychange` to hidden) before closing / navigating, which
-    //  is our last chance to persist any in-memory-only changes to
-    //  IndexedDB.  Best-effort — we can't await async work here, but
-    //  syncfs(false) kicks off the IDB transaction and the browser
-    //  usually lets it finish before tearing down the page.
-    // ───────────────────────────────────────────────────────────────────────
+    ['dragenter', 'dragover'].forEach((evt) => {
+      fmBackdrop.addEventListener(evt, (e) => {
+        if (!fmBackdrop.classList.contains('open')) return;
+        e.preventDefault();
+        fmBackdrop.classList.add('drag');
+      });
+    });
+    ['dragleave', 'drop'].forEach((evt) => {
+      fmBackdrop.addEventListener(evt, (e) => {
+        e.preventDefault();
+        fmBackdrop.classList.remove('drag');
+      });
+    });
+    fmBackdrop.addEventListener('drop', (e) => {
+      if (!fmBackdrop.classList.contains('open')) return;
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        uploadFiles(Array.from(e.dataTransfer.files), activeCategory);
+      }
+    });
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Best-effort IDBFS flush before the page closes
+    // ───────────────────────────────────────────────────────────────────
     window.addEventListener('pagehide', () => {
       if (Module && Module.FS && Module.FS.syncfs) {
         Module.FS.syncfs(false, () => {});
       }
     });
 
-    // ───────────────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────
     //  Emscripten Module configuration
-    // ───────────────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────
     window.Module = {
       canvas: canvas,
       noInitialRun: false,
@@ -360,33 +1056,29 @@
         return path;
       },
       preRun: [function () {
-        // Mount IDBFS at the default $HOME.  /home/web_user is created
-        // by Emscripten's MEMFS during startup, so the mkdir is
-        // idempotent — we just replace the MEMFS mount at that path
-        // with IDBFS.  FS.syncfs(true) copies IndexedDB contents into
-        // the memory-backed view before main() runs.
         try {
-          // The directory may or may not exist yet depending on the
-          // Emscripten version; mkdir-if-missing covers both.
-          try { Module.FS.mkdir(PERSIST_ROOT); } catch (e) {}
-          Module.FS.mount(Module.IDBFS, {}, PERSIST_ROOT);
+          try { Module.FS.mkdir(ROOT); } catch (e) {}
+          Module.FS.mount(Module.IDBFS, {}, ROOT);
         } catch (e) {
           appendLog('[fs] mount error: ' + e);
         }
         Module.addRunDependency('idbfs-populate');
         Module.FS.syncfs(true, (err) => {
           if (err) appendLog('[fs] initial syncfs failed: ' + err);
-          try { Module.FS.mkdirTree(GAMES_DIR); } catch (e) {}
-          try { Module.FS.mkdirTree(FIRMWARE_DIR); } catch (e) {}
-          try { Module.FS.mkdirTree(PERSIST_ROOT + '/.config/altirra'); } catch (e) {}
+          // Create every category dir + the config dir at startup so
+          // the sidebar counts are accurate and the emulator has a
+          // writable settings location.
+          try { Module.FS.mkdirTree(ROOT + '/.config/altirra'); } catch (e) {}
+          for (const c of CATEGORIES) {
+            try { Module.FS.mkdirTree(c.dir); } catch (e) {}
+          }
           Module.removeRunDependency('idbfs-populate');
         });
       }],
       onRuntimeInitialized: () => {
         statusEl.textContent = 'Running';
-        btnGame.disabled = false;
-        btnFirmware.disabled = false;
-        btnSave.disabled = false;
+        runtimeReady = true;
+        btnFiles.disabled = false;
         canvas.focus();
       },
       totalDependencies: 0,
@@ -406,7 +1098,6 @@
                 ' (' + (ev.filename || '?') + ':' + (ev.lineno || '?') + ')');
     });
 
-    // Load the generated Emscripten JS glue.
     const script = document.createElement('script');
     script.src = 'AltirraSDL.js?v=' + cacheBust;
     script.onerror = () => appendLog('[script] failed to load AltirraSDL.js');
