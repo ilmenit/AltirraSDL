@@ -229,7 +229,7 @@ layout).
   Acceleration page.
 
 **Checklist for new UI work:**
-1. Find the Windows equivalent (menu item, dialog, or page)
+1. Find the Windows equivalent (menu item, dialog, or page). Some extensions are needed over what's on native Windows Altirra but require explicit approval and proper comment in the code.
 2. Verify every option and its location
 3. Do not add options that the Windows version doesn't show in that
    context, do it only on explicit request. 

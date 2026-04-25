@@ -28,6 +28,8 @@
 #include <at/atio/cassetteimage.h>
 #include <vd2/Dita/accel.h>
 #include "ui_main.h"
+#include "ui_fonts.h"
+#include "display_backend.h"
 #include "accel_sdl3.h"
 #include "simulator.h"
 #include "gtia.h"
@@ -182,7 +184,8 @@ static int GetWizPrevPage(int page) {
 		case 1:  return 0;
 		case 2:  return 1;
 		case 5:  return IsGamingModeSelected() ? 2 : 1;
-		case 10: return 5;
+		case 6:  return 5;
+		case 10: return 6;
 		case 11: return 10;
 		case 20: return 11;
 		case 21: return 20;
@@ -198,7 +201,8 @@ static int GetWizNextPage(int page) {
 		case 0:  return 1;
 		case 1:  return IsGamingModeSelected() ? 2 : 5;
 		case 2:  return 5;
-		case 5:  return 10;
+		case 5:  return 6;
+		case 6:  return 10;
 		case 10: return 11;
 		case 11: return 20;
 		case 20: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 30 : 21;
@@ -305,7 +309,8 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			{ 0, 0, "Welcome", false },
 			{ 1, 1, "Interface mode", false },
 			{ 2, 4, "Game Library", true },
-			{ 5, 9, "Appearance", false },
+			{ 5, 5, "Appearance", false },
+			{ 6, 6, "Screen Effects", false },
 			{ 10, 19, "Setup firmware", false },
 			{ 20, 29, "Select system", false },
 			{ 30, 39, "Experience", false },
@@ -506,10 +511,72 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			}
 
 			ImGui::Spacing();
+
+			// UI font size — shares state with the Configure System
+			// "Fonts" page so the slider here is the same setting,
+			// just exposed earlier in the first-run flow.  Changing
+			// it sets the dirty flag and the atlas is rebuilt at the
+			// next frame, giving instant live preview.
+			int uiPt = ATUIFontsGetUISize();
+			if (ImGui::SliderInt("UI font size (pt)", &uiPt, 8, 32, "%d pt"))
+				ATUIFontsSetUISize(uiPt);
+			ImGui::TextDisabled(
+				"  Affects menus, dialogs, and all UI text.");
+
+			ImGui::Spacing();
 			ImGui::TextWrapped(
 				"These settings can be changed later from Configure System > "
-				"Emulator > UI."
+				"Emulator > UI (theme, opacity) and Configure System > "
+				"Emulator > Fonts (font size)."
 			);
+			break;
+		}
+
+		case 6: { // Screen Effects — built-in CRT effects on/off
+			ImGui::TextWrapped(
+				"Choose whether to apply Altirra's built-in CRT-style "
+				"screen effects (scanlines, bloom, distortion, mask, "
+				"vignette) to the emulated display.  Changes take "
+				"effect immediately so you can preview each option."
+			);
+			ImGui::Spacing();
+
+			ImGui::TextWrapped(
+				"You can fine-tune individual effects later from View > "
+				"Adjust Screen Effects, and load external librashader "
+				"presets from View > Screen Effects."
+			);
+			ImGui::Spacing();
+			ImGui::Spacing();
+
+			IDisplayBackend *be = ATUIGetDisplayBackend();
+			if (be && be->HasShaderPreset())
+				state.screenEffectsMode = ATUIState::kSFXMode_Preset;
+
+			int sel = (state.screenEffectsMode == ATUIState::kSFXMode_None) ? 0 : 1;
+
+			if (ImGui::RadioButton("None", sel == 0)) {
+				ATUIShaderPresetsClear(be);
+				state.screenEffectsMode = ATUIState::kSFXMode_None;
+			}
+			ImGui::TextDisabled(
+				"  Raw emulator output, no post-processing.");
+			ImGui::Spacing();
+
+			if (ImGui::RadioButton("Basic Shaders", sel == 1)) {
+				ATUIShaderPresetsClear(be);
+				state.screenEffectsMode = ATUIState::kSFXMode_Basic;
+			}
+			ImGui::TextDisabled(
+				"  Built-in scanlines, bloom, distortion, mask, vignette.");
+
+			if (state.screenEffectsMode == ATUIState::kSFXMode_Preset) {
+				ImGui::Spacing();
+				ImGui::TextWrapped(
+					"Note: a librashader preset is currently active. "
+					"Choosing None or Basic Shaders here will unload it."
+				);
+			}
 			break;
 		}
 

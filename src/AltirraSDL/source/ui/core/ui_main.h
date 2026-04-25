@@ -46,6 +46,7 @@ struct ATUIState {
 	bool showAdvancedConfig = false;
 	bool showCheater = false;
 	bool showLightPen = false;
+	bool showGameLibrary = false;
 	bool showRewind = false;
 	bool showTapeEditor = false;
 	bool showScreenEffects = false;
@@ -214,6 +215,7 @@ void ATUISaveFrameCallback(void *, const char * const *filelist, int);
 // Dialog render functions (each in its own .cpp file)
 void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state);
 void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *window);
+void ATUIRenderGameLibrary(ATSimulator &sim, ATUIState &state, SDL_Window *window);
 void ATUIRenderCassetteControl(ATSimulator &sim, ATUIState &state, SDL_Window *window);
 void ATUIRenderAdjustColors(ATSimulator &sim, ATUIState &state);
 void ATUIRenderDisplaySettings(ATSimulator &sim, ATUIState &state);

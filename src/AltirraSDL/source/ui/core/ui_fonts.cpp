@@ -475,6 +475,18 @@ ImFont *ATUIGetFontMono() {
 	return ImGui::GetIO().FontDefault;
 }
 
+int ATUIFontsGetUISize() {
+	return s_uiSize;
+}
+
+void ATUIFontsSetUISize(int pt) {
+	if (pt < 8)  pt = 8;
+	if (pt > 32) pt = 32;
+	if (pt == s_uiSize) return;
+	s_uiSize = pt;
+	s_dirty = true;
+}
+
 // =========================================================================
 // Configure System -> Emulator -> Fonts page
 // =========================================================================

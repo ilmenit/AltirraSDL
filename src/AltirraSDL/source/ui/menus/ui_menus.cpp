@@ -469,6 +469,9 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		ATUIShowOpenImageDialog(window);
 	ShortcutContextMenu("File.OpenImage");
 
+	if (ImGui::MenuItem("Game Library..."))
+		state.showGameLibrary = true;
+
 	// Recently Booted (MRU list)
 	uint32 mruCount = ATGetMRUCount();
 	if (ImGui::BeginMenu("Recently Booted", mruCount > 0)) {

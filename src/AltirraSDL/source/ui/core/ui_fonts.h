@@ -27,3 +27,9 @@ ImFont *ATUIGetFontMono();
 
 // Configure System -> Emulator -> Fonts page.
 void RenderFontsCategory(ATSimulator &sim);
+
+// Direct accessors for the UI font point size.  Used by the First Time
+// Setup wizard so the Appearance step can offer a font-size slider with
+// live preview that shares state with the Configure System Fonts page.
+int  ATUIFontsGetUISize();
+void ATUIFontsSetUISize(int pt);

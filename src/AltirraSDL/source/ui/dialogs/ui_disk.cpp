@@ -27,9 +27,12 @@
 #include <at/atio/diskimage.h>
 #include "options.h"
 #include "logging.h"
+#include "ui/gamelibrary/game_library.h"
 
 extern ATSimulator g_sim;
 extern ATOptions g_ATOptions;
+extern void GameBrowser_Init();
+extern ATGameLibrary *GetGameLibrary();
 
 // =========================================================================
 // Create Disk format types (matches Windows ATNewDiskDialog)
@@ -855,6 +858,109 @@ static void RenderDiskDriveContextMenu(int driveIdx, ATDiskInterface& di,
 // Render
 // =========================================================================
 
+// -------------------------------------------------------------------------
+// Variant ("Side") picker state.  When the disk currently mounted in a
+// drive matches a multi-variant Game Library entry, the row gets a
+// "Side..." button that opens a popup listing the entry's variants and
+// loads the chosen one into the same drive (preserving the drive's write
+// mode).  Mirrors the Gaming-Mode Disk Drives screen — see
+// mobile_disk.cpp:147-174 for the reference flow.
+// -------------------------------------------------------------------------
+static int  g_diskVariantPopupEntry = -1;   // GameEntry index
+static int  g_diskVariantPopupDrive = -1;   // 0..14
+static bool g_openDiskVariantPopup  = false;
+
+// Find the Game Library entry index whose variant path matches the disk
+// currently loaded in `di`, or -1 if none.  Pure read of shared state —
+// mirrors GameBrowser_FindEntryForPath but doesn't pull in the mobile UI.
+static int FindLibraryEntryForLoadedDisk(ATDiskInterface &di) {
+	if (!di.IsDiskLoaded()) return -1;
+	const wchar_t *path = di.GetPath();
+	if (!path || !*path) return -1;
+	ATGameLibrary *lib = GetGameLibrary();
+	if (!lib) return -1;
+	const auto &entries = lib->GetEntries();
+	for (size_t i = 0; i < entries.size(); ++i) {
+		for (const auto &v : entries[i].mVariants) {
+			if (v.mPath == path)
+				return (int)i;
+		}
+	}
+	return -1;
+}
+
+static void RenderDiskVariantPopup(ATSimulator &sim) {
+	if (g_openDiskVariantPopup) {
+		ImGui::OpenPopup("Select Variant##diskvariant");
+		g_openDiskVariantPopup = false;
+	}
+
+	ImGui::SetNextWindowSize(ImVec2(560, 0), ImGuiCond_Appearing);
+	if (!ImGui::BeginPopupModal("Select Variant##diskvariant", nullptr,
+		ImGuiWindowFlags_NoSavedSettings))
+		return;
+
+	ATGameLibrary *lib = GetGameLibrary();
+	if (!lib || g_diskVariantPopupEntry < 0
+		|| g_diskVariantPopupDrive < 0
+		|| g_diskVariantPopupDrive >= 15)
+	{
+		ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+		return;
+	}
+
+	const auto &entries = lib->GetEntries();
+	if ((size_t)g_diskVariantPopupEntry >= entries.size()) {
+		ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+		return;
+	}
+
+	const GameEntry &entry = entries[g_diskVariantPopupEntry];
+	VDStringA nameU8 = VDTextWToU8(entry.mDisplayName);
+	ImGui::Text("D%d:  %s", g_diskVariantPopupDrive + 1, nameU8.c_str());
+	ImGui::Separator();
+
+	for (size_t i = 0; i < entry.mVariants.size(); ++i) {
+		const GameVariant &var = entry.mVariants[i];
+		VDStringA label = VDTextWToU8(var.mLabel);
+		if (label.empty()) label = VDTextWToU8(var.mPath);
+
+		ImGui::PushID((int)i);
+		if (ImGui::Selectable(label.c_str())) {
+			int drive = g_diskVariantPopupDrive;
+			ATDiskInterface &di = g_sim.GetDiskInterface(drive);
+			try {
+				// Route through ATSimulator::Load so the load goes via
+				// the same path as Windows uidisk.cpp:1060-1065 (the
+				// 1-arg ATDiskInterface::LoadDisk path flags images as
+				// non-updatable, which we don't want for a swap).
+				// Inheriting di.GetWriteMode() preserves the user's
+				// existing R/O / R/W / VRW choice — same as Gaming
+				// Mode's "Side" button.
+				ATImageLoadContext ctx;
+				ctx.mLoadType  = kATImageType_Disk;
+				ctx.mLoadIndex = drive;
+				g_sim.Load(var.mPath.c_str(), di.GetWriteMode(), &ctx);
+				LOG_INFO("UI", "Swapped D%d: variant %d (%s)",
+					drive + 1, (int)i, label.c_str());
+			} catch (const MyError &e) {
+				LOG_ERROR("UI", "Variant swap on D%d failed: %s",
+					drive + 1, e.c_str());
+			}
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::PopID();
+	}
+
+	ImGui::Separator();
+	if (ImGui::Button("Cancel", ImVec2(120, 0)))
+		ImGui::CloseCurrentPopup();
+
+	ImGui::EndPopup();
+}
+
 void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
 	ImGui::SetNextWindowSize(ImVec2(720, 460), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -869,6 +975,11 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		return;
 	}
 
+	// Bring the shared Game Library online so the per-row "Side..."
+	// button can reflect multi-variant entries.  Idempotent — the same
+	// pattern is used by netplay and the setup wizard.
+	GameBrowser_Init();
+
 	// --- Drives 1-8 / 9-15 tab selector (matches Windows radio buttons) ---
 	static int driveTab = 0;  // 0 = drives 1-8, 1 = drives 9-15
 	if (ImGui::RadioButton("Drives 1-8", driveTab == 0)) driveTab = 0;
@@ -879,7 +990,7 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 	int numDrives = (driveTab == 0) ? 8 : 7;  // Drives 9-15 = 7 drives
 
 	// --- Per-drive table ---
-	if (ImGui::BeginTable("##Drives", 6,
+	if (ImGui::BeginTable("##Drives", 7,
 		ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
 		ImGuiTableFlags_SizingStretchProp)) {
 
@@ -887,6 +998,7 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		ImGui::TableSetupColumn("Image", ImGuiTableColumnFlags_WidthStretch);
 		ImGui::TableSetupColumn("Write Mode", ImGuiTableColumnFlags_WidthFixed, 100);
 		ImGui::TableSetupColumn("##mount", ImGuiTableColumnFlags_WidthFixed, 32);
+		ImGui::TableSetupColumn("##side", ImGuiTableColumnFlags_WidthFixed, 56);
 		ImGui::TableSetupColumn("##eject", ImGuiTableColumnFlags_WidthFixed, 48);
 		ImGui::TableSetupColumn("##more", ImGuiTableColumnFlags_WidthFixed, 32);
 		ImGui::TableHeadersRow();
@@ -958,6 +1070,30 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				});
 			}
 
+			// "Side..." variant picker (mirrors Gaming Mode's Side
+			// button — mobile_disk.cpp:147-174).  Shown only when the
+			// mounted disk is part of a Game Library entry that has more
+			// than one variant; lets the user swap to another disk side
+			// / version without going through the file picker.
+			ImGui::TableNextColumn();
+			int libEntry = -1;
+			if (loaded) libEntry = FindLibraryEntryForLoadedDisk(di);
+			const bool hasAlts = libEntry >= 0
+				&& GetGameLibrary()
+				&& (size_t)libEntry < GetGameLibrary()->GetEntries().size()
+				&& GetGameLibrary()->GetEntries()[libEntry]
+					.mVariants.size() > 1;
+			if (hasAlts) {
+				if (ImGui::SmallButton("Side...")) {
+					ConfirmDiscardIfDirty(driveIdx,
+						[driveIdx, libEntry]() {
+							g_diskVariantPopupDrive = driveIdx;
+							g_diskVariantPopupEntry = libEntry;
+							g_openDiskVariantPopup  = true;
+						});
+				}
+			}
+
 			// Eject button (matches Windows IDC_EJECT).  Prompts if dirty.
 			ImGui::TableNextColumn();
 			if (ImGui::SmallButton("Eject") && loaded)
@@ -976,6 +1112,10 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 		ImGui::EndTable();
 	}
+
+	// Variant picker — rendered after the table so its popup ID stack
+	// is at the dialog level, not nested inside a table cell.
+	RenderDiskVariantPopup(sim);
 
 	ImGui::Separator();
 

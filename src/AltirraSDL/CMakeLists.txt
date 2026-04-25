@@ -117,6 +117,7 @@ target_sources(AltirraSDL PRIVATE
 
     # --- ui/dialogs/ : standalone single-purpose dialogs ---
     source/ui/dialogs/ui_disk.cpp
+    source/ui/dialogs/ui_game_library.cpp
     source/ui/dialogs/ui_cassette.cpp
     source/ui/dialogs/ui_cartmapper.cpp
     source/ui/dialogs/ui_cheater.cpp

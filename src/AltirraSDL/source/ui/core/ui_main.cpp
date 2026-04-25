@@ -1477,6 +1477,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 	if (state.showSystemConfig)      ATUIRenderSystemConfig(sim, state);
 	if (state.showDiskManager)       ATUIRenderDiskManager(sim, state, window);
+	if (state.showGameLibrary)       ATUIRenderGameLibrary(sim, state, window);
 	if (state.showCassetteControl)   ATUIRenderCassetteControl(sim, state, window);
 	if (state.showAdjustColors)      ATUIRenderAdjustColors(sim, state);
 	if (state.showDisplaySettings)   ATUIRenderDisplaySettings(sim, state);
