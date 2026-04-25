@@ -234,6 +234,10 @@ target_sources(AltirraSDL PRIVATE
     # winmm. WASM/Android compile as no-op sinks.
     source/os/midimate_sdl3.cpp
 
+    # PipeSerial device — UNIX-domain SOCK_STREAM listener, the POSIX
+    # equivalent of the Win32 named pipe used by pipeserial_win32.cpp.
+    source/os/pipeserial_sdl3.cpp
+
     # Stub implementations replacing Win32-only files.
     # `oshelper_stubs.cpp` lives in stubs/ but is consumed only by the
     # headless AltirraBridgeServer target; the AltirraSDL GUI target

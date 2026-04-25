@@ -41,21 +41,12 @@
 // Device definitions stubs (from excluded files)
 // ============================================================
 //
-// Each of these device factories returns null instead of constructing
-// a real device. The user sees the device in the Add Device picker
-// but selecting it produces an empty entry. Per-platform follow-up:
-//
-//   * g_ATDeviceDefPipeSerial — Win32 named pipes for serial
-//     bridging. POSIX FIFOs (mkfifo) are the natural mapping.
-//
-// g_ATDeviceDefCustom now provided by customdevice.cpp.
-// g_ATDeviceDefIDEPhysDisk now provided by idephysdisk_sdl3.cpp.
-// g_ATDeviceDefIDEVHDImage now provided by idevhdimage.cpp.
-// g_ATDeviceDefMidiMate    now provided by midimate_sdl3.cpp.
-
-static void ATCreateDeviceNullStub(const ATPropertySet&, IATDevice **pp) { if (pp) *pp = nullptr; }
-
-extern const ATDeviceDefinition g_ATDeviceDefPipeSerial  = { "pipeser",  nullptr, L"Pipe Serial",   ATCreateDeviceNullStub };
+// All platform-specific device factories have been ported:
+//   g_ATDeviceDefCustom       — customdevice.cpp
+//   g_ATDeviceDefIDEPhysDisk  — idephysdisk_sdl3.cpp
+//   g_ATDeviceDefIDEVHDImage  — idevhdimage.cpp
+//   g_ATDeviceDefMidiMate     — midimate_sdl3.cpp
+//   g_ATDeviceDefPipeSerial   — pipeserial_sdl3.cpp
 
 
 // ATSetProcessEfficiencyMode: no-op on POSIX for now. The P2 plan is a

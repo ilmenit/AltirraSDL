@@ -62,6 +62,11 @@ add_executable(AltirraBridgeServer
     # aconnect) — same source as the GUI build.
     ${ALTIRRA_SDL_DIR}/source/os/midimate_sdl3.cpp
 
+    # PipeSerial device on UNIX-domain sockets (replaces Win32-only
+    # pipeserial_win32.cpp). Bridge clients can connect to e.g.
+    # $XDG_RUNTIME_DIR/altirra-AltirraSerial.sock to drive the SIO bus.
+    ${ALTIRRA_SDL_DIR}/source/os/pipeserial_sdl3.cpp
+
     # Keymap port — provides ATUIInitVirtualKeyMap, ATUIGet*KeyMap,
     # ATUIGetScanCodeForVirtualKey/Character32, etc.  settings.cpp links
     # against these symbols.  Self-contained, depends only on
