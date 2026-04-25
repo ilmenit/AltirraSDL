@@ -28,15 +28,45 @@ list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/allocator\\.cpp$")   # crtdbg.
 # Exclude UI command handler files (include atnativeui/uiframe.h -> windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cmd[a-z][^/]*\\.cpp$")
 # Exclude files with Win32 UI dependencies not needed for emulation core
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/customdevice\\.cpp$")      # includes customdevice_win32.h
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/customdevicevmtypes\\.cpp$") # includes atui/uicommandmanager.h
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cs8900a\\.cpp$")           # Win32 UI debug path
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idephysdisk\\.cpp$")       # Win32 raw disk access (DeviceIoControl)
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/midimate\\.cpp$")          # Win32 MIDI API (winmm.h)
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/modemtcp\\.cpp$")          # Win32 networking (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/profilerui\\.cpp$")        # Win32 profiler UI (w32assist.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/startuplogger\\.cpp$")     # Win32 only (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/texteditor\\.cpp$")        # Win32 HWND/WndProc text editor widget
+
+# midimate_sdl3.cpp handles all platforms internally (winmm on Windows,
+# ALSA on Linux, CoreMIDI on macOS, no-op on Android/WASM), so the
+# original midimate.cpp stays excluded everywhere — its factory symbol
+# would clash if both linked.
+list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/midimate\\.cpp$")
+
+# idephysdisk.cpp / modemtcp.cpp are Win32-only (DeviceIoControl,
+# Winsock2). On Windows-SDL3 we use the originals; on POSIX targets
+# the source/os/*_sdl3.cpp replacements are linked instead.
+if(NOT WIN32)
+    list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idephysdisk\\.cpp$")
+    list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/modemtcp\\.cpp$")
+endif()
+
+# pipeserial_win32.cpp is the Win32 named-pipe implementation. It was
+# already excluded by the blanket _win32.cpp filter above; on Windows
+# we re-add it explicitly so Windows-SDL3 builds get the native impl.
+if(WIN32)
+    list(APPEND ALTIRRA_ALL_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/Altirra/source/pipeserial_win32.cpp")
+endif()
+
+# customdevice_win32.cpp is misnamed: despite the suffix it has no Win32
+# deps (only at/atnetworksockets/nativesockets.h, which is portable).
+# The blanket _win32.cpp filter above would strip it, so re-add it
+# explicitly. customdevice.cpp + customdevicevmtypes.cpp are also
+# portable (atui/uicommandmanager.h is provided by AltirraSDL/stubs/).
+list(APPEND ALTIRRA_ALL_SOURCES "${CMAKE_SOURCE_DIR}/src/Altirra/source/customdevice_win32.cpp")
+
+# uiqueue.cpp is portable (only depends on uicommondialogs.h's
+# ATUIShowAlertError, stubbed in AltirraSDL/stubs/uiaccessors_stubs.cpp).
+# The Custom Device VM uses ATUIGetQueue + ATUIPushStep to defer command
+# execution to the next UI tick — see customdevicevmtypes.cpp:1728.
+# The blanket ui*.cpp filter above strips it, so re-add explicitly.
+list(APPEND ALTIRRA_ALL_SOURCES "${CMAKE_SOURCE_DIR}/src/Altirra/source/uiqueue.cpp")
 
 # Exclude architecture-specific files for the wrong target
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")

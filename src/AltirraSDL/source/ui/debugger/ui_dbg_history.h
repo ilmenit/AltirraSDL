@@ -33,7 +33,20 @@ public:
 	void OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) override;
 	void OnDebuggerEvent(ATDebugEvent eventId) override;
 
+	// Locate the history line whose mCycle matches |cycle| (or the
+	// nearest preceding entry when no exact match is present),
+	// select it, and request a scroll. Returns true if the buffer was
+	// non-empty (matches Win32 ATUIHistoryView::JumpToCycle).
+	bool JumpToCycle(uint32 cycle);
+
 private:
+	// Walk the history tree to find the Insn node containing
+	// |insnIndex| (offset into mInsnBuffer) and select the
+	// corresponding line. Direct port of Win32
+	// ATUIHistoryView::SelectInsn (uihistoryview.cpp:349).
+	void SelectInsn(uint32 insnIndex);
+
+
 	// === Tree management (ui_dbg_history.cpp) ===
 	void UpdateOpcodes();
 	void UpdateOpcodesRange(uint32 historyStart, uint32 historyEnd);

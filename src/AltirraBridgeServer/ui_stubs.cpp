@@ -340,12 +340,14 @@ void ATActivateUIPane(unsigned int /*id*/, bool /*giveFocus*/, bool /*activate*/
                       unsigned int /*subId*/, int /*subVal*/) {}
 
 // debuggerautotest.cpp uses the global command manager to dispatch
-// "autotest" commands by name. Bridge server has no command system.
-// Return a fake reference to a never-used static instance — the
-// command manager interface is opaque enough that the cast pattern
-// works at link time even though we never call into it.
-class ATUICommandManager;
-static char s_dummyCommandManager[256];
+// "autotest" commands by name. Custom-device VM (customdevicevmtypes.cpp)
+// also pushes commands through it. Bridge server doesn't populate a
+// command registry; provide an empty global so calls return
+// ExecuteCommandNT==false (no commands registered).
+#include <at/atui/uicommandmanager.h>
+
+ATUICommandManager g_ATUICommandMgr;
+
 ATUICommandManager& ATUIGetCommandManager() {
-	return *reinterpret_cast<ATUICommandManager*>(s_dummyCommandManager);
+	return g_ATUICommandMgr;
 }

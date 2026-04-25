@@ -74,6 +74,7 @@ else()
         source/file_sdl3.cpp
         source/fileasync_sdl3.cpp
         source/filesys_sdl3.cpp
+        source/filewatcher_sdl3.cpp
         source/registry_sdl3.cpp
         source/text_sdl3.cpp
         source/time_sdl3.cpp

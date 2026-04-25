@@ -35,6 +35,7 @@ extern "C" void ATWasmSyncFSOut();
 #include <exception>
 #include <at/atcore/media.h>
 #include <at/atio/image.h>
+#include "uiqueue.h"
 
 #include "crash_report.h"
 #include <imgui.h>
@@ -2428,6 +2429,14 @@ int main(int argc, char *argv[]) {
 		result = g_sim.Advance(dropFrame);
 		hadFrame = g_pDisplay->IsFramePending();
 #endif
+		// Drain deferred UI queue steps (custom-device VM commands,
+		// alert dialogs, etc.). Bounded to a handful per tick so a
+		// runaway script can't stall the frame loop.
+		for (int i = 0; i < 16; ++i) {
+			if (!ATUIGetQueue().Run())
+				break;
+		}
+
 		g_pDisplay->PrepareFrame();
 
 #ifdef ALTIRRA_NETPLAY_ENABLED

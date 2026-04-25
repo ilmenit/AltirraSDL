@@ -6,15 +6,22 @@
 #include <SDL3/SDL.h>
 #include <at/atui/uicommandmanager.h>
 #include <at/ataudio/pokey.h>
+#include <at/ataudio/audiooutput.h>
 #include <at/atcore/constants.h>
 
 #include "simulator.h"
 #include "uiaccessors.h"
 #include "inputmanager.h"
 #include "inputdefs.h"
+#include "inputcontroller.h"
 #include "antic.h"
 #include "gtia.h"
 #include "uikeyboard.h"
+#include "uitypes.h"
+#include "cassette.h"
+#include "options.h"
+#include "uirender.h"
+#include "devicemanager.h"
 #include "ui_main.h"
 #include "ui_debugger.h"
 #include "ui_textselection.h"
@@ -297,7 +304,423 @@ static void CmdOpenEmotePicker() {
 }
 
 // =========================================================================
-// Command table
+// Bulk command port from Windows cmd*.cpp
+// =========================================================================
+//
+// These commands map 1:1 onto Windows ATUICommand entries from
+// src/Altirra/source/cmd*.cpp. They are needed so accelerator-table
+// bindings, command-palette dispatch, and Custom Device VM
+// `run_command "..."` calls have the same vocabulary as the Windows
+// build. State/Test functions (used by Win32 menu checkmark
+// rendering) are intentionally omitted — the SDL3 ImGui menu queries
+// engine state directly each frame.
+//
+// Test/State callbacks are included only where they prevent invalid
+// dispatch (e.g., Cart.Detach when no cart is mounted).
+
+namespace {
+	bool IsCart0Attached() { return g_sim.IsCartridgeAttached(0); }
+	bool IsCart1Attached() { return g_sim.IsCartridgeAttached(1); }
+	bool IsNot5200() { return g_sim.GetHardwareMode() != kATHardwareMode_5200; }
+}
+
+static const ATUICommand kSDL3CommandsExtra[] = {
+	// =====================================================================
+	// Audio (cmdaudio.cpp)
+	// =====================================================================
+	{ "Audio.ToggleStereo",
+		[] { g_sim.SetDualPokeysEnabled(!g_sim.IsDualPokeysEnabled()); } },
+	{ "Audio.ToggleStereoAsMono",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetStereoAsMonoEnabled(!p.IsStereoAsMonoEnabled());
+		} },
+	{ "Audio.ToggleMonitor",
+		[] { g_sim.SetAudioMonitorEnabled(!g_sim.IsAudioMonitorEnabled()); } },
+	{ "Audio.ToggleScope",
+		[] { g_sim.SetAudioScopeEnabled(!g_sim.IsAudioScopeEnabled()); } },
+	{ "Audio.ToggleMute",
+		[] { if (auto *out = g_sim.GetAudioOutput()) out->SetMute(!out->GetMute()); } },
+	{ "Audio.ToggleNonlinearMixing",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetNonlinearMixingEnabled(!p.IsNonlinearMixingEnabled());
+		} },
+	{ "Audio.ToggleSpeakerFilter",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetSpeakerFilterEnabled(!p.IsSpeakerFilterEnabled());
+		} },
+	{ "Audio.ToggleSerialNoise",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetSerialNoiseEnabled(!p.IsSerialNoiseEnabled());
+		} },
+	{ "Audio.ToggleSecondaryChannel1",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetSecondaryChannelEnabled(0, !p.IsSecondaryChannelEnabled(0));
+		} },
+	{ "Audio.ToggleSecondaryChannel2",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetSecondaryChannelEnabled(1, !p.IsSecondaryChannelEnabled(1));
+		} },
+	{ "Audio.ToggleSecondaryChannel3",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetSecondaryChannelEnabled(2, !p.IsSecondaryChannelEnabled(2));
+		} },
+	{ "Audio.ToggleSecondaryChannel4",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetSecondaryChannelEnabled(3, !p.IsSecondaryChannelEnabled(3));
+		} },
+	{ "Audio.ToggleSlightSid",
+		[] { g_sim.GetDeviceManager()->ToggleDevice("slightsid"); } },
+	{ "Audio.ToggleCovox",
+		[] { g_sim.GetDeviceManager()->ToggleDevice("covox"); } },
+
+	// =====================================================================
+	// Cassette (cmdcassette.cpp) — settings half. Load/Unload/Save
+	// dialogs remain UI-driven and live in their respective ImGui
+	// panels.
+	// =====================================================================
+	{ "Cassette.Unload",
+		[] { g_sim.GetCassette().Unload(); } },
+	{ "Cassette.ToggleSIOPatch",
+		[] { g_sim.SetCassetteSIOPatchEnabled(!g_sim.IsCassetteSIOPatchEnabled()); } },
+	{ "Cassette.ToggleAutoBoot",
+		[] { g_sim.SetCassetteAutoBootEnabled(!g_sim.IsCassetteAutoBootEnabled()); } },
+	{ "Cassette.ToggleAutoBasicBoot",
+		[] { g_sim.SetCassetteAutoBasicBootEnabled(!g_sim.IsCassetteAutoBasicBootEnabled()); } },
+	{ "Cassette.ToggleAutoRewind",
+		[] { g_sim.SetCassetteAutoRewindEnabled(!g_sim.IsCassetteAutoRewindEnabled()); } },
+	{ "Cassette.ToggleLoadDataAsAudio",
+		[] {
+			ATCassetteEmulator& cas = g_sim.GetCassette();
+			cas.SetLoadDataAsAudioEnable(!cas.IsLoadDataAsAudioEnabled());
+		} },
+	{ "Cassette.ToggleRandomizeStartPosition",
+		[] { g_sim.SetCassetteRandomizedStartEnabled(!g_sim.IsCassetteRandomizedStartEnabled()); } },
+	{ "Cassette.TurboModeNone",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_None); } },
+	{ "Cassette.TurboModeCommandControl",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_CommandControl); } },
+	{ "Cassette.TurboModeDataControl",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_DataControl); } },
+	{ "Cassette.TurboModeProceedSense",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_ProceedSense); } },
+	{ "Cassette.TurboModeInterruptSense",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_InterruptSense); } },
+	{ "Cassette.TurboModeKSOTurbo2000",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_KSOTurbo2000); } },
+	{ "Cassette.TurboModeTurboD",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_TurboD); } },
+	{ "Cassette.TurboModeAlways",
+		[] { g_sim.GetCassette().SetTurboMode(kATCassetteTurboMode_Always); } },
+	{ "Cassette.TogglePolarity",
+		[] {
+			auto& cas = g_sim.GetCassette();
+			cas.SetPolarityMode(cas.GetPolarityMode() == kATCassettePolarityMode_Normal
+				? kATCassettePolarityMode_Inverted
+				: kATCassettePolarityMode_Normal);
+		} },
+	{ "Cassette.PolarityModeNormal",
+		[] { g_sim.GetCassette().SetPolarityMode(kATCassettePolarityMode_Normal); } },
+	{ "Cassette.PolarityModeInverted",
+		[] { g_sim.GetCassette().SetPolarityMode(kATCassettePolarityMode_Inverted); } },
+	{ "Cassette.DirectSenseNormal",
+		[] { g_sim.GetCassette().SetDirectSenseMode(ATCassetteDirectSenseMode::Normal); } },
+	{ "Cassette.DirectSenseLowSpeed",
+		[] { g_sim.GetCassette().SetDirectSenseMode(ATCassetteDirectSenseMode::LowSpeed); } },
+	{ "Cassette.DirectSenseHighSpeed",
+		[] { g_sim.GetCassette().SetDirectSenseMode(ATCassetteDirectSenseMode::HighSpeed); } },
+	{ "Cassette.DirectSenseMaxSpeed",
+		[] { g_sim.GetCassette().SetDirectSenseMode(ATCassetteDirectSenseMode::MaxSpeed); } },
+	{ "Cassette.ToggleTurboPrefilter",
+		[] {
+			auto& cas = g_sim.GetCassette();
+			cas.SetTurboDecodeAlgorithm(
+				cas.GetTurboDecodeAlgorithm() == ATCassetteTurboDecodeAlgorithm::SlopeNoFilter
+					? ATCassetteTurboDecodeAlgorithm::SlopeFilter
+					: ATCassetteTurboDecodeAlgorithm::SlopeNoFilter);
+		} },
+	{ "Cassette.TurboDecoderSlopeNoFilter",
+		[] { g_sim.GetCassette().SetTurboDecodeAlgorithm(ATCassetteTurboDecodeAlgorithm::SlopeNoFilter); } },
+	{ "Cassette.TurboDecoderSlopeFilter",
+		[] { g_sim.GetCassette().SetTurboDecodeAlgorithm(ATCassetteTurboDecodeAlgorithm::SlopeFilter); } },
+	{ "Cassette.TurboDecoderPeakFilter",
+		[] { g_sim.GetCassette().SetTurboDecodeAlgorithm(ATCassetteTurboDecodeAlgorithm::PeakFilter); } },
+
+	// =====================================================================
+	// View (cmdview.cpp) — display/filter/stretch/overscan toggles.
+	// =====================================================================
+	{ "View.NextFilterMode",
+		[] {
+			switch (ATUIGetDisplayFilterMode()) {
+			case kATDisplayFilterMode_Point:        ATUISetDisplayFilterMode(kATDisplayFilterMode_Bilinear); break;
+			case kATDisplayFilterMode_Bilinear:     ATUISetDisplayFilterMode(kATDisplayFilterMode_SharpBilinear); break;
+			case kATDisplayFilterMode_SharpBilinear:ATUISetDisplayFilterMode(kATDisplayFilterMode_Bicubic); break;
+			case kATDisplayFilterMode_Bicubic:      ATUISetDisplayFilterMode(kATDisplayFilterMode_AnySuitable); break;
+			case kATDisplayFilterMode_AnySuitable:  ATUISetDisplayFilterMode(kATDisplayFilterMode_Point); break;
+			}
+		} },
+	{ "View.FilterModePoint",         [] { ATUISetDisplayFilterMode(kATDisplayFilterMode_Point); } },
+	{ "View.FilterModeBilinear",      [] { ATUISetDisplayFilterMode(kATDisplayFilterMode_Bilinear); } },
+	{ "View.FilterModeSharpBilinear", [] { ATUISetDisplayFilterMode(kATDisplayFilterMode_SharpBilinear); } },
+	{ "View.FilterModeBicubic",       [] { ATUISetDisplayFilterMode(kATDisplayFilterMode_Bicubic); } },
+	{ "View.FilterModeDefault",       [] { ATUISetDisplayFilterMode(kATDisplayFilterMode_AnySuitable); } },
+	{ "View.FilterSharpnessSofter",   [] { ATUISetViewFilterSharpness(-2); } },
+	{ "View.FilterSharpnessSoft",     [] { ATUISetViewFilterSharpness(-1); } },
+	{ "View.FilterSharpnessNormal",   [] { ATUISetViewFilterSharpness(0); } },
+	{ "View.FilterSharpnessSharp",    [] { ATUISetViewFilterSharpness(+1); } },
+	{ "View.FilterSharpnessSharper",  [] { ATUISetViewFilterSharpness(+2); } },
+	{ "View.StretchFitToWindow",
+		[] { ATUISetDisplayStretchMode(kATDisplayStretchMode_Unconstrained); } },
+	{ "View.StretchPreserveAspectRatio",
+		[] { ATUISetDisplayStretchMode(kATDisplayStretchMode_PreserveAspectRatio); } },
+	{ "View.StretchSquarePixels",
+		[] { ATUISetDisplayStretchMode(kATDisplayStretchMode_SquarePixels); } },
+	{ "View.StretchSquarePixelsInt",
+		[] { ATUISetDisplayStretchMode(kATDisplayStretchMode_Integral); } },
+	{ "View.StretchPreserveAspectRatioInt",
+		[] { ATUISetDisplayStretchMode(kATDisplayStretchMode_IntegralPreserveAspectRatio); } },
+	{ "View.ToggleFPS",
+		[] { ATUISetShowFPS(!ATUIGetShowFPS()); } },
+	{ "View.ToggleIndicators",
+		[] { ATUISetDisplayIndicators(!ATUIGetDisplayIndicators()); } },
+	{ "View.ToggleIndicatorMargin",
+		[] { ATUISetDisplayPadIndicators(!ATUIGetDisplayPadIndicators()); } },
+	{ "View.ToggleAutoHidePointer",
+		[] { ATUISetPointerAutoHide(!ATUIGetPointerAutoHide()); } },
+	{ "View.ToggleConstrainPointerFullScreen",
+		[] { ATUISetConstrainMouseFullScreen(!ATUIGetConstrainMouseFullScreen()); } },
+	{ "View.ToggleTargetPointer",
+		[] { ATUISetTargetPointerVisible(!ATUIGetTargetPointerVisible()); } },
+	{ "View.TogglePadBounds",
+		[] { ATUISetDrawPadBoundsEnabled(!ATUIGetDrawPadBoundsEnabled()); } },
+	{ "View.TogglePadPointers",
+		[] { ATUISetDrawPadPointersEnabled(!ATUIGetDrawPadPointersEnabled()); } },
+	{ "View.ResetPan",
+		[] { ATUISetDisplayPanOffset(vdfloat2{0.0f, 0.0f}); } },
+	{ "View.ResetZoom",
+		[] { ATUISetDisplayZoom(1.0f); } },
+	{ "View.ResetViewFrame",
+		[] { ATUISetDisplayPanOffset(vdfloat2{0.0f, 0.0f}); ATUISetDisplayZoom(1.0f); } },
+	{ "View.PanZoomTool",
+		[] { ATUIActivatePanZoomTool(); } },
+	{ "View.VideoOutputNormal",
+		[] { ATUISetAltViewEnabled(false); } },
+
+	// =====================================================================
+	// Input (cmdinput.cpp) — keyboard layout/mode commands.
+	// =====================================================================
+	{ "Input.KeyboardLayoutNatural",
+		[] {
+			if (g_kbdOpts.mLayoutMode != ATUIKeyboardOptions::kLM_Natural) {
+				g_kbdOpts.mLayoutMode = ATUIKeyboardOptions::kLM_Natural;
+				ATUIInitVirtualKeyMap(g_kbdOpts);
+			}
+		} },
+	{ "Input.KeyboardLayoutDirect",
+		[] {
+			if (g_kbdOpts.mLayoutMode != ATUIKeyboardOptions::kLM_Raw) {
+				g_kbdOpts.mLayoutMode = ATUIKeyboardOptions::kLM_Raw;
+				ATUIInitVirtualKeyMap(g_kbdOpts);
+			}
+		} },
+	{ "Input.KeyboardLayoutCustom",
+		[] {
+			if (g_kbdOpts.mLayoutMode != ATUIKeyboardOptions::kLM_Custom) {
+				g_kbdOpts.mLayoutMode = ATUIKeyboardOptions::kLM_Custom;
+				ATUIInitVirtualKeyMap(g_kbdOpts);
+			}
+		} },
+	{ "Input.KeyboardModeCooked",
+		[] { g_kbdOpts.mbRawKeys = false; g_kbdOpts.mbFullRawKeys = false; } },
+	{ "Input.KeyboardModeRaw",
+		[] { g_kbdOpts.mbRawKeys = true; g_kbdOpts.mbFullRawKeys = false; } },
+	{ "Input.KeyboardModeFullScan",
+		[] { g_kbdOpts.mbRawKeys = true; g_kbdOpts.mbFullRawKeys = true; } },
+	{ "Input.KeyboardArrowModeDefault",
+		[] {
+			g_kbdOpts.mArrowKeyMode = ATUIKeyboardOptions::kAKM_InvertCtrl;
+			ATUIInitVirtualKeyMap(g_kbdOpts);
+		} },
+	{ "Input.KeyboardArrowModeAutoCtrl",
+		[] {
+			g_kbdOpts.mArrowKeyMode = ATUIKeyboardOptions::kAKM_AutoCtrl;
+			ATUIInitVirtualKeyMap(g_kbdOpts);
+		} },
+	{ "Input.KeyboardArrowModeRaw",
+		[] {
+			g_kbdOpts.mArrowKeyMode = ATUIKeyboardOptions::kAKM_DefaultCtrl;
+			ATUIInitVirtualKeyMap(g_kbdOpts);
+		} },
+	{ "Input.ToggleAllowShiftOnReset",
+		[] { g_kbdOpts.mbAllowShiftOnColdReset = !g_kbdOpts.mbAllowShiftOnColdReset; } },
+	{ "Input.Toggle1200XLFunctionKeys",
+		[] {
+			g_kbdOpts.mbEnableFunctionKeys = !g_kbdOpts.mbEnableFunctionKeys;
+			ATUIInitVirtualKeyMap(g_kbdOpts);
+		} },
+	{ "Input.ToggleAllowInputMapKeyboardOverlap",
+		[] { g_kbdOpts.mbAllowInputMapOverlap = !g_kbdOpts.mbAllowInputMapOverlap; } },
+	{ "Input.ToggleAllowInputMapKeyboardModifierOverlap",
+		[] { g_kbdOpts.mbAllowInputMapModifierOverlap = !g_kbdOpts.mbAllowInputMapModifierOverlap; } },
+	{ "Input.ToggleRawInputEnabled",
+		[] { ATUISetRawInputEnabled(!ATUIGetRawInputEnabled()); } },
+	{ "Input.ToggleImmediatePotUpdate",
+		[] {
+			ATPokeyEmulator& p = g_sim.GetPokey();
+			p.SetImmediatePotUpdateEnabled(!p.IsImmediatePotUpdateEnabled());
+		} },
+	{ "Input.ToggleImmediateLightPenUpdate",
+		[] {
+			auto *lpp = g_sim.GetLightPenPort();
+			lpp->SetImmediateUpdateEnabled(!lpp->GetImmediateUpdateEnabled());
+		} },
+	{ "Input.RecalibrateLightPen", ATUIRecalibrateLightPen },
+	{ "Input.TogglePotNoise",
+		[] { g_sim.SetPotNoiseEnabled(!g_sim.GetPotNoiseEnabled()); } },
+
+	// =====================================================================
+	// System (cmdsystem.cpp) — high-traffic toggles. Hardware/memory
+	// mode switchers go through ATUISwitchHardwareMode/MemoryMode/
+	// Kernel/Basic which already exist as real implementations in
+	// stubs/uiaccessors_stubs.cpp.
+	// =====================================================================
+	{ "System.ColdResetComputerOnly",
+		[] {
+			g_sim.ColdResetComputerOnly();
+			g_sim.Resume();
+			if (!g_kbdOpts.mbAllowShiftOnColdReset)
+				g_sim.GetPokey().SetShiftKeyState(false, true);
+		} },
+	{ "System.TogglePauseWhenInactive",
+		[] { ATUISetPauseWhenInactive(!ATUIGetPauseWhenInactive()); } },
+	{ "System.ToggleWarpSpeed",
+		[] { ATUISetTurbo(!ATUIGetTurbo()); } },
+	{ "System.ToggleFPPatch",
+		[] { g_sim.SetFPPatchEnabled(!g_sim.IsFPPatchEnabled()); } },
+	{ "System.ToggleKeyboardPresent",
+		[] { g_sim.SetKeyboardPresent(!g_sim.IsKeyboardPresent()); } },
+	{ "System.ToggleForcedSelfTest",
+		[] { g_sim.SetForcedSelfTest(!g_sim.IsForcedSelfTest()); } },
+	{ "System.ToggleMapRAM",
+		[] { g_sim.SetMapRAMEnabled(!g_sim.IsMapRAMEnabled()); } },
+	{ "System.ToggleUltimate1MB",
+		[] { g_sim.SetUltimate1MBEnabled(!g_sim.IsUltimate1MBEnabled()); } },
+	{ "System.ToggleFloatingIoBus",
+		[] { g_sim.SetFloatingIoBusEnabled(!g_sim.IsFloatingIoBusEnabled()); } },
+	{ "System.TogglePreserveExtRAM",
+		[] { g_sim.SetPreserveExtRAMEnabled(!g_sim.IsPreserveExtRAMEnabled()); } },
+	{ "System.ToggleMemoryRandomizationEXE",
+		[] { g_sim.SetRandomFillEXEEnabled(!g_sim.IsRandomFillEXEEnabled()); } },
+	{ "System.ToggleBASIC",
+		[] { g_sim.SetBASICEnabled(!g_sim.IsBASICEnabled()); } },
+	{ "System.ToggleFastBoot",
+		[] { g_sim.SetFastBootEnabled(!g_sim.IsFastBootEnabled()); } },
+	{ "System.ToggleRTime8",
+		[] { g_sim.GetDeviceManager()->ToggleDevice("rtime8"); } },
+	{ "System.SpeedMatchHardware",
+		[] { ATUISetFrameRateMode(kATFrameRateMode_Hardware); } },
+	{ "System.SpeedMatchBroadcast",
+		[] { ATUISetFrameRateMode(kATFrameRateMode_Broadcast); } },
+	{ "System.SpeedInteger",
+		[] { ATUISetFrameRateMode(kATFrameRateMode_Integral); } },
+	{ "System.SpeedToggleVSyncAdaptive",
+		[] { ATUISetFrameRateVSyncAdaptive(!ATUIGetFrameRateVSyncAdaptive()); } },
+
+	// Memory clear modes
+	{ "System.MemoryClearModeZero",
+		[] { g_sim.SetMemoryClearMode(kATMemoryClearMode_Zero); } },
+	{ "System.MemoryClearModeRandom",
+		[] { g_sim.SetMemoryClearMode(kATMemoryClearMode_Random); } },
+	{ "System.MemoryClearModeDRAM1",
+		[] { g_sim.SetMemoryClearMode(kATMemoryClearMode_DRAM1); } },
+	{ "System.MemoryClearModeDRAM2",
+		[] { g_sim.SetMemoryClearMode(kATMemoryClearMode_DRAM2); } },
+	{ "System.MemoryClearModeDRAM3",
+		[] { g_sim.SetMemoryClearMode(kATMemoryClearMode_DRAM3); } },
+
+	// Hardware mode shortcuts (the ATUISwitchHardwareMode in
+	// uiaccessors_stubs.cpp does the heavy lifting, including
+	// auto-profile switching).
+	{ "System.HardwareMode800",
+		[] { ATUISwitchHardwareMode(nullptr, kATHardwareMode_800, false); } },
+	{ "System.HardwareMode800XL",
+		[] { ATUISwitchHardwareMode(nullptr, kATHardwareMode_800XL, false); } },
+	{ "System.HardwareMode1200XL",
+		[] { ATUISwitchHardwareMode(nullptr, kATHardwareMode_1200XL, false); } },
+	{ "System.HardwareModeXEGS",
+		[] { ATUISwitchHardwareMode(nullptr, kATHardwareMode_XEGS, false); } },
+	{ "System.HardwareMode130XE",
+		[] { ATUISwitchHardwareMode(nullptr, kATHardwareMode_130XE, false); } },
+	{ "System.HardwareMode5200",
+		[] { ATUISwitchHardwareMode(nullptr, kATHardwareMode_5200, false); } },
+
+	// Memory mode shortcuts
+	{ "System.MemoryMode8K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_8K); } },
+	{ "System.MemoryMode16K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_16K); } },
+	{ "System.MemoryMode24K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_24K); } },
+	{ "System.MemoryMode32K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_32K); } },
+	{ "System.MemoryMode40K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_40K); } },
+	{ "System.MemoryMode48K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_48K); } },
+	{ "System.MemoryMode52K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_52K); } },
+	{ "System.MemoryMode64K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_64K); } },
+	{ "System.MemoryMode128K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_128K); } },
+	{ "System.MemoryMode320K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_320K); } },
+	{ "System.MemoryMode576K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_576K); } },
+	{ "System.MemoryMode1088K",
+		[] { ATUISwitchMemoryMode(nullptr, kATMemoryMode_1088K); } },
+
+	// Video standard shortcuts
+	{ "System.VideoStandardNTSC",
+		[] { g_sim.SetVideoStandard(kATVideoStandard_NTSC); } },
+	{ "System.VideoStandardPAL",
+		[] { g_sim.SetVideoStandard(kATVideoStandard_PAL); } },
+	{ "System.VideoStandardSECAM",
+		[] { g_sim.SetVideoStandard(kATVideoStandard_SECAM); } },
+	{ "System.VideoStandardNTSC50",
+		[] { g_sim.SetVideoStandard(kATVideoStandard_NTSC50); } },
+	{ "System.VideoStandardPAL60",
+		[] { g_sim.SetVideoStandard(kATVideoStandard_PAL60); } },
+
+	// =====================================================================
+	// Cart (cmdcart.cpp) — detach. Attach commands route to the ImGui
+	// cart picker which is opened from the File menu; this only needs
+	// to expose the detach so VM scripts and accelerators can drop the
+	// current cart without UI interaction.
+	// =====================================================================
+	{ "Cart.Detach",
+		[] { g_sim.LoadCartridge(0, nullptr, (ATCartLoadContext *)nullptr); },
+		IsCart0Attached },
+	{ "Cart.DetachSecond",
+		[] { g_sim.LoadCartridge(1, nullptr, (ATCartLoadContext *)nullptr); },
+		IsCart1Attached },
+
+	// =====================================================================
+	// Help (cmds.cpp) — URL launchers via SDL_OpenURL.
+	// =====================================================================
+	{ "Help.Online",
+		[] { SDL_OpenURL("http://www.virtualdub.org/altirra.html"); } },
+};
+
+// =========================================================================
+// Original SDL3 command table (display/global/debugger context)
 // =========================================================================
 
 static const ATUICommand kSDL3Commands[] = {
@@ -357,4 +780,5 @@ static const ATUICommand kSDL3Commands[] = {
 
 void ATUIInitSDL3Commands() {
 	g_ATUICommandMgr.RegisterCommands(kSDL3Commands, vdcountof(kSDL3Commands));
+	g_ATUICommandMgr.RegisterCommands(kSDL3CommandsExtra, vdcountof(kSDL3CommandsExtra));
 }

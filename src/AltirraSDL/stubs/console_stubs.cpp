@@ -12,6 +12,11 @@
 #include <SDL3/SDL.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
+#include <vd2/system/file.h>
+#include <vd2/system/strutil.h>
+#include <vd2/system/text.h>
+#include <vd2/system/function.h>
+#include <vd2/system/vdalloc.h>
 #include <at/atnativeui/uiframe.h>
 #include "console.h"
 #include "debugger.h"
@@ -28,7 +33,42 @@ extern std::string g_consoleText;
 extern std::atomic<bool> g_consoleScrollToBottom;
 extern std::atomic<bool> g_consoleTextDirty;
 
+// =========================================================================
+// Log file + trace logger state — port of console.cpp:99-103.
+//
+// Without these, debugger commands that write huge dumps had no way to
+// capture output to a file (ATConsoleOpenLogFile was a no-op stub) and the
+// trace-logger callback used by the trace tooling never received writes.
+// =========================================================================
+
+namespace {
+	std::mutex g_logFileMutex;
+	VDFileStream *g_pLogFile = nullptr;
+	VDTextOutputStream *g_pLogOutput = nullptr;
+	vdfunction<void(const char *, uint64)> g_traceLogger;
+}
+
+static void ConsoleWriteToLog(const char *s) {
+	std::lock_guard<std::mutex> lock(g_logFileMutex);
+	if (!g_pLogOutput || !s)
+		return;
+	for (;;) {
+		const char *lbreak = strchr(s, '\n');
+		if (!lbreak) {
+			g_pLogOutput->Write(s);
+			break;
+		}
+		g_pLogOutput->PutLine(s, (int)(lbreak - s));
+		s = lbreak + 1;
+	}
+}
+
 static void ConsoleAppend(const char *s) {
+	// Trace logger sees output unconditionally (matches console.cpp:973-975).
+	extern ATSimulator g_sim;
+	if (g_traceLogger && s)
+		g_traceLogger(s, g_sim.GetScheduler()->GetTick64());
+
 	if (g_pConsoleWindow) {
 		// Match Windows ATConsoleWrite: call both Write() and ShowEnd()
 		g_pConsoleWindow->Write(s);
@@ -40,23 +80,54 @@ static void ConsoleAppend(const char *s) {
 		g_consoleTextDirty = true;
 		g_consoleScrollToBottom = true;
 	}
+
+	ConsoleWriteToLog(s);
 }
 
 // =========================================================================
 // Console output routing
 // =========================================================================
 
-void ATConsoleOpenLogFile(const wchar_t*) {}
-void ATConsoleCloseLogFileNT() {}
-void ATConsoleCloseLogFile() {}
+// Mirrors console.cpp:939-967. The implementation is identical because it
+// relies only on the portable VDFileStream / VDTextOutputStream layer.
+void ATConsoleOpenLogFile(const wchar_t *path) {
+	ATConsoleCloseLogFile();
+
+	vdautoptr<VDFileStream> fs(new VDFileStream(path,
+		nsVDFile::kWrite | nsVDFile::kDenyAll | nsVDFile::kCreateAlways));
+	vdautoptr<VDTextOutputStream> tos(new VDTextOutputStream(fs));
+
+	std::lock_guard<std::mutex> lock(g_logFileMutex);
+	g_pLogFile = fs.release();
+	g_pLogOutput = tos.release();
+}
+
+void ATConsoleCloseLogFileNT() {
+	std::lock_guard<std::mutex> lock(g_logFileMutex);
+	delete g_pLogOutput; g_pLogOutput = nullptr;
+	delete g_pLogFile;   g_pLogFile = nullptr;
+}
+
+void ATConsoleCloseLogFile() {
+	try {
+		std::lock_guard<std::mutex> lock(g_logFileMutex);
+		if (g_pLogOutput) g_pLogOutput->Flush();
+		if (g_pLogFile)   g_pLogFile->close();
+	} catch (...) {
+		ATConsoleCloseLogFileNT();
+		throw;
+	}
+	ATConsoleCloseLogFileNT();
+}
 
 void ATConsoleWrite(const char *s) {
 	ConsoleAppend(s);
 }
 
 void ATConsolePrintfImpl(const char *format, ...) {
-	// Match Windows: only output when console window exists
-	if (!g_pConsoleWindow)
+	// Skip the format work entirely if there is no sink (no pane, no log,
+	// no trace) — matches Windows guard behaviour at console.cpp:973+.
+	if (!g_pConsoleWindow && !g_pLogOutput && !g_traceLogger)
 		return;
 
 	char buf[3072];
@@ -70,8 +141,7 @@ void ATConsolePrintfImpl(const char *format, ...) {
 }
 
 void ATConsoleTaggedPrintfImpl(const char *format, ...) {
-	// Match Windows: only output when console window exists
-	if (!g_pConsoleWindow)
+	if (!g_pConsoleWindow && !g_pLogOutput && !g_traceLogger)
 		return;
 
 	// Windows prepends "(frame:y,x) " beam position prefix.
@@ -92,7 +162,9 @@ void ATConsoleTaggedPrintfImpl(const char *format, ...) {
 	}
 }
 
-void ATConsoleSetTraceLogger(vdfunction<void(const char*, uint64)>) {}
+void ATConsoleSetTraceLogger(vdfunction<void(const char *, uint64)> traceLogger) {
+	g_traceLogger = std::move(traceLogger);
+}
 
 // =========================================================================
 // Font stubs (Win32-specific, no-op on SDL3)
@@ -115,7 +187,27 @@ void ATUIDebuggerOpen();
 void ATUIDebuggerClose();
 bool ATUIDebuggerIsOpen();
 
-bool ATConsoleShowSource(uint32) { return false; }
+// Mirrors console.cpp:106-123. Looks up the source line for an address
+// and opens the source pane focused on it. Returns false if the address
+// has no debug-line mapping or the source file can't be opened.
+bool ATConsoleShowSource(uint32 addr) {
+	uint32 moduleId;
+	ATSourceLineInfo lineInfo;
+	IATDebuggerSymbolLookup *lookup = ATGetDebuggerSymbolLookup();
+	if (!lookup->LookupLine(addr, false, moduleId, lineInfo))
+		return false;
+
+	ATDebuggerSourceFileInfo sourceFileInfo;
+	if (!lookup->GetSourceFilePath(moduleId, lineInfo.mFileId, sourceFileInfo) && lineInfo.mLine)
+		return false;
+
+	IATSourceWindow *w = ATOpenSourceWindow(sourceFileInfo);
+	if (!w)
+		return false;
+
+	w->FocusOnLine(lineInfo.mLine - 1);
+	return true;
+}
 
 void ATShowConsole() {
 	ATUIDebuggerOpen();
@@ -199,13 +291,65 @@ VDZHMENU ATUIGetSourceContextMenuW32() { return nullptr; }
 void ATConsoleAddFontNotification(const vdfunction<void()>*) {}
 void ATConsoleRemoveFontNotification(const vdfunction<void()>*) {}
 
-void ATConsolePingBeamPosition(uint32, uint32, uint32) {}
+// Decode a (frame, vpos, hpos) tuple into a CPU cycle and ask the
+// debugger History pane to scroll to it. Mirrors console.cpp:1035-1050
+// from the Windows source verbatim.
+//
+// The bridge server has no UI pane registry, so the helper is gated.
+
+#ifndef ALTIRRA_BRIDGE_HEADLESS
+extern bool ATUIDebuggerHistoryPaneJumpToCycle(uint32 cycle);
+#endif
+
+void ATConsolePingBeamPosition(uint32 frame, uint32 vpos, uint32 hpos) {
+#ifdef ALTIRRA_BRIDGE_HEADLESS
+	(void)frame; (void)vpos; (void)hpos;
+#else
+	extern ATSimulator g_sim;
+	const auto& decoder = g_sim.GetTimestampDecoder();
+
+	// Unsigned wrapping is intentional — matches Windows console.cpp:1044.
+	const uint32 cycle = decoder.mFrameTimestampBase
+		+ (frame - decoder.mFrameCountBase) * decoder.mCyclesPerFrame
+		+ 114u * vpos
+		+ hpos;
+
+	if (ATUIDebuggerHistoryPaneJumpToCycle(cycle))
+		return;
+
+	ATActivateUIPane(kATUIPaneId_History, true);
+#endif
+}
 
 // =========================================================================
-// debugger.cpp forward-declared function (defined in console.cpp on Win32)
+// debugger.cpp forward-declared — Ctrl-Break interrupt for long debugger
+// commands (memory dumps, traces, etc.). Replaces console.cpp:1031-1033
+// (which uses Win32 GetAsyncKeyState).
+//
+// SDL3 sets the flag from two paths:
+//   * The ImGui debugger console pane's Stop button calls
+//     ATConsoleRequestBreak() (extern below).
+//   * The keyboard handler routes Ctrl+Pause / Ctrl+Break to it.
+// The flag is consumed (auto-cleared) on read, matching the Windows
+// edge-trigger semantics — debugger.cpp polls every 16 rows and expects
+// successive calls during a single command to keep returning true until
+// the command exits.
 // =========================================================================
 
-bool ATConsoleCheckBreak() { return false; }
+namespace {
+	std::atomic<bool> g_breakRequested{false};
+}
+
+void ATConsoleRequestBreak() {
+	g_breakRequested.store(true, std::memory_order_relaxed);
+}
+
+bool ATConsoleCheckBreak() {
+	// exchange returns the previous value; the flag stays set until the
+	// next call so a rapid burst of CheckBreak() calls within one command
+	// all observe the break, matching Windows edge-vs-level behaviour.
+	return g_breakRequested.exchange(false, std::memory_order_relaxed);
+}
 
 // ATRegisterUIPaneType, ATRegisterUIPaneClass, ATActivateUIPane —
 // now provided by ui_debugger.cpp (ImGui pane manager).

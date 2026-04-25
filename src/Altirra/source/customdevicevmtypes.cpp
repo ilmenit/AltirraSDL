@@ -24,6 +24,7 @@
 #include <at/atui/uicommandmanager.h>
 #include "customdevicevmtypes.h"
 #include "customdevice.h"
+#include "customdevice_win32.h"	// IATDeviceCustomNetworkEngine full type required for vdrefptr<> dtor instantiation; some clang/Android targets are stricter about needing this where Linux GCC accepts the forward decl
 #include "memorymanager.h"
 #include "simulator.h"
 #include "irqcontroller.h"
@@ -1659,16 +1660,23 @@ void ATDeviceCustomPrinterPort::VMCallWriteUnicode(sint32 ch) {
 
 	IATPrinterOutput *dev = GetPrinterOutput();
 	if (dev) {
-		static_assert(sizeof(wchar_t) == 2);
-		wchar_t ch2[2] {};
-
-		if (ch < 0x10000) {
-			ch2[0] = (wchar_t)ch;
-			dev->WriteUnicode(ch2, 1);
+		// wchar_t is UTF-16 on Windows (2 bytes) and UTF-32 on
+		// Linux/macOS (4 bytes). Encode the codepoint accordingly so
+		// supplementary-plane characters survive the round trip.
+		if constexpr (sizeof(wchar_t) >= 4) {
+			wchar_t ch2 = (wchar_t)ch;
+			dev->WriteUnicode(&ch2, 1);
 		} else {
-			ch2[0] = (wchar_t)(0xD800 + ((ch >> 10) & 0x3FF));
-			ch2[1] = (wchar_t)(0xDC00 + (ch & 0x3FF));
-			dev->WriteUnicode(ch2, 2);
+			wchar_t ch2[2] {};
+
+			if (ch < 0x10000) {
+				ch2[0] = (wchar_t)ch;
+				dev->WriteUnicode(ch2, 1);
+			} else {
+				ch2[0] = (wchar_t)(0xD800 + ((ch >> 10) & 0x3FF));
+				ch2[1] = (wchar_t)(0xDC00 + (ch & 0x3FF));
+				dev->WriteUnicode(ch2, 2);
+			}
 		}
 	}
 }

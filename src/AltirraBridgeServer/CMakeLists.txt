@@ -42,6 +42,17 @@ add_executable(AltirraBridgeServer
     ${ALTIRRA_SDL_DIR}/stubs/win32_stubs.cpp
     ${ALTIRRA_SDL_DIR}/stubs/device_stubs.cpp
 
+    # Portable polling-based directory watcher (replaces the Win32-only
+    # directorywatcher.cpp). diskvirtimage.cpp / diskvirtimagesdfs.cpp
+    # link against ATDirectoryWatcher even in the bridge server build.
+    ${ALTIRRA_SDL_DIR}/source/os/directorywatcher_sdl3.cpp
+
+    # MidiMate device with portable MIDI backend. Builds on every
+    # platform — uses #ifdef internally to pick the backend (ALSA on
+    # Linux, CoreMIDI on macOS, winmm on Windows-SDL3, no-op
+    # elsewhere).
+    ${ALTIRRA_SDL_DIR}/source/os/midimate_sdl3.cpp
+
     # Keymap port — provides ATUIInitVirtualKeyMap, ATUIGet*KeyMap,
     # ATUIGetScanCodeForVirtualKey/Character32, etc.  settings.cpp links
     # against these symbols.  Self-contained, depends only on
@@ -107,6 +118,16 @@ add_executable(AltirraBridgeServer
 if(WIN32)
     target_sources(AltirraBridgeServer PRIVATE
         ${CMAKE_SOURCE_DIR}/src/Altirra/source/pclink_win32.cpp
+    )
+endif()
+
+# POSIX-only device source replacements (Win32 originals are linked
+# instead on Windows-SDL3 — see altirra_core_sources.cmake).
+if(NOT WIN32)
+    target_sources(AltirraBridgeServer PRIVATE
+        ${ALTIRRA_SDL_DIR}/source/os/modemtcp_sdl3.cpp
+        ${ALTIRRA_SDL_DIR}/source/os/idephysdisk_sdl3.cpp
+        ${ALTIRRA_SDL_DIR}/source/os/pipeserial_sdl3.cpp
     )
 endif()
 
@@ -218,8 +239,23 @@ if(WIN32)
     target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_WINDOWS=1)
 elseif(APPLE)
     target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_MACOS=1)
+    # CoreMIDI for the MidiMate device backend.
+    target_link_libraries(AltirraBridgeServer PRIVATE
+        "-framework CoreFoundation"
+        "-framework CoreMIDI"
+    )
 elseif(UNIX)
     target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_LINUX=1)
+    # ALSA seq for the MidiMate device backend (matches AltirraSDL).
+    if(NOT ANDROID)
+        find_package(ALSA)
+        if(ALSA_FOUND)
+            target_link_libraries(AltirraBridgeServer PRIVATE ALSA::ALSA)
+        else()
+            target_compile_definitions(AltirraBridgeServer PRIVATE
+                ATMIDI_BACKEND_NULL=1)
+        endif()
+    endif()
 endif()
 
 # MSVC + Windows SDK 10.0.26100 UCRT <wchar.h> contains inline

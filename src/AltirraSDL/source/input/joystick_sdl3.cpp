@@ -884,7 +884,7 @@ uint32 ATJoystickManagerSDL3Impl::GetJoystickPortStates() const {
 }
 
 // =========================================================================
-// Factory function — replaces the stub in joystick_stubs.cpp
+// Factory function — provides ATCreateJoystickManager.
 // =========================================================================
 
 IATJoystickManager *ATCreateJoystickManager() {

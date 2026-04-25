@@ -24,6 +24,7 @@
 #include "diskinterface.h"
 #include "devicemanager.h"
 #include "gtia.h"
+#include "firmwaremanager.h"
 #include <at/ataudio/pokey.h>
 #include <at/atcore/device.h>
 #include <vd2/system/text.h>
@@ -540,6 +541,97 @@ void ATUISwitchMemoryMode(VDGUIHandle h, ATMemoryMode mode) {
 	g_sim.SetMemoryMode(mode);
 	g_sim.ColdReset();
 }
+
+// ---------------------------------------------------------------------------
+// ATUISwitchKernel — port of Windows main.cpp:1041-1115.
+//
+// Platform-agnostic: walks the firmware-type table and adjusts hardware
+// mode + memory mode to be compatible with the requested kernel ROM.
+// Used by compatengine.cpp (auto-switch when a program requires a specific
+// kernel) and by the SDL3 ImGui Firmware menu. The previous stub at
+// win32_stubs.cpp:230 returned false unconditionally, so compatibility-
+// driven kernel switching silently failed.
+// ---------------------------------------------------------------------------
+static bool ATUISwitchHardwareMode5200_(VDGUIHandle h) {
+	if (g_sim.GetHardwareMode() == kATHardwareMode_5200)
+		return true;
+	return ATUISwitchHardwareMode(h, kATHardwareMode_5200, true);
+}
+
+bool ATUISwitchKernel(VDGUIHandle h, uint64 kernelId) {
+	if (g_sim.GetKernelId() == kernelId)
+		return true;
+
+	ATFirmwareManager& fwm = *g_sim.GetFirmwareManager();
+
+	if (kernelId) {
+		ATFirmwareInfo fwinfo;
+		if (!fwm.GetFirmwareInfo(kernelId, fwinfo))
+			return false;
+
+		const auto hwmode = g_sim.GetHardwareMode();
+		const bool canUseXLOS = kATHardwareModeTraits[hwmode].mbRunsXLOS;
+
+		switch (fwinfo.mType) {
+			case kATFirmwareType_Kernel1200XL:
+				if (!canUseXLOS) {
+					if (!ATUISwitchHardwareMode(h, kATHardwareMode_1200XL, true))
+						return false;
+				}
+				break;
+
+			case kATFirmwareType_KernelXL:
+				if (!canUseXLOS) {
+					if (!ATUISwitchHardwareMode(h, kATHardwareMode_800XL, true))
+						return false;
+				}
+				break;
+
+			case kATFirmwareType_KernelXEGS:
+				if (!canUseXLOS) {
+					if (!ATUISwitchHardwareMode(h, kATHardwareMode_XEGS, true))
+						return false;
+				}
+				break;
+
+			case kATFirmwareType_Kernel800_OSA:
+			case kATFirmwareType_Kernel800_OSB:
+				if (hwmode == kATHardwareMode_5200) {
+					if (!ATUISwitchHardwareMode(h, kATHardwareMode_800, true))
+						return false;
+				}
+				break;
+
+			case kATFirmwareType_Kernel5200:
+				if (!ATUISwitchHardwareMode5200_(h))
+					return false;
+				break;
+		}
+
+		// XL and 1200XL kernels can't run with 48K / 56K — bump to 64K.
+		// 16K is OK (600XL configuration).
+		switch (fwinfo.mType) {
+			case kATFirmwareType_KernelXL:
+			case kATFirmwareType_Kernel1200XL:
+				switch (g_sim.GetMemoryMode()) {
+					case kATMemoryMode_8K:
+					case kATMemoryMode_24K:
+					case kATMemoryMode_32K:
+					case kATMemoryMode_40K:
+					case kATMemoryMode_48K:
+					case kATMemoryMode_52K:
+						g_sim.SetMemoryMode(kATMemoryMode_64K);
+						break;
+				}
+				break;
+		}
+	}
+
+	g_sim.SetKernel(kernelId);
+	g_sim.ColdReset();
+	return true;
+}
+
 // Mirrors Windows main.cpp:2451-2461: state lives on the disk interfaces, not
 // a side-channel static. Without this, settings.cpp save/load round-trips
 // `false` because the engine never sees the UI toggle, and drive sounds
@@ -551,16 +643,90 @@ void ATUISetDriveSoundsEnabled(bool v) {
 	for (int i = 0; i < 15; ++i)
 		g_sim.GetDiskInterface(i).SetDriveSoundsEnabled(v);
 }
+// Light-pen recalibration: install a one-shot listener on the light
+// pen port's trigger-correction event. State machine mirrors the Win32
+// ATUIDisplayToolRecalibrateLightPen tool (uidisplaytool.cpp:106-137):
+//   stage 0 — wait for any click; record reference (x, y), prompt to
+//             click on where the running program drew the target.
+//   stage 1/2 — on a click matching the recorded phase, apply
+//             ApplyCorrection(refX-x, refY-y) and detach.
+// Phases distinguish press (true) from release (false) so the user
+// can't accidentally calibrate by completing a click started before
+// the calibration tool was active.
+//
+// The trigger-correction event is fired by ATLightPenController on
+// every digital trigger transition (inputcontroller.cpp:1386), which
+// already covers SDL3 mouse-button input through the standard input
+// manager pipeline — no extra wiring needed.
+
+#include "uirender.h"
+#include "inputcontroller.h"
+
+namespace {
+	struct ATSDL3LightPenRecal {
+		int mState = 0;
+		int mReferenceX = 0;
+		int mReferenceY = 0;
+		bool mActive = false;
+		vdfunction<void(bool, int, int)> mFn;
+	};
+
+	ATSDL3LightPenRecal g_lightPenRecal;
+
+	void EndLightPenRecal() {
+		if (!g_lightPenRecal.mActive)
+			return;
+		ATLightPenPort *lpp = g_sim.GetLightPenPort();
+		if (lpp)
+			lpp->OnTriggerCorrectionEvent().Remove(&g_lightPenRecal.mFn);
+		if (auto *r = g_sim.GetUIRenderer())
+			r->ClearMessage(IATUIRenderer::StatusPriority::Prompt);
+		g_lightPenRecal.mActive = false;
+		g_lightPenRecal.mState = 0;
+	}
+
+	void OnLightPenRecalTrigger(bool state, int x, int y) {
+		switch (g_lightPenRecal.mState) {
+		case 0:
+			if (auto *r = g_sim.GetUIRenderer())
+				r->SetMessage(IATUIRenderer::StatusPriority::Prompt,
+					L"Recalibrate light pen/gun: Click/fire where reference point was shown by running program");
+			g_lightPenRecal.mState = state ? 1 : 2;
+			g_lightPenRecal.mReferenceX = x;
+			g_lightPenRecal.mReferenceY = y;
+			break;
+
+		case 1:
+		case 2:
+			if (g_lightPenRecal.mState == (state ? 1 : 2)) {
+				ATLightPenPort *lpp = g_sim.GetLightPenPort();
+				if (lpp)
+					lpp->ApplyCorrection(g_lightPenRecal.mReferenceX - x,
+						g_lightPenRecal.mReferenceY - y);
+				EndLightPenRecal();
+			}
+			break;
+		}
+	}
+}
+
 void ATUIRecalibrateLightPen() {
-	// TODO(SDL3): port ATUIDisplayToolRecalibrateLightPen from
-	// uidisplaytool.cpp:106-137. Blocked on two prerequisites:
-	//   1. SDL3 mouse clicks must route to ATLightPenPort::TriggerCorrection
-	//      so OnTriggerCorrectionEvent fires (currently no SDL3 code
-	//      raises that event).
-	//   2. An ImGui overlay banner is needed to display the two-stage
-	//      "Click reference point / click where program drew it" prompt
-	//      (Windows uses ATUIDisplayTool::SetPrompt).
-	// Until both land, this menu item (ui_menus.cpp:918) is inert.
+	ATLightPenPort *lpp = g_sim.GetLightPenPort();
+	if (!lpp)
+		return;
+
+	if (g_lightPenRecal.mActive)
+		EndLightPenRecal();
+
+	g_lightPenRecal.mState = 0;
+	g_lightPenRecal.mFn = OnLightPenRecalTrigger;
+	lpp->OnTriggerCorrectionEvent().Add(&g_lightPenRecal.mFn);
+
+	if (auto *r = g_sim.GetUIRenderer())
+		r->SetMessage(IATUIRenderer::StatusPriority::Prompt,
+			L"Recalibrate light pen/gun: Click/fire on reference point");
+
+	g_lightPenRecal.mActive = true;
 }
 void ATUIActivatePanZoomTool() { ATUISetPanZoomToolActive(true); }
 void ATUIOpenOnScreenKeyboard() {}
