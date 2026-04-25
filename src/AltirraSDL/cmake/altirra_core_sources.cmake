@@ -28,15 +28,26 @@ list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/allocator\\.cpp$")   # crtdbg.
 # Exclude UI command handler files (include atnativeui/uiframe.h -> windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cmd[a-z][^/]*\\.cpp$")
 # Exclude files with Win32 UI dependencies not needed for emulation core
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/customdevice\\.cpp$")      # includes customdevice_win32.h
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/customdevicevmtypes\\.cpp$") # includes atui/uicommandmanager.h
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cs8900a\\.cpp$")           # Win32 UI debug path
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idephysdisk\\.cpp$")       # Win32 raw disk access (DeviceIoControl)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/midimate\\.cpp$")          # Win32 MIDI API (winmm.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/modemtcp\\.cpp$")          # Win32 networking (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/profilerui\\.cpp$")        # Win32 profiler UI (w32assist.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/startuplogger\\.cpp$")     # Win32 only (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/texteditor\\.cpp$")        # Win32 HWND/WndProc text editor widget
+
+# customdevice_win32.cpp is misnamed: despite the suffix it has no Win32
+# deps (only at/atnetworksockets/nativesockets.h, which is portable).
+# The blanket _win32.cpp filter above would strip it, so re-add it
+# explicitly. customdevice.cpp + customdevicevmtypes.cpp are also
+# portable (atui/uicommandmanager.h is provided by AltirraSDL/stubs/).
+list(APPEND ALTIRRA_ALL_SOURCES "${CMAKE_SOURCE_DIR}/src/Altirra/source/customdevice_win32.cpp")
+
+# uiqueue.cpp is portable (only depends on uicommondialogs.h's
+# ATUIShowAlertError, stubbed in AltirraSDL/stubs/uiaccessors_stubs.cpp).
+# The Custom Device VM uses ATUIGetQueue + ATUIPushStep to defer command
+# execution to the next UI tick — see customdevicevmtypes.cpp:1728.
+# The blanket ui*.cpp filter above strips it, so re-add explicitly.
+list(APPEND ALTIRRA_ALL_SOURCES "${CMAKE_SOURCE_DIR}/src/Altirra/source/uiqueue.cpp")
 
 # Exclude architecture-specific files for the wrong target
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|ARM64|arm64)")

@@ -1,6 +1,5 @@
 //	AltirraSDL - HUD indicator renderer
 //	Implements IATUIRenderer with ImGui overlay rendering.
-//	Replaces the null renderer in uirender_stubs.cpp.
 //
 //	Renders: drive activity LEDs, cassette position, status messages,
 //	FPS counter, pause overlay, recording indicator, error messages,
@@ -50,7 +49,15 @@ public:
 	void SetIDEActivity(bool active, uint32) override { mbIDEActive = active; }
 	void SetPCLinkActivity(bool active) override { mbPCLinkActive = active; }
 	void SetFlashWriteActivity() override { mbFlashWrite = true; }
-	void SetCartridgeActivity(sint32, sint32) override {}
+	// Two cartridge bank-switch indicator slots, each independently shown
+	// or hidden. Mirrors uirender.cpp:2217 — colour < 0 hides the dot,
+	// colour >= 0 shows it filled with the packed RGB value. Only SIDE3
+	// currently drives both slots (red xfer + green LED), so two slots
+	// are sufficient to match Windows.
+	void SetCartridgeActivity(sint32 color1, sint32 color2) override {
+		mCartActivityColor[0] = color1;
+		mCartActivityColor[1] = color2;
+	}
 
 	void SetCassetteIndicatorVisible(bool vis) override { mbCassetteVisible = vis; }
 	void SetCassettePosition(float pos, float len, bool playing, bool recording) override {
@@ -113,6 +120,9 @@ public:
 		int idx = (int)pri;
 		if (idx >= 0 && idx < 4) mMessages[idx].clear();
 	}
+	// Win32-only: the Win32 video display window (uivideodisplaywindow.cpp)
+	// is the sole caller. SDL3 uses ImGui native tooltips instead, so this
+	// stub is intentional.
 	void SetHoverTip(int x, int y, const wchar_t *tip) override {}
 	void SetPaused(bool v) override { mbPaused = v; }
 	void SetUIManager(ATUIManager *mgr) override {}
@@ -137,6 +147,10 @@ private:
 	bool mbIDEActive = false;
 	bool mbPCLinkActive = false;
 	bool mbFlashWrite = false;
+
+	// Cartridge bank-switch activity. Each slot < 0 means "hidden";
+	// otherwise the value is a packed 0xRRGGBB the dot is filled with.
+	sint32 mCartActivityColor[2] = { -1, -1 };
 
 	// Cassette
 	bool mbCassetteVisible = false;
@@ -234,6 +248,24 @@ void ATUIRendererImGui::RenderOverlay() {
 			dl->AddText(ImVec2(ledX, y - 16), IM_COL32(0, 200, 0, 255), "IDE");
 			ledX += 32;
 		}
+	}
+
+	// Cartridge bank-switch activity dots. Two slots, each independently
+	// shown by SIDE3 firmware (red xfer + green LED). Mirrors
+	// uirender.cpp:2217-2225 — when the colour is >= 0 we draw a small
+	// filled rectangle at the carrier colour. R/G/B are the low 24 bits
+	// of the packed value passed by side3.cpp.
+	for (int i = 0; i < 2; ++i) {
+		const sint32 packed = mCartActivityColor[i];
+		if (packed < 0)
+			continue;
+		const ImU32 color = IM_COL32(
+			(packed >> 16) & 0xff,
+			(packed >> 8) & 0xff,
+			(packed >> 0) & 0xff,
+			255);
+		dl->AddRectFilled(ImVec2(ledX, y - 14), ImVec2(ledX + 8, y - 6), color);
+		ledX += 12;
 	}
 
 	// Cassette position

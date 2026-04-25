@@ -10,10 +10,12 @@
 #include <vd2/system/VDString.h>
 #include <vd2/system/strutil.h>
 #include <vd2/system/unknown.h>
+#include <at/atcore/wraptime.h>
 #include <at/atcpu/history.h>
 #include <at/atdebugger/historytree.h>
 #include <at/atdebugger/historytreebuilder.h>
 #include <at/atdebugger/target.h>
+#include <algorithm>
 #include "ui_dbg_history.h"
 #include "ui_debugger.h"
 #include "console.h"
@@ -307,6 +309,115 @@ void ATImGuiHistoryPaneImpl::SelectLine(const ATHTLineIterator& it) {
 	}
 
 	mbScrollToSelection = true;
+}
+
+// Direct port of Win32 ATUIHistoryView::SelectInsn (uihistoryview.cpp:349).
+// Walks the tree depth-first, recursing into nodes that precede the
+// target index, until it finds the Insn node whose [mInsn.mOffset,
+// mInsn.mOffset + mInsn.mCount) range contains |insnIndex|.
+void ATImGuiHistoryPaneImpl::SelectInsn(uint32 insnIndex) {
+	struct ScanRange {
+		ATHTNode *begin;
+		ATHTNode *end;
+		bool recurse;
+	};
+
+	vdfastvector<ScanRange> scanStack;
+
+	ATHTNode *node = mHistoryTree.GetRootNode()->mpFirstChild;
+	ATHTNode *endNode = nullptr;
+	bool recurse = false;
+
+	for (;;) {
+		if (recurse) {
+			while (node != endNode) {
+				ATHTNode *nextNode = node->mpNextSibling;
+
+				if (node->mpFirstChild) {
+					scanStack.push_back(ScanRange { nextNode, endNode, true });
+
+					endNode = nullptr;
+					node = node->mpFirstChild;
+					recurse = false;
+					break;
+				}
+
+				node = nextNode;
+			}
+		} else {
+			ATHTNode *recurseStart = node;
+
+			for (;;) {
+				ATHTNode *nextInsnNode = node;
+
+				for (; nextInsnNode != endNode; nextInsnNode = nextInsnNode->mpNextSibling) {
+					if (nextInsnNode->mNodeType == kATHTNodeType_Insn)
+						break;
+				}
+
+				if (nextInsnNode != endNode) {
+					const uint32 lineOffset = insnIndex - nextInsnNode->mInsn.mOffset;
+					if (lineOffset < nextInsnNode->mInsn.mCount) {
+						const ATHTLineIterator lineIt { nextInsnNode, lineOffset };
+						SelectLine(lineIt);
+						return;
+					}
+				}
+
+				if (nextInsnNode == endNode || insnIndex < nextInsnNode->mInsn.mOffset) {
+					recurse = true;
+					endNode = nextInsnNode;
+					node = recurseStart;
+					break;
+				} else {
+					recurseStart = node;
+					node = nextInsnNode->mpNextSibling;
+				}
+			}
+		}
+
+		if (node == endNode) {
+			if (scanStack.empty())
+				break;
+
+			ScanRange scanRange = scanStack.back();
+			node = scanRange.begin;
+			endNode = scanRange.end;
+			recurse = scanRange.recurse;
+
+			scanStack.pop_back();
+		}
+	}
+}
+
+bool ATImGuiHistoryPaneImpl::JumpToCycle(uint32 cycle) {
+	if (mInsnBuffer.empty())
+		return false;
+
+	auto it = std::lower_bound(mInsnBuffer.cbegin(), mInsnBuffer.cend(), cycle,
+		[](const ATCPUHistoryEntry& he, uint32 c) {
+			return ATWrapTime { he.mCycle } < c;
+		});
+
+	const uint32 idx = std::min<uint32>(
+		(uint32)(it - mInsnBuffer.cbegin()),
+		(uint32)mInsnBuffer.size());
+
+	SelectInsn(idx);
+	return true;
+}
+
+// Free helper used by ATConsolePingBeamPosition — looks up the
+// registered History pane and forwards to JumpToCycle. Returns true
+// when the pane exists and accepted the jump (matches the Win32
+// IATUIDebuggerHistoryPane::JumpToCycle return contract that
+// console.cpp:1046 checks).
+bool ATUIDebuggerHistoryPaneJumpToCycle(uint32 cycle) {
+	auto *base = ATUIDebuggerGetPane(kATUIPaneId_History);
+	if (!base)
+		return false;
+	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(base);
+	return pane->JumpToCycle(cycle);
 }
 
 // =========================================================================

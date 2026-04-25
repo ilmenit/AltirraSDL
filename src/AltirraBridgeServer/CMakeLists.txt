@@ -42,6 +42,26 @@ add_executable(AltirraBridgeServer
     ${ALTIRRA_SDL_DIR}/stubs/win32_stubs.cpp
     ${ALTIRRA_SDL_DIR}/stubs/device_stubs.cpp
 
+    # Portable polling-based directory watcher (replaces the Win32-only
+    # directorywatcher.cpp). diskvirtimage.cpp / diskvirtimagesdfs.cpp
+    # link against ATDirectoryWatcher even in the bridge server build.
+    ${ALTIRRA_SDL_DIR}/source/os/directorywatcher_sdl3.cpp
+
+    # Portable POSIX TCP modem driver (replaces Winsock modemtcp.cpp).
+    # The SX-212/850 modem devices link against ATCreateModemDriverTCP
+    # even in headless mode.
+    ${ALTIRRA_SDL_DIR}/source/os/modemtcp_sdl3.cpp
+
+    # Portable POSIX raw block-device passthrough (replaces Win32
+    # idephysdisk.cpp). IDE adapter devices link against ATIDEPhysicalDisk
+    # via idediskdevices.cpp even in headless mode.
+    ${ALTIRRA_SDL_DIR}/source/os/idephysdisk_sdl3.cpp
+
+    # MidiMate device with portable MIDI backend. Headless builds get
+    # the ALSA backend on Linux (audible if a target is connected via
+    # aconnect) — same source as the GUI build.
+    ${ALTIRRA_SDL_DIR}/source/os/midimate_sdl3.cpp
+
     # Keymap port — provides ATUIInitVirtualKeyMap, ATUIGet*KeyMap,
     # ATUIGetScanCodeForVirtualKey/Character32, etc.  settings.cpp links
     # against these symbols.  Self-contained, depends only on
@@ -218,8 +238,23 @@ if(WIN32)
     target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_WINDOWS=1)
 elseif(APPLE)
     target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_MACOS=1)
+    # CoreMIDI for the MidiMate device backend.
+    target_link_libraries(AltirraBridgeServer PRIVATE
+        "-framework CoreFoundation"
+        "-framework CoreMIDI"
+    )
 elseif(UNIX)
     target_compile_definitions(AltirraBridgeServer PRIVATE VD_OS_LINUX=1)
+    # ALSA seq for the MidiMate device backend (matches AltirraSDL).
+    if(NOT ANDROID)
+        find_package(ALSA)
+        if(ALSA_FOUND)
+            target_link_libraries(AltirraBridgeServer PRIVATE ALSA::ALSA)
+        else()
+            target_compile_definitions(AltirraBridgeServer PRIVATE
+                ATMIDI_BACKEND_NULL=1)
+        endif()
+    endif()
 endif()
 
 # MSVC + Windows SDK 10.0.26100 UCRT <wchar.h> contains inline

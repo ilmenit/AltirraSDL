@@ -215,11 +215,30 @@ target_sources(AltirraSDL PRIVATE
     # Portable oshelper.h implementations (replaces Windows oshelper.cpp)
     source/os/oshelper_sdl3.cpp
 
-    # Stub implementations replacing Win32-only files
+    # Portable directory watcher (polling); replaces the Win32-only
+    # directorywatcher.cpp excluded by the core source glob.
+    source/os/directorywatcher_sdl3.cpp
+
+    # Portable POSIX TCP modem driver (replaces the Winsock-only
+    # modemtcp.cpp). Used by the SX-212 / 850 modem devices for
+    # telnet/BBS dialing.
+    source/os/modemtcp_sdl3.cpp
+
+    # Portable POSIX raw block-device passthrough (replaces Win32-only
+    # idephysdisk.cpp). IDE adapters use this to expose a host
+    # /dev/* node as Atari hard-disk storage (read-only).
+    source/os/idephysdisk_sdl3.cpp
+
+    # MidiMate device + portable MIDI backend (replaces winmm-only
+    # midimate.cpp). Linux uses ALSA seq, macOS CoreMIDI, Windows-SDL3
+    # winmm. WASM/Android compile as no-op sinks.
+    source/os/midimate_sdl3.cpp
+
+    # Stub implementations replacing Win32-only files.
+    # `oshelper_stubs.cpp` lives in stubs/ but is consumed only by the
+    # headless AltirraBridgeServer target; the AltirraSDL GUI target
+    # uses source/os/oshelper_sdl3.cpp instead.
     stubs/console_stubs.cpp
-    # oshelper_stubs.cpp is used only by the headless bridge server target;
-    # the AltirraSDL GUI target uses source/os/oshelper_sdl3.cpp instead.
-    # joystick_stubs.cpp replaced by source/input/joystick_sdl3.cpp
     stubs/uiaccessors_stubs.cpp
     stubs/win32_stubs.cpp
     stubs/device_stubs.cpp
@@ -769,6 +788,7 @@ if(APPLE)
         "-framework CoreFoundation"
         "-framework CoreAudio"
         "-framework AudioToolbox"
+        "-framework CoreMIDI"
     )
 
     # -----------------------------------------------------------------------
@@ -881,6 +901,21 @@ elseif(APPLE)
     target_compile_options(AltirraSDL PRIVATE -Wno-unknown-attributes)
 elseif(UNIX)
     target_compile_definitions(AltirraSDL PRIVATE VD_OS_LINUX=1)
+
+    # ALSA seq client for the MidiMate device's Linux MIDI backend
+    # (source/os/midimate_sdl3.cpp). Skip on Android/Emscripten — both
+    # compile midimate_sdl3.cpp with the no-op sink.
+    if(NOT ANDROID AND NOT EMSCRIPTEN)
+        find_package(ALSA)
+        if(ALSA_FOUND)
+            target_link_libraries(AltirraSDL PRIVATE ALSA::ALSA)
+        else()
+            message(WARNING "ALSA not found; MidiMate device will compile "
+                "with a no-op MIDI sink. Install libasound2-dev (Debian/"
+                "Ubuntu) or alsa-lib-devel (Fedora) to enable MIDI output.")
+            target_compile_definitions(AltirraSDL PRIVATE ATMIDI_BACKEND_NULL=1)
+        endif()
+    endif()
 endif()
 
 # ===========================================================================

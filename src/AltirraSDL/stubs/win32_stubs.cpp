@@ -226,8 +226,8 @@ bool ATUIShowWarningConfirm(VDGUIHandle, const wchar_t *caption, const wchar_t *
 	SDL_ShowMessageBox(&d, &id);
 	return id == 1;
 }
-// ATUISwitchHardwareMode is now in uiaccessors_stubs.cpp
-bool ATUISwitchKernel(VDGUIHandle, uint64) { return false; }
+// ATUISwitchHardwareMode and ATUISwitchKernel are now in uiaccessors_stubs.cpp
+// (real implementations matching Windows main.cpp).
 void ATUITemporarilyMountVHDImageW32(VDGUIHandle, const wchar_t*, bool) {}
 bool ATUpdateVerifyFeedSignature(const void*, const void*, size_t) { return false; }
 
@@ -275,6 +275,46 @@ void ATUIGenericDialogUndoAllIgnores() {
 	VDRegistryAppKey key;
 	key.removeKeyRecursive("DialogDefaults");
 	key.removeKeyRecursive("Confirmations");
+}
+
+// ============================================================
+// ATUIShowAlertError / ATUIExecuteCommandStringAndShowErrors
+// ============================================================
+//
+// Used by the Custom Device VM (customdevicevmtypes.cpp) to surface
+// errors and to invoke registered commands. Windows routes both
+// through the ATUIFuture/ATUIQueue machinery in main.cpp; the SDL3
+// build runs commands directly through g_ATUICommandMgr and surfaces
+// errors via SDL_ShowSimpleMessageBox + stderr.
+
+#include "uiqueue.h"
+#include <at/atui/uicommandmanager.h>
+
+vdrefptr<ATUIFutureWithResult<bool>> ATUIShowAlertError(const wchar_t *text, const wchar_t *title) {
+	VDStringA t = VDTextWToU8(VDStringW(title ? title : L"Error"));
+	VDStringA m = VDTextWToU8(VDStringW(text ? text : L""));
+	fprintf(stderr, "[error] %s: %s\n", t.c_str(), m.c_str());
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, t.c_str(), m.c_str(), nullptr);
+	// Synthesise a completed future with result=true (user has been
+	// notified). Mirrors the Win32 path returning after the modal closes.
+	return vdrefptr<ATUIFutureWithResult<bool>>(new ATUIFutureWithResult<bool>(true));
+}
+
+extern ATUICommandManager g_ATUICommandMgr;
+
+void ATUIExecuteCommandStringAndShowErrors(const char *cmd, const ATUICommandOptions *opts) noexcept {
+	if (!cmd || !*cmd)
+		return;
+
+	bool ok;
+	if (opts)
+		ok = g_ATUICommandMgr.ExecuteCommandNT(cmd, *opts);
+	else
+		ok = g_ATUICommandMgr.ExecuteCommandNT(cmd);
+
+	if (!ok && (!opts || !opts->mbQuiet)) {
+		fprintf(stderr, "[error] Command failed or not registered: %s\n", cmd);
+	}
 }
 
 // Accelerator string formatting for shortcut display in menus
