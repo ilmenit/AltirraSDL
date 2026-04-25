@@ -38,6 +38,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// macOS lacks MSG_NOSIGNAL on send(); use SO_NOSIGPIPE socket option
+// instead. Shim the macro to 0 so the call site stays portable.
+#ifndef MSG_NOSIGNAL
+	#define MSG_NOSIGNAL 0
+#endif
+
 void ATCreateDevicePipeSerial(const ATPropertySet& pset, IATDevice **dev);
 
 extern const ATDeviceDefinition g_ATDeviceDefPipeSerial = {
@@ -49,6 +55,15 @@ namespace {
 		int f = fcntl(fd, F_GETFL, 0);
 		if (f < 0) return -1;
 		return fcntl(fd, F_SETFL, f | O_NONBLOCK);
+	}
+
+	void disable_sigpipe(int fd) {
+#ifdef SO_NOSIGPIPE
+		int v = 1;
+		setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &v, sizeof v);
+#else
+		(void)fd;
+#endif
 	}
 }
 
@@ -357,6 +372,7 @@ void ATDevicePipeSerial::ThreadRun() {
 						continue;
 					return;
 				}
+				disable_sigpipe(fd);
 				set_nonblocking(fd);
 				mDataFd = fd;
 				connected = true;

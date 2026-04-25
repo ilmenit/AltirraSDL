@@ -27,8 +27,12 @@ namespace {
 		if (stat(u8.c_str(), &st) != 0)
 			return 0;
 
-		uint64 maxT = (uint64)st.st_mtim.tv_sec * 1000000000ull
-			+ (uint64)st.st_mtim.tv_nsec;
+		// st_mtime (seconds) is the only mtime member portable across
+		// Linux (st_mtim), macOS/BSD (st_mtimespec), and other POSIX
+		// systems. Sub-second precision isn't needed for polling-based
+		// hot reload — config files don't typically change twice a
+		// second.
+		uint64 maxT = (uint64)st.st_mtime;
 
 		DIR *d = opendir(u8.c_str());
 		if (!d)
@@ -49,8 +53,7 @@ namespace {
 			if (stat(child.c_str(), &cs) != 0)
 				continue;
 
-			uint64 t = (uint64)cs.st_mtim.tv_sec * 1000000000ull
-				+ (uint64)cs.st_mtim.tv_nsec;
+			uint64 t = (uint64)cs.st_mtime;
 			if (t > maxT)
 				maxT = t;
 		}

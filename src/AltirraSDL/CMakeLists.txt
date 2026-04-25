@@ -219,24 +219,11 @@ target_sources(AltirraSDL PRIVATE
     # directorywatcher.cpp excluded by the core source glob.
     source/os/directorywatcher_sdl3.cpp
 
-    # Portable POSIX TCP modem driver (replaces the Winsock-only
-    # modemtcp.cpp). Used by the SX-212 / 850 modem devices for
-    # telnet/BBS dialing.
-    source/os/modemtcp_sdl3.cpp
-
-    # Portable POSIX raw block-device passthrough (replaces Win32-only
-    # idephysdisk.cpp). IDE adapters use this to expose a host
-    # /dev/* node as Atari hard-disk storage (read-only).
-    source/os/idephysdisk_sdl3.cpp
-
     # MidiMate device + portable MIDI backend (replaces winmm-only
     # midimate.cpp). Linux uses ALSA seq, macOS CoreMIDI, Windows-SDL3
-    # winmm. WASM/Android compile as no-op sinks.
+    # winmm. WASM/Android compile as no-op sinks. Builds on every
+    # platform — uses #ifdef internally to pick the backend.
     source/os/midimate_sdl3.cpp
-
-    # PipeSerial device — UNIX-domain SOCK_STREAM listener, the POSIX
-    # equivalent of the Win32 named pipe used by pipeserial_win32.cpp.
-    source/os/pipeserial_sdl3.cpp
 
     # Stub implementations replacing Win32-only files.
     # `oshelper_stubs.cpp` lives in stubs/ but is consumed only by the
@@ -395,6 +382,26 @@ if(ALTIRRA_NETPLAY)
             ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
     endif()
     target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_NETPLAY_ENABLED=1)
+endif()
+
+# ---------------------------------------------------------------------------
+# POSIX-only device source replacements
+# ---------------------------------------------------------------------------
+# These files use POSIX sockets / O_DIRECT / mkfifo / pread which are
+# unavailable on Windows. On Windows-SDL3 the matching Win32 originals
+# (modemtcp.cpp, idephysdisk.cpp, pipeserial_win32.cpp) are linked
+# instead — see src/AltirraSDL/cmake/altirra_core_sources.cmake.
+if(NOT WIN32)
+    target_sources(AltirraSDL PRIVATE
+        # POSIX TCP modem driver (POSIX sockets + poll).
+        source/os/modemtcp_sdl3.cpp
+
+        # POSIX raw block-device passthrough (open + pread + ioctl).
+        source/os/idephysdisk_sdl3.cpp
+
+        # PipeSerial via UNIX-domain SOCK_STREAM listener.
+        source/os/pipeserial_sdl3.cpp
+    )
 endif()
 
 # ---------------------------------------------------------------------------

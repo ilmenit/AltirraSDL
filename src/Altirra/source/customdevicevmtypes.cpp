@@ -24,6 +24,7 @@
 #include <at/atui/uicommandmanager.h>
 #include "customdevicevmtypes.h"
 #include "customdevice.h"
+#include "customdevice_win32.h"	// IATDeviceCustomNetworkEngine full type required for vdrefptr<> dtor instantiation; some clang/Android targets are stricter about needing this where Linux GCC accepts the forward decl
 #include "memorymanager.h"
 #include "simulator.h"
 #include "irqcontroller.h"

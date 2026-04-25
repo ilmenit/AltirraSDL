@@ -28,12 +28,31 @@ list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/allocator\\.cpp$")   # crtdbg.
 # Exclude UI command handler files (include atnativeui/uiframe.h -> windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/cmd[a-z][^/]*\\.cpp$")
 # Exclude files with Win32 UI dependencies not needed for emulation core
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idephysdisk\\.cpp$")       # Win32 raw disk access (DeviceIoControl)
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/midimate\\.cpp$")          # Win32 MIDI API (winmm.h)
-list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/modemtcp\\.cpp$")          # Win32 networking (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/profilerui\\.cpp$")        # Win32 profiler UI (w32assist.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/startuplogger\\.cpp$")     # Win32 only (windows.h)
 list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/texteditor\\.cpp$")        # Win32 HWND/WndProc text editor widget
+
+# midimate_sdl3.cpp handles all platforms internally (winmm on Windows,
+# ALSA on Linux, CoreMIDI on macOS, no-op on Android/WASM), so the
+# original midimate.cpp stays excluded everywhere — its factory symbol
+# would clash if both linked.
+list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/midimate\\.cpp$")
+
+# idephysdisk.cpp / modemtcp.cpp are Win32-only (DeviceIoControl,
+# Winsock2). On Windows-SDL3 we use the originals; on POSIX targets
+# the source/os/*_sdl3.cpp replacements are linked instead.
+if(NOT WIN32)
+    list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/idephysdisk\\.cpp$")
+    list(FILTER ALTIRRA_ALL_SOURCES EXCLUDE REGEX ".*/modemtcp\\.cpp$")
+endif()
+
+# pipeserial_win32.cpp is the Win32 named-pipe implementation. It was
+# already excluded by the blanket _win32.cpp filter above; on Windows
+# we re-add it explicitly so Windows-SDL3 builds get the native impl.
+if(WIN32)
+    list(APPEND ALTIRRA_ALL_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/Altirra/source/pipeserial_win32.cpp")
+endif()
 
 # customdevice_win32.cpp is misnamed: despite the suffix it has no Win32
 # deps (only at/atnetworksockets/nativesockets.h, which is portable).

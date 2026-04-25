@@ -25,6 +25,25 @@
 #include <errno.h>
 #include <string.h>
 
+// macOS lacks MSG_NOSIGNAL on send(). The portable equivalent is the
+// SO_NOSIGPIPE socket option, set right after socket creation. We
+// shim MSG_NOSIGNAL to 0 on platforms that don't define it so the
+// send() call sites stay portable.
+#ifndef MSG_NOSIGNAL
+	#define MSG_NOSIGNAL 0
+#endif
+
+namespace {
+	void disable_sigpipe(int fd) {
+#ifdef SO_NOSIGPIPE
+		int v = 1;
+		setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &v, sizeof v);
+#else
+		(void)fd;
+#endif
+	}
+}
+
 #include "modemtcp.h"
 #include "rs232.h"
 
@@ -455,6 +474,7 @@ void ATModemDriverTCP::ThreadRun() {
 		int reuse = 1;
 		setsockopt(mSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
 		set_nonblocking(mSocket);
+		disable_sigpipe(mSocket);
 
 		sockaddr_in sa {};
 		sa.sin_port = htons((uint16)mPort);
@@ -489,6 +509,7 @@ void ATModemDriverTCP::ThreadRun() {
 				int v6only = 1;
 				setsockopt(mSocket2, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof v6only);
 				set_nonblocking(mSocket2);
+				disable_sigpipe(mSocket2);
 
 				sockaddr_in6 sa6 {};
 				sa6.sin6_port = htons((uint16)mPort);
@@ -571,6 +592,7 @@ void ATModemDriverTCP::ThreadRun() {
 
 			mSocket = sock2;
 			set_nonblocking(mSocket);
+			disable_sigpipe(mSocket);
 			int nodelay = 1;
 			setsockopt(mSocket, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
 
@@ -655,6 +677,7 @@ void ATModemDriverTCP::ThreadRun() {
 			int nodelay = 1;
 			setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
 			set_nonblocking(s);
+			disable_sigpipe(s);
 
 			int cr = ::connect(s, p->ai_addr, p->ai_addrlen);
 			if (cr == 0) {

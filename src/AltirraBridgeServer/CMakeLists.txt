@@ -47,25 +47,11 @@ add_executable(AltirraBridgeServer
     # link against ATDirectoryWatcher even in the bridge server build.
     ${ALTIRRA_SDL_DIR}/source/os/directorywatcher_sdl3.cpp
 
-    # Portable POSIX TCP modem driver (replaces Winsock modemtcp.cpp).
-    # The SX-212/850 modem devices link against ATCreateModemDriverTCP
-    # even in headless mode.
-    ${ALTIRRA_SDL_DIR}/source/os/modemtcp_sdl3.cpp
-
-    # Portable POSIX raw block-device passthrough (replaces Win32
-    # idephysdisk.cpp). IDE adapter devices link against ATIDEPhysicalDisk
-    # via idediskdevices.cpp even in headless mode.
-    ${ALTIRRA_SDL_DIR}/source/os/idephysdisk_sdl3.cpp
-
-    # MidiMate device with portable MIDI backend. Headless builds get
-    # the ALSA backend on Linux (audible if a target is connected via
-    # aconnect) — same source as the GUI build.
+    # MidiMate device with portable MIDI backend. Builds on every
+    # platform — uses #ifdef internally to pick the backend (ALSA on
+    # Linux, CoreMIDI on macOS, winmm on Windows-SDL3, no-op
+    # elsewhere).
     ${ALTIRRA_SDL_DIR}/source/os/midimate_sdl3.cpp
-
-    # PipeSerial device on UNIX-domain sockets (replaces Win32-only
-    # pipeserial_win32.cpp). Bridge clients can connect to e.g.
-    # $XDG_RUNTIME_DIR/altirra-AltirraSerial.sock to drive the SIO bus.
-    ${ALTIRRA_SDL_DIR}/source/os/pipeserial_sdl3.cpp
 
     # Keymap port — provides ATUIInitVirtualKeyMap, ATUIGet*KeyMap,
     # ATUIGetScanCodeForVirtualKey/Character32, etc.  settings.cpp links
@@ -132,6 +118,16 @@ add_executable(AltirraBridgeServer
 if(WIN32)
     target_sources(AltirraBridgeServer PRIVATE
         ${CMAKE_SOURCE_DIR}/src/Altirra/source/pclink_win32.cpp
+    )
+endif()
+
+# POSIX-only device source replacements (Win32 originals are linked
+# instead on Windows-SDL3 — see altirra_core_sources.cmake).
+if(NOT WIN32)
+    target_sources(AltirraBridgeServer PRIVATE
+        ${ALTIRRA_SDL_DIR}/source/os/modemtcp_sdl3.cpp
+        ${ALTIRRA_SDL_DIR}/source/os/idephysdisk_sdl3.cpp
+        ${ALTIRRA_SDL_DIR}/source/os/pipeserial_sdl3.cpp
     )
 endif()
 
