@@ -62,6 +62,16 @@ bool IsActive();
 // coordinator can be in this phase per the activity state machine.
 bool IsLockstepping();
 
+// Session-end cleanup hook.  Registered by ui_netplay_actions to call
+// RestoreSessionRestorePoint when the lower glue layer tears down a
+// session via DisconnectActive() or Shutdown() — paths that don't
+// otherwise reach the activity-edge restore in ReconcileHostedGames.
+// The hook is invoked before coordinators are torn down so the sim
+// can be returned to its pre-session state cleanly.  Pass nullptr to
+// clear.
+using SessionEndCleanupFn = void(*)();
+void SetSessionEndCleanupHook(SessionEndCleanupFn fn);
+
 // Drive all coordinators' Poll().  Must be called once per main-loop
 // iteration from main_sdl3.cpp.
 void Poll(uint64_t nowMs);
@@ -326,6 +336,8 @@ namespace ATNetplayGlue {
     inline uint32_t CurrentInputDelay()             { return 0; }
     inline uint64_t MsSinceLastPeerPacket(uint64_t) { return UINT64_MAX / 2; }
     inline const char* LockstepOfferId()            { return ""; }
+    using SessionEndCleanupFn = void(*)();
+    inline void SetSessionEndCleanupHook(SessionEndCleanupFn) {}
 } // namespace ATNetplayGlue
 
 #endif // ALTIRRA_NETPLAY_ENABLED

@@ -538,24 +538,35 @@ void StopCoordForHostedGame(HostedGame& o) {
 // -------------------------------------------------------------------
 
 // True iff any of our hostedGames is in a live-play coordinator phase.
+//
+// Resyncing and Desynced are mid-flight states from which the
+// coordinator is expected to recover into Lockstepping (or surface a
+// real terminal phase like Ended/Failed).  They MUST be treated as
+// "in session" so the activity edge in ReconcileHostedGames doesn't
+// fire RestoreSessionRestorePoint mid-resync — that consumes the
+// pre-session snapshot and clobbers the local sim while the resync
+// transfer is still in flight.
 bool AnyHostedGameInSession() {
 	for (auto& o : GetState().hostedGames) {
 		using P = ATNetplayGlue::Phase;
 		P p = ATNetplayGlue::HostPhase(o.id.c_str());
 		if (p == P::Handshaking || p == P::SendingSnapshot ||
 		    p == P::ReceivingSnapshot || p == P::SnapshotReady ||
-		    p == P::Lockstepping) return true;
+		    p == P::Lockstepping ||
+		    p == P::Resyncing || p == P::Desynced) return true;
 	}
 	return false;
 }
 
-// True iff we joined someone's session.
+// True iff we joined someone's session.  See AnyHostedGameInSession
+// for why Resyncing and Desynced count as "in session".
 bool JoinerInSession() {
 	using P = ATNetplayGlue::Phase;
 	P p = ATNetplayGlue::JoinPhase();
 	return p == P::Handshaking || p == P::SendingSnapshot ||
 	       p == P::ReceivingSnapshot || p == P::SnapshotReady ||
-	       p == P::Lockstepping;
+	       p == P::Lockstepping ||
+	       p == P::Resyncing || p == P::Desynced;
 }
 
 } // anonymous

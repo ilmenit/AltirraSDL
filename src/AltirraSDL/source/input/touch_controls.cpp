@@ -15,6 +15,7 @@
 #include "simulator.h"
 #include "android_platform.h"
 #include "netplay/netplay_glue.h"
+#include "netplay/netplay_input.h"
 #include "ui/emotes/emote_picker.h"
 #include "ui/emotes/emote_netplay.h"
 
@@ -157,8 +158,10 @@ static void ApplyDirectionMask(uint8 newMask, uint8 oldMask) {
 // -------------------------------------------------------------------------
 
 static void SetConsoleSwitch(uint8 bit, bool down) {
-	if (s_pGTIA)
-		s_pGTIA->SetConsoleSwitch(bit, down);
+	// Route through netplay when a session is live so the peer sees the
+	// edge; otherwise drive GTIA directly.  RouteConsoleSwitch handles
+	// both cases and is a no-op-redirect to GTIA in the WASM build.
+	ATNetplayInput::RouteConsoleSwitch(s_pGTIA, bit, down);
 }
 
 // -------------------------------------------------------------------------

@@ -74,15 +74,26 @@ LobbyWorker& GetWorker() { return GetWorkerImpl(); }
 // Public entry points
 // ---------------------------------------------------------------------
 
+// Cleanup hook installed into the netplay glue.  Fires when the lower
+// glue layer tears down a session via DisconnectActive() or Shutdown(),
+// so the user's pre-session sim state is restored even on paths that
+// don't go through the activity-edge in ReconcileHostedGames.
+static void ATNetplayUI_GlueCleanupHook() {
+	if (ATNetplayUI::HasSessionRestorePoint())
+		ATNetplayUI::RestoreSessionRestorePoint();
+}
+
 void ATNetplayUI_Initialize(SDL_Window *window) {
 	ATNetplayUI::Initialize();
 	ATNetplay::SetWindow(window);
 	ATNetplay::Initialize("AltirraSDL");
 	ATNetplayUI::GetWorker().Start();
 	ATNetplayUI::Activity_Hook();
+	ATNetplayGlue::SetSessionEndCleanupHook(&ATNetplayUI_GlueCleanupHook);
 }
 
 void ATNetplayUI_Shutdown() {
+	ATNetplayGlue::SetSessionEndCleanupHook(nullptr);
 	ATNetplayUI::Activity_Unhook();
 	// Best-effort Delete + coordinator teardown for every offer.
 	for (auto& o : ATNetplayUI::GetState().hostedGames) {
@@ -524,6 +535,13 @@ void ATNetplayUI_EndSession() {
 	for (auto& o : ATNetplayUI::GetState().hostedGames) {
 		ATNetplayUI::DisableHostedGame(o.id);
 	}
+	// Restore the user's pre-session sim immediately rather than
+	// waiting for the next ReconcileHostedGames tick to catch the
+	// activity edge.  Makes the menu click feel synchronous and
+	// guarantees the snapshot is consumed by the explicit-end path
+	// before any later poll could observe a transient phase.
+	if (ATNetplayUI::HasSessionRestorePoint())
+		ATNetplayUI::RestoreSessionRestorePoint();
 	ATNetplayUI::Navigate(ATNetplayUI::Screen::MyHostedGames);
 }
 

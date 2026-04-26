@@ -14,6 +14,7 @@
 #include <at/ataudio/pokey.h>
 #include "uikeyboard.h"
 #include "keyboard_data.h"
+#include "netplay/netplay_input.h"
 
 #ifdef __ANDROID__
 #include "android_platform.h"
@@ -160,6 +161,21 @@ static bool IsControlActive() {
 	return s_controlHeld || s_controlSticky;
 }
 
+// Apply the latched shift/ctrl state to the right destination: in
+// netplay, the lockstep pipeline (so peers stay in sync); otherwise
+// POKEY directly.  Mirrors the physical-keyboard gate at
+// input_sdl3.cpp:693-703.
+static void ApplyModifierState(ATPokeyEmulator &pokey) {
+	const bool shift = s_shiftHeld || s_shiftSticky;
+	const bool ctrl  = s_controlHeld || s_controlSticky;
+	if (ATNetplayInput::IsActive()) {
+		ATNetplayInput::OnLocalShiftCtrlState(shift, ctrl);
+	} else {
+		pokey.SetShiftKeyState(shift, !g_kbdOpts.mbFullRawKeys);
+		pokey.SetControlKeyState(ctrl);
+	}
+}
+
 static void HandleModifierPress(ATSimulator &sim, int index) {
 	const ATOSKKeyDef &key = kOSKKeys[index];
 	ATPokeyEmulator &pokey = sim.GetPokey();
@@ -168,13 +184,12 @@ static void HandleModifierPress(ATSimulator &sim, int index) {
 		// Shift — toggle sticky
 		s_shiftSticky = !s_shiftSticky;
 		s_shiftHeld = true;
-		pokey.SetShiftKeyState(true, !g_kbdOpts.mbFullRawKeys);
 	} else if (key.scanCode == 0x41) {
 		// Control — toggle sticky
 		s_controlSticky = !s_controlSticky;
 		s_controlHeld = true;
-		pokey.SetControlKeyState(true);
 	}
+	ApplyModifierState(pokey);
 }
 
 static void HandleModifierRelease(ATSimulator &sim, int index) {
@@ -183,28 +198,18 @@ static void HandleModifierRelease(ATSimulator &sim, int index) {
 
 	if (key.scanCode == 0x42) {
 		s_shiftHeld = false;
-		if (!s_shiftSticky)
-			pokey.SetShiftKeyState(false, !g_kbdOpts.mbFullRawKeys);
 	} else if (key.scanCode == 0x41) {
 		s_controlHeld = false;
-		if (!s_controlSticky)
-			pokey.SetControlKeyState(false);
 	}
+	ApplyModifierState(pokey);
 }
 
 static void ReleaseStickyModifiers(ATSimulator &sim) {
 	ATPokeyEmulator &pokey = sim.GetPokey();
 
-	if (s_shiftSticky) {
-		s_shiftSticky = false;
-		if (!s_shiftHeld)
-			pokey.SetShiftKeyState(false, !g_kbdOpts.mbFullRawKeys);
-	}
-	if (s_controlSticky) {
-		s_controlSticky = false;
-		if (!s_controlHeld)
-			pokey.SetControlKeyState(false);
-	}
+	if (s_shiftSticky)   s_shiftSticky = false;
+	if (s_controlSticky) s_controlSticky = false;
+	ApplyModifierState(pokey);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,22 +225,38 @@ static void PressKey(ATSimulator &sim, int index) {
 
 	if (key.flags & kOSKFlag_Console) {
 		uint8_t bit = GetConsoleBit(key.scanCode);
-		gtia.SetConsoleSwitch(bit, true);
+		// Route through netplay so the peer sees the same console-switch
+		// edge on the same lockstep frame; falls through to GTIA when
+		// no session is live.
+		ATNetplayInput::RouteConsoleSwitch(&gtia, bit, true);
 		bool *flag = GetConsoleHeldFlag(key.scanCode);
 		if (flag) *flag = true;
 	} else if (key.flags & kOSKFlag_Break) {
-		pokey.PushBreak();
+		// Hardware Break has no lockstep encoding; silenced in-session
+		// so peers don't diverge on a one-sided POKEY break event.
+		if (!ATNetplayInput::ShouldSuppressBreak())
+			pokey.PushBreak();
 	} else if (key.flags & kOSKFlag_Reset) {
-		sim.WarmReset();
+		// Same — WarmReset can't replicate over the wire.
+		if (!ATNetplayInput::ShouldSuppressWarmReset())
+			sim.WarmReset();
 	} else if (key.flags & kOSKFlag_Toggle) {
 		HandleModifierPress(sim, index);
 	} else {
 		uint8_t sc = key.scanCode;
-		if (pokey.GetShiftKeyState())
-			sc += 0x40;
-		if (pokey.GetControlKeyState())
-			sc += 0x80;
-		pokey.PushRawKey(sc, !g_kbdOpts.mbFullRawKeys);
+		// Outside a netplay session, the on-screen keyboard folds
+		// shift/ctrl into the scancode so PushRawKey sees a single
+		// pre-shifted code (legacy behaviour from uionscreenkeyboard).
+		// In-session we send the bare scancode + separate modifier state
+		// — the apply side calls PushKey (cooked) which does its own
+		// folding via SetShiftKeyState/SetControlKeyState.
+		if (!ATNetplayInput::IsActive()) {
+			if (pokey.GetShiftKeyState())
+				sc += 0x40;
+			if (pokey.GetControlKeyState())
+				sc += 0x80;
+		}
+		ATNetplayInput::RouteRawKeyDown(&pokey, sc, !g_kbdOpts.mbFullRawKeys);
 	}
 
 	s_pressedKey = index;
@@ -255,7 +276,7 @@ static void ReleaseKey(ATSimulator &sim, int index) {
 
 	if (key.flags & kOSKFlag_Console) {
 		uint8_t bit = GetConsoleBit(key.scanCode);
-		gtia.SetConsoleSwitch(bit, false);
+		ATNetplayInput::RouteConsoleSwitch(&gtia, bit, false);
 		bool *flag = GetConsoleHeldFlag(key.scanCode);
 		if (flag) *flag = false;
 	} else if (key.flags & kOSKFlag_Break) {
@@ -293,9 +314,9 @@ void ATUIVirtualKeyboard_ReleaseAll(ATSimulator &sim) {
 		s_controlSticky = false;
 		pokey.SetControlKeyState(false);
 	}
-	if (s_consoleStartHeld)  { gtia.SetConsoleSwitch(0x01, false); s_consoleStartHeld = false; }
-	if (s_consoleSelectHeld) { gtia.SetConsoleSwitch(0x02, false); s_consoleSelectHeld = false; }
-	if (s_consoleOptionHeld) { gtia.SetConsoleSwitch(0x04, false); s_consoleOptionHeld = false; }
+	if (s_consoleStartHeld)  { ATNetplayInput::RouteConsoleSwitch(&gtia, 0x01, false); s_consoleStartHeld = false; }
+	if (s_consoleSelectHeld) { ATNetplayInput::RouteConsoleSwitch(&gtia, 0x02, false); s_consoleSelectHeld = false; }
+	if (s_consoleOptionHeld) { ATNetplayInput::RouteConsoleSwitch(&gtia, 0x04, false); s_consoleOptionHeld = false; }
 
 	// Turn off native text input mode when keyboard is dismissed.
 	// SDL_StopTextInput hides the Android soft keyboard.  On desktop

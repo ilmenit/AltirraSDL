@@ -16,7 +16,12 @@
 
 #include <cstdint>
 
+class ATGTIAEmulator;
+class ATPokeyEmulator;
+
 namespace ATNetplay { struct NetInput; }
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
 
 namespace ATNetplayInput {
 
@@ -68,4 +73,74 @@ ATNetplay::NetInput PollLocal();
 void ApplyFrameInputs(const ATNetplay::NetInput& p1,
                       const ATNetplay::NetInput& p2);
 
+// -----------------------------------------------------------------------
+// Routing helpers for code paths that bypass ATInputManager.
+//
+// ATInputManager's restricted-mode gate (set during BeginSession) silences
+// console / keyboard / flag triggers from gamepads + custom-bound keys so
+// they don't double-fire alongside the lockstep pipeline.  But on-screen
+// touch controls and the on-screen virtual keyboard write to GTIA / POKEY
+// / ATSimulator directly — the input manager never sees them, so its
+// gate doesn't apply.  These helpers encapsulate the
+// "if a session is live, route through OnLocalConsoleSwitch /
+// OnLocalKeyDown; otherwise drive the hardware directly" pattern that
+// input_sdl3.cpp's keyboard path already follows.
+// -----------------------------------------------------------------------
+
+// Console-switch edge (Start=0x01, Select=0x02, Option=0x04).
+void RouteConsoleSwitch(ATGTIAEmulator* gtia, uint8_t bit, bool down);
+
+// Raw POKEY scancode press.  Outside a session, calls
+// pokey->PushRawKey(scanCode, naturalKb) verbatim.  In-session, queues
+// the bare scancode for the next NetInput.keyScan.  The caller is
+// responsible for keeping shift/ctrl state in sync via
+// OnLocalShiftCtrlState — same convention as the physical-keyboard
+// path at input_sdl3.cpp:858-877.  Pass scanCode WITHOUT the
+// shift/ctrl high-bit folding (no +0x40 / +0x80) when the helper is
+// used inside a session; the apply side does the folding via
+// PushKey + SetShiftKeyState.
+void RouteRawKeyDown(ATPokeyEmulator* pokey, uint8_t scanCode,
+                     bool naturalKb);
+
+// Hardware actions with no defined lockstep encoding — silenced during
+// a session.  Callers should check the return value and skip the
+// underlying call when these return true.
+bool ShouldSuppressWarmReset();
+bool ShouldSuppressBreak();
+
 } // namespace ATNetplayInput
+
+#else // !ALTIRRA_NETPLAY_ENABLED
+
+// WASM build: netplay is compiled out, so the routing helpers fall
+// through to the direct hardware path.  Inlined so the compiler can
+// fold them away at the call site, matching the no-netplay-stub
+// approach used by netplay_glue.h.
+
+#include "gtia.h"
+#include <at/ataudio/pokey.h>
+
+namespace ATNetplayInput {
+
+inline bool IsActive()                { return false; }
+inline bool IsSuppressingLocalInput() { return false; }
+
+inline void OnLocalKeyDown(uint8_t)        {}
+inline void OnLocalShiftCtrlState(bool, bool) {}
+inline void OnLocalConsoleSwitch(uint8_t, bool) {}
+
+inline void RouteConsoleSwitch(ATGTIAEmulator* gtia, uint8_t bit, bool down) {
+    if (gtia) gtia->SetConsoleSwitch(bit, down);
+}
+
+inline void RouteRawKeyDown(ATPokeyEmulator* pokey, uint8_t scanCode,
+                            bool naturalKb) {
+    if (pokey) pokey->PushRawKey(scanCode, naturalKb);
+}
+
+inline bool ShouldSuppressWarmReset() { return false; }
+inline bool ShouldSuppressBreak()     { return false; }
+
+} // namespace ATNetplayInput
+
+#endif // ALTIRRA_NETPLAY_ENABLED

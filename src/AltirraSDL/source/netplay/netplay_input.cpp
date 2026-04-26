@@ -436,4 +436,41 @@ void ApplyFrameInputs(const ATNetplay::NetInput& p1,
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Routing helpers — for code paths that bypass ATInputManager
+// (touch overlay, on-screen keyboard).
+// ---------------------------------------------------------------------------
+
+void RouteConsoleSwitch(ATGTIAEmulator* gtia, uint8_t bit, bool down) {
+	if (g_active) {
+		// In-session: feed the lockstep pipeline; the apply step on both
+		// peers will drive GTIA at the deterministic frame.  Don't write
+		// GTIA here or the local sim races ahead of the peer.
+		OnLocalConsoleSwitch(bit, down);
+		return;
+	}
+	if (gtia) gtia->SetConsoleSwitch(bit, down);
+}
+
+void RouteRawKeyDown(ATPokeyEmulator* pokey, uint8_t scanCode,
+                     bool naturalKb) {
+	if (g_active) {
+		// Just queue the bare scancode.  Shift/ctrl state is owned by
+		// whoever manages modifier press/release (physical-keyboard
+		// path at input_sdl3.cpp:858-877, on-screen keyboard's
+		// ApplyModifierState) — they call OnLocalShiftCtrlState
+		// independently so the latest modifier mask reflects every
+		// modifier source.  Reading POKEY here would be wrong: in
+		// netplay mode POKEY's shift register is intentionally NOT
+		// kept in sync with the local user's modifier state, since
+		// modifiers are applied at the lockstep apply step instead.
+		OnLocalKeyDown(scanCode);
+		return;
+	}
+	if (pokey) pokey->PushRawKey(scanCode, naturalKb);
+}
+
+bool ShouldSuppressWarmReset() { return g_active; }
+bool ShouldSuppressBreak()     { return g_active; }
+
 } // namespace ATNetplayInput

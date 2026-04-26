@@ -168,6 +168,18 @@ bool PollCoord(std::unique_ptr<ATNetplay::Coordinator>& coord,
 
 } // anonymous
 
+// Session-end cleanup hook.  Set by the UI layer (ui_netplay_actions)
+// during init so that DisconnectActive() / Shutdown() can drive the
+// pre-session-state restore without a backwards include from glue
+// into the UI module.  Invoked at most once per teardown.
+namespace {
+SessionEndCleanupFn g_sessionEndCleanupHook = nullptr;
+}
+
+void SetSessionEndCleanupHook(SessionEndCleanupFn fn) {
+	g_sessionEndCleanupHook = fn;
+}
+
 // -------------------------------------------------------------------
 // Aggregate queries
 // -------------------------------------------------------------------
@@ -488,6 +500,8 @@ void ApplyFrameInputsToSim() {
 }
 
 void Shutdown() {
+	// End coords before invoking the cleanup hook — same ordering as
+	// DisconnectActive so ApplySnapshot doesn't race a live coord.
 	for (auto& s : g_hosts) {
 		if (s.coord) s.coord->End();
 	}
@@ -497,6 +511,13 @@ void Shutdown() {
 		g_joiner.reset();
 	}
 	g_joinerTerminalTicks = 0;
+
+	// Best-effort restore: if a session is alive at app shutdown the
+	// user likely just wants to exit, but running the hook keeps
+	// behaviour consistent with the runtime DisconnectActive path.
+	// Safe to call whether or not a session was active.
+	if (g_sessionEndCleanupHook) g_sessionEndCleanupHook();
+
 	if (ATNetplayInput::IsActive()) ATNetplayInput::EndSession();
 }
 
@@ -747,8 +768,11 @@ uint64_t MsSinceLastPeerPacket(uint64_t nowMs) {
 }
 
 void DisconnectActive() {
-	// End every host coord + joiner coord.  The two-tick terminal
-	// teardown in Poll() will finish cleanup.
+	// End every host coord + joiner coord first so subsequent ApplySnapshot
+	// in the cleanup hook doesn't race against an active lockstep coord
+	// reading sim state for hash computation.  The two-tick terminal
+	// teardown in Poll() will finish coord cleanup; we just need them
+	// out of an "actively producing frames" phase.
 	for (auto& s : g_hosts) {
 		if (s.coord) s.coord->End();
 	}
@@ -758,6 +782,14 @@ void DisconnectActive() {
 	// after the user chose to leave.
 	g_lastJoinPhase = Phase::None;
 	g_lastJoinError.clear();
+
+	// Synchronously drive the pre-session restore so the user is back
+	// on their own emulator state by the time this returns, rather than
+	// racing the next Poll tick to catch the activity edge.  Mirrors
+	// the order used by ReconcileHostedGames (coords reach terminal
+	// phases first, then the activity edge fires the restore).
+	// Hook is a no-op if no snapshot was taken.
+	if (g_sessionEndCleanupHook) g_sessionEndCleanupHook();
 }
 
 bool SendEmote(uint8_t iconId) {
