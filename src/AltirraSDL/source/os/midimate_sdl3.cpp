@@ -29,8 +29,7 @@
 	#include <alsa/asoundlib.h>
 #elif defined(__APPLE__)
 	#define ATMIDI_BACKEND_COREMIDI 1
-	#include <CoreMIDI/CoreMIDI.h>
-	#include <CoreFoundation/CoreFoundation.h>
+	#include "midimate_coremidi.h"
 #elif defined(_WIN32)
 	#define ATMIDI_BACKEND_WINMM 1
 	#include <windows.h>
@@ -135,59 +134,14 @@ namespace {
 #elif ATMIDI_BACKEND_COREMIDI
 	class ATMidiSink {
 	public:
-		ATMidiSink() {
-			MIDIClientCreate(CFSTR("Altirra"), nullptr, nullptr, &mClient);
-			if (mClient)
-				MIDISourceCreate(mClient, CFSTR("MidiMate Out"), &mSource);
-		}
+		ATMidiSink()  { mSink = ATCoreMidiSink_Create(); }
+		~ATMidiSink() { ATCoreMidiSink_Destroy(mSink); }
 
-		~ATMidiSink() {
-			if (mSource) {
-				MIDIEndpointDispose(mSource);
-				mSource = 0;
-			}
-			if (mClient) {
-				MIDIClientDispose(mClient);
-				mClient = 0;
-			}
-		}
-
-		void SendShort(uint32 packed) {
-			if (!mSource)
-				return;
-			Byte buf[3] = {
-				(Byte)(packed       & 0xff),
-				(Byte)((packed >> 8) & 0xff),
-				(Byte)((packed >> 16) & 0xff),
-			};
-			Byte status = buf[0];
-			ByteCount len = 1;
-			if (status < 0xF0) {
-				switch (status & 0xF0) {
-				case 0xC0: case 0xD0: len = 2; break;
-				default:               len = 3; break;
-				}
-			}
-
-			MIDIPacketList packetList;
-			MIDIPacket *pkt = MIDIPacketListInit(&packetList);
-			pkt = MIDIPacketListAdd(&packetList, sizeof(packetList),
-				pkt, 0, len, buf);
-			if (pkt)
-				MIDIReceived(mSource, &packetList);
-		}
-
-		void Reset() {
-			for (uint8 ch = 0; ch < 16; ++ch) {
-				uint32 m = 0xB0 | ch;
-				m |= ((uint32)123 << 8);
-				SendShort(m);
-			}
-		}
+		void SendShort(uint32 packed) { ATCoreMidiSink_SendShort(mSink, packed); }
+		void Reset()                  { ATCoreMidiSink_Reset(mSink); }
 
 	private:
-		MIDIClientRef mClient = 0;
-		MIDIEndpointRef mSource = 0;
+		ATCoreMidiSink *mSink = nullptr;
 	};
 
 #elif ATMIDI_BACKEND_WINMM
