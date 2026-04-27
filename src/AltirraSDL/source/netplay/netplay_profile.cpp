@@ -56,6 +56,13 @@ extern ATSimulator g_sim;
 extern ATLogChannel g_ATLCNetplay;
 extern VDStringA ATGetConfigDir();
 
+// Forward to ui_netplay_state.cpp's cached CRC32 helper.  Declared
+// here at file scope (NOT inside ATNetplayProfile) so the linker
+// resolves it against the real ATNetplayUI::ComputeFirmwareCRC32
+// symbol in the UI module.  Header-free declaration keeps the
+// netplay-side dependency surface from pulling in the UI state header.
+namespace ATNetplayUI { uint32_t ComputeFirmwareCRC32(uint64_t); }
+
 namespace ATNetplayProfile {
 
 namespace {
@@ -382,6 +389,44 @@ bool ApplyCanonicalProfile(const PerGameOverrides& ov) {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+void ResolveDefaultFirmwareCRCs(PerGameOverrides& ov) {
+	ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
+	if (!fwm) return;
+
+	if (ov.kernelCRC32 == 0) {
+		uint64 kid = DefaultKernelForHardware(*fwm,
+			(ATHardwareMode)ov.hardwareMode);
+		if (kid) {
+			uint32_t crc = ATNetplayUI::ComputeFirmwareCRC32(kid);
+			if (crc) {
+				ov.kernelCRC32 = crc;
+				g_ATLCNetplay("netplay-profile: resolved default "
+					"kernel for hwmode %d to CRC32 %08X",
+					(int)ov.hardwareMode, (unsigned)crc);
+			} else {
+				g_ATLCNetplay("netplay-profile: WARNING — default "
+					"kernel for hwmode %d has no readable CRC32; "
+					"peers may diverge",
+					(int)ov.hardwareMode);
+			}
+		}
+	}
+	if (ov.basicCRC32 == 0) {
+		uint64 bid = fwm->GetFirmwareOfType(kATFirmwareType_Basic, true);
+		if (bid) {
+			uint32_t crc = ATNetplayUI::ComputeFirmwareCRC32(bid);
+			if (crc) {
+				ov.basicCRC32 = crc;
+				g_ATLCNetplay("netplay-profile: resolved default "
+					"BASIC to CRC32 %08X", (unsigned)crc);
+			} else {
+				g_ATLCNetplay("netplay-profile: WARNING — default "
+					"BASIC has no readable CRC32; peers may diverge");
+			}
+		}
+	}
+}
 
 bool IsActive() {
 	return g_active;

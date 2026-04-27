@@ -64,6 +64,26 @@ struct PerGameOverrides {
 	uint32_t basicCRC32    = 0;   // 0 = canonical default
 };
 
+// Resolve "use canonical default" markers (kernelCRC32 == 0,
+// basicCRC32 == 0) in `ov` to the local emulator's actual default
+// firmware CRC32 values.  Called by the HOST at offer-build time and
+// at session-begin time so the wire always carries an explicit CRC,
+// the joiner runs the same CRC-lookup path the host does, and a
+// peer that doesn't have the firmware fails clean instead of
+// silently cold-booting a different ROM.
+//
+// Built-in Altirra kernels routinely change CRC32 between releases
+// (firmwaredetect.cpp ATKnownFirmware table grows / shifts), and the
+// "default kernel" for a hardware mode reflects each peer's
+// firmwaremanager preferences anyway.  Without resolution, two
+// peers passing kernelCRC32 == 0 will silently cold-boot with
+// different ROMs and desync at frame 0.  Idempotent: non-zero CRCs
+// are left alone, and a successful resolve makes a second call a
+// no-op.  No-op if the firmware manager is unavailable or if the
+// default lookup fails — those failures surface later as
+// BeginSession's existing "kernel CRC32 X not installed" error path.
+void ResolveDefaultFirmwareCRCs(PerGameOverrides& ov);
+
 // True between BeginSession and EndSession.  Used by UI gates to
 // disable Configure System and the Profile chooser while a session
 // is live (the user must not be able to edit the canonical profile).

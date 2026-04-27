@@ -638,6 +638,19 @@ void ATUIPollDeferredActions() {
 				ov.kernelCRC32   = hg->config.kernelCRC32;
 				ov.basicCRC32    = hg->config.basicCRC32;
 
+				// Resolve "(default)" markers (CRC32 == 0) to the host's
+				// actual installed default-kernel CRC32 — same call the
+				// wire-builder (BuildBootConfig) made when the offer was
+				// first opened.  Both calls are deterministic on the
+				// same machine, so host's local sim ends up with the
+				// same kernel as the wire's CRC, and the joiner's
+				// BeginSession (which receives the resolved wire CRC)
+				// also runs the explicit-CRC path.  Built-in kernels
+				// shift CRC between Altirra releases, so re-resolving
+				// here is also defensive against a firmware install /
+				// upgrade that happened between offer-open and boot.
+				ATNetplayProfile::ResolveDefaultFirmwareCRCs(ov);
+
 				if (!ATNetplayProfile::BeginSession(ov)) {
 					ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
 						"could not establish Online Play profile "

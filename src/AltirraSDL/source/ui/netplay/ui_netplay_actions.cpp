@@ -307,14 +307,37 @@ void PostLobbyCreate(HostedGame& o) {
 	// v2: pre-flight firmware fields so joiners can colour-code the
 	// Browser without round-tripping a handshake.  CRCs are 8-char
 	// uppercase hex; empty means "no constraint" (joiner accepts any).
+	//
+	// Resolve the "(default)" picker (kernelCRC32 == 0) to the host's
+	// actual installed default-kernel CRC32 BEFORE publishing — so the
+	// lobby advertises the same CRC that the wire will carry, and
+	// browsers can pre-flight the firmware-availability check.
+	// Without this, a default-kernel offer publishes "" (no
+	// constraint), browsers cheerfully greenlight the join, and the
+	// joiner only discovers the missing-firmware mismatch after
+	// committing to the connect.  Same logic that BuildBootConfig
+	// runs for the wire side.
+	uint32_t advertiseKernelCRC = o.config.kernelCRC32;
+	uint32_t advertiseBasicCRC  = o.config.basicCRC32;
+	{
+		ATNetplayProfile::PerGameOverrides ovTmp{};
+		ovTmp.hardwareMode = (uint8_t)o.config.hardwareMode;
+		ovTmp.basicEnabled = o.config.basicEnabled ? 1 : 0;
+		ovTmp.kernelCRC32  = advertiseKernelCRC;
+		ovTmp.basicCRC32   = advertiseBasicCRC;
+		ATNetplayProfile::ResolveDefaultFirmwareCRCs(ovTmp);
+		advertiseKernelCRC = ovTmp.kernelCRC32;
+		advertiseBasicCRC  = ovTmp.basicCRC32;
+	}
+
 	auto hexCRC = [](uint32_t c, std::string& out) {
 		if (!c) { out.clear(); return; }
 		char buf[12];
 		std::snprintf(buf, sizeof buf, "%08X", c);
 		out = buf;
 	};
-	hexCRC(o.config.kernelCRC32, cr.kernelCRC32);
-	hexCRC(o.config.basicCRC32,  cr.basicCRC32);
+	hexCRC(advertiseKernelCRC, cr.kernelCRC32);
+	hexCRC(advertiseBasicCRC,  cr.basicCRC32);
 	cr.hardwareMode  = HardwareModeShort(o.config.hardwareMode);
 	cr.videoStandard = VideoStandardShort(o.config.videoStandard);
 	cr.memoryMode    = MemoryModeShort(o.config.memoryMode);
@@ -482,6 +505,30 @@ ATNetplay::NetBootConfig BuildBootConfig(const HostedGame& o) {
 	bc.basicEnabled    = o.config.basicEnabled ? 1 : 0;
 	bc.kernelCRC32     = o.config.kernelCRC32;
 	bc.basicCRC32      = o.config.basicCRC32;
+
+	// Resolve "(Altirra default for hardware)" — the picker option that
+	// stores CRC32 = 0 — to the host's actual installed default-kernel
+	// CRC32 BEFORE the wire encode.  Built-in Altirra kernels routinely
+	// change CRC32 between releases, and "default kernel" is each
+	// peer's local firmwaremanager preference, so two peers passing 0
+	// would silently cold-boot with different ROMs.  Resolving here
+	// puts an explicit CRC on the wire — the joiner then runs the
+	// CRC-lookup path (FindKernelByCRC) and either finds a matching
+	// installed firmware or fails clean with "kernel not installed",
+	// surfaced as a snapshot-apply failure.  Same for BASIC.
+	{
+		ATNetplayProfile::PerGameOverrides ovTmp{};
+		ovTmp.hardwareMode = bc.hardwareMode;
+		ovTmp.memoryMode   = bc.memoryMode;
+		ovTmp.videoStandard = bc.videoStandard;
+		ovTmp.basicEnabled = bc.basicEnabled;
+		ovTmp.kernelCRC32  = bc.kernelCRC32;
+		ovTmp.basicCRC32   = bc.basicCRC32;
+		ATNetplayProfile::ResolveDefaultFirmwareCRCs(ovTmp);
+		bc.kernelCRC32 = ovTmp.kernelCRC32;
+		bc.basicCRC32  = ovTmp.basicCRC32;
+	}
+
 	bc.gameFileCRC32   = CRC32OfHostedGame(o);
 	ExtractExtensionInto(o.gamePath, bc.gameExtension);
 	return bc;
