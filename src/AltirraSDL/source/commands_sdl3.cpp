@@ -75,12 +75,22 @@ static void CmdHoldKeys() {
 	ATUIToggleHoldKeys();
 }
 
+// All three of these mutate hashed simulator state (RAM via reset,
+// video standard) and would silently desync a netplay session.
+// F5 (Warm Reset) and Shift+F5 (Cold Reset) are common-enough
+// keypresses that the user could trigger them by accident; Ctrl+F7
+// (Toggle NTSC/PAL) is rarer but equally fatal.  All ATNetplay
+// session reset paths run via the canonical-profile boot sequence
+// in kATDeferred_NetplayHostBoot / NetplayJoinerApply, so the
+// keyboard shortcut is purely a user action that would break sync.
 static void CmdWarmReset() {
+	if (ATNetplayGlue::IsActive()) return;
 	g_sim.WarmReset();
 	g_sim.Resume();
 }
 
 static void CmdColdReset() {
+	if (ATNetplayGlue::IsActive()) return;
 	g_sim.ColdReset();
 	g_sim.Resume();
 	if (!g_kbdOpts.mbAllowShiftOnColdReset)
@@ -88,6 +98,7 @@ static void CmdColdReset() {
 }
 
 static void CmdToggleNTSCPAL() {
+	if (ATNetplayGlue::IsActive()) return;
 	if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
 		g_sim.SetVideoStandard(kATVideoStandard_PAL);
 	else
@@ -132,22 +143,29 @@ static void CmdToggleSlowMotion() {
 	ATUISetSlowMotion(!ATUIGetSlowMotion());
 }
 
+// POKEY channel toggles affect POKEY internal state which is
+// netplay-hashed (see netplay_simhash.cpp:pokeyRegs).  Toggling
+// during a session would diverge the next frame's hash.
 static void CmdToggleChannel1() {
+	if (ATNetplayGlue::IsActive()) return;
 	ATPokeyEmulator& pokey = g_sim.GetPokey();
 	pokey.SetChannelEnabled(0, !pokey.IsChannelEnabled(0));
 }
 
 static void CmdToggleChannel2() {
+	if (ATNetplayGlue::IsActive()) return;
 	ATPokeyEmulator& pokey = g_sim.GetPokey();
 	pokey.SetChannelEnabled(1, !pokey.IsChannelEnabled(1));
 }
 
 static void CmdToggleChannel3() {
+	if (ATNetplayGlue::IsActive()) return;
 	ATPokeyEmulator& pokey = g_sim.GetPokey();
 	pokey.SetChannelEnabled(2, !pokey.IsChannelEnabled(2));
 }
 
 static void CmdToggleChannel4() {
+	if (ATNetplayGlue::IsActive()) return;
 	ATPokeyEmulator& pokey = g_sim.GetPokey();
 	pokey.SetChannelEnabled(3, !pokey.IsChannelEnabled(3));
 }
@@ -181,10 +199,18 @@ static void CmdDeselect() {
 // =========================================================================
 
 static void CmdBootImage() {
+	// Loading a new game during a netplay session would UnloadAll +
+	// Load + ColdReset on this peer only, instantly desyncing.
+	// Block the dialog opener; the deferred-action handler
+	// (ui_main.cpp kATDeferred_BootImage) also has a backstop check
+	// for paths that bypass this command (drag-and-drop, mobile
+	// file browser).
+	if (ATNetplayGlue::IsActive()) return;
 	ATUIShowBootImageDialog(g_pWindow);
 }
 
 static void CmdOpenImage() {
+	if (ATNetplayGlue::IsActive()) return;
 	ATUIShowOpenImageDialog(g_pWindow);
 }
 
@@ -198,6 +224,10 @@ extern void ATUISetShowSystemConfig(bool v);
 extern void ATUISetShowCheater(bool v);
 
 static void CmdDrivesDialog() {
+	// Same rationale as CmdConfigure: mounting/unmounting disks
+	// during a netplay session would mutate MountedImages on this
+	// peer only and instantly desync.
+	if (ATNetplayGlue::IsActive()) return;
 	ATUISetShowDiskManager(true);
 }
 

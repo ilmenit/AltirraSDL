@@ -253,6 +253,24 @@ void ATUIPollDeferredActions() {
 				// 5. Resume
 
 				extern ATOptions g_ATOptions;
+
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				// Block File→Boot Image / File→Open Image (and the
+				// underlying drag-and-drop / mobile file-browser
+				// paths that fire the same deferred actions) while a
+				// netplay session is active.  Loading a new image
+				// would UnloadAll + Load + ColdReset on this peer
+				// only, instantly desyncing.  The netplay-internal
+				// boot path uses kATDeferred_NetplayHostBoot /
+				// NetplayJoinerApply so it is unaffected.
+				if (ATNetplayGlue::IsActive()) {
+					extern ATLogChannel g_ATLCNetplay;
+					g_ATLCNetplay("blocked Boot/Open Image during "
+						"netplay session");
+					break;
+				}
+#endif
+
 				if (a.type == kATDeferred_BootImage)
 					g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 

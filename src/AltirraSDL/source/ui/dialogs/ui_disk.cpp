@@ -24,6 +24,9 @@
 #include "simulator.h"
 #include "diskinterface.h"
 #include "disk.h"
+#ifdef ALTIRRA_NETPLAY_ENABLED
+#include "netplay/netplay_glue.h"
+#endif
 #include <at/atio/diskimage.h>
 #include "options.h"
 #include "logging.h"
@@ -962,6 +965,17 @@ static void RenderDiskVariantPopup(ATSimulator &sim) {
 }
 
 void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	// Defensive: mounting / unmounting / reconfiguring disks during
+	// a netplay session would alter MountedImages on this peer only,
+	// instantly desyncing.  The canonical Online Play profile pins
+	// disk state per session.  Close the dialog if it was open
+	// across BeginSession.
+	if (ATNetplayGlue::IsActive()) {
+		state.showDiskManager = false;
+		return;
+	}
+#endif
 	ImGui::SetNextWindowSize(ImVec2(720, 460), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	if (!ImGui::Begin("Disk drives", &state.showDiskManager, ImGuiWindowFlags_NoSavedSettings)) {

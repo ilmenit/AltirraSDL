@@ -103,30 +103,50 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 
 	ImGui::Separator();
 
-	if (ImGui::MenuItem("Warm Reset", ATUIGetShortcutStringForCommand("System.WarmReset"))) {
-		sim.WarmReset();
-		sim.Resume();
-	}
-	ShortcutContextMenu("System.WarmReset");
-	if (ImGui::MenuItem("Cold Reset", ATUIGetShortcutStringForCommand("System.ColdReset"))) {
-		sim.ColdReset();
-		sim.Resume();
-		if (!g_kbdOpts.mbAllowShiftOnColdReset)
-			sim.GetPokey().SetShiftKeyState(false, true);
-	}
-	if (ImGui::MenuItem("Cold Reset (Computer Only)")) {
-		sim.ColdResetComputerOnly();
-		sim.Resume();
-		if (!g_kbdOpts.mbAllowShiftOnColdReset)
-			sim.GetPokey().SetShiftKeyState(false, true);
+	// Warm/Cold Reset / Pause are sim-mutating actions — performing
+	// them during a netplay session would diverge our local state
+	// from the peer's and instantly desync.  Disable while online;
+	// the user must Leave the session first.  (The keyboard
+	// accelerators System.WarmReset / System.ColdReset / System.TogglePause
+	// have matching gates in commands_sdl3.cpp.)
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Warm Reset (disabled: Playing Online)");
+		ImGui::MenuItem("Cold Reset (disabled: Playing Online)");
+		ImGui::MenuItem("Cold Reset (Computer Only) (disabled: Playing Online)");
+		ImGui::EndDisabled();
+	} else {
+		if (ImGui::MenuItem("Warm Reset", ATUIGetShortcutStringForCommand("System.WarmReset"))) {
+			sim.WarmReset();
+			sim.Resume();
+		}
+		ShortcutContextMenu("System.WarmReset");
+		if (ImGui::MenuItem("Cold Reset", ATUIGetShortcutStringForCommand("System.ColdReset"))) {
+			sim.ColdReset();
+			sim.Resume();
+			if (!g_kbdOpts.mbAllowShiftOnColdReset)
+				sim.GetPokey().SetShiftKeyState(false, true);
+		}
+		if (ImGui::MenuItem("Cold Reset (Computer Only)")) {
+			sim.ColdResetComputerOnly();
+			sim.Resume();
+			if (!g_kbdOpts.mbAllowShiftOnColdReset)
+				sim.GetPokey().SetShiftKeyState(false, true);
+		}
+		ShortcutContextMenu("System.ColdReset");
 	}
 
-	ShortcutContextMenu("System.ColdReset");
 	bool paused = sim.IsPaused();
-	if (ImGui::MenuItem("Pause", ATUIGetShortcutStringForCommand("System.TogglePause"), paused)) {
-		if (paused) sim.Resume(); else sim.Pause();
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Pause (disabled: Playing Online)", nullptr, paused);
+		ImGui::EndDisabled();
+	} else {
+		if (ImGui::MenuItem("Pause", ATUIGetShortcutStringForCommand("System.TogglePause"), paused)) {
+			if (paused) sim.Resume(); else sim.Pause();
+		}
+		ShortcutContextMenu("System.TogglePause");
 	}
-	ShortcutContextMenu("System.TogglePause");
 
 	ImGui::Separator();
 
@@ -164,8 +184,16 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 		ATUISetPauseWhenInactive(!pauseInactive);
 	}
 
-	// Rewind submenu
-	if (ImGui::BeginMenu("Rewind")) {
+	// Rewind submenu — disabled during netplay because rewinding
+	// applies a previous savestate to the running sim, which would
+	// jump our sim to a different frame than the peer's and instantly
+	// desync.  The pre-session restore handled by
+	// ATNetplayProfile::EndSession is a separate (cleaner) mechanism.
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Rewind (disabled: Playing Online)");
+		ImGui::EndDisabled();
+	} else if (ImGui::BeginMenu("Rewind")) {
 		IATAutoSaveManager &mgr = sim.GetAutoSaveManager();
 		bool rewindEnabled = mgr.GetRewindEnabled();
 
@@ -183,7 +211,13 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 
 	ImGui::Separator();
 
-	if (ImGui::BeginMenu("Power-On Delay")) {
+	// Power-On Delay, Internal BASIC, and Auto-Boot Tape mutate
+	// canonical-pinned simulator state — disable while online.
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Power-On Delay (disabled: Playing Online)");
+		ImGui::EndDisabled();
+	} else if (ImGui::BeginMenu("Power-On Delay")) {
 		int delay = sim.GetPowerOnDelay();
 		if (ImGui::MenuItem("Auto", nullptr, delay < 0))
 			sim.SetPowerOnDelay(-1);
@@ -202,20 +236,40 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 		ATUIToggleHoldKeys();
 
 	bool basic = sim.IsBASICEnabled();
-	if (ImGui::MenuItem("Internal BASIC (Boot Without Option Key)", nullptr, basic)) {
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Internal BASIC (disabled: Playing Online)",
+			nullptr, basic);
+		ImGui::EndDisabled();
+	} else if (ImGui::MenuItem("Internal BASIC (Boot Without Option Key)", nullptr, basic)) {
 		sim.SetBASICEnabled(!basic);
 		if (ATUIIsResetNeeded(kATUIResetFlag_BasicChange))
 			sim.ColdReset();
 	}
 
 	bool casAutoBoot = sim.IsCassetteAutoBootEnabled();
-	if (ImGui::MenuItem("Auto-Boot Tape (Hold Start)", nullptr, casAutoBoot))
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Auto-Boot Tape (disabled: Playing Online)",
+			nullptr, casAutoBoot);
+		ImGui::EndDisabled();
+	} else if (ImGui::MenuItem("Auto-Boot Tape (Hold Start)", nullptr, casAutoBoot))
 		sim.SetCassetteAutoBootEnabled(!casAutoBoot);
 
 	ImGui::Separator();
 
-	// Console Switches submenu (matches Windows menu_default.txt exactly)
-	if (ImGui::BeginMenu("Console Switches")) {
+	// Console Switches submenu (matches Windows menu_default.txt exactly).
+	// Disabled during netplay — Keyboard Present / Force Self-Test /
+	// Cart Switch all mutate hashed simulator state.  Device buttons
+	// (BlackBox, IDE Plus 2, Indus GT etc.) often press hardware
+	// buttons on attached devices that aren't present in the
+	// canonical netplay profile anyway, so the items are also
+	// suppressed.
+	if (netplayActiveTop) {
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Console Switches (disabled: Playing Online)");
+		ImGui::EndDisabled();
+	} else if (ImGui::BeginMenu("Console Switches")) {
 		bool kbdPresent = sim.IsKeyboardPresent();
 		if (ImGui::MenuItem("Keyboard Present (XEGS)", nullptr, kbdPresent))
 			sim.SetKeyboardPresent(!kbdPresent);

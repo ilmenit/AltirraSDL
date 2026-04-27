@@ -954,17 +954,30 @@ static void BuildSystemMenu(NSMenu *menu) {
 
 	AddSeparator(menu);
 
-	AddItem(menu, @"Warm Reset", false, true, [=]{
+	// Reset / Pause are sim-mutating actions — performing them
+	// during a netplay session would diverge our local state from
+	// the peer's and instantly desync.  Disable while online; the
+	// user must Leave the session first.
+	AddItem(menu,
+		netplayActive ? @"Warm Reset (disabled: Playing Online)"
+		              : @"Warm Reset",
+		false, !netplayActive, [=]{
 		g_sim.WarmReset();
 		g_sim.Resume();
 	});
-	AddItem(menu, @"Cold Reset", false, true, [=]{
+	AddItem(menu,
+		netplayActive ? @"Cold Reset (disabled: Playing Online)"
+		              : @"Cold Reset",
+		false, !netplayActive, [=]{
 		g_sim.ColdReset();
 		g_sim.Resume();
 		if (!g_kbdOpts.mbAllowShiftOnColdReset)
 			g_sim.GetPokey().SetShiftKeyState(false, true);
 	});
-	AddItem(menu, @"Cold Reset (Computer Only)", false, true, [=]{
+	AddItem(menu,
+		netplayActive ? @"Cold Reset (Computer Only) (disabled: Playing Online)"
+		              : @"Cold Reset (Computer Only)",
+		false, !netplayActive, [=]{
 		g_sim.ColdResetComputerOnly();
 		g_sim.Resume();
 		if (!g_kbdOpts.mbAllowShiftOnColdReset)
@@ -972,7 +985,9 @@ static void BuildSystemMenu(NSMenu *menu) {
 	});
 
 	bool paused = g_sim.IsPaused();
-	AddItem(menu, @"Pause", paused, true, [=]{
+	AddItem(menu,
+		netplayActive ? @"Pause (disabled: Playing Online)" : @"Pause",
+		paused, !netplayActive, [=]{
 		if (g_sim.IsPaused()) g_sim.Resume(); else g_sim.Pause();
 	});
 
@@ -988,8 +1003,14 @@ static void BuildSystemMenu(NSMenu *menu) {
 		ATUISetPauseWhenInactive(!ATUIGetPauseWhenInactive());
 	});
 
-	// Rewind
-	{
+	// Rewind submenu — disabled while online (rewind applies a
+	// previous savestate, which would jump our sim to a different
+	// frame than the peer's).
+	if (netplayActive) {
+		NSMenu *rewMenu = AddSubmenu(menu,
+			@"Rewind (disabled: Playing Online)", false);
+		(void)rewMenu;
+	} else {
 		IATAutoSaveManager &mgr = g_sim.GetAutoSaveManager();
 		bool rewindEnabled = mgr.GetRewindEnabled();
 		NSMenu *rewMenu = AddSubmenu(menu, @"Rewind");
@@ -1009,8 +1030,10 @@ static void BuildSystemMenu(NSMenu *menu) {
 
 	AddSeparator(menu);
 
-	// Power-On Delay
-	{
+	// Power-On Delay — sim-affecting, disabled while online.
+	if (netplayActive) {
+		AddSubmenu(menu, @"Power-On Delay (disabled: Playing Online)", false);
+	} else {
 		int delay = g_sim.GetPowerOnDelay();
 		NSMenu *podMenu = AddSubmenu(menu, @"Power-On Delay");
 		AddItem(podMenu, @"Auto", delay < 0, true, [=]{ g_sim.SetPowerOnDelay(-1); });
@@ -1025,21 +1048,33 @@ static void BuildSystemMenu(NSMenu *menu) {
 	});
 
 	bool basic = g_sim.IsBASICEnabled();
-	AddItem(menu, @"Internal BASIC (Boot Without Option Key)", basic, true, [=]{
+	AddItem(menu,
+		netplayActive
+			? @"Internal BASIC (disabled: Playing Online)"
+			: @"Internal BASIC (Boot Without Option Key)",
+		basic, !netplayActive, [=]{
 		g_sim.SetBASICEnabled(!g_sim.IsBASICEnabled());
 		if (ATUIIsResetNeeded(kATUIResetFlag_BasicChange))
 			g_sim.ColdReset();
 	});
 
 	bool casAutoBoot = g_sim.IsCassetteAutoBootEnabled();
-	AddItem(menu, @"Auto-Boot Tape (Hold Start)", casAutoBoot, true, [=]{
+	AddItem(menu,
+		netplayActive
+			? @"Auto-Boot Tape (disabled: Playing Online)"
+			: @"Auto-Boot Tape (Hold Start)",
+		casAutoBoot, !netplayActive, [=]{
 		g_sim.SetCassetteAutoBootEnabled(!g_sim.IsCassetteAutoBootEnabled());
 	});
 
 	AddSeparator(menu);
 
-	// Console Switches
-	{
+	// Console Switches — Keyboard Present / Self-Test / Cart Switch
+	// + device buttons all mutate hashed sim state or attached-device
+	// state.  Disabled while online.
+	if (netplayActive) {
+		AddSubmenu(menu, @"Console Switches (disabled: Playing Online)", false);
+	} else {
 		NSMenu *csMenu = AddSubmenu(menu, @"Console Switches");
 		bool kbdPresent = g_sim.IsKeyboardPresent();
 		AddItem(csMenu, @"Keyboard Present (XEGS)", kbdPresent, true, [=]{

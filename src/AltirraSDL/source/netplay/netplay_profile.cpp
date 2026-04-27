@@ -45,6 +45,13 @@
 #include <cstdlib>
 #include <cstring>
 
+// Defined by registry_sdl3.cpp on Linux/macOS/Android (in-memory
+// VDRegistryProviderMemory backed by ~/.config/altirra/settings.ini)
+// and stubbed to a no-op by win32_stubs.cpp on Windows AltirraSDL
+// (where the Win32 native registry is already persistent).  Forward-
+// declared because there is no public header for it.
+extern void ATRegistryFlushToDisk();
+
 extern ATSimulator g_sim;
 extern ATLogChannel g_ATLCNetplay;
 extern VDStringA ATGetConfigDir();
@@ -125,7 +132,10 @@ bool WriteLockFile(uint32_t preProfileId) {
 
 	if (!SDL_RenamePath(tmpPath.c_str(), path.c_str())) {
 		g_ATLCNetplay("netplay-profile: lock-file rename failed");
-		std::remove(tmpPath.c_str());
+		// SDL_RemovePath (rather than std::remove) handles UTF-8 path
+		// conversion on Windows; std::remove takes ANSI-codepage paths
+		// there and would mishandle non-ASCII config dirs.
+		SDL_RemovePath(tmpPath.c_str());
 		return false;
 	}
 	return true;
@@ -408,6 +418,18 @@ bool BeginSession(const PerGameOverrides& ov) {
 		ATSettingsSetTemporaryProfileMode(false);
 	}
 	ATSaveSettings(kATSettingsCategory_All);
+
+	// On Linux/macOS/Android, the registry is in-memory and only
+	// hits disk via ATRegistryFlushToDisk (no-op stub on Windows
+	// where the Win32 native registry is already persistent).
+	// Force a flush HERE so the user's pre-session state is durably
+	// on disk before we start mutating the live sim — otherwise a
+	// process crash between this save and the next periodic flush
+	// (which can be hours away if the user never toggles a setting
+	// that triggers one) would leave the user's pre-session changes
+	// unrecoverable.  Cheap (one INI write) compared to the cost of
+	// losing user state.
+	ATRegistryFlushToDisk();
 
 	// Capture a full sim snapshot of the user's pre-session state so
 	// EndSession can restore the user's running game (CPU, RAM,
