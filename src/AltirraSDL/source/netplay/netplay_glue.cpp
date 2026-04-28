@@ -516,15 +516,47 @@ void OnFrameAdvanced() {
 	if (curFrame < kEarlyDiagFrames) {
 		ATNetplay::SimHashBreakdown br{};
 		ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
+		const char *role = c == g_joiner.get() ? "joiner" : "host";
 		g_ATLCNetplay("early-diag breakdown @frame %u (role=%s): "
 			"total=%08x cpu=%08x "
 			"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
 			"schedTick=%08x",
-			(unsigned)curFrame,
-			c == g_joiner.get() ? "joiner" : "host",
+			(unsigned)curFrame, role,
 			br.total, br.cpuRegs,
 			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
 			br.schedTick);
+
+		// Per-256-byte-page hash for ram0 ONLY (the bank that
+		// first diverges per field-evidence 2026-04-28).  16 KB
+		// → 64 pages → 64 hashes per frame per peer.  When both
+		// peers log this every frame, a side-by-side diff
+		// pinpoints the exact 256-byte region of the first-bad
+		// frame, which maps directly to a fixed Atari OS area
+		// (zp = $00, stack = $100, OS vars = $200..$3FF, IOCBs
+		// at $340, free RAM from $480).
+		const uint8_t *mem = g_sim.GetRawMemory();
+		if (mem) {
+			constexpr uint32_t kFnvOff = 0x811C9DC5u;
+			constexpr uint32_t kFnvP   = 0x01000193u;
+			char line[12 + 64*9 + 1];
+			int n = std::snprintf(line, sizeof line,
+				"page-hash ram0 @%u (%s):",
+				(unsigned)curFrame, role);
+			for (int p = 0; p < 64; ++p) {
+				uint32_t hh = kFnvOff;
+				const uint8_t *q = mem + p*256;
+				for (int i = 0; i < 256; ++i) {
+					hh ^= q[i];
+					hh *= kFnvP;
+				}
+				int w = std::snprintf(line + n, sizeof line - n,
+					" %08x", hh);
+				if (w <= 0 || (size_t)(n + w) >= sizeof line) break;
+				n += w;
+			}
+			g_ATLCNetplay("%s", line);
+		}
+
 		// Frame 0 also goes on the wire so the peer-diff logger
 		// emits its MATCH/DIFF table at session start (proves
 		// snapshot round-trip parity).  Other early frames stay
