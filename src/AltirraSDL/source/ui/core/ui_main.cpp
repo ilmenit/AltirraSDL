@@ -680,7 +680,20 @@ void ATUIPollDeferredActions() {
 				ATMediaLoadContext mctx;
 				mctx.mOriginalPath = imagePath;
 				mctx.mImageName    = imagePath;
-				mctx.mWriteMode    = g_ATOptions.mDefaultWriteMode;
+				// Hardcode VRWSafe (= AllowWrite, no AutoFlush, no
+				// AllowFormat) for netplay so host and joiner agree on
+				// the write mode regardless of each user's per-machine
+				// default.  Mismatch in write mode propagates straight
+				// into the disk emulator's Get Status reply (DVSTAT[0]
+				// bit 0x08 = write-protected) and desyncs lockstep on
+				// the very first frame the OS reads it.  We deliberately
+				// DON'T use RO (=0): on the host's load path RO breaks
+				// boot trajectory at frame 0 while the joiner's load
+				// path with the same RO value boots normally — root
+				// cause of that asymmetry is still TBD, but VRWSafe
+				// matches the historic g_ATOptions default and works
+				// reliably on both sides.
+				mctx.mWriteMode    = kATMediaWriteMode_VRWSafe;
 				mctx.mbStopOnModeIncompatibility   = true;
 				mctx.mbStopAfterImageLoaded        = true;
 				mctx.mbStopOnMemoryConflictBasic   = true;
@@ -875,8 +888,12 @@ void ATUIPollDeferredActions() {
 				bool ok = false;
 				try {
 					ATImageLoadContext ctx {};
+					// Match the host's hardcoded VRWSafe mount mode —
+					// see ui_main.cpp host-boot block above for the
+					// rationale.  Both peers MUST mount with the same
+					// write mode or DVSTAT[0] diverges at frame 0–13.
 					if (g_sim.Load(a.path.c_str(),
-					        kATMediaWriteMode_RO, &ctx)) {
+					        kATMediaWriteMode_VRWSafe, &ctx)) {
 						// Register loaded path so EndSession scrubs
 						// it from the user's saved MountedImages —
 						// no auto-load on next launch.

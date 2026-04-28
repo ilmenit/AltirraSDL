@@ -502,68 +502,27 @@ void OnFrameAdvanced() {
 	// main_sdl3.cpp gates this call on hadFrame exactly for that.
 	const uint32_t h = ATNetplay::ComputeSimStateHash(g_sim);
 
-	// Per-frame diagnostic for the first kEarlyDiagFrames frames.
-	// Frame 0 alone proves cold-boot parity but doesn't tell us
-	// WHICH frame first diverges when the desync detection trips
-	// many frames later — the desync-detect path only logs once,
-	// at the moment the loop notices, leaving us blind to the
-	// preceding frames.  Logging every early frame on both peers
-	// yields a side-by-side trace that pinpoints the first frame
-	// at which any subsystem (cpu / ram0..3 / schedTick) first
-	// disagrees.  Cheap: ~30 KB of log over 25 frames per peer.
-	constexpr uint32_t kEarlyDiagFrames = 25;
+	// Snapshot-round-trip diagnostic: log a full breakdown on BOTH
+	// peers for the first lockstep frame of every session.  Without
+	// this, the side that detects desync logs its breakdown (via
+	// LogDesyncBreakdownOnce below) and sends Bye before the other
+	// side computes its own breakdown, so we never see both halves
+	// of the comparison.  Printing unconditionally on frame 0 means
+	// both peers always log — a side-by-side diff of the breakdowns
+	// localizes the first diverging subsystem immediately.
 	const uint32_t curFrame = c->Loop().CurrentFrame();
-	if (curFrame < kEarlyDiagFrames) {
+	if (curFrame == 0) {
 		ATNetplay::SimHashBreakdown br{};
 		ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
-		const char *role = c == g_joiner.get() ? "joiner" : "host";
-		g_ATLCNetplay("early-diag breakdown @frame %u (role=%s): "
+		g_ATLCNetplay("frame0 breakdown (role=%s): "
 			"total=%08x cpu=%08x "
 			"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
-			"schedTick=%08x",
-			(unsigned)curFrame, role,
+			"gtia=%08x antic=%08x pokey=%08x schedTick=%08x",
+			c == g_joiner.get() ? "joiner" : "host",
 			br.total, br.cpuRegs,
 			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
-			br.schedTick);
-
-		// Per-256-byte-page hash for ram0 ONLY (the bank that
-		// first diverges per field-evidence 2026-04-28).  16 KB
-		// → 64 pages → 64 hashes per frame per peer.  When both
-		// peers log this every frame, a side-by-side diff
-		// pinpoints the exact 256-byte region of the first-bad
-		// frame, which maps directly to a fixed Atari OS area
-		// (zp = $00, stack = $100, OS vars = $200..$3FF, IOCBs
-		// at $340, free RAM from $480).
-		const uint8_t *mem = g_sim.GetRawMemory();
-		if (mem) {
-			constexpr uint32_t kFnvOff = 0x811C9DC5u;
-			constexpr uint32_t kFnvP   = 0x01000193u;
-			char line[12 + 64*9 + 1];
-			int n = std::snprintf(line, sizeof line,
-				"page-hash ram0 @%u (%s):",
-				(unsigned)curFrame, role);
-			for (int p = 0; p < 64; ++p) {
-				uint32_t hh = kFnvOff;
-				const uint8_t *q = mem + p*256;
-				for (int i = 0; i < 256; ++i) {
-					hh ^= q[i];
-					hh *= kFnvP;
-				}
-				int w = std::snprintf(line + n, sizeof line - n,
-					" %08x", hh);
-				if (w <= 0 || (size_t)(n + w) >= sizeof line) break;
-				n += w;
-			}
-			g_ATLCNetplay("%s", line);
-		}
-
-		// Frame 0 also goes on the wire so the peer-diff logger
-		// emits its MATCH/DIFF table at session start (proves
-		// snapshot round-trip parity).  Other early frames stay
-		// local-only — the per-frame trace is enough to localize
-		// without doubling the wire traffic.
-		if (curFrame == 0)
-			c->SubmitLocalSimHashDiag(BreakdownToDiag(curFrame, br));
+			br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
+		c->SubmitLocalSimHashDiag(BreakdownToDiag(curFrame, br));
 	}
 
 	c->OnFrameAdvanced(h);
