@@ -3377,6 +3377,49 @@ uint32 ATPokeyEmulator::GetNetplayDeterminismFingerprint() const {
 	return h;
 }
 
+void ATPokeyEmulator::DescribeNetplayDeterminismFingerprint(
+	VDStringA& out) const
+{
+	const uint32 t32 = ATSCHEDULER_GETTIME(mpScheduler);
+	const uint32 polyDelta = t32 - mLastPolyTime;
+	const uint32 poly9Live  = (mPoly9Counter  + polyDelta) % 511;
+	const uint32 poly17Live = (mPoly17Counter + polyDelta) % 131071;
+
+	out.append_sprintf(
+		"t32=%08x poly9=%u poly17=%u "
+		"k15dt=%u k64dt=%u "
+		"cnt=%d,%d,%d,%d brw=%d,%d,%d,%d "
+		"AUDF=%02X,%02X,%02X,%02X AUDC=%02X,%02X,%02X,%02X "
+		"AUDCTL=%02X IRQEN=%02X IRQST=%02X SKCTL=%02X SKSTAT=%02X "
+		"siSR=%02X soSR=%02X siC=%u soC=%u "
+		"sof=%d ssh=%d swsb=%d sidl=%d "
+		"potC=%u potA=%d slave=%d",
+		(unsigned)t32, (unsigned)poly9Live, (unsigned)poly17Live,
+		(unsigned)(t32 - mLast15KHzTime),
+		(unsigned)(t32 - mLast64KHzTime),
+		mCounter[0], mCounter[1], mCounter[2], mCounter[3],
+		mCounterBorrow[0], mCounterBorrow[1],
+		mCounterBorrow[2], mCounterBorrow[3],
+		mAUDF[0], mAUDF[1], mAUDF[2], mAUDF[3],
+		mAUDC[0], mAUDC[1], mAUDC[2], mAUDC[3],
+		mAUDCTL, mIRQEN, mIRQST, mSKCTL, mSKSTAT,
+		mSerialInputShiftRegister, mSerialOutputShiftRegister,
+		(unsigned)mSerialInputCounter,
+		(unsigned)mSerialOutputCounter,
+		mbSerOutValid ? 1 : 0,
+		mbSerShiftValid ? 1 : 0,
+		mbSerialWaitingForStartBit ? 1 : 0,
+		mbSerInDeferredLoad ? 1 : 0,
+		(unsigned)mPotMasterCounter,
+		mbPotScanActive ? 1 : 0,
+		(mpSlave && !mbIsSlave) ? 1 : 0);
+
+	if (mpSlave && !mbIsSlave) {
+		out += " | slave: ";
+		mpSlave->DescribeNetplayDeterminismFingerprint(out);
+	}
+}
+
 void ATPokeyEmulator::DumpStatus(ATConsoleOutput& out, bool isSlave) {
 	uint32 t = ATSCHEDULER_GETTIME(mpScheduler);
 

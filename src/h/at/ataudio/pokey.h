@@ -29,6 +29,7 @@
 #include <vd2/system/refcount.h>
 #include <vd2/system/vdalloc.h>
 #include <vd2/system/vdstl.h>
+#include <vd2/system/VDString.h>
 #include <at/atcore/scheduler.h>
 
 class IATAudioOutput;
@@ -235,6 +236,14 @@ public:
 	// state on the same frame it occurs, instead of waiting for it
 	// to leak into RAM (which can take 20-30 frames during boot).
 	uint32	GetNetplayDeterminismFingerprint() const;
+
+	// Emit a single-line per-field dump of every value folded into
+	// GetNetplayDeterminismFingerprint() for diagnostic logging.  Two
+	// peers' lines can be diff'd to localize a POKEY divergence to a
+	// specific field (counter, AUDF, IRQ, SKCTL, serial state, etc.)
+	// instead of just seeing two different 32-bit hashes.  The buffer
+	// is appended to (not cleared) so callers can prefix labels.
+	void	DescribeNetplayDeterminismFingerprint(VDStringA& out) const;
 
 	void	FlushAudio(bool pushAudio, uint64 timestamp);
 

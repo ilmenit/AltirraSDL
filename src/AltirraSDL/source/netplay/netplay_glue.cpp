@@ -606,14 +606,29 @@ void OnFrameAdvanced() {
 	if (curFrame == 0) {
 		ATNetplay::SimHashBreakdown br{};
 		ATNetplay::ComputeSimStateHashBreakdown(g_sim, br);
+		const char *role = (c == g_joiner.get() ? "joiner" : "host");
 		g_ATLCNetplay("frame0 breakdown (role=%s): "
 			"total=%08x cpu=%08x "
 			"ram0=%08x ram1=%08x ram2=%08x ram3=%08x "
 			"gtia=%08x antic=%08x pokey=%08x schedTick=%08x",
-			c == g_joiner.get() ? "joiner" : "host",
+			role,
 			br.total, br.cpuRegs,
 			br.ramBank0, br.ramBank1, br.ramBank2, br.ramBank3,
 			br.gtiaRegs, br.anticRegs, br.pokeyRegs, br.schedTick);
+
+		// Per-field POKEY dump.  POKEY is the recurring frame-0 outlier
+		// (CPU + RAM + ANTIC bit-identical, POKEY hash differs) — log
+		// every value that feeds the determinism fingerprint so a
+		// host-vs-peer side-by-side identifies which field carries
+		// pre-session state across the rebase + ColdReset path.
+		{
+			VDStringA pdump;
+			g_sim.GetPokey()
+				.DescribeNetplayDeterminismFingerprint(pdump);
+			g_ATLCNetplay("frame0 POKEY (role=%s): %s",
+				role, pdump.c_str());
+		}
+
 		c->SubmitLocalSimHashDiag(BreakdownToDiag(curFrame, br));
 	}
 
