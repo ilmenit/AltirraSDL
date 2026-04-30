@@ -16,6 +16,9 @@ android/gradlew
 android/gradlew.bat
 android/app/src/main/java/org/libsdl
 
+# BridgeSDK
+src/AltirraSDL/AltirraBridge/sdk/python/build/
+
 # macOS - Folder Attributes - .DS_Store
 .DS_Store
 
