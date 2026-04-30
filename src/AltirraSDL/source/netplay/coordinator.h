@@ -560,6 +560,32 @@ private:
 	bool    mRelayRegistered = false;
 	uint64_t mRelayRegisteredMs = 0;
 
+	// Direct-rescue probe state.  All three fields are reset at every
+	// site that flips mPeerPath to Relay (4 sites: MaybeEngageRelay
+	// host+joiner, the auto-flip in Poll's recv loop, and
+	// MaybeRescueRelayMidSession).  mRelayEngagedAtMs doubles as the
+	// "was on relay X ms" timestamp for the recovery-success log.
+	uint64_t mRelayEngagedAtMs    = 0;
+	uint64_t mLastDirectProbeMs   = 0;
+	uint32_t mDirectProbeAttempts = 0;
+	// Stamped at every Relay → Direct flip; used by the auto-flip
+	// block to suppress immediate flip-back on in-flight ASDF frames
+	// the peer sent before its own rescue completed.
+	uint64_t mLastFlipToDirectMs  = 0;
+
+	// Flap counter: incremented at every Direct → Relay engagement.
+	// When >= kMaxRelayEngagesBeforeGivingUp, mDirectGiveUp is set
+	// and all Relay → Direct rescue paths (probe sender, NetPunch
+	// rescue branch, passive-flip rule) are disabled for the
+	// remainder of this Coordinator's lifetime.
+	uint32_t mRelayEngageCount = 0;
+	bool     mDirectGiveUp     = false;
+
+	// Snapshot upload progress: last logged percentile milestone (0/1/2/3
+	// = 0%/25%/50%/75%).  100% is covered by the existing "snapshot
+	// delivered" log.  Reset at each snapshot-begin path.
+	uint8_t  mSnapProgressMilestone = 0;
+
 	// Monotonic wall-clock (Poll's nowMs) when the current handshake
 	// phase started.  Used by the relay-fallback timer.  Set by
 	// BeginJoin / BeginJoinMulti / BeginHost.  0 until first Poll.
@@ -609,6 +635,43 @@ private:
 	// connectivity hiccup.  Triggers ONLY in Lockstepping.
 	static constexpr uint64_t kMidSessionRelayRescueAfterMs = 5000;
 
+	// Mid-session direct rescue: while on Relay during Lockstepping,
+	// periodically test whether direct UDP works again.  Schedule:
+	// 10 fast probes at 1-second intervals after the relay flip, then
+	// drop to 1 probe / 5 s.  Designed so total recovery time from
+	// outage start to direct restored stays well under 10 s (5 s
+	// peer-silence detection + 1 s first probe + ~1 s round-trip).
+	static constexpr uint64_t kDirectProbeFastIntervalMs = 1000;
+	static constexpr uint64_t kDirectProbeSlowIntervalMs = 5000;
+	static constexpr uint32_t kDirectProbeFastAttempts   = 10;
+
+	// Grace window after a Relay → Direct flip during which the auto-
+	// flip-to-Relay path in the recv loop is suppressed.  Without this,
+	// in-flight ASDF frames the peer sent before *its* own flip would
+	// flap us straight back to Relay (and the peer's in-flight ASDF
+	// from before our flip would do the same in reverse), spamming
+	// "Direct connection restored" / "lost" toasts.  2 s is a safe
+	// upper bound for lobby + UDP path latency on a normal home
+	// connection; if peer is genuinely on Relay (e.g. asymmetric
+	// direct path), legitimate new ASDF after 2 s correctly flips us
+	// back.
+	static constexpr uint64_t kFlipToRelayGraceMs = 2000;
+
+	// Flap suppression: a marginal direct path with high packet loss
+	// will repeatedly stall lockstep at 5 s (peer-silence threshold),
+	// flip to Relay, recover to Direct, stall again — user sees a
+	// "Direct lost" / "Direct restored" toast pair every 10–12 s
+	// indefinitely.  After N Direct → Relay engagements in a session,
+	// stop trying to recover to Direct: stay on Relay so gameplay is
+	// stable, even if it costs a few ms of latency.  Operator can
+	// manually reconnect to reset (new Coordinator → new counter).
+	// 3 = tolerate 2 mid-session flaps after the initial engagement
+	// (which on a session that fell back during handshake consumes
+	// engagement #1).  Each Direct-Relay-Direct cycle takes ~12-14 s,
+	// so the flap window is bounded at ~30 s before we settle into
+	// stable relay mode for the remainder of the session.
+	static constexpr uint32_t kMaxRelayEngagesBeforeGivingUp = 3;
+
 	// Diagnostics: per-candidate inbound counters populated by Poll()
 	// when drained packets are from one of our candidates (joiner
 	// side).  Rendered in the structured FailWith message.
@@ -654,9 +717,21 @@ private:
 	//   and the peer has been silent past kMidSessionRelayRescueAfterMs,
 	//   re-arm relay so the session survives a transient direct-path
 	//   outage (router reboot, NAT eviction).
+	// MaybeProbeDirectFromRelay: in Lockstepping, if mPeerPath==Relay,
+	//   periodically send a NetPunch direct (NOT through the relay) to
+	//   the peer's last-known address.  If the peer's matching kMagicPunch
+	//   handler authenticates and echoes it back, both sides flip to
+	//   Direct via the receive-loop branch.  See kDirectProbe* for the
+	//   schedule.
 	void MaybePrearmRelay(uint64_t nowMs);
 	void MaybeEngageRelay(uint64_t nowMs);
 	void MaybeRescueRelayMidSession(uint64_t nowMs);
+	void MaybeProbeDirectFromRelay(uint64_t nowMs);
+
+	// Stamp mRelayEngagedAtMs and reset the direct-rescue probe
+	// counters.  Called from every site that flips mPeerPath to
+	// Relay so a fresh probe schedule starts on each engagement.
+	void OnPeerPathFlippedToRelay(uint64_t nowMs);
 
 	// Diagnostics.
 	const char* mLastError = "";

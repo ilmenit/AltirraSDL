@@ -297,11 +297,19 @@ void Coordinator::Poll(uint64_t nowMs) {
 		uint32_t magic = 0;
 		if (!PeekMagic(mRxBuf, n, magic)) continue;
 
+		// Track whether this packet arrived via the lobby (ASDF
+		// unwrap) or directly off the wire.  Used by the passive
+		// direct-rescue path below to detect "peer is sending us
+		// direct traffic — we should be on Direct too" without
+		// having to wait for our own probe to round-trip.
+		bool unwrappedFromRelay = false;
+
 		// v4: relay-frame unwrap.  The server forwards inner bytes
 		// directly, but if somehow we see an ASDF on our own socket
 		// (the other side is wrapping and hitting us directly, or a
 		// future design change), unwrap in place and re-dispatch.
 		if (magic == kMagicRelayData) {
+			unwrappedFromRelay = true;
 			NetRelayDataHeader hdr;
 			const uint8_t* inner = nullptr;
 			size_t innerLen = 0;
@@ -320,24 +328,160 @@ void Coordinator::Poll(uint64_t nowMs) {
 			// relay so the lobby will deliver our outgoing ASDF
 			// frames; without this, WrapAndSend wraps the packet
 			// but the lobby drops it because we have no entry in
-			// its RelayTable.  Idempotent — SendRelayRegister
-			// no-ops once registered.  Observed 2026-04-29 on
-			// same-machine two-instance test: joiner pre-armed
-			// and switched to relay-only at T+6s, host received
-			// the wrapped Hello (auto-flipped here), but its
-			// snapshot chunks all dropped at the lobby because
-			// it never registered, leaving the session frozen
-			// in SendingSnapshot.
-			mPeerPath = PeerPath::Relay;
-			SendRelayRegister();
+			// its RelayTable.  Observed 2026-04-29 on the same-
+			// machine two-instance test: joiner pre-armed and
+			// switched to relay-only at T+6 s; host received the
+			// wrapped Hello, but its snapshot chunks all dropped
+			// at the lobby because it never registered, leaving
+			// the session frozen in SendingSnapshot.
+			//
+			// IMPORTANT: gate the entire block on the FIRST
+			// transition.  This branch runs for every incoming
+			// ASDF frame, so without this gate the auto-flip log
+			// would spam once per peer packet AND
+			// OnPeerPathFlippedToRelay would reset the direct-
+			// probe schedule every 16 ms (peer input packet rate
+			// during Lockstepping), preventing the rescue probes
+			// from ever firing.
+			// Grace window: suppress flip-to-Relay for a short period
+			// after we just flipped to Direct.  In-flight ASDF
+			// frames the peer sent before its own rescue completed
+			// would otherwise flap us straight back, spamming
+			// toasts / logs while the lobby's queue drains.  We
+			// still PROCESS the unwrapped packet (lockstep input,
+			// snap chunks, etc.) — we just keep the path on Direct.
+			const bool inFlipGrace =
+				mLastFlipToDirectMs != 0 &&
+				nowMs >= mLastFlipToDirectMs &&
+				(nowMs - mLastFlipToDirectMs) < kFlipToRelayGraceMs;
+
+			if (mPeerPath != PeerPath::Relay && !inFlipGrace) {
+				g_ATLCNetplay(
+					"%s: peer ASDF detected — flipping to relay",
+					mRole == Role::Host ? "host" :
+					mRole == Role::Joiner ? "joiner" : "idle");
+				mPeerPath = PeerPath::Relay;
+				OnPeerPathFlippedToRelay(nowMs);
+				SendRelayRegister();
+			}
 		}
 
 		BumpCandidateRx(from, magic == kMagicReject);
+
+		// Passive direct-rescue flip: if a non-ASDF, non-NetPunch
+		// packet arrives from our known peer address while we're on
+		// Relay during Lockstepping, the peer is already on Direct
+		// and sending us raw traffic — flip back so our outbound
+		// stops paying the relay tax.  Covers the asymmetric scenario
+		// where our local probe reached the peer (peer flipped) but
+		// the peer's echo to us was lost.
+		// NetPunch is excluded here and handled by the dedicated
+		// rescue branch in the kMagicPunch handler below — that path
+		// also echoes back, which is essential when both peers are on
+		// Relay and lockstep traffic is stalled (no other packets to
+		// drive the convergence).  Without the exclusion, this rule
+		// would flip us first and the NetPunch handler's echo gate
+		// (`mPeerPath == Relay`) would fail, leaving the peer stuck
+		// on Relay.
+		// Authentication: from.Equals(mPeer) — we trust the locked-in
+		// peer endpoint that was authenticated during handshake.  We
+		// also reset mRelayRegistered so a future Direct→Relay
+		// transition can re-register with the lobby (the RelayTable
+		// entry times out after 30 s of idle, so the in-memory
+		// "already registered" flag would otherwise block the
+		// re-registration we'd actually need).
+		if (magic != kMagicPunch
+		    && !unwrappedFromRelay
+		    && mPhase == Phase::Lockstepping
+		    && mPeerPath == PeerPath::Relay
+		    && mPeerKnown
+		    && !mDirectGiveUp
+		    && from.Equals(mPeer))
+		{
+			const uint64_t outageMs =
+				(mRelayEngagedAtMs && nowMs >= mRelayEngagedAtMs)
+				? (nowMs - mRelayEngagedAtMs) : 0;
+			char ep[32] = {};
+			from.Format(ep, sizeof ep);
+			g_ATLCNetplay("%s: peer direct traffic detected — flipping "
+				"back to direct (was on relay %llu ms, peer=%s)",
+				mRole == Role::Host ? "host" : "joiner",
+				(unsigned long long)outageMs, ep);
+			mPeerPath = PeerPath::Direct;
+			mRelayRegistered = false;
+			mLastFlipToDirectMs = nowMs;
+		}
 
 		switch (magic) {
 			case kMagicPunch: {
 				NetPunch pp;
 				if (DecodePunch(mRxBuf, n, pp) != DecodeResult::Ok) continue;
+
+				// Mid-session direct rescue: a NetPunch arriving on the
+				// direct socket while we're stuck on Relay during
+				// Lockstepping is the signal that the network has
+				// healed.  Authenticate via session nonce, flip back
+				// to Direct, and echo so the OTHER side flips too on
+				// the same exchange (one round trip total — without
+				// the echo, only one side knows direct works).  Both
+				// sides also keep their independent probe schedules
+				// running as a backstop in case the echo is lost.
+				// Defensive: only fire when the punch arrived
+				// directly (not via ASDF unwrap).  A relay-routed
+				// punch's `from` is the lobby endpoint, not the peer
+				// — assigning that to mPeer would corrupt our direct
+				// fallback target.  Our own probe sender uses raw
+				// SendTo, so this branch only matches the intended
+				// direct-path flow.  Also gated by mDirectGiveUp:
+				// once we've decided to stay on relay for this
+				// session (flap suppression), don't recover even if
+				// the peer's probe arrives.
+				if (mPhase == Phase::Lockstepping &&
+				    mPeerPath == PeerPath::Relay &&
+				    !unwrappedFromRelay &&
+				    !mDirectGiveUp &&
+				    std::memcmp(pp.sessionNonce, mSessionNonce,
+				                kSessionNonceLen) == 0)
+				{
+					const uint64_t outageMs =
+						(mRelayEngagedAtMs && nowMs >= mRelayEngagedAtMs)
+						? (nowMs - mRelayEngagedAtMs) : 0;
+					mPeerPath = PeerPath::Direct;
+					// Reset the relay-registered flag so a future
+					// Direct → Relay engagement can re-register
+					// with the lobby — the RelayTable entry times
+					// out after 30 s of idle while we're on Direct.
+					mRelayRegistered = false;
+					mLastFlipToDirectMs = nowMs;
+					// Refresh mPeer to the address we just heard from
+					// — covers the NAT-eviction-and-recreate case where
+					// the peer's external IP/port changed during the
+					// relay window.  WrapAndSend now targets this in
+					// Direct mode.
+					mPeer = from;
+					// Echo a single NetPunch back via direct so the
+					// other side flips too.  Re-use the inbound nonce
+					// (== mSessionNonce by construction since we just
+					// authenticated it).  Idempotent if the other side
+					// already flipped on its own probe response.
+					{
+						NetPunch echo;
+						std::memcpy(echo.sessionNonce, mSessionNonce,
+							sizeof echo.sessionNonce);
+						uint8_t buf[kWirePunchSize];
+						size_t en = EncodePunch(echo, buf, sizeof buf);
+						if (en) mTransport.SendTo(buf, en, from);
+					}
+					char ep[32] = {};
+					from.Format(ep, sizeof ep);
+					g_ATLCNetplay("%s: direct connection restored at "
+						"frame %lld (was on relay %llu ms, peer=%s)",
+						mRole == Role::Host ? "host" : "joiner",
+						(long long)mLoop.CurrentFrame(),
+						(unsigned long long)outageMs, ep);
+					break;
+				}
+
 				if (mRole == Role::Joiner &&
 				    mPhase == Phase::Handshaking) {
 					if (std::memcmp(pp.sessionNonce, mSessionNonce,
@@ -351,8 +495,9 @@ void Coordinator::Poll(uint64_t nowMs) {
 						}
 					}
 				}
-				// Host side: a punch arriving here is almost certainly
-				// our own probe looping back through a weird NAT path;
+				// Host side outside the Lockstepping+Relay rescue
+				// case: a punch arriving here is almost certainly our
+				// own probe looping back through a weird NAT path;
 				// drop silently.
 				break;
 			}
@@ -569,6 +714,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 	MaybePrearmRelay(nowMs);
 	MaybeEngageRelay(nowMs);
 	MaybeRescueRelayMidSession(nowMs);
+	MaybeProbeDirectFromRelay(nowMs);
 
 	// Outgoing pumps.  Snapshot sender is shared between the session-
 	// start upload (Phase::SendingSnapshot) and the mid-session resync
@@ -836,6 +982,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	mPhase = Phase::SendingSnapshot;
 	SendWelcome();
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
+	mSnapProgressMilestone = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -901,6 +1048,7 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	mPhase = Phase::SendingSnapshot;
 	SendWelcome();
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
+	mSnapProgressMilestone = 0;
 }
 
 void Coordinator::RejectPendingJoiner(size_t i) {
@@ -933,6 +1081,7 @@ void Coordinator::SubmitSnapshotForUpload(const uint8_t* data, size_t len) {
 		mPhase = Phase::SendingSnapshot;
 		SendWelcome();
 		mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
+	mSnapProgressMilestone = 0;
 	}
 	// If no joiner yet, bytes sit in mSnapTxBuffer until one arrives.
 }
@@ -971,6 +1120,7 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t /*nowMs*/)
 
 	// Prepare receiver.
 	mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes);
+	mSnapProgressMilestone = 0;
 	mPhase = Phase::ReceivingSnapshot;
 	g_ATLCNetplay("joiner: Welcome accepted (snapshot=%u bytes / %u chunks, delay=%u)",
 		(unsigned)w.snapshotBytes, (unsigned)w.snapshotChunks,
@@ -1020,6 +1170,29 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t /*nowMs*/) {
 		if (n && mPeerKnown) WrapAndSend(mTxBuf, n, mPeer);
 	}
 
+	// Symmetric to the host's HandleSnapAck milestones — emit one
+	// log line at 25 / 50 / 75 % so a slow / stalled download is
+	// visible in the joiner's log.  100 % is covered by the
+	// "snapshot download complete, applying…" line below.
+	{
+		const uint32_t total = mSnapRx.ExpectedChunks();
+		const uint32_t recv  = mSnapRx.ReceivedChunks();
+		if (total > 0 && recv < total) {
+			const uint8_t pct100 = (uint8_t)((uint64_t)recv * 100u / total);
+			const uint8_t bucket =
+				pct100 >= 75 ? 3 :
+				pct100 >= 50 ? 2 :
+				pct100 >= 25 ? 1 : 0;
+			if (bucket > mSnapProgressMilestone) {
+				mSnapProgressMilestone = bucket;
+				g_ATLCNetplay(
+					"joiner: snapshot %u%% (%u/%u chunks)",
+					(unsigned)(bucket * 25u),
+					(unsigned)recv, (unsigned)total);
+			}
+		}
+	}
+
 	if (mSnapRx.IsComplete()) {
 		if (sessionStart) {
 			mPhase = Phase::SnapshotReady;
@@ -1041,6 +1214,31 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 	if (!sessionStart && !midResync) return;
 
 	mSnapTx.OnAckReceived(a.chunkIdx);
+
+	// Progress milestones at 25 / 50 / 75 % so a slow / stalled
+	// transfer is visible in the log without per-chunk noise.  100% is
+	// covered by the existing "snapshot delivered" line below — skip
+	// the milestone on the final ack so we don't emit a confusing
+	// "snapshot 75% (N/N chunks)" right before the "delivered" line.
+	{
+		const uint32_t total = mSnapTx.TotalChunks();
+		const uint32_t acked = mSnapTx.AcknowledgedChunks();
+		if (total > 0 && acked < total) {
+			const uint8_t pct100 = (uint8_t)((uint64_t)acked * 100u / total);
+			const uint8_t bucket =
+				pct100 >= 75 ? 3 :
+				pct100 >= 50 ? 2 :
+				pct100 >= 25 ? 1 : 0;
+			if (bucket > mSnapProgressMilestone) {
+				mSnapProgressMilestone = bucket;
+				g_ATLCNetplay("%s: snapshot %u%% (%u/%u chunks)",
+					mRole == Role::Host ? "host" : "joiner",
+					(unsigned)(bucket * 25u),
+					(unsigned)acked, (unsigned)total);
+			}
+		}
+	}
+
 	if (mSnapTx.GetStatus() == SnapshotSender::Status::Done) {
 		if (sessionStart) {
 			// Host is ready for lockstep immediately; joiner transitions
@@ -1228,6 +1426,15 @@ void Coordinator::End(uint32_t byeReason) {
 	mPendingDecisions.clear();
 	SendBye(byeReason);
 	mPhase = Phase::Ended;
+	// Log the locally-initiated end so a session that disappears from
+	// the user's perspective leaves a clear trail.  HandleBye logs
+	// peer-initiated ends; this covers our side (Shutdown, StopHost,
+	// app-level disconnect, manual Leave).  reason==kByeCleanExit (0)
+	// is the common case; non-zero values surface explicit reasons.
+	g_ATLCNetplay("%s: session ended locally (reason=%u)",
+		mRole == Role::Host ? "host" :
+		mRole == Role::Joiner ? "joiner" : "idle",
+		(unsigned)byeReason);
 }
 
 void Coordinator::SendBye(uint32_t reason) {
@@ -1423,6 +1630,7 @@ void Coordinator::SubmitResyncCapture(const uint8_t* data, size_t len) {
 
 	// Kick off chunk transfer (uses existing SnapTx machinery).
 	mSnapTx.Begin(mResyncTxBuffer.data(), mResyncTxBuffer.size());
+	mSnapProgressMilestone = 0;
 	g_ATLCNetplay("host: resync upload starting (%u bytes / %u chunks, epoch=%u)",
 		(unsigned)mResyncTxBuffer.size(), (unsigned)chunks, (unsigned)mResyncEpoch);
 }
@@ -1452,6 +1660,7 @@ void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t nowMs) {
 	mLoop.ClearDesync();
 
 	mSnapRx.Begin(s.stateChunks, s.stateBytes);
+	mSnapProgressMilestone = 0;
 	mNeedsResyncApply = false;
 	mResyncStartMs = nowMs;
 	mPhase = Phase::Resyncing;
@@ -1817,6 +2026,7 @@ void Coordinator::MaybeEngageRelay(uint64_t nowMs) {
 		if (nowMs - mPhaseStartMs < kRelayFallbackAfterMs) return;
 		SendRelayRegister();   // idempotent if pre-arm already fired
 		mPeerPath = PeerPath::Relay;
+		OnPeerPathFlippedToRelay(nowMs);
 		g_ATLCNetplay("joiner: punch failed, switching to relay at T+%llu ms",
 			(unsigned long long)(nowMs - mPhaseStartMs));
 		// Fire a wrapped Hello through the lobby so the joiner's
@@ -1847,6 +2057,7 @@ void Coordinator::MaybeEngageRelay(uint64_t nowMs) {
 		if (!mHostHasSeenHint) return;  // no joiner known yet
 		SendRelayRegister();   // idempotent if pre-arm already fired
 		mPeerPath = PeerPath::Relay;
+		OnPeerPathFlippedToRelay(nowMs);
 		g_ATLCNetplay("host: punch failed, switching to relay at T+%llu ms",
 			(unsigned long long)(nowMs - mPhaseStartMs));
 	}
@@ -1874,9 +2085,84 @@ void Coordinator::MaybeRescueRelayMidSession(uint64_t nowMs) {
 
 	SendRelayRegister();
 	mPeerPath = PeerPath::Relay;
+	OnPeerPathFlippedToRelay(nowMs);
 	g_ATLCNetplay("%s: peer silent %llu ms in Lockstepping — re-arming relay",
 		mRole == Role::Host ? "host" : "joiner",
 		(unsigned long long)kMidSessionRelayRescueAfterMs);
+}
+
+void Coordinator::OnPeerPathFlippedToRelay(uint64_t nowMs) {
+	// Stamp the engagement time and reset the direct-probe schedule so
+	// a fresh round of probes starts on every relay flip.  The probe
+	// pump (MaybeProbeDirectFromRelay) compares mLastDirectProbeMs to
+	// nowMs; seeding it at engagement time means the first probe waits
+	// kDirectProbeFastIntervalMs (1 s) before firing — long enough to
+	// let the relay path stabilise but short enough to recover well
+	// inside the 10 s budget if the network heals immediately.
+	mRelayEngagedAtMs    = nowMs;
+	mLastDirectProbeMs   = nowMs;
+	mDirectProbeAttempts = 0;
+
+	// Flap suppression: count engagements and give up on direct
+	// rescue once we've flapped too many times.  Stops the
+	// "Direct lost" / "Direct restored" toast spiral on connections
+	// where direct works just well enough to recover then fail again.
+	++mRelayEngageCount;
+	if (!mDirectGiveUp &&
+	    mRelayEngageCount >= kMaxRelayEngagesBeforeGivingUp) {
+		mDirectGiveUp = true;
+		g_ATLCNetplay("%s: direct path unstable (engaged relay %u "
+			"times) — staying on relay for the rest of the session",
+			mRole == Role::Host ? "host" : "joiner",
+			(unsigned)mRelayEngageCount);
+	}
+}
+
+void Coordinator::MaybeProbeDirectFromRelay(uint64_t nowMs) {
+	// Only probe in Lockstepping (the only phase where direct rescue
+	// is meaningful — in handshake phases the existing Hello-spray
+	// already covers direct probing).
+	if (mPhase != Phase::Lockstepping) return;
+	if (mPeerPath != PeerPath::Relay) return;
+	if (!mPeerKnown) return;
+	if (mDirectGiveUp) return;  // flap-suppression: stay on relay forever
+
+	// Throttle: 1 s between probes for the first kDirectProbeFastAttempts,
+	// then 5 s.
+	const uint64_t interval =
+		(mDirectProbeAttempts < kDirectProbeFastAttempts)
+			? kDirectProbeFastIntervalMs
+			: kDirectProbeSlowIntervalMs;
+	if (nowMs - mLastDirectProbeMs < interval) return;
+
+	// Build the probe.  Use the same NetPunch packet the initial-
+	// handshake probing path uses — the receiver already has a
+	// kMagicPunch handler we can extend with a Lockstepping+Relay
+	// rescue branch.  Carry mSessionNonce so the receiver can
+	// authenticate the probe (otherwise any random datagram with the
+	// right magic would trigger a bogus flip).
+	NetPunch p;
+	std::memcpy(p.sessionNonce, mSessionNonce, sizeof p.sessionNonce);
+	uint8_t buf[kWirePunchSize];
+	size_t n = EncodePunch(p, buf, sizeof buf);
+	if (!n) return;
+
+	// Send DIRECT — bypass WrapAndSend so the packet is NOT wrapped in
+	// ASDF and routed through the relay.  The whole point is to test
+	// whether direct UDP works again.
+	mTransport.SendTo(buf, n, mPeer);
+	mLastDirectProbeMs = nowMs;
+	++mDirectProbeAttempts;
+
+	// Log only the FIRST probe of a given relay engagement so the log
+	// stays calm.  Subsequent probes are silent; the success/failure
+	// outcome is what matters and that gets logged separately.
+	if (mDirectProbeAttempts == 1) {
+		char ep[32] = {};
+		mPeer.Format(ep, sizeof ep);
+		g_ATLCNetplay("%s: probing direct from relay (peer=%s)",
+			mRole == Role::Host ? "host" : "joiner", ep);
+	}
 }
 
 void Coordinator::BumpCandidateRx(const Endpoint& from, bool isReject) {
