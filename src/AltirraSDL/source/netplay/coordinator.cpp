@@ -89,6 +89,7 @@ bool Coordinator::BeginHost(uint16_t localPort,
 	mPhaseStartMs = 0;  // set on first Poll
 	mPunchTargets.clear();
 	mHostHasSeenHint = false;
+	mDirectRescueCandidates.clear();
 	mPeerPath = PeerPath::Direct;
 	mRelayRegistered = false;
 	mPunchProbesReceived = 0;
@@ -221,6 +222,20 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 		return false;
 	}
 
+	// Seed the persistent direct-rescue candidate set with the host's
+	// announced lobby endpoints.  These are the addresses the host is
+	// listening on for direct UDP — the same set the Hello-spray uses
+	// during handshake.  If the punch initially fails and the session
+	// settles on Relay (mPeer = lobby), MaybeProbeDirectFromRelay will
+	// keep poking these addresses; if any one becomes reachable later
+	// (router reboot, NAT mapping change, transient block lifted), the
+	// host's kMagicPunch handler echoes back direct and both sides
+	// flip to Direct.
+	mDirectRescueCandidates.clear();
+	for (const auto& ep : mHelloCandidates) {
+		mDirectRescueCandidates.push_back(ep);
+	}
+
 	// Pick the first candidate as the initial mPeer so the rest of the
 	// code (which uses mPeer for snapshot retries, etc.) has a usable
 	// default.  The ACTUAL peer is locked when the first NetWelcome
@@ -260,7 +275,14 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 	g_ATLCNetplay("joiner: multi-candidate (%u), spraying Hello",
 		(unsigned)mHelloCandidates.size());
 
-	// Initial spray to every candidate immediately.
+	// Initial spray to every candidate immediately.  Note: the relay-
+	// path Hello is NOT fired here because mLobbyRelayKnown / the
+	// relay context is set by the UI AFTER BeginJoinMulti returns
+	// (SetRelayContext is called once Create / Join lobby state is
+	// resolved).  The first Poll tick will both register with the
+	// lobby (MaybePrearmRelay, now T=0) and send a wrapped Hello in
+	// the retry-spray loop, so the relay-first behavior kicks in
+	// within one frame (~16 ms) of relay context becoming available.
 	NetHello h;
 	FillHello(h);
 	size_t n = EncodeHello(h, mTxBuf, sizeof mTxBuf);
@@ -390,12 +412,26 @@ void Coordinator::Poll(uint64_t nowMs) {
 		// entry times out after 30 s of idle, so the in-memory
 		// "already registered" flag would otherwise block the
 		// re-registration we'd actually need).
+		// Critical guard: PeerIsLobby() — when relay was engaged
+		// before any direct-path traffic ever reached us, mPeer is
+		// the lobby endpoint itself.  The lobby strips ASDF and
+		// forwards inner bytes, so every relay-routed peer packet
+		// arrives with the inner magic intact, from the lobby IP,
+		// with unwrappedFromRelay=false.  Without this gate, the
+		// FIRST lockstep input frame after entering Lockstepping
+		// would flip us to Direct against the lobby — outbound
+		// would then go raw to the lobby (dropped, no ASDF wrap)
+		// and the peer would go silent until Bye.  Observed
+		// 2026-04-30: gen=4 World Karate session, T+18 s into
+		// Lockstepping → "peer direct traffic detected" with
+		// peer=158.180.27.70:8081, immediate Bye.
 		if (magic != kMagicPunch
 		    && !unwrappedFromRelay
 		    && mPhase == Phase::Lockstepping
 		    && mPeerPath == PeerPath::Relay
 		    && mPeerKnown
 		    && !mDirectGiveUp
+		    && !PeerIsLobby()
 		    && from.Equals(mPeer))
 		{
 			const uint64_t outageMs =
@@ -436,10 +472,25 @@ void Coordinator::Poll(uint64_t nowMs) {
 				// once we've decided to stay on relay for this
 				// session (flap suppression), don't recover even if
 				// the peer's probe arrives.
+				// Reject punches that arrived via the lobby's
+				// strip-and-forward path (from == lobby).  A real
+				// direct rescue, by definition, must come from a
+				// non-lobby address — and only then is "set mPeer =
+				// from" the right thing to do.  This is the gate
+				// that allows recovery from a relay-only-since-start
+				// session: in that state PeerIsLobby() is true and
+				// mPeer is unusable, but if the peer manages to
+				// punch us directly (e.g. its NAT mapping changed
+				// and one of our candidates now reaches it), the
+				// punch arrives from the peer's true address and we
+				// adopt it as mPeer.
+				const bool fromLobby =
+					mLobbyRelayKnown && from.Equals(mLobbyRelayEndpoint);
 				if (mPhase == Phase::Lockstepping &&
 				    mPeerPath == PeerPath::Relay &&
 				    !unwrappedFromRelay &&
 				    !mDirectGiveUp &&
+				    !fromLobby &&
 				    std::memcmp(pp.sessionNonce, mSessionNonce,
 				                kSessionNonceLen) == 0)
 				{
@@ -517,11 +568,32 @@ void Coordinator::Poll(uint64_t nowMs) {
 				    mPhase == Phase::Handshaking) {
 					mPeer = from;
 					mPeerKnown = true;
+					// Path determination: same logic as the host-
+					// side accept paths.  If Welcome arrived via
+					// the lobby (from == lobby endpoint), the
+					// host can only be reached through the
+					// lobby's strip-and-forward path.  Flip
+					// mPeerPath = Relay so all subsequent
+					// outbound (Hello retransmits, snapshot
+					// chunk acks, lockstep input) gets ASDF-
+					// wrapped.  Direct rescue probing in
+					// MaybeProbeDirectFromRelay continues against
+					// the original mHelloCandidates set in case
+					// the network heals later.
+					const bool acceptedViaRelay =
+						mLobbyRelayKnown &&
+						from.Equals(mLobbyRelayEndpoint);
+					if (acceptedViaRelay &&
+					    mPeerPath != PeerPath::Relay) {
+						mPeerPath = PeerPath::Relay;
+						OnPeerPathFlippedToRelay(nowMs);
+					}
 					char fmt[64];
 					from.Format(fmt, sizeof fmt);
 					g_ATLCNetplay("joiner: locked onto responding host %s "
-						"(had %u candidates)",
-						fmt, (unsigned)mHelloCandidates.size());
+						"(had %u candidates, %s)",
+						fmt, (unsigned)mHelloCandidates.size(),
+						acceptedViaRelay ? "via relay" : "direct");
 					mHelloCandidates.clear();
 				}
 				HandleWelcomeFromHost(w, nowMs);
@@ -632,6 +704,14 @@ void Coordinator::Poll(uint64_t nowMs) {
 		}
 	}
 
+	// Relay-first: register with the lobby's relay table immediately
+	// on the first Poll tick after relay context is set, BEFORE the
+	// Hello-spray below consults mRelayRegistered.  Without this
+	// ordering, the very first spray after BeginJoinMulti would
+	// always skip the wrapped-Hello branch and we'd lose one retry
+	// interval (~250 ms) of relay-path latency on every join.
+	MaybePrearmRelay(nowMs);
+
 	// v3 NAT traversal: joiner retransmits NetHello to every candidate
 	// while we're still in Handshaking.  Stops as soon as any host
 	// replies (Welcome / Reject clears mHelloCandidates) or the hard
@@ -697,11 +777,22 @@ void Coordinator::Poll(uint64_t nowMs) {
 				for (const auto& ep : mHelloCandidates) {
 					mTransport.SendTo(mTxBuf, nn, ep);
 				}
-				// v4: once relay engaged, also blast a wrapped Hello
-				// through the lobby — the host may only be reachable
-				// via that path.
-				if (mPeerPath == PeerPath::Relay && mLobbyRelayKnown) {
-					WrapAndSend(mTxBuf, nn, mLobbyRelayEndpoint);
+				// Relay-first: ALSO send a wrapped Hello through the
+				// lobby on every retry, in parallel with the direct
+				// candidates.  Was previously gated on
+				// mPeerPath == Relay (i.e. only fired after the
+				// T+6s engage), which contributed up to a 30 s
+				// "host sees joiner" delay because the host's
+				// relay registration depended on the lobby
+				// heartbeat delivering the joiner's peer-hint.
+				// The new flow registers both peers proactively
+				// in MaybePrearmRelay at T=0, so a single lobby
+				// roundtrip (~100-300 ms) is enough for the host
+				// to see this Hello.  Direct punching still runs
+				// alongside; whichever path completes the
+				// handshake first determines mPeerPath.
+				if (mLobbyRelayKnown && mRelayRegistered) {
+					SendWrappedViaLobby(mTxBuf, nn);
 				}
 			}
 		}
@@ -958,13 +1049,29 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	// Hello accepted.  Lock in the peer.
 	mPeer = from;
 	mPeerKnown = true;
+	// Path determination: if this Hello arrived via the lobby's
+	// strip-and-forward path (from == lobby endpoint), we cannot
+	// reach the peer directly — every reply we send must be
+	// ASDF-wrapped so the lobby forwards it.  Flip mPeerPath
+	// accordingly so SendWelcome / snapshot chunks travel via
+	// WrapAndSend through the lobby.  Direct rescue probing in
+	// MaybeProbeDirectFromRelay will keep trying to acquire a
+	// real direct endpoint via the candidate list.
+	if (mLobbyRelayKnown && from.Equals(mLobbyRelayEndpoint)) {
+		if (mPeerPath != PeerPath::Relay) {
+			mPeerPath = PeerPath::Relay;
+			OnPeerPathFlippedToRelay(nowMs);
+		}
+	}
 	{
 		char handle[kHandleLen + 1] = {};
 		std::memcpy(handle, hello.playerHandle, kHandleLen);
 		char ep[32] = {};
 		from.Format(ep, sizeof ep);
-		g_ATLCNetplay("host: accepted joiner \"%s\" from %s",
-			handle, ep);
+		g_ATLCNetplay("host: accepted joiner \"%s\" from %s%s",
+			handle, ep,
+			(mLobbyRelayKnown && from.Equals(mLobbyRelayEndpoint))
+				? " (via relay)" : " (direct)");
 	}
 
 	if (mSnapTxBuffer.empty()) {
@@ -1033,10 +1140,26 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	mPeer      = chosen.peer;
 	mPeerKnown = true;
 
+	// Path determination — same logic as the auto-accept branch in
+	// HandleHelloFromJoiner.  If the chosen endpoint is the lobby,
+	// outbound responses must be ASDF-wrapped so the lobby forwards
+	// them to the peer.
+	const bool acceptedViaRelay =
+		mLobbyRelayKnown && mPeer.Equals(mLobbyRelayEndpoint);
+	if (acceptedViaRelay && mPeerPath != PeerPath::Relay) {
+		// We don't have nowMs here — use 0 as a sentinel.  The
+		// MaybeRescueRelayMidSession path is already gated on
+		// mPhase == Lockstepping so it won't observe this 0 stamp
+		// before it's overwritten.  The direct-rescue probe schedule
+		// resets on the next genuine flip-to-relay if any.
+		mPeerPath = PeerPath::Relay;
+		OnPeerPathFlippedToRelay(0);
+	}
+
 	char ep[32] = {};
 	mPeer.Format(ep, sizeof ep);
-	g_ATLCNetplay("host: accepted joiner \"%s\" from %s (manual approval)",
-		chosen.handle, ep);
+	g_ATLCNetplay("host: accepted joiner \"%s\" from %s (manual approval, %s)",
+		chosen.handle, ep, acceptedViaRelay ? "via relay" : "direct");
 
 	if (mSnapTxBuffer.empty()) {
 		mHostHasPendingJoiner = true;
@@ -1247,6 +1370,13 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 			mPhase = Phase::Lockstepping;
 			g_ATLCNetplay("host: snapshot delivered, entering Lockstepping (delay=%u frames)",
 				(unsigned)mInputDelay);
+			if (mPeerPath == PeerPath::Relay && PeerIsLobby()) {
+				g_ATLCNetplay("host: relay-only session — mid-session "
+					"direct rescue will probe %zu peer candidate%s "
+					"from the lobby heartbeat",
+					mDirectRescueCandidates.size(),
+					mDirectRescueCandidates.size() == 1 ? "" : "s");
+			}
 		} else {
 			// Resync: all chunks acknowledged.  Now wait for ResyncDone
 			// from the joiner confirming successful apply — only then
@@ -1317,6 +1447,12 @@ void Coordinator::AcknowledgeSnapshotApplied() {
 	mPhase = Phase::Lockstepping;
 	g_ATLCNetplay("joiner: snapshot applied, entering Lockstepping (delay=%u frames)",
 		(unsigned)mInputDelay);
+	if (mPeerPath == PeerPath::Relay && PeerIsLobby()) {
+		g_ATLCNetplay("joiner: relay-only session — mid-session "
+			"direct rescue will probe %zu host candidate%s",
+			mDirectRescueCandidates.size(),
+			mDirectRescueCandidates.size() == 1 ? "" : "s");
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1852,8 +1988,14 @@ void Coordinator::GetSessionNonce(uint8_t out[kSessionNonceLen]) const {
 void Coordinator::IngestPeerHint(const uint8_t nonce16[kSessionNonceLen],
                                  const char* candidatesSemicolonList) {
 	if (mRole != Role::Host) return;
-	if (mPhase != Phase::WaitingForJoiner) return;
 	if (!candidatesSemicolonList || !*candidatesSemicolonList) return;
+	// During the handshake (WaitingForJoiner) we DO add to mPunchTargets
+	// for the immediate punch-burst.  After handshake we only refresh
+	// mDirectRescueCandidates so the mid-session direct-rescue prober
+	// has up-to-date addresses (the joiner's NAT mapping may have
+	// changed since the original engagement, which is exactly the
+	// scenario where rescue can succeed).
+	const bool armPunchTargets = (mPhase == Phase::WaitingForJoiner);
 
 	// Parse the semicolon/comma list; tolerate whitespace.
 	const char* s = candidatesSemicolonList;
@@ -1866,7 +2008,34 @@ void Coordinator::IngestPeerHint(const uint8_t nonce16[kSessionNonceLen],
 			g_ATLCNetplay("host: hint candidate unresolved: \"%s\"", tok.c_str());
 			return;
 		}
-		// Dedupe on (nonce, endpoint).
+		// Always accumulate into the persistent direct-rescue set
+		// (deduped on endpoint only — nonce-keyed bookkeeping is
+		// reserved for mPunchTargets, the handshake-phase prober).
+		bool addedToRescueSet = false;
+		{
+			bool dup = false;
+			for (const auto& e : mDirectRescueCandidates) {
+				if (e.Equals(ep)) { dup = true; break; }
+			}
+			if (!dup) {
+				mDirectRescueCandidates.push_back(ep);
+				addedToRescueSet = true;
+			}
+		}
+		if (!armPunchTargets) {
+			// Lockstepping phase: only the rescue set matters.  Log
+			// the first time we learn each candidate and stay quiet
+			// thereafter so the heartbeat refresh doesn't spam.
+			if (addedToRescueSet) {
+				char fmt[64];
+				ep.Format(fmt, sizeof fmt);
+				g_ATLCNetplay("host: rescue candidate %s (%s) — "
+					"queued for direct-rescue probes",
+					tok.c_str(), fmt);
+			}
+			return;
+		}
+		// Dedupe on (nonce, endpoint) for the handshake punch list.
 		for (auto& t : mPunchTargets) {
 			if (std::memcmp(t.nonce, nonce16, kSessionNonceLen) == 0 &&
 			    t.ep.Equals(ep)) {
@@ -1946,6 +2115,11 @@ bool Coordinator::WrapAndSend(const uint8_t* bytes, size_t n,
 	    !mLobbyRelayKnown || !mHasRelaySessionId) {
 		return mTransport.SendTo(bytes, n, peer);
 	}
+	return SendWrappedViaLobby(bytes, n);
+}
+
+bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {
+	if (!mLobbyRelayKnown || !mHasRelaySessionId) return false;
 	// Wrap in ASDF frame targeted at the lobby.  The server strips the
 	// header and delivers inner bytes to the other side's registered
 	// srflx.  Inner max is kSnapshotChunkSize + header = ~1216 bytes,
@@ -1978,41 +2152,42 @@ void Coordinator::SendRelayRegister() {
 }
 
 void Coordinator::MaybePrearmRelay(uint64_t nowMs) {
-	// Phase 1 of the two-stage fallback: send one ASGR so the lobby
-	// has our endpoint primed before the data path actually flips to
-	// relay.  Idempotent — SendRelayRegister no-ops when already
-	// registered.  Does NOT change mPeerPath; direct probing
-	// continues normally.
+	// Relay-first handshake: register with the lobby's relay table
+	// the moment the relay context becomes available.  No T+3s wait,
+	// no waiting for a peer-hint to arrive on the heartbeat (which
+	// could be 30 seconds out).  The lobby will start forwarding
+	// inbound ASDF frames the instant both peers are registered, so
+	// the joiner's wrapped Hello can land within one lobby round-
+	// trip (~100-300 ms) instead of 30+ seconds.
+	// Direct punching keeps running in parallel; if a direct
+	// candidate replies first, mPeer gets set to that address and
+	// mPeerPath stays Direct.  If the relay path wins, mPeer ends
+	// up being the lobby and the receive-loop / Hello-handler flip
+	// mPeerPath to Relay (see the from.Equals(mLobbyRelayEndpoint)
+	// branches there).  Either way, the user-visible "host sees
+	// joiner" event fires as soon as ONE path delivers the Hello.
 	if (mRelayRegistered) return;
 	if (mPeerPath == PeerPath::Relay) return;
 	if (!mHasRelaySessionId || !mLobbyRelayKnown) return;
-	if (mPhaseStartMs == 0) return;
-	if (nowMs - mPhaseStartMs < kRelayPrearmAfterMs) return;
 
 	if (mRole == Role::Joiner && mPhase == Phase::Handshaking) {
 		SendRelayRegister();
-		g_ATLCNetplay("joiner: relay pre-armed at T+%llu ms (still trying direct)",
-			(unsigned long long)(nowMs - mPhaseStartMs));
+		g_ATLCNetplay("joiner: relay-first registration sent "
+			"(direct punching continues in parallel)");
 		return;
 	}
 	if (mRole == Role::Host &&
 	    (mPhase == Phase::WaitingForJoiner ||
 	     mPhase == Phase::Handshaking ||
 	     mPhase == Phase::SendingSnapshot)) {
-		// Pre-arm only after a hint has actually arrived — without
-		// one the joiner doesn't know our endpoint either, so the
-		// table entry would be unused.  Extended to cover Handshaking
-		// and SendingSnapshot so a host that accepted the joiner
-		// quickly (manual Allow click within ~3s of Hello) still
-		// pre-arms before the joiner's own fallback timer flips them
-		// to relay-only.  Without this, the joiner ends up relay-only
-		// while the host is still direct-only, the host's snapshot
-		// chunks travel out but no acks come back, and the session
-		// hangs in SendingSnapshot until the user gives up.
-		if (!mHostHasSeenHint) return;
+		// No mHostHasSeenHint gate — relay-first means we register
+		// PROACTIVELY so joiner-sent ASDF frames have somewhere to
+		// go from the very first poll tick.  Saves the up-to-30s
+		// heartbeat wait that previously delayed the host's relay
+		// registration to "after we learn a joiner exists."
 		SendRelayRegister();
-		g_ATLCNetplay("host: relay pre-armed at T+%llu ms (still trying direct)",
-			(unsigned long long)(nowMs - mPhaseStartMs));
+		g_ATLCNetplay("host: relay-first registration sent "
+			"(awaiting joiners; direct punching ready)");
 	}
 }
 
@@ -2127,6 +2302,29 @@ void Coordinator::MaybeProbeDirectFromRelay(uint64_t nowMs) {
 	if (!mPeerKnown) return;
 	if (mDirectGiveUp) return;  // flap-suppression: stay on relay forever
 
+	// Choose the probe targets:
+	//   - Normal case (mPeer is the real direct peer endpoint, e.g.
+	//     after a clean direct handshake that later flapped to relay):
+	//     probe just mPeer.  One packet per probe interval.
+	//   - Relay-only case (PeerIsLobby — initial direct never worked,
+	//     so mPeer was set to the lobby endpoint at Hello time): probe
+	//     every persistent rescue candidate we know about (host: peer-
+	//     hint endpoints from the lobby heartbeat; joiner: the host's
+	//     announced lobby endpoints from BeginJoinMulti).  This is the
+	//     scenario that lets a session that started on relay recover
+	//     direct mid-game once the network heals.  Bandwidth is bounded
+	//     — a typical candidate count is 2-3, probes are 24 bytes
+	//     apiece, and the throttle is 1 s for the first 10 attempts
+	//     then 5 s; even at 5 candidates that is < 150 B/s peak and
+	//     ~24 B/s steady state.
+	const bool useCandidateList = PeerIsLobby();
+	if (useCandidateList && mDirectRescueCandidates.empty()) {
+		// Nothing to probe and mPeer is unusable — stay on relay until
+		// the lobby heartbeat (host) or some future refresh (joiner)
+		// gives us a real address.
+		return;
+	}
+
 	// Throttle: 1 s between probes for the first kDirectProbeFastAttempts,
 	// then 5 s.
 	const uint64_t interval =
@@ -2150,7 +2348,16 @@ void Coordinator::MaybeProbeDirectFromRelay(uint64_t nowMs) {
 	// Send DIRECT — bypass WrapAndSend so the packet is NOT wrapped in
 	// ASDF and routed through the relay.  The whole point is to test
 	// whether direct UDP works again.
-	mTransport.SendTo(buf, n, mPeer);
+	if (useCandidateList) {
+		for (const auto& ep : mDirectRescueCandidates) {
+			// Defensive: never punch the lobby itself even if it
+			// somehow ended up in the candidate list.
+			if (mLobbyRelayKnown && ep.Equals(mLobbyRelayEndpoint)) continue;
+			mTransport.SendTo(buf, n, ep);
+		}
+	} else {
+		mTransport.SendTo(buf, n, mPeer);
+	}
 	mLastDirectProbeMs = nowMs;
 	++mDirectProbeAttempts;
 
@@ -2158,10 +2365,18 @@ void Coordinator::MaybeProbeDirectFromRelay(uint64_t nowMs) {
 	// stays calm.  Subsequent probes are silent; the success/failure
 	// outcome is what matters and that gets logged separately.
 	if (mDirectProbeAttempts == 1) {
-		char ep[32] = {};
-		mPeer.Format(ep, sizeof ep);
-		g_ATLCNetplay("%s: probing direct from relay (peer=%s)",
-			mRole == Role::Host ? "host" : "joiner", ep);
+		if (useCandidateList) {
+			g_ATLCNetplay("%s: probing direct from relay "
+				"(relay-only session, %zu candidate%s)",
+				mRole == Role::Host ? "host" : "joiner",
+				mDirectRescueCandidates.size(),
+				mDirectRescueCandidates.size() == 1 ? "" : "s");
+		} else {
+			char ep[32] = {};
+			mPeer.Format(ep, sizeof ep);
+			g_ATLCNetplay("%s: probing direct from relay (peer=%s)",
+				mRole == Role::Host ? "host" : "joiner", ep);
+		}
 	}
 }
 

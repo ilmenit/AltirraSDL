@@ -611,6 +611,21 @@ private:
 	// persistent flag the host would miss the 10 s relay trigger if
 	// the hint happened to arrive slightly earlier than that.
 	bool mHostHasSeenHint = false;
+
+	// Persistent direct-rescue candidates — endpoint addresses we
+	// believe the peer is reachable at directly.  Populated from:
+	//   - Host: every peer-hint the lobby delivers (across all
+	//     phases, not just WaitingForJoiner — the joiner's heartbeat
+	//     keeps refreshing these and a NAT mapping that changed
+	//     after the relay engaged is exactly what we need to retry).
+	//   - Joiner: copied from mHelloCandidates at BeginJoinMulti
+	//     (the host's announced lobby endpoints).
+	// Used by MaybeProbeDirectFromRelay when PeerIsLobby() — i.e.,
+	// in a relay-only session where mPeer points at the lobby and
+	// is therefore not a viable probe target.  Never expires; we
+	// dedupe on endpoint only (nonce is supplied by mSessionNonce
+	// at probe time).
+	std::vector<Endpoint> mDirectRescueCandidates;
 	static constexpr int      kPunchBurstInitialCount = 5;
 	static constexpr uint64_t kPunchSustainIntervalMs = 500;
 	static constexpr uint64_t kPunchSustainDurationMs = 4000;
@@ -694,6 +709,12 @@ private:
 	// server strips the header and forwards inner bytes to the other
 	// peer's registered srflx.
 	bool WrapAndSend(const uint8_t* bytes, size_t n, const Endpoint& peer);
+	// Send `bytes` to the lobby relay UNCONDITIONALLY wrapped in an
+	// ASDF frame, regardless of mPeerPath.  Used by the relay-first
+	// handshake path so the joiner can spray Hellos via the lobby
+	// in parallel with the direct candidates from T=0, instead of
+	// only doing so after MaybeEngageRelay flips mPeerPath at T+6s.
+	bool SendWrappedViaLobby(const uint8_t* bytes, size_t n);
 
 	// Role-appropriate relay register.  kRelayRoleHost for hosts,
 	// kRelayRoleJoiner for joiners.  One-shot: no-op on subsequent
@@ -732,6 +753,22 @@ private:
 	// counters.  Called from every site that flips mPeerPath to
 	// Relay so a fresh probe schedule starts on each engagement.
 	void OnPeerPathFlippedToRelay(uint64_t nowMs);
+
+	// True when the only address we have for the peer IS the lobby
+	// itself.  Happens when initial NAT punch failed entirely and
+	// the joiner's Hello arrived via the lobby's ASDF-strip-and-
+	// forward path, so HandleHelloOnHost set mPeer = from = lobby.
+	// In that state every relay-routed peer packet looks like a
+	// raw direct lockstep packet from the lobby IP, which would
+	// trip the passive-flip rule, the kMagicPunch rescue, and the
+	// direct-probe sender into "rescuing" against the lobby — a
+	// no-op at best, broken (outbound dropped at lobby) at worst.
+	// All three paths must therefore short-circuit when this is
+	// true; the session stays on Relay for its lifetime.
+	bool PeerIsLobby() const {
+		return mLobbyRelayKnown && mPeerKnown
+		    && mPeer.Equals(mLobbyRelayEndpoint);
+	}
 
 	// Diagnostics.
 	const char* mLastError = "";
