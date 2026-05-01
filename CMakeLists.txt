@@ -775,3 +775,14 @@ if(ALTIRRA_BUILD_LOBBY)
     endif()
     add_subdirectory(server/lobby)
 endif()
+
+# Item 6a: netplay self-tests, gated separately from the lobby tests
+# above.  Keep the netplay tests behind their own toggle so a default
+# build stays as small and quiet as before; turn ON when developing
+# netplay or running CI: -DALTIRRA_BUILD_TESTS=ON.
+option(ALTIRRA_BUILD_TESTS
+    "Build netplay self-test executables and wire them to ctest." OFF)
+if(ALTIRRA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(src/AltirraSDL/source/netplay/tests)
+endif()

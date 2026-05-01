@@ -4,6 +4,7 @@
 
 #include "snapshot_channel.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace ATNetplay {
@@ -117,6 +118,22 @@ void SnapshotSender::OnAckReceived(uint32_t chunkIdx) {
 	}
 }
 
+void SnapshotSender::ForceDone() {
+	if (mStatus != Status::Sending) return;
+	// Mark every chunk acked so AcknowledgedChunks() reports the
+	// correct progress (used by the host's milestone log).  We do
+	// not stamp mLastSendMs / mAttempts — those are only consulted
+	// by NextOutgoing, which short-circuits on Status != Sending.
+	for (uint32_t i = mLowestUnacked; i < mTotalChunks; ++i) {
+		if (!mAcked[i]) {
+			mAcked[i] = 1u;
+			++mAckedCount;
+		}
+	}
+	mLowestUnacked = mTotalChunks;
+	mStatus = Status::Done;
+}
+
 // ---------------------------------------------------------------------------
 // SnapshotReceiver
 // ---------------------------------------------------------------------------
@@ -158,6 +175,22 @@ bool SnapshotReceiver::OnChunk(const NetSnapChunk& c) {
 	}
 	mFilled[c.chunkIdx] = 1u;
 	++mReceived;
+	return true;
+}
+
+bool SnapshotReceiver::AdoptBytes(const uint8_t* data, size_t len) {
+	if (data == nullptr) return false;
+	// First call (cache hit before Begin runs): set up state as if
+	// Begin(1, len) was called.  Subsequent calls require the size
+	// to match what Begin already set.
+	if (mExpectedChunks == 0) {
+		Begin(1, (uint32_t)len);
+	} else if ((uint64_t)len != (uint64_t)mExpectedBytes) {
+		return false;
+	}
+	mData.assign(data, data + len);
+	std::fill(mFilled.begin(), mFilled.end(), (uint8_t)1u);
+	mReceived = mExpectedChunks;
 	return true;
 }
 

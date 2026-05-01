@@ -18,6 +18,8 @@
 #include "ui/core/ui_main.h"
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_picker.h"
+#include "ui/gamelibrary/game_library.h"
+#include "ui/mobile/mobile_internal.h"   // GetGameLibrary()
 #include "input/touch_widgets.h"
 
 #include <vd2/system/file.h>
@@ -92,12 +94,38 @@ void ATNetplayUI_Initialize(SDL_Window *window) {
 	ATNetplayUI::GetWorker().Start();
 	ATNetplayUI::Activity_Hook();
 	ATNetplayGlue::SetSessionEndCleanupHook(&ATNetplayUI_GlueCleanupHook);
+
+	// Item 4d/4e: feed the joiner-side cache lookup with the user's
+	// Game Library.  GetGameLibrary returns a singleton; we capture
+	// it here at init time (the library outlives every join attempt).
+	// The lookup runs on the netplay glue thread context (always the
+	// main thread in the SDL3 build) so no extra synchronization.
+	ATNetplayGlue::SetLibraryLookupHook(
+		[](uint32_t crc32, uint64_t expectedSize,
+		   const char ext[8], std::vector<uint8_t>& out) -> bool {
+			ATGameLibrary *lib = GetGameLibrary();
+			if (!lib) return false;
+			return lib->FindVariantBytesForCRC32(
+				crc32, expectedSize, ext, out);
+		});
 }
 
 void ATNetplayUI_Shutdown() {
 	ATNetplayGlue::SetSessionEndCleanupHook(nullptr);
 	ATNetplayUI::Activity_Unhook();
-	// Best-effort Delete + coordinator teardown for every offer.
+	// Synchronously delete every active lobby registration BEFORE
+	// the worker thread is stopped.  The async PostLobbyDelete path
+	// would race against GetWorker().Stop() — Stop() joins the
+	// thread and clears the queue, so any unprocessed Delete is
+	// silently dropped, leaving the session listed for its TTL.
+	// SyncDeleteAllRegistrationsForShutdown calls LobbyClient::Delete
+	// inline (with a tight 1.5 s per-call timeout) and clears each
+	// HostedGame's lobbyRegistrations, so the DisableHostedGame
+	// loop below sees nothing to delete and just tears down the
+	// coordinators / NAT-PMP mappings.
+	ATNetplayUI::SyncDeleteAllRegistrationsForShutdown();
+	// Coordinator + NAT-PMP teardown for every offer (lobby Deletes
+	// already done by the sync pass above).
 	for (auto& o : ATNetplayUI::GetState().hostedGames) {
 		ATNetplayUI::DisableHostedGame(o.id);
 	}
@@ -998,6 +1026,37 @@ void RenderInSessionHUD() {
 			ImGui::TextUnformatted(glyph);
 			ImGui::PopStyleColor();
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+		}
+
+		// Connection-unstable early indicator.  The existing 3-s
+		// peer-unresponsive modal (above) and the 5-s relay-rescue
+		// flip both happen at points where the user is already
+		// noticing the stutter; this dot fills the 1-3 s gap with
+		// a quiet visual cue so the user knows "something is off"
+		// before the modal pops.  Yellow • when silence is
+		// 1000-3000 ms; the modal takes over from 3000 ms and the
+		// "R" pip above goes amber once the relay rescue engages
+		// at 5000 ms.  No new state — derived from peerAgeMs each
+		// frame.  Sentinel value MsSinceLastPeerPacket returns
+		// (UINT64_MAX/2) when no peer packet has ever arrived
+		// (e.g. during ramp-up at lockstep entry); the upper
+		// bound here keeps the dot off in that case.
+		constexpr uint64_t kPeerSilenceUiWarningMs = 1000;
+		constexpr uint64_t kPeerSilenceUiPanicMs   = 3000;
+		const bool unstable =
+			peerAgeMs >= kPeerSilenceUiWarningMs &&
+			peerAgeMs <  kPeerSilenceUiPanicMs;
+		if (unstable) {
+			ImGui::SameLine(0, 8);
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				ImVec4(1.00f, 0.85f, 0.25f, 1.0f));   // yellow dot
+			ImGui::TextUnformatted("\xe2\x97\x8f");
+			ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered()) {
+				ImGui::SetTooltip(
+					"Connection unstable — peer last seen %llu ms ago.",
+					(unsigned long long)peerAgeMs);
+			}
 		}
 
 		// Compact Disconnect — no longer full-width, just enough to

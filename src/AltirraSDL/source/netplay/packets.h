@@ -37,6 +37,13 @@ constexpr uint32_t kMagicResyncDone   = 0x44504E41u; // 'ANPD'
 // Online-play communication icon ("emote").  Unreliable fire-and-forget;
 // a lost packet just means the peer misses one reaction.
 constexpr uint32_t kMagicEmote        = 0x45504E41u; // 'ANPE'
+// Joiner → host signal: "I have the game with this CRC32 locally
+// (library or netplay cache); skip the chunked snapshot transfer."
+// Host responds by jumping its SnapshotSender to Done — the joiner
+// uses its local copy as if it had been streamed.  Authenticated via
+// session nonce; the gameFileCRC32 must match what the host advertised
+// in NetBootConfig.gameFileCRC32 or the host ignores the packet.
+constexpr uint32_t kMagicSnapSkip     = 0x4B504E41u; // 'ANPK'
 // Per-subsystem simulator-state hash breakdown, exchanged on desync
 // detection (and on the first lockstep frame of every session) so each
 // peer can log which subsystem diverged instead of relying on the user
@@ -258,6 +265,18 @@ struct NetPunch {
 	uint8_t  sessionNonce[kSessionNonceLen] = {};
 };
 
+// NetSnapSkip — joiner → host (24 bytes).  Sent after Welcome when
+// the joiner finds the requested gameFileCRC32 locally (library or
+// netplay cache).  Host validates that the claimed CRC matches what
+// it advertised in NetBootConfig.gameFileCRC32 and that sessionNonce
+// matches; on success it jumps the SnapshotSender to Done so both
+// sides skip the chunked transfer.
+struct NetSnapSkip {
+	uint32_t magic = kMagicSnapSkip;
+	uint8_t  sessionNonce[kSessionNonceLen] = {};
+	uint32_t gameFileCRC32 = 0;
+};
+
 // NetRelayRegister — peer → lobby (24 bytes).  One-shot packet.
 // The server reads the source sockaddr and records it as the
 // (sessionId, role) endpoint.  No reply.
@@ -331,6 +350,7 @@ constexpr size_t kWireResyncDoneSize  = 12;
 constexpr size_t kWireEmoteSize       = 8;
 constexpr size_t kWireSimHashDiagSize = 4 * 13;   // 52
 constexpr size_t kWirePunchSize         = 4 + kSessionNonceLen;   // 20
+constexpr size_t kWireSnapSkipSize      = 4 + kSessionNonceLen + 4; // 24
 constexpr size_t kWireRelayHeaderSize   = 4 + 16 + 1 + 3;         // 24
 constexpr size_t kWireRelayRegisterSize = kWireRelayHeaderSize;   // 24
 

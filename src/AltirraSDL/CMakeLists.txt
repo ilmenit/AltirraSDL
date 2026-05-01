@@ -409,6 +409,7 @@ if(ALTIRRA_NETPLAY)
         source/netplay/netplay_profile.cpp
         source/netplay/transport.cpp
         source/netplay/snapshot_channel.cpp
+        source/netplay/netplay_cache.cpp
         source/netplay/lockstep.cpp
         source/netplay/coordinator.cpp
         source/netplay/netplay_glue.cpp

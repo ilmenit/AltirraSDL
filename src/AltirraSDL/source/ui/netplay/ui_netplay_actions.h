@@ -145,4 +145,14 @@ void PostLobbyDeleteForSession(const std::string& section,
                                const std::string& sessionId,
                                const std::string& token);
 
+// Synchronous best-effort lobby delete for app-shutdown.  Used by
+// ATNetplayUI_Shutdown right before the worker thread is stopped:
+// the worker queue is about to be cleared, so any pending async
+// Deletes posted via PostLobbyDelete would be lost.  This call
+// bypasses the worker and invokes LobbyClient::Delete directly
+// with a tight per-call timeout so the app exit isn't held up
+// when the lobby is unreachable.  Iterates every offer's
+// `lobbyRegistrations`; clears the vector after.
+void SyncDeleteAllRegistrationsForShutdown();
+
 } // namespace ATNetplayUI

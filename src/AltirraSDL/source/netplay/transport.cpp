@@ -406,11 +406,42 @@ bool Transport::EnumerateLocalIPv4s(std::vector<std::string>& out) {
 bool Transport::SendTo(const uint8_t* bytes, size_t n, const Endpoint& to) {
 	if (!IsOpen() || !to.IsValid() || n == 0 || bytes == nullptr) return false;
 
+	// Test-only outbound packet loss.  A simple xorshift32 keeps the
+	// test deterministic while staying header-only and very cheap when
+	// the drop rate is 0 (the common case — production builds never
+	// call SetTestDropRate).
+	if (mTestDropRate > 0.0f) {
+		uint32_t r = mTestRngState;
+		r ^= r << 13;
+		r ^= r >> 17;
+		r ^= r << 5;
+		mTestRngState = r;
+		// Map the 32-bit output to [0, 1) and compare against the
+		// drop rate.  Inclusive on the low side, exclusive on the
+		// high — at dropRate=1.0 we drop everything; at 0.0 nothing.
+		const float u = (float)(r & 0x00FFFFFFu) / (float)0x01000000u;
+		if (u < mTestDropRate) {
+			// Drop: pretend the kernel accepted the bytes.  Returning
+			// true mimics a successful send so retry logic in the
+			// caller fires only on absent ACKs / timeouts, not on
+			// "send failed".
+			return true;
+		}
+	}
+
 	int rc = ::sendto((int)mSock,
 	                  (const char*)bytes, (int)n, 0,
 	                  (const sockaddr*)to.raw, (socklen_t)to.rawLen);
 	if (rc < 0) return false;
 	return (size_t)rc == n;
+}
+
+void Transport::SetTestDropRate(float dropRate, uint32_t seed) {
+	if (dropRate < 0.0f) dropRate = 0.0f;
+	if (dropRate > 1.0f) dropRate = 1.0f;
+	mTestDropRate = dropRate;
+	// xorshift32 needs non-zero seed; coerce 0 to 1 silently.
+	mTestRngState = seed ? seed : 1u;
 }
 
 RecvResult Transport::RecvFrom(uint8_t* buf, size_t bufSize,

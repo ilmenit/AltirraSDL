@@ -31,6 +31,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <vector>
 
 namespace ATNetplay { enum class CoordPhase; struct NetBootConfig; }
 
@@ -129,6 +131,20 @@ void ApplyFrameInputsToSim();
 // Tear down every host offer AND the joiner.  Safe to call
 // unconditionally on shutdown.
 void Shutdown();
+
+// --- Joiner-side cache hooks (Item 4d/4e) ---------------------------------
+// Install the user's Game Library lookup callback.  StartJoin will compose
+// it with the file-based netplay_cache so the coordinator's cache hook
+// answers "do you have this game locally?" by checking the cache
+// directory FIRST and the library SECOND.  Pass nullptr to disable
+// library lookup (cache directory still works).
+//
+// Lifetime: call once at app startup.  The callback must outlive every
+// StartJoin → StopJoin cycle.
+using LibraryLookupFn = std::function<bool(
+    uint32_t crc32, uint64_t expectedSize, const char ext[8],
+    std::vector<uint8_t>& outBytes)>;
+void SetLibraryLookupHook(LibraryLookupFn fn);
 
 // --- Host hostedGames (multi) ---------------------------------------------------
 //

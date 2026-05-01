@@ -25,6 +25,14 @@ struct GameVariant {
 	uint64_t      mFileSize = 0;
 	uint64_t      mModTime = 0;
 	VDStringW     mLabel;
+	// Persistent CRC32 of the raw game-file bytes.  0 = not yet
+	// computed (lazy: filled in by the netplay-joiner cache lookup
+	// path on first use, then saved to the cache JSON).  Adding it
+	// to the scan would slow first-time scans on large libraries
+	// for no everyday user benefit; populating on demand keeps
+	// scans fast while still letting netplay match library files
+	// against a host's advertised gameFileCRC32 to skip downloads.
+	mutable uint32_t mGameFileCRC32 = 0;
 };
 
 struct GameEntry {
@@ -92,6 +100,26 @@ public:
 	// Lookup helper: returns the index of the entry with a variant whose
 	// mPath matches the given path, or -1 if none.
 	int  FindEntryByVariantPath(const VDStringW &path) const;
+
+	// Netplay joiner cache helper.  Find a variant whose raw game-file
+	// bytes have CRC32 == `crc32`, with `expectedSize` bytes and an
+	// extension matching `expectedExt8` (NUL-padded 8-byte field as
+	// carried in NetBootConfig.gameExtension; leading dot optional).
+	// Returns true on a match; on success `outBytes` is populated with
+	// the file's content.
+	//
+	// Strategy: filter variants by (size, extension) — typically 0 or 1
+	// candidates pass.  For each candidate either trust the cached
+	// `mGameFileCRC32` (when non-zero) or compute it from the file
+	// once and store it on the variant.  Persists the cache JSON when
+	// any variant got a new CRC so subsequent calls are instant.
+	//
+	// Best-effort: on read failure the variant is skipped and search
+	// continues.  Returns false if no match found.
+	bool FindVariantBytesForCRC32(uint32_t crc32,
+	                              uint64_t expectedSize,
+	                              const char expectedExt8[8],
+	                              std::vector<uint8_t>& outBytes);
 
 	const std::vector<GameEntry>& GetEntries() const { return mEntries; }
 	std::vector<GameEntry>& GetEntries() { return mEntries; }

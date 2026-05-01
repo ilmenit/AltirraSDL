@@ -667,6 +667,34 @@ void Coordinator::Poll(uint64_t nowMs) {
 				HandleSnapAck(a);
 				break;
 			}
+			case kMagicSnapSkip: {
+				// Joiner has the game locally — skip the chunked
+				// transfer.  Validates session nonce and the
+				// claimed CRC32 against what we advertised in
+				// Welcome (mBootConfig.gameFileCRC32) before
+				// short-circuiting the SnapshotSender.  Anti-
+				// spoof: a stale skip from a different session
+				// would carry a non-matching nonce; a different
+				// game's CRC would fail the second check.
+				NetSnapSkip s;
+				if (DecodeSnapSkip(mRxBuf, n, s) != DecodeResult::Ok) continue;
+				if (mRole != Role::Host) break;
+				if (mPhase != Phase::SendingSnapshot) break;
+				if (std::memcmp(s.sessionNonce, mSessionNonce,
+				                kSessionNonceLen) != 0) break;
+				if (s.gameFileCRC32 != mBootConfig.gameFileCRC32) break;
+				if (mSnapTx.GetStatus() != SnapshotSender::Status::Sending)
+					break;
+				mSnapTx.ForceDone();
+				g_ATLCNetplay(
+					"host: joiner has the game locally (CRC32=%08X) — "
+					"skipping snapshot transfer",
+					(unsigned)s.gameFileCRC32);
+				// PumpSnapshotSender on the next Poll tick will see
+				// Status==Done and run the existing "snapshot
+				// delivered → Lockstepping" path.
+				break;
+			}
 			case kMagicBye: {
 				NetBye b;
 				if (DecodeBye(mRxBuf, n, b) != DecodeResult::Ok) continue;
@@ -897,6 +925,23 @@ void Coordinator::Poll(uint64_t nowMs) {
 		SendBye(kByeDesyncDetected);
 		mPhase = Phase::Desynced;
 		mLastError = "resync timed out";
+	}
+
+	// Joiner-side ReceivingSnapshot deadline.  Without this, a host
+	// that crashes / loses network after sending Welcome but before
+	// the snapshot finishes leaves us stuck in
+	// "Downloading game from host…" indefinitely — the handshake
+	// timeout already passed (we're in ReceivingSnapshot, not
+	// Handshaking) and the Lockstepping peer-silence backstop only
+	// runs in Lockstepping.  Pattern matches the resync timeout
+	// above.  No SendBye: the host has stopped responding by
+	// definition; FailWith surfaces the error to the UI.
+	if (mPhase == Phase::ReceivingSnapshot && mLastChunkRecvMs != 0 &&
+	    nowMs - mLastChunkRecvMs >= kSnapshotReceiveTimeoutMs) {
+		g_ATLCNetplay(
+			"joiner: snapshot transfer stalled (no chunk in %llu ms) — terminating",
+			(unsigned long long)(nowMs - mLastChunkRecvMs));
+		FailWith("snapshot transfer stalled (host unresponsive)");
 	}
 
 	// Lockstep: peer-silence timeout.  With the lockstep design the
@@ -1213,7 +1258,7 @@ void Coordinator::SubmitSnapshotForUpload(const uint8_t* data, size_t len) {
 // Joiner: handle Welcome
 // ---------------------------------------------------------------------------
 
-void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t /*nowMs*/) {
+void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	if (mPhase != Phase::Handshaking) return;
 
 	// v4: reject if the host's canonical-profile version differs
@@ -1245,6 +1290,11 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t /*nowMs*/)
 	mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes);
 	mSnapProgressMilestone = 0;
 	mPhase = Phase::ReceivingSnapshot;
+	// Seed the snapshot-receive watchdog with nowMs (or 1 if nowMs
+	// happens to be 0 — same sentinel pattern used elsewhere).  The
+	// Poll-side watchdog fails the session if no chunk arrives
+	// within kSnapshotReceiveTimeoutMs.
+	mLastChunkRecvMs = nowMs ? nowMs : 1;
 	g_ATLCNetplay("joiner: Welcome accepted (snapshot=%u bytes / %u chunks, delay=%u)",
 		(unsigned)w.snapshotBytes, (unsigned)w.snapshotChunks,
 		(unsigned)w.inputDelayFrames);
@@ -1253,6 +1303,46 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t /*nowMs*/)
 	// move straight to SnapshotReady.
 	if (w.snapshotChunks == 0) {
 		mPhase = Phase::SnapshotReady;
+		return;
+	}
+
+	// Joiner-side cache lookup.  If the UI/glue layer installed a hook
+	// AND the host advertised a real CRC32 + extension, ask whether
+	// we already have these bytes locally (library or netplay cache).
+	// On hit, adopt the bytes as the fully-received snapshot, send
+	// NetSnapSkip so the host short-circuits its sender, and move
+	// straight to SnapshotReady — saving the entire chunked transfer.
+	mUsedLocalSnapshot = false;
+	if (mCacheLookup &&
+	    w.boot.gameFileCRC32 != 0 &&
+	    w.boot.gameExtension[0] != 0) {
+		std::vector<uint8_t> localBytes;
+		const bool hit = mCacheLookup(
+			w.boot.gameFileCRC32,
+			(uint64_t)w.snapshotBytes,
+			w.boot.gameExtension,
+			localBytes);
+		if (hit && (uint64_t)localBytes.size() == (uint64_t)w.snapshotBytes) {
+			if (mSnapRx.AdoptBytes(localBytes.data(), localBytes.size())) {
+				// Tell the host we don't need the chunks.  Carries
+				// the CRC the host advertised so the host can
+				// validate before short-circuiting its sender.
+				NetSnapSkip skip;
+				std::memcpy(skip.sessionNonce, mSessionNonce,
+				            sizeof skip.sessionNonce);
+				skip.gameFileCRC32 = w.boot.gameFileCRC32;
+				uint8_t buf[kWireSnapSkipSize];
+				size_t n = EncodeSnapSkip(skip, buf, sizeof buf);
+				if (n && mPeerKnown) WrapAndSend(buf, n, mPeer);
+
+				mUsedLocalSnapshot = true;
+				mPhase = Phase::SnapshotReady;
+				g_ATLCNetplay("joiner: snapshot satisfied locally "
+					"(CRC32=%08X, %zu bytes) — sent SnapSkip",
+					(unsigned)w.boot.gameFileCRC32, localBytes.size());
+				return;
+			}
+		}
 	}
 }
 
@@ -1282,12 +1372,18 @@ void Coordinator::HandleRejectFromHost(const NetReject& r) {
 // Snapshot chunking (bidirectional)
 // ---------------------------------------------------------------------------
 
-void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t /*nowMs*/) {
+void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 	const bool sessionStart = (mPhase == Phase::ReceivingSnapshot);
 	const bool midResync    = (mPhase == Phase::Resyncing && mRole == Role::Joiner);
 	if (!sessionStart && !midResync) return;
 
 	if (mSnapRx.OnChunk(c)) {
+		// Refresh the ReceivingSnapshot watchdog on every accepted
+		// chunk (including duplicates — they prove the host is alive
+		// and trying).  Only stamps during sessionStart; mid-session
+		// resyncs use kResyncOverallTimeoutMs which has its own
+		// independent deadline.
+		if (sessionStart) mLastChunkRecvMs = nowMs ? nowMs : 1;
 		NetSnapAck ack { kMagicAck, c.chunkIdx };
 		size_t n = EncodeSnapAck(ack, mTxBuf, sizeof mTxBuf);
 		if (n && mPeerKnown) WrapAndSend(mTxBuf, n, mPeer);
@@ -1320,6 +1416,22 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t /*nowMs*/) {
 		if (sessionStart) {
 			mPhase = Phase::SnapshotReady;
 			g_ATLCNetplay("joiner: snapshot download complete, applying…");
+			// Persist the just-downloaded bytes to the netplay cache
+			// so the next session for the same game can skip the
+			// transfer.  Suppressed when we adopted bytes locally
+			// (mUsedLocalSnapshot=true) — those came FROM the cache /
+			// library, no need to write them back.  The store hook
+			// validates CRC and writes atomically; failure logs but
+			// does not abort the session.
+			if (!mUsedLocalSnapshot && mCacheStore &&
+			    mBootConfig.gameFileCRC32 != 0 &&
+			    mBootConfig.gameExtension[0] != 0 &&
+			    !mSnapRx.Data().empty()) {
+				mCacheStore(mBootConfig.gameFileCRC32,
+				             mBootConfig.gameExtension,
+				             mSnapRx.Data().data(),
+				             mSnapRx.Data().size());
+			}
 		} else {
 			// Mid-session resync: flag the app to call ApplySavestate +
 			// AcknowledgeResyncApplied.  Phase stays Resyncing until

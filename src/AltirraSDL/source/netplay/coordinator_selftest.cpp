@@ -12,6 +12,7 @@
 //   /tmp/netplay_selftest/coordinator_run
 
 #include "coordinator.h"
+#include "netplay_profile.h"
 
 #include <chrono>
 #include <cstdio>
@@ -20,6 +21,16 @@
 #include <vector>
 
 using namespace ATNetplay;
+
+// Helper: a default boot config with the canonical profile version
+// stamped in so the joiner doesn't reject the host with a "different
+// profile version" error.  All tests below need this; doing it once
+// at top-level keeps the per-test boilerplate small.
+static NetBootConfig makeDefaultBootConfig() {
+	NetBootConfig bc{};
+	bc.canonicalProfileVersion = ATNetplayProfile::kCanonicalProfileVersion;
+	return bc;
+}
 
 static int fails = 0;
 
@@ -65,13 +76,15 @@ static void testEndToEndSession() {
 	const uint64_t kBasicRom = 0xCAFEF00DBABE0001ULL;
 	const uint64_t kSettings = 0xABCDEF0011223344ULL;
 
+	NetBootConfig defaultBoot = makeDefaultBootConfig();
 	CHECK(host.BeginHost(
 		/*localPort*/ 0,
 		/*playerHandle*/ "alice",
 		/*cartName*/ "Joust.atr",
 		kOsRom, kBasicRom, kSettings,
 		/*inputDelayFrames*/ 3,
-		/*entryCodeHash*/ nullptr  // public session
+		/*entryCodeHash*/ nullptr,  // public session
+		defaultBoot
 	));
 	CHECK(host.GetPhase() == Coordinator::Phase::WaitingForJoiner);
 
@@ -146,8 +159,12 @@ static void testEndToEndSession() {
 		host.Poll(nowMs());
 		joiner.Poll(nowMs());
 
-		if (host.CanAdvance())   host.OnFrameAdvanced();
-		if (joiner.CanAdvance()) joiner.OnFrameAdvanced();
+		// Pre-v4 API was `OnFrameAdvanced()` with no args; current
+		// signature takes the simulator-state hash.  Use 0 — these
+		// tests don't assert hash convergence (separate hashes-
+		// match selftest covers that).
+		if (host.CanAdvance())   host.OnFrameAdvanced(0);
+		if (joiner.CanAdvance()) joiner.OnFrameAdvanced(0);
 
 		CHECK(host.GetPhase() != Coordinator::Phase::Desynced);
 		CHECK(joiner.GetPhase() != Coordinator::Phase::Desynced);
@@ -172,9 +189,13 @@ static void testEndToEndSession() {
 static void testHostRejectsWrongOsRom() {
 	Coordinator host, joiner;
 
-	CHECK(host.BeginHost(0, "alice", "Joust.atr",
-		/*osRom*/ 0xAAAA, /*basicRom*/ 0xBBBB, /*settings*/ 0,
-		/*inputDelay*/ 3, /*entryCode*/ nullptr));
+	{
+		NetBootConfig defaultBoot = makeDefaultBootConfig();
+		CHECK(host.BeginHost(0, "alice", "Joust.atr",
+			/*osRom*/ 0xAAAA, /*basicRom*/ 0xBBBB, /*settings*/ 0,
+			/*inputDelay*/ 3, /*entryCode*/ nullptr,
+			defaultBoot));
+	}
 
 	char addr[48];
 	std::snprintf(addr, sizeof addr, "127.0.0.1:%u", (unsigned)host.BoundPort());
@@ -196,7 +217,11 @@ static void testPrivateSessionAcceptsCorrectCode() {
 	uint8_t code[kEntryCodeHashLen];
 	for (size_t i = 0; i < kEntryCodeHashLen; ++i) code[i] = (uint8_t)(i + 0x10);
 
-	CHECK(host.BeginHost(0, "alice", "Joust.atr", 1, 2, 3, 3, code));
+	{
+		NetBootConfig defaultBoot = makeDefaultBootConfig();
+		CHECK(host.BeginHost(0, "alice", "Joust.atr", 1, 2, 3, 3,
+			code, defaultBoot));
+	}
 
 	char addr[48];
 	std::snprintf(addr, sizeof addr, "127.0.0.1:%u", (unsigned)host.BoundPort());
@@ -209,7 +234,11 @@ static void testPrivateSessionAcceptsCorrectCode() {
 		return joiner.GetPhase() == Coordinator::Phase::Failed;
 	}, 2000);
 	CHECK(ok);
-	CHECK(joiner.LastError() && std::strstr(joiner.LastError(), "entry code") != nullptr);
+	// Error wording changed from "entry code" to "join code" — match
+	// either so this test survives further wording polish.
+	CHECK(joiner.LastError() &&
+	      (std::strstr(joiner.LastError(), "entry code") != nullptr ||
+	       std::strstr(joiner.LastError(), "join code") != nullptr));
 
 	// Fresh joiner with correct code.
 	Coordinator joiner2;
@@ -225,10 +254,135 @@ static void testPrivateSessionAcceptsCorrectCode() {
 	CHECK(ok);
 }
 
+// Item 6b regression: snapshot transfer must complete despite a 30%
+// outbound packet-loss rate on BOTH sides.  Validates the sliding-
+// window sender + retry budget bumped to 10 attempts, against a real
+// loopback transport.  Drop is applied symmetrically (host's outbound
+// AND joiner's outbound) to model realistic two-sided jitter.
+//
+// Bound: with kRetryIntervalMs=500 and ~30% loss, individual chunks
+// converge in 1-3 retries; the full transfer for a 4 KB / 4-chunk
+// snapshot completes well inside 5 seconds.  We give 10 s.
+static void testSnapshotSurvives30PctLoss() {
+	Coordinator host, joiner;
+	const uint64_t kOsRom = 0xDEADBEEFAABBCCDDULL;
+	const uint64_t kBasicRom = 0xCAFEF00DEFEFEFEEULL;
+	const uint64_t kSettings = 0x1122334455667788ULL;
+
+	NetBootConfig defaultBoot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "alice", "Joust.atr",
+		kOsRom, kBasicRom, kSettings, /*delay*/ 3, nullptr,
+		defaultBoot));
+
+	auto snap = makeMockSnapshot(4096);
+	host.SubmitSnapshotForUpload(snap.data(), snap.size());
+
+	char hostAddr[48];
+	std::snprintf(hostAddr, sizeof hostAddr, "127.0.0.1:%u",
+		(unsigned)host.BoundPort());
+	CHECK(joiner.BeginJoin(hostAddr, "bob",
+		kOsRom, kBasicRom, true, nullptr));
+
+	// Inject 30% drop AFTER both peers have bound a socket — different
+	// seeds so each side's drop pattern is independent (matches what
+	// real packet loss looks like).
+	host.TestGetTransport().SetTestDropRate(0.30f, /*seed*/ 0xC0FFEE01u);
+	joiner.TestGetTransport().SetTestDropRate(0.30f, /*seed*/ 0xC0FFEE02u);
+
+	bool ok = spinUntil(host, joiner, [&]{
+		return joiner.GetPhase() == Coordinator::Phase::SnapshotReady;
+	}, 10000);
+	CHECK(ok);
+	// Joiner is at SnapshotReady; the transition to Lockstepping
+	// happens on AcknowledgeSnapshotApplied — we don't need that
+	// for this test.  Wait one round-trip more for the host to see
+	// the final ACK and itself transition (under loss the host's
+	// snapshot delivered → Lockstepping handshake takes another
+	// retry after the joiner finished).
+	ok = spinUntil(host, joiner, [&]{
+		return host.GetPhase() == Coordinator::Phase::Lockstepping;
+	}, 5000);
+	CHECK(ok);
+
+	// Stop dropping so the Bye exchange isn't flaky.
+	host.TestGetTransport().SetTestDropRate(0.0f);
+	joiner.TestGetTransport().SetTestDropRate(0.0f);
+
+	host.End();
+	joiner.End();
+}
+
+// Item 6b regression: when the host stops sending entirely after
+// Welcome (simulating a host crash / network drop mid-snapshot), the
+// joiner's ReceivingSnapshot watchdog (Item 1) must fail the session
+// within ~kSnapshotReceiveTimeoutMs (30 s) instead of hanging
+// forever.  We compress the test by injecting 100% drop on the
+// host's outbound at exactly the moment the joiner enters
+// ReceivingSnapshot — the joiner sees Welcome but no chunks ever.
+//
+// We don't actually wait the full 30 s; instead we just verify that:
+//   1. joiner is in ReceivingSnapshot after Welcome arrives,
+//   2. joiner stays there with NO chunks delivered (all dropped),
+//   3. eventually FailWith fires (we accept any time within 35 s).
+// On a slow CI runner this should still complete inside 35 s.
+static void testJoinerDetectsStalledSnapshotHost() {
+	Coordinator host, joiner;
+	NetBootConfig defaultBoot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "alice", "Joust.atr",
+		1, 2, 3, /*delay*/ 3, nullptr, defaultBoot));
+	// Use a snapshot big enough that the chunked transfer can't
+	// complete in a single Poll iteration.  At kSnapshotChunkSize=1200
+	// and the 32-chunk sliding window, 1 MB ≈ 875 chunks ≈ 27 windows
+	// — plenty of opportunity to inject the drop mid-transfer.
+	auto snap = makeMockSnapshot(1024 * 1024);
+	host.SubmitSnapshotForUpload(snap.data(), snap.size());
+	char hostAddr[48];
+	std::snprintf(hostAddr, sizeof hostAddr, "127.0.0.1:%u",
+		(unsigned)host.BoundPort());
+	CHECK(joiner.BeginJoin(hostAddr, "bob", 1, 2, true, nullptr));
+
+	// Custom poll loop: inject the 100% drop the moment the joiner
+	// reports ReceivingSnapshot, then wait for the watchdog (Item 1)
+	// to flip the joiner to Failed.  spinUntil with a single
+	// completion predicate isn't quite enough here — the inject has
+	// to happen at the right moment, not before.
+	bool injected = false;
+	bool failed   = false;
+	const uint64_t startMs = nowMs();
+	const uint64_t deadlineMs = startMs + 40000;   // > 30 s watchdog
+	while (nowMs() < deadlineMs) {
+		host.Poll(nowMs());
+		joiner.Poll(nowMs());
+		if (!injected &&
+		    joiner.GetPhase() == Coordinator::Phase::ReceivingSnapshot) {
+			host.TestGetTransport().SetTestDropRate(1.0f);
+			injected = true;
+		}
+		if (joiner.GetPhase() == Coordinator::Phase::Failed) {
+			failed = true;
+			break;
+		}
+		// 5 ms is fine — the watchdog fires off wallclock so we
+		// don't need to pin the loop tight.
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+	CHECK(injected);   // we did get into ReceivingSnapshot
+	CHECK(failed);     // and the watchdog fired
+	CHECK(joiner.LastError() != nullptr &&
+	      std::strstr(joiner.LastError(), "stalled") != nullptr);
+
+	// Cleanup.
+	host.TestGetTransport().SetTestDropRate(0.0f);
+	host.End();
+	joiner.End();
+}
+
 int main() {
 	testEndToEndSession();
 	testHostRejectsWrongOsRom();
 	testPrivateSessionAcceptsCorrectCode();
+	testSnapshotSurvives30PctLoss();
+	testJoinerDetectsStalledSnapshotHost();
 
 	if (fails == 0) {
 		std::printf("netplay coordinator selftest: OK\n");

@@ -103,6 +103,17 @@ public:
 	// socket accepted the bytes.
 	bool SendTo(const uint8_t* bytes, size_t n, const Endpoint& to);
 
+	// Test instrumentation only.  When dropRate > 0, SendTo silently
+	// discards that fraction of outbound datagrams (deterministic via
+	// `seed` so test runs are reproducible).  Default 0 = real send,
+	// no overhead beyond a single comparison.  Called from
+	// coordinator_selftest's lossy-network regressions; not used in
+	// production builds.  The drop is on the SEND side because that
+	// composes correctly with two Transport instances in the same
+	// process — packets dropped here never reach the peer, so the
+	// peer's recv never sees them, modeling real-world packet loss.
+	void SetTestDropRate(float dropRate, uint32_t seed = 1);
+
 	// Non-blocking recv.  On RecvResult::Ok, outLen carries the byte
 	// count and `from` carries the sender's endpoint.  On
 	// RecvResult::WouldBlock the queue is empty.  `bufSize` must be
@@ -120,6 +131,11 @@ private:
 	// <winsock2.h> / <sys/socket.h> into every includer.
 	intptr_t mSock;
 	uint16_t mBoundPort;
+	// Test-only drop instrumentation.  See SetTestDropRate.  When
+	// mTestDropRate is 0 (default), SendTo's hot path skips the drop
+	// check entirely after a single zero-compare.
+	float    mTestDropRate = 0.0f;
+	uint32_t mTestRngState = 1u;
 };
 
 } // namespace ATNetplay

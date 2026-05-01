@@ -257,6 +257,33 @@ static void testByeRoundTrip() {
 	CHECK(out.reason == kByeDesyncDetected);
 }
 
+static void testSnapSkipRoundTrip() {
+	NetSnapSkip in;
+	for (size_t i = 0; i < kSessionNonceLen; ++i)
+		in.sessionNonce[i] = (uint8_t)(i * 17u + 3u);
+	in.gameFileCRC32 = 0xDEADBEEFu;
+	uint8_t buf[kWireSnapSkipSize];
+	CHECK(EncodeSnapSkip(in, buf, sizeof(buf)) == kWireSnapSkipSize);
+	NetSnapSkip out;
+	CHECK(DecodeSnapSkip(buf, sizeof(buf), out) == DecodeResult::Ok);
+	CHECK(out.magic == kMagicSnapSkip);
+	CHECK(out.gameFileCRC32 == 0xDEADBEEFu);
+	CHECK(std::memcmp(out.sessionNonce, in.sessionNonce,
+	                  kSessionNonceLen) == 0);
+
+	// Short input is rejected.
+	NetSnapSkip out2;
+	CHECK(DecodeSnapSkip(buf, kWireSnapSkipSize - 1, out2)
+	      == DecodeResult::TooShort);
+
+	// Wrong magic is rejected.
+	uint8_t bad[kWireSnapSkipSize];
+	std::memcpy(bad, buf, kWireSnapSkipSize);
+	bad[0] = 'Z';
+	CHECK(DecodeSnapSkip(bad, sizeof(bad), out2)
+	      == DecodeResult::BadMagic);
+}
+
 static void testStringFieldNulTermination() {
 	// A 40-character source must be truncated to kHandleLen-1 (31) with
 	// the final byte guaranteed zero, so HandleToCStr is safe even
@@ -307,6 +334,7 @@ int main() {
 	testSnapChunkRoundTrip();
 	testSnapAckRoundTrip();
 	testByeRoundTrip();
+	testSnapSkipRoundTrip();
 	testStringFieldNulTermination();
 	testShortAndBadMagic();
 

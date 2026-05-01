@@ -472,6 +472,27 @@ DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out) {
 }
 
 // ---------------------------------------------------------------------------
+// NetSnapSkip (24 bytes) — joiner→host cache-hit signal
+// ---------------------------------------------------------------------------
+
+size_t EncodeSnapSkip(const NetSnapSkip& s, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireSnapSkipSize) return 0;
+	put_u32(buf + 0, kMagicSnapSkip);
+	std::memcpy(buf + 4, s.sessionNonce, kSessionNonceLen);
+	put_u32(buf + 4 + kSessionNonceLen, s.gameFileCRC32);
+	return kWireSnapSkipSize;
+}
+
+DecodeResult DecodeSnapSkip(const uint8_t* buf, size_t len, NetSnapSkip& out) {
+	if (len < kWireSnapSkipSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicSnapSkip) return DecodeResult::BadMagic;
+	std::memcpy(out.sessionNonce, buf + 4, kSessionNonceLen);
+	out.gameFileCRC32 = get_u32(buf + 4 + kSessionNonceLen);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // NetRelayRegister (24 bytes)
 // ---------------------------------------------------------------------------
 

@@ -46,6 +46,7 @@
 #include "transport.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -180,6 +181,34 @@ public:
 	// will ship.
 	const NetBootConfig& GetBootConfig() const { return mBootConfig; }
 	void AcknowledgeSnapshotApplied();
+
+	// ---- joiner-side cache hooks (Item 4d/4e) ---------------------------------
+	//
+	// The coordinator is library/configdir-agnostic.  The UI/glue layer
+	// installs callbacks that:
+	//   - look up game bytes by (CRC32, expected size, extension)
+	//     before the chunked download starts; if the lookup yields
+	//     bytes whose CRC32 matches, the joiner adopts them locally
+	//     and sends NetSnapSkip so the host can fast-finish too;
+	//   - persist the downloaded bytes after a successful chunk-by-
+	//     chunk transfer so the next session for the same game hits
+	//     the cache.
+	// Returning false / no-op for either is fine — the chunked
+	// transfer is the always-correct fallback.
+	using CacheLookupFn = std::function<bool(
+		uint32_t crc32, uint64_t expectedSize, const char ext[8],
+		std::vector<uint8_t>& outBytes)>;
+	using CacheStoreFn  = std::function<void(
+		uint32_t crc32, const char ext[8],
+		const uint8_t* data, size_t len)>;
+	void SetCacheLookupHook(CacheLookupFn fn) { mCacheLookup = std::move(fn); }
+	void SetCacheStoreHook (CacheStoreFn  fn) { mCacheStore  = std::move(fn); }
+
+	// Test-only accessor.  Used by coordinator_selftest's lossy
+	// regressions to call mTransport.SetTestDropRate(...).  Not
+	// surfaced by netplay_glue, so production callers cannot reach
+	// the underlying socket.
+	Transport& TestGetTransport() { return mTransport; }
 
 	// ---- lockstep frame API (valid only in Lockstepping) -----------------
 
@@ -422,6 +451,15 @@ private:
 	// HandleWelcomeFromHost.
 	NetBootConfig mBootConfig{};
 
+	// Joiner-side cache hooks (Item 4d).  Optional — null is fine,
+	// and means the joiner always falls back to the chunked download.
+	CacheLookupFn mCacheLookup;
+	CacheStoreFn  mCacheStore;
+	// Set when the joiner short-circuited the download via
+	// NetSnapSkip; suppresses the post-download cache-store call so
+	// we don't re-write bytes that just came from the cache.
+	bool          mUsedLocalSnapshot = false;
+
 	// Host pending-welcome: a joiner Hello arrived, but
 	// SubmitSnapshotForUpload() hasn't been called yet.  We hold
 	// enough info to send the Welcome once bytes arrive.
@@ -530,6 +568,24 @@ private:
 	// cycles.
 	static constexpr uint64_t kResyncOverallTimeoutMs = 15000;
 	uint64_t mResyncStartMs = 0;
+
+	// Joiner-side ReceivingSnapshot watchdog.  Without this, a host
+	// that crashes / loses network AFTER sending Welcome but BEFORE
+	// the snapshot finishes leaves the joiner stuck in
+	// "Downloading game from host…" indefinitely — the 25 s
+	// handshake timeout no longer applies (we're past it), the
+	// 15 s resync timeout doesn't cover the session-start
+	// snapshot, and the 10-min Lockstepping peer-silence backstop
+	// is far too long to be useful here.
+	//
+	// 30 s is comfortably longer than any plausible chunk
+	// round-trip even on relay (typical: 200-400 ms; worst-case
+	// retry budget per chunk after Item 2 bump: 5 s) but short
+	// enough that a stalled host surfaces a clear error
+	// promptly.  Stamped on ReceivingSnapshot entry and on each
+	// successfully-accepted chunk.
+	static constexpr uint64_t kSnapshotReceiveTimeoutMs = 30000;
+	uint64_t mLastChunkRecvMs = 0;
 
 	// One-shot guard so the DESYNC-detected log only fires once per
 	// lockstep session rather than every tick until the resync handler

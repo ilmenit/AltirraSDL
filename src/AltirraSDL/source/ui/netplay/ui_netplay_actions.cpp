@@ -12,6 +12,7 @@
 
 #include "netplay/netplay_glue.h"
 #include "netplay/netplay_profile.h"
+#include "netplay/lobby_client.h"
 #include "netplay/lobby_config.h"
 #include "netplay/lobby_protocol.h"
 #include "netplay/netplay_simhash.h"
@@ -674,6 +675,58 @@ void PostLobbyDeleteForSession(const std::string& section,
 	g_ATLCNetplay("lobby: cannot Delete orphan session %s — "
 		"section \"%s\" no longer in lobby.ini",
 		sessionId.c_str(), section.c_str());
+}
+
+void SyncDeleteAllRegistrationsForShutdown() {
+	// Race we are closing: ATNetplayUI_Shutdown() previously called
+	// PostLobbyDelete (async) and then immediately stopped the
+	// worker.  LobbyWorker::Stop() joins the thread and clears the
+	// in-queue, so any Delete that hadn't been dequeued yet was
+	// silently dropped — leaving the session listed in the lobby
+	// for up to its TTL (60 s).  This helper bypasses the worker
+	// and calls LobbyClient::Delete inline, with a tight per-call
+	// timeout, so app exit completes the deletes when reachable
+	// and isn't held up when not.  Total worst case: N×timeoutMs
+	// (typically << 100 ms total against the live lobby).
+	auto lobbies = AllEnabledHttpLobbies();
+	if (lobbies.empty()) return;
+
+	constexpr uint32_t kShutdownDeleteTimeoutMs = 1500;
+
+	for (auto& o : GetState().hostedGames) {
+		for (const auto& reg : o.lobbyRegistrations) {
+			if (reg.sessionId.empty() || reg.token.empty()) continue;
+
+			ATNetplay::LobbyEndpoint epCopy;
+			bool epFound = false;
+			for (const auto& L : lobbies) {
+				if (L.section == reg.section) {
+					epCopy = L.endpoint;
+					epFound = true;
+					break;
+				}
+			}
+			if (!epFound) continue;
+
+			// Override the endpoint's normal 2 s timeout with our
+			// tighter shutdown budget so app exit isn't held up
+			// when the lobby is unreachable.
+			epCopy.timeoutMs = kShutdownDeleteTimeoutMs;
+
+			ATNetplay::LobbyClient client(epCopy);
+			bool ok = client.Delete(reg.sessionId, reg.token);
+			g_ATLCNetplay(
+				"shutdown: sync DELETE session %s @ %s — %s (status=%d)",
+				reg.sessionId.c_str(), reg.section.c_str(),
+				ok ? "ok" : "failed", client.LastStatus());
+		}
+		// Clear so the subsequent DisableHostedGame loop in
+		// ATNetplayUI_Shutdown sees nothing to delete and skips
+		// the async PostLobbyDelete branch (PostLobbyDelete
+		// iterates an empty vector cleanly; coord-stop and
+		// NAT-PMP release still run).
+		o.lobbyRegistrations.clear();
+	}
 }
 
 void EnableHostedGame(const std::string& gameId) {

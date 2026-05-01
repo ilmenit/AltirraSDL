@@ -42,10 +42,16 @@ public:
 		Failed,    // exceeded retry budget for some chunk
 	};
 
-	// Retry policy: 500 ms per attempt, 5 attempts per chunk before
-	// giving up.  Exposed for tests that want to fast-forward.
+	// Retry policy: 500 ms per attempt, 10 attempts per chunk before
+	// giving up.  Bumped from 5 (2.5 s window) to 10 (5 s window)
+	// because the 32-chunk sliding window can put many chunks under
+	// simultaneous retry pressure during a brief lobby hiccup; with
+	// 5 attempts a 1-s lobby blip that drops three retries in a row
+	// fails the whole transfer.  10 attempts × 500 ms gives enough
+	// headroom that only a sustained ~5 s outage tears down a chunk.
+	// Exposed for tests that want to fast-forward.
 	static constexpr uint64_t kRetryIntervalMs = 500;
-	static constexpr int      kMaxAttemptsPerChunk = 5;
+	static constexpr int      kMaxAttemptsPerChunk = 10;
 
 	// Sliding-window size — the maximum number of un-acked chunks
 	// allowed in flight simultaneously.  Prior implementation was
@@ -82,6 +88,14 @@ public:
 	// until the next un-acked chunk; when mLowestUnacked reaches
 	// mTotalChunks the transfer is Done.
 	void OnAckReceived(uint32_t chunkIdx);
+
+	// Mark all chunks acknowledged and transition to Done immediately.
+	// Used by the netplay-cache "I have it locally" path: the joiner
+	// sends NetSnapSkip claiming a CRC32 match, the host validates,
+	// and then short-circuits its sender so both sides converge on
+	// the existing "snapshot delivered → Lockstepping" path.
+	// Idempotent on Done; no-op when not Sending.
+	void ForceDone();
 
 	Status GetStatus() const { return mStatus; }
 	uint32_t TotalChunks() const { return mTotalChunks; }
@@ -134,6 +148,16 @@ public:
 	// wires) than our real host, and echoing an ACK back would
 	// confuse that peer.
 	bool OnChunk(const NetSnapChunk& c);
+
+	// Adopt an externally-provided byte buffer as the fully-received
+	// snapshot, bypassing the chunk loop.  Used by the netplay-cache
+	// path: joiner found the game in its library or local cache and
+	// wants the existing "IsComplete() → Data()" pipeline to work
+	// without simulating chunk arrivals.  `len` must equal the
+	// `expectedBytes` passed to Begin (or Begin must not have been
+	// called yet — this method calls it implicitly with
+	// expectedChunks = 1).  Returns true on success.
+	bool AdoptBytes(const uint8_t* data, size_t len);
 
 	bool IsComplete() const { return mReceived == mExpectedChunks && mExpectedChunks > 0; }
 

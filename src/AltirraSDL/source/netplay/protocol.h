@@ -77,6 +77,10 @@ DecodeResult DecodeSimHashDiag(const uint8_t* buf, size_t len, NetSimHashDiag& o
 size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize);
 DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out);
 
+// --- NetSnapSkip (joiner-side cache hit) -----------------------------------
+size_t EncodeSnapSkip(const NetSnapSkip& s, uint8_t* buf, size_t bufSize);
+DecodeResult DecodeSnapSkip(const uint8_t* buf, size_t len, NetSnapSkip& out);
+
 // --- NetRelayRegister / NetRelayDataHeader (v4 UDP relay) ------------------
 size_t EncodeRelayRegister(const NetRelayRegister& r,
                            uint8_t* buf, size_t bufSize);

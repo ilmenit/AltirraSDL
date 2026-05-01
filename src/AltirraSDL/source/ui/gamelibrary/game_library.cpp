@@ -387,9 +387,15 @@ static bool ParseCacheDocument(const void *buf, size_t size,
 	if (!root.IsObject())
 		return false;
 
+	// Schema versions: 1 = original, 2 = adds gameFileCRC32 to variants.
+	// v1 caches load fine — the new field defaults to 0 ("not yet
+	// computed") so the netplay lazy-CRC path computes and persists
+	// it on first use.  Reject anything else (future formats might
+	// drop fields we expect).
 	auto version = root[L"version"];
-	if (!version.IsInt() || version.AsInt64() != 1)
-		return false;
+	if (!version.IsInt()) return false;
+	const int64_t schemaVersion = version.AsInt64();
+	if (schemaVersion != 1 && schemaVersion != 2) return false;
 
 	outLastScanTime = 0;
 	auto lastScanTime = root[L"lastScanTime"];
@@ -461,6 +467,13 @@ static bool ParseCacheDocument(const void *buf, size_t size,
 					auto label = v[L"label"];
 					if (label.IsString())
 						var.mLabel = label.AsString();
+
+					// v2: optional persistent CRC32 of game-file
+					// bytes.  Missing = not yet computed (lazy-fill
+					// on first netplay cache lookup).
+					auto crc = v[L"gameFileCRC32"];
+					if (crc.IsInt())
+						var.mGameFileCRC32 = (uint32_t)crc.AsInt64();
 
 					entry.mVariants.push_back(std::move(var));
 				}
@@ -571,7 +584,9 @@ bool ATGameLibrary::WriteCacheFile(const VDStringW &path) const {
 		writer.OpenObject();
 
 		writer.WriteMemberName(L"version");
-		writer.WriteInt(1);
+		// v2 adds variant.gameFileCRC32 (lazy-filled by netplay cache
+		// lookup).  ParseCacheDocument accepts both 1 and 2.
+		writer.WriteInt(2);
 
 		writer.WriteMemberName(L"lastScanTime");
 		writer.WriteInt((sint64)mLastScanTime);
@@ -623,6 +638,12 @@ bool ATGameLibrary::WriteCacheFile(const VDStringW &path) const {
 				writer.WriteInt((sint64)var.mModTime);
 				writer.WriteMemberName(L"label");
 				writer.WriteString(var.mLabel.c_str());
+				// v2: persistent gameFileCRC32 (0 when not yet
+				// computed).  Always written so a v1 cache loaded
+				// once and saved is upgraded transparently; readers
+				// older than v2 ignore the unknown field.
+				writer.WriteMemberName(L"gameFileCRC32");
+				writer.WriteInt((sint64)var.mGameFileCRC32);
 				writer.Close();
 			}
 			writer.Close();
@@ -717,6 +738,139 @@ int ATGameLibrary::FindEntryByVariantPath(const VDStringW &path) const {
 		}
 	}
 	return -1;
+}
+
+// Lowercase + drop-leading-dot extension comparator for the netplay
+// CRC lookup.  Boot-config carries a NUL-padded 8-byte field that
+// usually starts with a '.'; library paths don't.
+static bool MatchExt8(const wchar_t *libPath, const char expectedExt8[8]) {
+	if (!libPath) return false;
+	// Pull the library path's extension (after the last '.').
+	const wchar_t *dot = nullptr;
+	for (const wchar_t *p = libPath; *p; ++p) {
+		if (*p == L'.') dot = p;
+	}
+	if (!dot) return false;
+	const wchar_t *libExt = dot + 1;
+
+	// Normalize the boot-config field: strip leading '.', truncate
+	// at NUL, lowercase ASCII letters.
+	char want[9] = {};
+	int wi = 0;
+	for (int i = 0; i < 8 && expectedExt8[i] != 0 && wi < 8; ++i) {
+		char c = expectedExt8[i];
+		if (i == 0 && c == '.') continue;
+		if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+		want[wi++] = c;
+	}
+	if (wi == 0) return false;
+
+	// Compare lib extension lowercase vs want.
+	int li = 0;
+	while (libExt[li] && li < 8) {
+		wchar_t lc = libExt[li];
+		if (lc >= L'A' && lc <= L'Z') lc = (wchar_t)(lc - L'A' + L'a');
+		if (li >= wi) return false;
+		if ((wchar_t)want[li] != lc) return false;
+		++li;
+	}
+	if (libExt[li] != 0) return false;   // lib ext longer than want
+	return li == wi;
+}
+
+bool ATGameLibrary::FindVariantBytesForCRC32(uint32_t crc32,
+                                             uint64_t expectedSize,
+                                             const char expectedExt8[8],
+                                             std::vector<uint8_t>& outBytes) {
+	outBytes.clear();
+	if (crc32 == 0 || expectedSize == 0 || !expectedExt8) return false;
+
+	bool persistedAny = false;
+
+	// Walk all variants.  Filter by (size, ext) before reading file
+	// bytes — that's what keeps this fast on large libraries (typical
+	// (size, ext) bucket has 0-1 candidates).
+	for (auto &entry : mEntries) {
+		for (auto &var : entry.mVariants) {
+			if (var.mFileSize != expectedSize) continue;
+			if (!MatchExt8(var.mPath.c_str(), expectedExt8)) continue;
+			if (var.mPath.empty()) continue;
+
+			// Try cached CRC first — instant when present.
+			uint32_t haveCrc = var.mGameFileCRC32;
+			std::vector<uint8_t> bytes;
+
+			if (haveCrc == 0) {
+				// Read the file once, compute CRC, persist.  Use
+				// VFS open so zip://outer!inner virtual paths from
+				// the archive scan resolve to inner bytes (mirrors
+				// the host's shipping path in
+				// ui_netplay_actions.cpp:1203).
+				try {
+					vdrefptr<ATVFSFileView> view;
+					ATVFSOpenFileView(var.mPath.c_str(), false, ~view);
+					if (!view) continue;
+					IVDRandomAccessStream& fs = view->GetStream();
+					sint64 sz = fs.Length();
+					if (sz <= 0) continue;
+					// Defensive: file size on disk may differ from
+					// cached mFileSize if user replaced the file
+					// since the last scan.
+					if ((uint64_t)sz != expectedSize) continue;
+					bytes.resize((size_t)sz);
+					fs.Seek(0);
+					fs.Read(bytes.data(), (sint32)bytes.size());
+				} catch (...) {
+					continue;
+				}
+				haveCrc = VDCRCTable::CRC32.CRC(
+					bytes.data(), bytes.size());
+				var.mGameFileCRC32 = haveCrc;
+				persistedAny = true;
+			}
+
+			if (haveCrc != crc32) continue;
+
+			// Cached CRC matched (and we either already have bytes
+			// from the lazy-fill path above, or we still need to
+			// read them).
+			if (bytes.empty()) {
+				try {
+					vdrefptr<ATVFSFileView> view;
+					ATVFSOpenFileView(var.mPath.c_str(), false, ~view);
+					if (!view) continue;
+					IVDRandomAccessStream& fs = view->GetStream();
+					sint64 sz = fs.Length();
+					if (sz <= 0 || (uint64_t)sz != expectedSize) continue;
+					bytes.resize((size_t)sz);
+					fs.Seek(0);
+					fs.Read(bytes.data(), (sint32)bytes.size());
+					// Re-verify CRC of bytes we just read — guards
+					// against a stale `mGameFileCRC32` after the
+					// user externally replaced the file.
+					uint32_t actual = VDCRCTable::CRC32.CRC(
+						bytes.data(), bytes.size());
+					if (actual != crc32) {
+						// Cached CRC was wrong.  Refresh it and skip.
+						var.mGameFileCRC32 = actual;
+						persistedAny = true;
+						continue;
+					}
+				} catch (...) {
+					continue;
+				}
+			}
+
+			// Hit.  Persist any newly-computed CRCs before returning
+			// so the next lookup is instant.
+			if (persistedAny) SaveCache();
+			outBytes = std::move(bytes);
+			return true;
+		}
+	}
+
+	if (persistedAny) SaveCache();
+	return false;
 }
 
 // Build a single-variant entry in-place from a real filesystem path.
