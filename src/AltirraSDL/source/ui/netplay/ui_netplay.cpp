@@ -95,19 +95,12 @@ void ATNetplayUI_Initialize(SDL_Window *window) {
 	ATNetplayUI::Activity_Hook();
 	ATNetplayGlue::SetSessionEndCleanupHook(&ATNetplayUI_GlueCleanupHook);
 
-	// Item 4d/4e: feed the joiner-side cache lookup with the user's
-	// Game Library.  GetGameLibrary returns a singleton; we capture
-	// it here at init time (the library outlives every join attempt).
-	// The lookup runs on the netplay glue thread context (always the
-	// main thread in the SDL3 build) so no extra synchronization.
-	ATNetplayGlue::SetLibraryLookupHook(
-		[](uint32_t crc32, uint64_t expectedSize,
-		   const char ext[8], std::vector<uint8_t>& out) -> bool {
-			ATGameLibrary *lib = GetGameLibrary();
-			if (!lib) return false;
-			return lib->FindVariantBytesForCRC32(
-				crc32, expectedSize, ext, out);
-		});
+	// Item 4d/4e library-lookup install DISABLED until the regression
+	// reported on 2026-05-01 is root-caused.  Without this hook
+	// installed, the joiner's per-Welcome cache lookup (also disabled
+	// in coordinator.cpp HandleWelcomeFromHost) never has anything
+	// to call, and the chunked-transfer fallback path is the only
+	// thing that runs.
 }
 
 void ATNetplayUI_Shutdown() {

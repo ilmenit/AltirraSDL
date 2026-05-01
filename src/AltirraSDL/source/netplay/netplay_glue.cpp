@@ -845,32 +845,11 @@ bool StartJoin(const char* hostAddress,
 	g_joinerTerminalTicks = 0;
 	g_joiner = std::make_unique<ATNetplay::Coordinator>();
 
-	// Install the joiner-side cache hooks BEFORE BeginJoinMulti so
-	// any subsequent Welcome can short-circuit the chunked download
-	// via NetSnapSkip.  Composition: (file cache, library lookup).
-	// Fall through to library lookup only on cache miss so the
-	// fast path stays fast even when the user has the same game
-	// in BOTH the cache and the library.
-	g_joiner->SetCacheLookupHook(
-		[](uint32_t crc32, uint64_t expectedSize,
-		   const char ext[8], std::vector<uint8_t>& out) -> bool {
-			if (ATNetplay::NetplayCacheLoad(crc32, ext, out)) {
-				if ((uint64_t)out.size() == expectedSize) return true;
-				// Size mismatch — treat as miss.  Don't trust a
-				// cache file whose contents disagree with the
-				// host's advertised size.
-				out.clear();
-			}
-			if (g_libraryLookup) {
-				return g_libraryLookup(crc32, expectedSize, ext, out);
-			}
-			return false;
-		});
-	g_joiner->SetCacheStoreHook(
-		[](uint32_t crc32, const char ext[8],
-		   const uint8_t* data, size_t len) {
-			ATNetplay::NetplayCacheStore(crc32, ext, data, len);
-		});
+	// Item 4d/4e cache-hook install DISABLED in lockstep with the
+	// joiner-side cache-lookup short-circuit in coordinator.cpp
+	// HandleWelcomeFromHost — see that comment for rationale.
+	// Re-enable both together when the joiner-hang regression is
+	// root-caused.
 
 	// Route through BeginJoinMulti so both single-endpoint ("host:port")
 	// and multi-candidate ("host:port;host:port;...") strings are
