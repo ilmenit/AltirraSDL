@@ -601,6 +601,56 @@ void TestRelayLookupOtherFailsWithOneSide() {
 		"no joiner yet → lookup fails");
 }
 
+// Regression: ClientIp() must NOT trust X-Forwarded-For from a peer
+// outside trustedProxies, and when the peer IS trusted it must take
+// the rightmost XFF entry (the one the proxy appended) -- not the
+// leftmost (which an attacker can forge by prepending a header before
+// the request reaches the proxy).
+void TestClientIpXffSpoof() {
+	++g_testsRun;
+	httplib::Request req;
+
+	// Untrusted peer: XFF must be ignored entirely, no matter what.
+	req.remote_addr = "203.0.113.7";
+	req.headers.emplace("X-Forwarded-For", "1.2.3.4");
+	{
+		std::string ip = ClientIp(req, {"127.0.0.1"});
+		T_EXPECT(ip == "203.0.113.7", "untrusted peer must ignore XFF");
+	}
+
+	// Trusted peer with a single XFF entry: that entry wins.
+	req.remote_addr = "127.0.0.1";
+	req.headers.clear();
+	req.headers.emplace("X-Forwarded-For", "198.51.100.42");
+	{
+		std::string ip = ClientIp(req, {"127.0.0.1"});
+		T_EXPECT(ip == "198.51.100.42", "trusted peer single-entry XFF");
+	}
+
+	// Trusted peer, attacker-prepended XFF + proxy-appended real IP:
+	// rightmost wins, attacker's spoof is discarded.
+	req.headers.clear();
+	req.headers.emplace("X-Forwarded-For", "1.2.3.4, 198.51.100.42");
+	{
+		std::string ip = ClientIp(req, {"127.0.0.1"});
+		T_EXPECT(ip == "198.51.100.42", "trusted peer rightmost wins");
+	}
+
+	// Trusted peer, no XFF header: fall back to peer.
+	req.headers.clear();
+	{
+		std::string ip = ClientIp(req, {"127.0.0.1"});
+		T_EXPECT(ip == "127.0.0.1", "trusted peer no-XFF falls back");
+	}
+
+	// Whitespace + trailing comma tolerated.
+	req.headers.emplace("X-Forwarded-For", " 1.2.3.4 ,  198.51.100.42 ,");
+	{
+		std::string ip = ClientIp(req, {"127.0.0.1"});
+		T_EXPECT(ip == "198.51.100.42", "whitespace + trailing comma");
+	}
+}
+
 void TestOriginBlockedOnPost() {
 	++g_testsRun;
 	Fixture f;
@@ -626,6 +676,7 @@ int RunAll() {
 	TestDeleteOk();
 	TestExpireSweeps();
 	TestRateLimit();
+	TestClientIpXffSpoof();
 	TestOriginBlockedOnPost();
 	TestPeerHintPostAndDeliver();
 	TestPeerHintSizeLimits();

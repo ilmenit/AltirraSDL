@@ -228,6 +228,14 @@ struct Config {
 	int         maxSessions   = kMaxSessions;
 	int         rateBurst     = kRateBurst;
 	int         rateRefillMs  = kRateRefillMillis;
+	// Hosts whose TCP-peer address we trust to attach an honest
+	// X-Forwarded-For header.  When the request arrives from a
+	// trusted proxy we read the LAST XFF entry (the IP that proxy
+	// observed); otherwise we use the TCP peer directly and ignore
+	// any client-supplied XFF.  Default = loopback, which covers the
+	// production reverse-proxy on the same VM.  Override via
+	// TRUSTED_PROXIES (comma-separated).
+	std::vector<std::string> trustedProxies = {"127.0.0.1", "::1"};
 };
 
 // Token-bucket rate limit per source IP.
@@ -747,19 +755,46 @@ std::string ValidateCreate(CreateReq& r) {
 // HTTP plumbing — route wiring + middleware chain
 // -----------------------------------------------------------------
 
-// Derive the client's IP.  cpp-httplib gives us req.remote_addr; we
-// also honour X-Forwarded-For (first entry) so reverse-proxy
-// deployments see real source IPs.
-std::string ClientIp(const httplib::Request& req) {
-	if (req.has_header("X-Forwarded-For")) {
-		std::string xff = req.get_header_value("X-Forwarded-For");
-		auto comma = xff.find(',');
-		if (comma != std::string::npos) xff.resize(comma);
-		while (!xff.empty() && xff.front() == ' ') xff.erase(xff.begin());
-		while (!xff.empty() && xff.back()  == ' ') xff.pop_back();
-		return xff;
+// Derive the client's IP for rate-limiting and logging.
+//
+// cpp-httplib hands us req.remote_addr (the immediate TCP peer).  When
+// the request actually came through our reverse proxy this is the
+// loopback address and would pool every external client into a single
+// bucket -- so we honour X-Forwarded-For, but ONLY when the TCP peer
+// is in trustedProxies.  An untrusted client is free to send whatever
+// XFF it wants; we ignore it and use the TCP peer.
+//
+// When trusted, we take the RIGHTMOST entry of XFF (the one our proxy
+// attached just before forwarding).  Taking the leftmost would let a
+// caller prepend a spoofed value to the header before it reaches the
+// proxy -- the proxy appends, the rightmost is the truthful IP, the
+// leftmost is whatever the attacker chose.
+std::string ClientIp(const httplib::Request& req,
+                     const std::vector<std::string>& trustedProxies) {
+	const std::string& peer = req.remote_addr;
+	bool trusted = false;
+	for (const auto& p : trustedProxies) {
+		if (peer == p) { trusted = true; break; }
 	}
-	return req.remote_addr;
+	if (!trusted || !req.has_header("X-Forwarded-For")) {
+		return peer;
+	}
+
+	std::string xff = req.get_header_value("X-Forwarded-For");
+	// Strip trailing whitespace/commas and take the substring after
+	// the last comma.  (No comma => single entry, take the whole.)
+	while (!xff.empty() &&
+	       (xff.back() == ' ' || xff.back() == '\t' || xff.back() == ',')) {
+		xff.pop_back();
+	}
+	auto lastComma = xff.rfind(',');
+	std::string last = (lastComma == std::string::npos)
+		? xff : xff.substr(lastComma + 1);
+	while (!last.empty() &&
+	       (last.front() == ' ' || last.front() == '\t')) {
+		last.erase(last.begin());
+	}
+	return last.empty() ? peer : last;
 }
 
 void SetCorsForGet(httplib::Response& res) {
@@ -822,7 +857,7 @@ void Install(httplib::Server& srv, Store& store) {
 	// Pre-route middleware: rate limit + origin guard on writes.
 	srv.set_pre_routing_handler(
 		[&store](const httplib::Request& req, httplib::Response& res) {
-			std::string ip = ClientIp(req);
+			std::string ip = ClientIp(req, store.Cfg().trustedProxies);
 
 			if (req.method == "POST" || req.method == "DELETE") {
 				// Native clients never send Origin; a browser that
@@ -845,9 +880,10 @@ void Install(httplib::Server& srv, Store& store) {
 		});
 
 	// Post-routing logger.
-	srv.set_logger([](const httplib::Request& req,
-	                  const httplib::Response& res) {
-		LogReq(ClientIp(req), req.method, req.path, res.status,
+	srv.set_logger([&store](const httplib::Request& req,
+	                        const httplib::Response& res) {
+		LogReq(ClientIp(req, store.Cfg().trustedProxies),
+			req.method, req.path, res.status,
 			res.body.size(), 0);  // duration is tricky without a hook
 	});
 
@@ -1097,7 +1133,7 @@ void Install(httplib::Server& srv, Store& store) {
 			// so in practice we add at most one new candidate.  The
 			// kPeerHintCandidatesMax cap (512) plus our trim below keeps
 			// the result bounded.
-			std::string srcIp = ClientIp(req);
+			std::string srcIp = ClientIp(req, store.Cfg().trustedProxies);
 			if (!srcIp.empty() && !ph.candidates.empty()) {
 				// Walk ph.candidates and collect unique port numbers,
 				// also tracking which `srcIp:port` entries already
@@ -1281,6 +1317,27 @@ Config LoadConfig() {
 		cfg.maxSessions = std::atoi(v);
 	if (const char *v = std::getenv("RATE_BURST"))
 		cfg.rateBurst = std::atoi(v);
+	if (const char *v = std::getenv("TRUSTED_PROXIES")) {
+		cfg.trustedProxies.clear();
+		std::string s = v;
+		size_t pos = 0;
+		while (pos <= s.size()) {
+			size_t comma = s.find(',', pos);
+			std::string entry = s.substr(pos,
+				comma == std::string::npos ? std::string::npos : comma - pos);
+			while (!entry.empty() &&
+			       (entry.front() == ' ' || entry.front() == '\t')) {
+				entry.erase(entry.begin());
+			}
+			while (!entry.empty() &&
+			       (entry.back() == ' ' || entry.back() == '\t')) {
+				entry.pop_back();
+			}
+			if (!entry.empty()) cfg.trustedProxies.push_back(std::move(entry));
+			if (comma == std::string::npos) break;
+			pos = comma + 1;
+		}
+	}
 	return cfg;
 }
 
