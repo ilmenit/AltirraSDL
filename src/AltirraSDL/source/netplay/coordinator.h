@@ -617,7 +617,12 @@ private:
 	// by SetRelayContext to short-circuit per-tick re-entry without
 	// re-running Transport::Resolve() or re-emitting a log line.
 	std::string mLobbyHostPortCached;
-	bool    mRelayRegistered = false;
+	// Timestamp (Poll's nowMs) of the last successful ASGR send to the
+	// lobby's RelayTable.  0 = never sent.  SendRelayRegister gates on
+	// (now - mRelayRegisteredMs) >= kRelayRegisterIntervalMs so a
+	// periodic refresh keeps the slot alive against the server's 30 s
+	// idle-prune (kRelayPeerIdleMs).  Reset to 0 on every Direct↔Relay
+	// transition, on Begin*, and on coordinator teardown.
 	uint64_t mRelayRegisteredMs = 0;
 
 	// Direct-rescue probe state.  All three fields are reset at every
@@ -777,9 +782,14 @@ private:
 	bool SendWrappedViaLobby(const uint8_t* bytes, size_t n);
 
 	// Role-appropriate relay register.  kRelayRoleHost for hosts,
-	// kRelayRoleJoiner for joiners.  One-shot: no-op on subsequent
-	// calls (mRelayRegistered guard).
-	void SendRelayRegister();
+	// kRelayRoleJoiner for joiners.  Periodic: each call sends a
+	// fresh ASGR if the previous send was more than
+	// kRelayRegisterIntervalMs ago (or this is the first send for
+	// this Coordinator).  Otherwise no-op.  The periodic refresh
+	// keeps the lobby's RelayTable slot alive across the 30 s idle
+	// prune even when the host is waiting for joiners with no other
+	// relay traffic to flow.
+	void SendRelayRegister(uint64_t nowMs);
 
 	// Send NetPunch probes to each target that is still inside its
 	// sustain window.  Called from Poll().
@@ -787,10 +797,13 @@ private:
 
 	// Two-stage relay fallback evaluator — called from Poll().
 	//
-	// MaybePrearmRelay: at T+kRelayPrearmAfterMs in Handshaking/
-	//   WaitingForJoiner, send one ASGR so the lobby's RelayTable has
-	//   our endpoint primed.  Does NOT change mPeerPath — direct
-	//   probes continue.  Idempotent (mRelayRegistered guard).
+	// MaybePrearmRelay: register with the lobby's RelayTable as soon as
+	//   relay context is set.  Does NOT change mPeerPath — direct
+	//   probes continue.  Re-sends every kRelayRegisterIntervalMs while
+	//   in WaitingForJoiner / Handshaking / SendingSnapshot so the slot
+	//   doesn't expire under the server's 30 s idle prune.  Skipped
+	//   when mPeerPath == Relay (ordinary ASDF traffic refreshes the
+	//   slot).
 	// MaybeEngageRelay: at T+kRelayFallbackAfterMs, flip mPeerPath to
 	//   Relay and fire the first wrapped Hello via lobby.  Calls
 	//   SendRelayRegister defensively in case prearm was skipped.

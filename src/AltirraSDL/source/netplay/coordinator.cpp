@@ -5,6 +5,7 @@
 #include "coordinator.h"
 
 #include "protocol.h"
+#include "lobby_protocol.h"
 #include "netplay_profile.h"
 
 #include <at/atcore/logging.h>
@@ -91,7 +92,7 @@ bool Coordinator::BeginHost(uint16_t localPort,
 	mHostHasSeenHint = false;
 	mDirectRescueCandidates.clear();
 	mPeerPath = PeerPath::Direct;
-	mRelayRegistered = false;
+	mRelayRegisteredMs = 0;
 	mPunchProbesReceived = 0;
 	mRelayFramesReceived = 0;
 	g_ATLCNetplay("host: listening on UDP port %u (cart=\"%s\" private=%s delay=%u)",
@@ -143,7 +144,7 @@ bool Coordinator::BeginJoin(const char* hostAddress,
 	mLastRejectReason = 0;
 	mPhaseStartMs = 0;
 	mPeerPath = PeerPath::Direct;
-	mRelayRegistered = false;
+	mRelayRegisteredMs = 0;
 	mCandidateStats.clear();
 	mPunchProbesReceived = 0;
 	mRelayFramesReceived = 0;
@@ -264,7 +265,7 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 	mLastRejectReason = 0;
 	mPhaseStartMs = 0;
 	mPeerPath = PeerPath::Direct;
-	mRelayRegistered = false;
+	mRelayRegisteredMs = 0;
 	mPunchProbesReceived = 0;
 	mRelayFramesReceived = 0;
 
@@ -384,7 +385,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 					mRole == Role::Joiner ? "joiner" : "idle");
 				mPeerPath = PeerPath::Relay;
 				OnPeerPathFlippedToRelay(nowMs);
-				SendRelayRegister();
+				SendRelayRegister(nowMs);
 			}
 		}
 
@@ -407,11 +408,11 @@ void Coordinator::Poll(uint64_t nowMs) {
 		// on Relay.
 		// Authentication: from.Equals(mPeer) — we trust the locked-in
 		// peer endpoint that was authenticated during handshake.  We
-		// also reset mRelayRegistered so a future Direct→Relay
-		// transition can re-register with the lobby (the RelayTable
-		// entry times out after 30 s of idle, so the in-memory
-		// "already registered" flag would otherwise block the
-		// re-registration we'd actually need).
+		// also reset mRelayRegisteredMs so a future Direct→Relay
+		// transition re-arms the periodic re-register clock from
+		// scratch (the lobby's RelayTable entry times out after 30 s
+		// of idle, so a stale timestamp from a previous Relay phase
+		// must not be used to skip a fresh registration).
 		// Critical guard: PeerIsLobby() — when relay was engaged
 		// before any direct-path traffic ever reached us, mPeer is
 		// the lobby endpoint itself.  The lobby strips ASDF and
@@ -444,7 +445,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 				mRole == Role::Host ? "host" : "joiner",
 				(unsigned long long)outageMs, ep);
 			mPeerPath = PeerPath::Direct;
-			mRelayRegistered = false;
+			mRelayRegisteredMs = 0;
 			mLastFlipToDirectMs = nowMs;
 		}
 
@@ -498,11 +499,13 @@ void Coordinator::Poll(uint64_t nowMs) {
 						(mRelayEngagedAtMs && nowMs >= mRelayEngagedAtMs)
 						? (nowMs - mRelayEngagedAtMs) : 0;
 					mPeerPath = PeerPath::Direct;
-					// Reset the relay-registered flag so a future
-					// Direct → Relay engagement can re-register
-					// with the lobby — the RelayTable entry times
-					// out after 30 s of idle while we're on Direct.
-					mRelayRegistered = false;
+					// Reset the registration timestamp so a future
+					// Direct → Relay engagement re-arms the periodic
+					// re-register clock from scratch — the RelayTable
+					// entry times out after 30 s of idle while we're
+					// on Direct, so we cannot trust a stale timestamp
+					// from a previous Relay phase.
+					mRelayRegisteredMs = 0;
 					mLastFlipToDirectMs = nowMs;
 					// Refresh mPeer to the address we just heard from
 					// — covers the NAT-eviction-and-recreate case where
@@ -717,7 +720,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 
 	// Relay-first: register with the lobby's relay table immediately
 	// on the first Poll tick after relay context is set, BEFORE the
-	// Hello-spray below consults mRelayRegistered.  Without this
+	// Hello-spray below consults mRelayRegisteredMs.  Without this
 	// ordering, the very first spray after BeginJoinMulti would
 	// always skip the wrapped-Hello branch and we'd lose one retry
 	// interval (~250 ms) of relay-path latency on every join.
@@ -802,7 +805,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 				// to see this Hello.  Direct punching still runs
 				// alongside; whichever path completes the
 				// handshake first determines mPeerPath.
-				if (mLobbyRelayKnown && mRelayRegistered) {
+				if (mLobbyRelayKnown && mRelayRegisteredMs != 0) {
 					SendWrappedViaLobby(mTxBuf, nn);
 				}
 			}
@@ -2221,22 +2224,47 @@ bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {
 	return mTransport.SendTo(buf, wn, mLobbyRelayEndpoint);
 }
 
-void Coordinator::SendRelayRegister() {
-	if (mRelayRegistered) return;
+void Coordinator::SendRelayRegister(uint64_t nowMs) {
 	if (!mLobbyRelayKnown || !mHasRelaySessionId) return;
+
+	// Periodic refresh: the lobby's RelayTable prunes a slot after
+	// kRelayPeerIdleMs of silence, and a single dropped UDP register
+	// packet at session start would otherwise break the relay path
+	// silently for the rest of the session.  Re-emit every
+	// kRelayRegisterIntervalMs (10 s under a 30 s prune) so:
+	//   - first-packet UDP loss recovers in one interval
+	//   - a host that idles in WaitingForJoiner for minutes / hours
+	//     keeps its slot live
+	//   - a Direct → Relay flip in Lockstepping pumps the timestamp
+	//     forward each time so the slot survives even if no other
+	//     ASDF traffic happens to flow in the first 10 s after flip
+	const bool firstSend = (mRelayRegisteredMs == 0);
+	if (!firstSend &&
+	    (nowMs - mRelayRegisteredMs) <
+	        (uint64_t)ATLobby::kRelayRegisterIntervalMs) {
+		return;
+	}
+
 	NetRelayRegister r;
 	std::memcpy(r.sessionId, mRelaySessionId, 16);
 	r.role = (mRole == Role::Host) ? kRelayRoleHost : kRelayRoleJoiner;
 	uint8_t buf[kWireRelayRegisterSize];
 	size_t n = EncodeRelayRegister(r, buf, sizeof buf);
 	if (!n) return;
-	mTransport.SendTo(buf, n, mLobbyRelayEndpoint);
-	mRelayRegistered = true;
-	char fmt[64];
-	mLobbyRelayEndpoint.Format(fmt, sizeof fmt);
-	g_ATLCNetplay("%s: auto-relay engaged (lobby=%s, role=%s)",
-		mRole == Role::Host ? "host" : "joiner", fmt,
-		mRole == Role::Host ? "host" : "joiner");
+	if (!mTransport.SendTo(buf, n, mLobbyRelayEndpoint)) return;
+
+	// Stamp AFTER the send so a SendTo failure leaves us eligible to
+	// retry on the very next call (no false "registered" state).
+	// nowMs == 0 collides with the "never sent" sentinel; bias to 1.
+	mRelayRegisteredMs = nowMs ? nowMs : 1;
+
+	if (firstSend) {
+		char fmt[64];
+		mLobbyRelayEndpoint.Format(fmt, sizeof fmt);
+		g_ATLCNetplay("%s: auto-relay engaged (lobby=%s, role=%s)",
+			mRole == Role::Host ? "host" : "joiner", fmt,
+			mRole == Role::Host ? "host" : "joiner");
+	}
 }
 
 void Coordinator::MaybePrearmRelay(uint64_t nowMs) {
@@ -2254,28 +2282,44 @@ void Coordinator::MaybePrearmRelay(uint64_t nowMs) {
 	// mPeerPath to Relay (see the from.Equals(mLobbyRelayEndpoint)
 	// branches there).  Either way, the user-visible "host sees
 	// joiner" event fires as soon as ONE path delivers the Hello.
-	if (mRelayRegistered) return;
+	//
+	// While on a Direct path we re-send the register every
+	// kRelayRegisterIntervalMs so the slot survives the server's
+	// 30 s idle prune even if no joiner ever arrives.  Once on the
+	// Relay path, ordinary ASDF traffic refreshes the slot, so this
+	// function bows out (the recv-loop's auto-flip-to-Relay handler
+	// fires its own SendRelayRegister at flip time).
 	if (mPeerPath == PeerPath::Relay) return;
 	if (!mHasRelaySessionId || !mLobbyRelayKnown) return;
 
-	if (mRole == Role::Joiner && mPhase == Phase::Handshaking) {
-		SendRelayRegister();
-		g_ATLCNetplay("joiner: relay-first registration sent "
-			"(direct punching continues in parallel)");
-		return;
-	}
-	if (mRole == Role::Host &&
-	    (mPhase == Phase::WaitingForJoiner ||
-	     mPhase == Phase::Handshaking ||
-	     mPhase == Phase::SendingSnapshot)) {
-		// No mHostHasSeenHint gate — relay-first means we register
-		// PROACTIVELY so joiner-sent ASDF frames have somewhere to
-		// go from the very first poll tick.  Saves the up-to-30s
-		// heartbeat wait that previously delayed the host's relay
-		// registration to "after we learn a joiner exists."
-		SendRelayRegister();
-		g_ATLCNetplay("host: relay-first registration sent "
-			"(awaiting joiners; direct punching ready)");
+	const bool joinerEligible =
+		(mRole == Role::Joiner && mPhase == Phase::Handshaking);
+	const bool hostEligible =
+		(mRole == Role::Host &&
+		 (mPhase == Phase::WaitingForJoiner ||
+		  mPhase == Phase::Handshaking ||
+		  mPhase == Phase::SendingSnapshot));
+	if (!joinerEligible && !hostEligible) return;
+
+	const bool wasFirstSend = (mRelayRegisteredMs == 0);
+	SendRelayRegister(nowMs);
+	if (wasFirstSend && mRelayRegisteredMs != 0) {
+		// First successful registration.  Log once with role-specific
+		// wording.  Subsequent periodic refreshes are silent so we
+		// don't spam the log every 10 s while waiting for a joiner.
+		if (joinerEligible) {
+			g_ATLCNetplay("joiner: relay-first registration sent "
+				"(direct punching continues in parallel)");
+		} else {
+			// No mHostHasSeenHint gate — relay-first means we
+			// register PROACTIVELY so joiner-sent ASDF frames have
+			// somewhere to go from the very first poll tick.  Saves
+			// the up-to-30s heartbeat wait that previously delayed
+			// the host's relay registration to "after we learn a
+			// joiner exists."
+			g_ATLCNetplay("host: relay-first registration sent "
+				"(awaiting joiners; direct punching ready)");
+		}
 	}
 }
 
@@ -2287,7 +2331,7 @@ void Coordinator::MaybeEngageRelay(uint64_t nowMs) {
 	if (mRole == Role::Joiner && mPhase == Phase::Handshaking) {
 		if (mPhaseStartMs == 0) return;
 		if (nowMs - mPhaseStartMs < kRelayFallbackAfterMs) return;
-		SendRelayRegister();   // idempotent if pre-arm already fired
+		SendRelayRegister(nowMs);  // periodic-gated; refreshes if due
 		mPeerPath = PeerPath::Relay;
 		OnPeerPathFlippedToRelay(nowMs);
 		g_ATLCNetplay("joiner: punch failed, switching to relay at T+%llu ms",
@@ -2318,7 +2362,7 @@ void Coordinator::MaybeEngageRelay(uint64_t nowMs) {
 		if (mPhaseStartMs == 0) return;
 		if (nowMs - mPhaseStartMs < kRelayFallbackAfterMs) return;
 		if (!mHostHasSeenHint) return;  // no joiner known yet
-		SendRelayRegister();   // idempotent if pre-arm already fired
+		SendRelayRegister(nowMs);  // periodic-gated; refreshes if due
 		mPeerPath = PeerPath::Relay;
 		OnPeerPathFlippedToRelay(nowMs);
 		g_ATLCNetplay("host: punch failed, switching to relay at T+%llu ms",
@@ -2346,7 +2390,7 @@ void Coordinator::MaybeRescueRelayMidSession(uint64_t nowMs) {
 	if (!mLoop.PeerTimedOut(nowMs, kMidSessionRelayRescueAfterMs))
 		return;
 
-	SendRelayRegister();
+	SendRelayRegister(nowMs);
 	mPeerPath = PeerPath::Relay;
 	OnPeerPathFlippedToRelay(nowMs);
 	g_ATLCNetplay("%s: peer silent %llu ms in Lockstepping — re-arming relay",

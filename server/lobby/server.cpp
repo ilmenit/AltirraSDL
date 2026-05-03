@@ -1076,6 +1076,75 @@ void Install(httplib::Server& srv, Store& store) {
 			}
 			err = ValidatePeerHint(ph);
 			if (!err.empty()) { WriteErr(res, 400, err); return true; }
+
+			// Source-IP enrichment: pair the request's observed source
+			// IP with each unique port the joiner reported as a local
+			// candidate, and append the resulting `srcIp:port` entries
+			// if not already present.  Two reasons:
+			//   1. Backstop the client-side reflector probe (which can
+			//      fail transiently — UDP loss to the reflector port,
+			//      a same-network short-circuit, etc.).  The lobby's
+			//      view of the request's source IP is authoritative
+			//      because the HTTP socket itself traversed every NAT
+			//      between the joiner and us.
+			//   2. Cover port-preserving NATs (most home routers): the
+			//      external port equals the internal port the joiner
+			//      bound, so `<srcIp>:<localPort>` is a routable
+			//      target even when the joiner's reflector probe
+			//      didn't run at all.
+			// The joiner uses one bound UDP port for all its local
+			// candidates (every entry is `ip:port` with the same port),
+			// so in practice we add at most one new candidate.  The
+			// kPeerHintCandidatesMax cap (512) plus our trim below keeps
+			// the result bounded.
+			std::string srcIp = ClientIp(req);
+			if (!srcIp.empty() && !ph.candidates.empty()) {
+				// Walk ph.candidates and collect unique port numbers,
+				// also tracking which `srcIp:port` entries already
+				// appear (so we don't duplicate when the joiner's own
+				// reflector probe already reported the same address).
+				std::vector<std::string> ports;
+				size_t pos = 0;
+				while (pos < ph.candidates.size()) {
+					size_t sep = ph.candidates.find(';', pos);
+					std::string token = (sep == std::string::npos)
+						? ph.candidates.substr(pos)
+						: ph.candidates.substr(pos, sep - pos);
+					size_t colon = token.rfind(':');
+					if (colon != std::string::npos &&
+					    colon + 1 < token.size()) {
+						std::string port = token.substr(colon + 1);
+						bool dup = false;
+						for (const auto& p : ports)
+							if (p == port) { dup = true; break; }
+						if (!dup) ports.push_back(std::move(port));
+					}
+					if (sep == std::string::npos) break;
+					pos = sep + 1;
+				}
+				std::string scan = ";" + ph.candidates + ";";
+				for (const auto& port : ports) {
+					std::string cand = srcIp + ":" + port;
+					std::string needle = ";" + cand + ";";
+					if (scan.find(needle) != std::string::npos) continue;
+					if (!ph.candidates.empty()) ph.candidates.push_back(';');
+					ph.candidates += cand;
+					scan = ";" + ph.candidates + ";";
+					// Honour the wire cap; trim any pending additions.
+					if ((int)ph.candidates.size() > kPeerHintCandidatesMax) {
+						ph.candidates.resize(
+							(size_t)kPeerHintCandidatesMax);
+						// Drop a possibly-truncated trailing token so
+						// downstream parsers see only well-formed
+						// `ip:port` entries.
+						size_t lastSep = ph.candidates.rfind(';');
+						if (lastSep != std::string::npos)
+							ph.candidates.resize(lastSep);
+						break;
+					}
+				}
+			}
+
 			PendingHint h;
 			h.nonceHex   = ph.sessionNonce;
 			h.handle     = ph.joinerHandle;

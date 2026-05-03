@@ -198,6 +198,18 @@ inline constexpr int kRelayPrearmAfterMs   = 3000;
 inline constexpr int kRelayFallbackAfterMs = 6000;
 inline constexpr int kRelayFailTimeoutMs   = 25000;
 inline constexpr int kRelayPeerIdleMs      = 30000;
+// Sustain interval for periodic relay re-registration.  The server's
+// RelayTable prunes a slot after kRelayPeerIdleMs of silence.  A host
+// that's waiting for a joiner emits no other relay traffic, so without
+// a periodic ASGR refresh the slot would expire and the safety-net
+// relay path would silently stop forwarding.  10 s gives 3x headroom
+// against the 30 s prune; cheap (28 bytes per send) and bounded (only
+// fires while in WaitingForJoiner / Handshaking / SendingSnapshot —
+// during Lockstepping, ordinary ASDF traffic refreshes the slot).
+// Also covers single-packet UDP loss at first registration: a dropped
+// register packet recovers in one interval instead of breaking the
+// session for its lifetime.
+inline constexpr int kRelayRegisterIntervalMs = 10000;
 // Per-pair token bucket on the relay forward path.  Lockstep runs at
 // 60 Hz in each direction, so a healthy session forwards ~120 pps
 // through the server.  Cap each pair at 240 pps (2x headroom for

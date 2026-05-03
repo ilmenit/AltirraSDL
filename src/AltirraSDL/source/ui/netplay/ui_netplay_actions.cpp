@@ -1075,7 +1075,26 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		// with.  A slow/dead lobby here doesn't block the others
 		// because each Heartbeat request is independent.
 		if (coordRunning && !o.lobbyRegistrations.empty()) {
-			const uint64_t kHeartbeatMs = 30000;
+			// Pre-Lockstepping the heartbeat is the only path that
+			// carries the joiner's peer-hint to the host, and a
+			// joiner's handshake timeout is kRelayFailTimeoutMs (25 s).
+			// A 30 s heartbeat interval can therefore lose the race
+			// outright — the joiner times out before the host's next
+			// poll arrives.  Drop to 5 s while the offer is still
+			// waiting for / accepting a join so peer-hints land
+			// well inside the joiner's budget; bump back to 30 s once
+			// Lockstepping starts since the live session no longer
+			// depends on heartbeat-delivered hints (relay traffic
+			// keeps everything refreshed) and we want to minimize
+			// lobby HTTP load.  The lobby session TTL is 60 s, so
+			// either interval keeps the listing alive.
+			const bool preLockstep =
+				(p == P::WaitingForJoiner ||
+				 p == P::Handshaking ||
+				 p == P::SendingSnapshot ||
+				 p == P::ReceivingSnapshot ||
+				 p == P::SnapshotReady);
+			const uint64_t kHeartbeatMs = preLockstep ? 5000 : 30000;
 			// Edge: as soon as we transition into / out of a session
 			// phase, send an immediate heartbeat with the new state so
 			// the lobby's "in play" indicator updates promptly instead
@@ -1387,11 +1406,20 @@ void StartJoiningAction() {
 				req.state     = ResolvedNickname();     // joiner handle
 				req.createReq.candidates.clear();
 				req.createReq.candidates.push_back(cands);
+				// Joiner's bound UDP port — worker prepends the srflx
+				// observed by the lobby's reflector before POSTing so
+				// the host receives a routable address even when the
+				// joiner is behind CGNAT / a NAT that hides the
+				// public endpoint from the local-IP enumeration.
+				req.peerHintLocalPort =
+					ATNetplayGlue::JoinerBoundPort();
 				GetWorker().Post(std::move(req), ep->host);
 				g_ATLCNetplay("joiner: posting peer-hint to %s:%u "
-					"(nonce=%s cands=\"%s\")",
+					"(nonce=%s local-cands=\"%s\" "
+					"srflx-probe-port=%u)",
 					ep->host.c_str(), (unsigned)ep->port,
-					nonceHex, cands);
+					nonceHex, cands,
+					(unsigned)req.peerHintLocalPort);
 			}
 		}
 	}
