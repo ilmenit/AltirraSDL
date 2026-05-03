@@ -15,6 +15,7 @@
 #include "netplay/lobby_client.h"
 #include "netplay/lobby_config.h"
 #include "netplay/lobby_protocol.h"
+#include "netplay/nat_discovery.h"
 #include "netplay/netplay_simhash.h"
 #include "netplay/packets.h"
 #include "netplay/nat_discovery.h"
@@ -1088,12 +1089,13 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			// keeps everything refreshed) and we want to minimize
 			// lobby HTTP load.  The lobby session TTL is 60 s, so
 			// either interval keeps the listing alive.
+			// Host phases only — joiner phases (ReceivingSnapshot,
+			// SnapshotReady) cannot appear here because this loop runs
+			// over the host's HostedGames.
 			const bool preLockstep =
 				(p == P::WaitingForJoiner ||
 				 p == P::Handshaking ||
-				 p == P::SendingSnapshot ||
-				 p == P::ReceivingSnapshot ||
-				 p == P::SnapshotReady);
+				 p == P::SendingSnapshot);
 			const uint64_t kHeartbeatMs = preLockstep ? 5000 : 30000;
 			// Edge: as soon as we transition into / out of a session
 			// phase, send an immediate heartbeat with the new state so
@@ -1389,12 +1391,76 @@ void StartJoiningAction() {
 			std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
 				"%s:%u", ep->host.c_str(),
 				(unsigned)ATLobby::kReflectorPortDefault);
+
+			// Build the joiner's candidate list BEFORE arming the
+			// relay context so the SRFLX probe doesn't race with
+			// inbound relay forwarding.  Reasoning:
+			//   - The lobby's UDP relay and the reflector both listen
+			//     on the same port (kReflectorPortDefault, 8081), so
+			//     a probe socket connect()'d to lobby:8081 has the
+			//     same 4-tuple as forwarded ASDF frames.
+			//   - On Linux with SO_REUSEPORT, the connect()'d socket
+			//     wins for matching 4-tuples — meaning ASDF frames
+			//     would land on the probe socket and be dropped
+			//     (magic mismatch) for the duration of the probe.
+			//   - The joiner's relay registration only fires on the
+			//     next Poll tick after JoinerSetRelayContext is set,
+			//     so doing the probe FIRST guarantees the lobby has
+			//     no entry for us yet — no ASDF can be in flight to
+			//     our game port — and the probe runs without
+			//     interference.
+			// The probe blocks the main thread for up to 1.5 s; that
+			// time also lets BeginJoinMulti's direct Hello sprays go
+			// out in parallel (BeginJoinMulti already returned).
+			char cands[512] = "";
+			ATNetplayGlue::JoinerBuildLocalCandidates(cands, sizeof cands);
+
+			const uint16_t joinerPort =
+				ATNetplayGlue::JoinerBoundPort();
+			std::string srflx;
+			if (joinerPort != 0) {
+				ATNetplay::ReflectorProbe probe;
+				std::string probeErr;
+				bool probeOk = probe.Run(
+					ep->host.c_str(),
+					ATLobby::kReflectorPortDefault,
+					joinerPort,
+					/*timeoutMs=*/1500,
+					srflx, probeErr);
+				if (probeOk && !srflx.empty()) {
+					// Prepend srflx to the candidates string if not
+					// already present (host on the same public network
+					// as the lobby would observe its own LAN IP, which
+					// would already be in `cands`).
+					std::string scan = std::string(";") + cands + ";";
+					std::string needle = std::string(";") + srflx + ";";
+					if (scan.find(needle) == std::string::npos) {
+						std::string augmented = srflx;
+						if (cands[0]) {
+							augmented.push_back(';');
+							augmented += cands;
+						}
+						std::snprintf(cands, sizeof cands, "%s",
+							augmented.c_str());
+					}
+					g_ATLCNetplay(
+						"joiner: reflector srflx %s (probe ok)",
+						srflx.c_str());
+				} else {
+					g_ATLCNetplay(
+						"joiner: reflector probe failed (%s) — "
+						"falling back to lobby-side source-IP capture",
+						probeErr.empty() ? "timeout" : probeErr.c_str());
+				}
+			}
+
+			// Now arm the relay context.  The next Poll tick will fire
+			// SendRelayRegister; from this moment on the lobby may
+			// start forwarding ASDF to our game socket.
 			ATNetplayGlue::JoinerSetRelayContext(
 				st.session.joinTarget.sessionId.c_str(),
 				lobbyHostPort);
 
-			char cands[512] = "";
-			ATNetplayGlue::JoinerBuildLocalCandidates(cands, sizeof cands);
 			char nonceHex[33] = "";
 			ATNetplayGlue::JoinerGetSessionNonceHex(nonceHex);
 			if (cands[0]) {
@@ -1406,20 +1472,11 @@ void StartJoiningAction() {
 				req.state     = ResolvedNickname();     // joiner handle
 				req.createReq.candidates.clear();
 				req.createReq.candidates.push_back(cands);
-				// Joiner's bound UDP port — worker prepends the srflx
-				// observed by the lobby's reflector before POSTing so
-				// the host receives a routable address even when the
-				// joiner is behind CGNAT / a NAT that hides the
-				// public endpoint from the local-IP enumeration.
-				req.peerHintLocalPort =
-					ATNetplayGlue::JoinerBoundPort();
 				GetWorker().Post(std::move(req), ep->host);
 				g_ATLCNetplay("joiner: posting peer-hint to %s:%u "
-					"(nonce=%s local-cands=\"%s\" "
-					"srflx-probe-port=%u)",
+					"(nonce=%s cands=\"%s\")",
 					ep->host.c_str(), (unsigned)ep->port,
-					nonceHex, cands,
-					(unsigned)req.peerHintLocalPort);
+					nonceHex, cands);
 			}
 		}
 	}

@@ -260,57 +260,13 @@ void LobbyWorker::ThreadMain() {
 				// req.sessionId  = target host's lobby session id
 				// req.token      = joiner sessionNonce hex (32 chars)
 				// req.state      = joiner handle
-				// req.createReq.candidates[0] = candidates
-				// req.peerHintLocalPort = joiner's bound UDP port (for
-				//                         the reflector probe — see below)
+				// req.createReq.candidates[0] = candidates (already
+				//                               srflx-enriched by the
+				//                               main thread before
+				//                               JoinerSetRelayContext)
 				std::string cands;
 				if (!q.req.createReq.candidates.empty())
 					cands = q.req.createReq.candidates.front();
-
-				// Augment the joiner's locally-enumerated addresses
-				// with the srflx (server-reflexive / public) endpoint
-				// observed by the lobby's reflector.  Without this
-				// step, a joiner behind any NAT — and that means every
-				// cellular / CGNAT joiner, plus most home-NAT joiners
-				// — posts only RFC1918 / 10.x / loopback candidates,
-				// which the host cannot route to.  The probe uses
-				// SO_REUSEADDR on the joiner's already-bound game
-				// socket so the observed mapping is the same one the
-				// joiner's wire traffic uses (on cone-NAT routers; a
-				// no-op on symmetric NATs but the relay safety net
-				// covers those).  Probe runs on the worker thread so
-				// the main UI thread isn't blocked for the timeout.
-				if (q.req.peerHintLocalPort != 0) {
-					ATNetplay::ReflectorProbe probe;
-					std::string srflx, err;
-					bool ok = probe.Run(
-						q.req.endpoint.host.c_str(),
-						ATLobby::kReflectorPortDefault,
-						q.req.peerHintLocalPort,
-						/*timeoutMs=*/1500,
-						srflx, err);
-					if (ok && !srflx.empty()) {
-						// Skip the srflx if it duplicates one of the
-						// already-listed local addresses (host on the
-						// same public network as the lobby — no NAT in
-						// front).  Otherwise prepend so the host tries
-						// the routable address first.
-						bool dup = false;
-						std::string scan = ";" + cands + ";";
-						std::string needle = ";" + srflx + ";";
-						if (scan.find(needle) != std::string::npos)
-							dup = true;
-						if (!dup) {
-							if (cands.empty()) cands = srflx;
-							else cands = srflx + ";" + cands;
-						}
-					}
-					// Probe failure is non-fatal: we just POST the
-					// pre-existing local-only candidates and let the
-					// lobby's source-IP capture (server-side fix) or
-					// the relay path carry the connection.
-				}
-
 				out.ok = client.PostPeerHint(q.req.sessionId,
 					q.req.state, q.req.token, cands);
 				break;

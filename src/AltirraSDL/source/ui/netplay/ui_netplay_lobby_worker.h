@@ -82,15 +82,6 @@ struct LobbyRequest {
 	// desired lease hint (router may clamp to its own maximum).
 	uint16_t                      portRefreshInternalPort = 0;
 	uint32_t                      portRefreshLifetimeSec  = 0;
-
-	// op == PeerHint: the joiner's bound local UDP port.  When non-zero
-	// the worker runs ReflectorProbe against the lobby's reflector with
-	// SO_REUSEADDR on this port and prepends the resulting srflx to the
-	// candidates string before POSTing.  Without this, the joiner's
-	// peer-hint carries only RFC1918 / CGNAT private addresses, which
-	// the host cannot route to — exactly the failure mode that
-	// motivated v4 two-sided punch in the first place.
-	uint16_t                      peerHintLocalPort = 0;
 };
 
 struct LobbyResult {
