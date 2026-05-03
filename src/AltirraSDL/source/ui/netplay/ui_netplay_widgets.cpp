@@ -743,66 +743,6 @@ void PeerChip(const char *handle, const char *region, bool isPrivate) {
 }
 
 // ---------------------------------------------------------------------
-// SpecLineRenderDiff — Join Confirm side-by-side spec viewer.
-// Tokens present in both lists (text match, case-insensitive) paint in
-// the muted body colour; tokens that differ paint in the palette's
-// warning colour (same path used to flag missing firmware on the
-// Browser tile) so the joiner sees which knobs will change when they
-// accept the host's config.
-// ---------------------------------------------------------------------
-void SpecLineRenderDiff(const SpecLine& local, const SpecLine& remote,
-                        const char *localLabel, const char *remoteLabel) {
-	const ATMobilePalette &p = ATMobileGetPalette();
-	auto lower = [](const std::string& s) -> std::string {
-		std::string r; r.reserve(s.size());
-		for (char c : s) r.push_back((c >= 'A' && c <= 'Z')
-			? (char)(c + 32) : c);
-		return r;
-	};
-	auto tokenMatches = [&](size_t i, const SpecLine& a, const SpecLine& b) {
-		if (i >= a.tokens.size()) return false;
-		if (i >= b.tokens.size()) return false;
-		return lower(a.tokens[i].text) == lower(b.tokens[i].text);
-	};
-
-	auto renderCol = [&](const char *label, const SpecLine& mine,
-	                     const SpecLine& other)
-	{
-		ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(p.textSection));
-		ImGui::TextUnformatted(label);
-		ImGui::PopStyleColor();
-		for (size_t i = 0; i < mine.tokens.size(); ++i) {
-			const SpecLineToken& tk = mine.tokens[i];
-			const bool mismatch = tk.missing
-				|| !tokenMatches(i, mine, other);
-			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(
-				mismatch ? p.warning : p.textMuted));
-			ImGui::TextUnformatted(tk.text.c_str());
-			ImGui::PopStyleColor();
-		}
-	};
-
-	const float colW = (ImGui::GetContentRegionAvail().x - Dp(12.0f)) * 0.5f;
-	ImGui::BeginGroup();
-	{
-		ImGui::BeginChild("##specDiffLocal",
-			ImVec2(colW, 0), ImGuiChildFlags_AutoResizeY);
-		renderCol(localLabel ? localLabel : "Local", local, remote);
-		ImGui::EndChild();
-	}
-	ImGui::EndGroup();
-	ImGui::SameLine(0, Dp(12.0f));
-	ImGui::BeginGroup();
-	{
-		ImGui::BeginChild("##specDiffRemote",
-			ImVec2(colW, 0), ImGuiChildFlags_AutoResizeY);
-		renderCol(remoteLabel ? remoteLabel : "Remote", remote, local);
-		ImGui::EndChild();
-	}
-	ImGui::EndGroup();
-}
-
-// ---------------------------------------------------------------------
 // SpecLineRenderHostOnly — single-column view of the host's session
 // spec for the Join Confirm screen.  The joiner inherits the host's
 // hardware/firmware from the snapshot, so any "diff vs your emulator"

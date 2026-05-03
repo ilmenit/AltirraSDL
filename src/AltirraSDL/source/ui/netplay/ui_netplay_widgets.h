@@ -219,16 +219,6 @@ void StatusBadge(const char *label, int severity, bool showSpinner);
 // SessionTile internally, and by the Waiting panel to echo the peer.
 void PeerChip(const char *handle, const char *region, bool isPrivate);
 
-// Render two spec token lists side-by-side for the Join Confirm screen.
-// Tokens present in both lists (same text, case-insensitive) paint in
-// the muted body colour; tokens that differ (including locally missing
-// firmware / hardware mismatches) paint in the palette warning colour
-// so the joiner sees at a glance which knobs the host's config
-// overrides.  `localLabel` / `remoteLabel` label the two columns
-// (e.g. "Your emulator" / "Host's session").
-void SpecLineRenderDiff(const SpecLine& local, const SpecLine& remote,
-	const char *localLabel, const char *remoteLabel);
-
 // Render a single column of host spec rows for the Join Confirm screen.
 // All five rows (HW mode, video standard, memory, OS, BASIC) come from
 // the host's session — the joiner cold-boots from the host's snapshot,
