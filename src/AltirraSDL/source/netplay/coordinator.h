@@ -47,6 +47,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -114,6 +115,27 @@ public:
 	// Same identity params as BeginJoin; returns false on socket bind
 	// failure or when zero candidates resolved.
 	bool BeginJoinMulti(const char* hostCandidatesSemicolonList,
+	                    uint16_t localPort,
+	                    const char* playerHandle,
+	                    uint64_t osRomHash,
+	                    uint64_t basicRomHash,
+	                    bool acceptTos,
+	                    const uint8_t* entryCodeHash /* 16 bytes or nullptr */);
+
+	// v3 wssRelayOnly join: relay-from-T=0.  Used when the host is a
+	// browser (WASM) build and has no UDP path of any kind — the lobby's
+	// WS bridge translates host-side WS↔UDP, but the joiner must skip
+	// candidate spray entirely (no UDP host endpoint to spray to) and
+	// register with the lobby's RelayTable immediately.  The first
+	// Hello goes out ASDF-wrapped via the lobby; the host receives it
+	// as a WS frame and replies via the same path in reverse.
+	//
+	// `lobbyHostPort` is "host:port" (typically kReflectorPortDefault).
+	// `sessionIdBytes16` is the 16-byte truncated UUID (same format
+	// SetRelayContext takes).  Returns false on socket bind / relay
+	// resolve failure.
+	bool BeginJoinRelay(const char* lobbyHostPort,
+	                    const uint8_t sessionIdBytes16[16],
 	                    uint16_t localPort,
 	                    const char* playerHandle,
 	                    uint64_t osRomHash,
@@ -205,10 +227,21 @@ public:
 	void SetCacheStoreHook (CacheStoreFn  fn) { mCacheStore  = std::move(fn); }
 
 	// Test-only accessor.  Used by coordinator_selftest's lossy
-	// regressions to call mTransport.SetTestDropRate(...).  Not
+	// regressions to call mTransport->SetTestDropRate(...).  Not
 	// surfaced by netplay_glue, so production callers cannot reach
-	// the underlying socket.
-	Transport& TestGetTransport() { return mTransport; }
+	// the underlying socket.  Tests assume the default UDP transport
+	// is in place; passing a non-UDP transport via SetTransport
+	// invalidates the cast.
+	UdpTransport& TestGetTransport() {
+		return *static_cast<UdpTransport*>(mTransport.get());
+	}
+
+	// Inject a non-default transport (e.g. WasmTransport for the
+	// browser build).  Must be called before BeginHost / BeginJoin;
+	// the Coordinator captures ownership.  Default-construction
+	// installs a UdpTransport so existing native callers don't need
+	// to call this.
+	void SetTransport(std::unique_ptr<INetTransport> t);
 
 	// ---- lockstep frame API (valid only in Lockstepping) -----------------
 
@@ -304,11 +337,24 @@ public:
 	// The full enum lives in the private section near other v4
 	// relay state — duplicated here as a public alias so the UI can
 	// take the dependency without including any private types.
-	enum class PeerPath : uint8_t { Direct, Relay };
+	// WsRelay = WASM-or-WSS-host session: traffic always rides the
+	// lobby's WS bridge (inner Altirra packets in WS frames).  No
+	// candidate spray, no NAT-PMP, no direct rescue probes — the
+	// browser can't UDP and the lobby is the single point of
+	// rendezvous.  Set at construction time when SetTransport()
+	// installs a WasmTransport, and (slice 5) on native joiners
+	// joining a session whose lobby record has wssRelayOnly=true.
+	enum class PeerPath : uint8_t { Direct, Relay, WsRelay };
 
 	// True once relay fallback has taken over the UDP path for this
 	// session.  UI can surface a "Relay active" badge after this flips.
-	bool IsRelayActive() const { return mPeerPath == PeerPath::Relay; }
+	// Both WS-relay and UDP-relay are reported as "active" here — the
+	// distinction matters internally (PeerPath::WsRelay disables NAT
+	// machinery) but the user-facing label is the same.
+	bool IsRelayActive() const {
+		return mPeerPath == PeerPath::Relay ||
+		       mPeerPath == PeerPath::WsRelay;
+	}
 
 	// Edge-detected by ATNetplayUI_Poll to fire the connection-quality
 	// toast and update the in-session HUD pip.  Const, lock-free.
@@ -340,7 +386,7 @@ public:
 	const LockstepLoop& Loop() const { return mLoop; }
 	LockstepLoop& Loop() { return mLoop; }
 
-	uint16_t BoundPort() const { return mTransport.BoundPort(); }
+	uint16_t BoundPort() const { return mTransport ? mTransport->BoundPort() : 0; }
 
 	// Last error message (one-shot; cleared on next successful
 	// transition).  Empty when no error.
@@ -399,8 +445,12 @@ private:
 	// once per join attempt from BeginJoin / BeginJoinMulti.
 	void GenerateSessionNonce();
 
-	// Transport.
-	Transport mTransport;
+	// Transport.  Held as a polymorphic pointer so the SDL3 build can
+	// substitute WasmTransport (WebSocket-over-lobby) without changing
+	// any of the call sites below.  Default-constructed to a
+	// UdpTransport in the constructor body so native code paths
+	// behave identically.
+	std::unique_ptr<INetTransport> mTransport;
 	Endpoint  mPeer;                 // set once we learn the peer's addr
 	bool      mPeerKnown = false;
 

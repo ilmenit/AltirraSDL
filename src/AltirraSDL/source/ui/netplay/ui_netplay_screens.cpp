@@ -744,6 +744,20 @@ void RenderJoinConfirm() {
 		ImGui::PopStyleColor();
 	}
 
+	// wssRelayOnly hosts run in a browser tab — they have no UDP
+	// path, so the entire session is forced through the lobby's WS
+	// bridge.  Latency is slightly higher and bandwidth is shared
+	// against the lobby's per-pair token bucket (240 pps).  Surface
+	// it explicitly so users understand why the connection mode
+	// pip stays "via lobby" for the whole session.
+	if (st.session.joinTarget.wssRelayOnly) {
+		ImGui::Spacing();
+		ATTouchMutedText(
+			"This host is running in a browser tab.  All traffic is "
+			"relayed through the lobby (no direct connection); expect "
+			"slightly higher latency than a native UDP host.");
+	}
+
 	EndScreenBody();
 
 	ImGui::Separator();

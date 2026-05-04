@@ -236,6 +236,58 @@ bool StartJoin(const char* hostAddress,
                bool acceptTos,
                const uint8_t* entryCodeHash);
 
+// Native v3 joiner targeting a `wssRelayOnly` host: relay-from-T=0
+// through the lobby reflector.  The host has no UDP path of its own,
+// so candidate spray would never land — this skips it entirely and
+// registers with the lobby relay immediately.  `lobbyHostPort` is
+// "host:port" (typically <lobby>:8081), `sessionIdHex` is the 32-hex
+// UUID-without-dashes from the lobby listing.
+bool StartJoinRelay(const char* lobbyHostPort,
+                    const char* sessionIdHex,
+                    const char* playerHandle,
+                    uint64_t osRomHash,
+                    uint64_t basicRomHash,
+                    bool acceptTos,
+                    const uint8_t* entryCodeHash);
+
+#if defined(__EMSCRIPTEN__)
+// WASM joiner: open a WSS connection to `lobbyHost` (e.g.
+// "altirra-lobby.duckdns.org") tagged with `sessionIdHex32` (the 32-hex
+// lobby session id, no dashes) and route Hello/Welcome/Input through it.
+// The lobby's WS bridge translates to/from UDP for the host.  No UDP
+// candidates are needed — the bridge keys on (sessionId, role).
+//
+// The joiner subprotocol does not include a token (the host's secret);
+// the WS bridge accepts any joiner with a valid sid+role=joiner combo,
+// and authentication happens at the Altirra protocol layer (entry code
+// hash + ROM hashes in NetHello).
+bool StartJoinWss(const char* lobbyHost,
+                  const char* sessionIdHex32,
+                  const char* playerHandle,
+                  uint64_t osRomHash,
+                  uint64_t basicRomHash,
+                  bool acceptTos,
+                  const uint8_t* entryCodeHash);
+
+// WASM host: must be called AFTER lobby Create returns (we need
+// `sessionIdHex32` + `tokenHex32`).  Opens a WSS to the lobby tagged
+// with role=host, then BeginHost.  No UDP listener bound (cannot, in
+// browser); the local "bound port" is reported as 0 — the lobby itself
+// is the only ingress for joiners targeting this host.
+bool StartHostWss(const char* gameId,
+                  const char* lobbyHost,
+                  const char* sessionIdHex32,
+                  const char* tokenHex32,
+                  const char* playerHandle,
+                  const char* cartName,
+                  uint64_t osRomHash,
+                  uint64_t basicRomHash,
+                  uint64_t settingsHash,
+                  uint16_t inputDelayFrames,
+                  const uint8_t* entryCodeHash,
+                  const ATNetplay::NetBootConfig& bootConfig);
+#endif // __EMSCRIPTEN__
+
 void StopJoin();
 bool JoinExists();
 Phase JoinPhase();

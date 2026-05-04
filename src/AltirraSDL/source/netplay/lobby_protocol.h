@@ -27,7 +27,17 @@ namespace ATLobby {
 //      so the Browser can show the host's full machine spec before
 //      anyone commits to joining.  New keys are additive and default
 //      to empty strings, so the version number stays at 2.
-inline constexpr int kProtocolVersion = 2;
+//
+// v3 — added `wssRelayOnly` (bool).  Hosts running in a browser
+//      (WASM build) cannot open UDP sockets, so they publish no
+//      `hostEndpoint` / `candidates` and set this flag instead.
+//      Joiners that see the flag MUST skip the candidate spray and
+//      go straight to the lobby's relay path from T=0 (the lobby's
+//      WS bridge bridges UDP↔WS internally).  Pre-v3 native joiners
+//      ignore unknown JSON fields, so they will simply fail to
+//      connect to a WSS-only host (Hello timeout) — that's the
+//      expected behaviour: a v2 client can join only v2 hosts.
+inline constexpr int kProtocolVersion = 3;
 
 // Session TTL in seconds.  Clients should heartbeat well inside this
 // window; 30 s is the configured cadence on the client side.  60 s
@@ -148,6 +158,13 @@ namespace Field {
     // format is a plain JSON string — no array parser needed on
     // either side.
     inline constexpr const char *kCandidates      = "candidates";
+
+    // v3: WebSocket relay-only sessions.  Browser-hosted (WASM)
+    // sessions set this flag to true; the host has no UDP endpoints
+    // to publish.  Joiners that see it MUST skip direct candidate
+    // spray and go straight to lobby-relay from T=0 (native joiners
+    // via UDP-ASDF, browser joiners via WSS — the lobby bridges).
+    inline constexpr const char *kWssRelayOnly    = "wssRelayOnly";
 
     // v4 two-sided punch: peer-hint request + heartbeat response.
     // The joiner sends { joinerHandle, sessionNonce (32 hex chars),

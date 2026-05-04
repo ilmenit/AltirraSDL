@@ -145,6 +145,22 @@ void PostLobbyDeleteForSession(const std::string& section,
                                const std::string& sessionId,
                                const std::string& token);
 
+// Called from ATNetplayUI_Poll's Create-success branch right after
+// the offer's LobbyRegistration has been recorded.  Native build:
+// no-op (the coordinator was already started by
+// StartCoordForHostedGame, before Create was even posted).  WASM
+// build: calls ATNetplayGlue::StartHostWss with the freshly-returned
+// (sid, token) so the host coordinator finally opens its WSS to the
+// lobby and starts accepting joiner Hellos.  Idempotent on the
+// `gameId` — only the first Create response per offer triggers
+// HostExists==false, subsequent (federated) Creates just add a
+// LobbyRegistration.
+struct HostedGame;
+void OnLobbyCreateSucceeded(HostedGame& o,
+                            const std::string& section,
+                            const std::string& sessionId,
+                            const std::string& token);
+
 // Synchronous best-effort lobby delete for app-shutdown.  Used by
 // ATNetplayUI_Shutdown right before the worker thread is stopped:
 // the worker queue is about to be cleared, so any pending async

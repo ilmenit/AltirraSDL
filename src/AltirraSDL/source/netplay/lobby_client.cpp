@@ -208,6 +208,7 @@ bool ReadSession(JsonCursor& c, LobbySession& s) {
 		else if (key == "maxPlayers")     c.parseInt(s.maxPlayers);
 		else if (key == "protocolVersion") c.parseInt(s.protocolVersion);
 		else if (key == "requiresCode")   c.parseBool(s.requiresCode);
+		else if (key == "wssRelayOnly")   c.parseBool(s.wssRelayOnly);
 		else { if (!c.parseNull() && !c.skipValue()) return false; }
 
 		if (!c.ok) return false;
@@ -358,6 +359,11 @@ bool LobbyClient::Create(const LobbyCreateRequest& req,
 	AppendKV(body, "hardwareMode",    req.hardwareMode,    first);
 	AppendKV(body, "videoStandard",   req.videoStandard,   first);
 	AppendKV(body, "memoryMode",      req.memoryMode,      first);
+	// v3: only emit wssRelayOnly when true; pre-v3 servers simply
+	// ignore the unknown key, and emitting it always would inflate
+	// every Create payload by ~22 bytes for no benefit.
+	if (req.wssRelayOnly)
+		AppendKV(body, "wssRelayOnly",  true,                first);
 	body.push_back('}');
 
 	HttpRequest hr;

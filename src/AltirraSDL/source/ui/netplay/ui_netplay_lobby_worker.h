@@ -165,6 +165,18 @@ private:
 	std::atomic<bool>       mStop{false};
 	std::atomic<size_t>     mInFlight{0};
 	std::thread             mThread;
+
+	// WASM build's emscripten_fetch_t callbacks (in
+	// ui_netplay_lobby_worker.cpp under __EMSCRIPTEN__) need to push
+	// completed results into mOutQueue.  Friend grants the file-scope
+	// helper functions exactly that — narrower than making mOutQueue
+	// public.  No-op on native.
+	friend void Internal_LobbyWorker_PushResult(LobbyWorker* w,
+	                                            LobbyResult&& r);
 };
+
+// Defined in ui_netplay_lobby_worker.cpp under __EMSCRIPTEN__.  On
+// native this declaration exists but the function is never linked.
+void Internal_LobbyWorker_PushResult(LobbyWorker* w, LobbyResult&& r);
 
 } // namespace ATNetplayUI

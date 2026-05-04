@@ -39,7 +39,24 @@ bool IsZeroEntryCode(const uint8_t* h) {
 
 } // anonymous
 
-Coordinator::Coordinator() = default;
+Coordinator::Coordinator()
+	: mTransport(std::make_unique<UdpTransport>())
+{
+	// SetTransport() can replace this default before BeginHost/BeginJoin.
+	// Existing native callers don't, and the WASM build will install a
+	// WasmTransport in slice 5.
+}
+
+void Coordinator::SetTransport(std::unique_ptr<INetTransport> t) {
+	if (!t) return;
+	const bool relayOnly = t->IsRelayOnly();
+	mTransport = std::move(t);
+	// WasmTransport (or any future relay-only transport): pin
+	// PeerPath::WsRelay so all UDP-NAT machinery is bypassed.  No
+	// candidate spray, no direct rescue, no NAT-PMP refresh.
+	if (relayOnly) mPeerPath = PeerPath::WsRelay;
+}
+
 Coordinator::~Coordinator() {
 	if (mPhase == Phase::Lockstepping ||
 	    mPhase == Phase::SendingSnapshot ||
@@ -64,7 +81,7 @@ bool Coordinator::BeginHost(uint16_t localPort,
                             const uint8_t* entryCodeHash,
                             const NetBootConfig& bootConfig) {
 	mBootConfig = bootConfig;
-	if (!mTransport.Listen(localPort)) {
+	if (!mTransport->Listen(localPort)) {
 		FailWith("failed to bind UDP socket");
 		return false;
 	}
@@ -91,15 +108,25 @@ bool Coordinator::BeginHost(uint16_t localPort,
 	mPunchTargets.clear();
 	mHostHasSeenHint = false;
 	mDirectRescueCandidates.clear();
-	mPeerPath = PeerPath::Direct;
+	// WS-relay-only transports (browser host) have no UDP path — pin
+	// PeerPath::WsRelay so the Poll-driven NAT machinery short-circuits.
+	mPeerPath = mTransport->IsRelayOnly()
+		? PeerPath::WsRelay : PeerPath::Direct;
 	mRelayRegisteredMs = 0;
 	mPunchProbesReceived = 0;
 	mRelayFramesReceived = 0;
-	g_ATLCNetplay("host: listening on UDP port %u (cart=\"%s\" private=%s delay=%u)",
-		(unsigned)mTransport.BoundPort(),
-		cartName ? cartName : "(none)",
-		mHasEntryCode ? "yes" : "no",
-		(unsigned)mInputDelay);
+	if (mTransport->IsRelayOnly()) {
+		g_ATLCNetplay("host: listening via WSS relay (cart=\"%s\" private=%s delay=%u)",
+			cartName ? cartName : "(none)",
+			mHasEntryCode ? "yes" : "no",
+			(unsigned)mInputDelay);
+	} else {
+		g_ATLCNetplay("host: listening on UDP port %u (cart=\"%s\" private=%s delay=%u)",
+			(unsigned)mTransport->BoundPort(),
+			cartName ? cartName : "(none)",
+			mHasEntryCode ? "yes" : "no",
+			(unsigned)mInputDelay);
+	}
 	return true;
 }
 
@@ -114,13 +141,13 @@ bool Coordinator::BeginJoin(const char* hostAddress,
                             bool acceptTos,
                             const uint8_t* entryCodeHash) {
 	// Bind ephemeral local port.
-	if (!mTransport.Listen(0)) {
+	if (!mTransport->Listen(0)) {
 		FailWith("failed to bind UDP socket");
 		return false;
 	}
 	if (!Transport::Resolve(hostAddress, mPeer)) {
 		FailWith("failed to resolve host address");
-		mTransport.Close();
+		mTransport->Close();
 		return false;
 	}
 	mPeerKnown = true;
@@ -172,9 +199,72 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
                                  uint64_t basicRomHash,
                                  bool acceptTos,
                                  const uint8_t* entryCodeHash) {
-	if (!mTransport.Listen(localPort)) {
-		FailWith("failed to bind UDP socket");
+	if (!mTransport->Listen(localPort)) {
+		FailWith(mTransport->IsRelayOnly()
+			? "failed to open WSS to lobby"
+			: "failed to bind UDP socket");
 		return false;
+	}
+
+	// WSS relay-only joiner (browser): no UDP, no candidate list.  We
+	// always send to a single sentinel "endpoint" — WasmTransport
+	// ignores the `to` arg and always frames to the lobby's WS bridge.
+	// The lobby unwraps and forwards to whichever transport the host
+	// is on (UDP or WS).  Inbound frames arrive with the same sentinel
+	// so subsequent mPeer.Equals(from) checks pass without further
+	// handling.
+	if (mTransport->IsRelayOnly()) {
+		Endpoint sentinel{};
+		sentinel.rawLen = 1;
+		sentinel.raw[0] = 0xFF;
+		mHelloCandidates.clear();
+		mCandidateStats.clear();
+		mDirectRescueCandidates.clear();
+		mHelloCandidates.push_back(sentinel);
+		CandidateStat cs;
+		cs.ep = sentinel;
+		cs.display = "wss-relay";
+		mCandidateStats.push_back(std::move(cs));
+		mPeer = sentinel;
+		mPeerKnown = true;
+
+		HandleFromString(playerHandle, reinterpret_cast<uint8_t*>(mPlayerHandle));
+		mOsRomHash = osRomHash;
+		mBasicRomHash = basicRomHash;
+		mAcceptTos = acceptTos;
+		if (entryCodeHash) {
+			std::memcpy(mEntryCodeHash, entryCodeHash, kEntryCodeHashLen);
+			mHasEntryCode = !IsZeroEntryCode(mEntryCodeHash);
+		} else {
+			std::memset(mEntryCodeHash, 0, kEntryCodeHashLen);
+			mHasEntryCode = false;
+		}
+
+		mRole = Role::Joiner;
+		mPhase = Phase::Handshaking;
+		mLastError = "";
+		mHelloStartMs = 0;
+		mLastHelloMs  = 0;
+		mHaveLastRejectReason = false;
+		mLastRejectReason = 0;
+		mPhaseStartMs = 0;
+		mPeerPath = PeerPath::WsRelay;
+		mRelayRegisteredMs = 0;
+		mPunchProbesReceived = 0;
+		mRelayFramesReceived = 0;
+
+		GenerateSessionNonce();
+
+		g_ATLCNetplay("joiner: WSS relay path, sending Hello via lobby bridge");
+
+		// Send the initial Hello.  The transport is queue-buffered
+		// pre-handshake, so even if the WS isn't open yet the bytes
+		// land on the wire as soon as `onopen` fires.
+		NetHello h;
+		FillHello(h);
+		size_t n = EncodeHello(h, mTxBuf, sizeof mTxBuf);
+		if (n) mTransport->SendTo(mTxBuf, n, sentinel);
+		return true;
 	}
 
 	// Parse semicolon-separated candidates, resolve each.  Skip any
@@ -219,7 +309,7 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 
 	if (mHelloCandidates.empty()) {
 		FailWith("no reachable host candidates");
-		mTransport.Close();
+		mTransport->Close();
 		return false;
 	}
 
@@ -289,9 +379,103 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 	size_t n = EncodeHello(h, mTxBuf, sizeof mTxBuf);
 	if (n) {
 		for (const auto& ep : mHelloCandidates) {
-			mTransport.SendTo(mTxBuf, n, ep);
+			mTransport->SendTo(mTxBuf, n, ep);
 		}
 	}
+	return true;
+}
+
+bool Coordinator::BeginJoinRelay(const char* lobbyHostPort,
+                                 const uint8_t sessionIdBytes16[16],
+                                 uint16_t localPort,
+                                 const char* playerHandle,
+                                 uint64_t osRomHash,
+                                 uint64_t basicRomHash,
+                                 bool acceptTos,
+                                 const uint8_t* entryCodeHash) {
+	if (!lobbyHostPort || !*lobbyHostPort || !sessionIdBytes16) return false;
+
+	// Bind a local UDP socket — we still need one to receive ASDF-
+	// unwrapped inner bytes the lobby reflector forwards.  The lobby
+	// keys forwarding by source-IP-of-our-ASGR, so this socket also
+	// publishes our srflx implicitly when the first ASGR fires.
+	if (!mTransport->Listen(localPort)) {
+		FailWith("failed to bind UDP socket");
+		return false;
+	}
+
+	// SetRelayContext: parses the lobby host:port, stores
+	// mLobbyRelayEndpoint, mRelaySessionId, mLobbyRelayKnown,
+	// mHasRelaySessionId.  Idempotent; safe to call before any
+	// handshake state is set up.
+	SetRelayContext(sessionIdBytes16, lobbyHostPort);
+	if (!mLobbyRelayKnown) {
+		FailWith("failed to resolve lobby relay endpoint");
+		mTransport->Close();
+		return false;
+	}
+
+	// Identity & entry code, mirroring BeginJoinMulti.
+	HandleFromString(playerHandle, reinterpret_cast<uint8_t*>(mPlayerHandle));
+	mOsRomHash = osRomHash;
+	mBasicRomHash = basicRomHash;
+	mAcceptTos = acceptTos;
+	if (entryCodeHash) {
+		std::memcpy(mEntryCodeHash, entryCodeHash, kEntryCodeHashLen);
+		mHasEntryCode = !IsZeroEntryCode(mEntryCodeHash);
+	} else {
+		std::memset(mEntryCodeHash, 0, kEntryCodeHashLen);
+		mHasEntryCode = false;
+	}
+
+	// No direct candidates; mPeer is the lobby endpoint so every
+	// outgoing packet WrapAndSend's via SendWrappedViaLobby.  The host's
+	// reply lands at our socket from the lobby's source IP+port —
+	// from.Equals(mPeer) matches because mPeer == lobby == that source.
+	mHelloCandidates.clear();
+	mDirectRescueCandidates.clear();
+	mCandidateStats.clear();
+	mPeer      = mLobbyRelayEndpoint;
+	mPeerKnown = true;
+	{
+		CandidateStat cs;
+		cs.ep      = mLobbyRelayEndpoint;
+		cs.display = "wss-relay-host";
+		mCandidateStats.push_back(std::move(cs));
+	}
+
+	mRole = Role::Joiner;
+	mPhase = Phase::Handshaking;
+	mLastError = "";
+	mHelloStartMs = 0;
+	mLastHelloMs  = 0;
+	mHaveLastRejectReason = false;
+	mLastRejectReason = 0;
+	mPhaseStartMs = 0;
+	mPeerPath = PeerPath::Relay;
+	mRelayRegisteredMs = 0;
+	mPunchProbesReceived = 0;
+	mRelayFramesReceived = 0;
+	// Tell the rescue/probe schedulers that we entered Relay; pass 0 as
+	// the sentinel "no monotonic clock available yet" — the same value
+	// AcceptPendingJoiner uses when promoting a relay-arrived peer.
+	OnPeerPathFlippedToRelay(0);
+
+	GenerateSessionNonce();
+
+	g_ATLCNetplay("joiner: WSS-only host — relay-from-T=0 via lobby %s",
+		lobbyHostPort);
+
+	// Fire ASGR + wrapped Hello immediately.  Subsequent retransmits
+	// follow the standard Poll-driven SendHello path which uses
+	// WrapAndSend (now mPeer == lobby, mPeerPath == Relay).
+	SendRelayRegister(0);
+
+	NetHello h;
+	FillHello(h);
+	uint8_t hb[kWireHelloSize];
+	size_t  n = EncodeHello(h, hb, sizeof hb);
+	if (n) WrapAndSend(hb, n, mLobbyRelayEndpoint);
 	return true;
 }
 
@@ -313,7 +497,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 	for (int drained = 0; drained < 64; ++drained) {
 		size_t n = 0;
 		Endpoint from;
-		RecvResult r = mTransport.RecvFrom(mRxBuf, sizeof mRxBuf, n, from);
+		RecvResult r = mTransport->RecvFrom(mRxBuf, sizeof mRxBuf, n, from);
 		if (r == RecvResult::WouldBlock) break;
 		if (r == RecvResult::Error)      break;
 
@@ -524,7 +708,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 							sizeof echo.sessionNonce);
 						uint8_t buf[kWirePunchSize];
 						size_t en = EncodePunch(echo, buf, sizeof buf);
-						if (en) mTransport.SendTo(buf, en, from);
+						if (en) mTransport->SendTo(buf, en, from);
 					}
 					char ep[32] = {};
 					from.Format(ep, sizeof ep);
@@ -732,9 +916,18 @@ void Coordinator::Poll(uint64_t nowMs) {
 	// timeout elapses.  v4 extends the hard timeout to kRelayFailTimeoutMs
 	// once relay mode has engaged, so the relay handshake has its own
 	// budget beyond the original direct-punch window.
-	if (mPhase == Phase::Handshaking && !mHelloCandidates.empty()) {
+	// Relay-from-T=0 joiners (BeginJoinRelay; native ↔ wssRelayOnly host)
+	// have no direct candidates but still need the retry / timeout
+	// machinery — gate the spray loop on candidates, but the timeout
+	// fires regardless.
+	const bool relayOnlyJoin =
+		(mRole == Role::Joiner && mPeerPath == PeerPath::Relay
+		 && mHelloCandidates.empty() && mLobbyRelayKnown);
+	if (mPhase == Phase::Handshaking
+	    && (!mHelloCandidates.empty() || relayOnlyJoin)) {
 		if (mHelloStartMs == 0) mHelloStartMs = nowMs;
-		uint64_t timeoutMs = (mPeerPath == PeerPath::Relay)
+		uint64_t timeoutMs = (mPeerPath == PeerPath::Relay
+		                       || mPeerPath == PeerPath::WsRelay)
 			? kRelayFailTimeoutMs : kHelloTimeoutMs;
 		if (nowMs - mHelloStartMs >= timeoutMs) {
 			g_ATLCNetplay("joiner: handshake timeout after %ums, "
@@ -789,7 +982,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 			size_t nn = EncodeHello(h, mTxBuf, sizeof mTxBuf);
 			if (nn) {
 				for (const auto& ep : mHelloCandidates) {
-					mTransport.SendTo(mTxBuf, nn, ep);
+					mTransport->SendTo(mTxBuf, nn, ep);
 				}
 				// Relay-first: ALSO send a wrapped Hello through the
 				// lobby on every retry, in parallel with the direct
@@ -1707,7 +1900,7 @@ void Coordinator::SendWelcome() {
 void Coordinator::SendReject(uint32_t reason, const Endpoint& to) {
 	NetReject r { kMagicReject, reason };
 	size_t n = EncodeReject(r, mTxBuf, sizeof mTxBuf);
-	if (n) mTransport.SendTo(mTxBuf, n, to);
+	if (n) mTransport->SendTo(mTxBuf, n, to);
 }
 
 // ---------------------------------------------------------------------------
@@ -2160,6 +2353,10 @@ void Coordinator::IngestPeerHint(const uint8_t nonce16[kSessionNonceLen],
 }
 
 void Coordinator::PumpPunchProbes(uint64_t nowMs) {
+	// WsRelay carrier (browser): no UDP socket, no NAT to punch.
+	// Coordinator never builds candidate sets in this mode, but
+	// guard anyway so a stray entry is harmless.
+	if (mPeerPath == PeerPath::WsRelay) return;
 	if (mPunchTargets.empty()) return;
 	// Drop targets that are past the sustain window.  Skip entries
 	// whose firstSentMs is still the 0-sentinel (they haven't been
@@ -2186,7 +2383,7 @@ void Coordinator::PumpPunchProbes(uint64_t nowMs) {
 			// because kPunchSustainDurationMs > 1.
 			uint64_t seed = nowMs ? nowMs : 1;
 			for (int i = 0; i < kPunchBurstInitialCount; ++i) {
-				mTransport.SendTo(buf, n, t.ep);
+				mTransport->SendTo(buf, n, t.ep);
 			}
 			t.sentCount   = kPunchBurstInitialCount;
 			t.firstSentMs = seed;
@@ -2194,7 +2391,7 @@ void Coordinator::PumpPunchProbes(uint64_t nowMs) {
 			continue;
 		}
 		if (nowMs - t.lastSentMs < kPunchSustainIntervalMs) continue;
-		mTransport.SendTo(buf, n, t.ep);
+		mTransport->SendTo(buf, n, t.ep);
 		t.lastSentMs = nowMs;
 		++t.sentCount;
 	}
@@ -2202,9 +2399,16 @@ void Coordinator::PumpPunchProbes(uint64_t nowMs) {
 
 bool Coordinator::WrapAndSend(const uint8_t* bytes, size_t n,
                               const Endpoint& peer) {
+	// WsRelay: WasmTransport::SendTo carries the bytes through the
+	// WS bridge; no ASDF wrapping (the WS frame is already
+	// session+role-bound at handshake time).  The transport ignores
+	// `peer` since there's exactly one connection.
+	if (mPeerPath == PeerPath::WsRelay) {
+		return mTransport->SendTo(bytes, n, peer);
+	}
 	if (mPeerPath != PeerPath::Relay ||
 	    !mLobbyRelayKnown || !mHasRelaySessionId) {
-		return mTransport.SendTo(bytes, n, peer);
+		return mTransport->SendTo(bytes, n, peer);
 	}
 	return SendWrappedViaLobby(bytes, n);
 }
@@ -2221,10 +2425,14 @@ bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {
 	h.role = (mRole == Role::Host) ? kRelayRoleHost : kRelayRoleJoiner;
 	size_t wn = EncodeRelayFrame(h, bytes, n, buf, sizeof buf);
 	if (!wn) return false;
-	return mTransport.SendTo(buf, wn, mLobbyRelayEndpoint);
+	return mTransport->SendTo(buf, wn, mLobbyRelayEndpoint);
 }
 
 void Coordinator::SendRelayRegister(uint64_t nowMs) {
+	// WsRelay: WASM hosts/joiners don't speak UDP — there's no ASGR
+	// to send.  Their session-keyed identity is established by the
+	// WS subprotocol header at handshake time.
+	if (mPeerPath == PeerPath::WsRelay) return;
 	if (!mLobbyRelayKnown || !mHasRelaySessionId) return;
 
 	// Periodic refresh: the lobby's RelayTable prunes a slot after
@@ -2251,7 +2459,7 @@ void Coordinator::SendRelayRegister(uint64_t nowMs) {
 	uint8_t buf[kWireRelayRegisterSize];
 	size_t n = EncodeRelayRegister(r, buf, sizeof buf);
 	if (!n) return;
-	if (!mTransport.SendTo(buf, n, mLobbyRelayEndpoint)) return;
+	if (!mTransport->SendTo(buf, n, mLobbyRelayEndpoint)) return;
 
 	// Stamp AFTER the send so a SendTo failure leaves us eligible to
 	// retry on the very next call (no false "registered" state).
@@ -2268,6 +2476,9 @@ void Coordinator::SendRelayRegister(uint64_t nowMs) {
 }
 
 void Coordinator::MaybePrearmRelay(uint64_t nowMs) {
+	// WsRelay carrier (browser): the WS bridge is the relay; there's
+	// no UDP relay table to pre-arm.
+	if (mPeerPath == PeerPath::WsRelay) return;
 	// Relay-first handshake: register with the lobby's relay table
 	// the moment the relay context becomes available.  No T+3s wait,
 	// no waiting for a peer-hint to arrive on the heartbeat (which
@@ -2324,6 +2535,9 @@ void Coordinator::MaybePrearmRelay(uint64_t nowMs) {
 }
 
 void Coordinator::MaybeEngageRelay(uint64_t nowMs) {
+	// WsRelay: traffic already flows through the lobby; no fallback
+	// engagement step exists.
+	if (mPeerPath == PeerPath::WsRelay) return;
 	if (mPeerPath == PeerPath::Relay) return;
 	if (!mHasRelaySessionId || !mLobbyRelayKnown) return;
 
@@ -2371,6 +2585,9 @@ void Coordinator::MaybeEngageRelay(uint64_t nowMs) {
 }
 
 void Coordinator::MaybeRescueRelayMidSession(uint64_t nowMs) {
+	// WsRelay: there's no Direct path to rescue from — the lobby's
+	// WS bridge is always the carrier.
+	if (mPeerPath == PeerPath::WsRelay) return;
 	// Mid-session resilience: a router reboot, a transient NAT
 	// eviction, or a brief WAN outage can stall a Direct path during
 	// Lockstepping.  Today such an outage just freezes the session
@@ -2426,6 +2643,9 @@ void Coordinator::OnPeerPathFlippedToRelay(uint64_t nowMs) {
 }
 
 void Coordinator::MaybeProbeDirectFromRelay(uint64_t nowMs) {
+	// WsRelay: no UDP path to probe back to; the WS connection IS
+	// the connection.
+	if (mPeerPath == PeerPath::WsRelay) return;
 	// Only probe in Lockstepping (the only phase where direct rescue
 	// is meaningful — in handshake phases the existing Hello-spray
 	// already covers direct probing).
@@ -2485,10 +2705,10 @@ void Coordinator::MaybeProbeDirectFromRelay(uint64_t nowMs) {
 			// Defensive: never punch the lobby itself even if it
 			// somehow ended up in the candidate list.
 			if (mLobbyRelayKnown && ep.Equals(mLobbyRelayEndpoint)) continue;
-			mTransport.SendTo(buf, n, ep);
+			mTransport->SendTo(buf, n, ep);
 		}
 	} else {
-		mTransport.SendTo(buf, n, mPeer);
+		mTransport->SendTo(buf, n, mPeer);
 	}
 	mLastDirectProbeMs = nowMs;
 	++mDirectProbeAttempts;

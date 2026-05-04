@@ -189,6 +189,7 @@ HostedGameState PhaseToHostedGameState(ATNetplayGlue::Phase p, bool enabled,
 		case P::ReceivingSnapshot:
 		case P::SnapshotReady:     return HostedGameState::Handshaking;
 		case P::Lockstepping:      return HostedGameState::Playing;
+		case P::Resyncing:         return HostedGameState::Playing;
 		case P::Ended:             return enabled ? HostedGameState::Open : HostedGameState::Off;
 		case P::Desynced:
 		case P::Failed:            return HostedGameState::Failed;
@@ -221,6 +222,13 @@ void PostLobbyCreate(HostedGame& o) {
 	ATNetplay::LobbyCreateRequest cr;
 	cr.cartName        = o.gameName;
 	cr.hostHandle      = ResolvedNickname();
+#if defined(__EMSCRIPTEN__)
+	// Browser hosts have no UDP path of any kind — the lobby's WS
+	// bridge is the only ingress.  Tag the session so v3+ joiners
+	// skip candidate spray and go relay-from-T=0; pre-v3 native
+	// joiners simply fail their Hello timeout (graceful degradation).
+	cr.wssRelayOnly = true;
+#endif
 
 	// Build the candidate list: every usable LAN interface + loopback.
 	// Server-reflexive (public) and router-mapped (NAT-PMP) endpoints
@@ -237,6 +245,14 @@ void PostLobbyCreate(HostedGame& o) {
 	//     similarly benefit from advertising all interfaces.
 	//   - Android devices often have cellular + WiFi simultaneously;
 	//     publishing both lets the joiner pick whichever is routable.
+#if defined(__EMSCRIPTEN__)
+	// WASM host: no UDP candidates of any kind.  Server validates the
+	// (wssRelayOnly=true ⟹ empty hostEndpoint + empty candidates)
+	// combination — empty hostEndpoint signals "WSS only, no direct
+	// path" to native v3 joiners.
+	cr.candidates.clear();
+	cr.hostEndpoint = "";
+#else
 	std::vector<std::string> lanIps;
 	ATNetplay::Transport::EnumerateLocalIPv4s(lanIps);
 
@@ -300,10 +316,14 @@ void PostLobbyCreate(HostedGame& o) {
 		g_ATLCNetplay("host candidates (pre-srflx / pre-NAT-PMP): [%s]",
 			joined.c_str());
 	}
+#endif // __EMSCRIPTEN__
 	cr.region          = "global";
 	cr.playerCount     = 1;
 	cr.maxPlayers      = 2;
-	cr.protocolVersion = 2;
+	// v3: clients announce protocolVersion=3 so the lobby's
+	// `wssRelayOnly` validator accepts the (true, empty hostEndpoint,
+	// empty candidates) combination from browser hosts.
+	cr.protocolVersion = ATNetplay::kProtocolVersion;
 	cr.visibility      = o.isPrivate ? "private" : "public";
 	cr.requiresCode    = o.isPrivate;
 	cr.cartArtHash     = o.cartArtHash;
@@ -548,6 +568,19 @@ ATNetplay::NetBootConfig BuildBootConfig(const HostedGame& o) {
 void StartCoordForHostedGame(HostedGame& o) {
 	if (ATNetplayGlue::HostExists(o.id.c_str())) return;
 
+#if defined(__EMSCRIPTEN__)
+	// WASM (browser) host: WS handshake requires the lobby's host
+	// token, which is only obtained from a successful Create.  Defer
+	// StartHost until the Create response arrives in ATNetplayUI_Poll
+	// (which then calls StartHostWss with sid+token).  Until then the
+	// HostedGame sits in `Open` with no coordinator — joiners can't
+	// see it yet because no lobby Create has succeeded.
+	o.boundPort = 0;
+	o.lastError.clear();
+	o.state = HostedGameState::Open;
+	PostLobbyCreate(o);
+	return;
+#else
 	uint8_t codeHash[16];
 	const uint8_t* codePtr = FoldEntryCode(o, codeHash);
 
@@ -582,6 +615,7 @@ void StartCoordForHostedGame(HostedGame& o) {
 	ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), true);
 
 	PostLobbyCreate(o);
+#endif
 }
 
 void StopCoordForHostedGame(HostedGame& o) {
@@ -728,6 +762,56 @@ void SyncDeleteAllRegistrationsForShutdown() {
 		// NAT-PMP release still run).
 		o.lobbyRegistrations.clear();
 	}
+}
+
+void OnLobbyCreateSucceeded(HostedGame& o,
+                            const std::string& section,
+                            const std::string& sessionId,
+                            const std::string& token) {
+#if defined(__EMSCRIPTEN__)
+	// First successful Create per offer triggers the WSS handshake.
+	// Subsequent multi-lobby Creates (different `section`) just add a
+	// LobbyRegistration; the WS is already open against ONE lobby
+	// (the bridge keys on sid+role and there's only one host slot).
+	if (ATNetplayGlue::HostExists(o.id.c_str())) return;
+	if (sessionId.empty() || token.empty()) return;
+
+	auto lobbiesNow = AllEnabledHttpLobbies();
+	const ATNetplay::LobbyEndpoint* ep = nullptr;
+	for (const auto& L : lobbiesNow) {
+		if (L.section == section) { ep = &L.endpoint; break; }
+	}
+	if (!ep) return;
+
+	uint8_t codeHash[16];
+	const uint8_t* codePtr = FoldEntryCode(o, codeHash);
+	ATNetplay::NetBootConfig bc = BuildBootConfig(o);
+
+	bool ok = ATNetplayGlue::StartHostWss(
+		o.id.c_str(),
+		ep->host.c_str(),
+		sessionId.c_str(),
+		token.c_str(),
+		ResolvedNickname().c_str(),
+		o.gameName.c_str(),
+		/*osRomHash*/    0,
+		/*basicRomHash*/ 0,
+		/*settingsHash*/ 0,
+		(uint16_t)GetState().prefs.defaultInputDelayInternet,
+		codePtr,
+		bc);
+	if (ok) {
+		ATNetplayGlue::HostSetPromptAccept(o.id.c_str(), true);
+		g_ATLCNetplay("WASM host (%s): WSS opened on lobby=%s sid=%s",
+			o.gameName.c_str(), ep->host.c_str(), sessionId.c_str());
+	} else {
+		const char* err = ATNetplayGlue::HostLastError(o.id.c_str());
+		o.lastError = (err && *err) ? err : "Failed to open WSS to lobby";
+		o.state = HostedGameState::Failed;
+	}
+#else
+	(void)o; (void)section; (void)sessionId; (void)token;
+#endif
 }
 
 void EnableHostedGame(const std::string& gameId) {
@@ -1341,26 +1425,115 @@ void StartJoiningAction() {
 		codePtr = codeHash;
 	}
 
-	// v3 NAT traversal: prefer the candidates list (LAN;srflx;loopback)
-	// over the single hostEndpoint when the host published one.  The
-	// coordinator sprays NetHello to each candidate in parallel and
-	// locks onto the first responder.  Fall back to hostEndpoint
-	// when candidates is empty (old hosts / v2 lobby entries).
-	const std::string& cand = st.session.joinTarget.candidates;
-	const char* target = cand.empty()
-		? st.session.joinTarget.hostEndpoint.c_str()
-		: cand.c_str();
-	g_ATLCNetplay("joiner: StartJoin target = \"%s\" (%s)",
-		target,
-		cand.empty() ? "legacy hostEndpoint" : "v3 candidates");
-
-	bool ok = ATNetplayGlue::StartJoin(
-		target,
-		ResolvedNickname().c_str(),
-		/*osRomHash*/    0,
-		/*basicRomHash*/ 0,
-		/*acceptTos*/    true,
-		codePtr);
+	bool ok = false;
+#if defined(__EMSCRIPTEN__)
+	// WASM browser build: no UDP path of any kind.  Always go via the
+	// lobby's WS bridge using the session id from the lobby listing.
+	// The bridge translates to/from UDP for native hosts.
+	if (st.session.joinTarget.sessionId.empty()) {
+		st.session.lastError =
+			"Cannot join: this lobby session has no id (browser builds "
+			"require a v3+ lobby).";
+		Navigate(Screen::Error);
+		return;
+	}
+	{
+		// Resolve the lobby's WSS host.  The user's lobby.ini stores
+		// `url = http://altirra-lobby.duckdns.org:8080`; for the WS
+		// upgrade we strip the scheme/port and let the transport go
+		// straight to wss://<host>:443/netplay.  Caddy on the lobby box
+		// terminates TLS and reverse-proxies /netplay to the bridge on
+		// localhost:8090.
+		auto lobbies = AllEnabledHttpLobbies();
+		const ATNetplay::LobbyEndpoint *ep = nullptr;
+		for (const auto& L : lobbies) {
+			if (L.section == st.session.joinTarget.sourceLobby) {
+				ep = &L.endpoint; break;
+			}
+		}
+		if (!ep && !lobbies.empty()) ep = &lobbies.front().endpoint;
+		if (!ep) {
+			st.session.lastError =
+				"No HTTP lobby is configured to host the WSS bridge.";
+			Navigate(Screen::Error);
+			return;
+		}
+		g_ATLCNetplay("joiner (WASM): StartJoinWss host=%s sid=%s",
+			ep->host.c_str(),
+			st.session.joinTarget.sessionId.c_str());
+		ok = ATNetplayGlue::StartJoinWss(
+			ep->host.c_str(),
+			st.session.joinTarget.sessionId.c_str(),
+			ResolvedNickname().c_str(),
+			/*osRomHash*/    0,
+			/*basicRomHash*/ 0,
+			/*acceptTos*/    true,
+			codePtr);
+	}
+#else
+	// Native v3 joiner targeting a wssRelayOnly host: skip candidate
+	// spray (the host has no UDP path) and register with the lobby
+	// relay immediately.  The host (a browser) receives our wrapped
+	// Hello as a WS frame from the lobby's bridge.
+	if (st.session.joinTarget.wssRelayOnly) {
+		if (st.session.joinTarget.sessionId.empty()) {
+			st.session.lastError =
+				"This browser-only host has no session id — "
+				"cannot relay-join.";
+			Navigate(Screen::Error);
+			return;
+		}
+		auto lobbies = AllEnabledHttpLobbies();
+		const ATNetplay::LobbyEndpoint* ep = nullptr;
+		for (const auto& L : lobbies) {
+			if (L.section == st.session.joinTarget.sourceLobby) {
+				ep = &L.endpoint; break;
+			}
+		}
+		if (!ep && !lobbies.empty()) ep = &lobbies.front().endpoint;
+		if (!ep) {
+			st.session.lastError =
+				"No HTTP lobby is configured for this browser host.";
+			Navigate(Screen::Error);
+			return;
+		}
+		char lobbyHostPort[128];
+		std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
+			"%s:%u", ep->host.c_str(),
+			(unsigned)ATLobby::kReflectorPortDefault);
+		g_ATLCNetplay(
+			"joiner: WSS-only host — StartJoinRelay sid=%s lobby=%s",
+			st.session.joinTarget.sessionId.c_str(), lobbyHostPort);
+		ok = ATNetplayGlue::StartJoinRelay(
+			lobbyHostPort,
+			st.session.joinTarget.sessionId.c_str(),
+			ResolvedNickname().c_str(),
+			/*osRomHash*/    0,
+			/*basicRomHash*/ 0,
+			/*acceptTos*/    true,
+			codePtr);
+	} else {
+		// v3 NAT traversal: prefer the candidates list (LAN;srflx;loopback)
+		// over the single hostEndpoint when the host published one.  The
+		// coordinator sprays NetHello to each candidate in parallel and
+		// locks onto the first responder.  Fall back to hostEndpoint
+		// when candidates is empty (old hosts / v2 lobby entries).
+		const std::string& cand = st.session.joinTarget.candidates;
+		const char* target = cand.empty()
+			? st.session.joinTarget.hostEndpoint.c_str()
+			: cand.c_str();
+		g_ATLCNetplay("joiner: StartJoin target = \"%s\" (%s)",
+			target,
+			cand.empty() ? "legacy hostEndpoint" : "v3 candidates");
+		ok = ATNetplayGlue::StartJoin(
+			target,
+			ResolvedNickname().c_str(),
+			/*osRomHash*/    0,
+			/*basicRomHash*/ 0,
+			/*acceptTos*/    true,
+			codePtr);
+	}
+#endif
 	if (!ok) {
 		const char *err = ATNetplayGlue::JoinLastError();
 		st.session.lastError = (err && *err) ? err
@@ -1382,7 +1555,16 @@ void StartJoiningAction() {
 	// candidates to the lobby so the host can fire outbound NetPunch
 	// probes before our Hello spray arrives.  Routed by the session's
 	// sourceLobby so we hit the same lobby that surfaced the session.
-	if (!st.session.joinTarget.sessionId.empty()) {
+	//
+	// Skipped under WASM: the browser has no UDP path, no LAN
+	// candidates to advertise, and no reflector to probe.  The lobby
+	// WS bridge is the only path and `StartJoinWss` already armed it.
+	// Skipped for native wssRelayOnly hosts: BeginJoinRelay already
+	// armed the relay context; peer-hint candidates would be useless
+	// (the browser host can't UDP-punch anything).
+#if !defined(__EMSCRIPTEN__)
+	if (!st.session.joinTarget.sessionId.empty() &&
+	    !st.session.joinTarget.wssRelayOnly) {
 		auto lobbies = AllEnabledHttpLobbies();
 		const ATNetplay::LobbyEndpoint *ep = nullptr;
 		for (const auto& L : lobbies) {
@@ -1485,6 +1667,7 @@ void StartJoiningAction() {
 			}
 		}
 	}
+#endif // !__EMSCRIPTEN__
 
 	Navigate(Screen::Waiting);
 }

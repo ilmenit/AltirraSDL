@@ -18,7 +18,16 @@ const char* const kDefaultLobbyIni =
 	"\n"
 	"[official]\n"
 	"name    = Altirra Official Lobby\n"
+#if defined(__EMSCRIPTEN__)
+	// WASM (browser) build: the page is served over HTTPS from
+	// GitHub Pages, so mixed-content rules force every fetch to use
+	// the TLS-fronted DuckDNS hostname.  Caddy on the lobby box
+	// terminates TLS and reverse-proxies /v1/* (HTTP API) and
+	// /netplay (WS bridge) to the appropriate localhost ports.
+	"url     = http://altirra-lobby.duckdns.org\n"
+#else
 	"url     = http://158.180.27.70:8080\n"
+#endif
 	"region  = global\n"
 	"enabled = true\n"
 	"\n"

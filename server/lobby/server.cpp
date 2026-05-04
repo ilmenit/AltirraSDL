@@ -19,6 +19,12 @@
 // deployment behind the reverse proxy keeps the binary dep-free.
 #include "httplib.h"
 
+// WebSocket bridge — translates browser WSS frames to/from the
+// existing UDP relay and the in-bridge WS-WS routing path.  Caddy
+// terminates TLS and reverse-proxies plain WS to localhost:8090; the
+// bridge runs on its own thread.
+#include "ws_bridge.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -169,6 +175,16 @@ struct LobbyCounters {
 
 LobbyCounters gLC;
 
+// WS bridge metrics + shared state — declared early because Install()
+// (the HTTP route registrar, ~line 886) reads `gWsBridgeStats` from
+// the /v1/metrics handler.  Definitions live near the WS callback
+// helpers further down so they group with the rest of the bridge
+// integration; here we only forward-declare the storage at file scope
+// inside the anonymous namespace.
+ATLobby::WsBridgeStats        gWsBridgeStats;
+ATLobby::ReflectorSocketHandle gWsBridgeReflectorFd;
+ATLobby::WsBridgeContext       gWsBridgeCtx;
+
 // -----------------------------------------------------------------
 // Session store
 // -----------------------------------------------------------------
@@ -219,6 +235,13 @@ struct Session {
 	// (kept in the listing so the lobby looks alive, but Browser greys
 	// it out and suppresses Join).  Hosts update via heartbeat.
 	std::string state;             // "waiting" | "playing"
+
+	// v3 WSS-only host (browser).  When true, this host has no UDP
+	// endpoints — joiners (native or browser) must use the lobby's WS
+	// bridge.  Pre-v3 native joiners ignore this field and will fail
+	// to connect with a Hello timeout, which is the intended graceful
+	// degradation.
+	bool        wssRelayOnly  = false;
 };
 
 struct Config {
@@ -527,6 +550,10 @@ void WriteSessionJson(JsonBuilder& b, const Session& s) {
 	b.key(Field::kHardwareMode);  b.str(s.hardwareMode);  b.raw(',');
 	b.key(Field::kVideoStandard); b.str(s.videoStandard); b.raw(',');
 	b.key(Field::kMemoryMode);    b.str(s.memoryMode);    b.raw(',');
+	// v3: always emit wssRelayOnly so v3 clients can distinguish
+	// "missing" (pre-v3 server, treat as false) from "explicit false"
+	// (v3 server reports a UDP host).
+	b.key(Field::kWssRelayOnly);    b.boolean(s.wssRelayOnly); b.raw(',');
 	b.key(Field::kState);           b.str(s.state.empty() ? kStateWaiting
 	                                                       : s.state);
 	b.raw(',');
@@ -561,6 +588,7 @@ struct CreateReq {
 	int         maxPlayers      = 0;
 	int         protocolVersion = 0;
 	bool        requiresCode    = false;
+	bool        wssRelayOnly    = false;   // v3
 	// v2 firmware pre-flight + hardware tag.
 	std::string kernelCRC32;
 	std::string basicCRC32;
@@ -605,6 +633,7 @@ bool ParseCreate(const std::string& body, CreateReq& r,
 		else if (key == Field::kMaxPlayers)      c.parseInt(r.maxPlayers);
 		else if (key == Field::kProtocolVersion) c.parseInt(r.protocolVersion);
 		else if (key == Field::kRequiresCode)    c.parseBool(r.requiresCode);
+		else if (key == Field::kWssRelayOnly)    c.parseBool(r.wssRelayOnly);
 		else { if (!c.parseNull() && !c.skipValue()) {
 			errOut = "invalid json"; return false;
 		} }
@@ -701,13 +730,24 @@ std::string ValidateCreate(CreateReq& r) {
 		return "cartName: 1.." + std::to_string(kCartNameMax) + " chars required";
 	if (r.hostHandle.empty() || (int)r.hostHandle.size() > kHostHandleMax)
 		return "hostHandle: 1.." + std::to_string(kHostHandleMax) + " chars required";
-	if (!IsEndpoint(r.hostEndpoint))
-		return "hostEndpoint: host:port required";
-	// v3 candidates: cap the length to deter abuse (8 candidates at
-	// ~40 bytes each = 320 bytes).  Content is not parsed here —
-	// joiner-side splitter validates each entry.
-	if (r.candidates.size() > 512)
-		return "candidates: <=512 chars";
+	// v3 WSS-only hosts have no UDP endpoints — skip the host:port
+	// shape check.  We DO require hostEndpoint and candidates to be
+	// empty in that case, to guard against a misbehaving client
+	// publishing reachable UDP coords while also claiming WS-only.
+	if (r.wssRelayOnly) {
+		if (!r.hostEndpoint.empty())
+			return "wssRelayOnly: hostEndpoint must be empty";
+		if (!r.candidates.empty())
+			return "wssRelayOnly: candidates must be empty";
+	} else {
+		if (!IsEndpoint(r.hostEndpoint))
+			return "hostEndpoint: host:port required";
+		// v3 candidates: cap the length to deter abuse (8 candidates at
+		// ~40 bytes each = 320 bytes).  Content is not parsed here —
+		// joiner-side splitter validates each entry.
+		if (r.candidates.size() > 512)
+			return "candidates: <=512 chars";
+	}
 	if (r.maxPlayers < kMinPlayers || r.maxPlayers > kMaxPlayersLimit)
 		return "maxPlayers: 2..8 required";
 	if (r.playerCount < 1 || r.playerCount > r.maxPlayers)
@@ -963,6 +1003,36 @@ void Install(httplib::Server& srv, Store& store) {
 				b.key("requests_total");
 				b.num((long long)gLC.reflectorRequestsTotal.load());
 			b.raw('}');                              b.raw(',');
+			// WebSocket bridge counters (slice 6 — production-ready).
+			// Mirrors the relay block: connection volume, message
+			// volume, and the four drop categories.  Cross-transport
+			// counts WS↔UDP forwards in either direction.
+			b.key("ws_bridge");       b.raw('{');
+				b.key("connections_total");
+				b.num((long long)gWsBridgeStats.connectionsTotal.load()); b.raw(',');
+				b.key("upgrades_rejected_auth");
+				b.num((long long)gWsBridgeStats.upgradesRejectedAuth.load()); b.raw(',');
+				b.key("upgrades_rejected_conflict");
+				b.num((long long)gWsBridgeStats.upgradesRejectedConflict.load()); b.raw(',');
+				b.key("messages_in_total");
+				b.num((long long)gWsBridgeStats.messagesIn.load()); b.raw(',');
+				b.key("messages_out_total");
+				b.num((long long)gWsBridgeStats.messagesOut.load()); b.raw(',');
+				b.key("bytes_in_total");
+				b.num((long long)gWsBridgeStats.bytesIn.load()); b.raw(',');
+				b.key("bytes_out_total");
+				b.num((long long)gWsBridgeStats.bytesOut.load()); b.raw(',');
+				b.key("forwards_cross_transport");
+				b.num((long long)gWsBridgeStats.forwardsCrossTransport.load()); b.raw(',');
+				b.key("dropped_no_peer");
+				b.num((long long)gWsBridgeStats.droppedNoPeer.load()); b.raw(',');
+				b.key("dropped_rate_limit");
+				b.num((long long)gWsBridgeStats.droppedRateLimit.load()); b.raw(',');
+				b.key("dropped_oversized");
+				b.num((long long)gWsBridgeStats.droppedOversized.load()); b.raw(',');
+				b.key("dropped_auth");
+				b.num((long long)gWsBridgeStats.droppedAuth.load());
+			b.raw('}');                              b.raw(',');
 			b.key("http");            b.raw('{');
 				b.key("requests_total");
 				b.num((long long)gLC.requestsTotal.load());      b.raw(',');
@@ -1021,6 +1091,7 @@ void Install(httplib::Server& srv, Store& store) {
 			in.hardwareMode  = r.hardwareMode;
 			in.videoStandard = r.videoStandard;
 			in.memoryMode    = r.memoryMode;
+			in.wssRelayOnly  = r.wssRelayOnly;
 
 			Session s = store.Create(in);
 			if (s.id.empty()) {
@@ -1481,6 +1552,32 @@ public:
 		return ForwardResult::kForward;
 	}
 
+	// Bridge-side variant: the sender is the WS bridge, which has no
+	// UDP endpoint to register — only look up the OTHER side and
+	// consume a per-pair forward token.  Returns kNoPeer if no
+	// matching session, kRateLimited on bucket exhaustion.  An entry
+	// is created on demand if the session has been WS-only so far,
+	// because WS↔UDP traffic still belongs in the same per-pair
+	// bucket once a UDP peer arrives.
+	ForwardResult BridgeLookupAndConsumeForward(
+		const uint8_t sid[16], uint8_t senderRole, int64_t nowMs,
+		sockaddr_in& outOther)
+	{
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mByKey.find(MakeKey(sid));
+		if (it == mByKey.end()) return ForwardResult::kNoPeer;
+		auto& pair = it->second;
+		RelayEndpoint& other = (senderRole == kRelayRoleHost)
+			? pair.joiner : pair.host;
+		if (!other.known) return ForwardResult::kNoPeer;
+		if (nowMs - other.lastSeenMs > kRelayPeerIdleMs)
+			return ForwardResult::kNoPeer;
+		if (!pair.TryForward(nowMs))
+			return ForwardResult::kRateLimited;
+		outOther = other.addr;
+		return ForwardResult::kForward;
+	}
+
 	bool IsRegisteredFromSource(const uint8_t sid[16], uint8_t role,
 	                            const sockaddr_in& from, int64_t nowMs) {
 		std::lock_guard<std::mutex> lk(mMu);
@@ -1537,6 +1634,138 @@ size_t RelaySizeNow() {
 	return Relay().Size();
 }
 
+// -----------------------------------------------------------------
+// WS bridge callbacks + shared state
+// -----------------------------------------------------------------
+//
+// Globals: the WS bridge runs on its own thread but its callbacks are
+// invoked synchronously from that thread.  We thread Store + reflector
+// FD via a single context struct passed as the callback `ctx`.
+//
+// gWsBridgeStats and gWsBridgeReflectorFd are file-scope so the
+// reflector thread (which sees the fd to publish) and the bridge
+// thread (which reads the fd to send) share a single object instance.
+//
+// gWsBridgeCtx.reg holds the bridge's registry pointer, set inside
+// RunWsBridge before its first poll iteration and cleared on shutdown
+// — so the reflector's ASDF handler can probe whether the OTHER side
+// of a session is on WS without acquiring any extra locks beyond the
+// registry's internal one.
+
+struct WsCallbackCtx {
+	Store* store;
+};
+
+// Convert raw 16-byte session id back to UUIDv4 dashed lowercase form
+// (`8-4-4-4-12`) so we can look it up in Store, which keys on that
+// canonical string.
+std::string SidRawToUuid(const uint8_t sid[16]) {
+	char out[40];
+	std::snprintf(out, sizeof out,
+		"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+		"%02x%02x%02x%02x%02x%02x",
+		sid[0], sid[1], sid[2], sid[3], sid[4], sid[5], sid[6], sid[7],
+		sid[8], sid[9], sid[10], sid[11], sid[12], sid[13], sid[14], sid[15]);
+	return out;
+}
+
+// Constant-time hex comparison for tokens.  The two strings are each
+// 32 hex chars; we treat any length mismatch as "not equal" but still
+// walk the longer string to keep the timing flat.
+bool ConstTimeEqual(const std::string& a, const char* b) {
+	size_t bn = b ? std::strlen(b) : 0;
+	size_t n  = std::max(a.size(), bn);
+	uint8_t diff = (uint8_t)(a.size() ^ bn);
+	for (size_t i = 0; i < n; ++i) {
+		uint8_t ca = (i < a.size()) ? (uint8_t)a[i] : 0;
+		uint8_t cb = (i < bn)       ? (uint8_t)b[i] : 0;
+		diff |= (uint8_t)(ca ^ cb);
+	}
+	return diff == 0;
+}
+
+ATLobby::WsAuthResult WsValidateSession(
+	const uint8_t sidRaw[16], uint8_t role,
+	const char* tokenHex, void* ctx)
+{
+	auto* cb = static_cast<WsCallbackCtx*>(ctx);
+	if (!cb || !cb->store) return ATLobby::WsAuthResult::kInternal;
+
+	std::string id = SidRawToUuid(sidRaw);
+	Session s;
+	if (!cb->store->Get(id, s)) return ATLobby::WsAuthResult::kGone;
+
+	// Hosts MUST present the same token they got from Create — that's
+	// the only way to authenticate as the legitimate host of an
+	// existing session record.  Joiners do NOT need it: anyone can
+	// ask the lobby to bridge them into a session (mirroring the UDP
+	// relay's open-registration model).  Wire-level auth (entry
+	// codes, ROM/firmware checks) happens at the Altirra protocol
+	// layer, not here.
+	if (role == 0 /* kRelayRoleHost */) {
+		if (!ConstTimeEqual(s.token, tokenHex))
+			return ATLobby::WsAuthResult::kForbidden;
+	}
+	return ATLobby::WsAuthResult::kOk;
+}
+
+// UDP forwarder callback for the WS bridge.  Builds an ASDF frame
+// addressed to the OTHER UDP peer (looked up in RelayTable) and sends
+// it via the reflector socket FD shared by the reflector thread.  The
+// shared FD preserves the lobby's stable (IP, :8081) source so the
+// peer's `Coordinator::PeerIsLobby()` check still recognises the
+// origin as the relay.
+bool WsForwardToUdp(const uint8_t sidRaw[16], uint8_t senderRole,
+                    const uint8_t* inner, size_t innerLen, void* ctx)
+{
+	(void)ctx;  // intentionally unused; we read globals
+	int64_t nowMs = NowMs();
+	sockaddr_in other{};
+	auto r = Relay().BridgeLookupAndConsumeForward(
+		sidRaw, senderRole, nowMs, other);
+	if (r == RelayTable::ForwardResult::kNoPeer) {
+		gWsBridgeStats.droppedNoPeer.fetch_add(
+			1, std::memory_order_relaxed);
+		return false;
+	}
+	if (r == RelayTable::ForwardResult::kRateLimited) {
+		gWsBridgeStats.droppedRateLimit.fetch_add(
+			1, std::memory_order_relaxed);
+		return false;
+	}
+
+	int fd = gWsBridgeReflectorFd.fd.load(std::memory_order_acquire);
+	if (fd < 0) {
+		gWsBridgeStats.droppedNoPeer.fetch_add(
+			1, std::memory_order_relaxed);
+		return false;
+	}
+
+	// Frame: 4-byte 'ASDF' magic + 16-byte sid + 1-byte role + 3-byte
+	// pad + inner.  Identical to the v4 wire format the native UDP
+	// path uses (packets.h NetRelayData).
+	std::vector<uint8_t> frame(kWireRelayHeaderSize + innerLen);
+	frame[0] = 'A'; frame[1] = 'S'; frame[2] = 'D'; frame[3] = 'F';
+	std::memcpy(frame.data() + 4, sidRaw, 16);
+	frame[20] = senderRole;
+	frame[21] = 0; frame[22] = 0; frame[23] = 0;
+	if (innerLen > 0)
+		std::memcpy(frame.data() + kWireRelayHeaderSize, inner, innerLen);
+
+	int sent = ::sendto(fd, (const char*)frame.data(),
+		(int)frame.size(), 0,
+		(const sockaddr*)&other, sizeof other);
+	if (sent <= 0) return false;
+
+	gWsBridgeStats.forwardsCrossTransport.fetch_add(
+		1, std::memory_order_relaxed);
+	gWsBridgeStats.bytesOut.fetch_add(
+		(uint64_t)sent, std::memory_order_relaxed);
+	gLC.relayPacketsOut.fetch_add(1, std::memory_order_relaxed);
+	gLC.relayBytesOut.fetch_add((uint64_t)sent, std::memory_order_relaxed);
+	return true;
+}
+
 }  // anonymous
 
 // The test binary #include's this .cpp file directly with
@@ -1585,6 +1814,13 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 	tv.tv_sec = 1;
 	tv.tv_usec = 0;
 	::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+
+	// Publish the FD so the WS bridge can sendto() through the same
+	// socket — preserves the lobby's stable (IP, :8081) source so
+	// native peers' Coordinator::PeerIsLobby() check keeps recognising
+	// the relay origin.  sendto() on the same FD is thread-safe under
+	// the kernel's per-socket lock.
+	gWsBridgeReflectorFd.fd.store(s, std::memory_order_release);
 
 	std::fprintf(stdout, "reflector listening on UDP :%u\n",
 		(unsigned)port);
@@ -1655,9 +1891,42 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 				1, std::memory_order_relaxed);
 			gLC.relayBytesIn.fetch_add(
 				(uint64_t)n, std::memory_order_relaxed);
+
+			// Always register the UDP sender's endpoint so the per-pair
+			// rate-limit bucket exists and a future lookup from the WS
+			// bridge can find it.  We split the lookup-for-other into
+			// two stages: first refresh sender (LookupAndConsumeForward
+			// already does this, but we also want the path where the
+			// other side is on WS to NOT consume a token here, since
+			// the WS branch has its own per-pair token consumption via
+			// BridgeLookupAndConsumeForward called from the bridge
+			// callback).  For slice 1 we keep the existing semantics —
+			// a sender-token is consumed once per relayed packet and
+			// the bridge consumes another for its leg; rates are well
+			// under the 240 pps cap so this doesn't degrade traffic.
 			sockaddr_in other{};
 			auto r = Relay().LookupAndConsumeForward(
 				sid, role, from, nowMs, other);
+
+			// Cross-transport: if the other side is on WS, route the
+			// inner bytes there before considering the UDP forward.
+			// We do this even on a kNoPeer UDP result, because the
+			// other side may be a WS-only peer (no UDP registration).
+			int innerLen = n - (int)kWireRelayHeaderSize;
+			const uint8_t* innerBytes =
+				(const uint8_t*)(buf + kWireRelayHeaderSize);
+			if (gWsBridgeCtx.reg) {
+				bool wsOk = ATLobby::WsBridgeForwardToWs(
+					gWsBridgeCtx.reg, sid, role,
+					innerBytes, (size_t)innerLen,
+					gWsBridgeStats);
+				if (wsOk) {
+					// Cross-transport delivery succeeded.  Don't also
+					// send via UDP — the other peer is on WS.
+					continue;
+				}
+			}
+
 			if (r == RelayTable::ForwardResult::kNoPeer) {
 				gLC.relayDroppedNoPeer.fetch_add(
 					1, std::memory_order_relaxed);
@@ -1670,9 +1939,8 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 			}
 			// Forward the inner bytes (after our 24-B header).
 			// Per-IP rate cap bypass: registered peer, live slot.
-			int innerLen = n - (int)kWireRelayHeaderSize;
 			int sent = ::sendto(s,
-				(const char*)(buf + kWireRelayHeaderSize),
+				(const char*)innerBytes,
 				innerLen, 0,
 				(const sockaddr*)&other, sizeof other);
 			if (sent > 0) {
@@ -1737,6 +2005,11 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 			(const sockaddr*)&from, sizeof from);
 	}
 
+	// Clear the published FD before close() so any racing bridge
+	// sendto() reads -1 instead of touching a freed FD.  The bridge
+	// thread joins before main() returns so this race window is
+	// short, but pay the cost of an atomic store anyway.
+	gWsBridgeReflectorFd.fd.store(-1, std::memory_order_release);
 	::close(s);
 }
 
@@ -1760,6 +2033,40 @@ int main(int argc, char **argv) {
 	if (reflectorPort > 0) {
 		reflectorThread = std::thread(
 			[&] { RunReflector(reflectorPort, reflectorStop); });
+	}
+
+	// WebSocket bridge port: default 8090, env override.  The bridge
+	// runs on its own thread; the cpp-httplib server on :8080 is
+	// untouched.  The bridge uses the reflector's UDP socket FD to
+	// send ASDF frames to native peers (same-port-source preserves
+	// PeerIsLobby() identity at the remote peer), and consults the
+	// existing RelayTable for the per-pair token bucket.
+	uint16_t wsBridgePort = 8090;
+	if (const char* e = std::getenv("WS_BRIDGE_PORT")) {
+		int v = std::atoi(e);
+		if (v > 0 && v < 65536) wsBridgePort = (uint16_t)v;
+	}
+	std::atomic<bool> wsBridgeStop{false};
+	std::thread wsBridgeThread;
+	WsCallbackCtx wsCb{ &store };
+	if (wsBridgePort > 0) {
+		ATLobby::WsBridgeConfig wcfg{};
+		wcfg.port            = wsBridgePort;
+		wcfg.listenAddr      = "127.0.0.1";    // Caddy fronts us
+		wcfg.maxMessageBytes = 2048;
+		wcfg.pingIntervalMs  = 15000;
+		wcfg.pongTimeoutMs   = 10000;
+		wcfg.idleTimeoutMs   = 60000;
+		wsBridgeThread = std::thread([&, wcfg]() mutable {
+			ATLobby::RunWsBridge(
+				wcfg,
+				gWsBridgeStats,
+				gWsBridgeReflectorFd,
+				WsValidateSession, &wsCb,
+				WsForwardToUdp,    nullptr,
+				gWsBridgeCtx,
+				wsBridgeStop);
+		});
 	}
 
 	httplib::Server srv;
@@ -1793,7 +2100,9 @@ int main(int argc, char **argv) {
 	bool ok = srv.listen(cfg.bind, cfg.port);
 	sweeper.Stop();
 	reflectorStop.store(true);
+	wsBridgeStop.store(true);
 	if (reflectorThread.joinable()) reflectorThread.join();
+	if (wsBridgeThread.joinable())  wsBridgeThread.join();
 	std::fputs("bye\n", stdout);
 	return ok ? 0 : 1;
 }

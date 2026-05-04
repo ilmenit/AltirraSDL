@@ -56,6 +56,11 @@ struct LobbySession {
 	std::string memoryMode;     // "320K" / "1088K" / … — may be empty (old hosts)
 	std::string state;          // "waiting" (joinable) | "playing" (in session)
 
+	// v3: WSS-only host (browser).  When true, this session has no UDP
+	// endpoints; joiners must skip candidate spray and go straight to
+	// lobby relay (the lobby's WS bridge connects the two transports).
+	bool        wssRelayOnly   = false;
+
 	// UI-owned: which configured lobby (section name) this session was
 	// learned from.  Never set by the HTTP parser; the UI stamps it on
 	// entries as they arrive so a subsequent response from the same
@@ -76,7 +81,7 @@ struct LobbyCreateRequest {
 	std::string region;
 	int         playerCount    = 1;
 	int         maxPlayers     = 2;
-	int         protocolVersion = 2;
+	int         protocolVersion = 3;
 	std::string visibility     = "public";  // or "private"
 	bool        requiresCode   = false;
 	std::string cartArtHash;    // may be empty
@@ -85,6 +90,10 @@ struct LobbyCreateRequest {
 	std::string hardwareMode;   // may be empty
 	std::string videoStandard;  // may be empty
 	std::string memoryMode;     // may be empty
+	// v3: WASM hosts have no UDP endpoint to publish; set this to
+	// true so joiners use lobby-relay from T=0.  Native hosts leave
+	// it false (default).
+	bool        wssRelayOnly   = false;
 };
 
 struct LobbyCreateResponse {

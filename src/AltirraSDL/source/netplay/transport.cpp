@@ -138,23 +138,23 @@ size_t Endpoint::Format(char* buf, size_t bufSize) const {
 }
 
 // ---------------------------------------------------------------------------
-// Transport
+// UdpTransport
 // ---------------------------------------------------------------------------
 
-Transport::Transport()
+UdpTransport::UdpTransport()
 	: mSock(NP_INVALID_SOCK)
 	, mBoundPort(0)
 {}
 
-Transport::~Transport() {
+UdpTransport::~UdpTransport() {
 	Close();
 }
 
-bool Transport::IsOpen() const {
+bool UdpTransport::IsOpen() const {
 	return mSock != NP_INVALID_SOCK;
 }
 
-bool Transport::Listen(uint16_t port) {
+bool UdpTransport::Listen(uint16_t port) {
 	Close();
 	InitNetSubsystem();
 
@@ -215,7 +215,7 @@ bool Transport::Listen(uint16_t port) {
 	return true;
 }
 
-bool Transport::Resolve(const char* hostPort, Endpoint& out) {
+bool UdpTransport::Resolve(const char* hostPort, Endpoint& out) {
 	InitNetSubsystem();
 
 	char host[256] = {};
@@ -248,7 +248,7 @@ bool Transport::Resolve(const char* hostPort, Endpoint& out) {
 	return out.IsValid();
 }
 
-bool Transport::DiscoverLocalIPv4(char* outIp, size_t outCap) {
+bool UdpTransport::DiscoverLocalIPv4(char* outIp, size_t outCap) {
 	if (!outIp || outCap < 16) return false;
 	outIp[0] = '\0';
 
@@ -321,7 +321,7 @@ bool Transport::DiscoverLocalIPv4(char* outIp, size_t outCap) {
 	return false;
 }
 
-bool Transport::EnumerateLocalIPv4s(std::vector<std::string>& out) {
+bool UdpTransport::EnumerateLocalIPv4s(std::vector<std::string>& out) {
 	out.clear();
 	InitNetSubsystem();
 
@@ -403,7 +403,7 @@ bool Transport::EnumerateLocalIPv4s(std::vector<std::string>& out) {
 	return !out.empty();
 }
 
-bool Transport::SendTo(const uint8_t* bytes, size_t n, const Endpoint& to) {
+bool UdpTransport::SendTo(const uint8_t* bytes, size_t n, const Endpoint& to) {
 	if (!IsOpen() || !to.IsValid() || n == 0 || bytes == nullptr) return false;
 
 	// Test-only outbound packet loss.  A simple xorshift32 keeps the
@@ -436,7 +436,7 @@ bool Transport::SendTo(const uint8_t* bytes, size_t n, const Endpoint& to) {
 	return (size_t)rc == n;
 }
 
-void Transport::SetTestDropRate(float dropRate, uint32_t seed) {
+void UdpTransport::SetTestDropRate(float dropRate, uint32_t seed) {
 	if (dropRate < 0.0f) dropRate = 0.0f;
 	if (dropRate > 1.0f) dropRate = 1.0f;
 	mTestDropRate = dropRate;
@@ -444,7 +444,7 @@ void Transport::SetTestDropRate(float dropRate, uint32_t seed) {
 	mTestRngState = seed ? seed : 1u;
 }
 
-RecvResult Transport::RecvFrom(uint8_t* buf, size_t bufSize,
+RecvResult UdpTransport::RecvFrom(uint8_t* buf, size_t bufSize,
                                size_t& outLen, Endpoint& from) {
 	outLen = 0;
 	from = {};
@@ -473,7 +473,7 @@ RecvResult Transport::RecvFrom(uint8_t* buf, size_t bufSize,
 	return RecvResult::Ok;
 }
 
-void Transport::Close() {
+void UdpTransport::Close() {
 	if (mSock != NP_INVALID_SOCK) {
 		NP_CLOSE(mSock);
 		mSock = NP_INVALID_SOCK;

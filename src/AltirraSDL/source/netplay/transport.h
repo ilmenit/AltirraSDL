@@ -48,25 +48,86 @@ enum class RecvResult {
 	Error,        // hard error; socket may still be usable
 };
 
-class Transport {
+// Polymorphic transport interface.  Two production implementations:
+//   - UdpTransport      — POSIX/Winsock UDP datagram socket (native).
+//   - WasmTransport     — Emscripten WebSocket relay through the lobby
+//                         (browser builds; lives in transport_wasm.cpp).
+//
+// Coordinator owns one INetTransport via std::unique_ptr and calls
+// only the methods declared here.  UDP-only operations (LAN
+// discovery, NAT-PMP, blocking name resolution) stay as static
+// members on UdpTransport — the Coordinator never invokes them on
+// non-UDP transports because their code paths are gated by PeerPath.
+//
+// Members are virtual where the SDL3 build needs to dispatch between
+// UDP/WS at runtime (SendTo/RecvFrom/IsOpen/Close/BoundPort).  The
+// abstract interface is intentionally narrower than UdpTransport's
+// public surface — UDP-specific helpers stay statically typed on
+// UdpTransport so callers that need them don't get a fake "always
+// fails" override on WasmTransport.
+class INetTransport {
 public:
-	Transport();
-	~Transport();
+	virtual ~INetTransport() = default;
 
-	Transport(const Transport&) = delete;
-	Transport& operator=(const Transport&) = delete;
+	// Bind / open the underlying transport.  For UdpTransport this
+	// binds a UDP socket (port == 0 → ephemeral); for WasmTransport
+	// this opens the WebSocket to the lobby (port is ignored).
+	// Returns true on success — note that for non-blocking transports
+	// "open" may complete asynchronously: poll IsOpen() afterwards.
+	virtual bool Listen(uint16_t port) = 0;
+
+	// True after Listen() succeeded (or, for WS, after the handshake
+	// completed) and before Close().
+	virtual bool IsOpen() const = 0;
+
+	// Local UDP port if applicable; 0 for transports without a stable
+	// local port concept (WS).
+	virtual uint16_t BoundPort() const = 0;
+
+	// Non-blocking send.  Returns true iff the bytes were queued to
+	// the underlying transport.  For WS, `to` is ignored — the
+	// connection is single-peer; the lobby routes by session+role.
+	virtual bool SendTo(const uint8_t* bytes, size_t n,
+	                    const Endpoint& to) = 0;
+
+	// Non-blocking recv.  See UdpTransport docs for buffer sizing
+	// requirements.  For WS, `from` is set to a synthetic endpoint
+	// (currently zeroed) since there is exactly one peer per
+	// connection and the Coordinator's WsRelay path doesn't dispatch
+	// by source.
+	virtual RecvResult RecvFrom(uint8_t* buf, size_t bufSize,
+	                            size_t& outLen, Endpoint& from) = 0;
+
+	// Idempotent close.
+	virtual void Close() = 0;
+
+	// True if this transport is fundamentally relay-only (WASM/WS).
+	// The Coordinator uses this to suppress NAT-traversal machinery
+	// (NAT punch, direct rescue, candidate spray) that doesn't apply
+	// when the carrier itself is a session-scoped WS connection.
+	// Default false; override in WasmTransport.
+	virtual bool IsRelayOnly() const { return false; }
+};
+
+class UdpTransport final : public INetTransport {
+public:
+	UdpTransport();
+	~UdpTransport() override;
+
+	UdpTransport(const UdpTransport&) = delete;
+	UdpTransport& operator=(const UdpTransport&) = delete;
 
 	// Bind a local UDP socket on AF_INET, any interface, port = `port`.
 	// port == 0 asks the OS for an ephemeral port; BoundPort() reports
 	// what was actually chosen.  Returns false on failure.
-	bool Listen(uint16_t port);
+	bool Listen(uint16_t port) override;
 
 	// True after Listen() succeeded and before Close().
-	bool IsOpen() const;
+	bool IsOpen() const override;
 
 	// The local port the socket is bound to.  Valid only after a
 	// successful Listen().
-	uint16_t BoundPort() const { return mBoundPort; }
+	uint16_t BoundPort() const override { return mBoundPort; }
 
 	// Resolve "host:port" to an Endpoint via getaddrinfo().  Host may
 	// be a dotted-quad IPv4 literal or a DNS name.  Returns false on
@@ -101,7 +162,7 @@ public:
 	// the kernel; false on EWOULDBLOCK or any other error.  UDP
 	// delivery is still best-effort — a `true` return only means the
 	// socket accepted the bytes.
-	bool SendTo(const uint8_t* bytes, size_t n, const Endpoint& to);
+	bool SendTo(const uint8_t* bytes, size_t n, const Endpoint& to) override;
 
 	// Test instrumentation only.  When dropRate > 0, SendTo silently
 	// discards that fraction of outbound datagrams (deterministic via
@@ -121,10 +182,10 @@ public:
 	// kMaxDatagramSize in packets.h); shorter buffers will silently
 	// truncate the datagram on Linux and flag an error on Windows.
 	RecvResult RecvFrom(uint8_t* buf, size_t bufSize,
-	                    size_t& outLen, Endpoint& from);
+	                    size_t& outLen, Endpoint& from) override;
 
 	// Close the socket if open.  Idempotent.
-	void Close();
+	void Close() override;
 
 private:
 	// Opaque socket handle.  Typed in the .cpp to avoid pulling
@@ -137,5 +198,11 @@ private:
 	float    mTestDropRate = 0.0f;
 	uint32_t mTestRngState = 1u;
 };
+
+// Source-compatibility alias — existing code that named the old
+// concrete class `Transport` keeps compiling.  New code should write
+// `UdpTransport` directly when it needs UDP-specific methods, or
+// `INetTransport` when it can work with any transport.
+using Transport = UdpTransport;
 
 } // namespace ATNetplay

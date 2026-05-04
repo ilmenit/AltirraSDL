@@ -664,6 +664,83 @@ void TestOriginBlockedOnPost() {
 	T_EXPECT_EQ_INT(r->status, 403, "browser origin blocked on POST");
 }
 
+// v3: WSS-only host (browser).  Verifies:
+//   - Create accepts wssRelayOnly=true with empty hostEndpoint.
+//   - Create rejects wssRelayOnly=true with non-empty hostEndpoint.
+//   - List echoes wssRelayOnly back to the client.
+//   - Default (no wssRelayOnly key) = false.
+void TestWssRelayOnlyRoundtrip() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+
+	// Case 1: WSS-only host with empty hostEndpoint succeeds.
+	{
+		JsonBuilder b;
+		b.raw('{');
+		b.key(Field::kCartName);        b.str("test");           b.raw(',');
+		b.key(Field::kHostHandle);      b.str("browser-host");   b.raw(',');
+		b.key(Field::kHostEndpoint);    b.str("");               b.raw(',');
+		b.key(Field::kCandidates);      b.str("");               b.raw(',');
+		b.key(Field::kRegion);          b.str("eu");             b.raw(',');
+		b.key(Field::kPlayerCount);     b.num(1);                b.raw(',');
+		b.key(Field::kMaxPlayers);      b.num(2);                b.raw(',');
+		b.key(Field::kProtocolVersion); b.num(3);                b.raw(',');
+		b.key(Field::kWssRelayOnly);    b.boolean(true);
+		b.raw('}');
+		auto r = c.Post(kPathSession, b.s, "application/json");
+		T_EXPECT(r, "wss-only post: response");
+		T_EXPECT_EQ_INT(r->status, 201, "wss-only Create accepted");
+	}
+
+	// Case 2: WSS-only with non-empty hostEndpoint rejected (400).
+	{
+		JsonBuilder b;
+		b.raw('{');
+		b.key(Field::kCartName);        b.str("test");           b.raw(',');
+		b.key(Field::kHostHandle);      b.str("browser-host-2"); b.raw(',');
+		b.key(Field::kHostEndpoint);    b.str("1.2.3.4:5678");   b.raw(',');
+		b.key(Field::kRegion);          b.str("eu");             b.raw(',');
+		b.key(Field::kPlayerCount);     b.num(1);                b.raw(',');
+		b.key(Field::kMaxPlayers);      b.num(2);                b.raw(',');
+		b.key(Field::kProtocolVersion); b.num(3);                b.raw(',');
+		b.key(Field::kWssRelayOnly);    b.boolean(true);
+		b.raw('}');
+		auto r = c.Post(kPathSession, b.s, "application/json");
+		T_EXPECT(r, "wss-only with endpoint: response");
+		T_EXPECT_EQ_INT(r->status, 400, "wss-only with endpoint rejected");
+	}
+
+	// Case 3: List response echoes wssRelayOnly true and false (the
+	// case-1 session above + a regular UDP session for default check).
+	{
+		auto r = c.Post(kPathSession,
+			MakeCreateBody("g", "udp-host", "1.2.3.4:5000"),
+			"application/json");
+		T_EXPECT(r, "udp-host post");
+		T_EXPECT_EQ_INT(r->status, 201, "udp-host Create accepted");
+	}
+	auto lr = c.Get(kPathSessions);
+	T_EXPECT(lr, "list response");
+	T_EXPECT_EQ_INT(lr->status, 200, "list status");
+	bool sawTrue = false;
+	bool sawFalse = false;
+	std::string body = lr->body;
+	for (size_t pos = 0;;) {
+		auto found = body.find("\"wssRelayOnly\":", pos);
+		if (found == std::string::npos) break;
+		size_t v = found + std::strlen("\"wssRelayOnly\":");
+		while (v < body.size() && (body[v] == ' ' || body[v] == '\t')) ++v;
+		if (v + 4 <= body.size() && body.compare(v, 4, "true") == 0)
+			sawTrue = true;
+		else if (v + 5 <= body.size() && body.compare(v, 5, "false") == 0)
+			sawFalse = true;
+		pos = v;
+	}
+	T_EXPECT(sawTrue,  "list contains wssRelayOnly:true");
+	T_EXPECT(sawFalse, "list contains wssRelayOnly:false");
+}
+
 int RunAll() {
 	TestHealthz();
 	TestCreateAndList();
@@ -683,6 +760,7 @@ int RunAll() {
 	TestPeerHintUnknownSession();
 	TestRelayTableRegisterAndLookup();
 	TestRelayLookupOtherFailsWithOneSide();
+	TestWssRelayOnlyRoundtrip();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",
 		g_testsRun, g_testsFail);

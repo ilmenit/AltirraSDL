@@ -219,6 +219,17 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 					if (!replaced)
 						o->lobbyRegistrations.push_back(std::move(reg));
 
+					// Hook for the WASM-host create-then-host bootstrap.
+					// On native this is a no-op; on WASM the helper
+					// constructs WasmTransport + BeginHost using the
+					// freshly-returned (sid, token).  Implemented in
+					// ui_netplay_actions.cpp where the static helpers
+					// (ResolvedNickname, BuildBootConfig, FoldEntryCode)
+					// already live.
+					ATNetplayUI::OnLobbyCreateSucceeded(
+						*o, r.sourceLobby,
+						r.create.sessionId, r.create.token);
+
 					o->lastHeartbeatMs = nowMs;
 					// Only clear lastError if no OTHER lobby is still
 					// showing a failure — but for v1 we just clear on

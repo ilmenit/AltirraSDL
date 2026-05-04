@@ -173,6 +173,127 @@ server/lobby/Dockerfile .` from the AltirraSDL root. The
 Dockerfile + `altirra-lobby.service` that ship here are the
 current production-matching references.
 
+## WebSocket bridge (browser netplay)
+
+A second listener runs on `localhost:8090` and accepts WebSocket
+upgrades on `/netplay`.  The public TLS edge (Caddy) reverse-proxies
+WSS traffic to it; native UDP clients are unaffected.  The bridge
+lets browser (WASM) builds share netplay sessions with native peers,
+translating between the two transports session by session.
+
+Vendored single-file mongoose 7.18 implements the WebSocket protocol
+(`vendor/mongoose/mongoose.{c,h}`).  Caddy terminates TLS so the
+bridge speaks plain WS upstream.
+
+### Handshake
+
+The browser opens
+
+    wss://altirra-lobby.duckdns.org/netplay
+
+with a comma-separated `Sec-WebSocket-Protocol` list:
+
+    altirra-netplay.v1, session.<32hex>, role.<host|joiner>, token.<32hex>
+
+The bridge validates the session id against the in-memory store,
+compares the token with the canonical one returned by Create
+(constant-time), and rejects the upgrade if the role slot is already
+occupied.  Tokens never appear in the URL — Caddy logs URIs but not
+subprotocol headers.
+
+Possible upgrade outcomes:
+
+| HTTP status | Reason |
+|-------------|--------|
+| 101 Switching Protocols | accepted |
+| 400 Bad Request | malformed subprotocol list |
+| 403 Forbidden  | wrong session token |
+| 410 Gone       | session expired between Create and upgrade |
+| 409 Conflict   | role already taken (host slot occupied, etc.) |
+| 429 Too Many Requests | per-IP upgrade rate limit (60/min) |
+
+### Frame format
+
+Each binary WS frame carries one inner Altirra netplay packet
+(`Hello`/`Welcome`/`Input`/`Bye`/etc.) prefixed with a one-byte
+sender role envelope:
+
+    [role:u8][inner_packet …]
+
+The role byte (`0` = host, `1` = joiner) lets the bridge route by
+the same `(sessionId, role)` key the existing UDP relay table uses.
+The lobby strips the byte before forwarding to a native UDP peer
+(the receiving native client never sees it) and rewrites it on
+inbound to identify the OTHER side for browser peers.  Inbound
+frames larger than 2048 bytes are rejected with WS close 1009
+(Message Too Big).
+
+### Liveness
+
+* WS-level ping every 15 s; close on 10 s pong-timeout.
+* Application-level idle: 60 s without any inbound frame closes the
+  connection.
+* On graceful WS close, the bridge synthesises an `ANPB` (NetBye)
+  packet and delivers it to the surviving peer so its Coordinator
+  transitions to `Phase::Ended` immediately instead of waiting for
+  its own peer-silence timeout.
+
+### Cross-transport bridging
+
+The bridge maintains a `WsRegistry` keyed on `(sessionId, role)`.
+On every incoming packet — whether from a UDP peer arriving at the
+reflector on `:8081`, or a WS frame arriving on `:8090` — the
+forwarder consults BOTH the WS registry and the UDP `RelayTable`:
+
+1. If the OTHER side of the session is on WS, deliver the inner
+   bytes as a binary WS frame (with the recipient's role byte
+   prepended).
+2. Otherwise, if the OTHER side is on UDP relay, wrap in ASDF and
+   `sendto()` via the reflector socket FD — sharing the FD keeps
+   the source as `lobby_ip:8081` so the native peer's
+   `Coordinator::PeerIsLobby()` check still recognises the relay
+   origin.
+3. Otherwise drop (no peer registered yet).
+
+Per-pair rate limiting reuses the existing `RelayPair::TryForward`
+token bucket (240 pps / 240 pps refill) so cross-transport sessions
+get the same protection as pure UDP sessions.
+
+### Metrics
+
+The `/v1/metrics` JSON object includes a `ws_bridge` block:
+
+    "ws_bridge": {
+      "connections_total": …,
+      "upgrades_rejected_auth": …,
+      "upgrades_rejected_conflict": …,
+      "messages_in_total": …,
+      "messages_out_total": …,
+      "bytes_in_total": …,
+      "bytes_out_total": …,
+      "forwards_cross_transport": …,
+      "dropped_no_peer": …,
+      "dropped_rate_limit": …,
+      "dropped_oversized": …,
+      "dropped_auth": …
+    }
+
+`forwards_cross_transport` counts WS↔UDP forwards in either
+direction; a non-zero value confirms a mixed-transport session is
+running.  `dropped_no_peer` should remain near zero in normal
+operation; sustained non-zero indicates a stale registration race
+or a client that is sending after the OTHER side has disconnected.
+
+### `wssRelayOnly` sessions
+
+Lobby-protocol v3 adds a boolean `wssRelayOnly` field on
+`/v1/session` POST and on every `/v1/sessions` entry.  Hosts running
+in a browser set the flag (and submit empty `hostEndpoint` /
+`candidates`) so joiners know there is no UDP path to attempt.
+Native v3 joiners that see the flag skip candidate spray and go
+straight to lobby-relay from T=0; pre-v3 native joiners simply fail
+with a Hello timeout (which is the intended graceful degradation).
+
 ## History
 
 This server was originally written in Go (≈500 LoC). Rewritten in
@@ -180,3 +301,7 @@ C++23 in 2026 so client and server share a single toolchain, a
 single protocol header (no cross-language schema drift), and a
 smaller deployable binary. The Go source was removed once this
 version passed functional parity.
+
+The WebSocket bridge was added in 2026 to let browser (WASM)
+builds participate in netplay sessions; the inner Altirra wire
+protocol is unchanged.

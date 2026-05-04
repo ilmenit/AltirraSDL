@@ -13,6 +13,10 @@
 #include "netplay_savestate.h"
 #include "netplay_simhash.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "transport_wasm.h"
+#endif
+
 #include "simulator.h"
 #include "cpu.h"
 #include "gtia.h"
@@ -887,6 +891,123 @@ bool StartJoin(const char* hostAddress,
 	return ok;
 }
 
+bool StartJoinRelay(const char* lobbyHostPort,
+                    const char* sessionIdHex,
+                    const char* playerHandle,
+                    uint64_t osRomHash,
+                    uint64_t basicRomHash,
+                    bool acceptTos,
+                    const uint8_t* entryCodeHash) {
+	if (!lobbyHostPort || !*lobbyHostPort ||
+	    !sessionIdHex || !*sessionIdHex) {
+		g_lastJoinError = "missing lobby endpoint or session id";
+		g_lastJoinPhase = Phase::Failed;
+		return false;
+	}
+	uint8_t sid[16] = {};
+	if (!ATNetplay::UuidHexToBytes16(sessionIdHex, sid)) {
+		g_lastJoinError = "malformed session id";
+		g_lastJoinPhase = Phase::Failed;
+		return false;
+	}
+
+	if (g_joiner) {
+		g_joiner->End();
+		g_joiner.reset();
+	}
+	g_lastJoinPhase = Phase::None;
+	g_lastJoinError.clear();
+	g_joinerTerminalTicks = 0;
+
+	g_joiner = std::make_unique<ATNetplay::Coordinator>();
+	bool ok = g_joiner->BeginJoinRelay(lobbyHostPort, sid,
+		/*localPort*/ 0, playerHandle,
+		osRomHash, basicRomHash, acceptTos, entryCodeHash);
+	return ok;
+}
+
+#if defined(__EMSCRIPTEN__)
+
+bool StartJoinWss(const char* lobbyHost,
+                  const char* sessionIdHex32,
+                  const char* playerHandle,
+                  uint64_t osRomHash,
+                  uint64_t basicRomHash,
+                  bool acceptTos,
+                  const uint8_t* entryCodeHash) {
+	if (!lobbyHost || !*lobbyHost || !sessionIdHex32 || !*sessionIdHex32) {
+		g_lastJoinError = "missing lobby host or session id";
+		g_lastJoinPhase = Phase::Failed;
+		return false;
+	}
+
+	if (g_joiner) {
+		g_joiner->End();
+		g_joiner.reset();
+	}
+	g_lastJoinPhase = Phase::None;
+	g_lastJoinError.clear();
+	g_joinerTerminalTicks = 0;
+
+	g_joiner = std::make_unique<ATNetplay::Coordinator>();
+	auto t = std::make_unique<ATNetplay::WasmTransport>(
+		std::string(lobbyHost),
+		std::string(sessionIdHex32),
+		/*role=*/ ATNetplay::kRelayRoleJoiner,
+		/*tokenHex=*/ std::string());
+	g_joiner->SetTransport(std::move(t));
+
+	// Empty candidates list — the relay-only branch in BeginJoinMulti
+	// short-circuits the resolver and synthesises a single sentinel
+	// "endpoint" representing the WSS bridge.
+	bool ok = g_joiner->BeginJoinMulti("", 0, playerHandle,
+		osRomHash, basicRomHash, acceptTos, entryCodeHash);
+	return ok;
+}
+
+bool StartHostWss(const char* gameId,
+                  const char* lobbyHost,
+                  const char* sessionIdHex32,
+                  const char* tokenHex32,
+                  const char* playerHandle,
+                  const char* cartName,
+                  uint64_t osRomHash,
+                  uint64_t basicRomHash,
+                  uint64_t settingsHash,
+                  uint16_t inputDelayFrames,
+                  const uint8_t* entryCodeHash,
+                  const ATNetplay::NetBootConfig& bootConfig) {
+	if (!gameId || !*gameId || !lobbyHost || !*lobbyHost ||
+	    !sessionIdHex32 || !*sessionIdHex32 ||
+	    !tokenHex32 || !*tokenHex32) {
+		return false;
+	}
+
+	StopHost(gameId);
+
+	HostSlot slot;
+	slot.gameId = gameId;
+	slot.coord  = std::make_unique<ATNetplay::Coordinator>();
+	auto t = std::make_unique<ATNetplay::WasmTransport>(
+		std::string(lobbyHost),
+		std::string(sessionIdHex32),
+		/*role=*/ ATNetplay::kRelayRoleHost,
+		std::string(tokenHex32));
+	slot.coord->SetTransport(std::move(t));
+
+	bool ok = slot.coord->BeginHost(
+		/*localPort*/ 0,
+		playerHandle, cartName,
+		osRomHash, basicRomHash, settingsHash, inputDelayFrames,
+		entryCodeHash, bootConfig);
+	if (!ok) return false;
+
+	g_hosts.push_back(std::move(slot));
+	return true;
+}
+
+#endif // __EMSCRIPTEN__
+
 void StopJoin() {
 	// Explicit user dismiss: wipe both the live coordinator AND the
 	// cached failure state so the Waiting screen closes cleanly.
@@ -972,11 +1093,16 @@ bool IsResyncing(uint32_t* outReceived, uint32_t* outExpected,
 
 // Translate the coordinator's binary PeerPath into the glue's
 // 3-valued enum (None | Direct | Relay).  Caller has already
-// checked that `c` exists.
+// checked that `c` exists.  WsRelay (browser builds) maps to Relay
+// for UI purposes — the user sees the same "via lobby" indicator
+// regardless of whether the relay leg is UDP-ASDF or WS frames.
 static PeerPath ToGluePeerPath(const ATNetplay::Coordinator& c) {
-	return c.GetPeerPath() == ATNetplay::Coordinator::PeerPath::Relay
-		? PeerPath::Relay
-		: PeerPath::Direct;
+	const auto p = c.GetPeerPath();
+	if (p == ATNetplay::Coordinator::PeerPath::Relay ||
+	    p == ATNetplay::Coordinator::PeerPath::WsRelay) {
+		return PeerPath::Relay;
+	}
+	return PeerPath::Direct;
 }
 
 PeerPath JoinerPeerPath() {

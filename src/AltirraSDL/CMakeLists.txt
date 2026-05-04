@@ -399,15 +399,16 @@ endif()
 # protocol only; transport, coordinator, lobby client, and UI land in
 # subsequent phases.  Default ON; disable with -DALTIRRA_NETPLAY=OFF.
 option(ALTIRRA_NETPLAY "Build the AltirraSDL netplay module" ON)
-if(ALTIRRA_WASM AND ALTIRRA_NETPLAY)
-    message(WARNING "ALTIRRA_NETPLAY is not supported for ALTIRRA_WASM; forcing OFF.")
-    set(ALTIRRA_NETPLAY OFF CACHE BOOL "Build the AltirraSDL netplay module" FORCE)
-endif()
+# WASM netplay support (slice 5): WSS bridge to the production lobby
+# replaces UDP at the transport layer; UDP-only sources (raw sockets,
+# NAT-PMP, LAN discovery) are excluded from the WASM source list
+# below.  The protocol headers, coordinator, lockstep loop, snapshot
+# channel, lobby client and UI all compile unchanged.
 if(ALTIRRA_NETPLAY)
+    # Protocol + coordinator + lockstep — pure data, no platform deps.
     target_sources(AltirraSDL PRIVATE
         source/netplay/protocol.cpp
         source/netplay/netplay_profile.cpp
-        source/netplay/transport.cpp
         source/netplay/snapshot_channel.cpp
         source/netplay/netplay_cache.cpp
         source/netplay/lockstep.cpp
@@ -416,13 +417,8 @@ if(ALTIRRA_NETPLAY)
         source/netplay/netplay_input.cpp
         source/netplay/netplay_savestate.cpp
         source/netplay/netplay_simhash.cpp
-        source/netplay/http_minimal.cpp
         source/netplay/lobby_client.cpp
         source/netplay/lobby_config.cpp
-        source/netplay/lan_discovery.cpp
-        source/netplay/nat_discovery.cpp
-        source/netplay/port_mapping.cpp
-        source/netplay/platform_notify.cpp
 
         # Online Play UI — Phase 11
         source/ui/netplay/ui_netplay_state.cpp
@@ -443,27 +439,68 @@ if(ALTIRRA_NETPLAY)
         # Online Play settings page (references emote/netplay symbols)
         source/ui/sysconfig/ui_system_pages_netplay.cpp
     )
-    if(WIN32)
+
+    # transport.cpp (UdpTransport + Endpoint helpers) compiles for both
+    # native and WASM — under Emscripten, the socket-using methods are
+    # internally stubbed to fail closed (browsers can't open raw UDP
+    # sockets) but the Endpoint helpers and class scaffolding remain
+    # available for the Coordinator and other netplay code.  The
+    # WasmTransport (transport_wasm.cpp) is the actual carrier; the
+    # Coordinator picks it via the transport factory.
+    target_sources(AltirraSDL PRIVATE
+        source/netplay/transport.cpp
+    )
+
+    if(ALTIRRA_WASM)
+        # Browser build adds the WS transport plus a tiny wasm_stubs.cpp
+        # that satisfies the linker for symbols the rest of the netplay
+        # code references on shared paths (Notify, HttpRequestSync,
+        # ReleaseUdpPortMapping, ReflectorProbe::Run) — the call sites
+        # are guarded by `#if !__EMSCRIPTEN__` so the stubs are never
+        # actually invoked at runtime, but they need to exist for link.
         target_sources(AltirraSDL PRIVATE
-            source/netplay/platform_notify_win32.cpp)
-        # IP Helper API — needed by port_mapping.cpp's default-gateway
-        # discovery (GetBestRoute).  ws2_32 is inherited transitively.
-        target_link_libraries(AltirraSDL PRIVATE iphlpapi)
-        target_compile_definitions(AltirraSDL PRIVATE
-            ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
-    elseif(APPLE)
-        altirra_add_objcxx_source(source/netplay/platform_notify_macos.mm)
-        target_link_libraries(AltirraSDL PRIVATE
-            "-framework UserNotifications"
-            "-framework Foundation")
-        target_compile_definitions(AltirraSDL PRIVATE
-            ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
-    elseif(UNIX)
+            source/netplay/transport_wasm.cpp
+            source/netplay/wasm_stubs.cpp
+        )
+    else()
+        # Native: full UDP + lobby HTTP via http_minimal + LAN/NAT
+        # plumbing.
         target_sources(AltirraSDL PRIVATE
-            source/netplay/platform_notify_linux.cpp)
-        target_link_libraries(AltirraSDL PRIVATE dl)
-        target_compile_definitions(AltirraSDL PRIVATE
-            ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+            source/netplay/http_minimal.cpp
+            source/netplay/lan_discovery.cpp
+            source/netplay/nat_discovery.cpp
+            source/netplay/port_mapping.cpp
+            source/netplay/platform_notify.cpp
+        )
+    endif()
+    # Native platform notification backends (toast / notify-send /
+    # NSUserNotificationCenter).  WASM has no equivalent — browsers
+    # don't surface OS-level notifications for user-initiated apps —
+    # so the entire branch is skipped, leaving the netplay UI to
+    # render notifications in-window via the existing toast fallback.
+    if(NOT ALTIRRA_WASM)
+        if(WIN32)
+            target_sources(AltirraSDL PRIVATE
+                source/netplay/platform_notify_win32.cpp)
+            # IP Helper API — needed by port_mapping.cpp's default-gateway
+            # discovery (GetBestRoute).  ws2_32 is inherited transitively.
+            target_link_libraries(AltirraSDL PRIVATE iphlpapi)
+            target_compile_definitions(AltirraSDL PRIVATE
+                ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+        elseif(APPLE)
+            altirra_add_objcxx_source(source/netplay/platform_notify_macos.mm)
+            target_link_libraries(AltirraSDL PRIVATE
+                "-framework UserNotifications"
+                "-framework Foundation")
+            target_compile_definitions(AltirraSDL PRIVATE
+                ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+        elseif(UNIX)
+            target_sources(AltirraSDL PRIVATE
+                source/netplay/platform_notify_linux.cpp)
+            target_link_libraries(AltirraSDL PRIVATE dl)
+            target_compile_definitions(AltirraSDL PRIVATE
+                ALTIRRA_NETPLAY_HAS_NOTIFY_BACKEND=1)
+        endif()
     endif()
     target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_NETPLAY_ENABLED=1)
 endif()
@@ -807,6 +844,16 @@ elseif(ALTIRRA_WASM)
         "SHELL:-sENVIRONMENT=web"
         "SHELL:-sASYNCIFY=0"
         "SHELL:-sFORCE_FILESYSTEM=1"
+        # FETCH=1 enables emscripten_fetch_t, used by
+        # ui_netplay_lobby_worker.cpp under __EMSCRIPTEN__ to talk to
+        # the lobby HTTP API (https://altirra-lobby.duckdns.org/v1/*)
+        # asynchronously from the main loop.  Adds ~10 KB to the wasm.
+        "SHELL:-sFETCH=1"
+        # websocket.js exports emscripten_websocket_*, used by
+        # netplay/transport_wasm.cpp to carry inner Altirra packets
+        # over WSS.  Without this flag the emscripten_websocket_*
+        # symbols resolve to JS thunks but are not auto-linked.
+        "SHELL:-lwebsocket.js"
     )
 
     # Debug builds keep ASSERTIONS on so the "Aborted: <reason>"
