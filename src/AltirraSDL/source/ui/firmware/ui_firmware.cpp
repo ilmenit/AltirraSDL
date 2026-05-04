@@ -1434,8 +1434,18 @@ void RenderFirmwareManager(ATSimulator &sim, bool &show) {
 
 	ImGui::SameLine();
 	if (ImGui::Button("Scan...")) {
+#ifdef __EMSCRIPTEN__
+		// WASM has no OS folder picker; uploaded ROMs live in the
+		// virtual filesystem at /home/web_user/firmware, so scan that
+		// directory directly (mirrors the setup wizard's WASM path at
+		// ui_tools_setup_wizard.cpp:638).
+		std::lock_guard<std::mutex> lock(g_fwScanMutex);
+		g_fwPendingScan.pending = true;
+		g_fwPendingScan.path = VDTextU8ToW(VDStringA("/home/web_user/firmware"));
+#else
 		// Use SDL3 folder picker dialog (matches Windows folder browser)
 		SDL_ShowOpenFolderDialog(FirmwareScanFolderCallback, nullptr, nullptr, nullptr, false);
+#endif
 	}
 
 	// Row 2: Set as Default, Use for..., Audit, Clear

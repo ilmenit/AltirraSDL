@@ -166,6 +166,7 @@ namespace {
 			case 'cass': return "cassettes";   // Cassette mount
 			case 'cart': return "cartridges";  // Cartridge
 			case 'firm': return "firmware";    // Firmware
+			case 'ROMI': return "firmware";    // Firmware Manager → Add...
 			case 'scrn': return "screenshots"; // Save screenshot
 			case 'vid ': return "screenshots"; // Save video
 			case 'aud ': return "screenshots"; // Save audio

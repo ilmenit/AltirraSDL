@@ -369,6 +369,235 @@
     }
     .fm-row .confirm:hover { background: #6d2a2a; }
 
+    /* Danger button accent (Wipe, Delete N) */
+    .fm-actions button.danger,
+    .fm-batchbar button.danger {
+      border-color: #6a3232;
+      color: #f3b6b6;
+    }
+    .fm-actions button.danger:hover:not(:disabled),
+    .fm-batchbar button.danger:hover:not(:disabled) {
+      background: #4a1d1d;
+      border-color: #8a3a3a;
+    }
+
+    /* Breadcrumb / batch toolbar shell */
+    .fm-breadcrumb,
+    .fm-batchbar {
+      flex: 0 0 auto;
+      padding: 6px 14px;
+      border-bottom: 1px solid #2a2a2a;
+      background: #181818;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #aaa;
+      min-height: 30px;
+    }
+    .fm-breadcrumb .crumb {
+      color: #7db2ff;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .fm-breadcrumb .crumb:hover { background: #23303e; }
+    .fm-breadcrumb .crumb.last {
+      color: #ddd;
+      cursor: default;
+    }
+    .fm-breadcrumb .sep { color: #555; }
+    .fm-breadcrumb[hidden] { display: none; }
+    .fm-batchbar { background: #20262e; border-bottom-color: #2c3a4a; }
+    .fm-batchbar[hidden] { display: none; }
+    .fm-batchbar .spacer { flex: 1 1 auto; }
+    .fm-batchbar button {
+      background: #2d2d2d;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .fm-batchbar button:hover:not(:disabled) { background: #383838; }
+    .fm-batchbar #fm-batch-count { font-weight: 600; color: #fff; }
+
+    /* Sidebar dividers + tree-mode entry styling */
+    .fm-sidebar .fm-divider {
+      height: 1px;
+      background: #2a2a2a;
+      margin: 6px 12px;
+    }
+    .fm-sidebar .fm-section {
+      padding: 6px 14px 2px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #666;
+    }
+
+    /* Multi-select checkbox column on rows.  Tree rows for folders show
+       a different icon and skip the size column. */
+    .fm-row.in-select {
+      grid-template-columns: 22px 28px 1fr auto auto auto;
+    }
+    .fm-row.in-select .checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1px solid #555;
+      border-radius: 3px;
+      background: #111;
+      flex: 0 0 auto;
+    }
+    .fm-row.in-select .checkbox.on {
+      background: #3a598a;
+      border-color: #4872ad;
+    }
+    .fm-row.is-folder .name { color: #7db2ff; }
+    .fm-row .pathHint {
+      color: #666;
+      font-size: 0.72rem;
+      grid-column: 2 / 5;
+      margin-top: -2px;
+    }
+    /* Shift the path hint right when the select-mode checkbox column
+       has pushed the icon over by one column. */
+    .fm-row.in-select .pathHint { grid-column: 3 / 6; }
+
+    /* Wipe / Move dialogs (centred popups over the FM overlay) */
+    #wipe-backdrop, #move-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+    #wipe-backdrop.open, #move-backdrop.open { display: flex; }
+    #wipe-box, #move-box {
+      width: min(440px, 90vw);
+      background: #1c1c1c;
+      border: 1px solid #5a3a3a;
+      border-radius: 6px;
+      padding: 18px 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      color: #e0e0e0;
+    }
+    #move-box { border-color: #3a4a5a; }
+    #wipe-box h2, #move-box h2 {
+      font-size: 1rem;
+      color: #f3b6b6;
+      margin-bottom: 8px;
+    }
+    #move-box h2 { color: #7db2ff; }
+    #wipe-box p, #move-box p {
+      font-size: 0.85rem;
+      color: #bbb;
+      margin-bottom: 14px;
+      line-height: 1.4;
+    }
+    .wipe-confirm {
+      display: block;
+      font-size: 0.85rem;
+      color: #ccc;
+      margin-bottom: 16px;
+    }
+    .wipe-confirm b {
+      color: #f3b6b6;
+      font-family: "SF Mono", Menlo, monospace;
+      letter-spacing: 0.1em;
+    }
+    #wipe-input, #move-input {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      background: #111;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      border-radius: 3px;
+      font-family: "SF Mono", Menlo, monospace;
+    }
+    #wipe-input:focus, #move-input:focus { outline: none; border-color: #5a7aad; }
+    .wipe-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .wipe-buttons button {
+      background: #2d2d2d;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .wipe-buttons button.primary {
+      background: #3a598a;
+      border-color: #4872ad;
+      color: #fff;
+    }
+    .wipe-buttons button.primary:hover:not(:disabled) { background: #4872ad; }
+    .wipe-buttons button.danger {
+      background: #4a1d1d;
+      color: #f3b6b6;
+      border-color: #7a2a2a;
+    }
+    .wipe-buttons button.danger:hover:not(:disabled) { background: #6d2a2a; }
+    .wipe-buttons button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #move-suggestions {
+      max-height: 160px;
+      overflow-y: auto;
+      margin: 8px 0 14px;
+      border: 1px solid #2a2a2a;
+      border-radius: 3px;
+      background: #141414;
+    }
+    #move-suggestions .suggest {
+      padding: 5px 10px;
+      font-size: 0.82rem;
+      color: #ccc;
+      cursor: pointer;
+      border-bottom: 1px solid #1f1f1f;
+    }
+    #move-suggestions .suggest:hover { background: #23303e; color: #fff; }
+    #move-suggestions:empty { display: none; }
+
+    /* Choose option in wipe modal */
+    .wipe-choices {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .wipe-choices label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid #333;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: #ddd;
+    }
+    .wipe-choices label:hover { border-color: #4a4a4a; background: #222; }
+    .wipe-choices input[type="radio"] { margin-top: 3px; }
+    .wipe-choices .lbl-title { font-weight: 600; color: #fff; }
+    .wipe-choices .lbl-sub {
+      display: block;
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 2px;
+    }
+
     /* Small toast notifications */
     #toasts {
       position: fixed;
@@ -429,10 +658,23 @@
       <div class="fm-header">
         <h2 id="fm-title">Files</h2>
         <div class="fm-actions">
-          <button id="fm-upload">📁 Upload…</button>
+          <button id="fm-upload" title="Upload files">📁 Upload…</button>
+          <button id="fm-new-folder" title="Create a new folder here">＋ New Folder</button>
+          <button id="fm-select-toggle" title="Toggle multi-select mode">☑ Select</button>
           <input type="search" id="fm-search" class="fm-search" placeholder="Search…">
+          <button id="fm-wipe" class="danger" title="Delete uploaded files or reset everything">🗑 Wipe…</button>
         </div>
         <button class="fm-close" id="fm-close" title="Close (Esc)">✕</button>
+      </div>
+      <!-- Breadcrumb / batch-action bar (only one is shown at a time). -->
+      <div id="fm-breadcrumb" class="fm-breadcrumb"></div>
+      <div id="fm-batchbar" class="fm-batchbar" hidden>
+        <span id="fm-batch-count">0 selected</span>
+        <button id="fm-batch-delete" class="danger">🗑 Delete</button>
+        <button id="fm-batch-move">📂 Move to…</button>
+        <button id="fm-batch-unpack" hidden>📦 Unpack</button>
+        <span class="spacer"></span>
+        <button id="fm-batch-cancel">Cancel</button>
       </div>
       <div class="fm-body">
         <div class="fm-sidebar" id="fm-sidebar"></div>
@@ -441,6 +683,52 @@
       <div class="fm-footer">
         <span id="fm-summary">—</span>
         <span>Drag and drop files anywhere to upload</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wipe confirmation modal (own backdrop so it stacks over the FM) ---- -->
+  <div id="wipe-backdrop" role="dialog" aria-modal="true" aria-labelledby="wipe-title">
+    <div id="wipe-box">
+      <h2 id="wipe-title">Wipe data</h2>
+      <p>This action is permanent and cannot be undone.</p>
+      <div class="wipe-choices">
+        <label>
+          <input type="radio" name="wipe-scope" value="files" checked>
+          <span>
+            <span class="lbl-title">Wipe uploaded files</span>
+            <span class="lbl-sub">Delete every game / disk / firmware / cassette / cartridge / archive / screenshot / save state. Keeps emulator settings, key bindings, and the first-launch ROM bootstrap state.</span>
+          </span>
+        </label>
+        <label>
+          <input type="radio" name="wipe-scope" value="everything">
+          <span>
+            <span class="lbl-title">Reset to factory</span>
+            <span class="lbl-sub">Delete EVERYTHING — uploaded files, settings, key bindings, save states, and the first-launch marker. The standard ROM bundle will be re-downloaded next time.</span>
+          </span>
+        </label>
+      </div>
+      <label class="wipe-confirm">Type <b>WIPE</b> to confirm:
+        <input type="text" id="wipe-input" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="wipe-buttons">
+        <button id="wipe-cancel">Cancel</button>
+        <button id="wipe-go" class="danger" disabled>Wipe</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move-to picker (lightweight popup, reuses wipe-backdrop styling) --- -->
+  <div id="move-backdrop" role="dialog" aria-modal="true" aria-labelledby="move-title">
+    <div id="move-box">
+      <h2 id="move-title">Move to…</h2>
+      <p>Choose a destination folder. Type a path to create a new one.</p>
+      <input type="text" id="move-input" autocomplete="off" spellcheck="false"
+             placeholder="/home/web_user/games/MyFolder">
+      <div id="move-suggestions"></div>
+      <div class="wipe-buttons">
+        <button id="move-cancel">Cancel</button>
+        <button id="move-go" class="primary">Move</button>
       </div>
     </div>
   </div>
@@ -494,14 +782,27 @@
     // Which category wins when a file extension matches more than one
     // (e.g. .rom can be firmware OR cartridge).  Firmware wins for .rom
     // because it's the more common case — user uploads an OS-B image
-    // and doesn't want it filed as a cartridge.
+    // and doesn't want it filed as a cartridge.  Extension comparison
+    // is case-insensitive — `MyROM.ROM`, `myrom.rom`, and `MyRom.RoM`
+    // all route to the same place.
     function categoryForExt(ext) {
+      const e = (ext || '').toLowerCase();
       for (const c of CATEGORIES) {
-        if (c.exts && c.exts.includes(ext))
+        if (c.exts && c.exts.includes(e))
           return c;
       }
       return CATEGORIES.find(c => c.id === 'other');
     }
+
+    // Virtual "All files" sidebar entry.  Selecting it switches the
+    // overlay into tree-browse mode rooted at /home/web_user, with
+    // breadcrumbs and folder drill-in.  It is not part of CATEGORIES
+    // because it has no fixed dir / extension list — picking it simply
+    // toggles `viewMode`.
+    const ALL_FILES = {
+      id: 'all', dir: ROOT, exts: null, primary: null,
+      icon: '📁', label: 'All files',
+    };
 
     // ───────────────────────────────────────────────────────────────────
     //  DOM handles
@@ -524,9 +825,50 @@
     const toasts      = document.getElementById('toasts');
     const cacheBust   = Date.now().toString();
 
+    // New header / breadcrumb / batch toolbar handles ------------------
+    const fmNewFolder    = document.getElementById('fm-new-folder');
+    const fmSelectToggle = document.getElementById('fm-select-toggle');
+    const fmWipe         = document.getElementById('fm-wipe');
+    const fmBreadcrumb   = document.getElementById('fm-breadcrumb');
+    const fmBatchBar     = document.getElementById('fm-batchbar');
+    const fmBatchCount   = document.getElementById('fm-batch-count');
+    const fmBatchDelete  = document.getElementById('fm-batch-delete');
+    const fmBatchMove    = document.getElementById('fm-batch-move');
+    const fmBatchUnpack  = document.getElementById('fm-batch-unpack');
+    const fmBatchCancel  = document.getElementById('fm-batch-cancel');
+    const wipeBackdrop   = document.getElementById('wipe-backdrop');
+    const wipeInput      = document.getElementById('wipe-input');
+    const wipeGo         = document.getElementById('wipe-go');
+    const wipeCancel     = document.getElementById('wipe-cancel');
+    const moveBackdrop   = document.getElementById('move-backdrop');
+    const moveInput      = document.getElementById('move-input');
+    const moveSuggest    = document.getElementById('move-suggestions');
+    const moveGo         = document.getElementById('move-go');
+    const moveCancel     = document.getElementById('move-cancel');
+
     let activeCategory = CATEGORIES[0];
     let selectedPath   = null;
     let runtimeReady   = false;
+
+    // Tree-vs-filter view mode.  `tree` shows the actual folder
+    // structure rooted at `currentPath`; `filter` keeps the legacy
+    // per-extension recursive view of `activeCategory`.  Selecting the
+    // virtual "All files" sidebar entry sets `tree`; clicking any of
+    // the existing CATEGORIES sets `filter`.
+    let viewMode    = 'filter';
+    let currentPath = ROOT;
+
+    // Multi-select state.  When `selectMode` is true, rows render with
+    // a checkbox column and per-row actions are hidden in favour of
+    // the batch toolbar (Delete / Move / Unpack).  `selectedSet`
+    // contains absolute VFS paths.  Cleared whenever the view changes.
+    let selectMode  = false;
+    const selectedSet = new Set();
+
+    // Move-to dialog: the set of paths being moved is captured at the
+    // moment the dialog opens so subsequent selection edits don't race
+    // the destination input.
+    let movePending = [];
 
     // Pick-mode state.  When the native file-dialog path routes through
     // the overlay (see ui_file_dialog_sdl3.cpp's ALTIRRA_WASM branch),
@@ -662,6 +1004,286 @@
     }
 
     // ───────────────────────────────────────────────────────────────────
+    //  Tree listing  (folders + files at a single VFS path)
+    //
+    //  Used by viewMode === 'tree'.  Folders sort first, then files;
+    //  both blocks sort case-insensitively by name.  Hidden entries
+    //  (leading '.') are skipped by default — the .config/altirra dir
+    //  is internal state and shouldn't show up in the user-facing
+    //  library view.
+    // ───────────────────────────────────────────────────────────────────
+    function listTree(path, includeHidden) {
+      if (!runtimeReady) return { dirs: [], files: [] };
+      const dirs = [], files = [];
+      try {
+        const entries = Module.FS.readdir(path)
+          .filter(n => n !== '.' && n !== '..');
+        for (const n of entries) {
+          if (!includeHidden && n.charAt(0) === '.') continue;
+          const p = path === '/' ? '/' + n : path + '/' + n;
+          let st;
+          try { st = Module.FS.stat(p); } catch (e) { continue; }
+          const isDir = Module.FS.isDir(st.mode);
+          const row = {
+            name:  n,
+            path:  p,
+            size:  isDir ? 0 : st.size,
+            mtime: st.mtime ? st.mtime.getTime() : Date.now(),
+            isDir: isDir,
+          };
+          (isDir ? dirs : files).push(row);
+        }
+        const cmp = (a,b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        dirs.sort(cmp);
+        files.sort(cmp);
+      } catch (e) { /* path unreadable — treat as empty */ }
+      return { dirs, files };
+    }
+
+    // Recursive walk under `path`, calling visit(p, st, isDir) for
+    // every entry it can stat.  Uses an explicit stack to avoid blowing
+    // the JS stack on deep trees.  Skips hidden entries unless
+    // includeHidden is true.
+    function walkTree(path, visit, includeHidden) {
+      if (!runtimeReady) return;
+      const stack = [path];
+      while (stack.length) {
+        const dir = stack.pop();
+        let names;
+        try {
+          names = Module.FS.readdir(dir).filter(n => n !== '.' && n !== '..');
+        } catch (e) { continue; }
+        for (const n of names) {
+          if (!includeHidden && n.charAt(0) === '.') continue;
+          const p = dir === '/' ? '/' + n : dir + '/' + n;
+          let st;
+          try { st = Module.FS.stat(p); } catch (e) { continue; }
+          const isDir = Module.FS.isDir(st.mode);
+          visit(p, st, isDir);
+          if (isDir) stack.push(p);
+        }
+      }
+    }
+
+    // Recursive filter view for one category.  Returns the list of
+    // matching files anywhere in /home/web_user/, plus the set of
+    // ancestor folders that contain at least one matching file (so
+    // the user can drill into them and see context).  Extension
+    // matching is case-insensitive.
+    function listFilter(cat) {
+      if (!runtimeReady) return { dirs: [], files: [] };
+      const exts = (cat.exts || []).map(e => e.toLowerCase());
+      const files = [];
+      const dirSet = new Map();   // path -> { name, path, mtime, count }
+      walkTree(ROOT, (p, st, isDir) => {
+        if (isDir) return;
+        let ext = '';
+        const dot = p.lastIndexOf('.');
+        if (dot >= 0 && dot > p.lastIndexOf('/'))
+          ext = p.substring(dot + 1).toLowerCase();
+        let match;
+        if (cat.id === 'other') {
+          // The "Other" filter catches everything that isn't claimed
+          // by another category — same logic as auto-categorise on
+          // upload, just inverted.
+          let claimed = false;
+          for (const c of CATEGORIES) {
+            if (c.exts && c.exts.includes(ext)) { claimed = true; break; }
+          }
+          match = !claimed;
+        } else {
+          match = exts.length > 0 && exts.includes(ext);
+        }
+        if (!match) return;
+        const name = p.substring(p.lastIndexOf('/') + 1);
+        files.push({
+          name, path: p,
+          size: st.size,
+          mtime: st.mtime ? st.mtime.getTime() : Date.now(),
+          isDir: false,
+          parent: p.substring(0, p.lastIndexOf('/')),
+        });
+        // Aggregate ancestor folders (between ROOT and the file).
+        let parent = p.substring(0, p.lastIndexOf('/'));
+        while (parent && parent.startsWith(ROOT) && parent !== ROOT) {
+          const e = dirSet.get(parent);
+          if (e) {
+            e.count += 1;
+            if (st.mtime && e.mtime < st.mtime.getTime())
+              e.mtime = st.mtime.getTime();
+          } else {
+            dirSet.set(parent, {
+              name:  parent.substring(parent.lastIndexOf('/') + 1),
+              path:  parent,
+              size:  0,
+              mtime: st.mtime ? st.mtime.getTime() : Date.now(),
+              isDir: true,
+              count: 1,
+            });
+          }
+          parent = parent.substring(0, parent.lastIndexOf('/'));
+        }
+      });
+      const dirs = Array.from(dirSet.values());
+      const cmp = (a,b) => b.mtime - a.mtime;
+      dirs.sort(cmp);
+      files.sort(cmp);
+      return { dirs, files };
+    }
+
+    // Cross-cutting count helper used by the sidebar so the badge on
+    // each category reflects how many files would appear if you
+    // selected that filter — including files the user has placed in
+    // sub-folders or in dirs other than the dedicated category root.
+    function countFilter(cat) {
+      return listFilter(cat).files.length;
+    }
+
+    // mkdir -p, swallowing failures on intermediate dirs that already
+    // exist.  Used for both upload routing and "New folder…".
+    function mkdirP(path) {
+      try { Module.FS.mkdirTree(path); } catch (e) {}
+    }
+
+    // Convenience wrapper for one-string C exports — converts the JS
+    // string to a UTF-8 cstring, calls Module._fnName(cstr), frees it,
+    // and returns the call's numeric result (or 0 if the export is
+    // missing).
+    function callC1(fnName, str) {
+      const fn = Module && Module['_' + fnName];
+      if (!fn) {
+        jlog(fnName + ': export not present');
+        return 0;
+      }
+      const lenBytes = Module.lengthBytesUTF8(str) + 1;
+      const cstr = Module._malloc(lenBytes);
+      Module.stringToUTF8(str, cstr, lenBytes);
+      try { return fn(cstr); }
+      finally { Module._free(cstr); }
+    }
+
+    function callC2(fnName, a, b) {
+      const fn = Module && Module['_' + fnName];
+      if (!fn) {
+        jlog(fnName + ': export not present');
+        return 0;
+      }
+      const aBytes = Module.lengthBytesUTF8(a) + 1;
+      const bBytes = Module.lengthBytesUTF8(b) + 1;
+      const aStr = Module._malloc(aBytes);
+      const bStr = Module._malloc(bBytes);
+      Module.stringToUTF8(a, aStr, aBytes);
+      Module.stringToUTF8(b, bStr, bBytes);
+      try { return fn(aStr, bStr); }
+      finally { Module._free(aStr); Module._free(bStr); }
+    }
+
+    // Collect every existing folder under ROOT for the Move-to picker.
+    // Sorted alphabetically.  Excludes the .config tree.
+    function collectAllFolders() {
+      const out = [ROOT];
+      walkTree(ROOT, (p, st, isDir) => {
+        if (isDir) out.push(p);
+      });
+      out.sort();
+      return out;
+    }
+
+    // Resolve the directory shown in the current view.  In tree mode
+    // it's `currentPath`; in filter mode the auto-route target for
+    // uploads is the active category's root dir.
+    function currentViewDir() {
+      return viewMode === 'tree' ? currentPath : (activeCategory && activeCategory.dir);
+    }
+
+    function clearSelection() {
+      selectedSet.clear();
+      renderBatchBar();
+    }
+
+    function setSelectMode(on) {
+      selectMode = !!on;
+      if (!selectMode) selectedSet.clear();
+      fmSelectToggle.classList.toggle('active', selectMode);
+      fmSelectToggle.style.background = selectMode ? '#3a598a' : '';
+      fmSelectToggle.style.color      = selectMode ? '#fff'    : '';
+      renderList();
+      renderBatchBar();
+    }
+
+    function renderBatchBar() {
+      const n = selectedSet.size;
+      const visible = selectMode && n > 0;
+      fmBatchBar.hidden = !visible;
+      fmBreadcrumb.hidden = visible || (viewMode !== 'tree');
+      if (!visible) return;
+      fmBatchCount.textContent = n + ' selected';
+      fmBatchDelete.textContent = '🗑 Delete ' + n;
+      fmBatchMove.textContent   = '📂 Move ' + n + '…';
+      // Unpack only makes sense when exactly one .zip is selected.
+      let oneZip = null;
+      if (n === 1) {
+        const p = selectedSet.values().next().value;
+        if (p && p.toLowerCase().endsWith('.zip')) {
+          // Don't offer Unpack on a folder named foo.zip — defensive.
+          try {
+            const st = Module.FS.stat(p);
+            if (Module.FS.isFile(st.mode)) oneZip = p;
+          } catch (e) {}
+        }
+      }
+      fmBatchUnpack.hidden = !oneZip;
+      fmBatchUnpack.dataset.zipPath = oneZip || '';
+    }
+
+    function renderBreadcrumb() {
+      fmBreadcrumb.innerHTML = '';
+      if (viewMode !== 'tree') {
+        fmBreadcrumb.hidden = true;
+        return;
+      }
+      // In tree mode the breadcrumb is the only navigation cue, so
+      // build it as a chain of clickable segments rooted at /.
+      const segs = currentPath.split('/').filter(s => s.length);
+      const parts = [{ name: 'home', path: ROOT }];   // canonical root
+      // Collapse the literal /home/web_user prefix to a single "home"
+      // crumb so users don't have to mentally parse the Emscripten
+      // mount point.
+      let acc = ROOT;
+      for (let i = 0; i < segs.length; ++i) {
+        const s = segs[i];
+        if (i < 2 && (s === 'home' || s === 'web_user')) continue;
+        acc = acc + '/' + s;
+        parts.push({ name: s, path: acc });
+      }
+      parts.forEach((p, i) => {
+        const el = document.createElement('span');
+        el.className = 'crumb' + (i === parts.length - 1 ? ' last' : '');
+        el.textContent = p.name;
+        if (i < parts.length - 1) {
+          el.addEventListener('click', () => {
+            navigateTo(p.path);
+          });
+        }
+        fmBreadcrumb.appendChild(el);
+        if (i < parts.length - 1) {
+          const sep = document.createElement('span');
+          sep.className = 'sep';
+          sep.textContent = '›';
+          fmBreadcrumb.appendChild(sep);
+        }
+      });
+      fmBreadcrumb.hidden = false;
+    }
+
+    function navigateTo(path) {
+      currentPath = path;
+      clearSelection();
+      renderFm();
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     //  C bridge — Boot path
     // ───────────────────────────────────────────────────────────────────
     function bridgeBoot(path) {
@@ -704,6 +1326,97 @@
     }
 
     // ───────────────────────────────────────────────────────────────────
+    //  First-run ROM bootstrap UX
+    //
+    //  C drives the whole flow (mirror walk, fetch, unpack, firmware
+    //  scan, marker write).  We just call ATWasmFirstRunBootstrap once
+    //  and poll the status integer to drive a toast + status-bar
+    //  message.  Polling stops once the status enters a terminal
+    //  state (5/6/7/8).  The polling cadence (1s) is intentionally
+    //  loose — fetch is async and the user has nothing to wait for
+    //  except the toast change.
+    //
+    //  States (mirrors src/AltirraSDL/source/app/wasm_bridge.cpp):
+    //    0 idle, 1 checking, 2 fetching primary, 3 fetching mirror,
+    //    4 unpacking, 5 success, 6 archive empty, 7 all failed, 8 skipped.
+    // ───────────────────────────────────────────────────────────────────
+    let firstRunPollTimer = null;
+    let firstRunLastState = -1;
+    let firstRunPollStarted = false;
+    function startFirstRunPolling() {
+      // Idempotent: hot-reload or accidental double-call shouldn't
+      // double-allocate.
+      if (firstRunPollStarted) return;
+      firstRunPollStarted = true;
+      if (!Module._ATWasmFirstRunBootstrap) {
+        jlog('first-run: bootstrap export missing — skipping');
+        return;
+      }
+      try { Module._ATWasmFirstRunBootstrap(); }
+      catch (err) {
+        jlog('first-run: bootstrap threw —', err && err.message ? err.message : err);
+        return;
+      }
+      if (!Module._ATWasmGetFirstRunStatus) {
+        jlog('first-run: status export missing — skipping');
+        return;
+      }
+      const statePtr = Module._malloc(4);
+      const filesPtr = Module._malloc(4);
+      let stopped = false;
+      const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        Module._free(statePtr);
+        Module._free(filesPtr);
+        if (firstRunPollTimer) {
+          clearInterval(firstRunPollTimer);
+          firstRunPollTimer = null;
+        }
+      };
+      const tick = () => {
+        if (stopped) return;
+        Module._ATWasmGetFirstRunStatus(statePtr, filesPtr);
+        // HEAP32 is the canonical 32-bit signed view; using it
+        // directly avoids needing Module.getValue (which would have
+        // to be added to EXPORTED_RUNTIME_METHODS).  >>2 converts the
+        // byte offset to a 32-bit element index.
+        const state = Module.HEAP32[statePtr >> 2];
+        const files = Module.HEAP32[filesPtr >> 2];
+        if (state !== firstRunLastState) {
+          firstRunLastState = state;
+          jlog('first-run: state=' + state + ' files=' + files);
+          switch (state) {
+            case 2: toast('Downloading standard ROMs…'); break;
+            case 3: toast('Trying mirror…'); break;
+            case 4: toast('Unpacking ROM bundle…'); break;
+            case 5:
+              toast('Loaded ' + files + ' standard ROM'
+                    + (files === 1 ? '' : 's'), 'ok');
+              renderFm();
+              break;
+            case 6:
+              toast('ROM bundle had no .rom files', 'error');
+              break;
+            case 7:
+              toast('Standard ROM download unavailable — upload your own', 'error');
+              break;
+            case 8: /* silently skipped */ break;
+          }
+        }
+        // Terminal states are 5 (success), 6 (empty zip), 7 (all
+        // mirrors failed), 8 (skipped).  All of those satisfy >= 5.
+        if (state >= 5) stop();
+      };
+      // Synchronous first tick: if the C side already finished
+      // (marker present → state 8) we never schedule the interval.
+      tick();
+      if (!stopped) {
+        firstRunPollTimer = setInterval(tick, 1000);
+      }
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     //  Upload
     //
     //  Auto-categorization by extension.  When the user clicks Upload
@@ -722,20 +1435,35 @@
       });
     }
 
-    // forceCategory: if provided, all files go into this category's dir.
-    // Otherwise files are auto-categorized by extension.
-    async function uploadFiles(files, forceCategory) {
+    // forceTarget: optional override for where uploads land.  Can be:
+    //   — a CATEGORIES object, e.g. drag-drop into the FM forces the
+    //     active category (matches legacy behaviour);
+    //   — a string path, e.g. tree-mode upload writes into the
+    //     currently visible folder regardless of extension.
+    // Otherwise files are auto-categorised by extension.
+    async function uploadFiles(files, forceTarget) {
       if (!runtimeReady) {
         toast('Runtime not ready', 'error');
         return;
       }
       ensureCategoryDirs();
 
+      // Normalise forceTarget to { dir, id, primary } so the loop below
+      // can reuse the existing per-row dispatch.  An ad-hoc tree-mode
+      // dir gets a synthetic { dir, id:'_dir', primary:null }.
+      let forceCategory = null;
+      if (typeof forceTarget === 'string') {
+        forceCategory = { dir: forceTarget, id: '_dir', primary: null };
+      } else if (forceTarget) {
+        forceCategory = forceTarget;
+      }
+
       jlog('upload: starting,', files.length, 'file(s),',
            forceCategory ? 'forced to ' + forceCategory.id : 'auto-categorize');
 
       let wrote = 0;
       let firstBootable = null;
+      const writtenPaths = [];
       for (const f of files) {
         try {
           const bytes = await readFileAsBytes(f);
@@ -751,6 +1479,7 @@
           const path = cat.dir + '/' + safe;
           Module.FS.writeFile(path, bytes);
           wrote++;
+          writtenPaths.push(path);
           if (!firstBootable && cat.primary)
             firstBootable = { path, cat };
           appendLog('[upload] ' + path + ' (' + fmtBytes(bytes.length) + ')');
@@ -769,7 +1498,7 @@
         // Setup Wizard / Firmware page / cold-boot path all see it.
         const touchedFirmware =
           (forceCategory && forceCategory.id === 'firmware') ||
-          lastWrittenPaths.some(p => p.includes('/firmware/'));
+          writtenPaths.some(p => p.includes('/firmware/'));
         if (touchedFirmware) {
           jlog('upload: firmware touched, requesting rescan');
           if (Module._ATWasmRescanFirmware) {
@@ -866,22 +1595,455 @@
     // ───────────────────────────────────────────────────────────────────
     function renderSidebar() {
       fmSidebar.innerHTML = '';
+
+      // "All files" — switches to tree-browse mode.  In pick mode the
+      // tree view's empty/full directory list is unhelpful (the user
+      // wants to pick from their library, not navigate the FS), and
+      // buildListModel forces filter view in pick mode anyway.  Hide
+      // the entry so the sidebar always reflects what's actually
+      // rendered.
+      if (!pickMode) {
+        const allRow = document.createElement('div');
+        allRow.className = 'fm-cat'
+          + (viewMode === 'tree' ? ' active' : '');
+        allRow.innerHTML =
+          '<span class="icon">' + ALL_FILES.icon + '</span>' +
+          '<span class="label">' + ALL_FILES.label + '</span>' +
+          '<span class="count"></span>';
+        allRow.addEventListener('click', () => {
+          viewMode = 'tree';
+          currentPath = ROOT;
+          clearSelection();
+          fmSearch.value = '';
+          renderFm();
+        });
+        fmSidebar.appendChild(allRow);
+
+        const sep = document.createElement('div');
+        sep.className = 'fm-divider';
+        fmSidebar.appendChild(sep);
+        const sect = document.createElement('div');
+        sect.className = 'fm-section';
+        sect.textContent = 'Filter by type';
+        fmSidebar.appendChild(sect);
+      }
+
       for (const c of CATEGORIES) {
-        const count = runtimeReady ? countCategory(c) : 0;
+        // Recursive count is cheaper than the old per-dir count when
+        // the tree is shallow (the common case); for huge libraries
+        // it's still a single FS walk.  Cache could be added later
+        // but isn't worth the complexity yet.
+        const count = runtimeReady ? countFilter(c) : 0;
         const row = document.createElement('div');
-        row.className = 'fm-cat' + (c === activeCategory ? ' active' : '');
+        const isActive = (viewMode === 'filter' && c === activeCategory);
+        row.className = 'fm-cat' + (isActive ? ' active' : '');
         row.innerHTML =
           '<span class="icon">' + c.icon + '</span>' +
           '<span class="label">' + c.label + '</span>' +
           '<span class="count">' + count + '</span>';
         row.addEventListener('click', () => {
           activeCategory = c;
-          selectedPath = null;
+          viewMode = 'filter';
+          clearSelection();
           fmSearch.value = '';
           renderFm();
         });
         fmSidebar.appendChild(row);
       }
+    }
+
+    // Helper: select model for the file list.  Returns { dirs, files }
+    // honouring pick-mode (which always uses the legacy flat per-cat
+    // view so the picker UX matches existing user mental model) and
+    // search query.  In tree mode, search matches anywhere in the
+    // currentPath subtree; in filter mode it matches the filtered set.
+    function buildListModel() {
+      const q = (fmSearch.value || '').toLowerCase().trim();
+
+      // Pick-mode preserves the legacy flat per-category view across
+      // the cross-category search.  We never enter tree mode in pick
+      // mode (the toolbar's "All files" still works but pick-mode
+      // ignores `viewMode` for safety).
+      if (pickMode) {
+        const flat = [];
+        if (q) {
+          for (const c of CATEGORIES) {
+            for (const r of listCategory(c)) {
+              if (r.name.toLowerCase().includes(q))
+                flat.push(Object.assign({ _cat: c, isDir: false }, r));
+            }
+          }
+        } else {
+          for (const r of listCategory(activeCategory)) {
+            flat.push(Object.assign(
+              { _cat: activeCategory, isDir: false }, r));
+          }
+        }
+        flat.sort((a,b) => b.mtime - a.mtime);
+        return { dirs: [], files: flat };
+      }
+
+      if (viewMode === 'tree') {
+        if (q) {
+          // Search across the subtree under currentPath.
+          const dirs = [], files = [];
+          walkTree(currentPath, (p, st, isDir) => {
+            const name = p.substring(p.lastIndexOf('/') + 1);
+            if (!name.toLowerCase().includes(q)) return;
+            const row = {
+              name, path: p,
+              size:  isDir ? 0 : st.size,
+              mtime: st.mtime ? st.mtime.getTime() : Date.now(),
+              isDir: isDir,
+              parent: p.substring(0, p.lastIndexOf('/')),
+            };
+            (isDir ? dirs : files).push(row);
+          });
+          dirs.sort((a,b) => b.mtime - a.mtime);
+          files.sort((a,b) => b.mtime - a.mtime);
+          return { dirs, files };
+        }
+        return listTree(currentPath, false);
+      }
+
+      // Filter mode.
+      const m = listFilter(activeCategory);
+      if (!q) return m;
+      const lc = s => s.toLowerCase();
+      return {
+        dirs:  m.dirs .filter(r => lc(r.name).includes(q)),
+        files: m.files.filter(r => lc(r.name).includes(q)),
+      };
+    }
+
+    // Per-row category lookup for icons + primary action labels.  In
+    // tree mode this uses the file extension; in filter mode it's the
+    // active filter (so e.g. a .rom in filter "Cartridges" still says
+    // "▶ Boot" because the cartridge filter applies).
+    function rowCategory(r) {
+      if (r._cat) return r._cat;
+      if (r.isDir) return null;
+      const dot = r.name.lastIndexOf('.');
+      if (dot < 0) return CATEGORIES.find(c => c.id === 'other');
+      return categoryForExt(r.name.substring(dot + 1));
+    }
+
+    function renderList() {
+      fmList.innerHTML = '';
+      const q = (fmSearch.value || '').toLowerCase().trim();
+      const model = buildListModel();
+      const searching = !!q;
+
+      // ── Save mode banner: filename input + save button ────────────
+      // Rendered above the file list so existing filenames are visible
+      // while the user types; overwrite-confirm happens on submit.
+      if (pickMode === 'save') {
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex; gap:8px; padding:10px 14px; '
+          + 'border-bottom:1px solid #2a2a2a; background:#1a1a1a;';
+        const suggested = 'untitled' + (pickSaveExt ? '.' + pickSaveExt : '');
+        bar.innerHTML =
+          '<input type="text" id="fm-savename" class="fm-search" ' +
+          'style="flex:1;" placeholder="filename" value="' + suggested + '">' +
+          '<button id="fm-savebtn" class="primary" style="background:#3a598a;' +
+          'border:1px solid #4872ad;color:#fff;padding:4px 14px;border-radius:3px;' +
+          'font-size:0.8rem;cursor:pointer;">Save</button>';
+        fmList.appendChild(bar);
+        const input = bar.querySelector('#fm-savename');
+        const btn   = bar.querySelector('#fm-savebtn');
+        const doSave = () => {
+          const raw = (input.value || '').trim();
+          if (!raw) { toast('Enter a filename', 'error'); return; }
+          const safe = sanitize(raw);
+          if (!safe)  { toast('Invalid filename', 'error'); return; }
+          let finalName = safe;
+          if (pickSaveExt && !finalName.toLowerCase()
+                  .endsWith('.' + pickSaveExt.toLowerCase())) {
+            finalName += '.' + pickSaveExt;
+          }
+          try { Module.FS.mkdirTree(activeCategory.dir); } catch (e) {}
+          const outPath = activeCategory.dir + '/' + finalName;
+          completePick(outPath);
+        };
+        btn.addEventListener('click', doSave);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); doSave(); }
+        });
+        setTimeout(() => input.select(), 20);
+      }
+
+      const allRows = model.dirs.concat(model.files);
+
+      if (allRows.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'fm-empty';
+        let main, hint;
+        if (searching) {
+          main = 'No matches for "' + q + '"';
+          hint = pickMode ? 'Pick from another category or upload a file'
+                          : 'Clear the search box to see all files';
+        } else if (viewMode === 'tree') {
+          main = 'This folder is empty';
+          hint = 'Drop files here or click Upload to add some';
+        } else {
+          main = 'No ' + activeCategory.label.toLowerCase() + ' yet';
+          hint = pickMode === 'save'
+            ? 'Type a name above and press Save'
+            : (pickMode === 'open'
+                ? 'Upload a file or pick from another category'
+                : 'Drop files here or click Upload');
+        }
+        empty.innerHTML =
+          '<div>' + main + '</div>' +
+          '<div class="hint">' + hint + '</div>';
+        fmList.appendChild(empty);
+        updateSummary(model.files);
+        return;
+      }
+
+      let totalBytes = 0;
+      for (const r of model.files) totalBytes += r.size;
+
+      for (const r of allRows) {
+        const row = document.createElement('div');
+        row.className = 'fm-row'
+          + (r.path === selectedPath ? ' selected' : '')
+          + (selectMode ? ' in-select' : '')
+          + (r.isDir   ? ' is-folder' : '');
+        row.dataset.path = r.path;
+        if (r.isDir) row.dataset.folder = '1';
+
+        const rowCat = rowCategory(r);
+        const icon = r.isDir ? '📂' : (rowCat ? rowCat.icon : '📄');
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        if (pickMode === 'open' && !r.isDir) {
+          const pickBtn = document.createElement('button');
+          pickBtn.className = 'primary';
+          pickBtn.textContent = 'Select';
+          pickBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            completePick(r.path);
+          });
+          actions.appendChild(pickBtn);
+        } else if (pickMode === 'save' && !r.isDir) {
+          const useBtn = document.createElement('button');
+          useBtn.textContent = 'Use name';
+          useBtn.title = 'Copy this filename into the save field';
+          useBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const input = document.getElementById('fm-savename');
+            if (input) { input.value = r.name; input.focus(); input.select(); }
+          });
+          actions.appendChild(useBtn);
+        } else if (selectMode) {
+          // No per-row buttons in select mode — the batch toolbar takes
+          // over.  The whole row toggles selection on click.
+        } else if (r.isDir) {
+          const open = document.createElement('button');
+          open.className = 'primary';
+          open.textContent = 'Open';
+          open.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateTo(r.path);
+          });
+          actions.appendChild(open);
+
+          const rn = document.createElement('button');
+          rn.textContent = '✎';
+          rn.title = 'Rename folder';
+          rn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renameEntry(r.path);
+          });
+          actions.appendChild(rn);
+
+          const del = document.createElement('button');
+          del.className = 'danger';
+          del.textContent = '🗑';
+          del.title = 'Delete folder (recursive)';
+          del.addEventListener('click', (e) => {
+            e.stopPropagation();
+            del.style.display = 'none';
+            const c = document.createElement('button');
+            c.className = 'confirm';
+            c.textContent = 'Confirm';
+            c.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              deleteEntry(r.path, true);
+            });
+            actions.appendChild(c);
+            setTimeout(() => { c.remove(); del.style.display = ''; }, 4000);
+          });
+          actions.appendChild(del);
+        } else {
+          if (rowCat && rowCat.primary) {
+            const primary = document.createElement('button');
+            primary.className = 'primary';
+            primary.textContent = rowCat.primary;
+            primary.addEventListener('click', (e) => {
+              e.stopPropagation();
+              bridgeBoot(r.path);
+            });
+            actions.appendChild(primary);
+          }
+
+          // Per-row Unpack action for .zip files.  Lives between the
+          // primary boot button and Download so users discover it
+          // without hunting through a context menu.
+          if (r.name.toLowerCase().endsWith('.zip')) {
+            const up = document.createElement('button');
+            up.textContent = '📦';
+            up.title = 'Unpack archive into a sibling folder';
+            up.addEventListener('click', (e) => {
+              e.stopPropagation();
+              unpackOne(r.path);
+            });
+            actions.appendChild(up);
+          }
+
+          const dl = document.createElement('button');
+          dl.textContent = '⬇';
+          dl.title = 'Download';
+          dl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            downloadFile(r.path);
+          });
+          actions.appendChild(dl);
+
+          const rn = document.createElement('button');
+          rn.textContent = '✎';
+          rn.title = 'Rename';
+          rn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renameEntry(r.path);
+          });
+          actions.appendChild(rn);
+
+          const del = document.createElement('button');
+          del.className = 'danger';
+          del.textContent = '🗑';
+          del.title = 'Delete';
+          del.addEventListener('click', (e) => {
+            e.stopPropagation();
+            del.style.display = 'none';
+            const confirm = document.createElement('button');
+            confirm.className = 'confirm';
+            confirm.textContent = 'Confirm delete';
+            confirm.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              deleteEntry(r.path, false);
+            });
+            actions.appendChild(confirm);
+            setTimeout(() => {
+              confirm.remove();
+              del.style.display = '';
+            }, 4000);
+          });
+          actions.appendChild(del);
+        }
+
+        // Build the row's static cells.  In select mode we prepend a
+        // checkbox column; in filter mode we surface the parent path
+        // beneath the name (so a user looking at the Games filter
+        // can see "wizard.xex" lives under games/Demos/).
+        let html = '';
+        if (selectMode) {
+          const on = selectedSet.has(r.path);
+          html += '<span class="checkbox' + (on ? ' on' : '') + '"></span>';
+        }
+        html += '<span class="icon">' + icon + '</span>';
+        html += '<span class="name">' + escapeHtml(r.name)
+              + (r.isDir && r.count ? ' <span style="color:#666">(' + r.count + ')</span>' : '')
+              + '</span>';
+        html += '<span class="size">' + (r.isDir ? '' : fmtBytes(r.size)) + '</span>';
+        html += '<span class="mtime">' + fmtTime(r.mtime) + '</span>';
+        row.innerHTML = html;
+        row.appendChild(actions);
+
+        // Filter-mode files get a parent-path subline so the user can
+        // see where the file actually lives.  (Skip when the parent
+        // is just the category root or ROOT itself — already implicit.)
+        if (viewMode === 'filter' && !r.isDir && r.parent
+            && r.parent !== activeCategory.dir) {
+          const hint = document.createElement('span');
+          hint.className = 'pathHint';
+          hint.textContent = 'in ' + r.parent.replace(ROOT + '/', '');
+          row.appendChild(hint);
+        }
+
+        // Click handling depends on mode:
+        //   select-mode:  toggle this row's selection
+        //   pick-mode:    on rows handled above; the row click itself
+        //                 just visually selects so the user can see
+        //                 what they're about to pick
+        //   normal:       single-click highlights, double-click
+        //                 navigates (folder) or boots (file)
+        row.addEventListener('click', (e) => {
+          if (selectMode) {
+            if (selectedSet.has(r.path)) selectedSet.delete(r.path);
+            else                          selectedSet.add(r.path);
+            renderList();
+            renderBatchBar();
+            return;
+          }
+          selectedPath = r.path;
+          renderList();
+        });
+        row.addEventListener('dblclick', () => {
+          if (selectMode) return;
+          if (r.isDir) {
+            navigateTo(r.path);
+            return;
+          }
+          if (pickMode === 'open') {
+            completePick(r.path);
+          } else if (pickMode === 'save') {
+            const input = document.getElementById('fm-savename');
+            if (input) { input.value = r.name; input.focus(); input.select(); }
+          } else if (rowCat && rowCat.primary) {
+            bridgeBoot(r.path);
+          }
+        });
+
+        // Drag-drop into folder rows = move the dragged file there.
+        if (r.isDir) {
+          row.addEventListener('dragover', (e) => {
+            // Only accept internal drags, not OS file drops.
+            if (!e.dataTransfer.types.includes('text/altirra-vfs-path'))
+              return;
+            e.preventDefault();
+            row.style.outline = '2px solid #7db2ff';
+          });
+          row.addEventListener('dragleave', () => {
+            row.style.outline = '';
+          });
+          row.addEventListener('drop', (e) => {
+            row.style.outline = '';
+            const src = e.dataTransfer.getData('text/altirra-vfs-path');
+            if (!src) return;
+            e.preventDefault();
+            moveSinglePath(src, r.path);
+          });
+        } else {
+          // Files become drag sources so users can drop onto folders.
+          row.draggable = true;
+          row.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/altirra-vfs-path', r.path);
+          });
+        }
+
+        fmList.appendChild(row);
+      }
+
+      updateSummary(model.files, totalBytes);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
+      }[m]));
     }
 
     function renderList() {
@@ -1116,11 +2278,371 @@
       if (titleEl) {
         if (pickMode === 'open')      titleEl.textContent = 'Select a file';
         else if (pickMode === 'save') titleEl.textContent = 'Save as…';
-        else                          titleEl.textContent = 'Files';
+        else if (viewMode === 'tree') titleEl.textContent = 'Files';
+        else                           titleEl.textContent =
+          'Files — ' + (activeCategory ? activeCategory.label : '');
       }
+      // New Folder is meaningful only in tree mode; the filter views
+      // have nowhere to "create a folder" because they aren't
+      // location-aware.
+      fmNewFolder.disabled = (viewMode !== 'tree') || !!pickMode;
+      // Wipe is a destructive global operation — disabled in pick mode
+      // so a user can't accidentally erase the library while a native
+      // dialog is waiting for them to choose a file.
+      fmWipe.disabled = !!pickMode;
+      // Pick mode also disables the Select toggle (multi-select makes
+      // no sense for a "choose one file" picker).
+      fmSelectToggle.disabled = !!pickMode;
       renderSidebar();
+      renderBreadcrumb();
+      renderBatchBar();
       renderList();
     }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Folder / file management actions
+    // ───────────────────────────────────────────────────────────────────
+    async function newFolder() {
+      if (viewMode !== 'tree') return;
+      const raw = prompt('New folder name:');
+      if (!raw) return;
+      const safe = sanitize(raw);
+      if (!safe) { toast('Invalid name', 'error'); return; }
+      const path = currentPath === '/' ? '/' + safe : currentPath + '/' + safe;
+      try {
+        Module.FS.mkdir(path);
+        await syncFsOut();
+        toast('Created ' + safe);
+        renderFm();
+      } catch (e) {
+        toast('Create failed: ' + (e && e.message ? e.message : e), 'error');
+      }
+    }
+
+    // Unified rename for files AND folders (FS.rename handles both,
+    // including non-empty directories — Emscripten's MEMFS rename
+    // succeeds in-place).
+    async function renameEntry(path) {
+      const oldName = pathBasename(path);
+      const dir     = path.substring(0, path.lastIndexOf('/'));
+      const newName = prompt('Rename to:', oldName);
+      if (!newName || newName === oldName) return;
+      const safe = sanitize(newName);
+      if (!safe) { toast('Invalid name', 'error'); return; }
+      const newPath = dir + '/' + safe;
+      try {
+        Module.FS.rename(path, newPath);
+        await syncFsOut();
+        toast('Renamed to ' + safe);
+        renderFm();
+      } catch (e) {
+        toast('Rename failed: ' + e, 'error');
+      }
+    }
+
+    // Single delete (file or folder).  Folders go through the C
+    // recursive-delete export so we don't have to round-trip every
+    // entry through JS — a single export call deletes the whole tree
+    // and returns a count.
+    async function deleteEntry(path, isDir) {
+      try {
+        if (isDir) {
+          const n = callC1('ATWasmDeleteTree', path);
+          if (n < 0) {
+            toast('Delete failed', 'error');
+            return;
+          }
+          await syncFsOut();
+          toast('Deleted ' + n + ' item' + (n === 1 ? '' : 's'));
+        } else {
+          Module.FS.unlink(path);
+          await syncFsOut();
+          toast('Deleted ' + pathBasename(path));
+        }
+        // Clear the just-deleted path from any selection state.
+        selectedSet.delete(path);
+        if (selectedPath === path) selectedPath = null;
+        renderFm();
+      } catch (e) {
+        toast('Delete failed: ' + e, 'error');
+      }
+    }
+
+    // Unpack a single archive.  The zip's basename (without extension)
+    // becomes a sibling folder under the same parent directory, and
+    // every entry inside is extracted preserving the archive's own
+    // directory structure.  No-op (with a friendly toast) if the
+    // export is missing — keeps older WASM builds from crashing the
+    // overlay.
+    async function unpackOne(zipPath) {
+      const fn = Module && Module._ATWasmUnpackArchive;
+      if (!fn) {
+        toast('Unpack not supported in this build', 'error');
+        return;
+      }
+      const dir   = zipPath.substring(0, zipPath.lastIndexOf('/'));
+      const base  = pathBasename(zipPath);
+      const stem  = base.replace(/\.zip$/i, '') || base + '_unpacked';
+      const dest  = dir + '/' + stem;
+      jlog('unpack:', zipPath, '->', dest);
+      try {
+        const n = callC2('ATWasmUnpackArchive', zipPath, dest);
+        if (n < 0) {
+          toast('Unpack failed (corrupt archive?)', 'error');
+          return;
+        }
+        await syncFsOut();
+        toast('Unpacked ' + n + ' file' + (n === 1 ? '' : 's')
+              + ' to ' + stem);
+        // If the user is browsing the source folder in tree mode,
+        // refresh so they immediately see the new sibling folder.
+        renderFm();
+      } catch (e) {
+        toast('Unpack threw: ' + e, 'error');
+      }
+    }
+
+    // Move one VFS path to live underneath destDir.  destDir can be a
+    // category root, an existing user folder, or a freshly typed
+    // path (mkdirP creates intermediates).  No-op if src is already
+    // inside destDir.
+    async function moveSinglePath(srcPath, destDir) {
+      if (!srcPath || !destDir) return;
+      const base = pathBasename(srcPath);
+      const newPath = destDir.replace(/\/+$/, '') + '/' + base;
+      if (newPath === srcPath) return;
+      try {
+        mkdirP(destDir);
+        Module.FS.rename(srcPath, newPath);
+        toast('Moved ' + base + ' → ' + destDir.replace(ROOT + '/', ''));
+      } catch (e) {
+        toast('Move failed: ' + (e && e.message ? e.message : e), 'error');
+        return;
+      }
+      await syncFsOut();
+      // Update selection state if the moved path was tracked.
+      if (selectedSet.has(srcPath)) {
+        selectedSet.delete(srcPath);
+        selectedSet.add(newPath);
+      }
+      renderFm();
+    }
+
+    // Batch operations driven by the multi-select toolbar.
+    async function batchDelete() {
+      const paths = Array.from(selectedSet);
+      if (paths.length === 0) return;
+      let ok = 0, fail = 0;
+      for (const p of paths) {
+        try {
+          let st;
+          try { st = Module.FS.stat(p); }
+          catch (e) { ++fail; continue; }
+          if (Module.FS.isDir(st.mode)) {
+            const n = callC1('ATWasmDeleteTree', p);
+            if (n < 0) ++fail; else ++ok;
+          } else {
+            Module.FS.unlink(p);
+            ++ok;
+          }
+        } catch (e) {
+          jlog('batchDelete: failed on', p, e && e.message ? e.message : e);
+          ++fail;
+        }
+      }
+      await syncFsOut();
+      toast('Deleted ' + ok + (fail ? ' (' + fail + ' failed)' : '')
+            + ' item' + (ok === 1 ? '' : 's'));
+      selectedSet.clear();
+      renderFm();
+    }
+
+    // batchMove takes an explicit list of source paths so the
+    // move-to dialog can capture the selection at "Open" time and
+    // not race with subsequent UI clicks on the row checkboxes.
+    async function batchMove(destDir, srcPaths) {
+      const paths = (srcPaths && srcPaths.length)
+        ? srcPaths.slice()
+        : Array.from(selectedSet);
+      if (paths.length === 0 || !destDir) return;
+      mkdirP(destDir);
+      let ok = 0, fail = 0;
+      for (const p of paths) {
+        const base = pathBasename(p);
+        const newPath = destDir.replace(/\/+$/, '') + '/' + base;
+        if (newPath === p) continue;
+        try {
+          Module.FS.rename(p, newPath);
+          ++ok;
+        } catch (e) {
+          jlog('batchMove: failed on', p, e && e.message ? e.message : e);
+          ++fail;
+        }
+      }
+      await syncFsOut();
+      toast('Moved ' + ok + (fail ? ' (' + fail + ' failed)' : '')
+            + ' item' + (ok === 1 ? '' : 's'));
+      selectedSet.clear();
+      renderFm();
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Wipe / Reset modal
+    // ───────────────────────────────────────────────────────────────────
+    function openWipeDialog() {
+      // Reset state every time so the radio + input don't carry
+      // stale values from a cancelled previous session.
+      const radios = wipeBackdrop.querySelectorAll('input[name="wipe-scope"]');
+      radios.forEach((r, i) => { r.checked = (i === 0); });
+      wipeInput.value = '';
+      wipeGo.disabled = true;
+      wipeBackdrop.classList.add('open');
+      setTimeout(() => wipeInput.focus(), 30);
+    }
+
+    function closeWipeDialog() { wipeBackdrop.classList.remove('open'); }
+
+    async function executeWipe() {
+      const scope = (wipeBackdrop.querySelector('input[name="wipe-scope"]:checked')
+                     || {}).value || 'files';
+      jlog('wipe: scope=' + scope);
+      let ok = false;
+      if (scope === 'files') {
+        // Wipe every immediate child of /home/web_user EXCEPT
+        // .config (settings, key bindings, first-run marker, save
+        // states preferences, etc.).  This catches both the
+        // CATEGORIES dirs AND user-created top-level folders, while
+        // preserving user customisation.  After wipe we recreate the
+        // empty CATEGORIES dirs so the next render's sidebar counts
+        // don't error on missing dirs.
+        let total = 0;
+        try {
+          const names = Module.FS.readdir(ROOT)
+            .filter(n => n !== '.' && n !== '..' && n !== '.config');
+          for (const n of names) {
+            const p = ROOT + '/' + n;
+            const r = callC1('ATWasmDeleteTree', p);
+            if (r > 0) total += r;
+          }
+        } catch (e) { /* missing dir is fine */ }
+        ensureCategoryDirs();
+        await syncFsOut();
+        if (Module._ATWasmRescanFirmware) {
+          try { Module._ATWasmRescanFirmware(); } catch (_) {}
+        }
+        toast('Wiped ' + total + ' item' + (total === 1 ? '' : 's'));
+        ok = true;
+      } else if (scope === 'everything') {
+        // Wipe every immediate child of ROOT — this nukes both user
+        // files AND .config (settings, first-run marker, etc.).  Then
+        // recreate the empty category dirs so the next render's
+        // sidebar counts don't all show zero with FS.readdir errors.
+        let total = 0;
+        try {
+          const names = Module.FS.readdir(ROOT)
+            .filter(n => n !== '.' && n !== '..');
+          for (const n of names) {
+            const p = ROOT + '/' + n;
+            const r = callC1('ATWasmDeleteTree', p);
+            if (r > 0) total += r;
+          }
+        } catch (e) { /* ROOT missing? — fresh boot will recreate */ }
+        ensureCategoryDirs();
+        await syncFsOut();
+        toast('Reset complete — ' + total + ' item' + (total === 1 ? '' : 's')
+              + ' deleted.  Reload the page to re-run first-launch.');
+        ok = true;
+      }
+      closeWipeDialog();
+      clearSelection();
+      if (ok) renderFm();
+    }
+
+    wipeInput.addEventListener('input', () => {
+      wipeGo.disabled = (wipeInput.value !== 'WIPE');
+    });
+    wipeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !wipeGo.disabled) {
+        e.preventDefault();
+        executeWipe();
+      }
+    });
+    wipeGo.addEventListener('click', executeWipe);
+    wipeCancel.addEventListener('click', closeWipeDialog);
+    wipeBackdrop.addEventListener('click', (e) => {
+      if (e.target === wipeBackdrop) closeWipeDialog();
+    });
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Move-to dialog
+    // ───────────────────────────────────────────────────────────────────
+    function openMoveDialog(paths) {
+      movePending = paths.slice();
+      moveInput.value = '';
+      moveSuggest.innerHTML = '';
+      const folders = collectAllFolders();
+      // Always include the user-facing category roots first, then the
+      // remaining folders alphabetically.  Removes duplicates with a
+      // Set so a category that's also been picked up by the recursive
+      // walk doesn't appear twice.
+      const seen = new Set();
+      const ordered = [];
+      for (const c of CATEGORIES) {
+        if (!seen.has(c.dir)) { seen.add(c.dir); ordered.push(c.dir); }
+      }
+      for (const f of folders) {
+        if (!seen.has(f)) { seen.add(f); ordered.push(f); }
+      }
+      for (const f of ordered) {
+        const el = document.createElement('div');
+        el.className = 'suggest';
+        el.textContent = f.replace(ROOT, ROOT === '/home/web_user' ? 'home' : ROOT);
+        el.title = f;
+        el.addEventListener('click', () => {
+          moveInput.value = f;
+          moveInput.focus();
+        });
+        moveSuggest.appendChild(el);
+      }
+      moveBackdrop.classList.add('open');
+      setTimeout(() => moveInput.focus(), 30);
+    }
+
+    function closeMoveDialog() {
+      moveBackdrop.classList.remove('open');
+      movePending = [];
+    }
+
+    async function executeMove() {
+      let dest = (moveInput.value || '').trim();
+      if (!dest) { toast('Enter a destination', 'error'); return; }
+      // Friendly: accept "home/games" as shorthand for the full path.
+      if (!dest.startsWith('/')) {
+        if (dest.startsWith('home/'))
+          dest = '/' + dest;
+        else
+          dest = ROOT + '/' + dest;
+      }
+      // Sanity: must stay under ROOT to keep the wipe / sync semantics
+      // consistent.
+      if (!dest.startsWith(ROOT)) {
+        toast('Destination must be under /home/web_user', 'error');
+        return;
+      }
+      mkdirP(dest);
+      const paths = movePending;
+      closeMoveDialog();
+      await batchMove(dest, paths);
+    }
+
+    moveGo.addEventListener('click', executeMove);
+    moveCancel.addEventListener('click', closeMoveDialog);
+    moveBackdrop.addEventListener('click', (e) => {
+      if (e.target === moveBackdrop) closeMoveDialog();
+    });
+    moveInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); executeMove(); }
+    });
 
     // ───────────────────────────────────────────────────────────────────
     //  Open / close overlay
@@ -1196,9 +2718,22 @@
       if (e.target === fmBackdrop) closeFm();
     });
 
-    // Close on Escape (but only when overlay is open).
+    // Close-on-Escape with stacking: the wipe + move dialogs are
+    // layered ON TOP of the FM backdrop, so we need to close them
+    // first or the user ends up with an orphan overlay obscuring
+    // the canvas.  Order matters — innermost dialog wins.
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      if (wipeBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        closeWipeDialog();
+        return;
+      }
+      if (moveBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        closeMoveDialog();
+        return;
+      }
       if (fmBackdrop.classList.contains('open')) {
         e.preventDefault();
         closeFm();
@@ -1261,6 +2796,25 @@
       renderList();
     });
 
+    // ───────────────────────────────────────────────────────────────────
+    //  New Folder / Select / Wipe / batch-toolbar wiring
+    // ───────────────────────────────────────────────────────────────────
+    fmNewFolder.addEventListener('click', newFolder);
+    fmSelectToggle.addEventListener('click', () => setSelectMode(!selectMode));
+    fmWipe.addEventListener('click', openWipeDialog);
+
+    fmBatchDelete.addEventListener('click', batchDelete);
+    fmBatchMove  .addEventListener('click', () => {
+      const paths = Array.from(selectedSet);
+      if (paths.length === 0) return;
+      openMoveDialog(paths);
+    });
+    fmBatchUnpack.addEventListener('click', () => {
+      const p = fmBatchUnpack.dataset.zipPath;
+      if (p) unpackOne(p);
+    });
+    fmBatchCancel.addEventListener('click', () => setSelectMode(false));
+
     // Connect Folder (File System Access API) lands in a later
     // commit — the button has been removed from the toolbar until
     // the full import / write-back flow ships, so users don't stare
@@ -1307,7 +2861,15 @@
     fmBackdrop.addEventListener('drop', (e) => {
       if (!fmBackdrop.classList.contains('open')) return;
       if (e.dataTransfer && e.dataTransfer.files.length) {
-        uploadFiles(Array.from(e.dataTransfer.files), activeCategory);
+        // Drop on overlay: in tree mode the user is "in" a folder so
+        // drop here = upload to that folder.  In filter mode there is
+        // no canonical location, so fall back to the active category
+        // (legacy behaviour — matches the user's mental model that
+        // "I'm currently looking at Disks; dropping here means Disks").
+        const target = (viewMode === 'tree')
+          ? currentPath
+          : activeCategory;
+        uploadFiles(Array.from(e.dataTransfer.files), target);
       }
     });
 
@@ -1388,6 +2950,13 @@
           jlog('startup: firmware rescan failed —', err && err.message ? err.message : err);
           appendLog('[fw] startup rescan failed: ' + err);
         }
+
+        // First-run ROM bootstrap.  C handles all the heavy lifting
+        // (marker detection, fetch with mirror fallback, zip unpack,
+        // firmware scan, marker write).  We just kick it off and
+        // poll the status export so a toast can narrate progress
+        // without the user wondering whether the page is hung.
+        startFirstRunPolling();
       },
       totalDependencies: 0,
       monitorRunDependencies: (left) => {
