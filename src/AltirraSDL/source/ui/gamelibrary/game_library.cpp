@@ -506,11 +506,24 @@ static bool ParseCacheDocument(const void *buf, size_t size,
 // true if the file exists, is well-formed, and was successfully
 // decoded into the output parameters.  Empty/oversized/corrupt files
 // return false without touching the outputs.
+//
+// First-run state — when gamelibrary.json doesn't exist yet — must
+// stay on the silent path: VDFileStream's throwing ctor surfaces
+// "Cannot open file ... No such file or directory" as a VDException,
+// and on Emscripten WASM that exception escaped past the catch(...)
+// here and reached the JS-level error handler, terminating the
+// page.  Probe with VDDoesPathExist (a plain stat()) before opening
+// so missing-file is a clean false return rather than an unwind.
+// The catch(...) is kept as a safety net for true I/O errors that
+// occur after open succeeds.
 static bool TryLoadCacheFile(const VDStringW &path,
 	std::vector<GameEntry> &outEntries,
 	std::vector<CachedSourceInfo> &outCachedSources,
 	uint64_t &outLastScanTime)
 {
+	if (!VDDoesPathExist(path.c_str()))
+		return false;
+
 	try {
 		VDFileStream fs(path.c_str());
 		sint64 size = fs.Length();
