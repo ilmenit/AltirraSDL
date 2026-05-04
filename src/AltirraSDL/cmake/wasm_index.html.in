@@ -1045,7 +1045,7 @@
         note:'Future: set as Kernel / BASIC ROM' },
       { id:'archives',    dir: ROOT+'/archives',    exts:['zip'],
         primary:'▶ Boot',   icon:'📦', label:'Archives' },
-      { id:'screenshots', dir: ROOT+'/screenshots', exts:['png','jpg','jpeg'],
+      { id:'screenshots', dir: ROOT+'/screenshots', exts:['png','jpg','jpeg','bmp'],
         primary:null,       icon:'📷', label:'Screenshots' },
       { id:'states',      dir: ROOT+'/states',      exts:['altstate','atstate2','sav'],
         primary:'▶ Load',   icon:'🗂', label:'State saves' },
@@ -1789,7 +1789,10 @@
       const n = selectedSet.size;
       const visible = selectMode && n > 0;
       fmBatchBar.hidden = !visible;
-      fmBreadcrumb.hidden = visible || (viewMode !== 'tree');
+      // Breadcrumb stays present in every mode — renderBreadcrumb()
+      // emits a single 🏠 Home crumb in filter mode so the strip
+      // doesn't collapse and the list rows don't jump.
+      fmBreadcrumb.hidden = false;
       if (!visible) return;
       fmBatchCount.textContent = n + ' selected';
       fmBatchDelete.textContent = '🗑 Delete ' + n;
@@ -1824,23 +1827,27 @@
 
     function renderBreadcrumb() {
       fmBreadcrumb.innerHTML = '';
-      if (viewMode !== 'tree') {
-        fmBreadcrumb.hidden = true;
-        return;
-      }
-      // In tree mode the breadcrumb is the only navigation cue, so
-      // build it as a chain of clickable segments rooted at /.  The
-      // first crumb is a 🏠 icon for the canonical root — collapses
-      // the literal /home/web_user mount point so the user doesn't
-      // have to read the Emscripten path layout.
-      const segs = currentPath.split('/').filter(s => s.length);
+      // Filter mode renders just a 🏠 Home crumb so the breadcrumb
+      // strip stays present at all times — previously we hid it
+      // entirely outside tree mode and the file list would jump
+      // upward every time the user picked a sidebar category.
+      // Clicking Home here drops back to the All-files tree view at
+      // ROOT (same effect as picking the All Files sidebar row).
       const parts = [{ name: '🏠', path: ROOT, isHome: true }];
-      let acc = ROOT;
-      for (let i = 0; i < segs.length; ++i) {
-        const s = segs[i];
-        if (i < 2 && (s === 'home' || s === 'web_user')) continue;
-        acc = acc + '/' + s;
-        parts.push({ name: s, path: acc });
+      if (viewMode === 'tree') {
+        // In tree mode the breadcrumb is the navigation cue, so
+        // build the full chain of clickable segments rooted at /.
+        // The first crumb is a 🏠 icon for the canonical root —
+        // collapses the literal /home/web_user mount point so the
+        // user doesn't have to read the Emscripten path layout.
+        const segs = currentPath.split('/').filter(s => s.length);
+        let acc = ROOT;
+        for (let i = 0; i < segs.length; ++i) {
+          const s = segs[i];
+          if (i < 2 && (s === 'home' || s === 'web_user')) continue;
+          acc = acc + '/' + s;
+          parts.push({ name: s, path: acc });
+        }
       }
       parts.forEach((p, i) => {
         const el = document.createElement('span');
@@ -2587,13 +2594,23 @@
         fmSidebar.appendChild(sect);
       }
 
-      // The Folders virtual filter is rendered first in the type list
-      // so it sits next to the type-icon group.  Hidden in pick mode
-      // because picking a folder isn't meaningful for the file dialogs
-      // that route through this overlay.
-      const sidebarFilters = pickMode
-        ? CATEGORIES
-        : [FOLDERS_FILTER].concat(CATEGORIES);
+      // The Folders virtual filter sits at the bottom of the filter
+      // list, just above "Other", because users only need it when
+      // they're explicitly looking for a folder — keeping it next to
+      // the catch-all keeps the visual weight of the primary
+      // categories (Games / Disks / Cassettes …) at the top.  Hidden
+      // in pick mode because picking a folder isn't meaningful for
+      // the file dialogs that route through this overlay.
+      let sidebarFilters;
+      if (pickMode) {
+        sidebarFilters = CATEGORIES;
+      } else {
+        sidebarFilters = [];
+        for (const c of CATEGORIES) {
+          if (c.id === 'other') sidebarFilters.push(FOLDERS_FILTER);
+          sidebarFilters.push(c);
+        }
+      }
       for (const c of sidebarFilters) {
         // Recursive count is cheaper than the old per-dir count when
         // the tree is shallow (the common case); for huge libraries
@@ -2775,6 +2792,49 @@
       }
 
       const allRows = model.dirs.concat(model.files);
+
+      // ── Select-mode header: "(De)Select All" checkbox ─────────────
+      // Lives at the top of the list (above the first file row) so
+      // users entering Select Mode for a batch operation can flip the
+      // entire visible set in one click.  The label flips between
+      // "Select All" and "Deselect All" based on current state, and
+      // the checkbox shows a partial-tick when only some rows are
+      // selected.  Hidden in pick mode (no batch ops there) and when
+      // the list is empty (nothing to select).
+      if (selectMode && !pickMode && allRows.length > 0) {
+        const allPaths = allRows.map(r => r.path);
+        const selectedHere = allPaths.filter(p => selectedSet.has(p)).length;
+        const allOn = (selectedHere === allPaths.length);
+        const someOn = (selectedHere > 0 && !allOn);
+        const head = document.createElement('div');
+        head.className = 'fm-row in-select';
+        head.style.cssText =
+          'background:#1a1a1a;border-bottom:1px solid #333;'
+          + 'cursor:pointer;font-weight:500;color:#bbb;';
+        const cbCls = 'checkbox' + (allOn ? ' on' : (someOn ? ' on' : ''));
+        head.innerHTML =
+          '<span class="' + cbCls + '"' +
+          (someOn ? ' style="background:#2a3f5f;border-color:#3a598a;"' : '') +
+          '></span>'
+          + '<span class="icon"></span>'
+          + '<span class="name">'
+          + (allOn ? 'Deselect All' : 'Select All')
+          + ' <span style="color:#666;font-weight:normal;">('
+          + selectedHere + '/' + allPaths.length + ')</span>'
+          + '</span>'
+          + '<span class="size"></span>'
+          + '<span class="mtime"></span>';
+        head.addEventListener('click', () => {
+          if (allOn) {
+            for (const p of allPaths) selectedSet.delete(p);
+          } else {
+            for (const p of allPaths) selectedSet.add(p);
+          }
+          renderList();
+          renderBatchBar();
+        });
+        fmList.appendChild(head);
+      }
 
       if (allRows.length === 0) {
         const empty = document.createElement('div');
@@ -3103,11 +3163,13 @@
       // buttons instead of the usual library actions).
       const titleEl = document.getElementById('fm-title');
       if (titleEl) {
+        // Title stays a stable "Files" in all non-pick modes — the
+        // active filter is already conveyed by the highlighted sidebar
+        // row, and a length-changing title was shifting the header
+        // buttons sideways every time the user picked a category.
         if (pickMode === 'open')      titleEl.textContent = 'Select a file';
         else if (pickMode === 'save') titleEl.textContent = 'Save as…';
-        else if (viewMode === 'tree') titleEl.textContent = 'Files';
-        else                           titleEl.textContent =
-          'Files — ' + (activeCategory ? activeCategory.label : '');
+        else                           titleEl.textContent = 'Files';
       }
       // New Folder needs a parent dir to create under.  In tree mode
       // that's currentPath; in filter mode the parent is the active
