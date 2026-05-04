@@ -208,6 +208,18 @@ bool ReadLockFile(uint32_t& outPreProfileId) {
 	outPreProfileId = 0;
 	VDStringA path = LockFilePath();
 
+	// Check existence with SDL_GetPathInfo first.  VDFileStream's
+	// "file not found" path throws VDException, and on the WASM build
+	// LTO + Emscripten can fail to honour the catch frame here — the
+	// throw escapes all the way out to JS as an uncaught CppException
+	// and aborts startup the first time the user opens the page (no
+	// lock file yet, every launch hits this).  Native builds catch fine
+	// either way; doing the existence check unconditionally keeps the
+	// two paths uniform and avoids a noisy log line in VDFileStream.
+	SDL_PathInfo info;
+	if (!SDL_GetPathInfo(path.c_str(), &info)) return false;
+	if (info.type != SDL_PATHTYPE_FILE) return false;
+
 	char buf[256];
 	size_t n = 0;
 	try {

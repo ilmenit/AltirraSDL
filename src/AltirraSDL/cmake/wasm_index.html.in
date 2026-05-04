@@ -548,6 +548,10 @@
     function appendLog(line) {
       logEl.textContent += line + '\n';
       logEl.scrollTop = logEl.scrollHeight;
+      // Tee to DevTools console so opening it after a crash reveals the
+      // full pre-crash log; the in-page <pre> may stop updating mid-line
+      // when the wasm runtime aborts.
+      try { console.log('[log]', line); } catch (_) {}
     }
 
     // Structured JS-side logger that also hands messages off to the
@@ -1397,9 +1401,60 @@
       },
     };
 
+    // ev.message alone is "Uncaught [object Object]" for Emscripten's
+    // simulate_infinite_loop unwind throw and for any C++ exception that
+    // crosses the WASM/JS boundary unhandled.  Both cases need ev.error
+    // (or its name/message/stack) to be diagnosable.  We log:
+    //   - ev.error.name / .message  — string-form details when present
+    //   - ev.error.stack            — first few frames for context
+    //   - String(ev.error)          — fallback for plain values
+    // The Emscripten unwind is a string "unwind" (or ExitStatus instance);
+    // recognise it explicitly so users see "(benign main-loop unwind)".
+    function describeError(e) {
+      if (e == null) return '(no error object)';
+      if (typeof e === 'string') return 'string: ' + e;
+      if (e && e.name === 'ExitStatus') return 'ExitStatus(' + e.status + ')';
+      if (e === 'unwind') return '(benign main-loop unwind)';
+      try {
+        var parts = [];
+        var ctor = (e.constructor && e.constructor.name);
+        if (ctor) parts.push('ctor=' + ctor);
+        if (e.name)    parts.push('name=' + e.name);
+        if (e.message) parts.push('msg=' + e.message);
+        // Decode CppException via Module.getExceptionMessage when present
+        // (export added in CMakeLists EXPORTED_RUNTIME_METHODS).  Returns
+        // [type_name, what_string].
+        if (e.excPtr !== undefined) {
+          parts.push('excPtr=' + e.excPtr);
+          try {
+            if (typeof Module !== 'undefined' && Module.getExceptionMessage
+                && Module.incrementExceptionRefcount) {
+              // Hold an extra reference so the unwind machinery doesn't
+              // free the payload before getExceptionMessage reads it.
+              Module.incrementExceptionRefcount(e);
+              try {
+                var info = Module.getExceptionMessage(e);
+                if (info) parts.push('cppExc=' + JSON.stringify(info));
+              } finally {
+                if (Module.decrementExceptionRefcount)
+                  Module.decrementExceptionRefcount(e);
+              }
+            }
+          } catch (ex) { parts.push('decodeFail=' + ex); }
+        }
+        if (typeof e.stack === 'string')
+          parts.push('stack=' + e.stack.split('\n').slice(0, 5).join(' | '));
+        if (parts.length) return parts.join(' | ');
+        return String(e);
+      } catch (_) { return '<unstringifiable>'; }
+    }
     window.addEventListener('error', (ev) => {
       appendLog('[onerror] ' + ev.message +
-                ' (' + (ev.filename || '?') + ':' + (ev.lineno || '?') + ')');
+                ' (' + (ev.filename || '?') + ':' + (ev.lineno || '?') + ')' +
+                ' :: ' + describeError(ev.error));
+    });
+    window.addEventListener('unhandledrejection', (ev) => {
+      appendLog('[unhandledrejection] ' + describeError(ev.reason));
     });
 
     const script = document.createElement('script');
