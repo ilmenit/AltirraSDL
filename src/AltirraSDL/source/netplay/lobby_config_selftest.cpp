@@ -46,7 +46,7 @@ static void testDefaultIni() {
 
 		CHECK(xs[1].section == "backup");
 		CHECK(xs[1].kind == LobbyKind::Http);
-		CHECK(!xs[1].enabled);
+		CHECK(xs[1].enabled);   // active fallback for DNS/cert hiccups
 
 		CHECK(xs[2].section == "lan");
 		CHECK(xs[2].kind == LobbyKind::LanBroadcast);

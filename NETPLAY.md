@@ -122,16 +122,19 @@ url     = http://lobby.atari.org.pl:8080
 region  = global
 enabled = true
 
-; Backup lobby — same server, alternate DNS via DuckDNS.  Enable
-; this manually if 'lobby.atari.org.pl' is unreachable (DNS outage
-; on the primary).  Do NOT enable both at once: both names resolve
-; to the same box, so leaving them on creates duplicate listings
-; in Browse and double the heartbeats per session.
+; Backup lobby — same server, alternate DNS via DuckDNS.  Active by
+; default so federation auto-falls-back: if one DNS path is
+; unreachable (or its TLS cert is pending) the other still answers.
+; While both names resolve to our server, a hosted game registers on
+; each separately and Browse shows it twice (different sessionIds,
+; same backend) — cosmetic and joiners can use either copy.  Flip
+; this to `enabled = false` if you prefer single-listing hosting
+; once both DNS names are stable.
 [backup]
 name    = Altirra Lobby (DuckDNS backup)
 url     = http://altirra-lobby.duckdns.org:8080
 region  = global
-enabled = false
+enabled = true
 
 [lan]
 name      = LAN
