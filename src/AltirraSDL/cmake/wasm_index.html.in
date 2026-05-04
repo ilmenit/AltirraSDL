@@ -852,9 +852,9 @@
     <button id="btn-files" disabled>📁 Files…</button>
     <button id="btn-firmware" disabled
             title="Re-run the standard ROM bundle download">🎛 Download firmware…</button>
+    <div id="status">Loading…</div>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
-    <div id="status">Loading…</div>
     <button id="btn-diagnose"
             title="Test reachability of the netplay lobby and WebSocket bridge. Useful when 'Play Online' fails with WS code 1006 / 'could not reach lobby'.">🩺 Diagnose Netplay</button>
     <div class="log-toggle" id="log-toggle" role="button" tabindex="0">▸ Show log</div>
@@ -1432,13 +1432,24 @@
       console.log.apply(console, ['[altirra-wasm]'].concat(args));
     }
 
-    function toast(msg, kind='ok') {
+    function toast(msg, kind='ok', holdMs=null) {
       const el = document.createElement('div');
       el.className = 'toast ' + kind;
       el.textContent = msg;
+      // Default animation: fade-in 0.2s, hold ~3s, fade-out 0.25s.
+      // Diagnostic toasts pass holdMs so the user can read/copy them
+      // before they disappear; we override the second animation's
+      // delay (toast-out) to keep the toast on screen longer.
+      if (holdMs && holdMs > 3200) {
+        const outDelayMs = holdMs - 250;
+        el.style.animationDelay = '0s, ' + outDelayMs + 'ms';
+      }
+      // Allow text selection so users can copy diagnostic verdicts.
+      el.style.userSelect = 'text';
       toasts.appendChild(el);
-      // Auto-remove after animation out.  Animation timings sum to 3.45s.
-      setTimeout(() => el.remove(), 3700);
+      // Auto-remove a hair after the animation is done so the DOM
+      // stays clean; default animation timings sum to ~3.45s.
+      setTimeout(() => el.remove(), (holdMs || 3450) + 250);
     }
 
     function toggleLog() {
@@ -4178,6 +4189,86 @@
       // and replied 400; everything is fine for real joiners.
       const wssReachedServer = (c.phase === 'close' && c.ms >= 30);
 
+      // ─── Extension / cross-origin discriminator ────────────────────
+      // When the lobby WSS fails synchronously, we want to tell the
+      // user WHY with high confidence.  Two cheap signals make that
+      // possible:
+      //
+      //  1. Same-origin WSS control probe.  A WS attempt to the page's
+      //     OWN host (with a fake path) goes through the browser's
+      //     full network stack — TLS handshake, HTTP upgrade, server
+      //     404 — and closes ≥ 30 ms later.  If THIS probe also
+      //     closes in < 10 ms, the block is broader than just the
+      //     lobby host (CSP, all-WSS extension, network).  If only
+      //     the lobby probe is fast, the block is host-specific —
+      //     the smoking gun for an adblock extension that has
+      //     duckdns.org on its filter list (uBlock Origin Lite,
+      //     Brave Shields, Adguard, etc. — by default these list
+      //     dynamic-DNS providers because malware C2 abuses them).
+      //
+      //  2. Adblock bait.  We append a hidden element with class
+      //     names that filter lists target by default (`adsbygoogle`,
+      //     `ad-banner`).  After a short rAF/timeout, if the element
+      //     has zero size or is detached / display:none, an adblock-
+      //     style extension is active.  This catches the extension
+      //     even when its WS-block list happens to spare our host —
+      //     the user can then disable / pause it and retry.
+      //
+      // Neither signal is conclusive on its own; together they pin
+      // the cause precisely enough to give an actionable verdict.
+      let sameOriginResult = null;
+      let adblockActive    = null;
+      if (a.ok && b.ok && !wssReachedServer) {
+        // Probe same-origin WSS to a path that won't speak WS.
+        // location.host already includes any non-default port so
+        // we just slap on a unique fake path and let the upgrade fail
+        // naturally on the server side.
+        const sameOriginWssUrl = 'wss://' + location.host
+                              + '/__altirra_diag_ext_check__';
+        sameOriginResult = await probeWss(sameOriginWssUrl);
+        let sLine = '[diagnose] same-origin-wss: ' + sameOriginWssUrl
+                  + ' → ' + sameOriginResult.phase
+                  + ' (' + sameOriginResult.ms + ' ms)';
+        if (sameOriginResult.code !== undefined)
+          sLine += ' code=' + sameOriginResult.code;
+        if (sameOriginResult.error)
+          sLine += ' error=' + sameOriginResult.error;
+        appendLog(sLine);
+
+        // Adblock bait — class names hit by stock filter lists.
+        // The element is positioned far off-screen and removed
+        // after the check so it never affects layout or visuals.
+        adblockActive = await (async () => {
+          try {
+            const bait = document.createElement('div');
+            bait.className = 'adsbygoogle ad-banner pub_300x250 ad';
+            bait.style.cssText = 'position:absolute;left:-99999px;'
+                               + 'top:-99999px;width:10px;height:10px;'
+                               + 'pointer-events:none;';
+            bait.innerHTML = '&nbsp;';
+            document.body.appendChild(bait);
+            // Two animation frames + 50 ms is enough for cosmetic
+            // filtering to settle without making the user wait long.
+            await new Promise(r => requestAnimationFrame(
+              () => requestAnimationFrame(() => setTimeout(r, 50))));
+            const cs = getComputedStyle(bait);
+            const blocked =
+              !bait.parentNode ||
+              bait.offsetParent === null ||
+              bait.offsetHeight === 0 ||
+              bait.offsetWidth === 0 ||
+              cs.display === 'none' ||
+              cs.visibility === 'hidden';
+            try { bait.remove(); } catch (_) {}
+            return blocked;
+          } catch (_) { return null; }
+        })();
+        appendLog('[diagnose] adblock-bait: '
+                + (adblockActive === true  ? 'HIDDEN — extension active'
+                 : adblockActive === false ? 'visible — no adblock-style filtering'
+                 : 'unknown'));
+      }
+
       // Build a one-line verdict for the toast.
       let verdict;
       if (a.ok && b.ok && wssReachedServer) {
@@ -4185,10 +4276,55 @@
       } else if (a.error && b.error) {
         verdict = 'Lobby unreachable: ' + (a.error || b.error);
       } else if (a.ok && b.ok && !wssReachedServer) {
-        // The HTTPS API works but the WSS leg fails synchronously —
-        // this is almost certainly a browser-side block.
-        verdict = 'WSS blocked by browser (CSP / extension / proxy?)'
-                + ' — HTTPS works, WSS closed in ' + c.ms + ' ms';
+        // Combine the two extra signals to write a precise verdict.
+        const sameOriginFast = sameOriginResult
+          && sameOriginResult.phase === 'close'
+          && sameOriginResult.ms < 10;
+        const sameOriginSlow = sameOriginResult
+          && sameOriginResult.phase === 'close'
+          && sameOriginResult.ms >= 30;
+
+        if (sameOriginSlow && (adblockActive === true)) {
+          // Lobby WSS blocked + same-origin WSS works fine + adblock
+          // bait was hidden = extension is targeting the lobby host.
+          // This is the high-confidence case.
+          verdict = 'Browser extension blocking WSS to ' + host
+                  + ' (uBlock Origin Lite, Brave Shields, Adguard,'
+                  + ' or similar).  Same-origin WSS works ('
+                  + sameOriginResult.ms + ' ms).  Disable / pause the'
+                  + ' extension on this site and reload, OR add an'
+                  + ' allow rule for ' + host + '.';
+        } else if (sameOriginSlow && adblockActive === false) {
+          // No adblock detected but lobby host specifically blocked —
+          // most likely a system-level filter (DNS, AV, proxy) that
+          // targets dynamic-DNS hosts.
+          verdict = 'WSS to ' + host + ' blocked at network/system'
+                  + ' level (DNS filter, antivirus TLS inspection,'
+                  + ' or system proxy).  Same-origin WSS works ('
+                  + sameOriginResult.ms + ' ms) so the browser itself'
+                  + ' is fine.  Check NextDNS / OpenDNS / Cloudflare'
+                  + ' family-filter, corporate AV, or proxy settings.';
+        } else if (sameOriginFast) {
+          // Same-origin WSS also fails synchronously — this is a
+          // CSP, COEP, or wholesale "no WSS" block.
+          verdict = 'All WSS blocked by browser (CSP / extension'
+                  + ' blocking ALL WebSocket / network restriction).'
+                  + '  Same-origin WSS also closed in '
+                  + sameOriginResult.ms + ' ms.'
+                  + (adblockActive === true
+                     ? '  Adblock-style extension is active — try'
+                     + ' disabling it.'
+                     : '');
+        } else {
+          // Couldn't confirm with the secondary probes.
+          verdict = 'WSS blocked by browser — HTTPS works, WSS closed'
+                  + ' in ' + c.ms + ' ms.  Open DevTools (F12) →'
+                  + ' Console for the exact reason.  Common causes:'
+                  + ' ad/privacy extension blocking WS to duckdns.org,'
+                  + ' corporate AV intercepting TLS, or a system proxy.'
+                  + '  Try an Incognito window with all extensions'
+                  + ' disabled to confirm.';
+        }
       } else if (!a.ok || !b.ok) {
         const bad = !a.ok ? a : b;
         verdict = 'Lobby reachable but ' +
@@ -4197,7 +4333,17 @@
       } else {
         verdict = 'Lobby partial — see log';
       }
-      toast(verdict, (a.ok && b.ok && wssReachedServer) ? 'ok' : 'error');
+      // Mirror the verdict into the persistent log so users can copy
+      // it from the log textarea (toasts auto-dismiss).  Both kinds of
+      // text get the same prefix so a screenshot of either one is
+      // unambiguous.
+      appendLog('[diagnose] verdict: ' + verdict);
+      // Show the toast for ~9 s so users can read and (with the user-
+      // select CSS) copy it before it fades out; default toasts auto-
+      // dismiss in ~3 s which is too short for a multi-line verdict.
+      toast(verdict,
+            (a.ok && b.ok && wssReachedServer) ? 'ok' : 'error',
+            9000);
     }
 
     if (btnDiagnose) {
