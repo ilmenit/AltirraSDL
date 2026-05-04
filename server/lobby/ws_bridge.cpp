@@ -429,6 +429,50 @@ static void RejectUpgrade(struct mg_connection* c, int code,
 		"Content-Type: text/plain\r\n", "%s\n", reason);
 }
 
+// Suppress mongoose's automatic Sec-WebSocket-Protocol echo.
+//
+// vendor/mongoose/mongoose.c ws_handshake() unconditionally echoes the
+// request's Sec-WebSocket-Protocol value back into the 101 response,
+// AS-IS — i.e. the entire offered list (`altirra-netplay.v1, session.<hex>,
+// role.<r>, token.<hex>`).  Combined with our own explicit single-protocol
+// header (`Sec-WebSocket-Protocol: altirra-netplay.v1`), this produces TWO
+// Sec-WebSocket-Protocol headers in the response — one valid, one whose
+// value is a comma-joined list.  Browsers (Chromium, Firefox) reject this
+// and abort the WS connection with code 1006; emscripten then surfaces it
+// as the misleading "could not reach lobby (DNS / TLS / CORS / mixed-
+// content)" error.  curl ignores the duplicate, which is why CLI tests
+// look fine while real WASM clients fail.
+//
+// We can't suppress the echo without modifying mongoose, but we can make
+// mongoose's internal mg_http_get_header() lookup miss the header.  The
+// header bytes live in mongoose's recv buffer (mg_str.buf is char*, not
+// const) and we already finished parsing the value above, so it is safe
+// to mangle the name byte-for-byte without changing its length.  Keeping
+// the length intact preserves iteration over hm->headers[] for any later
+// code that walks the array.
+static void StripRequestSubprotocolHeader(struct mg_http_message* hm) {
+	static const char kName[] = "Sec-WebSocket-Protocol";
+	constexpr size_t kNameLen = sizeof(kName) - 1;
+	const size_t maxH = sizeof(hm->headers) / sizeof(hm->headers[0]);
+	for (size_t i = 0; i < maxH && hm->headers[i].name.len > 0; ++i) {
+		struct mg_str& k = hm->headers[i].name;
+		if (k.len != kNameLen) continue;
+		bool eq = true;
+		for (size_t j = 0; j < kNameLen; ++j) {
+			char a = k.buf[j], b = kName[j];
+			if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+			if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+			if (a != b) { eq = false; break; }
+		}
+		if (!eq) continue;
+		// Break the name without changing length.  '_' is not in the
+		// target name, so the case-insensitive compare in
+		// mg_http_get_header() now fails on byte 0.
+		k.buf[0] = '_';
+		return;
+	}
+}
+
 // Find or create per-conn state for an accepted WS connection.
 static PerConn& GetPerConn(BridgeState& st, struct mg_connection* c) {
 	return st.conns[c->id];
@@ -612,6 +656,11 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 	// Respond with the version marker (NOT the token — never reflect
 	// secrets in response headers).  Browsers verify the echoed
 	// subprotocol and reject if they don't see their requested one.
+	// Strip the request-side Sec-WebSocket-Protocol first so mongoose's
+	// internal echo (which would re-emit the entire offered list as a
+	// second response header) doesn't fire — see comment on
+	// StripRequestSubprotocolHeader for the failure mode.
+	StripRequestSubprotocolHeader(hm);
 	mg_ws_upgrade(c, hm,
 		"Sec-WebSocket-Protocol: altirra-netplay.v1\r\n");
 

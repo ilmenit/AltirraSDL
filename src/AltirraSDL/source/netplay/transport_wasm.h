@@ -82,7 +82,16 @@ public:
 	// True after the browser fires onerror or onclose with a non-1000
 	// close code — meaning the session can no longer carry inner
 	// frames and the Coordinator should fail the joiner / host.
-	bool HasFailed() const override { return mFailed; }
+	//
+	// Also fires the synthetic "handshake timeout" failure path: if
+	// Listen() was called more than kHandshakeTimeoutMs ago and the
+	// browser still hasn't delivered onopen, we treat that as a
+	// silent-timeout failure (DNS / TLS / Caddy route missing /
+	// firewall) and surface a friendly message to the UI rather than
+	// letting the joiner sit on "Waiting for host…" forever.  The
+	// Coordinator polls HasFailed()/FailureReason() each Poll() so the
+	// fail flips through promptly.
+	bool HasFailed() const override;
 	const char *FailureReason() const override {
 		return mFailureSummary.c_str();
 	}
@@ -120,13 +129,30 @@ private:
 	// detect WS-level failures (auth reject, lobby down, mixed-content
 	// block) and surface a clear error to the UI.  Without this the
 	// joiner sits at "Waiting for host…" forever.
-	bool        mFailed = false;
-	uint16_t    mCloseCode = 0;
-	std::string mCloseReason;
-	bool        mCloseWasClean = false;
+	//
+	// `mutable` because HasFailed() is `const` (interface contract) but
+	// has to lazily flip mFailed when the handshake-timeout deadline
+	// passes — the alternative is a separate Tick() method on the
+	// transport interface that every other transport has to implement
+	// as a no-op.
+	mutable bool        mFailed = false;
+	mutable uint16_t    mCloseCode = 0;
+	mutable std::string mCloseReason;
+	bool                mCloseWasClean = false;
 	// Human-readable summary of the failure, generated in OnCloseCb
 	// from mCloseCode / mCloseReason and exposed via FailureReason().
-	std::string mFailureSummary;
+	mutable std::string mFailureSummary;
+
+	// Pre-handshake deadline.  emscripten_get_now() returns ms since
+	// page load, so this is a millisecond timestamp recorded in
+	// Listen() and consulted from HasFailed().  Zero before Listen()
+	// or after the handshake completes — the timeout only fires while
+	// mOpen is still false.  10 s is generous for slow phone networks
+	// (median TLS+WS handshake on 4G is ~1.5s) but still snappy enough
+	// that the UI doesn't sit on "Waiting for host…" indefinitely when
+	// the lobby is unreachable.
+	double mHandshakeStartMs = 0.0;
+	static constexpr double kHandshakeTimeoutMs = 10000.0;
 
 	// Emscripten event callbacks.  Match the canonical typedef
 	// signatures (including `_Nonnull` annotations) from

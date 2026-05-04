@@ -21,6 +21,10 @@
 #include <cstdio>
 #include <cstring>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>   // emscripten_get_now
+#endif
+
 extern ATLogChannel g_ATLCNetplay;
 
 namespace ATNetplay {
@@ -99,6 +103,8 @@ bool WasmTransport::Listen(uint16_t /*port*/) {
 #if defined(__EMSCRIPTEN__)
 	if (mWs != 0) return true;   // already opened
 
+	mHandshakeStartMs = emscripten_get_now();
+
 	std::string url = "wss://";
 	url += mLobbyHost;
 	url += "/netplay";
@@ -136,6 +142,41 @@ bool WasmTransport::Listen(uint16_t /*port*/) {
 
 bool WasmTransport::IsOpen() const {
 	return mOpen && !mClosed;
+}
+
+bool WasmTransport::HasFailed() const {
+#if defined(__EMSCRIPTEN__)
+	// Fast path: already-failed transports stay failed.
+	if (mFailed) return true;
+	// Handshake timeout: only fires while we're waiting for the
+	// browser's onopen — once mOpen flips true the deadline is moot.
+	// mClosed implies Close() was called explicitly (Coordinator tear-
+	// down) or onclose already fired; either way, no synthetic
+	// failure on top.
+	if (mOpen || mClosed) return false;
+	if (mHandshakeStartMs <= 0.0) return false;
+	const double elapsed = emscripten_get_now() - mHandshakeStartMs;
+	if (elapsed < kHandshakeTimeoutMs) return false;
+	// Synthesise a close-equivalent failure record.  Code 4998 is
+	// outside the IANA-assigned range AND the lobby's documented 4000-
+	// 4099 application-policy band, so it can never collide with a
+	// real lobby status.  The text mirrors the OnCloseCb formatting
+	// so callers don't need a separate code path.
+	mFailed         = true;
+	mCloseCode      = 4998;
+	mCloseReason    = "handshake timeout";
+	char buf[200];
+	std::snprintf(buf, sizeof buf,
+		"could not reach lobby — no response in %.0f s "
+		"(DNS / TLS / Caddy route / firewall) (code 4998)",
+		kHandshakeTimeoutMs / 1000.0);
+	mFailureSummary.assign(buf);
+	g_ATLCNetplay("WasmTransport: handshake timeout after %.1f s — %s",
+		elapsed / 1000.0, mFailureSummary.c_str());
+	return true;
+#else
+	return mFailed;
+#endif
 }
 
 bool WasmTransport::SendTo(const uint8_t* bytes, size_t n,

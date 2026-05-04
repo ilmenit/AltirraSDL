@@ -577,6 +577,74 @@
       color: #8aa;
       text-align: center;
     }
+
+    /* ── Game-pack selector inside the firmware wizard ───────────────
+       Only visible when config.json declares one or more game packs.
+       Each pack gets a checkbox + name + url hint; the controlling JS
+       toggles each pack's "selected" flag and the Download button
+       fires off the entire selected set in sequence. */
+    #fw-packs {
+      margin: 6px 0 14px;
+      max-height: 38vh;
+      overflow-y: auto;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 6px 0;
+    }
+    .fw-pack-row {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      grid-template-rows: auto auto;
+      gap: 0 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .fw-pack-row:hover { background: #232323; }
+    .fw-pack-row .check {
+      grid-column: 1; grid-row: 1 / 3;
+      align-self: center; justify-self: center;
+      width: 18px; height: 18px;
+      border: 1px solid #555;
+      border-radius: 3px;
+      background: #181818;
+    }
+    .fw-pack-row .check.on {
+      background: #4872ad;
+      border-color: #7db2ff;
+      box-shadow: inset 0 0 0 3px #1c1c1c, 0 0 0 0 transparent;
+    }
+    .fw-pack-row .name {
+      grid-column: 2; grid-row: 1;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .fw-pack-row .desc {
+      grid-column: 2; grid-row: 2;
+      color: #888;
+      font-size: 0.75rem;
+      word-break: break-all;
+    }
+    .fw-pack-row .status {
+      grid-column: 2; grid-row: 2;
+      justify-self: end;
+      color: #7d9ad0;
+      font-size: 0.72rem;
+      font-style: italic;
+    }
+    .fw-pack-row.installed .name::after {
+      content: ' ✓';
+      color: #6ec06e;
+      font-weight: 700;
+    }
+    #fw-packs-title {
+      font-size: 0.78rem;
+      color: #8aa;
+      margin: 14px 0 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
     #wipe-box h2, #move-box h2, #fw-box h2 {
       font-size: 1rem;
       color: #f3b6b6;
@@ -734,6 +802,8 @@
     <button id="btn-files" disabled>📁 Files…</button>
     <button id="btn-firmware" disabled
             title="Re-run the standard ROM bundle download">🎛 Download firmware…</button>
+    <button id="btn-diagnose"
+            title="Test reachability of the netplay lobby. Useful when 'Play Online' fails with WS code 1006 / 'could not reach lobby'.">🩺 Diagnose lobby</button>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
     <div id="status">Loading…</div>
@@ -828,7 +898,7 @@
     </div>
   </div>
 
-  <!-- Firmware-download wizard (first-run + on-demand) ------------------ -->
+  <!-- Firmware + game-pack wizard (first-run + on-demand) -------------- -->
   <div id="fw-backdrop" role="dialog" aria-modal="true" aria-labelledby="fw-title">
     <div id="fw-box">
       <h2 id="fw-title">Download standard Atari ROMs?</h2>
@@ -854,6 +924,25 @@
         can re-open this dialog any time from
         <b>🎛 Download firmware…</b> in the top bar.
       </p>
+      <!-- Firmware checkbox: lets the user opt out of the firmware
+           download even when a game-pack-only install is desired. -->
+      <label id="fw-firmware-toggle" class="fw-pack-row" style="display:none">
+        <span class="check on" id="fw-firmware-check"></span>
+        <span class="name">Download standard ROM bundle (XL/XE OS + BASIC)</span>
+        <span class="desc">Required for accurate boot of most software.</span>
+      </label>
+      <!-- Game-pack list (populated from config.json at startup;
+           the whole #fw-packs-section block is hidden when no packs
+           are configured). -->
+      <div id="fw-packs-section" hidden>
+        <div id="fw-packs-title">Optional game packs</div>
+        <div id="fw-packs"></div>
+        <p id="fw-packs-help" style="font-size:0.78rem; color:#888; margin:0 0 12px;">
+          Each pack is downloaded and unpacked into your local game library.
+          Files appear in <b>📁 Files… → Games</b> and you can delete or move
+          them at any time, just like uploads of your own.
+        </p>
+      </div>
       <div id="fw-progress" hidden>
         <div id="fw-progress-bar"><div id="fw-progress-fill"></div></div>
         <div id="fw-progress-msg">Starting download…</div>
@@ -993,7 +1082,12 @@
     const fwSkip         = document.getElementById('fw-skip');
     const fwProgress     = document.getElementById('fw-progress');
     const fwProgressMsg  = document.getElementById('fw-progress-msg');
+    const fwFirmwareToggle = document.getElementById('fw-firmware-toggle');
+    const fwFirmwareCheck  = document.getElementById('fw-firmware-check');
+    const fwPacksSection = document.getElementById('fw-packs-section');
+    const fwPacksList    = document.getElementById('fw-packs');
     const btnFirmware    = document.getElementById('btn-firmware');
+    const btnDiagnose    = document.getElementById('btn-diagnose');
     const btnLayout      = document.getElementById('btn-layout');
 
     // ───────────────────────────────────────────────────────────────────
@@ -1719,31 +1813,244 @@
       fwProgress.hidden  = true;
       fwGo.disabled      = false;
       fwSkip.disabled    = false;
-      fwGo.textContent   = (mode === 'manual' && hasFirmwareInstalled())
-                           ? 'Re-download'
-                           : 'Download';
+
+      // Firmware toggle visibility:
+      //   - first-run, firmware missing: hidden, default to download.
+      //   - manual, firmware present:    visible, default unchecked
+      //     (user opened wizard for packs, not firmware).
+      //   - manual, firmware missing:    visible, default checked.
+      const haveFw = hasFirmwareInstalled();
+      const showFwToggle = (mode === 'manual')
+                           && (hasGamePacksAvailable() || haveFw);
+      if (fwFirmwareToggle) {
+        fwFirmwareToggle.style.display = showFwToggle ? '' : 'none';
+        if (showFwToggle) {
+          fwFirmwareCheckState = !haveFw;
+          syncFwFirmwareCheck();
+        }
+      }
+
+      // Game-pack section visibility + reset selection state.  We render
+      // every time the wizard opens so the per-pack "✓ installed" hint
+      // reflects the current FS state (a pack might have been deleted
+      // since last open).
+      renderFwPacksSection();
+
+      updateFwGoLabel();
       fwBackdrop.classList.add('open');
     }
     function closeFirmwareWizard() {
       fwBackdrop.classList.remove('open');
     }
 
+    // Recompute the Download button's label based on what the user has
+    // selected: "Download" (firmware only), "Install N pack(s)" (no
+    // firmware), "Download + install N pack(s)" (both).  Empty state
+    // disables the button entirely.
+    let fwFirmwareCheckState = true;
+    function syncFwFirmwareCheck() {
+      if (!fwFirmwareCheck) return;
+      fwFirmwareCheck.classList.toggle('on', !!fwFirmwareCheckState);
+    }
+    function selectedPackCount() {
+      return GAME_PACKS.reduce((acc, p) => acc + (p.selected ? 1 : 0), 0);
+    }
+    function fwIsFirmwareSelected() {
+      // First-run mode and the firmware toggle is hidden → firmware
+      // download is implied.  Manual mode → driven by checkbox.
+      if (fwFirmwareToggle && fwFirmwareToggle.style.display === 'none')
+        return fwWizardMode === 'first-run';
+      return !!fwFirmwareCheckState;
+    }
+    function updateFwGoLabel() {
+      const fw = fwIsFirmwareSelected();
+      const n  = selectedPackCount();
+      let label = 'Download';
+      if (fw && n === 0)    label = (fwWizardMode === 'manual' && hasFirmwareInstalled())
+                                    ? 'Re-download' : 'Download';
+      else if (!fw && n > 0) label = (n === 1)
+                                    ? 'Install pack'
+                                    : 'Install ' + n + ' packs';
+      else if (fw && n > 0)  label = (n === 1)
+                                    ? 'Download + install pack'
+                                    : 'Download + install ' + n + ' packs';
+      fwGo.textContent = label;
+      fwGo.disabled = (!fw && n === 0);
+    }
+
+    // Build the per-pack DOM rows.  Each row reflects the live
+    // `selected` flag on GAME_PACKS[i]; clicking a row toggles it and
+    // re-syncs the Download button label.  `installed` is a hint
+    // (the destination dir already has files) — not authoritative,
+    // since the user could have manually deleted everything inside.
+    function renderFwPacksSection() {
+      if (!fwPacksSection || !fwPacksList) return;
+      if (GAME_PACKS.length === 0) {
+        fwPacksSection.hidden = true;
+        return;
+      }
+      fwPacksSection.hidden = false;
+      fwPacksList.innerHTML = '';
+      GAME_PACKS.forEach((p, idx) => {
+        const installed = isGamePackInstalled(p);
+        // Default selection: unchecked once already installed (the
+        // user opened the wizard for some other reason); checked
+        // otherwise so first-run "Download" auto-installs everything.
+        if (typeof p.selected !== 'boolean') p.selected = !installed;
+
+        const row = document.createElement('label');
+        row.className = 'fw-pack-row' + (installed ? ' installed' : '');
+        row.dataset.idx = String(idx);
+
+        const check = document.createElement('span');
+        check.className = 'check' + (p.selected ? ' on' : '');
+        row.appendChild(check);
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = p.name || '(unnamed pack)';
+        row.appendChild(name);
+
+        const desc = document.createElement('span');
+        desc.className = 'desc';
+        desc.textContent = p.description || p.url || '';
+        row.appendChild(desc);
+
+        row.addEventListener('click', (e) => {
+          e.preventDefault();
+          p.selected = !p.selected;
+          check.classList.toggle('on', !!p.selected);
+          updateFwGoLabel();
+        });
+
+        fwPacksList.appendChild(row);
+      });
+    }
+
+    // Heuristic: a pack is considered "installed" if its destination
+    // dir exists and contains at least one entry.  Used only to
+    // pre-select / pre-decorate rows in the wizard, never to skip
+    // re-fetching — the user can always force a reinstall.
+    function isGamePackInstalled(pack) {
+      if (!runtimeReady) return false;
+      try {
+        const dir = gamePackDir(pack);
+        const entries = Module.FS.readdir(dir)
+          .filter(n => n !== '.' && n !== '..');
+        return entries.length > 0;
+      } catch (e) { return false; }
+    }
+    function hasGamePacksAvailable() {
+      return GAME_PACKS.length > 0;
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Self-host config (config.json, optional)
+    //
+    //  A page operator hosting AltirraSDL on their own site can ship a
+    //  `config.json` next to AltirraSDL.html to:
+    //    1. override the firmware bundle URL,
+    //    2. pre-populate the Game Library with one or more "starter"
+    //       game packs (zip files) that the user can opt into during
+    //       the first-run wizard.
+    //
+    //  Schema (every field optional):
+    //    {
+    //      "firmwareUrl": "https://example.com/xf25.zip",
+    //      "gamePacks": [
+    //        { "name": "Games",
+    //          "url": "https://example.com/games.zip",
+    //          "description": "1990s Atari 8-bit cartridge dumps" },
+    //        { "name": "Demos",
+    //          "url": "https://example.com/demos.zip" }
+    //      ]
+    //    }
+    //
+    //  Game packs install under /home/web_user/games/<sanitized-name>/.
+    //  The user can browse + delete files there from File Manager just
+    //  like their own uploads.  See HOSTING.md for full deploy notes.
+    // ───────────────────────────────────────────────────────────────────
+    let GAME_PACKS = [];     // populated by loadHostConfig()
+    let HOST_CONFIG = null;  // raw object once parsed (or null)
+
+    function gamePackDirName(pack) {
+      // Sanitise the user-supplied name: keep ASCII alnum + dash/under-
+      // score, strip everything else.  Empty falls back to "pack-<idx>".
+      const raw = (pack && pack.name) ? String(pack.name) : '';
+      let s = raw.replace(/[^A-Za-z0-9_\- ]+/g, '').trim()
+                 .replace(/\s+/g, '_');
+      if (!s) {
+        const idx = GAME_PACKS.indexOf(pack);
+        s = 'pack-' + (idx >= 0 ? idx : 'x');
+      }
+      return s;
+    }
+    function gamePackDir(pack) {
+      return ROOT + '/games/' + gamePackDirName(pack);
+    }
+
+    async function loadHostConfig() {
+      // No-cache GET so an operator who updates config.json sees
+      // changes immediately without forcing every visitor to clear
+      // their browser cache.  config.json is small (< 1 KB) so the
+      // perf cost is negligible.
+      try {
+        const r = await fetch('config.json?v=' + cacheBust,
+                              { cache: 'no-store' });
+        if (!r.ok) {
+          jlog('host-config: no config.json (' + r.status + ') — using defaults');
+          return;
+        }
+        const j = await r.json();
+        HOST_CONFIG = j;
+        if (Array.isArray(j.gamePacks)) {
+          GAME_PACKS = j.gamePacks.filter(p => p && typeof p.url === 'string');
+          jlog('host-config: ' + GAME_PACKS.length + ' game pack(s) configured');
+        }
+        if (typeof j.firmwareUrl === 'string' && j.firmwareUrl) {
+          jlog('host-config: firmwareUrl override = ' + j.firmwareUrl);
+          // Note: actually wiring the override into the C-side mirror
+          // list would require a new export; for now we surface it in
+          // the wizard text and rely on the existing mirror list.
+          // Operators who need a private firmware URL can extract it
+          // ahead of time and ship the .rom files in firmware.zip
+          // alongside config.json — see HOSTING.md.
+        }
+      } catch (e) {
+        jlog('host-config: load failed —',
+          e && e.message ? e.message : String(e));
+      }
+    }
+
     // Decide what to do on every WASM start with respect to the
-    // firmware bundle.  Three branches:
-    //   1. Firmware already present → silent, never prompt.
-    //   2. Marker present, firmware empty → user skipped previously.
-    //      Stay silent; they can re-trigger via the toolbar button.
-    //   3. No marker, no firmware → fresh install.  Show the wizard.
+    // firmware bundle and any configured game packs.  Branches:
+    //   1. Firmware already present AND no packs configured → silent.
+    //   2. Firmware present, packs configured, none installed yet →
+    //      show wizard (user gets to opt into packs).
+    //   3. Marker present, firmware empty, no packs → silent.
+    //   4. No marker, no firmware → fresh install — always show.
+    //   5. Anything else with at least one un-installed pack → show.
     function decideFirstRunAction() {
-      if (hasFirmwareInstalled()) {
-        jlog('first-run: firmware present, no prompt needed');
+      const fw = hasFirmwareInstalled();
+      const marker = hasFirstRunMarker();
+      const packs = GAME_PACKS;
+      const havePacks = packs.length > 0;
+      const anyPackInstalled = havePacks
+        && packs.some(p => isGamePackInstalled(p));
+      const allPacksInstalled = havePacks
+        && packs.every(p => isGamePackInstalled(p));
+
+      if (fw && (!havePacks || allPacksInstalled)) {
+        jlog('first-run: firmware + all packs present, no prompt needed');
         return;
       }
-      if (hasFirstRunMarker()) {
-        jlog('first-run: marker present (user previously skipped)');
+      if (!fw && marker && (!havePacks || anyPackInstalled)) {
+        jlog('first-run: firmware skipped previously, no fresh packs to offer');
         return;
       }
-      jlog('first-run: showing firmware wizard');
+      jlog('first-run: showing firmware/packs wizard'
+        + ' (fw=' + fw + ', marker=' + marker
+        + ', packs=' + packs.length + ', installedAny=' + anyPackInstalled + ')');
       openFirmwareWizard('first-run');
     }
 
@@ -2878,25 +3185,89 @@
 
     // ───────────────────────────────────────────────────────────────────
     //  Firmware-download wizard wiring
+    //
+    //  fwUserAccept handles both firmware (legacy ATWasmFirstRunBootstrap
+    //  path) and game packs (browser fetch → unpack → register source).
+    //  Each pack runs sequentially — on a phone with limited RAM,
+    //  parallel downloads of multi-MB zips can OOM the wasm heap.
+    //  Pack failures are reported via toast but never block firmware
+    //  install or vice-versa.
     // ───────────────────────────────────────────────────────────────────
-    function fwUserAccept() {
-      // Reset C-side bootstrap state so a previous decline doesn't
-      // make ATWasmFirstRunBootstrap a no-op.  Safe even on first
-      // run (no marker present).
-      if (Module._ATWasmResetFirstRun) {
-        try { Module._ATWasmResetFirstRun(); }
-        catch (e) { jlog('first-run: reset threw —', e); }
-      }
-      // Allow startFirstRunPolling to run again (it's idempotent
-      // per-page-load via firstRunPollStarted; clearing here lets a
-      // re-download attempt actually fire).
-      firstRunPollStarted = false;
-      firstRunLastState = -1;
+    async function fwUserAccept() {
+      const wantFirmware = fwIsFirmwareSelected();
+      const wantPacks    = GAME_PACKS.filter(p => p.selected);
+
+      // Lock the dialog while work is in flight.
       fwProgress.hidden = false;
-      fwProgressMsg.textContent = 'Starting download…';
       fwGo.disabled = true;
       fwSkip.disabled = true;
-      startFirstRunPolling();
+
+      // 1) Firmware first (when requested) — uses the existing bootstrap
+      //    pipeline so we don't duplicate the mirror-list logic.
+      if (wantFirmware) {
+        fwProgressMsg.textContent = 'Starting firmware download…';
+        if (Module._ATWasmResetFirstRun) {
+          try { Module._ATWasmResetFirstRun(); }
+          catch (e) { jlog('first-run: reset threw —', e); }
+        }
+        firstRunPollStarted = false;
+        firstRunLastState = -1;
+        startFirstRunPolling();
+        // Wait for the firstRunPolling state machine to reach a
+        // terminal state (5/6/7/8) before kicking off pack downloads.
+        // The polling tick already updates fwProgressMsg in-place.
+        await new Promise((resolve) => {
+          const wait = setInterval(() => {
+            const st = Module._ATWasmGetFirstRunState
+                       ? Module._ATWasmGetFirstRunState() : 8;
+            if (st >= 5) { clearInterval(wait); resolve(); }
+          }, 500);
+        });
+      }
+
+      // 2) Packs second.  If only packs were requested (no firmware)
+      //    we still want to write the first-run marker so the wizard
+      //    doesn't auto-show next session.
+      if (wantPacks.length > 0) {
+        let okCount = 0, failCount = 0;
+        for (let i = 0; i < wantPacks.length; ++i) {
+          const p = wantPacks[i];
+          const label = (p.name || '(pack)') +
+                        ' (' + (i + 1) + '/' + wantPacks.length + ')';
+          fwProgressMsg.textContent = 'Downloading ' + label + '…';
+          try {
+            const ok = await installGamePack(p, (msg) => {
+              fwProgressMsg.textContent = label + ' — ' + msg;
+            });
+            if (ok) okCount++; else failCount++;
+          } catch (e) {
+            jlog('game-pack: ' + (p.name || '?') + ' failed —',
+              e && e.message ? e.message : String(e));
+            failCount++;
+          }
+        }
+        if (okCount > 0) {
+          toast('Installed ' + okCount + ' game pack' +
+                (okCount === 1 ? '' : 's'), 'ok');
+        }
+        if (failCount > 0) {
+          toast('Failed to install ' + failCount + ' pack' +
+                (failCount === 1 ? '' : 's') + ' — see log', 'error');
+        }
+      }
+
+      if (!wantFirmware && wantPacks.length > 0
+          && fwWizardMode === 'first-run') {
+        // Only-packs path: still persist the firmware marker so we
+        // don't keep nagging the user for firmware on every reload.
+        await writeFirstRunMarker();
+      }
+
+      // Auto-close after a short beat so the user sees the final
+      // status line.  Manual mode also closes — the user can re-open
+      // any time.
+      setTimeout(closeFirmwareWizard, 1200);
+      fwSkip.disabled = false;
     }
     async function fwUserSkip() {
       // First-run mode: persist the marker so we never auto-show the
@@ -2914,10 +3285,235 @@
       // doesn't write a marker, matching the explicit Skip button.
       if (e.target === fwBackdrop) fwUserSkip();
     });
+    if (fwFirmwareToggle) {
+      fwFirmwareToggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        fwFirmwareCheckState = !fwFirmwareCheckState;
+        syncFwFirmwareCheck();
+        updateFwGoLabel();
+      });
+    }
     if (btnFirmware) {
       btnFirmware.addEventListener('click', () => {
         if (!runtimeReady) { toast('Still loading…', 'error'); return; }
         openFirmwareWizard('manual');
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Game-pack install pipeline
+    //
+    //  fetch() → write zip to /tmp → unpack via the existing C export
+    //  → register the pack dir as a Game Library source.  Each step has
+    //  its own error path with a friendly toast; transient failures
+    //  (network, OOM, corrupt zip) leave the partial state in /tmp so
+    //  a retry from the wizard works without a full page reload.
+    // ───────────────────────────────────────────────────────────────────
+    async function installGamePack(pack, onProgress) {
+      if (!pack || !pack.url) {
+        jlog('game-pack: missing url, skipping');
+        return false;
+      }
+      const dirName = gamePackDirName(pack);
+      const destDir = gamePackDir(pack);
+      const zipPath = '/tmp/altirra-pack-' + dirName + '.zip';
+
+      // 1) Download into a Uint8Array.  We deliberately use the
+      //    browser's fetch() (not emscripten_fetch) because: (a)
+      //    fetch() respects the page's CORS rules cleanly, including
+      //    Access-Control-Allow-Origin from the pack host; (b) the
+      //    Response.body stream gives us cheap progress reporting via
+      //    Content-Length without buffering the entire body twice.
+      let bytes;
+      try {
+        if (onProgress) onProgress('connecting');
+        const r = await fetch(pack.url, { cache: 'no-store' });
+        if (!r.ok) {
+          throw new Error('HTTP ' + r.status + ' ' + r.statusText);
+        }
+        // Stream + size hint for progress.  Some hosts don't send
+        // Content-Length; the UI just shows bytes-so-far in that case.
+        const total = parseInt(r.headers.get('content-length') || '0', 10);
+        const reader = r.body && r.body.getReader ? r.body.getReader() : null;
+        if (reader) {
+          const chunks = [];
+          let received = 0;
+          while (true) {
+            const step = await reader.read();
+            if (step.done) break;
+            chunks.push(step.value);
+            received += step.value.length;
+            if (onProgress) {
+              const pct = total > 0
+                ? ' (' + Math.floor(received * 100 / total) + '%)'
+                : '';
+              onProgress('downloaded ' + fmtBytes(received) + pct);
+            }
+          }
+          bytes = new Uint8Array(received);
+          let off = 0;
+          for (const c of chunks) { bytes.set(c, off); off += c.length; }
+        } else {
+          if (onProgress) onProgress('downloading');
+          const ab = await r.arrayBuffer();
+          bytes = new Uint8Array(ab);
+        }
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        jlog('game-pack: fetch failed for', pack.url, '—', msg);
+        toast('Pack download failed: ' + (pack.name || pack.url) +
+              ' — ' + msg, 'error');
+        return false;
+      }
+
+      // 2) Stage the zip in /tmp.  /tmp lives on MEMFS (not IDBFS),
+      //    so it never persists across reloads — exactly what we want
+      //    for an intermediate file we'll delete on success.
+      try {
+        Module.FS.mkdirTree('/tmp');
+        Module.FS.writeFile(zipPath, bytes);
+      } catch (e) {
+        jlog('game-pack: write zip failed —', e);
+        toast('Pack stage failed: ' + (pack.name || pack.url), 'error');
+        return false;
+      }
+      if (onProgress) onProgress('unpacking ' + fmtBytes(bytes.length));
+
+      // 3) Unpack (delegates to the existing zip extractor in
+      //    wasm_bridge.cpp — same code path used for the firmware
+      //    bundle).  Returns the number of files written; ≤ 0 means
+      //    the archive was empty or extraction errored.
+      let written = -1;
+      try {
+        Module.FS.mkdirTree(destDir);
+        const zipPathPtr = stringToCPath(zipPath);
+        const destDirPtr = stringToCPath(destDir);
+        try {
+          written = Module._ATWasmUnpackArchive(zipPathPtr, destDirPtr);
+        } finally {
+          Module._free(zipPathPtr);
+          Module._free(destDirPtr);
+        }
+      } catch (e) {
+        jlog('game-pack: unpack threw —', e);
+        toast('Pack unpack threw: ' + (pack.name || pack.url), 'error');
+        return false;
+      }
+
+      // 4) Drop the staged zip regardless of success — it's no longer
+      //    needed and freeing the wasm-heap memory matters on phones.
+      try { Module.FS.unlink(zipPath); } catch (e) {}
+
+      if (written <= 0) {
+        toast('Pack contained no usable files: ' +
+              (pack.name || pack.url), 'error');
+        return false;
+      }
+
+      // 5) Register the destination as a Game Library source so the
+      //    new entries appear without a page reload.  Tolerant: if
+      //    the export is missing (ancient build) we fall back to the
+      //    user-needs-to-rescan path.
+      try {
+        if (Module._ATWasmRegisterGamePackSource) {
+          const dirPtr = stringToCPath(destDir);
+          try { Module._ATWasmRegisterGamePackSource(dirPtr); }
+          finally { Module._free(dirPtr); }
+        }
+        // Persist the unpacked files to IDBFS so they survive reloads.
+        if (Module._ATWasmSyncFSOut) Module._ATWasmSyncFSOut();
+      } catch (e) {
+        jlog('game-pack: register/sync threw —', e);
+      }
+
+      if (onProgress) onProgress('installed ' + written + ' file' +
+                                 (written === 1 ? '' : 's'));
+      jlog('game-pack: installed', pack.name || pack.url,
+           '→', destDir, '(' + written + ' files)');
+      // Reflect the install in the file manager view if it's open.
+      try { renderFm(); } catch (e) {}
+      return true;
+    }
+
+    // Tiny helper: malloc + UTF-8 encode a JS string into the wasm
+    // heap, return the pointer.  Caller must Module._free() it.
+    function stringToCPath(s) {
+      const len = Module.lengthBytesUTF8(s) + 1;
+      const ptr = Module._malloc(len);
+      Module.stringToUTF8(s, ptr, len);
+      return ptr;
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Diagnose lobby — quick reachability probe
+    //
+    //  When a user reports "Play Online" failing with WS code 1006
+    //  ("could not reach lobby"), the failure could be DNS, TLS, CORS,
+    //  mixed-content, a missing Caddy /netplay route, or the lobby
+    //  process being down.  This handler probes both the public HTTPS
+    //  endpoint (/healthz, /v1/stats) and reports each leg's outcome
+    //  so the user — or the operator hosting AltirraSDL — knows where
+    //  the break is.  No emulator state is touched.
+    // ───────────────────────────────────────────────────────────────────
+    async function diagnoseLobby() {
+      const host = (HOST_CONFIG && HOST_CONFIG.lobbyHost)
+                   ? HOST_CONFIG.lobbyHost
+                   : 'altirra-lobby.duckdns.org';
+      const baseHttps = 'https://' + host;
+
+      toast('Diagnosing ' + host + '…', 'ok');
+      appendLog('[diagnose] target = ' + host);
+
+      const probe = async (label, url) => {
+        const t0 = performance.now();
+        try {
+          const r = await fetch(url, { cache: 'no-store' });
+          const dt = (performance.now() - t0).toFixed(0);
+          const txt = await r.text();
+          appendLog('[diagnose] ' + label + ': ' + url + ' → ' +
+                    r.status + ' (' + dt + ' ms) ' +
+                    txt.slice(0, 80));
+          return { ok: r.ok, status: r.status, ms: +dt, body: txt };
+        } catch (e) {
+          const dt = (performance.now() - t0).toFixed(0);
+          const msg = e && e.message ? e.message : String(e);
+          appendLog('[diagnose] ' + label + ': ' + url + ' → THROW (' +
+                    dt + ' ms) ' + msg);
+          return { ok: false, error: msg, ms: +dt };
+        }
+      };
+
+      const a = await probe('healthz', baseHttps + '/healthz');
+      const b = await probe('stats',   baseHttps + '/v1/stats');
+
+      // Build a one-line verdict for the toast.
+      let verdict;
+      if (a.ok && b.ok) {
+        verdict = 'Lobby OK — HTTPS + Caddy reachable';
+      } else if (a.error && b.error) {
+        // Both legs threw → most likely DNS / CORS / TLS / mixed content.
+        verdict = 'Lobby unreachable: ' + (a.error || b.error);
+      } else if (!a.ok || !b.ok) {
+        const bad = !a.ok ? a : b;
+        verdict = 'Lobby reachable but ' +
+                  (bad.status ? ('HTTP ' + bad.status)
+                              : ('error: ' + bad.error));
+      } else {
+        verdict = 'Lobby partial — see log';
+      }
+      // The /netplay WebSocket leg can't be probed via fetch(); add
+      // an instructional line so the user knows what to check next.
+      appendLog('[diagnose] note: /netplay (WSS) is not testable via'
+              + ' fetch — if the two probes above passed but Play'
+              + ' Online still fails, the Caddy /netplay reverse-proxy'
+              + ' route is misconfigured.  See server/lobby/README.md.');
+      toast(verdict, (a.ok && b.ok) ? 'ok' : 'error');
+    }
+
+    if (btnDiagnose) {
+      btnDiagnose.addEventListener('click', () => {
+        if (!runtimeReady) { toast('Still loading…', 'error'); return; }
+        diagnoseLobby();
       });
     }
 
@@ -3229,17 +3825,15 @@
           appendLog('[fw] startup rescan failed: ' + err);
         }
 
-        // First-run ROM bootstrap.  Three-way decision:
-        //   1. Firmware already present (uploaded or previously
-        //      downloaded) → silent, no UI.
-        //   2. Marker file present (user previously skipped) →
-        //      silent.  They can re-trigger via the toolbar.
-        //   3. Neither → show the wizard so the user explicitly
-        //      consents before a network fetch happens.
-        // C still drives the actual fetch / unpack / marker writes;
-        // the wizard just gates whether ATWasmFirstRunBootstrap()
-        // gets called automatically or only on the user's say-so.
-        decideFirstRunAction();
+        // First-run firmware + game-packs decision.  loadHostConfig()
+        // must complete before decideFirstRunAction() so the wizard
+        // knows whether any game packs are configured (and offers
+        // them in the same modal as the firmware download).  Failure
+        // to load config.json is non-fatal — we just default to no
+        // packs, which is identical to the pre-config.json behaviour.
+        loadHostConfig().finally(() => {
+          decideFirstRunAction();
+        });
       },
       totalDependencies: 0,
       monitorRunDependencies: (left) => {

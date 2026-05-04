@@ -40,6 +40,12 @@
 
 #include "wasm_bridge.h"
 
+// ATGameLibrary + GameSource types used by ATWasmRegisterGamePackSource.
+// The corresponding implementation lives in
+// src/AltirraSDL/source/ui/gamelibrary/game_library.cpp; the singleton
+// itself lives in mobile_game_browser.cpp behind GetGameLibrary().
+#include "../ui/gamelibrary/game_library.h"
+
 // ATUIBootImage: the simulator's "load, auto-detect type, cold-boot"
 // one-shot API.  Declared in Altirra's main.cpp-era header that the
 // SDL3 build already pulls in for the file-dialog Open flow.
@@ -745,6 +751,111 @@ void ATWasmResetFirstRun() {
 	g_firstRunFiles.store(0);
 	unlink(kFirstRunMarkerPath);
 	_altirra_wasm_sync_fs_out();
+}
+
+// -----------------------------------------------------------------------
+// Game-pack registration
+// -----------------------------------------------------------------------
+//
+// Self-host config.json may declare one or more game packs (zip URLs
+// the page operator has chosen to ship as the "starter library").  JS
+// owns the actual fetch+write step (fetch() respects browser CORS /
+// mixed-content / redirect rules cleanly) and uses ATWasmUnpackArchive
+// for extraction; the only piece JS can't do is make the freshly-
+// extracted folder visible to the Game Library.
+//
+// ATWasmRegisterGamePackSource takes a UTF-8 directory path that
+// already exists on the VFS, registers it as a (recursive, folder-
+// kind) source on the live ATGameLibrary, persists the source set to
+// the registry, and triggers a synchronous rescan so the user sees
+// the new entries immediately.  The path is added at most once —
+// repeated calls are idempotent — so re-running the wizard with a
+// pack that's already installed is harmless.
+//
+// User-deletable: the source points at a normal VFS folder; the user
+// can browse there from File Manager and delete games one at a time
+// or wipe the whole pack via Wipe.  Removing the source itself (so
+// the empty dir stops appearing in the library) is left to the user
+// from the desktop UI's Library → Sources tab; the WASM mobile
+// browser doesn't surface that page yet, but the source row vanishes
+// automatically once its directory is empty + a rescan runs.
+
+// C++-linkage forward declarations.  They MUST sit outside the
+// extern "C" block below — the definitions in mobile_game_browser.cpp
+// and registry_sdl3.cpp are C++-mangled, and re-declaring them with C
+// linkage triggers wasm-ld "undefined symbol" at link time.
+ATGameLibrary *GetGameLibrary();
+void           ATRegistryFlushToDisk();
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmRegisterGamePackSource(const char *utf8Path) {
+	if (!utf8Path || !*utf8Path) {
+		fprintf(stderr, "[wasm] RegisterGamePackSource: empty path\n");
+		return -1;
+	}
+
+	ATGameLibrary *lib = GetGameLibrary();
+	if (!lib) {
+		fprintf(stderr,
+			"[wasm] RegisterGamePackSource: game library not initialised "
+			"yet — call after Gaming Mode entry\n");
+		return -1;
+	}
+
+	const VDStringW pathW = VDTextU8ToW(VDStringSpanA(utf8Path));
+
+	// Idempotent: bail if this exact path is already a source.  We
+	// match case-sensitively because VFS paths are.
+	const auto &cur = lib->GetSources();
+	for (const auto &s : cur) {
+		if (s.mPath == pathW) {
+			fprintf(stderr,
+				"[wasm] RegisterGamePackSource: '%s' already registered\n",
+				utf8Path);
+			return 0;
+		}
+	}
+
+	// Make sure the directory exists before adding a source for it —
+	// otherwise the very first scan will skip it silently.  Caller
+	// should have created it via ATWasmUnpackArchive, but be defensive.
+	if (!VDDoesPathExist(pathW.c_str())) {
+		try { VDCreateDirectory(pathW.c_str()); }
+		catch (const MyError &e) {
+			fprintf(stderr,
+				"[wasm] RegisterGamePackSource: cannot create '%s': %s\n",
+				utf8Path, e.c_str());
+			return -1;
+		}
+	}
+
+	std::vector<GameSource> next = cur;
+	GameSource newSrc;
+	newSrc.mPath       = pathW;
+	newSrc.mbIsArchive = false;
+	newSrc.mbIsFile    = false;
+	next.push_back(std::move(newSrc));
+	lib->SetSources(std::move(next));
+
+	// Persist the source list and run an immediate scan so the new
+	// games show up in the browser without requiring a page reload.
+	try {
+		lib->SaveSettingsToRegistry();
+		ATRegistryFlushToDisk();
+		lib->StartScan();
+	} catch (const MyError &e) {
+		fprintf(stderr,
+			"[wasm] RegisterGamePackSource: persist/scan threw: %s\n",
+			e.c_str());
+	} catch (...) {
+		fprintf(stderr,
+			"[wasm] RegisterGamePackSource: persist/scan threw unknown\n");
+	}
+
+	fprintf(stderr,
+		"[wasm] RegisterGamePackSource: added '%s' (now %zu sources)\n",
+		utf8Path, lib->GetSources().size());
+	return 1;
 }
 
 #endif // __EMSCRIPTEN__
