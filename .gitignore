@@ -1,5 +1,6 @@
 # CMake build directory (root level only — not scripts/build/)
 /build/
+/build-tests/
 CMakeUserPresets.json
 
 # Auto-fetched vendor dependencies (created by CMake FetchContent)
