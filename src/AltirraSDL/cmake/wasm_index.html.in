@@ -1666,12 +1666,12 @@
         return;
       }
       // In tree mode the breadcrumb is the only navigation cue, so
-      // build it as a chain of clickable segments rooted at /.
+      // build it as a chain of clickable segments rooted at /.  The
+      // first crumb is a 🏠 icon for the canonical root — collapses
+      // the literal /home/web_user mount point so the user doesn't
+      // have to read the Emscripten path layout.
       const segs = currentPath.split('/').filter(s => s.length);
-      const parts = [{ name: 'home', path: ROOT }];   // canonical root
-      // Collapse the literal /home/web_user prefix to a single "home"
-      // crumb so users don't have to mentally parse the Emscripten
-      // mount point.
+      const parts = [{ name: '🏠', path: ROOT, isHome: true }];
       let acc = ROOT;
       for (let i = 0; i < segs.length; ++i) {
         const s = segs[i];
@@ -1683,11 +1683,13 @@
         const el = document.createElement('span');
         el.className = 'crumb' + (i === parts.length - 1 ? ' last' : '');
         el.textContent = p.name;
-        if (i < parts.length - 1) {
-          el.addEventListener('click', () => {
-            navigateTo(p.path);
-          });
-        }
+        if (p.isHome) el.title = 'Go to home (' + ROOT + ')';
+        // Even the last crumb is clickable: a no-op refresh, but it
+        // gives the user a way to "force re-scan this folder" without
+        // closing+reopening the modal.
+        el.addEventListener('click', () => {
+          navigateTo(p.path);
+        });
         fmBreadcrumb.appendChild(el);
         if (i < parts.length - 1) {
           const sep = document.createElement('span');
@@ -1700,6 +1702,16 @@
     }
 
     function navigateTo(path) {
+      // Always shift into tree mode on a folder drill-in.  Without
+      // this, opening a folder from inside a filter view (e.g. the
+      // "Folders" virtual filter, or the ancestor-folder rows that
+      // listFilter surfaces alongside matching files) only mutated
+      // currentPath while renderList kept calling listFilter — so
+      // the user clicked Open / double-clicked and stayed put.
+      // Switching to tree mode means buildListModel takes the
+      // listTree(currentPath) branch and the user actually sees
+      // the destination folder's contents.
+      viewMode = 'tree';
       currentPath = path;
       clearSelection();
       renderFm();
@@ -1780,6 +1792,41 @@
           .filter(n => n !== '.' && n !== '..');
         return entries.length > 0;
       } catch (e) { return false; }
+    }
+
+    // Recompute the toolbar's #btn-firmware visibility + label.  Three
+    // states; the button is the only post-onboarding entry point to the
+    // wizard, so it has to flip in/out as the user installs or wipes
+    // firmware/packs:
+    //   - firmware missing:                    show "Download firmware…"
+    //   - firmware present, packs to install:  show "Install game packs…"
+    //   - firmware present, no packs to do:    hide
+    // Idempotent — safe to call from any UI event that might mutate
+    // the firmware dir or a pack dir.
+    function refreshFirmwareButton() {
+      if (!btnFirmware) return;
+      if (!runtimeReady) {
+        btnFirmware.style.display = '';   // keep visible-but-disabled
+        return;
+      }
+      const fw = hasFirmwareInstalled();
+      const packsConfigured = GAME_PACKS && GAME_PACKS.length > 0;
+      const packsToDo = packsConfigured
+        && GAME_PACKS.some(p => !isGamePackInstalled(p));
+
+      if (!fw) {
+        btnFirmware.style.display = '';
+        btnFirmware.textContent = '🎛 Download firmware…';
+        btnFirmware.title =
+          'Download the standard Atari OS + BASIC ROM bundle.';
+      } else if (packsToDo) {
+        btnFirmware.style.display = '';
+        btnFirmware.textContent = '🎛 Install game packs…';
+        btnFirmware.title =
+          'Install one or more pre-configured game packs into your library.';
+      } else {
+        btnFirmware.style.display = 'none';
+      }
     }
 
     function hasFirstRunMarker() {
@@ -2120,7 +2167,21 @@
               isTerminal = true;
               isError = true;
               break;
-            case 8: /* silently skipped — no message */ break;
+            case 8:
+              // "Skipped" — the C-side bootstrap detected an existing
+              // marker OR a non-empty firmware dir, so it didn't fetch.
+              // For first-run this is silent (the silent path is the
+              // whole point), but if the user explicitly clicked the
+              // toolbar button and ended up here we still need to
+              // close the modal cleanly with a clear message rather
+              // than leaving "Starting download…" up forever.
+              if (wizardOpen) {
+                msg = hasFirmwareInstalled()
+                  ? 'Firmware already installed — nothing to download.'
+                  : 'Skipped (marker present from a prior session).';
+                isTerminal = true;
+              }
+              break;
           }
           if (msg) {
             if (wizardOpen && fwProgressMsg) fwProgressMsg.textContent = msg;
@@ -2132,6 +2193,10 @@
               // message so the user sees what happened.
               setTimeout(closeFirmwareWizard, 1500);
             }
+            // Refresh the toolbar (button vanishes once firmware is
+            // installed) and the file manager (so the new ROMs show
+            // up under the Firmware category if the FM is open).
+            refreshFirmwareButton();
             if (state === 5) renderFm();
           }
         }
@@ -2810,6 +2875,13 @@
     }
 
     function renderFm() {
+      // Side-effect: keep the toolbar's #btn-firmware visibility in
+      // sync with the current FS state.  Most user actions that mutate
+      // /firmware or /games/<pack> already call renderFm; piggy-backing
+      // here covers upload, wipe, move, rename, delete, batch-delete,
+      // and tree-mode mkdir/rmdir without per-site wiring.
+      refreshFirmwareButton();
+
       // Update title to reflect pick-mode state so the user
       // understands why the overlay looks different (Select/Save
       // buttons instead of the usual library actions).
@@ -2821,10 +2893,21 @@
         else                           titleEl.textContent =
           'Files — ' + (activeCategory ? activeCategory.label : '');
       }
-      // New Folder is meaningful only in tree mode; the filter views
-      // have nowhere to "create a folder" because they aren't
-      // location-aware.
-      fmNewFolder.disabled = (viewMode !== 'tree') || !!pickMode;
+      // New Folder needs a parent dir to create under.  In tree mode
+      // that's currentPath; in filter mode the parent is the active
+      // category's home dir (e.g. /home/web_user/games for the Games
+      // filter), which gives the user a one-click way to organise
+      // their library without manually drilling into All Files first.
+      // The Folders virtual filter and the empty / pick modes still
+      // disable the button — pick mode because we don't want to
+      // mutate the FS while a native dialog is waiting; the Folders
+      // filter because there's no canonical parent for a new folder
+      // when viewing every dir flatly.
+      const canMkdir = !pickMode
+        && (viewMode === 'tree'
+            || (activeCategory && activeCategory.id !== 'folders'
+                && activeCategory.id !== 'all'));
+      fmNewFolder.disabled = !canMkdir;
       // Wipe is a destructive global operation — disabled in pick mode
       // so a user can't accidentally erase the library while a native
       // dialog is waiting for them to choose a file.
@@ -2842,17 +2925,40 @@
     //  Folder / file management actions
     // ───────────────────────────────────────────────────────────────────
     async function newFolder() {
-      if (viewMode !== 'tree') return;
-      const raw = prompt('New folder name:');
+      // Pick the parent dir from the current view: tree mode = the
+      // visible folder (currentPath); filter mode = the active
+      // category's root (so "Games" → /home/web_user/games).  Pick
+      // mode bails out for safety; the toolbar already disables the
+      // button in that case but be defensive.
+      if (pickMode) return;
+      let parent;
+      if (viewMode === 'tree') {
+        parent = currentPath || ROOT;
+      } else if (activeCategory
+                 && activeCategory.id !== 'folders'
+                 && activeCategory.id !== 'all') {
+        parent = activeCategory.dir;
+      } else {
+        return;
+      }
+      const raw = prompt('New folder name (under ' +
+        parent.replace(ROOT, '~') + '):');
       if (!raw) return;
       const safe = sanitize(raw);
       if (!safe) { toast('Invalid name', 'error'); return; }
-      const path = currentPath === '/' ? '/' + safe : currentPath + '/' + safe;
+      const path = (parent === '/' ? '' : parent) + '/' + safe;
       try {
+        // mkdirTree (not mkdir) so creating under a category dir that
+        // doesn't exist yet (e.g. /home/web_user/games when no game
+        // has been uploaded) still succeeds.
+        Module.FS.mkdirTree(parent);
         Module.FS.mkdir(path);
         await syncFsOut();
         toast('Created ' + safe);
-        renderFm();
+        // Drill into the new folder so the user sees what they just
+        // made — same UX as a desktop file manager's "Open in folder
+        // after create" option.
+        navigateTo(path);
       } catch (e) {
         toast('Create failed: ' + (e && e.message ? e.message : e), 'error');
       }
@@ -3194,8 +3300,29 @@
     //  install or vice-versa.
     // ───────────────────────────────────────────────────────────────────
     async function fwUserAccept() {
-      const wantFirmware = fwIsFirmwareSelected();
-      const wantPacks    = GAME_PACKS.filter(p => p.selected);
+      let wantFirmware = fwIsFirmwareSelected();
+      const wantPacks  = GAME_PACKS.filter(p => p.selected);
+
+      // Short-circuit: firmware is already installed AND the user
+      // didn't explicitly opt to re-download (manual mode with the
+      // toggle off).  Without this guard the C-side bootstrap returns
+      // state=8 immediately ("dir non-empty, skipping") and the wizard
+      // would otherwise sit on "Starting download…" — see the polling
+      // tick's case 8 handler for the dead-end fix.
+      //
+      // For first-run mode the wizard auto-opens before any firmware
+      // is present, so this branch is irrelevant there.
+      if (wantFirmware && hasFirmwareInstalled()
+          && fwWizardMode === 'manual') {
+        toast('Firmware already installed — skipping download.', 'ok');
+        wantFirmware = false;
+        if (wantPacks.length === 0) {
+          // Nothing left to do — close immediately.
+          closeFirmwareWizard();
+          refreshFirmwareButton();
+          return;
+        }
+      }
 
       // Lock the dialog while work is in flight.
       fwProgress.hidden = false;
@@ -3430,8 +3557,11 @@
                                  (written === 1 ? '' : 's'));
       jlog('game-pack: installed', pack.name || pack.url,
            '→', destDir, '(' + written + ' files)');
-      // Reflect the install in the file manager view if it's open.
+      // Reflect the install in the file manager view if it's open
+      // (renderFm transitively calls refreshFirmwareButton, which
+      // hides the toolbar entry once every configured pack is in).
       try { renderFm(); } catch (e) {}
+      try { refreshFirmwareButton(); } catch (e) {}
       return true;
     }
 
@@ -3832,6 +3962,9 @@
         // to load config.json is non-fatal — we just default to no
         // packs, which is identical to the pre-config.json behaviour.
         loadHostConfig().finally(() => {
+          // refresh BEFORE decideFirstRunAction so the "no prompt
+          // needed" silent branch still fixes up the toolbar button.
+          refreshFirmwareButton();
           decideFirstRunAction();
         });
       },
