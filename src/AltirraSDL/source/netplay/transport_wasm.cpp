@@ -354,12 +354,19 @@ bool WasmTransport::OnCloseCb(int /*eventType*/,
 				// outcomes: TCP/TLS failure, server returned non-101,
 				// or the browser refused the connection synchronously.
 				// Use the elapsed time to pick the more accurate hint.
+				// The "Browser blocked the connection" prefix is also a
+				// sentinel pattern that ui_netplay_screens.cpp's
+				// RenderError() matches to render a structured help
+				// panel (which extensions to disable, try Incognito,
+				// etc.).  Keep the wording in sync if you change it.
 				if (closeMs >= 0.0 && closeMs < 10.0) {
-					human = "WSS blocked by browser (CSP / mixed-content / "
-					        "extension / proxy)";
+					human = "Browser blocked the connection — "
+					        "an extension or content filter is "
+					        "preventing the WebSocket from opening";
 				} else {
-					human = "WSS handshake failed (server rejected upgrade, "
-					        "or DNS/TLS/Caddy /netplay route)";
+					human = "Could not reach the lobby relay — "
+					        "the lobby refused the upgrade or "
+					        "the network dropped the connection";
 				}
 				break;
 			case 1008: human = "lobby refused the connection (policy)"; break;

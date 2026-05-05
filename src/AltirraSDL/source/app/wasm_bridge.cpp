@@ -67,6 +67,12 @@ extern void ATUIDoFirmwareScan(const char *utf8path);
 #include "simulator.h"
 extern ATSimulator g_sim;
 
+// ATNetplayGlue::IsLockstepping(): used by ATWasmTogglePause to mirror
+// the F9 accelerator's netplay guard (commands_sdl3.cpp:CmdTogglePause).
+// Pausing during a lockstep session desyncs peers, so the page button
+// must refuse the toggle while online — same policy as F9.
+#include "netplay/netplay_glue.h"
+
 // Set to true by main_sdl3.cpp after g_sim.Init() + LoadROMs() have
 // been reached.  The JS side fires a startup rescan from
 // onRuntimeInitialized BEFORE main() runs (see wasm_index.html.in
@@ -127,6 +133,49 @@ EM_JS(void, _altirra_wasm_sync_fs_out, (), {
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSyncFSOut() {
 	_altirra_wasm_sync_fs_out();
+}
+
+// -----------------------------------------------------------------------
+// Pause / Run state — JS bindings for the page's Running/Paused indicator
+// and Pause button.  Mirrors the F9 keyboard accelerator ("System.Toggle
+// Pause") so the HTML status text and button stay in lockstep with what
+// the menu / shortcut shows, and clicks on the page-level button feel
+// identical to pressing F9.
+//
+// Why expose these instead of letting JS poke g_sim directly:
+//  - The pause toggle has a netplay guard (CmdTogglePause in
+//    commands_sdl3.cpp suppresses the toggle while Lockstepping, since
+//    pausing during a lockstep session desyncs the peers).  Replicating
+//    that policy here keeps the page button from shooting the user in
+//    the foot during a multiplayer session.
+//  - g_sim is C++ — the JS side cannot call its methods.
+//
+// Returns 1 if the simulator is paused, 0 if it is running, or -1 if
+// the simulator is not yet initialised (the JS poller treats anything
+// negative as "show 'Loading…' rather than 'Paused'/'Running'").
+// -----------------------------------------------------------------------
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmIsPaused() {
+	if (!g_wasmSimReady) return -1;
+	return g_sim.IsPaused() ? 1 : 0;
+}
+
+// Single source of truth used by the page button.  Returns the new
+// paused state (1 = paused, 0 = running) so the JS caller can update
+// its UI immediately without waiting for the next poll tick.  Returns
+// -2 on netplay-guarded suppression (so the button can flash a brief
+// "can't pause online" hint instead of silently doing nothing) and
+// -1 if the simulator isn't ready yet.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmTogglePause() {
+	if (!g_wasmSimReady) return -1;
+	if (ATNetplayGlue::IsLockstepping()) return -2;
+	if (g_sim.IsPaused()) {
+		g_sim.Resume();
+		return 0;
+	}
+	g_sim.Pause();
+	return 1;
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE

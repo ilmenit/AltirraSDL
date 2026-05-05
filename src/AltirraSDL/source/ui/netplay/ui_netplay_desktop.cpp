@@ -14,7 +14,10 @@
 #include "ui_netplay_state.h"
 #include "ui_netplay.h"
 #include "ui_netplay_actions.h"
+#include "ui_netplay_deeplink.h"
 #include "netplay/netplay_glue.h"
+
+#include <at/atcore/logging.h>
 #include "ui/core/ui_main.h"
 #include "ui/gamelibrary/game_library.h"
 #include "ui/emotes/emote_netplay.h"
@@ -43,6 +46,8 @@ extern VDStringA ATGetConfigDir();
 #include <cstring>
 #include <unordered_map>
 #include <vector>
+
+extern ATLogChannel g_ATLCNetplay;
 
 namespace ATNetplayUI {
 
@@ -1749,6 +1754,26 @@ bool DesktopDispatch() {
 		case Screen::AcceptJoinPrompt: DesktopAcceptJoinPrompt(); break;
 		case Screen::Prefs:        DesktopPrefs();       break;
 		case Screen::Error:        DesktopError();       break;
+		case Screen::DeepLinkPrep:
+			// The DeepLinkPrep flow (one-click join: nickname mini-prompt,
+			// firmware download progress, "Looking up the game") is
+			// implemented only in the Gaming-Mode dispatcher
+			// (ui_netplay_screens.cpp:RenderDeepLinkPrep).  Reaching here
+			// means something flipped Screen::DeepLinkPrep without first
+			// switching to Gaming Mode — that's a bug, not an expected
+			// path.  DriveDeepLinkJoin's Phase 0 always switches before
+			// navigating, so this case is defense-in-depth: log the
+			// drop, cancel the deep-link cleanly so the state machine
+			// stops re-asserting DeepLinkPrep every frame (which would
+			// otherwise clobber any menu navigation the user attempts),
+			// and close the netplay UI back to a safe state.  Surfaces
+			// the issue in logs instead of leaving the user staring at
+			// a bare emulator with no UI feedback.
+			g_ATLCNetplay("desktop dispatch: Screen::DeepLinkPrep "
+				"reached without Gaming Mode — cancelling deep-link to "
+				"recover (this is a bug)");
+			CancelDeepLink();
+			break;
 		default: break;
 	}
 	return true;

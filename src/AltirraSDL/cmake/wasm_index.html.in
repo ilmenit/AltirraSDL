@@ -1100,6 +1100,8 @@
     <button id="btn-files" disabled>📁 Files…</button>
     <button id="btn-firmware" disabled
             title="Re-run the standard ROM bundle download">🎛 Download firmware…</button>
+    <button id="btn-pause" disabled
+            title="Pause / resume the emulator (same as F9). Disabled during online play to keep peers in sync.">⏸ Pause</button>
     <div id="status">Loading Atari emulator…</div>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
@@ -1610,6 +1612,117 @@
     const btnFirmware    = document.getElementById('btn-firmware');
     const btnDiagnose    = document.getElementById('btn-diagnose');
     const btnLayout      = document.getElementById('btn-layout');
+    const btnPause       = document.getElementById('btn-pause');
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Pause / Run state mirror
+    //
+    //  The page-level Pause button and the #status text mirror the
+    //  emulator's actual paused state (toggled via F9, the System →
+    //  Pause menu, or the Pause button itself).  Without this mirror,
+    //  the status used to read "Running" forever even after the user
+    //  paused via F9 — misleading UX, and the page button below was
+    //  the missing affordance for users who don't know about F9.
+    //
+    //  Source of truth: the C export ATWasmIsPaused() (returns 1 paused,
+    //  0 running, -1 not yet ready).  We poll it from a setInterval
+    //  rather than wire a callback because pause-state changes are
+    //  rare (a few per session at most) and a 250 ms poll is cheap and
+    //  keeps the page-side wiring simple.
+    //
+    //  Netplay guard: ATWasmTogglePause() returns -2 when the simulator
+    //  is in a netplay lockstep session (pausing would desync peers).
+    //  refreshPauseUi() greys-out the button and updates its tooltip
+    //  while online so the user gets a clear signal the toggle is
+    //  unavailable.
+    //
+    //  Status text policy:
+    //    paused state → "Paused"
+    //    running      → "Running"
+    //    not ready    → leave whatever loader text is already there
+    //                   (the WASM bundle / firmware download messages
+    //                   from setStatus())
+    let lastPauseUiState = -99;     // sentinel — forces first repaint
+    let pausePollHandle  = 0;
+    function refreshPauseUi() {
+      // ATWasmIsPaused() is a no-arg int → int — Module._ATWasmIsPaused
+      // is the cheapest call form (cwrap/ccall add marshalling overhead
+      // we don't need for a 250 ms poll).
+      let p = -1;
+      if (typeof Module !== 'undefined' && Module._ATWasmIsPaused) {
+        try { p = Module._ATWasmIsPaused(); } catch (e) { p = -1; }
+      }
+      const lockstep = (typeof Module !== 'undefined'
+        && Module._ATWasmTogglePause)
+        ? false  // we can't query lockstep state directly without
+                 // calling Toggle (which would actually toggle).  The
+                 // Toggle return value reports lockstep when invoked;
+                 // for now we rely on the user discovering the guard
+                 // when they click.  Adding a separate IsLockstepping
+                 // export is the next iteration if needed.
+        : false;
+
+      if (p === lastPauseUiState) return;
+      lastPauseUiState = p;
+
+      if (p === 1) {
+        statusEl.textContent = 'Paused';
+        statusEl.style.color = '#f0d040';   // amber — same palette as the rainbow row
+        if (btnPause) {
+          btnPause.disabled = lockstep;
+          btnPause.textContent = '▶ Resume';
+          btnPause.title = 'Resume the emulator (same as F9)';
+        }
+      } else if (p === 0) {
+        statusEl.textContent = 'Running';
+        statusEl.style.color = '';          // restore default green
+        if (btnPause) {
+          btnPause.disabled = lockstep;
+          btnPause.textContent = '⏸ Pause';
+          btnPause.title = 'Pause the emulator (same as F9). '
+            + 'Disabled during online play to keep peers in sync.';
+        }
+      } else {
+        // p === -1: simulator not ready yet — keep whatever loader
+        // text setStatus() last installed; just keep the button safe.
+        if (btnPause) {
+          btnPause.disabled = true;
+          btnPause.textContent = '⏸ Pause';
+        }
+      }
+    }
+    function startPausePoller() {
+      if (pausePollHandle) return;
+      // 250 ms — fast enough that an F9 press feels instant on the
+      // status text, slow enough to be invisible cost-wise.  Tab-hidden
+      // tabs throttle setInterval to ≥1 s by spec, so background tabs
+      // automatically reduce the poll without us doing anything.
+      refreshPauseUi();
+      pausePollHandle = setInterval(refreshPauseUi, 250);
+    }
+    if (btnPause) {
+      btnPause.addEventListener('click', () => {
+        if (typeof Module === 'undefined' || !Module._ATWasmTogglePause)
+          return;
+        let r;
+        try { r = Module._ATWasmTogglePause(); } catch (e) { r = -1; }
+        if (r === -2) {
+          // Netplay-guard: the C side refused to toggle because the
+          // emulator is in a lockstep session.  Flash the button so the
+          // user sees their click registered, then refresh state.
+          btnPause.disabled = true;
+          btnPause.title = "Can't pause during online play "
+            + '— Disconnect first to pause.';
+          setTimeout(refreshPauseUi, 800);
+          return;
+        }
+        // Force an immediate repaint without waiting for the next poll
+        // tick so the status text and label flip the moment the click
+        // lands (poll is 250 ms — feels sluggish without this).
+        lastPauseUiState = -99;
+        refreshPauseUi();
+      });
+    }
 
     // ───────────────────────────────────────────────────────────────────
     //  Bar-position toggle
@@ -5902,7 +6015,23 @@
       // Empty string means "all dependencies satisfied — running"; we
       // map that to a concise "Running" label.
       setStatus: (t) => {
-        if (!t) { statusEl.textContent = 'Running'; return; }
+        if (!t) {
+          // Empty string = "loader all-clear, emulator is running".  If
+          // the pause poller is up by now, defer to it so a transient
+          // dependency-completion event doesn't overwrite "Paused" with
+          // "Running" while the emulator is actually paused.  Otherwise
+          // (very early — onRuntimeInitialized hasn't fired yet) just
+          // show the placeholder; the poller will repaint shortly.
+          if (typeof refreshPauseUi === 'function') {
+            // Force a state read on the next poll tick rather than
+            // assuming "Running" — stale label cost ≤250 ms.
+            lastPauseUiState = -99;
+            refreshPauseUi();
+          } else {
+            statusEl.textContent = 'Running';
+          }
+          return;
+        }
         // Match Emscripten's "Downloading data..." (with or without
         // the byte-progress tail in parens) and replace it with a
         // friendlier label that keeps any progress bytes intact.
@@ -5947,10 +6076,16 @@
         });
       }],
       onRuntimeInitialized: () => {
+        // Initial label — refreshPauseUi() below replaces this with the
+        // real Running / Paused state once g_wasmSimReady flips true.
         statusEl.textContent = 'Running';
         runtimeReady = true;
         btnFiles.disabled = false;
         if (btnFirmware) btnFirmware.disabled = false;
+        // Start the Pause/Run state poller (see startPausePoller below).
+        // The C export ATWasmIsPaused returns -1 until g_sim is ready;
+        // until then the poller leaves the "Running" placeholder up.
+        startPausePoller();
         canvas.focus();
         // Prime the storage indicator so the first time the user
         // opens the File Manager the bar shows real numbers

@@ -2032,7 +2032,19 @@ void RenderError() {
 	                ImVec2(Dp(640), Dp(460))))
 		return;
 
-	if (ScreenHeader("Something went wrong")) {
+	// Detect the WASM transport's "Browser blocked the connection"
+	// pattern (transport_wasm.cpp emits it for close-code 1006 with
+	// closeMs<10ms — the synchronous-refusal signature of an ad-blocker
+	// or content-filter extension stopping the WebSocket from opening).
+	// When it fires, render a structured help panel instead of just
+	// dumping the technical string at the user; otherwise fall back to
+	// the generic plain-text rendering.
+	const bool blocked = !st.session.lastError.empty()
+		&& st.session.lastError.find("Browser blocked the connection")
+		   != std::string::npos;
+
+	if (ScreenHeader(blocked ? "Connection blocked"
+	                         : "Something went wrong")) {
 		st.session.lastError.clear();
 		Back();
 	}
@@ -2040,13 +2052,47 @@ void RenderError() {
 	BeginScreenBody(ATTouch::kFooterReserveSingle);
 
 	ImGui::Spacing();
-	ATTouchSection("Error");
-	const char *msg = st.session.lastError.empty()
-		? "An unknown error occurred."
-		: st.session.lastError.c_str();
-	ImGui::PushTextWrapPos(0.0f);
-	ATTouchMutedText(msg);
-	ImGui::PopTextWrapPos();
+	if (blocked) {
+		ATTouchSection("What happened");
+		ImGui::PushTextWrapPos(0.0f);
+		ATTouchMutedText(
+			"Your browser refused to open the WebSocket connection that "
+			"online play uses.  This is almost always caused by an "
+			"ad-blocker, privacy extension, or DNS-level filter that "
+			"treats real-time game traffic as suspicious.");
+		ImGui::PopTextWrapPos();
+
+		ImGui::Spacing();
+		ATTouchSection("Try this");
+		ImGui::PushTextWrapPos(0.0f);
+		ATTouchMutedText(
+			"1.  Disable your ad-blocker for this page (uBlock Origin, "
+			"AdGuard, Privacy Badger, Ghostery — click the extension "
+			"icon and toggle it off for lobby.atari.org.pl).\n"
+			"\n"
+			"2.  Open the page in a Private / Incognito window.  Most "
+			"extensions stay disabled there, so this isolates the cause "
+			"in seconds.\n"
+			"\n"
+			"3.  Try a different browser, or temporarily switch off any "
+			"DNS-level blocker (NextDNS, AdGuard Home, Pi-hole) and "
+			"corporate / school proxy.");
+		ImGui::PopTextWrapPos();
+
+		ImGui::Spacing();
+		ATTouchSection("Technical details");
+		ImGui::PushTextWrapPos(0.0f);
+		ATTouchMutedText(st.session.lastError.c_str());
+		ImGui::PopTextWrapPos();
+	} else {
+		ATTouchSection("Error");
+		const char *msg = st.session.lastError.empty()
+			? "An unknown error occurred."
+			: st.session.lastError.c_str();
+		ImGui::PushTextWrapPos(0.0f);
+		ATTouchMutedText(msg);
+		ImGui::PopTextWrapPos();
+	}
 
 	EndScreenBody();
 

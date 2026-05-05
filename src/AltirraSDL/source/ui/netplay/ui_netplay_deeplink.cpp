@@ -32,6 +32,8 @@
 
 #include <vd2/system/registry.h>
 
+#include <SDL3/SDL_video.h>
+
 #include <mutex>
 
 extern ATLogChannel g_ATLCNetplay;
@@ -202,6 +204,40 @@ void DriveDeepLinkJoin() {
 	if (g_phase == Phase::Done)             return;
 	if (g_phase == Phase::FetchInFlight)    return;  // wait for response
 
+	// Phase 0 — Gaming Mode handoff.  Arriving via ?s=<id> is by
+	// definition the user saying "I clicked Join, take me into the
+	// game", which is the canonical Gaming Mode use case (touch HUD,
+	// large-tap UI, no debugger menus).  Critically: the DeepLinkPrep
+	// renderer (nickname / "Downloading game files…" / "Looking up the
+	// game") lives only in the Gaming-Mode dispatcher; the Desktop
+	// dispatcher in ui_netplay_desktop.cpp has no case for
+	// Screen::DeepLinkPrep, so leaving the user in Desktop UI parks the
+	// state machine in WaitingForNickname forever — the user sees a
+	// bare emulator with no UI feedback, and any menu navigation
+	// they attempt is bounced back to DeepLinkPrep on the next frame
+	// by EnsureOnScreen().  Switching here, before any phase logic,
+	// ensures the prep flow renders.  The user can switch back via the
+	// hamburger after the join finishes.
+	if (!ATUIIsGamingMode()) {
+		g_ATLCNetplay("deeplink: switching to Gaming Mode for one-click join");
+		ATUISetMode(ATUIMode::Gaming);
+		// Re-apply ImGui style under the new mode.  ATUISetMode flips
+		// only a flag; the visual sizing (ScaleAllSizes for big touch
+		// targets) is applied lazily.  Without this call the first few
+		// DeepLinkPrep frames would render at Desktop sizes — small
+		// buttons, tight padding — until something else triggers a
+		// restyle.  We don't have an SDL_Window* here, but the primary
+		// display has the same content scale as the window for the
+		// single-display configurations where deep-link join applies
+		// (WASM-in-browser is the primary target; native desktop and
+		// Android also work because they use the primary display too).
+		SDL_DisplayID disp = SDL_GetPrimaryDisplay();
+		float cs = (disp != 0) ? SDL_GetDisplayContentScale(disp) : 1.0f;
+		if (cs < 1.0f) cs = 1.0f;
+		if (cs > 4.0f) cs = 4.0f;
+		ATUIApplyModeStyle(cs);
+	}
+
 	// Phase 1 — nickname.  When the user arrives via deep-link we
 	// skip the full Gaming Mode setup wizard and just ask for a name
 	// (so the host's "X wants to join" prompt shows a real handle,
@@ -370,16 +406,8 @@ bool OnDeepLinkLobbyResult(const LobbyResult& r) {
 	ClearPendingDeepLink();
 	g_phase = Phase::Done;
 
-	// One-click UX: a deep-link arrival is by definition the user
-	// saying "I want to play this thing right now", which is the
-	// canonical Gaming Mode use case (touch HUD, larger fonts, no
-	// debug menus).  Flip to Gaming Mode if we're not already there
-	// before the join screens render.  The user can switch back via
-	// the hamburger any time after the session ends.
-	if (!ATUIIsGamingMode()) {
-		g_ATLCNetplay("deeplink: switching to Gaming Mode for one-click join");
-		ATUISetMode(ATUIMode::Gaming);
-	}
+	// Gaming Mode was already turned on at the start of
+	// DriveDeepLinkJoin (Phase 0).  No second switch needed here.
 
 	g_ATLCNetplay("deeplink: lobby fetch OK — handing off to "
 		"StartJoiningAction (cart=\"%s\", host=\"%s\")",

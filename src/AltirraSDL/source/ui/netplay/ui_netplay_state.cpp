@@ -25,6 +25,7 @@ extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -669,6 +670,30 @@ void LoadLobbyConfigIntoCache() {
 	if (s_lobbyCache.empty()) {
 		ATNetplay::GetDefaultLobbies(s_lobbyCache);
 	}
+
+#if defined(__EMSCRIPTEN__)
+	// WASM safety net: force-disable any lobby whose URL points at a
+	// *.duckdns.org host.  uBlock Origin's EasyPrivacy and most other
+	// public ad-blocker / DNS blocklists categorise duckdns.org as a
+	// dynamic-DNS service heavily abused for malware C2, so the
+	// browser refuses the WSS connection (close code 1006, closeMs<10).
+	// The default lobby.ini we ship now seeds the duckdns [backup]
+	// section with `enabled = false` for WASM, but users who first
+	// loaded an older build have the old `enabled = true` persisted in
+	// IDBFS — this loop catches that case and quietly migrates them.
+	// Native (desktop) builds keep duckdns enabled: the same browser
+	// blocklists don't apply to native socket transports.
+	for (auto& e : s_lobbyCache) {
+		if (e.kind != ATNetplay::LobbyKind::Http) continue;
+		// Lower-case URL substring search — the URL is a literal from
+		// the user's lobby.ini, so case is what they typed; "duckdns.org"
+		// is the only host this is meant to match.
+		std::string lu = e.url;
+		for (auto& c : lu) c = (char)std::tolower((unsigned char)c);
+		if (lu.find("duckdns.org") != std::string::npos)
+			e.enabled = false;
+	}
+#endif
 	s_lobbyCacheLoaded = true;
 }
 
