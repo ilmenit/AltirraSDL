@@ -343,6 +343,15 @@ jobs:
                   sudo /usr/bin/mv /var/www/altirra-sdl-wasm /var/www/altirra-sdl-wasm.old
               fi
               sudo /usr/bin/mv /var/www/altirra-sdl-wasm.new /var/www/altirra-sdl-wasm
+              # cp -a propagates the source SELinux context.  rsync from
+              # CI lands files under /home/wasm-deploy/stage with
+              # user_home_t labels; Caddy on OL9 runs in a domain that
+              # cannot read user_home_t and serves a 403 even though
+              # the file is on disk.  restorecon resets to the
+              # default httpd_sys_content_t the policy expects under
+              # /var/www.  Sudoers allowlists exactly /sbin/restorecon
+              # -R /var/www/altirra-sdl-wasm — see DEPLOYMENT.md §17.2.
+              sudo /sbin/restorecon -R /var/www/altirra-sdl-wasm
           '
 
       - name: Smoke test
