@@ -1670,7 +1670,31 @@ int main(int argc, char *argv[]) {
 	}
 	g_sim.SetRandomSeed(rand() ^ (rand() << 15));
 	phase = "firmware load";
+#ifdef __EMSCRIPTEN__
+	// On WASM the firmware lives in IDB-backed /home/web_user/firmware
+	// and may legitimately be missing on first visit, after a private-mode
+	// session, or when a previous run skipped firmware install (the
+	// "marker present, files absent" branch in ATWasmFirstRunBootstrap).
+	// Letting LoadROMs throw out of startup turns this expected first-run
+	// state into an unhandled C++ exception that Emscripten reports as
+	// `[onerror] Cannot open file '/home/web_user/firmware/ATARIXL.ROM'`
+	// — the simulator never finishes initializing and the page is wedged.
+	// Catch the throw, leave the OS image empty, and let the JS-side
+	// first-run bootstrap (state machine in wasm_bridge.cpp) offer the
+	// download or a manual upload.  ColdReset on an empty kernel is
+	// harmless; the user just sees a black screen until firmware lands.
+	try {
+		g_sim.LoadROMs();
+	} catch (const std::exception& e) {
+		fprintf(stderr,
+			"[Main] LoadROMs failed (firmware missing or unreadable): %s\n"
+			"[Main] Continuing without firmware — first-run bootstrap "
+			"will offer to download or accept an upload.\n",
+			e.what());
+	}
+#else
 	g_sim.LoadROMs();
+#endif
 
 	g_sim.GetGTIA().SetVideoOutput(g_pDisplay);
 
