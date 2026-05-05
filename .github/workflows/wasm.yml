@@ -269,12 +269,35 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Preflight — skip cleanly if VM secrets aren't provisioned
+        # The wasm-deploy user + SSH key + sudoers on the Oracle VM
+        # are a one-time bootstrap (see altirra-sdl-lobby/DEPLOYMENT.md
+        # §X — wasm-deploy bootstrap).  Until that's done and the
+        # WASM_DEPLOY_SSH_KEY / WASM_DEPLOY_HOST secrets are set on
+        # this repo, this job exits cleanly with a warning instead
+        # of failing the workflow — the GitHub Pages publish on the
+        # same run still delivers the WASM bundle, and the welcome
+        # page's Caddy fallback redirects /AltirraSDL/play/* there.
+        id: pf
+        env:
+          KEY:  ${{ secrets.WASM_DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.WASM_DEPLOY_HOST }}
+        run: |
+          if [ -z "$KEY" ] || [ -z "$HOST" ]; then
+            echo "::warning::WASM_DEPLOY_SSH_KEY / WASM_DEPLOY_HOST not set — skipping VM deploy. See altirra-sdl-lobby/DEPLOYMENT.md to provision the wasm-deploy user."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.pf.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
         with:
           name: wasm-dist
           path: wasm-dist
 
       - name: SSH setup
+        if: steps.pf.outputs.skip != 'true'
         env:
           SSH_KEY: ${{ secrets.WASM_DEPLOY_SSH_KEY }}
           HOST:    ${{ secrets.WASM_DEPLOY_HOST }}
