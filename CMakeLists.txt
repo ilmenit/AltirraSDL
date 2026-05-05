@@ -753,14 +753,19 @@ static inline void *_librashader_dlopen_macos(void) {
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
         ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
     )
-    # imgui_impl_opengl3.cpp is omitted on WASM builds — its direct glXxx
-    # calls conflict with Emscripten's WebGL stubs (symbol-type mismatches
-    # at wasm-ld).  AltirraSDL on WASM renders via SDL_Renderer only.
-    if(NOT ALTIRRA_WASM)
-        target_sources(imgui PRIVATE
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-        )
-    endif()
+    # imgui_impl_opengl3.cpp now compiles on every platform, including
+    # WASM.  Emscripten routes the backend's glXxx calls to its WebGL2
+    # binding when the build is configured with -sUSE_WEBGL2=1
+    # -sFULL_ES3=1 (see the link-flag block below) and the GLES3 code
+    # path is selected via IMGUI_IMPL_OPENGL_ES3 just below.  This is
+    # the same path the in-browser GL display backend already uses
+    # since c3e1c7e — without ImGui's OpenGL3 impl in the lib, ImGui
+    # silently falls through to SDL_Renderer at runtime and renders
+    # to a backend that isn't initialised on WASM, so the UI is
+    # invisible even though the emulator picture itself draws fine.
+    target_sources(imgui PRIVATE
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+    )
     target_include_directories(imgui PUBLIC
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
