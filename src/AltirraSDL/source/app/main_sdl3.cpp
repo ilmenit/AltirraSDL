@@ -1838,6 +1838,47 @@ int main(int argc, char *argv[]) {
 			if (IATAudioOutput *ao = g_sim.GetAudioOutput())
 				ao->SetLatency(30);
 		}
+
+		// SDL3-specific Basic Shaders defaults (deliberate divergence from
+		// Windows Altirra).
+		//
+		// settings.cpp + GTIA initialisers default scanlines off and the
+		// screen mask type to None, so a first-run user with the default
+		// View > Screen Effects = "Basic" sees no actual CRT effect even
+		// though Basic mode is supposed to produce one.  The Windows
+		// Altirra UX has the user explicitly opt in via Tools > Display >
+		// Effects controls — that surface doesn't exist in our SDL3
+		// "Basic" toggle, so the right SDL3 default is to ship the Basic
+		// look pre-configured.
+		//
+		// Aperture grille is the most "CRT-like" of the three masks for
+		// 8-bit Atari art at typical desktop scale (DotTriad bands much
+		// brighter, SlotMask is for high-DPI), and pairs with scanlines
+		// at the GTIA layer to give the canonical RGB-monitor look.  All
+		// the other ScreenMask params (mSourcePixelsPerDot=0.38,
+		// mOpenness=0.90, mbScreenMaskIntensityCompensation=true) come
+		// from ATGTIAEmulator::GetDefaultScreenMaskParams() unchanged —
+		// only the type field is overridden.
+		//
+		// We ONLY apply this when the user has no explicit setting in
+		// their INI, by the same getValueType-vs-getBool reasoning used
+		// for audio latency above: getBool's fallback default is
+		// indistinguishable from a stored "false", so we'd otherwise
+		// flip a deliberate user choice to off back on.
+		if (profileKey.getValueType("GTIA: Scanlines")
+		    == VDRegistryKey::kTypeUnknown)
+		{
+			ATGTIAEmulator& gtia = g_sim.GetGTIA();
+			gtia.SetScanlinesEnabled(true);
+		}
+		if (profileKey.getValueType("ScreenFX: Screen mask type")
+		    == VDRegistryKey::kTypeUnknown)
+		{
+			ATGTIAEmulator& gtia = g_sim.GetGTIA();
+			VDDScreenMaskParams sm = gtia.GetScreenMaskParams();
+			sm.mType = VDDScreenMaskType::ApertureGrille;
+			gtia.SetScreenMaskParams(sm);
+		}
 	}
 
 #ifdef __ANDROID__
