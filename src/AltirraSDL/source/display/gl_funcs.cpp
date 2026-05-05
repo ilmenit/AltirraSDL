@@ -19,7 +19,7 @@ void GLSetActiveProfile(GLProfile profile) { g_activeProfile = profile; }
 // Define all function pointer globals.
 // macOS: framework exports symbols directly (no indirection).
 // Android: GLESv3 library exports symbols directly (no indirection).
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 #define GL_FUNC(ret, name, ...) PFN_##name name = nullptr;
 #else
 #define GL_FUNC(ret, name, ...)
@@ -93,7 +93,7 @@ bool GLLoadFunctions(GLProfile profile) {
 	bool ok = true;
 	g_activeProfile = profile;
 
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 #define GL_LOAD(name) do { \
 	name = (PFN_##name)SDL_GL_GetProcAddress(#name); \
 	if (!name) { LOG_ERROR("GL", "Failed to load: %s", #name); ok = false; } \
@@ -120,7 +120,7 @@ bool GLLoadFunctions(GLProfile profile) {
 	// GLES 3.0.  ImGui uses it for wireframe debug mode only; silently
 	// skip if missing.  Nothing in AltirraSDL's own rendering depends on
 	// it, so a null pointer is safe.
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 	glPolygonMode = (PFN_glPolygonMode)SDL_GL_GetProcAddress("glPolygonMode");
 #endif
 	GL_LOAD(glColorMask);

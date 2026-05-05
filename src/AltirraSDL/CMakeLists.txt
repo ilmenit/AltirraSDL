@@ -50,9 +50,9 @@ target_sources(AltirraSDL PRIVATE
 
     # --- display/ : SDL display + GL backends + shaders ---
     # Note: the GL backend sources (display_backend_gl33.cpp, gl_funcs.cpp,
-    # gl_helpers.cpp, display_librashader.cpp) are added below — they are
-    # excluded on WASM builds because direct glXxx calls conflict with
-    # Emscripten's WebGL stubs.  See the "if(NOT ALTIRRA_WASM)" block below.
+    # gl_helpers.cpp) plus the librashader integration are added below —
+    # the GL backend compiles on every platform; librashader is excluded
+    # on WASM only.
     source/display/display_sdl3.cpp
     source/display/display_backend_sdl.cpp
 
@@ -249,18 +249,20 @@ target_sources(AltirraSDL PRIVATE
     ${ALTIRRA_ALL_SOURCES}
 )
 
-# GL display backend, GL helper layer, and librashader glue — excluded on
-# WASM because their direct glXxx calls conflict with Emscripten's WebGL
-# stubs (symbol-type mismatches at wasm-ld).  AltirraSDL on WASM renders
-# through SDL_Renderer (WebGL2) exclusively.
-if(NOT ALTIRRA_WASM)
-    target_sources(AltirraSDL PRIVATE
-        source/display/display_backend_gl33.cpp
-        source/display/gl_funcs.cpp
-        source/display/gl_helpers.cpp
-        source/display/display_librashader.cpp
-    )
-else()
+# GL display backend + helpers compile on every platform, including WASM
+# (Emscripten links GL entry points through its WebGL2 binding when the
+# build is configured with -sUSE_WEBGL2=1 -sFULL_ES3=1).  Built-in screen
+# effects (scanlines, bloom, distortion, mask, vignette) therefore work
+# in the browser too; on WASM the librashader integration compiles but
+# self-disables at runtime because there is no WebAssembly librashader
+# shared library to dlopen.
+target_sources(AltirraSDL PRIVATE
+    source/display/display_backend_gl33.cpp
+    source/display/gl_funcs.cpp
+    source/display/gl_helpers.cpp
+    source/display/display_librashader.cpp
+)
+if(ALTIRRA_WASM)
     # WASM-only bridge: JS/C glue for user uploads, library refresh, and
     # IDBFS flush.  See src/AltirraSDL/source/app/wasm_bridge.{h,cpp} for
     # the public surface.  Compiled only under ALTIRRA_WASM so native
@@ -863,6 +865,13 @@ elseif(ALTIRRA_WASM)
     # ----------------------------------------------------------------------
     target_link_options(AltirraSDL PRIVATE
         "SHELL:-sUSE_WEBGL2=1"
+        # FULL_ES3=1 routes the GLES 3.0 entry points referenced by the
+        # AltirraSDL GL backend (display_backend_gl33.cpp + helpers) to
+        # Emscripten's WebGL2 binding.  Without this, glTexStorage2D,
+        # glDrawBuffers, glBlitFramebuffer, etc. would resolve to
+        # WebGL1-only stubs and the screen-FX pipeline would silently
+        # render black on web.
+        "SHELL:-sFULL_ES3=1"
         "SHELL:-sALLOW_MEMORY_GROWTH=1"
         # 128 MB initial avoids early memory-growth transitions (each
         # grow call causes a brief stall while the heap is copied).

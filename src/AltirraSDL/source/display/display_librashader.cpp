@@ -12,8 +12,14 @@
 #include "display_librashader.h"
 #include "logging.h"
 
-// Check if librashader headers are available
-#if __has_include("../vendor/librashader/librashader_ld.h")
+// Check if librashader headers are available.  On Emscripten the headers
+// transitively include <linux/limits.h> (not part of Emscripten's
+// sysroot) and there is no WebAssembly librashader shared library to
+// dlopen even if the headers compiled — so the integration is force-
+// disabled on WASM.  Built-in screen FX still work in the browser.
+#if defined(__EMSCRIPTEN__)
+#define HAVE_LIBRASHADER 0
+#elif __has_include("../vendor/librashader/librashader_ld.h")
 #define HAVE_LIBRASHADER 1
 #define LIBRA_RUNTIME_OPENGL
 #include "../vendor/librashader/librashader_ld.h"

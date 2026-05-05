@@ -45,14 +45,10 @@ extern "C" void ATWasmSyncFSOut();
 #if ALTIRRA_HAS_BAKED_ICON
 #include "altirra_icon_data.h"
 #endif
-#ifndef ALTIRRA_WASM
-// The GL display backend is excluded from the WASM build — direct glXxx
-// calls conflict with Emscripten's WebGL stubs at link time.  See
-// src/AltirraSDL/CMakeLists.txt for the source-level exclusion; every
-// call site in this file that references DisplayBackendGL, GL_* or
-// SDL_GL_* is wrapped in `#ifndef ALTIRRA_WASM` below.
+// The GL display backend compiles on every platform, including WASM
+// (Emscripten routes glXxx calls to its WebGL2 binding via -sUSE_WEBGL2=1
+// -sFULL_ES3=1).  See src/AltirraSDL/CMakeLists.txt.
 #include "display_backend_gl33.h"
-#endif
 #include "display_backend_sdl.h"
 #include "gl_funcs.h"
 #include "input_sdl3.h"
@@ -1409,11 +1405,13 @@ int main(int argc, char *argv[]) {
 	SDL_GLContext glContext = nullptr;
 	GLProfile glProfile = GLProfile::Desktop33;
 
-#ifndef ALTIRRA_WASM
 	// Pick the preferred GL profile per platform.  Only ONE profile is
 	// attempted: requesting Desktop Core on Android, or ES on a desktop
 	// driver, would either fail outright or silently mislead.
-#if defined(__ANDROID__) || (defined(__APPLE__) && defined(TARGET_OS_IOS) && TARGET_OS_IOS)
+#if defined(__ANDROID__) || (defined(__APPLE__) && defined(TARGET_OS_IOS) && TARGET_OS_IOS) || defined(__EMSCRIPTEN__)
+	// WebGL2 maps to GLES 3.0 — use the same profile request Android and
+	// iOS use; Emscripten's SDL3 honours SDL_GL_CONTEXT_PROFILE_ES and
+	// produces a WebGL2 context.
 	glProfile = GLProfile::ES30;
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -1453,25 +1451,14 @@ int main(int argc, char *argv[]) {
 	// If GL failed, recreate window without OPENGL flag for SDL_Renderer.
 	// SDL_Renderer is a true safety net: it picks the platform's best
 	// 2D backend (D3D11/12 on Windows, Metal on macOS, GLES/Vulkan on
-	// Android) but cannot run our screen FX / librashader pipeline.
+	// Android, WebGL2 on Emscripten) but cannot run our screen FX /
+	// librashader pipeline.
 	if (!useGL) {
 		if (g_pWindow) SDL_DestroyWindow(g_pWindow);
 		g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
 		if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
 		LOG_INFO("Main", "Falling back to SDL_Renderer (screen FX and librashader unavailable)");
 	}
-#else // ALTIRRA_WASM
-	// WASM: no GL context creation.  SDL_Renderer on WebGL2 is the only
-	// rendering path in-browser; librashader and screen FX are already
-	// compiled out (see src/AltirraSDL/CMakeLists.txt).  Suppress the
-	// unused-variable warning on glProfile/glContext — the values are
-	// carried through to later logging code unchanged.
-	(void)glProfile;
-	(void)glContext;
-	g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight,
-		SDL_WINDOW_RESIZABLE);
-	if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
-#endif // ALTIRRA_WASM
 
 	// Set the window/taskbar/dock icon from the baked RGBA data.
 	// The largest image is the primary surface; smaller sizes are
@@ -1544,7 +1531,6 @@ int main(int argc, char *argv[]) {
 #endif
 
 	// Create the display backend.
-#ifndef ALTIRRA_WASM
 	if (useGL) {
 		g_pBackend = new DisplayBackendGL(g_pWindow, glContext);
 		// VSync swap interval is managed dynamically by the main loop based
@@ -1553,7 +1539,6 @@ int main(int argc, char *argv[]) {
 		// value before any frame is presented.
 		SDL_GL_SetSwapInterval(0);
 	} else
-#endif
 	{
 		g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
 		if (!g_pRenderer) { LOG_INFO("Main", "CreateRenderer: %s", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
