@@ -4199,32 +4199,54 @@
         }
       };
 
-      // WSS handshake probe.  The subprotocol list intentionally lacks
-      // session.<hex>, role.<…>; the bridge will reject with HTTP 400
-      // ("malformed Sec-WebSocket-Protocol").  We do NOT need a 101 —
-      // we need to learn whether the browser even reaches the server.
+      // WSS handshake probe.  We send a syntactically-complete
+      // subprotocol list (altirra-netplay.v1 + a bogus session/role/
+      // token) so the lobby's bridge will:
+      //   * upgrade the WS, then immediately send a Close frame with
+      //     code 4010 "session gone" (the bogus session id won't exist).
+      // Receiving close code 4010 is the strongest possible signal that
+      // the entire path is healthy: Caddy's /netplay route, the WS
+      // upgrade, AND the auth/lookup path inside the lobby.
+      // Older lobby builds reject the (still valid-shaped) subprotocol
+      // pre-handshake with HTTP 4xx; the browser surfaces that as
+      // code 1006.  Both outcomes are useful — the wssReachedServer
+      // check below treats 4010 as definitive success and falls back to
+      // the timing heuristic for the 1006 case.
+      const fakeSession = '00112233445566778899aabbccddeeff';
+      const fakeToken   = 'deadbeefdeadbeefdeadbeefdeadbeef';
+      const probeProtocols = [
+        'altirra-netplay.v1',
+        'session.' + fakeSession,
+        'role.joiner',
+        'token.' + fakeToken,
+      ];
       const probeWss = (url) => new Promise((resolve) => {
         const t0 = performance.now();
         let ws;
         let resolved = false;
+        let openedAt = 0;
         const finish = (out) => {
           if (resolved) return;
           resolved = true;
           out.ms = +(performance.now() - t0).toFixed(0);
+          if (openedAt) out.openMs = +(openedAt - t0).toFixed(0);
           if (ws && ws.readyState !== WebSocket.CLOSED) {
             try { ws.close(); } catch (_) {}
           }
           resolve(out);
         };
         try {
-          ws = new WebSocket(url, ['altirra-netplay.v1']);
+          ws = new WebSocket(url, probeProtocols);
         } catch (e) {
           finish({ phase: 'construct-throw',
                    error: (e && e.message) ? e.message : String(e) });
           return;
         }
         ws.binaryType = 'arraybuffer';
-        ws.onopen   = () => finish({ phase: 'open' });
+        // Don't resolve on open — we want the subsequent close event so
+        // we can read its code.  The lobby's WS bridge sends a Close
+        // frame with code 4010 within microseconds of the upgrade.
+        ws.onopen   = () => { openedAt = performance.now(); };
         ws.onerror  = () => { /* wait for close to grab the code */ };
         ws.onclose  = (e) => finish({ phase: 'close',
                                       code: e.code,
@@ -4248,14 +4270,26 @@
       if (c.code !== undefined) cLine += ' code=' + c.code;
       if (c.reason) cLine += ' reason="' + c.reason + '"';
       if (c.error)  cLine += ' error=' + c.error;
+      if (c.openMs !== undefined) cLine += ' openMs=' + c.openMs;
       appendLog(cLine);
 
-      // Fast (<10 ms) close = browser refused to even open the WS.
-      // That's the smoking-gun signature for CSP / mixed-content / a
-      // proxy or extension intercepting WSS.  Slow (≥30 ms) close with
-      // code=1006 (and our malformed handshake) = bridge IS reachable
-      // and replied 400; everything is fine for real joiners.
-      const wssReachedServer = (c.phase === 'close' && c.ms >= 30);
+      // Three positive outcomes prove the WS bridge is wired up:
+      //   * Close code 4010 ("session gone") — lobby parsed our bogus
+      //     subprotocol, looked up the session, and rejected via WS
+      //     close frame.  This is the strongest signal: Caddy route +
+      //     mongoose upgrade + lobby auth path all work.
+      //   * Any 4xxx application close code — current lobby uses 4010
+      //     for our probe, but accept the whole policy band so a future
+      //     lobby that maps probe rejections differently still passes.
+      //   * Close code 1006 with ms >= 30 — older lobby builds (or a
+      //     non-conformant intermediary) HTTP-rejected pre-upgrade.
+      //     Bridge IS reachable, auth path NOT validated; still a pass
+      //     for real joiners since the joiner sends a real subprotocol.
+      // A fast (<10 ms) close suggests browser-level block (CSP, mixed-
+      // content, extension, proxy).
+      const isPolicyCode = c.code !== undefined && c.code >= 4000 && c.code < 5000;
+      const wssReachedServer = (c.phase === 'close')
+        && (isPolicyCode || c.ms >= 30);
 
       // ─── Extension / cross-origin discriminator ────────────────────
       // When the lobby WSS fails synchronously, we want to tell the
@@ -4389,12 +4423,15 @@
         } else {
           // Couldn't confirm with the secondary probes.
           verdict = 'WSS blocked by browser — HTTPS works, WSS closed'
-                  + ' in ' + c.ms + ' ms.  Open DevTools (F12) →'
-                  + ' Console for the exact reason.  Common causes:'
-                  + ' ad/privacy extension blocking WS to ' + host + ','
-                  + ' corporate AV intercepting TLS, or a system proxy.'
-                  + '  Try an Incognito window with all extensions'
-                  + ' disabled to confirm.';
+                  + ' in ' + c.ms + ' ms.  MOST COMMON CAUSE: an'
+                  + ' ad/privacy extension (uBlock Origin, Brave Shields,'
+                  + ' Adguard, Ghostery) blocking third-party WebSockets'
+                  + ' from this page to ' + host + '.  Try: pause the'
+                  + ' extension on this site (or open an Incognito/'
+                  + 'Private window with all extensions disabled).'
+                  + '  Less common: corporate antivirus intercepting TLS,'
+                  + ' a system proxy, or a strict CSP.  Open DevTools'
+                  + ' (F12) → Console for the exact reason.';
         }
       } else if (!a.ok || !b.ok) {
         const bad = !a.ok ? a : b;

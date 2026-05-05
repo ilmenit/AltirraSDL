@@ -473,6 +473,36 @@ static void StripRequestSubprotocolHeader(struct mg_http_message* hm) {
 	}
 }
 
+// Application-policy WS close codes mirroring our WsAuthResult enum.
+// Browsers can read these in `event.code` on the WebSocket close event,
+// whereas a pre-upgrade HTTP 4xx collapses to 1006 (no detail).
+constexpr uint16_t kWsCloseBadRequest = 4000;
+constexpr uint16_t kWsCloseForbidden  = 4003;
+constexpr uint16_t kWsCloseRoleTaken  = 4009;
+constexpr uint16_t kWsCloseSessionGone = 4010;
+
+// Reject AFTER completing the WS handshake: complete the upgrade with
+// the agreed subprotocol echo, then immediately send a Close frame with
+// an application-policy code and a human reason.  Browsers expose both
+// to JS, so the WASM joiner can show "session full" / "role taken" /
+// "session ended" instead of the generic 1006 "WSS blocked".
+static void RejectAfterUpgrade(struct mg_connection* c,
+                               struct mg_http_message* hm,
+                               uint16_t wsCloseCode,
+                               const char* reason) {
+	StripRequestSubprotocolHeader(hm);
+	mg_ws_upgrade(c, hm,
+		"Sec-WebSocket-Protocol: altirra-netplay.v1\r\n");
+	char buf[125];   // 125 = WS control-frame payload limit
+	buf[0] = (char)((wsCloseCode >> 8) & 0xFF);
+	buf[1] = (char)(wsCloseCode & 0xFF);
+	size_t reasonLen = std::strlen(reason);
+	if (reasonLen > sizeof(buf) - 2) reasonLen = sizeof(buf) - 2;
+	std::memcpy(buf + 2, reason, reasonLen);
+	mg_ws_send(c, buf, 2 + reasonLen, WEBSOCKET_OP_CLOSE);
+	c->is_draining = 1;
+}
+
 // Find or create per-conn state for an accepted WS connection.
 static PerConn& GetPerConn(BridgeState& st, struct mg_connection* c) {
 	return st.conns[c->id];
@@ -612,7 +642,8 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 
 	// Validate session+token via the caller-supplied callback.  The
 	// callback returns an HTTP-shaped code so we can distinguish
-	// 403 (bad token) from 410 (gone).
+	// 403 (bad token) from 410 (gone).  Use the upgrade-then-close
+	// path so the browser can read the close code + reason.
 	WsAuthResult vr = st.validateFn(auth.sid, auth.role,
 		auth.tokenHex.c_str(), st.validateCtx);
 	if (vr != WsAuthResult::kOk) {
@@ -620,27 +651,33 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 		st.stats->upgradesRejectedAuth.fetch_add(1,
 			std::memory_order_relaxed);
 		const char* msg = "rejected";
+		uint16_t    wsCode = kWsCloseBadRequest;
 		switch (vr) {
-			case WsAuthResult::kBadRequest: msg = "bad request"; break;
-			case WsAuthResult::kForbidden:  msg = "forbidden";   break;
-			case WsAuthResult::kGone:       msg = "session gone"; break;
-			case WsAuthResult::kConflict:   msg = "role taken";  break;
-			default:                        msg = "rejected";    break;
+			case WsAuthResult::kBadRequest:
+				msg = "bad request";  wsCode = kWsCloseBadRequest;   break;
+			case WsAuthResult::kForbidden:
+				msg = "forbidden";    wsCode = kWsCloseForbidden;    break;
+			case WsAuthResult::kGone:
+				msg = "session gone"; wsCode = kWsCloseSessionGone;  break;
+			case WsAuthResult::kConflict:
+				msg = "role taken";   wsCode = kWsCloseRoleTaken;    break;
+			default:
+				msg = "rejected";     wsCode = kWsCloseBadRequest;   break;
 		}
-		RejectUpgrade(c, (int)vr, msg);
-		c->is_draining = 1;
+		RejectAfterUpgrade(c, hm, wsCode, msg);
 		return;
 	}
 
 	// Conflict check: don't allow a second WS to claim the same role.
 	// (We can't see UDP-side conflicts here; that's a defense-in-depth
-	// task for slice 6 which unifies the registries.)
+	// task for slice 6 which unifies the registries.)  Like the
+	// validate path above, upgrade-then-close so the browser sees a
+	// real close code (4009) instead of an opaque 1006.
 	if (!st.reg->Register(auth.sid, auth.role, c->id)) {
 		st.stats->upgradesRejectedConflict.fetch_add(1,
 			std::memory_order_relaxed);
-		RejectUpgrade(c, (int)WsAuthResult::kConflict,
+		RejectAfterUpgrade(c, hm, kWsCloseRoleTaken,
 			"role already in session");
-		c->is_draining = 1;
 		return;
 	}
 

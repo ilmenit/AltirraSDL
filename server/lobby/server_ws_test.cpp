@@ -69,6 +69,7 @@ struct ClientCtx {
 	bool                 connected = false;
 	bool                 closed    = false;
 	int                  httpStatus = 0;
+	uint16_t             wsCloseCode = 0;
 };
 
 void ClientFn(struct mg_connection* c, int ev, void* ev_data) {
@@ -82,6 +83,14 @@ void ClientFn(struct mg_connection* c, int ev, void* ev_data) {
 			cc->lastBinary.assign(
 				(const uint8_t*)wm->data.buf,
 				(const uint8_t*)wm->data.buf + wm->data.len);
+		}
+	} else if (ev == MG_EV_WS_CTL) {
+		auto* wm = static_cast<struct mg_ws_message*>(ev_data);
+		uint8_t opcode = wm->flags & 0x0F;
+		if (opcode == WEBSOCKET_OP_CLOSE && wm->data.len >= 2) {
+			cc->wsCloseCode =
+				(uint16_t)(((uint8_t)wm->data.buf[0] << 8) |
+				            (uint8_t)wm->data.buf[1]);
 		}
 	} else if (ev == MG_EV_HTTP_MSG) {
 		auto* hm = static_cast<struct mg_http_message*>(ev_data);
@@ -202,7 +211,7 @@ bool TestUpgradeMissingSubprotocol(Bridge& b) {
 }
 
 bool TestUpgradeBadToken(Bridge& b) {
-	std::printf("test: host upgrade rejected on bad token... ");
+	std::printf("test: host upgrade rejected on bad token (close 4003)... ");
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
 	ClientCtx cc;
@@ -216,10 +225,13 @@ bool TestUpgradeBadToken(Bridge& b) {
 	struct mg_connection* c = mg_ws_connect(
 		&mgr, url, ClientFn, &cc, "%s", hdr.c_str());
 	if (!c) { std::printf("FAIL\n"); mg_mgr_free(&mgr); return false; }
+	// Bridge upgrades the WS (so the browser can read the close code)
+	// then immediately sends a Close frame with policy code 4003.
 	bool ok = WaitFor(mgr, [&]{ return cc.closed; }, 1000);
 	mg_mgr_free(&mgr);
-	if (!ok || cc.connected) {
-		std::printf("FAIL (got connected=%d)\n", (int)cc.connected);
+	if (!ok || cc.wsCloseCode != 4003) {
+		std::printf("FAIL (closed=%d code=%u)\n",
+			(int)cc.closed, (unsigned)cc.wsCloseCode);
 		return false;
 	}
 	std::printf("OK\n");
@@ -318,7 +330,7 @@ bool TestPairExchange(Bridge& b) {
 }
 
 bool TestRoleConflict(Bridge& b) {
-	std::printf("test: second host upgrade rejected (409)... ");
+	std::printf("test: second host upgrade rejected (close 4009)... ");
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
 	ClientCtx h1, h2;
@@ -338,11 +350,14 @@ bool TestRoleConflict(Bridge& b) {
 	struct mg_connection* h2c = mg_ws_connect(
 		&mgr, url, ClientFn, &h2, "%s", hdr.c_str());
 	(void)h2c;
+	// Bridge completes the upgrade for h2 (briefly raising connected)
+	// so the close frame's 4009 reaches the browser.  We assert on the
+	// close code, not on connected==false.
 	bool ok = WaitFor(mgr, [&]{ return h2.closed; }, 1000);
 	mg_mgr_free(&mgr);
-	if (!ok || h2.connected) {
-		std::printf("FAIL (second host got connected=%d)\n",
-			(int)h2.connected);
+	if (!ok || h2.wsCloseCode != 4009) {
+		std::printf("FAIL (h2 closed=%d code=%u)\n",
+			(int)h2.closed, (unsigned)h2.wsCloseCode);
 		return false;
 	}
 	std::printf("OK\n");
