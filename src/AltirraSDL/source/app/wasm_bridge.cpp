@@ -58,6 +58,24 @@ extern void ATUIBootImage(const wchar_t *path);
 // the user uploads a firmware file.
 extern void ATUIDoFirmwareScan(const char *utf8path);
 
+// Global simulator instance.  Defined in main_sdl3.cpp.  We need it to
+// re-run LoadROMs() + ColdReset() after the first-run firmware fetch
+// or a manual upload, so the freshly-extracted OS ROM actually lands
+// in the simulator's memory map.  Without this, ATUIDoFirmwareScan
+// only updates the firmware manager catalogue — the kernel slot in
+// the running simulator stays empty until the user reloads the page.
+#include "simulator.h"
+extern ATSimulator g_sim;
+
+// Set to true by main_sdl3.cpp after g_sim.Init() + LoadROMs() have
+// been reached.  The JS side fires a startup rescan from
+// onRuntimeInitialized BEFORE main() runs (see wasm_index.html.in
+// `startup: running firmware rescan`); at that point g_sim is just a
+// statically-constructed shell and any LoadROMs/ColdReset call would
+// crash.  Anything in this file that touches running-simulator state
+// must gate on this flag.
+bool g_wasmSimReady = false;
+
 // -----------------------------------------------------------------------
 // Pending-request queue
 // -----------------------------------------------------------------------
@@ -118,6 +136,31 @@ void ATWasmRescanFirmware() {
 	// on the dedicated /home/web_user/firmware upload directory keeps
 	// the firmware manager in sync with what the user has dropped in.
 	ATUIDoFirmwareScan("/home/web_user/firmware");
+	// Push the freshly-scanned firmware into the simulator's memory
+	// map and cold-reset.  Without this, ATUIDoFirmwareScan above
+	// only updates the firmware-manager catalogue — the simulator's
+	// kernel slot stays whatever it was after main()'s LoadROMs (an
+	// empty image, in the Skip-then-upload path).  Same dance the
+	// setup wizard does on exit (ui_tools_setup_wizard.cpp:434-435)
+	// and the firmware category UI does on per-slot assignment
+	// changes (ui_firmware_category.cpp:88,163,201).
+	//
+	// Gate on g_wasmSimReady: the JS side fires a startup rescan from
+	// onRuntimeInitialized BEFORE main() has constructed the
+	// simulator's runtime state, and a LoadROMs call there would
+	// crash on uninitialised members.  In that pre-main case
+	// ATUIDoFirmwareScan alone is enough — main()'s own LoadROMs
+	// call right after g_sim.Init() will pick up the catalogue.
+	if (g_wasmSimReady) {
+		try {
+			g_sim.LoadROMs();
+			g_sim.ColdReset();
+		} catch (const std::exception& e) {
+			fprintf(stderr,
+				"[wasm] Rescan: LoadROMs/ColdReset failed: %s "
+				"— page reload will recover\n", e.what());
+		}
+	}
 }
 
 // -----------------------------------------------------------------------
@@ -848,6 +891,22 @@ namespace {
 		if (n > 0) {
 			g_firstRunFiles.store(n);
 			ATUIDoFirmwareScan(kFirstRunFirmwareDir);
+			// The scan registered the ROMs in the firmware manager and
+			// pinned them as the active OS / BASIC slots, but the
+			// simulator's memory map still has the empty kernel that
+			// our LoadROMs catch in main_sdl3.cpp left behind on
+			// startup.  Push the new ROMs into the running sim and
+			// cold-reset so the CPU starts fetching from a real OS.
+			// Same dance the setup wizard's exit path does after a
+			// firmware change (ui_tools_setup_wizard.cpp:434-435).
+			try {
+				g_sim.LoadROMs();
+				g_sim.ColdReset();
+			} catch (const std::exception& e) {
+				fprintf(stderr,
+					"[wasm] FirstRun: post-extract LoadROMs/ColdReset "
+					"failed: %s — page reload will recover\n", e.what());
+			}
 			_altirra_wasm_sync_fs_out();
 			g_firstRunState.store(5);
 			WriteFirstRunMarker();

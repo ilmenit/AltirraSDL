@@ -1696,6 +1696,17 @@ int main(int argc, char *argv[]) {
 	g_sim.LoadROMs();
 #endif
 
+#ifdef __EMSCRIPTEN__
+	// Tell the WASM bridge that g_sim.Init()+LoadROMs() have been
+	// reached.  ATWasmRescanFirmware reads this flag before calling
+	// LoadROMs/ColdReset itself: the JS side fires a startup rescan
+	// from onRuntimeInitialized BEFORE main() runs, and at that
+	// point g_sim is statically constructed but not yet Initialized,
+	// so a LoadROMs call there would crash.  See wasm_bridge.cpp.
+	extern bool g_wasmSimReady;
+	g_wasmSimReady = true;
+#endif
+
 	g_sim.GetGTIA().SetVideoOutput(g_pDisplay);
 
 	// Register all device definitions (Windows main.cpp:3904).
