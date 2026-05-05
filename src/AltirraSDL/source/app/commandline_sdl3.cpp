@@ -244,6 +244,14 @@ const char *ConsumeArg(int argc, char **argv, int &i,
 // ---------------------------------------------------------------------------
 
 bool ATProcessCommandLineSDL3(int argc, char **argv) {
+	// Capture the auto-host MRU baseline BEFORE any image-loading arg
+	// (--run/--disk/--cart/--tape) can call ATAddMRU.  DriveAutoHost
+	// uses this to detect "cmdline-driven load happened" by comparing
+	// the live MRU "Order" against the baseline; without an early
+	// snapshot the order matches → gate stays closed → Play Together
+	// never publishes.  Cheap, idempotent — see InitAutoHostBaseline.
+	ATNetplayUI::InitAutoHostBaseline();
+
 	if (argc <= 1)
 		return false;
 
@@ -290,7 +298,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		// ---- Help ----
 		if (MatchSwitch(sw, "help") || MatchSwitch(sw, "?")) {
 			consumed[i] = true;
-			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
+			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
 			continue;
 		}
 
@@ -521,6 +529,26 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			} else {
 				ATNetplayUI::SetPendingDeepLinkSessionId(id);
 			}
+			continue;
+		}
+		if ((val = ConsumeArg(argc, argv, i, consumed, "host-session")) != nullptr) {
+			// Symmetric counterpart to --join-session for hosts.  The
+			// native build can launch with (e.g.)
+			//   AltirraSDL --run game.atr --host-session "My Game"
+			// to load a game and immediately publish it as a public
+			// netplay session.  Used by the lobby HTML's "Play
+			// Together" deep-link, which assembles
+			//   /AltirraSDL/play/?lib=…&host=1&title=…
+			// and the WASM JS shell translates ?host=1+?title= into
+			// this flag (alongside --run/--disk for the boot).  The
+			// per-frame netplay driver (DriveAutoHost) waits for the
+			// boot to land before publishing.
+			const size_t n = val ? strlen(val) : 0;
+			if (n == 0 || n > 256) {
+				LOG_INFO("CmdLine", "--host-session: title length %zu invalid (need 1..256), ignored", n);
+				continue;
+			}
+			ATNetplayUI::RequestAutoHost(std::string(val, n), std::string());
 			continue;
 		}
 		if ((val = ConsumeArg(argc, argv, i, consumed, "join-code")) != nullptr) {

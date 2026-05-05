@@ -73,6 +73,13 @@ extern ATSimulator g_sim;
 // must refuse the toggle while online — same policy as F9.
 #include "netplay/netplay_glue.h"
 
+// ATNetplayUI::RequestAutoHost(): the lobby page's "Play Together"
+// deep-link is translated into a single call to this helper after the
+// JS side has finished pre-fetching the game files into the VFS.  See
+// ui_netplay_deeplink.h for the state machine; here we only stash the
+// title + primary path on the netplay module's pending-request slot.
+#include "../ui/netplay/ui_netplay_deeplink.h"
+
 // Set to true by main_sdl3.cpp after g_sim.Init() + LoadROMs() have
 // been reached.  The JS side fires a startup rescan from
 // onRuntimeInitialized BEFORE main() runs (see wasm_index.html.in
@@ -175,6 +182,55 @@ int ATWasmTogglePause() {
 		return 0;
 	}
 	g_sim.Pause();
+	return 1;
+}
+
+// ATWasmAutoHostNetplay
+//
+// Triggered by the lobby HTML's "Play Together" deep-link
+// (?host=1).  By the time JS calls us, every library file the URL
+// asked for has been pre-fetched into /home/web_user/games/library/
+// and the boot CLI args (--disk N <path>, --run, etc.) have already
+// been consumed by main()'s argv parser → the simulator either has a
+// loaded image or will have one within a frame or two.
+//
+// We DO NOT publish the session ourselves here — the netplay UI's
+// DriveAutoHost() per-frame driver does that, gated on:
+//   * netplay worker running
+//   * no Join deep-link in flight
+//   * MRU has a fresh entry (= image actually loaded)
+// That gate matters because JS can race ahead of main() returning
+// from cmdline parsing on a slow runtime.  Calling
+// ATNetplayUI::RequestAutoHost() simply stashes the request; the
+// driver picks it up on the next frame the gates open.
+//
+// Returns 1 if the request was accepted, 0 if `title` was empty or
+// suspiciously long (treated as a malformed deep-link and dropped).
+// `primaryPath` may be empty — DriveAutoHost falls back to the most-
+// recent MRU entry — but if supplied it pins the de-dup key to a
+// stable identifier (D1: for multi-disk titles), so re-firing the
+// same Play Together URL doesn't create duplicate HostedGame rows.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmAutoHostNetplay(const char* title, const char* primaryPath) {
+	if (!title || !*title) {
+		fprintf(stderr,
+			"[wasm] ATWasmAutoHostNetplay: empty title — ignored\n");
+		return 0;
+	}
+	// Defensive cap matching the lobby's cartName limit.  A pathological
+	// query string with a 10 MB title would blow up the std::string
+	// allocation; cap and move on.
+	const size_t kMaxTitle = 256;
+	std::string t = title;
+	if (t.size() > kMaxTitle) t.resize(kMaxTitle);
+	std::string p = primaryPath ? primaryPath : "";
+	if (p.size() > 4096) p.clear();
+
+	fprintf(stderr,
+		"[wasm] ATWasmAutoHostNetplay: title=\"%s\" primary=\"%s\"\n",
+		t.c_str(), p.c_str());
+
+	ATNetplayUI::RequestAutoHost(t, p);
 	return 1;
 }
 
@@ -1130,21 +1186,26 @@ void ATWasmResetFirstRun() {
 ATGameLibrary *GetGameLibrary();
 void           ATRegistryFlushToDisk();
 
-extern "C" EMSCRIPTEN_KEEPALIVE
-int ATWasmRegisterGamePackSource(const char *utf8Path) {
-	if (!utf8Path || !*utf8Path) {
-		fprintf(stderr, "[wasm] RegisterGamePackSource: empty path\n");
-		return -1;
-	}
+namespace {
 
-	ATGameLibrary *lib = GetGameLibrary();
-	if (!lib) {
-		fprintf(stderr,
-			"[wasm] RegisterGamePackSource: game library not initialised "
-			"yet — call after Gaming Mode entry\n");
-		return -1;
-	}
+// Pending source paths queued from JS before the game library exists.
+// onRuntimeInitialized fires before main() runs, but the library is
+// lazy-created inside main()'s GameBrowser_Init() (in Gaming Mode).
+// If JS calls ATWasmRegisterGamePackSource() at the early hook, the
+// library is null and the call is dropped.  Stash the path here
+// instead and let GameBrowser_Init drain the queue after construction
+// via ATWasmDrainPendingGamePackSources().
+//
+// Single-threaded: the WASM main runtime serialises both the JS-side
+// _ATWasm* calls and the GameBrowser_Init main-thread call, so plain
+// std::vector access is safe.
+std::vector<std::string> g_pendingGamePackPaths;
 
+// Apply a single path to the live library, identical to what
+// ATWasmRegisterGamePackSource does in its non-queued path.  Factored
+// out so the queue drain can reuse it.  Returns the same code as the
+// public function (1 added, 0 already present, -1 error).
+int ApplyGamePackSourceLocked(ATGameLibrary *lib, const char *utf8Path) {
 	const VDStringW pathW = VDTextU8ToW(VDStringSpanA(utf8Path));
 
 	// Idempotent: bail if this exact path is already a source.  We
@@ -1199,6 +1260,66 @@ int ATWasmRegisterGamePackSource(const char *utf8Path) {
 		"[wasm] RegisterGamePackSource: added '%s' (now %zu sources)\n",
 		utf8Path, lib->GetSources().size());
 	return 1;
+}
+
+} // namespace
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmRegisterGamePackSource(const char *utf8Path) {
+	if (!utf8Path || !*utf8Path) {
+		fprintf(stderr, "[wasm] RegisterGamePackSource: empty path\n");
+		return -1;
+	}
+
+	ATGameLibrary *lib = GetGameLibrary();
+	if (!lib) {
+		// Library not yet created (we're pre-main or pre-Gaming-Mode).
+		// Queue the path and return success — ATWasmDrainPendingGamePackSources
+		// will apply it once GameBrowser_Init runs.  De-dup so repeated
+		// calls before init don't pile up duplicate entries in the queue.
+		const std::string p = utf8Path;
+		for (const auto &q : g_pendingGamePackPaths) {
+			if (q == p) {
+				fprintf(stderr,
+					"[wasm] RegisterGamePackSource: '%s' already queued — "
+					"library not yet initialised, will apply on init\n",
+					utf8Path);
+				return 0;
+			}
+		}
+		g_pendingGamePackPaths.push_back(p);
+		fprintf(stderr,
+			"[wasm] RegisterGamePackSource: queued '%s' — library not yet "
+			"initialised (queue=%zu)\n",
+			utf8Path, g_pendingGamePackPaths.size());
+		return 1;
+	}
+
+	return ApplyGamePackSourceLocked(lib, utf8Path);
+}
+
+// Called from GameBrowser_Init() after the library is constructed (and
+// after LoadSettingsFromRegistry has restored persisted sources) so any
+// path queued by JS before init lands in the live source list.  Safe to
+// call repeatedly — the queue is drained on first call and stays empty.
+extern "C" void ATWasmDrainPendingGamePackSources() {
+	if (g_pendingGamePackPaths.empty()) return;
+	ATGameLibrary *lib = GetGameLibrary();
+	if (!lib) {
+		fprintf(stderr,
+			"[wasm] DrainPendingGamePackSources: library still null — "
+			"keeping queue (%zu paths) for later\n",
+			g_pendingGamePackPaths.size());
+		return;
+	}
+	std::vector<std::string> drained;
+	drained.swap(g_pendingGamePackPaths);
+	fprintf(stderr,
+		"[wasm] DrainPendingGamePackSources: applying %zu queued path(s)\n",
+		drained.size());
+	for (const auto &p : drained) {
+		ApplyGamePackSourceLocked(lib, p.c_str());
+	}
 }
 
 #endif // __EMSCRIPTEN__

@@ -105,4 +105,66 @@ void CancelDeepLink();
 // no-op on native builds.
 void RetryDeepLinkFirmware();
 
+// ── Auto-host (Play Together) deep-link ────────────────────────────
+//
+// Symmetric counterpart to the Join deep-link above: the lobby
+// HTML's "Play Together" button URL-encodes ?lib=<paths>&host=1, the
+// WASM JS shell pre-fetches the files into VFS and translates ?host=1
+// into a call to ATWasmAutoHostNetplay() (which lands here as
+// RequestAutoHost).  The native build can also reach this path via
+// the new --host-session command-line flag, which only stashes the
+// title; it expects the same argv to also include --run/--disk so a
+// game is in the simulator by the time DriveAutoHost fires.
+//
+// State machine: a per-frame DriveAutoHost() call (added next to
+// DriveDeepLinkJoin in the netplay tick) waits for the simulator to
+// finish loading, the netplay worker to be running, no other deep-
+// link to be in progress, and a non-empty MRU.  Once gates open it
+// populates the standard hosting state (pendingCart{Path,Name},
+// hostingPrivate=false) and calls StartHostingAction(), then clears
+// the request so it never re-fires.
+
+// Capture the MRU "Order" baseline used by DriveAutoHost to detect
+// "a fresh image was loaded by this run".  Must be called BEFORE any
+// argv-driven --run/--disk/--cart/--tape processing so the baseline
+// reflects pre-load state; subsequent ATAddMRU calls then register as
+// "MRU changed since baseline → publish".
+//
+// Without this, the snapshot would be taken at RequestAutoHost time,
+// which on WASM happens AFTER main()'s argv processing has already
+// loaded the image (the JS shell calls _ATWasmAutoHostNetplay from
+// onRuntimeInitialized's loadHostConfig().finally() chain) → MRU
+// matches snapshot → DriveAutoHost never fires.  Same problem on
+// native if argv is `--run X --host-session Y` (the documented form):
+// --run loads first, --host-session captures post-load MRU, gate
+// never opens.
+//
+// Idempotent and cheap; called from ATProcessCommandLineSDL3's
+// entry.  Safe to call repeatedly — subsequent calls are no-ops so
+// re-entering the cmdline parser (e.g. for a future "open this URL"
+// flow) doesn't reset the baseline mid-run.
+void InitAutoHostBaseline();
+
+// Stash a request to auto-publish the most-recently-loaded image as
+// a netplay session.  `title` is the friendly cartName the lobby row
+// will display (empty falls back to the file basename).  `primaryPath`
+// is the canonical path that uniquely identifies this game (typically
+// D1: for multi-disk titles); when empty the most-recent MRU entry is
+// used.  Safe to call before main() returns or before the netplay
+// worker exists.
+void RequestAutoHost(const std::string& title,
+                     const std::string& primaryPath);
+
+// Per-frame driver, called next to DriveDeepLinkJoin from the netplay
+// tick.  Cheap no-op when no request is pending or when the gates
+// (sim ready, worker up, no in-flight join) are still closed.
+void DriveAutoHost();
+
+// True iff a RequestAutoHost call is still waiting to be acted on.
+bool HasPendingAutoHost();
+
+// Erase the pending auto-host request.  Used internally after a
+// successful publish; no public callers expected.
+void ClearPendingAutoHost();
+
 } // namespace ATNetplayUI

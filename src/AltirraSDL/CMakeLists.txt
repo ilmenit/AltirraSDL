@@ -883,7 +883,7 @@ elseif(ALTIRRA_WASM)
         "SHELL:-sINITIAL_MEMORY=128MB"
         "SHELL:-sSTACK_SIZE=1MB"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','getExceptionMessage','incrementExceptionRefcount','decrementExceptionRefcount']"
-        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut','_ATWasmOnFilePicked','_ATWasmRescanFirmware','_ATWasmUnpackArchive','_ATWasmDeleteTree','_ATWasmCopyTree','_ATWasmFirstRunBootstrap','_ATWasmGetFirstRunState','_ATWasmGetFirstRunFiles','_ATWasmResetFirstRun','_ATWasmRegisterGamePackSource','_ATWasmIsPaused','_ATWasmTogglePause']"
+        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut','_ATWasmOnFilePicked','_ATWasmRescanFirmware','_ATWasmUnpackArchive','_ATWasmDeleteTree','_ATWasmCopyTree','_ATWasmFirstRunBootstrap','_ATWasmGetFirstRunState','_ATWasmGetFirstRunFiles','_ATWasmResetFirstRun','_ATWasmRegisterGamePackSource','_ATWasmIsPaused','_ATWasmTogglePause','_ATWasmAutoHostNetplay']"
         "SHELL:-lidbfs.js"
         "SHELL:-sENVIRONMENT=web"
         "SHELL:-sASYNCIFY=0"
@@ -960,6 +960,36 @@ elseif(ALTIRRA_WASM)
     if(EXISTS "${ALTIRRA_WASM_INDEX_TEMPLATE}")
         configure_file("${ALTIRRA_WASM_INDEX_TEMPLATE}"
             "${ALTIRRA_WASM_INDEX_OUTPUT}" @ONLY)
+    endif()
+
+    # Optional config.json sibling to AltirraSDL.html — operators
+    # override per-host firmware mirror + game packs by editing this
+    # at deploy time.  The default points at the lobby's curated pack
+    # so the first-run wizard offers the Curated Library install
+    # immediately.  Kept as a plain copy (no @VAR@ substitutions) so
+    # an operator can hand-edit the deployed file without rebuilding.
+    set(ALTIRRA_WASM_CONFIG_TEMPLATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wasm_config.json")
+    set(ALTIRRA_WASM_CONFIG_OUTPUT
+        "${CMAKE_CURRENT_BINARY_DIR}/config.json")
+    if(EXISTS "${ALTIRRA_WASM_CONFIG_TEMPLATE}")
+        configure_file("${ALTIRRA_WASM_CONFIG_TEMPLATE}"
+            "${ALTIRRA_WASM_CONFIG_OUTPUT}" COPYONLY)
+    endif()
+
+    # wasm_lib_deeplink.js — extracted from index.html.in so the host
+    # page stays under ~6,200 lines.  Loaded synchronously by index.html
+    # before the inline IIFE.  COPYONLY (no @VAR@ substitutions); the
+    # cache-busting query string in the <script src=…> uses the same
+    # @ALTIRRA_WASM_GIT_SHA@ baked into index.html so a single deploy
+    # refreshes both files in lockstep.
+    set(ALTIRRA_WASM_DEEPLINK_TEMPLATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wasm_lib_deeplink.js")
+    set(ALTIRRA_WASM_DEEPLINK_OUTPUT
+        "${CMAKE_CURRENT_BINARY_DIR}/wasm_lib_deeplink.js")
+    if(EXISTS "${ALTIRRA_WASM_DEEPLINK_TEMPLATE}")
+        configure_file("${ALTIRRA_WASM_DEEPLINK_TEMPLATE}"
+            "${ALTIRRA_WASM_DEEPLINK_OUTPUT}" COPYONLY)
     endif()
 else()
     target_link_libraries(AltirraSDL PRIVATE OpenGL::GL)

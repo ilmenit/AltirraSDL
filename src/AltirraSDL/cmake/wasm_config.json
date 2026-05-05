@@ -1,0 +1,11 @@
+{
+  "_comment": "AltirraSDL WASM host config.  Copied verbatim into the deployed bundle as config.json next to AltirraSDL.html.  Read once at startup by wasm_index.html.in's loadHostConfig() to drive the first-run firmware/game-pack wizard.",
+  "_comment_packs": "Each entry in gamePacks[] becomes an opt-in checkbox in the wizard.  url is fetched, unpacked into /home/web_user/games/<sanitized-name>/.  The lobby's \"Curated Game Library\" section on the welcome page reads from the same library/ tree directly (one game at a time), so an installed pack and the lobby grid stay in sync.",
+  "gamePacks": [
+    {
+      "name": "Curated Atari 8-bit Library",
+      "url": "/AltirraSDL/library/curated_pack.zip",
+      "description": "~196 classic + modern titles with screenshots (~9 MB)"
+    }
+  ]
+}

@@ -634,6 +634,12 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 	// AFTER the session-active update so the gate it checks
 	// (!ATNetplayGlue::IsActive()) reflects the current frame.
 	ATNetplayUI::DriveDeepLinkJoin();
+
+	// Auto-host (Play Together): symmetric driver for ?host=1 /
+	// --host-session.  Cheap no-op until the lobby HTML's "Play
+	// Together" deep-link arrives.  Runs after DriveDeepLinkJoin so
+	// it yields when both flows somehow arrived together.
+	ATNetplayUI::DriveAutoHost();
 }
 
 void ATNetplayUI_OpenBrowser() {

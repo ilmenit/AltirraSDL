@@ -1460,6 +1460,19 @@
   <!-- Hidden native file picker used by the toolbar Upload button ------- -->
   <input type="file" id="fm-filepicker" multiple hidden>
 
+  <!--
+    Curated-library deep-link helpers.  Loaded synchronously (no
+    `defer`) BEFORE the main inline IIFE so window.ATLibDeepLink is
+    populated by the time the IIFE's URL parser runs.  Cache-bust uses
+    the build-time git SHA so a deploy that rebuilds this script forces
+    every browser to refetch — the bare filename without query would
+    otherwise let stale Service Worker / browser-cache copies linger
+    while AltirraSDL.js (cache-busted with Date.now()) returns the new
+    build.  See src/AltirraSDL/cmake/wasm_lib_deeplink.js for the
+    contract.
+  -->
+  <script src="wasm_lib_deeplink.js?v=@ALTIRRA_WASM_GIT_SHA@"></script>
+
   <script>
   (() => {
     // ───────────────────────────────────────────────────────────────────
@@ -5997,6 +6010,16 @@
     } catch (e) {
       jlog('deeplink: URL parse failed —', e && e.message ? e.message : e);
     }
+    // Curated-library deep-link (?lib=… / ?host=1 / ?pal=1 / ?hardware=
+    // / ?memsize= / ?title=).  Implementation lives in the standalone
+    // wasm_lib_deeplink.js (loaded via <script> below); we just call
+    // its parseUrl entry point here so it can push --hardware / --pal
+    // / --memsize into argv synchronously.  The matching preRunFetch
+    // and onRuntimeReady calls are sequenced inside Module.preRun
+    // and Module.onRuntimeInitialized respectively.
+    if (window.ATLibDeepLink) {
+      window.ATLibDeepLink.parseUrl(__wasmCliArgs);
+    }
 
     // ───────────────────────────────────────────────────────────────────
     //  Emscripten Module configuration
@@ -6072,6 +6095,18 @@
           for (const c of CATEGORIES) {
             try { Module.FS.mkdirTree(c.dir); } catch (e) {}
           }
+          // Curated-library deep-link fetch — see wasm_lib_deeplink.js.
+          // No-op when the URL didn't carry ?lib=.  Must run AFTER
+          // syncfs(true) populates the in-memory FS from IndexedDB so
+          // the per-file stat-skip optimisation actually finds files
+          // cached from previous visits (otherwise every Play Solo
+          // click re-downloads and re-writes every disk on every
+          // page load).  The fetch installs its own 'library-fetch'
+          // run-dependency that keeps main() blocked until every file
+          // has landed.
+          if (window.ATLibDeepLink) {
+            window.ATLibDeepLink.preRunFetch(Module, __wasmCliArgs);
+          }
           Module.removeRunDependency('idbfs-populate');
         });
       }],
@@ -6132,6 +6167,12 @@
           // needed" silent branch still fixes up the toolbar button.
           refreshFirmwareButton();
           decideFirstRunAction();
+          // Curated-library deep-link tail — registers the staging
+          // dir with the Game Library and (for ?host=1) calls into
+          // the C-side auto-host stash.  No-op when ?lib= absent.
+          if (window.ATLibDeepLink) {
+            window.ATLibDeepLink.onRuntimeReady(Module);
+          }
         });
       },
       totalDependencies: 0,

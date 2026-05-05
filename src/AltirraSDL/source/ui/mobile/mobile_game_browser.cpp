@@ -43,6 +43,16 @@ extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 
+// WASM only — drains the queue of GamePack source paths stashed by JS
+// before the library was constructed.  Defined in wasm_bridge.cpp;
+// declared here at file scope (extern "C" can't appear inside a
+// function body) so GameBrowser_Init can invoke it after creating the
+// library.  No-op otherwise — guard with __EMSCRIPTEN__ at the call
+// site so non-WASM links don't pull an undefined symbol.
+#if defined(__EMSCRIPTEN__)
+extern "C" void ATWasmDrainPendingGamePackSources();
+#endif
+
 static ATGameLibrary *s_gameLibrary = nullptr;
 static GameArtCache *s_artCache = nullptr;
 static bool s_needsRefresh = true;
@@ -149,6 +159,19 @@ void GameBrowser_Init() {
 		}
 	}
 	s_needsRefresh = true;
+
+	// WASM only: drain any GamePack source paths queued by JS before
+	// the library existed.  ATWasmRegisterGamePackSource(), called from
+	// the Curated Library deep-link's onRuntimeReady hook, fires before
+	// main() reaches Gaming Mode and the library is null at that point;
+	// it stashes the path in g_pendingGamePackPaths and we apply it
+	// here once the library is ready so deep-link plays show up
+	// alongside wizard-installed packs without requiring a page reload.
+#if defined(__EMSCRIPTEN__)
+	if (s_gameLibrary) {
+		ATWasmDrainPendingGamePackSources();
+	}
+#endif
 
 	// Defensive: ensure the letter picker modal is not "stuck open" from
 	// a prior session.  It can only be opened from the Row 3 pill and is

@@ -33,6 +33,8 @@
 #include <at/atcore/logging.h>
 
 #include <vd2/system/registry.h>
+#include <vd2/system/text.h>
+#include <vd2/system/VDString.h>
 
 #include <SDL3/SDL_video.h>
 
@@ -520,6 +522,208 @@ void RetryDeepLinkFirmware() {
 	if (g_phase == Phase::FirmwareFailed)
 		g_phase = Phase::Idle;
 #endif
+}
+
+// ─── Auto-host (Play Together) deep-link ──────────────────────────
+namespace {
+	// Stash + completion bookkeeping.  Setters can run from any
+	// startup thread; the per-frame driver and the "fired?" flag are
+	// only touched from the netplay tick so they don't need the mutex.
+	std::mutex  g_autoHostMu;
+	std::string g_pendingHostTitle;        // protected by g_autoHostMu
+	std::string g_pendingHostPath;         // protected by g_autoHostMu
+	// MRU "Order" baseline captured at the start of cmdline parsing,
+	// BEFORE any --run/--disk/--cart/--tape arg can call ATAddMRU.
+	// DriveAutoHost waits for the live MRU "Order" to differ from
+	// this baseline before firing — that is, until cmdline-driven
+	// loads have actually registered with the MRU — so:
+	//
+	//  * a fresh tab whose IDBFS restored yesterday's MRU but had no
+	//    new --disk argv still gates closed (baseline == current);
+	//  * a returning tab that re-loads yesterday's game via --disk
+	//    still gates open (ATAddMRU bumps the entry which mutates
+	//    the "Order" string);
+	//  * a brand-new visitor sees baseline = empty and any later
+	//    --disk-driven MRU entry trips the gate.
+	//
+	// We deliberately DO NOT take the snapshot at RequestAutoHost
+	// time — on WASM that fires from onRuntimeReady's
+	// loadHostConfig().finally() chain which can race main()'s argv
+	// processing, sometimes capturing post-load MRU and locking the
+	// gate forever; same problem on native with the documented
+	// `--run X --host-session Y` argv order.  See InitAutoHostBaseline.
+	std::string g_mruBaselineAtCmdline;    // ASCII bytes of mru "Order"
+	bool        g_mruBaselineCaptured = false;
+	bool        g_autoHostFired = false;   // main-thread only
+
+	// Walk the MRU "Order" string to find the most recently loaded
+	// image's path.  Returns an empty string if the MRU is empty
+	// (no image loaded yet — the caller should retry next frame).
+	VDStringW MostRecentMruPath() {
+		VDRegistryAppKey mru("MRU List", false);
+		VDStringW order;
+		mru.getString("Order", order);
+		if (order.empty()) return VDStringW();
+		char kn[2] = { (char)order[0], 0 };
+		VDStringW path;
+		mru.getString(kn, path);
+		return path;
+	}
+
+	// Snapshot the MRU "Order" key as ASCII (it's a list of single-byte
+	// slot identifiers — A, B, C…) so we can detect "the boot we
+	// triggered has landed" by comparing against g_mruSnapshotAtRequest.
+	std::string MruOrderSnapshot() {
+		VDRegistryAppKey mru("MRU List", false);
+		VDStringW order;
+		mru.getString("Order", order);
+		std::string s;
+		s.reserve(order.size());
+		for (size_t i = 0; i < order.size(); ++i) {
+			// Order entries are ASCII alnum slot keys; cast safely.
+			s.push_back(static_cast<char>(order[i] & 0x7f));
+		}
+		return s;
+	}
+
+	// Strip directory prefix to get a display-friendly basename.
+	VDStringW BasenameOf(const VDStringW& path) {
+		const wchar_t *last = nullptr;
+		for (const wchar_t *q = path.c_str(); *q; ++q)
+			if (*q == L'/' || *q == L'\\') last = q;
+		return last ? VDStringW(last + 1) : path;
+	}
+}
+
+void InitAutoHostBaseline() {
+	if (g_mruBaselineCaptured) return;
+	g_mruBaselineAtCmdline = MruOrderSnapshot();
+	g_mruBaselineCaptured = true;
+	g_ATLCNetplay("auto-host: baseline captured (mru-order=\"%s\")",
+		g_mruBaselineAtCmdline.c_str());
+}
+
+void RequestAutoHost(const std::string& title,
+                     const std::string& primaryPath) {
+	{
+		std::lock_guard<std::mutex> lk(g_autoHostMu);
+		g_pendingHostTitle = title;
+		g_pendingHostPath  = primaryPath;
+	}
+	// Baseline must be in place before this fires.  If
+	// InitAutoHostBaseline hasn't been called (unusual — should run
+	// from ATProcessCommandLineSDL3's entry), fall back to capturing
+	// it now.  This is the original (race-prone) behaviour but
+	// preserves correctness for the common case where the baseline
+	// IS set first.
+	if (!g_mruBaselineCaptured) {
+		InitAutoHostBaseline();
+	}
+	// Reset the fired flag so a fresh request after a previous
+	// completion (rare — same-tab user navigates back and triggers
+	// Play Together on a different game) actually re-publishes.
+	g_autoHostFired = false;
+	g_ATLCNetplay("auto-host: request stashed (title=\"%s\", path=\"%s\", "
+		"baseline=\"%s\")",
+		title.c_str(), primaryPath.c_str(),
+		g_mruBaselineAtCmdline.c_str());
+}
+
+void ClearPendingAutoHost() {
+	std::lock_guard<std::mutex> lk(g_autoHostMu);
+	g_pendingHostTitle.clear();
+	g_pendingHostPath.clear();
+}
+
+bool HasPendingAutoHost() {
+	std::lock_guard<std::mutex> lk(g_autoHostMu);
+	return !g_pendingHostTitle.empty() || !g_pendingHostPath.empty();
+}
+
+void DriveAutoHost() {
+	// Cheap early-out — most frames have nothing to do.
+	if (g_autoHostFired) return;
+	std::string title, primaryPath;
+	{
+		std::lock_guard<std::mutex> lk(g_autoHostMu);
+		if (g_pendingHostTitle.empty() && g_pendingHostPath.empty())
+			return;
+		title       = g_pendingHostTitle;
+		primaryPath = g_pendingHostPath;
+	}
+
+	// Coexistence with the Join deep-link: if the same URL somehow
+	// asked for both (?s=… + ?host=1, which the lobby HTML never
+	// generates but a hand-built link could), let Join win — auto-
+	// host runs only when no join is pending or in flight.
+	if (HasPendingDeepLink()) return;
+	if (g_phase == Phase::FetchInFlight
+	    || g_phase == Phase::WaitingForNickname
+	    || g_phase == Phase::WaitingForFirmware) return;
+
+	// Worker must be up so StartHostingAction → ReconcileHostedGames
+	// can post the Create request.  Wait silently otherwise.
+	if (!GetWorker().IsRunning()) return;
+
+	// An image must actually be loaded.  Two-stage check:
+	//   1. MRU non-empty — necessary, but not sufficient (IDBFS may
+	//      retain MRU from a previous session before this boot starts).
+	//   2. MRU "Order" string differs from the baseline captured by
+	//      InitAutoHostBaseline at the start of cmdline parsing —
+	//      proves cmdline-driven --disk/--run/etc. has actually
+	//      registered with the MRU, not a leftover from yesterday.
+	// On a fresh-tab visitor the baseline is empty and any non-empty
+	// MRU passes (the only way it could be non-empty is our boot).
+	VDStringW mruPath = MostRecentMruPath();
+	if (mruPath.empty()) return;
+	const std::string mruNow = MruOrderSnapshot();
+	if (mruNow == g_mruBaselineAtCmdline) return;
+
+	VDStringW chosenPath = mruPath;
+	VDStringW chosenName;
+	if (!primaryPath.empty()) {
+		// JS gave us a canonical primary path — use it for de-dup
+		// (HostedGame is keyed by gamePath) so two browser tabs on
+		// the same game collapse rather than duplicate.  Note the
+		// MRU may point at the *last* loaded disk for multi-disk
+		// titles (D4: for a 4-disk game), which we deliberately
+		// do not want as the de-dup key.
+		chosenPath = VDTextU8ToW(VDStringSpanA(primaryPath.c_str()));
+	}
+	if (!title.empty()) {
+		chosenName = VDTextU8ToW(VDStringSpanA(title.c_str()));
+	} else {
+		chosenName = BasenameOf(chosenPath);
+	}
+
+	State& st = GetState();
+	// Don't fire if a hosting flow is already mid-flight on this tab
+	// (e.g. user opened the Host UI manually before our gate opened).
+	if (!st.session.pendingCartName.empty()
+	    && !st.hostedGames.empty()) {
+		// Already hosting; nothing to do here.  Treat as fired so we
+		// don't spam the log every frame.
+		g_autoHostFired = true;
+		ClearPendingAutoHost();
+		return;
+	}
+
+	st.session.pendingCartPath.assign(
+		VDTextWToU8(chosenPath).c_str());
+	st.session.pendingCartName.assign(
+		VDTextWToU8(chosenName).c_str());
+	// cartArtHash stays whatever it was — the lobby Create will
+	// recompute it from the loaded image hash if empty.
+	st.session.hostingPrivate    = false;
+	st.session.hostingEntryCode.clear();
+
+	g_ATLCNetplay("auto-host: gates open — publishing \"%s\" (path=\"%s\")",
+		st.session.pendingCartName.c_str(),
+		st.session.pendingCartPath.c_str());
+	StartHostingAction();
+
+	g_autoHostFired = true;
+	ClearPendingAutoHost();
 }
 
 } // namespace ATNetplayUI

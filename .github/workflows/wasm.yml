@@ -125,6 +125,27 @@ jobs:
           cp "${OUTDIR}/index.html"       "${DIST}/"
           cp "${OUTDIR}/AltirraSDL.js"    "${DIST}/"
           cp "${OUTDIR}/AltirraSDL.wasm"  "${DIST}/"
+          # config.json is the host config the first-run wizard reads
+          # (gamePacks list, firmware-URL override).  CMake copies it
+          # from src/AltirraSDL/cmake/wasm_config.json to the build
+          # output as a sibling of AltirraSDL.html.  If it's missing
+          # the wizard silently falls back to no-packs — non-fatal.
+          if [ -f "${OUTDIR}/config.json" ]; then
+            cp "${OUTDIR}/config.json" "${DIST}/"
+          else
+            echo "warning: ${OUTDIR}/config.json missing — wizard will offer no game packs" >&2
+          fi
+          # wasm_lib_deeplink.js — extracted from index.html so the
+          # host shell file stays manageable.  Loaded synchronously
+          # by index.html via <script src="wasm_lib_deeplink.js">.
+          # Fatal if missing: index.html depends on window.ATLibDeepLink
+          # for the lobby's Play Solo / Play Together URLs to do
+          # anything at all.
+          if [ ! -f "${OUTDIR}/wasm_lib_deeplink.js" ]; then
+            echo "ERROR: ${OUTDIR}/wasm_lib_deeplink.js missing" >&2
+            exit 1
+          fi
+          cp "${OUTDIR}/wasm_lib_deeplink.js" "${DIST}/"
 
           # Size + byte-count smoke check — catch accidental zero-size
           # artifacts (empty .wasm has bitten us before on upstream CMake
@@ -160,7 +181,12 @@ jobs:
           DIST=wasm-dist
           sudo apt-get update -qq
           sudo apt-get install -y -qq brotli
-          for f in index.html AltirraSDL.js AltirraSDL.wasm; do
+          # wasm_lib_deeplink.js is small (~7 KB raw) but precompressing
+          # it spares the runtime CPU on the lobby VM, same as the other
+          # static assets.  config.json is intentionally NOT precompressed
+          # — operators may hand-edit it on the live VM and we want their
+          # next request to see the change without a re-deploy.
+          for f in index.html AltirraSDL.js AltirraSDL.wasm wasm_lib_deeplink.js; do
             brotli -q 11 --keep "${DIST}/${f}"
             gzip   -9  --keep "${DIST}/${f}"
           done
