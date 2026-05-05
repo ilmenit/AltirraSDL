@@ -25,6 +25,44 @@ add_compile_definitions(AT_SDL3_PORTABLE=1)
 
 include(FetchContent)
 
+# Self-heal stale FetchContent subbuild caches when the generator
+# changes between CMake runs.  Without this, a user upgrading
+# Visual Studio (17 2022 → 18 2026) or switching from "Visual
+# Studio" to "Ninja" hits:
+#   "CMake Error: generator: Visual Studio 18 2026 Does not match
+#    the generator used previously: Visual Studio 17 2022"
+# inside FetchContent_populateSubbuild — because the dep's own
+# subbuild dir cached the old generator.  Top-level CMake's
+# generator-mismatch detection cleans the top-level cache, but
+# does NOT touch _deps/*-subbuild/.
+#
+# Call _altirra_clear_stale_fc(<name>) BEFORE FetchContent_Declare
+# / FetchContent_MakeAvailable for that dep — it nukes the dep's
+# subbuild + build + src trees when the cached generator differs
+# from the active one.  Idempotent and a no-op on a fresh build.
+function(_altirra_clear_stale_fc dep_name)
+    set(_subbuild_cache "${CMAKE_BINARY_DIR}/_deps/${dep_name}-subbuild/CMakeCache.txt")
+    if(NOT EXISTS "${_subbuild_cache}")
+        return()
+    endif()
+    file(STRINGS "${_subbuild_cache}" _gen_line
+         REGEX "^CMAKE_GENERATOR:INTERNAL=")
+    if(NOT _gen_line)
+        return()
+    endif()
+    string(REGEX REPLACE "^CMAKE_GENERATOR:INTERNAL=" "" _cached_gen "${_gen_line}")
+    if("${_cached_gen}" STREQUAL "${CMAKE_GENERATOR}")
+        return()
+    endif()
+    message(STATUS
+        "Clearing stale FetchContent cache for '${dep_name}' "
+        "(was: '${_cached_gen}', now: '${CMAKE_GENERATOR}')")
+    file(REMOVE_RECURSE
+        "${CMAKE_BINARY_DIR}/_deps/${dep_name}-subbuild"
+        "${CMAKE_BINARY_DIR}/_deps/${dep_name}-build"
+        "${CMAKE_BINARY_DIR}/_deps/${dep_name}-src")
+endfunction()
+
 ###############################################################################
 # Platform detection
 #
@@ -322,6 +360,7 @@ if(ALTIRRA_SDL3 OR NOT WIN32)
             message(STATUS "  └────────────────────────────────────────────")
             message(STATUS "")
 
+            _altirra_clear_stale_fc(sdl3)
             FetchContent_Declare(
                 sdl3
                 GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -409,6 +448,7 @@ if(ALTIRRA_SDL3)
         set(imgui_SOURCE_DIR "${ALTIRRA_IMGUI_SOURCE_DIR}")
         message(STATUS "Dear ImGui: using external source at ${imgui_SOURCE_DIR}")
     else()
+        _altirra_clear_stale_fc(imgui)
         FetchContent_Declare(
             imgui
             GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -429,6 +469,7 @@ if(ALTIRRA_SDL3)
         set(ENABLE_LIBRASHADER OFF CACHE BOOL "Enable librashader shader preset support" FORCE)
     endif()
     if(ENABLE_LIBRASHADER)
+        _altirra_clear_stale_fc(librashader_headers)
         FetchContent_Declare(
             librashader_headers
             GIT_REPOSITORY https://github.com/SnowflakePowered/librashader.git
@@ -666,6 +707,7 @@ static inline void *_librashader_dlopen_macos(void) {
         set(SDLIMAGE_BACKEND_WIC    OFF CACHE BOOL "" FORCE)
         set(SDLIMAGE_BACKEND_IMAGEIO OFF CACHE BOOL "" FORCE)
 
+        _altirra_clear_stale_fc(sdl3_image)
         FetchContent_Declare(
             sdl3_image
             GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
