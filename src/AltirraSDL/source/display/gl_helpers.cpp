@@ -3,6 +3,7 @@
 #include <stdafx.h>
 #include "gl_helpers.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <vector>
 #include "logging.h"
@@ -171,16 +172,25 @@ GLuint GLCreateXRGB8888Texture(int w, int h, bool linear, const void *data) {
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 
+#if !defined(__EMSCRIPTEN__)
 	if (GLGetActiveProfile() == GLProfile::ES30) {
 		// GLES samples RGBA-ordered memory as (R,G,B,A).  The source is
 		// BGRX, so we remap the sampler's R←B and B←R to restore RGB
 		// order.  A and G are identity.  Swizzle state is per-texture
 		// and persists for this texture's lifetime.
+		//
+		// Skipped on Emscripten: WebGL2 nominally supports
+		// GL_TEXTURE_SWIZZLE_*, but in practice the channel remap is
+		// not always honoured (different browser/driver/Emscripten
+		// build combinations have shipped silent-no-op
+		// implementations).  We instead pre-swap channels on the CPU
+		// in GLUploadXRGB8888, which always works.
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_BLUE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, GL_GREEN);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_RED);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ALPHA);
 	}
+#endif
 
 	if (data)
 		GLUploadXRGB8888(w, h, data, 0);
@@ -192,7 +202,50 @@ GLuint GLCreateXRGB8888Texture(int w, int h, bool linear, const void *data) {
 	return tex;
 }
 
+#if defined(__EMSCRIPTEN__)
+// CPU-side BGRX → RGBA conversion staging buffer.  Sized to the largest
+// frame seen so far and re-used across uploads to avoid per-frame
+// allocation churn.  The Atari emulator frame is well under 1 MB even
+// at the highest internal resolution (768×240), and mask/thumbnail
+// textures are smaller still, so the steady-state footprint is
+// negligible.
+static std::vector<uint32_t> g_uploadStaging;
+
+static const void *GLConvertBGRXToRGBA(int w, int h, const void *data, int pitchBytes) {
+	const int srcStride = (pitchBytes > 0) ? (pitchBytes / 4) : w;
+	const size_t needed = static_cast<size_t>(w) * static_cast<size_t>(h);
+	if (g_uploadStaging.size() < needed)
+		g_uploadStaging.resize(needed);
+
+	const uint32_t *src = static_cast<const uint32_t *>(data);
+	uint32_t *dst = g_uploadStaging.data();
+	for (int y = 0; y < h; ++y) {
+		const uint32_t *srcRow = src + static_cast<size_t>(y) * srcStride;
+		uint32_t *dstRow = dst + static_cast<size_t>(y) * w;
+		for (int x = 0; x < w; ++x) {
+			// Source DWORD is 0x00RRGGBB in little-endian memory layout
+			// (byte order B, G, R, X).  Target wants byte order R, G,
+			// B, A (DWORD 0xFFBBGGRR little-endian).  Swap R↔B, force
+			// alpha = 0xFF so the texture is fully opaque after upload.
+			const uint32_t s = srcRow[x];
+			dstRow[x] = 0xFF000000u
+				| ((s & 0x000000FFu) << 16)   // B → R
+				| (s & 0x0000FF00u)           // G → G
+				| ((s & 0x00FF0000u) >> 16);  // R → B
+		}
+	}
+	return dst;
+}
+#endif
+
 void GLUploadXRGB8888(int w, int h, const void *data, int pitch) {
+#if defined(__EMSCRIPTEN__)
+	// WebGL2: pre-swap BGRX → RGBA on the CPU and upload tightly packed
+	// (no UNPACK_ROW_LENGTH needed because the staging buffer is always
+	// w*4 bytes per row).
+	const void *converted = GLConvertBGRXToRGBA(w, h, data, pitch);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, converted);
+#else
 	GLenum format, type;
 	GLGetXRGB8888TransferParams(&format, &type);
 
@@ -201,6 +254,7 @@ void GLUploadXRGB8888(int w, int h, const void *data, int pitch) {
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, format, type, data);
 	if (pitch > 0 && pitch != w * 4)
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+#endif
 }
 
 void GLSetFramebufferSRGB(bool enable) {
