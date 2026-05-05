@@ -86,6 +86,17 @@ IATSourceWindow* ATImGuiOpenSourceWindow(const wchar_t* /*path*/) { return nullp
 
 void ATUISetPanZoomToolActive(bool /*active*/) {}
 
+// uiaccessors_stubs.cpp's ATUISwitchHardwareMode() calls this C-linkage
+// shim from adaptive_input.cpp after a 5200/8-bit hardware swap, to
+// re-apply the per-machine port-1 input map.  The bridge server has no
+// adaptive input layer at all — the bridge protocol's BOOT command
+// drives controllers via its own path, never through Adaptive Input —
+// so the SDL3 source/input/adaptive_input.cpp file is excluded from
+// this build.  A no-op stub is correct (and matches the contract: the
+// real function is documented as idempotent and a no-op when Adaptive
+// is disabled, which it always is here).
+void ATAdaptiveInput_ApplyAfterHardwareSwitch() {}
+
 // uiaccessors_stubs.cpp's ATUIBootImage(...) calls ATUIPushDeferred
 // to queue a boot through the SDL3 deferred-action queue. The bridge
 // server has no such queue — and the bridge module routes its own
