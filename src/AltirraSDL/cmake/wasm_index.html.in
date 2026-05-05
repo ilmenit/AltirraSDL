@@ -852,7 +852,7 @@
     <button id="btn-files" disabled>📁 Files…</button>
     <button id="btn-firmware" disabled
             title="Re-run the standard ROM bundle download">🎛 Download firmware…</button>
-    <div id="status">Loading…</div>
+    <div id="status">Loading Atari emulator…</div>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
     <button id="btn-diagnose"
@@ -4896,13 +4896,25 @@
         });
       },
       totalDependencies: 0,
+      // Emscripten's secondary progress channel: the dependency
+      // counter starts at N (left == N total deps) and decrements
+      // toward 0 as each preRun / async-fs / WASM-load step
+      // completes.  Translate to a friendlier label so non-technical
+      // users see what's happening even if the loader runtime path
+      // doesn't emit "Downloading data..." through setStatus.
       monitorRunDependencies: (left) => {
         Module.totalDependencies =
           Math.max(Module.totalDependencies, left);
         if (left) {
-          statusEl.textContent = 'Preparing… (' +
-            (Module.totalDependencies - left) + '/' +
-            Module.totalDependencies + ')';
+          const done  = Module.totalDependencies - left;
+          const total = Module.totalDependencies;
+          // First step is always the WASM fetch, which dwarfs the
+          // others.  Show "Downloading…" until that's done; the tail
+          // steps (IDBFS mount + dir creation) run sub-second so a
+          // single "Preparing…" label covers them.
+          statusEl.textContent = (done === 0)
+            ? 'Downloading Atari emulator…'
+            : 'Preparing the emulator… (' + done + '/' + total + ')';
         }
       },
     };

@@ -193,6 +193,16 @@ void RenderDeepLinkPrep() {
 
 	const DeepLinkUiState ui = GetDeepLinkUiState();
 
+	// Track the prior phase so the NeedsNickname case can re-seed
+	// its input on re-entry (e.g. after Cancel followed by a fresh
+	// ?s=... navigation in the same browser tab).  Updated at the
+	// top so the comparison is stable regardless of which sub-view
+	// the prior frame rendered.
+	static DeepLinkUiState s_prevUi = DeepLinkUiState::NotPending;
+	const bool nicknamePhaseEntered = (ui == DeepLinkUiState::NeedsNickname
+	                                && s_prevUi != DeepLinkUiState::NeedsNickname);
+	s_prevUi = ui;
+
 	// Title bar — Back / Cancel both abort the deep-link.  We don't
 	// push DeepLinkPrep onto the back stack on advance, so a tap on
 	// the system-back gesture also lands here as a single pop.
@@ -211,15 +221,13 @@ void RenderDeepLinkPrep() {
 			ImGui::Spacing();
 
 			char *buf = Wiz_DeepLinkNickBuf();
-			static bool seeded = false;
 			State& st = GetState();
-			if (!seeded || ConsumeFocusRequest(2001)) {
+			if (nicknamePhaseEntered || ConsumeFocusRequest(2001)) {
 				// Seed with whatever's already saved (re-entry case); a
 				// truly fresh visitor shows an empty box.
 				std::snprintf(buf, 32, "%s",
 					st.prefs.nickname.c_str());
 				ImGui::SetKeyboardFocusHere();
-				seeded = true;
 			}
 			ImGui::PushItemWidth(-FLT_MIN);
 			ATTouchInputTextScrollAware("##dlhandle", buf, 32);

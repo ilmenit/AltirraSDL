@@ -28,9 +28,13 @@
 
 #include "ui/core/ui_mode.h"
 
+#include <at/atcore/logging.h>
+
 #include <vd2/system/registry.h>
 
 #include <mutex>
+
+extern ATLogChannel g_ATLCNetplay;
 
 #if defined(__EMSCRIPTEN__)
 // WASM auto-fetch: forward-declare the wasm_bridge.cpp exports rather
@@ -145,13 +149,21 @@ void EnsureOnScreen(Screen target) {
 
 void SetPendingDeepLinkSessionId(const std::string& sessionId) {
 	if (sessionId.empty()) return;
-	std::lock_guard<std::mutex> lk(g_deepLinkMu);
-	g_pendingSessionId = sessionId;
+	{
+		std::lock_guard<std::mutex> lk(g_deepLinkMu);
+		g_pendingSessionId = sessionId;
+	}
+	g_ATLCNetplay("deeplink: set pending session=%.8s...",
+		sessionId.c_str());
 }
 
 void SetPendingDeepLinkCode(const std::string& entryCode) {
-	std::lock_guard<std::mutex> lk(g_deepLinkMu);
-	g_pendingEntryCode = entryCode;
+	{
+		std::lock_guard<std::mutex> lk(g_deepLinkMu);
+		g_pendingEntryCode = entryCode;
+	}
+	g_ATLCNetplay("deeplink: set pending entry-code (%zu chars)",
+		entryCode.size());
 }
 
 void ClearPendingDeepLink() {
@@ -190,6 +202,9 @@ void DriveDeepLinkJoin() {
 	// the WASM bootstrap so it's already a head-start by the time
 	// the user types.
 	if (!IsFirstRunComplete()) {
+		if (g_phase != Phase::WaitingForNickname) {
+			g_ATLCNetplay("deeplink: first-run gate open — asking for nickname");
+		}
 		g_phase = Phase::WaitingForNickname;
 		EnsureOnScreen(Screen::DeepLinkPrep);
 		return;
@@ -200,23 +215,37 @@ void DriveDeepLinkJoin() {
 	// 5/6/8 mean "ready"; 7 means "all mirrors failed"; 0..4 mean
 	// "in progress".  Idempotent: ATWasmFirstRunBootstrap uses an
 	// atomic guard so a second call from here is a no-op if JS
-	// already kicked it.
+	// already kicked it.  We log only on transitions (not every
+	// frame poll) to keep the log readable.
 #if defined(__EMSCRIPTEN__)
 	{
 		const int s = ATWasmGetFirstRunState();
 		if (s == 7) {
+			if (g_phase != Phase::FirmwareFailed) {
+				g_ATLCNetplay("deeplink: firmware fetch failed (state=7) — "
+					"all mirrors exhausted");
+			}
 			g_phase = Phase::FirmwareFailed;
 			EnsureOnScreen(Screen::DeepLinkPrep);
 			return;
 		}
 		if (s >= 0 && s <= 4) {
 			if (!g_firmwareKicked) {
+				g_ATLCNetplay("deeplink: kicking auto-firmware fetch "
+					"(state=%d → bootstrap)", s);
 				ATWasmFirstRunBootstrap();
 				g_firmwareKicked = true;
+			}
+			if (g_phase != Phase::WaitingForFirmware) {
+				g_ATLCNetplay("deeplink: waiting for firmware (state=%d)", s);
 			}
 			g_phase = Phase::WaitingForFirmware;
 			EnsureOnScreen(Screen::DeepLinkPrep);
 			return;
+		}
+		if (g_phase == Phase::WaitingForFirmware) {
+			g_ATLCNetplay("deeplink: firmware ready (state=%d) — "
+				"continuing to lobby fetch", s);
 		}
 		// 5 / 6 / 8 = firmware ready (or already-present); fall through.
 	}
@@ -253,11 +282,15 @@ void DriveDeepLinkJoin() {
 	g_fetchTag    = req.tag;
 
 	if (!GetWorker().Post(std::move(req), lobbies.front().section)) {
+		g_ATLCNetplay("deeplink: lobby Post() failed (worker overloaded?) "
+			"— routing to error");
 		RouteToError("Couldn't reach the lobby — try again in a moment.");
 		ClearPendingDeepLink();
 		g_phase = Phase::Done;
 		return;
 	}
+	g_ATLCNetplay("deeplink: lobby fetch posted (sid=%.8s..., section=%s)",
+		sessionId.c_str(), lobbies.front().section.c_str());
 	g_phase = Phase::FetchInFlight;
 	EnsureOnScreen(Screen::DeepLinkPrep);
 }
@@ -270,6 +303,8 @@ bool OnDeepLinkLobbyResult(const LobbyResult& r) {
 
 	State& st = GetState();
 	if (!r.ok || r.sessions.empty()) {
+		g_ATLCNetplay("deeplink: lobby fetch failed (http=%d, error=\"%s\")",
+			r.httpStatus, r.error.c_str());
 		// Friendly translation by HTTP status.
 		if (r.httpStatus == 404) {
 			RouteToError(
@@ -279,6 +314,12 @@ bool OnDeepLinkLobbyResult(const LobbyResult& r) {
 			RouteToError(
 				"Couldn't reach the lobby.  Check your connection and "
 				"try the link again.");
+		} else if (r.httpStatus == 429 || r.httpStatus == 503
+		        || r.httpStatus == 504) {
+			RouteToError(
+				"The lobby is currently busy or temporarily unavailable "
+				"(HTTP " + std::to_string(r.httpStatus) +
+				").  Wait a few seconds and try the link again.");
 		} else {
 			std::string msg = "Couldn't load the deep-link session";
 			if (!r.error.empty()) {
@@ -319,9 +360,15 @@ bool OnDeepLinkLobbyResult(const LobbyResult& r) {
 	// debug menus).  Flip to Gaming Mode if we're not already there
 	// before the join screens render.  The user can switch back via
 	// the hamburger any time after the session ends.
-	if (!ATUIIsGamingMode())
+	if (!ATUIIsGamingMode()) {
+		g_ATLCNetplay("deeplink: switching to Gaming Mode for one-click join");
 		ATUISetMode(ATUIMode::Gaming);
+	}
 
+	g_ATLCNetplay("deeplink: lobby fetch OK — handing off to "
+		"StartJoiningAction (cart=\"%s\", host=\"%s\")",
+		st.session.joinTarget.cartName.c_str(),
+		st.session.joinTarget.hostHandle.c_str());
 	StartJoiningAction();
 	return true;
 }
@@ -363,6 +410,8 @@ void SubmitDeepLinkNickname(const std::string& nickIn) {
 	st.prefs.isAnonymous = false;
 	SaveToRegistry();
 	MarkFirstRunComplete();
+	g_ATLCNetplay("deeplink: nickname submitted (\"%s\") — first-run "
+		"complete, advancing", nick.c_str());
 
 	// Re-enter the state machine from Idle on the next tick — it'll
 	// either advance to WaitingForFirmware (if firmware is missing)
@@ -371,6 +420,16 @@ void SubmitDeepLinkNickname(const std::string& nickIn) {
 }
 
 void CancelDeepLink() {
+	{
+		std::lock_guard<std::mutex> lk(g_deepLinkMu);
+		if (g_pendingSessionId.empty() && g_phase == Phase::Done) {
+			// Already cancelled / completed — silent no-op so the
+			// log doesn't get noisy if the renderer pings Cancel
+			// twice (window-close + button click).
+			return;
+		}
+	}
+	g_ATLCNetplay("deeplink: cancelled by user");
 	ClearPendingDeepLink();
 	g_phase = Phase::Done;
 	g_firmwareKicked = false;
@@ -381,6 +440,8 @@ void CancelDeepLink() {
 
 void RetryDeepLinkFirmware() {
 #if defined(__EMSCRIPTEN__)
+	g_ATLCNetplay("deeplink: user requested firmware retry — "
+		"resetting bootstrap state");
 	ATWasmResetFirstRun();
 	g_firmwareKicked = false;
 	// State machine drops back to Idle so the next DriveDeepLinkJoin

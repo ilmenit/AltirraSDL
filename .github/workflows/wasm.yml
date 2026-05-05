@@ -330,13 +330,32 @@ jobs:
           curl -fsS -o /dev/null --max-time 10 \
               "https://lobby.atari.org.pl/AltirraSDL/play/"
           echo "OK: index.html"
-          # Brotli content-encoded WASM — confirms .wasm.br exists and
-          # Caddy is wired up to serve precompressed.  We expect the
-          # brotli payload to be substantially smaller than 11 MB.
-          BR=$(curl -fsS --max-time 30 -H 'Accept-Encoding: br' \
-                  "https://lobby.atari.org.pl/AltirraSDL/play/AltirraSDL.wasm" \
-                  -o /dev/null -w '%{size_download} %{content_type}\n')
-          echo "OK: AltirraSDL.wasm br-served = $BR"
+          # Brotli content-encoded WASM — HEAD only, so we don't burn
+          # 3-4 MB of bandwidth on every deploy.  We just want to know
+          # that .wasm.br exists and Caddy is set to serve it.  Caddy
+          # echoes Content-Encoding: br in headers when the client
+          # advertises Accept-Encoding: br AND the .br sibling file
+          # is present on disk.
+          HDRS=$(curl -fsS --max-time 6 -I \
+                    -H 'Accept-Encoding: br' \
+                    "https://lobby.atari.org.pl/AltirraSDL/play/AltirraSDL.wasm")
+          echo "$HDRS" | head -8
+          if ! echo "$HDRS" | grep -qi '^content-encoding: *br'; then
+              echo "::warning::AltirraSDL.wasm not served brotli-precompressed"
+              echo "::warning::(check Caddyfile 'precompressed br gzip' + that"
+              echo "::warning:: AltirraSDL.wasm.br exists in /var/www/altirra-sdl-wasm)"
+              # Don't fail the deploy — the user-facing path still works,
+              # just heavier than expected.  A separate alert / dashboard
+              # entry is the right place to track this.
+          else
+              echo "OK: AltirraSDL.wasm served brotli-precompressed"
+          fi
+          # Probe the JS shim too — some Caddy precompressed-mode bugs
+          # only manifest on a subset of files.
+          curl -fsS --max-time 6 -I \
+              -H 'Accept-Encoding: br' \
+              "https://lobby.atari.org.pl/AltirraSDL/play/AltirraSDL.js" \
+              | head -4
 
   publish-nightly:
     name: Attach to rolling nightly release
