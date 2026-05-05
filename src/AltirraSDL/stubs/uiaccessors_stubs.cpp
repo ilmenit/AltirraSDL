@@ -493,6 +493,15 @@ bool ATUISwitchHardwareMode(VDGUIHandle h, ATHardwareMode mode, bool switchProfi
 	}
 
 	g_sim.ColdReset();
+
+	// Re-apply Adaptive Input — the canonical port-1 map set differs
+	// between Joystick mode (Atari 8-bit / XEGS) and 5200 mode, so a
+	// hardware switch needs to refresh which maps are active.  Apply()
+	// is idempotent and a no-op when Adaptive is disabled.
+	if (switching5200) {
+		extern void ATAdaptiveInput_ApplyAfterHardwareSwitch();
+		ATAdaptiveInput_ApplyAfterHardwareSwitch();
+	}
 	return true;
 }
 

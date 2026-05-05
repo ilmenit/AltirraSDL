@@ -28,6 +28,8 @@
 
 #include "ui/core/ui_mode.h"
 
+#include "adaptive_input.h"
+
 #include <at/atcore/logging.h>
 
 #include <vd2/system/registry.h>
@@ -237,6 +239,18 @@ void DriveDeepLinkJoin() {
 		if (cs > 4.0f) cs = 4.0f;
 		ATUIApplyModeStyle(cs);
 	}
+
+	// Adaptive Input — make sure the joiner has working controls before
+	// we hand off to the join flow.  ATUISetMode(Gaming) above already
+	// triggers Apply() once via ui_mode.cpp's mode-transition hook, but
+	// calling Apply() here too is cheap (idempotent) and gives us a
+	// safety net in the rare cases where the mode was already Gaming
+	// when the deep-link arrived (e.g. a returning user clicking Join
+	// from the welcome page mid-session).  Without an active port-1
+	// input map the joiner would arrive in the lobby with keyboard
+	// arrows, gamepad, and on-screen joypad all dead — they'd appear
+	// to "join the game" but have zero controls.
+	ATAdaptiveInput::Apply();
 
 	// Phase 1 — nickname.  When the user arrives via deep-link we
 	// skip the full Gaming Mode setup wizard and just ask for a name

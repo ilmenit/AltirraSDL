@@ -57,6 +57,7 @@ target_sources(AltirraSDL PRIVATE
     source/display/display_backend_sdl.cpp
 
     # --- input/ : SDL input, joystick, touch ---
+    source/input/adaptive_input.cpp
     source/input/input_sdl3.cpp
     source/input/joystick_sdl3.cpp
     source/input/keyboard_keymap_sdl3.cpp

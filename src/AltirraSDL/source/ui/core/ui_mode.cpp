@@ -9,6 +9,7 @@
 #include "ui_mode.h"
 #include "mobile_gamepad.h"
 #include "logging.h"
+#include "adaptive_input.h"
 
 static ATUIMode s_uiMode = ATUIMode::Desktop;
 
@@ -22,7 +23,21 @@ ATUIMode ATUIGetMode() {
 }
 
 void ATUISetMode(ATUIMode mode) {
+	const ATUIMode prev = s_uiMode;
 	s_uiMode = mode;
+	// Re-apply Adaptive Input on every mode transition.  Apply() is
+	// idempotent and a no-op when Adaptive is disabled, so this costs
+	// nothing for users who opted out.  The reason we re-apply on
+	// Desktop→Gaming (and Gaming→Desktop): a user who entered Gaming
+	// Mode without ever hitting the setup wizard or the Configure
+	// System Input page would otherwise have no port-1 map active —
+	// keyboard arrows AND on-screen joypad both dead.  Apply() makes
+	// the mobile-style "everything just works" UX consistent across
+	// every entry path into Gaming Mode (hamburger toggle, deep-link
+	// arrival, --gaming CLI flag, registry restore).
+	if (prev != mode) {
+		ATAdaptiveInput::Apply();
+	}
 }
 
 bool ATUIIsGamingMode() {

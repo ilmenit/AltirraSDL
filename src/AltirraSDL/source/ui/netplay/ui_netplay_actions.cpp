@@ -964,18 +964,46 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			Navigate(Screen::AcceptJoinPrompt);
 		} else if (!wasEmpty && isEmpty) {
 			// Last entry resolved — reject-all, joiner-cancel, accept,
-			// or auto-decline timeout.  If we're still on the prompt
-			// screen (Accept navigates away on its own), put the user
-			// back where they were.  Otherwise just tear down our
-			// saved-context bookkeeping; the Accept path is responsible
-			// for ATNetplayProfile::EndSession when its session ends.
+			// or auto-decline timeout.  Routing depends on WHY the
+			// queue emptied:
+			//
+			//   Accept   → the host is now playing the online game,
+			//              so close every netplay overlay and any
+			//              full-screen mobile sheet that was open
+			//              before the prompt fired.  Anything else
+			//              (Settings, Hosted Games, etc) leaves the
+			//              user staring at a stale UI on top of the
+			//              live game until they manually dismiss it,
+			//              which is the bug the host-side reported as
+			//              "I approved the join, the game is running,
+			//              but Settings is still showing."  The
+			//              promptSavedValid clear that the screens.cpp
+			//              Accept handler does is what gets us here:
+			//              we treat "no saved context" as "Accept
+			//              path — go to the bare emulator."
+			//
+			//   Reject / RejectAll / auto-decline / joiner-cancel →
+			//              the host did NOT change emulators, so
+			//              restore whatever screen was open before
+			//              the prompt fired.  promptSavedValid is
+			//              still true on these paths (only Accept
+			//              clears it) so we hit the restore branch.
 			if (st.screen == Screen::AcceptJoinPrompt) {
 				if (st.session.promptSavedValid) {
 					st.screen = st.session.promptSavedScreen;
-							g_mobileState.currentScreen =
+					g_mobileState.currentScreen =
 						(ATMobileUIScreen)st.session.promptSavedMobile;
 				} else {
-					Back();
+					// Accept path: close the netplay overlay AND the
+					// mobile UI sheet so the host sees the running
+					// game immediately.  Navigate(Closed) drives the
+					// netplay dispatcher's early-out
+					// (ATNetplayUI_IsActive returns false) and
+					// ATMobileUIScreen::None is the in-game state
+					// (ui_mobile.cpp:696).
+					Navigate(Screen::Closed);
+					g_mobileState.currentScreen =
+						ATMobileUIScreen::None;
 				}
 			}
 			if (st.session.promptPausedSim && g_sim.IsPaused()) {

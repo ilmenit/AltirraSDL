@@ -52,6 +52,7 @@ extern "C" void ATWasmSyncFSOut();
 #include "display_backend_sdl.h"
 #include "gl_funcs.h"
 #include "input_sdl3.h"
+#include "adaptive_input.h"
 #include "touch_controls.h"
 #include "ui_mobile.h"
 #include "mobile_gamepad.h"
@@ -1852,11 +1853,30 @@ int main(int argc, char *argv[]) {
 			key.setBool("Mobile defaults applied", true);
 		}
 	}
+#endif
 
-	// Make sure a *port-1* joystick input map is active, otherwise
-	// the on-screen fire/joystick buttons emit input codes that are
-	// never bound to the Atari port 0 controller (port 0 = joystick 1,
-	// the port games default to).
+	// Adaptive Input — universal one-toggle "let keyboard, gamepad,
+	// and on-screen joypad all drive port 1 simultaneously".  Default-
+	// on for first-run users; existing users with saved input-map
+	// selections are unaffected because Adaptive is purely additive
+	// (it activates extra canonical maps; never deactivates user
+	// selections).  Replaces the previous Android-only "force-pick the
+	// best gamepad map" block — the Android UX is preserved (gamepad
+	// + touch joypad both work) AND keyboard arrows now work for free,
+	// AND the same default works on Linux Desktop, Windows Gaming
+	// Mode, and the WASM browser build (where there is no setup
+	// wizard for deep-link Join arrivals).  Users who want exclusive
+	// single-map control turn the checkbox off in Configure System →
+	// Input.  See input/adaptive_input.h for the design rationale.
+	{
+		ATAdaptiveInput::Load();
+		ATAdaptiveInput::Apply();
+	}
+#ifdef __ANDROID__
+	// Legacy single-map activation block — kept for now as a safety
+	// net so existing Android installs continue to behave identically
+	// during the Adaptive rollout.  Adaptive's additive Apply() runs
+	// first; any further activation here is harmless overlap.
 	//
 	// Background: on Windows / desktop, the user picks an input map
 	// via the "Input" menu, and that activation is written to the
