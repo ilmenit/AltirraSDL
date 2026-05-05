@@ -311,6 +311,7 @@ jobs:
           touch ~/.ssh/known_hosts
 
       - name: rsync to VM and atomic-swap
+        if: steps.pf.outputs.skip != 'true'
         env:
           HOST: ${{ secrets.WASM_DEPLOY_HOST }}
         run: |
@@ -345,6 +346,7 @@ jobs:
           '
 
       - name: Smoke test
+        if: steps.pf.outputs.skip != 'true'
         env:
           HOST: ${{ secrets.WASM_DEPLOY_HOST }}
         run: |

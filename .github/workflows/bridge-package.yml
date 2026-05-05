@@ -542,8 +542,21 @@ jobs:
           if (-not (Test-Path "$sdl3BuildDir\SDL3Config.cmake")) {
               throw "SDL3Config.cmake not found at $sdl3BuildDir — was SDL3-shared built in the previous step?"
           }
+          # Reuse whatever Visual Studio generator the parent build
+          # picked from windows-latest's installed VS — hardcoding
+          # "Visual Studio 17 2022" broke when the runner image
+          # upgraded to VS 18 2026 (the C examples sub-build is a
+          # fresh CMake invocation, separate from the parent build's
+          # cache, so the parent's generator detection doesn't
+          # carry over). Read it back out of the parent's cache.
+          $parentCache = "$pwd\build\windows-sdl-release\CMakeCache.txt"
+          $cachedGen = (Select-String -Path $parentCache `
+              -Pattern '^CMAKE_GENERATOR:INTERNAL=(.*)$' `
+              | Select-Object -First 1).Matches.Groups[1].Value
+          if (-not $cachedGen) { throw "could not read CMAKE_GENERATOR from $parentCache" }
+          Write-Host "Using generator: $cachedGen"
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples `
-                -B build_c_examples -G "Visual Studio 17 2022" -A x64 `
+                -B build_c_examples -G "$cachedGen" -A x64 `
                 "-DCMAKE_PREFIX_PATH=$sdl3BuildDir"
           cmake --build build_c_examples --config Release
           # Get-ChildItem only takes one positional -Path; pass an
