@@ -206,7 +206,7 @@ jobs:
       # produce independent workflow runs, so there is no cross-branch
       # race — each push publishes its own commit.
       - name: Upload GitHub Pages artifact
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')
+        if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')) || github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v3
         with:
           path: wasm-dist
@@ -217,7 +217,7 @@ jobs:
       # (a tar.gz) isn't reusable by other jobs.  Includes .br / .gz
       # siblings for Caddy's `precompressed br gzip` directive.
       - name: Upload wasm-dist for VM deploy
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')
+        if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')) || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: wasm-dist
@@ -228,7 +228,7 @@ jobs:
   deploy-pages:
     name: Deploy to GitHub Pages
     needs: wasm
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -266,7 +266,7 @@ jobs:
   deploy-vm:
     name: Deploy to Oracle VM (lobby.atari.org.pl)
     needs: wasm
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/WASM-target')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Preflight — skip cleanly if VM secrets aren't provisioned
