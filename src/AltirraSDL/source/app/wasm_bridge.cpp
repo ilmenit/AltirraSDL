@@ -609,16 +609,38 @@ namespace {
 	// Mirror list for the standard ROM bundle.  Tried in order; the
 	// first one to return 2xx with extractable .rom entries wins.  Add
 	// or reorder URLs here — no other code paths reference these.
-	// HTTPS entries are listed first because mixed-content blocking on
-	// HTTPS-served pages will silently fail HTTP entries.  pcxf360.zip
-	// and xf25.zip both bundle the Altirra-distributable ROM set; the
+	//
+	// **Browser CORS gates this list.**  emscripten_fetch goes through
+	// the page's normal `fetch()` plumbing, so any mirror that doesn't
+	// return `Access-Control-Allow-Origin: *` is rejected by the
+	// browser as opaque before our success callback runs — the failure
+	// surfaces here as `status=0` with a synthesised error string.
+	// Result: in stock browsers, only mirrors that explicitly opt in
+	// to CORS work.  As of 2026-05, that's `ifarchive.org` (and its
+	// mirror network).  The other entries below are kept on purpose:
+	// self-hosters who reverse-proxy the ROM bundle through their own
+	// origin (HOSTING.md §3 describes the Caddyfile snippet) bypass
+	// CORS entirely, and a future mirror flipping CORS on shouldn't
+	// require a code change to start being used.  pcxf360.zip and
+	// xf25.zip both bundle the Altirra-distributable ROM set; the
 	// extractor accepts any ".rom" entry so either layout works.
 	constexpr const char *kFirstRunUrls[] = {
+		// CORS-permissive primary (verified 2026-05).
+		"https://ifarchive.org/if-archive/emulators/atari/pcxf360.zip",
+
+		// CORS-permissive ifarchive mirror (same content, separate
+		// origin; if ifarchive.org goes down, the mirrors keep
+		// answering — they typically inherit CORS too).
+		"https://mirrors.ibiblio.org/pub/mirrors/interactive-fiction/emulators/atari/pcxf360.zip",
+
+		// CORS-restricted mirrors (always fail in stock browsers but
+		// work for self-hosters who reverse-proxy them, and for any
+		// future runtime path that bypasses fetch's same-origin
+		// policy — keep them so non-browser embedders aren't forced
+		// onto a single mirror).
 		"https://atariarea.krap.pl/PLus/files/xf25.zip",
 		"https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.1/repos/emulators/xf25.zip",
 		"https://ftp.fau.de/macports/distfiles/atari800/xf25.zip",
-		"https://ifarchive.org/if-archive/emulators/atari/pcxf360.zip",
-		"https://mirrors.ibiblio.org/pub/mirrors/interactive-fiction/emulators/atari/pcxf360.zip",
 		"http://atari.vjetnam.cz/dow/emuROMs.zip",
 	};
 	constexpr int kFirstRunUrlCount =
@@ -834,9 +856,21 @@ namespace {
 		const int idx = (int)(intptr_t)f->userData;
 		// f->statusText is a fixed-size char array, so a pointer-NULL
 		// check is meaningless — gate on the first byte instead.
-		fprintf(stderr, "[wasm] FirstRun: fetch [%d] '%s' FAILED status=%lu (%s)\n",
+		// status=0 in emscripten_fetch is the browser's opaque-error
+		// signature: CORS rejection, mixed-content block, DNS / TLS
+		// failure, or network unreachable, all collapsed to a single
+		// indistinguishable code.  Spell that out so future readers
+		// don't chase phantom 404s like the krap.pl/ibiblio entries
+		// in 2026-05 (curl saw 200, browser saw status=0 — that was
+		// missing Access-Control-Allow-Origin, not "Not Found").
+		const char *hint = "";
+		if (f->status == 0)
+			hint = " — likely CORS / mixed-content / TLS / network "
+			       "(status=0 hides the real cause; check DevTools "
+			       "Network tab for the response)";
+		fprintf(stderr, "[wasm] FirstRun: fetch [%d] '%s' FAILED status=%lu (%s)%s\n",
 			idx, f->url ? f->url : "?", (unsigned long)f->status,
-			(f->statusText[0] ? f->statusText : ""));
+			(f->statusText[0] ? f->statusText : ""), hint);
 		emscripten_fetch_close(f);
 		TryNextMirror(idx);
 	}
