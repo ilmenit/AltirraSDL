@@ -1531,6 +1531,21 @@ void ATWasmSetGamingMode(int on) {
 	if (on) {
 		g_mobileState.gameLoaded    = true;
 		g_mobileState.currentScreen = ATMobileUIScreen::None;
+	} else {
+		// Switching to Desktop mode.  If the user landed here from
+		// plain "Start Atari Emulator" (no deep-link), the C-side
+		// startup at main_sdl3.cpp's "Gaming Mode + no restored
+		// media" branch left the simulator paused with
+		// currentScreen=GameBrowser.  In Desktop Mode, GameBrowser
+		// is hidden — the user expects the OS to boot (Self Test,
+		// BASIC, or memo screen depending on firmware/BASIC toggle).
+		//
+		// Resume() so the next frame produces a texture and the
+		// canvas isn't a black void.  Resume() is a no-op when the
+		// sim was already running, so the deep-link paths (which
+		// resume their own way) aren't affected.
+		if (g_sim.IsPaused())
+			g_sim.Resume();
 	}
 }
 

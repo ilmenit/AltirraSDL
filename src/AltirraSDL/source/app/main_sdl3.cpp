@@ -2741,7 +2741,7 @@ int main(int argc, char *argv[]) {
 				// File → Exit on WASM has nowhere useful to go — the
 				// canvas would freeze with the last frame and the user
 				// would be stranded on a dead page.  Navigate back to
-				// the curated game library (lobby's welcome page) so
+				// the curated software library (lobby's welcome page) so
 				// "Exit" feels like "back to where I came from".  The
 				// path /AltirraSDL/ resolves on both the production
 				// deploy (Caddy) and local-test.sh; outside the lobby

@@ -348,15 +348,31 @@
       background: #000;
     }
     canvas {
+      /* Fill the wrap completely.  SDL3's display pipeline letterboxes
+         the Atari frame to its native aspect via ComputeDisplayRect()
+         in PreserveAspectRatio mode, so no CSS aspect-ratio rule is
+         needed — and an explicit `aspect-ratio: 4 / 3` here was
+         actively harmful: when combined with `width: auto`,
+         `height: 100%`, and `max-width: 100%`, the browser resolves
+         height first, caps width by the parent, then drops the
+         aspect-ratio constraint silently.  The canvas ended up
+         non-4:3 (e.g. 940 × 909 in a narrow viewport) while SDL's
+         drawing buffer was set differently → the GL viewport
+         stretched vertically and the right column of pixels fell
+         outside the visible CSS box.  Filling the wrap eliminates
+         that whole class of bug. */
       display: block;
-      max-width: 100%;
-      max-height: 100%;
-      aspect-ratio: 4 / 3;
-      width: auto;
+      width: 100%;
       height: 100%;
       background: #000;
       outline: none;
     }
+    /* Browser-fullscreen: hide page chrome so the canvas owns the
+       entire viewport.  Without this rule the header keeps eating
+       ~91px and `aspect-ratio: 4/3`-driven layouts produced the
+       "fullscreen with right side cut" symptom. */
+    :fullscreen header,
+    :-webkit-full-screen header { display: none; }
     #drop-overlay {
       position: absolute;
       inset: 0;
@@ -1296,11 +1312,11 @@
            href="https://github.com/ilmenit/AltirraSDL"
            target="_blank" rel="noopener"
            title="AltirraSDL @PROJECT_VERSION@ · build @ALTIRRA_WASM_GIT_SHA@ (@ALTIRRA_WASM_BUILD_STAMP@) — open the GitHub project in a new tab">AltirraSDL</a></h1>
-    <!-- Lobby: navigate back to the curated game library (Play Solo /
-         Play Together gateway).  Same-origin link so the lobby's
-         iframe-style return is one click away. -->
+    <!-- Lobby: navigate back to the curated software library (Play Solo /
+         Play Together gateway, plus Demoscene productions).  Same-origin
+         link so the lobby's iframe-style return is one click away. -->
     <button id="btn-lobby"
-            title="Return to the curated game library">⬅ Lobby</button>
+            title="Return to the curated software library">⬅ Lobby</button>
     <!-- Console-key cluster: hardware buttons on a real Atari 8-bit.
          Promoted to the leftmost position (after Lobby) because these
          are the primary controls a player reaches for during gameplay
@@ -2057,7 +2073,7 @@
     //  Lobby (back-to-library) button
     //
     //  Goal: a one-click escape hatch from the running emulator back to
-    //  the curated game library page (lobby's welcome page) so a user
+    //  the curated software library page (lobby's welcome page) so a user
     //  who got here via Play Solo / Play Together can grab a different
     //  title without typing a URL.
     //
@@ -2392,7 +2408,21 @@
         } catch (e) {}
         refocusCanvas();
       });
-      document.addEventListener('fullscreenchange', updateFullscreenLabel);
+      document.addEventListener('fullscreenchange', () => {
+        updateFullscreenLabel();
+        // Fullscreen entry/exit changes the canvas's CSS box (header
+        // hides, viewport switches between window and screen).
+        // Emscripten + SDL3 listens on `window.resize` to push canvas
+        // size changes into the SDL window — but the resize event
+        // doesn't always fire reliably across browsers when the only
+        // trigger is a fullscreen transition.  Dispatch one manually
+        // after the layout has settled so SDL_EVENT_WINDOW_RESIZED
+        // arrives, mWinW/mWinH refresh, and the next ComputeDisplayRect
+        // uses the correct dimensions.
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event('resize'));
+        });
+      });
       updateFullscreenLabel();
     }
 

@@ -1,6 +1,6 @@
 {
   "_comment": "AltirraSDL WASM host config.  Copied verbatim into the deployed bundle as config.json next to AltirraSDL.html.  Read once at startup by wasm_index.html.in's loadHostConfig() to drive the first-run firmware/game-pack wizard.",
-  "_comment_packs": "Each entry in gamePacks[] becomes an opt-in checkbox in the wizard.  url is fetched, unpacked into /home/web_user/games/<sanitized-name>/.  The lobby's \"Curated Game Library\" section on the welcome page reads from the same library/ tree directly (one game at a time), so an installed pack and the lobby grid stay in sync.",
+  "_comment_packs": "Each entry in gamePacks[] becomes an opt-in checkbox in the wizard.  url is fetched, unpacked into /home/web_user/games/<sanitized-name>/.  The lobby's \"Curated Software Library\" section on the welcome page reads from the same library/ tree directly (one game at a time), so an installed pack and the lobby grid stay in sync.  The Demoscene tab in the lobby is intentionally NOT a wizard pack — those titles stream on click only.",
   "gamePacks": [
     {
       "name": "Curated Atari 8-bit Library",
