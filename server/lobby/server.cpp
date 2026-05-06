@@ -1207,7 +1207,20 @@ void Install(httplib::Server& srv, Store& store) {
 				b.key("dropped_oversized");
 				b.num((long long)gWsBridgeStats.droppedOversized.load()); b.raw(',');
 				b.key("dropped_auth");
-				b.num((long long)gWsBridgeStats.droppedAuth.load());
+				b.num((long long)gWsBridgeStats.droppedAuth.load()); b.raw(',');
+				// Snapshot-channel diagnostic counters (see
+				// ws_bridge.h for the four-way classification).
+				// On a healthy WSS-host / UDP-joiner snapshot all
+				// four should be ≥ snapshotChunks; any zero
+				// pinpoints the broken leg.
+				b.key("ws_in_chunks");
+				b.num((long long)gWsBridgeStats.wsInChunks.load());   b.raw(',');
+				b.key("udp_out_chunks");
+				b.num((long long)gWsBridgeStats.udpOutChunks.load()); b.raw(',');
+				b.key("udp_in_acks");
+				b.num((long long)gWsBridgeStats.udpInAcks.load());    b.raw(',');
+				b.key("ws_out_acks");
+				b.num((long long)gWsBridgeStats.wsOutAcks.load());
 			b.raw('}');                              b.raw(',');
 			b.key("http");            b.raw('{');
 				b.key("requests_total");
@@ -1998,6 +2011,22 @@ bool WsForwardToUdp(const uint8_t sidRaw[16], uint8_t senderRole,
 		1, std::memory_order_relaxed);
 	gWsBridgeStats.bytesOut.fetch_add(
 		(uint64_t)sent, std::memory_order_relaxed);
+	// Snapshot-channel diagnostic: count chunks actually relayed out
+	// over UDP after the lookup+rate-limit checks pass.  Pairs with
+	// wsInChunks: any delta between them is a chunk that the bridge
+	// received but couldn't forward (sendto failure, no peer, rate
+	// limit).  Inner magic is the first 4 bytes of `inner`.
+	if (innerLen >= 4) {
+		const uint32_t m =
+			  (uint32_t)inner[0]
+			| ((uint32_t)inner[1] <<  8)
+			| ((uint32_t)inner[2] << 16)
+			| ((uint32_t)inner[3] << 24);
+		if (m == 0x43504E41u /* kMagicChunk 'ANPC' */) {
+			gWsBridgeStats.udpOutChunks.fetch_add(1,
+				std::memory_order_relaxed);
+		}
+	}
 	gLC.relayPacketsOut.fetch_add(1, std::memory_order_relaxed);
 	gLC.relayBytesOut.fetch_add((uint64_t)sent, std::memory_order_relaxed);
 	return true;
@@ -2152,6 +2181,21 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 			int innerLen = n - (int)kWireRelayHeaderSize;
 			const uint8_t* innerBytes =
 				(const uint8_t*)(buf + kWireRelayHeaderSize);
+			// Snapshot-channel diagnostic: count snapshot acks we
+			// receive over UDP.  Pairs with the bridge's wsOutAcks:
+			// any delta is an ack that arrived at the lobby but
+			// failed to dispatch to the WS host's connection.
+			if (innerLen >= 4) {
+				const uint32_t innerMagicLE =
+					  (uint32_t)innerBytes[0]
+					| ((uint32_t)innerBytes[1] <<  8)
+					| ((uint32_t)innerBytes[2] << 16)
+					| ((uint32_t)innerBytes[3] << 24);
+				if (innerMagicLE == 0x41504E41u /* kMagicAck 'ANPA' */) {
+					gWsBridgeStats.udpInAcks.fetch_add(1,
+						std::memory_order_relaxed);
+				}
+			}
 			if (gWsBridgeCtx.reg) {
 				bool wsOk = ATLobby::WsBridgeForwardToWs(
 					gWsBridgeCtx.reg, sid, role,

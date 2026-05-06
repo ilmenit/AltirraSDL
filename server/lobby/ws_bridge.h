@@ -44,6 +44,26 @@ struct WsBridgeStats {
 	std::atomic<uint64_t> droppedNoPeer{0};
 	std::atomic<uint64_t> droppedOversized{0};
 	std::atomic<uint64_t> droppedAuth{0};
+
+	// Snapshot-channel diagnostics (added 2026-05-06 to root-cause the
+	// "snapshot upload failed (no chunk acks received)" failure that
+	// survived the auto-create RelayTable fix).  Per-direction counters
+	// classified by the inner Altirra magic so we can tell whether a
+	// chunk transfer fails because the host's chunks never reach the
+	// joiner OR because the joiner's acks never reach the host.  Four
+	// numbers, indexed by (transport, direction):
+	//   ws_in_chunks   — chunks received FROM a WS peer (host's burst)
+	//   udp_out_chunks — chunks forwarded TO a UDP peer (joiner relay)
+	//   udp_in_acks    — acks received FROM a UDP peer  (joiner reply)
+	//   ws_out_acks    — acks delivered  TO a WS peer   (host inbound)
+	// On a healthy WSS-host / UDP-joiner session for a 22-chunk
+	// snapshot, all four should be ≥22 (with retries usually higher).
+	// Any zero counter pinpoints the broken leg without per-session
+	// instrumentation.
+	std::atomic<uint64_t> wsInChunks{0};
+	std::atomic<uint64_t> udpOutChunks{0};
+	std::atomic<uint64_t> udpInAcks{0};
+	std::atomic<uint64_t> wsOutAcks{0};
 };
 
 // Reflector socket FD, owned by the reflector thread.  Set to a valid

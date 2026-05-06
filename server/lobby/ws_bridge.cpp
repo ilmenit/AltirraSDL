@@ -58,8 +58,24 @@ constexpr size_t   kAsdfHeaderSize = 4 + 16 + 1 + 3;   // magic + sid + role + 3
 constexpr uint32_t kNetByeMagicLE  = 0x42504E41u;       // 'ANPB' in little-endian wire order
 constexpr size_t   kNetByeSize     = 8;                 // magic + reason
 
+// Inner-packet magics we classify for the snapshot-channel counters.
+// These mirror src/AltirraSDL/source/netplay/packets.h kMagic{Chunk,Ack}
+// and live as little-endian 4-byte words on the wire (the first byte of
+// inner is bits 0..7 of the magic, etc.).  Drift caught by integration
+// tests that round-trip a real chunk through the bridge.
+constexpr uint32_t kNetChunkMagicLE = 0x43504E41u;      // 'ANPC'
+constexpr uint32_t kNetAckMagicLE   = 0x41504E41u;      // 'ANPA'
+
 constexpr uint8_t kRelayRoleHost   = 0;
 constexpr uint8_t kRelayRoleJoiner = 1;
+
+// Read a little-endian uint32 from `inner` (bounds-checked by caller).
+static inline uint32_t PeekInnerMagicLE(const uint8_t* inner) {
+	return  (uint32_t)inner[0]
+	     | ((uint32_t)inner[1] <<  8)
+	     | ((uint32_t)inner[2] << 16)
+	     | ((uint32_t)inner[3] << 24);
+}
 
 // ---------------------------------------------------------------------
 // Hex parsing helpers (slice-1-private; not pulled from json_cursor.h
@@ -748,6 +764,14 @@ static void HandleWsMsg(BridgeState& st, struct mg_connection* c,
 	const uint8_t* inner    = (const uint8_t*)wm->data.buf + 1;
 	size_t         innerLen = wm->data.len - 1;
 
+	// Snapshot-channel diagnostic: count chunks ingested from the WS
+	// host so the metrics endpoint can pinpoint which leg of a failed
+	// snapshot transfer dropped the traffic.
+	if (innerLen >= 4 &&
+	    PeekInnerMagicLE(inner) == kNetChunkMagicLE) {
+		st.stats->wsInChunks.fetch_add(1, std::memory_order_relaxed);
+	}
+
 	// Try WS-WS first; fall back to UDP relay table.
 	unsigned long otherId = st.reg->Other(pc.sid, pc.role);
 	if (otherId != 0) {
@@ -778,6 +802,20 @@ static void HandleWakeup(BridgeState& st, struct mg_connection* c,
                          struct mg_str* data) {
 	if (!c->is_websocket || c->is_closing) return;
 	if (!data || data->len == 0) return;
+
+	// Snapshot-channel diagnostic: count snapshot acks we actually
+	// dispatch to a WS peer.  Layout is [role:u8][inner…]; inner
+	// magic occupies bytes 1..4 when present.  Pairs with the
+	// reflector-side udpInAcks counter so we can see whether acks
+	// are dropped between UDP arrival and WS dispatch.
+	if (data->len >= 1 + 4) {
+		const uint8_t* inner =
+			reinterpret_cast<const uint8_t*>(data->buf) + 1;
+		if (PeekInnerMagicLE(inner) == kNetAckMagicLE) {
+			st.stats->wsOutAcks.fetch_add(1,
+				std::memory_order_relaxed);
+		}
+	}
 
 	mg_ws_send(c, data->buf, data->len, WEBSOCKET_OP_BINARY);
 	st.stats->messagesOut.fetch_add(1, std::memory_order_relaxed);
