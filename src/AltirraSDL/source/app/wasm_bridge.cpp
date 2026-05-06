@@ -1184,6 +1184,7 @@ void ATWasmResetFirstRun() {
 // and registry_sdl3.cpp are C++-mangled, and re-declaring them with C
 // linkage triggers wasm-ld "undefined symbol" at link time.
 ATGameLibrary *GetGameLibrary();
+void           GameBrowser_Init();
 void           ATRegistryFlushToDisk();
 
 namespace {
@@ -1273,26 +1274,38 @@ int ATWasmRegisterGamePackSource(const char *utf8Path) {
 
 	ATGameLibrary *lib = GetGameLibrary();
 	if (!lib) {
-		// Library not yet created (we're pre-main or pre-Gaming-Mode).
-		// Queue the path and return success — ATWasmDrainPendingGamePackSources
-		// will apply it once GameBrowser_Init runs.  De-dup so repeated
-		// calls before init don't pile up duplicate entries in the queue.
-		const std::string p = utf8Path;
-		for (const auto &q : g_pendingGamePackPaths) {
-			if (q == p) {
-				fprintf(stderr,
-					"[wasm] RegisterGamePackSource: '%s' already queued — "
-					"library not yet initialised, will apply on init\n",
-					utf8Path);
-				return 0;
+		// Library not yet created.  In desktop mode (the common WASM
+		// case) GameBrowser_Init is otherwise lazy — only fired when
+		// the user opens the Library window — so a queue-only path
+		// would lose the wizard install if the user closed the tab
+		// before opening Library.  Eagerly init here: GameBrowser_Init
+		// is idempotent (early-out on s_gameLibrary != null), runs
+		// on the same thread, and is only ~one cache load + one
+		// background scan kick — cheap relative to the wizard's
+		// surrounding zip extract.  After init, fall through to the
+		// normal apply path so the new source persists immediately.
+		GameBrowser_Init();
+		lib = GetGameLibrary();
+		if (!lib) {
+			// Init threw — keep the queue path as a fallback so a
+			// later GameBrowser_Init call can still pick this up.
+			const std::string p = utf8Path;
+			for (const auto &q : g_pendingGamePackPaths) {
+				if (q == p) {
+					fprintf(stderr,
+						"[wasm] RegisterGamePackSource: '%s' already queued — "
+						"library init failed, will retry on next init\n",
+						utf8Path);
+					return 0;
+				}
 			}
+			g_pendingGamePackPaths.push_back(p);
+			fprintf(stderr,
+				"[wasm] RegisterGamePackSource: queued '%s' — library init "
+				"failed (queue=%zu)\n",
+				utf8Path, g_pendingGamePackPaths.size());
+			return 1;
 		}
-		g_pendingGamePackPaths.push_back(p);
-		fprintf(stderr,
-			"[wasm] RegisterGamePackSource: queued '%s' — library not yet "
-			"initialised (queue=%zu)\n",
-			utf8Path, g_pendingGamePackPaths.size());
-		return 1;
 	}
 
 	return ApplyGamePackSourceLocked(lib, utf8Path);

@@ -406,17 +406,48 @@ void RenderTabSources(ATGameLibrary &lib, SDL_Window *window) {
 		}
 	}
 
-	// Bottom action row.
+	// Bottom action row.  On WASM, SDL_ShowOpenFolderDialog returns no
+	// path (browsers expose no folder picker for emscripten's SDL3
+	// shim), so the standard "Add Folder..." button silently does
+	// nothing.  Replace it with a text-input + Add pair so users can
+	// still register a VFS folder by typing the path (e.g. one created
+	// by the wizard's pack install at /home/web_user/games/<name>),
+	// then a Browse button that walks the VFS.
+	bool addFolderClicked = false;
+	std::string typedFolder;
+#if defined(__EMSCRIPTEN__)
+	{
+		static char vfsPath[256] = "/home/web_user/games/";
+		ImGui::SetNextItemWidth(280.0f);
+		bool entered = ImGui::InputTextWithHint("##addfolderpath",
+			"VFS folder, e.g. /home/web_user/games/MyPack",
+			vfsPath, sizeof vfsPath,
+			ImGuiInputTextFlags_EnterReturnsTrue);
+		ImGui::SameLine();
+		bool clicked = ImGui::Button("Add Folder");
+		if ((entered || clicked) && vfsPath[0]) {
+			typedFolder = vfsPath;
+			addFolderClicked = true;
+		}
+	}
+#else
 	if (ImGui::Button("Add Folder...")) {
 		SDL_ShowOpenFolderDialog(AddFolderCallback, nullptr, window,
 			nullptr, false);
 	}
+#endif
 	ImGui::SameLine();
 	if (ImGui::Button("Add File or Archive...")) {
 		ATUIShowOpenFileDialog('glib', AddFileCallback, nullptr, window,
 			kAddFileFilters, 2, false);
 	}
 	ImGui::SameLine();
+	// Stash the typed path for the post-render apply step (matches the
+	// async-callback path on native — keeps the apply logic in one place).
+	if (addFolderClicked) {
+		std::lock_guard<std::mutex> lock(g_pendingMutex);
+		g_pendingAddFolder = std::move(typedFolder);
+	}
 
 	bool scanning = lib.IsScanning();
 	if (scanning) ImGui::BeginDisabled();

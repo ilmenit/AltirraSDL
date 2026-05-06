@@ -171,10 +171,13 @@
       return i < 0 ? p : p.substring(i + 1);
     }
 
-    // Pre-allocate slots in URL-source order so out-of-order Promise
-    // resolutions can't scramble D1: vs D4: vs D2:.
+    // Pre-allocate names in URL-source order so out-of-order Promise
+    // resolutions can't scramble D1: vs D4: vs D2:.  The C-side argv
+    // parser auto-increments the disk slot for each `--disk <path>`
+    // it consumes (commandline_sdl3.cpp), so we just push the path —
+    // pushing an explicit slot number would make the parser read "1"
+    // as the path and fail with "Cannot open file '1'".
     var basenames = {};
-    var diskSlot  = 1;
     var entries = lib.paths.map(function (rel) {
       var b = basenameOf(rel);
       if (b in basenames) {
@@ -186,8 +189,7 @@
       basenames[b] = (basenames[b] || 0) + 1;
       var ext  = (b.split('.').pop() || '').toLowerCase();
       var kind = KIND[ext] || '';
-      var slot = (kind === 'disk') ? (diskSlot++) : 0;
-      return { rel: rel, vfs: DEST + '/' + b, kind: kind, slot: slot };
+      return { rel: rel, vfs: DEST + '/' + b, kind: kind };
     });
 
     // Push CLI args in source order NOW.  By the time main() reads
@@ -196,7 +198,7 @@
     for (var i = 0; i < entries.length; ++i) {
       var e = entries[i];
       if (e.kind === 'disk') {
-        __wasmCliArgs.push('--disk', String(e.slot), e.vfs);
+        __wasmCliArgs.push('--disk', e.vfs);
       } else if (e.kind === 'run') {
         __wasmCliArgs.push('--run', e.vfs);
       } else if (e.kind === 'cart') {
