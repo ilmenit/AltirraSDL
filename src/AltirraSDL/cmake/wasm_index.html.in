@@ -186,6 +186,140 @@
       padding: 6px 4px;
     }
 
+    /* ── Brand hyperlink ─────────────────────────────────────────────
+       Replaces the old "AltirraSDL X.YY" h1 text.  The full version +
+       build stamp + git SHA still live in the title= tooltip so the
+       version is one hover away. */
+    h1 a#brand {
+      color: #7db2ff;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    h1 a#brand:hover { color: #a8caff; text-decoration: underline; }
+
+    /* ── Issues disclosure ───────────────────────────────────────────
+       <details>/<summary> based menu — keyboard-accessible by default
+       and trivial to script (open property + outside-click listener).
+       Pop-out positioned absolutely so it doesn't reflow the header
+       when expanded.  Slides under the bar in horizontal mode and to
+       the right of it in vertical (left-bar) mode. */
+    .issues {
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .issues > summary {
+      list-style: none;
+      cursor: pointer;
+      background: #2a2a2a;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 4px 12px;
+      font-size: 0.85rem;
+      border-radius: 3px;
+      user-select: none;
+    }
+    .issues > summary::-webkit-details-marker { display: none; }
+    .issues > summary:hover { background: #353535; border-color: #555; }
+    .issues[open] > summary { background: #353535; border-color: #5a7aad; }
+    .issues-pop {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      min-width: 220px;
+      background: #1c1c1c;
+      border: 1px solid #3a3a3a;
+      border-radius: 5px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 50;
+    }
+    .issues-pop button,
+    .issues-pop a {
+      background: transparent;
+      color: #ddd;
+      border: 1px solid transparent;
+      padding: 6px 10px;
+      font-size: 0.85rem;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 3px;
+      text-decoration: none;
+      display: block;
+    }
+    .issues-pop button:hover,
+    .issues-pop a:hover {
+      background: #2a2a2a;
+      border-color: #444;
+    }
+
+    /* In left-bar mode the bar is narrow, so the pop-out should
+       unfold to the right of the bar instead of below it. */
+    body.layout-left .issues-pop {
+      top: 0;
+      left: calc(100% + 4px);
+      right: auto;
+    }
+
+    /* ── Log toolbar (Copy / Clear) ─────────────────────────────────
+       Sticky strip at the top of #log so the buttons stay reachable
+       even when the body has scrolled hundreds of lines. */
+    #log-toolbar {
+      position: sticky;
+      top: 0;
+      background: #000;
+      border-bottom: 1px solid #222;
+      padding: 4px 0 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 1;
+    }
+    #log-toolbar button {
+      background: #2a2a2a;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    #log-toolbar button:hover { background: #353535; }
+    #log-copy-status {
+      color: #9fd89f;
+      font-size: 0.75rem;
+    }
+    #log-body { padding-top: 4px; }
+
+    /* ── Narrow vertical bar (96px column, single button per row) ──
+       Tightens the left-bar layout to one button per row so the bar
+       eats minimal canvas width.  Matches user request: "make the bar
+       quite narrow when vertical … hold just one button horizontally". */
+    body.layout-left header { width: 96px; max-width: 20vw; padding: 6px 4px; }
+    body.layout-left header > * {
+      width: 100%;
+      box-sizing: border-box;
+      flex: 0 0 auto;
+    }
+    body.layout-left .console-keys {
+      flex-direction: column;
+      padding: 4px;
+    }
+    body.layout-left .console-keys .ck {
+      flex: 0 0 auto;
+      width: 100%;
+      padding: 6px 4px;
+    }
+    body.layout-left header button,
+    body.layout-left header .btn {
+      text-align: center;
+      padding: 6px 4px;
+      font-size: 0.78rem;
+    }
+    body.layout-left h1 { text-align: center; font-size: 0.85rem; }
+
     /* ── Canvas area ─────────────────────────────────────────────── */
     #canvas-wrap {
       flex: 1 1 auto;
@@ -1141,20 +1275,33 @@
 </head>
 <body>
   <header>
-    <h1>AltirraSDL @PROJECT_VERSION@
-      <span style="color:#666; font-weight:400; font-size:0.75rem;"
-            title="Build: @ALTIRRA_WASM_BUILD_STAMP@">
-        @ALTIRRA_WASM_GIT_SHA@
-      </span>
-    </h1>
+    <h1><a id="brand"
+           href="https://github.com/ilmenit/AltirraSDL"
+           target="_blank" rel="noopener"
+           title="AltirraSDL @PROJECT_VERSION@ · build @ALTIRRA_WASM_GIT_SHA@ (@ALTIRRA_WASM_BUILD_STAMP@) — open the GitHub project in a new tab">AltirraSDL</a></h1>
     <!-- Lobby: navigate back to the curated game library (Play Solo /
          Play Together gateway).  Same-origin link so the lobby's
          iframe-style return is one click away. -->
     <button id="btn-lobby"
             title="Return to the curated game library">⬅ Lobby</button>
+    <!-- MENU: open the Gaming-Mode hamburger menu (replaces the
+         on-canvas hamburger icon, which is hidden in WASM because the
+         page bar already provides the navigation entry point). -->
+    <button id="btn-menu"
+            title="Open the Atari menu (file management, settings, online play, …)">☰ Menu…</button>
     <button id="btn-files" disabled>📁 Files…</button>
-    <button id="btn-firmware" disabled
-            title="Re-run the standard ROM bundle download">🎛 Firmware…</button>
+    <button id="btn-pause" disabled
+            title="Pause / resume the emulator (same as F9). Disabled during online play to keep peers in sync.">⏸ Pause</button>
+    <button id="btn-region" disabled
+            title="Toggle the video standard (PAL ↔ NTSC).  Affects timing, palette, and frame rate (50 Hz vs 60 Hz).">NTSC</button>
+    <button id="btn-crt" disabled
+            title="Toggle the built-in CRT screen effects (scanlines, bloom, distortion).  Same as View → Screen Effects → Basic / (None).">CRT On</button>
+    <button id="btn-fullscreen"
+            title="Enter / exit browser fullscreen.  ESC restores the windowed view.">⤢ Full Screen</button>
+    <button id="btn-osk" disabled
+            title="Show / hide the on-screen Atari keyboard (same as the keyboard menu item).">⌨ Keyboard</button>
+    <button id="btn-touch" disabled
+            title="Show / hide on-canvas touch controls (joystick + fire + console keys).  Default on for touch devices, off on desktop.  Shortcut: Ctrl+T.">✦ Touch</button>
     <!-- Console-key cluster: hardware buttons on a real Atari 8-bit.
          Press-hold timing is JS-managed (~80 ms tap) so a single click
          feels like a real key press to the running cart. -->
@@ -1168,14 +1315,29 @@
       <button id="btn-c-reset"  class="ck danger"
               title="Cold reset — fully reboot the emulated Atari (asks for confirmation)">RESET</button>
     </span>
-    <button id="btn-pause" disabled
-            title="Pause / resume the emulator (same as F9). Disabled during online play to keep peers in sync.">⏸ Pause</button>
+    <button id="btn-firmware" disabled
+            title="Re-run the standard ROM bundle download">🎛 Firmware…</button>
+    <button id="btn-gamepack" disabled
+            title="Re-run the curated game pack download (re-opens the first-run wizard's game-pack page)">🎮 Game Pack…</button>
     <div id="status">Loading Atari emulator…</div>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
-    <button id="btn-diagnose"
-            title="Test reachability of the netplay lobby and WebSocket bridge. Useful when 'Play Online' fails with WS code 1006 / 'could not reach lobby'.">🩺 Diagnose</button>
-    <div class="log-toggle" id="log-toggle" role="button" tabindex="0">▸ Show log</div>
+    <!-- Issues disclosure: bundles diagnostics + log + report-issues
+         under one chevron so the bar stays compact when everything is
+         working.  Outside-click closes it (handled in JS below). -->
+    <details class="issues" id="issues-menu">
+      <summary title="Diagnostics, log, report a problem on GitHub">▾ Issues</summary>
+      <div class="issues-pop" role="menu">
+        <button id="btn-diagnose" type="button" role="menuitem"
+                title="Test reachability of the netplay lobby and WebSocket bridge. Useful when 'Play Online' fails with WS code 1006 / 'could not reach lobby'.">🩺 Diagnose Connection</button>
+        <button id="btn-log" type="button" role="menuitem"
+                title="Show / hide the in-page log panel">📜 Show Log</button>
+        <a id="btn-report" role="menuitem"
+           href="https://github.com/ilmenit/AltirraSDL/issues"
+           target="_blank" rel="noopener"
+           title="Open the AltirraSDL issue tracker on GitHub">🐞 Report Issues…</a>
+      </div>
+    </details>
   </header>
 
   <div id="canvas-wrap">
@@ -1183,7 +1345,16 @@
     <div id="drop-overlay">Drop files here to upload</div>
   </div>
 
-  <div id="log" class="hidden"></div>
+  <div id="log" class="hidden">
+    <div id="log-toolbar">
+      <button id="btn-log-copy" type="button"
+              title="Copy the entire log to the clipboard">📋 Copy to clipboard</button>
+      <button id="btn-log-clear" type="button"
+              title="Clear the log panel (does not affect server-side state)">🧹 Clear</button>
+      <span id="log-copy-status" aria-live="polite"></span>
+    </div>
+    <div id="log-body"></div>
+  </div>
 
   <!-- File manager modal ------------------------------------------------ -->
   <div id="fm-backdrop" role="dialog" aria-modal="true" aria-labelledby="fm-title">
@@ -1623,7 +1794,11 @@
     const canvas      = document.getElementById('canvas');
     const statusEl    = document.getElementById('status');
     const logEl       = document.getElementById('log');
-    const logToggle   = document.getElementById('log-toggle');
+    // The standalone "Show log" toggle was folded into the Issues
+    // disclosure (see #btn-log inside #issues-menu).  The handle is
+    // queried lazily later (see refreshLogToggleLabel) so it can
+    // initialise after the DOM-handle block, where #issues-menu's
+    // children are available.
     const dropOverlay = document.getElementById('drop-overlay');
     const canvasWrap  = document.getElementById('canvas-wrap');
     const btnFiles    = document.getElementById('btn-files');
@@ -1948,6 +2123,219 @@
     }
 
     // ───────────────────────────────────────────────────────────────────
+    //  Page-bar quick toggles (Region, CRT, Full Screen, Keyboard,
+    //  Touch, MENU…)
+    //
+    //  Each button is a thin wrapper around a C export added in
+    //  wasm_bridge.cpp.  Buttons start `disabled` in the markup and
+    //  refreshQuickToggles() (called from the existing 250 ms pause
+    //  poller) flips them on once the runtime is ready and updates
+    //  their labels to reflect live state.
+    //
+    //  Touch detection: pointer:coarse media query is the most reliable
+    //  signal for "primary input is a finger" (phone, tablet, Surface
+    //  in tablet mode).  Falls back to maxTouchPoints heuristics for
+    //  older browsers.  Default state is seeded once into
+    //  localStorage['altirra-wasm-touch'] on first run; subsequent
+    //  toggles persist the user's choice.
+    // ───────────────────────────────────────────────────────────────────
+    const btnMenu       = document.getElementById('btn-menu');
+    const btnRegion     = document.getElementById('btn-region');
+    const btnCrt        = document.getElementById('btn-crt');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+    const btnOsk        = document.getElementById('btn-osk');
+    const btnTouch      = document.getElementById('btn-touch');
+    const btnGamepack   = document.getElementById('btn-gamepack');
+
+    const TOUCH_KEY = 'altirra-wasm-touch';
+    const ATIsTouchDevice = (function () {
+      if (window.matchMedia
+          && window.matchMedia('(pointer: coarse)').matches) return true;
+      return ('ontouchstart' in window)
+          || (navigator.maxTouchPoints || 0) > 0;
+    })();
+
+    function refocusCanvas() {
+      try { document.getElementById('canvas').focus(); } catch (e) {}
+    }
+
+    function syncTouchPref() {
+      // Mirror localStorage → C side once on every poll while the
+      // runtime is ready.  Cheap (one int call) and self-correcting
+      // if settings.cpp loaded a stale value.
+      if (typeof Module === 'undefined'
+          || !Module._ATWasmGetTouchControls
+          || !Module._ATWasmSetTouchControls) return;
+      let pref;
+      try { pref = localStorage.getItem(TOUCH_KEY); } catch (e) { pref = null; }
+      if (pref === null) {
+        pref = ATIsTouchDevice ? '1' : '0';
+        try { localStorage.setItem(TOUCH_KEY, pref); } catch (e) {}
+      }
+      try {
+        const cur = Module._ATWasmGetTouchControls();
+        const want = (pref === '1') ? 1 : 0;
+        if (cur !== want) Module._ATWasmSetTouchControls(want);
+      } catch (e) {}
+    }
+
+    let touchPrefSeeded = false;
+    function refreshQuickToggles() {
+      if (typeof Module === 'undefined') return;
+      // First time the runtime is ready, seed the touch preference
+      // into the C side so the first frame already shows the right
+      // controls.  Subsequent frames just compare-and-update.
+      if (!touchPrefSeeded && Module._ATWasmSetTouchControls) {
+        syncTouchPref();
+        touchPrefSeeded = true;
+      }
+
+      // Region (PAL/NTSC).
+      if (btnRegion && Module._ATWasmGetVideoStandard) {
+        try {
+          const is50 = Module._ATWasmGetVideoStandard();
+          btnRegion.disabled = false;
+          btnRegion.textContent = is50 ? 'PAL' : 'NTSC';
+        } catch (e) {}
+      }
+
+      // CRT (Basic vs None).
+      if (btnCrt && Module._ATWasmGetCRTMode) {
+        try {
+          const m = Module._ATWasmGetCRTMode();   // 0 None, 1 Basic, 2 Preset
+          btnCrt.disabled = false;
+          btnCrt.textContent = (m === 0) ? 'CRT On' : 'CRT Off';
+        } catch (e) {}
+      }
+
+      // Virtual keyboard.
+      if (btnOsk && Module._ATWasmGetVirtualKeyboard) {
+        try {
+          const on = Module._ATWasmGetVirtualKeyboard();
+          btnOsk.disabled = false;
+          btnOsk.textContent = on ? '⌨ Keyboard (on)' : '⌨ Keyboard';
+        } catch (e) {}
+      }
+
+      // Touch controls.
+      if (btnTouch && Module._ATWasmGetTouchControls) {
+        try {
+          const on = Module._ATWasmGetTouchControls();
+          btnTouch.disabled = false;
+          btnTouch.textContent = on ? '✦ Touch (on)' : '✦ Touch';
+        } catch (e) {}
+      }
+
+      // MENU…  enabled once the runtime is up; the export itself
+      // no-ops when not in Gaming Mode (which is the case for the
+      // plain "Start Atari Emulator" entry).
+      if (btnMenu && Module._ATWasmOpenMenu) btnMenu.disabled = false;
+    }
+    // Hook into the existing pause-poller's tick so we only have one
+    // 250 ms heartbeat for all the quick toggles.
+    const __origRefreshPauseUi = refreshPauseUi;
+    refreshPauseUi = function () {
+      __origRefreshPauseUi();
+      refreshQuickToggles();
+    };
+
+    if (btnMenu) {
+      btnMenu.addEventListener('click', () => {
+        if (typeof Module === 'undefined' || !Module._ATWasmOpenMenu) return;
+        try { Module._ATWasmOpenMenu(); } catch (e) {}
+        refocusCanvas();
+      });
+    }
+    if (btnRegion) {
+      btnRegion.addEventListener('click', () => {
+        if (typeof Module === 'undefined'
+            || !Module._ATWasmToggleVideoStandard) return;
+        try { Module._ATWasmToggleVideoStandard(); } catch (e) {}
+        refreshQuickToggles();
+        refocusCanvas();
+      });
+    }
+    if (btnCrt) {
+      btnCrt.addEventListener('click', () => {
+        if (typeof Module === 'undefined' || !Module._ATWasmToggleCRT) return;
+        try { Module._ATWasmToggleCRT(); } catch (e) {}
+        refreshQuickToggles();
+        refocusCanvas();
+      });
+    }
+    if (btnOsk) {
+      btnOsk.addEventListener('click', () => {
+        if (typeof Module === 'undefined'
+            || !Module._ATWasmToggleVirtualKeyboard) return;
+        try { Module._ATWasmToggleVirtualKeyboard(); } catch (e) {}
+        refreshQuickToggles();
+        refocusCanvas();
+      });
+    }
+    if (btnTouch) {
+      const flipTouch = () => {
+        if (typeof Module === 'undefined'
+            || !Module._ATWasmGetTouchControls
+            || !Module._ATWasmSetTouchControls) return;
+        let cur = 0;
+        try { cur = Module._ATWasmGetTouchControls(); } catch (e) {}
+        const next = cur ? 0 : 1;
+        try { Module._ATWasmSetTouchControls(next); } catch (e) {}
+        try { localStorage.setItem(TOUCH_KEY, next ? '1' : '0'); } catch (e) {}
+        refreshQuickToggles();
+        refocusCanvas();
+      };
+      btnTouch.addEventListener('click', flipTouch);
+      // Ctrl+T shortcut (T alone would conflict with cart key input).
+      window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey
+            && (e.key === 't' || e.key === 'T')) {
+          e.preventDefault();
+          flipTouch();
+        }
+      });
+    }
+    if (btnFullscreen) {
+      const updateFullscreenLabel = () => {
+        btnFullscreen.textContent = document.fullscreenElement
+          ? '⤡ Exit Full Screen' : '⤢ Full Screen';
+      };
+      btnFullscreen.addEventListener('click', () => {
+        try {
+          if (document.fullscreenElement) {
+            document.exitFullscreen();
+          } else {
+            const el = document.documentElement;
+            if (el.requestFullscreen) {
+              el.requestFullscreen({ navigationUI: 'hide' })
+                .catch(() => {});
+            }
+          }
+        } catch (e) {}
+        refocusCanvas();
+      });
+      document.addEventListener('fullscreenchange', updateFullscreenLabel);
+      updateFullscreenLabel();
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Issues disclosure (Diagnose · Show Log · Report Issues)
+    //
+    //  <details>/<summary> handles open/close on click of the summary
+    //  for free.  We add an outside-click listener so users can dismiss
+    //  the menu by clicking elsewhere on the page (matches the UX of
+    //  every native popup menu).
+    // ───────────────────────────────────────────────────────────────────
+    const issuesMenu = document.getElementById('issues-menu');
+    if (issuesMenu) {
+      document.addEventListener('click', (e) => {
+        if (!issuesMenu.open) return;
+        if (issuesMenu.contains(e.target)) return;
+        issuesMenu.open = false;
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     //  Orientation / viewport-resize plumbing for mobile
     //
     //  SDL3's Emscripten port listens for `resize` events on `window`.
@@ -2173,8 +2561,13 @@
     // ───────────────────────────────────────────────────────────────────
     //  Utilities
     // ───────────────────────────────────────────────────────────────────
+    // Log content goes into a dedicated body div so the sticky toolbar
+    // (Copy / Clear) at the top of #log doesn't get clobbered by
+    // textContent updates and stays reachable while the body scrolls.
+    const logBody = document.getElementById('log-body');
     function appendLog(line) {
-      logEl.textContent += line + '\n';
+      const target = logBody || logEl;
+      target.textContent += line + '\n';
       logEl.scrollTop = logEl.scrollHeight;
       // Tee to DevTools console so opening it after a crash reveals the
       // full pre-crash log; the in-page <pre> may stop updating mid-line
@@ -2214,15 +2607,67 @@
       setTimeout(() => el.remove(), (holdMs || 3450) + 250);
     }
 
+    // Show / Hide log — wired to the "Show Log" button inside the
+    // Issues disclosure (no longer a standalone bar item).  The label
+    // flips so a user who opens the menu twice in a row knows which
+    // way the toggle will go without needing to peek at the panel.
+    const btnLog = document.getElementById('btn-log');
+    function refreshLogToggleLabel() {
+      if (!btnLog) return;
+      btnLog.textContent = logEl.classList.contains('hidden')
+        ? '📜 Show Log' : '📜 Hide Log';
+    }
     function toggleLog() {
       logEl.classList.toggle('hidden');
-      logToggle.textContent =
-        logEl.classList.contains('hidden') ? '▸ Show log' : '▾ Hide log';
+      refreshLogToggleLabel();
     }
-    logToggle.addEventListener('click', toggleLog);
-    logToggle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
-    });
+    if (btnLog) btnLog.addEventListener('click', toggleLog);
+    refreshLogToggleLabel();
+
+    // Copy / Clear inside the log toolbar — quality-of-life for
+    // sharing diagnostics in a bug report (the user request was
+    // explicit: "on top of the log button Copy To Clipboard").
+    const btnLogCopy   = document.getElementById('btn-log-copy');
+    const btnLogClear  = document.getElementById('btn-log-clear');
+    const logCopyStatus = document.getElementById('log-copy-status');
+    function flashCopyStatus(msg, ok) {
+      if (!logCopyStatus) return;
+      logCopyStatus.textContent = msg || '';
+      logCopyStatus.style.color = (ok === false) ? '#f08080' : '#9fd89f';
+      setTimeout(() => { if (logCopyStatus) logCopyStatus.textContent = ''; },
+        1500);
+    }
+    if (btnLogCopy) {
+      btnLogCopy.addEventListener('click', async () => {
+        const text = (logBody || logEl).textContent || '';
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            // Fallback for older browsers / file:// origins where the
+            // async clipboard API is gated.
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          flashCopyStatus('Copied!', true);
+        } catch (e) {
+          flashCopyStatus('Copy failed', false);
+        }
+      });
+    }
+    if (btnLogClear) {
+      btnLogClear.addEventListener('click', () => {
+        if (logBody) logBody.textContent = '';
+        else logEl.textContent = '';
+        flashCopyStatus('Cleared', true);
+      });
+    }
 
     function fmtBytes(n) {
       if (n < 1024) return n + ' B';
@@ -6426,10 +6871,10 @@
       logForceShownByError = true;
       try {
         const el = document.getElementById('log');
-        const tg = document.getElementById('log-toggle');
+        const tg = document.getElementById('btn-log');
         if (el && el.classList.contains('hidden')) {
           el.classList.remove('hidden');
-          if (tg) tg.textContent = '▾ Hide log';
+          if (tg) tg.textContent = '📜 Hide Log';
         }
       } catch (e) {}
     }
