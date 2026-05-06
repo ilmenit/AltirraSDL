@@ -88,6 +88,56 @@
       font-weight: 600;
     }
 
+    /* Console-key cluster: visually grouped pill, bordered to read as
+       a single unit on the bar.  Buttons inside use the .ck modifier
+       for tighter padding + a bold monospace label so START / SELECT /
+       OPTION / RESET feel like hardware-style keys, not generic UI
+       buttons.  RESET also picks up .danger to flag the destructive
+       action without a separate icon. */
+    .console-keys {
+      display: inline-flex;
+      gap: 4px;
+      padding: 2px 6px;
+      border: 1px solid #333;
+      border-radius: 5px;
+      background: #181818;
+    }
+    .console-keys .ck {
+      padding: 4px 9px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      font-family: ui-monospace, monospace;
+      background: #232323;
+      color: #cfcfcf;
+      border: 1px solid #3a3a3a;
+      border-radius: 3px;
+    }
+    .console-keys .ck:hover { background: #2c2c2c; color: #fff; }
+    .console-keys .ck:active { background: #1a1a1a; }
+    .console-keys .ck.danger {
+      color: #ffb3b3;
+      border-color: #5a2a2a;
+    }
+    .console-keys .ck.danger:hover {
+      background: #3a2020;
+      color: #ffe0e0;
+    }
+    /* Layout-left rotates the bar — let the console cluster wrap onto
+       its own row and span the column width, since the narrow bar
+       can't fit four buttons inline. */
+    body.layout-left .console-keys {
+      display: flex;
+      flex-wrap: wrap;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    body.layout-left .console-keys .ck {
+      flex: 1 1 calc(50% - 2px);
+      text-align: center;
+      padding: 6px 4px;
+    }
+
     /* ── Left-bar mode ───────────────────────────────────────────────
        Same header markup, just rotated to a fixed-width column on the
        left side.  The body's main axis becomes horizontal so the
@@ -1097,16 +1147,34 @@
         @ALTIRRA_WASM_GIT_SHA@
       </span>
     </h1>
+    <!-- Lobby: navigate back to the curated game library (Play Solo /
+         Play Together gateway).  Same-origin link so the lobby's
+         iframe-style return is one click away. -->
+    <button id="btn-lobby"
+            title="Return to the curated game library">⬅ Lobby</button>
     <button id="btn-files" disabled>📁 Files…</button>
     <button id="btn-firmware" disabled
-            title="Re-run the standard ROM bundle download">🎛 Download firmware…</button>
+            title="Re-run the standard ROM bundle download">🎛 Firmware…</button>
+    <!-- Console-key cluster: hardware buttons on a real Atari 8-bit.
+         Press-hold timing is JS-managed (~80 ms tap) so a single click
+         feels like a real key press to the running cart. -->
+    <span class="console-keys" role="group" aria-label="Atari console keys">
+      <button id="btn-c-start"  class="ck"
+              title="START — same as F2 (begin game / select option in many carts)">START</button>
+      <button id="btn-c-select" class="ck"
+              title="SELECT — same as F3 (cycle game variant on most carts)">SELECT</button>
+      <button id="btn-c-option" class="ck"
+              title="OPTION — same as F4 (toggle BASIC, difficulty, …)">OPTION</button>
+      <button id="btn-c-reset"  class="ck danger"
+              title="Cold reset — fully reboot the emulated Atari (asks for confirmation)">RESET</button>
+    </span>
     <button id="btn-pause" disabled
             title="Pause / resume the emulator (same as F9). Disabled during online play to keep peers in sync.">⏸ Pause</button>
     <div id="status">Loading Atari emulator…</div>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
     <button id="btn-diagnose"
-            title="Test reachability of the netplay lobby and WebSocket bridge. Useful when 'Play Online' fails with WS code 1006 / 'could not reach lobby'.">🩺 Diagnose Netplay</button>
+            title="Test reachability of the netplay lobby and WebSocket bridge. Useful when 'Play Online' fails with WS code 1006 / 'could not reach lobby'.">🩺 Diagnose</button>
     <div class="log-toggle" id="log-toggle" role="button" tabindex="0">▸ Show log</div>
   </header>
 
@@ -1779,6 +1847,105 @@
       if (saved === 'left') applyLayout('left');
     } catch (e) {}
     if (btnLayout) btnLayout.addEventListener('click', toggleLayout);
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Lobby (back-to-library) button
+    //
+    //  Goal: a one-click escape hatch from the running emulator back to
+    //  the curated game library page (lobby's welcome page) so a user
+    //  who got here via Play Solo / Play Together can grab a different
+    //  title without typing a URL.
+    //
+    //  Routing:
+    //    - Same-origin path /AltirraSDL/ resolves to lobby's welcome on
+    //      the production deploy AND on the local-test.sh setup, so use
+    //      it unconditionally — falls back gracefully even when the page
+    //      is loaded outside the lobby tree (a 404 leads to the host
+    //      root which is still useful).
+    //    - Goes through document.location.assign so the browser's back
+    //      button still works (vs. replace which would erase the visit
+    //      to the emulator).
+    //
+    //  Confirm prompt: the emulator may have unsaved state in IDBFS
+    //  (auto-saved on syncfs, but a user-initiated cold reset or a tab
+    //  close in the middle of a save could lose work).  A short confirm
+    //  is the right friction — beforeunload would be heavier and many
+    //  browsers ignore it now anyway.
+    // ───────────────────────────────────────────────────────────────────
+    const btnLobby = document.getElementById('btn-lobby');
+    if (btnLobby) {
+      btnLobby.addEventListener('click', () => {
+        if (!confirm('Return to the game library?\n\n'
+            + 'Any in-progress game state stays in your browser '
+            + 'storage and will be available next time you boot it.')) {
+          return;
+        }
+        try { document.location.assign('/AltirraSDL/'); }
+        catch (e) { document.location.href = '/AltirraSDL/'; }
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    //  Console-key cluster wiring
+    //
+    //  START / SELECT / OPTION / RESET on a real Atari 8-bit are
+    //  hardware switches read by GTIA, not keyboard keys.  Carts wait
+    //  for the user to "Press START" or "Press SELECT to choose
+    //  variant" — without a way to trigger these, a deep-linked play
+    //  session sits at the title screen forever on a phone.
+    //
+    //  Wiring goes through the C exports added in wasm_bridge.cpp:
+    //    ATWasmConsoleSwitch(bit, down)   — START=1, SELECT=2, OPTION=4
+    //    ATWasmColdReset()                — full hardware reset
+    //
+    //  Press timing: 80 ms is short enough to feel like a tap but long
+    //  enough that even a 50 Hz PAL frame samples the switch in the
+    //  pressed state at least 4 times.  Carts that latch on a single
+    //  edge (most do) read the press immediately; carts that poll
+    //  (early ANTIC demos) get a clean window.
+    // ───────────────────────────────────────────────────────────────────
+    const btnCStart  = document.getElementById('btn-c-start');
+    const btnCSelect = document.getElementById('btn-c-select');
+    const btnCOption = document.getElementById('btn-c-option');
+    const btnCReset  = document.getElementById('btn-c-reset');
+    function consoleTap(bit) {
+      // Disable until the C runtime is up — clicking before main()
+      // would crash on the missing export.  We re-enable in the
+      // pause-poller's first tick (it runs only after Module is
+      // ready) so the UX is correct without a separate ready signal.
+      if (typeof Module === 'undefined' || !Module._ATWasmConsoleSwitch)
+        return;
+      try {
+        Module._ATWasmConsoleSwitch(bit, 1);
+        setTimeout(() => {
+          try { Module._ATWasmConsoleSwitch(bit, 0); } catch (e) {}
+        }, 80);
+      } catch (e) {
+        jlog('console-key: ATWasmConsoleSwitch threw —', e);
+      }
+      // Pull focus back to the canvas so the next keyboard event
+      // (e.g. the player typing into the cart) lands on SDL, not on
+      // the button (button stayed focused after click and would
+      // re-fire on Enter — which wraps you in a useless tap loop).
+      try { document.getElementById('canvas').focus(); } catch (e) {}
+    }
+    if (btnCStart)  btnCStart .addEventListener('click', () => consoleTap(1));
+    if (btnCSelect) btnCSelect.addEventListener('click', () => consoleTap(2));
+    if (btnCOption) btnCOption.addEventListener('click', () => consoleTap(4));
+    if (btnCReset) {
+      btnCReset.addEventListener('click', () => {
+        if (typeof Module === 'undefined' || !Module._ATWasmColdReset)
+          return;
+        if (!confirm('Cold reset the emulator?\n\n'
+            + 'Equivalent to power-cycling a real Atari. '
+            + 'In-cart progress that has not been saved will be lost.')) {
+          return;
+        }
+        try { Module._ATWasmColdReset(); }
+        catch (e) { jlog('cold-reset: ATWasmColdReset threw —', e); }
+        try { document.getElementById('canvas').focus(); } catch (e) {}
+      });
+    }
 
     // ───────────────────────────────────────────────────────────────────
     //  Orientation / viewport-resize plumbing for mobile
@@ -6247,13 +6414,34 @@
         return String(e);
       } catch (_) { return '<unstringifiable>'; }
     }
+    // Auto-show the log panel on the FIRST uncaught error / abort —
+    // a black-screen + silent-throw is the worst class of bug for
+    // user-side debugging.  We only force-show once so a noisy page
+    // (e.g. extension throws unrelated to AltirraSDL) doesn't flap
+    // the panel open every time the user closes it.  The user can
+    // still toggle it via the bar's Show/Hide log control.
+    let logForceShownByError = false;
+    function showLogOnError() {
+      if (logForceShownByError) return;
+      logForceShownByError = true;
+      try {
+        const el = document.getElementById('log');
+        const tg = document.getElementById('log-toggle');
+        if (el && el.classList.contains('hidden')) {
+          el.classList.remove('hidden');
+          if (tg) tg.textContent = '▾ Hide log';
+        }
+      } catch (e) {}
+    }
     window.addEventListener('error', (ev) => {
       appendLog('[onerror] ' + ev.message +
                 ' (' + (ev.filename || '?') + ':' + (ev.lineno || '?') + ')' +
                 ' :: ' + describeError(ev.error));
+      showLogOnError();
     });
     window.addEventListener('unhandledrejection', (ev) => {
       appendLog('[unhandledrejection] ' + describeError(ev.reason));
+      showLogOnError();
     });
 
     const script = document.createElement('script');

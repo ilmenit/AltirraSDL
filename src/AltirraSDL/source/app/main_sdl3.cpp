@@ -2717,6 +2717,21 @@ int main(int argc, char *argv[]) {
 			auto& fn = *static_cast<decltype(&s_wasmTickFn)>(arg);
 			if (!g_running) {
 				emscripten_cancel_main_loop();
+				// File → Exit on WASM has nowhere useful to go — the
+				// canvas would freeze with the last frame and the user
+				// would be stranded on a dead page.  Navigate back to
+				// the curated game library (lobby's welcome page) so
+				// "Exit" feels like "back to where I came from".  The
+				// path /AltirraSDL/ resolves on both the production
+				// deploy (Caddy) and local-test.sh; outside the lobby
+				// tree the host root still gives a useful landing.
+				// Crashes follow a different path (window.onerror →
+				// showLogOnError) so this navigation only fires for an
+				// explicit user-confirmed exit, never on abort.
+				EM_ASM({
+					try { window.location.assign('/AltirraSDL/'); }
+					catch (e) { window.location.href = '/AltirraSDL/'; }
+				});
 				return;
 			}
 			fn();

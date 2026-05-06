@@ -67,6 +67,13 @@ extern void ATUIDoFirmwareScan(const char *utf8path);
 #include "simulator.h"
 extern ATSimulator g_sim;
 
+// Console-switch routing — the WASM page bar exposes hardware buttons
+// (START / SELECT / OPTION / RESET) that drive into the GTIA exactly
+// the same way the touch controls + virtual keyboard do.  Through the
+// netplay router so a hosted-session host edge propagates to peers.
+#include "../netplay/netplay_input.h"
+#include "gtia.h"
+
 // ATNetplayGlue::IsLockstepping(): used by ATWasmTogglePause to mirror
 // the F9 accelerator's netplay guard (commands_sdl3.cpp:CmdTogglePause).
 // Pausing during a lockstep session desyncs peers, so the page button
@@ -1333,6 +1340,29 @@ extern "C" void ATWasmDrainPendingGamePackSources() {
 	for (const auto &p : drained) {
 		ApplyGamePackSourceLocked(lib, p.c_str());
 	}
+}
+
+// JS-side bar buttons (START / SELECT / OPTION) drive the console
+// switches the same way the touch controls and virtual keyboard do —
+// through the netplay router so a hosted session propagates the edge
+// to the joiner.  `bit` is the GTIA console-switch mask (1 START,
+// 2 SELECT, 4 OPTION); `down` is non-zero for press, zero for release.
+// JS handles the press → 80 ms → release timing so a button click
+// looks like a real key tap.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmConsoleSwitch(int bit, int down) {
+	const uint8_t b = (uint8_t)(bit & 0x07);   // mask to START|SELECT|OPTION
+	if (!b) return;
+	ATNetplayInput::RouteConsoleSwitch(&g_sim.GetGTIA(), b, down != 0);
+}
+
+// JS-side bar button (RESET) — cold reset.  The HTML page wraps this
+// in a confirm() popup so an accidental click doesn't nuke a save in
+// progress.  Cold reset only — warm reset is rarely useful from the
+// page bar (most users want a clean cold-boot of the current cart).
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmColdReset() {
+	g_sim.ColdReset();
 }
 
 #endif // __EMSCRIPTEN__
