@@ -1472,11 +1472,13 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		// Advance phase so SubmitSnapshotForUpload knows we're
 		// expecting it.
 		mPhase = Phase::SendingSnapshot;
+		mWelcomeAcked = false;        // re-arm the v5 grace gate
 		return;
 	}
 
 	// Snapshot already submitted (app was proactive).  Welcome now.
 	mPhase = Phase::SendingSnapshot;
+	mWelcomeAcked = false;            // re-arm the v5 grace gate
 	SendWelcome(nowMs);
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
 	mSnapProgressMilestone = 0;
@@ -1566,10 +1568,12 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 		mHostHasPendingJoiner = true;
 		mPendingJoiner = mPeer;
 		mPhase = Phase::SendingSnapshot;
+		mWelcomeAcked = false;        // re-arm the v5 grace gate
 		return;
 	}
 
 	mPhase = Phase::SendingSnapshot;
+	mWelcomeAcked = false;            // re-arm the v5 grace gate
 	SendWelcome();
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
 	mSnapProgressMilestone = 0;
@@ -1629,6 +1633,7 @@ void Coordinator::SubmitSnapshotForUpload(const uint8_t* data, size_t len) {
 	if (mHostHasPendingJoiner) {
 		mHostHasPendingJoiner = false;
 		mPhase = Phase::SendingSnapshot;
+		mWelcomeAcked = false;        // re-arm the v5 grace gate
 		SendWelcome();
 		mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
 		mSnapProgressMilestone = 0;
@@ -1928,24 +1933,42 @@ void Coordinator::PumpSnapshotSender(uint64_t nowMs) {
 		return;
 	}
 
-	// Pace at one chunk per Poll tick (was: a `while (NextOutgoing)`
-	// loop that fired the entire 32-chunk window in microseconds).
-	// At 60 Hz this turns a 22-chunk Archon snapshot into a ~366 ms
-	// initial transfer instead of a sub-millisecond burst.  Slow
-	// uplinks (cellular, busy hotel WiFi, congested home routers)
-	// silently drop the tail of a microsecond burst when the
-	// bottleneck queue overflows; pacing prevents that without
-	// changing the retry interval (`kRetryIntervalMs = 500 ms`)
-	// or window size.  Mid-session resync uses the same pump and
-	// inherits the pacing — a 1 MB savestate becomes ~14 s instead
-	// of a single burst, which is acceptable for the rare recovery
-	// path and safer on lossy links.
-	NetSnapChunk c;
-	if (mSnapTx.NextOutgoing(c, nowMs)) {
-		size_t n = EncodeSnapChunk(c, mTxBuf, sizeof mTxBuf);
-		if (n != 0) {
+	// Pacing strategy is phase-dependent (item 7):
+	//
+	//   Phase::SendingSnapshot — start of session, ~25 KB to a few
+	//     hundred KB.  Pace at one chunk per Poll tick (~16 ms at
+	//     60 Hz).  A 22-chunk Archon snapshot takes ~366 ms instead
+	//     of a sub-millisecond burst — slow uplinks (cellular, busy
+	//     hotel WiFi, congested home routers) silently drop the tail
+	//     of microsecond bursts when the bottleneck queue overflows,
+	//     and pacing prevents that without changing kRetryIntervalMs
+	//     or window size.
+	//
+	//   Phase::Resyncing — mid-session recovery, savestate can be
+	//     1 MB+ (~833 chunks).  Pacing at 1/tick = ~14 s, dangerously
+	//     close to the 15 s kResyncOverallTimeoutMs.  The session is
+	//     already in Lockstepping when resync starts, so by definition
+	//     the connection has carried lockstep traffic successfully —
+	//     burst is safe.  Keep the pre-pacing `while` loop here.
+	//
+	// Only one is active at a time; this mirrors the existing logic
+	// elsewhere that special-cases SendingSnapshot vs Resyncing.
+	if (mPhase == Phase::Resyncing) {
+		NetSnapChunk c;
+		while (mSnapTx.NextOutgoing(c, nowMs)) {
+			size_t n = EncodeSnapChunk(c, mTxBuf, sizeof mTxBuf);
+			if (n == 0) break;
 			WrapAndSend(mTxBuf, n, mPeer);
 			++mDiag.chunksSent;
+		}
+	} else {
+		NetSnapChunk c;
+		if (mSnapTx.NextOutgoing(c, nowMs)) {
+			size_t n = EncodeSnapChunk(c, mTxBuf, sizeof mTxBuf);
+			if (n != 0) {
+				WrapAndSend(mTxBuf, n, mPeer);
+				++mDiag.chunksSent;
+			}
 		}
 	}
 
@@ -2199,12 +2222,18 @@ void Coordinator::SendWelcome(uint64_t nowMs) {
 	// NetWelcomeAck arrival (whichever comes first).  Callers without a
 	// monotonic clock pass 0; the gate then fails-open (chunks fire
 	// immediately on the next Poll), which matches pre-v5 behaviour.
-	// Reset mWelcomeAcked here too so a re-send of Welcome (e.g. host's
-	// retry-Hello path) re-arms the gate cleanly — without that, a
-	// stale ack from a previous attempt could prematurely release the
-	// gate on a fresh Welcome whose chunk pump hadn't run yet.
+	//
+	// NOTE: do NOT reset mWelcomeAcked here.  A retry-Welcome (the
+	// host's retry-Hello path at coordinator.cpp:1269) re-sends the
+	// same handshake — but the joiner, already past Handshaking,
+	// silently drops the duplicate Welcome and does NOT re-send
+	// WelcomeAck.  Resetting mWelcomeAcked on every SendWelcome would
+	// re-arm the gate after the original ack already released it,
+	// stalling the in-flight chunk pump for the full 250 ms grace.
+	// Reset happens once per session at the SendingSnapshot phase
+	// entry instead (see HandleHelloFromJoiner auto-accept,
+	// AcceptPendingJoiner, and SubmitSnapshotForUpload).
 	mWelcomeSentMs = nowMs;
-	mWelcomeAcked  = false;
 }
 
 void Coordinator::SendReject(uint32_t reason, const Endpoint& to) {
