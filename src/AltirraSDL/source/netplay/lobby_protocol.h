@@ -39,16 +39,17 @@ namespace ATLobby {
 //      expected behaviour: a v2 client can join only v2 hosts.
 inline constexpr int kProtocolVersion = 3;
 
-// Session TTL in seconds.  Clients should heartbeat well inside this
-// window; 30 s is the configured cadence on the client side.  60 s
-// allows exactly one missed heartbeat before eviction — long enough
-// to absorb a brief network blip but short enough that an actual
-// host crash / kill / loss-of-power leaves the session listed for
-// at most ~90 s (60 s TTL + 30 s sweep cadence) instead of ~120 s.
-// Combined with server-side dedup-on-Create (same hostHandle +
-// cartName replaces the prior session), this is what keeps the
-// public list from accumulating ghost entries.
-inline constexpr int kSessionTTLSeconds = 60;
+// Session TTL in seconds.  Clients heartbeat every 5 s when idle (3 s
+// during lockstep), so a 15 s TTL allows up to two missed heartbeats
+// before eviction — enough to ride out a single packet loss but short
+// enough that an actual host crash / kill / loss-of-power leaves the
+// session listed for at most ~20 s (15 s TTL + 5 s sweep cadence)
+// instead of the previous ~90 s.  Operators can override via the
+// TTL_SECONDS env var if heartbeat-storm load on the lobby box becomes
+// a problem.  Combined with server-side dedup-on-Create (same
+// hostHandle + cartName replaces the prior session), this is what
+// keeps the public list from accumulating ghost entries.
+inline constexpr int kSessionTTLSeconds = 15;
 
 // Rate limit (per source IP).  Token bucket: `kRateBurst` tokens
 // capacity, one token refilled every `kRateRefillMillis` ms.
@@ -60,8 +61,10 @@ inline constexpr int kRateRefillMillis  = 1000;
 inline constexpr int kRateBucketKeepMillis = 10 * 60 * 1000;  // 10 min
 
 // Session-store sweep cadence — how often the server scans for
-// expired sessions and prunes cold rate-limit buckets.
-inline constexpr int kSweepIntervalMillis = 30 * 1000;        // 30 s
+// expired sessions and prunes cold rate-limit buckets.  Tightened
+// from 30 s to 5 s alongside the 15 s TTL above so a disconnected
+// host vanishes from the public list inside 20 s.
+inline constexpr int kSweepIntervalMillis = 5 * 1000;         // 5 s
 
 // Lobby capacity (hard cap on concurrent sessions).  Additional
 // Create requests return 429 once full.

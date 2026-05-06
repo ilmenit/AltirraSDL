@@ -1230,7 +1230,12 @@ void ReconcileHostedGames(uint64_t nowMs) {
 				(p == P::WaitingForJoiner ||
 				 p == P::Handshaking ||
 				 p == P::SendingSnapshot);
-			const uint64_t kHeartbeatMs = preLockstep ? 5000 : 30000;
+			// Heartbeat cadence (paired with the 15 s lobby TTL): 3 s
+			// while waiting for / handshaking a join (peer-hint must
+			// land before the joiner's 25 s relay timeout) and 5 s
+			// once Lockstepping is live (relay traffic carries hints,
+			// so we just need to keep the lobby listing alive).
+			const uint64_t kHeartbeatMs = preLockstep ? 3000 : 5000;
 			// Edge: as soon as we transition into / out of a session
 			// phase, send an immediate heartbeat with the new state so
 			// the lobby's "in play" indicator updates promptly instead

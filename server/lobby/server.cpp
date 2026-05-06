@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -35,6 +36,7 @@
 #include <cstring>
 #include <mutex>
 #include <random>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -948,6 +950,41 @@ void SetCorsForGet(httplib::Response& res) {
 	res.set_header("Vary",                        "Origin");
 }
 
+// Trusted browser origins for write routes.  Native clients never
+// send Origin (and were the original threat-model assumption); the
+// WASM build loaded from lobby.atari.org.pl now does, so we admit
+// the lobby's own origin plus any operator-configured allow-list
+// passed via ALLOWED_BROWSER_ORIGINS (comma-separated).  Everything
+// else is still blocked as a CSRF attempt.
+const std::vector<std::string>& TrustedBrowserOrigins() {
+	static const std::vector<std::string> kList = []{
+		std::vector<std::string> v = {
+			"https://lobby.atari.org.pl",
+			"https://altirra-lobby.duckdns.org",
+		};
+		if (const char* env = std::getenv("ALLOWED_BROWSER_ORIGINS")) {
+			std::stringstream ss(env);
+			std::string tok;
+			while (std::getline(ss, tok, ',')) {
+				while (!tok.empty()
+				       && std::isspace((unsigned char)tok.front()))
+					tok.erase(tok.begin());
+				while (!tok.empty()
+				       && std::isspace((unsigned char)tok.back()))
+					tok.pop_back();
+				if (!tok.empty()) v.push_back(tok);
+			}
+		}
+		return v;
+	}();
+	return kList;
+}
+bool IsTrustedBrowserOrigin(const std::string& origin) {
+	for (const auto& o : TrustedBrowserOrigins())
+		if (o == origin) return true;
+	return false;
+}
+
 void WriteErr(httplib::Response& res, int code, const std::string& msg) {
 	res.status = code;
 	res.set_content(ErrorJson(msg), "application/json");
@@ -1000,18 +1037,51 @@ bool ParseSessionPath(const std::string& path,
 // -----------------------------------------------------------------
 
 void Install(httplib::Server& srv, Store& store) {
-	// Pre-route middleware: rate limit + origin guard on writes.
+	// Pre-route middleware: CORS preflight + origin guard + rate limit.
 	srv.set_pre_routing_handler(
 		[&store](const httplib::Request& req, httplib::Response& res) {
 			std::string ip = ClientIp(req, store.Cfg().trustedProxies);
 
+			// CORS preflight from a trusted browser origin: short-
+			// circuit with the necessary headers so the actual POST
+			// (or DELETE) gets through without a 405 from the
+			// router.  Untrusted origins fall through to the
+			// 403 path below (their preflight will fail).
+			if (req.method == "OPTIONS" && req.has_header("Origin")) {
+				const std::string origin =
+					req.get_header_value("Origin");
+				if (IsTrustedBrowserOrigin(origin)) {
+					res.set_header("Access-Control-Allow-Origin",
+						origin);
+					res.set_header("Access-Control-Allow-Methods",
+						"GET, POST, DELETE, OPTIONS");
+					res.set_header("Access-Control-Allow-Headers",
+						"Content-Type");
+					res.set_header("Access-Control-Max-Age", "600");
+					res.set_header("Vary", "Origin");
+					res.status = 204;
+					return httplib::Server::HandlerResponse::Handled;
+				}
+			}
+
 			if (req.method == "POST" || req.method == "DELETE") {
-				// Native clients never send Origin; a browser that
-				// reaches this point is a cross-site CSRF attempt.
-				if (req.has_header("Origin"))
-					return (WriteErr(res, 403,
-						"browser origin not permitted on write routes"),
-						httplib::Server::HandlerResponse::Handled);
+				// Native clients never send Origin; browsers do.
+				// Trusted browser origins (lobby.atari.org.pl,
+				// altirra-lobby.duckdns.org, plus anything in
+				// $ALLOWED_BROWSER_ORIGINS) get CORS headers
+				// echoed so fetch() succeeds; everything else is
+				// still treated as a cross-site CSRF attempt.
+				if (req.has_header("Origin")) {
+					const std::string origin =
+						req.get_header_value("Origin");
+					if (!IsTrustedBrowserOrigin(origin))
+						return (WriteErr(res, 403,
+							"browser origin not permitted on write routes"),
+							httplib::Server::HandlerResponse::Handled);
+					res.set_header("Access-Control-Allow-Origin",
+						origin);
+					res.set_header("Vary", "Origin");
+				}
 			}
 			if (req.method == "GET") SetCorsForGet(res);
 

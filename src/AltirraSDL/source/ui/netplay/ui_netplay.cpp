@@ -529,7 +529,7 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 	// opened Online Play and stayed on the hub never saw the first
 	// poll complete — the lobby banner was stuck on "checking..."
 	// because the flag sat unacted.
-	const uint64_t kAutoRefreshMs = 10000;
+	const uint64_t kAutoRefreshMs = 5000;
 	const bool backoffActive =
 		st.browser.nextRetryMs != 0 && nowMs < st.browser.nextRetryMs;
 	const bool userAsked = st.browser.refreshRequested;
