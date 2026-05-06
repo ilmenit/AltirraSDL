@@ -951,7 +951,15 @@ private:
 	// keeps the lobby's RelayTable slot alive across the 30 s idle
 	// prune even when the host is waiting for joiners with no other
 	// relay traffic to flow.
-	void SendRelayRegister(uint64_t nowMs);
+	// Re-emit the lobby ASGR registration packet.  Default (force=false)
+	// gates on kRelayRegisterIntervalMs so periodic callers don't flood
+	// the lobby.  Pass force=true to bypass the gate for one-shot
+	// "anchor my NAT mapping NOW" moments — used by item 6's
+	// keepalive on Phase::ReceivingSnapshot entry, where the joiner
+	// is about to go silent on UDP for the duration of the snapshot
+	// transfer and we don't want the carrier NAT (some mobile carriers
+	// expire UDP mappings after 15 s) to drop our inbound chunk path.
+	void SendRelayRegister(uint64_t nowMs, bool force = false);
 
 	// Send NetPunch probes to each target that is still inside its
 	// sustain window.  Called from Poll().

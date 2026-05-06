@@ -1670,6 +1670,22 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	mSnapProgressMilestone = 0;
 	mExpectedSnapCrc = w.snapshotCRC32;   // v5: verify on assembly
 	mPhase = Phase::ReceivingSnapshot;
+
+	// Item 6 — NAT keepalive.  We're about to go silent on UDP for
+	// the duration of the chunk transfer (no more Hello retries; the
+	// snapshot-ack flow is reactive to incoming chunks).  Some mobile
+	// carriers expire UDP NAT mappings after as little as 15 seconds
+	// of inbound silence; if the host's first chunk arrives after
+	// that window, the carrier NAT drops it and the snapshot path
+	// dies before we ever ack.  Force a fresh ASGR right now to
+	// anchor the mapping with a known-recent outbound; the lobby
+	// also refreshes our `joiner.lastSeenMs` so its prune timer
+	// resets.  Skip on PeerPath::Direct (no relay involvement) and
+	// on WsRelay (no UDP NAT).
+	if (mPeerPath == PeerPath::Relay) {
+		SendRelayRegister(nowMs, /*force=*/true);
+	}
+
 	// Seed the snapshot-receive watchdog with nowMs (or 1 if nowMs
 	// happens to be 0 — same sentinel pattern used elsewhere).  The
 	// Poll-side watchdog fails the session if no chunk arrives
@@ -2785,7 +2801,7 @@ bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {
 	return mTransport->SendTo(buf, wn, mLobbyRelayEndpoint);
 }
 
-void Coordinator::SendRelayRegister(uint64_t nowMs) {
+void Coordinator::SendRelayRegister(uint64_t nowMs, bool force) {
 	// WsRelay: WASM hosts/joiners don't speak UDP — there's no ASGR
 	// to send.  Their session-keyed identity is established by the
 	// WS subprotocol header at handshake time.
@@ -2803,8 +2819,9 @@ void Coordinator::SendRelayRegister(uint64_t nowMs) {
 	//   - a Direct → Relay flip in Lockstepping pumps the timestamp
 	//     forward each time so the slot survives even if no other
 	//     ASDF traffic happens to flow in the first 10 s after flip
+	// `force` bypasses this gate for one-shot anchor moments (item 6).
 	const bool firstSend = (mRelayRegisteredMs == 0);
-	if (!firstSend &&
+	if (!force && !firstSend &&
 	    (nowMs - mRelayRegisteredMs) <
 	        (uint64_t)ATLobby::kRelayRegisterIntervalMs) {
 		return;
