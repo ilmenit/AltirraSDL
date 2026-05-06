@@ -1418,17 +1418,18 @@ int ATWasmGetCRTMode() {
 // the mode flag.  The display backend reads screenEffectsMode each
 // frame, so the change is visible immediately.
 //
-// The mobile-style fxBloom / fxDistortion / fxVignette / fxScanlines /
-// fxApertureGrille flags drive the actual GTIA artifacting params.  In
-// Gaming Mode they get applied at startup; in Desktop Mode the user
-// sets them via the screen-effects dialog.  Both paths populate the
-// GTIA, so flipping screenEffectsMode here is enough to make the
-// difference visible — None → "all-off" pushed every frame in
-// SyncScreenFXToBackend (main_sdl3.cpp:1120), Basic → the GTIA's
-// current params get pushed.  Re-apply the mobile flags here so the
-// "back to Basic" branch produces a visible CRT look even when the
-// user toggled it off in a session that started without the
-// performance-preset auto-apply firing (e.g. Desktop Mode entry).
+// Important: do NOT call ATMobileUI_ApplyVisualEffects here.  That
+// helper overwrites the GTIA artifacting params (bloom radius/intensity,
+// distortion angles, vignette intensity) from g_mobileState's on/off
+// flags — when a flag is off it zeros the matching params.  Triggering
+// it on every toggle clobbers whatever the user configured via the
+// Adjust Screen Effects dialog (or the GTIA defaults from
+// ATArtifactingParams::GetDefault) and the next "back to Basic"
+// produces a flat image.  The GTIA's params are already populated by
+// startup paths (settings.cpp load, gaming-mode auto-apply at
+// main_sdl3.cpp:2279, the dialog itself), so the toggle only needs to
+// flip screenEffectsMode — None → SyncScreenFXToBackend pushes all-off,
+// Basic → the existing GTIA params get pushed.
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmToggleCRT() {
 	IDisplayBackend *be = ATUIGetDisplayBackend();
@@ -1438,14 +1439,6 @@ void ATWasmToggleCRT() {
 		(prev == ATUIState::kSFXMode_None)
 		? ATUIState::kSFXMode_Basic
 		: ATUIState::kSFXMode_None;
-	// Force a re-apply of the mobile visual-effects flags into GTIA
-	// when going None → Basic, so the artifacting params are populated
-	// regardless of which mode owned the last write.  Going the other
-	// way (Basic → None) is a no-op for GTIA — main_sdl3's "all-off"
-	// push handles disabling at the backend level.
-	if (g_uiState.screenEffectsMode == ATUIState::kSFXMode_Basic) {
-		ATMobileUI_ApplyVisualEffects(g_mobileState);
-	}
 	fprintf(stderr, "[wasm] CRT toggle: %s -> %s\n",
 		prev == ATUIState::kSFXMode_None ? "None" :
 		prev == ATUIState::kSFXMode_Basic ? "Basic" : "Preset",

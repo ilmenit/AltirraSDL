@@ -123,9 +123,22 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Dummy(ImVec2(0, dp(16.0f)));
 
 		// Credits block — scrollable child so long text doesn't push
-		// the Close button off-screen on small phones.
+		// the Close button off-screen on small phones.  Reserve room
+		// for both footer buttons (Debug Log + Close), the gap between
+		// them, and the ItemSpacing ImGui inserts between successive
+		// items (child→DebugLog, DebugLog→Dummy, Dummy→Close).
+		// Previously this only reserved closeH + 24dp, which left
+		// the Close button below the safe area on shorter viewports
+		// (e.g. WASM mobile-landscape) — it appeared to "hang off"
+		// the screen because the Debug Log button alone consumed
+		// 48dp + spacing of the 80dp reserve.
+		float debugBtnH = dp(48.0f);
 		float closeH = dp(56.0f);
-		float bottomReserve = closeH + dp(24.0f);
+		float gap = dp(8.0f);
+		float bottomMargin = dp(16.0f);
+		float itemSpacingY = ImGui::GetStyle().ItemSpacing.y;
+		float bottomReserve = debugBtnH + gap + closeH
+			+ bottomMargin + itemSpacingY * 3.0f;
 		// NavFlattened so the scrollable credits area doesn't trap the
 		// gamepad cursor — without it, D-pad down from the back arrow
 		// would land on the child window itself instead of skipping

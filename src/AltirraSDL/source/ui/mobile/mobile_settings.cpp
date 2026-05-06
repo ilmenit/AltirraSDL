@@ -683,18 +683,36 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		auto markCustom = [&](){ mobileState.performancePreset = 3; };
 
 		// PAL/NTSC Artifacting — shares state with the desktop UI's
-		// Configure System > Outputs > Artifacting combo.  ON sets
-		// AutoHi (matches the Setup Wizard "Authentic" path at
-		// ui_tools_setup_wizard.cpp:616); OFF sets None.  Persisted by
-		// settings.cpp under "GTIA: Artifacting mode"
+		// Configure System > Outputs > Artifacting combo.  Persisted
+		// by settings.cpp under "GTIA: Artifacting mode"
 		// (kATSettingsCategory_View).
+		//
+		// First-enable from a None state seeds AutoHi (the Setup
+		// Wizard "Authentic" default at ui_tools_setup_wizard.cpp:616).
+		// Subsequent toggles cache the last non-None mode and restore
+		// it on re-enable, so a user who picked NTSCHi/PALHi/Auto from
+		// the desktop dialog doesn't silently lose that choice the
+		// moment they flip this toggle off and back on.
 		{
 			ATGTIAEmulator &gtia = sim.GetGTIA();
-			bool artifactingOn = (gtia.GetArtifactingMode() != ATArtifactMode::None);
+			static ATArtifactMode sSavedArtifactMode = ATArtifactMode::AutoHi;
+			ATArtifactMode curMode = gtia.GetArtifactingMode();
+			bool artifactingOn = (curMode != ATArtifactMode::None);
 			if (ATTouchToggle("PAL/NTSC Artifacting", &artifactingOn)) {
-				gtia.SetArtifactingMode(artifactingOn
-					? ATArtifactMode::AutoHi : ATArtifactMode::None);
+				if (artifactingOn) {
+					gtia.SetArtifactingMode(sSavedArtifactMode);
+				} else {
+					if (curMode != ATArtifactMode::None)
+						sSavedArtifactMode = curMode;
+					gtia.SetArtifactingMode(ATArtifactMode::None);
+				}
 				ATPersistMobileEdit(kATSettingsCategory_View);
+			} else if (curMode != ATArtifactMode::None) {
+				// Keep the cache in sync when the user changes the
+				// mode from elsewhere (Configure System combo, etc.)
+				// so a later off→on round trip restores their newest
+				// choice rather than a stale one.
+				sSavedArtifactMode = curMode;
 			}
 		}
 

@@ -836,11 +836,23 @@ void GameBrowser_RenderOverlays(ATSimulator &sim,
 }
 
 static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) {
+	// Latch: when the bool flips false → true, kick the popup open.
+	// Same pattern as desktop ui_disk.cpp:RenderDiskVariantPopup —
+	// keeps the public API (s_variantPickerOpen + Show*ForSwap)
+	// untouched while routing the actual rendering through ImGui's
+	// modal-popup machinery.  The modal blocks input behind it so
+	// the picker cannot bleed onto the next screen if the user
+	// cancels by tapping a UI element underneath.
+	static bool prevOpen = false;
+	const char *kPopupId = "##MobileVariantPicker";
+
 	if (!s_variantPickerOpen || !s_gameLibrary) {
 		// Clean up any stale swap callback if the picker was closed
 		// by external state (library shutdown, etc.).
-		if (!s_variantPickerOpen)
+		if (!s_variantPickerOpen) {
 			s_variantPickerSwapCb = nullptr;
+			prevOpen = false;
+		}
 		return;
 	}
 
@@ -848,7 +860,13 @@ static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) 
 	if (s_variantPickerEntry >= entries.size()) {
 		s_variantPickerOpen = false;
 		s_variantPickerSwapCb = nullptr;
+		prevOpen = false;
 		return;
+	}
+
+	if (!prevOpen) {
+		ImGui::OpenPopup(kPopupId);
+		prevOpen = true;
 	}
 
 	auto &entry = entries[s_variantPickerEntry];
@@ -859,11 +877,21 @@ static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) 
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
+	bool keepOpen = true;
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
-		| ImGuiWindowFlags_NoSavedSettings;
+		| ImGuiWindowFlags_NoSavedSettings
+		| ImGuiWindowFlags_AlwaysAutoResize;
 
-	if (ImGui::Begin(titleU8.c_str(), &s_variantPickerOpen, flags)) {
+	if (ImGui::BeginPopupModal(kPopupId, &keepOpen, flags)) {
+		// Render the entry name as the body header — the popup ID is
+		// hidden ("##..."), so we draw the human-readable title here.
+		ImGui::SetWindowFontScale(1.1f);
+		ImGui::TextUnformatted(titleU8.c_str());
+		ImGui::SetWindowFontScale(1.0f);
+		ImGui::Separator();
+		ImGui::Spacing();
+
 		float btnH = dp(48.0f);
 		for (int i = 0; i < (int)entry.mVariants.size(); ++i) {
 			const auto &var = entry.mVariants[i];
@@ -900,11 +928,15 @@ static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) 
 					auto cb = std::move(s_variantPickerSwapCb);
 					s_variantPickerSwapCb = nullptr;
 					s_variantPickerOpen = false;
+					prevOpen = false;
 					VDStringW path = var.mPath;
+					ImGui::CloseCurrentPopup();
 					cb(path);
 				} else {
 					LaunchGame(sim, mobileState, s_variantPickerEntry, i);
 					s_variantPickerOpen = false;
+					prevOpen = false;
+					ImGui::CloseCurrentPopup();
 				}
 			}
 			if (i == 0)
@@ -917,13 +949,23 @@ static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) 
 		{
 			s_variantPickerOpen = false;
 			s_variantPickerSwapCb = nullptr;
+			prevOpen = false;
+			ImGui::CloseCurrentPopup();
 		}
+
+		ImGui::EndPopup();
 	}
-	// Drop swap callback if the user closed the window via the "X"
-	// control (s_variantPickerOpen flips via &open arg to Begin).
-	if (!s_variantPickerOpen)
+
+	// keepOpen flips false when the user clicks the X in the popup
+	// titlebar; ImGui has already closed the popup internally, so
+	// just sync our tracking flags + drop any pending swap callback.
+	// IsPopupOpen catches the ESC dismiss path which BeginPopupModal
+	// also handles internally without touching keepOpen.
+	if (!keepOpen || !ImGui::IsPopupOpen(kPopupId)) {
+		s_variantPickerOpen = false;
 		s_variantPickerSwapCb = nullptr;
-	ImGui::End();
+		prevOpen = false;
+	}
 }
 
 static VDStringA BuildHardwareInfoStr(ATSimulator &sim) {

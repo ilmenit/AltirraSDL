@@ -24,35 +24,62 @@ extern ATSimulator g_sim;
 // the params are still stored but SyncScreenFXToBackend in
 // main_sdl3.cpp skips the push.  Scanlines work in both the CPU and
 // GL paths.
+//
+// Non-destructive write semantics: this helper never zeroes the
+// numeric params just because the corresponding on/off flag is off.
+// The renderer already gates each effect off the flag (or, for
+// distortion which lacks a flag, off mDistortionViewAngleX > 0), so
+// keeping the values populated lets the user toggle an effect off
+// and on again — from the gaming-mode panel, the Adjust Screen
+// Effects dialog, or the WASM CRT button — without losing whatever
+// they had tuned.  First-enable populates from GetDefault() / a
+// saved cache so the slider lands on a sensible value instead of 0.
 void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState) {
 	ATGTIAEmulator &gtia = g_sim.GetGTIA();
 
 	gtia.SetScanlinesEnabled(mobileState.fxScanlines);
 
 	ATArtifactingParams params = gtia.GetArtifactingParams();
+	const ATArtifactingParams defaults = ATArtifactingParams::GetDefault();
 
+	// Bloom: the renderer keys off mbEnableBloom, so the radius /
+	// intensities are inert when the flag is false — leave them
+	// alone instead of zeroing.  Only seed defaults when enabling
+	// for the first time (params are still at zero from a prior
+	// off-state or a never-tuned profile).
 	params.mbEnableBloom = mobileState.fxBloom;
-	if (mobileState.fxBloom) {
-		params.mBloomRadius            = 0.20f;
-		params.mBloomDirectIntensity   = 1.00f;
-		params.mBloomIndirectIntensity = 0.70f;
-	} else {
-		params.mBloomRadius            = 0.0f;
-		params.mBloomDirectIntensity   = 0.0f;
-		params.mBloomIndirectIntensity = 0.0f;
+	if (mobileState.fxBloom && params.mBloomRadius <= 0.0f) {
+		params.mBloomRadius            = defaults.mBloomRadius;
+		params.mBloomDirectIntensity   = defaults.mBloomDirectIntensity;
+		params.mBloomIndirectIntensity = defaults.mBloomIndirectIntensity;
 	}
 
+	// Distortion has no separate enable flag — the renderer treats
+	// mDistortionViewAngleX > 0 as "on".  Cache the last enabled
+	// pair in static storage so toggling off → on restores the
+	// user's tuned values instead of always snapping to defaults.
+	// Same shape as ui_screenfx.cpp's saved-value pattern.
+	static float sSavedDistortionX = defaults.mDistortionViewAngleX;
+	static float sSavedDistortionY = defaults.mDistortionYRatio;
 	if (mobileState.fxDistortion) {
-		params.mDistortionViewAngleX = 35.0f;
-		params.mDistortionYRatio     = 0.90f;
+		if (params.mDistortionViewAngleX <= 0.0f) {
+			params.mDistortionViewAngleX = sSavedDistortionX > 0.0f
+				? sSavedDistortionX : defaults.mDistortionViewAngleX;
+			params.mDistortionYRatio     = sSavedDistortionY;
+		}
 	} else {
+		if (params.mDistortionViewAngleX > 0.0f) {
+			sSavedDistortionX = params.mDistortionViewAngleX;
+			sSavedDistortionY = params.mDistortionYRatio;
+		}
 		params.mDistortionViewAngleX = 0.0f;
 		params.mDistortionYRatio     = 0.0f;
 	}
 
 	params.mbEnableVignette = mobileState.fxVignette;
 	if (mobileState.fxVignette && params.mVignetteIntensity <= 0.0f)
-		params.mVignetteIntensity = 0.18f;
+		params.mVignetteIntensity = defaults.mVignetteIntensity > 0.0f
+			? defaults.mVignetteIntensity : 0.18f;
 
 	gtia.SetArtifactingParams(params);
 
