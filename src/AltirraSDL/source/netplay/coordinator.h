@@ -416,6 +416,9 @@ private:
 	void BumpDecodeCounter(DecodeResult r);
 	void HandleHelloFromJoiner(const NetHello& hello, const Endpoint& from, uint64_t nowMs);
 	void HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs);
+	// Host receives the joiner's NetWelcomeAck (v5).  Single-hit setter
+	// for mWelcomeAcked — releases the chunk pump's grace gate.
+	void HandleWelcomeAckFromJoiner(const Endpoint& from);
 	void HandleRejectFromHost(const NetReject& r);
 	void HandleInputPacket(const NetInputPacket& pkt, uint64_t nowMs);
 	void HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs);
@@ -444,7 +447,11 @@ private:
 	void BeginJoinerResync(const NetResyncStart& s, uint64_t nowMs);
 
 	void SendHello();
-	void SendWelcome();
+	// nowMs stamps mWelcomeSentMs for the chunk-pump grace timer.
+	// Pass 0 from contexts with no monotonic clock (legacy UI paths);
+	// the pump's grace check then fails-open and chunks fire on the
+	// next Poll, matching pre-v5 behaviour.
+	void SendWelcome(uint64_t nowMs = 0);
 	void SendReject(uint32_t reason, const Endpoint& to);
 	void SendBye(uint32_t reason);
 	void PumpSnapshotSender(uint64_t nowMs);
@@ -601,6 +608,29 @@ private:
 	std::vector<uint8_t> mSnapTxBuffer;   // host's copy of what we're uploading
 	SnapshotSender       mSnapTx;
 	SnapshotReceiver     mSnapRx;
+	// CRC32 over the snapshot bytes.  Host computes once in
+	// SubmitSnapshotForUpload, ships in NetWelcome.snapshotCRC32; joiner
+	// stores the value from Welcome and verifies the assembled bytes
+	// match before transitioning to Phase::SnapshotReady.  Catches
+	// silent truncation (defense in depth on top of the truncation
+	// guard), protocol drift across releases, and hostile peers.  Zero
+	// is a valid CRC value but is also the v4 wire default — to keep
+	// upgrade-bounce paths sane we ALSO verify on the joiner side
+	// regardless, since v5 hosts always populate it.
+	uint32_t mSnapTxCrc        = 0;
+	uint32_t mExpectedSnapCrc  = 0;
+
+	// Welcome→ready handshake (v5).  Host stamps mWelcomeSentMs in
+	// SendWelcome; the chunk pump holds fire while !mWelcomeAcked AND
+	// (now - mWelcomeSentMs) < kWelcomeAckGraceMs.  Once the joiner's
+	// NetWelcomeAck arrives we flip mWelcomeAcked = true and the pump
+	// runs unconstrained (only paced by item 7's one-per-tick rule).
+	// Grace timer is the safety net for a v5 peer whose NetWelcomeAck
+	// got dropped — the behaviour after grace is identical to the
+	// pre-v5 unconditional pump, just with a 250 ms head-start cost.
+	bool     mWelcomeAcked     = false;
+	uint64_t mWelcomeSentMs    = 0;
+	static constexpr uint64_t kWelcomeAckGraceMs = 250;
 
 	// Lockstep.
 	LockstepLoop mLoop;

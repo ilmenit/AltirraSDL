@@ -29,6 +29,14 @@ enum class DecodeResult : int {
 // knowing the full packet size yet.
 bool PeekMagic(const uint8_t* buf, size_t len, uint32_t& outMagic);
 
+// CRC32 (PKZIP / PNG polynomial 0xEDB88320, init=0xFFFFFFFF,
+// finalXOR=0xFFFFFFFF).  Byte-equal to VDCRCTable::CRC32.CRC()
+// (verified by protocol_selftest); we ship this small helper inside
+// the netplay tree so the standalone selftests don't have to link
+// the vd2/system/zip translation unit (3 KLOC + transitive deps).
+// Used by the v5 NetWelcome::snapshotCRC32 verify path.
+uint32_t Crc32(const void* data, size_t len);
+
 // --- NetHello --------------------------------------------------------------
 size_t EncodeHello(const NetHello& h, uint8_t* buf, size_t bufSize);
 DecodeResult DecodeHello(const uint8_t* buf, size_t len, NetHello& out);
@@ -36,6 +44,10 @@ DecodeResult DecodeHello(const uint8_t* buf, size_t len, NetHello& out);
 // --- NetWelcome ------------------------------------------------------------
 size_t EncodeWelcome(const NetWelcome& w, uint8_t* buf, size_t bufSize);
 DecodeResult DecodeWelcome(const uint8_t* buf, size_t len, NetWelcome& out);
+
+// --- NetWelcomeAck (joiner-ready signal, v5) ------------------------------
+size_t EncodeWelcomeAck(const NetWelcomeAck& a, uint8_t* buf, size_t bufSize);
+DecodeResult DecodeWelcomeAck(const uint8_t* buf, size_t len, NetWelcomeAck& out);
 
 // --- NetReject -------------------------------------------------------------
 size_t EncodeReject(const NetReject& r, uint8_t* buf, size_t bufSize);

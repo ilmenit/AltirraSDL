@@ -44,6 +44,14 @@ constexpr uint32_t kMagicEmote        = 0x45504E41u; // 'ANPE'
 // session nonce; the gameFileCRC32 must match what the host advertised
 // in NetBootConfig.gameFileCRC32 or the host ignores the packet.
 constexpr uint32_t kMagicSnapSkip     = 0x4B504E41u; // 'ANPK'
+// Joiner → host: "Welcome accepted, I'm in ReceivingSnapshot — start
+// shipping chunks now."  Lets the host gate its chunk burst on a real
+// signal instead of optimistically firing the entire window in the
+// poll tick after Welcome (which created a window where chunks raced
+// Welcome on the wire and were silently discarded by a joiner still in
+// Phase::Handshaking).  Sender stamps no fields beyond the magic; the
+// receive path is matched purely by source endpoint.
+constexpr uint32_t kMagicWelcomeAck   = 0x4D504E41u; // 'ANPM'
 // Per-subsystem simulator-state hash breakdown, exchanged on desync
 // detection (and on the first lockstep frame of every session) so each
 // peer can log which subsystem diverged instead of relying on the user
@@ -84,11 +92,16 @@ constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 // of the session and exchange only 6 per-game variables in
 // NetBootConfig.  Removed fields (cpuMode, sioAcceleration,
 // masterSeed, bootFrames) are now constants pinned by the canonical
-// profile.  v4 hosts refuse to handshake with v1/v2/v3 peers
+// profile.  v5 adds NetWelcome::snapshotCRC32 (joiner verifies the
+// assembled snapshot bytes against this before applying — catches
+// silent truncation, protocol drift, hostile peer) and the
+// kMagicWelcomeAck handshake (joiner signals "ready for chunks" so the
+// host's chunk burst is gated on a real ack instead of racing Welcome
+// on the wire).  v5 hosts refuse to handshake with v1..v4 peers
 // (kRejectVersionSkew); a separate kRejectCanonicalProfileMismatch
-// catches v4-vs-v4 cross-version mismatches when the canonical
+// catches v5-vs-v5 cross-version mismatches when the canonical
 // constant evolves between Altirra releases.
-constexpr uint16_t kProtocolVersion   = 4;
+constexpr uint16_t kProtocolVersion   = 5;
 constexpr int      kRedundancyR       = 5;       // sliding input-window length
 constexpr int      kFrameHz           = 60;      // simulated emulator frame rate
 constexpr uint32_t kSnapshotChunkSize = 1200;    // payload bytes per NetSnapChunk
@@ -163,9 +176,11 @@ struct NetBootConfig {
 	uint8_t  reserved1[8]    = {};
 };
 
-// NetWelcome — host → joiner (accept).  124 bytes on the wire at v4
-// (88 base + 36 BootConfig).  "snapshot" fields are now the raw
-// game-file bytes — framing is unchanged.
+// NetWelcome — host → joiner (accept).  128 bytes on the wire at v5
+// (92 base + 36 BootConfig).  "snapshot" fields are the raw game-file
+// bytes; framing matches v4.  Added in v5: snapshotCRC32 — joiner
+// verifies the assembled bytes against this before apply, catching
+// silent truncation / protocol drift / hostile peer.
 struct NetWelcome {
 	uint32_t magic = kMagicWelcome;
 	uint16_t inputDelayFrames = 3;
@@ -173,8 +188,17 @@ struct NetWelcome {
 	uint8_t  cartName[kCartLen] = {};
 	uint32_t snapshotBytes = 0;
 	uint32_t snapshotChunks = 0;
+	uint32_t snapshotCRC32 = 0;    // CRC32 over the snapshot bytes (v5)
 	uint64_t settingsHash = 0;     // digest over BootConfig + CRCs
 	NetBootConfig boot;
+};
+
+// NetWelcomeAck — joiner → host.  4 bytes on the wire (magic only).
+// Sent the instant the joiner transitions to Phase::ReceivingSnapshot
+// so the host's chunk pump can fire its first chunk on a confirmed
+// "joiner ready" signal instead of racing Welcome on the wire.
+struct NetWelcomeAck {
+	uint32_t magic = kMagicWelcomeAck;
 };
 
 // NetReject — host → joiner (refuse).  8 bytes.
@@ -338,7 +362,11 @@ struct NetSimHashDiag {
 constexpr size_t kWireHelloSize     = 4 + 2 + 2 + kSessionNonceLen + 8 + 8 + kHandleLen + 2 + kEntryCodeHashLen;   // 90
 // v4 BootConfig: u16 canonical + u16 reserved0 + 4×u8 + 3×u32 + 8 bytes ext + 8 bytes reserved1 = 36
 constexpr size_t kWireBootCfgSize   = 2 + 2 + 1 + 1 + 1 + 1 + 4 + 4 + 4 + 8 + 8;                                   // 36
-constexpr size_t kWireWelcomeSize   = 4 + 2 + 2 + kCartLen + 4 + 4 + 8 + kWireBootCfgSize;                        // 124
+// v5: 4 magic + 2 delay + 2 slot + 64 cart + 4 bytes + 4 chunks +
+// 4 crc + 8 settings + 36 bootcfg = 128
+constexpr size_t kWireWelcomeSize   = 4 + 2 + 2 + kCartLen + 4 + 4 + 4 + 8 + kWireBootCfgSize;                    // 128
+// New in v5.  4-byte ack with no payload.
+constexpr size_t kWireWelcomeAckSize = 4;
 constexpr size_t kWireRejectSize    = 8;
 constexpr size_t kWireInputSize     = 4;
 constexpr size_t kWireInputPktSize  = 4 + 4 + 2 + 2 + 4 + kRedundancyR * kWireInputSize;                           // 36 at R=5
@@ -377,7 +405,7 @@ constexpr size_t kMaxRelayDatagramSize =
 // canonical-profile contract (defaults applied per session) must also
 // bump ATNetplayProfile::kCanonicalProfileVersion in netplay_profile.h.
 static_assert(kWireBootCfgSize == 36, "NetBootConfig wire layout drift");
-static_assert(kWireWelcomeSize == 124, "NetWelcome wire layout drift");
+static_assert(kWireWelcomeSize == 128, "NetWelcome wire layout drift");
 
 // Resync messages: 6 × uint32 and 3 × uint32 respectively.  Guarding
 // against silent drift if someone reorders or adds fields to the

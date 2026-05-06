@@ -841,6 +841,13 @@ void Coordinator::Poll(uint64_t nowMs) {
 				HandleWelcomeFromHost(w, nowMs);
 				break;
 			}
+			case kMagicWelcomeAck: {
+				NetWelcomeAck wa;
+				{ DecodeResult dr = DecodeWelcomeAck(mRxBuf, n, wa);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
+				HandleWelcomeAckFromJoiner(from);
+				break;
+			}
 			case kMagicReject: {
 				NetReject rj;
 				{ DecodeResult dr = DecodeReject(mRxBuf, n, rj);
@@ -1265,7 +1272,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 			if (sameJoiner) {
 				g_ATLCNetplay("host: retry-Hello from accepted joiner — "
 					"re-sending Welcome (Welcome lost on the wire)");
-				SendWelcome();
+				SendWelcome(nowMs);
 				return;
 			}
 		}
@@ -1467,7 +1474,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 
 	// Snapshot already submitted (app was proactive).  Welcome now.
 	mPhase = Phase::SendingSnapshot;
-	SendWelcome();
+	SendWelcome(nowMs);
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
 	mSnapProgressMilestone = 0;
 }
@@ -1610,13 +1617,18 @@ void Coordinator::RejectPendingJoiner(size_t i) {
 void Coordinator::SubmitSnapshotForUpload(const uint8_t* data, size_t len) {
 	if (mRole != Role::Host) return;
 	mSnapTxBuffer.assign(data, data + len);
+	// Compute the CRC32 once; ship in NetWelcome.snapshotCRC32 so the
+	// joiner can verify the assembled bytes before applying.  Uses the
+	// netplay-internal Crc32 helper (PKZIP polynomial; byte-equal to
+	// VDCRCTable::CRC32.CRC — see protocol_selftest).
+	mSnapTxCrc = Crc32(mSnapTxBuffer.data(), mSnapTxBuffer.size());
 
 	if (mHostHasPendingJoiner) {
 		mHostHasPendingJoiner = false;
 		mPhase = Phase::SendingSnapshot;
 		SendWelcome();
 		mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
-	mSnapProgressMilestone = 0;
+		mSnapProgressMilestone = 0;
 	}
 	// If no joiner yet, bytes sit in mSnapTxBuffer until one arrives.
 }
@@ -1656,15 +1668,28 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	// Prepare receiver.
 	mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes);
 	mSnapProgressMilestone = 0;
+	mExpectedSnapCrc = w.snapshotCRC32;   // v5: verify on assembly
 	mPhase = Phase::ReceivingSnapshot;
 	// Seed the snapshot-receive watchdog with nowMs (or 1 if nowMs
 	// happens to be 0 — same sentinel pattern used elsewhere).  The
 	// Poll-side watchdog fails the session if no chunk arrives
 	// within kSnapshotReceiveTimeoutMs.
 	mLastChunkRecvMs = nowMs ? nowMs : 1;
-	g_ATLCNetplay("joiner: Welcome accepted (snapshot=%u bytes / %u chunks, delay=%u)",
+	g_ATLCNetplay("joiner: Welcome accepted (snapshot=%u bytes / %u chunks, delay=%u, crc=0x%08X)",
 		(unsigned)w.snapshotBytes, (unsigned)w.snapshotChunks,
-		(unsigned)w.inputDelayFrames);
+		(unsigned)w.inputDelayFrames, (unsigned)w.snapshotCRC32);
+
+	// v5: tell the host we're ready for chunks.  Sent NOW, not on the
+	// next Poll, so the host's chunk pump can release its grace gate
+	// well before the 250 ms timeout.  Travels the same WrapAndSend
+	// path the chunks will (relay-aware) — a path failure here surfaces
+	// on the host as "no WelcomeAck after 250 ms" rather than the more
+	// confusing "no chunk acks received" five seconds later.
+	if (mPeerKnown) {
+		NetWelcomeAck a;
+		size_t n = EncodeWelcomeAck(a, mTxBuf, sizeof mTxBuf);
+		if (n) WrapAndSend(mTxBuf, n, mPeer);
+	}
 
 	// If the snapshot is zero-length (edge case: nothing to ship),
 	// move straight to SnapshotReady.
@@ -1763,8 +1788,27 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 
 	if (mSnapRx.IsComplete()) {
 		if (sessionStart) {
+			// v5: verify the assembled bytes against the CRC the host
+			// shipped in NetWelcome.  Catches silent recv-side
+			// truncation (defense in depth on top of the recvfrom
+			// truncation guard), protocol drift across releases, and
+			// hostile peers.  Mid-session resync skips this gate —
+			// resync payloads aren't covered by the Welcome CRC; that
+			// path uses NetResyncStart's seedHash for sanity.
+			const auto& bytes = mSnapRx.Data();
+			const uint32_t actualCrc = Crc32(bytes.data(), bytes.size());
+			if (mExpectedSnapCrc != actualCrc) {
+				char msg[128];
+				std::snprintf(msg, sizeof msg,
+					"snapshot CRC mismatch (expected 0x%08X, got 0x%08X) — "
+					"transfer corrupted, refusing to apply",
+					(unsigned)mExpectedSnapCrc, (unsigned)actualCrc);
+				FailWith(msg);
+				return;
+			}
 			mPhase = Phase::SnapshotReady;
-			g_ATLCNetplay("joiner: snapshot download complete, applying…");
+			g_ATLCNetplay("joiner: snapshot download complete (crc=0x%08X), applying…",
+				(unsigned)actualCrc);
 			// Item 4 cache-store DISABLED with the cache-lookup
 			// short-circuit; see HandleWelcomeFromHost for the
 			// rationale.  Re-enable both together when the joiner-
@@ -1849,6 +1893,22 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 
 void Coordinator::PumpSnapshotSender(uint64_t nowMs) {
 	if (!mPeerKnown) return;
+
+	// v5 WelcomeAck grace gate: hold the first chunk until the joiner
+	// signals "ready for chunks" (NetWelcomeAck) OR a 250 ms grace
+	// elapses, whichever comes first.  Only applies to the snapshot-
+	// upload phase; mid-session resync (Phase::Resyncing) skips this
+	// gate because there's no Welcome to ack — the resync handshake
+	// uses NetResyncStart/NetResyncDone for synchronisation.
+	// Fail-open: if mWelcomeSentMs == 0 (caller had no clock — UI
+	// path) the gate is open immediately, matching pre-v5 behaviour.
+	if (mPhase == Phase::SendingSnapshot &&
+	    !mWelcomeAcked && mWelcomeSentMs != 0 &&
+	    nowMs >= mWelcomeSentMs &&
+	    (nowMs - mWelcomeSentMs) < kWelcomeAckGraceMs) {
+		return;
+	}
+
 	// Pace at one chunk per Poll tick (was: a `while (NextOutgoing)`
 	// loop that fired the entire 32-chunk window in microseconds).
 	// At 60 Hz this turns a 22-chunk Archon snapshot into a ~366 ms
@@ -2098,7 +2158,7 @@ void Coordinator::GenerateSessionNonce() {
 	}
 }
 
-void Coordinator::SendWelcome() {
+void Coordinator::SendWelcome(uint64_t nowMs) {
 	NetWelcome w;
 	w.magic = kMagicWelcome;
 	w.inputDelayFrames = mInputDelay;
@@ -2108,17 +2168,42 @@ void Coordinator::SendWelcome() {
 	w.snapshotChunks =
 		(uint32_t)((mSnapTxBuffer.size() + kSnapshotChunkSize - 1)
 			/ kSnapshotChunkSize);
+	w.snapshotCRC32 = mSnapTxCrc;     // v5
 	w.settingsHash = mSettingsHash;
 	w.boot = mBootConfig;
 
 	size_t n = EncodeWelcome(w, mTxBuf, sizeof mTxBuf);
 	if (n && mPeerKnown) WrapAndSend(mTxBuf, n, mPeer);
+
+	// Stamp the send time so PumpSnapshotSender's grace gate knows when
+	// to stop holding fire — 250 ms after this stamp OR earlier on
+	// NetWelcomeAck arrival (whichever comes first).  Callers without a
+	// monotonic clock pass 0; the gate then fails-open (chunks fire
+	// immediately on the next Poll), which matches pre-v5 behaviour.
+	// Reset mWelcomeAcked here too so a re-send of Welcome (e.g. host's
+	// retry-Hello path) re-arms the gate cleanly — without that, a
+	// stale ack from a previous attempt could prematurely release the
+	// gate on a fresh Welcome whose chunk pump hadn't run yet.
+	mWelcomeSentMs = nowMs;
+	mWelcomeAcked  = false;
 }
 
 void Coordinator::SendReject(uint32_t reason, const Endpoint& to) {
 	NetReject r { kMagicReject, reason };
 	size_t n = EncodeReject(r, mTxBuf, sizeof mTxBuf);
 	if (n) mTransport->SendTo(mTxBuf, n, to);
+}
+
+void Coordinator::HandleWelcomeAckFromJoiner(const Endpoint& from) {
+	// Only meaningful while we're holding chunks for the joiner who
+	// just acked.  Off-phase or wrong-source acks are dropped silently
+	// (a stale retry could otherwise prematurely release a fresh
+	// Welcome's grace gate before chunks for THIS attempt are ready).
+	if (mRole != Role::Host) return;
+	if (mPhase != Phase::SendingSnapshot) return;
+	if (!mPeerKnown) return;
+	if (!mPeer.Equals(from)) return;
+	mWelcomeAcked = true;
 }
 
 // ---------------------------------------------------------------------------

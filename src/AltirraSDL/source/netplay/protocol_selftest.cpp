@@ -29,16 +29,17 @@ static int fails = 0;
 	} while (0)
 
 static void testWireSizes() {
-	CHECK(kWireHelloSize    == 90);
-	CHECK(kWireBootCfgSize  == 36);
-	CHECK(kWireWelcomeSize  == 124);
-	CHECK(kWireRejectSize   == 8);
-	CHECK(kWireInputPktSize == 36);
-	CHECK(kWireByeSize      == 8);
-	CHECK(kWireChunkHdrSize == 16);
-	CHECK(kWireAckSize      == 8);
-	CHECK(kRedundancyR      == 5);
-	CHECK(kProtocolVersion  == 4);
+	CHECK(kWireHelloSize       == 90);
+	CHECK(kWireBootCfgSize     == 36);
+	CHECK(kWireWelcomeSize     == 128);   // v5: +4 for snapshotCRC32
+	CHECK(kWireWelcomeAckSize  == 4);     // v5: new
+	CHECK(kWireRejectSize      == 8);
+	CHECK(kWireInputPktSize    == 36);
+	CHECK(kWireByeSize         == 8);
+	CHECK(kWireChunkHdrSize    == 16);
+	CHECK(kWireAckSize         == 8);
+	CHECK(kRedundancyR         == 5);
+	CHECK(kProtocolVersion     == 5);
 }
 
 static void testMagicAnchors() {
@@ -96,6 +97,7 @@ static void testWelcomeRoundTrip() {
 	CartFromString("Joust.atr", in.cartName);
 	in.snapshotBytes = 65536;
 	in.snapshotChunks = 55;
+	in.snapshotCRC32 = 0xC0FFEE42u;       // v5
 	in.settingsHash = 0xABCDEF0011223344ULL;
 	// BootConfig (v4) — only 6 per-game vars + canonical-profile version.
 	in.boot.canonicalProfileVersion = 1;
@@ -119,6 +121,7 @@ static void testWelcomeRoundTrip() {
 	CHECK(std::strcmp(CartToCStr(out.cartName), "Joust.atr") == 0);
 	CHECK(out.snapshotBytes == 65536);
 	CHECK(out.snapshotChunks == 55);
+	CHECK(out.snapshotCRC32 == 0xC0FFEE42u);   // v5
 	CHECK(out.settingsHash == 0xABCDEF0011223344ULL);
 	CHECK(out.boot.canonicalProfileVersion == 1);
 	CHECK(out.boot.hardwareMode    == 1);
@@ -129,6 +132,45 @@ static void testWelcomeRoundTrip() {
 	CHECK(out.boot.basicCRC32      == 0x7D684184u);
 	CHECK(out.boot.gameFileCRC32   == 0xCAFEBABEu);
 	CHECK(std::memcmp(out.boot.gameExtension, ".atr\0\0\0\0", 8) == 0);
+}
+
+static void testCrc32KnownVectors() {
+	// Standard PKZIP / PNG CRC-32 test vectors.  The netplay-internal
+	// Crc32() helper MUST produce identical bytes to VDCRCTable::CRC32
+	// because the wire-side host computes the snapshot CRC via the
+	// internal helper while older log lines / cache lookups continue
+	// to use VDCRCTable.
+	CHECK(Crc32(nullptr, 0) == 0u);
+	CHECK(Crc32("", 0) == 0u);
+	// Standard "123456789" vector: 0xCBF43926.
+	CHECK(Crc32("123456789", 9) == 0xCBF43926u);
+	// "The quick brown fox jumps over the lazy dog" → 0x414FA339
+	CHECK(Crc32("The quick brown fox jumps over the lazy dog", 43)
+	      == 0x414FA339u);
+	// One-byte 'A' → 0xD3D99E8B
+	CHECK(Crc32("A", 1) == 0xD3D99E8Bu);
+}
+
+static void testWelcomeAckRoundTrip() {
+	NetWelcomeAck in;
+	uint8_t buf[kWireWelcomeAckSize];
+	size_t n = EncodeWelcomeAck(in, buf, sizeof buf);
+	CHECK(n == kWireWelcomeAckSize);
+	// Anchor on the wire bytes — magic is 'ANPM' little-endian.
+	CHECK(buf[0] == 'A' && buf[1] == 'N' && buf[2] == 'P' && buf[3] == 'M');
+
+	NetWelcomeAck out;
+	CHECK(DecodeWelcomeAck(buf, n, out) == DecodeResult::Ok);
+	CHECK(out.magic == kMagicWelcomeAck);
+
+	// Short-buffer rejection.
+	NetWelcomeAck stub;
+	CHECK(DecodeWelcomeAck(buf, 0, stub) == DecodeResult::TooShort);
+	// Wrong magic rejection.
+	uint8_t bad[kWireWelcomeAckSize];
+	std::memcpy(bad, buf, sizeof bad);
+	bad[0] = 'X';
+	CHECK(DecodeWelcomeAck(bad, sizeof bad, stub) == DecodeResult::BadMagic);
 }
 
 static void testRejectRoundTrip() {
@@ -329,6 +371,8 @@ int main() {
 	testMagicAnchors();
 	testHelloRoundTrip();
 	testWelcomeRoundTrip();
+	testWelcomeAckRoundTrip();
+	testCrc32KnownVectors();
 	testRejectRoundTrip();
 	testInputPacketRoundTrip();
 	testSnapChunkRoundTrip();

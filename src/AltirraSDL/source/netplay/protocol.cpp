@@ -9,6 +9,50 @@
 namespace ATNetplay {
 
 // ---------------------------------------------------------------------------
+// CRC32 (PKZIP / PNG polynomial 0xEDB88320)
+// ---------------------------------------------------------------------------
+//
+// Byte-equal to VDCRCTable::CRC32.CRC() — verified by
+// protocol_selftest's testCrc32KnownVectors().  See protocol.h for
+// rationale (avoid pulling vd2/system/zip into the standalone tests).
+
+namespace {
+
+// Lazy-initialised slice-by-1 lookup table.  256 entries × 4 B = 1 KiB.
+// Built on first use; subsequent calls hit the warm table.
+class Crc32Table {
+public:
+	Crc32Table() {
+		for (uint32_t i = 0; i < 256; ++i) {
+			uint32_t c = i;
+			for (int k = 0; k < 8; ++k) {
+				c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+			}
+			t[i] = c;
+		}
+	}
+	uint32_t t[256];
+};
+
+const Crc32Table& Crc32TableSingleton() {
+	static const Crc32Table inst;
+	return inst;
+}
+
+}  // namespace
+
+uint32_t Crc32(const void* data, size_t len) {
+	if (data == nullptr || len == 0) return 0u;
+	const uint8_t* p = static_cast<const uint8_t*>(data);
+	const uint32_t* tbl = Crc32TableSingleton().t;
+	uint32_t c = 0xFFFFFFFFu;
+	for (size_t i = 0; i < len; ++i) {
+		c = tbl[(c ^ p[i]) & 0xFFu] ^ (c >> 8);
+	}
+	return c ^ 0xFFFFFFFFu;
+}
+
+// ---------------------------------------------------------------------------
 // Little-endian byte I/O
 // ---------------------------------------------------------------------------
 //
@@ -97,7 +141,8 @@ DecodeResult DecodeHello(const uint8_t* buf, size_t len, NetHello& out) {
 }
 
 // ---------------------------------------------------------------------------
-// NetWelcome (120 bytes at v4: 88 base + 32 BootConfig)
+// NetWelcome (128 bytes at v5: 92 base + 36 BootConfig).  v5 added a
+// uint32 snapshotCRC32 between snapshotChunks and settingsHash.
 // ---------------------------------------------------------------------------
 
 size_t EncodeWelcome(const NetWelcome& w, uint8_t* buf, size_t bufSize) {
@@ -106,11 +151,12 @@ size_t EncodeWelcome(const NetWelcome& w, uint8_t* buf, size_t bufSize) {
 	put_u16(buf + 4, w.inputDelayFrames);
 	put_u16(buf + 6, w.playerSlot);
 	std::memcpy(buf + 8, w.cartName, kCartLen);                     // 8..72
-	put_u32(buf + 8 + kCartLen, w.snapshotBytes);                   // 72..76
+	put_u32(buf + 8 + kCartLen + 0, w.snapshotBytes);               // 72..76
 	put_u32(buf + 8 + kCartLen + 4, w.snapshotChunks);              // 76..80
-	put_u64(buf + 8 + kCartLen + 8, w.settingsHash);                // 80..88
-	// NetBootConfig (36 bytes, offset 88).
-	uint8_t *b = buf + 88;
+	put_u32(buf + 8 + kCartLen + 8, w.snapshotCRC32);               // 80..84  (v5)
+	put_u64(buf + 8 + kCartLen + 12, w.settingsHash);               // 84..92
+	// NetBootConfig (36 bytes, offset 92).
+	uint8_t *b = buf + 92;
 	put_u16(b + 0, w.boot.canonicalProfileVersion);                 //  0..2
 	put_u16(b + 2, w.boot.reserved0);                               //  2..4
 	b[4] = w.boot.hardwareMode;                                     //  4
@@ -132,10 +178,11 @@ DecodeResult DecodeWelcome(const uint8_t* buf, size_t len, NetWelcome& out) {
 	out.inputDelayFrames = get_u16(buf + 4);
 	out.playerSlot = get_u16(buf + 6);
 	std::memcpy(out.cartName, buf + 8, kCartLen);
-	out.snapshotBytes = get_u32(buf + 8 + kCartLen);
+	out.snapshotBytes  = get_u32(buf + 8 + kCartLen + 0);
 	out.snapshotChunks = get_u32(buf + 8 + kCartLen + 4);
-	out.settingsHash = get_u64(buf + 8 + kCartLen + 8);
-	const uint8_t *b = buf + 88;
+	out.snapshotCRC32  = get_u32(buf + 8 + kCartLen + 8);
+	out.settingsHash   = get_u64(buf + 8 + kCartLen + 12);
+	const uint8_t *b = buf + 92;
 	out.boot.canonicalProfileVersion = get_u16(b + 0);
 	out.boot.reserved0     = get_u16(b + 2);
 	out.boot.hardwareMode  = b[4];
@@ -147,6 +194,24 @@ DecodeResult DecodeWelcome(const uint8_t* buf, size_t len, NetWelcome& out) {
 	out.boot.gameFileCRC32 = get_u32(b + 16);
 	std::memcpy(out.boot.gameExtension, b + 20, 8);
 	std::memcpy(out.boot.reserved1, b + 28, 8);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetWelcomeAck (4 bytes; magic only)
+// ---------------------------------------------------------------------------
+
+size_t EncodeWelcomeAck(const NetWelcomeAck& a, uint8_t* buf, size_t bufSize) {
+	(void)a;
+	if (bufSize < kWireWelcomeAckSize) return 0;
+	put_u32(buf + 0, kMagicWelcomeAck);
+	return kWireWelcomeAckSize;
+}
+
+DecodeResult DecodeWelcomeAck(const uint8_t* buf, size_t len, NetWelcomeAck& out) {
+	if (len < kWireWelcomeAckSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicWelcomeAck) return DecodeResult::BadMagic;
 	return DecodeResult::Ok;
 }
 
