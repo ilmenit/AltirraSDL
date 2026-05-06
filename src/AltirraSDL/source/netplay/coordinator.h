@@ -589,9 +589,22 @@ private:
 	// Lockstep.
 	LockstepLoop mLoop;
 
-	// Buffers.
-	uint8_t  mRxBuf[kMaxDatagramSize];
+	// Buffers.  RX must accommodate ASDF-wrapped relay frames (24-byte
+	// header + up to kMaxDatagramSize inner) — sizing it at the inner-
+	// only kMaxDatagramSize causes recvfrom() to silently truncate the
+	// tail of every chunk-bearing relay frame, which DecodeSnapChunk
+	// then rejects as TooShort.  Diagnosed via lobby /v1/metrics on
+	// 2026-05-06: the ws_in_chunks/udp_out_chunks/udp_in_acks delta on
+	// a 22-chunk Archon snapshot was 211/211/1 — only the tail chunk
+	// (payloadLen=585) fit the truncated buffer.
+	// TX is fine at kMaxDatagramSize: encoders write inner-only into
+	// this buffer and SendWrappedViaLobby allocates its own larger
+	// temp for the wrap.
+	uint8_t  mRxBuf[kMaxRelayDatagramSize];
 	uint8_t  mTxBuf[kMaxDatagramSize];
+	static_assert(kMaxRelayDatagramSize >=
+	              kWireRelayHeaderSize + kMaxDatagramSize,
+	              "mRxBuf must hold an ASDF-wrapped chunk");
 
 	// Pacing for outgoing input packets (Lockstepping phase).  We
 	// emit one per Poll() call — the main loop ticks at 60 Hz, so

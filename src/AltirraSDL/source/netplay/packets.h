@@ -357,6 +357,19 @@ constexpr size_t kWireRelayRegisterSize = kWireRelayHeaderSize;   // 24
 // Maximum UDP datagram we need to send at once; chunks are the biggest.
 constexpr size_t kMaxDatagramSize = kWireChunkHdrSize + kSnapshotChunkSize;
 
+// Maximum UDP datagram we need to RECEIVE on a relay-attached socket.
+// Anything inbound from a peer on PeerPath::Relay arrives ASDF-wrapped
+// — the lobby prepends kWireRelayHeaderSize before forwarding, so the
+// receive buffer must hold the wrap header plus the largest inner
+// datagram or recvfrom() will silently truncate the tail bytes (which
+// looks like a short read of length kMaxDatagramSize, then DecodeSnapChunk
+// rejects every non-tail chunk as TooShort and the snapshot upload
+// dies with "no chunk acks received").  SendWrappedViaLobby's TX path
+// already sizes its temp buffer this way; this name matches that
+// convention so the symmetry is obvious.
+constexpr size_t kMaxRelayDatagramSize =
+	kMaxDatagramSize + kWireRelayHeaderSize;
+
 // Compile-time guard against NetWelcome layout drift.  The v4 wire
 // layout is 88 base bytes + 36 BootConfig bytes = 124.  Anyone adding
 // a field to NetBootConfig must also bump kProtocolVersion and update
