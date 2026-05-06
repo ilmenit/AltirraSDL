@@ -25,6 +25,7 @@
 #else
 #  include <sys/socket.h>
 #  include <sys/types.h>
+#  include <sys/uio.h>      // struct iovec for recvmsg
 #  include <netinet/in.h>
 #  include <arpa/inet.h>
 #  include <unistd.h>
@@ -454,27 +455,33 @@ RecvResult UdpTransport::RecvFrom(uint8_t* buf, size_t bufSize,
 	sockaddr_storage peer {};
 	socklen_t peerLen = sizeof peer;
 
-	// Truncation detection across the three OS API shapes:
+	// Truncation detection across the OS API shapes:
 	//
-	//   - POSIX (Linux/macOS/Android): pass MSG_TRUNC.  recvfrom()
-	//     returns the *actual* datagram size even when it copied only
-	//     bufSize bytes.  Comparing the return to bufSize tells us
-	//     whether the kernel discarded the tail.
+	//   - POSIX (Linux/macOS/Android): use recvmsg() and inspect
+	//     msg_flags & MSG_TRUNC after the call.  This is the only
+	//     portable way — Linux's recvfrom() honours MSG_TRUNC as an
+	//     input flag (returns actual datagram size when buf too
+	//     small), but BSD/macOS treats MSG_TRUNC strictly as an
+	//     output flag in recvmsg's msg_flags, so the recvfrom-based
+	//     trick silently misses truncation on Apple platforms.
+	//     recvmsg with msghdr.msg_flags read AFTER the call works
+	//     uniformly across Linux 2.6+, macOS 10.10+, all BSD
+	//     variants, and Android.
 	//
-	//   - Winsock (Windows): MSG_TRUNC isn't honoured.  When the
-	//     buffer is too small recvfrom returns SOCKET_ERROR with
-	//     WSAEMSGSIZE; the kernel still wrote bufSize bytes into
-	//     `buf` — the tail is discarded.  Treat WSAEMSGSIZE as a
+	//   - Winsock (Windows): no msg_flags equivalent.  recvfrom()
+	//     returns SOCKET_ERROR with WSAEMSGSIZE when the buffer is
+	//     too small; the kernel still wrote bufSize bytes into
+	//     `buf` and populated `peer`.  Treat WSAEMSGSIZE as a
 	//     successful Ok-with-truncation read of bufSize bytes.
 	//
 	// Truncation should never happen now that mRxBuf is sized for
-	// kMaxRelayDatagramSize, but the warning here is the early
-	// detector for any future buffer-sizing mismatch — silent
-	// truncation was the root cause of the May 2026 chunk-relay
-	// snapshot bug, and the static_assert in coordinator.h catches
-	// the simple case at compile time; this catches the harder
-	// runtime cases (a peer sending oversize garbage, an unexpected
-	// new packet kind, etc.).
+	// kMaxRelayDatagramSize, but this is the early detector for any
+	// future buffer-sizing mismatch — silent truncation was the root
+	// cause of the May 2026 chunk-relay snapshot bug, and the
+	// static_assert in coordinator.h catches the simple case at
+	// compile time; this catches the harder runtime cases (a peer
+	// sending oversize garbage, an unexpected new packet kind, a
+	// future protocol that bumps kMaxRelayDatagramSize past mRxBuf).
 	bool truncated = false;
 #if defined(_WIN32)
 	int rc = ::recvfrom((int)mSock,
@@ -492,17 +499,26 @@ RecvResult UdpTransport::RecvFrom(uint8_t* buf, size_t bufSize,
 		}
 	}
 #else
-	int rc = ::recvfrom((int)mSock,
-	                    (char*)buf, (int)bufSize, MSG_TRUNC,
-	                    (sockaddr*)&peer, &peerLen);
+	struct iovec iov;
+	iov.iov_base = buf;
+	iov.iov_len  = bufSize;
+	struct msghdr msg = {};
+	msg.msg_name    = &peer;
+	msg.msg_namelen = peerLen;
+	msg.msg_iov     = &iov;
+	msg.msg_iovlen  = 1;
+	// msg_flags is purely output for recvmsg — no need to set it.
+	ssize_t rc = ::recvmsg((int)mSock, &msg, 0);
 	if (rc < 0) {
 		return NP_WOULDBLOCK(NP_LAST_ERR())
 			? RecvResult::WouldBlock
 			: RecvResult::Error;
 	}
-	if ((size_t)rc > bufSize) {
+	peerLen = msg.msg_namelen;
+	if (msg.msg_flags & MSG_TRUNC) {
 		truncated = true;
-		rc = (int)bufSize;
+		// rc on POSIX is bytes COPIED (always ≤ bufSize), so already
+		// the correct outLen; the discarded tail is not reflected.
 	}
 #endif
 

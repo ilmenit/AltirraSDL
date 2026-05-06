@@ -529,12 +529,15 @@ void Coordinator::Poll(uint64_t nowMs) {
 			++mDiag.recvTruncated;
 			if (!mTruncationLogged) {
 				mTruncationLogged = true;
-				g_ATLCNetplay("%s: recvfrom truncated a datagram into a "
-					"%zu-byte buffer (rxbuf=%zu) — should never happen "
-					"with current packet sizes",
+				g_ATLCNetplay("%s: kernel truncated a datagram larger "
+					"than the %zu-byte recv buffer "
+					"(kMaxRelayDatagramSize=%zu) — should never happen "
+					"with current packet sizes; check for protocol "
+					"drift or oversize garbage from a peer",
 					mRole == Role::Host ? "host" :
 					mRole == Role::Joiner ? "joiner" : "idle",
-					sizeof mRxBuf, sizeof mRxBuf);
+					sizeof mRxBuf,
+					(size_t)kMaxRelayDatagramSize);
 			}
 		}
 
