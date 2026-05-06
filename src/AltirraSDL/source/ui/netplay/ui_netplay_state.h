@@ -208,6 +208,22 @@ struct HostedGame {
 	// the coordinator goes terminal.
 	bool        snapshotQueued = false;
 
+	// True while a lobby Create POST is in flight on the worker.  Set
+	// by PostLobbyCreate, cleared when the response (success or
+	// failure) is received in ATNetplayUI_Poll.  Gates
+	// StartCoordForHostedGame so the reconcile loop doesn't fire a
+	// fresh Create on every frame while the previous one is still in
+	// flight — without this the WASM host would post 8+ Creates in
+	// 60 ms before the first response arrived (each tick sees the
+	// coord still missing and re-fires), DDoS-ing the lobby.
+	bool        createInFlight = false;
+	// Earliest monotonic-ms at which a failed Create may be retried.
+	// On a Create failure (4xx/5xx, network error) the response
+	// handler arms this to `now + 30 s` so a misconfigured offer or a
+	// down lobby doesn't trigger a new Create on every reconcile tick.
+	// Zero means "no backoff".
+	uint64_t    createRetryAfterMs = 0;
+
 	// Previous-tick phase (glue int) so we can detect edges like
 	// WaitingForJoiner → Handshaking and fire notifications / start
 	// the boot flow exactly once per session.

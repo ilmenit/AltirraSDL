@@ -397,6 +397,11 @@ void PostLobbyCreate(HostedGame& o) {
 		GetWorker().Post(std::move(req), L.section);
 	}
 	o.lastHeartbeatMs = 0;    // arm first heartbeat
+	// Mark Create as in-flight so the reconcile loop skips
+	// StartCoordForHostedGame until the response lands.  The flag is
+	// cleared by the Create handler in ATNetplayUI_Poll on every
+	// outcome (success, per-lobby failure, transport error).
+	o.createInFlight = true;
 	// Wipe stale registrations from a previous session; Create
 	// responses will repopulate as they arrive.
 	o.lobbyRegistrations.clear();
@@ -578,6 +583,20 @@ void StartCoordForHostedGame(HostedGame& o) {
 	// (which then calls StartHostWss with sid+token).  Until then the
 	// HostedGame sits in `Open` with no coordinator — joiners can't
 	// see it yet because no lobby Create has succeeded.
+	//
+	// Two gates prevent flooding the lobby:
+	//   1. createInFlight — set by PostLobbyCreate, cleared on
+	//      response.  Blocks reconcile from re-firing while the
+	//      previous Create's HTTP response is still in flight (would
+	//      otherwise issue ~8 requests in 60 ms before round-trip).
+	//   2. createRetryAfterMs — armed on Create failure to a fixed
+	//      backoff so a misconfigured offer / down lobby doesn't
+	//      trigger one Create per frame indefinitely.
+	if (o.createInFlight) return;
+	{
+		const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+		if (o.createRetryAfterMs && nowMs < o.createRetryAfterMs) return;
+	}
 	o.boundPort = 0;
 	o.lastError.clear();
 	o.state = HostedGameState::Open;

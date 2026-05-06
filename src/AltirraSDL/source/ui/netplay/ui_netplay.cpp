@@ -175,6 +175,11 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 				ATNetplayUI::HostedGame* o =
 					ATNetplayUI::FindHostedGameByTag(r.tag);
 				if (!o) return;
+				// Clear the in-flight gate so the reconcile loop can
+				// retry (after backoff on failure, immediately on
+				// success → coord exists so reconcile no-ops).  Done
+				// for every outcome including stale-gen orphans below.
+				o->createInFlight = false;
 				if (r.ok) {
 					// Generation gate: if the offer's coordGen has
 					// advanced since the request was posted (the coord
@@ -292,6 +297,12 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 						r.httpStatus,
 						r.error.empty() ? "(no detail)"
 						                : r.error.c_str());
+					// Arm a 30 s backoff so reconcile doesn't fire a
+					// fresh Create on every frame for a misconfigured
+					// offer or down lobby (would DDoS the server on
+					// Oracle Free Tier).  The gate is in
+					// StartCoordForHostedGame.
+					o->createRetryAfterMs = nowMs + 30000;
 				}
 				return;
 			}

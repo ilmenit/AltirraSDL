@@ -763,7 +763,37 @@ void OnError(emscripten_fetch_t* f) {
 	out.sourceLobby = ctx->source;
 	out.httpStatus  = (int)f->status;
 	out.ok          = false;
-	out.error.assign(f->statusText ? f->statusText : "network error");
+	// Prefer a response body of the form {"error":"..."} when the
+	// upstream returned one (the lobby's 4xx responses always do —
+	// e.g. {"error":"hostHandle: 1..32 chars required"}).  Falls back
+	// to statusText (often "Not Found" from Caddy) when no JSON is
+	// present so the user still gets *something* actionable.  Without
+	// this the surface error was always literally "Not Found"
+	// regardless of what actually went wrong.
+	const char* body = f->data ? f->data : "";
+	const size_t blen = (size_t)f->numBytes;
+	std::string detail;
+	if (blen) {
+		ATLobby::JsonCursor c{body, body + blen};
+		if (c.match('{')) {
+			while (c.ok && !c.match('}')) {
+				std::string key;
+				if (!c.parseString(key)) break;
+				if (!c.match(':'))       break;
+				if (key == "error") {
+					c.parseString(detail);
+					break;
+				}
+				c.skipValue();
+				c.match(',');  // tolerant of trailing commas
+			}
+		}
+	}
+	if (!detail.empty()) {
+		out.error = std::move(detail);
+	} else {
+		out.error.assign(f->statusText ? f->statusText : "network error");
+	}
 	Internal_LobbyWorker_PushResult(ctx->worker, std::move(out));
 	emscripten_fetch_close(f);
 	delete ctx;
