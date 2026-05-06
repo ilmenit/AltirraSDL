@@ -15,7 +15,9 @@
 
 namespace ATNetplay {
 
-enum class DecodeResult {
+// Underlying type pinned to `int` so the forward declaration in
+// coordinator.h (`enum class DecodeResult : int;`) matches.
+enum class DecodeResult : int {
 	Ok,
 	TooShort,
 	BadMagic,

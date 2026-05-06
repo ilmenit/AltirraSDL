@@ -454,16 +454,61 @@ RecvResult UdpTransport::RecvFrom(uint8_t* buf, size_t bufSize,
 	sockaddr_storage peer {};
 	socklen_t peerLen = sizeof peer;
 
+	// Truncation detection across the three OS API shapes:
+	//
+	//   - POSIX (Linux/macOS/Android): pass MSG_TRUNC.  recvfrom()
+	//     returns the *actual* datagram size even when it copied only
+	//     bufSize bytes.  Comparing the return to bufSize tells us
+	//     whether the kernel discarded the tail.
+	//
+	//   - Winsock (Windows): MSG_TRUNC isn't honoured.  When the
+	//     buffer is too small recvfrom returns SOCKET_ERROR with
+	//     WSAEMSGSIZE; the kernel still wrote bufSize bytes into
+	//     `buf` — the tail is discarded.  Treat WSAEMSGSIZE as a
+	//     successful Ok-with-truncation read of bufSize bytes.
+	//
+	// Truncation should never happen now that mRxBuf is sized for
+	// kMaxRelayDatagramSize, but the warning here is the early
+	// detector for any future buffer-sizing mismatch — silent
+	// truncation was the root cause of the May 2026 chunk-relay
+	// snapshot bug, and the static_assert in coordinator.h catches
+	// the simple case at compile time; this catches the harder
+	// runtime cases (a peer sending oversize garbage, an unexpected
+	// new packet kind, etc.).
+	bool truncated = false;
+#if defined(_WIN32)
 	int rc = ::recvfrom((int)mSock,
 	                    (char*)buf, (int)bufSize, 0,
+	                    (sockaddr*)&peer, &peerLen);
+	if (rc < 0) {
+		const int err = NP_LAST_ERR();
+		if (err == WSAEMSGSIZE) {
+			truncated = true;
+			rc = (int)bufSize;
+		} else {
+			return NP_WOULDBLOCK(err)
+				? RecvResult::WouldBlock
+				: RecvResult::Error;
+		}
+	}
+#else
+	int rc = ::recvfrom((int)mSock,
+	                    (char*)buf, (int)bufSize, MSG_TRUNC,
 	                    (sockaddr*)&peer, &peerLen);
 	if (rc < 0) {
 		return NP_WOULDBLOCK(NP_LAST_ERR())
 			? RecvResult::WouldBlock
 			: RecvResult::Error;
 	}
+	if ((size_t)rc > bufSize) {
+		truncated = true;
+		rc = (int)bufSize;
+	}
+#endif
 
 	outLen = (size_t)rc;
+	if (truncated) mLastTruncated = true;
+
 	if ((size_t)peerLen > Endpoint::kMaxRaw) {
 		// Unexpected — should never happen for AF_INET peers.
 		return RecvResult::Error;
@@ -471,6 +516,12 @@ RecvResult UdpTransport::RecvFrom(uint8_t* buf, size_t bufSize,
 	std::memcpy(from.raw, &peer, peerLen);
 	from.rawLen = (uint8_t)peerLen;
 	return RecvResult::Ok;
+}
+
+bool UdpTransport::ConsumeTruncationFlag() {
+	const bool t = mLastTruncated;
+	mLastTruncated = false;
+	return t;
 }
 
 void UdpTransport::Close() {

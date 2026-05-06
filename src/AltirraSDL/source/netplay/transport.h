@@ -119,6 +119,18 @@ public:
 	// Optional human-readable failure summary for the UI.  Only
 	// meaningful when HasFailed() returns true.  Default empty.
 	virtual const char *FailureReason() const { return ""; }
+
+	// One-shot "the previous RecvFrom truncated a datagram" flag.
+	// Implementation: UdpTransport sets it from the kernel's
+	// MSG_TRUNC return (POSIX) or WSAEMSGSIZE error (Winsock); the
+	// Coordinator reads it via this getter once per packet and clears
+	// the flag.  WasmTransport returns false (the browser delivers
+	// whole frames; our queue copies via bounded memcpy that never
+	// truncates).  The Coordinator counts truncations into its
+	// session diagnostics and emits a one-line warning the FIRST time
+	// per session — silent truncation was the root cause of the May
+	// 2026 chunk-relay snapshot bug, and never again.
+	virtual bool ConsumeTruncationFlag() { return false; }
 };
 
 class UdpTransport final : public INetTransport {
@@ -199,6 +211,10 @@ public:
 	// Close the socket if open.  Idempotent.
 	void Close() override;
 
+	// See INetTransport::ConsumeTruncationFlag.  Reads-and-clears the
+	// "last RecvFrom truncated a datagram" flag.
+	bool ConsumeTruncationFlag() override;
+
 private:
 	// Opaque socket handle.  Typed in the .cpp to avoid pulling
 	// <winsock2.h> / <sys/socket.h> into every includer.
@@ -209,6 +225,10 @@ private:
 	// check entirely after a single zero-compare.
 	float    mTestDropRate = 0.0f;
 	uint32_t mTestRngState = 1u;
+	// Set by RecvFrom when the kernel signalled a truncated datagram
+	// (POSIX MSG_TRUNC return > bufSize; Winsock WSAEMSGSIZE error
+	// after writing bufSize bytes).  Cleared by ConsumeTruncationFlag.
+	bool     mLastTruncated = false;
 };
 
 // Source-compatibility alias — existing code that named the old

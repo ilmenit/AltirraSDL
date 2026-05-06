@@ -52,6 +52,13 @@
 #include <vector>
 
 namespace ATNetplay {
+// Forward declaration to keep `protocol.h` out of this header.  Full
+// definition lives in `protocol.h`; coordinator.cpp includes it.  The
+// underlying-type spelling lets us forward-declare a scoped enum.
+enum class DecodeResult : int;
+}
+
+namespace ATNetplay {
 
 class Coordinator {
 public:
@@ -398,6 +405,15 @@ private:
 	};
 
 	void FailWith(const char* msg);
+	// Emit one "session-summary" log line summarising the per-session
+	// DiagCounters at terminal phase transitions.  Idempotent; safe to
+	// call from FailWith / End / HandleBye — the gate flips on the
+	// first call and subsequent calls are silent.
+	void EmitSessionSummary(const char* reason);
+	// Bump the matching decode-failure counter.  Tiny helper used at
+	// every Decode<X> call site in Poll; declared here so the .cpp
+	// can keep the dispatch switch tidy.
+	void BumpDecodeCounter(DecodeResult r);
 	void HandleHelloFromJoiner(const NetHello& hello, const Endpoint& from, uint64_t nowMs);
 	void HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs);
 	void HandleRejectFromHost(const NetReject& r);
@@ -605,6 +621,27 @@ private:
 	static_assert(kMaxRelayDatagramSize >=
 	              kWireRelayHeaderSize + kMaxDatagramSize,
 	              "mRxBuf must hold an ASDF-wrapped chunk");
+
+	// Per-session diagnostic counters.  Surfaced once at terminal
+	// phase transitions (FailWith / End / HandleBye) as a single
+	// "session-summary" log line — never per-frame, never per-packet.
+	// Designed to localise failures the way the lobby's /v1/metrics
+	// counters localise lobby-side issues: a zero in one counter and
+	// non-zero in the previous leg pinpoints the broken leg.
+	struct DiagCounters {
+		uint32_t recvFrames     = 0;  // RecvFrom == Ok (any magic)
+		uint32_t recvBytes      = 0;  // bytes through RecvFrom
+		uint32_t recvTruncated  = 0;  // recvfrom kernel-level truncation
+		uint32_t decodeTooShort = 0;  // any DecodeXxx returned TooShort
+		uint32_t decodeBadMagic = 0;  // any DecodeXxx returned BadMagic
+		uint32_t decodeBadSize  = 0;  // any DecodeXxx returned BadSize
+		uint32_t chunksSent     = 0;  // host: emit count
+		uint32_t chunksRecv     = 0;  // joiner: HandleSnapChunk hits
+		uint32_t acksSent       = 0;  // joiner: ack emit count
+		uint32_t acksRecv       = 0;  // host: HandleSnapAck hits
+	} mDiag {};
+	bool mTruncationLogged = false;   // one-shot warning gate
+	bool mSummaryEmitted   = false;   // one-shot summary gate
 
 	// Pacing for outgoing input packets (Lockstepping phase).  We
 	// emit one per Poll() call — the main loop ticks at 60 Hz, so

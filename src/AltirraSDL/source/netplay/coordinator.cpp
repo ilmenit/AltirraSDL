@@ -519,8 +519,33 @@ void Coordinator::Poll(uint64_t nowMs) {
 		if (r == RecvResult::WouldBlock) break;
 		if (r == RecvResult::Error)      break;
 
+		// Truncation watchdog.  recvfrom() returning Ok-with-truncation
+		// means the kernel discarded the tail of a datagram larger than
+		// our receive buffer.  Bumps a counter every time, but only logs
+		// the FIRST occurrence per session — silent truncation was the
+		// root cause of the May 2026 chunk-relay snapshot bug, and one
+		// loud line is enough to flag any future buffer-class regression.
+		if (mTransport->ConsumeTruncationFlag()) {
+			++mDiag.recvTruncated;
+			if (!mTruncationLogged) {
+				mTruncationLogged = true;
+				g_ATLCNetplay("%s: recvfrom truncated a datagram into a "
+					"%zu-byte buffer (rxbuf=%zu) — should never happen "
+					"with current packet sizes",
+					mRole == Role::Host ? "host" :
+					mRole == Role::Joiner ? "joiner" : "idle",
+					sizeof mRxBuf, sizeof mRxBuf);
+			}
+		}
+
+		++mDiag.recvFrames;
+		mDiag.recvBytes += (uint32_t)n;
+
 		uint32_t magic = 0;
-		if (!PeekMagic(mRxBuf, n, magic)) continue;
+		if (!PeekMagic(mRxBuf, n, magic)) {
+			++mDiag.decodeTooShort;
+			continue;
+		}
 
 		// Track whether this packet arrived via the lobby (ASDF
 		// unwrap) or directly off the wire.  Used by the passive
@@ -538,15 +563,24 @@ void Coordinator::Poll(uint64_t nowMs) {
 			NetRelayDataHeader hdr;
 			const uint8_t* inner = nullptr;
 			size_t innerLen = 0;
-			if (DecodeRelayFrame(mRxBuf, n, hdr, inner, innerLen)
-			    != DecodeResult::Ok) continue;
+			DecodeResult dr =
+				DecodeRelayFrame(mRxBuf, n, hdr, inner, innerLen);
+			if (dr != DecodeResult::Ok) {
+				if (dr == DecodeResult::TooShort) ++mDiag.decodeTooShort;
+				else if (dr == DecodeResult::BadMagic) ++mDiag.decodeBadMagic;
+				else if (dr == DecodeResult::BadSize)  ++mDiag.decodeBadSize;
+				continue;
+			}
 			++mRelayFramesReceived;
 			// Copy inner over the receive buffer (overlapping
 			// memmove) so the downstream switch can use the
 			// existing mRxBuf/n path.
 			std::memmove(mRxBuf, inner, innerLen);
 			n = innerLen;
-			if (!PeekMagic(mRxBuf, n, magic)) continue;
+			if (!PeekMagic(mRxBuf, n, magic)) {
+				++mDiag.decodeTooShort;
+				continue;
+			}
 			// Peer is visible through the lobby — if we were not
 			// already in Relay mode, switch now so our responses
 			// travel back the same path.  Also register with the
@@ -654,7 +688,8 @@ void Coordinator::Poll(uint64_t nowMs) {
 		switch (magic) {
 			case kMagicPunch: {
 				NetPunch pp;
-				if (DecodePunch(mRxBuf, n, pp) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodePunch(mRxBuf, n, pp);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 
 				// Mid-session direct rescue: a NetPunch arriving on the
 				// direct socket while we're stuck on Relay during
@@ -759,13 +794,15 @@ void Coordinator::Poll(uint64_t nowMs) {
 			}
 			case kMagicHello: {
 				NetHello h;
-				if (DecodeHello(mRxBuf, n, h) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeHello(mRxBuf, n, h);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleHelloFromJoiner(h, from, nowMs);
 				break;
 			}
 			case kMagicWelcome: {
 				NetWelcome w;
-				if (DecodeWelcome(mRxBuf, n, w) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeWelcome(mRxBuf, n, w);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				// Multi-candidate: lock mPeer onto the responder and
 				// stop spraying to the other candidates.  The first
 				// host to Welcome us wins.
@@ -806,7 +843,8 @@ void Coordinator::Poll(uint64_t nowMs) {
 			}
 			case kMagicReject: {
 				NetReject rj;
-				if (DecodeReject(mRxBuf, n, rj) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeReject(mRxBuf, n, rj);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				// Only accept a Reject from the host we asked — an
 				// arbitrary bystander sending a Reject to our
 				// ephemeral port mustn't be able to abort the join.
@@ -856,19 +894,22 @@ void Coordinator::Poll(uint64_t nowMs) {
 			}
 			case kMagicInput: {
 				NetInputPacket ip;
-				if (DecodeInputPacket(mRxBuf, n, ip) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeInputPacket(mRxBuf, n, ip);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleInputPacket(ip, nowMs);
 				break;
 			}
 			case kMagicChunk: {
 				NetSnapChunk c;
-				if (DecodeSnapChunk(mRxBuf, n, c) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeSnapChunk(mRxBuf, n, c);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleSnapChunk(c, nowMs);
 				break;
 			}
 			case kMagicAck: {
 				NetSnapAck a;
-				if (DecodeSnapAck(mRxBuf, n, a) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeSnapAck(mRxBuf, n, a);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleSnapAck(a);
 				break;
 			}
@@ -885,37 +926,43 @@ void Coordinator::Poll(uint64_t nowMs) {
 			}
 			case kMagicBye: {
 				NetBye b;
-				if (DecodeBye(mRxBuf, n, b) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeBye(mRxBuf, n, b);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleBye(b, from);
 				break;
 			}
 			case kMagicResyncStart: {
 				NetResyncStart s;
-				if (DecodeResyncStart(mRxBuf, n, s) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeResyncStart(mRxBuf, n, s);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleResyncStart(s, nowMs);
 				break;
 			}
 			case kMagicResyncDone: {
 				NetResyncDone d;
-				if (DecodeResyncDone(mRxBuf, n, d) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeResyncDone(mRxBuf, n, d);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleResyncDone(d, nowMs);
 				break;
 			}
 			case kMagicEmote: {
 				NetEmote e;
-				if (DecodeEmote(mRxBuf, n, e) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeEmote(mRxBuf, n, e);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleEmote(e);
 				break;
 			}
 			case kMagicSimHashDiag: {
 				NetSimHashDiag d;
-				if (DecodeSimHashDiag(mRxBuf, n, d) != DecodeResult::Ok) continue;
+				{ DecodeResult dr = DecodeSimHashDiag(mRxBuf, n, d);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleSimHashDiag(d);
 				break;
 			}
 			default:
-				// Unknown magic — silently ignore (could be from a
-				// different version or a stray packet).
+				// Unknown magic — count as BadMagic (could be from a
+				// different version or a stray packet on our port).
+				++mDiag.decodeBadMagic;
 				break;
 		}
 	}
@@ -1674,6 +1721,8 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 	const bool midResync    = (mPhase == Phase::Resyncing && mRole == Role::Joiner);
 	if (!sessionStart && !midResync) return;
 
+	++mDiag.chunksRecv;
+
 	if (mSnapRx.OnChunk(c)) {
 		// Refresh the ReceivingSnapshot watchdog on every accepted
 		// chunk (including duplicates — they prove the host is alive
@@ -1683,7 +1732,10 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 		if (sessionStart) mLastChunkRecvMs = nowMs ? nowMs : 1;
 		NetSnapAck ack { kMagicAck, c.chunkIdx };
 		size_t n = EncodeSnapAck(ack, mTxBuf, sizeof mTxBuf);
-		if (n && mPeerKnown) WrapAndSend(mTxBuf, n, mPeer);
+		if (n && mPeerKnown) {
+			WrapAndSend(mTxBuf, n, mPeer);
+			++mDiag.acksSent;
+		}
 	}
 
 	// Symmetric to the host's HandleSnapAck milestones — emit one
@@ -1733,6 +1785,7 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 	const bool midResync    = (mPhase == Phase::Resyncing && mRole == Role::Host);
 	if (!sessionStart && !midResync) return;
 
+	++mDiag.acksRecv;
 	mSnapTx.OnAckReceived(a.chunkIdx);
 
 	// Progress milestones at 25 / 50 / 75 % so a slow / stalled
@@ -1796,18 +1849,25 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 
 void Coordinator::PumpSnapshotSender(uint64_t nowMs) {
 	if (!mPeerKnown) return;
+	// Pace at one chunk per Poll tick (was: a `while (NextOutgoing)`
+	// loop that fired the entire 32-chunk window in microseconds).
+	// At 60 Hz this turns a 22-chunk Archon snapshot into a ~366 ms
+	// initial transfer instead of a sub-millisecond burst.  Slow
+	// uplinks (cellular, busy hotel WiFi, congested home routers)
+	// silently drop the tail of a microsecond burst when the
+	// bottleneck queue overflows; pacing prevents that without
+	// changing the retry interval (`kRetryIntervalMs = 500 ms`)
+	// or window size.  Mid-session resync uses the same pump and
+	// inherits the pacing — a 1 MB savestate becomes ~14 s instead
+	// of a single burst, which is acceptable for the rare recovery
+	// path and safer on lossy links.
 	NetSnapChunk c;
-	// Fill the SnapshotSender's sliding window each Poll tick.  The
-	// sender returns false once the window is full (enough chunks
-	// in flight, none yet eligible for retry) — that is our natural
-	// stop signal.  Up to kWindowSize chunks per tick is bounded
-	// by the window, so a runaway loop is impossible.  This is the
-	// change that turns 220 ms × N-chunk stop-and-wait into a
-	// 2-3 RTT batched transfer over relay.
-	while (mSnapTx.NextOutgoing(c, nowMs)) {
+	if (mSnapTx.NextOutgoing(c, nowMs)) {
 		size_t n = EncodeSnapChunk(c, mTxBuf, sizeof mTxBuf);
-		if (n == 0) break;
-		WrapAndSend(mTxBuf, n, mPeer);
+		if (n != 0) {
+			WrapAndSend(mTxBuf, n, mPeer);
+			++mDiag.chunksSent;
+		}
 	}
 
 	// Surface SnapTx retry-budget exhaustion HERE, not only in
@@ -1940,6 +2000,11 @@ void Coordinator::HandleBye(const NetBye& b, const Endpoint& from) {
 	} else {
 		mPhase = Phase::Ended;
 	}
+	{
+		char buf[64];
+		std::snprintf(buf, sizeof buf, "peer-bye (%s)", reasonStr);
+		EmitSessionSummary(buf);
+	}
 }
 
 void Coordinator::End(uint32_t byeReason) {
@@ -1967,6 +2032,12 @@ void Coordinator::End(uint32_t byeReason) {
 		mRole == Role::Host ? "host" :
 		mRole == Role::Joiner ? "joiner" : "idle",
 		(unsigned)byeReason);
+	{
+		char buf[48];
+		std::snprintf(buf, sizeof buf, "local-end (reason=%u)",
+			(unsigned)byeReason);
+		EmitSessionSummary(buf);
+	}
 }
 
 void Coordinator::SendBye(uint32_t reason) {
@@ -2352,6 +2423,60 @@ void Coordinator::FailWith(const char* msg) {
 		mRole == Role::Host ? "host" :
 		mRole == Role::Joiner ? "joiner" : "idle",
 		msg ? msg : "(no reason)");
+	EmitSessionSummary(msg ? msg : "failed");
+}
+
+void Coordinator::BumpDecodeCounter(DecodeResult r) {
+	switch (r) {
+		case DecodeResult::TooShort: ++mDiag.decodeTooShort; break;
+		case DecodeResult::BadMagic: ++mDiag.decodeBadMagic; break;
+		case DecodeResult::BadSize:  ++mDiag.decodeBadSize;  break;
+		case DecodeResult::Ok: break;  // unreachable in caller
+	}
+}
+
+void Coordinator::EmitSessionSummary(const char* reason) {
+	if (mSummaryEmitted) return;
+	mSummaryEmitted = true;
+
+	const char* roleStr =
+		mRole == Role::Host   ? "host" :
+		mRole == Role::Joiner ? "joiner" : "idle";
+	const char* pathStr =
+		mPeerPath == PeerPath::Direct  ? "Direct"  :
+		mPeerPath == PeerPath::Relay   ? "Relay"   :
+		mPeerPath == PeerPath::WsRelay ? "WsRelay" : "?";
+	const char* phaseStr =
+		mPhase == Phase::Idle              ? "Idle"              :
+		mPhase == Phase::Handshaking       ? "Handshaking"       :
+		mPhase == Phase::WaitingForJoiner  ? "WaitingForJoiner"  :
+		mPhase == Phase::SendingSnapshot   ? "SendingSnapshot"   :
+		mPhase == Phase::ReceivingSnapshot ? "ReceivingSnapshot" :
+		mPhase == Phase::SnapshotReady     ? "SnapshotReady"     :
+		mPhase == Phase::Lockstepping      ? "Lockstepping"      :
+		mPhase == Phase::Resyncing         ? "Resyncing"         :
+		mPhase == Phase::Ended             ? "Ended"             :
+		mPhase == Phase::Failed            ? "Failed"            :
+		mPhase == Phase::Desynced          ? "Desynced"          : "?";
+
+	// One line, all numbers, no per-frame log spam.  Mirrors what the
+	// lobby's /v1/metrics gives us cross-transport — together they
+	// pinpoint any future leg failure without a custom investigation.
+	g_ATLCNetplay(
+		"%s: session-summary path=%s phase=%s "
+		"chunks_sent=%u acks_recv=%u chunks_recv=%u acks_sent=%u "
+		"decode_fails=%u/%u/%u (short/magic/size) "
+		"recv_frames=%u recv_bytes=%u recv_truncated=%u "
+		"reason=\"%s\"",
+		roleStr, pathStr, phaseStr,
+		(unsigned)mDiag.chunksSent, (unsigned)mDiag.acksRecv,
+		(unsigned)mDiag.chunksRecv, (unsigned)mDiag.acksSent,
+		(unsigned)mDiag.decodeTooShort,
+		(unsigned)mDiag.decodeBadMagic,
+		(unsigned)mDiag.decodeBadSize,
+		(unsigned)mDiag.recvFrames, (unsigned)mDiag.recvBytes,
+		(unsigned)mDiag.recvTruncated,
+		reason ? reason : "");
 }
 
 // ---------------------------------------------------------------------------
