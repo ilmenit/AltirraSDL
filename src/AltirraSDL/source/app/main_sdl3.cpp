@@ -2158,6 +2158,13 @@ int main(int argc, char *argv[]) {
 			dbg->SetScriptAutoLoadMode(ATDebuggerScriptAutoLoadMode::Disabled);
 		}
 	}
+
+	// WASM: the page-bar's [☰ Menu…] button is the canonical way to
+	// open the Gaming-Mode hamburger menu, so the on-canvas hamburger
+	// icon is redundant and would just steal canvas real estate.  Hide
+	// the icon unconditionally; ATWasmOpenMenu() still navigates to
+	// the menu screen when the page button is clicked.
+	g_mobileState.showHamburgerMenu = false;
 #endif
 
 	// Register emulation error handler (matches Windows main.cpp:4007).

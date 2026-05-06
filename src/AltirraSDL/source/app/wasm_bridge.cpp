@@ -74,6 +74,19 @@ extern ATSimulator g_sim;
 #include "../netplay/netplay_input.h"
 #include "gtia.h"
 
+// Page-bar toggles (PAL/NTSC, CRT, Virtual Keyboard, Touch Controls,
+// MENU…, Gaming-Mode entry) reach into existing UI globals + the
+// shader-preset helper.  All of these are already used elsewhere
+// (menus, main loop, mobile) — the WASM bridge just exposes a thin
+// EMSCRIPTEN_KEEPALIVE wrapper for each so the HTML can drive them.
+#include "../ui/core/ui_main.h"
+#include "../ui/core/ui_mode.h"
+#include "../ui/mobile/ui_mobile.h"
+#include "../ui/ui_virtual_keyboard.h"
+#include "../display/display_backend.h"
+extern ATUIState g_uiState;
+extern ATMobileUIState g_mobileState;
+
 // ATNetplayGlue::IsLockstepping(): used by ATWasmTogglePause to mirror
 // the F9 accelerator's netplay guard (commands_sdl3.cpp:CmdTogglePause).
 // Pausing during a lockstep session desyncs peers, so the page button
@@ -1363,6 +1376,106 @@ void ATWasmConsoleSwitch(int bit, int down) {
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmColdReset() {
 	g_sim.ColdReset();
+}
+
+// JS-side bar button (PAL/NTSC).  Returns 1 when the running standard
+// is 50 Hz (PAL/SECAM), 0 when 60 Hz (NTSC/PAL60).  Mirrors
+// ATSimulator::IsVideo50Hz so the button label tracks the live state.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetVideoStandard() {
+	if (!g_wasmSimReady) return 0;
+	return g_sim.IsVideo50Hz() ? 1 : 0;
+}
+
+// Toggle PAL ↔ NTSC.  Mirrors src/Altirra/source/cmdsystem.cpp's
+// CmdToggleVideo: the user picks a side and the simulator switches
+// over (no SECAM/PAL60 from the page bar — those are advanced presets
+// that live in Configure System).
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmToggleVideoStandard() {
+	if (!g_wasmSimReady) return;
+	const ATVideoStandard now = g_sim.GetVideoStandard();
+	const ATVideoStandard next = (now == kATVideoStandard_NTSC
+		|| now == kATVideoStandard_PAL60)
+		? kATVideoStandard_PAL
+		: kATVideoStandard_NTSC;
+	g_sim.SetVideoStandard(next);
+}
+
+// JS-side bar button (CRT On/Off).  Returns 0=None, 1=Basic, 2=Preset.
+// The page-bar button cares only about None ↔ Basic (Preset is for
+// librashader, which the WASM build doesn't ship).
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetCRTMode() {
+	return (int)g_uiState.screenEffectsMode;
+}
+
+// Toggle CRT effects (Basic ↔ None).  Mirrors the menu path at
+// ui_menus_view.cpp:223-231: clear any active shader preset first so
+// the rendering layer falls back to the built-in pipeline, then flip
+// the mode flag.  The display backend reads screenEffectsMode each
+// frame, so the change is visible immediately.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmToggleCRT() {
+	IDisplayBackend *be = ATUIGetDisplayBackend();
+	ATUIShaderPresetsClear(be);
+	g_uiState.screenEffectsMode =
+		(g_uiState.screenEffectsMode == ATUIState::kSFXMode_None)
+		? ATUIState::kSFXMode_Basic
+		: ATUIState::kSFXMode_None;
+}
+
+// JS-side bar button (virtual on-screen keyboard).
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetVirtualKeyboard() {
+	return g_uiState.showVirtualKeyboard ? 1 : 0;
+}
+
+// Toggle the virtual keyboard.  On hide, release any held keys —
+// matches the F12 accelerator path at main_sdl3.cpp:430-432 so the
+// emulator never ends up with stuck keys after the keyboard slides
+// off screen mid-press.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmToggleVirtualKeyboard() {
+	g_uiState.showVirtualKeyboard = !g_uiState.showVirtualKeyboard;
+	if (!g_uiState.showVirtualKeyboard)
+		ATUIVirtualKeyboard_ReleaseAll(g_sim);
+}
+
+// JS-side bar button (MENU…).  Opens the Gaming-Mode hamburger menu
+// screen — same target as tapping the on-canvas hamburger icon, which
+// the WASM build hides because the page bar already has a MENU button.
+// No-op outside Gaming Mode (the screen enum is only meaningful then;
+// every WASM deep-link enters Gaming Mode via ATWasmSetGamingMode).
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmOpenMenu() {
+	if (!ATUIIsGamingMode()) return;
+	g_mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+}
+
+// JS-side: switch the UI to Gaming Mode (or back to Desktop).  Called
+// by the deep-link JS for any ?lib=… URL so Play Solo and Play
+// Together both land on the same Gaming-Mode UX as Join.  Persists
+// the mode so the choice survives a reload.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetGamingMode(int on) {
+	ATUISetMode(on ? ATUIMode::Gaming : ATUIMode::Desktop);
+	ATUISaveMode();
+}
+
+// JS-side bar button (✦ Touch).  Show or hide the on-canvas joystick +
+// fire + console-key controls.  Default seeded by the JS shell from
+// localStorage['altirra-wasm-touch'] (which itself defaults to "1" on
+// touch devices, "0" on desktop), so the user's choice persists per
+// browser/origin.  The flag is also serialised by ATSaveSettings so
+// the C side stays in sync.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetTouchControls() {
+	return g_mobileState.showTouchControls ? 1 : 0;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetTouchControls(int on) {
+	g_mobileState.showTouchControls = (on != 0);
 }
 
 #endif // __EMSCRIPTEN__

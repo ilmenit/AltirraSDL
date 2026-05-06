@@ -623,10 +623,19 @@ void RequestAutoHost(const std::string& title,
 	// completion (rare — same-tab user navigates back and triggers
 	// Play Together on a different game) actually re-publishes.
 	g_autoHostFired = false;
+	// Clear the MRU baseline as well: a second Play Together click in
+	// the same tab counts as "treat as a fresh request", which the
+	// MRU-changed gate at the top of DriveAutoHost would otherwise
+	// silently swallow when the MRU hasn't moved between the two
+	// clicks (same title, no intervening cmdline reload).  Leave
+	// g_mruBaselineCaptured = true so RequestAutoHost doesn't re-snap
+	// the *current* MRU (which would re-arm the same gate); empty
+	// baseline + non-empty MRU is precisely the "fresh tab" state the
+	// gate already accepts.
+	g_mruBaselineAtCmdline.clear();
 	g_ATLCNetplay("auto-host: request stashed (title=\"%s\", path=\"%s\", "
-		"baseline=\"%s\")",
-		title.c_str(), primaryPath.c_str(),
-		g_mruBaselineAtCmdline.c_str());
+		"baseline-cleared)",
+		title.c_str(), primaryPath.c_str());
 }
 
 void ClearPendingAutoHost() {
@@ -720,6 +729,14 @@ void DriveAutoHost() {
 	g_ATLCNetplay("auto-host: gates open — publishing \"%s\" (path=\"%s\")",
 		st.session.pendingCartName.c_str(),
 		st.session.pendingCartPath.c_str());
+	// Match the JOIN deep-link's UX: every lobby-driven entry into
+	// the emulator (Join, Play Together, Play Solo) lands the user in
+	// Gaming Mode.  Plain "Start Atari Emulator" (no ?lib=) skips
+	// this and stays in Desktop UI.
+	if (!ATUIIsGamingMode()) {
+		ATUISetMode(ATUIMode::Gaming);
+		ATUISaveMode();
+	}
 	StartHostingAction();
 
 	g_autoHostFired = true;

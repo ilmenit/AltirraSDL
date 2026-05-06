@@ -132,6 +132,14 @@
         __wasmCliArgs.push('--ntsc');
       }
 
+      // ?basic=1 boots with Atari BASIC enabled.  Useful even without
+      // a ?lib= entry: the lobby's "Start Atari Emulator" button can
+      // pass it directly.  --basic / --nobasic are the cmdline-side
+      // toggles already wired into ATProcessCommandLineSDL3.
+      if ((p.get('basic') || '') === '1') {
+        __wasmCliArgs.push('--basic'); log('--basic');
+      }
+
       if ((p.get('host') || '') === '1') {
         var t = (p.get('title') || '')
           .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 64);
@@ -259,6 +267,17 @@
   function onRuntimeReady(Module) {
     var lib = window.__altirraLib;
     if (!lib || !lib.paths || !lib.paths.length) return;
+
+    // Every lobby-driven deep-link (Play Solo or Play Together) lands
+    // the user in Gaming Mode — same UX as Join.  Plain
+    // /AltirraSDL/play/ (no ?lib=) is filtered out by the early-return
+    // above, so the "Start Atari Emulator" button still opens the
+    // Desktop UI.  ATWasmSetGamingMode persists the choice so a
+    // subsequent reload (without ?lib=) honours it; users can flip
+    // back via View → Switch to Desktop Mode.
+    if (Module._ATWasmSetGamingMode) {
+      try { Module._ATWasmSetGamingMode(1); } catch (e) {}
+    }
 
     // Register the staging dir with the in-emulator Game Library so
     // titles fetched via deep-link show up alongside wizard-installed
