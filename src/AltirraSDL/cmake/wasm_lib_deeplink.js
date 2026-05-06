@@ -266,18 +266,21 @@
   // ── 3. onRuntimeReady — register source + (optional) auto-host ──
   function onRuntimeReady(Module) {
     var lib = window.__altirraLib;
-    if (!lib || !lib.paths || !lib.paths.length) return;
+    var hasLib = !!(lib && lib.paths && lib.paths.length);
 
-    // Every lobby-driven deep-link (Play Solo or Play Together) lands
-    // the user in Gaming Mode — same UX as Join.  Plain
-    // /AltirraSDL/play/ (no ?lib=) is filtered out by the early-return
-    // above, so the "Start Atari Emulator" button still opens the
-    // Desktop UI.  ATWasmSetGamingMode persists the choice so a
-    // subsequent reload (without ?lib=) honours it; users can flip
-    // back via View → Switch to Desktop Mode.
+    // Mode-of-entry contract — set first, every time, regardless of
+    // whether the URL carries a ?lib= entry:
+    //   ?lib=…           (Play Solo / Play Together)  → Gaming Mode
+    //   /AltirraSDL/play/ (Start Atari Emulator)      → Desktop Mode
+    // This honours the user's explicit spec ("Start Atari Emulator
+    // should start the Desktop UI") even when the previous visit was
+    // a deep-link that persisted Gaming Mode in the registry.  Users
+    // can still flip via View → Switch to Gaming/Desktop Mode at any
+    // time and that choice is saved for the next bare-URL visit.
     if (Module._ATWasmSetGamingMode) {
-      try { Module._ATWasmSetGamingMode(1); } catch (e) {}
+      try { Module._ATWasmSetGamingMode(hasLib ? 1 : 0); } catch (e) {}
     }
+    if (!hasLib) return;
 
     // Register the staging dir with the in-emulator Game Library so
     // titles fetched via deep-link show up alongside wizard-installed

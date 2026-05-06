@@ -65,6 +65,8 @@ extern void ATUIDoFirmwareScan(const char *utf8path);
 // only updates the firmware manager catalogue — the kernel slot in
 // the running simulator stays empty until the user reloads the page.
 #include "simulator.h"
+#include "diskinterface.h"
+#include "cassette.h"
 extern ATSimulator g_sim;
 
 // Console-switch routing — the WASM page bar exposes hardware buttons
@@ -1453,14 +1455,55 @@ void ATWasmOpenMenu() {
 	g_mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
 }
 
+// JS-side: query whether Gaming Mode is currently active.  The page-
+// bar polls this so the MENU… button can show only when meaningful
+// (Desktop UI doesn't have the hamburger menu screen) — keeps the
+// bar tidy while still surfacing the menu the moment the user
+// switches to Gaming Mode via View → Switch to Gaming Mode.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmIsGamingMode() {
+	return ATUIIsGamingMode() ? 1 : 0;
+}
+
 // JS-side: switch the UI to Gaming Mode (or back to Desktop).  Called
 // by the deep-link JS for any ?lib=… URL so Play Solo and Play
 // Together both land on the same Gaming-Mode UX as Join.  Persists
 // the mode so the choice survives a reload.
+//
+// Side-effect: when entering Gaming Mode AND a game is already
+// mounted (the Play Solo / Play Together cmdline already ran
+// --disk/--cart/--tape and the simulator is booting), mark
+// `gameLoaded = true` and force `currentScreen = None`.  Without
+// this, ui_mobile.cpp's None-screen handler sees `!gameLoaded`,
+// concludes "no game in progress", and redirects the user to the
+// Game Library overlay — even though the cart is actually running
+// behind it.  The cmdline path that runs before this hook can't set
+// the flag itself because Gaming Mode isn't on yet (the JS hook
+// fires after main()'s deep-link processing).
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSetGamingMode(int on) {
 	ATUISetMode(on ? ATUIMode::Gaming : ATUIMode::Desktop);
 	ATUISaveMode();
+
+	if (on) {
+		bool mediaLoaded = false;
+		if (g_sim.GetCartridge(0) || g_sim.GetCartridge(1))
+			mediaLoaded = true;
+		if (!mediaLoaded && g_sim.GetCassette().IsLoaded())
+			mediaLoaded = true;
+		if (!mediaLoaded) {
+			for (int i = 0; i < 15; ++i) {
+				if (g_sim.GetDiskInterface(i).IsDiskLoaded()) {
+					mediaLoaded = true;
+					break;
+				}
+			}
+		}
+		if (mediaLoaded) {
+			g_mobileState.gameLoaded    = true;
+			g_mobileState.currentScreen = ATMobileUIScreen::None;
+		}
+	}
 }
 
 // JS-side bar button (✦ Touch).  Show or hide the on-canvas joystick +

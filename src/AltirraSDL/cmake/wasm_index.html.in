@@ -2147,6 +2147,16 @@
     const btnTouch      = document.getElementById('btn-touch');
     const btnGamepack   = document.getElementById('btn-gamepack');
 
+    // MENU… opens the Gaming-Mode hamburger menu screen — that screen
+    // doesn't exist in Desktop UI, so the button is meaningless there.
+    // refreshQuickToggles() polls ATWasmIsGamingMode() and toggles the
+    // visibility live, so the button appears the moment the user
+    // switches to Gaming Mode via View → Switch to Gaming Mode and
+    // disappears when they switch back.  Start hidden until the first
+    // poll confirms which mode we're in (avoids a flash on Desktop
+    // entries while the wasm runtime is still loading).
+    if (btnMenu) btnMenu.style.display = 'none';
+
     const TOUCH_KEY = 'altirra-wasm-touch';
     const ATIsTouchDevice = (function () {
       if (window.matchMedia
@@ -2182,6 +2192,18 @@
     let touchPrefSeeded = false;
     function refreshQuickToggles() {
       if (typeof Module === 'undefined') return;
+
+      // Sim-ready gate: ATWasmIsPaused() returns -1 before the
+      // simulator is initialised (g_wasmSimReady is the C-side
+      // sentinel).  Region/CRT/Keyboard read live emulator state, so
+      // keep their buttons disabled until that gate flips.  Touch
+      // and Menu only touch UI state and are safe earlier.
+      let simReady = false;
+      if (Module._ATWasmIsPaused) {
+        try { simReady = (Module._ATWasmIsPaused() >= 0); }
+        catch (e) { simReady = false; }
+      }
+
       // First time the runtime is ready, seed the touch preference
       // into the C side so the first frame already shows the right
       // controls.  Subsequent frames just compare-and-update.
@@ -2190,34 +2212,47 @@
         touchPrefSeeded = true;
       }
 
-      // Region (PAL/NTSC).
+      // Region (PAL/NTSC).  Reads g_sim.IsVideo50Hz() — needs sim ready.
       if (btnRegion && Module._ATWasmGetVideoStandard) {
         try {
-          const is50 = Module._ATWasmGetVideoStandard();
-          btnRegion.disabled = false;
-          btnRegion.textContent = is50 ? 'PAL' : 'NTSC';
+          if (simReady) {
+            const is50 = Module._ATWasmGetVideoStandard();
+            btnRegion.disabled = false;
+            btnRegion.textContent = is50 ? 'PAL' : 'NTSC';
+          } else {
+            btnRegion.disabled = true;
+          }
         } catch (e) {}
       }
 
-      // CRT (Basic vs None).
+      // CRT (Basic vs None).  Pure UI state — safe before sim ready,
+      // but the menu it mirrors only matters once a frame is rendering.
       if (btnCrt && Module._ATWasmGetCRTMode) {
         try {
-          const m = Module._ATWasmGetCRTMode();   // 0 None, 1 Basic, 2 Preset
-          btnCrt.disabled = false;
-          btnCrt.textContent = (m === 0) ? 'CRT On' : 'CRT Off';
+          if (simReady) {
+            const m = Module._ATWasmGetCRTMode();   // 0 None, 1 Basic, 2 Preset
+            btnCrt.disabled = false;
+            btnCrt.textContent = (m === 0) ? 'CRT On' : 'CRT Off';
+          } else {
+            btnCrt.disabled = true;
+          }
         } catch (e) {}
       }
 
       // Virtual keyboard.
       if (btnOsk && Module._ATWasmGetVirtualKeyboard) {
         try {
-          const on = Module._ATWasmGetVirtualKeyboard();
-          btnOsk.disabled = false;
-          btnOsk.textContent = on ? '⌨ Keyboard (on)' : '⌨ Keyboard';
+          if (simReady) {
+            const on = Module._ATWasmGetVirtualKeyboard();
+            btnOsk.disabled = false;
+            btnOsk.textContent = on ? '⌨ Keyboard (on)' : '⌨ Keyboard';
+          } else {
+            btnOsk.disabled = true;
+          }
         } catch (e) {}
       }
 
-      // Touch controls.
+      // Touch controls — UI state only, safe even before sim is up.
       if (btnTouch && Module._ATWasmGetTouchControls) {
         try {
           const on = Module._ATWasmGetTouchControls();
@@ -2226,10 +2261,19 @@
         } catch (e) {}
       }
 
-      // MENU…  enabled once the runtime is up; the export itself
-      // no-ops when not in Gaming Mode (which is the case for the
-      // plain "Start Atari Emulator" entry).
-      if (btnMenu && Module._ATWasmOpenMenu) btnMenu.disabled = false;
+      // MENU…  visible only when Gaming Mode is active; hidden in
+      // Desktop UI (where the hamburger menu screen doesn't exist).
+      // Polled every 250 ms so View → Switch to Gaming Mode flips
+      // the button on/off in step with the user's choice.
+      if (btnMenu && Module._ATWasmOpenMenu) {
+        let gaming = false;
+        if (Module._ATWasmIsGamingMode) {
+          try { gaming = (Module._ATWasmIsGamingMode() === 1); }
+          catch (e) { gaming = false; }
+        }
+        btnMenu.style.display = gaming ? '' : 'none';
+        btnMenu.disabled = false;
+      }
     }
     // Hook into the existing pause-poller's tick so we only have one
     // 250 ms heartbeat for all the quick toggles.
@@ -2328,11 +2372,25 @@
     // ───────────────────────────────────────────────────────────────────
     const issuesMenu = document.getElementById('issues-menu');
     if (issuesMenu) {
+      // Close on outside click.
       document.addEventListener('click', (e) => {
         if (!issuesMenu.open) return;
         if (issuesMenu.contains(e.target)) return;
         issuesMenu.open = false;
       });
+      // Close after the user picks an item, so the popup gets out of
+      // the way of any toast / panel the chosen item produces.  Defer
+      // to next tick so the menuitem's own click handler runs first.
+      const issuesPop = issuesMenu.querySelector('.issues-pop');
+      if (issuesPop) {
+        issuesPop.addEventListener('click', (e) => {
+          // Don't close when the click was on the popup background
+          // (between items) — only when it was on a real menuitem.
+          const item = e.target.closest('[role="menuitem"]');
+          if (!item) return;
+          setTimeout(() => { issuesMenu.open = false; }, 0);
+        });
+      }
     }
 
     // ───────────────────────────────────────────────────────────────────
