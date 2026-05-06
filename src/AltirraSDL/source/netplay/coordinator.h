@@ -549,6 +549,16 @@ private:
 	bool     mPromptAccept       = false;
 	std::vector<PendingDecision> mPendingDecisions;
 
+	// Captured at AcceptPendingJoiner time.  Used by HandleHelloFromJoiner
+	// to recognise a retry-Hello from the SAME accepted joiner (whose
+	// Welcome was lost on the wire) and re-send Welcome instead of
+	// rejecting with kRejectHostFull.  Without this, lossy lobby→joiner
+	// UDP paths (mobile carriers, restrictive NAT) strand the joiner —
+	// it retries Hello indefinitely and never enters ReceivingSnapshot,
+	// which makes the host's snapshot upload fail with "no chunk acks
+	// received" 5 s later.
+	uint8_t  mAcceptedJoinerNonce[kSessionNonceLen] = {};
+
 	// Recently-rejected peers (host-side).  When the user clicks
 	// "Reject" on a pending joiner we push (endpoint + sessionNonce)
 	// here.  Subsequent Hellos from the same peer are auto-re-rejected

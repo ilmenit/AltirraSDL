@@ -1209,13 +1209,19 @@ void DesktopMyHostedGames() {
 
 	ImGui::Separator();
 
-	// Always-visible counter — same shape as the Gaming Mode card so
-	// users see the limit before they hit it.  The number is shared
-	// with the server (kMaxHostedGamesPerHost in lobby_protocol.h);
-	// a modded client that bypasses the local cap still gets a 429
-	// "host limit reached" from the lobby.
-	ImGui::Text("Hosted Games (%zu / %zu)",
-		st.hostedGames.size(), (size_t)State::kMaxHostedGames);
+	// Counter — show enabled / saved-list / max-enabled.  Users can
+	// curate a long library and rotate which N are advertised at a
+	// time.  The lobby enforces the same enabled cap server-side
+	// (kMaxHostedGamesPerHost in lobby_protocol.h); a modded client
+	// that bypasses the local cap still gets a 429.
+	{
+		size_t enabledCount = 0;
+		for (const auto& g : st.hostedGames) if (g.enabled) ++enabledCount;
+		ImGui::Text("Hosted Games: %zu (%zu/%zu enabled)",
+			st.hostedGames.size(),
+			enabledCount,
+			(size_t)State::kMaxEnabledHostedGames);
+	}
 
 	bool atCap = (st.hostedGames.size() >= State::kMaxHostedGames);
 	ImGui::BeginDisabled(atCap);
@@ -1227,13 +1233,8 @@ void DesktopMyHostedGames() {
 	if (atCap && ImGui::IsItemHovered(
 			ImGuiHoveredFlags_AllowWhenDisabled)) {
 		ImGui::SetTooltip(
-			"Hosted-games limit reached — remove one of your hosted "
-			"games before adding another.");
-	}
-	if (atCap) {
-		ImGui::SameLine();
-		ImGui::TextDisabled("(%zu/%zu — remove one first)",
-			st.hostedGames.size(), State::kMaxHostedGames);
+			"Saved hosted-games list is full — remove some unused "
+			"entries before adding new ones.");
 	}
 
 	ImGui::SameLine();
@@ -1482,7 +1483,9 @@ namespace {
 		o.isPrivate    = s_addPrivate;
 		o.entryCode    = s_addEntryCode;
 		o.config       = s_addConfig;
-		o.enabled      = true;
+		// Start disabled; EnableHostedGame's at-cap check decides
+		// whether the row goes live now (kMaxEnabledHostedGames).
+		o.enabled      = false;
 		o.state        = HostedGameState::Off;
 		st.hostedGames.push_back(std::move(o));
 		st.prefs.lastAddConfig = s_addConfig;

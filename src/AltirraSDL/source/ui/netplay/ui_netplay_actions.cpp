@@ -839,6 +839,23 @@ void OnLobbyCreateSucceeded(HostedGame& o,
 void EnableHostedGame(const std::string& gameId) {
 	HostedGame* o = FindHostedGame(gameId);
 	if (!o) return;
+	if (o->enabled) return;   // already enabled; nothing to do
+
+	// Enforce the parallel-enabled cap (matches the server-side
+	// kMaxHostedGamesPerHost gate).  Counting peers explicitly here —
+	// rather than relying on size() — lets the saved list grow without
+	// bound while still capping how many are advertised at once.  The
+	// list view shows a "5/5 active" hint when the cap is reached so
+	// the user knows to disable one before enabling another.
+	State& st = GetState();
+	size_t enabledCount = 0;
+	for (const auto& g : st.hostedGames) if (g.enabled) ++enabledCount;
+	if (enabledCount >= State::kMaxEnabledHostedGames) {
+		o->lastError = "Already running the maximum number of "
+			"simultaneous hosted games.  Disable one first.";
+		return;
+	}
+
 	o->enabled = true;
 	SaveToRegistry();
 	// The reconcile loop will actually start the coordinator on the
@@ -1368,16 +1385,15 @@ void StartHostingAction() {
 	std::string id;
 	if (existing) {
 		id = existing->id;
-		existing->enabled = true;
+		// Don't pre-flip enabled here; let EnableHostedGame's
+		// at-cap check decide whether the row goes live now.
 	} else {
 		if (st.hostedGames.size() >= State::kMaxHostedGames) {
-			// Same wording the server-side 429 ("host limit reached")
-			// produces via FriendlyLobbyError, so users see a single
-			// message regardless of which side caught the cap.
+			// Soft cap on the saved-list size (kMaxHostedGames=256).
+			// You'd have to add hundreds of games to ever hit this.
 			st.session.lastError =
-				"You're already hosting the maximum number of "
-				"games — remove one of your hosted games and try "
-				"again.";
+				"Saved hosted-games list is full — remove some "
+				"unused entries before adding new ones.";
 			Navigate(Screen::Error);
 			return;
 		}
@@ -1388,7 +1404,11 @@ void StartHostingAction() {
 		o.cartArtHash  = st.session.pendingCartArtHash;
 		o.isPrivate    = st.session.hostingPrivate;
 		o.entryCode    = st.session.hostingEntryCode;
-		o.enabled      = true;
+		// Start disabled; EnableHostedGame below applies the
+		// kMaxEnabledHostedGames cap and only flips it live if there's
+		// a free slot.  The user can rotate which 5 of their library
+		// are live without resizing the list.
+		o.enabled      = false;
 		o.state        = HostedGameState::Off;
 		st.hostedGames.push_back(std::move(o));
 		id = st.hostedGames.back().id;

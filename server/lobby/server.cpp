@@ -1747,9 +1747,32 @@ public:
 		sockaddr_in& outOther)
 	{
 		std::lock_guard<std::mutex> lk(mMu);
-		auto it = mByKey.find(MakeKey(sid));
-		if (it == mByKey.end()) return ForwardResult::kNoPeer;
-		auto& pair = it->second;
+		// Auto-create the pair entry on first ASDF if it doesn't
+		// already exist.  Background: the original design required
+		// peers to send NetRelayRegister (ASGR) before any ASDF
+		// frame, which created the entry via Register().  But the
+		// initial ASGR is fire-and-forget UDP — if it gets lost on
+		// the way to the lobby (joiner just bootstrapped, NAT mapping
+		// still warming up, mobile carrier transient drop), the v4
+		// RelayTable has no entry for the session.  An ASDF Hello
+		// that *does* get through then races: it succeeds because the
+		// WS-bridge cross-transport path forwards Hello to the WS
+		// host directly, bypassing the v4 lookup.  The host accepts,
+		// sends Welcome via WS → bridge → WsForwardToUdp →
+		// BridgeLookupAndConsumeForward → kNoPeer (entry doesn't
+		// exist!) → DROPPED.  Symptom: host's snapshot upload fails
+		// with "no chunk acks received" 5 s later because every
+		// chunk and every Welcome silently disappears at the lobby.
+		//
+		// The auto-register here closes that race: any ASDF frame
+		// from a known sid AND/OR not-yet-known one populates `me`
+		// so the bridge's reverse-direction lookup succeeds.
+		// `operator[]` default-constructs a RelayPair with both
+		// halves `known=false`; the assignment below promotes only
+		// the SENDER's half, leaving the OTHER side untouched until
+		// it sends its own packet (or this branch fires the other
+		// way).
+		auto& pair = mByKey[MakeKey(sid)];
 		RelayEndpoint& me    = (senderRole == kRelayRoleHost)
 			? pair.host : pair.joiner;
 		RelayEndpoint& other = (senderRole == kRelayRoleHost)

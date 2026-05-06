@@ -1180,6 +1180,48 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
                                         const Endpoint& from,
                                         uint64_t nowMs) {
 	if (mPhase != Phase::WaitingForJoiner) {
+		// Special case: this is a retry-Hello from the joiner we
+		// already accepted, and our Welcome was lost on the wire.
+		// Without this, the joiner is stranded — it keeps retrying
+		// Hello at the standard 500 ms tick, the host always
+		// short-circuits to kRejectHostFull, and the snapshot upload
+		// fails after kMaxAttemptsPerChunk × kRetryIntervalMs (5 s)
+		// with "no chunk acks received" because the joiner never
+		// transitioned to ReceivingSnapshot.  Observed in the wild
+		// 2026-05-06 with a WSS host + Android UDP joiner, where the
+		// lobby→joiner UDP path was lossy enough to drop the single
+		// Welcome.
+		//
+		// Identify the same joiner via the per-attempt session nonce
+		// (16 bytes, always non-zero on v1.4+ clients) — a value-match
+		// is robust across NAT rebinds and source-port reassignments
+		// the WS bridge introduces when relaying.  Endpoint comparison
+		// alone is insufficient because the lobby's WS-bridge sentinel
+		// always formats as "<invalid>" and may compare unequal across
+		// transport flips.  When the nonce matches, re-send Welcome and
+		// re-pump the snapshot sender's window — the joiner's HandleWelcome
+		// will move it into ReceivingSnapshot regardless of how many
+		// chunks have already been (or will be) sent, since the chunk
+		// receiver tolerates out-of-order and duplicate chunks.
+		if (mPhase == Phase::SendingSnapshot && mPeerKnown) {
+			bool helloHasNonce = false;
+			for (size_t k = 0; k < kSessionNonceLen; ++k) {
+				if (hello.sessionNonce[k] != 0) { helloHasNonce = true; break; }
+			}
+			bool sameJoiner = false;
+			if (helloHasNonce) {
+				sameJoiner = (std::memcmp(mAcceptedJoinerNonce,
+					hello.sessionNonce, kSessionNonceLen) == 0);
+			} else {
+				sameJoiner = mPeer.Equals(from);
+			}
+			if (sameJoiner) {
+				g_ATLCNetplay("host: retry-Hello from accepted joiner — "
+					"re-sending Welcome (Welcome lost on the wire)");
+				SendWelcome();
+				return;
+			}
+		}
 		// Host is already past the listening phase (handshake in
 		// progress, snapshot streaming, or in lockstep).  Tell the
 		// joiner we're full so they get a clear message instead of
@@ -1326,6 +1368,20 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	// Hello accepted.  Lock in the peer.
 	mPeer = from;
 	mPeerKnown = true;
+	// Capture nonce on auto-accept so a Hello-retry (Welcome lost on
+	// the wire) recognises the same joiner and re-sends Welcome
+	// instead of kRejectHostFull-ing.  Mirrors AcceptPendingJoiner.
+	{
+		bool helloHasNonce = false;
+		for (size_t k = 0; k < kSessionNonceLen; ++k) {
+			if (hello.sessionNonce[k] != 0) { helloHasNonce = true; break; }
+		}
+		if (helloHasNonce) {
+			std::memcpy(mAcceptedJoinerNonce, hello.sessionNonce, kSessionNonceLen);
+		} else {
+			std::memset(mAcceptedJoinerNonce, 0, kSessionNonceLen);
+		}
+	}
 	// Path determination: if this Hello arrived via the lobby's
 	// strip-and-forward path (from == lobby endpoint), we cannot
 	// reach the peer directly — every reply we send must be
@@ -1416,6 +1472,17 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	// branch used to (see HandleHelloFromJoiner).
 	mPeer      = chosen.peer;
 	mPeerKnown = true;
+
+	// Capture nonce so a retry-Hello with the same nonce (Welcome lost
+	// on the wire) re-triggers Welcome instead of being kRejectHostFull-d.
+	// chosen.hasSessionNonce==false (v1.0 clients) leaves the array
+	// zero, which the comparison in HandleHelloFromJoiner falls back
+	// to endpoint-equality for.
+	if (chosen.hasSessionNonce) {
+		std::memcpy(mAcceptedJoinerNonce, chosen.sessionNonce, kSessionNonceLen);
+	} else {
+		std::memset(mAcceptedJoinerNonce, 0, kSessionNonceLen);
+	}
 
 	// Path determination — same logic as the auto-accept branch in
 	// HandleHelloFromJoiner.  If the chosen endpoint is the lobby,

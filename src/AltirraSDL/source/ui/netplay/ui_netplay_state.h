@@ -619,13 +619,21 @@ struct State {
 	// runs; runtime fields (state/port/tokens) reset each launch.
 	std::vector<HostedGame> hostedGames;
 
-	// Cap on the number of simultaneous hostedGames.  Single source of
-	// truth lives in lobby_protocol.h (shared with the server, which
-	// enforces the same number on POST /v1/session); this alias keeps
-	// the existing State::kMaxHostedGames spelling for the dozen
-	// references already in the UI.
-	static constexpr size_t kMaxHostedGames =
+	// Cap on the number of *enabled* hostedGames (the games actively
+	// advertised to lobbies and waiting for joiners).  Matches the
+	// server-side enforcement at server.cpp's HostLimit branch
+	// (kMaxHostedGamesPerHost in lobby_protocol.h).  The user's saved
+	// list can be much longer; only the enable-count is capped, so
+	// players curate a large library and rotate which 5 are live.
+	static constexpr size_t kMaxEnabledHostedGames =
 		(size_t)ATLobby::kMaxHostedGamesPerHost;
+
+	// Soft cap on the saved-list size.  Persisted-state guard against
+	// runaway growth (a buggy import script or corrupted INI line); the
+	// user has to consciously add hundreds of games to hit this.  The
+	// at-cap-on-add UI gate uses this; the at-cap-on-enable gate uses
+	// kMaxEnabledHostedGames above.
+	static constexpr size_t kMaxHostedGames = 256;
 
 	// The offer currently being edited / added (id string), so the
 	// HostSetup screen knows which one to mutate.  Empty when adding

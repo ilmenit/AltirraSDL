@@ -1417,14 +1417,40 @@ int ATWasmGetCRTMode() {
 // the rendering layer falls back to the built-in pipeline, then flip
 // the mode flag.  The display backend reads screenEffectsMode each
 // frame, so the change is visible immediately.
+//
+// The mobile-style fxBloom / fxDistortion / fxVignette / fxScanlines /
+// fxApertureGrille flags drive the actual GTIA artifacting params.  In
+// Gaming Mode they get applied at startup; in Desktop Mode the user
+// sets them via the screen-effects dialog.  Both paths populate the
+// GTIA, so flipping screenEffectsMode here is enough to make the
+// difference visible — None → "all-off" pushed every frame in
+// SyncScreenFXToBackend (main_sdl3.cpp:1120), Basic → the GTIA's
+// current params get pushed.  Re-apply the mobile flags here so the
+// "back to Basic" branch produces a visible CRT look even when the
+// user toggled it off in a session that started without the
+// performance-preset auto-apply firing (e.g. Desktop Mode entry).
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmToggleCRT() {
 	IDisplayBackend *be = ATUIGetDisplayBackend();
 	ATUIShaderPresetsClear(be);
+	const ATUIState::ScreenEffectsMode prev = g_uiState.screenEffectsMode;
 	g_uiState.screenEffectsMode =
-		(g_uiState.screenEffectsMode == ATUIState::kSFXMode_None)
+		(prev == ATUIState::kSFXMode_None)
 		? ATUIState::kSFXMode_Basic
 		: ATUIState::kSFXMode_None;
+	// Force a re-apply of the mobile visual-effects flags into GTIA
+	// when going None → Basic, so the artifacting params are populated
+	// regardless of which mode owned the last write.  Going the other
+	// way (Basic → None) is a no-op for GTIA — main_sdl3's "all-off"
+	// push handles disabling at the backend level.
+	if (g_uiState.screenEffectsMode == ATUIState::kSFXMode_Basic) {
+		ATMobileUI_ApplyVisualEffects(g_mobileState);
+	}
+	fprintf(stderr, "[wasm] CRT toggle: %s -> %s\n",
+		prev == ATUIState::kSFXMode_None ? "None" :
+		prev == ATUIState::kSFXMode_Basic ? "Basic" : "Preset",
+		g_uiState.screenEffectsMode == ATUIState::kSFXMode_None ? "None" :
+		g_uiState.screenEffectsMode == ATUIState::kSFXMode_Basic ? "Basic" : "Preset");
 }
 
 // JS-side bar button (virtual on-screen keyboard).

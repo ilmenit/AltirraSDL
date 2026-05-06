@@ -1357,16 +1357,19 @@ void RenderMyHostedGames() {
 	float btnW = Dp(220);
 	bool atCap = (st.hostedGames.size() >= State::kMaxHostedGames);
 
-	// Counter — always visible so users learn the limit before they
-	// hit it.  Same number is enforced server-side
-	// (kMaxHostedGamesPerHost in lobby_protocol.h, returned as 429
-	// "host limit reached" if a modded client tries to exceed it).
+	// Counter — show enabled / saved-list / max-enabled.  Users can
+	// curate a long library and rotate which 5 are advertised at a
+	// time.  The lobby enforces the same enabled cap server-side
+	// (kMaxHostedGamesPerHost in lobby_protocol.h).
 	{
-		char counter[64];
+		size_t enabledCount = 0;
+		for (const auto& g : st.hostedGames) if (g.enabled) ++enabledCount;
+		char counter[96];
 		std::snprintf(counter, sizeof counter,
-			"Hosted games: %zu / %zu",
+			"Hosted games: %zu (%zu/%zu enabled)",
 			st.hostedGames.size(),
-			(size_t)State::kMaxHostedGames);
+			enabledCount,
+			(size_t)State::kMaxEnabledHostedGames);
 		ATTouchMutedText(counter);
 	}
 
@@ -1382,8 +1385,8 @@ void RenderMyHostedGames() {
 	ImGui::EndDisabled();
 	if (atCap && ImGui::IsItemHovered()) {
 		ImGui::SetTooltip(
-			"Hosted-games limit reached — remove one of your hosted "
-			"games before adding another.");
+			"Saved hosted-games list is full — remove some unused "
+			"entries before adding new ones.");
 	}
 
 	ImGui::Spacing();
@@ -1769,7 +1772,10 @@ void RenderAddOffer() {
 			o.isPrivate = s_mobileAddPrivate;
 			o.entryCode = s_mobileAddCode;
 			o.config    = s_mobileAddConfig;
-			o.enabled   = true;
+			// Start disabled; EnableHostedGame applies the
+			// kMaxEnabledHostedGames cap and only flips it live
+			// when there's a free slot.
+			o.enabled   = false;
 			s.hostedGames.push_back(std::move(o));
 			s.prefs.lastAddConfig = s_mobileAddConfig;
 			SaveToRegistry();
