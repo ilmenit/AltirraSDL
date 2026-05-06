@@ -90,38 +90,55 @@
 
     /* Console-key cluster: visually grouped pill, bordered to read as
        a single unit on the bar.  Buttons inside use the .ck modifier
-       for tighter padding + a bold monospace label so START / SELECT /
-       OPTION / RESET feel like hardware-style keys, not generic UI
-       buttons.  RESET also picks up .danger to flag the destructive
-       action without a separate icon. */
+       for bold monospace labels so START / SELECT / OPTION / RESET
+       feel like hardware-style keys, not generic UI buttons.  This is
+       the primary control surface (a real Atari has these hardware
+       keys; the "PAL/CRT/Keyboard" toggles are emulator chrome) so
+       the cluster sits immediately after the Lobby button and is
+       visually heavier than the secondary toggles: a "Keys:" prefix
+       label, slightly larger size, and an accent border. */
     .console-keys {
       display: inline-flex;
-      gap: 4px;
-      padding: 2px 6px;
-      border: 1px solid #333;
-      border-radius: 5px;
-      background: #181818;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border: 1px solid #4a5a78;
+      border-radius: 6px;
+      background: #181f2a;
+      box-shadow: 0 0 0 1px #0a0e16 inset;
+    }
+    .console-keys-label {
+      font-size: 0.72rem;
+      color: #8aa2c8;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-right: 1px;
+      user-select: none;
     }
     .console-keys .ck {
-      padding: 4px 9px;
-      font-size: 0.72rem;
+      padding: 6px 12px;
+      font-size: 0.82rem;
       font-weight: 700;
       letter-spacing: 0.04em;
-      font-family: ui-monospace, monospace;
-      background: #232323;
-      color: #cfcfcf;
-      border: 1px solid #3a3a3a;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      background: #2a3447;
+      color: #e6ecf5;
+      border: 1px solid #4a5a78;
       border-radius: 3px;
+      min-width: 0;
     }
-    .console-keys .ck:hover { background: #2c2c2c; color: #fff; }
-    .console-keys .ck:active { background: #1a1a1a; }
+    .console-keys .ck:hover { background: #354060; color: #fff; border-color: #6a82b0; }
+    .console-keys .ck:active { background: #1f2738; }
     .console-keys .ck.danger {
-      color: #ffb3b3;
-      border-color: #5a2a2a;
+      color: #ffd6d6;
+      background: #3a2030;
+      border-color: #7a3a4a;
     }
     .console-keys .ck.danger:hover {
-      background: #3a2020;
-      color: #ffe0e0;
+      background: #4a2838;
+      color: #fff;
+      border-color: #a04a5a;
     }
     /* Layout-left rotates the bar — let the console cluster wrap onto
        its own row and span the column width, since the narrow bar
@@ -1284,9 +1301,29 @@
          iframe-style return is one click away. -->
     <button id="btn-lobby"
             title="Return to the curated game library">⬅ Lobby</button>
+    <!-- Console-key cluster: hardware buttons on a real Atari 8-bit.
+         Promoted to the leftmost position (after Lobby) because these
+         are the primary controls a player reaches for during gameplay
+         — START to begin, SELECT to cycle variants, OPTION to toggle
+         BASIC, RESET to reboot.  Press-hold timing is JS-managed
+         (~80 ms tap) so a single click feels like a real key press to
+         the running cart. -->
+    <span class="console-keys" role="group" aria-label="Atari console keys">
+      <span class="console-keys-label" aria-hidden="true">Keys:</span>
+      <button id="btn-c-start"  class="ck"
+              title="START — same as F2 (begin game / select option in many carts)">START</button>
+      <button id="btn-c-select" class="ck"
+              title="SELECT — same as F3 (cycle game variant on most carts)">SELECT</button>
+      <button id="btn-c-option" class="ck"
+              title="OPTION — same as F4 (toggle BASIC, difficulty, …)">OPTION</button>
+      <button id="btn-c-reset"  class="ck danger"
+              title="Cold reset — fully reboot the emulated Atari (asks for confirmation)">RESET</button>
+    </span>
     <!-- MENU: open the Gaming-Mode hamburger menu (replaces the
          on-canvas hamburger icon, which is hidden in WASM because the
-         page bar already provides the navigation entry point). -->
+         page bar already provides the navigation entry point).  Live-
+         hidden in Desktop Mode (the hamburger menu screen doesn't
+         exist there). -->
     <button id="btn-menu"
             title="Open the Atari menu (file management, settings, online play, …)">☰ Menu…</button>
     <button id="btn-files" disabled>📁 Files…</button>
@@ -1300,21 +1337,14 @@
             title="Enter / exit browser fullscreen.  ESC restores the windowed view.">⤢ Full Screen</button>
     <button id="btn-osk" disabled
             title="Show / hide the on-screen Atari keyboard (same as the keyboard menu item).">⌨ Keyboard</button>
+    <!-- Touch toggle: the on-canvas joystick / fire / hamburger overlay
+         is rendered ONLY in Gaming Mode (ui_mobile.cpp).  In Desktop
+         Mode the toggle has no observable effect, so we hide the
+         button live (refreshQuickToggles polls ATWasmIsGamingMode).
+         The user can flip into Gaming Mode via the View menu and the
+         button reappears. -->
     <button id="btn-touch" disabled
-            title="Show / hide on-canvas touch controls (joystick + fire + console keys).  Default on for touch devices, off on desktop.  Shortcut: Ctrl+T.">✦ Touch</button>
-    <!-- Console-key cluster: hardware buttons on a real Atari 8-bit.
-         Press-hold timing is JS-managed (~80 ms tap) so a single click
-         feels like a real key press to the running cart. -->
-    <span class="console-keys" role="group" aria-label="Atari console keys">
-      <button id="btn-c-start"  class="ck"
-              title="START — same as F2 (begin game / select option in many carts)">START</button>
-      <button id="btn-c-select" class="ck"
-              title="SELECT — same as F3 (cycle game variant on most carts)">SELECT</button>
-      <button id="btn-c-option" class="ck"
-              title="OPTION — same as F4 (toggle BASIC, difficulty, …)">OPTION</button>
-      <button id="btn-c-reset"  class="ck danger"
-              title="Cold reset — fully reboot the emulated Atari (asks for confirmation)">RESET</button>
-    </span>
+            title="Show / hide on-canvas touch controls (joystick + fire + console keys).  Visible in Gaming Mode only.  Default on for touch devices, off on desktop.  Shortcut: Ctrl+T.">✦ Touch</button>
     <button id="btn-firmware" disabled
             title="Re-run the standard ROM bundle download">🎛 Firmware…</button>
     <button id="btn-gamepack" disabled
@@ -2147,15 +2177,17 @@
     const btnTouch      = document.getElementById('btn-touch');
     const btnGamepack   = document.getElementById('btn-gamepack');
 
-    // MENU… opens the Gaming-Mode hamburger menu screen — that screen
-    // doesn't exist in Desktop UI, so the button is meaningless there.
-    // refreshQuickToggles() polls ATWasmIsGamingMode() and toggles the
-    // visibility live, so the button appears the moment the user
-    // switches to Gaming Mode via View → Switch to Gaming Mode and
-    // disappears when they switch back.  Start hidden until the first
-    // poll confirms which mode we're in (avoids a flash on Desktop
-    // entries while the wasm runtime is still loading).
-    if (btnMenu) btnMenu.style.display = 'none';
+    // MENU… and ✦ Touch are Gaming-Mode-only controls — the
+    // hamburger menu screen and the on-canvas touch overlay both
+    // live in the Gaming-Mode dispatcher and have no effect in
+    // Desktop UI.  refreshQuickToggles() polls ATWasmIsGamingMode()
+    // and toggles their visibility live, so they appear the moment
+    // the user enters Gaming Mode (via deep-link or View → Switch
+    // to Gaming Mode) and disappear on switch-back.  Start hidden
+    // until the first poll confirms which mode we're in (avoids a
+    // flash on Desktop entries while the wasm runtime is loading).
+    if (btnMenu)  btnMenu.style.display  = 'none';
+    if (btnTouch) btnTouch.style.display = 'none';
 
     const TOUCH_KEY = 'altirra-wasm-touch';
     const ATIsTouchDevice = (function () {
@@ -2252,27 +2284,29 @@
         } catch (e) {}
       }
 
-      // Touch controls — UI state only, safe even before sim is up.
-      if (btnTouch && Module._ATWasmGetTouchControls) {
-        try {
-          const on = Module._ATWasmGetTouchControls();
-          btnTouch.disabled = false;
-          btnTouch.textContent = on ? '✦ Touch (on)' : '✦ Touch';
-        } catch (e) {}
+      // MENU… and ✦ Touch — Gaming-Mode-only.  The on-canvas touch
+      // overlay only renders in Gaming Mode (ui_mobile.cpp), and the
+      // hamburger menu screen only exists there.  Polled every 250 ms
+      // so View → Switch to Gaming/Desktop Mode flips them on/off in
+      // step with the user's choice.
+      let gaming = false;
+      if (Module._ATWasmIsGamingMode) {
+        try { gaming = (Module._ATWasmIsGamingMode() === 1); }
+        catch (e) { gaming = false; }
       }
-
-      // MENU…  visible only when Gaming Mode is active; hidden in
-      // Desktop UI (where the hamburger menu screen doesn't exist).
-      // Polled every 250 ms so View → Switch to Gaming Mode flips
-      // the button on/off in step with the user's choice.
       if (btnMenu && Module._ATWasmOpenMenu) {
-        let gaming = false;
-        if (Module._ATWasmIsGamingMode) {
-          try { gaming = (Module._ATWasmIsGamingMode() === 1); }
-          catch (e) { gaming = false; }
-        }
         btnMenu.style.display = gaming ? '' : 'none';
         btnMenu.disabled = false;
+      }
+      if (btnTouch && Module._ATWasmGetTouchControls) {
+        btnTouch.style.display = gaming ? '' : 'none';
+        if (gaming) {
+          try {
+            const on = Module._ATWasmGetTouchControls();
+            btnTouch.disabled = false;
+            btnTouch.textContent = on ? '✦ Touch (on)' : '✦ Touch';
+          } catch (e) {}
+        }
       }
     }
     // Hook into the existing pause-poller's tick so we only have one

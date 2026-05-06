@@ -2188,6 +2188,20 @@ int main(int argc, char *argv[]) {
 	// media loading (--cart, --disk, --run, positional args), startup.atdbg,
 	// and debug suspend mode.  Returns true if any boot image was loaded.
 	bool cmdLineHadBootImage = ATProcessCommandLineSDL3(argc, argv);
+	if (cmdLineHadBootImage && ATUIIsGamingMode()) {
+		// Command line booted a game (--run, --cart, --disk, --tape).
+		// Without this, ui_mobile.cpp's None-screen handler sees
+		// gameLoaded=false on the first frames and redirects to the
+		// Game Library overlay — even though the cart/XEX is already
+		// running.  Gaming Mode might be on either because the user
+		// kept it from a previous session (registry-restored) or
+		// because the WASM JS shell will toggle it via
+		// ATWasmSetGamingMode shortly after this; in both cases the
+		// flag must be true.
+		GameBrowser_Init();
+		g_mobileState.currentScreen = ATMobileUIScreen::None;
+		g_mobileState.gameLoaded    = true;
+	}
 	if (!cmdLineHadBootImage) {
 		// Detect whether ATSettingsLoadLastProfile restored any mounted
 		// media (cart, disk, cassette).  If so the user's last session

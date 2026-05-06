@@ -1466,43 +1466,45 @@ int ATWasmIsGamingMode() {
 }
 
 // JS-side: switch the UI to Gaming Mode (or back to Desktop).  Called
-// by the deep-link JS for any ?lib=… URL so Play Solo and Play
-// Together both land on the same Gaming-Mode UX as Join.  Persists
-// the mode so the choice survives a reload.
+// by the deep-link JS exactly once on every page load:
+//   ?lib=…           (Play Solo / Play Together)  → on=1
+//   ?s=…&code=…      (Join)                       → on=1
+//   /AltirraSDL/play/ (bare URL — Start Atari Emu) → on=0
 //
-// Side-effect: when entering Gaming Mode AND a game is already
-// mounted (the Play Solo / Play Together cmdline already ran
-// --disk/--cart/--tape and the simulator is booting), mark
-// `gameLoaded = true` and force `currentScreen = None`.  Without
-// this, ui_mobile.cpp's None-screen handler sees `!gameLoaded`,
-// concludes "no game in progress", and redirects the user to the
-// Game Library overlay — even though the cart is actually running
-// behind it.  The cmdline path that runs before this hook can't set
-// the flag itself because Gaming Mode isn't on yet (the JS hook
-// fires after main()'s deep-link processing).
+// When `on=1` we also force `g_mobileState.gameLoaded = true` and
+// `currentScreen = None`.  By the time this hook fires (post-main(),
+// post-cmdline-boot), one of these is true:
+//   - Play Solo:    main() already booted the cart/disk via
+//                   ATProcessCommandLineSDL3.  cmdLineHadBootImage
+//                   was true, but the surrounding code only sets
+//                   gameLoaded inside the !cmdLineHadBootImage branch.
+//   - Play Solo --run XEX: an XEX boot leaves nothing in the cart /
+//                   disk / cassette slots — the binary is injected
+//                   into RAM and the start address is set.  A
+//                   `mediaLoaded`-style probe based on
+//                   GetCartridge / IsDiskLoaded misses this case
+//                   entirely.  (This was the actual root cause of the
+//                   "music plays but Game Library overlay covers the
+//                   game" bug: Play Solo titles like Bruce Lee.xex
+//                   loaded with --run never tripped the probe.)
+//   - Play Together: same as Play Solo + an auto-host stash; the
+//                   netplay tick does its thing in parallel.
+//   - Join:         the netplay deep-link path will deliver a game
+//                   asynchronously; until it does, the user wants
+//                   the prep flow visible (DeepLinkPrep renders only
+//                   in Gaming Mode), not the Game Library.
+//
+// Forcing the flag is the right behaviour for all three because the
+// JS hook is only ever called from a deep-link, never from a generic
+// "switch mode" path — those go through ATUISetMode directly.
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSetGamingMode(int on) {
 	ATUISetMode(on ? ATUIMode::Gaming : ATUIMode::Desktop);
 	ATUISaveMode();
 
 	if (on) {
-		bool mediaLoaded = false;
-		if (g_sim.GetCartridge(0) || g_sim.GetCartridge(1))
-			mediaLoaded = true;
-		if (!mediaLoaded && g_sim.GetCassette().IsLoaded())
-			mediaLoaded = true;
-		if (!mediaLoaded) {
-			for (int i = 0; i < 15; ++i) {
-				if (g_sim.GetDiskInterface(i).IsDiskLoaded()) {
-					mediaLoaded = true;
-					break;
-				}
-			}
-		}
-		if (mediaLoaded) {
-			g_mobileState.gameLoaded    = true;
-			g_mobileState.currentScreen = ATMobileUIScreen::None;
-		}
+		g_mobileState.gameLoaded    = true;
+		g_mobileState.currentScreen = ATMobileUIScreen::None;
 	}
 }
 

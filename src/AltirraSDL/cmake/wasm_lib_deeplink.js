@@ -268,17 +268,28 @@
     var lib = window.__altirraLib;
     var hasLib = !!(lib && lib.paths && lib.paths.length);
 
-    // Mode-of-entry contract — set first, every time, regardless of
-    // whether the URL carries a ?lib= entry:
+    // Mode-of-entry contract — set first, every time:
     //   ?lib=…           (Play Solo / Play Together)  → Gaming Mode
+    //   ?s=…             (Join via lobby invite)      → Gaming Mode
     //   /AltirraSDL/play/ (Start Atari Emulator)      → Desktop Mode
-    // This honours the user's explicit spec ("Start Atari Emulator
-    // should start the Desktop UI") even when the previous visit was
-    // a deep-link that persisted Gaming Mode in the registry.  Users
-    // can still flip via View → Switch to Gaming/Desktop Mode at any
-    // time and that choice is saved for the next bare-URL visit.
+    //
+    // The Join path is critical: the C-side netplay deep-link handler
+    // already calls ATUISetMode(Gaming) when it sees --join-session,
+    // but that runs from a netplay tick AFTER main() returned.  This
+    // JS hook fires later still, on the same browser turn, so without
+    // recognising ?s= here we'd reset Gaming → Desktop and the
+    // DeepLinkPrep renderer (which lives only in the Gaming-Mode
+    // dispatcher) would never run — the user would land in Desktop UI
+    // and have to manually open Browse Hosted Games to complete the
+    // join.  Detecting ?s= directly here keeps the C and JS sides
+    // pointing in the same direction.
+    var p;
+    try { p = new URLSearchParams(window.location.search || ''); }
+    catch (e) { p = null; }
+    var hasJoin = !!(p && (p.get('s') || '').trim());
+    var wantsGaming = hasLib || hasJoin;
     if (Module._ATWasmSetGamingMode) {
-      try { Module._ATWasmSetGamingMode(hasLib ? 1 : 0); } catch (e) {}
+      try { Module._ATWasmSetGamingMode(wantsGaming ? 1 : 0); } catch (e) {}
     }
     if (!hasLib) return;
 
