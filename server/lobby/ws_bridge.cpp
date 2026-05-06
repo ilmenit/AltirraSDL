@@ -63,8 +63,9 @@ constexpr size_t   kNetByeSize     = 8;                 // magic + reason
 // and live as little-endian 4-byte words on the wire (the first byte of
 // inner is bits 0..7 of the magic, etc.).  Drift caught by integration
 // tests that round-trip a real chunk through the bridge.
-constexpr uint32_t kNetChunkMagicLE = 0x43504E41u;      // 'ANPC'
-constexpr uint32_t kNetAckMagicLE   = 0x41504E41u;      // 'ANPA'
+constexpr uint32_t kNetChunkMagicLE      = 0x43504E41u; // 'ANPC'
+constexpr uint32_t kNetAckMagicLE        = 0x41504E41u; // 'ANPA'
+constexpr uint32_t kNetWelcomeAckMagicLE = 0x4D504E41u; // 'ANPM' (v5)
 
 constexpr uint8_t kRelayRoleHost   = 0;
 constexpr uint8_t kRelayRoleJoiner = 1;
@@ -803,16 +804,21 @@ static void HandleWakeup(BridgeState& st, struct mg_connection* c,
 	if (!c->is_websocket || c->is_closing) return;
 	if (!data || data->len == 0) return;
 
-	// Snapshot-channel diagnostic: count snapshot acks we actually
-	// dispatch to a WS peer.  Layout is [role:u8][inner…]; inner
-	// magic occupies bytes 1..4 when present.  Pairs with the
-	// reflector-side udpInAcks counter so we can see whether acks
-	// are dropped between UDP arrival and WS dispatch.
+	// Snapshot-channel diagnostic: count snapshot acks AND v5
+	// WelcomeAcks we dispatch to a WS peer.  Layout is
+	// [role:u8][inner…]; inner magic occupies bytes 1..4 when
+	// present.  Pairs with the reflector-side udpInAcks /
+	// udpInWelcomeAcks counters so we can see whether the relevant
+	// frame is dropped between UDP arrival and WS dispatch.
 	if (data->len >= 1 + 4) {
 		const uint8_t* inner =
 			reinterpret_cast<const uint8_t*>(data->buf) + 1;
-		if (PeekInnerMagicLE(inner) == kNetAckMagicLE) {
+		const uint32_t m = PeekInnerMagicLE(inner);
+		if (m == kNetAckMagicLE) {
 			st.stats->wsOutAcks.fetch_add(1,
+				std::memory_order_relaxed);
+		} else if (m == kNetWelcomeAckMagicLE) {
+			st.stats->wsOutWelcomeAcks.fetch_add(1,
 				std::memory_order_relaxed);
 		}
 	}

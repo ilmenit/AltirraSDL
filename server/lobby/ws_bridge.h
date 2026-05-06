@@ -64,6 +64,20 @@ struct WsBridgeStats {
 	std::atomic<uint64_t> udpOutChunks{0};
 	std::atomic<uint64_t> udpInAcks{0};
 	std::atomic<uint64_t> wsOutAcks{0};
+
+	// v5 handshake diagnostic (added 2026-05-06 alongside the
+	// snapshot CRC + WelcomeAck protocol bump).  When a session
+	// hangs at "Welcome accepted" → silence on the host's chunk pump,
+	// these two counters localise the failure to either:
+	//   joiner never sent WelcomeAck       → udp_in_welcome_acks=0
+	//   ack didn't make it to the host     → udp_in_welcome_acks≥1
+	//                                        but ws_out_welcome_acks=0
+	// Both counters are bumped at the SAME bridge sites that classify
+	// chunks/acks (HandleWsMsg ingest + the reflector ASDF route +
+	// HandleWakeup dispatch); the inner-magic peek is `'ANPM'` (LE
+	// 0x4D504E41 — kMagicWelcomeAck in packets.h).
+	std::atomic<uint64_t> udpInWelcomeAcks{0};
+	std::atomic<uint64_t> wsOutWelcomeAcks{0};
 };
 
 // Reflector socket FD, owned by the reflector thread.  Set to a valid

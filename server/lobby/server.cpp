@@ -1214,13 +1214,22 @@ void Install(httplib::Server& srv, Store& store) {
 				// four should be ≥ snapshotChunks; any zero
 				// pinpoints the broken leg.
 				b.key("ws_in_chunks");
-				b.num((long long)gWsBridgeStats.wsInChunks.load());   b.raw(',');
+				b.num((long long)gWsBridgeStats.wsInChunks.load());        b.raw(',');
 				b.key("udp_out_chunks");
-				b.num((long long)gWsBridgeStats.udpOutChunks.load()); b.raw(',');
+				b.num((long long)gWsBridgeStats.udpOutChunks.load());      b.raw(',');
 				b.key("udp_in_acks");
-				b.num((long long)gWsBridgeStats.udpInAcks.load());    b.raw(',');
+				b.num((long long)gWsBridgeStats.udpInAcks.load());         b.raw(',');
 				b.key("ws_out_acks");
-				b.num((long long)gWsBridgeStats.wsOutAcks.load());
+				b.num((long long)gWsBridgeStats.wsOutAcks.load());         b.raw(',');
+				// v5 WelcomeAck handshake counters: udp_in is the
+				// reflector receiving the joiner's "ready for chunks"
+				// signal; ws_out is the bridge dispatching it to the
+				// WS host's connection.  Localises any
+				// "joiner sent the ack but host never saw it" gap.
+				b.key("udp_in_welcome_acks");
+				b.num((long long)gWsBridgeStats.udpInWelcomeAcks.load());  b.raw(',');
+				b.key("ws_out_welcome_acks");
+				b.num((long long)gWsBridgeStats.wsOutWelcomeAcks.load());
 			b.raw('}');                              b.raw(',');
 			b.key("http");            b.raw('{');
 				b.key("requests_total");
@@ -2193,6 +2202,9 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 					| ((uint32_t)innerBytes[3] << 24);
 				if (innerMagicLE == 0x41504E41u /* kMagicAck 'ANPA' */) {
 					gWsBridgeStats.udpInAcks.fetch_add(1,
+						std::memory_order_relaxed);
+				} else if (innerMagicLE == 0x4D504E41u /* kMagicWelcomeAck 'ANPM' */) {
+					gWsBridgeStats.udpInWelcomeAcks.fetch_add(1,
 						std::memory_order_relaxed);
 				}
 			}
