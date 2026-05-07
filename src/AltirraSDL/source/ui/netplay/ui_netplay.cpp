@@ -40,6 +40,16 @@ extern ATLogChannel g_ATLCNetplay;
 
 extern VDStringA ATGetConfigDir();
 
+#if defined(__EMSCRIPTEN__)
+// Defined in wasm_bridge.cpp.  Tells whether the user arrived via a
+// broker deep-link (?broker=1) and triggers the navigate-back-to-
+// lobby on session end.  Forward-declared at namespace scope so we
+// don't have to drag in emscripten.h or the wasm_bridge translation
+// unit's full header graph.
+extern "C" bool ATWasmBrokerIsActive();
+extern "C" void ATWasmBrokerSessionEnded(int reasonCode);
+#endif
+
 namespace ATNetplayUI {
 
 // Screen dispatcher implemented in ui_netplay_screens.cpp.
@@ -639,6 +649,44 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 	// Track aggregate session-active for menu/HUD.
 	st.sessionActive = ATNetplayGlue::IsActive();
 
+#if defined(__EMSCRIPTEN__)
+	// Broker-mode auto-return: when a netplay session that the broker
+	// page launched us into ends (joiner kicked, host Bye, peer-silent
+	// timeout, manual End Session, snapshot-apply error, …), navigate
+	// back to /AltirraSDL/?broker_return=1&reason=<code>.  The broker
+	// page renders a "Game ended — Play again?" panel keyed off that
+	// query parameter so the user gets a clean one-click rebound.
+	//
+	// Edge-detect: only fire on the engaged → not-engaged transition,
+	// and only after the session ever became engaged at least once.
+	// "Engaged" excludes the host's WaitingForJoiner phase, so a host
+	// who clicks End Session before any joiner arrives still gets
+	// returned to the lobby (handled by ATNetplayUI_EndSession's
+	// explicit call below, not this auto-detect).  The Idle → Failed
+	// transition during a joiner's failed handshake DOES count: the
+	// joiner reached Handshaking briefly so s_brokerWasEngaged was
+	// set, then JoinPhase fell to Failed → engaged dropped → fire.
+	static bool s_brokerWasEngaged = false;
+	if (ATWasmBrokerIsActive()) {
+		const bool engagedNow = ATNetplayGlue::IsSessionEngaged();
+		if (engagedNow) s_brokerWasEngaged = true;
+		if (s_brokerWasEngaged && !engagedNow) {
+			s_brokerWasEngaged = false;       // one-shot per WASM tab
+			// Reason code: prefer the joiner's last reject (carries
+			// SessionTermination semantics — BadEntryCode, HostRejected,
+			// etc.); fall back to 0 for "clean end" / host-side close.
+			uint16_t reason = ATNetplayGlue::JoinLastRejectReason();
+			ATWasmBrokerSessionEnded((int)reason);
+			// ATWasmBrokerSessionEnded clears g_brokerCtx.active and
+			// fires location.href.  The current tick's render still
+			// completes; the new page is fetched on the next browser
+			// turn.  Skip further netplay UI updates to avoid touching
+			// state that's about to be torn down by navigation.
+			return;
+		}
+	}
+#endif
+
 	// Deep-link join: drive the per-frame state machine that consumes
 	// any pending --join-session / ?s=<id> request.  Cheap no-op
 	// unless the URL bridge or CLI parser stashed something.  Runs
@@ -703,6 +751,16 @@ void ATNetplayUI_EndSession() {
 	// any later poll could observe a transient phase.  Idempotent.
 	ATNetplayProfile::EndSession();
 	ATNetplayUI::Navigate(ATNetplayUI::Screen::MyHostedGames);
+#if defined(__EMSCRIPTEN__)
+	// In broker mode, an explicit End Session click also navigates
+	// the page back to the lobby (whether or not a peer was ever
+	// engaged).  This covers the "host gave up waiting" path that
+	// the engaged → not-engaged auto-detect in Poll skips by
+	// design.  Idempotent: ATWasmBrokerSessionEnded no-ops once
+	// fired, so a subsequent auto-detect or another End Session
+	// click won't re-navigate.
+	if (ATWasmBrokerIsActive()) ATWasmBrokerSessionEnded(0);
+#endif
 }
 
 namespace ATNetplayUI { bool DesktopDispatch(); }
