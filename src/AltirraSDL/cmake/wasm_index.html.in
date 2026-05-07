@@ -3592,11 +3592,17 @@
     // a netplay deep-link — `?broker=1` (host-via-Play-Together or
     // joiner-via-broker-Join) or `?s=<id>` (legacy join URL).  In both
     // cases the user is mid-flow trying to play with someone, NOT
-    // bootstrapping their tab; the netplay deep-link path's own
-    // bootstrap (firstrunbootstrap) auto-fetches the firmware bundle
-    // (altirra-firmware.zip from the lobby), so the wizard is
-    // redundant and the curated game pack offered alongside it would
-    // delay the join with a several-MB download nobody asked for.
+    // bootstrapping their tab; showing a modal would interrupt the
+    // netplay handshake and the curated game pack offered alongside
+    // it would delay the join with a several-MB download nobody asked
+    // for.
+    //
+    // The standard ROM bundle is still REQUIRED for the emulator to
+    // boot (no kernel ⇒ no Atari ⇒ no game), so when firmware is
+    // missing we kick off `ATWasmFirstRunBootstrap` SILENTLY (no
+    // wizard, no toasts that block input).  The broker page's own
+    // "Starting…" overlay covers user-facing feedback while the
+    // bootstrap and the netplay snapshot transfer run in parallel.
     function netplayDeepLinkActive() {
       try {
         const p = new URLSearchParams(window.location.search || '');
@@ -3608,8 +3614,15 @@
     function decideFirstRunAction() {
       const dl = netplayDeepLinkActive();
       if (dl) {
-        jlog('first-run: suppressed (netplay ' + dl + ' deep-link active'
-          + ' — firmware auto-fetches via bootstrap, no wizard needed)');
+        const fw = hasFirmwareInstalled();
+        if (!fw) {
+          jlog('first-run: ' + dl + ' deep-link active without firmware'
+            + ' — auto-fetching ROM bundle silently (no wizard)');
+          startFirstRunPolling();
+        } else {
+          jlog('first-run: ' + dl + ' deep-link active, firmware present'
+            + ' — wizard suppressed');
+        }
         return;
       }
       const fw = hasFirmwareInstalled();

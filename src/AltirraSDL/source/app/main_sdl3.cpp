@@ -807,6 +807,41 @@ static void HandleEvents() {
 
 		case SDL_EVENT_WINDOW_RESIZED:
 			ATUpdateWindowedGeometry(g_pWindow);
+#ifdef __EMSCRIPTEN__
+			// Browser-initiated fullscreen (our HTML "Full Screen" button
+			// calls document.documentElement.requestFullscreen) updates
+			// SDL's idea of the window size to the desktop-mode dimensions
+			// — SDL3 catches the document fullscreenchange and synthesises
+			// a RESIZED event with display->desktop_mode.w/h — but it does
+			// NOT resize the canvas drawing buffer to match.  SDL's
+			// Emscripten_HandleResize bails out as soon as
+			// SDL_WINDOW_FULLSCREEN is set, on the assumption that SDL's
+			// own fullscreen path owns the canvas size; that path is only
+			// used when the C side calls SDL_SetWindowFullscreen, not
+			// when the page-level fullscreen API is invoked from JS.
+			//
+			// The result: window->w/h and mWinW/mWinH jump to 1920×1080
+			// while canvas.width/.height stay at the pre-fullscreen size
+			// (e.g. 1920×1030).  glViewport then renders past the top
+			// edge of the framebuffer; rows beyond the actual buffer are
+			// silently discarded and the user sees the top of the Atari
+			// display clipped.
+			//
+			// Force-sync the drawing buffer to window->w/h here.
+			// SDL_SetWindowSize routes through Emscripten_SetWindowSize,
+			// which calls emscripten_set_canvas_element_size with the
+			// matching pixel size.  When the size already matches
+			// (the common case — a normal CSS-driven resize where SDL
+			// already updated the canvas), SDL_SendWindowEvent's
+			// equality check short-circuits the redundant RESIZED event,
+			// so there's no recursion or duplicated work.
+			if (g_pWindow) {
+				int logW, logH;
+				SDL_GetWindowSize(g_pWindow, &logW, &logH);
+				if (logW > 0 && logH > 0)
+					SDL_SetWindowSize(g_pWindow, logW, logH);
+			}
+#endif
 			if (g_pBackend) {
 				int w, h;
 				SDL_GetWindowSizeInPixels(g_pWindow, &w, &h);

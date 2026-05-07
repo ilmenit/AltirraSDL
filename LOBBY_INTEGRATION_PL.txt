@@ -1,0 +1,273 @@
+================================================================
+ LOBBY ALTIRRA NETPLAY — INTEGRACJA Z WŁASNĄ STRONĄ
+================================================================
+
+Ten poradnik pokazuje, jak umieścić na własnej stronie żywą
+listę "Kto teraz hostuje grę Atari?" wraz z przyciskiem DOŁĄCZ,
+który otwiera grę w przeglądarce odwiedzającego — jednym
+kliknięciem, bez instalacji.
+
+Bez backendu, bez kluczy API, bez rejestracji, bez limitów do
+pilnowania.  Wklejasz fragment HTML i działa.
+
+
+----------------------------------------------------------------
+ 1.  CO DOSTAJESZ
+----------------------------------------------------------------
+
+Żywą listę aktualnie hostowanych sesji Altirra Netplay,
+odświeżaną co kilka sekund, każda z przyciskiem DOŁĄCZ.  Gdy
+odwiedzający kliknie DOŁĄCZ, w jego przeglądarce uruchamia się
+emulator Atari (wersja WebAssembly) i automatycznie łączy się
+z tą konkretną sesją — nic do zainstalowania, nic do
+konfigurowania.
+
+Odwiedzający nie potrzebuje żadnego konta Altirra.  Hosci nie
+muszą wiedzieć, że Twoja strona pokazuje ich sesję.  Wszystko
+jest publiczne z założenia (sesje prywatne są oznaczone i
+filtrowane).
+
+
+----------------------------------------------------------------
+ 2.  WERSJA NA SZYBKO  (skopiuj-wklej i gotowe)
+----------------------------------------------------------------
+
+Wklej to gdziekolwiek wewnątrz <body> swojej strony HTML:
+
+----  początek wklejki  ----------------------------------------
+<div id="altirra-lobby">Wczytywanie sesji Atari…</div>
+
+<script>
+async function refreshAltirraLobby() {
+  const root = document.getElementById('altirra-lobby');
+  try {
+    const r = await fetch(
+      'https://lobby.atari.org.pl/v1/public/sessions',
+      { cache: 'no-store' });
+    const sessions = await r.json();
+    if (sessions.length === 0) {
+      root.innerHTML = '<p>Nikt aktualnie nie hostuje gry.</p>';
+      return;
+    }
+    root.innerHTML = sessions.map(s => `
+      <div style="margin:8px 0;padding:8px;border:1px solid #444;">
+        <b>${escapeHtml(s.cartName)}</b>
+        — host: ${escapeHtml(s.hostHandle)}
+        (${s.playerCount}/${s.maxPlayers} graczy)
+        ${s.requiresCode
+          ? '🔒 prywatna'
+          : `<a href="${s.joinUrl}" target="_blank"
+                style="background:#c00;color:#fff;padding:4px 10px;
+                       text-decoration:none;border-radius:4px;
+                       margin-left:8px;">DOŁĄCZ</a>`}
+      </div>`).join('');
+  } catch (e) {
+    root.innerHTML = '<p>Nie udało się pobrać listy sesji.</p>';
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+refreshAltirraLobby();
+setInterval(refreshAltirraLobby, 15000); // odświeżaj co 15 s
+</script>
+----  koniec wklejki  ------------------------------------------
+
+To wszystko.  Zapisz stronę, otwórz w przeglądarce i lista się
+zapełni.  Jeśli nikt nie hostuje, zobaczysz "Nikt aktualnie nie
+hostuje gry."  Gdy ktoś zacznie, pojawi się przycisk DOŁĄCZ.
+
+
+----------------------------------------------------------------
+ 3.  JAK TO DZIAŁA  (tyle, by móc to debugować)
+----------------------------------------------------------------
+
+Lobby to mały serwer pod adresem lobby.atari.org.pl.  Trzyma w
+pamięci listę aktualnie hostowanych sesji Altirra Netplay i
+udostępnia jeden tylko-do-odczytu HTTPS-owy endpoint, do
+którego każdy może się odwołać — bez klucza, bez tokena:
+
+   GET https://lobby.atari.org.pl/v1/public/sessions
+
+Zwraca tablicę JSON.  Każdy element to jedna hostowana gra.
+
+Endpoint wysyła nagłówek
+"Access-Control-Allow-Origin: *", co oznacza, że nowoczesne
+przeglądarki pozwalają Twojej stronie wywołać go bezpośrednio
+przez fetch() — także z file:// do testów lokalnych.
+
+Link "DOŁĄCZ" to zwykły <a href="..."> wskazujący na
+WebAssembly-ową wersję Altirry (też hostowaną pod
+lobby.atari.org.pl) z parametrem "?s=<sessionId>".  Klient WASM
+przy starcie czyta ten parametr i automatycznie dołącza do
+sesji.
+
+
+----------------------------------------------------------------
+ 4.  POLA, KTÓRE OTRZYMUJESZ
+----------------------------------------------------------------
+
+Każda sesja w tablicy JSON ma dokładnie te pola:
+
+  cartName         "Boulder Dash"      — nazwa gry / kartridża
+  hostHandle       "ilmenit"           — nick hosta
+  region           "global" / "eu" /…  — preferowany region
+  hardwareMode     "800XL", "5200", …  — model Atari
+  videoStandard    "PAL" lub "NTSC"    — standard video
+  memoryMode       "64K", "320K", …    — konfiguracja RAM
+  state            "waiting" lub
+                   "playing"           — czy gra już ruszyła?
+  playerCount      1                   — graczy aktualnie w środku
+  maxPlayers       2                   — pojemność (2..8)
+  requiresCode     false               — czy pokój prywatny?
+  joinUrl          "https://lobby.atari.org.pl/AltirraSDL/
+                    play/?s=<sessionId>"
+                                       — gotowy link "dołącz"
+
+To cały schemat.  Nic poza tym.
+
+Te pola są STABILNYM PUBLICZNYM KONTRAKTEM — gwarantujemy, że
+będą działać tak samo nawet gdy wewnętrzny protokół Altirry
+będzie ewoluować.  Możesz na nich polegać.
+
+
+----------------------------------------------------------------
+ 5.  WAŻNE: UŻYWAJ HTTPS, NIE GOŁEGO IP
+----------------------------------------------------------------
+
+Zawsze używaj:
+
+   https://lobby.atari.org.pl/v1/public/sessions       ← TEGO
+
+NIE używaj tego na swojej stronie:
+
+   http://158.180.27.70:8080/v1/public/sessions       ← tylko debug
+
+Dlaczego?  Nowoczesne przeglądarki blokują wczytywanie zasobów
+HTTP ze stron HTTPS (nazywa się to "mixed content").  Twój
+fetch() po cichu rzuci TypeError, a widżet pokaże "Nie udało
+się pobrać listy sesji." bez wyraźnej przyczyny.
+
+Gołe IP nadaje się do testów z linii poleceń (curl, wget) lub
+do lokalnych eksperymentów na file://, ale nigdy do prawdziwej
+strony WWW.
+
+
+----------------------------------------------------------------
+ 6.  CZĘSTE PYTANIA
+----------------------------------------------------------------
+
+P:  Jak często odświeżać?
+O:  Co 10 do 30 sekund w zupełności wystarczy.  Sesje nie
+    pojawiają się ani nie znikają szybciej.  Częstsze odpytywanie
+    to tylko marnowanie pasma odwiedzającego.
+
+P:  A co z sesjami prywatnymi (requiresCode: true)?
+O:  Pokaż je z ikoną kłódki, ale NIE pokazuj przy nich
+    przycisku DOŁĄCZ.  Host przekazuje kod znajomym poza lobby
+    (Discord, czat, …).  Powyższy minimalny przykład robi to
+    poprawnie.
+
+P:  Czy mogę pokazywać sesje w stanie "playing"?
+O:  Tak — gracze mogą dołączyć do trwającej gry, dopóki
+    playerCount < maxPlayers.  Jeśli wolisz je ukryć, filtruj
+    przez sessions.filter(s => s.state === 'waiting').
+
+P:  Czy jest limit liczby zwracanych sesji?
+O:  Lobby zwraca maksymalnie ok. 32 sesji, od najnowszej.  Nie
+    ma paginacji, bo przy obecnej skali nigdy nie zbliżamy się
+    do limitu.
+
+P:  Czy zadziała w iframe / cross-origin?
+O:  Tak — nagłówek CORS dopuszcza wywołania z dowolnej domeny.
+    Osadzanie przez <iframe> też działa bez problemu.
+
+P:  Czy mogę dostać listę nicków wszystkich graczy?
+O:  Nie.  Publicznie wystawiony jest tylko nick hosta.
+    Pozostali gracze są liczeni (playerCount), ale niewymienieni
+    z nazwy — celowo, ze względu na prywatność.
+
+P:  Czy mogę filtrować po regionie albo sprzęcie?
+O:  API zwraca wszystko; filtrowanie to Twoja robota w JS.
+    Przykład — pokaż tylko sesje 800XL PAL:
+      sessions.filter(s =>
+        s.hardwareMode === '800XL' && s.videoStandard === 'PAL')
+
+P:  Co jeśli lobby padnie?
+O:  fetch() rzuca błąd, który przykład łapie i wyświetla "Nie
+    udało się pobrać listy sesji."  Twoja strona nie zostanie
+    zepsuta.
+
+P:  Czy hosci wiedzą, że moja strona ich pokazuje?
+O:  Nie.  Endpoint jest anonimowy i tylko-do-odczytu — żaden
+    referer nie wycieka do hosta, żadnego powiadomienia, nic.
+    Sesje są publiczne z definicji (host sam zdecydował się je
+    opublikować w lobby).
+
+
+----------------------------------------------------------------
+ 7.  ROZWIĄZYWANIE PROBLEMÓW
+----------------------------------------------------------------
+
+Widżet pokazuje "Nie udało się pobrać listy sesji."
+  • Otwórz DevTools przeglądarki (F12) i sprawdź zakładkę
+    Console.
+  • Jeśli widzisz "Mixed Content" lub "blocked": Twoja strona
+    jest HTTPS, ale użyłeś adresu http://158.180.27.70:8080.
+    Przełącz na https://lobby.atari.org.pl.
+  • Jeśli widzisz "Failed to fetch" bez innej wskazówki:
+    spróbuj odwiedzić bezpośrednio
+    https://lobby.atari.org.pl/v1/public/sessions w
+    przeglądarce.  Jeśli to działa, a widżet nie — być może
+    Twój nagłówek CSP (Content Security Policy) blokuje
+    wychodzące fetch().  Dodaj lobby.atari.org.pl do
+    connect-src.
+  • Test z linii poleceń:
+      curl https://lobby.atari.org.pl/v1/public/sessions
+    Powinieneś zobaczyć tablicę JSON.
+
+Przycisk DOŁĄCZ otwiera się, ale gra nie startuje
+  • Przeglądarka odwiedzającego może blokować WebAssembly /
+    SharedArrayBuffer.  Sprawdź, czy sama strona WASM się
+    ładuje (otwórz joinUrl ręcznie).
+  • Niektóre sieci firmowe blokują WebSocket Relay używany do
+    netplay.  To problem po stronie sieci odwiedzającego,
+    którego widżet nie naprawi.
+
+Lista jest zawsze pusta, mimo że hostuję
+  • Sprawdź, czy host faktycznie się pojawia: odwiedź
+    https://lobby.atari.org.pl/v1/public/sessions w
+    przeglądarce.
+  • Sesje są trzymane wyłącznie w pamięci; jeśli lobby się
+    zrestartowało, hosci muszą opublikować się ponownie.
+
+Chcę użyć tego na stronie tylko-HTTP
+  • Spoko — ten sam JS zadziała na adresie http://IP:8080 ze
+    strony HTTP.  Po prostu zamień URL w skrypcie.
+
+
+----------------------------------------------------------------
+ 8.  ZASADY KORZYSTANIA / FAIR USE
+----------------------------------------------------------------
+
+Endpoint jest publiczny, anonimowy, darmowy i z otwartym CORS-em
+z założenia — każdy może go osadzać.  Prosimy tylko o
+rozsądek:
+
+  • Trzymaj rozsądne interwały odświeżania (≥ 10 sekund).
+    Lobby to mała maszyna wirtualna i nie potrzebuje
+    sekundowych burz odpytań od stu osadzonych widżetów.
+  • Nie scrape'uj wewnętrznych endpointów
+    (/v1/sessions, /v1/stats, /v1/metrics — to dla klienta i
+    operatora, nie do osadzania).  /v1/public/ to kontrakt;
+    cała reszta może się zmienić w każdej chwili.
+  • Jeśli osadzasz to na stronie z dużym ruchem, zostaw
+    notkę w issues na GitHubie AltirraSDL, żebyśmy mogli
+    zaplanować pojemność.
+
+
+----------------------------------------------------------------
+ KONIEC
+----------------------------------------------------------------

@@ -1,0 +1,261 @@
+================================================================
+ ALTIRRA NETPLAY LOBBY — WEBSITE INTEGRATION GUIDE
+================================================================
+
+This guide shows how to put a live "Who is hosting an Atari game
+right now?" widget on your website, with a one-click JOIN button
+that drops visitors straight into the game in their browser.
+
+No backend, no API key, no signup, no rate limits to worry about.
+Just paste a snippet of HTML and you are done.
+
+
+----------------------------------------------------------------
+ 1.  WHAT YOU GET
+----------------------------------------------------------------
+
+A live list of Atari netplay sessions hosted right now in the
+Altirra lobby, refreshed every few seconds, each with a JOIN
+button.  When a visitor clicks JOIN, the Atari emulator opens in
+their browser (WebAssembly build) and connects to that exact
+session — no install, no configuration.
+
+Visitors do not need an Altirra account.  Hosts do not need to
+know that your website is showing their session.  Everything is
+public by design (private sessions are flagged and filtered).
+
+
+----------------------------------------------------------------
+ 2.  THE 60-SECOND VERSION  (copy-paste and you are done)
+----------------------------------------------------------------
+
+Paste this anywhere inside the <body> of your HTML page:
+
+----  begin paste  ---------------------------------------------
+<div id="altirra-lobby">Loading Atari sessions…</div>
+
+<script>
+async function refreshAltirraLobby() {
+  const root = document.getElementById('altirra-lobby');
+  try {
+    const r = await fetch(
+      'https://lobby.atari.org.pl/v1/public/sessions',
+      { cache: 'no-store' });
+    const sessions = await r.json();
+    if (sessions.length === 0) {
+      root.innerHTML = '<p>No-one is hosting a game right now.</p>';
+      return;
+    }
+    root.innerHTML = sessions.map(s => `
+      <div style="margin:8px 0;padding:8px;border:1px solid #444;">
+        <b>${escapeHtml(s.cartName)}</b>
+        — hosted by ${escapeHtml(s.hostHandle)}
+        (${s.playerCount}/${s.maxPlayers} players)
+        ${s.requiresCode
+          ? '🔒 private'
+          : `<a href="${s.joinUrl}" target="_blank"
+                style="background:#c00;color:#fff;padding:4px 10px;
+                       text-decoration:none;border-radius:4px;
+                       margin-left:8px;">JOIN</a>`}
+      </div>`).join('');
+  } catch (e) {
+    root.innerHTML = '<p>Could not load lobby.</p>';
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+refreshAltirraLobby();
+setInterval(refreshAltirraLobby, 15000); // refresh every 15 s
+</script>
+----  end paste  -----------------------------------------------
+
+That is it.  Save the page, open it in a browser, and the list
+will populate.  If nobody is hosting, you will see "No-one is
+hosting a game right now."  When someone does, the JOIN button
+appears.
+
+
+----------------------------------------------------------------
+ 3.  HOW IT WORKS  (just enough so you can debug it)
+----------------------------------------------------------------
+
+The lobby is a small server running at lobby.atari.org.pl.  It
+keeps a list of currently hosted Atari netplay sessions in
+memory and exposes one read-only HTTPS endpoint that anyone can
+fetch — no key, no token:
+
+   GET https://lobby.atari.org.pl/v1/public/sessions
+
+It returns a JSON array.  Each entry is one hosted game.
+
+The endpoint sends the CORS header
+"Access-Control-Allow-Origin: *", which means modern browsers
+allow your website to call it directly with fetch() — even from
+file:// for local testing.
+
+The "JOIN" link is just a normal <a href="..."> pointing at the
+WebAssembly build of Altirra (also hosted at lobby.atari.org.pl)
+with a "?s=<sessionId>" parameter.  The WASM client reads that
+parameter on startup and joins the session automatically.
+
+
+----------------------------------------------------------------
+ 4.  THE FIELDS YOU GET BACK
+----------------------------------------------------------------
+
+Each session in the JSON array has exactly these fields:
+
+  cartName         "Boulder Dash"      — the game / cartridge
+  hostHandle       "ilmenit"           — host's nickname
+  region           "global" / "eu" /…  — preferred region
+  hardwareMode     "800XL", "5200", …  — Atari model
+  videoStandard    "PAL" or "NTSC"     — video standard
+  memoryMode       "64K", "320K", …    — RAM configuration
+  state            "waiting" or
+                   "playing"           — has the game started?
+  playerCount      1                   — players currently in
+  maxPlayers       2                   — capacity (2..8)
+  requiresCode     false               — is it a private room?
+  joinUrl          "https://lobby.atari.org.pl/AltirraSDL/
+                    play/?s=<sessionId>"
+                                       — ready-made join link
+
+That is the entire schema.  Nothing else.
+
+These fields are a STABLE PUBLIC CONTRACT — they are guaranteed
+to keep working even when the internal Altirra protocol evolves.
+You can rely on them.
+
+
+----------------------------------------------------------------
+ 5.  IMPORTANT: USE HTTPS, NOT THE RAW IP
+----------------------------------------------------------------
+
+Always use:
+
+   https://lobby.atari.org.pl/v1/public/sessions       ← USE THIS
+
+Do NOT use this on your website:
+
+   http://158.180.27.70:8080/v1/public/sessions       ← debug only
+
+Why?  Modern browsers refuse to load HTTP resources from an
+HTTPS page (this is called "mixed content").  Your fetch() will
+fail silently with a TypeError, and your widget will show "Could
+not load lobby." for no obvious reason.
+
+The raw IP is fine for command-line testing (curl, wget) or
+local file:// experiments, but never on a real website.
+
+
+----------------------------------------------------------------
+ 6.  COMMON QUESTIONS
+----------------------------------------------------------------
+
+Q:  How often should I refresh?
+A:  Every 10 to 30 seconds is plenty.  Sessions don't appear or
+    disappear faster than that.  Polling more frequently just
+    wastes the visitor's bandwidth.
+
+Q:  What about private sessions (requiresCode: true)?
+A:  Show them with a lock icon, but DO NOT show a JOIN button
+    for them.  The host shares the join code with friends out of
+    band (Discord, chat, …).  The minimal example above already
+    handles this correctly.
+
+Q:  Can I show "playing" sessions?
+A:  Yes — players can join a game in progress as long as
+    playerCount < maxPlayers.  If you want to hide them, filter
+    with sessions.filter(s => s.state === 'waiting').
+
+Q:  Is there a limit on the number of sessions returned?
+A:  The lobby returns at most about 32 sessions, newest first.
+    There is no pagination because, at current scale, we never
+    come close to the cap.
+
+Q:  Does this work on iframes / cross-origin?
+A:  Yes — the CORS header allows calls from any domain.
+    Embedding via <iframe> works fine too.
+
+Q:  Can I get a list of player nicknames in each session?
+A:  No.  Only the host's nickname is exposed publicly.  Other
+    players are counted (playerCount) but not named, by design.
+
+Q:  Can I filter by region or hardware?
+A:  The API returns everything; filtering is your job in JS.
+    Example to show only PAL 800XL sessions:
+      sessions.filter(s =>
+        s.hardwareMode === '800XL' && s.videoStandard === 'PAL')
+
+Q:  What if the lobby goes down?
+A:  fetch() throws an error, which the example catches and
+    displays "Could not load lobby."  Your page will not break.
+
+Q:  Do hosts know my website is listing them?
+A:  No.  The endpoint is anonymous and read-only — there is no
+    referer leaked to the host, no notification, nothing.  The
+    sessions are public by definition (the host chose to publish
+    them in the lobby).
+
+
+----------------------------------------------------------------
+ 7.  TROUBLESHOOTING
+----------------------------------------------------------------
+
+The widget shows "Could not load lobby."
+  • Open the browser DevTools (F12) and check the Console tab.
+  • If you see "Mixed Content" or "blocked": your page is HTTPS
+    but you used the http://158.180.27.70:8080 URL.  Switch to
+    the https://lobby.atari.org.pl URL.
+  • If you see "Failed to fetch" with no other clue: try
+    visiting https://lobby.atari.org.pl/v1/public/sessions
+    directly in your browser.  If that works but your widget
+    doesn't, your CSP (Content Security Policy) header may be
+    blocking outbound fetch — add lobby.atari.org.pl to
+    connect-src.
+  • Test on the command line:
+      curl https://lobby.atari.org.pl/v1/public/sessions
+    You should see a JSON array.
+
+The JOIN button opens but the game doesn't start
+  • The visitor's browser may be blocking WebAssembly / SharedArrayBuffer.
+    Make sure the WASM page itself loads (open joinUrl manually).
+  • Some corporate networks block the WebSocket relay used for
+    netplay.  This is a network problem on the visitor's side,
+    not something your widget can fix.
+
+The list is always empty even though I am hosting
+  • Confirm your host actually appears: visit
+    https://lobby.atari.org.pl/v1/public/sessions in your browser.
+  • Hosting sessions are kept in memory only; if the lobby
+    restarted, hosts need to re-publish.
+
+I want to use this on an HTTP-only page
+  • That's fine — the same JS works against the http://IP:8080
+    address from an HTTP page.  Just swap the URL in the script.
+
+
+----------------------------------------------------------------
+ 8.  TERMS / FAIR USE
+----------------------------------------------------------------
+
+The endpoint is public, anonymous, free, and CORS-open by
+design — anyone may embed it.  Please be considerate:
+
+  • Keep refresh intervals reasonable (≥ 10 seconds).  The
+    lobby is a small VM and does not need 1-second polling
+    storms from a hundred embedded widgets.
+  • Do not screen-scrape internal endpoints
+    (/v1/sessions, /v1/stats, /v1/metrics — those are for the
+    client and the operator, not for embedding).  /v1/public/
+    is the contract; everything else may change at any time.
+  • If you embed this on a high-traffic site, drop a note in
+    the AltirraSDL GitHub issues so we can plan capacity.
+
+
+----------------------------------------------------------------
+ END
+----------------------------------------------------------------
