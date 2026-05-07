@@ -111,6 +111,23 @@ bool WasmTransport::Listen(uint16_t /*port*/) {
 
 	std::string subp = BuildSubprotocolList(mSidHex, mRole, mTokenHex);
 
+	// Tee the connect attempt to the browser DevTools console so a
+	// user with adblock / corporate proxy / mixed-content blocking
+	// can correlate the failure with the actual URL we tried.  The
+	// `[altirra-net]` prefix matches the broker page's
+	// `[altirra-broker]` so a single console filter catches both.
+	const std::string sidTag =
+		mSidHex.size() >= 8 ? mSidHex.substr(0, 8) : mSidHex;
+	EM_ASM({
+		if (typeof console !== "undefined" && (console.info || console.log)) {
+			(console.info || console.log).call(console,
+				"[altirra-net] WSS connecting url=" + UTF8ToString($0)
+				+ " role=" + ($1 ? "host" : "joiner")
+				+ " sid=" + UTF8ToString($2) + "..."
+				+ " tokenLen=" + $3);
+		}
+	}, url.c_str(), (int)mRole, sidTag.c_str(), (int)mTokenHex.size());
+
 	EmscriptenWebSocketCreateAttributes attrs{};
 	attrs.url             = url.c_str();
 	attrs.protocols       = subp.c_str();
@@ -120,6 +137,13 @@ bool WasmTransport::Listen(uint16_t /*port*/) {
 	if (ws <= 0) {
 		g_ATLCNetplay("WasmTransport: emscripten_websocket_new failed: %d",
 			(int)ws);
+		EM_ASM({
+			if (typeof console !== "undefined" && console.error) {
+				console.error("[altirra-net] emscripten_websocket_new"
+					+ " failed rc=" + $0
+					+ " — usually means WebSocket API disabled");
+			}
+		}, (int)ws);
 		return false;
 	}
 	mWs = (int32_t)ws;
@@ -269,8 +293,18 @@ bool WasmTransport::OnOpenCb(int /*eventType*/,
 	auto* self = static_cast<WasmTransport*>(userData);
 	self->mOpen = true;
 	self->DrainOutboundLocked();
+	const double openMs = (self->mHandshakeStartMs > 0.0)
+		? (emscripten_get_now() - self->mHandshakeStartMs)
+		: -1.0;
 	g_ATLCNetplay("WasmTransport: WS open (sid=%.8s..., role=%u)",
 		self->mSidHex.c_str(), (unsigned)self->mRole);
+	EM_ASM({
+		if (typeof console !== "undefined" && (console.info || console.log)) {
+			(console.info || console.log).call(console,
+				"[altirra-net] WSS open role=" + ($0 ? "host" : "joiner")
+				+ " openMs=" + ($1 >= 0 ? Math.round($1) : "?"));
+		}
+	}, (int)self->mRole, openMs);
 	return true;
 }
 
@@ -313,6 +347,15 @@ bool WasmTransport::OnErrorCb(int /*eventType*/,
 	// real close code, so log a placeholder here and capture the
 	// detail there.
 	g_ATLCNetplay("WasmTransport: WS error (browser will close shortly)");
+	EM_ASM({
+		if (typeof console !== "undefined" && console.warn) {
+			console.warn("[altirra-net] WSS onerror role="
+				+ ($0 ? "host" : "joiner")
+				+ " — browser refused; close event follows"
+				+ " (typical causes: ad/content blocker, CSP,"
+				+ " corporate proxy, mixed content)");
+		}
+	}, (int)self->mRole);
 	self->mOpen   = false;
 	self->mFailed = true;
 	return true;
@@ -405,6 +448,27 @@ bool WasmTransport::OnCloseCb(int /*eventType*/,
 			self->mFailed ? " — " : "",
 			self->mFailed ? self->mFailureSummary.c_str() : "");
 	}
+	// Mirror the close to the browser DevTools console.  The friendly
+	// hint (mFailureSummary) already classifies the close-code → cause
+	// mapping that lets a user spot adblock vs lobby-policy vs network
+	// drop without reading the in-page log pane.
+	EM_ASM({
+		var msg = "[altirra-net] WSS closed code=" + $0
+			+ " clean=" + ($1 ? "true" : "false")
+			+ " reason=\"" + UTF8ToString($2) + "\""
+			+ " closeMs=" + ($3 >= 0 ? Math.round($3) : "?");
+		if ($4) msg += " — " + UTF8ToString($5);
+		if (typeof console !== "undefined") {
+			if ($4 && console.error) console.error(msg);
+			else if (console.info)   console.info(msg);
+			else if (console.log)    console.log(msg);
+		}
+	}, (unsigned)self->mCloseCode,
+	   (int)self->mCloseWasClean,
+	   self->mCloseReason.c_str(),
+	   closeMs,
+	   (int)self->mFailed,
+	   self->mFailureSummary.c_str());
 	return true;
 }
 
