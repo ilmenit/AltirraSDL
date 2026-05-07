@@ -1361,6 +1361,18 @@ void ATNetplayUI_Notify(const char *title, const char *body) {
 	ATNetplay::Notify(title, body, st.prefs.notif);
 }
 
+void ATNetplayUI_ApplyPlayerNickname(const char *nickname) {
+	if (!nickname || !*nickname) return;
+	auto& st = ATNetplayUI::GetState();
+	const std::string newNick(nickname);
+	if (st.prefs.nickname == newNick) return;   // idempotent no-op
+	st.prefs.nickname = newNick;
+	// Persist so a tab reload retains the chosen handle.  This mirrors
+	// what the desktop nickname dialog does after the user clicks
+	// Save (ui_netplay_desktop.cpp:230 / :973 / ui_netplay_screens.cpp:148).
+	ATNetplayUI::SaveToRegistry();
+}
+
 // Called from the kATDeferred_NetplayJoinerApply handler after
 // g_sim.Load+Resume succeed.  Acks the coordinator so it advances to
 // Lockstepping.

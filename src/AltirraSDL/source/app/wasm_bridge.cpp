@@ -101,6 +101,7 @@ extern ATMobileUIState g_mobileState;
 // ui_netplay_deeplink.h for the state machine; here we only stash the
 // title + primary path on the netplay module's pending-request slot.
 #include "../ui/netplay/ui_netplay_deeplink.h"
+#include "../ui/netplay/ui_netplay.h"   // ATNetplayUI_ApplyPlayerNickname
 
 // Set to true by main_sdl3.cpp after g_sim.Init() + LoadROMs() have
 // been reached.  The JS side fires a startup rescan from
@@ -1648,6 +1649,20 @@ void ATWasmSetBrokerActive(int role, int active) {
 //
 // All string args may be NULL; empty strings clear the corresponding
 // field.  Pass active=1 to enter broker mode, active=0 to clear.
+//
+// Param semantics (asymmetric by role):
+//   joinerHandle  — the handle the host's coordinator should match
+//                   incoming Hello against for auto-accept.  Host
+//                   role: the broker-approved joiner's handle (from
+//                   the URL ?join_handle=).  Joiner role: unused;
+//                   pass empty.
+//   ownNickname   — the player's own display name (from the URL
+//                   ?handle=, which the user typed in the broker
+//                   modal).  Host role: the host's typed name;
+//                   joiner role: the joiner's typed name.  We push
+//                   it into st.prefs.nickname so ResolvedNickname()
+//                   returns it for NetHello / hostHandle, instead
+//                   of the AnonName fallback ("Risedibo" etc.).
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmAdoptBrokerSession(
 	const char* sessionId,
@@ -1655,6 +1670,7 @@ void ATWasmAdoptBrokerSession(
 	const char* intentId,
 	const char* joinerHandle,
 	const char* codeHashHex,
+	const char* ownNickname,
 	int         role,
 	int         active)
 {
@@ -1670,10 +1686,17 @@ void ATWasmAdoptBrokerSession(
 		// switch to the new export wholesale without losing the
 		// first-run-complete write.
 		SetFirstRunComplete();
+		// Push the user's typed handle into the netplay UI prefs so
+		// ResolvedNickname() / hostHandle / NetHello carry the broker-
+		// chosen name instead of the auto-generated AnonName fallback.
+		// Without this, the joiner's NetHello shows "Risedibo" (or
+		// similar) and the host's auto-accept gate cannot match by
+		// handle — the prompt modal opens and auto-declines after 20 s.
+		ATNetplayUI_ApplyPlayerNickname(ownNickname);
 	}
 	fprintf(stderr,
 		"[wasm] ATWasmAdoptBrokerSession: role=%d active=%d session=%s "
-		"intent=%s handle=%s\n",
+		"intent=%s joinHandle=%s nickname=%s\n",
 		g_brokerCtx.role,
 		g_brokerCtx.active ? 1 : 0,
 		g_brokerCtx.sessionId.empty() ? "(none)"
@@ -1682,7 +1705,8 @@ void ATWasmAdoptBrokerSession(
 		                              : g_brokerCtx.intentId.c_str(),
 		g_brokerCtx.joinerHandle.empty()
 			? "(none)"
-			: g_brokerCtx.joinerHandle.c_str());
+			: g_brokerCtx.joinerHandle.c_str(),
+		(ownNickname && *ownNickname) ? ownNickname : "(none)");
 }
 
 // Read by the WASM branch of StartCoordForHostedGame

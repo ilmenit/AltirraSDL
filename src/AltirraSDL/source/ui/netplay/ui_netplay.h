@@ -91,6 +91,16 @@ bool ATNetplayUI_IsActive();
 // pref mask applied.  Safe from the UI thread.
 void ATNetplayUI_Notify(const char *title, const char *body);
 
+// Set the player's display nickname.  Called from the WASM broker-
+// adoption path so the netplay coordinator's NetHello carries the
+// handle the user typed in the broker page (instead of the
+// auto-generated AnonName fallback).  Empty / nullptr arguments are
+// ignored — silently keeps the current nickname.  Persists to the
+// registry so a subsequent reload of the same WASM tab keeps the
+// chosen handle.  Idempotent: writing the same nickname twice is a
+// cheap no-op write.
+void ATNetplayUI_ApplyPlayerNickname(const char *nickname);
+
 // Called from the deferred host-boot handler when g_sim.Load() fails
 // or the retry loop exhausts its options.  Marks the offer as failed
 // (sets lastError, flips enabled off so ReconcileHostedGames doesn't spin-

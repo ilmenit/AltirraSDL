@@ -3587,7 +3587,31 @@
     //   3. Marker present, firmware empty, no packs → silent.
     //   4. No marker, no firmware → fresh install — always show.
     //   5. Anything else with at least one un-installed pack → show.
+    //
+    // BUT: the wizard is suppressed entirely when the user arrived via
+    // a netplay deep-link — `?broker=1` (host-via-Play-Together or
+    // joiner-via-broker-Join) or `?s=<id>` (legacy join URL).  In both
+    // cases the user is mid-flow trying to play with someone, NOT
+    // bootstrapping their tab; the netplay deep-link path's own
+    // bootstrap (firstrunbootstrap) auto-fetches the firmware bundle
+    // (altirra-firmware.zip from the lobby), so the wizard is
+    // redundant and the curated game pack offered alongside it would
+    // delay the join with a several-MB download nobody asked for.
+    function netplayDeepLinkActive() {
+      try {
+        const p = new URLSearchParams(window.location.search || '');
+        if ((p.get('broker') || '') === '1') return 'broker';
+        if ((p.get('s')      || '').trim()) return 'join';
+      } catch (_) {}
+      return '';
+    }
     function decideFirstRunAction() {
+      const dl = netplayDeepLinkActive();
+      if (dl) {
+        jlog('first-run: suppressed (netplay ' + dl + ' deep-link active'
+          + ' — firmware auto-fetches via bootstrap, no wizard needed)');
+        return;
+      }
       const fw = hasFirmwareInstalled();
       const marker = hasFirstRunMarker();
       const packs = GAME_PACKS;

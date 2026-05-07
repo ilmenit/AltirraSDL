@@ -181,6 +181,11 @@
         var role   = (p.get('role')    || '').trim().toLowerCase();
         var hndl   = (p.get('handle')  || '')
           .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 32);
+        // ?join_handle is host-only: the broker-approved joiner's
+        // handle, used by the host's auto-accept gate to skip the
+        // prompt modal.  On the joiner side this param is ignored.
+        var jhndl  = (p.get('join_handle') || '')
+          .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 32);
         var code   = (p.get('code')    || '').trim();
 
         var idOk    = /^[0-9a-f-]{32,40}$/i.test(sid);
@@ -192,12 +197,13 @@
         if (idOk && roleOk && intOk && codeOk &&
             (role === 'joiner' || tokOk) /* host requires token */) {
           window.__altirraLib.brokerMode = {
-            sessionId: sid,
-            token:     token,
-            intentId:  intent,
-            handle:    hndl,
-            codeHash:  code,
-            role:      role,
+            sessionId:   sid,
+            token:       token,
+            intentId:    intent,
+            handle:      hndl,
+            joinHandle:  jhndl,
+            codeHash:    code,
+            role:        role,
           };
           // M3 first ship intentionally KEEPS the existing AutoHost
           // path active for role=host (publishes a fresh lobby
@@ -400,22 +406,38 @@
       var sidA = alloc(bm.sessionId);
       var tokA = alloc(bm.token);
       var iidA = alloc(bm.intentId);
-      var hndA = alloc(bm.handle);
-      var codA = alloc(bm.codeHash);
+      // joinerHandle slot semantics:
+      //   role=host   → bm.joinHandle (the broker-approved joiner's
+      //                 handle, for the host's auto-accept gate)
+      //   role=joiner → empty (joiner side doesn't read this)
+      // ownNickname slot:
+      //   both roles → bm.handle (the user's typed name, applied to
+      //                ResolvedNickname for NetHello / hostHandle).
+      // Without this asymmetry the host's auto-accept gate compared
+      // its own handle against the joiner's NetHello and never
+      // matched, leaving the prompt modal up until the 20-s
+      // auto-decline fired (joiner saw reason code 8).
+      var joinerHandleStr = (bm.role === 'host') ? bm.joinHandle : '';
+      var hndA  = alloc(joinerHandleStr);
+      var codA  = alloc(bm.codeHash);
+      var nickA = alloc(bm.handle);
       try {
         Module._ATWasmAdoptBrokerSession(
           sidA.ptr, tokA.ptr, iidA.ptr, hndA.ptr, codA.ptr,
+          nickA.ptr,
           roleNum, 1);
         brokerAdopted = true;
         log('broker-mode adopted (role=' + bm.role
-            + ' session=' + (bm.sessionId || '').slice(0, 8) + '…)');
+            + ' session=' + (bm.sessionId || '').slice(0, 8) + '…'
+            + ' nick=' + (bm.handle || '<none>')
+            + ' joinHandle=' + (joinerHandleStr || '<n/a>') + ')');
       } catch (e) {
         log('broker-mode adopt failed:',
             e && e.message ? e.message : e);
       } finally {
-        Module._free(sidA.ptr); Module._free(tokA.ptr);
-        Module._free(iidA.ptr); Module._free(hndA.ptr);
-        Module._free(codA.ptr);
+        Module._free(sidA.ptr);  Module._free(tokA.ptr);
+        Module._free(iidA.ptr);  Module._free(hndA.ptr);
+        Module._free(codA.ptr);  Module._free(nickA.ptr);
       }
     } else if (hasBroker && Module._ATWasmSetBrokerActive) {
       var bm = lib.brokerMode;
