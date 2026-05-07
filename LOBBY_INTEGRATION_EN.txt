@@ -268,9 +268,10 @@ The JOIN button opens but the game doesn't start
   • Some corporate networks block the WebSocket relay used for
     netplay.  This is a network problem on the visitor's side,
     not something your widget can fix.
-  • If the host hasn't clicked Allow within ~30 s, the lobby
-    auto-times-out the join request and the visitor lands back
-    on the lobby with "Online session ended unexpectedly".  Try
+  • If the host hasn't clicked Allow within ~60 s, the lobby
+    auto-times-out the join request (the intent's TTL) and the
+    visitor sees "Request timed out" or, if the emulator was
+    already spawning, "Online session ended unexpectedly".  Try
     again when the host is ready.
 
 The list is always empty even though I am hosting

@@ -278,10 +278,11 @@ Przycisk DOŁĄCZ otwiera się, ale gra nie startuje
   • Niektóre sieci firmowe blokują WebSocket Relay używany do
     netplay.  To problem po stronie sieci odwiedzającego,
     którego widżet nie naprawi.
-  • Jeśli host nie kliknie Allow w ciągu ~30 s, lobby
-    przekroczy limit czasu zatwierdzania i odwiedzający wraca
-    na lobby z komunikatem "Online session ended unexpectedly".
-    Spróbujcie ponownie, gdy host będzie gotowy.
+  • Jeśli host nie kliknie Allow w ciągu ~60 s, lobby
+    automatycznie wygasi prośbę o dołączenie (TTL intentu)
+    i odwiedzający zobaczy "Request timed out" albo — jeśli
+    emulator już zaczął się uruchamiać — "Online session ended
+    unexpectedly".  Spróbujcie ponownie, gdy host będzie gotowy.
 
 Lista jest zawsze pusta, mimo że hostuję
   • Sprawdź, czy host faktycznie się pojawia: odwiedź
