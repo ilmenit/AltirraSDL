@@ -356,4 +356,20 @@ inline constexpr int    kIntentCodeHashHexLen     = 32;            // 16-byte tr
 inline constexpr int    kSseHeartbeatIntervalMs   = 5 * 1000;      // SSE comment-line ping cadence (also bounds clean-shutdown latency)
 inline constexpr int    kJoinerHandleMax          = 32;            // matches kHostHandleMax
 
+// v6 — grace window for a wssRelayOnly session whose host WS has
+// gone silent.  After this many ms with no host WS registration,
+// the lobby drops the session record so a) the listing stops
+// advertising a ghost row, and b) joiners that follow a stale
+// link get a clean 404 from GetById instead of a 25-s WSS
+// handshake timeout against an empty host slot.
+//
+// Native (non-relay) sessions never set the WS-lost timer; their
+// liveness is heartbeat-driven and uses the standard waiting TTL.
+//
+// Tuned to survive a tab-background suspend + WS reconnect while
+// still feeling instant on graceful exit (Exit-to-Lobby, tab close).
+// Higher = more tolerant of network blips; lower = faster ghost
+// cleanup but riskier auto-eviction on a Wi-Fi handoff.
+inline constexpr int    kHostWsLostGraceMs        = 3 * 1000;
+
 } // namespace ATLobby

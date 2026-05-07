@@ -435,6 +435,77 @@ void TestExpireSweeps() {
 	T_EXPECT(!f.store.Get(out.id, probe), "session removed");
 }
 
+// v6 — host-WS-presence-driven cleanup for wssRelayOnly sessions.
+// Models the WASM-host lifecycle:
+//   1. Create session (wssRelayOnly=true)
+//   2. WS bridge fires OnHostWsPresence(true)  — host upgrade succeeded
+//   3. WS bridge fires OnHostWsPresence(false) — host disconnected
+//   4. After kHostWsLostGraceMs, ExpireOnce drops the session
+//   5. Reconnect within grace window survives
+// Native (non-relay) sessions never set the WS-lost timer; they keep
+// the standard 15-s heartbeat-driven TTL even if the new path runs.
+void TestWsPresenceDrivesCleanup() {
+	++g_testsRun;
+	Fixture f;
+	Session seed;
+	seed.cartName     = "x"; seed.hostHandle = "h";
+	seed.hostEndpoint = "";          // wssRelayOnly host has no UDP
+	seed.candidates   = "";
+	seed.playerCount  = 1; seed.maxPlayers = 2; seed.protocolVer = 6;
+	seed.visibility   = kVisibilityPublic;
+	seed.wssRelayOnly = true;
+	seed.createdAt    = IsoNow();
+	Store::CreateError createErr = Store::CreateError::None;
+	Session out = f.store.Create(seed, createErr);
+	T_EXPECT(!out.id.empty(), "seeded wssRelayOnly session");
+
+	const int64_t now = NowMs();
+
+	// Host WS opens.
+	f.store.OnHostWsPresence(out.id, /*present=*/true);
+
+	// Brief check before close: session must still exist.
+	T_EXPECT_EQ_INT(f.store.ExpireOnce(now + 1), 0,
+		"connected host: no expire");
+
+	// Host WS closes.  Until grace elapses, session stays.
+	f.store.OnHostWsPresence(out.id, /*present=*/false);
+	T_EXPECT_EQ_INT(
+		f.store.ExpireOnce(now + kHostWsLostGraceMs - 100), 0,
+		"within grace: no expire");
+
+	// Past grace: session is dropped.
+	int n = f.store.ExpireOnce(now + kHostWsLostGraceMs + 100);
+	T_EXPECT_EQ_INT(n, 1, "past grace: expired");
+	Session probe;
+	T_EXPECT(!f.store.Get(out.id, probe),
+		"wssRelayOnly session removed after WS loss");
+
+	// Reconnect-within-grace path on a fresh session: clear timer.
+	Session out2 = f.store.Create(seed, createErr);
+	T_EXPECT(!out2.id.empty(), "second seeded session");
+	f.store.OnHostWsPresence(out2.id, true);
+	f.store.OnHostWsPresence(out2.id, false);
+	f.store.OnHostWsPresence(out2.id, true);   // reconnect in time
+	T_EXPECT_EQ_INT(
+		f.store.ExpireOnce(now + kHostWsLostGraceMs + 100), 0,
+		"reconnect cleared timer");
+
+	// Native (UDP) session — wssRelayOnly=false.  Even if a stray
+	// OnHostWsPresence(false) is delivered (defensive), no expiry
+	// fires under the WS-lost code path; the standard heartbeat TTL
+	// is the only liveness check.
+	Session udpSeed = seed;
+	udpSeed.wssRelayOnly = false;
+	udpSeed.hostEndpoint = "1.2.3.4:5";
+	Session udpOut = f.store.Create(udpSeed, createErr);
+	T_EXPECT(!udpOut.id.empty(), "udp seeded");
+	f.store.OnHostWsPresence(udpOut.id, false);
+	T_EXPECT_EQ_INT(
+		f.store.ExpireOnce(now + kHostWsLostGraceMs + 100), 0,
+		"native session: WS-lost grace does not apply");
+}
+
 void TestRateLimit() {
 	++g_testsRun;
 	// Independent config with a tiny burst so we can hit the limiter.
@@ -1803,6 +1874,7 @@ int RunAll() {
 	TestDeleteBadToken();
 	TestDeleteOk();
 	TestExpireSweeps();
+	TestWsPresenceDrivesCleanup();
 	TestRateLimit();
 	TestClientIpXffSpoof();
 	TestOriginBlockedOnPost();

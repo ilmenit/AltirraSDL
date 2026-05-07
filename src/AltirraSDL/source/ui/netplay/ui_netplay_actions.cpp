@@ -75,6 +75,7 @@ extern "C" const char* ATWasmBrokerToken();
 extern "C" const char* ATWasmBrokerIntentId();
 extern "C" const char* ATWasmBrokerJoinerHandle();
 extern "C" int         ATWasmBrokerRole();
+extern "C" void        ATWasmBrokerClearAdoption();
 #endif
 
 #include <algorithm>
@@ -655,6 +656,18 @@ void StartCoordForHostedGame(HostedGame& o) {
 				g_ATLCNetplay("WASM host (%s): adopted broker "
 					"session %s (no Create posted)",
 					o.gameName.c_str(), reg.sessionId.c_str());
+				// Adoption is one-shot.  Clear (sessionId, token)
+				// from the broker context so a Disable→Enable cycle
+				// of this HostedGame falls through to PostLobbyCreate
+				// and publishes a fresh session — the broker record
+				// will already be gone from the lobby (the host's WS
+				// closed when the Disable ran StopCoord, and 3 s
+				// later the lobby's WS-presence sweep deleted it).
+				// The joiner-handle / intent stay set so the
+				// auto-accept gate keeps working on the in-flight
+				// session (and on any future broker-spawned joiner
+				// during this WASM tab's lifetime).
+				ATWasmBrokerClearAdoption();
 				return;
 			}
 		}

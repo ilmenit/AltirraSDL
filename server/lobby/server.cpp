@@ -288,6 +288,24 @@ struct Session {
 	// to connect with a Hello timeout, which is the intended graceful
 	// degradation.
 	bool        wssRelayOnly  = false;
+
+	// v6 WS-presence-driven cleanup (only meaningful when
+	// wssRelayOnly).  The session is joinable iff the host's WS slot
+	// is alive: WASM hosts have no other transport, and a closed WS
+	// means they cannot relay any traffic to a joiner.
+	//
+	//   mHostWsLostMs == 0    → host WS currently registered (or no
+	//                           host WS has ever connected)
+	//   mHostWsLostMs != 0    → host WS was registered and is now
+	//                           gone since this monotonic ms.  After
+	//                           kHostWsLostGraceMs of being gone the
+	//                           Expire sweep deletes the session so
+	//                           joiners stop seeing a ghost row.
+	//
+	// Native (UDP/non-relay) sessions never set this field; their
+	// liveness is purely heartbeat-driven (15s waiting TTL).
+	bool        mHostWsEverConnected = false;
+	int64_t     mHostWsLostMs        = 0;  // monotonic ms; 0 = present
 };
 
 // v4 broker handshake — joiner-side intent record.  Created when a
@@ -705,12 +723,26 @@ public:
 		// broker keeps the record alive via Heartbeat to sustain it,
 		// but if heartbeats stop entirely we still expire eventually.
 		int64_t awaitCutoff = nowMs - (int64_t)kAwaitingApprovalTtlMs;
+		// v6 WS-presence cutoff (only meaningful when wssRelayOnly).
+		// A WASM host whose WS has been gone for longer than this is
+		// a ghost — listed but unjoinable — so we drop the session
+		// to keep the listing honest and joiners from connecting to
+		// nothing.  Short enough to clear within the human "did the
+		// page just refresh?" perception window; long enough to
+		// survive a tab-background pause + WS reconnect.
+		int64_t wsLostCutoff = nowMs - (int64_t)kHostWsLostGraceMs;
 		std::vector<std::string> removedSessions;
 		for (auto it = mItems.begin(); it != mItems.end();) {
-			const bool awaiting =
-				(it->second.state == kStateAwaitingApproval);
+			const auto& s = it->second;
+			const bool awaiting = (s.state == kStateAwaitingApproval);
 			const int64_t cu = awaiting ? awaitCutoff : cutoff;
-			if (it->second.lastSeenMs < cu) {
+			const bool heartbeatExpired = (s.lastSeenMs < cu);
+			const bool wsExpired =
+				s.wssRelayOnly &&
+				s.mHostWsEverConnected &&
+				s.mHostWsLostMs != 0 &&
+				s.mHostWsLostMs < wsLostCutoff;
+			if (heartbeatExpired || wsExpired) {
 				removedSessions.push_back(it->first);
 				it = mItems.erase(it);
 				++n;
@@ -727,6 +759,35 @@ public:
 		BrokerExpireIntentsLocked(nowMs);
 		BrokerExpireDecisionsLocked(nowMs);
 		return n;
+	}
+
+	// v6 — called by the WS bridge when the host-role WS for a
+	// session opens or closes.  `present=true` clears any pending
+	// "WS lost" timer and notes that a host has been seen on this
+	// session at least once.  `present=false` arms the timer; if no
+	// reconnect within kHostWsLostGraceMs, ExpireOnce drops the
+	// session.
+	//
+	// Lookups are cheap (O(log N) on mItems) and the WS bridge
+	// already holds a sessionId in raw bytes, so this is fast even
+	// at full session concurrency.
+	void OnHostWsPresence(const std::string& sessionId, bool present) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mItems.find(sessionId);
+		if (it == mItems.end()) return;
+		if (present) {
+			it->second.mHostWsEverConnected = true;
+			it->second.mHostWsLostMs        = 0;
+		} else {
+			// Only arm the timer if the host actually was connected
+			// at some point — otherwise a UDP-only session with no WS
+			// at all would never set this and we'd skip the cutoff
+			// above.  Belt + suspenders since wsExpired also checks
+			// mHostWsEverConnected.
+			if (it->second.mHostWsEverConnected) {
+				it->second.mHostWsLostMs = NowMs();
+			}
+		}
 	}
 
 	// -------------------------------------------------------------
@@ -3384,6 +3445,19 @@ void WsObserveEvents(const uint8_t sidRaw[16], uint8_t senderRole,
 	store->DeliverEventsJson(SidRawToUuid(sidRaw), std::move(b.s));
 }
 
+// Host-WS-presence callback for the WS bridge.  Fires only on
+// host-role transitions (joiner connect/close events do not call
+// us).  Hands the raw 16-byte sid → uuid string and forwards to
+// the Store's grace-timer machinery.  Cheap: one mutex acquisition
+// + one map lookup.
+void WsOnHostPresence(const uint8_t sidRaw[16], bool present,
+                      void* ctx)
+{
+	Store* store = static_cast<Store*>(ctx);
+	if (!store) return;
+	store->OnHostWsPresence(SidRawToUuid(sidRaw), present);
+}
+
 // UDP forwarder callback for the WS bridge.  Builds an ASDF frame
 // addressed to the OTHER UDP peer (looked up in RelayTable) and sends
 // it via the reflector socket FD shared by the reflector thread.  The
@@ -3774,6 +3848,7 @@ int main(int argc, char **argv) {
 				WsValidateSession,  &wsCb,
 				WsForwardToUdp,     nullptr,
 				WsObserveEvents,    &store,
+				WsOnHostPresence,   &store,
 				gWsBridgeCtx,
 				wsBridgeStop);
 		});

@@ -223,6 +223,8 @@ struct BridgeState {
 	void*                     udpForwardCtx = nullptr;
 	WsEventsObserverFn        eventsObserveFn  = nullptr;
 	void*                     eventsObserveCtx = nullptr;
+	WsHostPresenceFn          hostPresenceFn   = nullptr;
+	void*                     hostPresenceCtx  = nullptr;
 	WsRegistryHandle*         reg           = nullptr;
 
 	std::unordered_map<unsigned long, PerConn> conns;
@@ -717,6 +719,15 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 	pc.lastRecvMs = NowMs();
 	pc.lastPingMs = pc.lastRecvMs;
 
+	// v6 — fire host-presence "connected" so the Store clears any
+	// pending WS-lost grace timer on this session.  Joiner-role
+	// upgrades do NOT signal presence; only the host's WS keeps the
+	// session joinable for a wssRelayOnly listing.
+	if (auth.role == kRelayRoleHost && st.hostPresenceFn) {
+		st.hostPresenceFn(pc.sid, /*present=*/true,
+			st.hostPresenceCtx);
+	}
+
 	// Respond with the version marker (NOT the token — never reflect
 	// secrets in response headers).  Browsers verify the echoed
 	// subprotocol and reject if they don't see their requested one.
@@ -822,6 +833,17 @@ static void HandleClose(BridgeState& st, struct mg_connection* c) {
 		// transitions to ended state immediately.
 		SendSyntheticBye(st, pc);
 		st.reg->Unregister(pc.sid, c->id);
+		// v6 — host-WS gone; arm the Store's grace timer.  After
+		// kHostWsLostGraceMs the session is dropped from the listing
+		// even if HTTP heartbeats are still arriving (a wssRelayOnly
+		// host with no WS is a ghost — listed but unjoinable).
+		// Joiner-role disconnects skip this because their absence
+		// doesn't affect joinability (a fresh joiner could replace
+		// them via a new upgrade).
+		if (pc.role == kRelayRoleHost && st.hostPresenceFn) {
+			st.hostPresenceFn(pc.sid, /*present=*/false,
+				st.hostPresenceCtx);
+		}
 	}
 	DropPerConn(st, c);
 }
@@ -960,6 +982,7 @@ void RunWsBridge(const WsBridgeConfig& cfg,
                  WsSessionValidatorFn validateFn, void* validateCtx,
                  WsUdpForwarderFn udpForwardFn, void* udpForwardCtx,
                  WsEventsObserverFn eventsObserveFn, void* eventsObserveCtx,
+                 WsHostPresenceFn hostPresenceFn, void* hostPresenceCtx,
                  WsBridgeContext& outCtx,
                  std::atomic<bool>& stop) {
 	struct mg_mgr mgr;
@@ -983,6 +1006,8 @@ void RunWsBridge(const WsBridgeConfig& cfg,
 	st.udpForwardCtx    = udpForwardCtx;
 	st.eventsObserveFn  = eventsObserveFn;
 	st.eventsObserveCtx = eventsObserveCtx;
+	st.hostPresenceFn   = hostPresenceFn;
+	st.hostPresenceCtx  = hostPresenceCtx;
 	st.reg              = &reg;
 
 	// Publish the registry pointer so the reflector thread (in

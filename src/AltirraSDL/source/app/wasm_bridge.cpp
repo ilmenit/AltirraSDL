@@ -1708,6 +1708,29 @@ extern "C" int ATWasmBrokerRole() {
 	return g_brokerCtx.role;
 }
 
+// Called by StartCoordForHostedGame after the adoption short-circuit
+// has successfully called OnLobbyCreateSucceeded.  Clears the one-shot
+// adoption fields (sessionId, token) so a subsequent Disable+Enable
+// of the same HostedGame does NOT try to re-adopt the now-stale
+// broker session record (a re-adopt would fail StartHostWss with
+// kGone (4010) and the user would see the row stuck in Failed
+// state).  Subsequent enables fall through to PostLobbyCreate, which
+// publishes a fresh /v1/session.
+//
+// joinerHandle and intentId are deliberately KEPT — the auto-accept
+// gate in ReconcileHostedGames may fire on the next reconcile tick
+// (peer Hello arrives slightly after host WSS opens), and that match
+// is independent of the underlying lobby session id.  joinerHandle
+// also lets us tell broker-spawned sessions apart from native joiner
+// arrivals throughout the WASM tab's lifetime.
+extern "C" void ATWasmBrokerClearAdoption() {
+	g_brokerCtx.sessionId.clear();
+	g_brokerCtx.token.clear();
+	fprintf(stderr,
+		"[wasm] ATWasmBrokerClearAdoption: adoption fields cleared "
+		"(intent/handle preserved for auto-accept)\n");
+}
+
 // Called from the JS deep-link onRuntimeReady() when ?broker=1 is
 // recognised.  Read every frame by the overlay renderer
 // (ui_main.cpp).  The overlay clears automatically when the netplay

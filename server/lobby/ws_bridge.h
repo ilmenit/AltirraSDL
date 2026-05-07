@@ -166,6 +166,25 @@ using WsEventsObserverFn = void(*)(
 	const uint8_t* inner, size_t innerLen,
 	void* ctx);
 
+// Callback: v6 host-WS-presence signal.  Fires on every transition
+// of the host-role WS slot (role==kRelayRoleHost) for a session:
+//   present=true  on a successful WS upgrade for role=host
+//   present=false on MG_EV_CLOSE for that same registration
+//
+// Joiner-role WS connect/close events do NOT fire this callback;
+// only the host's presence drives the session's joinability.  The
+// implementation in server.cpp wires it to Store::OnHostWsPresence
+// which arms / clears a 3-second grace timer used by ExpireOnce.
+//
+// Native (UDP-only) hosts never reach this path because they don't
+// open a WS in the first place.  The callback is a no-op for them.
+//
+//   sidRaw   — 16-byte session id (raw, not hex)
+//   present  — true on upgrade success, false on close
+//   ctx      — opaque (server.cpp's Store*)
+using WsHostPresenceFn = void(*)(
+	const uint8_t sidRaw[16], bool present, void* ctx);
+
 // Callback: when the bridge accepts a WS upgrade, registers the
 // (sid, role, conn) in the WsRegistry so the reflector thread can find
 // it during ASDF dispatch.  Likewise on close, unregister.  These run
@@ -218,6 +237,7 @@ void RunWsBridge(const WsBridgeConfig& cfg,
                  WsSessionValidatorFn validateFn, void* validateCtx,
                  WsUdpForwarderFn udpForwardFn, void* udpForwardCtx,
                  WsEventsObserverFn eventsObserveFn, void* eventsObserveCtx,
+                 WsHostPresenceFn hostPresenceFn, void* hostPresenceCtx,
                  WsBridgeContext& outCtx,
                  std::atomic<bool>& stop);
 
