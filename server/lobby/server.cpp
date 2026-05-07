@@ -171,6 +171,15 @@ struct LobbyCounters {
 	std::atomic<uint64_t> relayDroppedAuth{0};
 	std::atomic<uint64_t> relayRegistersTotal{0};
 	std::atomic<uint64_t> reflectorRequestsTotal{0};
+	// v4 broker handshake counters.  posted/decided are cumulative
+	// since process start; rejected counts validation failures
+	// (handle empty, code wrong, queue full, …).  Active set sizes
+	// are sampled from the Store at /v1/metrics serve time.
+	std::atomic<uint64_t> brokerIntentsPosted{0};
+	std::atomic<uint64_t> brokerIntentsRejected{0};
+	std::atomic<uint64_t> brokerDecisionsPosted{0};
+	std::atomic<uint64_t> brokerIntentStreams{0};
+	std::atomic<uint64_t> brokerDecisionStreams{0};
 	int64_t  startedAtMs    = 0;       // set once at startup
 	std::atomic<int64_t> lastEgressWarnMs{0};
 };
@@ -272,6 +281,60 @@ struct Session {
 	// to connect with a Hello timeout, which is the intended graceful
 	// degradation.
 	bool        wssRelayOnly  = false;
+};
+
+// v4 broker handshake — joiner-side intent record.  Created when a
+// joiner POSTs /v1/session/{id}/intents.  Persists in the Store
+// until the host decides (accept/reject) or the TTL fires.  Once a
+// decision is recorded the intent itself is preserved (for SSE
+// replay on a late-connecting joiner) but `decided=true` blocks
+// further decisions on the same id.
+struct Intent {
+	std::string id;            // intentId — uuid v4
+	std::string sessionId;     // owning session
+	std::string joinerHandle;  // ≤kJoinerHandleMax, NormalizeHandle untouched
+	std::string codeHash;      // hex string, 32 chars, or "" if session has no code
+	std::string sourceIp;      // observed by the lobby (informational; never sent to host)
+	int64_t     createdAtMs = 0;
+	bool        decided     = false;
+};
+
+// v4 broker handshake — host-side decision record.  Created when
+// the host POSTs /v1/session/{id}/intents/{iid}/decision.  Pushed
+// to the joiner's SSE stream and retained for kDecisionTtlMs after
+// the decision so a late joiner reconnect can still pick it up.
+struct Decision {
+	std::string intentId;
+	std::string sessionId;
+	bool        accepted    = false;
+	int         reason      = 0;       // SessionTermination code; 0 if accepted
+	int64_t     decidedAtMs = 0;
+};
+
+// Per-session SSE listener.  One instance per live
+// GET /v1/session/{id}/intents/stream connection.  Stack-allocated
+// inside the request handler; registered with the Store on connect
+// and unregistered on disconnect.  The Store pushes intentIds onto
+// `pendingIntentIds` under its own mutex, then notifies `cv`.
+struct IntentListener {
+	std::mutex                mu;
+	std::condition_variable   cv;
+	std::vector<std::string>  pendingIntentIds;
+	std::vector<std::string>  cancelledIntentIds;  // intent expired or session ended
+	bool                      sessionEnded = false;
+};
+
+// Per-intent SSE listener.  One instance per live
+// GET /v1/intent/{iid}/stream connection.  Same lifetime model as
+// IntentListener.  When the host posts a decision the Store sets
+// `decided = true` + `decision = …` and notifies; the SSE handler
+// emits the decision and terminates the stream.
+struct DecisionListener {
+	std::mutex                mu;
+	std::condition_variable   cv;
+	bool                      decided = false;
+	bool                      expired = false;
+	Decision                  decision{};
 };
 
 struct Config {
@@ -446,7 +509,16 @@ public:
 		    newPlayerCount <= it->second.maxPlayers) {
 			it->second.playerCount = newPlayerCount;
 		}
-		if (newState == kStateWaiting || newState == kStatePlaying) {
+		// v4: kStateAwaitingApproval accepted alongside the original
+		// pair so a broker that publishes its session in awaiting state
+		// can keep refreshing the lifetime via Heartbeat without
+		// flipping back to "waiting" before approval lands.  Once the
+		// broker spawns the WASM emulator the very first emulator
+		// heartbeat carries kStateWaiting and the listing becomes
+		// joinable through the legacy flow.
+		if (newState == kStateWaiting ||
+		    newState == kStatePlaying ||
+		    newState == kStateAwaitingApproval) {
 			it->second.state = newState;
 		}
 		return 200;
@@ -481,6 +553,11 @@ public:
 		if (it == mItems.end()) return 404;
 		if (it->second.token != token) return 401;
 		mItems.erase(it);
+		// v4: cascade-cancel any pending intents on this session and
+		// notify the host's intent stream listeners that the session
+		// has gone away (the broker is closing its tab — the joiner
+		// modal needs to flip to "host abandoned").
+		BrokerOnSessionRemovedLocked(id);
 		return 204;
 	}
 
@@ -568,25 +645,409 @@ public:
 		std::lock_guard<std::mutex> lk(mMu);
 		int n = 0;
 		int64_t cutoff = nowMs - (int64_t)mCfg.ttlSeconds * 1000;
+		// v4: AwaitingApproval sessions get a much longer TTL because
+		// the broker tab can be backgrounded for many minutes; the
+		// broker keeps the record alive via Heartbeat to sustain it,
+		// but if heartbeats stop entirely we still expire eventually.
+		int64_t awaitCutoff = nowMs - (int64_t)kAwaitingApprovalTtlMs;
+		std::vector<std::string> removedSessions;
 		for (auto it = mItems.begin(); it != mItems.end();) {
-			if (it->second.lastSeenMs < cutoff) {
+			const bool awaiting =
+				(it->second.state == kStateAwaitingApproval);
+			const int64_t cu = awaiting ? awaitCutoff : cutoff;
+			if (it->second.lastSeenMs < cu) {
+				removedSessions.push_back(it->first);
 				it = mItems.erase(it);
 				++n;
 			} else {
 				++it;
 			}
 		}
+		for (const auto& sid : removedSessions) {
+			BrokerOnSessionRemovedLocked(sid);
+		}
+		// v4: expire intents (60 s default) and decisions (10 s after
+		// the host posts).  Notify any listeners so SSE handlers can
+		// emit a final cancellation event and close cleanly.
+		BrokerExpireIntentsLocked(nowMs);
+		BrokerExpireDecisionsLocked(nowMs);
 		return n;
+	}
+
+	// -------------------------------------------------------------
+	// v4 broker handshake
+	// -------------------------------------------------------------
+
+	// Outcome of CreateIntent.  Distinct enum values so callers can
+	// `switch` cleanly; the HTTP status mapping lives in
+	// IntentErrorHttp() (free function in the anon namespace).
+	enum class IntentError {
+		None              = 0,    // ok — out fields populated
+		SessionNotFound,
+		SessionWrongState,        // session not in waiting/awaiting_approval
+		HandleEmpty,
+		HandleTooLong,
+		CodeRequired,
+		CodeMismatch,
+		QueueFull,                // session has too many pending intents
+	};
+
+	IntentError CreateIntent(const std::string& sessionId,
+	                         const std::string& joinerHandle,
+	                         const std::string& codeHash,
+	                         const std::string& sourceIp,
+	                         std::string& intentIdOut,
+	                         int64_t& createdAtMsOut) {
+		std::vector<std::shared_ptr<IntentListener>> toNotify;
+		std::string newId;
+		int64_t now = NowMs();
+		{
+			std::lock_guard<std::mutex> lk(mMu);
+			auto sit = mItems.find(sessionId);
+			if (sit == mItems.end()) return IntentError::SessionNotFound;
+			const Session& s = sit->second;
+			// "playing" sessions are full and don't accept new joiners.
+			// Legacy "waiting" sessions accept intents (which the WS
+			// bridge will translate to NetHello for native hosts).
+			// "awaiting_approval" is the broker-host case where the
+			// whole flow is intent-driven.
+			if (s.state != kStateWaiting &&
+			    s.state != kStateAwaitingApproval) {
+				return IntentError::SessionWrongState;
+			}
+			if (joinerHandle.empty()) return IntentError::HandleEmpty;
+			if ((int)joinerHandle.size() > kJoinerHandleMax) {
+				return IntentError::HandleTooLong;
+			}
+			if (s.requiresCode) {
+				if (codeHash.empty()) return IntentError::CodeRequired;
+				if ((int)codeHash.size() != kIntentCodeHashHexLen) {
+					return IntentError::CodeMismatch;
+				}
+				// The session itself doesn't carry the code-hash
+				// today; for native-emulator hosts the code check
+				// happens inside the emulator on NetHello.  For
+				// broker-hosts we'll add a session-level code-hash
+				// field once M2 lands; today we just sanity-check
+				// the field's presence + length and let the client
+				// (or emulator) reject on mismatch.
+			}
+			// Cap pending intents per session.  A flood of joiners
+			// on one session would otherwise allow a single session
+			// to consume the per-session listener notification queue.
+			size_t pendingForSession = 0;
+			for (const auto& kv : mIntents) {
+				if (kv.second.sessionId == sessionId &&
+				    !kv.second.decided) ++pendingForSession;
+			}
+			if (pendingForSession >= kIntentsPerSessionCap) {
+				return IntentError::QueueFull;
+			}
+			Intent it{};
+			it.id            = NewUUIDv4();
+			it.sessionId     = sessionId;
+			it.joinerHandle  = joinerHandle;
+			it.codeHash      = codeHash;
+			it.sourceIp      = sourceIp;
+			it.createdAtMs   = now;
+			it.decided       = false;
+			newId            = it.id;
+			mIntents[newId]  = std::move(it);
+
+			// Snapshot listener pointers under the same lock so the
+			// notify loop below sees a consistent view even if a
+			// listener detaches concurrently.
+			auto lit = mIntentListeners.find(sessionId);
+			if (lit != mIntentListeners.end()) {
+				toNotify = lit->second;
+			}
+		}
+		// Notify listeners outside our own mutex to avoid lock-order
+		// inversion with each listener's per-handler mutex.
+		for (auto& L : toNotify) {
+			if (!L) continue;
+			std::lock_guard<std::mutex> ll(L->mu);
+			L->pendingIntentIds.push_back(newId);
+			L->cv.notify_one();
+		}
+		intentIdOut    = std::move(newId);
+		createdAtMsOut = now;
+		return IntentError::None;
+	}
+
+	// MakeDecision returns 200 (ok), 401 (bad token), 404 (no such
+	// intent / session vanished), or 410 (already decided).  The host
+	// side only calls this after the broker UI receives a fresh
+	// intent — the (token, intentId) tuple is the entire authority.
+	int MakeDecision(const std::string& intentId,
+	                 const std::string& sessionToken,
+	                 bool accepted, int reason) {
+		std::shared_ptr<DecisionListener> singleListener;
+		std::vector<std::shared_ptr<DecisionListener>> toNotify;
+		Decision d{};
+		{
+			std::lock_guard<std::mutex> lk(mMu);
+			auto iit = mIntents.find(intentId);
+			if (iit == mIntents.end()) return 404;
+			if (iit->second.decided)   return 410;
+			auto sit = mItems.find(iit->second.sessionId);
+			if (sit == mItems.end())   return 404;
+			if (sit->second.token != sessionToken) return 401;
+
+			d.intentId    = intentId;
+			d.sessionId   = iit->second.sessionId;
+			d.accepted    = accepted;
+			d.reason      = reason;
+			d.decidedAtMs = NowMs();
+			mDecisions[intentId] = d;
+			iit->second.decided  = true;
+
+			auto lit = mDecisionListeners.find(intentId);
+			if (lit != mDecisionListeners.end()) {
+				toNotify = lit->second;
+			}
+		}
+		for (auto& L : toNotify) {
+			if (!L) continue;
+			std::lock_guard<std::mutex> ll(L->mu);
+			L->decided  = true;
+			L->decision = d;
+			L->cv.notify_one();
+		}
+		return 200;
+	}
+
+	bool GetIntent(const std::string& intentId, Intent& out) const {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mIntents.find(intentId);
+		if (it == mIntents.end()) return false;
+		out = it->second;
+		return true;
+	}
+
+	bool GetDecision(const std::string& intentId, Decision& out) const {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mDecisions.find(intentId);
+		if (it == mDecisions.end()) return false;
+		out = it->second;
+		return true;
+	}
+
+	std::vector<Intent> ListSessionIntents(const std::string& sessionId) const {
+		std::vector<Intent> out;
+		std::lock_guard<std::mutex> lk(mMu);
+		for (const auto& kv : mIntents) {
+			if (kv.second.sessionId == sessionId) {
+				out.push_back(kv.second);
+			}
+		}
+		std::sort(out.begin(), out.end(),
+			[](const Intent& a, const Intent& b) {
+				return a.createdAtMs < b.createdAtMs;
+			});
+		return out;
+	}
+
+	// Verify the session's host token against the supplied bearer
+	// before opening an SSE stream.  Returns true iff the token
+	// matches an existing session.  Any 4xx response goes back to
+	// the SSE caller before set_chunked_content_provider runs.
+	bool ValidateSessionToken(const std::string& sessionId,
+	                          const std::string& token) const {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mItems.find(sessionId);
+		if (it == mItems.end())              return false;
+		if (it->second.token != token)       return false;
+		return true;
+	}
+
+	bool SessionExists(const std::string& sessionId) const {
+		std::lock_guard<std::mutex> lk(mMu);
+		return mItems.find(sessionId) != mItems.end();
+	}
+
+	// Per-session intent stream listener registration.  The handler
+	// owns the IntentListener (stack-allocated, RAII via a guard);
+	// the Store keeps a shared_ptr so notification loops see the
+	// listener even if the handler thread is preempted.
+	void RegisterIntentListener(const std::string& sessionId,
+	                            std::shared_ptr<IntentListener> L) {
+		std::lock_guard<std::mutex> lk(mMu);
+		mIntentListeners[sessionId].push_back(std::move(L));
+	}
+	void UnregisterIntentListener(const std::string& sessionId,
+	                              const std::shared_ptr<IntentListener>& L) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mIntentListeners.find(sessionId);
+		if (it == mIntentListeners.end()) return;
+		auto& v = it->second;
+		v.erase(std::remove(v.begin(), v.end(), L), v.end());
+		if (v.empty()) mIntentListeners.erase(it);
+	}
+
+	void RegisterDecisionListener(const std::string& intentId,
+	                              std::shared_ptr<DecisionListener> L) {
+		std::lock_guard<std::mutex> lk(mMu);
+		mDecisionListeners[intentId].push_back(std::move(L));
+	}
+	void UnregisterDecisionListener(const std::string& intentId,
+	                                const std::shared_ptr<DecisionListener>& L) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mDecisionListeners.find(intentId);
+		if (it == mDecisionListeners.end()) return;
+		auto& v = it->second;
+		v.erase(std::remove(v.begin(), v.end(), L), v.end());
+		if (v.empty()) mDecisionListeners.erase(it);
+	}
+
+	// /v1/metrics: snapshot the broker counters + active sets.
+	struct BrokerStats {
+		int activeIntents     = 0;
+		int activeDecisions   = 0;
+		int activeIntentsListeners   = 0;
+		int activeDecisionsListeners = 0;
+		int awaitingApprovalSessions = 0;
+	};
+	BrokerStats ComputeBrokerStats() const {
+		std::lock_guard<std::mutex> lk(mMu);
+		BrokerStats s;
+		s.activeIntents             = (int)mIntents.size();
+		s.activeDecisions           = (int)mDecisions.size();
+		for (const auto& kv : mIntentListeners)   s.activeIntentsListeners   += (int)kv.second.size();
+		for (const auto& kv : mDecisionListeners) s.activeDecisionsListeners += (int)kv.second.size();
+		for (const auto& kv : mItems) {
+			if (kv.second.state == kStateAwaitingApproval) ++s.awaitingApprovalSessions;
+		}
+		return s;
 	}
 
 	RateLimiter& Rate()          { return mRate; }
 	const Config& Cfg() const    { return mCfg; }
 
 private:
+	// Cascade an intent removal: if there's a DecisionListener still
+	// blocked on it (joiner modal hasn't picked up the result yet),
+	// flag it as expired so the SSE handler can emit a final event.
+	// MUST be called with mMu held.
+	void BrokerCancelIntentLocked(const std::string& intentId,
+	                              const std::string& sessionId) {
+		// Notify the per-intent decision listeners (joiner side).
+		auto lit = mDecisionListeners.find(intentId);
+		if (lit != mDecisionListeners.end()) {
+			for (auto& L : lit->second) {
+				if (!L) continue;
+				std::lock_guard<std::mutex> ll(L->mu);
+				L->expired = true;
+				L->cv.notify_one();
+			}
+		}
+		// Notify the per-session intent listeners (host side) so the
+		// host UI can drop the entry from its pending list.
+		auto sit = mIntentListeners.find(sessionId);
+		if (sit != mIntentListeners.end()) {
+			for (auto& L : sit->second) {
+				if (!L) continue;
+				std::lock_guard<std::mutex> ll(L->mu);
+				L->cancelledIntentIds.push_back(intentId);
+				L->cv.notify_one();
+			}
+		}
+	}
+
+	// Expire intents older than kIntentTtlMs (unless decided — those
+	// are aged out by BrokerExpireDecisionsLocked).  MUST be called
+	// with mMu held.
+	void BrokerExpireIntentsLocked(int64_t nowMs) {
+		const int64_t cutoff = nowMs - (int64_t)kIntentTtlMs;
+		std::vector<std::pair<std::string, std::string>> toCancel; // (intentId, sessionId)
+		for (auto it = mIntents.begin(); it != mIntents.end();) {
+			// Decided intents are kept for kDecisionTtlMs after the
+			// decision was posted (handled in
+			// BrokerExpireDecisionsLocked); they expire in the
+			// decision pass, not here.
+			if (it->second.decided) { ++it; continue; }
+			if (it->second.createdAtMs < cutoff) {
+				toCancel.push_back({it->first, it->second.sessionId});
+				it = mIntents.erase(it);
+			} else {
+				++it;
+			}
+		}
+		for (const auto& p : toCancel) {
+			BrokerCancelIntentLocked(p.first, p.second);
+		}
+	}
+
+	// Expire decisions older than kDecisionTtlMs and the matching
+	// intent (it stays alive only as long as the decision lasts).
+	// MUST be called with mMu held.
+	void BrokerExpireDecisionsLocked(int64_t nowMs) {
+		const int64_t cutoff = nowMs - (int64_t)kDecisionTtlMs;
+		for (auto it = mDecisions.begin(); it != mDecisions.end();) {
+			if (it->second.decidedAtMs < cutoff) {
+				const std::string iid = it->first;
+				it = mDecisions.erase(it);
+				mIntents.erase(iid);
+			} else {
+				++it;
+			}
+		}
+	}
+
+	// Session was deleted (Delete(), Heartbeat 401 cleanup, or expiry).
+	// Cancel every pending intent + tell the SSE listeners that the
+	// session is gone so their connections close.  MUST be called with
+	// mMu held.
+	void BrokerOnSessionRemovedLocked(const std::string& sessionId) {
+		// Pending intents on this session → cancel.
+		std::vector<std::string> pendingIds;
+		for (auto& kv : mIntents) {
+			if (kv.second.sessionId == sessionId && !kv.second.decided) {
+				pendingIds.push_back(kv.first);
+			}
+		}
+		for (const auto& iid : pendingIds) {
+			BrokerCancelIntentLocked(iid, sessionId);
+			mIntents.erase(iid);
+		}
+		// Drop any decisions belonging to this session — their
+		// sub-resources are gone.
+		for (auto it = mDecisions.begin(); it != mDecisions.end();) {
+			if (it->second.sessionId == sessionId) {
+				it = mDecisions.erase(it);
+			} else {
+				++it;
+			}
+		}
+		// Tell the host's intents-stream listeners that the session
+		// has gone (the broker-host's tab closed mid-wait, or the
+		// session expired — either way we close the SSE).
+		auto lit = mIntentListeners.find(sessionId);
+		if (lit != mIntentListeners.end()) {
+			for (auto& L : lit->second) {
+				if (!L) continue;
+				std::lock_guard<std::mutex> ll(L->mu);
+				L->sessionEnded = true;
+				L->cv.notify_one();
+			}
+			mIntentListeners.erase(lit);
+		}
+	}
+
 	mutable std::mutex                       mMu;
 	Config                                   mCfg;
 	std::unordered_map<std::string, Session> mItems;
 	RateLimiter                              mRate;
+
+	// v4 broker handshake state.  All access goes through mMu — there
+	// is no separate broker mutex because every operation needs a
+	// session-or-intent lookup that already lives under mMu.
+	std::unordered_map<std::string, Intent>   mIntents;
+	std::unordered_map<std::string, Decision> mDecisions;
+	std::unordered_map<std::string,
+	                   std::vector<std::shared_ptr<IntentListener>>> mIntentListeners;
+	std::unordered_map<std::string,
+	                   std::vector<std::shared_ptr<DecisionListener>>> mDecisionListeners;
 };
 
 // -----------------------------------------------------------------
@@ -703,6 +1164,14 @@ struct CreateReq {
 	std::string hardwareMode;
 	std::string videoStandard;
 	std::string memoryMode;
+	// v4 broker handshake — initial state for the session.  Empty
+	// or "waiting" means the host is ready to accept a NetHello
+	// directly (legacy path, also used by emulators).
+	// "awaiting_approval" means the host is a web-page broker that
+	// has not yet spawned an emulator; only the broker handshake
+	// applies.  "playing" is rejected (state can only transition
+	// into "playing" via Heartbeat).
+	std::string state;
 };
 
 struct HeartbeatReq {
@@ -742,6 +1211,7 @@ bool ParseCreate(const std::string& body, CreateReq& r,
 		else if (key == Field::kProtocolVersion) c.parseInt(r.protocolVersion);
 		else if (key == Field::kRequiresCode)    c.parseBool(r.requiresCode);
 		else if (key == Field::kWssRelayOnly)    c.parseBool(r.wssRelayOnly);
+		else if (key == Field::kState)           c.parseString(r.state);
 		else { if (!c.parseNull() && !c.skipValue()) {
 			errOut = "invalid json"; return false;
 		} }
@@ -838,10 +1308,26 @@ std::string ValidateCreate(CreateReq& r) {
 		return "cartName: 1.." + std::to_string(kCartNameMax) + " chars required";
 	if (r.hostHandle.empty() || (int)r.hostHandle.size() > kHostHandleMax)
 		return "hostHandle: 1.." + std::to_string(kHostHandleMax) + " chars required";
+	// v4 broker handshake — explicit state on Create.
+	const bool isBrokerCreate = (r.state == kStateAwaitingApproval);
+	if (!r.state.empty() &&
+	    r.state != kStateWaiting &&
+	    r.state != kStateAwaitingApproval) {
+		return "state: \"\" | \"waiting\" | \"awaiting_approval\" required";
+	}
 	// v3 WSS-only hosts have no UDP endpoints — skip the host:port
 	// shape check.  We DO require hostEndpoint and candidates to be
 	// empty in that case, to guard against a misbehaving client
 	// publishing reachable UDP coords while also claiming WS-only.
+	// v4 broker hosts in awaiting_approval state likewise have no
+	// endpoint yet (the WASM emulator that will own the relay slot
+	// does not exist).  They must be wssRelayOnly=true so that joiner
+	// browsers / native joiners both route through the lobby's WS
+	// bridge once the spawn happens — a future native-host broker
+	// flow can lift this requirement later.
+	if (isBrokerCreate && !r.wssRelayOnly) {
+		return "awaiting_approval: requires wssRelayOnly=true";
+	}
 	if (r.wssRelayOnly) {
 		if (!r.hostEndpoint.empty())
 			return "wssRelayOnly: hostEndpoint must be empty";
@@ -1011,6 +1497,102 @@ void LogReq(const std::string& ip, const std::string& method,
 	std::fputs(b.s.c_str(), stdout);
 	std::fputc('\n', stdout);
 	std::fflush(stdout);
+}
+
+// -----------------------------------------------------------------
+// v4 broker handshake — request body parsing + JSON helpers
+// -----------------------------------------------------------------
+
+struct CreateIntentReq {
+	std::string joinerHandle;
+	std::string codeHash;   // hex; "" if session has no code
+};
+
+bool ParseCreateIntent(const std::string& body, CreateIntentReq& r,
+                       std::string& errOut) {
+	if (body.size() > (size_t)kMaxRequestBodyBytes) {
+		errOut = "invalid json: body too large";
+		return false;
+	}
+	JsonCursor c{body.data(), body.data() + body.size()};
+	if (!c.match('{')) { errOut = "invalid json"; return false; }
+	if (c.match('}')) return true;
+	for (;;) {
+		std::string key;
+		if (!c.parseString(key)) { errOut = "invalid json"; return false; }
+		if (!c.match(':'))       { errOut = "invalid json"; return false; }
+		if      (key == Field::kJoinerHandle) c.parseString(r.joinerHandle);
+		else if (key == Field::kCodeHash)     c.parseString(r.codeHash);
+		else { if (!c.parseNull() && !c.skipValue()) {
+			errOut = "invalid json"; return false;
+		} }
+		if (!c.ok) { errOut = "invalid json"; return false; }
+		if (c.match(',')) continue;
+		if (c.match('}')) return true;
+		errOut = "invalid json"; return false;
+	}
+}
+
+struct DecisionReq {
+	std::string token;       // session host token
+	bool        accepted = false;
+	int         reason   = 0;
+};
+
+bool ParseDecision(const std::string& body, DecisionReq& r,
+                   std::string& errOut) {
+	if (body.size() > (size_t)kMaxRequestBodyBytes) {
+		errOut = "invalid json: body too large";
+		return false;
+	}
+	JsonCursor c{body.data(), body.data() + body.size()};
+	if (!c.match('{')) { errOut = "invalid json"; return false; }
+	if (c.match('}')) return true;
+	for (;;) {
+		std::string key;
+		if (!c.parseString(key)) { errOut = "invalid json"; return false; }
+		if (!c.match(':'))       { errOut = "invalid json"; return false; }
+		if      (key == Field::kToken)    c.parseString(r.token);
+		else if (key == Field::kAccepted) c.parseBool(r.accepted);
+		else if (key == Field::kReason)   c.parseInt(r.reason);
+		else { if (!c.parseNull() && !c.skipValue()) {
+			errOut = "invalid json"; return false;
+		} }
+		if (!c.ok) { errOut = "invalid json"; return false; }
+		if (c.match(',')) continue;
+		if (c.match('}')) return true;
+		errOut = "invalid json"; return false;
+	}
+}
+
+// One intent serialised to JSON.  No surrounding object braces — the
+// caller writes the array opener / commas.  Used both for the
+// initial replay block on SSE connect and for each subsequent
+// "data:" line as new intents arrive.
+void WriteIntentJson(JsonBuilder& b, const Intent& it, int64_t nowMs) {
+	b.raw('{');
+	b.key(Field::kIntentId);     b.str(it.id);            b.raw(',');
+	b.key(Field::kSessionId);    b.str(it.sessionId);     b.raw(',');
+	b.key(Field::kJoinerHandle); b.str(it.joinerHandle);  b.raw(',');
+	b.key(Field::kCodeHash);     b.str(it.codeHash);      b.raw(',');
+	b.key(Field::kArrivedMs);
+	long long age = (long long)(nowMs - it.createdAtMs);
+	if (age < 0) age = 0;
+	b.num(age);
+	b.raw('}');
+}
+
+void WriteDecisionJson(JsonBuilder& b, const Decision& d, int64_t nowMs) {
+	b.raw('{');
+	b.key(Field::kIntentId);    b.str(d.intentId);     b.raw(',');
+	b.key(Field::kSessionId);   b.str(d.sessionId);    b.raw(',');
+	b.key(Field::kAccepted);    b.boolean(d.accepted); b.raw(',');
+	b.key(Field::kReason);      b.num(d.reason);       b.raw(',');
+	b.key(Field::kDecidedAtMs);
+	long long age = (long long)(nowMs - d.decidedAtMs);
+	if (age < 0) age = 0;
+	b.num(age);
+	b.raw('}');
 }
 
 // Helper: does `path` start with `kPathSession + "/"`?  Returns the
@@ -1237,6 +1819,34 @@ void Install(httplib::Server& srv, Store& store) {
 				b.key("rate_limited_total");
 				b.num((long long)gLC.requestsRateLimited.load());
 			b.raw('}');                              b.raw(',');
+			// v4 broker handshake counters.  See LobbyCounters
+			// for semantics.  active_* fields are sampled from the
+			// Store (cheap O(N) walks under its existing mutex).
+			{
+				Store::BrokerStats bs = store.ComputeBrokerStats();
+				b.key("broker");        b.raw('{');
+					b.key("intents_posted_total");
+					b.num((long long)gLC.brokerIntentsPosted.load()); b.raw(',');
+					b.key("intents_rejected_total");
+					b.num((long long)gLC.brokerIntentsRejected.load()); b.raw(',');
+					b.key("decisions_posted_total");
+					b.num((long long)gLC.brokerDecisionsPosted.load()); b.raw(',');
+					b.key("intent_streams_total");
+					b.num((long long)gLC.brokerIntentStreams.load()); b.raw(',');
+					b.key("decision_streams_total");
+					b.num((long long)gLC.brokerDecisionStreams.load()); b.raw(',');
+					b.key("active_intents");
+					b.num(bs.activeIntents); b.raw(',');
+					b.key("active_decisions");
+					b.num(bs.activeDecisions); b.raw(',');
+					b.key("active_intent_listeners");
+					b.num(bs.activeIntentsListeners); b.raw(',');
+					b.key("active_decision_listeners");
+					b.num(bs.activeDecisionsListeners); b.raw(',');
+					b.key("awaiting_approval_sessions");
+					b.num(bs.awaitingApprovalSessions);
+				b.raw('}');                              b.raw(',');
+			}
 			b.key("limits");          b.raw('{');
 				b.key("egress_soft_cap_bytes");
 				b.num((long long)kEgressSoftCapBytes);           b.raw(',');
@@ -1310,6 +1920,11 @@ void Install(httplib::Server& srv, Store& store) {
 			in.videoStandard = r.videoStandard;
 			in.memoryMode    = r.memoryMode;
 			in.wssRelayOnly  = r.wssRelayOnly;
+			// v4 broker handshake.  Empty/"" stays Create's existing
+			// kStateWaiting default; an explicit "awaiting_approval"
+			// flows through to the Session so the Heartbeat path can
+			// decide whether the broker or a real emulator is driving.
+			in.state         = r.state;
 
 			Store::CreateError createErr = Store::CreateError::None;
 			Session s = store.Create(in, createErr);
@@ -1497,6 +2112,223 @@ void Install(httplib::Server& srv, Store& store) {
 			res.set_content(std::move(b.s), "application/json");
 			return true;
 		}
+		// v4 broker handshake — joiner POSTs an intent.  The body is
+		// {joinerHandle, codeHash}; the lobby returns
+		// {intentId, sessionId, ttlSeconds}.  Distinct from the
+		// stream endpoint below: this writes once, the stream reads
+		// repeatedly.
+		if (req.method == "POST" && suffix == kPathIntentsSuffix) {
+			CreateIntentReq cir;
+			std::string err;
+			if (!ParseCreateIntent(req.body, cir, err)) {
+				WriteErr(res, 400, err); return true;
+			}
+			std::string srcIp = ClientIp(req,
+				store.Cfg().trustedProxies);
+			std::string newId;
+			int64_t createdMs = 0;
+			Store::IntentError ie = store.CreateIntent(
+				id, cir.joinerHandle, cir.codeHash, srcIp,
+				newId, createdMs);
+			if (ie != Store::IntentError::None) {
+				int code = 500;
+				const char* msg = "intent rejected";
+				switch (ie) {
+				case Store::IntentError::SessionNotFound:
+					code = 404; msg = "no such session"; break;
+				case Store::IntentError::SessionWrongState:
+					code = 410; msg = "session not joinable"; break;
+				case Store::IntentError::HandleEmpty:
+					code = 400; msg = "joinerHandle: required"; break;
+				case Store::IntentError::HandleTooLong:
+					code = 400; msg = "joinerHandle: too long"; break;
+				case Store::IntentError::CodeRequired:
+					code = 400; msg = "codeHash: required for private session"; break;
+				case Store::IntentError::CodeMismatch:
+					code = 403; msg = "codeHash: bad format"; break;
+				case Store::IntentError::QueueFull:
+					code = 429; msg = "intent queue full"; break;
+				case Store::IntentError::None:  // unreachable
+					code = 500; break;
+				}
+				WriteErr(res, code, msg);
+				gLC.brokerIntentsRejected.fetch_add(1,
+					std::memory_order_relaxed);
+				return true;
+			}
+			gLC.brokerIntentsPosted.fetch_add(1,
+				std::memory_order_relaxed);
+			JsonBuilder b;
+			b.raw('{');
+			b.key(Field::kIntentId);   b.str(newId); b.raw(',');
+			b.key(Field::kSessionId);  b.str(id);    b.raw(',');
+			b.key(Field::kTTLSeconds); b.num(kIntentTtlMs / 1000);
+			b.raw('}');
+			res.status = 201;
+			res.set_content(std::move(b.s), "application/json");
+			return true;
+		}
+
+		// v4 broker handshake — host opens the SSE stream of pending
+		// intents.  Authenticated by the X-Session-Token header so a
+		// random observer can't tail the stream of a session they
+		// don't own.  cpp-httplib calls the provider lambda
+		// repeatedly until it returns false.  We park the thread on
+		// the listener's cv with a heartbeat-interval timeout so an
+		// idle stream still emits a keepalive comment line.
+		if (req.method == "GET" && suffix == kPathIntentsStreamSuffix) {
+			const std::string tok =
+				req.get_header_value(kHeaderSessionToken);
+			if (!store.ValidateSessionToken(id, tok)) {
+				WriteErr(res, 401, "bad token");
+				return true;
+			}
+			gLC.brokerIntentStreams.fetch_add(1,
+				std::memory_order_relaxed);
+			auto listener = std::make_shared<IntentListener>();
+			store.RegisterIntentListener(id, listener);
+			// Snapshot the current pending intents so the joiner who
+			// posted before the host opened the stream is replayed.
+			auto initial = store.ListSessionIntents(id);
+
+			res.set_header("Cache-Control",
+				"no-cache, no-transform");
+			res.set_header("X-Accel-Buffering", "no");
+			// Connection: keep-alive header cpp-httplib already
+			// sets via chunked encoding.  Same for HTTP/1.1.
+			struct State {
+				std::vector<Intent> initial;
+				bool sentInitial = false;
+			};
+			auto stref = std::make_shared<State>();
+			stref->initial = std::move(initial);
+
+			res.set_chunked_content_provider("text/event-stream",
+				[stref, listener, id, &store]
+				(size_t /*offset*/, httplib::DataSink& sink) -> bool {
+					// First call: emit a one-shot "initial" event
+					// containing every currently-pending intent.
+					if (!stref->sentInitial) {
+						stref->sentInitial = true;
+						JsonBuilder b;
+						b.raw("event: initial\ndata: {\"");
+						b.raw(Field::kIntents); b.raw("\":[");
+						const int64_t now = NowMs();
+						for (size_t i = 0; i < stref->initial.size(); ++i) {
+							if (i) b.raw(',');
+							WriteIntentJson(b, stref->initial[i], now);
+						}
+						b.raw("]}\n\n");
+						if (!sink.write(b.s.data(), b.s.size()))
+							return false;
+					}
+
+					std::vector<std::string> newIds, cancelledIds;
+					bool ended = false;
+					{
+						std::unique_lock<std::mutex> lk(listener->mu);
+						listener->cv.wait_for(lk,
+							std::chrono::milliseconds(
+								kSseHeartbeatIntervalMs),
+							[&] {
+								return !listener->pendingIntentIds.empty() ||
+								       !listener->cancelledIntentIds.empty() ||
+								       listener->sessionEnded;
+							});
+						newIds       = std::move(listener->pendingIntentIds);
+						cancelledIds = std::move(listener->cancelledIntentIds);
+						ended        = listener->sessionEnded;
+					}
+
+					if (newIds.empty() && cancelledIds.empty() && !ended) {
+						// SSE comment line — keepalive only.
+						const char* ping = ": heartbeat\n\n";
+						return sink.write(ping, std::strlen(ping));
+					}
+
+					const int64_t now = NowMs();
+					for (auto& iid : newIds) {
+						Intent it;
+						if (!store.GetIntent(iid, it)) continue;
+						JsonBuilder b;
+						b.raw("event: intent\ndata: ");
+						WriteIntentJson(b, it, now);
+						b.raw("\n\n");
+						if (!sink.write(b.s.data(), b.s.size()))
+							return false;
+					}
+					for (auto& iid : cancelledIds) {
+						JsonBuilder b;
+						b.raw("event: cancelled\ndata: {\"");
+						b.raw(Field::kIntentId);
+						b.raw("\":");
+						b.str(iid);
+						b.raw("}\n\n");
+						if (!sink.write(b.s.data(), b.s.size()))
+							return false;
+					}
+					if (ended) {
+						const char* line =
+							"event: session_ended\ndata: {}\n\n";
+						sink.write(line, std::strlen(line));
+						return false;
+					}
+					return true;
+				},
+				[listener, id, &store](bool /*success*/) {
+					store.UnregisterIntentListener(id, listener);
+				});
+			return true;
+		}
+
+		// v4 broker handshake — host posts a decision (accept/reject)
+		// for a queued intent.  Path: /v1/session/{id}/intents/{iid}/decision.
+		// Body: {token, accepted, reason?}.
+		{
+			static const std::string kPrefix = std::string("/intents/");
+			static const std::string kSuffix =
+				std::string(kPathIntentDecisionTail);
+			if (req.method == "POST" &&
+			    suffix.size() > kPrefix.size() + kSuffix.size() &&
+			    suffix.compare(0, kPrefix.size(), kPrefix) == 0 &&
+			    suffix.compare(suffix.size() - kSuffix.size(),
+			                   kSuffix.size(), kSuffix) == 0) {
+				std::string iid = suffix.substr(kPrefix.size(),
+					suffix.size() - kPrefix.size() - kSuffix.size());
+				if (iid.empty() ||
+				    iid.find('/') != std::string::npos) {
+					WriteErr(res, 400, "bad intentId");
+					return true;
+				}
+				DecisionReq dr;
+				std::string err;
+				if (!ParseDecision(req.body, dr, err)) {
+					WriteErr(res, 400, err); return true;
+				}
+				if (dr.token.empty()) {
+					WriteErr(res, 401, "token required");
+					return true;
+				}
+				int code = store.MakeDecision(iid, dr.token,
+					dr.accepted, dr.reason);
+				if (code == 200) {
+					gLC.brokerDecisionsPosted.fetch_add(1,
+						std::memory_order_relaxed);
+					JsonBuilder b;
+					b.raw('{');
+					b.key(Field::kIntentId);    b.str(iid);
+					b.raw('}');
+					res.status = 200;
+					res.set_content(std::move(b.s),
+						"application/json");
+				} else if (code == 401) WriteErr(res, 401, "bad token");
+				else if   (code == 404) WriteErr(res, 404, "no such intent");
+				else if   (code == 410) WriteErr(res, 410, "intent already decided");
+				else                    WriteErr(res, 500, "internal");
+				return true;
+			}
+		}
+
 		if (req.method == "DELETE" && suffix.empty()) {
 			std::string tok = req.get_header_value(kHeaderSessionToken);
 			int code = store.Delete(id, tok);
@@ -1510,8 +2342,15 @@ void Install(httplib::Server& srv, Store& store) {
 
 	// cpp-httplib lets us register per-method handlers with a regex.
 	// Wire all three verbs to the dispatcher.
+	// Allow up to two trailing path segments after the id so the
+	// dispatcher can route /v1/session/{id}/intents/{iid}/decision
+	// (three segments after the id total — but the broker writes
+	// the iid as a path component which is what kPathIntent paths
+	// look like below).  Existing /heartbeat and /peer-hint are
+	// one-segment; /intents and /intents/stream are 1- and 2-
+	// segment; /intents/{iid}/decision is 3-segment.
 	const std::string idRegex =
-		std::string(kPathSession) + "/[^/]+(?:/[^/]+)?";
+		std::string(kPathSession) + "/[^/]+(?:/[^/]+){0,3}";
 	srv.Get(idRegex,
 		[dispatchId](const httplib::Request& req, httplib::Response& res) {
 			if (!dispatchId(req, res)) WriteErr(res, 404, "not found");
@@ -1523,6 +2362,106 @@ void Install(httplib::Server& srv, Store& store) {
 	srv.Delete(idRegex,
 		[dispatchId](const httplib::Request& req, httplib::Response& res) {
 			if (!dispatchId(req, res)) WriteErr(res, 404, "not found");
+		});
+
+	// v4 broker handshake — joiner-side decision SSE stream.
+	// Path: /v1/intent/{iid}/stream.  Open-to-anyone but the only
+	// information leaked is whether the intent has been decided +
+	// what reason was given; the joiner already has the intentId
+	// because they posted it in the first place, so an attacker who
+	// finds an iid out-of-band gains nothing useful.
+	const std::string intentStreamRegex =
+		std::string(kPathIntent) + "/[^/]+/stream";
+	srv.Get(intentStreamRegex,
+		[&store](const httplib::Request& req, httplib::Response& res) {
+			// Parse iid out of the path manually — cpp-httplib's regex
+			// captures vary by version, plain string slicing keeps
+			// the dependency surface tiny.
+			const std::string prefix = std::string(kPathIntent) + "/";
+			const std::string suffix =
+				std::string(kPathIntentStreamTail);
+			const std::string& path = req.path;
+			if (path.size() <= prefix.size() + suffix.size() ||
+			    path.compare(0, prefix.size(), prefix) != 0 ||
+			    path.compare(path.size() - suffix.size(),
+			                 suffix.size(), suffix) != 0) {
+				WriteErr(res, 404, "not found");
+				return;
+			}
+			std::string iid = path.substr(prefix.size(),
+				path.size() - prefix.size() - suffix.size());
+			if (iid.empty() || iid.find('/') != std::string::npos) {
+				WriteErr(res, 400, "bad intentId");
+				return;
+			}
+			// Existence check (also serves as fast-fail for typo'd
+			// iids — listener registration happens regardless and
+			// would otherwise wait for a TTL to fire).
+			Intent it;
+			if (!store.GetIntent(iid, it)) {
+				WriteErr(res, 404, "no such intent");
+				return;
+			}
+
+			gLC.brokerDecisionStreams.fetch_add(1,
+				std::memory_order_relaxed);
+
+			auto listener = std::make_shared<DecisionListener>();
+			store.RegisterDecisionListener(iid, listener);
+
+			// If the decision is already in (rare race: host clicked
+			// Allow before the joiner re-opened its stream), seed
+			// the listener so the lambda emits + closes immediately
+			// without waiting on the cv.
+			Decision existing;
+			if (store.GetDecision(iid, existing)) {
+				std::lock_guard<std::mutex> ll(listener->mu);
+				listener->decided  = true;
+				listener->decision = existing;
+			}
+
+			res.set_header("Cache-Control",
+				"no-cache, no-transform");
+			res.set_header("X-Accel-Buffering", "no");
+
+			res.set_chunked_content_provider("text/event-stream",
+				[listener, iid, &store]
+				(size_t /*offset*/, httplib::DataSink& sink) -> bool {
+					Decision d;
+					bool decided = false, expired = false;
+					{
+						std::unique_lock<std::mutex> lk(listener->mu);
+						listener->cv.wait_for(lk,
+							std::chrono::milliseconds(
+								kSseHeartbeatIntervalMs),
+							[&] {
+								return listener->decided ||
+								       listener->expired;
+							});
+						decided = listener->decided;
+						expired = listener->expired;
+						d       = listener->decision;
+					}
+					if (decided) {
+						JsonBuilder b;
+						b.raw("event: decision\ndata: ");
+						WriteDecisionJson(b, d, NowMs());
+						b.raw("\n\n");
+						sink.write(b.s.data(), b.s.size());
+						return false;
+					}
+					if (expired) {
+						const char* line =
+							"event: expired\ndata: {}\n\n";
+						sink.write(line, std::strlen(line));
+						return false;
+					}
+					const char* ping = ": heartbeat\n\n";
+					return sink.write(ping, std::strlen(ping));
+				},
+				[listener, iid, &store](bool /*success*/) {
+					store.UnregisterDecisionListener(iid, listener);
+				});
 		});
 
 	// CORS preflight.

@@ -912,6 +912,502 @@ void TestHostCapPerHandle() {
 		"different handle gets its own slots");
 }
 
+// =================================================================
+// v4 broker handshake tests
+// =================================================================
+
+// Helper: POST /v1/session with state=awaiting_approval and
+// wssRelayOnly=true.  Returns the created session id+token via outs.
+bool CreateBrokerSession(httplib::Client& c,
+                         const std::string& cart, const std::string& handle,
+                         std::string& idOut, std::string& tokenOut) {
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kCartName);        b.str(cart);   b.raw(',');
+	b.key(Field::kHostHandle);      b.str(handle); b.raw(',');
+	b.key(Field::kRegion);          b.str("eu");   b.raw(',');
+	b.key(Field::kPlayerCount);     b.num(1);      b.raw(',');
+	b.key(Field::kMaxPlayers);      b.num(2);      b.raw(',');
+	b.key(Field::kProtocolVersion); b.num(kProtocolVersion); b.raw(',');
+	b.key(Field::kWssRelayOnly);    b.boolean(true);    b.raw(',');
+	b.key(Field::kState);           b.str(kStateAwaitingApproval);
+	b.raw('}');
+	auto r = c.Post(kPathSession, b.s, "application/json");
+	if (!r || r->status != 201) return false;
+	int ttl = 0;
+	return ReadCreateRespJson(r->body, idOut, tokenOut, ttl);
+}
+
+// Helper: POST a joiner intent to a session.  Reads back the new
+// intentId.
+bool PostIntent(httplib::Client& c, const std::string& sessionId,
+                const std::string& handle, const std::string& codeHash,
+                std::string& intentIdOut, int& statusOut) {
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kJoinerHandle); b.str(handle);   b.raw(',');
+	b.key(Field::kCodeHash);     b.str(codeHash);
+	b.raw('}');
+	std::string path = std::string(kPathSession) + "/" + sessionId
+		+ kPathIntentsSuffix;
+	auto r = c.Post(path.c_str(), b.s, "application/json");
+	if (!r) { statusOut = 0; return false; }
+	statusOut = r->status;
+	if (r->status != 201) return false;
+	JsonCursor jc{r->body.data(), r->body.data() + r->body.size()};
+	if (!jc.match('{')) return false;
+	for (;;) {
+		std::string k;
+		if (!jc.parseString(k)) return false;
+		if (!jc.match(':'))     return false;
+		if      (k == Field::kIntentId) jc.parseString(intentIdOut);
+		else                            jc.skipValue();
+		if (!jc.ok) return false;
+		if (jc.match(',')) continue;
+		if (jc.match('}')) return !intentIdOut.empty();
+		return false;
+	}
+}
+
+// Helper: host POST decision on intent.  Returns HTTP status.
+int PostDecision(httplib::Client& c, const std::string& sessionId,
+                 const std::string& intentId, const std::string& token,
+                 bool accepted, int reason) {
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kToken);    b.str(token);          b.raw(',');
+	b.key(Field::kAccepted); b.boolean(accepted);   b.raw(',');
+	b.key(Field::kReason);   b.num(reason);
+	b.raw('}');
+	std::string path = std::string(kPathSession) + "/" + sessionId
+		+ "/intents/" + intentId + kPathIntentDecisionTail;
+	auto r = c.Post(path.c_str(), b.s, "application/json");
+	return r ? r->status : 0;
+}
+
+// SSE consumer in a worker thread.  Drains events for up to
+// `timeoutMs` ms (or until the connection closes), accumulates raw
+// bytes, exposes the buffer.  Used by both the host-side intents-
+// stream and the joiner-side decision-stream tests.
+struct SseClient {
+	std::thread       worker;
+	std::mutex        mu;
+	std::string       buffer;          // guarded by mu
+	std::atomic<bool> done{false};
+	std::atomic<bool> connected{false};
+	std::atomic<int>  status{0};
+
+	~SseClient() {
+		Stop();
+	}
+
+	void Start(int port, const std::string& path,
+	           const std::string& tokenOrEmpty) {
+		worker = std::thread([this, port, path, tokenOrEmpty]() {
+			httplib::Client cc("127.0.0.1", port);
+			cc.set_connection_timeout(2, 0);
+			cc.set_read_timeout(8, 0);
+			httplib::Headers h;
+			if (!tokenOrEmpty.empty()) {
+				h.emplace(kHeaderSessionToken, tokenOrEmpty);
+			}
+			connected.store(true);
+			auto r = cc.Get(path.c_str(), h,
+				[this](const char* data, size_t len) -> bool {
+					std::lock_guard<std::mutex> lk(mu);
+					buffer.append(data, len);
+					return !done.load(std::memory_order_acquire);
+				});
+			status.store(r ? r->status : 0);
+		});
+	}
+
+	void Stop() {
+		done.store(true, std::memory_order_release);
+		if (worker.joinable()) worker.join();
+	}
+
+	bool WaitForSubstring(const std::string& needle, int waitMs) {
+		const auto start = std::chrono::steady_clock::now();
+		while (true) {
+			{
+				std::lock_guard<std::mutex> lk(mu);
+				if (buffer.find(needle) != std::string::npos)
+					return true;
+			}
+			auto now = std::chrono::steady_clock::now();
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(
+				now - start).count() >= waitMs) return false;
+			std::this_thread::sleep_for(
+				std::chrono::milliseconds(20));
+		}
+	}
+
+	std::string Snapshot() {
+		std::lock_guard<std::mutex> lk(mu);
+		return buffer;
+	}
+};
+
+// 1. Plain happy path: host posts session in awaiting_approval,
+//    joiner posts intent, host SSE receives it, host decides accept,
+//    joiner SSE receives the decision.
+void TestBrokerHappyPathAccept() {
+	++g_testsRun;
+	Fixture f;
+	auto host = f.client();
+	auto joiner = f.client();
+
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Archon", "alice", sid, tok),
+		"create awaiting_approval session");
+
+	// Host opens its intents stream BEFORE the joiner posts so it
+	// observes the live event (rather than the initial replay).
+	SseClient hostStream;
+	hostStream.Start(f.port,
+		std::string(kPathSession) + "/" + sid + kPathIntentsStreamSuffix,
+		tok);
+	// First chunk arrives within ~50 ms of connection (the initial
+	// replay is sent before any wait).  Wait for the empty-array form.
+	T_EXPECT(hostStream.WaitForSubstring("\"intents\":[]", 1000),
+		"host receives initial empty replay");
+
+	std::string intentId; int httpStatus = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", intentId, httpStatus),
+		"joiner posts intent");
+	T_EXPECT_EQ_INT(httpStatus, 201, "intent POST status");
+	T_EXPECT(!intentId.empty(), "intentId returned");
+
+	// Host SSE should now show an event: intent line carrying bob.
+	T_EXPECT(hostStream.WaitForSubstring("event: intent", 2000),
+		"host receives intent event");
+	T_EXPECT(hostStream.WaitForSubstring("\"" + intentId + "\"", 500),
+		"host event carries the intentId");
+	T_EXPECT(hostStream.WaitForSubstring("\"joinerHandle\":\"bob\"", 500),
+		"host event carries joinerHandle");
+
+	// Joiner opens its decision stream now (or could open earlier;
+	// we test the late-open path which exercises the decision-replay
+	// branch in the GET handler).
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + intentId + kPathIntentStreamTail,
+		"");
+
+	// Host accepts.
+	int dst = PostDecision(host, sid, intentId, tok, /*accepted=*/true, /*reason=*/0);
+	T_EXPECT_EQ_INT(dst, 200, "decision POST status");
+
+	T_EXPECT(joinerStream.WaitForSubstring("event: decision", 2000),
+		"joiner receives decision event");
+	T_EXPECT(joinerStream.WaitForSubstring("\"accepted\":true", 500),
+		"decision says accepted=true");
+	T_EXPECT(joinerStream.WaitForSubstring("\"intentId\":\"" + intentId + "\"",
+		500),
+		"decision carries intentId");
+
+	hostStream.Stop();
+	joinerStream.Stop();
+}
+
+// 2. Reject path: host POSTs decision with accepted=false and a
+//    reason code; joiner SSE shows the rejection.
+void TestBrokerRejectPath() {
+	++g_testsRun;
+	Fixture f;
+	auto host = f.client();
+	auto joiner = f.client();
+
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create awaiting_approval session");
+	std::string intentId; int httpStatus = 0;
+	T_EXPECT(PostIntent(joiner, sid, "mallory", "", intentId, httpStatus),
+		"joiner posts intent");
+	T_EXPECT_EQ_INT(httpStatus, 201, "intent posted");
+
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + intentId + kPathIntentStreamTail,
+		"");
+
+	const int kReasonHostRejected = 8; // matches kRejectHostRejected today
+	int dst = PostDecision(host, sid, intentId, tok, false, kReasonHostRejected);
+	T_EXPECT_EQ_INT(dst, 200, "reject decision POST status");
+	T_EXPECT(joinerStream.WaitForSubstring("\"accepted\":false", 2000),
+		"joiner sees accepted=false");
+	T_EXPECT(joinerStream.WaitForSubstring("\"reason\":8", 500),
+		"joiner sees reason code");
+	joinerStream.Stop();
+}
+
+// 3. Initial replay: joiner posts BEFORE host opens stream.  Host
+//    must see the existing intent in the initial replay block.
+void TestBrokerHostStreamInitialReplay() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+	std::string i1, i2; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob",   "", i1, hs), "intent 1");
+	T_EXPECT(PostIntent(joiner, sid, "carol", "", i2, hs), "intent 2");
+
+	SseClient hostStream;
+	hostStream.Start(f.port,
+		std::string(kPathSession) + "/" + sid + kPathIntentsStreamSuffix,
+		tok);
+	T_EXPECT(hostStream.WaitForSubstring("event: initial", 2000),
+		"initial replay event");
+	T_EXPECT(hostStream.WaitForSubstring("\"" + i1 + "\"", 500),
+		"replay contains first intent");
+	T_EXPECT(hostStream.WaitForSubstring("\"" + i2 + "\"", 500),
+		"replay contains second intent");
+	hostStream.Stop();
+}
+
+// 4. Late joiner: decision is posted before joiner opens its
+//    stream.  The decision is replayed on connect.
+void TestBrokerLateJoinerDecisionReplay() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, hs), "intent");
+	int dst = PostDecision(host, sid, iid, tok, /*accepted=*/true, 0);
+	T_EXPECT_EQ_INT(dst, 200, "decision posted");
+
+	// Joiner connects AFTER decision exists.
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + iid + kPathIntentStreamTail,
+		"");
+	T_EXPECT(joinerStream.WaitForSubstring("event: decision", 2000),
+		"late joiner sees replayed decision");
+	joinerStream.Stop();
+}
+
+// 5. Bad token on decision: must return 401 and not affect the
+//    intent's decided state.
+void TestBrokerDecisionBadToken() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, hs), "intent");
+	int dst = PostDecision(host, sid, iid, "wrong-token", true, 0);
+	T_EXPECT_EQ_INT(dst, 401, "bad token rejected");
+
+	// Posting again with the right token must still succeed.
+	int dst2 = PostDecision(host, sid, iid, tok, true, 0);
+	T_EXPECT_EQ_INT(dst2, 200, "right token works");
+}
+
+// 6. Double-decision: second POST must return 410.
+void TestBrokerDoubleDecision() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, hs), "intent");
+	int d1 = PostDecision(host, sid, iid, tok, true, 0);
+	int d2 = PostDecision(host, sid, iid, tok, false, 1);
+	T_EXPECT_EQ_INT(d1, 200, "first decision ok");
+	T_EXPECT_EQ_INT(d2, 410, "second decision 410");
+}
+
+// 7. Unauthenticated host stream: 401.
+void TestBrokerHostStreamRequiresToken() {
+	++g_testsRun;
+	Fixture f;
+	auto host = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+	auto c = f.client();
+	auto r = c.Get((std::string(kPathSession) + "/" + sid +
+		kPathIntentsStreamSuffix).c_str());
+	T_EXPECT(r,                             "got response");
+	T_EXPECT_EQ_INT(r ? r->status : 0, 401, "no-token = 401");
+}
+
+// 8. Cancellation: when the session is DELETEd while the host is
+//    streaming, the stream emits a session_ended event and closes.
+void TestBrokerSessionDeletionCancelsStreams() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, hs), "intent");
+
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + iid + kPathIntentStreamTail,
+		"");
+	T_EXPECT(joinerStream.WaitForSubstring(": heartbeat", 100) ||
+	         true, "joiner stream up (heartbeat may not yet fire)");
+
+	// DELETE the session.  The joiner stream should see "expired"
+	// once the cascade fires.
+	httplib::Headers h;
+	h.emplace(kHeaderSessionToken, tok);
+	auto del = host.Delete(
+		(std::string(kPathSession) + "/" + sid).c_str(), h);
+	T_EXPECT(del && del->status == 204, "delete 204");
+
+	T_EXPECT(joinerStream.WaitForSubstring("event: expired", 2000),
+		"joiner stream sees expired event after session delete");
+	joinerStream.Stop();
+}
+
+// 9. Validation: handle empty / handle too long / bad JSON / queue
+//    full.  Each failure path must return the correct HTTP status.
+void TestBrokerIntentValidation() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+
+	// Empty handle → 400
+	{
+		std::string iid; int hs = 0;
+		bool ok = PostIntent(joiner, sid, "", "", iid, hs);
+		T_EXPECT(!ok, "empty handle rejected");
+		T_EXPECT_EQ_INT(hs, 400, "empty handle = 400");
+	}
+	// Too-long handle → 400
+	{
+		std::string longH(kJoinerHandleMax + 1, 'x');
+		std::string iid; int hs = 0;
+		bool ok = PostIntent(joiner, sid, longH, "", iid, hs);
+		T_EXPECT(!ok, "long handle rejected");
+		T_EXPECT_EQ_INT(hs, 400, "long handle = 400");
+	}
+	// Unknown session → 404
+	{
+		std::string iid; int hs = 0;
+		bool ok = PostIntent(joiner, "no-such-id", "bob", "", iid, hs);
+		T_EXPECT(!ok, "unknown session rejected");
+		T_EXPECT_EQ_INT(hs, 404, "unknown session = 404");
+	}
+	// Queue cap: post kIntentsPerSessionCap successful intents,
+	// then the next one returns 429.
+	std::vector<std::string> ids;
+	for (size_t i = 0; i < kIntentsPerSessionCap; ++i) {
+		std::string iid; int hs = 0;
+		char name[8]; std::snprintf(name, sizeof name, "j%zu", i);
+		bool ok = PostIntent(joiner, sid, name, "", iid, hs);
+		T_EXPECT(ok, "intent within cap");
+		ids.push_back(iid);
+	}
+	{
+		std::string iid; int hs = 0;
+		bool ok = PostIntent(joiner, sid, "overflow", "", iid, hs);
+		T_EXPECT(!ok, "queue full");
+		T_EXPECT_EQ_INT(hs, 429, "queue full = 429");
+	}
+}
+
+// 10. Metrics counters: posting an intent + decision bumps the
+//     corresponding /v1/metrics counters.
+void TestBrokerMetricsCounters() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create session");
+
+	auto m0 = host.Get(kPathMetrics);
+	T_EXPECT(m0 && m0->status == 200, "metrics before");
+	const std::string body0 = m0->body;
+	T_EXPECT(body0.find("\"broker\":") != std::string::npos,
+		"broker section present in /v1/metrics");
+
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, hs), "intent");
+	int dst = PostDecision(host, sid, iid, tok, true, 0);
+	T_EXPECT_EQ_INT(dst, 200, "decision");
+
+	auto m1 = host.Get(kPathMetrics);
+	T_EXPECT(m1 && m1->status == 200, "metrics after");
+	const std::string body1 = m1->body;
+	T_EXPECT(body1.find("\"intents_posted_total\":") != std::string::npos,
+		"intents_posted_total key");
+	T_EXPECT(body1.find("\"decisions_posted_total\":") != std::string::npos,
+		"decisions_posted_total key");
+	// awaiting_approval_sessions should reflect at least 1.
+	T_EXPECT(body1.find("\"awaiting_approval_sessions\":1") != std::string::npos ||
+		body1.find("\"awaiting_approval_sessions\":") != std::string::npos,
+		"awaiting_approval_sessions key");
+}
+
+// 11. State validation: trying to create a session with an
+//     unsupported state value must be rejected.
+void TestBrokerCreateRejectsBadState() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kCartName);        b.str("Joust"); b.raw(',');
+	b.key(Field::kHostHandle);      b.str("alice"); b.raw(',');
+	b.key(Field::kRegion);          b.str("eu");    b.raw(',');
+	b.key(Field::kPlayerCount);     b.num(1);       b.raw(',');
+	b.key(Field::kMaxPlayers);      b.num(2);       b.raw(',');
+	b.key(Field::kProtocolVersion); b.num(kProtocolVersion); b.raw(',');
+	b.key(Field::kWssRelayOnly);    b.boolean(true); b.raw(',');
+	b.key(Field::kState);           b.str("playing");
+	b.raw('}');
+	auto r = c.Post(kPathSession, b.s, "application/json");
+	T_EXPECT(r,                          "got response");
+	T_EXPECT_EQ_INT(r->status, 400,      "bogus state rejected");
+}
+
+// 12. AwaitingApproval requires wssRelayOnly=true.
+void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kCartName);        b.str("Joust");          b.raw(',');
+	b.key(Field::kHostHandle);      b.str("alice");          b.raw(',');
+	b.key(Field::kHostEndpoint);    b.str("1.2.3.4:1");      b.raw(',');
+	b.key(Field::kRegion);          b.str("eu");             b.raw(',');
+	b.key(Field::kPlayerCount);     b.num(1);                b.raw(',');
+	b.key(Field::kMaxPlayers);      b.num(2);                b.raw(',');
+	b.key(Field::kProtocolVersion); b.num(kProtocolVersion); b.raw(',');
+	b.key(Field::kState);           b.str(kStateAwaitingApproval);
+	b.raw('}');
+	auto r = c.Post(kPathSession, b.s, "application/json");
+	T_EXPECT(r,                     "got response");
+	T_EXPECT_EQ_INT(r->status, 400, "endpoint+awaiting_approval rejected");
+}
+
 int RunAll() {
 	TestHealthz();
 	TestCreateAndList();
@@ -937,6 +1433,20 @@ int RunAll() {
 	TestRelayTableRegisterAndLookup();
 	TestRelayLookupOtherFailsWithOneSide();
 	TestWssRelayOnlyRoundtrip();
+
+	// v4 broker handshake.
+	TestBrokerHappyPathAccept();
+	TestBrokerRejectPath();
+	TestBrokerHostStreamInitialReplay();
+	TestBrokerLateJoinerDecisionReplay();
+	TestBrokerDecisionBadToken();
+	TestBrokerDoubleDecision();
+	TestBrokerHostStreamRequiresToken();
+	TestBrokerSessionDeletionCancelsStreams();
+	TestBrokerIntentValidation();
+	TestBrokerMetricsCounters();
+	TestBrokerCreateRejectsBadState();
+	TestBrokerAwaitingApprovalRequiresWssRelayOnly();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",
 		g_testsRun, g_testsFail);

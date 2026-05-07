@@ -37,7 +37,16 @@ namespace ATLobby {
 //      ignore unknown JSON fields, so they will simply fail to
 //      connect to a WSS-only host (Hello timeout) — that's the
 //      expected behaviour: a v2 client can join only v2 hosts.
-inline constexpr int kProtocolVersion = 3;
+//
+// v4 — added the broker handshake.  A "broker" host (web page that
+//      hasn't yet spawned a WASM emulator) creates a session in the
+//      new `awaiting_approval` state and waits for joiner intents on
+//      a server-sent-events stream.  Joiners post intents instead of
+//      sending NetHello; the host accepts/rejects and only then
+//      spawns the emulator that takes over the session.  This is
+//      additive — old clients keep using the original "send Hello,
+//      get Welcome" flow against `waiting`-state sessions.
+inline constexpr int kProtocolVersion = 4;
 
 // Session TTL in seconds.  Clients heartbeat every 5 s when idle (3 s
 // during lockstep), so a 15 s TTL allows up to two missed heartbeats
@@ -128,6 +137,26 @@ inline constexpr const char *kPathHeartbeatSuffix = "/heartbeat";
 // outbound UDP probes to the joiner, pre-opening its NAT pinhole.
 inline constexpr const char *kPathPeerHintSuffix  = "/peer-hint";
 
+// v4 broker handshake.  Joiner posts an intent with its handle and
+// optional code-hash; the lobby pushes the intent to the host on
+// the SSE stream below.  Host responds with a decision (accept or
+// reject); the lobby pushes the decision to the joiner on its own
+// SSE stream.  Only after acceptance does either side spawn an
+// emulator and begin the existing Hello/Welcome handshake.
+//
+// Wire layout under /v1/session/{id}:
+//   POST /intents                 — joiner submits intent
+//   GET  /intents/stream          — host SSE: pending intents
+//   POST /intents/{iid}/decision  — host accepts / rejects
+//
+// And a top-level joiner-side stream:
+//   GET /v1/intent/{iid}/stream  — joiner SSE: pending decision
+inline constexpr const char *kPathIntentsSuffix       = "/intents";
+inline constexpr const char *kPathIntentsStreamSuffix = "/intents/stream";
+inline constexpr const char *kPathIntentDecisionTail  = "/decision";
+inline constexpr const char *kPathIntent              = "/v1/intent";
+inline constexpr const char *kPathIntentStreamTail    = "/stream";
+
 // Header name carrying the session's delete token.
 inline constexpr const char *kHeaderSessionToken = "X-Session-Token";
 
@@ -207,6 +236,15 @@ namespace Field {
     // directly; the format is opaque to them so we can change the
     // WASM host without rebroadcasting.
     inline constexpr const char *kJoinUrl         = "joinUrl";
+
+    // v4 broker handshake.  See route block in this file.
+    inline constexpr const char *kIntentId        = "intentId";
+    inline constexpr const char *kCodeHash        = "codeHash";   // 32-char hex (16-byte truncated SHA-256), or "" if session has no code
+    inline constexpr const char *kAccepted        = "accepted";   // bool
+    inline constexpr const char *kReason          = "reason";     // u16 SessionTermination code, optional
+    inline constexpr const char *kArrivedMs       = "arrivedMs";  // age-ms helper for SSE entries
+    inline constexpr const char *kIntents         = "intents";    // array key on initial SSE replay
+    inline constexpr const char *kDecidedAtMs     = "decidedAtMs";
 
     // Error response.
     inline constexpr const char *kError           = "error";
@@ -291,7 +329,26 @@ inline constexpr const char *kVisibilityPublic  = "public";
 inline constexpr const char *kVisibilityPrivate = "private";
 
 // Session state values.
-inline constexpr const char *kStateWaiting = "waiting";
-inline constexpr const char *kStatePlaying = "playing";
+inline constexpr const char *kStateWaiting           = "waiting";
+inline constexpr const char *kStatePlaying           = "playing";
+// v4 broker handshake.  A web-page broker may publish a session
+// without spawning an emulator yet — joiner intents are queued, the
+// host approves one, and only then does the broker spawn its WASM
+// emulator (which transitions the session to "waiting"/"playing"
+// via Heartbeat the moment it registers).  An awaiting_approval
+// session does NOT appear in /v1/public/sessions and is not
+// joinable through the legacy "send NetHello" flow — joiners must
+// post an intent.  TTL is much longer than ordinary "waiting"
+// (10 min vs 15 s) because the broker tab can be backgrounded.
+inline constexpr const char *kStateAwaitingApproval  = "awaiting_approval";
+
+// v4 broker handshake limits.
+inline constexpr int    kIntentTtlMs              = 60 * 1000;     // intent expires unless decided
+inline constexpr int    kDecisionTtlMs            = 10 * 1000;     // decision retained for joiner pickup
+inline constexpr int    kAwaitingApprovalTtlMs    = 10 * 60 * 1000;// AwaitingApproval session lifetime (broker heartbeats)
+inline constexpr size_t kIntentsPerSessionCap     = 16;            // queue cap; oldest pending dropped on overflow
+inline constexpr int    kIntentCodeHashHexLen     = 32;            // 16-byte truncated SHA-256 in hex
+inline constexpr int    kSseHeartbeatIntervalMs   = 15 * 1000;     // SSE comment-line ping cadence
+inline constexpr int    kJoinerHandleMax          = 32;            // matches kHostHandleMax
 
 } // namespace ATLobby
