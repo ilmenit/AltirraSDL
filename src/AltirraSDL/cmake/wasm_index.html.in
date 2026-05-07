@@ -3358,7 +3358,9 @@
           'Download the standard Atari OS + BASIC ROM bundle.';
       } else if (packsToDo) {
         btnFirmware.style.display = '';
-        btnFirmware.textContent = '🎛 Install game packs…';
+        // Short label to keep the toolbar compact when packs are
+        // installable; the full action is in the tooltip.
+        btnFirmware.textContent = '📥 Games';
         btnFirmware.title =
           'Install one or more pre-configured game packs into your library.';
       } else {
