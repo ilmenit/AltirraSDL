@@ -121,11 +121,23 @@ constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 //     logs still reads).
 //   - Narrows NetReject.reason u32 → u16 and adds a u16 reason to
 //     NetBye (was magic-only).  kWireRejectSize and kWireByeSize
-//     drop from 8 to 6 bytes — HARD WIRE BREAK from v5: a v5 peer
-//     and a v6 peer cannot exchange Reject/Bye, so the version-skew
-//     handshake now relies on NetWelcome's protocolVersion check.
-//     Mixed-version peers see a clean "decode size mismatch" rather
-//     than a silently-wrong reason code.
+//     drop from 8 to 6 bytes.  Wire compatibility with v5 is
+//     ASYMMETRIC by design:
+//       v5→v6 Reject/Bye: the v6 wire is a strict prefix of the v5
+//         wire (same magic + low-16 bits of v5's u32 reason map
+//         exactly onto v6's u16 reason).  v6's lenient decoder
+//         (`if (len < 6) TooShort`) accepts the 8-byte v5 datagram
+//         and reads the right reason — so a v6 peer connecting to
+//         a v5 host still sees the friendly version-skew message
+//         when the v5 host rejects the handshake.
+//       v6→v5 Reject/Bye: v5's strict size check (`if (len < 8)
+//         TooShort`) rejects the 6-byte v6 datagram and silently
+//         drops it.  A v5 peer connecting to a v6 host therefore
+//         sees a generic Hello timeout rather than a friendly
+//         reason — acceptable because v5 stragglers will be rare
+//         once the lobby's 4-pin coordinated update has propagated.
+//     Version-skew handshake itself uses NetWelcome's protocolVersion
+//     check (unchanged from v5) plus the asymmetric Reject decode.
 //   - Adds three new broadcast packet types for observability:
 //     NetPhase (12 B, every phase transition + heartbeat),
 //     NetEventBatch (variable ≤230 B, fine-grained event stream),
@@ -545,8 +557,8 @@ constexpr size_t kWireWelcomeSize   = 4 + 2 + 2 + kCartLen + 4 + 4 + 4 + 8 + kWi
 constexpr size_t kWireWelcomeAckSize = 4;
 // v6: NetReject narrowed reason u32→u16 → 4 + 2 = 6.  NetBye gained
 // a real u16 reason (replacing the v5 unused 4-byte tail) → 4 + 2 = 6.
-// Mixed-version peers fail at decode (size mismatch) — see the v6
-// release notes at kProtocolVersion above.
+// Asymmetric wire compatibility with v5 — see the kProtocolVersion
+// comment above for the full v5↔v6 decode-rule analysis.
 constexpr size_t kWireRejectSize    = 6;
 constexpr size_t kWireInputSize     = 4;
 constexpr size_t kWireInputPktSize  = 4 + 4 + 2 + 2 + 4 + kRedundancyR * kWireInputSize;                           // 36 at R=5

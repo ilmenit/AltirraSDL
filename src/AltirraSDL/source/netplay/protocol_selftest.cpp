@@ -191,17 +191,21 @@ static void testRejectRoundTrip() {
 	CHECK(DecodeReject(buf, kWireRejectSize, out) == DecodeResult::Ok);
 	CHECK(out.reason == (uint16_t)SessionTermination::BadEntryCode);
 
-	// Hard wire break test: a v5-shaped 8-byte Reject (4 magic + 4
-	// reason u32) decodes successfully through DecodeReject's v6 path
-	// only as the first 6 bytes — and its low-2-byte reason is
-	// preserved.  Mixed-version peers still get a usable code for
-	// the version-skew handshake, but the decoder treats trailing
-	// bytes as the next packet (or noise) — confirming that a single-
-	// version pipeline doesn't accidentally accept v5 wire shape.
+	// v5→v6 forward-compatibility check.  A v5 sender's 8-byte
+	// NetReject (4-magic + u32 reason; low byte = SessionTermination
+	// numeric) is delivered to a v6 receiver verbatim — recvfrom
+	// hands the v6 decoder the full 8 bytes, NOT pre-trimmed to 6.
+	// v6's lenient decoder (`if (len < 6) TooShort`) accepts the
+	// oversized datagram, reads bytes 0..5, and ignores 6..7.
+	// Result: a v5 host's "version skew" Reject still arrives at a
+	// v6 joiner as SessionTermination::VersionSkew (numeric 3) so
+	// the user sees a friendly "Protocol version mismatch" message
+	// rather than a generic timeout.  See the kProtocolVersion
+	// comment in packets.h for the full v5↔v6 decode-rule matrix.
 	uint8_t v5Buf[8] = { 'A', 'N', 'P', 'R', 0x07, 0, 0, 0 };
 	NetReject v5out;
-	CHECK(DecodeReject(v5Buf, 6, v5out) == DecodeResult::Ok);
-	CHECK(v5out.reason == 7);  // BadEntryCode
+	CHECK(DecodeReject(v5Buf, sizeof(v5Buf), v5out) == DecodeResult::Ok);
+	CHECK(v5out.reason == 7);  // BadEntryCode (low byte of v5 u32)
 
 	// New v6 reason values round-trip too.
 	NetReject snap;

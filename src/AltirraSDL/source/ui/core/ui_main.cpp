@@ -1583,8 +1583,18 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// through to the canvas if they wanted, but in practice the wait
 	// is short and the overlay is purely informational.
 	{
-		extern int  ATWasmIsStartingOverlayActive();
-		extern void ATWasmSetStartingOverlay(int);
+		// extern "C" is REQUIRED here: these symbols are defined in
+		// wasm_bridge.cpp with extern "C" linkage so JS can resolve
+		// them via Module._..., and a plain C++ extern declaration
+		// would be name-mangled by the consumer-side compiler — the
+		// linker would look for _Z31ATWasm... and never find the
+		// unmangled symbol the bridge emits.  Native build is
+		// shielded by the surrounding #if defined(__EMSCRIPTEN__),
+		// so a missed extern "C" only manifests as a WASM link
+		// error.  Native test suites do NOT cover this; only
+		// emcmake/emcc surfaces the breakage.
+		extern "C" int  ATWasmIsStartingOverlayActive();
+		extern "C" void ATWasmSetStartingOverlay(int);
 		if (ATWasmIsStartingOverlayActive()) {
 			if (ATNetplayGlue::IsLockstepping()) {
 				// Self-clear on lockstep — no separate hook needed.

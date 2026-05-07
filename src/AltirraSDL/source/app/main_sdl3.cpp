@@ -2261,8 +2261,13 @@ int main(int argc, char *argv[]) {
 			// spawning this WASM emulator.  Showing the setup wizard
 			// here would defeat the entire purpose of the broker
 			// (instant gaming-mode landing).  ATWasmBrokerIsActive()
-			// is a free function exported by wasm_bridge.cpp.
-			extern bool ATWasmBrokerIsActive();
+			// is a free function exported by wasm_bridge.cpp with
+			// extern "C" linkage — the matching declaration here MUST
+			// also use extern "C" or the WASM linker can't bind the
+			// mangled C++ name to the unmangled symbol the bridge
+			// emits.  Native build is shielded by the #ifdef so a
+			// missed extern "C" would only break the WASM build.
+			extern "C" bool ATWasmBrokerIsActive();
 			const bool brokerActive = ATWasmBrokerIsActive();
 #else
 			constexpr bool brokerActive = false;
