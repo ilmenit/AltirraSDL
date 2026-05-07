@@ -46,6 +46,7 @@
 #include "transport.h"
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -74,6 +75,45 @@ public:
 		Ended,                  // clean Bye or app-initiated End
 		Desynced,               // hash mismatch — unrecoverable (flap limit hit)
 		Failed,                 // transport / handshake / snapshot failure
+	};
+
+	// Wire-stable mirror of Phase, sent in NetPhase.phase.  Values are
+	// FROZEN once shipped — changing one breaks v6 cross-version
+	// compatibility for the observability protocol.  static_assert in
+	// coordinator.cpp catches accidental drift between the two enums.
+	// Decoupling from the local Phase enum means we can add new local
+	// phases (e.g. WaitingForCRTSettings) without inventing a wire
+	// value, and reorder the local enum without rewriting peer
+	// observers.
+	enum class PhaseBroadcast : uint8_t {
+		Idle              = 0,
+		WaitingForJoiner  = 1,
+		Handshaking       = 2,
+		SendingSnapshot   = 3,
+		ReceivingSnapshot = 4,
+		SnapshotReady     = 5,
+		Lockstepping      = 6,
+		Resyncing         = 7,
+		Ended             = 8,
+		Desynced          = 9,
+		Failed            = 10,
+	};
+
+	// v6 NetEvent kind constants — wire-stable subcodes that travel
+	// in NetEvent.kind.  Receiver-side semantics (logging,
+	// localization) live in the lobby SSE bridge and the broker.js
+	// page consumer, NOT in the local Coordinator (which only emits
+	// and never reacts).  Adding a new kind is non-breaking: an
+	// older peer just logs an unknown numeric kind.
+	enum NetEventKind : uint8_t {
+		kEvtHandshake    = 1,
+		kEvtSnapshot     = 2,
+		kEvtDesync       = 3,
+		kEvtResync       = 4,
+		kEvtConnectivity = 5,
+		kEvtEnd          = 6,
+		kEvtFocusChange  = 100,   // privacy-gated (TelemetryPrefs)
+		kEvtAudioState   = 101,   // privacy-gated
 	};
 
 	Coordinator();
@@ -391,6 +431,19 @@ public:
 	// True iff the main loop should call Advance() this tick.
 	bool IsLockstepping() const { return mPhase == Phase::Lockstepping; }
 
+	// v6 observability — peer-state caches populated by
+	// HandlePhaseFromPeer / HandleHeartbeatFromPeer.  Default values
+	// (Idle phase, zero-filled heartbeat) are used until the peer
+	// emits its first NetPhase / NetHeartbeat — the staleness
+	// accessors below let the HUD distinguish "peer hasn't sent
+	// anything yet" from "peer was here but went silent".
+	PhaseBroadcast GetPeerPhase()           const { return mPeerPhase; }
+	uint16_t       GetPeerPhaseProgNum()    const { return mPeerPhaseProgNum; }
+	uint16_t       GetPeerPhaseProgDen()    const { return mPeerPhaseProgDen; }
+	NetHeartbeat   GetPeerHeartbeat()       const { return mPeerHeartbeat; }
+	int64_t        PeerPhaseSeenMs()        const { return mPeerPhaseSeenMs; }
+	int64_t        PeerHeartbeatSeenMs()    const { return mPeerHeartbeatSeenMs; }
+
 	// Lockstep accessors for HUD / diagnostics.
 	const LockstepLoop& Loop() const { return mLoop; }
 	LockstepLoop& Loop() { return mLoop; }
@@ -424,12 +477,37 @@ private:
 	void HandleRejectFromHost(const NetReject& r);
 	void HandleInputPacket(const NetInputPacket& pkt, uint64_t nowMs);
 	void HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs);
-	void HandleSnapAck(const NetSnapAck& a);
-	void HandleBye(const NetBye& b, const Endpoint& from);
+	void HandleSnapAck(const NetSnapAck& a, uint64_t nowMs);
+	void HandleBye(const NetBye& b, const Endpoint& from, uint64_t nowMs);
 	void HandleResyncStart(const NetResyncStart& s, uint64_t nowMs);
 	void HandleResyncDone(const NetResyncDone& d, uint64_t nowMs);
 	void HandleEmote(const NetEmote& e);
 	void HandleSimHashDiag(const NetSimHashDiag& d);
+
+	// v6 observability handlers — peer broadcasts about its phase,
+	// fine-grained events, and 1-Hz heartbeat telemetry.  Local
+	// diagnostic only: these update the peer-state cache used by
+	// the HUD and lobby SSE bridge.  They do NOT alter the local
+	// Coordinator's behaviour (so a missing or buggy peer's
+	// observability doesn't affect the lockstep handshake).
+	void HandlePhaseFromPeer(const NetPhase& p, uint64_t nowMs);
+	void HandleEventBatchFromPeer(const NetEventBatch& b, uint64_t nowMs);
+	void HandleHeartbeatFromPeer(const NetHeartbeat& h, uint64_t nowMs);
+
+	// v6 observability emitters.  SetPhaseAndBroadcast is the
+	// canonical way to assign mPhase — every call site in
+	// coordinator.cpp routes through this helper so the peer sees
+	// every transition.  EmitEvent appends to mPendingEvents
+	// (drop-oldest if full); the Poll-driven flush picks it up.
+	// BuildAndSendHeartbeat samples local telemetry into a
+	// NetHeartbeat and ships it.
+	void SetPhaseAndBroadcast(Phase newPhase,
+	                          uint16_t progNum = 0,
+	                          uint16_t progDen = 0);
+	void FlushEventBatch(uint64_t nowMs);
+	void BuildAndSendHeartbeat(uint64_t nowMs);
+	void EmitEvent(uint8_t kind, uint8_t code, uint32_t data,
+	               uint64_t nowMs);
 	// If we have both a local and a peer diag for the same frame, log
 	// a DIFF line naming every subsystem whose hash disagrees.  Fires
 	// once per (frame) pair; a second call with identical frame is a
@@ -512,6 +590,36 @@ private:
 	// Phase + role.
 	Phase mPhase = Phase::Idle;
 	Role  mRole  = Role::None;
+
+	// v6 observability — peer-state cache.  Populated by
+	// HandlePhaseFromPeer / HandleHeartbeatFromPeer.  All zeros
+	// means "peer hasn't broadcast yet" — the *SeenMs accessors
+	// let the HUD distinguish that from "stale" / "old peer".
+	PhaseBroadcast mPeerPhase           = PhaseBroadcast::Idle;
+	uint16_t       mPeerPhaseProgNum    = 0;
+	uint16_t       mPeerPhaseProgDen    = 0;
+	int64_t        mPeerPhaseSeenMs     = 0;
+	NetHeartbeat   mPeerHeartbeat       {};
+	int64_t        mPeerHeartbeatSeenMs = 0;
+
+	// v6 observability — local broadcast state.  mLastHeartbeatSec
+	// gates the 1-Hz emit in Poll; mHeartbeatSeq is the per-sender
+	// monotonic sequence number sent inside NetHeartbeat.  Pending-
+	// events queue is drained by FlushEventBatch every ≤100 ms.
+	int64_t        mLastHeartbeatSec    = 0;
+	int64_t        mLastEventFlushMs    = 0;
+	uint16_t       mHeartbeatSeq        = 0;
+	uint64_t       mSessionStartMs      = 0;
+	std::vector<NetEvent> mPendingEvents;
+
+	// RTT estimation.  Per-frame outgoing-stamps; matched against
+	// peer's ackedFrame in incoming input packets to compute round-
+	// trip samples.  EWMA-smoothed into mPeerRttMsEwma.  Bounded so
+	// a long lockstep gap (peer paused, networks blip) doesn't
+	// balloon memory.
+	struct InputTxStamp { uint32_t frame; int64_t txMs; };
+	std::deque<InputTxStamp> mInputTxStamps;   // ≤64
+	uint16_t       mPeerRttMsEwma        = 0;
 
 	// Handshake state.
 	char     mPlayerHandle[kHandleLen] = {};

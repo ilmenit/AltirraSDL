@@ -102,7 +102,7 @@ bool Coordinator::BeginHost(uint16_t localPort,
 	}
 
 	mRole = Role::Host;
-	mPhase = Phase::WaitingForJoiner;
+	SetPhaseAndBroadcast(Phase::WaitingForJoiner);
 	mLastError = "";
 	mPhaseStartMs = 0;  // set on first Poll
 	mPunchTargets.clear();
@@ -165,7 +165,7 @@ bool Coordinator::BeginJoin(const char* hostAddress,
 	}
 
 	mRole = Role::Joiner;
-	mPhase = Phase::Handshaking;
+	SetPhaseAndBroadcast(Phase::Handshaking);
 	mLastError = "";
 	mHaveLastRejectReason = false;
 	mLastRejectReason = 0;
@@ -241,7 +241,7 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 		}
 
 		mRole = Role::Joiner;
-		mPhase = Phase::Handshaking;
+		SetPhaseAndBroadcast(Phase::Handshaking);
 		mLastError = "";
 		mHelloStartMs = 0;
 		mLastHelloMs  = 0;
@@ -348,7 +348,7 @@ bool Coordinator::BeginJoinMulti(const char* hostCandidatesSemicolonList,
 	}
 
 	mRole = Role::Joiner;
-	mPhase = Phase::Handshaking;
+	SetPhaseAndBroadcast(Phase::Handshaking);
 	mLastError = "";
 	mHelloStartMs = 0;  // set on first Poll tick
 	mLastHelloMs  = 0;
@@ -447,7 +447,7 @@ bool Coordinator::BeginJoinRelay(const char* lobbyHostPort,
 	}
 
 	mRole = Role::Joiner;
-	mPhase = Phase::Handshaking;
+	SetPhaseAndBroadcast(Phase::Handshaking);
 	mLastError = "";
 	mHelloStartMs = 0;
 	mLastHelloMs  = 0;
@@ -920,7 +920,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 				NetSnapAck a;
 				{ DecodeResult dr = DecodeSnapAck(mRxBuf, n, a);
 				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
-				HandleSnapAck(a);
+				HandleSnapAck(a, nowMs);
 				break;
 			}
 			case kMagicSnapSkip: {
@@ -938,7 +938,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 				NetBye b;
 				{ DecodeResult dr = DecodeBye(mRxBuf, n, b);
 				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
-				HandleBye(b, from);
+				HandleBye(b, from, nowMs);
 				break;
 			}
 			case kMagicResyncStart: {
@@ -967,6 +967,27 @@ void Coordinator::Poll(uint64_t nowMs) {
 				{ DecodeResult dr = DecodeSimHashDiag(mRxBuf, n, d);
 				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleSimHashDiag(d);
+				break;
+			}
+			case kMagicNetPhase: {
+				NetPhase p;
+				{ DecodeResult dr = DecodePhase(mRxBuf, n, p);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
+				HandlePhaseFromPeer(p, nowMs);
+				break;
+			}
+			case kMagicNetEvents: {
+				NetEventBatch b;
+				{ DecodeResult dr = DecodeEventBatch(mRxBuf, n, b);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
+				HandleEventBatchFromPeer(b, nowMs);
+				break;
+			}
+			case kMagicNetHeartbeat: {
+				NetHeartbeat h;
+				{ DecodeResult dr = DecodeHeartbeat(mRxBuf, n, h);
+				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
+				HandleHeartbeatFromPeer(h, nowMs);
 				break;
 			}
 			default:
@@ -1120,6 +1141,8 @@ void Coordinator::Poll(uint64_t nowMs) {
 				mRole == Role::Host ? "host" : "joiner",
 				(unsigned)mInputDelay);
 			mDesyncLogged = true;
+			EmitEvent(kEvtDesync, /*code*/ 0,
+			          (uint32_t)mLoop.DesyncFrame(), nowMs);
 		}
 		if (mRole == Role::Host) {
 			BeginHostResync(nowMs);
@@ -1184,8 +1207,10 @@ void Coordinator::Poll(uint64_t nowMs) {
 			mRole == Role::Host ? "host" : "joiner",
 			(unsigned long long)(nowMs - mResyncStartMs),
 			(unsigned)mResyncEpoch);
+		EmitEvent(kEvtResync, /*code*/ 2 /*timeout*/,
+		          mResyncEpoch, nowMs);
 		SendBye(kByeDesyncDetected);
-		mPhase = Phase::Desynced;
+		SetPhaseAndBroadcast(Phase::Desynced);
 		mLastError = "resync timed out";
 	}
 
@@ -1222,9 +1247,36 @@ void Coordinator::Poll(uint64_t nowMs) {
 				mRole == Role::Host ? "host" : "joiner",
 				(unsigned long long)kPeerTimeoutMs,
 				(unsigned long long)(nowMs - mLoop.LastPeerRecvMs()));
+			EmitEvent(kEvtConnectivity, /*code*/ 0 /*peer-silent*/,
+			          (uint32_t)(nowMs - mLoop.LastPeerRecvMs()), nowMs);
 			SendBye(kByeTimeout);
-			mPhase = Phase::Ended;
+			SetPhaseAndBroadcast(Phase::Ended);
 			mLastError = "peer timed out";
+		}
+	}
+
+	// v6 observability — 1-Hz heartbeat + ≤100 ms event-batch flush.
+	// Skip if we have no peer (handshake hasn't started) or we're
+	// in a terminal phase (peer is gone).  Anchor mSessionStartMs
+	// once we have a peer so EmitEvent's tsOffsetMs has a base.
+	if (mTransport && mPeerKnown
+	    && mPhase != Phase::Idle && mPhase != Phase::Ended
+	    && mPhase != Phase::Failed) {
+		if (mSessionStartMs == 0) mSessionStartMs = nowMs;
+
+		const int64_t curSec = (int64_t)(nowMs / 1000);
+		if (curSec != mLastHeartbeatSec) {
+			mLastHeartbeatSec = curSec;
+			BuildAndSendHeartbeat(nowMs);
+		}
+
+		// Flush events when the queue has aged past 100 ms or filled
+		// up.  Drop-oldest already happened on EmitEvent overflow.
+		if (!mPendingEvents.empty()) {
+			const bool aged = (mLastEventFlushMs == 0
+			                   || (int64_t)nowMs - mLastEventFlushMs >= 100);
+			const bool full = (mPendingEvents.size() >= kMaxEventBatchEvents);
+			if (aged || full) FlushEventBatch(nowMs);
 		}
 	}
 }
@@ -1462,6 +1514,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 			handle, ep,
 			(mLobbyRelayKnown && from.Equals(mLobbyRelayEndpoint))
 				? " (via relay)" : " (direct)");
+		EmitEvent(kEvtHandshake, /*code*/ 1 /*accepted*/, 0, nowMs);
 	}
 
 	if (mSnapTxBuffer.empty()) {
@@ -1471,13 +1524,13 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		mPendingJoiner = from;
 		// Advance phase so SubmitSnapshotForUpload knows we're
 		// expecting it.
-		mPhase = Phase::SendingSnapshot;
+		SetPhaseAndBroadcast(Phase::SendingSnapshot);
 		mWelcomeAcked = false;        // re-arm the v5 grace gate
 		return;
 	}
 
 	// Snapshot already submitted (app was proactive).  Welcome now.
-	mPhase = Phase::SendingSnapshot;
+	SetPhaseAndBroadcast(Phase::SendingSnapshot);
 	mWelcomeAcked = false;            // re-arm the v5 grace gate
 	SendWelcome(nowMs);
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
@@ -1567,12 +1620,12 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	if (mSnapTxBuffer.empty()) {
 		mHostHasPendingJoiner = true;
 		mPendingJoiner = mPeer;
-		mPhase = Phase::SendingSnapshot;
+		SetPhaseAndBroadcast(Phase::SendingSnapshot);
 		mWelcomeAcked = false;        // re-arm the v5 grace gate
 		return;
 	}
 
-	mPhase = Phase::SendingSnapshot;
+	SetPhaseAndBroadcast(Phase::SendingSnapshot);
 	mWelcomeAcked = false;            // re-arm the v5 grace gate
 	SendWelcome();
 	mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
@@ -1632,7 +1685,7 @@ void Coordinator::SubmitSnapshotForUpload(const uint8_t* data, size_t len) {
 
 	if (mHostHasPendingJoiner) {
 		mHostHasPendingJoiner = false;
-		mPhase = Phase::SendingSnapshot;
+		SetPhaseAndBroadcast(Phase::SendingSnapshot);
 		mWelcomeAcked = false;        // re-arm the v5 grace gate
 		SendWelcome();
 		mSnapTx.Begin(mSnapTxBuffer.data(), mSnapTxBuffer.size());
@@ -1656,7 +1709,7 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	// sees a clear explanation instead of mysterious silence.
 	if (w.boot.canonicalProfileVersion !=
 	    ATNetplayProfile::kCanonicalProfileVersion) {
-		mPhase = Phase::Failed;
+		SetPhaseAndBroadcast(Phase::Failed);
 		mLastError = "Host is running a different Online Play "
 			"profile version. Both peers must run a compatible "
 			"Altirra release.";
@@ -1677,7 +1730,7 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes);
 	mSnapProgressMilestone = 0;
 	mExpectedSnapCrc = w.snapshotCRC32;   // v5: verify on assembly
-	mPhase = Phase::ReceivingSnapshot;
+	SetPhaseAndBroadcast(Phase::ReceivingSnapshot);
 
 	// Item 6 — NAT keepalive.  We're about to go silent on UDP for
 	// the duration of the chunk transfer (no more Hello retries; the
@@ -1702,6 +1755,8 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	g_ATLCNetplay("joiner: Welcome accepted (snapshot=%u bytes / %u chunks, delay=%u, crc=0x%08X)",
 		(unsigned)w.snapshotBytes, (unsigned)w.snapshotChunks,
 		(unsigned)w.inputDelayFrames, (unsigned)w.snapshotCRC32);
+	EmitEvent(kEvtHandshake, /*code*/ 3 /*welcome-accepted*/,
+	          w.snapshotChunks, nowMs);
 
 	// v5: tell the host we're ready for chunks.  Sent NOW, not on the
 	// next Poll, so the host's chunk pump can release its grace gate
@@ -1718,7 +1773,7 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	// If the snapshot is zero-length (edge case: nothing to ship),
 	// move straight to SnapshotReady.
 	if (w.snapshotChunks == 0) {
-		mPhase = Phase::SnapshotReady;
+		SetPhaseAndBroadcast(Phase::SnapshotReady);
 		return;
 	}
 
@@ -1735,7 +1790,7 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 
 void Coordinator::HandleRejectFromHost(const NetReject& r) {
 	if (mPhase != Phase::Handshaking) return;
-	mPhase = Phase::Failed;
+	SetPhaseAndBroadcast(Phase::Failed);
 	// Latch the rejection so the Hello-retry block in Poll() stops
 	// firing.  Without this, a joiner that just received NetReject
 	// would still send another Hello on the next retry tick (and
@@ -1806,6 +1861,8 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 					"joiner: snapshot %u%% (%u/%u chunks)",
 					(unsigned)(bucket * 25u),
 					(unsigned)recv, (unsigned)total);
+				EmitEvent(kEvtSnapshot, /*code*/ 1 /*progress*/,
+				          (uint32_t)(bucket * 25u), nowMs);
 			}
 		}
 	}
@@ -1830,7 +1887,7 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 				FailWith(msg);
 				return;
 			}
-			mPhase = Phase::SnapshotReady;
+			SetPhaseAndBroadcast(Phase::SnapshotReady);
 			g_ATLCNetplay("joiner: snapshot download complete (crc=0x%08X), applying…",
 				(unsigned)actualCrc);
 			// Item 4 cache-store DISABLED with the cache-lookup
@@ -1848,7 +1905,7 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 	}
 }
 
-void Coordinator::HandleSnapAck(const NetSnapAck& a) {
+void Coordinator::HandleSnapAck(const NetSnapAck& a, uint64_t nowMs) {
 	const bool sessionStart = (mPhase == Phase::SendingSnapshot);
 	const bool midResync    = (mPhase == Phase::Resyncing && mRole == Role::Host);
 	if (!sessionStart && !midResync) return;
@@ -1876,6 +1933,8 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 					mRole == Role::Host ? "host" : "joiner",
 					(unsigned)(bucket * 25u),
 					(unsigned)acked, (unsigned)total);
+				EmitEvent(kEvtSnapshot, /*code*/ 1 /*progress*/,
+				          (uint32_t)(bucket * 25u), nowMs);
 			}
 		}
 	}
@@ -1885,9 +1944,10 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 			// Host is ready for lockstep immediately; joiner transitions
 			// to Lockstepping when it calls AcknowledgeSnapshotApplied.
 			mLoop.Begin(Slot::Host, mInputDelay);
-			mPhase = Phase::Lockstepping;
+			SetPhaseAndBroadcast(Phase::Lockstepping);
 			g_ATLCNetplay("host: snapshot delivered, entering Lockstepping (delay=%u frames)",
 				(unsigned)mInputDelay);
+			EmitEvent(kEvtSnapshot, /*code*/ 2 /*delivered*/, 0, nowMs);
 			if (mPeerPath == PeerPath::Relay && PeerIsLobby()) {
 				g_ATLCNetplay("host: relay-only session — mid-session "
 					"direct rescue will probe %zu peer candidate%s "
@@ -1908,7 +1968,7 @@ void Coordinator::HandleSnapAck(const NetSnapAck& a) {
 		} else {
 			// Resync transfer exhausted retries — treat as unrecoverable.
 			SendBye(kByeDesyncDetected);
-			mPhase = Phase::Desynced;
+			SetPhaseAndBroadcast(Phase::Desynced);
 			mLastError = "resync payload upload failed";
 			g_ATLCNetplay("host: resync transfer failed — terminating session");
 		}
@@ -1988,7 +2048,7 @@ void Coordinator::PumpSnapshotSender(uint64_t nowMs) {
 			FailWith("snapshot upload failed (no chunk acks received)");
 		} else if (midResync) {
 			SendBye(kByeDesyncDetected);
-			mPhase = Phase::Desynced;
+			SetPhaseAndBroadcast(Phase::Desynced);
 			mLastError = "resync payload upload failed (no acks)";
 			g_ATLCNetplay("host: resync transfer failed (no acks) — terminating session");
 		}
@@ -2002,7 +2062,7 @@ void Coordinator::PumpSnapshotSender(uint64_t nowMs) {
 void Coordinator::AcknowledgeSnapshotApplied() {
 	if (mPhase != Phase::SnapshotReady) return;
 	mLoop.Begin(Slot::Joiner, mInputDelay);
-	mPhase = Phase::Lockstepping;
+	SetPhaseAndBroadcast(Phase::Lockstepping);
 	g_ATLCNetplay("joiner: snapshot applied, entering Lockstepping (delay=%u frames)",
 		(unsigned)mInputDelay);
 	if (mPeerPath == PeerPath::Relay && PeerIsLobby()) {
@@ -2056,7 +2116,7 @@ void Coordinator::PumpLockstepSend() {
 // Bye / termination
 // ---------------------------------------------------------------------------
 
-void Coordinator::HandleBye(const NetBye& b, const Endpoint& from) {
+void Coordinator::HandleBye(const NetBye& b, const Endpoint& from, uint64_t nowMs) {
 	// Host-side special case: a Bye from a joiner that's only *queued*
 	// (not yet the locked-in peer) means that joiner cancelled before
 	// we got around to accepting them.  Just drop them from the queue —
@@ -2090,6 +2150,7 @@ void Coordinator::HandleBye(const NetBye& b, const Endpoint& from) {
 	}
 	g_ATLCNetplay("%s: peer said Bye (%s)",
 		mRole == Role::Host ? "host" : "joiner", reasonStr);
+	EmitEvent(kEvtEnd, /*code*/ 1 /*peer-bye*/, b.reason, nowMs);
 	// A desync Bye from the peer is terminal regardless of our current
 	// phase — Lockstepping (their apply-time check fired before ours)
 	// or Resyncing (they hit their flap limit / apply error mid-
@@ -2097,10 +2158,10 @@ void Coordinator::HandleBye(const NetBye& b, const Endpoint& from) {
 	// show "clean exit" for an unrecoverable desync.
 	if (b.reason == kByeDesyncDetected &&
 	    (mPhase == Phase::Lockstepping || mPhase == Phase::Resyncing)) {
-		mPhase = Phase::Desynced;
+		SetPhaseAndBroadcast(Phase::Desynced);
 		mLastError = "peer reported desync";
 	} else {
-		mPhase = Phase::Ended;
+		SetPhaseAndBroadcast(Phase::Ended);
 	}
 	{
 		char buf[64];
@@ -2124,7 +2185,7 @@ void Coordinator::End(uint16_t byeReason) {
 	}
 	mPendingDecisions.clear();
 	SendBye(byeReason);
-	mPhase = Phase::Ended;
+	SetPhaseAndBroadcast(Phase::Ended);
 	// Log the locally-initiated end so a session that disappears from
 	// the user's perspective leaves a clear trail.  HandleBye logs
 	// peer-initiated ends; this covers our side (Shutdown, StopHost,
@@ -2281,8 +2342,10 @@ void Coordinator::BeginHostResync(uint64_t nowMs) {
 			"declaring unrecoverable desync",
 			mResyncCountInWindow,
 			(unsigned long long)(nowMs - mResyncWindowStartMs));
+		EmitEvent(kEvtDesync, /*code*/ 1 /*flap-limit*/,
+		          (uint32_t)mResyncCountInWindow, nowMs);
 		SendBye(kByeDesyncDetected);
-		mPhase = Phase::Desynced;
+		SetPhaseAndBroadcast(Phase::Desynced);
 		mLastError = "repeated desync — session unrecoverable";
 		return;
 	}
@@ -2318,10 +2381,12 @@ void Coordinator::BeginHostResync(uint64_t nowMs) {
 	mResyncTxBuffer.clear();
 	mNeedsResyncCapture = true;
 	mResyncStartMs = nowMs;
-	mPhase = Phase::Resyncing;
+	SetPhaseAndBroadcast(Phase::Resyncing);
 
 	g_ATLCNetplay("host: initiating resync epoch=%u resumeFrame=%u",
 		(unsigned)mResyncEpoch, (unsigned)mResyncResumeFrame);
+	EmitEvent(kEvtResync, /*code*/ 1 /*initiated*/,
+	          mResyncEpoch, nowMs);
 }
 
 void Coordinator::SubmitResyncCapture(const uint8_t* data, size_t len) {
@@ -2332,7 +2397,7 @@ void Coordinator::SubmitResyncCapture(const uint8_t* data, size_t len) {
 
 	if (!data || len == 0) {
 		SendBye(kByeDesyncDetected);
-		mPhase = Phase::Desynced;
+		SetPhaseAndBroadcast(Phase::Desynced);
 		mLastError = "host failed to capture savestate";
 		g_ATLCNetplay("host: SubmitResyncCapture got empty payload");
 		return;
@@ -2399,7 +2464,7 @@ void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t nowMs) {
 	mSnapProgressMilestone = 0;
 	mNeedsResyncApply = false;
 	mResyncStartMs = nowMs;
-	mPhase = Phase::Resyncing;
+	SetPhaseAndBroadcast(Phase::Resyncing);
 
 	g_ATLCNetplay("joiner: resync incoming (epoch=%u, %u bytes / %u chunks, "
 		"resumeFrame=%u)",
@@ -2438,7 +2503,7 @@ void Coordinator::AcknowledgeResyncApplied() {
 	mAwaitingHostResyncAck = true;
 	mResyncDoneLastSentMs  = 0;
 
-	mPhase = Phase::Lockstepping;
+	SetPhaseAndBroadcast(Phase::Lockstepping);
 	g_ATLCNetplay("joiner: resync applied, resumed at frame %u (epoch %u)",
 		(unsigned)mResyncResumeFrame, (unsigned)mResyncEpoch);
 }
@@ -2456,7 +2521,7 @@ void Coordinator::HandleResyncDone(const NetResyncDone& d, uint64_t /*nowMs*/) {
 	// post-capture hash.
 	mLoop.ResumeAt(mResyncResumeFrame, mResyncSeedHash);
 	mDesyncLogged = false;
-	mPhase = Phase::Lockstepping;
+	SetPhaseAndBroadcast(Phase::Lockstepping);
 	mResyncTxBuffer.clear();    // free memory
 	g_ATLCNetplay("host: resync complete, resumed at frame %u (epoch %u)",
 		(unsigned)mResyncResumeFrame, (unsigned)mResyncEpoch);
@@ -2551,7 +2616,7 @@ void Coordinator::MaybeLogSimHashDiff() {
 
 void Coordinator::FailWith(const char* msg) {
 	mLastError = msg;
-	mPhase = Phase::Failed;
+	SetPhaseAndBroadcast(Phase::Failed);
 	g_ATLCNetplay("%s session failed: %s",
 		mRole == Role::Host ? "host" :
 		mRole == Role::Joiner ? "joiner" : "idle",
@@ -2816,6 +2881,169 @@ bool Coordinator::WrapAndSend(const uint8_t* bytes, size_t n,
 		return mTransport->SendTo(bytes, n, peer);
 	}
 	return SendWrappedViaLobby(bytes, n);
+}
+
+// ----------------------------------------------------------------------
+// v6 observability — phase / event / heartbeat broadcast and ingest.
+//
+// All three packet types ride the same WrapAndSend path used by Hello /
+// Welcome / Input — direct UDP, relay UDP via ASDF, and WS-relay are
+// transparent to the caller.  Handlers update the peer-state cache used
+// by the HUD and lobby SSE bridge, and never alter the local Coordinator's
+// behaviour (a missing or buggy peer's observability stays decoupled
+// from the lockstep handshake).
+// ----------------------------------------------------------------------
+
+namespace {
+
+// Compile-time guard: PhaseBroadcast is a wire-stable mirror of Phase.
+// If a future patch reorders the local Phase enum without updating the
+// mirror, these static_asserts fail to compile.  PhaseBroadcast values
+// are FROZEN once shipped — changing one breaks v6 compatibility.
+using PB = Coordinator::PhaseBroadcast;
+using PH = Coordinator::Phase;
+static_assert((uint8_t)PB::Idle              == (uint8_t)PH::Idle, "");
+static_assert((uint8_t)PB::WaitingForJoiner  == (uint8_t)PH::WaitingForJoiner, "");
+static_assert((uint8_t)PB::Handshaking       == (uint8_t)PH::Handshaking, "");
+static_assert((uint8_t)PB::SendingSnapshot   == (uint8_t)PH::SendingSnapshot, "");
+static_assert((uint8_t)PB::ReceivingSnapshot == (uint8_t)PH::ReceivingSnapshot, "");
+static_assert((uint8_t)PB::SnapshotReady     == (uint8_t)PH::SnapshotReady, "");
+static_assert((uint8_t)PB::Lockstepping      == (uint8_t)PH::Lockstepping, "");
+static_assert((uint8_t)PB::Resyncing         == (uint8_t)PH::Resyncing, "");
+static_assert((uint8_t)PB::Ended             == (uint8_t)PH::Ended, "");
+static_assert((uint8_t)PB::Desynced          == (uint8_t)PH::Desynced, "");
+static_assert((uint8_t)PB::Failed            == (uint8_t)PH::Failed, "");
+
+inline PB MapPhaseToBroadcast(PH p) { return (PB)(uint8_t)p; }
+
+} // anonymous
+
+void Coordinator::SetPhaseAndBroadcast(Phase newPhase,
+                                       uint16_t progNum,
+                                       uint16_t progDen) {
+	// Dedup: a few code paths assign the same Phase twice (e.g. Failed
+	// after a transport error already in Failed); don't broadcast a
+	// duplicate transition.  Saves a few packets per session and keeps
+	// the peer's view of "transitions seen" tidy.
+	const bool changed = (mPhase != newPhase);
+	mPhase = newPhase;
+	if (!changed && progNum == 0 && progDen == 0) return;
+
+	// Only broadcast once we have a peer.  Pre-handshake transitions
+	// (Idle → WaitingForJoiner before mPeer is known) are local-only;
+	// the first packet the peer ever receives from us will be the
+	// Welcome anyway.  Joiner side: BeginJoin sets mPeerKnown after
+	// adding the first candidate, so the initial Idle → Handshaking
+	// will broadcast.
+	if (!mTransport || !mPeerKnown) return;
+
+	NetPhase p;
+	p.phase    = (uint8_t)MapPhaseToBroadcast(newPhase);
+	p.flags    = (mRole == Role::Joiner) ? 0x01 : 0x00;
+	p.progNum  = progNum;
+	p.progDen  = progDen;
+	p.reserved = 0;
+	uint8_t buf[kWireNetPhaseSize];
+	const size_t n = EncodePhase(p, buf, sizeof buf);
+	if (n == kWireNetPhaseSize) WrapAndSend(buf, n, mPeer);
+}
+
+void Coordinator::EmitEvent(uint8_t kind, uint8_t code, uint32_t data,
+                            uint64_t nowMs) {
+	// Lazy-initialise the session-start stamp so tsOffsetMs has a
+	// meaningful base.  First non-zero nowMs we see anchors all
+	// subsequent event timestamps for this session.
+	if (mSessionStartMs == 0) mSessionStartMs = nowMs;
+
+	NetEvent e;
+	e.tsOffsetMs = (uint16_t)((nowMs - mSessionStartMs) & 0xFFFF);
+	e.kind = kind;
+	e.code = code;
+	e.data = data;
+
+	// Drop-oldest on overflow.  The Poll-driven flush runs every
+	// ≤100 ms or whenever the queue fills, so overflow is rare —
+	// only happens if the host fires >280 events/sec sustained.
+	if (mPendingEvents.size() >= kMaxEventBatchEvents) {
+		mPendingEvents.erase(mPendingEvents.begin());
+	}
+	mPendingEvents.push_back(e);
+}
+
+void Coordinator::FlushEventBatch(uint64_t nowMs) {
+	if (mPendingEvents.empty()) return;
+	if (!mTransport || !mPeerKnown) {
+		// No one to send to yet — drop and reset the timer so we
+		// don't keep flooding the queue.
+		mPendingEvents.clear();
+		mLastEventFlushMs = (int64_t)nowMs;
+		return;
+	}
+
+	NetEventBatch b;
+	b.count = (uint8_t)std::min<size_t>(mPendingEvents.size(),
+	                                    kMaxEventBatchEvents);
+	b.reserved = 0;
+	for (uint8_t i = 0; i < b.count; ++i) b.items[i] = mPendingEvents[i];
+
+	uint8_t buf[kWireNetEventBatchMaxSize];
+	const size_t n = EncodeEventBatch(b, buf, sizeof buf);
+	if (n) WrapAndSend(buf, n, mPeer);
+
+	mPendingEvents.erase(mPendingEvents.begin(),
+	                     mPendingEvents.begin() + b.count);
+	mLastEventFlushMs = (int64_t)nowMs;
+}
+
+void Coordinator::BuildAndSendHeartbeat(uint64_t nowMs) {
+	if (!mTransport || !mPeerKnown) return;
+
+	NetHeartbeat h;
+	h.rttMs         = mPeerRttMsEwma;
+	// B.1 ships the wire + scheduler.  B.3+B.4 wires up real
+	// telemetry sources from LockstepLoop and the SDL3 frontend.
+	// Stubbing to 0 here is a deliberate placeholder, NOT a bug —
+	// a v1 heartbeat with all-zero telemetry still gives the peer
+	// a useful liveness signal, sequence number for skip detection,
+	// and a wallclock cadence sample.
+	h.lossPct5s     = 0;
+	h.frameSkip5s   = 0;
+	h.framesBehind  = 0;
+	h.cpuSaturation = 0;
+	h.tabVisible    = 1;
+	h.seq           = mHeartbeatSeq++;
+	h.wallMsLow     = (uint16_t)(nowMs & 0xFFFFu);
+
+	uint8_t buf[kWireNetHeartbeatSize];
+	const size_t n = EncodeHeartbeat(h, buf, sizeof buf);
+	if (n) WrapAndSend(buf, n, mPeer);
+}
+
+void Coordinator::HandlePhaseFromPeer(const NetPhase& p, uint64_t nowMs) {
+	mPeerPhase           = (PhaseBroadcast)p.phase;
+	mPeerPhaseProgNum    = p.progNum;
+	mPeerPhaseProgDen    = p.progDen;
+	mPeerPhaseSeenMs     = (int64_t)nowMs;
+}
+
+void Coordinator::HandleEventBatchFromPeer(const NetEventBatch& b,
+                                           uint64_t nowMs) {
+	(void)nowMs;
+	// v1: log only.  Future patches may surface specific kinds in
+	// the HUD ("Peer dropped window focus" toast etc.); for now the
+	// trace lets postmortems read both sides of a session.
+	for (uint8_t i = 0; i < b.count; ++i) {
+		const NetEvent& e = b.items[i];
+		g_ATLCNetplay("peer-event: kind=%u code=%u data=0x%08x ts=%u",
+			(unsigned)e.kind, (unsigned)e.code,
+			(unsigned)e.data, (unsigned)e.tsOffsetMs);
+	}
+}
+
+void Coordinator::HandleHeartbeatFromPeer(const NetHeartbeat& h,
+                                          uint64_t nowMs) {
+	mPeerHeartbeat       = h;
+	mPeerHeartbeatSeenMs = (int64_t)nowMs;
 }
 
 bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {

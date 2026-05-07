@@ -1130,6 +1130,65 @@ uint64_t MsSinceLastPeerPacket(uint64_t nowMs) {
 	return nowMs > last ? (nowMs - last) : 0;
 }
 
+// v6 observability accessors — bridge ATNetplay::Coordinator's
+// peer-state cache to the HUD layer.  Returns sentinels when no
+// coordinator is active so the HUD code can render "no data yet"
+// without special-casing.  Maps the wire-stable
+// ATNetplay::Coordinator::PhaseBroadcast values into the existing
+// glue Phase mirror (which the UI already consumes); the values
+// match 1:1 modulo the glue-only `None` sentinel which we use here
+// when there's no coord.
+Phase GetPeerPhase() {
+	ATNetplay::Coordinator *c = ActiveLockstep();
+	if (!c) return Phase::None;
+	const auto pb = c->GetPeerPhase();
+	switch (pb) {
+		case ATNetplay::Coordinator::PhaseBroadcast::Idle:              return Phase::Idle;
+		case ATNetplay::Coordinator::PhaseBroadcast::WaitingForJoiner:  return Phase::WaitingForJoiner;
+		case ATNetplay::Coordinator::PhaseBroadcast::Handshaking:       return Phase::Handshaking;
+		case ATNetplay::Coordinator::PhaseBroadcast::SendingSnapshot:   return Phase::SendingSnapshot;
+		case ATNetplay::Coordinator::PhaseBroadcast::ReceivingSnapshot: return Phase::ReceivingSnapshot;
+		case ATNetplay::Coordinator::PhaseBroadcast::SnapshotReady:     return Phase::SnapshotReady;
+		case ATNetplay::Coordinator::PhaseBroadcast::Lockstepping:      return Phase::Lockstepping;
+		case ATNetplay::Coordinator::PhaseBroadcast::Resyncing:         return Phase::Resyncing;
+		case ATNetplay::Coordinator::PhaseBroadcast::Ended:             return Phase::Ended;
+		case ATNetplay::Coordinator::PhaseBroadcast::Desynced:          return Phase::Desynced;
+		case ATNetplay::Coordinator::PhaseBroadcast::Failed:            return Phase::Failed;
+	}
+	return Phase::None;
+}
+
+PeerHeartbeat GetPeerHeartbeat() {
+	PeerHeartbeat hb{};
+	ATNetplay::Coordinator *c = ActiveLockstep();
+	if (!c) return hb;
+	const auto& src = c->GetPeerHeartbeat();
+	hb.rttMs         = src.rttMs;
+	hb.lossPct5s     = src.lossPct5s;
+	hb.frameSkip5s   = src.frameSkip5s;
+	hb.framesBehind  = src.framesBehind;
+	hb.cpuSaturation = src.cpuSaturation;
+	hb.tabVisible    = src.tabVisible != 0;
+	hb.seq           = src.seq;
+	return hb;
+}
+
+uint64_t MsSincePeerPhase(uint64_t nowMs) {
+	ATNetplay::Coordinator *c = ActiveLockstep();
+	if (!c) return UINT64_MAX / 2;
+	int64_t seen = c->PeerPhaseSeenMs();
+	if (seen == 0) return UINT64_MAX / 2;
+	return nowMs > (uint64_t)seen ? (nowMs - (uint64_t)seen) : 0;
+}
+
+uint64_t MsSincePeerHeartbeat(uint64_t nowMs) {
+	ATNetplay::Coordinator *c = ActiveLockstep();
+	if (!c) return UINT64_MAX / 2;
+	int64_t seen = c->PeerHeartbeatSeenMs();
+	if (seen == 0) return UINT64_MAX / 2;
+	return nowMs > (uint64_t)seen ? (nowMs - (uint64_t)seen) : 0;
+}
+
 void DisconnectActive() {
 	// End every host coord + joiner coord first so subsequent ApplySnapshot
 	// in the cleanup hook doesn't race against an active lockstep coord

@@ -323,6 +323,30 @@ bool IsDesynced(int64_t* outFrame);
 // no coordinator is lockstepping or no packet has arrived yet.
 uint64_t MsSinceLastPeerPacket(uint64_t nowMs);
 
+// v6 observability — peer heartbeat snapshot for the HUD's quality
+// glyph.  Plain POD so the UI can read field-by-field without
+// pulling the netplay packet headers.  All zeros means the peer
+// hasn't broadcast a heartbeat yet — gate visual changes on
+// MsSincePeerHeartbeat() to distinguish "first-frame" from "stale".
+struct PeerHeartbeat {
+	uint16_t rttMs         = 0;
+	uint8_t  lossPct5s     = 0;   // 0..100
+	uint8_t  frameSkip5s   = 0;
+	uint16_t framesBehind  = 0;
+	uint8_t  cpuSaturation = 0;
+	bool     tabVisible    = true;
+	uint16_t seq           = 0;
+};
+
+// Peer's last broadcast Phase (M5 NetPhase observation).  Returns
+// Phase::None when no coord is lockstepping.  The peer-staleness
+// accessor below distinguishes "peer never broadcast" (returns
+// huge number) from "peer is silent" (small but rising).
+Phase         GetPeerPhase();
+PeerHeartbeat GetPeerHeartbeat();
+uint64_t      MsSincePeerPhase(uint64_t nowMs);
+uint64_t      MsSincePeerHeartbeat(uint64_t nowMs);
+
 // Connection mode for the joiner coordinator (Direct vs Relay).
 // Returns PeerPath::None when no joiner exists.  Read in the
 // connecting screen (RenderWaiting) and the in-session HUD (HUD pip).
@@ -447,6 +471,20 @@ namespace ATNetplayGlue {
     inline uint32_t CurrentFrame()                  { return 0; }
     inline uint32_t CurrentInputDelay()             { return 0; }
     inline uint64_t MsSinceLastPeerPacket(uint64_t) { return UINT64_MAX / 2; }
+    // M5 observability stubs.  Phase / PeerHeartbeat are defined in
+    // the netplay-enabled section above; here we just need values
+    // for the always-off stubs.
+    enum class Phase : uint8_t { None = 0 };
+    struct PeerHeartbeat {
+        uint16_t rttMs = 0; uint8_t lossPct5s = 0;
+        uint8_t  frameSkip5s = 0; uint16_t framesBehind = 0;
+        uint8_t  cpuSaturation = 0; bool tabVisible = true;
+        uint16_t seq = 0;
+    };
+    inline Phase         GetPeerPhase()             { return Phase::None; }
+    inline PeerHeartbeat GetPeerHeartbeat()         { return {}; }
+    inline uint64_t      MsSincePeerPhase(uint64_t) { return UINT64_MAX / 2; }
+    inline uint64_t      MsSincePeerHeartbeat(uint64_t) { return UINT64_MAX / 2; }
     enum class PeerPath : uint8_t { None = 0, Direct, Relay };
     inline PeerPath JoinerPeerPath()                { return PeerPath::None; }
     inline PeerPath HostPeerPath(const char*)       { return PeerPath::None; }

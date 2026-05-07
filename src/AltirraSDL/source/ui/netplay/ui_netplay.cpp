@@ -1129,6 +1129,122 @@ void RenderInSessionHUD() {
 	ImGui::PopStyleVar(2);
 	ImGui::PopStyleVar(2);
 	ImGui::PopStyleColor(3);
+
+	// v6 observability HUD (M5).  Two pieces:
+	//   1. Peer-phase banner — top-centre, only when the peer is in a
+	//      non-Lockstepping phase while we're in Lockstepping (so the
+	//      user sees "they're loading state…" instead of a confusing
+	//      stall).
+	//   2. Connection-quality glyph — top-right, 3 bars derived from
+	//      RTT + loss.  Renders as ●●● / ●●○ / ●○○ / ○○○ in a colour
+	//      that grades from green to red.  Only shown when at least
+	//      one heartbeat has arrived; otherwise the user sees nothing
+	//      (avoids a misleading "0 bars" early in the session).
+	{
+		const ATNetplayGlue::Phase peerPh = ATNetplayGlue::GetPeerPhase();
+		const uint64_t phaseAge = ATNetplayGlue::MsSincePeerPhase(nowMs);
+		const ATNetplayGlue::PeerHeartbeat hb =
+			ATNetplayGlue::GetPeerHeartbeat();
+		const uint64_t hbAge = ATNetplayGlue::MsSincePeerHeartbeat(nowMs);
+
+		// Peer-phase banner.
+		const char* peerPhaseText = nullptr;
+		if (peerPh != ATNetplayGlue::Phase::None
+		    && peerPh != ATNetplayGlue::Phase::Lockstepping
+		    && phaseAge < 5000) {
+			switch (peerPh) {
+				case ATNetplayGlue::Phase::Resyncing:
+					peerPhaseText = "Opponent is recovering from desync…"; break;
+				case ATNetplayGlue::Phase::ReceivingSnapshot:
+					peerPhaseText = "Opponent is loading game state…";     break;
+				case ATNetplayGlue::Phase::SendingSnapshot:
+					peerPhaseText = "Opponent is preparing the session…";  break;
+				case ATNetplayGlue::Phase::SnapshotReady:
+					peerPhaseText = "Opponent is starting the game…";      break;
+				case ATNetplayGlue::Phase::Handshaking:
+					peerPhaseText = "Opponent is connecting…";             break;
+				case ATNetplayGlue::Phase::Desynced:
+					peerPhaseText = "Opponent reported an unrecoverable desync."; break;
+				case ATNetplayGlue::Phase::Failed:
+					peerPhaseText = "Opponent reported a session error.";  break;
+				case ATNetplayGlue::Phase::Ended:
+					peerPhaseText = "Opponent ended the session.";         break;
+				default: break;
+			}
+		}
+		if (peerPhaseText) {
+			const ImVec2 safeO = ATTouchSafeOrigin();
+			const ImVec2 safeS = ATTouchSafeSize();
+			ImGui::SetNextWindowPos(
+				ImVec2(safeO.x + safeS.x * 0.5f,
+				       safeO.y + ATTouchDp(50.0f)),
+				ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+			ImGui::PushStyleColor(ImGuiCol_WindowBg,
+				ImVec4(0.08f, 0.08f, 0.12f, 0.85f));
+			ImGui::Begin("##NetplayPeerPhaseBanner", nullptr,
+				ImGuiWindowFlags_NoTitleBar |
+				ImGuiWindowFlags_NoResize |
+				ImGuiWindowFlags_NoMove |
+				ImGuiWindowFlags_NoSavedSettings |
+				ImGuiWindowFlags_NoFocusOnAppearing |
+				ImGuiWindowFlags_NoNav |
+				ImGuiWindowFlags_AlwaysAutoResize);
+			ImGui::TextUnformatted(peerPhaseText);
+			ImGui::End();
+			ImGui::PopStyleColor();
+		}
+
+		// Connection-quality glyph.  Only show after we've received at
+		// least one heartbeat (hbAge < ~3 s) — otherwise the dots
+		// would render as red zeros throughout the handshake, which
+		// is alarming and useless.
+		if (ATNetplayGlue::IsLockstepping() && hbAge < 3000) {
+			const uint16_t rtt   = hb.rttMs;
+			const uint8_t  loss  = hb.lossPct5s;
+			int bars = 3;
+			if (rtt > 250 || loss > 20) bars = 2;
+			if (rtt > 500 || loss > 50) bars = 1;
+			if (rtt > 1000 || loss > 80 || hbAge > 2000) bars = 0;
+
+			const ImVec4 col =
+				bars == 3 ? ImVec4(0.40f, 0.92f, 0.45f, 0.95f) :
+				bars == 2 ? ImVec4(1.00f, 0.78f, 0.30f, 0.95f) :
+				bars == 1 ? ImVec4(1.00f, 0.55f, 0.25f, 0.95f) :
+				            ImVec4(1.00f, 0.42f, 0.42f, 0.95f);
+
+			const ImVec2 safeO = ATTouchSafeOrigin();
+			const ImVec2 safeS = ATTouchSafeSize();
+			ImGui::SetNextWindowPos(
+				ImVec2(safeO.x + safeS.x - ATTouchDp(12.0f),
+				       safeO.y + ATTouchDp(12.0f)),
+				ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+			ImGui::PushStyleColor(ImGuiCol_WindowBg,
+				ImVec4(0.06f, 0.06f, 0.10f, 0.55f));
+			ImGui::Begin("##NetplayQualityGlyph", nullptr,
+				ImGuiWindowFlags_NoTitleBar |
+				ImGuiWindowFlags_NoResize |
+				ImGuiWindowFlags_NoMove |
+				ImGuiWindowFlags_NoSavedSettings |
+				ImGuiWindowFlags_NoFocusOnAppearing |
+				ImGuiWindowFlags_NoNav |
+				ImGuiWindowFlags_AlwaysAutoResize);
+			ImGui::PushStyleColor(ImGuiCol_Text, col);
+			char glyph[16];
+			std::snprintf(glyph, sizeof glyph, "%s%s%s",
+				bars >= 1 ? "●" : "○",
+				bars >= 2 ? "●" : "○",
+				bars >= 3 ? "●" : "○");
+			ImGui::TextUnformatted(glyph);
+			ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered()) {
+				ImGui::SetTooltip("RTT: %u ms\nLoss: %u%%\nBehind: %u frames",
+					(unsigned)rtt, (unsigned)loss,
+					(unsigned)hb.framesBehind);
+			}
+			ImGui::End();
+			ImGui::PopStyleColor();
+		}
+	}
 }
 
 // Desktop on-screen emote button.  Gaming Mode already draws the
