@@ -714,6 +714,12 @@ std::string GenerateAnonymousNickname();
 // session so the lobby never sees a flicker.
 const std::string& ResolvedNickname();
 
+// Trim ASCII whitespace and ASCII-lowercase a handle/nickname.  Mirrors
+// server/lobby/server.cpp::NormalizeHandle so client-side self-checks
+// (browser self-filter, "join your own session" guard) match the
+// dedup/cap key the lobby applies on Create.
+std::string NormalizeHandle(const std::string& h);
+
 // Render the Online Play preferences body (sections + controls, no
 // window/sheet wrapping).  Extracted out of RenderPrefs() so the
 // Gaming-Mode Settings "Online Play" page and the old netplay Prefs

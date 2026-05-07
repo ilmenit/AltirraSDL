@@ -27,6 +27,7 @@
 #include "ui_textselection.h"
 #include "uiclipboard.h"
 #include "ui/emotes/emote_picker.h"
+#include "ui/netplay/ui_netplay.h"
 #include "netplay/netplay_glue.h"
 
 extern ATSimulator g_sim;
@@ -83,25 +84,41 @@ static void CmdHoldKeys() {
 // session reset paths run via the canonical-profile boot sequence
 // in kATDeferred_NetplayHostBoot / NetplayJoinerApply, so the
 // keyboard shortcut is purely a user action that would break sync.
-// Gate on IsSessionEngaged() — a host that's still merely
-// advertising (no peer connecting yet) can warm/cold reset freely;
-// the lock only kicks in once a peer is past Handshaking and a
-// reset would actually diverge lockstep.
+// When any session is active (advertising OR engaged) we route the
+// keypress through ATNetplayUI_TryConfirmResetEndsSession, which
+// queues a confirm dialog and on confirm tears down the session
+// before executing the reset.  This both fixes the silent-desync
+// risk (engaged path) and the bug where a host could reset under a
+// live broker advertisement and end up in a state where their own
+// session was visible-and-joinable in the lobby (advertising path).
 static void CmdWarmReset() {
-	if (ATNetplayGlue::IsSessionEngaged()) return;
-	g_sim.WarmReset();
-	g_sim.Resume();
+	auto doReset = []{
+		g_sim.WarmReset();
+		g_sim.Resume();
+	};
+	if (ATNetplayUI_TryConfirmResetEndsSession("Warm Reset", doReset))
+		return;
+	doReset();
 }
 
 static void CmdColdReset() {
-	if (ATNetplayGlue::IsSessionEngaged()) return;
-	g_sim.ColdReset();
-	g_sim.Resume();
-	if (!g_kbdOpts.mbAllowShiftOnColdReset)
-		g_sim.GetPokey().SetShiftKeyState(false, true);
+	auto doReset = []{
+		g_sim.ColdReset();
+		g_sim.Resume();
+		if (!g_kbdOpts.mbAllowShiftOnColdReset)
+			g_sim.GetPokey().SetShiftKeyState(false, true);
+	};
+	if (ATNetplayUI_TryConfirmResetEndsSession("Cold Reset", doReset))
+		return;
+	doReset();
 }
 
 static void CmdToggleNTSCPAL() {
+	// NTSC/PAL toggle is also reset-equivalent for sync purposes —
+	// keep it gated against engaged sessions.  No confirm dialog: it's
+	// a niche shortcut and the rare press during WaitingForJoiner is
+	// safe because a fresh joiner picks up whatever standard the host
+	// is on at handshake.
 	if (ATNetplayGlue::IsSessionEngaged()) return;
 	if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
 		g_sim.SetVideoStandard(kATVideoStandard_PAL);
@@ -636,10 +653,16 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	// =====================================================================
 	{ "System.ColdResetComputerOnly",
 		[] {
-			g_sim.ColdResetComputerOnly();
-			g_sim.Resume();
-			if (!g_kbdOpts.mbAllowShiftOnColdReset)
-				g_sim.GetPokey().SetShiftKeyState(false, true);
+			auto doReset = []{
+				g_sim.ColdResetComputerOnly();
+				g_sim.Resume();
+				if (!g_kbdOpts.mbAllowShiftOnColdReset)
+					g_sim.GetPokey().SetShiftKeyState(false, true);
+			};
+			if (ATNetplayUI_TryConfirmResetEndsSession(
+					"Cold Reset (Computer Only)", doReset))
+				return;
+			doReset();
 		} },
 	{ "System.TogglePauseWhenInactive",
 		[] { ATUISetPauseWhenInactive(!ATUIGetPauseWhenInactive()); } },

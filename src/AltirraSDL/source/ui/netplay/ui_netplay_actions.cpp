@@ -1683,6 +1683,47 @@ void StartJoiningAction() {
 		return;
 	}
 
+	// Self-join guard.  The browser tile filters most cases (see
+	// SessionTile click in ui_netplay_screens.cpp), but this entry
+	// point is also reached from the deep-link / private-code paths
+	// which bypass the tile.  Match on sessionId against any of our
+	// own live registrations and on hostHandle against the local
+	// nickname so a stale broker row that survived our Stop Hosting
+	// is also caught.
+	{
+		const auto& target = st.session.joinTarget;
+		bool isOwn = false;
+		for (const auto& own : st.hostedGames) {
+			for (const auto& reg : own.lobbyRegistrations) {
+				if (!target.sessionId.empty()
+				 && reg.sessionId == target.sessionId) {
+					isOwn = true; break;
+				}
+			}
+			if (isOwn) break;
+		}
+		if (!isOwn && !target.hostHandle.empty()) {
+			if (NormalizeHandle(target.hostHandle)
+			 == NormalizeHandle(ResolvedNickname())) {
+				isOwn = true;
+			}
+		}
+		if (isOwn) {
+			st.session.lastError =
+				"That session is the one you're hosting — "
+				"you can't join your own game.  Open My Hosted "
+				"Games to manage it.";
+#if defined(__EMSCRIPTEN__)
+			if (ATWasmBrokerIsActive()) {
+				ATWasmBrokerSessionEnded(0);
+				return;
+			}
+#endif
+			Navigate(Screen::Error);
+			return;
+		}
+	}
+
 	uint8_t codeHash[16] = {};
 	const uint8_t* codePtr = nullptr;
 	if (!st.session.joinEntryCode.empty()) {

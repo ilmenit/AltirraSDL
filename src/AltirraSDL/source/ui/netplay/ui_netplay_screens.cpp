@@ -679,11 +679,39 @@ void RenderBrowser() {
 
 			if (SessionTile(ti, tileSize)) {
 				br.selectedIdx = (int)i;
+				// Self-join guard.  Belt-and-suspenders against a
+				// stale lobby row that survived a Stop Hosting (the
+				// local registration list is cleared synchronously
+				// but the broker DELETE is fire-and-forget; for a
+				// brief window GET /v1/sessions still returns it,
+				// and the merge filter keys on sessionId only).
+				// Match by hostHandle here so the row is rejected
+				// even after the registration was wiped.
+				bool isSelfHosted = false;
+				for (const auto& own : st.hostedGames) {
+					for (const auto& reg : own.lobbyRegistrations) {
+						if (!s.sessionId.empty()
+						 && reg.sessionId == s.sessionId) {
+							isSelfHosted = true; break;
+						}
+					}
+					if (isSelfHosted) break;
+				}
+				if (!isSelfHosted && !s.hostHandle.empty()) {
+					if (NormalizeHandle(s.hostHandle)
+					 == NormalizeHandle(ResolvedNickname())) {
+						isSelfHosted = true;
+					}
+				}
 				// Block Join on missing firmware.  The tile still
 				// registers the click (users get the hover feedback
 				// + selection) but the navigation is suppressed and
 				// a toast explains why.
-				if (ti.specMissing) {
+				if (isSelfHosted) {
+					PushToast("That's your own hosted session — "
+						"open My Hosted Games to manage it.",
+						ToastSeverity::Info, 3500);
+				} else if (ti.specMissing) {
 					PushToast("Install the required firmware in "
 						"System \xE2\x86\x92 Firmware to join.",
 						ToastSeverity::Warning, 3500);

@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 struct SDL_Window;
 class ATSimulator;
@@ -67,6 +68,24 @@ void ATNetplayUI_OpenMyHostedGames();
 // Browser.  Called from Online Play → End Session and from the
 // Waiting panel's Cancel button.
 void ATNetplayUI_EndSession();
+
+// If a netplay session is currently active (advertising an offer or
+// engaged with a peer), queue a confirmation dialog warning that the
+// online session will end; on confirm, call EndSession() and then
+// invoke `doReset`.  Returns true iff the dialog was queued (caller
+// must NOT perform its own reset).  Returns false when no netplay
+// activity is live, leaving the caller to reset directly.
+//
+// `resetLabel` should be the user-facing reset name ("Warm Reset",
+// "Cold Reset", "Cold Reset (Computer Only)") so the dialog can name
+// the action it's about to perform.  Wired into every user-triggered
+// reset path (keyboard shortcuts, menu bar, hamburger menu, macOS
+// menubar) so a stray F5 doesn't silently desync a running game OR
+// leave a stale lobby advertisement up while the local hardware
+// reboots out from under it.
+bool ATNetplayUI_TryConfirmResetEndsSession(
+	const char *resetLabel,
+	std::function<void()> doReset);
 
 // --- Render ----- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
 

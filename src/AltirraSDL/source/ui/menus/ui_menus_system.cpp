@@ -17,6 +17,7 @@
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_glue.h"
+#include "ui/netplay/ui_netplay.h"
 #endif
 
 extern ATSimulator g_sim;
@@ -108,38 +109,49 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 
 	ImGui::Separator();
 
-	// Warm/Cold Reset / Pause are sim-mutating actions — performing
-	// them during a netplay session would diverge our local state
-	// from the peer's and instantly desync.  Disable while online;
-	// the user must Leave the session first.  (The keyboard
-	// accelerators System.WarmReset / System.ColdReset / System.TogglePause
-	// have matching gates in commands_sdl3.cpp.)
-	if (netplayActiveTop) {
-		ImGui::BeginDisabled();
-		ImGui::MenuItem("Warm Reset (disabled: Playing Online)");
-		ImGui::MenuItem("Cold Reset (disabled: Playing Online)");
-		ImGui::MenuItem("Cold Reset (Computer Only) (disabled: Playing Online)");
-		ImGui::EndDisabled();
-	} else {
-		if (ImGui::MenuItem("Warm Reset", ATUIGetShortcutStringForCommand("System.WarmReset"))) {
+	// Warm/Cold Reset are sim-mutating actions that would diverge a
+	// netplay session.  Items stay enabled and clickable; if a session
+	// is active, ATNetplayUI_TryConfirmResetEndsSession queues a
+	// confirmation that ends the session before resetting.  When no
+	// session is live the click runs the reset directly.  Same wiring
+	// for the F5 / Shift+F5 accelerators (commands_sdl3.cpp).
+	if (ImGui::MenuItem("Warm Reset", ATUIGetShortcutStringForCommand("System.WarmReset"))) {
+		auto doReset = [&sim]{
 			sim.WarmReset();
 			sim.Resume();
-		}
-		ShortcutContextMenu("System.WarmReset");
-		if (ImGui::MenuItem("Cold Reset", ATUIGetShortcutStringForCommand("System.ColdReset"))) {
+		};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayUI_TryConfirmResetEndsSession("Warm Reset", doReset))
+#endif
+			doReset();
+	}
+	ShortcutContextMenu("System.WarmReset");
+	if (ImGui::MenuItem("Cold Reset", ATUIGetShortcutStringForCommand("System.ColdReset"))) {
+		auto doReset = [&sim]{
 			sim.ColdReset();
 			sim.Resume();
 			if (!g_kbdOpts.mbAllowShiftOnColdReset)
 				sim.GetPokey().SetShiftKeyState(false, true);
-		}
-		if (ImGui::MenuItem("Cold Reset (Computer Only)")) {
+		};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayUI_TryConfirmResetEndsSession("Cold Reset", doReset))
+#endif
+			doReset();
+	}
+	if (ImGui::MenuItem("Cold Reset (Computer Only)")) {
+		auto doReset = [&sim]{
 			sim.ColdResetComputerOnly();
 			sim.Resume();
 			if (!g_kbdOpts.mbAllowShiftOnColdReset)
 				sim.GetPokey().SetShiftKeyState(false, true);
-		}
-		ShortcutContextMenu("System.ColdReset");
+		};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayUI_TryConfirmResetEndsSession(
+				"Cold Reset (Computer Only)", doReset))
+#endif
+			doReset();
 	}
+	ShortcutContextMenu("System.ColdReset");
 
 	bool paused = sim.IsPaused();
 	if (netplayActiveTop) {

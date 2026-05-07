@@ -65,6 +65,7 @@
 #include "debugger.h"
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_glue.h"
+#include "ui/netplay/ui_netplay.h"
 #endif
 #include "ui_mode.h"
 #include "logging.h"
@@ -960,32 +961,43 @@ static void BuildSystemMenu(NSMenu *menu) {
 
 	// Reset / Pause are sim-mutating actions — performing them
 	// during a netplay session would diverge our local state from
-	// the peer's and instantly desync.  Disable while online; the
-	// user must Leave the session first.
-	AddItem(menu,
-		netplayActive ? @"Warm Reset (disabled: Playing Online)"
-		              : @"Warm Reset",
-		false, !netplayActive, [=]{
-		g_sim.WarmReset();
-		g_sim.Resume();
+	// the peer's and instantly desync.  Items stay enabled and
+	// clickable; if a session is active, the helper queues a
+	// confirmation that ends the session before resetting.
+	AddItem(menu, @"Warm Reset", false, true, [=]{
+		auto doReset = []{
+			g_sim.WarmReset();
+			g_sim.Resume();
+		};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayUI_TryConfirmResetEndsSession("Warm Reset", doReset))
+#endif
+			doReset();
 	});
-	AddItem(menu,
-		netplayActive ? @"Cold Reset (disabled: Playing Online)"
-		              : @"Cold Reset",
-		false, !netplayActive, [=]{
-		g_sim.ColdReset();
-		g_sim.Resume();
-		if (!g_kbdOpts.mbAllowShiftOnColdReset)
-			g_sim.GetPokey().SetShiftKeyState(false, true);
+	AddItem(menu, @"Cold Reset", false, true, [=]{
+		auto doReset = []{
+			g_sim.ColdReset();
+			g_sim.Resume();
+			if (!g_kbdOpts.mbAllowShiftOnColdReset)
+				g_sim.GetPokey().SetShiftKeyState(false, true);
+		};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayUI_TryConfirmResetEndsSession("Cold Reset", doReset))
+#endif
+			doReset();
 	});
-	AddItem(menu,
-		netplayActive ? @"Cold Reset (Computer Only) (disabled: Playing Online)"
-		              : @"Cold Reset (Computer Only)",
-		false, !netplayActive, [=]{
-		g_sim.ColdResetComputerOnly();
-		g_sim.Resume();
-		if (!g_kbdOpts.mbAllowShiftOnColdReset)
-			g_sim.GetPokey().SetShiftKeyState(false, true);
+	AddItem(menu, @"Cold Reset (Computer Only)", false, true, [=]{
+		auto doReset = []{
+			g_sim.ColdResetComputerOnly();
+			g_sim.Resume();
+			if (!g_kbdOpts.mbAllowShiftOnColdReset)
+				g_sim.GetPokey().SetShiftKeyState(false, true);
+		};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayUI_TryConfirmResetEndsSession(
+				"Cold Reset (Computer Only)", doReset))
+#endif
+			doReset();
 	});
 
 	bool paused = g_sim.IsPaused();

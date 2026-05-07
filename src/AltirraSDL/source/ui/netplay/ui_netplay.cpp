@@ -17,6 +17,7 @@
 
 #include "ui/core/ui_mode.h"
 #include "ui/core/ui_main.h"
+#include "ui/core/ui_confirm_dialog.h"
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_picker.h"
 #include "ui/gamelibrary/game_library.h"
@@ -505,7 +506,17 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 			// out our own hostedGames by matching against any of the
 			// per-lobby registrations — a game hosted on N lobbies
 			// appears N times in the merged list and we want all
-			// copies filtered.
+			// copies filtered.  We also catch by nickname: when the
+			// user hits Stop Hosting we synchronously clear our local
+			// registration list while the broker DELETE is still in
+			// flight, so for a brief window the next list response
+			// would surface our own session as joinable.  Comparing
+			// hostHandle against the local nickname (using the same
+			// NormalizeHandle the lobby applies on Create) keeps it
+			// hidden across that race.
+			const std::string selfHandle =
+				ATNetplayUI::NormalizeHandle(
+					ATNetplayUI::ResolvedNickname());
 			for (auto& s : r.sessions) {
 				bool isOwn = false;
 				for (auto& own : st.hostedGames) {
@@ -515,6 +526,12 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 						}
 					}
 					if (isOwn) break;
+				}
+				if (!isOwn && !selfHandle.empty()
+				 && !s.hostHandle.empty()
+				 && ATNetplayUI::NormalizeHandle(s.hostHandle)
+				    == selfHandle) {
+					isOwn = true;
 				}
 				if (isOwn) continue;
 				s.sourceLobby = r.sourceLobby;
@@ -761,6 +778,49 @@ void ATNetplayUI_EndSession() {
 	// click won't re-navigate.
 	if (ATWasmBrokerIsActive()) ATWasmBrokerSessionEnded(0);
 #endif
+}
+
+bool ATNetplayUI_TryConfirmResetEndsSession(
+	const char *resetLabel,
+	std::function<void()> doReset)
+{
+	// No netplay activity: caller resets directly.  We deliberately use
+	// IsActive() (covers WaitingForJoiner) rather than IsSessionEngaged()
+	// so an advertised offer is also caught — otherwise the host's
+	// hardware would reset under a live broker advertisement and a
+	// joiner could land on a freshly-rebooted machine.
+	if (!ATNetplayGlue::IsActive()) return false;
+
+	// Build a body that names the operation and explains what's about
+	// to happen.  Three reset variants share this helper, so the label
+	// passes in from the call site.
+	const char *label = (resetLabel && *resetLabel) ? resetLabel : "Reset";
+	char title[64];
+	std::snprintf(title, sizeof title, "%s — End online session?", label);
+
+	char body[256];
+	std::snprintf(body, sizeof body,
+		"You are currently playing or hosting online.  "
+		"%s will end the session and disconnect any joiner.\n\n"
+		"Continue?", label);
+
+	ATUIConfirmOptions opts;
+	opts.title         = title;
+	opts.message       = body;
+	opts.confirmLabel  = "End and Reset";
+	opts.cancelLabel   = "Stay Online";
+	opts.destructive   = true;  // default-focus Cancel — reset is the
+	                            // unrecoverable action for the peer.
+	opts.onConfirm = [doReset = std::move(doReset)]() {
+		// Tear down both directions of activity.  EndSession does the
+		// canonical sequence (StopJoin + DisableHostedGame for every
+		// offer + ATNetplayProfile::EndSession + Navigate(MyHosted)).
+		ATNetplayUI_EndSession();
+		// Then the actual hardware reset the user asked for.
+		if (doReset) doReset();
+	};
+	ATUIShowConfirm(std::move(opts));
+	return true;
 }
 
 namespace ATNetplayUI { bool DesktopDispatch(); }

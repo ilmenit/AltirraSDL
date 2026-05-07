@@ -1376,9 +1376,19 @@ void ATWasmConsoleSwitch(int bit, int down) {
 // in a confirm() popup so an accidental click doesn't nuke a save in
 // progress.  Cold reset only — warm reset is rarely useful from the
 // page bar (most users want a clean cold-boot of the current cart).
+//
+// Routes through ATNetplayUI_TryConfirmResetEndsSession when a session
+// is live so the in-emulator ImGui dialog ends the session before the
+// reset.  The JS confirm() still runs first (the user already opted
+// into "Cold reset the emulator?"); the second prompt is netplay-
+// specific ("end online session?") and only fires if there's an
+// online session to lose.
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmColdReset() {
-	g_sim.ColdReset();
+	auto doReset = []{ g_sim.ColdReset(); };
+	if (ATNetplayUI_TryConfirmResetEndsSession("Cold Reset", doReset))
+		return;
+	doReset();
 }
 
 // JS-side bar button (PAL/NTSC).  Returns 1 when the running standard

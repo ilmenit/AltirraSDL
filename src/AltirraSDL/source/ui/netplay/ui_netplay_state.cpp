@@ -94,6 +94,22 @@ const std::string& ResolvedNickname() {
 	return g_resolvedCache;
 }
 
+std::string NormalizeHandle(const std::string& h) {
+	// Mirror server/lobby/server.cpp::NormalizeHandle exactly so the
+	// client's self-checks bucket the same way the lobby's dedup does.
+	size_t a = 0, b = h.size();
+	while (a < b && (unsigned char)h[a] <= 0x20) ++a;
+	while (b > a && (unsigned char)h[b - 1] <= 0x20) --b;
+	std::string out;
+	out.reserve(b - a);
+	for (size_t i = a; i < b; ++i) {
+		unsigned char c = (unsigned char)h[i];
+		if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + 32);
+		out.push_back((char)c);
+	}
+	return out;
+}
+
 // -----------------------------------------------------------------------
 // Registry I/O
 // -----------------------------------------------------------------------
@@ -558,6 +574,26 @@ void PrefillHostMachineConfigDefaults(MachineConfig &cfg) {
 }
 
 std::string FriendlyLobbyError(const std::string& raw, int httpStatus) {
+	// Validation errors come back as JSON like {"error":"hostHandle:
+	// 1..32 chars required"} or {"error":"joinerHandle: too long"}.
+	// "Handle" is the lobby protocol's term but the SDL3 UI calls the
+	// field "Nickname" everywhere else — surface a consistent label so
+	// a user who tried to host/join with an empty name doesn't see a
+	// mystery field in the error.  Caught at every HTTP status because
+	// the same text can come back from Create/Heartbeat/Join under
+	// different codes.
+	if (raw.find("hostHandle") != std::string::npos
+	 || raw.find("joinerHandle") != std::string::npos) {
+		// Cover the two validator messages explicitly; fall through
+		// only if the server adds a new variant we haven't taught
+		// the client about.
+		if (raw.find("required") != std::string::npos
+		 || raw.find("too long") != std::string::npos
+		 || raw.find("chars") != std::string::npos) {
+			return "Nickname is required (1-24 characters).";
+		}
+	}
+
 	// HTTP-level statuses take priority — they carry specific meaning.
 	if (httpStatus == 429) {
 		// Server reports two distinct 429 cases via the body's

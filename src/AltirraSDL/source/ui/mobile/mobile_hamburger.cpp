@@ -271,28 +271,45 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		// Warm Reset — with confirmation.
+		// Warm Reset — with confirmation.  When a netplay session is
+		// active, the helper queues its own ("End online session and
+		// reset?") confirm via ATUIShowConfirm and we skip the local
+		// hamburger one to avoid stacking two dialogs.  The local
+		// confirm is still shown for the offline case so users who
+		// fat-finger the button don't lose state.
 		if (ATTouchButton("Warm Reset", btnSize)) {
-			ShowConfirmDialog("Warm Reset",
-				"Reset the emulator without clearing memory?",
-				[&sim, &mobileState]() {
-					sim.WarmReset();
-					ATMobileUI_CloseMenu(sim, mobileState);
-					sim.Resume();
-				});
+			auto doReset = [&sim, &mobileState]() {
+				sim.WarmReset();
+				ATMobileUI_CloseMenu(sim, mobileState);
+				sim.Resume();
+			};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (!ATNetplayUI_TryConfirmResetEndsSession("Warm Reset", doReset))
+#endif
+			{
+				ShowConfirmDialog("Warm Reset",
+					"Reset the emulator without clearing memory?",
+					doReset);
+			}
 		}
 		ImGui::Spacing();
 
-		// Cold Reset — with confirmation.
+		// Cold Reset — same dual-confirm pattern as Warm Reset above.
 		if (ATTouchButton("Cold Reset", btnSize, ATTouchButtonStyle::Danger)) {
-			ShowConfirmDialog("Cold Reset",
-				"Power-cycle the emulator?  This clears RAM and "
-				"reboots, just like unplugging the machine.",
-				[&sim, &mobileState]() {
-					sim.ColdReset();
-					ATMobileUI_CloseMenu(sim, mobileState);
-					sim.Resume();
-				});
+			auto doReset = [&sim, &mobileState]() {
+				sim.ColdReset();
+				ATMobileUI_CloseMenu(sim, mobileState);
+				sim.Resume();
+			};
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (!ATNetplayUI_TryConfirmResetEndsSession("Cold Reset", doReset))
+#endif
+			{
+				ShowConfirmDialog("Cold Reset",
+					"Power-cycle the emulator?  This clears RAM and "
+					"reboots, just like unplugging the machine.",
+					doReset);
+			}
 		}
 		ImGui::Spacing();
 
