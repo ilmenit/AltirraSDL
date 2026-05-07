@@ -34,6 +34,7 @@
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
 #include "netplay/platform_notify.h"
+#include "netplay/packets.h"  // for SessionTermination enum (v6)
 
 #include "ui/gamelibrary/game_library.h"
 #include "ui/gamelibrary/game_library_art.h"
@@ -1107,9 +1108,13 @@ void RenderWaiting() {
 	// Terminal-failure layout: surface a specific "Change Code" button
 	// for bad-code rejects so the common mistake takes one tap to fix
 	// instead of a back-out and re-navigate through the Browser.
+	// v6: compare against the typed SessionTermination::BadEntryCode
+	// instead of substring-matching the localized error string —
+	// keeps the UI working through localization changes and protocol
+	// extensions that change the wording.
 	const bool badCode = joinFailed && st.session.joinTarget.requiresCode
-		&& std::strstr(ATNetplayGlue::JoinLastError(),
-		               "Incorrect join code") != nullptr;
+		&& ATNetplayGlue::JoinLastRejectReason()
+			== (uint16_t)ATNetplay::SessionTermination::BadEntryCode;
 
 	if (badCode) {
 		float bw = (ImGui::GetContentRegionAvail().x - Dp(20)) / 3.0f;

@@ -1797,23 +1797,94 @@ void Coordinator::HandleRejectFromHost(const NetReject& r) {
 	// every subsequent tick), and a host that hadn't yet drained
 	// our previous Hello would re-show the join-request UI.
 	mWasRejected = true;
-	switch (r.reason) {
-		case kRejectOsMismatch:     mLastError = "OS ROM does not match the host's. Install the matching firmware and try again."; break;
-		case kRejectBasicMismatch:  mLastError = "BASIC ROM does not match the host's. Install the matching firmware and try again."; break;
-		case kRejectVersionSkew:    mLastError = "Protocol version mismatch — your Altirra build is incompatible with the host's."; break;
-		case kRejectTosNotAccept:   mLastError = "Host requires terms-of-service acceptance."; break;
-		case kRejectHostFull:       mLastError = "The host chose another player, or is handling too many requests right now."; break;
-		case kRejectHostNotReady:   mLastError = "Host is not ready to accept joiners yet."; break;
-		case kRejectBadEntryCode:   mLastError = "Incorrect join code. Ask the host for the right code and try again."; break;
-		case kRejectHostRejected:   mLastError = "The host declined your request to join."; break;
-		case kRejectCanonicalProfileMismatch:
-			mLastError = "Host is running a different Online Play "
-				"profile version. Both peers must run a compatible "
-				"Altirra release.";
-			break;
-		default:                    mLastError = "Host rejected the connection (unknown reason)."; break;
-	}
+	mLastError = SessionTerminationToLocalizedString(r.reason);
 	g_ATLCNetplay("joiner: %s (reason code %u)", mLastError, (unsigned)r.reason);
+}
+
+// v6 SessionTermination → user-facing string.  Free function (not a
+// member) so the lobby's events SSE bridge and the UI's reject-reason
+// matcher can call it without a Coordinator instance.  Strings are
+// English-only baseline; localization framework can wrap this without
+// changing the call sites.
+//
+// Covers every code in the SessionTermination enum.  An unknown numeric
+// code falls through to a generic "Host rejected the connection
+// (unknown reason)" — useful when a v6.1 peer emits a new code we
+// haven't translated yet.
+const char* SessionTerminationToLocalizedString(uint16_t reason) {
+	switch (reason) {
+		// Handshake (v5 numeric range 1–9)
+		case (uint16_t)SessionTermination::OsMismatch:
+			return "OS ROM does not match the host's. Install the matching firmware and try again.";
+		case (uint16_t)SessionTermination::BasicMismatch:
+			return "BASIC ROM does not match the host's. Install the matching firmware and try again.";
+		case (uint16_t)SessionTermination::VersionSkew:
+			return "Protocol version mismatch — your Altirra build is incompatible with the host's.";
+		case (uint16_t)SessionTermination::TosNotAccept:
+			return "Host requires terms-of-service acceptance.";
+		case (uint16_t)SessionTermination::HostFull:
+			return "The host chose another player, or is handling too many requests right now.";
+		case (uint16_t)SessionTermination::HostNotReady:
+			return "Host is not ready to accept joiners yet.";
+		case (uint16_t)SessionTermination::BadEntryCode:
+			return "Incorrect join code. Ask the host for the right code and try again.";
+		case (uint16_t)SessionTermination::HostRejected:
+			return "The host declined your request to join.";
+		case (uint16_t)SessionTermination::CanonicalProfileMismatch:
+			return "Host is running a different Online Play profile version. "
+			       "Both peers must run a compatible Altirra release.";
+		// Snapshot (100s)
+		case (uint16_t)SessionTermination::SnapshotCrcMismatch:
+			return "Game state arrived corrupted — the host's snapshot failed verification.";
+		case (uint16_t)SessionTermination::SnapshotApplyFailed:
+			return "Failed to apply the host's game state — emulator state was rejected.";
+		case (uint16_t)SessionTermination::SnapshotChunkTimeout:
+			return "Game state download timed out — the host stopped sending data.";
+		case (uint16_t)SessionTermination::SnapshotTooLarge:
+			return "Game state is too large for the network buffer.";
+		case (uint16_t)SessionTermination::SnapshotEncodeFailed:
+			return "Host failed to capture its game state.";
+		// Mid-session (200s)
+		case (uint16_t)SessionTermination::DesyncFlapLimit:
+			return "Repeated desyncs — the session can't recover.  This usually means a non-deterministic emulator setting.";
+		case (uint16_t)SessionTermination::ProtocolViolation:
+			return "Peer sent a protocol-violating packet — terminating session.";
+		case (uint16_t)SessionTermination::EmulatorCrashed:
+			return "Peer's emulator reported an internal error.";
+		case (uint16_t)SessionTermination::PeerVersionMismatchMidSession:
+			return "Peer is running a different protocol version than this build.";
+		// Transport (300s)
+		case (uint16_t)SessionTermination::NetworkUnreachable:
+			return "Network unreachable — check your connection.";
+		case (uint16_t)SessionTermination::NatTraversalFailed:
+			return "Couldn't establish a peer connection through your firewall / NAT.";
+		case (uint16_t)SessionTermination::RelayDisconnect:
+			return "Lost connection to the lobby relay server.";
+		case (uint16_t)SessionTermination::AckTimeoutExceeded:
+			return "Peer stopped responding.";
+		// User / UI (400s)
+		case (uint16_t)SessionTermination::PeerSentBye:
+			return "Peer left the session.";
+		case (uint16_t)SessionTermination::LocalUserQuit:
+			return "Session ended cleanly.";
+		case (uint16_t)SessionTermination::LocalUserKick:
+			return "You were removed from the session.";
+		// Broker UX (500s)
+		case (uint16_t)SessionTermination::BrokerSessionExpired:
+			return "Broker session expired — the host took too long to start the game.";
+		case (uint16_t)SessionTermination::BrokerJoinerCanceled:
+			return "The other player canceled before the game started.";
+		case (uint16_t)SessionTermination::BrokerHostCanceled:
+			return "The host canceled the session.";
+		case (uint16_t)SessionTermination::BrokerApprovalTimeout:
+			return "The host didn't approve in time.";
+		// Catchall
+		case (uint16_t)SessionTermination::Internal:
+			return "Internal error — see logs for details.";
+		case (uint16_t)SessionTermination::Unknown:
+		default:
+			return "Host rejected the connection (unknown reason).";
+	}
 }
 
 // ---------------------------------------------------------------------------

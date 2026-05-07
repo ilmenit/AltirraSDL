@@ -293,6 +293,12 @@ bool JoinExists();
 Phase JoinPhase();
 const char* JoinLastError();
 
+// v6 — raw SessionTermination value from the host's last reject.
+// Returns 0 when no reject has arrived yet.  Use this for code-
+// specific UI branches (e.g. Bad-Code retry button) instead of
+// substring-matching the localized error string.
+uint16_t JoinLastRejectReason();
+
 // Joiner received snapshot bytes — returns pointer + length for the
 // UI/caller to Apply into the simulator.  Out params nullable.
 void GetReceivedSnapshot(const uint8_t** data, size_t* len);
@@ -471,6 +477,7 @@ namespace ATNetplayGlue {
     inline uint32_t CurrentFrame()                  { return 0; }
     inline uint32_t CurrentInputDelay()             { return 0; }
     inline uint64_t MsSinceLastPeerPacket(uint64_t) { return UINT64_MAX / 2; }
+    inline uint16_t JoinLastRejectReason()          { return 0; }
     // M5 observability stubs.  Phase / PeerHeartbeat are defined in
     // the netplay-enabled section above; here we just need values
     // for the always-off stubs.

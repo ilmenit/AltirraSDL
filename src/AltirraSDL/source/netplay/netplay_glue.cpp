@@ -1033,6 +1033,15 @@ const char* JoinLastError() {
 	return g_lastJoinError.c_str();
 }
 
+// v6 — raw SessionTermination reason from the host's last reject.
+// Surfaced so the joiner UI can branch on specific codes (e.g.
+// `if (reason == BadEntryCode) show Bad-Code retry button`) instead
+// of substring-matching the localized string.  Returns 0 when no
+// reject has been received yet.
+uint16_t JoinLastRejectReason() {
+	return g_joiner ? g_joiner->GetLastRejectReason() : 0;
+}
+
 void GetReceivedSnapshot(const uint8_t** data, size_t* len) {
 	if (!g_joiner) { if (data) *data = nullptr; if (len) *len = 0; return; }
 	const auto& buf = g_joiner->GetReceivedSnapshot();

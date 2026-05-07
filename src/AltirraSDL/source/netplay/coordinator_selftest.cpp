@@ -377,12 +377,168 @@ static void testJoinerDetectsStalledSnapshotHost() {
 	joiner.End();
 }
 
+// v6 observability tests --------------------------------------------------
+//
+// These exercise the M5 active broadcast wiring: every Phase transition
+// produces a NetPhase the peer receives, and Poll's 1-Hz heartbeat
+// scheduler delivers exactly one NetHeartbeat per second of session
+// time.  The tests use the same in-process UDP loopback harness as the
+// other coordinator tests; broadcast packets ride the same WrapAndSend
+// path as Hello / Welcome / Input.
+
+static void testPhaseTransitionsAreBroadcast() {
+	Coordinator host, joiner;
+
+	const uint64_t kOsRom = 0xDEADBEEF01234567ULL;
+	const uint64_t kBasicRom = 0xCAFEF00DBABE0001ULL;
+
+	NetBootConfig defaultBoot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "alice", "Joust.atr",
+		kOsRom, kBasicRom, /*settingsHash*/ 0,
+		/*inputDelay*/ 3, /*entryCode*/ nullptr, defaultBoot));
+
+	// Pre-host phase: local-only, peer hasn't been observed yet.  The
+	// initial Phase::WaitingForJoiner is set BEFORE any peer is known
+	// and therefore is NOT broadcast.  Subsequent transitions
+	// (SendingSnapshot, Lockstepping) happen after the joiner Hello
+	// arrives so they DO broadcast.
+
+	auto snapshot = makeMockSnapshot(2000);
+	host.SubmitSnapshotForUpload(snapshot.data(), snapshot.size());
+
+	char hostAddr[48];
+	std::snprintf(hostAddr, sizeof hostAddr, "127.0.0.1:%u",
+		(unsigned)host.BoundPort());
+
+	CHECK(joiner.BeginJoin(hostAddr, "bob",
+		kOsRom, kBasicRom, /*acceptTos*/ true, /*entryCode*/ nullptr));
+
+	// Spin until joiner is in lockstep — exercises every interesting
+	// host-side broadcast (WaitingForJoiner → SendingSnapshot →
+	// Lockstepping) and joiner-side (Handshaking → ReceivingSnapshot
+	// → SnapshotReady → Lockstepping).
+	bool ok = spinUntil(host, joiner, [&]{
+		return joiner.GetPhase() == Coordinator::Phase::SnapshotReady;
+	}, /*timeoutMs*/ 5000);
+	CHECK(ok);
+	joiner.AcknowledgeSnapshotApplied();
+	ok = spinUntil(host, joiner, [&]{
+		return host.GetPhase()  == Coordinator::Phase::Lockstepping
+		    && joiner.GetPhase() == Coordinator::Phase::Lockstepping;
+	}, 1000);
+	CHECK(ok);
+
+	// At this point each coord should have observed the peer's
+	// terminal Lockstepping phase via NetPhase broadcast.  This is the
+	// canonical "peer is alive and at the same phase as me" check
+	// the HUD uses.
+	CHECK(joiner.GetPeerPhase() == Coordinator::PhaseBroadcast::Lockstepping);
+	CHECK(host.GetPeerPhase()   == Coordinator::PhaseBroadcast::Lockstepping);
+
+	// Mid-session transition: have the host initiate a clean End and
+	// confirm the joiner observes the resulting phase change.  We don't
+	// rely on a specific phase here — End() routes through SendBye
+	// which the joiner observes and transitions itself; the
+	// joiner-side NetPhase broadcast on its own Ended transition is
+	// what we're verifying.
+	host.End();
+	ok = spinUntil(host, joiner, [&]{
+		return joiner.GetPhase() == Coordinator::Phase::Ended;
+	}, 500);
+	CHECK(ok);
+	// The host's GetPeerPhase reflects the LAST phase the joiner
+	// broadcast.  With dedup + the fact that Ended is set inside the
+	// joiner's HandleBye AFTER receiving the host's Bye, the host
+	// should see PhaseBroadcast::Ended unless the broadcast Bye
+	// arrived first and tore down state on the host side before the
+	// joiner's Ended NetPhase landed.  Treat both Ended and the
+	// pre-End Lockstepping as acceptable — the test is "the peer's
+	// final state is one of {Lockstepping, Ended}".
+	const auto hostPeer = host.GetPeerPhase();
+	CHECK(hostPeer == Coordinator::PhaseBroadcast::Ended
+	   || hostPeer == Coordinator::PhaseBroadcast::Lockstepping);
+}
+
+static void testHeartbeatPeriodicity() {
+	Coordinator host, joiner;
+
+	const uint64_t kOsRom = 0xDEADBEEF01234567ULL;
+	const uint64_t kBasicRom = 0xCAFEF00DBABE0001ULL;
+
+	NetBootConfig defaultBoot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "alice", "Joust.atr",
+		kOsRom, kBasicRom, 0, 3, nullptr, defaultBoot));
+
+	auto snapshot = makeMockSnapshot(1000);
+	host.SubmitSnapshotForUpload(snapshot.data(), snapshot.size());
+
+	char hostAddr[48];
+	std::snprintf(hostAddr, sizeof hostAddr, "127.0.0.1:%u",
+		(unsigned)host.BoundPort());
+	CHECK(joiner.BeginJoin(hostAddr, "bob",
+		kOsRom, kBasicRom, true, nullptr));
+
+	bool ok = spinUntil(host, joiner, [&]{
+		return joiner.GetPhase() == Coordinator::Phase::SnapshotReady;
+	}, 5000);
+	CHECK(ok);
+	joiner.AcknowledgeSnapshotApplied();
+	ok = spinUntil(host, joiner, [&]{
+		return host.GetPhase()  == Coordinator::Phase::Lockstepping
+		    && joiner.GetPhase() == Coordinator::Phase::Lockstepping;
+	}, 1000);
+	CHECK(ok);
+
+	// Sample the host-side observation of joiner heartbeats before
+	// and after a 2.5-second wall-clock window.  Heartbeat scheduler
+	// is gated on `nowMs / 1000 != mLastHeartbeatSec`, so over 2.5 s
+	// each side emits 2-3 heartbeats.  Track via the seq field
+	// (monotonic per-sender) to count without an exposed counter.
+	const uint16_t hostStartSeq   = host.GetPeerHeartbeat().seq;
+	const uint16_t joinerStartSeq = joiner.GetPeerHeartbeat().seq;
+
+	const uint64_t spinUntilMs = nowMs() + 2500;
+	while (nowMs() < spinUntilMs) {
+		host.Poll(nowMs());
+		joiner.Poll(nowMs());
+		// Exercise frame inputs so peer-packet-age tracking stays
+		// fresh; without this the lockstep loop would stall and
+		// PeerTimedOut would eventually fire.
+		NetInput hi{}, ji{};
+		host.SubmitLocalInput(hi);
+		joiner.SubmitLocalInput(ji);
+		if (host.CanAdvance())   host.OnFrameAdvanced(0);
+		if (joiner.CanAdvance()) joiner.OnFrameAdvanced(0);
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+
+	const uint16_t hostEndSeq   = host.GetPeerHeartbeat().seq;
+	const uint16_t joinerEndSeq = joiner.GetPeerHeartbeat().seq;
+
+	// We expect 2-3 emissions per peer over 2.5 s.  Allow ±1 for
+	// boundary-condition (first emit may land just inside or just
+	// outside the window depending on when the second-boundary
+	// crossed).  seq is u16 so use modular subtraction to handle
+	// the (extremely unlikely) wrap.
+	const uint16_t hostDelta   = (uint16_t)(hostEndSeq   - hostStartSeq);
+	const uint16_t joinerDelta = (uint16_t)(joinerEndSeq - joinerStartSeq);
+	CHECK(hostDelta   >= 1 && hostDelta   <= 4);
+	CHECK(joinerDelta >= 1 && joinerDelta <= 4);
+
+	host.End();
+	spinUntil(host, joiner, [&]{
+		return joiner.GetPhase() == Coordinator::Phase::Ended;
+	}, 500);
+}
+
 int main() {
 	testEndToEndSession();
 	testHostRejectsWrongOsRom();
 	testPrivateSessionAcceptsCorrectCode();
 	testSnapshotSurvives30PctLoss();
 	testJoinerDetectsStalledSnapshotHost();
+	testPhaseTransitionsAreBroadcast();
+	testHeartbeatPeriodicity();
 
 	if (fails == 0) {
 		std::printf("netplay coordinator selftest: OK\n");

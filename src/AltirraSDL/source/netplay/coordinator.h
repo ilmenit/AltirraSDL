@@ -57,6 +57,13 @@ namespace ATNetplay {
 // definition lives in `protocol.h`; coordinator.cpp includes it.  The
 // underlying-type spelling lets us forward-declare a scoped enum.
 enum class DecodeResult : int;
+
+// v6 — translate a SessionTermination raw value (carried in NetReject
+// /  NetBye reason fields) to a user-facing English string.  Defined
+// in coordinator.cpp.  Free function rather than a Coordinator member
+// so the lobby's events SSE bridge and the UI's reject-reason matcher
+// can call it without a Coordinator instance.
+const char* SessionTerminationToLocalizedString(uint16_t reason);
 }
 
 namespace ATNetplay {
@@ -430,6 +437,15 @@ public:
 
 	// True iff the main loop should call Advance() this tick.
 	bool IsLockstepping() const { return mPhase == Phase::Lockstepping; }
+
+	// v6 — last reject reason this Coordinator received from the
+	// host (joiner side; meaningless on the host side).  Returns 0
+	// when no reject has been received yet.  The UI compares
+	// against SessionTermination::* to drive specific reaction
+	// flows (e.g. "show Bad Code retry button" vs. generic error).
+	uint16_t GetLastRejectReason() const {
+		return mHaveLastRejectReason ? mLastRejectReason : 0;
+	}
 
 	// v6 observability — peer-state caches populated by
 	// HandlePhaseFromPeer / HandleHeartbeatFromPeer.  Default values
