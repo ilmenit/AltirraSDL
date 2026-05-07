@@ -66,6 +66,10 @@ struct Fixture {
 	}
 
 	~Fixture() {
+		// v4: nudge any active SSE listeners awake before stopping the
+		// server so their handlers exit promptly (see Store::Shutdown
+		// for rationale).  Idempotent if no streams are open.
+		store.Shutdown();
 		srv.stop();
 		if (srvThread.joinable()) srvThread.join();
 	}
@@ -1387,6 +1391,133 @@ void TestBrokerCreateRejectsBadState() {
 	T_EXPECT_EQ_INT(r->status, 400,      "bogus state rejected");
 }
 
+// 12a. awaiting_approval sessions must NOT appear in /v1/sessions —
+//      pre-v4 native emulators browsing the lobby would otherwise try
+//      to join them via NetHello, which has no live coordinator yet
+//      and times out silently.  This is a regression test for the
+//      filter added in M1's audit pass.
+void TestBrokerAwaitingApprovalHiddenFromSessionsList() {
+	++g_testsRun;
+	Fixture f;
+	auto host = f.client();
+
+	// Create one ordinary "waiting" session (legacy path) and one
+	// broker session in awaiting_approval.  The latter must be
+	// invisible to the public list endpoints; the former must remain
+	// visible.
+	auto r1 = host.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r1 ? r1->status : 0, 201, "legacy create 201");
+	std::string id1, tok1; int ttl1 = 0;
+	T_EXPECT(ReadCreateRespJson(r1->body, id1, tok1, ttl1),
+		"parse legacy create");
+
+	std::string id2, tok2;
+	T_EXPECT(CreateBrokerSession(host, "Archon", "bob", id2, tok2),
+		"broker create");
+
+	auto list = host.Get(kPathSessions);
+	T_EXPECT(list && list->status == 200, "GET /v1/sessions 200");
+	T_EXPECT(list->body.find(id1) != std::string::npos,
+		"legacy session present in /v1/sessions");
+	T_EXPECT(list->body.find(id2) == std::string::npos,
+		"awaiting_approval session HIDDEN from /v1/sessions");
+
+	auto pub = host.Get(kPathPublicSessions);
+	T_EXPECT(pub && pub->status == 200, "GET /v1/public/sessions 200");
+	// /v1/public/sessions doesn't include the sessionId field by name
+	// in the wire format (it has joinUrl carrying it).  Check the
+	// joinUrl construction instead.
+	T_EXPECT(pub->body.find("?s=" + id1) != std::string::npos,
+		"legacy session present in /v1/public/sessions");
+	T_EXPECT(pub->body.find("?s=" + id2) == std::string::npos,
+		"awaiting_approval session HIDDEN from /v1/public/sessions");
+}
+
+// 12b. /v1/stats must not count awaiting_approval sessions in
+//      `waiting`, `playing`, or `sessions`.  Otherwise the page
+//      widget's "X games waiting" number disagrees with the list it
+//      renders below.
+void TestBrokerAwaitingApprovalNotCountedInStats() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	auto r1 = c.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r1 ? r1->status : 0, 201, "legacy create");
+	std::string i, t;
+	T_EXPECT(CreateBrokerSession(c, "Archon", "bob", i, t),
+		"broker create");
+	auto stats = c.Get(kPathStats);
+	T_EXPECT(stats && stats->status == 200, "GET /v1/stats 200");
+	// One legacy session = one waiting, total sessions=1.  Broker
+	// session is not counted.  We don't parse the JSON — string-
+	// match the expected substrings.
+	T_EXPECT(stats->body.find("\"sessions\":1") != std::string::npos,
+		"sessions count excludes awaiting_approval");
+	T_EXPECT(stats->body.find("\"waiting\":1") != std::string::npos,
+		"waiting count excludes awaiting_approval");
+}
+
+// 13. Joiner-from-broker against a NATIVE host (legacy "waiting"
+//     session): the joiner can post an intent.  This is the API-layer
+//     half of the M1b ws_bridge translation; the API path must not
+//     reject by virtue of session state.
+void TestBrokerIntentAgainstWaitingSessionAccepted() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	auto r = host.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r ? r->status : 0, 201, "legacy create");
+	std::string sid, tok; int ttl = 0;
+	T_EXPECT(ReadCreateRespJson(r->body, sid, tok, ttl),
+		"parse legacy create");
+
+	std::string iid; int hs = 0;
+	bool ok = PostIntent(joiner, sid, "bob", "", iid, hs);
+	T_EXPECT(ok,                      "intent accepted on waiting session");
+	T_EXPECT_EQ_INT(hs, 201,          "intent POST status 201");
+	T_EXPECT(!iid.empty(),            "intentId returned");
+}
+
+// 14. State validation: trying to POST an intent against a "playing"
+//     session must fail with 410 (already in session, can't add more).
+void TestBrokerIntentRejectedOnPlayingSession() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	auto r = host.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r ? r->status : 0, 201, "create");
+	std::string sid, tok; int ttl = 0;
+	T_EXPECT(ReadCreateRespJson(r->body, sid, tok, ttl), "parse");
+
+	// Move session to "playing" via heartbeat.
+	JsonBuilder hb;
+	hb.raw('{');
+	hb.key(Field::kToken);       hb.str(tok);          hb.raw(',');
+	hb.key(Field::kPlayerCount); hb.num(2);            hb.raw(',');
+	hb.key(Field::kState);       hb.str(kStatePlaying);
+	hb.raw('}');
+	auto hbr = host.Post(
+		(std::string(kPathSession) + "/" + sid +
+			kPathHeartbeatSuffix).c_str(),
+		hb.s, "application/json");
+	T_EXPECT(hbr && hbr->status == 200, "heartbeat to playing");
+
+	std::string iid; int hs = 0;
+	bool ok = PostIntent(joiner, sid, "bob", "", iid, hs);
+	T_EXPECT(!ok,             "intent rejected on playing session");
+	T_EXPECT_EQ_INT(hs, 410,  "playing = 410");
+}
+
 // 12. AwaitingApproval requires wssRelayOnly=true.
 void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
 	++g_testsRun;
@@ -1447,6 +1578,10 @@ int RunAll() {
 	TestBrokerMetricsCounters();
 	TestBrokerCreateRejectsBadState();
 	TestBrokerAwaitingApprovalRequiresWssRelayOnly();
+	TestBrokerAwaitingApprovalHiddenFromSessionsList();
+	TestBrokerAwaitingApprovalNotCountedInStats();
+	TestBrokerIntentAgainstWaitingSessionAccepted();
+	TestBrokerIntentRejectedOnPlayingSession();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",
 		g_testsRun, g_testsFail);

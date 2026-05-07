@@ -348,7 +348,7 @@ inline constexpr int    kDecisionTtlMs            = 10 * 1000;     // decision r
 inline constexpr int    kAwaitingApprovalTtlMs    = 10 * 60 * 1000;// AwaitingApproval session lifetime (broker heartbeats)
 inline constexpr size_t kIntentsPerSessionCap     = 16;            // queue cap; oldest pending dropped on overflow
 inline constexpr int    kIntentCodeHashHexLen     = 32;            // 16-byte truncated SHA-256 in hex
-inline constexpr int    kSseHeartbeatIntervalMs   = 15 * 1000;     // SSE comment-line ping cadence
+inline constexpr int    kSseHeartbeatIntervalMs   = 5 * 1000;      // SSE comment-line ping cadence (also bounds clean-shutdown latency)
 inline constexpr int    kJoinerHandleMax          = 32;            // matches kHostHandleMax
 
 } // namespace ATLobby

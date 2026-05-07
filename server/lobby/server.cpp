@@ -535,9 +535,17 @@ public:
 	Stats ComputeStats() const {
 		std::lock_guard<std::mutex> lk(mMu);
 		Stats s;
-		s.sessions = (int)mItems.size();
 		std::unordered_map<std::string, int> hostSeen;
 		for (const auto& kv : mItems) {
+			// v4: awaiting_approval is the broker's pre-spawn state —
+			// invisible to embedders / public widgets.  Counting it
+			// in `waiting` would break the page math
+			// (sessions = waiting + playing) and inflate the user-
+			// facing "live games" number with sessions that are not
+			// yet joinable.  Operators can see these under the
+			// /v1/metrics `broker.awaiting_approval_sessions` counter.
+			if (kv.second.state == kStateAwaitingApproval) continue;
+			++s.sessions;
 			if (kv.second.state == kStatePlaying) ++s.playing;
 			else                                  ++s.waiting;
 			if (!kv.second.hostHandle.empty())
@@ -617,12 +625,26 @@ public:
 	}
 
 	// Returns up to kListCap sessions, newest-createdAt first.
-	std::vector<Session> List() const {
+	// `includeAwaitingApproval` flips whether broker-host sessions
+	// that have not yet spawned an emulator should be returned.  Both
+	// /v1/sessions (the in-app browser feed) and /v1/public/sessions
+	// (the embeddable widget) pass FALSE, because pre-v4 emulators
+	// would otherwise try to join a session that has no live
+	// coordinator and fail with a Hello timeout.  The v4 broker pulls
+	// its own session record by id (not via List), so exclusion is
+	// invisible to it.
+	std::vector<Session> List(bool includeAwaitingApproval = true) const {
 		std::vector<Session> out;
 		{
 			std::lock_guard<std::mutex> lk(mMu);
 			out.reserve(mItems.size());
-			for (const auto& kv : mItems) out.push_back(kv.second);
+			for (const auto& kv : mItems) {
+				if (!includeAwaitingApproval &&
+				    kv.second.state == kStateAwaitingApproval) {
+					continue;
+				}
+				out.push_back(kv.second);
+			}
 		}
 		std::sort(out.begin(), out.end(),
 			[](const Session& a, const Session& b) {
@@ -923,6 +945,35 @@ public:
 
 	RateLimiter& Rate()          { return mRate; }
 	const Config& Cfg() const    { return mCfg; }
+
+	// Signal every active SSE listener that the process is going
+	// down so their handlers terminate within one heartbeat tick
+	// instead of waiting out the full kSseHeartbeatIntervalMs after
+	// the kernel closes their socket.  Idempotent — calling twice is
+	// safe; calling on a Store with zero listeners is a no-op.
+	void Shutdown() {
+		std::vector<std::shared_ptr<IntentListener>>   intents;
+		std::vector<std::shared_ptr<DecisionListener>> decisions;
+		{
+			std::lock_guard<std::mutex> lk(mMu);
+			for (auto& kv : mIntentListeners)
+				for (auto& L : kv.second) intents.push_back(L);
+			for (auto& kv : mDecisionListeners)
+				for (auto& L : kv.second) decisions.push_back(L);
+		}
+		for (auto& L : intents) {
+			if (!L) continue;
+			std::lock_guard<std::mutex> ll(L->mu);
+			L->sessionEnded = true;
+			L->cv.notify_all();
+		}
+		for (auto& L : decisions) {
+			if (!L) continue;
+			std::lock_guard<std::mutex> ll(L->mu);
+			L->expired = true;
+			L->cv.notify_all();
+		}
+	}
 
 private:
 	// Cascade an intent removal: if there's a DecisionListener still
@@ -1860,7 +1911,12 @@ void Install(httplib::Server& srv, Store& store) {
 
 	srv.Get(kPathSessions,
 		[&store](const httplib::Request&, httplib::Response& res) {
-			auto list = store.List();
+			// v4: hide awaiting_approval sessions from native-emulator
+			// browsers — they have no live coordinator yet, so a Hello
+			// would time out with no feedback.  After M1b ships ws_bridge
+			// translation, this filter can stay (the broker still owns
+			// the approval UX) or relax behind a query parameter.
+			auto list = store.List(/*includeAwaitingApproval=*/false);
 			JsonBuilder b;
 			b.raw('[');
 			for (size_t i = 0; i < list.size(); ++i) {
@@ -1879,7 +1935,11 @@ void Install(httplib::Server& srv, Store& store) {
 	// every GET, so external sites can fetch() this directly.
 	srv.Get(kPathPublicSessions,
 		[&store](const httplib::Request&, httplib::Response& res) {
-			auto list = store.List();
+			// v4: same filter as /v1/sessions — embedders rendering
+			// "Join" buttons would otherwise produce buttons that
+			// silently fail when clicked against a broker-host that
+			// hasn't spawned its emulator yet.
+			auto list = store.List(/*includeAwaitingApproval=*/false);
 			const std::string& wasmBase = store.Cfg().publicWasmUrl;
 			JsonBuilder b;
 			b.raw('[');
@@ -2223,6 +2283,13 @@ void Install(httplib::Server& srv, Store& store) {
 							return false;
 					}
 
+					// Probe socket health BEFORE blocking on the
+					// listener's cv — short-circuits the case where the
+					// client closed during the prior write but our
+					// internal mutex was still held.
+					if (sink.is_writable && !sink.is_writable())
+						return false;
+
 					std::vector<std::string> newIds, cancelledIds;
 					bool ended = false;
 					{
@@ -2239,6 +2306,9 @@ void Install(httplib::Server& srv, Store& store) {
 						cancelledIds = std::move(listener->cancelledIntentIds);
 						ended        = listener->sessionEnded;
 					}
+
+					if (sink.is_writable && !sink.is_writable())
+						return false;
 
 					if (newIds.empty() && cancelledIds.empty() && !ended) {
 						// SSE comment line — keepalive only.
@@ -2427,6 +2497,9 @@ void Install(httplib::Server& srv, Store& store) {
 			res.set_chunked_content_provider("text/event-stream",
 				[listener, iid, &store]
 				(size_t /*offset*/, httplib::DataSink& sink) -> bool {
+					if (sink.is_writable && !sink.is_writable())
+						return false;
+
 					Decision d;
 					bool decided = false, expired = false;
 					{
@@ -2442,6 +2515,10 @@ void Install(httplib::Server& srv, Store& store) {
 						expired = listener->expired;
 						d       = listener->decision;
 					}
+
+					if (sink.is_writable && !sink.is_writable())
+						return false;
+
 					if (decided) {
 						JsonBuilder b;
 						b.raw("event: decision\ndata: ");
@@ -3330,6 +3407,10 @@ int main(int argc, char **argv) {
 	std::fflush(stdout);
 
 	bool ok = srv.listen(cfg.bind, cfg.port);
+	// v4: signal SSE listeners that we're going down so their
+	// handlers terminate inside the next tick rather than waiting
+	// for the heartbeat timeout to fire write-failures one by one.
+	store.Shutdown();
 	sweeper.Stop();
 	reflectorStop.store(true);
 	wsBridgeStop.store(true);
