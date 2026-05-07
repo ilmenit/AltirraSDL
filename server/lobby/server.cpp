@@ -2140,12 +2140,25 @@ void Install(httplib::Server& srv, Store& store) {
 	// header is already set by the pre-routing handler that runs for
 	// every GET, so external sites can fetch() this directly.
 	srv.Get(kPathPublicSessions,
-		[&store](const httplib::Request&, httplib::Response& res) {
-			// v4: same filter as /v1/sessions — embedders rendering
-			// "Join" buttons would otherwise produce buttons that
-			// silently fail when clicked against a broker-host that
-			// hasn't spawned its emulator yet.
-			auto list = store.List(/*includeAwaitingApproval=*/false);
+		[&store](const httplib::Request& req, httplib::Response& res) {
+			// Default behaviour preserves the embedder-friendly
+			// contract: awaiting_approval sessions (broker pre-spawn,
+			// no coordinator yet) are hidden so a third-party widget
+			// rendering a Join button never produces a button that
+			// silently fails.
+			//
+			// `?include_awaiting=1` opts into the broker-aware view.
+			// The lobby's own page passes this flag so a host who
+			// clicked Play Together is discoverable to other browsers
+			// — clicking Join on such an entry routes through the
+			// broker module (intent post → host modal Allow → spawn),
+			// which is exactly the flow that makes awaiting sessions
+			// joinable.  The Caddy edge keeps this same-origin so the
+			// param is page-only by default.
+			const bool includeAwaiting =
+				req.has_param("include_awaiting") &&
+				req.get_param_value("include_awaiting") == "1";
+			auto list = store.List(includeAwaiting);
 			const std::string& wasmBase = store.Cfg().publicWasmUrl;
 			JsonBuilder b;
 			b.raw('[');
