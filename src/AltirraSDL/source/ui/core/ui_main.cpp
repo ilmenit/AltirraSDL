@@ -125,6 +125,17 @@ void ATUIStartVGMRecording(const wchar_t *path);
 #include <mutex>
 #include <vector>
 
+#if defined(__EMSCRIPTEN__)
+// Read by the broker-mode "Starting…" overlay below.  Defined in
+// wasm_bridge.cpp with extern "C" linkage so the WASM linker can bind
+// the call site to the unmangled symbol the bridge emits — a plain C++
+// extern declaration would be name-mangled.  These declarations must
+// live at namespace scope: a function-body-local `extern "C"` is
+// ill-formed in C++ and rejected by emcc.
+extern "C" int  ATWasmIsStartingOverlayActive();
+extern "C" void ATWasmSetStartingOverlay(int);
+#endif
+
 // ATDeferredActionType enum is now in ui_main.h
 
 struct ATDeferredAction {
@@ -1583,18 +1594,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// through to the canvas if they wanted, but in practice the wait
 	// is short and the overlay is purely informational.
 	{
-		// extern "C" is REQUIRED here: these symbols are defined in
-		// wasm_bridge.cpp with extern "C" linkage so JS can resolve
-		// them via Module._..., and a plain C++ extern declaration
-		// would be name-mangled by the consumer-side compiler — the
-		// linker would look for _Z31ATWasm... and never find the
-		// unmangled symbol the bridge emits.  Native build is
-		// shielded by the surrounding #if defined(__EMSCRIPTEN__),
-		// so a missed extern "C" only manifests as a WASM link
-		// error.  Native test suites do NOT cover this; only
-		// emcmake/emcc surfaces the breakage.
-		extern "C" int  ATWasmIsStartingOverlayActive();
-		extern "C" void ATWasmSetStartingOverlay(int);
+		// ATWasmIsStartingOverlayActive / ATWasmSetStartingOverlay are
+		// forward-declared at file scope above (function-body-local
+		// `extern "C"` is ill-formed in C++ and rejected by emcc).
 		if (ATWasmIsStartingOverlayActive()) {
 			if (ATNetplayGlue::IsLockstepping()) {
 				// Self-clear on lockstep — no separate hook needed.

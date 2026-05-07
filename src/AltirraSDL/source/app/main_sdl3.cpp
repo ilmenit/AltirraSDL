@@ -21,6 +21,14 @@
 extern "C" void VDWASMTimerTick();
 extern void ATWasmBridgeTick();
 extern "C" void ATWasmSyncFSOut();
+
+// Read by the wizard gate below.  Defined in wasm_bridge.cpp with
+// extern "C" linkage so the WASM linker can bind the call site to the
+// unmangled symbol the bridge emits — a plain C++ extern declaration
+// would be name-mangled and the link would fail.  This declaration must
+// live at namespace scope: a function-body-local `extern "C"` is
+// ill-formed in C++ and rejected by emcc (and clang/gcc).
+extern "C" bool ATWasmBrokerIsActive();
 #endif
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL_main.h>
@@ -2261,13 +2269,8 @@ int main(int argc, char *argv[]) {
 			// spawning this WASM emulator.  Showing the setup wizard
 			// here would defeat the entire purpose of the broker
 			// (instant gaming-mode landing).  ATWasmBrokerIsActive()
-			// is a free function exported by wasm_bridge.cpp with
-			// extern "C" linkage — the matching declaration here MUST
-			// also use extern "C" or the WASM linker can't bind the
-			// mangled C++ name to the unmangled symbol the bridge
-			// emits.  Native build is shielded by the #ifdef so a
-			// missed extern "C" would only break the WASM build.
-			extern "C" bool ATWasmBrokerIsActive();
+			// is forward-declared at file scope above (function-body
+			// `extern "C"` is ill-formed in C++).
 			const bool brokerActive = ATWasmBrokerIsActive();
 #else
 			constexpr bool brokerActive = false;
