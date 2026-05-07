@@ -1035,38 +1035,71 @@ void ReconcileHostedGames(uint64_t nowMs) {
 	{
 #if defined(__EMSCRIPTEN__)
 		// M3.4 — broker auto-accept pre-pass.  When the user came in
-		// via ?broker=1&role=host&handle=<H>, the host already
-		// clicked "Allow" on the broker page before navigating here;
-		// showing them an in-emulator AcceptJoinPrompt would be a
-		// duplicate approval step.  Auto-accept any pending request
-		// whose handle matches the broker-supplied joiner handle
-		// BEFORE mirroring into `next`, so the prompt screen never
-		// opens for that joiner.  Other pending requests (a
-		// different joiner who happened to find this same broker
-		// host through the public listing) preserve today's
-		// behaviour — they flow into `next` and trigger the prompt.
+		// via ?broker=1&role=host, the broker page is the gatekeeper:
+		// the host already clicked "Allow" there, the lobby auto-
+		// accepted the broker-approved intent, and the joiner's WSS
+		// upgrade against this session id was authorised by the
+		// lobby.  Any pending Hello that reaches us is therefore a
+		// connection the broker has already vetted — showing the
+		// in-emulator AcceptJoinPrompt would be a duplicate approval
+		// step from the user's perspective, and (since the broker
+		// host is on the lobby page in another tab) one they cannot
+		// see, so the prompt's 20-s auto-decline fires and the
+		// joiner gets reason code 8 (HostRejected).
 		//
-		// AcceptPendingJoiner clears the entire pending queue per
+		// We auto-accept the pending request unconditionally for any
+		// HostedGame in broker host mode.  We prefer matching the
+		// broker-supplied joiner handle when one was passed
+		// (?join_handle=) so the log line and any future per-joiner
+		// gating remains accurate, but we DO NOT make handle match a
+		// hard requirement — URL handle and NetHello handle have
+		// historically diverged (URL trim vs registry-stored prefs
+		// vs NetHello fixed-length pad), and a missed match leaves
+		// the host stuck on the prompt modal indefinitely.  The
+		// lobby's session-state filter is the correct authority for
+		// "is this joiner allowed in"; the in-emulator prompt is for
+		// the non-broker public-listing scenario, not this one.
+		//
+		// HostAcceptPending clears the entire pending queue for a
 		// HostedGame on the first match (the joiner is now adopted;
 		// the host's phase advances to SendingSnapshot).  So one
-		// match per game is the most we'll ever fire here.
-		if (ATWasmBrokerIsActive() && ATWasmBrokerRole() == 1
-		    && ATWasmBrokerJoinerHandle()[0] != '\0') {
-			const std::string brokerHandle = ATWasmBrokerJoinerHandle();
+		// accept per game per pre-pass is the most we'll ever fire.
+		if (ATWasmBrokerIsActive() && ATWasmBrokerRole() == 1) {
+			const char* expectedHandlePtr = ATWasmBrokerJoinerHandle();
+			const std::string expectedHandle =
+				expectedHandlePtr ? expectedHandlePtr : "";
 			for (auto& o : st.hostedGames) {
 				const size_t n = ATNetplayGlue::HostPendingCount(o.id.c_str());
-				for (size_t i = 0; i < n; ++i) {
-					char handle[40] = {};
-					if (!ATNetplayGlue::HostPendingAt(o.id.c_str(), i,
-							handle, sizeof handle, nullptr)) continue;
-					if (brokerHandle == handle) {
-						ATNetplayGlue::HostAcceptPending(o.id.c_str(), i);
-						g_ATLCNetplay("broker host: auto-accepted "
-							"joiner '%s' (intent %s)", handle,
-							ATWasmBrokerIntentId());
-						break;  // queue is now cleared for this game
+				if (n == 0) continue;
+				size_t pickIdx = n;   // n == "no pick yet"
+				char pickHandle[40] = {};
+				bool matchedByHandle = false;
+				if (!expectedHandle.empty()) {
+					for (size_t i = 0; i < n; ++i) {
+						char handle[40] = {};
+						if (!ATNetplayGlue::HostPendingAt(o.id.c_str(), i,
+								handle, sizeof handle, nullptr)) continue;
+						if (expectedHandle == handle) {
+							pickIdx = i;
+							std::memcpy(pickHandle, handle, sizeof pickHandle);
+							matchedByHandle = true;
+							break;
+						}
 					}
 				}
+				if (pickIdx == n) {
+					if (!ATNetplayGlue::HostPendingAt(o.id.c_str(), 0,
+							pickHandle, sizeof pickHandle, nullptr))
+						continue;
+					pickIdx = 0;
+				}
+				ATNetplayGlue::HostAcceptPending(o.id.c_str(), pickIdx);
+				g_ATLCNetplay("broker host: auto-accepted joiner '%s' "
+					"(intent=%s, handle-match=%s, expected='%s')",
+					pickHandle,
+					ATWasmBrokerIntentId(),
+					matchedByHandle ? "yes" : "no (broker authority)",
+					expectedHandle.c_str());
 			}
 		}
 #endif
