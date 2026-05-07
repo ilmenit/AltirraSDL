@@ -425,8 +425,10 @@ static void HandleEvents() {
 		}
 
 		// Virtual keyboard intercepts gamepad events when visible.
-		// Gamepad X toggles visibility; D-pad/A/LB/RB navigate and
-		// press keys when the keyboard is showing.
+		// Gamepad Y toggles visibility; D-pad/A/LB/RB navigate and
+		// press keys when the keyboard is showing.  Y was chosen over
+		// X because some USB2JOY adapters mirror the standard fire
+		// button onto X, which would spuriously toggle the keyboard.
 		// Skip when a mobile UI screen (hamburger, file browser, etc.)
 		// is open — ImGui needs gamepad events for dialog navigation.
 		{
@@ -434,7 +436,7 @@ static void HandleEvents() {
 				&& (g_mobileState.currentScreen != ATMobileUIScreen::None);
 			if (!mobileUIActive) {
 				if (ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
-					&& ev.gbutton.button == SDL_GAMEPAD_BUTTON_WEST) {
+					&& ev.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH) {
 					g_uiState.showVirtualKeyboard = !g_uiState.showVirtualKeyboard;
 					if (!g_uiState.showVirtualKeyboard)
 						ATUIVirtualKeyboard_ReleaseAll(g_sim);
