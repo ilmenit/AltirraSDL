@@ -122,7 +122,7 @@ bool WasmTransport::Listen(uint16_t /*port*/) {
 		if (typeof console !== "undefined" && (console.info || console.log)) {
 			(console.info || console.log).call(console,
 				"[altirra-net] WSS connecting url=" + UTF8ToString($0)
-				+ " role=" + ($1 ? "host" : "joiner")
+				+ " role=" + ($1 ? "joiner" : "host")
 				+ " sid=" + UTF8ToString($2) + "..."
 				+ " tokenLen=" + $3);
 		}
@@ -301,7 +301,7 @@ bool WasmTransport::OnOpenCb(int /*eventType*/,
 	EM_ASM({
 		if (typeof console !== "undefined" && (console.info || console.log)) {
 			(console.info || console.log).call(console,
-				"[altirra-net] WSS open role=" + ($0 ? "host" : "joiner")
+				"[altirra-net] WSS open role=" + ($0 ? "joiner" : "host")
 				+ " openMs=" + ($1 >= 0 ? Math.round($1) : "?"));
 		}
 	}, (int)self->mRole, openMs);
@@ -350,7 +350,7 @@ bool WasmTransport::OnErrorCb(int /*eventType*/,
 	EM_ASM({
 		if (typeof console !== "undefined" && console.warn) {
 			console.warn("[altirra-net] WSS onerror role="
-				+ ($0 ? "host" : "joiner")
+				+ ($0 ? "joiner" : "host")
 				+ " — browser refused; close event follows"
 				+ " (typical causes: ad/content blocker, CSP,"
 				+ " corporate proxy, mixed content)");
