@@ -25,6 +25,16 @@ extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 
+#if defined(__EMSCRIPTEN__)
+// Defined in wasm_bridge.cpp.  Read by Navigate/PopTo to enforce the
+// broker-mode invariant that no in-emulator netplay screen ever shows
+// while broker is active.  Function-body-local `extern` would resolve
+// against the enclosing ATNetplayUI namespace and miss the bridge's
+// free function — declare at file scope so the lookup hits the
+// expected symbol.
+extern "C" bool ATWasmBrokerIsActive();
+#endif
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -830,6 +840,24 @@ void Navigate(Screen next) {
 		g_state.screen = Screen::Closed;
 		return;
 	}
+#if defined(__EMSCRIPTEN__)
+	// Broker mode contract: the browser (broker page + lobby) is the
+	// sole UX surface.  The emulator window must show only the
+	// running Atari, never an in-emulator Online Play sheet or
+	// modal — those would be unreachable to the user (the broker
+	// page is in a different tab, and our deep-link URL has no
+	// browser-back affordance).  Refuse all navigations to any
+	// netplay screen while broker mode is active; explicit error
+	// routing via ATWasmBrokerSessionEnded is the only way out.
+	// Closed is unreachable here (early-return above) so we don't
+	// special-case it.
+	if (::ATWasmBrokerIsActive()) {
+		// Don't touch the back stack — leaving it empty + screen at
+		// Closed is the broker-mode invariant.  A future contributor
+		// who Navigate(Closed)s into us still works.
+		return;
+	}
+#endif
 	// Nickname is a first-time gate, not a navigable page: once the
 	// user saves a handle and moves on, backing into it again would
 	// just show an already-completed wizard.  Treat it like Closed so
@@ -865,6 +893,16 @@ bool Back() {
 
 void PopTo(Screen target) {
 	if (g_state.screen == target) return;
+#if defined(__EMSCRIPTEN__)
+	// Same broker-mode contract as Navigate above — see comment
+	// there.  PopTo into a non-Closed screen would surface the
+	// in-emulator UI; refuse and stay on Closed.  Allow PopTo
+	// to Closed so future cleanup code (e.g. external "leave"
+	// shortcuts) still works.
+	if (target != Screen::Closed) {
+		if (::ATWasmBrokerIsActive()) return;
+	}
+#endif
 
 	// Walk the existing stack top-down looking for `target`.  If
 	// found, drop everything from that point to the top so the user
