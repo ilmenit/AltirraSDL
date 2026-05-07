@@ -51,6 +51,15 @@ extern ATLogChannel g_ATLCNetplay;
 extern "C" int  ATWasmGetFirstRunState();
 extern "C" void ATWasmFirstRunBootstrap();
 extern "C" void ATWasmResetFirstRun();
+
+// Broker-mode error routing.  Defined in wasm_bridge.cpp.  These
+// MUST be at file scope (not inside namespace ATNetplayUI's
+// anonymous namespace) so the C linkage symbol resolves correctly
+// — emcc's wasm-ld will otherwise look for
+// `ATNetplayUI::(anonymous)::ATWasmBrokerIsActive` and fail to
+// link against the bridge's free-function definition.
+extern "C" bool ATWasmBrokerIsActive();
+extern "C" void ATWasmBrokerSessionEnded(int reasonCode);
 #endif
 
 // We don't link against ui_mobile.cpp's SetFirstRunComplete() —
@@ -135,6 +144,24 @@ bool IsFirstRunComplete() {
 void RouteToError(const std::string& msg) {
 	State& st = GetState();
 	st.session.lastError = msg;
+#if defined(__EMSCRIPTEN__)
+	// In broker mode the user reached this code path through the
+	// browser-driven Join flow (?broker=1&s=<id>).  The browser is
+	// the UX surface, so an in-emulator Error screen would be a
+	// dead end (the user has no way back to the lobby from inside
+	// the WASM emulator window).  Bail out to the lobby with a
+	// reason code so the broker page can render a clean
+	// "Game ended / session unavailable" panel keyed on
+	// ?broker_return=1.  ATWasmBrokerSessionEnded is a one-shot
+	// per WASM tab so a subsequent terminal-phase auto-detect
+	// won't double-fire the navigation.
+	if (ATWasmBrokerIsActive()) {
+		g_ATLCNetplay("broker joiner: deep-link error \"%s\" — "
+			"returning to lobby", msg.c_str());
+		ATWasmBrokerSessionEnded(0);
+		return;
+	}
+#endif
 	Navigate(Screen::Error);
 }
 

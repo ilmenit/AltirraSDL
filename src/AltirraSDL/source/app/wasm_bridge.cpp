@@ -1781,17 +1781,64 @@ extern "C" int ATWasmIsStartingOverlayActive() {
 // flag so the broker page can render a "Game ended — Play again?"
 // panel keyed on ?broker_return=1.  Synchronous from JS's perspective
 // (the next browser turn after this is the new page).
-EM_JS(void, _altirra_wasm_broker_return, (int reasonCode), {
-	if (typeof location === 'undefined') return;
-	var dest = '/AltirraSDL/?broker_return=1&reason=' + reasonCode;
+//
+// For role=host we ALSO fire a DELETE against /v1/sessions/{id} (with
+// the session token in X-Session-Token) before navigating, so the
+// lobby record is removed immediately rather than waiting up to
+// kSweepIntervalMillis + kHostWsLostGraceMs (~8 s) for the WS-
+// presence sweep to declare the WASM-side host gone.  Without the
+// explicit DELETE, other browsers refreshing the lobby in the gap
+// see a ghost session — and the host themselves, on returning to the
+// lobby page, can see and click Join on their own just-ended game,
+// which then routes them to the in-emulator deep-link join flow
+// (the lobby session is dead, the WSS upgrade fails with kGone, and
+// the joiner's WASM lands on the in-emulator Online Play / Error
+// screen instead of getting a clean "session ended" lobby-side
+// rendering).
+//
+// Joiner side has no token to authenticate the DELETE; we just
+// navigate.  The joiner's clean Bye over the existing WSS arrives
+// at the host's coordinator first, which advances the host to
+// Ended → host's own ATWasmBrokerSessionEnded fires → host's
+// authenticated DELETE removes the lobby record.  Net effect: one
+// DELETE per game-end regardless of who initiates the close.
+//
+// The DELETE uses fetch() with `keepalive: true` (sendBeacon would
+// be cleaner but doesn't support custom headers — the lobby's
+// /v1/sessions/{id} DELETE endpoint requires X-Session-Token).
+// keepalive lets the request outlive the page navigation that
+// follows on the very next line.
+EM_JS(void, _altirra_wasm_broker_return,
+      (int reasonCode, const char* sidPtr, const char* tokPtr), {
+	if (typeof location === "undefined") return;
+	var sid = (typeof sidPtr === "number" && sidPtr) ? UTF8ToString(sidPtr) : "";
+	var tok = (typeof tokPtr === "number" && tokPtr) ? UTF8ToString(tokPtr) : "";
+	if (sid && tok) {
+		try {
+			fetch("/v1/sessions/" + encodeURIComponent(sid), {
+				method: "DELETE",
+				headers: {
+					"Content-Type": "application/json",
+					"X-Session-Token": tok,
+				},
+				keepalive: true,
+			}).catch(function () { /* best-effort */ });
+		} catch (e) { /* best-effort */ }
+	}
+	var dest = "/AltirraSDL/?broker_return=1&reason=" + reasonCode;
 	try { location.href = dest; }
-	catch (e) { console.warn('[broker] return navigate failed:', e); }
+	catch (e) { console.warn("[broker] return navigate failed:", e); }
 });
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmBrokerSessionEnded(int reasonCode) {
 	if (!g_brokerCtx.active) return;   // not in broker mode → no-op
 	g_brokerCtx.active = false;        // one-shot — don't fire twice
-	// Clear the M3.4 strings too — page navigates away immediately
+	// Snapshot the host-only DELETE inputs before the field clear
+	// below — the EM_JS reads them after the C-side state is gone.
+	const bool isHost = (g_brokerCtx.role == 1);
+	const std::string sid   = isHost ? g_brokerCtx.sessionId : "";
+	const std::string token = isHost ? g_brokerCtx.token     : "";
+	// Clear the M3.4 strings — page navigates away immediately
 	// after this call, but if the navigation is somehow blocked or
 	// delayed, leaving stale strings around could confuse a future
 	// adoption attempt (e.g. the user manually navigates back).
@@ -1800,7 +1847,9 @@ void ATWasmBrokerSessionEnded(int reasonCode) {
 	g_brokerCtx.intentId.clear();
 	g_brokerCtx.joinerHandle.clear();
 	g_brokerCtx.codeHashHex.clear();
-	_altirra_wasm_broker_return(reasonCode);
+	_altirra_wasm_broker_return(reasonCode,
+		sid.empty()   ? nullptr : sid.c_str(),
+		token.empty() ? nullptr : token.c_str());
 }
 
 #endif // __EMSCRIPTEN__

@@ -76,6 +76,7 @@ extern "C" const char* ATWasmBrokerIntentId();
 extern "C" const char* ATWasmBrokerJoinerHandle();
 extern "C" int         ATWasmBrokerRole();
 extern "C" void        ATWasmBrokerClearAdoption();
+extern "C" void        ATWasmBrokerSessionEnded(int reasonCode);
 #endif
 
 #include <algorithm>
@@ -1533,6 +1534,12 @@ void StartHostingAction() {
 	if (st.session.pendingCartName.empty()) {
 		st.session.lastError =
 			"No game selected.  Open Host Games to add one.";
+#if defined(__EMSCRIPTEN__)
+		if (ATWasmBrokerIsActive()) {
+			ATWasmBrokerSessionEnded(0);
+			return;
+		}
+#endif
 		Navigate(Screen::Error);
 		return;
 	}
@@ -1561,6 +1568,12 @@ void StartHostingAction() {
 			st.session.lastError =
 				"Saved hosted-games list is full — remove some "
 				"unused entries before adding new ones.";
+#if defined(__EMSCRIPTEN__)
+			if (ATWasmBrokerIsActive()) {
+				ATWasmBrokerSessionEnded(0);
+				return;
+			}
+#endif
 			Navigate(Screen::Error);
 			return;
 		}
@@ -1582,6 +1595,16 @@ void StartHostingAction() {
 	}
 	SaveToRegistry();
 	EnableHostedGame(id);
+#if defined(__EMSCRIPTEN__)
+	// In broker mode the user reached this code path through the
+	// browser-driven AutoHost flow (?host=1&broker=1 → DriveAutoHost
+	// → StartHostingAction).  The browser is the UX surface for the
+	// broker session; the emulator window must show only the running
+	// Atari, never the in-emulator Online Play UI.  Returning here
+	// without touching the screen stack leaves the user on
+	// Screen::Closed, which is what the broker contract requires.
+	if (ATWasmBrokerIsActive()) return;
+#endif
 	// PopTo, not Navigate — MyHostedGames is on the stack from the
 	// Hub → MyHostedGames → AddGame → HostSetup chain.  Navigating
 	// here would push HostSetup onto the stack and a subsequent
@@ -1653,6 +1676,9 @@ void SubmitHostGameFileForGame(const char *gameId) {
 void StartJoiningAction() {
 	State& st = GetState();
 	if (ATNetplayGlue::IsActive()) {
+#if defined(__EMSCRIPTEN__)
+		if (ATWasmBrokerIsActive()) return;
+#endif
 		Navigate(Screen::Waiting);
 		return;
 	}
@@ -1675,6 +1701,15 @@ void StartJoiningAction() {
 
 	bool ok = false;
 #if defined(__EMSCRIPTEN__)
+	// Helper: in broker mode, route an in-emulator error back to the
+	// lobby instead of showing the unreachable Error screen.
+	auto BrokerErrorOrNavigate = [&]() {
+		if (ATWasmBrokerIsActive()) {
+			ATWasmBrokerSessionEnded(0);
+			return;
+		}
+		Navigate(Screen::Error);
+	};
 	// WASM browser build: no UDP path of any kind.  Always go via the
 	// lobby's WS bridge using the session id from the lobby listing.
 	// The bridge translates to/from UDP for native hosts.
@@ -1682,7 +1717,7 @@ void StartJoiningAction() {
 		st.session.lastError =
 			"Cannot join: this lobby session has no id (browser builds "
 			"require a v3+ lobby).";
-		Navigate(Screen::Error);
+		BrokerErrorOrNavigate();
 		return;
 	}
 	{
@@ -1703,7 +1738,7 @@ void StartJoiningAction() {
 		if (!ep) {
 			st.session.lastError =
 				"No HTTP lobby is configured to host the WSS bridge.";
-			Navigate(Screen::Error);
+			BrokerErrorOrNavigate();
 			return;
 		}
 		g_ATLCNetplay("joiner (WASM): StartJoinWss host=%s sid=%s",
@@ -1786,6 +1821,12 @@ void StartJoiningAction() {
 		const char *err = ATNetplayGlue::JoinLastError();
 		st.session.lastError = (err && *err) ? err
 			: "Failed to join the session.";
+#if defined(__EMSCRIPTEN__)
+		if (ATWasmBrokerIsActive()) {
+			ATWasmBrokerSessionEnded(0);
+			return;
+		}
+#endif
 		Navigate(Screen::Error);
 		return;
 	}
@@ -1917,6 +1958,18 @@ void StartJoiningAction() {
 	}
 #endif // !__EMSCRIPTEN__
 
+#if defined(__EMSCRIPTEN__)
+	// In broker mode the user reached this code path through the
+	// browser-driven Join flow.  Showing the in-emulator Waiting
+	// screen would obscure the running emulator (post-snapshot) or
+	// leak through as a flash of "Connecting to host…" UI before the
+	// snapshot arrives.  Stay on Screen::Closed; the snapshot apply +
+	// resume path renders the actual game directly.  If the join
+	// fails, the engaged-edge auto-detect in ATNetplayUI_Poll fires
+	// ATWasmBrokerSessionEnded, which routes the user back to the
+	// lobby — no in-emulator error UI ever surfaces.
+	if (ATWasmBrokerIsActive()) return;
+#endif
 	Navigate(Screen::Waiting);
 }
 
