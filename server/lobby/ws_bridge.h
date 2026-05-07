@@ -78,6 +78,14 @@ struct WsBridgeStats {
 	// 0x4D504E41 — kMagicWelcomeAck in packets.h).
 	std::atomic<uint64_t> udpInWelcomeAcks{0};
 	std::atomic<uint64_t> wsOutWelcomeAcks{0};
+
+	// M5 observability — count of inner packets the bridge classified
+	// as NetPhase / NetEventBatch / NetHeartbeat (magics 'ANPF',
+	// 'ANPV', 'ANPT').  `eventsObserved` is total seen; the other two
+	// split by what the events-tee callback returned.  Listener
+	// presence is a server.cpp-side concept; the bridge just tracks
+	// the bytes it observed for parity with snapshot diagnostics.
+	std::atomic<uint64_t> eventsObserved{0};
 };
 
 // Reflector socket FD, owned by the reflector thread.  Set to a valid
@@ -137,6 +145,27 @@ using WsUdpForwarderFn = bool(*)(
 	const uint8_t* inner, size_t innerLen,
 	void* ctx);
 
+// Callback: M5 observability tee.  When the bridge sees an inner
+// packet whose first 4 bytes match one of the netplay v6
+// observability magics (NetPhase / NetEventBatch / NetHeartbeat),
+// it invokes this callback so the server.cpp side can route the
+// bytes to subscribed SSE listeners on /v1/session/{id}/events/
+// stream.  Forwarding to the peer continues unchanged regardless
+// of the callback's return — the tee is observation-only, never
+// an error path.
+//
+//   sidRaw      — 16-byte session id (raw bytes, not hex)
+//   senderRole  — 0/1 of the WS peer that originated the packet
+//   innerMagic  — the inner LE u32 magic that triggered the call
+//   inner       — inner packet bytes (envelope already stripped)
+//   innerLen    — bytes; ≥4
+//   ctx         — opaque (server.cpp's Store*)
+using WsEventsObserverFn = void(*)(
+	const uint8_t sidRaw[16], uint8_t senderRole,
+	uint32_t innerMagic,
+	const uint8_t* inner, size_t innerLen,
+	void* ctx);
+
 // Callback: when the bridge accepts a WS upgrade, registers the
 // (sid, role, conn) in the WsRegistry so the reflector thread can find
 // it during ASDF dispatch.  Likewise on close, unregister.  These run
@@ -188,6 +217,7 @@ void RunWsBridge(const WsBridgeConfig& cfg,
                  ReflectorSocketHandle& reflectorFd,
                  WsSessionValidatorFn validateFn, void* validateCtx,
                  WsUdpForwarderFn udpForwardFn, void* udpForwardCtx,
+                 WsEventsObserverFn eventsObserveFn, void* eventsObserveCtx,
                  WsBridgeContext& outCtx,
                  std::atomic<bool>& stop);
 

@@ -2,6 +2,7 @@
 /build/
 /build-tests/
 /build-lobby/
+/build_lobby/
 CMakeUserPresets.json
 
 # Auto-fetched vendor dependencies (created by CMake FetchContent)

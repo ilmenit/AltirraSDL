@@ -67,6 +67,14 @@ constexpr uint32_t kNetChunkMagicLE      = 0x43504E41u; // 'ANPC'
 constexpr uint32_t kNetAckMagicLE        = 0x41504E41u; // 'ANPA'
 constexpr uint32_t kNetWelcomeAckMagicLE = 0x4D504E41u; // 'ANPM' (v5)
 
+// M5 observability magics (v6).  Mirror packets.h kMagicNet{Phase,
+// Events,Heartbeat}; the bridge tees these to subscribed SSE
+// listeners on /v1/sessions/{id}/events/stream while still
+// forwarding the bytes to the WS / UDP peer unchanged.
+constexpr uint32_t kNetPhaseMagicLE      = 0x46504E41u; // 'ANPF'
+constexpr uint32_t kNetEventsMagicLE     = 0x56504E41u; // 'ANPV'
+constexpr uint32_t kNetHeartbeatMagicLE  = 0x54504E41u; // 'ANPT'
+
 constexpr uint8_t kRelayRoleHost   = 0;
 constexpr uint8_t kRelayRoleJoiner = 1;
 
@@ -213,6 +221,8 @@ struct BridgeState {
 	void*                     validateCtx   = nullptr;
 	WsUdpForwarderFn          udpForwardFn  = nullptr;
 	void*                     udpForwardCtx = nullptr;
+	WsEventsObserverFn        eventsObserveFn  = nullptr;
+	void*                     eventsObserveCtx = nullptr;
 	WsRegistryHandle*         reg           = nullptr;
 
 	std::unordered_map<unsigned long, PerConn> conns;
@@ -773,6 +783,27 @@ static void HandleWsMsg(BridgeState& st, struct mg_connection* c,
 		st.stats->wsInChunks.fetch_add(1, std::memory_order_relaxed);
 	}
 
+	// M5 observability — tee NetPhase / NetEventBatch / NetHeartbeat
+	// to the events-stream tee callback (server.cpp routes them to
+	// subscribed SSE listeners on /v1/sessions/{id}/events/stream).
+	// Forwarding to the peer continues unchanged below regardless of
+	// whether anyone's listening.  We only peek + count; decoding
+	// (re-using the netplay protocol's decoders) happens inside the
+	// callback to keep the bridge protocol-format-agnostic.
+	if (innerLen >= 4) {
+		const uint32_t innerMagic = PeekInnerMagicLE(inner);
+		if (innerMagic == kNetPhaseMagicLE
+		 || innerMagic == kNetEventsMagicLE
+		 || innerMagic == kNetHeartbeatMagicLE) {
+			st.stats->eventsObserved.fetch_add(1, std::memory_order_relaxed);
+			if (st.eventsObserveFn) {
+				st.eventsObserveFn(pc.sid, pc.role, innerMagic,
+				                   inner, innerLen,
+				                   st.eventsObserveCtx);
+			}
+		}
+	}
+
 	// Try WS-WS first; fall back to UDP relay table.
 	unsigned long otherId = st.reg->Other(pc.sid, pc.role);
 	if (otherId != 0) {
@@ -928,6 +959,7 @@ void RunWsBridge(const WsBridgeConfig& cfg,
                  ReflectorSocketHandle& reflectorFd,
                  WsSessionValidatorFn validateFn, void* validateCtx,
                  WsUdpForwarderFn udpForwardFn, void* udpForwardCtx,
+                 WsEventsObserverFn eventsObserveFn, void* eventsObserveCtx,
                  WsBridgeContext& outCtx,
                  std::atomic<bool>& stop) {
 	struct mg_mgr mgr;
@@ -942,14 +974,16 @@ void RunWsBridge(const WsBridgeConfig& cfg,
 	reg.mgr = &mgr;
 
 	BridgeState st;
-	st.cfg           = cfg;
-	st.stats         = &stats;
-	st.reflectorFd   = &reflectorFd;
-	st.validateFn    = validateFn;
-	st.validateCtx   = validateCtx;
-	st.udpForwardFn  = udpForwardFn;
-	st.udpForwardCtx = udpForwardCtx;
-	st.reg           = &reg;
+	st.cfg              = cfg;
+	st.stats            = &stats;
+	st.reflectorFd      = &reflectorFd;
+	st.validateFn       = validateFn;
+	st.validateCtx      = validateCtx;
+	st.udpForwardFn     = udpForwardFn;
+	st.udpForwardCtx    = udpForwardCtx;
+	st.eventsObserveFn  = eventsObserveFn;
+	st.eventsObserveCtx = eventsObserveCtx;
+	st.reg              = &reg;
 
 	// Publish the registry pointer so the reflector thread (in
 	// server.cpp) can probe for WS peers before falling back to UDP.

@@ -156,6 +156,11 @@ inline constexpr const char *kPathIntentsStreamSuffix = "/intents/stream";
 inline constexpr const char *kPathIntentDecisionTail  = "/decision";
 inline constexpr const char *kPathIntent              = "/v1/intent";
 inline constexpr const char *kPathIntentStreamTail    = "/stream";
+// M5 — per-session SSE events stream.  Bridges the WS bridge's
+// inner-magic peek of NetPhase / NetEventBatch / NetHeartbeat to the
+// broker page (and any other observer with the session token).
+// Token-authenticated via X-Session-Token, same as intents/stream.
+inline constexpr const char *kPathEventsStreamSuffix  = "/events/stream";
 
 // Header name carrying the session's delete token.
 inline constexpr const char *kHeaderSessionToken = "X-Session-Token";

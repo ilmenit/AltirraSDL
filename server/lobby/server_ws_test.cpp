@@ -161,6 +161,7 @@ struct Bridge {
 				wcfg, stats, dummyFd,
 				StubValidate, nullptr,
 				StubUdpForward, nullptr,
+				/*eventsObserveFn*/ nullptr, nullptr,
 				ctx, stop);
 		});
 		// Give the bridge a moment to bind.

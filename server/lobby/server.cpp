@@ -344,6 +344,20 @@ struct DecisionListener {
 	Decision                  decision{};
 };
 
+// M5 — per-session SSE events listener.  One instance per live
+// GET /v1/session/{id}/events/stream connection.  ws_bridge's
+// WsObserveEvents callback calls Store::OnEventsPacketObserved which
+// JSON-encodes the inner packet and pushes it onto every listener's
+// queue.  The SSE handler drains the queue, emits one event per
+// entry, and blocks on `cv` until the next batch arrives or the
+// session ends.
+struct EventsListener {
+	std::mutex                mu;
+	std::condition_variable   cv;
+	std::vector<std::string>  pendingJson;     // each entry is one SSE data payload
+	bool                      sessionEnded = false;
+};
+
 struct Config {
 	std::string bind          = "0.0.0.0";
 	int         port          = 8080;
@@ -1007,6 +1021,46 @@ public:
 		if (v.empty()) mDecisionListeners.erase(it);
 	}
 
+	// M5 events stream — per-session listener registration.  Same
+	// shape as Intent / Decision listeners; the bridge's
+	// WsObserveEvents callback enqueues JSON-encoded events into
+	// every registered listener's pendingJson and notifies its CV.
+	void RegisterEventsListener(const std::string& sessionId,
+	                            std::shared_ptr<EventsListener> L) {
+		std::lock_guard<std::mutex> lk(mMu);
+		mEventsListeners[sessionId].push_back(std::move(L));
+	}
+	void UnregisterEventsListener(const std::string& sessionId,
+	                              const std::shared_ptr<EventsListener>& L) {
+		std::lock_guard<std::mutex> lk(mMu);
+		auto it = mEventsListeners.find(sessionId);
+		if (it == mEventsListeners.end()) return;
+		auto& v = it->second;
+		v.erase(std::remove(v.begin(), v.end(), L), v.end());
+		if (v.empty()) mEventsListeners.erase(it);
+	}
+
+	// Called from the WS bridge's events tee callback.  Pushes one
+	// JSON-encoded line onto every registered listener's queue and
+	// notifies their CVs.  Bytes-only — the caller has already
+	// classified the magic and produced the JSON projection.  No-op
+	// when the session has no listeners.
+	void DeliverEventsJson(const std::string& sessionId,
+	                       std::string&& json) {
+		std::vector<std::shared_ptr<EventsListener>> targets;
+		{
+			std::lock_guard<std::mutex> lk(mMu);
+			auto it = mEventsListeners.find(sessionId);
+			if (it == mEventsListeners.end()) return;
+			targets = it->second;
+		}
+		for (auto& L : targets) {
+			std::lock_guard<std::mutex> lk(L->mu);
+			L->pendingJson.push_back(json);
+			L->cv.notify_one();
+		}
+	}
+
 	// /v1/metrics: snapshot the broker counters + active sets.
 	struct BrokerStats {
 		int activeIntents     = 0;
@@ -1039,12 +1093,15 @@ public:
 	void Shutdown() {
 		std::vector<std::shared_ptr<IntentListener>>   intents;
 		std::vector<std::shared_ptr<DecisionListener>> decisions;
+		std::vector<std::shared_ptr<EventsListener>>   events;
 		{
 			std::lock_guard<std::mutex> lk(mMu);
 			for (auto& kv : mIntentListeners)
 				for (auto& L : kv.second) intents.push_back(L);
 			for (auto& kv : mDecisionListeners)
 				for (auto& L : kv.second) decisions.push_back(L);
+			for (auto& kv : mEventsListeners)
+				for (auto& L : kv.second) events.push_back(L);
 		}
 		for (auto& L : intents) {
 			if (!L) continue;
@@ -1056,6 +1113,12 @@ public:
 			if (!L) continue;
 			std::lock_guard<std::mutex> ll(L->mu);
 			L->expired = true;
+			L->cv.notify_all();
+		}
+		for (auto& L : events) {
+			if (!L) continue;
+			std::lock_guard<std::mutex> ll(L->mu);
+			L->sessionEnded = true;
 			L->cv.notify_all();
 		}
 	}
@@ -1189,6 +1252,26 @@ private:
 			}
 			mIntentListeners.erase(lit);
 		}
+		// M5 — same for events-stream listeners.  Without this, a
+		// browser tab tailing /v1/session/{id}/events/stream would
+		// keep emitting `: heartbeat` comment lines indefinitely
+		// after the session expired (the server would happily wake
+		// every kSseHeartbeatIntervalMs and write the keepalive
+		// because nothing told it the session was gone).  Browsers
+		// don't notice the staleness — they'd reuse the connection
+		// until the user closes the tab.  Mirror IntentListener's
+		// notify-and-erase pattern so the SSE handler returns false
+		// from its content provider and httplib closes the stream.
+		auto eit = mEventsListeners.find(sessionId);
+		if (eit != mEventsListeners.end()) {
+			for (auto& L : eit->second) {
+				if (!L) continue;
+				std::lock_guard<std::mutex> ll(L->mu);
+				L->sessionEnded = true;
+				L->cv.notify_one();
+			}
+			mEventsListeners.erase(eit);
+		}
 	}
 
 	mutable std::mutex                       mMu;
@@ -1205,6 +1288,8 @@ private:
 	                   std::vector<std::shared_ptr<IntentListener>>> mIntentListeners;
 	std::unordered_map<std::string,
 	                   std::vector<std::shared_ptr<DecisionListener>>> mDecisionListeners;
+	std::unordered_map<std::string,
+	                   std::vector<std::shared_ptr<EventsListener>>>  mEventsListeners;
 };
 
 // -----------------------------------------------------------------
@@ -1968,7 +2053,13 @@ void Install(httplib::Server& srv, Store& store) {
 				b.key("udp_in_welcome_acks");
 				b.num((long long)gWsBridgeStats.udpInWelcomeAcks.load());  b.raw(',');
 				b.key("ws_out_welcome_acks");
-				b.num((long long)gWsBridgeStats.wsOutWelcomeAcks.load());
+				b.num((long long)gWsBridgeStats.wsOutWelcomeAcks.load()); b.raw(',');
+				// M5 — count of NetPhase / NetEventBatch / NetHeartbeat
+				// inner packets the bridge has classified.  Pairs with
+				// /v1/session/{id}/events/stream listener counts to
+				// triage a "no peer events" report.
+				b.key("events_observed");
+				b.num((long long)gWsBridgeStats.eventsObserved.load());
 			b.raw('}');                              b.raw(',');
 			b.key("http");            b.raw('{');
 				b.key("requests_total");
@@ -2467,6 +2558,77 @@ void Install(httplib::Server& srv, Store& store) {
 				},
 				[listener, id, &store](bool /*success*/) {
 					store.UnregisterIntentListener(id, listener);
+				});
+			return true;
+		}
+
+		// M5 — per-session events stream.  ws_bridge tees observed
+		// NetPhase / NetEventBatch / NetHeartbeat inner packets to
+		// Store::DeliverEventsJson; this handler drains the queue
+		// and writes one SSE event per JSON line.  Authenticated by
+		// X-Session-Token like intents/stream.  Heartbeat-comment
+		// keepalive on idle (so a TCP-level idle timeout doesn't
+		// drop a quiet session).
+		if (req.method == "GET" && suffix == kPathEventsStreamSuffix) {
+			const std::string tok =
+				req.get_header_value(kHeaderSessionToken);
+			if (!store.ValidateSessionToken(id, tok)) {
+				WriteErr(res, 401, "bad token");
+				return true;
+			}
+			auto listener = std::make_shared<EventsListener>();
+			store.RegisterEventsListener(id, listener);
+
+			res.set_header("Cache-Control", "no-cache, no-transform");
+			res.set_header("X-Accel-Buffering", "no");
+
+			res.set_chunked_content_provider("text/event-stream",
+				[listener, id, &store]
+				(size_t /*offset*/, httplib::DataSink& sink) -> bool {
+					// Probe socket health BEFORE blocking.
+					if (sink.is_writable && !sink.is_writable())
+						return false;
+
+					std::vector<std::string> drain;
+					bool ended = false;
+					{
+						std::unique_lock<std::mutex> lk(listener->mu);
+						listener->cv.wait_for(lk,
+							std::chrono::milliseconds(
+								kSseHeartbeatIntervalMs),
+							[&] {
+								return !listener->pendingJson.empty() ||
+								       listener->sessionEnded;
+							});
+						drain = std::move(listener->pendingJson);
+						ended = listener->sessionEnded;
+					}
+
+					if (sink.is_writable && !sink.is_writable())
+						return false;
+
+					if (drain.empty() && !ended) {
+						const char* ping = ": heartbeat\n\n";
+						return sink.write(ping, std::strlen(ping));
+					}
+					for (auto& json : drain) {
+						JsonBuilder b;
+						b.raw("event: events\ndata: ");
+						b.raw(json);
+						b.raw("\n\n");
+						if (!sink.write(b.s.data(), b.s.size()))
+							return false;
+					}
+					if (ended) {
+						const char* line =
+							"event: session_ended\ndata: {}\n\n";
+						sink.write(line, std::strlen(line));
+						return false;
+					}
+					return true;
+				},
+				[listener, id, &store](bool /*success*/) {
+					store.UnregisterEventsListener(id, listener);
 				});
 			return true;
 		}
@@ -3120,6 +3282,95 @@ ATLobby::WsAuthResult WsValidateSession(
 	return ATLobby::WsAuthResult::kOk;
 }
 
+// M5 — observability tee callback.  ws_bridge invokes this when an
+// inner packet's first 4 bytes match NetPhase / NetEventBatch /
+// NetHeartbeat magics.  We project the bytes to JSON and hand off
+// to Store::DeliverEventsJson which drives subscribed SSE listeners
+// on /v1/session/{id}/events/stream.  Decoding is done inline here
+// rather than via the netplay protocol library — keeps the lobby's
+// link surface small (no netplay protocol library dependency) and
+// matches the existing inline decoders in WsForwardToUdp's path.
+//
+// Magic constants mirror the ones in ws_bridge.cpp.  Wire layout
+// matches packets.h:
+//   NetPhase     (12 B): magic[4] phase[1] flags[1] progNum[2] progDen[2] reserved[2]
+//   NetEventBatch (≥6 B): magic[4] count[1] reserved[1] {ts[2] kind[1] code[1] data[4]}*count
+//   NetHeartbeat (16 B): magic[4] rttMs[2] loss[1] skip[1] behind[2] cpu[1] tab[1] seq[2] wallMs[2]
+namespace {
+constexpr uint32_t kNetPhaseMagicLE     = 0x46504E41u; // 'ANPF'
+constexpr uint32_t kNetEventsMagicLE    = 0x56504E41u; // 'ANPV'
+constexpr uint32_t kNetHeartbeatMagicLE = 0x54504E41u; // 'ANPT'
+
+inline uint16_t ReadU16LE(const uint8_t* p) {
+	return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+inline uint32_t ReadU32LE(const uint8_t* p) {
+	return (uint32_t)p[0]
+	     | ((uint32_t)p[1] << 8)
+	     | ((uint32_t)p[2] << 16)
+	     | ((uint32_t)p[3] << 24);
+}
+}  // anonymous
+
+void WsObserveEvents(const uint8_t sidRaw[16], uint8_t senderRole,
+                     uint32_t innerMagic,
+                     const uint8_t* inner, size_t innerLen,
+                     void* ctx)
+{
+	Store* store = static_cast<Store*>(ctx);
+	if (!store) return;
+
+	// Build JSON for the observed packet.  The "role" field tags which
+	// peer broadcast the packet so the SSE consumer can attribute it
+	// (host vs joiner) without reaching into per-connection state.
+	JsonBuilder b;
+	if (innerMagic == kNetPhaseMagicLE) {
+		if (innerLen < 12) return;
+		b.raw("{\"kind\":\"phase\",\"role\":");
+		b.num((int64_t)senderRole);
+		b.raw(",\"phase\":");      b.num((int64_t)inner[4]);
+		b.raw(",\"flags\":");      b.num((int64_t)inner[5]);
+		b.raw(",\"progNum\":");    b.num((int64_t)ReadU16LE(inner + 6));
+		b.raw(",\"progDen\":");    b.num((int64_t)ReadU16LE(inner + 8));
+		b.raw('}');
+	} else if (innerMagic == kNetHeartbeatMagicLE) {
+		if (innerLen < 16) return;
+		b.raw("{\"kind\":\"heartbeat\",\"role\":");
+		b.num((int64_t)senderRole);
+		b.raw(",\"rttMs\":");        b.num((int64_t)ReadU16LE(inner + 4));
+		b.raw(",\"lossPct5s\":");    b.num((int64_t)inner[6]);
+		b.raw(",\"frameSkip5s\":");  b.num((int64_t)inner[7]);
+		b.raw(",\"framesBehind\":"); b.num((int64_t)ReadU16LE(inner + 8));
+		b.raw(",\"cpuSat\":");       b.num((int64_t)inner[10]);
+		b.raw(",\"tabVisible\":");   b.num((int64_t)inner[11]);
+		b.raw(",\"seq\":");          b.num((int64_t)ReadU16LE(inner + 12));
+		b.raw('}');
+	} else if (innerMagic == kNetEventsMagicLE) {
+		if (innerLen < 6) return;
+		const uint8_t count = inner[4];
+		const size_t need = 6 + (size_t)count * 8;
+		if (innerLen < need) return;
+		b.raw("{\"kind\":\"events\",\"role\":");
+		b.num((int64_t)senderRole);
+		b.raw(",\"items\":[");
+		for (uint8_t i = 0; i < count; ++i) {
+			if (i) b.raw(',');
+			const uint8_t* e = inner + 6 + (size_t)i * 8;
+			b.raw("{\"tsMs\":");
+			b.num((int64_t)ReadU16LE(e + 0));
+			b.raw(",\"kind\":");  b.num((int64_t)e[2]);
+			b.raw(",\"code\":");  b.num((int64_t)e[3]);
+			b.raw(",\"data\":");  b.num((int64_t)ReadU32LE(e + 4));
+			b.raw('}');
+		}
+		b.raw("]}");
+	} else {
+		return;
+	}
+
+	store->DeliverEventsJson(SidRawToUuid(sidRaw), std::move(b.s));
+}
+
 // UDP forwarder callback for the WS bridge.  Builds an ASDF frame
 // addressed to the OTHER UDP peer (looked up in RelayTable) and sends
 // it via the reflector socket FD shared by the reflector thread.  The
@@ -3507,8 +3758,9 @@ int main(int argc, char **argv) {
 				wcfg,
 				gWsBridgeStats,
 				gWsBridgeReflectorFd,
-				WsValidateSession, &wsCb,
-				WsForwardToUdp,    nullptr,
+				WsValidateSession,  &wsCb,
+				WsForwardToUdp,     nullptr,
+				WsObserveEvents,    &store,
 				gWsBridgeCtx,
 				wsBridgeStop);
 		});
