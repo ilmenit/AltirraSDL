@@ -1348,7 +1348,7 @@
     <button id="btn-region" disabled
             title="Toggle the video standard (PAL ↔ NTSC).  Affects timing, palette, and frame rate (50 Hz vs 60 Hz).">NTSC</button>
     <button id="btn-crt" disabled
-            title="Toggle the built-in CRT screen effects (scanlines, bloom, distortion).  Same as View → Screen Effects → Basic / (None).">CRT On</button>
+            title="Toggle the built-in CRT screen effects (scanlines, bloom, distortion).  Same as View → Screen Effects → Basic / (None).">CRT</button>
     <button id="btn-fullscreen"
             title="Enter / exit browser fullscreen.  ESC restores the windowed view.">⤢ Full Screen</button>
     <button id="btn-osk" disabled
@@ -2275,12 +2275,17 @@
 
       // CRT (Basic vs None).  Pure UI state — safe before sim ready,
       // but the menu it mirrors only matters once a frame is rendering.
+      // Label shows current state (matches Region/Keyboard/Touch
+      // convention): plain "CRT" when off, "CRT (on)" when active.
+      // Earlier wording flipped the verb ("CRT On" / "CRT Off"), which
+      // diverged from the other quick toggles and read as the *action*
+      // the click would perform rather than the current state.
       if (btnCrt && Module._ATWasmGetCRTMode) {
         try {
           if (simReady) {
             const m = Module._ATWasmGetCRTMode();   // 0 None, 1 Basic, 2 Preset
             btnCrt.disabled = false;
-            btnCrt.textContent = (m === 0) ? 'CRT On' : 'CRT Off';
+            btnCrt.textContent = (m === 0) ? 'CRT' : 'CRT (on)';
           } else {
             btnCrt.disabled = true;
           }
