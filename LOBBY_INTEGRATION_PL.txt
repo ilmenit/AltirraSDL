@@ -27,6 +27,10 @@ muszą wiedzieć, że Twoja strona pokazuje ich sesję.  Wszystko
 jest publiczne z założenia (sesje prywatne są oznaczone i
 filtrowane).
 
+Aktualnie każda sesja Altirra Netplay to gra 1-vs-1 — jeden
+host, jeden gracz dołączający.  Schemat dopuszcza więcej, ale
+emulator obsługuje obecnie wyłącznie tryb dwuosobowy.
+
 
 ----------------------------------------------------------------
  2.  WERSJA NA SZYBKO  (skopiuj-wklej i gotowe)
@@ -45,11 +49,14 @@ async function refreshAltirraLobby() {
       'https://lobby.atari.org.pl/v1/public/sessions',
       { cache: 'no-store' });
     const sessions = await r.json();
-    if (sessions.length === 0) {
+    // Dołączanie do trwającej gry nie jest wspierane;
+    // pokazujemy DOŁĄCZ tylko dla sesji "waiting".
+    const joinable = sessions.filter(s => s.state === 'waiting');
+    if (joinable.length === 0) {
       root.innerHTML = '<p>Nikt aktualnie nie hostuje gry.</p>';
       return;
     }
-    root.innerHTML = sessions.map(s => `
+    root.innerHTML = joinable.map(s => `
       <div style="margin:8px 0;padding:8px;border:1px solid #444;">
         <b>${escapeHtml(s.cartName)}</b>
         — host: ${escapeHtml(s.hostHandle)}
@@ -104,6 +111,15 @@ lobby.atari.org.pl) z parametrem "?s=<sessionId>".  Klient WASM
 przy starcie czyta ten parametr i automatycznie dołącza do
 sesji.
 
+Gdy sesję utworzono przez przycisk "Play Together" w lobby,
+host widzi w przeglądarce monit "Allow / Deny" zanim
+odwiedzający się połączy (tzw. broker handshake).  Dla Twojego
+widżetu jest to całkowicie przezroczyste — link DOŁĄCZ wciąż
+robi to, co trzeba; odwiedzający widzi po prostu krótki etap
+"Pytamy hosta…" w swojej przeglądarce, dopóki host nie kliknie
+Allow.  Dla sesji utworzonych z natywnego emulatora Altirra
+lobby auto-akceptuje i odwiedzający łączy się od razu.
+
 
 ----------------------------------------------------------------
  4.  POLA, KTÓRE OTRZYMUJESZ
@@ -118,15 +134,29 @@ Każda sesja w tablicy JSON ma dokładnie te pola:
   videoStandard    "PAL" lub "NTSC"    — standard video
   memoryMode       "64K", "320K", …    — konfiguracja RAM
   state            "waiting" lub
-                   "playing"           — czy gra już ruszyła?
+                   "playing"           — patrz niżej
   playerCount      1                   — graczy aktualnie w środku
-  maxPlayers       2                   — pojemność (2..8)
+  maxPlayers       2                   — pojemność (dziś zawsze 2;
+                                         schemat dopuszcza do 8)
   requiresCode     false               — czy pokój prywatny?
   joinUrl          "https://lobby.atari.org.pl/AltirraSDL/
                     play/?s=<sessionId>"
                                        — gotowy link "dołącz"
 
 To cały schemat.  Nic poza tym.
+
+Możliwe wartości pola state:
+
+  "waiting"        Gotowe do dołączenia — DOŁĄCZ działa.
+  "playing"        Gra już ruszyła — DOŁĄCZ zostanie odrzucony.
+                   Pokaż innym stylem albo odfiltruj.
+
+(Istnieje też przejściowy stan "awaiting_approval", używany
+gdy host jest jeszcze w lobby-owym oknie zatwierdzania.
+Domyślnie publiczny endpoint je ukrywa, by widżet osoby
+trzeciej nigdy nie pokazał przycisku DOŁĄCZ, który po cichu
+nie działa.  Jeśli chcesz traktować je jako jeden łączny
+status "otwarte", dopisz "?include_awaiting=1" do URL-a.)
 
 Te pola są STABILNYM PUBLICZNYM KONTRAKTEM — gwarantujemy, że
 będą działać tak samo nawet gdy wewnętrzny protokół Altirry
@@ -161,8 +191,10 @@ strony WWW.
 
 P:  Jak często odświeżać?
 O:  Co 10 do 30 sekund w zupełności wystarczy.  Sesje nie
-    pojawiają się ani nie znikają szybciej.  Częstsze odpytywanie
-    to tylko marnowanie pasma odwiedzającego.
+    pojawiają się ani nie znikają szybciej — wewnętrzny sweep
+    lobby uruchamia się co 5 sekund, a wpisy znikają po
+    upłynięciu 15-sekundowego TTL.  Częstsze odpytywanie to
+    tylko marnowanie pasma odwiedzającego.
 
 P:  A co z sesjami prywatnymi (requiresCode: true)?
 O:  Pokaż je z ikoną kłódki, ale NIE pokazuj przy nich
@@ -171,14 +203,25 @@ O:  Pokaż je z ikoną kłódki, ale NIE pokazuj przy nich
     poprawnie.
 
 P:  Czy mogę pokazywać sesje w stanie "playing"?
-O:  Tak — gracze mogą dołączyć do trwającej gry, dopóki
-    playerCount < maxPlayers.  Jeśli wolisz je ukryć, filtruj
-    przez sessions.filter(s => s.state === 'waiting').
+O:  Możesz je WYŚWIETLAĆ (jako informację — "kto teraz w co
+    gra"), ale NIE oferuj przycisku DOŁĄCZ.  Dołączanie do
+    trwającej gry nie jest wspierane: koordynator hosta
+    odrzuca spóźnionych graczy, a samo lobby zwraca błąd dla
+    każdej próby dołączenia do sesji "playing".  Powyższy
+    minimalny przykład odfiltrowuje je, więc DOŁĄCZ pojawia
+    się tylko przy sesjach możliwych do dołączenia.
+
+P:  Dlaczego maxPlayers to zawsze 2?
+O:  Altirra Netplay obsługuje obecnie wyłącznie tryb 1-vs-1
+    (jeden host, jeden gracz dołączający).  Schemat rezerwuje
+    miejsce na większe gry (pole akceptuje 2..8), ale dziś
+    żadna gra nie używa więcej niż 2.  Gdy się to zmieni,
+    Twój widżet będzie działać dalej bez zmian.
 
 P:  Czy jest limit liczby zwracanych sesji?
-O:  Lobby zwraca maksymalnie ok. 32 sesji, od najnowszej.  Nie
-    ma paginacji, bo przy obecnej skali nigdy nie zbliżamy się
-    do limitu.
+O:  Lobby zwraca maksymalnie 500 sesji, od najnowszej według
+    czasu utworzenia.  W praktyce żywa lista rzadko ma więcej
+    niż kilka pozycji naraz.  Nie ma paginacji.
 
 P:  Czy zadziała w iframe / cross-origin?
 O:  Tak — nagłówek CORS dopuszcza wywołania z dowolnej domeny.
@@ -235,6 +278,10 @@ Przycisk DOŁĄCZ otwiera się, ale gra nie startuje
   • Niektóre sieci firmowe blokują WebSocket Relay używany do
     netplay.  To problem po stronie sieci odwiedzającego,
     którego widżet nie naprawi.
+  • Jeśli host nie kliknie Allow w ciągu ~30 s, lobby
+    przekroczy limit czasu zatwierdzania i odwiedzający wraca
+    na lobby z komunikatem "Online session ended unexpectedly".
+    Spróbujcie ponownie, gdy host będzie gotowy.
 
 Lista jest zawsze pusta, mimo że hostuję
   • Sprawdź, czy host faktycznie się pojawia: odwiedź
@@ -242,6 +289,10 @@ Lista jest zawsze pusta, mimo że hostuję
     przeglądarce.
   • Sesje są trzymane wyłącznie w pamięci; jeśli lobby się
     zrestartowało, hosci muszą opublikować się ponownie.
+  • Jeśli widzisz, że Twoja sesja znika z widżetu po jej
+    rozpoczęciu — to oczekiwane: gdy sesja przechodzi w stan
+    "playing", powyższy przykład ją odfiltrowuje (dołączanie
+    do trwającej gry nie jest wspierane).
 
 Chcę użyć tego na stronie tylko-HTTP
   • Spoko — ten sam JS zadziała na adresie http://IP:8080 ze

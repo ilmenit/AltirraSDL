@@ -24,6 +24,10 @@ Visitors do not need an Altirra account.  Hosts do not need to
 know that your website is showing their session.  Everything is
 public by design (private sessions are flagged and filtered).
 
+Today every Altirra netplay session is 1-vs-1 — one host, one
+joiner.  The schema permits more, but the emulator is currently
+two-player only.
+
 
 ----------------------------------------------------------------
  2.  THE 60-SECOND VERSION  (copy-paste and you are done)
@@ -42,11 +46,14 @@ async function refreshAltirraLobby() {
       'https://lobby.atari.org.pl/v1/public/sessions',
       { cache: 'no-store' });
     const sessions = await r.json();
-    if (sessions.length === 0) {
+    // Drop-in mid-game is not supported; only "waiting" sessions
+    // are joinable from a third-party embed.
+    const joinable = sessions.filter(s => s.state === 'waiting');
+    if (joinable.length === 0) {
       root.innerHTML = '<p>No-one is hosting a game right now.</p>';
       return;
     }
-    root.innerHTML = sessions.map(s => `
+    root.innerHTML = joinable.map(s => `
       <div style="margin:8px 0;padding:8px;border:1px solid #444;">
         <b>${escapeHtml(s.cartName)}</b>
         — hosted by ${escapeHtml(s.hostHandle)}
@@ -101,6 +108,15 @@ WebAssembly build of Altirra (also hosted at lobby.atari.org.pl)
 with a "?s=<sessionId>" parameter.  The WASM client reads that
 parameter on startup and joins the session automatically.
 
+When a session was created via the lobby's "Play Together"
+button, the host gets an in-page "Allow / Deny" prompt before
+the visitor connects (the broker handshake).  This is fully
+transparent to your widget — the JOIN link still does the right
+thing, the visitor just sees a brief "Asking host…" stage in
+their browser while the host clicks Allow.  For sessions
+created from the native Altirra emulator, the lobby auto-
+accepts and the visitor connects straight through.
+
 
 ----------------------------------------------------------------
  4.  THE FIELDS YOU GET BACK
@@ -115,15 +131,29 @@ Each session in the JSON array has exactly these fields:
   videoStandard    "PAL" or "NTSC"     — video standard
   memoryMode       "64K", "320K", …    — RAM configuration
   state            "waiting" or
-                   "playing"           — has the game started?
+                   "playing"           — see below
   playerCount      1                   — players currently in
-  maxPlayers       2                   — capacity (2..8)
+  maxPlayers       2                   — capacity (today always 2;
+                                         schema permits up to 8)
   requiresCode     false               — is it a private room?
   joinUrl          "https://lobby.atari.org.pl/AltirraSDL/
                     play/?s=<sessionId>"
                                        — ready-made join link
 
 That is the entire schema.  Nothing else.
+
+State values you may see:
+
+  "waiting"        Ready for a joiner — JOIN works.
+  "playing"        Already in progress — JOIN will be rejected.
+                   Show with a different style or filter out.
+
+(There is also "awaiting_approval", a transient state used while
+a host is still in the lobby's pre-approval modal.  By default
+the public endpoint hides these so a third-party widget never
+shows a JOIN button that silently fails.  If you want to see
+them as a single combined "open" badge, append
+"?include_awaiting=1" to the URL.)
 
 These fields are a STABLE PUBLIC CONTRACT — they are guaranteed
 to keep working even when the internal Altirra protocol evolves.
@@ -157,8 +187,9 @@ local file:// experiments, but never on a real website.
 
 Q:  How often should I refresh?
 A:  Every 10 to 30 seconds is plenty.  Sessions don't appear or
-    disappear faster than that.  Polling more frequently just
-    wastes the visitor's bandwidth.
+    disappear faster than that — the lobby's own sweep runs every
+    5 seconds and entries TTL out at 15 seconds.  Polling more
+    frequently just wastes the visitor's bandwidth.
 
 Q:  What about private sessions (requiresCode: true)?
 A:  Show them with a lock icon, but DO NOT show a JOIN button
@@ -167,14 +198,24 @@ A:  Show them with a lock icon, but DO NOT show a JOIN button
     handles this correctly.
 
 Q:  Can I show "playing" sessions?
-A:  Yes — players can join a game in progress as long as
-    playerCount < maxPlayers.  If you want to hide them, filter
-    with sessions.filter(s => s.state === 'waiting').
+A:  You can DISPLAY them (informational — "what people are
+    playing right now") but DO NOT offer a JOIN button.
+    Drop-in mid-game is not supported: the host's coordinator
+    rejects late joiners and the lobby itself returns an error
+    for any join attempt against a "playing" session.  The
+    minimal example above filters them out so the JOIN button
+    only appears on joinable sessions.
+
+Q:  Why is maxPlayers always 2?
+A:  Altirra netplay is currently strictly 1-vs-1 (one host, one
+    joiner).  The schema reserves room for larger games (the
+    field accepts 2..8) but no game uses >2 today.  When that
+    changes, your widget will keep working unchanged.
 
 Q:  Is there a limit on the number of sessions returned?
-A:  The lobby returns at most about 32 sessions, newest first.
-    There is no pagination because, at current scale, we never
-    come close to the cap.
+A:  The lobby returns at most 500 sessions, newest-createdAt
+    first.  In practice the live list rarely has more than a
+    handful at once.  There is no pagination.
 
 Q:  Does this work on iframes / cross-origin?
 A:  Yes — the CORS header allows calls from any domain.
@@ -221,17 +262,26 @@ The widget shows "Could not load lobby."
     You should see a JSON array.
 
 The JOIN button opens but the game doesn't start
-  • The visitor's browser may be blocking WebAssembly / SharedArrayBuffer.
-    Make sure the WASM page itself loads (open joinUrl manually).
+  • The visitor's browser may be blocking WebAssembly /
+    SharedArrayBuffer.  Make sure the WASM page itself loads
+    (open joinUrl manually).
   • Some corporate networks block the WebSocket relay used for
     netplay.  This is a network problem on the visitor's side,
     not something your widget can fix.
+  • If the host hasn't clicked Allow within ~30 s, the lobby
+    auto-times-out the join request and the visitor lands back
+    on the lobby with "Online session ended unexpectedly".  Try
+    again when the host is ready.
 
 The list is always empty even though I am hosting
   • Confirm your host actually appears: visit
     https://lobby.atari.org.pl/v1/public/sessions in your browser.
   • Hosting sessions are kept in memory only; if the lobby
     restarted, hosts need to re-publish.
+  • If you only see your own session disappear from your widget
+    on a refresh after you started playing, that's expected —
+    once the session goes "playing" the example above filters
+    it out (drop-in mid-game isn't supported).
 
 I want to use this on an HTTP-only page
   • That's fine — the same JS works against the http://IP:8080
