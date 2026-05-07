@@ -1572,6 +1572,60 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	}
 	RenderStatusOverlay(sim);
 
+#if defined(__EMSCRIPTEN__)
+	// Broker-mode "Starting…" overlay (M3).  When the page broker has
+	// just spawned this WASM emulator and the netplay handshake is
+	// still running, draw a centred hint over the canvas so the user
+	// sees that something is happening — the firmware fetch + cold
+	// boot + Hello/Welcome handshake takes 5–15 s on a cold cache.
+	// Auto-clears on Phase::Lockstepping (ATNetplayGlue::IsLockstepping
+	// returns true).  Input is NOT blocked: the user could click
+	// through to the canvas if they wanted, but in practice the wait
+	// is short and the overlay is purely informational.
+	{
+		extern int  ATWasmIsStartingOverlayActive();
+		extern void ATWasmSetStartingOverlay(int);
+		if (ATWasmIsStartingOverlayActive()) {
+			if (ATNetplayGlue::IsLockstepping()) {
+				// Self-clear on lockstep — no separate hook needed.
+				ATWasmSetStartingOverlay(0);
+			} else {
+				const ImGuiViewport *vp = ImGui::GetMainViewport();
+				ImGui::SetNextWindowPos(vp->WorkPos);
+				ImGui::SetNextWindowSize(vp->WorkSize);
+				ImGui::SetNextWindowBgAlpha(0.45f);
+				ImGuiWindowFlags flags =
+					ImGuiWindowFlags_NoTitleBar |
+					ImGuiWindowFlags_NoResize |
+					ImGuiWindowFlags_NoMove |
+					ImGuiWindowFlags_NoScrollbar |
+					ImGuiWindowFlags_NoSavedSettings |
+					ImGuiWindowFlags_NoFocusOnAppearing |
+					ImGuiWindowFlags_NoBringToFrontOnFocus |
+					ImGuiWindowFlags_NoNavInputs |
+					ImGuiWindowFlags_NoInputs;
+				if (ImGui::Begin("##broker-starting", nullptr, flags)) {
+					// Animated dot count: 0..3, ticking at ~3 Hz.
+					int dots = (int)(ImGui::GetTime() * 3.0) & 3;
+					char msg[24];
+					std::snprintf(msg, sizeof msg,
+						"Starting%s%s%s",
+						(dots > 0 ? "." : " "),
+						(dots > 1 ? "." : " "),
+						(dots > 2 ? "." : " "));
+					ImVec2 sz   = ImGui::CalcTextSize(msg);
+					ImVec2 wsz  = ImGui::GetWindowSize();
+					ImGui::SetCursorPos(
+						ImVec2((wsz.x - sz.x) * 0.5f,
+						       (wsz.y - sz.y) * 0.5f));
+					ImGui::TextUnformatted(msg);
+				}
+				ImGui::End();
+			}
+		}
+	}
+#endif
+
 	// Pick up pending cartridge mapper dialog from deferred actions
 	if (g_cartMapperPending) {
 		state.showCartridgeMapper = true;

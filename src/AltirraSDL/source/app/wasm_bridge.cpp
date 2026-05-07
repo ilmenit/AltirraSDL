@@ -1557,4 +1557,108 @@ void ATWasmSetTouchControls(int on) {
 	g_mobileState.showTouchControls = (on != 0);
 }
 
+// -----------------------------------------------------------------------
+// Broker mode (M3): chrome suppression + Starting overlay + session-end
+// navigation.
+//
+// Triggered by the lobby page's broker URL
+// (?broker=1&session=...&token=...&intent=...&handle=...&role=...).
+// The page broker has already created a lobby session in
+// awaiting_approval state; this WASM spawn is the post-Allow flow that
+// lands the host (or joiner) in Gaming Mode running the game with no
+// setup chrome.  M3 first ship still uses the legacy AutoHost path on
+// the host side (the broker session is orphaned until lobby TTL); the
+// chrome-suppression flag and overlay are the user-facing wins.  A
+// follow-up phase will add true adoption (skip CreateSession, inherit
+// the broker session id+token).
+// -----------------------------------------------------------------------
+
+namespace {
+	// Process-global broker context.  Read by the wizard / firmware
+	// gates and the in-frame overlay renderer.  All access is on the
+	// JS thread (single-threaded WASM build) so no atomics needed,
+	// but the overlay flag is hot-read every frame so use std::atomic
+	// for cache-coherency clarity.
+	struct BrokerCtx {
+		bool        active = false;
+		int         role   = 0;     // 0=joiner, 1=host
+	};
+	BrokerCtx          g_brokerCtx;
+	std::atomic<int>   g_brokerStartingOverlay{0};
+}
+
+// Read by the desktop wizard gate (main_sdl3.cpp) and mobile FirstRun
+// gate (ui_mobile.cpp).  Returns 1 if the user is in a broker-spawned
+// session and the surrounding setup chrome should be suppressed.
+extern "C" bool ATWasmBrokerIsActive() {
+	return g_brokerCtx.active;
+}
+
+// Forward-declare from src/AltirraSDL/source/ui/mobile/mobile_internal.h.
+// Pulling that header here would drag in the mobile UI graph; we only
+// need this one symbol to mark first-run as complete from the broker
+// path (mirrors the wizard's call at mobile_about_wizard.cpp:401/413).
+void SetFirstRunComplete();
+
+// Set by the JS deep-link parser when ?broker=1 is recognised, BEFORE
+// the auto-host / pending-deep-link logic runs.  After this call the
+// wizard, firmware prompt, and library screen are suppressed for the
+// rest of the session — there's no public unset because broker mode
+// is single-shot per page load (a fresh URL would be a fresh tab).
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetBrokerActive(int role, int active) {
+	g_brokerCtx.role   = (role != 0) ? 1 : 0;
+	g_brokerCtx.active = (active != 0);
+	if (active) {
+		// Mark first-run as complete in the registry so the mobile
+		// FirstRunWizard gate (ui_mobile.cpp:643) trips and the
+		// wizard never renders.  Idempotent: if first-run was
+		// already complete, this is a no-op write of the same flag.
+		// Same call the wizard's own "I'm done" button uses.
+		SetFirstRunComplete();
+	}
+	fprintf(stderr,
+		"[wasm] ATWasmSetBrokerActive: role=%d active=%d\n",
+		g_brokerCtx.role, g_brokerCtx.active ? 1 : 0);
+}
+
+// Called from the JS deep-link onRuntimeReady() when ?broker=1 is
+// recognised.  Read every frame by the overlay renderer
+// (ui_main.cpp).  The overlay clears automatically when the netplay
+// coordinator reaches Phase::Lockstepping (ATNetplayUI fires a hook
+// that toggles this back to 0).  Manual on/off is also exposed for
+// the JS side to clear it on terminal phases (Failed / Desynced /
+// Ended) that should retire the overlay even without lockstep.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetStartingOverlay(int on) {
+	g_brokerStartingOverlay.store(on ? 1 : 0, std::memory_order_release);
+}
+
+// Read by the in-frame overlay renderer.  Cheap atomic load; no
+// branch-mispredict risk for the common no-broker case (fast 0
+// return).  Exposed via extern "C" (no EMSCRIPTEN_KEEPALIVE) because
+// only the C++ side calls it.
+extern "C" int ATWasmIsStartingOverlayActive() {
+	return g_brokerStartingOverlay.load(std::memory_order_acquire);
+}
+
+// Called from C++ when the netplay coordinator reaches a terminal
+// phase (Ended / Failed / Desynced) and broker mode is active.  Emits
+// an EM_ASM that swaps location.href back to the lobby with a return
+// flag so the broker page can render a "Game ended — Play again?"
+// panel keyed on ?broker_return=1.  Synchronous from JS's perspective
+// (the next browser turn after this is the new page).
+EM_JS(void, _altirra_wasm_broker_return, (int reasonCode), {
+	if (typeof location === 'undefined') return;
+	var dest = '/AltirraSDL/?broker_return=1&reason=' + reasonCode;
+	try { location.href = dest; }
+	catch (e) { console.warn('[broker] return navigate failed:', e); }
+});
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmBrokerSessionEnded(int reasonCode) {
+	if (!g_brokerCtx.active) return;   // not in broker mode → no-op
+	g_brokerCtx.active = false;        // one-shot — don't fire twice
+	_altirra_wasm_broker_return(reasonCode);
+}
+
 #endif // __EMSCRIPTEN__

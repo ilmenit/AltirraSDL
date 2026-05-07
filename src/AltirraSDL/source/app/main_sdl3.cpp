@@ -2255,7 +2255,21 @@ int main(int argc, char *argv[]) {
 
 			bool cmdLineHadAnything = (argc > 1);
 
-			if (!cmdLineHadAnything && !registryHadAnything) {
+#if defined(__EMSCRIPTEN__)
+			// Broker mode (M3): the page broker has already taken the
+			// user through a "publish session"-equivalent flow before
+			// spawning this WASM emulator.  Showing the setup wizard
+			// here would defeat the entire purpose of the broker
+			// (instant gaming-mode landing).  ATWasmBrokerIsActive()
+			// is a free function exported by wasm_bridge.cpp.
+			extern bool ATWasmBrokerIsActive();
+			const bool brokerActive = ATWasmBrokerIsActive();
+#else
+			constexpr bool brokerActive = false;
+#endif
+
+			if (!cmdLineHadAnything && !registryHadAnything
+			    && !brokerActive) {
 #ifndef __ANDROID__
 				// On desktop, show the setup wizard for first-time
 				// configuration.  On Android, the mobile first-run

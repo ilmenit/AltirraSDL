@@ -59,6 +59,13 @@
     autoHost:    false,
     hostTitle:   '',
     vfsPaths:    [],   // populated by preRunFetch in source order
+    // Broker mode (M3): set by parseUrl when the URL carries
+    // ?broker=1&session=...&token=...&intent=...&handle=...&role=...
+    // In broker mode, the WASM emulator adopts an existing lobby
+    // session published by the page broker rather than calling
+    // ATWasmAutoHostNetplay (which would create a new session).
+    // null when not in broker mode; an object when set.
+    brokerMode:  null,
   };
 
   // Path validation: same-origin /AltirraSDL/library/<path> only.
@@ -151,6 +158,58 @@
         window.__altirraLib.autoHost  = true;
         window.__altirraLib.hostTitle = t;
         log('auto-host requested, title="' + t + '"');
+      }
+
+      // ── Broker context (?broker=1&session=&token=&intent=&handle=
+      //                    &role=&code=) ────────────────────────────
+      // Parsed last because it OVERRIDES the auto-host flag: when in
+      // broker mode the WASM does not call ATWasmAutoHostNetplay
+      // (which creates a new session), it adopts the supplied
+      // sessionId+token via ATWasmAdoptBrokerSession.  We still
+      // honour the lib/hardware/memsize/pal CLI args parsed above —
+      // the broker page passes them so the emulator boots the
+      // right machine + ROM regardless of broker context.
+      if ((p.get('broker') || '') === '1') {
+        // Sanitise every field to the same character class the lobby
+        // already enforces (UUID-shaped session/intent ids, 32-char
+        // hex handles, hex code-hash, role ∈ {host,joiner}).  Bad
+        // input falls back to legacy auto-host so a malformed URL
+        // doesn't trap the user in a half-initialised broker state.
+        var sid    = (p.get('session') || '').trim();
+        var token  = (p.get('token')   || '').trim();
+        var intent = (p.get('intent')  || '').trim();
+        var role   = (p.get('role')    || '').trim().toLowerCase();
+        var hndl   = (p.get('handle')  || '')
+          .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 32);
+        var code   = (p.get('code')    || '').trim();
+
+        var idOk    = /^[0-9a-f-]{32,40}$/i.test(sid);
+        var tokOk   = /^[0-9a-f]{16,64}$/i.test(token);
+        var intOk   = !intent || /^[0-9a-f-]{32,40}$/i.test(intent);
+        var roleOk  = (role === 'host' || role === 'joiner');
+        var codeOk  = !code || /^[0-9a-fA-F]+$/.test(code);
+
+        if (idOk && roleOk && intOk && codeOk &&
+            (role === 'joiner' || tokOk) /* host requires token */) {
+          window.__altirraLib.brokerMode = {
+            sessionId: sid,
+            token:     token,
+            intentId:  intent,
+            handle:    hndl,
+            codeHash:  code,
+            role:      role,
+          };
+          // M3 first ship intentionally KEEPS the existing AutoHost
+          // path active for role=host (publishes a fresh lobby
+          // session); the broker session orphans until TTL or the
+          // lobby's dedup-on-Create evicts it.  See the chrome-
+          // suppression block in onRuntimeReady() for the rationale.
+          log('broker mode active — role=' + role
+              + ' session=' + sid.slice(0, 8) + '…');
+        } else {
+          log('broker URL rejected — malformed param(s); '
+              + 'falling back to legacy flow');
+        }
       }
     } catch (e) {
       log('URL parse failed —', e && e.message ? e.message : e);
@@ -286,12 +345,20 @@
     var p;
     try { p = new URLSearchParams(window.location.search || ''); }
     catch (e) { p = null; }
-    var hasJoin = !!(p && (p.get('s') || '').trim());
-    var wantsGaming = hasLib || hasJoin;
+    var hasJoin   = !!(p && (p.get('s') || '').trim());
+    var hasBroker = !!(lib && lib.brokerMode);
+    var wantsGaming = hasLib || hasJoin || hasBroker;
     if (Module._ATWasmSetGamingMode) {
       try { Module._ATWasmSetGamingMode(wantsGaming ? 1 : 0); } catch (e) {}
     }
-    if (!hasLib) return;
+    // Broker mode shows the "Starting…" overlay until lockstep so
+    // the user sees something happening while the netplay handshake
+    // runs.  Set BEFORE the broker session adoption so the first
+    // frame after spawn already has the overlay visible.
+    if (hasBroker && Module._ATWasmSetStartingOverlay) {
+      try { Module._ATWasmSetStartingOverlay(1); } catch (e) {}
+    }
+    if (!hasLib && !hasBroker) return;
 
     // Register the staging dir with the in-emulator Game Library so
     // titles fetched via deep-link show up alongside wizard-installed
@@ -306,6 +373,39 @@
         Module._ATWasmRegisterGamePackSource(ptr);
         log('registered ' + dir + ' with Game Library');
       } finally { Module._free(ptr); }
+    }
+
+    // Broker-mode chrome suppression (M3 first ship): flip a process-
+    // global flag in the C side.  The flag is read by the wizard
+    // gate (`main_sdl3.cpp` desktop, `ui_mobile.cpp` mobile) and the
+    // firmware bootstrap to short-circuit any setup chrome — the
+    // user has already committed to a multiplayer session through
+    // the broker, they don't want to see the first-run wizard.
+    //
+    // Why we DON'T skip AutoHost here: a true broker-session
+    // adoption (where the WASM emulator inherits the broker-page-
+    // created lobby session by id+token and skips CreateSession) is
+    // a deeper netplay refactor.  For the M3 first ship we keep the
+    // existing AutoHost path: the host's WASM publishes a fresh
+    // lobby session under the same (handle, cart), and the page
+    // broker's existing session-list poll picks it up for the
+    // joiner.  This leaves the broker-created session orphaned for
+    // up to 10 minutes (TTL) but the dedup-on-Create logic in the
+    // lobby evicts it the moment the new session lands.  M3 next-
+    // phase introduces a true adoption export to remove the orphan
+    // window and the joiner-side polling latency.
+    if (hasBroker && Module._ATWasmSetBrokerActive) {
+      var bm = lib.brokerMode;
+      var roleNum = (bm.role === 'host') ? 1 : 0;
+      try {
+        Module._ATWasmSetBrokerActive(roleNum, 1);
+        log('broker-mode active (role=' + bm.role + ')');
+      } catch (e) {
+        log('broker-mode set failed:', e && e.message ? e.message : e);
+      }
+    } else if (hasBroker) {
+      log('broker-mode: ATWasmSetBrokerActive export missing — '
+          + 'wizard suppression unavailable');
     }
 
     // Auto-host (Play Together): one call into the C export, which
