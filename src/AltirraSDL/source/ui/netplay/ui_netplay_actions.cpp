@@ -60,6 +60,23 @@ extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
 extern ATMobileUIState g_mobileState;
 
+#if defined(__EMSCRIPTEN__)
+// Read by the M3.4 broker-session adoption short-circuit in
+// StartCoordForHostedGame and the auto-accept gate in
+// ReconcileHostedGames.  Defined in wasm_bridge.cpp with extern "C"
+// linkage; matching declarations MUST also be extern "C" or the WASM
+// linker can't bind the unmangled symbol the bridge emits.  These
+// declarations live at namespace scope — function-body-local
+// `extern "C"` is ill-formed in C++ and rejected by emcc (same trap
+// as the M3 audit-3 fix in commit b9c7773).
+extern "C" bool        ATWasmBrokerIsActive();
+extern "C" const char* ATWasmBrokerSessionId();
+extern "C" const char* ATWasmBrokerToken();
+extern "C" const char* ATWasmBrokerIntentId();
+extern "C" const char* ATWasmBrokerJoinerHandle();
+extern "C" int         ATWasmBrokerRole();
+#endif
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -577,6 +594,72 @@ void StartCoordForHostedGame(HostedGame& o) {
 	if (ATNetplayGlue::HostExists(o.id.c_str())) return;
 
 #if defined(__EMSCRIPTEN__)
+	// M3.4 — broker session adoption.  When the broker page pre-
+	// created a /v1/sessions entry and supplied (sessionId, token)
+	// via ?broker=1&session=&token=&intent=&handle=&role=host, skip
+	// PostLobbyCreate and adopt the broker-supplied identity in
+	// place.  This avoids orphaning the broker-created session
+	// (which would force the joiner page to poll the public listing
+	// for the new (handle, cart) match before navigating).  The
+	// adoption populates the same HostedGame state that a successful
+	// Create response would, then calls OnLobbyCreateSucceeded to
+	// drive the WSS handshake.
+	//
+	// The accessors below are defined in wasm_bridge.cpp and forward-
+	// declared at file scope at the top of this file (function-body-
+	// local `extern "C"` is ill-formed in C++ and rejected by emcc —
+	// same trap fixed by commit b9c7773).  Active is gated by
+	// ATWasmBrokerIsActive so a broker page that called the chrome-
+	// suppression-only ATWasmSetBrokerActive (transition build) does
+	// NOT trip adoption — only ATWasmAdoptBrokerSession populates
+	// the session strings.
+	{
+		const bool brokerHost =
+			ATWasmBrokerIsActive() && ATWasmBrokerRole() == 1;
+		const char* sid = brokerHost ? ATWasmBrokerSessionId() : "";
+		const char* tok = brokerHost ? ATWasmBrokerToken()     : "";
+		if (brokerHost && *sid && *tok) {
+			const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+			// Mirror the Create-success state set in ATNetplayUI_Poll
+			// (ui_netplay.cpp:182, :246, :305).  Without these, the
+			// reconcile loop would re-fire StartCoord and a stale
+			// retry/inflight gate could block adoption from completing.
+			o.createInFlight     = false;
+			o.createRetryAfterMs = 0;
+			o.boundPort          = 0;
+			o.lastError.clear();
+			o.state              = HostedGameState::Open;
+			o.lastHeartbeatMs    = nowMs;   // arms next heartbeat
+			++o.coordGen;                   // matches post-Create state
+
+			// Determine the lobby section: WASM uses a single
+			// configured lobby — pick the first enabled one.  Empty
+			// lobbies list means lobby.ini is misconfigured; fall
+			// through to legacy Create which will fail loudly.
+			auto lobbiesNow = AllEnabledHttpLobbies();
+			if (!lobbiesNow.empty()) {
+				HostedGame::LobbyRegistration reg;
+				reg.section   = lobbiesNow.front().section;
+				reg.sessionId = sid;
+				reg.token     = tok;
+				o.lobbyRegistrations.clear();
+				o.lobbyRegistrations.push_back(reg);
+
+				// Drive the WSS handshake against the adopted
+				// (sessionId, token).  This is exactly what the
+				// Create-success branch in ATNetplayUI_Poll does at
+				// ui_netplay.cpp:242 — refactor extracted to keep
+				// the adoption path lockstep with the Create path.
+				OnLobbyCreateSucceeded(o, reg.section,
+				                       reg.sessionId, reg.token);
+				g_ATLCNetplay("WASM host (%s): adopted broker "
+					"session %s (no Create posted)",
+					o.gameName.c_str(), reg.sessionId.c_str());
+				return;
+			}
+		}
+	}
+
 	// WASM (browser) host: WS handshake requires the lobby's host
 	// token, which is only obtained from a successful Create.  Defer
 	// StartHost until the Create response arrives in ATNetplayUI_Poll
@@ -937,6 +1020,44 @@ void ReconcileHostedGames(uint64_t nowMs) {
 	//     ago" counter.  Auto-decline, Allow, Deny are driven by the
 	//     AcceptJoinPrompt screen; this loop only does mirroring.
 	{
+#if defined(__EMSCRIPTEN__)
+		// M3.4 — broker auto-accept pre-pass.  When the user came in
+		// via ?broker=1&role=host&handle=<H>, the host already
+		// clicked "Allow" on the broker page before navigating here;
+		// showing them an in-emulator AcceptJoinPrompt would be a
+		// duplicate approval step.  Auto-accept any pending request
+		// whose handle matches the broker-supplied joiner handle
+		// BEFORE mirroring into `next`, so the prompt screen never
+		// opens for that joiner.  Other pending requests (a
+		// different joiner who happened to find this same broker
+		// host through the public listing) preserve today's
+		// behaviour — they flow into `next` and trigger the prompt.
+		//
+		// AcceptPendingJoiner clears the entire pending queue per
+		// HostedGame on the first match (the joiner is now adopted;
+		// the host's phase advances to SendingSnapshot).  So one
+		// match per game is the most we'll ever fire here.
+		if (ATWasmBrokerIsActive() && ATWasmBrokerRole() == 1
+		    && ATWasmBrokerJoinerHandle()[0] != '\0') {
+			const std::string brokerHandle = ATWasmBrokerJoinerHandle();
+			for (auto& o : st.hostedGames) {
+				const size_t n = ATNetplayGlue::HostPendingCount(o.id.c_str());
+				for (size_t i = 0; i < n; ++i) {
+					char handle[40] = {};
+					if (!ATNetplayGlue::HostPendingAt(o.id.c_str(), i,
+							handle, sizeof handle, nullptr)) continue;
+					if (brokerHandle == handle) {
+						ATNetplayGlue::HostAcceptPending(o.id.c_str(), i);
+						g_ATLCNetplay("broker host: auto-accepted "
+							"joiner '%s' (intent %s)", handle,
+							ATWasmBrokerIntentId());
+						break;  // queue is now cleared for this game
+					}
+				}
+			}
+		}
+#endif
+
 		std::vector<Session::PendingJoinRequest> next;
 		for (auto& o : st.hostedGames) {
 			const size_t n = ATNetplayGlue::HostPendingCount(o.id.c_str());

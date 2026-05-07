@@ -1575,13 +1575,30 @@ void ATWasmSetTouchControls(int on) {
 
 namespace {
 	// Process-global broker context.  Read by the wizard / firmware
-	// gates and the in-frame overlay renderer.  All access is on the
-	// JS thread (single-threaded WASM build) so no atomics needed,
-	// but the overlay flag is hot-read every frame so use std::atomic
-	// for cache-coherency clarity.
+	// gates, the in-frame overlay renderer, and the netplay session-
+	// init path (M3.4 adoption).  All access is on the JS thread
+	// (single-threaded WASM build) so no atomics needed, but the
+	// overlay flag is hot-read every frame so use std::atomic for
+	// cache-coherency clarity.
+	//
+	// M3.4 added the 5 string fields below: when the broker page
+	// pre-creates a /v1/sessions entry and navigates the user here
+	// with ?broker=1&session=&token=&intent=&handle=&code=, the
+	// netplay coordinator inherits that session ID + token instead
+	// of calling LobbyClient::Create() (which would orphan the
+	// broker-created session and force the joiner page to poll the
+	// public listing).  Empty strings are treated as "not provided"
+	// — the older ATWasmSetBrokerActive(role, active) entry point
+	// leaves them empty and only flips the active/role bits, so
+	// chrome suppression works without adoption.
 	struct BrokerCtx {
-		bool        active = false;
-		int         role   = 0;     // 0=joiner, 1=host
+		bool        active        = false;
+		int         role          = 0;     // 0=joiner, 1=host
+		std::string sessionId;             // UUID from broker (M3.4)
+		std::string token;                 // hex auth token (M3.4)
+		std::string intentId;              // joiner intent UUID (M3.4)
+		std::string joinerHandle;          // 32-byte player handle (M3.4)
+		std::string codeHashHex;           // 32-char hex / 16 B (M3.4)
 	};
 	BrokerCtx          g_brokerCtx;
 	std::atomic<int>   g_brokerStartingOverlay{0};
@@ -1622,6 +1639,75 @@ void ATWasmSetBrokerActive(int role, int active) {
 		g_brokerCtx.role, g_brokerCtx.active ? 1 : 0);
 }
 
+// M3.4 — broker session adoption export.  Like ATWasmSetBrokerActive
+// but ALSO stashes the session id+token+intent+handle+code so the
+// netplay coordinator can adopt the broker-created /v1/sessions entry
+// instead of calling LobbyClient::Create() and publishing a fresh
+// session.  The accessors below feed those strings into the WASM
+// branch of StartCoordForHostedGame.
+//
+// All string args may be NULL; empty strings clear the corresponding
+// field.  Pass active=1 to enter broker mode, active=0 to clear.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmAdoptBrokerSession(
+	const char* sessionId,
+	const char* token,
+	const char* intentId,
+	const char* joinerHandle,
+	const char* codeHashHex,
+	int         role,
+	int         active)
+{
+	g_brokerCtx.role         = (role != 0) ? 1 : 0;
+	g_brokerCtx.active       = (active != 0);
+	g_brokerCtx.sessionId    = sessionId    ? sessionId    : "";
+	g_brokerCtx.token        = token        ? token        : "";
+	g_brokerCtx.intentId     = intentId     ? intentId     : "";
+	g_brokerCtx.joinerHandle = joinerHandle ? joinerHandle : "";
+	g_brokerCtx.codeHashHex  = codeHashHex  ? codeHashHex  : "";
+	if (active) {
+		// Mirror the ATWasmSetBrokerActive side-effect so callers can
+		// switch to the new export wholesale without losing the
+		// first-run-complete write.
+		SetFirstRunComplete();
+	}
+	fprintf(stderr,
+		"[wasm] ATWasmAdoptBrokerSession: role=%d active=%d session=%s "
+		"intent=%s handle=%s\n",
+		g_brokerCtx.role,
+		g_brokerCtx.active ? 1 : 0,
+		g_brokerCtx.sessionId.empty() ? "(none)"
+		                              : g_brokerCtx.sessionId.c_str(),
+		g_brokerCtx.intentId.empty()  ? "(none)"
+		                              : g_brokerCtx.intentId.c_str(),
+		g_brokerCtx.joinerHandle.empty()
+			? "(none)"
+			: g_brokerCtx.joinerHandle.c_str());
+}
+
+// Read by the WASM branch of StartCoordForHostedGame
+// (ui_netplay_actions.cpp) and the auto-accept path in
+// ReconcileHostedGames.  All return stable, NUL-terminated, empty-
+// string-on-unset pointers — never NULL.  Lifetime is the lifetime of
+// the std::string member, which lives as long as g_brokerCtx (process
+// global), so the caller can use the pointer for the duration of the
+// call without copying.
+extern "C" const char* ATWasmBrokerSessionId() {
+	return g_brokerCtx.sessionId.c_str();
+}
+extern "C" const char* ATWasmBrokerToken() {
+	return g_brokerCtx.token.c_str();
+}
+extern "C" const char* ATWasmBrokerIntentId() {
+	return g_brokerCtx.intentId.c_str();
+}
+extern "C" const char* ATWasmBrokerJoinerHandle() {
+	return g_brokerCtx.joinerHandle.c_str();
+}
+extern "C" int ATWasmBrokerRole() {
+	return g_brokerCtx.role;
+}
+
 // Called from the JS deep-link onRuntimeReady() when ?broker=1 is
 // recognised.  Read every frame by the overlay renderer
 // (ui_main.cpp).  The overlay clears automatically when the netplay
@@ -1658,6 +1744,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmBrokerSessionEnded(int reasonCode) {
 	if (!g_brokerCtx.active) return;   // not in broker mode → no-op
 	g_brokerCtx.active = false;        // one-shot — don't fire twice
+	// Clear the M3.4 strings too — page navigates away immediately
+	// after this call, but if the navigation is somehow blocked or
+	// delayed, leaving stale strings around could confuse a future
+	// adoption attempt (e.g. the user manually navigates back).
+	g_brokerCtx.sessionId.clear();
+	g_brokerCtx.token.clear();
+	g_brokerCtx.intentId.clear();
+	g_brokerCtx.joinerHandle.clear();
+	g_brokerCtx.codeHashHex.clear();
 	_altirra_wasm_broker_return(reasonCode);
 }
 

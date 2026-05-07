@@ -375,43 +375,76 @@
       } finally { Module._free(ptr); }
     }
 
-    // Broker-mode chrome suppression (M3 first ship): flip a process-
-    // global flag in the C side.  The flag is read by the wizard
-    // gate (`main_sdl3.cpp` desktop, `ui_mobile.cpp` mobile) and the
-    // firmware bootstrap to short-circuit any setup chrome — the
-    // user has already committed to a multiplayer session through
-    // the broker, they don't want to see the first-run wizard.
+    // Broker-mode adoption (M3.4): the broker page pre-created a
+    // /v1/sessions entry and supplied (sessionId, token, intent,
+    // handle, code) on the URL.  When the new ATWasmAdoptBrokerSession
+    // export is available, stash all five strings into the C side so
+    // StartCoordForHostedGame can adopt the broker session in place
+    // — no Create call, no orphan, no joiner-side polling.
     //
-    // Why we DON'T skip AutoHost here: a true broker-session
-    // adoption (where the WASM emulator inherits the broker-page-
-    // created lobby session by id+token and skips CreateSession) is
-    // a deeper netplay refactor.  For the M3 first ship we keep the
-    // existing AutoHost path: the host's WASM publishes a fresh
-    // lobby session under the same (handle, cart), and the page
-    // broker's existing session-list poll picks it up for the
-    // joiner.  This leaves the broker-created session orphaned for
-    // up to 10 minutes (TTL) but the dedup-on-Create logic in the
-    // lobby evicts it the moment the new session lands.  M3 next-
-    // phase introduces a true adoption export to remove the orphan
-    // window and the joiner-side polling latency.
-    if (hasBroker && Module._ATWasmSetBrokerActive) {
+    // For backward compat with a transition build that lacks the new
+    // export but has the old chrome-only ATWasmSetBrokerActive: fall
+    // back to the chrome-suppression-only call so the user at least
+    // gets gaming-mode + no-wizard.  Adoption requires the new export.
+    var brokerAdopted = false;
+    if (hasBroker && Module._ATWasmAdoptBrokerSession) {
+      var bm = lib.brokerMode;
+      var roleNum = (bm.role === 'host') ? 1 : 0;
+      var alloc = function(s) {
+        s = s || '';
+        var n = Module.lengthBytesUTF8(s) + 1;
+        var p = Module._malloc(n);
+        Module.stringToUTF8(s, p, n);
+        return { ptr: p, bytes: n };
+      };
+      var sidA = alloc(bm.sessionId);
+      var tokA = alloc(bm.token);
+      var iidA = alloc(bm.intentId);
+      var hndA = alloc(bm.handle);
+      var codA = alloc(bm.codeHash);
+      try {
+        Module._ATWasmAdoptBrokerSession(
+          sidA.ptr, tokA.ptr, iidA.ptr, hndA.ptr, codA.ptr,
+          roleNum, 1);
+        brokerAdopted = true;
+        log('broker-mode adopted (role=' + bm.role
+            + ' session=' + (bm.sessionId || '').slice(0, 8) + '…)');
+      } catch (e) {
+        log('broker-mode adopt failed:',
+            e && e.message ? e.message : e);
+      } finally {
+        Module._free(sidA.ptr); Module._free(tokA.ptr);
+        Module._free(iidA.ptr); Module._free(hndA.ptr);
+        Module._free(codA.ptr);
+      }
+    } else if (hasBroker && Module._ATWasmSetBrokerActive) {
       var bm = lib.brokerMode;
       var roleNum = (bm.role === 'host') ? 1 : 0;
       try {
         Module._ATWasmSetBrokerActive(roleNum, 1);
-        log('broker-mode active (role=' + bm.role + ')');
+        log('broker-mode active — chrome suppression only '
+            + '(adopt export missing; falling back to legacy AutoHost)');
       } catch (e) {
         log('broker-mode set failed:', e && e.message ? e.message : e);
       }
     } else if (hasBroker) {
-      log('broker-mode: ATWasmSetBrokerActive export missing — '
+      log('broker-mode: no broker exports present — '
           + 'wizard suppression unavailable');
     }
 
     // Auto-host (Play Together): one call into the C export, which
     // stashes the request for the netplay tick's DriveAutoHost
     // driver to fire once the boot lands.  No polling here.
-    if (lib.autoHost && Module._ATWasmAutoHostNetplay) {
+    //
+    // M3.4: when broker mode adopted the session, we MUST NOT call
+    // AutoHost — adoption already wired up the lobby registration
+    // with the broker-supplied (sessionId, token), and AutoHost would
+    // publish a fresh /v1/sessions entry on top of it (the original
+    // bug we're fixing).  Joiner side never calls AutoHost, so the
+    // skip is host-only.
+    if (lib.autoHost && Module._ATWasmAutoHostNetplay
+        && !(brokerAdopted && lib.brokerMode
+             && lib.brokerMode.role === 'host')) {
       var title = lib.hostTitle || '';
       if (!title && lib.vfsPaths.length) {
         var i = lib.vfsPaths[0].lastIndexOf('/');
