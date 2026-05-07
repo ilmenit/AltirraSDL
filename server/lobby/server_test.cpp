@@ -1462,9 +1462,10 @@ void TestBrokerAwaitingApprovalNotCountedInStats() {
 }
 
 // 13. Joiner-from-broker against a NATIVE host (legacy "waiting"
-//     session): the joiner can post an intent.  This is the API-layer
-//     half of the M1b ws_bridge translation; the API path must not
-//     reject by virtue of session state.
+//     session): the joiner can post an intent and gets an automatic
+//     accept (no broker host UI is listening on a legacy session;
+//     the joiner's spawned WASM emulator's NetHello carries any
+//     remaining authorisation through the netplay protocol).
 void TestBrokerIntentAgainstWaitingSessionAccepted() {
 	++g_testsRun;
 	Fixture f;
@@ -1483,6 +1484,57 @@ void TestBrokerIntentAgainstWaitingSessionAccepted() {
 	T_EXPECT(ok,                      "intent accepted on waiting session");
 	T_EXPECT_EQ_INT(hs, 201,          "intent POST status 201");
 	T_EXPECT(!iid.empty(),            "intentId returned");
+
+	// Auto-accept verification: opening the joiner's decision stream
+	// must immediately replay the recorded accept (without waiting on
+	// a host POST), because intents on legacy waiting sessions are
+	// decided synchronously inside CreateIntent.
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + iid + kPathIntentStreamTail,
+		"");
+	T_EXPECT(joinerStream.WaitForSubstring("event: decision", 2000),
+		"auto-accept decision replays on stream connect");
+	T_EXPECT(joinerStream.WaitForSubstring("\"accepted\":true", 500),
+		"auto-accept decision is accepted=true");
+	joinerStream.Stop();
+
+	// Posting the same decision again from a host token should now
+	// return 410 — the auto-accept already finalised the intent.
+	int code = PostDecision(host, sid, iid, tok, true, 0);
+	T_EXPECT_EQ_INT(code, 410, "auto-accepted intent already decided");
+}
+
+// 13b. Auto-accept must fire even if the joiner connects its stream
+//      BEFORE posting the intent (i.e. opens the stream as soon as
+//      it has the intentId).  This exercises the live-notify path
+//      rather than the replay path of test 13.
+void TestBrokerAutoAcceptLiveNotify() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	auto r = host.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r ? r->status : 0, 201, "legacy create");
+	std::string sid, tok; int ttl = 0;
+	T_EXPECT(ReadCreateRespJson(r->body, sid, tok, ttl), "parse");
+
+	// Post the intent first to obtain the intentId, then immediately
+	// open the stream.  We can't open the stream before the intent
+	// exists (the GET would 404), so this is the closest we can
+	// approximate a "stream-then-decision" race in HTTP semantics.
+	std::string iid; int hs = 0;
+	bool ok = PostIntent(joiner, sid, "carol", "", iid, hs);
+	T_EXPECT(ok && hs == 201, "intent posted");
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + iid + kPathIntentStreamTail,
+		"");
+	T_EXPECT(joinerStream.WaitForSubstring("event: decision", 2000),
+		"decision arrives on legacy session");
+	joinerStream.Stop();
 }
 
 // 14. State validation: trying to POST an intent against a "playing"
@@ -1581,6 +1633,7 @@ int RunAll() {
 	TestBrokerAwaitingApprovalHiddenFromSessionsList();
 	TestBrokerAwaitingApprovalNotCountedInStats();
 	TestBrokerIntentAgainstWaitingSessionAccepted();
+	TestBrokerAutoAcceptLiveNotify();
 	TestBrokerIntentRejectedOnPlayingSession();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",

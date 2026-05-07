@@ -721,18 +721,27 @@ public:
 	                         std::string& intentIdOut,
 	                         int64_t& createdAtMsOut) {
 		std::vector<std::shared_ptr<IntentListener>> toNotify;
+		std::vector<std::shared_ptr<DecisionListener>> autoNotify;
 		std::string newId;
 		int64_t now = NowMs();
+		bool autoAcceptForLegacy = false;
+		Decision autoDecision{};
 		{
 			std::lock_guard<std::mutex> lk(mMu);
 			auto sit = mItems.find(sessionId);
 			if (sit == mItems.end()) return IntentError::SessionNotFound;
 			const Session& s = sit->second;
 			// "playing" sessions are full and don't accept new joiners.
-			// Legacy "waiting" sessions accept intents (which the WS
-			// bridge will translate to NetHello for native hosts).
+			// "waiting" is a session published by a native emulator
+			// (or post-spawn broker) — there is no broker host UI
+			// listening for the intent, so we auto-accept and let the
+			// netplay-protocol Hello/Welcome handshake (which the
+			// joiner's emulator will run after spawning) carry any
+			// further authorisation decisions (private-code mismatch,
+			// prompt-on-join refusal, etc.).
 			// "awaiting_approval" is the broker-host case where the
-			// whole flow is intent-driven.
+			// whole flow is intent-driven and the host's modal owns
+			// the decision.
 			if (s.state != kStateWaiting &&
 			    s.state != kStateAwaitingApproval) {
 				return IntentError::SessionWrongState;
@@ -746,13 +755,12 @@ public:
 				if ((int)codeHash.size() != kIntentCodeHashHexLen) {
 					return IntentError::CodeMismatch;
 				}
-				// The session itself doesn't carry the code-hash
-				// today; for native-emulator hosts the code check
-				// happens inside the emulator on NetHello.  For
-				// broker-hosts we'll add a session-level code-hash
-				// field once M2 lands; today we just sanity-check
-				// the field's presence + length and let the client
-				// (or emulator) reject on mismatch.
+				// The session record itself doesn't carry the code
+				// hash today; the native-emulator host validates it
+				// on NetHello, and a broker-host's modal compares
+				// what the joiner sent.  The lobby just enforces the
+				// shape (16-byte hex) so a malformed value never
+				// reaches either layer.
 			}
 			// Cap pending intents per session.  A flood of joiners
 			// on one session would otherwise allow a single session
@@ -774,14 +782,44 @@ public:
 			it.createdAtMs   = now;
 			it.decided       = false;
 			newId            = it.id;
+
+			// v4 mixed-mode: against a legacy/native "waiting"
+			// session, the lobby auto-accepts the intent immediately
+			// because there is no broker UI to wait on.  The joiner's
+			// future decision-stream consumer will pick up the
+			// decision either via the live cv notification (if it
+			// connects in time) or via the snapshot replay branch
+			// in the GET handler.  We mark the intent decided
+			// in-place so the per-intent TTL still applies cleanly.
+			if (s.state == kStateWaiting) {
+				autoAcceptForLegacy = true;
+				it.decided          = true;
+				autoDecision.intentId    = newId;
+				autoDecision.sessionId   = sessionId;
+				autoDecision.accepted    = true;
+				autoDecision.reason      = 0;
+				autoDecision.decidedAtMs = now;
+				mDecisions[newId]   = autoDecision;
+			}
 			mIntents[newId]  = std::move(it);
 
 			// Snapshot listener pointers under the same lock so the
 			// notify loop below sees a consistent view even if a
-			// listener detaches concurrently.
-			auto lit = mIntentListeners.find(sessionId);
-			if (lit != mIntentListeners.end()) {
-				toNotify = lit->second;
+			// listener detaches concurrently.  For an awaiting_approval
+			// session we notify the host's intent stream; for an
+			// auto-accept legacy session we notify the joiner's (likely
+			// not-yet-connected) decision stream — same shared-ptr
+			// pattern as MakeDecision.
+			if (!autoAcceptForLegacy) {
+				auto lit = mIntentListeners.find(sessionId);
+				if (lit != mIntentListeners.end()) {
+					toNotify = lit->second;
+				}
+			} else {
+				auto lit = mDecisionListeners.find(newId);
+				if (lit != mDecisionListeners.end()) {
+					autoNotify = lit->second;
+				}
 			}
 		}
 		// Notify listeners outside our own mutex to avoid lock-order
@@ -790,6 +828,13 @@ public:
 			if (!L) continue;
 			std::lock_guard<std::mutex> ll(L->mu);
 			L->pendingIntentIds.push_back(newId);
+			L->cv.notify_one();
+		}
+		for (auto& L : autoNotify) {
+			if (!L) continue;
+			std::lock_guard<std::mutex> ll(L->mu);
+			L->decided  = true;
+			L->decision = autoDecision;
 			L->cv.notify_one();
 		}
 		intentIdOut    = std::move(newId);
