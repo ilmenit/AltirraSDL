@@ -436,15 +436,20 @@
     // stashes the request for the netplay tick's DriveAutoHost
     // driver to fire once the boot lands.  No polling here.
     //
-    // M3.4: when broker mode adopted the session, we MUST NOT call
-    // AutoHost — adoption already wired up the lobby registration
-    // with the broker-supplied (sessionId, token), and AutoHost would
-    // publish a fresh /v1/sessions entry on top of it (the original
-    // bug we're fixing).  Joiner side never calls AutoHost, so the
-    // skip is host-only.
-    if (lib.autoHost && Module._ATWasmAutoHostNetplay
-        && !(brokerAdopted && lib.brokerMode
-             && lib.brokerMode.role === 'host')) {
+    // Always call this when ?host=1 is present — including under
+    // broker adoption.  ATWasmAutoHostNetplay does NOT publish any
+    // session itself (see wasm_bridge.cpp:219-227); it only
+    // RequestAutoHost-stashes the title/path so DriveAutoHost can
+    // call StartHostingAction once the boot lands, which in turn
+    // creates the HostedGame entry the reconcile loop walks.  The
+    // adoption short-circuit lives downstream in
+    // StartCoordForHostedGame, which checks ATWasmBrokerIsActive()
+    // and skips PostLobbyCreate, calling OnLobbyCreateSucceeded
+    // directly with the broker-supplied (sessionId, token).
+    // Skipping AutoHost here was a regression: no AutoHost ⇒ no
+    // HostedGame ⇒ no StartCoordForHostedGame ⇒ no StartHostWss ⇒
+    // joiner times out at 25 s with "no host responded".
+    if (lib.autoHost && Module._ATWasmAutoHostNetplay) {
       var title = lib.hostTitle || '';
       if (!title && lib.vfsPaths.length) {
         var i = lib.vfsPaths[0].lastIndexOf('/');
