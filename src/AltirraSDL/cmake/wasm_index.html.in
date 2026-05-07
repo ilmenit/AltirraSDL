@@ -1361,10 +1361,15 @@
          button reappears. -->
     <button id="btn-touch" disabled
             title="Show / hide on-canvas touch controls (joystick + fire + console keys).  Visible in Gaming Mode only.  Default on for touch devices, off on desktop.  Shortcut: Ctrl+T.">✦ Touch</button>
+    <!-- Single wizard entry point.  refreshFirmwareButton() flips this
+         button's label between "Download firmware…" and
+         "Install game packs…" based on what's missing, and hides it
+         once both are done.  An earlier draft also shipped a separate
+         "🎮 Game Pack…" button alongside it, but that was never wired
+         to a click handler and stayed permanently disabled — same
+         dialog, two buttons, one confusingly inert. -->
     <button id="btn-firmware" disabled
             title="Re-run the standard ROM bundle download">🎛 Firmware…</button>
-    <button id="btn-gamepack" disabled
-            title="Re-run the curated game pack download (re-opens the first-run wizard's game-pack page)">🎮 Game Pack…</button>
     <div id="status">Loading Atari emulator…</div>
     <button id="btn-layout"
             title="Move the bar to the left side (vertical) — click again to bring it back to the top">⇄</button>
@@ -2191,7 +2196,6 @@
     const btnFullscreen = document.getElementById('btn-fullscreen');
     const btnOsk        = document.getElementById('btn-osk');
     const btnTouch      = document.getElementById('btn-touch');
-    const btnGamepack   = document.getElementById('btn-gamepack');
 
     // MENU… and ✦ Touch are Gaming-Mode-only controls — the
     // hamburger menu screen and the on-canvas touch overlay both
