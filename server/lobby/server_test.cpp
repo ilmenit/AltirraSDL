@@ -1570,6 +1570,89 @@ void TestBrokerIntentRejectedOnPlayingSession() {
 	T_EXPECT_EQ_INT(hs, 410,  "playing = 410");
 }
 
+// 14b. Audit fix: dedup-on-Create must cancel any pending intents
+//      on the evicted session.  Scenario: broker host creates a
+//      session, joiner posts intent, broker tab refreshes (creates
+//      another session for the same host+cart), the OLD session is
+//      evicted by the existing dedup logic.  Joiner SSE must see
+//      "expired" rather than wait out the 60-s intent TTL.
+void TestBrokerDedupCancelsPendingIntents() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	std::string sid1, tok1;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid1, tok1),
+		"first broker session");
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid1, "bob", "", iid, hs),
+		"joiner posts intent on first session");
+
+	SseClient joinerStream;
+	joinerStream.Start(f.port,
+		std::string(kPathIntent) + "/" + iid + kPathIntentStreamTail,
+		"");
+	// Wait for the SSE handler to register its listener before
+	// triggering the dedup eviction — otherwise the GET could land
+	// on the server AFTER dedup has fired and the intent is already
+	// gone, producing a 404 instead of the expected expired event.
+	// The ": ready" comment line is emitted on the first provider
+	// invocation, immediately after RegisterDecisionListener returns.
+	T_EXPECT(joinerStream.WaitForSubstring(": ready", 2000),
+		"joiner SSE registered listener");
+
+	// Re-create with same host+cart → triggers dedup, evicting sid1.
+	std::string sid2, tok2;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid2, tok2),
+		"second broker session (dedup eviction)");
+	T_EXPECT(sid1 != sid2, "fresh session id");
+
+	T_EXPECT(joinerStream.WaitForSubstring("event: expired", 2000),
+		"intent listener sees expired event from dedup eviction");
+	joinerStream.Stop();
+}
+
+// 14c. Audit fix: codeHash with non-hex characters is rejected.
+//      Scenario: broker joiner sends 32-char string that's the right
+//      length but contains a 'z'.  Lobby returns 403 CodeMismatch
+//      rather than letting the malformed value reach the host.
+void TestBrokerIntentRejectsNonHexCodeHash() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	// Build a private session (requiresCode=true).
+	JsonBuilder b;
+	b.raw('{');
+	b.key(Field::kCartName);        b.str("Joust");        b.raw(',');
+	b.key(Field::kHostHandle);      b.str("alice");        b.raw(',');
+	b.key(Field::kHostEndpoint);    b.str("1.2.3.4:1");    b.raw(',');
+	b.key(Field::kRegion);          b.str("eu");           b.raw(',');
+	b.key(Field::kPlayerCount);     b.num(1);              b.raw(',');
+	b.key(Field::kMaxPlayers);      b.num(2);              b.raw(',');
+	b.key(Field::kProtocolVersion); b.num(kProtocolVersion); b.raw(',');
+	b.key(Field::kVisibility);      b.str("private");      b.raw(',');
+	b.key(Field::kRequiresCode);    b.boolean(true);
+	b.raw('}');
+	auto rcr = c.Post(kPathSession, b.s, "application/json");
+	T_EXPECT_EQ_INT(rcr ? rcr->status : 0, 201, "private session create");
+	std::string sid, tok; int ttl = 0;
+	T_EXPECT(ReadCreateRespJson(rcr->body, sid, tok, ttl),
+		"parse private session create");
+
+	// 32-char string with 'z' (not hex).
+	std::string badHash = "0123456789abcdez1234567890abcdef";
+	std::string iid; int hs = 0;
+	bool ok = PostIntent(c, sid, "bob", badHash, iid, hs);
+	T_EXPECT(!ok,             "non-hex codeHash rejected");
+	T_EXPECT_EQ_INT(hs, 403,  "non-hex codeHash returns 403");
+
+	// Valid hex of correct length is accepted.
+	std::string goodHash = "0123456789abcdef0123456789abcdef";
+	ok = PostIntent(c, sid, "bob", goodHash, iid, hs);
+	T_EXPECT(ok,              "valid hex codeHash accepted");
+	T_EXPECT_EQ_INT(hs, 201,  "valid hex returns 201");
+}
+
 // 12. AwaitingApproval requires wssRelayOnly=true.
 void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
 	++g_testsRun;
@@ -1635,6 +1718,8 @@ int RunAll() {
 	TestBrokerIntentAgainstWaitingSessionAccepted();
 	TestBrokerAutoAcceptLiveNotify();
 	TestBrokerIntentRejectedOnPlayingSession();
+	TestBrokerDedupCancelsPendingIntents();
+	TestBrokerIntentRejectsNonHexCodeHash();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",
 		g_testsRun, g_testsFail);

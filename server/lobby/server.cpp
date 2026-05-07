@@ -452,13 +452,25 @@ public:
 		// protocol.  No token check here: this is a server-side
 		// housekeeping step, not a per-request action.
 		if (!handleNorm.empty() && !in.cartName.empty()) {
+			std::vector<std::string> evictedIds;
 			for (auto it = mItems.begin(); it != mItems.end();) {
 				if (it->second.hostHandleNorm == handleNorm &&
 				    it->second.cartName       == in.cartName) {
+					evictedIds.push_back(it->first);
 					it = mItems.erase(it);
 				} else {
 					++it;
 				}
+			}
+			// v4: cascade the dedup eviction into the broker layer
+			// so any pending intents on the evicted session(s) get
+			// cancelled and SSE listeners (host's intents stream,
+			// joiner's decision stream) wake immediately rather
+			// than wait for kIntentTtlMs to fire.  No-op for the
+			// common case (legacy native session being re-created
+			// with no broker artifacts attached).
+			for (const auto& sid : evictedIds) {
+				BrokerOnSessionRemovedLocked(sid);
 			}
 		}
 
@@ -754,6 +766,17 @@ public:
 				if (codeHash.empty()) return IntentError::CodeRequired;
 				if ((int)codeHash.size() != kIntentCodeHashHexLen) {
 					return IntentError::CodeMismatch;
+				}
+				// Reject anything that isn't proper hex.  The host
+				// or peer-broker would otherwise see a malformed
+				// "hash" reach them and produce a confusing error
+				// downstream; failing fast at the lobby layer puts
+				// the diagnostic on the joiner's modal where the
+				// fix (re-enter the code) lives.
+				for (char c : codeHash) {
+					if (!IsHexChar(c)) {
+						return IntentError::CodeMismatch;
+					}
 				}
 				// The session record itself doesn't carry the code
 				// hash today; the native-emulator host validates it
@@ -2313,6 +2336,11 @@ void Install(httplib::Server& srv, Store& store) {
 				(size_t /*offset*/, httplib::DataSink& sink) -> bool {
 					// First call: emit a one-shot "initial" event
 					// containing every currently-pending intent.
+					// The event itself doubles as the "connection
+					// ready" signal for browsers / tests — they can
+					// confirm the listener is registered with the
+					// Store as soon as the first chunk arrives,
+					// without waiting kSseHeartbeatIntervalMs.
 					if (!stref->sentInitial) {
 						stref->sentInitial = true;
 						JsonBuilder b;
@@ -2539,11 +2567,27 @@ void Install(httplib::Server& srv, Store& store) {
 				"no-cache, no-transform");
 			res.set_header("X-Accel-Buffering", "no");
 
+			auto firstCall = std::make_shared<bool>(true);
 			res.set_chunked_content_provider("text/event-stream",
-				[listener, iid, &store]
+				[listener, iid, firstCall, &store]
 				(size_t /*offset*/, httplib::DataSink& sink) -> bool {
 					if (sink.is_writable && !sink.is_writable())
 						return false;
+
+					// First call: emit an immediate "ready" comment
+					// so the client (and tests) can confirm the
+					// listener has been registered with the Store.
+					// Without this, the first user-visible byte is
+					// delayed until kSseHeartbeatIntervalMs whether
+					// or not anything has happened.  Browsers'
+					// EventSource also treats this as a "connection
+					// confirmed" signal — useful for spinner UX.
+					if (*firstCall) {
+						*firstCall = false;
+						const char* line = ": ready\n\n";
+						if (!sink.write(line, std::strlen(line)))
+							return false;
+					}
 
 					Decision d;
 					bool decided = false, expired = false;
