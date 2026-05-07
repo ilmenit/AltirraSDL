@@ -1534,12 +1534,28 @@ void ATWasmSetGamingMode(int on) {
 		// is hidden — the user expects the OS to boot (Self Test,
 		// BASIC, or memo screen depending on firmware/BASIC toggle).
 		//
-		// Resume() so the next frame produces a texture and the
-		// canvas isn't a black void.  Resume() is a no-op when the
-		// sim was already running, so the deep-link paths (which
-		// resume their own way) aren't affected.
-		if (g_sim.IsPaused())
-			g_sim.Resume();
+		// We need MORE than just Resume() here.  Field evidence
+		// (the "sometimes a black screen on Start Atari Emulator,
+		// only Shift+F5 fixes it" report): when the previous run
+		// was a netplay session that crashed without a clean
+		// EndSession, ATNetplayProfile::RecoverFromCrash rewrites
+		// the registry but doesn't touch live sim state, and the
+		// user's pre-session profile may carry Gaming-Mode-on +
+		// settings that don't agree with main()'s initial LoadROMs.
+		// The startup ColdReset in main_sdl3.cpp can land on top of
+		// that mismatched state, leaving the CPU running but unable
+		// to produce frames.  In-app Warm Reset (WarmReset+Resume)
+		// doesn't recover — only Shift+F5 (ColdReset+Resume) does,
+		// because ColdReset clears RAM + re-runs InternalColdReset
+		// over the now-correct settings.
+		//
+		// Mirror Shift+F5 here: the simulator needs a clean
+		// cold-cycle when transitioning out of the startup
+		// Gaming-Mode-paused state, not just a resume.  Cheap (one
+		// extra ColdReset per page load) and only fires on this
+		// single JS-driven mode transition.
+		g_sim.ColdReset();
+		g_sim.Resume();
 	}
 }
 
