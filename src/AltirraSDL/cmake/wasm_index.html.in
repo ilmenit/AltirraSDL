@@ -3638,16 +3638,38 @@
     // wizard, no toasts that block input).  The broker page's own
     // "Starting…" overlay covers user-facing feedback while the
     // bootstrap and the netplay snapshot transfer run in parallel.
-    function netplayDeepLinkActive() {
+    // Returns the category (for logging) when the URL carries an
+    // explicit "play this thing" intent — otherwise ''.  Every
+    // category here suppresses the first-run firmware/game-pack
+    // wizard because the user has already made a specific choice
+    // (a curated game, a Play Together host slot, a Join link)
+    // and offering them a different selection would be
+    // disorienting.  The standard ROM bundle is still REQUIRED for
+    // the emulator to boot, so when firmware is missing we kick off
+    // ATWasmFirstRunBootstrap SILENTLY (no modal, no toast that
+    // grabs input).  For broker/join the page's own "Starting…"
+    // overlay covers user feedback while the bootstrap and the
+    // netplay snapshot transfer run in parallel; for Play Solo /
+    // legacy host the bootstrap finishes long before the picked
+    // game has finished mounting, so the user just sees the boot
+    // splash with no chrome.
+    //
+    // Detection order is most-specific → least-specific so
+    // ?broker=1&lib=... reports as 'broker', ?lib=...&host=1
+    // (legacy Play Together) reports as 'host', and a bare
+    // ?lib=... reports as 'solo'.
+    function gameDeepLinkActive() {
       try {
         const p = new URLSearchParams(window.location.search || '');
-        if ((p.get('broker') || '') === '1') return 'broker';
-        if ((p.get('s')      || '').trim()) return 'join';
+        if ((p.get('broker') || '') === '1')  return 'broker';
+        if ((p.get('s')      || '').trim())   return 'join';
+        if ((p.get('host')   || '') === '1')  return 'host';
+        if ((p.get('lib')    || '').trim())   return 'solo';
       } catch (_) {}
       return '';
     }
     function decideFirstRunAction() {
-      const dl = netplayDeepLinkActive();
+      const dl = gameDeepLinkActive();
       if (dl) {
         const fw = hasFirmwareInstalled();
         if (!fw) {
