@@ -1653,6 +1653,119 @@ void TestBrokerIntentRejectsNonHexCodeHash() {
 	T_EXPECT_EQ_INT(hs, 201,  "valid hex returns 201");
 }
 
+// 14d. Audit-3 fix: deleting a legacy session that auto-accepted one
+//      or more intents must clean up the decided-intent records too,
+//      not just the matching decisions.  Before the fix,
+//      BrokerOnSessionRemovedLocked walked mIntents only for !decided
+//      entries, leaking decided ones in mIntents forever.  Use
+//      ComputeBrokerStats (which reads activeIntents from the live
+//      mIntents map) as the leak gauge — a clean cleanup sees 0
+//      active_intents after the session is deleted and the decision
+//      TTL has not yet fired.
+void TestBrokerSessionDeletionClearsAutoAcceptedIntents() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+	// Legacy waiting session — every intent posted gets auto-accepted.
+	auto r = host.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r ? r->status : 0, 201, "legacy create");
+	std::string sid, tok; int ttl = 0;
+	T_EXPECT(ReadCreateRespJson(r->body, sid, tok, ttl), "parse");
+
+	// Post three intents to bulk up the decided-intent / decision pile.
+	for (int i = 0; i < 3; ++i) {
+		std::string iid; int hs = 0;
+		std::string handle = std::string("joiner") + char('0' + i);
+		T_EXPECT(PostIntent(joiner, sid, handle, "", iid, hs),
+			"post intent");
+	}
+	// Sanity: pre-deletion the Store has 3 active intents + 3 active
+	// decisions (each auto-accept produces both).
+	{
+		auto bs = f.store.ComputeBrokerStats();
+		T_EXPECT_EQ_INT(bs.activeIntents,   3, "3 intents pre-delete");
+		T_EXPECT_EQ_INT(bs.activeDecisions, 3, "3 decisions pre-delete");
+	}
+
+	// Delete the session — host clicked Quit, or session was evicted by
+	// dedup, or expired.  Either way BrokerOnSessionRemovedLocked fires.
+	httplib::Headers h{{kHeaderSessionToken, tok}};
+	auto del = host.Delete(
+		(std::string(kPathSession) + "/" + sid).c_str(), h);
+	T_EXPECT(del && del->status == 204, "delete 204");
+
+	// Post-deletion: BOTH containers must be empty.  Before the audit-3
+	// fix, activeIntents stayed at 3 (decided intents were leaked); the
+	// only path that would eventually free them was BrokerExpireDecisions
+	// reading from mDecisions, which had already been wiped by the
+	// session-removed handler — so the orphan intents would persist
+	// forever.
+	auto bs = f.store.ComputeBrokerStats();
+	T_EXPECT_EQ_INT(bs.activeIntents,   0, "decided intents cleaned up");
+	T_EXPECT_EQ_INT(bs.activeDecisions, 0, "decisions cleaned up");
+}
+
+// 14e. Audit-3 metric: auto-accept must be visible in /v1/metrics
+//      under the dedicated counter.  Operators read this number to
+//      tell whether legacy / native-host traffic is healthy
+//      independently of the broker-driven decisions.  We check the
+//      counter directly (gLC is a process-global, so absolute values
+//      depend on test-run history); the relative delta is what
+//      matters here.
+void TestBrokerAutoAcceptCounterIncrements() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+
+	const uint64_t before =
+		gLC.brokerIntentsAutoAccepted.load(std::memory_order_relaxed);
+	const uint64_t beforeDecisions =
+		gLC.brokerDecisionsPosted.load(std::memory_order_relaxed);
+
+	// Two waiting sessions, two joiners — should produce 2 auto-accepts.
+	auto r1 = host.Post(kPathSession,
+		MakeCreateBody("Joust",  "alice-aa", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r1 ? r1->status : 0, 201, "legacy create #1");
+	std::string sid1, tok1; int ttl1 = 0;
+	T_EXPECT(ReadCreateRespJson(r1->body, sid1, tok1, ttl1), "parse #1");
+	auto r2 = host.Post(kPathSession,
+		MakeCreateBody("Archon", "carol-aa", "1.2.3.4:2"),
+		"application/json");
+	T_EXPECT_EQ_INT(r2 ? r2->status : 0, 201, "legacy create #2");
+	std::string sid2, tok2; int ttl2 = 0;
+	T_EXPECT(ReadCreateRespJson(r2->body, sid2, tok2, ttl2), "parse #2");
+
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid1, "bob",  "", iid, hs), "intent #1");
+	T_EXPECT(PostIntent(joiner, sid2, "dave", "", iid, hs), "intent #2");
+
+	const uint64_t after =
+		gLC.brokerIntentsAutoAccepted.load(std::memory_order_relaxed);
+	const uint64_t afterDecisions =
+		gLC.brokerDecisionsPosted.load(std::memory_order_relaxed);
+	T_EXPECT_EQ_INT((int)(after - before), 2,
+		"auto-accept counter advanced by 2");
+	// Cross-check: decisions_posted_total does NOT advance — auto-
+	// accepts bypass MakeDecision, so the broker-UI counter stays
+	// flat.  This is the observability distinction between the two
+	// counters: legacy traffic vs. broker-modal traffic.
+	T_EXPECT_EQ_INT((int)(afterDecisions - beforeDecisions), 0,
+		"decisions_posted_total stays flat for auto-accept-only flow");
+
+	// And the metrics endpoint surfaces the counter under the new
+	// JSON key — protect against typos in the wire schema.
+	auto m = host.Get(kPathMetrics);
+	T_EXPECT(m && m->status == 200, "metrics endpoint responds");
+	T_EXPECT(m->body.find("\"intents_auto_accepted_total\":")
+	         != std::string::npos,
+		"intents_auto_accepted_total key present in /v1/metrics");
+}
+
 // 12. AwaitingApproval requires wssRelayOnly=true.
 void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
 	++g_testsRun;
@@ -1720,6 +1833,8 @@ int RunAll() {
 	TestBrokerIntentRejectedOnPlayingSession();
 	TestBrokerDedupCancelsPendingIntents();
 	TestBrokerIntentRejectsNonHexCodeHash();
+	TestBrokerSessionDeletionClearsAutoAcceptedIntents();
+	TestBrokerAutoAcceptCounterIncrements();
 
 	std::fprintf(stderr, "tests: %d run, %d failed\n",
 		g_testsRun, g_testsFail);

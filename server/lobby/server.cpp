@@ -177,6 +177,13 @@ struct LobbyCounters {
 	// are sampled from the Store at /v1/metrics serve time.
 	std::atomic<uint64_t> brokerIntentsPosted{0};
 	std::atomic<uint64_t> brokerIntentsRejected{0};
+	// Auto-accepts on legacy "waiting" sessions.  Counted alongside
+	// brokerDecisionsPosted (host-driven decisions) so an operator
+	// dashboard can see the breakdown — a sudden drop in auto-accepts
+	// when broker traffic is steady would imply legacy sessions have
+	// stopped being publishable, while a sudden drop in host-driven
+	// decisions means the broker UI has gone unresponsive.
+	std::atomic<uint64_t> brokerIntentsAutoAccepted{0};
 	std::atomic<uint64_t> brokerDecisionsPosted{0};
 	std::atomic<uint64_t> brokerIntentStreams{0};
 	std::atomic<uint64_t> brokerDecisionStreams{0};
@@ -860,6 +867,16 @@ public:
 			L->decision = autoDecision;
 			L->cv.notify_one();
 		}
+		// Auto-accept counter — fires once per legacy-session intent.
+		// Bumped here (after the listener notify) rather than inside the
+		// locked region so the counter ordering matches the visible
+		// effect on /v1/metrics: by the time the counter increments, the
+		// intent + decision pair are both stored and any waiting joiner
+		// stream has been notified.
+		if (autoAcceptForLegacy) {
+			gLC.brokerIntentsAutoAccepted.fetch_add(
+				1, std::memory_order_relaxed);
+		}
 		intentIdOut    = std::move(newId);
 		createdAtMsOut = now;
 		return IntentError::None;
@@ -1137,6 +1154,27 @@ private:
 			} else {
 				++it;
 			}
+		}
+		// Audit-3 fix: also drop any DECIDED intents for this session.
+		// Auto-accept on a legacy "waiting" session creates an Intent
+		// with decided=true plus a matching Decision; the loop above
+		// erases the Decision, but the pending-only loop earlier skips
+		// decided intents.  Without this third pass, the Intent record
+		// would orphan in mIntents and never be cleaned up — slow-
+		// growing memory leak proportional to (auto-accept rate × rate
+		// of session deletion within kDecisionTtlMs).  Listeners on a
+		// decided intent are no-ops because the joiner has already
+		// emitted its decision event and closed; we still notify any
+		// stragglers via expired so their stream terminates cleanly.
+		std::vector<std::string> decidedIds;
+		for (auto& kv : mIntents) {
+			if (kv.second.sessionId == sessionId && kv.second.decided) {
+				decidedIds.push_back(kv.first);
+			}
+		}
+		for (const auto& iid : decidedIds) {
+			BrokerCancelIntentLocked(iid, sessionId);
+			mIntents.erase(iid);
 		}
 		// Tell the host's intents-stream listeners that the session
 		// has gone (the broker-host's tab closed mid-wait, or the
@@ -1948,6 +1986,15 @@ void Install(httplib::Server& srv, Store& store) {
 					b.num((long long)gLC.brokerIntentsPosted.load()); b.raw(',');
 					b.key("intents_rejected_total");
 					b.num((long long)gLC.brokerIntentsRejected.load()); b.raw(',');
+					// Auto-accepts on legacy "waiting" sessions.  Sum
+					// of (intents_auto_accepted_total + decisions_posted_total)
+					// equals the total accept-or-reject decisions
+					// produced by the lobby; keeping them split tells
+					// the operator how much traffic flows through the
+					// broker UI vs. how much short-circuits via the
+					// legacy auto-accept path.
+					b.key("intents_auto_accepted_total");
+					b.num((long long)gLC.brokerIntentsAutoAccepted.load()); b.raw(',');
 					b.key("decisions_posted_total");
 					b.num((long long)gLC.brokerDecisionsPosted.load()); b.raw(',');
 					b.key("intent_streams_total");
