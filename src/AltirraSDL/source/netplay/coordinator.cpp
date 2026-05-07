@@ -2109,7 +2109,7 @@ void Coordinator::HandleBye(const NetBye& b, const Endpoint& from) {
 	}
 }
 
-void Coordinator::End(uint32_t byeReason) {
+void Coordinator::End(uint16_t byeReason) {
 	if (mPhase == Phase::Idle || mPhase == Phase::Ended || mPhase == Phase::Failed)
 		return;
 	// Tell every still-queued joiner that we're not coming — without
@@ -2142,7 +2142,7 @@ void Coordinator::End(uint32_t byeReason) {
 	}
 }
 
-void Coordinator::SendBye(uint32_t reason) {
+void Coordinator::SendBye(uint16_t reason) {
 	if (!mPeerKnown) return;
 	NetBye b { kMagicBye, reason };
 	size_t n = EncodeBye(b, mTxBuf, sizeof mTxBuf);
@@ -2236,7 +2236,7 @@ void Coordinator::SendWelcome(uint64_t nowMs) {
 	mWelcomeSentMs = nowMs;
 }
 
-void Coordinator::SendReject(uint32_t reason, const Endpoint& to) {
+void Coordinator::SendReject(uint16_t reason, const Endpoint& to) {
 	NetReject r { kMagicReject, reason };
 	size_t n = EncodeReject(r, mTxBuf, sizeof mTxBuf);
 	if (n) mTransport->SendTo(mTxBuf, n, to);

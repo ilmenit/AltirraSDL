@@ -374,8 +374,10 @@ public:
 
 	// ---- termination ------------------------------------------------------
 
-	// Send a NetBye and transition to Ended.  Idempotent.
-	void End(uint32_t byeReason = kByeCleanExit);
+	// Send a NetBye and transition to Ended.  Idempotent.  v6: reason
+	// is a SessionTermination value (cast to uint16_t at call sites
+	// via the kBye* aliases preserved in packets.h).
+	void End(uint16_t byeReason = kByeCleanExit);
 
 	// ---- queries ----------------------------------------------------------
 
@@ -452,8 +454,9 @@ private:
 	// the pump's grace check then fails-open and chunks fire on the
 	// next Poll, matching pre-v5 behaviour.
 	void SendWelcome(uint64_t nowMs = 0);
-	void SendReject(uint32_t reason, const Endpoint& to);
-	void SendBye(uint32_t reason);
+	// v6: reason narrowed u32→u16 to match NetReject/NetBye wire layout.
+	void SendReject(uint16_t reason, const Endpoint& to);
+	void SendBye(uint16_t reason);
 	void PumpSnapshotSender(uint64_t nowMs);
 	void PumpLockstepSend();
 
@@ -502,7 +505,8 @@ private:
 	// only transition to Phase::Failed when *every* candidate has
 	// rejected (or timed out), and we use this reason so the user sees
 	// the host-supplied cause rather than a generic "timeout".
-	uint32_t mLastRejectReason = 0;
+	// v6: SessionTermination raw value cached for late-arriving rejects.
+	uint16_t mLastRejectReason = 0;
 	bool     mHaveLastRejectReason = false;
 
 	// Phase + role.

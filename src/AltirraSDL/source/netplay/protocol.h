@@ -87,6 +87,19 @@ DecodeResult DecodeEmote(const uint8_t* buf, size_t len, NetEmote& out);
 size_t EncodeSimHashDiag(const NetSimHashDiag& d, uint8_t* buf, size_t bufSize);
 DecodeResult DecodeSimHashDiag(const uint8_t* buf, size_t len, NetSimHashDiag& out);
 
+// --- NetPhase / NetEventBatch / NetHeartbeat (v6 observability) -----------
+// Broadcast on every Coordinator phase transition, fine-grained event
+// batches, and 1-Hz heartbeat respectively.  Decoders also serve the
+// lobby's WS bridge inner-magic peek (no Coordinator state needed).
+size_t EncodePhase(const NetPhase& p, uint8_t* buf, size_t bufSize);
+DecodeResult DecodePhase(const uint8_t* buf, size_t len, NetPhase& out);
+
+size_t EncodeEventBatch(const NetEventBatch& b, uint8_t* buf, size_t bufSize);
+DecodeResult DecodeEventBatch(const uint8_t* buf, size_t len, NetEventBatch& out);
+
+size_t EncodeHeartbeat(const NetHeartbeat& h, uint8_t* buf, size_t bufSize);
+DecodeResult DecodeHeartbeat(const uint8_t* buf, size_t len, NetHeartbeat& out);
+
 // --- NetPunch (v4 two-sided punch) -----------------------------------------
 size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize);
 DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out);

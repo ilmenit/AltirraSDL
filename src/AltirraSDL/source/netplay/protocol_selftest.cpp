@@ -29,17 +29,24 @@ static int fails = 0;
 	} while (0)
 
 static void testWireSizes() {
-	CHECK(kWireHelloSize       == 90);
-	CHECK(kWireBootCfgSize     == 36);
-	CHECK(kWireWelcomeSize     == 128);   // v5: +4 for snapshotCRC32
-	CHECK(kWireWelcomeAckSize  == 4);     // v5: new
-	CHECK(kWireRejectSize      == 8);
-	CHECK(kWireInputPktSize    == 36);
-	CHECK(kWireByeSize         == 8);
-	CHECK(kWireChunkHdrSize    == 16);
-	CHECK(kWireAckSize         == 8);
-	CHECK(kRedundancyR         == 5);
-	CHECK(kProtocolVersion     == 5);
+	CHECK(kWireHelloSize          == 90);
+	CHECK(kWireBootCfgSize        == 36);
+	CHECK(kWireWelcomeSize        == 128);   // v5: +4 for snapshotCRC32
+	CHECK(kWireWelcomeAckSize     == 4);     // v5: new
+	// v6: NetReject reason u32→u16 (8→6); NetBye gains u16 reason (8→6).
+	CHECK(kWireRejectSize         == 6);
+	CHECK(kWireByeSize            == 6);
+	CHECK(kWireInputPktSize       == 36);
+	CHECK(kWireChunkHdrSize       == 16);
+	CHECK(kWireAckSize            == 8);
+	CHECK(kRedundancyR            == 5);
+	CHECK(kProtocolVersion        == 6);
+	// v6 observability layer.
+	CHECK(kWireNetPhaseSize       == 12);
+	CHECK(kWireNetEventSize       == 8);
+	CHECK(kWireNetHeartbeatSize   == 16);
+	CHECK(kWireNetEventBatchHdrSize == 6);
+	CHECK(kMaxEventBatchEvents    == 28);
 }
 
 static void testMagicAnchors() {
@@ -174,12 +181,35 @@ static void testWelcomeAckRoundTrip() {
 }
 
 static void testRejectRoundTrip() {
-	NetReject in; in.reason = kRejectBadEntryCode;
+	// v6 reason field narrowed to u16; existing kReject* aliases now
+	// resolve to SessionTermination raw values.
+	NetReject in;
+	in.reason = (uint16_t)SessionTermination::BadEntryCode;
 	uint8_t buf[kWireRejectSize];
 	CHECK(EncodeReject(in, buf, sizeof(buf)) == kWireRejectSize);
 	NetReject out;
 	CHECK(DecodeReject(buf, kWireRejectSize, out) == DecodeResult::Ok);
-	CHECK(out.reason == kRejectBadEntryCode);
+	CHECK(out.reason == (uint16_t)SessionTermination::BadEntryCode);
+
+	// Hard wire break test: a v5-shaped 8-byte Reject (4 magic + 4
+	// reason u32) decodes successfully through DecodeReject's v6 path
+	// only as the first 6 bytes — and its low-2-byte reason is
+	// preserved.  Mixed-version peers still get a usable code for
+	// the version-skew handshake, but the decoder treats trailing
+	// bytes as the next packet (or noise) — confirming that a single-
+	// version pipeline doesn't accidentally accept v5 wire shape.
+	uint8_t v5Buf[8] = { 'A', 'N', 'P', 'R', 0x07, 0, 0, 0 };
+	NetReject v5out;
+	CHECK(DecodeReject(v5Buf, 6, v5out) == DecodeResult::Ok);
+	CHECK(v5out.reason == 7);  // BadEntryCode
+
+	// New v6 reason values round-trip too.
+	NetReject snap;
+	snap.reason = (uint16_t)SessionTermination::SnapshotCrcMismatch;
+	CHECK(EncodeReject(snap, buf, sizeof(buf)) == kWireRejectSize);
+	NetReject snapOut;
+	CHECK(DecodeReject(buf, kWireRejectSize, snapOut) == DecodeResult::Ok);
+	CHECK(snapOut.reason == 100);
 }
 
 static void testInputPacketRoundTrip() {
@@ -291,12 +321,127 @@ static void testSnapAckRoundTrip() {
 }
 
 static void testByeRoundTrip() {
-	NetBye in; in.reason = kByeDesyncDetected;
+	// v6 Bye gains a u16 reason (was magic + 4 unused bytes in v5).
+	NetBye in;
+	in.reason = (uint16_t)SessionTermination::DesyncFlapLimit;
 	uint8_t buf[kWireByeSize];
 	CHECK(EncodeBye(in, buf, sizeof(buf)) == kWireByeSize);
 	NetBye out;
 	CHECK(DecodeBye(buf, sizeof(buf), out) == DecodeResult::Ok);
-	CHECK(out.reason == kByeDesyncDetected);
+	CHECK(out.reason == (uint16_t)SessionTermination::DesyncFlapLimit);
+
+	// Broker reasons in the v6 namespace.
+	NetBye broker;
+	broker.reason = (uint16_t)SessionTermination::BrokerHostCanceled;
+	CHECK(EncodeBye(broker, buf, sizeof(buf)) == kWireByeSize);
+	NetBye brokerOut;
+	CHECK(DecodeBye(buf, sizeof(buf), brokerOut) == DecodeResult::Ok);
+	CHECK(brokerOut.reason == 502);
+}
+
+static void testPhaseRoundTrip() {
+	NetPhase in;
+	in.phase    = 7;            // arbitrary phase code
+	in.flags    = 0x01;         // bit0 set → joiner
+	in.progNum  = 1234;
+	in.progDen  = 5678;
+	in.reserved = 0;
+	uint8_t buf[kWireNetPhaseSize];
+	CHECK(EncodePhase(in, buf, sizeof(buf)) == kWireNetPhaseSize);
+	// Magic anchor: 'A' 'N' 'P' 'F'.
+	CHECK(buf[0] == 'A' && buf[1] == 'N'
+	      && buf[2] == 'P' && buf[3] == 'F');
+	NetPhase out;
+	CHECK(DecodePhase(buf, sizeof(buf), out) == DecodeResult::Ok);
+	CHECK(out.phase    == 7);
+	CHECK(out.flags    == 0x01);
+	CHECK(out.progNum  == 1234);
+	CHECK(out.progDen  == 5678);
+	CHECK(out.reserved == 0);
+
+	// Short / wrong-magic rejection.
+	NetPhase shortOut;
+	CHECK(DecodePhase(buf, kWireNetPhaseSize - 1, shortOut)
+	      == DecodeResult::TooShort);
+	uint8_t bad[kWireNetPhaseSize];
+	std::memcpy(bad, buf, sizeof bad);
+	bad[3] = 'X';
+	CHECK(DecodePhase(bad, sizeof bad, shortOut) == DecodeResult::BadMagic);
+}
+
+static void testEventBatchRoundTrip() {
+	NetEventBatch in;
+	in.count = 3;
+	in.items[0] = NetEvent{ 100, 1,  10, 0xAABBCCDDu };
+	in.items[1] = NetEvent{ 250, 2,  20, 0x11223344u };
+	in.items[2] = NetEvent{ 999, 99, 7,  0x00u };
+
+	uint8_t buf[kWireNetEventBatchMaxSize];
+	const size_t expectedLen =
+		kWireNetEventBatchHdrSize + (size_t)in.count * kWireNetEventSize;
+	CHECK(EncodeEventBatch(in, buf, sizeof(buf)) == expectedLen);
+	CHECK(buf[0] == 'A' && buf[1] == 'N'
+	      && buf[2] == 'P' && buf[3] == 'V');
+
+	NetEventBatch out;
+	CHECK(DecodeEventBatch(buf, expectedLen, out) == DecodeResult::Ok);
+	CHECK(out.count == 3);
+	for (uint8_t i = 0; i < 3; ++i) {
+		CHECK(out.items[i].tsOffsetMs == in.items[i].tsOffsetMs);
+		CHECK(out.items[i].kind       == in.items[i].kind);
+		CHECK(out.items[i].code       == in.items[i].code);
+		CHECK(out.items[i].data       == in.items[i].data);
+	}
+
+	// Encoder rejects oversize count.
+	NetEventBatch big;
+	big.count = (uint8_t)(kMaxEventBatchEvents + 1);
+	uint8_t bigBuf[kWireNetEventBatchMaxSize + 32] = {};
+	CHECK(EncodeEventBatch(big, bigBuf, sizeof(bigBuf)) == 0);
+
+	// Decoder rejects oversize count too (defence against hostile peer).
+	uint8_t bad[kWireNetEventBatchMaxSize] = {};
+	bad[0] = 'A'; bad[1] = 'N'; bad[2] = 'P'; bad[3] = 'V';
+	bad[4] = (uint8_t)(kMaxEventBatchEvents + 1);
+	NetEventBatch outBad;
+	CHECK(DecodeEventBatch(bad, sizeof(bad), outBad) == DecodeResult::BadSize);
+}
+
+static void testHeartbeatRoundTrip() {
+	NetHeartbeat in;
+	in.rttMs         = 73;
+	in.lossPct5s     = 12;
+	in.frameSkip5s   = 4;
+	in.framesBehind  = 2;
+	in.cpuSaturation = 88;
+	in.tabVisible    = 1;
+	in.seq           = 0xBEEF;
+	in.wallMsLow     = 0x1234;
+
+	uint8_t buf[kWireNetHeartbeatSize];
+	CHECK(EncodeHeartbeat(in, buf, sizeof(buf)) == kWireNetHeartbeatSize);
+	CHECK(buf[0] == 'A' && buf[1] == 'N'
+	      && buf[2] == 'P' && buf[3] == 'T');
+
+	NetHeartbeat out;
+	CHECK(DecodeHeartbeat(buf, sizeof(buf), out) == DecodeResult::Ok);
+	CHECK(out.rttMs         == 73);
+	CHECK(out.lossPct5s     == 12);
+	CHECK(out.frameSkip5s   == 4);
+	CHECK(out.framesBehind  == 2);
+	CHECK(out.cpuSaturation == 88);
+	CHECK(out.tabVisible    == 1);
+	CHECK(out.seq           == 0xBEEF);
+	CHECK(out.wallMsLow     == 0x1234);
+
+	// Short / wrong-magic rejection.
+	NetHeartbeat shortOut;
+	CHECK(DecodeHeartbeat(buf, kWireNetHeartbeatSize - 1, shortOut)
+	      == DecodeResult::TooShort);
+	uint8_t bad[kWireNetHeartbeatSize];
+	std::memcpy(bad, buf, sizeof bad);
+	bad[3] = 'X';
+	CHECK(DecodeHeartbeat(bad, sizeof bad, shortOut) == DecodeResult::BadMagic);
 }
 
 static void testSnapSkipRoundTrip() {
@@ -378,6 +523,9 @@ int main() {
 	testSnapChunkRoundTrip();
 	testSnapAckRoundTrip();
 	testByeRoundTrip();
+	testPhaseRoundTrip();
+	testEventBatchRoundTrip();
+	testHeartbeatRoundTrip();
 	testSnapSkipRoundTrip();
 	testStringFieldNulTermination();
 	testShortAndBadMagic();

@@ -216,13 +216,13 @@ DecodeResult DecodeWelcomeAck(const uint8_t* buf, size_t len, NetWelcomeAck& out
 }
 
 // ---------------------------------------------------------------------------
-// NetReject (8 bytes)
+// NetReject (v6: 6 bytes; reason narrowed u32→u16)
 // ---------------------------------------------------------------------------
 
 size_t EncodeReject(const NetReject& r, uint8_t* buf, size_t bufSize) {
 	if (bufSize < kWireRejectSize) return 0;
 	put_u32(buf + 0, kMagicReject);
-	put_u32(buf + 4, r.reason);
+	put_u16(buf + 4, r.reason);
 	return kWireRejectSize;
 }
 
@@ -230,7 +230,7 @@ DecodeResult DecodeReject(const uint8_t* buf, size_t len, NetReject& out) {
 	if (len < kWireRejectSize) return DecodeResult::TooShort;
 	out.magic = get_u32(buf);
 	if (out.magic != kMagicReject) return DecodeResult::BadMagic;
-	out.reason = get_u32(buf + 4);
+	out.reason = get_u16(buf + 4);
 	return DecodeResult::Ok;
 }
 
@@ -279,13 +279,13 @@ DecodeResult DecodeInputPacket(const uint8_t* buf, size_t len, NetInputPacket& o
 }
 
 // ---------------------------------------------------------------------------
-// NetBye (8 bytes)
+// NetBye (v6: 6 bytes; reason added — u16; was unused 4-byte tail in v5)
 // ---------------------------------------------------------------------------
 
 size_t EncodeBye(const NetBye& b, uint8_t* buf, size_t bufSize) {
 	if (bufSize < kWireByeSize) return 0;
 	put_u32(buf + 0, kMagicBye);
-	put_u32(buf + 4, b.reason);
+	put_u16(buf + 4, b.reason);
 	return kWireByeSize;
 }
 
@@ -293,7 +293,118 @@ DecodeResult DecodeBye(const uint8_t* buf, size_t len, NetBye& out) {
 	if (len < kWireByeSize) return DecodeResult::TooShort;
 	out.magic = get_u32(buf);
 	if (out.magic != kMagicBye) return DecodeResult::BadMagic;
-	out.reason = get_u32(buf + 4);
+	out.reason = get_u16(buf + 4);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetPhase (v6 observability — 12 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodePhase(const NetPhase& p, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireNetPhaseSize) return 0;
+	put_u32(buf + 0,  kMagicNetPhase);
+	buf[4] = p.phase;
+	buf[5] = p.flags;
+	put_u16(buf + 6,  p.progNum);
+	put_u16(buf + 8,  p.progDen);
+	put_u16(buf + 10, p.reserved);
+	return kWireNetPhaseSize;
+}
+
+DecodeResult DecodePhase(const uint8_t* buf, size_t len, NetPhase& out) {
+	if (len < kWireNetPhaseSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicNetPhase) return DecodeResult::BadMagic;
+	out.phase    = buf[4];
+	out.flags    = buf[5];
+	out.progNum  = get_u16(buf + 6);
+	out.progDen  = get_u16(buf + 8);
+	out.reserved = get_u16(buf + 10);
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetEventBatch (v6 observability — 6-byte header + count × 8 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodeEventBatch(const NetEventBatch& b, uint8_t* buf, size_t bufSize) {
+	if (b.count > kMaxEventBatchEvents) return 0;
+	const size_t total = kWireNetEventBatchHdrSize
+	                   + (size_t)b.count * kWireNetEventSize;
+	if (bufSize < total) return 0;
+	put_u32(buf + 0, kMagicNetEvents);
+	buf[4] = b.count;
+	buf[5] = b.reserved;
+	uint8_t* off = buf + kWireNetEventBatchHdrSize;
+	for (uint8_t i = 0; i < b.count; ++i) {
+		put_u16(off + 0, b.items[i].tsOffsetMs);
+		off[2] = b.items[i].kind;
+		off[3] = b.items[i].code;
+		put_u32(off + 4, b.items[i].data);
+		off += kWireNetEventSize;
+	}
+	return total;
+}
+
+DecodeResult DecodeEventBatch(const uint8_t* buf, size_t len, NetEventBatch& out) {
+	if (len < kWireNetEventBatchHdrSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicNetEvents) return DecodeResult::BadMagic;
+	out.count    = buf[4];
+	out.reserved = buf[5];
+	if (out.count > kMaxEventBatchEvents) return DecodeResult::BadSize;
+	const size_t total = kWireNetEventBatchHdrSize
+	                   + (size_t)out.count * kWireNetEventSize;
+	if (len < total) return DecodeResult::TooShort;
+	const uint8_t* off = buf + kWireNetEventBatchHdrSize;
+	for (uint8_t i = 0; i < out.count; ++i) {
+		out.items[i].tsOffsetMs = get_u16(off + 0);
+		out.items[i].kind       = off[2];
+		out.items[i].code       = off[3];
+		out.items[i].data       = get_u32(off + 4);
+		off += kWireNetEventSize;
+	}
+	// Zero the tail of the items array so the caller sees a clean
+	// view (decode is the only path that populates this struct;
+	// without this, leftover stack bytes from the caller's NetEventBatch
+	// instance would show through on items[count..max-1]).
+	for (uint8_t i = out.count; i < (uint8_t)kMaxEventBatchEvents; ++i) {
+		out.items[i] = NetEvent{};
+	}
+	return DecodeResult::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// NetHeartbeat (v6 observability — 16 bytes)
+// ---------------------------------------------------------------------------
+
+size_t EncodeHeartbeat(const NetHeartbeat& h, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWireNetHeartbeatSize) return 0;
+	put_u32(buf + 0,  kMagicNetHeartbeat);
+	put_u16(buf + 4,  h.rttMs);
+	buf[6] = h.lossPct5s;
+	buf[7] = h.frameSkip5s;
+	put_u16(buf + 8,  h.framesBehind);
+	buf[10] = h.cpuSaturation;
+	buf[11] = h.tabVisible;
+	put_u16(buf + 12, h.seq);
+	put_u16(buf + 14, h.wallMsLow);
+	return kWireNetHeartbeatSize;
+}
+
+DecodeResult DecodeHeartbeat(const uint8_t* buf, size_t len, NetHeartbeat& out) {
+	if (len < kWireNetHeartbeatSize) return DecodeResult::TooShort;
+	out.magic = get_u32(buf);
+	if (out.magic != kMagicNetHeartbeat) return DecodeResult::BadMagic;
+	out.rttMs         = get_u16(buf + 4);
+	out.lossPct5s     = buf[6];
+	out.frameSkip5s   = buf[7];
+	out.framesBehind  = get_u16(buf + 8);
+	out.cpuSaturation = buf[10];
+	out.tabVisible    = buf[11];
+	out.seq           = get_u16(buf + 12);
+	out.wallMsLow     = get_u16(buf + 14);
 	return DecodeResult::Ok;
 }
 

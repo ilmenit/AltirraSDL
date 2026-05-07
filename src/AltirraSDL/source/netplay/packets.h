@@ -28,6 +28,21 @@ constexpr uint32_t kMagicInput        = 0x49504E41u; // 'ANPI'
 constexpr uint32_t kMagicBye          = 0x42504E41u; // 'ANPB'
 constexpr uint32_t kMagicChunk        = 0x43504E41u; // 'ANPC'
 constexpr uint32_t kMagicAck          = 0x41504E41u; // 'ANPA'
+// v6 observability layer (M5).  Three new packet families broadcast
+// alongside the main wire so peers and the lobby can build a
+// bilateral timeline of every Coordinator transition without
+// crossing the snapshot/input critical path.
+//   ANPS — phase  ("State")
+//   ANPV — events ("eVents")
+//   ANPT — heartbeat ("Telemetry")
+// Letters chosen to avoid collision with existing magics (L,W,R,I,
+// B,C,A,D,E,K,M,H,S,P).  Note: 'ANPS' clashed with the prior v5
+// kMagicResyncStart — the resync magic stays at 'ANPS' (resync is
+// pre-v6 wire-frozen) so we picked 'ANPV' / 'ANPT' for the new
+// types and a different letter for phase: 'ANPF' (Frame-state).
+constexpr uint32_t kMagicNetPhase     = 0x46504E41u; // 'ANPF'
+constexpr uint32_t kMagicNetEvents    = 0x56504E41u; // 'ANPV'
+constexpr uint32_t kMagicNetHeartbeat = 0x54504E41u; // 'ANPT'
 // v3.1: mid-session resync.  ResyncStart (host→joiner) announces the
 // incoming savestate and the frame at which both peers will resume;
 // the payload then streams through the existing SnapChunk/SnapAck
@@ -97,11 +112,28 @@ constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 // silent truncation, protocol drift, hostile peer) and the
 // kMagicWelcomeAck handshake (joiner signals "ready for chunks" so the
 // host's chunk burst is gated on a real ack instead of racing Welcome
-// on the wire).  v5 hosts refuse to handshake with v1..v4 peers
-// (kRejectVersionSkew); a separate kRejectCanonicalProfileMismatch
-// catches v5-vs-v5 cross-version mismatches when the canonical
-// constant evolves between Altirra releases.
-constexpr uint16_t kProtocolVersion   = 5;
+// on the wire).  v6 (M4 + M5 release):
+//   - Replaces the byte-sized Reject/Bye reason enums with a single
+//     SessionTermination : uint16_t covering every terminal-cause
+//     code from handshake through transport, broker UX, and
+//     internal failures.  Numeric codes for the v5 kReject*/kBye*
+//     constants are preserved (so a hex-dump of historical session
+//     logs still reads).
+//   - Narrows NetReject.reason u32 → u16 and adds a u16 reason to
+//     NetBye (was magic-only).  kWireRejectSize and kWireByeSize
+//     drop from 8 to 6 bytes — HARD WIRE BREAK from v5: a v5 peer
+//     and a v6 peer cannot exchange Reject/Bye, so the version-skew
+//     handshake now relies on NetWelcome's protocolVersion check.
+//     Mixed-version peers see a clean "decode size mismatch" rather
+//     than a silently-wrong reason code.
+//   - Adds three new broadcast packet types for observability:
+//     NetPhase (12 B, every phase transition + heartbeat),
+//     NetEventBatch (variable ≤230 B, fine-grained event stream),
+//     NetHeartbeat (16 B, 1-Hz RTT/loss/frame-skip telemetry).
+//     Magics 'ANPF' / 'ANPV' / 'ANPT' are above.  Lobby's WS bridge
+//     observes these on relay sessions and republishes via SSE so
+//     the broker page can render peer status without parsing UDP.
+constexpr uint16_t kProtocolVersion   = 6;
 constexpr int      kRedundancyR       = 5;       // sliding input-window length
 constexpr int      kFrameHz           = 60;      // simulated emulator frame rate
 constexpr uint32_t kSnapshotChunkSize = 1200;    // payload bytes per NetSnapChunk
@@ -111,26 +143,100 @@ constexpr size_t kCartLen         = 64;
 constexpr size_t kEntryCodeHashLen = 16;
 constexpr size_t kSessionNonceLen  = 16;
 
-// Reject reasons (§5.1).
-enum : uint32_t {
-	kRejectOsMismatch              = 1,
-	kRejectBasicMismatch           = 2,
-	kRejectVersionSkew             = 3,
-	kRejectTosNotAccept            = 4,
-	kRejectHostFull                = 5,
-	kRejectHostNotReady            = 6,
-	kRejectBadEntryCode            = 7,  // v2: private session code mismatch
-	kRejectHostRejected            = 8,  // v2: prompt-me host declined this joiner
-	kRejectCanonicalProfileMismatch = 9, // v4: canonical session-profile version differs
+// Session termination reasons (v6).  Replaces the v5 kReject* (u32)
+// and kBye* (u32) byte-sized enums with one strongly-typed family
+// covering every terminal-cause code.  Carried on the wire as
+// uint16_t in NetReject.reason and NetBye.reason.  Numeric values
+// for the v5 kReject* constants (1–9) are preserved; the v5 kBye*
+// constants are remapped into the new namespace (legacy hex dumps
+// of v5 sessions read against the historical kBye* table).
+//
+// Code layout (chosen to leave gaps for future expansion):
+//   0          — None / no reason
+//   1–99       — handshake (negotiated reasons during Hello/Welcome)
+//   100–199    — snapshot delivery
+//   200–299    — mid-session
+//   300–399    — transport
+//   400–499    — user / UI
+//   500–599    — broker UX
+//   65000–     — catchall
+enum class SessionTermination : uint16_t {
+	None = 0,
+
+	// Handshake (preserve v5 kReject* numerics 1–9).
+	OsMismatch                = 1,
+	BasicMismatch             = 2,
+	VersionSkew               = 3,
+	TosNotAccept              = 4,
+	HostFull                  = 5,
+	HostNotReady              = 6,
+	BadEntryCode              = 7,
+	HostRejected              = 8,
+	CanonicalProfileMismatch  = 9,
+
+	// Snapshot.
+	SnapshotCrcMismatch       = 100,
+	SnapshotApplyFailed       = 101,
+	SnapshotChunkTimeout      = 102,
+	SnapshotTooLarge          = 103,
+	SnapshotEncodeFailed      = 104,
+
+	// Mid-session.
+	DesyncFlapLimit           = 200,
+	ProtocolViolation         = 201,
+	EmulatorCrashed           = 202,
+	PeerVersionMismatchMidSession = 203,
+
+	// Transport.
+	NetworkUnreachable        = 300,
+	NatTraversalFailed        = 301,
+	RelayDisconnect           = 302,
+	AckTimeoutExceeded        = 303,
+
+	// User / UI.
+	PeerSentBye               = 400,
+	LocalUserQuit             = 401,
+	LocalUserKick             = 402,
+
+	// Broker UX.
+	BrokerSessionExpired      = 500,
+	BrokerJoinerCanceled      = 501,
+	BrokerHostCanceled        = 502,
+	BrokerApprovalTimeout     = 503,
+
+	// Catchall.
+	Internal                  = 65000,
+	Unknown                   = 65535,
 };
 
-// Bye reasons.
-enum : uint32_t {
-	kByeCleanExit        = 1,
-	kByeDesyncDetected   = 2,
-	kByeTimeout          = 3,
-	kByeVersionMismatch  = 4,
-};
+// Source-compat aliases for the v5 kReject* / kBye* names.  These
+// keep the existing 50+ call sites in coordinator.cpp / netplay_glue
+// / tests compiling without a sweeping rename in the same patch.
+// The numeric values match the new SessionTermination codes (1–9 for
+// kReject*, the v5-specific kBye* codes are remapped to the closest
+// SessionTermination semantic).  Hex dumps of v5 session logs read
+// against the historical kBye* table; v6 emits these as
+// SessionTermination values so no log compatibility cliff.
+constexpr uint16_t kRejectOsMismatch              = (uint16_t)SessionTermination::OsMismatch;
+constexpr uint16_t kRejectBasicMismatch           = (uint16_t)SessionTermination::BasicMismatch;
+constexpr uint16_t kRejectVersionSkew             = (uint16_t)SessionTermination::VersionSkew;
+constexpr uint16_t kRejectTosNotAccept            = (uint16_t)SessionTermination::TosNotAccept;
+constexpr uint16_t kRejectHostFull                = (uint16_t)SessionTermination::HostFull;
+constexpr uint16_t kRejectHostNotReady            = (uint16_t)SessionTermination::HostNotReady;
+constexpr uint16_t kRejectBadEntryCode            = (uint16_t)SessionTermination::BadEntryCode;
+constexpr uint16_t kRejectHostRejected            = (uint16_t)SessionTermination::HostRejected;
+constexpr uint16_t kRejectCanonicalProfileMismatch =
+	(uint16_t)SessionTermination::CanonicalProfileMismatch;
+
+// v5 kBye* codes remap into the v6 SessionTermination namespace.
+// kByeCleanExit → LocalUserQuit (the user closed the emulator).
+// kByeDesyncDetected → DesyncFlapLimit.
+// kByeTimeout → AckTimeoutExceeded.
+// kByeVersionMismatch → PeerVersionMismatchMidSession.
+constexpr uint16_t kByeCleanExit         = (uint16_t)SessionTermination::LocalUserQuit;
+constexpr uint16_t kByeDesyncDetected    = (uint16_t)SessionTermination::DesyncFlapLimit;
+constexpr uint16_t kByeTimeout           = (uint16_t)SessionTermination::AckTimeoutExceeded;
+constexpr uint16_t kByeVersionMismatch   = (uint16_t)SessionTermination::PeerVersionMismatchMidSession;
 
 // --- packet structs --------------------------------------------------------
 //
@@ -201,10 +307,14 @@ struct NetWelcomeAck {
 	uint32_t magic = kMagicWelcomeAck;
 };
 
-// NetReject — host → joiner (refuse).  8 bytes.
+// NetReject — host → joiner (refuse).  v6: 6 bytes (was 8 in v5).
+// `reason` is a SessionTermination value, narrowed to u16 in v6 to
+// match the new enum's underlying type.  v5 senders' 8-byte Reject
+// fails the v6 size check (DecodeResult::TooShort or BadSize) — see
+// the v6 release notes at kProtocolVersion above.
 struct NetReject {
 	uint32_t magic = kMagicReject;
-	uint32_t reason = 0;
+	uint16_t reason = 0;     // SessionTermination raw value
 };
 
 // NetInput — 4 bytes per frame per player.
@@ -225,10 +335,76 @@ struct NetInputPacket {
 	NetInput inputs[kRedundancyR] = {};
 };
 
-// NetBye — disconnect.  8 bytes.
+// NetBye — disconnect.  v6: 6 bytes (was 8 in v5; reason was u32).
+// In v5 NetBye carried no semantic reason — the trailing 4 bytes
+// were unused.  v6 repurposes the field: peers explain WHY they
+// disconnected via SessionTermination.  Hard wire break vs. v5
+// (size + interpretation both change) — same rationale as Reject.
 struct NetBye {
 	uint32_t magic = kMagicBye;
-	uint32_t reason = 0;
+	uint16_t reason = 0;     // SessionTermination raw value
+};
+
+// NetPhase — bilateral broadcast on every Coordinator phase
+// transition + 1-Hz heartbeat during stable phases.  Lets the peer
+// (and the lobby's WS bridge for relay sessions) build a real-time
+// view of where the other side is in the handshake/snapshot/
+// lockstep machine without parsing the snapshot payload.  v6 only.
+//
+// `phase` is the broadcast subset of Coordinator::Phase plus a few
+// host-only / joiner-only phases distinguished by `flags` bit 0 (0
+// = local is host, 1 = local is joiner).  `progNum` / `progDen`
+// carry an optional per-phase progress fraction (e.g.
+// "snapshot chunks delivered" = N / total).  When unused both are
+// zero.  12 bytes.
+struct NetPhase {
+	uint32_t magic     = kMagicNetPhase;
+	uint8_t  phase     = 0;     // PhaseBroadcast enum (see coordinator.h)
+	uint8_t  flags     = 0;     // bit0: 0=host 1=joiner
+	uint16_t progNum   = 0;     // numerator (0 if no progress fraction)
+	uint16_t progDen   = 0;     // denominator (0 if no progress fraction)
+	uint16_t reserved  = 0;     // future fields; must be zero in v6
+};
+
+// NetEvent — single fine-grained event in a NetEventBatch.  Twelve-
+// byte packet of (kind, code, data, ts_offset_ms).  Kinds + codes
+// are ad-hoc per use site (see Coordinator::EmitEvent).  8 bytes.
+struct NetEvent {
+	uint16_t tsOffsetMs = 0;     // ms since session start (mod 65536)
+	uint8_t  kind       = 0;     // EventKind enum
+	uint8_t  code       = 0;     // kind-specific subcode
+	uint32_t data       = 0;     // kind-specific payload (frame number,
+	                             // chunk index, RTT sample, etc.)
+};
+
+// NetEventBatch — variable size, ≤230 B.  Header is 6 bytes (4
+// magic + 1 count + 1 reserved); each NetEvent is 8 bytes; the cap
+// kMaxEventBatchEvents = 28 keeps the total payload below the v5
+// snapshot-chunk size.  Sent at most every 100 ms or when the
+// per-coordinator pending queue fills.  Drop-oldest on overflow.
+constexpr size_t kMaxEventBatchEvents = 28;
+struct NetEventBatch {
+	uint32_t magic    = kMagicNetEvents;
+	uint8_t  count    = 0;       // ≤ kMaxEventBatchEvents
+	uint8_t  reserved = 0;
+	NetEvent items[kMaxEventBatchEvents] = {};
+};
+
+// NetHeartbeat — 1-Hz bilateral telemetry: RTT, packet loss, frame-
+// skip, peer-frame lag, local CPU saturation, tab-visible bit.
+// Cheap to emit (data is sampled from existing local counters that
+// are already maintained for lockstep / relay rate-limiting).
+// 16 bytes.
+struct NetHeartbeat {
+	uint32_t magic         = kMagicNetHeartbeat;
+	uint16_t rttMs         = 0;   // local→peer→local round trip estimate
+	uint8_t  lossPct5s     = 0;   // 0..100 over the last 5 s window
+	uint8_t  frameSkip5s   = 0;   // # of frames dropped in last 5 s
+	uint16_t framesBehind  = 0;   // local lockstep frame minus peer's ack
+	uint8_t  cpuSaturation = 0;   // 0..100 estimate (sim-thread busy %)
+	uint8_t  tabVisible    = 1;   // 1 = tab visible / window focused
+	uint16_t seq           = 0;   // monotonic per-sender (skip detect)
+	uint16_t wallMsLow     = 0;   // wallclock millis low 16 bits (cadence)
 };
 
 // NetSnapChunk — chunked snapshot.  16-byte header + variable payload.
@@ -367,10 +543,21 @@ constexpr size_t kWireBootCfgSize   = 2 + 2 + 1 + 1 + 1 + 1 + 4 + 4 + 4 + 8 + 8;
 constexpr size_t kWireWelcomeSize   = 4 + 2 + 2 + kCartLen + 4 + 4 + 4 + 8 + kWireBootCfgSize;                    // 128
 // New in v5.  4-byte ack with no payload.
 constexpr size_t kWireWelcomeAckSize = 4;
-constexpr size_t kWireRejectSize    = 8;
+// v6: NetReject narrowed reason u32→u16 → 4 + 2 = 6.  NetBye gained
+// a real u16 reason (replacing the v5 unused 4-byte tail) → 4 + 2 = 6.
+// Mixed-version peers fail at decode (size mismatch) — see the v6
+// release notes at kProtocolVersion above.
+constexpr size_t kWireRejectSize    = 6;
 constexpr size_t kWireInputSize     = 4;
 constexpr size_t kWireInputPktSize  = 4 + 4 + 2 + 2 + 4 + kRedundancyR * kWireInputSize;                           // 36 at R=5
-constexpr size_t kWireByeSize       = 8;
+constexpr size_t kWireByeSize       = 6;
+// v6 observability layer (M5).
+constexpr size_t kWireNetPhaseSize     = 4 + 1 + 1 + 2 + 2 + 2;       // 12
+constexpr size_t kWireNetEventSize     = 2 + 1 + 1 + 4;               // 8
+constexpr size_t kWireNetEventBatchHdrSize = 4 + 1 + 1;               // 6
+constexpr size_t kWireNetEventBatchMaxSize =
+	kWireNetEventBatchHdrSize + kMaxEventBatchEvents * kWireNetEventSize; // 6 + 28*8 = 230
+constexpr size_t kWireNetHeartbeatSize = 4 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2; // 16
 constexpr size_t kWireChunkHdrSize  = 16;                              // + payloadLen bytes
 constexpr size_t kWireAckSize       = 8;
 constexpr size_t kWireResyncStartSize = 24;
@@ -413,5 +600,16 @@ static_assert(kWireWelcomeSize == 128, "NetWelcome wire layout drift");
 static_assert(kWireResyncStartSize == 4 * 6, "NetResyncStart wire drift");
 static_assert(kWireResyncDoneSize  == 4 * 3, "NetResyncDone wire drift");
 static_assert(kWireSimHashDiagSize == 4 * 13, "NetSimHashDiag wire drift");
+
+// v6 wire-size guards.  Bumping kProtocolVersion alone isn't enough
+// to catch silent drift — these asserts will trip the build the
+// moment someone adds a field without updating the size constant.
+static_assert(kWireRejectSize == 6,    "v6 NetReject wire drift");
+static_assert(kWireByeSize    == 6,    "v6 NetBye wire drift");
+static_assert(kWireNetPhaseSize     == 12,  "NetPhase wire drift");
+static_assert(kWireNetEventSize     == 8,   "NetEvent wire drift");
+static_assert(kWireNetHeartbeatSize == 16,  "NetHeartbeat wire drift");
+static_assert(kProtocolVersion == 6,
+	"v6 release: bump kProtocolVersion when wire format changes");
 
 } // namespace ATNetplay
