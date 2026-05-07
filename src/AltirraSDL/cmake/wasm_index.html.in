@@ -2464,6 +2464,35 @@
           setTimeout(() => { issuesMenu.open = false; }, 0);
         });
       }
+
+      // Viewport clamp.  The popup is anchored with `right: 0` to
+      // its <details> parent, so when the bar wraps to a second row
+      // and the Issues button lands near the LEFT edge of the page,
+      // the popup unfolds off-screen leftward.  Same in left-bar
+      // (vertical) mode if the bar is on the right side.  Translate
+      // the popup back into the viewport — keep it pinned to the
+      // natural anchor when it already fits.
+      function clampIssuesPop() {
+        if (!issuesMenu.open || !issuesPop) return;
+        // Reset prior translation so we measure the natural position.
+        issuesPop.style.transform = '';
+        const r = issuesPop.getBoundingClientRect();
+        const margin = 8;
+        let dx = 0;
+        if (r.left < margin) {
+          dx = margin - r.left;                        // push right
+        } else if (r.right > window.innerWidth - margin) {
+          dx = (window.innerWidth - margin) - r.right; // push left
+        }
+        if (dx !== 0) {
+          issuesPop.style.transform = 'translateX('
+            + Math.round(dx) + 'px)';
+        }
+      }
+      issuesMenu.addEventListener('toggle', clampIssuesPop);
+      // Re-clamp on viewport resize while the popup is open (mobile
+      // rotate, browser pane resize, OSK show/hide).
+      window.addEventListener('resize', clampIssuesPop);
     }
 
     // ───────────────────────────────────────────────────────────────────
