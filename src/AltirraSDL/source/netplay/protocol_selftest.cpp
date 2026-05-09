@@ -36,11 +36,12 @@ static void testWireSizes() {
 	// v6: NetReject reason u32→u16 (8→6); NetBye gains u16 reason (8→6).
 	CHECK(kWireRejectSize         == 6);
 	CHECK(kWireByeSize            == 6);
-	CHECK(kWireInputPktSize       == 36);
+	CHECK(kWireInputPktSize       == 41);   // v7: NetInput +1 byte for rttClass
+	CHECK(kWireInputSize          == 5);    // v7
 	CHECK(kWireChunkHdrSize       == 16);
 	CHECK(kWireAckSize            == 8);
 	CHECK(kRedundancyR            == 5);
-	CHECK(kProtocolVersion        == 6);
+	CHECK(kProtocolVersion        == 7);
 	// v6 observability layer.
 	CHECK(kWireNetPhaseSize       == 12);
 	CHECK(kWireNetEventSize       == 8);
@@ -227,6 +228,7 @@ static void testInputPacketRoundTrip() {
 		in.inputs[i].buttons  = (uint8_t)(0x10 + i);
 		in.inputs[i].keyScan  = (uint8_t)(0x20 + i);
 		in.inputs[i].extFlags = (uint8_t)(0x30 + i);
+		in.inputs[i].rttClass = (uint8_t)(0x40 + i);   // v7
 	}
 
 	uint8_t buf[kMaxDatagramSize];
@@ -244,6 +246,7 @@ static void testInputPacketRoundTrip() {
 		CHECK(out.inputs[i].buttons  == (uint8_t)(0x10 + i));
 		CHECK(out.inputs[i].keyScan  == (uint8_t)(0x20 + i));
 		CHECK(out.inputs[i].extFlags == (uint8_t)(0x30 + i));
+		CHECK(out.inputs[i].rttClass == (uint8_t)(0x40 + i));   // v7
 	}
 
 	// Oversize count is rejected by both encoder and decoder.

@@ -2531,7 +2531,7 @@ int main(int argc, char *argv[]) {
 			// vsync block here would turn a 0.5 ms wait into a
 			// 16.7 ms wait and halve aggregate throughput to
 			// ~30 fps (both peers block symmetrically each
-			// frame).  See NETPLAY_DESIGN_PLAN.md §6.
+			// frame).  See docs/netplay-architecture.md §6.
 			if (!ATNetplayGlue::CanAdvanceThisTick()) {
 				const uint64_t stallStartMs = SDL_GetTicks();
 				const uint64_t stallBudgetMs = 12;  // < 1 frame

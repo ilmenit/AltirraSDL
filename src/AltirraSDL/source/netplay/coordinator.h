@@ -299,7 +299,12 @@ public:
 
 	// ---- lockstep frame API (valid only in Lockstepping) -----------------
 
-	void SubmitLocalInput(const NetInput& in) { mLoop.SubmitLocalInput(in); }
+	// On the host side this stamps the current smoothed-RTT bucket
+	// into the rttClass byte before forwarding to the lockstep loop;
+	// the joiner forwards in.rttClass as-is (the wire treats joiner
+	// stamps as zero-meaning, see packets.h NetInput).  Inline body in
+	// coordinator.cpp keeps the dependency on mPeerRttMsEwma local.
+	void SubmitLocalInput(const NetInput& in);
 	bool CanAdvance() const { return mLoop.CanAdvance(); }
 	bool GetInputsForCurrentFrame(NetInput& p1, NetInput& p2) const {
 		return mLoop.GetInputsForCurrentFrame(p1, p2);

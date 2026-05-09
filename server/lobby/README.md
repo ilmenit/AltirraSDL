@@ -73,8 +73,8 @@ The server exposes **two** sockets:
 - `PORT` (TCP, default 8080) — the HTTP session directory.
 - `UDP_REFLECTOR_PORT` (UDP, default 8081) — a stateless STUN-lite
   reflector used by netplay hosts to discover their public
-  endpoint. See `docs/netplay-nat.md` in the client repo for the
-  wire format.
+  endpoint. See `docs/netplay-architecture.md` §8.4 in the client
+  repo for the wire format.
 
 Firewalls / security lists must permit **both** ports for netplay
 hosts behind NAT to be reachable from the public internet.

@@ -51,11 +51,15 @@ your title.
    https://your-site/altirra/?embed=1&lib=mygame.atr&hardware=800xl
    ```
 
-   …or embed it in your existing page with an iframe:
+   …or embed it in your existing page with an iframe.  The `src`
+   below is **page-relative**: it works whether your bundle sits at
+   `/altirra/`, `/atari/altirra/`, `/games/altirra/`, or any other
+   prefix, as long as the iframe-hosting page is in the parent
+   directory of the bundle:
 
    ```html
    <iframe
-     src="/altirra/?embed=1&lib=mygame.atr&hardware=800xl&pal=1"
+     src="altirra/?embed=1&lib=mygame.atr&hardware=800xl&pal=1"
      width="800" height="600"
      style="border:0; aspect-ratio: 4 / 3; max-width: 100%;"
      allow="autoplay; fullscreen; gamepad"
@@ -64,6 +68,39 @@ your title.
    </iframe>
    ```
 
+   > **Watch the leading slash.**  `src="/altirra/..."` (with `/`)
+   > is *root-relative* and only works when the bundle is at the
+   > site root.  If the page is `https://your-site/atari/foo.htm`
+   > and the bundle is at `https://your-site/atari/altirra/`, use
+   > `src="altirra/..."` (no leading slash) or the full path
+   > `src="/atari/altirra/..."`.  A 404 on the iframe is almost
+   > always this.
+
 That is the whole tutorial.  See **EMBED.md** for the full URL
 reference, custom firmware, layout overrides for non-standard
 deploy paths, and the security model.
+
+## Common display tweaks
+
+Add any of these to the URL to override the default look.  All four
+work together — combine them to taste.
+
+| Param      | Values                                     | What it does |
+|------------|--------------------------------------------|--------------|
+| `crt`      | `0` / `1`                                  | Disable / enable the CRT screen effects (scanlines, bloom, vignette).  `crt=0` gives a flat, sharp look — best for text-heavy titles or readability. |
+| `filter`   | `point`, `bilinear`, `sharp`, `bicubic`, `auto` | Display upscale filter.  `point` = pixel-perfect (nearest-neighbour); `bilinear` = soft; `sharp` = sharp-bilinear; `auto` = renderer's choice. |
+| `artifact` | `none`, `auto`, `ntsc`, `pal`, `ntschi`, `palhi` | NTSC/PAL color artifacting.  `none` kills color smearing on text; `auto` matches the active video standard. |
+| `vkbd`     | `0` / `1`                                  | Show / hide the on-screen Atari keyboard at startup.  Useful for embeds whose game accepts text input. |
+
+**Pixel-perfect text** for a PAL game with no color tricks:
+
+```
+?embed=1&lib=mygame.xex&hardware=800xl&pal=1&crt=0&filter=point&artifact=none
+```
+
+**Authentic CRT look + a virtual keyboard** for a touchscreen
+embed of a typing game:
+
+```
+?embed=1&lib=type.atr&hardware=800xl&crt=1&vkbd=1
+```

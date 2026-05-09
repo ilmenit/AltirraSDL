@@ -3,7 +3,7 @@
 // Typed facade over http_minimal.cpp + a tiny hand-rolled JSON reader.
 // Talks to the altirra-sdl-lobby reference server (C++, deployed at
 // http://lobby.atari.org.pl:8080 → 158.180.27.70 — see
-// NETPLAY_DESIGN_PLAN.md §11).
+// docs/netplay-architecture.md §7).
 //
 // The lobby is a session directory, not a rendezvous server.  Calls:
 //

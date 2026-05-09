@@ -245,6 +245,137 @@ static void testPeerTimeout() {
 	CHECK(l.PeerTimedOut(1101, 1000));    // 1001 ms since — timed out
 }
 
+static void testRatchetTargetMapping() {
+	// Spot-check the deterministic threshold function.  Both peers
+	// must compute identical D targets from the same rttClass byte
+	// or the ratchet desyncs the input rings.
+	CHECK(LockstepLoop::TargetDelayFromRttClass(0)   == 3);   // floor
+	CHECK(LockstepLoop::TargetDelayFromRttClass(4)   == 3);   // 2+1=3 → floor
+	CHECK(LockstepLoop::TargetDelayFromRttClass(8)   == 4);   // 2+2
+	CHECK(LockstepLoop::TargetDelayFromRttClass(64)  == 18);  // 2+16
+	CHECK(LockstepLoop::TargetDelayFromRttClass(112) == 30);  // 2+28 → cap
+	CHECK(LockstepLoop::TargetDelayFromRttClass(255) == 30);  // cap
+
+	// And the round-trip encoding.
+	CHECK(LockstepLoop::RttClassFromMs(0)    == 0);
+	CHECK(LockstepLoop::RttClassFromMs(4)    == 1);
+	CHECK(LockstepLoop::RttClassFromMs(256)  == 64);
+	CHECK(LockstepLoop::RttClassFromMs(2000) == 255);  // cap
+}
+
+static void testRatchetLowRttIsNoOp() {
+	LockstepLoop host, joiner;
+	host.Begin(Slot::Host, 3);
+	joiner.Begin(Slot::Joiner, 3);
+	// Tighten so any spurious bump would fire well within the loop.
+	host.SetRatchetTuning(/*streak*/10, /*modulus*/32);
+	joiner.SetRatchetTuning(/*streak*/10, /*modulus*/32);
+
+	XorShift32 hr(1), jr(2);
+	for (uint32_t i = 0; i < 200; ++i) {
+		NetInput h = genInput(hr); h.rttClass = 0;
+		NetInput j = genInput(jr); j.rttClass = 0;
+		tick(host, joiner, h, j, (uint64_t)i * 16);
+	}
+
+	// At rttClass=0 the target stays at the floor (3) — never exceeds
+	// the current delay, so no bump is ever scheduled.
+	CHECK(host.InputDelay()   == 3);
+	CHECK(joiner.InputDelay() == 3);
+	CHECK(!host.HasPendingDelayBump());
+	CHECK(!joiner.HasPendingDelayBump());
+	CHECK(!host.IsDesynced());
+	CHECK(!joiner.IsDesynced());
+}
+
+static void testRatchetUpAndConverge() {
+	LockstepLoop host, joiner;
+	host.Begin(Slot::Host, 3);
+	joiner.Begin(Slot::Joiner, 3);
+	// Streak=10 frames + modulus=32 lets the test fire a real ratchet
+	// inside ~100 frames instead of the 1024-frame production cadence.
+	host.SetRatchetTuning(/*streak*/10, /*modulus*/32);
+	joiner.SetRatchetTuning(/*streak*/10, /*modulus*/32);
+
+	XorShift32 hr(1), jr(2);
+
+	// Phase A: 5 low-RTT frames — D must stay at 3, nothing scheduled.
+	for (uint32_t i = 0; i < 5; ++i) {
+		NetInput h = genInput(hr); h.rttClass = 0;
+		NetInput j = genInput(jr); j.rttClass = 0;
+		tick(host, joiner, h, j, (uint64_t)i * 16);
+	}
+	CHECK(host.InputDelay()   == 3);
+	CHECK(joiner.InputDelay() == 3);
+
+	// Phase B: 100 high-RTT frames.  rttClass=64 maps to target=18, so
+	// the streak threshold (10) trips fast and a switch is scheduled
+	// at the next modulus-32 boundary.  We cap the loop high enough
+	// that the boundary frame is reached and the switch applies on
+	// both sides.
+	for (uint32_t i = 0; i < 100; ++i) {
+		NetInput h = genInput(hr); h.rttClass = 64;
+		NetInput j = genInput(jr); j.rttClass = 0;
+		tick(host, joiner, h, j, (uint64_t)(5 + i) * 16);
+	}
+
+	// Both peers must agree on the new D and stay in lockstep.
+	CHECK(host.InputDelay()   == joiner.InputDelay());
+	CHECK(host.InputDelay()   == 18);
+	CHECK(joiner.InputDelay() == 18);
+	CHECK(host.CurrentFrame() == joiner.CurrentFrame());
+	CHECK(!host.IsDesynced());
+	CHECK(!joiner.IsDesynced());
+	CHECK(!host.HasPendingDelayBump());
+	CHECK(!joiner.HasPendingDelayBump());
+
+	// Phase C: 60 more frames at high RTT — should keep running cleanly
+	// at the new D without any further desync.  (rttClass=64 maps to
+	// target=18 == current D, so the streak doesn't build again.)
+	const uint32_t startFrame = host.CurrentFrame();
+	for (uint32_t i = 0; i < 60; ++i) {
+		NetInput h = genInput(hr); h.rttClass = 64;
+		NetInput j = genInput(jr); j.rttClass = 0;
+		tick(host, joiner, h, j, (uint64_t)(105 + i) * 16);
+	}
+	CHECK(host.CurrentFrame() > startFrame);
+	CHECK(host.CurrentFrame() == joiner.CurrentFrame());
+	CHECK(!host.IsDesynced());
+	CHECK(!joiner.IsDesynced());
+}
+
+static void testRatchetSwitchFrameAlignment() {
+	// Both peers must compute the SAME pending-switch-frame when they
+	// schedule a bump.  This is the deterministic-coordination property
+	// that lets the design avoid an explicit handshake message.
+	LockstepLoop host, joiner;
+	host.Begin(Slot::Host, 3);
+	joiner.Begin(Slot::Joiner, 3);
+	host.SetRatchetTuning(/*streak*/10, /*modulus*/32);
+	joiner.SetRatchetTuning(/*streak*/10, /*modulus*/32);
+
+	XorShift32 hr(1), jr(2);
+
+	// Drive high-RTT inputs until both sides have a pending switch.
+	// We assert at the first frame BOTH report HasPendingDelayBump,
+	// and check that the scheduled frame matches.
+	uint32_t hostSched = 0, joinerSched = 0;
+	for (uint32_t i = 0; i < 100; ++i) {
+		NetInput h = genInput(hr); h.rttClass = 64;
+		NetInput j = genInput(jr); j.rttClass = 0;
+		tick(host, joiner, h, j, (uint64_t)i * 16);
+		if (host.HasPendingDelayBump() && joiner.HasPendingDelayBump()) {
+			hostSched   = host.PendingDelaySwitchFrame();
+			joinerSched = joiner.PendingDelaySwitchFrame();
+			break;
+		}
+	}
+	CHECK(hostSched != 0);
+	CHECK(hostSched == joinerSched);
+	// Switch frame must be a positive multiple of the modulus.
+	CHECK((hostSched % 32) == 0);
+}
+
 static void testOutgoingPacketShape() {
 	// Just after Begin with inputDelay=3 and no SubmitLocalInput
 	// calls, frames [0, 3) have been pre-filled with zeros (warmup).
@@ -276,6 +407,10 @@ int main() {
 	testWarmupAdvances();
 	testCanonicalSlotOrdering();
 	testPeerTimeout();
+	testRatchetTargetMapping();
+	testRatchetLowRttIsNoOp();
+	testRatchetUpAndConverge();
+	testRatchetSwitchFrameAlignment();
 	testOutgoingPacketShape();
 
 	if (fails == 0) {

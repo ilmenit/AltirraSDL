@@ -125,6 +125,55 @@ The firmware base resolves the same way as the library base, with
 `<meta name="altirra-firmware-base">` and the `?embed=1` page-relative
 default.
 
+### Display look — CRT, filter, artifacting
+
+The gaming-mode default (a deep-link with `?lib=` enters Gaming
+Mode) applies the **Balanced** performance preset: bilinear filter,
+vignette on, screen effects in Basic mode, color artifacting on
+Auto.  This is a sensible default for arcade-style games on a
+phone but it makes pixel-art text fuzzy and adds visible color
+smearing on high-resolution Atari modes (the 80-column GR.0 text
+GTIA puts up at the start of many `.xex` titles).
+
+The four params below override the gaming-mode defaults so an
+embed author can pick the look that fits their game.  Each one is
+optional — leaving the param off keeps whatever the user's saved
+preference / gaming-mode preset chose.
+
+| Parameter   | Allowed values                                          | Effect |
+|-------------|---------------------------------------------------------|--------|
+| `crt`       | `0`, `1`                                                | `0` applies the **Efficient** preset (no scanlines/bloom/distortion/vignette, screen effects off, artifacting off, point filter).  `1` applies **Quality** (full CRT look — scanlines, bloom, distortion, vignette, sharp-bilinear filter, artifacting Auto).  Same routing as the page-bar CRT button. |
+| `filter`    | `point`, `bilinear`, `sharp` (= `sharpbilinear`), `bicubic`, `auto` | Display upscale filter applied AFTER the `crt=` preset.  Lets you keep the CRT look (`crt=1`) but force `filter=point` for crisp text overlays, or vice versa. |
+| `artifact`  | `none`, `ntsc`, `pal`, `ntschi`, `palhi`, `auto`, `autohi` | Color artifacting mode.  `none` is the right pick for any title that draws solid-color graphics or pixel-art text.  `auto` matches the active video standard (PAL → PAL artifacting, NTSC → NTSC).  The `*hi` variants are higher-quality / higher-cost shaders for the same look. |
+| `vkbd`      | `0`, `1`                                                | Show or hide the on-screen Atari keyboard at startup.  In embed mode the page-bar **⌨ Keyboard** button is hidden along with all the other chrome, so this is the only way for an embed visitor to reach the keyboard if the game needs it.  The keyboard can still be dismissed with **F12** (PC keyboard) or by tapping the X icon (touch). |
+
+The application order at runtime is:
+
+1. Saved settings + gaming-mode performance preset (Efficient /
+   Balanced / Quality) load from the user's profile.
+2. `crt=0|1` runs (if present) — overwrites `filter` and `artifact`
+   to the preset's values.
+3. `filter=` runs (if present) — overrides whatever `crt=` set.
+4. `artifact=` runs (if present) — overrides whatever `crt=` set.
+5. `vkbd=` runs (if present) — independent of the above.
+
+So `?crt=1&filter=point&artifact=none` is a valid combination: it
+gives you scanlines + bloom + vignette but with crisp pixel text
+and no color smearing.
+
+**Common recipes:**
+
+```
+# Pixel-perfect text, no CRT effects, no color artifacting.
+?embed=1&lib=mygame.xex&pal=1&crt=0&filter=point&artifact=none
+
+# Authentic CRT look (default) but artifacting disabled.
+?embed=1&lib=mygame.xex&pal=1&artifact=none
+
+# Soft scaling with a virtual keyboard for touchscreen visitors.
+?embed=1&lib=adventure.atr&hardware=800xl&filter=bilinear&vkbd=1
+```
+
 ### Pinning a kernel by name
 
 If you need the emulator to choose a specific kernel **type** (rather
@@ -227,7 +276,7 @@ frame's height proportional to its width when the page is resized.
 
 ```html
 <iframe
-  src="/altirra/?embed=1&lib=mygame.atr&hardware=800xl"
+  src="altirra/?embed=1&lib=mygame.atr&hardware=800xl"
   width="800" height="600"
   style="border:0; aspect-ratio: 4 / 3; max-width: 100%;"
   allow="autoplay; fullscreen; gamepad"
@@ -235,6 +284,19 @@ frame's height proportional to its width when the page is resized.
   title="Play MyGame">
 </iframe>
 ```
+
+The `src` above is intentionally **page-relative** (no leading
+`/`).  The browser resolves it against the URL of the document
+that contains the iframe, so the example works whether your page
+is at `/index.html`, `/atari/thelady.htm`, or
+`/games/2026/foo/bar.html`, as long as the bundle is at
+`<that-directory>/altirra/`.  A *root-relative* `src="/altirra/..."`
+(with the leading slash) only works when the bundle sits at the
+**site root**; a page at `https://your-site/atari/foo.htm` with an
+`src="/altirra/..."` iframe will load
+`https://your-site/altirra/...`, which is almost certainly not
+where you put the bundle.  When in doubt, write the full path
+explicitly: `src="/atari/altirra/?embed=1&..."`.
 
 For mobile, drop `width`/`height` and let CSS sizing do the work
 (`max-width: 100%; aspect-ratio: 4 / 3;` is enough).
@@ -260,6 +322,19 @@ The embed inherits the **same-origin** model the lobby already uses:
   constraint, not a quirk of the emulator.
 
 ## Troubleshooting
+
+**The iframe shows "Not Found" / 404 instead of the emulator.**
+The iframe `src` is pointing at a path that doesn't exist on your
+server.  By far the most common cause is a leading `/` on the
+`src` when the bundle is *not* at the site root.  If the page is
+at `https://your-site/atari/thelady.htm` and the bundle is at
+`https://your-site/atari/altirra/`, then `src="/altirra/..."`
+resolves to `https://your-site/altirra/` (no `/atari/`), which is
+the wrong directory.  Use either the page-relative form
+`src="altirra/..."` (no leading slash) or the full root-relative
+path `src="/atari/altirra/..."`.  Open DevTools' Network tab,
+look at the failing iframe request URL, and adjust the `src`
+until the URL Apache reports matches the directory you uploaded.
 
 **The canvas appears but the game never boots.**  Open DevTools'
 console.  `[lib-deeplink]` lines log every parsed parameter and

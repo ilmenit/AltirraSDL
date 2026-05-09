@@ -79,6 +79,20 @@
     // right type-defaults.  No CLI arg is pushed for these — the
     // simulator picks up the type override automatically.
     firmwarePaths: [],
+    // Embed-kit display overrides parsed from the URL.  Each is left
+    // null when the corresponding param is absent so the deep-link
+    // applier can distinguish "user didn't specify" (keep saved /
+    // gaming-mode default) from "user wants this exact value".
+    //   crt:        true|false|null  (?crt=0|1)
+    //   filter:     0..4|null         (?filter=point|bilinear|sharp|bicubic|auto)
+    //   artifact:   0..6|null         (?artifact=none|ntsc|pal|ntschi|palhi|auto|autohi)
+    //   vkbd:       true|false|null   (?vkbd=0|1)
+    // Applied in onRuntimeReady AFTER the gaming-mode preset has run,
+    // so an explicit ?crt=0 wins over Balanced's vignette default.
+    crt:         null,
+    filter:      null,
+    artifact:    null,
+    vkbd:        null,
   };
 
   // Resolve the same-origin base URL for fetched assets.  The lobby
@@ -268,6 +282,68 @@
         } else {
           log('ignored unknown kernel:', kern);
         }
+      }
+
+      // ?crt=0|1 — master CRT-effect toggle.  Applied post-runtime via
+      // ATWasmSetCRTEnabled, which routes through the same Gaming-Mode
+      // performance preset (Efficient ↔ Quality) the page bar's CRT
+      // button drives.  Useful for embed authors whose game's
+      // titlescreen text needs pixel-sharp rendering rather than the
+      // gaming-mode default (Balanced: bilinear filter + vignette).
+      var crtRaw = (p.get('crt') || '').trim();
+      if (crtRaw === '0' || crtRaw === '1') {
+        window.__altirraLib.crt = (crtRaw === '1');
+        log('crt=' + (window.__altirraLib.crt ? '1' : '0'));
+      } else if (crtRaw) {
+        log('ignored unknown crt value:', crtRaw);
+      }
+
+      // ?filter=point|bilinear|sharp|bicubic|auto — display upscale
+      // filter.  Maps to the public ATDisplayFilterMode enum (see
+      // uitypes.h).  Applied via ATWasmSetDisplayFilter once the
+      // runtime is ready.  `auto` = AnySuitable (the renderer picks).
+      var filterMap = { point: 0, bilinear: 1, bicubic: 2, auto: 3,
+                        sharp: 4, sharpbilinear: 4 };
+      var filterRaw = (p.get('filter') || '').trim().toLowerCase();
+      if (filterRaw) {
+        if (filterRaw in filterMap) {
+          window.__altirraLib.filter = filterMap[filterRaw];
+          log('filter=' + filterRaw + ' (mode='
+              + window.__altirraLib.filter + ')');
+        } else {
+          log('ignored unknown filter:', filterRaw);
+        }
+      }
+
+      // ?artifact=none|ntsc|pal|ntschi|palhi|auto|autohi — color
+      // artifacting mode.  Maps to ATArtifactMode (see gtia.h).  The
+      // most common embed use is `none` to kill PAL/NTSC color
+      // smearing on titlescreen text.  `auto` lets the simulator pick
+      // based on the active video standard.
+      var artifactMap = { none: 0, ntsc: 1, pal: 2, ntschi: 3,
+                          palhi: 4, auto: 5, autohi: 6 };
+      var artRaw = (p.get('artifact') || '').trim().toLowerCase();
+      if (artRaw) {
+        if (artRaw in artifactMap) {
+          window.__altirraLib.artifact = artifactMap[artRaw];
+          log('artifact=' + artRaw + ' (mode='
+              + window.__altirraLib.artifact + ')');
+        } else {
+          log('ignored unknown artifact:', artRaw);
+        }
+      }
+
+      // ?vkbd=0|1 — show the on-screen Atari keyboard at startup.
+      // Useful for embeds whose game accepts text input or letter-
+      // selection menus, since embed mode hides the page-bar
+      // ⌨ Keyboard button (chrome is suppressed).  Applied via
+      // ATWasmSetVirtualKeyboard once the runtime is ready.
+      var vkbdRaw = (p.get('vkbd') || '').trim();
+      if (vkbdRaw === '0' || vkbdRaw === '1') {
+        window.__altirraLib.vkbd = (vkbdRaw === '1');
+        log('vkbd=' + (window.__altirraLib.vkbd ? '1' : '0'));
+      } else if (vkbdRaw) {
+        log('ignored unknown vkbd value:', vkbdRaw);
       }
 
       if ((p.get('host') || '') === '1') {
@@ -610,6 +686,29 @@
     if (Module._ATWasmSetGamingMode) {
       try { Module._ATWasmSetGamingMode(wantsGaming ? 1 : 0); } catch (e) {}
     }
+
+    // Embed-kit display overrides — applied AFTER the gaming-mode
+    // setter so an explicit ?crt=0 wins over the gaming-mode default
+    // preset (Balanced: bilinear filter + vignette).  Apply order
+    // matters: CRT first because flipping it rewrites filter +
+    // artifact mode (off=Efficient → Point + None, on=Quality →
+    // SharpBilinear + Auto), then filter/artifact let an embed
+    // author override one knob without disabling the rest of the
+    // CRT look (e.g. ?crt=1&filter=point keeps scanlines + bloom but
+    // pins the upscale to nearest-neighbour for crisp text).
+    if (lib.crt !== null && Module._ATWasmSetCRTEnabled) {
+      try { Module._ATWasmSetCRTEnabled(lib.crt ? 1 : 0); } catch (e) {}
+    }
+    if (lib.filter !== null && Module._ATWasmSetDisplayFilter) {
+      try { Module._ATWasmSetDisplayFilter(lib.filter); } catch (e) {}
+    }
+    if (lib.artifact !== null && Module._ATWasmSetArtifactMode) {
+      try { Module._ATWasmSetArtifactMode(lib.artifact); } catch (e) {}
+    }
+    if (lib.vkbd !== null && Module._ATWasmSetVirtualKeyboard) {
+      try { Module._ATWasmSetVirtualKeyboard(lib.vkbd ? 1 : 0); } catch (e) {}
+    }
+
     // Broker mode shows the "Starting…" overlay until lockstep so
     // the user sees something happening while the netplay handshake
     // runs.  Set BEFORE the broker session adoption so the first

@@ -70,8 +70,8 @@ enum class Screen {
 // -----------------------------------------------------------------------
 // Hosted games — the list of games a user has queued up for hosting.
 // Each entry translates into one lobby listing + one UDP port when
-// Enabled and the user's activity allows it.  See the netplay design
-// plan (NETPLAY_DESIGN_PLAN.md) for the activity-driven state
+// Enabled and the user's activity allows it.  See
+// docs/netplay-architecture.md for the activity-driven state
 // transitions.
 // -----------------------------------------------------------------------
 

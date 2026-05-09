@@ -2162,6 +2162,22 @@ void Coordinator::HandleInputPacket(const NetInputPacket& pkt, uint64_t nowMs) {
 	mLoop.OnPeerInputPacket(pkt, nowMs);
 }
 
+void Coordinator::SubmitLocalInput(const NetInput& in) {
+	NetInput stamped = in;
+	// Only the host writes a meaningful rttClass — the joiner's value
+	// is ignored by the ratchet (see lockstep.cpp AuthoritativeRttClass)
+	// so we explicitly zero it for the joiner side instead of trusting
+	// the caller.  The host's value comes from the same EWMA the
+	// heartbeat layer publishes, quantised via LockstepLoop's static
+	// helper to keep the encoding rule in one place.
+	if (mLoop.GetSlot() == Slot::Host) {
+		stamped.rttClass = LockstepLoop::RttClassFromMs(mPeerRttMsEwma);
+	} else {
+		stamped.rttClass = 0;
+	}
+	mLoop.SubmitLocalInput(stamped);
+}
+
 void Coordinator::OnFrameAdvanced(uint32_t simStateHash) {
 	if (mPhase != Phase::Lockstepping) return;
 	mLoop.OnFrameAdvanced(simStateHash);

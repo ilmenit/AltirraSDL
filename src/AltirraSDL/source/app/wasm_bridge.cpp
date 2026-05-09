@@ -86,6 +86,7 @@ extern ATSimulator g_sim;
 #include "../ui/mobile/ui_mobile.h"
 #include "../ui/ui_virtual_keyboard.h"
 #include "../display/display_backend.h"
+#include "uitypes.h"  // ATDisplayFilterMode for ATWasmSetDisplayFilter
 extern ATUIState g_uiState;
 extern ATMobileUIState g_mobileState;
 
@@ -1487,6 +1488,55 @@ void ATWasmToggleVirtualKeyboard() {
 	g_uiState.showVirtualKeyboard = !g_uiState.showVirtualKeyboard;
 	if (!g_uiState.showVirtualKeyboard)
 		ATUIVirtualKeyboard_ReleaseAll(g_sim);
+}
+
+// Direct setters for the embed-kit URL params (?crt= / ?vkbd= /
+// ?filter= / ?artifact=).  Each takes a small int the deep-link JS
+// already validated against a fixed allow-list.  Keeping these as
+// thin wrappers around the existing setters means the URL surface
+// stays trivially auditable from the C side: out-of-range values
+// simply hit the default branch and no-op.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetCRTEnabled(int on) {
+	// Reuse the page-bar toggle's logic by short-circuiting when the
+	// requested state already matches.  ATWasmToggleCRT clears any
+	// active librashader preset, applies Quality (preset 2) on the
+	// off→on edge and Efficient (preset 0) on on→off, and persists
+	// the choice via SaveMobileConfig.
+	const bool isOn = (g_uiState.screenEffectsMode != ATUIState::kSFXMode_None);
+	const bool wantOn = (on != 0);
+	if (isOn == wantOn) return;
+	ATWasmToggleCRT();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetVirtualKeyboard(int on) {
+	const bool wantOn = (on != 0);
+	if (g_uiState.showVirtualKeyboard == wantOn) return;
+	g_uiState.showVirtualKeyboard = wantOn;
+	if (!wantOn)
+		ATUIVirtualKeyboard_ReleaseAll(g_sim);
+}
+
+// Display filter mode setter.  The int parameter matches the public
+// ATDisplayFilterMode enum (0=Point, 1=Bilinear, 2=Bicubic,
+// 3=AnySuitable, 4=SharpBilinear).  Out-of-range values are ignored.
+extern void ATUISetDisplayFilterMode(ATDisplayFilterMode mode);
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetDisplayFilter(int mode) {
+	if (mode < 0 || mode >= (int)kATDisplayFilterModeCount) return;
+	ATUISetDisplayFilterMode((ATDisplayFilterMode)mode);
+}
+
+// Artifacting mode setter.  Maps directly to ATArtifactMode:
+//   0=None  1=NTSC  2=PAL  3=NTSCHi  4=PALHi  5=Auto  6=AutoHi
+// The deep-link JS only forwards the values the embed kit
+// documents (none / auto / ntsc / ntschi / pal / palhi); the rest
+// of the range is reserved for future expansion.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetArtifactMode(int mode) {
+	if (mode < 0 || mode >= (int)ATArtifactMode::Count) return;
+	g_sim.GetGTIA().SetArtifactingMode((ATArtifactMode)mode);
 }
 
 // JS-side bar button (MENU…).  Opens the Gaming-Mode hamburger menu

@@ -4,9 +4,9 @@
 // implementation in altirra-netplay-poc/protocol/, which has been
 // validated end-to-end against itself and the reference lobby server.
 //
-// See NETPLAY_DESIGN_PLAN.md §5 for the authoritative spec.  Magics
-// are ASCII "ANP" + role letter, read as little-endian uint32 — so
-// the bytes on the wire always begin with 41 4E 50 XX.
+// See docs/netplay-architecture.md §4 for the authoritative spec.
+// Magics are ASCII "ANP" + role letter, read as little-endian uint32
+// — so the bytes on the wire always begin with 41 4E 50 XX.
 //
 // The Go PoC's NetHello did NOT carry an entry-code hash; this C++
 // version does (§5.1, §9.3).  Protocol version is therefore bumped
@@ -145,7 +145,17 @@ constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 //     Magics 'ANPF' / 'ANPV' / 'ANPT' are above.  Lobby's WS bridge
 //     observes these on relay sessions and republishes via SSE so
 //     the broker page can render peer status without parsing UDP.
-constexpr uint16_t kProtocolVersion   = 6;
+// v7 (dynamic input-delay ratchet): NetInput grows from 4 to 5 bytes
+// to carry an rttClass byte stamped by the host.  Both peers run the
+// same deterministic threshold + ratchet logic on the host's stamped
+// rttClass(F), agreeing to bump the input-delay D at the next
+// frame % kSwitchModulus boundary without an explicit handshake.
+// See docs/netplay-architecture.md §11.4 for the design rationale,
+// and lockstep.{h,cpp} EvaluateDelayRatchet for the apply path.
+// Wire-incompatible with v6: v6 peers expect kWireInputSize=4 and
+// will read the 5-byte v7 inputs as misaligned garbage.  Version
+// skew is detected by the existing NetWelcome.protocolVersion check.
+constexpr uint16_t kProtocolVersion   = 7;
 constexpr int      kRedundancyR       = 5;       // sliding input-window length
 constexpr int      kFrameHz           = 60;      // simulated emulator frame rate
 constexpr uint32_t kSnapshotChunkSize = 1200;    // payload bytes per NetSnapChunk
@@ -329,12 +339,31 @@ struct NetReject {
 	uint16_t reason = 0;     // SessionTermination raw value
 };
 
-// NetInput — 4 bytes per frame per player.
+// NetInput — 5 bytes per frame per player (v7).
+//
+// rttClass is the host's smoothed RTT estimate at the wall frame this
+// input was captured, quantised to a single byte (4 ms per unit, max
+// ≈1020 ms).  Only the host populates it; the joiner writes 0.  The
+// byte rides inside NetInput rather than NetInputPacket so it survives
+// the R=5 redundancy window unchanged — the rttClass associated with
+// frame F is whatever the host stamped when it captured F, regardless
+// of which packet redundantly delivered it.
+//
+// Both peers see the same rttClass(F) on their authoritative ring
+// (the host's local ring on the host side, the peer ring on the
+// joiner side) and run the same deterministic threshold + ratchet
+// logic on it (see lockstep.{h,cpp} EvaluateDelayRatchet).  The
+// determinism guarantee for THIS field is "same value on both sides
+// for any given F" — not bit-stable across replays of a session,
+// since rttClass is itself a measurement of network conditions at
+// stamp time.  Replays must record the input stream including the
+// rttClass byte (the existing replay design already does this).
 struct NetInput {
 	uint8_t stickDir = 0;  // bits: up|down|left|right (low 4 bits)
 	uint8_t buttons  = 0;  // trig|start|select|option|reset
 	uint8_t keyScan  = 0;  // ATUIGetScanCodeForVirtualKey() or 0
 	uint8_t extFlags = 0;  // bit 0: paddle/5200 extension follows (v2 reserved)
+	uint8_t rttClass = 0;  // v7: host-stamped RTT bucket; 0 on joiner
 };
 
 // NetInputPacket — 36 bytes at R=5.  Hot path, sent every frame per peer.
@@ -560,8 +589,8 @@ constexpr size_t kWireWelcomeAckSize = 4;
 // Asymmetric wire compatibility with v5 — see the kProtocolVersion
 // comment above for the full v5↔v6 decode-rule analysis.
 constexpr size_t kWireRejectSize    = 6;
-constexpr size_t kWireInputSize     = 4;
-constexpr size_t kWireInputPktSize  = 4 + 4 + 2 + 2 + 4 + kRedundancyR * kWireInputSize;                           // 36 at R=5
+constexpr size_t kWireInputSize     = 5;                                                                          // v7: +rttClass
+constexpr size_t kWireInputPktSize  = 4 + 4 + 2 + 2 + 4 + kRedundancyR * kWireInputSize;                           // 41 at R=5 (v7)
 constexpr size_t kWireByeSize       = 6;
 // v6 observability layer (M5).
 constexpr size_t kWireNetPhaseSize     = 4 + 1 + 1 + 2 + 2 + 2;       // 12
@@ -621,7 +650,9 @@ static_assert(kWireByeSize    == 6,    "v6 NetBye wire drift");
 static_assert(kWireNetPhaseSize     == 12,  "NetPhase wire drift");
 static_assert(kWireNetEventSize     == 8,   "NetEvent wire drift");
 static_assert(kWireNetHeartbeatSize == 16,  "NetHeartbeat wire drift");
-static_assert(kProtocolVersion == 6,
-	"v6 release: bump kProtocolVersion when wire format changes");
+static_assert(kWireInputSize    == 5,    "v7 NetInput wire drift");
+static_assert(kWireInputPktSize == 41,   "v7 NetInputPacket wire drift");
+static_assert(kProtocolVersion == 7,
+	"v7 release: bump kProtocolVersion when wire format changes");
 
 } // namespace ATNetplay

@@ -14,7 +14,8 @@ covers:
 5. [Troubleshooting](#troubleshooting).
 
 For the protocol-level design (wire formats, determinism strategy,
-packet flow), see [NETPLAY_DESIGN_PLAN.md](NETPLAY_DESIGN_PLAN.md).
+packet flow, NAT traversal), see
+[docs/netplay-architecture.md](docs/netplay-architecture.md).
 
 ---
 
@@ -407,8 +408,9 @@ packets between the two peers. Common causes:
 - **Host behind a restrictive NAT / CGNAT.** The host's router drops
   inbound UDP from the joiner's IP because the mapping was never
   established. Workaround: the host port-forwards the UDP port
-  (default 26100) on their router. See the netplay-NAT doc for
-  details.
+  (default 26100) on their router. See
+  [docs/netplay-architecture.md §8](docs/netplay-architecture.md#8-nat-traversal)
+  for the full NAT-traversal picture.
 - **Mobile / cellular data on the joiner.** Carrier-grade NAT
   (CGNAT) often uses symmetric mapping that breaks hole-punching.
   Switch to Wi-Fi if possible.
@@ -426,7 +428,7 @@ giving up, so transient packet loss is no longer a failure mode.
 
 - [server/lobby/README.md](server/lobby/README.md) — lobby server
   build / API / test / protocol-coupling details.
-- [NETPLAY_DESIGN_PLAN.md](NETPLAY_DESIGN_PLAN.md) — protocol-level
-  design: packet formats, lockstep math, cold-boot determinism
-  rationale.
+- [docs/netplay-architecture.md](docs/netplay-architecture.md) —
+  protocol-level design: packet formats, lockstep math, NAT
+  traversal, determinism contract, known limitations.
 - [BUILD.md](BUILD.md) — AltirraSDL client build instructions.

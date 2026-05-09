@@ -58,11 +58,36 @@ public:
 	static constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
 	static constexpr uint64_t kFnvPrime  = 0x00000100000001b3ULL;
 
+	// Default tuning for the input-delay ratchet (see EvaluateDelayRatchet).
+	// kDelayMin is the floor — the ratchet never lowers D below this.
+	// kDelayMax caps runaway growth on pathological connections.
+	// kRatchetStreakDefault: how many consecutive frames the target
+	// must exceed the current D before scheduling a switch — at 60 fps
+	// this is one second of consistent high RTT.
+	// kSwitchModulusDefault: switches happen at the next emu frame
+	// where (frame % kSwitchModulus) == 0.  At 60 fps this is ~17 s
+	// of soonest activation; mean wait ~8.5 s.  Both peers compute
+	// identically so no explicit handshake is needed.
+	static constexpr uint32_t kDelayMin              = 3;
+	static constexpr uint32_t kDelayMax              = 30;
+	static constexpr uint32_t kRatchetStreakDefault  = 60;
+	static constexpr uint32_t kSwitchModulusDefault  = 1024;
+
 	// Begin a new session.  `inputDelay` is the number of wall frames
 	// between local capture and emulation apply (D in the design
 	// doc).  Valid range 0..32; 3 is the LAN default, 4 the internet
 	// default.  Slot chooses the canonical hash-folding order.
 	void Begin(Slot slot, uint32_t inputDelay);
+
+	// Override the ratchet tuning constants for this loop.  Production
+	// callers do not need this — Begin() seeds the defaults above.
+	// Selftests use it to trigger ratcheting in fewer than 1024 frames.
+	// Both peers MUST configure identical values; the ratchet decision
+	// is deterministic only if the streak threshold and modulus match.
+	void SetRatchetTuning(uint32_t streakFrames, uint32_t switchModulus) {
+		mRatchetStreakFrames = streakFrames;
+		mRatchetSwitchModulus = switchModulus;
+	}
 
 	// Record this wall-tick's local input.  Internally keyed at the
 	// emu frame (CurrentFrame() + inputDelay), matching invariant #1.
@@ -116,6 +141,26 @@ public:
 	uint32_t CurrentFrame() const { return mCurrentFrame; }
 	uint32_t InputDelay() const { return mInputDelay; }
 	Slot     GetSlot() const { return mSlot; }
+
+	// True if a ratchet bump is queued and will fire when CurrentFrame
+	// reaches the returned switch frame.  PendingDelaySwitchFrame()
+	// returns 0 when no switch is queued.  Exposed for telemetry/UI
+	// and selftest assertions; the actual decision logic is internal.
+	bool     HasPendingDelayBump() const { return mPendingDelay != 0; }
+	uint32_t PendingDelay()              const { return mPendingDelay; }
+	uint32_t PendingDelaySwitchFrame()   const { return mPendingDelaySwitchFrame; }
+	uint32_t DelayUpStreak()             const { return mDelayUpStreak; }
+
+	// Map a host-stamped rttClass byte to the corresponding D target.
+	// Public so selftests + Coordinator telemetry can reuse the same
+	// quantisation rule; both peers must agree on this function for the
+	// ratchet to converge.
+	static uint32_t TargetDelayFromRttClass(uint8_t cls);
+
+	// Inverse direction: encode a smoothed-RTT value (in ms) into the
+	// rttClass byte.  4 ms per unit, capped at 255 (≈1020 ms).  Used by
+	// the Coordinator to stamp the host's outgoing inputs.
+	static uint8_t  RttClassFromMs(uint16_t rttMs);
 
 	bool    IsDesynced()  const { return mDesyncFrame >= 0; }
 	int64_t DesyncFrame() const { return mDesyncFrame; }
@@ -186,6 +231,14 @@ private:
 	void PutLocalHash(uint32_t frame, uint32_t v);
 	void PutPeerHash(uint32_t frame, uint32_t v);
 
+	// Ratchet helpers (lockstep.cpp).  EvaluateDelayRatchet is called at
+	// the end of OnFrameAdvanced for the just-applied frame and
+	// possibly schedules / applies a bump.  ApplyDelayRatchet performs
+	// the gap fill and writes the new mInputDelay.
+	uint8_t  AuthoritativeRttClass(uint32_t frame) const;
+	void     EvaluateDelayRatchet();
+	void     ApplyDelayRatchet();
+
 	InputSlot mLocalInputs[kRingSize] = {};
 	InputSlot mPeerInputs[kRingSize]  = {};
 	HashSlot  mLocalHashes[kRingSize] = {};
@@ -200,6 +253,25 @@ private:
 
 	uint64_t mLastPeerRecvMs = 0;
 	bool     mAnyPeerPacketSeen = false;
+
+	// Dynamic input-delay ratchet (v7).  The host stamps an rttClass
+	// byte into every NetInput it captures; both peers see the same
+	// rttClass(F) on their authoritative ring and run identical
+	// threshold logic.  When the target D exceeds the current D for
+	// mRatchetStreakFrames consecutive frames, both peers schedule a
+	// switch at the next emu frame where (frame % mRatchetSwitchModulus)
+	// == 0.  At that frame the gap slots [F+D_old, F+D_new) are filled
+	// deterministically by repeating the input from slot F+D_old-1 in
+	// both rings, and mInputDelay updates atomically.
+	//
+	// The ratchet is one-way: D never lowers automatically (lowering
+	// would discard already-queued input).  A future enhancement could
+	// add careful ratchet-down via the resync path.
+	uint32_t mDelayUpStreak           = 0;
+	uint32_t mPendingDelay            = 0;   // 0 = no switch queued
+	uint32_t mPendingDelaySwitchFrame = 0;   // emu frame to apply at
+	uint32_t mRatchetStreakFrames     = kRatchetStreakDefault;
+	uint32_t mRatchetSwitchModulus    = kSwitchModulusDefault;
 };
 
 } // namespace ATNetplay

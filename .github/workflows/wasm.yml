@@ -162,7 +162,7 @@ jobs:
             # that drops the handler (without renaming the global
             # token) is caught: a bare-substring grep for "lib" would
             # match "library" and "altirraLib" in unrelated lines.
-            for param in embed lib firmware hardware memsize pal ntsc basic kernel; do
+            for param in embed lib firmware hardware memsize pal ntsc basic kernel crt filter artifact vkbd; do
               if ! grep -qE "p\.get\(['\"]${param}['\"]\)" \
                             "${DIST}/wasm_lib_deeplink.js"; then
                 echo "ERROR: embed kit references URL param '${param}'" \

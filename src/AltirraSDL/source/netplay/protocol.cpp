@@ -235,7 +235,8 @@ DecodeResult DecodeReject(const uint8_t* buf, size_t len, NetReject& out) {
 }
 
 // ---------------------------------------------------------------------------
-// NetInputPacket (36 bytes at R=5)
+// NetInputPacket (41 bytes at R=5, v7).  v7 adds NetInput.rttClass as
+// the 5th per-frame byte; the surrounding header layout is unchanged.
 // ---------------------------------------------------------------------------
 
 size_t EncodeInputPacket(const NetInputPacket& p, uint8_t* buf, size_t bufSize) {
@@ -253,6 +254,7 @@ size_t EncodeInputPacket(const NetInputPacket& p, uint8_t* buf, size_t bufSize) 
 		off[1] = p.inputs[i].buttons;
 		off[2] = p.inputs[i].keyScan;
 		off[3] = p.inputs[i].extFlags;
+		off[4] = p.inputs[i].rttClass;   // v7
 		off += kWireInputSize;
 	}
 	return kWireInputPktSize;
@@ -273,6 +275,7 @@ DecodeResult DecodeInputPacket(const uint8_t* buf, size_t len, NetInputPacket& o
 		out.inputs[i].buttons = off[1];
 		out.inputs[i].keyScan = off[2];
 		out.inputs[i].extFlags = off[3];
+		out.inputs[i].rttClass = off[4];   // v7
 		off += kWireInputSize;
 	}
 	return DecodeResult::Ok;

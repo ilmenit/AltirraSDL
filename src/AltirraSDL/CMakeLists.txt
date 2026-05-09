@@ -399,9 +399,10 @@ endif()
 # ---------------------------------------------------------------------------
 # Netplay
 # ---------------------------------------------------------------------------
-# Lockstep UDP netplay — see NETPLAY_DESIGN_PLAN.md.  Currently the wire
-# protocol only; transport, coordinator, lobby client, and UI land in
-# subsequent phases.  Default ON; disable with -DALTIRRA_NETPLAY=OFF.
+# Lockstep UDP netplay — see docs/netplay-architecture.md.  Currently
+# the wire protocol only; transport, coordinator, lobby client, and UI
+# land in subsequent phases.  Default ON; disable with
+# -DALTIRRA_NETPLAY=OFF.
 option(ALTIRRA_NETPLAY "Build the AltirraSDL netplay module" ON)
 # WASM netplay support (slice 5): WSS bridge to the production lobby
 # replaces UDP at the transport layer; UDP-only sources (raw sockets,
@@ -883,7 +884,7 @@ elseif(ALTIRRA_WASM)
         "SHELL:-sINITIAL_MEMORY=128MB"
         "SHELL:-sSTACK_SIZE=1MB"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','getExceptionMessage','incrementExceptionRefcount','decrementExceptionRefcount']"
-        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut','_ATWasmOnFilePicked','_ATWasmRescanFirmware','_ATWasmUnpackArchive','_ATWasmDeleteTree','_ATWasmCopyTree','_ATWasmFirstRunBootstrap','_ATWasmGetFirstRunState','_ATWasmGetFirstRunFiles','_ATWasmResetFirstRun','_ATWasmRegisterGamePackSource','_ATWasmIsPaused','_ATWasmTogglePause','_ATWasmAutoHostNetplay','_ATWasmConsoleSwitch','_ATWasmColdReset','_ATWasmGetVideoStandard','_ATWasmToggleVideoStandard','_ATWasmGetCRTMode','_ATWasmToggleCRT','_ATWasmGetVirtualKeyboard','_ATWasmToggleVirtualKeyboard','_ATWasmOpenMenu','_ATWasmSetGamingMode','_ATWasmIsGamingMode','_ATWasmGetTouchControls','_ATWasmSetTouchControls','_ATWasmSetBrokerActive','_ATWasmAdoptBrokerSession','_ATWasmSetStartingOverlay','_ATWasmBrokerSessionEnded']"
+        "SHELL:-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ATWasmOnFileUploaded','_ATWasmSyncFSOut','_ATWasmOnFilePicked','_ATWasmRescanFirmware','_ATWasmUnpackArchive','_ATWasmDeleteTree','_ATWasmCopyTree','_ATWasmFirstRunBootstrap','_ATWasmGetFirstRunState','_ATWasmGetFirstRunFiles','_ATWasmResetFirstRun','_ATWasmRegisterGamePackSource','_ATWasmIsPaused','_ATWasmTogglePause','_ATWasmAutoHostNetplay','_ATWasmConsoleSwitch','_ATWasmColdReset','_ATWasmGetVideoStandard','_ATWasmToggleVideoStandard','_ATWasmGetCRTMode','_ATWasmToggleCRT','_ATWasmGetVirtualKeyboard','_ATWasmToggleVirtualKeyboard','_ATWasmSetCRTEnabled','_ATWasmSetVirtualKeyboard','_ATWasmSetDisplayFilter','_ATWasmSetArtifactMode','_ATWasmOpenMenu','_ATWasmSetGamingMode','_ATWasmIsGamingMode','_ATWasmGetTouchControls','_ATWasmSetTouchControls','_ATWasmSetBrokerActive','_ATWasmAdoptBrokerSession','_ATWasmSetStartingOverlay','_ATWasmBrokerSessionEnded']"
         "SHELL:-lidbfs.js"
         "SHELL:-sENVIRONMENT=web"
         "SHELL:-sASYNCIFY=0"
