@@ -296,46 +296,50 @@ ROM is a known stock dump and not a patched / rehashed copy.
 
 ## Updating game files on a live deploy
 
-Fetched library and firmware files are stored in two layers and
-both have to invalidate before a returning visitor sees an updated
-file:
+`wasm_lib_deeplink.js` validates each cached file against the
+origin on every visit and refetches automatically when it has
+changed:
 
-1. **HTTP cache** — `wasm_lib_deeplink.js` fetches with
-   `cache: 'force-cache'`, so the browser will serve a previously
-   downloaded copy without re-checking the server until cache TTL
-   expires.  If your hosting sends `Cache-Control: max-age=…` your
-   visitors are pinned to the old version for that long.
-2. **IndexedDB persistence** — the deep-link layer stat-skips
-   files that already exist in IDBFS from a previous visit (this
-   is what makes a returning player skip the ~80 KB ATR
-   re-download on every click).  The skip is keyed by the
-   destination filename in the VFS, not by the source URL or
-   content.
+1. **First visit** — the browser GETs the file and the loader
+   stores both the bytes and the response's `ETag` header
+   (sidecar file `<vfs path>.etag` in IDBFS).
+2. **Return visit** — the loader issues a HEAD with
+   `cache: 'no-cache'` so headers come fresh from the origin, then
+   compares the server's `ETag` (preferred) or `Content-Length`
+   against the on-disk state.  Match → keep the cached file.
+   Mismatch → re-GET and overwrite.
 
-**Recommended:** change the filename when you ship a new build —
-`mygame.atr` → `mygame-v2.atr`.  Update the embed URL to point at
-the new name.  This bypasses both caches naturally, and old
-bookmarked links keep serving the old version (so you can roll
-out incrementally without breaking visitors mid-game).  This is
-the same pattern the lobby's curated content uses internally.
+In practice this means **just replacing the file on your server is
+enough**: the next time a returning visitor loads the page their
+copy gets refreshed.  No filename change, no manual cache flush,
+no `?v=…` query trick required.
 
-**If you must keep the same filename**, you'll have to invalidate
-both layers.  The HTTP cache responds to `Cache-Control: no-store`
-or a short `max-age` from your web server, but IDBFS is per-origin
-and persists silently — the deep-link layer has no way to tell
-that the server-side file changed, so a returning visitor keeps
-booting the old copy until they clear their browser storage for
-your origin.  There is no scheme-, path-, or query-based partition
-that creates a "fresh" IDBFS scope on the same domain.
+A few things worth knowing:
 
-The deep-link layer fetches with `cache: 'force-cache'` and does
-NOT add a cache-busting query string to the fetch URL — adding
-`&v=…` to the embed URL has no effect on the fetch.
+- HEAD failures (CORS, 405 Method Not Allowed, offline reload, …)
+  fall back to "trust the cache" so an offline-capable PWA-style
+  setup keeps booting from IDBFS.  If your server *blocks* HEAD on
+  static files you'll never see updates — re-enable HEAD or set
+  `Allow: GET, HEAD` on those paths.
+- The HEAD adds one small request per file (a few hundred bytes of
+  headers) on every page load.  For Play Solo / Play Together URLs
+  with one or two files this is invisible; if you ever embed a
+  page with dozens of `lib=` entries it adds up linearly.
+- Profiles that pre-date the ETag sidecar (older AltirraSDL builds)
+  fall back to a `Content-Length` comparison and opportunistically
+  store the server's ETag on first match, so they upgrade to the
+  fast path on the very next visit.
+- Same-size content changes that *also* change the ETag still get
+  detected.  Same-size content changes against a server that
+  doesn't emit ETag *and* the visitor has no sidecar yet are the
+  only case where an update is missed — extremely rare for binary
+  game files.
 
-That's why renaming the file is the recommended path: it side-
-steps both the HTTP cache and the IDBFS stat-skip optimisation in
-one move and works for every visitor regardless of their browser
-state.
+**Filename-bumping (`mygame.atr` → `mygame-v2.atr`) still works**
+and is the right choice when you want to roll out incrementally
+without disrupting visitors who are mid-session — old bookmarked
+links keep serving the old name.  But it is no longer required for
+ordinary updates.
 
 ## Versioning
 

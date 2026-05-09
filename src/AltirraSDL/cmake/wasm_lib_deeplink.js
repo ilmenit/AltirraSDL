@@ -433,34 +433,121 @@
       lib.vfsPaths.push(e.vfs);
     }
 
-    var fetched = 0, cached = 0;
+    var fetched = 0, cached = 0, refetched = 0;
     function makeFetchPromise(e, baseUrl) {
-      // Stat-skip cached files (IDBFS persistence saves the ~80 KB
-      // ATR re-download on every repeat Play Solo click).
+      // Cache-validation flow:
+      //   1. If no file is on disk yet → straight fetch.
+      //   2. Otherwise HEAD the origin to learn the current ETag /
+      //      Content-Length, compare against our on-disk state, and
+      //      either skip (still current) or re-GET (file moved on).
+      //
+      // We persist the ETag returned by the most recent successful GET
+      // alongside the file (`<vfs>.etag` sidecar in IDBFS) so subsequent
+      // visits can do the cheap ETag equality check.  Falling back to
+      // Content-Length covers (a) profiles that pre-date the sidecar
+      // and (b) servers / proxies that strip ETag from HEAD responses.
+      //
+      // HEAD uses `cache: 'no-cache'` so we always revalidate with the
+      // origin — without it the browser would happily return the same
+      // stale headers it cached the day the user first played the
+      // game, defeating the whole point.  HEAD on a static asset is a
+      // few hundred bytes; the bandwidth saving on a >10 KB game file
+      // when nothing changed (the common case) more than pays for it.
+      var encRel = e.rel.split('/').map(encodeURIComponent).join('/');
+      var url = baseUrl + encRel;
+      var etagPath = e.vfs + '.etag';
+
+      var onDiskSize = 0;
       try {
         var st = Module.FS.stat(e.vfs);
-        if (st && st.size > 0) { cached++; return Promise.resolve(); }
+        if (st) onDiskSize = st.size;
       } catch (_) {}
 
-      var encRel = e.rel.split('/').map(encodeURIComponent).join('/');
-      return fetch(baseUrl + encRel, { cache: 'force-cache' })
-        .then(function (r) {
-          if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + e.rel);
-          return r.arrayBuffer();
-        })
-        .then(function (buf) {
-          try {
-            Module.FS.writeFile(e.vfs, new Uint8Array(buf));
-            fetched++;
-          } catch (err) {
-            log('writeFile failed for', e.vfs, '—',
+      var savedETag = null;
+      try {
+        var raw = Module.FS.readFile(etagPath, { encoding: 'utf8' });
+        if (raw) savedETag = String(raw).trim() || null;
+      } catch (_) {}
+
+      function writeFile(buf, etag) {
+        try {
+          Module.FS.writeFile(e.vfs, new Uint8Array(buf));
+        } catch (err) {
+          log('writeFile failed for', e.vfs, '—',
+              err && err.message ? err.message : err);
+          throw err;
+        }
+        if (etag) {
+          try { Module.FS.writeFile(etagPath, etag); } catch (_) {}
+        }
+      }
+
+      function doFetch(reasonLabel) {
+        return fetch(url, { cache: 'no-cache' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + e.rel);
+            var freshETag = r.headers.get('etag');
+            return r.arrayBuffer().then(function (buf) {
+              writeFile(buf, freshETag);
+              if (reasonLabel === 'refetch') refetched++; else fetched++;
+            });
+          })
+          .catch(function (err) {
+            log('fetch failed for', e.rel, '—',
                 err && err.message ? err.message : err);
-            throw err;
+          });
+      }
+
+      if (onDiskSize <= 0) {
+        return doFetch('initial');
+      }
+
+      // On-disk file exists — HEAD the origin to confirm it's still
+      // current.  Any HEAD failure (CORS, 405, offline, ...) falls
+      // back to "trust the cache" so an offline reload still boots.
+      return fetch(url, { method: 'HEAD', cache: 'no-cache' })
+        .then(function (r) {
+          if (!r.ok) { cached++; return; }
+          var serverETag = r.headers.get('etag');
+          var clHeader   = r.headers.get('content-length');
+          var serverSize = clHeader != null ? parseInt(clHeader, 10) : NaN;
+
+          var etagMatch = !!(savedETag && serverETag
+                             && savedETag === serverETag);
+          var sizeMatch = (!isNaN(serverSize)
+                           && serverSize === onDiskSize);
+
+          // Best signal: matching ETags on both sides.
+          if (etagMatch) {
+            cached++;
+            return;
           }
+
+          // ETag check inconclusive (server omits the header, or this
+          // profile has no sidecar yet) — fall back to size.  Same
+          // size + missing ETag side = same file.  When we land here
+          // because the profile lacked a sidecar, opportunistically
+          // store the server's ETag so the next visit can use the
+          // ETag-only fast path.
+          if (sizeMatch && (!serverETag || !savedETag)) {
+            cached++;
+            if (serverETag && !savedETag) {
+              try { Module.FS.writeFile(etagPath, serverETag); } catch (_) {}
+            }
+            return;
+          }
+
+          var reason = (savedETag && serverETag)
+            ? 'ETag ' + savedETag + ' → ' + serverETag
+            : 'size ' + onDiskSize + ' → ' + serverSize;
+          log('refetching', e.rel, '—', reason);
+          return doFetch('refetch');
         })
         .catch(function (err) {
-          log('fetch failed for', e.rel, '—',
+          log('HEAD check failed for', e.rel,
+              '— keeping cached file:',
               err && err.message ? err.message : err);
+          cached++;
         });
     }
 
@@ -472,8 +559,9 @@
 
     var totalCount = entries.length + fwEntries.length;
     Promise.all(promises).then(function () {
-      log('lib+firmware: ' + fetched + ' fetched + ' + cached
-          + ' cached / ' + totalCount + ' file(s)'
+      log('lib+firmware: ' + fetched + ' fetched + ' + refetched
+          + ' refetched + ' + cached + ' cached / ' + totalCount
+          + ' file(s)'
           + ' — argv now has ' + __wasmCliArgs.length + ' arg(s)');
       // No explicit ATWasmRescanFirmware call here: the wasm runtime
       // hasn't initialised yet (we're still inside a preRun promise
