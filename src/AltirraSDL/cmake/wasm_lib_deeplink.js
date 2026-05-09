@@ -349,16 +349,25 @@
       // ?randmem=0|1 — RAM randomization on EXE load.  Pushed as a CLI
       // switch (NOT a post-runtime setter) because it must be set
       // before --run is processed in main(), otherwise the EXE has
-      // already loaded against a deterministic memory floor.  Off by
-      // default in Altirra — turn on for "the game feels different
-      // each play" titles whose RNG samples low RAM.
+      // already loaded against a deterministic memory floor.
+      //
+      // Default differs by surface:
+      //   - Embed (?embed=1): defaults to ON.  Embed authors are
+      //     showcasing one game and almost always want each visit
+      //     to feel different (RNG seeds vary).  Set ?randmem=0
+      //     explicitly to opt out (e.g. for replay capture pages).
+      //   - Lobby / netplay / bare WASM page: keeps Altirra's global
+      //     default (off, matching Windows) so online-play
+      //     determinism and the existing lobby UX are unchanged.
       var rmRaw = (p.get('randmem') || '').trim();
       if (rmRaw === '1') {
-        __wasmCliArgs.push('--randmem'); log('--randmem');
+        __wasmCliArgs.push('--randmem'); log('--randmem (explicit)');
       } else if (rmRaw === '0') {
-        __wasmCliArgs.push('--norandmem'); log('--norandmem');
+        __wasmCliArgs.push('--norandmem'); log('--norandmem (explicit)');
       } else if (rmRaw) {
         log('ignored unknown randmem value:', rmRaw);
+      } else if (window.__altirraLib.embed) {
+        __wasmCliArgs.push('--randmem'); log('--randmem (embed default)');
       }
 
       // ?randdelay=0|1 — randomize program launch delay (the small

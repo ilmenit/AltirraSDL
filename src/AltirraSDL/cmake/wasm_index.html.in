@@ -2193,7 +2193,7 @@
       // (e.g. the player typing into the cart) lands on SDL, not on
       // the button (button stayed focused after click and would
       // re-fire on Enter — which wraps you in a useless tap loop).
-      try { document.getElementById('canvas').focus(); } catch (e) {}
+      try { document.getElementById('canvas').focus({ preventScroll: true }); } catch (e) {}
     }
     if (btnCStart)  btnCStart .addEventListener('click', () => consoleTap(1));
     if (btnCSelect) btnCSelect.addEventListener('click', () => consoleTap(2));
@@ -2209,7 +2209,7 @@
         }
         try { Module._ATWasmColdReset(); }
         catch (e) { jlog('cold-reset: ATWasmColdReset threw —', e); }
-        try { document.getElementById('canvas').focus(); } catch (e) {}
+        try { document.getElementById('canvas').focus({ preventScroll: true }); } catch (e) {}
       });
     }
 
@@ -2258,7 +2258,7 @@
     })();
 
     function refocusCanvas() {
-      try { document.getElementById('canvas').focus(); } catch (e) {}
+      try { document.getElementById('canvas').focus({ preventScroll: true }); } catch (e) {}
     }
 
     function syncTouchPref() {
@@ -3324,7 +3324,7 @@
         jlog('boot: handed off to bridge queue');
         toast('Booting ' + pathBasename(path));
         closeFm();
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       } catch (e) {
         jlog('boot: JS-side exception', e && e.message ? e.message : e);
         toast('Boot failed: ' + e, 'error');
@@ -6593,7 +6593,7 @@
     function closeFm() {
       cancelPendingPick();
       fmBackdrop.classList.remove('open');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     }
 
     // Completes a pending native dialog by handing the chosen VFS path
@@ -6618,7 +6618,7 @@
       }
       // Close without re-cancelling (pickMode is already cleared).
       fmBackdrop.classList.remove('open');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     }
 
     btnFiles .addEventListener('click', () => {
@@ -7020,7 +7020,14 @@
         // The C export ATWasmIsPaused returns -1 until g_sim is ready;
         // until then the poller leaves the "Running" placeholder up.
         startPausePoller();
-        canvas.focus();
+        // preventScroll: avoid scrolling the parent page when this
+        // WASM page runs inside an iframe.  Without it, focusing the
+        // canvas at startup pulls the iframe into view and the
+        // surrounding embed page jumps to it — undesirable on
+        // editorial pages where the iframe sits below screenshots
+        // or copy.  The canvas is already visible by the time we
+        // get here, so we only need keyboard routing, not visibility.
+        canvas.focus({ preventScroll: true });
         // Prime the storage indicator so the first time the user
         // opens the File Manager the bar shows real numbers
         // immediately rather than "checking…" for a frame.

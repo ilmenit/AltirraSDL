@@ -220,10 +220,19 @@ Two independent knobs control how reproducible each play is.  Both
 are passed to the simulator as CLI switches before the program
 loads, so they take effect on the very first cold-reset.
 
-| Parameter   | Default | Effect |
-|-------------|---------|--------|
-| `randmem`   | `0` (off) | When `1`, RAM regions the loaded program does not overwrite are filled with a wall-clock-seeded pseudo-random pattern.  Many Atari titles sample addresses below the program's load point as an entropy source for in-game RNG (random enemy paths, dice rolls, music seed) — without `randmem=1` those reads return the same bytes every visit, so the game feels deterministic.  Equivalent to **Memory: Randomize on EXE load** in Windows Altirra. |
-| `randdelay` | `1` (on)  | When `1` (the default), the HLE program loader inserts a small randomized jitter between the cold-reset settle frame and program entry.  Set `randdelay=0` for a frame-deterministic boot — needed when capturing reproducible replays or building a speedrun page where every visitor must see the exact same frame sequence. |
+| Parameter   | Embed default | Effect |
+|-------------|---------------|--------|
+| `randmem`   | `1` (on)  | RAM regions the loaded program does not overwrite are filled with a wall-clock-seeded pseudo-random pattern, so any address the game samples as an "RNG seed" returns different bytes each visit.  **On by default in embed mode** — embed authors are showcasing one game and almost always want each visit to feel different.  Set `randmem=0` to opt out for replay-capture / speedrun pages where every visitor must see the exact same play sequence.  Equivalent to **Memory: Randomize on EXE load** in Windows Altirra. |
+| `randdelay` | `1` (on)  | The HLE program loader inserts a small randomized jitter between the cold-reset settle frame and program entry.  Set `randdelay=0` for a frame-deterministic boot — needed when capturing reproducible replays alongside `randmem=0`. |
+
+> **Online-play note.**  These defaults apply **only** to embed mode
+> (`?embed=1`).  Lobby URLs (`/AltirraSDL/play/?lib=…`, `?host=1`,
+> `?broker=1&…`) keep Altirra's global default (`randmem=0`,
+> `randdelay=1`) so online-play behaviour is unchanged: lockstep
+> netplay relies on the host's snapshot transmitted to the joiner,
+> which is correct under either setting, but the lobby UX has been
+> tuned against the default-off baseline and we don't change that
+> implicitly.
 
 The simulator's master RNG is **already seeded from wall-clock time
 at startup** (one `srand(SDL_GetPerformanceCounter ^ SDL_GetTicksNS)`
@@ -233,11 +242,11 @@ RAM scrambling are non-deterministic across visits without any
 the RAM regions an `.xex` *doesn't* overwrite — the predictable
 "floor" the program sees in the gaps of its own data.
 
-For *typical* embeds you want:
+For *typical* embeds the defaults already do the right thing:
 
 ```
-# Each play different — recommended for most arcade-style XEX games.
-?embed=1&lib=mygame.xex&randmem=1
+# Each play different — embed default; no flag needed.
+?embed=1&lib=mygame.xex
 
 # Bit-identical playback every time — recommended for replay captures.
 ?embed=1&lib=mygame.xex&randmem=0&randdelay=0
