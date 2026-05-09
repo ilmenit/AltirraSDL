@@ -220,32 +220,47 @@ Two independent knobs control how reproducible each play is.  Both
 are passed to the simulator as CLI switches before the program
 loads, so they take effect on the very first cold-reset.
 
-| Parameter   | Embed default | Effect |
-|-------------|---------------|--------|
-| `randmem`   | `1` (on)  | RAM regions the loaded program does not overwrite are filled with a wall-clock-seeded pseudo-random pattern, so any address the game samples as an "RNG seed" returns different bytes each visit.  **On by default in embed mode** — embed authors are showcasing one game and almost always want each visit to feel different.  Set `randmem=0` to opt out for replay-capture / speedrun pages where every visitor must see the exact same play sequence.  Equivalent to **Memory: Randomize on EXE load** in Windows Altirra. |
+| Parameter   | Default   | Effect |
+|-------------|-----------|--------|
+| `randmem`   | `1` (on)  | Bundled toggle: cold-reset memory clear mode + EXE-load random fill.  When on, RAM at cold-reset time is filled with a wall-clock-seeded pseudo-random pattern, and any RAM region the loaded program does not overwrite is re-randomized at HLE load time.  Either path produces different bytes each visit, so any address the game samples as an "RNG seed" returns different content per session.  **On by default for every surface** (lobby Solo / Play Together / bare emulator / self-hosted embed) — real Atari hardware never gave you the same uninitialised RAM twice.  Set `randmem=0` to opt out for replay-capture / speedrun pages where every visitor must see a bit-identical play sequence.  Bundles **Memory: Randomize on EXE load** *and* **Memory clear mode = Random** from the Windows Altirra Configure System dialog. |
 | `randdelay` | `1` (on)  | The HLE program loader inserts a small randomized jitter between the cold-reset settle frame and program entry.  Set `randdelay=0` for a frame-deterministic boot — needed when capturing reproducible replays alongside `randmem=0`. |
 
-> **Online-play note.**  These defaults apply **only** to embed mode
-> (`?embed=1`).  Lobby URLs (`/AltirraSDL/play/?lib=…`, `?host=1`,
-> `?broker=1&…`) keep Altirra's global default (`randmem=0`,
-> `randdelay=1`) so online-play behaviour is unchanged: lockstep
-> netplay relies on the host's snapshot transmitted to the joiner,
-> which is correct under either setting, but the lobby UX has been
-> tuned against the default-off baseline and we don't change that
-> implicitly.
+> **Online-play note.**  Play Together sessions also start with
+> per-session random RAM, but each session is bit-identical between
+> the two peers.  Mechanism:
+>
+> 1. The host's pre-snapshot ColdReset uses `kATMemoryClearMode_Random`
+>    (set by the netplay canonical profile in `netplay_profile.cpp`),
+>    seeded from the host's wall-clock-derived `mRandomSeed`.  RAM is
+>    filled with a fresh random pattern that varies per host-page-load.
+> 2. The host captures a snapshot of the post-boot state and ships it
+>    to the joiner over the netplay channel.  `ApplySnapshot` overwrites
+>    the joiner's RAM byte-for-byte with the host's, so both peers have
+>    bit-identical content at frame 0.
+> 3. `ATSimulator::ReseedNetplayRandomState` runs on both peers at
+>    `BeginSession`, locking every RNG subsystem (`mRandomSeed`, derived
+>    per-subsystem seeds, PIA floating-input LFSR, float-timer schedule)
+>    to the constant `kLockedRandomSeed = 0xA7C0BEEFu`.  All in-session
+>    RAM scrambles, RNG draws, and PIA floating-bit reads use this
+>    constant on both peers, so lockstep proceeds with deterministic
+>    divergence from frame 0.
+>
+> Net effect: each session feels alive (host's wall-clock seed varies
+> across page loads), both peers see exactly the same content (the
+> snapshot does the heavy lifting), and lockstep determinism is
+> preserved (the locked seed handles every post-snapshot RNG draw).
 
-The simulator's master RNG is **already seeded from wall-clock time
-at startup** (one `srand(SDL_GetPerformanceCounter ^ SDL_GetTicksNS)`
-in `main_sdl3.cpp`), so POKEY noise + PIA floating-input + cold-reset
-RAM scrambling are non-deterministic across visits without any
-`?randmem=`.  What `randmem=1` adds is a non-deterministic fill of
-the RAM regions an `.xex` *doesn't* overwrite — the predictable
-"floor" the program sees in the gaps of its own data.
+The simulator's master RNG is seeded from wall-clock time at startup
+(one `srand(SDL_GetPerformanceCounter ^ SDL_GetTicksNS)` in
+`main_sdl3.cpp`), so POKEY noise + PIA floating-input + cold-reset
+RAM scrambling are non-deterministic across visits.  `randmem=1`
+ensures both the cold-reset clear and the EXE-load fill participate
+in that randomness.
 
 For *typical* embeds the defaults already do the right thing:
 
 ```
-# Each play different — embed default; no flag needed.
+# Each play different — default behaviour; no flag needed.
 ?embed=1&lib=mygame.xex
 
 # Bit-identical playback every time — recommended for replay captures.

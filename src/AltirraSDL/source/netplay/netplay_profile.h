@@ -35,7 +35,7 @@ namespace ATNetplayProfile {
 // 0; a mismatch is a guaranteed desync at frame 0).  Tracked
 // independently of kProtocolVersion so the wire format and the
 // canonical values can evolve separately.
-constexpr uint16_t kCanonicalProfileVersion = 1;
+constexpr uint16_t kCanonicalProfileVersion = 2;
 
 // Master RNG seed both peers apply via SetLockedRandomSeed after
 // loading the profile.  Was previously the per-session masterSeed

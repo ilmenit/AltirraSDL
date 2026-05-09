@@ -1715,6 +1715,23 @@ int main(int argc, char *argv[]) {
 		srand(seed);
 	}
 	g_sim.SetRandomSeed(rand() ^ (rand() << 15));
+
+	// SDL3-build defaults: flipped from the simulator's C++ ctor defaults
+	// (which match Windows-Altirra parity, off) to match user expectation
+	// across all WASM/lobby surfaces.  Real Atari hardware never gave you
+	// the same uninitialised RAM twice, and games that sample low RAM as
+	// an RNG seed (random enemy paths, dice rolls, music seed) feel
+	// scripted with a deterministic floor.  Set BEFORE the profile system
+	// loads — ATSettingsSwitchProfile / ATLoadSettings reads the live
+	// value via Is*() as the fallback default, so a saved user preference
+	// (registry key present) wins over this default; only fresh-install /
+	// no-key visitors see the new behaviour.  The netplay canonical
+	// profile (netplay_profile.cpp) overrides MemoryClearMode for online
+	// sessions explicitly with its own Random value, so this default
+	// doesn't double-apply or fight the profile system.
+	g_sim.SetRandomFillEXEEnabled(true);
+	g_sim.SetMemoryClearMode(kATMemoryClearMode_Random);
+
 	phase = "firmware load";
 #ifdef __EMSCRIPTEN__
 	// On WASM the firmware lives in IDB-backed /home/web_user/firmware

@@ -343,7 +343,23 @@ bool ApplyCanonicalProfile(const PerGameOverrides& ov) {
 	g_sim.SetUltimate1MBEnabled(false);
 	g_sim.SetFloatingIoBusEnabled(false);
 	g_sim.SetPreserveExtRAMEnabled(false);
-	g_sim.SetMemoryClearMode(kATMemoryClearMode_Zero);
+
+	// Per-session random RAM at cold-reset time.  Each Play Together
+	// session starts with different uninitialised-memory contents
+	// (the host's mRandomSeed is wallclock-derived from process start
+	// at main_sdl3.cpp's srand+SetRandomSeed, varying per page load),
+	// so games that sample low RAM as an RNG seed feel alive instead
+	// of scripted across sessions.  Both peers see bit-identical RAM
+	// because the host's snapshot transmits the post-cold-reset RAM
+	// to the joiner verbatim (CreateSnapshot → ApplySnapshot in
+	// simulator.cpp).  Lockstep determinism within a session is
+	// unaffected: it comes from ReseedNetplayRandomState locking
+	// every RNG subsystem to kLockedRandomSeed at BeginSession,
+	// which runs after the snapshot is applied on both peers.  Was
+	// kATMemoryClearMode_Zero historically — the version bump in
+	// netplay_profile.h forces cross-version peers to refuse the
+	// handshake rather than silently desync at frame 0.
+	g_sim.SetMemoryClearMode(kATMemoryClearMode_Random);
 
 	g_sim.SetShadowROMEnabled(true);
 	g_sim.SetShadowCartridgeEnabled(false);

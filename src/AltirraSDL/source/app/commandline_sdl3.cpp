@@ -451,23 +451,32 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			continue;
 		}
 
-		// ---- Memory randomization on EXE load ----
-		// Affects --run / --runbas: when on, RAM regions the loaded
-		// program does NOT overwrite are filled with a wall-clock-seeded
-		// pseudo-random pattern instead of zero-equivalent floor.
-		// Matters for titles that read low memory as an RNG seed (e.g.
-		// for "different play each time" feel).  Must be set BEFORE
-		// --run is processed, which is why this is a CLI switch rather
-		// than a post-runtime setter.  Mirrors the Windows
-		// "Memory: Randomize on EXE load" setting.
+		// ---- Memory randomization (cold-reset clear + EXE load fill) ----
+		// Bundled toggle.  --randmem turns ON both knobs:
+		//   * MemoryClearMode = Random (cold-reset RAM gets a wall-clock-
+		//     seeded random scramble; varies per page load).
+		//   * RandomFillEXEEnabled = true (regions the loaded EXE does
+		//     not overwrite are RE-randomized at HLE load time).
+		// --norandmem turns OFF both, giving full deterministic boot:
+		//   * MemoryClearMode = Zero
+		//   * RandomFillEXEEnabled = false
+		// Bundling matters for the documented ?randmem=0 opt-out — a
+		// caller asking for "deterministic" expects bit-identical boot
+		// across visits, which requires BOTH knobs.  Without the
+		// MemoryClearMode part, cold-reset RAM would still be
+		// randomized and "deterministic" would be a half-truth.  Must
+		// be set BEFORE --run is processed, which is why this is a CLI
+		// switch rather than a post-runtime setter.
 		if (MatchSwitch(sw, "randmem")) {
 			consumed[i] = true;
 			g_sim.SetRandomFillEXEEnabled(true);
+			g_sim.SetMemoryClearMode(kATMemoryClearMode_Random);
 			continue;
 		}
 		if (MatchSwitch(sw, "norandmem")) {
 			consumed[i] = true;
 			g_sim.SetRandomFillEXEEnabled(false);
+			g_sim.SetMemoryClearMode(kATMemoryClearMode_Zero);
 			continue;
 		}
 

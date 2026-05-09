@@ -346,19 +346,23 @@
         log('ignored unknown vkbd value:', vkbdRaw);
       }
 
-      // ?randmem=0|1 — RAM randomization on EXE load.  Pushed as a CLI
-      // switch (NOT a post-runtime setter) because it must be set
-      // before --run is processed in main(), otherwise the EXE has
-      // already loaded against a deterministic memory floor.
+      // ?randmem=0|1 — RAM randomization (bundled cold-reset clear-mode
+      // + EXE-load fill).  Pushed as a CLI switch (NOT a post-runtime
+      // setter) because both knobs must be set before --run is processed
+      // in main(), otherwise the EXE has already loaded against the
+      // pre-toggle memory floor.
       //
-      // Default differs by surface:
-      //   - Embed (?embed=1): defaults to ON.  Embed authors are
-      //     showcasing one game and almost always want each visit
-      //     to feel different (RNG seeds vary).  Set ?randmem=0
-      //     explicitly to opt out (e.g. for replay capture pages).
-      //   - Lobby / netplay / bare WASM page: keeps Altirra's global
-      //     default (off, matching Windows) so online-play
-      //     determinism and the existing lobby UX are unchanged.
+      // No default branch here: the SDL3 build's startup code in
+      // main_sdl3.cpp pre-sets RandomFillEXEEnabled=true and
+      // MemoryClearMode=Random as the simulator-level fallback default,
+      // so all surfaces (lobby Solo / Together / Bare URL / self-hosted
+      // embed) inherit the "different each visit" feel without any
+      // JS-side handling.  Online-play sessions inherit per-session
+      // randomness via the same mechanism — the netplay canonical
+      // profile uses MemoryClearMode_Random and the snapshot
+      // mechanism transmits the host's RAM to the joiner verbatim.
+      // We only emit a CLI arg here when the user explicitly overrides
+      // via the URL.
       var rmRaw = (p.get('randmem') || '').trim();
       if (rmRaw === '1') {
         __wasmCliArgs.push('--randmem'); log('--randmem (explicit)');
@@ -366,8 +370,6 @@
         __wasmCliArgs.push('--norandmem'); log('--norandmem (explicit)');
       } else if (rmRaw) {
         log('ignored unknown randmem value:', rmRaw);
-      } else if (window.__altirraLib.embed) {
-        __wasmCliArgs.push('--randmem'); log('--randmem (embed default)');
       }
 
       // ?randdelay=0|1 — randomize program launch delay (the small

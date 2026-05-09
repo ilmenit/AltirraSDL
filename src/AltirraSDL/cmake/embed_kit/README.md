@@ -91,7 +91,7 @@ work together — combine them to taste.
 | `filter`   | `point`, `bilinear`, `sharp`, `bicubic`, `auto` | Display upscale filter.  `point` = pixel-perfect (nearest-neighbour); `bilinear` = soft; `sharp` = sharp-bilinear; `auto` = renderer's choice. |
 | `artifact` | `none`, `auto`, `ntsc`, `pal`, `ntschi`, `palhi` | NTSC/PAL color artifacting.  `none` kills color smearing on text; `auto` matches the active video standard. |
 | `vkbd`     | `0` / `1`                                  | Show / hide the on-screen Atari keyboard at startup.  Useful for embeds whose game accepts text input. |
-| `randmem`  | `0` / `1`                                  | Randomize uninitialised RAM on EXE load.  **On by default in embed mode** so each visit feels different (game RNG seeds vary).  Set `randmem=0` to opt out for replay-capture / speedrun pages. |
+| `randmem`  | `0` / `1`                                  | Randomize uninitialised RAM (cold-reset clear + EXE-load fill, bundled).  **On by default for all surfaces** (lobby Solo / Together / Bare URL / embed) so each visit feels different.  Set `randmem=0` to opt out for replay-capture / speedrun pages where every visitor must see a bit-identical play sequence. |
 | `randdelay`| `0` / `1`                                  | Randomize the small jitter between cold-reset and program entry.  On by default; turn off (`randdelay=0`) for frame-deterministic boot (speedrun pages, replay capture). |
 
 **Pixel-perfect text** for a PAL game with no color tricks:

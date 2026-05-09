@@ -862,7 +862,7 @@ void ATSettingsExchangeHardware(bool write, VDRegistryKey& key) {
 		g_sim.SetUltimate1MBEnabled(key.getBool("Memory: Ultimate1MB", false));
 		g_sim.SetFloatingIoBusEnabled(key.getBool("Memory: Floating IO bus", false));
 		g_sim.SetPreserveExtRAMEnabled(key.getBool("Memory: Preserve extRAM", false));
-		g_sim.SetMemoryClearMode((ATMemoryClearMode)key.getEnumInt("Memory: Cold start pattern", kATMemoryClearModeCount, kATMemoryClearMode_DRAM1));
+		g_sim.SetMemoryClearMode((ATMemoryClearMode)key.getEnumInt("Memory: Cold start pattern", kATMemoryClearModeCount, (int)g_sim.GetMemoryClearMode()));
 
 		cpu.SetNMIBlockingEnabled(key.getBool("CPU: Allow NMI blocking", false));
 		cpu.SetIllegalInsnsEnabled(key.getBool("CPU: Allow illegal instructions", true));
