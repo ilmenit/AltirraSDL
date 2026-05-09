@@ -91,6 +91,8 @@ work together — combine them to taste.
 | `filter`   | `point`, `bilinear`, `sharp`, `bicubic`, `auto` | Display upscale filter.  `point` = pixel-perfect (nearest-neighbour); `bilinear` = soft; `sharp` = sharp-bilinear; `auto` = renderer's choice. |
 | `artifact` | `none`, `auto`, `ntsc`, `pal`, `ntschi`, `palhi` | NTSC/PAL color artifacting.  `none` kills color smearing on text; `auto` matches the active video standard. |
 | `vkbd`     | `0` / `1`                                  | Show / hide the on-screen Atari keyboard at startup.  Useful for embeds whose game accepts text input. |
+| `randmem`  | `0` / `1`                                  | Randomize uninitialised RAM on EXE load.  Off by default — turn on (`randmem=1`) for titles that sample low memory as an RNG seed so each visit plays differently. |
+| `randdelay`| `0` / `1`                                  | Randomize the small jitter between cold-reset and program entry.  On by default; turn off (`randdelay=0`) for frame-deterministic boot (speedrun pages, replay capture). |
 
 **Pixel-perfect text** for a PAL game with no color tricks:
 

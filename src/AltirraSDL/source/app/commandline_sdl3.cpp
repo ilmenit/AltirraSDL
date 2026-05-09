@@ -451,6 +451,43 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			continue;
 		}
 
+		// ---- Memory randomization on EXE load ----
+		// Affects --run / --runbas: when on, RAM regions the loaded
+		// program does NOT overwrite are filled with a wall-clock-seeded
+		// pseudo-random pattern instead of zero-equivalent floor.
+		// Matters for titles that read low memory as an RNG seed (e.g.
+		// for "different play each time" feel).  Must be set BEFORE
+		// --run is processed, which is why this is a CLI switch rather
+		// than a post-runtime setter.  Mirrors the Windows
+		// "Memory: Randomize on EXE load" setting.
+		if (MatchSwitch(sw, "randmem")) {
+			consumed[i] = true;
+			g_sim.SetRandomFillEXEEnabled(true);
+			continue;
+		}
+		if (MatchSwitch(sw, "norandmem")) {
+			consumed[i] = true;
+			g_sim.SetRandomFillEXEEnabled(false);
+			continue;
+		}
+
+		// ---- Random program-launch delay ----
+		// HLE program loader inserts a small jitter between cold-reset
+		// settle and program entry.  On by default — matches the Windows
+		// "ExeLoader: Randomize launch delay" setting.  Off makes XEX
+		// boot frame-deterministic for replay / speedrun pages.
+		if (MatchSwitch(sw, "randdelay") || MatchSwitch(sw, "randlaunchdelay")) {
+			consumed[i] = true;
+			g_sim.SetRandomProgramLaunchDelayEnabled(true);
+			continue;
+		}
+		if (MatchSwitch(sw, "norandelay") ||
+		    MatchSwitch(sw, "norandlaunchdelay")) {
+			consumed[i] = true;
+			g_sim.SetRandomProgramLaunchDelayEnabled(false);
+			continue;
+		}
+
 		// ---- SoundBoard ----
 		if ((val = ConsumeArg(argc, argv, i, consumed, "soundboard")) != nullptr) {
 			uint32 base = 0;

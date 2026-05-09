@@ -170,9 +170,81 @@ and no color smearing.
 # Authentic CRT look (default) but artifacting disabled.
 ?embed=1&lib=mygame.xex&pal=1&artifact=none
 
-# Soft scaling with a virtual keyboard for touchscreen visitors.
+# Soft scaling with a virtual keyboard for all visitors.
 ?embed=1&lib=adventure.atr&hardware=800xl&filter=bilinear&vkbd=1
 ```
+
+#### Showing the virtual keyboard only on mobile
+
+`vkbd=1` is unconditional by design — it is the embed author's
+explicit choice, not a device auto-detect.  If you want the
+virtual keyboard to appear only on touchscreen visitors, that
+decision belongs in the page that hosts the iframe, where you
+have the audience and layout context.  A few lines of vanilla JS
+on the parent page do it:
+
+```html
+<iframe id="emu"
+  src="altirra/?embed=1&lib=mygame.xex&hardware=800xl&pal=1"
+  width="800" height="600"
+  style="border:0; aspect-ratio: 4 / 3; max-width: 100%;"
+  allow="autoplay; fullscreen; gamepad"
+  loading="lazy"
+  title="Play MyGame">
+</iframe>
+<script>
+  // Show the on-screen Atari keyboard only when the visitor is on
+  // a touch device.  Heuristic mirrors the WASM page's own touch-
+  // overlay detection: pointer:coarse first, maxTouchPoints fallback.
+  // Keep this <script> AFTER the <iframe> element so getElementById
+  // finds it; the iframe then fetches the rewritten URL.
+  (function () {
+    var f = document.getElementById('emu');
+    if (!f) return;
+    var isTouch =
+      (window.matchMedia &&
+       window.matchMedia('(pointer: coarse)').matches) ||
+      (navigator.maxTouchPoints || 0) > 0;
+    if (isTouch) f.src = f.src + '&vkbd=1';
+  })();
+</script>
+```
+
+The script appends `&vkbd=1` to the iframe's `src` on touch
+devices, so phone / tablet visitors land with the keyboard up
+while desktop visitors do not.
+
+### Determinism — RAM randomization and launch jitter
+
+Two independent knobs control how reproducible each play is.  Both
+are passed to the simulator as CLI switches before the program
+loads, so they take effect on the very first cold-reset.
+
+| Parameter   | Default | Effect |
+|-------------|---------|--------|
+| `randmem`   | `0` (off) | When `1`, RAM regions the loaded program does not overwrite are filled with a wall-clock-seeded pseudo-random pattern.  Many Atari titles sample addresses below the program's load point as an entropy source for in-game RNG (random enemy paths, dice rolls, music seed) — without `randmem=1` those reads return the same bytes every visit, so the game feels deterministic.  Equivalent to **Memory: Randomize on EXE load** in Windows Altirra. |
+| `randdelay` | `1` (on)  | When `1` (the default), the HLE program loader inserts a small randomized jitter between the cold-reset settle frame and program entry.  Set `randdelay=0` for a frame-deterministic boot — needed when capturing reproducible replays or building a speedrun page where every visitor must see the exact same frame sequence. |
+
+The simulator's master RNG is **already seeded from wall-clock time
+at startup** (one `srand(SDL_GetPerformanceCounter ^ SDL_GetTicksNS)`
+in `main_sdl3.cpp`), so POKEY noise + PIA floating-input + cold-reset
+RAM scrambling are non-deterministic across visits without any
+`?randmem=`.  What `randmem=1` adds is a non-deterministic fill of
+the RAM regions an `.xex` *doesn't* overwrite — the predictable
+"floor" the program sees in the gaps of its own data.
+
+For *typical* embeds you want:
+
+```
+# Each play different — recommended for most arcade-style XEX games.
+?embed=1&lib=mygame.xex&randmem=1
+
+# Bit-identical playback every time — recommended for replay captures.
+?embed=1&lib=mygame.xex&randmem=0&randdelay=0
+```
+
+These params are independent of `crt` / `filter` / `artifact` /
+`vkbd`; combine freely.
 
 ### Pinning a kernel by name
 

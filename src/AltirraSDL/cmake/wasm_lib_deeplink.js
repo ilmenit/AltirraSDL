@@ -346,6 +346,35 @@
         log('ignored unknown vkbd value:', vkbdRaw);
       }
 
+      // ?randmem=0|1 — RAM randomization on EXE load.  Pushed as a CLI
+      // switch (NOT a post-runtime setter) because it must be set
+      // before --run is processed in main(), otherwise the EXE has
+      // already loaded against a deterministic memory floor.  Off by
+      // default in Altirra — turn on for "the game feels different
+      // each play" titles whose RNG samples low RAM.
+      var rmRaw = (p.get('randmem') || '').trim();
+      if (rmRaw === '1') {
+        __wasmCliArgs.push('--randmem'); log('--randmem');
+      } else if (rmRaw === '0') {
+        __wasmCliArgs.push('--norandmem'); log('--norandmem');
+      } else if (rmRaw) {
+        log('ignored unknown randmem value:', rmRaw);
+      }
+
+      // ?randdelay=0|1 — randomize program launch delay (the small
+      // jitter between cold-reset settle and EXE entry).  On by
+      // default in Altirra; off makes XEX boot frame-deterministic
+      // for replay / speedrun pages.  Same CLI-arg ordering reason
+      // as randmem.
+      var rdRaw = (p.get('randdelay') || '').trim();
+      if (rdRaw === '1') {
+        __wasmCliArgs.push('--randdelay'); log('--randdelay');
+      } else if (rdRaw === '0') {
+        __wasmCliArgs.push('--norandelay'); log('--norandelay');
+      } else if (rdRaw) {
+        log('ignored unknown randdelay value:', rdRaw);
+      }
+
       if ((p.get('host') || '') === '1') {
         var t = (p.get('title') || '')
           .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 64);
