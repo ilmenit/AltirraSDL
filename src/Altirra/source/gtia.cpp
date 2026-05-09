@@ -1260,6 +1260,13 @@ void ATGTIAEmulator::SetSECAMMode(bool enabled) {
 
 VDDScreenMaskParams ATGTIAEmulator::GetDefaultScreenMaskParams() {
 	VDDScreenMaskParams params {};
+	// Default to a vertical aperture-grille mask so a freshly-installed
+	// profile with Basic screen effects on shows the canonical CRT look
+	// the user expects.  Settings persistence overrides this whenever
+	// the user has explicitly picked a different mask (or None) — see
+	// ATSettingsExchange in settings.cpp around the "ScreenFX: Screen
+	// mask type" key.
+	params.mType = VDDScreenMaskType::ApertureGrille;
 	params.mSourcePixelsPerDot = 0.38f;
 	params.mOpenness = 0.90f;
 	params.mbScreenMaskIntensityCompensation = true;

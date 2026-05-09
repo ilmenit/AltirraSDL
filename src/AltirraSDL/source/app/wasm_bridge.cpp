@@ -1423,38 +1423,53 @@ int ATWasmGetCRTMode() {
 	return (int)g_uiState.screenEffectsMode;
 }
 
-// Toggle CRT effects (Basic ↔ None).  Mirrors the menu path at
-// ui_menus_view.cpp:223-231: clear any active shader preset first so
-// the rendering layer falls back to the built-in pipeline, then flip
-// the mode flag.  The display backend reads screenEffectsMode each
-// frame, so the change is visible immediately.
+// SaveMobileConfig lives in mobile_internal.h with the rest of the
+// per-screen helpers.  Pull in the symbol directly so the WASM bridge
+// can persist the preset choice without depending on every other piece
+// of internal mobile-UI state.
+extern void SaveMobileConfig(const ATMobileUIState &mobileState);
+
+// Toggle CRT effects.  Routes through the same Gaming-Mode performance
+// preset that the Settings → Performance segmented control uses, so all
+// three CRT surfaces (Desktop View > Screen Effects, Gaming-Mode preset,
+// page bar button) stay in sync:
 //
-// Important: do NOT call ATMobileUI_ApplyVisualEffects here.  That
-// helper overwrites the GTIA artifacting params (bloom radius/intensity,
-// distortion angles, vignette intensity) from g_mobileState's on/off
-// flags — when a flag is off it zeros the matching params.  Triggering
-// it on every toggle clobbers whatever the user configured via the
-// Adjust Screen Effects dialog (or the GTIA defaults from
-// ATArtifactingParams::GetDefault) and the next "back to Basic"
-// produces a flat image.  The GTIA's params are already populated by
-// startup paths (settings.cpp load, gaming-mode auto-apply at
-// main_sdl3.cpp:2279, the dialog itself), so the toggle only needs to
-// flip screenEffectsMode — None → SyncScreenFXToBackend pushes all-off,
-// Basic → the existing GTIA params get pushed.
+//   off → on  : applies Quality (preset 2) — all fx flags + Basic +
+//               artifacting Auto + SharpBilinear filter + interlace.
+//   on  → off : applies Efficient (preset 0) — all fx flags off + None
+//               screen FX + artifacting None + Point filter.
+//
+// ApplyPerformancePreset writes only the on/off flags, the master
+// screen-FX mode, and the artifacting mode.  The numeric shader
+// parameters (bloom radius, distortion angle, mask openness, vignette
+// intensity, ...) are intentionally untouched — ATMobileUI_ApplyVisual
+// Effects keeps numerics non-destructive — so a user who has tuned
+// values via the Adjust Screen Effects dialog keeps them across
+// repeated CRT-button presses.  First-use values come from
+// ATArtifactingParams::GetDefault and ATGTIAEmulator::GetDefaultScreen
+// MaskParams.
+//
+// Any active librashader preset is cleared first so Basic actually
+// drives the built-in pipeline.  The mobile config is persisted so the
+// choice survives a page reload.
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmToggleCRT() {
 	IDisplayBackend *be = ATUIGetDisplayBackend();
 	ATUIShaderPresetsClear(be);
+
 	const ATUIState::ScreenEffectsMode prev = g_uiState.screenEffectsMode;
-	g_uiState.screenEffectsMode =
-		(prev == ATUIState::kSFXMode_None)
-		? ATUIState::kSFXMode_Basic
-		: ATUIState::kSFXMode_None;
-	fprintf(stderr, "[wasm] CRT toggle: %s -> %s\n",
-		prev == ATUIState::kSFXMode_None ? "None" :
-		prev == ATUIState::kSFXMode_Basic ? "Basic" : "Preset",
-		g_uiState.screenEffectsMode == ATUIState::kSFXMode_None ? "None" :
-		g_uiState.screenEffectsMode == ATUIState::kSFXMode_Basic ? "Basic" : "Preset");
+	const bool wasOn = (prev != ATUIState::kSFXMode_None);
+	g_mobileState.performancePreset = wasOn ? 0 /* Efficient */
+	                                        : 2 /* Quality */;
+
+	ATMobileUI_ApplyPerformancePreset(g_mobileState);
+	SaveMobileConfig(g_mobileState);
+
+	fprintf(stderr, "[wasm] CRT toggle: %s -> %s (preset=%d)\n",
+		wasOn ? "on" : "off",
+		(g_uiState.screenEffectsMode == ATUIState::kSFXMode_None)
+			? "off" : "on",
+		g_mobileState.performancePreset);
 }
 
 // JS-side bar button (virtual on-screen keyboard).

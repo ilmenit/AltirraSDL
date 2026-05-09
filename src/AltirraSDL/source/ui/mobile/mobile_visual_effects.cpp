@@ -13,10 +13,13 @@
 #include "uiaccessors.h"
 #include "uitypes.h"
 #include "constants.h"
+#include "settings.h"
 
 #include "mobile_internal.h"
 
 extern ATSimulator g_sim;
+extern ATUIState g_uiState;
+extern void ATRegistryFlushToDisk();
 
 // Push the three visual-effect toggles into the GTIA's
 // ATArtifactingParams + scanlines flag.  Safe to call on any
@@ -99,9 +102,30 @@ void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState) {
 }
 
 // Apply a bundled performance preset.  Efficient turns everything
-// off and picks the cheapest filter.  Balanced keeps effects off
-// but uses a nicer filter.  Quality enables all three CRT effects.
-// Custom (3) is a no-op so the user's manual tweaks stay put.
+// off and picks the cheapest filter.  Balanced keeps the heavy CRT
+// effects off but leaves vignette + bilinear on for a softer look.
+// Quality enables all CRT effects.  Custom (3) is a no-op so the
+// user's manual tweaks stay put.
+//
+// Each preset also drives the master CRT switches:
+//   - g_uiState.screenEffectsMode (Basic vs None) — the binary master
+//     toggle the desktop View > Screen Effects menu and the WASM page
+//     "CRT" button both manipulate.
+//   - GTIA artifacting mode (Auto vs None) — paired with the CRT look
+//     so a fresh "CRT On" via the page button or the Quality preset
+//     produces NTSC/PAL color artifacts immediately, and "CRT Off" /
+//     Efficient turns them off in step.  Auto (not AutoHi) is used
+//     deliberately: AutoHi is heavier, and the user-facing "CRT On"
+//     should land on the cheaper authentic look.
+//
+// Numeric shader parameters (bloom radius, distortion angle, vignette
+// intensity, mask openness, ...) are deliberately NOT touched here —
+// only the on/off flags.  ATMobileUI_ApplyVisualEffects keeps the
+// numerics non-destructive (see the comment above it), so toggling
+// the preset never wipes a value the user tuned via the Adjust Screen
+// Effects dialog.  The struct defaults from
+// ATArtifactingParams::GetDefault and ATGTIAEmulator::GetDefault
+// ScreenMaskParams remain the source of truth for first-use values.
 void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 	int p = mobileState.performancePreset;
 	if (p < 0 || p >= 3) return;  // Custom or out of range
@@ -112,6 +136,19 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 	bool nonlinearMix   = true;
 	bool audioMonitor   = false;
 	bool driveSounds    = false;
+
+	// Master CRT switches — kept in sync across all three preset
+	// surfaces (Desktop View menu, Gaming-Mode preset, page CRT button).
+	//
+	// `wantArtifacting` is the on/off intent of this preset.  The actual
+	// ATArtifactMode value is only forced when we cross the on/off
+	// boundary (None ↔ not-None) so a user who picked AutoHi / NTSCHi /
+	// PALHi from the desktop dialog isn't silently downgraded to Auto
+	// on every Gaming-Mode startup.  When the boundary is crossed we
+	// land on Auto (the cheaper authentic look) for "on" — heavier
+	// modes like AutoHi remain a deliberate user choice.
+	ATUIState::ScreenEffectsMode screenFXMode = ATUIState::kSFXMode_Basic;
+	bool wantArtifacting = true;
 
 	switch (p) {
 	case 0: // Efficient
@@ -125,6 +162,8 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 		interlace     = false;
 		nonlinearMix  = false;
 		driveSounds   = false;
+		screenFXMode    = ATUIState::kSFXMode_None;
+		wantArtifacting = false;
 		break;
 	case 1: // Balanced
 		mobileState.fxScanlines      = false;
@@ -137,6 +176,8 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 		interlace     = false;
 		nonlinearMix  = true;
 		driveSounds   = false;
+		screenFXMode    = ATUIState::kSFXMode_Basic;
+		wantArtifacting = true;
 		break;
 	case 2: // Quality
 		mobileState.fxScanlines      = true;
@@ -149,6 +190,8 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 		interlace     = true;
 		nonlinearMix  = true;
 		driveSounds   = true;
+		screenFXMode    = ATUIState::kSFXMode_Basic;
+		wantArtifacting = true;
 		break;
 	}
 
@@ -160,4 +203,44 @@ void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState) {
 	g_sim.GetPokey().SetNonlinearMixingEnabled(nonlinearMix);
 	g_sim.SetAudioMonitorEnabled(audioMonitor);
 	ATUISetDriveSoundsEnabled(driveSounds);
+
+	// Drive the master CRT switches.  Don't clobber a librashader
+	// preset (kSFXMode_Preset) — those are an external rendering path
+	// the gaming-mode preset has no opinion about, so leave that mode
+	// alone.  Going from a preset back to Basic / None requires the
+	// user to clear the preset explicitly via the desktop View menu.
+	if (g_uiState.screenEffectsMode != ATUIState::kSFXMode_Preset)
+		g_uiState.screenEffectsMode = screenFXMode;
+
+	// Only force the artifacting mode when crossing the on/off
+	// boundary.  This preserves a desktop user's deliberate choice of
+	// AutoHi / NTSCHi / PALHi across Gaming-Mode startup ApplyPreset
+	// calls, while still flipping artifacting on/off when the preset
+	// transitions to/from Efficient.
+	ATGTIAEmulator &gtia = g_sim.GetGTIA();
+	const ATArtifactMode curArtifact = gtia.GetArtifactingMode();
+	const bool artifactingOn = (curArtifact != ATArtifactMode::None);
+	bool artifactChanged = false;
+	if (wantArtifacting && !artifactingOn) {
+		gtia.SetArtifactingMode(ATArtifactMode::Auto);
+		artifactChanged = true;
+	} else if (!wantArtifacting && artifactingOn) {
+		gtia.SetArtifactingMode(ATArtifactMode::None);
+		artifactChanged = true;
+	}
+
+	// Persist the artifacting mode change immediately — settings.cpp
+	// owns the registry key, and the mobile lifecycle rarely reaches
+	// the clean-exit ATSaveSettings call (Android kills backgrounded
+	// apps without notice).  Best-effort; the suspend path retries.
+	if (artifactChanged) {
+		try {
+			ATSaveSettings(kATSettingsCategory_View);
+		} catch (...) {
+		}
+		try {
+			ATRegistryFlushToDisk();
+		} catch (...) {
+		}
+	}
 }

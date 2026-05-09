@@ -607,8 +607,12 @@ void ATSettingsExchangeView(bool write, VDRegistryKey& key) {
 
 		VDDScreenMaskParams smparams = ATGTIAEmulator::GetDefaultScreenMaskParams();
 
-		key.getString("ScreenFX: Screen mask type", s);
-		smparams.mType = ATParseEnum<VDDScreenMaskType>(s).mValue;
+		// Honor the GetDefault default when the registry key is missing
+		// (fresh install / pre-mask-key profiles).  Parsing an empty
+		// string would otherwise return VDDScreenMaskType::None and
+		// silently clobber the GetDefault choice.
+		if (key.getString("ScreenFX: Screen mask type", s))
+			smparams.mType = ATParseEnum<VDDScreenMaskType>(s).mValue;
 
 		if (key.getString("ScreenFX: Screen mask ccs per dot", s))
 			smparams.mSourcePixelsPerDot = std::clamp<float>((float)strtod(s.c_str(), nullptr), 0.01f, 10.0f);
