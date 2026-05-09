@@ -373,6 +373,46 @@
        "fullscreen with right side cut" symptom. */
     :fullscreen header,
     :-webkit-full-screen header { display: none; }
+
+    /* ── Embed mode (?embed=1) ───────────────────────────────────────
+       Author-self-hosted single-page embed: hide every piece of
+       chrome that the lobby wears so the canvas is the only thing on
+       screen.  The <header> bar (Lobby/Files/Pause/Region/CRT/Full-
+       Screen/Keyboard/Touch/Firmware/Issues), the bottom log panel,
+       and the drop-files overlay all collapse to display:none; the
+       canvas-wrap inherits the full body height.  The file-manager
+       overlay, firmware-download wizard, restart dialog, and toast
+       container are all kept reachable via JS but hidden by default —
+       the embed never opens any of them, but a future opt-in
+       ?embed_chrome=1 mode could unhide selected pieces.
+
+       layout-left and fullscreen rules already cascade correctly
+       under .embed; we only need to suppress the bar itself, not
+       rotate it.  Browser fullscreen on top of embed remains a
+       no-op since the canvas already fills the viewport.
+
+       Selectors:
+         > header / > #log / > #fm-backdrop / > #fw-backdrop /
+         > #toasts / > #fm-filepicker
+                                   — these elements ARE direct
+                                     children of <body>; the > is
+                                     a small specificity narrowing.
+         #drop-overlay              — nested inside #canvas-wrap, so
+                                     a descendant selector is needed
+                                     (a > rule here would never match). */
+    body.embed > header,
+    body.embed > #log,
+    body.embed > #fm-backdrop,
+    body.embed > #fw-backdrop,
+    body.embed > #toasts,
+    body.embed > #fm-filepicker,
+    body.embed #drop-overlay { display: none !important; }
+    /* No explicit #canvas-wrap override needed: the wrap's existing
+       `flex: 1 1 auto` already grows to fill the body once header
+       and log are removed from the column flex flow. */
+    /* Embed mode in an iframe relies on the parent's overflow rule;
+       a stray scrollbar on the embedded document looks like a bug. */
+    body.embed { overflow: hidden; }
     #drop-overlay {
       position: absolute;
       inset: 0;
@@ -3656,8 +3696,14 @@
     //
     // Detection order is most-specific → least-specific so
     // ?broker=1&lib=... reports as 'broker', ?lib=...&host=1
-    // (legacy Play Together) reports as 'host', and a bare
-    // ?lib=... reports as 'solo'.
+    // (legacy Play Together) reports as 'host', a bare
+    // ?lib=... reports as 'solo', and a chrome-free third-party
+    // embed (?embed=1) reports as 'embed'.  The embed branch is
+    // last because a Play Solo URL that also carries ?embed=1
+    // (an author hosting curated content with their own chrome
+    // suppression) still wants the 'solo' code path — the embed
+    // CSS still applies via body.embed regardless of which
+    // branch we report here.
     function gameDeepLinkActive() {
       try {
         const p = new URLSearchParams(window.location.search || '');
@@ -3665,10 +3711,30 @@
         if ((p.get('s')      || '').trim())   return 'join';
         if ((p.get('host')   || '') === '1')  return 'host';
         if ((p.get('lib')    || '').trim())   return 'solo';
+        if ((p.get('embed')  || '') === '1')  return 'embed';
       } catch (_) {}
       return '';
     }
     function decideFirstRunAction() {
+      // Embed mode short-circuits FIRST, before the deep-link category
+      // dispatch.  A self-hosted page never wants the cross-origin
+      // ROM-bundle fetch, regardless of whether the URL also carries
+      // ?lib= / ?host= / ?broker= / ?s=.  We can't gate on
+      // gameDeepLinkActive() returning 'embed' because that string is
+      // returned only when embed is the ONLY deep-link signal — a
+      // typical self-hosted URL is `?embed=1&lib=mygame.atr`, where
+      // gameDeepLinkActive prefers 'solo' (lib is checked first) and
+      // we'd fall through to the lobby bootstrap.  Reading the
+      // window.__altirraLib.embed flag directly catches every
+      // combination.
+      const lib = window.__altirraLib;
+      if (lib && lib.embed) {
+        const fw = hasFirmwareInstalled();
+        jlog('first-run: embed mode active'
+          + ' (firmware ' + (fw ? 'present' : 'absent') + ')'
+          + ' — wizard + bundle bootstrap suppressed');
+        return;
+      }
       const dl = gameDeepLinkActive();
       if (dl) {
         const fw = hasFirmwareInstalled();

@@ -147,6 +147,35 @@ jobs:
           fi
           cp "${OUTDIR}/wasm_lib_deeplink.js" "${DIST}/"
 
+          # Embed kit — README, EMBED reference, and the example.html
+          # iframe demo.  CMake copies these to ${OUTDIR}/embed/; we
+          # forward the whole directory so a self-hosting author who
+          # downloads AltirraSDL-${VER}-wasm.zip gets the docs and
+          # the live demo page next to the runtime files.  Non-fatal:
+          # if the embed kit is missing the runtime still works, the
+          # author just doesn't see the tutorial.
+          if [ -d "${OUTDIR}/embed" ]; then
+            cp -a "${OUTDIR}/embed" "${DIST}/"
+            # Sanity-grep — every URL parameter the embed kit documents
+            # must still be honoured by the deep-link shim.  We grep
+            # for the literal `p.get('<name>')` call so a regression
+            # that drops the handler (without renaming the global
+            # token) is caught: a bare-substring grep for "lib" would
+            # match "library" and "altirraLib" in unrelated lines.
+            for param in embed lib firmware hardware memsize pal ntsc basic kernel; do
+              if ! grep -qE "p\.get\(['\"]${param}['\"]\)" \
+                            "${DIST}/wasm_lib_deeplink.js"; then
+                echo "ERROR: embed kit references URL param '${param}'" \
+                  "but wasm_lib_deeplink.js does not handle it" \
+                  "(no p.get('${param}') call)." >&2
+                exit 1
+              fi
+            done
+            echo "embed kit staged: $(ls "${DIST}/embed" | wc -l) file(s)"
+          else
+            echo "warning: ${OUTDIR}/embed missing — author kit not shipped" >&2
+          fi
+
           # Size + byte-count smoke check — catch accidental zero-size
           # artifacts (empty .wasm has bitten us before on upstream CMake
           # bugs) before they are published as "working" builds.

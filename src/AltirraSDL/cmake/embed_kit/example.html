@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AltirraSDL embed example</title>
+  <!--
+    AltirraSDL — embed example page.
+
+    This is a complete reference implementation for hosting the WASM
+    Atari emulator on your own site.  Copy this file next to the
+    AltirraSDL bundle (index.html / AltirraSDL.js / AltirraSDL.wasm /
+    wasm_lib_deeplink.js / config.json), drop your game into a sibling
+    `library/` directory, and you have a working Atari-game landing
+    page.  See README.md (quickstart) and EMBED.md (full reference) in
+    the same directory.
+
+    This file deliberately does NOT depend on any framework, build
+    step, or external CDN — open it in a browser served from any
+    static host and it works.  The single iframe `src` is the only
+    knob you need to touch when wiring up your title.
+  -->
+  <style>
+    :root {
+      color-scheme: dark light;
+      --fg: #e8e8e8;
+      --bg: #181a1f;
+      --accent: #7db2ff;
+      --muted: #a0a4ad;
+      --card: #22252c;
+      --border: #353841;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI",
+                     Roboto, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+      padding: 24px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.6rem; margin: 0 0 0.2em; color: var(--accent); }
+    h2 { font-size: 1.1rem; margin: 1.6em 0 0.4em; color: var(--accent); }
+    p, li { color: var(--fg); }
+    a { color: var(--accent); }
+    .lead { color: var(--muted); margin-top: 0; }
+    .frame-wrap {
+      width: 100%;
+      max-width: 800px;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 1em 0;
+    }
+    .frame-wrap iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+    }
+    pre {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      font-size: 0.85em;
+    }
+    code { font-family: "SF Mono", Menlo, Consolas, monospace; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      margin: 0.8em 0 0.4em;
+      font-size: 0.9em;
+    }
+    .controls label { display: inline-flex; align-items: center; gap: 4px; }
+    .controls input, .controls select {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font: inherit;
+    }
+    .controls button {
+      background: var(--accent);
+      color: #0a1628;
+      border: 0;
+      border-radius: 4px;
+      padding: 6px 14px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .controls button:hover { filter: brightness(1.1); }
+    .note {
+      background: var(--card);
+      border-left: 3px solid var(--accent);
+      padding: 10px 14px;
+      margin: 1em 0;
+      font-size: 0.92em;
+      color: var(--muted);
+    }
+    .note strong { color: var(--fg); }
+  </style>
+</head>
+<body>
+  <h1>AltirraSDL — embed example</h1>
+  <p class="lead">A reference page for wiring the WASM Atari emulator
+     into your own site.</p>
+
+  <div class="note">
+    <strong>Before this page does anything:</strong> place an Atari
+    title at <code>library/yourgame.atr</code> next to this file.  The
+    iframe below points at <code>library/yourgame.atr</code> by
+    default — change the <em>Game file</em> input below to use a
+    different name, or edit the <code>src</code> attribute directly
+    in the HTML source.
+  </div>
+
+  <!--
+    The iframe src is "../index.html..." because this example.html
+    lives in the embed/ subdirectory of the deployed bundle (next to
+    EMBED.md / README.md), and the WASM page is one level up.  The
+    snippet generator below outputs a src that starts with
+    "index.html..." instead — that's what an author pastes into a
+    page hosted at the deploy root next to index.html, where the
+    relative path resolves correctly.  Two URLs, same content.
+  -->
+  <div class="frame-wrap">
+    <iframe id="emu"
+      src="../index.html?embed=1&amp;lib=yourgame.atr&amp;hardware=800xl&amp;pal=1"
+      allow="autoplay; fullscreen; gamepad; clipboard-read; clipboard-write"
+      loading="lazy"
+      title="Atari emulator"></iframe>
+  </div>
+
+  <div class="controls" aria-label="Tweak the embed URL">
+    <label>Game file
+      <input id="ctl-lib" value="yourgame.atr" size="22">
+    </label>
+    <label>Hardware
+      <select id="ctl-hw">
+        <option value="">(default)</option>
+        <option value="800">Atari 800 (NTSC)</option>
+        <option value="800xl" selected>Atari 800XL</option>
+        <option value="1200xl">Atari 1200XL</option>
+        <option value="130xe">Atari 130XE</option>
+        <option value="xegs">XEGS</option>
+        <option value="5200">Atari 5200</option>
+      </select>
+    </label>
+    <label>Region
+      <select id="ctl-region">
+        <option value="pal" selected>PAL</option>
+        <option value="ntsc">NTSC</option>
+        <option value="">(default)</option>
+      </select>
+    </label>
+    <label>BASIC
+      <input id="ctl-basic" type="checkbox">
+    </label>
+    <button id="ctl-apply" type="button">Apply &amp; reload frame</button>
+  </div>
+
+  <p>Copy the <code>iframe</code> tag above into your own page once
+     you have the URL you want.  The same URL also works as a direct
+     link if you'd rather visitors land on the emulator full-frame.</p>
+
+  <h2>Generated iframe markup</h2>
+  <pre id="snippet"><code></code></pre>
+
+  <h2>Layout on your server</h2>
+  <pre><code>your-deploy-root/
+  index.html
+  AltirraSDL.js
+  AltirraSDL.wasm
+  wasm_lib_deeplink.js
+  config.json
+  example.html         ← this page
+  library/
+    yourgame.atr       ← your title
+  firmware/            ← optional, for custom OS / BASIC ROMs
+</code></pre>
+
+  <h2>What you can change</h2>
+  <ul>
+    <li><strong>Multiple disks</strong> — pass a comma-separated list:
+        <code>lib=disk1.atr,disk2.atr</code>.</li>
+    <li><strong>Custom kernel ROM</strong> — drop the file into
+        <code>firmware/</code>, then add
+        <code>&amp;firmware=myos.rom</code> to the URL.  The emulator
+        identifies it by hash.</li>
+    <li><strong>Force a specific kernel</strong> — add
+        <code>&amp;kernel=lle</code> (built-in, no firmware needed) or
+        <code>&amp;kernel=osb</code> if you shipped an OS-B ROM.</li>
+    <li><strong>Memory size</strong> — add
+        <code>&amp;memsize=128K</code> for a 130XE-only title.</li>
+    <li><strong>Title</strong> — add
+        <code>&amp;title=My+Game</code> if you ever expose chrome.</li>
+  </ul>
+
+  <p>See <a href="EMBED.md">EMBED.md</a> for the complete reference.</p>
+
+  <script>
+    // Live URL builder — keeps the iframe and the snippet block in
+    // sync as the user tweaks the controls.  Pure DOM, no framework.
+    (function () {
+      var iframe   = document.getElementById('emu');
+      var ctlLib   = document.getElementById('ctl-lib');
+      var ctlHw    = document.getElementById('ctl-hw');
+      var ctlReg   = document.getElementById('ctl-region');
+      var ctlBasic = document.getElementById('ctl-basic');
+      var btn      = document.getElementById('ctl-apply');
+      var snippet  = document.querySelector('#snippet code');
+
+      // Build the URL twice with different prefixes:
+      //  - liveUrl  → "../index.html?…"  for this page's iframe (we
+      //               are at embed/example.html; the WASM page is the
+      //               sibling parent directory).
+      //  - snippet  → "index.html?…"     for the markup the author
+      //               copies into their own page, which they will
+      //               place next to index.html at the deploy root.
+      function buildQuery() {
+        var p = new URLSearchParams();
+        p.set('embed', '1');
+        var lib = (ctlLib.value || '').trim();
+        if (lib) p.set('lib', lib);
+        if (ctlHw.value)    p.set('hardware', ctlHw.value);
+        if (ctlReg.value)   p.set(ctlReg.value, '1');
+        if (ctlBasic.checked) p.set('basic', '1');
+        return '?' + p.toString();
+      }
+
+      function refreshSnippet(query) {
+        var snippetUrl = 'index.html' + query;
+        var html =
+          '<iframe\n' +
+          '  src="' + snippetUrl.replace(/&/g, '&amp;') + '"\n' +
+          '  width="800" height="600"\n' +
+          '  style="border:0; aspect-ratio: 4 / 3; max-width: 100%;"\n' +
+          '  allow="autoplay; fullscreen; gamepad"\n' +
+          '  loading="lazy"\n' +
+          '  title="Atari game">\n' +
+          '</iframe>';
+        snippet.textContent = html;
+      }
+
+      btn.addEventListener('click', function () {
+        var q = buildQuery();
+        iframe.src = '../index.html' + q;
+        refreshSnippet(q);
+      });
+
+      // Prime the snippet at load so the user sees the default URL.
+      refreshSnippet(buildQuery());
+    })();
+  </script>
+</body>
+</html>

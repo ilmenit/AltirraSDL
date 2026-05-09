@@ -991,6 +991,29 @@ elseif(ALTIRRA_WASM)
         configure_file("${ALTIRRA_WASM_DEEPLINK_TEMPLATE}"
             "${ALTIRRA_WASM_DEEPLINK_OUTPUT}" COPYONLY)
     endif()
+
+    # Embed kit — README + EMBED reference + the example.html iframe
+    # demo.  Copied to a sibling embed/ subdirectory so a deploy ends
+    # up with the runtime files at the root and the docs + example
+    # one level down (so an author can `unzip && rm -rf embed/`
+    # if they want a minimal payload, but the default is to ship
+    # everything).  The wasm.yml CI job picks the same embed/ tree
+    # up by name when assembling the published artefact.
+    set(ALTIRRA_WASM_EMBED_KIT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_kit")
+    set(ALTIRRA_WASM_EMBED_KIT_OUT
+        "${CMAKE_CURRENT_BINARY_DIR}/embed")
+    if(IS_DIRECTORY "${ALTIRRA_WASM_EMBED_KIT_DIR}")
+        file(MAKE_DIRECTORY "${ALTIRRA_WASM_EMBED_KIT_OUT}")
+        foreach(_kitfile README.md EMBED.md example.html)
+            if(EXISTS "${ALTIRRA_WASM_EMBED_KIT_DIR}/${_kitfile}")
+                configure_file(
+                    "${ALTIRRA_WASM_EMBED_KIT_DIR}/${_kitfile}"
+                    "${ALTIRRA_WASM_EMBED_KIT_OUT}/${_kitfile}"
+                    COPYONLY)
+            endif()
+        endforeach()
+    endif()
 else()
     target_link_libraries(AltirraSDL PRIVATE OpenGL::GL)
 endif()

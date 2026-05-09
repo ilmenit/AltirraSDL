@@ -66,10 +66,54 @@
     // ATWasmAutoHostNetplay (which would create a new session).
     // null when not in broker mode; an object when set.
     brokerMode:  null,
+    // Embed mode (?embed=1): host page is a third-party site that just
+    // wants the canvas with their game pre-loaded.  parseUrl flips this
+    // true; wasm_index.html.in reads it to add a body.embed CSS class
+    // (chrome suppression) and to short-circuit the curated-content
+    // first-run firmware/game-pack wizard via gameDeepLinkActive().
+    embed:       false,
+    // Firmware ROMs to fetch alongside the lib= files.  Populated from
+    // ?firmware=path1,path2,...; landed under /home/web_user/firmware
+    // by preRunFetch so ATWasmRescanFirmware (already called in
+    // index.html's onRuntimeInitialized) hashes them and assigns the
+    // right type-defaults.  No CLI arg is pushed for these — the
+    // simulator picks up the type override automatically.
+    firmwarePaths: [],
   };
 
-  // Path validation: same-origin /AltirraSDL/library/<path> only.
-  // Reject '..' segments, leading slashes, control chars, scheme://.
+  // Resolve the same-origin base URL for fetched assets.  The lobby
+  // hosts the WASM at /AltirraSDL/play/ and the curated content at
+  // /AltirraSDL/library/ + /AltirraSDL/firmware/, so the historical
+  // default is an absolute /AltirraSDL/<kind>/ path.  Self-hosted
+  // embeds (?embed=1) typically drop the whole bundle next to a
+  // sibling library/ + firmware/ directory and want page-relative
+  // paths so the deploy works at any URL prefix.  A host page can
+  // override either knob with <meta name="altirra-library-base">
+  // / "altirra-firmware-base"; the meta wins over both defaults so
+  // an author with a non-standard tree can place files anywhere.
+  function metaBase(name) {
+    try {
+      var m = document.querySelector('meta[name="' + name + '"]');
+      if (!m) return null;
+      var v = (m.getAttribute('content') || '').trim();
+      if (!v) return null;
+      // Normalise: ensure trailing slash so concatenation is clean.
+      if (v.charAt(v.length - 1) !== '/') v += '/';
+      return v;
+    } catch (_) { return null; }
+  }
+  function resolveBase(kind /* 'library' | 'firmware' */, embed) {
+    var meta = metaBase('altirra-' + kind + '-base');
+    if (meta) return meta;
+    if (embed) return kind + '/';
+    return '/AltirraSDL/' + kind + '/';
+  }
+
+  // Path validation: same-origin <base>/<path> only.  Reject '..'
+  // segments, leading slashes, control chars, scheme://.  Same shape
+  // as the lobby's curated-content sanitiser — embed mode does not
+  // relax these checks because the input still flows through fetch()
+  // against the host's origin.
   function pathOk(s) {
     return s.length > 0
         && s.length <= 256
@@ -97,6 +141,37 @@
     try {
       var p = new URLSearchParams(window.location.search || '');
 
+      // ?embed=1 — chrome-free single-page embed mode.  Read first so
+      // logging downstream can mention it and so resolveBase() picks
+      // the page-relative default for ?lib= / ?firmware= when no
+      // <meta> override is present.  We attach the body.embed class
+      // here (rather than waiting for the lobby IIFE) so the chrome
+      // is suppressed before the first paint — this script tag is
+      // synchronous and lives inside <body>, so document.body is
+      // already constructed by the time parseUrl runs.
+      if ((p.get('embed') || '') === '1') {
+        window.__altirraLib.embed = true;
+        try {
+          if (document && document.body)
+            document.body.classList.add('embed');
+        } catch (_) {}
+        // ?title= sets the browser tab name in embed mode so an
+        // iframe-less direct page lands with a friendlier label
+        // than "AltirraSDL @VERSION@ — WebAssembly".  We only do
+        // this under embed=1 to avoid stomping on the lobby's
+        // baked-in <title> for non-embed visits.  The host=1 auto-
+        // host path further down also reads ?title=, but for the
+        // session display name (lib.hostTitle), not document.title
+        // — the two uses of the same param don't conflict.
+        var embedTitle = (p.get('title') || '')
+          .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 64);
+        if (embedTitle) {
+          try { document.title = embedTitle; } catch (_) {}
+        }
+        log('embed mode requested'
+          + (embedTitle ? ', title="' + embedTitle + '"' : ''));
+      }
+
       var libRaw = (p.get('lib') || '').trim();
       if (libRaw) {
         var parts = libRaw.split(',').map(function (x) {
@@ -112,6 +187,33 @@
         }
         window.__altirraLib.paths = good;
         if (good.length) log('lib request — ' + good.length + ' file(s)');
+      }
+
+      // ?firmware=rom1,rom2,...  — fetch ROM(s) into the firmware
+      // directory.  ATUIDoFirmwareScan (already called once at startup
+      // by wasm_index.html.in) hashes each file and registers it with
+      // the firmware manager, calling SetSpecificFirmware for any
+      // recognised type.  Authors who need a custom OS/BASIC drop it
+      // here; the simulator's hardware-mode kernel pick then resolves
+      // to the dropped ROM automatically.  No CLI arg is pushed —
+      // the type-default override is enough.  Cap at 8 to bound the
+      // worst-case fetch latency on a fresh visit.
+      var fwRaw = (p.get('firmware') || '').trim();
+      if (fwRaw) {
+        var fwParts = fwRaw.split(',').map(function (x) {
+          return x.trim();
+        }).filter(Boolean);
+        var fwGood = [];
+        for (var fi = 0; fi < fwParts.length && fwGood.length < 8; ++fi) {
+          if (pathOk(fwParts[fi])) {
+            fwGood.push(fwParts[fi]);
+          } else {
+            log('rejected malformed firmware path:', fwParts[fi]);
+          }
+        }
+        window.__altirraLib.firmwarePaths = fwGood;
+        if (fwGood.length)
+          log('firmware request — ' + fwGood.length + ' ROM(s)');
       }
 
       var hwAllow = ['800','800xl','1200xl','130xe','xegs','1400xl','5200'];
@@ -145,6 +247,27 @@
       // toggles already wired into ATProcessCommandLineSDL3.
       if ((p.get('basic') || '') === '1') {
         __wasmCliArgs.push('--basic'); log('--basic');
+      }
+
+      // ?kernel=… pins a specific kernel ROM type, bypassing the
+      // hardware-mode-driven auto pick.  Maps directly to the
+      // existing --kernel CLI option in commandline_sdl3.cpp.  The
+      // built-in `lle` / `llexl` / `5200lle` values are useful when
+      // the author hasn't shipped any firmware ROM and wants the
+      // built-in clean-room kernel rather than whatever the
+      // simulator default would be — for example a self-hosted
+      // embed of a 130XE title that should always run against
+      // LLE-XL regardless of what the visitor previously installed.
+      var kernelAllow = ['default','osa','osb','xl','xegs',
+                         '1200xl','5200','lle','llexl','hle','5200lle'];
+      var kern = (p.get('kernel') || '').trim().toLowerCase();
+      if (kern) {
+        if (kernelAllow.indexOf(kern) >= 0) {
+          __wasmCliArgs.push('--kernel', kern);
+          log('--kernel ' + kern);
+        } else {
+          log('ignored unknown kernel:', kern);
+        }
       }
 
       if ((p.get('host') || '') === '1') {
@@ -225,12 +348,17 @@
   // ── 2. preRun fetch ──────────────────────────────────────────────
   function preRunFetch(Module, __wasmCliArgs) {
     var lib = window.__altirraLib;
-    if (!lib || !lib.paths || !lib.paths.length) return;
+    if (!lib) return;
+    var hasLibPaths = !!(lib.paths && lib.paths.length);
+    var hasFwPaths  = !!(lib.firmwarePaths && lib.firmwarePaths.length);
+    if (!hasLibPaths && !hasFwPaths) return;
 
     Module.addRunDependency('library-fetch');
 
-    var BASE = '/AltirraSDL/library/';
+    var BASE = resolveBase('library', lib.embed);
+    var FW_BASE = resolveBase('firmware', lib.embed);
     var DEST = '/home/web_user/games/library';
+    var FW_DEST = '/home/web_user/firmware';
     var KIND = {
       atr:'disk', xfd:'disk', atx:'disk', pro:'disk', dcm:'disk',
       xex:'run',  com:'run',  exe:'run',
@@ -238,6 +366,7 @@
       cas:'tape', wav:'tape',
     };
     try { Module.FS.mkdirTree(DEST); } catch (e) {}
+    try { Module.FS.mkdirTree(FW_DEST); } catch (e) {}
 
     function basenameOf(p) {
       var i = p.lastIndexOf('/');
@@ -265,6 +394,26 @@
       return { rel: rel, vfs: DEST + '/' + b, kind: kind };
     });
 
+    // Firmware ROMs land in /home/web_user/firmware with their original
+    // basename (preserving the .rom extension is important — the firmware
+    // scanner inspects extension AND content hash, and some recognised
+    // ROMs only match when the file ends in .rom or .bin).  No CLI args
+    // are pushed: ATUIDoFirmwareScan registers each detected type as the
+    // type-default, and the simulator's hardware-mode boot resolves the
+    // kernel/BASIC slot to the dropped ROM automatically.
+    var fwBasenames = {};
+    var fwEntries = (lib.firmwarePaths || []).map(function (rel) {
+      var b = basenameOf(rel);
+      if (b in fwBasenames) {
+        var dot = b.lastIndexOf('.');
+        var stem = dot >= 0 ? b.substring(0, dot) : b;
+        var ext2 = dot >= 0 ? b.substring(dot)    : '';
+        b = stem + '_' + (fwBasenames[b]++) + ext2;
+      }
+      fwBasenames[b] = (fwBasenames[b] || 0) + 1;
+      return { rel: rel, vfs: FW_DEST + '/' + b };
+    });
+
     // Push CLI args in source order NOW.  By the time main() reads
     // Module.arguments, the run-dependency below has been resolved →
     // every fetch has completed → every vfs path is on disk.
@@ -285,7 +434,7 @@
     }
 
     var fetched = 0, cached = 0;
-    var promises = entries.map(function (e) {
+    function makeFetchPromise(e, baseUrl) {
       // Stat-skip cached files (IDBFS persistence saves the ~80 KB
       // ATR re-download on every repeat Play Solo click).
       try {
@@ -294,7 +443,7 @@
       } catch (_) {}
 
       var encRel = e.rel.split('/').map(encodeURIComponent).join('/');
-      return fetch(BASE + encRel, { cache: 'force-cache' })
+      return fetch(baseUrl + encRel, { cache: 'force-cache' })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + e.rel);
           return r.arrayBuffer();
@@ -313,12 +462,28 @@
           log('fetch failed for', e.rel, '—',
               err && err.message ? err.message : err);
         });
-    });
+    }
 
+    var promises = entries.map(function (e) {
+      return makeFetchPromise(e, BASE);
+    }).concat(fwEntries.map(function (e) {
+      return makeFetchPromise(e, FW_BASE);
+    }));
+
+    var totalCount = entries.length + fwEntries.length;
     Promise.all(promises).then(function () {
-      log('library: ' + fetched + ' fetched + ' + cached
-          + ' cached / ' + lib.paths.length + ' file(s)'
+      log('lib+firmware: ' + fetched + ' fetched + ' + cached
+          + ' cached / ' + totalCount + ' file(s)'
           + ' — argv now has ' + __wasmCliArgs.length + ' arg(s)');
+      // No explicit ATWasmRescanFirmware call here: the wasm runtime
+      // hasn't initialised yet (we're still inside a preRun promise
+      // chain), so Module._* exports may be undefined.  The rescan
+      // that wasm_index.html.in runs unconditionally in
+      // onRuntimeInitialized executes AFTER our run-dependency has
+      // been released — which means our fetched ROMs are on disk by
+      // then and get hashed + type-default-registered before main()
+      // boots the simulator.
+      //
       // Best-effort flush so the fetched files persist in IDBFS.
       try {
         if (Module.FS && Module.FS.syncfs)
