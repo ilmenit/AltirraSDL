@@ -407,6 +407,17 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 					// mobileState.autoSaveOnSuspend, so users who
 					// disabled it still get a clean exit-and-forget.
 					ATMobileUI_SaveSuspendState(sim, mobileState);
+
+					// Mark the Android activity so the eventual
+					// finish() (which SDLActivity calls automatically
+					// once native main() returns) is redirected to
+					// finishAndRemoveTask() and the OS process is
+					// killed — without this the recents entry stays
+					// and tapping it warm-starts a new activity,
+					// which looks like the app didn't really exit.
+					// No-op on desktop.
+					ATAndroid_RequestQuitAndRemoveTask();
+
 					uiState.exitConfirmed = true;
 					SDL_Event q{};
 					q.type = SDL_EVENT_QUIT;

@@ -91,3 +91,14 @@ void ATAndroid_InvalidateStorageVolumes();
 // callers should invalidate via ATAndroid_InvalidateSafeInsets() so
 // the UI re-queries them.
 void ATAndroid_SetImmersiveMode(bool enabled);
+
+// Mark the Android activity for a true exit: when SDLActivity's main
+// thread runner calls finish() after native main() returns, the
+// AltirraActivity.finish() override redirects to finishAndRemoveTask()
+// and kills the OS process.  Used by the "Exit Emulator" menu item so
+// the user gets a deterministic shutdown — without this, finish()
+// leaves the task chip in recents and tapping it warm-starts a new
+// activity, looking like the app failed to quit.  Call before pushing
+// SDL_EVENT_QUIT so the flag is in place by the time main() returns.
+// No-op on non-Android builds.
+void ATAndroid_RequestQuitAndRemoveTask();

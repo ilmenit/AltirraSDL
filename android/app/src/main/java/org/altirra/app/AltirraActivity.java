@@ -40,6 +40,22 @@ public class AltirraActivity extends SDLActivity {
 
     private static final int PERM_REQUEST_STORAGE = 0x4154;  // "AT"
 
+    /**
+     * When true, the next call to {@link #finish()} (typically from
+     * SDLActivity's SDLMain after our native main loop returns) is
+     * redirected to {@link #finishAndRemoveTask()} so the recents
+     * entry disappears, and we kill the OS process so Android cannot
+     * warm-start a new activity into our half-torn-down state.
+     *
+     * Set from native via {@link #requestQuitAndRemoveTask()} when the
+     * user picks "Exit Emulator" from the hamburger menu — that path
+     * promises a true exit, not a normal back-stack pop.  Other
+     * finish() callers (broken-libraries dialog, system back stack
+     * navigation, etc.) leave this false and get the standard
+     * Android behaviour.
+     */
+    private volatile boolean mQuitAndRemoveTask = false;
+
     @Override
     protected String[] getLibraries() {
         return new String[]{
@@ -51,6 +67,35 @@ public class AltirraActivity extends SDLActivity {
     @Override
     protected String getMainFunction() {
         return "main";
+    }
+
+    /**
+     * Called from native via JNI by the "Exit Emulator" menu handler
+     * before it asks the SDL event loop to shut down.  Marks the
+     * activity so the eventual finish() call removes the task from
+     * recents and kills the process.
+     */
+    public void requestQuitAndRemoveTask() {
+        mQuitAndRemoveTask = true;
+    }
+
+    @Override
+    public void finish() {
+        if (mQuitAndRemoveTask) {
+            // True exit path requested by the user via Exit Emulator.
+            // finishAndRemoveTask() drops the recents entry so tapping
+            // the task chip cannot warm-start the app — without this,
+            // Android keeps the chip and re-launches into a new
+            // activity, which looks like the app "didn't really quit".
+            // We deliberately don't follow up with Process.killProcess:
+            // finishAndRemoveTask is asynchronous, killing the process
+            // immediately afterwards races the task-removal commit and
+            // can leave a stale chip in recents.  Android cleans up the
+            // process on its own once all activities are finished.
+            finishAndRemoveTask();
+        } else {
+            super.finish();
+        }
     }
 
     /**

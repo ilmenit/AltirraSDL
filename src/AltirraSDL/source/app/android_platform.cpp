@@ -485,6 +485,38 @@ void ATAndroid_SetImmersiveMode(bool enabled) {
 	LOGI("Immersive mode %s", enabled ? "enabled" : "disabled");
 }
 
+void ATAndroid_RequestQuitAndRemoveTask() {
+	JNIEnv *env = GetEnv();
+	jobject activity = GetActivity();
+	if (!env || !activity) return;
+
+	jclass activityClass = env->GetObjectClass(activity);
+	if (!activityClass) {
+		CheckAndClearException(env, "quit: GetObjectClass");
+		return;
+	}
+	JLocal _acls(env, activityClass);
+
+	// Sets a Java-side flag that the AltirraActivity.finish() override
+	// reads when SDLActivity's main-thread runner calls finish() after
+	// our native main() returns.  With the flag set, finish() routes
+	// to finishAndRemoveTask() + Process.killProcess() so the recents
+	// entry disappears and the OS process actually dies — without it,
+	// "Exit Emulator" leaves the task in recents and clicking it warm-
+	// starts a new activity, which looks like the app didn't really
+	// quit.  Java handles the flag; we only schedule it here.
+	jmethodID mid = env->GetMethodID(activityClass,
+		"requestQuitAndRemoveTask", "()V");
+	if (!mid) {
+		CheckAndClearException(env, "requestQuitAndRemoveTask mid");
+		LOGW("AltirraActivity.requestQuitAndRemoveTask missing");
+		return;
+	}
+	env->CallVoidMethod(activity, mid);
+	if (CheckAndClearException(env, "requestQuitAndRemoveTask call")) return;
+	LOGI("Quit-and-remove-task requested");
+}
+
 #else // !__ANDROID__
 
 ATSafeInsets ATAndroid_GetSafeInsets() { return ATSafeInsets{}; }
@@ -495,6 +527,7 @@ const char *ATAndroid_GetPublicDownloadsDir() { return ""; }
 bool ATAndroid_OpenManageStorageSettings() { return false; }
 void ATAndroid_Vibrate(int) {}
 void ATAndroid_SetImmersiveMode(bool) {}
+void ATAndroid_RequestQuitAndRemoveTask() {}
 
 namespace {
 std::vector<ATAndroidVolume> g_emptyVolumes;
