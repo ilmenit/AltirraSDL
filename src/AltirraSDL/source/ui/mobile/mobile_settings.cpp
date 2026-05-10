@@ -31,6 +31,8 @@
 #include <at/atio/diskimage.h>
 #include "mediamanager.h"
 #include "firmwaremanager.h"
+#include "devicemanager.h"
+#include <at/atcore/propertyset.h>
 #include "uiaccessors.h"
 #include "uitypes.h"
 #include "constants.h"
@@ -489,6 +491,152 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			if (ATTouchToggle("SIO Patch", &sioEnabled)) {
 				sim.SetSIOPatchEnabled(sioEnabled);
 				ATPersistMobileEdit(kATSettingsCategory_Acceleration);
+			}
+		}
+
+		// ---- DEVICES (still on Machine page) ----
+		// Quick on/off toggles for the most-requested internal expansion
+		// devices.  Each toggle adds the device with the same defaults the
+		// Desktop UI's "Configure System -> Devices -> Add Device" dialog
+		// proposes (see RenderVBXEConfig / RenderCovoxConfig /
+		// RenderSoundBoardConfig in ui_devconfig_devices.cpp), so a Gaming
+		// Mode user gets exactly the same hardware as a Desktop user who
+		// accepted the defaults.  Removal is a plain RemoveDevice() — the
+		// user can still customise advanced parameters from Desktop Mode.
+		ATTouchSection("Devices");
+
+		{
+			ATDeviceManager *devMgr = sim.GetDeviceManager();
+			if (devMgr) {
+				auto toggleDevice = [&](const char *tag, const char *label,
+					std::function<void(ATPropertySet&)> setDefaults)
+				{
+					IATDevice *existing = devMgr->GetDeviceByTag(tag);
+					bool present = (existing != nullptr);
+					const bool wasPresent = present;
+					if (ATTouchToggle(label, &present)) {
+						bool changed = false;
+						bool needsReboot = false;
+
+						// Devices flagged kATDeviceDefFlag_RebootOnPlug
+						// (Rapidus, BlackBox, MIO, SIDE, KMK/JZ IDE, MyIDE-II,
+						// WarpOS) rewire the CPU/ROM map at plug time and
+						// must trigger a cold reset; the simulator does not
+						// auto-reset on AddDevice/RemoveDevice.  See
+						// uidevices.cpp:1077,1162 for the Windows path.
+						const ATDeviceDefinition *def =
+							devMgr->GetDeviceDefinition(tag);
+						if (def && (def->mFlags & kATDeviceDefFlag_RebootOnPlug))
+							needsReboot = true;
+
+						if (present && !wasPresent) {
+							ATPropertySet pset;
+							if (setDefaults)
+								setDefaults(pset);
+							try {
+								if (devMgr->AddDevice(tag, pset, false))
+									changed = true;
+							} catch (...) {
+								// AddDevice failed (bad firmware, conflict,
+								// etc.).  Suppress — next frame's
+								// GetDeviceByTag will resync the toggle.
+							}
+						} else if (!present && wasPresent) {
+							ATUICloseDeviceConfigFor(existing);
+							devMgr->RemoveDevice(existing);
+							changed = true;
+						}
+
+						if (changed) {
+							if (needsReboot)
+								sim.ColdReset();
+							ATPersistMobileEdit(kATSettingsCategory_Devices);
+						}
+					}
+				};
+
+				// VBXE — defaults match RenderVBXEConfig: FX 1.26, $D600,
+				// no shared memory.  Only "version" needs to be written;
+				// "alt_page" and "shared_mem" are absent for defaults.
+				toggleDevice("vbxe", "VideoBoard XE (VBXE)",
+					[](ATPropertySet &p) {
+						p.SetUint32("version", 126);
+					});
+
+				// Covox — defaults match RenderCovoxConfig: $D600-D6FF,
+				// 4 channels (stereo).
+				toggleDevice("covox", "Covox",
+					[](ATPropertySet &p) {
+						p.SetUint32("base", 0xD600);
+						p.SetUint32("size", 0x100);
+						p.SetUint32("channels", 4);
+					});
+
+				// SoundBoard — defaults match RenderSoundBoardConfig:
+				// version 1.2, base $D2C0.
+				toggleDevice("soundboard", "SoundBoard",
+					[](ATPropertySet &p) {
+						p.SetUint32("version", 120);
+						p.SetUint32("base", 0xD2C0);
+					});
+
+				// Rapidus Accelerator — no configurable parameters.
+				toggleDevice("rapidus", "Rapidus Accelerator", nullptr);
+			}
+		}
+
+		// ---- CPU (still on Machine page) ----
+		// Mirrors Configure System -> CPU but exposes only the four chip
+		// selections most users actually toggle in gameplay.  Other
+		// 65C816 clock multipliers and the secondary CPU options
+		// (Shadow ROM, NMI blocking, BRK/IRQ trapping, etc.) remain
+		// reachable via Desktop Mode.
+		ATTouchSection("CPU");
+
+		{
+			static const struct {
+				ATCPUMode mode;
+				uint32 subCycles;
+				const char *label;
+			} kCpu[] = {
+				{ kATCPUMode_6502,    1, "6502C"           },
+				{ kATCPUMode_65C02,   1, "65C02"           },
+				{ kATCPUMode_65C816,  4, "65C816 (7 MHz)"  },
+				{ kATCPUMode_65C816, 12, "65C816 (21 MHz)" },
+			};
+			constexpr int kNumCpu = (int)(sizeof(kCpu) / sizeof(kCpu[0]));
+
+			ATCPUMode curMode = sim.GetCPU().GetCPUMode();
+			uint32 curSub = sim.GetCPU().GetSubCycles();
+			int curIdx = 0; // default 6502C if no exact match
+			for (int i = 0; i < kNumCpu; ++i) {
+				if (kCpu[i].mode == curMode && kCpu[i].subCycles == curSub) {
+					curIdx = i;
+					break;
+				}
+			}
+
+			static const char *labels[kNumCpu] = {
+				kCpu[0].label, kCpu[1].label, kCpu[2].label, kCpu[3].label,
+			};
+			if (ATTouchSegmented("CPU", &curIdx, labels, kNumCpu)) {
+				// Cold reset only when chip type changes (not on a pure
+				// speed change); matches Windows OnCommandSystemCPUMode
+				// and ui_system_pages_computer.cpp:492.
+				bool needReset =
+					(!sim.IsCPUModeOverridden() && kCpu[curIdx].mode != curMode);
+				sim.SetCPUMode(kCpu[curIdx].mode, kCpu[curIdx].subCycles);
+				if (needReset)
+					sim.ColdReset();
+				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+			}
+		}
+
+		{
+			bool illegals = sim.GetCPU().AreIllegalInsnsEnabled();
+			if (ATTouchToggle("Enable Illegal Instructions", &illegals)) {
+				sim.GetCPU().SetIllegalInsnsEnabled(illegals);
+				ATPersistMobileEdit(kATSettingsCategory_Hardware);
 			}
 		}
 
