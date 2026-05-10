@@ -1322,7 +1322,12 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// ESC / B / Backspace: context-dependent.
 		// If search or variant picker is active, close it.
 		// If a game was running, return to it.
-		// Otherwise this IS the home screen — do nothing.
+		// Otherwise this IS the home screen — on Android we minimize
+		// the activity to the launcher (the Android idiom for "Back
+		// on root"), which keeps the process alive in the background
+		// so the user can resume from the task switcher.  On desktop
+		// there is no equivalent gesture, so Back on root is a no-op
+		// and the user closes the window through normal OS chrome.
 		//
 		// When the letter picker modal is open it owns the back key —
 		// we must not also process it here, otherwise a single ESC
@@ -1355,6 +1360,15 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			} else if (mobileState.gameLoaded) {
 				mobileState.currentScreen = ATMobileUIScreen::None;
 				sim.Resume();
+			} else {
+#ifdef __ANDROID__
+				// Root home screen with no game — match the Android
+				// system idiom for Back on a root activity by sending
+				// the app to the background.  SDL_MinimizeWindow on
+				// Android maps to Activity.moveTaskToBack().
+				if (window)
+					SDL_MinimizeWindow(window);
+#endif
 			}
 		}
 

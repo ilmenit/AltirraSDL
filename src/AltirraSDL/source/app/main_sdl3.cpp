@@ -409,13 +409,25 @@ static void HandleEvents() {
 			if (ATMobileUI_HandleEvent(ev, g_mobileState))
 				continue;
 
-			// ESC on the emulation screen opens the hamburger (pause menu).
-			// If somehow on None with no game, return to the library.
+			// ESC on the emulation screen has a layered meaning that
+			// matches the Android Back idiom of "dismiss the topmost
+			// transient overlay first":
+			//
+			//   1. Virtual on-screen Atari keyboard visible → close it.
+			//      (Standard Android pattern: Back closes the soft
+			//      keyboard before navigating.  Without this branch,
+			//      pressing Back with the VKB up would open the
+			//      hamburger and leave the keyboard stranded behind it.)
+			//   2. A game is running → open the hamburger pause menu.
+			//   3. No game and somehow on None → return to the library.
 			if (ev.type == SDL_EVENT_KEY_DOWN
 				&& ev.key.key == SDLK_ESCAPE
 				&& g_mobileState.currentScreen == ATMobileUIScreen::None)
 			{
-				if (g_mobileState.gameLoaded) {
+				if (g_uiState.showVirtualKeyboard) {
+					g_uiState.showVirtualKeyboard = false;
+					ATUIVirtualKeyboard_ReleaseAll(g_sim);
+				} else if (g_mobileState.gameLoaded) {
 					ATMobileUI_OpenMenu(g_sim, g_mobileState);
 				} else {
 					g_mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
@@ -1377,6 +1389,19 @@ int main(int argc, char *argv[]) {
 			"Altirra: ALTIRRA_MACOS_FORCE_IOKIT=1: SDL_JOYSTICK_MFI=0 "
 			"(using IOKit HID instead of GameController.framework)");
 	}
+#endif
+
+#ifdef __ANDROID__
+	// Trap the Android hardware Back button so it surfaces as a key
+	// event (SDL_SCANCODE_AC_BACK) instead of SDL's default behaviour
+	// of calling Activity.onBackPressed() which finishes/minimizes the
+	// app.  The same value is also baked into the AndroidManifest as
+	// SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON=1 (which is the path the
+	// Java side actually reads first); this SDL_SetHint() is the
+	// belt-and-suspenders C-side equivalent so the trap stays on even
+	// if the manifest meta-data ever drops out.  See main_sdl3.cpp
+	// SDL_SCANCODE_AC_BACK rewrite below for the rest of the chain.
+	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 #endif
 
 	phase = "SDL_Init";

@@ -374,6 +374,47 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		}
 #endif
 
+		// Exit Emulator — explicit quit path requested by users who
+		// want a deterministic shutdown (auto-save state on suspend,
+		// flush settings, release file handles) instead of swiping the
+		// task away.  Routed through the same exit-confirm flow as
+		// SDL_EVENT_QUIT / window close so a user with unsaved progress
+		// gets the standard "Exit Altirra?" prompt.  Danger style and
+		// bottom placement so it isn't confused with Resume / Game
+		// Library.
+		ImGui::Separator();
+		ImGui::Spacing();
+		if (ATTouchButton("Exit Emulator", btnSize, ATTouchButtonStyle::Danger)) {
+			// The confirm copy adapts to whether the user has the
+			// auto-save-on-suspend toggle on (default: yes).  With
+			// auto-save the snapshot is restored on next launch, so
+			// the prompt is purely a "are you sure" — without it the
+			// user genuinely loses their place, and the prompt has to
+			// say so.
+			const char *body = mobileState.autoSaveOnSuspend
+				? "Quit Altirra?  Your current progress is saved "
+				  "automatically and will be restored next time you "
+				  "open the app."
+				: "Quit Altirra?  Any unsaved progress will be lost.";
+			ShowConfirmDialog("Exit Emulator", body,
+				[&sim, &uiState, &mobileState]() {
+					// Mirror the WILL_ENTER_BACKGROUND / TERMINATING
+					// path so the emulator state snapshot is written
+					// before we tear down — without this call the
+					// auto-save toggle would silently drop progress
+					// when the user exits via the menu instead of
+					// swiping the app away.  Self-gated on
+					// mobileState.autoSaveOnSuspend, so users who
+					// disabled it still get a clean exit-and-forget.
+					ATMobileUI_SaveSuspendState(sim, mobileState);
+					uiState.exitConfirmed = true;
+					SDL_Event q{};
+					q.type = SDL_EVENT_QUIT;
+					SDL_PushEvent(&q);
+				});
+		}
+		ImGui::Spacing();
+
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 	}

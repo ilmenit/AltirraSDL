@@ -254,6 +254,28 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoBackground;
 
 	if (ImGui::Begin("##FirstRun", nullptr, flags)) {
+		// Back-key handling: the first-run wizard is the root screen
+		// on a fresh install (no game, no settings, nothing to go back
+		// to inside the app), so Android's idiom for Back-on-root
+		// applies — send the activity to the launcher rather than
+		// silently swallowing the press.  The wizard state is in the
+		// registry so the user resumes mid-flow when they relaunch.
+		// On desktop, Back is a no-op here (no equivalent gesture).
+		{
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back) {
+#ifdef __ANDROID__
+				if (window)
+					SDL_MinimizeWindow(window);
+#endif
+			}
+		}
+
 		float w = ImGui::GetContentRegionAvail().x;
 		float h = ImGui::GetContentRegionAvail().y;
 
