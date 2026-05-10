@@ -427,6 +427,87 @@
     }
     #drop-overlay.active { display: flex; }
 
+    /* ── Manual-start overlay (?autoplay=0) ────────────────────────────
+       A black scrim with a centred play glyph that covers the canvas
+       until the visitor clicks (or taps).  When ?autoplay=0 is in
+       the URL, the deep-link parser adds `body.manual-start`
+       *synchronously* (during the early <script> in <body>), so the
+       overlay paints on the very first frame — before AltirraSDL.js
+       is fetched.  The host-page IIFE then DEFERS the AltirraSDL.js
+       <script> injection until the overlay is clicked, so the wasm
+       (~5 MB) is never downloaded for visitors who never engage —
+       this is the YouTube-facade pattern that embed authors expect.
+
+       The same click also unmutes the audio context per browser
+       autoplay policy (any same-tab user gesture is enough).
+
+       Positioned absolute inside #canvas-wrap so it sits exactly over
+       the canvas regardless of letterboxing.  Hidden by default; the
+       `body.manual-start` selector makes it visible — the JS click
+       handler removes that class to dismiss the overlay (same as
+       toggling a `.active` modifier, but body-class-driven so the
+       initial paint needs no JS).  Pointer-events stay on auto so
+       the click hits the overlay before reaching the canvas.
+
+       The play button is built from CSS shapes — no SVG, no extra HTTP
+       request — so the overlay renders even before AltirraSDL.js has
+       loaded.  Hover state brightens the ring and nudges it slightly;
+       touch users get the same target without hover styling. */
+    #start-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      background: #000;
+      color: #e8e8e8;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      z-index: 10;
+    }
+    body.manual-start #start-overlay { display: flex; }
+    #start-overlay .play-ring {
+      width: clamp(80px, 18vmin, 160px);
+      height: clamp(80px, 18vmin, 160px);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: 3px solid rgba(255,255,255,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    #start-overlay:hover .play-ring,
+    #start-overlay:focus .play-ring {
+      background: rgba(125,178,255,0.2);
+      border-color: #7db2ff;
+      transform: scale(1.05);
+    }
+    #start-overlay .play-ring::before {
+      content: "";
+      display: block;
+      width: 0;
+      height: 0;
+      /* Equilateral triangle pointing right; offset slightly to look
+         visually centred inside the ring (geometric vs optical centre). */
+      margin-left: 18%;
+      border-style: solid;
+      border-width: clamp(16px, 4vmin, 32px) 0
+                    clamp(16px, 4vmin, 32px) clamp(28px, 7vmin, 56px);
+      border-color: transparent transparent transparent #fff;
+    }
+    #start-overlay .play-label {
+      font: 600 clamp(14px, 1.6vmin, 20px)/1.3
+            -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      letter-spacing: 0.04em;
+      opacity: 0.85;
+      text-align: center;
+      padding: 0 16px;
+    }
+
     /* ── Log panel ───────────────────────────────────────────────── */
     #log {
       flex: 0 0 auto;
@@ -1434,6 +1515,15 @@
   <div id="canvas-wrap">
     <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
     <div id="drop-overlay">Drop files here to upload</div>
+    <!-- Manual-start overlay.  Activated by JS when ?autoplay=0 is in
+         the URL; click handler resumes the paused simulator and unmutes
+         audio in a single user gesture.  See start-overlay CSS above
+         and the matching JS block in the deep-link applier. -->
+    <div id="start-overlay" role="button" tabindex="0"
+         aria-label="Click to start the emulator">
+      <div class="play-ring" aria-hidden="true"></div>
+      <div class="play-label">Click to play</div>
+    </div>
   </div>
 
   <div id="log" class="hidden">
@@ -7183,10 +7273,66 @@
       showLogOnError();
     });
 
-    const script = document.createElement('script');
-    script.src = 'AltirraSDL.js?v=' + cacheBust;
-    script.onerror = () => appendLog('[script] failed to load AltirraSDL.js');
-    document.body.appendChild(script);
+    // ── AltirraSDL.js loader ─────────────────────────────────────────
+    // Wrapped in a one-shot helper so manual-start mode (?autoplay=0)
+    // can defer the injection until the user clicks the overlay.  The
+    // wasm bundle is ~5 MB; for embed authors who want a YouTube-style
+    // facade, deferring saves the entire payload for visitors who
+    // never engage with the canvas.  The default (autoplay on) calls
+    // the helper immediately, exactly as before.
+    let scriptLoaded = false;
+    function loadAltirraScript() {
+      if (scriptLoaded) return;
+      scriptLoaded = true;
+      const script = document.createElement('script');
+      script.src = 'AltirraSDL.js?v=' + cacheBust;
+      script.onerror = () => appendLog('[script] failed to load AltirraSDL.js');
+      document.body.appendChild(script);
+    }
+
+    // Manual-start path: defer the WASM fetch until the visitor
+    // clicks the overlay.  body.manual-start was added by
+    // ATLibDeepLink.parseUrl() during the earlier <script> block;
+    // the matching CSS rule (body.manual-start #start-overlay) makes
+    // the play-button overlay visible from the very first paint.
+    //
+    // Click handler runs in the user-gesture context, so the audio
+    // context unmute that AltirraSDL.js triggers later in its own
+    // init code finds the gesture flag set and silent-audio-fallbacks
+    // are not needed.  We also refocus the canvas so keyboard input
+    // routes correctly once the runtime is ready.
+    const startOverlay = document.getElementById('start-overlay');
+    const isManualStart = !!(window.__altirraLib
+                             && window.__altirraLib.manualStart);
+    if (isManualStart && startOverlay) {
+      const startGo = (e) => {
+        if (e) e.preventDefault();
+        // Hide the overlay immediately for snappy feedback; the wasm
+        // download takes a few seconds even on a fast link.
+        document.body.classList.remove('manual-start');
+        // Belt-and-braces: also hide the element directly in case a
+        // host page or extension overrides the body-class CSS rule.
+        try { startOverlay.style.display = 'none'; } catch (_) {}
+        loadAltirraScript();
+        try { document.getElementById('canvas')
+              .focus({ preventScroll: true }); } catch (_) {}
+      };
+      // Pointerdown beats click by one round-trip on touch and is
+      // accepted as a user gesture by every modern browser's audio
+      // policy.  Keyboard activation (Enter / Space on the focused
+      // role="button") fires as a click event, which we handle too.
+      startOverlay.addEventListener('pointerdown', startGo, { once: true });
+      startOverlay.addEventListener('click',       startGo, { once: true });
+      startOverlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') startGo(e);
+      });
+    } else {
+      // Default path: load AltirraSDL.js immediately.  Behaviour
+      // matches every prior release for every URL that doesn't carry
+      // ?autoplay=0 (lobby Solo / Together / Bare URL / self-hosted
+      // embed without the opt-in).
+      loadAltirraScript();
+    }
   })();
   </script>
 </body>

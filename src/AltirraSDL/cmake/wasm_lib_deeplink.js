@@ -87,12 +87,20 @@
     //   filter:     0..4|null         (?filter=point|bilinear|sharp|bicubic|auto)
     //   artifact:   0..6|null         (?artifact=none|ntsc|pal|ntschi|palhi|auto|autohi)
     //   vkbd:       true|false|null   (?vkbd=0|1)
+    //   stretch:    0..4|null         (?stretch=fill|preserve|square|integral|integral_preserve)
+    //   ui:         'desktop'|'gaming'|null  (?ui=…)  overrides the
+    //              auto-pick that forces Gaming Mode whenever ?lib= is set.
+    //   manualStart:true|false        (?autoplay=0)  pause until user clicks
+    //              the "Click to play" overlay; default false (autoplay on).
     // Applied in onRuntimeReady AFTER the gaming-mode preset has run,
     // so an explicit ?crt=0 wins over Balanced's vignette default.
     crt:         null,
     filter:      null,
     artifact:    null,
     vkbd:        null,
+    stretch:     null,
+    ui:          null,
+    manualStart: false,
   };
 
   // Resolve the same-origin base URL for fetched assets.  The lobby
@@ -344,6 +352,73 @@
         log('vkbd=' + (window.__altirraLib.vkbd ? '1' : '0'));
       } else if (vkbdRaw) {
         log('ignored unknown vkbd value:', vkbdRaw);
+      }
+
+      // ?stretch=fill|preserve|square|integral|integral_preserve —
+      // display stretch mode.  Maps to ATDisplayStretchMode (uitypes.h).
+      // Useful for pixel-perfect embed authors: ?stretch=integral
+      // forces integer-multiple scaling (no PAR multiplier), which is
+      // the only setting that guarantees every Atari pixel maps to the
+      // same number of destination pixels regardless of iframe size.
+      // The PreserveAspectRatio default (= what gaming mode applies)
+      // multiplies width by ~1.04 (PAL) or ~0.857 (NTSC) for accurate
+      // CRT geometry, and the resulting non-integer per-pixel scale
+      // blurs hi-res GR.0 text even with filter=point.
+      var stretchMap = {
+        fill: 0, unconstrained: 0,
+        preserve: 1, par: 1,
+        square: 2, squarepixels: 2,
+        integral: 3,
+        integral_preserve: 4, integralpreserve: 4, integralpar: 4,
+      };
+      var stretchRaw = (p.get('stretch') || '').trim().toLowerCase();
+      if (stretchRaw) {
+        if (stretchRaw in stretchMap) {
+          window.__altirraLib.stretch = stretchMap[stretchRaw];
+          log('stretch=' + stretchRaw + ' (mode='
+              + window.__altirraLib.stretch + ')');
+        } else {
+          log('ignored unknown stretch value:', stretchRaw);
+        }
+      }
+
+      // ?ui=desktop|gaming — override the UI-mode auto-pick.
+      // Without this param, presence of ?lib= / ?s= / broker context
+      // forces Gaming Mode (full-screen canvas, hamburger menu, no
+      // menu bar).  Authors who want their visitors to land in the
+      // full Desktop UI (menu bar, dialogs, debugger) with a game
+      // pre-loaded — e.g. a "Try this game in the full emulator"
+      // button on a games-list page — pass ?ui=desktop.  Conversely
+      // ?ui=gaming forces Gaming Mode even when no game is preloaded.
+      var uiRaw = (p.get('ui') || '').trim().toLowerCase();
+      if (uiRaw === 'desktop' || uiRaw === 'gaming') {
+        window.__altirraLib.ui = uiRaw;
+        log('ui=' + uiRaw);
+      } else if (uiRaw) {
+        log('ignored unknown ui value:', uiRaw);
+      }
+
+      // ?autoplay=0|1 — controls whether the emulator runs immediately
+      // on page load.  Note: this is independent of the iframe's
+      // `allow="autoplay"` permissions-policy attribute (which only
+      // governs browser audio autoplay, NOT whether the simulator
+      // runs).  When ?autoplay=0 is set, the JS pauses the emulator
+      // as soon as the runtime is ready and shows a centred
+      // "▶ Click to play" overlay over the canvas; the overlay's
+      // click handler resumes the simulator and unmutes audio in the
+      // same user gesture.  Default behaviour (autoplay=1, no param)
+      // matches every existing surface — emulator boots and runs the
+      // moment the page loads.
+      var apRaw = (p.get('autoplay') || '').trim();
+      if (apRaw === '0') {
+        window.__altirraLib.manualStart = true;
+        try {
+          if (document && document.body)
+            document.body.classList.add('manual-start');
+        } catch (_) {}
+        log('autoplay=0 — manual start enabled');
+      } else if (apRaw && apRaw !== '1') {
+        log('ignored unknown autoplay value:', apRaw);
       }
 
       // ?randmem=0|1 — RAM randomization (bundled cold-reset clear-mode
@@ -723,6 +798,18 @@
     var hasJoin   = !!(p && (p.get('s') || '').trim());
     var hasBroker = !!(lib && lib.brokerMode);
     var wantsGaming = hasLib || hasJoin || hasBroker;
+
+    // ?ui= override: an explicit Desktop / Gaming choice always wins
+    // over the heuristic above.  The Join (?s=) path stays Gaming-Mode
+    // even with ?ui=desktop because the Join handshake's prep flow
+    // lives only in the Gaming-Mode dispatcher — overriding there
+    // would trap the user in Desktop without the Browse Hosted Games
+    // gate they need.  All other surfaces honour the override.
+    if (lib.ui === 'desktop' && !hasJoin && !hasBroker) {
+      wantsGaming = false;
+    } else if (lib.ui === 'gaming') {
+      wantsGaming = true;
+    }
     if (Module._ATWasmSetGamingMode) {
       try { Module._ATWasmSetGamingMode(wantsGaming ? 1 : 0); } catch (e) {}
     }
@@ -748,6 +835,14 @@
     if (lib.vkbd !== null && Module._ATWasmSetVirtualKeyboard) {
       try { Module._ATWasmSetVirtualKeyboard(lib.vkbd ? 1 : 0); } catch (e) {}
     }
+    if (lib.stretch !== null && Module._ATWasmSetStretchMode) {
+      try { Module._ATWasmSetStretchMode(lib.stretch); } catch (e) {}
+    }
+    // Manual-start (?autoplay=0) needs no work here — the host page
+    // (wasm_index.html.in) handles it entirely outside the runtime
+    // lifecycle by deferring the AltirraSDL.js <script> injection
+    // until the visitor clicks the overlay.  By the time this hook
+    // fires we are already running in the post-click code path.
 
     // Broker mode shows the "Starting…" overlay until lockstep so
     // the user sees something happening while the netplay handshake

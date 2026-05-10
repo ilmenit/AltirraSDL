@@ -204,6 +204,18 @@
         <code>&amp;memsize=128K</code> for a 130XE-only title.</li>
     <li><strong>Title</strong> — add
         <code>&amp;title=My+Game</code> if you ever expose chrome.</li>
+    <li><strong>Pixel-perfect text</strong> — add
+        <code>&amp;crt=0&amp;filter=point&amp;artifact=none&amp;stretch=integral</code>
+        and use <code>aspect-ratio: 7 / 5</code> for PAL or
+        <code>3 / 2</code> for NTSC.  See <a href="EMBED.md">EMBED.md</a>
+        for why <code>4 / 3</code> isn't quite right.</li>
+    <li><strong>Lazy load (click-to-play)</strong> — add
+        <code>&amp;autoplay=0</code> to skip the wasm download until
+        the visitor clicks the canvas.  Saves ~5 MB per visitor who
+        never engages.</li>
+    <li><strong>Open in the full emulator UI</strong> — add
+        <code>&amp;ui=desktop</code> (and omit <code>embed=1</code>)
+        for a "try this in the full emulator" link.</li>
   </ul>
 
   <p>See <a href="EMBED.md">EMBED.md</a> for the complete reference.</p>

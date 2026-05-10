@@ -146,6 +146,7 @@ preference / gaming-mode preset chose.
 | `filter`    | `point`, `bilinear`, `sharp` (= `sharpbilinear`), `bicubic`, `auto` | Display upscale filter applied AFTER the `crt=` preset.  Lets you keep the CRT look (`crt=1`) but force `filter=point` for crisp text overlays, or vice versa. |
 | `artifact`  | `none`, `ntsc`, `pal`, `ntschi`, `palhi`, `auto`, `autohi` | Color artifacting mode.  `none` is the right pick for any title that draws solid-color graphics or pixel-art text.  `auto` matches the active video standard (PAL → PAL artifacting, NTSC → NTSC).  The `*hi` variants are higher-quality / higher-cost shaders for the same look. |
 | `vkbd`      | `0`, `1`                                                | Show or hide the on-screen Atari keyboard at startup.  In embed mode the page-bar **⌨ Keyboard** button is hidden along with all the other chrome, so this is the only way for an embed visitor to reach the keyboard if the game needs it.  The keyboard can still be dismissed with **F12** (PC keyboard) or by tapping the X icon (touch). |
+| `stretch`   | `fill`, `preserve`, `square`, `integral`, `integral_preserve` | Display stretch mode.  See the **Pixel-perfect text** section below — `integral` is the only mode that guarantees every Atari pixel maps to the same number of destination pixels at any iframe size, so it is the right pick for titles whose hi-res GR.0 text needs to look crisp.  Default is `preserve` (gaming-mode default). |
 
 The application order at runtime is:
 
@@ -165,7 +166,7 @@ and no color smearing.
 
 ```
 # Pixel-perfect text, no CRT effects, no color artifacting.
-?embed=1&lib=mygame.xex&pal=1&crt=0&filter=point&artifact=none
+?embed=1&lib=mygame.xex&pal=1&crt=0&filter=point&artifact=none&stretch=integral
 
 # Authentic CRT look (default) but artifacting disabled.
 ?embed=1&lib=mygame.xex&pal=1&artifact=none
@@ -173,6 +174,81 @@ and no color smearing.
 # Soft scaling with a virtual keyboard for all visitors.
 ?embed=1&lib=adventure.atr&hardware=800xl&filter=bilinear&vkbd=1
 ```
+
+#### Pixel-perfect text — `stretch=integral` and the right iframe aspect ratio
+
+Two settings together decide whether your titlescreen text looks
+crisp or slightly fuzzy:
+
+1. **The stretch mode** decides whether the source frame is scaled
+   by an integer multiplier or stretched to fill the iframe
+   continuously.
+2. **The iframe's CSS aspect ratio** decides how much room the
+   browser hands the canvas for that scaling.
+
+The default `stretch=preserve` (PreserveAspectRatio) multiplies the
+source width by the **pixel aspect ratio** (PAR) of the active video
+standard — about ×1.04 for PAL and ×0.857 for NTSC — to reproduce
+the geometry of a CRT.  That ratio is irrational, so for almost any
+iframe size the renderer ends up scaling each Atari pixel by a
+non-integer factor: some Atari pixels become 2 destination pixels
+wide, others become 3, and hi-res GR.0 text (the 80-column GR.0 font
+many `.xex` titles use for menus) reads as slightly uneven even with
+`filter=point`.
+
+**Fix: pass `stretch=integral`.**  This drops the PAR multiplier and
+forces an integer scale (1×, 2×, 3×, …) on both axes, so every
+Atari pixel is drawn at exactly the same size.  The visual cost is
+that the picture is slightly narrower than a CRT would have shown
+(no PAR correction), and the iframe gets thin black bars on the
+sides if its size doesn't match a clean multiple.  For a typical
+800-wide embed of an `800xl` title you'll get a 672×480 (2×) canvas
+with 64 px of black on each side.
+
+The frame the emulator renders depends on the **overscan** setting
+(default: Normal):
+
+| Region | Source frame | Stock aspect (no PAR) |
+|--------|--------------|-----------------------|
+| NTSC   | 336 × 224    | 3 / 2                 |
+| PAL    | 336 × 240    | 7 / 5                 |
+
+If you want the iframe to wrap the canvas without any letterboxing
+in `stretch=integral` mode, give the iframe one of the matching
+aspect ratios:
+
+```html
+<!-- PAL game, pixel-perfect, fills the iframe at any 2× / 3× size. -->
+<iframe
+  src="altirra/?embed=1&lib=mygame.xex&pal=1&crt=0&filter=point&artifact=none&stretch=integral"
+  style="border:0; aspect-ratio: 7 / 5; max-width: 100%; width: 672px;"
+  allow="autoplay; fullscreen; gamepad"
+  loading="lazy"
+  title="Play MyGame">
+</iframe>
+```
+
+```html
+<!-- NTSC game, same idea with the 3:2 aspect that matches 336 × 224. -->
+<iframe
+  src="altirra/?embed=1&lib=mygame.xex&ntsc=1&crt=0&filter=point&artifact=none&stretch=integral"
+  style="border:0; aspect-ratio: 3 / 2; max-width: 100%; width: 672px;"
+  allow="autoplay; fullscreen; gamepad"
+  loading="lazy"
+  title="Play MyGame">
+</iframe>
+```
+
+The pixel width 672 = 2× source width is intentional: at smaller
+widths the Integral stretch falls back to 1× and the picture looks
+tiny; at 1008 px it would jump to 3×.  Pick a width that's a clean
+multiple of 336 and the canvas always exactly fills its iframe.
+
+The often-seen `aspect-ratio: 4 / 3` is the right choice **only**
+for `stretch=preserve` (the default) and **only** if you accept the
+non-integer per-pixel scaling that comes with it.  For
+pixel-perfect text use `stretch=integral` and one of the source-
+matching aspects above.
 
 #### Showing the virtual keyboard only on mobile
 
@@ -213,6 +289,92 @@ on the parent page do it:
 The script appends `&vkbd=1` to the iframe's `src` on touch
 devices, so phone / tablet visitors land with the keyboard up
 while desktop visitors do not.
+
+### Click-to-play — `autoplay=0`
+
+By default the emulator boots and starts running the moment the page
+loads — same behaviour as every video player without a poster
+image.  For embed authors who want a YouTube-style facade where the
+~5 MB wasm bundle isn't downloaded until the visitor explicitly
+engages, pass `?autoplay=0`.
+
+What changes when `autoplay=0` is set:
+
+1. The page paints a black canvas with a centred ▶ play button.
+2. The `AltirraSDL.js` script tag is **not** injected.  No wasm
+   bytes, no firmware fetch, no game-file fetch — none of the embed
+   payload hits the wire.
+3. On the first click / tap on the overlay, the script tag is
+   injected, the wasm boots, and the deep-link applier runs the
+   normal startup sequence (firmware probe, lib fetch, cold reset).
+4. The same click satisfies the browser's audio-autoplay gesture
+   requirement, so the emulator's first frames are audible.
+
+This is independent of the iframe's
+`allow="autoplay; fullscreen; gamepad"` attribute — that attribute
+controls the *browser's* audio-autoplay permission policy and has
+no effect on whether the simulator runs.  Removing
+`allow="autoplay"` does not stop the emulator from booting; it just
+mutes the audio until the user clicks.  `?autoplay=0` is the URL
+param that actually defers the boot.
+
+```html
+<!-- Lazy-loaded embed: nothing is fetched until the visitor clicks. -->
+<iframe
+  src="altirra/?embed=1&lib=mygame.xex&pal=1&autoplay=0"
+  width="800" height="600"
+  style="border:0; aspect-ratio: 4 / 3; max-width: 100%;"
+  allow="autoplay; fullscreen; gamepad"
+  loading="lazy"
+  title="Play MyGame">
+</iframe>
+```
+
+`autoplay=0` is independent of every other display knob — it
+combines freely with `crt`, `filter`, `artifact`, `stretch`, `vkbd`,
+and the determinism flags.
+
+### UI mode — `ui=desktop` to land in the full emulator front end
+
+By default any URL that carries `?lib=…` (or a netplay-join /
+broker context) enters **Gaming Mode** — the full-canvas, no-menu-
+bar layout designed for kiosks and phones.  This is the right
+choice for a self-hosted embed that exists only to play a single
+title.
+
+For "Try this game in the full emulator" links — where you want
+the visitor to land on the same page they would see at
+`/AltirraSDL/play/`, with the menu bar, the file manager, the
+debugger, the dialogs — but with a game pre-loaded, pass
+`?ui=desktop`:
+
+```
+# Open the full emulator front end, with TheLady.xex preloaded.
+https://your-site/altirra/?lib=TheLady.xex&hardware=800xl&pal=1&ui=desktop
+```
+
+Notice that `?embed=1` is **omitted** in this recipe.  `embed=1`
+hides the page chrome via CSS (`body.embed > header { display:none }`),
+which would defeat the point of switching to Desktop UI.  Use
+`ui=desktop` for "I want the full app" and `embed=1` for "I want
+just the canvas".  The two are independent:
+
+| `embed=1` | `ui=desktop` | Result |
+|-----------|--------------|--------|
+| no        | no           | Full chrome page; Gaming Mode if `?lib=` is set, else Desktop Mode |
+| no        | yes          | Full chrome page; Desktop Mode even with `?lib=` |
+| yes       | no           | Chrome hidden; Gaming Mode (typical embed) |
+| yes       | yes          | Chrome hidden; Desktop Mode — rarely useful (no menu bar to drive Desktop UI) |
+
+`ui=gaming` exists as the inverse override, for the corner case of
+a "Start Atari Emulator" entry point that should land in Gaming
+Mode without auto-loading any game (`?ui=gaming` with no `?lib=`).
+
+The Join (`?s=…`) deep-link path always stays in Gaming Mode even
+with `ui=desktop`, because the netplay handshake's prep flow lives
+only in the Gaming-Mode dispatcher — overriding there would trap
+the user in Desktop UI without the controls they need to complete
+the join.
 
 ### Determinism — RAM randomization and launch jitter
 
@@ -311,7 +473,8 @@ If you pass any of these alongside `?embed=1` the emulator will try
 to publish to or join a netplay session, which on a self-hosted page
 will fail because there is no netplay broker on your origin.  Pass
 **only** `embed`, `lib`, `firmware`, `hardware`, `memsize`, `pal` /
-`ntsc`, `basic`, `kernel`, and `title`.
+`ntsc`, `basic`, `kernel`, `title`, `crt`, `filter`, `artifact`,
+`vkbd`, `stretch`, `ui`, `autoplay`, `randmem`, and `randdelay`.
 
 ## Custom deploy paths
 

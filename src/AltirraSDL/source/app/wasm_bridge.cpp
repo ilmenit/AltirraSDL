@@ -86,7 +86,8 @@ extern ATSimulator g_sim;
 #include "../ui/mobile/ui_mobile.h"
 #include "../ui/ui_virtual_keyboard.h"
 #include "../display/display_backend.h"
-#include "uitypes.h"  // ATDisplayFilterMode for ATWasmSetDisplayFilter
+#include "uitypes.h"  // ATDisplayFilterMode / ATDisplayStretchMode
+#include "uiaccessors.h"  // ATUISetDisplayStretchMode
 extern ATUIState g_uiState;
 extern ATMobileUIState g_mobileState;
 
@@ -1537,6 +1538,26 @@ extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSetArtifactMode(int mode) {
 	if (mode < 0 || mode >= (int)ATArtifactMode::Count) return;
 	g_sim.GetGTIA().SetArtifactingMode((ATArtifactMode)mode);
+}
+
+// Display stretch-mode setter for the embed-kit ?stretch= URL param.
+// Maps directly to ATDisplayStretchMode (uitypes.h):
+//   0=Unconstrained (fill viewport, ignores aspect)
+//   1=PreserveAspectRatio (continuous scale honouring PAR — default)
+//   2=SquarePixels (continuous scale, no PAR — 1:1 Atari pixels)
+//   3=Integral (integer-only scale, no PAR — pixel-perfect)
+//   4=IntegralPreserveAspectRatio (integer scale + PAR)
+// Important for embeds whose authors want truly pixel-perfect text:
+// the gaming-mode default is PreserveAspectRatio + bilinear filter +
+// PAR multiplier, which produces non-integer per-pixel scaling at
+// most iframe sizes — Atari pixels end up 2 dest pixels in some
+// columns and 3 in others, blurring hi-res GR.0 text even with
+// filter=point.  ?stretch=integral fixes this when the iframe is
+// at least 2× the source frame.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetStretchMode(int mode) {
+	if (mode < 0 || mode >= (int)kATDisplayStretchModeCount) return;
+	ATUISetDisplayStretchMode((ATDisplayStretchMode)mode);
 }
 
 // JS-side bar button (MENU…).  Opens the Gaming-Mode hamburger menu
