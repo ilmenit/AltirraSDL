@@ -1673,6 +1673,512 @@ void SubmitHostGameFileForGame(const char *gameId) {
 	}
 }
 
+// -------------------------------------------------------------------
+// v4 broker join flow — joiner-side state machine.
+// -------------------------------------------------------------------
+//
+// When a joiner picks a session whose lobby state is
+// "awaiting_approval" (a browser-hosted Play Together listing with
+// no live coordinator yet), the regular StartJoiningAction connect
+// path would run NetHello against an empty hostEndpoint and time out.
+// Instead the join is wrapped in a three-step dance, mirroring what
+// the lobby web page's broker.js does for browser joiners:
+//
+//   1. POST /v1/session/{id}/intents     (BrokerAsking)
+//   2. Poll  /v1/intent/{iid}            until decided
+//        - accepted=false → friendly error, back to Browser
+//        - accepted=true  → continue
+//   3. Poll  /v1/session/{id}            (BrokerSpawning)
+//        - state still awaiting_approval → keep polling
+//        - state == "waiting"            → host's WASM emulator is up;
+//                                          re-enter StartJoiningAction
+//                                          which falls into the
+//                                          existing wssRelayOnly path
+//                                          (StartJoinRelay on native,
+//                                          StartJoinWss on WASM)
+//        - state == "playing"            → host took someone else,
+//                                          friendly error
+//        - lobby 404                     → host abandoned, error
+//
+// Cancellation (any stage) clears the per-session intent state and
+// navigates back to Browser.  The lobby's intent TTL (60 s) handles
+// server-side cleanup; the host-side modal collapses on its own.
+//
+// Tag scheme: a 32-bit cookie carried through Post/Result so a stale
+// response from a cancelled flow can't drive the new flow's state
+// machine.  CancelBrokerJoinFlow zeroes the tag, which OnBrokerLobby
+// Result rejects.
+
+namespace {
+
+// Polling cadences.  1 s is a sweet spot: fast enough that a host's
+// Allow click feels instant, slow enough not to thrash the lobby
+// (which has a per-IP token bucket with burst 120).  Spawn poll runs
+// at the same cadence — host-side WASM cold boot is ~3–10 s; we want
+// to detect the state flip within one tick of it happening.
+constexpr uint64_t kBrokerIntentPollIntervalMs = 1000;
+constexpr uint64_t kBrokerSpawnPollIntervalMs  = 1000;
+
+// Hard cap on host's WASM-spawn time after Allow.  The browser tab
+// has to download/decompress the WASM (cached after first run),
+// initialise SDL, adopt the session, and start heartbeating.  30 s is
+// generous for the cold path; the expected steady-state is < 5 s.
+constexpr uint64_t kBrokerSpawnDeadlineMs = 30000;
+
+// Distinct tag base so OnDeepLinkLobbyResult (kDeepLinkTagBase) and
+// any future per-tag dispatch don't collide with broker traffic.
+// 16-bit counter gives 64K unique tags before wraparound — far past
+// the lobby's intent TTL window where a stale response could collide.
+constexpr uint32_t kBrokerTagBase = 0xB704E000u;
+constexpr uint32_t kBrokerTagMask = 0x0000FFFFu;
+
+uint32_t NextBrokerTag() {
+	static uint32_t s_next = 0;
+	++s_next;
+	return kBrokerTagBase | (s_next & kBrokerTagMask);
+}
+
+// Post a CreateIntent against the resolved sourceLobby.  Falls back
+// to the first enabled lobby if the source isn't configured (e.g.
+// the user added the lobby, browsed, removed it, then clicked Join
+// from a stale list — extremely rare, but cheap to handle).
+bool PostBrokerCreateIntent(const ATNetplay::LobbySession& target,
+                            const std::string& joinerHandle,
+                            const std::string& codeHashHex,
+                            uint32_t tag) {
+	auto lobbies = AllEnabledHttpLobbies();
+	if (lobbies.empty()) return false;
+	const ATNetplay::LobbyEndpoint* ep = nullptr;
+	std::string section;
+	for (const auto& L : lobbies) {
+		if (L.section == target.sourceLobby) {
+			ep      = &L.endpoint;
+			section = L.section;
+			break;
+		}
+	}
+	if (!ep) {
+		ep      = &lobbies.front().endpoint;
+		section = lobbies.front().section;
+	}
+	LobbyRequest req;
+	req.op         = LobbyOp::CreateIntent;
+	req.endpoint   = *ep;
+	req.sessionId  = target.sessionId;
+	req.state      = joinerHandle;   // body.joinerHandle
+	req.token      = codeHashHex;    // body.codeHash (empty for public)
+	req.tag        = tag;
+	return GetWorker().Post(std::move(req), section);
+}
+
+bool PostBrokerGetIntent(const ATNetplay::LobbySession& target,
+                         const std::string& intentId,
+                         uint32_t tag) {
+	auto lobbies = AllEnabledHttpLobbies();
+	if (lobbies.empty()) return false;
+	const ATNetplay::LobbyEndpoint* ep = nullptr;
+	std::string section;
+	for (const auto& L : lobbies) {
+		if (L.section == target.sourceLobby) {
+			ep      = &L.endpoint;
+			section = L.section;
+			break;
+		}
+	}
+	if (!ep) {
+		ep      = &lobbies.front().endpoint;
+		section = lobbies.front().section;
+	}
+	LobbyRequest req;
+	req.op         = LobbyOp::GetIntent;
+	req.endpoint   = *ep;
+	// LobbyOp::GetIntent overloads sessionId to mean intentId — see
+	// the LobbyOp enum comment in ui_netplay_lobby_worker.h.
+	req.sessionId  = intentId;
+	req.tag        = tag;
+	return GetWorker().Post(std::move(req), section);
+}
+
+bool PostBrokerSessionPoll(const ATNetplay::LobbySession& target,
+                           uint32_t tag) {
+	auto lobbies = AllEnabledHttpLobbies();
+	if (lobbies.empty()) return false;
+	const ATNetplay::LobbyEndpoint* ep = nullptr;
+	std::string section;
+	for (const auto& L : lobbies) {
+		if (L.section == target.sourceLobby) {
+			ep      = &L.endpoint;
+			section = L.section;
+			break;
+		}
+	}
+	if (!ep) {
+		ep      = &lobbies.front().endpoint;
+		section = lobbies.front().section;
+	}
+	LobbyRequest req;
+	req.op         = LobbyOp::GetById;
+	req.endpoint   = *ep;
+	req.sessionId  = target.sessionId;
+	req.tag        = tag;
+	return GetWorker().Post(std::move(req), section);
+}
+
+void EnterBrokerError(const char* msg) {
+	State& st = GetState();
+	st.session.lastError = msg;
+	st.session.brokerIntentId.clear();
+	st.session.brokerSessionId.clear();
+	st.session.brokerInFlight = false;
+	st.session.brokerAccepted = false;
+	st.session.brokerSpawnDeadlineMs = 0;
+	st.session.brokerLast404Streak   = 0;
+	st.session.brokerTag = 0;
+	Navigate(Screen::Error);
+}
+
+// Runs at the top of StartJoiningAction.  Returns true iff the
+// target requires the broker dance and the dance has been kicked off
+// (or we're already mid-flow on the same target).
+bool BeginBrokerJoinFlow(const ATNetplay::LobbySession& target,
+                         const std::string& codeHashHex) {
+	if (target.state != ATLobby::kStateAwaitingApproval) return false;
+
+	State& st = GetState();
+
+	// Resume in-progress: same target on an existing flow → user
+	// pressed Join again (rapid double-tap, gamepad bounce, navigate
+	// back-and-forward).  Re-attach to whichever stage the state
+	// machine is in instead of double-posting an intent.  Stage
+	// chosen by the same pair of fields the renderer uses.
+	if (st.session.brokerSessionId == target.sessionId &&
+	    st.session.brokerTag != 0) {
+		Navigate(st.session.brokerAccepted ? Screen::BrokerSpawning
+		                                   : Screen::BrokerAsking);
+		return true;
+	}
+
+	// Fresh start — clear any stale state and post the intent.
+	st.session.brokerIntentId.clear();
+	st.session.brokerSessionId  = target.sessionId;
+	st.session.brokerStartedMs  = (uint64_t)SDL_GetTicks();
+	st.session.brokerLastPollMs = 0;
+	st.session.brokerSpawnDeadlineMs = 0;
+	st.session.brokerAccepted   = false;
+	st.session.brokerLast404Streak = 0;
+	st.session.brokerTag = NextBrokerTag();
+	st.session.brokerInFlight   = true;
+
+	const std::string handle = ResolvedNickname();
+	if (handle.empty()) {
+		EnterBrokerError("Pick a nickname before joining (Online "
+		                 "\xE2\x86\x92 Preferences \xE2\x86\x92 "
+		                 "Nickname).");
+		return true;
+	}
+
+	g_ATLCNetplay("broker: POST intent sid=%s handle=%s code=%s tag=%08X",
+		target.sessionId.c_str(), handle.c_str(),
+		codeHashHex.empty() ? "(public)" : "(private)",
+		(unsigned)st.session.brokerTag);
+
+	if (!PostBrokerCreateIntent(target, handle, codeHashHex,
+	                            st.session.brokerTag)) {
+		EnterBrokerError("No HTTP lobby is configured to host the "
+		                 "approval handshake.");
+		return true;
+	}
+
+	Navigate(Screen::BrokerAsking);
+	return true;
+}
+
+}  // namespace
+
+void CancelBrokerJoinFlow() {
+	State& st = GetState();
+	if (st.session.brokerSessionId.empty() &&
+	    st.session.brokerIntentId.empty()) {
+		return;
+	}
+	g_ATLCNetplay("broker: cancel sid=%s iid=%s tag=%08X",
+		st.session.brokerSessionId.c_str(),
+		st.session.brokerIntentId.c_str(),
+		(unsigned)st.session.brokerTag);
+	st.session.brokerIntentId.clear();
+	st.session.brokerSessionId.clear();
+	st.session.brokerInFlight = false;
+	st.session.brokerAccepted = false;
+	st.session.brokerSpawnDeadlineMs = 0;
+	st.session.brokerLast404Streak   = 0;
+	st.session.brokerTag = 0;
+	Navigate(Screen::Browser);
+}
+
+void Tick_BrokerWait(uint64_t nowMs) {
+	State& st = GetState();
+	const Screen scr = st.screen;
+	if (scr != Screen::BrokerAsking && scr != Screen::BrokerSpawning) {
+		// User navigated away from the broker UI without an explicit
+		// Cancel (Esc / Back / menu close on Desktop, where the
+		// global Esc handler bypasses ScreenHeader's Cancel hook).
+		// Stop polling and reset state so a future Join click on the
+		// same session starts fresh.  If a poll is in flight, leave
+		// the cleanup to OnBrokerLobbyResult's late-arrival branch
+		// (it would otherwise overwrite our just-cleared brokerTag).
+		if (st.session.brokerTag != 0 && !st.session.brokerInFlight) {
+			g_ATLCNetplay("broker: navigated away — clearing state");
+			st.session.brokerTag = 0;
+			st.session.brokerIntentId.clear();
+			st.session.brokerSessionId.clear();
+			st.session.brokerAccepted = false;
+			st.session.brokerSpawnDeadlineMs = 0;
+			st.session.brokerLast404Streak   = 0;
+		}
+		return;
+	}
+	if (st.session.brokerInFlight) return;       // a poll is already queued
+	if (st.session.brokerTag == 0)  return;      // cancelled mid-flow
+
+	if (scr == Screen::BrokerAsking) {
+		if (st.session.brokerIntentId.empty()) return;  // CreateIntent in flight
+		if (st.session.brokerLastPollMs != 0 &&
+		    nowMs - st.session.brokerLastPollMs <
+		    kBrokerIntentPollIntervalMs) {
+			return;
+		}
+		st.session.brokerLastPollMs = nowMs;
+		st.session.brokerInFlight = true;
+		if (!PostBrokerGetIntent(st.session.joinTarget,
+		                         st.session.brokerIntentId,
+		                         st.session.brokerTag)) {
+			// AllEnabledHttpLobbies became empty mid-flow (user
+			// disabled the lobby in Preferences).  No poll will
+			// ever succeed — surface the dead-end now instead of
+			// waiting out the intent's 60 s TTL with a stuck
+			// brokerInFlight gate.
+			st.session.brokerInFlight = false;
+			EnterBrokerError("No HTTP lobby is configured to wait "
+			                 "for the host's approval.");
+		}
+		return;
+	}
+
+	// BrokerSpawning — host accepted; poll the session record until
+	// state flips out of awaiting_approval.
+	if (st.session.brokerSpawnDeadlineMs != 0 &&
+	    nowMs > st.session.brokerSpawnDeadlineMs) {
+		EnterBrokerError("The host accepted but their browser tab "
+		                 "never finished loading the emulator.  Try "
+		                 "another session.");
+		return;
+	}
+	if (st.session.brokerLastPollMs != 0 &&
+	    nowMs - st.session.brokerLastPollMs <
+	    kBrokerSpawnPollIntervalMs) {
+		return;
+	}
+	st.session.brokerLastPollMs = nowMs;
+	st.session.brokerInFlight = true;
+	if (!PostBrokerSessionPoll(st.session.joinTarget,
+	                           st.session.brokerTag)) {
+		st.session.brokerInFlight = false;
+		EnterBrokerError("No HTTP lobby is configured to wait for "
+		                 "the host's emulator to start.");
+	}
+}
+
+bool OnBrokerLobbyResult(LobbyResult& r) {
+	State& st = GetState();
+	if (st.session.brokerTag == 0) return false;
+	if (r.tag != st.session.brokerTag) return false;
+	if (r.op != LobbyOp::CreateIntent &&
+	    r.op != LobbyOp::GetIntent    &&
+	    r.op != LobbyOp::GetById) {
+		return false;
+	}
+
+	st.session.brokerInFlight = false;
+
+	// If the user navigated away from the broker UI (Esc / Back /
+	// menu close) without explicit Cancel, treat the in-flight
+	// response as cancelled-by-navigation: drop it, wipe the tag so
+	// no further results drive the state machine, and let the lobby
+	// intent expire on its own (60 s TTL).  Without this hook a late
+	// Allow click would yank the user back into BrokerSpawning.
+	if (st.screen != Screen::BrokerAsking &&
+	    st.screen != Screen::BrokerSpawning) {
+		g_ATLCNetplay("broker: late result on screen=%d — dropping",
+			(int)st.screen);
+		st.session.brokerTag = 0;
+		st.session.brokerIntentId.clear();
+		st.session.brokerSessionId.clear();
+		st.session.brokerAccepted = false;
+		st.session.brokerSpawnDeadlineMs = 0;
+		st.session.brokerLast404Streak = 0;
+		return true;  // consumed, do not run state machine
+	}
+
+	switch (r.op) {
+		case LobbyOp::CreateIntent: {
+			if (!r.ok) {
+				g_ATLCNetplay("broker: CreateIntent FAILED status=%d "
+					"error=\"%s\"", r.httpStatus, r.error.c_str());
+				if (r.httpStatus == 404) {
+					EnterBrokerError("That session went away before "
+					                 "the host could approve you.");
+				} else if (r.httpStatus == 410) {
+					EnterBrokerError("That session is no longer "
+					                 "joinable (the host may have "
+					                 "ended it or it filled up).");
+				} else if (r.httpStatus == 429) {
+					EnterBrokerError("The lobby is rate-limiting "
+					                 "your IP.  Wait a moment and "
+					                 "try again.");
+				} else {
+					EnterBrokerError(r.error.empty()
+						? "Could not ask the host for approval."
+						: r.error.c_str());
+				}
+				return true;
+			}
+			st.session.brokerIntentId = r.intentResp.intentId;
+			st.session.brokerLastPollMs = 0;  // arm the first poll tick
+			g_ATLCNetplay("broker: intent posted iid=%s ttl=%ds",
+				r.intentResp.intentId.c_str(), r.intentResp.ttlSeconds);
+			return true;
+		}
+
+		case LobbyOp::GetIntent: {
+			if (!r.ok) {
+				if (r.httpStatus == 404) {
+					// Two interpretations:
+					//   - intent never existed (we just posted it; the
+					//     lobby returned the iid; this can't happen
+					//     unless the lobby restarted between posts)
+					//   - intent expired (TTL fired before the host
+					//     replied)
+					// We treat the first 404 as "host never replied"
+					// because we can't distinguish without a longer
+					// streak — and at our 1 s cadence one 404 is
+					// already > kIntentTtlMs after post.
+					EnterBrokerError("The host didn't respond to your "
+					                 "request in time.  Try another "
+					                 "session.");
+					return true;
+				}
+				// Other transports failures are retried on the next
+				// tick; brokerInFlight is already cleared.  Don't
+				// surface intermittent network blips to the user.
+				g_ATLCNetplay("broker: GetIntent transient fail "
+					"status=%d error=\"%s\"",
+					r.httpStatus, r.error.c_str());
+				return true;
+			}
+			if (!r.intentStatus.decided) return true;  // still pending
+			if (!r.intentStatus.accepted) {
+				// Map the SessionTermination reason codes back to the
+				// user-facing copy.  Broker hosts post their own
+				// reason in /v1/session/{id}/intents/{iid}/decision;
+				// the ones we expect to see here are HostRejected,
+				// HostFull, BrokerHostCanceled, BadEntryCode.
+				const int reason = r.intentStatus.reason;
+				const char* msg;
+				switch (reason) {
+				case ATNetplay::kRejectHostRejected:
+					msg = "The host declined your join request.";
+					break;
+				case ATNetplay::kRejectHostFull:
+					msg = "The host's session is full.";
+					break;
+				case ATNetplay::kRejectBadEntryCode:
+					msg = "The join code didn't match.  Re-enter "
+					      "the code and try again.";
+					break;
+				case (int)ATNetplay::SessionTermination::BrokerHostCanceled:
+					msg = "The host closed their lobby tab before "
+					      "accepting you.";
+					break;
+				case (int)ATNetplay::SessionTermination::BrokerSessionExpired:
+					msg = "That session expired before the host "
+					      "could accept you.";
+					break;
+				default:
+					msg = "The host declined your join request.";
+					break;
+				}
+				g_ATLCNetplay("broker: rejected reason=%d", reason);
+				EnterBrokerError(msg);
+				return true;
+			}
+			// Accepted — flip into spawn-wait.
+			st.session.brokerAccepted = true;
+			st.session.brokerSpawnDeadlineMs =
+				(uint64_t)SDL_GetTicks() + kBrokerSpawnDeadlineMs;
+			st.session.brokerLastPollMs = 0;  // arm spawn poll
+			g_ATLCNetplay("broker: accepted — entering spawn-wait "
+				"deadline=%llums",
+				(unsigned long long)st.session.brokerSpawnDeadlineMs);
+			Navigate(Screen::BrokerSpawning);
+			return true;
+		}
+
+		case LobbyOp::GetById: {
+			if (!r.ok) {
+				if (r.httpStatus == 404) {
+					if (++st.session.brokerLast404Streak >= 3) {
+						EnterBrokerError("The host's session "
+						                 "vanished before their "
+						                 "emulator could connect.");
+					}
+					return true;
+				}
+				g_ATLCNetplay("broker: spawn-poll transient fail "
+					"status=%d error=\"%s\"",
+					r.httpStatus, r.error.c_str());
+				return true;
+			}
+			st.session.brokerLast404Streak = 0;
+			if (r.sessions.empty()) return true;
+			const ATNetplay::LobbySession& s = r.sessions.front();
+			if (s.state == ATLobby::kStatePlaying) {
+				EnterBrokerError("The host accepted you but another "
+				                 "player slipped in first.  Try "
+				                 "another session.");
+				return true;
+			}
+			if (s.state == ATLobby::kStateAwaitingApproval) {
+				return true;  // host's WASM still booting
+			}
+			// state == "waiting" (or anything else non-terminal that
+			// indicates a live coordinator) — refresh joinTarget with
+			// the live record so the wssRelayOnly + sessionId fields
+			// are current, then re-enter StartJoiningAction.  The
+			// awaiting_approval check at the top of StartJoiningAction
+			// is now false, so it falls into the legacy connect path.
+			g_ATLCNetplay("broker: spawn detected (state=%s) — "
+				"falling into wssRelayOnly join", s.state.c_str());
+			ATNetplay::LobbySession refreshed = s;
+			refreshed.sourceLobby = st.session.joinTarget.sourceLobby;
+			st.session.joinTarget = std::move(refreshed);
+
+			// Clear the broker latch BEFORE re-entering so the
+			// awaiting_approval check sees state="waiting" + no
+			// pending intent and routes through the normal path.
+			st.session.brokerIntentId.clear();
+			st.session.brokerSessionId.clear();
+			st.session.brokerAccepted = false;
+			st.session.brokerSpawnDeadlineMs = 0;
+			st.session.brokerLast404Streak   = 0;
+			st.session.brokerTag = 0;
+
+			StartJoiningAction();
+			return true;
+		}
+		default: return false;
+	}
+}
+
 void StartJoiningAction() {
 	State& st = GetState();
 	if (ATNetplayGlue::IsActive()) {
@@ -1738,6 +2244,31 @@ void StartJoiningAction() {
 			codeHash[i + 8] = (uint8_t)((h2 >> (i * 8)) & 0xFF);
 		}
 		codePtr = codeHash;
+	}
+
+	// v4 broker dance.  awaiting_approval targets are browser hosts
+	// whose WASM emulator hasn't spawned yet — running NetHello now
+	// would silently time out.  BeginBrokerJoinFlow posts the intent
+	// and routes the user through BrokerAsking/BrokerSpawning; once
+	// the host's emulator publishes itself with state="waiting" the
+	// state machine refreshes joinTarget and re-invokes us, so this
+	// branch is taken at most once per join.
+	if (BeginBrokerJoinFlow(st.session.joinTarget,
+	                        codePtr ? [&](){
+		// 16-byte raw → 32-char lowercase hex.  The lobby validates
+		// the shape only (kIntentCodeHashHexLen=32); the actual code
+		// comparison happens at NetHello time on the host.  See
+		// server.cpp's CreateIntent codeHash branch.
+		static const char hex[] = "0123456789abcdef";
+		std::string out;
+		out.reserve(32);
+		for (uint8_t b : codeHash) {
+			out.push_back(hex[(b >> 4) & 0xF]);
+			out.push_back(hex[b & 0xF]);
+		}
+		return out;
+	}() : std::string())) {
+		return;
 	}
 
 	bool ok = false;

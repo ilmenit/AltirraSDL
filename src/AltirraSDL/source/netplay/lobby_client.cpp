@@ -398,7 +398,13 @@ bool LobbyClient::List(std::vector<LobbySession>& out) {
 	hr.method    = "GET";
 	hr.host      = mEp.host.c_str();
 	hr.port      = mEp.port;
-	hr.path      = "/v1/sessions";
+	// `include_awaiting=1` opts into broker-pre-spawn (awaiting_approval)
+	// sessions so the in-app browser can surface games hosted from the
+	// lobby web page's Play Together flow.  Without this flag the
+	// server hides them to protect pre-broker-aware clients from
+	// silent NetHello timeouts; with the flag, the join action below
+	// runs the broker intent dance before the netplay handshake.
+	hr.path      = "/v1/sessions?include_awaiting=1";
 	hr.timeoutMs = mEp.timeoutMs;
 
 	// RTT measurement.  Wraps the synchronous request only; we don't
@@ -473,6 +479,129 @@ bool LobbyClient::GetById(const std::string& sessionId,
 	if (!ReadSession(c, out)) {
 		mLastError = "malformed session entry";
 		return false;
+	}
+	mLastError.clear();
+	return true;
+}
+
+bool LobbyClient::CreateIntent(const std::string& sessionId,
+                               const std::string& joinerHandle,
+                               const std::string& codeHashHex,
+                               LobbyIntentResponse& out) {
+	out = LobbyIntentResponse{};
+	if (sessionId.empty()) {
+		mLastError  = "empty sessionId";
+		mLastStatus = 0;
+		return false;
+	}
+
+	std::string body;
+	body.reserve(128);
+	body.push_back('{');
+	bool first = true;
+	AppendKV(body, "joinerHandle", joinerHandle, first);
+	AppendKV(body, "codeHash",     codeHashHex,  first);
+	body.push_back('}');
+
+	std::string path = "/v1/session/";
+	path += sessionId;
+	path += "/intents";
+
+	HttpRequest hr;
+	hr.method      = "POST";
+	hr.host        = mEp.host.c_str();
+	hr.port        = mEp.port;
+	hr.path        = path.c_str();
+	hr.contentType = "application/json";
+	hr.body        = (const uint8_t*)body.data();
+	hr.bodyLen     = body.size();
+	hr.timeoutMs   = mEp.timeoutMs;
+
+	HttpResponse resp;
+	HttpRequestSync(hr, resp); mLastStatus = resp.status;
+	if (resp.status != 201) {
+		FormatHttpError(mLastError, resp);
+		return false;
+	}
+
+	JsonCursor c{(const char*)resp.body.data(),
+	             (const char*)resp.body.data() + resp.body.size()};
+	if (!c.match('{')) {
+		mLastError = "malformed intent response";
+		return false;
+	}
+	for (;;) {
+		std::string key;
+		if (!c.parseString(key)) { mLastError = "bad intent json"; return false; }
+		if (!c.match(':'))       { mLastError = "bad intent json"; return false; }
+		if      (key == "intentId")   c.parseString(out.intentId);
+		else if (key == "sessionId")  c.parseString(out.sessionId);
+		else if (key == "ttlSeconds") c.parseInt(out.ttlSeconds);
+		else { if (!c.parseNull() && !c.skipValue()) {
+			mLastError = "bad intent json"; return false;
+		} }
+		if (!c.ok) { mLastError = "bad intent json"; return false; }
+		if (c.match(',')) continue;
+		if (c.match('}')) break;
+		mLastError = "bad intent json"; return false;
+	}
+	if (out.intentId.empty()) {
+		mLastError = "intent response missing intentId";
+		return false;
+	}
+	mLastError.clear();
+	return true;
+}
+
+bool LobbyClient::GetIntent(const std::string& intentId,
+                            LobbyIntentStatus& out) {
+	out = LobbyIntentStatus{};
+	if (intentId.empty()) {
+		mLastError  = "empty intentId";
+		mLastStatus = 0;
+		return false;
+	}
+	std::string path = "/v1/intent/";
+	path += intentId;
+
+	HttpRequest hr;
+	hr.method    = "GET";
+	hr.host      = mEp.host.c_str();
+	hr.port      = mEp.port;
+	hr.path      = path.c_str();
+	hr.timeoutMs = mEp.timeoutMs;
+
+	HttpResponse resp;
+	HttpRequestSync(hr, resp); mLastStatus = resp.status;
+	if (resp.status != 200) {
+		FormatHttpError(mLastError, resp);
+		return false;
+	}
+
+	JsonCursor c{(const char*)resp.body.data(),
+	             (const char*)resp.body.data() + resp.body.size()};
+	if (!c.match('{')) {
+		mLastError = "malformed intent json";
+		return false;
+	}
+	for (;;) {
+		std::string key;
+		if (!c.parseString(key)) { mLastError = "bad intent json"; return false; }
+		if (!c.match(':'))       { mLastError = "bad intent json"; return false; }
+		if      (key == "intentId")   c.parseString(out.intentId);
+		else if (key == "sessionId")  c.parseString(out.sessionId);
+		else if (key == "decided")    c.parseBool(out.decided);
+		else if (key == "accepted")   c.parseBool(out.accepted);
+		else if (key == "reason")     c.parseInt(out.reason);
+		else if (key == "arrivedMs")  c.parseInt(out.arrivedMs);
+		else if (key == "ttlSeconds") c.parseInt(out.ttlSeconds);
+		else { if (!c.parseNull() && !c.skipValue()) {
+			mLastError = "bad intent json"; return false;
+		} }
+		if (!c.ok) { mLastError = "bad intent json"; return false; }
+		if (c.match(',')) continue;
+		if (c.match('}')) break;
+		mLastError = "bad intent json"; return false;
 	}
 	mLastError.clear();
 	return true;

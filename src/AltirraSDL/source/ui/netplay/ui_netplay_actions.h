@@ -90,6 +90,29 @@ void ActivityTrack_OnLocalPlayStop();
 
 void StartJoiningAction();
 
+// Cancel an in-flight broker join (BrokerAsking / BrokerSpawning).
+// Clears the per-session intent state and navigates the user back to
+// the Browser.  No-op if no broker flow is in flight.  The lobby's
+// intent record is left to expire on its own (the lobby does not
+// expose a DELETE intent endpoint — adding one would only save 60 s
+// of host-side ghost UI which the host already handles by ignoring
+// the modal); any post-cancel host approval is silently dropped on
+// the joiner side because the polling loop has stopped.
+void CancelBrokerJoinFlow();
+
+// Driven from ATNetplayUI_Poll once per frame.  Looks at the current
+// screen + brokerInFlight gate and fires the next CreateIntent /
+// GetIntent / GetById poll if the cadence interval has elapsed.
+// Idempotent.
+void Tick_BrokerWait(uint64_t nowMs);
+
+// Called from ATNetplayUI_Poll's lobby-result drain loop.  If the
+// result corresponds to a CreateIntent / GetIntent / GetById that the
+// broker flow posted, drives the state machine and returns true so
+// the rest of the loop short-circuits.  Returns false otherwise.
+struct LobbyResult;
+bool OnBrokerLobbyResult(LobbyResult& r);
+
 // Read the game file bytes from disk and hand them to the host
 // coordinator for the given offer id.  Called from the
 // kATDeferred_NetplayHostSnapshot deferred action on the UI thread.

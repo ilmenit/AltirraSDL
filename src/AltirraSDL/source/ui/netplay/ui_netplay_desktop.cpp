@@ -760,6 +760,92 @@ void DesktopAcceptJoinPrompt() {
 	}
 }
 
+// v4 broker handshake — desktop counterparts of RenderBrokerAsking /
+// RenderBrokerSpawning.  Same state machine drives both; only the
+// rendering surface differs (centered Win32-style modal here vs.
+// the touch-mode sheet in ui_netplay_screens.cpp).
+void DesktopBrokerAsking() {
+	State& st = GetState();
+	CenterNext(ImVec2(440, 220));
+	bool open = true;
+	if (!ImGui::Begin("Asking the host\xe2\x80\xa6##netplay", &open,
+		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
+		ImGui::End();
+		if (!open) CancelBrokerJoinFlow();
+		return;
+	}
+
+	ImGui::TextDisabled("Host: %s   Game: %s",
+		st.session.joinTarget.hostHandle.c_str(),
+		st.session.joinTarget.cartName.c_str());
+	ImGui::Spacing();
+	ImGui::TextWrapped(
+		"Waiting for the host to allow you in.  This host runs the "
+		"emulator in their browser tab; when they click Allow your "
+		"game will start automatically.");
+
+	if (st.session.brokerStartedMs != 0) {
+		const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+		const uint64_t wait = nowMs > st.session.brokerStartedMs
+			? (nowMs - st.session.brokerStartedMs) / 1000 : 0;
+		ImGui::Spacing();
+		ImGui::TextDisabled("(%llus waiting)",
+			(unsigned long long)wait);
+	}
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+		CancelBrokerJoinFlow();
+	}
+	if (!open) CancelBrokerJoinFlow();
+	ImGui::End();
+}
+
+void DesktopBrokerSpawning() {
+	State& st = GetState();
+	CenterNext(ImVec2(440, 220));
+	bool open = true;
+	if (!ImGui::Begin("Host is starting\xe2\x80\xa6##netplay", &open,
+		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
+		ImGui::End();
+		if (!open) CancelBrokerJoinFlow();
+		return;
+	}
+
+	ImGui::TextDisabled("Host: %s   Game: %s",
+		st.session.joinTarget.hostHandle.c_str(),
+		st.session.joinTarget.cartName.c_str());
+	ImGui::Spacing();
+	ImGui::TextWrapped(
+		"The host accepted you.  Their browser-tab emulator is "
+		"loading the game; this usually takes a few seconds the "
+		"first time they play today.  Your game will start "
+		"automatically when it's ready.");
+
+	if (st.session.brokerSpawnDeadlineMs != 0) {
+		const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+		const uint64_t spawnBudgetMs = 30000;
+		const uint64_t startedMs =
+			st.session.brokerSpawnDeadlineMs > spawnBudgetMs
+			? st.session.brokerSpawnDeadlineMs - spawnBudgetMs
+			: nowMs;
+		const uint64_t wait = nowMs > startedMs
+			? (nowMs - startedMs) / 1000 : 0;
+		ImGui::Spacing();
+		ImGui::TextDisabled("(%llus connecting)",
+			(unsigned long long)wait);
+	}
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+		CancelBrokerJoinFlow();
+	}
+	if (!open) CancelBrokerJoinFlow();
+	ImGui::End();
+}
+
 void DesktopWaiting() {
 	State& st = GetState();
 
@@ -1753,6 +1839,8 @@ bool DesktopDispatch() {
 		case Screen::HostSetup:    DesktopHostSetup();   break;
 		case Screen::JoinPrompt:   DesktopJoinPrompt();  break;
 		case Screen::JoinConfirm:  DesktopJoinConfirm(); break;
+		case Screen::BrokerAsking: DesktopBrokerAsking();   break;
+		case Screen::BrokerSpawning: DesktopBrokerSpawning(); break;
 		case Screen::Waiting:      DesktopWaiting();     break;
 		case Screen::AcceptJoinPrompt: DesktopAcceptJoinPrompt(); break;
 		case Screen::Prefs:        DesktopPrefs();       break;

@@ -1898,6 +1898,40 @@ void WriteDecisionJson(JsonBuilder& b, const Decision& d, int64_t nowMs) {
 	b.raw('}');
 }
 
+// Polling projection for GET /v1/intent/{iid}.  Mirrors the SSE
+// stream as a single shot a non-SSE client (native HTTP, no chunked
+// transfer support) can read with a plain GET on a 1–2 s cadence.
+//
+// "decided" is true once the host has posted accept/reject; "expired"
+// stays false here because the sweeper deletes expired intents
+// outright (we surface them as 404 instead).  TTL counts down so the
+// client can stop polling without keeping its own deadline.
+void WriteIntentPollJson(JsonBuilder& b,
+                         const Intent& it,
+                         const Decision* d,
+                         int64_t nowMs) {
+	b.raw('{');
+	b.key(Field::kIntentId);    b.str(it.id);          b.raw(',');
+	b.key(Field::kSessionId);   b.str(it.sessionId);   b.raw(',');
+	b.key("decided");           b.boolean(d != nullptr); b.raw(',');
+	b.key(Field::kAccepted);    b.boolean(d ? d->accepted : false); b.raw(',');
+	b.key(Field::kReason);      b.num(d ? d->reason : 0); b.raw(',');
+	b.key(Field::kArrivedMs);
+	long long age = (long long)(nowMs - it.createdAtMs);
+	if (age < 0) age = 0;
+	b.num(age);
+	b.raw(',');
+	// Remaining seconds before the intent (or the post-decision
+	// retention window) is swept.  Clamped to non-negative.
+	int64_t deadlineMs;
+	if (d) deadlineMs = d->decidedAtMs + (int64_t)kDecisionTtlMs;
+	else   deadlineMs = it.createdAtMs + (int64_t)kIntentTtlMs;
+	int64_t remaining = (deadlineMs - nowMs) / 1000;
+	if (remaining < 0) remaining = 0;
+	b.key(Field::kTTLSeconds);  b.num((long long)remaining);
+	b.raw('}');
+}
+
 // Helper: does `path` start with `kPathSession + "/"`?  Returns the
 // id portion after the slash (and the suffix portion after the id).
 bool ParseSessionPath(const std::string& path,
@@ -2177,13 +2211,23 @@ void Install(httplib::Server& srv, Store& store) {
 		});
 
 	srv.Get(kPathSessions,
-		[&store](const httplib::Request&, httplib::Response& res) {
-			// v4: hide awaiting_approval sessions from native-emulator
-			// browsers — they have no live coordinator yet, so a Hello
-			// would time out with no feedback.  After M1b ships ws_bridge
-			// translation, this filter can stay (the broker still owns
-			// the approval UX) or relax behind a query parameter.
-			auto list = store.List(/*includeAwaitingApproval=*/false);
+		[&store](const httplib::Request& req, httplib::Response& res) {
+			// Default behaviour: hide awaiting_approval (broker-pre-spawn)
+			// sessions so a pre-broker-aware client that POSTs a Hello
+			// directly doesn't silently time out against a host with no
+			// live coordinator.
+			//
+			// `?include_awaiting=1` opts into the broker-aware view.
+			// Native clients that have implemented the broker intent
+			// dance (POST /v1/session/{id}/intents → poll
+			// /v1/intent/{iid} → wait for state to flip to "waiting")
+			// pass this flag so they can list and join browser-hosted
+			// sessions.  See lobby_client.cpp / ui_netplay_actions.cpp
+			// for the joiner's side of the handshake.
+			const bool includeAwaiting =
+				req.has_param("include_awaiting") &&
+				req.get_param_value("include_awaiting") == "1";
+			auto list = store.List(includeAwaiting);
 			JsonBuilder b;
 			b.raw('[');
 			for (size_t i = 0; i < list.size(); ++i) {
@@ -2788,6 +2832,49 @@ void Install(httplib::Server& srv, Store& store) {
 	srv.Delete(idRegex,
 		[dispatchId](const httplib::Request& req, httplib::Response& res) {
 			if (!dispatchId(req, res)) WriteErr(res, 404, "not found");
+		});
+
+	// v4 broker handshake — joiner-side decision poll endpoint.
+	// Path: /v1/intent/{iid}.  Same information surface as the SSE
+	// stream below, but readable in a single non-chunked GET so the
+	// native lobby_client (which doesn't speak chunked transfer-encoding)
+	// can poll it from a worker thread on a 1–2 s cadence.
+	//
+	// Returns 404 once the intent (and any decision) has been swept —
+	// the client should treat 404 after a previous 200 as "expired" and
+	// surface a friendly timeout, not as a transient error.
+	//
+	// std::regex_match is full-anchored, so `[^/]+` here cannot collide
+	// with the `[^/]+/stream` regex below.  Order is irrelevant.
+	const std::string intentPollRegex =
+		std::string(kPathIntent) + "/[^/]+";
+	srv.Get(intentPollRegex,
+		[&store](const httplib::Request& req, httplib::Response& res) {
+			const std::string prefix = std::string(kPathIntent) + "/";
+			const std::string& path = req.path;
+			if (path.size() <= prefix.size() ||
+			    path.compare(0, prefix.size(), prefix) != 0) {
+				WriteErr(res, 404, "not found");
+				return;
+			}
+			std::string iid = path.substr(prefix.size());
+			if (iid.empty() || iid.find('/') != std::string::npos) {
+				WriteErr(res, 400, "bad intentId");
+				return;
+			}
+			Intent it;
+			if (!store.GetIntent(iid, it)) {
+				WriteErr(res, 404, "no such intent");
+				return;
+			}
+			Decision d{};
+			bool haveDecision = store.GetDecision(iid, d);
+			JsonBuilder b;
+			WriteIntentPollJson(b, it,
+				haveDecision ? &d : nullptr,
+				NowMs());
+			res.status = 200;
+			res.set_content(std::move(b.s), "application/json");
 		});
 
 	// v4 broker handshake — joiner-side decision SSE stream.

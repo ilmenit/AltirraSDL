@@ -61,6 +61,13 @@ enum class Screen {
 	JoinPrompt,       // Enter entry code (private session)
 	JoinConfirm,      // Confirm ROM / TOS before joining public
 	Waiting,          // Host is waiting for a joiner; joiner is waiting for snapshot
+	BrokerAsking,     // Joiner targeting a browser-hosted (awaiting_approval)
+	                  // session: intent posted, waiting for the host's modal
+	                  // Allow click.  Polls /v1/intent/{iid} on a 1 s cadence.
+	BrokerSpawning,   // Host accepted; their WASM emulator is booting + adopting
+	                  // the session.  Polls /v1/session/{id} until state flips
+	                  // from awaiting_approval to waiting, then jumps into
+	                  // the standard StartJoiningAction connect path.
 	AcceptJoinPrompt, // Host's "<peer> wants to join <game>" Allow/Deny modal
 	Prefs,            // Preferences → Netplay
 	DesyncReport,     // Post-desync "something went wrong" card
@@ -474,6 +481,21 @@ struct Session {
 	// the Connecting screen so the joiner gets feedback during a host
 	// that's taking a long time to approve.
 	uint64_t         joinStartedMs     = 0;
+
+	// v4 broker handshake — joiner-side scratch state for the
+	// BrokerAsking → BrokerSpawning → (legacy join) transition.
+	// Populated when StartJoiningAction routes a broker-host target
+	// through the intent-post path; cleared on session end / cancel /
+	// terminal error.  See ui_netplay_actions.cpp Tick_BrokerWait.
+	std::string      brokerIntentId;       // POST /v1/session/{id}/intents return
+	std::string      brokerSessionId;      // mirror of joinTarget.sessionId
+	uint64_t         brokerStartedMs    = 0;  // monotonic ms — postal time
+	uint64_t         brokerLastPollMs   = 0;  // last successful Get* tick
+	uint64_t         brokerSpawnDeadlineMs = 0; // 0 until Allow; ms cap on host spawn
+	bool             brokerInFlight     = false; // a poll request is queued
+	bool             brokerAccepted     = false; // host's Allow already observed
+	int              brokerLast404Streak = 0;    // consecutive 404s on intent
+	uint32_t         brokerTag          = 0;     // worker tag for our intent ops
 
 	// -- Active hosting state ---------------------------------------
 	// Populated when the host has actually called StartHost() and

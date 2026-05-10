@@ -143,11 +143,20 @@ void ATNetplayUI_Shutdown() {
 void ATNetplayUI_Poll(uint64_t nowMs) {
 	auto& st = ATNetplayUI::GetState();
 
+	// v4 broker join — drive the BrokerAsking/BrokerSpawning poll
+	// cadence.  Idempotent; no-op when the user isn't mid-broker.
+	ATNetplayUI::Tick_BrokerWait(nowMs);
+
 	// Drain completed lobby requests.
 	st.browser.refreshInFlight =
 		(ATNetplayUI::GetWorker().InFlightCount() > 0);
 	ATNetplayUI::GetWorker().Poll(
 		[&](ATNetplayUI::LobbyResult& r) {
+			// v4 broker join — first crack at intent + spawn-poll
+			// results.  Tag-matched, so a stale response from a
+			// cancelled flow is silently dropped.
+			if (ATNetplayUI::OnBrokerLobbyResult(r)) return;
+
 			// Deep-link join: GetById results route to the dedicated
 			// state machine that populates joinTarget and fires
 			// StartJoiningAction.  Returns true when the result is

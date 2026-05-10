@@ -33,6 +33,7 @@
 
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
+#include "netplay/lobby_protocol.h"  // ATLobby::kStateAwaitingApproval
 #include "netplay/platform_notify.h"
 #include "netplay/packets.h"  // for SessionTermination enum (v6)
 
@@ -974,6 +975,20 @@ void RenderJoinConfirm() {
 			"slightly higher latency than a native UDP host.");
 	}
 
+	// awaiting_approval hosts haven't spawned their emulator yet —
+	// the broker dance asks the host's tab modal to Allow you in,
+	// then waits for their WASM to come up.  Set expectations so the
+	// joiner doesn't read the BrokerAsking screen as "stuck".
+	if (st.session.joinTarget.state ==
+	    ATLobby::kStateAwaitingApproval) {
+		ImGui::Spacing();
+		ATTouchMutedText(
+			"The host is waiting in the lobby web page; tapping Join "
+			"will pop up an approval prompt on their side.  After "
+			"they click Allow their emulator takes a few seconds to "
+			"start before your game begins.");
+	}
+
 	EndScreenBody();
 
 	ImGui::Separator();
@@ -1004,6 +1019,133 @@ void RenderJoinConfirm() {
 	if (firmwareMissing) ImGui::EndDisabled();
 
 	if (!open) Back();
+	EndSheet();
+}
+
+// -------------------------------------------------------------------
+// Broker handshake — joiner is asking a browser-host's tab modal to
+// approve the join.  Mirrors the lobby web page's broker.js
+// joiner-side stages so a native joiner sees the same conceptual
+// steps a WASM joiner would.  The state machine in
+// ui_netplay_actions.cpp::Tick_BrokerWait drives the polling; this
+// screen is purely presentational + Cancel.
+// -------------------------------------------------------------------
+
+void RenderBrokerAsking() {
+	State& st = GetState();
+	bool open = true;
+	if (!BeginSheet("Asking the host", &open,
+	                ImVec2(Dp(420), Dp(280)),
+	                ImVec2(Dp(620), Dp(420))))
+		return;
+
+	if (ScreenHeader("Asking the host")) {
+		CancelBrokerJoinFlow();
+	}
+
+	BeginScreenBody(ATTouch::kFooterReserveSingle);
+
+	ATTouchSection("Waiting for approval");
+	PeerChip(st.session.joinTarget.hostHandle.c_str(),
+	         st.session.joinTarget.region.c_str(),
+	         st.session.joinTarget.requiresCode);
+	ATTouchMutedText(st.session.joinTarget.cartName.c_str());
+
+	ImGui::Spacing();
+	StatusBadge(
+		"Waiting for the host to allow you in\xe2\x80\xa6",
+		/*severity=*/0, /*spin=*/true);
+
+	if (st.session.brokerStartedMs != 0) {
+		const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+		const uint64_t wait = nowMs > st.session.brokerStartedMs
+			? (nowMs - st.session.brokerStartedMs) / 1000 : 0;
+		char waitText[40];
+		std::snprintf(waitText, sizeof waitText,
+			"(%llus waiting)", (unsigned long long)wait);
+		ATTouchMutedText(waitText);
+	}
+
+	ImGui::Spacing();
+	ATTouchMutedText(
+		"The host runs the emulator in their browser tab.  When "
+		"they click Allow your game will start automatically.");
+
+	EndScreenBody();
+
+	ImGui::Separator();
+	ImGui::Spacing();
+	if (ATTouchButton("Cancel",
+	                  ImVec2(-FLT_MIN,
+	                         Dp(ATTouch::kButtonHeightNormal)),
+	                  ATTouchButtonStyle::Neutral)) {
+		CancelBrokerJoinFlow();
+	}
+
+	if (!open) CancelBrokerJoinFlow();
+	EndSheet();
+}
+
+void RenderBrokerSpawning() {
+	State& st = GetState();
+	bool open = true;
+	if (!BeginSheet("Host is starting", &open,
+	                ImVec2(Dp(420), Dp(280)),
+	                ImVec2(Dp(620), Dp(420))))
+		return;
+
+	if (ScreenHeader("Host is starting")) {
+		CancelBrokerJoinFlow();
+	}
+
+	BeginScreenBody(ATTouch::kFooterReserveSingle);
+
+	ATTouchSection("Approved \xe2\x80\x94 host's emulator is loading");
+	PeerChip(st.session.joinTarget.hostHandle.c_str(),
+	         st.session.joinTarget.region.c_str(),
+	         st.session.joinTarget.requiresCode);
+	ATTouchMutedText(st.session.joinTarget.cartName.c_str());
+
+	ImGui::Spacing();
+	StatusBadge(
+		"Host accepted \xe2\x80\x94 their emulator is starting up\xe2\x80\xa6",
+		/*severity=*/0, /*spin=*/true);
+
+	// Show elapsed time since approval so the user sees progress.
+	if (st.session.brokerSpawnDeadlineMs != 0) {
+		const uint64_t nowMs = (uint64_t)SDL_GetTicks();
+		const uint64_t deadline = st.session.brokerSpawnDeadlineMs;
+		// Elapsed = total spawn budget − remaining.  Approximated from
+		// the deadline minus the constant from actions.cpp; we don't
+		// need exact precision, just a visible counter.
+		const uint64_t spawnBudgetMs = 30000;
+		const uint64_t startedMs = (deadline > spawnBudgetMs)
+			? (deadline - spawnBudgetMs) : nowMs;
+		const uint64_t wait = nowMs > startedMs
+			? (nowMs - startedMs) / 1000 : 0;
+		char waitText[40];
+		std::snprintf(waitText, sizeof waitText,
+			"(%llus connecting)", (unsigned long long)wait);
+		ATTouchMutedText(waitText);
+	}
+
+	ImGui::Spacing();
+	ATTouchMutedText(
+		"This usually takes a few seconds the first time the host "
+		"plays today.  The game will start automatically.");
+
+	EndScreenBody();
+
+	ImGui::Separator();
+	ImGui::Spacing();
+	if (ATTouchButton("Cancel",
+	                  ImVec2(-FLT_MIN,
+	                         Dp(ATTouch::kButtonHeightNormal)),
+	                  ATTouchButtonStyle::Neutral)) {
+		CancelBrokerJoinFlow();
+	}
+
+	if (!open) CancelBrokerJoinFlow();
 	EndSheet();
 }
 
@@ -2857,6 +2999,8 @@ bool ATNetplayUI_DispatchScreen() {
 		case Screen::HostSetup:     RenderHostSetup();      break;
 		case Screen::JoinPrompt:    RenderJoinPrompt();     break;
 		case Screen::JoinConfirm:   RenderJoinConfirm();    break;
+		case Screen::BrokerAsking:  RenderBrokerAsking();   break;
+		case Screen::BrokerSpawning:RenderBrokerSpawning(); break;
 		case Screen::Waiting:       RenderWaiting();        break;
 		case Screen::Prefs:             RenderPrefs();            break;
 		case Screen::Error:             RenderError();            break;

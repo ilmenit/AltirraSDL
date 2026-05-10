@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <unistd.h>
 
 using namespace ATNetplay;
@@ -173,10 +174,106 @@ static void testLiveLobbyRoundTrip() {
 	}
 }
 
+// v4 broker handshake — a native joiner against a broker-host
+// (awaiting_approval) session uses CreateIntent + GetIntent to wait
+// for the host's modal Allow click.  The lobby auto-accepts intents
+// on legacy "waiting" sessions, so this test (which doesn't simulate
+// a host modal) validates the auto-accept path: post intent against
+// a normal Create'd session, immediately poll, expect decided=true
+// accepted=true.
+static void testLiveBrokerAutoAccept() {
+	const char* skip = std::getenv("LOBBY_SKIP");
+	if (skip && *skip) {
+		std::printf("lobby_selftest: broker tests skipped (LOBBY_SKIP set)\n");
+		return;
+	}
+	LobbyEndpoint ep;
+	ep.host = envOr("LOBBY_HOST", "lobby.atari.org.pl");
+	ep.port = (uint16_t)std::atoi(envOr("LOBBY_PORT", "8080").c_str());
+	ep.timeoutMs = 8000;
+
+	LobbyClient host(ep);
+	pid_t pid = getpid();
+	uint64_t ts = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+	char tag[64];
+	std::snprintf(tag, sizeof tag, "broker-%d-%llu",
+		(int)pid, (unsigned long long)ts);
+
+	LobbyCreateRequest cr;
+	cr.cartName        = std::string("BrokerTest-") + tag;
+	cr.hostHandle      = "brokerhost";
+	cr.hostEndpoint    = "127.0.0.1:26199";
+	cr.region          = "selftest";
+	cr.playerCount     = 1;
+	cr.maxPlayers      = 2;
+	cr.protocolVersion = 2;
+
+	LobbyCreateResponse cresp;
+	bool ok = host.Create(cr, cresp);
+	if (!ok) {
+		std::fprintf(stderr, "broker test: Create() failed: %s — "
+			"is %s:%u reachable?\n",
+			host.LastError(), ep.host.c_str(), (unsigned)ep.port);
+		++fails;
+		return;
+	}
+
+	LobbyClient joiner(ep);
+	LobbyIntentResponse iresp;
+	ok = joiner.CreateIntent(cresp.sessionId, "brokerjoiner", "", iresp);
+	CHECK_MSG(ok, joiner.LastError());
+	if (!ok) {
+		host.Delete(cresp.sessionId, cresp.token);
+		return;
+	}
+	CHECK(!iresp.intentId.empty());
+	CHECK(iresp.sessionId == cresp.sessionId);
+	CHECK(iresp.ttlSeconds >= 30);
+
+	// Auto-accept on a "waiting" session: a poll should find a
+	// recorded decision immediately (no SSE handshake needed).  Sleep
+	// briefly to let the lobby's CV path settle, but kept tiny so the
+	// test stays fast.  The lobby commits the decision inline inside
+	// CreateIntent itself so this is more about scheduling than waits.
+	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+	LobbyIntentStatus istat;
+	ok = joiner.GetIntent(iresp.intentId, istat);
+	CHECK_MSG(ok, joiner.LastError());
+	CHECK(istat.decided);
+	CHECK(istat.accepted);
+	CHECK(istat.intentId == iresp.intentId);
+	CHECK(istat.sessionId == cresp.sessionId);
+
+	// Cleanup.
+	host.Delete(cresp.sessionId, cresp.token);
+}
+
+// Polling 404 on an unknown intentId.  The native joiner relies on
+// this status to detect a swept intent (TTL fired) and surface a
+// "host didn't reply" message.
+static void testLiveBrokerGetIntent404() {
+	const char* skip = std::getenv("LOBBY_SKIP");
+	if (skip && *skip) return;
+	LobbyEndpoint ep;
+	ep.host = envOr("LOBBY_HOST", "lobby.atari.org.pl");
+	ep.port = (uint16_t)std::atoi(envOr("LOBBY_PORT", "8080").c_str());
+	ep.timeoutMs = 8000;
+
+	LobbyClient c(ep);
+	LobbyIntentStatus istat;
+	bool ok = c.GetIntent("ffffffff-ffff-ffff-ffff-ffffffffffff", istat);
+	CHECK(!ok);
+	CHECK(c.LastStatus() == 404);
+}
+
 int main() {
 	testUrlPercentEncode();
 	testListRoundTripDoesntCrash();
 	testLiveLobbyRoundTrip();
+	testLiveBrokerAutoAccept();
+	testLiveBrokerGetIntent404();
 
 	if (fails == 0) {
 		std::printf("netplay lobby selftest: OK\n");

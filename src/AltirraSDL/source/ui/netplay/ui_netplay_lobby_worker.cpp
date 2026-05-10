@@ -306,6 +306,23 @@ void LobbyWorker::ThreadMain() {
 				}
 				break;
 			}
+			case LobbyOp::CreateIntent: {
+				// req.sessionId = target host's lobby session id
+				// req.state     = joinerHandle
+				// req.token     = codeHash hex (empty for public)
+				out.ok = client.CreateIntent(
+					q.req.sessionId, q.req.state, q.req.token,
+					out.intentResp);
+				break;
+			}
+			case LobbyOp::GetIntent: {
+				// req.sessionId = intentId (this op doesn't touch
+				// the session store; we reuse the field to keep the
+				// LobbyRequest shape stable).
+				out.ok = client.GetIntent(q.req.sessionId,
+					out.intentStatus);
+				break;
+			}
 			case LobbyOp::PeerHint: {
 				// req.sessionId  = target host's lobby session id
 				// req.token      = joiner sessionNonce hex (32 chars)
@@ -622,6 +639,50 @@ bool ParseHeartbeatResp(const char* data, size_t len,
 	return true;
 }
 
+bool ParseCreateIntentResp(const char* data, size_t len,
+                           ATNetplay::LobbyIntentResponse& out) {
+	out = ATNetplay::LobbyIntentResponse{};
+	ATLobby::JsonCursor c{data, data + len};
+	if (!c.match('{')) return false;
+	for (;;) {
+		std::string k;
+		if (!c.parseString(k)) return false;
+		if (!c.match(':'))     return false;
+		if      (k == "intentId")   c.parseString(out.intentId);
+		else if (k == "sessionId")  c.parseString(out.sessionId);
+		else if (k == "ttlSeconds") c.parseInt(out.ttlSeconds);
+		else { if (!c.parseNull() && !c.skipValue()) return false; }
+		if (!c.ok) return false;
+		if (c.match(',')) continue;
+		if (c.match('}')) return !out.intentId.empty();
+		return false;
+	}
+}
+
+bool ParseIntentStatusResp(const char* data, size_t len,
+                           ATNetplay::LobbyIntentStatus& out) {
+	out = ATNetplay::LobbyIntentStatus{};
+	ATLobby::JsonCursor c{data, data + len};
+	if (!c.match('{')) return false;
+	for (;;) {
+		std::string k;
+		if (!c.parseString(k)) return false;
+		if (!c.match(':'))     return false;
+		if      (k == "intentId")   c.parseString(out.intentId);
+		else if (k == "sessionId")  c.parseString(out.sessionId);
+		else if (k == "decided")    c.parseBool(out.decided);
+		else if (k == "accepted")   c.parseBool(out.accepted);
+		else if (k == "reason")     c.parseInt(out.reason);
+		else if (k == "arrivedMs")  c.parseInt(out.arrivedMs);
+		else if (k == "ttlSeconds") c.parseInt(out.ttlSeconds);
+		else { if (!c.parseNull() && !c.skipValue()) return false; }
+		if (!c.ok) return false;
+		if (c.match(',')) continue;
+		if (c.match('}')) return true;
+		return false;
+	}
+}
+
 bool ParseStatsResp(const char* data, size_t len,
                     ATNetplay::LobbyStats& out) {
 	ATLobby::JsonCursor c{data, data + len};
@@ -739,6 +800,14 @@ void OnSuccess(emscripten_fetch_t* f) {
 			case LobbyOp::PeerHint:
 				// 200 OK with arbitrary body; ignore it.
 				break;
+			case LobbyOp::CreateIntent:
+				out.ok = ParseCreateIntentResp(body, len, out.intentResp);
+				if (!out.ok) out.error = "malformed intent response";
+				break;
+			case LobbyOp::GetIntent:
+				out.ok = ParseIntentStatusResp(body, len, out.intentStatus);
+				if (!out.ok) out.error = "malformed intent status";
+				break;
 			case LobbyOp::PortMapRefresh:
 				// Should not happen — we never schedule this op for WASM.
 				out.ok = false;
@@ -830,7 +899,11 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 
 	switch (req.op) {
 		case LobbyOp::List:
-			path = "/v1/sessions";
+			// `include_awaiting=1` opts into broker-pre-spawn
+			// (awaiting_approval) rows so the in-app browser surfaces
+			// games hosted from the lobby web page.  See LobbyClient::
+			// List in lobby_client.cpp for the equivalent native flag.
+			path = "/v1/sessions?include_awaiting=1";
 			methodStr = "GET";
 			break;
 		case LobbyOp::Create:
@@ -872,6 +945,28 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 			ctx->body = BuildPeerHintBody(req.state, req.token, cands);
 			break;
 		}
+		case LobbyOp::CreateIntent: {
+			// req.sessionId = target host's lobby session id
+			// req.state     = joinerHandle
+			// req.token     = codeHash hex (empty for public)
+			path  = "/v1/session/";
+			path += req.sessionId;
+			path += "/intents";
+			methodStr = "POST";
+			ctx->body.clear();
+			ctx->body.push_back('{');
+			bool first = true;
+			AppendKV(ctx->body, "joinerHandle", req.state, first);
+			AppendKV(ctx->body, "codeHash",     req.token, first);
+			ctx->body.push_back('}');
+			break;
+		}
+		case LobbyOp::GetIntent:
+			// req.sessionId = intentId (overloaded — see LobbyOp comment)
+			path  = "/v1/intent/";
+			path += req.sessionId;
+			methodStr = "GET";
+			break;
 		case LobbyOp::PortMapRefresh: {
 			// Silently fail with a clear error — PMP/PCP requires
 			// LAN UDP which the browser doesn't have.
@@ -906,7 +1001,8 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 		attr.requestHeaders = delHeaders;
 	} else if (req.op == LobbyOp::Create ||
 	           req.op == LobbyOp::Heartbeat ||
-	           req.op == LobbyOp::PeerHint) {
+	           req.op == LobbyOp::PeerHint ||
+	           req.op == LobbyOp::CreateIntent) {
 		attr.requestHeaders = postHeaders;
 		attr.requestData     = ctx->body.data();
 		attr.requestDataSize = ctx->body.size();

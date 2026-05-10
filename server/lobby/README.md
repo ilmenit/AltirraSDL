@@ -124,6 +124,26 @@ curl -sS http://localhost:8080/healthz   # → ok sessions=0
   "12 sessions • 4 in play • 7 hosts" footer without enumerating
   the full list. O(N) under the same lock List takes; cheap with
   `kListCap = 500`.
+- **v4** `GET /v1/sessions?include_awaiting=1` — opt-in flag that
+  surfaces broker-pre-spawn (`awaiting_approval`) sessions in the
+  list.  Hidden by default to protect pre-broker-aware clients from
+  silent NetHello timeouts.  Native clients that have implemented
+  the broker intent dance pass this flag.
+- **v4** `POST /v1/session/{id}/intents` — joiner posts an intent
+  against an `awaiting_approval` (or auto-accepting `waiting`)
+  session.  Body `{joinerHandle, codeHash}`; returns
+  `{intentId, sessionId, ttlSeconds}`.
+- **v4** `GET /v1/intent/{iid}` — non-SSE polling endpoint mirroring
+  the SSE stream below.  Returns
+  `{intentId, sessionId, decided, accepted, reason, arrivedMs, ttlSeconds}`
+  on 200, or 404 once the intent has been swept.  Native clients
+  whose HTTP transport doesn't speak chunked transfer-encoding poll
+  this on a 1–2 s cadence instead of opening the SSE stream.
+- **v4** `GET /v1/intent/{iid}/stream` — SSE stream of decision
+  events (used by the lobby web page's broker.js; native clients
+  use the `GET /v1/intent/{iid}` poll above).
+- **v4** `POST /v1/session/{id}/intents/{iid}/decision` — host posts
+  the accept/reject decision.  Body `{token, accepted, reason?}`.
 - `GET /healthz` — Liveness (also exercises the session-store mutex,
   so a deadlocked store fails its health check).
 

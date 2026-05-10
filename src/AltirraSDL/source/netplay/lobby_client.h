@@ -123,6 +123,33 @@ struct LobbyStats {
 	int hosts    = 0;
 };
 
+// v4 broker handshake.  Joiners that target an `awaiting_approval`
+// (broker-pre-spawn) session POST a CreateIntent first; the host's
+// page modal owns the accept/reject decision.  The lobby exposes a
+// polling shape over GET /v1/intent/{iid} so this synchronous client
+// (no chunked-transfer support) can wait for the verdict from a
+// worker thread on a 1–2 s cadence.
+//
+// Lifecycle: Create → poll Get* on the returned intentId until either
+// `decided==true` or the lobby returns 404 (intent swept after TTL,
+// surfaced as IsExpired()).  See ui_netplay_actions for the join-flow
+// integration.
+struct LobbyIntentResponse {
+	std::string intentId;
+	std::string sessionId;
+	int         ttlSeconds = 0;
+};
+
+struct LobbyIntentStatus {
+	std::string intentId;
+	std::string sessionId;
+	bool        decided    = false;
+	bool        accepted   = false;
+	int         reason     = 0;       // SessionTermination code; 0 if accepted
+	int         arrivedMs  = 0;       // age since intent post
+	int         ttlSeconds = 0;       // remaining lifetime before sweep
+};
+
 struct LobbyEndpoint {
 	// HTTP transport.  Default points at the public lobby; clients can
 	// override per-call from the user's lobby.ini.
@@ -159,7 +186,36 @@ public:
 	bool Create(const LobbyCreateRequest& req, LobbyCreateResponse& out);
 
 	// Returns true on HTTP 200 (including empty list).  Populates `out`.
+	// Always passes `?include_awaiting=1` so broker-host (browser) sessions
+	// in awaiting_approval state are visible alongside legacy waiting
+	// sessions.  The native joiner detects the state on each row and
+	// routes through CreateIntent / GetIntent before issuing the actual
+	// netplay handshake (see ui_netplay_actions for the join flow).
 	bool List(std::vector<LobbySession>& out);
+
+	// v4 broker handshake.  POST /v1/session/{id}/intents.  Returns
+	// true on HTTP 201; on success `out` carries the intentId + ttl.
+	// `joinerHandle` must be 1..kJoinerHandleMax bytes.  `codeHash`
+	// must be 32 hex chars for a private session, empty otherwise (the
+	// lobby validates this synchronously and rejects with 400/403 on
+	// mismatch — surfaced as LastStatus()).
+	//
+	// On a non-broker (`waiting`) target the lobby auto-accepts the
+	// intent inside this same call: a subsequent GetIntent returns
+	// `decided=true accepted=true`, no host modal involved.  The join
+	// flow can use the same code path for both host types.
+	bool CreateIntent(const std::string& sessionId,
+	                  const std::string& joinerHandle,
+	                  const std::string& codeHashHex,
+	                  LobbyIntentResponse& out);
+
+	// v4 broker handshake.  GET /v1/intent/{iid}.  Returns true on
+	// HTTP 200; populates `out`.  HTTP 404 (intent unknown / swept
+	// after TTL) is surfaced as `false` with LastStatus()==404 — the
+	// caller should treat 404-after-prior-200 as "host never replied
+	// before lobby TTL fired".  Other 4xx/5xx return false with
+	// LastStatus() carrying the actual code.
+	bool GetIntent(const std::string& intentId, LobbyIntentStatus& out);
 
 	// GET /v1/session/<id> — fetch a single session by lobby-issued id.
 	// Returns true on HTTP 200, populating `out`.  Returns false on 404

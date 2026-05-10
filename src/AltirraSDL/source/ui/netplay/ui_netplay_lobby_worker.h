@@ -65,6 +65,19 @@ enum class LobbyOp {
 	// update its HostedGame in the existing result handler.  No
 	// lobby I/O — this is a local LAN round-trip.
 	PortMapRefresh,
+	// v4 broker handshake — joiner posts an intent against an
+	// awaiting_approval (or auto-accepted "waiting") session.  Uses
+	// req.sessionId (target host), req.state (joinerHandle),
+	// req.token (codeHash hex, empty for public sessions).  Result
+	// arrives as LobbyResult::intentResp.
+	CreateIntent,
+	// v4 broker handshake — joiner polls /v1/intent/{iid} to learn
+	// whether the host has decided.  Uses req.sessionId
+	// (interpreted as intentId — this op doesn't touch the session
+	// store).  Result arrives as LobbyResult::intentStatus; HTTP 404
+	// is surfaced as result.ok=false with httpStatus=404 (the join
+	// flow treats "missing after prior 200" as TTL expiry).
+	GetIntent,
 };
 
 struct LobbyRequest {
@@ -106,6 +119,8 @@ struct LobbyResult {
 	std::vector<ATNetplay::LobbySession> sessions;  // List
 	ATNetplay::LobbyCreateResponse       create;    // Create
 	ATNetplay::LobbyStats                stats;     // Stats
+	ATNetplay::LobbyIntentResponse       intentResp;   // CreateIntent
+	ATNetplay::LobbyIntentStatus         intentStatus; // GetIntent
 	std::string                          sourceLobby;  // section name
 
 	// op == List: round-trip wall-clock for the GET /v1/sessions

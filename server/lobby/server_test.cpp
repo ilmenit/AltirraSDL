@@ -1838,6 +1838,137 @@ void TestBrokerAutoAcceptCounterIncrements() {
 }
 
 // 12. AwaitingApproval requires wssRelayOnly=true.
+// Native joiners can't read SSE chunked responses, so they poll the
+// decision via GET /v1/intent/{iid}.  Three states:
+//   - pending → 200 {decided:false}
+//   - decided → 200 {decided:true, accepted:bool, reason:int}
+//   - missing → 404 (intent never existed, or swept after TTL)
+void TestBrokerIntentPollEndpoint() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Archon", "alice", sid, tok),
+		"create awaiting_approval session");
+
+	std::string iid;
+	int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, hs),
+		"joiner posts intent");
+	T_EXPECT_EQ_INT(hs, 201, "intent POST status");
+
+	// Pending — decision not yet posted.
+	{
+		auto r = joiner.Get(
+			(std::string(kPathIntent) + "/" + iid).c_str());
+		T_EXPECT(r && r->status == 200, "poll pending → 200");
+		T_EXPECT(r->body.find("\"decided\":false") != std::string::npos,
+			"pending payload reports decided=false");
+		T_EXPECT(r->body.find("\"intentId\":\"" + iid + "\"")
+			!= std::string::npos, "pending payload echoes intentId");
+		T_EXPECT(r->body.find("\"sessionId\":\"" + sid + "\"")
+			!= std::string::npos, "pending payload echoes sessionId");
+	}
+
+	// Host accepts.
+	int dst = PostDecision(host, sid, iid, tok,
+		/*accepted=*/true, /*reason=*/0);
+	T_EXPECT_EQ_INT(dst, 200, "decision accepted");
+
+	// Decided — payload now carries the verdict.
+	{
+		auto r = joiner.Get(
+			(std::string(kPathIntent) + "/" + iid).c_str());
+		T_EXPECT(r && r->status == 200, "poll decided → 200");
+		T_EXPECT(r->body.find("\"decided\":true") != std::string::npos,
+			"decided payload reports decided=true");
+		T_EXPECT(r->body.find("\"accepted\":true") != std::string::npos,
+			"decided payload reports accepted=true");
+	}
+
+	// Missing — the sweeper hasn't fired yet, but a fresh nonexistent
+	// id should 404 just like the SSE handler.
+	{
+		auto r = joiner.Get(
+			(std::string(kPathIntent) + "/no-such-iid").c_str());
+		T_EXPECT(r && r->status == 404, "unknown iid → 404");
+	}
+}
+
+// Reject path through the polling endpoint: the joiner sees
+// accepted=false + the host's reason code.  Mirrors the SSE reject
+// path test to make sure the two surfaces stay consistent.
+void TestBrokerIntentPollReject() {
+	++g_testsRun;
+	Fixture f;
+	auto host   = f.client();
+	auto joiner = f.client();
+
+	std::string sid, tok;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, tok),
+		"create awaiting_approval session");
+
+	std::string iid; int hs = 0;
+	T_EXPECT(PostIntent(joiner, sid, "mallory", "", iid, hs),
+		"joiner posts intent");
+	T_EXPECT_EQ_INT(hs, 201, "intent posted");
+
+	const int kReasonHostRejected = 8;
+	int dst = PostDecision(host, sid, iid, tok,
+		/*accepted=*/false, kReasonHostRejected);
+	T_EXPECT_EQ_INT(dst, 200, "reject decision posted");
+
+	auto r = joiner.Get(
+		(std::string(kPathIntent) + "/" + iid).c_str());
+	T_EXPECT(r && r->status == 200, "poll → 200");
+	T_EXPECT(r->body.find("\"decided\":true")  != std::string::npos,
+		"reject payload reports decided=true");
+	T_EXPECT(r->body.find("\"accepted\":false") != std::string::npos,
+		"reject payload reports accepted=false");
+	T_EXPECT(r->body.find("\"reason\":8") != std::string::npos,
+		"reject payload carries reason code");
+}
+
+// `?include_awaiting=1` on /v1/sessions surfaces broker-host sessions
+// to native clients that have implemented the broker intent dance.
+// Without the flag the legacy hide-awaiting filter still applies.
+void TestBrokerAwaitingApprovalIncludeFlagOnSessionsList() {
+	++g_testsRun;
+	Fixture f;
+	auto host = f.client();
+
+	auto r1 = host.Post(kPathSession,
+		MakeCreateBody("Joust", "alice", "1.2.3.4:1"),
+		"application/json");
+	T_EXPECT_EQ_INT(r1 ? r1->status : 0, 201, "legacy create 201");
+	std::string id1, tok1; int ttl1 = 0;
+	T_EXPECT(ReadCreateRespJson(r1->body, id1, tok1, ttl1),
+		"parse legacy create");
+
+	std::string id2, tok2;
+	T_EXPECT(CreateBrokerSession(host, "Archon", "bob", id2, tok2),
+		"broker create");
+
+	// Default — broker session hidden.
+	auto def = host.Get(kPathSessions);
+	T_EXPECT(def && def->status == 200, "default GET 200");
+	T_EXPECT(def->body.find(id1) != std::string::npos,
+		"legacy session present");
+	T_EXPECT(def->body.find(id2) == std::string::npos,
+		"awaiting_approval hidden by default");
+
+	// Opt-in — broker session visible.
+	auto opt = host.Get((std::string(kPathSessions)
+		+ "?include_awaiting=1").c_str());
+	T_EXPECT(opt && opt->status == 200, "opt-in GET 200");
+	T_EXPECT(opt->body.find(id1) != std::string::npos,
+		"legacy session still present with opt-in");
+	T_EXPECT(opt->body.find(id2) != std::string::npos,
+		"awaiting_approval VISIBLE with include_awaiting=1");
+}
+
 void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
 	++g_testsRun;
 	Fixture f;
@@ -1899,7 +2030,10 @@ int RunAll() {
 	TestBrokerCreateRejectsBadState();
 	TestBrokerAwaitingApprovalRequiresWssRelayOnly();
 	TestBrokerAwaitingApprovalHiddenFromSessionsList();
+	TestBrokerAwaitingApprovalIncludeFlagOnSessionsList();
 	TestBrokerAwaitingApprovalNotCountedInStats();
+	TestBrokerIntentPollEndpoint();
+	TestBrokerIntentPollReject();
 	TestBrokerIntentAgainstWaitingSessionAccepted();
 	TestBrokerAutoAcceptLiveNotify();
 	TestBrokerIntentRejectedOnPlayingSession();
