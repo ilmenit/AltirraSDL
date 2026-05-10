@@ -599,10 +599,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				uint32 subCycles;
 				const char *label;
 			} kCpu[] = {
-				{ kATCPUMode_6502,    1, "6502C"           },
-				{ kATCPUMode_65C02,   1, "65C02"           },
-				{ kATCPUMode_65C816,  4, "65C816 (7 MHz)"  },
-				{ kATCPUMode_65C816, 12, "65C816 (21 MHz)" },
+				{ kATCPUMode_6502,    1, "6502C"        },
+				{ kATCPUMode_65C02,   1, "65C02"        },
+				{ kATCPUMode_65C816,  4, "65C816 7MHz"  },
+				{ kATCPUMode_65C816, 12, "65C816 21MHz" },
 			};
 			constexpr int kNumCpu = (int)(sizeof(kCpu) / sizeof(kCpu[0]));
 
