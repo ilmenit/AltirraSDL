@@ -79,6 +79,7 @@ static void LoadMobileConfig(ATMobileUIState &mobileState) {
 	mobileState.layoutConfig.controlOpacity = opacityPct / 100.0f;
 	mobileState.layoutConfig.hapticEnabled = key.getBool("HapticEnabled", true);
 	mobileState.autoSaveOnSuspend   = key.getBool("AutoSaveOnSuspend", true);
+	mobileState.saveStateOnExit     = key.getBool("SaveStateOnExit", false);
 	mobileState.autoRestoreOnStart  = key.getBool("AutoRestoreOnStart", true);
 	mobileState.fxScanlines         = key.getBool("FxScanlines", false);
 	mobileState.fxBloom             = key.getBool("FxBloom", false);
@@ -115,6 +116,7 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobil
 		key.setInt("ControlOpacity", pct);
 		key.setBool("HapticEnabled", mobileState.layoutConfig.hapticEnabled);
 		key.setBool("AutoSaveOnSuspend",  mobileState.autoSaveOnSuspend);
+		key.setBool("SaveStateOnExit",    mobileState.saveStateOnExit);
 		key.setBool("AutoRestoreOnStart", mobileState.autoRestoreOnStart);
 		key.setBool("FxScanlines",      mobileState.fxScanlines);
 		key.setBool("FxBloom",          mobileState.fxBloom);

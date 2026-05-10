@@ -25,8 +25,14 @@
 void ATMobileUI_SaveSuspendState(ATSimulator &sim,
 	const ATMobileUIState &mobileState)
 {
-	if (!mobileState.autoSaveOnSuspend)
-		return;
+	// No "autoSaveOnSuspend" self-gate here — the caller decides
+	// whether to invoke this based on the relevant policy flag (the
+	// background path checks autoSaveOnSuspend; the Exit Emulator
+	// path checks saveStateOnExit).  We only short-circuit when there
+	// is genuinely nothing to snapshot (no game loaded) — in that
+	// case the right thing is to clear any stale snapshot so the
+	// next launch doesn't pick up something the user can no longer
+	// associate with what they were doing.
 	if (!mobileState.gameLoaded) {
 		ATMobileUI_ClearSuspendState();
 		return;

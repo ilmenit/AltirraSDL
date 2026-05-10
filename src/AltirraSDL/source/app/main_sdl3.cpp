@@ -893,7 +893,8 @@ static void HandleEvents() {
 			ATTouchControls_ReleaseAll();
 			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 #ifdef __ANDROID__
-			ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
+			if (g_mobileState.autoSaveOnSuspend)
+				ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
 #ifdef ALTIRRA_NETPLAY_ENABLED
 			// Restore user's pre-session profile + scrub the netplay-
 			// loaded media BEFORE persist-to-disk so the saved state
@@ -954,7 +955,8 @@ static void HandleEvents() {
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: TERMINATING — flushing settings");
 #ifdef __ANDROID__
-			ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
+			if (g_mobileState.autoSaveOnSuspend)
+				ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
 #endif
 #ifdef ALTIRRA_NETPLAY_ENABLED
 			// Restore user's pre-session profile + scrub the netplay-

@@ -385,37 +385,38 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Separator();
 		ImGui::Spacing();
 		if (ATTouchButton("Exit Emulator", btnSize, ATTouchButtonStyle::Danger)) {
-			// The confirm copy adapts to whether the user has the
-			// auto-save-on-suspend toggle on (default: yes).  With
-			// auto-save the snapshot is restored on next launch, so
-			// the prompt is purely a "are you sure" — without it the
-			// user genuinely loses their place, and the prompt has to
-			// say so.
-			const char *body = mobileState.autoSaveOnSuspend
-				? "Quit Altirra?  Your current progress is saved "
-				  "automatically and will be restored next time you "
-				  "open the app."
+			// Explicit Exit is a deliberately clean exit by default —
+			// opposite signal from auto-save-on-background, which
+			// recovers from unexpected OS terminations.  The user can
+			// flip "Save state on exit" in Settings → Save State to
+			// get RetroArch-style exit-and-resume behaviour, in which
+			// case Exit writes a fresh snapshot for the next launch.
+			// Confirm copy adapts so the user knows which path runs.
+			const char *body = mobileState.saveStateOnExit
+				? "Quit Altirra?  Your current progress will be saved "
+				  "and restored next time you open the app."
 				: "Quit Altirra?  Any unsaved progress will be lost.";
 			ShowConfirmDialog("Exit Emulator", body,
 				[&sim, &uiState, &mobileState]() {
-					// Mirror the WILL_ENTER_BACKGROUND / TERMINATING
-					// path so the emulator state snapshot is written
-					// before we tear down — without this call the
-					// auto-save toggle would silently drop progress
-					// when the user exits via the menu instead of
-					// swiping the app away.  Self-gated on
-					// mobileState.autoSaveOnSuspend, so users who
-					// disabled it still get a clean exit-and-forget.
-					ATMobileUI_SaveSuspendState(sim, mobileState);
+					// Two paths, gated on the user's "Save state on
+					// exit" preference.  ON: write a fresh snapshot
+					// for next-launch restore (RetroArch idiom).
+					// OFF: clear any existing snapshot so a stale
+					// background-save from earlier doesn't get
+					// silently reloaded — the user asked for a
+					// clean exit, honour it.
+					if (mobileState.saveStateOnExit)
+						ATMobileUI_SaveSuspendState(sim, mobileState);
+					else
+						ATMobileUI_ClearSuspendState();
 
 					// Mark the Android activity so the eventual
 					// finish() (which SDLActivity calls automatically
 					// once native main() returns) is redirected to
-					// finishAndRemoveTask() and the OS process is
-					// killed — without this the recents entry stays
-					// and tapping it warm-starts a new activity,
-					// which looks like the app didn't really exit.
-					// No-op on desktop.
+					// finishAndRemoveTask() — without this the recents
+					// chip remains and tapping it warm-starts a new
+					// activity, which looks like the app didn't
+					// really exit.  No-op on desktop.
 					ATAndroid_RequestQuitAndRemoveTask();
 
 					uiState.exitConfirmed = true;

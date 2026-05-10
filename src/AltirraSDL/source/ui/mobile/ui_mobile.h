@@ -49,13 +49,28 @@ struct ATMobileUIState {
 	bool topBarVisible = true;
 
 	// --- Auto save-state ---
-	// When enabled, the emulator snapshots its state whenever the
-	// app is backgrounded (SDL_EVENT_WILL_ENTER_BACKGROUND /
-	// TERMINATING).  When enabled, the snapshot is automatically
-	// reloaded at startup so the user resumes exactly where they
-	// left off — important because Android will kill backgrounded
-	// apps at any time (low memory, incoming call, swipe away).
+	// Three independent toggles that together describe how the
+	// "snapshot to disk and restore on next launch" feature behaves.
+	//
+	// autoSaveOnSuspend (default true) — write a snapshot whenever
+	//   the app is backgrounded (SDL_EVENT_WILL_ENTER_BACKGROUND /
+	//   TERMINATING).  This is the OS-induced safety net: low-memory
+	//   kill, incoming call, swipe-away.  On by default because
+	//   Android terminates backgrounded apps unpredictably and most
+	//   users expect their progress to survive that.
+	//
+	// saveStateOnExit (default false) — write a snapshot when the
+	//   user picks "Exit Emulator" from the hamburger menu.  Off by
+	//   default because explicit Exit is a deliberate "I'm done"
+	//   signal; users who want exit-and-resume (RetroArch style) can
+	//   opt in.  Without this, Exit Emulator clears any existing
+	//   snapshot so the next launch starts fresh.
+	//
+	// autoRestoreOnStart (default true) — at startup, if a snapshot
+	//   exists on disk, load it and resume.  Applies regardless of
+	//   which of the two save paths produced the snapshot.
 	bool autoSaveOnSuspend = true;
+	bool saveStateOnExit = false;
 	bool autoRestoreOnStart = true;
 
 	// --- Visual effects (CRT look) ---

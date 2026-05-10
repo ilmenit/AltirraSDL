@@ -753,15 +753,26 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		if (s_settingsPage == ATMobileSettingsPage::SaveState) {
 		ATTouchSection("Save State");
 
-		if (ATTouchToggle("Auto-save on exit / background",
+		if (ATTouchToggle("Auto-save on background",
 			&mobileState.autoSaveOnSuspend))
 		{
 			SaveMobileConfig(mobileState);
 		}
 		ATTouchMutedText(
-			"Snapshots the emulator whenever the app goes to "
-			"background or is closed, so a swipe-away or an "
-			"incoming call never loses progress.");
+			"Snapshots the emulator whenever the app is sent to "
+			"the background, so a swipe-away, incoming call, or "
+			"low-memory kill never loses progress.");
+
+		if (ATTouchToggle("Save state on exit",
+			&mobileState.saveStateOnExit))
+		{
+			SaveMobileConfig(mobileState);
+		}
+		ATTouchMutedText(
+			"When you choose Exit Emulator, save your current "
+			"progress so the next launch resumes from there.  Off "
+			"by default — Exit normally starts the next session "
+			"fresh.");
 
 		if (ATTouchToggle("Restore on startup",
 			&mobileState.autoRestoreOnStart))
@@ -769,8 +780,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			SaveMobileConfig(mobileState);
 		}
 		ATTouchMutedText(
-			"On launch, resume exactly where you left off "
-			"(requires Auto-save above).");
+			"On launch, resume from the most recent snapshot "
+			"(requires one of the save toggles above).");
 
 		ImGui::Spacing();
 
