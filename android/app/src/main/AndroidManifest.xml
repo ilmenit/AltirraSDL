@@ -45,7 +45,30 @@
         android:hasCode="true"
         android:hardwareAccelerated="true"
         android:allowBackup="true"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:enableOnBackInvokedCallback="false">
+
+        <!-- Trap the Android hardware Back button so it arrives in our
+             SDL event loop as SDL_SCANCODE_AC_BACK (rewritten to
+             SDL_SCANCODE_ESCAPE in main_sdl3.cpp) instead of SDL
+             swallowing it inside SDLActivity.onBackPressed() and
+             finishing the activity.  Without this, every press of Back —
+             in-game, in Settings, in the Game Library — minimizes the
+             app instead of navigating one screen up the mobile UI stack.
+
+             MUST be at <application> scope: SDL3's
+             getManifestEnvironmentVariables() reads
+             ApplicationInfo.metaData (application-level only).  Putting
+             this inside <activity> silently drops it.
+
+             Pairs with android:enableOnBackInvokedCallback="false" on
+             the <application> above: targeting API 34+, Android enables
+             predictive back by default, which routes Back through
+             OnBackInvokedCallback and bypasses SDLActivity.onBackPressed
+             entirely (SDL3 doesn't register an OnBackInvokedCallback).
+             Without the opt-out, this hint is read but never consulted. -->
+        <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON"
+            android:value="1" />
 
         <!-- Main activity — SDL3 provides SDLActivity which handles
              the GL surface, lifecycle, and native library loading.
@@ -74,21 +97,6 @@
                 <data android:pathPattern=".*\\.cas" />
                 <data android:pathPattern=".*\\.rom" />
             </intent-filter>
-
-            <!-- SDL3 metadata: tell SDL which native library to load -->
-            <meta-data android:name="SDL_MAIN_ENTRY_POINT"
-                android:value="main" />
-
-            <!-- Trap the Android hardware Back button so it arrives in
-                 our SDL event loop as SDL_SCANCODE_AC_BACK (rewritten to
-                 SDL_SCANCODE_ESCAPE in main_sdl3.cpp) instead of SDL
-                 swallowing it inside SDLActivity.onBackPressed() and
-                 finishing the activity.  Without this, every press of
-                 Back — in-game, in Settings, in the Game Library —
-                 minimizes the app instead of navigating one screen up
-                 the mobile UI stack. -->
-            <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON"
-                android:value="1" />
         </activity>
     </application>
 </manifest>
