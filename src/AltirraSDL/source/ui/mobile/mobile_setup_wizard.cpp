@@ -62,6 +62,7 @@ static const char *WizStepLabel(int page) {
 	if (page >= 10 && page <= 19)   return "Firmware";
 	if (page >= 20 && page <= 29)   return "System";
 	if (page == 30)                 return "Experience";
+	if (page == 32)                 return "Hardware add-ons";
 	if (page == 35)                 return "Joystick";
 	if (page >= 40 && page <= 49)   return "Finish";
 	return "";
@@ -460,6 +461,60 @@ static void WizMobile_Experience() {
 	}
 }
 
+static void WizMobile_HardwareAddons() {
+	Wiz_SeedHardwareAddonsPage(g_sim);
+
+	ImGui::TextWrapped(
+		"Many modern Atari demos and games need expanded hardware "
+		"that isn't part of a stock 800XL.  These four add-ons cover "
+		"the most common requirements.  Original-era software runs "
+		"identically with them on, so leaving them all enabled is a "
+		"safe default for compatibility.");
+	ImGui::Dummy(ImVec2(0, dp(12.0f)));
+
+	{
+		bool flag = Wiz_HasDualPokey(g_sim);
+		if (ATTouchToggle("Stereo POKEY", &flag))
+			Wiz_SetDualPokey(g_sim, flag);
+		ATTouchMutedText(
+			"Second audio chip for software with independent "
+			"left/right output.");
+	}
+	ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+	{
+		bool flag = Wiz_HasCovox(g_sim);
+		if (ATTouchToggle("Covox", &flag))
+			Wiz_SetCovox(g_sim, flag);
+		ATTouchMutedText(
+			"8-bit DAC at $D6xx for digitised stereo sound.");
+	}
+	ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+	{
+		bool flag = Wiz_HasVBXE(g_sim);
+		if (ATTouchToggle("VideoBoard XE", &flag))
+			Wiz_SetVBXE(g_sim, flag);
+		ATTouchMutedText(
+			"High-color graphics and hardware overlays.");
+	}
+	ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+	{
+		bool flag = Wiz_HasMemory1088K(g_sim);
+		if (ATTouchToggle("1088 KB RAM", &flag))
+			Wiz_SetMemory1088K(g_sim, flag);
+		ATTouchMutedText(
+			"Extended memory for large demos.  Off reverts to the "
+			"130XE 128 KB layout.");
+	}
+	ImGui::Dummy(ImVec2(0, dp(12.0f)));
+
+	ATTouchMutedText(
+		"All four can be changed any time from "
+		"Settings > Machine.");
+}
+
 static void WizMobile_Joystick() {
 	const bool is5200 =
 		(g_sim.GetHardwareMode() == kATHardwareMode_5200);
@@ -719,6 +774,7 @@ void RenderMobileSetupWizard(ATSimulator &sim, ATUIState &uiState,
 		case 20: WizMobile_System();            break;
 		case 21: WizMobile_VideoStandard();     break;
 		case 30: WizMobile_Experience();        break;
+		case 32: WizMobile_HardwareAddons();    break;
 		case 35: WizMobile_Joystick();          break;
 		case 40:
 		case 41: WizMobile_Finish();            break;

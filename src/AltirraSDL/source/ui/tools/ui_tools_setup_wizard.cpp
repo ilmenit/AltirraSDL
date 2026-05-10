@@ -55,6 +55,8 @@
 #include "inputmap.h"
 #include "adaptive_input.h"
 #include "setup_wizard_shared.h"
+#include "devicemanager.h"
+#include <at/atcore/deviceimpl.h>
 
 extern ATSimulator g_sim;
 extern ATMobileUIState g_mobileState;
@@ -77,6 +79,172 @@ void SetupWizardState::Reset() {
 	scanMessage.clear();
 	needsHardwareReset = false;
 	joystickPageSeeded = false;
+	addonsPageSeeded = false;
+}
+
+// =========================================================================
+// Hardware Add-ons helpers (page 32 + mobile first-run silent path)
+// =========================================================================
+
+bool Wiz_HasDualPokey(ATSimulator &sim) {
+	return sim.IsDualPokeysEnabled();
+}
+
+void Wiz_SetDualPokey(ATSimulator &sim, bool enable) {
+	if (sim.IsDualPokeysEnabled() == enable)
+		return;
+	sim.SetDualPokeysEnabled(enable);
+	g_setupWiz.needsHardwareReset = true;
+}
+
+bool Wiz_HasMemory1088K(ATSimulator &sim) {
+	return sim.GetMemoryMode() == kATMemoryMode_1088K;
+}
+
+void Wiz_SetMemory1088K(ATSimulator &sim, bool enable) {
+	ATMemoryMode want = enable ? kATMemoryMode_1088K : kATMemoryMode_128K;
+	if (sim.GetMemoryMode() == want)
+		return;
+	sim.SetMemoryMode(want);
+	g_setupWiz.needsHardwareReset = true;
+}
+
+bool Wiz_HasVBXE(ATSimulator &sim) {
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	return dm && dm->GetDeviceByTag("vbxe") != nullptr;
+}
+
+bool Wiz_HasCovox(ATSimulator &sim) {
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	return dm && dm->GetDeviceByTag("covox") != nullptr;
+}
+
+namespace {
+	// Add-or-remove helper that mirrors mobile_settings.cpp's toggleDevice
+	// pattern: AddDevice with a default property set, RemoveDevice on
+	// existing device, ColdReset only for kATDeviceDefFlag_RebootOnPlug
+	// devices (VBXE/Covox aren't, but the helper is correct in general).
+	void Wiz_ToggleDevice(ATSimulator &sim, const char *tag, bool enable,
+		void (*setDefaults)(ATPropertySet &))
+	{
+		ATDeviceManager *dm = sim.GetDeviceManager();
+		if (!dm) return;
+
+		IATDevice *existing = dm->GetDeviceByTag(tag);
+		const bool present = (existing != nullptr);
+
+		if (present == enable)
+			return;
+
+		const ATDeviceDefinition *def = dm->GetDeviceDefinition(tag);
+		const bool needsReboot = def && (def->mFlags & kATDeviceDefFlag_RebootOnPlug);
+
+		if (enable) {
+			ATPropertySet pset;
+			if (setDefaults)
+				setDefaults(pset);
+			try {
+				dm->AddDevice(tag, pset, false);
+			} catch (...) {
+				// AddDevice failed (firmware mismatch / conflict).
+				// Suppress so the wizard's UI re-syncs next frame.
+				return;
+			}
+		} else {
+			dm->RemoveDevice(existing);
+		}
+
+		g_setupWiz.needsHardwareReset = true;
+		if (needsReboot)
+			sim.ColdReset();
+	}
+}
+
+void Wiz_SetVBXE(ATSimulator &sim, bool enable) {
+	// Defaults match RenderVBXEConfig in ui_devconfig_devices.cpp:
+	// VBXE 1.26 at $D6xx, no shared memory, no alt page.
+	Wiz_ToggleDevice(sim, "vbxe", enable, [](ATPropertySet &p) {
+		p.SetUint32("version", 126);
+	});
+}
+
+void Wiz_SetCovox(ATSimulator &sim, bool enable) {
+	// Defaults match RenderCovoxConfig: $D600-D6FF, 4 channels (stereo).
+	Wiz_ToggleDevice(sim, "covox", enable, [](ATPropertySet &p) {
+		p.SetUint32("base", 0xD600);
+		p.SetUint32("size", 0x100);
+		p.SetUint32("channels", 4);
+	});
+}
+
+void Wiz_ApplyConvenientWithRecommendedAddons(ATSimulator &sim) {
+	// Skip silently for 5200 — the four add-ons are XL/XE-only concepts
+	// (5200 has no banked RAM beyond cartridge area, no second POKEY in
+	// the canonical config, and VBXE/Covox are computer expansions).
+	if (sim.GetHardwareMode() == kATHardwareMode_5200)
+		return;
+
+	// Convenient experience preset — same writes as wizard page 30's
+	// Convenient radio (ui_tools_setup_wizard.cpp:930-939) so the silent
+	// mobile path lands the user in the same state a Desktop user would
+	// arrive at by clicking Convenient + ticking all four add-ons.
+	ATUISetDriveSoundsEnabled(false);
+	sim.SetCassetteSIOPatchEnabled(true);
+	sim.SetDiskSIOPatchEnabled(true);
+	sim.SetDiskAccurateTimingEnabled(false);
+	sim.GetGTIA().SetArtifactingMode(ATArtifactMode::None);
+	ATUISetDisplayFilterMode(kATDisplayFilterMode_SharpBilinear);
+	ATUISetViewFilterSharpness(+1);
+
+	Wiz_SetMemory1088K(sim, true);
+	Wiz_SetDualPokey(sim, true);
+	Wiz_SetVBXE(sim, true);
+	Wiz_SetCovox(sim, true);
+
+	// Cold reset so the new hardware actually appears to running code.
+	// Helpers above set needsHardwareReset; we do the reset here
+	// directly because the silent path doesn't end at Wiz_Finish.
+	sim.LoadROMs();
+	sim.ColdReset();
+
+	// Clear the dirty flag — we already reset.  Otherwise the flag
+	// would persist into a future wizard session (started via "Repeat
+	// First Time Setup") and Wiz_Finish would do a needless cold reset
+	// the moment the user advances past Welcome.  Wiz_Finish reads the
+	// flag together with wentPastFirst, but the silent apply path
+	// doesn't go through Wiz_Finish, so we have to reset it ourselves.
+	g_setupWiz.needsHardwareReset = false;
+}
+
+void Wiz_SeedHardwareAddonsPage(ATSimulator &sim) {
+	if (g_setupWiz.addonsPageSeeded)
+		return;
+
+	// Skip seeding for 5200 — the page is also gated out of the nav
+	// flow for 5200, so this branch is defensive.  Don't claim the
+	// "seeded" flag in this case so a hardware-mode flip back to
+	// Computer mid-wizard re-checks the seed conditions.
+	if (sim.GetHardwareMode() == kATHardwareMode_5200)
+		return;
+
+	// Only auto-enable add-ons if the user just chose Convenient.  The
+	// canonical Convenient indicator is "artifacting == None" — that's
+	// the field both wizard renderers use to tell the modes apart in
+	// page 30's radio buttons.  If they're on Authentic right now, do
+	// NOT mark the page seeded — that way switching to Convenient and
+	// returning to page 32 still gets the recommended defaults.
+	const bool isConvenient =
+		(sim.GetGTIA().GetArtifactingMode() == ATArtifactMode::None);
+	if (!isConvenient)
+		return;
+
+	g_setupWiz.addonsPageSeeded = true;
+
+	// Never reduce existing config — only add what's currently off.
+	if (!Wiz_HasDualPokey(sim))    Wiz_SetDualPokey(sim, true);
+	if (!Wiz_HasMemory1088K(sim))  Wiz_SetMemory1088K(sim, true);
+	if (!Wiz_HasVBXE(sim))         Wiz_SetVBXE(sim, true);
+	if (!Wiz_HasCovox(sim))        Wiz_SetCovox(sim, true);
 }
 
 // Firmware scan logic reimplemented from uifirmwarescan.cpp.
@@ -197,7 +365,11 @@ int Wiz_GetPrevPage(int page) {
 		case 20: return 11;
 		case 21: return 20;
 		case 30: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 20 : 21;
-		case 35: return 30;
+		// Hardware Add-ons (page 32) sits between Experience and
+		// Joystick for Computer systems only.  Back from Joystick
+		// returns to add-ons for Computer, Experience for 5200.
+		case 32: return 30;
+		case 35: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 30 : 32;
 		case 40: return 35;
 		case 41: return 35;
 		default: return 0;
@@ -218,7 +390,10 @@ int Wiz_GetNextPage(int page) {
 		case 11: return 20;
 		case 20: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 30 : 21;
 		case 21: return 30;
-		case 30: return 35;
+		// Skip Hardware Add-ons (page 32) for 5200 — none of the four
+		// expansions apply to console hardware.
+		case 30: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 35 : 32;
+		case 32: return 35;
 		case 35: return g_sim.GetHardwareMode() == kATHardwareMode_5200 ? 41 : 40;
 		default: return -1;
 	}
@@ -511,6 +686,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			{ 10, 19, "Setup firmware", false },
 			{ 20, 29, "Select system", false },
 			{ 30, 30, "Experience", false },
+			{ 32, 32, "Hardware add-ons", false },
 			{ 35, 35, "Joystick", false },
 			{ 40, 49, "Finish", false },
 		};
@@ -937,6 +1113,60 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				ATUISetViewFilterSharpness(+1);
 				g_setupWiz.needsHardwareReset = true;
 			}
+			break;
+		}
+
+		case 32: { // Hardware Add-ons — recommended XL/XE expansions
+			Wiz_SeedHardwareAddonsPage(sim);
+
+			ImGui::TextWrapped(
+				"Many modern Atari demos and games require expanded "
+				"hardware that isn't part of a stock 800XL.  Enable the "
+				"common expansions below for maximum compatibility.\n\n"
+				"All four are non-destructive: original-era software "
+				"that doesn't use them will run identically.  You can "
+				"adjust each expansion later from Configure System > "
+				"Memory and Configure System > Devices."
+			);
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Spacing();
+
+			bool stereo = Wiz_HasDualPokey(sim);
+			if (ImGui::Checkbox("Stereo POKEY (dual chip audio)", &stereo))
+				Wiz_SetDualPokey(sim, stereo);
+			ImGui::TextDisabled(
+				"  A second POKEY at $D210 for software that outputs "
+				"independent left/right channels.");
+			ImGui::Spacing();
+
+			bool covox = Wiz_HasCovox(sim);
+			if (ImGui::Checkbox("Covox (8-bit sample audio)", &covox))
+				Wiz_SetCovox(sim, covox);
+			ImGui::TextDisabled(
+				"  Stereo 8-bit DAC at $D6xx for digitised sound.");
+			ImGui::Spacing();
+
+			bool vbxe = Wiz_HasVBXE(sim);
+			if (ImGui::Checkbox("VideoBoard XE (high-color graphics)", &vbxe))
+				Wiz_SetVBXE(sim, vbxe);
+			ImGui::TextDisabled(
+				"  256+ simultaneous colors, hardware overlays, and "
+				"512x240 high-res mode.");
+			ImGui::Spacing();
+
+			bool ram = Wiz_HasMemory1088K(sim);
+			if (ImGui::Checkbox("1088 KB RAM (extended memory)", &ram))
+				Wiz_SetMemory1088K(sim, ram);
+			ImGui::TextDisabled(
+				"  Rambo XL banking up to 1 MB for large demos and "
+				"PD compilations.  Disabling reverts to 130XE-style 128 KB.");
+
+			ImGui::Spacing();
+			ImGui::TextWrapped(
+				"For maximum original-hardware accuracy, leave all four "
+				"unchecked."
+			);
 			break;
 		}
 

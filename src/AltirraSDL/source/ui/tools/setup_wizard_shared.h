@@ -40,6 +40,11 @@ struct SetupWizardState {
 	// by Reset() so a fresh wizard session re-seeds.
 	bool joystickPageSeeded = false;
 
+	// True once the Hardware Add-ons page (32) has applied its
+	// experience-driven seed.  Without this guard the seed would re-run
+	// every frame the page is displayed, undoing user toggles.
+	bool addonsPageSeeded = false;
+
 	// Thread-safe: paths stored by SDL file-dialog callbacks (which fire
 	// on background threads), processed on the main thread by Wiz_PumpAsync.
 	std::mutex scanMutex;
@@ -128,3 +133,45 @@ void Wiz_ActivatePortMap(ATInputManager &im,
 // suitable default exists.
 void Wiz_SeedDefaultPort1Map(ATInputManager &im,
 	std::vector<WizPortMapEntry> &entries);
+
+// =========================================================================
+// Hardware Add-ons page (32) — recommended expansions
+// =========================================================================
+//
+// The four toggles ("Stereo POKEY", "Covox", "VBXE", "1088 KB RAM")
+// each map to a single helper.  The helpers are shared by the Desktop
+// and Gaming Mode renderers, and by the mobile first-run silent path
+// in mobile_about_wizard.cpp which applies them all at once via
+// Wiz_ApplyRecommendedAddons.
+//
+// Each setter sets g_setupWiz.needsHardwareReset = true, since adding
+// or removing devices, banking RAM, or installing a second POKEY all
+// require LoadROMs+ColdReset to take effect cleanly.
+
+bool Wiz_HasDualPokey(ATSimulator &sim);
+void Wiz_SetDualPokey(ATSimulator &sim, bool enable);
+
+bool Wiz_HasMemory1088K(ATSimulator &sim);
+void Wiz_SetMemory1088K(ATSimulator &sim, bool enable);
+
+bool Wiz_HasVBXE(ATSimulator &sim);
+void Wiz_SetVBXE(ATSimulator &sim, bool enable);
+
+bool Wiz_HasCovox(ATSimulator &sim);
+void Wiz_SetCovox(ATSimulator &sim, bool enable);
+
+// Apply the four recommended add-ons in one call (Stereo POKEY, Covox,
+// VBXE, 1088 KB RAM) PLUS the Convenient experience preset (no
+// artifacting, SIO patches on, drive sounds off, SharpBilinear filter).
+// Used by the mobile first-run completion path so a brand-new install
+// boots into a sensible "modern demo / game compatible" config without
+// requiring the user to walk a 7-page wizard.  Skipped silently for
+// 5200 hardware (no XL/XE expansions apply).  Idempotent.
+void Wiz_ApplyConvenientWithRecommendedAddons(ATSimulator &sim);
+
+// Seed the wizard page 32 toggles when the user first lands on it.
+// If Convenient mode is currently active, enable any add-ons that are
+// off (matches the spirit of "convenient = compatibility-first").  If
+// Authentic, leave everything as-is.  Never reduces existing config.
+// Called once per wizard session, gated by addonsPageSeeded.
+void Wiz_SeedHardwareAddonsPage(ATSimulator &sim);

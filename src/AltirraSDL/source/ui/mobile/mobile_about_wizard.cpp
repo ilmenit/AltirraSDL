@@ -38,6 +38,8 @@
 #include <at/ataudio/audiooutput.h>
 
 #include "mobile_internal.h"
+#include "../tools/setup_wizard_shared.h"
+#include "../../app/wipe_data.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -71,7 +73,16 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoBackground;
 
 	if (ImGui::Begin("##MobileAbout", nullptr, flags)) {
-		// ESC / B-button / Backspace returns to hamburger.
+		// State for the destructive "Reset Altirra (delete all data)"
+		// confirm overlay (declared up here so ESC/Back can dismiss
+		// the overlay before exiting the About screen).
+		static bool s_showResetConfirm = false;
+
+		// ESC / B-button / Backspace: dismisses the reset overlay
+		// first if it's open, otherwise returns to the hamburger
+		// menu.  Without the two-step we'd leave About with the
+		// modal flag still set, and the modal would reappear on
+		// next About open.
 		{
 			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
 			if (!ImGui::IsAnyItemActive()) {
@@ -79,8 +90,12 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
 					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
 			}
-			if (back)
-				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+			if (back) {
+				if (s_showResetConfirm)
+					s_showResetConfirm = false;
+				else
+					mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+			}
 		}
 
 		float w = ImGui::GetContentRegionAvail().x;
@@ -124,21 +139,19 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 
 		// Credits block — scrollable child so long text doesn't push
 		// the Close button off-screen on small phones.  Reserve room
-		// for both footer buttons (Debug Log + Close), the gap between
-		// them, and the ItemSpacing ImGui inserts between successive
-		// items (child→DebugLog, DebugLog→Dummy, Dummy→Close).
-		// Previously this only reserved closeH + 24dp, which left
-		// the Close button below the safe area on shorter viewports
-		// (e.g. WASM mobile-landscape) — it appeared to "hang off"
-		// the screen because the Debug Log button alone consumed
-		// 48dp + spacing of the 80dp reserve.
+		// for the three footer buttons (Reset Altirra + Debug Log +
+		// Close), the gaps between them, and the ItemSpacing ImGui
+		// inserts between successive items.  Reset Altirra is the
+		// new bottom row added for the data-wipe action.
+		float resetBtnH = dp(48.0f);
 		float debugBtnH = dp(48.0f);
 		float closeH = dp(56.0f);
 		float gap = dp(8.0f);
 		float bottomMargin = dp(16.0f);
 		float itemSpacingY = ImGui::GetStyle().ItemSpacing.y;
-		float bottomReserve = debugBtnH + gap + closeH
-			+ bottomMargin + itemSpacingY * 3.0f;
+		float bottomReserve = resetBtnH + gap
+			+ debugBtnH + gap + closeH
+			+ bottomMargin + itemSpacingY * 5.0f;
 		// NavFlattened so the scrollable credits area doesn't trap the
 		// gamepad cursor — without it, D-pad down from the back arrow
 		// would land on the child window itself instead of skipping
@@ -200,6 +213,29 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
+		// Reset Altirra button — destructive, opens a confirm overlay
+		// drawn after the Close button below.  Subtle style so it
+		// doesn't compete with Close as the primary action.  The
+		// s_showResetConfirm flag is declared at the top of this
+		// function so the ESC/Back handler can dismiss the overlay
+		// before exiting the About screen.
+
+		// Disable the underlying button row while the confirm overlay
+		// is shown.  The overlay's dimmer is a draw-only rect (no
+		// input blocking), and we use a regular ImGui::Begin (not
+		// BeginPopupModal) so taps would otherwise pass through to
+		// these buttons, leaving the modal flag dirty for the next
+		// time the About screen opens.
+		ImGui::BeginDisabled(s_showResetConfirm);
+
+		if (ATTouchButton("Reset Altirra (delete all data)",
+			ImVec2(-1, dp(48.0f)),
+			ATTouchButtonStyle::Subtle))
+		{
+			s_showResetConfirm = true;
+		}
+		ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
 		// Debug Log button — opens the in-app log viewer.  On Android,
 		// stderr is gated behind an adb pairing the user typically
 		// doesn't have, so this is the only path to read NETPLAY /
@@ -217,6 +253,93 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 			ATTouchButtonStyle::Accent))
 		{
 			mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+		}
+
+		ImGui::EndDisabled();
+
+		// --- Reset confirmation overlay ---
+		// Drawn inline (still inside the About window's Begin) as a
+		// centered modal pseudo-window with a draw-only dimmer.  Input
+		// gating is handled by the BeginDisabled block above, not by
+		// ImGui's popup stack, because the touch UI controls its own
+		// z-order and palette colours.
+		if (s_showResetConfirm) {
+			float dimW = io.DisplaySize.x;
+			float dimH = io.DisplaySize.y;
+			ImGui::GetForegroundDrawList()->AddRectFilled(
+				ImVec2(0, 0), ImVec2(dimW, dimH),
+				IM_COL32(0, 0, 0, 160));
+
+			float modW = dimW * 0.88f;
+			if (modW > dp(420.0f)) modW = dp(420.0f);
+			float modH = dp(360.0f);
+			float modX = (dimW - modW) * 0.5f;
+			float modY = (dimH - modH) * 0.5f;
+
+			ImGui::SetNextWindowPos(ImVec2(modX, modY));
+			ImGui::SetNextWindowSize(ImVec2(modW, modH));
+			ImGui::PushStyleColor(ImGuiCol_WindowBg,
+				ATMobileCol(pal.modalBg));
+			ImGui::PushStyleColor(ImGuiCol_Border,
+				ATMobileCol(pal.modalBorder));
+			ImGuiStyle &style = ImGui::GetStyle();
+			float prevRound = style.WindowRounding;
+			float prevBorder = style.WindowBorderSize;
+			style.WindowRounding = dp(14.0f);
+			style.WindowBorderSize = dp(2.0f);
+
+			ImGui::Begin("##ResetConfirm", nullptr,
+				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+				| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+				| ImGuiWindowFlags_NoCollapse);
+
+			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.textTitle));
+			ImGui::SetWindowFontScale(1.3f);
+			ImGui::TextUnformatted("Reset Altirra?");
+			ImGui::SetWindowFontScale(1.0f);
+			ImGui::PopStyleColor();
+			ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+			ImGui::PushTextWrapPos(modW - dp(24.0f));
+			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.text));
+			ImGui::TextUnformatted(
+				"This deletes every file Altirra saved on this device:\n"
+				"settings, save state, game library, custom art, lobby "
+				"cache, and crash logs.\n\n"
+				"Altirra will close immediately.  Reopening starts the "
+				"first-time setup again.  This cannot be undone.");
+			ImGui::PopStyleColor();
+			ImGui::PopTextWrapPos();
+
+			// Push the buttons to the bottom of the modal via a
+			// flexible spacer.  Avoids the off-by-WindowPadding bug
+			// of computing an absolute SetCursorPosY (cursor coords
+			// already start past WindowPadding.y), and keeps the
+			// layout robust if the body text length changes.
+			float spacerH = ImGui::GetContentRegionAvail().y
+				- dp(56.0f) - ImGui::GetStyle().ItemSpacing.y;
+			if (spacerH > 0.0f)
+				ImGui::Dummy(ImVec2(0, spacerH));
+
+			float btnW = (modW - dp(24.0f) - dp(8.0f)) * 0.5f;
+			if (ATTouchButton("Cancel",
+				ImVec2(btnW, dp(56.0f))))
+			{
+				s_showResetConfirm = false;
+			}
+			ImGui::SameLine();
+			if (ATTouchButton("Reset and Exit",
+				ImVec2(btnW, dp(56.0f)),
+				ATTouchButtonStyle::Danger))
+			{
+				ATWipeAndExit();  // never returns
+			}
+
+			ImGui::End();
+
+			style.WindowRounding = prevRound;
+			style.WindowBorderSize = prevBorder;
+			ImGui::PopStyleColor(2);
 		}
 	}
 	ImGui::End();
@@ -398,7 +521,10 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		{
 			const char *body =
 				"To get started, select a folder containing Atari ROM firmware,\n"
-				"or skip and use the built-in replacement kernel.";
+				"or skip and use the built-in replacement kernel.\n\n"
+				"Altirra is preconfigured for maximum game compatibility:\n"
+				"Stereo POKEY, Covox, VideoBoard XE, and 1088 KB RAM are\n"
+				"enabled.  Change any of this from Settings > Machine.";
 			float wrapW = w * 0.85f;
 			float bodyX = (w - wrapW) * 0.5f;
 			ImGui::SetCursorPosX(bodyX);
@@ -413,10 +539,20 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		float btnW = dp(260.0f);
 		float btnH = dp(56.0f);
 
+		// Both completion paths apply the recommended hardware add-ons
+		// so the very first launch lands the user in a "modern demo
+		// compatible" config without forcing them through a multi-page
+		// wizard.  Skipped silently for 5200 hardware mode by the
+		// helper itself.  Idempotent — running again is a no-op.
+		auto applyDefaults = []() {
+			Wiz_ApplyConvenientWithRecommendedAddons(g_sim);
+		};
+
 		ImGui::SetCursorPosX((w - btnW) * 0.5f);
 		if (ATTouchButton("Select ROM Folder", ImVec2(btnW, btnH),
 			ATTouchButtonStyle::Accent))
 		{
+			applyDefaults();
 			s_romFolderMode = true;
 			s_fileBrowserNeedsRefresh = true;
 			mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
@@ -431,6 +567,7 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		if (ATTouchButton("Skip - Use Built-in Kernel",
 			ImVec2(btnW, btnH)))
 		{
+			applyDefaults();
 			mobileState.currentScreen = ATMobileUIScreen::None;
 			SetFirstRunComplete();
 		}
