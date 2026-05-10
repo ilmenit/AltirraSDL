@@ -1,10 +1,17 @@
 name: Android build
 
-# Builds AltirraSDL as a release Android APK (arm64-v8a) using the
-# self-contained Gradle project under android/ and the existing
-# scripts/build/android.sh pipeline. The APK is signed with the bundled
-# debug keystore so it is installable on any device with "Unknown sources"
-# enabled (no Google Play upload key, no Play Store distribution).
+# Builds AltirraSDL as two release Android APKs — one per ABI
+# (arm64-v8a + armeabi-v7a) — using the self-contained Gradle project
+# under android/ and the existing scripts/build/android.sh pipeline.
+# Per-ABI APK splits are configured in android/app/build.gradle's
+# `splits.abi` block so a single Gradle invocation produces both
+# slices; sideload-friendly versionCodes (2440 for arm64, 1440 for v7a)
+# guarantee an arm64 device can still upgrade cleanly if the user
+# happened to install the v7a slice first.
+#
+# Each APK is signed with the bundled debug keystore so it is
+# installable on any device with "Unknown sources" enabled (no Google
+# Play upload key, no Play Store distribution).
 #
 # The mobile touch UI lives in src/AltirraSDL/source/ui/mobile/ and the
 # Java SDLActivity shim is wired up by android/setup_sdl3.sh, which
@@ -34,7 +41,7 @@ permissions:
 
 jobs:
   android:
-    name: Build Android APK (arm64-v8a)
+    name: Build Android APKs (arm64-v8a + armeabi-v7a)
     runs-on: ubuntu-latest
 
     steps:
@@ -73,28 +80,27 @@ jobs:
           chmod +x ./build.sh ./scripts/build/*.sh
           ./build.sh --setup-android --android --release --sign
 
-      - name: Rename APK with version + arch
+      - name: Rename APKs with version + arch
         shell: bash
         run: |
           set -e
-          # Modern AGP (with Gradle 9+) names release APKs differently
-          # depending on whether a signing config was applied:
-          #   - app-release-unsigned.apk  (no signing config — old AGP)
-          #   - app-release.apk           (signing config applied — new AGP)
-          # Just glob the directory and pick whichever one is there.
+          # Gradle's `splits.abi` block produces one APK per ABI under
+          # the same release directory — app-arm64-v8a-release.apk and
+          # app-armeabi-v7a-release.apk.  Find each by ABI suffix and
+          # rename to the AltirraSDL-<ver>-android-<abi>.apk convention
+          # that matches the Linux / macOS / Windows artifact pattern.
           APK_DIR="android/app/build/outputs/apk/release"
-          APK=$(ls "$APK_DIR"/*.apk 2>/dev/null | head -1)
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-              echo "ERROR: no APK found in $APK_DIR"
+          if ! ls "$APK_DIR"/*.apk >/dev/null 2>&1; then
+              echo "ERROR: no APKs found in $APK_DIR"
               find android/app/build/outputs/apk -type f -name '*.apk' || true
               exit 1
           fi
-          echo "Found APK: $APK"
-          # No host CMake build runs in this job, so the AltirraSDL-<ver>
+          echo "APKs in $APK_DIR:"
+          ls -lh "$APK_DIR"/*.apk
+          # Parse the version straight out of the top-level CMakeLists.txt
+          # — no host CMake build runs in this job, so the AltirraSDL-<ver>
           # package directory used by package.sh on the other platforms
-          # doesn't exist here.  Parse the version straight out of the
-          # top-level CMakeLists.txt so the APK name matches the AppImage,
-          # macOS, and Windows artifacts (e.g. AltirraSDL-4.40-...).
+          # doesn't exist here.
           VERSION=$(sed -n 's/^project(Altirra VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
           if [ -z "$VERSION" ]; then
               echo "ERROR: could not parse version from CMakeLists.txt"
@@ -102,15 +108,23 @@ jobs:
           fi
           OUT_DIR="build/android-release"
           mkdir -p "$OUT_DIR"
-          NEW="$OUT_DIR/AltirraSDL-${VERSION}-android-arm64-v8a.apk"
-          cp "$APK" "$NEW"
-          ls -lh "$NEW"
+          for ABI in arm64-v8a armeabi-v7a; do
+              SRC="$APK_DIR/app-${ABI}-release.apk"
+              if [ ! -f "$SRC" ]; then
+                  echo "ERROR: expected ABI APK missing: $SRC"
+                  exit 1
+              fi
+              DST="$OUT_DIR/AltirraSDL-${VERSION}-android-${ABI}.apk"
+              cp "$SRC" "$DST"
+              echo "Renamed: $SRC -> $DST"
+          done
+          ls -lh "$OUT_DIR"/*.apk
 
-      - name: Upload Android artifact
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: AltirraSDL-android-arm64-v8a
-          path: build/android-release/AltirraSDL-*-android-arm64-v8a.apk
+          name: AltirraSDL-android
+          path: build/android-release/AltirraSDL-*-android-*.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -124,7 +138,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: AltirraSDL-android-arm64-v8a
+          name: AltirraSDL-android
           path: dist
 
       # Wipe any previously-uploaded *.apk assets from the nightly release
@@ -187,7 +201,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: AltirraSDL-android-arm64-v8a
+          name: AltirraSDL-android
           path: dist
 
       - name: Attach APK to tagged release
