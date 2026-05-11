@@ -354,3 +354,52 @@ bugs even when the underlying functionality is correct.
 (keyboard shortcut labels, checkbox states, enabled menu items) must be
 backed by working code.  When changing behaviour, update the display.
 When changing the display, update behaviour.
+
+### Don't put `static` variables inside constexpr functions/lambdas
+
+The upstream Windows `.sln` build uses MSVC and developer-machine
+Linux builds usually use a bleeding-edge GCC (15+), both of which
+implement [P2647](https://wg21.link/p2647) — *"Permitting static
+constexpr variables in constexpr functions"* — accepted into C++23.
+Under P2647 it is legal to write:
+
+```cpp
+static constexpr auto kThing = [] {
+    static constexpr SomeType kRaw[] = { ... };   // ← P2647
+    return cookIt(kRaw);
+}();
+```
+
+Our **CI floor** is more conservative and does **not** implement P2647:
+
+- macOS CI runs Apple Clang 15 (from Xcode 15 on `macos-14` runner).
+- Linux CI runs GCC 12 (from `ubuntu:22.04` container).
+
+Both will reject the snippet above with:
+
+```
+error: constexpr variable 'kThing' must be initialized by a constant expression
+note: control flows through the definition of a static variable
+```
+
+This bites during test-branch merges (test10 / test11 / test12 / …)
+because upstream code routinely uses this pattern.  The fix is trivial:
+
+```cpp
+static constexpr auto kThing = [] {
+    constexpr SomeType kRaw[] = { ... };          // ← non-static
+    return cookIt(kRaw);
+}();
+```
+
+Non-static `constexpr` locals are fine under C++17.  The outer lambda
+is still evaluated once at compile time and the result is copied into
+the surrounding constexpr variable, so dropping `static` costs nothing
+at runtime — the inner array never exists as a runtime object.
+
+**Rule:** Inside any `constexpr` function or any lambda invoked at
+compile time (typically as `static constexpr auto X = [] { ... }();`),
+do **not** declare local variables with `static` (including
+`static constexpr`).  Drop the `static` keyword.  See
+`src/ATDebugger/source/defsymbols.cpp` for the canonical fix and an
+in-source comment explaining the constraint.

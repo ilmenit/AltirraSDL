@@ -20,6 +20,28 @@
 #include <at/atdebugger/symbols.h>
 #include <at/atdebugger/internal/symstore.h>
 
+// =====================================================================
+// MERGE NOTE — read before re-applying upstream changes (test11+).
+// =====================================================================
+//
+// Several `static constexpr auto kFoo = [] { ... }();` blocks below
+// invoke `ATPreSortDefaultSymbolArray` at compile time.  The raw
+// symbol arrays passed to it MUST be declared as `constexpr` only,
+// not `static constexpr`.  Mixing `static` into a constexpr lambda
+// body requires P2647 (C++23), which our CI floor — Apple Clang 15
+// on macos-14, GCC 12 on ubuntu:22.04 — does not implement.  See
+// the "Don't put static variables inside constexpr functions/lambdas"
+// section of CLAUDE.md for the full rationale.
+//
+// Upstream Windows `.sln` builds (MSVC) and modern developer Linux
+// (GCC 15+) accept `static constexpr` inside the lambda, so the
+// pattern tends to creep back in during test-branch merges.  If you
+// see a CI failure with
+//     error: constexpr variable '...' must be initialized by a constant expression
+//     note:  control flows through the definition of a static variable
+// after a merge, drop `static` from the offending local array.
+// =====================================================================
+
 template<size_t N>
 consteval VDCxArray<ATDefaultSymbolInfo, N> ATPreSortDefaultSymbolArray(const ATDefaultSymbolInfo (&src)[N]) {
 	VDCxArray<ATDefaultSymbolInfo, N> dst {};
