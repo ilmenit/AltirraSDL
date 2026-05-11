@@ -40,7 +40,13 @@ consteval VDCxArray<ATDefaultSymbolInfo, N> ATPreSortDefaultSymbolArray(const AT
 };
 
 static constexpr auto kATDefaultSymbolsForOSVariables = [] {
-	static constexpr ATDefaultSymbolInfo kVariableSymbols[] = {
+	// NOTE: must be a non-static constexpr array, not `static constexpr`.
+	// `static` inside a constexpr lambda body requires P2647 (C++23),
+	// which Apple Clang 15 / GCC 12 (our CI floor) don't implement.
+	// The lambda is evaluated once at compile time and the result copied
+	// into the outer kATDefaultSymbolsForOSVariables, so dropping
+	// `static` doesn't cost anything at runtime.
+	constexpr ATDefaultSymbolInfo kVariableSymbols[] = {
 		{ ATKernelSymbols::CASINI, 2, "CASINI" },
 		{ ATKernelSymbols::RAMLO , 2, "RAMLO"  },
 		{ ATKernelSymbols::TRAMSZ, 1, "TRAMSZ" },
@@ -406,7 +412,8 @@ void ATCreateDefaultKernelSymbolStore(IATSymbolStore **ppStore) {
 
 namespace {
 	static constexpr auto kGTIASymbols = [] {
-		static constexpr ATDefaultSymbolInfo kRawGTIASymbols[]={
+		// See kATDefaultSymbolsForOSVariables note: must be non-static.
+		constexpr ATDefaultSymbolInfo kRawGTIASymbols[]={
 			{ 0x00, 1, "HPOSP0", ATDefaultSymbolType::WriteOnly },
 			{ 0x01, 1, "HPOSP1", ATDefaultSymbolType::WriteOnly },
 			{ 0x02, 1, "HPOSP2", ATDefaultSymbolType::WriteOnly },
@@ -478,7 +485,8 @@ namespace {
 	}();
 
 	static constexpr auto kPOKEYSymbols = [] {
-		static constexpr ATDefaultSymbolInfo kRawPOKEYSymbols[]={
+		// See kATDefaultSymbolsForOSVariables note: must be non-static.
+		constexpr ATDefaultSymbolInfo kRawPOKEYSymbols[]={
 			{ 0x00, 1, "AUDF1" , ATDefaultSymbolType::WriteOnly },
 			{ 0x01, 1, "AUDC1" , ATDefaultSymbolType::WriteOnly },
 			{ 0x02, 1, "AUDF2" , ATDefaultSymbolType::WriteOnly },
@@ -515,7 +523,8 @@ namespace {
 	}();
 
 	static constexpr auto kPIASymbols = [] {
-		static constexpr ATDefaultSymbolInfo kRawPIASymbols[]={
+		// See kATDefaultSymbolsForOSVariables note: must be non-static.
+		constexpr ATDefaultSymbolInfo kRawPIASymbols[]={
 			{ 0xD300, 1, "PORTA", ATDefaultSymbolType::NoExecute },
 			{ 0xD301, 1, "PORTB", ATDefaultSymbolType::NoExecute },
 			{ 0xD302, 1, "PACTL", ATDefaultSymbolType::NoExecute },
@@ -526,7 +535,8 @@ namespace {
 	}();
 
 	static constexpr auto kANTICSymbols = [] {
-		static constexpr ATDefaultSymbolInfo kRawANTICSymbols[]={
+		// See kATDefaultSymbolsForOSVariables note: must be non-static.
+		constexpr ATDefaultSymbolInfo kRawANTICSymbols[]={
 			{ 0xD400, 1, "DMACTL", ATDefaultSymbolType::WriteOnly },
 			{ 0xD401, 1, "CHACTL", ATDefaultSymbolType::WriteOnly },
 			{ 0xD402, 1, "DLISTL", ATDefaultSymbolType::WriteOnly },
