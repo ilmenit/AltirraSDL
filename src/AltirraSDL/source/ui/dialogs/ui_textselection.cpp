@@ -5,6 +5,7 @@
 
 #include <stdafx.h>
 #include <algorithm>
+#include <cmath>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
@@ -42,20 +43,53 @@ bool ATUIIsTextSelected() {
 
 // Map a pixel position within the display image to ANTIC beam coordinates.
 // imagePos/imageSize = screen-space origin and size of the emulator texture.
+// Matches Windows ATUIVideoDisplayWindow::MapPixelToBeamPosition
+// (uivideodisplaywindow.cpp:2737): pixel centers map to beam centers, with the
+// -0.5 offset accounting for the half-color-clock granularity of beam coords.
 static bool MapPixelToBeam(const ImVec2& imagePos, const ImVec2& imageSize,
 						   float px, float py, int& beamX, int& beamY) {
-	float rx = (px - imagePos.x) / imageSize.x;
-	float ry = (py - imagePos.y) / imageSize.y;
+	float dx = px - imagePos.x;
+	float dy = py - imagePos.y;
 
-	if (rx < 0.0f) rx = 0.0f; if (rx > 1.0f) rx = 1.0f;
-	if (ry < 0.0f) ry = 0.0f; if (ry > 1.0f) ry = 1.0f;
+	if (dx < 0.0f) dx = 0.0f; if (dx > imageSize.x) dx = imageSize.x;
+	if (dy < 0.0f) dy = 0.0f; if (dy > imageSize.y) dy = imageSize.y;
 
 	ATGTIAEmulator& gtia = g_sim.GetGTIA();
 	const vdrect32 scanArea(gtia.GetFrameScanArea());
 
-	beamX = (int)(scanArea.left + rx * scanArea.width() + 0.5f);
-	beamY = (int)(scanArea.top  + ry * scanArea.height() + 0.5f);
+	const float xf = (float)scanArea.left
+		+ (dx + 0.5f) * (float)scanArea.width()  / imageSize.x - 0.5f;
+	const float yf = (float)scanArea.top
+		+ (dy + 0.5f) * (float)scanArea.height() / imageSize.y - 0.5f;
+
+	beamX = (int)floorf(xf + 0.5f);
+	beamY = (int)floorf(yf + 0.5f);
 	return true;
+}
+
+// Walk back from scanline ys to the start scanline of the mode line that
+// contains it.  Returns -1 if no mode line is found.  Matches Windows
+// ATUIVideoDisplayWindow::GetModeLineYPos (uivideodisplaywindow.cpp:3105),
+// simplified to the checkValidCopyText=false path that the selection drag
+// uses.
+//
+// This snap is essential: clicks typically land in the middle of a mode line
+// where dlhist[yc].mbValid is false; the partial-line clipping in
+// SelectByBeamPosition only fires when yc1/yc2 coincide with the iteration
+// yc, which requires them to be the mode line *start* scanlines.  Without
+// the snap, every selection collapses to full horizontal lines.
+static int GetModeLineYPos(int ys) {
+	ATAnticEmulator& antic = g_sim.GetAntic();
+	const ATAnticEmulator::DLHistoryEntry *dlhist = antic.GetDLHistory();
+
+	if (ys >= 248)
+		ys = 247;
+
+	for (; ys >= 8; --ys) {
+		if (dlhist[ys].mbValid)
+			return ys;
+	}
+	return -1;
 }
 
 // Map beam coordinates back to screen-space pixel position.
@@ -462,10 +496,20 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 				return true;
 			}
 
-			// Normal drag release — finalize selection.
+			// Normal drag release — finalize selection.  Snap the
+			// raw anchor/end Y coords to the start scanline of the
+			// mode line that contains them (Windows
+			// UpdateDragPreviewAntic, uivideodisplaywindow.cpp:2912).
+			// GetModeLineYPos returns -1 when nothing is found above
+			// the click — SelectByBeamPosition's internal clamp to
+			// [8, 248] turns that into "start from the first scanline",
+			// which matches Windows' behaviour (its GetModeLineYPos
+			// returns 0 in the same case, also clamped to 8).
 			int bx, by;
 			MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
-			SelectByBeamPosition(s_sel.mAnchorBeamX, s_sel.mAnchorBeamY, bx, by);
+			const int yc1 = GetModeLineYPos(s_sel.mAnchorBeamY);
+			const int yc2 = GetModeLineYPos(by);
+			SelectByBeamPosition(s_sel.mAnchorBeamX, yc1, bx, yc2);
 			if (s_sel.mSpans.empty())
 				ATUITextDeselect();
 			return true;
@@ -477,14 +521,21 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 		// Drag threshold: suppress selection preview until the mouse
 		// moves to a different beam position from the anchor.  Matches
 		// Windows UpdateDragPreviewAntic() mbDragInitial check
-		// (uivideodisplaywindow.cpp:2854-2858).
+		// (uivideodisplaywindow.cpp:2854-2858).  Compare raw beam coords
+		// (pre-snap) so any sub-mode-line motion still trips the threshold.
 		if (s_sel.mbDragInitial) {
 			if (bx == s_sel.mAnchorBeamX && by == s_sel.mAnchorBeamY)
 				return true;
 			s_sel.mbDragInitial = false;
 		}
 
-		SelectByBeamPosition(s_sel.mAnchorBeamX, s_sel.mAnchorBeamY, bx, by);
+		// Snap to mode line start (see GetModeLineYPos comment for why).
+		// -1 (no mode line above) is fine — SelectByBeamPosition's
+		// std::clamp(yc, 8, 248) turns it into yc=8, which matches the
+		// Windows fallback behaviour.
+		const int yc1 = GetModeLineYPos(s_sel.mAnchorBeamY);
+		const int yc2 = GetModeLineYPos(by);
+		SelectByBeamPosition(s_sel.mAnchorBeamX, yc1, bx, yc2);
 		UpdateHighlightRects(imagePos, imageSize);
 		s_sel.mbHighlightsValid = true;
 		return true;

@@ -63,6 +63,37 @@ namespace ATUIAutoSuggest {
 	// Both are no-ops in gaming mode.
 	void Update();
 	void Render();
+
+	// Open / render the modal "Configure Suggestions" dialog.  Open()
+	// records the request; RenderConfigDialog() must be called every
+	// frame from ui_main so the dialog can draw.  Both are no-ops in
+	// gaming mode.
+	void OpenConfigDialog();
+	void RenderConfigDialog();
+}
+
+// =====================================================================
+// Auto-line-numbering (RetroArch-style "keep typing" helper for BASIC)
+//
+// Watches the BASIC screen editor: after the user presses RETURN at the
+// end of a numbered line and the cursor advances to a freshly-cleared
+// row at the left margin, this helper injects "next + step" + space so
+// the user can immediately keep coding without re-typing the line
+// number.  Gated by ATUIGetAutoLineNumberingEnabled() (off by default).
+//
+// Read-only with respect to simulator state apart from the typed text
+// injection — netplay-safe.
+// =====================================================================
+namespace ATUIBasicLineNumbering {
+	void Update();
+
+	// Draw a small "Replaces line N" badge near the BASIC cursor when
+	// the line currently being typed has a leading number that is
+	// already in STMTAB.  Gated by the master Auto-Suggest toggle and
+	// by the per-feature ShowReplaceWarning toggle.  No-op in gaming
+	// mode and when no BASIC is loaded.  Must be called every frame
+	// from the SDL3 main loop, after Update().
+	void RenderReplaceWarning();
 }
 
 #endif

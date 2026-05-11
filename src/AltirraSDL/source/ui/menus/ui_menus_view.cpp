@@ -308,18 +308,32 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 		ImGui::EndMenu();
 	}
 
-	// Auto-Suggest submenu (test10) — mirrors Windows menu_default.txt
-	// "Auto-Suggest" submenu under the Edit menu.  Show Suggestions is a
-	// one-shot trigger (Alt+,); Auto-Show Suggestions is a persisted
-	// toggle ("View: Auto-suggest enabled" registry key).
-	if (ImGui::BeginMenu("Auto-Suggest")) {
+	// Auto-Suggest for BASIC submenu.  Renamed from "Auto-Suggest" because
+	// every category in the catalogue is BASIC-aware (statements,
+	// functions, variables, line numbering, replace-warning) and the
+	// engine self-gates on ATIsBasicMemoryLayoutValid() — calling it just
+	// "Auto-Suggest" misled users into expecting completion in assembly
+	// listings or DOS prompts where nothing fires.
+	//
+	// Layout: Suggestions Enabled (master) | Show Suggestions (one-shot)
+	// | Configure...  The master toggle sits at the top so flipping the
+	// whole subsystem off is one click away; "Show Suggestions" and
+	// "Configure" disable when the master is off (anything else would
+	// be misleading — they wouldn't do anything).
+	if (ImGui::BeginMenu("Auto-Suggest for BASIC")) {
+		bool master = ATUIGetAutoSuggestMasterEnabled();
+		if (ImGui::MenuItem("Suggestions Enabled", nullptr, master))
+			ATUISetAutoSuggestMasterEnabled(!master);
+
+		ImGui::Separator();
+
 		if (ImGui::MenuItem("Show Suggestions",
-				ATUIGetShortcutStringForCommand("Edit.ShowSuggestions")))
+				ATUIGetShortcutStringForCommand("Edit.ShowSuggestions"),
+				false, master))
 			ATUIAutoSuggest::ShowSuggestionsOnce();
 
-		const bool enabled = ATUIAutoSuggest::IsAutoSuggestEnabled();
-		if (ImGui::MenuItem("Auto-Show Suggestions", nullptr, enabled))
-			ATUIAutoSuggest::SetAutoSuggestEnabled(!enabled);
+		if (ImGui::MenuItem("Configure Suggestions...", nullptr, false, master))
+			ATUIAutoSuggest::OpenConfigDialog();
 
 		ImGui::EndMenu();
 	}

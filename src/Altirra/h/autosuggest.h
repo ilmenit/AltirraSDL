@@ -21,6 +21,24 @@
 #include <vd2/system/vdstl.h>
 #include <vd2/system/VDString.h>
 
+// User-toggleable BASIC-aware suggestion categories.
+//
+// Address-symbol completion (PEEK/POKE digit-extension) and CIO path
+// completion are always on — they were the engine's only behaviour
+// before this struct existed and have no failure mode worth gating.
+//
+// Statement / function / variable suggestions are derived from the
+// Atari + Altirra BASIC keyword set and from the BASIC interpreter's
+// own variable-name table (VNT, zero-page pointers $82/$84).  They
+// only make sense when the BASIC cartridge is active, so a runtime
+// toggle keeps the noise out of e.g. assembly listings rendered in
+// the screen editor.
+struct ATAutoSuggestOptions {
+	bool mbStatementKeywords = true;
+	bool mbFunctionKeywords  = true;
+	bool mbVariableNames     = true;
+};
+
 class IATAutoSuggestEngine : public IVDRefCount {
 public:
 	struct MatchInfo {
@@ -37,6 +55,12 @@ public:
 
 		// Display text describing the item completion.
 		VDStringW mDescriptionText;
+
+		// Optional canonical-syntax hint, used by the popup to show a
+		// secondary "Syntax: ..." line under the selected entry.  Empty
+		// for completions that don't have a manual entry (variables,
+		// CIO paths, PEEK/POKE address symbols).
+		VDStringW mSyntaxText;
 	};
 
 	using ResultSink = vdfunction<void(const ResultInfo&)>;
@@ -49,6 +73,12 @@ public:
 
 	virtual void AddDynamicPattern(VDStringSpanA regex, vdfunction<void(const ResultSink&, const MatchInfo&)> handler) = 0;
 
+	// Configure which BASIC-aware suggestion categories are active.
+	// Default is "all on"; the SDL3 frontend persists user choices and
+	// pushes them via this entry point.  Windows callers can do the
+	// same once the Configure Suggestions dialog is ported.
+	virtual void SetOptions(const ATAutoSuggestOptions& options) = 0;
+
 	virtual void Update(VDStringSpanA text) = 0;
 
 	virtual size_t GetNumResults() const = 0;
@@ -56,5 +86,22 @@ public:
 };
 
 vdrefptr<IATAutoSuggestEngine> ATCreateAutoSuggestEngine();
+
+// Returns true when the BASIC zero-page pointer chain
+// (VNTP/VNTD/VVTP/STMTAB/STARP at $82-$8D) is consistent.  Every Atari
+// BASIC dialect that shares the original Atari BASIC variable/statement
+// layout — Atari BASIC rev A/B/C, Altirra BASIC, BASIC XL/XE, Turbo-
+// BASIC XL — passes this test.  Non-BASIC contexts (DOS, machine-code
+// monitors, OSS Action!) return false, so BASIC-specific features
+// (variable-name completion, auto-line-numbering) can short-circuit
+// when there is no BASIC interpreter loaded.
+bool ATIsBasicMemoryLayoutValid();
+
+// Returns true if `lineNumber` (0..32767) is already stored in the
+// BASIC statement table at STMTAB ($88..$8B).  Stops scanning at the
+// direct-mode sentinel (line 32768) or at STARP, whichever comes
+// first.  Requires ATIsBasicMemoryLayoutValid() — returns false in
+// non-BASIC contexts (so callers don't have to gate every callsite).
+bool ATBasicProgramLineExists(uint16 lineNumber);
 
 #endif

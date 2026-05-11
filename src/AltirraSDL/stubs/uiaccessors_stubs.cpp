@@ -183,6 +183,16 @@ static bool s_showFPS = false;
 bool ATUIGetShowFPS() { return s_showFPS; }
 void ATUISetShowFPS(bool v) { s_showFPS = v; }
 
+// Master Auto-Suggest gate.  When off, every auto-suggest subsystem
+// (popup, line numbering, replace-warning) is dormant.  Default on:
+// the catalogue is BASIC-only and the engine self-gates on
+// ATIsBasicMemoryLayoutValid(), so users running non-BASIC software
+// see nothing — turning the master switch on by default costs them
+// nothing while making the feature discoverable for BASIC users.
+static bool s_autoSuggestMaster = true;
+bool ATUIGetAutoSuggestMasterEnabled() { return s_autoSuggestMaster; }
+void ATUISetAutoSuggestMasterEnabled(bool v) { s_autoSuggestMaster = v; }
+
 // Autosuggest auto-show-on-edit toggle (test10).  The state lives here
 // so AltirraBridgeServer (headless) can also persist it through
 // settings.cpp without pulling in ImGui.  The AltirraSDL frontend's
@@ -190,6 +200,49 @@ void ATUISetShowFPS(bool v) { s_showFPS = v; }
 static bool s_autoSuggestEnabled = false;
 bool ATUIGetAutoSuggestEnabled() { return s_autoSuggestEnabled; }
 void ATUISetAutoSuggestEnabled(bool v) { s_autoSuggestEnabled = v; }
+
+// Autosuggest category toggles (all default-on).  These gate the
+// engine's BASIC keyword / function / variable handlers; the address
+// and CIO-path patterns are always on, matching the engine's
+// pre-existing always-available behaviour.
+static bool s_autoSuggestStatements = true;
+static bool s_autoSuggestFunctions  = true;
+static bool s_autoSuggestVariables  = true;
+bool ATUIGetAutoSuggestStatementsEnabled() { return s_autoSuggestStatements; }
+void ATUISetAutoSuggestStatementsEnabled(bool v) { s_autoSuggestStatements = v; }
+bool ATUIGetAutoSuggestFunctionsEnabled()  { return s_autoSuggestFunctions; }
+void ATUISetAutoSuggestFunctionsEnabled(bool v)  { s_autoSuggestFunctions = v; }
+bool ATUIGetAutoSuggestVariablesEnabled()  { return s_autoSuggestVariables; }
+void ATUISetAutoSuggestVariablesEnabled(bool v)  { s_autoSuggestVariables = v; }
+
+// Auto-line-numbering.  Step is clamped to [1, 1000] on read so a
+// corrupted settings.ini cannot wedge the feature.
+static bool s_autoLineNumberingEnabled = false;
+static int  s_autoLineNumberingStep    = 10;
+static bool s_autoLineNumberingWarn    = true;   // replace-warning default ON
+bool ATUIGetAutoLineNumberingEnabled() { return s_autoLineNumberingEnabled; }
+void ATUISetAutoLineNumberingEnabled(bool v) { s_autoLineNumberingEnabled = v; }
+int  ATUIGetAutoLineNumberingStep() {
+	int s = s_autoLineNumberingStep;
+	if (s < 1)    s = 1;
+	if (s > 1000) s = 1000;
+	return s;
+}
+void ATUISetAutoLineNumberingStep(int v) {
+	if (v < 1)    v = 1;
+	if (v > 1000) v = 1000;
+	s_autoLineNumberingStep = v;
+}
+bool ATUIGetAutoLineNumberingShowReplaceWarning() { return s_autoLineNumberingWarn; }
+void ATUISetAutoLineNumberingShowReplaceWarning(bool v) { s_autoLineNumberingWarn = v; }
+
+static bool s_autoSuggestTabAccept = true;
+bool ATUIGetAutoSuggestTabAcceptEnabled() { return s_autoSuggestTabAccept; }
+void ATUISetAutoSuggestTabAcceptEnabled(bool v) { s_autoSuggestTabAccept = v; }
+
+static bool s_autoSuggestShowSyntax = true;
+bool ATUIGetAutoSuggestShowSyntaxEnabled() { return s_autoSuggestShowSyntax; }
+void ATUISetAutoSuggestShowSyntaxEnabled(bool v) { s_autoSuggestShowSyntax = v; }
 
 // =========================================================================
 // Speed control

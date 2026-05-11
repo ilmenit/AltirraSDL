@@ -2250,6 +2250,52 @@ void ATUISetAutoSuggestEnabled(bool enabled) {
 	ATUIGetFrontEnd().SetAutoSuggestEnabled(enabled);
 }
 
+// Autosuggest category toggles and auto-line-numbering settings.  These
+// are pure UI preferences shared with the SDL3 build's stubs.  Until the
+// Windows native UI grows a Configure Suggestions dialog, the values live
+// here as static state so settings.cpp can persist them through the
+// normal exchange path.
+namespace {
+	bool g_autoSuggestMaster        = true;   // master gate (default ON)
+	bool g_autoSuggestStatements    = true;
+	bool g_autoSuggestFunctions     = true;
+	bool g_autoSuggestVariables     = true;
+	bool g_autoLineNumberingEnabled = false;
+	int  g_autoLineNumberingStep    = 10;
+	bool g_autoLineNumberingWarn    = true;   // show "Replaces line N" badge
+	bool g_autoSuggestTabAccept     = true;
+}
+
+bool ATUIGetAutoSuggestMasterEnabled() { return g_autoSuggestMaster; }
+void ATUISetAutoSuggestMasterEnabled(bool v) { g_autoSuggestMaster = v; }
+bool ATUIGetAutoSuggestStatementsEnabled() { return g_autoSuggestStatements; }
+void ATUISetAutoSuggestStatementsEnabled(bool v) { g_autoSuggestStatements = v; }
+bool ATUIGetAutoSuggestFunctionsEnabled()  { return g_autoSuggestFunctions; }
+void ATUISetAutoSuggestFunctionsEnabled(bool v)  { g_autoSuggestFunctions = v; }
+bool ATUIGetAutoSuggestVariablesEnabled()  { return g_autoSuggestVariables; }
+void ATUISetAutoSuggestVariablesEnabled(bool v)  { g_autoSuggestVariables = v; }
+bool ATUIGetAutoLineNumberingEnabled()     { return g_autoLineNumberingEnabled; }
+void ATUISetAutoLineNumberingEnabled(bool v)     { g_autoLineNumberingEnabled = v; }
+int  ATUIGetAutoLineNumberingStep() {
+	int s = g_autoLineNumberingStep;
+	if (s < 1)    s = 1;
+	if (s > 1000) s = 1000;
+	return s;
+}
+void ATUISetAutoLineNumberingStep(int v) {
+	if (v < 1)    v = 1;
+	if (v > 1000) v = 1000;
+	g_autoLineNumberingStep = v;
+}
+bool ATUIGetAutoLineNumberingShowReplaceWarning() { return g_autoLineNumberingWarn; }
+void ATUISetAutoLineNumberingShowReplaceWarning(bool v) { g_autoLineNumberingWarn = v; }
+bool ATUIGetAutoSuggestTabAcceptEnabled() { return g_autoSuggestTabAccept; }
+void ATUISetAutoSuggestTabAcceptEnabled(bool v) { g_autoSuggestTabAccept = v; }
+
+namespace { bool g_autoSuggestShowSyntax = true; }
+bool ATUIGetAutoSuggestShowSyntaxEnabled() { return g_autoSuggestShowSyntax; }
+void ATUISetAutoSuggestShowSyntaxEnabled(bool v) { g_autoSuggestShowSyntax = v; }
+
 void OnCommandViewAdjustWindowSize() {
 	if (g_pMainWindow)
 		g_pMainWindow->AutoSize();

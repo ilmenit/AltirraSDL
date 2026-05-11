@@ -476,7 +476,16 @@ void ATSettingsExchangeView(bool write, VDRegistryKey& key) {
 	// uiaccessors_stubs.cpp holder so AltirraBridgeServer headless also
 	// preserves the user's choice (the popup itself is rendered only by
 	// the AltirraSDL frontend's ui_autosuggest.cpp).
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest master enabled", ATUIGetAutoSuggestMasterEnabled, ATUISetAutoSuggestMasterEnabled);
 	ATSettingsExchangeBool(write, key, "View: Auto-suggest enabled", ATUIGetAutoSuggestEnabled, ATUISetAutoSuggestEnabled);
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest statements", ATUIGetAutoSuggestStatementsEnabled, ATUISetAutoSuggestStatementsEnabled);
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest functions", ATUIGetAutoSuggestFunctionsEnabled, ATUISetAutoSuggestFunctionsEnabled);
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest variables", ATUIGetAutoSuggestVariablesEnabled, ATUISetAutoSuggestVariablesEnabled);
+	ATSettingsExchangeBool(write, key, "View: Auto-line-numbering enabled", ATUIGetAutoLineNumberingEnabled, ATUISetAutoLineNumberingEnabled);
+	ATSettingsExchangeInt32(write, key, "View: Auto-line-numbering step", ATUIGetAutoLineNumberingStep, [](sint32 v) { ATUISetAutoLineNumberingStep((int)v); });
+	ATSettingsExchangeBool(write, key, "View: Auto-line-numbering warn-replace", ATUIGetAutoLineNumberingShowReplaceWarning, ATUISetAutoLineNumberingShowReplaceWarning);
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest tab-accept", ATUIGetAutoSuggestTabAcceptEnabled, ATUISetAutoSuggestTabAcceptEnabled);
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest show-syntax", ATUIGetAutoSuggestShowSyntaxEnabled, ATUISetAutoSuggestShowSyntaxEnabled);
 
 	ATSettingsExchangeEnum<ATArtifactMode>(write, key, "GTIA: Artifacting mode", ATArtifactMode::Count,
 		[&]() { return gtia.GetArtifactingMode(); },

@@ -94,10 +94,60 @@ void ATUISetDisplayFilterMode(ATDisplayFilterMode mode);
 bool ATUIGetShowFPS();
 void ATUISetShowFPS(bool enabled);
 
+// Master Auto-Suggest for BASIC toggle.  When off, *everything* in the
+// auto-suggest subsystem is dormant — the popup, the auto-show debounce,
+// the one-shot Alt+, trigger, the line-numbering injector, and the
+// "replaces existing line" warning.  Default on.  Persisted via
+// "View: Auto-suggest master enabled".  This is the single switch a
+// user flips to opt out completely; the other toggles below only refine
+// behaviour when this one is on.
+bool ATUIGetAutoSuggestMasterEnabled();
+void ATUISetAutoSuggestMasterEnabled(bool enabled);
+
 // Autosuggest auto-show-on-edit toggle (test10).  Persisted via the
 // "View: Auto-suggest enabled" registry key.
 bool ATUIGetAutoSuggestEnabled();
 void ATUISetAutoSuggestEnabled(bool enabled);
+
+// Autosuggest category toggles (which kinds of completions to offer).
+// Default = all on.  Stored under "View: Auto-suggest *" registry keys.
+bool ATUIGetAutoSuggestStatementsEnabled();
+void ATUISetAutoSuggestStatementsEnabled(bool enabled);
+bool ATUIGetAutoSuggestFunctionsEnabled();
+void ATUISetAutoSuggestFunctionsEnabled(bool enabled);
+bool ATUIGetAutoSuggestVariablesEnabled();
+void ATUISetAutoSuggestVariablesEnabled(bool enabled);
+
+// Auto-line-numbering: when the user presses RETURN at the end of a
+// numbered BASIC line and the next screen row is empty, the next
+// line number is injected automatically.  Step is the increment
+// (10 by default — matches the convention RUN uses internally).
+bool ATUIGetAutoLineNumberingEnabled();
+void ATUISetAutoLineNumberingEnabled(bool enabled);
+int  ATUIGetAutoLineNumberingStep();
+void ATUISetAutoLineNumberingStep(int step);
+
+// Auto-line-numbering: show a "Replaces line N" warning badge near the
+// cursor whenever the row being typed starts with digits that match a
+// line already stored in STMTAB.  Default on.  Acts independently of
+// the auto-injection feature — useful even when auto-numbering is off,
+// since a user editing or re-typing an existing line by hand is still
+// about to overwrite (or delete) that line on Enter.
+bool ATUIGetAutoLineNumberingShowReplaceWarning();
+void ATUISetAutoLineNumberingShowReplaceWarning(bool enabled);
+
+// Tab-key acceptance: when true and the autosuggest popup is open,
+// Tab picks the top entry instead of falling through as a literal
+// keystroke to the BASIC editor.  Default on.
+bool ATUIGetAutoSuggestTabAcceptEnabled();
+void ATUISetAutoSuggestTabAcceptEnabled(bool enabled);
+
+// Show the canonical "Syntax: ..." line under the selected suggestion.
+// Sourced from the Altirra BASIC Reference Manual.  Default on; users
+// who find the popup too tall can opt out without losing the rest of
+// the suggestion behaviour.
+bool ATUIGetAutoSuggestShowSyntaxEnabled();
+void ATUISetAutoSuggestShowSyntaxEnabled(bool enabled);
 bool ATUIGetFullscreen();
 bool ATUIGetDisplayFullscreen();
 void ATSetFullscreen(bool);

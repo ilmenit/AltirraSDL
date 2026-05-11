@@ -1591,6 +1591,17 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// read-only with respect to simulator state).
 	ATUIAutoSuggest::Update();
 	ATUIAutoSuggest::Render();
+	ATUIAutoSuggest::RenderConfigDialog();
+
+	// Auto-line-numbering watcher.  Polls SAVMSC/ROWCRS/COLCRS each frame
+	// and injects "next-number + space" after Enter on a numbered BASIC
+	// line.  Gated by ATUIGetAutoLineNumberingEnabled() inside Update().
+	ATUIBasicLineNumbering::Update();
+
+	// Passive "Replaces line N" badge when the user is editing/typing
+	// a line whose number is already stored in STMTAB.  Read-only,
+	// purely cosmetic — its own toggle inside the helper.
+	ATUIBasicLineNumbering::RenderReplaceWarning();
 
 #if defined(__EMSCRIPTEN__)
 	// Broker-mode "Starting…" overlay (M3).  When the page broker has
