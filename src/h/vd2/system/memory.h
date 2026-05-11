@@ -26,6 +26,7 @@
 #ifndef f_VD2_SYSTEM_MEMORY_H
 #define f_VD2_SYSTEM_MEMORY_H
 
+#include <string.h>		// memcpy / memset — see docs/merging-with-altirra-mainline.md
 #include <type_traits>
 #include <vd2/system/vdtypes.h>
 

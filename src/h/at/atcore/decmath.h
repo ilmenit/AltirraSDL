@@ -23,6 +23,7 @@
 #define f_AT_ATCORE_DECMATH_H
 
 #include <optional>
+#include <string.h>		// memcpy — see docs/merging-with-altirra-mainline.md
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 

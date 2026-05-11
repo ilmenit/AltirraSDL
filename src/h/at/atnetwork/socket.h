@@ -17,6 +17,8 @@
 #ifndef f_ATNETWORK_SOCKET_H
 #define f_ATNETWORK_SOCKET_H
 
+#include <string.h>		// memset — see docs/merging-with-altirra-mainline.md
+
 #include <vd2/system/function.h>
 #include <vd2/system/refcount.h>
 

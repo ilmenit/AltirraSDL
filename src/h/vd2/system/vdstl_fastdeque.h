@@ -26,6 +26,7 @@
 #ifndef f_VD2_SYSTEM_VDSTL_FASTDEQUE_H
 #define f_VD2_SYSTEM_VDSTL_FASTDEQUE_H
 
+#include <string.h>		// memcpy / memmove / memset — see docs/merging-with-altirra-mainline.md
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vdstl.h>
 

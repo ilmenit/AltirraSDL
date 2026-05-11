@@ -26,6 +26,7 @@
 #ifndef f_VD2_SYSTEM_VDSTL_BLOCK_H
 #define f_VD2_SYSTEM_VDSTL_BLOCK_H
 
+#include <string.h>		// memcpy — see docs/merging-with-altirra-mainline.md
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vdstl.h>
 

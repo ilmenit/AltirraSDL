@@ -35,6 +35,7 @@
 #include <initializer_list>
 #include <ranges>
 #include <memory>
+#include <stdlib.h>		// malloc / free — see docs/merging-with-altirra-mainline.md
 #include <string.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/memory.h>

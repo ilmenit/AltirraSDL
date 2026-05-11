@@ -29,9 +29,7 @@
 // symbol arrays passed to it MUST be declared as `constexpr` only,
 // not `static constexpr`.  Mixing `static` into a constexpr lambda
 // body requires P2647 (C++23), which our CI floor — Apple Clang 15
-// on macos-14, GCC 12 on ubuntu:22.04 — does not implement.  See
-// the "Don't put static variables inside constexpr functions/lambdas"
-// section of CLAUDE.md for the full rationale.
+// on macos-14, GCC 12 on ubuntu:22.04 — does not implement.
 //
 // Upstream Windows `.sln` builds (MSVC) and modern developer Linux
 // (GCC 15+) accept `static constexpr` inside the lambda, so the
@@ -40,6 +38,9 @@
 //     error: constexpr variable '...' must be initialized by a constant expression
 //     note:  control flows through the definition of a static variable
 // after a merge, drop `static` from the offending local array.
+//
+// See docs/merging-with-altirra-mainline.md for the canonical write-up
+// of this and related Altirra-mainline merge pitfalls.
 // =====================================================================
 
 template<size_t N>
