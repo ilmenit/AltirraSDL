@@ -37,6 +37,7 @@ void RenderCaptionCategory(ATSimulator &sim);
 void RenderWorkaroundsCategory(ATSimulator &sim);
 void RenderCompatDBCategory(ATSimulator &sim);
 void RenderErrorHandlingCategory(ATSimulator &sim);
+void RenderIOCategory(ATSimulator &sim);
 void RenderFlashCategory(ATSimulator &sim);
 void RenderAccessibilityCategory(ATSimulator &sim);
 void RenderDebuggerCfgCategory(ATSimulator &sim);

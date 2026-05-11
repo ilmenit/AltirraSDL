@@ -157,6 +157,7 @@ void ATOptionsExchange(VDRegistryKey& key, bool write, ATOptions& opts) {
 
 	ATOptionsExchange(key, write, "System: Force directory change polling", opts.mbPollDirectories);
 	ATOptionsExchangeEnum(key, write, "System: Efficiency mode", opts.mEfficiencyMode);
+	ATOptionsExchange(key, write, "System: Write text files LF only", opts.mbTextOutputLFOnly);
 
 	ATOptionsExchange(key, write, "Accessibility: Enable", opts.mbAccEnabled);
 }

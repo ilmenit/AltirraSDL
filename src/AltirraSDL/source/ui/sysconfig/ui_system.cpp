@@ -95,6 +95,7 @@ enum {
 	kCat_Display,       // Emulator > Display
 	kCat_EaseOfUse,     // Emulator > Ease of Use
 	kCat_ErrorHandling, // Emulator > Error Handling
+	kCat_IO,            // Emulator > I/O (test10: text-file LF-only toggle)
 	kCat_Input,         // Emulator > Input
 	kCat_Caption,       // Emulator > Window Caption
 	kCat_Workarounds,   // Emulator > Workarounds
@@ -153,6 +154,7 @@ static const TreeEntry kTreeEntries[] = {
 	{ "Display",        kCat_Display,   1 },
 	{ "Ease of Use",    kCat_EaseOfUse, 1 },
 	{ "Error Handling", kCat_ErrorHandling, 1 },
+	{ "I/O",            kCat_IO,        1 },
 	{ "Input",          kCat_Input,     1 },
 	{ "Window Caption", kCat_Caption,   1 },
 	{ "Workarounds",    kCat_Workarounds, 1 },
@@ -241,6 +243,7 @@ void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 	case kCat_Display:        RenderDisplayCategory(sim); break;
 	case kCat_EaseOfUse:      RenderEaseOfUseCategory(sim); break;
 	case kCat_ErrorHandling:  RenderErrorHandlingCategory(sim); break;
+	case kCat_IO:             RenderIOCategory(sim); break;
 	case kCat_Input:          RenderInputCategory(sim); break;
 	case kCat_Caption:        RenderCaptionCategory(sim); break;
 	case kCat_Workarounds:    RenderWorkaroundsCategory(sim); break;

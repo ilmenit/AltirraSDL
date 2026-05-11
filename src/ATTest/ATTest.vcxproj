@@ -22,6 +22,7 @@
     <ClCompile Include="source\TestMisc_TTF.cpp" />
     <ClCompile Include="source\TestNet_NativeDatagramLiveTest.cpp" />
     <ClCompile Include="source\TestNet_NativeSockets.cpp" />
+    <ClCompile Include="source\TestSystem_Any.cpp" />
     <ClCompile Include="source\TestSystem_CRC.cpp" />
     <ClCompile Include="source\TestSystem_Exception.cpp" />
     <ClCompile Include="source\TestSystem_HashMap.cpp" />

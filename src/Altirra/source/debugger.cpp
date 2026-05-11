@@ -4663,7 +4663,13 @@ void ATDebugger::OnSimulatorEvent(ATSimulatorEvent ev) {
 				L"kernel", L"mathpack", L"kerneldb", L"hardware"
 			};
 
-			for(const wchar_t *modname : kReloadModules) {
+			vdspan<const wchar_t * const> modules(kReloadModules);
+
+			// drop the first two if 5200 mode
+			if (g_sim.GetHardwareMode() == kATHardwareMode_5200)
+				modules = modules.subspan(2);
+
+			for(const wchar_t *modname : modules) {
 				try {
 					LoadSymbols(modname, false);
 				} catch(const MyError&) {
@@ -7721,8 +7727,11 @@ void ATConsoleCmdListModules(ATDebuggerCmdParser& parser) {
 
 void ATConsoleCmdListNearestSymbol(ATDebuggerCmdParser& parser) {
 	ATDebuggerCmdExprAddr addrArg(true, true);
+	ATDebuggerCmdSwitch readArg("r", false);
+	ATDebuggerCmdSwitch writeArg("w", false);
+	ATDebuggerCmdSwitch executeArg("x", false);
 
-	parser >> addrArg >> 0;
+	parser >> readArg >> writeArg >> executeArg >> addrArg >> 0;
 
 	sint32 v = addrArg.GetValue();
 	if (!addrArg.IsValid()) {
@@ -7730,10 +7739,18 @@ void ATConsoleCmdListNearestSymbol(ATDebuggerCmdParser& parser) {
 		return;
 	}
 
-	uint32 addr = (uint32)v;
+	const uint32 addr = (uint32)v;
+	uint32 flags = kATSymbol_Any;
+
+	if (readArg)
+		flags = kATSymbol_Read;
+	else if (writeArg)
+		flags = kATSymbol_Write;
+	else if (executeArg)
+		flags = kATSymbol_Execute;
 
 	ATDebuggerSymbol sym;
-	if (g_debugger.LookupSymbol(addr, kATSymbol_Any, sym)) {
+	if (g_debugger.LookupSymbol(addr, flags, sym)) {
 		ATDebuggerSourceFileInfo sourceFileInfo;
 		ATSourceLineInfo lineInfo;
 		uint32 moduleId;

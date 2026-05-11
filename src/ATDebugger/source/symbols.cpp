@@ -64,9 +64,30 @@ void ATSymbolStore::AddSymbol(uint32 offset, const char *name, uint32 size, uint
 	mbSymbolsNeedSorting = true;
 }
 
-void ATSymbolStore::AddSymbols(vdvector_view<const SymbolInfo> symbols) {
-	for(const SymbolInfo& si : symbols)
-		AddSymbol(si.mOffset, si.mpName, si.mSize);
+void ATSymbolStore::AddDefaultSymbols(vdspan<const ATDefaultSymbolInfo> symbols, uint32 addressOffset) {
+	for(const ATDefaultSymbolInfo& si : symbols) {
+		uint32 flags = 0;
+
+		switch(si.mType) {
+			case ATDefaultSymbolType::Default:
+				flags = kATSymbol_Read | kATSymbol_Write | kATSymbol_Execute;
+				break;
+
+			case ATDefaultSymbolType::ReadOnly:
+				flags = kATSymbol_Read;
+				break;
+
+			case ATDefaultSymbolType::WriteOnly:
+				flags = kATSymbol_Write;
+				break;
+
+			case ATDefaultSymbolType::NoExecute:
+				flags = kATSymbol_Read | kATSymbol_Write;
+				break;
+		}
+
+		AddSymbol(si.mAddress + addressOffset, si.mName, si.mSize, flags);
+	}
 }
 
 void ATSymbolStore::AddSymbols(vdvector_view<const Symbol> symbols) {

@@ -1615,10 +1615,25 @@ int ATWasmIsGamingMode() {
 // "switch mode" path — those go through ATUISetMode directly.
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSetGamingMode(int on) {
-	ATUISetMode(on ? ATUIMode::Gaming : ATUIMode::Desktop);
+	const bool wantGaming = (on != 0);
+
+	// Short-circuit when already in the requested mode.  Critical for
+	// the WASM ?ui=desktop deep-link path: the JS now also pushes
+	// --ui-mode desktop into argv so commandline_sdl3.cpp sets the
+	// mode at command-line time (before main() loads stale registry
+	// state).  This post-runtime call from the deeplink JS still
+	// fires as a backstop — without this short-circuit the redundant
+	// transition below would ColdReset the simulator and wipe a
+	// freshly --run-loaded XEX payload (TheLady etc.), leaving the
+	// user staring at the firmware's default screen instead of the
+	// game they followed the link for.
+	if (ATUIIsGamingMode() == wantGaming)
+		return;
+
+	ATUISetMode(wantGaming ? ATUIMode::Gaming : ATUIMode::Desktop);
 	ATUISaveMode();
 
-	if (on) {
+	if (wantGaming) {
 		g_mobileState.gameLoaded    = true;
 		g_mobileState.currentScreen = ATMobileUIScreen::None;
 	} else {

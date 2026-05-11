@@ -489,10 +489,33 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		}
 #endif
 
-		// Center content vertically
-		float contentH = dp(360.0f);
+		// Two persistent toggles — outlive a single render so the user's
+		// choice survives if they open and close the More-options link
+		// or the Android permission gate sneaks back in front of us.
+		// Defaults match the silent-apply path: convenient + on.
+		static int  s_experience = 0;   // 0=Convenient, 1=Authentic
+		static bool s_addonsOn   = true;
+
+		// Apply the chosen knobs to the simulator.  Idempotent — calling
+		// twice is a no-op.  deferReset=false: the wizard exits to the
+		// running emulator immediately after, so we want the changes
+		// live before the next frame.
+		auto applyChosenDefaults = []() {
+			if (s_experience == 1)
+				Wiz_ApplyAuthenticExperience(g_sim, /*deferReset=*/false);
+			else
+				Wiz_ApplyConvenientExperience(g_sim, /*deferReset=*/false);
+			Wiz_ApplyHardwareAddons(g_sim, s_addonsOn, /*deferReset=*/false);
+		};
+
+		// Layout-by-content: the wizard now has more content (toggles +
+		// link), so center vertically using a generous reservation.
+		// On a 720dp tablet portrait this sits comfortably above the
+		// keyboard area; on a phone in landscape it keeps action buttons
+		// above the soft-key band.
+		float contentH = dp(560.0f);
 		float topPad = (h - contentH) * 0.5f;
-		if (topPad < dp(40.0f)) topPad = dp(40.0f);
+		if (topPad < dp(20.0f)) topPad = dp(20.0f);
 		ImGui::Dummy(ImVec2(0, topPad));
 
 		// Title
@@ -515,16 +538,14 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 			ImGui::TextColored(ATMobileCol(pal.textMuted), "%s", sub);
 		}
 
-		ImGui::Dummy(ImVec2(0, dp(24.0f)));
+		ImGui::Dummy(ImVec2(0, dp(20.0f)));
 
-		// Body text
+		// Body text — kept brief; the toggles below are self-explanatory.
 		{
 			const char *body =
-				"To get started, select a folder containing Atari ROM firmware,\n"
-				"or skip and use the built-in replacement kernel.\n\n"
-				"Altirra is preconfigured for maximum game compatibility:\n"
-				"Stereo POKEY, Covox, VideoBoard XE, and 1088 KB RAM are\n"
-				"enabled.  Change any of this from Settings > Machine.";
+				"Welcome!  Pick how you want the emulator to behave, "
+				"then choose whether to load original Atari ROM firmware "
+				"or use the built-in replacement (AltirraOS).";
 			float wrapW = w * 0.85f;
 			float bodyX = (w - wrapW) * 0.5f;
 			ImGui::SetCursorPosX(bodyX);
@@ -533,26 +554,73 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 			ImGui::PopTextWrapPos();
 		}
 
-		ImGui::Dummy(ImVec2(0, dp(32.0f)));
+		ImGui::Dummy(ImVec2(0, dp(20.0f)));
 
-		// Action buttons — centered, stacked
-		float btnW = dp(260.0f);
+		// ── Knob 1: Emulation experience (Convenient | Authentic) ─────
+		{
+			float knobW = w * 0.85f;
+			float knobX = (w - knobW) * 0.5f;
+			ImGui::SetCursorPosX(knobX);
+			ImGui::BeginGroup();
+			ImGui::PushItemWidth(knobW);
+			static const char *items[] = { "Convenient", "Authentic" };
+			ATTouchSegmented("Emulation experience",
+				&s_experience, items, 2);
+			ImGui::PopItemWidth();
+			ImGui::EndGroup();
+
+			ImGui::SetCursorPosX(knobX);
+			ImGui::PushTextWrapPos(knobX + knobW);
+			ImGui::TextColored(ATMobileCol(pal.textMuted),
+				s_experience == 1
+				? "Authentic: hardware artifacts, drive sounds, "
+				  "accurate disk timing, no SIO patches."
+				: "Convenient: clean display, fast SIO loading, no "
+				  "drive sounds.  Right for casual play.");
+			ImGui::PopTextWrapPos();
+		}
+
+		ImGui::Dummy(ImVec2(0, dp(16.0f)));
+
+		// ── Knob 2: Hardware add-ons (On | Off) ─────────────────────
+		// Skip silently for 5200 hardware mode — none of the four
+		// add-ons (VBXE/Covox/Stereo POKEY/1088K) apply to it.  For
+		// 5200 we just hide the toggle; the apply helpers also no-op
+		// for 5200 so this is purely a UI tidy.
+		const bool is5200 =
+			(g_sim.GetHardwareMode() == kATHardwareMode_5200);
+		if (!is5200) {
+			float knobW = w * 0.85f;
+			float knobX = (w - knobW) * 0.5f;
+			ImGui::SetCursorPosX(knobX);
+			ImGui::BeginGroup();
+			ImGui::PushItemWidth(knobW);
+			ATTouchToggle("Modern-demo hardware add-ons", &s_addonsOn);
+			ImGui::PopItemWidth();
+			ImGui::EndGroup();
+
+			ImGui::SetCursorPosX(knobX);
+			ImGui::PushTextWrapPos(knobX + knobW);
+			ImGui::TextColored(ATMobileCol(pal.textMuted),
+				s_addonsOn
+				? "On: VBXE, Covox, Stereo POKEY, 1088 KB RAM enabled. "
+				  "Required for most modern Atari demos."
+				: "Off: stock 800XL/130XE hardware.  Right for "
+				  "period-accurate originals.");
+			ImGui::PopTextWrapPos();
+		}
+
+		ImGui::Dummy(ImVec2(0, dp(24.0f)));
+
+		// ── Action buttons — centered, stacked ─────────────────────
+		float btnW = dp(280.0f);
 		float btnH = dp(56.0f);
 
-		// Both completion paths apply the recommended hardware add-ons
-		// so the very first launch lands the user in a "modern demo
-		// compatible" config without forcing them through a multi-page
-		// wizard.  Skipped silently for 5200 hardware mode by the
-		// helper itself.  Idempotent — running again is a no-op.
-		auto applyDefaults = []() {
-			Wiz_ApplyConvenientWithRecommendedAddons(g_sim);
-		};
-
 		ImGui::SetCursorPosX((w - btnW) * 0.5f);
-		if (ATTouchButton("Select ROM Folder", ImVec2(btnW, btnH),
+		if (ATTouchButton("Select Firmware ROMs Folder", ImVec2(btnW, btnH),
 			ATTouchButtonStyle::Accent))
 		{
-			applyDefaults();
+			applyChosenDefaults();
 			s_romFolderMode = true;
 			s_fileBrowserNeedsRefresh = true;
 			mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
@@ -564,12 +632,47 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		ImGui::SetCursorPosX((w - btnW) * 0.5f);
 		// Note: avoid Unicode dashes — ImGui's default font doesn't ship
 		// the U+2014 em-dash glyph, so it renders as a fallback '?'.
-		if (ATTouchButton("Skip - Use Built-in Kernel",
+		if (ATTouchButton("Skip - Use Built-in AltirraOS",
 			ImVec2(btnW, btnH)))
 		{
-			applyDefaults();
+			applyChosenDefaults();
 			mobileState.currentScreen = ATMobileUIScreen::None;
 			SetFirstRunComplete();
+		}
+
+		ImGui::Dummy(ImVec2(0, dp(16.0f)));
+
+		// ── "More options..." link → multi-page wizard ───────────────
+		// Power users who want the full configuration flow (Game
+		// Library, Firmware scan, Joystick mapping, etc.) can opt into
+		// it here.  Wiz_Open sets currentScreen=SetupWizard for Gaming
+		// Mode, which dispatches to mobile_setup_wizard.cpp's renderer.
+		// FirstRunComplete is marked here so even if the user closes
+		// the multi-page wizard mid-flow, they don't get prompted by
+		// this shortened wizard again.
+		{
+			const char *more = "More options...";
+			ImVec2 ts = ImGui::CalcTextSize(more);
+			ImGui::SetCursorPosX((w - ts.x) * 0.5f);
+			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.accent));
+			ImGui::TextUnformatted(more);
+			ImGui::PopStyleColor();
+			ImVec2 linkMin = ImGui::GetItemRectMin();
+			ImVec2 linkMax = ImGui::GetItemRectMax();
+			// Expand hit area slightly so the link is touch-friendly
+			// without making it look like a button.
+			linkMin.y -= dp(8.0f);
+			linkMax.y += dp(8.0f);
+			linkMin.x -= dp(16.0f);
+			linkMax.x += dp(16.0f);
+			if (ImGui::IsMouseHoveringRect(linkMin, linkMax)
+				&& ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+			{
+				applyChosenDefaults();
+				SetFirstRunComplete();
+				extern void Wiz_Open(ATUIState &);
+				Wiz_Open(uiState);
+			}
 		}
 	}
 	ImGui::End();

@@ -183,6 +183,14 @@ static bool s_showFPS = false;
 bool ATUIGetShowFPS() { return s_showFPS; }
 void ATUISetShowFPS(bool v) { s_showFPS = v; }
 
+// Autosuggest auto-show-on-edit toggle (test10).  The state lives here
+// so AltirraBridgeServer (headless) can also persist it through
+// settings.cpp without pulling in ImGui.  The AltirraSDL frontend's
+// ATUIAutoSuggest::Is/SetAutoSuggestEnabled thin-wraps this accessor.
+static bool s_autoSuggestEnabled = false;
+bool ATUIGetAutoSuggestEnabled() { return s_autoSuggestEnabled; }
+void ATUISetAutoSuggestEnabled(bool v) { s_autoSuggestEnabled = v; }
+
 // =========================================================================
 // Speed control
 // =========================================================================

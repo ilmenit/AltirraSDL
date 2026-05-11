@@ -61,6 +61,46 @@ behaviour.
 |-------------|------------|--------|
 | `embed`     | `1`        | Hide all page chrome (header bar, log, drop overlay, file manager, wizards). Canvas fills the viewport. Suppresses the first-run firmware-bundle download — the emulator falls back to its built-in LLE kernel if no firmware is supplied.  Do **not** set this for the lobby flow. |
 | `title`     | string     | Sets the browser tab name (`document.title`) for an embed page that the visitor lands on directly (rather than via an iframe).  Truncated to 64 chars and stripped of control chars.  No effect when the page is hosted in an iframe — the parent page's `<title>` wins for the actual tab. |
+| `back_url`  | URL or path | Per-link override of the page-bar *⬅ Lobby* button's destination — useful for `?ui=desktop` links from your own catalog page when you want the back-link to return to your page rather than to the canonical lobby (or to be hidden entirely).  Accepts a same-origin path (`/games/`) or an absolute `http(s)://` URL.  An empty value (`?back_url=`) **forces the button hidden**, even if the bundle ships a `config.json` with `lobbyUrl`.  Wins over `config.json`.  No effect under `?embed=1` (the entire header is hidden in embed mode). |
+| `back_label` | string    | Text shown on the *⬅ Lobby* button when `back_url` is in use.  Printed verbatim — supply your own arrow / glyph if you want one.  Clamped to 32 chars; control chars stripped.  Defaults to `⬅ Lobby` when omitted. |
+
+### First-run defaults (Experience + Add-ons)
+
+The emulator applies sensible defaults the very first time a visitor
+loads your embed.  These two URL params let you control what those
+defaults look like so demos requiring modern hardware "just work" or,
+conversely, so a period-accurate originals showcase boots into a
+stock 800 XL with NTSC artifact colors.
+
+| Parameter | Allowed values | Effect |
+|---|---|---|
+| `experience` | `convenient` *(default)* / `authentic` | **Convenient**: artifact mode = None, SIO patches on (fast disk loading), drive sounds off, accurate disk timing off, SharpBilinear filter, sharpness +1.  **Authentic**: artifact mode = AutoHi (NTSC color smearing on hi-res text — a faithful look), SIO patches off, drive sounds on, accurate disk timing on, Bilinear filter. |
+| `addons` | `on` *(default)* / `off`<br>(also accepts `1`/`0`, `true`/`false`, `enabled`/`disabled`, `yes`/`no`) | **On**: enable VBXE 1.26 + Covox $D600/4 ch + Stereo POKEY, set memory mode to 1088 K.  Required for most modern Atari demos.  **Off**: actively REMOVE those three devices (memory mode left alone — use `?memsize=` to set it explicitly).  Right for period-accurate originals. |
+
+The two axes are **orthogonal** — you can pick any combination
+(Convenient + on, Authentic + on, Convenient + off, Authentic + off).
+
+These defaults fire **only on first run** (a fresh IndexedDB / no
+saved registry).  Subsequent visits use whatever the user (or your
+embed) configured, persisted in the browser's IndexedDB-backed
+settings.  To change a configured deploy, the visitor uses
+*Hamburger > Settings* in Gaming Mode or the Atari menu in Desktop
+Mode.
+
+The hardware switches in the Hardware table below ALWAYS override
+the silent defaults — `?addons=on&memsize=128K` yields VBXE + Covox
++ Stereo POKEY at 128 K (CLI wins).  Same for `--hardware`,
+`--stereo`, `--adddevice`, etc.
+
+#### Common embed recipes
+
+| Goal | URL params |
+|---|---|
+| Lobby-style "modern demo just works" *(default)* | none — implicit `experience=convenient&addons=on` |
+| Period-accurate original Atari title | `?experience=authentic&addons=off` |
+| Realistic look on a VBXE-required demo | `?experience=authentic&addons=on` |
+| Convenient loading on a stock 130 XE | `?experience=convenient&addons=off&hardware=130xe` |
+| Stock 800 XL with 64 K (replay capture / speedrun) | `?addons=off&hardware=800xl&memsize=64K&randmem=0` |
 
 ### Hardware
 

@@ -15,6 +15,7 @@ This prerelease version:
    * Custom Devices: Added $sio.set_external_clock().
    * Debugger: Added .custom command to dump the status of a custom device.
    * Debugger: @value now works within read access breakpoint conditions and actions.
+   * Debugger: ln command has options for specific read/write/execute symbol lookups.
    * Devices: Added Karin Maxi Drive.
    * Disk: Added option to reinterleave disks to 815 16:1 DD interleave.
    * Display: Added support for rendering to Wide Color Gamut (WCG) displays without HDR support.
@@ -23,8 +24,10 @@ This prerelease version:
    * PerfAnalyzer: Debugger console logging is now captured into performance traces.
    * Printer: The print position in graphical mode can be adjusted.
    * Printer: Added SVG export.
+   * Simulator: Added option to write text files with LF line endings.
    * UI: Removed inner edge on display window when there are no other docked panes visible.
    * UI: Files can now be dragged from folders mapped with the H: device to paste in the emulated path to the file.
+   * UI: Added auto-suggest feature for H: paths and PEEK/POKE addresses.
 
    [bugs fixed]
    * AltirraOS: Fixed screen corruption in screen editor when moving cursor with a Get Byte call. (3.46)
@@ -32,6 +35,7 @@ This prerelease version:
    * AltirraOS: Fixed occasional bogus timeout errors in SIO routines. (3.49)
    * Cartridge: Added DCart to cartridge type autodetection list.
    * Command Line: Fixed 5200 cartridges not loading if passed on the command line without /cart.
+   * Debugger: Computer OS ROM symbols are no longer loaded in 5200 mode.
    * Devices: Fixed Rapidus $4000-7FFF fast read shadow not toggling reliably on PORTB extended RAM accesses.
    * Devices: Standard device emulators now support SIO timeouts where implemented by the original devices.
    * Devices: Fixed erroneous control signal inputs on 850 full emulation serial port 1.

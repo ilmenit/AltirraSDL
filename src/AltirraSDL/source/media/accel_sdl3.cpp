@@ -81,6 +81,7 @@ namespace {
 		{ "Edit.CopyFrame",                0, { kATInputCode_KeyM,   ALT+SHIFT } },
 		{ "Edit.SelectAll",                0, { kATInputCode_KeyA,   ALT+SHIFT } },
 		{ "Edit.Deselect",                 0, { kATInputCode_KeyD,   ALT+SHIFT } },
+		{ "Edit.ShowSuggestions",          0, { kATInputCode_KeyOemComma, ALT } },
 	};
 
 	const VDAccelTableEntry kATDefaultAccelTableGlobal[] = {

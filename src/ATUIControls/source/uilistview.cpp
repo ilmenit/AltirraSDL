@@ -42,6 +42,22 @@ ATUIListView::ATUIListView()
 ATUIListView::~ATUIListView() {
 }
 
+void ATUIListView::SetItemHeight(sint32 height) {
+	if (mItemHeight != height) {
+		mItemHeight = height;
+
+		Invalidate();
+		RemakeViews();
+	}
+}
+
+void ATUIListView::SetItemPresenter(IATUIListViewItemPresenter *presenter) {
+	RemoveAllItems();
+	DestroyViewCache();
+
+	mpItemPresenter = presenter;
+}
+
 void ATUIListView::AddItem(const wchar_t *text) {
 	InsertItem(0x7FFFFFFF, text);
 }
@@ -51,25 +67,14 @@ void ATUIListView::AddItem(IATUIListViewVirtualItem *item) {
 }
 
 void ATUIListView::InsertItem(sint32 pos, const wchar_t *text) {
-	uint32 n = (uint32)mItems.size();
-
-	if (pos < 0)
-		pos = 0;
-	else if ((uint32)pos > n)
-		pos = n;
-
-	ATUIListViewItem& item = *mItems.insert(mItems.begin() + pos, ATUIListViewItem());
-
-	item.mText = text;
-
-	if (mSelectedIndex >= pos)
-		++mSelectedIndex;
-
-	Invalidate();
-	RecomputeSlider();
+	InsertRawItemData(pos, VDAny(VDStringW(text)));
 }
 
 void ATUIListView::InsertItem(sint32 pos, IATUIListViewVirtualItem *vitem) {
+	InsertRawItemData(pos, vitem);
+}
+
+void ATUIListView::InsertRawItemData(sint32 pos, VDAny data) {
 	uint32 n = (uint32)mItems.size();
 
 	if (pos < 0)
@@ -79,46 +84,73 @@ void ATUIListView::InsertItem(sint32 pos, IATUIListViewVirtualItem *vitem) {
 
 	ATUIListViewItem& item = *mItems.insert(mItems.begin() + pos, ATUIListViewItem());
 
-	item.mpVirtualItem = vitem;
+	item.mData = std::move(data);
+
+	if (mItemViewBegin >= pos)
+		++mItemViewBegin;
+
+	if (mItemViewEnd >= pos)
+		++mItemViewEnd;
 
 	if (mSelectedIndex >= pos)
 		++mSelectedIndex;
 
 	Invalidate();
 	RecomputeSlider();
+	RemakeViews();
 }
 
 void ATUIListView::RemoveItem(sint32 pos) {
 	uint32 n = (uint32)mItems.size();
-	if ((uint32)pos < n) {
-		mItems.erase(mItems.begin() + pos);
+	if ((uint32)pos >= n)
+		return;
 
-		const bool selDeleted = (pos == mSelectedIndex);
+	ATUIListViewItem& item = mItems[pos];
 
-		if (mSelectedIndex >= pos) {
-			if (mSelectedIndex > pos)
-				--mSelectedIndex;
+	if (item.mpView)
+		RecycleView(std::move(item.mpView));
 
-			if ((uint32)mSelectedIndex >= n)
-				mSelectedIndex = -1;
-		}
+	mItems.erase(mItems.begin() + pos);
 
-		RecomputeSlider();
-		Invalidate();
+	const bool selDeleted = (pos == mSelectedIndex);
 
-		mpSlider->SetRange(0, (sint32)mItems.size());
+	if (mSelectedIndex >= pos) {
+		if (mSelectedIndex > pos)
+			--mSelectedIndex;
 
-		if (selDeleted) {
-			if (mItemSelectedEvent)
-				mItemSelectedEvent(mSelectedIndex);
-		}
+		if ((uint32)mSelectedIndex >= n)
+			mSelectedIndex = -1;
+	}
+
+	if (mItemViewBegin > pos)
+		--mItemViewBegin;
+
+	if (mItemViewEnd > pos)
+		--mItemViewEnd;
+
+	RecomputeSlider();
+	Invalidate();
+	RemakeViews();
+
+	mpSlider->SetRange(0, (sint32)mItems.size());
+
+	if (selDeleted) {
+		if (mItemSelectedEvent)
+			mItemSelectedEvent(mSelectedIndex);
 	}
 }
 
 void ATUIListView::RemoveAllItems() {
 	if (!mItems.empty()) {
+		for(ATUIListViewItem& item : mItems) {
+			if (item.mpView)
+				RecycleView(std::move(item.mpView));
+		}
+
 		mItems.clear();
 		mSelectedIndex = -1;
+		mItemViewBegin = 0;
+		mItemViewEnd = 0;
 		Invalidate();
 		RecomputeSlider();
 	}
@@ -127,7 +159,10 @@ void ATUIListView::RemoveAllItems() {
 namespace {
 	struct LVItemSortAdapter {
 		bool operator()(const ATUIListViewItem *a, const ATUIListViewItem *b) {
-			return mpSorter->Compare(a->mpVirtualItem, b->mpVirtualItem);
+			return mpSorter->Compare(
+				a->mData.ValueOrDefault<IATUIListViewVirtualItem *>(),
+				b->mData.ValueOrDefault<IATUIListViewVirtualItem *>()
+			);
 		}
 
 		const IATUIListViewSorter *mpSorter;
@@ -169,6 +204,7 @@ void ATUIListView::Sort(const IATUIListViewSorter& sorter) {
 	if (redrawRequired) {
 		mSelectedIndex = newSelIndex;
 		Invalidate();
+		RemakeViews();
 
 		EnsureSelectedItemVisible(true);
 	}
@@ -178,7 +214,11 @@ IATUIListViewVirtualItem *ATUIListView::GetSelectedVirtualItem() {
 	if (mSelectedIndex < 0)
 		return NULL;
 
-	return mItems[mSelectedIndex].mpVirtualItem;
+	return mItems[mSelectedIndex].mData.ValueOrDefault<IATUIListViewVirtualItem *>();
+}
+
+const VDAny *ATUIListView::GetSelectedRawItemData() const {
+	return mSelectedIndex < 0 ? nullptr : &mItems[mSelectedIndex].mData;
 }
 
 void ATUIListView::SetSelectedItem(sint32 idx) {
@@ -235,6 +275,8 @@ void ATUIListView::ScrollToPixel(sint32 py, bool updateSlider) {
 
 	if (mScrollY != py) {
 		mScrollY = py;
+
+		RemakeViews();
 		Invalidate();
 
 		if (updateSlider && mpSlider)
@@ -367,6 +409,13 @@ void ATUIListView::OnCreate() {
 }
 
 void ATUIListView::OnDestroy() {
+	for(ATUIListViewItem& item : mItems) {
+		if (item.mpView)
+			RecycleView(std::move(item.mpView));
+	}
+
+	DestroyViewCache();
+
 	vdsaferelease <<= mpSlider;
 
 	ATUIContainer::OnDestroy();
@@ -376,6 +425,7 @@ void ATUIListView::OnSize() {
 	ATUIContainer::OnSize();
 
 	RecomputeSlider();
+	RemakeViews();
 }
 
 void ATUIListView::OnSetFocus() {
@@ -407,15 +457,19 @@ void ATUIListView::Paint(IVDDisplayRenderer& rdr, sint32 w, sint32 h) {
 			rdr.FillRect(0, y, w, mItemHeight);
 		}
 
-		if (rdr.PushViewport(vdrect32(2, y+2, w-2, y+mItemHeight-2), 2, y+2)) {
+		if (!mpItemPresenter && rdr.PushViewport(vdrect32(2, y+2, w-2, y+mItemHeight-2), 2, y+2)) {
 			tr->SetColorRGB(textColor);
 
-			if (lv.mpVirtualItem) {
+			if (lv.mData.HasType<IATUIListViewVirtualItem *>()) {
 				mTempStr.clear();
-				lv.mpVirtualItem->GetText(mTempStr);
+				lv.mData.Value<IATUIListViewVirtualItem *>()->GetText(mTempStr);
 				tr->DrawTextLine(0, 0, mTempStr.c_str());
-			} else {
-				tr->DrawTextLine(0, 0, lv.mText.c_str());
+			} else if (lv.mData.HasType<VDStringW>()) {
+				tr->DrawTextLine(0, 0, lv.mData.Value<VDStringW>().c_str());
+			} else if (lv.mData.HasType<const wchar_t *>()) {
+				tr->DrawTextLine(0, 0, lv.mData.Value<const wchar_t *>());
+			} else if (lv.mData.HasType<wchar_t *>()) {
+				tr->DrawTextLine(0, 0, lv.mData.Value<wchar_t *>());
 			}
 
 			rdr.PopViewport();
@@ -441,4 +495,73 @@ void ATUIListView::RecomputeSlider() {
 	mpSlider->SetLineSize(mItemHeight);
 	mpSlider->SetPageSize(pageItemCount * mItemHeight);
 	mpSlider->SetRange(0, scrollMax);
+}
+
+void ATUIListView::RemakeViews() {
+	if (!mpItemPresenter)
+		return;
+
+	sint32 width = std::max<sint32>(0, mpSlider->GetArea().left);
+	const sint32 idx1 = mScrollY / mItemHeight;
+	const sint32 idx2 = std::min<sint32>(mItems.size(), (mScrollY + GetClientArea().bottom + (mItemHeight - 1)) / mItemHeight);
+
+	// recycle item views before new range start
+	while(mItemViewBegin < idx1) {
+		RecycleView(std::move(mItems[mItemViewBegin++].mpView));
+	}
+
+	// recycle item views after new range end
+	while(mItemViewEnd > idx2) {
+		RecycleView(std::move(mItems[--mItemViewEnd].mpView));
+	}
+
+	// create and relayout views within window
+	sint32 y = mItemHeight * idx1 - mScrollY;
+
+	for(sint32 i = idx1; i < idx2; ++i) {
+		ATUIWidget *w = mItems[i].mpView;
+
+		if (!w) {
+			if (mViewCache.empty()) {
+				vdrefptr<ATUIWidget> newView = mpItemPresenter->CreateView();
+				AddChild(newView);
+
+				mViewCache.emplace_back(newView.release());
+			}
+
+			w = mViewCache.back();
+			mViewCache.pop_back();
+
+			mItems[i].mpView.set(w);
+			mpItemPresenter->SetViewData(*w, mItems[i].mData);
+
+			w->SetVisible(true);
+		}
+
+		w->SetArea(vdrect32(0, y, width, y + mItemHeight));
+
+		y += mItemHeight;
+	}
+
+	mItemViewBegin = idx1;
+	mItemViewEnd = idx2;
+}
+
+void ATUIListView::RecycleView(vdrefptr<ATUIWidget>&& viewRef) {
+	if (viewRef) {
+		viewRef->SetVisible(false);
+
+		mViewCache.emplace_back();
+		mViewCache.back() = viewRef.release();
+	}
+}
+
+void ATUIListView::DestroyViewCache() {
+	while(!mViewCache.empty()) {
+		ATUIWidget *w = mViewCache.back();
+		mViewCache.pop_back();
+
+		w->Destroy();
+		w->Release();
+	}
 }

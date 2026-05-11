@@ -22,6 +22,7 @@
     <ClInclude Include="..\h\at\atcore\devicecart.h" />
     <ClInclude Include="..\h\at\atcore\devicediskdrive.h" />
     <ClInclude Include="..\h\at\atcore\deviceindicators.h" />
+    <ClInclude Include="..\h\at\atcore\deviceautosuggest.h" />
     <ClInclude Include="..\h\at\atcore\devicecio.h" />
     <ClInclude Include="..\h\at\atcore\deviceimpl.h" />
     <ClInclude Include="..\h\at\atcore\bussignal.h" />

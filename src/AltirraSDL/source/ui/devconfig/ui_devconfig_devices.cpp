@@ -1096,12 +1096,13 @@ bool RenderBlackBoxConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 // =========================================================================
 
 bool RenderVBXEConfig(ATPropertySet& props, ATDeviceConfigState& st) {
-	static const char *kVersionLabels[] = { "FX 1.20", "FX 1.24", "FX 1.26" };
-	static const uint32 kVersionValues[] = { 120, 124, 126 };
+	// test10: order so the latest core version is first (and the default).
+	static const char *kVersionLabels[] = { "FX 1.26", "FX 1.24", "FX 1.20" };
+	static const uint32 kVersionValues[] = { 126, 124, 120 };
 
 	if (st.justOpened) {
 		uint32 ver = props.GetUint32("version", 126);
-		st.combo[0] = 2;
+		st.combo[0] = 0;
 		for (int i = 0; i < 3; ++i)
 			if (kVersionValues[i] == ver) st.combo[0] = i;
 

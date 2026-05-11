@@ -168,3 +168,14 @@ constexpr ATATASCIITables kATATASCIITables = []() constexpr -> ATATASCIITables {
 
 	return tbl;
 }();
+
+////////////////////////////////////////////////////////////////////////////////
+
+static_assert(ATConvertInternalToATASCII(0x00) == 0x20);
+static_assert(ATConvertInternalToATASCII(0x21) == 0x41);
+static_assert(ATConvertInternalToATASCII(0x45) == 0x05);
+static_assert(ATConvertInternalToATASCII(0x7F) == 0x7F);
+static_assert(ATConvertInternalToATASCII(0x80) == 0xA0);
+static_assert(ATConvertInternalToATASCII(0xA1) == 0xC1);
+static_assert(ATConvertInternalToATASCII(0xC5) == 0x85);
+static_assert(ATConvertInternalToATASCII(0xFF) == 0xFF);

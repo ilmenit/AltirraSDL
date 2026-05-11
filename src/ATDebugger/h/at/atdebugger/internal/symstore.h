@@ -24,6 +24,7 @@
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vdstl_vectorview.h>
 #include <at/atdebugger/symbols.h>
+#include <at/atdebugger/defsymbols.h>
 
 class ATSymbolFileParsingException : public MyError {
 public:
@@ -60,7 +61,7 @@ public:
 	void Init(uint32 moduleBase, uint32 moduleSize);
 	void RemoveSymbol(uint32 offset);
 	void AddSymbol(uint32 offset, const char *name, uint32 size = 1, uint32 flags = kATSymbol_Read | kATSymbol_Write | kATSymbol_Execute, uint16 fileid = 0, uint16 lineno = 0);
-	void AddSymbols(vdvector_view<const SymbolInfo> symbols);
+	void AddDefaultSymbols(vdspan<const ATDefaultSymbolInfo> symbols, uint32 addressOffset = 0);
 	void AddSymbols(vdvector_view<const Symbol> symbols);
 	void AddReadWriteRegisterSymbol(uint32 offset, const char *writename, const char *readname = NULL);
 	uint16 AddFileName(const wchar_t *filename);

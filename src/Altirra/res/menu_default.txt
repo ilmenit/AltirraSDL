@@ -150,6 +150,10 @@
 		---
 		Select &All				{Edit.SelectAll}
 		&Deselect				{Edit.Deselect}
+	---
+	Auto-Suggest
+		Show Suggestions		{Edit.ShowSuggestions}
+		Auto-Show Suggestions	{Edit.ToggleAutoShowSuggestions}
 
 S&ystem
 	&Profiles					{$profiles}

@@ -46,6 +46,7 @@ extern bool g_showFps;
 void ATUIInitCommandMappingsAudio(ATUICommandManager& cmdMgr);
 void ATUIInitCommandMappingsInput(ATUICommandManager& cmdMgr);
 void ATUIInitCommandMappingsView(ATUICommandManager& cmdMgr);
+void ATUIInitCommandMappingsEdit(ATUICommandManager& cmdMgr);
 void ATUIInitCommandMappingsDebug(ATUICommandManager& cmdMgr);
 void ATUIInitCommandMappingsCassette(ATUICommandManager& cmdMgr);
 void ATUIInitCommandMappingsOption(ATUICommandManager& cmdMgr);
@@ -1227,6 +1228,7 @@ void ATUIInitCommandMappings(ATUICommandManager& cmdMgr) {
 	ATUIInitCommandMappingsAudio(cmdMgr);
 	ATUIInitCommandMappingsInput(cmdMgr);
 	ATUIInitCommandMappingsView(cmdMgr);
+	ATUIInitCommandMappingsEdit(cmdMgr);
 	ATUIInitCommandMappingsDebug(cmdMgr);
 	ATUIInitCommandMappingsCassette(cmdMgr);
 	ATUIInitCommandMappingsOption(cmdMgr);

@@ -9,6 +9,7 @@
 
 #include "display_backend.h"
 #include "ui_main.h"
+#include "ui_autosuggest.h"
 #include "ui_debugger.h"
 #include "ui_textselection.h"
 #include "ui_menus_internal.h"
@@ -304,6 +305,22 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 			ATUITextSelectAll();
 		if (ImGui::MenuItem("Deselect", ATUIGetShortcutStringForCommand("Edit.Deselect"), false, hasSelection))
 			ATUITextDeselect();
+		ImGui::EndMenu();
+	}
+
+	// Auto-Suggest submenu (test10) — mirrors Windows menu_default.txt
+	// "Auto-Suggest" submenu under the Edit menu.  Show Suggestions is a
+	// one-shot trigger (Alt+,); Auto-Show Suggestions is a persisted
+	// toggle ("View: Auto-suggest enabled" registry key).
+	if (ImGui::BeginMenu("Auto-Suggest")) {
+		if (ImGui::MenuItem("Show Suggestions",
+				ATUIGetShortcutStringForCommand("Edit.ShowSuggestions")))
+			ATUIAutoSuggest::ShowSuggestionsOnce();
+
+		const bool enabled = ATUIAutoSuggest::IsAutoSuggestEnabled();
+		if (ImGui::MenuItem("Auto-Show Suggestions", nullptr, enabled))
+			ATUIAutoSuggest::SetAutoSuggestEnabled(!enabled);
+
 		ImGui::EndMenu();
 	}
 

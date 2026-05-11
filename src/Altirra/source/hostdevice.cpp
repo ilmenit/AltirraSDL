@@ -22,6 +22,7 @@
 #include <vd2/system/strutil.h>
 #include <at/atcore/cio.h>
 #include <at/atcore/devicecio.h>
+#include <at/atcore/deviceautosuggest.h>
 #include <at/atcore/deviceimpl.h>
 #include <at/atcore/propertyset.h>
 #include "hostdevice.h"
@@ -317,16 +318,22 @@ void ATHostDeviceChannel::Close() {
 		vdfastvector<uint8> tmp;
 		tmp.reserve(mData.size());
 
-		vdfastvector<uint8>::const_iterator it(mData.begin()), itEnd(mData.end());
-		for(; it != itEnd; ++it) {
-			uint8 c = *it;
+		if (VDTextOutputStream::GetDefaultLFOnly()) {
+			for(uint8 c : mData) {
+				if (c == 0x9B)
+					c = 0x0A;
 
-			if (c == 0x9B) {
-				tmp.push_back(0x0D);
-				c = 0x0A;
+				tmp.push_back(c);
 			}
+		} else {
+			for(uint8 c : mData) {
+				if (c == 0x9B) {
+					tmp.push_back(0x0D);
+					c = 0x0A;
+				}
 
-			tmp.push_back(c);
+				tmp.push_back(c);
+			}
 		}
 
 		if (mFile.seekNT(0)) {
@@ -442,6 +449,7 @@ class ATHostDeviceEmulator final
 			, public IATDeviceCIO
 			, public IATDeviceIndicators
 			, public IATDeviceNativePathMapping
+			, public IATDeviceAutoSuggest
 {
 	ATHostDeviceEmulator(const ATHostDeviceEmulator&) = delete;
 	ATHostDeviceEmulator& operator=(const ATHostDeviceEmulator&) = delete;
@@ -493,6 +501,9 @@ public:
 public:	// IATDeviceNativePathMapping
 	bool CanSupportPathMapping() const override;
 	bool MapNativePathToCIOPath(VDStringA& cioPath, const wchar_t *nativePath) const override;
+
+public:	// IATDeviceAutoSuggest
+	void AutoSuggestCIOPaths(char cioDevice, uint8 unit, const VDStringA& path, IATDeviceAutoSuggestSink& sink) override;
 
 protected:
 	sint32 HandleCmd_Note(int channel, uint8 aux[6]);
@@ -561,6 +572,8 @@ void *ATHostDeviceEmulator::AsInterface(uint32 id) {
 		return static_cast<IATDeviceIndicators *>(this);
 	else if (id == IATDeviceNativePathMapping::kTypeID)
 		return static_cast<IATDeviceNativePathMapping*>(this);
+	else if (id == IATDeviceAutoSuggest::kTypeID)
+		return static_cast<IATDeviceAutoSuggest*>(this);
 
 	return ATDevice::AsInterface(id);
 }
@@ -1157,6 +1170,44 @@ bool ATHostDeviceEmulator::MapNativePathToCIOPath(VDStringA& cioPath, const wcha
 	}
 
 	return false;
+}
+
+void ATHostDeviceEmulator::AutoSuggestCIOPaths(char cioDevice, uint8 unit, const VDStringA& path, IATDeviceAutoSuggestSink& sink) {
+	// validate CIO device name
+	if (cioDevice != 'H') {
+		if (!mbFakeDisk || cioDevice != 'D')
+			return;
+	}
+
+	const uint8 basefn[] {
+		(uint8)cioDevice,
+		(uint8)(0x30 + unit),
+		(uint8)':',
+		(uint8)'*',
+		(uint8)'.',
+		(uint8)'*',
+		(uint8)0x9B
+	};
+
+	ReadFilename(basefn, false, true);
+
+	VDDirectoryIterator it(mNativeSearchPath.c_str());
+
+	VDStringA translatedName;
+	VDStringW itemText;
+	const size_t prefixLen = path.size();
+
+	while(GetNextMatch(it, true, &translatedName)) {
+		if (translatedName.subspan(0, prefixLen).comparei(path) == 0) {
+			itemText.clear();
+			itemText += (wchar_t)cioDevice;
+			itemText += L'0' + unit;
+			itemText += L':';
+			itemText += VDTextAToW(translatedName);
+
+			sink.AddSuggestion(translatedName.c_str() + prefixLen, itemText.c_str(), it.GetName());
+		}
+	}
 }
 
 sint32 ATHostDeviceEmulator::HandleCmd_Note(int channel, uint8 aux[6]) {

@@ -3887,6 +3887,34 @@ bool ATUIDialogSysConfigErrorHandling::OnLoaded() {
 
 ///////////////////////////////////////////////////////////////////////////
 
+class ATUIDialogSysConfigIO final : public ATUIDialogSysConfigPage {
+public:
+	ATUIDialogSysConfigIO();
+
+	const char *GetPageTag() const override { return "io"; }
+
+private:
+	bool OnLoaded() override;
+};
+
+ATUIDialogSysConfigIO::ATUIDialogSysConfigIO()
+	: ATUIDialogSysConfigPage(IDD_CONFIGURE_IO)
+{
+}
+
+bool ATUIDialogSysConfigIO::OnLoaded() {
+	BindCheckbox(IDC_TEXTOUTPUTLF, "Options.ToggleTextOutputLFOnly");
+
+	AddHelpEntry(IDC_TEXTOUTPUTLF,
+		L"Write text files with LF-only line endings",
+		L"Write text files with LF instead of CR/LF as the line ending. This only affects text output; either LF or CR/LF is always accepted for text input."
+	);
+
+	return ATUIDialogSysConfigPage::OnLoaded();
+}
+
+///////////////////////////////////////////////////////////////////////////
+
 class ATUIDialogSysConfigSettings final : public ATUIDialogSysConfigPage {
 public:
 	ATUIDialogSysConfigSettings();
@@ -4190,6 +4218,7 @@ void ATUIDialogConfigureSystem::OnPopulatePages() {
 	AddPage(L"Ease of Use", vdmakeunique<ATUIDialogSysConfigEaseOfUse>());
 	AddPage(L"Error Handling", vdmakeunique<ATUIDialogSysConfigErrorHandling>());
 	AddPage(L"Input", vdmakeunique<ATUIDialogSysConfigInput>());
+	AddPage(L"I/O", vdmakeunique<ATUIDialogSysConfigIO>());
 	AddPage(L"Settings", vdmakeunique<ATUIDialogSysConfigSettings>());
 	AddPage(L"UI", vdmakeunique<ATUIDialogSysConfigUI>());
 	AddPage(L"Window Caption", vdmakeunique<ATUIDialogSysConfigCaption>());

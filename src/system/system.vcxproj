@@ -147,6 +147,7 @@
     <ClInclude Include="..\h\vd2\system\vdstdc.h" />
     <ClInclude Include="..\h\vd2\system\vdstl.h" />
     <ClInclude Include="..\h\vd2\system\vdstl_algorithm.h" />
+    <ClInclude Include="..\h\vd2\system\vdstl_any.h" />
     <ClInclude Include="..\h\vd2\system\vdstl_vectorview.h" />
     <ClInclude Include="..\h\vd2\system\vdstl_hash.h" />
     <ClInclude Include="..\h\vd2\system\vdstl_hashmap.h" />

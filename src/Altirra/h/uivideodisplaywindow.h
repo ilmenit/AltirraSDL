@@ -33,8 +33,10 @@ class ATSimulatorEventManager;
 class IATDeviceVideoOutput;
 class IATDeviceVideoManager;
 class IATVideoWriter;
+class IATAutoSuggestEngine;
 
 class ATUIDisplayTool;
+class ATUIAutoSuggestPopup;
 struct ATUIDisplayAccessibilityScreen;
 
 enum class ATTextCopyMode : uint8;
@@ -44,7 +46,8 @@ public:
 	enum {
 		kActionOpenOSK = kActionCustom,
 		kActionCloseOSK,
-		kActionOpenSidePanel
+		kActionOpenSidePanel,
+		kActionCloseAutoSuggest
 	};
 
 	ATUIVideoDisplayWindow();
@@ -70,6 +73,10 @@ public:
 
 	void OpenOSK();
 	void CloseOSK();
+
+	void SetAutoSuggestEnabled(bool enabled);
+	void ShowSuggestions();
+	void CloseAutoSuggest();
 
 	void OpenSidePanel();
 	void CloseSidePanel();
@@ -218,6 +225,16 @@ private:
 
 	int ReadText(uint8 *dst, uint8 *raw, int yc, int startChar, int numChars, bool& intl) const;
 
+	struct EditorLine {
+		uint8 mCursorCol = 0;
+		uint8 mCursorRow = 0;
+		vdfastvector<uint8> mText;
+
+		bool operator==(const EditorLine&) const = default;
+	};
+
+	void ReadEditorLine(EditorLine& line) const;
+
 	void ClearCoordinateIndicator();
 	void SetCoordinateIndicator(int x, int y);
 
@@ -227,6 +244,8 @@ private:
 	void HighlightDropTargetOverlay(int index);
 	void CreateDropTargetOverlays();
 	void DestroyDropTargetOverlays();
+
+	void UpdateAutoSuggest();
 
 	bool mbShiftDepressed = false;
 	bool mbShiftToggledPostKeyDown = false;
@@ -301,6 +320,12 @@ private:
 	vdvector<vdrefptr<ATUIDisplayTool>> mTools;
 	ATUIDisplayTool *mpActiveTool = nullptr;
 
+	vdrefptr<IATAutoSuggestEngine> mpAutoSuggestEngine;
+	vdrefptr<ATUIAutoSuggestPopup> mpAutoSuggestPopup;
+	bool mbAutoSuggestEnabled = false;
+	bool mbAutoSuggestAcceptMapped = false;
+	uint32 mShowSuggestionsCounter = 0;
+
 	vdfunction<void()> mpOnAllowContextMenu;
 	vdfunction<void(const vdpoint32&)> mpOnDisplayContextMenu;
 	vdfunction<void()> mpOnOSKChange;
@@ -309,6 +334,10 @@ private:
 
 	vdfunction<void(uint32)> mpOnAddedVideoOutput;
 	vdfunction<void(uint32)> mpOnRemovingVideoOutput;
+
+	EditorLine mSuggestScanText1;
+	EditorLine mSuggestScanText2;
+	EditorLine mSuggestScanText3;
 
 	IATVideoWriter *mpVideoWriter = nullptr;
 

@@ -71,7 +71,8 @@ struct ATUITriggerBinding {
 	unsigned	mAction : 12;
 	unsigned	mModVal : 3;
 	unsigned	mModMask : 3;
-	unsigned	: 2;
+	unsigned	mbForward : 1;
+	unsigned	: 1;
 	uint32	mTargetInstanceId;
 };
 
@@ -255,10 +256,13 @@ public:
 	vdpoint32 TranslateClientPtToScreenPt(vdpoint32 cpt);
 
 	void UnbindAction(uint32 vk, uint32 mod);
+	void UnforwardAction(uint32 action);
 	void UnbindAllActions();
 	void BindAction(const ATUITriggerBinding& binding);
 	void BindAction(uint32 vk, uint32 action, uint32 mod = 0, uint32 instanceid = 0);
+	void ForwardAction(uint32 srcAction, uint32 targetAction, uint32 instanceid);
 	const ATUITriggerBinding *FindAction(uint32 vk, uint32 extvk, uint32 mods) const;
+	const ATUITriggerBinding *FindForwardedAction(uint32 action) const;
 
 	ATUITimerHandle StartTimer(float initialDelay, float period, vdfunction<void()> fn);
 	void StopTimer(ATUITimerHandle h);

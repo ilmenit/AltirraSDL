@@ -93,9 +93,12 @@ LRESULT ATUIPaneWindowBase::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 		case WM_CREATE:
 			if (!OnCreate())
 				return -1;
+
+			ATUINotifyPaneInterfaces(AsPane(), false);
 			break;
 
 		case WM_DESTROY:
+			ATUINotifyPaneInterfaces(AsPane(), true);
 			OnDestroy();
 			break;
 

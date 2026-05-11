@@ -27,11 +27,13 @@
 #include <vd2/system/binary.h>
 #include <vd2/system/strutil.h>
 #include <vd2/system/vdstl.h>
+#include <vd2/system/vdstl_hashmap.h>
 #include <vd2/system/vecmath.h>
 #include <vd2/system/vectors.h>
 #include <vd2/system/w32assist.h>
 #include <vd2/system/math.h>
 #include <at/atcore/comsupport_win32.h>
+#include <at/atcore/notifylist.h>
 #include <at/atui/accessibility.h>
 #include <at/atui/constants.h>
 #include <at/atnativeui/accessibility_win32.h>
@@ -49,6 +51,16 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 extern ATContainerWindow *g_pMainWindow;
+
+namespace {
+	struct ATUIPaneInterfaceHandler {
+		uint64 mId = 0;
+		ATUIPaneInterfaceFn mFn;
+	};
+
+	vdhashmap<uint32, ATNotifyList<ATUIPaneInterfaceHandler>> g_ATUIPaneInterfaceHandlerMap;
+	uint64 g_ATUIPaneInterfaceTokenCounter = 0;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -4165,4 +4177,48 @@ uint32 ATUIGetActivePaneId() {
 	ATUIPane *pane = ATUIGetActivePane();
 
 	return pane ? pane->GetUIPaneId() : 0;
+}
+
+ATUIPaneInterfaceFnToken ATUIRegisterForPaneInterface(uint32 iid, ATUIPaneInterfaceFn fn) {
+	auto& ifHandlers = g_ATUIPaneInterfaceHandlerMap.insert_as(iid).first->second;
+	const auto id = ++g_ATUIPaneInterfaceTokenCounter;
+
+	ifHandlers.Emplace(
+		ATUIPaneInterfaceHandler {
+			id,
+			std::move(fn)
+		}
+	);
+
+	return id;
+}
+
+void ATUIUnregisterForPaneInterface(uint32 iid, ATUIPaneInterfaceFnToken id) {
+	auto it = g_ATUIPaneInterfaceHandlerMap.find(iid);
+	if (it == g_ATUIPaneInterfaceHandlerMap.end())
+		return;
+
+	auto& ifHandlers = it->second;
+
+	ifHandlers.RemoveIf(
+		[id](const ATUIPaneInterfaceHandler& e) {
+			return e.mId == id;
+		}
+	);
+}
+
+void ATUINotifyPaneInterfaces(ATUIPane& pane, bool removing) {
+	for (auto& [iid, handlers] : g_ATUIPaneInterfaceHandlerMap) {
+		if (handlers.IsEmpty())
+			continue;
+
+		void* iface = pane.AsInterface(iid);
+		if (iface) {
+			handlers.NotifyAll(
+				[removing, iface](const ATUIPaneInterfaceHandler& e) {
+					e.mFn(iface, removing);
+				}
+			);
+		}
+	}
 }

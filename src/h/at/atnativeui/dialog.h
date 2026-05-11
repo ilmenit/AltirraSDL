@@ -372,10 +372,12 @@ protected:
 	virtual void OnDataExchange(bool write);
 	virtual void OnPreLoaded();
 	virtual bool OnLoaded();
+	virtual void OnPostLoaded();
 	virtual bool OnOK();
 	virtual bool OnCancel();
 	virtual void OnSize();
 	virtual bool OnClose();
+	virtual void OnPreDestroy();
 	virtual void OnDestroy();
 	virtual void OnEnable(bool enable);
 	virtual bool OnTimer(uint32 id);

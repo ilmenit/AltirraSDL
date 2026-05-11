@@ -140,9 +140,10 @@ void Wiz_SeedDefaultPort1Map(ATInputManager &im,
 //
 // The four toggles ("Stereo POKEY", "Covox", "VBXE", "1088 KB RAM")
 // each map to a single helper.  The helpers are shared by the Desktop
-// and Gaming Mode renderers, and by the mobile first-run silent path
-// in mobile_about_wizard.cpp which applies them all at once via
-// Wiz_ApplyRecommendedAddons.
+// and Gaming Mode renderers, by the shortened mobile FirstRunWizard
+// in mobile_about_wizard.cpp, and by the WASM/Android startup-time
+// silent first-run apply in main_sdl3.cpp — all routes converge on
+// Wiz_ApplyHardwareAddons below.
 //
 // Each setter sets g_setupWiz.needsHardwareReset = true, since adding
 // or removing devices, banking RAM, or installing a second POKEY all
@@ -160,14 +161,34 @@ void Wiz_SetVBXE(ATSimulator &sim, bool enable);
 bool Wiz_HasCovox(ATSimulator &sim);
 void Wiz_SetCovox(ATSimulator &sim, bool enable);
 
-// Apply the four recommended add-ons in one call (Stereo POKEY, Covox,
-// VBXE, 1088 KB RAM) PLUS the Convenient experience preset (no
-// artifacting, SIO patches on, drive sounds off, SharpBilinear filter).
-// Used by the mobile first-run completion path so a brand-new install
-// boots into a sensible "modern demo / game compatible" config without
-// requiring the user to walk a 7-page wizard.  Skipped silently for
-// 5200 hardware (no XL/XE expansions apply).  Idempotent.
-void Wiz_ApplyConvenientWithRecommendedAddons(ATSimulator &sim);
+// Single-axis helpers — apply ONLY the emulation experience preset
+// (artifacting, SIO patches, drive sounds, accurate-disk timing,
+// display filter, sharpness).  Mirrors the wizard's Experience radio
+// at page 30.  Independent of hardware add-ons — composable with any
+// hardware configuration.  Skipped silently for 5200 hardware.
+//
+// `deferReset=true` skips the trailing LoadROMs()+ColdReset() so a
+// caller (e.g. main_sdl3.cpp's startup-time silent apply) can batch
+// the reset with its own one.  Default false matches the wizard's
+// in-app behaviour where each radio click expects an immediate reset.
+void Wiz_ApplyConvenientExperience(ATSimulator &sim, bool deferReset = false);
+void Wiz_ApplyAuthenticExperience (ATSimulator &sim, bool deferReset = false);
+
+// Single-axis helper — apply ONLY the four hardware add-ons (VBXE,
+// Covox, Stereo POKEY, 1088 KB RAM) as one batch.  Mirrors the
+// wizard's "Hardware add-ons" page 32.  Skipped silently for 5200
+// (none of the four apply there).
+//
+// enable=true:  add VBXE 1.26 + Covox $D600/4 ch + Stereo POKEY,
+//               set memory mode to 1088 K.
+// enable=false: actively REMOVE VBXE/Covox/Stereo POKEY if present
+//               (so a `?addons=off` URL param yields a predictable
+//               "stock" hardware config regardless of what the loaded
+//               profile shipped with).  Memory mode is LEFT ALONE so
+//               the user's --memsize / profile choice survives.
+//
+// Same `deferReset=true` semantics as the experience helpers.
+void Wiz_ApplyHardwareAddons(ATSimulator &sim, bool enable, bool deferReset = false);
 
 // Seed the wizard page 32 toggles when the user first lands on it.
 // If Convenient mode is currently active, enable any add-ons that are

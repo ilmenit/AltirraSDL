@@ -18,6 +18,7 @@
     <ClInclude Include="..\h\at\atdebugger\argparse.h" />
     <ClInclude Include="..\h\at\atdebugger\breakpointsimpl.h" />
     <ClInclude Include="..\h\at\atdebugger\debugdevice.h" />
+    <ClInclude Include="..\h\at\atdebugger\defsymbols.h" />
     <ClInclude Include="..\h\at\atdebugger\expression.h" />
     <ClInclude Include="..\h\at\atdebugger\historytree.h" />
     <ClInclude Include="..\h\at\atdebugger\historytreebuilder.h" />

@@ -77,6 +77,18 @@ void ATUIPaneDialogBase::OnPreLoaded() {
 	return VDDialogFrameW32::OnPreLoaded();
 }
 
+void ATUIPaneDialogBase::OnPostLoaded() {
+	VDDialogFrameW32::OnPostLoaded();
+
+	ATUINotifyPaneInterfaces(AsPane(), false);
+}
+
+void ATUIPaneDialogBase::OnPreDestroy() {
+	ATUINotifyPaneInterfaces(AsPane(), true);
+
+	VDDialogFrameW32::OnPreDestroy();
+}
+
 void ATUIPaneDialogBase::OnDestroy() {
 	AsPane().UnregisterUIPane();
 	return VDDialogFrameW32::OnDestroy();

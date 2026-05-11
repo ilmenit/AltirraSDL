@@ -31,9 +31,9 @@
 #endif
 
 #include <limits.h>
-#include <stdlib.h>  // malloc/free — NDK libc++ does not transitively include this
 #include <stdexcept>
 #include <initializer_list>
+#include <ranges>
 #include <memory>
 #include <string.h>
 #include <vd2/system/vdtypes.h>

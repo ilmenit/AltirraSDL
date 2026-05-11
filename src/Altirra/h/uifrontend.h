@@ -24,8 +24,6 @@ struct ATVideoRecordingSettings;
 
 class IATUIFrontEnd {
 public:
-	virtual void Shutdown() = 0;
-
 	virtual ATUIRecordingStatus GetRecordingStatus() const = 0;
 	virtual bool IsRecording() const = 0;
 
@@ -42,9 +40,15 @@ public:
 	virtual void TogglePauseResumeRecording() = 0;
 
 	virtual void CheckRecordingExceptions() = 0;
+
+	virtual void ShowSuggestions() = 0;
+	virtual bool IsAutoSuggestEnabled() = 0;
+	virtual void SetAutoSuggestEnabled(bool enabled) = 0;
 };
 
 IATDeviceSnapshot *ATUIGetFrontEndSnapshot();
 IATUIFrontEnd& ATUIGetFrontEnd();
+void ATUIInitFrontEnd();
+void ATUIShutdownFrontEnd();
 
 #endif

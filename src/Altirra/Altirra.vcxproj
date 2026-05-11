@@ -62,6 +62,7 @@
     <ClInclude Include="h\audiorawsource.h" />
     <ClInclude Include="h\asyncdownloader.h" />
     <ClInclude Include="h\autosavemanager.h" />
+    <ClInclude Include="h\autosuggest.h" />
     <ClInclude Include="h\bit3.h" />
     <ClInclude Include="h\blackboxfloppy.h" />
     <ClInclude Include="h\blockdevdiskadapter.h" />
@@ -174,6 +175,7 @@
     <ClCompile Include="source\audiostocksamples.cpp" />
     <ClCompile Include="source\audiowriter.cpp" />
     <ClCompile Include="source\autosavemanager.cpp" />
+    <ClCompile Include="source\autosuggest.cpp" />
     <ClCompile Include="source\aviwriter.cpp" />
     <ClCompile Include="source\asyncdownloader_win32.cpp" />
     <ClCompile Include="source\bit3.cpp" />
@@ -193,6 +195,7 @@
     <ClCompile Include="source\cmdcassette.cpp" />
     <ClCompile Include="source\cmdcpu.cpp" />
     <ClCompile Include="source\cmddebug.cpp" />
+    <ClCompile Include="source\cmdedit.cpp" />
     <ClCompile Include="source\cmdinput.cpp" />
     <ClCompile Include="source\cmdoptions.cpp" />
     <ClCompile Include="source\cmdrecord.cpp" />
@@ -363,6 +366,7 @@
     <ClCompile Include="source\uiaccessors.cpp" />
     <ClCompile Include="source\uiadvancedconfiguration.cpp" />
     <ClCompile Include="source\uiaudiooptions.cpp" />
+    <ClCompile Include="source\uiautosuggest.cpp" />
     <ClCompile Include="source\uicalibrationscreen.cpp" />
     <ClCompile Include="source\uicaptionupdater.cpp" />
     <ClCompile Include="source\uicartmapper.cpp" />
@@ -592,6 +596,7 @@
     <ClInclude Include="h\tracetape.h" />
     <ClInclude Include="h\tracevideo.h" />
     <ClInclude Include="h\uiaccessors.h" />
+    <ClInclude Include="h\uiautosuggest.h" />
     <ClInclude Include="h\uicalibrationscreen.h" />
     <ClInclude Include="h\uiclipboard.h" />
     <ClInclude Include="h\uicompat.h" />

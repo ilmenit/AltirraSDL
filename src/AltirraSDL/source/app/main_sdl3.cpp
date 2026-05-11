@@ -33,6 +33,10 @@ extern "C" bool ATWasmBrokerIsActive();
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL_main.h>
 #include <stdio.h>
+#include <cstring>
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#  include <strings.h>  // strcasecmp for the first-run silent-defaults pre-scan
+#endif
 #include <string>
 
 #include <vd2/system/vdtypes.h>
@@ -40,6 +44,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include <vd2/system/text.h>
 #include <vd2/system/registry.h>
 #include <vd2/system/error.h>
+#include <vd2/system/file.h>
 #include <exception>
 #include <at/atcore/media.h>
 #include <at/atio/image.h>
@@ -69,6 +74,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "ui_mode.h"
 #include "options.h"
 #include "ui_main.h"
+#include "ui_autosuggest.h"
 #include "ui_debugger.h"
 #include "debugger.h"   // IATDebugger + ATDebuggerSymbolLoadMode (used in the __EMSCRIPTEN__ startup block below)
 #include "ui_testmode.h"
@@ -526,6 +532,24 @@ static void HandleEvents() {
 
 					if (!handled && !ATUIWantCaptureKeyboard())
 						handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Display);
+				}
+
+				// Autosuggest popup (test10) consumes Up/Down/PgUp/PgDn/Esc
+				// while open, and Enter once an item has been selected by
+				// arrow navigation.  Must run AFTER the accel table (so
+				// the user's bound Alt+, hotkey still triggers the popup
+				// itself) but BEFORE forwarding to the emulator (so the
+				// keys don't double-fire as both popup navigation and
+				// Atari editor input).  Skip when ImGui owns the
+				// keyboard (e.g. the debugger console input field is
+				// focused) — Up/Down should navigate that history, not
+				// the popup.
+				if (!handled
+					&& !ATUIWantCaptureKeyboard()
+					&& ATUIAutoSuggest::IsPopupOpen()
+					&& ATUIAutoSuggest::HandleKeyDown(ev.key))
+				{
+					handled = true;
 				}
 
 				if (!handled && !ATUIWantCaptureKeyboard())
@@ -1087,9 +1111,38 @@ static SDL_FRect ComputeDisplayRect() {
 		const float fsw = (float)sw;
 		const float fsh = (float)sh;
 
-		float ratio = std::floor(std::min(w / fsw, h / fsh));
+		const float continuousRatio = std::min(w / fsw, h / fsh);
+		const float integerRatio    = std::floor(continuousRatio);
 
-		if (ratio < 1.0f || stretchMode == kATDisplayStretchMode_SquarePixels) {
+		// Integral mode wants pixel-perfect integer scaling, but
+		// snapping the continuous ratio down to the next integer can
+		// leave the display very small relative to the viewport — for
+		// PAL Normal overscan (~336x240) in a viewport tall enough
+		// for ~1.5x but not 2x, the integer ratio collapses to 1 and
+		// the user sees a tiny image with huge black borders.  Windows
+		// Altirra has the same code but the WASM build's iframe-style
+		// viewports (where the embedder controls the height) hit the
+		// "too small for 2x" zone constantly.
+		//
+		// Fall back to continuous (PAR-respecting) scaling when:
+		//   1. integer < 1 (source bigger than viewport — same as
+		//      before; integer scaling is meaningless),
+		//   2. SquarePixels was explicitly requested (continuous by
+		//      definition — same as before),
+		//   3. Integral mode AND integer scaling would discard >= 25 %
+		//      of one viewport dimension vs. the continuous fit.  The
+		//      threshold is the largest "snap waste" that still feels
+		//      pixel-clean; below it we keep integer scaling so a 2.05
+		//      continuous ratio still snaps to 2 (only 2.5 % waste).
+		const bool wasteTooMuch =
+			(stretchMode == kATDisplayStretchMode_Integral)
+			&& (integerRatio >= 1.0f)
+			&& (continuousRatio - integerRatio >= 0.25f * integerRatio);
+
+		if (integerRatio < 1.0f
+			|| stretchMode == kATDisplayStretchMode_SquarePixels
+			|| wasteTooMuch)
+		{
 			// Continuous scaling maintaining source aspect ratio.
 			if (w * fsh < h * fsw) {
 				// Width is the constraining axis.
@@ -1099,8 +1152,8 @@ static SDL_FRect ComputeDisplayRect() {
 				w = (fsw * h) / fsh;
 			}
 		} else {
-			w = fsw * ratio;
-			h = fsh * ratio;
+			w = fsw * integerRatio;
+			h = fsh * integerRatio;
 		}
 	}
 	// kATDisplayStretchMode_Unconstrained: w, h stay as viewport size.
@@ -2168,6 +2221,18 @@ int main(int argc, char *argv[]) {
 		}
 	);
 
+	// LF-only text output toggle (test10): when the user enables this option,
+	// every text file written via VDTextOutputStream (settings.ini, cheat
+	// files, trace exports, H: writes, parallel-printer text output) emits
+	// '\n' instead of '\r\n'.  The simulator state is unaffected; this is
+	// purely host-side I/O so it is netplay-safe.
+	ATOptionsAddUpdateCallback(true,
+		[](ATOptions& opts, const ATOptions *prevOpts, void *) {
+			if (!prevOpts || opts.mbTextOutputLFOnly != prevOpts->mbTextOutputLFOnly)
+				VDTextOutputStream::SetDefaultLFOnly(opts.mbTextOutputLFOnly);
+		}
+	);
+
 	// Re-apply fullscreen mode if settings change while already in fullscreen.
 	// In the ImGui build the settings dialog is non-modal, so the user can
 	// change fullscreen options while the emulator is fullscreen.
@@ -2272,6 +2337,126 @@ int main(int argc, char *argv[]) {
 	// Save options after initial load (matches Windows main.cpp:4002).
 	ATOptionsSave();
 
+	// =========================================================================
+	// First-run silent defaults (WASM deep-link + Mobile Android)
+	// =========================================================================
+	//
+	// Two surfaces never see a wizard but still benefit from sensible
+	// defaults:
+	//
+	//   1. WASM deep-link / embed visitors — `Wiz_Open` is gated by
+	//      !cmdLineHadAnything (the deeplink JS pushes --hardware /
+	//      --run / --memsize / etc., so cmdLineHadAnything=true and the
+	//      wizard is suppressed).  Without this block, every Lobby
+	//      Play Solo / Play Together / third-party embed visitor lands
+	//      on a stock 800 XL with no VBXE/Covox/Stereo POKEY/1088 K
+	//      RAM — most modern Atari demos can't render correctly there.
+	//
+	//   2. Mobile Android first run — `Wiz_Open` is wrapped in
+	//      `#ifndef __ANDROID__` so it's never called on Android.  The
+	//      mobile FirstRunWizard's silent applyDefaults() in
+	//      mobile_about_wizard.cpp was meant to cover this, but that
+	//      lambda is dead code: ui_mobile.cpp:649 short-circuits
+	//      because main's first-run gate below sets ShownSetupWizard=1
+	//      before the first frame renders.
+	//
+	// Both surfaces resolve here.  We pre-scan argv for `--experience`
+	// and `--addons` (defaults: convenient + on; matches what the
+	// wizard's Convenient + add-ons path produces) and apply the two
+	// orthogonal presets BEFORE ATProcessCommandLineSDL3 — so any
+	// explicit CLI overrides (--memsize 128K, --hardware 130xe,
+	// --stereo, etc.) win over the silent defaults.
+	//
+	// `deferReset=true` skips the helpers' trailing LoadROMs+ColdReset
+	// because main's existing ColdReset+Resume below covers it in one
+	// shot (and a duplicate ColdReset would risk wiping the --run
+	// payload that ATProcessCommandLineSDL3 is about to load).
+	//
+	// Subsequent visits (registry has data → registryHadAnything=true)
+	// skip this block — the persisted config wins.
+	//
+	// `?experience=convenient|authentic` and `?addons=on|off|0|1|...`
+	// are documented in HOSTING.md and src/AltirraSDL/cmake/embed_kit/EMBED.md.
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+	{
+		extern void Wiz_ApplyConvenientExperience(ATSimulator&, bool);
+		extern void Wiz_ApplyAuthenticExperience (ATSimulator&, bool);
+		extern void Wiz_ApplyHardwareAddons(ATSimulator&, bool, bool);
+
+		const char *expChoice    = "convenient";
+		const char *addonsChoice = "on";
+		for (int i = 1; i + 1 < argc; ++i) {
+			if (argv[i] && argv[i+1]) {
+				if (std::strcmp(argv[i], "--experience") == 0)
+					expChoice = argv[i + 1];
+				else if (std::strcmp(argv[i], "--addons") == 0)
+					addonsChoice = argv[i + 1];
+			}
+		}
+
+		auto isFalsy = [](const char *v) {
+			return v && (
+				strcasecmp(v, "off")      == 0 ||
+				strcasecmp(v, "0")        == 0 ||
+				strcasecmp(v, "false")    == 0 ||
+				strcasecmp(v, "disabled") == 0 ||
+				strcasecmp(v, "no")       == 0);
+		};
+		const bool addonsOn = !isFalsy(addonsChoice);
+		const bool authentic = (strcasecmp(expChoice, "authentic") == 0);
+
+		// `wizard-will-fire` mirrors the gate in the existing first-run
+		// branch further below — only the bare-URL Desktop path opens
+		// a wizard.  Android skips Wiz_Open via the #ifndef there.
+		const bool cmdLineHadAnything = (argc > 1);
+#  if defined(__EMSCRIPTEN__)
+		const bool brokerActive = ATWasmBrokerIsActive();
+		const bool wizardWillFire = !cmdLineHadAnything && !brokerActive;
+#  else  // __ANDROID__
+		const bool brokerActive = false;
+		const bool wizardWillFire = false;
+#  endif
+
+		if (!registryHadAnything && !brokerActive && !wizardWillFire) {
+			if (authentic)
+				Wiz_ApplyAuthenticExperience(g_sim, /*deferReset=*/true);
+			else
+				Wiz_ApplyConvenientExperience(g_sim, /*deferReset=*/true);
+			Wiz_ApplyHardwareAddons(g_sim, addonsOn, /*deferReset=*/true);
+
+			// Mark the mobile FirstRunWizard "done" too — without this,
+			// a Gaming-Mode user who deep-linked to the page would see
+			// the shortened FirstRunWizard pop up on the very first
+			// frame (covering the running game), even though the
+			// silent-apply already gave them sensible defaults.  The
+			// shortened wizard's two action buttons mark the same
+			// flag, so this just signals "first-run handled" without
+			// requiring a UI step.
+			extern void SetFirstRunComplete();
+			SetFirstRunComplete();
+
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+				"Altirra: first-run silent defaults applied "
+				"(experience=%s, addons=%s)",
+				authentic ? "authentic" : "convenient",
+				addonsOn ? "on" : "off");
+		} else if (registryHadAnything) {
+			// Returning user — they have persisted settings from a
+			// previous run.  Even if Mobile/FirstRunComplete was never
+			// written (because they only used Desktop Mode previously),
+			// they're NOT a first-run visitor.  Without this, switching
+			// to Gaming Mode for the first time would fire the
+			// shortened FirstRunWizard and a single tap on its action
+			// buttons would silently overwrite their existing
+			// VBXE/Covox/Stereo POKEY/Memory/Artifact/SIO/Filter
+			// settings with the convenient+on defaults — destroying
+			// the configuration they spent time on.
+			extern void SetFirstRunComplete();
+			SetFirstRunComplete();
+		}
+	}
+#endif
+
 	// Full command-line processing matching Windows uicommandline.cpp.
 	// Handles all switches (--debug, --debugcmd, --hardware, --ntsc, etc.),
 	// media loading (--cart, --disk, --run, positional args), startup.atdbg,
@@ -2360,15 +2545,36 @@ int main(int argc, char *argv[]) {
 			if (!cmdLineHadAnything && !registryHadAnything
 			    && !brokerActive) {
 #ifndef __ANDROID__
-				// On desktop, show the setup wizard for first-time
-				// configuration.  On Android, the mobile first-run
-				// flow handles this instead.
+				// Bare-URL first-run wizard.  Gated by UI mode:
 				//
-				// Wiz_Open also seeds the Gaming Mode currentScreen so
-				// that if the user has Gaming Mode set as the active UI
-				// mode, the wizard renders with the touch chrome.
-				extern void Wiz_Open(ATUIState &);
-				Wiz_Open(g_uiState);
+				//   Desktop Mode → Wiz_Open opens the multi-page
+				//                  Desktop wizard (Welcome → Interface
+				//                  → Game Library → Appearance →
+				//                  Firmware → System → Experience →
+				//                  Hardware add-ons → Joystick → Done).
+				//
+				//   Gaming Mode  → Wiz_Open is SKIPPED.  Instead,
+				//                  ui_mobile.cpp's first-run gate (the
+				//                  branch around line 645 that checks
+				//                  !IsFirstRunComplete()) sets
+				//                  currentScreen=FirstRunWizard, and
+				//                  RenderFirstRunWizard in
+				//                  mobile_about_wizard.cpp draws the
+				//                  shortened single-screen wizard
+				//                  (Experience radio + Add-ons toggle +
+				//                  Select-Firmware-Folder / Skip /
+				//                  More-options links).  The shortened
+				//                  wizard's "More options..." link
+				//                  calls Wiz_Open itself for users who
+				//                  want the full multi-page flow.
+				//
+				// Without this UI-mode gate, every Gaming-Mode bare-URL
+				// visitor would land on the 11-page mobile wizard
+				// instead of the shortened one.
+				if (!ATUIIsGamingMode()) {
+					extern void Wiz_Open(ATUIState &);
+					Wiz_Open(g_uiState);
+				}
 #endif
 			}
 		}

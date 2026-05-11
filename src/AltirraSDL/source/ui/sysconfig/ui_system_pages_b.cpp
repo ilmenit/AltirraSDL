@@ -729,6 +729,30 @@ void RenderErrorHandlingCategory(ATSimulator &) {
 }
 
 // =========================================================================
+// I/O (matches Windows IDD_CONFIGURE_IO from test10)
+// =========================================================================
+
+void RenderIOCategory(ATSimulator &) {
+	extern ATOptions g_ATOptions;
+
+	ImGui::SeparatorText("Text file I/O");
+
+	bool lfOnly = g_ATOptions.mbTextOutputLFOnly;
+	if (ImGui::Checkbox("Write text files with LF-only line endings", &lfOnly)) {
+		ATOptions prev(g_ATOptions);
+		g_ATOptions.mbTextOutputLFOnly = lfOnly;
+		if (g_ATOptions != prev) {
+			g_ATOptions.mbDirty = true;
+			ATOptionsRunUpdateCallbacks(&prev);
+			ATOptionsSave();
+		}
+	}
+	ImGui::SetItemTooltip("Write text files with LF instead of CR/LF as the line ending. "
+		"This only affects text output; either LF or CR/LF is always accepted for "
+		"text input.");
+}
+
+// =========================================================================
 // Flash (matches Windows IDD_CONFIGURE_FLASH)
 // =========================================================================
 

@@ -638,18 +638,35 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 		ATTouchLayout_Update(mobileState.layout, w, h, mobileState.layoutConfig, insets);
 	}
 
-	// First run: show welcome wizard on top of everything until the user
-	// picks ROMs or skips.  The wizard sets the flag itself.
-	// On desktop, the setup wizard may have already run (checking
-	// "ShownSetupWizard") — skip the mobile first-run in that case.
+	// First run: show the shortened FirstRunWizard for Gaming-Mode
+	// visitors who haven't completed it yet.  Two key gates:
+	//
+	//   1. We're in Gaming Mode and on the gameplay screen (None) —
+	//      the wizard takes the whole canvas, so it must not race
+	//      with another full-screen mobile screen (file browser,
+	//      settings, etc.).
+	//   2. !IsFirstRunComplete() — registry "Mobile/FirstRunComplete".
+	//
+	// We INTENTIONALLY no longer short-circuit on the Desktop wizard's
+	// "ShownSetupWizard" flag: that flag is set unconditionally by
+	// main_sdl3.cpp on the very first run (line ~2372) before the loop
+	// starts, so checking it here would cause this branch to fire on
+	// every fresh install except the first frame — i.e. NEVER show the
+	// shortened wizard for any Gaming-Mode user.  The two flags now
+	// track independent first-run UXes:
+	//   ShownSetupWizard          → Desktop multi-page Wiz_Open path
+	//   Mobile/FirstRunComplete   → Gaming-Mode shortened FirstRunWizard
+	//
+	// Deep-link / Android visitors don't need the wizard at all — the
+	// silent first-run apply in main_sdl3.cpp covers their defaults
+	// before any frame renders, AND those visitors mark
+	// FirstRunComplete via the silent-apply path so this branch
+	// stays dormant.  See main_sdl3.cpp's first-run silent-defaults
+	// block.
 	if (mobileState.currentScreen == ATMobileUIScreen::None
 		&& !IsFirstRunComplete())
 	{
-		VDRegistryAppKey appKey;
-		if (appKey.getBool("ShownSetupWizard", false))
-			SetFirstRunComplete();
-		else
-			mobileState.currentScreen = ATMobileUIScreen::FirstRunWizard;
+		mobileState.currentScreen = ATMobileUIScreen::FirstRunWizard;
 	}
 
 	// Check for menu button tap

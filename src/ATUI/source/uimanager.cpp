@@ -127,7 +127,10 @@ ATUIWidget *ATUIManager::GetWindowByInstance(uint32 id) const {
 }
 
 void ATUIManager::BeginAction(ATUIWidget *w, const ATUITriggerBinding& binding) {
+	VDASSERT(!binding.mbForward);
+
 	ATUIWidget *target = w;
+	const ATUITriggerBinding *binding2 = &binding;
 
 	if (binding.mTargetInstanceId) {
 		target = GetWindowByInstance(binding.mTargetInstanceId);
@@ -135,6 +138,16 @@ void ATUIManager::BeginAction(ATUIWidget *w, const ATUITriggerBinding& binding) 
 			return;
 	}
 
+	while(const ATUITriggerBinding *bindingFwd = target->FindForwardedAction(binding2->mAction)) {
+		target = GetWindowByInstance(bindingFwd->mTargetInstanceId);
+		if (!target)
+			return;
+
+		binding2 = bindingFwd;
+	}
+
+	// tag the active action by the original vk, regardless of where it got
+	// forwarded
 	ActiveActionMap::insert_return_type r = mActiveActionMap.insert(binding.mVk);
 	if (!r.second)
 		return;
@@ -142,7 +155,7 @@ void ATUIManager::BeginAction(ATUIWidget *w, const ATUITriggerBinding& binding) 
 	ActiveAction *action = new ActiveAction;
 	action->mpParent = this;
 	action->mTargetInstance = target->GetInstanceId();
-	action->mActionId = binding.mAction;
+	action->mActionId = binding2->mAction;
 
 	r.first->second = action;
 
@@ -151,7 +164,7 @@ void ATUIManager::BeginAction(ATUIWidget *w, const ATUITriggerBinding& binding) 
 	action->mRepeatDelay = 100;
 	action->mRepeatTimer.SetOneShot(action, 400);
 
-	target->OnActionStart(binding.mAction);
+	target->OnActionStart(binding2->mAction);
 	UnlockDestroy();
 }
 

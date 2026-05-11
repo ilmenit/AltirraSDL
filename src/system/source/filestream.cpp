@@ -574,6 +574,16 @@ VDTextInputFile::~VDTextInputFile() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+bool VDTextOutputStream::sbUseLFOnly = false;
+
+bool VDTextOutputStream::GetDefaultLFOnly() {
+	return sbUseLFOnly;
+}
+
+void VDTextOutputStream::SetDefaultLFOnly(bool enabled) {
+	sbUseLFOnly = enabled;
+}
+
 VDTextOutputStream::VDTextOutputStream(IVDStream *stream)
 	: mpDst(stream)
 	, mLevel(0)
@@ -608,7 +618,10 @@ void VDTextOutputStream::Write(const char *s, int len) {
 }
 
 void VDTextOutputStream::PutLine() {
-	PutData("\r\n", 2);
+	if (sbUseLFOnly)
+		PutData("\n", 1);
+	else
+		PutData("\r\n", 2);
 }
 
 void VDTextOutputStream::PutLine(const char *s) {
@@ -617,7 +630,7 @@ void VDTextOutputStream::PutLine(const char *s) {
 
 void VDTextOutputStream::PutLine(const char *s, int len) {
 	PutData(s, len);
-	PutData("\r\n", 2);
+	PutLine();
 }
 
 void VDTextOutputStream::Format(const char *format, ...) {
@@ -671,7 +684,7 @@ void VDTextOutputStream::FormatLine(const char *format, ...) {
 	else
 		Format2(format, val);
 
-	PutData("\r\n", 2);
+	PutLine();
 	va_end(val);
 }
 

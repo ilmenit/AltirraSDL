@@ -33,6 +33,8 @@ protected:
 
 	VDZINT_PTR DlgProc(VDZUINT msg, VDZWPARAM wParam, VDZLPARAM lParam) override;
 	void OnPreLoaded() override;
+	void OnPostLoaded() override;
+	void OnPreDestroy() override;
 	void OnDestroy() override;
 	void PostNCDestroy() override;
 

@@ -35,6 +35,7 @@
 #include <at/atcore/serializable.h>
 
 #include "ui_main.h"
+#include "ui_autosuggest.h"
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_overlay.h"
 #include "ui/emotes/emote_picker.h"
@@ -1582,6 +1583,14 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 		ATUIRenderMainMenu(sim, window, backend, state);
 	}
 	RenderStatusOverlay(sim);
+
+	// Autosuggest popup (test10).  Update reads the BASIC editor line via
+	// DebugReadByte and runs the regex/symbol engine; Render draws the
+	// ImGui overlay near the cursor when there are suggestions.  Both
+	// are no-ops in gaming mode and on netplay guests (the engine is
+	// read-only with respect to simulator state).
+	ATUIAutoSuggest::Update();
+	ATUIAutoSuggest::Render();
 
 #if defined(__EMSCRIPTEN__)
 	// Broker-mode "Starting…" overlay (M3).  When the page broker has

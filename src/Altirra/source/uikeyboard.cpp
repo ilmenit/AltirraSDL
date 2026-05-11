@@ -957,6 +957,7 @@ namespace {
 		{ "Edit.CopyFrame", 0, { 'M', ALT+SHIFT } },
 		{ "Edit.SelectAll", 0, { 'A', ALT+SHIFT } },
 		{ "Edit.Deselect", 0, { 'D', ALT+SHIFT } },
+		{ "Edit.ShowSuggestions", 0, { VK_OEM_COMMA, ALT } },
 	};
 
 	const VDAccelTableEntry kATDefaultAccelTableGlobal[]={

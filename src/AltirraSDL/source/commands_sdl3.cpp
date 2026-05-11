@@ -23,6 +23,7 @@
 #include "uirender.h"
 #include "devicemanager.h"
 #include "ui_main.h"
+#include "ui_autosuggest.h"
 #include "ui_debugger.h"
 #include "ui_textselection.h"
 #include "uiclipboard.h"
@@ -214,6 +215,20 @@ static void CmdSelectAll() {
 
 static void CmdDeselect() {
 	ATUITextDeselect();
+}
+
+static void CmdShowSuggestions() {
+	ATUIAutoSuggest::ShowSuggestionsOnce();
+}
+
+static void CmdToggleAutoShowSuggestions() {
+	ATUIAutoSuggest::SetAutoSuggestEnabled(!ATUIAutoSuggest::IsAutoSuggestEnabled());
+}
+
+static ATUICmdState TestAutoShowSuggestionsChecked() {
+	return ATUIAutoSuggest::IsAutoSuggestEnabled()
+		? kATUICmdState_Checked
+		: kATUICmdState_None;
 }
 
 // =========================================================================
@@ -815,6 +830,8 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "Edit.CopyFrame",                CmdCopyFrame,            nullptr, nullptr, nullptr },
 	{ "Edit.SelectAll",                CmdSelectAll,            nullptr, nullptr, nullptr },
 	{ "Edit.Deselect",                 CmdDeselect,             nullptr, nullptr, nullptr },
+	{ "Edit.ShowSuggestions",          CmdShowSuggestions,            nullptr, nullptr, nullptr },
+	{ "Edit.ToggleAutoShowSuggestions", CmdToggleAutoShowSuggestions, nullptr, TestAutoShowSuggestionsChecked, nullptr },
 
 	// Global context
 	{ "File.BootImage",                CmdBootImage,            nullptr, nullptr, nullptr },

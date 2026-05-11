@@ -566,6 +566,35 @@ void ATRegisterUIPaneClass(uint32 id, ATPaneClassCreator creator);
 
 void ATActivateUIPane(uint32 id, bool giveFocus, bool visible = true, uint32 relid = 0, int reldock = 0);
 
+///////////////////////////////////////////////////////////////////////////
+
+using ATUIPaneInterfaceFn = vdfunction<void(void* iface, bool removing)>;
+
+template<typename T>
+using ATUIPaneInterfaceFnT = vdfunction<void(T& iface, bool removing)>;
+
+using ATUIPaneInterfaceFnToken = uint64;
+
+template<typename T>
+ATUIPaneInterfaceFnToken ATUIRegisterForPaneInterface(ATUIPaneInterfaceFnT<T> fn) {
+	return ATUIRegisterForPaneInterface(
+		T::kTypeID,
+		[fn = std::move(fn)](void* iface, bool removing) {
+			fn(*(T *)iface, removing);
+		}
+	);
+}
+
+template<typename T>
+void ATUIUnregisterForPaneInterface(ATUIPaneInterfaceFnToken token) {
+	ATUIUnregisterForPaneInterface(T::kTypeID, token);
+}
+
+ATUIPaneInterfaceFnToken ATUIRegisterForPaneInterface(uint32 iid, ATUIPaneInterfaceFn fn);
+void ATUIUnregisterForPaneInterface(uint32 iid, ATUIPaneInterfaceFnToken token);
+
+void ATUINotifyPaneInterfaces(ATUIPane& pane, bool removing);
+
 uint32 ATUIGetGlobalDpiW32();
 uint32 ATUIGetWindowDpiW32(HWND hwnd);
 uint32 ATUIGetMonitorDpiW32(HMONITOR hMonitor);

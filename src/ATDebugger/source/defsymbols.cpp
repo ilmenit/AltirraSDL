@@ -15,246 +15,271 @@
 //	with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdafx.h>
+#include <vd2/system/constexpr.h>
 #include <at/atcore/ksyms.h>
 #include <at/atdebugger/symbols.h>
 #include <at/atdebugger/internal/symstore.h>
+
+template<size_t N>
+consteval VDCxArray<ATDefaultSymbolInfo, N> ATPreSortDefaultSymbolArray(const ATDefaultSymbolInfo (&src)[N]) {
+	VDCxArray<ATDefaultSymbolInfo, N> dst {};
+
+	for(size_t i = 0; i < N; ++i) {
+		dst.v[i] = src[i];
+	}
+
+	std::sort(
+		dst.begin(),
+		dst.end(),
+		[](const ATDefaultSymbolInfo& x, const ATDefaultSymbolInfo& y) {
+			return x.mAddress < y.mAddress;
+		}
+	);
+
+	return dst;
+};
+
+static constexpr auto kATDefaultSymbolsForOSVariables = [] {
+	static constexpr ATDefaultSymbolInfo kVariableSymbols[] = {
+		{ ATKernelSymbols::CASINI, 2, "CASINI" },
+		{ ATKernelSymbols::RAMLO , 2, "RAMLO"  },
+		{ ATKernelSymbols::TRAMSZ, 1, "TRAMSZ" },
+		{ ATKernelSymbols::WARMST, 1, "WARMST" },
+		{ ATKernelSymbols::DOSVEC, 2, "DOSVEC" },
+		{ ATKernelSymbols::DOSINI, 2, "DOSINI" },
+		{ ATKernelSymbols::APPMHI, 2, "APPMHI" },
+		{ ATKernelSymbols::POKMSK, 1, "POKMSK" },
+		{ ATKernelSymbols::BRKKEY, 1, "BRKKEY" },
+		{ ATKernelSymbols::RTCLOK, 3, "RTCLOK" },
+		{ ATKernelSymbols::BUFADR, 2, "BUFADR" },
+		{ ATKernelSymbols::ICHIDZ, 1, "ICHIDZ" },
+		{ ATKernelSymbols::ICDNOZ, 1, "ICDNOZ" },
+		{ ATKernelSymbols::ICCOMZ, 1, "ICCOMZ" },
+		{ ATKernelSymbols::ICSTAZ, 1, "ICSTAZ" },
+		{ ATKernelSymbols::ICBALZ, 1, "ICBALZ" },
+		{ ATKernelSymbols::ICBAHZ, 1, "ICBAHZ" },
+		{ ATKernelSymbols::ICBLLZ, 1, "ICBLLZ" },
+		{ ATKernelSymbols::ICBLHZ, 1, "ICBLHZ" },
+		{ ATKernelSymbols::ICAX1Z, 1, "ICAX1Z" },
+		{ ATKernelSymbols::ICAX2Z, 1, "ICAX2Z" },
+		{ ATKernelSymbols::ICAX3Z, 1, "ICAX3Z" },
+		{ ATKernelSymbols::ICAX4Z, 1, "ICAX4Z" },
+		{ ATKernelSymbols::ICAX5Z, 1, "ICAX5Z" },
+		{ ATKernelSymbols::CIOCHR, 1, "CIOCHR" },
+		{ ATKernelSymbols::STATUS, 1, "STATUS" },
+		{ ATKernelSymbols::CHKSUM, 1, "CHKSUM" },
+		{ ATKernelSymbols::BUFRLO, 1, "BUFRLO" },
+		{ ATKernelSymbols::BUFRHI, 1, "BUFRHI" },
+		{ ATKernelSymbols::BFENLO, 1, "BFENLO" },
+		{ ATKernelSymbols::BFENHI, 1, "BFENHI" },
+		{ ATKernelSymbols::BUFRFL, 1, "BUFRFL" },
+		{ ATKernelSymbols::RECVDN, 1, "RECVDN" },
+		{ ATKernelSymbols::XMTDON, 1, "XMTDON" },
+		{ ATKernelSymbols::CHKSNT, 1, "CHKSNT" },
+		{ ATKernelSymbols::SOUNDR, 1, "SOUNDR" },
+		{ ATKernelSymbols::CRITIC, 1, "CRITIC" },
+		{ ATKernelSymbols::CKEY  , 1, "CKEY"   },
+		{ ATKernelSymbols::CASSBT, 1, "CASSBT" },
+		{ ATKernelSymbols::ATRACT, 1, "ATRACT" },
+		{ ATKernelSymbols::DRKMSK, 1, "DRKMSK" },
+		{ ATKernelSymbols::COLRSH, 1, "COLRSH" },
+		{ ATKernelSymbols::HOLD1 , 1, "HOLD1"  },
+		{ ATKernelSymbols::LMARGN, 1, "LMARGN" },
+		{ ATKernelSymbols::RMARGN, 1, "RMARGN" },
+		{ ATKernelSymbols::ROWCRS, 1, "ROWCRS" },
+		{ ATKernelSymbols::COLCRS, 2, "COLCRS" },
+		{ ATKernelSymbols::OLDROW, 1, "OLDROW" },
+		{ ATKernelSymbols::OLDCOL, 2, "OLDCOL" },
+		{ ATKernelSymbols::OLDCHR, 1, "OLDCHR" },
+		{ ATKernelSymbols::DINDEX, 1, "DINDEX" },
+		{ ATKernelSymbols::SAVMSC, 2, "SAVMSC" },
+		{ ATKernelSymbols::OLDADR, 2, "OLDADR" },
+		{ ATKernelSymbols::PALNTS, 1, "PALNTS" },
+		{ ATKernelSymbols::LOGCOL, 1, "LOGCOL" },
+		{ ATKernelSymbols::ADRESS, 2, "ADRESS" },
+		{ ATKernelSymbols::TOADR , 2, "TOADR"  },
+		{ ATKernelSymbols::RAMTOP, 1, "RAMTOP" },
+		{ ATKernelSymbols::BUFCNT, 1, "BUFCNT" },
+		{ ATKernelSymbols::BUFSTR, 2, "BUFSTR" },
+		{ ATKernelSymbols::BITMSK, 1, "BITMSK" },
+		{ ATKernelSymbols::DELTAR, 1, "DELTAR" },
+		{ ATKernelSymbols::DELTAC, 2, "DELTAC" },
+		{ ATKernelSymbols::ROWINC, 1, "ROWINC" },
+		{ ATKernelSymbols::COLINC, 1, "COLINC" },
+		{ ATKernelSymbols::KEYDEF, 2, "KEYDEF" },	// XL/XE
+		{ ATKernelSymbols::SWPFLG, 1, "SWPFLG" },
+		{ ATKernelSymbols::COUNTR, 2, "COUNTR" },
+
+		{ ATKernelSymbols::FR0   , 6, "FR0"    },
+		{ ATKernelSymbols::FR1   , 6, "FR1"    },
+		{ ATKernelSymbols::CIX   , 1, "CIX"    },
+
+		{ ATKernelSymbols::INBUFF, 1, "INBUFF" },
+		{ ATKernelSymbols::FLPTR , 1, "FLPTR"  },
+
+		{ ATKernelSymbols::VDSLST, 2, "VDSLST" },
+		{ ATKernelSymbols::VPRCED, 2, "VPRCED" },
+		{ ATKernelSymbols::VINTER, 2, "VINTER" },
+		{ ATKernelSymbols::VBREAK, 2, "VBREAK" },
+		{ ATKernelSymbols::VKEYBD, 2, "VKEYBD" },
+		{ ATKernelSymbols::VSERIN, 2, "VSERIN" },
+		{ ATKernelSymbols::VSEROR, 2, "VSEROR" },
+		{ ATKernelSymbols::VSEROC, 2, "VSEROC" },
+		{ ATKernelSymbols::VTIMR1, 2, "VTIMR1" },
+		{ ATKernelSymbols::VTIMR2, 2, "VTIMR2" },
+		{ ATKernelSymbols::VTIMR4, 2, "VTIMR4" },
+		{ ATKernelSymbols::VIMIRQ, 2, "VIMIRQ" },
+		{ ATKernelSymbols::CDTMV1, 2, "CDTMV1" },
+		{ ATKernelSymbols::CDTMV2, 2, "CDTMV2" },
+		{ ATKernelSymbols::CDTMV3, 2, "CDTMV3" },
+		{ ATKernelSymbols::CDTMV4, 2, "CDTMV4" },
+		{ ATKernelSymbols::CDTMV5, 2, "CDTMV5" },
+		{ ATKernelSymbols::VVBLKI, 2, "VVBLKI" },
+		{ ATKernelSymbols::VVBLKD, 2, "VVBLKD" },
+		{ ATKernelSymbols::CDTMA1, 2, "CDTMA1" },
+		{ ATKernelSymbols::CDTMA2, 2, "CDTMA2" },
+		{ ATKernelSymbols::CDTMF3, 1, "CDTMF3" },
+		{ ATKernelSymbols::CDTMF4, 1, "CDTMF4" },
+		{ ATKernelSymbols::CDTMF5, 1, "CDTMF5" },
+		{ ATKernelSymbols::SDMCTL, 1, "SDMCTL" },
+		{ ATKernelSymbols::SDLSTL, 1, "SDLSTL" },
+		{ ATKernelSymbols::SDLSTH, 1, "SDLSTH" },
+		{ ATKernelSymbols::SSKCTL, 1, "SSKCTL" },
+		{ ATKernelSymbols::LPENH , 1, "LPENH"  },
+		{ ATKernelSymbols::LPENV , 1, "LPENV"  },
+		{ ATKernelSymbols::BRKKY , 2, "BRKKY"  },
+		{ ATKernelSymbols::VPIRQ , 2, "VPIRQ"  },	// XL/XE
+		{ ATKernelSymbols::DFLAGS, 1, "DFLAGS" },
+		{ ATKernelSymbols::DBSECT, 1, "DBSECT" },
+		{ ATKernelSymbols::BOOTAD, 2, "BOOTAD" },
+		{ ATKernelSymbols::COLDST, 1, "COLDST" },
+		{ ATKernelSymbols::DSKTIM, 1, "DSKTIM" },
+		{ ATKernelSymbols::PDVMSK, 1, "PDVMSK" },
+		{ ATKernelSymbols::SHPDVS, 1, "SHPDVS" },
+		{ ATKernelSymbols::PDMSK , 1, "PDMSK"  },	// XL/XE
+		{ ATKernelSymbols::CHSALT, 1, "CHSALT" },	// XL/XE
+		{ ATKernelSymbols::GPRIOR, 1, "GPRIOR" },
+		{ ATKernelSymbols::PADDL0, 1, "PADDL0" },
+		{ ATKernelSymbols::PADDL1, 1, "PADDL1" },
+		{ ATKernelSymbols::PADDL2, 1, "PADDL2" },
+		{ ATKernelSymbols::PADDL3, 1, "PADDL3" },
+		{ ATKernelSymbols::PADDL4, 1, "PADDL4" },
+		{ ATKernelSymbols::PADDL5, 1, "PADDL5" },
+		{ ATKernelSymbols::PADDL6, 1, "PADDL6" },
+		{ ATKernelSymbols::PADDL7, 1, "PADDL7" },
+		{ ATKernelSymbols::STICK0, 1, "STICK0" },
+		{ ATKernelSymbols::STICK1, 1, "STICK1" },
+		{ ATKernelSymbols::STICK2, 1, "STICK2" },
+		{ ATKernelSymbols::STICK3, 1, "STICK3" },
+		{ ATKernelSymbols::PTRIG0, 1, "PTRIG0" },
+		{ ATKernelSymbols::PTRIG1, 1, "PTRIG1" },
+		{ ATKernelSymbols::PTRIG2, 1, "PTRIG2" },
+		{ ATKernelSymbols::PTRIG3, 1, "PTRIG3" },
+		{ ATKernelSymbols::PTRIG4, 1, "PTRIG4" },
+		{ ATKernelSymbols::PTRIG5, 1, "PTRIG5" },
+		{ ATKernelSymbols::PTRIG6, 1, "PTRIG6" },
+		{ ATKernelSymbols::PTRIG7, 1, "PTRIG7" },
+		{ ATKernelSymbols::STRIG0, 1, "STRIG0" },
+		{ ATKernelSymbols::STRIG1, 1, "STRIG1" },
+		{ ATKernelSymbols::STRIG2, 1, "STRIG2" },
+		{ ATKernelSymbols::STRIG3, 1, "STRIG3" },
+		{ ATKernelSymbols::JVECK , 2, "JVECK"  },
+		{ ATKernelSymbols::TXTROW, 1, "TXTROW" },
+		{ ATKernelSymbols::TXTCOL, 2, "TXTCOL" },
+		{ ATKernelSymbols::TINDEX, 1, "TINDEX" },
+		{ ATKernelSymbols::TXTMSC, 2, "TXTMSC" },
+		{ ATKernelSymbols::TXTOLD, 2, "TXTOLD" },
+		{ ATKernelSymbols::CRETRY, 1, "CRETRY" },
+		{ ATKernelSymbols::HOLD2 , 1, "HOLD2"  },
+		{ ATKernelSymbols::DMASK , 1, "DMASK"  },
+		{ ATKernelSymbols::ESCFLG, 1, "ESCFLG" },
+		{ ATKernelSymbols::TABMAP,15, "TABMAP" },
+		{ ATKernelSymbols::LOGMAP, 4, "LOGMAP" },
+		{ ATKernelSymbols::DRETRY, 1, "DRETRY" },
+		{ ATKernelSymbols::SHFLOK, 1, "SHFLOK" },
+		{ ATKernelSymbols::BOTSCR, 1, "BOTSCR" },
+		{ ATKernelSymbols::PCOLR0, 1, "PCOLR0" },
+		{ ATKernelSymbols::PCOLR1, 1, "PCOLR1" },
+		{ ATKernelSymbols::PCOLR2, 1, "PCOLR2" },
+		{ ATKernelSymbols::PCOLR3, 1, "PCOLR3" },
+		{ ATKernelSymbols::COLOR0, 1, "COLOR0" },
+		{ ATKernelSymbols::COLOR1, 1, "COLOR1" },
+		{ ATKernelSymbols::COLOR2, 1, "COLOR2" },
+		{ ATKernelSymbols::COLOR3, 1, "COLOR3" },
+		{ ATKernelSymbols::COLOR4, 1, "COLOR4" },
+		{ ATKernelSymbols::DSCTLN, 1, "DSCTLN" },	// XL/XE
+		{ ATKernelSymbols::KRPDEL, 1, "KRPDEL" },	// XL/XE
+		{ ATKernelSymbols::KEYREP, 1, "KEYREP" },	// XL/XE
+		{ ATKernelSymbols::NOCLIK, 1, "NOCLIK" },	// XL/XE
+		{ ATKernelSymbols::HELPFG, 1, "HELPFG" },	// XL/XE
+		{ ATKernelSymbols::DMASAV, 1, "DMASAV" },	// XL/XE
+		{ ATKernelSymbols::RUNAD , 2, "RUNAD"  },
+		{ ATKernelSymbols::INITAD, 2, "INITAD" },
+		{ ATKernelSymbols::MEMTOP, 2, "MEMTOP" },
+		{ ATKernelSymbols::MEMLO , 2, "MEMLO"  },
+		{ ATKernelSymbols::DVSTAT, 4, "DVSTAT" },
+		{ ATKernelSymbols::CBAUDL, 1, "CBAUDL" },
+		{ ATKernelSymbols::CBAUDH, 1, "CBAUDH" },
+		{ ATKernelSymbols::CRSINH, 1, "CRSINH" },
+		{ ATKernelSymbols::KEYDEL, 1, "KEYDEL" },
+		{ ATKernelSymbols::CH1   , 1, "CH1"    },
+		{ ATKernelSymbols::CHACT , 1, "CHACT"  },
+		{ ATKernelSymbols::CHBAS , 1, "CHBAS"  },
+		{ ATKernelSymbols::ATACHR, 1, "ATACHR" },
+		{ ATKernelSymbols::CH    , 1, "CH"     },
+		{ ATKernelSymbols::FILDAT, 1, "FILDAT" },
+		{ ATKernelSymbols::DSPFLG, 1, "DSPFLG" },
+		{ ATKernelSymbols::DDEVIC, 1, "DDEVIC" },
+		{ ATKernelSymbols::DUNIT , 1, "DUNIT"  },
+		{ ATKernelSymbols::DCOMND, 1, "DCOMND" },
+		{ ATKernelSymbols::DSTATS, 1, "DSTATS" },
+		{ ATKernelSymbols::DBUFLO, 1, "DBUFLO" },
+		{ ATKernelSymbols::DBUFHI, 1, "DBUFHI" },
+		{ ATKernelSymbols::DTIMLO, 1, "DTIMLO" },
+		{ ATKernelSymbols::DBYTLO, 1, "DBYTLO" },
+		{ ATKernelSymbols::DBYTHI, 1, "DBYTHI" },
+		{ ATKernelSymbols::DAUX1 , 1, "DAUX1"  },
+		{ ATKernelSymbols::DAUX2 , 1, "DAUX2"  },
+		{ ATKernelSymbols::TIMER1, 2, "TIMER1" },
+		{ ATKernelSymbols::CASFLG, 1, "CASFLG" },
+		{ ATKernelSymbols::TIMER2, 2, "TIMER2" },
+		{ ATKernelSymbols::TIMFLG, 1, "TIMFLG" },
+		{ ATKernelSymbols::STACKP, 1, "STACKP" },
+		{ ATKernelSymbols::HATABS,38, "HATABS" },
+		{ ATKernelSymbols::ICHID , 1, "ICHID"  },
+		{ ATKernelSymbols::ICDNO , 1, "ICDNO"  },
+		{ ATKernelSymbols::ICCMD , 1, "ICCMD"  },
+		{ ATKernelSymbols::ICSTA , 1, "ICSTA"  },
+		{ ATKernelSymbols::ICBAL , 1, "ICBAL"  },
+		{ ATKernelSymbols::ICBAH , 1, "ICBAH"  },
+		{ ATKernelSymbols::ICPTL , 1, "ICPTL"  },
+		{ ATKernelSymbols::ICPTH , 1, "ICPTH"  },
+		{ ATKernelSymbols::ICBLL , 1, "ICBLL"  },
+		{ ATKernelSymbols::ICBLH , 1, "ICBLH"  },
+		{ ATKernelSymbols::ICAX1 , 1, "ICAX1"  },
+		{ ATKernelSymbols::ICAX2 , 1, "ICAX2"  },
+		{ ATKernelSymbols::ICAX3 , 1, "ICAX3"  },
+		{ ATKernelSymbols::ICAX4 , 1, "ICAX4"  },
+		{ ATKernelSymbols::ICAX5 , 1, "ICAX5"  },
+		{ ATKernelSymbols::ICAX6 , 1, "ICAX6"  },
+		{ ATKernelSymbols::BASICF, 1, "BASICF" },
+		{ ATKernelSymbols::GINTLK, 1, "GINTLK" },
+		{ ATKernelSymbols::CASBUF, 131, "CASBUF" },
+		{ ATKernelSymbols::LBUFF , 128, "LBUFF"  },
+	};
+
+	return ATPreSortDefaultSymbolArray(kVariableSymbols);
+}();
+
+vdspan<const ATDefaultSymbolInfo> ATGetSortedSymbolsForOSVariables() {
+	return kATDefaultSymbolsForOSVariables;
+}
 
 void ATCreateDefaultVariableSymbolStore(IATSymbolStore **ppStore) {
 	vdrefptr<ATSymbolStore> symstore(new ATSymbolStore);
 
 	symstore->Init(0x0000, 0x0400);
-
-	using namespace ATKernelSymbols;
-
-	static constexpr ATSymbolStore::SymbolInfo kSymbols[] = {
-		{ CASINI, "CASINI", 2 },
-		{ RAMLO , "RAMLO" , 2 },
-		{ TRAMSZ, "TRAMSZ", 1 },
-		{ WARMST, "WARMST", 1 },
-		{ DOSVEC, "DOSVEC", 2 },
-		{ DOSINI, "DOSINI", 2 },
-		{ APPMHI, "APPMHI", 2 },
-		{ POKMSK, "POKMSK", 1 },
-		{ BRKKEY, "BRKKEY", 1 },
-		{ RTCLOK, "RTCLOK", 3 },
-		{ BUFADR, "BUFADR", 2 },
-		{ ICHIDZ, "ICHIDZ", 1 },
-		{ ICDNOZ, "ICDNOZ", 1 },
-		{ ICCOMZ, "ICCOMZ", 1 },
-		{ ICSTAZ, "ICSTAZ", 1 },
-		{ ICBALZ, "ICBALZ", 1 },
-		{ ICBAHZ, "ICBAHZ", 1 },
-		{ ICBLLZ, "ICBLLZ", 1 },
-		{ ICBLHZ, "ICBLHZ", 1 },
-		{ ICAX1Z, "ICAX1Z", 1 },
-		{ ICAX2Z, "ICAX2Z", 1 },
-		{ ICAX3Z, "ICAX3Z", 1 },
-		{ ICAX4Z, "ICAX4Z", 1 },
-		{ ICAX5Z, "ICAX5Z", 1 },
-		{ CIOCHR, "CIOCHR", 1 },
-		{ STATUS, "STATUS", 1 },
-		{ CHKSUM, "CHKSUM", 1 },
-		{ BUFRLO, "BUFRLO", 1 },
-		{ BUFRHI, "BUFRHI", 1 },
-		{ BFENLO, "BFENLO", 1 },
-		{ BFENHI, "BFENHI", 1 },
-		{ BUFRFL, "BUFRFL", 1 },
-		{ RECVDN, "RECVDN", 1 },
-		{ XMTDON, "XMTDON", 1 },
-		{ CHKSNT, "CHKSNT", 1 },
-		{ SOUNDR, "SOUNDR", 1 },
-		{ CRITIC, "CRITIC", 1 },
-		{ CKEY,   "CKEY"  , 1 },
-		{ CASSBT, "CASSBT", 1 },
-		{ ATRACT, "ATRACT", 1 },
-		{ DRKMSK, "DRKMSK", 1 },
-		{ COLRSH, "COLRSH", 1 },
-		{ HOLD1 , "HOLD1" , 1 },
-		{ LMARGN, "LMARGN", 1 },
-		{ RMARGN, "RMARGN", 1 },
-		{ ROWCRS, "ROWCRS", 1 },
-		{ COLCRS, "COLCRS", 2 },
-		{ OLDROW, "OLDROW", 1 },
-		{ OLDCOL, "OLDCOL", 2 },
-		{ OLDCHR, "OLDCHR", 1 },
-		{ DINDEX, "DINDEX", 1 },
-		{ SAVMSC, "SAVMSC", 2 },
-		{ OLDADR, "OLDADR", 2 },
-		{ PALNTS, "PALNTS", 1 },
-		{ LOGCOL, "LOGCOL", 1 },
-		{ ADRESS, "ADRESS", 2 },
-		{ TOADR , "TOADR" , 2 },
-		{ RAMTOP, "RAMTOP", 1 },
-		{ BUFCNT, "BUFCNT", 1 },
-		{ BUFSTR, "BUFSTR", 2 },
-		{ BITMSK, "BITMSK", 1 },
-		{ DELTAR, "DELTAR", 1 },
-		{ DELTAC, "DELTAC", 2 },
-		{ ROWINC, "ROWINC", 1 },
-		{ COLINC, "COLINC", 1 },
-		{ KEYDEF, "KEYDEF", 2 },	// XL/XE
-		{ SWPFLG, "SWPFLG", 1 },
-		{ COUNTR, "COUNTR", 2 },
-
-		{ FR0, "FR0", 6 },
-		{ FR1, "FR1", 6 },
-		{ CIX, "CIX", 1 },
-
-		{ INBUFF, "INBUFF", 1 },
-		{ FLPTR, "FLPTR", 1 },
-
-		{ VDSLST, "VDSLST", 2 },
-		{ VPRCED, "VPRCED", 2 },
-		{ VINTER, "VINTER", 2 },
-		{ VBREAK, "VBREAK", 2 },
-		{ VKEYBD, "VKEYBD", 2 },
-		{ VSERIN, "VSERIN", 2 },
-		{ VSEROR, "VSEROR", 2 },
-		{ VSEROC, "VSEROC", 2 },
-		{ VTIMR1, "VTIMR1", 2 },
-		{ VTIMR2, "VTIMR2", 2 },
-		{ VTIMR4, "VTIMR4", 2 },
-		{ VIMIRQ, "VIMIRQ", 2 },
-		{ CDTMV1, "CDTMV1", 2 },
-		{ CDTMV2, "CDTMV2", 2 },
-		{ CDTMV3, "CDTMV3", 2 },
-		{ CDTMV4, "CDTMV4", 2 },
-		{ CDTMV5, "CDTMV5", 2 },
-		{ VVBLKI, "VVBLKI", 2 },
-		{ VVBLKD, "VVBLKD", 2 },
-		{ CDTMA1, "CDTMA1", 2 },
-		{ CDTMA2, "CDTMA2", 2 },
-		{ CDTMF3, "CDTMF3", 1 },
-		{ CDTMF4, "CDTMF4", 1 },
-		{ CDTMF5, "CDTMF5", 1 },
-		{ SDMCTL, "SDMCTL", 1 },
-		{ SDLSTL, "SDLSTL", 1 },
-		{ SDLSTH, "SDLSTH", 1 },
-		{ SSKCTL, "SSKCTL", 1 },
-		{ LPENH , "LPENH" , 1 },
-		{ LPENV , "LPENV" , 1 },
-		{ BRKKY , "BRKKY" , 2 },
-		{ VPIRQ , "VPIRQ" , 2 },	// XL/XE
-		{ DFLAGS, "DFLAGS", 1 },
-		{ DBSECT, "DBSECT", 1 },
-		{ BOOTAD, "BOOTAD", 2 },
-		{ COLDST, "COLDST", 1 },
-		{ DSKTIM, "DSKTIM", 1 },
-		{ PDVMSK, "PDVMSK", 1 },
-		{ SHPDVS, "SHPDVS", 1 },
-		{ PDMSK , "PDMSK" , 1 },	// XL/XE
-		{ CHSALT, "CHSALT", 1 },	// XL/XE
-		{ GPRIOR, "GPRIOR", 1 },
-		{ PADDL0, "PADDL0", 1 },
-		{ PADDL1, "PADDL1", 1 },
-		{ PADDL2, "PADDL2", 1 },
-		{ PADDL3, "PADDL3", 1 },
-		{ PADDL4, "PADDL4", 1 },
-		{ PADDL5, "PADDL5", 1 },
-		{ PADDL6, "PADDL6", 1 },
-		{ PADDL7, "PADDL7", 1 },
-		{ STICK0, "STICK0", 1 },
-		{ STICK1, "STICK1", 1 },
-		{ STICK2, "STICK2", 1 },
-		{ STICK3, "STICK3", 1 },
-		{ PTRIG0, "PTRIG0", 1 },
-		{ PTRIG1, "PTRIG1", 1 },
-		{ PTRIG2, "PTRIG2", 1 },
-		{ PTRIG3, "PTRIG3", 1 },
-		{ PTRIG4, "PTRIG4", 1 },
-		{ PTRIG5, "PTRIG5", 1 },
-		{ PTRIG6, "PTRIG6", 1 },
-		{ PTRIG7, "PTRIG7", 1 },
-		{ STRIG0, "STRIG0", 1 },
-		{ STRIG1, "STRIG1", 1 },
-		{ STRIG2, "STRIG2", 1 },
-		{ STRIG3, "STRIG3", 1 },
-		{ JVECK , "JVECK" , 2 },
-		{ TXTROW, "TXTROW", 1 },
-		{ TXTCOL, "TXTCOL", 2 },
-		{ TINDEX, "TINDEX", 1 },
-		{ TXTMSC, "TXTMSC", 2 },
-		{ TXTOLD, "TXTOLD", 2 },
-		{ CRETRY, "CRETRY", 1 },
-		{ HOLD2 , "HOLD2" , 1 },
-		{ DMASK , "DMASK" , 1 },
-		{ ESCFLG, "ESCFLG", 1 },
-		{ TABMAP, "TABMAP", 15 },
-		{ LOGMAP, "LOGMAP", 4 },
-		{ DRETRY, "DRETRY", 1 },
-		{ SHFLOK, "SHFLOK", 1 },
-		{ BOTSCR, "BOTSCR", 1 },
-		{ PCOLR0, "PCOLR0", 1 },
-		{ PCOLR1, "PCOLR1", 1 },
-		{ PCOLR2, "PCOLR2", 1 },
-		{ PCOLR3, "PCOLR3", 1 },
-		{ COLOR0, "COLOR0", 1 },
-		{ COLOR1, "COLOR1", 1 },
-		{ COLOR2, "COLOR2", 1 },
-		{ COLOR3, "COLOR3", 1 },
-		{ COLOR4, "COLOR4", 1 },
-		{ DSCTLN, "DSCTLN", 1 },	// XL/XE
-		{ KRPDEL, "KRPDEL", 1 },	// XL/XE
-		{ KEYREP, "KEYREP", 1 },	// XL/XE
-		{ NOCLIK, "NOCLIK", 1 },	// XL/XE
-		{ HELPFG, "HELPFG", 1 },	// XL/XE
-		{ DMASAV, "DMASAV", 1 },	// XL/XE
-		{ RUNAD , "RUNAD" , 2 },
-		{ INITAD, "INITAD", 2 },
-		{ MEMTOP, "MEMTOP", 2 },
-		{ MEMLO , "MEMLO" , 2 },
-		{ DVSTAT, "DVSTAT", 4 },
-		{ CBAUDL, "CBAUDL", 1 },
-		{ CBAUDH, "CBAUDH", 1 },
-		{ CRSINH, "CRSINH", 1 },
-		{ KEYDEL, "KEYDEL", 1 },
-		{ CH1   , "CH1"   , 1 },
-		{ CHACT , "CHACT" , 1 },
-		{ CHBAS , "CHBAS" , 1 },
-		{ ATACHR, "ATACHR", 1 },
-		{ CH    , "CH"    , 1 },
-		{ FILDAT, "FILDAT", 1 },
-		{ DSPFLG, "DSPFLG", 1 },
-		{ DDEVIC, "DDEVIC", 1 },
-		{ DUNIT , "DUNIT" , 1 },
-		{ DCOMND, "DCOMND", 1 },
-		{ DSTATS, "DSTATS", 1 },
-		{ DBUFLO, "DBUFLO", 1 },
-		{ DBUFHI, "DBUFHI", 1 },
-		{ DTIMLO, "DTIMLO", 1 },
-		{ DBYTLO, "DBYTLO", 1 },
-		{ DBYTHI, "DBYTHI", 1 },
-		{ DAUX1 , "DAUX1" , 1 },
-		{ DAUX2 , "DAUX2" , 1 },
-		{ TIMER1, "TIMER1", 2 },
-		{ CASFLG, "CASFLG", 1 },
-		{ TIMER2, "TIMER2", 2 },
-		{ TIMFLG, "TIMFLG", 1 },
-		{ STACKP, "STACKP", 1 },
-		{ HATABS, "HATABS", 38 },
-		{ ICHID , "ICHID" , 1 },
-		{ ICDNO , "ICDNO" , 1 },
-		{ ICCMD , "ICCMD" , 1 },
-		{ ICSTA , "ICSTA" , 1 },
-		{ ICBAL , "ICBAL" , 1 },
-		{ ICBAH , "ICBAH" , 1 },
-		{ ICPTL , "ICPTL" , 1 },
-		{ ICPTH , "ICPTH" , 1 },
-		{ ICBLL , "ICBLL" , 1 },
-		{ ICBLH , "ICBLH" , 1 },
-		{ ICAX1 , "ICAX1" , 1 },
-		{ ICAX2 , "ICAX2" , 1 },
-		{ ICAX3 , "ICAX3" , 1 },
-		{ ICAX4 , "ICAX4" , 1 },
-		{ ICAX5 , "ICAX5" , 1 },
-		{ ICAX6 , "ICAX6" , 1 },
-		{ BASICF, "BASICF", 1 },
-		{ GINTLK, "GINTLK", 1 },
-		{ CASBUF, "CASBUF", 131 },
-		{ LBUFF , "LBUFF" , 128 },
-	};
-
-	symstore->AddSymbols(kSymbols);
+	symstore->AddDefaultSymbols(kATDefaultSymbolsForOSVariables);
 
 	*ppStore = symstore.release();
 }
@@ -266,41 +291,41 @@ void ATCreateDefaultVariableSymbolStore5200(IATSymbolStore **ppStore) {
 
 	using namespace ATKernelSymbols5200;
 
-	static constexpr ATSymbolStore::SymbolInfo kSymbols[] = {
-		{ POKMSK, "POKMSK", 1 },
-		{ RTCLOK, "RTCLOK", 1 },
-		{ CRITIC, "CRITIC", 1 },
-		{ ATRACT, "ATRACT", 1 },
-		{ SDMCTL, "SDMCTL", 1 },
-		{ SDLSTL, "SDLSTL", 1 },
-		{ SDLSTH, "SDLSTH", 1 },
-		{ PCOLR0, "PCOLR0", 1 },
-		{ PCOLR1, "PCOLR1", 1 },
-		{ PCOLR2, "PCOLR2", 1 },
-		{ PCOLR3, "PCOLR3", 1 },
-		{ COLOR0, "COLOR0", 1 },
-		{ COLOR1, "COLOR1", 1 },
-		{ COLOR2, "COLOR2", 1 },
-		{ COLOR3, "COLOR3", 1 },
-		{ COLOR4, "COLOR4", 1 },
+	static constexpr ATDefaultSymbolInfo kSymbols[] = {
+		{ POKMSK, 1, "POKMSK" },
+		{ RTCLOK, 1, "RTCLOK" },
+		{ CRITIC, 1, "CRITIC" },
+		{ ATRACT, 1, "ATRACT" },
+		{ SDMCTL, 1, "SDMCTL" },
+		{ SDLSTL, 1, "SDLSTL" },
+		{ SDLSTH, 1, "SDLSTH" },
+		{ PCOLR0, 1, "PCOLR0" },
+		{ PCOLR1, 1, "PCOLR1" },
+		{ PCOLR2, 1, "PCOLR2" },
+		{ PCOLR3, 1, "PCOLR3" },
+		{ COLOR0, 1, "COLOR0" },
+		{ COLOR1, 1, "COLOR1" },
+		{ COLOR2, 1, "COLOR2" },
+		{ COLOR3, 1, "COLOR3" },
+		{ COLOR4, 1, "COLOR4" },
 
-		{ VIMIRQ, "VIMIRQ", 2 },
-		{ VVBLKI, "VVBLKI", 2 },
-		{ VVBLKD, "VVBLKD", 2 },
-		{ VDSLST, "VDSLST", 2 },
-		{ VTRIGR, "VTRIGR", 2 },
-		{ VBRKOP, "VBRKOP", 2 },
-		{ VKYBDI, "VKYBDI", 2 },
-		{ VKYBDF, "VKYBDF", 2 },
-		{ VSERIN, "VSERIN", 2 },
-		{ VSEROR, "VSEROR", 2 },
-		{ VSEROC, "VSEROC", 2 },
-		{ VTIMR1, "VTIMR1", 2 },
-		{ VTIMR2, "VTIMR2", 2 },
-		{ VTIMR4, "VTIMR4", 2 },
+		{ VIMIRQ, 2, "VIMIRQ" },
+		{ VVBLKI, 2, "VVBLKI" },
+		{ VVBLKD, 2, "VVBLKD" },
+		{ VDSLST, 2, "VDSLST" },
+		{ VTRIGR, 2, "VTRIGR" },
+		{ VBRKOP, 2, "VBRKOP" },
+		{ VKYBDI, 2, "VKYBDI" },
+		{ VKYBDF, 2, "VKYBDF" },
+		{ VSERIN, 2, "VSERIN" },
+		{ VSEROR, 2, "VSEROR" },
+		{ VSEROC, 2, "VSEROC" },
+		{ VTIMR1, 2, "VTIMR1" },
+		{ VTIMR2, 2, "VTIMR2" },
+		{ VTIMR4, 2, "VTIMR4" },
 	};
 
-	symstore->AddSymbols(kSymbols);
+	symstore->AddDefaultSymbols(kSymbols);
 
 	*ppStore = symstore.release();
 }
@@ -312,32 +337,32 @@ void ATCreateDefaultMathPackSymbolStore(IATSymbolStore **ppStore) {
 
 	symstore->Init(0xD800, 0x0800);
 
-	static constexpr ATSymbolStore::SymbolInfo kSymbols[] = {
-		{ AFP, "AFP", 1 },
-		{ FASC, "FASC", 1 },
-		{ IFP, "IFP", 1 },
-		{ FPI, "FPI", 1 },
-		{ ZFR0, "ZFR0", 1 },
-		{ ZF1, "ZF1", 1 },
-		{ FADD, "FADD", 1 },
-		{ FSUB, "FSUB", 1 },
-		{ FMUL, "FMUL", 1 },
-		{ FDIV, "FDIV", 1 },
-		{ PLYEVL, "PLYEVL", 1 },
-		{ FLD0R, "FLD0R", 1 },
-		{ FLD0P, "FLD0P", 1 },
-		{ FLD1R, "FLD1R", 1 },
-		{ FLD1P, "FLD1P", 1 },
-		{ FST0R, "FST0R", 1 },
-		{ FST0P, "FST0P", 1 },
-		{ FMOVE, "FMOVE", 1 },
-		{ EXP, "EXP", 1 },
-		{ EXP10, "EXP10", 1 },
-		{ LOG, "LOG", 1 },
-		{ LOG10, "LOG10", 1 },
+	static constexpr ATDefaultSymbolInfo kSymbols[] = {
+		{ AFP   , 1, "AFP"    },
+		{ FASC  , 1, "FASC"   },
+		{ IFP   , 1, "IFP"    },
+		{ FPI   , 1, "FPI"    },
+		{ ZFR0  , 1, "ZFR0"   },
+		{ ZF1   , 1, "ZF1"    },
+		{ FADD  , 1, "FADD"   },
+		{ FSUB  , 1, "FSUB"   },
+		{ FMUL  , 1, "FMUL"   },
+		{ FDIV  , 1, "FDIV"   },
+		{ PLYEVL, 1, "PLYEVL" },
+		{ FLD0R , 1, "FLD0R"  },
+		{ FLD0P , 1, "FLD0P"  },
+		{ FLD1R , 1, "FLD1R"  },
+		{ FLD1P , 1, "FLD1P"  },
+		{ FST0R , 1, "FST0R"  },
+		{ FST0P , 1, "FST0P"  },
+		{ FMOVE , 1, "FMOVE"  },
+		{ EXP   , 1, "EXP"    },
+		{ EXP10 , 1, "EXP10"  },
+		{ LOG   , 1, "LOG"    },
+		{ LOG10 , 1, "LOG10"  },
 	};
 
-	symstore->AddSymbols(kSymbols);
+	symstore->AddDefaultSymbols(kSymbols);
 
 	*ppStore = symstore.release();
 }
@@ -349,141 +374,203 @@ void ATCreateDefaultKernelSymbolStore(IATSymbolStore **ppStore) {
 
 	symstore->Init(0xE400, 0x0100);
 
-	static constexpr ATSymbolStore::SymbolInfo kSymbols[] = {
-		{ 0xE400, "EDITRV", 3 },
-		{ 0xE410, "SCRENV", 3 },
-		{ 0xE420, "KEYBDV", 3 },
-		{ 0xE430, "PRINTV", 3 },
-		{ 0xE440, "CASETV", 3 },
-		{ 0xE450, "DISKIV", 3 },
-		{ 0xE453, "DSKINV", 3 },
-		{ 0xE456, "CIOV", 3 },
-		{ 0xE459, "SIOV", 3 },
-		{ 0xE45C, "SETVBV", 3 },
-		{ 0xE45F, "SYSVBV", 3 },
-		{ 0xE462, "XITVBV", 3 },
-		{ 0xE465, "SIOINV", 3 },
-		{ 0xE468, "SENDEV", 3 },
-		{ 0xE46B, "INTINV", 3 },
-		{ 0xE46E, "CIOINV", 3 },
-		{ 0xE471, "BLKBDV", 3 },
-		{ 0xE474, "WARMSV", 3 },
-		{ 0xE477, "COLDSV", 3 },
-		{ 0xE47A, "RBLOKV", 3 },
-		{ 0xE47D, "CSOPIV", 3 },
-		{ 0xE480, "VCTABL", 3 },
+	static constexpr ATDefaultSymbolInfo kSymbols[] = {
+		{ 0xE400, 3, "EDITRV" },
+		{ 0xE410, 3, "SCRENV" },
+		{ 0xE420, 3, "KEYBDV" },
+		{ 0xE430, 3, "PRINTV" },
+		{ 0xE440, 3, "CASETV" },
+		{ 0xE450, 3, "DISKIV" },
+		{ 0xE453, 3, "DSKINV" },
+		{ 0xE456, 3, "CIOV"   },
+		{ 0xE459, 3, "SIOV"   },
+		{ 0xE45C, 3, "SETVBV" },
+		{ 0xE45F, 3, "SYSVBV" },
+		{ 0xE462, 3, "XITVBV" },
+		{ 0xE465, 3, "SIOINV" },
+		{ 0xE468, 3, "SENDEV" },
+		{ 0xE46B, 3, "INTINV" },
+		{ 0xE46E, 3, "CIOINV" },
+		{ 0xE471, 3, "BLKBDV" },
+		{ 0xE474, 3, "WARMSV" },
+		{ 0xE477, 3, "COLDSV" },
+		{ 0xE47A, 3, "RBLOKV" },
+		{ 0xE47D, 3, "CSOPIV" },
+		{ 0xE480, 3, "VCTABL" },
 	};
 
-	symstore->AddSymbols(kSymbols);
+	symstore->AddDefaultSymbols(kSymbols);
 
 	*ppStore = symstore.release();
 }
 
 namespace {
-	struct HardwareSymbol {
-		uint32 mOffset;
-		const char *mpWriteName;
-		const char *mpReadName;
-	};
+	static constexpr auto kGTIASymbols = [] {
+		static constexpr ATDefaultSymbolInfo kRawGTIASymbols[]={
+			{ 0x00, 1, "HPOSP0", ATDefaultSymbolType::WriteOnly },
+			{ 0x01, 1, "HPOSP1", ATDefaultSymbolType::WriteOnly },
+			{ 0x02, 1, "HPOSP2", ATDefaultSymbolType::WriteOnly },
+			{ 0x03, 1, "HPOSP3", ATDefaultSymbolType::WriteOnly },
+			{ 0x04, 1, "HPOSM0", ATDefaultSymbolType::WriteOnly },
+			{ 0x05, 1, "HPOSM1", ATDefaultSymbolType::WriteOnly },
+			{ 0x06, 1, "HPOSM2", ATDefaultSymbolType::WriteOnly },
+			{ 0x07, 1, "HPOSM3", ATDefaultSymbolType::WriteOnly },
+			{ 0x08, 1, "SIZEP0", ATDefaultSymbolType::WriteOnly },
+			{ 0x09, 1, "SIZEP1", ATDefaultSymbolType::WriteOnly },
+			{ 0x0A, 1, "SIZEP2", ATDefaultSymbolType::WriteOnly },
+			{ 0x0B, 1, "SIZEP3", ATDefaultSymbolType::WriteOnly },
+			{ 0x0C, 1, "SIZEM" , ATDefaultSymbolType::WriteOnly },
+			{ 0x0D, 1, "GRAFP0", ATDefaultSymbolType::WriteOnly },
+			{ 0x0E, 1, "GRAFP1", ATDefaultSymbolType::WriteOnly },
+			{ 0x0F, 1, "GRAFP2", ATDefaultSymbolType::WriteOnly },
+			{ 0x10, 1, "GRAFP3", ATDefaultSymbolType::WriteOnly },
+			{ 0x11, 1, "GRAFM" , ATDefaultSymbolType::WriteOnly },
+			{ 0x12, 1, "COLPM0", ATDefaultSymbolType::WriteOnly },
+			{ 0x13, 1, "COLPM1", ATDefaultSymbolType::WriteOnly },
+			{ 0x14, 1, "COLPM2", ATDefaultSymbolType::WriteOnly },
+			{ 0x15, 1, "COLPM3", ATDefaultSymbolType::WriteOnly },
+			{ 0x16, 1, "COLPF0", ATDefaultSymbolType::WriteOnly },
+			{ 0x17, 1, "COLPF1", ATDefaultSymbolType::WriteOnly },
+			{ 0x18, 1, "COLPF2", ATDefaultSymbolType::WriteOnly },
+			{ 0x19, 1, "COLPF3", ATDefaultSymbolType::WriteOnly },
+			{ 0x1A, 1, "COLBK" , ATDefaultSymbolType::WriteOnly },
+			{ 0x1B, 1, "PRIOR" , ATDefaultSymbolType::WriteOnly },
+			{ 0x1C, 1, "VDELAY", ATDefaultSymbolType::WriteOnly },
+			{ 0x1D, 1, "GRACTL", ATDefaultSymbolType::WriteOnly },
+			{ 0x1E, 1, "HITCLR", ATDefaultSymbolType::WriteOnly },
 
-	static const HardwareSymbol kGTIASymbols[]={
-		{ 0x00, "HPOSP0", "M0PF" },
-		{ 0x01, "HPOSP1", "M1PF" },
-		{ 0x02, "HPOSP2", "M2PF" },
-		{ 0x03, "HPOSP3", "M3PF" },
-		{ 0x04, "HPOSM0", "P0PF" },
-		{ 0x05, "HPOSM1", "P1PF" },
-		{ 0x06, "HPOSM2", "P2PF" },
-		{ 0x07, "HPOSM3", "P3PF" },
-		{ 0x08, "SIZEP0", "M0PL" },
-		{ 0x09, "SIZEP1", "M1PL" },
-		{ 0x0A, "SIZEP2", "M2PL" },
-		{ 0x0B, "SIZEP3", "M3PL" },
-		{ 0x0C, "SIZEM", "P0PL" },
-		{ 0x0D, "GRAFP0", "P1PL" },
-		{ 0x0E, "GRAFP1", "P2PL" },
-		{ 0x0F, "GRAFP2", "P3PL" },
-		{ 0x10, "GRAFP3", "TRIG0" },
-		{ 0x11, "GRAFM", "TRIG1" },
-		{ 0x12, "COLPM0", "TRIG2" },
-		{ 0x13, "COLPM1", "TRIG3" },
-		{ 0x14, "COLPM2", "PAL" },
-		{ 0x15, "COLPM3", NULL },
-		{ 0x16, "COLPF0" },
-		{ 0x17, "COLPF1" },
-		{ 0x18, "COLPF2" },
-		{ 0x19, "COLPF3" },
-		{ 0x1A, "COLBK" },
-		{ 0x1B, "PRIOR" },
-		{ 0x1C, "VDELAY" },
-		{ 0x1D, "GRACTL" },
-		{ 0x1E, "HITCLR" },
-		{ 0x1F, "CONSOL", "CONSOL" },
-	};
+			{ 0x00, 1, "M0PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x01, 1, "M1PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x02, 1, "M2PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x03, 1, "M3PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x04, 1, "P0PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x05, 1, "P1PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x06, 1, "P2PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x07, 1, "P3PF"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x08, 1, "M0PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x09, 1, "M1PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x0A, 1, "M2PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x0B, 1, "M3PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x0C, 1, "P0PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x0D, 1, "P1PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x0E, 1, "P2PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x0F, 1, "P3PL"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x10, 1, "TRIG0" , ATDefaultSymbolType::ReadOnly },
+			{ 0x11, 1, "GRAFM" , ATDefaultSymbolType::ReadOnly },
+			{ 0x12, 1, "COLPM0", ATDefaultSymbolType::ReadOnly },
+			{ 0x13, 1, "COLPM1", ATDefaultSymbolType::ReadOnly },
+			{ 0x14, 1, "COLPM2", ATDefaultSymbolType::ReadOnly },
+			{ 0x15, 1, "COLPM3", ATDefaultSymbolType::ReadOnly },
+			{ 0x16, 1, "COLPF0", ATDefaultSymbolType::ReadOnly },
+			{ 0x17, 1, "COLPF1", ATDefaultSymbolType::ReadOnly },
+			{ 0x18, 1, "COLPF2", ATDefaultSymbolType::ReadOnly },
+			{ 0x19, 1, "COLPF3", ATDefaultSymbolType::ReadOnly },
+			{ 0x1A, 1, "COLBK" , ATDefaultSymbolType::ReadOnly },
+			{ 0x1B, 1, "PRIOR" , ATDefaultSymbolType::ReadOnly },
+			{ 0x1C, 1, "VDELAY", ATDefaultSymbolType::ReadOnly },
+			{ 0x1D, 1, "GRACTL", ATDefaultSymbolType::ReadOnly },
+			{ 0x1E, 1, "HITCLR", ATDefaultSymbolType::ReadOnly },
 
-	static const HardwareSymbol kPOKEYSymbols[]={
-		{ 0x00, "AUDF1", "POT0" },
-		{ 0x01, "AUDC1", "POT1" },
-		{ 0x02, "AUDF2", "POT2" },
-		{ 0x03, "AUDC2", "POT3" },
-		{ 0x04, "AUDF3", "POT4" },
-		{ 0x05, "AUDC3", "POT5" },
-		{ 0x06, "AUDF4", "POT6" },
-		{ 0x07, "AUDC4", "POT7" },
-		{ 0x08, "AUDCTL", "ALLPOT" },
-		{ 0x09, "STIMER", "KBCODE" },
-		{ 0x0A, "SKRES", "RANDOM" },
-		{ 0x0B, "POTGO" },
-		{ 0x0D, "SEROUT", "SERIN" },
-		{ 0x0E, "IRQEN", "IRQST" },
-		{ 0x0F, "SKCTL", "SKSTAT" },
-	};
+			{ 0x1F, 1, "CONSOL", ATDefaultSymbolType::NoExecute },
+		};
 
-	static const HardwareSymbol kPIASymbols[]={
-		{ 0x00, "PORTA", "PORTA" },
-		{ 0x01, "PORTB", "PORTB" },
-		{ 0x02, "PACTL", "PACTL" },
-		{ 0x03, "PBCTL", "PBCTL" },
-	};
+		return ATPreSortDefaultSymbolArray(kRawGTIASymbols);
+	}();
 
-	static const HardwareSymbol kANTICSymbols[]={
-		{ 0x00, "DMACTL" },
-		{ 0x01, "CHACTL" },
-		{ 0x02, "DLISTL" },
-		{ 0x03, "DLISTH" },
-		{ 0x04, "HSCROL" },
-		{ 0x05, "VSCROL" },
-		{ 0x07, "PMBASE" },
-		{ 0x09, "CHBASE" },
-		{ 0x0A, "WSYNC" },
-		{ 0x0B, NULL, "VCOUNT" },
-		{ 0x0C, NULL, "PENH" },
-		{ 0x0D, NULL, "PENV" },
-		{ 0x0E, "NMIEN" },
-		{ 0x0F, "NMIRES", "NMIST" },
-	};
+	static constexpr auto kPOKEYSymbols = [] {
+		static constexpr ATDefaultSymbolInfo kRawPOKEYSymbols[]={
+			{ 0x00, 1, "AUDF1" , ATDefaultSymbolType::WriteOnly },
+			{ 0x01, 1, "AUDC1" , ATDefaultSymbolType::WriteOnly },
+			{ 0x02, 1, "AUDF2" , ATDefaultSymbolType::WriteOnly },
+			{ 0x03, 1, "AUDC2" , ATDefaultSymbolType::WriteOnly },
+			{ 0x04, 1, "AUDF3" , ATDefaultSymbolType::WriteOnly },
+			{ 0x05, 1, "AUDC3" , ATDefaultSymbolType::WriteOnly },
+			{ 0x06, 1, "AUDF4" , ATDefaultSymbolType::WriteOnly },
+			{ 0x07, 1, "AUDC4" , ATDefaultSymbolType::WriteOnly },
+			{ 0x08, 1, "AUDCTL", ATDefaultSymbolType::WriteOnly },
+			{ 0x09, 1, "STIMER", ATDefaultSymbolType::WriteOnly },
+			{ 0x0A, 1, "SKRES" , ATDefaultSymbolType::WriteOnly },
+			{ 0x0B, 1, "POTGO" , ATDefaultSymbolType::WriteOnly },
+			{ 0x0D, 1, "SEROUT", ATDefaultSymbolType::WriteOnly },
+			{ 0x0E, 1, "IRQEN" , ATDefaultSymbolType::WriteOnly },
+			{ 0x0F, 1, "SKCTL" , ATDefaultSymbolType::WriteOnly },
 
-	void AddHardwareSymbols(ATSymbolStore *store, uint32 base, const HardwareSymbol *sym, uint32 n) {
-		while(n--) {
-			store->AddReadWriteRegisterSymbol(base + sym->mOffset, sym->mpWriteName, sym->mpReadName);
-			++sym;
-		}
-	}
+			{ 0x00, 1, "POT0"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x01, 1, "POT1"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x02, 1, "POT2"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x03, 1, "POT3"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x04, 1, "POT4"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x05, 1, "POT5"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x06, 1, "POT6"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x07, 1, "POT7"  , ATDefaultSymbolType::ReadOnly },
+			{ 0x08, 1, "ALLPOT", ATDefaultSymbolType::ReadOnly },
+			{ 0x09, 1, "KBCODE", ATDefaultSymbolType::ReadOnly },
+			{ 0x0A, 1, "RANDOM", ATDefaultSymbolType::ReadOnly },
+			{ 0x0D, 1, "SERIN" , ATDefaultSymbolType::ReadOnly },
+			{ 0x0E, 1, "IRQST" , ATDefaultSymbolType::ReadOnly },
+			{ 0x0F, 1, "SKSTAT", ATDefaultSymbolType::ReadOnly },
+		};
 
-	template<size_t N>
-	inline void AddHardwareSymbols(ATSymbolStore *store, uint32 base, const HardwareSymbol (&syms)[N]) {
-		AddHardwareSymbols(store, base, syms, N);
-	}
+		return ATPreSortDefaultSymbolArray(kRawPOKEYSymbols);
+	}();
+
+	static constexpr auto kPIASymbols = [] {
+		static constexpr ATDefaultSymbolInfo kRawPIASymbols[]={
+			{ 0xD300, 1, "PORTA", ATDefaultSymbolType::NoExecute },
+			{ 0xD301, 1, "PORTB", ATDefaultSymbolType::NoExecute },
+			{ 0xD302, 1, "PACTL", ATDefaultSymbolType::NoExecute },
+			{ 0xD303, 1, "PBCTL", ATDefaultSymbolType::NoExecute },
+		};
+
+		return ATPreSortDefaultSymbolArray(kRawPIASymbols);
+	}();
+
+	static constexpr auto kANTICSymbols = [] {
+		static constexpr ATDefaultSymbolInfo kRawANTICSymbols[]={
+			{ 0xD400, 1, "DMACTL", ATDefaultSymbolType::WriteOnly },
+			{ 0xD401, 1, "CHACTL", ATDefaultSymbolType::WriteOnly },
+			{ 0xD402, 1, "DLISTL", ATDefaultSymbolType::WriteOnly },
+			{ 0xD403, 1, "DLISTH", ATDefaultSymbolType::WriteOnly },
+			{ 0xD404, 1, "HSCROL", ATDefaultSymbolType::WriteOnly },
+			{ 0xD405, 1, "VSCROL", ATDefaultSymbolType::WriteOnly },
+			{ 0xD407, 1, "PMBASE", ATDefaultSymbolType::WriteOnly },
+			{ 0xD409, 1, "CHBASE", ATDefaultSymbolType::WriteOnly },
+			{ 0xD40A, 1, "WSYNC" , ATDefaultSymbolType::WriteOnly },
+			{ 0xD40B, 1, "VCOUNT", ATDefaultSymbolType::ReadOnly  },
+			{ 0xD40C, 1, "PENH"  , ATDefaultSymbolType::ReadOnly  },
+			{ 0xD40D, 1, "PENV"  , ATDefaultSymbolType::ReadOnly  },
+			{ 0xD40E, 1, "NMIEN" , ATDefaultSymbolType::WriteOnly },
+			{ 0xD40F, 1, "NMIRES", ATDefaultSymbolType::WriteOnly },
+			{ 0xD40F, 1, "NMIST" , ATDefaultSymbolType::ReadOnly  },
+		};
+		return ATPreSortDefaultSymbolArray(kRawANTICSymbols);
+	}();
+}
+
+vdspan<const ATDefaultSymbolInfo> ATGetSortedSymbolsForANTICVariables() {
+	return kANTICSymbols;
+}
+
+vdspan<const ATDefaultSymbolInfo> ATGetSortedSymbolsForGTIAVariables() {
+	return kGTIASymbols;
+}
+
+vdspan<const ATDefaultSymbolInfo> ATGetSortedSymbolsForPIAVariables() {
+	return kPIASymbols;
+}
+
+vdspan<const ATDefaultSymbolInfo> ATGetSortedSymbolsForPOKEYVariables() {
+	return kPOKEYSymbols;
 }
 
 void ATCreateDefaultHardwareSymbolStore(IATSymbolStore **ppStore) {
 	vdrefptr<ATSymbolStore> symstore(new ATSymbolStore);
 
 	symstore->Init(0xD000, 0x0500);
-	AddHardwareSymbols(symstore, 0xD000, kGTIASymbols);
-	AddHardwareSymbols(symstore, 0xD200, kPOKEYSymbols);
-	AddHardwareSymbols(symstore, 0xD300, kPIASymbols);
-	AddHardwareSymbols(symstore, 0xD400, kANTICSymbols);
+	symstore->AddDefaultSymbols(kGTIASymbols , 0xD000);
+	symstore->AddDefaultSymbols(kPOKEYSymbols, 0xD200);
+	symstore->AddDefaultSymbols(kPIASymbols);
+	symstore->AddDefaultSymbols(kANTICSymbols);
 
 	*ppStore = symstore.release();
 }
@@ -492,9 +579,9 @@ void ATCreateDefault5200HardwareSymbolStore(IATSymbolStore **ppStore) {
 	vdrefptr<ATSymbolStore> symstore(new ATSymbolStore);
 
 	symstore->Init(0xC000, 0x3000);
-	AddHardwareSymbols(symstore, 0xC000, kGTIASymbols);
-	AddHardwareSymbols(symstore, 0xE800, kPOKEYSymbols);
-	AddHardwareSymbols(symstore, 0xD400, kANTICSymbols);
+	symstore->AddDefaultSymbols(kGTIASymbols , 0xC000);
+	symstore->AddDefaultSymbols(kPOKEYSymbols, 0xE800);
+	symstore->AddDefaultSymbols(kANTICSymbols);
 
 	*ppStore = symstore.release();
 }

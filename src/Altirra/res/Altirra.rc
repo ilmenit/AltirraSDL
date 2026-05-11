@@ -2725,6 +2725,15 @@ BEGIN
     CONTROL         "",IDC_SYSLINK,"SysLink",LWS_USECUSTOMTEXT | LWS_NOPREFIX | WS_TABSTOP,0,0,309,10
 END
 
+IDD_CONFIGURE_IO DIALOGEX 0, 0, 366, 200
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Text file options",-1,0,2,85,10,SS_CENTERIMAGE
+    CONTROL         "Write text files with LF-only line endings",IDC_TEXTOUTPUTLF,
+                    "Button",BS_AUTOCHECKBOX | BS_VCENTER | WS_TABSTOP,88,2,277,10
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -3800,6 +3809,14 @@ BEGIN
 
     IDD_CFGPROP_SYSLINK2, DIALOG
     BEGIN
+    END
+
+    IDD_CONFIGURE_IO, DIALOG
+    BEGIN
+        VERTGUIDE, 85
+        VERTGUIDE, 88
+        VERTGUIDE, 217
+        VERTGUIDE, 272
     END
 END
 #endif    // APSTUDIO_INVOKED

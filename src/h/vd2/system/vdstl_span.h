@@ -176,4 +176,7 @@ bool operator==(const vdspan<T>& x, const vdspan<T>& y) {
 template<class T>
 inline bool operator!=(const vdspan<T>& x, const vdspan<T>& y) { return !(x == y); }
 
+template<typename T>
+inline constexpr bool std::ranges::enable_borrowed_range<vdspan<T>> = true;
+
 #endif

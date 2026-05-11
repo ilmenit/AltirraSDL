@@ -34,6 +34,8 @@ first-run experience.  Every field is optional.
 {
   "firmwareUrl": "https://example.com/firmware/xf25.zip",
   "lobbyHost":   "lobby.atari.org.pl",
+  "lobbyUrl":    "/games/",
+  "lobbyLabel":  "⬅ My Catalog",
   "gamePacks": [
     {
       "name":        "Games",
@@ -73,6 +75,28 @@ first-run experience.  Every field is optional.
   lobby (see `server/lobby/README.md`).  The same VM also answers on
   the DuckDNS backup hostname `altirra-lobby.duckdns.org` if the
   primary DNS is ever unreachable.
+
+- **`lobbyUrl`** *(string, optional, no default)* — destination of the
+  page-bar *⬅ Lobby* back-link button.  When unset (or when no
+  `config.json` is shipped at all), the button is **hidden** — this is
+  the right default for a self-hosted bundle that has no separate
+  catalog page, since otherwise the button would 404.  Set it to the
+  path of your own catalog (e.g. `"/games/"`) or to an absolute URL
+  (`"https://example.com/atari/"`) to surface the button.  The
+  canonical `lobby.atari.org.pl` deploy injects
+  `"lobbyUrl": "/AltirraSDL/"` server-side so the public bundle keeps
+  a working back-link without baking the path into the source tree.
+  Per-link override is also available via the
+  `?back_url=…&back_label=…` URL params (URL params win over
+  `config.json`; an explicit `?back_url=` empty value forces the
+  button hidden).
+
+- **`lobbyLabel`** *(string, optional, default `⬅ Lobby`)* — the
+  button's text.  Falls through the same precedence as `lobbyUrl`
+  (URL param `?back_label=` first, then `config.json`, then default).
+  The label is printed verbatim — no auto-prefix arrow — so a custom
+  label like `"← My Catalog"` keeps your styling intact.  Clamped to
+  32 characters; control chars are stripped.
 
 - **`gamePacks`** *(array of objects, optional)* — pre-populated
   starter library.  Each pack:
@@ -174,7 +198,49 @@ issues the same probes a debugger would and reports the result in
 both a toast and the log panel.  See `server/lobby/README.md` for
 self-hosting your own lobby.
 
-## 5. Caching + cache-busting
+## 5. First-run defaults via URL params
+
+Two URL params let your hosted page choose what hardware/behaviour
+config a brand-new visitor lands on, before they've configured
+anything themselves.  These are documented in full in
+[`src/AltirraSDL/cmake/embed_kit/EMBED.md`](src/AltirraSDL/cmake/embed_kit/EMBED.md);
+the operator-relevant summary:
+
+- **`?experience=convenient|authentic`** — emulation behavior preset
+  (mirrors the wizard's Experience radio).  Default: **convenient**
+  (no artifact mode, fast SIO, no drive sounds, sharp filter).  Set to
+  `authentic` for hardware artifacts, drive sounds, accurate disk
+  timing, and SIO patches off.
+- **`?addons=on|off`** — hardware add-ons preset (mirrors the wizard's
+  Hardware add-ons page).  Default: **on** (enable VBXE 1.26 +
+  Covox $D600/4 ch + Stereo POKEY, set memory mode to 1088 K — the
+  config most modern Atari demos require).  Set to `off` for a
+  predictable stock 800 XL with no add-ons (memory mode left to your
+  `?memsize=` choice or the loaded profile).  Also accepts
+  `1`/`0`, `true`/`false`, `enabled`/`disabled`, `yes`/`no`.
+
+The two are independent — any of the four combinations works.
+
+These defaults only fire on the **first visit** (fresh IndexedDB / no
+saved registry).  Subsequent visits use whatever the visitor
+configured, persisted in the browser's IndexedDB.  An embedded page
+linking to a specific game (`?lib=Game.xex&experience=authentic&addons=off`)
+is **not** the same as forcing those values on every visit — a user
+who later opens *Settings* in the emulator and changes the experience
+will see their change persist.  This matches the user's expectation
+that an emulator remembers what they chose.
+
+A canonical lobby deploy that wants every Play Solo visitor to land on
+"modern demo compatible" can rely on the implicit defaults — no URL
+params needed.  An embedder hosting a period-accurate Atari 800XL
+title typically wants `?experience=authentic&addons=off`.
+
+CLI-style URL params (`?hardware=`, `?memsize=`, `?stereo=`,
+`?adddevice=`, etc.) ALWAYS override the silent defaults, so an
+embedder can mix-and-match: `?addons=on&memsize=128K` yields VBXE +
+Covox + Stereo POKEY at 128 K.
+
+## 6. Caching + cache-busting
 
 The page shell loads `AltirraSDL.js?v=<timestamp>` so the loader is
 always fresh, but the `.wasm` and `.data` are fetched by the
@@ -188,7 +254,7 @@ build, either:
 - Append your own version to the filenames (e.g. `AltirraSDL-v42.wasm`)
   and edit the loader script to match.
 
-## 6. Minimum hosting checklist
+## 7. Minimum hosting checklist
 
 1. Serve the four build artifacts over HTTPS (Storage quota / IDBFS
    require a secure context).

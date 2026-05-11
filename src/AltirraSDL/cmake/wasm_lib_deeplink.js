@@ -101,6 +101,46 @@
     stretch:     null,
     ui:          null,
     manualStart: false,
+    // First-run silent defaults — `?experience=` and `?addons=`.
+    //
+    // These are independent axes (the wizard exposes them on
+    // separate pages — Experience radio at page 30, Hardware add-ons
+    // page at 32).  parseUrl pushes the chosen values as `--experience`
+    // and `--addons` CLI args FIRST in __wasmCliArgs so main_sdl3.cpp's
+    // pre-scan (which runs BEFORE ATProcessCommandLineSDL3) finds them
+    // before any other arg overrides take effect.
+    //
+    //   experience: 'convenient' | 'authentic' | null (use default)
+    //               Default = 'convenient' on first-run silent apply.
+    //               Mirrors the wizard's Experience radio.
+    //   addons:     true | false | null (use default)
+    //               Default = true on first-run silent apply.
+    //               When true: enable VBXE + Covox + Stereo POKEY +
+    //                 set memory mode to 1088 K.
+    //               When false: actively REMOVE those three devices
+    //                 (memory mode left alone — overridden separately
+    //                 via ?memsize= if needed).
+    //
+    // These only fire on FIRST RUN (registry empty).  Subsequent
+    // visits use the persisted state.  Subsequent CLI args
+    // (--memsize / --hardware / --stereo / etc.) ALWAYS override.
+    experience:  null,
+    addons:      null,
+    // Lobby / back-link button (page-bar "⬅ Lobby" element).  By
+    // default the button is hidden — only the canonical lobby deploy
+    // (which ships a config.json with `lobbyUrl`) shows it.  A self-
+    // hosting embedder who wants their own back-link sets BOTH a
+    // `lobbyUrl` in config.json AND optionally a `lobbyLabel`, OR
+    // overrides per-link with `?back_url=…&back_label=…` URL params.
+    // When a `back_url` URL param is present it ALWAYS wins over
+    // config.json (including an explicit `back_url=` empty string,
+    // which forces the button hidden even if config.json sets one).
+    //   backUrl:   string|null  null = "no override, defer to config"
+    //              ""           = "force hide (URL says no button)"
+    //              other        = use this URL on click
+    //   backLabel: string|null  null = use config.json or default
+    backUrl:     null,
+    backLabel:   null,
   };
 
   // Resolve the same-origin base URL for fetched assets.  The lobby
@@ -390,12 +430,122 @@
       // pre-loaded — e.g. a "Try this game in the full emulator"
       // button on a games-list page — pass ?ui=desktop.  Conversely
       // ?ui=gaming forces Gaming Mode even when no game is preloaded.
+      //
+      // We push a `--ui-mode <choice>` CLI arg into __wasmCliArgs at
+      // parse-time so main_sdl3.cpp's command-line processor can
+      // apply it BEFORE the first frame renders.  The post-runtime
+      // ATWasmSetGamingMode() in onRuntimeReady() also still fires
+      // as a backstop, but by the time it runs main() is already
+      // ticking — without the CLI-time apply, a user whose registry
+      // saved Mode=Gaming from a previous visit would see Gaming-
+      // Mode chrome (touch overlay, hidden menu bar) for hundreds of
+      // ms before the JS-side flip lands, and the flip's ColdReset
+      // would wipe the --run payload to boot.  CLI-time apply lets
+      // the very first rendered frame already reflect ?ui=desktop.
       var uiRaw = (p.get('ui') || '').trim().toLowerCase();
       if (uiRaw === 'desktop' || uiRaw === 'gaming') {
         window.__altirraLib.ui = uiRaw;
-        log('ui=' + uiRaw);
+        __wasmCliArgs.push('--ui-mode', uiRaw);
+        log('ui=' + uiRaw + ' (--ui-mode pushed for early apply)');
       } else if (uiRaw) {
         log('ignored unknown ui value:', uiRaw);
+      }
+
+      // ?experience=convenient|authentic — first-run emulation
+      // experience preset (orthogonal to ?addons= below).  Mirrors
+      // the wizard's Experience radio:
+      //   convenient (default): no artifacts, SIO patches on, fast
+      //                         disk timing, no drive sounds,
+      //                         SharpBilinear filter.  Right for
+      //                         casual visitors who want a game to
+      //                         load fast and look clean.
+      //   authentic:            AutoHi artifacts, SIO patches off,
+      //                         accurate disk timing, drive sounds,
+      //                         Bilinear filter.  Right for embedders
+      //                         showcasing original-era titles.
+      // Pushed as `--experience <choice>` so main_sdl3.cpp's pre-scan
+      // applies it BEFORE other CLI args take effect.  Subsequent
+      // CLI / URL display knobs (`?artifact=`, `?filter=`, etc.)
+      // still override this — they land in onRuntimeReady, after
+      // main()'s init.
+      var expRaw = (p.get('experience') || '').trim().toLowerCase();
+      if (expRaw === 'convenient' || expRaw === 'authentic') {
+        window.__altirraLib.experience = expRaw;
+        __wasmCliArgs.push('--experience', expRaw);
+        log('experience=' + expRaw + ' (--experience pushed for first-run)');
+      } else if (expRaw) {
+        log('ignored unknown experience value:', expRaw);
+      }
+
+      // ?addons=on|off|0|1|enabled|disabled|true|false — first-run
+      // hardware add-ons preset (orthogonal to ?experience= above).
+      // Mirrors the wizard's Hardware add-ons page:
+      //   on (default):  enable VBXE 1.26 + Covox $D600/4 ch +
+      //                  Stereo POKEY, set memory mode to 1088 K.
+      //                  Right for modern Atari demos.
+      //   off:           actively REMOVE those three devices if
+      //                  present.  Memory mode left alone — use
+      //                  ?memsize= to set it explicitly.
+      // Pushed as `--addons <choice>` so main_sdl3.cpp's pre-scan
+      // applies it BEFORE other CLI args take effect.  An explicit
+      // `--memsize 128K` (or any other --memsize value) ALWAYS wins
+      // over the silent 1088 K.
+      var addonsRaw = (p.get('addons') || '').trim().toLowerCase();
+      if (addonsRaw) {
+        var truthyAddons = ['on','1','enabled','true','yes'];
+        var falsyAddons  = ['off','0','disabled','false','no','none'];
+        if (truthyAddons.indexOf(addonsRaw) >= 0) {
+          window.__altirraLib.addons = true;
+          __wasmCliArgs.push('--addons', 'on');
+          log('addons=on (--addons pushed for first-run)');
+        } else if (falsyAddons.indexOf(addonsRaw) >= 0) {
+          window.__altirraLib.addons = false;
+          __wasmCliArgs.push('--addons', 'off');
+          log('addons=off (--addons pushed for first-run)');
+        } else {
+          log('ignored unknown addons value:', addonsRaw);
+        }
+      }
+
+      // ?back_url=<href>&back_label=<text> — per-link override of the
+      // page-bar Lobby button's destination + text.  Useful for
+      // embedders / self-hosters who want a "back to my catalog" link
+      // pointing at their own page rather than the canonical lobby.
+      //
+      // Precedence (resolved at button-show time in wasm_index.html.in):
+      //   1. ?back_url= URL param   (this code path)
+      //   2. config.json lobbyUrl   (if present)
+      //   3. button hidden          (default)
+      //
+      // An explicit `?back_url=` (empty value) is meaningful: it forces
+      // the button hidden even when config.json supplies a URL.  This
+      // lets a self-hosted embed of the canonical bundle silence the
+      // Lobby button without having to ship its own config.json.
+      //
+      // URL sanitisation: only same-origin (relative) paths and absolute
+      // http/https URLs are accepted; anything with a scheme other than
+      // http(s) (javascript:, data:, file:, …) is rejected to keep
+      // third-party page operators from being able to inject script
+      // execution via the back-link.  The label is stripped of control
+      // chars and clamped to 32 characters so it fits the page-bar.
+      if (p.has('back_url')) {
+        var bu = (p.get('back_url') || '').trim();
+        if (bu === '') {
+          window.__altirraLib.backUrl = '';
+          log('back_url= (empty) — Lobby button forced hidden');
+        } else if (/^https?:\/\//i.test(bu) || /^\/[^\/]/.test(bu)
+                || /^[A-Za-z0-9_\-./]+$/.test(bu)) {
+          window.__altirraLib.backUrl = bu;
+          log('back_url=' + bu);
+        } else {
+          log('rejected unsafe back_url:', bu);
+        }
+      }
+      var blRaw = (p.get('back_label') || '')
+        .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 32).trim();
+      if (blRaw) {
+        window.__altirraLib.backLabel = blRaw;
+        log('back_label=' + blRaw);
       }
 
       // ?autoplay=0|1 — controls whether the emulator runs immediately

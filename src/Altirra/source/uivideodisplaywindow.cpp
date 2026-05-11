@@ -28,12 +28,14 @@
 #include <at/atcore/configvar.h>
 #include <at/atcore/device.h>
 #include <at/atcore/devicevideo.h>
+#include <at/atcore/ksyms.h>
 #include <at/atcore/logging.h>
 #include <at/atdebugger/symbols.h>
 #include <at/atuicontrols/uilabel.h>
 #include <at/atui/uianchor.h>
 #include <at/atui/uidragdrop.h>
 #include <at/atui/uimanager.h>
+#include "autosuggest.h"
 #include "console.h"
 #include "debugger.h"
 #include "devicemanager.h"
@@ -43,6 +45,7 @@
 #include "oshelper.h"
 #include "simulator.h"
 #include "uiaccessors.h"
+#include "uiautosuggest.h"
 #include "uicaptionupdater.h"
 #include "uidisplay.h"
 #include "uidisplaytool.h"
@@ -79,6 +82,7 @@ extern bool g_dispPadIndicators;
 
 void ATCreateUISettingsScreenMain(IATUISettingsScreen **screen);
 void OnCommandEditPasteText();
+void ATUIPaste(VDStringSpanA);
 
 VDStringA g_ATCurrentAltViewName;
 bool g_ATCurrentAltViewIsXEP;
@@ -329,6 +333,39 @@ void ATUIVideoDisplayWindow::CloseOSK() {
 
 		if (mpOnOSKChange)
 			mpOnOSKChange();
+	}
+}
+
+void ATUIVideoDisplayWindow::SetAutoSuggestEnabled(bool enabled) {
+	mbAutoSuggestEnabled = enabled;
+}
+
+void ATUIVideoDisplayWindow::ShowSuggestions() {
+	mShowSuggestionsCounter = 1;
+	
+	mSuggestScanText1.mText.clear();
+	mSuggestScanText2.mText.clear();
+	mSuggestScanText3.mText.clear();
+}
+
+void ATUIVideoDisplayWindow::CloseAutoSuggest() {
+	if (mpAutoSuggestPopup) {
+		mpAutoSuggestPopup->Destroy();
+		mpAutoSuggestPopup = nullptr;
+
+		UnbindAction(kATUIVK_Up, 0);
+		UnbindAction(kATUIVK_Down, 0);
+		UnbindAction(kATUIVK_Prior, 0);
+		UnbindAction(kATUIVK_Next, 0);
+		UnbindAction(kATUIVK_Escape, 0);
+		UnbindAction(kATUIVK_Return, 0);
+
+		UnbindAction(kATUIVK_UIUp, 0);
+		UnbindAction(kATUIVK_UIDown, 0);
+		UnbindAction(kATUIVK_UIReject, 0);
+		UnbindAction(kATUIVK_UIAccept, 0);
+
+		mbAutoSuggestAcceptMapped = false;
 	}
 }
 
@@ -891,6 +928,8 @@ void ATUIVideoDisplayWindow::OnFrameTick() {
 	} else {
 		g_sim.GetUIRenderer()->SetPadInputEnabled(false);
 	}
+
+	UpdateAutoSuggest();
 }
 
 void ATUIVideoDisplayWindow::OnAddedVideoOutput(uint32 index) {
@@ -1481,6 +1520,9 @@ bool ATUIVideoDisplayWindow::OnContextMenu(const vdpoint32 *pt) {
 }
 
 bool ATUIVideoDisplayWindow::OnKeyDown(const ATUIKeyEvent& event) {
+	if (ATUIWidget::OnKeyDown(event))
+		return true;
+
 	if (!mTools.empty() && mTools.front() && mTools.front()->IsMainTool()) {
 		if (event.mVirtKey == kATUIVK_Escape || event.mVirtKey == kATUIVK_UIReject) {
 			RemoveTool(*mTools.front());
@@ -1497,6 +1539,8 @@ bool ATUIVideoDisplayWindow::OnKeyDown(const ATUIKeyEvent& event) {
 	// fall through so the simulator still receives the alt key, in case a key is typed
 	const auto selCmdCounter = mSelectionCommandProcessedCounter;
 	if (ProcessKeyDown(event, !mpEnhTextEngine || mpEnhTextEngine->IsRawInputEnabled())) {
+		CloseAutoSuggest();
+
 		// slight hack, don't clear the selection if a selection command was
 		// processed
 		if (selCmdCounter == mSelectionCommandProcessedCounter)
@@ -1508,23 +1552,28 @@ bool ATUIVideoDisplayWindow::OnKeyDown(const ATUIKeyEvent& event) {
 		if (!mpEnhTextEngine->IsRawInputEnabled() && event.mVirtKey == kATUIVK_A + ('V'-'A') && mpManager->IsKeyDown(kATUIVK_Control) && !mpManager->IsKeyDown(kATUIVK_Shift) && !mpManager->IsKeyDown(kATUIVK_Alt)) {
 			OnCommandEditPasteText();
 			ClearDragPreview();
+			CloseAutoSuggest();
 			return true;
 		}
 
 		if (mpEnhTextEngine->OnKeyDown(event.mVirtKey)) {
+			CloseAutoSuggest();
 			ClearDragPreview();
 			return true;
 		}
 	}
 
-	return ATUIWidget::OnKeyDown(event);
+	return false;
 }
 
 bool ATUIVideoDisplayWindow::OnKeyUp(const ATUIKeyEvent& event) {
+	if (ATUIWidget::OnKeyUp(event))
+		return true;
+
 	if (ProcessKeyUp(event, !mpEnhTextEngine || mpEnhTextEngine->IsRawInputEnabled()) || (mpEnhTextEngine && mpEnhTextEngine->OnKeyUp(event.mVirtKey)))
 		return true;
 
-	return ATUIWidget::OnKeyUp(event);
+	return false;
 }
 
 bool ATUIVideoDisplayWindow::OnChar(const ATUICharEvent& event) {
@@ -1545,6 +1594,8 @@ bool ATUIVideoDisplayWindow::OnChar(const ATUICharEvent& event) {
 		uint32 ch;
 
 		if (!event.mbIsRepeat && ATUIGetScanCodeForCharacter32(code, ch)) {
+			CloseAutoSuggest();
+
 			if (ch >= 0x100)
 				ProcessVirtKey(0, event.mScanCode, ch, false);
 			else if (mbHoldKeys)
@@ -1566,6 +1617,8 @@ bool ATUIVideoDisplayWindow::OnChar(const ATUICharEvent& event) {
 		uint32 ch;
 
 		if (ATUIGetScanCodeForCharacter32(code, ch)) {
+			CloseAutoSuggest();
+
 			if (ch >= 0x100)
 				ProcessVirtKey(0, event.mScanCode, ch, false);
 			else
@@ -1622,6 +1675,10 @@ void ATUIVideoDisplayWindow::OnActionStart(uint32 id) {
 			OpenOSK();
 			break;
 
+		case kActionCloseAutoSuggest:
+			CloseAutoSuggest();
+			break;
+
 		default:
 			return ATUIContainer::OnActionStart(id);
 	}
@@ -1653,12 +1710,6 @@ void ATUIVideoDisplayWindow::OnCreate() {
 	mpUILabelBadSignal->SetPlacement(vdrect32f(0.5f, 0.5f, 0.5f, 0.5f), vdpoint32(0, 0), vdfloat2{0.5f, 0.5f});
 
 	AddChild(mpUILabelBadSignal);
-
-#if 0
-	vdrefptr cs(new ATUICalibrationScreen);
-	AddChild(cs);
-	cs->SetPlacementFill();
-#endif
 }
 
 void ATUIVideoDisplayWindow::OnDestroy() {
@@ -3201,6 +3252,55 @@ int ATUIVideoDisplayWindow::ReadText(uint8 *dst, uint8 *raw, int yc, int startCh
 	return numChars;
 }
 
+void ATUIVideoDisplayWindow::ReadEditorLine(EditorLine& line) const {
+	const uint8 mode = g_sim.DebugReadByte(ATKernelSymbols::DINDEX);
+	const bool textWindowActive = g_sim.DebugReadByte(ATKernelSymbols::SWPFLG);
+
+	line.mText.clear();
+
+	uint8 row = 0;
+	uint8 col = 0;
+
+	if (!mode || textWindowActive) {
+		const bool textIsCurrent = !mode || textWindowActive;
+
+		row = g_sim.DebugReadByte(textIsCurrent ? (uint32)ATKernelSymbols::ROWCRS : (uint32)ATKernelSymbols::TXTROW);
+		col = g_sim.DebugReadByte(textIsCurrent ? (uint32)ATKernelSymbols::COLCRS : (uint32)ATKernelSymbols::TXTCOL);
+		const uint8 lmar = g_sim.DebugReadByte(ATKernelSymbols::LMARGN);
+		const uint8 rmar = g_sim.DebugReadByte(ATKernelSymbols::RMARGN);
+		const uint16 addr = g_sim.DebugReadWord(textIsCurrent ? (uint32)ATKernelSymbols::SAVMSC : (uint32)ATKernelSymbols::TXTMSC);
+
+		if (lmar <= rmar && rmar <= 39 && col >= lmar && col <= rmar && row < (mode ? 4 : 24)) {
+			// read previous line, if there is one
+			if (row >= 1) {
+				const size_t prevLineLen = rmar + 1 - lmar;
+				const uint16 prevAddr = addr + (row - 1) * 40 + lmar;
+
+				line.mText.resize(prevLineLen);
+
+				for(size_t i = 0; i < prevLineLen; ++i)
+					line.mText[i] = g_sim.DebugReadByte((uint16)(prevAddr + lmar + i));
+			}
+
+			// read current line up to cursor
+			const size_t currentLineLen = col - lmar;
+			if (currentLineLen) {
+				const uint16 curAddr = addr + row * 40;
+
+				line.mText.resize(line.mText.size() + currentLineLen);
+
+				uint8 *dst = &*(line.mText.end() - currentLineLen);
+
+				for(size_t i = lmar; i < col; ++i)
+					dst[i - lmar] = g_sim.DebugReadByte((uint16)(curAddr + i));
+			}
+		}
+	}
+
+	line.mCursorCol = col;
+	line.mCursorRow = row;
+}
+
 void ATUIVideoDisplayWindow::ClearCoordinateIndicator() {
 	if (mbCoordIndicatorActive) {
 		mbCoordIndicatorActive = false;
@@ -3505,6 +3605,131 @@ void ATUIVideoDisplayWindow::UpdateEnhTextSize() {
 
 				mpUILabelEnhTextSize->SetTextF(L"%ux%u", videoInfoNext.mTextColumns, videoInfoNext.mTextRows);
 			}
+		}
+	}
+}
+
+void ATUIVideoDisplayWindow::UpdateAutoSuggest() {
+	if (mShowSuggestionsCounter && ++mShowSuggestionsCounter >= 100) {
+		mShowSuggestionsCounter = 0;
+	}
+
+	if (!mbAutoSuggestEnabled && !mShowSuggestionsCounter)
+		return;
+
+	if (!mpAutoSuggestEngine)
+		mpAutoSuggestEngine = ATCreateAutoSuggestEngine();
+
+	if (mShowSuggestionsCounter) {
+		std::swap(mSuggestScanText1, mSuggestScanText2);
+	}
+
+	std::swap(mSuggestScanText2, mSuggestScanText3);
+
+	ReadEditorLine(mSuggestScanText3);
+
+	if (mSuggestScanText2 == mSuggestScanText3 && (mShowSuggestionsCounter ? mSuggestScanText1 == mSuggestScanText2 : mSuggestScanText1 != mSuggestScanText2)) {
+		mShowSuggestionsCounter = 0;
+
+		std::swap(mSuggestScanText1, mSuggestScanText2);
+
+		VDStringA text;
+
+		for(uint8 c : mSuggestScanText1.mText) {
+			c = ATConvertInternalToATASCII(c);
+
+			if (c >= 0x20 && c < 0x7F)
+				text.push_back((char)c);
+			else
+				text.push_back(' ');
+		}
+
+		mpAutoSuggestEngine->Update(text);
+
+		const size_t n = mpAutoSuggestEngine->GetNumResults();
+		if (n) {
+			if (!mpAutoSuggestPopup) {
+				mpAutoSuggestPopup = new ATUIAutoSuggestPopup;
+				AddChild(mpAutoSuggestPopup);
+
+				mpAutoSuggestPopup->SetOnEntrySelected(
+					[this](sint32 index) {
+						if (index >= 0 && mpAutoSuggestEngine && (uint32)index < mpAutoSuggestEngine->GetNumResults()) {
+							const auto& result = mpAutoSuggestEngine->GetResult(index);
+
+							if (!result.mInsertionText.empty()) {
+								ATUIPaste(result.mInsertionText);
+								CloseAutoSuggest();
+							}
+						}
+					}
+				);
+
+				mpAutoSuggestPopup->SetOnSelectionChanged(
+					[this](sint32 index) {
+						if (index >= 0) {
+							if (!mbAutoSuggestAcceptMapped) {
+								mbAutoSuggestAcceptMapped = true;
+
+								BindAction(kATUIVK_Return, ATUIAutoSuggestPopup::kActionAccept, 0, mpAutoSuggestPopup->GetInstanceId());
+							}
+						} else {
+							if (mbAutoSuggestAcceptMapped) {
+								mbAutoSuggestAcceptMapped = false;
+
+								UnbindAction(kATUIVK_Return, 0);
+							}
+						}
+					}
+				);
+
+				BindAction(kATUIVK_Up, ATUIAutoSuggestPopup::kActionMoveUp, 0, mpAutoSuggestPopup->GetInstanceId());
+				BindAction(kATUIVK_Down, ATUIAutoSuggestPopup::kActionMoveDown, 0, mpAutoSuggestPopup->GetInstanceId());
+				BindAction(kATUIVK_UIUp, ATUIAutoSuggestPopup::kActionMoveUp, 0, mpAutoSuggestPopup->GetInstanceId());
+				BindAction(kATUIVK_UIDown, ATUIAutoSuggestPopup::kActionMoveDown, 0, mpAutoSuggestPopup->GetInstanceId());
+				BindAction(kATUIVK_Prior, ATUIAutoSuggestPopup::kActionMovePageUp, 0, mpAutoSuggestPopup->GetInstanceId());
+				BindAction(kATUIVK_Next, ATUIAutoSuggestPopup::kActionMovePageDown, 0, mpAutoSuggestPopup->GetInstanceId());
+				BindAction(kATUIVK_Escape, kActionCloseAutoSuggest);
+			}
+
+			mpAutoSuggestPopup->UpdateSuggestions(*mpAutoSuggestEngine);
+			
+			// By default, we want the autosuggest widget to align left/top against bottom/left of the cursor. But if there isn't
+			// enough room on the bottom and more room on the top, flip this around so it appears above.
+			const sint32 cursorBeamX1 = 48 + 4 * mSuggestScanText3.mCursorCol;
+			const sint32 cursorBeamY1 = 32 + 8 * mSuggestScanText3.mCursorRow;
+			const sint32 cursorBeamY2 = cursorBeamY1 + 8;
+
+			vdint2 posCursorBL = MapBeamPositionToPoint(cursorBeamX1, cursorBeamY2);
+			vdint2 posCursorTL = MapBeamPositionToPoint(cursorBeamX1, cursorBeamY1);
+			vdrect32 viewportArea = GetClientArea();
+
+			posCursorBL.y = std::clamp<sint32>(posCursorBL.y, 0, viewportArea.bottom);
+			posCursorTL.y = std::clamp<sint32>(posCursorTL.y, 0, viewportArea.bottom);
+			
+			const vdsize32 idealSize = mpAutoSuggestPopup->GetIdealSize();
+
+			const sint32 spaceAbove = posCursorTL.y;
+			const sint32 spaceBelow = viewportArea.bottom - posCursorBL.y;
+
+			const sint32 desiredWidth = std::min<sint32>(idealSize.w, viewportArea.right);
+			const sint32 desiredHeight = std::min<sint32>(idealSize.h, viewportArea.bottom);
+
+			vdrect32 r;
+			r.left = std::min<sint32>(viewportArea.right - desiredWidth, posCursorBL.x);
+			r.right = r.left + desiredWidth;
+
+			if (spaceBelow < desiredHeight && spaceAbove > spaceBelow) {
+				r.top = std::max<sint32>(0, posCursorTL.y - desiredHeight);
+				r.bottom = posCursorTL.y;
+			} else {
+				r.top = posCursorBL.y;
+				r.bottom = std::min<sint32>(posCursorBL.y + desiredHeight, viewportArea.bottom);
+			}
+
+			mpAutoSuggestPopup->SetArea(r);
+		} else {
+			CloseAutoSuggest();
 		}
 	}
 }

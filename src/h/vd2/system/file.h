@@ -396,6 +396,9 @@ protected:
 
 class VDTextOutputStream {
 public:
+	static bool GetDefaultLFOnly();
+	static void SetDefaultLFOnly(bool enabled);
+
 	VDTextOutputStream(IVDStream *stream);
 	~VDTextOutputStream();
 
@@ -419,6 +422,8 @@ protected:
 	int			mLevel;
 	IVDStream	*mpDst;
 	char		mBuf[kBufSize];
+
+	static bool sbUseLFOnly;
 };
 
 #endif

@@ -471,6 +471,13 @@ void ATSettingsExchangeView(bool write, VDRegistryKey& key) {
 	ATSettingsExchangeBool(write, key, "View: 80-column view enabled", ATUIGetAltViewEnabled, ATUISetAltViewEnabled);
 	ATSettingsExchangeBool(write, key, "View: 80-column view autoswitching enabled", ATUIGetAltViewAutoswitchingEnabled, ATUISetAltViewAutoswitchingEnabled);
 
+	// Autosuggest auto-show-on-edit (test10).  Persists across sessions
+	// like the other View: toggles.  The accessors route to the
+	// uiaccessors_stubs.cpp holder so AltirraBridgeServer headless also
+	// preserves the user's choice (the popup itself is rendered only by
+	// the AltirraSDL frontend's ui_autosuggest.cpp).
+	ATSettingsExchangeBool(write, key, "View: Auto-suggest enabled", ATUIGetAutoSuggestEnabled, ATUISetAutoSuggestEnabled);
+
 	ATSettingsExchangeEnum<ATArtifactMode>(write, key, "GTIA: Artifacting mode", ATArtifactMode::Count,
 		[&]() { return gtia.GetArtifactingMode(); },
 		[&](ATArtifactMode mode) { gtia.SetArtifactingMode(mode); });

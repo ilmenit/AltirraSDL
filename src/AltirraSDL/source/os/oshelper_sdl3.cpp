@@ -87,6 +87,7 @@
 #include "../../romdata/kernel_rom.h"
 #include "../../romdata/kernelxl_rom.h"
 #include "../../romdata/nokernel_rom.h"
+#include "../../romdata/atbasic_rom.h"
 
 // Embedded PCM audio samples for stock sounds
 #include "../../romdata/audio_samples.h"
@@ -138,6 +139,7 @@ namespace {
 		{ IDR_KERNEL,   EmbeddedKind::Kernel, kernel_rom,   kernel_rom_len   },
 		{ IDR_KERNELXL, EmbeddedKind::Kernel, kernelxl_rom, kernelxl_rom_len },
 		{ IDR_NOKERNEL, EmbeddedKind::Kernel, nokernel_rom, nokernel_rom_len },
+		{ IDR_BASIC,    EmbeddedKind::Kernel, atbasic_rom,  atbasic_rom_len  },
 
 		// --- STUFF resources (audio samples, HTML/text blobs) --------------
 		{ IDR_DISK_SPIN,            EmbeddedKind::Stuff, audio_disk_spin,            audio_disk_spin_len            },

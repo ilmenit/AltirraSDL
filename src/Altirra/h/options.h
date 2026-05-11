@@ -75,6 +75,8 @@ struct ATOptionsData {
 
 	bool mbAccEnabled = false;
 
+	bool mbTextOutputLFOnly = false;
+
 	ATOptionsData();
 	
 	bool operator==(const ATOptionsData&) const = default;

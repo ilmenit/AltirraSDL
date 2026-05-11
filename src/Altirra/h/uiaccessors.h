@@ -93,6 +93,11 @@ ATDisplayFilterMode ATUIGetDisplayFilterMode();
 void ATUISetDisplayFilterMode(ATDisplayFilterMode mode);
 bool ATUIGetShowFPS();
 void ATUISetShowFPS(bool enabled);
+
+// Autosuggest auto-show-on-edit toggle (test10).  Persisted via the
+// "View: Auto-suggest enabled" registry key.
+bool ATUIGetAutoSuggestEnabled();
+void ATUISetAutoSuggestEnabled(bool enabled);
 bool ATUIGetFullscreen();
 bool ATUIGetDisplayFullscreen();
 void ATSetFullscreen(bool);

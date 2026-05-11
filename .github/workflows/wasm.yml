@@ -351,6 +351,29 @@ jobs:
           name: wasm-dist
           path: wasm-dist
 
+      # Inject the canonical lobby's config.json into the staging tree
+      # so the page-bar Lobby button shows on lobby.atari.org.pl and
+      # navigates to the welcome page (/AltirraSDL/, served from
+      # /var/www/altirra-sdl-page).  We do this ONLY here in the
+      # deploy-vm job so the GitHub Pages mirror (deploy-pages) and
+      # the downloadable AltirraSDL-wasm.zip stay config-less — a
+      # self-hoster who copies the bundle to their own site sees no
+      # Lobby button by default and never 404s.  Self-hosters who DO
+      # want a back-link drop their own config.json with their own
+      # `lobbyUrl` (and optional `lobbyLabel`) — see HOSTING.md.
+      - name: Inject canonical config.json (lobby button → /AltirraSDL/)
+        if: steps.pf.outputs.skip != 'true'
+        run: |
+          set -e
+          cat > wasm-dist/config.json <<'EOF'
+          {
+            "lobbyUrl":   "/AltirraSDL/",
+            "lobbyLabel": "⬅ Lobby"
+          }
+          EOF
+          echo "Wrote canonical config.json:"
+          cat wasm-dist/config.json
+
       - name: SSH setup
         if: steps.pf.outputs.skip != 'true'
         env:

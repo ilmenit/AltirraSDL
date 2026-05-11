@@ -669,6 +669,7 @@
 #define IDC_ENABLE_CONDITION            1217
 #define IDC_FSKSPEEDCOMPENSATION        1217
 #define IDC_INTENSITY_COMPENSATION      1217
+#define IDC_TEXTOUTPUTLF                1217
 #define IDC_ACCESS_NONE                 1218
 #define IDC_CHECK2                      1218
 #define IDC_IGNOREALL                   1218
@@ -1109,6 +1110,7 @@
 #define IDD_CFGPROP_SYSLINK2            1357
 #define IDC_LABEL                       1358
 #define IDC_LABEL_BLOOM_THRESHOLD       1358
+#define IDD_CONFIGURE_IO                1358
 #define IDC_LABEL_BLOOM_RADIUS          1359
 #define IDC_LABEL_BLOOM_DIRECT_INTENSITY 1360
 #define IDC_LABEL_BLOOM_INDIRECT_INTENSITY 1361

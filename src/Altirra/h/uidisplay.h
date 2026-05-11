@@ -53,6 +53,9 @@ public:
 	virtual void UpdateCustomRefreshRate() = 0;
 	virtual void RequestRenderedFrame(vdfunction<void(const VDPixmap *)> fn) = 0;
 	virtual void SetVideoWriter(IATVideoWriter *writer) = 0;
+
+	virtual void SetAutoSuggestEnabled(bool enabled) = 0;
+	virtual void ShowSuggestions() = 0;
 };
 
 void ATUIRegisterDisplayPane();

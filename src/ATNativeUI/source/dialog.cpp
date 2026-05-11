@@ -1535,6 +1535,9 @@ bool VDDialogFrameW32::OnLoaded() {
 	return false;
 }
 
+void VDDialogFrameW32::OnPostLoaded() {
+}
+
 bool VDDialogFrameW32::OnOK() {
 	BeginValidation();
 
@@ -1573,6 +1576,9 @@ bool VDDialogFrameW32::OnClose() {
 	}
 
 	return false;
+}
+
+void VDDialogFrameW32::OnPreDestroy() {
 }
 
 void VDDialogFrameW32::OnDestroy() {
@@ -2292,7 +2298,7 @@ VDZINT_PTR VDZCALLBACK VDDialogFrameW32::StaticDlgProc(VDZHWND hwnd, VDZUINT msg
 
 VDZINT_PTR VDDialogFrameW32::DlgProc(VDZUINT msg, VDZWPARAM wParam, VDZLPARAM lParam) {
 	switch(msg) {
-		case WM_INITDIALOG:
+		case WM_INITDIALOG: {
 			if (mbIsModal) {
 				mbProgressParentHooked = true;
 				mhPrevProgressParent = ATUIPushProgressParent((VDGUIHandle)mhdlg);
@@ -2300,8 +2306,15 @@ VDZINT_PTR VDDialogFrameW32::DlgProc(VDZUINT msg, VDZWPARAM wParam, VDZLPARAM lP
 
 			if (ShouldSetDialogIcon())
 				SetDialogIcon();
+
 			OnPreLoaded();
-			return !OnLoaded();
+
+			bool useDefaultFocus = !OnLoaded();
+
+			OnPostLoaded();
+
+			return useDefaultFocus;
+		}
 
 		case WM_MOUSEMOVE:
 			OnMouseMove((int)(SHORT)LOWORD(lParam), (int)(SHORT)HIWORD(lParam));
@@ -2425,6 +2438,7 @@ VDZINT_PTR VDDialogFrameW32::DlgProc(VDZUINT msg, VDZWPARAM wParam, VDZLPARAM lP
 			return TRUE;
 
 		case WM_DESTROY:
+			OnPreDestroy();
 			OnDestroy();
 
 			// ensure this happens even if OnDestroy() doesn't propagate -- though

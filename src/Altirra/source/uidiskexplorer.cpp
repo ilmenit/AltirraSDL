@@ -1325,26 +1325,33 @@ bool ATUIDialogDiskExplorer::OnCommand(uint32 id, uint32 extcode) {
 				mpFS->GetFileInfo(fle->mFileKey, fileInfo);
 
 				if (text) {
-					const size_t numEOLs = std::count(buf.begin(), buf.end(), (uint8)0x9B);
+					if (VDTextOutputStream::GetDefaultLFOnly()) {
+						for(uint8& v : buf) {
+							if (v == 0x9B)
+								v = 0x0A;
+						}
+					} else {
+						const size_t numEOLs = std::count(buf.begin(), buf.end(), (uint8)0x9B);
 
-					if (numEOLs) {
-						const size_t origSize = buf.size();
+						if (numEOLs) {
+							const size_t origSize = buf.size();
 
-						buf.resize(origSize + numEOLs);
+							buf.resize(origSize + numEOLs);
 
-						auto begin = buf.begin();
-						auto src = begin + origSize;
-						auto dst = buf.end();
+							auto begin = buf.begin();
+							auto src = begin + origSize;
+							auto dst = buf.end();
 
-						while(dst != begin) {
-							uint8 c = *--src;
+							while(dst != begin) {
+								uint8 c = *--src;
 
-							if (c == 0x9B) {
-								*--dst = 0x0A;
-								c = 0x0D;
+								if (c == 0x9B) {
+									*--dst = 0x0A;
+									c = 0x0D;
+								}
+
+								*--dst = c;
 							}
-
-							*--dst = c;
 						}
 					}
 				}

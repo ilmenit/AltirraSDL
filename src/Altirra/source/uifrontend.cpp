@@ -18,7 +18,9 @@
 #include <vd2/system/error.h>
 #include <at/atcore/devicesnapshot.h>
 #include <at/atcore/snapshotimpl.h>
+#include <at/atnativeui/uiframe.h>
 #include "audiowriter.h"
+#include "console.h"
 #include "sapwriter.h"
 #include "simulator.h"
 #include "uiaccessors.h"
@@ -56,7 +58,8 @@ class ATUIFrontEnd final : public IATUIFrontEnd, public IATDeviceSnapshot {
 public:
 	ATUIFrontEnd() = default;
 
-	void Shutdown() override;
+	void Init();
+	void Shutdown();
 
 	ATUIRecordingStatus GetRecordingStatus() const override;
 	bool IsRecording() const override;
@@ -75,6 +78,10 @@ public:
 
 	void CheckRecordingExceptions() override;
 
+	void ShowSuggestions() override;
+	bool IsAutoSuggestEnabled() override;
+	void SetAutoSuggestEnabled(bool enabled) override;
+
 public:
 	void StopAudioRecording();
 	void StopVideoRecording();
@@ -85,13 +92,33 @@ public:
 	vdrefptr<IATObjectState> SaveState(ATSnapshotContext& ctx) const override;
 
 private:
+	bool mbAutoSuggestEnabled = false;
+
 	vdautoptr<ATAudioWriter> mpAudioWriter;
 	vdautoptr<IATVideoWriter> mpVideoWriter;
 	vdautoptr<IATSAPWriter> mpSapWriter;
 	vdrefptr<IATVgmWriter> mpATVgmWriter;
+
+	ATUIPaneInterfaceFnToken mPaneInterfaceToken {};
 };
 
+void ATUIFrontEnd::Init() {
+	mPaneInterfaceToken = ATUIRegisterForPaneInterface<IATDisplayPane>(
+		[this](IATDisplayPane& pane, bool removing) {
+			if (!removing) {
+				pane.SetAutoSuggestEnabled(mbAutoSuggestEnabled);
+			}
+		}
+	);
+}
+
 void ATUIFrontEnd::Shutdown() {
+	if (mPaneInterfaceToken) {
+		ATUIUnregisterForPaneInterface<IATDisplayPane>(mPaneInterfaceToken);
+
+		mPaneInterfaceToken = {};
+	}
+
 	StopRecording();
 }
 
@@ -306,6 +333,26 @@ void ATUIFrontEnd::CheckRecordingExceptions() {
 	}
 }
 
+void ATUIFrontEnd::ShowSuggestions() {
+	IATDisplayPane *pane = ATGetUIPaneAs<IATDisplayPane>(kATUIPaneId_Display);
+	if (pane)
+		pane->ShowSuggestions();
+}
+
+bool ATUIFrontEnd::IsAutoSuggestEnabled() {
+	return mbAutoSuggestEnabled;
+}
+
+void ATUIFrontEnd::SetAutoSuggestEnabled(bool enabled) {
+	if (mbAutoSuggestEnabled != enabled) {
+		mbAutoSuggestEnabled = enabled;
+
+		IATDisplayPane *pane = ATGetUIPaneAs<IATDisplayPane>(kATUIPaneId_Display);
+		if (pane)
+			pane->SetAutoSuggestEnabled(enabled);
+	}
+}
+
 void ATUIFrontEnd::LoadState(const IATObjectState *state, ATSnapshotContext& ctx) {
 	if (!state) {
 		const ATUISaveStateFrontEnd kDefaultState {};
@@ -362,13 +409,29 @@ void ATUIFrontEnd::StopVgmRecording() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ATUIFrontEnd g_ATUIFrontEnd;
+ATUIFrontEnd *g_pATUIFrontEnd;
 
 IATDeviceSnapshot *ATUIGetFrontEndSnapshot() {
-	return &g_ATUIFrontEnd;
+	return g_pATUIFrontEnd;
+}
+
+void ATUIInitFrontEnd() {
+	VDASSERT(!g_pATUIFrontEnd);
+	g_pATUIFrontEnd = new ATUIFrontEnd;
+	g_pATUIFrontEnd->Init();
+}
+
+void ATUIShutdownFrontEnd() {
+	if (g_pATUIFrontEnd) {
+		g_pATUIFrontEnd->Shutdown();
+		delete g_pATUIFrontEnd;
+		g_pATUIFrontEnd = nullptr;
+	}
 }
 
 IATUIFrontEnd& ATUIGetFrontEnd() {
-	return g_ATUIFrontEnd;
+	VDASSERT(g_pATUIFrontEnd);
+
+	return *g_pATUIFrontEnd;
 }
 

@@ -47,6 +47,7 @@
 #include "uiaccessors.h"
 #include "uikeyboard.h"
 #include "ui_main.h"
+#include "ui_mode.h"
 #include "logging.h"
 #include "ui/netplay/ui_netplay_deeplink.h"
 
@@ -617,6 +618,45 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			else if (strcasecmp(val, "1400xl") == 0) g_sim.SetHardwareMode(kATHardwareMode_1400XL);
 			else if (strcasecmp(val, "5200") == 0) g_sim.SetHardwareMode(kATHardwareMode_5200);
 			else LOG_INFO("CmdLine", "Invalid hardware mode: %s", val);
+			continue;
+		}
+
+		// ---- First-run defaults: experience + addons (consumed-here no-op) ----
+		// Pushed by the WASM deeplink JS when ?experience= / ?addons= is
+		// in the URL.  The actual application happens in main_sdl3.cpp's
+		// pre-scan (BEFORE this function runs), so subsequent CLI args
+		// (--memsize / --hardware / --stereo / etc.) override the silent
+		// defaults rather than the other way around.  Here we just
+		// consume the arg so it doesn't trip ATProcessCommandLineSDL3's
+		// unknown-arg log; the value-validity check is in main_sdl3.cpp.
+		if ((val = ConsumeArg(argc, argv, i, consumed, "experience")) != nullptr) {
+			(void)val;  // applied in main_sdl3.cpp first-run silent-defaults block
+			continue;
+		}
+		if ((val = ConsumeArg(argc, argv, i, consumed, "addons")) != nullptr) {
+			(void)val;  // applied in main_sdl3.cpp first-run silent-defaults block
+			continue;
+		}
+
+		// ---- UI mode (Desktop / Gaming) ----
+		// Pushed by the WASM deeplink JS when ?ui=desktop or
+		// ?ui=gaming is in the URL.  Applied at command-line time so
+		// the very first frame already reflects the override — without
+		// this, the registry-restored mode (whatever the user left
+		// from a previous visit) would render for hundreds of ms
+		// before the post-runtime ATWasmSetGamingMode() lands, leaving
+		// the user staring at the "wrong" UI during the first paint.
+		// Native CLI users can also pass --ui-mode desktop|gaming.
+		if ((val = ConsumeArg(argc, argv, i, consumed, "ui-mode")) != nullptr) {
+			if (strcasecmp(val, "desktop") == 0) {
+				ATUISetMode(ATUIMode::Desktop);
+				ATUISaveMode();
+			} else if (strcasecmp(val, "gaming") == 0) {
+				ATUISetMode(ATUIMode::Gaming);
+				ATUISaveMode();
+			} else {
+				LOG_INFO("CmdLine", "--ui-mode: expected 'desktop' or 'gaming', got '%s'", val);
+			}
 			continue;
 		}
 

@@ -469,7 +469,18 @@ vdpoint32 ATUIWidget::TranslateClientPtToScreenPt(vdpoint32 cpt) {
 void ATUIWidget::UnbindAction(uint32 vk, uint32 mod) {
 	auto it = std::find_if(mActionMap.begin(), mActionMap.end(),
 		[=](const ATUITriggerBinding& binding) {
-			return binding.mVk == vk && binding.mModVal == mod;
+			return !binding.mbForward && binding.mVk == vk && binding.mModVal == mod;
+		}
+	);
+
+	if (it != mActionMap.end())
+		mActionMap.erase(it);
+}
+
+void ATUIWidget::UnforwardAction(uint32 action) {
+	auto it = std::find_if(mActionMap.begin(), mActionMap.end(),
+		[=](const ATUITriggerBinding& binding) {
+			return binding.mbForward && binding.mVk == action;
 		}
 	);
 
@@ -486,30 +497,50 @@ void ATUIWidget::BindAction(const ATUITriggerBinding& binding) {
 }
 
 void ATUIWidget::BindAction(uint32 vk, uint32 action, uint32 mod, uint32 instanceid) {
-	ATUITriggerBinding binding;
+	ATUITriggerBinding binding {};
 	binding.mVk = vk;
 	binding.mModMask = ATUITriggerBinding::kModAll;
 	binding.mModVal = mod;
 	binding.mAction = action;
+	binding.mbForward = false;
 	binding.mTargetInstanceId = instanceid;
 
 	BindAction(binding);
 }
 
-const ATUITriggerBinding *ATUIWidget::FindAction(uint32 vk, uint32 extvk, uint32 mods) const {
-	for(ActionMap::const_iterator it(mActionMap.begin()), itEnd(mActionMap.end());
-		it != itEnd;
-		++it)
-	{
-		const ATUITriggerBinding& binding = *it;
+void ATUIWidget::ForwardAction(uint32 srcAction, uint32 targetAction, uint32 instanceid) {
+	if (!instanceid) {
+		VDFAIL("ForwardAction() requires non-zero instance ID");
+		return;
+	}
 
-		if (binding.mVk == vk || binding.mVk == extvk) {
+	ATUITriggerBinding binding {};
+	binding.mVk = srcAction;
+	binding.mAction = targetAction;
+	binding.mTargetInstanceId = instanceid;
+	binding.mbForward = true;
+
+	BindAction(binding);
+}
+
+const ATUITriggerBinding *ATUIWidget::FindAction(uint32 vk, uint32 extvk, uint32 mods) const {
+	for(const ATUITriggerBinding& binding : mActionMap) {
+		if (!binding.mbForward && (binding.mVk == vk || binding.mVk == extvk)) {
 			if (!((mods ^ binding.mModVal) & binding.mModMask))
 				return &binding;
 		}
 	}
 
-	return NULL;
+	return nullptr;
+}
+
+const ATUITriggerBinding *ATUIWidget::FindForwardedAction(uint32 action) const {
+	for(const ATUITriggerBinding& binding : mActionMap) {
+		if (binding.mbForward && binding.mVk == action)
+			return &binding;
+	}
+
+	return nullptr;
 }
 
 ATUITimerHandle ATUIWidget::StartTimer(float initialDelay, float period, vdfunction<void()> fn) {

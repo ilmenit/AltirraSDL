@@ -1032,10 +1032,14 @@
 
     Display the closest symbol to a given address.
     
-      ln <address>
+      ln [-r] [-w] [-x] <address>
       
     The closest symbol is the one with the highest address that is equal to
     or lower than the given address.
+
+      -r   Restrict lookup to symbols valid for read accesses.
+      -w   Restrict lookup to symbols valid for write accesses.
+      -x   Restrict lookup to symbols valid for execute accesses.
 
 + m    Move memory
 

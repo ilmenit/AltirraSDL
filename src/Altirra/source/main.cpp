@@ -2238,6 +2238,18 @@ void ATUISetShowFPS(bool enabled) {
 		g_sim.GetUIRenderer()->SetFpsIndicator(-1.0f);
 }
 
+// Autosuggest auto-show-on-edit (test10).  On Windows native, route to the
+// pointer-owned ATUIFrontEnd; on SDL3, this same name is provided by
+// AltirraSDL/stubs/uiaccessors_stubs.cpp.  Either way settings.cpp can
+// exchange the "View: Auto-suggest enabled" key via the same accessor pair.
+bool ATUIGetAutoSuggestEnabled() {
+	return ATUIGetFrontEnd().IsAutoSuggestEnabled();
+}
+
+void ATUISetAutoSuggestEnabled(bool enabled) {
+	ATUIGetFrontEnd().SetAutoSuggestEnabled(enabled);
+}
+
 void OnCommandViewAdjustWindowSize() {
 	if (g_pMainWindow)
 		g_pMainWindow->AutoSize();
@@ -3821,6 +3833,13 @@ int RunInstance(int nCmdShow, ATSettingsCategory categoriesToIgnore) {
 		}
 	);
 
+	ATOptionsAddUpdateCallback(true,
+		[](ATOptions& opts, const ATOptions *prevOpts, void *) {
+			if (!prevOpts || opts.mbTextOutputLFOnly != prevOpts->mbTextOutputLFOnly)
+				VDTextOutputStream::SetDefaultLFOnly(opts.mbTextOutputLFOnly);
+		}
+	);
+
 	VDVideoDisplaySetMonitorSwitchingDXEnabled(true);
 	VDVideoDisplaySetSecondaryDXEnabled(true);
 	VDVideoDisplaySetD3D9ExEnabled(false);
@@ -3894,6 +3913,9 @@ int RunInstance(int nCmdShow, ATSettingsCategory categoriesToIgnore) {
 
 	ATUISetDispatcher(g_sim.GetDeviceManager()->GetService<IATAsyncDispatcher>());
 	ATUILinkMainWindowToSimulator(*g_pMainWindow);
+
+	ATStartupLog("Initializing front end");
+	ATUIInitFrontEnd();
 
 	ATStartupLog("Initializing game controllers");
 	ATInitJoysticks();
@@ -4047,7 +4069,7 @@ int RunInstance(int nCmdShow, ATSettingsCategory categoriesToIgnore) {
 	ATSetFullscreen(false);
 
 	ATStartupLog("Stopping front end");
-	ATUIGetFrontEnd().Shutdown();
+	ATUIShutdownFrontEnd();
 
 	ATStartupLog("Stopping sockets");
 	ATSocketPreShutdown();

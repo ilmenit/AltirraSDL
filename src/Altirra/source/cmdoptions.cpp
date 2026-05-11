@@ -127,6 +127,8 @@ void ATUIInitCommandMappingsOption(ATUICommandManager& cmdMgr) {
 		ATMakeOnCommandOptionToggle<&ATOptions::mbDisplay3D>("Options.ToggleDisplayD3D11"),
 		ATMakeOnCommandOptionToggle<&ATOptions::mbDisplay16Bit>("Options.ToggleDisplay16Bit", [] { return g_ATOptions.mbDisplayD3D9; }),
 		ATMakeOnCommandOptionToggle<&ATOptions::mbDisplayCustomRefresh>("Options.ToggleDisplayCustomRefresh", [] { return g_ATOptions.mbDisplay3D; }),
+
+		ATMakeOnCommandOptionToggle<&ATOptions::mbTextOutputLFOnly>("Options.ToggleTextOutputLFOnly"),
 	};
 
 	cmdMgr.RegisterCommands(kCommands, vdcountof(kCommands));

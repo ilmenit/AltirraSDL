@@ -166,6 +166,20 @@
     <label>BASIC
       <input id="ctl-basic" type="checkbox">
     </label>
+    <label>Experience
+      <select id="ctl-exp">
+        <option value="" selected>(default: convenient)</option>
+        <option value="convenient">Convenient</option>
+        <option value="authentic">Authentic</option>
+      </select>
+    </label>
+    <label>Add-ons
+      <select id="ctl-addons">
+        <option value="" selected>(default: on)</option>
+        <option value="on">On (VBXE/Covox/POKEY/1088K)</option>
+        <option value="off">Off (stock hardware)</option>
+      </select>
+    </label>
     <button id="ctl-apply" type="button">Apply &amp; reload frame</button>
   </div>
 
@@ -216,6 +230,12 @@
     <li><strong>Open in the full emulator UI</strong> — add
         <code>&amp;ui=desktop</code> (and omit <code>embed=1</code>)
         for a "try this in the full emulator" link.</li>
+    <li><strong>Period-accurate look</strong> — add
+        <code>&amp;experience=authentic&amp;addons=off</code> for a
+        stock 800XL with NTSC artifact colors, drive sounds, and
+        accurate disk timing.  Right for original-era titles.  See
+        the "First-run defaults" section in <a href="EMBED.md">EMBED.md</a>
+        for the full matrix.</li>
   </ul>
 
   <p>See <a href="EMBED.md">EMBED.md</a> for the complete reference.</p>
@@ -224,13 +244,15 @@
     // Live URL builder — keeps the iframe and the snippet block in
     // sync as the user tweaks the controls.  Pure DOM, no framework.
     (function () {
-      var iframe   = document.getElementById('emu');
-      var ctlLib   = document.getElementById('ctl-lib');
-      var ctlHw    = document.getElementById('ctl-hw');
-      var ctlReg   = document.getElementById('ctl-region');
-      var ctlBasic = document.getElementById('ctl-basic');
-      var btn      = document.getElementById('ctl-apply');
-      var snippet  = document.querySelector('#snippet code');
+      var iframe    = document.getElementById('emu');
+      var ctlLib    = document.getElementById('ctl-lib');
+      var ctlHw     = document.getElementById('ctl-hw');
+      var ctlReg    = document.getElementById('ctl-region');
+      var ctlBasic  = document.getElementById('ctl-basic');
+      var ctlExp    = document.getElementById('ctl-exp');
+      var ctlAddons = document.getElementById('ctl-addons');
+      var btn       = document.getElementById('ctl-apply');
+      var snippet   = document.querySelector('#snippet code');
 
       // Build the URL twice with different prefixes:
       //  - liveUrl  → "../index.html?…"  for this page's iframe (we
@@ -247,6 +269,8 @@
         if (ctlHw.value)    p.set('hardware', ctlHw.value);
         if (ctlReg.value)   p.set(ctlReg.value, '1');
         if (ctlBasic.checked) p.set('basic', '1');
+        if (ctlExp.value)    p.set('experience', ctlExp.value);
+        if (ctlAddons.value) p.set('addons', ctlAddons.value);
         return '?' + p.toString();
       }
 

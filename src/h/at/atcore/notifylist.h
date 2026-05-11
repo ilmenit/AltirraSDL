@@ -78,10 +78,21 @@ public:
 	// list.
 	void AddUnique(T v);
 
-	/// Removes the first item from the list that matches the supplied value,
-	/// if any. Silently exits if not found.
-	/// Complexity: O(N)
+	// Create a new item in the list in place. No check is made for a duplicate.
+	// Complexity: Amortized O(1)
+	template<typename... Args>
+	void Emplace(Args&&... args) {
+		mList.emplace_back(std::forward<Args>(args)...);
+	}
+
+	// Removes the first item from the list that matches the supplied value,
+	// if any. Silently exits if not found.
+	// Complexity: O(N)
 	void Remove(T v);
+
+	// Remove the first item from the list that matches the specified predicate,
+	// if any. Returns true if an item was removed.
+	bool RemoveIf(const vdfunction<bool(const T&)> fn);
 
 	void NotifyAll(const vdfunction<void(T)>& fn);
 
@@ -152,6 +163,25 @@ void ATNotifyList<T>::Remove(T v) {
 
 		mList.erase(it);
 	}
+}
+
+template<typename T>
+bool ATNotifyList<T>::RemoveIf(const vdfunction<bool(const T&)> fn) {
+	auto it = mList.begin(), itEnd = mList.end();
+
+	for(; it != itEnd; ++it) {
+		const T& v = *it;
+
+		if (fn(v)) {
+			size_t pos = (size_t)(it - mList.begin());
+			AdjustIteratorsForRemove(pos);
+
+			mList.erase(it);
+			return true;
+		}
+	}
+
+	return false;
 }
 
 template<class T>

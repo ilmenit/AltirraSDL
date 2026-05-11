@@ -1,6 +1,5 @@
 //	Altirra - Atari 800/800XL/5200 emulator
-//	Core library - generic bus signal implementation
-//	Copyright (C) 2023 Avery Lee
+//	Copyright (C) 2026 Avery Lee
 //
 //	This program is free software; you can redistribute it and/or modify
 //	it under the terms of the GNU General Public License as published by
@@ -19,26 +18,25 @@
 //	modified under an alternate license. See COPYING.RMT in the same source
 //	archive for details.
 
-#ifndef f_AT_ATCORE_ATASCII_H
-#define f_AT_ATCORE_ATASCII_H
+#ifndef f_AT_ATCORE_DEVICEAUTOSUGGEST_H
+#define f_AT_ATCORE_DEVICEAUTOSUGGEST_H
 
 #include <vd2/system/vdtypes.h>
-#include <vd2/system/constexpr.h>
+#include <vd2/system/unknown.h>
 
-struct ATATASCIITables {
-	uint16 mATASCIIToUnicode[2][128];
-	VDCxHashMap<uint16, uint8, 167, 256> mUnicodeToATASCII;
+class VDStringA;
+class IATDeviceAutoSuggestSink;
+
+class IATDeviceAutoSuggest {
+public:
+	static constexpr auto kTypeID = "IATDeviceAutoSuggest"_vdtypeid;
+
+	virtual void AutoSuggestCIOPaths(char cioDevice, uint8 unit, const VDStringA& path, IATDeviceAutoSuggestSink& sink) = 0;
 };
 
-extern const ATATASCIITables kATATASCIITables;
-
-// XOR value for indexing by bits 5..6
-static inline constexpr uint8 kATInternalToATASCIITable[4] {
-	0x20, 0x60, 0x40, 0x00
+class IATDeviceAutoSuggestSink {
+public:
+	virtual void AddSuggestion(const char *insertText, const wchar_t *itemText, const wchar_t *descriptionText) = 0;
 };
-
-inline constexpr uint8 ATConvertInternalToATASCII(uint8 c) {
-	return c ^ kATInternalToATASCIITable[(c >> 5) & 3];
-}
 
 #endif

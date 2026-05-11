@@ -88,29 +88,51 @@ void ATDeviceFileWriter::WriteRaw(const uint8 *src, size_t len) {
 		return;
 	}
 
-	while(len--) {
-		uint8 c = *src++;
+	if (VDTextOutputStream::GetDefaultLFOnly()) {
+		while(len--) {
+			uint8 c = *src++;
 
-		if (c == 0x9B) {
-			WriteByte(0x0D);
-			c = 0x0A;
-		} else if (c == 0x0D) {
-			WriteByte(0x0D);
-			c = 0x0A;
-			mbTextIgnoreNextLF = true;
-		} else if (c == 0x0A) {
-			if (mbTextIgnoreNextLF) {
+			if (c == 0x9B) {
+				c = 0x0A;
+			} else if (c == 0x0D) {
+				c = 0x0A;
+				mbTextIgnoreNextLF = true;
+			} else if (c == 0x0A) {
+				if (mbTextIgnoreNextLF) {
+					mbTextIgnoreNextLF = false;
+					continue;
+				}
+			} else {
 				mbTextIgnoreNextLF = false;
-				continue;
 			}
 
-			WriteByte(0x0D);
-			c = 0x0A;
-		} else {
-			mbTextIgnoreNextLF = false;
+			WriteByte(c);
 		}
+	} else {
+		while(len--) {
+			uint8 c = *src++;
 
-		WriteByte(c);
+			if (c == 0x9B) {
+				WriteByte(0x0D);
+				c = 0x0A;
+			} else if (c == 0x0D) {
+				WriteByte(0x0D);
+				c = 0x0A;
+				mbTextIgnoreNextLF = true;
+			} else if (c == 0x0A) {
+				if (mbTextIgnoreNextLF) {
+					mbTextIgnoreNextLF = false;
+					continue;
+				}
+
+				WriteByte(0x0D);
+				c = 0x0A;
+			} else {
+				mbTextIgnoreNextLF = false;
+			}
+
+			WriteByte(c);
+		}
 	}
 
 	Flush();

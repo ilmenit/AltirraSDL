@@ -177,17 +177,46 @@ void Wiz_SetCovox(ATSimulator &sim, bool enable) {
 	});
 }
 
-void Wiz_ApplyConvenientWithRecommendedAddons(ATSimulator &sim) {
-	// Skip silently for 5200 — the four add-ons are XL/XE-only concepts
-	// (5200 has no banked RAM beyond cartridge area, no second POKEY in
-	// the canonical config, and VBXE/Covox are computer expansions).
+// =========================================================================
+// Single-axis presets — Experience and Hardware Add-ons
+// =========================================================================
+//
+// The wizard's page-30 Experience radio and page-32 Hardware Add-ons
+// page are conceptually orthogonal: a user might want
+// "Authentic look + modern hardware" (e.g. NTSC artifacts on a
+// VBXE-required demo) or "Convenient loading + stock 800 XL" (a
+// period-accurate game with fast disk loading).  The helpers below
+// expose each axis independently so the silent first-run apply at
+// startup, the URL params, and the wizard renderer all share one
+// implementation.
+//
+// `deferReset=true` skips the trailing LoadROMs()+ColdReset() so a
+// caller can batch the reset with its own (e.g. main_sdl3.cpp's
+// startup-time apply runs before ATProcessCommandLineSDL3, which is
+// followed by a single ColdReset later in main()).  Default false
+// matches the wizard's in-app behaviour where each click should
+// reset immediately.
+
+namespace {
+	// Shared trailing reset for the helpers below.  Reuses the dirty
+	// flag bookkeeping so Wiz_Finish's downstream reset doesn't fire a
+	// second time when the silent path already covered it.
+	void Wiz_FinishApply(ATSimulator &sim, bool deferReset) {
+		if (!deferReset) {
+			sim.LoadROMs();
+			sim.ColdReset();
+		}
+		g_setupWiz.needsHardwareReset = false;
+	}
+}
+
+void Wiz_ApplyConvenientExperience(ATSimulator &sim, bool deferReset) {
 	if (sim.GetHardwareMode() == kATHardwareMode_5200)
 		return;
 
-	// Convenient experience preset — same writes as wizard page 30's
-	// Convenient radio (ui_tools_setup_wizard.cpp:930-939) so the silent
-	// mobile path lands the user in the same state a Desktop user would
-	// arrive at by clicking Convenient + ticking all four add-ons.
+	// Mirrors the wizard's Convenient radio at
+	// ui_tools_setup_wizard.cpp:1106-1115.  Keep these in lockstep —
+	// any time the wizard's behaviour changes, this preset must too.
 	ATUISetDriveSoundsEnabled(false);
 	sim.SetCassetteSIOPatchEnabled(true);
 	sim.SetDiskSIOPatchEnabled(true);
@@ -196,24 +225,50 @@ void Wiz_ApplyConvenientWithRecommendedAddons(ATSimulator &sim) {
 	ATUISetDisplayFilterMode(kATDisplayFilterMode_SharpBilinear);
 	ATUISetViewFilterSharpness(+1);
 
-	Wiz_SetMemory1088K(sim, true);
-	Wiz_SetDualPokey(sim, true);
-	Wiz_SetVBXE(sim, true);
-	Wiz_SetCovox(sim, true);
+	Wiz_FinishApply(sim, deferReset);
+}
 
-	// Cold reset so the new hardware actually appears to running code.
-	// Helpers above set needsHardwareReset; we do the reset here
-	// directly because the silent path doesn't end at Wiz_Finish.
-	sim.LoadROMs();
-	sim.ColdReset();
+void Wiz_ApplyAuthenticExperience(ATSimulator &sim, bool deferReset) {
+	if (sim.GetHardwareMode() == kATHardwareMode_5200)
+		return;
 
-	// Clear the dirty flag — we already reset.  Otherwise the flag
-	// would persist into a future wizard session (started via "Repeat
-	// First Time Setup") and Wiz_Finish would do a needless cold reset
-	// the moment the user advances past Welcome.  Wiz_Finish reads the
-	// flag together with wentPastFirst, but the silent apply path
-	// doesn't go through Wiz_Finish, so we have to reset it ourselves.
-	g_setupWiz.needsHardwareReset = false;
+	// Mirrors the wizard's Authentic radio at
+	// ui_tools_setup_wizard.cpp:1097-1104.  AutoHi gives PAL/NTSC-
+	// appropriate artifact colors (the simulator picks based on
+	// active video standard).
+	sim.GetGTIA().SetArtifactingMode(ATArtifactMode::AutoHi);
+	sim.SetCassetteSIOPatchEnabled(false);
+	sim.SetDiskSIOPatchEnabled(false);
+	sim.SetDiskAccurateTimingEnabled(true);
+	ATUISetDriveSoundsEnabled(true);
+	ATUISetDisplayFilterMode(kATDisplayFilterMode_Bilinear);
+
+	Wiz_FinishApply(sim, deferReset);
+}
+
+void Wiz_ApplyHardwareAddons(ATSimulator &sim, bool enable, bool deferReset) {
+	// 5200: nothing to add.  XL/XE expansions don't apply.
+	if (sim.GetHardwareMode() == kATHardwareMode_5200)
+		return;
+
+	if (enable) {
+		Wiz_SetMemory1088K(sim, true);
+		Wiz_SetDualPokey(sim, true);
+		Wiz_SetVBXE(sim, true);
+		Wiz_SetCovox(sim, true);
+	} else {
+		// `?addons=off` → predictable stock hardware regardless of
+		// what the loaded default profile shipped with.  Actively
+		// remove the three devices and disable Stereo POKEY; LEAVE
+		// memory mode alone so the user's --memsize / profile choice
+		// survives (otherwise we'd silently force 128 K and shadow
+		// any explicit ?memsize= URL param).
+		Wiz_SetDualPokey(sim, false);
+		Wiz_SetVBXE(sim, false);
+		Wiz_SetCovox(sim, false);
+	}
+
+	Wiz_FinishApply(sim, deferReset);
 }
 
 void Wiz_SeedHardwareAddonsPage(ATSimulator &sim) {
@@ -629,6 +684,16 @@ void Wiz_Finish(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
 		if (g_mobileState.currentScreen == ATMobileUIScreen::SetupWizard)
 			g_mobileState.currentScreen = ATMobileUIScreen::None;
 	}
+
+	// Mark the Gaming-Mode shortened FirstRunWizard as "done" too.
+	// Completing the multi-page wizard (in either Desktop or Gaming
+	// Mode) is a strictly stronger signal than tapping a button on the
+	// shortened wizard, so it should silence both UXes.  Without this,
+	// a Desktop user who finishes the multi-page wizard and later
+	// switches to Gaming Mode would re-see the shortened FirstRunWizard
+	// — and any tap on its action buttons would overwrite the settings
+	// they just deliberately picked in the multi-page flow.
+	SetFirstRunComplete();
 
 	// Flush settings to disk so anything that was changed during the
 	// wizard but only stored in the in-memory registry (e.g. mode
