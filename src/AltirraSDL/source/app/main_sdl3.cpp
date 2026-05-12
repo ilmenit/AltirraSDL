@@ -1797,20 +1797,26 @@ int main(int argc, char *argv[]) {
 	}
 	g_sim.SetRandomSeed(rand() ^ (rand() << 15));
 
-	// SDL3-build defaults: flipped from the simulator's C++ ctor defaults
-	// (which match Windows-Altirra parity, off) to match user expectation
-	// across all WASM/lobby surfaces.  Real Atari hardware never gave you
-	// the same uninitialised RAM twice, and games that sample low RAM as
-	// an RNG seed (random enemy paths, dice rolls, music seed) feel
-	// scripted with a deterministic floor.  Set BEFORE the profile system
-	// loads — ATSettingsSwitchProfile / ATLoadSettings reads the live
-	// value via Is*() as the fallback default, so a saved user preference
-	// (registry key present) wins over this default; only fresh-install /
-	// no-key visitors see the new behaviour.  The netplay canonical
-	// profile (netplay_profile.cpp) overrides MemoryClearMode for online
+	// SDL3-build default flip for power-on RAM contents: real Atari
+	// hardware never gave you the same uninitialised RAM twice, and
+	// games that sample low RAM as an RNG seed (random enemy paths,
+	// dice rolls, music seed) feel scripted with a deterministic floor.
+	// Set BEFORE the profile system loads — ATSettingsSwitchProfile /
+	// ATLoadSettings reads the live value via Get*() as the fallback
+	// default, so a saved user preference (registry key present) wins
+	// over this default; only fresh-install / no-key visitors see the
+	// new behaviour.  The netplay canonical profile
+	// (netplay_profile.cpp) overrides MemoryClearMode for online
 	// sessions explicitly with its own Random value, so this default
 	// doesn't double-apply or fight the profile system.
-	g_sim.SetRandomFillEXEEnabled(true);
+	//
+	// "Randomize memory on EXE load" is intentionally NOT flipped here.
+	// Windows Altirra defaults that toggle to OFF, the Gaming-Mode UI
+	// labels it "Default: off", and turning it on subtly changes how
+	// .xex programs behave (regions the EXE doesn't load get random
+	// bytes instead of leaving the existing OS-cleared pattern).  Keep
+	// parity with Windows — users who want it can flip it in
+	// Configure System > Memory or Gaming Mode Settings > Machine.
 	g_sim.SetMemoryClearMode(kATMemoryClearMode_Random);
 
 	phase = "firmware load";
@@ -2425,6 +2431,21 @@ int main(int argc, char *argv[]) {
 			else
 				Wiz_ApplyConvenientExperience(g_sim, /*deferReset=*/true);
 			Wiz_ApplyHardwareAddons(g_sim, addonsOn, /*deferReset=*/true);
+
+#  if defined(__ANDROID__)
+			// Android Gaming Mode default: real read/write disk mounts.
+			// Phones don't expose a file dialog the way Desktop does, so
+			// the discoverable workflow for "this game saves high scores
+			// / progress" is to make persistence the default and let the
+			// user dial it back via Configure System > Disk drives if a
+			// disk image is precious.  The disk write mode is read from
+			// g_ATOptions.mDefaultWriteMode at mount time; flushing via
+			// ATOptionsSave persists the choice so a returning user keeps
+			// it (or sees their own later override stick).
+			g_ATOptions.mDefaultWriteMode = kATMediaWriteMode_RW;
+			g_ATOptions.mbDirty = true;
+			ATOptionsSave();
+#  endif
 
 			// Mark the mobile FirstRunWizard "done" too — without this,
 			// a Gaming-Mode user who deep-linked to the page would see
