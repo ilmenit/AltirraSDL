@@ -44,6 +44,7 @@
 #include "../gamelibrary/game_library.h"
 #include "settings.h"
 #include "options.h"
+#include "../../app/wipe_data.h"
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "../netplay/ui_netplay_state.h"
 #include "../emotes/emote_netplay.h"
@@ -175,6 +176,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		case ATMobileSettingsPage::Firmware:    pageTitle = "Firmware"; break;
 		case ATMobileSettingsPage::GameLibrary: pageTitle = "Game Library"; break;
 		case ATMobileSettingsPage::OnlinePlay:  pageTitle = "Online Play"; break;
+		case ATMobileSettingsPage::Advanced:    pageTitle = "Advanced"; break;
 		}
 		ImGui::Text("%s", pageTitle);
 
@@ -212,7 +214,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				VDStringA subtitle;
 				ATMobileSettingsPage target;
 			};
-			CatRow cats[10];
+			CatRow cats[11];
 			int n = 0;
 
 			cats[n++] = { "Machine",
@@ -330,6 +332,20 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					ATMobileSettingsPage::OnlinePlay };
 			}
 #endif
+
+			// Advanced — settings management and the destructive
+			// "Reset Altirra (delete all data)" action.  Placed last
+			// so destructive content sits visually at the bottom of
+			// the list, away from the day-to-day toggles above.
+			{
+				VDStringA sub;
+				if (ATSettingsIsResetPending())
+					sub = "Reset scheduled for next launch";
+				else
+					sub = "Reset settings or wipe all data";
+				cats[n++] = { "Advanced", sub,
+					ATMobileSettingsPage::Advanced };
+			}
 
 
 			float rowH = dp(76.0f);
@@ -1518,6 +1534,83 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			ATNetplayUI::SaveToRegistry();
 		}
 #endif
+
+		// --- Sub-page: Advanced ---
+		// Mirrors Configure System > Settings in the desktop UI:
+		//   - "Reset all settings" (soft, deferred to next launch —
+		//     ATSettingsScheduleReset; settings only, library / saves
+		//     / custom art / firmware survive)
+		//   - "Reset Altirra (delete all data)" (destructive,
+		//     immediate — ATWipeAndExit wipes the whole config dir
+		//     and exits).  Primary audience is Android, where the
+		//     user cannot reach app-private storage with a file
+		//     manager.
+		//
+		// The Windows "switch portable/registry" toggle is omitted
+		// here because mobile always stores settings in INI form in
+		// the app's private directory — there's nothing to migrate.
+		if (s_settingsPage == ATMobileSettingsPage::Advanced) {
+			ATTouchSection("Settings");
+
+			const bool resetPending = ATSettingsIsResetPending();
+			if (resetPending) {
+				ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+					"Settings reset scheduled for next launch.");
+				ImGui::Dummy(ImVec2(0, dp(8.0f)));
+			}
+
+			ImGui::BeginDisabled(resetPending);
+			if (ATTouchButton("Reset all settings",
+				ImVec2(-1, dp(48.0f))))
+			{
+				ShowConfirmDialog("Reset all settings?",
+					"This resets all program settings to first-time "
+					"defaults on the next launch.\n\n"
+					"Your game library, save states, custom box art, "
+					"and installed firmware ROMs are not affected.",
+					[]() { ATSettingsScheduleReset(); });
+			}
+			ImGui::EndDisabled();
+			ImGui::Dummy(ImVec2(0, dp(8.0f)));
+			ATTouchMutedText(
+				"Soft reset.  Library, save states, custom art, and "
+				"firmware survive.  Takes effect on next launch.");
+
+			ImGui::Dummy(ImVec2(0, dp(20.0f)));
+			ATTouchSection("Reset Altirra (delete all data)");
+
+			ATTouchMutedText(
+				"Deletes every file Altirra has saved on this "
+				"device: all settings and key bindings, quick save "
+				"state, game library and thumbnails, custom box "
+				"art, lobby cache and netplay downloads, crash "
+				"logs.  Altirra will close immediately and the "
+				"next launch starts the first-time setup again.  "
+				"This cannot be undone.");
+			ImGui::Dummy(ImVec2(0, dp(12.0f)));
+
+			if (ATTouchButton("Reset Altirra (delete all data)",
+				ImVec2(-1, dp(56.0f)),
+				ATTouchButtonStyle::Danger))
+			{
+				ShowConfirmDialog("Reset Altirra?",
+					"This deletes every file Altirra has saved on "
+					"this device and exits immediately.  Reopening "
+					"the app starts the first-time setup again.  "
+					"This cannot be undone.",
+					[]() { ATWipeAndExit(); });
+			}
+
+#ifdef __ANDROID__
+			ImGui::Dummy(ImVec2(0, dp(16.0f)));
+			ATTouchMutedText(
+				"Android: this wipes LOCAL data only.  Your cloud "
+				"snapshot in Google Drive Auto Backup is unaffected "
+				"and may be restored on next launch.  For a fully "
+				"clean slate, clear the cloud copy from Settings > "
+				"System > Backup > Manage backup > Altirra.");
+#endif
+		}
 
 		// Bottom padding so the last row isn't flush against the nav bar
 		ImGui::Dummy(ImVec2(0, dp(32.0f)));

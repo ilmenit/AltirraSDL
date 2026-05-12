@@ -110,6 +110,7 @@ enum class ATMobileSettingsPage {
 	Firmware,
 	GameLibrary,
 	OnlinePlay,
+	Advanced,    // Settings storage + Reset Altirra (destructive)
 };
 extern ATMobileSettingsPage s_settingsPage;
 extern ATMobileUIScreen s_settingsReturnScreen;
