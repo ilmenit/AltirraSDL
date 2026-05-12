@@ -143,6 +143,53 @@ The library base resolves in this order:
 3. Otherwise: absolute `/AltirraSDL/library/` (lobby-compatible
    default).
 
+### Disk write mode — `wm=` (high-score persistence)
+
+By default a game can write to its disk image during play, but the
+modifications live in an in-memory copy and are discarded when the
+browser tab closes.  High scores, save slots, level-progress
+files — all gone on next visit.  This is intentional and matches
+Windows Altirra: it protects original `.atr` files from accidental
+modification, and it's the behaviour the lobby (Play Solo / Play
+Together) is locked into for desync reasons.
+
+For a single-player **embed** page where the embedder wants player
+progress to follow the visitor across sessions, pass `?wm=rw`.
+Modifications are flushed back to the IDBFS-backed file, and the
+next time the same visitor lands on the page the disk image is
+already in its post-play state.
+
+| Parameter | Allowed values | Effect |
+|-----------|----------------|--------|
+| `wm` | `ro`, `vrwsafe` *(default)*, `vrw`, `rw` | Boot-image write mode.  See table below. |
+
+| Value     | Writes? | Format command? | Flushed to file? | Use case |
+|-----------|---------|-----------------|------------------|----------|
+| `ro`      | rejected   | rejected   | n/a    | Demo / kiosk pages that want a guaranteed-clean state every visit (game thinks the disk is write-protected). |
+| `vrwsafe` | in memory  | rejected   | no     | The default.  Game can write during play; nothing persists.  Originals untouched. |
+| `vrw`     | in memory  | in memory  | no     | Same as `vrwsafe` plus the format command is honoured (some titles format a save disk before writing). |
+| `rw`      | in memory  | in memory  | **yes** | Real R/W.  High scores / saves persist across sessions in the browser's IndexedDB.  Recommended for self-hosted single-player embeds. |
+
+`?wm=rw` is the right pick for the common embed case "I host one
+specific game and want my visitors' progress to stick."  Combine
+with `?embed=1&lib=mygame.atr`:
+
+    ?embed=1&lib=mygame.atr&wm=rw
+
+**Not honoured for online play.**  Lobby `?s=…&code=…` (Join) and
+`?lib=…` URLs that originated from a Host / Play Solo button are
+locked to `vrwsafe` regardless of this parameter — Play Together
+requires identical write modes on host and joiner (a mismatch
+desyncs the very first frame the OS reads the disk-status
+register), and Play Solo cannot use `rw` because it shares the
+same IDBFS file with Play Together (a Solo write would leak into
+the next Together session you hosted of the same title).
+
+To verify which mode is active after the page loads, open the
+emulator's **About** dialog (the `?` button in embed mode, or
+*Hamburger → About* in Gaming Mode) and look at the
+**Disk write mode** row in the configuration summary.
+
 ### Firmware ROMs (`firmware/`)
 
 | Parameter   | Value           | Effect |

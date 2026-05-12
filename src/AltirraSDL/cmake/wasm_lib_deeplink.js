@@ -332,6 +332,46 @@
         }
       }
 
+      // ?wm=ro|vrwsafe|vrw|rw — boot-image write mode.  Controls what
+      // happens when an emulated program writes back to the disk image
+      // it was loaded from.  Maps 1:1 to the existing --bootro /
+      // --bootvrwsafe / --bootvrw / --bootrw CLI flags in
+      // commandline_sdl3.cpp:794-813.
+      //
+      //   ro       = Read Only.  All writes fail (game thinks the disk
+      //              is write-protected).  Useful for demo/kiosk pages
+      //              that want a guaranteed-clean state every visit.
+      //   vrwsafe  = Virtual R/W (Safe) — the default.  Writes go to an
+      //              in-memory copy of the image; the underlying file
+      //              is never touched.  Format command is rejected.
+      //              Matches Windows Altirra's default; protects
+      //              original .atr files from accidental modification.
+      //   vrw      = Virtual R/W.  Same as vrwsafe but format-disk is
+      //              also allowed in memory.
+      //   rw       = Real R/W.  Writes are flushed back to the IDBFS-
+      //              backed file so high scores / save slots persist
+      //              across browser sessions.  Pair with ?embed=1 for
+      //              self-hosted single-player pages where the
+      //              embedder wants player progress to stick.
+      //
+      // NOT honoured for online-play (Play Together / Play Solo from
+      // the lobby): those surfaces hardcode VRWSafe regardless of this
+      // param.  Mismatched write modes desync lockstep, and a Solo
+      // session that wrote back would leak modifications into the next
+      // hosted Together session for the same title.  See
+      // ui_main.cpp:701-714 for the netplay rationale.
+      var wmMap = { ro: '--bootro', vrwsafe: '--bootvrwsafe',
+                    vrw: '--bootvrw', rw: '--bootrw' };
+      var wmRaw = (p.get('wm') || '').trim().toLowerCase();
+      if (wmRaw) {
+        if (wmRaw in wmMap) {
+          __wasmCliArgs.push(wmMap[wmRaw]);
+          log(wmMap[wmRaw] + ' (wm=' + wmRaw + ')');
+        } else {
+          log('ignored unknown wm value:', wmRaw);
+        }
+      }
+
       // ?crt=0|1 — master CRT-effect toggle.  Applied post-runtime via
       // ATWasmSetCRTEnabled, which routes through the same Gaming-Mode
       // performance preset (Efficient ↔ Quality) the page bar's CRT
