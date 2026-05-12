@@ -7,7 +7,6 @@
 #include "ui_main.h"
 #include "ui_main_internal.h"
 #include "buildinfo.h"
-#include "../../app/wipe_data.h"
 #include "../tools/setup_wizard_shared.h"
 #include "simulator.h"
 
@@ -209,21 +208,18 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 	ImGui::TextDisabled("Commit: %s", ALTIRRA_BUILD_COMMIT);
 
 	ImGui::Spacing();
-	// Bottom row: "Reset Altirra..." (left, destructive) opens a
-	// confirm modal that on accept wipes ATGetConfigDir() and exits.
-	// "Configuration..." opens a read-only summary card.  "Debug Log..."
-	// opens the in-app log viewer.  "OK" closes the dialog.
+	// Bottom row: "Configuration..." opens a read-only summary card.
+	// "Debug Log..." opens the in-app log viewer.  "OK" closes the
+	// dialog.  The destructive "Reset Altirra" wipe lives in
+	// Configure System > Settings (matches Windows Altirra's
+	// settings-management page) so it doesn't clutter the About card
+	// and doesn't overflow the dialog's width budget.
 	float buttonWidth = 80.0f;
 	float pad = ImGui::GetStyle().WindowPadding.x;
 	float spacing = ImGui::GetStyle().ItemSpacing.x;
 	float debugBtnW = 110.0f;
 	float configBtnW = 130.0f;
-	float resetBtnW = 130.0f;
 
-	if (ImGui::Button("Reset Altirra...", ImVec2(resetBtnW, 0)))
-		ImGui::OpenPopup("Reset Altirra?##about_reset");
-
-	ImGui::SameLine();
 	ImGui::SetCursorPosX(ImGui::GetWindowWidth()
 		- buttonWidth - spacing - debugBtnW
 		- spacing - configBtnW - pad);
@@ -261,37 +257,6 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 
 		ImGui::Separator();
 		if (ImGui::Button("Close", ImVec2(100, 0)))
-			ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
-	}
-
-	// Reset confirmation popup — destructive, so use a plain modal
-	// (no implicit-close-on-outside-click) and put the destructive
-	// action on the left, Cancel on the right.
-	ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Appearing);
-	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
-		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-	if (ImGui::BeginPopupModal("Reset Altirra?##about_reset", nullptr,
-		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
-	{
-		ImGui::TextWrapped(
-			"This deletes every file Altirra has saved on this "
-			"device:\n\n"
-			"  - All settings and key bindings\n"
-			"  - Quick save state\n"
-			"  - Game library and thumbnails\n"
-			"  - Custom box art\n"
-			"  - Lobby cache and netplay downloads\n"
-			"  - Crash logs\n\n"
-			"Altirra will close immediately.  Reopening the app "
-			"starts the first-time setup again.  This cannot be "
-			"undone.");
-		ImGui::Separator();
-		if (ImGui::Button("Reset and Exit", ImVec2(140, 0))) {
-			ATWipeAndExit();  // never returns
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Cancel", ImVec2(80, 0)))
 			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}

@@ -31,6 +31,7 @@
 #include "uiconfirm.h"
 #include "uikeyboard.h"
 #include "uitypes.h"
+#include "../../app/wipe_data.h"
 #include <at/ataudio/pokey.h>
 #include <at/ataudio/audiooutput.h>
 #include <at/atio/cassetteimage.h>
@@ -1109,5 +1110,75 @@ void RenderSettingsCfgCategory(ATSimulator &) {
 		ATSettingsScheduleMigration();
 	ImGui::SetItemTooltip("Migrate settings on next startup.");
 	if (disabled) ImGui::EndDisabled();
+
+	// =====================================================================
+	// Destructive: full data wipe (settings + game library + saves + ...)
+	// =====================================================================
+	//
+	// Distinct from "Reset all settings" above:
+	//
+	//   "Reset all settings"  — defers a registry/INI clear to next launch.
+	//                           Game library entries, save states, custom
+	//                           art, etc. all survive.  Matches Windows
+	//                           Altirra's "Reset All Settings" semantics
+	//                           (uiconfiguresystem.cpp::OnResetAll).
+	//
+	//   "Reset Altirra"       — immediate, wipes the entire config
+	//                           directory (settings + library cache +
+	//                           thumbnails + quicksave + custom art +
+	//                           netplay cache + crash logs), then exits.
+	//                           Primary audience is Android, where users
+	//                           cannot reach app-private storage with a
+	//                           file manager.  Desktop users could just
+	//                           rm -rf the directory, but the in-app
+	//                           button is convenient and works the same
+	//                           in both modes.
+	//
+	// The button used to live in the About dialog, which made it both
+	// visually prominent (wrong for a destructive action) and pushed
+	// the About bottom row past its width budget once a Configuration
+	// button was added.  Settings management belongs here.
+	ImGui::Spacing();
+	ImGui::SeparatorText("Reset Altirra (delete all data)");
+	ImGui::TextWrapped(
+		"Deletes every file Altirra has saved on this device: all "
+		"settings and key bindings, quick save state, game library "
+		"and thumbnails, custom box art, lobby cache and netplay "
+		"downloads, crash logs.  Altirra will close immediately and "
+		"the next launch starts the first-time setup again.  This "
+		"cannot be undone.");
+	ImGui::Spacing();
+	if (ImGui::Button("Reset Altirra..."))
+		ImGui::OpenPopup("Reset Altirra?##settings_reset_all");
+	ImGui::SetItemTooltip(
+		"Delete every file Altirra has saved on this device and exit.");
+
+	ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (ImGui::BeginPopupModal("Reset Altirra?##settings_reset_all", nullptr,
+		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+	{
+		ImGui::TextWrapped(
+			"This deletes every file Altirra has saved on this "
+			"device:\n\n"
+			"  - All settings and key bindings\n"
+			"  - Quick save state\n"
+			"  - Game library and thumbnails\n"
+			"  - Custom box art\n"
+			"  - Lobby cache and netplay downloads\n"
+			"  - Crash logs\n\n"
+			"Altirra will close immediately.  Reopening the app "
+			"starts the first-time setup again.  This cannot be "
+			"undone.");
+		ImGui::Separator();
+		if (ImGui::Button("Reset and Exit", ImVec2(140, 0))) {
+			ATWipeAndExit();  // never returns
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(80, 0)))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
 }
 

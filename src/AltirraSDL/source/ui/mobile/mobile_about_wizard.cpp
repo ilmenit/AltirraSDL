@@ -39,7 +39,6 @@
 
 #include "mobile_internal.h"
 #include "../tools/setup_wizard_shared.h"
-#include "../../app/wipe_data.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -73,16 +72,11 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoBackground;
 
 	if (ImGui::Begin("##MobileAbout", nullptr, flags)) {
-		// State for the destructive "Reset Altirra (delete all data)"
-		// confirm overlay (declared up here so ESC/Back can dismiss
-		// the overlay before exiting the About screen).
-		static bool s_showResetConfirm = false;
-
-		// ESC / B-button / Backspace: dismisses the reset overlay
-		// first if it's open, otherwise returns to the hamburger
-		// menu.  Without the two-step we'd leave About with the
-		// modal flag still set, and the modal would reappear on
-		// next About open.
+		// ESC / B-button / Backspace: returns to the hamburger menu.
+		// The destructive "Reset Altirra (delete all data)" button
+		// that used to live here moved to Configure System >
+		// Settings to match Windows Altirra's settings-management
+		// page convention.
 		{
 			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
 			if (!ImGui::IsAnyItemActive()) {
@@ -90,12 +84,8 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
 					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
 			}
-			if (back) {
-				if (s_showResetConfirm)
-					s_showResetConfirm = false;
-				else
-					mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
-			}
+			if (back)
+				mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
 		}
 
 		float w = ImGui::GetContentRegionAvail().x;
@@ -139,19 +129,16 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 
 		// Credits block — scrollable child so long text doesn't push
 		// the Close button off-screen on small phones.  Reserve room
-		// for the three footer buttons (Reset Altirra + Debug Log +
-		// Close), the gaps between them, and the ItemSpacing ImGui
-		// inserts between successive items.  Reset Altirra is the
-		// new bottom row added for the data-wipe action.
-		float resetBtnH = dp(48.0f);
+		// for the two footer buttons (Debug Log + Close), the gap
+		// between them, and the ItemSpacing ImGui inserts between
+		// successive items.
 		float debugBtnH = dp(48.0f);
 		float closeH = dp(56.0f);
 		float gap = dp(8.0f);
 		float bottomMargin = dp(16.0f);
 		float itemSpacingY = ImGui::GetStyle().ItemSpacing.y;
-		float bottomReserve = resetBtnH + gap
-			+ debugBtnH + gap + closeH
-			+ bottomMargin + itemSpacingY * 5.0f;
+		float bottomReserve = debugBtnH + gap + closeH
+			+ bottomMargin + itemSpacingY * 3.0f;
 		// NavFlattened so the scrollable credits area doesn't trap the
 		// gamepad cursor — without it, D-pad down from the back arrow
 		// would land on the child window itself instead of skipping
@@ -238,29 +225,6 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
-		// Reset Altirra button — destructive, opens a confirm overlay
-		// drawn after the Close button below.  Subtle style so it
-		// doesn't compete with Close as the primary action.  The
-		// s_showResetConfirm flag is declared at the top of this
-		// function so the ESC/Back handler can dismiss the overlay
-		// before exiting the About screen.
-
-		// Disable the underlying button row while the confirm overlay
-		// is shown.  The overlay's dimmer is a draw-only rect (no
-		// input blocking), and we use a regular ImGui::Begin (not
-		// BeginPopupModal) so taps would otherwise pass through to
-		// these buttons, leaving the modal flag dirty for the next
-		// time the About screen opens.
-		ImGui::BeginDisabled(s_showResetConfirm);
-
-		if (ATTouchButton("Reset Altirra (delete all data)",
-			ImVec2(-1, dp(48.0f)),
-			ATTouchButtonStyle::Subtle))
-		{
-			s_showResetConfirm = true;
-		}
-		ImGui::Dummy(ImVec2(0, dp(8.0f)));
-
 		// Debug Log button — opens the in-app log viewer.  On Android,
 		// stderr is gated behind an adb pairing the user typically
 		// doesn't have, so this is the only path to read NETPLAY /
@@ -280,121 +244,6 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 			mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
 		}
 
-		ImGui::EndDisabled();
-
-		// --- Reset confirmation overlay ---
-		// Drawn inline (still inside the About window's Begin) as a
-		// centered modal pseudo-window with a dimmer.  Input gating is
-		// handled by the BeginDisabled block above, not by ImGui's popup
-		// stack, because the touch UI controls its own z-order and
-		// palette colours.
-		if (s_showResetConfirm) {
-			float dimW = io.DisplaySize.x;
-			float dimH = io.DisplaySize.y;
-
-			// The dimmer is rendered as its own full-screen ImGui
-			// window submitted BEFORE the modal — relying on window
-			// stack order to place it below the modal.
-			//
-			// Why: GetForegroundDrawList() (no args) is the GLOBAL
-			// foreground list, rendered AFTER every window in the
-			// frame, including the modal we Begin below — so it
-			// covered the modal and made the dialog appear darkened
-			// and unreadable.  A separate dimmer window stacks
-			// correctly: About content < dimmer < modal.
-			ImGui::SetNextWindowPos(ImVec2(0, 0));
-			ImGui::SetNextWindowSize(ImVec2(dimW, dimH));
-			ImGui::PushStyleColor(ImGuiCol_WindowBg,
-				IM_COL32(0, 0, 0, 160));
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-			ImGui::Begin("##ResetDim", nullptr,
-				ImGuiWindowFlags_NoTitleBar
-				| ImGuiWindowFlags_NoResize
-				| ImGuiWindowFlags_NoMove
-				| ImGuiWindowFlags_NoCollapse
-				| ImGuiWindowFlags_NoSavedSettings
-				| ImGuiWindowFlags_NoScrollbar
-				| ImGuiWindowFlags_NoScrollWithMouse
-				| ImGuiWindowFlags_NoBringToFrontOnFocus
-				| ImGuiWindowFlags_NoFocusOnAppearing
-				| ImGuiWindowFlags_NoNav
-				| ImGuiWindowFlags_NoInputs);
-			ImGui::End();
-			ImGui::PopStyleVar(2);
-			ImGui::PopStyleColor();
-
-			float modW = dimW * 0.88f;
-			if (modW > dp(420.0f)) modW = dp(420.0f);
-			float modH = dp(360.0f);
-			float modX = (dimW - modW) * 0.5f;
-			float modY = (dimH - modH) * 0.5f;
-
-			ImGui::SetNextWindowPos(ImVec2(modX, modY));
-			ImGui::SetNextWindowSize(ImVec2(modW, modH));
-			ImGui::PushStyleColor(ImGuiCol_WindowBg,
-				ATMobileCol(pal.modalBg));
-			ImGui::PushStyleColor(ImGuiCol_Border,
-				ATMobileCol(pal.modalBorder));
-			ImGuiStyle &style = ImGui::GetStyle();
-			float prevRound = style.WindowRounding;
-			float prevBorder = style.WindowBorderSize;
-			style.WindowRounding = dp(14.0f);
-			style.WindowBorderSize = dp(2.0f);
-
-			ImGui::Begin("##ResetConfirm", nullptr,
-				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
-				| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
-				| ImGuiWindowFlags_NoCollapse);
-
-			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.textTitle));
-			ImGui::SetWindowFontScale(1.3f);
-			ImGui::TextUnformatted("Reset Altirra?");
-			ImGui::SetWindowFontScale(1.0f);
-			ImGui::PopStyleColor();
-			ImGui::Dummy(ImVec2(0, dp(8.0f)));
-
-			ImGui::PushTextWrapPos(modW - dp(24.0f));
-			ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(pal.text));
-			ImGui::TextUnformatted(
-				"This deletes every file Altirra saved on this device:\n"
-				"settings, save state, game library, custom art, lobby "
-				"cache, and crash logs.\n\n"
-				"Altirra will close immediately.  Reopening starts the "
-				"first-time setup again.  This cannot be undone.");
-			ImGui::PopStyleColor();
-			ImGui::PopTextWrapPos();
-
-			// Push the buttons to the bottom of the modal via a
-			// flexible spacer.  Avoids the off-by-WindowPadding bug
-			// of computing an absolute SetCursorPosY (cursor coords
-			// already start past WindowPadding.y), and keeps the
-			// layout robust if the body text length changes.
-			float spacerH = ImGui::GetContentRegionAvail().y
-				- dp(56.0f) - ImGui::GetStyle().ItemSpacing.y;
-			if (spacerH > 0.0f)
-				ImGui::Dummy(ImVec2(0, spacerH));
-
-			float btnW = (modW - dp(24.0f) - dp(8.0f)) * 0.5f;
-			if (ATTouchButton("Cancel",
-				ImVec2(btnW, dp(56.0f))))
-			{
-				s_showResetConfirm = false;
-			}
-			ImGui::SameLine();
-			if (ATTouchButton("Reset and Exit",
-				ImVec2(btnW, dp(56.0f)),
-				ATTouchButtonStyle::Danger))
-			{
-				ATWipeAndExit();  // never returns
-			}
-
-			ImGui::End();
-
-			style.WindowRounding = prevRound;
-			style.WindowBorderSize = prevBorder;
-			ImGui::PopStyleColor(2);
-		}
 	}
 	ImGui::End();
 }
