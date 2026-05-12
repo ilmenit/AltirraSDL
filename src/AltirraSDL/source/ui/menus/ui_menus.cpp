@@ -1091,6 +1091,16 @@ static void RenderToolsMenu(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 		ATUIShowOpenFileDialog('cass', TapeAnalysisOpenCallback, window, window, kTapeFilters, 2, false);
 	}
 
+	// Debug Log — viewer for ATLogChannel output (netplay, disk,
+	// audio, cassette, video, ...).  Stderr is unreachable on Android
+	// and clipped on macOS app bundles; this is the only way to see
+	// the live log from inside the app on those platforms.  Lives in
+	// Tools alongside the other runtime diagnostics rather than in
+	// About, which is reserved for credits / version / configuration
+	// summary.
+	if (ImGui::MenuItem("Debug Log..."))
+		state.showDebugLog = true;
+
 	ImGui::Separator();
 
 	if (ImGui::MenuItem("First Time Setup...")) {

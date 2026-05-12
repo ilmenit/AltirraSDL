@@ -208,28 +208,21 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 	ImGui::TextDisabled("Commit: %s", ALTIRRA_BUILD_COMMIT);
 
 	ImGui::Spacing();
-	// Bottom row: "Configuration..." opens a read-only summary card.
-	// "Debug Log..." opens the in-app log viewer.  "OK" closes the
-	// dialog.  The destructive "Reset Altirra" wipe lives in
-	// Configure System > Settings (matches Windows Altirra's
-	// settings-management page) so it doesn't clutter the About card
-	// and doesn't overflow the dialog's width budget.
+	// Bottom row: "Configuration..." opens a read-only summary of the
+	// currently-applied settings.  "OK" closes the dialog.  Debug Log
+	// moved to Tools > Debug Log... (runtime diagnostic, doesn't
+	// belong in About); Reset Altirra lives in Configure System >
+	// Settings (matches Windows Altirra's settings-management page).
 	float buttonWidth = 80.0f;
 	float pad = ImGui::GetStyle().WindowPadding.x;
 	float spacing = ImGui::GetStyle().ItemSpacing.x;
-	float debugBtnW = 110.0f;
 	float configBtnW = 130.0f;
 
 	ImGui::SetCursorPosX(ImGui::GetWindowWidth()
-		- buttonWidth - spacing - debugBtnW
-		- spacing - configBtnW - pad);
+		- buttonWidth - spacing - configBtnW - pad);
 	if (ImGui::Button("Configuration...", ImVec2(configBtnW, 0)))
 		ImGui::OpenPopup("Current configuration##about_config");
 
-	ImGui::SameLine();
-	if (ImGui::Button("Debug Log...", ImVec2(debugBtnW, 0))) {
-		state.showDebugLog = true;
-	}
 	ImGui::SameLine();
 	if (ImGui::Button("OK", ImVec2(buttonWidth, 0)))
 		state.showAboutDialog = false;

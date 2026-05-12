@@ -333,16 +333,17 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 #endif
 
-			// Advanced — settings management and the destructive
-			// "Reset Altirra (delete all data)" action.  Placed last
-			// so destructive content sits visually at the bottom of
-			// the list, away from the day-to-day toggles above.
+			// Advanced — Debug Log viewer, settings management,
+			// and the destructive "Reset Altirra (delete all data)"
+			// action.  Placed last so destructive content sits
+			// visually at the bottom of the list, away from the
+			// day-to-day toggles above.
 			{
 				VDStringA sub;
 				if (ATSettingsIsResetPending())
 					sub = "Reset scheduled for next launch";
 				else
-					sub = "Reset settings or wipe all data";
+					sub = "Debug log, reset settings, wipe all data";
 				cats[n++] = { "Advanced", sub,
 					ATMobileSettingsPage::Advanced };
 			}
@@ -1550,6 +1551,18 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		// here because mobile always stores settings in INI form in
 		// the app's private directory — there's nothing to migrate.
 		if (s_settingsPage == ATMobileSettingsPage::Advanced) {
+			ATTouchSection("Diagnostics");
+			ATTouchMutedText(
+				"Viewer for ATLogChannel output (netplay, disk, "
+				"audio, cassette, video, ...).  The only path to "
+				"read this stream on Android, where stderr is "
+				"unreachable.");
+			ImGui::Dummy(ImVec2(0, dp(8.0f)));
+			if (ATTouchButton("Debug Log", ImVec2(-1, dp(48.0f)))) {
+				uiState.showDebugLog = true;
+			}
+
+			ImGui::Dummy(ImVec2(0, dp(20.0f)));
 			ATTouchSection("Settings");
 
 			const bool resetPending = ATSettingsIsResetPending();

@@ -1557,6 +1557,12 @@ static void BuildToolsMenu(NSMenu *menu) {
 			}, nullptr, window, kTapeFilters, 2, false);
 	});
 
+	// Debug Log — viewer for ATLogChannel output.  See ui_menus.cpp
+	// for the rationale.
+	AddItem(menu, @"Debug Log...", false, true, [=]{
+		g_uiState.showDebugLog = true;
+	});
+
 	AddSeparator(menu);
 
 	AddItem(menu, @"First Time Setup...", false, true, [=]{
