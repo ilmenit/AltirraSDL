@@ -621,14 +621,20 @@ static void WizMobile_Joystick() {
 
 static void WizMobile_Finish() {
 	bool is5200 = (g_sim.GetHardwareMode() == kATHardwareMode_5200);
+
+	ImGui::TextUnformatted("Setup is complete.");
+	ImGui::Dummy(ImVec2(0, dp(6.0f)));
+
+	ATTouchSection("Your configuration");
+	Wiz_RenderConfigurationSummary(g_sim);
+	ImGui::Dummy(ImVec2(0, dp(10.0f)));
+
 	if (is5200) {
 		ImGui::TextWrapped(
-			"Setup is complete.\n\n"
 			"Tap Done to enter Gaming Mode.  The 5200 needs a cartridge "
 			"to run — pick one from the Game Library home screen.");
 	} else {
 		ImGui::TextWrapped(
-			"Setup is complete.\n\n"
 			"Tap Done to enter Gaming Mode.  The Game Library is your "
 			"home screen — browse and launch your Atari games from "
 			"there.");

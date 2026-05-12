@@ -8,6 +8,10 @@
 #include "ui_main_internal.h"
 #include "buildinfo.h"
 #include "../../app/wipe_data.h"
+#include "../tools/setup_wizard_shared.h"
+#include "simulator.h"
+
+extern ATSimulator g_sim;
 
 void ATUIRenderCommandLineHelpDialog(ATUIState &state) {
 	ImGui::SetNextWindowSize(ImVec2(580, 520), ImGuiCond_Appearing);
@@ -207,13 +211,13 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 	ImGui::Spacing();
 	// Bottom row: "Reset Altirra..." (left, destructive) opens a
 	// confirm modal that on accept wipes ATGetConfigDir() and exits.
-	// "Debug Log..." opens the in-app log viewer (the only way to read
-	// NETPLAY / disk / audio channel output on Android, where stderr is
-	// unreachable).  "OK" closes the dialog.
+	// "Configuration..." opens a read-only summary card.  "Debug Log..."
+	// opens the in-app log viewer.  "OK" closes the dialog.
 	float buttonWidth = 80.0f;
 	float pad = ImGui::GetStyle().WindowPadding.x;
 	float spacing = ImGui::GetStyle().ItemSpacing.x;
 	float debugBtnW = 110.0f;
+	float configBtnW = 130.0f;
 	float resetBtnW = 130.0f;
 
 	if (ImGui::Button("Reset Altirra...", ImVec2(resetBtnW, 0)))
@@ -221,13 +225,45 @@ void ATUIRenderAboutDialog(ATUIState &state) {
 
 	ImGui::SameLine();
 	ImGui::SetCursorPosX(ImGui::GetWindowWidth()
-		- buttonWidth - spacing - debugBtnW - pad);
+		- buttonWidth - spacing - debugBtnW
+		- spacing - configBtnW - pad);
+	if (ImGui::Button("Configuration...", ImVec2(configBtnW, 0)))
+		ImGui::OpenPopup("Current configuration##about_config");
+
+	ImGui::SameLine();
 	if (ImGui::Button("Debug Log...", ImVec2(debugBtnW, 0))) {
 		state.showDebugLog = true;
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("OK", ImVec2(buttonWidth, 0)))
 		state.showAboutDialog = false;
+
+	// Configuration read-out popup — auto-sized, scrollable if the row
+	// list grows.  Read-only; closing returns to the About dialog.
+	ImGui::SetNextWindowSize(ImVec2(520, 460), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (ImGui::BeginPopupModal("Current configuration##about_config", nullptr,
+		ImGuiWindowFlags_NoSavedSettings))
+	{
+		ImGui::TextWrapped(
+			"These are the settings the wizard / first-run defaults "
+			"have applied (or that are currently in effect).  Adjust "
+			"any of them in System > Configure System.");
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+
+		ImGui::BeginChild("##config_scroll", ImVec2(0, -36),
+			ImGuiChildFlags_NavFlattened);
+		Wiz_RenderConfigurationSummary(g_sim);
+		ImGui::EndChild();
+
+		ImGui::Separator();
+		if (ImGui::Button("Close", ImVec2(100, 0)))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
 
 	// Reset confirmation popup — destructive, so use a plain modal
 	// (no implicit-close-on-outside-click) and put the destructive

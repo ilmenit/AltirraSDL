@@ -67,6 +67,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "input_sdl3.h"
 #include "adaptive_input.h"
 #include "touch_controls.h"
+#include "touch_widgets.h"
 #include "ui_mobile.h"
 #include "mobile_gamepad.h"
 #include "mobile_internal.h"
@@ -2382,6 +2383,7 @@ int main(int argc, char *argv[]) {
 		extern void Wiz_ApplyConvenientExperience(ATSimulator&, bool);
 		extern void Wiz_ApplyAuthenticExperience (ATSimulator&, bool);
 		extern void Wiz_ApplyHardwareAddons(ATSimulator&, bool, bool);
+		extern void Wiz_FormatConfigSummaryLine(ATSimulator&, char*, size_t);
 
 		const char *expChoice    = "convenient";
 		const char *addonsChoice = "on";
@@ -2440,6 +2442,19 @@ int main(int argc, char *argv[]) {
 				"(experience=%s, addons=%s)",
 				authentic ? "authentic" : "convenient",
 				addonsOn ? "on" : "off");
+
+			// Surface the same data as a non-blocking toast on the
+			// first frame the main loop ticks.  Visitors who came in
+			// via a WASM deeplink or Android first-run never saw a
+			// wizard Finish page, so without this they have no way
+			// to discover what was applied without diving into the
+			// About dialog.  The toast auto-dismisses after a few
+			// seconds; users who want a permanent audit can open
+			// Settings > About > Current configuration.
+			char summary[256];
+			Wiz_FormatConfigSummaryLine(g_sim, summary, sizeof(summary));
+			ATTouchPushFeedback("Defaults applied", summary,
+				ATTouchToastSeverity::Info);
 		} else if (registryHadAnything) {
 			// Returning user — they have persisted settings from a
 			// previous run.  Even if Mobile/FirstRunComplete was never

@@ -196,3 +196,35 @@ void Wiz_ApplyHardwareAddons(ATSimulator &sim, bool enable, bool deferReset = fa
 // Authentic, leave everything as-is.  Never reduces existing config.
 // Called once per wizard session, gated by addonsPageSeeded.
 void Wiz_SeedHardwareAddonsPage(ATSimulator &sim);
+
+// =========================================================================
+// Configuration summary — "what the wizard applied"
+// =========================================================================
+//
+// Renders a scannable, two-column read-out of the current effective
+// configuration so users see concretely what was applied (or what the
+// emulator is currently set to).  Same content is shown on the desktop
+// and mobile wizard Finish pages and inside the About surface so users
+// have a permanent recall path without re-running the wizard.
+//
+// Caller owns the surrounding scope (ImGui::Begin / scroll region /
+// section header).  The helper emits the rows directly into the
+// current cursor position.
+//
+// Read-only: it never mutates simulator state.  Detection rules:
+//   - Experience preset: introspect the seven knobs that
+//     Wiz_ApplyConvenientExperience / Wiz_ApplyAuthenticExperience
+//     touch.  All-match → "Convenient" or "Authentic"; otherwise
+//     "Custom".
+//   - Hardware add-ons: Wiz_HasVBXE / Wiz_HasCovox / Wiz_HasDualPokey /
+//     Wiz_HasMemory1088K.
+//   - Default write mode: g_ATOptions.mDefaultWriteMode.
+//   - Game library / firmware / joystick: live introspection.
+void Wiz_RenderConfigurationSummary(ATSimulator &sim);
+
+// Build a single-paragraph plain-text summary of the same information
+// for use in toasts and log lines (no ImGui calls).  Format is one
+// short line so it fits a touch toast / SDL_LogInfo:
+//   "Gaming Mode, Convenient, all add-ons, write: VRW(Safe)"
+// Caller passes a buffer of at least 256 bytes.
+void Wiz_FormatConfigSummaryLine(ATSimulator &sim, char *buf, size_t buflen);

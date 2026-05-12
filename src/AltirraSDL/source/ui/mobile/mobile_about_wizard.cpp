@@ -200,6 +200,31 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 				"Performance preset: %s (change in Settings > "
 				"Performance).", presetLabel);
 		}
+		ImGui::Dummy(ImVec2(0, dp(8.0f)));
+
+		// Current configuration read-out — collapsible so the credits
+		// stay readable for users who don't care, but available for
+		// users who want to audit what the wizard / first-run defaults
+		// applied without re-running the wizard.  Default collapsed.
+		{
+			static bool s_showConfig = false;
+			const char *label = s_showConfig
+				? "Hide current configuration"
+				: "Show current configuration";
+			if (ATTouchButton(label, ImVec2(-1, dp(44.0f)),
+				ATTouchButtonStyle::Subtle))
+			{
+				s_showConfig = !s_showConfig;
+			}
+			if (s_showConfig) {
+				ImGui::Dummy(ImVec2(0, dp(6.0f)));
+				Wiz_RenderConfigurationSummary(sim);
+				ImGui::Dummy(ImVec2(0, dp(6.0f)));
+				ATTouchMutedText(
+					"Adjust any of these in Settings > Configure "
+					"System.");
+			}
+		}
 		ImGui::Dummy(ImVec2(0, dp(12.0f)));
 
 		ImGui::TextColored(ATMobileCol(pal.text),
@@ -259,16 +284,45 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 
 		// --- Reset confirmation overlay ---
 		// Drawn inline (still inside the About window's Begin) as a
-		// centered modal pseudo-window with a draw-only dimmer.  Input
-		// gating is handled by the BeginDisabled block above, not by
-		// ImGui's popup stack, because the touch UI controls its own
-		// z-order and palette colours.
+		// centered modal pseudo-window with a dimmer.  Input gating is
+		// handled by the BeginDisabled block above, not by ImGui's popup
+		// stack, because the touch UI controls its own z-order and
+		// palette colours.
 		if (s_showResetConfirm) {
 			float dimW = io.DisplaySize.x;
 			float dimH = io.DisplaySize.y;
-			ImGui::GetForegroundDrawList()->AddRectFilled(
-				ImVec2(0, 0), ImVec2(dimW, dimH),
+
+			// The dimmer is rendered as its own full-screen ImGui
+			// window submitted BEFORE the modal — relying on window
+			// stack order to place it below the modal.
+			//
+			// Why: GetForegroundDrawList() (no args) is the GLOBAL
+			// foreground list, rendered AFTER every window in the
+			// frame, including the modal we Begin below — so it
+			// covered the modal and made the dialog appear darkened
+			// and unreadable.  A separate dimmer window stacks
+			// correctly: About content < dimmer < modal.
+			ImGui::SetNextWindowPos(ImVec2(0, 0));
+			ImGui::SetNextWindowSize(ImVec2(dimW, dimH));
+			ImGui::PushStyleColor(ImGuiCol_WindowBg,
 				IM_COL32(0, 0, 0, 160));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+			ImGui::Begin("##ResetDim", nullptr,
+				ImGuiWindowFlags_NoTitleBar
+				| ImGuiWindowFlags_NoResize
+				| ImGuiWindowFlags_NoMove
+				| ImGuiWindowFlags_NoCollapse
+				| ImGuiWindowFlags_NoSavedSettings
+				| ImGuiWindowFlags_NoScrollbar
+				| ImGuiWindowFlags_NoScrollWithMouse
+				| ImGuiWindowFlags_NoBringToFrontOnFocus
+				| ImGuiWindowFlags_NoFocusOnAppearing
+				| ImGuiWindowFlags_NoNav
+				| ImGuiWindowFlags_NoInputs);
+			ImGui::End();
+			ImGui::PopStyleVar(2);
+			ImGui::PopStyleColor();
 
 			float modW = dimW * 0.88f;
 			if (modW > dp(420.0f)) modW = dp(420.0f);
@@ -500,12 +554,22 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		// twice is a no-op.  deferReset=false: the wizard exits to the
 		// running emulator immediately after, so we want the changes
 		// live before the next frame.
+		//
+		// On the first-run path the user never sees a Finish page with
+		// the full configuration summary, so we surface the same data as
+		// a short non-blocking toast after apply.  Users who want the
+		// full audit can open Settings > About > Current configuration.
 		auto applyChosenDefaults = []() {
 			if (s_experience == 1)
 				Wiz_ApplyAuthenticExperience(g_sim, /*deferReset=*/false);
 			else
 				Wiz_ApplyConvenientExperience(g_sim, /*deferReset=*/false);
 			Wiz_ApplyHardwareAddons(g_sim, s_addonsOn, /*deferReset=*/false);
+
+			char summary[256];
+			Wiz_FormatConfigSummaryLine(g_sim, summary, sizeof(summary));
+			ATTouchPushFeedback("Defaults applied", summary,
+				ATTouchToastSeverity::Info);
 		};
 
 		// Layout-by-content: the wizard now has more content (toggles +

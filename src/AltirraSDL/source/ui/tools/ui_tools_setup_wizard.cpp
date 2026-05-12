@@ -302,6 +302,322 @@ void Wiz_SeedHardwareAddonsPage(ATSimulator &sim) {
 	if (!Wiz_HasCovox(sim))        Wiz_SetCovox(sim, true);
 }
 
+// =========================================================================
+// Configuration summary
+// =========================================================================
+
+namespace {
+
+enum class WizExperience { Convenient, Authentic, Custom };
+
+WizExperience Wiz_DetectExperience(ATSimulator &sim) {
+	// Read the seven knobs that the experience presets set.  All-match
+	// in either direction → that preset; anything else → Custom.
+	const bool driveSnd  = ATUIGetDriveSoundsEnabled();
+	const bool cassPatch = sim.IsCassetteSIOPatchEnabled();
+	const bool diskPatch = sim.IsDiskSIOPatchEnabled();
+	const bool accurate  = sim.IsDiskAccurateTimingEnabled();
+	const ATArtifactMode artifact = sim.GetGTIA().GetArtifactingMode();
+	const ATDisplayFilterMode filter = ATUIGetDisplayFilterMode();
+	const int sharp = ATUIGetViewFilterSharpness();
+
+	const bool convenient =
+		!driveSnd && cassPatch && diskPatch && !accurate
+		&& artifact == ATArtifactMode::None
+		&& filter == kATDisplayFilterMode_SharpBilinear
+		&& sharp == +1;
+
+	const bool authentic =
+		driveSnd && !cassPatch && !diskPatch && accurate
+		&& artifact == ATArtifactMode::AutoHi
+		&& filter == kATDisplayFilterMode_Bilinear;
+		// sharpness is intentionally not checked for Authentic — the
+		// preset doesn't set it, so any user value should still match.
+
+	if (convenient) return WizExperience::Convenient;
+	if (authentic)  return WizExperience::Authentic;
+	return WizExperience::Custom;
+}
+
+const char *Wiz_WriteModeLabel(ATMediaWriteMode mode) {
+	switch (mode) {
+		case kATMediaWriteMode_RO:      return "Read Only";
+		case kATMediaWriteMode_VRWSafe: return "Virtual R/W (Safe)";
+		case kATMediaWriteMode_VRW:     return "Virtual R/W";
+		case kATMediaWriteMode_RW:      return "Real R/W";
+		default:                        return "Custom";
+	}
+}
+
+const char *Wiz_MemoryModeLabel(ATMemoryMode mode) {
+	switch (mode) {
+		case kATMemoryMode_8K:          return "8 KB";
+		case kATMemoryMode_16K:         return "16 KB";
+		case kATMemoryMode_24K:         return "24 KB";
+		case kATMemoryMode_32K:         return "32 KB";
+		case kATMemoryMode_40K:         return "40 KB";
+		case kATMemoryMode_48K:         return "48 KB";
+		case kATMemoryMode_52K:         return "52 KB";
+		case kATMemoryMode_64K:         return "64 KB";
+		case kATMemoryMode_128K:        return "128 KB";
+		case kATMemoryMode_256K:        return "256 KB";
+		case kATMemoryMode_320K:        return "320 KB";
+		case kATMemoryMode_320K_Compy:  return "320 KB (Compy)";
+		case kATMemoryMode_576K:        return "576 KB";
+		case kATMemoryMode_576K_Compy:  return "576 KB (Compy)";
+		case kATMemoryMode_1088K:       return "1088 KB";
+		default:                        return "?";
+	}
+}
+
+const char *Wiz_HardwareModeLabel(ATHardwareMode mode) {
+	switch (mode) {
+		case kATHardwareMode_800:    return "Atari 800";
+		case kATHardwareMode_800XL:  return "Atari 800XL";
+		case kATHardwareMode_1200XL: return "Atari 1200XL";
+		case kATHardwareMode_130XE:  return "Atari 130XE";
+		case kATHardwareMode_XEGS:   return "Atari XEGS";
+		case kATHardwareMode_1400XL: return "Atari 1400XL";
+		case kATHardwareMode_5200:   return "Atari 5200";
+		default:                     return "?";
+	}
+}
+
+const char *Wiz_ArtifactModeLabel(ATArtifactMode mode) {
+	switch (mode) {
+		case ATArtifactMode::None:    return "off";
+		case ATArtifactMode::NTSC:    return "NTSC";
+		case ATArtifactMode::PAL:     return "PAL";
+		case ATArtifactMode::NTSCHi:  return "NTSC (high)";
+		case ATArtifactMode::PALHi:   return "PAL (high)";
+		case ATArtifactMode::Auto:    return "Auto";
+		case ATArtifactMode::AutoHi:  return "Auto (high)";
+		default:                      return "?";
+	}
+}
+
+const char *Wiz_FilterModeLabel(ATDisplayFilterMode mode) {
+	switch (mode) {
+		case kATDisplayFilterMode_Point:         return "Point (nearest)";
+		case kATDisplayFilterMode_Bilinear:      return "Bilinear";
+		case kATDisplayFilterMode_Bicubic:       return "Bicubic";
+		case kATDisplayFilterMode_AnySuitable:   return "Any suitable";
+		case kATDisplayFilterMode_SharpBilinear: return "Sharp Bilinear";
+		default:                                 return "?";
+	}
+}
+
+// Find the active port-1 input map name (the wizard's joystick page
+// uses radio-button semantics so at most one is active per port).
+VDStringA Wiz_GetActivePort1MapName(ATInputManager &im) {
+	std::vector<WizPortMapEntry> entries;
+	Wiz_GatherPortMaps(im, 0, entries);
+	for (auto &e : entries) {
+		if (e.active)
+			return e.name;
+	}
+	return VDStringA();
+}
+
+// Probe one firmware type and return its user-visible name if the user
+// has configured a real on-disk file for it.  Returns empty string if
+// the slot is unset or points at a built-in AltirraOS replacement (the
+// built-ins have empty mPath because they live in the binary as
+// resources rather than on disk).
+VDStringA Wiz_TryFirmwareName(ATFirmwareManager &fwmgr, ATFirmwareType type) {
+	const uint64 id = fwmgr.GetFirmwareOfType(type, true);
+	if (!id) return VDStringA();
+	ATFirmwareInfo info;
+	if (!fwmgr.GetFirmwareInfo(id, info)) return VDStringA();
+	if (info.mPath.empty()) return VDStringA();
+	return VDTextWToU8(info.mName);
+}
+
+// Find the user-visible kernel firmware name.  Returns empty string if
+// the simulator is using the built-in AltirraOS replacement.
+//
+// For Atari 800 (which can run OSA or OSB) we probe both slots and
+// return whichever has a real on-disk file.  The firmware manager
+// stores them under separate types and the simulator picks at
+// LoadROMs() time based on which is set as the active 800 default —
+// without a "currently loaded" accessor on the simulator side, this
+// best-effort probe is the closest we can get.
+VDStringA Wiz_GetKernelFirmwareName(ATSimulator &sim) {
+	ATFirmwareManager *fwmgr = sim.GetFirmwareManager();
+	if (!fwmgr) return VDStringA();
+
+	const ATHardwareMode hw = sim.GetHardwareMode();
+	if (hw == kATHardwareMode_800) {
+		// Try OSB first (most common), fall back to OSA.
+		VDStringA name = Wiz_TryFirmwareName(*fwmgr, kATFirmwareType_Kernel800_OSB);
+		if (name.empty())
+			name = Wiz_TryFirmwareName(*fwmgr, kATFirmwareType_Kernel800_OSA);
+		return name;
+	}
+
+	ATFirmwareType fwType;
+	switch (hw) {
+		case kATHardwareMode_5200:   fwType = kATFirmwareType_Kernel5200;    break;
+		case kATHardwareMode_1200XL: fwType = kATFirmwareType_Kernel1200XL;  break;
+		case kATHardwareMode_XEGS:   fwType = kATFirmwareType_KernelXEGS;    break;
+		default:                     fwType = kATFirmwareType_KernelXL;      break;
+	}
+	return Wiz_TryFirmwareName(*fwmgr, fwType);
+}
+
+// Column position (offset from content-region start) where the value
+// half of each summary row begins.  Computed once at the top of
+// Wiz_RenderConfigurationSummary based on the surrounding container's
+// width so the layout adapts to the narrow Gaming Mode wizard, the
+// wider desktop wizard, and the About popup without truncation.
+float s_summaryValueColX = 220.0f;
+
+// Render one "label : value" row with an aligned column for the
+// values.  Indent is in IndentSpacing units (1.0 = one normal indent)
+// so sub-rows scale with the font / dp.
+void Wiz_DrawSummaryRow(const char *label, const char *value, int indent = 0) {
+	if (indent > 0) {
+		const float indentPx = indent * ImGui::GetStyle().IndentSpacing;
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indentPx);
+	}
+	ImGui::TextUnformatted(label);
+	ImGui::SameLine(s_summaryValueColX);
+	ImGui::TextDisabled(":");
+	ImGui::SameLine();
+	ImGui::TextUnformatted(value);
+}
+
+} // namespace
+
+void Wiz_RenderConfigurationSummary(ATSimulator &sim) {
+	const ATHardwareMode hw = sim.GetHardwareMode();
+	const bool is5200 = (hw == kATHardwareMode_5200);
+
+	// Adapt the value column to the surrounding container.  45% of
+	// available width keeps the column reasonable on a narrow phone
+	// portrait window (~360 px → 162 px), while the floor protects
+	// against very narrow embeds and the ceiling stops the column
+	// drifting far right on a wide desktop About popup.
+	const float availW = ImGui::GetContentRegionAvail().x;
+	float col = availW * 0.45f;
+	if (col < 140.0f) col = 140.0f;
+	if (col > 240.0f) col = 240.0f;
+	s_summaryValueColX = col;
+
+	// Interface mode
+	Wiz_DrawSummaryRow("Interface mode",
+		ATUIIsGamingMode() ? "Gaming Mode" : "Desktop Mode");
+
+	// Hardware
+	Wiz_DrawSummaryRow("Hardware", Wiz_HardwareModeLabel(hw));
+	Wiz_DrawSummaryRow("Memory", Wiz_MemoryModeLabel(sim.GetMemoryMode()));
+
+	// Firmware
+	VDStringA fw = Wiz_GetKernelFirmwareName(sim);
+	Wiz_DrawSummaryRow("Firmware",
+		fw.empty() ? "AltirraOS (built-in)" : fw.c_str());
+
+	ImGui::Dummy(ImVec2(0, 4));
+
+	// Experience preset (5200 has no relevant experience axis)
+	if (!is5200) {
+		const WizExperience exp = Wiz_DetectExperience(sim);
+		const char *expLabel = "Custom";
+		if (exp == WizExperience::Convenient) expLabel = "Convenient";
+		else if (exp == WizExperience::Authentic) expLabel = "Authentic";
+
+		Wiz_DrawSummaryRow("Emulation experience", expLabel);
+		Wiz_DrawSummaryRow("Drive sounds",
+			ATUIGetDriveSoundsEnabled() ? "on" : "off", 1);
+		Wiz_DrawSummaryRow("Disk SIO patch",
+			sim.IsDiskSIOPatchEnabled() ? "on (fast loading)" : "off", 1);
+		Wiz_DrawSummaryRow("Cassette SIO patch",
+			sim.IsCassetteSIOPatchEnabled() ? "on (fast loading)" : "off", 1);
+		Wiz_DrawSummaryRow("Accurate disk timing",
+			sim.IsDiskAccurateTimingEnabled() ? "on" : "off", 1);
+		Wiz_DrawSummaryRow("Artifacting",
+			Wiz_ArtifactModeLabel(sim.GetGTIA().GetArtifactingMode()), 1);
+		Wiz_DrawSummaryRow("Display filter",
+			Wiz_FilterModeLabel(ATUIGetDisplayFilterMode()), 1);
+
+		ImGui::Dummy(ImVec2(0, 4));
+	}
+
+	// Hardware add-ons (5200 has no relevant add-ons)
+	if (!is5200) {
+		const bool hasVBXE   = Wiz_HasVBXE(sim);
+		const bool hasCovox  = Wiz_HasCovox(sim);
+		const bool hasPokey2 = Wiz_HasDualPokey(sim);
+
+		int onCount = (hasVBXE ? 1 : 0) + (hasCovox ? 1 : 0) + (hasPokey2 ? 1 : 0);
+		char summary[64];
+		if (onCount == 3)      snprintf(summary, sizeof(summary), "All on");
+		else if (onCount == 0) snprintf(summary, sizeof(summary), "None (stock hardware)");
+		else                   snprintf(summary, sizeof(summary), "%d of 3 enabled", onCount);
+
+		Wiz_DrawSummaryRow("Hardware add-ons", summary);
+		Wiz_DrawSummaryRow("VBXE",         hasVBXE   ? "on" : "off", 1);
+		Wiz_DrawSummaryRow("Covox",        hasCovox  ? "on" : "off", 1);
+		Wiz_DrawSummaryRow("Stereo POKEY", hasPokey2 ? "on" : "off", 1);
+
+		ImGui::Dummy(ImVec2(0, 4));
+	}
+
+	// Disk write mode
+	Wiz_DrawSummaryRow("Disk write mode",
+		Wiz_WriteModeLabel(g_ATOptions.mDefaultWriteMode));
+
+	// Game library source count
+	if (ATGameLibrary *lib = GetGameLibrary()) {
+		const auto &sources = lib->GetSources();
+		char libBuf[64];
+		if (sources.empty())     snprintf(libBuf, sizeof(libBuf), "None added");
+		else if (sources.size() == 1) snprintf(libBuf, sizeof(libBuf), "1 folder");
+		else                     snprintf(libBuf, sizeof(libBuf), "%zu folders", sources.size());
+		Wiz_DrawSummaryRow("Game Library", libBuf);
+	}
+
+	// Joystick port-1 mapping
+	if (ATInputManager *im = sim.GetInputManager()) {
+		VDStringA mapName = Wiz_GetActivePort1MapName(*im);
+		Wiz_DrawSummaryRow("Joystick port 1",
+			mapName.empty() ? "(none active)" : mapName.c_str());
+	}
+}
+
+void Wiz_FormatConfigSummaryLine(ATSimulator &sim, char *buf, size_t buflen) {
+	if (!buf || buflen == 0) return;
+
+	const char *modeStr = ATUIIsGamingMode() ? "Gaming" : "Desktop";
+
+	const char *expStr = "Custom";
+	if (sim.GetHardwareMode() != kATHardwareMode_5200) {
+		const WizExperience exp = Wiz_DetectExperience(sim);
+		if (exp == WizExperience::Convenient)     expStr = "Convenient";
+		else if (exp == WizExperience::Authentic) expStr = "Authentic";
+	} else {
+		expStr = nullptr;  // not meaningful for 5200
+	}
+
+	const int addonsOn =
+		(Wiz_HasVBXE(sim)        ? 1 : 0) +
+		(Wiz_HasCovox(sim)       ? 1 : 0) +
+		(Wiz_HasDualPokey(sim)   ? 1 : 0);
+	const char *addonsStr =
+		(addonsOn == 3) ? "all add-ons" :
+		(addonsOn == 0) ? "no add-ons"  :
+		                  "some add-ons";
+
+	const char *wmStr = Wiz_WriteModeLabel(g_ATOptions.mDefaultWriteMode);
+
+	if (expStr)
+		snprintf(buf, buflen, "%s Mode, %s, %s, write: %s",
+			modeStr, expStr, addonsStr, wmStr);
+	else
+		snprintf(buf, buflen, "%s Mode, %s, write: %s",
+			modeStr, addonsStr, wmStr);
+}
+
 // Firmware scan logic reimplemented from uifirmwarescan.cpp.
 // Exposed (no `static`) so the WASM bridge can invoke the same scan
 // on /home/web_user/firmware after an upload, keeping the firmware
@@ -1349,53 +1665,60 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		}
 
 		case 40: // Finish (computer)
-			if (ATUIIsGamingMode()) {
-				ImGui::TextWrapped(
-					"Setup is now complete.\n\n"
-					"Click Finish to enter Gaming Mode. The Game Library will be your "
-					"home screen — browse and launch your Atari games from there.\n\n"
-					"You can add or remove game folders at any time from Settings > "
-					"Game Library.\n\n"
-					"To repeat this process, switch to Desktop Mode and choose "
-					"Tools > First Time Setup..."
-				);
-			} else {
-				ImGui::TextWrapped(
-					"Setup is now complete.\n\n"
-					"Click Finish to exit and power up the emulated computer. You can then "
-					"use the File > Boot Image... menu option to boot a disk, cartridge, or "
-					"cassette tape image, or start a program.\n\n"
-					"If you want to repeat this process in the future, the setup wizard can "
-					"be restarted via the Tools menu."
-				);
-			}
-			break;
-
 		case 41: // Finish (5200)
+		{
+			ImGui::TextUnformatted("Setup is now complete.");
+			ImGui::Spacing();
+			ImGui::SeparatorText("Your configuration");
+			Wiz_RenderConfigurationSummary(sim);
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Spacing();
+
+			const bool is5200 = (g_setupWiz.page == 41);
 			if (ATUIIsGamingMode()) {
-				ImGui::TextWrapped(
-					"Setup is now complete.\n\n"
-					"Click Finish to enter Gaming Mode. The 5200 needs a cartridge to "
-					"work — use \"Boot Game\" in the Game Library to attach and start "
-					"a cartridge image.\n\n"
-					"To repeat this process, switch to Desktop Mode and choose "
-					"Tools > First Time Setup..."
+				if (is5200) {
+					ImGui::TextWrapped(
+						"Click Finish to enter Gaming Mode. The 5200 needs a "
+						"cartridge to work — use \"Boot Game\" in the Game "
+						"Library to attach and start a cartridge image."
+					);
+				} else {
+					ImGui::TextWrapped(
+						"Click Finish to enter Gaming Mode. The Game Library "
+						"will be your home screen — browse and launch your "
+						"Atari games from there."
+					);
+				}
+				ImGui::Spacing();
+				ImGui::TextDisabled(
+					"To repeat this process, switch to Desktop Mode and "
+					"choose Tools > First Time Setup..."
 				);
 			} else {
-				ImGui::TextWrapped(
-					"Setup is now complete.\n\n"
-					"Click Finish to exit and power up the emulated console. The 5200 needs "
-					"a cartridge to work, so select File > Boot Image... to attach and start "
-					"a cartridge image.\n\n"
-					"You will probably want to check your controller settings. The default "
-					"setup binds F2-F4, the digit key row, arrow keys, and Ctrl/Shift to "
-					"joystick 1. Alternate bindings can be selected from the Input menu or "
-					"new ones can be defined in Input > Input Mappings.\n\n"
-					"If you want to repeat this process in the future, choose Tools > First "
-					"Time Setup... from the menu."
+				if (is5200) {
+					ImGui::TextWrapped(
+						"Click Finish to exit and power up the emulated "
+						"console. The 5200 needs a cartridge to work, so "
+						"select File > Boot Image... to attach and start a "
+						"cartridge image."
+					);
+				} else {
+					ImGui::TextWrapped(
+						"Click Finish to exit and power up the emulated "
+						"computer. You can then use the File > Boot Image... "
+						"menu option to boot a disk, cartridge, or cassette "
+						"tape image, or start a program."
+					);
+				}
+				ImGui::Spacing();
+				ImGui::TextDisabled(
+					"To repeat this process, choose Tools > First Time "
+					"Setup... from the menu."
 				);
 			}
 			break;
+		}
 		}
 
 		ImGui::EndChild();
