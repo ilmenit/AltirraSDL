@@ -36,6 +36,7 @@
 
 #include "ui_main.h"
 #include "ui_autosuggest.h"
+#include "../../app/disk_state.h"  // ATResolveDiskMount / Canonical
 #include "ui/emotes/emote_netplay.h"
 #include "ui/emotes/emote_overlay.h"
 #include "ui/emotes/emote_picker.h"
@@ -309,12 +310,33 @@ void ATUIPollDeferredActions() {
 				ctx.mpCartLoadContext = &cartCtx;
 				ctx.mpStateLoadContext = &stateCtx;
 
-				// Build full ATMediaLoadContext with stop flags (matches Windows)
+				// Build full ATMediaLoadContext with stop flags (matches Windows).
+				//
+				// Disk-state interception:  when the user's default write mode
+				// is Real R/W, route the mount path through ATResolveDiskMount.
+				// That helper substitutes a per-image working copy under
+				// {configDir}/disk_state/<SHA256>/disk{ext} (lazily created on
+				// first launch), so writes from games that save progress or
+				// high scores persist across sessions WITHOUT touching the
+				// source .atr.  The pristine source bytes are mirrored under
+				// the same dir, keeping Game Library CRC32 / netplay handshake
+				// / custom art keying stable forever.
+				//
+				// For all other write modes (RO, VRWSafe, VRW) and for non-disk
+				// extensions (cart, tape, EXE), ATResolveDiskMount returns the
+				// original path unchanged — no behavioural change there.
+				//
+				// We update `mOriginalPath` AND `mImageName` so the simulator's
+				// downstream "where did this come from" reporting reflects the
+				// path actually being read.  See disk_state.h for the full
+				// rationale.
 				ATMediaLoadContext mctx;
-				mctx.mOriginalPath = a.path;
-				mctx.mImageName = a.path;
-				mctx.mpStream = nullptr;
 				mctx.mWriteMode = g_ATOptions.mDefaultWriteMode;
+				VDStringW resolvedPath = ATResolveDiskMount(a.path.c_str(),
+					mctx.mWriteMode);
+				mctx.mOriginalPath = resolvedPath;
+				mctx.mImageName = resolvedPath;
+				mctx.mpStream = nullptr;
 				mctx.mbStopOnModeIncompatibility = true;
 				mctx.mbStopAfterImageLoaded = true;
 				mctx.mbStopOnMemoryConflictBasic = true;
@@ -696,8 +718,23 @@ void ATUIPollDeferredActions() {
 				imgCtx.mpCartLoadContext = &cartCtx;
 
 				ATMediaLoadContext mctx;
-				mctx.mOriginalPath = imagePath;
-				mctx.mImageName    = imagePath;
+				// Route through ATResolveDiskCanonical so a host who has
+				// previously played this game in Solo with Real R/W loads
+				// the pristine bytes (`disk_state/<sha>/pristine{ext}`)
+				// instead of their modified working copy.  Joiners always
+				// load pristine via the canonical CRC32 lookup; the host
+				// did NOT before this change — host's saved high scores
+				// would silently desync the session because Lockstep
+				// compares simulator state at frame 0 against bytes that
+				// only existed on the host's side.
+				//
+				// For images that have never been RW-mounted there is no
+				// pristine and the helper returns the original path
+				// unchanged, so existing behaviour is preserved.
+				VDStringW netplayPath = ATResolveDiskCanonical(
+					imagePath.c_str());
+				mctx.mOriginalPath = netplayPath;
+				mctx.mImageName    = netplayPath;
 				// Hardcode VRWSafe (= AllowWrite, no AutoFlush, no
 				// AllowFormat) for netplay so host and joiner agree on
 				// the write mode regardless of each user's per-machine

@@ -22,6 +22,7 @@
 
 #include "ui_mobile.h"
 #include "ui_main.h"
+#include "../../app/disk_state.h"   // ATResolveDiskMount
 #include "touch_controls.h"
 #include "touch_widgets.h"
 #include "simulator.h"
@@ -748,6 +749,16 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 						ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
 							? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
 
+						// Disk-state interception (see disk_state.h): when
+						// the resolved write mode is Real R/W, the helper
+						// returns the path to a per-image working copy
+						// under {configDir}/disk_state/<SHA256>/disk{ext}
+						// so writes (high scores etc.) persist across
+						// sessions without mutating the user's source
+						// .atr.  No-op for non-RW modes.
+						VDStringW mountPath = ATResolveDiskMount(
+							entry.fullPath.c_str(), wm);
+
 						// Route through ATSimulator::Load to match Windows
 						// (uidisk.cpp:1060-1065).  See ui_main.cpp
 						// kATDeferred_AttachDisk for why the 1-arg
@@ -756,7 +767,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 						ATImageLoadContext ctx;
 						ctx.mLoadType  = kATImageType_Disk;
 						ctx.mLoadIndex = drive;
-						sim.Load(entry.fullPath.c_str(), wm, &ctx);
+						sim.Load(mountPath.c_str(), wm, &ctx);
 
 						ATAddMRU(entry.fullPath.c_str());
 						VDStringA u8 = VDTextWToU8(entry.fullPath);

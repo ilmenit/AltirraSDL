@@ -30,6 +30,7 @@
 #include <at/atio/cartridgeimage.h>
 #include <at/atio/cartridgetypes.h>
 #include <at/atio/image.h>
+#include "disk_state.h"           // ATResolveDiskMount for RW persistence
 #include "mediamanager.h"
 #include "cassette.h"
 #include "cheatengine.h"
@@ -132,10 +133,18 @@ bool DoLoadDirect(const char *utf8path,
 	ctx.mpStateLoadContext = &stateCtx;
 
 	ATMediaLoadContext mctx;
-	mctx.mOriginalPath = wpath;
-	mctx.mImageName = wpath;
-	mctx.mpStream = nullptr;
+	// Compute effective write mode first so we can route through the
+	// disk_state helper.  This is the path taken by every command-line
+	// `--disk path` and (on WASM) by `?wm=rw` deeplinks, so persistence
+	// across reloads/sessions for those entry points depends on the
+	// helper substituting a per-image working copy here.  Non-disk
+	// extensions and non-RW intents make the helper a no-op (returns
+	// `wpath` unchanged), so command-line cart/tape loads see no change.
 	mctx.mWriteMode = writeMode ? *writeMode : g_ATOptions.mDefaultWriteMode;
+	VDStringW resolvedPath = ATResolveDiskMount(wpath.c_str(), mctx.mWriteMode);
+	mctx.mOriginalPath = resolvedPath;
+	mctx.mImageName = resolvedPath;
+	mctx.mpStream = nullptr;
 	mctx.mbStopOnModeIncompatibility = true;
 	mctx.mbStopAfterImageLoaded = true;
 	mctx.mbStopOnMemoryConflictBasic = true;

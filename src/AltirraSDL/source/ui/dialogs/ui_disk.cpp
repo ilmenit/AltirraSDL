@@ -31,6 +31,7 @@
 #include "options.h"
 #include "logging.h"
 #include "ui/gamelibrary/game_library.h"
+#include "../../app/disk_state.h"   // ATResolveDiskMount for RW persistence
 
 extern ATSimulator g_sim;
 extern ATOptions g_ATOptions;
@@ -239,6 +240,16 @@ static void DiskMountCallback(void *userdata, const char * const *filelist, int)
 		ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
 			? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
 
+		// Disk-state interception (see disk_state.h):  for Real R/W
+		// mounts, swap the source path for a per-image working copy
+		// under {configDir}/disk_state/<SHA256>/disk{ext}.  Solo
+		// writes (high scores, level edits) then persist to that
+		// working copy instead of mutating the user's original .atr —
+		// so file managers, netplay CRC32 checks, Game Library
+		// identity, and custom art keying all stay stable.  For RO /
+		// VRWSafe / VRW the helper is a no-op (returns widePath).
+		VDStringW mountPath = ATResolveDiskMount(widePath.c_str(), wm);
+
 		// Route through ATSimulator::Load to match Windows
 		// (uidisk.cpp:1060-1065).  See the note on the matching call in
 		// ui_main.cpp kATDeferred_AttachDisk for why the 1-arg
@@ -247,8 +258,12 @@ static void DiskMountCallback(void *userdata, const char * const *filelist, int)
 		ATImageLoadContext ctx;
 		ctx.mLoadType  = kATImageType_Disk;
 		ctx.mLoadIndex = driveIdx;
-		g_sim.Load(widePath.c_str(), wm, &ctx);
+		g_sim.Load(mountPath.c_str(), wm, &ctx);
 
+		// MRU keeps the user's original path so re-opening from the
+		// Recent menu hits the same disk_state slot rather than a
+		// path inside the config directory that means nothing to the
+		// user.
 		ATAddMRU(widePath.c_str());
 		LOG_INFO("UI", "Mounted D%d: %s", driveIdx + 1, filelist[0]);
 	} catch (...) {
