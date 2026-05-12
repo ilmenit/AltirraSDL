@@ -9,9 +9,17 @@
 //	shutdown flush doesn't re-create settings.ini from the in-memory
 //	registry between the wipe and the process exit.
 //
-//	Android note: this does NOT disable Android Auto Backup.  The user
-//	wanted a clean slate today; a future backup of the (now-empty) data
-//	dir naturally propagates the wipe to other devices via Google Drive.
+//	Android note: this wipes LOCAL data only.  Auto Backup is enabled
+//	(see android:allowBackup="true" in AndroidManifest.xml, with curated
+//	exclusions in res/xml/backup_rules.xml + data_extraction_rules.xml)
+//	so the user's game library and settings can follow them to a new
+//	phone.  Android does not let an app refuse a restore at install
+//	time — uninstall+reinstall on the same device will pull the cloud
+//	snapshot back too.  Users who want a fully clean slate must also
+//	clear the cloud backup from Settings > System > Backup > Manage
+//	backup > Altirra.  The Reset Altirra button intentionally does NOT
+//	open that screen automatically — wiping someone's cloud copy is
+//	more destructive than the local wipe and warrants a manual step.
 
 #pragma once
 

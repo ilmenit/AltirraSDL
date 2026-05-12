@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android Auto Backup rules (legacy, API <= 30 — fullBackupContent).
+
+    The companion file res/xml/data_extraction_rules.xml is the
+    equivalent for API 31+ and must be kept in sync.
+
+    Paths are relative to getFilesDir() (domain="file").  SDL3 places
+    our data under Altirra/AltirraSDL/ via SDL_GetPrefPath("Altirra",
+    "AltirraSDL"), so every rule starts with that prefix.
+
+    INCLUDED implicitly (the user's valuable data — should follow them
+    to a new phone):
+      Altirra/AltirraSDL/settings.ini      (registry / preferences)
+      Altirra/AltirraSDL/gamelibrary.json  (curated game library)
+      Altirra/AltirraSDL/custom_art/       (user-supplied cover art)
+      Altirra/AltirraSDL/quicksave*.atstate2 + save states
+
+    EXCLUDED below (transient / device-specific / regeneratable):
+      imgui.ini       — ImGui dock & window layout; doesn't fit new screen
+      last_crash.txt  — debug diagnostic from old device
+      lobby.ini       — transient netplay lobby state
+      netplay_cache/  — discoverable session list cache
+      thumbnails/     — auto-regenerated from disk images on first open
+
+    Android limitation: there is no way to refuse a restore on a
+    user-initiated uninstall+reinstall — the restore happens before
+    our code runs and the OS can't distinguish that scenario from a
+    phone migration.  Users who want a deliberate fresh start must
+    clear the cloud backup via Settings > Backup > Manage backup.
+-->
+<full-backup-content>
+    <exclude domain="file" path="Altirra/AltirraSDL/imgui.ini"/>
+    <exclude domain="file" path="Altirra/AltirraSDL/last_crash.txt"/>
+    <exclude domain="file" path="Altirra/AltirraSDL/lobby.ini"/>
+    <exclude domain="file" path="Altirra/AltirraSDL/netplay_cache/"/>
+    <exclude domain="file" path="Altirra/AltirraSDL/thumbnails/"/>
+</full-backup-content>
