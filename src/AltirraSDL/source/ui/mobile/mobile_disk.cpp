@@ -22,6 +22,7 @@
 #include "ui_main.h"
 #include "touch_controls.h"
 #include "touch_widgets.h"
+#include "../../app/disk_state.h"  // ATResolveDiskMount
 #include "simulator.h"
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
@@ -153,6 +154,16 @@ void RenderMobileDiskRow(ATSimulator &sim, int driveIdx,
 					ATDiskInterface &tgt =
 						g_sim.GetDiskInterface(drive);
 					try {
+						// Disk-state interception (see disk_state.h):
+						// when the drive's current write mode is R/W,
+						// route the new variant through the helper so
+						// the swap mounts the NEW image's working copy
+						// instead of mutating the source.  No-op for
+						// the other write modes.
+						ATMediaWriteMode wm = tgt.GetWriteMode();
+						VDStringW mountPath = ATResolveDiskMount(
+							variantPath.c_str(), wm);
+
 						// Route through ATSimulator::Load (matches
 						// Windows uidisk.cpp:1060-1065).  The 1-arg
 						// ATDiskInterface::LoadDisk path flags images
@@ -165,8 +176,7 @@ void RenderMobileDiskRow(ATSimulator &sim, int driveIdx,
 						ATImageLoadContext ctx;
 						ctx.mLoadType  = kATImageType_Disk;
 						ctx.mLoadIndex = drive;
-						g_sim.Load(variantPath.c_str(),
-							tgt.GetWriteMode(), &ctx);
+						g_sim.Load(mountPath.c_str(), wm, &ctx);
 					} catch (const MyError &e) {
 						ShowInfoModal("Mount Failed", e.c_str());
 					}

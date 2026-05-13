@@ -488,6 +488,17 @@ void ATUIPollDeferredActions() {
 					ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
 						? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
 
+					// Disk-state interception (see disk_state.h):  this
+					// is the deferred "attach disk to D<N>" path that
+					// the Disk Drives dialog and `kATDeferred_AttachDisk`
+					// producers use.  For Real R/W mounts, route the
+					// path through the helper so writes land in a
+					// per-image working copy instead of the source .atr.
+					// No-op for RO / VRWSafe / VRW.  MRU below records
+					// the original path so the user sees what they
+					// picked, not an internal disk_state path.
+					VDStringW mountPath = ATResolveDiskMount(a.path.c_str(), wm);
+
 					// Route through ATSimulator::Load to match Windows
 					// (uidisk.cpp:1060-1065).  The 1-arg
 					// ATDiskInterface::LoadDisk(path) path forwards
@@ -504,7 +515,7 @@ void ATUIPollDeferredActions() {
 					ATImageLoadContext ctx;
 					ctx.mLoadType  = kATImageType_Disk;
 					ctx.mLoadIndex = idx;
-					g_sim.Load(a.path.c_str(), wm, &ctx);
+					g_sim.Load(mountPath.c_str(), wm, &ctx);
 
 					ATAddMRU(a.path.c_str());
 				}

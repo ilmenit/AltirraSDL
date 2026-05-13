@@ -950,6 +950,15 @@ static void RenderDiskVariantPopup(ATSimulator &sim) {
 			int drive = g_diskVariantPopupDrive;
 			ATDiskInterface &di = g_sim.GetDiskInterface(drive);
 			try {
+				// Disk-state interception (see disk_state.h): variant
+				// swap inherits the drive's existing write mode; when
+				// that's R/W, route through the helper so writes land
+				// in the NEW variant's working copy (different image
+				// bytes => different SHA-256 => different disk_state
+				// dir).  No-op for RO / VRWSafe / VRW.
+				ATMediaWriteMode wm = di.GetWriteMode();
+				VDStringW mountPath = ATResolveDiskMount(var.mPath.c_str(), wm);
+
 				// Route through ATSimulator::Load so the load goes via
 				// the same path as Windows uidisk.cpp:1060-1065 (the
 				// 1-arg ATDiskInterface::LoadDisk path flags images as
@@ -960,7 +969,7 @@ static void RenderDiskVariantPopup(ATSimulator &sim) {
 				ATImageLoadContext ctx;
 				ctx.mLoadType  = kATImageType_Disk;
 				ctx.mLoadIndex = drive;
-				g_sim.Load(var.mPath.c_str(), di.GetWriteMode(), &ctx);
+				g_sim.Load(mountPath.c_str(), wm, &ctx);
 				LOG_INFO("UI", "Swapped D%d: variant %d (%s)",
 					drive + 1, (int)i, label.c_str());
 			} catch (const MyError &e) {
