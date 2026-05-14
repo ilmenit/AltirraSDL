@@ -266,7 +266,7 @@ VDStringW VDFileSplitExtRight(const VDStringW& s) { return splitimpR(s, VDFileSp
 VDStringSpanA VDFileSplitExtLeftSpan (const VDStringSpanA& s) { return VDStringSpanA(s.begin(), VDFileSplitExt(s.begin(), s.end())); }
 VDStringSpanW VDFileSplitExtLeftSpan (const VDStringSpanW& s) { return VDStringSpanW(s.begin(), VDFileSplitExt(s.begin(), s.end())); }
 VDStringSpanA VDFileSplitExtRightSpan(const VDStringSpanA& s) { return VDStringSpanA(VDFileSplitExt(s.begin(), s.end()), s.end()); }
-VDStringSpanW VDFileSplitExtRighSpant(const VDStringSpanW& s) { return VDStringSpanW(VDFileSplitExt(s.begin(), s.end()), s.end()); }
+VDStringSpanW VDFileSplitExtRightSpan(const VDStringSpanW& s) { return VDStringSpanW(VDFileSplitExt(s.begin(), s.end()), s.end()); }
 
 /////////////////////////////////////////////////////////////////////////////
 
