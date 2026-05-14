@@ -95,6 +95,13 @@ extern "C" void ATWasmFirstRunBootstrap();
 extern "C" int ATWasmGetFirstRunState();
 extern "C" int ATWasmGetFirstRunFiles();
 
+// Prepend an operator-supplied URL to the firmware mirror list so the
+// first-run bootstrap tries it before any built-in mirror.  Called by
+// the JS shell when `firmwareUrl` is set in config.json.  Idempotent;
+// empty / null URLs are a no-op.  Must be called before
+// ATWasmFirstRunBootstrap to affect the current run.
+extern "C" void ATWasmSetFirstRunPrimaryUrl(const char *url);
+
 #else // !__EMSCRIPTEN__
 
 inline void ATWasmBridgeTick() {}

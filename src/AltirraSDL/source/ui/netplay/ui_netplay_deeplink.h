@@ -75,7 +75,7 @@ bool OnDeepLinkLobbyResult(const LobbyResult& r);
 enum class DeepLinkUiState {
 	NotPending,        // no deep-link in flight; screen should be Closed
 	NeedsNickname,     // first-time visitor; ask for a name and persist
-	DownloadingFw,     // WASM auto-fetching ROM bundle from kFirstRunUrls
+	DownloadingFw,     // WASM auto-fetching ROM bundle from g_firstRunUrls
 	FirmwareFailed,    // all firmware mirrors failed; show error + retry
 	Looking,           // GET /v1/session/<id> in flight on the lobby
 	Joining,           // StartJoiningAction has fired; standard screens

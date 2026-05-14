@@ -3778,12 +3778,25 @@
         }
         if (typeof j.firmwareUrl === 'string' && j.firmwareUrl) {
           jlog('host-config: firmwareUrl override = ' + j.firmwareUrl);
-          // Note: actually wiring the override into the C-side mirror
-          // list would require a new export; for now we surface it in
-          // the wizard text and rely on the existing mirror list.
-          // Operators who need a private firmware URL can extract it
-          // ahead of time and ship the .rom files in firmware.zip
-          // alongside config.json — see HOSTING.md.
+          // Prepend to the C-side firmware mirror list so the operator's
+          // URL is tried before any built-in mirror.  This runs from
+          // loadHostConfig() inside onRuntimeInitialized.finally(), so
+          // the WASM exports are available and the first-run bootstrap
+          // (kicked off by startFirstRunPolling() in decideFirstRunAction)
+          // hasn't started yet — the prepended URL ends up at index 0
+          // of the mirror list for the upcoming fetch cascade.
+          if (Module._ATWasmSetFirstRunPrimaryUrl) {
+            try {
+              const urlPtr = stringToCPath(j.firmwareUrl);
+              try { Module._ATWasmSetFirstRunPrimaryUrl(urlPtr); }
+              finally { Module._free(urlPtr); }
+            } catch (e) {
+              jlog('host-config: SetFirstRunPrimaryUrl threw —', e);
+            }
+          } else {
+            jlog('host-config: SetFirstRunPrimaryUrl export missing — '
+              + 'firmwareUrl will not be used (ancient build)');
+          }
         }
       } catch (e) {
         jlog('host-config: load failed —',

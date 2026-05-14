@@ -297,7 +297,7 @@ void DriveDeepLinkJoin() {
 	}
 
 	// Phase 2 — firmware (WASM only).  Wait until the auto-fetch
-	// (kFirstRunUrls cascade) has produced an extracted ROM.  States
+	// (g_firstRunUrls cascade) has produced an extracted ROM.  States
 	// 5/6/8 mean "ready"; 7 means "all mirrors failed"; 0..4 mean
 	// "in progress".  Idempotent: ATWasmFirstRunBootstrap uses an
 	// atomic guard so a second call from here is a no-op if JS

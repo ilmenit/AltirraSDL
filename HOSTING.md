@@ -58,14 +58,22 @@ first-run experience.  Every field is optional.
 
 ### Schema
 
-- **`firmwareUrl`** *(string, optional)* — surfaced to the user in the
-  wizard.  The emulator's mirror list (xf25.zip on atariarea + ibiblio
-  + a couple of FreeDOS archives) is still the canonical source for
-  the standard ROM bundle, and works for almost everyone.  Override
-  this only if you're running on an air-gapped network where the
-  default mirrors aren't reachable; in that case, host your own copy
-  of `xf25.zip` (or build a minimal zip containing only `.rom`
-  entries) and point at it.
+- **`firmwareUrl`** *(string, optional)* — operator-supplied firmware
+  bundle URL.  When set, this URL is prepended to the first-run
+  bootstrap mirror list and tried before any built-in mirror; the
+  built-in mirrors (ifarchive.org's pcxf360.zip, the ibiblio mirror,
+  and the reverse-proxy fallbacks) stay in the list as fallbacks.
+  Point at a `.zip` containing the standard ROM set (`ATARIBAS.ROM` /
+  `ATARIOSB.ROM` / `ATARIXL.ROM` — any other `.rom` entries are also
+  extracted), served with `Access-Control-Allow-Origin: *` (or same-
+  origin to your `AltirraSDL.html`).  Use this when running on an
+  air-gapped network, when you want first-run to complete in a single
+  round-trip without leaving your origin, or when you want a specific
+  ROM revision shipped with the deployment.  Self-hosters on origins
+  *other* than `lobby.atari.org.pl` also benefit even without this
+  setting: the built-in lobby URL is automatically skipped on third-
+  party origins (where it would CORS-fail), so the default list falls
+  through to ifarchive.org with no spurious console error.
 
 - **`lobbyHost`** *(string, optional, default `lobby.atari.org.pl`)*
   — the netplay lobby host.  Used by the *🩺 Diagnose lobby* button to

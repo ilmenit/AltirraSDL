@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -780,8 +781,7 @@ namespace {
 		"/home/web_user/.config/altirra";
 
 	// Mirror list for the standard ROM bundle.  Tried in order; the
-	// first one to return 2xx with extractable .rom entries wins.  Add
-	// or reorder URLs here — no other code paths reference these.
+	// first one to return 2xx with extractable .rom entries wins.
 	//
 	// **Browser CORS gates this list.**  emscripten_fetch goes through
 	// the page's normal `fetch()` plumbing, so any mirror that doesn't
@@ -790,14 +790,76 @@ namespace {
 	// surfaces here as `status=0` with a synthesised error string.
 	// Result: in stock browsers, only mirrors that explicitly opt in
 	// to CORS work.  As of 2026-05, that's `ifarchive.org` (and its
-	// mirror network).  The other entries below are kept on purpose:
-	// self-hosters who reverse-proxy the ROM bundle through their own
-	// origin (HOSTING.md §3 describes the Caddyfile snippet) bypass
-	// CORS entirely, and a future mirror flipping CORS on shouldn't
-	// require a code change to start being used.  pcxf360.zip and
-	// xf25.zip both bundle the Altirra-distributable ROM set; the
-	// extractor accepts any ".rom" entry so either layout works.
-	constexpr const char *kFirstRunUrls[] = {
+	// mirror network).  Reverse-proxy fallbacks below are kept for
+	// self-hosters who proxy the bundle through their own origin
+	// (HOSTING.md describes the Caddyfile snippet), and for any future
+	// runtime path that bypasses fetch's same-origin policy.
+	//
+	// The mirror list is built at runtime instead of being a fixed
+	// constexpr array so that two things can happen:
+	//
+	//   1. **Origin-aware lobby entry.**  The canonical lobby URL is
+	//      same-origin only when the page is actually served from
+	//      `lobby.atari.org.pl` (or its DuckDNS backup hostname).  On
+	//      every other origin — including any self-hosted deployment —
+	//      the lobby URL is cross-origin and the lobby doesn't send
+	//      `Access-Control-Allow-Origin` for third-party origins, so
+	//      browsers reject it with `status=0` (visible as a CORS
+	//      console error).  We detect the hostname via EM_ASM_INT and
+	//      include the lobby URL only when same-origin, so self-hosters
+	//      never see the spurious error and never wait for a doomed
+	//      round-trip.
+	//
+	//   2. **Operator-supplied primary.**  `config.json` may set
+	//      `firmwareUrl` to point at the operator's own (or air-gapped
+	//      / private) firmware bundle.  JS calls
+	//      `ATWasmSetFirstRunPrimaryUrl` with that value before
+	//      `ATWasmFirstRunBootstrap`, prepending it to the mirror list.
+	//
+	// pcxf360.zip and xf25.zip both bundle the Altirra-distributable
+	// ROM set; the extractor accepts any ".rom" entry so either layout
+	// works.
+
+	std::vector<std::string> g_firstRunUrls;
+	bool                     g_firstRunUrlsInitialised = false;
+
+	// True iff `window.location.hostname` is one of the canonical lobby
+	// hostnames — see EnsureFirstRunUrlsInitialised() below.  Detected
+	// once via EM_ASM_INT at first use.
+	bool IsLobbyOrigin() {
+		// Note: JS string literals inside EM_ASM_INT use double quotes
+		// because the C preprocessor sees single-quoted tokens first and
+		// would warn on `''` (empty string in JS) as an invalid empty
+		// character constant.  Double-quoted strings are equivalent in
+		// JS and bypass the preprocessor's char-literal interpretation.
+		return EM_ASM_INT({
+			try {
+				if (typeof window === "undefined" || !window.location)
+					return 0;
+				const h = window.location.hostname || "";
+				return (h === "lobby.atari.org.pl"
+					|| h === "altirra-lobby.duckdns.org") ? 1 : 0;
+			} catch (e) {
+				return 0;
+			}
+		}) != 0;
+	}
+
+	// Lazily populate g_firstRunUrls with the built-in defaults.  Safe
+	// to call repeatedly — first call wins, subsequent calls are
+	// no-ops.  ATWasmSetFirstRunPrimaryUrl drives this too, so an
+	// operator-supplied primary URL is prepended on top of these
+	// defaults rather than replacing them.
+	void EnsureFirstRunUrlsInitialised() {
+		if (g_firstRunUrlsInitialised) return;
+		g_firstRunUrlsInitialised = true;
+
+		const bool sameOrigin = IsLobbyOrigin();
+		fprintf(stderr,
+			"[wasm] FirstRun: origin %s → lobby entry %s\n",
+			sameOrigin ? "is lobby" : "is third-party",
+			sameOrigin ? "included" : "skipped (would CORS-fail)");
+
 		// Self-hosted primary on the netplay lobby — same origin as
 		// the WASM page when served from lobby.atari.org.pl/AltirraSDL/
 		// play/.  ~26 KB minimal repackage of pcxf360.zip containing
@@ -805,30 +867,42 @@ namespace {
 		// .rom files the extractor cares about).  Same-origin =
 		// guaranteed CORS, fast, no third-party dependency.  Ships
 		// from the altirra-sdl-lobby repo's page/firmware/ tree.
-		"https://lobby.atari.org.pl/AltirraSDL/firmware/altirra-firmware.zip",
+		// Included ONLY when the page itself is served from the lobby
+		// (or its DuckDNS backup) — on every other origin the lobby
+		// response omits Access-Control-Allow-Origin for third-party
+		// requesters, so the browser rejects it as opaque and
+		// emscripten_fetch surfaces it as status=0.
+		if (sameOrigin) {
+			g_firstRunUrls.emplace_back(
+				"https://lobby.atari.org.pl/AltirraSDL/firmware/altirra-firmware.zip");
+		}
 
 		// CORS-permissive secondary on ifarchive (verified 2026-05).
 		// Survives a lobby outage; same content, larger payload
 		// (591 KB — includes XFD demo disks the extractor ignores).
-		"https://ifarchive.org/if-archive/emulators/atari/pcxf360.zip",
+		g_firstRunUrls.emplace_back(
+			"https://ifarchive.org/if-archive/emulators/atari/pcxf360.zip");
 
 		// CORS-permissive ifarchive mirror (same content, separate
 		// origin; if ifarchive.org goes down, the mirrors keep
 		// answering — they typically inherit CORS too).
-		"https://mirrors.ibiblio.org/pub/mirrors/interactive-fiction/emulators/atari/pcxf360.zip",
+		g_firstRunUrls.emplace_back(
+			"https://mirrors.ibiblio.org/pub/mirrors/interactive-fiction/emulators/atari/pcxf360.zip");
 
 		// CORS-restricted mirrors (always fail in stock browsers but
 		// work for self-hosters who reverse-proxy them, and for any
 		// future runtime path that bypasses fetch's same-origin
 		// policy — keep them so non-browser embedders aren't forced
 		// onto a single mirror).
-		"https://atariarea.krap.pl/PLus/files/xf25.zip",
-		"https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.1/repos/emulators/xf25.zip",
-		"https://ftp.fau.de/macports/distfiles/atari800/xf25.zip",
-		"http://atari.vjetnam.cz/dow/emuROMs.zip",
-	};
-	constexpr int kFirstRunUrlCount =
-		(int)(sizeof(kFirstRunUrls) / sizeof(kFirstRunUrls[0]));
+		g_firstRunUrls.emplace_back(
+			"https://atariarea.krap.pl/PLus/files/xf25.zip");
+		g_firstRunUrls.emplace_back(
+			"https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.1/repos/emulators/xf25.zip");
+		g_firstRunUrls.emplace_back(
+			"https://ftp.fau.de/macports/distfiles/atari800/xf25.zip");
+		g_firstRunUrls.emplace_back(
+			"http://atari.vjetnam.cz/dow/emuROMs.zip");
+	}
 
 	std::atomic<int>  g_firstRunState{0};
 	std::atomic<int>  g_firstRunFiles{0};
@@ -987,9 +1061,10 @@ namespace {
 	// way so we don't keep retrying on every page load.
 	void TryNextMirror(int currentIdx) {
 		const int next = currentIdx + 1;
-		if (next >= kFirstRunUrlCount) {
+		const int total = (int)g_firstRunUrls.size();
+		if (next >= total) {
 			fprintf(stderr, "[wasm] FirstRun: all %d mirror(s) failed\n",
-				kFirstRunUrlCount);
+				total);
 			g_firstRunState.store(7);
 			WriteFirstRunMarker();
 			return;
@@ -1076,7 +1151,7 @@ namespace {
 	}
 
 	void StartFetchAt(int idx) {
-		if (idx < 0 || idx >= kFirstRunUrlCount) {
+		if (idx < 0 || idx >= (int)g_firstRunUrls.size()) {
 			g_firstRunState.store(7);
 			WriteFirstRunMarker();
 			return;
@@ -1094,9 +1169,9 @@ namespace {
 		attr.userData   = (void *)(intptr_t)idx;
 		attr.onsuccess  = OnFirstRunSuccess;
 		attr.onerror    = OnFirstRunError;
-		fprintf(stderr, "[wasm] FirstRun: fetching [%d] %s\n",
-			idx, kFirstRunUrls[idx]);
-		emscripten_fetch(&attr, kFirstRunUrls[idx]);
+		const char *url = g_firstRunUrls[idx].c_str();
+		fprintf(stderr, "[wasm] FirstRun: fetching [%d] %s\n", idx, url);
+		emscripten_fetch(&attr, url);
 	}
 }
 
@@ -1107,6 +1182,11 @@ void ATWasmFirstRunBootstrap() {
 		fprintf(stderr, "[wasm] FirstRun: already started, ignoring\n");
 		return;
 	}
+
+	// Build the mirror list now (idempotent — if JS already prepended a
+	// primary URL via ATWasmSetFirstRunPrimaryUrl, the defaults are
+	// appended below that entry).
+	EnsureFirstRunUrlsInitialised();
 
 	g_firstRunState.store(1);
 
@@ -1159,6 +1239,35 @@ int ATWasmGetFirstRunState() { return g_firstRunState.load(); }
 
 extern "C" EMSCRIPTEN_KEEPALIVE
 int ATWasmGetFirstRunFiles() { return g_firstRunFiles.load(); }
+
+// Prepend an operator-supplied URL to the firmware mirror list.  The
+// caller (JS, in loadHostConfig) passes `firmwareUrl` from config.json
+// — when present, that URL is tried before any built-in mirror.  Must
+// be called before ATWasmFirstRunBootstrap; calls after the bootstrap
+// is in flight don't change the in-flight fetch, but ATWasmResetFirstRun
+// + a fresh bootstrap will pick up the new ordering.
+//
+// Idempotent: if the same URL is already in the list (operator pushed
+// twice, hot reload, etc.) the existing entry is dropped before
+// prepending so the URL still ends up at position 0 with no duplicate.
+// An empty / null URL is a no-op so JS can call unconditionally.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetFirstRunPrimaryUrl(const char *url) {
+	if (!url || !*url) return;
+
+	// Make sure the defaults are present so that a caller who only
+	// supplies a primary URL still ends up with the universal CORS-
+	// permissive fallbacks behind it.
+	EnsureFirstRunUrlsInitialised();
+
+	const std::string s(url);
+	auto it = std::find(g_firstRunUrls.begin(), g_firstRunUrls.end(), s);
+	if (it != g_firstRunUrls.end()) g_firstRunUrls.erase(it);
+	g_firstRunUrls.insert(g_firstRunUrls.begin(), s);
+	fprintf(stderr,
+		"[wasm] FirstRun: operator-supplied primary URL = %s (list size now %zu)\n",
+		s.c_str(), g_firstRunUrls.size());
+}
 
 // Reset the bootstrap state so a subsequent ATWasmFirstRunBootstrap
 // call actually performs the fetch.  Called by JS in two situations:
