@@ -66,9 +66,32 @@ extern IDisplayBackend *ATUIGetDisplayBackend();
 // otherwise only serialised by the clean-exit ATSaveSettings call,
 // which the OS rarely lets a backgrounded mobile app reach — so each
 // edit must persist immediately.
-static void ATPersistMobileEdit(uint32 categoryMask) {
+//
+// We deliberately save the full registered category set (every
+// category in kHandlers, see settings.cpp:1668) on every mobile edit
+// rather than letting each call site name "its" category.  The
+// alternative — a category-mask argument — relies on the caller
+// matching the toggle to the `ATSettingsExchange*` function that owns
+// the key, and that map is non-obvious (e.g. "Randomize memory on EXE
+// load" lives in `Debugging`, not `Boot`).  A wrong category writes
+// nothing visible and the user's choice is silently lost on the next
+// process kill.  Saving every category is sub-millisecond and the
+// suspend path already does the same with the same exclusion set, so
+// there's no regression risk and the entire class of "wrong category"
+// bug becomes structurally impossible.  Excluded:
+//   - kATSettingsCategory_FullScreen: would re-assert fullscreen state
+//     on every UI tap (matches the suspend path exclusion at
+//     main_sdl3.cpp:341 — same reason).
+//   - kATSettingsCategory_MountedImages: rewriting the entire mount
+//     list on every tap is wasteful and the per-edit handler can't
+//     produce changes to mounted media anyway.
+static void ATPersistMobileEdit() {
+	constexpr uint32 kMobileEditMask =
+		kATSettingsCategory_AllCategories
+		& ~kATSettingsCategory_FullScreen
+		& ~kATSettingsCategory_MountedImages;
 	try {
-		ATSaveSettings((ATSettingsCategory)categoryMask);
+		ATSaveSettings((ATSettingsCategory)kMobileEditMask);
 	} catch (...) {
 		// Best effort; lifecycle handler will retry at suspend.
 	}
@@ -450,7 +473,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				// Hardware mode change can also reset memory mode in
 				// the simulator (e.g. switching to 5200 forces 16K).
 				// Save Hardware so all coupled defaults stick.
-				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -460,7 +483,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			static const char *items[] = { "PAL", "NTSC" };
 			if (ATTouchSegmented("Video Standard", &current, items, 2)) {
 				sim.SetVideoStandard(current == 0 ? kATVideoStandard_PAL : kATVideoStandard_NTSC);
-				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -489,7 +512,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			};
 			if (ATTouchSegmented("Memory Size", &curIdx, labels, count)) {
 				sim.SetMemoryMode(kMemModes[curIdx].mode);
-				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -498,7 +521,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			bool basicEnabled = sim.IsBASICEnabled();
 			if (ATTouchToggle("BASIC Enabled", &basicEnabled)) {
 				sim.SetBASICEnabled(basicEnabled);
-				ATPersistMobileEdit(kATSettingsCategory_StartupConfig);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -507,7 +530,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			bool sioEnabled = sim.IsSIOPatchEnabled();
 			if (ATTouchToggle("SIO Patch", &sioEnabled)) {
 				sim.SetSIOPatchEnabled(sioEnabled);
-				ATPersistMobileEdit(kATSettingsCategory_Acceleration);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -567,7 +590,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						if (changed) {
 							if (needsReboot)
 								sim.ColdReset();
-							ATPersistMobileEdit(kATSettingsCategory_Devices);
+							ATPersistMobileEdit();
 						}
 					}
 				};
@@ -645,7 +668,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				sim.SetCPUMode(kCpu[curIdx].mode, kCpu[curIdx].subCycles);
 				if (needReset)
 					sim.ColdReset();
-				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -653,7 +676,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			bool illegals = sim.GetCPU().AreIllegalInsnsEnabled();
 			if (ATTouchToggle("Enable Illegal Instructions", &illegals)) {
 				sim.GetCPU().SetIllegalInsnsEnabled(illegals);
-				ATPersistMobileEdit(kATSettingsCategory_Hardware);
+				ATPersistMobileEdit();
 			}
 		}
 
@@ -664,7 +687,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			bool randomLaunch = sim.IsRandomProgramLaunchDelayEnabled();
 			if (ATTouchToggle("Randomize launch delay", &randomLaunch)) {
 				sim.SetRandomProgramLaunchDelayEnabled(randomLaunch);
-				ATPersistMobileEdit(kATSettingsCategory_Boot);
+				ATPersistMobileEdit();
 			}
 		}
 		ATTouchMutedText(
@@ -675,7 +698,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			bool randomFill = sim.IsRandomFillEXEEnabled();
 			if (ATTouchToggle("Randomize memory on EXE load", &randomFill)) {
 				sim.SetRandomFillEXEEnabled(randomFill);
-				ATPersistMobileEdit(kATSettingsCategory_Boot);
+				ATPersistMobileEdit();
 			}
 		}
 		ATTouchMutedText(
@@ -712,7 +735,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			bool showEmotes = ATEmoteNetplay::GetSendEnabled();
 			if (ATTouchToggle("Show Emoticons", &showEmotes)) {
 				ATEmoteNetplay::SetSendEnabled(showEmotes);
-				ATPersistMobileEdit(kATSettingsCategory_Environment);
+				ATPersistMobileEdit();
 			}
 			if (!mobileState.showTouchControls) {
 				ATTouchMutedText(
@@ -882,7 +905,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						sSavedArtifactMode = curMode;
 					gtia.SetArtifactingMode(ATArtifactMode::None);
 				}
-				ATPersistMobileEdit(kATSettingsCategory_View);
+				ATPersistMobileEdit();
 			} else if (curMode != ATArtifactMode::None) {
 				// Keep the cache in sync when the user changes the
 				// mode from elsewhere (Configure System combo, etc.)
@@ -1003,10 +1026,10 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				ATUISetDisplayFilterMode(kModes[idx]);
 				mobileState.performancePreset = 3;  // Custom
 				SaveMobileConfig(mobileState);
-				// Filter mode lives in the View settings category, not
-				// in mobile-only registry — persist that too so the
+				// Filter mode is owned by ATSettingsExchangeView, not
+				// the mobile-only registry — persist that too so the
 				// choice survives a process kill.
-				ATPersistMobileEdit(kATSettingsCategory_View);
+				ATPersistMobileEdit();
 			}
 		}
 		} // end Display page
@@ -1028,16 +1051,17 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			// matches Desktop / Windows Altirra and saves a little
 			// CPU on the POKEY + filter path.
 			//
-			// Note: "Audio: Dual POKEYs enabled" is actually persisted
-			// by ATSettingsExchangeHardware (settings.cpp:819/879), not
-			// ATSettingsExchangeSound — Windows groups it with the rest
-			// of the hardware-config keys.  Use Hardware here so the
-			// toggle survives restart.
+			// "Audio: Dual POKEYs enabled" is actually persisted by
+			// ATSettingsExchangeHardware, not ATSettingsExchangeSound —
+			// Windows groups it with the rest of the hardware-config
+			// keys.  ATPersistMobileEdit() now saves every relevant
+			// category, so callers no longer need to match key →
+			// category by hand.
 			{
 				bool dualPokey = sim.IsDualPokeysEnabled();
 				if (ATTouchToggle("Stereo (Dual POKEY)", &dualPokey)) {
 					sim.SetDualPokeysEnabled(dualPokey);
-					ATPersistMobileEdit(kATSettingsCategory_Hardware);
+					ATPersistMobileEdit();
 				}
 			}
 			ATTouchMutedText(
@@ -1055,7 +1079,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				bool stereoMono = pokey.IsStereoAsMonoEnabled();
 				if (ATTouchToggle("Downmix stereo to mono", &stereoMono)) {
 					pokey.SetStereoAsMonoEnabled(stereoMono);
-					ATPersistMobileEdit(kATSettingsCategory_Sound);
+					ATPersistMobileEdit();
 				}
 			}
 
@@ -1067,7 +1091,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				bool driveSounds = ATUIGetDriveSoundsEnabled();
 				if (ATTouchToggle("Drive Sounds", &driveSounds)) {
 					ATUISetDriveSoundsEnabled(driveSounds);
-					ATPersistMobileEdit(kATSettingsCategory_Sound);
+					ATPersistMobileEdit();
 				}
 			}
 			ATTouchMutedText(
@@ -1087,7 +1111,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				tick = std::clamp(tick, 1, 50);
 				if (ATTouchSlider("Latency", &tick, 1, 50, "%d0 ms")) {
 					audioOut->SetLatency(tick * 10);
-					ATPersistMobileEdit(kATSettingsCategory_Sound);
+					ATPersistMobileEdit();
 				}
 			}
 			ATTouchMutedText(

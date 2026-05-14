@@ -2360,10 +2360,18 @@
     //  poller) flips them on once the runtime is ready and updates
     //  their labels to reflect live state.
     //
-    //  Touch detection: pointer:coarse media query is the most reliable
-    //  signal for "primary input is a finger" (phone, tablet, Surface
-    //  in tablet mode).  Falls back to maxTouchPoints heuristics for
-    //  older browsers.  Default state is seeded once into
+    //  Touch detection: a *touch-primary* device has both
+    //  (pointer: coarse) and (hover: none).  We deliberately do NOT
+    //  fall back to `navigator.maxTouchPoints` or `'ontouchstart' in
+    //  window` — both are wrong on touch-screen laptops (Surface
+    //  laptop mode, 2-in-1 in clamshell), and both are perturbed by
+    //  anti-fingerprinting browsers (Brave Shields, Tor, Firefox
+    //  Resist Fingerprinting) which can leave a desktop user with
+    //  the touch-overlay defaults silently turned on.  CSS media
+    //  queries describe the input device class rather than per-device
+    //  fingerprintable values, so they survive privacy hardening.
+    //
+    //  Default state is seeded once into
     //  localStorage['altirra-wasm-touch'] on first run; subsequent
     //  toggles persist the user's choice.
     // ───────────────────────────────────────────────────────────────────
@@ -2388,10 +2396,9 @@
 
     const TOUCH_KEY = 'altirra-wasm-touch';
     const ATIsTouchDevice = (function () {
-      if (window.matchMedia
-          && window.matchMedia('(pointer: coarse)').matches) return true;
-      return ('ontouchstart' in window)
-          || (navigator.maxTouchPoints || 0) > 0;
+      if (!window.matchMedia) return false;
+      return window.matchMedia('(pointer: coarse)').matches
+          && window.matchMedia('(hover: none)').matches;
     })();
 
     function refocusCanvas() {

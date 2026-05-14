@@ -647,6 +647,135 @@ explicitly: `src="/atari/altirra/?embed=1&..."`.
 For mobile, drop `width`/`height` and let CSS sizing do the work
 (`max-width: 100%; aspect-ratio: 4 / 3;` is enough).
 
+### Responsive recipe: desktop + mobile portrait + on-screen keyboard
+
+The defaults above are fine for desktop visitors but compound badly
+when the same iframe is loaded on a phone in portrait orientation:
+the `aspect-ratio: 4/3` constraint plus `max-width: 100%` shrinks
+the box to about a third of the viewport height, the on-screen
+keyboard (if you enabled it) eats the bottom half of that, and the
+playable area ends up postage-stamp size.
+
+A small CSS media query and a tiny script give the embed a
+desktop-and-mobile shape without giving up the pixel-perfect feel
+on the big screen:
+
+```html
+<style>
+  /* Default (landscape, desktop): keep the classic 4:3 box. */
+  .altirra-embed {
+    border: 0;
+    display: block;
+    width: 672px;
+    max-width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000;
+  }
+  /* Mobile portrait on a touch-primary device: let the iframe take
+     the remaining viewport height so the Atari frame + on-screen
+     keyboard get a usable size.  `dvh` accounts for the address bar
+     showing/hiding during scroll. */
+  @media (orientation: portrait) and (pointer: coarse) and (hover: none) {
+    .altirra-embed {
+      width: 100%;
+      max-width: none;
+      height: calc(100dvh - 120px);   /* tune for your page header */
+      aspect-ratio: auto;
+    }
+  }
+</style>
+
+<iframe id="emu" class="altirra-embed"
+  src="altirra/?embed=1&lib=mygame.xex&hardware=800xl&filter=point&artifact=none&autoplay=0"
+  allow="autoplay; fullscreen; gamepad"
+  loading="lazy"
+  title="Play My Game">
+</iframe>
+
+<script>
+  // Pick the right Altirra stretch mode for the device class and
+  // auto-enable the on-screen keyboard ONLY for touch-primary
+  // devices.  Touch detection uses the (pointer: coarse) AND
+  // (hover: none) pair, NOT `navigator.maxTouchPoints` — the latter
+  // returns non-zero on touch-screen laptops where the user is
+  // really driving a trackpad, and anti-fingerprinting browsers
+  // (Brave Shields, Tor, Firefox Resist Fingerprinting) can perturb
+  // it.  CSS media queries describe the input device class itself,
+  // so they survive privacy hardening.
+  (function () {
+    var f = document.getElementById('emu');
+    if (!f || !window.matchMedia) return;
+    var touchOnly = window.matchMedia('(pointer: coarse)').matches
+                 && window.matchMedia('(hover: none)').matches;
+    f.src += touchOnly
+      ? '&stretch=preserve&vkbd=1'   // mobile: fill iframe, show OSK
+      : '&stretch=integral';          // desktop: integer-multiple scale
+  })();
+</script>
+```
+
+The key choices and why:
+
+- **`stretch=integral` on desktop, `stretch=preserve` on mobile**.
+  Integral scaling is pixel-perfect (integer-multiple) and great
+  when the iframe is large enough that the next-smaller integer
+  step still fills the box.  On mobile the iframe is small, the
+  integer-step jump leaves big black bars around the Atari frame,
+  and `preserve` (pixel-aspect-ratio preserving) gives a sharper
+  apparent size by filling the box at correct PAR.
+- **`vkbd=1` only on touch-primary devices**.  Desktop visitors
+  still get the keyboard button on the page bar and can toggle it
+  from the menu — the on-screen keyboard just isn't on by default,
+  which matches Atari user expectations on a real keyboard.
+- **Media-query touch detection, not `maxTouchPoints`**.  See the
+  script comment.  The pair (`pointer: coarse` AND `hover: none`)
+  is true for phones and tablets, false for touch-screen laptops
+  where the mouse/trackpad is the primary pointer, and immune to
+  anti-fingerprinting hardening.
+
+### MIME type for `.wasm` (server configuration)
+
+For best startup time, your web server must serve `.wasm` files
+with `Content-Type: application/wasm`.  Without it, browsers fall
+back from `WebAssembly.instantiateStreaming` (which decodes during
+download) to `ArrayBuffer` instantiation (download → buffer →
+decode); the page still works but loads measurably slower and
+prints a console warning like:
+
+```
+wasm streaming compile failed: TypeError: Incorrect response MIME type.
+                                  Expected 'application/wasm'.
+falling back to ArrayBuffer instantiation
+```
+
+To verify, `curl -I https://your-site/altirra/AltirraSDL.wasm`
+should show `Content-Type: application/wasm` in the response
+headers.
+
+Add the mapping to your server config:
+
+```apache
+# Apache (httpd.conf or a .htaccess file in the bundle directory)
+AddType application/wasm .wasm
+```
+
+```nginx
+# Nginx (inside the http {} or server {} block, or in mime.types)
+types {
+    application/wasm  wasm;
+}
+```
+
+```
+# Caddy (Caddyfile)
+@wasm path *.wasm
+header @wasm Content-Type application/wasm
+```
+
+`python3 -m http.server` (used in the "Test locally" section
+above) already maps `.wasm` correctly on Python 3.8+, so the
+local-test path doesn't trigger the warning.
+
 ## Security model — what to expect
 
 The embed inherits the **same-origin** model the lobby already uses:
