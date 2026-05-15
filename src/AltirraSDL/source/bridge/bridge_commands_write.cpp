@@ -131,6 +131,16 @@ void AddU32(std::string& out, const char* key, uint32_t value) {
 	out += std::to_string(value);
 	out += ',';
 }
+// Boolean field. Mirrors AddU32 -- emits "key":true or "key":false
+// with a trailing comma. Used by CmdEject / CmdFresh (and any other
+// helper that reports a bool flag in the response).
+void AddBool(std::string& out, const char* key, bool value) {
+	out += '"';
+	out += key;
+	out += "\":";
+	out += (value ? "true" : "false");
+	out += ',';
+}
 // String field: surrounds with quotes and JSON-escapes the value.
 // Use this for any user-provided string (paths, names) — never
 // interpolate user data into JSON without going through JsonEscape,
