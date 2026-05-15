@@ -30,6 +30,7 @@
 #include "ui/core/ui_mode.h"
 #include "ui/emotes/emote_netplay.h"
 #include "settings.h"
+#include "altirra_icons.h"
 
 #include "netplay/netplay_glue.h"
 #include "netplay/lobby_config.h"
@@ -137,14 +138,14 @@ void RenderNickname() {
 
 	float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 	if (ATTouchButton("Cancel", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		Navigate(Screen::Closed);
 	}
 	ImGui::SameLine(0, Dp(10));
 	bool valid = anon || (buf[0] != 0);
 	ImGui::BeginDisabled(!valid);
 	if (ATTouchButton("Save", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Accent)) {
+	                  ATTouchButtonStyle::Accent, ICON_MD_SAVE)) {
 		if (anon) st.prefs.nickname.clear();
 		else      st.prefs.nickname = buf;
 		SaveToRegistry();
@@ -302,7 +303,7 @@ void RenderDeepLinkPrep() {
 		float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 		if (ATTouchButton("Cancel",
 		                  ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 			CancelDeepLink();
 		}
 		ImGui::SameLine(0, Dp(10));
@@ -316,7 +317,7 @@ void RenderDeepLinkPrep() {
 		ImGui::BeginDisabled(!valid);
 		if (ATTouchButton("Continue",
 		                  ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Accent)) {
+		                  ATTouchButtonStyle::Accent, ICON_MD_ARROW_FORWARD)) {
 			SubmitDeepLinkNickname(std::string(cur));
 		}
 		ImGui::EndDisabled();
@@ -325,13 +326,13 @@ void RenderDeepLinkPrep() {
 		float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 		if (ATTouchButton("Cancel",
 		                  ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 			CancelDeepLink();
 		}
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Try again",
 		                  ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Accent)) {
+		                  ATTouchButtonStyle::Accent, ICON_MD_REFRESH)) {
 			RetryDeepLinkFirmware();
 		}
 	}
@@ -339,7 +340,7 @@ void RenderDeepLinkPrep() {
 		// DownloadingFw / Looking / Joining: only Cancel.
 		if (ATTouchButton("Cancel",
 		                  ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 			CancelDeepLink();
 		}
 	}
@@ -440,7 +441,7 @@ void RenderBrowser() {
 		ImGui::SetKeyboardFocusHere();
 	if (ATTouchButton("Refresh",
 	                  ImVec2(Dp(140), Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_REFRESH)) {
 		// Preserve scroll position across the refresh so new data
 		// landing doesn't yank the list back to the top.
 		br.savedScrollY = ImGui::GetScrollY();
@@ -818,7 +819,7 @@ void RenderHostSetup() {
 
 	float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 	if (ATTouchButton("Cancel", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		Back();
 	}
 	ImGui::SameLine(0, Dp(10));
@@ -827,7 +828,7 @@ void RenderHostSetup() {
 	                   || !st.session.hostingEntryCode.empty());
 	ImGui::BeginDisabled(!canHost);
 	if (ATTouchButton("Start Hosting", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Accent)) {
+	                  ATTouchButtonStyle::Accent, ICON_MD_CAST)) {
 		st.prefs.lastEntryCode = st.session.hostingEntryCode;
 		SaveToRegistry();
 		StartHostingAction();
@@ -879,13 +880,13 @@ void RenderJoinPrompt() {
 	ImGui::Spacing();
 	float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 	if (ATTouchButton("Cancel", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		Back();
 	}
 	ImGui::SameLine(0, Dp(10));
 	ImGui::BeginDisabled(code[0] == 0);
 	if (ATTouchButton("Join", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Accent)) {
+	                  ATTouchButtonStyle::Accent, ICON_MD_LOGIN)) {
 		StartJoiningAction();
 	}
 	ImGui::EndDisabled();
@@ -995,7 +996,7 @@ void RenderJoinConfirm() {
 	ImGui::Spacing();
 	float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 	if (ATTouchButton("Cancel", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		Back();
 	}
 	ImGui::SameLine(0, Dp(10));
@@ -1013,7 +1014,7 @@ void RenderJoinConfirm() {
 	 || jcompat == JoinCompat::MissingBoth;
 	if (firmwareMissing) ImGui::BeginDisabled();
 	if (ATTouchButton("Join", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Accent)) {
+	                  ATTouchButtonStyle::Accent, ICON_MD_LOGIN)) {
 		StartJoiningAction();
 	}
 	if (firmwareMissing) ImGui::EndDisabled();
@@ -1078,7 +1079,7 @@ void RenderBrokerAsking() {
 	if (ATTouchButton("Cancel",
 	                  ImVec2(-FLT_MIN,
 	                         Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		CancelBrokerJoinFlow();
 	}
 
@@ -1141,7 +1142,7 @@ void RenderBrokerSpawning() {
 	if (ATTouchButton("Cancel",
 	                  ImVec2(-FLT_MIN,
 	                         Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		CancelBrokerJoinFlow();
 	}
 
@@ -1289,7 +1290,7 @@ void RenderWaiting() {
 	if (badCode) {
 		float bw = (ImGui::GetContentRegionAvail().x - Dp(20)) / 3.0f;
 		if (ATTouchButton("Cancel", ImVec2(bw, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 			ATNetplayGlue::DisconnectActive();
 			// Pop back to Browser (it's already on the stack from the
 			// natural Hub → Browser → JoinPrompt → Waiting chain).
@@ -1300,7 +1301,7 @@ void RenderWaiting() {
 		}
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Change Code", ImVec2(bw, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Accent)) {
+		                  ATTouchButtonStyle::Accent, ICON_MD_KEYBOARD)) {
 			ATNetplayGlue::DisconnectActive();
 			// JoinPrompt is on the stack for private sessions (the
 			// only path that reaches the bad-code branch).  Pop to
@@ -1310,7 +1311,7 @@ void RenderWaiting() {
 		}
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Try Again", ImVec2(bw, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_REFRESH)) {
 			ATNetplayGlue::DisconnectActive();
 			StartJoiningAction();
 		}
@@ -1320,21 +1321,21 @@ void RenderWaiting() {
 		// ambiguous hosting-oriented Cancel/Minimise pair.
 		float bw = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 		if (ATTouchButton("Back to Browse", ImVec2(bw, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_ARROW_BACK)) {
 			ATNetplayGlue::DisconnectActive();
 			// PopTo, not Navigate — see Cancel above for rationale.
 			PopTo(Screen::Browser);
 		}
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Try Again", ImVec2(bw, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Accent)) {
+		                  ATTouchButtonStyle::Accent, ICON_MD_REFRESH)) {
 			ATNetplayGlue::DisconnectActive();
 			StartJoiningAction();
 		}
 	} else {
 		float btnW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 		if (ATTouchButton("Cancel", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Danger)) {
+		                  ATTouchButtonStyle::Danger, ICON_MD_CLOSE)) {
 			// Joiner-only Waiting screen (the whole RenderWaiting
 			// reads JoinPhase / joinTarget), so this is always a
 			// joiner cancel.  StopJoin tears down THIS attempt;
@@ -1352,7 +1353,7 @@ void RenderWaiting() {
 		}
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Minimise", ImVec2(btnW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_REMOVE)) {
 			// Hide the sheet — coordinator keeps running in the background.
 			Navigate(Screen::Closed);
 		}
@@ -1653,7 +1654,7 @@ void RenderMyHostedGames() {
 			ImGui::SameLine();
 			if (ATTouchButton("Remove",
 			                  ImVec2(Dp(120), Dp(ATTouch::kButtonHeightSmall)),
-			                  ATTouchButtonStyle::Danger)) {
+			                  ATTouchButtonStyle::Danger, ICON_MD_DELETE_SWEEP)) {
 				pendingRemove = o.id;
 			}
 
@@ -1834,7 +1835,7 @@ void RenderAddOffer() {
 			ImGui::SetKeyboardFocusHere();
 		if (ATTouchButton("Pick from Library…",
 		                  ImVec2(bW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_SPORTS_ESPORTS)) {
 			if (ATUIIsGamingMode()) {
 				// Gaming Mode — delegate the full Game Library UI
 				// (grid/list toggle, letter pill, search, cover art)
@@ -1872,7 +1873,7 @@ void RenderAddOffer() {
 		ImGui::SameLine(0, Dp(10));
 		if (ATTouchButton("Pick a File…",
 		                  ImVec2(bW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_FOLDER_OPEN)) {
 			ATUIShowOpenFileDialog('npam', MobileAddOfferFileCallback,
 				nullptr, g_pWindow,
 				kMobileAddOfferFilters,
@@ -1915,13 +1916,13 @@ void RenderAddOffer() {
 		&& (!s_mobileAddPrivate || s_mobileAddCode[0] != 0);
 	float bW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 	if (ATTouchButton("Cancel", ImVec2(bW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Neutral)) {
+	                  ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		Back();
 	}
 	ImGui::SameLine(0, Dp(10));
 	ImGui::BeginDisabled(!ready);
 	if (ATTouchButton("Add to Hosted", ImVec2(bW, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Accent)) {
+	                  ATTouchButtonStyle::Accent, ICON_MD_ADD)) {
 		State& s = GetState();
 		// Reject duplicates — same image path + same machine config.
 		// Shares the signature function with the Desktop Add flow so
@@ -2105,7 +2106,7 @@ void RenderAcceptJoinPrompt() {
 		float bW = (ImGui::GetContentRegionAvail().x - Dp(10)) * 0.5f;
 		if (ATTouchButton("Deny",
 		                  ImVec2(bW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Danger)) {
+		                  ATTouchButtonStyle::Danger, ICON_MD_CLOSE)) {
 			action = ActionKind::Reject;
 			actionGameId = r.hostedGameId;
 			actionIdx = perOfferIdx[i];
@@ -2118,7 +2119,7 @@ void RenderAcceptJoinPrompt() {
 			ImGui::SetKeyboardFocusHere();
 		if (ATTouchButton("Allow",
 		                  ImVec2(bW, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Accent)) {
+		                  ATTouchButtonStyle::Accent, ICON_MD_CHECK)) {
 			action = ActionKind::Accept;
 			actionGameId = r.hostedGameId;
 			actionIdx = perOfferIdx[i];
@@ -2136,7 +2137,7 @@ void RenderAcceptJoinPrompt() {
 		ImGui::Spacing();
 		if (ATTouchButton("Deny all",
 		                  ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
-		                  ATTouchButtonStyle::Danger)) {
+		                  ATTouchButtonStyle::Danger, ICON_MD_CLOSE)) {
 			action = ActionKind::RejectAll;
 		}
 	}
@@ -2280,7 +2281,7 @@ void RenderError() {
 	ImGui::Separator();
 	ImGui::Spacing();
 	if (ATTouchButton("OK", ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
-	                  ATTouchButtonStyle::Accent)) {
+	                  ATTouchButtonStyle::Accent, ICON_MD_CHECK)) {
 		st.session.lastError.clear();
 		Back();
 	}
@@ -2940,17 +2941,20 @@ void RenderOnlinePlayHub() {
 	const bool firstFrame = ImGui::IsWindowAppearing();
 	if (firstFrame) ImGui::SetKeyboardFocusHere();
 
-	if (ATTouchListItem("Host Games", hostSub, false, true)) {
+	if (ATTouchListItem("Host Games", hostSub, false, true,
+			ICON_MD_CAST)) {
 		Navigate(Screen::MyHostedGames);
 	}
 	ImGui::Spacing();
-	if (ATTouchListItem("Browse Hosted Games", browseSub, false, true)) {
+	if (ATTouchListItem("Browse Hosted Games", browseSub, false, true,
+			ICON_MD_PUBLIC)) {
 		EnqueueBrowserRefresh();
 		Navigate(Screen::Browser);
 	}
 	ImGui::Spacing();
 	if (ATTouchListItem("Preferences",
-		"Nickname, notifications, input delay, art.", false, true)) {
+		"Nickname, notifications, input delay, art.", false, true,
+		ICON_MD_TUNE)) {
 		// Shortcut: delegate to the Gaming-Mode Settings tree so every
 		// configuration category lives in one place.  Persist what the
 		// user has already set, close the netplay overlay so the

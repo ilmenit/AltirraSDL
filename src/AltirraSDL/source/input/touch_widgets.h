@@ -178,16 +178,30 @@ enum class ATTouchButtonStyle {
 	Subtle,
 };
 
+// `icon` is an optional leading glyph — pass one of the ICON_MD_* macros
+// from `altirra_icons.h` (any UTF-8 codepoint from the Material Icons
+// font works).  When non-null, the icon and label are drawn as a single
+// horizontally-centred unit with an 8dp gap between them; the icon is
+// rendered with the larger Material Icons ImFont so it stands taller
+// than the surrounding text.  Pass nullptr (the default) for a plain
+// text-only button identical to the pre-icon behaviour.
 bool ATTouchButton(const char *label, const ImVec2 &size,
-	ATTouchButtonStyle style = ATTouchButtonStyle::Neutral);
+	ATTouchButtonStyle style = ATTouchButtonStyle::Neutral,
+	const char *icon = nullptr);
 
 // List-item row.  Full-width, two-line (title + subtitle) card with
 // an optional chevron on the right.  Used by the Settings home screen
 // for category rows, and by the file browser / hamburger menu for
 // list entries.  Returns true on click.  The `selected` flag paints
 // the accent colour so the row stands out from its peers.
+//
+// `icon` is an optional leading glyph rendered in a 40dp slot at the
+// left of the row (Material spec: list rows reserve a fixed leading
+// area so titles in successive rows align even when some have icons
+// and some don't).  Pass nullptr for the historical no-icon layout.
 bool ATTouchListItem(const char *title, const char *subtitle,
-	bool selected = false, bool chevron = true);
+	bool selected = false, bool chevron = true,
+	const char *icon = nullptr);
 
 // Touch-drag scroll for the current scrollable window / BeginChild.
 // Call at the top of any child that the user should be able to

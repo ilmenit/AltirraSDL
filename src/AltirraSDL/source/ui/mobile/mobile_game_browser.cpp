@@ -20,6 +20,7 @@
 #include "touch_widgets.h"
 #include "simulator.h"
 #include "mobile_internal.h"
+#include "altirra_icons.h"
 #include "constants.h"
 #include "cpu.h"
 #include "gtia.h"
@@ -663,7 +664,7 @@ static void RenderLetterPickerModal(ImGuiIO &io,
 		// on touch; Subtle was almost invisible against the modalBg.
 		ImGui::Spacing();
 		if (ATTouchButton("Cancel", ImVec2(-1, dp(48.0f)),
-			ATTouchButtonStyle::Neutral))
+			ATTouchButtonStyle::Neutral, ICON_MD_CLOSE))
 		{
 			close();
 		}
@@ -1486,7 +1487,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			// other button uses the neutral card-gradient style so the
 			// bar reads as a cohesive surface with one stand-out.
 			if (ATTouchButton("Boot Game", ImVec2(0, btnH),
-				ATTouchButtonStyle::Accent))
+				ATTouchButtonStyle::Accent, ICON_MD_PLAY_ARROW))
 			{
 				s_romFolderMode = false;
 				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
@@ -1495,7 +1496,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 			ImGui::SameLine();
-			if (ATTouchButton("Online Play", ImVec2(0, btnH))) {
+			if (ATTouchButton("Online Play", ImVec2(0, btnH),
+				ATTouchButtonStyle::Neutral, ICON_MD_PUBLIC)) {
 				// Go to My Hosted Games first — that's the primary
 				// entry point for the offer-list UX.  The browser is
 				// reachable from there with one tap.
@@ -1504,7 +1506,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 #endif
 
 			ImGui::SameLine();
-			if (ATTouchButton("Boot Empty", ImVec2(0, btnH))) {
+			if (ATTouchButton("Boot Empty", ImVec2(0, btnH),
+				ATTouchButtonStyle::Neutral, ICON_MD_POWER_SETTINGS_NEW)) {
 				mobileState.gameLoaded = true;
 				mobileState.currentScreen = ATMobileUIScreen::None;
 				sim.ColdReset();

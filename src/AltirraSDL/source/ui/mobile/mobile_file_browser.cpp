@@ -40,6 +40,7 @@
 #include "display_backend.h"
 #include "android_platform.h"
 #include <at/ataudio/audiooutput.h>
+#include "altirra_icons.h"
 
 #include "mobile_internal.h"
 #include "options.h"
@@ -320,7 +321,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 			ImGui::Spacing();
 			if (ATTouchButton("Open Settings to Grant Access",
 				ImVec2(-1, dp(48.0f)),
-				ATTouchButtonStyle::Danger))
+				ATTouchButtonStyle::Danger, ICON_MD_SETTINGS))
 			{
 				ATAndroid_OpenManageStorageSettings();
 				ShowInfoModal("Grant Access",
@@ -529,7 +530,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		if (s_romFolderMode) {
 			float rowBtnH = dp(48.0f);
 			if (ATTouchButton("Use This Folder", ImVec2(-1, rowBtnH),
-				ATTouchButtonStyle::Accent))
+				ATTouchButtonStyle::Accent, ICON_MD_CHECK))
 			{
 				// Trigger firmware scan on current directory
 				s_romDir = s_fileBrowserDir;
@@ -575,7 +576,7 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 		if (s_folderPickerMode) {
 			float rowBtnH = dp(48.0f);
 			if (ATTouchButton("Select This Folder", ImVec2(-1, rowBtnH),
-				ATTouchButtonStyle::Accent))
+				ATTouchButtonStyle::Accent, ICON_MD_CHECK))
 			{
 				VDStringW selectedDir = s_fileBrowserDir;
 				s_folderPickerMode = false;

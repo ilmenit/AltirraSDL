@@ -39,6 +39,7 @@
 
 #include "mobile_internal.h"
 #include "../tools/setup_wizard_shared.h"
+#include "altirra_icons.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -226,7 +227,7 @@ void RenderMobileAbout(ATSimulator &sim, ATUIState &uiState,
 		// reads as the primary action and matches the rest of Gaming
 		// Mode's visual language.
 		if (ATTouchButton("Close", ImVec2(-1, closeH),
-			ATTouchButtonStyle::Accent))
+			ATTouchButtonStyle::Accent, ICON_MD_CHECK))
 		{
 			mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
 		}
@@ -357,7 +358,7 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 			ImGui::SetCursorPosX((w - pgBtnW) * 0.5f);
 			if (ATTouchButton("Open Android Settings",
 				ImVec2(pgBtnW, pgBtnH),
-				ATTouchButtonStyle::Accent))
+				ATTouchButtonStyle::Accent, ICON_MD_SETTINGS))
 			{
 				ATAndroid_OpenManageStorageSettings();
 			}
@@ -366,7 +367,8 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 
 			ImGui::SetCursorPosX((w - pgBtnW) * 0.5f);
 			if (ATTouchButton("Continue Without Access",
-				ImVec2(pgBtnW, pgBtnH)))
+				ImVec2(pgBtnW, pgBtnH),
+				ATTouchButtonStyle::Neutral, ICON_MD_ARROW_FORWARD))
 			{
 				// Advance to the ROM-folder step.  The file browser
 				// will still show its own in-app banner so the user
@@ -518,7 +520,7 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 
 		ImGui::SetCursorPosX((w - btnW) * 0.5f);
 		if (ATTouchButton("Select Firmware ROMs Folder", ImVec2(btnW, btnH),
-			ATTouchButtonStyle::Accent))
+			ATTouchButtonStyle::Accent, ICON_MD_FOLDER_OPEN))
 		{
 			applyChosenDefaults();
 			s_romFolderMode = true;
@@ -533,7 +535,8 @@ void RenderFirstRunWizard(ATSimulator &sim, ATUIState &uiState,
 		// Note: avoid Unicode dashes — ImGui's default font doesn't ship
 		// the U+2014 em-dash glyph, so it renders as a fallback '?'.
 		if (ATTouchButton("Skip - Use Built-in AltirraOS",
-			ImVec2(btnW, btnH)))
+			ImVec2(btnW, btnH),
+			ATTouchButtonStyle::Neutral, ICON_MD_ARROW_FORWARD))
 		{
 			applyChosenDefaults();
 			mobileState.currentScreen = ATMobileUIScreen::None;
@@ -658,7 +661,7 @@ void RenderLoadGamePrompt(ATSimulator &sim, ATUIState &uiState,
 	// Primary action button — centered horizontally inside the pill.
 	ImGui::SetCursorPos(ImVec2((pillW - btnW) * 0.5f, padY));
 	if (ATTouchButton("Load Game", ImVec2(btnW, btnH),
-		ATTouchButtonStyle::Accent))
+		ATTouchButtonStyle::Accent, ICON_MD_PLAY_ARROW))
 	{
 		s_romFolderMode = false;
 		mobileState.currentScreen = ATMobileUIScreen::FileBrowser;

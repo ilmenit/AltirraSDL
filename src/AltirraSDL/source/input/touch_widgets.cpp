@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 #include "touch_widgets.h"
 #include "options.h"
+#include "ui_fonts.h" // ATUIGetFontIcon() for leading-glyph buttons
 
 // Forward declaration — provided by ui/mobile/mobile_dialogs.cpp via
 // mobile_internal.h.  We can't include the header here because it
@@ -974,13 +975,22 @@ bool ATTouchIsDraggingBeyondSlop() {
 // -------------------------------------------------------------------------
 
 bool ATTouchButton(const char *label, const ImVec2 &sizeArg,
-	ATTouchButtonStyle style)
+	ATTouchButtonStyle style, const char *icon)
 {
 	UpdateContentScale();
 	ImGuiWindow *window = ImGui::GetCurrentWindow();
 	if (window->SkipItems) return false;
 
 	const ATMobilePalette &pal = ATMobileGetPalette();
+
+	// Resolve the leading icon (if any).  Icon-less buttons keep the
+	// classic centred-label layout.  With an icon, alignment is chosen
+	// later from the resolved width: full-width buttons (sizeArg.x < 0)
+	// left-align so a stack reads as a consistent icon column, while
+	// explicit or auto-width buttons centre the icon+label pair so
+	// side-by-side dialog rows stay visually symmetric.
+	ImFont *iconFont = icon && *icon ? ATUIGetFontIcon() : nullptr;
+	bool hasIcon = iconFont != nullptr;
 
 	// Pick top/bottom gradient colours + text colour per variant.
 	struct Colors { uint32 top, mid, bot, textCol, border; };
@@ -1029,19 +1039,42 @@ bool ATTouchButton(const char *label, const ImVec2 &sizeArg,
 
 	// Resolve the requested size.  -FLT_MIN / -1 = fill axis; 0 = auto.
 	ImVec2 labelSize = ImGui::CalcTextSize(label, nullptr, true);
+
+	// Icon metrics: render at the icon font's own size.  Material Icons
+	// are square, so the width approximation iconSize × 1.0 holds for
+	// every glyph and avoids a CalcTextSize() round-trip through ImGui's
+	// font stack.  The 8dp gap between icon and label matches Google's
+	// Material 3 button spec.
+	float iconSize = hasIcon ? iconFont->FontSize : 0.0f;
+	float iconGap  = hasIcon ? dp(8.0f)           : 0.0f;
+	float iconUnit = hasIcon ? (iconSize + iconGap) : 0.0f;
+
 	const float padLR = dp(16.0f);
 	const float minH  = dp(56.0f);
+	const bool  fillWidth = sizeArg.x < 0.0f;
 	float w = sizeArg.x;
 	float h = sizeArg.y;
 	if (w <= 0.0f) {
 		float avail = ImGui::GetContentRegionAvail().x;
-		w = (w < 0.0f) ? avail : (labelSize.x + padLR * 2);
+		w = (w < 0.0f) ? avail : (iconUnit + labelSize.x + padLR * 2);
 		if (w > avail) w = avail;
+	} else {
+		// Caller passed an explicit width.  If adding the icon would
+		// push the label past the right edge (e.g. an 88dp "Mount"
+		// button that already barely fit its text), drop the icon
+		// rather than truncate the label — a clipped label loses
+		// meaning, a missing icon just falls back to text-only.
+		const float requiredW = iconUnit + labelSize.x + padLR * 2.0f;
+		if (hasIcon && requiredW > w + 0.5f) {
+			hasIcon = false;
+			iconFont = nullptr;
+			iconSize = iconGap = iconUnit = 0.0f;
+		}
 	}
 	if (h <= 0.0f) {
 		h = (h < 0.0f)
 			? ImGui::GetContentRegionAvail().y
-			: std::max(minH, labelSize.y + dp(20.0f));
+			: std::max(minH, std::max(labelSize.y, iconSize) + dp(20.0f));
 	}
 
 	ImVec2 cursor = window->DC.CursorPos;
@@ -1116,18 +1149,52 @@ bool ATTouchButton(const char *label, const ImVec2 &sizeArg,
 		}
 	}
 
-	// Centred label.  AddText draws the raw buffer including any
-	// "##id" suffix — find the visible end explicitly so "Grid##view"
-	// renders as "Grid" to match ImGui::Button's own behaviour.
-	if (label && *label) {
-		const char *labelEnd = RenderedLabelEnd(label);
+	// Layout: with no icon we keep the classic centred-label path.
+	// With an icon, choose alignment from the resolved width:
+	//   - fillWidth (sizeArg.x < 0): left-align icon+label at padLR.
+	//     Vertical stacks (hamburger menu, settings actions) now have
+	//     a consistent icon column instead of each row's icon drifting
+	//     horizontally with its label length.
+	//   - explicit/auto width: centre the icon+label pair as a unit.
+	//     Side-by-side dialog rows (Cancel/Confirm, Cancel/Save) look
+	//     symmetric this way; a left-aligned icon in a 280dp button
+	//     would leave a long empty trailing edge.
+	const bool drawLabel = label && *label;
+	const char *labelEnd = drawLabel ? RenderedLabelEnd(label) : nullptr;
+	dl->PushClipRect(rowMin, rowMax, true);
+	if (hasIcon) {
+		float ux;
+		if (fillWidth) {
+			ux = rowMin.x + padLR;
+		} else {
+			const float unitW = iconSize + iconGap + labelSize.x;
+			ux = rowMin.x + (w - unitW) * 0.5f;
+			// Clamp the unit to the left padding so a slightly-too-narrow
+			// explicit width (which the overflow guard above has already
+			// caught) can't shove the icon off the left edge.
+			if (ux < rowMin.x + padLR) ux = rowMin.x + padLR;
+		}
+
+		// Icon: vertically centre by its own size; the icon font's
+		// baseline is offset upward (see GlyphOffset in ui_fonts.cpp)
+		// so the visual centre matches the surrounding text.
+		float iy = rowMin.y + (h - iconSize) * 0.5f;
+		dl->AddText(iconFont, iconSize, ImVec2(ux, iy),
+			c.textCol, icon);
+
+		if (drawLabel) {
+			float tx = ux + iconSize + iconGap;
+			float ty = rowMin.y + (h - labelSize.y) * 0.5f;
+			dl->AddText(nullptr, 0.0f, ImVec2(tx, ty),
+				c.textCol, label, labelEnd);
+		}
+	} else if (drawLabel) {
 		float tx = rowMin.x + (w - labelSize.x) * 0.5f;
 		float ty = rowMin.y + (h - labelSize.y) * 0.5f;
-		dl->PushClipRect(rowMin, rowMax, true);
 		dl->AddText(nullptr, 0.0f, ImVec2(tx, ty),
 			c.textCol, label, labelEnd);
-		dl->PopClipRect();
 	}
+	dl->PopClipRect();
 
 	return pressed;
 }
@@ -1141,13 +1208,23 @@ bool ATTouchButton(const char *label, const ImVec2 &sizeArg,
 // -------------------------------------------------------------------------
 
 bool ATTouchListItem(const char *title, const char *subtitle,
-	bool selected, bool chevron)
+	bool selected, bool chevron, const char *icon)
 {
 	UpdateContentScale();
 	ImGuiWindow *window = ImGui::GetCurrentWindow();
 	if (window->SkipItems) return false;
 
 	const ATMobilePalette &pal = ATMobileGetPalette();
+
+	ImFont *iconFont = icon && *icon ? ATUIGetFontIcon() : nullptr;
+	const bool hasIcon = iconFont != nullptr;
+	// Leading area = icon glyph (~26dp at 1.0 scale) + 16dp gap to
+	// title (Material 3 list-row spec).  Sized from the actual icon
+	// font height rather than a fixed slot, so a future change to
+	// kIconPointSize doesn't leave the title overlapping the glyph.
+	const float iconSize = hasIcon ? iconFont->FontSize : 0.0f;
+	const float iconGap  = hasIcon ? dp(16.0f)          : 0.0f;
+	const float iconSlot = hasIcon ? (iconSize + iconGap) : 0.0f;
 
 	const float rowH = subtitle && *subtitle ? dp(76.0f) : dp(56.0f);
 	const float padLR = dp(16.0f);
@@ -1206,11 +1283,21 @@ bool ATTouchListItem(const char *title, const char *subtitle,
 			rounding, 0, dp(2.0f));
 	}
 
+	// Leading icon — left-aligned at padLR, vertically centred.  The
+	// row content (title/subtitle below) starts at padLR + iconSize +
+	// iconGap so the icon never crowds the text.
+	if (hasIcon) {
+		float ix = rowMin.x + padLR;
+		float iy = rowMin.y + (rowH - iconSize) * 0.5f;
+		dl->AddText(iconFont, iconSize, ImVec2(ix, iy),
+			textCol, icon);
+	}
+
 	// Title — strip "##id" suffix so "[DIR] foo##42" renders as
 	// "[DIR] foo".  Matches ImGui::Text behaviour.
 	if (title && *title) {
 		const char *titleEnd = RenderedLabelEnd(title);
-		float tx = rowMin.x + padLR;
+		float tx = rowMin.x + padLR + iconSlot;
 		float ty = (subtitle && *subtitle)
 			? rowMin.y + dp(12.0f)
 			: rowMin.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
@@ -1223,7 +1310,7 @@ bool ATTouchListItem(const char *title, const char *subtitle,
 	}
 	// Subtitle
 	if (subtitle && *subtitle) {
-		float tx = rowMin.x + padLR;
+		float tx = rowMin.x + padLR + iconSlot;
 		float ty = rowMin.y + dp(44.0f);
 		float rightEdge = rowMax.x - padLR - (chevron ? dp(20.0f) : 0.0f);
 		const char *subEnd = RenderedLabelEnd(subtitle);

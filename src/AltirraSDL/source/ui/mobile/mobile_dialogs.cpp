@@ -10,6 +10,7 @@
 #include "ui_mobile.h"
 #include "mobile_internal.h"
 #include "touch_widgets.h"
+#include "altirra_icons.h"
 
 // Render the global mobile dialog sheet — serves both info popups
 // (ShowInfoModal, single OK button) and confirmation popups
@@ -137,7 +138,8 @@ void RenderMobileModalSheet(const ATMobileUIState &mobileState) {
 
 		// Cancel = neutral card surface; Confirm = accent.  Matches the
 		// rest of Gaming Mode's lifted-card button silhouette.
-		if (ATTouchButton("Cancel", ImVec2(halfW, btnH))) {
+		if (ATTouchButton("Cancel", ImVec2(halfW, btnH),
+			ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 			s_confirmActive = false;
 			s_confirmAction = nullptr;
 		}
@@ -145,7 +147,7 @@ void RenderMobileModalSheet(const ATMobileUIState &mobileState) {
 		ImGui::SameLine(0.0f, gap);
 
 		if (ATTouchButton("Confirm", ImVec2(halfW, btnH),
-			ATTouchButtonStyle::Accent))
+			ATTouchButtonStyle::Accent, ICON_MD_CHECK))
 		{
 			auto act = s_confirmAction;
 			s_confirmActive = false;
@@ -154,7 +156,7 @@ void RenderMobileModalSheet(const ATMobileUIState &mobileState) {
 		}
 	} else {
 		if (ATTouchButton("OK", ImVec2(-1, btnH),
-			ATTouchButtonStyle::Accent))
+			ATTouchButtonStyle::Accent, ICON_MD_CHECK))
 		{
 			s_infoModalOpen = false;
 		}

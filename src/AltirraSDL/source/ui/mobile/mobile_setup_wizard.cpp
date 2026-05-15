@@ -41,6 +41,7 @@
 #include "mobile_internal.h"
 #include "../tools/setup_wizard_shared.h"
 #include "../gamelibrary/game_library.h"
+#include "altirra_icons.h"
 
 extern ATSimulator g_sim;
 extern ATMobileUIState g_mobileState;
@@ -215,14 +216,14 @@ static void WizMobile_GameLibrary(SDL_Window *window) {
 	// non-WASM s_folderPicker* state never gets set when the file
 	// browser screen wouldn't actually open.
 #ifdef __EMSCRIPTEN__
-	if (ATTouchButton("+ Add Folder", ImVec2(-1, dp(48.0f)),
-		ATTouchButtonStyle::Accent))
+	if (ATTouchButton("Add Folder", ImVec2(-1, dp(48.0f)),
+		ATTouchButtonStyle::Accent, ICON_MD_CREATE_NEW_FOLDER))
 	{
 		Wiz_TriggerLibFolderPicker(window);
 	}
 #else
-	if (ATTouchButton("+ Add Folder", ImVec2(-1, dp(48.0f)),
-		ATTouchButtonStyle::Accent))
+	if (ATTouchButton("Add Folder", ImVec2(-1, dp(48.0f)),
+		ATTouchButtonStyle::Accent, ICON_MD_CREATE_NEW_FOLDER))
 	{
 		// Mobile folder picker: stash a callback that updates the
 		// library, return target = SetupWizard so the file browser
@@ -340,7 +341,7 @@ static void WizMobile_Firmware(SDL_Window *window) {
 	ImGui::Dummy(ImVec2(0, dp(12.0f)));
 
 	if (ATTouchButton("Scan for Firmware...", ImVec2(-1, dp(48.0f)),
-		ATTouchButtonStyle::Accent))
+		ATTouchButtonStyle::Accent, ICON_MD_FOLDER_OPEN))
 	{
 		Wiz_TriggerFirmwareScan(window);
 	}
@@ -810,7 +811,8 @@ void RenderMobileSetupWizard(ATSimulator &sim, ATUIState &uiState,
 	float btnH = footerBtnH;
 
 	ImGui::BeginDisabled(!canPrev);
-	if (ATTouchButton("< Prev", ImVec2(btnW, btnH))) {
+	if (ATTouchButton("Prev", ImVec2(btnW, btnH),
+			ATTouchButtonStyle::Neutral, ICON_MD_ARROW_BACK)) {
 		g_setupWiz.page = prev;
 	}
 	ImGui::EndDisabled();
@@ -818,15 +820,15 @@ void RenderMobileSetupWizard(ATSimulator &sim, ATUIState &uiState,
 	ImGui::SameLine();
 
 	if (canNext) {
-		if (ATTouchButton("Next >", ImVec2(btnW, btnH),
-			ATTouchButtonStyle::Accent))
+		if (ATTouchButton("Next", ImVec2(btnW, btnH),
+			ATTouchButtonStyle::Accent, ICON_MD_ARROW_FORWARD))
 		{
 			g_setupWiz.wentPastFirst = true;
 			g_setupWiz.page = next;
 		}
 	} else {
 		if (ATTouchButton("Done", ImVec2(btnW, btnH),
-			ATTouchButtonStyle::Accent))
+			ATTouchButtonStyle::Accent, ICON_MD_CHECK))
 		{
 			Wiz_Finish(sim, uiState, window);
 			ImGui::End();
@@ -835,7 +837,8 @@ void RenderMobileSetupWizard(ATSimulator &sim, ATUIState &uiState,
 	}
 
 	ImGui::SameLine();
-	if (ATTouchButton("Close", ImVec2(btnW, btnH))) {
+	if (ATTouchButton("Close", ImVec2(btnW, btnH),
+			ATTouchButtonStyle::Neutral, ICON_MD_CLOSE)) {
 		Wiz_Finish(sim, uiState, window);
 		ImGui::End();
 		return;

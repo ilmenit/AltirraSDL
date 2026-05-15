@@ -39,6 +39,7 @@
 #include <at/ataudio/audiooutput.h>
 
 #include "mobile_internal.h"
+#include "altirra_icons.h"
 
 extern ATSimulator g_sim;
 extern VDStringA ATGetConfigDir();
@@ -137,7 +138,7 @@ void RenderMobileDiskRow(ATSimulator &sim, int driveIdx,
 
 	ImGui::SetCursorScreenPos(ImVec2(mountX, btnY));
 	if (ATTouchButton("Mount", ImVec2(btnW, btnH),
-		ATTouchButtonStyle::Accent))
+		ATTouchButtonStyle::Accent, ICON_MD_UPLOAD_FILE))
 	{
 		s_diskMountTargetDrive = driveIdx;
 		s_romFolderMode = false;
@@ -186,7 +187,8 @@ void RenderMobileDiskRow(ATSimulator &sim, int driveIdx,
 
 	ImGui::SetCursorScreenPos(ImVec2(ejectX, btnY));
 	ImGui::BeginDisabled(!loaded);
-	if (ATTouchButton("Eject", ImVec2(btnW, btnH))) {
+	if (ATTouchButton("Eject", ImVec2(btnW, btnH),
+			ATTouchButtonStyle::Neutral, ICON_MD_EJECT)) {
 		try {
 			di.UnloadDisk();
 			sim.GetDiskDrive(driveIdx).SetEnabled(false);

@@ -39,6 +39,7 @@
 
 #include "mobile_internal.h"
 #include "ui_mode.h"
+#include "altirra_icons.h"
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "../netplay/ui_netplay.h"
 #endif
@@ -142,13 +143,15 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// a controller user can press A immediately to dismiss the
 		// menu without D-padding first.  Accent-gradient for the hero
 		// action; every other item is neutral.
-		if (ATTouchButton("Resume", btnSize, ATTouchButtonStyle::Accent))
+		if (ATTouchButton("Resume", btnSize, ATTouchButtonStyle::Accent,
+				ICON_MD_PLAY_ARROW))
 			ATMobileUI_CloseMenu(sim, mobileState);
 		ImGui::SetItemDefaultFocus();
 		ImGui::Spacing();
 
 		// Game Library — returns to the library home screen
-		if (ATTouchButton("Game Library", btnSize)) {
+		if (ATTouchButton("Game Library", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_SPORTS_ESPORTS)) {
 			sim.Pause();
 			mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
 		}
@@ -171,7 +174,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		if (mobileState.gameLoaded
 			&& GameBrowser_CurrentEntryNeedsArt())
 		{
-			if (ATTouchButton("Save Screenshot as Game Art", btnSize)) {
+			if (ATTouchButton("Save Screenshot as Game Art", btnSize,
+					ATTouchButtonStyle::Neutral, ICON_MD_PHOTO_CAMERA)) {
 				VDStringA err = GameBrowser_SetCurrentFrameAsArt();
 				if (!err.empty())
 					ShowInfoModal("Save Game Art Failed", err.c_str());
@@ -185,7 +189,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		}
 
 		// Disk Drives — mobile-friendly full-screen manager
-		if (ATTouchButton("Disk Drives", btnSize)) {
+		if (ATTouchButton("Disk Drives", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_ALBUM)) {
 			mobileState.currentScreen = ATMobileUIScreen::DiskManager;
 		}
 		ImGui::Spacing();
@@ -193,7 +198,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// Virtual Keyboard toggle
 		{
 			const char *kbdLabel = uiState.showVirtualKeyboard ? "Keyboard: ON" : "Keyboard: OFF";
-			if (ATTouchButton(kbdLabel, btnSize)) {
+			if (ATTouchButton(kbdLabel, btnSize,
+					ATTouchButtonStyle::Neutral, ICON_MD_KEYBOARD)) {
 				uiState.showVirtualKeyboard = !uiState.showVirtualKeyboard;
 				ATMobileUI_CloseMenu(sim, mobileState);
 				sim.Resume();
@@ -204,7 +210,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// Audio toggle
 		{
 			const char *audioLabel = mobileState.audioMuted ? "Audio: OFF" : "Audio: ON";
-			if (ATTouchButton(audioLabel, btnSize)) {
+			if (ATTouchButton(audioLabel, btnSize,
+					ATTouchButtonStyle::Neutral, ICON_MD_VOLUME_UP)) {
 				mobileState.audioMuted = !mobileState.audioMuted;
 				IATAudioOutput *audioOut = g_sim.GetAudioOutput();
 				if (audioOut)
@@ -218,7 +225,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 
 		// Quick Save State — with confirmation to prevent accidental
 		// overwrite of an earlier checkpoint.
-		if (ATTouchButton("Quick Save State", btnSize)) {
+		if (ATTouchButton("Quick Save State", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_SAVE)) {
 			ShowConfirmDialog("Quick Save State",
 				"Overwrite the current quick save with the "
 				"emulator's state right now?",
@@ -238,7 +246,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 
 		// Quick Load State — confirmation, with a distinct info
 		// dialog if no save is available.
-		if (ATTouchButton("Quick Load State", btnSize)) {
+		if (ATTouchButton("Quick Load State", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_RESTORE)) {
 			VDStringW path = QuickSaveStatePath();
 			if (!VDDoesPathExist(path.c_str())) {
 				ShowInfoModal("No Quick Save",
@@ -277,7 +286,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// hamburger one to avoid stacking two dialogs.  The local
 		// confirm is still shown for the offline case so users who
 		// fat-finger the button don't lose state.
-		if (ATTouchButton("Warm Reset", btnSize)) {
+		if (ATTouchButton("Warm Reset", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_REFRESH)) {
 			auto doReset = [&sim, &mobileState]() {
 				sim.WarmReset();
 				ATMobileUI_CloseMenu(sim, mobileState);
@@ -295,7 +305,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Spacing();
 
 		// Cold Reset — same dual-confirm pattern as Warm Reset above.
-		if (ATTouchButton("Cold Reset", btnSize, ATTouchButtonStyle::Danger)) {
+		if (ATTouchButton("Cold Reset", btnSize, ATTouchButtonStyle::Danger,
+				ICON_MD_POWER_SETTINGS_NEW)) {
 			auto doReset = [&sim, &mobileState]() {
 				sim.ColdReset();
 				ATMobileUI_CloseMenu(sim, mobileState);
@@ -317,7 +328,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Spacing();
 
 		// Settings
-		if (ATTouchButton("Settings", btnSize)) {
+		if (ATTouchButton("Settings", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_SETTINGS)) {
 			s_settingsPage = ATMobileSettingsPage::Home;
 			s_settingsReturnScreen = ATMobileUIScreen::HamburgerMenu;
 			mobileState.currentScreen = ATMobileUIScreen::Settings;
@@ -328,7 +340,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Spacing();
 
 		// About — mobile-friendly full-screen panel
-		if (ATTouchButton("About", btnSize)) {
+		if (ATTouchButton("About", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_INFO)) {
 			mobileState.currentScreen = ATMobileUIScreen::About;
 		}
 		ImGui::Spacing();
@@ -337,7 +350,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// menu, rendered with the touch chrome here.  Useful for users
 		// who want to revisit the joystick / firmware / mode choices
 		// without going through Desktop Mode.
-		if (ATTouchButton("First Time Setup", btnSize)) {
+		if (ATTouchButton("First Time Setup", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_TUNE)) {
 			extern void Wiz_Open(ATUIState &);
 			Wiz_Open(uiState);
 		}
@@ -347,12 +361,13 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Separator();
 		ImGui::Spacing();
 		if (ATTouchButton("Online — Browse", btnSize,
-		                  ATTouchButtonStyle::Accent)) {
+		                  ATTouchButtonStyle::Accent, ICON_MD_PUBLIC)) {
 			ATNetplayUI_OpenBrowser();
 			ATMobileUI_CloseMenu(sim, mobileState);
 		}
 		ImGui::Spacing();
-		if (ATTouchButton("Online — Host Games", btnSize)) {
+		if (ATTouchButton("Online — Host Games", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_GROUP_ADD)) {
 			ATNetplayUI_OpenMyHostedGames();
 			ATMobileUI_CloseMenu(sim, mobileState);
 		}
@@ -363,7 +378,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		if (ATTouchButton("Switch to Desktop Mode", btnSize)) {
+		if (ATTouchButton("Switch to Desktop Mode", btnSize,
+				ATTouchButtonStyle::Neutral, ICON_MD_DESKTOP_WINDOWS)) {
 			ATUISetMode(ATUIMode::Desktop);
 			ATUISaveMode();
 			ATMobileUI_CloseMenu(sim, mobileState);
@@ -384,7 +400,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		// Library.
 		ImGui::Separator();
 		ImGui::Spacing();
-		if (ATTouchButton("Exit Emulator", btnSize, ATTouchButtonStyle::Danger)) {
+		if (ATTouchButton("Exit Emulator", btnSize, ATTouchButtonStyle::Danger,
+				ICON_MD_EXIT_TO_APP)) {
 			// Explicit Exit is a deliberately clean exit by default —
 			// opposite signal from auto-save-on-background, which
 			// recovers from unexpected OS terminations.  The user can

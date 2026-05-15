@@ -41,6 +41,8 @@
 #include <at/ataudio/audiooutput.h>
 
 #include "mobile_internal.h"
+#include "altirra_icons.h"
+#include "ui_fonts.h"
 #include "../gamelibrary/game_library.h"
 #include "settings.h"
 #include "options.h"
@@ -236,6 +238,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				const char *title;
 				VDStringA subtitle;
 				ATMobileSettingsPage target;
+				const char *icon; // Material Icons codepoint (UTF-8)
 			};
 			CatRow cats[11];
 			int n = 0;
@@ -243,7 +246,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			cats[n++] = { "Machine",
 				VDStringA().sprintf("%s  \xC2\xB7  %s",
 					hwLabel(), vsLabel),
-				ATMobileSettingsPage::Machine };
+				ATMobileSettingsPage::Machine,
+				ICON_MD_MEMORY };
 
 			{
 				const char *scaleLabel =
@@ -251,7 +255,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					mobileState.interfaceScale == 2 ? "Large" : "Standard";
 				cats[n++] = { "Display",
 					VDStringA().sprintf("Size: %s  \xC2\xB7  Filter, effects", scaleLabel),
-					ATMobileSettingsPage::Display };
+					ATMobileSettingsPage::Display,
+					ICON_MD_DESKTOP_WINDOWS };
 			}
 
 			{
@@ -261,12 +266,14 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					VDStringA().sprintf("Stereo: %s  \xC2\xB7  Drive sounds: %s",
 						dualPokey ? "on" : "off",
 						driveSounds ? "on" : "off"),
-					ATMobileSettingsPage::Audio };
+					ATMobileSettingsPage::Audio,
+					ICON_MD_VOLUME_UP };
 			}
 
 			cats[n++] = { "Performance",
 				VDStringA().sprintf("Preset: %s", presetLabel),
-				ATMobileSettingsPage::Performance };
+				ATMobileSettingsPage::Performance,
+				ICON_MD_TUNE };
 
 			cats[n++] = { "Controls",
 				mobileState.showTouchControls
@@ -276,13 +283,15 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						mobileState.layoutConfig.controlSize == ATTouchControlSize::Large  ? "Large"  : "Medium")
 					: VDStringA().sprintf("Touch: off  \xC2\xB7  Menu: %s",
 						mobileState.showHamburgerMenu ? "on" : "off"),
-				ATMobileSettingsPage::Controls };
+				ATMobileSettingsPage::Controls,
+				ICON_MD_VIDEOGAME_ASSET };
 
 			cats[n++] = { "Save State",
 				VDStringA().sprintf("Auto-save: %s  \xC2\xB7  Restore: %s",
 					mobileState.autoSaveOnSuspend ? "on" : "off",
 					mobileState.autoRestoreOnStart ? "on" : "off"),
-				ATMobileSettingsPage::SaveState };
+				ATMobileSettingsPage::SaveState,
+				ICON_MD_SAVE };
 
 			{
 				ATFirmwareManager *fwm = g_sim.GetFirmwareManager();
@@ -319,7 +328,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						shortName(bId).c_str());
 				}
 				cats[n++] = { "Firmware", sub,
-					ATMobileSettingsPage::Firmware };
+					ATMobileSettingsPage::Firmware,
+					ICON_MD_FONT_DOWNLOAD };
 			}
 
 			{
@@ -332,7 +342,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 							gameCount, sourceCount,
 							sourceCount == 1 ? "" : "s")
 						: VDStringA("(no sources)"),
-					ATMobileSettingsPage::GameLibrary };
+					ATMobileSettingsPage::GameLibrary,
+					ICON_MD_SPORTS_ESPORTS };
 			}
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
@@ -352,7 +363,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					sub = "Nickname, notifications, input delay";
 				}
 				cats[n++] = { "Online Play", sub,
-					ATMobileSettingsPage::OnlinePlay };
+					ATMobileSettingsPage::OnlinePlay,
+					ICON_MD_PUBLIC };
 			}
 #endif
 
@@ -368,7 +380,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				else
 					sub = "Debug log, reset settings, wipe all data";
 				cats[n++] = { "Advanced", sub,
-					ATMobileSettingsPage::Advanced };
+					ATMobileSettingsPage::Advanced,
+					ICON_MD_TROUBLESHOOT };
 			}
 
 
@@ -413,9 +426,28 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						dp(10.0f), 0, dp(2.0f));
 				}
 
-				ImVec2 tcur(cursor.x + dp(16.0f), cursor.y + dp(12.0f));
+				// Optional leading icon — left-aligned at padLR with a
+				// 16dp gap before the title (Material 3 list-row spec).
+				// Reserving the slot unconditionally would mis-align
+				// rows when iconFont is null, so leave it 0-wide on the
+				// no-icon path and the title takes the full leading
+				// area instead.
+				ImFont *iconFont = cats[i].icon ? ATUIGetFontIcon() : nullptr;
+				const float iconSize = iconFont ? iconFont->FontSize : 0.0f;
+				const float iconGap  = iconFont ? dp(16.0f)          : 0.0f;
+				const float iconSlot = iconSize + iconGap;
+				if (iconFont) {
+					ImVec2 iconPos(
+						cursor.x + dp(16.0f),
+						cursor.y + (rowH - iconSize) * 0.5f);
+					dl->AddText(iconFont, iconSize, iconPos,
+						pal.text, cats[i].icon);
+				}
+
+				const float textLeft = cursor.x + dp(16.0f) + iconSlot;
+				ImVec2 tcur(textLeft, cursor.y + dp(12.0f));
 				dl->AddText(tcur, pal.text, cats[i].title);
-				ImVec2 scur(cursor.x + dp(16.0f), cursor.y + dp(44.0f));
+				ImVec2 scur(textLeft, cursor.y + dp(44.0f));
 				dl->AddText(scur, pal.textMuted,
 					cats[i].subtitle.c_str());
 
@@ -429,7 +461,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 
 			ImGui::Dummy(ImVec2(0, dp(16.0f)));
-			if (ATTouchButton("About", ImVec2(-1, dp(56.0f)))) {
+			if (ATTouchButton("About", ImVec2(-1, dp(56.0f)),
+					ATTouchButtonStyle::Neutral, ICON_MD_INFO)) {
 				mobileState.currentScreen = ATMobileUIScreen::About;
 			}
 
@@ -829,7 +862,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		// can checkpoint a run independently of the auto-save setting.
 		float halfW = (ImGui::GetContentRegionAvail().x - dp(8.0f)) * 0.5f;
 		if (ATTouchButton("Save State Now", ImVec2(halfW, dp(56.0f)),
-			ATTouchButtonStyle::Accent))
+			ATTouchButtonStyle::Accent, ICON_MD_SAVE))
 		{
 			try {
 				VDStringW path = QuickSaveStatePath();
@@ -841,7 +874,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 		ImGui::SameLine();
-		if (ATTouchButton("Load State Now", ImVec2(halfW, dp(56.0f)))) {
+		if (ATTouchButton("Load State Now", ImVec2(halfW, dp(56.0f)),
+			ATTouchButtonStyle::Neutral, ICON_MD_RESTORE)) {
 			VDStringW path = QuickSaveStatePath();
 			if (!VDDoesPathExist(path.c_str())) {
 				ShowInfoModal("No State", "No saved state available to load.");
@@ -1216,8 +1250,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 
-			if (ATTouchButton("+ Add Folder", ImVec2(-1, dp(44.0f)),
-				ATTouchButtonStyle::Accent))
+			if (ATTouchButton("Add Folder", ImVec2(-1, dp(44.0f)),
+				ATTouchButtonStyle::Accent, ICON_MD_CREATE_NEW_FOLDER))
 			{
 				// Drop any sticky zip-browsing state so the folder
 				// picker opens on the real filesystem, and make sure
@@ -1297,8 +1331,9 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 
-			if (ATTouchButton("+ Add Archive (ZIP)",
-				ImVec2(-1, dp(44.0f)), ATTouchButtonStyle::Accent))
+			if (ATTouchButton("Add Archive (ZIP)",
+				ImVec2(-1, dp(44.0f)), ATTouchButtonStyle::Accent,
+				ICON_MD_ARCHIVE))
 			{
 				// Archive-file-picker mode — the user selects a single
 				// archive file (.zip/.atz/.gz/.arc).  Tapping the archive
@@ -1465,7 +1500,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				} else {
 					if (ATTouchButton("Rescan Now",
 						ImVec2(-1, dp(44.0f)),
-						ATTouchButtonStyle::Accent))
+						ATTouchButtonStyle::Accent, ICON_MD_REFRESH))
 					{
 						lib->StartScan();
 					}
@@ -1478,7 +1513,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					if (!canSet)
 						ImGui::BeginDisabled();
 					if (ATTouchButton("Save Screenshot as Game Art",
-						ImVec2(-1, dp(44.0f))))
+						ImVec2(-1, dp(44.0f)),
+						ATTouchButtonStyle::Neutral, ICON_MD_PHOTO_CAMERA))
 					{
 						VDStringA err = GameBrowser_SetCurrentFrameAsArt();
 						if (!err.empty())
@@ -1496,7 +1532,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 				ImGui::Spacing();
 				if (ATTouchButton("Clear Play History",
-					ImVec2(-1, dp(44.0f))))
+					ImVec2(-1, dp(44.0f)),
+					ATTouchButtonStyle::Neutral, ICON_MD_DELETE_SWEEP))
 				{
 					lib->ClearHistory();
 					GameBrowser_Invalidate();
@@ -1508,7 +1545,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				// on the page.
 				if (ATTouchButton("Clear Entire Library",
 					ImVec2(-1, dp(44.0f)),
-					ATTouchButtonStyle::Danger))
+					ATTouchButtonStyle::Danger, ICON_MD_DELETE_FOREVER))
 				{
 					ShowConfirmDialog(
 						"Clear Library",
@@ -1582,7 +1619,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 				"read this stream on Android, where stderr is "
 				"unreachable.");
 			ImGui::Dummy(ImVec2(0, dp(8.0f)));
-			if (ATTouchButton("Debug Log", ImVec2(-1, dp(48.0f)))) {
+			if (ATTouchButton("Debug Log", ImVec2(-1, dp(48.0f)),
+					ATTouchButtonStyle::Neutral, ICON_MD_BUG_REPORT)) {
 				uiState.showDebugLog = true;
 			}
 
@@ -1598,7 +1636,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 			ImGui::BeginDisabled(resetPending);
 			if (ATTouchButton("Reset all settings",
-				ImVec2(-1, dp(48.0f))))
+				ImVec2(-1, dp(48.0f)),
+				ATTouchButtonStyle::Neutral, ICON_MD_RESTORE))
 			{
 				ShowConfirmDialog("Reset all settings?",
 					"This resets all program settings to first-time "
@@ -1628,7 +1667,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 			if (ATTouchButton("Reset Altirra (delete all data)",
 				ImVec2(-1, dp(56.0f)),
-				ATTouchButtonStyle::Danger))
+				ATTouchButtonStyle::Danger, ICON_MD_DELETE_FOREVER))
 			{
 				ShowConfirmDialog("Reset Altirra?",
 					"This deletes every file Altirra has saved on "

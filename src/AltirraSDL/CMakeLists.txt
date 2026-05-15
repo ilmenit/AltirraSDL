@@ -217,6 +217,7 @@ target_sources(AltirraSDL PRIVATE
     # Generated embedded font blobs (see "Embedded fonts" section below)
     ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_roboto.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_firamono.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/embedded_font_materialicons.cpp
 
     # Portable oshelper.h implementations (replaces Windows oshelper.cpp)
     source/os/oshelper_sdl3.cpp
@@ -745,6 +746,13 @@ add_custom_target(generate_buildinfo ALL
 add_dependencies(AltirraSDL generate_buildinfo)
 target_include_directories(AltirraSDL PRIVATE ${BUILDINFO_DIR})
 
+# Material Icons header is generated next to the embedded font blobs in
+# CMAKE_CURRENT_BINARY_DIR; expose that dir so `#include "altirra_icons.h"`
+# resolves from every TU, and force the build dependency so the header
+# is generated before AltirraSDL's first .cpp tries to include it.
+add_dependencies(AltirraSDL altirra_icons_header)
+target_include_directories(AltirraSDL PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 target_include_directories(AltirraSDL PRIVATE
     # Public system headers
     ${ALTIRRA_INCLUDE_DIR}
@@ -1156,6 +1164,42 @@ add_custom_command(
     VERBATIM
     COMMENT "Embedding FiraMono-Regular.ttf"
 )
+
+# Material Icons (icon font) — embedded so Gaming-Mode buttons can show a
+# leading glyph without a runtime fonts/ dependency.  Also generate an
+# auto-include header (altirra_icons.h) with one #define per icon, parsed
+# from MaterialIcons-Regular.codepoints (the canonical name->U+codepoint
+# mapping shipped by Google in the same font/ directory as the TTF).
+add_custom_command(
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/embedded_font_materialicons.cpp"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fonts/MaterialIcons/MaterialIcons-Regular.ttf
+        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/embedded_font_materialicons.cpp
+        -DSYMBOL=g_atFontMaterialIconsData
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_font.cmake
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/fonts/MaterialIcons/MaterialIcons-Regular.ttf
+        ${CMAKE_SOURCE_DIR}/cmake/embed_font.cmake
+    VERBATIM
+    COMMENT "Embedding MaterialIcons-Regular.ttf"
+)
+add_custom_command(
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/altirra_icons.h"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fonts/MaterialIcons/MaterialIcons-Regular.codepoints
+        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/altirra_icons.h
+        -P ${CMAKE_SOURCE_DIR}/cmake/gen_icon_codepoints.cmake
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/fonts/MaterialIcons/MaterialIcons-Regular.codepoints
+        ${CMAKE_SOURCE_DIR}/cmake/gen_icon_codepoints.cmake
+    VERBATIM
+    COMMENT "Generating altirra_icons.h from MaterialIcons-Regular.codepoints"
+)
+# Stamp target so any TU that #include's altirra_icons.h gets a build-time
+# dependency on the generated header (CMake's add_custom_command only ties
+# the output to files that explicitly list it in their DEPENDS otherwise).
+add_custom_target(altirra_icons_header
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/altirra_icons.h)
 
 # Stage bundled TTF/OTF fonts next to the binary so the Fonts page in
 # Configure System (and the default Roboto/Fira Mono load on first run)

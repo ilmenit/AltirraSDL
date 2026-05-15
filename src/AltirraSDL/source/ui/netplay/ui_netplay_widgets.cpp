@@ -12,6 +12,7 @@
 #include "input/touch_widgets.h"
 #include "ui/core/ui_mode.h"
 #include "ui_netplay_state.h"
+#include "altirra_icons.h"
 #include "../mobile/mobile_internal.h"
 #include "../gamelibrary/game_library.h"
 #include "../gamelibrary/game_library_art.h"
@@ -621,7 +622,7 @@ void LobbyStatusBanner(bool allowRetry) {
 		const float btnH = Dp(ATTouch::kButtonHeightSmall);
 		if (ATTouchButton(label,
 		                  ImVec2(btnW, btnH),
-		                  ATTouchButtonStyle::Neutral)) {
+		                  ATTouchButtonStyle::Neutral, ICON_MD_REFRESH)) {
 			State& st = GetState();
 			st.browser.refreshRequested = true;
 			st.browser.nextRetryMs = 0;
@@ -1112,7 +1113,7 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 		ImGui::Spacing();
 		if (ATTouchButton("Copy from current emulator",
 			ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
-			ATTouchButtonStyle::Neutral))
+			ATTouchButtonStyle::Neutral, ICON_MD_LAYERS))
 		{
 			cfg = CaptureCurrentMachineConfig();
 		}

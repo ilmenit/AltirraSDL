@@ -40,6 +40,8 @@ extern "C" {
 	extern const unsigned int  g_atFontRobotoMediumData_size;
 	extern const unsigned char g_atFontFiraMonoRegularData[];
 	extern const unsigned int  g_atFontFiraMonoRegularData_size;
+	extern const unsigned char g_atFontMaterialIconsData[];
+	extern const unsigned int  g_atFontMaterialIconsData_size;
 }
 
 // =========================================================================
@@ -91,6 +93,16 @@ static bool  s_usingGLBackend = false;
 
 ImFont *g_pFontUI   = nullptr;
 ImFont *g_pFontMono = nullptr;
+ImFont *g_pFontIcon = nullptr;
+
+// Icon font is loaded at a single, button-friendly pixel size.  Gaming
+// Mode is the only consumer right now and renders icons inside 48–56dp
+// buttons, so a 22dp glyph height looks balanced next to ~14dp body
+// text without crowding the touch target.  Scaled by contentScale at
+// atlas-build time the same way the UI/mono fonts are.
+namespace {
+	constexpr float kIconPointSize = 20.0f; // pt; ~26px @ 1.0 contentScale (96 DPI)
+}
 
 // =========================================================================
 // Helpers
@@ -277,6 +289,16 @@ static const ImWchar *GetMonoFontGlyphRanges() {
 	return ImGui::GetIO().Fonts->GetGlyphRangesDefault();
 }
 
+// Material Icons font: every glyph lives in the BMP Private Use Area
+// (U+E000..U+F8FF).  Loading the full range adds ~2,200 glyphs to the
+// atlas — about 350 KB of texture at 22dp on a standard-density screen,
+// which is acceptable for the one-time atlas build and keeps every
+// ICON_MD_* macro from altirra_icons.h immediately available.
+static const ImWchar *GetIconFontGlyphRanges() {
+	static const ImWchar kIconRange[] = { 0xE000, 0xF8FF, 0 };
+	return kIconRange;
+}
+
 static void LoadFontFromFile(const ATFontFile *file, float pixelSize,
 	const ImWchar *glyphRanges, ImFont*& out)
 {
@@ -315,21 +337,50 @@ static void LoadFontFromFile(const ATFontFile *file, float pixelSize,
 	out = io.Fonts->AddFontFromMemoryTTF(imgData, (int)srcSize, pixelSize, &cfg, glyphRanges);
 }
 
+// Load the embedded Material Icons blob at `pixelSize`.  Returns the
+// font through `out`.  Self-contained (no ATFontFile rec needed) because
+// the icon font is never user-selectable.
+static void LoadIconFontFromMemory(float pixelSize, ImFont*& out) {
+	out = nullptr;
+	if (!g_atFontMaterialIconsData || g_atFontMaterialIconsData_size == 0) {
+		LOG_INFO("UI", "Icon font blob unavailable");
+		return;
+	}
+	void *imgData = IM_ALLOC(g_atFontMaterialIconsData_size);
+	memcpy(imgData, g_atFontMaterialIconsData, g_atFontMaterialIconsData_size);
+
+	ImFontConfig cfg;
+	cfg.FontDataOwnedByAtlas = true;
+	// Icon glyphs are square; ask ImGui to pixel-snap horizontal advance
+	// so they align cleanly to the integer grid the buttons draw on.
+	cfg.PixelSnapH = true;
+	// Material Icons font has tight side-bearings; nudge slightly to
+	// match the visual baseline of the body text when drawn side by side.
+	cfg.GlyphOffset = ImVec2(0.0f, 1.0f);
+
+	ImGuiIO& io = ImGui::GetIO();
+	out = io.Fonts->AddFontFromMemoryTTF(imgData,
+		(int)g_atFontMaterialIconsData_size, pixelSize,
+		&cfg, GetIconFontGlyphRanges());
+}
+
 static void RebuildAtlas() {
 	ImGuiIO& io = ImGui::GetIO();
 	io.Fonts->Clear();
 
 	const float uiPx   = (float)s_uiSize   * s_contentScale * 96.0f / 72.0f;
 	const float monoPx = (float)s_monoSize * s_contentScale * 96.0f / 72.0f;
+	const float iconPx = kIconPointSize    * s_contentScale * 96.0f / 72.0f;
 
-	LOG_INFO("UI", "Font rebuild: uiSize=%d monoSize=%d contentScale=%.2f uiPx=%.1f monoPx=%.1f FontGlobalScale=%.2f",
-		s_uiSize, s_monoSize, s_contentScale, uiPx, monoPx, ImGui::GetIO().FontGlobalScale);
+	LOG_INFO("UI", "Font rebuild: uiSize=%d monoSize=%d contentScale=%.2f uiPx=%.1f monoPx=%.1f iconPx=%.1f FontGlobalScale=%.2f",
+		s_uiSize, s_monoSize, s_contentScale, uiPx, monoPx, iconPx, ImGui::GetIO().FontGlobalScale);
 
 	const ATFontFile *uiFile   = PickFontFile(s_uiFamily.c_str(),   s_uiWeight.c_str());
 	const ATFontFile *monoFile = PickFontFile(s_monoFamily.c_str(), s_monoWeight.c_str());
 
 	LoadFontFromFile(uiFile,   uiPx,   GetUIFontGlyphRanges(),   g_pFontUI);
 	LoadFontFromFile(monoFile, monoPx, GetMonoFontGlyphRanges(), g_pFontMono);
+	LoadIconFontFromMemory(iconPx, g_pFontIcon);
 
 	if (!g_pFontUI) {
 		// Last-resort fallback: ImGui's built-in ProggyClean bitmap font.
@@ -341,6 +392,8 @@ static void RebuildAtlas() {
 	if (!g_pFontMono) {
 		g_pFontMono = g_pFontUI;
 	}
+	// g_pFontIcon may legitimately be null if the icon blob failed to
+	// load — callers must always null-check before drawing with it.
 
 	io.FontDefault = g_pFontUI;
 	io.Fonts->Build();
@@ -468,6 +521,10 @@ ImFont *ATUIGetFontMono() {
 	if (g_pFontUI)
 		return g_pFontUI;
 	return ImGui::GetIO().FontDefault;
+}
+
+ImFont *ATUIGetFontIcon() {
+	return g_pFontIcon; // may be null — callers must check before using
 }
 
 int ATUIFontsGetUISize() {

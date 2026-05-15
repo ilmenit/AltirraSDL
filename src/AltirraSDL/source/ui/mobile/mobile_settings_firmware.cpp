@@ -15,6 +15,7 @@
 #include "firmwaremanager.h"
 
 #include "mobile_internal.h"
+#include "altirra_icons.h"
 
 extern ATSimulator g_sim;
 extern void ATRegistryFlushToDisk();
@@ -52,7 +53,8 @@ void RenderSettingsPage_Firmware(ATMobileUIState &mobileState) {
 
 		ImGui::Spacing();
 		if (ATTouchButton("Select Firmware Folder",
-			ImVec2(-1, dp(56.0f)), ATTouchButtonStyle::Accent))
+			ImVec2(-1, dp(56.0f)), ATTouchButtonStyle::Accent,
+			ICON_MD_FOLDER_OPEN))
 		{
 			s_romFolderMode = true;
 			s_fileBrowserNeedsRefresh = true;

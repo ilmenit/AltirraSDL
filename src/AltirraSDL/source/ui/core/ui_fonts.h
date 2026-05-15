@@ -25,6 +25,13 @@ void ATUIFontsRebuildIfDirty();
 ImFont *ATUIGetFontUI();
 ImFont *ATUIGetFontMono();
 
+// Material Icons font, sized for use as a leading glyph on touch
+// buttons / list rows.  Returns null if the embedded blob failed to
+// load — callers MUST null-check before drawing with this font.  All
+// codepoints from `altirra_icons.h` (ICON_MD_*) are present in the
+// atlas.
+ImFont *ATUIGetFontIcon();
+
 // Configure System -> Emulator -> Fonts page.
 void RenderFontsCategory(ATSimulator &sim);
 
