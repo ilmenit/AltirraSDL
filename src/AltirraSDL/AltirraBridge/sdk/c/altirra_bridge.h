@@ -296,8 +296,52 @@ int atb_boot_bare(atb_client_t* c, unsigned int settle_frames);
 int atb_cold_reset(atb_client_t* c);
 int atb_warm_reset(atb_client_t* c);
 
+/*
+ * Save states.
+ *
+ * Three modes, all synchronous (no FRAME 1 dance needed):
+ *   - PATH:   write/read a server-side .altstate2 file
+ *   - SLOT:   in-memory named slot (session-scope on the server,
+ *             dropped on shutdown or via atb_state_drop)
+ *   - INLINE: blob travels over the socket as bytes; useful when
+ *             client and server don't share a filesystem
+ *
+ * Pause state is preserved across atb_state_load_*: a paused
+ * simulator stays paused after the load. Call atb_resume() to
+ * resume execution.
+ *
+ * The atb_state_save/atb_state_load names without a suffix remain
+ * for backward compatibility -- they are thin shims for the _path
+ * variants.
+ */
 int atb_state_save(atb_client_t* c, const char* path);
 int atb_state_load(atb_client_t* c, const char* path);
+
+int atb_state_save_path(atb_client_t* c, const char* path);
+int atb_state_save_slot(atb_client_t* c, const char* slot);
+
+/*
+ * Inline save: *out_blob is malloc()'d and contains the .altstate2
+ * bytes; *out_len holds its size. Caller owns the buffer and must
+ * free() it. The blob is byte-identical to a .altstate2 file.
+ */
+int atb_state_save_inline(atb_client_t* c,
+                          unsigned char** out_blob,
+                          size_t*         out_len);
+
+int atb_state_load_path(atb_client_t* c, const char* path);
+int atb_state_load_slot(atb_client_t* c, const char* slot);
+int atb_state_load_inline(atb_client_t* c,
+                          const unsigned char* blob,
+                          size_t               blob_len);
+
+/*
+ * Drop one slot (slot != NULL) or every slot (slot == NULL).
+ * Returns ATB_OK; the actual count removed is server-side and not
+ * propagated through this thin C surface (parse the raw response
+ * via atb_send / atb_recv if you need it).
+ */
+int atb_state_drop(atb_client_t* c, const char* slot);
 
 /*
  * Phase 4 — rendering.

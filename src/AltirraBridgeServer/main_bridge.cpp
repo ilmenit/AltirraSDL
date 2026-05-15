@@ -177,15 +177,27 @@ bool ATBridgeDispatchStateSave(ATSimulator& sim, const std::string& path) {
 	}
 }
 
-bool ATBridgeDispatchStateLoad(ATSimulator& /*sim*/, const std::string& path) {
+bool ATBridgeDispatchStateLoad(ATSimulator& sim, const std::string& path) {
 	if (path.empty()) return false;
-	// LoadState is more complex than SaveState — it requires a
-	// ATSaveStateReader and goes through the deserialization
-	// pipeline. Phase 1 of the headless build defers this; the
-	// command returns ok=false with a clear error so clients know
-	// to wait for v2.
-	LOG_ERROR("BridgeServer", "STATE_LOAD not yet implemented in headless build (path=%s)", path.c_str());
-	return false;
+	try {
+		// sim.Load() auto-detects the savestate format (legacy
+		// .altstate vs. .altstate2) by magic and routes through
+		// LoadState / ApplySnapshot internally. The deserializer
+		// registry is populated at startup by the
+		// ATInitSaveStateDeserializer() call in main(). Pause
+		// state is preserved per the CLAUDE.md invariant: clients
+		// that want to resume after load issue RESUME explicitly.
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
+		ATImageLoadContext ctx{};
+		if (!sim.Load(wpath.c_str(), kATMediaWriteMode_RO, &ctx)) {
+			LOG_ERROR("BridgeServer", "STATE_LOAD failed: %s", path.c_str());
+			return false;
+		}
+		return true;
+	} catch (const MyError& e) {
+		LOG_ERROR("BridgeServer", "STATE_LOAD exception: %s", e.c_str());
+		return false;
+	}
 }
 
 // =========================================================================

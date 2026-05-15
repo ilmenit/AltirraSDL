@@ -36,9 +36,23 @@ std::string CmdBpList     (ATSimulator& sim, const std::vector<std::string>& tok
 std::string CmdWatchSet   (ATSimulator& sim, const std::vector<std::string>& tokens);
 
 // Symbols
-std::string CmdSymLoad    (ATSimulator& sim, const std::vector<std::string>& tokens);
-std::string CmdSymResolve (ATSimulator& sim, const std::vector<std::string>& tokens);
-std::string CmdSymLookup  (ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdSymLoad      (ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdSymResolve   (ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdSymLookup    (ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdSymUnload    (ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdSymClearAll  (ATSimulator& sim, const std::vector<std::string>& tokens);
+
+// Cross-module hook for FRESH — unloads every module the bridge has
+// recorded via SYM_LOAD and clears the tracking list. Idempotent and
+// safe when no symbols are loaded.
+void BridgeSymClearAllInternal();
+
+// Cross-module hook for FRESH — stop the profiler if running and drop
+// any cached session. Idempotent.
+void BridgeProfileResetInternal(ATSimulator& sim);
+
+// Cross-module hook for FRESH — disable the verifier. Idempotent.
+void BridgeVerifierResetInternal(ATSimulator& sim);
 
 // Memory search
 std::string CmdMemSearch  (ATSimulator& sim, const std::vector<std::string>& tokens);

@@ -143,9 +143,13 @@ The `AltirraBridgeServer` binary speaks the **identical bridge
 protocol** as `AltirraSDL --bridge` — clients written against
 either binary work against the other. Differences:
 
-- BOOT / MOUNT / STATE_SAVE / STATE_LOAD complete *synchronously*
-  on the bridge server (no deferred-action queue), so subsequent
-  read commands see the new state immediately.
+- STATE_SAVE / STATE_LOAD / STATE_LIST / STATE_DROP run
+  *synchronously* on both targets -- the response carries the
+  outcome and no `FRAME 1` is needed. BOOT / MOUNT still run via
+  the deferred-action queue on `AltirraSDL --bridge` because the
+  triggered cold reset takes ~300 frames to settle; clients use
+  `FRAME N` for those after the response arrives. On the headless
+  `AltirraBridgeServer` they run synchronously too.
 - No window-related commands (none exist in v1 anyway).
 - No SDL3 settings file lookup — the bridge server reads ROM paths
   from the same `~/.config/altirra/settings.ini` as AltirraSDL by

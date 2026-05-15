@@ -39,6 +39,63 @@
 namespace ATBridge {
 
 // ===========================================================================
+// Module-state tracking shared between commands.
+//
+// The bridge owns its own list of SYM_LOAD module ids so SYM_CLEAR_ALL
+// and FRESH can iterate without relying on the debugger's
+// implementation-only `GetModuleIds()`. The list is append-only on
+// SYM_LOAD and gets cleared by SYM_UNLOAD / SYM_CLEAR_ALL /
+// BridgeSymClearAllInternal().
+//
+// The profiler-session cache fixes the long-standing "PROFILE_DUMP is
+// one-shot" gotcha. `ATCPUProfiler::GetSession` moves its internal
+// session out, so a naïve second call returns empty data. We cache
+// the moved session into g_profileSessionCache the first time DUMP is
+// called after STOP, and reuse it for every subsequent DUMP /
+// DUMP_TREE until the next PROFILE_START (which Reset()s the cache).
+//
+// All of this is process-singleton state — there is one bridge, one
+// simulator, one profiler. No locking needed; commands serialise on
+// the main thread.
+// ===========================================================================
+
+namespace {
+
+std::vector<uint32_t> g_loadedSymModules;
+
+void TrackSymModule(uint32_t id) {
+	if (id == 0) return;
+	g_loadedSymModules.push_back(id);
+}
+
+// Returns the number actually unloaded.
+uint32_t SymClearAllTracked() {
+	IATDebugger* dbg = ATGetDebugger();
+	if (!dbg) { g_loadedSymModules.clear(); return 0; }
+	uint32_t n = 0;
+	for (uint32_t id : g_loadedSymModules) {
+		dbg->UnloadSymbols(id);
+		++n;
+	}
+	g_loadedSymModules.clear();
+	return n;
+}
+
+// Cached profile session — see comment above.
+ATProfileSession g_profileSessionCache;
+bool             g_profileSessionCached = false;
+
+void ProfileResetCache() {
+	g_profileSessionCache = ATProfileSession{};
+	g_profileSessionCached = false;
+}
+
+// Re-implement of the helpers from the original namespace below;
+// declared here so FRESH internal hooks can call them at file scope.
+
+}  // namespace
+
+// ===========================================================================
 // Local helpers
 // ===========================================================================
 
@@ -363,9 +420,74 @@ std::string CmdSymLoad(ATSimulator& sim, const std::vector<std::string>& tokens)
 		return JsonError(std::string("SYM_LOAD: ") + msg);
 	}
 
+	TrackSymModule(moduleId);
+
 	std::string payload;
 	AddStr (payload, "path",      path);
 	AddU32 (payload, "module_id", moduleId);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ===========================================================================
+// SYM_UNLOAD module_id
+//
+// Inverse of SYM_LOAD. Removes one module from the debugger's symbol
+// store and from the bridge's internal tracking list (so a later
+// SYM_CLEAR_ALL doesn't try to free it twice). Returns
+// "unloaded": true on success, false when the id isn't currently
+// tracked by the bridge.
+// ===========================================================================
+
+std::string CmdSymUnload(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	(void)sim;
+	if (tokens.size() < 2)
+		return JsonError("SYM_UNLOAD: usage: SYM_UNLOAD module_id");
+
+	uint32_t id = 0;
+	if (!ParseUint(tokens[1], id))
+		return JsonError("SYM_UNLOAD: bad module_id");
+
+	IATDebugger* dbg = Dbg();
+	if (!dbg) return JsonError("SYM_UNLOAD: debugger unavailable");
+
+	bool found = false;
+	for (auto it = g_loadedSymModules.begin(); it != g_loadedSymModules.end(); ++it) {
+		if (*it == id) {
+			g_loadedSymModules.erase(it);
+			found = true;
+			break;
+		}
+	}
+	// Always call UnloadSymbols — even when we didn't track the id
+	// the debugger may know it (e.g. system-symbol modules loaded by
+	// Altirra itself). Returning unloaded=false signals "id wasn't
+	// in the bridge's SYM_LOAD list", which is the actionable thing
+	// for clients.
+	dbg->UnloadSymbols(id);
+
+	std::string payload;
+	AddU32 (payload, "module_id", id);
+	AddBool(payload, "unloaded",  found);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ===========================================================================
+// SYM_CLEAR_ALL
+//
+// Unload every symbol module that came in via SYM_LOAD. Modules
+// Altirra loaded itself (auto-system-symbols, kernel symbols) are
+// left alone. Returns the number of modules removed.
+// ===========================================================================
+
+std::string CmdSymClearAll(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	(void)sim; (void)tokens;
+	IATDebugger* dbg = Dbg();
+	if (!dbg) return JsonError("SYM_CLEAR_ALL: debugger unavailable");
+	const uint32_t n = SymClearAllTracked();
+	std::string payload;
+	AddU32(payload, "cleared", n);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
 }
@@ -554,6 +676,10 @@ std::string CmdProfileStart(ATSimulator& sim, const std::vector<std::string>& to
 	if (prof->IsRunning())
 		prof->End();
 
+	// PROFILE_START always invalidates the cached DUMP result: the
+	// new run will own its own session.
+	ProfileResetCache();
+
 	prof->SetBoundaryRule(kATProfileBoundaryRule_None, 0, 0);
 	prof->SetGlobalAddressesEnabled(true);
 	// Start() calls OpenFrame() internally (profiler.cpp:949) —
@@ -625,8 +751,15 @@ std::string CmdProfileDump(ATSimulator& sim, const std::vector<std::string>& tok
 	if (prof->IsRunning())
 		return JsonError("PROFILE_DUMP: call PROFILE_STOP first");
 
-	ATProfileSession session;
-	prof->GetSession(session);
+	// First DUMP after STOP moves the session out of the profiler
+	// into our cache; subsequent DUMP/DUMP_TREE calls read the
+	// cache and return the same data instead of an empty session.
+	// PROFILE_START resets the cache.
+	if (!g_profileSessionCached) {
+		prof->GetSession(g_profileSessionCache);
+		g_profileSessionCached = true;
+	}
+	ATProfileSession& session = g_profileSessionCache;
 
 	// Merge all frames' records into a single map keyed by address.
 	struct Row { uint32_t addr; uint64_t cycles; uint64_t insns; uint64_t calls; };
@@ -702,8 +835,11 @@ std::string CmdProfileDumpTree(ATSimulator& sim, const std::vector<std::string>&
 	if (prof->IsRunning())
 		return JsonError("PROFILE_DUMP_TREE: call PROFILE_STOP first");
 
-	ATProfileSession session;
-	prof->GetSession(session);
+	if (!g_profileSessionCached) {
+		prof->GetSession(g_profileSessionCache);
+		g_profileSessionCached = true;
+	}
+	ATProfileSession& session = g_profileSessionCache;
 
 	if (session.mProfileMode != kATProfileMode_CallGraph)
 		return JsonError("PROFILE_DUMP_TREE: profiler is not in callgraph mode");
@@ -814,6 +950,38 @@ std::string CmdVerifierSet(ATSimulator& sim, const std::vector<std::string>& tok
 	AddField(payload, "flags", buf);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
+}
+
+// ===========================================================================
+// Cross-module FRESH hooks (declared in bridge_commands_debug2.h).
+//
+// These exist so bridge_commands_write.cpp's CmdFresh can reset
+// debugger/profiler/verifier state without dragging in profiler.h /
+// debugger.h / verifier.h itself. Each is idempotent.
+// ===========================================================================
+
+void BridgeSymClearAllInternal() {
+	IATDebugger* dbg = ATGetDebugger();
+	if (!dbg) {
+		g_loadedSymModules.clear();
+		return;
+	}
+	(void)SymClearAllTracked();
+}
+
+void BridgeProfileResetInternal(ATSimulator& sim) {
+	ATCPUProfiler* prof = sim.GetProfiler();
+	if (prof && prof->IsRunning()) {
+		prof->End();
+	}
+	ProfileResetCache();
+	// Disable the profiler entirely so the next PROFILE_START starts
+	// clean — SetProfilingEnabled(false) releases the singleton.
+	sim.SetProfilingEnabled(false);
+}
+
+void BridgeVerifierResetInternal(ATSimulator& sim) {
+	sim.SetVerifierEnabled(false);
 }
 
 }  // namespace ATBridge

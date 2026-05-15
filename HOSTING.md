@@ -25,6 +25,40 @@ Copy all four to the same directory on your web host.  Browsers must
 serve the page over HTTPS — IDBFS persistence relies on `Storage`
 quota that's only granted in secure contexts.
 
+### Deep-link content layout
+
+If you want users to launch pre-loaded titles via URLs like
+`https://your-site/altirra/?lib=game.xex`, the deep-link fetcher
+expects two sibling directories next to `AltirraSDL.html`:
+
+```
+your-site/altirra/
+├── AltirraSDL.html
+├── AltirraSDL.js
+├── AltirraSDL.wasm
+├── AltirraSDL.data
+├── library/              ← ?lib=<path> files resolve under here
+│   ├── game.xex
+│   └── subfolder/another.atr
+└── firmware/             ← ?firmware=<path> files (embed-kit only)
+    └── custom-os.rom
+```
+
+`?lib=game.xex` then resolves to `your-site/altirra/library/game.xex`.
+Subpaths (`?lib=demos/2024/intro.xex`) are supported and resolved under
+the same `library/` root.  If you can't ship files at that layout —
+e.g. the assets live on a CDN — add one of these tags to your HTML to
+override the base URL:
+
+```html
+<meta name="altirra-library-base"  content="https://cdn.example.com/games/">
+<meta name="altirra-firmware-base" content="https://cdn.example.com/roms/">
+```
+
+The override is the absolute final word; embed-kit pages
+(`?embed=1`) and canonical lobby deploys also fall through to sensible
+origin-aware defaults if no meta tag is present.
+
 ## 2. Optional: `config.json`
 
 Drop a `config.json` next to `AltirraSDL.html` to customise the

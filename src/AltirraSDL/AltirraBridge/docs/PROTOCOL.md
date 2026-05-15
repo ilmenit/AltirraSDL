@@ -576,25 +576,132 @@ on a real Atari). Same pause-preservation semantics as
 {"ok":true}
 ```
 
-#### `STATE_SAVE path`
+#### Save states — `STATE_SAVE` / `STATE_LOAD` / `STATE_LIST` / `STATE_DROP`
 
-Save the simulator snapshot to `path`. Async via the deferred-
-action queue, same as `BOOT`. Issue `FRAME 1` to wait for the
-write to complete before exiting / verifying the file.
+All save-state commands run **synchronously**: by the time the
+response arrives, the operation has finished. No `FRAME 1` gating
+is required (clients that send one anyway will see the same state;
+it costs one frame of advance).
+
+Pause state is preserved across `STATE_LOAD` per the bridge's
+[CLAUDE invariant](#pause-state): a paused simulator stays paused,
+a running simulator stays running. The captured snapshot's own
+running flag is not honoured -- use `RESUME` / `PAUSE` after the
+load if you want a particular state.
+
+Three modes are supported on `STATE_SAVE` and `STATE_LOAD`:
+
+| Mode    | When to use                                                  |
+|---------|--------------------------------------------------------------|
+| **Path**   | Long-lived snapshots, cross-session persistence, sharing |
+| **Slot**   | Session-scope checkpoint/rewind loops (no disk I/O)      |
+| **Inline** | Client and server don't share a filesystem (Android, ssh) |
+
+The on-disk format and the slot/inline blobs are byte-equivalent
+`.altstate2` payloads -- a slot can be flushed to disk after the
+fact, a file can be slurped into a slot for fast reuse.
+
+All save/load responses include the following metadata:
+
+| Field    | Type    | Description                                  |
+|----------|---------|----------------------------------------------|
+| `mode`   | string  | `"path"` / `"slot"` / `"inline"`             |
+| `size`   | number  | size of the serialized blob, in bytes        |
+| `cycle`  | number  | CPU cycle counter at the moment of save/load |
+| `pc`     | hex     | CPU program counter, e.g. `"$e2a4"`          |
+| `machine`| string  | hardware mode (`"800XL"`, `"5200"`, ...)     |
+| `memory` | string  | RAM size (`"320K"`, `"64K"`, ...)            |
+| `basic`  | bool    | whether built-in BASIC is enabled            |
+
+The cycle counter is monotonic and does not reset across loads --
+useful for "time since X" measurements, not for identifying a
+specific snapshot.
+
+##### `STATE_SAVE <path>`  /  `STATE_SAVE path=<path>`
+
+Write the snapshot to a server-side `.altstate2` file. The
+positional form is backward-compatible with the v1 wire protocol;
+the `path=` form is the new explicit syntax. Paths containing
+spaces are only supported via the positional form.
 
 ```json
-{"ok":true,"path":"/path/to/state.altstate"}
+{"ok":true,"mode":"path","path":"/tmp/state.altstate2",
+ "size":54171,"cycle":4294681990,"pc":"$060f",
+ "machine":"800XL","memory":"1088K","basic":false}
 ```
 
-#### `STATE_LOAD path`
+##### `STATE_SAVE slot=<name>`
 
-Load a previously-saved snapshot from `path`. Async via the
-deferred-action queue. The simulator's running state, all chip
-state, and all media mounts are replaced. Issue `FRAME 1` and
-then `REGS` to verify the load.
+Store the snapshot in an in-memory slot under `name`. The slot
+survives until `STATE_DROP` is called or the server exits. Saving
+to a slot that already exists overwrites it (no warning).
 
 ```json
-{"ok":true,"path":"/path/to/state.altstate"}
+{"ok":true,"mode":"slot","slot":"checkpoint_1",
+ "size":54176,"cycle":4294675270,"pc":"$060f",
+ "machine":"800XL","memory":"1088K","basic":false}
+```
+
+##### `STATE_SAVE inline=true`
+
+Serialize the snapshot and return it base64-encoded in the
+`data` field of the response.
+
+```json
+{"ok":true,"mode":"inline","encoding":"base64",
+ "size":54198,"cycle":6481719,"pc":"$060f",
+ "machine":"800XL","memory":"1088K","basic":false,
+ "data":"UEsDBBQAAAAIAAAA..."}
+```
+
+##### `STATE_LOAD <path>`  /  `STATE_LOAD path=<path>`
+
+Load a snapshot from a server-side file. The simulator's chip
+state, RAM, and media mounts are replaced. Running state is
+preserved (see invariant above).
+
+```json
+{"ok":true,"mode":"path","path":"/tmp/state.altstate2",
+ "size":54171,"cycle":4294705510,"pc":"$060f",
+ "machine":"800XL","memory":"1088K","basic":false}
+```
+
+##### `STATE_LOAD slot=<name>`
+
+Load from an in-memory slot. Returns an `ok:false` error if no
+slot with that name exists.
+
+```json
+{"ok":true,"mode":"slot","slot":"checkpoint_1", ...}
+```
+
+##### `STATE_LOAD data=<base64>` (or `STATE_LOAD inline=true data=<base64>`)
+
+Load from an inline base64 blob -- typically one produced earlier
+by `STATE_SAVE inline=true`.
+
+```json
+{"ok":true,"mode":"inline","size":54198, ...}
+```
+
+##### `STATE_LIST`
+
+Enumerate every in-memory slot. The list is sorted by name.
+
+```json
+{"ok":true,"slots":[
+  {"name":"checkpoint_1","size":54176,"cycle":4294675270,
+   "pc":"$060f","machine":"800XL","memory":"1088K","basic":false}
+],"count":1}
+```
+
+##### `STATE_DROP <name>` / `STATE_DROP slot=<name>` / `STATE_DROP all=true`
+
+Remove one slot by name, or every slot at once with `all=true`.
+The response reports the number of slots actually removed.
+
+```json
+{"ok":true,"dropped":1}
 ```
 
 #### `CONFIG`

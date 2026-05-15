@@ -109,6 +109,7 @@ add_executable(AltirraBridgeServer
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_debug.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_debug2.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_bare_stub.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_savestate.cpp
     # NB: bridge_main_glue_sdl3.cpp is NOT included — main_bridge.cpp
     # provides its own ATBridgeDispatch* implementations that call the
     # simulator directly without the SDL3 deferred-action queue.

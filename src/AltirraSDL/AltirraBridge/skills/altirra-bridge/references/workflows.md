@@ -210,22 +210,60 @@ For a hierarchical call tree:
 
 ## 8. Save / load state for deterministic test branches
 
+The bridge supports three save-state destinations -- pick the one
+that matches the test's structure.
+
+**In-memory slots** are the workhorse for many-trial loops: no
+disk I/O, no temp-file cleanup. Use `bridge.checkpoint()` as a
+context manager for save/probe/rewind:
+
 ```python
 with AltirraBridge.from_token_file(sys.argv[1]) as a:
     a.boot("/path/to/game.xex")
     a.frame(180)
-    a.state_save("/tmp/checkpoint.altstate"); a.frame(1)
 
     for trial in range(10):
-        a.state_load("/tmp/checkpoint.altstate"); a.frame(1)
-        # Try a different input sequence each time
-        run_strategy(a, trial)
-        open(f"trial_{trial}.png", "wb").write(a.screenshot())
+        with a.checkpoint() as cp:                # save state to anon slot
+            run_strategy(a, trial)                # mutate freely
+            open(f"trial_{trial}.png", "wb").write(a.screenshot())
+        # context exit -> rewound back to the saved state, slot dropped.
 ```
 
-`cold_reset()` and `warm_reset()` preserve the simulator's pause
-state — a paused emulator stays paused after reset. Rely on this
-invariant.
+Or use a named slot if you want to keep it around between blocks:
+
+```python
+a.state_save(slot="level_2_start")
+for trial in range(10):
+    a.state_load(slot="level_2_start")
+    run_strategy(a, trial)
+```
+
+**File mode** is byte-equivalent to the slot blob; use it for
+checkpoints you want to keep across server restarts or share
+between machines:
+
+```python
+a.state_save("/tmp/checkpoint.altstate2")
+a.state_load("/tmp/checkpoint.altstate2")
+```
+
+**Inline mode** sends the blob over the socket; pick it when the
+client and server don't share a filesystem (Android adb, remote
+ssh):
+
+```python
+r = a.state_save(inline=True)
+# transport r["data"] (bytes) wherever you need it
+a.state_load(data=r["data"])
+```
+
+All three modes are synchronous -- by the time the call returns,
+the save is on disk or the load is applied. The `state_load` family
+preserves the simulator's pause state (a paused emulator stays
+paused); call `a.resume()` afterwards if you want execution.
+
+`cold_reset()` and `warm_reset()` also preserve pause state -- rely
+on this invariant.
 
 ---
 

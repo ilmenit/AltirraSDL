@@ -143,16 +143,41 @@
     backLabel:   null,
   };
 
-  // Resolve the same-origin base URL for fetched assets.  The lobby
-  // hosts the WASM at /AltirraSDL/play/ and the curated content at
-  // /AltirraSDL/library/ + /AltirraSDL/firmware/, so the historical
-  // default is an absolute /AltirraSDL/<kind>/ path.  Self-hosted
-  // embeds (?embed=1) typically drop the whole bundle next to a
-  // sibling library/ + firmware/ directory and want page-relative
-  // paths so the deploy works at any URL prefix.  A host page can
-  // override either knob with <meta name="altirra-library-base">
-  // / "altirra-firmware-base"; the meta wins over both defaults so
-  // an author with a non-standard tree can place files anywhere.
+  // Resolve the same-origin base URL for fetched assets.  Three knobs,
+  // in priority order:
+  //
+  //   1. <meta name="altirra-library-base" content="..."> /
+  //      <meta name="altirra-firmware-base" content="...">
+  //      — explicit override; wins over everything.  An author with a
+  //      non-standard tree (e.g. files served from a CDN subpath) sets
+  //      this and we honour it verbatim.
+  //
+  //   2. ?embed=1 → page-relative `<kind>/`.  Embed-kit pages drop the
+  //      whole bundle next to a sibling library/ + firmware/ directory
+  //      and want resolution relative to the host HTML so the deploy
+  //      works at any URL prefix.
+  //
+  //   3. Default — depends on the page's path layout:
+  //      • Canonical layout — WASM bundle served at a URL whose path
+  //        contains `/AltirraSDL/play/`, with curated content one level
+  //        up at `/AltirraSDL/<kind>/`.  This is how `lobby.atari.org.pl`,
+  //        `altirra-lobby.duckdns.org`, and the GitHub Pages fallback
+  //        (`ilmenit.github.io/AltirraSDL/play/`) all deploy, so we
+  //        use the absolute path `/AltirraSDL/<kind>/` regardless of
+  //        which host the user actually landed on.
+  //      • Any other layout (self-hosted at an arbitrary URL prefix)
+  //        gets page-relative `<kind>/`.  Anything else 404s — the
+  //        page's containing directory is the only path the self-host
+  //        necessarily controls, and the standard layout HOSTING.md
+  //        describes is `AltirraSDL.html` next to `library/` and
+  //        `firmware/` subdirectories.  Self-hosters who keep that
+  //        layout get a working deep-link with zero extra
+  //        configuration; ones who don't can still override via the
+  //        `<meta>` knob above.
+  //
+  // Choosing on path-layout rather than hostname keeps the canonical
+  // lobby AND its GitHub Pages mirror working without hardcoding host
+  // lists that would silently drift if a new mirror is ever added.
   function metaBase(name) {
     try {
       var m = document.querySelector('meta[name="' + name + '"]');
@@ -164,11 +189,54 @@
       return v;
     } catch (_) { return null; }
   }
+  function isCanonicalLayout() {
+    // Anchor at the start of the pathname so a self-hoster who
+    // happens to put `/AltirraSDL/play/` deeper in their URL (e.g.
+    // `/cdn/AltirraSDL/play/`) doesn't accidentally flip onto the
+    // canonical branch — their library wouldn't be at the URL root
+    // either, so we'd resolve to the wrong place.  The canonical
+    // deploys (lobby, DuckDNS backup, GitHub Pages mirror) all serve
+    // the WASM page at pathname `/AltirraSDL/play/` exactly:
+    //   • https://lobby.atari.org.pl/AltirraSDL/play/
+    //   • https://altirra-lobby.duckdns.org/AltirraSDL/play/
+    //   • https://ilmenit.github.io/AltirraSDL/play/
+    //   • https://*/AltirraSDL/play/index.html (any of the above)
+    // and serve library/firmware one level up at /AltirraSDL/<kind>/.
+    // A non-canonical layout falls through to page-relative; if a
+    // canonical-mirror operator one day deploys under a non-canonical
+    // URL (e.g. behind a reverse-proxy subpath) they can still pin
+    // the absolute path with <meta name="altirra-library-base">.
+    try {
+      var p = (window.location && window.location.pathname) || '';
+      return /^\/AltirraSDL\/play(\/|$)/.test(p);
+    } catch (_) { return false; }
+  }
   function resolveBase(kind /* 'library' | 'firmware' */, embed) {
+    // Pick the base URL AND log which branch we took.  The log line is
+    // the single most useful piece of debug info when a self-hoster
+    // reports "files not loading" — it shows both which URL the fetch
+    // will run against AND which branch decided that, so the operator
+    // can see at a glance whether they need a `<meta>` override.
     var meta = metaBase('altirra-' + kind + '-base');
-    if (meta) return meta;
-    if (embed) return kind + '/';
-    return '/AltirraSDL/' + kind + '/';
+    if (meta) {
+      log('resolveBase(' + kind + ') = ' + meta + '  [<meta> override]');
+      return meta;
+    }
+    if (embed) {
+      var b = kind + '/';
+      log('resolveBase(' + kind + ') = ' + b + '  [embed=1]');
+      return b;
+    }
+    if (isCanonicalLayout()) {
+      var c = '/AltirraSDL/' + kind + '/';
+      log('resolveBase(' + kind + ') = ' + c
+        + '  [canonical layout: pathname=' + window.location.pathname + ']');
+      return c;
+    }
+    var rel = kind + '/';
+    log('resolveBase(' + kind + ') = ' + rel
+      + '  [page-relative: pathname=' + window.location.pathname + ']');
+    return rel;
   }
 
   // Path validation: same-origin <base>/<path> only.  Reject '..'
@@ -866,7 +934,10 @@
       function doFetch(reasonLabel) {
         return fetch(url, { cache: 'no-cache' })
           .then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + e.rel);
+            // Compact status-only message — the outer .catch logs the
+            // full URL alongside, so duplicating it here would just
+            // produce "... at URL — HTTP 404 for URL".
+            if (!r.ok) throw new Error('HTTP ' + r.status);
             var freshETag = r.headers.get('etag');
             return r.arrayBuffer().then(function (buf) {
               writeFile(buf, freshETag);
@@ -874,7 +945,11 @@
             });
           })
           .catch(function (err) {
-            log('fetch failed for', e.rel, '—',
+            // Include the full URL — when self-hosters report "fetch
+            // failed", the actual URL the browser tried is the single
+            // most useful debug breadcrumb (404 from the wrong path is
+            // the #1 cause; HTTP status alone doesn't pinpoint that).
+            log('fetch failed for', e.rel, 'at', url, '—',
                 err && err.message ? err.message : err);
           });
       }

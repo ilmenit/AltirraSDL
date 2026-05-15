@@ -223,6 +223,51 @@ type
       and the CPU to park, so no client-side settle is needed. }
     procedure BootBare;
 
+    // ---- Save states -----------------------------------------------
+    //
+    // Three modes, all synchronous (no Frame(1) wait needed):
+    //   - Path mode  : write/read a server-side .altstate2 file
+    //   - Slot mode  : in-memory named slot, session-scope; no disk I/O
+    //   - Inline mode: blob travels over the socket as bytes; works
+    //                  when client and server don't share a filesystem
+    //
+    // Pause state is preserved across StateLoad* (paused stays
+    // paused, running stays running). Call ResumeEmu afterwards if
+    // you want execution to continue.
+
+    { Save snapshot to a server-side file. Returns the raw response
+      JSON string -- parse with ExtractInt / ExtractString. }
+    function  StateSave(const Path: String): String;
+
+    { Load snapshot from a server-side file. }
+    function  StateLoad(const Path: String): String;
+
+    { Save snapshot to a named in-memory slot. Slot names persist
+      until StateDrop or server shutdown. }
+    function  StateSaveSlot(const Slot: String): String;
+
+    { Load snapshot from a named in-memory slot. Raises a runtime
+      error if no such slot exists. }
+    function  StateLoadSlot(const Slot: String): String;
+
+    { Save snapshot inline. Returns the raw .altstate2 blob in Blob
+      (already base64-decoded) and the response JSON as the function
+      result. Blob is byte-identical to a .altstate2 file. }
+    function  StateSaveInline(out Blob: TBytes): String;
+
+    { Load snapshot from an inline blob (e.g. one returned by
+      StateSaveInline). }
+    function  StateLoadInline(const Blob: TBytes): String;
+
+    { Drop one slot, or every slot when Slot = ''. Returns the raw
+      response JSON. }
+    function  StateDrop(const Slot: String = ''): String;
+
+    { Enumerate in-memory slots. Returns the raw response JSON
+      containing a "slots":[...] array. Hand-parse with ExtractInt
+      etc. if you need typed fields per slot. }
+    function  StateList: String;
+
     // ---- Phase 4 — rendering ---------------------------------------
 
     { Upload a 768-byte Adobe Color Table (256 * RGB24) and run
@@ -894,6 +939,70 @@ begin
   // and the parked-CPU PC synchronously before acknowledging, so
   // no client-side frame settle is required.
   CheckOk(Rpc('BOOT_BARE'), 'BOOT_BARE');
+end;
+
+// ---- Save states -----------------------------------------------------
+
+function TAltirraBridge.StateSave(const Path: String): String;
+begin
+  Result := Rpc('STATE_SAVE ' + Path);
+  CheckOk(Result, 'STATE_SAVE');
+end;
+
+function TAltirraBridge.StateLoad(const Path: String): String;
+begin
+  Result := Rpc('STATE_LOAD ' + Path);
+  CheckOk(Result, 'STATE_LOAD');
+end;
+
+function TAltirraBridge.StateSaveSlot(const Slot: String): String;
+begin
+  Result := Rpc('STATE_SAVE slot=' + Slot);
+  CheckOk(Result, 'STATE_SAVE slot');
+end;
+
+function TAltirraBridge.StateLoadSlot(const Slot: String): String;
+begin
+  Result := Rpc('STATE_LOAD slot=' + Slot);
+  CheckOk(Result, 'STATE_LOAD slot');
+end;
+
+function TAltirraBridge.StateSaveInline(out Blob: TBytes): String;
+var
+  B64: String;
+begin
+  Result := Rpc('STATE_SAVE inline=true');
+  CheckOk(Result, 'STATE_SAVE inline');
+  B64 := GetStringField(Result, 'data');
+  Blob := Base64Decode(B64);
+end;
+
+function TAltirraBridge.StateLoadInline(const Blob: TBytes): String;
+var
+  Encoded: String;
+begin
+  if System.Length(Blob) = 0 then
+    raise EBridgeError.Create('StateLoadInline: empty blob');
+  Encoded := Base64Encode(Blob[0], System.Length(Blob));
+  Result := Rpc('STATE_LOAD data=' + Encoded);
+  CheckOk(Result, 'STATE_LOAD inline');
+end;
+
+function TAltirraBridge.StateDrop(const Slot: String): String;
+begin
+  if Slot = '' then
+    Result := Rpc('STATE_DROP all=true')
+  else
+    // Explicit slot= form so names containing '=' aren't
+    // reinterpreted by the server's key=value parser.
+    Result := Rpc('STATE_DROP slot=' + Slot);
+  CheckOk(Result, 'STATE_DROP');
+end;
+
+function TAltirraBridge.StateList: String;
+begin
+  Result := Rpc('STATE_LIST');
+  CheckOk(Result, 'STATE_LIST');
 end;
 
 function TAltirraBridge.PaletteLoadAct(const Act: TBytes): Double;

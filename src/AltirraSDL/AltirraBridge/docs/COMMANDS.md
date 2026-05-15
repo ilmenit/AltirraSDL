@@ -8,7 +8,8 @@ examples. For full request/response schemas and field semantics see
 |--------------|----------|
 | [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `QUIT` |
 | [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `STATE_SAVE`, `STATE_LOAD`, `CONFIG` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG` |
+| [Save states](#save-states)           | `STATE_SAVE`, `STATE_LOAD`, `STATE_LIST`, `STATE_DROP` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |
 | [Breakpoints](#breakpoints)           | `BP_SET`, `BP_CLEAR`, `BP_CLEAR_ALL`, `BP_LIST`, `WATCH_SET` |
@@ -69,7 +70,6 @@ a.joy(0, "upright", fire=True)
 a.key("A", shift=True)                  # types capital A
 a.consol(start=True)
 a.boot("/path/to/game.xex"); a.frame(120)   # wait for boot
-a.state_save("/tmp/session.altstate"); a.frame(1)
 ```
 
 ```c
@@ -80,6 +80,72 @@ atb_joy(c, 0, "upright", 1);
 atb_key(c, "A", 1, 0);
 atb_consol(c, 1, 0, 0);
 atb_boot(c, "/path/to/game.xex"); atb_frame(c, 120);
+```
+
+## Save states
+
+All save-state commands run *synchronously* -- no `frame(1)` dance
+is required. Three destinations are supported:
+
+| Mode   | Use when                                                       |
+|--------|----------------------------------------------------------------|
+| Path   | long-lived snapshots, cross-session persistence, file sharing  |
+| Slot   | session-scope checkpoint/rewind loops (no disk I/O)            |
+| Inline | client and server don't share a filesystem (Android, ssh)      |
+
+The blob format is byte-identical across modes: a slot can be
+dumped to disk after the fact, a file can be slurped into a slot
+for fast reuse.
+
+`STATE_LOAD` **preserves pause state** -- a paused simulator stays
+paused, a running simulator stays running. Call `RESUME` afterwards
+if you want execution.
+
+```python
+# --- Path mode (backward-compatible) ---
+a.state_save("/tmp/session.altstate2")
+a.state_load("/tmp/session.altstate2")
+
+# --- Slot mode (in-memory, fast) ---
+a.state_save(slot="checkpoint_1")
+a.state_load(slot="checkpoint_1")
+
+# --- Inline mode (blob over socket) ---
+r = a.state_save(inline=True)   # r["data"] is bytes (.altstate2)
+a.state_load(data=r["data"])
+
+# --- Slot management ---
+slots = a.state_list()            # list of dicts (name, size, cycle, pc, ...)
+a.state_drop("checkpoint_1")      # remove one
+a.state_drop(all=True)            # remove every slot
+
+# --- Idiomatic save/probe/rewind loop ---
+with a.checkpoint() as cp:
+    a.poke(0x80, 0xff)
+    a.frame(60)
+    print("after probe: PC =", a.regs()["pc"])
+# block exit: rewind to cp, anonymous slot dropped.
+```
+
+```c
+/* Path mode -- backward-compatible. */
+atb_state_save(c, "/tmp/session.altstate2");
+atb_state_load(c, "/tmp/session.altstate2");
+
+/* Slot mode -- session-scope in-memory checkpoint. */
+atb_state_save_slot(c, "checkpoint_1");
+atb_state_load_slot(c, "checkpoint_1");
+
+/* Inline mode -- blob round-trips through the socket. */
+unsigned char* blob;
+size_t blob_len;
+atb_state_save_inline(c, &blob, &blob_len);   /* malloc()'d */
+atb_state_load_inline(c, blob, blob_len);
+free(blob);
+
+/* Drop one slot (or every slot via NULL). */
+atb_state_drop(c, "checkpoint_1");
+atb_state_drop(c, NULL);                       /* drop all */
 ```
 
 ### Configuration

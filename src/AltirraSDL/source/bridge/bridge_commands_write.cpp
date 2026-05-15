@@ -28,6 +28,7 @@
 #include "bridge_bare_stub.h"    // EnsureBareStubXexPath
 #include "bridge_main_glue.h"   // ATBridgeDispatch* — provided per-target
 #include "bridge_protocol.h"
+#include "bridge_savestate.h"   // ATBridge::SlotStore + memory I/O
 
 #include "simulator.h"
 #include "cpu.h"              // ATCPUEmulator::GetInsnPC (used by BOOT_BARE settle)
@@ -36,8 +37,18 @@
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
 #include "pia.h"
+#include "diskinterface.h"   // ATDiskInterface::UnloadDisk (EJECT)
+#include "firmwaremanager.h" // ATFirmwareManager, ATFirmwareInfo (CONFIG kernel/basicrom)
 #include "constants.h"       // ATHardwareMode, ATMemoryMode enums
 #include "debugger.h"        // ATGetDebugger() — break-on-EXE-run
+
+#include "bridge_commands_debug2.h"  // BridgeSymClearAllInternal, BridgeProfileResetInternal, BridgeVerifierResetInternal
+
+#include <vd2/system/file.h>
+#include <vd2/system/filesys.h>     // VDDoesPathExist, VDFileSplitPathRight
+#include <vd2/system/text.h>
+#include <vd2/system/VDString.h>
+#include <vd2/system/error.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -78,6 +89,33 @@ bool ParseAddr16(const std::string& tok, uint16_t& addr) {
 // purpose so each file is self-contained. The total LOC is tiny.
 std::string Hex8(uint32_t v)  { char b[8];  std::snprintf(b, sizeof b, "\"$%02x\"",  v & 0xff);   return b; }
 std::string Hex16(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%04x\"",  v & 0xffff); return b; }
+
+// key=value option parsing -- mirrors the helpers in
+// bridge_commands_render.cpp (which keeps them anonymous in its
+// own TU). Duplicated here so each command file is self-contained.
+// MatchKey returns false for bare positional tokens (no '=').
+bool MatchKey(const std::string& tok, const char* key, std::string& value) {
+	const size_t kl = std::strlen(key);
+	if (tok.size() <= kl) return false;
+	if (std::strncmp(tok.c_str(), key, kl) != 0) return false;
+	if (tok[kl] != '=') return false;
+	value.assign(tok, kl + 1, std::string::npos);
+	return true;
+}
+
+bool IsTrueLiteral(const std::string& s) {
+	return s == "1" || s == "true" || s == "yes" || s == "on";
+}
+
+// Has the form key=anything ? Used to tell a bare positional path
+// from a key=value option without parsing the value.
+bool IsKeyValueToken(const std::string& tok) {
+	const auto eq = tok.find('=');
+	if (eq == std::string::npos || eq == 0) return false;
+	// First character must be a letter (key=...).
+	const char c = tok[0];
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
 
 void AddField(std::string& out, const char* key, const std::string& valueLiteral) {
 	out += '"';
@@ -284,6 +322,166 @@ bool StrToMemoryMode(const std::string& s, ATMemoryMode& out) {
 	return false;
 }
 
+const char* VideoStandardToStr(ATVideoStandard v) {
+	switch (v) {
+		case kATVideoStandard_NTSC:   return "ntsc";
+		case kATVideoStandard_PAL:    return "pal";
+		case kATVideoStandard_SECAM:  return "secam";
+		case kATVideoStandard_PAL60:  return "pal60";
+		case kATVideoStandard_NTSC50: return "ntsc50";
+		default:                      return "unknown";
+	}
+}
+
+bool StrToVideoStandard(const std::string& s, ATVideoStandard& out) {
+	std::string lower;
+	lower.reserve(s.size());
+	for (char c : s) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+	if (lower == "ntsc")   { out = kATVideoStandard_NTSC;   return true; }
+	if (lower == "pal")    { out = kATVideoStandard_PAL;    return true; }
+	if (lower == "secam")  { out = kATVideoStandard_SECAM;  return true; }
+	if (lower == "pal60")  { out = kATVideoStandard_PAL60;  return true; }
+	if (lower == "ntsc50") { out = kATVideoStandard_NTSC50; return true; }
+	return false;
+}
+
+// Resolve a `CONFIG kernel <value>` value to a firmware id.
+//
+// Accepts three forms:
+//   - well-known short names ("default", "osa", "osb", "xl", "xegs",
+//     "1200xl", "5200", "lle", "llexl", "hle", "5200lle")
+//   - a filesystem path (registered into the firmware manager on the
+//     fly via AddFirmware if not already known)
+//   - a numeric/hex firmware id (e.g. "0x800000...."), looked up
+//     verbatim via GetFirmwareByRefString (which falls back to
+//     ATGetFirmwareIdFromPath internally)
+//
+// On unrecognised short-name and unloadable path, returns
+// false + writes an error sentence into `err`. The id is
+// returned via `out`; an `out` of 0 means "use the simulator
+// default" (sim.SetKernel(0) is a valid call).
+bool ResolveKernelArg(ATSimulator& sim, const std::string& raw,
+                      uint64_t& out, std::string& err) {
+	out = 0;
+
+	std::string lower;
+	lower.reserve(raw.size());
+	for (char c : raw) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+
+	ATFirmwareManager* fwm = sim.GetFirmwareManager();
+	if (!fwm) { err = "firmware manager unavailable"; return false; }
+
+	if (lower == "default")           { out = 0;                              return true; }
+	if (lower == "lle")               { out = kATFirmwareId_Kernel_LLE;       return true; }
+	if (lower == "llexl")             { out = kATFirmwareId_Kernel_LLEXL;     return true; }
+	if (lower == "hle")               { out = kATFirmwareId_Kernel_HLE;       return true; }
+	if (lower == "5200lle")           { out = kATFirmwareId_5200_LLE;         return true; }
+
+	struct { const char* name; ATFirmwareType type; } byType[] = {
+		{ "osa",     kATFirmwareType_Kernel800_OSA },
+		{ "osb",     kATFirmwareType_Kernel800_OSB },
+		{ "xl",      kATFirmwareType_KernelXL      },
+		{ "xegs",    kATFirmwareType_KernelXEGS    },
+		{ "1200xl",  kATFirmwareType_Kernel1200XL  },
+		{ "5200",    kATFirmwareType_Kernel5200    },
+	};
+	for (const auto& e : byType) {
+		if (lower == e.name) {
+			out = fwm->GetFirmwareOfType(e.type, /*allowInternal*/ false);
+			if (!out) out = kATFirmwareId_NoKernel;
+			return true;
+		}
+	}
+
+	// Treat as a path / ref string. First try the registered set.
+	const VDStringW wraw = VDTextU8ToW(VDStringSpanA(raw.c_str()));
+	uint64 id = fwm->GetFirmwareByRefString(wraw.c_str(), ATIsKernelFirmwareType);
+	if (id) { out = id; return true; }
+
+	// Path is not registered yet — register it on the fly. The
+	// firmware manager keys by ATGetFirmwareIdFromPath() (a hash of
+	// the relative path), so AddFirmware is idempotent: the same
+	// path always gets the same id.
+	if (!VDDoesPathExist(wraw.c_str())) {
+		err = "kernel ROM not found: " + raw;
+		return false;
+	}
+	ATFirmwareInfo info{};
+	info.mPath = wraw;
+	info.mName = VDFileSplitPathRight(wraw);
+	info.mType = sim.GetHardwareMode() == kATHardwareMode_5200
+	             ? kATFirmwareType_Kernel5200
+	             : (sim.GetHardwareMode() == kATHardwareMode_800
+	                ? kATFirmwareType_Kernel800_OSB
+	                : kATFirmwareType_KernelXL);
+	info.mbVisible    = false;   // bridge-only entry
+	info.mbAutoselect = false;
+	info.mFlags       = kATFirmwareFlags_None;
+	info.mId          = ATGetFirmwareIdFromPath(wraw.c_str());
+	fwm->AddFirmware(info);
+	out = info.mId;
+	return true;
+}
+
+// Resolve a `CONFIG basicrom <value>` value to a firmware id.
+//
+// Accepts:
+//   - "default"  — clear the override
+//   - "atbasic"  — built-in AltirraOS BASIC
+//   - "reva", "revb", "revc"  — specific Atari BASIC versions
+//   - a filesystem path (registered on the fly, like kernel)
+//
+// On success returns true and writes the id (0 = default) into out.
+// Sets err and returns false otherwise.
+bool ResolveBasicRomArg(ATSimulator& sim, const std::string& raw,
+                        uint64_t& out, std::string& err) {
+	out = 0;
+
+	std::string lower;
+	lower.reserve(raw.size());
+	for (char c : raw) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+
+	ATFirmwareManager* fwm = sim.GetFirmwareManager();
+	if (!fwm) { err = "firmware manager unavailable"; return false; }
+
+	if (lower == "default") { out = 0;                            return true; }
+	if (lower == "atbasic") { out = kATFirmwareId_Basic_ATBasic;  return true; }
+
+	struct { const char* name; ATSpecificFirmwareType type; } byType[] = {
+		{ "reva",  kATSpecificFirmwareType_BASICRevA },
+		{ "revb",  kATSpecificFirmwareType_BASICRevB },
+		{ "revc",  kATSpecificFirmwareType_BASICRevC },
+	};
+	for (const auto& e : byType) {
+		if (lower == e.name) {
+			out = fwm->GetSpecificFirmware(e.type);
+			if (!out) out = kATFirmwareId_Basic_ATBasic;
+			return true;
+		}
+	}
+
+	const VDStringW wraw = VDTextU8ToW(VDStringSpanA(raw.c_str()));
+	uint64 id = fwm->GetFirmwareByRefString(wraw.c_str(),
+		[](ATFirmwareType type) { return type == kATFirmwareType_Basic; });
+	if (id) { out = id; return true; }
+
+	if (!VDDoesPathExist(wraw.c_str())) {
+		err = "BASIC ROM not found: " + raw;
+		return false;
+	}
+	ATFirmwareInfo info{};
+	info.mPath        = wraw;
+	info.mName        = VDFileSplitPathRight(wraw);
+	info.mType        = kATFirmwareType_Basic;
+	info.mbVisible    = false;
+	info.mbAutoselect = false;
+	info.mFlags       = kATFirmwareFlags_None;
+	info.mId          = ATGetFirmwareIdFromPath(wraw.c_str());
+	fwm->AddFirmware(info);
+	out = info.mId;
+	return true;
+}
+
 std::string BuildConfigPayload(ATSimulator& sim) {
 	IATDebugger* dbg = ATGetDebugger();
 	std::string payload;
@@ -292,6 +490,23 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 	payload += ',';
 	AddString(payload, "machine", HardwareModeToStr(sim.GetHardwareMode()));
 	AddString(payload, "memory",  MemoryModeToStr(sim.GetMemoryMode()));
+	AddString(payload, "video",   VideoStandardToStr(sim.GetVideoStandard()));
+	payload += "\"selftest\":";
+	payload += (sim.IsForcedSelfTest() ? "true" : "false");
+	payload += ',';
+	payload += "\"fastboot\":";
+	payload += (sim.IsFastBootEnabled() ? "true" : "false");
+	payload += ',';
+	payload += "\"fppatch\":";
+	payload += (sim.IsFPPatchEnabled() ? "true" : "false");
+	payload += ',';
+	// Kernel id (hex64). 0 = "default for hardware mode".
+	{
+		char buf[32];
+		std::snprintf(buf, sizeof buf, "\"kernel_id\":\"$%016llx\",",
+			(unsigned long long)sim.GetKernelId());
+		payload += buf;
+	}
 	payload += "\"debugbrkrun\":";
 	payload += (dbg && dbg->IsBreakOnEXERunAddrEnabled() ? "true" : "false");
 	return payload;
@@ -776,26 +991,306 @@ std::string CmdMount(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	return JsonOk(payload);
 }
 
+// ---------------------------------------------------------------------------
+// STATE_SAVE / STATE_LOAD — three modes:
+//
+//   STATE_SAVE <path>              file-mode (backward-compat positional)
+//   STATE_SAVE path=<path>         file-mode, explicit
+//   STATE_SAVE slot=<name>         in-memory slot (session-scope)
+//   STATE_SAVE inline=true         base64 blob in response
+//
+//   STATE_LOAD <path>              file-mode (backward-compat positional)
+//   STATE_LOAD path=<path>         file-mode, explicit
+//   STATE_LOAD slot=<name>         in-memory slot
+//   STATE_LOAD data=<base64>       inline blob in request
+//   STATE_LOAD inline=true data=…  same as data= (inline is implied)
+//
+// All modes are synchronous: the response carries the actual outcome
+// (size, cycle counter, machine type, PC). No FRAME N dance needed.
+//
+// Pause state is preserved by STATE_LOAD per the CLAUDE.md invariant.
+// Clients that want to resume after load issue RESUME explicitly.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Mode discriminator for STATE_SAVE/LOAD parsing.
+enum class StateMode { Path, Slot, Inline };
+
+struct StateArgs {
+	StateMode   mode = StateMode::Path;
+	std::string path;
+	std::string slot;
+	std::string data;   // base64 (load only)
+};
+
+// Parse the arg tokens for STATE_SAVE/STATE_LOAD. On error returns
+// false and writes an error sentence into err (without the verb
+// prefix -- caller prepends "STATE_SAVE:" / "STATE_LOAD:").
+bool ParseStateArgs(const std::vector<std::string>& tokens,
+                    bool loadDir,
+                    StateArgs& out,
+                    std::string& err) {
+	std::string pathArg, slotArg, dataArg;
+	bool        wantInline = false;
+	bool        anyKeyVal  = false;
+
+	for (size_t i = 1; i < tokens.size(); ++i) {
+		const std::string& tok = tokens[i];
+		std::string v;
+		if (MatchKey(tok, "path",   v)) { pathArg = v; anyKeyVal = true; continue; }
+		if (MatchKey(tok, "slot",   v)) { slotArg = v; anyKeyVal = true; continue; }
+		if (MatchKey(tok, "data",   v)) {
+			if (!loadDir) { err = "data= is only valid on STATE_LOAD"; return false; }
+			dataArg = v;
+			anyKeyVal = true;
+			continue;
+		}
+		if (MatchKey(tok, "inline", v)) { wantInline = IsTrueLiteral(v); anyKeyVal = true; continue; }
+		// If we've already seen key=value tokens, an unknown token is an error.
+		// If we haven't, fall through to the positional-path branch.
+		if (anyKeyVal || IsKeyValueToken(tok)) {
+			err = "unknown option: " + tok;
+			return false;
+		}
+	}
+
+	// Mutual exclusion: at most one of path/slot/inline+data may be set.
+	const int modes = (pathArg.empty() ? 0 : 1)
+	                + (slotArg.empty() ? 0 : 1)
+	                + ((wantInline || !dataArg.empty()) ? 1 : 0);
+	if (modes > 1) {
+		err = "specify at most one of path=, slot=, inline=true/data=";
+		return false;
+	}
+
+	// If we saw key=value tokens but no destination is set (e.g.
+	// "STATE_SAVE inline=false", "STATE_SAVE path=", "STATE_LOAD
+	// data="), that's a usage error -- DO NOT fall through to
+	// positional-path mode, which would treat the literal token as
+	// a filename.
+	if (anyKeyVal && modes == 0) {
+		err = (loadDir
+		       ? "no source specified (path=, slot=, or data=)"
+		       : "no destination specified (path=, slot=, or inline=true)");
+		return false;
+	}
+
+	if (!slotArg.empty()) {
+		out.mode = StateMode::Slot;
+		out.slot = slotArg;
+		return true;
+	}
+	if (wantInline || !dataArg.empty()) {
+		out.mode = StateMode::Inline;
+		out.data = dataArg;
+		return true;
+	}
+	if (!pathArg.empty()) {
+		out.mode = StateMode::Path;
+		out.path = pathArg;
+		return true;
+	}
+
+	// No key=value matched -- positional path mode for backward
+	// compatibility ("STATE_SAVE /tmp/foo.altstate"). JoinPath
+	// handles paths containing spaces.
+	out.mode = StateMode::Path;
+	out.path = JoinPath(tokens, 1);
+	if (out.path.empty()) {
+		err = (loadDir
+		       ? "usage: STATE_LOAD <path> | path=<path> | slot=<name> | data=<base64>"
+		       : "usage: STATE_SAVE <path> | path=<path> | slot=<name> | inline=true");
+		return false;
+	}
+	return true;
+}
+
+// stat() the file size for path-mode responses. Returns 0 on error.
+uint32_t FileSize(const std::string& path) {
+	try {
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
+		VDFileStream fs(wpath.c_str(), nsVDFile::kRead | nsVDFile::kDenyNone | nsVDFile::kOpenExisting);
+		const sint64 len = fs.Length();
+		return (len >= 0 && len <= (sint64)0xFFFFFFFF) ? (uint32_t)len : 0;
+	} catch (const MyError&) {
+		return 0;
+	}
+}
+
+}  // namespace
+
 std::string CmdStateSave(ATSimulator& sim, const std::vector<std::string>& tokens) {
-	if (tokens.size() < 2)
-		return JsonError("STATE_SAVE: usage: STATE_SAVE path");
-	std::string path = JoinPath(tokens, 1);
-	if (!ATBridgeDispatchStateSave(sim, path))
-		return JsonError("STATE_SAVE: dispatch failed");
+	StateArgs args;
+	std::string err;
+	if (!ParseStateArgs(tokens, /*loadDir=*/false, args, err))
+		return JsonError("STATE_SAVE: " + err);
+
+	if (args.mode == StateMode::Path) {
+		if (!ATBridgeDispatchStateSave(sim, args.path))
+			return JsonError("STATE_SAVE: failed to write " + args.path);
+		ATBridge::StateMetadata md;
+		ATBridge::CaptureLiveMetadata(sim, md);
+		md.size = FileSize(args.path);
+		std::string payload;
+		payload += "\"mode\":\"path\",";
+		AddString(payload, "path", args.path);
+		payload += ATBridge::FormatMetadataFields(md);
+		StripTrailingComma(payload);
+		return JsonOk(payload);
+	}
+
+	// Slot and inline both go through the memory-buffer path.
+	std::vector<uint8_t> blob;
+	ATBridge::StateMetadata md;
+	try {
+		ATBridge::SaveStateToBuffer(sim, blob, md);
+	} catch (const MyError& e) {
+		return JsonError(std::string("STATE_SAVE: serialize failed: ") + e.c_str());
+	}
+
+	if (args.mode == StateMode::Slot) {
+		ATBridge::SlotStore(args.slot, std::move(blob), md);
+		std::string payload;
+		payload += "\"mode\":\"slot\",";
+		AddString(payload, "slot", args.slot);
+		payload += ATBridge::FormatMetadataFields(md);
+		StripTrailingComma(payload);
+		return JsonOk(payload);
+	}
+
+	// Inline mode.
 	std::string payload;
-	AddString(payload, "path", path);
-	StripTrailingComma(payload);
+	payload += "\"mode\":\"inline\",";
+	payload += "\"encoding\":\"base64\",";
+	payload += ATBridge::FormatMetadataFields(md);
+	payload += "\"data\":\"";
+	payload += Base64Encode(blob.data(), blob.size());
+	payload += "\"";
 	return JsonOk(payload);
 }
 
 std::string CmdStateLoad(ATSimulator& sim, const std::vector<std::string>& tokens) {
-	if (tokens.size() < 2)
-		return JsonError("STATE_LOAD: usage: STATE_LOAD path");
-	std::string path = JoinPath(tokens, 1);
-	if (!ATBridgeDispatchStateLoad(sim, path))
-		return JsonError("STATE_LOAD: dispatch failed");
+	StateArgs args;
+	std::string err;
+	if (!ParseStateArgs(tokens, /*loadDir=*/true, args, err))
+		return JsonError("STATE_LOAD: " + err);
+
+	if (args.mode == StateMode::Path) {
+		if (!ATBridgeDispatchStateLoad(sim, args.path))
+			return JsonError("STATE_LOAD: failed to load " + args.path);
+		ATBridge::StateMetadata md;
+		ATBridge::CaptureLiveMetadata(sim, md);
+		md.size = FileSize(args.path);
+		std::string payload;
+		payload += "\"mode\":\"path\",";
+		AddString(payload, "path", args.path);
+		payload += ATBridge::FormatMetadataFields(md);
+		StripTrailingComma(payload);
+		return JsonOk(payload);
+	}
+
+	if (args.mode == StateMode::Slot) {
+		const auto* blob = ATBridge::SlotFind(args.slot);
+		if (!blob)
+			return JsonError("STATE_LOAD: no such slot: " + args.slot);
+		try {
+			if (!ATBridge::LoadStateFromBuffer(sim, blob->data(), blob->size()))
+				return JsonError("STATE_LOAD: deserialize failed");
+		} catch (const MyError& e) {
+			return JsonError(std::string("STATE_LOAD: ") + e.c_str());
+		}
+		ATBridge::StateMetadata md;
+		ATBridge::CaptureLiveMetadata(sim, md);
+		md.size = (uint32_t)blob->size();
+		std::string payload;
+		payload += "\"mode\":\"slot\",";
+		AddString(payload, "slot", args.slot);
+		payload += ATBridge::FormatMetadataFields(md);
+		StripTrailingComma(payload);
+		return JsonOk(payload);
+	}
+
+	// Inline mode: blob arrives base64-encoded in data=.
+	if (args.data.empty())
+		return JsonError("STATE_LOAD: inline mode requires data=<base64>");
+	std::vector<uint8_t> blob;
+	if (!Base64Decode(args.data, blob))
+		return JsonError("STATE_LOAD: invalid base64 in data=");
+	try {
+		if (!ATBridge::LoadStateFromBuffer(sim, blob.data(), blob.size()))
+			return JsonError("STATE_LOAD: deserialize failed");
+	} catch (const MyError& e) {
+		return JsonError(std::string("STATE_LOAD: ") + e.c_str());
+	}
+	ATBridge::StateMetadata md;
+	ATBridge::CaptureLiveMetadata(sim, md);
+	md.size = (uint32_t)blob.size();
 	std::string payload;
-	AddString(payload, "path", path);
+	payload += "\"mode\":\"inline\",";
+	payload += ATBridge::FormatMetadataFields(md);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// STATE_LIST  —  enumerate in-memory slots.
+// ---------------------------------------------------------------------------
+
+std::string CmdStateList(ATSimulator& /*sim*/, const std::vector<std::string>& /*tokens*/) {
+	const auto slots = ATBridge::SlotList();
+	std::string payload;
+	payload += "\"slots\":[";
+	bool first = true;
+	for (const auto& si : slots) {
+		if (!first) payload += ',';
+		first = false;
+		payload += '{';
+		AddString(payload, "name", si.name);
+		payload += ATBridge::FormatMetadataFields(si.metadata);
+		StripTrailingComma(payload);
+		payload += '}';
+	}
+	payload += "],\"count\":";
+	payload += std::to_string(slots.size());
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// STATE_DROP  —  remove one slot, or all of them.
+//
+//   STATE_DROP <name>      remove the named slot
+//   STATE_DROP slot=<name> ditto
+//   STATE_DROP all=true    remove every slot
+// ---------------------------------------------------------------------------
+
+std::string CmdStateDrop(ATSimulator& /*sim*/, const std::vector<std::string>& tokens) {
+	std::string slotArg;
+	bool        dropAll = false;
+	bool        anyKeyVal = false;
+
+	for (size_t i = 1; i < tokens.size(); ++i) {
+		const std::string& tok = tokens[i];
+		std::string v;
+		if (MatchKey(tok, "slot", v)) { slotArg = v; anyKeyVal = true; continue; }
+		if (MatchKey(tok, "all",  v)) { dropAll = IsTrueLiteral(v); anyKeyVal = true; continue; }
+		if (anyKeyVal || IsKeyValueToken(tok))
+			return JsonError("STATE_DROP: unknown option: " + tok);
+		// Positional name (for parity with STATE_SAVE/LOAD positional).
+		slotArg = tok;
+	}
+
+	size_t dropped = 0;
+	if (dropAll) {
+		dropped = ATBridge::SlotDropAll();
+	} else if (!slotArg.empty()) {
+		dropped = ATBridge::SlotDrop(slotArg) ? 1 : 0;
+	} else {
+		return JsonError("STATE_DROP: usage: STATE_DROP <name> | slot=<name> | all=true");
+	}
+
+	std::string payload;
+	AddU32(payload, "dropped", (uint32_t)dropped);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
 }
@@ -915,12 +1410,307 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		bool v = (rawVal == "true" || rawVal == "1" || rawVal == "on");
 		dbg->SetBreakOnEXERunAddrEnabled(v);
 	}
+	else if (key == "video") {
+		ATVideoStandard vs;
+		if (!StrToVideoStandard(rawVal, vs))
+			return JsonError("CONFIG: unknown video standard '" + rawVal +
+				"' (valid: ntsc, pal, secam, pal60, ntsc50)");
+		const bool wasPaused = sim.IsPaused();
+		sim.SetVideoStandard(vs);
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+	}
+	else if (key == "selftest") {
+		const bool v = IsTrueLiteral(rawVal);
+		sim.SetForcedSelfTest(v);
+	}
+	else if (key == "fastboot") {
+		const bool v = IsTrueLiteral(rawVal);
+		sim.SetFastBootEnabled(v);
+	}
+	else if (key == "fppatch") {
+		const bool v = IsTrueLiteral(rawVal);
+		sim.SetFPPatchEnabled(v);
+	}
+	else if (key == "kernel") {
+		uint64_t id = 0;
+		std::string err;
+		if (!ResolveKernelArg(sim, rawVal, id, err))
+			return JsonError("CONFIG: kernel: " + err);
+		const bool wasPaused = sim.IsPaused();
+		sim.SetKernel(id);
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+	}
+	else if (key == "basicrom") {
+		uint64_t id = 0;
+		std::string err;
+		if (!ResolveBasicRomArg(sim, rawVal, id, err))
+			return JsonError("CONFIG: basicrom: " + err);
+		ATFirmwareManager* fwm = sim.GetFirmwareManager();
+		if (fwm) {
+			// AltirraOS BASIC and revs go in via the typed slot;
+			// a custom path lands as a kATFirmwareType_Basic with
+			// a hashed id we just registered. Either way the
+			// "default BASIC for type" slot is the right plumbing.
+			fwm->SetDefaultFirmware(kATFirmwareType_Basic, id);
+		}
+		const bool wasPaused = sim.IsPaused();
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+	}
 	else {
 		return JsonError("CONFIG: unknown key '" + tokens[1] + "'");
 	}
 
 	// Return full config after set.
 	std::string payload = BuildConfigPayload(sim);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// EJECT  —  unmount a disk from one drive (or every drive).
+//
+// Usage:
+//   EJECT                  → eject from D1: (drive 0)
+//   EJECT drive=N          → eject from drive N (0..14, 0 = D1:)
+//   EJECT all=true         → eject from every drive (0..14)
+//
+// Differs from MOUNT'ing over an existing image: EJECT brings the
+// drive back to the "no disk inserted" state, which is meaningful for
+// boot tests (the kernel will skip the disk-boot phase) and for save
+// states (a cleanly-empty drive serialises differently from a drive
+// holding a stale image). Synchronous; no FRAME dance required.
+// ---------------------------------------------------------------------------
+
+std::string CmdEject(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	bool         all      = false;
+	bool         anyKeyVal= false;
+	int          drive    = 0;
+	bool         driveSet = false;
+
+	for (size_t i = 1; i < tokens.size(); ++i) {
+		std::string v;
+		if (MatchKey(tokens[i], "drive", v)) {
+			uint32_t d = 0;
+			if (!ParseUint(v, d) || d > 14)
+				return JsonError("EJECT: drive must be 0..14");
+			drive    = (int)d;
+			driveSet = true;
+			anyKeyVal = true;
+			continue;
+		}
+		if (MatchKey(tokens[i], "all", v)) {
+			all       = IsTrueLiteral(v);
+			anyKeyVal = true;
+			continue;
+		}
+		if (anyKeyVal || IsKeyValueToken(tokens[i]))
+			return JsonError("EJECT: unknown option: " + tokens[i]);
+		// Bare positional: accept as drive number for ergonomic
+		// "EJECT 2" call style.
+		uint32_t d = 0;
+		if (!ParseUint(tokens[i], d) || d > 14)
+			return JsonError("EJECT: drive must be 0..14");
+		drive    = (int)d;
+		driveSet = true;
+	}
+
+	if (all && driveSet)
+		return JsonError("EJECT: pass at most one of drive= / all=");
+
+	uint32_t ejected = 0;
+	if (all) {
+		for (int i = 0; i < 15; ++i) {
+			ATDiskInterface& di = sim.GetDiskInterface(i);
+			if (di.GetDiskImage()) { di.UnloadDisk(); ++ejected; }
+		}
+	} else {
+		ATDiskInterface& di = sim.GetDiskInterface(drive);
+		if (di.GetDiskImage()) { di.UnloadDisk(); ++ejected; }
+	}
+
+	std::string payload;
+	if (!all) AddU32(payload, "drive", (uint32_t)drive);
+	AddBool(payload, "all", all);
+	AddU32 (payload, "ejected", ejected);
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// CART_EJECT  —  remove the cartridge (primary + secondary slots).
+//
+// Use case: get back to "no cartridge inserted" without restarting the
+// process — necessary before booting an XEX that expects the cart
+// slot empty, or before testing a different cartridge from scratch.
+// Cold-resets the machine so the bus map reflects the change.
+//
+// 5200 console: removing the cart leaves the machine in the
+// "no cartridge" state. UnloadAll(...) would re-attach the built-in
+// NoCartridge ROM; CART_EJECT does not, so the bus stays bare. Use
+// FRESH for the full "factory reset" behaviour.
+//
+// Usage:
+//   CART_EJECT             → eject from slots 0 and 1
+//   CART_EJECT slot=N      → eject from slot N (0 = primary, 1 = secondary)
+// ---------------------------------------------------------------------------
+
+std::string CmdCartEject(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	int slot = -1;   // -1 = both
+
+	for (size_t i = 1; i < tokens.size(); ++i) {
+		std::string v;
+		if (MatchKey(tokens[i], "slot", v)) {
+			uint32_t s = 0;
+			if (!ParseUint(v, s) || s > 1)
+				return JsonError("CART_EJECT: slot must be 0 or 1");
+			slot = (int)s;
+			continue;
+		}
+		return JsonError("CART_EJECT: unknown option: " + tokens[i]);
+	}
+
+	const bool wasPaused = sim.IsPaused();
+	if (slot < 0) {
+		sim.UnloadCartridge(0);
+		sim.UnloadCartridge(1);
+	} else {
+		sim.UnloadCartridge((uint32_t)slot);
+	}
+	sim.ColdReset();
+	if (wasPaused) sim.Pause(); else sim.Resume();
+
+	std::string payload;
+	AddU32(payload, "slot", (uint32_t)(slot < 0 ? 0xFFFFFFFFu : slot));
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// FRESH  —  one-shot "factory reset" of the simulator.
+//
+// Clears every piece of session-scope state the bridge knows about,
+// then cold-resets. Designed for AI-agent loops doing 1000s of
+// iterations: prevents drift from leaked breakpoints / symbols /
+// profile state / dangling cart images across iterations.
+//
+// Usage:
+//   FRESH                      → wipe everything, cold-reset
+//   FRESH keep=KEYS            → preserve some categories (comma-sep)
+//
+// keep= categories (case-insensitive):
+//   bps       — leave PC breakpoints and watchpoints in place
+//   symbols   — leave SYM_LOAD modules in place
+//   profile   — leave profiler state in place
+//   verifier  — leave CPU verifier enabled with its current flags
+//   media     — leave currently-mounted disks/cart in place
+//   reset     — skip the trailing COLD_RESET (just clear bridge-side
+//               state; useful when the caller plans to apply CONFIG
+//               changes and reset themselves)
+//
+// What's always reset (no keep= preserves these): joystick state,
+// console switches, key matrix (the bridge's own injected input).
+// ---------------------------------------------------------------------------
+
+std::string CmdFresh(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	struct Keep {
+		bool bps      = false;
+		bool symbols  = false;
+		bool profile  = false;
+		bool verifier = false;
+		bool media    = false;
+		bool reset    = false;   // when true, SKIP the trailing ColdReset
+	} keep;
+
+	for (size_t i = 1; i < tokens.size(); ++i) {
+		std::string v;
+		if (!MatchKey(tokens[i], "keep", v))
+			return JsonError("FRESH: unknown option: " + tokens[i]);
+
+		// Split v by commas. Single category also accepted.
+		std::string cur;
+		v += ',';
+		for (char c : v) {
+			if (c == ',') {
+				// lowercase + trim
+				while (!cur.empty() && (cur.front() == ' ' || cur.front() == '\t')) cur.erase(cur.begin());
+				while (!cur.empty() && (cur.back()  == ' ' || cur.back()  == '\t')) cur.pop_back();
+				for (char& ch : cur)
+					if (ch >= 'A' && ch <= 'Z') ch += 32;
+				if      (cur == "bps")      keep.bps      = true;
+				else if (cur == "symbols")  keep.symbols  = true;
+				else if (cur == "profile")  keep.profile  = true;
+				else if (cur == "verifier") keep.verifier = true;
+				else if (cur == "media")    keep.media    = true;
+				else if (cur == "reset")    keep.reset    = true;
+				else if (!cur.empty())
+					return JsonError("FRESH: unknown keep category '" + cur +
+						"' (valid: bps, symbols, profile, verifier, media, reset)");
+				cur.clear();
+			} else {
+				cur += c;
+			}
+		}
+	}
+
+	const bool wasPaused = sim.IsPaused();
+
+	// Order matters here — we drop debugger/profiler/verifier state
+	// BEFORE cold-resetting the simulator, because some of these
+	// (verifier, breakpoint hits) attach to the CPU and a clean
+	// teardown order avoids spurious final-step callbacks.
+	uint32_t bpsCleared    = 0;
+	uint32_t symsCleared   = 0;
+	bool     profileWasOn  = false;
+	bool     verifierWasOn = false;
+
+	if (!keep.bps) {
+		IATDebugger* dbg = ATGetDebugger();
+		if (dbg) {
+			IATDebuggerSymbolLookup* sl = ATGetDebuggerSymbolLookup();
+			(void)sl;
+			// We don't have a count API; report 0 unless we add one.
+			// The CmdBpClearAll path clears every user breakpoint.
+			ATGetDebugger()->ClearAllBreakpoints();
+			bpsCleared = 1; // sentinel: "we tried"
+		}
+	}
+	if (!keep.symbols) {
+		BridgeSymClearAllInternal();
+		symsCleared = 1;   // sentinel
+	}
+	if (!keep.profile) {
+		BridgeProfileResetInternal(sim);
+		profileWasOn = true;
+	}
+	if (!keep.verifier) {
+		BridgeVerifierResetInternal(sim);
+		verifierWasOn = true;
+	}
+
+	if (!keep.media) {
+		sim.UnloadAll();
+	}
+
+	// Always cleanly release injected input — the agent loop should
+	// see a centred joystick and released console switches after
+	// FRESH no matter what.
+	CleanupInjectedInput(sim);
+
+	if (!keep.reset) {
+		sim.ColdReset();
+	}
+	if (wasPaused) sim.Pause(); else sim.Resume();
+
+	std::string payload;
+	AddBool(payload, "kept_bps",      keep.bps);
+	AddBool(payload, "kept_symbols",  keep.symbols);
+	AddBool(payload, "kept_profile",  keep.profile);
+	AddBool(payload, "kept_verifier", keep.verifier);
+	AddBool(payload, "kept_media",    keep.media);
+	AddBool(payload, "reset_skipped", keep.reset);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
 }

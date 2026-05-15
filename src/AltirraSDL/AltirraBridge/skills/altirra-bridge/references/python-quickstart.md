@@ -96,8 +96,25 @@ a.boot("/path/to/game.xex"); a.frame(120)
 a.mount(0, "/path/to/disk.atr")          # D1:
 a.cold_reset()                           # preserves pause state
 a.warm_reset()
-a.state_save("/tmp/save.altstate"); a.frame(1)
-a.state_load("/tmp/save.altstate"); a.frame(1)
+
+# Save states -- three modes, all synchronous.
+a.state_save("/tmp/save.altstate2")      # path mode (file on server)
+a.state_save(slot="checkpoint")          # slot mode (in-memory)
+r = a.state_save(inline=True)            # inline mode -- r["data"] is bytes
+a.state_load("/tmp/save.altstate2")
+a.state_load(slot="checkpoint")
+a.state_load(data=r["data"])
+
+# Auto-rewinding checkpoint context manager (the workhorse for
+# analysis loops -- save, probe, rewind, repeat).
+with a.checkpoint() as cp:
+    a.poke(0x80, 0xff)
+    a.frame(60)
+    # block exit: simulator is back at the saved state.
+
+a.state_list()                           # enumerate slots
+a.state_drop("checkpoint")               # remove one
+a.state_drop(all=True)                   # remove every slot
 
 # Simulator configuration — query or set
 cfg = a.config()                         # all keys
@@ -107,11 +124,13 @@ a.config("memory", "48K")                # set 48K RAM (triggers reset)
 a.config("debugbrkrun", "true")          # break at EXE run address
 ```
 
-Async commands (`boot`, `mount`, `state_save`, `state_load`) are
-queued via the SDL3 deferred-action system in `AltirraSDL --bridge`,
-or executed inline in `AltirraBridgeServer`. Either way, issue
-`frame(N)` afterwards to wait for the action to complete before
-reading state.
+`boot` and `mount` are async on `AltirraSDL --bridge` (they queue
+to the SDL3 deferred-action system; use `frame(N)` to wait for the
+cold-reset and OS init to settle). Everything else, including
+every `state_*` call, is synchronous on both targets.
+
+`state_load` preserves pause state -- a paused simulator stays
+paused after the load. Call `a.resume()` if you want execution.
 
 ## Rendering
 

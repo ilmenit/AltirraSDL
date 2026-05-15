@@ -811,8 +811,72 @@ int atb_mount(atb_client_t* c, unsigned int drive, const char* path) {
 
 int atb_cold_reset(atb_client_t* c) { return atb_simple_cmd(c, "COLD_RESET"); }
 int atb_warm_reset(atb_client_t* c) { return atb_simple_cmd(c, "WARM_RESET"); }
-int atb_state_save(atb_client_t* c, const char* path) { return atb_cmd_with_path(c, "STATE_SAVE", path); }
-int atb_state_load(atb_client_t* c, const char* path) { return atb_cmd_with_path(c, "STATE_LOAD", path); }
+/* Forward decl -- defined below in the Phase 4 (rendering) block but
+ * also used by atb_state_save_inline above it.  Keeps the rendering
+ * code's locality without forcing it to move. */
+static int atb_decode_inline_data(atb_client_t* c, unsigned char** out_buf, size_t* out_len);
+
+/* --------------------------------------------------------------------- */
+/* Save states.                                                           */
+/*                                                                        */
+/* Backward-compat: the un-suffixed atb_state_save/atb_state_load are     */
+/* thin shims for the _path variants.                                     */
+/* --------------------------------------------------------------------- */
+
+int atb_state_save(atb_client_t* c, const char* path)      { return atb_cmd_with_path(c, "STATE_SAVE", path); }
+int atb_state_load(atb_client_t* c, const char* path)      { return atb_cmd_with_path(c, "STATE_LOAD", path); }
+int atb_state_save_path(atb_client_t* c, const char* path) { return atb_cmd_with_path(c, "STATE_SAVE", path); }
+int atb_state_load_path(atb_client_t* c, const char* path) { return atb_cmd_with_path(c, "STATE_LOAD", path); }
+
+/* Slot mode -- single positional name argument. */
+static int atb_state_kv(atb_client_t* c, const char* verb, const char* key, const char* value) {
+	if (!verb || !key || !value) return ATB_ERR_BAD_ARG;
+	size_t need = strlen(verb) + 1 + strlen(key) + 1 + strlen(value) + 1;
+	char* cmd = (char*)malloc(need);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	snprintf(cmd, need, "%s %s=%s", verb, key, value);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
+int atb_state_save_slot(atb_client_t* c, const char* slot) { return atb_state_kv(c, "STATE_SAVE", "slot", slot); }
+int atb_state_load_slot(atb_client_t* c, const char* slot) { return atb_state_kv(c, "STATE_LOAD", "slot", slot); }
+
+int atb_state_save_inline(atb_client_t* c,
+                          unsigned char** out_blob,
+                          size_t*         out_len) {
+	if (!out_blob || !out_len) return ATB_ERR_BAD_ARG;
+	*out_blob = NULL;
+	*out_len  = 0;
+	int rc = atb_simple_cmd(c, "STATE_SAVE inline=true");
+	if (rc != ATB_OK) return rc;
+	return atb_decode_inline_data(c, out_blob, out_len);
+}
+
+int atb_state_load_inline(atb_client_t* c,
+                          const unsigned char* blob,
+                          size_t               blob_len) {
+	if (!blob || blob_len == 0) return ATB_ERR_BAD_ARG;
+	/* "STATE_LOAD data=<base64>" -- preallocate accordingly. */
+	size_t b64_size = (blob_len + 2) / 3 * 4 + 1;
+	size_t cmd_size = 32 + b64_size;
+	char* cmd = (char*)malloc(cmd_size);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	int n = snprintf(cmd, 32, "STATE_LOAD data=");
+	atb_base64_encode(blob, blob_len, cmd + n);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
+int atb_state_drop(atb_client_t* c, const char* slot) {
+	/* slot == NULL drops every slot. Use the explicit "slot=NAME"
+	 * form so names containing '=' aren't reinterpreted by the
+	 * server's key=value parser. */
+	if (!slot) return atb_simple_cmd(c, "STATE_DROP all=true");
+	return atb_state_kv(c, "STATE_DROP", "slot", slot);
+}
 
 /* --------------------------------------------------------------------- */
 /* Phase 4 — rendering                                                    */

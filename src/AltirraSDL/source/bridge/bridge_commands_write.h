@@ -49,12 +49,21 @@ std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdBootBare(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdMount(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdEject(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdCartEject(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 std::string CmdColdReset(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdWarmReset(ATSimulator& sim, const std::vector<std::string>& tokens);
 
+// FRESH — single-shot "factory reset" of the simulator. Clears every
+// piece of session-scope state the bridge knows about and cold-resets
+// the machine. See implementation for the precise `keep=` taxonomy.
+std::string CmdFresh(ATSimulator& sim, const std::vector<std::string>& tokens);
+
 std::string CmdStateSave(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdStateLoad(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdStateList(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdStateDrop(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens);
 

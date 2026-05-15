@@ -299,10 +299,15 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "BOOT")       return CmdBoot(sim, tokens);
 	if (verb == "BOOT_BARE")  return CmdBootBare(sim, tokens);
 	if (verb == "MOUNT")      return CmdMount(sim, tokens);
+	if (verb == "EJECT")      return CmdEject(sim, tokens);
+	if (verb == "CART_EJECT") return CmdCartEject(sim, tokens);
 	if (verb == "COLD_RESET") return CmdColdReset(sim, tokens);
 	if (verb == "WARM_RESET") return CmdWarmReset(sim, tokens);
+	if (verb == "FRESH")      return CmdFresh(sim, tokens);
 	if (verb == "STATE_SAVE") return CmdStateSave(sim, tokens);
 	if (verb == "STATE_LOAD") return CmdStateLoad(sim, tokens);
+	if (verb == "STATE_LIST") return CmdStateList(sim, tokens);
+	if (verb == "STATE_DROP") return CmdStateDrop(sim, tokens);
 	if (verb == "CONFIG")     return CmdConfig(sim, tokens);
 
 	// Phase 4: rendering commands
@@ -328,6 +333,8 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "BP_LIST")           return CmdBpList        (sim, tokens);
 	if (verb == "WATCH_SET")         return CmdWatchSet      (sim, tokens);
 	if (verb == "SYM_LOAD")          return CmdSymLoad       (sim, tokens);
+	if (verb == "SYM_UNLOAD")        return CmdSymUnload     (sim, tokens);
+	if (verb == "SYM_CLEAR_ALL")     return CmdSymClearAll   (sim, tokens);
 	if (verb == "SYM_RESOLVE")       return CmdSymResolve    (sim, tokens);
 	if (verb == "SYM_LOOKUP")        return CmdSymLookup     (sim, tokens);
 	if (verb == "MEMSEARCH")         return CmdMemSearch     (sim, tokens);

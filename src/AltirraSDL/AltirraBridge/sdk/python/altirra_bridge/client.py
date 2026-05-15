@@ -7,11 +7,14 @@ Threading model: not thread-safe. Use one AltirraBridge per thread.
 
 from __future__ import annotations
 
+import base64
+import contextlib
 import json
 import os
+import secrets
 import socket
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Iterator, List, Optional
 
 
 @dataclass
@@ -41,6 +44,48 @@ class RawFrame:
             out[i + 2] = b
             out[i + 3] = 0xFF
         return bytes(out)
+
+
+@dataclass
+class Checkpoint:
+    """A handle to an in-memory save-state slot.
+
+    Yielded by :meth:`AltirraBridge.checkpoint` inside a ``with``
+    block. The context manager automatically rewinds the simulator
+    to this slot on exit (and drops the slot if it was anonymous).
+
+    Attributes:
+        slot:  the slot name (synthetic UUID for anonymous slots)
+        info:  the response dict from STATE_SAVE — has keys
+               ``size``, ``cycle``, ``pc``, ``machine``, ``memory``,
+               ``basic``, plus ``mode`` / ``slot``.
+    """
+    slot: str
+    info: dict
+    _bridge: Optional["AltirraBridge"] = None  # set by checkpoint(); private
+    _auto_drop: bool = False
+    _suppress_rewind: bool = False
+
+    def rewind(self) -> dict:
+        """Rewind the simulator to this checkpoint now. Useful when
+        you want to rewind mid-block without exiting the ``with``."""
+        if self._bridge is None:
+            raise BridgeError("Checkpoint not attached to a bridge")
+        return self._bridge.state_load(slot=self.slot)
+
+    def keep(self) -> None:
+        """Skip the auto-rewind at block exit. Call this when an
+        experiment succeeded and you want the simulator to stay in the
+        post-experiment state. The slot is still dropped on exit if it
+        was anonymous (call :meth:`pin` to keep both)."""
+        self._suppress_rewind = True
+
+    def pin(self) -> None:
+        """Promote an anonymous checkpoint to a kept slot. After
+        ``pin()``, the slot survives block exit; use ``state_drop()``
+        to remove it later. The auto-rewind still fires unless you
+        also called :meth:`keep`."""
+        self._auto_drop = False
 
 
 class BridgeError(Exception):
@@ -478,16 +523,195 @@ class AltirraBridge:
         """Warm-reset the simulator (Reset key). Preserves pause state."""
         return self._cmd_ok("WARM_RESET")
 
-    def state_save(self, path: str) -> dict:
-        """Save the simulator snapshot to ``path``. Async via the
-        deferred-action queue; issue ``frame(1)`` to wait for the
-        write to complete.
-        """
-        return self._cmd_ok(f"STATE_SAVE {path}")
+    # ------------------------------------------------------------------
+    # Save states.
+    #
+    # Three modes, exactly one per call:
+    #
+    #   state_save(path)              -> .altstate2 file on the server
+    #   state_save(slot="name")       -> in-memory slot, session-scope
+    #   state_save(inline=True)       -> raw blob bytes in result["data"]
+    #
+    #   state_load(path)              <- .altstate2 file
+    #   state_load(slot="name")       <- in-memory slot
+    #   state_load(data=blob_bytes)   <- inline blob (bytes)
+    #
+    # All three modes are synchronous: by the time the call returns,
+    # the snapshot has been written or applied. No frame(1) gating
+    # needed.
+    #
+    # Pause state is preserved across STATE_LOAD (paused stays
+    # paused, running stays running). The captured snapshot's
+    # running flag is intentionally not honoured -- call
+    # :meth:`pause` or :meth:`resume` explicitly after the load if
+    # you need a particular state.
+    # ------------------------------------------------------------------
 
-    def state_load(self, path: str) -> dict:
-        """Load a previously-saved snapshot from ``path``. Async."""
-        return self._cmd_ok(f"STATE_LOAD {path}")
+    def state_save(
+        self,
+        path: Optional[str] = None,
+        *,
+        slot: Optional[str] = None,
+        inline: bool = False,
+    ) -> dict:
+        """Save the simulator snapshot. Specify exactly one destination.
+
+        Args:
+            path:    server-side file path (use the backward-compatible
+                     positional form). The serialized format is the
+                     same .altstate2 that AltirraSDL's File > Save State
+                     menu writes.
+            slot:    in-memory slot name. Session-scope -- slots are
+                     dropped when the server exits or on
+                     :meth:`state_drop`. Free of disk I/O.
+            inline:  if True, return the raw blob in ``result["data"]``
+                     (bytes, already base64-decoded). Useful when the
+                     client and server don't share a filesystem
+                     (Android adb forward, remote ssh).
+
+        Returns:
+            A dict with the response fields plus, for inline mode,
+            ``data`` containing the raw bytes (already decoded). Keys
+            include ``mode``, ``size``, ``cycle``, ``pc``, ``machine``,
+            ``memory``, ``basic``.
+        """
+        modes = int(path is not None) + int(slot is not None) + int(inline)
+        if modes != 1:
+            raise BridgeError(
+                "state_save: specify exactly one of path, slot=, inline=True"
+            )
+        if path is not None:
+            r = self._cmd_ok(f"STATE_SAVE {path}")
+        elif slot is not None:
+            r = self._cmd_ok(f"STATE_SAVE slot={slot}")
+        else:
+            r = self._cmd_ok("STATE_SAVE inline=true")
+            # Decode base64 for the caller so r["data"] is bytes.
+            if "data" in r and isinstance(r["data"], str):
+                r["data"] = base64.b64decode(r["data"])
+        return r
+
+    def state_load(
+        self,
+        path: Optional[str] = None,
+        *,
+        slot: Optional[str] = None,
+        data: Optional[bytes] = None,
+    ) -> dict:
+        """Load a previously-saved snapshot. Specify exactly one source.
+
+        Args:
+            path:  server-side file path.
+            slot:  in-memory slot name (see :meth:`state_save`).
+            data:  raw .altstate2 bytes (e.g. the ``data`` field from
+                   a previous ``state_save(inline=True)``).
+
+        Returns:
+            A dict with the response fields. Pause state is preserved
+            -- call :meth:`resume` after if you want execution.
+        """
+        modes = int(path is not None) + int(slot is not None) + int(data is not None)
+        if modes != 1:
+            raise BridgeError(
+                "state_load: specify exactly one of path, slot=, data="
+            )
+        if path is not None:
+            return self._cmd_ok(f"STATE_LOAD {path}")
+        if slot is not None:
+            return self._cmd_ok(f"STATE_LOAD slot={slot}")
+        # Inline data — base64-encode in transit.
+        b64 = base64.b64encode(data).decode("ascii")
+        return self._cmd_ok(f"STATE_LOAD data={b64}")
+
+    def state_list(self) -> List[dict]:
+        """Enumerate the in-memory slot store. Returns a list of dicts
+        each with ``name``, ``size``, ``cycle``, ``pc``, ``machine``,
+        ``memory``, ``basic`` -- sorted by name."""
+        r = self._cmd_ok("STATE_LIST")
+        return r.get("slots", [])
+
+    def state_drop(
+        self,
+        name: Optional[str] = None,
+        *,
+        all: bool = False,
+    ) -> int:
+        """Drop one slot, or every slot.
+
+        Args:
+            name:  the slot to drop (passed positionally or as the
+                   first keyword). Mutually exclusive with ``all``.
+            all:   if True, drop every slot.
+
+        Returns:
+            The number of slots that were removed.
+        """
+        if all and name is not None:
+            raise BridgeError("state_drop: pass name OR all=True, not both")
+        if all:
+            r = self._cmd_ok("STATE_DROP all=true")
+        elif name is not None:
+            # Use the explicit slot= form so slot names containing
+            # '=' don't get reinterpreted by the server's key=value
+            # parser.
+            r = self._cmd_ok(f"STATE_DROP slot={name}")
+        else:
+            raise BridgeError("state_drop: pass a slot name, or all=True")
+        return int(r.get("dropped", 0))
+
+    @contextlib.contextmanager
+    def checkpoint(self, name: Optional[str] = None) -> Iterator[Checkpoint]:
+        """Save state, yield a :class:`Checkpoint`, auto-rewind on exit.
+
+        The canonical "save / probe / rewind" loop for analysis::
+
+            with bridge.checkpoint() as cp:
+                bridge.poke(0x80, 0xFF)     # poke something interesting
+                bridge.frame(60)
+                print("PC =", bridge.regs()["pc"])
+            # block exits -> simulator is back at the saved state,
+            # the anonymous slot has been dropped.
+
+        Named checkpoints persist after the block. They still auto-
+        rewind on exit (use ``cp.keep()`` to suppress) but are NOT
+        auto-dropped, so you can reload them later::
+
+            with bridge.checkpoint("level_2") as cp:
+                ... # block does its thing
+            # rewound back to level_2 start, slot 'level_2' still in store.
+            bridge.state_load(slot="level_2")  # rewind again later.
+
+        Nested checkpoints are fine; each yields its own slot.
+
+        Raises:
+            BridgeError: if the save fails.
+        """
+        auto_drop = (name is None)
+        slot_name = name if name is not None else f"_cp_{secrets.token_hex(6)}"
+        info = self.state_save(slot=slot_name)
+        cp = Checkpoint(
+            slot=slot_name,
+            info=info,
+            _bridge=self,
+            _auto_drop=auto_drop,
+            _suppress_rewind=False,
+        )
+        try:
+            yield cp
+        finally:
+            if not cp._suppress_rewind:
+                try:
+                    self.state_load(slot=cp.slot)
+                except BridgeError:
+                    # If the slot got dropped externally we don't
+                    # want to mask the user's own exception. The
+                    # rewind is best-effort.
+                    pass
+            if cp._auto_drop:
+                try:
+                    self.state_drop(cp.slot)
+                except BridgeError:
+                    pass
 
     def config(self, key: Optional[str] = None,
                value: Optional[str] = None) -> dict:
