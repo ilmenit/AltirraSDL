@@ -11,6 +11,10 @@
 # BMP range that always encodes to exactly three UTF-8 bytes), so the
 # emitted macros can be concatenated with plain C string literals.
 
+if(POLICY CMP0057)
+    cmake_policy(SET CMP0057 NEW)
+endif()
+
 if(NOT DEFINED INPUT OR NOT DEFINED OUTPUT)
     message(FATAL_ERROR "gen_icon_codepoints.cmake: INPUT and OUTPUT required")
 endif()
