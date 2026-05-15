@@ -3780,8 +3780,62 @@
         const j = await r.json();
         HOST_CONFIG = j;
         if (Array.isArray(j.gamePacks)) {
-          GAME_PACKS = j.gamePacks.filter(p => p && typeof p.url === 'string');
-          jlog('host-config: ' + GAME_PACKS.length + ' game pack(s) configured');
+          const declared = j.gamePacks
+            .filter(p => p && typeof p.url === 'string');
+          // HEAD pre-flight every declared pack URL in parallel and
+          // keep only the reachable ones, so the wizard never offers a
+          // pack the operator can't actually deliver (404 / CORS-blocked
+          // / dead origin).  Without this, the user would only discover
+          // the broken URL after clicking "Install pack" and watching
+          // the download fail mid-flight.
+          //
+          // Cost: one HEAD per pack at startup, fired concurrently —
+          // typically <100 ms total for the whole batch.  Worst case
+          // (one dead URL with no quick TCP RST) is capped by the 5s
+          // AbortController timeout, so a single broken pack can't
+          // stall startup for long.
+          //
+          // We treat any non-ok HTTP response (404/5xx/etc.) AND any
+          // network error (CORS rejection, TLS failure, abort/timeout)
+          // as "unreachable".  This is the same notion of reachability
+          // installGamePack uses for the actual fetch, so the gate
+          // here matches downstream behaviour.
+          if (declared.length === 0) {
+            GAME_PACKS = [];
+          } else {
+            jlog('host-config: ' + declared.length
+              + ' game pack(s) declared — pre-flighting…');
+            const checkPack = async (p) => {
+              const ctrl  = new AbortController();
+              const timer = setTimeout(() => ctrl.abort(), 5000);
+              try {
+                const r = await fetch(p.url, {
+                  method: 'HEAD',
+                  cache:  'no-cache',
+                  signal: ctrl.signal,
+                });
+                if (r.ok) {
+                  jlog('host-config: pack OK [' + r.status + ']: ' + p.url);
+                  return p;
+                }
+                jlog('host-config: pack DROP [HTTP ' + r.status + ']: ' + p.url);
+                return null;
+              } catch (e) {
+                const reason = (e && e.name === 'AbortError')
+                  ? 'timeout'
+                  : (e && e.message ? e.message : 'network');
+                jlog('host-config: pack DROP [' + reason + ']: ' + p.url);
+                return null;
+              } finally {
+                clearTimeout(timer);
+              }
+            };
+            const settled = await Promise.all(declared.map(checkPack));
+            GAME_PACKS = settled.filter(p => p !== null);
+            const dropped = declared.length - GAME_PACKS.length;
+            jlog('host-config: ' + GAME_PACKS.length + ' game pack(s) reachable'
+              + (dropped > 0 ? ' (' + dropped + ' dropped)' : ''));
+          }
         }
         if (typeof j.firmwareUrl === 'string' && j.firmwareUrl) {
           jlog('host-config: firmwareUrl override = ' + j.firmwareUrl);
