@@ -15,7 +15,7 @@
 #include "bridge_protocol.h"
 #include "bridge_transport.h"
 
-#include "logging.h"
+#include "bridge_logging.h"
 #include "simulator.h"
 
 // Defined in main_sdl3.cpp; flips g_running to false so the SDL3 main
@@ -139,7 +139,7 @@ void WriteTokenFile(const std::string& path,
                     const std::string& boundDescription) {
 	FILE* fp = std::fopen(path.c_str(), "w");
 	if (!fp) {
-		LOG_ERROR("Bridge", "Could not write token file %s", path.c_str());
+		BRIDGE_LOG_ERROR("Bridge", "Could not write token file %s", path.c_str());
 		return;
 	}
 	std::fprintf(fp, "%s\n%s\n", boundDescription.c_str(), token.c_str());
@@ -196,6 +196,48 @@ void OnClientDisconnected(ATSimulator& sim) {
 // Phase 1 command dispatch
 // ---------------------------------------------------------------------------
 
+bool ShouldLogCommand(const std::string& verb) {
+	return verb == "PAUSE" || verb == "RESUME" || verb == "FRAME"
+		|| verb == "QUIT" || verb == "POKE" || verb == "POKE16"
+		|| verb == "HWPOKE" || verb == "MEMLOAD" || verb == "JOY"
+		|| verb == "KEY" || verb == "CONSOL" || verb == "BOOT"
+		|| verb == "BOOT_BARE" || verb == "MOUNT" || verb == "EJECT"
+		|| verb == "CART_EJECT" || verb == "COLD_RESET"
+		|| verb == "WARM_RESET" || verb == "FRESH"
+		|| verb == "STATE_SAVE" || verb == "STATE_LOAD"
+		|| verb == "STATE_DROP" || verb == "CONFIG"
+		|| verb == "SCREENSHOT" || verb == "RAWSCREEN"
+		|| verb == "RENDER_FRAME" || verb == "PALETTE_LOAD_ACT"
+		|| verb == "PALETTE_RESET" || verb == "BP_SET"
+		|| verb == "BP_CLEAR" || verb == "BP_CLEAR_ALL"
+		|| verb == "WATCH_SET" || verb == "SYM_LOAD"
+		|| verb == "SYM_UNLOAD" || verb == "SYM_CLEAR_ALL"
+		|| verb == "PROFILE_START" || verb == "PROFILE_STOP"
+		|| verb == "VERIFIER_SET";
+}
+
+void LogCommandStart(const std::vector<std::string>& tokens) {
+	if (tokens.empty() || !ShouldLogCommand(tokens[0]))
+		return;
+
+	std::string summary = tokens[0];
+	const size_t maxTokens = tokens[0] == "MEMLOAD" ? 3 : 5;
+	for (size_t i = 1; i < tokens.size() && i < maxTokens; ++i) {
+		summary += ' ';
+		if (tokens[0] == "MEMLOAD" && i == 2) {
+			summary += "<base64:";
+			summary += std::to_string(tokens[i].size());
+			summary += " chars>";
+		} else {
+			summary += tokens[i];
+		}
+	}
+	if (tokens.size() > maxTokens)
+		summary += " ...";
+
+	BRIDGE_LOG_INFO("Bridge", "command: %s", summary.c_str());
+}
+
 std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	auto tokens = TokenizeCommand(line);
 	if (tokens.empty())
@@ -208,10 +250,11 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 		if (tokens.size() < 2)
 			return JsonError("HELLO requires <token>");
 		if (tokens[1] != g_state.token) {
-			LOG_INFO("Bridge", "HELLO with wrong token from client (rejecting)");
+			BRIDGE_LOG_INFO("Bridge", "HELLO with wrong token from client (rejecting)");
 			return JsonError("bad token");
 		}
 		g_state.authenticated = true;
+		BRIDGE_LOG_INFO("Bridge", "HELLO accepted");
 		// Echo a small payload so the client can confirm and pin the
 		// protocol version it's talking to.
 		return JsonOk(
@@ -223,6 +266,8 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	// Everything else requires authentication.
 	if (!g_state.authenticated)
 		return JsonError("auth required");
+
+	LogCommandStart(tokens);
 
 	if (verb == "PING") {
 		return JsonOk();
@@ -355,7 +400,7 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 // without ever sending '\n' until OOM.
 bool AppendRecvBytes(ATSimulator& sim, const char* buf, size_t got) {
 	if (g_state.recvBuf.size() + got > ServerState::kMaxRecvBuf) {
-		LOG_ERROR("Bridge", "client exceeded inbound buffer cap (%zu bytes); dropping",
+		BRIDGE_LOG_ERROR("Bridge", "client exceeded inbound buffer cap (%zu bytes); dropping",
 			ServerState::kMaxRecvBuf);
 		g_state.transport.DropClient();
 		OnClientDisconnected(sim);
@@ -406,6 +451,15 @@ bool TryDispatchOneLine(ATSimulator& sim) {
 	}
 
 	std::string response = DispatchCommand(line, sim);
+	if (response.rfind("{\"ok\":false", 0) == 0) {
+		std::string logLine = line;
+		if (logLine.size() > 256) {
+			logLine.resize(256);
+			logLine += "...";
+		}
+		BRIDGE_LOG_ERROR("Bridge", "command failed: %s -> %s",
+			logLine.c_str(), response.c_str());
+	}
 	IoResult sr = g_state.transport.SendAll(response.data(), response.size());
 	if (sr == IoResult::Error) {
 		g_state.transport.DropClient();
@@ -421,13 +475,16 @@ bool TryDispatchOneLine(ATSimulator& sim) {
 // ---------------------------------------------------------------------------
 
 bool Init(const std::string& addrSpec) {
+	ATBridgeLog::Init();
+
 	if (g_state.enabled) {
-		LOG_INFO("Bridge", "Init called twice; ignoring");
+		BRIDGE_LOG_INFO("Bridge", "Init called twice; ignoring");
 		return true;
 	}
 
 	if (!g_state.transport.Listen(addrSpec, g_state.boundDescription)) {
-		LOG_ERROR("Bridge", "Listen() failed for spec '%s'", addrSpec.c_str());
+		BRIDGE_LOG_ERROR("Bridge", "Listen() failed for spec '%s'", addrSpec.c_str());
+		ATBridgeLog::Shutdown();
 		return false;
 	}
 
@@ -442,12 +499,13 @@ bool Init(const std::string& addrSpec) {
 	}
 	WriteTokenFile(g_state.tokenFilePath, g_state.token, g_state.boundDescription);
 
-	// Two banner lines on stderr (LOG_INFO routes there). Stdout is
-	// reserved for any future emulator output that a client might
-	// want to capture.
-	LOG_INFO("Bridge", "listening on %s", g_state.boundDescription.c_str());
-	LOG_INFO("Bridge", "token-file: %s", g_state.tokenFilePath.c_str());
-	LOG_INFO("Bridge", "token: %s", g_state.token.c_str());
+	// Banner lines on stderr. Stdout is reserved for any future
+	// emulator output that a client might want to capture. The token
+	// itself is intentionally not written to the persistent log.
+	BRIDGE_LOG_INFO("Bridge", "listening on %s", g_state.boundDescription.c_str());
+	BRIDGE_LOG_INFO("Bridge", "token-file: %s", g_state.tokenFilePath.c_str());
+	BRIDGE_LOG_INFO("Bridge", "log-file: %s", ATBridgeLog::GetPath());
+	std::fprintf(stderr, "[Bridge] token: %s\n", g_state.token.c_str());
 
 	g_state.enabled = true;
 	g_state.authenticated = false;
@@ -469,7 +527,8 @@ void Shutdown(ATSimulator& sim) {
 	g_state.authenticated = false;
 	g_state.framesRemaining = 0;
 	g_state.recvBuf.clear();
-	LOG_INFO("Bridge", "shutdown");
+	BRIDGE_LOG_INFO("Bridge", "shutdown");
+	ATBridgeLog::Shutdown();
 }
 
 void Poll(ATSimulator& sim, ATUIState& /*ui*/) {

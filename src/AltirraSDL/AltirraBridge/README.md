@@ -37,12 +37,19 @@ from altirra_bridge import AltirraBridge
 
 with AltirraBridge.from_token_file("/tmp/altirra-bridge-12345.token") as a:
     a.boot("game.xex")          # load an Atari executable
-    a.frame(120)                # advance 120 frames (~2 seconds)
+    a.frame(240)                # wait for OS boot + XEX loader
     a.key("SPACE")              # press SPACE
     a.frame(60)
     png = a.screenshot()        # capture the current frame
     open("title.png", "wb").write(png)
 ```
+
+`BOOT` starts a normal Atari OS boot. It returns after the media has
+been accepted by the emulator, not after the program's RUNAD has
+executed. Always wait with `frame(N)` before peeking RAM or taking a
+screenshot; sleeping in Python does not advance a paused emulator. Many
+XEX files need more than 120 frames from cold boot, especially on PAL
+or when the current profile disables fast boot.
 
 The same thing in C, Lua, Rust, or anything else that speaks
 newline-terminated JSON over a TCP socket — the wire protocol is
@@ -75,11 +82,12 @@ BUILD-INFO.txt              version, commit, platform requirements
 ./AltirraBridgeServer --bridge=tcp:127.0.0.1:0
 ```
 
-On startup the server prints two lines to stderr:
+On startup the server prints the connection details to stderr:
 
 ```
 [bridge] listening on tcp:127.0.0.1:54321
 [bridge] token-file: /tmp/altirra-bridge-12345.token
+[bridge] log-file: /tmp/altirra-bridge-12345.log
 ```
 
 > **What is the token file?** The server picks a random TCP port and
@@ -120,6 +128,35 @@ variations on the same theme. Read `sdk/python/examples/` and
 `sdk/c/examples/` for progressively richer demos (state dump, input
 injection, interactive paint on an ANTIC mode D framebuffer), and
 `docs/COMMANDS.md` for the full command reference.
+
+### When a screenshot is black
+
+First check that the XEX actually loaded:
+
+```python
+with AltirraBridge.from_token_file(token_file) as a:
+    print(a.config())
+    print(a.boot(r"C:\path\to\game.xex"))
+    a.frame(300)
+    print(a.regs())
+    print(a.peek(0x2f80, 16).hex())
+```
+
+If RAM still has the reset fill pattern after `frame(300)`, copy the
+server log file. `AltirraBridgeServer` logs the config directory,
+selected profile, machine, memory, BASIC state, kernel IDs, bridge
+commands that change state, BOOT requests, client connect/disconnect,
+and every failed bridge command. The log file is written next to the
+token file (`%TEMP%\altirra-bridge-<pid>.log` on Windows,
+`/tmp/altirra-bridge-<pid>.log` on Unix-like systems). The token itself
+is printed to stderr for emergency manual connection but is not written
+to the persistent log.
+
+The standalone server uses the same `settings.ini` profile store as
+AltirraSDL, so a previous GUI run can change the bridge's default
+profile. That is expected, but ordinary XEX booting does not require
+external Atari ROMs: the built-in AltirraOS kernel is used when no
+custom kernel is configured.
 
 ## Writing your own client — Python
 

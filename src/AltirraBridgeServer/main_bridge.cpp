@@ -33,7 +33,7 @@
 
 #include "simulator.h"
 #include "gtia.h"
-#include "logging.h"
+#include "bridge_logging.h"
 #include "settings.h"            // ATSettingsCategory enum + ATSettingsLoadLastProfile
 #include "constants.h"           // ATHardwareMode, ATMemoryMode enums
 #include "debugger.h"            // ATGetDebugger() — for --debugbrkrun
@@ -111,6 +111,62 @@ std::atomic<bool> g_running { true };
 #include <at/atcore/media.h>
 #include <at/atio/image.h>
 #include "mediamanager.h"        // ATMediaLoadContext (full definition)
+#include "firmwaremanager.h"
+
+static const char *BridgeHardwareModeName(ATHardwareMode mode) {
+	switch (mode) {
+		case kATHardwareMode_800:    return "800";
+		case kATHardwareMode_800XL:  return "800XL";
+		case kATHardwareMode_1200XL: return "1200XL";
+		case kATHardwareMode_130XE:  return "130XE";
+		case kATHardwareMode_XEGS:   return "XEGS";
+		case kATHardwareMode_1400XL: return "1400XL";
+		case kATHardwareMode_5200:   return "5200";
+		default:                     return "unknown";
+	}
+}
+
+static void BridgeLogSimulatorConfig(const char *stage) {
+	const uint32 profileId = ATSettingsGetCurrentProfileId();
+	VDStringA profileName;
+	try {
+		profileName = VDTextWToU8(ATSettingsProfileGetName(profileId));
+	} catch (...) {
+		profileName = "";
+	}
+
+	ATFirmwareInfo kernelInfo {};
+	ATFirmwareInfo basicInfo {};
+	const bool haveKernelInfo = g_sim.GetFirmwareManager()
+		&& g_sim.GetFirmwareManager()->GetFirmwareInfo(g_sim.GetActualKernelId(), kernelInfo);
+	const bool haveBasicInfo = g_sim.GetFirmwareManager()
+		&& g_sim.GetFirmwareManager()->GetFirmwareInfo(g_sim.GetActualBasicId(), basicInfo);
+
+	VDStringA kernelName;
+	VDStringA basicName;
+	if (haveKernelInfo)
+		kernelName = VDTextWToU8(kernelInfo.mName);
+	if (haveBasicInfo)
+		basicName = VDTextWToU8(basicInfo.mName);
+
+	BRIDGE_LOG_INFO("BridgeServer",
+		"%s config: profile=%08x '%s', machine=%s, memory=%u, "
+		"basic=%s, video=%d, kernel_id=$%016llx actual_kernel=$%016llx '%s', "
+		"basic_id=$%016llx actual_basic=$%016llx '%s'",
+		stage,
+		(unsigned)profileId,
+		profileName.c_str(),
+		BridgeHardwareModeName(g_sim.GetHardwareMode()),
+		(unsigned)g_sim.GetMemoryMode(),
+		g_sim.IsBASICEnabled() ? "on" : "off",
+		(int)g_sim.GetVideoStandard(),
+		(unsigned long long)g_sim.GetKernelId(),
+		(unsigned long long)g_sim.GetActualKernelId(),
+		kernelName.c_str(),
+		(unsigned long long)g_sim.GetBasicId(),
+		(unsigned long long)g_sim.GetActualBasicId(),
+		basicName.c_str());
+}
 
 bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
 	if (path.empty()) return false;
@@ -121,7 +177,7 @@ bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
 		ctx.mImageName = wpath.c_str();
 		ctx.mWriteMode = kATMediaWriteMode_RW;
 		if (!sim.Load(ctx)) {
-			LOG_ERROR("BridgeServer", "BOOT load failed: %s", path.c_str());
+			BRIDGE_LOG_ERROR("BridgeServer", "BOOT load failed: %s", path.c_str());
 			return false;
 		}
 		// Match the SDL3 frontend behaviour: cold-reset after a
@@ -134,7 +190,7 @@ bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
 		if (wasPaused) sim.Pause(); else sim.Resume();
 		return true;
 	} catch (const MyError& e) {
-		LOG_ERROR("BridgeServer", "BOOT exception: %s", e.c_str());
+		BRIDGE_LOG_ERROR("BridgeServer", "BOOT exception: %s", e.c_str());
 		return false;
 	}
 }
@@ -155,12 +211,12 @@ bool ATBridgeDispatchMount(ATSimulator& sim, int drive, const std::string& path)
 		// to a follow-up if needed.
 		(void)drive;
 		if (!sim.Load(ctx)) {
-			LOG_ERROR("BridgeServer", "MOUNT load failed: %s", path.c_str());
+			BRIDGE_LOG_ERROR("BridgeServer", "MOUNT load failed: %s", path.c_str());
 			return false;
 		}
 		return true;
 	} catch (const MyError& e) {
-		LOG_ERROR("BridgeServer", "MOUNT exception: %s", e.c_str());
+		BRIDGE_LOG_ERROR("BridgeServer", "MOUNT exception: %s", e.c_str());
 		return false;
 	}
 }
@@ -172,7 +228,7 @@ bool ATBridgeDispatchStateSave(ATSimulator& sim, const std::string& path) {
 		sim.SaveState(wpath.c_str());
 		return true;
 	} catch (const MyError& e) {
-		LOG_ERROR("BridgeServer", "STATE_SAVE exception: %s", e.c_str());
+		BRIDGE_LOG_ERROR("BridgeServer", "STATE_SAVE exception: %s", e.c_str());
 		return false;
 	}
 }
@@ -190,12 +246,12 @@ bool ATBridgeDispatchStateLoad(ATSimulator& sim, const std::string& path) {
 		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
 		ATImageLoadContext ctx{};
 		if (!sim.Load(wpath.c_str(), kATMediaWriteMode_RO, &ctx)) {
-			LOG_ERROR("BridgeServer", "STATE_LOAD failed: %s", path.c_str());
+			BRIDGE_LOG_ERROR("BridgeServer", "STATE_LOAD failed: %s", path.c_str());
 			return false;
 		}
 		return true;
 	} catch (const MyError& e) {
-		LOG_ERROR("BridgeServer", "STATE_LOAD exception: %s", e.c_str());
+		BRIDGE_LOG_ERROR("BridgeServer", "STATE_LOAD exception: %s", e.c_str());
 		return false;
 	}
 }
@@ -244,9 +300,10 @@ void PrintHelp() {
 		"  --debugbrkrun       Enable break-on-EXE-run-address.\n"
 		"  -h, --help          Show this help.\n"
 		"\n"
-		"On startup the server prints two lines on stderr:\n"
+		"On startup the server prints connection and diagnostic paths on stderr:\n"
 		"  [Bridge] listening on tcp:127.0.0.1:54321\n"
 		"  [Bridge] token-file: /tmp/altirra-bridge-12345.token\n"
+		"  [Bridge] log-file: /tmp/altirra-bridge-12345.log\n"
 		"\n"
 		"Connect with the Python or C SDK from\n"
 		"src/AltirraSDL/AltirraBridge/sdk/. The wire protocol is the\n"
@@ -304,14 +361,14 @@ static bool InitSimulator() {
 	// configuration. The headless server does not write back.
 	VDRegistryAppKey::setDefaultKey("AltirraSDL");
 
-	LOG_INFO("BridgeServer", "config dir = %s", ATGetConfigDir().c_str());
+	BRIDGE_LOG_INFO("BridgeServer", "config dir = %s", ATGetConfigDir().c_str());
 	ATRegistryLoadFromDisk();
 
 	// Pre-simulator init matching main_sdl3.cpp.
 	ATInitSaveStateDeserializer();
 	ATVFSInstallAtfsHandler();
 
-	LOG_INFO("BridgeServer", "initialising simulator...");
+	BRIDGE_LOG_INFO("BridgeServer", "initialising simulator...");
 	g_sim.Init();
 	g_sim.SetRandomSeed((uint32)std::rand() ^ ((uint32)std::rand() << 15));
 	g_sim.LoadROMs();
@@ -343,7 +400,9 @@ static bool InitSimulator() {
 	ATLoadConfigVars();
 	ATOptionsLoad();
 
-	ATLoadDefaultProfiles();
+	const bool createdDefaultProfiles = ATLoadDefaultProfiles();
+	if (createdDefaultProfiles)
+		BRIDGE_LOG_INFO("BridgeServer", "created default profiles in settings store");
 	// Load most settings categories. Skip:
 	//   - FullScreen        (window placement, meaningless without a window)
 	//   - Input / InputMaps (call into the joystick manager which is
@@ -355,6 +414,7 @@ static bool InitSimulator() {
 		& ~kATSettingsCategory_Input
 		& ~kATSettingsCategory_InputMaps
 	));
+	BridgeLogSimulatorConfig("loaded");
 
 	// Initialize the debugger engine so Phase 5a commands
 	// (DISASM / CALLSTACK / EVAL) have a valid debug target.
@@ -382,8 +442,12 @@ int main(int argc, char** argv) {
 	std::signal(SIGPIPE, SIG_IGN);  // socket sends survive client disconnect
 #endif
 
+	ATBridgeLog::Init();
+	BRIDGE_LOG_INFO("BridgeServer", "log-file: %s", ATBridgeLog::GetPath());
+
 	if (!InitSimulator()) {
 		std::fprintf(stderr, "AltirraBridgeServer: simulator init failed\n");
+		ATBridgeLog::Shutdown();
 		return 1;
 	}
 
@@ -439,14 +503,16 @@ int main(int argc, char** argv) {
 			g_sim.ColdReset();
 			g_sim.Resume();
 		}
+		BridgeLogSimulatorConfig("effective");
 	}
 
 	if (!ATBridge::Init(args.bridgeAddr)) {
 		std::fprintf(stderr, "AltirraBridgeServer: bridge init failed\n");
+		ATBridgeLog::Shutdown();
 		return 1;
 	}
 
-	LOG_INFO("BridgeServer", "entering main loop");
+	BRIDGE_LOG_INFO("BridgeServer", "entering main loop");
 
 	// NTSC frame target: ~16.68 ms. We don't pace strictly — the
 	// frame gate handles client-driven timing. Outside the gate the
@@ -514,7 +580,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	LOG_INFO("BridgeServer", "shutting down");
+	BRIDGE_LOG_INFO("BridgeServer", "shutting down");
 
 	ATBridge::Shutdown(g_sim);
 	ATShutdownDebugger();

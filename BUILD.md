@@ -131,6 +131,12 @@ cd AltirraBridge-*/
 .\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
 ```
 
+On startup the server prints the token file and a persistent diagnostic
+log path. Keep that log when reporting bridge issues; it records startup
+profile/firmware selection, state-changing commands, BOOT requests,
+client disconnects, and failed commands. The session token is not
+written to the persistent log.
+
 ### Building the bridge from source
 
 The bridge is a plain CMake option. Configure with

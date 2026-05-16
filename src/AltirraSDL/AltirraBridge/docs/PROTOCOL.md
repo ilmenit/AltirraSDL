@@ -60,14 +60,20 @@ POSIX). The file format is two lines:
 The bound address line is exactly the form the client passes to its
 `connect()` call (e.g. `tcp:127.0.0.1:54321`).
 
-The server also logs both pieces to **stderr** (so a client capturing
-stdout doesn't have to filter):
+The server also logs the connection details to **stderr** (so a client
+capturing stdout doesn't have to filter):
 
 ```
 [bridge] listening on tcp:127.0.0.1:54321
 [bridge] token-file: /tmp/altirra-bridge-12345.token
+[bridge] log-file: /tmp/altirra-bridge-12345.log
 [bridge] token: 9ec0...e4
 ```
+
+The persistent log file is written next to the token file and records
+startup configuration, selected firmware, client connect/disconnect,
+state-changing bridge commands, BOOT requests, and failed commands. The
+session token is intentionally not written to the persistent log.
 
 ### Framing
 
@@ -522,17 +528,17 @@ bit 1 = SELECT, bit 2 = OPTION; clear bit means pressed.
 
 #### `BOOT path`
 
-Load and boot a media file (XEX, ATR, CAS, CAR, BIN). The path
-is queued via the SDL3 deferred-action system and processed at
-the start of the next main-loop frame, going through the same
-code path as the menu File > Open command. The action runs
-synchronously on the SDL3 main thread between bridge polls.
+Load and boot a media file (XEX, ATR, CAS, CAR, BIN). In
+`AltirraSDL --bridge`, the path is queued via the SDL3 deferred-action
+system and processed at the start of the next main-loop frame. In
+`AltirraBridgeServer`, the media dispatch itself is synchronous.
 
-The bridge response is sent **immediately**, before the load has
-actually completed. To wait for the load to finish before reading
-state, send `FRAME N` (or any read command, which will be
-gated). For most simple boots, `FRAME 1` is sufficient; for
-complex multi-stage loaders, more frames may be needed.
+For XEX/program images, a successful `BOOT` response means the emulator
+accepted the image and armed the OS/HLE program loader. It does not mean
+the Atari-side load has finished or that RUNAD has executed. To wait
+before reading state or capturing a screenshot, send `FRAME N` and then
+the read command. Typical cold XEX boots need hundreds of frames; use
+`FRAME 240` or `FRAME 300` as a conservative starting point.
 
 ```json
 {"ok":true,"path":"/path/to/game.xex"}
@@ -709,7 +715,7 @@ The response reports the number of slots actually removed.
 Query the full simulator configuration.
 
 ```json
-{"ok":true,"basic":false,"machine":"800XL","memory":"320K","debugbrkrun":false}
+{"ok":true,"basic":false,"machine":"800XL","memory":"320K","video":"ntsc","selftest":false,"fastboot":true,"fppatch":false,"exeloadmode":"default","kernel_id":"$0000000000000000","actual_kernel_id":"$0000000000000003","basic_id":"$0000000000000000","actual_basic_id":"$0000000000000005","debugbrkrun":false}
 ```
 
 #### `CONFIG key`
@@ -729,15 +735,25 @@ Set a config key. Returns the full config state after the set.
 | `basic`       | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
 | `machine`     | `800`, `800XL`, `1200XL`, `130XE`, `XEGS`, `1400XL`, `5200`   | Triggers cold reset         |
 | `memory`      | `8K`..`1088K` (see below)                                       | Triggers cold reset         |
+| `video`       | `ntsc`, `pal`, `secam`, `pal60`, `ntsc50`                       | Triggers cold reset         |
+| `selftest`    | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
+| `fastboot`    | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
+| `fppatch`     | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
+| `exeloadmode` | `default`, `type3poll`, `deferred`, `diskboot`                  | Program-image loader mode   |
+| `kernel`      | `default`, `lle`, `llexl`, `hle`, `osa`, `osb`, `xl`, path/id   | Triggers cold reset         |
+| `basicrom`    | `default`, `atbasic`, `reva`, `revb`, `revc`, path/id           | Triggers cold reset         |
 | `debugbrkrun` | `true`, `false`, `on`, `off`, `1`, `0`                          | Break at EXE run address    |
 
 Memory modes: `8K`, `16K`, `24K`, `32K`, `40K`, `48K`, `52K`, `64K`,
 `128K`, `256K`, `320K`, `320K_Compy`, `576K`, `576K_Compy`, `1088K`.
 
-Keys and values are case-insensitive. Setting `machine` or `memory`
-triggers a cold reset with pause-state preservation (same semantics
-as `COLD_RESET`). Setting `basic` or `debugbrkrun` does not trigger
-a reset — issue `COLD_RESET` or `BOOT` afterwards if needed.
+Keys and values are case-insensitive. `kernel_id` / `basic_id` are the
+configured firmware references; `actual_kernel_id` / `actual_basic_id`
+show the firmware selected after default/autoselect resolution. Setting
+`machine`, `memory`, `video`, `kernel`, or `basicrom` triggers a cold
+reset with pause-state preservation (same semantics as `COLD_RESET`).
+Other keys do not trigger a reset — issue `COLD_RESET` or `BOOT`
+afterwards if needed.
 
 ### Phase 4 commands — rendering
 

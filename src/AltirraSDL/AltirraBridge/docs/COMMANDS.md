@@ -69,7 +69,7 @@ data = a.memdump(0x4000, 0x100)
 a.joy(0, "upright", fire=True)
 a.key("A", shift=True)                  # types capital A
 a.consol(start=True)
-a.boot("/path/to/game.xex"); a.frame(120)   # wait for boot
+a.boot("/path/to/game.xex"); a.frame(240)   # wait for OS boot + XEX load
 ```
 
 ```c

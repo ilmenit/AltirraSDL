@@ -4,7 +4,7 @@
 
 #include "bridge_transport.h"
 
-#include "logging.h"
+#include "bridge_logging.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -55,7 +55,7 @@ void InitNetSubsystem() {
 	WSADATA wsa;
 	int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
 	if (rc != 0) {
-		LOG_ERROR("Bridge", "WSAStartup failed: %d", rc);
+		BRIDGE_LOG_ERROR("Bridge", "WSAStartup failed: %d", rc);
 		// Best-effort: leave initialised=false so the next call retries.
 		return;
 	}
@@ -117,7 +117,7 @@ bool ParseTcpSpec(const std::string& spec, std::string& host, uint16_t& port) {
 	if (!requestedHost.empty() &&
 	    requestedHost != "127.0.0.1" &&
 	    requestedHost != "localhost") {
-		LOG_INFO("Bridge",
+		BRIDGE_LOG_INFO("Bridge",
 			"address spec asked for host '%s'; binding 127.0.0.1 anyway "
 			"(bridge is loopback-only by design)",
 			requestedHost.c_str());
@@ -149,20 +149,20 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		std::string host;
 		uint16_t port = 0;
 		if (!ParseTcpSpec(addrSpec, host, port)) {
-			LOG_ERROR("Bridge", "Bad address spec: '%s'", addrSpec.c_str());
+			BRIDGE_LOG_ERROR("Bridge", "Bad address spec: '%s'", addrSpec.c_str());
 			return false;
 		}
 
 #if defined(_WIN32)
 		SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (s == INVALID_SOCKET) {
-			LOG_ERROR("Bridge", "socket() failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "socket() failed: %d", BR_LAST_ERR());
 			return false;
 		}
 #else
 		int s = ::socket(AF_INET, SOCK_STREAM, 0);
 		if (s < 0) {
-			LOG_ERROR("Bridge", "socket() failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "socket() failed: %d", BR_LAST_ERR());
 			return false;
 		}
 #endif
@@ -176,7 +176,7 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
 		if (::bind((int)s, (sockaddr*)&addr, sizeof addr) != 0) {
-			LOG_ERROR("Bridge", "bind() failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "bind() failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			return false;
 		}
@@ -184,19 +184,19 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		// Read back the actually-bound port (matters when port=0).
 		socklen_t alen = sizeof addr;
 		if (::getsockname((int)s, (sockaddr*)&addr, &alen) != 0) {
-			LOG_ERROR("Bridge", "getsockname() failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "getsockname() failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			return false;
 		}
 		uint16_t boundPort = ntohs(addr.sin_port);
 
 		if (::listen((int)s, 1) != 0) {
-			LOG_ERROR("Bridge", "listen() failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "listen() failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			return false;
 		}
 		if (!SetNonBlocking((SockHandle)s)) {
-			LOG_ERROR("Bridge", "set non-blocking failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "set non-blocking failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			return false;
 		}
@@ -214,14 +214,14 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		// --- POSIX filesystem UDS ---
 		std::string path = addrSpec.substr(5);
 		if (path.size() >= sizeof(((sockaddr_un*)0)->sun_path)) {
-			LOG_ERROR("Bridge", "unix path too long: %s", path.c_str());
+			BRIDGE_LOG_ERROR("Bridge", "unix path too long: %s", path.c_str());
 			return false;
 		}
 		::unlink(path.c_str());
 
 		int s = ::socket(AF_UNIX, SOCK_STREAM, 0);
 		if (s < 0) {
-			LOG_ERROR("Bridge", "socket(AF_UNIX) failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "socket(AF_UNIX) failed: %d", BR_LAST_ERR());
 			return false;
 		}
 
@@ -230,7 +230,7 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		std::strncpy(addr.sun_path, path.c_str(), sizeof addr.sun_path - 1);
 
 		if (::bind(s, (sockaddr*)&addr, sizeof addr) != 0) {
-			LOG_ERROR("Bridge", "bind(AF_UNIX) failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "bind(AF_UNIX) failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			return false;
 		}
@@ -239,7 +239,7 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		::chmod(path.c_str(), 0600);
 
 		if (::listen(s, 1) != 0) {
-			LOG_ERROR("Bridge", "listen(AF_UNIX) failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "listen(AF_UNIX) failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			::unlink(path.c_str());
 			return false;
@@ -261,13 +261,13 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		// --- Linux abstract namespace UDS ---
 		std::string name = addrSpec.substr(14);
 		if (1 + name.size() >= sizeof(((sockaddr_un*)0)->sun_path)) {
-			LOG_ERROR("Bridge", "abstract name too long");
+			BRIDGE_LOG_ERROR("Bridge", "abstract name too long");
 			return false;
 		}
 
 		int s = ::socket(AF_UNIX, SOCK_STREAM, 0);
 		if (s < 0) {
-			LOG_ERROR("Bridge", "socket(AF_UNIX) failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "socket(AF_UNIX) failed: %d", BR_LAST_ERR());
 			return false;
 		}
 
@@ -279,7 +279,7 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 		socklen_t alen = (socklen_t)(offsetof(sockaddr_un, sun_path) + 1 + name.size());
 
 		if (::bind(s, (sockaddr*)&addr, alen) != 0) {
-			LOG_ERROR("Bridge", "bind abstract failed: %d", BR_LAST_ERR());
+			BRIDGE_LOG_ERROR("Bridge", "bind abstract failed: %d", BR_LAST_ERR());
 			BR_CLOSE(s);
 			return false;
 		}
@@ -299,7 +299,7 @@ bool Transport::Listen(const std::string& addrSpec, std::string& boundDescriptio
 #  endif  // __linux__
 #endif  // !_WIN32
 
-	LOG_ERROR("Bridge", "Unsupported address spec: '%s'", addrSpec.c_str());
+	BRIDGE_LOG_ERROR("Bridge", "Unsupported address spec: '%s'", addrSpec.c_str());
 	return false;
 }
 
@@ -342,11 +342,11 @@ bool Transport::TryAccept() {
 		SOCKET extra = accept((SOCKET)mListenFd, nullptr, nullptr);
 		if (extra != INVALID_SOCKET) {
 			if (mClientHasSpoken) {
-				LOG_INFO("Bridge", "Rejecting second client (single-client mode)");
+				BRIDGE_LOG_INFO("Bridge", "Rejecting second client (single-client mode)");
 				closesocket(extra);
 				return false;
 			}
-			LOG_INFO("Bridge", "Evicting silent client, taking new connection");
+			BRIDGE_LOG_INFO("Bridge", "Evicting silent client, taking new connection");
 			DropClient();
 			if (!SetNonBlocking((SockHandle)extra)) {
 				closesocket(extra);
@@ -360,18 +360,18 @@ bool Transport::TryAccept() {
 			mClientFd = (SockHandle)extra;
 			mPendingSend.clear();
 			mClientHasSpoken = false;
-			LOG_INFO("Bridge", "Client connected");
+			BRIDGE_LOG_INFO("Bridge", "Client connected");
 			return true;
 		}
 #else
 		int extra = ::accept((int)mListenFd, nullptr, nullptr);
 		if (extra >= 0) {
 			if (mClientHasSpoken) {
-				LOG_INFO("Bridge", "Rejecting second client (single-client mode)");
+				BRIDGE_LOG_INFO("Bridge", "Rejecting second client (single-client mode)");
 				::close(extra);
 				return false;
 			}
-			LOG_INFO("Bridge", "Evicting silent client, taking new connection");
+			BRIDGE_LOG_INFO("Bridge", "Evicting silent client, taking new connection");
 			DropClient();
 			if (!SetNonBlocking((SockHandle)extra)) {
 				::close(extra);
@@ -385,7 +385,7 @@ bool Transport::TryAccept() {
 			mClientFd = (SockHandle)extra;
 			mPendingSend.clear();
 			mClientHasSpoken = false;
-			LOG_INFO("Bridge", "Client connected");
+			BRIDGE_LOG_INFO("Bridge", "Client connected");
 			return true;
 		}
 #endif
@@ -397,7 +397,7 @@ bool Transport::TryAccept() {
 	if (c == INVALID_SOCKET) {
 		int e = BR_LAST_ERR();
 		if (!BR_WOULDBLOCK(e) && !BR_INTR(e))
-			LOG_ERROR("Bridge", "accept() failed: %d", e);
+			BRIDGE_LOG_ERROR("Bridge", "accept() failed: %d", e);
 		return false;
 	}
 #else
@@ -405,7 +405,7 @@ bool Transport::TryAccept() {
 	if (c < 0) {
 		int e = BR_LAST_ERR();
 		if (!BR_WOULDBLOCK(e) && !BR_INTR(e))
-			LOG_ERROR("Bridge", "accept() failed: %d", e);
+			BRIDGE_LOG_ERROR("Bridge", "accept() failed: %d", e);
 		return false;
 	}
 #endif
@@ -429,7 +429,7 @@ bool Transport::TryAccept() {
 	mClientFd = (SockHandle)c;
 	mPendingSend.clear();
 	mClientHasSpoken = false;
-	LOG_INFO("Bridge", "Client connected");
+	BRIDGE_LOG_INFO("Bridge", "Client connected");
 	return true;
 }
 
@@ -496,7 +496,7 @@ void Transport::DropClient() {
 		mClientFd = kInvalidSock;
 		mPendingSend.clear();
 		mClientHasSpoken = false;
-		LOG_INFO("Bridge", "Client disconnected");
+		BRIDGE_LOG_INFO("Bridge", "Client disconnected");
 	}
 }
 

@@ -17,17 +17,24 @@ across the wire. For the full protocol see
 ./AltirraSDL --bridge
 ```
 
-You should see two log lines on stderr:
+You should see connection details on stderr:
 
 ```
 [bridge] listening on tcp:127.0.0.1:54321
 [bridge] token-file: /tmp/altirra-bridge-12345.token
+[bridge] log-file: /tmp/altirra-bridge-12345.log
 ```
 
 The port number is chosen by the OS (you can pin it with
 `--bridge=tcp:127.0.0.1:6502`). The token file contains the bound
 address and a 128-bit session token; any client process with read
 access to that file can connect.
+
+The log file is the first thing to ask for when a bridge script appears
+to succeed but the emulator state is wrong. It records startup config,
+selected firmware, state-changing bridge commands, BOOT requests,
+client disconnects, and failed commands. The token itself is not written
+to the persistent log.
 
 ## 2. Connect from Python
 

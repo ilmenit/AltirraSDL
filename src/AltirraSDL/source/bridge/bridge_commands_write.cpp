@@ -44,6 +44,8 @@
 
 #include "bridge_commands_debug2.h"  // BridgeSymClearAllInternal, BridgeProfileResetInternal, BridgeVerifierResetInternal
 
+#include "bridge_logging.h"
+
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>     // VDDoesPathExist, VDFileSplitPathRight
 #include <vd2/system/text.h>
@@ -85,10 +87,11 @@ bool ParseAddr16(const std::string& tok, uint16_t& addr) {
 	return true;
 }
 
-// Hex8/Hex16 helpers — duplicated from bridge_commands_state.cpp on
+// Hex helpers — duplicated from bridge_commands_state.cpp on
 // purpose so each file is self-contained. The total LOC is tiny.
 std::string Hex8(uint32_t v)  { char b[8];  std::snprintf(b, sizeof b, "\"$%02x\"",  v & 0xff);   return b; }
 std::string Hex16(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%04x\"",  v & 0xffff); return b; }
+std::string Hex64(uint64_t v) { char b[24]; std::snprintf(b, sizeof b, "\"$%016llx\"", (unsigned long long)v); return b; }
 
 // key=value option parsing -- mirrors the helpers in
 // bridge_commands_render.cpp (which keeps them anonymous in its
@@ -355,6 +358,27 @@ bool StrToVideoStandard(const std::string& s, ATVideoStandard& out) {
 	return false;
 }
 
+const char* ProgramLoadModeToStr(ATHLEProgramLoadMode mode) {
+	switch (mode) {
+		case kATHLEProgramLoadMode_Default:   return "default";
+		case kATHLEProgramLoadMode_Type3Poll: return "type3poll";
+		case kATHLEProgramLoadMode_Deferred:  return "deferred";
+		case kATHLEProgramLoadMode_DiskBoot:  return "diskboot";
+		default:                              return "unknown";
+	}
+}
+
+bool StrToProgramLoadMode(const std::string& s, ATHLEProgramLoadMode& out) {
+	std::string lower;
+	lower.reserve(s.size());
+	for (char c : s) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+	if (lower == "default")   { out = kATHLEProgramLoadMode_Default;   return true; }
+	if (lower == "type3poll") { out = kATHLEProgramLoadMode_Type3Poll; return true; }
+	if (lower == "deferred")  { out = kATHLEProgramLoadMode_Deferred;  return true; }
+	if (lower == "diskboot")  { out = kATHLEProgramLoadMode_DiskBoot;  return true; }
+	return false;
+}
+
 // Resolve a `CONFIG kernel <value>` value to a firmware id.
 //
 // Accepts three forms:
@@ -510,11 +534,30 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 	payload += "\"fppatch\":";
 	payload += (sim.IsFPPatchEnabled() ? "true" : "false");
 	payload += ',';
+	AddString(payload, "exeloadmode", ProgramLoadModeToStr(sim.GetHLEProgramLoadMode()));
 	// Kernel id (hex64). 0 = "default for hardware mode".
 	{
-		char buf[32];
+		char buf[64];
 		std::snprintf(buf, sizeof buf, "\"kernel_id\":\"$%016llx\",",
 			(unsigned long long)sim.GetKernelId());
+		payload += buf;
+	}
+	{
+		char buf[64];
+		std::snprintf(buf, sizeof buf, "\"actual_kernel_id\":\"$%016llx\",",
+			(unsigned long long)sim.GetActualKernelId());
+		payload += buf;
+	}
+	{
+		char buf[64];
+		std::snprintf(buf, sizeof buf, "\"basic_id\":\"$%016llx\",",
+			(unsigned long long)sim.GetBasicId());
+		payload += buf;
+	}
+	{
+		char buf[64];
+		std::snprintf(buf, sizeof buf, "\"actual_basic_id\":\"$%016llx\",",
+			(unsigned long long)sim.GetActualBasicId());
 		payload += buf;
 	}
 	payload += "\"debugbrkrun\":";
@@ -865,8 +908,10 @@ std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 2)
 		return JsonError("BOOT: usage: BOOT path");
 	std::string path = JoinPath(tokens, 1);
+	BRIDGE_LOG_INFO("Bridge", "BOOT requested: %s", path.c_str());
 	if (!ATBridgeDispatchBoot(sim, path))
 		return JsonError("BOOT: dispatch failed");
+	BRIDGE_LOG_INFO("Bridge", "BOOT dispatched: %s", path.c_str());
 	std::string payload;
 	AddString(payload, "path", path);
 	StripTrailingComma(payload);
@@ -1340,6 +1385,13 @@ std::string CmdWarmReset(ATSimulator& sim, const std::vector<std::string>& /*tok
 //   basic       true/false      SetBASICEnabled / IsBASICEnabled
 //   machine     800/800XL/...   SetHardwareMode / GetHardwareMode
 //   memory      8K/16K/...      SetMemoryMode / GetMemoryMode
+//   video       ntsc/pal/...     SetVideoStandard / GetVideoStandard
+//   selftest    true/false      SetForcedSelfTest / IsForcedSelfTest
+//   fastboot    true/false      SetFastBootEnabled / IsFastBootEnabled
+//   fppatch     true/false      SetFPPatchEnabled / IsFPPatchEnabled
+//   exeloadmode default/...     SetHLEProgramLoadMode / GetHLEProgramLoadMode
+//   kernel      default/path/id SetKernel / GetKernelId
+//   basicrom    default/path/id SetBasic / GetBasicId
 //   debugbrkrun true/false      SetBreakOnEXERunAddrEnabled
 //
 // Setting machine or memory triggers a cold reset (the simulator
@@ -1377,11 +1429,37 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 			StripTrailingComma(payload);
 			return JsonOk(payload);
 		}
+		if (key == "video") {
+			std::string payload;
+			AddString(payload, "video", VideoStandardToStr(sim.GetVideoStandard()));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "selftest")
+			return JsonOk(std::string("\"selftest\":") + (sim.IsForcedSelfTest() ? "true" : "false"));
+		if (key == "fastboot")
+			return JsonOk(std::string("\"fastboot\":") + (sim.IsFastBootEnabled() ? "true" : "false"));
+		if (key == "fppatch")
+			return JsonOk(std::string("\"fppatch\":") + (sim.IsFPPatchEnabled() ? "true" : "false"));
 		if (key == "debugbrkrun") {
 			IATDebugger* dbg = ATGetDebugger();
 			bool val = dbg && dbg->IsBreakOnEXERunAddrEnabled();
 			return JsonOk(std::string("\"debugbrkrun\":") + (val ? "true" : "false"));
 		}
+		if (key == "exeloadmode") {
+			std::string payload;
+			AddString(payload, "exeloadmode", ProgramLoadModeToStr(sim.GetHLEProgramLoadMode()));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "kernel" || key == "kernel_id")
+			return JsonOk(std::string("\"kernel_id\":") + Hex64(sim.GetKernelId()));
+		if (key == "actual_kernel" || key == "actual_kernel_id")
+			return JsonOk(std::string("\"actual_kernel_id\":") + Hex64(sim.GetActualKernelId()));
+		if (key == "basicrom" || key == "basic_id")
+			return JsonOk(std::string("\"basic_id\":") + Hex64(sim.GetBasicId()));
+		if (key == "actual_basic" || key == "actual_basic_id")
+			return JsonOk(std::string("\"actual_basic_id\":") + Hex64(sim.GetActualBasicId()));
 		return JsonError("CONFIG: unknown key '" + tokens[1] + "'");
 	}
 
@@ -1441,6 +1519,13 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	else if (key == "fppatch") {
 		const bool v = IsTrueLiteral(rawVal);
 		sim.SetFPPatchEnabled(v);
+	}
+	else if (key == "exeloadmode") {
+		ATHLEProgramLoadMode mode;
+		if (!StrToProgramLoadMode(rawVal, mode))
+			return JsonError("CONFIG: unknown exeloadmode '" + rawVal +
+				"' (valid: default, type3poll, deferred, diskboot)");
+		sim.SetHLEProgramLoadMode(mode);
 	}
 	else if (key == "kernel") {
 		uint64_t id = 0;

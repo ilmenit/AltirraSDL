@@ -101,6 +101,7 @@ add_executable(AltirraBridgeServer
 
     # --- Bridge module (shared with AltirraSDL via path reference) ---
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_server.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_logging.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_protocol.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_transport.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_state.cpp
