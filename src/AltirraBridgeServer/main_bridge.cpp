@@ -70,6 +70,7 @@ extern void      ATShutdownDebugger();
 // et al.
 class IVDVideoDisplay;
 extern IVDVideoDisplay *ATBridgeCreateNullVideoDisplay();
+extern bool ATBridgeNullVideoDisplayConsumeFramePosted(IVDVideoDisplay *display);
 static IVDVideoDisplay *g_pNullDisplay = nullptr;
 // ATLoadDefaultProfiles is declared in settings.h (which we include) as
 // `bool ATLoadDefaultProfiles()` — no need to redeclare here.
@@ -533,11 +534,11 @@ int main(int argc, char** argv) {
 		//    display consumption.
 		ATSimulator::AdvanceResult result = g_sim.Advance(false);
 
-		// 3. Notify the frame gate that a frame completed. The
-		//    bridge decrements its frame counter here and re-pauses
-		//    the sim when the gate hits zero.
-		if (result == ATSimulator::kAdvanceResult_Running ||
-		    result == ATSimulator::kAdvanceResult_WaitingForFrame) {
+		// 3. Notify the frame gate only when GTIA actually posted a
+		//    frame. Advance() returns Running after internal
+		//    scanline chunks too, so using the result alone counts
+		//    partial frames and makes FRAME N finish early.
+		if (ATBridgeNullVideoDisplayConsumeFramePosted(g_pNullDisplay)) {
 			ATBridge::OnFrameCompleted(g_sim);
 		}
 

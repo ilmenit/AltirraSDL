@@ -258,6 +258,12 @@ int VDVideoDisplayFrame::Release() {
 
 class ATBridgeNullVideoDisplay final : public IVDVideoDisplay {
 public:
+	bool ConsumeFramePosted() {
+		const bool posted = mFramePosted;
+		mFramePosted = false;
+		return posted;
+	}
+
 	void Destroy() override { FlushBuffers(); delete this; }
 	void Reset() override { FlushBuffers(); }
 	void SetSourceMessage(const wchar_t*) override {}
@@ -281,6 +287,7 @@ public:
 
 	void PostBuffer(VDVideoDisplayFrame *frame) override {
 		if (!frame) return;
+		mFramePosted = true;
 		// Cycle pending → prev so the frame allocator can recycle via
 		// RevokeBuffer. Matches the SDL3 display's approach.
 		if (mPending) {
@@ -339,10 +346,15 @@ public:
 private:
 	VDVideoDisplayFrame *mPending = nullptr;
 	VDVideoDisplayFrame *mPrev    = nullptr;
+	bool mFramePosted = false;
 };
 
 IVDVideoDisplay *ATBridgeCreateNullVideoDisplay() {
 	return new ATBridgeNullVideoDisplay();
+}
+
+bool ATBridgeNullVideoDisplayConsumeFramePosted(IVDVideoDisplay *display) {
+	return static_cast<ATBridgeNullVideoDisplay *>(display)->ConsumeFramePosted();
 }
 
 // debugger.cpp's ActivateSourceWindow() asks the UI to open or focus
