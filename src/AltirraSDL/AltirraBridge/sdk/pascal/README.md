@@ -45,6 +45,14 @@ that owns one TCP connection to a bridge server. Instantiate it,
 call `ConnectTokenFile`, then drive the simulator with the
 Phase-specific methods:
 
+Modern hardware add-ons are available through `ConfigSet` and
+`DeviceSet`, for example:
+
+```pascal
+Bridge.ConfigSet('addons', 'modern');
+Bridge.DeviceSet('vbxe', True, 'version=126 base=d600');
+```
+
 ```pascal
 uses
   SysUtils, altirra_bridge;

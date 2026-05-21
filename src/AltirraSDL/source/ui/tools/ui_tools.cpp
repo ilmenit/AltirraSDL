@@ -254,4 +254,3 @@ void ATUIRenderAdvancedConfig(ATUIState &state) {
 
 	ImGui::End();
 }
-

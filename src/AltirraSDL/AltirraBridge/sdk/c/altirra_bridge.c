@@ -415,6 +415,71 @@ int atb_frame(atb_client_t* c, unsigned int n) {
 	return atb_simple_cmd(c, cmd);
 }
 
+int atb_config_get(atb_client_t* c, const char* key) {
+	if (key && *key) {
+		size_t cmd_size = 16 + strlen(key);
+		char* cmd = (char*)malloc(cmd_size);
+		if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+		snprintf(cmd, cmd_size, "CONFIG %s", key);
+		int rc = atb_simple_cmd(c, cmd);
+		free(cmd);
+		return rc;
+	}
+	return atb_simple_cmd(c, "CONFIG");
+}
+
+int atb_config_set(atb_client_t* c, const char* key, const char* value) {
+	if (!key || !*key || !value) return ATB_ERR_BAD_ARG;
+	size_t cmd_size = 16 + strlen(key) + strlen(value);
+	char* cmd = (char*)malloc(cmd_size);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	snprintf(cmd, cmd_size, "CONFIG %s %s", key, value);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
+int atb_device_list(atb_client_t* c) { return atb_simple_cmd(c, "DEVICE_LIST"); }
+
+int atb_device_get(atb_client_t* c, const char* tag) {
+	if (!tag || !*tag) return ATB_ERR_BAD_ARG;
+	size_t cmd_size = 16 + strlen(tag);
+	char* cmd = (char*)malloc(cmd_size);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	snprintf(cmd, cmd_size, "DEVICE_GET %s", tag);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
+int atb_device_set(atb_client_t* c, const char* tag, int enabled, const char* options) {
+	if (!tag || !*tag) return ATB_ERR_BAD_ARG;
+	const char* state = enabled ? "on" : "off";
+	size_t cmd_size = 24 + strlen(tag) + strlen(state) + (options ? strlen(options) : 0);
+	char* cmd = (char*)malloc(cmd_size);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	if (options && *options)
+		snprintf(cmd, cmd_size, "DEVICE_SET %s %s %s", tag, state, options);
+	else
+		snprintf(cmd, cmd_size, "DEVICE_SET %s %s", tag, state);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
+int atb_device_remove(atb_client_t* c, const char* tag) {
+	if (!tag || !*tag) return ATB_ERR_BAD_ARG;
+	size_t cmd_size = 20 + strlen(tag);
+	char* cmd = (char*)malloc(cmd_size);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	snprintf(cmd, cmd_size, "DEVICE_REMOVE %s", tag);
+	int rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
+int atb_device_clear(atb_client_t* c) { return atb_simple_cmd(c, "DEVICE_CLEAR"); }
+
 /* --------------------------------------------------------------------- */
 /* Phase 2 — state read                                                   */
 /* --------------------------------------------------------------------- */

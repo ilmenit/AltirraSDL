@@ -37,6 +37,8 @@ struct FileBrowserEntry {
 	VDStringW name;
 	VDStringW fullPath;
 	bool isDirectory;
+	uint64 modifiedTime = 0;
+	sint64 size = 0;
 	bool operator<(const FileBrowserEntry &o) const {
 		if (isDirectory != o.isDirectory) return isDirectory > o.isDirectory;
 		return name < o.name;
@@ -77,6 +79,8 @@ extern bool s_mobileShowAllDrives;
 
 // When true, the file browser shows all files regardless of extension
 extern bool s_showAllFiles;
+extern bool s_fileBrowserSortByModified;
+extern bool s_fileBrowserSortAscending;
 
 // -------------------------------------------------------------------------
 // Modal info / confirmation sheet state

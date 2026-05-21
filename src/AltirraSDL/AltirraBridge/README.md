@@ -200,6 +200,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     atb_ping(c);
+    atb_config_set(c, "addons", "modern");
+    atb_device_set(c, "vbxe", 1, "version=126 base=d600");
     atb_frame(c, 60);
     atb_close(c);
     return 0;

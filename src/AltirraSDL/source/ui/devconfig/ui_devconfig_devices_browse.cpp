@@ -70,8 +70,8 @@ void DevBrowseForFile(char *buf, int maxLen,
 
 void DevBrowseForFolder(char *buf, int maxLen) {
 	auto *tgt = new DevBrowseTarget{buf, maxLen};
-	SDL_ShowOpenFolderDialog(DevBrowseFolderCallback, tgt,
-		SDL_GetKeyboardFocus(), nullptr, false);
+	ATUIShowOpenFolderDialog('dvbr', DevBrowseFolderCallback, tgt,
+		SDL_GetKeyboardFocus());
 }
 
 void DevBrowseForSaveFile(char *buf, int maxLen,

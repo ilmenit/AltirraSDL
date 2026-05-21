@@ -38,13 +38,19 @@
 #include <at/ataudio/pokey.h>
 #include "pia.h"
 #include "diskinterface.h"   // ATDiskInterface::UnloadDisk (EJECT)
+#include "disk.h"            // ATDiskEmulationMode
 #include "firmwaremanager.h" // ATFirmwareManager, ATFirmwareInfo (CONFIG kernel/basicrom)
 #include "constants.h"       // ATHardwareMode, ATMemoryMode enums
 #include "debugger.h"        // ATGetDebugger() — break-on-EXE-run
+#include "devicemanager.h"
 
 #include "bridge_commands_debug2.h"  // BridgeSymClearAllInternal, BridgeProfileResetInternal, BridgeVerifierResetInternal
 
 #include "bridge_logging.h"
+
+#include <at/atcore/device.h>
+#include <at/atcore/enumparse.h>
+#include <at/atcore/propertyset.h>
 
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>     // VDDoesPathExist, VDFileSplitPathRight
@@ -54,6 +60,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -110,6 +117,35 @@ bool IsTrueLiteral(const std::string& s) {
 	return s == "1" || s == "true" || s == "yes" || s == "on";
 }
 
+bool ParseBoolLiteral(const std::string& s, bool& out) {
+	std::string lower;
+	lower.reserve(s.size());
+	for (char c : s) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+
+	if (lower == "1" || lower == "true" || lower == "yes" || lower == "on" || lower == "enabled") {
+		out = true;
+		return true;
+	}
+
+	if (lower == "0" || lower == "false" || lower == "no" || lower == "off" || lower == "disabled") {
+		out = false;
+		return true;
+	}
+
+	return false;
+}
+
+std::string ToLower(std::string s) {
+	for (char& c : s)
+		if (c >= 'A' && c <= 'Z')
+			c = (char)(c + 32);
+	return s;
+}
+
+std::string WideToU8(const wchar_t *s) {
+	return s ? std::string(VDTextWToU8(VDStringSpanW(s)).c_str()) : std::string();
+}
+
 // Has the form key=anything ? Used to tell a bare positional path
 // from a key=value option without parsing the value.
 bool IsKeyValueToken(const std::string& tok) {
@@ -157,6 +193,362 @@ void AddString(std::string& out, const char* key, const std::string& s) {
 }
 void StripTrailingComma(std::string& s) {
 	if (!s.empty() && s.back() == ',') s.pop_back();
+}
+
+void ColdResetPreservingPause(ATSimulator& sim) {
+	const bool wasPaused = sim.IsPaused();
+	sim.ColdReset();
+	if (wasPaused) sim.Pause(); else sim.Resume();
+}
+
+std::string ArtifactModeToStr(ATArtifactMode mode) {
+	switch (mode) {
+		case ATArtifactMode::None:   return "none";
+		case ATArtifactMode::NTSC:   return "ntsc";
+		case ATArtifactMode::PAL:    return "pal";
+		case ATArtifactMode::NTSCHi: return "ntschi";
+		case ATArtifactMode::PALHi:  return "palhi";
+		case ATArtifactMode::Auto:   return "auto";
+		case ATArtifactMode::AutoHi: return "autohi";
+		default:                     return "unknown";
+	}
+}
+
+bool StrToArtifactMode(const std::string& s, ATArtifactMode& out) {
+	const std::string lower = ToLower(s);
+	if (lower == "none" || lower == "off") { out = ATArtifactMode::None; return true; }
+	if (lower == "ntsc")                   { out = ATArtifactMode::NTSC; return true; }
+	if (lower == "pal")                    { out = ATArtifactMode::PAL; return true; }
+	if (lower == "ntschi" || lower == "ntsc_hi") { out = ATArtifactMode::NTSCHi; return true; }
+	if (lower == "palhi"  || lower == "pal_hi")                         { out = ATArtifactMode::PALHi; return true; }
+	if (lower == "auto")                   { out = ATArtifactMode::Auto; return true; }
+	if (lower == "autohi" || lower == "auto_hi") { out = ATArtifactMode::AutoHi; return true; }
+	return false;
+}
+
+std::string DiskEmuModeToStr(ATDiskEmulationMode mode) {
+	switch (mode) {
+		case kATDiskEmulationMode_Generic:         return "generic";
+		case kATDiskEmulationMode_FastestPossible: return "fastest";
+		case kATDiskEmulationMode_810:             return "810";
+		case kATDiskEmulationMode_1050:            return "1050";
+		case kATDiskEmulationMode_XF551:           return "xf551";
+		case kATDiskEmulationMode_USDoubler:       return "usdoubler";
+		case kATDiskEmulationMode_Speedy1050:      return "speedy1050";
+		case kATDiskEmulationMode_IndusGT:         return "indusgt";
+		case kATDiskEmulationMode_Happy1050:       return "happy1050";
+		case kATDiskEmulationMode_1050Turbo:       return "1050turbo";
+		case kATDiskEmulationMode_Generic57600:    return "generic56k";
+		case kATDiskEmulationMode_Happy810:        return "happy810";
+		default:                                   return "unknown";
+	}
+}
+
+void AddHighBanksJson(std::string& payload, ATSimulator& sim) {
+	payload += "\"highbanks\":";
+	const sint32 banks = sim.GetHighMemoryBanks();
+	if (banks < 0)
+		payload += "\"na\"";
+	else
+		payload += std::to_string(banks);
+	payload += ',';
+	payload += "\"highbanks_overridden\":";
+	payload += (sim.GetHighMemoryBanksOverridden() ? "true" : "false");
+	payload += ',';
+}
+
+uint32 ParseAddressLikeValue(const std::string& raw, const char *key) {
+	uint32 v = 0;
+	if (ParseUint(raw, v))
+		return v;
+
+	// Device UI commonly writes bases as d600/d2c0. Allow bare hex
+	// for address/base-like properties without changing version=126
+	// into 0x126.
+	if (!strcmp(key, "base")) {
+		std::string prefixed = "0x" + raw;
+		if (ParseUint(prefixed, v))
+			return v;
+	}
+
+	throw MyError("invalid numeric value for %s: %s", key, raw.c_str());
+}
+
+bool ParseDeviceSettingToken(const std::string& tok, ATPropertySet& pset, std::string& err) {
+	const auto eq = tok.find('=');
+	if (eq == std::string::npos || eq == 0) {
+		err = "expected key=value option, got '" + tok + "'";
+		return false;
+	}
+
+	const std::string key = tok.substr(0, eq);
+	const std::string raw = tok.substr(eq + 1);
+	const std::string lowerKey = ToLower(key);
+
+	bool bv = false;
+	if (ParseBoolLiteral(raw, bv)) {
+		pset.SetBool(lowerKey.c_str(), bv);
+		return true;
+	}
+
+	try {
+		uint32 uv = 0;
+		if (lowerKey == "base" || lowerKey == "size" || lowerKey == "channels" ||
+			lowerKey == "version" || lowerKey == "bank" || lowerKey == "addr")
+		{
+			uv = ParseAddressLikeValue(raw, lowerKey.c_str());
+			pset.SetUint32(lowerKey.c_str(), uv);
+			return true;
+		}
+		if (ParseUint(raw, uv)) {
+			pset.SetUint32(lowerKey.c_str(), uv);
+			return true;
+		}
+	} catch (const MyError& e) {
+		err = e.c_str();
+		return false;
+	}
+
+	pset.SetString(lowerKey.c_str(), VDTextU8ToW(VDStringSpanA(raw.c_str())).c_str());
+	return true;
+}
+
+void ApplyQuickDeviceDefaults(const std::string& tag, ATPropertySet& pset) {
+	if (tag == "vbxe") {
+		pset.SetUint32("version", 126);
+	} else if (tag == "covox") {
+		pset.SetUint32("base", 0xD600);
+		pset.SetUint32("size", 0x100);
+		pset.SetUint32("channels", 4);
+	} else if (tag == "soundboard") {
+		pset.SetUint32("version", 120);
+		pset.SetUint32("base", 0xD2C0);
+	} else if (tag == "side3") {
+		pset.SetBool("led_enable", true);
+		pset.SetUint32("version", 10);
+	}
+}
+
+bool IsKnownQuickDevice(const std::string& tag) {
+	return tag == "vbxe" || tag == "covox" || tag == "soundboard" ||
+		tag == "rapidus" || tag == "slightsid" || tag == "side" ||
+		tag == "side2" || tag == "side3";
+}
+
+void AddPropertyValueJson(std::string& out, const char *name, const ATPropertyValue& v) {
+	out += '"';
+	out += JsonEscape(name);
+	out += "\":";
+
+	switch (v.mType) {
+		case kATPropertyType_Bool:
+			out += (v.mValBool ? "true" : "false");
+			break;
+		case kATPropertyType_Int32:
+			out += std::to_string(v.mValI32);
+			break;
+		case kATPropertyType_Uint32:
+			out += std::to_string(v.mValU32);
+			break;
+		case kATPropertyType_Float:
+			out += std::to_string(v.mValF);
+			break;
+		case kATPropertyType_Double:
+			out += std::to_string(v.mValD);
+			break;
+		case kATPropertyType_String16:
+			out += '"';
+			out += JsonEscape(WideToU8(v.mValStr16));
+			out += '"';
+			break;
+		default:
+			out += "null";
+			break;
+	}
+	out += ',';
+}
+
+std::string BuildPropertySetJson(const ATPropertySet& pset) {
+	std::string out = "{";
+	pset.EnumProperties([&](const char *name, const ATPropertyValue& v) {
+		AddPropertyValueJson(out, name, v);
+	});
+	StripTrailingComma(out);
+	out += '}';
+	return out;
+}
+
+std::string BuildDevicePayload(ATSimulator& sim, const std::string& tag, bool reset) {
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	std::string payload;
+	AddString(payload, "tag", tag);
+	const ATDeviceDefinition *def = dm ? dm->GetDeviceDefinition(tag.c_str()) : nullptr;
+	AddBool(payload, "known", def != nullptr);
+	if (def && def->mpName)
+		AddString(payload, "name", WideToU8(def->mpName));
+	AddBool(payload, "present", dm && dm->GetDeviceByTag(tag.c_str()) != nullptr);
+	AddBool(payload, "reset", reset);
+
+	if (dm) {
+		IATDevice *dev = dm->GetDeviceByTag(tag.c_str());
+		if (dev) {
+			ATPropertySet settings;
+			dev->GetSettings(settings);
+			payload += "\"settings\":";
+			payload += BuildPropertySetJson(settings);
+			payload += ',';
+		}
+	}
+
+	StripTrailingComma(payload);
+	return payload;
+}
+
+std::string GetAddonsPreset(ATSimulator& sim) {
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	const bool haveVBXE = dm && dm->GetDeviceByTag("vbxe");
+	const bool haveCovox = dm && dm->GetDeviceByTag("covox");
+	const bool haveSoundBoard = dm && dm->GetDeviceByTag("soundboard");
+	const bool haveRapidus = dm && dm->GetDeviceByTag("rapidus");
+	const bool haveAny = haveVBXE || haveCovox || haveSoundBoard || haveRapidus;
+
+	if (sim.GetMemoryMode() == kATMemoryMode_1088K &&
+		sim.IsDualPokeysEnabled() &&
+		haveVBXE &&
+		haveCovox &&
+		haveSoundBoard &&
+		haveRapidus)
+	{
+		return "modern";
+	}
+
+	if (!sim.IsDualPokeysEnabled() && !haveAny)
+		return "off";
+
+	return "custom";
+}
+
+std::string SetDeviceEnabled(ATSimulator& sim, const std::string& rawTag, bool enable,
+	const std::vector<std::string>& optionTokens, size_t optionStart, bool resetAfter)
+{
+	const std::string tag = ToLower(rawTag);
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	if (!dm)
+		return JsonError("DEVICE_SET: device manager unavailable");
+
+	const ATDeviceDefinition *def = dm->GetDeviceDefinition(tag.c_str());
+	if (!def)
+		return JsonError("DEVICE_SET: unknown device '" + rawTag + "'");
+	if (def->mFlags & kATDeviceDefFlag_Hidden)
+		return JsonError("DEVICE_SET: hidden device '" + rawTag + "' cannot be managed by the bridge");
+	if ((def->mFlags & kATDeviceDefFlag_Internal) && !dm->GetDeviceByTag(tag.c_str()))
+		return JsonError("DEVICE_SET: internal device '" + rawTag + "' is not present");
+
+	bool changed = false;
+	bool reset = false;
+
+	if (enable) {
+		ATPropertySet pset;
+		IATDevice *dev = dm->GetDeviceByTag(tag.c_str());
+		if (dev)
+			dev->GetSettings(pset);
+		else
+			ApplyQuickDeviceDefaults(tag, pset);
+
+		for (size_t i = optionStart; i < optionTokens.size(); ++i) {
+			if (tag == "vbxe") {
+				const auto eq = optionTokens[i].find('=');
+				const std::string optKey = eq == std::string::npos ? std::string() : ToLower(optionTokens[i].substr(0, eq));
+
+				if (optKey == "base") {
+					std::string err;
+					try {
+						const uint32 base = ParseAddressLikeValue(optionTokens[i].substr(eq + 1), "base");
+
+						if (base == 0xD600) {
+							pset.SetBool("alt_page", false);
+							continue;
+						}
+
+						if (base == 0xD700) {
+							pset.SetBool("alt_page", true);
+							continue;
+						}
+					} catch (const MyError& e) {
+						err = e.c_str();
+					}
+
+					return JsonError(err.empty()
+						? "DEVICE_SET: VBXE base must be d600 or d700"
+						: std::string("DEVICE_SET: ") + err);
+				}
+			}
+			if (tag == "covox") {
+				const auto eq = optionTokens[i].find('=');
+				const std::string optKey = eq == std::string::npos ? std::string() : ToLower(optionTokens[i].substr(0, eq));
+
+				if (optKey == "size") {
+					uint32 size = 0;
+					const std::string rawSize = optionTokens[i].substr(eq + 1);
+					const bool explicitBase = rawSize.rfind("0x", 0) == 0 ||
+						rawSize.rfind("0X", 0) == 0 ||
+						rawSize.rfind("$", 0) == 0;
+					if (explicitBase && ParseUint(rawSize, size)) {
+						pset.SetUint32("size", size);
+						continue;
+					}
+
+					const std::string prefixed = "0x" + rawSize;
+					if (ParseUint(prefixed, size)) {
+						pset.SetUint32("size", size);
+						continue;
+					}
+
+					if (ParseUint(rawSize, size)) {
+						pset.SetUint32("size", size);
+						continue;
+					}
+				}
+			}
+
+			std::string err;
+			if (!ParseDeviceSettingToken(optionTokens[i], pset, err))
+				return JsonError("DEVICE_SET: " + err);
+		}
+
+		try {
+			if (dev) {
+				if (optionStart < optionTokens.size()) {
+					dm->ReconfigureDevice(*dev, pset);
+					changed = true;
+				}
+			} else {
+				dev = dm->AddDevice(def, pset);
+				if (!dev)
+					return JsonError("DEVICE_SET: could not add device '" + rawTag + "'");
+				changed = true;
+			}
+		} catch (const MyError& e) {
+			return JsonError(std::string("DEVICE_SET: ") + e.c_str());
+		}
+	} else {
+		IATDevice *dev = dm->GetDeviceByTag(tag.c_str());
+		if (dev) {
+			ATDeviceInfo info {};
+			dev->GetDeviceInfo(info);
+			if (info.mpDef && (info.mpDef->mFlags & kATDeviceDefFlag_Internal))
+				return JsonError("DEVICE_SET: internal device '" + rawTag + "' cannot be removed");
+			dm->RemoveDevice(dev);
+			changed = true;
+		}
+	}
+
+	if (changed && resetAfter) {
+		ColdResetPreservingPause(sim);
+		reset = true;
+	}
+
+	return JsonOk(BuildDevicePayload(sim, tag, reset));
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +926,62 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 	payload += "\"fppatch\":";
 	payload += (sim.IsFPPatchEnabled() ? "true" : "false");
 	payload += ',';
+	payload += "\"stereo\":";
+	payload += (sim.IsDualPokeysEnabled() ? "true" : "false");
+	payload += ',';
+	payload += "\"stereomono\":";
+	payload += (sim.GetPokey().IsStereoAsMonoEnabled() ? "true" : "false");
+	payload += ',';
+	payload += "\"siopatch\":\"";
+	if (sim.IsDiskSIOPatchEnabled() && sim.IsCassetteSIOPatchEnabled())
+		payload += sim.IsDiskSIOOverrideDetectEnabled() ? "safe" : "on";
+	else if (!sim.IsDiskSIOPatchEnabled() && !sim.IsCassetteSIOPatchEnabled())
+		payload += "off";
+	else
+		payload += "mixed";
+	payload += "\",";
+	payload += "\"burstio\":";
+	payload += (sim.GetDiskBurstTransfersEnabled() ? "true" : "false");
+	payload += ',';
+	payload += "\"accuratedisk\":";
+	payload += (sim.IsDiskAccurateTimingEnabled() ? "true" : "false");
+	payload += ',';
+	payload += "\"casautoboot\":";
+	payload += (sim.IsCassetteAutoBootEnabled() ? "true" : "false");
+	payload += ',';
+	payload += "\"casautobasicboot\":";
+	payload += (sim.IsCassetteAutoBasicBootEnabled() ? "true" : "false");
+	payload += ',';
+	AddString(payload, "artifact", ArtifactModeToStr(sim.GetGTIA().GetArtifactingMode()));
+	payload += "\"axlonmemsize\":";
+	switch (sim.GetAxlonMemoryMode()) {
+		case 0: payload += "\"none\""; break;
+		case 2: payload += "\"64K\""; break;
+		case 3: payload += "\"128K\""; break;
+		case 4: payload += "\"256K\""; break;
+		case 5: payload += "\"512K\""; break;
+		case 6: payload += "\"1024K\""; break;
+		case 7: payload += "\"2048K\""; break;
+		default: payload += "\"unknown\""; break;
+	}
+	payload += ',';
+	AddHighBanksJson(payload, sim);
+	payload += "\"randmem\":";
+	payload += (sim.IsRandomFillEXEEnabled() || sim.GetMemoryClearMode() == kATMemoryClearMode_Random ? "true" : "false");
+	payload += ',';
+	payload += "\"randdelay\":";
+	payload += (sim.IsRandomProgramLaunchDelayEnabled() ? "true" : "false");
+	payload += ',';
+	AddString(payload, "diskemu", DiskEmuModeToStr(sim.GetDiskDrive(0).GetEmulationMode()));
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	for (const char *tag : { "vbxe", "covox", "soundboard", "rapidus", "slightsid" }) {
+		payload += '"';
+		payload += tag;
+		payload += "\":";
+		payload += (dm && dm->GetDeviceByTag(tag) ? "true" : "false");
+		payload += ',';
+	}
+	AddString(payload, "addons", GetAddonsPreset(sim));
 	AddString(payload, "exeloadmode", ProgramLoadModeToStr(sim.GetHLEProgramLoadMode()));
 	// Kernel id (hex64). 0 = "default for hardware mode".
 	{
@@ -1389,6 +1837,9 @@ std::string CmdWarmReset(ATSimulator& sim, const std::vector<std::string>& /*tok
 //   selftest    true/false      SetForcedSelfTest / IsForcedSelfTest
 //   fastboot    true/false      SetFastBootEnabled / IsFastBootEnabled
 //   fppatch     true/false      SetFPPatchEnabled / IsFPPatchEnabled
+//   stereo      true/false      SetDualPokeysEnabled / IsDualPokeysEnabled
+//   stereomono  true/false      ATPokeyEmulator::SetStereoAsMonoEnabled
+//   addons      on/off/modern/stock  batch modern-demo add-ons
 //   exeloadmode default/...     SetHLEProgramLoadMode / GetHLEProgramLoadMode
 //   kernel      default/path/id SetKernel / GetKernelId
 //   basicrom    default/path/id SetBasic / GetBasicId
@@ -1441,6 +1892,72 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 			return JsonOk(std::string("\"fastboot\":") + (sim.IsFastBootEnabled() ? "true" : "false"));
 		if (key == "fppatch")
 			return JsonOk(std::string("\"fppatch\":") + (sim.IsFPPatchEnabled() ? "true" : "false"));
+		if (key == "stereo")
+			return JsonOk(std::string("\"stereo\":") + (sim.IsDualPokeysEnabled() ? "true" : "false"));
+		if (key == "stereomono")
+			return JsonOk(std::string("\"stereomono\":") + (sim.GetPokey().IsStereoAsMonoEnabled() ? "true" : "false"));
+		if (key == "siopatch") {
+			std::string v = "mixed";
+			if (sim.IsDiskSIOPatchEnabled() && sim.IsCassetteSIOPatchEnabled())
+				v = sim.IsDiskSIOOverrideDetectEnabled() ? "safe" : "on";
+			else if (!sim.IsDiskSIOPatchEnabled() && !sim.IsCassetteSIOPatchEnabled())
+				v = "off";
+			return JsonOk(std::string("\"siopatch\":\"") + v + "\"");
+		}
+		if (key == "burstio")
+			return JsonOk(std::string("\"burstio\":") + (sim.GetDiskBurstTransfersEnabled() ? "true" : "false"));
+		if (key == "accuratedisk")
+			return JsonOk(std::string("\"accuratedisk\":") + (sim.IsDiskAccurateTimingEnabled() ? "true" : "false"));
+		if (key == "casautoboot")
+			return JsonOk(std::string("\"casautoboot\":") + (sim.IsCassetteAutoBootEnabled() ? "true" : "false"));
+		if (key == "casautobasicboot")
+			return JsonOk(std::string("\"casautobasicboot\":") + (sim.IsCassetteAutoBasicBootEnabled() ? "true" : "false"));
+		if (key == "artifact") {
+			std::string payload;
+			AddString(payload, "artifact", ArtifactModeToStr(sim.GetGTIA().GetArtifactingMode()));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "axlonmemsize") {
+			std::string payload = "\"axlonmemsize\":";
+			switch (sim.GetAxlonMemoryMode()) {
+				case 0: payload += "\"none\""; break;
+				case 2: payload += "\"64K\""; break;
+				case 3: payload += "\"128K\""; break;
+				case 4: payload += "\"256K\""; break;
+				case 5: payload += "\"512K\""; break;
+				case 6: payload += "\"1024K\""; break;
+				case 7: payload += "\"2048K\""; break;
+				default: payload += "\"unknown\""; break;
+			}
+			return JsonOk(payload);
+		}
+		if (key == "highbanks") {
+			std::string payload;
+			AddHighBanksJson(payload, sim);
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "randmem")
+			return JsonOk(std::string("\"randmem\":") + (sim.IsRandomFillEXEEnabled() || sim.GetMemoryClearMode() == kATMemoryClearMode_Random ? "true" : "false"));
+		if (key == "randdelay")
+			return JsonOk(std::string("\"randdelay\":") + (sim.IsRandomProgramLaunchDelayEnabled() ? "true" : "false"));
+		if (key == "diskemu") {
+			std::string payload;
+			AddString(payload, "diskemu", DiskEmuModeToStr(sim.GetDiskDrive(0).GetEmulationMode()));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
+		if (key == "vbxe" || key == "covox" || key == "soundboard" || key == "rapidus" || key == "slightsid") {
+			ATDeviceManager *dm = sim.GetDeviceManager();
+			return JsonOk(std::string("\"") + key + "\":" + (dm && dm->GetDeviceByTag(key.c_str()) ? "true" : "false"));
+		}
+		if (key == "addons") {
+			std::string payload;
+			AddString(payload, "addons", GetAddonsPreset(sim));
+			StripTrailingComma(payload);
+			return JsonOk(payload);
+		}
 		if (key == "debugbrkrun") {
 			IATDebugger* dbg = ATGetDebugger();
 			bool val = dbg && dbg->IsBreakOnEXERunAddrEnabled();
@@ -1467,7 +1984,9 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	const std::string& rawVal = tokens[2];
 
 	if (key == "basic") {
-		bool v = (rawVal == "true" || rawVal == "1" || rawVal == "on");
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for basic");
 		sim.SetBASICEnabled(v);
 	}
 	else if (key == "machine") {
@@ -1495,7 +2014,9 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		IATDebugger* dbg = ATGetDebugger();
 		if (!dbg)
 			return JsonError("CONFIG: debugger unavailable");
-		bool v = (rawVal == "true" || rawVal == "1" || rawVal == "on");
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for debugbrkrun");
 		dbg->SetBreakOnEXERunAddrEnabled(v);
 	}
 	else if (key == "video") {
@@ -1509,16 +2030,160 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		if (wasPaused) sim.Pause(); else sim.Resume();
 	}
 	else if (key == "selftest") {
-		const bool v = IsTrueLiteral(rawVal);
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for selftest");
 		sim.SetForcedSelfTest(v);
 	}
 	else if (key == "fastboot") {
-		const bool v = IsTrueLiteral(rawVal);
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for fastboot");
 		sim.SetFastBootEnabled(v);
 	}
 	else if (key == "fppatch") {
-		const bool v = IsTrueLiteral(rawVal);
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for fppatch");
 		sim.SetFPPatchEnabled(v);
+	}
+	else if (key == "stereo") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for stereo");
+		sim.SetDualPokeysEnabled(v);
+		ColdResetPreservingPause(sim);
+	}
+	else if (key == "stereomono") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for stereomono");
+		sim.GetPokey().SetStereoAsMonoEnabled(v);
+	}
+	else if (key == "siopatch") {
+		const std::string val = ToLower(rawVal);
+		if (val == "on" || val == "true" || val == "1") {
+			sim.SetDiskSIOPatchEnabled(true);
+			sim.SetDiskSIOOverrideDetectEnabled(false);
+			sim.SetCassetteSIOPatchEnabled(true);
+		} else if (val == "safe") {
+			sim.SetDiskSIOPatchEnabled(true);
+			sim.SetDiskSIOOverrideDetectEnabled(true);
+			sim.SetCassetteSIOPatchEnabled(true);
+		} else if (val == "off" || val == "false" || val == "0") {
+			sim.SetDiskSIOPatchEnabled(false);
+			sim.SetCassetteSIOPatchEnabled(false);
+		} else {
+			return JsonError("CONFIG: unknown siopatch mode '" + rawVal + "' (valid: on, safe, off)");
+		}
+	}
+	else if (key == "burstio") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for burstio");
+		sim.SetDiskBurstTransfersEnabled(v);
+	}
+	else if (key == "accuratedisk") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for accuratedisk");
+		sim.SetDiskAccurateTimingEnabled(v);
+	}
+	else if (key == "casautoboot") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for casautoboot");
+		sim.SetCassetteAutoBootEnabled(v);
+	}
+	else if (key == "casautobasicboot") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for casautobasicboot");
+		sim.SetCassetteAutoBasicBootEnabled(v);
+	}
+	else if (key == "artifact") {
+		ATArtifactMode mode;
+		if (!StrToArtifactMode(rawVal, mode))
+			return JsonError("CONFIG: unknown artifact mode '" + rawVal +
+				"' (valid: none, ntsc, ntschi, pal, palhi, auto, autohi)");
+		sim.GetGTIA().SetArtifactingMode(mode);
+	}
+	else if (key == "axlonmemsize") {
+		const std::string val = ToLower(rawVal);
+		uint8 bits = 0;
+		if (val == "none" || val == "off" || val == "0") bits = 0;
+		else if (val == "64k") bits = 2;
+		else if (val == "128k") bits = 3;
+		else if (val == "256k") bits = 4;
+		else if (val == "512k") bits = 5;
+		else if (val == "1024k") bits = 6;
+		else if (val == "2048k" || val == "4096k") bits = 7;
+		else return JsonError("CONFIG: unknown axlonmemsize '" + rawVal + "'");
+		sim.SetAxlonMemoryMode(bits);
+		ColdResetPreservingPause(sim);
+	}
+	else if (key == "highbanks") {
+		const std::string val = ToLower(rawVal);
+		if (val == "na")
+			sim.SetHighMemoryBanks(-1);
+		else if (val == "0" || val == "1" || val == "3" || val == "15" || val == "63" || val == "255")
+			sim.SetHighMemoryBanks((sint32)std::atoi(val.c_str()));
+		else
+			return JsonError("CONFIG: unknown highbanks '" + rawVal + "' (valid: na, 0, 1, 3, 15, 63, 255)");
+		ColdResetPreservingPause(sim);
+	}
+	else if (key == "randmem") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for randmem");
+		sim.SetRandomFillEXEEnabled(v);
+		sim.SetMemoryClearMode(v ? kATMemoryClearMode_Random : kATMemoryClearMode_Zero);
+	}
+	else if (key == "randdelay") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for randdelay");
+		sim.SetRandomProgramLaunchDelayEnabled(v);
+	}
+	else if (key == "diskemu") {
+		auto result = ATParseEnum<ATDiskEmulationMode>(VDStringSpanA(rawVal.c_str()));
+		if (!result.mValid)
+			return JsonError("CONFIG: unsupported diskemu mode '" + rawVal + "'");
+		for (int i = 0; i < 15; ++i)
+			sim.GetDiskDrive(i).SetEmulationMode(result.mValue);
+	}
+	else if (key == "addons") {
+		const std::string val = ToLower(rawVal);
+		const auto applyDevice = [&](const char *tag, bool enable) -> std::string {
+			std::string r = SetDeviceEnabled(sim, tag, enable, tokens, tokens.size(), false);
+			return r.rfind("{\"ok\":false", 0) == 0 ? r : std::string();
+		};
+		if (val == "on" || val == "modern" || val == "true" || val == "1") {
+			sim.SetMemoryMode(kATMemoryMode_1088K);
+			sim.SetDualPokeysEnabled(true);
+			if (std::string err = applyDevice("vbxe", true); !err.empty()) return err;
+			if (std::string err = applyDevice("covox", true); !err.empty()) return err;
+			if (std::string err = applyDevice("soundboard", true); !err.empty()) return err;
+			if (std::string err = applyDevice("rapidus", true); !err.empty()) return err;
+			ColdResetPreservingPause(sim);
+		} else if (val == "off" || val == "stock" || val == "false" || val == "0") {
+			sim.SetDualPokeysEnabled(false);
+			if (std::string err = applyDevice("vbxe", false); !err.empty()) return err;
+			if (std::string err = applyDevice("covox", false); !err.empty()) return err;
+			if (std::string err = applyDevice("soundboard", false); !err.empty()) return err;
+			if (std::string err = applyDevice("rapidus", false); !err.empty()) return err;
+			ColdResetPreservingPause(sim);
+		} else {
+			return JsonError("CONFIG: unknown addons preset '" + rawVal + "' (valid: on, off, modern, stock)");
+		}
+	}
+	else if (key == "vbxe" || key == "covox" || key == "soundboard" || key == "rapidus" || key == "slightsid") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for " + key);
+		const std::string r = SetDeviceEnabled(sim, key, v, tokens, 3, true);
+		if (r.rfind("{\"ok\":false", 0) == 0)
+			return r;
 	}
 	else if (key == "exeloadmode") {
 		ATHLEProgramLoadMode mode;
@@ -1562,6 +2227,112 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	std::string payload = BuildConfigPayload(sim);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// DEVICE_* — generic device management for bridge clients.
+// ---------------------------------------------------------------------------
+
+std::string CmdDeviceList(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	if (!dm)
+		return JsonError("DEVICE_LIST: device manager unavailable");
+
+	std::string payload;
+	payload += "\"installed\":[";
+	bool first = true;
+	for (IATDevice *dev : dm->GetDevices(true, true, false)) {
+		if (!dev) continue;
+		ATDeviceInfo info {};
+		dev->GetDeviceInfo(info);
+		if (!info.mpDef || !info.mpDef->mpTag)
+			continue;
+		if (!first) payload += ',';
+		first = false;
+		payload += '{';
+		AddString(payload, "tag", info.mpDef->mpTag);
+		if (info.mpDef->mpName)
+			AddString(payload, "name", WideToU8(info.mpDef->mpName));
+		AddBool(payload, "internal", (info.mpDef->mFlags & kATDeviceDefFlag_Internal) != 0);
+		StripTrailingComma(payload);
+		payload += '}';
+	}
+	payload += "],\"quick\":[";
+	first = true;
+	for (const char *tag : { "vbxe", "covox", "soundboard", "rapidus", "slightsid", "side", "side2", "side3" }) {
+		const ATDeviceDefinition *def = dm->GetDeviceDefinition(tag);
+		if (!def || (def->mFlags & kATDeviceDefFlag_Hidden))
+			continue;
+		if (!first) payload += ',';
+		first = false;
+		payload += '{';
+		AddString(payload, "tag", tag);
+		if (def->mpName)
+			AddString(payload, "name", WideToU8(def->mpName));
+		AddBool(payload, "present", dm->GetDeviceByTag(tag) != nullptr);
+		AddBool(payload, "reboot_on_plug", (def->mFlags & kATDeviceDefFlag_RebootOnPlug) != 0);
+		StripTrailingComma(payload);
+		payload += '}';
+	}
+	payload += ']';
+	return JsonOk(payload);
+}
+
+std::string CmdDeviceGet(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() != 2)
+		return JsonError("DEVICE_GET: usage: DEVICE_GET <tag>");
+	return JsonOk(BuildDevicePayload(sim, ToLower(tokens[1]), false));
+}
+
+std::string CmdDeviceSet(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() < 3)
+		return JsonError("DEVICE_SET: usage: DEVICE_SET <tag> on|off [key=value...]");
+
+	bool enable = false;
+	if (!ParseBoolLiteral(tokens[2], enable))
+		return JsonError("DEVICE_SET: expected on/off after tag");
+
+	if (!IsKnownQuickDevice(ToLower(tokens[1]))) {
+		for (size_t i = 3; i < tokens.size(); ++i) {
+			if (!IsKeyValueToken(tokens[i]))
+				return JsonError("DEVICE_SET: generic devices require key=value options after on/off");
+		}
+	}
+
+	return SetDeviceEnabled(sim, tokens[1], enable, tokens, 3, true);
+}
+
+std::string CmdDeviceRemove(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() != 2)
+		return JsonError("DEVICE_REMOVE: usage: DEVICE_REMOVE <tag>");
+
+	std::vector<std::string> empty;
+	return SetDeviceEnabled(sim, tokens[1], false, empty, 0, true);
+}
+
+std::string CmdDeviceClear(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() != 1)
+		return JsonError("DEVICE_CLEAR: usage: DEVICE_CLEAR");
+
+	ATDeviceManager *dm = sim.GetDeviceManager();
+	if (!dm)
+		return JsonError("DEVICE_CLEAR: device manager unavailable");
+
+	bool changed = false;
+	for (IATDevice *dev : dm->GetDevices(true, true, false)) {
+		if (!dev) continue;
+		ATDeviceInfo info {};
+		dev->GetDeviceInfo(info);
+		if (!info.mpDef || (info.mpDef->mFlags & kATDeviceDefFlag_Internal) == 0) {
+			changed = true;
+			break;
+		}
+	}
+
+	dm->RemoveAllDevices(false);
+	if (changed)
+		ColdResetPreservingPause(sim);
+	return JsonOk(changed ? "\"reset\":true" : "\"reset\":false");
 }
 
 // ---------------------------------------------------------------------------

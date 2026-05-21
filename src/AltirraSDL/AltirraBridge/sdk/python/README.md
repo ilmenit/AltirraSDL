@@ -45,5 +45,14 @@ with AltirraBridge.from_token_file("/tmp/altirra-bridge-12345.token") as a:
     a.resume()
 ```
 
+Enable modern demo/debug hardware before booting a program:
+
+```python
+with AltirraBridge.from_token_file("/tmp/altirra-bridge-12345.token") as a:
+    a.enable_modern_addons()          # 1088K, Stereo POKEY, VBXE, Covox, SoundBoard, Rapidus
+    a.device_set("vbxe", True, version=126, base="d600")
+    a.boot("demo.xex")
+```
+
 See `examples/` for runnable scripts and `docs/PROTOCOL.md` (in the
 parent AltirraBridge directory) for the full wire contract.

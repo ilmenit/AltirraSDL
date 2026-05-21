@@ -16,6 +16,7 @@
 #include "display_backend_gl33.h"
 #include "display_backend.h"
 #include "../../input/touch_widgets.h"
+#include "../../app/ui_file_dialog_sdl3.h"
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -1903,6 +1904,11 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// Reusable confirmation dialogs — drawn last so they sit above
 	// every other window.  Also re-centers and captures keyboard focus.
 	ATUIRenderConfirmDialogs();
+
+	// Native SDL file/folder dialogs can fail asynchronously on Unix when
+	// portal/Zenity integration is unavailable; this renders the queued
+	// Desktop ImGui fallback in that case.
+	ATUIRenderFileDialogFallback();
 
 	// Main display text-mode selection: mouse drag, highlight overlay, and
 	// right-click context menu.  Runs only when the debugger is closed;

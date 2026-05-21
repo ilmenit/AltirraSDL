@@ -1674,7 +1674,8 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 					g_diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
 				}
 			}
-			SDL_ShowOpenFolderDialog(DiskExplorerMultiExportCallback, nullptr, window, nullptr, false);
+			ATUIShowOpenFolderDialog('dexp',
+				DiskExplorerMultiExportCallback, nullptr, window);
 		} else {
 			// Single file export
 			for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
@@ -1956,7 +1957,9 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 									g_diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
 								}
 							}
-							SDL_ShowOpenFolderDialog(DiskExplorerMultiExportCallback, nullptr, window, nullptr, false);
+							ATUIShowOpenFolderDialog('dexp',
+								DiskExplorerMultiExportCallback, nullptr,
+								window);
 						} else {
 							g_diskExportInfo.key = e.key;
 							g_diskExportInfo.dateValid = e.dateValid;
@@ -1978,7 +1981,9 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 									g_diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
 								}
 							}
-							SDL_ShowOpenFolderDialog(DiskExplorerMultiExportCallback, nullptr, window, nullptr, false);
+							ATUIShowOpenFolderDialog('dexp',
+								DiskExplorerMultiExportCallback, nullptr,
+								window);
 						} else {
 							g_diskExportTextInfo.key = e.key;
 							g_diskExportTextInfo.dateValid = e.dateValid;
@@ -2089,4 +2094,3 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 
 	ImGui::End();
 }
-

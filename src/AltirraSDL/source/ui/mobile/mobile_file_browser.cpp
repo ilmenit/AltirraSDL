@@ -523,6 +523,34 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 					s_fileBrowserNeedsRefresh = true;
 				}
 			}
+
+			{
+				float sortW = ImGui::CalcTextSize(
+					s_fileBrowserSortByModified ? "Modified" : "Name").x
+					+ dp(16.0f) * 2.0f;
+				sameLineIfFits(sortW);
+				if (ATTouchButton(
+					s_fileBrowserSortByModified ? "Modified" : "Name",
+					ImVec2(0, shortcutH),
+					chipStyle(s_fileBrowserSortByModified)))
+				{
+					s_fileBrowserSortByModified =
+						!s_fileBrowserSortByModified;
+					s_fileBrowserNeedsRefresh = true;
+				}
+
+				float dirW = dp(48.0f);
+				sameLineIfFits(dirW);
+				if (ATTouchButton(
+					s_fileBrowserSortAscending ? "^" : "v",
+					ImVec2(dirW, shortcutH),
+					chipStyle(!s_fileBrowserSortAscending)))
+				{
+					s_fileBrowserSortAscending =
+						!s_fileBrowserSortAscending;
+					s_fileBrowserNeedsRefresh = true;
+				}
+			}
 		}
 
 		// In ROM-folder mode, the user picks a directory instead of a

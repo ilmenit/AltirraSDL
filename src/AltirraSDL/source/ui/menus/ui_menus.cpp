@@ -1081,7 +1081,8 @@ static void RenderToolsMenu(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 	}
 
 	if (ImGui::MenuItem("Export ROM set..."))
-		SDL_ShowOpenFolderDialog(ExportROMSetCallback, nullptr, window, nullptr, false);
+		ATUIShowOpenFolderDialog('rom ', ExportROMSetCallback, nullptr,
+			window);
 
 	if (ImGui::MenuItem("Analyze tape decoding...")) {
 		static const SDL_DialogFileFilter kTapeFilters[] = {

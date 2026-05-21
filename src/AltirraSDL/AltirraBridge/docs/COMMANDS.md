@@ -8,7 +8,7 @@ examples. For full request/response schemas and field semantics see
 |--------------|----------|
 | [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `QUIT` |
 | [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
 | [Save states](#save-states)           | `STATE_SAVE`, `STATE_LOAD`, `STATE_LIST`, `STATE_DROP` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |
@@ -163,6 +163,14 @@ a.config("basic", "false")    # no cold reset
 a.config("machine", "800")    # triggers cold reset
 a.config("memory", "48K")     # triggers cold reset
 a.config("debugbrkrun", "true")
+
+# Modern demo/debug hardware
+a.config("stereo", "on")          # dual POKEY
+a.config("addons", "modern")      # 1088K + Stereo POKEY + VBXE + Covox + SoundBoard + Rapidus
+a.device_set("vbxe", True, version=126, base="d700", shared_mem=True)
+a.device_set("covox", True, base="d600", size="100", channels=4)
+a.device_set("rapidus", True)
+print(a.device_get("vbxe"))
 ```
 
 Supported keys:
@@ -172,7 +180,32 @@ Supported keys:
 | `basic`       | `true`, `false`, `on`, `off`                                    | no          |
 | `machine`     | `800`, `800XL`, `1200XL`, `130XE`, `XEGS`, `1400XL`, `5200`   | yes         |
 | `memory`      | `8K`..`1088K`                                                   | yes         |
+| `stereo`      | `true`, `false`, `on`, `off`                                    | yes         |
+| `stereomono`  | `true`, `false`, `on`, `off`                                    | no          |
+| `addons`      | `on`, `off`, `modern`, `stock`                                  | yes; `off`/`stock` leave memory size unchanged |
+| `vbxe`, `covox`, `soundboard`, `rapidus`, `slightsid` | `on`, `off`             | yes         |
+| `siopatch`    | `on`, `safe`, `off`                                             | no          |
+| `burstio`, `accuratedisk`, `casautoboot`, `casautobasicboot` | `on`, `off` | no |
+| `artifact`    | `none`, `ntsc`, `ntschi`, `pal`, `palhi`, `auto`, `autohi`      | no          |
+| `axlonmemsize`| `none`, `64K`, `128K`, `256K`, `512K`, `1024K`, `2048K`, `4096K`| yes         |
+| `highbanks`   | `na`, `0`, `1`, `3`, `15`, `63`, `255`                          | yes         |
+| `randmem`, `randdelay` | `on`, `off`                                           | no          |
+| `diskemu`     | `generic`, `fastest`, `810`, `1050`, `xf551`, etc.              | no          |
 | `debugbrkrun` | `true`, `false`, `on`, `off`                                    | no          |
+
+Device commands:
+
+```python
+a.device_list()
+a.device_get("vbxe")
+a.device_set("vbxe", True, version=126, base="d600")
+a.device_set("soundboard", True, version=120, base="d2c0")
+a.device_remove("rapidus")
+a.device_clear()
+```
+
+Wire form is token-based: `DEVICE_SET vbxe on version=126 base=d600`.
+Device option values must not contain spaces.
 
 ## Rendering
 

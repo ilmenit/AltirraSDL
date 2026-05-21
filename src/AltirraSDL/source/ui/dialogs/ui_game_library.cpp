@@ -432,8 +432,8 @@ void RenderTabSources(ATGameLibrary &lib, SDL_Window *window) {
 	}
 #else
 	if (ImGui::Button("Add Folder...")) {
-		SDL_ShowOpenFolderDialog(AddFolderCallback, nullptr, window,
-			nullptr, false);
+		ATUIShowOpenFolderDialog('glib', AddFolderCallback, nullptr,
+			window);
 	}
 #endif
 	ImGui::SameLine();

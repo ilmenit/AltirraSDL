@@ -715,7 +715,7 @@ The response reports the number of slots actually removed.
 Query the full simulator configuration.
 
 ```json
-{"ok":true,"basic":false,"machine":"800XL","memory":"320K","video":"ntsc","selftest":false,"fastboot":true,"fppatch":false,"exeloadmode":"default","kernel_id":"$0000000000000000","actual_kernel_id":"$0000000000000003","basic_id":"$0000000000000000","actual_basic_id":"$0000000000000005","debugbrkrun":false}
+{"ok":true,"basic":false,"machine":"800XL","memory":"320K","video":"ntsc","stereo":false,"vbxe":false,"covox":false,"rapidus":false,"addons":"off","exeloadmode":"default","debugbrkrun":false}
 ```
 
 #### `CONFIG key`
@@ -739,6 +739,17 @@ Set a config key. Returns the full config state after the set.
 | `selftest`    | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
 | `fastboot`    | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
 | `fppatch`     | `true`, `false`, `on`, `off`, `1`, `0`                          | Does not trigger cold reset |
+| `stereo`      | `true`, `false`, `on`, `off`, `1`, `0`                          | Dual POKEY; cold reset      |
+| `stereomono`  | `true`, `false`, `on`, `off`, `1`, `0`                          | Downmix dual POKEY to mono  |
+| `addons`      | `on`, `off`, `modern`, `stock`                                  | Batch modern add-ons; `off`/`stock` leave memory size unchanged |
+| `vbxe`, `covox`, `soundboard`, `rapidus`, `slightsid` | `on`, `off`                 | Device aliases; cold reset  |
+| `siopatch`    | `on`, `safe`, `off`                                             | Disk/cassette SIO patch     |
+| `burstio`, `accuratedisk`, `casautoboot`, `casautobasicboot` | booleans | CLI parity toggles          |
+| `artifact`    | `none`, `ntsc`, `ntschi`, `pal`, `palhi`, `auto`, `autohi`      | Artifacting mode            |
+| `axlonmemsize`| `none`, `64K`, `128K`, `256K`, `512K`, `1024K`, `2048K`, `4096K`| Cold reset                  |
+| `highbanks`   | `na`, `0`, `1`, `3`, `15`, `63`, `255`                          | Cold reset                  |
+| `randmem`, `randdelay` | booleans                                                 | Program-load determinism    |
+| `diskemu`     | `generic`, `fastest`, `810`, `1050`, `xf551`, `usdoubler`, etc. | All disk drives             |
 | `exeloadmode` | `default`, `type3poll`, `deferred`, `diskboot`                  | Program-image loader mode   |
 | `kernel`      | `default`, `lle`, `llexl`, `hle`, `osa`, `osb`, `xl`, path/id   | Triggers cold reset         |
 | `basicrom`    | `default`, `atbasic`, `reva`, `revb`, `revc`, path/id           | Triggers cold reset         |
@@ -752,8 +763,52 @@ configured firmware references; `actual_kernel_id` / `actual_basic_id`
 show the firmware selected after default/autoselect resolution. Setting
 `machine`, `memory`, `video`, `kernel`, or `basicrom` triggers a cold
 reset with pause-state preservation (same semantics as `COLD_RESET`).
-Other keys do not trigger a reset — issue `COLD_RESET` or `BOOT`
-afterwards if needed.
+
+#### `DEVICE_LIST`
+
+List installed top-level devices and bridge quick-add device tags.
+
+```json
+{"ok":true,"installed":[{"tag":"vbxe","name":"VideoBoard XE"}],
+ "quick":[{"tag":"vbxe","present":true,"reboot_on_plug":false}]}
+```
+
+#### `DEVICE_GET tag`
+
+Query a device by tag. `settings` is an object containing the device's
+current `ATPropertySet` values when the device is present.
+
+```json
+{"ok":true,"tag":"vbxe","known":true,"present":true,"reset":false,
+ "settings":{"version":126,"alt_page":true}}
+```
+
+#### `DEVICE_SET tag on|off [key=value...]`
+
+Add, reconfigure, or remove a device. Common quick tags have the same
+defaults as Gaming Mode/Desktop device config:
+
+- `vbxe`: `version=126`, optional `base=d600|d700`, `shared_mem=true|false`
+- `covox`: `base=d600`, `size=100`, `channels=4`
+- `soundboard`: `version=120`, `base=d2c0`
+- `rapidus`, `slightsid`: no default properties
+
+Examples:
+
+```
+DEVICE_SET vbxe on version=126 base=d700 shared_mem=true
+DEVICE_SET covox on base=d600 size=100 channels=4
+DEVICE_SET rapidus off
+```
+
+Option tokens are whitespace-separated `key=value` pairs; values cannot
+contain spaces. Successful device changes cold-reset the machine while
+preserving pause state and report `"reset":true`.
+
+#### `DEVICE_REMOVE tag` / `DEVICE_CLEAR`
+
+Remove one non-internal device, or all non-internal devices. Both
+preserve pause state and cold-reset when anything changes.
 
 ### Phase 4 commands — rendering
 

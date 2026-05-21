@@ -211,6 +211,17 @@ type
       corresponding switch down; False releases it. }
     procedure Consol(StartSw, SelectSw, OptionSw: Boolean);
 
+    { Configuration and device management. These return raw JSON so
+      callers can inspect whichever fields they need. }
+    function  Config(const Key: String = ''): String;
+    function  ConfigSet(const Key, Value: String): String;
+    function  DeviceList: String;
+    function  DeviceGet(const Tag: String): String;
+    function  DeviceSet(const Tag: String; Enabled: Boolean;
+      const Options: String = ''): String;
+    function  DeviceRemove(const Tag: String): String;
+    function  DeviceClear: String;
+
     // ---- Lifecycle: bare-metal boot --------------------------------
 
     { Boot the server's embedded "bare-metal" stub: a ~30-byte XEX
@@ -926,6 +937,57 @@ begin
   if SelectSw then Cmd := Cmd + ' select';
   if OptionSw then Cmd := Cmd + ' option';
   CheckOk(Rpc(Cmd), 'CONSOL');
+end;
+
+function TAltirraBridge.Config(const Key: String): String;
+begin
+  if Key = '' then
+    Result := Rpc('CONFIG')
+  else
+    Result := Rpc('CONFIG ' + Key);
+  CheckOk(Result, 'CONFIG');
+end;
+
+function TAltirraBridge.ConfigSet(const Key, Value: String): String;
+begin
+  Result := Rpc('CONFIG ' + Key + ' ' + Value);
+  CheckOk(Result, 'CONFIG');
+end;
+
+function TAltirraBridge.DeviceList: String;
+begin
+  Result := Rpc('DEVICE_LIST');
+  CheckOk(Result, 'DEVICE_LIST');
+end;
+
+function TAltirraBridge.DeviceGet(const Tag: String): String;
+begin
+  Result := Rpc('DEVICE_GET ' + Tag);
+  CheckOk(Result, 'DEVICE_GET');
+end;
+
+function TAltirraBridge.DeviceSet(const Tag: String; Enabled: Boolean;
+  const Options: String): String;
+var
+  Cmd: String;
+begin
+  Cmd := 'DEVICE_SET ' + Tag + ' ';
+  if Enabled then Cmd := Cmd + 'on' else Cmd := Cmd + 'off';
+  if Options <> '' then Cmd := Cmd + ' ' + Options;
+  Result := Rpc(Cmd);
+  CheckOk(Result, 'DEVICE_SET');
+end;
+
+function TAltirraBridge.DeviceRemove(const Tag: String): String;
+begin
+  Result := Rpc('DEVICE_REMOVE ' + Tag);
+  CheckOk(Result, 'DEVICE_REMOVE');
+end;
+
+function TAltirraBridge.DeviceClear: String;
+begin
+  Result := Rpc('DEVICE_CLEAR');
+  CheckOk(Result, 'DEVICE_CLEAR');
 end;
 
 procedure TAltirraBridge.HwPoke(Addr: Word; Value: Byte);

@@ -41,4 +41,17 @@ void ATUIShowSaveFileDialog(
 	int nfilters,
 	const char *fallbackLocation = nullptr);
 
+void ATUIShowOpenFolderDialog(
+	long nKey,
+	SDL_DialogFileCallback callback,
+	void *userdata,
+	SDL_Window *window,
+	const char *fallbackLocation = nullptr,
+	bool allow_many = false);
+
+void ATUIRenderFileDialogFallback();
+
+bool ATUIGetForceBuiltinFileDialog();
+void ATUISetForceBuiltinFileDialog(bool enabled);
+
 #endif

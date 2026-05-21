@@ -164,6 +164,19 @@ int atb_dlist(atb_client_t* c);
 int atb_hwstate(atb_client_t* c);
 
 /*
+ * Configuration and device management. These return typed success/failure
+ * only; inspect atb_last_response() for returned JSON fields.
+ */
+int atb_config_get(atb_client_t* c, const char* key /* NULL for all */);
+int atb_config_set(atb_client_t* c, const char* key, const char* value);
+int atb_device_list(atb_client_t* c);
+int atb_device_get(atb_client_t* c, const char* tag);
+int atb_device_set(atb_client_t* c, const char* tag, int enabled,
+                   const char* options /* e.g. "version=126 base=d600" or NULL */);
+int atb_device_remove(atb_client_t* c, const char* tag);
+int atb_device_clear(atb_client_t* c);
+
+/*
  * Read the GTIA analysis palette as 256 RGB24 entries. `out_rgb`
  * must point to a buffer of at least 768 bytes (256 * 3). Bytes are
  * R0, G0, B0, R1, G1, B1, ...

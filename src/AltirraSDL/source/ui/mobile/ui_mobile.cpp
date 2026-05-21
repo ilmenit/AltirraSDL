@@ -204,6 +204,8 @@ float s_contentScale = 1.0f;
 std::vector<FileBrowserEntry> s_fileBrowserEntries;
 VDStringW s_fileBrowserDir;
 bool s_fileBrowserNeedsRefresh = true;
+bool s_fileBrowserSortByModified = false;
+bool s_fileBrowserSortAscending = true;
 
 // ROM folder browser mode — when true, selecting a folder triggers firmware scan
 bool s_romFolderMode = false;
@@ -312,6 +314,52 @@ static bool IsSupportedExtension(const wchar_t *name) {
 	return false;
 }
 
+static int CompareFileBrowserName(const VDStringW& a, const VDStringW& b) {
+	const wchar_t *as = a.c_str();
+	const wchar_t *bs = b.c_str();
+	const size_t alen = a.size();
+	const size_t blen = b.size();
+	const size_t n = std::min(alen, blen);
+
+	for (size_t i = 0; i < n; ++i) {
+		wchar_t ca = as[i];
+		wchar_t cb = bs[i];
+		wchar_t la = std::towlower(ca);
+		wchar_t lb = std::towlower(cb);
+		if (la != lb)
+			return la < lb ? -1 : 1;
+	}
+
+	if (alen != blen)
+		return alen < blen ? -1 : 1;
+
+	for (size_t i = 0; i < n; ++i) {
+		if (as[i] != bs[i])
+			return as[i] < bs[i] ? -1 : 1;
+	}
+
+	return 0;
+}
+
+static void SortFileBrowserEntries() {
+	std::sort(s_fileBrowserEntries.begin(), s_fileBrowserEntries.end(),
+		[](const FileBrowserEntry& a, const FileBrowserEntry& b) {
+			if (a.isDirectory != b.isDirectory)
+				return a.isDirectory > b.isDirectory;
+
+			int cmp = 0;
+			if (s_fileBrowserSortByModified) {
+				if (a.modifiedTime < b.modifiedTime)
+					cmp = -1;
+				else if (a.modifiedTime > b.modifiedTime)
+					cmp = 1;
+			}
+			if (!cmp)
+				cmp = CompareFileBrowserName(a.name, b.name);
+			return s_fileBrowserSortAscending ? cmp < 0 : cmp > 0;
+		});
+}
+
 static void RefreshFileBrowserFromZip() {
 	s_fileBrowserEntries.clear();
 
@@ -374,7 +422,7 @@ static void RefreshFileBrowserFromZip() {
 		s_zipInternalDir.clear();
 	}
 
-	std::sort(s_fileBrowserEntries.begin(), s_fileBrowserEntries.end());
+	SortFileBrowserEntries();
 	s_fileBrowserNeedsRefresh = false;
 }
 
@@ -419,6 +467,8 @@ void RefreshFileBrowser(const VDStringW &dir) {
 		SDL_PathInfo info;
 		if (SDL_GetPathInfo(fullPathU8.c_str(), &info)) {
 			entry.isDirectory = (info.type == SDL_PATHTYPE_DIRECTORY);
+			entry.modifiedTime = (uint64)info.modify_time;
+			entry.size = (sint64)info.size;
 		} else {
 			entry.isDirectory = false;
 		}
@@ -444,7 +494,7 @@ void RefreshFileBrowser(const VDStringW &dir) {
 	};
 
 	SDL_EnumerateDirectory(dirU8.c_str(), callback, &ctx);
-	std::sort(s_fileBrowserEntries.begin(), s_fileBrowserEntries.end());
+	SortFileBrowserEntries();
 	s_fileBrowserNeedsRefresh = false;
 }
 

@@ -844,14 +844,16 @@ static void RenderDiskDriveContextMenu(int driveIdx, ATDiskInterface& di,
 	if (ImGui::MenuItem("Mount folder as virtual DOS 2 disk...")) {
 		ConfirmDiscardIfDirty(driveIdx, [driveIdx, window]() {
 			auto *info = new MountFolderInfo{driveIdx, false};
-			SDL_ShowOpenFolderDialog(MountFolderCallback, info, window, nullptr, false);
+			ATUIShowOpenFolderDialog('disk', MountFolderCallback, info,
+				window);
 		});
 	}
 
 	if (ImGui::MenuItem("Mount folder as virtual SpartaDOS disk...")) {
 		ConfirmDiscardIfDirty(driveIdx, [driveIdx, window]() {
 			auto *info = new MountFolderInfo{driveIdx, true};
-			SDL_ShowOpenFolderDialog(MountFolderCallback, info, window, nullptr, false);
+			ATUIShowOpenFolderDialog('disk', MountFolderCallback, info,
+				window);
 		});
 	}
 

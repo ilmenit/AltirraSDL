@@ -1444,7 +1444,8 @@ void RenderFirmwareManager(ATSimulator &sim, bool &show) {
 		g_fwPendingScan.path = VDTextU8ToW(VDStringA("/home/web_user/firmware"));
 #else
 		// Use SDL3 folder picker dialog (matches Windows folder browser)
-		SDL_ShowOpenFolderDialog(FirmwareScanFolderCallback, nullptr, nullptr, nullptr, false);
+		ATUIShowOpenFolderDialog('firm', FirmwareScanFolderCallback, nullptr,
+			nullptr);
 #endif
 	}
 

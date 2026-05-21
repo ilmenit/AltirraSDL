@@ -67,4 +67,10 @@ std::string CmdStateDrop(ATSimulator& sim, const std::vector<std::string>& token
 
 std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens);
 
+std::string CmdDeviceList(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdDeviceGet(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdDeviceSet(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdDeviceRemove(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdDeviceClear(ATSimulator& sim, const std::vector<std::string>& tokens);
+
 }  // namespace ATBridge

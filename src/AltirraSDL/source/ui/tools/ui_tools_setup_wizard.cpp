@@ -12,6 +12,7 @@
 #include <vd2/system/strutil.h>
 #include <imgui.h>
 #include <SDL3/SDL.h>
+#include "ui_file_dialog_sdl3.h"
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
@@ -812,7 +813,7 @@ void Wiz_TriggerFirmwareScan(SDL_Window *window) {
 		g_setupWiz.pendingScanPath = "/home/web_user/firmware";
 	}
 #else
-	SDL_ShowOpenFolderDialog(FirmwareScanCallback, nullptr, window, nullptr, false);
+	ATUIShowOpenFolderDialog('firm', FirmwareScanCallback, nullptr, window);
 #endif
 }
 
@@ -824,7 +825,7 @@ void Wiz_TriggerLibFolderPicker(SDL_Window *window) {
 		g_setupWiz.pendingLibFolderPath = "/home/web_user/games";
 	}
 #else
-	SDL_ShowOpenFolderDialog(LibFolderCallback, nullptr, window, nullptr, false);
+	ATUIShowOpenFolderDialog('glib', LibFolderCallback, nullptr, window);
 #endif
 }
 
@@ -1760,4 +1761,3 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 	ImGui::End();
 }
-

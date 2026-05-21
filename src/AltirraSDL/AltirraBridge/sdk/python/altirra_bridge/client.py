@@ -728,18 +728,69 @@ class AltirraBridge:
           ``"130XE"``, ``"XEGS"``, ``"1200XL"``, ``"1400XL"``,
           ``"5200"``.
         * ``memory`` — RAM size: ``"8K"`` through ``"1088K"``.
+        * ``stereo`` / ``stereomono`` — dual POKEY and mono downmix.
+        * ``addons`` — ``"modern"`` enables 1088K, Stereo POKEY,
+          VBXE, Covox, SoundBoard, and Rapidus; ``"stock"`` disables
+          the add-on device set.
+        * ``vbxe``, ``covox``, ``soundboard``, ``rapidus``,
+          ``slightsid`` — quick device aliases.
+        * ``siopatch``, ``burstio``, ``accuratedisk``,
+          ``casautoboot``, ``casautobasicboot`` — SIO/disk/cassette
+          command-line parity toggles.
+        * ``artifact``, ``axlonmemsize``, ``highbanks``, ``randmem``,
+          ``randdelay``, ``diskemu`` — video, memory, loader, and disk
+          emulation options matching Altirra command-line switches.
         * ``debugbrkrun`` — ``"true"``/``"false"``: break at EXE run
           address.
 
-        Setting ``machine`` or ``memory`` triggers a cold reset
-        (preserving pause state).  Setting ``basic`` or
-        ``debugbrkrun`` does not.
+        Hardware/device changes that require it trigger a cold reset
+        while preserving pause state.
         """
         if key is None:
             return self._cmd_ok("CONFIG")
         if value is None:
             return self._cmd_ok(f"CONFIG {key}")
         return self._cmd_ok(f"CONFIG {key} {value}")
+
+    def device_list(self) -> dict:
+        """List installed devices and bridge quick-add device tags."""
+        return self._cmd_ok("DEVICE_LIST")
+
+    def device_get(self, tag: str) -> dict:
+        """Return presence and settings for one device tag."""
+        return self._cmd_ok(f"DEVICE_GET {tag}")
+
+    def device_set(self, tag: str, enabled: bool = True, **settings) -> dict:
+        """Add/reconfigure or remove a device.
+
+        Settings are encoded as ``key=value`` tokens, so values must not
+        contain whitespace. Common quick tags include ``vbxe``, ``covox``,
+        ``soundboard``, ``rapidus``, and ``slightsid``.
+        """
+        state = "on" if enabled else "off"
+        opts = []
+        for key, value in settings.items():
+            if isinstance(value, bool):
+                value = "true" if value else "false"
+            opts.append(f"{key}={value}")
+        suffix = (" " + " ".join(opts)) if opts else ""
+        return self._cmd_ok(f"DEVICE_SET {tag} {state}{suffix}")
+
+    def device_remove(self, tag: str) -> dict:
+        """Remove one non-internal device by tag."""
+        return self._cmd_ok(f"DEVICE_REMOVE {tag}")
+
+    def device_clear(self) -> dict:
+        """Remove all non-internal devices."""
+        return self._cmd_ok("DEVICE_CLEAR")
+
+    def enable_modern_addons(self) -> dict:
+        """Enable 1088K RAM, Stereo POKEY, VBXE, Covox, SoundBoard, Rapidus."""
+        return self.config("addons", "modern")
+
+    def disable_modern_addons(self) -> dict:
+        """Disable the modern add-on device set, leaving memory size alone."""
+        return self.config("addons", "stock")
 
     # ------------------------------------------------------------------
     # Phase 4 commands — rendering (SCREENSHOT / RAWSCREEN / RENDER_FRAME)

@@ -1537,11 +1537,11 @@ static void BuildToolsMenu(NSMenu *menu) {
 	});
 
 	AddItem(menu, @"Export ROM set...", false, true, [=]{
-		SDL_ShowOpenFolderDialog(
+		ATUIShowOpenFolderDialog('rom ',
 			[](void *, const char * const *fl, int) {
 				if (fl && fl[0])
 					ATUIPushDeferred(kATDeferred_ExportROMSet, fl[0]);
-			}, nullptr, window, nullptr, false);
+			}, nullptr, window);
 	});
 
 	AddItem(menu, @"Analyze tape decoding...", false, true, [=]{
