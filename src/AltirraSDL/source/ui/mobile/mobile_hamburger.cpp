@@ -79,7 +79,8 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 
 	// ESC / B-button / Backspace closes the hamburger menu, matching
-	// the BACK gamepad button and the "<" header arrow.
+	// the cancel action and the "<" header arrow.  Gamepad Back/Select
+	// is reserved for the Atari SELECT console switch in Gaming Mode.
 	// Skip when a modal dialog is showing on top — ESC should dismiss
 	// the modal first (handled by mobile_dialogs.cpp), not the menu.
 	bool closeFromBack = false;

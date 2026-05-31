@@ -4,10 +4,12 @@
 //	down to tap the screen.  Touch coexists — the focus ring only
 //	appears after gamepad input is received.
 //
-//	Two reserved global buttons:
-//	  Start  → cold-boot the loaded image / toggle pause
-//	  Back   → toggle the hamburger drawer
-//	All other UI navigation (D-pad, A=activate, B=back, L1/R1 tabs)
+//	Reserved global buttons:
+//	  Start  -> Atari START console switch
+//	  Back   -> Atari SELECT console switch
+//	  L1     -> hamburger drawer from the emulation screen
+//	  R1     -> emulator pause/resume from the emulation screen
+//	All other UI navigation (D-pad/left stick, A=activate, B=back)
 //	is handled automatically by Dear ImGui's NavEnableGamepad once
 //	the flag is set in ATMobileGamepad_Init().
 
@@ -21,12 +23,16 @@ struct ATMobileUIState;
 // Idempotent; safe to call repeatedly.
 void ATMobileGamepad_Init();
 
-// Intercept SDL_EVENT_GAMEPAD_BUTTON_DOWN for the two reserved
-// buttons (Start, Back).  Returns true if the event was consumed
+// Intercept SDL gamepad button events for reserved buttons. Returns true
+// if the event was consumed
 // — caller should NOT forward it to ImGui or to the joystick
 // manager when the return value is true.
 bool ATMobileGamepad_HandleEvent(const SDL_Event &ev,
 	ATSimulator &sim, ATMobileUIState &mobileState);
+
+// Release console switches held by gamepad Start/Back. Called from focus
+// and background release paths so Atari START/SELECT cannot stick.
+void ATMobileGamepad_ReleaseAll(ATSimulator &sim);
 
 // True whenever the mobile UI is currently displaying a screen
 // that should own the gamepad (drawer, settings, file browser,
@@ -38,7 +44,5 @@ bool ATMobileGamepad_IsUIOwning();
 // ATMobileUIState.  Called from ATMobileUI_Render each frame.
 void ATMobileGamepad_SetUIOwning(bool owning);
 
-// True iff the given SDL gamepad button index is one of the two
-// UI-reserved buttons (Start or Back).  joystick_sdl3 uses this to
-// mask those buttons out of game input on mobile builds.
+// True iff the given SDL gamepad button index is UI-reserved.
 bool ATMobileGamepad_IsReservedButton(int sdlGamepadButton);

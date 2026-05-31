@@ -46,6 +46,9 @@ static int s_focusedKey = -1;     // gamepad cursor index (-1 = none, kOSKKeyCou
 static int s_pressedKey = -1;     // currently pressed key (mouse/touch)
 static int s_hoverKey = -1;       // key under mouse cursor
 static bool s_closeRequested = false; // set by close button press
+static int s_gamepadNavAxisX = 0;
+static int s_gamepadNavAxisY = 0;
+static int s_gamepadNavDir = -1;
 
 // Modifier sticky/held state (matches uionscreenkeyboard.cpp pattern)
 static bool s_shiftHeld = false;
@@ -332,6 +335,9 @@ void ATUIVirtualKeyboard_ReleaseAll(ATSimulator &sim) {
 
 	s_touchActive = false;
 	s_focusedKey = -1;
+	s_gamepadNavAxisX = 0;
+	s_gamepadNavAxisY = 0;
+	s_gamepadNavDir = -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +635,44 @@ static bool s_lastVisible = false;
 static const int kCloseButtonIndex = 62;  // == kOSKKeyCount
 // Text input button index — one past close
 static const int kTextInputButtonIndex = 63;
+
+static bool MoveGamepadFocus(int dir) {
+	if (s_focusedKey < 0) {
+		for (int i = 0; i < kOSKKeyCount; i++) {
+			if (kOSKKeys[i].label[0] == 'A' && kOSKKeys[i].label[1] == '\0') {
+				s_focusedKey = i;
+				break;
+			}
+		}
+		if (s_focusedKey < 0)
+			s_focusedKey = 0;
+		return true;
+	}
+
+	if (s_focusedKey == kCloseButtonIndex) {
+#ifdef __ANDROID__
+		if (dir == 3)       s_focusedKey = 5;   // down -> ESC
+		else if (dir == 1)  s_focusedKey = kTextInputButtonIndex;
+		else if (dir == 0)  s_focusedKey = 5;
+#else
+		if (dir == 3)       s_focusedKey = 5;   // down -> ESC
+		else if (dir == 1)  s_focusedKey = 0;
+		else if (dir == 0)  s_focusedKey = 5;
+#endif
+	} else if (s_focusedKey == kTextInputButtonIndex) {
+		if (dir == 3)       s_focusedKey = 0;
+		else if (dir == 0)  s_focusedKey = kCloseButtonIndex;
+		else if (dir == 1)  s_focusedKey = 0;
+	} else {
+		int next = kOSKKeys[s_focusedKey].nav[dir];
+		if (dir == 2 && next < 0)
+			s_focusedKey = kCloseButtonIndex;
+		else if (next >= 0)
+			s_focusedKey = next;
+	}
+
+	return true;
+}
 
 // Close and text input buttons are drawn as overlays above the keyboard
 // image (not embedded in it).  On mobile they are sized to match the
@@ -933,19 +977,6 @@ bool ATUIVirtualKeyboard_HandleEvent(const SDL_Event &ev, ATSimulator &sim, bool
 			case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
 			case SDL_GAMEPAD_BUTTON_DPAD_UP:
 			case SDL_GAMEPAD_BUTTON_DPAD_DOWN: {
-				// Initialize focus on first D-pad press
-				if (s_focusedKey < 0) {
-					for (int i = 0; i < kOSKKeyCount; i++) {
-						if (kOSKKeys[i].label[0] == 'A' && kOSKKeys[i].label[1] == '\0') {
-							s_focusedKey = i;
-							break;
-						}
-					}
-					if (s_focusedKey < 0)
-						s_focusedKey = 0;
-					return true;
-				}
-
 				int dir;
 				switch (ev.gbutton.button) {
 					case SDL_GAMEPAD_BUTTON_DPAD_LEFT:  dir = 0; break;
@@ -955,33 +986,7 @@ bool ATUIVirtualKeyboard_HandleEvent(const SDL_Event &ev, ATSimulator &sim, bool
 					default: dir = 0; break;
 				}
 
-				if (s_focusedKey == kCloseButtonIndex) {
-#ifdef __ANDROID__
-					// From close button: right → text input, down → ESC
-					if (dir == 3)       s_focusedKey = 5;   // down → ESC
-					else if (dir == 1)  s_focusedKey = kTextInputButtonIndex;  // right → text input
-					else if (dir == 0)  s_focusedKey = 5;   // left → wrap to ESC
-#else
-					// Desktop: no text input button
-					if (dir == 3)       s_focusedKey = 5;   // down → ESC
-					else if (dir == 1)  s_focusedKey = 0;   // right → HELP
-					else if (dir == 0)  s_focusedKey = 5;   // left → ESC
-#endif
-				} else if (s_focusedKey == kTextInputButtonIndex) {
-					// From text input button (Android only): left → close, down → HELP
-					if (dir == 3)       s_focusedKey = 0;   // down → HELP
-					else if (dir == 0)  s_focusedKey = kCloseButtonIndex;  // left → close
-					else if (dir == 1)  s_focusedKey = 0;   // right → wrap to HELP
-				} else {
-					int next = kOSKKeys[s_focusedKey].nav[dir];
-					if (dir == 2 && next < 0) {
-						// Up from top row (nav[up]==-1) → close button
-						s_focusedKey = kCloseButtonIndex;
-					} else if (next >= 0) {
-						s_focusedKey = next;
-					}
-				}
-				return true;
+				return MoveGamepadFocus(dir);
 			}
 
 			case SDL_GAMEPAD_BUTTON_SOUTH:  // A — press focused key
@@ -1040,6 +1045,34 @@ bool ATUIVirtualKeyboard_HandleEvent(const SDL_Event &ev, ATSimulator &sim, bool
 			default:
 				break;
 		}
+	}
+
+	if (ev.type == SDL_EVENT_GAMEPAD_AXIS_MOTION
+		&& (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX
+			|| ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY))
+	{
+		if (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX)
+			s_gamepadNavAxisX = ev.gaxis.value;
+		else
+			s_gamepadNavAxisY = ev.gaxis.value;
+
+		constexpr int kNavThreshold = 18000;
+		int dir = -1;
+		if (abs(s_gamepadNavAxisX) > kNavThreshold
+			|| abs(s_gamepadNavAxisY) > kNavThreshold) {
+			if (abs(s_gamepadNavAxisX) >= abs(s_gamepadNavAxisY))
+				dir = s_gamepadNavAxisX < 0 ? 0 : 1;
+			else
+				dir = s_gamepadNavAxisY < 0 ? 2 : 3;
+		}
+
+		if (dir != s_gamepadNavDir) {
+			s_gamepadNavDir = dir;
+			if (dir >= 0)
+				return MoveGamepadFocus(dir);
+		}
+
+		return dir >= 0;
 	}
 
 	// --- Touch events (mobile) ---

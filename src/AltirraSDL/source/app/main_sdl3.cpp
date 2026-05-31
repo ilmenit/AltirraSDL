@@ -444,7 +444,7 @@ static void HandleEvents() {
 		}
 
 		// Virtual keyboard intercepts gamepad events when visible.
-		// Gamepad Y toggles visibility; D-pad/A/LB/RB navigate and
+		// Gamepad Y toggles visibility; D-pad/left stick/A navigate and
 		// press keys when the keyboard is showing.  Y was chosen over
 		// X because some USB2JOY adapters mirror the standard fire
 		// button onto X, which would spuriously toggle the keyboard.
@@ -459,8 +459,11 @@ static void HandleEvents() {
 					g_uiState.showVirtualKeyboard = !g_uiState.showVirtualKeyboard;
 					if (!g_uiState.showVirtualKeyboard)
 						ATUIVirtualKeyboard_ReleaseAll(g_sim);
-					else
+					else {
+						if (ATInputManager *im = g_sim.GetInputManager())
+							im->ReleaseButtons(kATInputCode_JoyClass, 0xFFFF);
 						ATTouchControls_ReleaseAll();  // hide touch controls cleanly
+					}
 					continue;
 				}
 				if (g_uiState.showVirtualKeyboard) {
@@ -799,6 +802,7 @@ static void HandleEvents() {
 
 		case SDL_EVENT_GAMEPAD_REMOVED:
 		case SDL_EVENT_JOYSTICK_REMOVED:
+			ATMobileGamepad_ReleaseAll(g_sim);
 			// RescanForDevices only adds new devices.  For removal,
 			// the SDL3-specific manager exposes CloseGamepad(), which
 			// despite its historical name handles both gamepads and
@@ -916,6 +920,7 @@ static void HandleEvents() {
 			ATInputSDL3_ReleaseAllKeys();
 			ATUIReleaseMouse();
 			ATTouchControls_ReleaseAll();
+			ATMobileGamepad_ReleaseAll(g_sim);
 			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 #ifdef __ANDROID__
 			if (g_mobileState.autoSaveOnSuspend)
@@ -1038,6 +1043,7 @@ static void HandleEvents() {
 			ATUIReleaseMouse();
 			// Release all touch controls on focus loss
 			ATTouchControls_ReleaseAll();
+			ATMobileGamepad_ReleaseAll(g_sim);
 			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 			break;
 

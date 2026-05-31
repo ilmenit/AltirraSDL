@@ -39,7 +39,10 @@
 #include "inputmanager.h"
 #include "logging.h"
 #include "mobile_gamepad.h"
+#include "ui_main.h"
 #include "ui_mode.h"
+
+extern ATUIState g_uiState;
 
 namespace {
 
@@ -554,8 +557,33 @@ void ATJoystickManagerSDL3Impl::PollController(ATControllerSDL3& ctrl, bool& act
 		ReadRawJoystickState(ctrl, buttonStates, axisButtonStates, axisVals, deadVals);
 
 	if (ATUIIsGamingMode() && ctrl.mbIsGamepad) {
-		buttonStates &= ~((1u << 7) | (1u << 6));
-		ctrl.mLastButtons &= ~((1u << 7) | (1u << 6));
+		// Gaming Mode reserves B/X/Y and shoulder/system buttons for UI
+		// actions. Keep them out of the default "face buttons = fire"
+		// preset so they do not leak into the emulated joystick.
+		const uint32 reservedButtons =
+			(1u << 1) |	// B / cancel
+			(1u << 2) |	// X / UI reserve
+			(1u << 3) |	// Y / virtual keyboard
+			(1u << 4) |	// LB / hamburger
+			(1u << 5) |	// RB / pause
+			(1u << 6) |	// Back / Atari SELECT through direct switch path
+			(1u << 7);	// Start / Atari START through direct switch path
+
+		const bool vkbVisible = g_uiState.showVirtualKeyboard;
+		if (vkbVisible) {
+			// The virtual keyboard owns gamepad navigation while visible.
+			// Clear the polled gameplay state so D-pad/left-stick/A used
+			// to move and press OSK keys do not also move/fire in-game.
+			buttonStates = 0;
+			axisButtonStates = 0;
+			memset(axisVals, 0, sizeof(axisVals));
+			memset(deadVals, 0, sizeof(deadVals));
+		} else {
+			if (axisButtonStates & ((1u << 5) | (1u << 11)))
+				buttonStates |= (1u << 0);	// L2/R2 also act as joystick fire
+
+			buttonStates &= ~reservedButtons;
+		}
 	}
 
 	// --- Report changes to ATInputManager ---

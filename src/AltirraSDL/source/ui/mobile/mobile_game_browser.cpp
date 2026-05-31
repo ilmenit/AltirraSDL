@@ -72,6 +72,18 @@ static int SearchInputCallback(ImGuiInputTextCallbackData *data) {
 	return 0;
 }
 
+static bool NavDownPressed() {
+	return ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)
+		|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false)
+		|| ImGui::IsKeyPressed(ImGuiKey_GamepadLStickDown, false);
+}
+
+static bool NavUpPressed() {
+	return ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)
+		|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false)
+		|| ImGui::IsKeyPressed(ImGuiKey_GamepadLStickUp, false);
+}
+
 // Indices into the library's entries, filtered and sorted for display
 static std::vector<size_t> s_lastPlayedIndices;
 static std::vector<size_t> s_allGamesIndices;
@@ -599,7 +611,7 @@ static void RenderLetterPickerModal(ImGuiIO &io,
 		float childH = ImGui::GetContentRegionAvail().y - dp(72.0f);
 		if (childH < dp(80.0f)) childH = dp(80.0f);
 		ImGui::BeginChild("##LetterPickerGrid", ImVec2(0, childH),
-			ImGuiChildFlags_None, ImGuiWindowFlags_NoSavedSettings);
+			ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoSavedSettings);
 
 		// Build the list of tiles: "All" first, then every available
 		// letter.  Empty letters are simply skipped (not shown as
@@ -885,73 +897,92 @@ static void RenderVariantPicker(ATSimulator &sim, ATMobileUIState &mobileState) 
 		| ImGuiWindowFlags_AlwaysAutoResize;
 
 	if (ImGui::BeginPopupModal(kPopupId, &keepOpen, flags)) {
-		// Render the entry name as the body header — the popup ID is
-		// hidden ("##..."), so we draw the human-readable title here.
-		ImGui::SetWindowFontScale(1.1f);
-		ImGui::TextUnformatted(titleU8.c_str());
-		ImGui::SetWindowFontScale(1.0f);
-		ImGui::Separator();
-		ImGui::Spacing();
-
-		float btnH = dp(48.0f);
-		for (int i = 0; i < (int)entry.mVariants.size(); ++i) {
-			const auto &var = entry.mVariants[i];
-			VDStringA labelU8 = VDTextWToU8(var.mLabel);
-
-			char sizeStr[32];
-			if (var.mFileSize >= 1024 * 1024)
-				snprintf(sizeStr, sizeof(sizeStr), "%.1f MB",
-					var.mFileSize / (1024.0 * 1024.0));
-			else if (var.mFileSize >= 1024)
-				snprintf(sizeStr, sizeof(sizeStr), "%d KB",
-					(int)(var.mFileSize / 1024));
-			else
-				snprintf(sizeStr, sizeof(sizeStr), "%d B",
-					(int)var.mFileSize);
-
-			char btnLabel[256];
-			snprintf(btnLabel, sizeof(btnLabel), "%s    %s##var%d",
-				labelU8.c_str(), sizeStr, i);
-
-			ImU32 color = MediaTypeColor(var.mType);
-			ImVec2 cursor = ImGui::GetCursorScreenPos();
-			ImGui::GetWindowDrawList()->AddRectFilled(
-				cursor, ImVec2(cursor.x + dp(4.0f), cursor.y + btnH),
-				color);
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + dp(12.0f));
-
-			if (ATTouchButton(btnLabel, ImVec2(-1, btnH))) {
-				if (s_variantPickerSwapCb) {
-					// Swap mode — hand the variant path to the caller
-					// (Disk Drives "Select" button) and close.  We copy
-					// the callback locally because LoadDisk may trigger
-					// UI state changes that invalidate the static.
-					auto cb = std::move(s_variantPickerSwapCb);
-					s_variantPickerSwapCb = nullptr;
-					s_variantPickerOpen = false;
-					prevOpen = false;
-					VDStringW path = var.mPath;
-					ImGui::CloseCurrentPopup();
-					cb(path);
-				} else {
-					LaunchGame(sim, mobileState, s_variantPickerEntry, i);
-					s_variantPickerOpen = false;
-					prevOpen = false;
-					ImGui::CloseCurrentPopup();
-				}
-			}
-			if (i == 0)
-				ImGui::SetItemDefaultFocus();
-		}
-
-		ImGui::Spacing();
-		if (ATTouchButton("Cancel", ImVec2(-1, dp(40.0f)),
-			ATTouchButtonStyle::Subtle))
-		{
+		bool popupClosed = false;
+		auto closePopup = [&]() {
 			s_variantPickerOpen = false;
 			s_variantPickerSwapCb = nullptr;
 			prevOpen = false;
+			popupClosed = true;
 			ImGui::CloseCurrentPopup();
+		};
+
+		if (!s_confirmActive && !s_infoModalOpen) {
+			bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+			if (!ImGui::IsAnyItemActive()) {
+				back = back
+					|| ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
+			}
+			if (back)
+				closePopup();
+		}
+
+		if (!popupClosed) {
+			// Render the entry name as the body header — the popup ID is
+			// hidden ("##..."), so we draw the human-readable title here.
+			ImGui::SetWindowFontScale(1.1f);
+			ImGui::TextUnformatted(titleU8.c_str());
+			ImGui::SetWindowFontScale(1.0f);
+			ImGui::Separator();
+			ImGui::Spacing();
+
+			float btnH = dp(48.0f);
+			for (int i = 0; i < (int)entry.mVariants.size(); ++i) {
+				const auto &var = entry.mVariants[i];
+				VDStringA labelU8 = VDTextWToU8(var.mLabel);
+
+				char sizeStr[32];
+				if (var.mFileSize >= 1024 * 1024)
+					snprintf(sizeStr, sizeof(sizeStr), "%.1f MB",
+						var.mFileSize / (1024.0 * 1024.0));
+				else if (var.mFileSize >= 1024)
+					snprintf(sizeStr, sizeof(sizeStr), "%d KB",
+						(int)(var.mFileSize / 1024));
+				else
+					snprintf(sizeStr, sizeof(sizeStr), "%d B",
+						(int)var.mFileSize);
+
+				char btnLabel[256];
+				snprintf(btnLabel, sizeof(btnLabel), "%s    %s##var%d",
+					labelU8.c_str(), sizeStr, i);
+
+				ImU32 color = MediaTypeColor(var.mType);
+				ImVec2 cursor = ImGui::GetCursorScreenPos();
+				ImGui::GetWindowDrawList()->AddRectFilled(
+					cursor, ImVec2(cursor.x + dp(4.0f), cursor.y + btnH),
+					color);
+				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + dp(12.0f));
+
+				if (ATTouchButton(btnLabel, ImVec2(-1, btnH))) {
+					if (s_variantPickerSwapCb) {
+						// Swap mode — hand the variant path to the caller
+						// (Disk Drives "Select" button) and close.  We copy
+						// the callback locally because LoadDisk may trigger
+						// UI state changes that invalidate the static.
+						auto cb = std::move(s_variantPickerSwapCb);
+						VDStringW path = var.mPath;
+						closePopup();
+						cb(path);
+					} else {
+						LaunchGame(sim, mobileState,
+							s_variantPickerEntry, i);
+						closePopup();
+					}
+				}
+				if (i == 0)
+					ImGui::SetItemDefaultFocus();
+				if (popupClosed)
+					break;
+			}
+
+			if (!popupClosed) {
+				ImGui::Spacing();
+				if (ATTouchButton("Cancel", ImVec2(-1, dp(40.0f)),
+					ATTouchButtonStyle::Subtle))
+				{
+					closePopup();
+				}
+			}
 		}
 
 		ImGui::EndPopup();
@@ -1544,6 +1575,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				{
 					if (!isGrid) setMode(1);
 				}
+				if (ImGui::IsItemFocused())
+					letterBarHasFocus = true;
 				ImGui::SameLine(0, dp(2.0f));
 				if (ATTouchButton("List##view", ImVec2(viewW, viewH),
 					!isGrid ? ATTouchButtonStyle::Accent
@@ -1551,6 +1584,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				{
 					if (isGrid) setMode(0);
 				}
+				if (ImGui::IsItemFocused())
+					letterBarHasFocus = true;
 			}
 
 			// Letter filter pill.  Label reflects the current state so
@@ -1738,6 +1773,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
 				mobileState.currentScreen = ATMobileUIScreen::Settings;
 			}
+			ImGui::SetItemDefaultFocus();
 
 			ImGui::SetCursorPos(ImVec2(centerX - btnSize.x * 0.5f,
 				centerY + dp(160.0f)));
@@ -1760,8 +1796,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		static bool s_focusGameList = false;
 		if (letterBarHasFocus
 			&& !s_variantPickerOpen
-			&& (ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)
-				|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false)))
+			&& NavDownPressed())
 		{
 			s_focusGameList = true;
 		}
@@ -1943,10 +1978,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 
-			bool upPressed = ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)
-				|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false);
-			if (upPressed
-				&& !s_searchActive && !s_variantPickerOpen)
+			if (NavUpPressed() && !s_searchActive && !s_variantPickerOpen)
 			{
 				s_navIdOnUp = g.NavId;
 				s_scrollOnUp = ImGui::GetScrollY();

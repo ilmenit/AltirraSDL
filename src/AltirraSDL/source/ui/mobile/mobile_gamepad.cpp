@@ -7,12 +7,42 @@
 
 #include "ui_mobile.h"
 #include "simulator.h"
+#include "inputmanager.h"
+#include "netplay/netplay_input.h"
 #include "mobile_gamepad.h"
 #include "mobile_internal.h"
 
 namespace {
 	bool s_inited      = false;
 	bool s_uiOwning    = false;
+	bool s_startHeld   = false;
+	bool s_selectHeld  = false;
+	bool s_l1Consumed  = false;
+	bool s_r1Consumed  = false;
+
+	void SetConsoleSwitch(ATSimulator& sim, uint8 bit, bool down) {
+		ATNetplayInput::RouteConsoleSwitch(&sim.GetGTIA(), bit, down);
+	}
+
+	void SetHeldConsoleSwitch(ATSimulator& sim, uint8 bit, bool down, bool& held) {
+		if (held == down)
+			return;
+
+		held = down;
+		SetConsoleSwitch(sim, bit, down);
+	}
+
+	void TogglePause(ATSimulator& sim) {
+		if (sim.IsPaused())
+			sim.Resume();
+		else
+			sim.Pause();
+	}
+
+	void ReleaseGamepadMappedInput(ATSimulator& sim) {
+		if (ATInputManager *im = sim.GetInputManager())
+			im->ReleaseButtons(kATInputCode_JoyClass, 0xFFFF);
+	}
 }
 
 void ATMobileGamepad_Init() {
@@ -39,56 +69,75 @@ bool ATMobileGamepad_IsUIOwning() {
 
 bool ATMobileGamepad_IsReservedButton(int sdlGamepadButton) {
 	return sdlGamepadButton == SDL_GAMEPAD_BUTTON_START
-	    || sdlGamepadButton == SDL_GAMEPAD_BUTTON_BACK;
+	    || sdlGamepadButton == SDL_GAMEPAD_BUTTON_BACK
+		|| sdlGamepadButton == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER
+		|| sdlGamepadButton == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
 }
 
 bool ATMobileGamepad_HandleEvent(const SDL_Event &ev,
 	ATSimulator &sim, ATMobileUIState &mobileState)
 {
-	if (ev.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN)
+	if (ev.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN
+		&& ev.type != SDL_EVENT_GAMEPAD_BUTTON_UP)
 		return false;
 
 	const int btn = ev.gbutton.button;
+	const bool down = ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
 
 	if (btn == SDL_GAMEPAD_BUTTON_START) {
-		// Start: cold-boot if no game has been loaded yet (gives
-		// the user a way to (re)launch the most-recent image
-		// without touching the screen); otherwise toggle pause.
-		// Matches the behaviour of the on-screen Start button.
-		if (!mobileState.gameLoaded) {
-			sim.ColdReset();
-			sim.Resume();
-		} else if (sim.IsPaused()) {
-			sim.Resume();
-		} else {
-			sim.Pause();
-		}
+		SetHeldConsoleSwitch(sim, 0x01, down, s_startHeld);
 		return true;
 	}
 
 	if (btn == SDL_GAMEPAD_BUTTON_BACK) {
-		if (mobileState.currentScreen == ATMobileUIScreen::None) {
-			if (mobileState.gameLoaded) {
-				ATMobileUI_OpenMenu(sim, mobileState);
-				s_uiOwning = true;
-			} else {
-				mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
-				s_uiOwning = true;
-			}
-		} else if (mobileState.currentScreen == ATMobileUIScreen::HamburgerMenu) {
-			ATMobileUI_CloseMenu(sim, mobileState);
-			s_uiOwning = false;
-		} else if (mobileState.currentScreen == ATMobileUIScreen::GameBrowser) {
-			if (mobileState.gameLoaded) {
-				mobileState.currentScreen = ATMobileUIScreen::None;
-				sim.Resume();
-				s_uiOwning = false;
-			}
-		} else {
-			ATMobileUI_OpenMenu(sim, mobileState);
-		}
+		SetHeldConsoleSwitch(sim, 0x02, down, s_selectHeld);
 		return true;
 	}
 
+	if (btn == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) {
+		if (!down) {
+			const bool consumed = s_l1Consumed;
+			s_l1Consumed = false;
+			return consumed;
+		}
+
+		if (mobileState.currentScreen == ATMobileUIScreen::None) {
+			ReleaseGamepadMappedInput(sim);
+			ATMobileUI_OpenMenu(sim, mobileState);
+			s_uiOwning = true;
+			s_l1Consumed = true;
+			return true;
+		}
+
+		return false;
+	}
+
+	if (btn == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) {
+		if (!down) {
+			const bool consumed = s_r1Consumed;
+			s_r1Consumed = false;
+			return consumed;
+		}
+
+		if (mobileState.currentScreen != ATMobileUIScreen::None)
+			return false;
+
+		TogglePause(sim);
+		s_r1Consumed = true;
+		return true;
+	}
+
+	if (!down)
+		return false;
+
 	return false;
+}
+
+void ATMobileGamepad_ReleaseAll(ATSimulator &sim) {
+	if (s_startHeld)
+		SetHeldConsoleSwitch(sim, 0x01, false, s_startHeld);
+	if (s_selectHeld)
+		SetHeldConsoleSwitch(sim, 0x02, false, s_selectHeld);
+	s_l1Consumed = false;
+	s_r1Consumed = false;
 }
