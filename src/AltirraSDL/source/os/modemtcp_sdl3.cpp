@@ -841,6 +841,10 @@ void ATModemDriverTCP::OnRead(uint32 bytes) {
 			uint8 c = mReadBuffer[i];
 
 			switch (state) {
+			case kTS_Disabled:
+				state = kTS_WaitingForIAC;
+				[[fallthrough]];
+
 			case kTS_WaitingForIAC:
 				if (c == 0xFF) {
 					state = kTS_WaitingForCommandByte;

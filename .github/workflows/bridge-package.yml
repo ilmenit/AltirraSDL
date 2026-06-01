@@ -78,8 +78,8 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential ninja-build git ca-certificates \
             curl wget file zip unzip xz-utils patch pkg-config \
-            gnupg lsb-release software-properties-common \
-            python3 python3-venv \
+            python3 python3-pip python3-venv \
+            gcc-12 g++-12 \
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev \
@@ -88,13 +88,13 @@ jobs:
             libdbus-1-dev libudev-dev libibus-1.0-dev \
             libusb-1.0-0-dev desktop-file-utils \
             tar gzip
-          # CMake >= 3.24 + gcc-12.
-          wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
-            | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
-            > /etc/apt/sources.list.d/kitware.list
-          apt-get update
-          apt-get install -y --no-install-recommends cmake gcc-12 g++-12
+          # CMake >= 3.24 + gcc-12. Ubuntu 22.04 ships CMake 3.22, so
+          # install a PyPI binary wheel instead of adding a second
+          # external APT repo.
+          python3 -m pip install --user --disable-pip-version-check \
+            --only-binary=:all: 'cmake>=3.24,<5'
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
           update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
           # Hard floor check (see linux.yml for rationale).
@@ -103,7 +103,7 @@ jobs:
           CMAKE_MAJOR=${CMAKE_VER%%.*}
           CMAKE_MINOR=${CMAKE_VER#*.}; CMAKE_MINOR=${CMAKE_MINOR%%.*}
           if [ "$CMAKE_MAJOR" -lt 3 ] || { [ "$CMAKE_MAJOR" -eq 3 ] && [ "$CMAKE_MINOR" -lt 24 ]; }; then
-            echo "ERROR: CMake $CMAKE_VER below 3.24 floor (Kitware arm64?)" >&2
+            echo "ERROR: CMake $CMAKE_VER below 3.24 floor (PyPI wheel not on PATH?)" >&2
             exit 1
           fi
 

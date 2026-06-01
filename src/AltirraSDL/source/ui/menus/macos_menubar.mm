@@ -82,20 +82,7 @@ extern ATUIState g_uiState;
 extern ATUIKeyboardOptions g_kbdOpts;
 extern float g_menuBarHeight;
 
-// Functions declared in ui_menus.cpp
-void ATUIShowBootImageDialog(SDL_Window *window);
-void ATUIShowOpenImageDialog(SDL_Window *window);
-void ATUIShowOpenSourceFileDialog(SDL_Window *window);
-void ATUIShowSaveFrameDialog(SDL_Window *window, bool trueAspect = false);
-void ATUIRequestCopyFrame(bool trueAspect = false);
-void ATUIQuickSaveState();
-void ATUIQuickLoadState();
-bool ATUIHasQuickSaveState();
-
-void ATSetFullscreen(bool fs);
-void ATUIPasteText();
 bool ATUIClipIsTextAvailable();
-IDisplayBackend *ATUIGetDisplayBackend();
 
 // =========================================================================
 // Tag-based action dispatch (GCC-compatible — no ObjC blocks)

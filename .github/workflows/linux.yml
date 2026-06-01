@@ -69,8 +69,8 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential ninja-build git ca-certificates \
             curl wget file zip unzip xz-utils patch pkg-config \
-            gnupg lsb-release software-properties-common \
-            python3 \
+            python3 python3-pip \
+            gcc-12 g++-12 \
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev \
@@ -81,12 +81,14 @@ jobs:
             desktop-file-utils
 
           # CMakePresets.json declares "version": 5 which requires CMake
-          # >= 3.24.  Ubuntu 22.04 ships 3.22, so pull a current CMake from
-          # Kitware's APT repo to match the project's documented floor.
-          wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
-            | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
-            > /etc/apt/sources.list.d/kitware.list
+          # >= 3.24. Ubuntu 22.04 ships 3.22, so install a PyPI binary
+          # wheel instead of adding a second external APT repo.
+          # --only-binary avoids a slow source build if a wheel is missing
+          # for either x86_64 or aarch64.
+          python3 -m pip install --user --disable-pip-version-check \
+            --only-binary=:all: 'cmake>=3.24,<5'
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
           # gcc-12 from jammy-updates.  Ubuntu 22.04's default gcc is 11,
           # which doesn't support C++23 `if consteval` (used to be in
@@ -95,8 +97,6 @@ jobs:
           # required for full C++20/23 standard-library support — gcc-11's
           # libstdc++ has known constexpr math gaps that bite the
           # constexpr_assert tests in src/system.
-          apt-get update
-          apt-get install -y --no-install-recommends cmake gcc-12 g++-12
           update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
           update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
           cmake --version
@@ -104,15 +104,14 @@ jobs:
           g++ --version
 
           # Hard floor check. CMakePresets.json requires >= 3.24; if
-          # Kitware's apt repo ever stops publishing for this arch and
-          # we silently fall back to distro CMake 3.22, fail loudly
-          # here instead of deep in the configure step.
+          # the PyPI install ever fails and we silently fall back to distro
+          # CMake 3.22, fail loudly here instead of deep in configure.
           CMAKE_VER=$(cmake --version | awk 'NR==1{print $3}')
           CMAKE_MAJOR=${CMAKE_VER%%.*}
           CMAKE_MINOR=${CMAKE_VER#*.}; CMAKE_MINOR=${CMAKE_MINOR%%.*}
           if [ "$CMAKE_MAJOR" -lt 3 ] || { [ "$CMAKE_MAJOR" -eq 3 ] && [ "$CMAKE_MINOR" -lt 24 ]; }; then
             echo "ERROR: CMake $CMAKE_VER is below the 3.24 floor." >&2
-            echo "  Kitware apt repo probably doesn't publish this arch." >&2
+            echo "  The PyPI cmake wheel was not installed or is not on PATH." >&2
             exit 1
           fi
 
