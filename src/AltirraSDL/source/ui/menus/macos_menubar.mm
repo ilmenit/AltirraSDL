@@ -81,13 +81,13 @@ extern SDL_Window *g_pWindow;
 extern ATUIState g_uiState;
 extern ATUIKeyboardOptions g_kbdOpts;
 extern float g_menuBarHeight;
-extern bool g_copyFrameRequested;
 
 // Functions declared in ui_menus.cpp
 void ATUIShowBootImageDialog(SDL_Window *window);
 void ATUIShowOpenImageDialog(SDL_Window *window);
 void ATUIShowOpenSourceFileDialog(SDL_Window *window);
-void ATUIShowSaveFrameDialog(SDL_Window *window);
+void ATUIShowSaveFrameDialog(SDL_Window *window, bool trueAspect = false);
+void ATUIRequestCopyFrame(bool trueAspect = false);
 void ATUIQuickSaveState();
 void ATUIQuickLoadState();
 bool ATUIHasQuickSaveState();
@@ -838,14 +838,18 @@ static void BuildViewMenu(NSMenu *menu) {
 	AddSeparator(menu);
 
 	AddItem(menu, @"Copy Frame to Clipboard", false, true, [=]{
-		g_copyFrameRequested = true;
+		ATUIRequestCopyFrame(false);
 	});
-	AddItem(menu, @"Copy Frame to Clipboard (True Aspect)", false, false, [=]{});
+	AddItem(menu, @"Copy Frame to Clipboard (True Aspect)", false, true, [=]{
+		ATUIRequestCopyFrame(true);
+	});
 
 	AddItem(menu, @"Save Frame...", false, true, [=]{
-		ATUIShowSaveFrameDialog(g_pWindow);
+		ATUIShowSaveFrameDialog(g_pWindow, false);
 	});
-	AddItem(menu, @"Save Frame (True Aspect)...", false, false, [=]{});
+	AddItem(menu, @"Save Frame (True Aspect)...", false, true, [=]{
+		ATUIShowSaveFrameDialog(g_pWindow, true);
+	});
 
 	// Text Selection
 	{

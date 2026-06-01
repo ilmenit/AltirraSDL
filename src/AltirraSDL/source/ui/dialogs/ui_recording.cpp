@@ -98,17 +98,47 @@ void ATUIStartVGMRecording(const wchar_t *path) {
 }
 
 void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
-	if (ATUIIsRecording()) return;
+	if (ATUIIsRecording()) {
+		LOG_ERROR("UI", "Cannot start video recording while another recording is active");
+		return;
+	}
+
+	if (!path || !*path) {
+		LOG_ERROR("UI", "Cannot start video recording without an output path");
+		return;
+	}
+
+	if (encoding != kATVideoEncoding_Raw
+		&& encoding != kATVideoEncoding_RLE
+		&& encoding != kATVideoEncoding_ZMBV)
+	{
+		LOG_ERROR("UI", "Unsupported video recording encoding: %d", (int)encoding);
+		return;
+	}
+
+	bool audioTapAttached = false;
+	bool videoTapAttached = false;
 
 	try {
 		ATGTIAEmulator& gtia = g_sim.GetGTIA();
-
-		ATCreateVideoWriter(&g_pVideoWriter);
 
 		int w;
 		int h;
 		bool rgb32;
 		gtia.GetRawFrameFormat(w, h, rgb32);
+		if (w <= 0 || h <= 0)
+			throw MyError("Video recording cannot start because the GTIA raw frame size is invalid (%dx%d).", w, h);
+
+		if ((unsigned)g_videoRecFrameRate >= kATVideoRecordingFrameRateCount)
+			throw MyError("Video recording frame rate setting is invalid.");
+		if (g_videoRecAspectRatioMode >= ATVideoRecordingAspectRatioMode::Count)
+			throw MyError("Video recording aspect ratio setting is invalid.");
+		if (g_videoRecResamplingMode >= ATVideoRecordingResamplingMode::Count)
+			throw MyError("Video recording resampling setting is invalid.");
+		if (g_videoRecScalingMode >= ATVideoRecordingScalingMode::Count)
+			throw MyError("Video recording scaling setting is invalid.");
+
+		ATCreateVideoWriter(&g_pVideoWriter);
 
 		uint32 palette[256];
 		if (!rgb32)
@@ -172,14 +202,17 @@ void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
 			nullptr);
 
 		g_sim.GetAudioOutput()->SetAudioTap(g_pVideoWriter->AsAudioTap());
+		audioTapAttached = true;
 		gtia.AddVideoTap(g_pVideoWriter->AsVideoTap());
+		videoTapAttached = true;
 
 		LOG_INFO("UI", "Video recording started");
 	} catch (const MyError& e) {
 		if (g_pVideoWriter) {
-			ATGTIAEmulator& gtia2 = g_sim.GetGTIA();
-			gtia2.RemoveVideoTap(g_pVideoWriter->AsVideoTap());
-			g_sim.GetAudioOutput()->SetAudioTap(nullptr);
+			if (videoTapAttached)
+				g_sim.GetGTIA().RemoveVideoTap(g_pVideoWriter->AsVideoTap());
+			if (audioTapAttached)
+				g_sim.GetAudioOutput()->SetAudioTap(nullptr);
 			try { g_pVideoWriter->Shutdown(); } catch (...) {}
 			delete g_pVideoWriter;
 			g_pVideoWriter = nullptr;
@@ -187,9 +220,10 @@ void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
 		LOG_ERROR("UI", "Failed to start video recording: %s", e.c_str());
 	} catch (...) {
 		if (g_pVideoWriter) {
-			ATGTIAEmulator& gtia2 = g_sim.GetGTIA();
-			gtia2.RemoveVideoTap(g_pVideoWriter->AsVideoTap());
-			g_sim.GetAudioOutput()->SetAudioTap(nullptr);
+			if (videoTapAttached)
+				g_sim.GetGTIA().RemoveVideoTap(g_pVideoWriter->AsVideoTap());
+			if (audioTapAttached)
+				g_sim.GetAudioOutput()->SetAudioTap(nullptr);
 			try { g_pVideoWriter->Shutdown(); } catch (...) {}
 			delete g_pVideoWriter;
 			g_pVideoWriter = nullptr;

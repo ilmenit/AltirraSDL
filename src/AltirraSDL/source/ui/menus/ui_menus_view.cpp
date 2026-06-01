@@ -280,12 +280,14 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 
 	// Copy/Save Frame
 	if (ImGui::MenuItem("Copy Frame to Clipboard", ATUIGetShortcutStringForCommand("Edit.CopyFrame")))
-		g_copyFrameRequested = true;
-	ImGui::MenuItem("Copy Frame to Clipboard (True Aspect)", nullptr, false, false);  // placeholder
+		ATUIRequestCopyFrame(false);
+	if (ImGui::MenuItem("Copy Frame to Clipboard (True Aspect)"))
+		ATUIRequestCopyFrame(true);
 
 	if (ImGui::MenuItem("Save Frame...", ATUIGetShortcutStringForCommand("Edit.SaveFrame")))
-		ATUIShowSaveFrameDialog(window);
-	ImGui::MenuItem("Save Frame (True Aspect)...", nullptr, false, false);  // placeholder
+		ATUIShowSaveFrameDialog(window, false);
+	if (ImGui::MenuItem("Save Frame (True Aspect)..."))
+		ATUIShowSaveFrameDialog(window, true);
 
 	// Text Selection submenu
 	if (ImGui::BeginMenu("Text Selection")) {

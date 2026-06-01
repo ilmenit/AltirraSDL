@@ -281,6 +281,30 @@ void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
 	ShowConfirmDialog(title, body, std::move(onConfirm));
 }
 
+void ATMobileUI_ShowExitEmulatorConfirm(ATSimulator &sim,
+	ATUIState &uiState, ATMobileUIState &mobileState)
+{
+	const char *body = mobileState.saveStateOnExit
+		? "Quit Altirra?  Your current progress will be saved "
+		  "and restored next time you open the app."
+		: "Quit Altirra?  Any unsaved progress will be lost.";
+
+	ShowConfirmDialog("Exit Emulator", body,
+		[&sim, &uiState, &mobileState]() {
+			if (mobileState.saveStateOnExit)
+				ATMobileUI_SaveSuspendState(sim, mobileState);
+			else
+				ATMobileUI_ClearSuspendState();
+
+			ATAndroid_RequestQuitAndRemoveTask();
+
+			uiState.exitConfirmed = true;
+			SDL_Event q{};
+			q.type = SDL_EVENT_QUIT;
+			SDL_PushEvent(&q);
+		});
+}
+
 // Hierarchical settings — definition lives in mobile_internal.h.
 ATMobileSettingsPage s_settingsPage = ATMobileSettingsPage::Home;
 ATMobileUIScreen s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
@@ -649,18 +673,34 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 	ATMobileUIState &mobileState, SDL_Window *window)
 {
 	// Cache content scale for dp() helper, applying user's interface
-	// scale preference on top of the physical DPI factor.
+	// scale preference on top of the physical DPI factor. Re-query the
+	// physical scale each frame: mobile browsers and OS shells can
+	// change DPR/content scale during rotation or when moving between
+	// displays, and the touch layout must follow without an app restart.
 	static constexpr float kInterfaceScaleFactors[] = { 0.75f, 1.0f, 1.25f };
 	int scaleIdx = mobileState.interfaceScale;
 	if (scaleIdx < 0 || scaleIdx > 2) scaleIdx = 1;
 	float userScale = kInterfaceScaleFactors[scaleIdx];
+	if (window) {
+		SDL_DisplayID displayID = SDL_GetDisplayForWindow(window);
+		float cs = SDL_GetDisplayContentScale(displayID);
+		if (cs >= 1.0f && cs <= 4.0f)
+			mobileState.layoutConfig.contentScale = cs;
+	}
 	s_contentScale = mobileState.layoutConfig.contentScale * userScale;
 
 	ImGuiIO &io = ImGui::GetIO();
 	io.FontGlobalScale = userScale;
 
-	int w, h;
-	SDL_GetWindowSize(window, &w, &h);
+	// Use ImGui's current frame size as the touch-layout source of
+	// truth.  On WASM, CSS viewport/canvas changes during rotation can
+	// update ImGui's DisplaySize before SDL_GetWindowSize() reflects the
+	// same basis, which leaves the on-screen pad stretched while the
+	// rest of the Gaming Mode UI has already adapted.
+	int w = (int)(io.DisplaySize.x + 0.5f);
+	int h = (int)(io.DisplaySize.y + 0.5f);
+	if (w <= 0 || h <= 0)
+		SDL_GetWindowSize(window, &w, &h);
 
 	// Query Android safe-area insets (status bar, nav bar, cutout).
 	// Zero on desktop.  Cached — only re-queried when the window was

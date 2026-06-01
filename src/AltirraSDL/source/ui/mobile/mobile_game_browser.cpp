@@ -27,6 +27,7 @@
 #include "versioninfo.h"
 #include "settings.h"
 #include "ui_mode.h"
+#include "ui_frame_capture.h"
 #include "oshelper.h"
 #include <vd2/system/error.h>
 #include <vd2/Kasumi/pixmap.h>
@@ -274,12 +275,8 @@ VDStringA GameBrowser_SetCurrentFrameAsArt() {
 	if ((size_t)eidx >= entries.size() || entries[eidx].mVariants.empty())
 		return VDStringA("Library entry is invalid.");
 
-	// Pull the clean emulator frame directly from GTIA rather than the
-	// SDL framebuffer — the latter contains the hamburger menu / settings
-	// panel that's on top of the game when this action is triggered.
 	VDPixmapBuffer pxbuf;
-	VDPixmap px;
-	if (!g_sim.GetGTIA().GetLastFrameBuffer(pxbuf, px) || !px.data)
+	if (!ATUICaptureEmulatorFrame(g_sim, ATUIFrameCaptureMode::Display, pxbuf))
 		return VDStringA("No emulator frame is available yet.");
 
 	auto &entry = entries[eidx];
@@ -307,7 +304,7 @@ VDStringA GameBrowser_SetCurrentFrameAsArt() {
 
 	VDStringW pngPathW = VDTextU8ToW(pngPath.c_str(), -1);
 	try {
-		ATSaveFrame(px, pngPathW.c_str());
+		ATSaveFrame(pxbuf, pngPathW.c_str());
 	} catch (const MyError &e) {
 		return VDStringA(e.c_str());
 	}
@@ -1394,12 +1391,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				sim.Resume();
 			} else {
 #ifdef __ANDROID__
-				// Root home screen with no game — match the Android
-				// system idiom for Back on a root activity by sending
-				// the app to the background.  SDL_MinimizeWindow on
-				// Android maps to Activity.moveTaskToBack().
-				if (window)
-					SDL_MinimizeWindow(window);
+				// Root Game Library screen with no game: ask for a clean
+				// emulator exit instead of silently backgrounding the app.
+				ATMobileUI_ShowExitEmulatorConfirm(sim, uiState, mobileState);
 #endif
 			}
 		}

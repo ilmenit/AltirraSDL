@@ -31,6 +31,7 @@
 #include <vd2/system/error.h>
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
+#include <vd2/Kasumi/pixmapops.h>
 #include <at/atio/cassetteimage.h>
 
 #include <at/atcore/serializable.h>
@@ -63,6 +64,7 @@
 #include "ui_emuerror.h"
 #include "ui_confirm_dialog.h"
 #include "ui_virtual_keyboard.h"
+#include "ui_frame_capture.h"
 #include "display_sdl3_impl.h"
 #include "simulator.h"
 #include "hleprogramloader.h"
@@ -78,6 +80,7 @@
 #include "debugger.h"
 #include <algorithm>
 #include "videowriter.h"
+#include "oshelper.h"
 #include <at/ataudio/pokey.h>
 #include "uiaccessors.h"
 #include "uiconfirm.h"
@@ -230,15 +233,37 @@ std::mutex g_saveFrameMutex;
 VDStringA g_saveFramePath;
 
 bool g_copyFrameRequested = false;
+static bool g_copyFrameTrueAspect = false;
+bool g_saveFrameTrueAspect = false;
 // Deferred clipboard capture: set when g_copyFrameRequested is consumed,
 // cleared and captured at the start of the NEXT frame before ImGui renders.
 static bool g_copyFramePending = false;
 ATUIDragDropState g_dragDropState;
 
+static bool ATUIPathFilenameHasExtension(const char *path) {
+	if (!path)
+		return false;
+
+	const char *lastSep = path;
+	for (const char *p = path; *p; ++p) {
+		if (*p == '/' || *p == '\\')
+			lastSep = p + 1;
+	}
+
+	return strchr(lastSep, '.') != nullptr;
+}
+
 void ATUISaveFrameCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
 	std::lock_guard<std::mutex> lock(g_saveFrameMutex);
 	g_saveFramePath = filelist[0];
+	if (!ATUIPathFilenameHasExtension(g_saveFramePath.c_str()))
+		g_saveFramePath += ".png";
+}
+
+void ATUIRequestCopyFrame(bool trueAspect) {
+	g_copyFrameTrueAspect = trueAspect;
+	g_copyFrameRequested = true;
 }
 // =========================================================================
 // Deferred action execution (main thread only)
@@ -1365,10 +1390,40 @@ SDL_Surface *ATUIReadFramebuffer() {
 	return ReadFramebufferToSurface(ATUIGetDisplayBackend());
 }
 
-static void CopyFrameToClipboard(IDisplayBackend *backend) {
-	SDL_Surface *surface = ReadFramebufferToSurface(backend);
+static SDL_Surface *CreateSurfaceFromFrame(const VDPixmap& px) {
+	SDL_Surface *surface = SDL_CreateSurface(px.w, px.h, SDL_PIXELFORMAT_BGR24);
+	if (!surface)
+		return nullptr;
+
+	VDPixmap dst {};
+	dst.data = surface->pixels;
+	dst.palette = nullptr;
+	dst.w = surface->w;
+	dst.h = surface->h;
+	dst.pitch = surface->pitch;
+	dst.format = nsVDPixmap::kPixFormat_RGB888;
+	dst.data2 = nullptr;
+	dst.pitch2 = 0;
+	dst.data3 = nullptr;
+	dst.pitch3 = 0;
+
+	VDPixmapBlt(dst, px);
+	return surface;
+}
+
+static void CopyFrameToClipboard(ATSimulator& sim, bool trueAspect) {
+	VDPixmapBuffer frame;
+	if (!ATUICaptureEmulatorFrame(sim,
+		trueAspect ? ATUIFrameCaptureMode::TrueAspect : ATUIFrameCaptureMode::Display,
+		frame))
+	{
+		LOG_ERROR("UI", "Copy frame: no emulator frame is available");
+		return;
+	}
+
+	SDL_Surface *surface = CreateSurfaceFromFrame(frame);
 	if (!surface) {
-		LOG_ERROR("UI", "Copy frame: failed to read pixels: %s", SDL_GetError());
+		LOG_ERROR("UI", "Copy frame: failed to create surface: %s", SDL_GetError());
 		return;
 	}
 
@@ -1376,10 +1431,12 @@ static void CopyFrameToClipboard(IDisplayBackend *backend) {
 	// When SDL_SetClipboardData is called again, SDL calls the OLD cleanup
 	// with the OLD userdata (old surface), then installs the new callbacks.
 	const char *mimeTypes[] = { "image/bmp" };
-	if (SDL_SetClipboardData(ClipboardDataCallback, ClipboardCleanupCallback, surface, mimeTypes, 1))
+	if (SDL_SetClipboardData(ClipboardDataCallback, ClipboardCleanupCallback, surface, mimeTypes, 1)) {
 		LOG_INFO("UI", "Frame copied to clipboard");
-	else
+	} else {
 		LOG_ERROR("UI", "Failed to copy frame to clipboard: %s", SDL_GetError());
+		SDL_DestroySurface(surface);
+	}
 }
 
 // =========================================================================
@@ -1586,7 +1643,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	// the menu item was clicked (ImGui had already rendered that frame).
 	if (g_copyFramePending) {
 		g_copyFramePending = false;
-		CopyFrameToClipboard(backend);
+		CopyFrameToClipboard(sim, g_copyFrameTrueAspect);
 	}
 
 	// If the user changed any font setting last frame, rebuild the atlas
@@ -1942,23 +1999,26 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 			savePath.swap(g_saveFramePath);
 		}
 		if (!savePath.empty()) {
-			SDL_Surface *surface = ReadFramebufferToSurface(backend);
-			if (surface) {
-				if (SDL_SaveBMP(surface, savePath.c_str()))
+			VDPixmapBuffer frame;
+			if (ATUICaptureEmulatorFrame(sim,
+				g_saveFrameTrueAspect ? ATUIFrameCaptureMode::TrueAspect : ATUIFrameCaptureMode::Display,
+				frame))
+			{
+				try {
+					const VDStringW savePathW = VDTextU8ToW(savePath.c_str(), -1);
+					ATSaveFrame(frame, savePathW.c_str());
 					LOG_INFO("UI", "Frame saved to %s", savePath.c_str());
-				else
-					LOG_ERROR("UI", "Failed to save frame: %s", SDL_GetError());
-				SDL_DestroySurface(surface);
+				} catch (const MyError& e) {
+					LOG_ERROR("UI", "Failed to save frame: %s", e.c_str());
+				}
 			} else {
-				LOG_ERROR("UI", "Failed to read pixels: %s", SDL_GetError());
+				LOG_ERROR("UI", "Failed to save frame: no emulator frame is available");
 			}
+			g_saveFrameTrueAspect = false;
 		}
 
 		if (g_copyFrameRequested) {
 			g_copyFrameRequested = false;
-			// Don't capture here — ImGui has already rendered onto the
-			// framebuffer this frame (menu is visible). Defer to the
-			// start of the next frame, before ImGui::NewFrame().
 			g_copyFramePending = true;
 		}
 	}

@@ -41,6 +41,7 @@
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 extern void GameBrowser_Init();
+extern void GameBrowser_Invalidate();
 extern ATGameLibrary *GetGameLibrary();
 
 namespace {
@@ -144,6 +145,7 @@ void CommitSources(ATGameLibrary &lib, std::vector<GameSource> sources,
 	lib.SaveSettingsToRegistry();
 	if (rescan)
 		lib.StartScan();
+	GameBrowser_Invalidate();
 	ATRegistryFlushToDisk();
 }
 
@@ -453,6 +455,7 @@ void RenderTabSources(ATGameLibrary &lib, SDL_Window *window) {
 	if (scanning) ImGui::BeginDisabled();
 	if (ImGui::Button(scanning ? "Scanning..." : "Rescan Now")) {
 		lib.StartScan();
+		GameBrowser_Invalidate();
 	}
 	if (scanning) ImGui::EndDisabled();
 }
@@ -573,6 +576,7 @@ void RenderClearLibPopup(ATGameLibrary &lib) {
 		SDL_RemovePath(tmpPath.c_str());
 		ATRegistryFlushToDisk();
 		g_selectedEntry = -1;
+		GameBrowser_Invalidate();
 		ImGui::CloseCurrentPopup();
 	}
 	ImGui::SameLine();

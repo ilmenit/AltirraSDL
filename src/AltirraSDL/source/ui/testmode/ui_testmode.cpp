@@ -12,12 +12,16 @@
 #include <vector>
 #include <mutex>
 #include <algorithm>
+#include <vd2/system/error.h>
+#include <vd2/system/text.h>
 
 #include "testmode_ipc.h"
 #include "ui_testmode.h"
 #include "ui_main.h"
+#include "ui_frame_capture.h"
 #include "simulator.h"
 #include "gtia.h"
+#include "oshelper.h"
 #include "logging.h"
 
 bool g_testModeEnabled = false;
@@ -475,13 +479,17 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		if (path.empty())
 			return JsonError("usage: screenshot <path>");
 
-		// Use existing save frame mechanism
-		extern std::mutex g_saveFrameMutex;
-		extern VDStringA g_saveFramePath;
-		{
-			std::lock_guard<std::mutex> lock(g_saveFrameMutex);
-			g_saveFramePath = path.c_str();
+		try {
+			VDPixmapBuffer frame;
+			if (!ATUICaptureEmulatorFrame(sim, ATUIFrameCaptureMode::Display, frame))
+				return JsonError("no emulator frame is available");
+
+			const VDStringW pathW = VDTextU8ToW(path.c_str(), -1);
+			ATSaveFrame(frame, pathW.c_str());
+		} catch (const MyError& e) {
+			return JsonError(e.c_str());
 		}
+
 		return "{\"ok\":true,\"path\":\"" + JsonEscape(path) + "\"}";
 	}
 
@@ -821,4 +829,3 @@ const char* ImGuiTestEngine_FindItemDebugLabel(ImGuiContext *ctx, ImGuiID id) {
 	}
 	return nullptr;
 }
-

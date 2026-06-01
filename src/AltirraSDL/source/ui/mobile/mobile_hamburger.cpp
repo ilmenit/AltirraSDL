@@ -403,45 +403,7 @@ void RenderHamburgerMenu(ATSimulator &sim, ATUIState &uiState,
 		ImGui::Spacing();
 		if (ATTouchButton("Exit Emulator", btnSize, ATTouchButtonStyle::Danger,
 				ICON_MD_EXIT_TO_APP)) {
-			// Explicit Exit is a deliberately clean exit by default —
-			// opposite signal from auto-save-on-background, which
-			// recovers from unexpected OS terminations.  The user can
-			// flip "Save state on exit" in Settings → Save State to
-			// get RetroArch-style exit-and-resume behaviour, in which
-			// case Exit writes a fresh snapshot for the next launch.
-			// Confirm copy adapts so the user knows which path runs.
-			const char *body = mobileState.saveStateOnExit
-				? "Quit Altirra?  Your current progress will be saved "
-				  "and restored next time you open the app."
-				: "Quit Altirra?  Any unsaved progress will be lost.";
-			ShowConfirmDialog("Exit Emulator", body,
-				[&sim, &uiState, &mobileState]() {
-					// Two paths, gated on the user's "Save state on
-					// exit" preference.  ON: write a fresh snapshot
-					// for next-launch restore (RetroArch idiom).
-					// OFF: clear any existing snapshot so a stale
-					// background-save from earlier doesn't get
-					// silently reloaded — the user asked for a
-					// clean exit, honour it.
-					if (mobileState.saveStateOnExit)
-						ATMobileUI_SaveSuspendState(sim, mobileState);
-					else
-						ATMobileUI_ClearSuspendState();
-
-					// Mark the Android activity so the eventual
-					// finish() (which SDLActivity calls automatically
-					// once native main() returns) is redirected to
-					// finishAndRemoveTask() — without this the recents
-					// chip remains and tapping it warm-starts a new
-					// activity, which looks like the app didn't
-					// really exit.  No-op on desktop.
-					ATAndroid_RequestQuitAndRemoveTask();
-
-					uiState.exitConfirmed = true;
-					SDL_Event q{};
-					q.type = SDL_EVENT_QUIT;
-					SDL_PushEvent(&q);
-				});
+			ATMobileUI_ShowExitEmulatorConfirm(sim, uiState, mobileState);
 		}
 		ImGui::Spacing();
 

@@ -25,6 +25,14 @@ extern float g_menuBarHeight;
 extern ATUIKeyboardOptions g_kbdOpts;
 extern IDisplayBackend *ATUIGetDisplayBackend();
 
+static void GetUIWindowSize(int& winW, int& winH) {
+	ImGuiIO& io = ImGui::GetIO();
+	winW = (int)(io.DisplaySize.x + 0.5f);
+	winH = (int)(io.DisplaySize.y + 0.5f);
+	if (winW <= 0 || winH <= 0)
+		SDL_GetWindowSize(g_pWindow, &winW, &winH);
+}
+
 // Native text input mode — when active, the mobile phone's soft keyboard
 // is shown and typed characters are translated to Atari scancodes.
 static bool s_nativeTextInputActive = false;
@@ -417,7 +425,7 @@ static int ResolveAutoPlacement(int placement) {
 		return placement;
 
 	int winW, winH;
-	SDL_GetWindowSize(g_pWindow, &winW, &winH);
+	GetUIWindowSize(winW, winH);
 	float aspect = (winH > 0) ? (float)winW / (float)winH : 1.6f;
 
 	// Wide windows: keyboard on the right; tall/square: bottom
@@ -426,7 +434,7 @@ static int ResolveAutoPlacement(int placement) {
 
 static void ComputeKeyboardRect(int placement, ImVec2 *outPos, ImVec2 *outSize) {
 	int winW, winH;
-	SDL_GetWindowSize(g_pWindow, &winW, &winH);
+	GetUIWindowSize(winW, winH);
 	float menuH = g_menuBarHeight;
 
 	int resolved = ResolveAutoPlacement(placement);
@@ -542,7 +550,7 @@ void ATUIVirtualKeyboard_GetDisplayInset(bool visible, int placement,
 	ComputeKeyboardRect(placement, &pos, &size);
 
 	int winW, winH;
-	SDL_GetWindowSize(g_pWindow, &winW, &winH);
+	GetUIWindowSize(winW, winH);
 
 	int resolved = ResolveAutoPlacement(placement);
 	if (resolved == kOSKPlacement_Right) {
@@ -1081,7 +1089,7 @@ bool ATUIVirtualKeyboard_HandleEvent(const SDL_Event &ev, ATSimulator &sim, bool
 			return false;
 
 		int winW, winH;
-		SDL_GetWindowSize(g_pWindow, &winW, &winH);
+		GetUIWindowSize(winW, winH);
 		float fx = ev.tfinger.x * (float)winW;
 		float fy = ev.tfinger.y * (float)winH;
 		ImVec2 touchPt(fx, fy);

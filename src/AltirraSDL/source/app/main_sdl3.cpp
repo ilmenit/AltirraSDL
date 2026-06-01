@@ -894,6 +894,26 @@ static void HandleEvents() {
 			// Orientation change / rotation → safe insets change too.
 			ATAndroid_InvalidateSafeInsets();
 #endif
+			// A resize/orientation change can move every virtual touch
+			// target while fingers are still down.  Release acquired
+			// emulator-side state so directions/buttons do not survive
+			// into the new layout if the matching finger-up is lost or
+			// lands in a different coordinate basis.
+			ATTouchControls_ReleaseAll();
+			ATUIVirtualKeyboard_ReleaseAll(g_sim);
+			break;
+		case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+			if (g_pBackend) {
+				int w, h;
+				SDL_GetWindowSizeInPixels(g_pWindow, &w, &h);
+				g_pBackend->OnResize(w, h);
+			}
+#ifdef __ANDROID__
+			ATAndroid_InvalidateSafeInsets();
+#endif
+			ATTouchControls_ReleaseAll();
+			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 			break;
 		case SDL_EVENT_WINDOW_MOVED:
 			ATUpdateWindowedGeometry(g_pWindow);

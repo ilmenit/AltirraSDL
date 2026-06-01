@@ -1273,6 +1273,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					lib->SetSources(std::move(sources));
 					lib->SaveSettingsToRegistry();
 					lib->StartScan();
+					GameBrowser_Invalidate();
 					extern void ATRegistryFlushToDisk();
 					ATRegistryFlushToDisk();
 				};
@@ -1369,6 +1370,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					lib->SetSources(std::move(sources));
 					lib->SaveSettingsToRegistry();
 					lib->StartScan();
+					GameBrowser_Invalidate();
 					extern void ATRegistryFlushToDisk();
 					ATRegistryFlushToDisk();
 				};
@@ -1503,6 +1505,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 						ATTouchButtonStyle::Accent, ICON_MD_REFRESH))
 					{
 						lib->StartScan();
+						GameBrowser_Invalidate();
 					}
 				}
 

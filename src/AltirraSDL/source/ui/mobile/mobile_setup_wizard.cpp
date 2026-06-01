@@ -184,6 +184,7 @@ static void WizMobile_GameLibrary(SDL_Window *window) {
 				lib->PurgeRemovedSourceEntries();
 				lib->SaveSettingsToRegistry();
 				lib->StartScan();
+				GameBrowser_Invalidate();
 				ATRegistryFlushToDisk();
 				ImGui::PopID();
 				break;
@@ -246,6 +247,7 @@ static void WizMobile_GameLibrary(SDL_Window *window) {
 			l->SetSources(std::move(srcs));
 			l->SaveSettingsToRegistry();
 			l->StartScan();
+			GameBrowser_Invalidate();
 			ATRegistryFlushToDisk();
 		};
 		s_fileBrowserNeedsRefresh = true;

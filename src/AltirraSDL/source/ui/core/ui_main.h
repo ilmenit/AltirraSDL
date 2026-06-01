@@ -106,7 +106,7 @@ void ATUIQuickLoadState();
 void ATUIShowBootImageDialog(SDL_Window *window);     // Alt+B
 void ATUIShowOpenImageDialog(SDL_Window *window);     // Alt+O
 void ATUIShowOpenSourceFileDialog(SDL_Window *window); // Alt+Shift+O
-void ATUIShowSaveFrameDialog(SDL_Window *window);     // Alt+F10
+void ATUIShowSaveFrameDialog(SDL_Window *window, bool trueAspect = false);     // Alt+F10
 
 // Capture the current display framebuffer as an SDL surface (caller frees).
 struct SDL_Surface;
@@ -212,6 +212,8 @@ void ATUIShowVideoRecordingDialog();
 
 // Frame capture (ui_main.cpp)
 extern bool g_copyFrameRequested;
+extern bool g_saveFrameTrueAspect;
+void ATUIRequestCopyFrame(bool trueAspect = false);
 void ATUISaveFrameCallback(void *, const char * const *filelist, int);
 
 // Dialog render functions (each in its own .cpp file)

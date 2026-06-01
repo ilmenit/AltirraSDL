@@ -82,6 +82,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/core/ui_indicators.cpp
     source/ui/core/ui_fonts.cpp
     source/ui/core/ui_autosuggest.cpp
+    source/ui/core/ui_frame_capture.cpp
 
     # --- ui/menus/ : menu bar ---
     source/ui/menus/ui_menus.cpp

@@ -58,7 +58,6 @@
 
 extern ATSimulator g_sim;
 extern ATUIKeyboardOptions g_kbdOpts;
-extern bool g_copyFrameRequested;  // defined in ui_main.cpp
 extern SDL_Window *g_pWindow;      // defined in main_sdl3.cpp
 
 // Right-click context menu for menu items — "Assign Keyboard Shortcut..."
@@ -258,9 +257,10 @@ void ATUIShowOpenSourceFileDialog(SDL_Window *window) {
 	}, nullptr, window, srcFilters, 2, false);
 }
 
-void ATUIShowSaveFrameDialog(SDL_Window *window) {
+void ATUIShowSaveFrameDialog(SDL_Window *window, bool trueAspect) {
+	g_saveFrameTrueAspect = trueAspect;
 	static const SDL_DialogFileFilter filters[] = {
-		{ "BMP Images", "bmp" },
+		{ "PNG Images", "png" },
 	};
 	ATUIShowSaveFileDialog('scrn', ATUISaveFrameCallback, nullptr, window, filters, 1);
 }

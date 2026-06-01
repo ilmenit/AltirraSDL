@@ -33,6 +33,20 @@ void RenderMobileModalSheet(const ATMobileUIState &mobileState) {
 		ImVec2(0, 0), ImGui::GetIO().DisplaySize,
 		pal.backdropDim);
 
+	// Modal input blocker.  The dim rect is intentionally drawn behind
+	// all windows so the sheet card stays bright, but it does not stop
+	// underlying full-screen lists from receiving wheel/drag input.
+	// This invisible window owns the viewport until the sheet closes.
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+	ImGui::Begin("##MobileModalBlocker", nullptr,
+		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground);
+	ImGui::InvisibleButton("##MobileModalBlockerHit",
+		ImGui::GetIO().DisplaySize);
+	ImGui::End();
+
 	float insetL = (float)mobileState.layout.insets.left;
 	float insetR = (float)mobileState.layout.insets.right;
 	float insetT = (float)mobileState.layout.insets.top;

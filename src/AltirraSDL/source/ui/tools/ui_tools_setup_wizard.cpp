@@ -795,6 +795,7 @@ void Wiz_PumpAsync() {
 			lib->SetSources(std::move(sources));
 			lib->SaveSettingsToRegistry();
 			lib->StartScan();
+			GameBrowser_Invalidate();
 			extern void ATRegistryFlushToDisk();
 			ATRegistryFlushToDisk();
 		}
@@ -1197,6 +1198,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 								mut.erase(mut.begin() + i);
 								lib->SetSources(std::move(mut));
 								lib->SaveSettingsToRegistry();
+								GameBrowser_Invalidate();
 								extern void ATRegistryFlushToDisk();
 								ATRegistryFlushToDisk();
 							}

@@ -215,3 +215,5 @@ void ATMobileUI_OpenOnlinePlaySettings();
 void ATMobileUI_ShowInfoModal(const char *title, const char *body);
 void ATMobileUI_ShowConfirmDialog(const char *title, const char *body,
 	std::function<void()> onConfirm);
+void ATMobileUI_ShowExitEmulatorConfirm(ATSimulator &sim,
+	ATUIState &uiState, ATMobileUIState &mobileState);

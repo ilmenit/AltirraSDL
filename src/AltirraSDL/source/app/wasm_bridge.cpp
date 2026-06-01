@@ -47,6 +47,8 @@
 // itself lives in mobile_game_browser.cpp behind GetGameLibrary().
 #include "../ui/gamelibrary/game_library.h"
 
+void GameBrowser_Invalidate();
+
 // ATUIBootImage: the simulator's "load, auto-detect type, cold-boot"
 // one-shot API.  Declared in Altirra's main.cpp-era header that the
 // SDL3 build already pulls in for the file-dialog Open flow.
@@ -1382,6 +1384,7 @@ int ApplyGamePackSourceLocked(ATGameLibrary *lib, const char *utf8Path) {
 		lib->SaveSettingsToRegistry();
 		ATRegistryFlushToDisk();
 		lib->StartScan();
+		GameBrowser_Invalidate();
 	} catch (const MyError &e) {
 		fprintf(stderr,
 			"[wasm] RegisterGamePackSource: persist/scan threw: %s\n",

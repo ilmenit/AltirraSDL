@@ -34,7 +34,6 @@
 extern ATSimulator g_sim;
 extern SDL_Window *g_pWindow;
 extern ATUIKeyboardOptions g_kbdOpts;
-extern bool g_copyFrameRequested;
 
 ATUICommandManager g_ATUICommandMgr;
 
@@ -198,7 +197,11 @@ static void CmdPasteText() {
 }
 
 static void CmdSaveFrame() {
-	ATUIShowSaveFrameDialog(g_pWindow);
+	ATUIShowSaveFrameDialog(g_pWindow, false);
+}
+
+static void CmdSaveFrameTrueAspect() {
+	ATUIShowSaveFrameDialog(g_pWindow, true);
 }
 
 static void CmdCopyText() {
@@ -206,7 +209,11 @@ static void CmdCopyText() {
 }
 
 static void CmdCopyFrame() {
-	g_copyFrameRequested = true;
+	ATUIRequestCopyFrame(false);
+}
+
+static void CmdCopyFrameTrueAspect() {
+	ATUIRequestCopyFrame(true);
 }
 
 static void CmdSelectAll() {
@@ -826,8 +833,10 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "Audio.ToggleChannel4",          CmdToggleChannel4,       nullptr, nullptr, nullptr },
 	{ "Edit.PasteText",                CmdPasteText,            ATUIClipIsTextAvailable, nullptr, nullptr },
 	{ "Edit.SaveFrame",                CmdSaveFrame,            nullptr, nullptr, nullptr },
+	{ "Edit.SaveFrameTrueAspect",      CmdSaveFrameTrueAspect,  nullptr, nullptr, nullptr },
 	{ "Edit.CopyText",                 CmdCopyText,             nullptr, nullptr, nullptr },
 	{ "Edit.CopyFrame",                CmdCopyFrame,            nullptr, nullptr, nullptr },
+	{ "Edit.CopyFrameTrueAspect",      CmdCopyFrameTrueAspect,  nullptr, nullptr, nullptr },
 	{ "Edit.SelectAll",                CmdSelectAll,            nullptr, nullptr, nullptr },
 	{ "Edit.Deselect",                 CmdDeselect,             nullptr, nullptr, nullptr },
 	{ "Edit.ShowSuggestions",          CmdShowSuggestions,            nullptr, nullptr, nullptr },
