@@ -23,8 +23,13 @@ struct ImVec2 {
 	ImVec2(float _x, float _y) : x(_x), y(_y) {}
 };
 
+// Keep constructor signatures aligned with Dear ImGui's vector types.
+// Frontend headers may contain inline helpers that construct these even
+// though the headless bridge target never links or calls ImGui itself.
 struct ImVec4 {
 	float x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f;
+	ImVec4() = default;
+	ImVec4(float _x, float _y, float _z, float _w) : x(_x), y(_y), z(_z), w(_w) {}
 };
 
 // Opaque pointer types referenced in ui_main.h. Real ImGui defines
