@@ -8,6 +8,7 @@
 #include <at/atcore/address.h>
 #include <at/atdebugger/target.h>
 #include "ui_dbg_memory.h"
+#include "../core/ui_main.h"
 #include "console.h"
 #include "debugger.h"
 
@@ -93,7 +94,7 @@ static void RenderEditCursor(sint32 editValue, int editPhase,
 		snprintf(buf, sizeof(buf), "%5d_", editValue & 0xFFFF);
 	}
 
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
 	ImGui::TextUnformatted(buf);
 	ImGui::PopStyleColor();
 }

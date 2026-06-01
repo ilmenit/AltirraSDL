@@ -83,6 +83,31 @@ void ATUIUpdateSystemTheme();
 // Accounts for ATUIThemeMode::System by consulting the last known
 // system theme (refreshed by ATUIUpdateSystemTheme).
 bool ATUIIsDarkTheme();
+
+inline ImVec4 ATUIColorWarningText() {
+	return ATUIIsDarkTheme()
+		? ImVec4(1.00f, 0.78f, 0.30f, 1.0f)
+		: ImVec4(0.58f, 0.33f, 0.00f, 1.0f);
+}
+
+inline ImVec4 ATUIColorDangerText() {
+	return ATUIIsDarkTheme()
+		? ImVec4(1.00f, 0.40f, 0.40f, 1.0f)
+		: ImVec4(0.68f, 0.12f, 0.12f, 1.0f);
+}
+
+inline ImVec4 ATUIColorSuccessText() {
+	return ATUIIsDarkTheme()
+		? ImVec4(0.40f, 1.00f, 0.40f, 1.0f)
+		: ImVec4(0.05f, 0.48f, 0.18f, 1.0f);
+}
+
+inline ImVec4 ATUIColorInfoText() {
+	return ATUIIsDarkTheme()
+		? ImVec4(0.45f, 0.70f, 1.00f, 1.0f)
+		: ImVec4(0.08f, 0.35f, 0.78f, 1.0f);
+}
+
 bool ATUIWantCaptureKeyboard();
 bool ATUIWantCaptureMouse();
 

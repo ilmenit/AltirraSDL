@@ -408,13 +408,13 @@ void RenderDevicesCategory(ATSimulator &sim) {
 				if (dev.hasFwStatus) {
 					switch (dev.fwStatus) {
 						case ATDeviceFirmwareStatus::OK:
-							ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "OK");
+							ImGui::TextColored(ATUIColorSuccessText(), "OK");
 							break;
 						case ATDeviceFirmwareStatus::Missing:
-							ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "FW Missing");
+							ImGui::TextColored(ATUIColorDangerText(), "FW Missing");
 							break;
 						case ATDeviceFirmwareStatus::Invalid:
-							ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "FW Invalid");
+							ImGui::TextColored(ATUIColorWarningText(), "FW Invalid");
 							break;
 					}
 				} else {
@@ -1098,8 +1098,8 @@ void RenderSettingsCfgCategory(ATSimulator &) {
 	bool resetting = ATSettingsIsResetPending();
 
 	ImGui::TextWrapped(portable ? "Currently using portable settings (INI file)." : "Currently using standard settings.");
-	if (migrating) ImGui::TextColored(ImVec4(1,1,0,1), "Settings migration scheduled for next startup.");
-	if (resetting) ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Settings reset scheduled for next startup.");
+	if (migrating) ImGui::TextColored(ATUIColorWarningText(), "Settings migration scheduled for next startup.");
+	if (resetting) ImGui::TextColored(ATUIColorDangerText(), "Settings reset scheduled for next startup.");
 
 	ImGui::Spacing();
 	bool disabled = resetting || migrating;
@@ -1181,4 +1181,3 @@ void RenderSettingsCfgCategory(ATSimulator &) {
 		ImGui::EndPopup();
 	}
 }
-

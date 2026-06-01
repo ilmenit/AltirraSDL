@@ -119,7 +119,7 @@ void ATUIRenderAdvancedConfig(ATUIState &state) {
 			// Bold if overridden
 			bool overridden = entry.pVar && entry.pVar->mbOverridden;
 			if (overridden) {
-				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.4f, 1.0f));
+				ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
 			}
 			ImGui::TextUnformatted(entry.name);
 			if (overridden) {

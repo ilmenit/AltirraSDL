@@ -8,6 +8,7 @@
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 #include <at/atdebugger/symbols.h>
+#include "../core/ui_main.h"
 #include "ui_debugger.h"
 #include "console.h"
 #include "debugger.h"
@@ -137,7 +138,7 @@ bool ATImGuiCallStackPaneImpl::Render() {
 
 		// Highlight current frame
 		if (f.mbCurrent)
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.3f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
 
 		ImGui::PushID(i);
 		ImGui::Selectable(f.mText.c_str(), f.mbCurrent);

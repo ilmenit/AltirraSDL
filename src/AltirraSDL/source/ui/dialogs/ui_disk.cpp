@@ -1057,7 +1057,7 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			// Drive label
 			ImGui::TableNextColumn();
 			if (dirty)
-				ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "D%d:", driveIdx + 1);
+				ImGui::TextColored(ATUIColorWarningText(), "D%d:", driveIdx + 1);
 			else
 				ImGui::Text("D%d:", driveIdx + 1);
 

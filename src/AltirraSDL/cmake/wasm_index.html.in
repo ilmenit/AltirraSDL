@@ -2697,19 +2697,21 @@
     //    soft keyboard appears (e.g. typing into the File Manager
     //    search field on Android).
     //  - Some Android browsers reflow once on orientation start AND
-    //    once when the rotation finishes.  Re-firing twice (next
-    //    frame + 250ms later) catches both quirks without flooding.
+    //    once when the rotation finishes.  Re-firing across a short
+    //    settling window catches both quirks without flooding.
     // ───────────────────────────────────────────────────────────────────
     function refireResizeSoon() {
-      // Two passes: requestAnimationFrame catches the immediate
-      // post-rotation layout; the 250ms delay catches Android's
-      // delayed-commit case where the viewport keeps changing.
+      // Several passes: requestAnimationFrame catches the immediate
+      // post-rotation layout; later delays catch mobile browsers that
+      // commit browser-fullscreen/orientation dimensions in stages.
+      const fire = () => {
+        try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+      };
       requestAnimationFrame(() => {
-        try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+        fire();
+        requestAnimationFrame(fire);
       });
-      setTimeout(() => {
-        try { window.dispatchEvent(new Event('resize')); } catch (e) {}
-      }, 250);
+      [120, 300, 700].forEach((ms) => setTimeout(fire, ms));
     }
     window.addEventListener('orientationchange', refireResizeSoon);
     if (window.screen && window.screen.orientation) {

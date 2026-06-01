@@ -419,7 +419,7 @@ void ATUIRenderCartridgeMapper(ATUIState &state) {
 	}
 
 	if (s.show2600Warning) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
 		ImGui::TextWrapped("Warning: This image appears to be an Atari 2600 cartridge. "
 			"Altirra is an Atari 800/5200 emulator and cannot run 2600 games.");
 		ImGui::PopStyleColor();

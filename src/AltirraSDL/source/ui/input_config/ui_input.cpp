@@ -1703,7 +1703,7 @@ static void RenderRebindPopup(ATInputManager *pIM) {
 	}
 
 	ImGui::Text("Press a key or button for:");
-	ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", targetNameA.c_str());
+	ImGui::TextColored(ATUIColorWarningText(), "%s", targetNameA.c_str());
 	ImGui::Text("(Shift+Escape to cancel)");
 
 	ImGui::Separator();
@@ -2553,4 +2553,3 @@ void ATUIRenderInputMappings(ATSimulator &sim, ATUIState &state) {
 	RenderCreateInputMapPopup(pIM);
 	RenderEditInputMapDialog(pIM);
 }
-

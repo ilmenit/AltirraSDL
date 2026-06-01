@@ -14,6 +14,7 @@
 #include <at/atdebugger/target.h>
 #include <at/atdebugger/symbols.h>
 #include <vd2/system/text.h>
+#include "../core/ui_main.h"
 #include "debuggersettings.h"
 #include "ui_debugger.h"
 #include "console.h"
@@ -625,7 +626,7 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 
 				// Arrow indicator for current PC
 				if (li.mbIsPC) {
-					ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), ">");
+					ImGui::TextColored(ATUIColorWarningText(), ">");
 					ImGui::SameLine(0, 0);
 				} else if (li.mbIsFramePC) {
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), ">");

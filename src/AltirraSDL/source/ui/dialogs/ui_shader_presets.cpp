@@ -775,10 +775,10 @@ void ATUIRenderShaderSetupHelp(ATUIState &state) {
 	ImGui::Spacing();
 
 	if (libAvailable) {
-		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
+		ImGui::TextColored(ATUIColorSuccessText(),
 			"  Installed and available.");
 	} else {
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+		ImGui::TextColored(ATUIColorDangerText(),
 			"  Not found.");
 		ImGui::Spacing();
 #if defined(__linux__)
@@ -819,12 +819,12 @@ void ATUIRenderShaderSetupHelp(ATUIState &state) {
 				}
 			};
 		countFiles(s_shaderTree);
-		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
+		ImGui::TextColored(ATUIColorSuccessText(),
 			"  %d shader presets found.", count);
 		ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
 			"  %s", shaderDir.c_str());
 	} else {
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+		ImGui::TextColored(ATUIColorWarningText(),
 			"  No shader packs installed.");
 		ImGui::Spacing();
 		ImGui::TextWrapped(
@@ -851,14 +851,14 @@ void ATUIRenderShaderSetupHelp(ATUIState &state) {
 		if (!s_downloadStatus.empty()) {
 			ImGui::Spacing();
 			if (s_downloadInProgress) {
-				ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f),
+				ImGui::TextColored(ATUIColorWarningText(),
 					"%s", s_downloadStatus.c_str());
 			} else if (s_downloadStatus.find("Done!") == 0 ||
 					   s_downloadStatus.find("already installed") != std::string::npos) {
-				ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
+				ImGui::TextColored(ATUIColorSuccessText(),
 					"%s", s_downloadStatus.c_str());
 			} else {
-				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+				ImGui::TextColored(ATUIColorDangerText(),
 					"%s", s_downloadStatus.c_str());
 			}
 		}

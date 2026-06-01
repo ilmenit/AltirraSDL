@@ -1079,12 +1079,7 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 				continue;
 			bool active = (g_setupWiz.page >= step.pageMin && g_setupWiz.page <= step.pageMax);
 			if (active) {
-				const auto &bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
-				bool darkBg = (bg.x + bg.y + bg.z) < 1.5f;
-				ImVec4 highlightColor = darkBg
-					? ImVec4(1.0f, 0.85f, 0.2f, 1.0f)
-					: ImVec4(0.7f, 0.5f, 0.0f, 1.0f);
-				ImGui::PushStyleColor(ImGuiCol_Text, highlightColor);
+				ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
 				ImGui::Bullet();
 				ImGui::SameLine();
 				ImGui::TextUnformatted(step.label);

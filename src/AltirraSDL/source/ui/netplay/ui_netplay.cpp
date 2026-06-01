@@ -856,7 +856,7 @@ static ImVec4 HudTextMuted()   { return ImVec4(0.72f, 0.74f, 0.80f, 1.00f); }
 // across themes so a glance at the dot always means the same thing.
 static ImVec4 StatusColorGood() { return ImVec4(0.40f, 0.92f, 0.45f, 1.0f); }
 static ImVec4 StatusColorBad()  { return ImVec4(1.00f, 0.42f, 0.42f, 1.0f); }
-static ImVec4 StatusColorWarn() { return ImVec4(1.00f, 0.78f, 0.30f, 1.0f); }
+static ImVec4 StatusColorWarn() { return ATUIColorWarningText(); }
 
 void RenderInSessionHUD() {
 	// One-shot "you are live" toast on lockstep entry so both host
@@ -1221,7 +1221,7 @@ void RenderInSessionHUD() {
 		if (unstable) {
 			ImGui::SameLine(0, 8);
 			ImGui::PushStyleColor(ImGuiCol_Text,
-				ImVec4(1.00f, 0.85f, 0.25f, 1.0f));   // yellow dot
+				ATUIColorWarningText());
 			ImGui::TextUnformatted("\xe2\x97\x8f");
 			ImGui::PopStyleColor();
 			if (ImGui::IsItemHovered()) {

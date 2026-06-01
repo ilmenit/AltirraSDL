@@ -1491,16 +1491,16 @@ static void RenderStatusOverlay(ATSimulator &sim) {
 		}
 		if (paused) {
 			if (needSep) ImGui::SameLine();
-			ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "PAUSED");
+			ImGui::TextColored(ATUIColorWarningText(), "PAUSED");
 			needSep = true;
 		}
 		if (recording) {
 			if (needSep) ImGui::SameLine();
 			bool recPaused = ATUIIsRecordingPaused();
 			if (recPaused)
-				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "REC PAUSED");
+				ImGui::TextColored(ATUIColorWarningText(), "REC PAUSED");
 			else
-				ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "REC");
+				ImGui::TextColored(ATUIColorDangerText(), "REC");
 			needSep = true;
 		}
 

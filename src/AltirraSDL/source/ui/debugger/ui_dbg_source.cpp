@@ -19,6 +19,7 @@
 #include <vd2/system/filesys.h>
 #include <vd2/system/error.h>
 #include <at/atdebugger/symbols.h>
+#include "../core/ui_main.h"
 #include "ui_debugger.h"
 #include "console.h"
 #include "debugger.h"
@@ -294,7 +295,7 @@ bool ATImGuiSourcePaneImpl::Render() {
 
 				// PC arrow
 				if (i == mPCLine) {
-					ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), ">");
+					ImGui::TextColored(ATUIColorWarningText(), ">");
 					ImGui::SameLine(0, 0);
 				} else if (i == mFramePCLine) {
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), ">");

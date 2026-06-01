@@ -314,7 +314,7 @@ void ATUIRenderScreenEffects(ATSimulator &sim, ATUIState &state) {
 	// Show warning banner when hardware acceleration is not available.
 	// This matches the Windows dialog's IDC_WARNING behavior.
 	if (!hwSupport) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
 		ImGui::TextWrapped(
 			"Screen effects require the OpenGL display backend. "
 			"The current display is using the SDL_Renderer fallback, "

@@ -16,6 +16,7 @@
 #include <at/atdebugger/historytreebuilder.h>
 #include <at/atdebugger/target.h>
 #include <algorithm>
+#include "../core/ui_main.h"
 #include "ui_dbg_history.h"
 #include "ui_debugger.h"
 #include "console.h"
@@ -840,7 +841,7 @@ void ATImGuiHistoryPaneImpl::RenderTreeContent() {
 				const ATCPUHistoryEntry *lineHe = GetLineHistoryEntry(it);
 				if (lineHe) {
 					if (lineHe->mbNMI && lineHe->mbIRQ)
-						textColor = IM_COL32(200, 200, 0, 255);   // HLE (yellow)
+						textColor = ImGui::ColorConvertFloat4ToU32(ATUIColorWarningText());
 					else if (lineHe->mbNMI)
 						textColor = IM_COL32(255, 128, 128, 255);  // NMI (red)
 					else if (lineHe->mbIRQ)

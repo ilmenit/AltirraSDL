@@ -1632,7 +1632,7 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 
 			const bool resetPending = ATSettingsIsResetPending();
 			if (resetPending) {
-				ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+				ImGui::TextColored(ATMobileCol(ATMobileGetPalette().warning),
 					"Settings reset scheduled for next launch.");
 				ImGui::Dummy(ImVec2(0, dp(8.0f)));
 			}
