@@ -144,6 +144,8 @@ void ATSaveStatePokey::Exchange(T& rw) {
 	rw.Transfer("kbcode", &mKBCODE);
 	rw.Transfer("internal_state", &mpInternalState);
 	rw.Transfer("stereo_pair", &mpStereoPair);
+	rw.Transfer("quad_pair3", &mpQuadPair3);
+	rw.Transfer("quad_pair4", &mpQuadPair4);
 	rw.TransferArray("pot", mPOT);
 }
 

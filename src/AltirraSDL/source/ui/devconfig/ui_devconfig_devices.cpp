@@ -73,6 +73,142 @@ bool RenderCovoxConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 }
 
 // =========================================================================
+// PokeyMax — Covox-compatible clone with a fixed configuration.
+//
+// Unlike Covox, PokeyMax is hardwired in hardware: the address range is
+// always $D280-$D2FF and it always has 4 channels in an LRRL layout. These
+// settings cannot be changed, so the dialog shows them as read-only and
+// always writes the fixed values. The core (covox.cpp) also forces these
+// values for PokeyMax, so they hold regardless of what is written here.
+// =========================================================================
+
+bool RenderPokeyMaxConfig(ATPropertySet& props, ATDeviceConfigState& st) {
+	static const char *kPokeyLabels[] = { "Mono", "Stereo", "Quad" };
+	static const char *kCovoxLabels[] = { "Enabled", "Disabled" };
+
+	if (st.justOpened) {
+		uint32 pokeys = props.GetUint32("pokeys", 0);
+		st.combo[0] = (pokeys < 3) ? (int)pokeys : 0;
+		// Covox section defaults to Enabled.
+		st.combo[1] = props.GetBool("covoxenabled", true) ? 0 : 1;
+		// PSG section defaults to Enabled.
+		st.combo[2] = props.GetBool("psgenabled", true) ? 0 : 1;
+		// SID section defaults to Enabled.
+		st.combo[3] = props.GetBool("sidenabled", true) ? 0 : 1;
+		// SID engine (Altirra extension) defaults to MAME (accurate).
+		st.combo[4] = props.GetBool("sidaccurate", true) ? 0 : 1;
+		// Sample engine section defaults to Enabled.
+		st.combo[5] = props.GetBool("sampleenabled", true) ? 0 : 1;
+	}
+
+	ImGui::Combo("Pokey", &st.combo[0], kPokeyLabels, 3);
+
+	// POKEY address blocks. Mono uses only Pokey1, Stereo uses Pokey1-2,
+	// Quad uses all four. Inactive blocks are shown in the dimmed
+	// TextDisabled colour (the same grey used for inactive Covox info).
+	static const char *kPokeyAddrLabels[] = {
+		"$D200-$D20F  Pokey1",
+		"$D210-$D21F  Pokey2 / Configuration",
+		"$D220-$D22F  Pokey3",
+		"$D230-$D23F  Pokey4",
+	};
+	const int activePokeys = (st.combo[0] == 0) ? 1 : (st.combo[0] == 1) ? 2 : 4;
+	for (int i = 0; i < 4; ++i) {
+		if (i < activePokeys)
+			ImGui::TextUnformatted(kPokeyAddrLabels[i]);
+		else
+			ImGui::TextDisabled("%s", kPokeyAddrLabels[i]);
+	}
+
+	ImGui::Separator();
+	ImGui::Combo("Covox", &st.combo[1], kCovoxLabels, 2);
+
+	// When the Covox section is disabled, show its address/channel info in
+	// the dimmed TextDisabled colour.
+	const bool covoxEnabled = (st.combo[1] == 0);
+	if (covoxEnabled) {
+		ImGui::TextUnformatted("Address range: $D280-$D283");
+		ImGui::TextUnformatted("Channels: 4 channels (LRRL)");
+	} else {
+		ImGui::TextDisabled("Address range: $D280-$D283");
+		ImGui::TextDisabled("Channels: 4 channels (LRRL)");
+	}
+
+	ImGui::Separator();
+	ImGui::Combo("PSG", &st.combo[2], kCovoxLabels, 2);
+
+	// When the PSG section is disabled, show its address info in the dimmed
+	// TextDisabled colour.
+	const bool psgEnabled = (st.combo[2] == 0);
+	if (psgEnabled) {
+		ImGui::TextUnformatted("PSG1 $D2A0-$D2AF");
+		ImGui::TextUnformatted("PSG2 $D2B0-$D2BF");
+	} else {
+		ImGui::TextDisabled("PSG1 $D2A0-$D2AF");
+		ImGui::TextDisabled("PSG2 $D2B0-$D2BF");
+	}
+
+	ImGui::Separator();
+	ImGui::Combo("SID", &st.combo[3], kCovoxLabels, 2);
+
+	// When the SID section is disabled, show its address info in the dimmed
+	// TextDisabled colour.
+	const bool sidEnabled = (st.combo[3] == 0);
+	if (sidEnabled) {
+		ImGui::TextUnformatted("SID1 $D240-$D25F");
+		ImGui::TextUnformatted("SID2 $D260-$D27F");
+	} else {
+		ImGui::TextDisabled("SID1 $D240-$D25F");
+		ImGui::TextDisabled("SID2 $D260-$D27F");
+	}
+
+	// SID engine selector (Altirra extension; not real PokeyMax hardware).
+	// MAME = measured combined-waveform ROM tables + correct 24-bit noise.
+	// SlightSID = original logical-AND combined waveforms + approximate noise.
+	static const char *kSIDEngineLabels[] = { "MAME", "SlightSID" };
+	if (!sidEnabled)
+		ImGui::BeginDisabled();
+	ImGui::Combo("SID engine", &st.combo[4], kSIDEngineLabels, 2);
+	if (!sidEnabled)
+		ImGui::EndDisabled();
+
+	ImGui::Separator();
+	ImGui::Combo("Sample", &st.combo[5], kCovoxLabels, 2);
+
+	// When the Sample section is disabled, show its address info in the
+	// dimmed TextDisabled colour. $D280-$D283 belong to the manual COVOX DAC;
+	// the SAMPLE block-RAM player owns $D284-$D293.
+	const bool sampleEnabled = (st.combo[5] == 0);
+	if (sampleEnabled) {
+		ImGui::TextUnformatted("Address range: $D284-$D293");
+		ImGui::TextUnformatted("4 channels, 42 KiB sample RAM (8-bit PCM)");
+	} else {
+		ImGui::TextDisabled("Address range: $D284-$D293");
+		ImGui::TextDisabled("4 channels, 42 KiB sample RAM (8-bit PCM)");
+	}
+
+	ImGui::Separator();
+	if (ImGui::Button("OK", ImVec2(120, 0))) {
+		props.Clear();
+		props.SetUint32("base", 0xD280);
+		props.SetUint32("size", 0x80);
+		props.SetUint32("channels", 4);
+		props.SetUint32("pokeys", (uint32)st.combo[0]);
+		props.SetBool("covoxenabled", covoxEnabled);
+		props.SetBool("psgenabled", psgEnabled);
+		props.SetBool("sidenabled", sidEnabled);
+		props.SetBool("sidaccurate", st.combo[4] == 0);
+		props.SetBool("sampleenabled", sampleEnabled);
+		return true;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(120, 0)))
+		g_devCfg.Reset();
+
+	return false;
+}
+
+// =========================================================================
 // 850 Interface — SIO emulation level + checkboxes
 // =========================================================================
 

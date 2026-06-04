@@ -84,6 +84,13 @@ public:
 
 	vdrefptr<ATSaveStatePokeyInternal> mpInternalState;
 	vdrefptr<IATObjectState> mpStereoPair;
+
+	// PokeyMax quad: nested snapshots for the third (P3) and fourth (P4)
+	// audio-only POKEYs. Null in mono/stereo snapshots, so older/mono/stereo
+	// save states remain byte-identical and back-compatible (a missing field
+	// deserializes to null).
+	vdrefptr<IATObjectState> mpQuadPair3;
+	vdrefptr<IATObjectState> mpQuadPair4;
 };
 
 #endif

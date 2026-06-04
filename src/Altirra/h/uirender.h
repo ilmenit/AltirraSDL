@@ -60,8 +60,10 @@ public:
 
 	virtual void SetAudioStatus(const ATUIAudioStatus *status) = 0;
 
-	virtual void SetAudioMonitor(bool secondary, ATAudioMonitor *monitor) = 0;
-	virtual void SetAudioDisplayEnabled(bool secondary, bool enable) = 0;
+	// Per-POKEY audio monitor/display channel index. 0 = primary (P1),
+	// 1 = secondary (P2); 2/3 = PokeyMax quad P3/P4. Mono/stereo only use 0/1.
+	virtual void SetAudioMonitor(uint32 index, ATAudioMonitor *monitor) = 0;
+	virtual void SetAudioDisplayEnabled(uint32 index, bool enable) = 0;
 	virtual void SetAudioScopeEnabled(bool enable) = 0;
 
 	virtual void SetSlightSID(ATSlightSIDEmulator *emu) = 0;

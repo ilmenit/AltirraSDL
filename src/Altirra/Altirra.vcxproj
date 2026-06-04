@@ -107,6 +107,8 @@
     <ClInclude Include="h\palettegenerator.h" />
     <ClInclude Include="h\palettesolver.h" />
     <ClInclude Include="h\pbidisk.h" />
+    <ClInclude Include="h\pokeymaxsample.h" />
+    <ClInclude Include="h\pokeymaxsid.h" />
     <ClInclude Include="h\pokeysavecompat.h" />
     <ClInclude Include="h\pokeytrace.h" />
     <ClInclude Include="h\portmanager.h" />
@@ -312,6 +314,10 @@
     <ClCompile Include="source\pia.cpp" />
     <ClCompile Include="source\pipeserial_win32.cpp" />
     <ClCompile Include="source\pocketmodem.cpp" />
+    <ClCompile Include="source\pokeymax.cpp" />
+    <ClCompile Include="source\pokeymaxsample.cpp" />
+    <ClCompile Include="source\pokeymaxsid.cpp" />
+    <ClCompile Include="source\ympsg.cpp" />
     <ClCompile Include="source\pokeysavecompat.cpp" />
     <ClCompile Include="source\pokeytrace.cpp" />
     <ClCompile Include="source\portmanager.cpp" />
@@ -679,6 +685,7 @@
     <ClInclude Include="h\videowriter.h" />
     <ClInclude Include="h\virtualscreen.h" />
     <ClInclude Include="h\xep80.h" />
+    <ClInclude Include="h\ympsg.h" />
     <ClInclude Include="h\stdafx.h" />
   </ItemGroup>
   <ItemGroup>

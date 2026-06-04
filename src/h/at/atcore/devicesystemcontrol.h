@@ -109,4 +109,32 @@ public:
 	virtual void InitCovoxControl(IATCovoxController& controller) = 0;
 };
 
+// POKEY channel-count control (PokeyMax). A device drives the core POKEY
+// sound-generator count (mono/stereo/quad) so its Mono/Stereo/Quad setting
+// produces real second/third/fourth POKEYs with hardware panning
+// (P1+P3 -> left, P2+P4 -> right). The core's user "Dual POKEYs" preference is
+// restored when the override is cleared.
+class IATPokeyChannelController {
+public:
+	// mode: 0=mono, 1=stereo, 2=quad. owner identifies the requesting device so
+	// a stale Clear from a detached device cannot revert a newer owner.
+	virtual void SetExternalPokeyChannelMode(void *owner, uint32 mode) = 0;
+	virtual void ClearExternalPokeyChannelMode(void *owner) = 0;
+
+	// PokeyMax $D210 MODE bit0 (Saturate): false = linear same-side sum,
+	// true = POKEY saturation curve applied to the summed same-side quad
+	// channels (P1+P3 / P2+P4). Hardware default is true. Only affects quad
+	// mode; ignored in mono/stereo. owner matches the channel-mode owner.
+	virtual void SetExternalPokeySaturation(void *owner, bool pokeyCurve) = 0;
+};
+
+class IATDevicePokeyChannelControl {
+public:
+	// "dspk" = device-system-pokey; verified unique (no collision with the
+	// sibling IDs dscn/dscv in this header or any other _vdfcctypeid).
+	enum : uint32 { kTypeID = "dspk"_vdfcctypeid };
+
+	virtual void InitPokeyChannelControl(IATPokeyChannelController& controller) = 0;
+};
+
 #endif

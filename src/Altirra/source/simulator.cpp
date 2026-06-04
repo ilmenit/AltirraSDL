@@ -268,6 +268,7 @@ class ATSimulator::PrivateData final
 	, public IATDiskDriveManager
 	, public IATSystemController
 	, public IATCovoxController
+	, public IATPokeyChannelController
 	, public IATDeviceSchedulingService
 	, public IATDeviceChangeCallback
 	, public IATDeviceSystemInfo
@@ -303,6 +304,11 @@ public:		// IATSystemController
 public:		// IATCovoxController
 	bool IsCovoxEnabled() const override { return mCovoxEnableSignal.OrDefaultTrue(); }
 	ATNotifyList<const vdfunction<void(bool)> *>& GetCovoxEnableNotifyList() override { return mCovoxEnableChangedNotifyList; }
+
+public:		// IATPokeyChannelController
+	void SetExternalPokeyChannelMode(void *owner, uint32 mode) override { mParent.SetPokeyModeOverride(owner, mode); }
+	void ClearExternalPokeyChannelMode(void *owner) override { mParent.ClearPokeyModeOverride(owner); }
+	void SetExternalPokeySaturation(void *owner, bool pokeyCurve) override { mParent.SetPokeyQuadSaturation(owner, pokeyCurve); }
 
 public:		// IATDeviceSchedulingService
 	ATScheduler *GetMachineScheduler() const override;
@@ -775,6 +781,8 @@ ATSimulator::ATSimulator()
 	, mpSimEventManager(nullptr)
 	, mPokey(false)
 	, mPokey2(true)
+	, mPokey3(true)
+	, mPokey4(true)
 	, mpAudioOutput(NULL)
 	, mpPokeyTables(nullptr)
 	, mpAudioMonitors()
@@ -929,8 +937,15 @@ void ATSimulator::Init() {
 	mPokey.Init(this, &mScheduler, mpAudioOutput, mpPokeyTables);
 	mPokey2.Init(&g_pokeyDummyConnection, &mScheduler, NULL, mpPokeyTables);
 
+	// PokeyMax quad: P3/P4 are audio-only slaves, exactly like P2 (dummy
+	// connection, no audio output of their own -- the master mixes them).
+	mPokey3.Init(&g_pokeyDummyConnection, &mScheduler, NULL, mpPokeyTables);
+	mPokey4.Init(&g_pokeyDummyConnection, &mScheduler, NULL, mpPokeyTables);
+
 	mPokey.SetConsoleOutput(&g_ATPokeyConsoleOutput);
 	mPokey2.SetConsoleOutput(&g_ATPokeyConsoleOutput);
+	mPokey3.SetConsoleOutput(&g_ATPokeyConsoleOutput);
+	mPokey4.SetConsoleOutput(&g_ATPokeyConsoleOutput);
 
 	mpPrivateData->mStereoEnableSignal.SetOnUpdated(
 		[this] {
@@ -1717,18 +1732,80 @@ void ATSimulator::SetDualPokeysEnabled(bool enable) {
 	if (mbDualPokeys != enable) {
 		mbDualPokeys = enable;
 
-		mPokey.SetSlave(enable ? &mPokey2 : NULL);
+		// The user "Dual POKEYs" preference is one input to the effective
+		// channel mode; a device (PokeyMax) override takes precedence while
+		// installed. ApplyEffectivePokeyMode rewires the chain accordingly.
+		ApplyEffectivePokeyMode();
+	}
+}
 
-		// we need to flash the audio monitors if they're enabled to add or
-		// remove the second monitor
-		const bool monitor = IsAudioMonitorEnabled();
-		const bool scope = IsAudioScopeEnabled();
-		if (monitor || scope) {
-			SetAudioMonitorEnabled(false);
-			SetAudioScopeEnabled(false);
-			SetAudioMonitorEnabled(monitor);
-			SetAudioScopeEnabled(scope);
-		}
+void ATSimulator::SetPokeyModeOverride(void *owner, uint32 mode) {
+	// Single-active-override, last writer wins. Record the requesting device so
+	// a stale Clear from a superseded/detached device cannot revert us.
+	mPokeyModeOverride = (int)mode;
+	mpPokeyModeOverrideOwner = owner;
+
+	ApplyEffectivePokeyMode();
+}
+
+void ATSimulator::ClearPokeyModeOverride(void *owner) {
+	// Ignore a stale clear from a device that is no longer the active owner.
+	if (mpPokeyModeOverrideOwner != owner)
+		return;
+
+	mPokeyModeOverride = -1;
+	mpPokeyModeOverrideOwner = nullptr;
+
+	// Revert the quad saturation curve to its default (on) so a later device
+	// starts from the hardware default rather than a stale linear request.
+	mPokey.SetQuadSaturationEnabled(true);
+
+	ApplyEffectivePokeyMode();
+}
+
+void ATSimulator::SetPokeyQuadSaturation(void *owner, bool pokeyCurve) {
+	// Honour the same single-active-override discipline as the channel mode:
+	// only the active mode owner may drive the quad saturation curve.
+	if (mpPokeyModeOverrideOwner && mpPokeyModeOverrideOwner != owner)
+		return;
+
+	mPokey.SetQuadSaturationEnabled(pokeyCurve);
+}
+
+void ATSimulator::ApplyEffectivePokeyMode() {
+	// Effective mode: device override (if installed) wins over the user
+	// "Dual POKEYs" preference. Stereo == today's dual-POKEY behaviour.
+	ATPokeyChannelMode mode;
+
+	if (mPokeyModeOverride >= 0)
+		mode = (ATPokeyChannelMode)mPokeyModeOverride;
+	else
+		mode = mbDualPokeys ? ATPokeyChannelMode::Stereo : ATPokeyChannelMode::Mono;
+
+	if (mActivePokeyChannelMode == mode)
+		return;
+
+	mActivePokeyChannelMode = mode;
+
+	// Wire the slave chain. SetSlave tears down any existing P3/P4, so set P2
+	// first, then re-establish the quad slaves. SetSlave/SetExtraSlaves flush
+	// and cold-reset the affected slaves.
+	mPokey.SetSlave(mode != ATPokeyChannelMode::Mono ? &mPokey2 : nullptr);
+
+	if (mode == ATPokeyChannelMode::Quad)
+		mPokey.SetExtraSlaves(&mPokey3, &mPokey4);
+	else
+		mPokey.SetExtraSlaves(nullptr, nullptr);
+
+	// Re-flush the audio monitors if they're enabled so the monitor/display
+	// set matches the new active channel count (Mono=1, Stereo=2, Quad=4).
+	const bool monitor = IsAudioMonitorEnabled();
+	const bool scope = IsAudioScopeEnabled();
+	if (monitor || scope) {
+		SetAudioMonitorEnabled(false);
+		SetAudioScopeEnabled(false);
+		SetAudioMonitorEnabled(monitor);
+		SetAudioScopeEnabled(scope);
 	}
 }
 
@@ -1849,15 +1926,20 @@ void ATSimulator::SetAudioMonitorEnabled(bool enable) {
 	mbAudioMonitorEnabled = enable;
 
 	if (!enable) {
-		mpUIRenderer->SetAudioDisplayEnabled(false, false);
-		mpUIRenderer->SetAudioDisplayEnabled(true, false);
+		for(uint32 i = 0; i < 4; ++i)
+			mpUIRenderer->SetAudioDisplayEnabled(i, false);
 	}
 
 	UpdateAudioMonitors();
 
 	if (enable) {
-		mpUIRenderer->SetAudioDisplayEnabled(false, true);
-		mpUIRenderer->SetAudioDisplayEnabled(true, mbDualPokeys);
+		// Enable one display per active POKEY: Mono=1 (P1), Stereo=2 (P1/P2),
+		// Quad=4 (P1..P4).
+		const uint32 channels = mActivePokeyChannelMode == ATPokeyChannelMode::Quad ? 4
+			: mActivePokeyChannelMode == ATPokeyChannelMode::Stereo ? 2 : 1;
+
+		for(uint32 i = 0; i < 4; ++i)
+			mpUIRenderer->SetAudioDisplayEnabled(i, i < channels);
 	}
 }
 
@@ -6010,6 +6092,9 @@ void ATSimulator::InitDevice(IVDUnknown& dev) {
 	if (auto devcovoxcon = vdpoly_cast<IATDeviceCovoxControl *>(&dev))
 		devcovoxcon->InitCovoxControl(*mpPrivateData);
 
+	if (auto devpokeychan = vdpoly_cast<IATDevicePokeyChannelControl *>(&dev))
+		devpokeychan->InitPokeyChannelControl(*mpPrivateData);
+
 	if (auto devdisk = vdpoly_cast<IATDeviceDiskDrive *>(&dev)) {
 		devdisk->InitDiskDrive(mpPrivateData);
 
@@ -6119,14 +6204,24 @@ bool ATSimulator::SupportsInternalBasic() const {
 
 void ATSimulator::UpdateAudioMonitors() {
 	if (mbAudioMonitorEnabled || mbAudioScopeEnabled) {
-		if (!mpAudioMonitors[0]) {
-			mpAudioMonitors[0] = new ATAudioMonitor;
-			mpAudioMonitors[0]->Init(&mPokey, mpUIRenderer, false);
-		}
+		// Active POKEY count: Mono=1, Stereo=2, Quad=4 (P1..P4). Each monitor
+		// is keyed to its channel index so the UI renderer routes it to the
+		// matching display/scope trace.
+		const uint32 channels = mActivePokeyChannelMode == ATPokeyChannelMode::Quad ? 4
+			: mActivePokeyChannelMode == ATPokeyChannelMode::Stereo ? 2 : 1;
 
-		if (mbDualPokeys && !mpAudioMonitors[1]) {
-			mpAudioMonitors[1] = new ATAudioMonitor;
-			mpAudioMonitors[1]->Init(&mPokey2, mpUIRenderer, true);
+		ATPokeyEmulator *const pokeys[4] = { &mPokey, &mPokey2, &mPokey3, &mPokey4 };
+
+		for(uint32 i = 0; i < vdcountof(mpAudioMonitors); ++i) {
+			if (i < channels) {
+				if (!mpAudioMonitors[i]) {
+					mpAudioMonitors[i] = new ATAudioMonitor;
+					mpAudioMonitors[i]->Init(pokeys[i], mpUIRenderer, i);
+				}
+			} else if (mpAudioMonitors[i]) {
+				delete mpAudioMonitors[i];
+				mpAudioMonitors[i] = nullptr;
+			}
 		}
 	} else {
 		vdsafedelete <<= mpAudioMonitors;

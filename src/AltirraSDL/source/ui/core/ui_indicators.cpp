@@ -104,8 +104,12 @@ public:
 	}
 	void SetTracingSize(sint64 s) override { mTracingSize = s; }
 	void SetAudioStatus(const ATUIAudioStatus *s) override { mAudioStatus = s ? *s : ATUIAudioStatus{}; }
-	void SetAudioMonitor(bool enable, ATAudioMonitor *mon) override { mbAudioMon = enable; mpAudioMon = mon; }
-	void SetAudioDisplayEnabled(bool vis, bool scope) override { mbAudioVis = vis; mbAudioScope = scope; }
+	void SetAudioMonitor(uint32 index, ATAudioMonitor *mon) override {
+		if (index < kNumAudioChannels) mpAudioMon[index] = mon;
+	}
+	void SetAudioDisplayEnabled(uint32 index, bool enable) override {
+		if (index < kNumAudioChannels) mbAudioVis[index] = enable;
+	}
 	void SetAudioScopeEnabled(bool v) override { mbAudioScope = v; }
 	void SetSlightSID(ATSlightSIDEmulator *s) override { mpSlightSID = s; }
 	vdrect32 GetPadArea() const override { return {}; }
@@ -190,9 +194,14 @@ private:
 	bool mWatchValid[8] = {};
 
 	// Audio
+	// PokeyMax quad: per-POKEY monitor/display channel state. Index 0 = P1
+	// (primary/left), 1 = P2 (right), 2/3 = P3/P4 (PokeyMax quad). Mono/stereo
+	// only use 0/1.
+	static constexpr uint32 kNumAudioChannels = 4;
 	ATUIAudioStatus mAudioStatus {};
-	bool mbAudioMon = false, mbAudioVis = false, mbAudioScope = false;
-	ATAudioMonitor *mpAudioMon = nullptr;
+	bool mbAudioScope = false;
+	bool mbAudioVis[kNumAudioChannels] = {};
+	ATAudioMonitor *mpAudioMon[kNumAudioChannels] = {};
 	ATSlightSIDEmulator *mpSlightSID = nullptr;
 
 	// Messages (indexed by StatusPriority)

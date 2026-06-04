@@ -111,6 +111,12 @@
     <ClCompile Include="source\TestEmu_PokeyPots.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\TestEmu_PokeyMaxSample.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Altirra\source\pokeymaxsample.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="source\TestSystem_FastVector.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
