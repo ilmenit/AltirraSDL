@@ -329,6 +329,13 @@ static void BuildFileMenu(NSMenu *menu) {
 		AddItem(attachMenu, @"Rotate Up", false, true, [=]{
 			g_sim.RotateDrives(8, -1);
 		});
+		// Extension over Windows Altirra (approved): swap the disks
+		// mounted in drive 1 (index 0) and drive 2 (index 1).
+		// Cmd-R is free on macOS (not used by the native menu, and the
+		// SDL accel table ignores the Cmd/GUI modifier).
+		AddItem(attachMenu, @"Swap Disks", @"r", NSEventModifierFlagCommand, false, true, [=]{
+			g_sim.SwapDrives(0, 1);
+		});
 		AddSeparator(attachMenu);
 
 		for (int i = 0; i < 8; ++i) {
