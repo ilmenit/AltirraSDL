@@ -79,6 +79,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "ui_debugger.h"
 #include "debugger.h"   // IATDebugger + ATDebuggerSymbolLoadMode (used in the __EMSCRIPTEN__ startup block below)
 #include "ui_testmode.h"
+#include "cputest_runner.h"
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
 #endif
@@ -1349,6 +1350,53 @@ int main(int argc, char *argv[]) {
 			--argc;
 			--i;
 		}
+	}
+
+	// Check for --cpu-test flag (must be before SDL_Init).
+	//
+	// --cpu-test runs a headless 65C816 conformance harness that drives
+	// Altirra's real CPU emulator (ATCPUEmulator) against the Tom Harte
+	// "SingleStepTests/65816" JSON corpus, prints a pass/fail summary,
+	// and exits with the harness result code without ever opening a
+	// window or starting the emulator proper.  This is the AltirraSDL
+	// counterpart of sim816's coretest mode.  See cputest_runner.cpp.
+	//
+	//   --cpu-test <path>            directory of hh.e.json / hh.n.json,
+	//                                or a single .json file
+	//   --cpu-test-opcode <hh>       only run this opcode (hex)
+	//   --cpu-test-mode e|n|both     emulation / native / both (default both)
+	//   --cpu-test-limit <n>         max tests per file (0 = all)
+	//   --cpu-test-stop-on-fail      stop the whole run on first failure
+	//   --cpu-test-verbose           print per-register / per-RAM diffs
+	{
+		ATCPUTestOptions cpuTestOpts;
+		bool cpuTestRequested = false;
+
+		for (int i = 1; i < argc; ++i) {
+			if (strcmp(argv[i], "--cpu-test") == 0 && i + 1 < argc) {
+				cpuTestRequested = true;
+				cpuTestOpts.mPath = argv[++i];
+			} else if (strcmp(argv[i], "--cpu-test-opcode") == 0 && i + 1 < argc) {
+				cpuTestOpts.mOpcodeFilter = (int)(strtol(argv[++i], nullptr, 16) & 0xFF);
+			} else if (strcmp(argv[i], "--cpu-test-mode") == 0 && i + 1 < argc) {
+				const char *m = argv[++i];
+				if (strcmp(m, "e") == 0)
+					cpuTestOpts.mMode = ATCPUTestMode::Emulation;
+				else if (strcmp(m, "n") == 0)
+					cpuTestOpts.mMode = ATCPUTestMode::Native;
+				else
+					cpuTestOpts.mMode = ATCPUTestMode::Both;
+			} else if (strcmp(argv[i], "--cpu-test-limit") == 0 && i + 1 < argc) {
+				cpuTestOpts.mLimit = atoi(argv[++i]);
+			} else if (strcmp(argv[i], "--cpu-test-stop-on-fail") == 0) {
+				cpuTestOpts.mStopOnFail = true;
+			} else if (strcmp(argv[i], "--cpu-test-verbose") == 0) {
+				cpuTestOpts.mVerbose = true;
+			}
+		}
+
+		if (cpuTestRequested)
+			return ATRunCPUTests(cpuTestOpts);
 	}
 
 	// Check for --headless flag (must be before SDL_Init).

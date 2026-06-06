@@ -168,10 +168,13 @@ namespace AT6502States {
 		kStateReadAddrDpY,				// Read direct page offset to address register and add Y16
 		kStateReadAddrDpYInPage,		// Read direct page offset to address register and add Y16 (no page wrap)
 		kState816ReadIndAddrDpInPage,	// Read high byte of indirect address from direct page, wrapping within page
+		kState816ReadIndAddrDpXInPage,	// Read high byte of (dp,X) indirect address; wraps within page only when DH==0
 		kStateReadIndAddrDp,			// Read high byte of indirect address from direct page
 		kStateReadIndAddrDpY,			// Read high byte of indirect address from direct page and add Y16
 		kStateReadIndAddrDpLongH,		// Read high byte of indirect long address from direct page
 		kStateReadIndAddrDpLongB,		// Read bank byte of indirect long address from direct page
+		kState816ReadIndAddrDpLongHInPage,	// Read high byte of indirect long address, wrapping within direct page
+		kState816ReadIndAddrDpLongBInPage,	// Read bank byte of indirect long address, wrapping within direct page
 		kStateReadAddrAddY,				// Add Y16 to address register
 		kState816ReadAddrL,				// Read low byte of absolute address and push data bank
 		kState816ReadAddrH,				// Read high byte of absolute address
@@ -249,6 +252,9 @@ namespace AT6502States {
 		kStatePopPCLNative,
 		kStatePopPCHNative,
 		kStatePopPCHP1Native,
+		kStatePopPCLRtl,				// RTL: always 16-bit stack increment (even in emulation)
+		kStatePopPCHP1Rtl,				// RTL: always 16-bit stack increment (even in emulation)
+		kStatePopPBKRtl,				// RTL: 16-bit increment; forces SH=$01 at end in emulation
 		kStateSep,
 		kStateRep,
 		kStateJ16,

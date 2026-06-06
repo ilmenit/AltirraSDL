@@ -1509,41 +1509,47 @@ for(;;) {
 
 		case kStateC02_Sbc:
 			if (mP & kFlagD) {
-				// Pole Position needs N set properly here for its passing counter
-				// to stop correctly!
+				// 65C02/65C816 decimal SBC.  Unlike the NMOS path (kStateSbc),
+				// N and Z come from the BCD-corrected result, not the binary
+				// one.  Processed per-nibble with direct subtraction so the
+				// inter-nibble borrow stays a single unit even for invalid BCD
+				// inputs (nibbles >9).
+				const uint32 a8 = mA;
+				const uint32 v8 = mData;
+				const uint32 c  = (mP & kFlagC) ? 1 : 0;	// 1 => no borrow
 
-				mData ^= 0xff;
+				const sint32 diffBin = (sint32)a8 - (sint32)v8 - (sint32)(c ? 0 : 1);
 
-				// Flags set according to binary op
-				uint32 carry7 = (mA & 0x7f) + (mData & 0x7f) + (mP & kFlagC);
-				uint32 result = carry7 + (mA & 0x80) + (mData & 0x80);
+				sint32 lo = (sint32)(a8 & 0x0f) - (sint32)(v8 & 0x0f) - (sint32)(c ? 0 : 1);
+				sint32 hi = (sint32)(a8 & 0xf0) - (sint32)(v8 & 0xf0);
+				if (lo < 0) {
+					lo -= 6;
+					hi -= 0x10;
+				}
 
-				// BCD
-				uint32 lowResult = (mA & 15) + (mData & 15) + (mP & kFlagC);
-				if (lowResult < 0x10)
-					lowResult -= 6;
+				uint8 p = mP & ~(kFlagC | kFlagN | kFlagZ | kFlagV);
 
-				uint32 highResult = (mA & 0xf0) + (mData & 0xf0) + (lowResult & 0x1f);
+				// V is taken from the result before the high-nibble correction.
+				const uint8 pre = (uint8)(((uint32)hi & 0xf0) | ((uint32)lo & 0x0f));
+				if ((a8 ^ v8) & (a8 ^ pre) & 0x80)
+					p |= kFlagV;
 
-				if (highResult < 0x100)
-					highResult -= 0x60;
+				if (hi < 0)
+					hi -= 0x60;
 
-				mP &= ~(kFlagC | kFlagN | kFlagZ | kFlagV);
+				const uint8 result = (uint8)(((uint32)hi & 0xf0) | ((uint32)lo & 0x0f));
 
-				uint8 bcdresult = (uint8)highResult;
+				if (diffBin >= 0)
+					p |= kFlagC;
 
-				if (bcdresult & 0x80)
-					mP |= kFlagN;
+				if (result & 0x80)
+					p |= kFlagN;
 
-				if (result >= 0x100)
-					mP |= kFlagC;
+				if (!result)
+					p |= kFlagZ;
 
-				if (!(bcdresult & 0xff))
-					mP |= kFlagZ;
-
-				mP |= ((result >> 2) ^ (carry7 >> 1)) & kFlagV;
-
-				mA = bcdresult;
+				mP = p;
+				mA = result;
 			} else {
 				mData ^= 0xff;
 				uint32 carry7 = (mA & 0x7f) + (mData & 0x7f) + (mP & kFlagC);
@@ -1648,6 +1654,22 @@ for(;;) {
 
 		case kState816ReadIndAddrDpInPage:
 			mAddr = mData + ((uint16)AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 1))) << 8);
+			mAddrBank = mB;
+			END_SUB_CYCLE();
+
+		case kState816ReadIndAddrDpXInPage:
+			// (dp,X) pointer high-byte fetch.  On the 65C816 in emulation
+			// mode this fetch wraps within the direct page only when the
+			// direct page lies in the first 256 bytes of bank 0 (DH==0).
+			// When DH!=0 the high byte is read linearly even though DL may
+			// be nonzero -- this differs from (dp)/(dp),Y, which only wrap
+			// when the whole D register is zero.  Verified against the Tom
+			// Harte SingleStepTests 65816 corpus.
+			if (mDP & 0xff00)
+				mAddr = mData + ((uint16)AT_CPU_READ_BYTE(mAddr + 1) << 8);
+			else
+				mAddr = mData + ((uint16)AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 1))) << 8);
+			mAddrBank = mB;
 			END_SUB_CYCLE();
 
 		case kStateReadIndAddrDp:
@@ -1666,6 +1688,19 @@ for(;;) {
 
 		case kStateReadIndAddrDpLongB:
 			mAddrBank = AT_CPU_READ_BYTE(mAddr + 2);
+			mAddr = mData16;
+			END_SUB_CYCLE();
+
+		case kState816ReadIndAddrDpLongHInPage:
+			// [dp] long pointer middle byte, emulation mode with DL==0: the
+			// fetch wraps within the direct page (high byte stays = DH).
+			mData16 = mData + ((uint16)AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 1))) << 8);
+			END_SUB_CYCLE();
+
+		case kState816ReadIndAddrDpLongBInPage:
+			// [dp] long pointer bank byte, emulation mode with DL==0: also
+			// wraps within the direct page.
+			mAddrBank = AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 2)));
 			mAddr = mData16;
 			END_SUB_CYCLE();
 
@@ -1997,36 +2032,51 @@ for(;;) {
 
 		case kStateAdc16:
 			if (mP & kFlagD) {
-				uint32 lowResult = (mA & 15) + (mData16 & 15) + (mP & kFlagC);
-				if (lowResult >= 10)
-					lowResult += 6;
+				// 16-bit BCD add, processed nibble-by-nibble so that the
+				// inter-nibble carry is normalized to a single bit.  This is
+				// required for invalid BCD inputs (nibbles >9): a chained
+				// accumulation lets the +6 correction carry more than one unit
+				// into the next nibble, diverging from real 65C816 behavior.
+				const uint32 a16 = mA + ((uint32)mAH << 8);
+				const uint32 v16 = mData16;
+				uint32 carry = (mP & kFlagC) ? 1 : 0;
+				uint32 result = 0;
+				uint8 vflag = 0;
 
-				uint32 midResult = (mA & 0xf0) + (mData16 & 0xf0) + lowResult;
-				if (midResult >= 0xA0)
-					midResult += 0x60;
+				for (uint32 shift = 0; shift < 16; shift += 4) {
+					uint32 digit = ((a16 >> shift) & 0x0f) + ((v16 >> shift) & 0x0f) + carry;
 
-				uint32 acchi = (uint32)mAH << 8;
-				uint32 midHiResult = (acchi & 0xf00) + (mData16 & 0xf00) + midResult;
-				if (midHiResult >= 0xA00)
-					midHiResult += 0x600;
+					// V is taken from the binary sum of the high nibble,
+					// before its decimal correction.
+					if (shift == 12) {
+						const uint32 pre = result | ((digit & 0x0f) << 12);
+						if ((~(a16 ^ v16) & (a16 ^ pre)) & 0x8000)
+							vflag = kFlagV;
+					}
 
-				uint32 highResult = (acchi & 0xf000) + (mData16 & 0xf000) + midHiResult;
-				if (highResult >= 0xA000)
-					highResult += 0x6000;
+					if (digit > 9)
+						digit += 6;
 
-				mP &= ~(kFlagC | kFlagN | kFlagZ | kFlagV);
+					carry = (digit > 0x0f) ? 1 : 0;
+					result |= (digit & 0x0f) << shift;
+				}
 
-				if (highResult >= 0x10000)
-					mP |= kFlagC;
+				uint8 p = mP & ~(kFlagC | kFlagN | kFlagZ | kFlagV);
 
-				if (!(highResult & 0xffff))
-					mP |= kFlagZ;
+				p |= vflag;
 
-				if (highResult & 0x8000)
-					mP |= kFlagN;
+				if (carry)
+					p |= kFlagC;
 
-				mA = (uint8)highResult;
-				mAH = (uint8)(highResult >> 8);
+				if (!(result & 0xffff))
+					p |= kFlagZ;
+
+				if (result & 0x8000)
+					p |= kFlagN;
+
+				mP = p;
+				mA = (uint8)result;
+				mAH = (uint8)(result >> 8);
 			} else {
 				uint32 data = mData16;
 				uint32 acc = mA + ((uint32)mAH << 8);
@@ -2053,39 +2103,54 @@ for(;;) {
 
 		case kStateSbc16:
 			if (mP & kFlagD) {
-				uint32 data = (uint32)mData ^ 0xffff;
-				uint32 acc = mA + ((uint32)mAH << 8);
+				// 16-bit BCD subtract, processed nibble-by-nibble so the
+				// inter-nibble borrow is normalized to a single bit (required
+				// for invalid BCD inputs, as with ADC above).
+				const uint32 a16 = mA + ((uint32)mAH << 8);
+				const uint32 v16 = mData16;
+				uint32 carry = (mP & kFlagC) ? 1 : 0;	// carry=1 => no borrow
+				uint32 result = 0;
+				uint8 vflag = 0;
 
-				// BCD
-				uint32 lowResult = (acc & 15) + (data & 15) + (mP & kFlagC);
-				if (lowResult < 0x10)
-					lowResult -= 6;
+				for (uint32 shift = 0; shift < 16; shift += 4) {
+					sint32 digit = (sint32)((a16 >> shift) & 0x0f)
+						- (sint32)((v16 >> shift) & 0x0f)
+						+ (sint32)carry - 1;
 
-				uint32 midResult = (acc & 0xf0) + (data & 0xf0) + lowResult;
-				if (midResult < 0x100)
-					midResult -= 0x60;
+					// V is taken from the binary difference of the high nibble,
+					// before its decimal correction.
+					if (shift == 12) {
+						const uint32 pre = result | (((uint32)digit & 0x0f) << 12);
+						if (((a16 ^ v16) & (a16 ^ pre)) & 0x8000)
+							vflag = kFlagV;
+					}
 
-				uint32 midHiResult = (acc & 0xf00) + (data & 0xf00) + midResult;
-				if (midHiResult < 0x1000)
-					midHiResult -= 0x600;
+					if (digit < 0) {
+						digit -= 6;
+						carry = 0;
+					} else {
+						carry = 1;
+					}
 
-				uint32 highResult = (acc & 0xf000) + (data & 0xf000) + midHiResult;
-				if (highResult < 0x10000)
-					highResult -= 0x6000;
+					result |= ((uint32)digit & 0x0f) << shift;
+				}
 
-				mP &= ~(kFlagC | kFlagN | kFlagZ | kFlagV);
+				uint8 p = mP & ~(kFlagC | kFlagN | kFlagZ | kFlagV);
 
-				if (highResult & 0x8000)
-					mP |= kFlagN;
+				p |= vflag;
 
-				if (highResult >= 0x10000)
-					mP |= kFlagC;
+				if (carry)
+					p |= kFlagC;
 
-				if (!(highResult & 0xffff))
-					mP |= kFlagZ;
+				if (result & 0x8000)
+					p |= kFlagN;
 
-				mA = (uint8)highResult;
-				mAH = (uint8)(highResult >> 8);
+				if (!(result & 0xffff))
+					p |= kFlagZ;
+
+				mP = p;
+				mA = (uint8)result;
+				mAH = (uint8)(result >> 8);
 			} else {
 				uint32 acc = ((uint32)mAH << 8) + mA;
 				
@@ -2396,6 +2461,30 @@ for(;;) {
 			mK = AT_CPU_READ_BYTE_HL(mSH, mS);
 			END_SUB_CYCLE();
 
+		case kStatePopPCLRtl:
+			// RTL uses a full 16-bit stack pointer even in emulation mode, so
+			// the pull may cross the page-1 boundary (unlike RTS/RTI which
+			// wrap within page 1).  The stack high byte is forced back to $01
+			// at the end of the instruction (see kStatePopPBKRtl).
+			if (!++mS)
+				++mSH;
+			mPC = AT_CPU_READ_BYTE_HL(mSH, mS);
+			END_SUB_CYCLE();
+
+		case kStatePopPCHP1Rtl:
+			if (!++mS)
+				++mSH;
+			mPC += ((uint32)AT_CPU_READ_BYTE_HL(mSH, mS) << 8) + 1;
+			END_SUB_CYCLE();
+
+		case kStatePopPBKRtl:
+			if (!++mS)
+				++mSH;
+			mK = AT_CPU_READ_BYTE_HL(mSH, mS);
+			if (mbEmulationFlag)
+				mSH = 0x01;
+			END_SUB_CYCLE();
+
 		case kStateRep:
 			if (mP & mData & kFlagI)
 				mIntFlags |= kIntFlag_IRQReleasePending;
@@ -2436,6 +2525,7 @@ for(;;) {
 
 		case kState816_EmuCOPVecToPC:
 			mPC = 0xFFF4;
+			mK = 0;
 			break;
 
 		case kState816_NatNMIVecToPC:

@@ -371,7 +371,7 @@ protected:
 	void	Decode65816AddrDpIndX(bool unalignedDP, bool emu);
 	void	Decode65816AddrDpIndY(bool unalignedDP, bool emu, bool forceCycle);
 	void	Decode65816AddrDpLongInd(bool unalignedDP);
-	void	Decode65816AddrDpLongIndY(bool unalignedDP);
+	void	Decode65816AddrDpLongIndY(bool unalignedDP, bool emu);
 	void	Decode65816AddrAbs();
 	void	Decode65816AddrAbsX(bool forceCycle);
 	void	Decode65816AddrAbsY(bool forceCycle);

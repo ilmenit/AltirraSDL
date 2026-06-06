@@ -37,6 +37,7 @@ endif()
 target_sources(AltirraSDL PRIVATE
     # --- app/ : process lifecycle, main loop, CLI, crash ---
     source/app/main_sdl3.cpp
+    source/app/cputest_runner.cpp
     source/app/main_pacer.cpp
     source/app/main_window.cpp
     source/app/window_caption_sdl3.cpp
