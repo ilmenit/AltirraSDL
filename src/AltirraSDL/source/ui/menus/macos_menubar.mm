@@ -331,9 +331,9 @@ static void BuildFileMenu(NSMenu *menu) {
 		});
 		// Extension over Windows Altirra (approved): swap the disks
 		// mounted in drive 1 (index 0) and drive 2 (index 1).
-		// Cmd-R is free on macOS (not used by the native menu, and the
-		// SDL accel table ignores the Cmd/GUI modifier).
-		AddItem(attachMenu, @"Swap Disks", @"r", NSEventModifierFlagCommand, false, true, [=]{
+		// Menu item only, no default shortcut, to keep behaviour
+		// consistent with the SDL/ImGui menu path on all platforms.
+		AddItem(attachMenu, @"Swap Disks", false, true, [=]{
 			g_sim.SwapDrives(0, 1);
 		});
 		AddSeparator(attachMenu);
