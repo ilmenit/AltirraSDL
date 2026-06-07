@@ -46,6 +46,11 @@ void ATBridgeRequestAppQuit();
 
 namespace ATBridge {
 
+#ifdef ALTIRRA_BRIDGE_AUDIO_REC
+// Defined in bridge_commands_audio.cpp (GUI AltirraSDL target only).
+std::string CmdAudioRecord(ATSimulator& sim, const std::vector<std::string>& tokens);
+#endif
+
 // Bumped on any wire-format change. Clients echo this back via the
 // HELLO response and may refuse to operate against a higher major
 // version than they understand. See AltirraBridge/docs/PROTOCOL.md.
@@ -215,6 +220,9 @@ bool ShouldLogCommand(const std::string& verb) {
 		|| verb == "WATCH_SET" || verb == "SYM_LOAD"
 		|| verb == "SYM_UNLOAD" || verb == "SYM_CLEAR_ALL"
 		|| verb == "PROFILE_START" || verb == "PROFILE_STOP"
+#ifdef ALTIRRA_BRIDGE_AUDIO_REC
+		|| verb == "AUDIO_RECORD"
+#endif
 		|| verb == "VERIFIER_SET";
 }
 
@@ -377,6 +385,13 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "CART_INFO")   return CmdCartInfo  (sim, tokens);
 	if (verb == "PMG")         return CmdPmg       (sim, tokens);
 	if (verb == "AUDIO_STATE") return CmdAudioState(sim, tokens);
+
+#ifdef ALTIRRA_BRIDGE_AUDIO_REC
+	// Audio capture (GUI target only — links ATAudioWriter; see
+	// bridge_commands_audio.cpp). The headless AltirraBridgeServer target
+	// does not define ALTIRRA_BRIDGE_AUDIO_REC, so this compiles out cleanly.
+	if (verb == "AUDIO_RECORD") return CmdAudioRecord(sim, tokens);
+#endif
 
 	// Phase 5b: breakpoints, symbols, memsearch, profiler, verifier
 	if (verb == "BP_SET")            return CmdBpSet         (sim, tokens);

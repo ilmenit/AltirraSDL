@@ -311,6 +311,12 @@ if(ALTIRRA_BRIDGE)
         source/bridge/bridge_commands_render.cpp
         source/bridge/bridge_commands_debug.cpp
         source/bridge/bridge_commands_debug2.cpp
+        # Audio capture (AUDIO_RECORD): GUI target only — links ATAudioWriter
+        # via ui_recording.cpp. The headless AltirraBridgeServer target builds
+        # audio with -DALTIRRA_AUDIO_NULL and does NOT link ATAudioWriter, so
+        # it must not compile this file; the dispatch + forward-decl in
+        # bridge_server.cpp are guarded by ALTIRRA_BRIDGE_AUDIO_REC.
+        source/bridge/bridge_commands_audio.cpp
         source/bridge/bridge_bare_stub.cpp
         source/bridge/bridge_savestate.cpp
         # Per-target glue: SDL3 routes BOOT/MOUNT/STATE_* through
@@ -318,7 +324,7 @@ if(ALTIRRA_BRIDGE)
         # target provides its own implementation of these symbols.
         source/bridge/bridge_main_glue_sdl3.cpp
     )
-    target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_BRIDGE_ENABLED=1)
+    target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_BRIDGE_ENABLED=1 ALTIRRA_BRIDGE_AUDIO_REC=1)
 endif()
 
 # ---------------------------------------------------------------------------
