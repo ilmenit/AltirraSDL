@@ -1692,15 +1692,25 @@ for(;;) {
 			END_SUB_CYCLE();
 
 		case kState816ReadIndAddrDpLongHInPage:
-			// [dp] long pointer middle byte, emulation mode with DL==0: the
-			// fetch wraps within the direct page (high byte stays = DH).
-			mData16 = mData + ((uint16)AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 1))) << 8);
+			// [dp]/[dp],Y long pointer middle byte, emulation mode with DL==0.
+			// The fetch wraps within the direct page only when the direct page
+			// lies above the first 256 bytes of bank 0 (DH!=0); when DH==0 the
+			// pointer is read linearly (Acid800: long modes never page-zero
+			// wrap with D==0).  The DH!=0 wrap is required by the Tom Harte
+			// SingleStepTests 65816 corpus (e.g. opcode 97, d=$6D00).
+			if (mDP & 0xff00)
+				mData16 = mData + ((uint16)AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 1))) << 8);
+			else
+				mData16 = mData + ((uint16)AT_CPU_READ_BYTE(mAddr + 1) << 8);
 			END_SUB_CYCLE();
 
 		case kState816ReadIndAddrDpLongBInPage:
-			// [dp] long pointer bank byte, emulation mode with DL==0: also
-			// wraps within the direct page.
-			mAddrBank = AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 2)));
+			// [dp]/[dp],Y long pointer bank byte, emulation mode with DL==0.
+			// Wraps within the direct page only when DH!=0 (see above).
+			if (mDP & 0xff00)
+				mAddrBank = AT_CPU_READ_BYTE((mAddr & 0xff00) + (0xff & (mAddr + 2)));
+			else
+				mAddrBank = AT_CPU_READ_BYTE(mAddr + 2);
 			mAddr = mData16;
 			END_SUB_CYCLE();
 

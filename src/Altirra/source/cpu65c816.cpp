@@ -1513,10 +1513,17 @@ bool ATCPUEmulator::Decode65C816(uint8 opcode, bool unalignedDP, bool emu, bool 
 			if (mpVerifier)
 				*mpDstState++ = kStateVerifyInsn;
 
-			// PLB pulls DBR from the stack.  In emulation mode the stack stays
-			// confined to page 1, so the pull wraps within page 1 (verified
-			// against the Tom Harte 65816 tests) -- same as every other pull.
-			*mpDstState++ = emu ? kStatePop : kStatePopNative;
+			// PLB pulls DBR from the stack.  Unlike the "old" 6502 pulls
+			// (PLA/PLX/PLY), the 65C816's new PLB indexes the stack with
+			// full 16-bit arithmetic even in emulation mode, so a pull at
+			// S=$01FF reads from $0200 (crossing into page 2) rather than
+			// wrapping to $0100.  kStatePopNative performs the 16-bit
+			// increment and re-forces SH=$01 afterward.  Verified against
+			// Acid800 ("PLB should index across to page two") and sim816;
+			// the Tom Harte 65816 corpus models this as page-1 confinement,
+			// which is incorrect for PLB (sim816 fails the same ~36 ab.e
+			// tests for exactly this reason).
+			*mpDstState++ = kStatePopNative;
 			*mpDstState++ = kStateWait;
 			*mpDstState++ = kStateWait;
 			*mpDstState++ = kStateDSetSZ;
