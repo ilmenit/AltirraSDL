@@ -1368,6 +1368,7 @@ int main(int argc, char *argv[]) {
 	//   --cpu-test-limit <n>         max tests per file (0 = all)
 	//   --cpu-test-stop-on-fail      stop the whole run on first failure
 	//   --cpu-test-verbose           print per-register / per-RAM diffs
+	//   --cpu-test-cycles            also verify per-cycle bus activity
 	{
 		ATCPUTestOptions cpuTestOpts;
 		bool cpuTestRequested = false;
@@ -1392,6 +1393,8 @@ int main(int argc, char *argv[]) {
 				cpuTestOpts.mStopOnFail = true;
 			} else if (strcmp(argv[i], "--cpu-test-verbose") == 0) {
 				cpuTestOpts.mVerbose = true;
+			} else if (strcmp(argv[i], "--cpu-test-cycles") == 0) {
+				cpuTestOpts.mCheckCycles = true;
 			}
 		}
 

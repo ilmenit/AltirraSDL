@@ -50,6 +50,12 @@ struct ATCPUTestOptions {
 
 	// Print per-register / per-RAM diffs for each failing test.
 	bool mVerbose = false;
+
+	// Also verify per-cycle bus activity against each test's "cycles"
+	// array (address + data + read/write).  Routes every CPU access
+	// through the recording memory handlers (slower than the default
+	// register/RAM-only mode).
+	bool mCheckCycles = false;
 };
 
 // Runs the 65C816 conformance harness described by opts and returns a

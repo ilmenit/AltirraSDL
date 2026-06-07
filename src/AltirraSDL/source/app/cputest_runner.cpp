@@ -29,6 +29,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 #include <utility>
 #include <vector>
 
@@ -51,14 +52,27 @@ namespace {
 // 65C816 instruction.
 constexpr int kCycleCap = 64;
 
+// One recorded bus cycle: a single read or write observed on the bus.
+struct CycleRecord {
+	uint32 addr;	// full 24-bit address
+	uint8 value;	// byte read or written
+	bool isWrite;
+};
+
 // =========================================================================
-// Flat 16 MB banked memory exposed entirely as direct RAM
+// Flat 16 MB banked memory, with an optional per-cycle recording mode
 // =========================================================================
 //
-// Every page-table entry points straight at the backing array, so the
-// special-handler path (ATCPUMEMISSPECIAL -> CPU*ReadByte/WriteByte) is
-// never taken.  The pure-virtual handlers are still implemented (flat-RAM
-// fallbacks) to satisfy the interface.
+// Default (recording off): every page-table entry points straight at the
+// backing array, so the special-handler path (ATCPUMEMISSPECIAL ->
+// CPU*ReadByte/WriteByte) is never taken -- the fast register/RAM path.
+//
+// Recording on (SetRecording(true)): every page entry is rewritten to an
+// odd sentinel so ATCPUMEMISSPECIAL is true for *every* page, routing all
+// accesses -- opcode fetch, operand reads, data read/write, and dummy /
+// internal reads -- through the virtual handlers below, which both perform
+// the real RAM access and append a CycleRecord to mTrace.  This captures
+// the exact per-cycle bus activity the Tom Harte "cycles" array describes.
 
 class ATCPUTestMemory final : public ATCPUEmulatorMemory {
 public:
@@ -66,16 +80,39 @@ public:
 
 	uint8 *Ram() { return mRam.data(); }
 
+	// Toggle per-cycle bus recording.  Flips the page maps between direct
+	// RAM pointers (fast) and the special sentinel (every access traced).
+	void SetRecording(bool enabled);
+
+	void ClearTrace() { mTrace.clear(); }
+	const std::vector<CycleRecord>& Trace() const { return mTrace; }
+
+	// Drop the trailing recorded access -- used by the cycle harness to
+	// discard the next instruction's opcode fetch that Altirra's fused
+	// micro-op core performs as the step's final Advance().
+	void DropLastTrace() { if (!mTrace.empty()) mTrace.pop_back(); }
+
 	uint8 CPUReadByte(uint32 address) override {
-		return mRam[address & 0xFFFFFF];
+		const uint8 v = mRam[address & 0xFFFFFF];
+		if (mRecord)
+			mTrace.push_back(CycleRecord{ address & 0xFFFFFF, v, false });
+		return v;
 	}
 
 	uint8 CPUExtReadByte(uint16 address, uint8 bank) override {
-		return mRam[((uint32)bank << 16) | address];
+		const uint32 addr = ((uint32)bank << 16) | address;
+		const uint8 v = mRam[addr];
+		if (mRecord)
+			mTrace.push_back(CycleRecord{ addr, v, false });
+		return v;
 	}
 
 	sint32 CPUExtReadByteAccel(uint16 address, uint8 bank, bool chipOK) override {
-		return mRam[((uint32)bank << 16) | address];
+		const uint32 addr = ((uint32)bank << 16) | address;
+		const uint8 v = mRam[addr];
+		if (mRecord)
+			mTrace.push_back(CycleRecord{ addr, v, false });
+		return v;
 	}
 
 	uint8 CPUDebugReadByte(uint16 address) const override {
@@ -88,14 +125,22 @@ public:
 
 	void CPUWriteByte(uint16 address, uint8 value) override {
 		mRam[address] = value;
+		if (mRecord)
+			mTrace.push_back(CycleRecord{ (uint32)address, value, true });
 	}
 
 	void CPUExtWriteByte(uint16 address, uint8 bank, uint8 value) override {
-		mRam[((uint32)bank << 16) | address] = value;
+		const uint32 addr = ((uint32)bank << 16) | address;
+		mRam[addr] = value;
+		if (mRecord)
+			mTrace.push_back(CycleRecord{ addr, value, true });
 	}
 
 	sint32 CPUExtWriteByteAccel(uint16 address, uint8 bank, uint8 value, bool chipOK) override {
-		mRam[((uint32)bank << 16) | address] = value;
+		const uint32 addr = ((uint32)bank << 16) | address;
+		mRam[addr] = value;
+		if (mRecord)
+			mTrace.push_back(CycleRecord{ addr, value, true });
 		return 0;
 	}
 
@@ -104,6 +149,8 @@ private:
 	vdblock<uintptr> mPageEntries;	// 256 banks * 256 pages
 	BankTable mBankTable;
 	uint32 mAddrPageMap[256];
+	bool mRecord = false;
+	std::vector<CycleRecord> mTrace;
 };
 
 void ATCPUTestMemory::Init() {
@@ -133,6 +180,26 @@ void ATCPUTestMemory::Init() {
 	mpCPUReadPageMap = mBankTable[0];
 	mpCPUWritePageMap = mBankTable[0];
 	mpCPUReadAddressPageMap = mAddrPageMap;
+}
+
+void ATCPUTestMemory::SetRecording(bool enabled) {
+	mRecord = enabled;
+	mTrace.clear();
+
+	uint8 *base = mRam.data();
+
+	for (uint32 b = 0; b < 256; ++b) {
+		if (enabled) {
+			// Odd sentinel => ATCPUMEMISSPECIAL true for every page, so
+			// every access routes through the virtual handlers above.
+			for (uint32 p = 0; p < 256; ++p)
+				mPageEntries[b * 256 + p] = (uintptr)1;
+		} else {
+			uintptr bankBase = (uintptr)(base + ((uint32)b << 16));
+			for (uint32 p = 0; p < 256; ++p)
+				mPageEntries[b * 256 + p] = bankBase;
+		}
+	}
 }
 
 // =========================================================================
@@ -237,7 +304,22 @@ public:
 	//     corpus deliberately caps them mid-move at a fixed cycle budget, so we
 	//     match the reference (sim816's sim816_step_limited) by running exactly
 	//     expectedCycles clocks and reporting GetPC().
+	// True after the most recent StepOneInstruction() returned via a "fused"
+	// path -- i.e. the final Advance() it executed was the *next*
+	// instruction's opcode fetch (one bus access too many for the current
+	// instruction's cycle trace).
+	bool LastStepOverran() const { return mLastStepOverran; }
+
+	// Number of Advance() calls (= emulated CPU clock cycles) consumed by the
+	// most recent StepOneInstruction().  Unlike the recorded bus trace this
+	// also counts internal/dummy cycles that Altirra implements as no-bus
+	// waits, so (mLastStepCycles - overran?1:0) is the instruction's true cycle
+	// count for comparison against the test's "cycles" array length.
+	int LastStepCycles() const { return mLastStepCycles; }
+
 	uint16 StepOneInstruction(int expectedCycles) {
+		mLastStepOverran = false;
+
 		const uint16 pc0 = GetInsnPC();
 
 		Advance();			// cycle 1: opcode fetch (primed kStateReadOpcodeNoBreak)
@@ -259,6 +341,7 @@ public:
 				Advance();
 				++n;
 			}
+			mLastStepCycles = n;
 			return GetPC();
 		}
 
@@ -267,23 +350,31 @@ public:
 			// instruction's final ALU/transfer cycle with the *next* opcode
 			// fetch in one Advance().  After that fetch mInsnPC snapshots the
 			// fetch PC -- exactly the post-instruction PC the Harte test wants.
-			if (GetInsnPC() != pc0)
+			if (GetInsnPC() != pc0) {
+				mLastStepOverran = true;
+				mLastStepCycles = n;
 				return GetInsnPC();
+			}
 
 			// Fused control transfer to the *same* 16-bit PC (JSL/JML/RTL to a
 			// different bank, or a self-targeting jump).  Here mInsnPC keeps the
 			// same value so the test above cannot see the fetch, but mOpcode has
 			// been overwritten by the freshly fetched target opcode.  mInsnPC is
 			// the (unchanged) target PC and every register is already final.
-			if (mOpcode != op0)
+			if (mOpcode != op0) {
+				mLastStepOverran = true;
+				mLastStepCycles = n;
 				return GetInsnPC();
+			}
 
 			// Non-fused completion (stores, RMW, BRK/COP push+vector): the final
 			// cycle ends cleanly and mpNextState parks at an opcode-fetch state,
 			// so IsInstructionInProgress() goes false *before* the next fetch and
 			// mPC already holds the final value (no overshoot).
-			if (!IsInstructionInProgress())
+			if (!IsInstructionInProgress()) {
+				mLastStepCycles = n;
 				return GetPC();
+			}
 
 			Advance();
 			++n;
@@ -294,12 +385,17 @@ public:
 		// mOpcode and every register are invariant across the loop, so the
 		// post-instruction PC is simply the (unchanged) target = mInsnPC.  (mPC
 		// here is mid-operand-fetch and would be wrong.)
+		mLastStepCycles = n;
 		return GetInsnPC();
 	}
 
 	uint16 GetA16() const { return (uint16)(GetA() | (GetAH() << 8)); }
 	uint16 GetX16() const { return (uint16)(GetX() | (GetXH() << 8)); }
 	uint16 GetY16() const { return (uint16)(GetY() | (GetYH() << 8)); }
+
+private:
+	bool mLastStepOverran = false;
+	int mLastStepCycles = 0;
 };
 
 // =========================================================================
@@ -313,6 +409,14 @@ struct CTRegState {
 
 typedef std::vector<std::pair<uint32, uint8> > CTRamList;
 
+// One expected bus cycle from the test's "cycles" array.
+struct CTCycle {
+	uint32 addr = 0;	// 24-bit bus address
+	uint8 value = 0;	// data byte (only meaningful when !isNull)
+	bool isWrite = false;	// RWB flag from the flags string (position 3)
+	bool isNull = false;	// JSON value == null => internal/dummy cycle
+};
+
 struct CTTest {
 	VDStringA name;
 	CTRegState initial;
@@ -320,6 +424,7 @@ struct CTTest {
 	CTRamList initRam;
 	CTRamList finalRam;
 	int cycleCount = 0;	// length of the "cycles" array
+	std::vector<CTCycle> cycles;
 };
 
 bool ParseRegState(const VDJSONValueRef& o, CTRegState& r) {
@@ -394,11 +499,39 @@ bool ParseTest(const VDJSONValueRef& obj, CTTest& t) {
 	if (!ParseRamList(final_["ram"], t.finalRam))
 		return false;
 
-	// Cycle count is the length of the "cycles" array; only used to bound
-	// block-move opcodes (MVN/MVP).  Missing/empty is tolerated (0).
+	// Cycle count is the length of the "cycles" array; used to bound
+	// block-move opcodes (MVN/MVP) and, in cycle mode, to verify the
+	// per-cycle bus trace.  Each entry is [addr24, value|null, flags8].
+	// Missing/empty is tolerated (0).
 	VDJSONValueRef cycles = obj["cycles"];
-	if (cycles.IsArray())
+	if (cycles.IsArray()) {
 		t.cycleCount = (int)cycles.GetArrayLength();
+
+		for (VDJSONValueRef entry : cycles.AsArray()) {
+			if (!entry.IsArray() || entry.GetArrayLength() < 3)
+				return false;
+
+			CTCycle c;
+			c.addr = (uint32)entry[(size_t)0].AsInt64() & 0xFFFFFF;
+
+			VDJSONValueRef valRef = entry[(size_t)1];
+			if (valRef.IsNull()) {
+				c.isNull = true;
+			} else {
+				c.value = (uint8)valRef.AsInt64();
+			}
+
+			// flags string: position 3 is 'r' (read) or 'w' (write).
+			VDJSONValueRef flagsRef = entry[(size_t)2];
+			if (flagsRef.IsString()) {
+				const wchar_t *fl = flagsRef.AsString();
+				size_t flen = wcslen(fl);
+				c.isWrite = (flen > 3 && fl[3] == L'w');
+			}
+
+			t.cycles.push_back(c);
+		}
+	}
 
 	return true;
 }
@@ -471,6 +604,141 @@ bool VerifyState(ATCPUTestHarness& cpu, ATCPUTestMemory& mem, const CTTest& t,
 	return ok;
 }
 
+// Returns true when the recorded per-cycle bus activity matches the test's
+// "cycles" array.  This is a SAFE, harness-only cycle-conformance check that
+// accepts Altirra's optimized-but-equivalent micro-op cycle model without any
+// change to the shared CPU core.  It verifies three things:
+//
+//   1. Total cycle count.  Uses effectiveCycles = the number of Advance()s the
+//      instruction consumed minus the fused next-opcode fetch (when the step
+//      over-ran).  Crucially this counts internal/dummy cycles that Altirra
+//      implements as no-bus waits -- which never appear in the bus trace -- so
+//      it is the authoritative per-instruction cycle count (e.g. REP/SEP and
+//      the push family PHB/PHK each spend a wait cycle with no bus access).
+//
+//   2. Writes.  Every write the chip performs must be reproduced exactly
+//      (address + data), and the trace must contain no extra writes.  Writes
+//      are always real accesses, never internal/dummy cycles.
+//
+//   3. Real reads.  Every concrete (non-null) read in the test must appear
+//      somewhere in the trace (address + data).  Left-over actual reads are
+//      Altirra's internal/dummy cycles or the fused next-opcode fetch and are
+//      intentionally not address-checked (the test marks those cycles null =
+//      don't-care, and Altirra legitimately places a dummy read at a different
+//      but equivalent address or fuses it with the next fetch).
+//
+// Matching is order-tolerant (multiset): Altirra reorders internal/dummy
+// cycles relative to the real access within an instruction (e.g. the pull
+// family reads the stack early and the dummies late -- the reverse of real
+// silicon).  The checks above still catch any wrong address, wrong data, wrong
+// R/W direction, extra/dropped write, or wrong cycle count; only the ordering
+// of cycles within the (already register/RAM-verified) instruction is relaxed.
+bool VerifyCycles(const CTTest& t, const std::vector<CycleRecord>& trace,
+	int effectiveCycles, bool verbose)
+{
+	const size_t expN = t.cycles.size();
+	const size_t actN = trace.size();
+
+	bool ok = true;
+	const char *reason = nullptr;
+
+	// (1) Cycle count.
+	if ((int)expN != effectiveCycles) {
+		ok = false;
+		reason = "cycle count";
+	}
+
+	std::vector<bool> used(actN, false);
+
+	// (2) Writes: exact multiset match (expected <-> actual).
+	if (ok) {
+		for (size_t i = 0; i < expN && ok; ++i) {
+			const CTCycle& e = t.cycles[i];
+			if (e.isNull || !e.isWrite)
+				continue;
+
+			bool matched = false;
+			for (size_t j = 0; j < actN; ++j) {
+				if (used[j] || !trace[j].isWrite)
+					continue;
+				if (trace[j].addr == e.addr && trace[j].value == e.value) {
+					used[j] = true;
+					matched = true;
+					break;
+				}
+			}
+
+			if (!matched) {
+				ok = false;
+				reason = "missing write";
+			}
+		}
+
+		// No unexplained extra writes in the trace.
+		for (size_t j = 0; j < actN && ok; ++j) {
+			if (!used[j] && trace[j].isWrite) {
+				ok = false;
+				reason = "unexpected write";
+			}
+		}
+	}
+
+	// (3) Real reads: every concrete expected read must be present.
+	if (ok) {
+		for (size_t i = 0; i < expN && ok; ++i) {
+			const CTCycle& e = t.cycles[i];
+			if (e.isNull || e.isWrite)
+				continue;
+
+			bool matched = false;
+			for (size_t j = 0; j < actN; ++j) {
+				if (used[j] || trace[j].isWrite)
+					continue;
+				if (trace[j].addr == e.addr && trace[j].value == e.value) {
+					used[j] = true;
+					matched = true;
+					break;
+				}
+			}
+
+			if (!matched) {
+				ok = false;
+				reason = "missing read";
+			}
+		}
+	}
+
+	if (!ok && verbose) {
+		printf("FAIL (cycles): %s [%s]\n", t.name.c_str(),
+			reason ? reason : "?");
+		printf("  expected %zu cycles, got %d (bus accesses recorded: %zu)\n",
+			expN, effectiveCycles, actN);
+		const size_t dump = expN > actN ? expN : actN;
+		for (size_t i = 0; i < dump; ++i) {
+			printf("  [%2zu] ", i);
+			if (i < expN) {
+				const CTCycle& e = t.cycles[i];
+				if (e.isNull)
+					printf("exp %c @$%06X (internal)", e.isWrite ? 'W' : 'R', e.addr);
+				else
+					printf("exp %c @$%06X =$%02X", e.isWrite ? 'W' : 'R', e.addr, e.value);
+			} else {
+				printf("exp --");
+			}
+			printf("   ");
+			if (i < actN) {
+				const CycleRecord& a = trace[i];
+				printf("got %c @$%06X =$%02X", a.isWrite ? 'W' : 'R', a.addr, a.value);
+			} else {
+				printf("got --");
+			}
+			printf("\n");
+		}
+	}
+
+	return ok;
+}
+
 // =========================================================================
 // File I/O
 // =========================================================================
@@ -494,7 +762,8 @@ bool ReadFileBytes(const wchar_t *wpath, vdblock<uint8>& out) {
 // Returns: 0 = all pass, 1 = had failures, 2 = fatal (I/O / parse).
 int RunSingleFile(ATCPUTestHarness& cpu, ATCPUTestMemory& mem,
 	const wchar_t *wpath, const char *displayName,
-	const ATCPUTestOptions& opts, int& totalPass, int& totalFail)
+	const ATCPUTestOptions& opts, int& totalPass, int& totalFail,
+	int& totalCycleFail)
 {
 	vdblock<uint8> bytes;
 	if (!ReadFileBytes(wpath, bytes)) {
@@ -515,7 +784,7 @@ int RunSingleFile(ATCPUTestHarness& cpu, ATCPUTestMemory& mem,
 		return 2;
 	}
 
-	int filePass = 0, fileFail = 0, count = 0;
+	int filePass = 0, fileFail = 0, fileCycleFail = 0, count = 0;
 	bool stop = false;
 
 	for (VDJSONValueRef item : root.AsArray()) {
@@ -531,12 +800,34 @@ int RunSingleFile(ATCPUTestHarness& cpu, ATCPUTestMemory& mem,
 		}
 
 		SetupState(cpu, mem, test);
+
+		if (opts.mCheckCycles)
+			mem.ClearTrace();
+
 		const uint16 finalPC = cpu.StepOneInstruction(test.cycleCount);
 
-		if (VerifyState(cpu, mem, test, finalPC, opts.mVerbose)) {
+		const bool stateOK = VerifyState(cpu, mem, test, finalPC, opts.mVerbose);
+
+		// Cycle verification is independent of register/RAM: a test can
+		// pass state but fail the per-cycle bus trace, and vice versa.
+		bool cycleOK = true;
+		if (opts.mCheckCycles) {
+			// The instruction's true cycle count is the number of Advance()s
+			// it consumed, minus the fused next-opcode fetch when the step
+			// over-ran (the over-run Advance belongs to the next instruction).
+			const int effectiveCycles =
+				cpu.LastStepCycles() - (cpu.LastStepOverran() ? 1 : 0);
+
+			cycleOK = VerifyCycles(test, mem.Trace(), effectiveCycles,
+				opts.mVerbose);
+		}
+
+		if (stateOK && cycleOK) {
 			++filePass;
 		} else {
 			++fileFail;
+			if (!cycleOK)
+				++fileCycleFail;
 			if (opts.mStopOnFail) {
 				++count;
 				stop = true;
@@ -547,11 +838,16 @@ int RunSingleFile(ATCPUTestHarness& cpu, ATCPUTestMemory& mem,
 		++count;
 	}
 
-	printf("[%s] %d pass, %d fail (%d total)\n",
-		displayName, filePass, fileFail, count);
+	if (opts.mCheckCycles)
+		printf("[%s] %d pass, %d fail (%d cycle) (%d total)\n",
+			displayName, filePass, fileFail, fileCycleFail, count);
+	else
+		printf("[%s] %d pass, %d fail (%d total)\n",
+			displayName, filePass, fileFail, count);
 
 	totalPass += filePass;
 	totalFail += fileFail;
+	totalCycleFail += fileCycleFail;
 
 	if (stop)
 		return 1;
@@ -593,7 +889,14 @@ int ATRunCPUTests(const ATCPUTestOptions& opts) {
 	cpu.SetCPUMode(kATCPUMode_65C816, 1);
 	cpu.ColdReset();
 
-	int totalPass = 0, totalFail = 0;
+	// In cycle mode, route every CPU bus access through the recording
+	// handlers (slower); the default register/RAM mode keeps the fast
+	// direct-page path.  Recording is enabled once, after ColdReset, so
+	// the reset sequence itself is not traced.
+	if (opts.mCheckCycles)
+		mem.SetRecording(true);
+
+	int totalPass = 0, totalFail = 0, totalCycleFail = 0;
 	int fatal = 0;
 
 	try {
@@ -601,7 +904,7 @@ int ATRunCPUTests(const ATCPUTestOptions& opts) {
 			// Single-file mode.
 			VDStringW wpath(VDTextU8ToW(opts.mPath.c_str(), (int)opts.mPath.size()));
 			int r = RunSingleFile(cpu, mem, wpath.c_str(), opts.mPath.c_str(),
-				opts, totalPass, totalFail);
+				opts, totalPass, totalFail, totalCycleFail);
 			if (r == 2)
 				fatal = 1;
 		} else {
@@ -639,7 +942,7 @@ int ATRunCPUTests(const ATCPUTestOptions& opts) {
 					probe.closeNT();
 
 					int r = RunSingleFile(cpu, mem, wpath.c_str(), base,
-						opts, totalPass, totalFail);
+						opts, totalPass, totalFail, totalCycleFail);
 					if (r == 2) {
 						fatal = 1;
 						break;
@@ -661,6 +964,8 @@ int ATRunCPUTests(const ATCPUTestOptions& opts) {
 	printf("\n=== CPU Test Summary ===\n");
 	printf("Passed: %d\n", totalPass);
 	printf("Failed: %d\n", totalFail);
+	if (opts.mCheckCycles)
+		printf("  of which cycle failures: %d\n", totalCycleFail);
 	printf("Total:  %d\n", totalPass + totalFail);
 	printf("Result: %s\n", (totalFail == 0 && !fatal) ? "PASS" : "FAIL");
 
