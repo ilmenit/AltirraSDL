@@ -463,6 +463,14 @@ void ATUIRenderAdjustColors(ATSimulator &sim, ATUIState &state) {
 		ImGui::EndMenuBar();
 	}
 
+	// Scrollable body: reserve space at the bottom for a pinned footer
+	// (separator + "Reset to Defaults") so the reset button stays visible
+	// regardless of how tall the color controls get, matching Windows where
+	// Reset is always on screen.
+	const float footerHeight = ImGui::GetFrameHeightWithSpacing()
+		+ ImGui::GetStyle().ItemSpacing.y;
+	ImGui::BeginChild("##AdjustColorsBody", ImVec2(0, -footerHeight), false);
+
 	// ---- Palette preview ----
 	if (ImGui::CollapsingHeader("Palette Preview", ImGuiTreeNodeFlags_DefaultOpen)) {
 		DrawPalettePreview(gtia);
@@ -687,6 +695,9 @@ void ATUIRenderAdjustColors(ATSimulator &sim, ATUIState &state) {
 		gtia.SetColorSettings(settings);
 	}
 
+	ImGui::EndChild();
+
+	// Pinned footer (outside the scrolling body) — always visible.
 	ImGui::Separator();
 
 	if (ImGui::Button("Reset to Defaults")) {
