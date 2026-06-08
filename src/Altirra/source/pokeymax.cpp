@@ -218,6 +218,7 @@ private:
 	// Present / capability flags (driven by the device config dialog, reported
 	// by $D211 CAPABILITY -- never change at runtime):
 	//   mPokeyCapability  POKEY channel count: 0=Mono, 1=Stereo, 2=Quad
+	//                     (internal value; $D211 maps quad 2 -> 3)
 	//   mbCovoxPresent    Covox-compatible DAC present
 	//   mbPSGPresent      PSG present
 	//   mbSIDPresent      SID present
@@ -769,7 +770,7 @@ uint8 ATDevicePokeyMax::GetCapability() const {
 	//   bit 4 ($10)  Covox support
 	//   bit 3 ($08)  PSG support
 	//   bit 2 ($04)  SID support
-	//   bits 1-0     POKEY channels: 0=Mono, 1=Stereo, 2=Quad
+	//   bits 1-0     POKEY channels: 0=Mono, 1=Stereo, 3=Quad
 	uint8 cap = 0;
 
 	if (mbSamplePresent)
@@ -781,7 +782,10 @@ uint8 ATDevicePokeyMax::GetCapability() const {
 	if (mbSIDPresent)
 		cap |= 0x04;
 
-	cap |= (uint8)(mPokeyCapability & 3);
+	// Internal mPokeyCapability is {0=Mono,1=Stereo,2=Quad} (drives the core
+	// ATPokeyChannelMode enum). The hardware $D211 field encodes quad as 3,
+	// so map 2 -> 3 here while leaving the internal value untouched.
+	cap |= (mPokeyCapability == 2) ? 0x03 : (uint8)(mPokeyCapability & 3);
 
 	return cap;
 }
