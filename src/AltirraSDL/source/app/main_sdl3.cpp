@@ -79,7 +79,9 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "ui_debugger.h"
 #include "debugger.h"   // IATDebugger + ATDebuggerSymbolLoadMode (used in the __EMSCRIPTEN__ startup block below)
 #include "ui_testmode.h"
+#ifdef ALTIRRA_CPU_TESTS_ENABLED
 #include "cputest_runner.h"
+#endif
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
 #endif
@@ -1352,6 +1354,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+#ifdef ALTIRRA_CPU_TESTS_ENABLED
 	// Check for --cpu-test flag (must be before SDL_Init).
 	//
 	// --cpu-test runs a headless 65C816 conformance harness that drives
@@ -1401,6 +1404,7 @@ int main(int argc, char *argv[]) {
 		if (cpuTestRequested)
 			return ATRunCPUTests(cpuTestOpts);
 	}
+#endif	// ALTIRRA_CPU_TESTS_ENABLED
 
 	// Check for --headless flag (must be before SDL_Init).
 	//

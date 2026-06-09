@@ -37,7 +37,6 @@ endif()
 target_sources(AltirraSDL PRIVATE
     # --- app/ : process lifecycle, main loop, CLI, crash ---
     source/app/main_sdl3.cpp
-    source/app/cputest_runner.cpp
     source/app/main_pacer.cpp
     source/app/main_window.cpp
     source/app/window_caption_sdl3.cpp
@@ -319,6 +318,23 @@ if(ALTIRRA_BRIDGE)
         source/bridge/bridge_main_glue_sdl3.cpp
     )
     target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_BRIDGE_ENABLED=1)
+endif()
+
+# ---------------------------------------------------------------------------
+# 65C816 CPU conformance harness (Tom Harte SingleStepTests) — OFF by default.
+#
+# When ON, compiles cputest_runner.cpp and enables the --cpu-test* CLI flags
+# in main_sdl3.cpp (guarded by ALTIRRA_CPU_TESTS_ENABLED).  This is developer
+# build-time tooling; the shipped binary is built with it OFF so it carries
+# none of the harness code and none of the --cpu-test flags.
+#   cmake -DALTIRRA_CPU_TESTS=ON ...
+# ---------------------------------------------------------------------------
+option(ALTIRRA_CPU_TESTS "Build the 65C816 --cpu-test conformance harness" OFF)
+if(ALTIRRA_CPU_TESTS)
+    target_sources(AltirraSDL PRIVATE
+        source/app/cputest_runner.cpp
+    )
+    target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_CPU_TESTS_ENABLED=1)
 endif()
 
 # ---------------------------------------------------------------------------
