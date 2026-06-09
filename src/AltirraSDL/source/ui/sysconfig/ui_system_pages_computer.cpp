@@ -13,6 +13,7 @@
 #include "ui_main.h"
 #include "ui_system_internal.h"
 #include "simulator.h"
+#include "mmu.h"
 
 // Always include — the header exposes inline no-op stubs when
 // ALTIRRA_NETPLAY_ENABLED is not defined so the call sites below
@@ -603,6 +604,18 @@ void RenderMemoryCategory(ATSimulator &sim) {
 		sim.ColdReset();
 	}
 	ImGui::SetItemTooltip("Emulate 800-specific behavior where the I/O bus floats when no device responds.");
+
+	// AltirraSDL extension (not in Windows Altirra; user-approved).  Controls
+	// whether the BASIC / self-test ROM bits latch during RAMBO banking.
+	if (ATMMUEmulator *mmu = sim.GetMMU()) {
+		bool latch = mmu->IsBasicSelfTestLatchEnabled();
+		if (ImGui::Checkbox("Enable BASIC/Self Test Latch", &latch))
+			mmu->SetBasicSelfTestLatchEnabled(latch);
+		ImGui::SetItemTooltip("In the extended-memory (RAMBO) modes, hold the BASIC and "
+			"self-test ROM state while PORTB bits 1/7 act as RAM bank-address lines "
+			"(hardware-accurate). Disable to use the legacy behavior where these ROMs "
+			"are forced off during banking.");
+	}
 
 	ImGui::SeparatorText("Axlon banked memory (800 only)");
 
