@@ -165,6 +165,36 @@ static bool g_winActive = true;
 static bool g_appSuspended = false;
 ATUIState g_uiState;
 
+#ifdef __EMSCRIPTEN__
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmSyncCanvasSize(int logicalW, int logicalH) {
+	if (!g_pWindow || logicalW <= 0 || logicalH <= 0)
+		return 0;
+
+	// Browser fullscreen/orientation changes can update the canvas CSS box
+	// while SDL's fullscreen resize path refuses to resize the drawing
+	// buffer. Route the measured CSS size back through SDL so ImGui, GL,
+	// input hit testing, and the browser backing store share one basis.
+	SDL_SetWindowSize(g_pWindow, logicalW, logicalH);
+
+	if (g_pBackend) {
+		int pixelW = 0;
+		int pixelH = 0;
+		SDL_GetWindowSizeInPixels(g_pWindow, &pixelW, &pixelH);
+		if (pixelW > 0 && pixelH > 0)
+			g_pBackend->OnResize(pixelW, pixelH);
+	}
+
+	extern bool g_wasmSimReady;
+	if (g_wasmSimReady) {
+		ATTouchControls_ReleaseAll();
+		ATUIVirtualKeyboard_ReleaseAll(g_sim);
+	}
+
+	return 1;
+}
+#endif
+
 // Turbo-mode frame drop divisor. In turbo mode we render only 1 of every N
 // frames at the GTIA framebuffer-allocation level, which lets the simulator
 // run much faster than realtime without paying the per-frame artifacting /
