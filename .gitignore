@@ -5,6 +5,10 @@
 /build_lobby/
 CMakeUserPresets.json
 
+# source codes of other versions
+Altirra-4.*/*
+Altirra-5.*/*
+
 # Auto-fetched vendor dependencies (created by CMake FetchContent)
 src/AltirraSDL/vendor/
 

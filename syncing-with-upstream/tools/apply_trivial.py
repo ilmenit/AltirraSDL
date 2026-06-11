@@ -34,6 +34,9 @@ import pathlib
 import shutil
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+import report_safety  # noqa: E402
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -54,7 +57,10 @@ def infer_paths(report_dir: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     Layout expected (the one ``sync_diff.sh`` creates):
         <FORK>/syncing-with-upstream/reports/<OLD>__to__<NEW>/
 
-    NEW lives as a sibling of FORK, named ``Altirra-<NEW_LABEL>-src``.
+    NEW normally lives as a sibling of FORK, named
+    ``Altirra-<NEW_LABEL>-src``.  For local workspaces that keep
+    snapshots inside the fork checkout, a matching child directory under
+    FORK is also accepted.  Ambiguous matches still require ``--new``.
     """
     report_dir = report_dir.resolve()
     fork = report_dir.parent.parent.parent  # …/<FORK>
@@ -65,12 +71,18 @@ def infer_paths(report_dir: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
             f"cannot infer NEW label from report dir name: {name!r} "
             "(expected '<OLD>__to__<NEW>')"
         )
-    # Look for a sibling directory whose basename contains the label.
-    parent = fork.parent
-    candidates = [p for p in parent.iterdir() if p.is_dir() and new_label in p.name and "Altirra" in p.name]
+    def snapshot_candidates(parent: pathlib.Path) -> list[pathlib.Path]:
+        return [
+            p for p in parent.iterdir()
+            if p.is_dir() and new_label in p.name and "Altirra" in p.name
+        ]
+
+    # Prefer the documented sibling layout, but also support the in-repo
+    # snapshot layout used by some local workspaces.
+    candidates = snapshot_candidates(fork.parent) + snapshot_candidates(fork)
     if not candidates:
         raise SystemExit(
-            f"cannot find NEW snapshot for label '{new_label}' next to fork. "
+            f"cannot find NEW snapshot for label '{new_label}' next to or inside fork. "
             f"Pass --new explicitly."
         )
     if len(candidates) > 1:
@@ -81,32 +93,40 @@ def infer_paths(report_dir: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     return candidates[0], fork
 
 
-def read_list(path: pathlib.Path) -> list[str]:
-    if not path.exists():
-        return []
-    out: list[str] = []
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        file_path, _, _status = line.partition("\t")
-        out.append(file_path)
-    return out
-
-
 def main() -> int:
     args = parse_args()
     report_dir: pathlib.Path = args.report_dir.resolve()
-    if not report_dir.is_dir():
-        print(f"error: report dir not found: {report_dir}", file=sys.stderr)
-        return 2
+    report_safety.require_report_dir(report_dir)
+    report_safety.require_not_marked_invalid(report_dir, "apply")
+    required = [
+        "01_upstream_changed.txt",
+        "02_fork_changed.txt",
+        "03_three_way.txt",
+        "04_trivial_copy.txt",
+    ]
+    if args.include_added:
+        required.append("05_added_in_new.txt")
+    report_safety.require_report_files(report_dir, required)
+    report_safety.require_not_all_added_report(report_dir)
 
+    report_inputs = report_safety.read_report_inputs(report_dir)
+    sync_trees = report_safety.report_sync_trees(report_inputs)
     new = args.new.resolve() if args.new else None
     fork = args.fork.resolve() if args.fork else None
+    if new is None and report_inputs.get("NEW"):
+        new = pathlib.Path(report_inputs["NEW"]).resolve()
+    if fork is None and report_inputs.get("FORK"):
+        fork = pathlib.Path(report_inputs["FORK"]).resolve()
     if new is None or fork is None:
         inferred_new, inferred_fork = infer_paths(report_dir)
         new = new or inferred_new
         fork = fork or inferred_fork
+
+    validation_inputs = dict(report_inputs)
+    validation_inputs["NEW"] = str(new)
+    validation_inputs["FORK"] = str(fork)
+    report_safety.validate_report_input_roots(report_dir, validation_inputs, keys=("NEW", "FORK"))
+    sync_trees = report_safety.report_sync_trees(validation_inputs)
 
     if not new.is_dir():
         print(f"error: NEW snapshot not found: {new}", file=sys.stderr)
@@ -114,16 +134,19 @@ def main() -> int:
     if not fork.is_dir():
         print(f"error: FORK not found: {fork}", file=sys.stderr)
         return 2
+    report_safety.require_sync_trees(new, "NEW snapshot", sync_trees)
+    report_safety.require_sync_trees(fork, "FORK tree", sync_trees)
 
     print(f"[apply] NEW  = {new}")
     print(f"[apply] FORK = {fork}")
     print(f"[apply] report = {report_dir}")
 
-    trivial = read_list(report_dir / "04_trivial_copy.txt")
-    added = read_list(report_dir / "05_added_in_new.txt") if args.include_added else []
+    trivial = report_safety.read_list(report_dir / "04_trivial_copy.txt")
+    added = report_safety.read_list(report_dir / "05_added_in_new.txt") if args.include_added else []
+    report_safety.require_report_paths_in_trees(trivial + added, sync_trees)
 
-    fork_changed = {p for p in read_list(report_dir / "02_fork_changed.txt")}
-    three_way = {p for p in read_list(report_dir / "03_three_way.txt")}
+    fork_changed = {p for p in report_safety.read_list(report_dir / "02_fork_changed.txt")}
+    three_way = {p for p in report_safety.read_list(report_dir / "03_three_way.txt")}
 
     to_copy: list[str] = []
     for path in trivial + added:

@@ -20,17 +20,8 @@ def load_filemap():
     return filemap
 
 
-def read_tab(path: pathlib.Path) -> list[tuple[str, str]]:
-    out: list[tuple[str, str]] = []
-    if not path.exists():
-        return out
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        file_path, _, status = line.partition("\t")
-        out.append((file_path, status or "MODIFIED"))
-    return out
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+import report_safety  # noqa: E402
 
 
 def main() -> int:
@@ -39,12 +30,30 @@ def main() -> int:
         return 2
 
     report_dir = pathlib.Path(sys.argv[1]).resolve()
+    report_safety.require_report_dir(report_dir)
+    report_safety.require_not_marked_invalid(report_dir, "classify")
+    required = [
+        "01_upstream_changed.txt",
+        "03_three_way.txt",
+        "04_trivial_copy.txt",
+        "05_added_in_new.txt",
+        "06_removed_in_new.txt",
+    ]
+    report_safety.require_report_files(report_dir, required)
+    report_safety.require_not_all_added_report(report_dir)
+    report_inputs = report_safety.validate_report_input_roots(report_dir)
+    sync_trees = report_safety.report_sync_trees(report_inputs)
+
     filemap = load_filemap()
 
-    three_way = read_tab(report_dir / "03_three_way.txt")
-    added     = read_tab(report_dir / "05_added_in_new.txt")
-    removed   = read_tab(report_dir / "06_removed_in_new.txt")
-    trivial   = read_tab(report_dir / "04_trivial_copy.txt")
+    three_way = report_safety.read_tab(report_dir / "03_three_way.txt")
+    added     = report_safety.read_tab(report_dir / "05_added_in_new.txt")
+    removed   = report_safety.read_tab(report_dir / "06_removed_in_new.txt")
+    trivial   = report_safety.read_tab(report_dir / "04_trivial_copy.txt")
+    report_safety.require_report_paths_in_trees(
+        [path for path, _status in three_way + added + removed + trivial],
+        sync_trees,
+    )
 
     # Group three-way files by (role, module).
     grouped: dict[tuple[str, str], list[tuple[str, str, str]]] = defaultdict(list)

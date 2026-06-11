@@ -304,6 +304,9 @@ public:
 	void RemoveAllInputMaps();
 	void ActivateInputMap(ATInputMap *imap, bool enable);
 	ATInputMap *CycleQuickMaps();
+	ATInputMap *CycleQuickMaps(const ATInputControllerType *typeOpt);
+	bool HasQuickMapWithType(ATInputControllerType type) const;
+	bool IsQuickMapActiveWithType(ATInputControllerType type) const;
 
 	uint32 GetPresetInputMapCount() const;
 	bool GetPresetInputMapByIndex(uint32 index, ATInputMap **imap) const;

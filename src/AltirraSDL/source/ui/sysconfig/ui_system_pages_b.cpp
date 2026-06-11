@@ -905,6 +905,11 @@ void RenderUICategory(ATSimulator &) {
 		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
 	}
 
+	bool quickBar = ATUIGetQuickBarEnabled();
+	if (ImGui::Checkbox("Enable quick bar", &quickBar))
+		ATUISetQuickBarEnabled(quickBar);
+	ImGui::SetItemTooltip("Show the lower-right quick bar when the mouse is near the lower-right corner.");
+
 	bool single = g_ATOptions.mbSingleInstance;
 	if (ImGui::Checkbox("Reuse program instance", &single)) {
 		ATOptions prev(g_ATOptions);

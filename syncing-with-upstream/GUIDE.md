@@ -49,6 +49,12 @@ Two assumptions the tooling relies on:
 2. **NEW is an unpacked, untouched copy of the upstream zip.** Do not
    edit NEW before running the tooling.
 
+Both OLD and NEW must be source snapshots with a non-empty `src/` tree.
+The binary distribution package is not sufficient even if it has the same
+version label; it lacks the source baseline required for the three-way diff.
+The helper tools, including the changelog extractor, reject missing or empty
+configured sync trees before producing output.
+
 If assumption (1) breaks (e.g. the last sync was messy), run the tools
 anyway — they will surface the discrepancies so you can clean them up.
 
@@ -141,9 +147,24 @@ This writes `reports/<OLD>__to__<NEW>/` with:
 - `05_added_in_new.txt` — new files upstream added
 - `06_removed_in_new.txt` — files upstream deleted
 - `07_classified.md` — three-way files grouped by module
+- `REPORT_INPUTS.txt` — absolute OLD / NEW / FORK paths and sync trees used
 - `diffs/<path>.upstream.diff` — OLD vs NEW (the patch upstream authored)
 - `diffs/<path>.fork.diff` — OLD vs FORK (the fork's local edits)
 - `diffs/<path>.full.diff` — FORK vs NEW (combined, for cross-checking)
+
+If `SUMMARY.md` warns that the report is invalid, or if the report directory
+contains `INVALID_REPORT_DO_NOT_USE.md`, stop immediately. Replace the bad
+snapshot, regenerate the report, and do not run apply/classification helpers
+against the invalid output.
+The helper scripts also enforce this: `apply_trivial.py` validates NEW and
+FORK source trees before copying, and `classify_changes.py` refuses malformed
+or invalid report directories before rewriting `07_classified.md`. When
+`REPORT_INPUTS.txt` is present, the helpers use it to locate and validate the
+recorded snapshot roots and sync trees instead of relying only on
+directory-layout guesses. Older reports without metadata fall back to the
+default `src` tree. Metadata OLD/NEW paths must also match the
+`<OLD>__to__<NEW>` report directory labels. For `apply_trivial.py`, explicit
+`--new` and `--fork` arguments override metadata and are then validated.
 
 ### 5. Skim the changelog first
 

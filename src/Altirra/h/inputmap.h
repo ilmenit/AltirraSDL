@@ -56,6 +56,7 @@ public:
 
 	uint32 GetControllerCount() const;
 	bool HasControllerType(ATInputControllerType type) const;
+	bool HasController(ATInputControllerType type, uint32 index) const;
 	const Controller& GetController(uint32 i) const;
 	uint32 AddController(ATInputControllerType type, uint32 index);
 	void AddControllers(std::initializer_list<Controller> controllers);

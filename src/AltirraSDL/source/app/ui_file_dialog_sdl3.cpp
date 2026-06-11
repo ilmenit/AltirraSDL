@@ -238,15 +238,18 @@ namespace {
 			return;
 		}
 
+		// filelist == nullptr means an SDL error.  An empty list or empty
+		// filename means cancel; do not forward it as a user action.
+		if (!filelist[0] || !*filelist[0]) {
+			delete ctx;
+			return;
+		}
+
 		// Remember the selected file's full path so the next time this
 		// dialog opens we can land in the same directory (matching
-		// Windows Altirra's behaviour).  filelist == nullptr means an
-		// SDL error, and an empty list (filelist[0] == nullptr) means
-		// the user cancelled — in both cases leave the saved path alone.
-		if (filelist[0]) {
-			VDStringW selected = VDTextU8ToW(VDStringSpanA(filelist[0]));
-			VDSetLastLoadSavePath(ctx->nKey, selected.c_str());
-		}
+		// Windows Altirra's behaviour).
+		VDStringW selected = VDTextU8ToW(VDStringSpanA(filelist[0]));
+		VDSetLastLoadSavePath(ctx->nKey, selected.c_str());
 
 		if (ctx->userCb)
 			ctx->userCb(ctx->userUd, filelist, filter);

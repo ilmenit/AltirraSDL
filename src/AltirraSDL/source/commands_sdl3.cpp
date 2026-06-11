@@ -12,6 +12,7 @@
 #include "simulator.h"
 #include "uiaccessors.h"
 #include "inputmanager.h"
+#include "inputmap.h"
 #include "inputdefs.h"
 #include "inputcontroller.h"
 #include "antic.h"
@@ -69,7 +70,74 @@ static void CmdPulseWarpOff() {
 
 static void CmdCycleQuickMaps() {
 	ATInputManager *pIM = g_sim.GetInputManager();
-	if (pIM) pIM->CycleQuickMaps();
+	if (!pIM)
+		return;
+
+	ATInputMap *pMap = pIM->CycleQuickMaps();
+	IATUIRenderer *pUIR = g_sim.GetUIRenderer();
+
+	if (pUIR) {
+		if (pMap)
+			pUIR->SetStatusMessage((VDStringW(L"Quick map: ") + pMap->GetName()).c_str());
+		else
+			pUIR->SetStatusMessage(L"Quick maps disabled");
+	}
+}
+
+static void CmdSelectQuickMap(ATInputControllerType type) {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	if (!pIM)
+		return;
+
+	ATInputMap *pMap = pIM->CycleQuickMaps(&type);
+	IATUIRenderer *pUIR = g_sim.GetUIRenderer();
+
+	if (pUIR) {
+		if (pMap)
+			pUIR->SetStatusMessage((VDStringW(L"Quick map: ") + pMap->GetName()).c_str());
+		else
+			pUIR->SetStatusMessage(L"Quick maps disabled");
+	}
+}
+
+static bool TestSelectQuickMapNone() {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	return pIM && pIM->HasQuickMapWithType(kATInputControllerType_None);
+}
+
+static bool TestInputManagerAvailable() {
+	return g_sim.GetInputManager() != nullptr;
+}
+
+static bool TestSelectQuickMapJoystick() {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	return pIM && pIM->HasQuickMapWithType(kATInputControllerType_Joystick);
+}
+
+static bool TestSelectQuickMapPaddle() {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	return pIM && pIM->HasQuickMapWithType(kATInputControllerType_Paddle);
+}
+
+static ATUICmdState QuerySelectQuickMapNone() {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	return pIM && pIM->IsQuickMapActiveWithType(kATInputControllerType_None)
+		? kATUICmdState_RadioChecked
+		: kATUICmdState_None;
+}
+
+static ATUICmdState QuerySelectQuickMapJoystick() {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	return pIM && pIM->IsQuickMapActiveWithType(kATInputControllerType_Joystick)
+		? kATUICmdState_RadioChecked
+		: kATUICmdState_None;
+}
+
+static ATUICmdState QuerySelectQuickMapPaddle() {
+	ATInputManager *pIM = g_sim.GetInputManager();
+	return pIM && pIM->IsQuickMapActiveWithType(kATInputControllerType_Paddle)
+		? kATUICmdState_RadioChecked
+		: kATUICmdState_None;
 }
 
 static void CmdHoldKeys() {
@@ -115,15 +183,25 @@ static void CmdColdReset() {
 
 static void CmdToggleNTSCPAL() {
 	// NTSC/PAL toggle is also reset-equivalent for sync purposes —
-	// keep it gated against engaged sessions.  No confirm dialog: it's
-	// a niche shortcut and the rare press during WaitingForJoiner is
-	// safe because a fresh joiner picks up whatever standard the host
+	// keep it gated against engaged sessions.  No confirm dialog: during
+	// WaitingForJoiner, a fresh joiner picks up whatever standard the host
 	// is on at handshake.
 	if (ATNetplayGlue::IsSessionEngaged()) return;
 	if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
 		g_sim.SetVideoStandard(kATVideoStandard_PAL);
 	else
 		g_sim.SetVideoStandard(kATVideoStandard_NTSC);
+}
+
+static void CmdSetVideoStandard(ATVideoStandard standard) {
+	if (ATNetplayGlue::IsSessionEngaged()) return;
+	g_sim.SetVideoStandard(standard);
+}
+
+static ATUICmdState QueryVideoStandard(ATVideoStandard standard) {
+	return g_sim.GetVideoStandard() == standard
+		? kATUICmdState_RadioChecked
+		: kATUICmdState_None;
 }
 
 static void CmdNextANTICVisMode() {
@@ -161,6 +239,8 @@ static void CmdToggleFullScreen() {
 }
 
 static void CmdToggleSlowMotion() {
+	if (ATNetplayGlue::IsSessionEngaged())
+		return;
 	ATUISetSlowMotion(!ATUIGetSlowMotion());
 }
 
@@ -393,17 +473,24 @@ static void CmdOpenEmotePicker() {
 // src/Altirra/source/cmd*.cpp. They are needed so accelerator-table
 // bindings, command-palette dispatch, and Custom Device VM
 // `run_command "..."` calls have the same vocabulary as the Windows
-// build. State/Test functions (used by Win32 menu checkmark
-// rendering) are intentionally omitted — the SDL3 ImGui menu queries
-// engine state directly each frame.
+// build. Many SDL3 ImGui menus query engine state directly each frame,
+// but commands still expose state/test callbacks where shared command
+// surfaces need authoritative checked/radio state.
 //
-// Test/State callbacks are included only where they prevent invalid
-// dispatch (e.g., Cart.Detach when no cart is mounted).
+// Test/State callbacks are included where they prevent invalid dispatch
+// or where shared command surfaces need authoritative checked/radio state.
 
 namespace {
+	ATUICmdState ToChecked(bool checked) {
+		return checked ? kATUICmdState_Checked : kATUICmdState_None;
+	}
+
 	bool IsCart0Attached() { return g_sim.IsCartridgeAttached(0); }
 	bool IsCart1Attached() { return g_sim.IsCartridgeAttached(1); }
 	bool IsNot5200() { return g_sim.GetHardwareMode() != kATHardwareMode_5200; }
+	bool IsNetplaySessionNotEngaged() { return !ATNetplayGlue::IsSessionEngaged(); }
+	bool IsNetplayNotLockstepping() { return !ATNetplayGlue::IsLockstepping(); }
+	bool IsVideoStandardPALFamilyAvailable() { return IsNetplaySessionNotEngaged() && IsNot5200(); }
 }
 
 static const ATUICommand kSDL3CommandsExtra[] = {
@@ -471,7 +558,10 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	{ "Cassette.Unload",
 		[] { g_sim.GetCassette().Unload(); } },
 	{ "Cassette.ToggleSIOPatch",
-		[] { g_sim.SetCassetteSIOPatchEnabled(!g_sim.IsCassetteSIOPatchEnabled()); } },
+		[] {
+			if (ATNetplayGlue::IsSessionEngaged()) return;
+			g_sim.SetCassetteSIOPatchEnabled(!g_sim.IsCassetteSIOPatchEnabled());
+		}, IsNetplaySessionNotEngaged, [] { return ToChecked(g_sim.IsCassetteSIOPatchEnabled()); } },
 	{ "Cassette.ToggleAutoBoot",
 		[] { g_sim.SetCassetteAutoBootEnabled(!g_sim.IsCassetteAutoBootEnabled()); } },
 	{ "Cassette.ToggleAutoBasicBoot",
@@ -536,6 +626,17 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { g_sim.GetCassette().SetTurboDecodeAlgorithm(ATCassetteTurboDecodeAlgorithm::PeakFilter); } },
 
 	// =====================================================================
+	// Disk (cmds.cpp) — quick access toggles also used by the test11
+	// quick bar. Keep the mutation behind the command manager so menu,
+	// shortcut, custom-device, and overlay dispatch all share one path.
+	// =====================================================================
+	{ "Disk.ToggleSIOPatch",
+		[] {
+			if (ATNetplayGlue::IsSessionEngaged()) return;
+			g_sim.SetDiskSIOPatchEnabled(!g_sim.IsDiskSIOPatchEnabled());
+		}, IsNetplaySessionNotEngaged, [] { return ToChecked(g_sim.IsDiskSIOPatchEnabled()); } },
+
+	// =====================================================================
 	// View (cmdview.cpp) — display/filter/stretch/overscan toggles.
 	// =====================================================================
 	{ "View.NextFilterMode",
@@ -584,6 +685,8 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { ATUISetDrawPadBoundsEnabled(!ATUIGetDrawPadBoundsEnabled()); } },
 	{ "View.TogglePadPointers",
 		[] { ATUISetDrawPadPointersEnabled(!ATUIGetDrawPadPointersEnabled()); } },
+	{ "View.ToggleQuickBar",
+		[] { ATUISetQuickBarEnabled(!ATUIGetQuickBarEnabled()); }, nullptr, [] { return ToChecked(ATUIGetQuickBarEnabled()); } },
 	{ "View.ResetPan",
 		[] { ATUISetDisplayPanOffset(vdfloat2{0.0f, 0.0f}); } },
 	{ "View.ResetZoom",
@@ -689,7 +792,10 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	{ "System.TogglePauseWhenInactive",
 		[] { ATUISetPauseWhenInactive(!ATUIGetPauseWhenInactive()); } },
 	{ "System.ToggleWarpSpeed",
-		[] { ATUISetTurbo(!ATUIGetTurbo()); } },
+		[] {
+			if (!IsNetplaySessionNotEngaged()) return;
+			ATUISetTurbo(!ATUIGetTurbo());
+		}, IsNetplaySessionNotEngaged, [] { return ToChecked(ATUIGetTurbo()); } },
 	{ "System.ToggleFPPatch",
 		[] { g_sim.SetFPPatchEnabled(!g_sim.IsFPPatchEnabled()); } },
 	{ "System.ToggleKeyboardPresent",
@@ -707,7 +813,12 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	{ "System.ToggleMemoryRandomizationEXE",
 		[] { g_sim.SetRandomFillEXEEnabled(!g_sim.IsRandomFillEXEEnabled()); } },
 	{ "System.ToggleBASIC",
-		[] { g_sim.SetBASICEnabled(!g_sim.IsBASICEnabled()); } },
+		[] {
+			if (!g_sim.SupportsInternalBasic() || !IsNetplaySessionNotEngaged()) return;
+			g_sim.SetBASICEnabled(!g_sim.IsBASICEnabled());
+		},
+		[] { return g_sim.SupportsInternalBasic() && IsNetplaySessionNotEngaged(); },
+		[] { return ToChecked(g_sim.SupportsInternalBasic() && g_sim.IsBASICEnabled()); } },
 	{ "System.ToggleFastBoot",
 		[] { g_sim.SetFastBootEnabled(!g_sim.IsFastBootEnabled()); } },
 	{ "System.ToggleRTime8",
@@ -777,15 +888,25 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 
 	// Video standard shortcuts
 	{ "System.VideoStandardNTSC",
-		[] { g_sim.SetVideoStandard(kATVideoStandard_NTSC); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_NTSC); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC); } },
 	{ "System.VideoStandardPAL",
-		[] { g_sim.SetVideoStandard(kATVideoStandard_PAL); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL); } },
 	{ "System.VideoStandardSECAM",
-		[] { g_sim.SetVideoStandard(kATVideoStandard_SECAM); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_SECAM); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_SECAM); } },
 	{ "System.VideoStandardNTSC50",
-		[] { g_sim.SetVideoStandard(kATVideoStandard_NTSC50); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_NTSC50); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC50); } },
 	{ "System.VideoStandardPAL60",
-		[] { g_sim.SetVideoStandard(kATVideoStandard_PAL60); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
+	{ "Video.StandardNTSC",
+		[] { CmdSetVideoStandard(kATVideoStandard_NTSC); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC); } },
+	{ "Video.StandardPAL",
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL); } },
+	{ "Video.StandardSECAM",
+		[] { CmdSetVideoStandard(kATVideoStandard_SECAM); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_SECAM); } },
+	{ "Video.StandardNTSC50",
+		[] { CmdSetVideoStandard(kATVideoStandard_NTSC50); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC50); } },
+	{ "Video.StandardPAL60",
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
 
 	// =====================================================================
 	// Cart (cmdcart.cpp) — detach. Attach commands route to the ImGui
@@ -815,18 +936,21 @@ static const ATUICommand kSDL3Commands[] = {
 	// Display context
 	{ "System.PulseWarpOn",            CmdPulseWarpOn,          nullptr, nullptr, nullptr },
 	{ "System.PulseWarpOff",           CmdPulseWarpOff,         nullptr, nullptr, nullptr },
-	{ "Input.CycleQuickMaps",          CmdCycleQuickMaps,       nullptr, nullptr, nullptr },
+	{ "Input.CycleQuickMaps",          CmdCycleQuickMaps,       TestInputManagerAvailable, nullptr, nullptr },
+	{ "Input.SelectQuickMapNone",      [] { CmdSelectQuickMap(kATInputControllerType_None); },     TestSelectQuickMapNone,     QuerySelectQuickMapNone,     nullptr },
+	{ "Input.SelectQuickMapJoystick",  [] { CmdSelectQuickMap(kATInputControllerType_Joystick); }, TestSelectQuickMapJoystick, QuerySelectQuickMapJoystick, nullptr },
+	{ "Input.SelectQuickMapPaddle",    [] { CmdSelectQuickMap(kATInputControllerType_Paddle); },   TestSelectQuickMapPaddle,   QuerySelectQuickMapPaddle,   nullptr },
 	{ "Console.HoldKeys",              CmdHoldKeys,             nullptr, nullptr, nullptr },
 	{ "System.WarmReset",              CmdWarmReset,             nullptr, nullptr, nullptr },
 	{ "System.ColdReset",              CmdColdReset,             nullptr, nullptr, nullptr },
-	{ "Video.ToggleStandardNTSCPAL",   CmdToggleNTSCPAL,       nullptr, nullptr, nullptr },
+	{ "Video.ToggleStandardNTSCPAL",   CmdToggleNTSCPAL,       IsNetplaySessionNotEngaged, nullptr, nullptr },
 	{ "View.NextANTICVisMode",         CmdNextANTICVisMode,     nullptr, nullptr, nullptr },
 	{ "View.NextGTIAVisMode",          CmdNextGTIAVisMode,      nullptr, nullptr, nullptr },
-	{ "System.TogglePause",            CmdTogglePause,          nullptr, nullptr, nullptr },
+	{ "System.TogglePause",            CmdTogglePause,          IsNetplayNotLockstepping, [] { return ToChecked(g_sim.IsPaused()); }, nullptr },
 	{ "Netplay.OpenEmotePicker",       CmdOpenEmotePicker,      nullptr, nullptr, nullptr },
 	{ "Input.CaptureMouse",            CmdCaptureMouse,         nullptr, nullptr, nullptr },
 	{ "View.ToggleFullScreen",         CmdToggleFullScreen,     nullptr, nullptr, nullptr },
-	{ "System.ToggleSlowMotion",       CmdToggleSlowMotion,     nullptr, nullptr, nullptr },
+	{ "System.ToggleSlowMotion",       CmdToggleSlowMotion,     IsNetplaySessionNotEngaged, [] { return ToChecked(ATUIGetSlowMotion()); }, nullptr },
 	{ "Audio.ToggleChannel1",          CmdToggleChannel1,       nullptr, nullptr, nullptr },
 	{ "Audio.ToggleChannel2",          CmdToggleChannel2,       nullptr, nullptr, nullptr },
 	{ "Audio.ToggleChannel3",          CmdToggleChannel3,       nullptr, nullptr, nullptr },
@@ -843,11 +967,11 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "Edit.ToggleAutoShowSuggestions", CmdToggleAutoShowSuggestions, nullptr, TestAutoShowSuggestionsChecked, nullptr },
 
 	// Global context
-	{ "File.BootImage",                CmdBootImage,            nullptr, nullptr, nullptr },
-	{ "File.OpenImage",                CmdOpenImage,            nullptr, nullptr, nullptr },
+	{ "File.BootImage",                CmdBootImage,            IsNetplaySessionNotEngaged, nullptr, nullptr },
+	{ "File.OpenImage",                CmdOpenImage,            IsNetplaySessionNotEngaged, nullptr, nullptr },
 	{ "Debug.OpenSourceFile",          CmdOpenSourceFile,       nullptr, nullptr, nullptr },
 	{ "Disk.DrivesDialog",             CmdDrivesDialog,         nullptr, nullptr, nullptr },
-	{ "System.Configure",              CmdConfigure,            nullptr, nullptr, nullptr },
+	{ "System.Configure",              CmdConfigure,            IsNetplaySessionNotEngaged, nullptr, nullptr },
 	{ "Cheat.CheatDialog",             CmdCheatDialog,          nullptr, nullptr, nullptr },
 	{ "Debug.RunStop",                 CmdDebugRunStop,         nullptr, nullptr, nullptr },
 	{ "Debug.StepInto",                CmdDebugStepInto,        nullptr, nullptr, nullptr },

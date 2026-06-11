@@ -81,6 +81,8 @@ public:
 	void ShowSuggestions() override;
 	bool IsAutoSuggestEnabled() override;
 	void SetAutoSuggestEnabled(bool enabled) override;
+	bool GetQuickBarEnabled() const override;
+	void SetQuickBarEnabled(bool enabled) override;
 
 public:
 	void StopAudioRecording();
@@ -93,6 +95,7 @@ public:
 
 private:
 	bool mbAutoSuggestEnabled = false;
+	bool mbQuickBarEnabled = true;
 
 	vdautoptr<ATAudioWriter> mpAudioWriter;
 	vdautoptr<IATVideoWriter> mpVideoWriter;
@@ -353,6 +356,22 @@ void ATUIFrontEnd::SetAutoSuggestEnabled(bool enabled) {
 	}
 }
 
+bool ATUIFrontEnd::GetQuickBarEnabled() const {
+	return mbQuickBarEnabled;
+}
+
+void ATUIFrontEnd::SetQuickBarEnabled(bool enabled) {
+	mbQuickBarEnabled = enabled;
+}
+
+bool ATUIGetQuickBarEnabled() {
+	return ATUIGetFrontEnd().GetQuickBarEnabled();
+}
+
+void ATUISetQuickBarEnabled(bool enabled) {
+	ATUIGetFrontEnd().SetQuickBarEnabled(enabled);
+}
+
 void ATUIFrontEnd::LoadState(const IATObjectState *state, ATSnapshotContext& ctx) {
 	if (!state) {
 		const ATUISaveStateFrontEnd kDefaultState {};
@@ -434,4 +453,3 @@ IATUIFrontEnd& ATUIGetFrontEnd() {
 
 	return *g_pATUIFrontEnd;
 }
-

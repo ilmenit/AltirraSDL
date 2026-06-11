@@ -1133,6 +1133,10 @@ void ATInputManager::ActivateInputMap(ATInputMap *imap, bool enable) {
 }
 
 ATInputMap *ATInputManager::CycleQuickMaps() {
+	return CycleQuickMaps(nullptr);
+}
+
+ATInputMap *ATInputManager::CycleQuickMaps(const ATInputControllerType *typeOpt) {
 	using InputMapEntry = std::pair<ATInputMap * const, bool>;
 	vdfastvector<InputMapEntry *> quickMaps;
 
@@ -1162,11 +1166,36 @@ ATInputMap *ATInputManager::CycleQuickMaps() {
 		}
 	}
 
-	// advance one step, including the end iterator for disabled
-	if (it == quickMaps.end())
-		it = quickMaps.begin();
-	else
-		++it;
+	// advance one step if no type was specified, including the end iterator
+	// for disabled; otherwise, step to next quick map matching criteria
+	if (typeOpt) {
+		if (*typeOpt == kATInputControllerType_None) {
+			it = quickMaps.end();
+		} else {
+			if (it == quickMaps.end())
+				it = quickMaps.begin();
+
+			bool found = false;
+			size_t n = quickMaps.size();
+			while(n--) {
+				if (++it == quickMaps.end())
+					it = quickMaps.begin();
+
+				if ((*it)->first->HasController(*typeOpt, 0)) {
+					found = true;
+					break;
+				}
+			}
+
+			if (!found)
+				it = quickMaps.end();
+		}
+	} else {
+		if (it == quickMaps.end())
+			it = quickMaps.begin();
+		else
+			++it;
+	}
 
 	// enable the next map, if any
 	ATInputMap *newActive = nullptr;
@@ -1177,6 +1206,36 @@ ATInputMap *ATInputManager::CycleQuickMaps() {
 
 	RebuildMappings();
 	return newActive;
+}
+
+bool ATInputManager::HasQuickMapWithType(ATInputControllerType type) const {
+	if (type == kATInputControllerType_None)
+		return true;
+
+	for(const auto& entry : mInputMaps) {
+		if (entry.first->IsQuickMap() && entry.first->HasController(type, 0))
+			return true;
+	}
+
+	return false;
+}
+
+bool ATInputManager::IsQuickMapActiveWithType(ATInputControllerType type) const {
+	if (type == kATInputControllerType_None) {
+		for(const auto& [imap, enabled] : mInputMaps) {
+			if (enabled && imap->IsQuickMap())
+				return false;
+		}
+
+		return true;
+	} else {
+		for(const auto& [imap, enabled] : mInputMaps) {
+			if (enabled && imap->IsQuickMap() && imap->HasController(type, 0))
+				return true;
+		}
+
+		return false;
+	}
 }
 
 uint32 ATInputManager::GetPresetInputMapCount() const {

@@ -51,3 +51,53 @@ snapshot_label() {
 # tools/lib/filemap.py under the ``fork-only`` rules — there is a single
 # source of truth, not a bash duplicate.
 SYNC_TREES="src"
+
+require_sync_trees() {
+    # $1: role label, $2: root path
+    local role=$1
+    local root=$2
+
+    for tree in $SYNC_TREES; do
+        [ -d "$root/$tree" ] || fatal "$role is not a usable sync root: missing $tree/ under $root"
+        find "$root/$tree" -type f -print -quit | grep -q . \
+            || fatal "$role is not a usable sync root: no files under $root/$tree"
+    done
+}
+
+require_report_paths_in_sync_trees() {
+    # $@: report files containing path or path<TAB>status lines
+    local file path ok tree
+
+    for file in "$@"; do
+        [ -f "$file" ] || continue
+
+        while IFS= read -r path || [ -n "$path" ]; do
+            [ -n "$path" ] || continue
+            path=${path%%	*}
+
+            [ -n "$path" ] || fatal "empty report path"
+
+            case "$path" in
+                *\\*)
+                    fatal "unsafe report path uses backslashes: $path"
+                    ;;
+            esac
+
+            case "$path" in
+                /*|.|./*|*/./*|*/.|../*|*/../*|*/..|..|*//*)
+                    fatal "unsafe report path outside sync root: $path"
+                    ;;
+            esac
+
+            ok=0
+            for tree in $SYNC_TREES; do
+                if [ "$path" = "$tree" ] || [ "${path#"$tree/"}" != "$path" ]; then
+                    ok=1
+                    break
+                fi
+            done
+
+            [ "$ok" -eq 1 ] || fatal "report path is outside configured sync trees: $path"
+        done < "$file"
+    done
+}

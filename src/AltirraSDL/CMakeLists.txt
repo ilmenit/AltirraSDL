@@ -79,6 +79,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/core/ui_main_compat.cpp
     source/ui/core/ui_main_overlays.cpp
     source/ui/core/ui_confirm_dialog.cpp
+    source/ui/core/ui_command_icons.cpp
     source/ui/core/ui_indicators.cpp
     source/ui/core/ui_fonts.cpp
     source/ui/core/ui_autosuggest.cpp
@@ -694,6 +695,28 @@ add_custom_command(
 )
 
 target_sources(AltirraSDL PRIVATE ${EMOTES_GEN_C})
+
+# ---------------------------------------------------------------------------
+# Windows command icon atlas used by the desktop quick bar
+# ---------------------------------------------------------------------------
+set(COMMAND_ICONS_ASSET ${CMAKE_CURRENT_SOURCE_DIR}/assets/command-icons/command-icons.png)
+set(COMMAND_ICONS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(COMMAND_ICONS_GEN_H ${COMMAND_ICONS_GEN_DIR}/command_icons_data.h)
+set(COMMAND_ICONS_GEN_C ${COMMAND_ICONS_GEN_DIR}/command_icons_data.cpp)
+set(COMMAND_ICONS_BAKE_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_command_icons.py)
+
+add_custom_command(
+    OUTPUT ${COMMAND_ICONS_GEN_H} ${COMMAND_ICONS_GEN_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${COMMAND_ICONS_GEN_DIR}
+    COMMAND ${Python3_EXECUTABLE} ${COMMAND_ICONS_BAKE_SCRIPT}
+            ${COMMAND_ICONS_GEN_DIR}
+            ${COMMAND_ICONS_ASSET}
+    DEPENDS ${COMMAND_ICONS_BAKE_SCRIPT} ${COMMAND_ICONS_ASSET}
+    COMMENT "Baking command icon atlas -> C++"
+    VERBATIM
+)
+
+target_sources(AltirraSDL PRIVATE ${COMMAND_ICONS_GEN_C})
 
 # ---------------------------------------------------------------------------
 # Help content (Altirra .chm XML sources -> embedded binary blob)

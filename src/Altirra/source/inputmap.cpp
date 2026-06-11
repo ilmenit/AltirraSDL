@@ -84,6 +84,11 @@ bool ATInputMap::HasControllerType(ATInputControllerType type) const {
 		[=](const Controller& c) { return c.mType == type; }) != mControllers.end();
 }
 
+bool ATInputMap::HasController(ATInputControllerType type, uint32 index) const {
+	return std::find_if(mControllers.begin(), mControllers.end(),
+		[=](const Controller& c) { return c.mType == type && c.mIndex == index; }) != mControllers.end();
+}
+
 const ATInputMap::Controller& ATInputMap::GetController(uint32 i) const {
 	return mControllers[i];
 }
