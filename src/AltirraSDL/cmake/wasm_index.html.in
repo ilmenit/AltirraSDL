@@ -2405,6 +2405,45 @@
       try { document.getElementById('canvas').focus({ preventScroll: true }); } catch (e) {}
     }
 
+    function getCanvasCssSize() {
+      if (!canvas) return { w: 0, h: 0 };
+      const rect = canvas.getBoundingClientRect();
+      let w = Math.round(rect.width);
+      let h = Math.round(rect.height);
+      if (w <= 0) w = canvas.clientWidth | 0;
+      if (h <= 0) h = canvas.clientHeight | 0;
+      if ((w <= 0 || h <= 0)
+          && (document.fullscreenElement || document.webkitFullscreenElement)) {
+        w = window.innerWidth | 0;
+        h = window.innerHeight | 0;
+      }
+      return { w, h };
+    }
+
+    function syncCanvasSizeToCssBox(force) {
+      const size = getCanvasCssSize();
+      if (size.w <= 0 || size.h <= 0) return false;
+
+      if (!force && canvas.width === size.w && canvas.height === size.h)
+        return false;
+
+      let syncedBySdl = false;
+      if (typeof Module !== 'undefined' && Module._ATWasmSyncCanvasSize) {
+        try {
+          syncedBySdl = (Module._ATWasmSyncCanvasSize(size.w, size.h) === 1);
+        } catch (e) {}
+      }
+
+      // Before the runtime export exists, keep the backing store close
+      // to the CSS box. Once SDL is live, the export above is the owner.
+      if (!syncedBySdl) {
+        canvas.width = size.w;
+        canvas.height = size.h;
+      }
+
+      return true;
+    }
+
     function syncTouchPref() {
       // Mirror localStorage → C side once on every poll while the
       // runtime is ready.  Cheap (one int call) and self-correcting
@@ -2613,6 +2652,7 @@
         // arrives, mWinW/mWinH refresh, and the next ComputeDisplayRect
         // uses the correct dimensions.
         requestAnimationFrame(() => {
+          syncCanvasSizeToCssBox(true);
           window.dispatchEvent(new Event('resize'));
         });
       });
@@ -2705,6 +2745,7 @@
       // post-rotation layout; later delays catch mobile browsers that
       // commit browser-fullscreen/orientation dimensions in stages.
       const fire = () => {
+        syncCanvasSizeToCssBox(false);
         try { window.dispatchEvent(new Event('resize')); } catch (e) {}
       };
       requestAnimationFrame(() => {
@@ -2719,6 +2760,10 @@
         window.screen.orientation.addEventListener('change', refireResizeSoon);
       } catch (e) {}
     }
+    window.addEventListener('resize', () => {
+      if (document.fullscreenElement || document.webkitFullscreenElement)
+        requestAnimationFrame(() => syncCanvasSizeToCssBox(false));
+    });
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', refireResizeSoon);
     }
@@ -7227,6 +7272,12 @@
         // real Running / Paused state once g_wasmSimReady flips true.
         statusEl.textContent = 'Running';
         runtimeReady = true;
+        // If the user entered browser fullscreen while the wasm was
+        // still loading, SDL may create its window at the startup size.
+        // Force a few post-init syncs after main() has had time to run.
+        [0, 120, 300, 700].forEach((ms) => {
+          setTimeout(() => syncCanvasSizeToCssBox(true), ms);
+        });
         btnFiles.disabled = false;
         if (btnFirmware) btnFirmware.disabled = false;
         // Start the Pause/Run state poller (see startPausePoller below).

@@ -57,6 +57,7 @@
 #include "ui_mode.h"
 #include "ui_debugger.h"
 #include "ui_textselection.h"
+#include "uiaccessors.h"
 #include "accel_sdl3.h"
 #include "inputmanager.h"
 #include "ui_testmode.h"
@@ -65,6 +66,7 @@
 #include "ui_confirm_dialog.h"
 #include "ui_virtual_keyboard.h"
 #include "ui_frame_capture.h"
+#include "ui_command_icons.h"
 #include "display_sdl3_impl.h"
 #include "simulator.h"
 #include "hleprogramloader.h"
@@ -77,12 +79,12 @@
 #include "disk.h"
 #include "diskinterface.h"
 #include <at/atio/diskimage.h>
+#include <at/atui/uicommandmanager.h>
 #include "debugger.h"
 #include <algorithm>
 #include "videowriter.h"
 #include "oshelper.h"
 #include <at/ataudio/pokey.h>
-#include "uiaccessors.h"
 #include "uiconfirm.h"
 #include "uikeyboard.h"
 #include "uitypes.h"
@@ -1257,6 +1259,7 @@ void ATUIShutdown() {
 #ifdef ALTIRRA_NETPLAY_ENABLED
 	ATNetplayUI_Shutdown();
 #endif
+	ATCommandIcons::Shutdown();
 	ATUIVirtualKeyboard_Shutdown();
 	ATUIShutdownPaletteSolver();
 	ATUIStopRecording();
@@ -1538,6 +1541,274 @@ static void RenderStatusOverlay(ATSimulator &sim) {
 	ImGui::End();
 }
 
+static bool ATUIQuickBarCommandAvailable(const char *command);
+
+static bool ATUIQuickBarButton(const char *label, const char *iconName,
+	const char *tooltip, const char *command, bool active = false)
+{
+	bool clicked = false;
+	const bool available = ATUIQuickBarCommandAvailable(command);
+	ATCommandIcons::Icon icon;
+	const bool hasIcon = ATCommandIcons::Get(iconName, icon);
+
+	if (active) {
+		const ImVec4 activeColor = ATUIIsDarkTheme()
+			? ImVec4(0.18f, 0.48f, 0.26f, 1.0f)
+			: ImVec4(0.40f, 0.75f, 0.48f, 1.0f);
+		ImGui::PushStyleColor(ImGuiCol_Button, activeColor);
+	}
+
+	if (!available)
+		ImGui::BeginDisabled();
+
+	if (hasIcon) {
+		const float buttonSize = floorf(ImGui::GetFrameHeight() * 1.22f);
+		const ImVec4 buttonColor = active
+			? ImVec4(0.07f, 0.24f, 0.12f, 1.0f)
+			: ImVec4(0.045f, 0.050f, 0.055f, 1.0f);
+		const ImVec4 hoverColor = active
+			? ImVec4(0.10f, 0.32f, 0.17f, 1.0f)
+			: ImVec4(0.10f, 0.11f, 0.12f, 1.0f);
+		const ImVec4 pressedColor = active
+			? ImVec4(0.13f, 0.40f, 0.21f, 1.0f)
+			: ImVec4(0.15f, 0.16f, 0.17f, 1.0f);
+		ImGui::PushStyleColor(ImGuiCol_Button, buttonColor);
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverColor);
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, pressedColor);
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0, 0, 0, 0));
+		if (ImGui::Button(label, ImVec2(buttonSize, buttonSize)))
+			clicked = true;
+		ImGui::PopStyleColor(5);
+
+		const ImVec2 itemMin = ImGui::GetItemRectMin();
+		const ImVec2 itemMax = ImGui::GetItemRectMax();
+		const float pad = floorf(buttonSize * 0.18f);
+		ImGui::GetWindowDrawList()->AddImage(icon.mTexID,
+			ImVec2(itemMin.x + pad, itemMin.y + pad),
+			ImVec2(itemMax.x - pad, itemMax.y - pad),
+			icon.mUV0, icon.mUV1,
+			available ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 110));
+	} else {
+		if (ImGui::Button(label))
+			clicked = true;
+	}
+
+	if (!available)
+		ImGui::EndDisabled();
+
+	if (active)
+		ImGui::PopStyleColor();
+
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s\nCommand: %s", tooltip, command);
+
+	if (clicked && available)
+		ATUIExecuteCommandStringAndShowErrors(command, nullptr);
+
+	return clicked;
+}
+
+static bool ATUIQuickBarCommandActive(const char *command) {
+	const ATUICommand *cmd = ATUIGetCommandManager().GetCommand(command);
+	if (!cmd || !cmd->mpStateFn)
+		return false;
+
+	return cmd->mpStateFn() != kATUICmdState_None;
+}
+
+static bool ATUIQuickBarCommandAvailable(const char *command) {
+	const ATUICommand *cmd = ATUIGetCommandManager().GetCommand(command);
+	return cmd && (!cmd->mpTestFn || cmd->mpTestFn());
+}
+
+static void ATUIQuickBarQuickMapButton() {
+	const char *label = "QMap";
+	const char *iconName = "controller_none";
+	const char *tooltip = "Cycle Quick Map";
+	const char *command = "Input.CycleQuickMaps";
+	const bool joystickAvailable = ATUIQuickBarCommandAvailable("Input.SelectQuickMapJoystick");
+	const bool paddleAvailable = ATUIQuickBarCommandAvailable("Input.SelectQuickMapPaddle");
+	bool active = false;
+
+	if (ATUIQuickBarCommandActive("Input.SelectQuickMapJoystick")) {
+		label = "Joy";
+		iconName = "controller_joystick";
+		tooltip = "Quick Map: Joystick";
+		command = paddleAvailable ? "Input.SelectQuickMapPaddle" : "Input.SelectQuickMapNone";
+		active = true;
+	} else if (ATUIQuickBarCommandActive("Input.SelectQuickMapPaddle")) {
+		label = "Pdl";
+		iconName = "controller_paddles";
+		tooltip = "Quick Map: Paddle";
+		command = "Input.SelectQuickMapNone";
+		active = true;
+	} else if (ATUIQuickBarCommandActive("Input.SelectQuickMapNone")) {
+		label = "None";
+		iconName = "controller_none";
+		tooltip = "Quick Map: None";
+		command = joystickAvailable ? "Input.SelectQuickMapJoystick" :
+			paddleAvailable ? "Input.SelectQuickMapPaddle" :
+			"Input.SelectQuickMapNone";
+		active = true;
+	}
+
+	ATUIQuickBarButton(label, iconName, tooltip, command, active);
+}
+
+static void ATUIQuickBarVideoStandardButton() {
+	const bool ntscActive = ATUIQuickBarCommandActive("Video.StandardNTSC");
+	const bool palActive = ATUIQuickBarCommandActive("Video.StandardPAL");
+	const char *label = ntscActive ? "NTSC" :
+		palActive ? "PAL" :
+		"Std";
+	const char *iconName = ntscActive ? "60hz" :
+		palActive ? "50hz" :
+		"60hz";
+	const char *tooltip = ntscActive ? "Video Standard: NTSC" :
+		palActive ? "Video Standard: PAL" :
+		"Video Standard: switch to NTSC";
+	const char *command = ntscActive ?
+		"Video.StandardPAL" :
+		palActive ?
+			"Video.StandardNTSC" :
+			"Video.StandardNTSC";
+
+	ATUIQuickBarButton(label, iconName, tooltip, command, ntscActive || palActive);
+}
+
+static void ATUIQuickBarSameLine() {
+	ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.x * 0.55f);
+}
+
+static bool ATUIQuickBarSuppressedByDialog(const ATUIState& state) {
+	return state.fileDialogPending ||
+		state.showExitConfirm ||
+		state.showSystemConfig ||
+		state.showDiskManager ||
+		state.showCassetteControl ||
+		state.showAboutDialog ||
+		state.showDebugLog ||
+		state.showAdjustColors ||
+		state.showDisplaySettings ||
+		state.showCartridgeMapper ||
+		state.showAudioOptions ||
+		state.showInputMappings ||
+		state.showInputSetup ||
+		state.showProfiles ||
+		state.showCommandLineHelp ||
+		state.showChangeLog ||
+		state.showCompatWarning ||
+		state.showHelpContents ||
+		state.showDiskExplorer ||
+		state.showSetupWizard ||
+		state.showKeyboardShortcuts ||
+		state.showKeyboardCustomize ||
+		state.showCompatDB ||
+		state.showAdvancedConfig ||
+		state.showCheater ||
+		state.showLightPen ||
+		state.showGameLibrary ||
+		state.showRewind ||
+		state.showTapeEditor ||
+		state.showScreenEffects ||
+		state.showShaderParams ||
+		state.showShaderSetup ||
+		state.showCalibrate ||
+		state.showCustomizeHud ||
+		state.showVirtualKeyboard ||
+		g_showFirmwareManager;
+}
+
+static void RenderDesktopQuickBar(const ATUIState& state) {
+	if (!ATUIGetQuickBarEnabled())
+		return;
+	if (ATUIQuickBarSuppressedByDialog(state))
+		return;
+	if (ATUIDebuggerHasVisiblePanes())
+		return;
+
+	const ImGuiViewport *vp = ImGui::GetMainViewport();
+	ImVec2 mouse;
+	if (!ATTestModeGetMousePosOverride(mouse))
+		mouse = ImGui::GetMousePos();
+	const float triggerW = 180.0f;
+	const float triggerH = 96.0f;
+
+	static ImVec2 s_lastPos(0, 0);
+	static ImVec2 s_lastSize(0, 0);
+
+	const bool inTrigger =
+		mouse.x >= vp->WorkPos.x + vp->WorkSize.x - triggerW &&
+		mouse.y >= vp->WorkPos.y + vp->WorkSize.y - triggerH;
+	const bool inLast =
+		s_lastSize.x > 0.0f &&
+		mouse.x >= s_lastPos.x - 8.0f &&
+		mouse.y >= s_lastPos.y - 8.0f &&
+		mouse.x <= s_lastPos.x + s_lastSize.x + 8.0f &&
+		mouse.y <= s_lastPos.y + s_lastSize.y + 8.0f;
+
+	if (!inTrigger && !inLast)
+		return;
+
+	const float statusClearance = 42.0f;
+	ImGui::SetNextWindowPos(
+		ImVec2(vp->WorkPos.x + vp->WorkSize.x - 10.0f,
+			vp->WorkPos.y + vp->WorkSize.y - 10.0f - statusClearance),
+		ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+
+	ImGuiWindowFlags flags =
+		ImGuiWindowFlags_NoTitleBar |
+		ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_AlwaysAutoResize |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoScrollbar |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoFocusOnAppearing |
+		ImGuiWindowFlags_NoNav;
+
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.010f, 0.012f, 0.014f, 0.94f));
+	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.004f, 0.005f, 0.006f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_BorderShadow, ImVec4(0, 0, 0, 0));
+
+	if (ImGui::Begin("##DesktopQuickBar", nullptr, flags)) {
+		// Matches the test11 Windows quick-bar order, adapted to the SDL
+		// command names and using tooltips as the accessible labels.
+		ATUIQuickBarButton("Config", "configure", "Configure System", "System.Configure");
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("Boot", "image_boot", "Boot Image", "File.BootImage");
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("Open", "image_open", "Open Image", "File.OpenImage");
+		ATUIQuickBarSameLine();
+		const bool warpActive = ATUIQuickBarCommandActive("System.ToggleWarpSpeed");
+		ATUIQuickBarButton("Warp", warpActive ? "speed_warp" : "speed_normal",
+			"Warp Speed", "System.ToggleWarpSpeed", warpActive);
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("Pause", "speed_pause", "Pause", "System.TogglePause", ATUIQuickBarCommandActive("System.TogglePause"));
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("Slow", "speed_slow", "Slow Motion", "System.ToggleSlowMotion", ATUIQuickBarCommandActive("System.ToggleSlowMotion"));
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("Cold", "cold_reset", "Cold Reset", "System.ColdReset");
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("Warm", "warm_reset", "Warm Reset", "System.WarmReset");
+		ATUIQuickBarSameLine();
+		ATUIQuickBarQuickMapButton();
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("C SIO", "sio_c_patch", "Cassette SIO Patch", "Cassette.ToggleSIOPatch", ATUIQuickBarCommandActive("Cassette.ToggleSIOPatch"));
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("D SIO", "sio_d_patch", "Disk SIO Patch", "Disk.ToggleSIOPatch", ATUIQuickBarCommandActive("Disk.ToggleSIOPatch"));
+		ATUIQuickBarSameLine();
+		ATUIQuickBarButton("BASIC", "basic", "Internal BASIC", "System.ToggleBASIC", ATUIQuickBarCommandActive("System.ToggleBASIC"));
+		ATUIQuickBarSameLine();
+		ATUIQuickBarVideoStandardButton();
+
+		s_lastPos = ImGui::GetWindowPos();
+		s_lastSize = ImGui::GetWindowSize();
+	}
+	ImGui::End();
+	ImGui::PopStyleColor(3);
+}
+
 // =========================================================================
 // Main display text selection — Windows parity for mouse-drag selection and
 // right-click context menu on the Atari frame.
@@ -1689,6 +1960,8 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 		ATUIRenderMainMenu(sim, window, backend, state);
 	}
 	RenderStatusOverlay(sim);
+	if (!ATUIIsGamingMode())
+		RenderDesktopQuickBar(state);
 
 	// Autosuggest popup (test10).  Update reads the BASIC editor line via
 	// DebugReadByte and runs the regex/symbol engine; Render draws the

@@ -94,6 +94,9 @@ void ATUISetDisplayFilterMode(ATDisplayFilterMode mode);
 bool ATUIGetShowFPS();
 void ATUISetShowFPS(bool enabled);
 
+bool ATUIGetQuickBarEnabled();
+void ATUISetQuickBarEnabled(bool enabled);
+
 // Master Auto-Suggest for BASIC toggle.  When off, *everything* in the
 // auto-suggest subsystem is dormant — the popup, the auto-show debounce,
 // the one-shot Alt+, trigger, the line-numbering injector, and the

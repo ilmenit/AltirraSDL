@@ -13,8 +13,10 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)
 [ $# -eq 1 ] || fatal "usage: extract_changelog.sh <NEW_SNAPSHOT>"
 
 NEW=$(abs_path "$1")
+require_sync_trees "NEW snapshot" "$NEW"
+
 F=$NEW/src/Altirra/res/changes.txt
-[ -f "$F" ] || fatal "changes.txt not found in NEW: $F"
+[ -f "$F" ] || fatal "changes.txt not found in NEW source snapshot: $F"
 
 # Print lines up to (but not including) the first numbered "Version X.Y"
 # heading, which separates the in-development section from the last

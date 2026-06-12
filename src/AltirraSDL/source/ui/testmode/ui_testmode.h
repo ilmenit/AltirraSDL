@@ -7,6 +7,8 @@
 //	Transport:
 //	  POSIX:   Unix domain socket at /tmp/altirra-test-<pid>.sock
 //	  Windows: Named pipe at \\.\pipe\altirra-test-<pid>
+//	  Script:  ALTIRRA_TESTMODE_SCRIPT=<commands.txt>
+//	           ALTIRRA_TESTMODE_OUTPUT=<responses.jsonl>
 
 #pragma once
 
@@ -28,6 +30,9 @@ void ATTestModePollCommands(ATSimulator &sim, ATUIState &state);
 
 // Call after ImGui::Render() to collect window/item data and process pending interactions
 void ATTestModePostRender(ATSimulator &sim, ATUIState &state);
+
+// Returns a scripted mouse position override when test mode is driving input.
+bool ATTestModeGetMousePosOverride(ImVec2& pos);
 
 // ImGui Test Engine hook implementations.
 // These are called automatically by ImGui when IMGUI_ENABLE_TEST_ENGINE is defined

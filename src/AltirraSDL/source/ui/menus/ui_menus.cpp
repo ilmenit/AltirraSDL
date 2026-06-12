@@ -148,29 +148,29 @@ static void ATClearMRU() {
 // =========================================================================
 
 static void BootImageCallback(void *, const char * const *filelist, int) {
-	if (!filelist || !filelist[0]) return;
+	if (!filelist || !filelist[0] || !*filelist[0]) return;
 	ATUIPushDeferred(kATDeferred_BootImage, filelist[0]);
 }
 
 static void OpenImageCallback(void *, const char * const *filelist, int) {
-	if (!filelist || !filelist[0]) return;
+	if (!filelist || !filelist[0] || !*filelist[0]) return;
 	ATUIPushDeferred(kATDeferred_OpenImage, filelist[0]);
 }
 
 static void CartridgeAttachCallback(void *, const char * const *filelist, int) {
-	if (!filelist || !filelist[0]) return;
+	if (!filelist || !filelist[0] || !*filelist[0]) return;
 	ATUIPushDeferred(kATDeferred_AttachCartridge, filelist[0]);
 }
 
 // Per-drive attach callback — drive index in userdata
 static void AttachDiskCallback(void *userdata, const char * const *filelist, int) {
 	int driveIdx = (int)(intptr_t)userdata;
-	if (!filelist || !filelist[0] || driveIdx < 0 || driveIdx >= 15) return;
+	if (!filelist || !filelist[0] || !*filelist[0] || driveIdx < 0 || driveIdx >= 15) return;
 	ATUIPushDeferred(kATDeferred_AttachDisk, filelist[0], driveIdx);
 }
 
 static void CassetteSaveCallback(void *, const char * const *filelist, int) {
-	if (!filelist || !filelist[0]) return;
+	if (!filelist || !filelist[0] || !*filelist[0]) return;
 	ATUIPushDeferred(kATDeferred_SaveCassette, filelist[0]);
 }
 

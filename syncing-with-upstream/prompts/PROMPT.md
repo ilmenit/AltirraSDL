@@ -53,8 +53,12 @@ syncing-with-upstream/tools/sync_diff.sh \
 
 That produced
 `syncing-with-upstream/reports/<OLD_LABEL>__to__<NEW_LABEL>/` with these
-files. **Treat the report dir as your single source of truth — do not
-re-diff manually.**
+files. First check whether the report directory contains
+`INVALID_REPORT_DO_NOT_USE.md` or whether `SUMMARY.md` warns that the
+report is invalid. If either is true, stop and report that the sync cannot
+continue until the operator replaces the bad snapshot and regenerates the
+report. Otherwise, **treat the report dir as your single source of truth —
+do not re-diff manually.**
 
 | File                      | What it contains                                                                 |
 |---------------------------|----------------------------------------------------------------------------------|
@@ -74,6 +78,12 @@ re-diff manually.**
 The operator may or may not already have run
 `apply_trivial.py` — check `git status` and ask if unsure.
 
+The OLD and NEW inputs used to generate the report must be source snapshots
+with non-empty `src/` trees. A binary release package with executables and no
+source tree is not a valid OLD baseline. If the report has every upstream
+changed path classified as `ADDED`, treat it as invalid even if the marker is
+missing.
+
 ## 3. Your job, in order
 
 ### 3.1 Produce a written plan for approval (DO NOT EDIT FILES YET)
@@ -84,6 +94,11 @@ Read, in this order:
 2. `reports/<…>/00_changelog.txt`  ← highest information density
 3. `reports/<…>/07_classified.md`
 4. The root-level `CLAUDE.md` for the fork's design rules
+
+Before planning, confirm that `INVALID_REPORT_DO_NOT_USE.md` is absent from
+the report directory and that `SUMMARY.md` does not warn that the report is
+invalid. If the report is invalid, do not plan edits and do not apply
+trivial copies.
 
 Then produce a plan that, for **each role** in `07_classified.md`,
 states:
@@ -167,6 +182,11 @@ After approval, work role-by-role in this order:
      modal dialogs.
    - Match Windows Altirra's exact option set and layout — **do not**
      invent controls that aren't in the Windows version.
+   - Preserve deliberate AltirraSDL improvements when reflecting UI, such
+     as command-state-aware disabled controls, netplay safety guards, and
+     tooltips on quick-access/overlay controls. Do not replace an improved
+     SDL adaptation with a literal native Win32 widget design unless the
+     operator explicitly asks for that.
 5. **Review-UI** headers — patch call sites if signatures changed.
 6. **Skip-win-only** — do nothing except note in your final report
    that the change is Windows-only and explain why.
@@ -202,6 +222,9 @@ Produce a final report containing:
 - Build status.
 
 Append a one-line entry to `syncing-with-upstream/HISTORY.md`.
+Only do this after the merge has actually completed and validation has run;
+do not advance the documented baseline for a partially merged or invalid
+report.
 
 ## 4. Guard-rails
 
@@ -216,6 +239,9 @@ Append a one-line entry to `syncing-with-upstream/HISTORY.md`.
 - **Never** commit without an approved plan.
 - **Never** rerun `sync_diff.sh` mid-sync — the intermediate report
   files are your stable reference.
+- **Never** proceed from a report marked with `INVALID_REPORT_DO_NOT_USE.md`
+  or from an all-added report shape. Ask the operator for a real source
+  snapshot and a regenerated report.
 - Prefer small, focused commits: one for trivial copies, one per
   module for three-way merges, one for UI reflection, one for
   CMake/build-list updates. This makes review bearable.

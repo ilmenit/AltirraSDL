@@ -459,6 +459,7 @@ void ATSettingsExchangeView(bool write, VDRegistryKey& key) {
 	ATSettingsExchangeBool(write, key, "View: Auto-hide menu", ATUIIsMenuAutoHideEnabled, ATUISetMenuAutoHideEnabled);
 	ATSettingsExchangeBool(write, key, "View: Show FPS", ATUIGetShowFPS, ATUISetShowFPS);
 	ATSettingsExchangeBool(write, key, "View: Vertical sync", [&]() { return gtia.IsVsyncEnabled(); }, [&](bool en) { gtia.SetVsyncEnabled(en); });
+	ATSettingsExchangeBool(write, key, "View: Quick bar enabled", ATUIGetQuickBarEnabled, ATUISetQuickBarEnabled);
 
 	if (write)
 		key.setString("View: Alt output name", ATUIGetCurrentAltOutputName());

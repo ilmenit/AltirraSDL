@@ -18,13 +18,17 @@
 #include "testmode_ipc.h"
 #include "ui_testmode.h"
 #include "ui_main.h"
+#include "uiaccessors.h"
 #include "ui_frame_capture.h"
+#include "ui_mode.h"
+#include "ui/mobile/ui_mobile.h"
 #include "simulator.h"
 #include "gtia.h"
 #include "oshelper.h"
 #include "logging.h"
 
 bool g_testModeEnabled = false;
+extern ATMobileUIState g_mobileState;
 
 // =========================================================================
 // IPC transport (cross-platform wrapper)
@@ -34,12 +38,23 @@ static TestModeIPC g_ipc;
 static std::string g_ipcAddress;   // socket path or pipe name (for display)
 static std::string g_recvBuf;      // accumulates partial reads
 static std::string g_sendBuf;      // accumulates responses to flush
+static std::vector<std::string> g_scriptLines;
+static size_t g_scriptLineNext = 0;
+static FILE *g_scriptOutput = nullptr;
+static bool g_hasMouseOverride = false;
+static ImVec2 g_mouseOverride {};
 
 static void SendResponse(const std::string &json) {
-	if (!g_ipc.HasClient())
-		return;
-	g_sendBuf += json;
-	g_sendBuf += '\n';
+	if (g_scriptOutput) {
+		fputs(json.c_str(), g_scriptOutput);
+		fputc('\n', g_scriptOutput);
+		fflush(g_scriptOutput);
+	}
+
+	if (g_ipc.HasClient()) {
+		g_sendBuf += json;
+		g_sendBuf += '\n';
+	}
 }
 
 // Forward declarations for cleanup (defined further down)
@@ -71,6 +86,7 @@ struct TestItem {
 	std::string label;
 	std::string windowName;
 	ImGuiItemStatusFlags flags;
+	ImGuiItemFlags itemFlags;
 };
 
 static std::vector<TestItem> g_items;
@@ -90,6 +106,7 @@ static const char* GetCurrentWindowName(ImGuiContext *ctx) {
 enum class PendingActionType {
 	None,
 	Click,          // click at a position (mouse down + up)
+	MouseMove,      // move pointer to a fixed position
 	WaitFrames,     // wait N frames before responding
 };
 
@@ -112,7 +129,28 @@ static void ResetClientState() {
 	g_recvBuf.clear();
 	g_sendBuf.clear();
 	g_pendingActions.clear();
+	g_hasMouseOverride = false;
 	g_commandsBlocked = false;
+}
+
+static bool LoadScriptFile(const char *path) {
+	FILE *f = fopen(path, "rb");
+	if (!f) {
+		LOG_ERROR("TestMode", "failed to open script '%s'", path);
+		return false;
+	}
+
+	char buf[4096];
+	while (fgets(buf, sizeof buf, f)) {
+		std::string line(buf);
+		while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+			line.pop_back();
+		g_scriptLines.push_back(std::move(line));
+	}
+
+	fclose(f);
+	g_scriptLineNext = 0;
+	return true;
 }
 
 // =========================================================================
@@ -326,6 +364,9 @@ static std::string BuildItemListJson(const std::string &windowFilter) {
 			json += ",\"type\":\"button\"";
 		}
 
+		json += ",\"disabled\":";
+		json += (item.itemFlags & ImGuiItemFlags_Disabled) ? "true" : "false";
+
 		json += ",\"x\":";
 		json += std::to_string((int)item.rect.Min.x);
 		json += ",\"y\":";
@@ -415,6 +456,31 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return JsonOk();
 	}
 
+	if (verb == "system_config_category") {
+		std::string categoryStr = NextToken(cmd);
+		if (categoryStr.empty())
+			return JsonError("usage: system_config_category <index>");
+
+		state.showSystemConfig = true;
+		state.systemConfigCategory = atoi(categoryStr.c_str());
+		return JsonOk();
+	}
+
+	if (verb == "mobile_hamburger") {
+		ATUISetMode(ATUIMode::Gaming);
+		ATUIApplyModeStyle(1.0f);
+		g_mobileState.gameLoaded = true;
+		g_mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
+		return JsonOk();
+	}
+
+	if (verb == "mobile_exit_confirm") {
+		ATUISetMode(ATUIMode::Gaming);
+		ATUIApplyModeStyle(1.0f);
+		ATMobileUI_ShowExitEmulatorConfirm(sim, state, g_mobileState);
+		return JsonOk();
+	}
+
 	if (verb == "list_dialogs") {
 		std::string json = "{\"ok\":true,\"dialogs\":[";
 		bool first = true;
@@ -454,6 +520,19 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		);
 		action.posResolved = true;
 		action.clickPhase = 0;
+		g_pendingActions.push_back(action);
+		return JsonOk();
+	}
+
+	if (verb == "mouse_move") {
+		std::string xStr = NextToken(cmd);
+		std::string yStr = NextToken(cmd);
+		if (xStr.empty() || yStr.empty())
+			return JsonError("usage: mouse_move <x> <y>");
+
+		PendingAction action;
+		action.type = PendingActionType::MouseMove;
+		action.clickPos = ImVec2((float)atof(xStr.c_str()), (float)atof(yStr.c_str()));
 		g_pendingActions.push_back(action);
 		return JsonOk();
 	}
@@ -516,6 +595,23 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return JsonOk();
 	}
 
+	if (verb == "quit") {
+		state.exitConfirmed = true;
+		SDL_Event q {};
+		q.type = SDL_EVENT_QUIT;
+		SDL_PushEvent(&q);
+		return JsonOk();
+	}
+
+	if (verb == "run_command") {
+		std::string command = RestOfLine(cmd);
+		if (command.empty())
+			return JsonError("usage: run_command <command>");
+
+		ATUIExecuteCommandStringAndShowErrors(command.c_str(), nullptr);
+		return JsonOk();
+	}
+
 	if (verb == "boot_image") {
 		std::string path = RestOfLine(cmd);
 		if (path.empty())
@@ -560,13 +656,19 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"list_dialogs\","
 			"\"open_dialog <name>\","
 			"\"close_dialog <name>\","
+			"\"system_config_category <index>\","
+			"\"mobile_hamburger\","
+			"\"mobile_exit_confirm\","
 			"\"click <window> <label>\","
+			"\"mouse_move <x> <y>\","
 			"\"wait_frames [n]\","
 			"\"screenshot <path>\","
 			"\"cold_reset\","
 			"\"warm_reset\","
 			"\"pause\","
 			"\"resume\","
+			"\"quit\","
+			"\"run_command <command>\","
 			"\"boot_image <path>\","
 			"\"attach_disk <drive> <path>\","
 			"\"load_state <path>\","
@@ -597,6 +699,20 @@ static void ProcessPendingActions() {
 				continue;
 			}
 			++i;
+			continue;
+		}
+
+		if (action.type == PendingActionType::MouseMove) {
+			if (mouseUsedThisFrame) {
+				++i;
+				continue;
+			}
+
+			mouseUsedThisFrame = true;
+			g_hasMouseOverride = true;
+			g_mouseOverride = action.clickPos;
+			io.AddMousePosEvent(action.clickPos.x, action.clickPos.y);
+			g_pendingActions.erase(g_pendingActions.begin() + i);
 			continue;
 		}
 
@@ -688,9 +804,28 @@ bool ATTestModeInit() {
 	if (!g_testModeEnabled)
 		return true;
 
-	g_ipcAddress = g_ipc.Init();
-	if (g_ipcAddress.empty())
-		return false;
+	const char *scriptPath = SDL_getenv("ALTIRRA_TESTMODE_SCRIPT");
+	const char *outputPath = SDL_getenv("ALTIRRA_TESTMODE_OUTPUT");
+	if (scriptPath && *scriptPath) {
+		if (!LoadScriptFile(scriptPath))
+			return false;
+
+		if (outputPath && *outputPath) {
+			g_scriptOutput = fopen(outputPath, "wb");
+			if (!g_scriptOutput) {
+				LOG_ERROR("TestMode", "failed to open script output '%s'", outputPath);
+				return false;
+			}
+		}
+	}
+
+	if (g_scriptLines.empty()) {
+		g_ipcAddress = g_ipc.Init();
+		if (g_ipcAddress.empty())
+			return false;
+	} else {
+		g_ipcAddress.clear();
+	}
 
 	// Enable ImGui test engine hooks
 	ImGuiContext &g = *ImGui::GetCurrentContext();
@@ -699,7 +834,10 @@ bool ATTestModeInit() {
 	// Register NewFrame hook to clear item registry each frame
 	EnsureHookRegistered();
 
-	LOG_INFO("TestMode", "Initialized (PID %lu)", (unsigned long)SDL_GetCurrentThreadID());
+	if (!g_ipcAddress.empty())
+		LOG_INFO("TestMode", "Initialized (PID %lu)", (unsigned long)SDL_GetCurrentThreadID());
+	else
+		LOG_INFO("TestMode", "Initialized with script transport only");
 	return true;
 }
 
@@ -714,6 +852,12 @@ void ATTestModeShutdown() {
 
 	g_ipc.Shutdown();
 	g_ipcAddress.clear();
+	if (g_scriptOutput) {
+		fclose(g_scriptOutput);
+		g_scriptOutput = nullptr;
+	}
+	g_scriptLines.clear();
+	g_scriptLineNext = 0;
 	g_items.clear();
 	ResetClientState();
 	LOG_INFO("TestMode", "Shutdown");
@@ -723,24 +867,37 @@ void ATTestModePollCommands(ATSimulator &sim, ATUIState &state) {
 	if (!g_testModeEnabled)
 		return;
 
-	g_ipc.TryAccept();
+	if (!g_ipcAddress.empty())
+		g_ipc.TryAccept();
 
-	if (!g_ipc.HasClient())
+	if (!g_ipc.HasClient() && g_scriptLineNext >= g_scriptLines.size())
 		return;
 
 	// Read available data
-	char buf[4096];
-	int n = g_ipc.Recv(buf, sizeof(buf));
-	if (n > 0) {
-		g_recvBuf.append(buf, n);
-	} else if (n < 0) {
-		// Client disconnected or error
-		LOG_INFO("TestMode", "Client disconnected");
-		g_ipc.DisconnectClient();
-		ResetClientState();
-		return;
+	if (g_ipc.HasClient()) {
+		char buf[4096];
+		int n = g_ipc.Recv(buf, sizeof(buf));
+		if (n > 0) {
+			g_recvBuf.append(buf, n);
+		} else if (n < 0) {
+			// Client disconnected or error
+			LOG_INFO("TestMode", "Client disconnected");
+			g_ipc.DisconnectClient();
+			ResetClientState();
+			return;
+		}
+		// n == 0: no data available (would block)
 	}
-	// n == 0: no data available (would block)
+
+	while (!g_commandsBlocked && g_scriptLineNext < g_scriptLines.size()) {
+		std::string line = g_scriptLines[g_scriptLineNext++];
+		if (line.empty() || line[0] == '#')
+			continue;
+
+		std::string response = DispatchCommand(line, sim, state);
+		if (!response.empty())
+			SendResponse(response);
+	}
 
 	// Process complete lines — stop if a blocking command (wait_frames) is active
 	size_t pos;
@@ -772,6 +929,14 @@ void ATTestModePostRender(ATSimulator &sim, ATUIState &state) {
 	FlushSendBuffer();
 }
 
+bool ATTestModeGetMousePosOverride(ImVec2& pos) {
+	if (!g_testModeEnabled || !g_hasMouseOverride)
+		return false;
+
+	pos = g_mouseOverride;
+	return true;
+}
+
 // =========================================================================
 // ImGui Test Engine Hook Implementations
 // =========================================================================
@@ -789,6 +954,7 @@ void ImGuiTestEngineHook_ItemAdd(ImGuiContext *ctx, ImGuiID id, const ImRect &bb
 	item.rect = bb;
 	item.windowName = GetCurrentWindowName(ctx);
 	item.flags = item_data ? item_data->StatusFlags : ImGuiItemStatusFlags_None;
+	item.itemFlags = item_data ? item_data->ItemFlags : ImGuiItemFlags_None;
 	g_items.push_back(std::move(item));
 }
 

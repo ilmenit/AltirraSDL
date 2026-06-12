@@ -32,6 +32,10 @@ The sync pipeline:
   everything else →  can be copied straight from NEW into FORK
 ```
 
+`OLD` and `NEW` must be source snapshots with a non-empty `src/` tree.
+The tooling preflights this before generating reports; a binary release
+package with executables but no `src/` is not a valid sync input.
+
 The rest of this document explains how to drive that pipeline with the
 tooling in `tools/` and how to hand off the result to an LLM coding agent
 using `prompts/PROMPT.md`.
@@ -49,13 +53,15 @@ syncing-with-upstream/
 │   └── PROMPT.md             ← self-contained LLM brief (fed to the agent)
 ├── tools/
 │   ├── sync_diff.sh          ← three-way diff driver, produces reports/
-│   ├── classify_changes.py   ← categorises files (core / ui / win-only / …)
-│   ├── apply_trivial.py      ← copies no-conflict files from NEW to FORK
+│   ├── classify_changes.py   ← categorises valid reports (core / ui / win-only / …)
+│   ├── apply_trivial.py      ← validates roots and copies no-conflict files from NEW to FORK
 │   ├── extract_changelog.sh  ← extracts the NEW release's changes.txt delta
+│   │                            after source-snapshot validation
 │   └── lib/
-│       ├── common.sh         ← shared bash helpers (path resolution, etc.)
+│       ├── common.sh         ← shared bash helpers and source-tree validation
 │       ├── compute_diffs.py  ← fast Python diff-set producer
-│       └── filemap.py        ← path→module classification rules
+│       ├── filemap.py        ← path→module classification rules
+│       └── report_safety.py  ← shared report-consumer safety checks
 └── reports/                  ← generated per-sync, git-ignored by default
     └── <OLD>__to__<NEW>/
         ├── 00_changelog.txt          ← upstream's own change log delta
@@ -66,12 +72,18 @@ syncing-with-upstream/
         ├── 05_added_in_new.txt       ← new files to bring over
         ├── 06_removed_in_new.txt     ← files upstream deleted
         ├── 07_classified.md          ← files grouped by module / subsystem
+        ├── REPORT_INPUTS.txt         ← absolute OLD/NEW/FORK paths used by helper tools
         ├── diffs/                    ← per-file unified diffs
         │   ├── <path>.upstream.diff  ← OLD vs NEW (what upstream changed)
         │   ├── <path>.fork.diff      ← OLD vs FORK (what the fork changed)
         │   └── <path>.full.diff      ← FORK vs NEW (combined view)
         └── SUMMARY.md                ← human-readable report
 ```
+
+If a report directory contains `INVALID_REPORT_DO_NOT_USE.md`, do not apply,
+classify, or otherwise trust that report. This marker is used for reports
+generated from an unusable baseline, such as an OLD snapshot that did not
+contain a source tree.
 
 The `tools/` are version-agnostic: they take OLD / NEW / FORK paths as
 arguments and do not hard-code any Altirra version number.

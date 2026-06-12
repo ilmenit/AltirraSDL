@@ -20,6 +20,8 @@
 #ifndef f_VD2_RIZA_DIRECT3D_H
 #define f_VD2_RIZA_DIRECT3D_H
 
+#include <string.h>
+
 #include <windows.h>
 #include <d3d9.h>
 

@@ -5,11 +5,13 @@ Short form of `GUIDE.md`. Tick each box in the PR description.
 ## Preparation
 - [ ] OLD snapshot folder present **next to the AltirraSDL repo** as a sibling directory (e.g. `../Altirra-<old-ver>-src/`)
 - [ ] NEW snapshot folder present next to AltirraSDL as a sibling directory
+- [ ] OLD and NEW are source snapshots with non-empty `src/` trees, not binary release packages
 - [ ] Clean/committed working tree
 - [ ] New branch: `sync/altirra-<new-version>`
 
 ## Diff
 - [ ] `./tools/sync_diff.sh --old <OLD> --new <NEW> --fork ..` ran cleanly
+- [ ] Report directory does not contain `INVALID_REPORT_DO_NOT_USE.md`
 - [ ] Skimmed `reports/<OLD>__to__<NEW>/SUMMARY.md`
 - [ ] Skimmed `reports/<OLD>__to__<NEW>/00_changelog.txt`
 - [ ] Inspected unexpected entries in `02_fork_changed.txt`
@@ -30,5 +32,6 @@ Short form of `GUIDE.md`. Tick each box in the PR description.
 - [ ] UI test-mode smoke test (`--test-mode`) ping/query_state OK
 
 ## Record
-- [ ] Appended one-line entry to `HISTORY.md`
+- [ ] Appended one-line entry to `HISTORY.md` only after the merge and validation are complete
+- [ ] Updated documented baseline/current OLD reference only after successful validation
 - [ ] PR description links to `SUMMARY.md` and lists the 3-way files touched

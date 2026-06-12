@@ -183,6 +183,10 @@ static bool s_showFPS = false;
 bool ATUIGetShowFPS() { return s_showFPS; }
 void ATUISetShowFPS(bool v) { s_showFPS = v; }
 
+static bool s_quickBarEnabled = true;
+bool ATUIGetQuickBarEnabled() { return s_quickBarEnabled; }
+void ATUISetQuickBarEnabled(bool v) { s_quickBarEnabled = v; }
+
 // Master Auto-Suggest gate.  When off, every auto-suggest subsystem
 // (popup, line numbering, replace-warning) is dormant.  Default on:
 // the catalogue is BASIC-only and the engine self-gates on

@@ -77,6 +77,19 @@ def compare_trees(
     return out
 
 
+def require_trees(root: pathlib.Path, role: str, trees: list[str]) -> None:
+    for tree in trees:
+        path = root / tree
+        if not path.is_dir():
+            raise SystemExit(
+                f"{role} is not a usable sync root: missing {tree}/ under {root}"
+            )
+        if not any(p.is_file() for p in path.rglob("*")):
+            raise SystemExit(
+                f"{role} is not a usable sync root: no files under {path}"
+            )
+
+
 def write_tab(path: pathlib.Path, entries: list[tuple[str, str]]) -> None:
     path.write_text("\n".join(f"{p}\t{s}" for p, s in entries) + ("\n" if entries else ""))
 
@@ -96,6 +109,10 @@ def main() -> int:
 
     filemap = load_filemap()
     report = args.report_dir
+
+    require_trees(args.old, "OLD snapshot", args.trees)
+    require_trees(args.new, "NEW snapshot", args.trees)
+    require_trees(args.fork, "FORK tree", args.trees)
 
     upstream = compare_trees(args.old, args.new, args.trees)
     fork_raw = compare_trees(args.old, args.fork, args.trees)

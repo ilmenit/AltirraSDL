@@ -44,6 +44,9 @@ public:
 	virtual void ShowSuggestions() = 0;
 	virtual bool IsAutoSuggestEnabled() = 0;
 	virtual void SetAutoSuggestEnabled(bool enabled) = 0;
+
+	virtual bool GetQuickBarEnabled() const = 0;
+	virtual void SetQuickBarEnabled(bool enabled) = 0;
 };
 
 IATDeviceSnapshot *ATUIGetFrontEndSnapshot();
