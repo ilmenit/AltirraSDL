@@ -715,6 +715,48 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		);
 	}
 
+	// --- Speed control ---
+	//
+	// Format:  set_speed <turbo|warp|normal|real>
+	//          get_speed
+	//
+	// `turbo` / `warp` enable the sticky turbo mode (== Tab key in
+	// the GUI) so the simulator runs as fast as the host CPU allows.
+	// `normal` / `real` clear it so the simulator runs at its native
+	// ~60 Hz NTSC (or 50 Hz PAL) rate.
+	//
+	// Test-mode defaults to whatever the user's settings.ini specified
+	// (typically normal speed); use this verb at the start of a
+	// capture session if you need to override.
+	//
+	// Interaction with wait_frames: wait_frames counts RENDERED frames
+	// (decremented in ATTestModePostRender), and the turbo frame-skip
+	// renders only 1 of every engine.turbo_fps_divisor (default 16)
+	// emulated frames — so `wait_frames N` under turbo spans roughly
+	// N*divisor emulated frames.  Scripts that count emulated frames
+	// should stay at normal speed or divide accordingly.
+	if (verb == "set_speed") {
+		std::string mode = NextToken(cmd);
+		if (mode.empty())
+			return JsonError("usage: set_speed <turbo|warp|normal|real>");
+		if (mode == "turbo" || mode == "warp") {
+			ATUISetTurbo(true);
+			return JsonOk();
+		}
+		if (mode == "normal" || mode == "real") {
+			ATUISetTurbo(false);
+			return JsonOk();
+		}
+		return JsonError("unknown speed mode: " + mode);
+	}
+
+	if (verb == "get_speed") {
+		std::string body = "{\"ok\":true,\"turbo\":";
+		body += ATUIGetTurbo() ? "true" : "false";
+		body += "}";
+		return body;
+	}
+
 	// --- Emulation control ---
 	if (verb == "cold_reset") {
 		sim.ColdReset();
@@ -809,6 +851,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"mem_read <hex_addr> [<count>]\","
 			"\"input joy <unit> <left|right|up|down|fire|release_all>\","
 			"\"input console <start|select|option> [up]\","
+			"\"set_speed <turbo|warp|normal|real>\","
+			"\"get_speed\","
 			"\"cold_reset\","
 			"\"warm_reset\","
 			"\"pause\","
