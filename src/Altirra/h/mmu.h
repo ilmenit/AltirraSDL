@@ -86,6 +86,15 @@ public:
 	uint8 GetBankRegister() const { return mCurrentBank; }
 	void SetBankRegister(uint8 bank);
 
+	// AltirraSDL extension (not present in Windows Altirra; user-approved,
+	// exposed in Configure System > Memory).  Toggles the BASIC / self-test
+	// ROM latch in the RAMBO modes.  Enabled (default): the ROM-control bits
+	// latch during banking, matching real XL/XE hardware and the sim816
+	// reference.  Disabled: the legacy stateless behaviour (ROM forced off
+	// while banking is active).
+	bool IsBasicSelfTestLatchEnabled() const { return mbLatchEnabled; }
+	void SetBasicSelfTestLatchEnabled(bool enabled);
+
 	void SetAxlonBank(uint8 bank);
 	uint8 GetAxlonBank() const { return mAxlonBank; }
 
@@ -123,6 +132,21 @@ protected:
 	uint32		mCPUBase {};
 	uint32		mAnticBase {};
 	uint32		mCurrentBankInfo {};
+
+	// BASIC / self-test ROM latch.  The extended-memory (RAMBO) modes reuse
+	// PORTB bit 1 (BASIC control) and bit 7 (self-test control) as RAM
+	// bank-address lines.  On real XL/XE hardware (and in the sim816
+	// reference) those ROM-control bits behave as latches: they update only
+	// while CPU/ANTIC banking is inactive and HOLD their last value while the
+	// bit is driving the bank address.  Altirra's stateless table forces the
+	// ROM off during banking; these members restore the hold-during-banking
+	// behaviour.  The *Reuse flags select the modes where the latch applies;
+	// mLatchedBasic/SelfTest hold the captured kMapInfo_BASIC / _SelfTest bit.
+	bool		mbBasicLatchReuse = false;
+	bool		mbSelfTestLatchReuse = false;
+	bool		mbLatchEnabled = true;
+	uint16		mLatchedBasic = 0;
+	uint16		mLatchedSelfTest = 0;
 
 	ATNotifyList<const vdfunction<void()> *> mROMMappingChangeFns;
 

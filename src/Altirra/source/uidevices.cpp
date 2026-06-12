@@ -208,6 +208,9 @@ const ATUIDialogDeviceNew::CategoryEntry ATUIDialogDeviceNew::kCategories[]={
 			{ "covox", L"Covox",
 				L"Provides a simple DAC for 8-bit digital sound."
 			},
+			{ "pokeymax", L"PokeyMax",
+				L"Provides a simple DAC for 8-bit digital sound (Covox-compatible)."
+			},
 			{ "rapidus", L"Rapidus Accelerator",
 				L"Switchable 6502/65C816 based accelerator running at 20MHz with 15MB of memory and 512KB of flash."
 			},

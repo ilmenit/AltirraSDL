@@ -517,6 +517,10 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			sim.RotateDrives(8, 1);
 		if (ImGui::MenuItem("Rotate Up"))
 			sim.RotateDrives(8, -1);
+		// Extension over Windows Altirra (approved): swap the disks
+		// mounted in drive 1 (index 0) and drive 2 (index 1).
+		if (ImGui::MenuItem("Swap Disks"))
+			sim.SwapDrives(0, 1);
 
 		ImGui::Separator();
 

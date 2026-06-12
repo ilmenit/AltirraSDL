@@ -90,6 +90,7 @@ void ATRegisterDeviceConfigurers(ATDeviceManager& dev) {
 	dev.AddDeviceConfigurer("kmkjzide", ATUIConfDevKMKJZIDE);
 	dev.AddDeviceConfigurer("kmkjzide2", ATUIConfDevKMKJZIDE2);
 	dev.AddDeviceConfigurer("covox", ATUIConfDevCovox);
+	dev.AddDeviceConfigurer("pokeymax", ATUIConfDevCovox);
 	dev.AddDeviceConfigurer("diskdriveatr8000", ATUIConfDevATR8000);
 	dev.AddDeviceConfigurer("diskdrivepercom", ATUIConfDevPercomRFD);
 	dev.AddDeviceConfigurer("diskdrivepercomat", ATUIConfDevPercomAT);

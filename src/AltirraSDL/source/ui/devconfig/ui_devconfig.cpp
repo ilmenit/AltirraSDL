@@ -194,6 +194,10 @@ static bool DispatchDeviceDialog(const char *tag, ATPropertySet& props, ATDevice
 	// Covox
 	if (!strcmp(tag, "covox")) return RenderCovoxConfig(props, st);
 
+	// PokeyMax — Covox-compatible clone with a fixed ($D280-$D2FF, 4ch
+	// LRRL) configuration that the user cannot change.
+	if (!strcmp(tag, "pokeymax")) return RenderPokeyMaxConfig(props, st);
+
 	// 850 interface
 	if (!strcmp(tag, "850")) return Render850Config(props, st);
 	if (!strcmp(tag, "850full")) return Render850FullConfig(props, st);

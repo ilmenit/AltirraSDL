@@ -123,6 +123,19 @@ public:
 
 	bool	IsStereoEnabled() const;
 	void	SetSlave(ATPokeyEmulator *slave);
+
+	// Quad POKEY support (PokeyMax). The master drives up to three audio-only
+	// slaves: slave1 (P2) via SetSlave for stereo, plus slave3 (P3) / slave4
+	// (P4) for quad. Panning: P1+P3 -> left, P2+P4 -> right. Passing null
+	// pointers reverts to stereo (P2 only). SetSlave clears P3/P4, so call
+	// SetSlave first, then SetExtraSlaves.
+	void	SetExtraSlaves(ATPokeyEmulator *slave3, ATPokeyEmulator *slave4);
+
+	// PokeyMax $D210 Saturate (bit0). false = linear same-side sum (P1+P3,
+	// P2+P4); true = POKEY saturation curve applied to the summed same-side
+	// pair (hardware default). Only affects the quad mix in FlushAudio.
+	void	SetQuadSaturationEnabled(bool enable) { mbQuadSaturation = enable; }
+
 	void	SetCassette(IATPokeyCassetteDevice *dev);
 	void	SetAudioLog(ATPokeyAudioLog *log);
 	void	SetConsoleOutput(ATConsoleOutput *output);
@@ -311,8 +324,12 @@ private:
 	void	StartPotScan();
 	void	UpdatePots(uint32 timeSkew);
 
-	void	UpdateAddressDecoding();	
+	void	UpdateAddressDecoding();
 	void	NotifyForceBreak();
+
+	// Shared slave initialization (cold reset + renderer sync + init regs),
+	// used by SetSlave (P2) and SetExtraSlaves (P3/P4).
+	void	InitSlave(ATPokeyEmulator *slave);
 
 	template<unsigned T_Ch>
 	int GetAUDFP1(uint32 t) const;
@@ -455,6 +472,16 @@ private:
 	IATPokeyEmulatorConnections *mpConn;
 	IATPokeyTraceOutput *mpTraceOutput = nullptr;
 	ATPokeyEmulator	*mpSlave;
+
+	// Quad POKEY (PokeyMax) audio-only slaves. mpSlave drives P2 (stereo);
+	// mpSlave3/mpSlave4 drive P3/P4 (quad). Null in mono/stereo.
+	ATPokeyEmulator	*mpSlave3 = nullptr;
+	ATPokeyEmulator	*mpSlave4 = nullptr;
+
+	// PokeyMax $D210 Saturate (bit0). Hardware default on (POKEY saturation
+	// curve); driven by PokeyMax via the channel-mode bridge. Quad mix only.
+	bool	mbQuadSaturation = true;
+
 	const bool	mbIsSlave;
 	bool	mbIrqAsserted;
 

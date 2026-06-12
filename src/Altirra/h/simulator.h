@@ -107,6 +107,16 @@ public:
 	virtual void LogRegisterWrites(vdspan<const ATMemoryWriteLogEntry> entries) = 0;
 };
 
+// Effective POKEY sound-generator count. Mono = master only; Stereo = master +
+// P2 (today's "Dual POKEYs"); Quad = master + P2/P3/P4 (PokeyMax). The effective
+// mode is the user "Dual POKEYs" preference unless a device (PokeyMax) installs
+// an override via SetPokeyModeOverride.
+enum class ATPokeyChannelMode : uint8 {
+	Mono,
+	Stereo,
+	Quad
+};
+
 class ATSimulator final : ATCPUEmulatorCallbacks,
 					ATAnticEmulatorConnections,
 					IATPokeyEmulatorConnections,
@@ -305,6 +315,21 @@ public:
 	void SetAutoLoadKernelSymbolsEnabled(bool enable);
 	void SetDualPokeysEnabled(bool enable);
 
+	// Effective POKEY channel mode (after applying any device override).
+	ATPokeyChannelMode GetPokeyChannelMode() const { return mActivePokeyChannelMode; }
+
+	// Device override for the POKEY channel mode (PokeyMax). mode: 0=mono,
+	// 1=stereo, 2=quad. The owner token guards against a stale Clear from a
+	// detached device reverting a newer owner. Clear restores the user
+	// "Dual POKEYs" preference. See IATPokeyChannelController.
+	void SetPokeyModeOverride(void *owner, uint32 mode);
+	void ClearPokeyModeOverride(void *owner);
+
+	// PokeyMax $D210 Saturate (bit0): drives the same-side quad mix curve
+	// (linear vs POKEY saturation). Only the active channel-mode owner may
+	// set it; affects quad mode only.
+	void SetPokeyQuadSaturation(void *owner, bool pokeyCurve);
+
 	bool IsFastBootEnabled() const { return mbFastBoot; }
 	void SetFastBootEnabled(bool enable);
 
@@ -495,6 +520,11 @@ private:
 	bool UpdateKernel(bool trackChanges, bool forceReload = false);
 	bool ReloadU1MBFirmware();
 	void InitMemoryMap();
+
+	// Recompute the effective POKEY channel mode from mbDualPokeys + any device
+	// override, flush the active renderers, and re-wire the master/slave chain.
+	void ApplyEffectivePokeyMode();
+
 	void RecreateMemLayerPOKEY();
 	void ShutdownMemoryMap();
 	void UpdateKernelROMSegments();
@@ -574,6 +604,17 @@ private:
 	bool mbROMAutoReloadEnabled;
 	bool mbAutoLoadKernelSymbols;
 	bool mbDualPokeys;
+
+	// Currently-wired effective POKEY channel mode (recomputed by
+	// ApplyEffectivePokeyMode from mbDualPokeys + any device override).
+	ATPokeyChannelMode mActivePokeyChannelMode = ATPokeyChannelMode::Mono;
+
+	// Device override (PokeyMax). mPokeyModeOverride is -1 when no override is
+	// active, else 0=mono/1=stereo/2=quad. mpPokeyModeOverrideOwner is the
+	// owning device token used to reject a stale Clear.
+	int mPokeyModeOverride = -1;
+	void *mpPokeyModeOverrideOwner = nullptr;
+
 	bool mbFastBoot;
 	bool mbKeyboardPresent;
 	bool mbForcedSelfTest;
@@ -624,12 +665,16 @@ private:
 	ATGTIAEmulator	mGTIA;
 	ATPokeyEmulator	mPokey;
 	ATPokeyEmulator	mPokey2;
+	ATPokeyEmulator	mPokey3;	// PokeyMax quad: P3 (audio-only, left)
+	ATPokeyEmulator	mPokey4;	// PokeyMax quad: P4 (audio-only, right)
 	IATAudioOutput	*mpAudioOutput;
 	ATPokeyTables	*mpPokeyTables;
 	ATScheduler		mScheduler;
 	ATScheduler		mSlowScheduler;
 	ATDiskEmulator	*mpDiskDrives[15];
-	ATAudioMonitor	*mpAudioMonitors[2];
+	// PokeyMax quad: up to four per-POKEY monitors (P1..P4). Mono uses [0],
+	// stereo [0..1], quad [0..3]. Sized by the active channel mode.
+	ATAudioMonitor	*mpAudioMonitors[4];
 	ATCassetteEmulator	*mpCassette;
 	IATJoystickManager	*mpJoysticks;
 	ATCartridgeEmulator	*mpCartridge[2];

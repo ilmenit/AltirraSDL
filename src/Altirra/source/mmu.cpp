@@ -176,6 +176,21 @@ void ATMMUEmulator::RebuildMappingTables() {
 			break;
 	}
 
+	// PB1 (BASIC) is reused as a RAM bank-address line in exactly the modes
+	// that block extended BASIC; PB7 (self-test) is reused in the Compy +
+	// 1088K modes.  In those modes the ROM-control bit latches when banking is
+	// enabled (see the latch handling in SetBankRegister).
+	mbBasicLatchReuse = blockExtBasic;
+
+	mbSelfTestLatchReuse = false;
+	switch(memmode) {
+		case kATMemoryMode_320K_Compy:
+		case kATMemoryMode_576K_Compy:
+		case kATMemoryMode_1088K:
+			mbSelfTestLatchReuse = true;
+			break;
+	}
+
 	uint8 basicMask = mbForceBasic ? 0 : 0x02;
 	if (kATHardwareModeTraits[hwmode].mbInternalBASIC)
 		basicMask = 0;
@@ -402,7 +417,50 @@ void ATMMUEmulator::SetBankRegister(uint8 bank) {
 
 	mCurrentBank = bank;
 
-	const uint32 bankInfo = mBankMap[bank];
+	uint32 bankInfo = mBankMap[bank];
+
+	// --- BASIC / self-test ROM latch (RAMBO PB1/PB7 reuse) ---
+	// In the extended-memory modes that reuse PORTB bit 1 (BASIC) and bit 7
+	// (self-test) as RAM bank-address lines, those ROM-control bits behave as
+	// latches on real hardware: they update only while CPU/ANTIC banking is
+	// inactive, and HOLD their last value while the bit is driving the bank
+	// address.  The stateless mBankMap[] forces the ROM off during banking
+	// (blockExtBasic / the self-test skip); here we restore the captured value
+	// so the ROM stays as it was last latched -- matching real XL/XE hardware
+	// and the sim816 reference (hw.c: basic_latch / selftest_latch, updated
+	// only when PORTB bit 4 = 1).
+	const bool banking =
+		(bankInfo & (kMapInfo_ExtendedCPU | kMapInfo_ExtendedANTIC)) != 0;
+
+	// The latch value is always captured while banking is inactive (so the
+	// option can be toggled mid-session with an up-to-date value); the captured
+	// value is only applied when the latch is enabled.  When disabled, bankInfo
+	// stays at the legacy combinatorial value (ROM forced off during banking).
+	if (mbBasicLatchReuse) {
+		if (banking) {
+			if (mbLatchEnabled)
+				bankInfo = (bankInfo & ~(uint32)kMapInfo_BASIC) | mLatchedBasic;
+		} else
+			mLatchedBasic = (uint16)(bankInfo & kMapInfo_BASIC);
+	}
+
+	if (mbSelfTestLatchReuse) {
+		if (banking) {
+			if (mbLatchEnabled) {
+				uint32 st = mLatchedSelfTest;
+
+				// The self-test ROM still requires the OS kernel ROM enabled
+				// (PORTB bit 0 = 1); if the kernel is banked out the overlay
+				// cannot appear.
+				if (!(bank & 0x01))
+					st = 0;
+
+				bankInfo = (bankInfo & ~(uint32)kMapInfo_SelfTest) | st;
+			}
+		} else {
+			mLatchedSelfTest = (uint16)(bankInfo & kMapInfo_SelfTest);
+		}
+	}
 
 	if (mCurrentBankInfo == bankInfo)
 		return;
@@ -474,6 +532,21 @@ void ATMMUEmulator::SetBankRegister(uint8 bank) {
 		mpMemMan->EnableLayer(mpLayerHiddenRAM, (bankInfo & kMapInfo_HiddenRAM) != 0);
 
 	UpdateROMMappingHook();
+}
+
+void ATMMUEmulator::SetBasicSelfTestLatchEnabled(bool enabled) {
+	if (mbLatchEnabled == enabled)
+		return;
+
+	mbLatchEnabled = enabled;
+
+	// Re-apply the current PORTB value so the change takes effect immediately.
+	// Defeat both early-outs in SetBankRegister (same pattern as the forced
+	// reinit at the end of RebuildMappingTables).
+	const uint8 bank = mCurrentBank;
+	mCurrentBank = ~bank;
+	mCurrentBankInfo = ~mCurrentBankInfo;
+	SetBankRegister(bank);
 }
 
 void ATMMUEmulator::SetAxlonBank(uint8 bank) {

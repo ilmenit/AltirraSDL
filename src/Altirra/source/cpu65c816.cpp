@@ -113,7 +113,7 @@ bool ATCPUEmulator::Decode65C816(uint8 opcode, bool unalignedDP, bool emu, bool 
 				break;
 
 			case 0x17:
-				Decode65816AddrDpLongIndY(unalignedDP);
+				Decode65816AddrDpLongIndY(unalignedDP, emu);
 				break;
 
 			case 0x19:
@@ -1074,9 +1074,9 @@ bool ATCPUEmulator::Decode65C816(uint8 opcode, bool unalignedDP, bool emu, bool 
 		case 0x6B:	// RTL
 			*mpDstState++ = kStateWait;				// 2
 			*mpDstState++ = kStateWait;				// 3
-			*mpDstState++ = kStatePopPCLNative;		// 4
-			*mpDstState++ = kStatePopPCHP1Native;	// 5
-			*mpDstState++ = kStatePopPBKNative;		// 6
+			*mpDstState++ = kStatePopPCLRtl;		// 4
+			*mpDstState++ = kStatePopPCHP1Rtl;		// 5
+			*mpDstState++ = kStatePopPBKRtl;		// 6
 			break;
 
 		case 0x6C:	// JMP (abs)
@@ -1513,7 +1513,17 @@ bool ATCPUEmulator::Decode65C816(uint8 opcode, bool unalignedDP, bool emu, bool 
 			if (mpVerifier)
 				*mpDstState++ = kStateVerifyInsn;
 
-			*mpDstState++ = kStatePopNative;	//** doesn't wrap even in emu mode
+			// PLB pulls DBR from the stack.  Unlike the "old" 6502 pulls
+			// (PLA/PLX/PLY), the 65C816's new PLB indexes the stack with
+			// full 16-bit arithmetic even in emulation mode, so a pull at
+			// S=$01FF reads from $0200 (crossing into page 2) rather than
+			// wrapping to $0100.  kStatePopNative performs the 16-bit
+			// increment and re-forces SH=$01 afterward.  Verified against
+			// Acid800 ("PLB should index across to page two") and sim816;
+			// the Tom Harte 65816 corpus models this as page-1 confinement,
+			// which is incorrect for PLB (sim816 fails the same ~36 ab.e
+			// tests for exactly this reason).
+			*mpDstState++ = kStatePopNative;
 			*mpDstState++ = kStateWait;
 			*mpDstState++ = kStateWait;
 			*mpDstState++ = kStateDSetSZ;
@@ -2126,8 +2136,10 @@ void ATCPUEmulator::Decode65816AddrDpIndX(bool unalignedDP, bool emu) {
 	*mpDstState++ = kState816ReadByte;	
 
 	// In emulation mode, (dp,X) wraps when reading its second byte even if DP is
-	// unaligned.
-	*mpDstState++ = !emu ? kStateReadIndAddrDp : kState816ReadIndAddrDpInPage;
+	// unaligned (DL!=0) -- but only when the direct page is in the first 256
+	// bytes of bank 0 (DH==0).  The dedicated state resolves the DH condition at
+	// runtime; native mode never wraps.
+	*mpDstState++ = !emu ? kStateReadIndAddrDp : kState816ReadIndAddrDpXInPage;
 
 	if (mbHistoryEnabled)
 		*mpDstState++ = kStateAddEAToHistory;
@@ -2153,23 +2165,29 @@ void ATCPUEmulator::Decode65816AddrDpLongInd(bool unalignedDP) {
 	if (unalignedDP)
 		*mpDstState++ = kStateWait;
 
-	*mpDstState++ = kState816ReadByte;	
-	*mpDstState++ = kStateReadIndAddrDpLongH;	
-	*mpDstState++ = kStateReadIndAddrDpLongB;	
+	// The non-indexed [dp] long pointer always reads its 24 bits linearly
+	// (16-bit wrap only), even in emulation mode with an aligned direct page.
+	// This is asymmetric with [dp],Y, which page-wraps the bank byte; both
+	// behaviours are confirmed by the Tom Harte SingleStepTests corpus.
+	*mpDstState++ = kState816ReadByte;
+	*mpDstState++ = kStateReadIndAddrDpLongH;
+	*mpDstState++ = kStateReadIndAddrDpLongB;
 
 	if (mbHistoryEnabled)
 		*mpDstState++ = kStateAddEAToHistory;
 }
 
-void ATCPUEmulator::Decode65816AddrDpLongIndY(bool unalignedDP) {
+void ATCPUEmulator::Decode65816AddrDpLongIndY(bool unalignedDP, bool emu) {
 	*mpDstState++ = kStateReadAddrDp;
 
 	if (unalignedDP)
 		*mpDstState++ = kStateWait;
 
-	*mpDstState++ = kState816ReadByte;	
-	*mpDstState++ = kStateReadIndAddrDpLongH;
-	*mpDstState++ = kStateReadIndAddrDpLongB;
+	const bool wrap = emu && !unalignedDP;
+
+	*mpDstState++ = kState816ReadByte;
+	*mpDstState++ = wrap ? kState816ReadIndAddrDpLongHInPage : kStateReadIndAddrDpLongH;
+	*mpDstState++ = wrap ? kState816ReadIndAddrDpLongBInPage : kStateReadIndAddrDpLongB;
 	*mpDstState++ = kStateReadAddrAddY;
 
 	if (mbHistoryEnabled)

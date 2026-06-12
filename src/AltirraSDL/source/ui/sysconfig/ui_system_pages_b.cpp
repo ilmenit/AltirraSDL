@@ -108,6 +108,7 @@ static const DeviceCatalogEntry kInternalDevices[] = {
 	{ "warpos",         "APE Warp+ OS 32-in-1", "Allows soft-switching between 32 different OS ROMs." },
 	{ "bit3",           "Bit 3 Full-View 80", "80 column video board for the 800, replaces RAM slot 3." },
 	{ "covox",          "Covox", "Simple DAC for 8-bit digital sound." },
+	{ "pokeymax",       "PokeyMax", "Enhanced audio including Mono/Stereo/Quad POKEY, PSG, SID, Covox, and the Sample DMA Engine." },
 	{ "rapidus",        "Rapidus Accelerator", "6502/65C816 accelerator at 20MHz with 15MB memory and 512KB flash." },
 	{ "soundboard",     "SoundBoard", "Multi-channel wavetable sound with 512K internal memory." },
 	{ "myide-d1xx",     "MyIDE (internal)", "IDE adapter attached to internal port, using the $D1xx address range." },

@@ -316,6 +316,13 @@ static void BuildFileMenu(NSMenu *menu) {
 		AddItem(attachMenu, @"Rotate Up", false, true, [=]{
 			g_sim.RotateDrives(8, -1);
 		});
+		// Extension over Windows Altirra (approved): swap the disks
+		// mounted in drive 1 (index 0) and drive 2 (index 1).
+		// Menu item only, no default shortcut, to keep behaviour
+		// consistent with the SDL/ImGui menu path on all platforms.
+		AddItem(attachMenu, @"Swap Disks", false, true, [=]{
+			g_sim.SwapDrives(0, 1);
+		});
 		AddSeparator(attachMenu);
 
 		for (int i = 0; i < 8; ++i) {

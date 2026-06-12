@@ -309,6 +309,8 @@ bool ATCPUEmulator::IsNextCycleWrite() const {
 			case kStateReadIndAddrDpY:
 			case kStateReadIndAddrDpLongH:
 			case kStateReadIndAddrDpLongB:
+			case kState816ReadIndAddrDpLongHInPage:
+			case kState816ReadIndAddrDpLongBInPage:
 			case kStateReadAddrAddY:
 			case kState816ReadAddrL:
 			case kState816ReadAddrH:
@@ -1119,6 +1121,8 @@ namespace {
 			case kStateReadIndAddrDpY:
 			case kStateReadIndAddrDpLongH:
 			case kStateReadIndAddrDpLongB:
+			case kState816ReadIndAddrDpLongHInPage:
+			case kState816ReadIndAddrDpLongBInPage:
 			case kStateReadAddrAddY:
 			case kState816ReadAddrL:
 			case kState816ReadAddrH:

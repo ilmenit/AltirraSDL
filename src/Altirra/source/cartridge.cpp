@@ -1667,7 +1667,14 @@ bool ATCartridgeEmulator::WriteByte_CCTL_MaxFlash_128K_MyIDE(void *thisptr0, uin
 }
 
 sint32 ATCartridgeEmulator::ReadByte_CCTL_MaxFlash_1024K(void *thisptr0, uint32 address) {
-	((ATCartridgeEmulator *)thisptr0)->SetCartBank(address & 0x80 ? -1 : (uint8)address & 0x7F);
+	// MaxFlash8: CCTL reads return open bus ($FF) WITHOUT switching the bank.
+	// Bank selection happens only on a WRITE to $D500-$D5FF (see WriteByte
+	// below).  This matches the sim816 reference model (hw.c sim_cctl), which
+	// RapidusOS/SDX relies on: it probes $D500-$D503 by reading and must not
+	// have the cart bank/enable state disturbed by that probe.  (Deviation from
+	// the AtariMax read-latch hardware is intentional and user-approved — see
+	// memory/sota-hang.md "CONFIRMED ROOT CAUSE".)
+	(void)address;
 	return 0xFF;
 }
 

@@ -1407,7 +1407,10 @@ class ATUIAudioScope final : public ATUIContainer {
 public:
 	ATUIAudioScope();
 
-	void SetAudioMonitor(bool secondary, ATAudioMonitor *mon);
+	// PokeyMax quad: up to 4 channels (P1..P4). Mono/stereo use 0/1 only.
+	static constexpr int kMaxChannels = 4;
+
+	void SetAudioMonitor(uint32 index, ATAudioMonitor *mon);
 
 	void Update();
 
@@ -1420,9 +1423,9 @@ protected:
 	void UpdateRateLabel();
 	void UpdateSampleCounts(int i);
 
-	ATAudioMonitor *mpAudioMonitors[2] {};
+	ATAudioMonitor *mpAudioMonitors[kMaxChannels] {};
 
-	vdfastvector<float> mWaveforms[2];
+	vdfastvector<float> mWaveforms[kMaxChannels];
 	vdfastvector<vdpoint32> mLineData;
 	vdfastvector<vdfloat2> mLineDataF;
 	vdrefptr<ATUILabel> mpRateLabel;
@@ -1450,8 +1453,11 @@ ATUIAudioScope::ATUIAudioScope() {
 	SetHitTransparent(true);
 }
 
-void ATUIAudioScope::SetAudioMonitor(bool secondary, ATAudioMonitor *mon) {
-	const int i = secondary ? 1 : 0;
+void ATUIAudioScope::SetAudioMonitor(uint32 index, ATAudioMonitor *mon) {
+	const int i = (int)index;
+	if (i < 0 || i >= kMaxChannels)
+		return;
+
 	if (mpAudioMonitors[i] == mon)
 		return;
 
@@ -1483,9 +1489,9 @@ namespace {
 }
 
 void ATUIAudioScope::Update() {
-	ATPokeyAudioLog *logs[2] {};
+	ATPokeyAudioLog *logs[kMaxChannels] {};
 
-	for(int i=0; i<2; ++i) {
+	for(int i=0; i<kMaxChannels; ++i) {
 		ATAudioMonitor *mon = mpAudioMonitors[i];
 		if (!mon)
 			continue;
@@ -1507,7 +1513,7 @@ void ATUIAudioScope::Update() {
 		n >>= 1;
 	}
 
-	for(int i=0; i<2; ++i) {
+	for(int i=0; i<kMaxChannels; ++i) {
 		ATPokeyAudioLog *log = logs[i];
 		if (!log)
 			continue;
@@ -1572,8 +1578,8 @@ void ATUIAudioScope::OnCreate() {
 void ATUIAudioScope::OnSize() {
 	ATUIContainer::OnSize();
 
-	UpdateSampleCounts(0);
-	UpdateSampleCounts(1);
+	for(int i=0; i<kMaxChannels; ++i)
+		UpdateSampleCounts(i);
 }
 
 ATUIWidgetMetrics ATUIAudioScope::OnMeasure() {
@@ -1618,7 +1624,16 @@ void ATUIAudioScope::Paint(IVDDisplayRenderer& rdr, sint32 w, sint32 h) {
 		rdr.FillRect(0, ymid, w, 1);
 	}
 
-	for(int i=0; i<2; ++i) {
+	// Per-channel trace colors. P1 red / P2 green match the historical
+	// stereo display; P3 blue / P4 amber are the PokeyMax quad channels.
+	static constexpr uint32 kChannelColors[kMaxChannels] = {
+		0xFF0000,	// P1
+		0x008A00,	// P2
+		0x3060FF,	// P3
+		0xC0A000,	// P4
+	};
+
+	for(int i=0; i<kMaxChannels; ++i) {
 		ATAudioMonitor *mon = mpAudioMonitors[i];
 		if (!mon)
 			continue;
@@ -1629,7 +1644,7 @@ void ATUIAudioScope::Paint(IVDDisplayRenderer& rdr, sint32 w, sint32 h) {
 
 		size_t n = waveform.size();
 
-		rdr.SetColorRGB(i ? 0x008A00 : 0xFF0000);
+		rdr.SetColorRGB(kChannelColors[i]);
 
 		if (rdr.GetCaps().mbSupportsPolyLineF) {
 			float xoffset2 = xoffset + 0.5f;
@@ -1659,8 +1674,8 @@ void ATUIAudioScope::Paint(IVDDisplayRenderer& rdr, sint32 w, sint32 h) {
 void ATUIAudioScope::AdjustRate(int delta) {
 	mRateIndex = (uint32)std::clamp<int>((int)mRateIndex + delta, 0, (int)vdcountof(kUsPerDiv) - 1);
 
-	UpdateSampleCounts(0);
-	UpdateSampleCounts(1);
+	for(int i=0; i<kMaxChannels; ++i)
+		UpdateSampleCounts(i);
 	UpdateRateLabel();
 }
 
@@ -1744,8 +1759,8 @@ public:
 	void ClearWatchedValue(int index) override;
 	void SetWatchedValue(int index, uint32 value, WatchFormat format) override;
 	void SetAudioStatus(const ATUIAudioStatus *status) override;
-	void SetAudioMonitor(bool secondary, ATAudioMonitor *monitor) override;
-	void SetAudioDisplayEnabled(bool secondary, bool enable) override;
+	void SetAudioMonitor(uint32 index, ATAudioMonitor *monitor) override;
+	void SetAudioDisplayEnabled(uint32 index, bool enable) override;
 	void SetAudioScopeEnabled(bool enable) override;
 	void SetSlightSID(ATSlightSIDEmulator *emu) override;
 
@@ -1831,7 +1846,10 @@ protected:
 	uint32	mWatchedValues[8];
 	WatchFormat mWatchedValueFormats[8];
 
-	ATAudioMonitor	*mpAudioMonitors[2] = {};
+	// PokeyMax quad: up to 4 POKEY audio monitors/displays (P1..P4).
+	// Mono/stereo populate only [0]/[1].
+	static constexpr uint32 kNumAudioChannels = 4;
+	ATAudioMonitor	*mpAudioMonitors[kNumAudioChannels] = {};
 	ATSlightSIDEmulator *mpSlightSID = nullptr;
 
 	VDDisplaySubRenderCache mFpsRenderCache;
@@ -1877,7 +1895,7 @@ protected:
 	vdrefptr<ATUILabel> mpHeldButtonLabels[3];
 	vdrefptr<ATUILabel> mpPendingHeldKeyLabel;
 	vdrefptr<ATUIAudioStatusDisplay> mpAudioStatusDisplay;
-	vdrefptr<ATUIAudioDisplay> mpAudioDisplays[2];
+	vdrefptr<ATUIAudioDisplay> mpAudioDisplays[kNumAudioChannels];
 	vdrefptr<ATUIAudioScope> mpAudioScope;
 	vdrefptr<ATUIWidget> mpPadInput;
 	vdrefptr<ATUIOverlayCustomization> mpOverlayCustomization;
@@ -1904,7 +1922,14 @@ protected:
 
 	static constexpr char kTagAudioDisplay[] = "audio_display";
 	static constexpr char kTagAudioDisplay2[] = "audio_display_2";
+	static constexpr char kTagAudioDisplay3[] = "audio_display_3";
+	static constexpr char kTagAudioDisplay4[] = "audio_display_4";
 	static constexpr char kTagAudioScope[] = "audio_scope";
+
+	// PokeyMax quad: customization tag per audio display channel (P1..P4).
+	static constexpr const char *kTagAudioDisplayN[kNumAudioChannels] = {
+		kTagAudioDisplay, kTagAudioDisplay2, kTagAudioDisplay3, kTagAudioDisplay4
+	};
 	static constexpr char kTagPadInput[] = "pad_input";
 };
 
@@ -2489,42 +2514,49 @@ void ATUIRenderer::SetAudioStatus(const ATUIAudioStatus *status) {
 	}
 }
 
-void ATUIRenderer::SetAudioMonitor(bool secondary, ATAudioMonitor *monitor) {
-	mpAudioMonitors[secondary] = monitor;
+void ATUIRenderer::SetAudioMonitor(uint32 index, ATAudioMonitor *monitor) {
+	if (index >= kNumAudioChannels)
+		return;
 
-	if (mpAudioDisplays[secondary])
-		mpAudioDisplays[secondary]->SetAudioMonitor(monitor);
+	mpAudioMonitors[index] = monitor;
+
+	if (mpAudioDisplays[index])
+		mpAudioDisplays[index]->SetAudioMonitor(monitor);
 
 	if (mpAudioScope)
-		mpAudioScope->SetAudioMonitor(secondary, monitor);
+		mpAudioScope->SetAudioMonitor(index, monitor);
 }
 
-void ATUIRenderer::SetAudioDisplayEnabled(bool secondary, bool enable) {
-	ATUIAudioDisplay *disp = mpAudioDisplays[secondary];
+void ATUIRenderer::SetAudioDisplayEnabled(uint32 index, bool enable) {
+	if (index >= kNumAudioChannels)
+		return;
+
+	ATUIAudioDisplay *disp = mpAudioDisplays[index];
 
 	if (enable) {
 		if (!disp) {
 			disp = new ATUIAudioDisplay;
-			mpAudioDisplays[secondary] = disp;
+			mpAudioDisplays[index] = disp;
 			mpContainer->AddChild(disp);
 			disp->SetCyclesPerSecond(mCyclesPerSecond);
 			disp->SetAlphaFillColor(0x80000000);
 			disp->SetBigFont(mpSysMonoFont);
 			disp->SetSmallFont(mpSmallMonoSysFont);
 
-			if (!secondary)
+			// Only the primary (P1) display hosts the SlightSID readout.
+			if (index == 0)
 				disp->SetSlightSID(mpSlightSID);
-			
-			disp->SetAudioMonitor(mpAudioMonitors[secondary]);
 
-			mpOverlayCustomization->BindCustomizableWidget(secondary ? kTagAudioDisplay2 : kTagAudioDisplay, disp);
+			disp->SetAudioMonitor(mpAudioMonitors[index]);
+
+			mpOverlayCustomization->BindCustomizableWidget(kTagAudioDisplayN[index], disp);
 		}
 	} else {
 		if (disp) {
-			mpOverlayCustomization->BindCustomizableWidget(secondary ? kTagAudioDisplay2 : kTagAudioDisplay, nullptr);
+			mpOverlayCustomization->BindCustomizableWidget(kTagAudioDisplayN[index], nullptr);
 			disp->SetAudioMonitor(nullptr);
 			disp->Destroy();
-			mpAudioDisplays[secondary] = nullptr;
+			mpAudioDisplays[index] = nullptr;
 		}
 	}
 }
@@ -2537,8 +2569,9 @@ void ATUIRenderer::SetAudioScopeEnabled(bool enable) {
 		mpAudioScope = new ATUIAudioScope;
 		mpContainer->AddChild(mpAudioScope);
 		mpAudioScope->SetAlphaFillColor(0xC0000000);
-		mpAudioScope->SetAudioMonitor(false, mpAudioMonitors[0]);
-		mpAudioScope->SetAudioMonitor(true, mpAudioMonitors[1]);
+
+		for(uint32 i=0; i<kNumAudioChannels; ++i)
+			mpAudioScope->SetAudioMonitor(i, mpAudioMonitors[i]);
 
 		mpOverlayCustomization->BindCustomizableWidget(kTagAudioScope, mpAudioScope);
 	} else {
@@ -2546,8 +2579,10 @@ void ATUIRenderer::SetAudioScopeEnabled(bool enable) {
 			return;
 
 		mpOverlayCustomization->BindCustomizableWidget(kTagAudioScope, nullptr);
-		mpAudioScope->SetAudioMonitor(false, nullptr);
-		mpAudioScope->SetAudioMonitor(true, nullptr);
+
+		for(uint32 i=0; i<kNumAudioChannels; ++i)
+			mpAudioScope->SetAudioMonitor(i, nullptr);
+
 		mpAudioScope->Destroy();
 		mpAudioScope = nullptr;
 	}
@@ -2685,6 +2720,8 @@ void ATUIRenderer::SetUIManager(ATUIManager *m) {
 		m->GetMainWindow()->AddChild(mpOverlayCustomization);
 		mpOverlayCustomization->AddCustomizableWidget(kTagAudioDisplay, mpAudioDisplays[0], L"Audio display (left/mono channel)");
 		mpOverlayCustomization->AddCustomizableWidget(kTagAudioDisplay2, mpAudioDisplays[1], L"Audio display (right channel)");
+		mpOverlayCustomization->AddCustomizableWidget(kTagAudioDisplay3, mpAudioDisplays[2], L"Audio display (PokeyMax P3, left)");
+		mpOverlayCustomization->AddCustomizableWidget(kTagAudioDisplay4, mpAudioDisplays[3], L"Audio display (PokeyMax P4, right)");
 		mpOverlayCustomization->AddCustomizableWidget(kTagAudioScope, mpAudioScope, L"Audio scope");
 		mpOverlayCustomization->AddCustomizableWidget(kTagPadInput, mpPadInput, L"Pad input");
 		mpOverlayCustomization->SetPlacement(vdrect32f(0, 0, 1, 1), vdpoint32(0, 0), vdfloat2{0, 0});
@@ -2749,6 +2786,11 @@ void ATUIRenderer::SetUIManager(ATUIManager *m) {
 			vdrect32f(0, 1, 0, 1), vdpoint32(8, -audioDisplayMargin), vdfloat2{0, 1}, vdsize32(), true);
 		mpOverlayCustomization->SetDefaultPlacement(kTagAudioDisplay2,
 			vdrect32f(1, 1, 1, 1), vdpoint32(-8, -audioDisplayMargin), vdfloat2{1, 1}, vdsize32(), true);
+		// PokeyMax quad: P3 stacks above P1 (left), P4 above P2 (right).
+		mpOverlayCustomization->SetDefaultPlacement(kTagAudioDisplay3,
+			vdrect32f(0, 1, 0, 1), vdpoint32(8, -audioDisplayMargin * 2), vdfloat2{0, 1}, vdsize32(), true);
+		mpOverlayCustomization->SetDefaultPlacement(kTagAudioDisplay4,
+			vdrect32f(1, 1, 1, 1), vdpoint32(-8, -audioDisplayMargin * 2), vdfloat2{1, 1}, vdsize32(), true);
 		mpOverlayCustomization->SetDefaultPlacement(kTagAudioScope,
 			vdrect32f(0, 0, 0, 0), vdpoint32(32, 32), vdfloat2{0, 0}, vdsize32(), true);
 		mpOverlayCustomization->SetDefaultPlacement(kTagPadInput,

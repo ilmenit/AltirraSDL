@@ -23,7 +23,7 @@
 ATAudioMonitor::ATAudioMonitor()
 	: mpPokey(NULL)
 	, mpUIRenderer(NULL)
-	, mbSecondary(false)
+	, mChannelIndex(0)
 {
 }
 
@@ -31,10 +31,10 @@ ATAudioMonitor::~ATAudioMonitor() {
 	Shutdown();
 }
 
-void ATAudioMonitor::Init(ATPokeyEmulator *pokey, IATUIRenderer *uir, bool secondary) {
+void ATAudioMonitor::Init(ATPokeyEmulator *pokey, IATUIRenderer *uir, uint32 channelIndex) {
 	mpPokey = pokey;
 	mpUIRenderer = uir;
-	mbSecondary = secondary;
+	mChannelIndex = channelIndex;
 
 	memset(mAudioStates, 0, sizeof mAudioStates);
 
@@ -44,7 +44,7 @@ void ATAudioMonitor::Init(ATPokeyEmulator *pokey, IATUIRenderer *uir, bool secon
 	mLog.mCyclesPerSample = 114;
 
 	pokey->SetAudioLog(&mLog);
-	uir->SetAudioMonitor(mbSecondary, this);
+	uir->SetAudioMonitor(mChannelIndex, this);
 }
 
 void ATAudioMonitor::Shutdown() {
@@ -54,7 +54,7 @@ void ATAudioMonitor::Shutdown() {
 	}
 
 	if (mpUIRenderer) {
-		mpUIRenderer->SetAudioMonitor(mbSecondary, NULL);
+		mpUIRenderer->SetAudioMonitor(mChannelIndex, NULL);
 		mpUIRenderer = NULL;
 
 	}

@@ -75,6 +75,7 @@ extern ATDeviceConfigState g_devCfg;
 // =========================================================================
 
 bool RenderCovoxConfig(ATPropertySet& props, ATDeviceConfigState& st);
+bool RenderPokeyMaxConfig(ATPropertySet& props, ATDeviceConfigState& st);
 bool Render850Config(ATPropertySet& props, ATDeviceConfigState& st);
 bool Render850FullConfig(ATPropertySet& props, ATDeviceConfigState& st);
 bool RenderModemConfig(ATPropertySet& props, ATDeviceConfigState& st, bool fullEmu, bool is835, bool hasConnectRate = true);

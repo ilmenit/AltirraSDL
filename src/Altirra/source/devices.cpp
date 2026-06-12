@@ -33,6 +33,7 @@ extern const ATDeviceDefinition g_ATDeviceDefIDERawImage;
 extern const ATDeviceDefinition g_ATDeviceDefIDEVHDImage;
 extern const ATDeviceDefinition g_ATDeviceDefRTime8;
 extern const ATDeviceDefinition g_ATDeviceDefCovox;
+extern const ATDeviceDefinition g_ATDeviceDefPokeyMax;
 extern const ATDeviceDefinition g_ATDeviceDefXEP80;
 extern const ATDeviceDefinition g_ATDeviceDefSlightSID;
 extern const ATDeviceDefinition g_ATDeviceDefDragonCart;
@@ -141,6 +142,7 @@ void ATRegisterDevices(ATDeviceManager& dm) {
 		&g_ATDeviceDefIDEVHDImage,
 		&g_ATDeviceDefRTime8,
 		&g_ATDeviceDefCovox,
+		&g_ATDeviceDefPokeyMax,
 		&g_ATDeviceDefXEP80,
 		&g_ATDeviceDefSlightSID,
 		&g_ATDeviceDefDragonCart,

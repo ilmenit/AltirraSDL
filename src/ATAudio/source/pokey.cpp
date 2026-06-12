@@ -294,6 +294,11 @@ void ATPokeyEmulator::ColdReset() {
 	if (mpSlave)
 		mpSlave->ColdReset();
 
+	if (mpSlave3)
+		mpSlave3->ColdReset();
+	if (mpSlave4)
+		mpSlave4->ColdReset();
+
 	NegateIrq(false);
 	NotifyForceBreak();
 }
@@ -302,37 +307,68 @@ bool ATPokeyEmulator::IsStereoEnabled() const {
 	return mpSlave != nullptr;
 }
 
+void ATPokeyEmulator::InitSlave(ATPokeyEmulator *slave) {
+	slave->ColdReset();
+	slave->SyncRenderers(mpRenderer);
+
+	// If we're hot-starting a slave, let's try to get it into
+	// a somewhat reasonable state.
+
+	static const uint8 kInitRegs[][2]={
+		{ 0x00, 0xFF },		// AUDF1 = $00
+		{ 0x01, 0xB0 },		// AUDC1 = $B0
+		{ 0x02, 0xFF },		// AUDF2 = $00
+		{ 0x03, 0xB0 },		// AUDC2 = $B0
+		{ 0x04, 0xFF },		// AUDF3 = $00
+		{ 0x05, 0xB0 },		// AUDC3 = $B0
+		{ 0x06, 0xFF },		// AUDF4 = $00
+		{ 0x07, 0xB0 },		// AUDC4 = $B0
+		{ 0x08, 0x00 },		// AUDCTL = $00
+		{ 0x0F, 0x03 },		// SKCTL = $03
+	};
+
+	for(const auto& data : kInitRegs)
+		slave->WriteByte(data[0], data[1]);
+}
+
 void ATPokeyEmulator::SetSlave(ATPokeyEmulator *slave) {
 	if (mpSlave)
 		mpSlave->ColdReset();
 
+	// Changing the slave-1 (P2) wiring also tears down any quad slaves;
+	// the caller must re-establish P3/P4 via SetExtraSlaves afterward.
+	if (mpSlave3)
+		mpSlave3->ColdReset();
+	if (mpSlave4)
+		mpSlave4->ColdReset();
+
 	mpSlave = slave;
+	mpSlave3 = nullptr;
+	mpSlave4 = nullptr;
 
 	UpdateAddressDecoding();
 
-	if (mpSlave) {
-		mpSlave->ColdReset();
-		mpSlave->SyncRenderers(mpRenderer);
+	if (mpSlave)
+		InitSlave(mpSlave);
 
-		// If we're hot-starting a slave, let's try to get it into
-		// a somewhat reasonable state.
+	UpdateMixTable();
+}
 
-		static const uint8 kInitRegs[][2]={
-			{ 0x00, 0xFF },		// AUDF1 = $00
-			{ 0x01, 0xB0 },		// AUDC1 = $B0
-			{ 0x02, 0xFF },		// AUDF2 = $00
-			{ 0x03, 0xB0 },		// AUDC2 = $B0
-			{ 0x04, 0xFF },		// AUDF3 = $00
-			{ 0x05, 0xB0 },		// AUDC3 = $B0
-			{ 0x06, 0xFF },		// AUDF4 = $00
-			{ 0x07, 0xB0 },		// AUDC4 = $B0
-			{ 0x08, 0x00 },		// AUDCTL = $00
-			{ 0x0F, 0x03 },		// SKCTL = $03
-		};
+void ATPokeyEmulator::SetExtraSlaves(ATPokeyEmulator *slave3, ATPokeyEmulator *slave4) {
+	if (mpSlave3 && mpSlave3 != slave3)
+		mpSlave3->ColdReset();
+	if (mpSlave4 && mpSlave4 != slave4)
+		mpSlave4->ColdReset();
 
-		for(const auto& data : kInitRegs)
-			mpSlave->WriteByte(data[0], data[1]);
-	}
+	mpSlave3 = slave3;
+	mpSlave4 = slave4;
+
+	UpdateAddressDecoding();
+
+	if (mpSlave3)
+		InitSlave(mpSlave3);
+	if (mpSlave4)
+		InitSlave(mpSlave4);
 
 	UpdateMixTable();
 }
@@ -1329,6 +1365,11 @@ void ATPokeyEmulator::AdvanceScanLine() {
 
 	if (mpSlave)
 		mpSlave->AdvanceScanLine();
+
+	if (mpSlave3)
+		mpSlave3->AdvanceScanLine();
+	if (mpSlave4)
+		mpSlave4->AdvanceScanLine();
 }
 
 void ATPokeyEmulator::AdvanceFrame(bool pushAudio, uint64 timestamp) {
@@ -1336,6 +1377,11 @@ void ATPokeyEmulator::AdvanceFrame(bool pushAudio, uint64 timestamp) {
 
 	if (mpSlave)
 		mpSlave->UpdatePots(0);
+
+	if (mpSlave3)
+		mpSlave3->UpdatePots(0);
+	if (mpSlave4)
+		mpSlave4->UpdatePots(0);
 
 	if (mKeyCodeTimer) {
 		if (!--mKeyCodeTimer) {
@@ -1363,6 +1409,11 @@ void ATPokeyEmulator::AdvanceFrame(bool pushAudio, uint64 timestamp) {
 
 	if (mpSlave)
 		mpSlave->PostFrameUpdate(t);
+
+	if (mpSlave3)
+		mpSlave3->PostFrameUpdate(t);
+	if (mpSlave4)
+		mpSlave4->PostFrameUpdate(t);
 }
 
 void ATPokeyEmulator::PostFrameUpdate(uint32 t) {
@@ -2354,8 +2405,15 @@ void ATPokeyEmulator::SetupDeferredTimerEventsLinked(int channel, uint32 t0, uin
 sint32 ATPokeyEmulator::ReadBackWriteRegister(uint8 reg) const {
 	reg &= mAddressMask;
 
-	if (mpSlave && (reg & 0x10))
-		return mpSlave->ReadBackWriteRegister(reg);
+	// Bank routing: bits 5-4 select master (0) / P2 (1) / P3 (2) / P4 (3).
+	// In mono/stereo only banks 0/1 occur (mAddressMask 0x0F/0x1F).
+	if (reg & 0x30) {
+		const uint8 bank = (reg >> 4) & 3;
+		ATPokeyEmulator *slave = bank == 1 ? mpSlave : bank == 2 ? mpSlave3 : mpSlave4;
+
+		if (slave)
+			return slave->ReadBackWriteRegister(reg & 0x0F);
+	}
 
 	switch (reg & 0x0F) {
 		case 0x00:	// $D200 AUDF1
@@ -2419,9 +2477,12 @@ uint8 ATPokeyEmulator::DebugReadByte(uint8 reg) const {
 			return const_cast<ATPokeyEmulator *>(this)->ReadByte(reg);
 	}
 
-	if (reg & 0x10) {
-		if (mpSlave)
-			return mpSlave->DebugReadByte(reg & 0x0f);
+	if (reg & 0x30) {
+		const uint8 bank = (reg >> 4) & 3;
+		ATPokeyEmulator *slave = bank == 1 ? mpSlave : bank == 2 ? mpSlave3 : mpSlave4;
+
+		if (slave)
+			return slave->DebugReadByte(reg & 0x0f);
 		else
 			return DebugReadByte(reg & 0x0f);
 	}
@@ -2570,14 +2631,32 @@ uint8 ATPokeyEmulator::ReadByte(uint8 reg) {
 			break;
 	}
 
-	if (reg & 0x10)
-		return mpSlave->ReadByte(reg & 0x0f);
+	if (reg & 0x30) {
+		const uint8 bank = (reg >> 4) & 3;
+		ATPokeyEmulator *slave = bank == 1 ? mpSlave : bank == 2 ? mpSlave3 : mpSlave4;
+
+		if (slave)
+			return slave->ReadByte(reg & 0x0f);
+	}
 
 	return 0xFF;
 }
 
 void ATPokeyEmulator::WriteByte(uint8 reg, uint8 value) {
 	reg &= mAddressMask;
+
+	// Quad bank routing for P3/P4 (reg 0x20-0x3F). This must happen BEFORE the
+	// mState.mReg[reg] store below, which is sized for banks 0-1 (0x00-0x1F)
+	// and would overflow at quad reg 0x20-0x3F. Banks 0/1 (mono/stereo) fall
+	// through unchanged: the master stores and the bottom default case
+	// dispatches reg 0x10-0x1F to mpSlave exactly as before.
+	if (reg & 0x20) {
+		ATPokeyEmulator *slave = (reg & 0x10) ? mpSlave4 : mpSlave3;
+
+		if (slave)
+			slave->WriteByte(reg & 0x0F, value);
+		return;
+	}
 
 	mState.mReg[reg] = value;
 
@@ -3034,8 +3113,21 @@ void ATPokeyEmulator::DumpStatus(ATConsoleOutput& out) {
 		out.WriteLine("Primary POKEY:");
 		DumpStatus(out, false);
 		out.WriteLine("");
-		out.WriteLine("Secondary POKEY:");
+		out.WriteLine(mpSlave3 ? "POKEY #2:" : "Secondary POKEY:");
 		mpSlave->DumpStatus(out, true);
+
+		// PokeyMax quad: dump the audio-only P3/P4 as well.
+		if (mpSlave3) {
+			out.WriteLine("");
+			out.WriteLine("POKEY #3:");
+			mpSlave3->DumpStatus(out, true);
+		}
+
+		if (mpSlave4) {
+			out.WriteLine("");
+			out.WriteLine("POKEY #4:");
+			mpSlave4->DumpStatus(out, true);
+		}
 	} else {
 		DumpStatus(out, false);
 	}
@@ -3112,6 +3204,13 @@ void ATPokeyEmulator::SaveState(IATObjectState **pp) {
 
 	if (mpSlave)
 		mpSlave->SaveState(~obj->mpStereoPair);
+
+	// PokeyMax quad: serialize the audio-only P3/P4 alongside P2.
+	if (mpSlave3)
+		mpSlave3->SaveState(~obj->mpQuadPair3);
+
+	if (mpSlave4)
+		mpSlave4->SaveState(~obj->mpQuadPair4);
 
 	*pp = obj.release();
 }
@@ -3252,6 +3351,14 @@ void ATPokeyEmulator::LoadState(const ATSaveStatePokey& pstate) {
 	if (mpSlave)
 		mpSlave->LoadState(pstate.mpStereoPair);
 
+	// PokeyMax quad: P3/P4 load from their nested snapshots. A stereo/mono
+	// snapshot has null quad pairs, so the slaves load default state.
+	if (mpSlave3)
+		mpSlave3->LoadState(pstate.mpQuadPair3);
+
+	if (mpSlave4)
+		mpSlave4->LoadState(pstate.mpQuadPair4);
+
 	PostLoadState();
 }
 
@@ -3302,6 +3409,13 @@ void ATPokeyEmulator::PostLoadState() {
 
 	if (mpSlave)
 		mpSlave->PostLoadState();
+
+	// PokeyMax quad: mirror the P2 post-load fixup for P3/P4.
+	if (mpSlave3)
+		mpSlave3->PostLoadState();
+
+	if (mpSlave4)
+		mpSlave4->PostLoadState();
 
 	NotifyForceBreak();
 }
@@ -3393,6 +3507,13 @@ uint32 ATPokeyEmulator::GetNetplayDeterminismFingerprint() const {
 	if (mpSlave && !mbIsSlave)
 		h = fold32(h, mpSlave->GetNetplayDeterminismFingerprint());
 
+	// PokeyMax quad: fold the audio-only P3/P4 state in too.
+	if (mpSlave3 && !mbIsSlave)
+		h = fold32(h, mpSlave3->GetNetplayDeterminismFingerprint());
+
+	if (mpSlave4 && !mbIsSlave)
+		h = fold32(h, mpSlave4->GetNetplayDeterminismFingerprint());
+
 	if (h == 0) h = 1;
 	return h;
 }
@@ -3437,6 +3558,17 @@ void ATPokeyEmulator::DescribeNetplayDeterminismFingerprint(
 	if (mpSlave && !mbIsSlave) {
 		out += " | slave: ";
 		mpSlave->DescribeNetplayDeterminismFingerprint(out);
+	}
+
+	// PokeyMax quad: describe the audio-only P3/P4 as well.
+	if (mpSlave3 && !mbIsSlave) {
+		out += " | slave3: ";
+		mpSlave3->DescribeNetplayDeterminismFingerprint(out);
+	}
+
+	if (mpSlave4 && !mbIsSlave) {
+		out += " | slave4: ";
+		mpSlave4->DescribeNetplayDeterminismFingerprint(out);
 	}
 }
 
@@ -3601,6 +3733,90 @@ void ATPokeyEmulator::FlushAudio(bool pushAudio, uint64 timestamp) {
 	VDFastMathScope fastMathScope;
 
 	IATSyncAudioEdgePlayer *edgePlayer = mpAudioOut ? &mpAudioOut->AsMixer().GetEdgePlayer() : nullptr;
+
+	// Quad POKEY (PokeyMax): four mono renderers summed by hardware side --
+	// P1+P3 -> left, P2+P4 -> right. The PokeyMax $D210 Saturate bit selects
+	// how the same-side pair combines: linear sum (bit0=0) or a POKEY
+	// saturation curve (bit0=1, hardware default). The mono/stereo path below
+	// is left untouched.
+	if (mpSlave3) {
+		const auto r1 = mpRenderer->EndBlock(edgePlayer);
+		const auto r2 = mpSlave->mpRenderer->EndBlock(edgePlayer);
+		const auto r3 = mpSlave3->mpRenderer->EndBlock(edgePlayer);
+		const auto r4 = mpSlave4->mpRenderer->EndBlock(edgePlayer);
+
+		VDASSERT(r1.mSamples == r2.mSamples && r1.mSamples == r3.mSamples && r1.mSamples == r4.mSamples);
+		VDASSERT(r1.mTimestamp == r2.mTimestamp && r1.mTimestamp == r3.mTimestamp && r1.mTimestamp == r4.mTimestamp);
+
+		if (mpAudioOut) {
+			// Matches ATPokeyRenderer::kBufferSize (1536); the renderer never
+			// produces more than ~1271 samples per frame, so this is a safe cap.
+			static constexpr uint32 kQuadBufferSize = 1536;
+			const uint32 n = std::min<uint32>(r1.mSamples, kQuadBufferSize);
+
+			const float *VDRESTRICT b1 = mpRenderer->GetOutputBuffer();
+			const float *VDRESTRICT b2 = mpSlave->mpRenderer->GetOutputBuffer();
+			const float *VDRESTRICT b3 = mpSlave3->mpRenderer->GetOutputBuffer();
+			const float *VDRESTRICT b4 = mpSlave4->mpRenderer->GetOutputBuffer();
+
+			alignas(16) float leftAccum[kQuadBufferSize];
+			alignas(16) float rightAccum[kQuadBufferSize];
+
+			if (mbQuadSaturation) {
+				// $D210 Saturate = 1 (POKEY saturation curve, hardware
+				// default). Each POKEY output is already individually
+				// saturated to ~[-1, 1]; summing two same-side POKEYs on one
+				// analog pin saturates rather than simply doubling. The
+				// soft-knee curve below (linear below the knee, exponential
+				// approach to a limit above it) mirrors the per-POKEY channel
+				// mix curve in UpdateMixTable. The exact PokeyMax transfer
+				// function is not published; this is a faithful approximation.
+				constexpr float kKnee = 0.9f;
+				constexpr float kRolloff = 0.5f;
+
+				for(uint32 i = 0; i < n; ++i) {
+					const float l = b1[i] + b3[i];
+					const float r = b2[i] + b4[i];
+
+					const float al = fabsf(l);
+					const float ar = fabsf(r);
+
+					leftAccum[i] = al <= kKnee ? l
+						: (l < 0.0f ? -1.0f : 1.0f) * (kKnee + (1.0f - expf(-(al - kKnee) / kRolloff)) * kRolloff);
+					rightAccum[i] = ar <= kKnee ? r
+						: (r < 0.0f ? -1.0f : 1.0f) * (kKnee + (1.0f - expf(-(ar - kKnee) / kRolloff)) * kRolloff);
+				}
+			} else {
+				// $D210 Saturate = 0 (linear same-side sum).
+				for(uint32 i = 0; i < n; ++i) {
+					leftAccum[i] = b1[i] + b3[i];
+					rightAccum[i] = b2[i] + b4[i];
+				}
+			}
+
+			// convert 32-bit timestamp to 64-bit
+			const uint64 now64 = mpScheduler->GetTick64();
+			uint64 t64 = (now64 & ~UINT64_C(0xFFFFFFFF)) + r1.mTimestamp;
+
+			if (t64 > now64 + UINT64_C(0x80000000))
+				t64 -= UINT64_C(1) << 32;
+
+			mpAudioOut->WriteAudio(
+				leftAccum,
+				mbStereoSoftEnable ? rightAccum : NULL,
+				n,
+				pushAudio,
+				mbStereoAsMono,
+				t64);
+		}
+
+		mpRenderer->StartBlock();
+		mpSlave->mpRenderer->StartBlock();
+		mpSlave3->mpRenderer->StartBlock();
+		mpSlave4->mpRenderer->StartBlock();
+		return;
+	}
+
 	const auto endBlockResult = mpRenderer->EndBlock(edgePlayer);
 
 	if (mpSlave) {
@@ -4158,7 +4374,10 @@ void ATPokeyEmulator::UpdatePots(uint32 timeSkew) {
 }
 
 void ATPokeyEmulator::UpdateAddressDecoding() {
-	mAddressMask = mpSlave && mbStereoSoftEnable ? 0x1F : 0x0F;
+	// Quad (PokeyMax): mask 0x3F exposes banks 0-3 ($D200-$D23F) so P3/P4
+	// register writes reach the master decode and route via WriteByte/ReadByte
+	// bank routing. Stereo = 0x1F (banks 0-1), mono = 0x0F (bank 0).
+	mAddressMask = mpSlave && mbStereoSoftEnable ? (mpSlave3 ? 0x3F : 0x1F) : 0x0F;
 }
 
 void ATPokeyEmulator::NotifyForceBreak() {

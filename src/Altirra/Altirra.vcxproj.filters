@@ -100,6 +100,18 @@
     <ClCompile Include="source\covox.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\pokeymax.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\pokeymaxsample.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\pokeymaxsid.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\ympsg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="source\cpu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1165,6 +1177,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="h\covox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="h\ympsg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="h\pokeymaxsample.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="h\pokeymaxsid.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="h\cpu.h">

@@ -30,7 +30,9 @@ public:
 	ATAudioMonitor();
 	~ATAudioMonitor();
 
-	void Init(ATPokeyEmulator *pokey, IATUIRenderer *uir, bool secondary);
+	// channelIndex: 0 = primary (P1), 1 = secondary (P2), 2/3 = PokeyMax quad
+	// P3/P4. Selects which audio display/scope slot this monitor drives.
+	void Init(ATPokeyEmulator *pokey, IATUIRenderer *uir, uint32 channelIndex);
 	void Shutdown();
 
 	void SetMixedSampleCount(uint32 len);
@@ -40,7 +42,7 @@ public:
 protected:
 	ATPokeyEmulator		*mpPokey;
 	IATUIRenderer		*mpUIRenderer;
-	bool				mbSecondary;
+	uint32				mChannelIndex;
 
 	ATPokeyAudioLog		mLog;
 	ATPokeyRegisterState	mRegisterState;

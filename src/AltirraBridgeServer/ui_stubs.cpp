@@ -165,8 +165,8 @@ public:
 	void SetWatchedValue(int, uint32, WatchFormat) override {}
 	void SetTracingSize(sint64) override {}
 	void SetAudioStatus(const ATUIAudioStatus*) override {}
-	void SetAudioMonitor(bool, ATAudioMonitor*) override {}
-	void SetAudioDisplayEnabled(bool, bool) override {}
+	void SetAudioMonitor(uint32, ATAudioMonitor*) override {}
+	void SetAudioDisplayEnabled(uint32, bool) override {}
 	void SetAudioScopeEnabled(bool) override {}
 	void SetSlightSID(ATSlightSIDEmulator*) override {}
 	vdrect32 GetPadArea() const override { return vdrect32(0, 0, 0, 0); }
