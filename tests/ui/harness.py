@@ -210,6 +210,24 @@ class AltirraTestHarness:
     def save_state(self, path: str) -> dict:
         return self.send(f"save_state {path}")
 
+    def mem_read(self, addr: int, count: int = 1) -> list[int]:
+        """Side-effect-free RAM/register read; returns the byte list."""
+        resp = self.send(f"mem_read {addr:04X} {count}")
+        return resp["bytes"]
+
+    def input_joy(self, unit: int, action: str) -> dict:
+        return self.send(f"input joy {unit} {action}")
+
+    def input_console(self, button: str, up: bool = False) -> dict:
+        return self.send(f"input console {button}{' up' if up else ''}")
+
+    def set_speed(self, mode: str) -> dict:
+        return self.send(f"set_speed {mode}")
+
+    def get_speed(self) -> bool:
+        """Return True if sticky turbo mode is engaged."""
+        return self.send("get_speed")["turbo"]
+
     # ── Convenience helpers ──────────────────────────────────────────────
 
     def get_dialog_state(self, name: str) -> bool:
