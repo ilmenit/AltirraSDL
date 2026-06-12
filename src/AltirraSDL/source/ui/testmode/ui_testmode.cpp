@@ -572,6 +572,51 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return "{\"ok\":true,\"path\":\"" + JsonEscape(path) + "\"}";
 	}
 
+	// --- Memory inspection (read-only, side-effect-free) ---
+	// Reads bytes via ATSimulator::DebugReadByte so I/O reads do not
+	// trigger side effects (collision-clear, IRQ ack, etc).  Useful for
+	// dynamic analysis of disassembled software: dump zero-page,
+	// inspect object arrays, verify hypotheses about register usage.
+	//
+	// Format:  mem_read <hex_addr> [<count>]
+	// Default count = 1.  Max count = 4096 (one response packet).
+	// Response: {"ok":true,"addr":"$xxxx","bytes":[h0,h1,...]}
+	if (verb == "mem_read") {
+		std::string addrStr  = NextToken(cmd);
+		std::string countStr = NextToken(cmd);
+		if (addrStr.empty())
+			return JsonError("usage: mem_read <hex_addr> [<count>]");
+
+		// Reject unparseable input loudly.  A debugging verb that
+		// silently falls back to reading $0000 on a typo would hand the
+		// caller wrong-but-plausible data — worse than any error.
+		char *end = nullptr;
+		uint32 addr = (uint32)strtoul(addrStr.c_str(), &end, 16);
+		if (end == addrStr.c_str() || *end)
+			return JsonError("bad hex address: " + addrStr);
+
+		uint32 count = 1;
+		if (!countStr.empty()) {
+			count = (uint32)strtoul(countStr.c_str(), &end, 0);
+			if (end == countStr.c_str() || *end)
+				return JsonError("bad count: " + countStr);
+		}
+		if (count == 0) count = 1;
+		if (count > 4096) count = 4096;
+		std::string body = "{\"ok\":true,\"addr\":\"$";
+		char buf[32];
+		snprintf(buf, sizeof(buf), "%04X", addr & 0xFFFF);
+		body += buf;
+		body += "\",\"bytes\":[";
+		for (uint32 i = 0; i < count; ++i) {
+			uint8 b = sim.DebugReadByte((uint16)((addr + i) & 0xFFFF));
+			snprintf(buf, sizeof(buf), "%s%u", i ? "," : "", (unsigned)b);
+			body += buf;
+		}
+		body += "]}";
+		return body;
+	}
+
 	// --- Emulation control ---
 	if (verb == "cold_reset") {
 		sim.ColdReset();
@@ -663,6 +708,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"mouse_move <x> <y>\","
 			"\"wait_frames [n]\","
 			"\"screenshot <path>\","
+			"\"mem_read <hex_addr> [<count>]\","
 			"\"cold_reset\","
 			"\"warm_reset\","
 			"\"pause\","
