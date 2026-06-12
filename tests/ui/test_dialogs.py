@@ -58,14 +58,18 @@ class TestAdjustColors:
 
     WIN = "Adjust Colors"
 
+    # Labels match Windows Altirra's Adjust Colors dialog: the hue-range
+    # slider is shown as "Hue Step" (per-step angle) and gamma as
+    # "Gamma Correction".
     EXPECTED_SLIDERS = [
-        "Hue Start", "Hue Range",
-        "Brightness", "Contrast", "Saturation", "Gamma", "Intensity Scale",
+        "Hue Start", "Hue Step",
+        "Brightness", "Contrast", "Saturation", "Gamma Correction", "Intensity Scale",
     ]
 
+    # PAL quirks is an Options-menu item (enabled only in PAL mode), not a
+    # body checkbox, so it is not asserted here.
     EXPECTED_CHECKBOXES = [
         "Share NTSC/PAL settings",
-        "PAL quirks",
     ]
 
     def test_widgets_exist(self, emu: AltirraTestHarness):

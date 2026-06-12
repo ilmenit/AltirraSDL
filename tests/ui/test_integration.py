@@ -188,8 +188,8 @@ class TestColorAdjustments:
         emu.open_dialog("AdjustColors")
         emu.wait_frames(5)
         labels = emu.get_item_labels("Adjust Colors")
-        for slider in ["Hue Start", "Hue Range", "Brightness", "Contrast",
-                        "Saturation", "Gamma", "Intensity Scale"]:
+        for slider in ["Hue Start", "Hue Step", "Brightness", "Contrast",
+                        "Saturation", "Gamma Correction", "Intensity Scale"]:
             assert slider in labels, f"Slider '{slider}' missing from Adjust Colors"
 
     def test_reset_to_defaults(self, emu: AltirraTestHarness):
