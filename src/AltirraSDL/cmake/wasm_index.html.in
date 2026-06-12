@@ -2420,17 +2420,31 @@
       return { w, h };
     }
 
+    let lastSdlCanvasSyncW = 0;
+    let lastSdlCanvasSyncH = 0;
+
     function syncCanvasSizeToCssBox(force) {
       const size = getCanvasCssSize();
       if (size.w <= 0 || size.h <= 0) return false;
 
-      if (!force && canvas.width === size.w && canvas.height === size.h)
+      const canSyncSdl = (typeof Module !== 'undefined'
+          && Module._ATWasmSyncCanvasSize);
+
+      if (!force
+          && canvas.width === size.w && canvas.height === size.h
+          && (!canSyncSdl
+              || (lastSdlCanvasSyncW === size.w
+                  && lastSdlCanvasSyncH === size.h)))
         return false;
 
       let syncedBySdl = false;
-      if (typeof Module !== 'undefined' && Module._ATWasmSyncCanvasSize) {
+      if (canSyncSdl) {
         try {
           syncedBySdl = (Module._ATWasmSyncCanvasSize(size.w, size.h) === 1);
+          if (syncedBySdl) {
+            lastSdlCanvasSyncW = size.w;
+            lastSdlCanvasSyncH = size.h;
+          }
         } catch (e) {}
       }
 

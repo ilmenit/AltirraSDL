@@ -197,6 +197,12 @@ jobs:
                       assert png[:8] == b'\x89PNG\r\n\x1a\n'
                       insns = a.disasm(0xe477, 4)
                       assert 'COLDSV' in insns[0]['text']
+                      a.pause()
+                      for i in range(14):
+                          a.joy(0, 'down' if i % 2 == 0 else 'centre')
+                      a.key('A')
+                      assert a.eval_expr('db($d209)') == 0x3f
+                      assert (a.eval_expr('db($d20f)') & 0x04) == 0
                   print(f"python sdk OK (attempt {attempt+1})")
                   break
               except (BridgeError, ConnectionError, OSError) as e:
