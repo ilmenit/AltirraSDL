@@ -25,6 +25,9 @@
 #include "simulator.h"
 #include "gtia.h"
 #include "oshelper.h"
+#include "inputmanager.h"
+#include "inputdefs.h"
+#include "netplay/netplay_input.h"
 #include "logging.h"
 
 bool g_testModeEnabled = false;
@@ -617,6 +620,101 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return body;
 	}
 
+	// --- Controller input ---
+	//
+	// Format:  input joy <unit> <action>
+	//          input console <button> [up]
+	//
+	// joy actions:   left | right | up | down | fire | release_all
+	// console btns:  start | select | option
+	//                ("up" suffix releases the switch; default = press)
+	//
+	// <unit> is the input-map controller unit (0 = first/default
+	// controller); which console port it drives is decided by the
+	// active input map, exactly as for a physical game controller.
+	//
+	// Joystick state is sticky — a press is held until release_all.
+	// Directions on one axis are exclusive: pressing left releases
+	// right and vice versa (same for up/down), because a physical
+	// stick cannot hold both and ATInputManager does no such
+	// exclusion itself.  The caller (test script) owns press/release
+	// scheduling so frame timing stays deterministic.
+	if (verb == "input") {
+		std::string sub = NextToken(cmd);
+
+		if (sub == "joy") {
+			std::string unitStr = NextToken(cmd);
+			std::string action  = NextToken(cmd);
+			if (unitStr.empty() || action.empty())
+				return JsonError("usage: input joy <unit> <action>");
+			int unit = atoi(unitStr.c_str());
+			if (unit < 0 || unit > 3)
+				return JsonError("unit must be 0..3");
+			ATInputManager *im = sim.GetInputManager();
+			if (!im)
+				return JsonError("no input manager");
+
+			if (action == "release_all") {
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Left);
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Right);
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Up);
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Down);
+				im->OnButtonUp(unit, kATInputCode_JoyButton0);
+				return JsonOk();
+			}
+
+			int code = -1;
+			int opposite = -1;
+			if (action == "left") {
+				code = kATInputCode_JoyStick1Left;
+				opposite = kATInputCode_JoyStick1Right;
+			} else if (action == "right") {
+				code = kATInputCode_JoyStick1Right;
+				opposite = kATInputCode_JoyStick1Left;
+			} else if (action == "up") {
+				code = kATInputCode_JoyStick1Up;
+				opposite = kATInputCode_JoyStick1Down;
+			} else if (action == "down") {
+				code = kATInputCode_JoyStick1Down;
+				opposite = kATInputCode_JoyStick1Up;
+			} else if (action == "fire") {
+				code = kATInputCode_JoyButton0;
+			} else
+				return JsonError("unknown joy action: " + action);
+
+			// Enforce per-axis exclusivity (see header comment): a
+			// physical stick cannot hold left+right or up+down, and
+			// some games misbehave on the impossible state.
+			if (opposite >= 0)
+				im->OnButtonUp(unit, opposite);
+			im->OnButtonDown(unit, code);
+			return JsonOk();
+		}
+
+		if (sub == "console") {
+			std::string button = NextToken(cmd);
+			std::string state  = NextToken(cmd);   // optional "up"
+			if (button.empty())
+				return JsonError("usage: input console <start|select|option> [up]");
+
+			uint8 bit = 0;
+			if      (button == "start")  bit = 0x01;
+			else if (button == "select") bit = 0x02;
+			else if (button == "option") bit = 0x04;
+			else
+				return JsonError("unknown console button: " + button);
+
+			ATGTIAEmulator &gtia = sim.GetGTIA();
+			ATNetplayInput::RouteConsoleSwitch(&gtia, bit, state != "up");
+			return JsonOk();
+		}
+
+		return JsonError(
+			"usage: input joy <unit> <left|right|up|down|fire|release_all>"
+			" | input console <start|select|option> [up]"
+		);
+	}
+
 	// --- Emulation control ---
 	if (verb == "cold_reset") {
 		sim.ColdReset();
@@ -709,6 +807,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"wait_frames [n]\","
 			"\"screenshot <path>\","
 			"\"mem_read <hex_addr> [<count>]\","
+			"\"input joy <unit> <left|right|up|down|fire|release_all>\","
+			"\"input console <start|select|option> [up]\","
 			"\"cold_reset\","
 			"\"warm_reset\","
 			"\"pause\","
