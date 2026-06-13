@@ -25,6 +25,9 @@
 #include "simulator.h"
 #include "gtia.h"
 #include "oshelper.h"
+#include "inputmanager.h"
+#include "inputdefs.h"
+#include "netplay/netplay_input.h"
 #include "logging.h"
 
 bool g_testModeEnabled = false;
@@ -572,6 +575,188 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return "{\"ok\":true,\"path\":\"" + JsonEscape(path) + "\"}";
 	}
 
+	// --- Memory inspection (read-only, side-effect-free) ---
+	// Reads bytes via ATSimulator::DebugReadByte so I/O reads do not
+	// trigger side effects (collision-clear, IRQ ack, etc).  Useful for
+	// dynamic analysis of disassembled software: dump zero-page,
+	// inspect object arrays, verify hypotheses about register usage.
+	//
+	// Format:  mem_read <hex_addr> [<count>]
+	// Default count = 1.  Max count = 4096 (one response packet).
+	// Response: {"ok":true,"addr":"$xxxx","bytes":[h0,h1,...]}
+	if (verb == "mem_read") {
+		std::string addrStr  = NextToken(cmd);
+		std::string countStr = NextToken(cmd);
+		if (addrStr.empty())
+			return JsonError("usage: mem_read <hex_addr> [<count>]");
+
+		// Reject unparseable input loudly.  A debugging verb that
+		// silently falls back to reading $0000 on a typo would hand the
+		// caller wrong-but-plausible data — worse than any error.
+		char *end = nullptr;
+		uint32 addr = (uint32)strtoul(addrStr.c_str(), &end, 16);
+		if (end == addrStr.c_str() || *end)
+			return JsonError("bad hex address: " + addrStr);
+
+		uint32 count = 1;
+		if (!countStr.empty()) {
+			count = (uint32)strtoul(countStr.c_str(), &end, 0);
+			if (end == countStr.c_str() || *end)
+				return JsonError("bad count: " + countStr);
+		}
+		if (count == 0) count = 1;
+		if (count > 4096) count = 4096;
+		std::string body = "{\"ok\":true,\"addr\":\"$";
+		char buf[32];
+		snprintf(buf, sizeof(buf), "%04X", addr & 0xFFFF);
+		body += buf;
+		body += "\",\"bytes\":[";
+		for (uint32 i = 0; i < count; ++i) {
+			uint8 b = sim.DebugReadByte((uint16)((addr + i) & 0xFFFF));
+			snprintf(buf, sizeof(buf), "%s%u", i ? "," : "", (unsigned)b);
+			body += buf;
+		}
+		body += "]}";
+		return body;
+	}
+
+	// --- Controller input ---
+	//
+	// Format:  input joy <unit> <action>
+	//          input console <button> [up]
+	//
+	// joy actions:   left | right | up | down | fire | release_all
+	// console btns:  start | select | option
+	//                ("up" suffix releases the switch; default = press)
+	//
+	// <unit> is the input-map controller unit (0 = first/default
+	// controller); which console port it drives is decided by the
+	// active input map, exactly as for a physical game controller.
+	//
+	// Joystick state is sticky — a press is held until release_all.
+	// Directions on one axis are exclusive: pressing left releases
+	// right and vice versa (same for up/down), because a physical
+	// stick cannot hold both and ATInputManager does no such
+	// exclusion itself.  The caller (test script) owns press/release
+	// scheduling so frame timing stays deterministic.
+	if (verb == "input") {
+		std::string sub = NextToken(cmd);
+
+		if (sub == "joy") {
+			std::string unitStr = NextToken(cmd);
+			std::string action  = NextToken(cmd);
+			if (unitStr.empty() || action.empty())
+				return JsonError("usage: input joy <unit> <action>");
+			int unit = atoi(unitStr.c_str());
+			if (unit < 0 || unit > 3)
+				return JsonError("unit must be 0..3");
+			ATInputManager *im = sim.GetInputManager();
+			if (!im)
+				return JsonError("no input manager");
+
+			if (action == "release_all") {
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Left);
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Right);
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Up);
+				im->OnButtonUp(unit, kATInputCode_JoyStick1Down);
+				im->OnButtonUp(unit, kATInputCode_JoyButton0);
+				return JsonOk();
+			}
+
+			int code = -1;
+			int opposite = -1;
+			if (action == "left") {
+				code = kATInputCode_JoyStick1Left;
+				opposite = kATInputCode_JoyStick1Right;
+			} else if (action == "right") {
+				code = kATInputCode_JoyStick1Right;
+				opposite = kATInputCode_JoyStick1Left;
+			} else if (action == "up") {
+				code = kATInputCode_JoyStick1Up;
+				opposite = kATInputCode_JoyStick1Down;
+			} else if (action == "down") {
+				code = kATInputCode_JoyStick1Down;
+				opposite = kATInputCode_JoyStick1Up;
+			} else if (action == "fire") {
+				code = kATInputCode_JoyButton0;
+			} else
+				return JsonError("unknown joy action: " + action);
+
+			// Enforce per-axis exclusivity (see header comment): a
+			// physical stick cannot hold left+right or up+down, and
+			// some games misbehave on the impossible state.
+			if (opposite >= 0)
+				im->OnButtonUp(unit, opposite);
+			im->OnButtonDown(unit, code);
+			return JsonOk();
+		}
+
+		if (sub == "console") {
+			std::string button = NextToken(cmd);
+			std::string state  = NextToken(cmd);   // optional "up"
+			if (button.empty())
+				return JsonError("usage: input console <start|select|option> [up]");
+
+			uint8 bit = 0;
+			if      (button == "start")  bit = 0x01;
+			else if (button == "select") bit = 0x02;
+			else if (button == "option") bit = 0x04;
+			else
+				return JsonError("unknown console button: " + button);
+
+			ATGTIAEmulator &gtia = sim.GetGTIA();
+			ATNetplayInput::RouteConsoleSwitch(&gtia, bit, state != "up");
+			return JsonOk();
+		}
+
+		return JsonError(
+			"usage: input joy <unit> <left|right|up|down|fire|release_all>"
+			" | input console <start|select|option> [up]"
+		);
+	}
+
+	// --- Speed control ---
+	//
+	// Format:  set_speed <turbo|warp|normal|real>
+	//          get_speed
+	//
+	// `turbo` / `warp` enable the sticky turbo mode (== Tab key in
+	// the GUI) so the simulator runs as fast as the host CPU allows.
+	// `normal` / `real` clear it so the simulator runs at its native
+	// ~60 Hz NTSC (or 50 Hz PAL) rate.
+	//
+	// Test-mode defaults to whatever the user's settings.ini specified
+	// (typically normal speed); use this verb at the start of a
+	// capture session if you need to override.
+	//
+	// Interaction with wait_frames: wait_frames counts RENDERED frames
+	// (decremented in ATTestModePostRender), and the turbo frame-skip
+	// renders only 1 of every engine.turbo_fps_divisor (default 16)
+	// emulated frames — so `wait_frames N` under turbo spans roughly
+	// N*divisor emulated frames.  Scripts that count emulated frames
+	// should stay at normal speed or divide accordingly.
+	if (verb == "set_speed") {
+		std::string mode = NextToken(cmd);
+		if (mode.empty())
+			return JsonError("usage: set_speed <turbo|warp|normal|real>");
+		if (mode == "turbo" || mode == "warp") {
+			ATUISetTurbo(true);
+			return JsonOk();
+		}
+		if (mode == "normal" || mode == "real") {
+			ATUISetTurbo(false);
+			return JsonOk();
+		}
+		return JsonError("unknown speed mode: " + mode);
+	}
+
+	if (verb == "get_speed") {
+		std::string body = "{\"ok\":true,\"turbo\":";
+		body += ATUIGetTurbo() ? "true" : "false";
+		body += "}";
+		return body;
+	}
+
 	// --- Emulation control ---
 	if (verb == "cold_reset") {
 		sim.ColdReset();
@@ -663,6 +848,11 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"mouse_move <x> <y>\","
 			"\"wait_frames [n]\","
 			"\"screenshot <path>\","
+			"\"mem_read <hex_addr> [<count>]\","
+			"\"input joy <unit> <left|right|up|down|fire|release_all>\","
+			"\"input console <start|select|option> [up]\","
+			"\"set_speed <turbo|warp|normal|real>\","
+			"\"get_speed\","
 			"\"cold_reset\","
 			"\"warm_reset\","
 			"\"pause\","

@@ -518,7 +518,13 @@ static void HandleEvents() {
 		switch (ev.type) {
 		case SDL_EVENT_QUIT:
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-			if (g_uiState.exitConfirmed)
+			// Test-mode runs are non-interactive: a SIGTERM/SIGINT or a
+			// programmatic SDL_EVENT_QUIT (e.g. from the test-mode `quit`
+			// command) means "exit now".  Skip the Confirm Exit modal —
+			// there is no human to dismiss it, and leaving the dialog up
+			// would wedge the process and also pollute any screenshot
+			// the test driver takes around shutdown time.
+			if (g_uiState.exitConfirmed || g_testModeEnabled)
 				g_running = false;
 			else if (!g_uiState.showExitConfirm)
 				g_uiState.showExitConfirm = true;  // Render loop will open the popup
