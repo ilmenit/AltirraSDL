@@ -753,7 +753,7 @@ private:
 ATAutoSuggestEngine::ATAutoSuggestEngine() {
 	AddDynamicPattern(VDStringSpanA("POKE ([1-9][0-9]*)$"), std::bind_front(&ATAutoSuggestEngine::HandlePeekPoke, this, true));
 	AddDynamicPattern(VDStringSpanA("PEEK\\(([1-9][0-9]*)$"), std::bind_front(&ATAutoSuggestEngine::HandlePeekPoke, this, false));
-	AddDynamicPattern(VDStringSpanA("[^A-Z][A-Z](?:|[1-9]):([A-Z]*)$"), std::bind_front(&ATAutoSuggestEngine::HandleCIOPath, this));
+	AddDynamicPattern(VDStringSpanA("[^A-Z][A-Z](?:|[1-9]):([A-Z0-9_]*)$"), std::bind_front(&ATAutoSuggestEngine::HandleCIOPath, this));
 
 	// --- BASIC keyword / variable completion ------------------------------
 	//
@@ -1227,4 +1227,3 @@ bool ATBasicProgramLineExists(uint16 lineNumber) {
 	}
 	return false;
 }
-

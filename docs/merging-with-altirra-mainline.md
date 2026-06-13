@@ -208,3 +208,15 @@ prescribes, add an in-source comment if the offending code is in a
 mainline-tracked file (so the next merger sees the constraint at the
 diff site), and update the file table in Issue 2 if you added a new
 explicit-include patch.
+
+---
+
+## Test12 local merge note
+
+The test11 → test12 merge imported the 1020 Color Printer rework, but
+kept one local correction in `src/Altirra/source/printer1020.cpp`:
+`DrawClippedLine()` uses `-raw2.x` when clipping an exit endpoint to the
+left edge (`x = 0`). Upstream test12 used `raw2.x` there, which moves
+the interpolated Y coordinate in the wrong direction for lines exiting
+past the left paper edge. Preserve this correction when re-syncing the
+file from upstream.

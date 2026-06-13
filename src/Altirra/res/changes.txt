@@ -44,6 +44,7 @@ This prerelease version:
    * Disk: Fixed Percom AT-88/AT-88SPD not saving 1795 FDC setting.
    * Disk Explorer: Fixed MAC/65 decoder mis-decoding some constants.
    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.
+   * Printer: Improved accuracy of 1020 command parsing and plot behavior.
    * Recorder: SAP recorder now uses prescribed text for unknown author/title.
    * SAP: Fixed converter causing player to swap channels when repeating a stereo type R file.
    * UI: 65C816 linear memory setting is now disabled when Rapidus is enabled since Rapidus settings take precedence.

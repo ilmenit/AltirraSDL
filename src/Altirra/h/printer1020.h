@@ -40,28 +40,36 @@ public:
 private:
 	void ResetState();
 	void PrintChar(uint8 ch, bool graphical);
-	bool ClipTo(sint32& x, sint32& y);
 	bool MoveToAbsolute(sint32 x, sint32 y);
 	bool DrawToAbsolute(sint32 x, sint32 y);
+	void DrawClippedLine(const vdfloat2& raw1, const vdfloat2& raw2);
 	vdfloat2 ConvertPointToMM(sint32 x, sint32 y) const;
+	vdfloat2 ConvertPointFToMM(float x, float y) const;
 	vdfloat2 ConvertVectorToMM(sint32 x, sint32 y) const;
+	vdfloat2 ConvertVectorFToMM(float x, float y) const;
 
 	void ReconvertPens();
 
 	// 0.200mm/step per VIC-1520 manual and CGP-115 service manual
 	static constexpr float kUnitsToMM = 0.20f;
 
-	enum class State : uint8 {
-		TextMode,
-		TextEscape,
-		GraphicsMode,
-		GraphicsTextCommand,
+	enum class LineState : uint8 {
+		StartOfLine,
+		Escape,
+		ProcessLine,
+	} mLineState = LineState::StartOfLine;
+
+	enum class CommandState : uint8 {
+		WaitForCommand,
+		PrintText,
+		PrintTextEscape,
 		ArgStart,
 		ArgStart2,
 		ArgDigit,
 		ArgEnd
-	} mState = State::TextMode;
+	} mCommandState = CommandState::WaitForCommand;
 
+	bool mbGraphicsMode = false;
 	uint8 mGraphicsCommand = 0;
 	sint32 mBaseX = 0;
 	sint32 mX = 0;

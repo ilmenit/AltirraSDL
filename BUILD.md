@@ -18,6 +18,11 @@ All three build paths coexist in the same repository and do not
 conflict (different output directories: `.sln` uses `out/`, CMake
 uses `build/`).
 
+## Upstream Baseline
+
+This tree is based on upstream Altirra 4.50 test12 source, with the
+SDL3/CMake frontend and cross-platform adaptations layered on top.
+
 ---
 
 ## Quick Start (build.sh)
