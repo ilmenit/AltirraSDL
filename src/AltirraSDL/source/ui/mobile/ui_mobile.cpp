@@ -161,6 +161,28 @@ static VDStringW LoadFileBrowserDir() {
 	return s;
 }
 
+void SaveFileBrowserSortPrefs() {
+	{
+		VDRegistryAppKey key(kMobileKey, true);
+		if (!key.isReady())
+			return;
+		key.setInt("FileBrowserSortKey", (int)s_fileBrowserSortKey);
+		key.setBool("FileBrowserSortAsc", s_fileBrowserSortAscending);
+	}
+	ATRegistryFlushToDisk();
+}
+
+static void LoadFileBrowserSortPrefs() {
+	VDRegistryAppKey key(kMobileKey, false);
+	if (!key.isReady())
+		return;
+	int k = key.getInt("FileBrowserSortKey", (int)FileBrowserSortKey::Name);
+	if (k < (int)FileBrowserSortKey::Name || k > (int)FileBrowserSortKey::Date)
+		k = (int)FileBrowserSortKey::Name;
+	s_fileBrowserSortKey = (FileBrowserSortKey)k;
+	s_fileBrowserSortAscending = key.getBool("FileBrowserSortAsc", true);
+}
+
 bool IsFirstRunComplete() {
 	VDRegistryAppKey key(kMobileKey, false);
 	if (!key.isReady()) return false;
@@ -204,8 +226,19 @@ float s_contentScale = 1.0f;
 std::vector<FileBrowserEntry> s_fileBrowserEntries;
 VDStringW s_fileBrowserDir;
 bool s_fileBrowserNeedsRefresh = true;
-bool s_fileBrowserSortByModified = false;
+FileBrowserSortKey s_fileBrowserSortKey = FileBrowserSortKey::Name;
 bool s_fileBrowserSortAscending = true;
+
+// Quick-filter state (definitions; declared in mobile_internal.h).
+bool      s_fileBrowserSearchActive = false;
+char      s_fileBrowserSearchBuf[128] = {};
+VDStringA s_fileBrowserSearchFilter;
+
+void ClearFileBrowserSearch() {
+	s_fileBrowserSearchActive = false;
+	s_fileBrowserSearchBuf[0] = '\0';
+	s_fileBrowserSearchFilter.clear();
+}
 
 // ROM folder browser mode — when true, selecting a folder triggers firmware scan
 bool s_romFolderMode = false;
@@ -372,12 +405,24 @@ static void SortFileBrowserEntries() {
 				return a.isDirectory > b.isDirectory;
 
 			int cmp = 0;
-			if (s_fileBrowserSortByModified) {
-				if (a.modifiedTime < b.modifiedTime)
-					cmp = -1;
-				else if (a.modifiedTime > b.modifiedTime)
-					cmp = 1;
+			switch (s_fileBrowserSortKey) {
+				case FileBrowserSortKey::Date:
+					if (a.modifiedTime < b.modifiedTime)
+						cmp = -1;
+					else if (a.modifiedTime > b.modifiedTime)
+						cmp = 1;
+					break;
+				case FileBrowserSortKey::Size:
+					if (a.size < b.size)
+						cmp = -1;
+					else if (a.size > b.size)
+						cmp = 1;
+					break;
+				case FileBrowserSortKey::Name:
+					break;  // fall through to name tiebreak below
 			}
+			// Always tiebreak by name so equal sizes/dates stay stable
+			// and the Name key sorts purely alphabetically.
 			if (!cmp)
 				cmp = CompareFileBrowserName(a.name, b.name);
 			return s_fileBrowserSortAscending ? cmp < 0 : cmp > 0;
@@ -529,6 +574,9 @@ void RefreshFileBrowser(const VDStringW &dir) {
 void ATMobileUI_Init() {
 	// Enable ImGui gamepad nav once at startup.  Idempotent.
 	ATMobileGamepad_Init();
+
+	// 0) Restore file-browser sort preference (key + direction).
+	LoadFileBrowserSortPrefs();
 
 	// 1) Restore last-used browser dir from registry, if any.
 	VDStringW saved = LoadFileBrowserDir();

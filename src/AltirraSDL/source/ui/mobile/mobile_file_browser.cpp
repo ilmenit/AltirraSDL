@@ -3,6 +3,7 @@
 
 #include <stdafx.h>
 #include <cwctype>
+#include <cctype>
 #include <vector>
 #include <algorithm>
 #include <functional>
@@ -51,6 +52,26 @@ extern ATOptions g_ATOptions;
 extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 extern IDisplayBackend *ATUIGetDisplayBackend();
+
+// -------------------------------------------------------------------------
+// Quick-filter helpers (mirror the Game Library search UX)
+// -------------------------------------------------------------------------
+namespace {
+	// Set true the frame the search bar should grab keyboard focus.
+	bool s_fbFocusSearchInput = false;
+	// Set true when search is opened pre-filled (letter key) so the
+	// InputText callback parks the caret at the end of the text.
+	bool s_fbSearchCursorToEnd = false;
+
+	int FileBrowserSearchCallback(ImGuiInputTextCallbackData *data) {
+		if (s_fbSearchCursorToEnd) {
+			data->CursorPos = data->BufTextLen;
+			data->SelectionStart = data->SelectionEnd = data->BufTextLen;
+			s_fbSearchCursorToEnd = false;
+		}
+		return 0;
+	}
+}
 
 void NavigateUp() {
 	if (!s_zipArchivePath.empty()) {
@@ -138,6 +159,23 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 #endif
 	if (s_fileBrowserNeedsRefresh)
 		RefreshFileBrowser(s_fileBrowserDir);
+
+	// Auto-clear the quick filter whenever the displayed location changes
+	// (navigate up/into a folder, shortcut jump, ZIP enter/exit).  Handled
+	// in one place here so every navigation path is covered, while sort /
+	// "All files" toggles keep the same location and thus keep the filter.
+	{
+		static VDStringW s_lastBrowseLoc;
+		VDStringW loc = s_fileBrowserDir;
+		loc += L'\n';
+		loc += s_zipArchivePath;
+		loc += L'\n';
+		loc += s_zipInternalDir;
+		if (loc != s_lastBrowseLoc) {
+			ClearFileBrowserSearch();
+			s_lastBrowseLoc = loc;
+		}
+	}
 
 	ImGuiIO &io = ImGui::GetIO();
 
@@ -524,31 +562,141 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 
+			// --- Sort: segmented Name / Size / Date chips ---
+			// The active key is highlighted (Accent) and shows a ^/v
+			// direction arrow.  Tapping the active key flips direction;
+			// tapping a different key switches the key (keeping direction).
+			// Each chip uses a fixed width (room reserved for the arrow)
+			// so the row doesn't reflow when the arrow appears.
 			{
-				float sortW = ImGui::CalcTextSize(
-					s_fileBrowserSortByModified ? "Modified" : "Name").x
-					+ dp(16.0f) * 2.0f;
-				sameLineIfFits(sortW);
-				if (ATTouchButton(
-					s_fileBrowserSortByModified ? "Modified" : "Name",
-					ImVec2(0, shortcutH),
-					chipStyle(s_fileBrowserSortByModified)))
-				{
-					s_fileBrowserSortByModified =
-						!s_fileBrowserSortByModified;
-					s_fileBrowserNeedsRefresh = true;
+				struct SortChip { FileBrowserSortKey key; const char *name; };
+				static const SortChip kSortChips[] = {
+					{ FileBrowserSortKey::Name, "Name" },
+					{ FileBrowserSortKey::Size, "Size" },
+					{ FileBrowserSortKey::Date, "Date" },
+				};
+				for (const SortChip &sc : kSortChips) {
+					bool active = (s_fileBrowserSortKey == sc.key);
+
+					// Stable ID via "###" so the arrow changing the visible
+					// label doesn't change the widget identity.
+					char label[40];
+					if (active)
+						snprintf(label, sizeof(label), "%s %s###fbsort%s",
+							sc.name,
+							s_fileBrowserSortAscending ? "^" : "v",
+							sc.name);
+					else
+						snprintf(label, sizeof(label), "%s###fbsort%s",
+							sc.name, sc.name);
+
+					float w = ImGui::CalcTextSize(sc.name).x
+						+ dp(16.0f) * 2.0f + dp(14.0f);  // +arrow room
+					sameLineIfFits(w);
+					if (ATTouchButton(label, ImVec2(w, shortcutH),
+						chipStyle(active)))
+					{
+						if (active)
+							s_fileBrowserSortAscending =
+								!s_fileBrowserSortAscending;
+						else
+							s_fileBrowserSortKey = sc.key;
+						s_fileBrowserNeedsRefresh = true;
+						SaveFileBrowserSortPrefs();
+					}
+				}
+			}
+		}
+
+		// --- Quick filter (type-to-filter) — mirrors the Game Library
+		// search.  A "Search" chip morphs into a full-width filter input
+		// with a trailing clear button.  Filtering itself happens at
+		// render time (see the list loop below), so changing the text
+		// never re-enumerates the directory. ---
+		{
+			float searchH = dp(40.0f);
+			if (s_fileBrowserSearchActive) {
+				if (s_fbFocusSearchInput) {
+					ImGui::SetKeyboardFocusHere(0);
+					s_fbFocusSearchInput = false;
 				}
 
-				float dirW = dp(48.0f);
-				sameLineIfFits(dirW);
-				if (ATTouchButton(
-					s_fileBrowserSortAscending ? "^" : "v",
-					ImVec2(dirW, shortcutH),
-					chipStyle(!s_fileBrowserSortAscending)))
+				float clearW = dp(44.0f);
+				float inputW = ImGui::GetContentRegionAvail().x - clearW
+					- ImGui::GetStyle().ItemSpacing.x;
+				if (inputW < dp(80.0f))
+					inputW = dp(80.0f);
+				ImGui::SetNextItemWidth(inputW);
+				if (ImGui::InputTextWithHint("##fbsearch",
+					"Filter files...",
+					s_fileBrowserSearchBuf,
+					sizeof(s_fileBrowserSearchBuf),
+					ImGuiInputTextFlags_CallbackAlways,
+					FileBrowserSearchCallback))
 				{
-					s_fileBrowserSortAscending =
-						!s_fileBrowserSortAscending;
-					s_fileBrowserNeedsRefresh = true;
+					s_fileBrowserSearchFilter = s_fileBrowserSearchBuf;
+				}
+
+				// ESC clears + closes; emptying then defocusing closes too.
+				if (!s_confirmActive && !s_infoModalOpen
+					&& ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+				{
+					ClearFileBrowserSearch();
+				} else if (ImGui::IsItemDeactivatedAfterEdit()
+					&& s_fileBrowserSearchBuf[0] == '\0')
+				{
+					s_fileBrowserSearchActive = false;
+				}
+
+				ImGui::SameLine();
+				if (ATTouchButton("##fbsearchclear",
+					ImVec2(clearW, searchH),
+					ATTouchButtonStyle::Subtle, ICON_MD_CLOSE))
+				{
+					ClearFileBrowserSearch();
+				}
+			} else {
+				if (ATTouchButton("Search##fbsearchopen",
+					ImVec2(0, searchH)))
+				{
+					s_fileBrowserSearchActive = true;
+					s_fbFocusSearchInput = true;
+					s_fileBrowserSearchBuf[0] = '\0';
+					s_fileBrowserSearchFilter.clear();
+				}
+
+				// Desktop niceties (no effect on touch): Ctrl+F opens the
+				// filter; an unmodified A-Z key opens it pre-filled with
+				// that letter.  Guarded so it doesn't fire while another
+				// widget is focused or a modal is up.
+				if (!s_confirmActive && !s_infoModalOpen
+					&& !ImGui::IsAnyItemActive())
+				{
+					if (io.KeyCtrl
+						&& ImGui::IsKeyPressed(ImGuiKey_F, false))
+					{
+						s_fileBrowserSearchActive = true;
+						s_fbFocusSearchInput = true;
+						s_fileBrowserSearchBuf[0] = '\0';
+						s_fileBrowserSearchFilter.clear();
+					} else {
+						for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k) {
+							if (ImGui::IsKeyPressed((ImGuiKey)k, false)
+								&& !io.KeyCtrl && !io.KeyAlt
+								&& !io.KeySuper)
+							{
+								s_fileBrowserSearchActive = true;
+								s_fbFocusSearchInput = true;
+								s_fbSearchCursorToEnd = true;
+								s_fileBrowserSearchBuf[0] =
+									(char)('a' + (k - ImGuiKey_A));
+								s_fileBrowserSearchBuf[1] = '\0';
+								s_fileBrowserSearchFilter =
+									s_fileBrowserSearchBuf;
+								break;
+							}
+						}
+					}
 				}
 			}
 		}
@@ -685,9 +833,31 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 
 		bool insideZip = !s_zipArchivePath.empty();
 
+		// Pre-lower the active filter once per frame (cheap ASCII fold;
+		// good enough for a substring filter, matching the Game Library).
+		VDStringA searchLower;
+		for (size_t si = 0; si < s_fileBrowserSearchFilter.size(); ++si)
+			searchLower += (char)std::tolower(
+				(unsigned char)s_fileBrowserSearchFilter[si]);
+
+		int visibleCount = 0;
+
 		for (size_t i = 0; i < s_fileBrowserEntries.size(); i++) {
 			const FileBrowserEntry &entry = s_fileBrowserEntries[i];
 			VDStringA nameU8 = VDTextWToU8(VDStringW(entry.name));
+
+			// Quick-filter: hide entries (files and folders) whose name
+			// doesn't contain the search text.  Indices into
+			// s_fileBrowserEntries stay valid since we only skip drawing.
+			if (!searchLower.empty()) {
+				VDStringA nameLower;
+				for (size_t si = 0; si < nameU8.size(); ++si)
+					nameLower += (char)std::tolower(
+						(unsigned char)nameU8[si]);
+				if (nameLower.find(searchLower.c_str()) == VDStringA::npos)
+					continue;
+			}
+			++visibleCount;
 
 			// A ZIP behaves as a *container* (tap = drill into it) only in
 			// the modes where drilling actually makes sense: normal Load
@@ -829,6 +999,22 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 			ImGui::PopID();
+		}
+
+		// Friendly empty state so a filtered-out or genuinely empty
+		// folder never looks like a broken blank pane.
+		if (visibleCount == 0) {
+			const ATMobilePalette &emPal = ATMobileGetPalette();
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				ATMobileCol(emPal.textMuted));
+			ImGui::Spacing();
+			if (!searchLower.empty()) {
+				ImGui::TextWrapped("No files match \"%s\"",
+					s_fileBrowserSearchFilter.c_str());
+			} else {
+				ImGui::TextWrapped("This folder is empty.");
+			}
+			ImGui::PopStyleColor();
 		}
 
 		ATTouchEndDragScroll();

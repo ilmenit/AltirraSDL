@@ -95,7 +95,7 @@ namespace {
 		std::string				saveName;
 		std::string				search;
 		bool					showHidden = false;
-		bool					sortByModified = false;
+		int						sortColumn = 0;	// 0=Name, 1=Modified, 2=Size
 		bool					sortAscending = true;
 		bool					needsRefresh = true;
 		std::vector<FallbackEntry> entries;
@@ -341,10 +341,15 @@ static void RefreshFallbackEntries(DialogContext& ctx) {
 			if (ad != bd)
 				return ad > bd;
 			int cmp = 0;
-			if (ctx.sortByModified) {
+			if (ctx.sortColumn == 1) {
 				if (a.info.modify_time < b.info.modify_time)
 					cmp = -1;
 				else if (a.info.modify_time > b.info.modify_time)
+					cmp = 1;
+			} else if (ctx.sortColumn == 2) {
+				if (a.info.size < b.info.size)
+					cmp = -1;
+				else if (a.info.size > b.info.size)
 					cmp = 1;
 			}
 			if (!cmp) {
@@ -565,14 +570,14 @@ void ATUIRenderFileDialogFallback() {
 			ImGuiTableColumnFlags_PreferSortDescending
 				| ImGuiTableColumnFlags_WidthFixed, 150.0f);
 		ImGui::TableSetupColumn("Size",
-			ImGuiTableColumnFlags_NoSort
+			ImGuiTableColumnFlags_PreferSortDescending
 				| ImGuiTableColumnFlags_WidthFixed, 90.0f);
 		ImGui::TableHeadersRow();
 
 		if (ImGuiTableSortSpecs *sorts = ImGui::TableGetSortSpecs()) {
 			if (sorts->SpecsDirty && sorts->SpecsCount > 0) {
 				const ImGuiTableColumnSortSpecs& spec = sorts->Specs[0];
-				ctx->sortByModified = spec.ColumnIndex == 1;
+				ctx->sortColumn = spec.ColumnIndex;
 				ctx->sortAscending =
 					spec.SortDirection == ImGuiSortDirection_Ascending;
 				ctx->needsRefresh = true;

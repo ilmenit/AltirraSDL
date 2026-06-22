@@ -79,8 +79,24 @@ extern bool s_mobileShowAllDrives;
 
 // When true, the file browser shows all files regardless of extension
 extern bool s_showAllFiles;
-extern bool s_fileBrowserSortByModified;
+
+// Sort key for the file browser listing.  Directories are always grouped
+// first; this selects the comparison applied within each group.
+enum class FileBrowserSortKey { Name, Size, Date };
+extern FileBrowserSortKey s_fileBrowserSortKey;
 extern bool s_fileBrowserSortAscending;
+
+// Quick-filter (substring, case-insensitive) over the current listing —
+// mirrors the Game Library search.  Applied at render time so it never
+// re-enumerates the directory and keeps entry indices stable.
+extern bool      s_fileBrowserSearchActive;   // bar shown vs. "Search" chip
+extern char      s_fileBrowserSearchBuf[128]; // raw user text (UTF-8)
+extern VDStringA s_fileBrowserSearchFilter;   // == buf, drives filtering
+void ClearFileBrowserSearch();                // reset all three above
+
+// Persist / restore the sort key + direction (mobile registry).  The
+// search filter is intentionally ephemeral and never persisted.
+void SaveFileBrowserSortPrefs();
 
 // -------------------------------------------------------------------------
 // Modal info / confirmation sheet state
