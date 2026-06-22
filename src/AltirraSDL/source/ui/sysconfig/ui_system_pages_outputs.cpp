@@ -73,6 +73,9 @@ void RenderVideoCategory(ATSimulator &sim) {
 	if (ImGui::Combo("Artifacting", &artifact, kArtifactLabels, 7))
 		gtia.SetArtifactingMode((ATArtifactMode)artifact);
 	ImGui::SetItemTooltip("Emulate false color effects derived from composite video encoding.");
+	if (sim.GetVBXE()) {
+		ImGui::TextDisabled("VBXE supports PAL standard artifacting only; high/NTSC modes are downgraded or unavailable.");
+	}
 
 	static const char *kMonitorLabels[] = {
 		"Color", "Peritel", "Green Mono", "Amber Mono", "Blue-White Mono", "White Mono"

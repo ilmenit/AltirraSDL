@@ -1701,7 +1701,10 @@ static void ATUIQuickBarVideoStandardButton() {
 }
 
 static void ATUIQuickBarViewButton(bool& viewPopupOpen) {
+	const bool hasVBXE = g_sim.GetVBXE() != nullptr;
 	const bool active =
+		ATUIQuickBarCommandActive("Video.ArtifactingAuto") ||
+		ATUIQuickBarCommandActive("Video.ArtifactingAutoHi") ||
 		ATUIQuickBarCommandActive("Video.ToggleFrameBlending") ||
 		ATUIQuickBarCommandActive("Video.ToggleScanlines") ||
 		ATUIQuickBarCommandActive("View.ToggleFullScreen");
@@ -1716,6 +1719,11 @@ static void ATUIQuickBarViewButton(bool& viewPopupOpen) {
 		ATUIQuickBarMenuCommand("Artifacting Off", "Video.ArtifactingNone");
 		ATUIQuickBarMenuCommand("Artifacting Low", "Video.ArtifactingAuto");
 		ATUIQuickBarMenuCommand("Artifacting High", "Video.ArtifactingAutoHi");
+		if (hasVBXE) {
+			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 18.0f);
+			ImGui::TextDisabled("VBXE supports PAL standard artifacting only; high/NTSC modes are downgraded or unavailable.");
+			ImGui::PopTextWrapPos();
+		}
 
 		ImGui::Separator();
 		ATUIQuickBarMenuCommand("Frame Blending", "Video.ToggleFrameBlending");

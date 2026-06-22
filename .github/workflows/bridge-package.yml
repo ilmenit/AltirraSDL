@@ -299,47 +299,60 @@ jobs:
 
   macos:
     name: Build (macOS arm64)
-    runs-on: macos-14
+    runs-on: macos-26-arm64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
 
     steps:
-      - name: Install Ninja and SDL3
-        run: brew install ninja sdl3
-
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
+      - name: Show toolchain versions
+        run: |
+          cmake --version
+          ninja --version
+          clang --version
+          uname -m
 
       - name: Cache CMake FetchContent dependencies
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: bridge-macos-arm64-deps-${{ hashFiles('CMakeLists.txt', 'src/AltirraSDL/CMakeLists.txt', 'src/AltirraBridgeServer/CMakeLists.txt') }}
-          restore-keys: bridge-macos-arm64-deps-
+          key: bridge-macos-arm64-deps-macos11-${{ hashFiles('CMakeLists.txt', 'src/AltirraSDL/CMakeLists.txt', 'src/AltirraBridgeServer/CMakeLists.txt') }}
+          restore-keys: bridge-macos-arm64-deps-macos11-
 
       - name: Configure
         shell: bash
         run: |
-          # ALTIRRA_STATIC_SDL3=OFF: 04_paint is bundled with a sidecar
-          # libSDL3.0.dylib (brew-provided, rpath-rewritten) — opt out
-          # of the desktop static default so find_package finds the
-          # brew dylib and the packaging step below has something to
-          # copy next to the example binary.
+          # ALTIRRA_FETCH_SDL3=ON + ALTIRRA_STATIC_SDL3=OFF:
+          # 04_paint is bundled with a sidecar libSDL3.0.dylib built
+          # from source under MACOSX_DEPLOYMENT_TARGET=11.0. Do not
+          # use Homebrew SDL3 here: bottles from a macOS 26 runner may
+          # require a newer OS than the package advertises.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_BRIDGE_SERVER=ON \
+            -DALTIRRA_FETCH_SDL3=ON \
             -DALTIRRA_STATIC_SDL3=OFF \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
       - name: Build AltirraBridgeServer
         shell: bash
-        run: cmake --build build --target AltirraBridgeServer -j"$(sysctl -n hw.ncpu)"
+        run: |
+          cmake --build build \
+            --target AltirraBridgeServer SDL3-shared \
+            -j"$(sysctl -n hw.ncpu)"
 
       - name: Build C example binaries
         shell: bash
         run: |
-          # 04_paint links SDL3 (system install via brew above).
+          # 04_paint links SDL3. Reuse the FetchContent SDL3 build
+          # from the parent build so it has the same deployment target
+          # as the packaged Bridge binaries.
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
                 -B build_c_examples -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$PWD/build/_deps/sdl3-build" \
                 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
           cmake --build build_c_examples -j"$(sysctl -n hw.ncpu)"
           ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs \
@@ -405,6 +418,48 @@ jobs:
         shell: bash
         run: |
           set -e
+
+          version_le() {
+            awk -v a="$1" -v b="$2" '
+              BEGIN {
+                split(a, A, ".")
+                split(b, B, ".")
+                for (i = 1; i <= 3; ++i) {
+                  x = A[i] + 0
+                  y = B[i] + 0
+                  if (x < y) exit 0
+                  if (x > y) exit 1
+                }
+                exit 0
+              }'
+          }
+
+          macho_minos() {
+            otool -l "$1" | awk '
+              $1 == "cmd" && $2 == "LC_BUILD_VERSION" { in_build = 1; next }
+              in_build && $1 == "minos" { print $2; exit }
+              in_build && $1 == "cmd" { in_build = 0 }
+            '
+          }
+
+          verify_macos_minos() {
+            local file="$1"
+            local minos
+
+            minos="$(macho_minos "$file")"
+            if [ -z "$minos" ]; then
+              echo "ERROR: could not read LC_BUILD_VERSION minos from $file"
+              otool -l "$file" || true
+              exit 1
+            fi
+
+            echo "Mach-O minos: $file -> $minos"
+            if ! version_le "$minos" "$MACOSX_DEPLOYMENT_TARGET"; then
+              echo "ERROR: $file requires macOS $minos; expected <= $MACOSX_DEPLOYMENT_TARGET"
+              exit 1
+            fi
+          }
+
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VER="${{ github.ref_name }}"
             SLUG="${VER}"
@@ -432,30 +487,39 @@ jobs:
           for ex in 01_ping 02_peek_regs 03_input 04_paint; do
               cp "build_c_examples/${ex}" "${STAGE}/sdk/c/examples/bin/"
           done
-          # Bundle the brew SDL3 dylib next to 04_paint and rewrite
-          # its install_name to @loader_path so the loader picks
-          # the bundled copy without a system SDL3 install.
-          BREW_SDL3_LIB="$(brew --prefix sdl3)/lib"
-          if [ -e "${BREW_SDL3_LIB}/libSDL3.0.dylib" ]; then
-              cp -L "${BREW_SDL3_LIB}/libSDL3.0.dylib" \
-                    "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
-              # Find the original install_name the binary points at
-              # (looks like /opt/homebrew/opt/sdl3/lib/libSDL3.0.dylib)
-              # and rewrite it.
-              ORIG_REF="$(otool -L "${STAGE}/sdk/c/examples/bin/04_paint" \
-                          | awk '/libSDL3/ {print $1; exit}')"
-              if [ -n "${ORIG_REF}" ]; then
-                  install_name_tool -change "${ORIG_REF}" \
-                      "@loader_path/libSDL3.0.dylib" \
-                      "${STAGE}/sdk/c/examples/bin/04_paint"
-              fi
-              # Also fix the dylib's own id so it doesn't drag in
-              # the absolute brew path.
-              install_name_tool -id "@loader_path/libSDL3.0.dylib" \
-                  "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
+
+          # Bundle the fetched SDL3 dylib next to 04_paint. This copy
+          # was built under MACOSX_DEPLOYMENT_TARGET=11.0; using a
+          # Homebrew bottle from the runner would risk a newer minos.
+          SDL3_DYLIB="$(find build/_deps/sdl3-build -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -1)"
+          if [ -z "${SDL3_DYLIB}" ]; then
+              echo "ERROR: SDL3 dylib not found in build/_deps/sdl3-build"
+              find build/_deps/sdl3-build -maxdepth 2 -name 'libSDL3*.dylib' -print || true
+              exit 1
           fi
+          cp "${SDL3_DYLIB}" "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
+
+          # Rewrite 04_paint to load the bundled dylib explicitly from
+          # its own directory, independent of @rpath search order.
+          ORIG_REF="$(otool -L "${STAGE}/sdk/c/examples/bin/04_paint" \
+                      | awk '/libSDL3/ {print $1; exit}')"
+          if [ -n "${ORIG_REF}" ]; then
+              install_name_tool -change "${ORIG_REF}" \
+                  "@loader_path/libSDL3.0.dylib" \
+                  "${STAGE}/sdk/c/examples/bin/04_paint"
+          fi
+          install_name_tool -id "@loader_path/libSDL3.0.dylib" \
+              "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
+
           strip "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
           chmod +x "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
+
+          verify_macos_minos "${STAGE}/AltirraBridgeServer"
+          for f in "${STAGE}/sdk/c/examples/bin/"*; do
+              if [ -f "$f" ] && file "$f" | grep -q 'Mach-O'; then
+                  verify_macos_minos "$f"
+              fi
+          done
 
           STAMP="$(date -u +%Y-%m-%d)"
           cat > "${STAGE}/BUILD-INFO.txt" <<EOF

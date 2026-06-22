@@ -18,6 +18,15 @@ case "$PLATFORM" in
     *)       die "Unsupported platform for librashader: $PLATFORM" ;;
 esac
 
+# Keep the Rust-built dylib aligned with the CMake deployment target used
+# for AltirraSDL.app. Without this, Cargo/rustc inherit the runner SDK
+# default, which can make the bundled dylib require the build host macOS.
+if [ "$PLATFORM" = "macos" ]; then
+    : "${MACOSX_DEPLOYMENT_TARGET:=11.0}"
+    export MACOSX_DEPLOYMENT_TARGET
+    info "macOS deployment target for librashader: ${C_BOLD}${MACOSX_DEPLOYMENT_TARGET}${C_RESET}"
+fi
+
 # Destination: next to the AltirraSDL executable.
 # - Windows: MSVC puts the binary in a per-config subdirectory (Release/).
 # - macOS:   AltirraSDL is a .app bundle; the Mach-O binary lives inside

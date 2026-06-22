@@ -1290,22 +1290,30 @@ static void SyncScreenFXToBackend() {
 	// HasScreenFX() returns false — we must still push a default (all-off)
 	// state to the backend so it stops rendering stale effects.
 	//
-	// When the user picks View > Screen Effects > (None), bypass the GTIA
-	// FX entirely and push an identity state regardless of what the core
-	// produced this frame — the ATArtifactingParams values are retained
-	// in GTIA so the user's bloom/distortion/etc. settings survive the
-	// None → Basic round trip.
+	// When the user picks View > Screen Effects > (None), bypass optional
+	// GTIA screen effects while preserving mandatory display passes. VBXE
+	// PAL artifacting is implemented as an accelerated PAL blend in the
+	// backend, so clearing all screen FX here would silently disable PAL
+	// artifacting only for VBXE.
 	const bool effectsDisabled =
 		(g_uiState.screenEffectsMode == ATUIState::kSFXMode_None);
 
 	if (!effectsDisabled && g_pDisplay->HasScreenFX()) {
 		g_pBackend->UpdateScreenFX(g_pDisplay->GetLastScreenFX());
 	} else {
-		// Push an all-off state so the backend stops rendering stale effects.
+		// Push an all-off state so the backend stops rendering stale optional
+		// effects, but keep PAL artifacting if GTIA requested it.
 		// Note: mGamma must be 1.0 (identity), not 0 (the struct default) —
 		// a gamma of 0 triggers the screen FX shader path and produces black.
 		VDVideoDisplayScreenFXInfo offFX {};
 		offFX.mGamma = 1.0f;
+
+		if (g_pDisplay->HasScreenFX()) {
+			const VDVideoDisplayScreenFXInfo& requestedFX = g_pDisplay->GetLastScreenFX();
+			offFX.mPALBlendingOffset = requestedFX.mPALBlendingOffset;
+			offFX.mbSignedRGBEncoding = requestedFX.mbSignedRGBEncoding;
+		}
+
 		g_pBackend->UpdateScreenFX(offFX);
 	}
 }
