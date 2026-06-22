@@ -1700,7 +1700,7 @@ static void ATUIQuickBarVideoStandardButton() {
 	ATUIQuickBarButton(label, iconName, tooltip, command, ntscActive || palActive);
 }
 
-static void ATUIQuickBarViewButton() {
+static void ATUIQuickBarViewButton(bool& viewPopupOpen) {
 	const bool active =
 		ATUIQuickBarCommandActive("Video.ToggleFrameBlending") ||
 		ATUIQuickBarCommandActive("Video.ToggleScanlines") ||
@@ -1709,7 +1709,10 @@ static void ATUIQuickBarViewButton() {
 	if (ATUIQuickBarButton("View", "view", "View Options", nullptr, active))
 		ImGui::OpenPopup("##QuickBarView");
 
+	bool popupOpenThisFrame = false;
 	if (ImGui::BeginPopup("##QuickBarView")) {
+		popupOpenThisFrame = true;
+
 		ATUIQuickBarMenuCommand("Artifacting Off", "Video.ArtifactingNone");
 		ATUIQuickBarMenuCommand("Artifacting Low", "Video.ArtifactingAuto");
 		ATUIQuickBarMenuCommand("Artifacting High", "Video.ArtifactingAutoHi");
@@ -1729,6 +1732,8 @@ static void ATUIQuickBarViewButton() {
 		ATUIQuickBarMenuCommand("Full Screen", "View.ToggleFullScreen");
 		ImGui::EndPopup();
 	}
+
+	viewPopupOpen = popupOpenThisFrame;
 }
 
 static void ATUIQuickBarSameLine() {
@@ -1775,12 +1780,20 @@ static bool ATUIQuickBarSuppressedByDialog(const ATUIState& state) {
 }
 
 static void RenderDesktopQuickBar(const ATUIState& state) {
-	if (!ATUIGetQuickBarEnabled())
+	static bool s_viewPopupOpen = false;
+
+	if (!ATUIGetQuickBarEnabled()) {
+		s_viewPopupOpen = false;
 		return;
-	if (ATUIQuickBarSuppressedByDialog(state))
+	}
+	if (ATUIQuickBarSuppressedByDialog(state)) {
+		s_viewPopupOpen = false;
 		return;
-	if (ATUIDebuggerHasVisiblePanes())
+	}
+	if (ATUIDebuggerHasVisiblePanes()) {
+		s_viewPopupOpen = false;
 		return;
+	}
 
 	const ImGuiViewport *vp = ImGui::GetMainViewport();
 	ImVec2 mouse;
@@ -1802,7 +1815,7 @@ static void RenderDesktopQuickBar(const ATUIState& state) {
 		mouse.x <= s_lastPos.x + s_lastSize.x + 8.0f &&
 		mouse.y <= s_lastPos.y + s_lastSize.y + 8.0f;
 
-	if (!inTrigger && !inLast)
+	if (!inTrigger && !inLast && !s_viewPopupOpen)
 		return;
 
 	const float statusClearance = 42.0f;
@@ -1830,7 +1843,10 @@ static void RenderDesktopQuickBar(const ATUIState& state) {
 		// command names and using tooltips as the accessible labels.
 		ATUIQuickBarButton("Config", "configure", "Configure System", "System.Configure");
 		ATUIQuickBarSameLine();
-		ATUIQuickBarViewButton();
+		// Keep the auto-hidden quick bar alive while the View popup is open.
+		// Otherwise moving from the bar into the popup stops submitting the
+		// popup's parent window, which makes ImGui close the popup.
+		ATUIQuickBarViewButton(s_viewPopupOpen);
 		ATUIQuickBarSameLine();
 		ATUIQuickBarButton("Boot", "image_boot", "Boot Image", "File.BootImage");
 		ATUIQuickBarSameLine();
