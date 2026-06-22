@@ -19,10 +19,7 @@
 #include <at/atui/uimanager.h>
 #include <at/atui/uianchor.h>
 
-ATUIContainer::ATUIContainer()
-	: mbLayoutInvalid(false)
-	, mbDescendantLayoutInvalid(false)
-{
+ATUIContainer::ATUIContainer() {
 	mbFastClip = true;
 	SetAlphaFillColor(0);
 }
@@ -36,6 +33,9 @@ void ATUIContainer::AddChild(ATUIWidget *w) {
 	w->SetParent(mpManager, this);
 
 	mWidgets.push_back(w);
+
+	mbHasAnimation = true;
+	mbDescendantMayHaveAnimation = true;
 
 	if (w->IsVisible())
 		Invalidate();
@@ -312,6 +312,8 @@ ATUIWidgetMetrics ATUIContainer::OnMeasure() {
 }
 
 void ATUIContainer::Paint(IVDDisplayRenderer& rdr, sint32 w, sint32 h) {
+	VDASSERT(mbHasAnimation || !mbDescendantMayHaveAnimation);
+
 	for(Widgets::const_iterator it(mWidgets.begin()), itEnd(mWidgets.end());
 		it != itEnd;
 		++it)
@@ -353,4 +355,32 @@ ATUIWidget *ATUIContainer::DragHitTest(vdpoint32 pt) {
 	}
 
 	return mbDropTarget ? this : nullptr;
+}
+
+bool ATUIContainer::UpdateAnimation(const ATUIWidgetAnimContext& ctx) {
+	bool newDescAnim = false;
+
+	VDASSERT(mbHasAnimation);
+
+	if (mbDescendantMayHaveAnimation) {
+		for(ATUIWidget *w : mWidgets) {
+			if (w->mbHasAnimation) {
+				if (w->UpdateAnimation(ctx))
+					newDescAnim = true;
+				else
+					w->mbHasAnimation = false;
+			}
+		}
+
+		if (!newDescAnim)
+			mbDescendantMayHaveAnimation = false;
+	}
+
+	if (ATUIWidget::UpdateAnimation(ctx))
+		return true;
+
+	if (!newDescAnim)
+		VDASSERT(!mbDescendantMayHaveAnimation);
+
+	return newDescAnim;
 }

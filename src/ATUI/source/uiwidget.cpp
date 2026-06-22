@@ -16,12 +16,13 @@
 
 #include <stdafx.h>
 #include <vd2/VDDisplay/textrenderer.h>
-#include <at/atui/uiwidget.h>
 #include <at/atui/uianchor.h>
 #include <at/atui/uimanager.h>
 #include <at/atui/uicontainer.h>
 #include <at/atui/uidrawingutils.h>
 #include <at/atui/uidragdrop.h>
+#include <at/atui/uiwidget.h>
+#include <at/atui/uiwidgetanimator.h>
 
 ATUIWidget::ATUIWidget()
 	: mpManager(NULL)
@@ -56,7 +57,13 @@ ATUIWidget::ATUIWidget()
 }
 
 ATUIWidget::~ATUIWidget() {
+	RemoveAllAnimators();
+
 	vdsaferelease <<= mpAnchor;
+}
+
+void *ATUIWidget::AsInterface(uint32 iid) {
+	return nullptr;
 }
 
 ATUICloseResult ATUIWidget::Close() {
@@ -709,6 +716,53 @@ ATUIDragEffect ATUIWidget::OnDragDrop(sint32 x, sint32 y, ATUIDragModifiers modi
 	return ATUIDragEffect::None;
 }
 
+void ATUIWidget::AddAnimator(ATUIWidgetAnimator& anim) {
+	if (anim.mpOwner) {
+		VDFAIL("Attempting to add animator already added to another widget.");
+		return;
+	}
+
+	anim.AddRef();
+	anim.mpOwner = this;
+
+	anim.mpNextAnimator = mpInactiveAnimators;
+	mpInactiveAnimators = &anim;
+
+	if (anim.mbActive) {
+		anim.mbActive = false;
+		MakeAnimationActive(anim);
+	}
+}
+
+void ATUIWidget::RemoveAnimator(ATUIWidgetAnimator& anim) {
+	if (anim.mpOwner != this)
+		return;
+
+	ATUIWidgetAnimator **it = anim.mbActive ? &mpActiveAnimators : &mpInactiveAnimators;
+	while(ATUIWidgetAnimator *anim2 = *it) {
+		if (anim2 == &anim) {
+			*it = anim.mpNextAnimator;
+			anim.mpNextAnimator = nullptr;
+			anim.mpOwner = nullptr;
+			anim.mbActive = false;
+			anim.Release();
+			return;
+		}
+
+		it = &anim2->mpNextAnimator;
+	}
+
+	VDFAIL("Animator not found");
+}
+
+void ATUIWidget::RemoveAllAnimators() {
+	while(mpActiveAnimators)
+		RemoveAnimator(*mpActiveAnimators);
+
+	while(mpInactiveAnimators)
+		RemoveAnimator(*mpInactiveAnimators);
+}
+
 void ATUIWidget::Draw(IVDDisplayRenderer& rdr) {
 	if (!mbVisible)
 		return;
@@ -875,4 +929,84 @@ void ATUIWidget::RecomputeClientArea() {
 		Invalidate();
 		OnSize();
 	}
+}
+
+bool ATUIWidget::UpdateAnimation(const ATUIWidgetAnimContext& ctx) {
+	ATUIWidgetAnimator **it = &mpActiveAnimators;
+
+	if (*it) {
+		while(ATUIWidgetAnimator *anim = *it) {
+			ATUIWidgetAnimator::AnimResult result = anim->Animate(ctx);
+
+			if (result == ATUIWidgetAnimator::AnimResult::Active) {
+				it = &anim->mpNextAnimator;
+			} else {
+				anim->mbActive = false;
+				*it = anim->mpNextAnimator;
+
+				if (result == ATUIWidgetAnimator::AnimResult::Inactive) {
+					anim->mpNextAnimator = mpInactiveAnimators;
+					mpInactiveAnimators = anim;
+				} else {
+					anim->mpNextAnimator = nullptr;
+					anim->mpOwner = nullptr;
+					anim->Release();
+				}
+			}
+		}
+	}
+
+	return mpActiveAnimators != nullptr;
+}
+
+void ATUIWidget::MakeAnimationInactive(ATUIWidgetAnimator& anim) {
+	VDASSERT(anim.mbActive);
+
+	ATUIWidgetAnimator **it = &mpActiveAnimators;
+	while(*it) {
+		if (*it == &anim) {
+			*it = anim.mpNextAnimator;
+			anim.mbActive = false;
+			anim.mpNextAnimator = mpInactiveAnimators;
+			mpInactiveAnimators = &anim;
+			return;
+		}
+
+		it = &anim.mpNextAnimator;
+	}
+
+	VDFAIL("Animator not found in active list.");
+}
+
+void ATUIWidget::MakeAnimationActive(ATUIWidgetAnimator& anim) {
+	VDASSERT(!anim.mbActive);
+
+	ATUIWidgetAnimator **it = &mpInactiveAnimators;
+	while(*it) {
+		if (*it == &anim) {
+			*it = anim.mpNextAnimator;
+			anim.mbActive = true;
+			anim.mpNextAnimator = mpActiveAnimators;
+			mpActiveAnimators = &anim;
+
+			if (!mbHasAnimation) {
+				mbHasAnimation = true;
+
+				ATUIContainer *c = mpParent;
+				for(; c && !c->mbDescendantMayHaveAnimation; c = c->mpParent) {
+					c->mbDescendantMayHaveAnimation = true;
+					c->mbHasAnimation = true;
+				}
+
+				VDASSERT(!c || (c->mbHasAnimation && c->mbDescendantMayHaveAnimation));
+
+				Invalidate();
+			}
+			return;
+		}
+
+		it = &anim.mpNextAnimator;
+	}
+
+	VDFAIL("Animator not found in inactive list.");
 }

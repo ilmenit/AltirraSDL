@@ -1097,7 +1097,7 @@ bool RenderATR8000Config(ATPropertySet& props, ATDeviceConfigState& st) {
 }
 
 // =========================================================================
-// 1020 Plotter — pen colors
+// 1020 Plotter — options and pen colors
 // =========================================================================
 
 bool Render1020Config(ATPropertySet& props, ATDeviceConfigState& st) {
@@ -1117,7 +1117,12 @@ bool Render1020Config(ATPropertySet& props, ATDeviceConfigState& st) {
 			st.combo[i] = (int)props.GetUint32(key, (uint32)i);
 			if (st.combo[i] > 3) st.combo[i] = i;
 		}
+
+		st.check[0] = props.GetBool("accurate_bresenham", false);
 	}
+
+	ImGui::SeparatorText("Options");
+	ImGui::Checkbox("Use accurate line stepping", &st.check[0]);
 
 	ImGui::SeparatorText("Pen Colors");
 	for (int i = 0; i < 4; ++i) {
@@ -1139,6 +1144,9 @@ bool Render1020Config(ATPropertySet& props, ATDeviceConfigState& st) {
 	ImGui::Separator();
 	if (ImGui::Button("OK", ImVec2(120, 0))) {
 		props.Clear();
+		if (st.check[0])
+			props.SetBool("accurate_bresenham", true);
+
 		for (int i = 0; i < 4; ++i) {
 			char key[16];
 			snprintf(key, sizeof(key), "pencolor%d", i);

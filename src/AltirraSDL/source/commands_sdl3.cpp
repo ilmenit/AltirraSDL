@@ -485,12 +485,33 @@ namespace {
 		return checked ? kATUICmdState_Checked : kATUICmdState_None;
 	}
 
+	ATUICmdState ToRadioChecked(bool checked) {
+		return checked ? kATUICmdState_RadioChecked : kATUICmdState_None;
+	}
+
 	bool IsCart0Attached() { return g_sim.IsCartridgeAttached(0); }
 	bool IsCart1Attached() { return g_sim.IsCartridgeAttached(1); }
 	bool IsNot5200() { return g_sim.GetHardwareMode() != kATHardwareMode_5200; }
 	bool IsNetplaySessionNotEngaged() { return !ATNetplayGlue::IsSessionEngaged(); }
 	bool IsNetplayNotLockstepping() { return !ATNetplayGlue::IsLockstepping(); }
 	bool IsVideoStandardPALFamilyAvailable() { return IsNetplaySessionNotEngaged() && IsNot5200(); }
+	bool IsFullscreen() { return (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0; }
+
+	void SetOverscanMode(ATGTIAEmulator::OverscanMode mode) {
+		g_sim.GetGTIA().SetOverscanMode(mode);
+	}
+
+	ATUICmdState QueryOverscanMode(ATGTIAEmulator::OverscanMode mode) {
+		return ToRadioChecked(g_sim.GetGTIA().GetOverscanMode() == mode);
+	}
+
+	void SetArtifactingMode(ATArtifactMode mode) {
+		g_sim.GetGTIA().SetArtifactingMode(mode);
+	}
+
+	ATUICmdState QueryArtifactingMode(ATArtifactMode mode) {
+		return ToRadioChecked(g_sim.GetGTIA().GetArtifactingMode() == mode);
+	}
 }
 
 static const ATUICommand kSDL3CommandsExtra[] = {
@@ -626,7 +647,7 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { g_sim.GetCassette().SetTurboDecodeAlgorithm(ATCassetteTurboDecodeAlgorithm::PeakFilter); } },
 
 	// =====================================================================
-	// Disk (cmds.cpp) — quick access toggles also used by the test12
+	// Disk (cmds.cpp) — quick access toggles also used by the test13
 	// quick bar. Keep the mutation behind the command manager so menu,
 	// shortcut, custom-device, and overlay dispatch all share one path.
 	// =====================================================================
@@ -687,6 +708,16 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { ATUISetDrawPadPointersEnabled(!ATUIGetDrawPadPointersEnabled()); } },
 	{ "View.ToggleQuickBar",
 		[] { ATUISetQuickBarEnabled(!ATUIGetQuickBarEnabled()); }, nullptr, [] { return ToChecked(ATUIGetQuickBarEnabled()); } },
+	{ "View.OverscanOSScreen",
+		[] { SetOverscanMode(ATGTIAEmulator::kOverscanOSScreen); }, nullptr, [] { return QueryOverscanMode(ATGTIAEmulator::kOverscanOSScreen); } },
+	{ "View.OverscanNormal",
+		[] { SetOverscanMode(ATGTIAEmulator::kOverscanNormal); }, nullptr, [] { return QueryOverscanMode(ATGTIAEmulator::kOverscanNormal); } },
+	{ "View.OverscanWidescreen",
+		[] { SetOverscanMode(ATGTIAEmulator::kOverscanWidescreen); }, nullptr, [] { return QueryOverscanMode(ATGTIAEmulator::kOverscanWidescreen); } },
+	{ "View.OverscanExtended",
+		[] { SetOverscanMode(ATGTIAEmulator::kOverscanExtended); }, nullptr, [] { return QueryOverscanMode(ATGTIAEmulator::kOverscanExtended); } },
+	{ "View.OverscanFull",
+		[] { SetOverscanMode(ATGTIAEmulator::kOverscanFull); }, nullptr, [] { return QueryOverscanMode(ATGTIAEmulator::kOverscanFull); } },
 	{ "View.ResetPan",
 		[] { ATUISetDisplayPanOffset(vdfloat2{0.0f, 0.0f}); } },
 	{ "View.ResetZoom",
@@ -697,6 +728,34 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { ATUIActivatePanZoomTool(); } },
 	{ "View.VideoOutputNormal",
 		[] { ATUISetAltViewEnabled(false); } },
+
+	// =====================================================================
+	// Video (cmdsystem.cpp) — quick-bar and command-palette display modes.
+	// =====================================================================
+	{ "Video.ToggleFrameBlending",
+		[] {
+			auto& gtia = g_sim.GetGTIA();
+			gtia.SetBlendModeEnabled(!gtia.IsBlendModeEnabled());
+		}, nullptr, [] { return ToChecked(g_sim.GetGTIA().IsBlendModeEnabled()); } },
+	{ "Video.ToggleScanlines",
+		[] {
+			auto& gtia = g_sim.GetGTIA();
+			gtia.SetScanlinesEnabled(!gtia.AreScanlinesEnabled());
+		}, nullptr, [] { return ToChecked(g_sim.GetGTIA().AreScanlinesEnabled()); } },
+	{ "Video.ArtifactingNone",
+		[] { SetArtifactingMode(ATArtifactMode::None); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::None); } },
+	{ "Video.ArtifactingNTSC",
+		[] { SetArtifactingMode(ATArtifactMode::NTSC); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::NTSC); } },
+	{ "Video.ArtifactingNTSCHi",
+		[] { SetArtifactingMode(ATArtifactMode::NTSCHi); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::NTSCHi); } },
+	{ "Video.ArtifactingPAL",
+		[] { SetArtifactingMode(ATArtifactMode::PAL); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::PAL); } },
+	{ "Video.ArtifactingPALHi",
+		[] { SetArtifactingMode(ATArtifactMode::PALHi); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::PALHi); } },
+	{ "Video.ArtifactingAuto",
+		[] { SetArtifactingMode(ATArtifactMode::Auto); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::Auto); } },
+	{ "Video.ArtifactingAutoHi",
+		[] { SetArtifactingMode(ATArtifactMode::AutoHi); }, nullptr, [] { return QueryArtifactingMode(ATArtifactMode::AutoHi); } },
 
 	// =====================================================================
 	// Input (cmdinput.cpp) — keyboard layout/mode commands.
@@ -949,7 +1008,7 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "System.TogglePause",            CmdTogglePause,          IsNetplayNotLockstepping, [] { return ToChecked(g_sim.IsPaused()); }, nullptr },
 	{ "Netplay.OpenEmotePicker",       CmdOpenEmotePicker,      nullptr, nullptr, nullptr },
 	{ "Input.CaptureMouse",            CmdCaptureMouse,         nullptr, nullptr, nullptr },
-	{ "View.ToggleFullScreen",         CmdToggleFullScreen,     nullptr, nullptr, nullptr },
+	{ "View.ToggleFullScreen",         CmdToggleFullScreen,     nullptr, [] { return ToChecked(IsFullscreen()); }, nullptr },
 	{ "System.ToggleSlowMotion",       CmdToggleSlowMotion,     IsNetplaySessionNotEngaged, [] { return ToChecked(ATUIGetSlowMotion()); }, nullptr },
 	{ "Audio.ToggleChannel1",          CmdToggleChannel1,       nullptr, nullptr, nullptr },
 	{ "Audio.ToggleChannel2",          CmdToggleChannel2,       nullptr, nullptr, nullptr },

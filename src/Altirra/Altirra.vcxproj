@@ -740,6 +740,7 @@
     <None Include="h\gtiarenderer_ssse3_intrin.inl" />
     <None Include="h\gtia_neon.inl" />
     <None Include="h\gtia_sse2_intrin.inl" />
+    <None Include="h\uicommandiconinfo.inl" />
     <None Include="res\1030relay.pcm" />
     <None Include="res\about.txt" />
     <None Include="..\..\out\release\atbasic.bin" />

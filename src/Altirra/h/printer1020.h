@@ -85,6 +85,7 @@ private:
 	uint8 mArgsLeft = 0;
 	uint8 mArgCount = 0;
 	bool mbIntCharsEnabled = false;
+	bool mbAccurateBresenham = false;
 
 	sint32 mPenColors[4] {};
 	uint32 mPrintPenColors[4] {};

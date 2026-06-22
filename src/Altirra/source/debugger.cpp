@@ -5469,6 +5469,7 @@ void ATDebugger::ClearRunConditions() {
 	ATCPUEmulator& cpu = g_sim.GetCPU();
 
 	cpu.RemoveStepCondition(mDebugStepCondition);
+	cpu.SetTrace(false);
 
 	g_sim.SetBreakOnScanline(-1);
 	g_sim.SetBreakOnFrameEnd(false);

@@ -27,6 +27,13 @@ bool ATUIConfDev1020(VDGUIHandle hParent, ATPropertySet& props) {
 				0xC91B12,	// red
 			};
 
+			view.AddCheckbox()
+				.SetTag("accurate_bresenham")
+				.SetLabel(L"&Options")
+				.SetText(L"Use accurate line stepping");
+
+			view.AddVerticalSpace();
+
 			view.AddColor().SetValue(0).SetFixedPalette(kPalette).SetCustomPaletteKey("1020 Pens").SetLabel(L"Pen &1 (Black)").SetTag("pencolor0");
 			view.AddColor().SetValue(0).SetFixedPalette(kPalette).SetCustomPaletteKey("1020 Pens").SetLabel(L"Pen &2 (Blue)").SetTag("pencolor1");
 			view.AddColor().SetValue(0).SetFixedPalette(kPalette).SetCustomPaletteKey("1020 Pens").SetLabel(L"Pen &3 (Green)").SetTag("pencolor2");

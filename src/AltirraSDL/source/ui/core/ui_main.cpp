@@ -1600,11 +1600,17 @@ static bool ATUIQuickBarButton(const char *label, const char *iconName,
 	if (active)
 		ImGui::PopStyleColor();
 
-	if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
-		ImGui::SetTooltip("%s\nCommand: %s", tooltip, command);
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) {
+		if (command && *command)
+			ImGui::SetTooltip("%s\nCommand: %s", tooltip, command);
+		else
+			ImGui::SetTooltip("%s", tooltip);
+	}
 
-	if (clicked && available)
-		ATUIExecuteCommandStringAndShowErrors(command, nullptr);
+	if (clicked && available) {
+		if (command && *command)
+			ATUIExecuteCommandStringAndShowErrors(command, nullptr);
+	}
 
 	return clicked;
 }
@@ -1618,8 +1624,25 @@ static bool ATUIQuickBarCommandActive(const char *command) {
 }
 
 static bool ATUIQuickBarCommandAvailable(const char *command) {
+	if (!command || !*command)
+		return true;
+
 	const ATUICommand *cmd = ATUIGetCommandManager().GetCommand(command);
 	return cmd && (!cmd->mpTestFn || cmd->mpTestFn());
+}
+
+static void ATUIQuickBarMenuCommand(const char *label, const char *command) {
+	const bool available = ATUIQuickBarCommandAvailable(command);
+	const bool active = ATUIQuickBarCommandActive(command);
+
+	if (!available)
+		ImGui::BeginDisabled();
+
+	if (ImGui::MenuItem(label, nullptr, active) && available)
+		ATUIExecuteCommandStringAndShowErrors(command, nullptr);
+
+	if (!available)
+		ImGui::EndDisabled();
 }
 
 static void ATUIQuickBarQuickMapButton() {
@@ -1675,6 +1698,37 @@ static void ATUIQuickBarVideoStandardButton() {
 			"Video.StandardNTSC";
 
 	ATUIQuickBarButton(label, iconName, tooltip, command, ntscActive || palActive);
+}
+
+static void ATUIQuickBarViewButton() {
+	const bool active =
+		ATUIQuickBarCommandActive("Video.ToggleFrameBlending") ||
+		ATUIQuickBarCommandActive("Video.ToggleScanlines") ||
+		ATUIQuickBarCommandActive("View.ToggleFullScreen");
+
+	if (ATUIQuickBarButton("View", "view", "View Options", nullptr, active))
+		ImGui::OpenPopup("##QuickBarView");
+
+	if (ImGui::BeginPopup("##QuickBarView")) {
+		ATUIQuickBarMenuCommand("Artifacting Off", "Video.ArtifactingNone");
+		ATUIQuickBarMenuCommand("Artifacting Low", "Video.ArtifactingAuto");
+		ATUIQuickBarMenuCommand("Artifacting High", "Video.ArtifactingAutoHi");
+
+		ImGui::Separator();
+		ATUIQuickBarMenuCommand("Frame Blending", "Video.ToggleFrameBlending");
+		ATUIQuickBarMenuCommand("Scanlines", "Video.ToggleScanlines");
+
+		ImGui::Separator();
+		ATUIQuickBarMenuCommand("Overscan: OS Screen Only", "View.OverscanOSScreen");
+		ATUIQuickBarMenuCommand("Overscan: Normal", "View.OverscanNormal");
+		ATUIQuickBarMenuCommand("Overscan: Widescreen", "View.OverscanWidescreen");
+		ATUIQuickBarMenuCommand("Overscan: Extended", "View.OverscanExtended");
+		ATUIQuickBarMenuCommand("Overscan: Full", "View.OverscanFull");
+
+		ImGui::Separator();
+		ATUIQuickBarMenuCommand("Full Screen", "View.ToggleFullScreen");
+		ImGui::EndPopup();
+	}
 }
 
 static void ATUIQuickBarSameLine() {
@@ -1772,9 +1826,11 @@ static void RenderDesktopQuickBar(const ATUIState& state) {
 	ImGui::PushStyleColor(ImGuiCol_BorderShadow, ImVec4(0, 0, 0, 0));
 
 	if (ImGui::Begin("##DesktopQuickBar", nullptr, flags)) {
-		// Matches the test12 Windows quick-bar order, adapted to the SDL
+		// Matches the test13 Windows quick-bar order, adapted to the SDL
 		// command names and using tooltips as the accessible labels.
 		ATUIQuickBarButton("Config", "configure", "Configure System", "System.Configure");
+		ATUIQuickBarSameLine();
+		ATUIQuickBarViewButton();
 		ATUIQuickBarSameLine();
 		ATUIQuickBarButton("Boot", "image_boot", "Boot Image", "File.BootImage");
 		ATUIQuickBarSameLine();

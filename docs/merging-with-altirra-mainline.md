@@ -220,3 +220,8 @@ left edge (`x = 0`). Upstream test12 used `raw2.x` there, which moves
 the interpolated Y coordinate in the wrong direction for lines exiting
 past the left paper edge. Preserve this correction when re-syncing the
 file from upstream.
+
+Upstream test13 now carries the same `-raw2.x` correction, so this is no
+longer a fork-only delta after the test12 → test13 sync. Keep this note as
+historical context if future upstream snapshots touch the same clipping
+block.

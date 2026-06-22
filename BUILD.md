@@ -20,7 +20,7 @@ uses `build/`).
 
 ## Upstream Baseline
 
-This tree is based on upstream Altirra 4.50 test12 source, with the
+This tree is based on upstream Altirra 4.50 test13 source, with the
 SDL3/CMake frontend and cross-platform adaptations layered on top.
 
 ---

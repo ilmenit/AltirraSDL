@@ -739,6 +739,9 @@ public:
 	void RequestRenderedFrame(vdfunction<void(const VDPixmap *)> fn) override;
 	void SetVideoWriter(IATVideoWriter *writer) override;
 
+	void SetAutoSuggestEnabled(bool enabled) override;
+	void ShowSuggestions() override;
+
 public:		// IATUIDisplayAccessibilityCallbacksW32
 	vdpoint32 GetNearestBeamPositionForScreenPoint(sint32 x, sint32 y) const override;
 	vdrect32 GetTextSpanBoundingBox(int ypos, int xc1, int xc2) const override;
@@ -1819,6 +1822,16 @@ void ATDisplayPane::SetVideoWriter(IATVideoWriter *writer) {
 		g_pATVideoDisplayWindow->SetVideoWriter(writer);
 }
 
+void ATDisplayPane::SetAutoSuggestEnabled(bool enabled) {
+	if (g_pATVideoDisplayWindow)
+		g_pATVideoDisplayWindow->SetAutoSuggestEnabled(enabled);
+}
+
+void ATDisplayPane::ShowSuggestions() {
+	if (g_pATVideoDisplayWindow)
+		g_pATVideoDisplayWindow->ShowSuggestions();
+}
+
 void ATDisplayPane::SetHaveMouse() {
 	if (!mbHaveMouse) {
 		mbHaveMouse = true;
@@ -1955,7 +1968,13 @@ void ATDisplayPane::OnDisplayContextMenu(const vdpoint32& pt) {
 		::ClientToScreen(mhwnd, &pt2);
 
 		++mMouseCursorLock;
-		EnableMenuItem(hmenuPopup, ID_DISPLAYCONTEXTMENU_COPY, IsTextSelected() ? MF_ENABLED : MF_DISABLED|MF_GRAYED);
+
+		const UINT canCopyTextMode = IsTextSelected() ? MF_ENABLED : MF_DISABLED|MF_GRAYED;
+
+		EnableMenuItem(hmenuPopup, ID_DISPLAYCONTEXTMENU_COPY, canCopyTextMode);
+		EnableMenuItem(hmenuPopup, ID_DISPLAYCONTEXTMENU_COPYESCAPEDTEXT, canCopyTextMode);
+		EnableMenuItem(hmenuPopup, ID_DISPLAYCONTEXTMENU_COPYHEX, canCopyTextMode);
+		EnableMenuItem(hmenuPopup, ID_DISPLAYCONTEXTMENU_COPYUNICODE, canCopyTextMode);
 		EnableMenuItem(hmenuPopup, ID_DISPLAYCONTEXTMENU_PASTE, IsClipboardFormatAvailable(CF_TEXT) ? MF_ENABLED : MF_DISABLED|MF_GRAYED);
 
 		UINT cmd = (UINT)TrackPopupMenu(hmenuPopup, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD, pt2.x, pt2.y, 0, GetAncestor(mhwnd, GA_ROOTOWNER), NULL);

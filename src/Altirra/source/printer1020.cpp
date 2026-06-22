@@ -60,6 +60,9 @@ void ATDevicePrinter1020::GetSettings(ATPropertySet& settings) {
 			settings.SetUint32(name.c_str(), mPenColors[i]);
 		}
 	}
+
+	if (mbAccurateBresenham)
+		settings.SetBool("accurate_bresenham", true);
 }
 
 bool ATDevicePrinter1020::SetSettings(const ATPropertySet& settings) {
@@ -75,6 +78,8 @@ bool ATDevicePrinter1020::SetSettings(const ATPropertySet& settings) {
 	}
 
 	ReconvertPens();
+
+	mbAccurateBresenham = settings.GetBool("accurate_bresenham");
 
 	return true;
 }
@@ -696,13 +701,20 @@ bool ATDevicePrinter1020::MoveToAbsolute(sint32 x, sint32 y) {
 	return true;
 }
 
-bool ATDevicePrinter1020::DrawToAbsolute(sint32 x, sint32 y) {
+bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 	vdfloat2 raw1 { (float)mX, 0.0f };
-	vdfloat2 raw2 { (float)x, (float)(y - mY) };
-	sint32 stepsLeft = std::max<sint32>(abs(x - mX), abs(y - mY)) + 1;
+	vdfloat2 raw2 { (float)x2, (float)(y2 - mY) };
 
-	mX = x;
-	mY = y;
+	sint32 x = mX;
+	const sint32 vecx = x2 - mX;
+	const sint32 vecy = y2 - mY;
+
+	mX = x2;
+	mY = y2;
+
+	// Null draws do not do a pen down on the 1020.
+	if (!vecx && !vecy)
+		return true;
 
 	if (!mpPrinterGraphicalOutput)
 		return true;
@@ -725,7 +737,83 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x, sint32 y) {
 	// shows line patterns consistently starting on, while the 1020 shows them consistently
 	// starting off. The CGP-115 appears to carry over the remainder to the next line.
 
-	if (mLineStyle) {
+	const sint32 dx = abs(vecx);
+	const sint32 dy = abs(vecy);
+	sint32 stepsLeft = std::max<sint32>(dx, dy) + 1;
+
+	if (mbAccurateBresenham) {
+		// Reverse engineered behavior from the SP-400 firmware:
+		//
+		// - Discriminant starts as dx >> 1, but dx subtraction occurs before minor axis
+		//   check.
+		// - Minor axis steps on d < 0.
+
+		const uint32 penColor = mPrintPenColors[mPenIndex];
+
+		const sint32 stepx = vecx < 0 ? -1 : vecx > 0 ? +1 : 0;
+		const sint32 stepy = vecy < 0 ? -1 : vecy > 0 ? +1 : 0;
+		const bool xMajor = dx >= dy;
+		const sint32 dmajor = xMajor ? dx : dy;
+		const sint32 dminor = xMajor ? dy : dx;
+
+		sint32 stepCount = dmajor;
+		bool prevInRange = x >= 0 && x <= 480;
+		int dashLen = mLineStyle;
+		bool penDown = false;
+
+		if (!dashLen) {
+			dashLen = 0x7FFFFFFF;
+			penDown = true;
+		}
+
+		sint32 error = dmajor >> 1;
+		sint32 y = 0;
+
+		while(stepCount-- > 0) {
+			sint32 xn = x;
+			sint32 yn = y;
+
+			error -= dminor;
+
+			if (error < 0) {
+				error += dmajor;
+
+				if (xMajor)
+					yn += stepy;
+				else
+					xn += stepx;
+			}
+
+			if (xMajor)
+				xn += stepx;
+			else
+				yn += stepy;
+
+			const bool nextInRange = xn >= 0 && xn <= 480;
+
+			if (prevInRange && nextInRange && penDown) {
+				mpPrinterGraphicalOutput->AddVector(
+					ConvertPointFToMM(x, y),
+					ConvertPointFToMM(xn, yn),
+					penColor
+				);
+
+				yn = 0;
+			}
+
+			if (!--dashLen) {
+				dashLen = mLineStyle;
+				penDown = !penDown;
+			}
+
+			x = xn;
+			y = yn;
+			prevInRange = nextInRange;
+		}
+
+		if (y)
+			mpPrinterGraphicalOutput->FeedPaper(ConvertVectorFToMM(0, y).y);
+	} else if (mLineStyle) {
 		const vdfloat2 step = (raw2 - raw1) / (float)stepsLeft;
 		const int dashLen = mLineStyle;
 
@@ -734,10 +822,10 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x, sint32 y) {
 
 			if (stepsLeft <= 0) {
 				// check if we have an undrawn part at the end -- we still need to feed paper
-				sint32 dy = stepsLeft + dashLen;
+				sint32 finalStepY = stepsLeft + dashLen;
 
-				if (dy)
-					mpPrinterGraphicalOutput->FeedPaper(ConvertVectorFToMM(0.0f, dy * step.y).y);
+				if (finalStepY)
+					mpPrinterGraphicalOutput->FeedPaper(ConvertVectorFToMM(0.0f, finalStepY * step.y).y);
 
 				break;
 			}

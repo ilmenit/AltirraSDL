@@ -30,6 +30,9 @@ struct IconInfo {
 constexpr IconInfo kIconInfos[] {
 	{ "50hz" },
 	{ "60hz" },
+	{ "artifacting_hi" },
+	{ "artifacting_lo" },
+	{ "artifacting_off" },
 	{ "basic" },
 	{ "cold_reset" },
 	{ "configure" },
@@ -38,6 +41,11 @@ constexpr IconInfo kIconInfos[] {
 	{ "controller_paddles" },
 	{ "image_boot" },
 	{ "image_open" },
+	{ "overscan_ext" },
+	{ "overscan_full" },
+	{ "overscan_normal" },
+	{ "overscan_os" },
+	{ "overscan_wide" },
 	{ "record_audio" },
 	{ "record_video" },
 	{ "sio_c_patch" },
@@ -46,6 +54,11 @@ constexpr IconInfo kIconInfos[] {
 	{ "speed_pause" },
 	{ "speed_slow" },
 	{ "speed_warp" },
+	{ "submenu" },
+	{ "view" },
+	{ "view_blend" },
+	{ "view_fullscreen" },
+	{ "view_scanlines" },
 	{ "warm_reset" },
 };
 

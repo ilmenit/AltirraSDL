@@ -2045,6 +2045,9 @@
     <None Include="res\printer-1029-retract.pcm" />
     <None Include="res\printer-1029-home.pcm" />
     <None Include="res\printer-1025-feed.pcm" />
+    <None Include="h\uicommandiconinfo.inl">
+      <Filter>Header Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res\Altirra.rc">

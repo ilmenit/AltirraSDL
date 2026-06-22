@@ -1,5 +1,5 @@
 //	Altirra - Atari 800/800XL/5200 emulator
-//	Copyright (C) 2008-2018 Avery Lee
+//	Copyright (C) 2008-2026 Avery Lee
 //
 //	This program is free software; you can redistribute it and/or modify
 //	it under the terms of the GNU General Public License as published by
@@ -14,21 +14,26 @@
 //	You should have received a copy of the GNU General Public License along
 //	with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef f_AT2_UIWIDGET_H
-#define f_AT2_UIWIDGET_H
+#ifndef f_AT_ATUI_UIWIDGET_H
+#define f_AT_ATUI_UIWIDGET_H
 
 #include <vd2/system/vectors.h>
+#include <vd2/system/unknown.h>
 #include <vd2/VDDisplay/rendercache.h>
 #include <at/atui/constants.h>
 #include <at/atui/events.h>
+
+struct ATUIWidgetAnimContext;
 
 class IVDDisplayRenderer;
 class VDDisplayTextRenderer;
 class IATUIAnchor;
 class IATUIDragDropObject;
+class IATUIWidgetAnimator;
 
 class ATUIContainer;
 class ATUIManager;
+class ATUIWidgetAnimator;
 
 enum class ATUIDragModifiers : uint32;
 enum class ATUIDragEffect : uint32;
@@ -88,7 +93,7 @@ struct ATUIWidgetMetrics {
 	vdsize32 mDesiredSize { 0, 0 };
 };
 
-class ATUIWidget : public vdrefcount {
+class ATUIWidget : public vdrefcount, public IVDUnknown {
 public:
 	enum {
 		kActionFocus = 1,
@@ -97,6 +102,8 @@ public:
 
 	ATUIWidget();
 	~ATUIWidget();
+
+	void *AsInterface(uint32 iid) override;
 
 	// Try to do a friendly close of the window. This may be refused or delayed depending on the
 	// implementation. By default, this forwards to Destroy() and returns success.
@@ -309,6 +316,9 @@ public:
 	
 	virtual void OnEnableChanged();
 
+	// Called for widgets that have registered as tracking windows. A tracking
+	// window will receive notifications when the cursor enters or exits it
+	// or any of its descendants.
 	virtual void OnTrackCursorChanges(ATUIWidget *w);
 
 	// Drag and drop support
@@ -336,6 +346,12 @@ public:
 	virtual void OnDragLeave();
 	virtual ATUIDragEffect OnDragDrop(sint32 x, sint32 y, ATUIDragModifiers modifiers, IATUIDragDropObject *obj);
 
+	// Animation support
+	void AddAnimator(ATUIWidgetAnimator& anim);
+	void RemoveAnimator(ATUIWidgetAnimator& anim);
+	void RemoveAllAnimators();
+
+	// Rendering
 	void Draw(IVDDisplayRenderer& rdr);
 
 public:
@@ -346,12 +362,20 @@ public:
 	void OnPointerClear();
 
 protected:
+	friend class ATUIContainer;
+	friend class ATUIManager;
+	friend class ATUIWidgetAnimator;
+
 	void Invalidate();
 	void InvalidateMeasure();
 	void InvalidateArrange();
 
 	virtual void Paint(IVDDisplayRenderer& rdr, sint32 w, sint32 h) = 0;
 	void RecomputeClientArea();
+
+	virtual bool UpdateAnimation(const ATUIWidgetAnimContext& ctx);
+	void MakeAnimationInactive(ATUIWidgetAnimator& anim);
+	void MakeAnimationActive(ATUIWidgetAnimator& anim);
 
 	ATUIManager *mpManager;
 	ATUIContainer *mpParent;
@@ -382,6 +406,7 @@ protected:
 	bool mbFixedPosition;
 	bool mbForcedSize;
 	bool mbAutoSize;
+	bool mbHasAnimation = true;
 
 	typedef vdfastvector<ATUITriggerBinding> ActionMap;
 	ActionMap mActionMap;
@@ -389,6 +414,9 @@ protected:
 	VDDisplaySubRenderCache mRenderCache;
 	ATUIWidgetMetrics mMeasureCache;
 	bool mbMeasureCacheValid = false;
+
+	ATUIWidgetAnimator *mpActiveAnimators = nullptr;
+	ATUIWidgetAnimator *mpInactiveAnimators = nullptr;
 };
 
 #endif

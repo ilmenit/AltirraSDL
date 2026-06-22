@@ -30,8 +30,8 @@ abs_path() {
 }
 
 # Extract the Altirra version label from a snapshot dir name.
-# Input:  /…/Altirra-4.50-test9-src
-# Output: 4.50-test9
+# Input:  /…/Altirra-4.50-test13-src
+# Output: 4.50-test13
 snapshot_label() {
     local p=$1
     local base
