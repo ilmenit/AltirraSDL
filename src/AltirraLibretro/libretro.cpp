@@ -512,9 +512,6 @@ unsigned DiskGetImageIndex() {
 }
 
 bool DiskSetImageIndex(unsigned index) {
-	if (!g_core.diskEjected)
-		return false;
-
 	if (index >= g_core.diskImages.size()) {
 		if (g_core.simulatorInitialized)
 			g_sim.GetDiskInterface(0).UnloadDisk();
@@ -523,6 +520,9 @@ bool DiskSetImageIndex(unsigned index) {
 		InvalidateSerializeCache();
 		return true;
 	}
+
+	if (!g_core.diskEjected && !MountDiskIndex(index))
+		return false;
 
 	g_core.diskIndex = index;
 	InvalidateSerializeCache();
@@ -579,8 +579,13 @@ bool DiskSetInitialImage(unsigned index, const char *path) {
 }
 
 bool CopyDiskString(unsigned index, char *out, size_t len, bool label) {
-	if (!out || !len || index >= g_core.diskImages.size())
+	if (!out || !len)
 		return false;
+
+	if (index >= g_core.diskImages.size()) {
+		*out = 0;
+		return true;
+	}
 
 	const std::string& s = label
 		? g_core.diskImages[index].label

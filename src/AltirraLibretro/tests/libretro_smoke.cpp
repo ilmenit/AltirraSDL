@@ -975,6 +975,28 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	if (!g_diskControl.set_image_index(0) || g_diskControl.get_image_index() != 0) {
+		fprintf(stderr, "empty disk list restore selection failed\n");
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
+	char emptyDiskPath[8] = { 'x' };
+	char emptyDiskLabel[8] = { 'x' };
+	if (!g_diskControl.get_image_path(0, emptyDiskPath, sizeof emptyDiskPath)
+		|| *emptyDiskPath
+		|| !g_diskControl.get_image_label(0, emptyDiskLabel, sizeof emptyDiskLabel)
+		|| *emptyDiskLabel)
+	{
+		fprintf(stderr,
+			"empty disk list path/label query failed: path=%s label=%s\n",
+			emptyDiskPath, emptyDiskLabel);
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
 	if (!g_diskControl.set_eject_state(true) || !g_diskControl.get_eject_state()) {
 		fprintf(stderr, "disk eject state did not set\n");
 		retro_unload_game();
