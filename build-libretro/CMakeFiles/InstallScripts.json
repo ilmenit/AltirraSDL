@@ -1,0 +1,22 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/system/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/vdjson/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/Kasumi/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATCore/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATCPU/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATEmulation/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATDevices/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATIO/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATAudio/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATNetwork/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATNetworkSockets/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATDebugger/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/ATVM/cmake_install.cmake",
+		"/home/ilm/Documents/GitHub/AltirraSDL/build-libretro/src/AltirraLibretro/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

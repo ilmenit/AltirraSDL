@@ -34,3 +34,9 @@ endif()
 if(ALTIRRA_BRIDGE_SERVER AND ALTIRRA_SDL3 AND NOT ANDROID)
     add_subdirectory(AltirraBridgeServer)
 endif()
+
+# RetroArch/libretro core. This target is intentionally independent of the
+# SDL3 frontend; it has its own adapter sources under AltirraLibretro.
+if(ALTIRRA_LIBRETRO AND NOT ANDROID)
+    add_subdirectory(AltirraLibretro)
+endif()
