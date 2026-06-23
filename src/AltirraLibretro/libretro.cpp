@@ -137,6 +137,9 @@ struct CoreState {
 	std::vector<DiskEntry> diskImages;
 	unsigned diskIndex = 0;
 	bool diskEjected = false;
+	bool pendingInitialDiskValid = false;
+	unsigned pendingInitialDiskIndex = 0;
+	std::string pendingInitialDiskPath;
 };
 
 CoreState g_core;
@@ -395,6 +398,45 @@ std::string ResolveRelativePath(const std::string& baseFile,
 	return baseFile.substr(0, slash + 1) + child;
 }
 
+bool PathsReferToSameFile(const std::string& a, const std::string& b) {
+	if (a == b)
+		return true;
+
+	if (a.empty() || b.empty())
+		return false;
+
+	try {
+		const VDStringW wa = VDTextU8ToW(VDStringSpanA(a.c_str()));
+		const VDStringW wb = VDTextU8ToW(VDStringSpanA(b.c_str()));
+		return VDFileIsPathEqual(wa.c_str(), wb.c_str());
+	} catch(...) {
+		return false;
+	}
+}
+
+void ClearPendingInitialDisk() {
+	g_core.pendingInitialDiskValid = false;
+	g_core.pendingInitialDiskIndex = 0;
+	g_core.pendingInitialDiskPath.clear();
+}
+
+void ApplyPendingInitialDiskSelection() {
+	if (!g_core.pendingInitialDiskValid)
+		return;
+
+	if (g_core.pendingInitialDiskIndex < g_core.diskImages.size()
+		&& PathsReferToSameFile(
+			g_core.diskImages[g_core.pendingInitialDiskIndex].path,
+			g_core.pendingInitialDiskPath))
+	{
+		g_core.diskIndex = g_core.pendingInitialDiskIndex;
+	} else {
+		g_core.diskIndex = 0;
+	}
+
+	ClearPendingInitialDisk();
+}
+
 bool LoadM3U(const char *path) {
 	g_core.diskImages.clear();
 	g_core.diskIndex = 0;
@@ -446,8 +488,12 @@ bool DiskSetEjectState(bool ejected) {
 		return true;
 	}
 
-	if (g_core.diskImages.empty() || g_core.diskIndex >= g_core.diskImages.size())
-		return false;
+	if (g_core.diskImages.empty() || g_core.diskIndex >= g_core.diskImages.size()) {
+		g_sim.GetDiskInterface(0).UnloadDisk();
+		g_core.diskEjected = false;
+		InvalidateSerializeCache();
+		return true;
+	}
 
 	if (!MountDiskIndex(g_core.diskIndex))
 		return false;
@@ -466,11 +512,17 @@ unsigned DiskGetImageIndex() {
 }
 
 bool DiskSetImageIndex(unsigned index) {
-	if (index >= g_core.diskImages.size())
+	if (!g_core.diskEjected)
 		return false;
 
-	if (!g_core.diskEjected && !MountDiskIndex(index))
-		return false;
+	if (index >= g_core.diskImages.size()) {
+		if (g_core.simulatorInitialized)
+			g_sim.GetDiskInterface(0).UnloadDisk();
+
+		g_core.diskIndex = index;
+		InvalidateSerializeCache();
+		return true;
+	}
 
 	g_core.diskIndex = index;
 	InvalidateSerializeCache();
@@ -482,20 +534,28 @@ unsigned DiskGetNumImages() {
 }
 
 bool DiskReplaceImageIndex(unsigned index, const retro_game_info *info) {
+	if (!g_core.diskEjected)
+		return false;
+
 	if (index >= g_core.diskImages.size())
 		return false;
 
+	if (!info) {
+		g_core.diskImages.erase(g_core.diskImages.begin() + index);
+		if (g_core.diskIndex > index)
+			--g_core.diskIndex;
+		else if (g_core.diskIndex >= g_core.diskImages.size())
+			g_core.diskIndex = (unsigned)g_core.diskImages.size();
+
+		InvalidateSerializeCache();
+		return true;
+	}
+
 	std::string path;
-	if (info && info->path)
+	if (info->path)
 		path = info->path;
 
-	CoreState::DiskEntry oldEntry = g_core.diskImages[index];
 	g_core.diskImages[index] = { path, path.empty() ? std::string() : GetPathLabel(path) };
-
-	if (index == g_core.diskIndex && !g_core.diskEjected && !MountDiskIndex(index)) {
-		g_core.diskImages[index] = oldEntry;
-		return false;
-	}
 
 	InvalidateSerializeCache();
 	return true;
@@ -507,13 +567,14 @@ bool DiskAddImageIndex() {
 }
 
 bool DiskSetInitialImage(unsigned index, const char *path) {
-	if (index >= g_core.diskImages.size())
-		return false;
+	ClearPendingInitialDisk();
 
-	g_core.diskIndex = index;
-	if (path && *path)
-		g_core.diskImages[index] = { path, GetPathLabel(path) };
+	if (!path || !*path)
+		return true;
 
+	g_core.pendingInitialDiskValid = true;
+	g_core.pendingInitialDiskIndex = index;
+	g_core.pendingInitialDiskPath = path;
 	return true;
 }
 
@@ -988,6 +1049,8 @@ ATMemoryMode ParseMemoryMode() {
 }
 
 ATVideoStandard ParseVideoStandard() {
+	if (OptionEquals("altirra_video_standard", "ntsc"))
+		return kATVideoStandard_NTSC;
 	if (OptionEquals("altirra_video_standard", "pal"))
 		return kATVideoStandard_PAL;
 	if (OptionEquals("altirra_video_standard", "secam"))
@@ -2636,6 +2699,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 			if (!LoadM3U(game->path))
 				return false;
 
+			ApplyPendingInitialDiskSelection();
 			if (!MountDiskIndex(g_core.diskIndex))
 				return false;
 		} else {
@@ -2650,8 +2714,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 				g_core.diskImages.push_back({ game->path, GetPathLabel(game->path) });
 				g_core.diskIndex = 0;
 				g_core.diskEjected = false;
+				ApplyPendingInitialDiskSelection();
+			} else {
+				ClearPendingInitialDisk();
 			}
 		}
+	} else {
+		ClearPendingInitialDisk();
 	}
 
 	g_sim.ColdReset();
@@ -2659,12 +2728,6 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 	InvalidateSerializeCache();
 	g_core.gameLoaded = true;
 	g_core.serializeFixedSize = kStateFixedMaxSize;
-
-	if (g_env) {
-		retro_system_av_info av {};
-		FillAvInfo(av);
-		g_env(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
-	}
 
 	return true;
 }
@@ -2686,6 +2749,7 @@ RETRO_API void retro_unload_game(void) {
 	g_core.diskImages.clear();
 	g_core.diskIndex = 0;
 	g_core.diskEjected = false;
+	ClearPendingInitialDisk();
 }
 
 RETRO_API void retro_run(void) {

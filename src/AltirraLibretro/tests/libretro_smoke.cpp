@@ -83,6 +83,14 @@ static const char *g_driveSoundsValue = "enabled";
 static double g_lastSystemAvFps;
 static unsigned g_lastGeometryW;
 static unsigned g_lastGeometryH;
+enum class CallbackPhase {
+	None,
+	LoadGame,
+	Run,
+};
+static CallbackPhase g_callbackPhase = CallbackPhase::None;
+static unsigned g_systemAvInfoDuringRun;
+static unsigned g_systemAvInfoWrongPhase;
 static uint16_t g_joypadMask;
 static int16_t g_analogX = 12000;
 static bool g_keyboardLeftDown;
@@ -473,6 +481,14 @@ static bool env_cb(unsigned cmd, void *data) {
 		}
 		case 32: {	// SET_SYSTEM_AV_INFO
 			auto *av = (retro_system_av_info *)data;
+			if (g_callbackPhase == CallbackPhase::Run) {
+				++g_systemAvInfoDuringRun;
+			} else {
+				++g_systemAvInfoWrongPhase;
+				fprintf(stderr,
+					"SET_SYSTEM_AV_INFO outside retro_run phase\n");
+			}
+
 			if (av)
 				g_lastSystemAvFps = av->timing.fps;
 			return true;
@@ -648,6 +664,32 @@ static T sym(void *lib, const char *name) {
 	return reinterpret_cast<T>(p);
 }
 
+struct CallbackPhaseScope {
+	CallbackPhaseScope(CallbackPhase phase)
+		: oldPhase(g_callbackPhase)
+	{
+		g_callbackPhase = phase;
+	}
+
+	~CallbackPhaseScope() {
+		g_callbackPhase = oldPhase;
+	}
+
+	CallbackPhase oldPhase;
+};
+
+static bool load_core_game(bool (*retro_load_game)(const void *),
+	const retro_game_info *game)
+{
+	CallbackPhaseScope phase(CallbackPhase::LoadGame);
+	return retro_load_game(game);
+}
+
+static void run_core_frame(void (*retro_run)()) {
+	CallbackPhaseScope phase(CallbackPhase::Run);
+	retro_run();
+}
+
 static bool run_geometry_case(void (*retro_run)(), const char *standard,
 	const char *artifacting, const char *crop, unsigned maxW, unsigned maxH)
 {
@@ -657,7 +699,7 @@ static bool run_geometry_case(void (*retro_run)(), const char *standard,
 	g_variablesUpdated = true;
 
 	for (int i = 0; i < 6; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	++g_geometryMatrixChecks;
 	if (!g_lastW || !g_lastH || g_lastW > maxW || g_lastH > maxH) {
@@ -754,8 +796,24 @@ int main(int argc, char **argv) {
 		av.geometry.max_width, av.geometry.max_height,
 		av.timing.fps);
 
-	if (!retro_load_game(nullptr)) {
+	if (!g_diskControl.set_initial_image
+		|| !g_diskControl.set_initial_image(0, ""))
+	{
+		fprintf(stderr, "empty initial disk selection was rejected\n");
+		retro_deinit();
+		return 1;
+	}
+
+	if (!load_core_game(retro_load_game, nullptr)) {
 		fprintf(stderr, "retro_load_game(NULL) failed\n");
+		retro_deinit();
+		return 1;
+	}
+
+	if (g_systemAvInfoWrongPhase) {
+		fprintf(stderr,
+			"SET_SYSTEM_AV_INFO was called outside retro_run during load\n");
+		retro_unload_game();
 		retro_deinit();
 		return 1;
 	}
@@ -768,10 +826,10 @@ int main(int argc, char **argv) {
 
 	g_keyboardLeftDown = true;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 	g_keyboardLeftDown = false;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	if (!g_keyboardInputPolls) {
 		fprintf(stderr, "keyboard polling fallback was not exercised\n");
@@ -790,7 +848,7 @@ int main(int argc, char **argv) {
 	g_keyboardCallback.callback(false, 288, 0, 0);
 
 	for (int i = 0; i < 30; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	const unsigned normalW = g_lastW;
 	const unsigned normalH = g_lastH;
@@ -805,7 +863,7 @@ int main(int argc, char **argv) {
 	g_cropOverscanValue = "full";
 	g_variablesUpdated = true;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	if (g_lastW <= normalW || g_lastH <= normalH
 		|| g_lastGeometryW != g_lastW || g_lastGeometryH != g_lastH) {
@@ -817,10 +875,23 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	g_videoStandardValue = "ntsc";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 5; ++i)
+		run_core_frame(retro_run);
+
+	if (g_lastSystemAvFps < 59.0 || g_lastSystemAvFps > 60.5) {
+		fprintf(stderr, "NTSC core option did not update AV fps, got %.4f\n",
+			g_lastSystemAvFps);
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
 	g_videoStandardValue = "pal";
 	g_variablesUpdated = true;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	if (g_lastSystemAvFps < 49.0 || g_lastSystemAvFps > 50.5) {
 		fprintf(stderr, "PAL core option did not update AV fps, got %.4f\n",
@@ -871,31 +942,31 @@ int main(int argc, char **argv) {
 	g_cropOverscanValue = "normal";
 	g_variablesUpdated = true;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	g_joypadMask = (uint16_t)((1U << 0) | (1U << 3) | (1U << 7));
 	for (int i = 0; i < 30; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	g_joypadMask = 0;
 	for (int i = 0; i < 60; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	retro_set_controller_port_device(0, 2);	// RETRO_DEVICE_MOUSE / ST mouse
 	g_mouseLeftDown = true;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 	g_mouseLeftDown = false;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	retro_set_controller_port_device(0, 4);	// RETRO_DEVICE_LIGHTGUN
 	g_lightGunTriggerDown = true;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 	g_lightGunTriggerDown = false;
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	if (!g_diskControl.get_num_images || g_diskControl.get_num_images() != 0) {
 		fprintf(stderr, "unexpected initial disk image count\n");
@@ -944,13 +1015,36 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	const unsigned removeIndex = g_diskControl.get_num_images();
+	if (!g_diskControl.set_image_index(removeIndex)
+		|| g_diskControl.get_image_index() != removeIndex
+		|| !g_diskControl.set_eject_state(false)
+		|| g_diskControl.get_eject_state())
+	{
+		fprintf(stderr, "disk removal/close failed\n");
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
+	if (!g_diskControl.set_eject_state(true)
+		|| !g_diskControl.replace_image_index(0, nullptr)
+		|| g_diskControl.get_num_images() != 0
+		|| !g_diskControl.set_eject_state(false))
+	{
+		fprintf(stderr, "disk image null replacement/removal failed\n");
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
 	g_stereoPokeyValue = "enabled";
 	g_vbxeValue = "enabled";
 	g_covoxValue = "enabled";
 	g_soundBoardValue = "enabled";
 	g_variablesUpdated = true;
 	for (int i = 0; i < 8; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	if (!g_lastW || !g_lastH
 		|| g_lastW > av.geometry.max_width
@@ -989,7 +1083,7 @@ int main(int argc, char **argv) {
 	}
 
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	const size_t stateSize2 = retro_serialize_size();
 	if (stateSize2 > stateSize) {
@@ -1012,7 +1106,7 @@ int main(int argc, char **argv) {
 	free(state);
 
 	for (int i = 0; i < 5; ++i)
-		retro_run();
+		run_core_frame(retro_run);
 
 	printf("video_calls=%u non_null=%u last=%ux%u\n",
 		g_videoCalls, g_nonNullFrames, g_lastW, g_lastH);
@@ -1025,6 +1119,8 @@ int main(int argc, char **argv) {
 	printf("disk_control_registered=%u\n", g_diskControlRegistered);
 	printf("geometry_updates=%u last_geometry=%ux%u\n",
 		g_geometryUpdates, g_lastGeometryW, g_lastGeometryH);
+	printf("system_av_info_updates=%u wrong_phase=%u\n",
+		g_systemAvInfoDuringRun, g_systemAvInfoWrongPhase);
 	printf("geometry_matrix_checks=%u max_observed=%ux%u\n",
 		g_geometryMatrixChecks, g_maxObservedW, g_maxObservedH);
 	printf("controller_info_registered=%u\n", g_controllerInfoRegistered);
@@ -1046,6 +1142,8 @@ int main(int argc, char **argv) {
 		&& (g_coreOptionsVersion < 2 || g_optionHardwareCategoryValidated > 0)
 		&& g_diskControlRegistered > 0
 		&& g_geometryUpdates > 0
+		&& g_systemAvInfoDuringRun > 0
+		&& g_systemAvInfoWrongPhase == 0
 		&& g_geometryMatrixChecks == expectedGeometryChecks
 		&& g_controllerInfoRegistered > 0
 		&& g_inputBitmaskQueries > 0
