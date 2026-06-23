@@ -1,6 +1,6 @@
 # Software Information
-display_name = "Atari - 8-bit / 5200 (Altirra)"
-authors = "Avery Lee"
+display_name = "Atari - 400/800/600XL/800XL/130XE/5200 (Altirra)"
+authors = "Jakub 'ilmenit' Debski, fork of Altirra by Avery Lee"
 supported_extensions = "atr|xfd|atx|atz|dcm|pro|arc|bin|rom|car|a52|xex|exe|obx|com|bas|cas|wav|flac|ogg|sap|vgm|vgz|zip|gz|altstate|atstate2|m3u"
 corename = "Altirra"
 categories = "Emulator"

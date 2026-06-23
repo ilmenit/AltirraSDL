@@ -15,6 +15,37 @@ Build it with:
 ./build.sh --libretro
 ```
 
+For the Flathub/Flatpak RetroArch build, do not distribute a core built on the
+host system. Build inside the matching Flatpak SDK so the shared library links
+against the same glibc/libstdc++ ABI that RetroArch will load:
+
+```sh
+flatpak install flathub org.kde.Sdk//6.10
+./build.sh --libretro-flatpak
+```
+
+Use `./build.sh --libretro-flatpak --package` to create a package named with a
+`flatpak-kde610` suffix. This artifact is intended for RetroArch Flatpak users;
+keep it separate from the generic host-native Linux libretro package.
+
+Use the build that matches the RetroArch distribution:
+
+- Flathub/Flatpak RetroArch: `./build.sh --libretro-flatpak --package`
+- Locally installed RetroArch on the same or newer Linux distribution:
+  `./build.sh --libretro --package`
+- Cross-distro Linux distribution: build in the oldest Linux runtime/sysroot
+  you intend to support, then package that output separately.
+
+Before shipping a Linux core, check the required symbol versions:
+
+```sh
+readelf --version-info altirra_libretro.so | grep -E 'GLIBC_|GLIBCXX_'
+```
+
+The Flatpak build script rejects outputs that require a glibc newer than the
+RetroArch Flatpak runtime. A host-native Linux build does not, because it is
+intended for local/native use and may legitimately depend on the host ABI.
+
 GitHub Actions packages the standalone core for:
 
 - Linux x86_64

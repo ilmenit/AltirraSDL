@@ -113,8 +113,8 @@ the silent defaults — `?addons=on&memsize=128K` yields VBXE + Covox
 | `basic`         | `1` — boot with Atari BASIC enabled                                              |
 
 If neither `pal` nor `ntsc` is set, the emulator picks based on the
-saved settings (default NTSC).  PAL is the right choice for most
-European-authored games.
+saved settings (default PAL).  Use `ntsc=1` for North American-authored
+games that require 60 Hz timing.
 
 ### Game files (`library/`)
 

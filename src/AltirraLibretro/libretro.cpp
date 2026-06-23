@@ -3,8 +3,10 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <cstddef>
 #include <iterator>
 #include <algorithm>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,16 @@ extern VDStringA ATGetConfigDir();
 ATSimulator g_sim;
 
 namespace {
+static_assert(RETRO_NUM_CORE_OPTION_VALUES_MAX == 128);
+static_assert(offsetof(retro_core_option_definition, values)
+	== sizeof(const char *) * 3);
+static_assert(offsetof(retro_core_option_v2_definition, values)
+	== sizeof(const char *) * 6);
+static_assert(sizeof(((retro_core_option_definition *)nullptr)->values)
+	== sizeof(retro_core_option_value) * RETRO_NUM_CORE_OPTION_VALUES_MAX);
+static_assert(sizeof(((retro_core_option_v2_definition *)nullptr)->values)
+	== sizeof(retro_core_option_value) * RETRO_NUM_CORE_OPTION_VALUES_MAX);
+
 retro_environment_t g_env = nullptr;
 retro_video_refresh_t g_video = nullptr;
 retro_audio_sample_t g_audioSample = nullptr;
@@ -81,7 +93,7 @@ struct CoreState {
 	ptrdiff_t lastFramePitch = 0;
 	unsigned reportedGeometryW = 0;
 	unsigned reportedGeometryH = 0;
-	ATVideoStandard lastStandard = kATVideoStandard_NTSC;
+	ATVideoStandard lastStandard = kATVideoStandard_PAL;
 	bool inputBitmasksSupported = false;
 	bool buttonsHeld[2][9] {};
 	uint32 buttonHeldCodes[2][9] {};
@@ -96,7 +108,7 @@ struct CoreState {
 	size_t serializeFixedSize = 0;
 	ATHardwareMode pendingHardwareMode = kATHardwareMode_800XL;
 	ATMemoryMode pendingMemoryMode = kATMemoryMode_320K;
-	ATVideoStandard pendingVideoStandard = kATVideoStandard_NTSC;
+	ATVideoStandard pendingVideoStandard = kATVideoStandard_PAL;
 	ATCPUMode pendingCPUMode = kATCPUMode_6502;
 	uint32 pendingCPUSubCycles = 1;
 	bool pendingBasicEnabled = false;
@@ -544,7 +556,7 @@ void RegisterDiskControl() {
 	g_env(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, &callbacks);
 }
 
-static const retro_core_option_v2_category kOptionCategories[] = {
+static retro_core_option_v2_category kOptionCategories[] = {
 	{ "system", "System", "Computer, memory, video standard, CPU, and BASIC options." },
 	{ "hardware", "Hardware Add-ons", "Common expansion hardware options." },
 	{ "media", "Media", "Disk and cassette acceleration options." },
@@ -552,6 +564,17 @@ static const retro_core_option_v2_category kOptionCategories[] = {
 	{ "audio", "Audio", "Audio output and filtering options." },
 	{ "input", "Input", "Controller type options." },
 	{ nullptr, nullptr, nullptr },
+};
+
+struct CompactOptionDefinition {
+	const char *key;
+	const char *desc;
+	const char *descCategorized;
+	const char *info;
+	const char *infoCategorized;
+	const char *categoryKey;
+	const retro_core_option_value *values;
+	const char *defaultValue;
 };
 
 static const retro_core_option_value kSystemValues[] = {
@@ -659,7 +682,7 @@ static const retro_core_option_value kInputPort2Values[] = {
 	{ nullptr, nullptr },
 };
 
-static const retro_core_option_v2_definition kOptionDefinitions[] = {
+static const CompactOptionDefinition kOptionSpecs[] = {
 	{
 		"altirra_system", "System", nullptr,
 		"Selects the emulated Atari computer or console model.",
@@ -673,7 +696,7 @@ static const retro_core_option_v2_definition kOptionDefinitions[] = {
 	{
 		"altirra_video_standard", "Video Standard", nullptr,
 		"Selects the machine video timing standard.",
-		nullptr, "system", kVideoStandardValues, "ntsc"
+		nullptr, "system", kVideoStandardValues, "pal"
 	},
 	{
 		"altirra_basic", "BASIC", nullptr,
@@ -768,129 +791,65 @@ static const retro_core_option_v2_definition kOptionDefinitions[] = {
 	{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
 };
 
-static const retro_core_options_v2 kOptionsV2 = {
+static std::array<retro_core_option_v2_definition,
+	std::size(kOptionSpecs)> kOptionDefinitionsV2 {};
+static std::array<retro_core_option_definition,
+	std::size(kOptionSpecs)> kOptionDefinitionsV1 {};
+static bool g_coreOptionsBuilt = false;
+
+void CopyOptionValues(retro_core_option_value *dst,
+	const retro_core_option_value *src)
+{
+	for(size_t i = 0; i < RETRO_NUM_CORE_OPTION_VALUES_MAX; ++i) {
+		dst[i] = src ? src[i] : retro_core_option_value {};
+
+		if (!dst[i].value)
+			break;
+	}
+}
+
+void BuildCoreOptionDefinitions() {
+	if (g_coreOptionsBuilt)
+		return;
+
+	for(size_t i = 0; i < std::size(kOptionSpecs); ++i) {
+		const CompactOptionDefinition& src = kOptionSpecs[i];
+		retro_core_option_v2_definition& dstV2 = kOptionDefinitionsV2[i];
+		retro_core_option_definition& dstV1 = kOptionDefinitionsV1[i];
+
+		dstV2.key = src.key;
+		dstV2.desc = src.desc;
+		dstV2.desc_categorized = src.descCategorized;
+		dstV2.info = src.info;
+		dstV2.info_categorized = src.infoCategorized;
+		dstV2.category_key = src.categoryKey;
+		dstV2.default_value = src.defaultValue;
+		CopyOptionValues(dstV2.values, src.values);
+
+		dstV1.key = src.key;
+		dstV1.desc = src.desc;
+		dstV1.info = src.info;
+		dstV1.default_value = src.defaultValue;
+		CopyOptionValues(dstV1.values, src.values);
+	}
+
+	g_coreOptionsBuilt = true;
+}
+
+static retro_core_options_v2 kOptionsV2 = {
 	kOptionCategories,
-	kOptionDefinitions
+	kOptionDefinitionsV2.data()
 };
 
-static const retro_core_options_v2_intl kOptionsV2Intl = {
+static retro_core_options_v2_intl kOptionsV2Intl = {
 	&kOptionsV2,
 	nullptr
-};
-
-static const retro_core_option_definition kOptionDefinitionsV1[] = {
-	{
-		"altirra_system", "System",
-		"Selects the emulated Atari computer or console model.",
-		kSystemValues, "800xl"
-	},
-	{
-		"altirra_memory", "Memory Size",
-		"Selects the RAM expansion mode.",
-		kMemoryValues, "320K"
-	},
-	{
-		"altirra_video_standard", "Video Standard",
-		"Selects the machine video timing standard.",
-		kVideoStandardValues, "ntsc"
-	},
-	{
-		"altirra_basic", "BASIC",
-		"Enables or disables internal BASIC where supported.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_cpu", "CPU",
-		"Selects the emulated CPU type and speed.",
-		kCPUValues, "6502c"
-	},
-	{
-		"altirra_illegal_instructions", "Illegal Instructions",
-		"Enables undocumented 6502 opcodes.",
-		kEnabledDisabledValues, "enabled"
-	},
-	{
-		"altirra_random_launch_delay", "Randomize Launch Delay",
-		"Adds a small random launch delay for directly loaded programs so hardware RNG state varies between runs.",
-		kEnabledDisabledValues, "enabled"
-	},
-	{
-		"altirra_randomize_exe_memory", "Randomize EXE Memory",
-		"Fills uninitialized RAM with random bytes before directly loaded programs start.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_stereo_pokey", "Stereo POKEY",
-		"Enables a second POKEY for dual-chip stereo audio software.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_vbxe", "VideoBoard XE (VBXE)",
-		"Enables VBXE 1.26 at the default $D6xx address range.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_covox", "Covox",
-		"Enables a four-channel Covox DAC at $D600-D6FF.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_soundboard", "SoundBoard",
-		"Enables SoundBoard 1.2 at the default $D2C0 base address.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_rapidus", "Rapidus Accelerator",
-		"Enables the Rapidus accelerator device.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_sio_patch", "SIO Patch",
-		"Controls disk and cassette SIO acceleration patches.",
-		kSioPatchValues, "disk_and_cassette"
-	},
-	{
-		"altirra_artifacting", "Artifacting",
-		"Selects NTSC/PAL artifact color simulation.",
-		kArtifactingValues, "auto"
-	},
-	{
-		"altirra_crop_overscan", "Crop Overscan",
-		"Selects the video crop mode.",
-		kOverscanValues, "normal"
-	},
-	{
-		"altirra_audio_filters", "Audio Filters",
-		"Enables Altirra's audio filter chain.",
-		kEnabledDisabledValues, "enabled"
-	},
-	{
-		"altirra_stereo_as_mono", "Downmix Stereo to Mono",
-		"Mixes stereo POKEY output down to mono while keeping dual POKEY emulation enabled.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_drive_sounds", "Drive Sounds",
-		"Enables disk drive mechanical sound effects.",
-		kDisabledEnabledValues, "disabled"
-	},
-	{
-		"altirra_input_port1", "Input Port 1",
-		"Selects the first controller port type.",
-		kInputPort1Values, "joystick"
-	},
-	{
-		"altirra_input_port2", "Input Port 2",
-		"Selects the second controller port type.",
-		kInputPort2Values, "none"
-	},
-	{ nullptr, nullptr, nullptr, nullptr, nullptr },
 };
 
 static const retro_variable kOptionVariables[] = {
 	{ "altirra_system", "System; 800xl|800|1200xl|130xe|xegs|5200" },
 	{ "altirra_memory", "Memory Size; 320K|8K|16K|24K|32K|40K|48K|52K|64K|128K|256K|320K_Compy|576K|576K_Compy|1088K" },
-	{ "altirra_video_standard", "Video Standard; ntsc|pal|secam|ntsc50|pal60" },
+	{ "altirra_video_standard", "Video Standard; pal|ntsc|secam|ntsc50|pal60" },
 	{ "altirra_basic", "BASIC; disabled|enabled" },
 	{ "altirra_cpu", "CPU; 6502c|65c02|65c816_7mhz|65c816_21mhz" },
 	{ "altirra_illegal_instructions", "Illegal Instructions; enabled|disabled" },
@@ -913,7 +872,9 @@ static const retro_variable kOptionVariables[] = {
 };
 
 const retro_core_option_v2_definition *FindOptionDefinition(const char *key) {
-	for(const auto *def = kOptionDefinitions; def->key; ++def) {
+	BuildCoreOptionDefinitions();
+
+	for(const auto *def = kOptionDefinitionsV2.data(); def->key; ++def) {
 		if (!std::strcmp(def->key, key))
 			return def;
 	}
@@ -948,6 +909,8 @@ void RegisterCoreOptions() {
 	if (!g_env)
 		return;
 
+	BuildCoreOptionDefinitions();
+
 	unsigned version = 0;
 	if (g_env(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
 		if (g_env(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL, (void *)&kOptionsV2Intl))
@@ -959,7 +922,7 @@ void RegisterCoreOptions() {
 
 	if (version >= 1
 		&& g_env(RETRO_ENVIRONMENT_SET_CORE_OPTIONS,
-			(void *)kOptionDefinitionsV1))
+			(void *)kOptionDefinitionsV1.data()))
 	{
 		return;
 	}
@@ -1034,7 +997,7 @@ ATVideoStandard ParseVideoStandard() {
 	if (OptionEquals("altirra_video_standard", "pal60"))
 		return kATVideoStandard_PAL60;
 
-	return kATVideoStandard_NTSC;
+	return kATVideoStandard_PAL;
 }
 
 void ParseCPUMode(ATCPUMode& mode, uint32& subCycles) {
@@ -2414,13 +2377,15 @@ void ApplyUpdatedCoreOptions() {
 	const ATVideoStandard oldVideoStandard = g_sim.GetVideoStandard();
 	ReadCoreOptions();
 
-	if (!ApplyPendingResetOptions(false))
-		return;
+	const bool resetRequired = ApplyPendingResetOptions(false);
 
-	ReleaseInput();
 	InvalidateSerializeCache();
-	g_sim.ColdReset();
-	g_sim.Resume();
+	ApplyLiveOptions();
+
+	if (resetRequired) {
+		g_sim.ColdReset();
+		g_sim.Resume();
+	}
 
 	if (oldVideoStandard != g_sim.GetVideoStandard()) {
 		retro_system_av_info av {};

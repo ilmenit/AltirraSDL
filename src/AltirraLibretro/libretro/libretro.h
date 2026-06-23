@@ -346,11 +346,13 @@ struct retro_core_option_value {
    const char *label;
 };
 
+#define RETRO_NUM_CORE_OPTION_VALUES_MAX 128
+
 struct retro_core_option_definition {
    const char *key;
    const char *desc;
    const char *info;
-   const struct retro_core_option_value *values;
+   struct retro_core_option_value values[RETRO_NUM_CORE_OPTION_VALUES_MAX];
    const char *default_value;
 };
 
@@ -367,18 +369,18 @@ struct retro_core_option_v2_definition {
    const char *info;
    const char *info_categorized;
    const char *category_key;
-   const struct retro_core_option_value *values;
+   struct retro_core_option_value values[RETRO_NUM_CORE_OPTION_VALUES_MAX];
    const char *default_value;
 };
 
 struct retro_core_options_v2 {
-   const struct retro_core_option_v2_category *categories;
-   const struct retro_core_option_v2_definition *definitions;
+   struct retro_core_option_v2_category *categories;
+   struct retro_core_option_v2_definition *definitions;
 };
 
 struct retro_core_options_v2_intl {
-   const struct retro_core_options_v2 *us;
-   const struct retro_core_options_v2 *local;
+   struct retro_core_options_v2 *us;
+   struct retro_core_options_v2 *local;
 };
 
 struct retro_input_descriptor {

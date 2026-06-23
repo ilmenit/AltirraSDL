@@ -15,6 +15,8 @@
 #   ./build.sh --native           Windows only: build libs for .sln (no SDL3)
 #   ./build.sh --libretro         Build the RetroArch/libretro core
 #                                 (altirra_libretro.{so,dll,dylib}, no SDL3).
+#   ./build.sh --libretro-flatpak Build the Linux libretro core inside the
+#                                 RetroArch Flatpak-compatible KDE 6.10 SDK.
 #   ./build.sh --libretro --package
 #                                 Build + archive the libretro core with its
 #                                 required altirra_libretro.info metadata.
@@ -40,6 +42,9 @@
 # Output archives (with --package):
 #   build/<preset>/AltirraSDL-<ver>-<platform>.zip
 #   build/<preset>/AltirraLibretro-<ver>-<platform>-<arch>.(zip|tar.gz)
+#   build/linux-libretro-flatpak-kde610/
+#     AltirraLibretro-<ver>-linux-<arch>-flatpak-kde610.tar.gz
+#     (with --libretro-flatpak --package)
 #   build/<preset>/AltirraSDL-<ver>-src.tar.gz  (with --source)
 
 set -euo pipefail
@@ -63,6 +68,7 @@ CMAKE_EXTRA_ARGS=""
 BUILD_LIBRASHADER=0
 APPIMAGE=0
 LIBRETRO=0
+LIBRETRO_FLATPAK=0
 
 # ── Parse arguments ───────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
@@ -74,6 +80,7 @@ while [ $# -gt 0 ]; do
         --setup-android) ANDROID=1; SETUP_ANDROID=1; BUILD_TYPE=debug ;;
         --native)   FRONTEND=native ;;
         --libretro) LIBRETRO=1 ;;
+        --libretro-flatpak) LIBRETRO=1; LIBRETRO_FLATPAK=1 ;;
         --sdl)      FRONTEND=sdl ;;
         --clean)    CLEAN=1 ;;
         --package)  PACKAGE=1 ;;
@@ -122,11 +129,16 @@ if [ "$LIBRETRO" = "1" ]; then
 
     echo ""
     info "Platform:   ${C_BOLD}${PLATFORM}${C_RESET}"
-    info "Target:     ${C_BOLD}libretro core (Release)${C_RESET}"
+    if [ "$LIBRETRO_FLATPAK" = "1" ]; then
+        info "Target:     ${C_BOLD}libretro core for RetroArch Flatpak (Release)${C_RESET}"
+    else
+        info "Target:     ${C_BOLD}libretro core (Release)${C_RESET}"
+    fi
     info "Jobs:       ${C_BOLD}${JOBS}${C_RESET}"
     echo ""
 
     export ROOT_DIR PLATFORM CLEAN JOBS CMAKE_EXTRA_ARGS PACKAGE SOURCE_ARCHIVE
+    export LIBRETRO_FLATPAK
     source "$SCRIPTS_DIR/libretro.sh"
 
     echo ""

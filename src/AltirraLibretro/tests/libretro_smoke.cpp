@@ -1,6 +1,6 @@
 #include <dlfcn.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,7 +66,7 @@ static unsigned g_mouseInputPolls;
 static unsigned g_lightGunInputPolls;
 static unsigned g_geometryMatrixChecks;
 static bool g_variablesUpdated;
-static const char *g_videoStandardValue = "ntsc";
+static const char *g_videoStandardValue = "pal";
 static const char *g_cropOverscanValue = "normal";
 static const char *g_artifactingValue = "auto";
 static const char *g_cpuValue = "65c02";
@@ -101,11 +101,13 @@ struct retro_core_option_value {
 	const char *label;
 };
 
+static constexpr size_t RETRO_NUM_CORE_OPTION_VALUES_MAX = 128;
+
 struct retro_core_option_definition {
 	const char *key;
 	const char *desc;
 	const char *info;
-	const retro_core_option_value *values;
+	retro_core_option_value values[RETRO_NUM_CORE_OPTION_VALUES_MAX];
 	const char *default_value;
 };
 
@@ -122,19 +124,29 @@ struct retro_core_option_v2_definition {
 	const char *info;
 	const char *info_categorized;
 	const char *category_key;
-	const retro_core_option_value *values;
+	retro_core_option_value values[RETRO_NUM_CORE_OPTION_VALUES_MAX];
 	const char *default_value;
 };
 
 struct retro_core_options_v2 {
-	const retro_core_option_v2_category *categories;
-	const retro_core_option_v2_definition *definitions;
+	retro_core_option_v2_category *categories;
+	retro_core_option_v2_definition *definitions;
 };
 
 struct retro_core_options_v2_intl {
-	const retro_core_options_v2 *us;
-	const retro_core_options_v2 *local;
+	retro_core_options_v2 *us;
+	retro_core_options_v2 *local;
 };
+
+static_assert(RETRO_NUM_CORE_OPTION_VALUES_MAX == 128);
+static_assert(offsetof(retro_core_option_definition, values)
+	== sizeof(const char *) * 3);
+static_assert(offsetof(retro_core_option_v2_definition, values)
+	== sizeof(const char *) * 6);
+static_assert(sizeof(((retro_core_option_definition *)nullptr)->values)
+	== sizeof(retro_core_option_value) * RETRO_NUM_CORE_OPTION_VALUES_MAX);
+static_assert(sizeof(((retro_core_option_v2_definition *)nullptr)->values)
+	== sizeof(retro_core_option_value) * RETRO_NUM_CORE_OPTION_VALUES_MAX);
 
 struct retro_game_info {
 	const char *path;
@@ -206,7 +218,21 @@ static bool validate_option_keys_v1(const retro_core_option_definition *defs) {
 		bool found = false;
 		for (const auto *def = defs; def->key; ++def) {
 			if (!strcmp(def->key, required)
-				&& def->values && def->default_value) {
+				&& def->values[0].value && def->default_value) {
+				bool defaultFound = false;
+				for (const auto *value = def->values; value->value; ++value) {
+					if (!strcmp(value->value, def->default_value)) {
+						defaultFound = true;
+						break;
+					}
+				}
+
+				if (!defaultFound) {
+					fprintf(stderr, "default value missing in V1 option: %s\n",
+						required);
+					return false;
+				}
+
 				found = true;
 				break;
 			}
@@ -240,8 +266,22 @@ static bool validate_option_keys_v2(const retro_core_options_v2 *opts) {
 		bool found = false;
 		for (const auto *def = opts->definitions; def->key; ++def) {
 			if (!strcmp(def->key, required)
-				&& def->values && def->default_value
+				&& def->values[0].value && def->default_value
 				&& def->category_key) {
+				bool defaultFound = false;
+				for (const auto *value = def->values; value->value; ++value) {
+					if (!strcmp(value->value, def->default_value)) {
+						defaultFound = true;
+						break;
+					}
+				}
+
+				if (!defaultFound) {
+					fprintf(stderr, "default value missing in V2 option: %s\n",
+						required);
+					return false;
+				}
+
 				found = true;
 				break;
 			}
@@ -754,7 +794,7 @@ int main(int argc, char **argv) {
 
 	const unsigned normalW = g_lastW;
 	const unsigned normalH = g_lastH;
-	if (normalW != 336 || normalH != 224) {
+	if (normalW != 336 || normalH != 240) {
 		fprintf(stderr, "unexpected normal overscan frame %ux%u\n",
 			normalW, normalH);
 		retro_unload_game();

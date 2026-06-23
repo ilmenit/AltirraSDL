@@ -12,8 +12,97 @@
 
 [ -z "${C_RESET:-}" ] && source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
+FLATPAK_SDK_REF="${ALTIRRA_LIBRETRO_FLATPAK_SDK:-org.kde.Sdk//6.10}"
+FLATPAK_RUNTIME_REF="${ALTIRRA_LIBRETRO_FLATPAK_RUNTIME:-org.kde.Platform//6.10}"
+
+detect_max_symbol_minor() {
+    local prefix="$1"
+    shift
+    local files=()
+
+    for path in "$@"; do
+        [ -e "$path" ] && files+=("$path")
+    done
+
+    [ "${#files[@]}" -gt 0 ] || return 0
+
+    strings "${files[@]}" 2>/dev/null \
+        | sed -n "s/^${prefix}_2\\.\\([0-9][0-9]*\\)$/\\1/p" \
+        | sort -n | tail -1
+}
+
+detect_required_symbol_minor() {
+    local binary="$1"
+    local prefix="$2"
+
+    { readelf --version-info "$binary" 2>/dev/null || true; } \
+        | sed -n "s/.*Name: ${prefix}_2\\.\\([0-9][0-9]*\\).*/\\1/p" \
+        | sort -n | tail -1
+}
+
+check_symbol_version_ceiling() {
+    local binary="$1"
+    local prefix="$2"
+    local available_minor="$3"
+
+    local required_minor
+    required_minor=$(detect_required_symbol_minor "$binary" "$prefix")
+
+    if [ -z "$required_minor" ]; then
+        return
+    fi
+
+    if [ -z "$available_minor" ]; then
+        warn "Could not determine ${prefix} ceiling from the Flatpak SDK; skipping ${prefix} ABI check"
+        return
+    fi
+
+    if [ "$required_minor" -gt "$available_minor" ]; then
+        die "Flatpak libretro core requires ${prefix}_2.${required_minor}; ${FLATPAK_RUNTIME_REF} provides ${prefix}_2.${available_minor}"
+    fi
+}
+
+if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
+    if [ "$PLATFORM" != "linux" ]; then
+        die "--libretro-flatpak is only supported on Linux"
+    fi
+
+    if [ -z "${ALTIRRA_LIBRETRO_FLATPAK_INNER:-}" ]; then
+        command -v flatpak >/dev/null 2>&1 \
+            || die "flatpak not found; install Flatpak and ${FLATPAK_SDK_REF}"
+
+        flatpak info "$FLATPAK_SDK_REF" >/dev/null 2>&1 \
+            || die "${FLATPAK_SDK_REF} is not installed. Run: flatpak install flathub ${FLATPAK_SDK_REF}"
+
+        info "Entering ${C_BOLD}${FLATPAK_SDK_REF}${C_RESET} for RetroArch-compatible libretro build"
+
+        INNER_ARGS=(./build.sh --libretro --libretro-flatpak --jobs "$JOBS")
+        [ "${CLEAN:-0}" = "1" ] && INNER_ARGS+=(--clean)
+        [ "${PACKAGE:-0}" = "1" ] && INNER_ARGS+=(--package)
+        if [ -n "${CMAKE_EXTRA_ARGS:-}" ]; then
+            INNER_ARGS+=(--cmake "$CMAKE_EXTRA_ARGS")
+        fi
+
+        exec flatpak run --devel \
+            "--filesystem=${ROOT_DIR}" \
+            "--env=ALTIRRA_LIBRETRO_FLATPAK_INNER=1" \
+            "--env=ALTIRRA_LIBRETRO_FLATPAK_SDK=${FLATPAK_SDK_REF}" \
+            "--env=ALTIRRA_LIBRETRO_FLATPAK_RUNTIME=${FLATPAK_RUNTIME_REF}" \
+            --command=sh "$FLATPAK_SDK_REF" \
+            -c 'cd "$1"; shift; exec "$@"' sh "$ROOT_DIR" "${INNER_ARGS[@]}"
+    fi
+fi
+
 case "$PLATFORM" in
-    linux)   PRESET="linux-libretro" ;;
+    linux)
+        if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
+            PRESET="linux-libretro-flatpak-kde610"
+        else
+            PRESET="linux-libretro"
+            warn "Host-native Linux libretro builds inherit this system's glibc ABI."
+            warn "Use ./build.sh --libretro-flatpak for Flathub/Flatpak RetroArch packages."
+        fi
+        ;;
     macos)   PRESET="macos-libretro" ;;
     windows) PRESET="windows-libretro" ;;
     *)       die "Unsupported platform for --libretro: $PLATFORM" ;;
@@ -26,8 +115,18 @@ if [ "${CLEAN:-0}" = "1" ] && [ -d "$BUILD_DIR" ]; then
     rm -rf "$BUILD_DIR"
 fi
 
-info "Configuring preset: ${C_BOLD}${PRESET}${C_RESET}"
-cmake --preset "$PRESET" ${CMAKE_EXTRA_ARGS:-} || die "CMake configure failed"
+if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
+    info "Configuring Flatpak-compatible libretro build: ${C_BOLD}${BUILD_DIR}${C_RESET}"
+    cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DALTIRRA_LIBRETRO=ON \
+        -DALTIRRA_SDL3=OFF \
+        -DALTIRRA_LIBRETRO_NO_SDL3=ON \
+        ${CMAKE_EXTRA_ARGS:-} || die "CMake configure failed"
+else
+    info "Configuring preset: ${C_BOLD}${PRESET}${C_RESET}"
+    cmake --preset "$PRESET" ${CMAKE_EXTRA_ARGS:-} || die "CMake configure failed"
+fi
 
 info "Building libretro core with ${C_BOLD}${JOBS}${C_RESET} parallel jobs..."
 BUILD_ARGS=(--build "$BUILD_DIR" --target AltirraLibretro -j "$JOBS")
@@ -58,13 +157,35 @@ ok "libretro core: ${C_BOLD}${CORE}${C_RESET} ($SIZE)"
 ok "core info:     ${C_BOLD}${INFO_DST}${C_RESET}"
 info "Install the core into RetroArch's cores directory and altirra_libretro.info into RetroArch's Core Info directory."
 
+if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
+    AVAILABLE_GLIBC_MINOR=$(detect_max_symbol_minor GLIBC \
+        /usr/lib*/libc.so.6 \
+        /usr/lib*/*/libc.so.6 \
+        /lib*/libc.so.6 \
+        /lib*/*/libc.so.6)
+    AVAILABLE_GLIBCXX_MINOR=$(detect_max_symbol_minor GLIBCXX \
+        /usr/lib*/libstdc++.so.6 \
+        /usr/lib*/*/libstdc++.so.6 \
+        /lib*/libstdc++.so.6 \
+        /lib*/*/libstdc++.so.6)
+
+    check_symbol_version_ceiling "$CORE" GLIBC "$AVAILABLE_GLIBC_MINOR"
+    check_symbol_version_ceiling "$CORE" GLIBCXX "$AVAILABLE_GLIBCXX_MINOR"
+
+    ok "Flatpak ABI check passed for ${C_BOLD}${FLATPAK_RUNTIME_REF}${C_RESET}"
+fi
+
 if [ "${PACKAGE:-0}" = "1" ]; then
     VERSION=$(sed -n 's/^#define[[:space:]]\\+AT_VERSION[[:space:]]\\+"\\([^"]*\\)".*/\\1/p' \
         "$ROOT_DIR/src/Altirra/autobuild_default/version.h" | head -1)
     [ -n "$VERSION" ] || VERSION="dev"
 
     ARCH=$(uname -m)
-    PKG_NAME="AltirraLibretro-${VERSION}-${PLATFORM}-${ARCH}"
+    if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
+        PKG_NAME="AltirraLibretro-${VERSION}-${PLATFORM}-${ARCH}-flatpak-kde610"
+    else
+        PKG_NAME="AltirraLibretro-${VERSION}-${PLATFORM}-${ARCH}"
+    fi
     PKG_DIR="$BUILD_DIR/$PKG_NAME"
 
     info "Creating libretro package: ${C_BOLD}${PKG_NAME}${C_RESET}"
@@ -83,6 +204,7 @@ if [ "${PACKAGE:-0}" = "1" ]; then
     cat > "$PKG_DIR/BUILD-INFO.txt" <<BUILDINFO
 AltirraLibretro ${VERSION} ${COMMIT_SHORT} — ${PLATFORM} ${ARCH}
 Built ${BUILD_DATE} from commit ${COMMIT_FULL}
+$(if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then printf 'Built inside %s for RetroArch Flatpak runtime %s\n' "$FLATPAK_SDK_REF" "$FLATPAK_RUNTIME_REF"; fi)
 Install altirra_libretro.info into RetroArch's Core Info directory.
 BUILDINFO
 
