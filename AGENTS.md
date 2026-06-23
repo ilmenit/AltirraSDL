@@ -41,13 +41,22 @@ See `PORTING/` for the full cross-platform implementation plan.
 **Requirements:** CMake 3.24+, C++17 compiler (GCC or Clang), SDL3, Dear ImGui (vendored).
 
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-./src/AltirraSDL/AltirraSDL
+cmake --preset linux-release
+cmake --build --preset linux-release -j$(nproc)
+./build/linux-release/src/AltirraSDL/AltirraSDL
 ```
 
 The CMake build exists alongside the `.sln` — it does not replace it. See `PORTING/BUILD.md` for details.
+
+**Build directory convention:** CMake build trees live under `build/<name>`
+or `build/<preset>`, never as root-level `build-*` directories. Use examples
+like `build/linux-release`, `build/linux-libretro`, `build/lobby`, or
+`build/tests`. Tool-owned directories such as `android/app/build` are
+exceptions because Gradle owns that layout; shared caches under `build/_deps`
+and helper tools under `build/_tools` are also allowed because they are not
+CMake build trees. Legacy root directories such as `build-lobby`,
+`build-tests`, and `build-libretro` are disposable local scratch trees; do not
+add new docs, scripts, or CI steps that create them.
 
 ## Code Style
 

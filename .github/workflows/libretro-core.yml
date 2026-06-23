@@ -91,7 +91,7 @@ jobs:
               -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/toolchains/linux-armv7hf.cmake"
             )
           fi
-          cmake -S . -B build -G Ninja \
+          cmake -S . -B build/linux-libretro-${{ matrix.arch }} -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_LIBRETRO=ON \
             -DALTIRRA_SDL3=OFF \
@@ -100,13 +100,13 @@ jobs:
 
       - name: Build standalone core
         shell: bash
-        run: cmake --build build --target AltirraLibretro -j"$(nproc)"
+        run: cmake --build build/linux-libretro-${{ matrix.arch }} --target AltirraLibretro -j"$(nproc)"
 
       - name: Check exports and dependencies
         shell: bash
         run: |
           set -euo pipefail
-          core=build/src/AltirraLibretro/altirra_libretro.so
+          core=build/linux-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.so
           test -f "$core"
           if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
             file "$core" | grep -Eq 'ARM|arm'
@@ -147,7 +147,7 @@ jobs:
           fi
           pkg="AltirraLibretro-${slug}-linux-${{ matrix.arch }}"
           mkdir -p "$pkg"
-          cp build/src/AltirraLibretro/altirra_libretro.so "$pkg/"
+          cp build/linux-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.so "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
           cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
@@ -190,7 +190,7 @@ jobs:
       - name: Configure standalone core
         shell: bash
         run: |
-          cmake -S . -B build -G Ninja \
+          cmake -S . -B build/macos-libretro-${{ matrix.arch }} -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_LIBRETRO=ON \
             -DALTIRRA_SDL3=OFF \
@@ -199,13 +199,13 @@ jobs:
 
       - name: Build standalone core
         shell: bash
-        run: cmake --build build --target AltirraLibretro -j"$(sysctl -n hw.ncpu)"
+        run: cmake --build build/macos-libretro-${{ matrix.arch }} --target AltirraLibretro -j"$(sysctl -n hw.ncpu)"
 
       - name: Check exports and dependencies
         shell: bash
         run: |
           set -euo pipefail
-          core=build/src/AltirraLibretro/altirra_libretro.dylib
+          core=build/macos-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.dylib
           test -f "$core"
           # Confirm the slice is the expected architecture (native per runner).
           if ! file "$core" | grep -q "${{ matrix.arch }}"; then
@@ -237,7 +237,7 @@ jobs:
           fi
           pkg="AltirraLibretro-${slug}-macos-${{ matrix.arch }}"
           mkdir -p "$pkg"
-          cp build/src/AltirraLibretro/altirra_libretro.dylib "$pkg/"
+          cp build/macos-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.dylib "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
           cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
@@ -389,7 +389,7 @@ jobs:
             exit 1
           fi
           echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
-          cmake -S . -B build-android -G Ninja \
+          cmake -S . -B build/android-libretro-arm64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
@@ -400,13 +400,13 @@ jobs:
 
       - name: Build standalone core
         shell: bash
-        run: cmake --build build-android --target AltirraLibretro -j"$(nproc)"
+        run: cmake --build build/android-libretro-arm64 --target AltirraLibretro -j"$(nproc)"
 
       - name: Check exports and dependencies
         shell: bash
         run: |
           set -euo pipefail
-          core=build-android/src/AltirraLibretro/altirra_libretro.so
+          core=build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so
           test -f "$core"
           file "$core" | grep -Eq 'aarch64|ARM aarch64|ARM64'
           "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
@@ -436,7 +436,7 @@ jobs:
           fi
           pkg="AltirraLibretro-${slug}-android-arm64-v8a"
           mkdir -p "$pkg"
-          cp build-android/src/AltirraLibretro/altirra_libretro.so "$pkg/"
+          cp build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
           cp LICENSE "$pkg/COPYING"
@@ -482,7 +482,7 @@ jobs:
       - name: Configure standalone core
         shell: bash
         run: |
-          cmake -S . -B build-real -G Ninja \
+          cmake -S . -B build/linux-libretro-smoke -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_LIBRETRO=ON \
             -DALTIRRA_SDL3=OFF \
@@ -490,13 +490,13 @@ jobs:
 
       - name: Build standalone core
         shell: bash
-        run: cmake --build build-real --target AltirraLibretro -j"$(nproc)"
+        run: cmake --build build/linux-libretro-smoke --target AltirraLibretro -j"$(nproc)"
 
       - name: Check exports and runtime symbols
         shell: bash
         run: |
           set -euo pipefail
-          core=build-real/src/AltirraLibretro/altirra_libretro.so
+          core=build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so
           test -f "$core"
           nm -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
           for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
@@ -517,11 +517,11 @@ jobs:
         run: |
           set -euo pipefail
           g++ -std=c++17 src/AltirraLibretro/tests/libretro_smoke.cpp \
-            -ldl -o build-real/libretro_smoke
-          build-real/libretro_smoke \
-            build-real/src/AltirraLibretro/altirra_libretro.so
-          build-real/libretro_smoke \
-            build-real/src/AltirraLibretro/altirra_libretro.so 1
+            -ldl -o build/linux-libretro-smoke/libretro_smoke
+          build/linux-libretro-smoke/libretro_smoke \
+            build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so
+          build/linux-libretro-smoke/libretro_smoke \
+            build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so 1
 
   publish-nightly:
     name: Attach to nightly-libretro release
