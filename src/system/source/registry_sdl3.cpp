@@ -18,7 +18,7 @@
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(ALTIRRA_LIBRETRO_NO_SDL3)
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 #endif
@@ -38,7 +38,7 @@ static VDStringW s_configPath;
 VDStringA ATGetConfigDir() {
 	if (s_configDir.empty()) {
 		VDStringA dir;
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(ALTIRRA_LIBRETRO_NO_SDL3)
 		// On Android the only reliable writable location is the app's
 		// internal storage directory.  $HOME is unset or points inside
 		// the APK.  SDL_GetPrefPath returns

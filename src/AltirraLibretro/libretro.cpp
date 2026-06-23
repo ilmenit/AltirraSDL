@@ -14,6 +14,8 @@
 #include "version.h"
 
 #include "constants.h"
+#include "cpu.h"
+#include "devicemanager.h"
 #include "diskinterface.h"
 #include "gtia.h"
 #include "inputdefs.h"
@@ -23,14 +25,17 @@
 #include "simulator.h"
 #include "savestateio.h"
 #include "libretro_video.h"
+#include "uiaccessors.h"
 #include "uikeyboard.h"
 #include <at/ataudio/audiooutput.h>
 #include <at/ataudio/pokey.h>
+#include <at/atcore/device.h>
 #include <at/atio/atfs.h>
 #include <at/atio/image.h>
 #include <at/atcore/configvar.h>
 #include <at/atcore/constants.h>
 #include <at/atcore/media.h>
+#include <at/atcore/propertyset.h>
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
 #include <at/atnetworksockets/nativesockets.h>
@@ -92,11 +97,24 @@ struct CoreState {
 	ATHardwareMode pendingHardwareMode = kATHardwareMode_800XL;
 	ATMemoryMode pendingMemoryMode = kATMemoryMode_320K;
 	ATVideoStandard pendingVideoStandard = kATVideoStandard_NTSC;
+	ATCPUMode pendingCPUMode = kATCPUMode_6502;
+	uint32 pendingCPUSubCycles = 1;
 	bool pendingBasicEnabled = false;
+	bool pendingStereoPokeyEnabled = false;
+	bool pendingVbxeEnabled = false;
+	bool pendingCovoxEnabled = false;
+	bool pendingSoundBoardEnabled = false;
+	bool pendingRapidusEnabled = false;
 	bool optionHardwarePending = true;
 	bool optionMemoryPending = true;
 	bool optionVideoPending = true;
+	bool optionCpuPending = true;
 	bool optionBasicPending = true;
+	bool optionStereoPokeyPending = true;
+	bool optionVbxePending = true;
+	bool optionCovoxPending = true;
+	bool optionSoundBoardPending = true;
+	bool optionRapidusPending = true;
 	VDStringA systemDirectory;
 	VDStringA saveDirectory;
 	VDStringA configDirectory;
@@ -527,10 +545,11 @@ void RegisterDiskControl() {
 }
 
 static const retro_core_option_v2_category kOptionCategories[] = {
-	{ "system", "System", "Computer, memory, video standard, and BASIC options." },
+	{ "system", "System", "Computer, memory, video standard, CPU, and BASIC options." },
+	{ "hardware", "Hardware Add-ons", "Common expansion hardware options." },
 	{ "media", "Media", "Disk and cassette acceleration options." },
 	{ "video", "Video", "Artifacting and display output options." },
-	{ "audio", "Audio", "Audio filtering options." },
+	{ "audio", "Audio", "Audio output and filtering options." },
 	{ "input", "Input", "Controller type options." },
 	{ nullptr, nullptr, nullptr },
 };
@@ -573,9 +592,23 @@ static const retro_core_option_value kVideoStandardValues[] = {
 	{ nullptr, nullptr },
 };
 
-static const retro_core_option_value kEnabledValues[] = {
+static const retro_core_option_value kDisabledEnabledValues[] = {
 	{ "disabled", "Disabled" },
 	{ "enabled", "Enabled" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kEnabledDisabledValues[] = {
+	{ "enabled", "Enabled" },
+	{ "disabled", "Disabled" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kCPUValues[] = {
+	{ "6502c", "6502C" },
+	{ "65c02", "65C02" },
+	{ "65c816_7mhz", "65C816 7MHz" },
+	{ "65c816_21mhz", "65C816 21MHz" },
 	{ nullptr, nullptr },
 };
 
@@ -645,7 +678,52 @@ static const retro_core_option_v2_definition kOptionDefinitions[] = {
 	{
 		"altirra_basic", "BASIC", nullptr,
 		"Enables or disables internal BASIC where supported.",
-		nullptr, "system", kEnabledValues, "disabled"
+		nullptr, "system", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_cpu", "CPU", nullptr,
+		"Selects the emulated CPU type and speed.",
+		nullptr, "system", kCPUValues, "6502c"
+	},
+	{
+		"altirra_illegal_instructions", "Illegal Instructions", nullptr,
+		"Enables undocumented 6502 opcodes.",
+		nullptr, "system", kEnabledDisabledValues, "enabled"
+	},
+	{
+		"altirra_random_launch_delay", "Randomize Launch Delay", nullptr,
+		"Adds a small random launch delay for directly loaded programs so hardware RNG state varies between runs.",
+		nullptr, "system", kEnabledDisabledValues, "enabled"
+	},
+	{
+		"altirra_randomize_exe_memory", "Randomize EXE Memory", nullptr,
+		"Fills uninitialized RAM with random bytes before directly loaded programs start.",
+		nullptr, "system", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_stereo_pokey", "Stereo POKEY", nullptr,
+		"Enables a second POKEY for dual-chip stereo audio software.",
+		nullptr, "hardware", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_vbxe", "VideoBoard XE (VBXE)", nullptr,
+		"Enables VBXE 1.26 at the default $D6xx address range.",
+		nullptr, "hardware", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_covox", "Covox", nullptr,
+		"Enables a four-channel Covox DAC at $D600-D6FF.",
+		nullptr, "hardware", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_soundboard", "SoundBoard", nullptr,
+		"Enables SoundBoard 1.2 at the default $D2C0 base address.",
+		nullptr, "hardware", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_rapidus", "Rapidus Accelerator", nullptr,
+		"Enables the Rapidus accelerator device.",
+		nullptr, "hardware", kDisabledEnabledValues, "disabled"
 	},
 	{
 		"altirra_sio_patch", "SIO Patch", nullptr,
@@ -665,7 +743,17 @@ static const retro_core_option_v2_definition kOptionDefinitions[] = {
 	{
 		"altirra_audio_filters", "Audio Filters", nullptr,
 		"Enables Altirra's audio filter chain.",
-		nullptr, "audio", kEnabledValues, "enabled"
+		nullptr, "audio", kEnabledDisabledValues, "enabled"
+	},
+	{
+		"altirra_stereo_as_mono", "Downmix Stereo to Mono", nullptr,
+		"Mixes stereo POKEY output down to mono while keeping dual POKEY emulation enabled.",
+		nullptr, "audio", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_drive_sounds", "Drive Sounds", nullptr,
+		"Enables disk drive mechanical sound effects.",
+		nullptr, "audio", kDisabledEnabledValues, "disabled"
 	},
 	{
 		"altirra_input_port1", "Input Port 1", nullptr,
@@ -709,7 +797,52 @@ static const retro_core_option_definition kOptionDefinitionsV1[] = {
 	{
 		"altirra_basic", "BASIC",
 		"Enables or disables internal BASIC where supported.",
-		kEnabledValues, "disabled"
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_cpu", "CPU",
+		"Selects the emulated CPU type and speed.",
+		kCPUValues, "6502c"
+	},
+	{
+		"altirra_illegal_instructions", "Illegal Instructions",
+		"Enables undocumented 6502 opcodes.",
+		kEnabledDisabledValues, "enabled"
+	},
+	{
+		"altirra_random_launch_delay", "Randomize Launch Delay",
+		"Adds a small random launch delay for directly loaded programs so hardware RNG state varies between runs.",
+		kEnabledDisabledValues, "enabled"
+	},
+	{
+		"altirra_randomize_exe_memory", "Randomize EXE Memory",
+		"Fills uninitialized RAM with random bytes before directly loaded programs start.",
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_stereo_pokey", "Stereo POKEY",
+		"Enables a second POKEY for dual-chip stereo audio software.",
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_vbxe", "VideoBoard XE (VBXE)",
+		"Enables VBXE 1.26 at the default $D6xx address range.",
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_covox", "Covox",
+		"Enables a four-channel Covox DAC at $D600-D6FF.",
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_soundboard", "SoundBoard",
+		"Enables SoundBoard 1.2 at the default $D2C0 base address.",
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_rapidus", "Rapidus Accelerator",
+		"Enables the Rapidus accelerator device.",
+		kDisabledEnabledValues, "disabled"
 	},
 	{
 		"altirra_sio_patch", "SIO Patch",
@@ -729,7 +862,17 @@ static const retro_core_option_definition kOptionDefinitionsV1[] = {
 	{
 		"altirra_audio_filters", "Audio Filters",
 		"Enables Altirra's audio filter chain.",
-		kEnabledValues, "enabled"
+		kEnabledDisabledValues, "enabled"
+	},
+	{
+		"altirra_stereo_as_mono", "Downmix Stereo to Mono",
+		"Mixes stereo POKEY output down to mono while keeping dual POKEY emulation enabled.",
+		kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_drive_sounds", "Drive Sounds",
+		"Enables disk drive mechanical sound effects.",
+		kDisabledEnabledValues, "disabled"
 	},
 	{
 		"altirra_input_port1", "Input Port 1",
@@ -749,10 +892,21 @@ static const retro_variable kOptionVariables[] = {
 	{ "altirra_memory", "Memory Size; 320K|8K|16K|24K|32K|40K|48K|52K|64K|128K|256K|320K_Compy|576K|576K_Compy|1088K" },
 	{ "altirra_video_standard", "Video Standard; ntsc|pal|secam|ntsc50|pal60" },
 	{ "altirra_basic", "BASIC; disabled|enabled" },
+	{ "altirra_cpu", "CPU; 6502c|65c02|65c816_7mhz|65c816_21mhz" },
+	{ "altirra_illegal_instructions", "Illegal Instructions; enabled|disabled" },
+	{ "altirra_random_launch_delay", "Randomize Launch Delay; enabled|disabled" },
+	{ "altirra_randomize_exe_memory", "Randomize EXE Memory; disabled|enabled" },
+	{ "altirra_stereo_pokey", "Stereo POKEY; disabled|enabled" },
+	{ "altirra_vbxe", "VideoBoard XE (VBXE); disabled|enabled" },
+	{ "altirra_covox", "Covox; disabled|enabled" },
+	{ "altirra_soundboard", "SoundBoard; disabled|enabled" },
+	{ "altirra_rapidus", "Rapidus Accelerator; disabled|enabled" },
 	{ "altirra_sio_patch", "SIO Patch; disk_and_cassette|off|disk|cassette" },
 	{ "altirra_artifacting", "Artifacting; auto|none|ntsc|ntschi|pal|palhi" },
 	{ "altirra_crop_overscan", "Crop Overscan; normal|off|extended|full" },
 	{ "altirra_audio_filters", "Audio Filters; enabled|disabled" },
+	{ "altirra_stereo_as_mono", "Downmix Stereo to Mono; disabled|enabled" },
+	{ "altirra_drive_sounds", "Drive Sounds; disabled|enabled" },
 	{ "altirra_input_port1", "Input Port 1; joystick|5200_controller|paddle_a|paddle_b|st_mouse|light_pen|light_gun|none" },
 	{ "altirra_input_port2", "Input Port 2; none|joystick|paddle_a|paddle_b|st_mouse" },
 	{ nullptr, nullptr },
@@ -784,6 +938,10 @@ const char *GetOptionValue(const char *key) {
 bool OptionEquals(const char *key, const char *value) {
 	const char *opt = GetOptionValue(key);
 	return opt && !std::strcmp(opt, value);
+}
+
+bool OptionEnabled(const char *key) {
+	return OptionEquals(key, "enabled");
 }
 
 void RegisterCoreOptions() {
@@ -879,6 +1037,29 @@ ATVideoStandard ParseVideoStandard() {
 	return kATVideoStandard_NTSC;
 }
 
+void ParseCPUMode(ATCPUMode& mode, uint32& subCycles) {
+	if (OptionEquals("altirra_cpu", "65c02")) {
+		mode = kATCPUMode_65C02;
+		subCycles = 1;
+		return;
+	}
+
+	if (OptionEquals("altirra_cpu", "65c816_7mhz")) {
+		mode = kATCPUMode_65C816;
+		subCycles = 4;
+		return;
+	}
+
+	if (OptionEquals("altirra_cpu", "65c816_21mhz")) {
+		mode = kATCPUMode_65C816;
+		subCycles = 12;
+		return;
+	}
+
+	mode = kATCPUMode_6502;
+	subCycles = 1;
+}
+
 ATArtifactMode ParseArtifactMode() {
 	if (OptionEquals("altirra_artifacting", "none"))
 		return ATArtifactMode::None;
@@ -905,46 +1086,137 @@ ATGTIAEmulator::OverscanMode ParseOverscanMode() {
 	return ATGTIAEmulator::kOverscanNormal;
 }
 
+bool SetDeviceEnabled(const char *tag, bool enabled,
+	void (*setDefaults)(ATPropertySet&))
+{
+	ATDeviceManager *dm = g_sim.GetDeviceManager();
+	if (!dm)
+		return false;
+
+	IATDevice *existing = dm->GetDeviceByTag(tag);
+	const bool present = existing != nullptr;
+	if (present == enabled)
+		return false;
+
+	if (enabled) {
+		ATPropertySet pset;
+		if (setDefaults)
+			setDefaults(pset);
+
+		try {
+			return dm->AddDevice(tag, pset, false) != nullptr;
+		} catch(...) {
+			return false;
+		}
+	}
+
+	dm->RemoveDevice(existing);
+	return true;
+}
+
+bool ApplyPendingDeviceOption(bool force, bool pending, const char *tag,
+	bool enabled, void (*setDefaults)(ATPropertySet&))
+{
+	if (!force && !pending)
+		return false;
+
+	return SetDeviceEnabled(tag, enabled, setDefaults);
+}
+
 void ReadResetOptions() {
 	g_core.pendingHardwareMode = ParseHardwareMode();
 	g_core.pendingMemoryMode = ParseMemoryMode();
 	g_core.pendingVideoStandard = ParseVideoStandard();
+	ParseCPUMode(g_core.pendingCPUMode, g_core.pendingCPUSubCycles);
 	g_core.pendingBasicEnabled = OptionEquals("altirra_basic", "enabled");
+	g_core.pendingStereoPokeyEnabled = OptionEnabled("altirra_stereo_pokey");
+	g_core.pendingVbxeEnabled = OptionEnabled("altirra_vbxe");
+	g_core.pendingCovoxEnabled = OptionEnabled("altirra_covox");
+	g_core.pendingSoundBoardEnabled = OptionEnabled("altirra_soundboard");
+	g_core.pendingRapidusEnabled = OptionEnabled("altirra_rapidus");
 }
 
 bool ApplyPendingResetOptions(bool force) {
-	bool changed = false;
+	bool resetRequired = false;
 
 	if ((force || g_core.optionHardwarePending)
 		&& g_sim.GetHardwareMode() != g_core.pendingHardwareMode) {
 		g_sim.SetHardwareMode(g_core.pendingHardwareMode);
-		changed = true;
+		resetRequired = true;
 	}
 
 	if ((force || g_core.optionMemoryPending)
 		&& g_sim.GetMemoryMode() != g_core.pendingMemoryMode) {
 		g_sim.SetMemoryMode(g_core.pendingMemoryMode);
-		changed = true;
+		resetRequired = true;
 	}
 
 	if ((force || g_core.optionVideoPending)
 		&& g_sim.GetVideoStandard() != g_core.pendingVideoStandard) {
 		g_sim.SetVideoStandard(g_core.pendingVideoStandard);
-		changed = true;
+		resetRequired = true;
+	}
+
+	if ((force || g_core.optionCpuPending)
+		&& (g_sim.GetCPUMode() != g_core.pendingCPUMode
+			|| g_sim.GetCPUSubCycles() != g_core.pendingCPUSubCycles)) {
+		const bool chipChanged =
+			!g_sim.IsCPUModeOverridden()
+			&& g_sim.GetCPUMode() != g_core.pendingCPUMode;
+		g_sim.SetCPUMode(g_core.pendingCPUMode, g_core.pendingCPUSubCycles);
+		if (chipChanged)
+			resetRequired = true;
 	}
 
 	if ((force || g_core.optionBasicPending)
 		&& g_sim.IsBASICEnabled() != g_core.pendingBasicEnabled) {
 		g_sim.SetBASICEnabled(g_core.pendingBasicEnabled);
-		changed = true;
+		resetRequired = true;
+	}
+
+	if ((force || g_core.optionStereoPokeyPending)
+		&& g_sim.IsDualPokeysEnabled() != g_core.pendingStereoPokeyEnabled) {
+		g_sim.SetDualPokeysEnabled(g_core.pendingStereoPokeyEnabled);
+		resetRequired = true;
 	}
 
 	g_core.optionHardwarePending = false;
 	g_core.optionMemoryPending = false;
 	g_core.optionVideoPending = false;
+	g_core.optionCpuPending = false;
 	g_core.optionBasicPending = false;
+	g_core.optionStereoPokeyPending = false;
 
-	return changed;
+	resetRequired |= ApplyPendingDeviceOption(force,
+		g_core.optionVbxePending, "vbxe", g_core.pendingVbxeEnabled,
+		[](ATPropertySet& p) { p.SetUint32("version", 126); });
+
+	resetRequired |= ApplyPendingDeviceOption(force,
+		g_core.optionCovoxPending, "covox", g_core.pendingCovoxEnabled,
+		[](ATPropertySet& p) {
+			p.SetUint32("base", 0xD600);
+			p.SetUint32("size", 0x100);
+			p.SetUint32("channels", 4);
+		});
+
+	resetRequired |= ApplyPendingDeviceOption(force,
+		g_core.optionSoundBoardPending, "soundboard",
+		g_core.pendingSoundBoardEnabled,
+		[](ATPropertySet& p) {
+			p.SetUint32("version", 120);
+			p.SetUint32("base", 0xD2C0);
+		});
+
+	resetRequired |= ApplyPendingDeviceOption(force,
+		g_core.optionRapidusPending, "rapidus",
+		g_core.pendingRapidusEnabled, nullptr);
+
+	g_core.optionVbxePending = false;
+	g_core.optionCovoxPending = false;
+	g_core.optionSoundBoardPending = false;
+	g_core.optionRapidusPending = false;
+
+	return resetRequired;
 }
 
 void ApplyLiveOptions() {
@@ -968,6 +1240,16 @@ void ApplyLiveOptions() {
 	if (IATAudioOutput *audio = g_sim.GetAudioOutput())
 		audio->SetFiltersEnabled(!OptionEquals("altirra_audio_filters", "disabled"));
 
+	g_sim.GetCPU().SetIllegalInsnsEnabled(
+		OptionEnabled("altirra_illegal_instructions"));
+	g_sim.SetRandomProgramLaunchDelayEnabled(
+		OptionEnabled("altirra_random_launch_delay"));
+	g_sim.SetRandomFillEXEEnabled(
+		OptionEnabled("altirra_randomize_exe_memory"));
+	g_sim.GetPokey().SetStereoAsMonoEnabled(
+		OptionEnabled("altirra_stereo_as_mono"));
+	ATUISetDriveSoundsEnabled(OptionEnabled("altirra_drive_sounds"));
+
 	ReleaseInput();
 	InitDefaultInputMaps();
 }
@@ -976,7 +1258,15 @@ void ReadCoreOptions() {
 	const ATHardwareMode hardwareMode = ParseHardwareMode();
 	const ATMemoryMode memoryMode = ParseMemoryMode();
 	const ATVideoStandard videoStandard = ParseVideoStandard();
+	ATCPUMode cpuMode = kATCPUMode_6502;
+	uint32 cpuSubCycles = 1;
+	ParseCPUMode(cpuMode, cpuSubCycles);
 	const bool basicEnabled = OptionEquals("altirra_basic", "enabled");
+	const bool stereoPokeyEnabled = OptionEnabled("altirra_stereo_pokey");
+	const bool vbxeEnabled = OptionEnabled("altirra_vbxe");
+	const bool covoxEnabled = OptionEnabled("altirra_covox");
+	const bool soundBoardEnabled = OptionEnabled("altirra_soundboard");
+	const bool rapidusEnabled = OptionEnabled("altirra_rapidus");
 
 	if (hardwareMode != g_core.pendingHardwareMode) {
 		g_core.pendingHardwareMode = hardwareMode;
@@ -993,9 +1283,41 @@ void ReadCoreOptions() {
 		g_core.optionVideoPending = true;
 	}
 
+	if (cpuMode != g_core.pendingCPUMode
+		|| cpuSubCycles != g_core.pendingCPUSubCycles) {
+		g_core.pendingCPUMode = cpuMode;
+		g_core.pendingCPUSubCycles = cpuSubCycles;
+		g_core.optionCpuPending = true;
+	}
+
 	if (basicEnabled != g_core.pendingBasicEnabled) {
 		g_core.pendingBasicEnabled = basicEnabled;
 		g_core.optionBasicPending = true;
+	}
+
+	if (stereoPokeyEnabled != g_core.pendingStereoPokeyEnabled) {
+		g_core.pendingStereoPokeyEnabled = stereoPokeyEnabled;
+		g_core.optionStereoPokeyPending = true;
+	}
+
+	if (vbxeEnabled != g_core.pendingVbxeEnabled) {
+		g_core.pendingVbxeEnabled = vbxeEnabled;
+		g_core.optionVbxePending = true;
+	}
+
+	if (covoxEnabled != g_core.pendingCovoxEnabled) {
+		g_core.pendingCovoxEnabled = covoxEnabled;
+		g_core.optionCovoxPending = true;
+	}
+
+	if (soundBoardEnabled != g_core.pendingSoundBoardEnabled) {
+		g_core.pendingSoundBoardEnabled = soundBoardEnabled;
+		g_core.optionSoundBoardPending = true;
+	}
+
+	if (rapidusEnabled != g_core.pendingRapidusEnabled) {
+		g_core.pendingRapidusEnabled = rapidusEnabled;
+		g_core.optionRapidusPending = true;
 	}
 
 	ApplyLiveOptions();
@@ -2078,6 +2400,35 @@ bool InitSimulator() {
 	return true;
 }
 
+void ApplyUpdatedCoreOptions() {
+	if (!g_core.simulatorInitialized || !g_env)
+		return;
+
+	bool optionsUpdated = false;
+	if (!g_env(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &optionsUpdated)
+		|| !optionsUpdated)
+	{
+		return;
+	}
+
+	const ATVideoStandard oldVideoStandard = g_sim.GetVideoStandard();
+	ReadCoreOptions();
+
+	if (!ApplyPendingResetOptions(false))
+		return;
+
+	ReleaseInput();
+	InvalidateSerializeCache();
+	g_sim.ColdReset();
+	g_sim.Resume();
+
+	if (oldVideoStandard != g_sim.GetVideoStandard()) {
+		retro_system_av_info av {};
+		FillAvInfo(av);
+		g_env(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+	}
+}
+
 void ShutdownSimulator() {
 	if (!g_core.simulatorInitialized)
 		return;
@@ -2323,7 +2674,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 			if (!MountDiskIndex(g_core.diskIndex))
 				return false;
 		} else {
-			ATImageLoadContext ctx;
+			ATImageLoadContext ctx {};
 			const VDStringW wpath = VDTextU8ToW(VDStringSpanA(game->path));
 
 			if (!g_sim.Load(wpath.c_str(), kATMediaWriteMode_RO, &ctx))
@@ -2376,28 +2727,10 @@ RETRO_API void retro_run(void) {
 	if (g_inputPoll)
 		g_inputPoll();
 
+	ApplyUpdatedCoreOptions();
+
 	bool ranFrame = false;
 	if (g_core.gameLoaded) {
-		bool optionsUpdated = false;
-		if (g_env && g_env(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &optionsUpdated)
-			&& optionsUpdated) {
-			const ATVideoStandard oldVideoStandard = g_sim.GetVideoStandard();
-			ReadCoreOptions();
-
-			if (ApplyPendingResetOptions(false)) {
-				ReleaseInput();
-				InvalidateSerializeCache();
-				g_sim.ColdReset();
-				g_sim.Resume();
-
-				if (oldVideoStandard != g_sim.GetVideoStandard()) {
-					retro_system_av_info av {};
-					FillAvInfo(av);
-					g_env(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
-				}
-			}
-		}
-
 		UpdateInput();
 
 		for (;;) {

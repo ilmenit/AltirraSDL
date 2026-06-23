@@ -138,6 +138,98 @@
             }
         },
         {
+            "name": "linux-libretro",
+            "displayName": "Linux libretro core (no SDL3)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "ALTIRRA_LIBRETRO": "ON",
+                "ALTIRRA_SDL3": "OFF",
+                "ALTIRRA_LIBRETRO_NO_SDL3": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-libretro-armv7hf",
+            "displayName": "Linux ARMv7 hard-float libretro core (cross, no SDL3)",
+            "inherits": "linux-libretro",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/linux-armv7hf.cmake"
+        },
+        {
+            "name": "android-libretro-arm64",
+            "displayName": "Android ARM64 libretro core (NDK, no SDL3)",
+            "inherits": "base",
+            "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "ANDROID_ABI": "arm64-v8a",
+                "ANDROID_PLATFORM": "android-23",
+                "ALTIRRA_LIBRETRO": "ON",
+                "ALTIRRA_SDL3": "OFF",
+                "ALTIRRA_LIBRETRO_NO_SDL3": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "$env{ANDROID_NDK_HOME}",
+                "rhs": ""
+            }
+        },
+        {
+            "name": "macos-libretro",
+            "displayName": "macOS libretro core (native arch, no SDL3)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "ALTIRRA_LIBRETRO": "ON",
+                "ALTIRRA_SDL3": "OFF",
+                "ALTIRRA_LIBRETRO_NO_SDL3": "ON",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "windows-libretro-base",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "ALTIRRA_SDL3": "OFF",
+                "ALTIRRA_LIBRETRO": "ON",
+                "ALTIRRA_LIBRETRO_NO_SDL3": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "windows-libretro",
+            "displayName": "Windows libretro core x64 (no SDL3)",
+            "inherits": "windows-libretro-base",
+            "architecture": {
+                "value": "x64",
+                "strategy": "set"
+            }
+        },
+        {
+            "name": "windows-libretro-arm64",
+            "displayName": "Windows libretro core ARM64 (no SDL3)",
+            "inherits": "windows-libretro-base",
+            "architecture": {
+                "value": "ARM64",
+                "strategy": "set"
+            }
+        },
+        {
             "name": "wasm-debug",
             "displayName": "WebAssembly Debug (Emscripten)",
             "inherits": "emscripten-base",
@@ -182,6 +274,38 @@
         {
             "name": "windows-libs-only",
             "configurePreset": "windows-libs-only"
+        },
+        {
+            "name": "linux-libretro",
+            "configurePreset": "linux-libretro",
+            "targets": "AltirraLibretro"
+        },
+        {
+            "name": "linux-libretro-armv7hf",
+            "configurePreset": "linux-libretro-armv7hf",
+            "targets": "AltirraLibretro"
+        },
+        {
+            "name": "android-libretro-arm64",
+            "configurePreset": "android-libretro-arm64",
+            "targets": "AltirraLibretro"
+        },
+        {
+            "name": "macos-libretro",
+            "configurePreset": "macos-libretro",
+            "targets": "AltirraLibretro"
+        },
+        {
+            "name": "windows-libretro",
+            "configurePreset": "windows-libretro",
+            "configuration": "Release",
+            "targets": "AltirraLibretro"
+        },
+        {
+            "name": "windows-libretro-arm64",
+            "configurePreset": "windows-libretro-arm64",
+            "configuration": "Release",
+            "targets": "AltirraLibretro"
         },
         {
             "name": "wasm-debug",

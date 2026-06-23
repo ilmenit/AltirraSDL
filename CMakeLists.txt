@@ -94,6 +94,10 @@ option(ALTIRRA_LIBRETRO "Build Altirra as a libretro core" OFF)
 # graph.
 option(ALTIRRA_LIBRETRO_NO_SDL3 "Build standalone libretro target without fetching/linking SDL3" OFF)
 
+if(ALTIRRA_LIBRETRO_NO_SDL3)
+    add_compile_definitions(ALTIRRA_LIBRETRO_NO_SDL3=1)
+endif()
+
 if(ALTIRRA_LIBRETRO)
     # The libretro core is a shared library that embeds the static Altirra
     # emulation libraries. Build those static libraries as PIC only for this

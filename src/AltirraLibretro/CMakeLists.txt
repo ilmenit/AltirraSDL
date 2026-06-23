@@ -62,6 +62,13 @@ set_target_properties(AltirraLibretro PROPERTIES
     VISIBILITY_INLINES_HIDDEN ON
 )
 
+add_custom_command(TARGET AltirraLibretro POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/altirra_libretro.info"
+        "$<TARGET_FILE_DIR:AltirraLibretro>/altirra_libretro.info"
+    COMMENT "Copying Altirra libretro core info"
+)
+
 target_compile_definitions(AltirraLibretro PRIVATE
     ALTIRRA_LIBRETRO=1
     AT_SDL3_PORTABLE=1
@@ -116,6 +123,8 @@ target_link_libraries(AltirraLibretro PRIVATE
 
 if(WIN32)
     target_compile_definitions(AltirraLibretro PRIVATE VD_OS_WINDOWS=1)
+elseif(ANDROID)
+    target_compile_definitions(AltirraLibretro PRIVATE VD_OS_ANDROID=1)
 elseif(APPLE)
     target_compile_definitions(AltirraLibretro PRIVATE VD_OS_MACOS=1)
 elseif(UNIX)
@@ -176,3 +185,11 @@ if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
         PROPERTIES COMPILE_FLAGS "-mssse3 -mpopcnt"
     )
 endif()
+
+install(TARGETS AltirraLibretro
+    LIBRARY DESTINATION lib/libretro
+    RUNTIME DESTINATION lib/libretro
+)
+install(FILES altirra_libretro.info
+    DESTINATION share/libretro/info
+)

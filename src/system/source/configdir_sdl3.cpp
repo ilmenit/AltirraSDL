@@ -15,7 +15,7 @@
 #include <shlobj.h>   // SHGetFolderPathA
 #endif
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(ALTIRRA_LIBRETRO_NO_SDL3)
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 #endif
@@ -40,7 +40,7 @@ VDStringA ATGetConfigDir() {
 		}
 		dir += "\\altirra";
 		_mkdir(dir.c_str());
-#elif defined(__ANDROID__)
+#elif defined(__ANDROID__) && !defined(ALTIRRA_LIBRETRO_NO_SDL3)
 		// On Android the only reliable writable location is the app's
 		// internal storage directory.  SDL_GetPrefPath returns something
 		// like /data/user/0/org.altirra.app/files/Altirra/AltirraSDL/

@@ -35,8 +35,13 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-latest
+            cross: ""
           - arch: aarch64
             runner: ubuntu-22.04-arm
+            cross: ""
+          - arch: armv7hf
+            runner: ubuntu-latest
+            cross: arm-linux-gnueabihf
     container:
       image: ubuntu:22.04
       options: --user root
@@ -51,6 +56,11 @@ jobs:
             build-essential ninja-build git ca-certificates \
             python3 python3-pip file tar gzip \
             gcc-12 g++-12
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            apt-get install -y --no-install-recommends \
+              gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+              binutils-arm-linux-gnueabihf
+          fi
           python3 -m pip install --user --disable-pip-version-check \
             --only-binary=:all: 'cmake>=3.24,<5'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -75,11 +85,18 @@ jobs:
       - name: Configure standalone core
         shell: bash
         run: |
+          extra_args=()
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            extra_args+=(
+              -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/toolchains/linux-armv7hf.cmake"
+            )
+          fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_LIBRETRO=ON \
             -DALTIRRA_SDL3=OFF \
-            -DALTIRRA_LIBRETRO_NO_SDL3=ON
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON \
+            "${extra_args[@]}"
 
       - name: Build standalone core
         shell: bash
@@ -91,7 +108,13 @@ jobs:
           set -euo pipefail
           core=build/src/AltirraLibretro/altirra_libretro.so
           test -f "$core"
-          nm -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            file "$core" | grep -Eq 'ARM|arm'
+            arm-linux-gnueabihf-nm -D --defined-only "$core" \
+              | awk '{print $3}' | sort > exports.txt
+          else
+            nm -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
+          fi
           for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
             grep -qx "$sym" exports.txt
           done
@@ -99,10 +122,18 @@ jobs:
             echo "Unexpected non-libretro exports" >&2
             exit 1
           fi
-          ldd -r "$core"
-          if ldd "$core" | grep -Ei 'SDL3|asound'; then
-            echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
-            exit 1
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            arm-linux-gnueabihf-readelf -d "$core" > dynamic.txt
+            if grep -Ei 'SDL3|asound' dynamic.txt; then
+              echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
+              exit 1
+            fi
+          else
+            ldd -r "$core"
+            if ldd "$core" | grep -Ei 'SDL3|asound'; then
+              echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
+              exit 1
+            fi
           fi
 
       - name: Package artifact
@@ -119,6 +150,7 @@ jobs:
           cp build/src/AltirraLibretro/altirra_libretro.so "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
+          cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
           cp LICENSE "$pkg/COPYING"
           tar -czf "$pkg.tar.gz" "$pkg"
 
@@ -130,8 +162,16 @@ jobs:
           if-no-files-found: error
 
   macos:
-    name: Standalone ABI (macOS arm64)
-    runs-on: macos-14
+    name: Standalone ABI (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
 
@@ -167,6 +207,12 @@ jobs:
           set -euo pipefail
           core=build/src/AltirraLibretro/altirra_libretro.dylib
           test -f "$core"
+          # Confirm the slice is the expected architecture (native per runner).
+          if ! file "$core" | grep -q "${{ matrix.arch }}"; then
+            echo "Core is not a ${{ matrix.arch }} binary:" >&2
+            file "$core" >&2
+            exit 1
+          fi
           nm -gU "$core" | awk '{print $3}' | sed 's/^_//' | sort > exports.txt
           for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
             grep -qx "$sym" exports.txt
@@ -189,24 +235,33 @@ jobs:
           else
             slug="nightly"
           fi
-          pkg="AltirraLibretro-${slug}-macos-arm64"
+          pkg="AltirraLibretro-${slug}-macos-${{ matrix.arch }}"
           mkdir -p "$pkg"
           cp build/src/AltirraLibretro/altirra_libretro.dylib "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
+          cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
           cp LICENSE "$pkg/COPYING"
           zip -r "$pkg.zip" "$pkg"
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: AltirraLibretro-macos-arm64
-          path: AltirraLibretro-*-macos-arm64.zip
+          name: AltirraLibretro-macos-${{ matrix.arch }}
+          path: AltirraLibretro-*-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
 
   windows:
-    name: Standalone ABI (Windows x86_64)
+    name: Standalone ABI (Windows ${{ matrix.arch }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            preset: windows-libretro
+          - arch: arm64
+            preset: windows-libretro-arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -221,23 +276,21 @@ jobs:
       - name: Configure standalone core
         shell: pwsh
         run: |
-          cmake --preset windows-libs-only `
-            -DALTIRRA_LIBRETRO=ON `
-            -DALTIRRA_LIBRETRO_NO_SDL3=ON
+          cmake --preset ${{ matrix.preset }}
 
       - name: Build standalone core
         shell: pwsh
         run: |
-          cmake --build build/windows-libs-only `
+          cmake --build build/${{ matrix.preset }} `
             --target AltirraLibretro `
             --config Release
 
       - name: Check exports and dependencies
         shell: pwsh
         run: |
-          $core = "build/windows-libs-only/src/AltirraLibretro/Release/altirra_libretro.dll"
+          $core = "build/${{ matrix.preset }}/src/AltirraLibretro/Release/altirra_libretro.dll"
           if (!(Test-Path $core)) {
-            $core = "build/windows-libs-only/src/AltirraLibretro/altirra_libretro.dll"
+            $core = "build/${{ matrix.preset }}/src/AltirraLibretro/altirra_libretro.dll"
           }
           if (!(Test-Path $core)) {
             throw "altirra_libretro.dll not found"
@@ -272,9 +325,9 @@ jobs:
       - name: Package artifact
         shell: pwsh
         run: |
-          $core = "build/windows-libs-only/src/AltirraLibretro/Release/altirra_libretro.dll"
+          $core = "build/${{ matrix.preset }}/src/AltirraLibretro/Release/altirra_libretro.dll"
           if (!(Test-Path $core)) {
-            $core = "build/windows-libs-only/src/AltirraLibretro/altirra_libretro.dll"
+            $core = "build/${{ matrix.preset }}/src/AltirraLibretro/altirra_libretro.dll"
           }
           if (!(Test-Path $core)) {
             throw "altirra_libretro.dll not found"
@@ -284,19 +337,116 @@ jobs:
           } else {
             $slug = "nightly"
           }
-          $pkg = "AltirraLibretro-$slug-windows-x86_64"
+          $pkg = "AltirraLibretro-$slug-windows-${{ matrix.arch }}"
           New-Item -ItemType Directory -Force $pkg | Out-Null
           Copy-Item $core "$pkg/"
           Copy-Item "src/AltirraLibretro/altirra_libretro.info" "$pkg/"
           Copy-Item "src/AltirraLibretro/README.md" "$pkg/"
+          Copy-Item "src/AltirraLibretro/install-retroarch.sh" "$pkg/"
           Copy-Item "LICENSE" "$pkg/COPYING"
           Compress-Archive -Path $pkg -DestinationPath "$pkg.zip" -Force
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: AltirraLibretro-windows-x86_64
-          path: AltirraLibretro-*-windows-x86_64.zip
+          name: AltirraLibretro-windows-${{ matrix.arch }}
+          path: AltirraLibretro-*-windows-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  android:
+    name: Standalone ABI (Android arm64-v8a)
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.2.12479018"
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build file zip
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Configure standalone core
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}}"
+          if [[ -z "$NDK" || ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
+            yes | sdkmanager --install "ndk;$NDK_VERSION"
+            NDK="${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          fi
+          if [[ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
+            echo "Android NDK CMake toolchain not found at $NDK" >&2
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          cmake -S . -B build-android -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-23 \
+            -DALTIRRA_LIBRETRO=ON \
+            -DALTIRRA_SDL3=OFF \
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON
+
+      - name: Build standalone core
+        shell: bash
+        run: cmake --build build-android --target AltirraLibretro -j"$(nproc)"
+
+      - name: Check exports and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=build-android/src/AltirraLibretro/altirra_libretro.so
+          test -f "$core"
+          file "$core" | grep -Eq 'aarch64|ARM aarch64|ARM64'
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
+          for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
+            grep -qx "$sym" exports.txt
+          done
+          if grep -v '^retro_' exports.txt; then
+            echo "Unexpected non-libretro exports" >&2
+            exit 1
+          fi
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            -d "$core" > dynamic.txt
+          if grep -Ei 'SDL3|asound' dynamic.txt; then
+            echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
+            exit 1
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            slug="${{ github.ref_name }}"
+          else
+            slug="nightly"
+          fi
+          pkg="AltirraLibretro-${slug}-android-arm64-v8a"
+          mkdir -p "$pkg"
+          cp build-android/src/AltirraLibretro/altirra_libretro.so "$pkg/"
+          cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
+          cp src/AltirraLibretro/README.md "$pkg/"
+          cp LICENSE "$pkg/COPYING"
+          zip -r "$pkg.zip" "$pkg"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltirraLibretro-android-arm64-v8a
+          path: AltirraLibretro-*-android-arm64-v8a.zip
           if-no-files-found: error
 
   linux-smoke:
@@ -375,7 +525,7 @@ jobs:
 
   publish-nightly:
     name: Attach to nightly-libretro release
-    needs: [linux, macos, windows, linux-smoke]
+    needs: [linux, macos, windows, android, linux-smoke]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -415,7 +565,7 @@ jobs:
 
   publish-release:
     name: Attach to tagged release
-    needs: [linux, macos, windows, linux-smoke]
+    needs: [linux, macos, windows, android, linux-smoke]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

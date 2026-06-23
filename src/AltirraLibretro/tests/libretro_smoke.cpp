@@ -54,6 +54,8 @@ static unsigned g_geometryUpdates;
 static unsigned g_controllerInfoRegistered;
 static unsigned g_inputBitmaskQueries;
 static unsigned g_achievementsDisabled;
+static unsigned g_optionKeysValidated;
+static unsigned g_optionHardwareCategoryValidated;
 static unsigned g_coreOptionsVersion = 2;
 static unsigned g_port2InputPolls;
 static unsigned g_joypadMaskPolls;
@@ -67,6 +69,17 @@ static bool g_variablesUpdated;
 static const char *g_videoStandardValue = "ntsc";
 static const char *g_cropOverscanValue = "normal";
 static const char *g_artifactingValue = "auto";
+static const char *g_cpuValue = "65c02";
+static const char *g_illegalInstructionsValue = "disabled";
+static const char *g_randomLaunchDelayValue = "disabled";
+static const char *g_randomizeExeMemoryValue = "enabled";
+static const char *g_stereoPokeyValue = "disabled";
+static const char *g_vbxeValue = "disabled";
+static const char *g_covoxValue = "disabled";
+static const char *g_soundBoardValue = "disabled";
+static const char *g_rapidusValue = "disabled";
+static const char *g_stereoAsMonoValue = "enabled";
+static const char *g_driveSoundsValue = "enabled";
 static double g_lastSystemAvFps;
 static unsigned g_lastGeometryW;
 static unsigned g_lastGeometryH;
@@ -81,6 +94,46 @@ static char g_saveDir[256];
 struct retro_variable {
 	const char *key;
 	const char *value;
+};
+
+struct retro_core_option_value {
+	const char *value;
+	const char *label;
+};
+
+struct retro_core_option_definition {
+	const char *key;
+	const char *desc;
+	const char *info;
+	const retro_core_option_value *values;
+	const char *default_value;
+};
+
+struct retro_core_option_v2_category {
+	const char *key;
+	const char *desc;
+	const char *info;
+};
+
+struct retro_core_option_v2_definition {
+	const char *key;
+	const char *desc;
+	const char *desc_categorized;
+	const char *info;
+	const char *info_categorized;
+	const char *category_key;
+	const retro_core_option_value *values;
+	const char *default_value;
+};
+
+struct retro_core_options_v2 {
+	const retro_core_option_v2_category *categories;
+	const retro_core_option_v2_definition *definitions;
+};
+
+struct retro_core_options_v2_intl {
+	const retro_core_options_v2 *us;
+	const retro_core_options_v2 *local;
 };
 
 struct retro_game_info {
@@ -121,6 +174,199 @@ struct retro_controller_info {
 static retro_keyboard_callback g_keyboardCallback {};
 static retro_disk_control_ext_callback g_diskControl {};
 
+static const char *const kRequiredOptionKeys[] = {
+	"altirra_system",
+	"altirra_memory",
+	"altirra_video_standard",
+	"altirra_basic",
+	"altirra_cpu",
+	"altirra_illegal_instructions",
+	"altirra_random_launch_delay",
+	"altirra_randomize_exe_memory",
+	"altirra_stereo_pokey",
+	"altirra_vbxe",
+	"altirra_covox",
+	"altirra_soundboard",
+	"altirra_rapidus",
+	"altirra_sio_patch",
+	"altirra_artifacting",
+	"altirra_crop_overscan",
+	"altirra_audio_filters",
+	"altirra_stereo_as_mono",
+	"altirra_drive_sounds",
+	"altirra_input_port1",
+	"altirra_input_port2",
+};
+
+static bool validate_option_keys_v1(const retro_core_option_definition *defs) {
+	if (!defs)
+		return false;
+
+	for (const char *required : kRequiredOptionKeys) {
+		bool found = false;
+		for (const auto *def = defs; def->key; ++def) {
+			if (!strcmp(def->key, required)
+				&& def->values && def->default_value) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			fprintf(stderr, "missing V1 core option: %s\n", required);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static bool validate_option_keys_v2(const retro_core_options_v2 *opts) {
+	if (!opts || !opts->categories || !opts->definitions)
+		return false;
+
+	bool sawHardware = false;
+	for (const auto *cat = opts->categories; cat->key; ++cat) {
+		if (!strcmp(cat->key, "hardware"))
+			sawHardware = true;
+	}
+
+	if (!sawHardware) {
+		fprintf(stderr, "missing V2 hardware option category\n");
+		return false;
+	}
+
+	for (const char *required : kRequiredOptionKeys) {
+		bool found = false;
+		for (const auto *def = opts->definitions; def->key; ++def) {
+			if (!strcmp(def->key, required)
+				&& def->values && def->default_value
+				&& def->category_key) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			fprintf(stderr, "missing V2 core option: %s\n", required);
+			return false;
+		}
+	}
+
+	++g_optionHardwareCategoryValidated;
+	return true;
+}
+
+static bool validate_option_variables(const retro_variable *vars) {
+	if (!vars)
+		return false;
+
+	for (const char *required : kRequiredOptionKeys) {
+		bool found = false;
+		for (const auto *var = vars; var->key; ++var) {
+			if (!strcmp(var->key, required) && var->value) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			fprintf(stderr, "missing legacy core option variable: %s\n",
+				required);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static bool extension_list_contains(const char *extensions, const char *needle) {
+	if (!extensions || !needle || !*needle)
+		return false;
+
+	const size_t needleLen = strlen(needle);
+	const char *p = extensions;
+	while (*p) {
+		const char *end = strchr(p, '|');
+		const size_t len = end ? (size_t)(end - p) : strlen(p);
+		if (len == needleLen && !strncmp(p, needle, needleLen))
+			return true;
+
+		if (!end)
+			break;
+
+		p = end + 1;
+	}
+
+	return false;
+}
+
+static bool validate_system_info(const retro_system_info& si) {
+	if (!si.library_name || strcmp(si.library_name, "Altirra")) {
+		fprintf(stderr, "unexpected library_name: %s\n",
+			si.library_name ? si.library_name : "(null)");
+		return false;
+	}
+
+	if (!si.library_version || !*si.library_version) {
+		fprintf(stderr, "missing library_version\n");
+		return false;
+	}
+
+	if (!si.need_fullpath) {
+		fprintf(stderr, "need_fullpath should be true\n");
+		return false;
+	}
+
+	static const char *const requiredExts[] = {
+		"atr", "atx", "xex", "exe", "bas", "cas", "car", "a52", "m3u"
+	};
+
+	for (const char *ext : requiredExts) {
+		if (!extension_list_contains(si.valid_extensions, ext)) {
+			fprintf(stderr, "missing valid extension: %s\n", ext);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static const char *lookup_variable_value(const char *key) {
+	if (!strcmp(key, "altirra_video_standard"))
+		return g_videoStandardValue;
+	if (!strcmp(key, "altirra_input_port2"))
+		return "joystick";
+	if (!strcmp(key, "altirra_crop_overscan"))
+		return g_cropOverscanValue;
+	if (!strcmp(key, "altirra_artifacting"))
+		return g_artifactingValue;
+	if (!strcmp(key, "altirra_cpu"))
+		return g_cpuValue;
+	if (!strcmp(key, "altirra_illegal_instructions"))
+		return g_illegalInstructionsValue;
+	if (!strcmp(key, "altirra_random_launch_delay"))
+		return g_randomLaunchDelayValue;
+	if (!strcmp(key, "altirra_randomize_exe_memory"))
+		return g_randomizeExeMemoryValue;
+	if (!strcmp(key, "altirra_stereo_pokey"))
+		return g_stereoPokeyValue;
+	if (!strcmp(key, "altirra_vbxe"))
+		return g_vbxeValue;
+	if (!strcmp(key, "altirra_covox"))
+		return g_covoxValue;
+	if (!strcmp(key, "altirra_soundboard"))
+		return g_soundBoardValue;
+	if (!strcmp(key, "altirra_rapidus"))
+		return g_rapidusValue;
+	if (!strcmp(key, "altirra_stereo_as_mono"))
+		return g_stereoAsMonoValue;
+	if (!strcmp(key, "altirra_drive_sounds"))
+		return g_driveSoundsValue;
+
+	return nullptr;
+}
+
 static bool env_cb(unsigned cmd, void *data) {
 	switch (cmd) {
 		case 9: {	// GET_SYSTEM_DIRECTORY
@@ -140,23 +386,44 @@ static bool env_cb(unsigned cmd, void *data) {
 		}
 		case 15: {	// GET_VARIABLE
 			auto *var = (retro_variable *)data;
-			if (var && var->key && !strcmp(var->key, "altirra_video_standard")) {
-				var->value = g_videoStandardValue;
-				return true;
-			}
-			if (var && var->key && !strcmp(var->key, "altirra_input_port2")) {
-				var->value = "joystick";
-				return true;
-			}
-			if (var && var->key && !strcmp(var->key, "altirra_crop_overscan")) {
-				var->value = g_cropOverscanValue;
-				return true;
-			}
-			if (var && var->key && !strcmp(var->key, "altirra_artifacting")) {
-				var->value = g_artifactingValue;
-				return true;
+			if (var && var->key) {
+				var->value = lookup_variable_value(var->key);
+				if (var->value)
+					return true;
 			}
 			return false;
+		}
+		case 16: {	// SET_VARIABLES
+			if (!validate_option_variables((retro_variable *)data))
+				return false;
+			++g_optionKeysValidated;
+			++g_optionsRegistered;
+			return true;
+		}
+		case 53: {	// SET_CORE_OPTIONS
+			if (!validate_option_keys_v1(
+				(retro_core_option_definition *)data))
+			{
+				return false;
+			}
+			++g_optionKeysValidated;
+			++g_optionsRegistered;
+			return true;
+		}
+		case 67: {	// SET_CORE_OPTIONS_V2
+			if (!validate_option_keys_v2((retro_core_options_v2 *)data))
+				return false;
+			++g_optionKeysValidated;
+			++g_optionsRegistered;
+			return true;
+		}
+		case 68: {	// SET_CORE_OPTIONS_V2_INTL
+			auto *intl = (retro_core_options_v2_intl *)data;
+			if (!intl || !validate_option_keys_v2(intl->us))
+				return false;
+			++g_optionKeysValidated;
+			++g_optionsRegistered;
+			return true;
 		}
 		case 17: {	// GET_VARIABLE_UPDATE
 			auto *updated = (bool *)data;
@@ -252,13 +519,6 @@ static bool env_cb(unsigned cmd, void *data) {
 			++g_diskControlRegistered;
 			return true;
 		}
-		case 53:	// SET_CORE_OPTIONS
-			++g_optionsRegistered;
-			return true;
-		case 67:	// SET_CORE_OPTIONS_V2
-		case 68:	// SET_CORE_OPTIONS_V2_INTL
-			++g_optionsRegistered;
-			return true;
 		default:
 			return false;
 	}
@@ -440,6 +700,11 @@ int main(int argc, char **argv) {
 
 	retro_system_info si {};
 	retro_get_system_info(&si);
+	if (!validate_system_info(si)) {
+		retro_deinit();
+		return 1;
+	}
+
 	retro_system_av_info av {};
 	retro_get_system_av_info(&av);
 	printf("core=%s version=%s base=%ux%u max=%ux%u fps=%.4f\n",
@@ -639,6 +904,26 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	g_stereoPokeyValue = "enabled";
+	g_vbxeValue = "enabled";
+	g_covoxValue = "enabled";
+	g_soundBoardValue = "enabled";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 8; ++i)
+		retro_run();
+
+	if (!g_lastW || !g_lastH
+		|| g_lastW > av.geometry.max_width
+		|| g_lastH > av.geometry.max_height)
+	{
+		fprintf(stderr,
+			"add-on option update produced invalid geometry: frame=%ux%u max=%ux%u\n",
+			g_lastW, g_lastH, av.geometry.max_width, av.geometry.max_height);
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
 	const size_t stateSize = retro_serialize_size();
 	if (!stateSize) {
 		fprintf(stderr, "retro_serialize_size returned 0\n");
@@ -695,6 +980,8 @@ int main(int argc, char **argv) {
 		g_audioCallbacks, g_audioFrames);
 	printf("state_size=%zu options_registered=%u av_fps=%.4f\n",
 		stateSize, g_optionsRegistered, g_lastSystemAvFps);
+	printf("option_keys_validated=%u hardware_categories=%u\n",
+		g_optionKeysValidated, g_optionHardwareCategoryValidated);
 	printf("disk_control_registered=%u\n", g_diskControlRegistered);
 	printf("geometry_updates=%u last_geometry=%ux%u\n",
 		g_geometryUpdates, g_lastGeometryW, g_lastGeometryH);
@@ -715,6 +1002,8 @@ int main(int argc, char **argv) {
 
 	return g_videoCalls >= 140 && g_nonNullFrames > 0 && g_lastW && g_lastH
 		&& g_audioCallbacks > 0 && g_audioFrames > 0 && g_optionsRegistered > 0
+		&& g_optionKeysValidated > 0
+		&& (g_coreOptionsVersion < 2 || g_optionHardwareCategoryValidated > 0)
 		&& g_diskControlRegistered > 0
 		&& g_geometryUpdates > 0
 		&& g_geometryMatrixChecks == expectedGeometryChecks

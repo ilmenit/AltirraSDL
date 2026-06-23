@@ -12,9 +12,59 @@ library prefix:
 Build it with:
 
 ```sh
-cmake -S . -B build-libretro -DALTIRRA_LIBRETRO=ON -DALTIRRA_SDL3=OFF -DALTIRRA_LIBRETRO_NO_SDL3=ON
-cmake --build build-libretro --target AltirraLibretro
+./build.sh --libretro
 ```
+
+GitHub Actions packages the standalone core for:
+
+- Linux x86_64
+- Linux aarch64
+- Linux ARMv7 hard-float (`armv7hf`)
+- Android ARM64 (`arm64-v8a`)
+- macOS arm64 and x86_64
+- Windows x86_64 and ARM64
+
+Local cross-build presets are also available:
+
+```sh
+# Requires gcc-arm-linux-gnueabihf / g++-arm-linux-gnueabihf.
+cmake --preset linux-libretro-armv7hf
+cmake --build --preset linux-libretro-armv7hf
+
+# Requires ANDROID_NDK_HOME to point at an Android NDK.
+cmake --preset android-libretro-arm64
+cmake --build --preset android-libretro-arm64
+```
+
+The build output directory contains both files RetroArch needs:
+
+- `altirra_libretro.so` / `altirra_libretro.dll` / `altirra_libretro.dylib`
+- `altirra_libretro.info`
+
+Install the shared library into RetroArch's cores directory and install
+`altirra_libretro.info` into RetroArch's Core Info directory. If the `.info`
+file is missing or in the wrong directory, RetroArch can still load the shared
+library directly, but it will show the filename instead of `Atari - 8-bit /
+5200 (Altirra)` and its content browser may not filter for Atari extensions.
+
+RetroArch's `Install or Restore a Core` action may import only the shared
+library. It does not reliably install a sidecar `.info` file from the same
+directory. For packaged builds, run:
+
+```sh
+./install-retroarch.sh
+```
+
+On the Flatpak RetroArch build, check the active paths in
+`~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg`:
+
+```ini
+libretro_directory = "..."
+libretro_info_path = "..."
+```
+
+Logs are written under the configured `logs` directory only when RetroArch
+logging is enabled.
 
 `libretro/libretro.h` is a vendored subset of the canonical libretro ABI header
 covering only the interfaces used by this adapter:
