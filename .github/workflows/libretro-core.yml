@@ -13,6 +13,13 @@ on:
       - 'src/AltirraBridgeServer/**'
       - 'src/ATAudio/**'
       - 'src/system/**'
+      - 'docs/libretro-*.md'
+      - 'scripts/build/libretro.sh'
+      - 'scripts/prepare-libretro-upstream.sh'
+      - 'scripts/validate-libretro-*.sh'
+      - 'scripts/verify-libretro-*.sh'
+      - 'build.sh'
+      - 'Makefile.libretro'
       - 'CMakeLists.txt'
       - 'src/CMakeLists.txt'
       - '.github/workflows/libretro-core.yml'
@@ -26,8 +33,39 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    name: Metadata and upstream staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Validate scripts, metadata, and docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n \
+            build.sh \
+            scripts/create-libretro-readiness-report.sh \
+            scripts/build/libretro.sh \
+            scripts/prepare-libretro-upstream.sh \
+            scripts/validate-libretro-docs.sh \
+            scripts/validate-libretro-info.sh \
+            scripts/validate-libretro-readiness-report.sh \
+            scripts/verify-libretro-artifact.sh \
+            scripts/verify-libretro-package.sh
+          bash scripts/validate-libretro-info.sh
+          bash scripts/validate-libretro-docs.sh
+          bash scripts/validate-libretro-readiness-report.sh --self-test
+          make -f Makefile.libretro validate-info
+          bash scripts/prepare-libretro-upstream.sh
+          test -f build/libretro-upstream/libretro-super/dist/info/altirra_libretro.info
+          test -f build/libretro-upstream/libretro-docs/docs/library/altirra.md
+
   linux:
     name: Standalone ABI (Linux ${{ matrix.arch }})
+    needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -151,8 +189,20 @@ jobs:
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
           cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
-          cp LICENSE "$pkg/COPYING"
+          chmod +x "$pkg/install-retroarch.sh"
+          cp LICENSE "$pkg/LICENSE"
+          {
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - linux ${{ matrix.arch }}"
+            echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
+            echo "Install altirra_libretro.info into RetroArch's Core Info directory."
+          } > "$pkg/BUILD-INFO.txt"
           tar -czf "$pkg.tar.gz" "$pkg"
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            NM=arm-linux-gnueabihf-nm READELF=arm-linux-gnueabihf-readelf \
+              bash scripts/verify-libretro-package.sh "$pkg.tar.gz"
+          else
+            bash scripts/verify-libretro-package.sh "$pkg.tar.gz"
+          fi
 
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -163,6 +213,7 @@ jobs:
 
   macos:
     name: Standalone ABI (macOS ${{ matrix.arch }})
+    needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -241,8 +292,15 @@ jobs:
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
           cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
-          cp LICENSE "$pkg/COPYING"
+          chmod +x "$pkg/install-retroarch.sh"
+          cp LICENSE "$pkg/LICENSE"
+          {
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - macos ${{ matrix.arch }}"
+            echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
+            echo "Install altirra_libretro.info into RetroArch's Core Info directory."
+          } > "$pkg/BUILD-INFO.txt"
           zip -r "$pkg.zip" "$pkg"
+          bash scripts/verify-libretro-package.sh "$pkg.zip"
 
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -253,6 +311,7 @@ jobs:
 
   windows:
     name: Standalone ABI (Windows ${{ matrix.arch }})
+    needs: preflight
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -343,7 +402,13 @@ jobs:
           Copy-Item "src/AltirraLibretro/altirra_libretro.info" "$pkg/"
           Copy-Item "src/AltirraLibretro/README.md" "$pkg/"
           Copy-Item "src/AltirraLibretro/install-retroarch.sh" "$pkg/"
-          Copy-Item "LICENSE" "$pkg/COPYING"
+          Copy-Item "LICENSE" "$pkg/LICENSE"
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+          @(
+            "AltirraLibretro $slug $($env:GITHUB_SHA.Substring(0, 7)) - windows ${{ matrix.arch }}",
+            "Built $date from commit $env:GITHUB_SHA",
+            "Install altirra_libretro.info into RetroArch's Core Info directory."
+          ) | Set-Content "$pkg/BUILD-INFO.txt" -Encoding utf8
           Compress-Archive -Path $pkg -DestinationPath "$pkg.zip" -Force
 
       - name: Upload package
@@ -355,6 +420,7 @@ jobs:
 
   android:
     name: Standalone ABI (Android arm64-v8a)
+    needs: preflight
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: "27.2.12479018"
@@ -439,8 +505,18 @@ jobs:
           cp build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
-          cp LICENSE "$pkg/COPYING"
+          cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
+          chmod +x "$pkg/install-retroarch.sh"
+          cp LICENSE "$pkg/LICENSE"
+          {
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - android arm64-v8a"
+            echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
+            echo "Install altirra_libretro.info into RetroArch's Core Info directory."
+          } > "$pkg/BUILD-INFO.txt"
           zip -r "$pkg.zip" "$pkg"
+          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            bash scripts/verify-libretro-package.sh "$pkg.zip"
 
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -451,6 +527,7 @@ jobs:
 
   linux-smoke:
     name: Boot/video smoke (Linux x86_64)
+    needs: preflight
     runs-on: ubuntu-latest
     container:
       image: ubuntu:22.04
@@ -486,42 +563,35 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_LIBRETRO=ON \
             -DALTIRRA_SDL3=OFF \
-            -DALTIRRA_LIBRETRO_NO_SDL3=ON
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON \
+            -DALTIRRA_LIBRETRO_BUILD_TESTS=ON
 
       - name: Build standalone core
         shell: bash
         run: cmake --build build/linux-libretro-smoke --target AltirraLibretro -j"$(nproc)"
 
-      - name: Check exports and runtime symbols
+      - name: Build libretro smoke host
+        shell: bash
+        run: cmake --build build/linux-libretro-smoke --target AltirraLibretroSmoke -j"$(nproc)"
+
+      - name: Check artifact
         shell: bash
         run: |
           set -euo pipefail
           core=build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so
-          test -f "$core"
-          nm -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
-          for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
-            grep -qx "$sym" exports.txt
-          done
-          if grep -v '^retro_' exports.txt; then
-            echo "Unexpected non-libretro exports" >&2
-            exit 1
-          fi
-          ldd -r "$core"
-          if ldd "$core" | grep -Ei 'SDL3|asound'; then
-            echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
-            exit 1
-          fi
+          info=build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.info
+          bash scripts/verify-libretro-artifact.sh "$core" "$info"
 
-      - name: Run no-content video smoke
+      - name: Run libretro smoke tests
         shell: bash
         run: |
           set -euo pipefail
-          g++ -std=c++17 src/AltirraLibretro/tests/libretro_smoke.cpp \
-            -ldl -o build/linux-libretro-smoke/libretro_smoke
-          build/linux-libretro-smoke/libretro_smoke \
-            build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so
-          build/linux-libretro-smoke/libretro_smoke \
-            build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so 1
+          test_dir=build/linux-libretro-smoke/src/AltirraLibretro
+          ctest --test-dir "$test_dir" -N -R AltirraLibretroSmoke \
+            | tee ctest-list.txt
+          grep -Eq 'Total Tests: [1-9][0-9]*' ctest-list.txt
+          ctest --test-dir "$test_dir" --output-on-failure \
+            -R AltirraLibretroSmoke
 
   publish-nightly:
     name: Attach to nightly-libretro release

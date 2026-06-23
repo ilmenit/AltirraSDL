@@ -7,7 +7,20 @@ add_library(AltirraLibretro SHARED
     libretro.cpp
 )
 
+option(ALTIRRA_LIBRETRO_BUILD_TESTS
+    "Build and register the Altirra libretro smoke host." OFF)
+
 set(ALTIRRA_SDL_DIR ${CMAKE_SOURCE_DIR}/src/AltirraSDL)
+set(ALTIRRA_LIBRETRO_GENERATED_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(ALTIRRA_LIBRETRO_VERSION_DIR
+    "${ALTIRRA_LIBRETRO_GENERATED_DIR}/version")
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/version.h.in"
+    "${ALTIRRA_LIBRETRO_VERSION_DIR}/version.h"
+    @ONLY
+)
 
 include(${ALTIRRA_SDL_DIR}/cmake/altirra_core_sources.cmake)
 
@@ -80,6 +93,7 @@ if(ALTIRRA_LIBRETRO_NO_SDL3)
 endif()
 
 target_include_directories(AltirraLibretro PRIVATE
+    ${ALTIRRA_LIBRETRO_VERSION_DIR}
     ${ALTIRRA_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/src/Altirra/h
     ${CMAKE_SOURCE_DIR}/src/Altirra/source
@@ -193,3 +207,28 @@ install(TARGETS AltirraLibretro
 install(FILES altirra_libretro.info
     DESTINATION share/libretro/info
 )
+
+if(ALTIRRA_LIBRETRO_BUILD_TESTS)
+    if(WIN32)
+        message(FATAL_ERROR
+            "ALTIRRA_LIBRETRO_BUILD_TESTS is not implemented on Windows yet: "
+            "tests/libretro_smoke.cpp currently uses dlopen().")
+    endif()
+
+    enable_testing()
+
+    add_executable(AltirraLibretroSmoke
+        tests/libretro_smoke.cpp
+    )
+    target_link_libraries(AltirraLibretroSmoke PRIVATE ${CMAKE_DL_LIBS})
+
+    foreach(_options_version 2 1 0)
+        add_test(
+            NAME "AltirraLibretroSmokeOptionsV${_options_version}"
+            COMMAND AltirraLibretroSmoke
+                "$<TARGET_FILE:AltirraLibretro>"
+                "${_options_version}"
+                "$<TARGET_FILE_DIR:AltirraLibretro>/altirra_libretro.info"
+        )
+    endforeach()
+endif()

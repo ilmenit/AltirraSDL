@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <map>
+#include <string>
+
 typedef bool (*retro_environment_t)(unsigned, void *);
 typedef void (*retro_video_refresh_t)(const void *, unsigned, unsigned, size_t);
 typedef void (*retro_audio_sample_t)(int16_t, int16_t);
@@ -349,7 +352,82 @@ static bool extension_list_contains(const char *extensions, const char *needle) 
 	return false;
 }
 
-static bool validate_system_info(const retro_system_info& si) {
+static std::string trim_copy(const std::string& s) {
+	const size_t begin = s.find_first_not_of(" \t\r\n");
+	if (begin == std::string::npos)
+		return {};
+
+	const size_t end = s.find_last_not_of(" \t\r\n");
+	return s.substr(begin, end - begin + 1);
+}
+
+static bool load_core_info_file(const char *path,
+	std::map<std::string, std::string>& out)
+{
+	if (!path || !*path)
+		return true;
+
+	FILE *fp = fopen(path, "rb");
+	if (!fp) {
+		perror(path);
+		return false;
+	}
+
+	char line[4096];
+	unsigned lineNo = 0;
+	while (fgets(line, sizeof line, fp)) {
+		++lineNo;
+
+		std::string s = trim_copy(line);
+		if (s.empty() || s[0] == '#')
+			continue;
+
+		const size_t eq = s.find('=');
+		if (eq == std::string::npos) {
+			fprintf(stderr, "%s:%u: malformed .info line\n", path, lineNo);
+			fclose(fp);
+			return false;
+		}
+
+		std::string key = trim_copy(s.substr(0, eq));
+		std::string value = trim_copy(s.substr(eq + 1));
+		if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+			value = value.substr(1, value.size() - 2);
+
+		if (key.empty() || !out.emplace(key, value).second) {
+			fprintf(stderr, "%s:%u: duplicate or empty .info key\n",
+				path, lineNo);
+			fclose(fp);
+			return false;
+		}
+	}
+
+	fclose(fp);
+	return true;
+}
+
+static bool require_info_value(const std::map<std::string, std::string>& info,
+	const char *key, const char *actual)
+{
+	const auto it = info.find(key);
+	if (it == info.end()) {
+		fprintf(stderr, "core info missing key: %s\n", key);
+		return false;
+	}
+
+	const char *actualSafe = actual ? actual : "";
+	if (it->second != actualSafe) {
+		fprintf(stderr, "core info mismatch for %s: info='%s' core='%s'\n",
+			key, it->second.c_str(), actualSafe);
+		return false;
+	}
+
+	return true;
+}
+
+static bool validate_system_info(const retro_system_info& si,
+	const std::map<std::string, std::string>& coreInfo)
+{
 	if (!si.library_name || strcmp(si.library_name, "Altirra")) {
 		fprintf(stderr, "unexpected library_name: %s\n",
 			si.library_name ? si.library_name : "(null)");
@@ -373,6 +451,30 @@ static bool validate_system_info(const retro_system_info& si) {
 	for (const char *ext : requiredExts) {
 		if (!extension_list_contains(si.valid_extensions, ext)) {
 			fprintf(stderr, "missing valid extension: %s\n", ext);
+			return false;
+		}
+	}
+
+	if (!coreInfo.empty()) {
+		if (!require_info_value(coreInfo, "corename", si.library_name)
+			|| !require_info_value(coreInfo, "display_version",
+				si.library_version)
+			|| !require_info_value(coreInfo, "supported_extensions",
+				si.valid_extensions))
+		{
+			return false;
+		}
+
+		const auto it = coreInfo.find("needs_fullpath");
+		if (it == coreInfo.end()) {
+			fprintf(stderr, "core info missing key: needs_fullpath\n");
+			return false;
+		}
+
+		if ((it->second == "true") != si.need_fullpath) {
+			fprintf(stderr,
+				"core info mismatch for needs_fullpath: info='%s' core='%s'\n",
+				it->second.c_str(), si.need_fullpath ? "true" : "false");
 			return false;
 		}
 	}
@@ -721,13 +823,20 @@ static bool run_geometry_case(void (*retro_run)(), const char *standard,
 }
 
 int main(int argc, char **argv) {
-	if (argc != 2 && argc != 3) {
-		fprintf(stderr, "usage: %s CORE [core-options-version]\n", argv[0]);
+	if (argc < 2 || argc > 4) {
+		fprintf(stderr, "usage: %s CORE [core-options-version] [core-info]\n",
+			argv[0]);
 		return 2;
 	}
 
 	if (argc == 3)
 		g_coreOptionsVersion = (unsigned)atoi(argv[2]);
+	else if (argc == 4)
+		g_coreOptionsVersion = (unsigned)atoi(argv[2]);
+
+	std::map<std::string, std::string> coreInfo;
+	if (argc == 4 && !load_core_info_file(argv[3], coreInfo))
+		return 1;
 
 	strcpy(g_systemDir, "/tmp/altirra-libretro-system-XXXXXX");
 	strcpy(g_saveDir, "/tmp/altirra-libretro-save-XXXXXX");
@@ -782,7 +891,7 @@ int main(int argc, char **argv) {
 
 	retro_system_info si {};
 	retro_get_system_info(&si);
-	if (!validate_system_info(si)) {
+	if (!validate_system_info(si, coreInfo)) {
 		retro_deinit();
 		return 1;
 	}

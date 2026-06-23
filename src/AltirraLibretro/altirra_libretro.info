@@ -11,7 +11,7 @@ permissions = ""
 manufacturer = "Atari"
 systemname = "Atari 8-bit Family"
 systemid = "atari_8bit"
-display_version = "dev"
+display_version = "4.40"
 
 # Libretro Features
 database = "Atari - 8-bit Family|Atari - 5200"

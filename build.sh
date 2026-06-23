@@ -23,6 +23,8 @@
 #                                 On macOS pass
 #                                 --cmake "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
 #                                 for a universal core.
+#   ./build.sh --libretro-test    With --libretro, also build and run the
+#                                 libretro smoke tests.
 #   ./build.sh --jobs 8           Override parallel job count
 #   ./build.sh --librashader      Build librashader from source (needs Rust)
 #   ./build.sh --fetch-sdl3       Force-fetch SDL3 from source (ignore system SDL3).
@@ -69,6 +71,7 @@ BUILD_LIBRASHADER=0
 APPIMAGE=0
 LIBRETRO=0
 LIBRETRO_FLATPAK=0
+LIBRETRO_TEST=0
 
 # ── Parse arguments ───────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
@@ -81,6 +84,7 @@ while [ $# -gt 0 ]; do
         --native)   FRONTEND=native ;;
         --libretro) LIBRETRO=1 ;;
         --libretro-flatpak) LIBRETRO=1; LIBRETRO_FLATPAK=1 ;;
+        --libretro-test) LIBRETRO=1; LIBRETRO_TEST=1 ;;
         --sdl)      FRONTEND=sdl ;;
         --clean)    CLEAN=1 ;;
         --package)  PACKAGE=1 ;;
@@ -138,7 +142,7 @@ if [ "$LIBRETRO" = "1" ]; then
     echo ""
 
     export ROOT_DIR PLATFORM CLEAN JOBS CMAKE_EXTRA_ARGS PACKAGE SOURCE_ARCHIVE
-    export LIBRETRO_FLATPAK
+    export LIBRETRO_FLATPAK LIBRETRO_TEST
     source "$SCRIPTS_DIR/libretro.sh"
 
     echo ""

@@ -3,7 +3,8 @@
 #               (altirra_libretro.{so,dll,dylib}).
 #
 # Sourced by build.sh when --libretro is passed; never run directly.
-# Expects: ROOT_DIR, PLATFORM, CLEAN, JOBS, CMAKE_EXTRA_ARGS, PACKAGE
+# Expects: ROOT_DIR, PLATFORM, CLEAN, JOBS, CMAKE_EXTRA_ARGS, PACKAGE,
+#          LIBRETRO_TEST
 #          (from build.sh)
 #
 # The libretro core is a standalone shared library with no SDL3 dependency
@@ -79,6 +80,7 @@ if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
         INNER_ARGS=(./build.sh --libretro --libretro-flatpak --jobs "$JOBS")
         [ "${CLEAN:-0}" = "1" ] && INNER_ARGS+=(--clean)
         [ "${PACKAGE:-0}" = "1" ] && INNER_ARGS+=(--package)
+        [ "${LIBRETRO_TEST:-0}" = "1" ] && INNER_ARGS+=(--libretro-test)
         if [ -n "${CMAKE_EXTRA_ARGS:-}" ]; then
             INNER_ARGS+=(--cmake "$CMAKE_EXTRA_ARGS")
         fi
@@ -115,6 +117,14 @@ if [ "${CLEAN:-0}" = "1" ] && [ -d "$BUILD_DIR" ]; then
     rm -rf "$BUILD_DIR"
 fi
 
+if [ "${LIBRETRO_TEST:-0}" = "1" ]; then
+    if [ -z "${CMAKE_EXTRA_ARGS:-}" ]; then
+        CMAKE_EXTRA_ARGS="-DALTIRRA_LIBRETRO_BUILD_TESTS=ON"
+    else
+        CMAKE_EXTRA_ARGS="$CMAKE_EXTRA_ARGS -DALTIRRA_LIBRETRO_BUILD_TESTS=ON"
+    fi
+fi
+
 if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
     info "Configuring Flatpak-compatible libretro build: ${C_BOLD}${BUILD_DIR}${C_RESET}"
     cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
@@ -136,6 +146,28 @@ if [ "$PLATFORM" = "windows" ]; then
 fi
 cmake "${BUILD_ARGS[@]}" || die "Build failed"
 
+if [ "${LIBRETRO_TEST:-0}" = "1" ]; then
+    info "Building libretro smoke host..."
+    TEST_BUILD_ARGS=(--build "$BUILD_DIR" --target AltirraLibretroSmoke -j "$JOBS")
+    if [ "$PLATFORM" = "windows" ]; then
+        TEST_BUILD_ARGS+=(--config Release)
+    fi
+    cmake "${TEST_BUILD_ARGS[@]}" || die "Smoke host build failed"
+
+    info "Running libretro smoke tests..."
+    TEST_DIR="$BUILD_DIR/src/AltirraLibretro"
+    if ! ctest --test-dir "$TEST_DIR" -N -R AltirraLibretroSmoke \
+        | grep -Eq 'Total Tests: [1-9][0-9]*'; then
+        die "No libretro smoke tests were registered in $TEST_DIR"
+    fi
+
+    CTEST_ARGS=(--test-dir "$TEST_DIR" --output-on-failure -R AltirraLibretroSmoke)
+    if [ "$PLATFORM" = "windows" ]; then
+        CTEST_ARGS+=(-C Release)
+    fi
+    ctest "${CTEST_ARGS[@]}" || die "Smoke tests failed"
+fi
+
 # ── Locate and report the artifact ────────────────────────────────────────
 case "$PLATFORM" in
     linux)   CORE="$BUILD_DIR/src/AltirraLibretro/altirra_libretro.so" ;;
@@ -150,7 +182,13 @@ esac
 
 INFO_SRC="${ROOT_DIR}/src/AltirraLibretro/altirra_libretro.info"
 INFO_DST="$(dirname "$CORE")/altirra_libretro.info"
+bash "$ROOT_DIR/scripts/validate-libretro-info.sh" \
+    "$INFO_SRC" "$ROOT_DIR/CMakeLists.txt" \
+    || die "libretro core info validation failed"
 cp "$INFO_SRC" "$INFO_DST"
+bash "$ROOT_DIR/scripts/verify-libretro-artifact.sh" \
+    "$CORE" "$INFO_DST" "$ROOT_DIR/CMakeLists.txt" \
+    || die "libretro artifact verification failed"
 
 SIZE=$(du -h "$CORE" | cut -f1)
 ok "libretro core: ${C_BOLD}${CORE}${C_RESET} ($SIZE)"
@@ -176,8 +214,12 @@ if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
 fi
 
 if [ "${PACKAGE:-0}" = "1" ]; then
-    VERSION=$(sed -n 's/^#define[[:space:]]\\+AT_VERSION[[:space:]]\\+"\\([^"]*\\)".*/\\1/p' \
-        "$ROOT_DIR/src/Altirra/autobuild_default/version.h" | head -1)
+    VERSION=$(sed -n 's/^project(Altirra[[:space:]]\+VERSION[[:space:]]\+\([^[:space:])]*\).*/\1/p' \
+        "$ROOT_DIR/CMakeLists.txt" | head -1)
+    if [ -z "$VERSION" ]; then
+        VERSION=$(sed -n 's/^#define[[:space:]]\\+AT_VERSION[[:space:]]\\+"\\([^"]*\\)".*/\\1/p' \
+            "$ROOT_DIR/src/Altirra/autobuild_default/version.h" | head -1)
+    fi
     [ -n "$VERSION" ] || VERSION="dev"
 
     ARCH=$(uname -m)
@@ -196,13 +238,15 @@ if [ "${PACKAGE:-0}" = "1" ]; then
     cp "$INFO_SRC" "$PKG_DIR/"
     cp "$ROOT_DIR/src/AltirraLibretro/README.md" "$PKG_DIR/"
     cp "$ROOT_DIR/src/AltirraLibretro/install-retroarch.sh" "$PKG_DIR/"
+    chmod +x "$PKG_DIR/install-retroarch.sh"
+    cp "$ROOT_DIR/LICENSE" "$PKG_DIR/"
 
     COMMIT_SHORT=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
     COMMIT_FULL=$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
     BUILD_DATE=$(date -u +%Y-%m-%d)
 
     cat > "$PKG_DIR/BUILD-INFO.txt" <<BUILDINFO
-AltirraLibretro ${VERSION} ${COMMIT_SHORT} — ${PLATFORM} ${ARCH}
+AltirraLibretro ${VERSION} ${COMMIT_SHORT} - ${PLATFORM} ${ARCH}
 Built ${BUILD_DATE} from commit ${COMMIT_FULL}
 $(if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then printf 'Built inside %s for RetroArch Flatpak runtime %s\n' "$FLATPAK_SDK_REF" "$FLATPAK_RUNTIME_REF"; fi)
 Install altirra_libretro.info into RetroArch's Core Info directory.
@@ -229,5 +273,8 @@ BUILDINFO
     esac
 
     SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
+    bash "$ROOT_DIR/scripts/verify-libretro-package.sh" \
+        "$ARCHIVE_PATH" "$ROOT_DIR/CMakeLists.txt" \
+        || die "libretro package verification failed"
     ok "Package:       ${C_BOLD}${ARCHIVE_PATH}${C_RESET} ($SIZE)"
 fi

@@ -15,6 +15,26 @@ Build it with:
 ./build.sh --libretro
 ```
 
+Build and run the libretro smoke tests with:
+
+```sh
+./build.sh --libretro --libretro-test
+```
+
+The build script validates the `.info` metadata and verifies the built core
+artifact before reporting success.
+
+Libretro-style automation can also call the thin repository-root wrapper:
+
+```sh
+make -f Makefile.libretro
+make -f Makefile.libretro verify
+make -f Makefile.libretro test
+```
+
+This wrapper delegates to CMake and must stay thin; the CMake target is the
+only real build definition for the core.
+
 For the Flathub/Flatpak RetroArch build, do not distribute a core built on the
 host system. Build inside the matching Flatpak SDK so the shared library links
 against the same glibc/libstdc++ ABI that RetroArch will load:
@@ -27,6 +47,9 @@ flatpak install flathub org.kde.Sdk//6.10
 Use `./build.sh --libretro-flatpak --package` to create a package named with a
 `flatpak-kde610` suffix. This artifact is intended for RetroArch Flatpak users;
 keep it separate from the generic host-native Linux libretro package.
+
+Packaged builds include the core, `altirra_libretro.info`, this README, the
+installer helper, build provenance, and the GPLv2 license text.
 
 Use the build that matches the RetroArch distribution:
 
@@ -72,6 +95,27 @@ The build output directory contains both files RetroArch needs:
 - `altirra_libretro.so` / `altirra_libretro.dll` / `altirra_libretro.dylib`
 - `altirra_libretro.info`
 
+Validate the source `.info` before copying it to Libretro infrastructure:
+
+```sh
+bash scripts/validate-libretro-info.sh
+```
+
+Verify a built core and its sidecar `.info`:
+
+```sh
+bash scripts/verify-libretro-artifact.sh \
+  build/linux-libretro/src/AltirraLibretro/altirra_libretro.so \
+  build/linux-libretro/src/AltirraLibretro/altirra_libretro.info
+```
+
+Verify a package archive:
+
+```sh
+bash scripts/verify-libretro-package.sh \
+  build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz
+```
+
 Install the shared library into RetroArch's cores directory and install
 `altirra_libretro.info` into RetroArch's Core Info directory. If the `.info`
 file is missing or in the wrong directory, RetroArch can still load the shared
@@ -96,6 +140,23 @@ libretro_info_path = "..."
 
 Logs are written under the configured `logs` directory only when RetroArch
 logging is enabled.
+
+Before submitting the core to Libretro infrastructure, follow the local
+readiness checklist in `docs/libretro-upstream.md`. After the readiness gates
+pass, `bash scripts/prepare-libretro-upstream.sh` stages the `.info` and docs
+draft in a local directory matching the Libretro repository layouts.
+Use `docs/libretro-readiness-report-template.md` to record each RetroArch
+release-candidate test pass before changing `is_experimental` or opening
+upstream pull requests.
+To create a prefilled report for a package:
+
+```sh
+bash scripts/create-libretro-readiness-report.sh \
+  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --verify-package
+bash scripts/validate-libretro-readiness-report.sh \
+  build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
+```
 
 `libretro/libretro.h` is a vendored subset of the canonical libretro ABI header
 covering only the interfaces used by this adapter:
