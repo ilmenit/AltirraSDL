@@ -38,7 +38,12 @@
 // _MSC_VER.
 #if defined(_MSC_VER)
 #include <intrin.h>      // _ReturnAddress etc. (needed by <ppltasks.h>)
-#include <immintrin.h>   // __m128i / __m256i (needed by <wchar.h>)
+// The <wchar.h> workaround above is x86/x64-only: the SDK's SIMD inlines use
+// __m128i/__m256i (x86 vector types).  On ARM64 those types don't apply and
+// <immintrin.h> rejects the target (error C1189), so restrict it to x86/x64.
+#if defined(_M_IX86) || defined(_M_X64)
+#include <immintrin.h>   // __m128i / __m256i (needed by <wchar.h> on x86/x64)
+#endif
 #endif
 
 #include <stddef.h>
