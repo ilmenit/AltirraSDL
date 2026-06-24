@@ -402,7 +402,8 @@ static void WizMobile_System() {
 static void WizMobile_VideoStandard() {
 	ImGui::TextWrapped(
 		"Pick the video standard.  NTSC (60Hz) is North American, PAL "
-		"(50Hz) is European.  Most software is designed for NTSC.");
+		"(50Hz) is European.  PAL is the default; choose NTSC for "
+		"North American software.");
 	ImGui::Dummy(ImVec2(0, dp(8.0f)));
 
 	bool isNTSC = (g_sim.GetVideoStandard() == kATVideoStandard_NTSC

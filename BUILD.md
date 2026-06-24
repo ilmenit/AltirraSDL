@@ -18,6 +18,25 @@ All three build paths coexist in the same repository and do not
 conflict (different output directories: `.sln` uses `out/`, CMake
 uses `build/`).
 
+## Build Directory Convention
+
+All CMake build trees live under `build/<name>` or `build/<preset>`.
+Do not create root-level `build-*` directories for new scripts, docs,
+or CI jobs. Examples:
+
+- `build/linux-release`
+- `build/linux-libretro`
+- `build/lobby`
+- `build/tests`
+- `build/bridge-package-linux`
+
+Tool-owned output directories are exceptions, for example Gradle's
+`android/app/build`. Shared caches under `build/_deps` and helper
+tools under `build/_tools` are also allowed because they are not CMake
+build trees. Older local directories such as `build-lobby`,
+`build-tests`, and `build-libretro` are disposable scratch trees and can
+be removed after equivalent builds are recreated under `build/`.
+
 ## Upstream Baseline
 
 This tree is based on upstream Altirra 4.50 test13 source, with the
@@ -150,20 +169,20 @@ target:
 
 ```bash
 # Linux / macOS
-cmake -S . -B build -G Ninja \
+cmake -S . -B build/bridge-server -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DALTIRRA_BRIDGE_SERVER=ON
-cmake --build build --target AltirraBridgeServer -j$(nproc)
-./build/src/AltirraBridgeServer/AltirraBridgeServer --bridge=tcp:127.0.0.1:0
+cmake --build build/bridge-server --target AltirraBridgeServer -j$(nproc)
+./build/bridge-server/src/AltirraBridgeServer/AltirraBridgeServer --bridge=tcp:127.0.0.1:0
 ```
 
 ```pwsh
 # Windows (from Developer PowerShell for VS)
-cmake -S . -B build -G Ninja `
+cmake -S . -B build/bridge-server -G Ninja `
       -DCMAKE_BUILD_TYPE=Release `
       -DALTIRRA_BRIDGE_SERVER=ON
-cmake --build build --target AltirraBridgeServer
-.\build\src\AltirraBridgeServer\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
+cmake --build build/bridge-server --target AltirraBridgeServer
+.\build\bridge-server\src\AltirraBridgeServer\AltirraBridgeServer.exe --bridge=tcp:127.0.0.1:0
 ```
 
 The `AltirraBridge` module inside `AltirraSDL` is always built —
@@ -181,17 +200,18 @@ interactive window. If SDL3 is not found, the CMake configure
 prints a status and skips `04_paint` — the others still build.
 
 ```bash
-cd src/AltirraSDL/AltirraBridge/sdk/c/examples
-mkdir build && cd build
-
 # With system SDL3 (brew install sdl3, libsdl3-dev, etc.)
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
+cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
+      -B build/bridge-c-examples \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build build/bridge-c-examples
 
 # Or point at the bridge build's FetchContent'd SDL3
-cmake .. -DCMAKE_BUILD_TYPE=Release \
-         -DCMAKE_PREFIX_PATH=../../../../../../build/_deps/sdl3-build
-cmake --build .
+cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
+      -B build/bridge-c-examples \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH="$PWD/build/bridge-server/_deps/sdl3-build"
+cmake --build build/bridge-c-examples
 ```
 
 Binaries land next to the build directory (`01_ping`,

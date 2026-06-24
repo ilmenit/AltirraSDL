@@ -188,9 +188,9 @@ rest of AltirraSDL (no extra toolchain).
 For LAN games or just testing against yourself:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target altirra-lobby -j
-./build/server/lobby/altirra-lobby
+cmake -S . -B build/lobby -DCMAKE_BUILD_TYPE=Release -DALTIRRA_BUILD_LOBBY=ON
+cmake --build build/lobby --target altirra-lobby -j
+./build/lobby/server/lobby/altirra-lobby
 # altirra-lobby listening on 0.0.0.0:8080 (max=1000, ttl=90s, burst=120)
 ```
 
@@ -256,9 +256,9 @@ ssh your-vps
 sudo apt install -y build-essential cmake git
 git clone https://github.com/ilmenit/AltirraSDL.git
 cd AltirraSDL
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target altirra-lobby -j
-sudo install -m 0755 build/server/lobby/altirra-lobby /usr/local/bin/
+cmake -S . -B build/lobby -DCMAKE_BUILD_TYPE=Release -DALTIRRA_BUILD_LOBBY=ON
+cmake --build build/lobby --target altirra-lobby -j
+sudo install -m 0755 build/lobby/server/lobby/altirra-lobby /usr/local/bin/
 ```
 
 **2. Create a dedicated user** (the systemd unit assumes one):

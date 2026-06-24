@@ -33,15 +33,15 @@ Via the AltirraSDL CMake build (binary lands in the CMake build
 directory as `server/lobby/altirra-lobby`):
 
 ```bash
-cmake -S . -B build
-cmake --build build --target altirra-lobby
+cmake -S . -B build/lobby -DALTIRRA_BUILD_LOBBY=ON
+cmake --build build/lobby --target altirra-lobby
 ```
 
 Standalone (no AltirraSDL build wiring), as the Dockerfile does:
 
 ```bash
 # Run from the repo root so shared headers resolve.
-cmake -B build/lobby-only -DCMAKE_BUILD_TYPE=Release .
+cmake -S . -B build/lobby-only -DCMAKE_BUILD_TYPE=Release
 cmake --build build/lobby-only --target altirra-lobby
 ```
 
@@ -173,8 +173,8 @@ negotiation — this is a single-community protocol.
 ## Tests
 
 ```bash
-cmake --build build --target altirra-lobby-test
-ctest --test-dir build
+cmake --build build/lobby --target altirra-lobby-test
+ctest --test-dir build/lobby
 ```
 
 Coverage: `/healthz`, Create happy path, Create validation (empty

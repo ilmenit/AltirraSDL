@@ -126,7 +126,7 @@ jobs:
           # copies libSDL3.so* next to the example binary. That only
           # works when SDL3 is built as a shared library, so opt out
           # of the desktop static default here.
-          cmake -S . -B build -G Ninja \
+          cmake -S . -B build/bridge-package-linux -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_BRIDGE_SERVER=ON \
             -DALTIRRA_STATIC_SDL3=OFF \
@@ -134,33 +134,33 @@ jobs:
 
       - name: Build AltirraBridgeServer
         shell: bash
-        run: cmake --build build --target AltirraBridgeServer -j"$(nproc)"
+        run: cmake --build build/bridge-package-linux --target AltirraBridgeServer -j"$(nproc)"
 
       - name: Build C example binaries
         shell: bash
         run: |
           # 04_paint links SDL3. The bridge build above already
-          # FetchContents and builds SDL3 into build/_deps/sdl3-build
+          # FetchContents and builds SDL3 into build/bridge-package-linux/_deps/sdl3-build
           # — point find_package at it via CMAKE_PREFIX_PATH so we
           # reuse the same SDL3 instead of fetching twice.
           SDL3_HINT=""
-          if [ -d build/_deps/sdl3-build ]; then
-              SDL3_HINT="-DCMAKE_PREFIX_PATH=$PWD/build/_deps/sdl3-build"
+          if [ -d build/bridge-package-linux/_deps/sdl3-build ]; then
+              SDL3_HINT="-DCMAKE_PREFIX_PATH=$PWD/build/bridge-package-linux/_deps/sdl3-build"
           fi
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
-                -B build_c_examples -G Ninja \
+                -B build/bridge-c-examples-linux -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
                 $SDL3_HINT
-          cmake --build build_c_examples -j"$(nproc)"
-          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs \
-                 build_c_examples/03_input build_c_examples/04_paint
+          cmake --build build/bridge-c-examples-linux -j"$(nproc)"
+          ls -lh build/bridge-c-examples-linux/01_ping build/bridge-c-examples-linux/02_peek_regs \
+                 build/bridge-c-examples-linux/03_input build/bridge-c-examples-linux/04_paint
 
       - name: Smoke test bridge + Python SDK + C example
         shell: bash
         timeout-minutes: 5
         run: |
           set -e
-          ./build/src/AltirraBridgeServer/AltirraBridgeServer \
+          ./build/bridge-package-linux/src/AltirraBridgeServer/AltirraBridgeServer \
             --bridge=tcp:127.0.0.1:0 >/tmp/brs.log 2>&1 &
           BPID=$!
           # Wait up to 30s for the token-file line, checking every 1s
@@ -213,7 +213,7 @@ jobs:
               raise SystemExit(f"python smoke failed after retries: {last!r}")
           PY
           # C example (uses the same token file)
-          ./build_c_examples/01_ping "${TOKFILE}" || { echo "C ping failed"; cat /tmp/brs.log; kill -KILL $BPID; exit 1; }
+          ./build/bridge-c-examples-linux/01_ping "${TOKFILE}" || { echo "C ping failed"; cat /tmp/brs.log; kill -KILL $BPID; exit 1; }
           echo "c example OK"
           # Always print the server log on success too — cheap and
           # catches silent regressions.
@@ -240,7 +240,7 @@ jobs:
           mkdir -p "${STAGE}"
 
           # Server binary, stripped
-          cp build/src/AltirraBridgeServer/AltirraBridgeServer "${STAGE}/"
+          cp build/bridge-package-linux/src/AltirraBridgeServer/AltirraBridgeServer "${STAGE}/"
           strip "${STAGE}/AltirraBridgeServer" || true
           chmod +x "${STAGE}/AltirraBridgeServer"
 
@@ -256,13 +256,13 @@ jobs:
           # Compiled C examples
           mkdir -p "${STAGE}/sdk/c/examples/bin"
           for ex in 01_ping 02_peek_regs 03_input 04_paint; do
-              cp "build_c_examples/${ex}" "${STAGE}/sdk/c/examples/bin/"
+              cp "build/bridge-c-examples-linux/${ex}" "${STAGE}/sdk/c/examples/bin/"
           done
           # Bundle libSDL3.so* alongside 04_paint. The CMakeLists
           # set RPATH=$ORIGIN on the binary, so the loader looks
           # here first before falling back to the system.
-          if compgen -G "build/_deps/sdl3-build/libSDL3.so*" > /dev/null; then
-              cp -P build/_deps/sdl3-build/libSDL3.so* "${STAGE}/sdk/c/examples/bin/"
+          if compgen -G "build/bridge-package-linux/_deps/sdl3-build/libSDL3.so*" > /dev/null; then
+              cp -P build/bridge-package-linux/_deps/sdl3-build/libSDL3.so* "${STAGE}/sdk/c/examples/bin/"
           fi
           strip "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
           chmod +x "${STAGE}/sdk/c/examples/bin/"* 2>/dev/null || true
@@ -317,7 +317,7 @@ jobs:
       - name: Cache CMake FetchContent dependencies
         uses: actions/cache@v4
         with:
-          path: build/_deps
+          path: build/bridge-package-macos/_deps
           key: bridge-macos-arm64-deps-macos11-${{ hashFiles('CMakeLists.txt', 'src/AltirraSDL/CMakeLists.txt', 'src/AltirraBridgeServer/CMakeLists.txt') }}
           restore-keys: bridge-macos-arm64-deps-macos11-
 
@@ -329,7 +329,7 @@ jobs:
           # from source under MACOSX_DEPLOYMENT_TARGET=11.0. Do not
           # use Homebrew SDL3 here: bottles from a macOS 26 runner may
           # require a newer OS than the package advertises.
-          cmake -S . -B build -G Ninja \
+          cmake -S . -B build/bridge-package-macos -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DALTIRRA_BRIDGE_SERVER=ON \
             -DALTIRRA_FETCH_SDL3=ON \
@@ -339,7 +339,7 @@ jobs:
       - name: Build AltirraBridgeServer
         shell: bash
         run: |
-          cmake --build build \
+          cmake --build build/bridge-package-macos \
             --target AltirraBridgeServer SDL3-shared \
             -j"$(sysctl -n hw.ncpu)"
 
@@ -350,20 +350,20 @@ jobs:
           # from the parent build so it has the same deployment target
           # as the packaged Bridge binaries.
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples \
-                -B build_c_examples -G Ninja \
+                -B build/bridge-c-examples-macos -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_PREFIX_PATH="$PWD/build/_deps/sdl3-build" \
+                -DCMAKE_PREFIX_PATH="$PWD/build/bridge-package-macos/_deps/sdl3-build" \
                 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
-          cmake --build build_c_examples -j"$(sysctl -n hw.ncpu)"
-          ls -lh build_c_examples/01_ping build_c_examples/02_peek_regs \
-                 build_c_examples/03_input build_c_examples/04_paint
+          cmake --build build/bridge-c-examples-macos -j"$(sysctl -n hw.ncpu)"
+          ls -lh build/bridge-c-examples-macos/01_ping build/bridge-c-examples-macos/02_peek_regs \
+                 build/bridge-c-examples-macos/03_input build/bridge-c-examples-macos/04_paint
 
       - name: Smoke test
         shell: bash
         timeout-minutes: 5
         run: |
           set -e
-          ./build/src/AltirraBridgeServer/AltirraBridgeServer \
+          ./build/bridge-package-macos/src/AltirraBridgeServer/AltirraBridgeServer \
             --bridge=tcp:127.0.0.1:0 >/tmp/brs.log 2>&1 &
           BPID=$!
           # Wait up to 30s for the token-file line, bailing if the
@@ -406,7 +406,7 @@ jobs:
           else:
               raise SystemExit(f"python smoke failed after retries: {last!r}")
           PY
-          ./build_c_examples/01_ping "${TOKFILE}" || { echo "C ping failed"; cat /tmp/brs.log; kill -KILL $BPID; exit 1; }
+          ./build/bridge-c-examples-macos/01_ping "${TOKFILE}" || { echo "C ping failed"; cat /tmp/brs.log; kill -KILL $BPID; exit 1; }
           echo "c example OK"
           echo "===== brs.log ====="; cat /tmp/brs.log
           # Bounded kill; see Linux smoke test for rationale.
@@ -471,7 +471,7 @@ jobs:
           STAGE="staging/${NAME}"
           mkdir -p "${STAGE}"
 
-          cp build/src/AltirraBridgeServer/AltirraBridgeServer "${STAGE}/"
+          cp build/bridge-package-macos/src/AltirraBridgeServer/AltirraBridgeServer "${STAGE}/"
           strip "${STAGE}/AltirraBridgeServer" || true
           chmod +x "${STAGE}/AltirraBridgeServer"
 
@@ -485,16 +485,16 @@ jobs:
 
           mkdir -p "${STAGE}/sdk/c/examples/bin"
           for ex in 01_ping 02_peek_regs 03_input 04_paint; do
-              cp "build_c_examples/${ex}" "${STAGE}/sdk/c/examples/bin/"
+              cp "build/bridge-c-examples-macos/${ex}" "${STAGE}/sdk/c/examples/bin/"
           done
 
           # Bundle the fetched SDL3 dylib next to 04_paint. This copy
           # was built under MACOSX_DEPLOYMENT_TARGET=11.0; using a
           # Homebrew bottle from the runner would risk a newer minos.
-          SDL3_DYLIB="$(find build/_deps/sdl3-build -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -1)"
+          SDL3_DYLIB="$(find build/bridge-package-macos/_deps/sdl3-build -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -1)"
           if [ -z "${SDL3_DYLIB}" ]; then
-              echo "ERROR: SDL3 dylib not found in build/_deps/sdl3-build"
-              find build/_deps/sdl3-build -maxdepth 2 -name 'libSDL3*.dylib' -print || true
+              echo "ERROR: SDL3 dylib not found in build/bridge-package-macos/_deps/sdl3-build"
+              find build/bridge-package-macos/_deps/sdl3-build -maxdepth 2 -name 'libSDL3*.dylib' -print || true
               exit 1
           fi
           cp "${SDL3_DYLIB}" "${STAGE}/sdk/c/examples/bin/libSDL3.0.dylib"
@@ -626,17 +626,17 @@ jobs:
           if (-not $cachedGen) { throw "could not read CMAKE_GENERATOR from $parentCache" }
           Write-Host "Using generator: $cachedGen"
           cmake -S src/AltirraSDL/AltirraBridge/sdk/c/examples `
-                -B build_c_examples -G "$cachedGen" -A x64 `
+                -B build/bridge-c-examples-windows -G "$cachedGen" -A x64 `
                 "-DCMAKE_PREFIX_PATH=$sdl3BuildDir"
-          cmake --build build_c_examples --config Release
+          cmake --build build/bridge-c-examples-windows --config Release
           # Get-ChildItem only takes one positional -Path; pass an
           # explicit array so all four binaries are listed (and the
           # step fails fast if any one is missing).
           Get-ChildItem -Path @(
-              "build_c_examples\Release\01_ping.exe",
-              "build_c_examples\Release\02_peek_regs.exe",
-              "build_c_examples\Release\03_input.exe",
-              "build_c_examples\Release\04_paint.exe"
+              "build/bridge-c-examples-windows\Release\01_ping.exe",
+              "build/bridge-c-examples-windows\Release\02_peek_regs.exe",
+              "build/bridge-c-examples-windows\Release\03_input.exe",
+              "build/bridge-c-examples-windows\Release\04_paint.exe"
           )
 
       - name: Smoke test
@@ -741,7 +741,7 @@ jobs:
               throw "python smoke failed (exit $LASTEXITCODE)"
           }
 
-          .\build_c_examples\Release\01_ping.exe $tokfile
+          .\build/bridge-c-examples-windows\Release\01_ping.exe $tokfile
           if ($LASTEXITCODE -ne 0) {
               Dump-ServerState $proc
               Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -788,7 +788,7 @@ jobs:
           # Prebuilt C example binaries
           New-Item -ItemType Directory -Force -Path "$stage\sdk\c\examples\bin" | Out-Null
           foreach ($ex in '01_ping','02_peek_regs','03_input','04_paint') {
-              Copy-Item "build_c_examples\Release\$ex.exe" "$stage\sdk\c\examples\bin\"
+              Copy-Item "build/bridge-c-examples-windows\Release\$ex.exe" "$stage\sdk\c\examples\bin\"
           }
           # Bundle SDL3.dll next to 04_paint.exe so the loader finds
           # it in the same directory (Windows DLL search order

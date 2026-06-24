@@ -1629,7 +1629,9 @@ void LoadBaselineSettings() {
 	}
 
 	g_sim.SetBASICEnabled(false);
-	g_sim.SetVideoStandard(kATVideoStandard_NTSC);
+	g_sim.SetVideoStandard(profileId == ATGetDefaultProfileId(kATDefaultProfile_5200)
+		? kATVideoStandard_NTSC
+		: kATVideoStandard_PAL);
 	g_sim.SetCassetteSIOPatchEnabled(true);
 	g_sim.SetCassetteAutoBootEnabled(true);
 	g_sim.SetFPPatchEnabled(false);

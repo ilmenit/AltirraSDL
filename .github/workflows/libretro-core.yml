@@ -1,0 +1,667 @@
+name: Altirra libretro core
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/AltirraLibretro/**'
+      - 'src/AltirraSDL/cmake/altirra_core_sources.cmake'
+      - 'src/AltirraSDL/stubs/**'
+      - 'src/AltirraBridgeServer/**'
+      - 'src/ATAudio/**'
+      - 'src/system/**'
+      - 'docs/libretro-*.md'
+      - 'scripts/build/libretro.sh'
+      - 'scripts/prepare-libretro-upstream.sh'
+      - 'scripts/validate-libretro-*.sh'
+      - 'scripts/verify-libretro-*.sh'
+      - 'build.sh'
+      - 'Makefile.libretro'
+      - 'CMakeLists.txt'
+      - 'src/CMakeLists.txt'
+      - '.github/workflows/libretro-core.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Metadata and upstream staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Validate scripts, metadata, and docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n \
+            build.sh \
+            scripts/create-libretro-readiness-report.sh \
+            scripts/build/libretro.sh \
+            scripts/prepare-libretro-upstream.sh \
+            scripts/validate-libretro-docs.sh \
+            scripts/validate-libretro-info.sh \
+            scripts/validate-libretro-readiness-report.sh \
+            scripts/verify-libretro-artifact.sh \
+            scripts/verify-libretro-package.sh
+          bash scripts/validate-libretro-info.sh
+          bash scripts/validate-libretro-docs.sh
+          bash scripts/validate-libretro-readiness-report.sh --self-test
+          bash scripts/prepare-libretro-upstream.sh
+          make -f Makefile.libretro validate-info
+
+  linux:
+    name: Standalone ABI (Linux ${{ matrix.arch }})
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            cross: ""
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            cross: ""
+          - arch: armv7hf
+            runner: ubuntu-latest
+            cross: arm-linux-gnueabihf
+    container:
+      image: ubuntu:22.04
+      options: --user root
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ninja-build git ca-certificates \
+            python3 python3-pip file tar gzip \
+            gcc-12 g++-12
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            apt-get install -y --no-install-recommends \
+              gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+              binutils-arm-linux-gnueabihf
+          fi
+          python3 -m pip install --user --disable-pip-version-check \
+            --only-binary=:all: 'cmake>=3.24,<5'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+          cmake --version
+          CMAKE_VER=$(cmake --version | awk 'NR==1{print $3}')
+          CMAKE_MAJOR=${CMAKE_VER%%.*}
+          CMAKE_MINOR=${CMAKE_VER#*.}; CMAKE_MINOR=${CMAKE_MINOR%%.*}
+          if [ "$CMAKE_MAJOR" -lt 3 ] || { [ "$CMAKE_MAJOR" -eq 3 ] && [ "$CMAKE_MINOR" -lt 24 ]; }; then
+            echo "ERROR: CMake $CMAKE_VER below 3.24 floor (PyPI wheel not on PATH?)" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Configure standalone core
+        shell: bash
+        run: |
+          extra_args=()
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            extra_args+=(
+              -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/toolchains/linux-armv7hf.cmake"
+            )
+          fi
+          cmake -S . -B build/linux-libretro-${{ matrix.arch }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DALTIRRA_LIBRETRO=ON \
+            -DALTIRRA_SDL3=OFF \
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON \
+            "${extra_args[@]}"
+
+      - name: Build standalone core
+        shell: bash
+        run: cmake --build build/linux-libretro-${{ matrix.arch }} --target AltirraLibretro -j"$(nproc)"
+
+      - name: Check exports and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=build/linux-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.so
+          test -f "$core"
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            file "$core" | grep -Eq 'ARM|arm'
+            arm-linux-gnueabihf-nm -D --defined-only "$core" \
+              | awk '{print $3}' | sort > exports.txt
+          else
+            nm -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
+          fi
+          for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
+            grep -qx "$sym" exports.txt
+          done
+          if grep -v '^retro_' exports.txt; then
+            echo "Unexpected non-libretro exports" >&2
+            exit 1
+          fi
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            arm-linux-gnueabihf-readelf -d "$core" > dynamic.txt
+            if grep -Ei 'SDL3|asound' dynamic.txt; then
+              echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
+              exit 1
+            fi
+          else
+            ldd -r "$core"
+            if ldd "$core" | grep -Ei 'SDL3|asound'; then
+              echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            slug="${{ github.ref_name }}"
+          else
+            slug="nightly"
+          fi
+          pkg="AltirraLibretro-${slug}-linux-${{ matrix.arch }}"
+          mkdir -p "$pkg"
+          cp build/linux-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.so "$pkg/"
+          cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
+          cp src/AltirraLibretro/README.md "$pkg/"
+          cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
+          chmod +x "$pkg/install-retroarch.sh"
+          cp LICENSE "$pkg/LICENSE"
+          {
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - linux ${{ matrix.arch }}"
+            echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
+            echo "Install altirra_libretro.info into RetroArch's Core Info directory."
+          } > "$pkg/BUILD-INFO.txt"
+          tar -czf "$pkg.tar.gz" "$pkg"
+          if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            NM=arm-linux-gnueabihf-nm READELF=arm-linux-gnueabihf-readelf \
+              bash scripts/verify-libretro-package.sh "$pkg.tar.gz"
+          else
+            bash scripts/verify-libretro-package.sh "$pkg.tar.gz"
+          fi
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltirraLibretro-linux-${{ matrix.arch }}
+          path: AltirraLibretro-*-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: Standalone ABI (macOS ${{ matrix.arch }})
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Show toolchain versions
+        shell: bash
+        run: |
+          cmake --version
+          ninja --version
+          clang --version
+          uname -m
+
+      - name: Configure standalone core
+        shell: bash
+        run: |
+          cmake -S . -B build/macos-libretro-${{ matrix.arch }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DALTIRRA_LIBRETRO=ON \
+            -DALTIRRA_SDL3=OFF \
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build standalone core
+        shell: bash
+        run: cmake --build build/macos-libretro-${{ matrix.arch }} --target AltirraLibretro -j"$(sysctl -n hw.ncpu)"
+
+      - name: Check exports and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=build/macos-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.dylib
+          test -f "$core"
+          # Confirm the slice is the expected architecture (native per runner).
+          if ! file "$core" | grep -q "${{ matrix.arch }}"; then
+            echo "Core is not a ${{ matrix.arch }} binary:" >&2
+            file "$core" >&2
+            exit 1
+          fi
+          nm -gU "$core" | awk '{print $3}' | sed 's/^_//' | sort > exports.txt
+          for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
+            grep -qx "$sym" exports.txt
+          done
+          if grep -v '^retro_' exports.txt; then
+            echo "Unexpected non-libretro exports" >&2
+            exit 1
+          fi
+          if otool -L "$core" | grep -i 'SDL3'; then
+            echo "Unexpected SDL3 dependency in standalone libretro core" >&2
+            exit 1
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            slug="${{ github.ref_name }}"
+          else
+            slug="nightly"
+          fi
+          pkg="AltirraLibretro-${slug}-macos-${{ matrix.arch }}"
+          mkdir -p "$pkg"
+          cp build/macos-libretro-${{ matrix.arch }}/src/AltirraLibretro/altirra_libretro.dylib "$pkg/"
+          cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
+          cp src/AltirraLibretro/README.md "$pkg/"
+          cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
+          chmod +x "$pkg/install-retroarch.sh"
+          cp LICENSE "$pkg/LICENSE"
+          {
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - macos ${{ matrix.arch }}"
+            echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
+            echo "Install altirra_libretro.info into RetroArch's Core Info directory."
+          } > "$pkg/BUILD-INFO.txt"
+          zip -r "$pkg.zip" "$pkg"
+          bash scripts/verify-libretro-package.sh "$pkg.zip"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltirraLibretro-macos-${{ matrix.arch }}
+          path: AltirraLibretro-*-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  windows:
+    name: Standalone ABI (Windows ${{ matrix.arch }})
+    needs: preflight
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            preset: windows-libretro
+          - arch: arm64
+            preset: windows-libretro-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Show toolchain versions
+        shell: bash
+        run: |
+          cmake --version
+          where cl.exe || true
+
+      - name: Configure standalone core
+        shell: pwsh
+        run: |
+          cmake --preset ${{ matrix.preset }}
+
+      - name: Build standalone core
+        shell: pwsh
+        run: |
+          cmake --build build/${{ matrix.preset }} `
+            --target AltirraLibretro `
+            --config Release
+
+      - name: Check exports and dependencies
+        shell: pwsh
+        run: |
+          $core = "build/${{ matrix.preset }}/src/AltirraLibretro/Release/altirra_libretro.dll"
+          if (!(Test-Path $core)) {
+            $core = "build/${{ matrix.preset }}/src/AltirraLibretro/altirra_libretro.dll"
+          }
+          if (!(Test-Path $core)) {
+            throw "altirra_libretro.dll not found"
+          }
+          $dumpbin = Get-ChildItem "${env:ProgramFiles}/Microsoft Visual Studio/2022" -Recurse -Filter dumpbin.exe |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (!$dumpbin) {
+            throw "dumpbin.exe not found"
+          }
+          $exports = & $dumpbin /EXPORTS $core
+          $exportNames = @()
+          foreach ($line in $exports) {
+            if ($line -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') {
+              $exportNames += $Matches[1]
+            }
+          }
+          foreach ($sym in @("retro_init", "retro_run", "retro_load_game", "retro_get_system_info", "retro_get_system_av_info", "retro_serialize_size")) {
+            if (!($exportNames -contains $sym)) {
+              throw "Missing export $sym"
+            }
+          }
+          $unexpected = $exportNames | Where-Object { $_ -notmatch '^retro_' }
+          if ($unexpected) {
+            throw "Unexpected non-libretro exports: $($unexpected -join ', ')"
+          }
+          $deps = & $dumpbin /DEPENDENTS $core
+          if ($deps | Select-String -Pattern 'SDL3') {
+            throw "Unexpected SDL3 dependency in standalone libretro core"
+          }
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $core = "build/${{ matrix.preset }}/src/AltirraLibretro/Release/altirra_libretro.dll"
+          if (!(Test-Path $core)) {
+            $core = "build/${{ matrix.preset }}/src/AltirraLibretro/altirra_libretro.dll"
+          }
+          if (!(Test-Path $core)) {
+            throw "altirra_libretro.dll not found"
+          }
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $slug = "${{ github.ref_name }}"
+          } else {
+            $slug = "nightly"
+          }
+          $pkg = "AltirraLibretro-$slug-windows-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item $core "$pkg/"
+          Copy-Item "src/AltirraLibretro/altirra_libretro.info" "$pkg/"
+          Copy-Item "src/AltirraLibretro/README.md" "$pkg/"
+          Copy-Item "src/AltirraLibretro/install-retroarch.sh" "$pkg/"
+          Copy-Item "LICENSE" "$pkg/LICENSE"
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+          @(
+            "AltirraLibretro $slug $($env:GITHUB_SHA.Substring(0, 7)) - windows ${{ matrix.arch }}",
+            "Built $date from commit $env:GITHUB_SHA",
+            "Install altirra_libretro.info into RetroArch's Core Info directory."
+          ) | Set-Content "$pkg/BUILD-INFO.txt" -Encoding utf8
+          Compress-Archive -Path $pkg -DestinationPath "$pkg.zip" -Force
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/verify-libretro-package.sh \
+            AltirraLibretro-*-windows-${{ matrix.arch }}.zip
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltirraLibretro-windows-${{ matrix.arch }}
+          path: AltirraLibretro-*-windows-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  android:
+    name: Standalone ABI (Android arm64-v8a)
+    needs: preflight
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.2.12479018"
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build file zip
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Configure standalone core
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}}"
+          if [[ -z "$NDK" || ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
+            yes | sdkmanager --install "ndk;$NDK_VERSION"
+            NDK="${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          fi
+          if [[ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
+            echo "Android NDK CMake toolchain not found at $NDK" >&2
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          cmake -S . -B build/android-libretro-arm64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-23 \
+            -DALTIRRA_LIBRETRO=ON \
+            -DALTIRRA_SDL3=OFF \
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON
+
+      - name: Build standalone core
+        shell: bash
+        run: cmake --build build/android-libretro-arm64 --target AltirraLibretro -j"$(nproc)"
+
+      - name: Check exports and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so
+          test -f "$core"
+          file "$core" | grep -Eq 'aarch64|ARM aarch64|ARM64'
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
+          for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
+            grep -qx "$sym" exports.txt
+          done
+          if grep -v '^retro_' exports.txt; then
+            echo "Unexpected non-libretro exports" >&2
+            exit 1
+          fi
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            -d "$core" > dynamic.txt
+          if grep -Ei 'SDL3|asound' dynamic.txt; then
+            echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
+            exit 1
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            slug="${{ github.ref_name }}"
+          else
+            slug="nightly"
+          fi
+          pkg="AltirraLibretro-${slug}-android-arm64-v8a"
+          mkdir -p "$pkg"
+          cp build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so "$pkg/"
+          cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
+          cp src/AltirraLibretro/README.md "$pkg/"
+          cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
+          chmod +x "$pkg/install-retroarch.sh"
+          cp LICENSE "$pkg/LICENSE"
+          {
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - android arm64-v8a"
+            echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
+            echo "Install altirra_libretro.info into RetroArch's Core Info directory."
+          } > "$pkg/BUILD-INFO.txt"
+          zip -r "$pkg.zip" "$pkg"
+          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            OBJDUMP="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump" \
+            bash scripts/verify-libretro-package.sh "$pkg.zip"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltirraLibretro-android-arm64-v8a
+          path: AltirraLibretro-*-android-arm64-v8a.zip
+          if-no-files-found: error
+
+  linux-smoke:
+    name: Boot/video smoke (Linux x86_64)
+    needs: preflight
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+      options: --user root
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ninja-build git ca-certificates \
+            python3 python3-pip gcc-12 g++-12
+          python3 -m pip install --user --disable-pip-version-check \
+            --only-binary=:all: 'cmake>=3.24,<5'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+          cmake --version
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Configure standalone core
+        shell: bash
+        run: |
+          cmake -S . -B build/linux-libretro-smoke -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DALTIRRA_LIBRETRO=ON \
+            -DALTIRRA_SDL3=OFF \
+            -DALTIRRA_LIBRETRO_NO_SDL3=ON \
+            -DALTIRRA_LIBRETRO_BUILD_TESTS=ON
+
+      - name: Build standalone core
+        shell: bash
+        run: cmake --build build/linux-libretro-smoke --target AltirraLibretro -j"$(nproc)"
+
+      - name: Build libretro smoke host
+        shell: bash
+        run: cmake --build build/linux-libretro-smoke --target AltirraLibretroSmoke -j"$(nproc)"
+
+      - name: Check artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.so
+          info=build/linux-libretro-smoke/src/AltirraLibretro/altirra_libretro.info
+          bash scripts/verify-libretro-artifact.sh "$core" "$info"
+
+      - name: Run libretro smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_dir=build/linux-libretro-smoke/src/AltirraLibretro
+          ctest --test-dir "$test_dir" -N -R AltirraLibretroSmoke \
+            | tee ctest-list.txt
+          grep -Eq 'Total Tests: [1-9][0-9]*' ctest-list.txt
+          ctest --test-dir "$test_dir" --output-on-failure \
+            -R AltirraLibretroSmoke
+
+  publish-nightly:
+    name: Attach to nightly-libretro release
+    needs: [linux, macos, windows, android, linux-smoke]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List packages
+        shell: bash
+        run: find dist -maxdepth 3 -type f -print | sort
+
+      - name: Move nightly-libretro tag to current commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly-libretro" \
+            -f "sha=${GITHUB_SHA}" -F "force=true" \
+          || gh api --method POST \
+               "repos/${GITHUB_REPOSITORY}/git/refs" \
+               -f "ref=refs/tags/nightly-libretro" -f "sha=${GITHUB_SHA}"
+
+      - name: Attach packages to rolling prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-libretro
+          name: "Nightly libretro core"
+          prerelease: true
+          draft: false
+          files: |
+            dist/**/*.tar.gz
+            dist/**/*.zip
+          fail_on_unmatched_files: true
+
+  publish-release:
+    name: Attach to tagged release
+    needs: [linux, macos, windows, android, linux-smoke]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List packages
+        shell: bash
+        run: find dist -maxdepth 3 -type f -print | sort
+
+      - name: Attach packages to tagged release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            dist/**/*.tar.gz
+            dist/**/*.zip
+          fail_on_unmatched_files: true

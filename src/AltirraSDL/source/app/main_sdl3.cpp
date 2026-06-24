@@ -2155,21 +2155,6 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-#ifdef __ANDROID__
-	// On first run (no saved settings), default to PAL for mobile.
-	// ATSettingsLoadLastProfile sets NTSC in ATSettingsExchangeStartupConfig;
-	// override to PAL when "Defaults inited" was just created this session
-	// (ATLoadDefaultProfiles above will have set it on first boot).
-	// We detect first run by checking a mobile-specific flag we set ourselves.
-	{
-		VDRegistryAppKey key("", true);
-		if (!key.getBool("Mobile defaults applied")) {
-			g_sim.SetVideoStandard(kATVideoStandard_PAL);
-			key.setBool("Mobile defaults applied", true);
-		}
-	}
-#endif
-
 	// Adaptive Input — universal one-toggle "let keyboard, gamepad,
 	// and on-screen joypad all drive port 1 simultaneously".  Default-
 	// on for first-run users; existing users with saved input-map

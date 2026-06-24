@@ -107,7 +107,7 @@ enum class HostedGameState : uint8_t {
 struct MachineConfig {
 	ATHardwareMode  hardwareMode    = kATHardwareMode_800XL;
 	ATMemoryMode    memoryMode      = kATMemoryMode_320K;
-	ATVideoStandard videoStandard   = kATVideoStandard_NTSC;
+	ATVideoStandard videoStandard   = kATVideoStandard_PAL;
 	bool            basicEnabled    = false;
 
 	uint32_t        kernelCRC32     = 0;

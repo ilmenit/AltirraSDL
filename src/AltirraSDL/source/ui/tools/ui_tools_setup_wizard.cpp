@@ -1443,7 +1443,8 @@ void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			ImGui::TextWrapped(
 				"Select the video standard. NTSC (60Hz) is the North American standard. "
 				"PAL (50Hz) is the European standard.\n\n"
-				"This affects timing and color palette. Most software is designed for NTSC."
+				"This affects timing and color palette. PAL is the default; choose NTSC "
+				"for North American software."
 			);
 			ImGui::Spacing();
 

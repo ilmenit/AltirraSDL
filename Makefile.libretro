@@ -1,0 +1,70 @@
+# Thin Libretro build wrapper.
+#
+# Keep the real build definition in CMake. This file exists so Libretro-style
+# automation can call make without us duplicating source lists or compiler
+# flags in a second build system.
+
+CMAKE ?= cmake
+BUILD_DIR ?= build/libretro-make
+BUILD_TYPE ?= Release
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || printf 4)
+BUILD_TESTS ?= OFF
+CONFIGURE_ARGS ?=
+INFO_FILE ?= src/AltirraLibretro/altirra_libretro.info
+CMAKE_FILE ?= CMakeLists.txt
+
+CMAKE_FLAGS = \
+	-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
+	-DALTIRRA_LIBRETRO=ON \
+	-DALTIRRA_SDL3=OFF \
+	-DALTIRRA_LIBRETRO_NO_SDL3=ON \
+	-DALTIRRA_LIBRETRO_BUILD_TESTS=$(BUILD_TESTS)
+
+.PHONY: all validate-info configure verify test clean print-artifacts
+
+all: validate-info configure
+	$(CMAKE) --build "$(BUILD_DIR)" --target AltirraLibretro \
+		--config "$(BUILD_TYPE)" -j "$(JOBS)"
+
+validate-info:
+	bash scripts/validate-libretro-info.sh "$(INFO_FILE)" "$(CMAKE_FILE)"
+
+configure:
+	$(CMAKE) -S . -B "$(BUILD_DIR)" $(CMAKE_FLAGS) $(CONFIGURE_ARGS)
+
+verify: all
+	@core=""; \
+	for candidate in \
+		"$(BUILD_DIR)/src/AltirraLibretro/altirra_libretro.so" \
+		"$(BUILD_DIR)/src/AltirraLibretro/altirra_libretro.dylib" \
+		"$(BUILD_DIR)/src/AltirraLibretro/altirra_libretro.dll" \
+		"$(BUILD_DIR)/src/AltirraLibretro/Release/altirra_libretro.dll"; do \
+		if [ -f "$$candidate" ]; then core="$$candidate"; break; fi; \
+	done; \
+	if [ -z "$$core" ]; then \
+		printf '%s\n' "No built libretro core was found" >&2; \
+		exit 1; \
+	fi; \
+	bash scripts/verify-libretro-artifact.sh "$$core" \
+		"$$(dirname "$$core")/altirra_libretro.info" "$(CMAKE_FILE)"
+
+test: BUILD_TESTS=ON
+test: all
+	$(CMAKE) --build "$(BUILD_DIR)" --target AltirraLibretroSmoke \
+		--config "$(BUILD_TYPE)" -j "$(JOBS)"
+	@if ! ctest --test-dir "$(BUILD_DIR)/src/AltirraLibretro" -N \
+		-R AltirraLibretroSmoke | grep -Eq 'Total Tests: [1-9][0-9]*'; then \
+		printf '%s\n' "No libretro smoke tests were registered" >&2; \
+		exit 1; \
+	fi
+	ctest --test-dir "$(BUILD_DIR)/src/AltirraLibretro" \
+		--output-on-failure -R AltirraLibretroSmoke
+
+clean:
+	rm -rf "$(BUILD_DIR)"
+
+print-artifacts:
+	@printf '%s\n' "$(BUILD_DIR)/src/AltirraLibretro/altirra_libretro.so"
+	@printf '%s\n' "$(BUILD_DIR)/src/AltirraLibretro/altirra_libretro.dylib"
+	@printf '%s\n' "$(BUILD_DIR)/src/AltirraLibretro/altirra_libretro.dll"
+	@printf '%s\n' "$(BUILD_DIR)/src/AltirraLibretro/Release/altirra_libretro.dll"

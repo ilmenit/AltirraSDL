@@ -13,6 +13,18 @@
 #   ./build.sh --package --source Also create source archive
 #   ./build.sh --clean            Clean rebuild
 #   ./build.sh --native           Windows only: build libs for .sln (no SDL3)
+#   ./build.sh --libretro         Build the RetroArch/libretro core
+#                                 (altirra_libretro.{so,dll,dylib}, no SDL3).
+#   ./build.sh --libretro-flatpak Build the Linux libretro core inside the
+#                                 RetroArch Flatpak-compatible KDE 6.10 SDK.
+#   ./build.sh --libretro --package
+#                                 Build + archive the libretro core with its
+#                                 required altirra_libretro.info metadata.
+#                                 On macOS pass
+#                                 --cmake "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+#                                 for a universal core.
+#   ./build.sh --libretro-test    With --libretro, also build and run the
+#                                 libretro smoke tests.
 #   ./build.sh --jobs 8           Override parallel job count
 #   ./build.sh --librashader      Build librashader from source (needs Rust)
 #   ./build.sh --fetch-sdl3       Force-fetch SDL3 from source (ignore system SDL3).
@@ -31,6 +43,10 @@
 #
 # Output archives (with --package):
 #   build/<preset>/AltirraSDL-<ver>-<platform>.zip
+#   build/<preset>/AltirraLibretro-<ver>-<platform>-<arch>.(zip|tar.gz)
+#   build/linux-libretro-flatpak-kde610/
+#     AltirraLibretro-<ver>-linux-<arch>-flatpak-kde610.tar.gz
+#     (with --libretro-flatpak --package)
 #   build/<preset>/AltirraSDL-<ver>-src.tar.gz  (with --source)
 
 set -euo pipefail
@@ -53,6 +69,9 @@ JOBS=""
 CMAKE_EXTRA_ARGS=""
 BUILD_LIBRASHADER=0
 APPIMAGE=0
+LIBRETRO=0
+LIBRETRO_FLATPAK=0
+LIBRETRO_TEST=0
 
 # ── Parse arguments ───────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
@@ -63,6 +82,9 @@ while [ $# -gt 0 ]; do
         --sign)     SIGN_APK=1 ;;
         --setup-android) ANDROID=1; SETUP_ANDROID=1; BUILD_TYPE=debug ;;
         --native)   FRONTEND=native ;;
+        --libretro) LIBRETRO=1 ;;
+        --libretro-flatpak) LIBRETRO=1; LIBRETRO_FLATPAK=1 ;;
+        --libretro-test) LIBRETRO=1; LIBRETRO_TEST=1 ;;
         --sdl)      FRONTEND=sdl ;;
         --clean)    CLEAN=1 ;;
         --package)  PACKAGE=1 ;;
@@ -98,6 +120,30 @@ if [ "$ANDROID" = "1" ]; then
 
     export ROOT_DIR BUILD_TYPE CLEAN SETUP_ANDROID SIGN_APK
     source "$SCRIPTS_DIR/android.sh"
+
+    echo ""
+    ok "All done!"
+    exit 0
+fi
+
+# ── libretro core build (separate path — single target, no SDL3) ──────────
+if [ "$LIBRETRO" = "1" ]; then
+    detect_platform
+    detect_jobs
+
+    echo ""
+    info "Platform:   ${C_BOLD}${PLATFORM}${C_RESET}"
+    if [ "$LIBRETRO_FLATPAK" = "1" ]; then
+        info "Target:     ${C_BOLD}libretro core for RetroArch Flatpak (Release)${C_RESET}"
+    else
+        info "Target:     ${C_BOLD}libretro core (Release)${C_RESET}"
+    fi
+    info "Jobs:       ${C_BOLD}${JOBS}${C_RESET}"
+    echo ""
+
+    export ROOT_DIR PLATFORM CLEAN JOBS CMAKE_EXTRA_ARGS PACKAGE SOURCE_ARCHIVE
+    export LIBRETRO_FLATPAK LIBRETRO_TEST
+    source "$SCRIPTS_DIR/libretro.sh"
 
     echo ""
     ok "All done!"

@@ -1,7 +1,7 @@
-# CMake build directory (root level only — not scripts/build/)
+# CMake build directories. Canonical layout is build/<name>; /build-*/ only
+# ignores legacy local scratch trees such as build-lobby or build-libretro.
 /build/
-/build-tests/
-/build-lobby/
+/build-*/
 /build_lobby/
 CMakeUserPresets.json
 
