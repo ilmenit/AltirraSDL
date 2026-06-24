@@ -93,8 +93,11 @@ jobs:
             python3 python3-pip file tar gzip \
             gcc-12 g++-12
           if [[ "${{ matrix.cross }}" == "arm-linux-gnueabihf" ]]; then
+            # GCC 12+ cross compiler: the shared headers use C++23
+            # `if consteval`, which the default GCC 11 cross toolchain on
+            # Ubuntu 22.04 does not support.
             apt-get install -y --no-install-recommends \
-              gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+              gcc-12-arm-linux-gnueabihf g++-12-arm-linux-gnueabihf \
               binutils-arm-linux-gnueabihf
           fi
           python3 -m pip install --user --disable-pip-version-check \
@@ -352,7 +355,14 @@ jobs:
           if (!(Test-Path $core)) {
             throw "altirra_libretro.dll not found"
           }
-          $dumpbin = Get-ChildItem "${env:ProgramFiles}/Microsoft Visual Studio/2022" -Recurse -Filter dumpbin.exe |
+          # Search across all installed Visual Studio versions (the hosted
+          # runner image moves between major versions, e.g. 2022 -> 18) and
+          # both Program Files roots.
+          $vsRoots = @(
+            "${env:ProgramFiles}/Microsoft Visual Studio",
+            "${env:ProgramFiles(x86)}/Microsoft Visual Studio"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+          $dumpbin = Get-ChildItem $vsRoots -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match 'Hostx64\\x64' } |
             Select-Object -First 1 -ExpandProperty FullName
           if (!$dumpbin) {

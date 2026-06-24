@@ -17,13 +17,20 @@ fail() {
 [ -f "$CMAKE_FILE" ] || fail "CMake file not found: $CMAKE_FILE"
 [ -f "$CORE_FILE" ] || fail "core source not found: $CORE_FILE"
 
+# Note: `\+` is a GNU sed extension; use the portable `X X*` form so this
+# matches under BSD sed (macOS) as well.
 PROJECT_VERSION=$(sed -n \
-    's/^project(Altirra[[:space:]]\+VERSION[[:space:]]\+\([^[:space:])]*\).*/\1/p' \
+    's/^project(Altirra[[:space:]][[:space:]]*VERSION[[:space:]][[:space:]]*\([^[:space:])]*\).*/\1/p' \
     "$CMAKE_FILE" | head -1)
 [ -n "$PROJECT_VERSION" ] \
     || fail "could not read project version from $CMAKE_FILE"
 
-declare -A INFO
+# bash 3.2 (the default /bin/bash on macOS) has no associative arrays, so
+# emulate INFO[key]=value with prefixed dynamic variables.  Keys are validated
+# to [A-Za-z0-9_]+ below, so they are always valid shell identifier suffixes.
+info_set() { eval "INFOVAL_$1=\$2"; }
+info_get() { eval "printf '%s' \"\${INFOVAL_$1-}\""; }
+info_has() { eval "[ \"\${INFOVAL_$1+set}\" = set ]"; }
 
 LINE_NO=0
 while IFS= read -r LINE || [ -n "$LINE" ]; do
@@ -47,16 +54,16 @@ while IFS= read -r LINE || [ -n "$LINE" ]; do
         fail "$INFO_FILE:$LINE_NO: unquoted non-numeric value for key: $KEY"
     fi
 
-    if [[ -v "INFO[$KEY]" ]]; then
+    if info_has "$KEY"; then
         fail "$INFO_FILE:$LINE_NO: duplicate key: $KEY"
     fi
 
-    INFO["$KEY"]="$VALUE"
+    info_set "$KEY" "$VALUE"
 done < "$INFO_FILE"
 
 require_key() {
     local key="$1"
-    [[ -v "INFO[$key]" ]] || fail "missing required key: $key"
+    info_has "$key" || fail "missing required key: $key"
 }
 
 require_value() {
@@ -64,8 +71,8 @@ require_value() {
     local expected="$2"
 
     require_key "$key"
-    if [ "${INFO[$key]}" != "$expected" ]; then
-        fail "unexpected $key: '${INFO[$key]}' (expected '$expected')"
+    if [ "$(info_get "$key")" != "$expected" ]; then
+        fail "unexpected $key: '$(info_get "$key")' (expected '$expected')"
     fi
 }
 
@@ -73,7 +80,7 @@ require_extension() {
     local ext="$1"
     require_key supported_extensions
 
-    case "|${INFO[supported_extensions]}|" in
+    case "|$(info_get supported_extensions)|" in
         *"|$ext|"*) ;;
         *) fail "supported_extensions is missing '$ext'" ;;
     esac
@@ -102,9 +109,9 @@ if [ "${ALTIRRA_LIBRETRO_ALLOW_NON_EXPERIMENTAL:-0}" != "1" ]; then
     require_value is_experimental "true"
 else
     require_key is_experimental
-    case "${INFO[is_experimental]}" in
+    case "$(info_get is_experimental)" in
         true|false) ;;
-        *) fail "is_experimental must be 'true' or 'false': ${INFO[is_experimental]}" ;;
+        *) fail "is_experimental must be 'true' or 'false': $(info_get is_experimental)" ;;
     esac
 fi
 
@@ -121,10 +128,11 @@ CORE_EXTENSIONS=$(sed -n '/kValidExtensions[[:space:]]*=/,/;/p' "$CORE_FILE" \
 require_value supported_extensions "$CORE_EXTENSIONS"
 
 require_key firmware_count
-[[ "${INFO[firmware_count]}" =~ ^[0-9]+$ ]] \
-    || fail "firmware_count is not numeric: ${INFO[firmware_count]}"
+FIRMWARE_COUNT=$(info_get firmware_count)
+[[ "$FIRMWARE_COUNT" =~ ^[0-9]+$ ]] \
+    || fail "firmware_count is not numeric: $FIRMWARE_COUNT"
 
-for ((I = 0; I < INFO[firmware_count]; ++I)); do
+for ((I = 0; I < FIRMWARE_COUNT; ++I)); do
     require_key "firmware${I}_desc"
     require_key "firmware${I}_path"
     require_value "firmware${I}_opt" "true"

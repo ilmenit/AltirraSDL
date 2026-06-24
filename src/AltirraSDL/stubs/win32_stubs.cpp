@@ -394,7 +394,11 @@ void VDUIGetAcceleratorString(const VDUIAccelerator& accel, VDStringW& s) {
 // main loop calls ATRegistryLoadFromDisk()/ATRegistryFlushToDisk() which
 // are provided by registry_sdl3.cpp on non-Windows.  On Windows we just
 // provide no-op stubs since the registry handles persistence.
-#ifdef _WIN32
+//
+// The libretro core builds an in-memory registry persisted to an INI file and
+// supplies its own ATRegistryLoadFromDisk()/ATRegistryFlushToDisk() in
+// libretro_dirs.cpp, so exclude these stubs there to avoid duplicate symbols.
+#if defined(_WIN32) && !defined(ALTIRRA_LIBRETRO)
 void ATRegistryLoadFromDisk() {}
 void ATRegistryFlushToDisk() {}
 #endif

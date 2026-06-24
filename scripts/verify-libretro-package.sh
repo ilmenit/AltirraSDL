@@ -40,7 +40,12 @@ case "$ARCHIVE" in
         ;;
 esac
 
-mapfile -t ROOTS < <(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+# Use a portable read loop instead of `mapfile`/`readarray`, which are not
+# available in the bash 3.2 shipped on macOS.
+ROOTS=()
+while IFS= read -r line; do
+    ROOTS+=("$line")
+done < <(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
 [ "${#ROOTS[@]}" -eq 1 ] \
     || fail "package should contain exactly one top-level directory"
 
@@ -51,7 +56,10 @@ for required in BUILD-INFO.txt LICENSE README.md altirra_libretro.info \
     [ -f "$PKG_DIR/$required" ] || fail "package missing $required"
 done
 
-mapfile -t CORES < <(find "$PKG_DIR" -maxdepth 1 -type f \
+CORES=()
+while IFS= read -r line; do
+    CORES+=("$line")
+done < <(find "$PKG_DIR" -maxdepth 1 -type f \
     \( -name 'altirra_libretro.so' \
     -o -name 'altirra_libretro.dylib' \
     -o -name 'altirra_libretro.dll' \) | sort)
