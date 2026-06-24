@@ -79,6 +79,24 @@ endfunction()
 # never produces a native Win32 frontend.
 ###############################################################################
 
+# MSVC's Visual Studio generator leaves CMAKE_SYSTEM_PROCESSOR at the host
+# value (e.g. AMD64) even when targeting ARM64 via "-A ARM64".  That makes the
+# per-architecture SIMD source selection in the subprojects pick x86 sources
+# for an ARM64 target.  Normalize CMAKE_SYSTEM_PROCESSOR from the compiler's
+# actual target architecture so every "MATCHES" arch check downstream is
+# correct.  Non-MSVC builds already report the target architecture correctly.
+if(MSVC AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+    if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "ARM64")
+        set(CMAKE_SYSTEM_PROCESSOR "ARM64")
+    elseif(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM")
+        set(CMAKE_SYSTEM_PROCESSOR "ARM")
+    elseif(CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "x64")
+        set(CMAKE_SYSTEM_PROCESSOR "AMD64")
+    elseif(CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "X86")
+        set(CMAKE_SYSTEM_PROCESSOR "X86")
+    endif()
+endif()
+
 # ALTIRRA_SDL3 — build the SDL3+ImGui frontend.
 # Always ON: CMake exclusively builds the SDL3+ImGui frontend.
 # The native Win32 UI is built via the Visual Studio .sln, never via CMake.
