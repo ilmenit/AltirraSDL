@@ -8,7 +8,10 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_FILE=""
 PACKAGE_PATH=""
 BUILD_COMMAND="./build.sh --libretro --package"
+SMOKE_COMMAND="not run"
+SMOKE_RESULT="not run"
 RETROARCH_COMMAND=""
+RETROARCH_COMMAND_PROVIDED=0
 VERIFY_PACKAGE=0
 PACKAGE_VERIFY_RESULT=""
 
@@ -32,6 +35,37 @@ absolute_path() {
     fi
 }
 
+expand_user_path() {
+    local path="$1"
+
+    case "$path" in
+        "~") printf '%s\n' "$HOME" ;;
+        "~/"*) printf '%s/%s\n' "$HOME" "${path#\~/}" ;;
+        *) printf '%s\n' "$path" ;;
+    esac
+}
+
+config_value() {
+    local config_file="$1"
+    local key="$2"
+
+    [ -f "$config_file" ] || return 0
+
+    sed -n \
+        "s/^${key}[[:space:]]*=[[:space:]]*\"\\(.*\\)\"[[:space:]]*$/\\1/p" \
+        "$config_file" | tail -1
+}
+
+yes_no_for_file() {
+    local path="$1"
+
+    if [ -n "$path" ] && [ -f "$path" ]; then
+        printf 'yes\n'
+    else
+        printf 'no\n'
+    fi
+}
+
 usage() {
     cat <<USAGE
 Usage: $(basename "$0") [options]
@@ -40,6 +74,8 @@ Options:
   --output FILE          Write the report to FILE.
   --package FILE         Record FILE as the package under test.
   --build-command TEXT   Record TEXT as the build command.
+  --smoke-command TEXT   Record TEXT as the smoke test command.
+  --smoke-result TEXT    Record the smoke test result.
   --retroarch-command C  Record C as the RetroArch command/distribution.
   --verify-package       Run the package verifier and record its result.
   -h, --help             Show this help.
@@ -59,7 +95,13 @@ while [ $# -gt 0 ]; do
         --output) OUT_FILE="$(need_value "$@")"; shift ;;
         --package) PACKAGE_PATH="$(need_value "$@")"; shift ;;
         --build-command) BUILD_COMMAND="$(need_value "$@")"; shift ;;
-        --retroarch-command) RETROARCH_COMMAND="$(need_value "$@")"; shift ;;
+        --smoke-command) SMOKE_COMMAND="$(need_value "$@")"; shift ;;
+        --smoke-result) SMOKE_RESULT="$(need_value "$@")"; shift ;;
+        --retroarch-command)
+            RETROARCH_COMMAND="$(need_value "$@")"
+            RETROARCH_COMMAND_PROVIDED=1
+            shift
+            ;;
         --verify-package) VERIFY_PACKAGE=1 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
@@ -112,6 +154,7 @@ else
     PACKAGE_VERIFY_RESULT="not run"
 fi
 
+UNAME_S=$(uname -s)
 HOST_OS=$(uname -srmo 2>/dev/null || uname -a)
 if [ -f /etc/os-release ]; then
     OS_PRETTY=$(sed -n 's/^PRETTY_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' \
@@ -133,15 +176,62 @@ if [ -z "$RETROARCH_COMMAND" ]; then
 fi
 
 RETROARCH_VERSION="not detected"
-if command -v retroarch >/dev/null 2>&1; then
-    RETROARCH_VERSION=$(retroarch --version 2>/dev/null | head -1 \
-        || printf 'not detected')
-elif command -v flatpak >/dev/null 2>&1 \
+RETROARCH_CONFIG=""
+if printf '%s' "$RETROARCH_COMMAND" | grep -Eiq '^flatpak:' \
+    && command -v flatpak >/dev/null 2>&1 \
     && flatpak info org.libretro.RetroArch >/dev/null 2>&1; then
     RETROARCH_VERSION=$(flatpak info org.libretro.RetroArch 2>/dev/null \
         | sed -n 's/^[[:space:]]*Version:[[:space:]]*//p' | head -1)
     [ -n "$RETROARCH_VERSION" ] \
         || RETROARCH_VERSION="Flatpak installed, version not reported"
+    FLATPAK_CONFIG="$HOME/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg"
+    [ -f "$FLATPAK_CONFIG" ] && RETROARCH_CONFIG="$FLATPAK_CONFIG"
+elif { [ "$RETROARCH_COMMAND_PROVIDED" = "0" ] \
+        || printf '%s' "$RETROARCH_COMMAND" | grep -Eiq '^native:'; } \
+    && command -v retroarch >/dev/null 2>&1; then
+    RETROARCH_VERSION=$(retroarch --version 2>/dev/null | head -1 \
+        || printf 'not detected')
+    [ -f "$HOME/.config/retroarch/retroarch.cfg" ] \
+        && RETROARCH_CONFIG="$HOME/.config/retroarch/retroarch.cfg"
+elif [ "$RETROARCH_COMMAND_PROVIDED" = "0" ] \
+    && command -v flatpak >/dev/null 2>&1 \
+    && flatpak info org.libretro.RetroArch >/dev/null 2>&1; then
+    RETROARCH_VERSION=$(flatpak info org.libretro.RetroArch 2>/dev/null \
+        | sed -n 's/^[[:space:]]*Version:[[:space:]]*//p' | head -1)
+    [ -n "$RETROARCH_VERSION" ] \
+        || RETROARCH_VERSION="Flatpak installed, version not reported"
+    FLATPAK_CONFIG="$HOME/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg"
+    [ -f "$FLATPAK_CONFIG" ] && RETROARCH_CONFIG="$FLATPAK_CONFIG"
+fi
+
+RETROARCH_VIDEO_DRIVER=""
+RETROARCH_AUDIO_DRIVER=""
+CORE_PATH=""
+CORE_INFO_PATH=""
+INFO_INSTALLED="no"
+if [ -n "$RETROARCH_CONFIG" ]; then
+    RETROARCH_VIDEO_DRIVER=$(config_value "$RETROARCH_CONFIG" video_driver)
+    RETROARCH_AUDIO_DRIVER=$(config_value "$RETROARCH_CONFIG" audio_driver)
+
+    LIBRETRO_DIR=$(config_value "$RETROARCH_CONFIG" libretro_directory)
+    LIBRETRO_INFO_DIR=$(config_value "$RETROARCH_CONFIG" libretro_info_path)
+
+    if [ -n "$LIBRETRO_DIR" ]; then
+        LIBRETRO_DIR=$(expand_user_path "$LIBRETRO_DIR")
+        case "$UNAME_S" in
+            Darwin) CORE_EXT=dylib ;;
+            MINGW*|MSYS*|CYGWIN*) CORE_EXT=dll ;;
+            *) CORE_EXT=so ;;
+        esac
+        CORE_PATH="$LIBRETRO_DIR/altirra_libretro.$CORE_EXT"
+    fi
+
+    if [ -n "$LIBRETRO_INFO_DIR" ]; then
+        LIBRETRO_INFO_DIR=$(expand_user_path "$LIBRETRO_INFO_DIR")
+        CORE_INFO_PATH="$LIBRETRO_INFO_DIR/altirra_libretro.info"
+    fi
+
+    INFO_INSTALLED=$(yes_no_for_file "$CORE_INFO_PATH")
 fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
@@ -156,6 +246,8 @@ cat > "$OUT_FILE" <<REPORT
 - Git commit: $COMMIT_FULL
 - Altirra version: $PROJECT_VERSION
 - Build command: $BUILD_COMMAND
+- Smoke test command: $SMOKE_COMMAND
+- Smoke test result: $SMOKE_RESULT
 - Package path: $PACKAGE_PATH
 - Package verifier command: $PACKAGE_VERIFY_COMMAND
 - Package verifier result: $PACKAGE_VERIFY_RESULT
@@ -163,14 +255,14 @@ cat > "$OUT_FILE" <<REPORT
 - CPU architecture: $ARCH
 - RetroArch distribution: $RETROARCH_COMMAND
 - RetroArch version: $RETROARCH_VERSION
-- RetroArch video driver:
-- RetroArch audio driver:
+- RetroArch video driver: $RETROARCH_VIDEO_DRIVER
+- RetroArch audio driver: $RETROARCH_AUDIO_DRIVER
 
 ## Installed Files
 
-- Core path:
-- Core Info path:
-- \`altirra_libretro.info\` installed: yes / no
+- Core path: $CORE_PATH
+- Core Info path: $CORE_INFO_PATH
+- \`altirra_libretro.info\` installed: $INFO_INSTALLED
 - Core Information page shows display name: yes / no
 - Core Information page shows author: yes / no
 - Core Information page shows firmware list: yes / no
@@ -180,17 +272,18 @@ cat > "$OUT_FILE" <<REPORT
 ## Content Matrix
 
 Use known-good test media. Record filename, expected machine type if relevant,
-and whether the core loads, runs, resets, and unloads without frontend errors.
+and whether the core loads, runs, resets, unloads, and survives frontend exit
+without errors or coredumps.
 
-| Type | File | Load | Run 60s | Reset | Close Content | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| No-content boot | none |  |  |  |  |  |
-| Executable | \`.xex\` |  |  |  |  |  |
-| Disk | \`.atr\` |  |  |  |  |  |
-| Cartridge | \`.car\` |  |  |  |  |  |
-| Cassette | \`.cas\` |  |  |  |  |  |
-| Playlist | \`.m3u\` |  |  |  |  |  |
-| Compressed content | \`.zip\` or \`.gz\` |  |  |  |  |  |
+| Type | File | Load | Run 60s | Reset | Close Content | Exit RetroArch | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| No-content boot | none |  |  |  |  |  |  |
+| Executable | \`.xex\` |  |  |  |  |  |  |
+| Disk | \`.atr\` |  |  |  |  |  |  |
+| Cartridge | \`.car\` |  |  |  |  |  |  |
+| Cassette | \`.cas\` |  |  |  |  |  |  |
+| Playlist | \`.m3u\` |  |  |  |  |  |  |
+| Compressed content | \`.zip\` or \`.gz\` |  |  |  |  |  |  |
 
 ## Runtime Features
 
@@ -208,6 +301,7 @@ and whether the core loads, runs, resets, and unloads without frontend errors.
 | Audio is present and stable |  |  |
 | RetroArch logs contain no Altirra errors |  |  |
 | No coredump or frontend crash produced |  |  |
+| Alt+F4 / window close exits without crash |  |  |
 
 ## Logs And Diagnostics
 

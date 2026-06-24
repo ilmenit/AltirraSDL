@@ -6,6 +6,7 @@ set -euo pipefail
 
 INFO_FILE="${1:-src/AltirraLibretro/altirra_libretro.info}"
 CMAKE_FILE="${2:-CMakeLists.txt}"
+CORE_FILE="${3:-src/AltirraLibretro/libretro.cpp}"
 
 fail() {
     printf 'error: %s\n' "$*" >&2
@@ -14,6 +15,7 @@ fail() {
 
 [ -f "$INFO_FILE" ] || fail "info file not found: $INFO_FILE"
 [ -f "$CMAKE_FILE" ] || fail "CMake file not found: $CMAKE_FILE"
+[ -f "$CORE_FILE" ] || fail "core source not found: $CORE_FILE"
 
 PROJECT_VERSION=$(sed -n \
     's/^project(Altirra[[:space:]]\+VERSION[[:space:]]\+\([^[:space:])]*\).*/\1/p' \
@@ -96,10 +98,27 @@ require_value needs_fullpath "true"
 require_value disk_control "true"
 require_value needs_kbd_mouse_focus "true"
 
+if [ "${ALTIRRA_LIBRETRO_ALLOW_NON_EXPERIMENTAL:-0}" != "1" ]; then
+    require_value is_experimental "true"
+else
+    require_key is_experimental
+    case "${INFO[is_experimental]}" in
+        true|false) ;;
+        *) fail "is_experimental must be 'true' or 'false': ${INFO[is_experimental]}" ;;
+    esac
+fi
+
 for EXT in atr xfd atx atz dcm pro arc bin rom car a52 xex exe obx com bas \
     cas wav flac ogg sap vgm vgz zip gz altstate atstate2 m3u; do
     require_extension "$EXT"
 done
+
+CORE_EXTENSIONS=$(sed -n '/kValidExtensions[[:space:]]*=/,/;/p' "$CORE_FILE" \
+    | sed -n 's/.*"\([^"]*\)".*/\1/p' \
+    | tr -d '\n')
+[ -n "$CORE_EXTENSIONS" ] \
+    || fail "could not extract kValidExtensions from $CORE_FILE"
+require_value supported_extensions "$CORE_EXTENSIONS"
 
 require_key firmware_count
 [[ "${INFO[firmware_count]}" =~ ^[0-9]+$ ]] \

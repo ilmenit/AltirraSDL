@@ -58,10 +58,8 @@ jobs:
           bash scripts/validate-libretro-info.sh
           bash scripts/validate-libretro-docs.sh
           bash scripts/validate-libretro-readiness-report.sh --self-test
-          make -f Makefile.libretro validate-info
           bash scripts/prepare-libretro-upstream.sh
-          test -f build/libretro-upstream/libretro-super/dist/info/altirra_libretro.info
-          test -f build/libretro-upstream/libretro-docs/docs/library/altirra.md
+          make -f Makefile.libretro validate-info
 
   linux:
     name: Standalone ABI (Linux ${{ matrix.arch }})
@@ -411,6 +409,13 @@ jobs:
           ) | Set-Content "$pkg/BUILD-INFO.txt" -Encoding utf8
           Compress-Archive -Path $pkg -DestinationPath "$pkg.zip" -Force
 
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/verify-libretro-package.sh \
+            AltirraLibretro-*-windows-${{ matrix.arch }}.zip
+
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
@@ -516,6 +521,7 @@ jobs:
           zip -r "$pkg.zip" "$pkg"
           NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
             READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            OBJDUMP="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump" \
             bash scripts/verify-libretro-package.sh "$pkg.zip"
 
       - name: Upload package

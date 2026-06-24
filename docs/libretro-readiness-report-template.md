@@ -15,6 +15,8 @@ reports before changing `is_experimental`.
 - Git commit:
 - Altirra version:
 - Build command:
+- Smoke test command:
+- Smoke test result:
 - Package path:
 - Package verifier command:
 - Package verifier result:
@@ -39,17 +41,18 @@ reports before changing `is_experimental`.
 ## Content Matrix
 
 Use known-good test media. Record filename, expected machine type if relevant,
-and whether the core loads, runs, resets, and unloads without frontend errors.
+and whether the core loads, runs, resets, unloads, and survives frontend exit
+without errors or coredumps.
 
-| Type | File | Load | Run 60s | Reset | Close Content | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| No-content boot | none |  |  |  |  |  |
-| Executable | `.xex` |  |  |  |  |  |
-| Disk | `.atr` |  |  |  |  |  |
-| Cartridge | `.car` |  |  |  |  |  |
-| Cassette | `.cas` |  |  |  |  |  |
-| Playlist | `.m3u` |  |  |  |  |  |
-| Compressed content | `.zip` or `.gz` |  |  |  |  |  |
+| Type | File | Load | Run 60s | Reset | Close Content | Exit RetroArch | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| No-content boot | none |  |  |  |  |  |  |
+| Executable | `.xex` |  |  |  |  |  |  |
+| Disk | `.atr` |  |  |  |  |  |  |
+| Cartridge | `.car` |  |  |  |  |  |  |
+| Cassette | `.cas` |  |  |  |  |  |  |
+| Playlist | `.m3u` |  |  |  |  |  |  |
+| Compressed content | `.zip` or `.gz` |  |  |  |  |  |  |
 
 ## Runtime Features
 
@@ -67,6 +70,7 @@ and whether the core loads, runs, resets, and unloads without frontend errors.
 | Audio is present and stable |  |  |
 | RetroArch logs contain no Altirra errors |  |  |
 | No coredump or frontend crash produced |  |  |
+| Alt+F4 / window close exits without crash |  |  |
 
 ## Logs And Diagnostics
 

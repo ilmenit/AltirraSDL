@@ -77,6 +77,9 @@ if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
 
         info "Entering ${C_BOLD}${FLATPAK_SDK_REF}${C_RESET} for RetroArch-compatible libretro build"
 
+        OUTER_COMMIT_SHORT=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        OUTER_COMMIT_FULL=$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+
         INNER_ARGS=(./build.sh --libretro --libretro-flatpak --jobs "$JOBS")
         [ "${CLEAN:-0}" = "1" ] && INNER_ARGS+=(--clean)
         [ "${PACKAGE:-0}" = "1" ] && INNER_ARGS+=(--package)
@@ -90,6 +93,8 @@ if [ "${LIBRETRO_FLATPAK:-0}" = "1" ]; then
             "--env=ALTIRRA_LIBRETRO_FLATPAK_INNER=1" \
             "--env=ALTIRRA_LIBRETRO_FLATPAK_SDK=${FLATPAK_SDK_REF}" \
             "--env=ALTIRRA_LIBRETRO_FLATPAK_RUNTIME=${FLATPAK_RUNTIME_REF}" \
+            "--env=ALTIRRA_LIBRETRO_BUILD_COMMIT_SHORT=${OUTER_COMMIT_SHORT}" \
+            "--env=ALTIRRA_LIBRETRO_BUILD_COMMIT_FULL=${OUTER_COMMIT_FULL}" \
             --command=sh "$FLATPAK_SDK_REF" \
             -c 'cd "$1"; shift; exec "$@"' sh "$ROOT_DIR" "${INNER_ARGS[@]}"
     fi
@@ -241,8 +246,10 @@ if [ "${PACKAGE:-0}" = "1" ]; then
     chmod +x "$PKG_DIR/install-retroarch.sh"
     cp "$ROOT_DIR/LICENSE" "$PKG_DIR/"
 
-    COMMIT_SHORT=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
-    COMMIT_FULL=$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+    COMMIT_SHORT=${ALTIRRA_LIBRETRO_BUILD_COMMIT_SHORT:-}
+    COMMIT_FULL=${ALTIRRA_LIBRETRO_BUILD_COMMIT_FULL:-}
+    [ -n "$COMMIT_SHORT" ] || COMMIT_SHORT=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    [ -n "$COMMIT_FULL" ] || COMMIT_FULL=$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
     BUILD_DATE=$(date -u +%Y-%m-%d)
 
     cat > "$PKG_DIR/BUILD-INFO.txt" <<BUILDINFO

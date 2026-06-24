@@ -21,8 +21,10 @@ Build and run the libretro smoke tests with:
 ./build.sh --libretro --libretro-test
 ```
 
-The build script validates the `.info` metadata and verifies the built core
-artifact before reporting success.
+The smoke tests cover no-content boot, disk control, option changes, geometry,
+audio, input, save states, and a post-shutdown `retro_get_system_info()` query.
+The build script also validates the `.info` metadata and verifies the built
+core artifact before reporting success.
 
 Libretro-style automation can also call the thin repository-root wrapper:
 
@@ -101,6 +103,10 @@ Validate the source `.info` before copying it to Libretro infrastructure:
 bash scripts/validate-libretro-info.sh
 ```
 
+The validator intentionally requires `is_experimental = "true"` until the
+readiness report matrix is complete. For the eventual reviewed promotion, run
+it with `ALTIRRA_LIBRETRO_ALLOW_NON_EXPERIMENTAL=1`.
+
 Verify a built core and its sidecar `.info`:
 
 ```sh
@@ -109,6 +115,13 @@ bash scripts/verify-libretro-artifact.sh \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.info
 ```
 
+On x86_64 ELF builds, the artifact verifier also rejects the known-bad
+`retro_get_system_info()` code shape where the compiler packs metadata
+pointers through an RIP-relative XMM table load. That optimization has produced
+invalid `library_name` pointers during RetroArch shutdown, so keep the
+implementation's named static strings and noinline accessors unless the
+shutdown regression is re-tested with the verifier updated accordingly.
+
 Verify a package archive:
 
 ```sh
@@ -116,11 +129,16 @@ bash scripts/verify-libretro-package.sh \
   build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz
 ```
 
+The package verifier also runs the packaged installer in `--dry-run` mode
+against a temporary RetroArch config, so installer option regressions are
+caught before a package is handed to testers.
+
 Install the shared library into RetroArch's cores directory and install
 `altirra_libretro.info` into RetroArch's Core Info directory. If the `.info`
 file is missing or in the wrong directory, RetroArch can still load the shared
-library directly, but it will show the filename instead of `Atari - 8-bit /
-5200 (Altirra)` and its content browser may not filter for Atari extensions.
+library directly, but it will show the filename instead of the configured
+display name (`Atari - 400/800/600XL/800XL/130XE/5200 (Altirra)`) and its
+content browser may not filter for Atari extensions.
 
 RetroArch's `Install or Restore a Core` action may import only the shared
 library. It does not reliably install a sidecar `.info` file from the same
@@ -153,6 +171,8 @@ To create a prefilled report for a package:
 ```sh
 bash scripts/create-libretro-readiness-report.sh \
   --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --smoke-command './build.sh --libretro --libretro-test' \
+  --smoke-result pass \
   --verify-package
 bash scripts/validate-libretro-readiness-report.sh \
   build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md

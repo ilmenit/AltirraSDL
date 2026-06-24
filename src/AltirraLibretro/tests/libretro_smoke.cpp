@@ -1267,6 +1267,14 @@ int main(int argc, char **argv) {
 	retro_unload_game();
 	retro_deinit();
 
+	retro_system_info shutdownSi {};
+	retro_get_system_info(&shutdownSi);
+	if (!validate_system_info(shutdownSi, coreInfo)) {
+		fprintf(stderr,
+			"retro_get_system_info returned invalid metadata after shutdown\n");
+		return 1;
+	}
+
 	return g_videoCalls >= 140 && g_nonNullFrames > 0 && g_lastW && g_lastH
 		&& g_audioCallbacks > 0 && g_audioFrames > 0 && g_optionsRegistered > 0
 		&& g_optionKeysValidated > 0

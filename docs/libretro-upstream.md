@@ -18,6 +18,8 @@ this repository; upstream pull requests still happen in Libretro-owned repos.
 - Readiness report helper: `scripts/create-libretro-readiness-report.sh`
 - Readiness report validator: `scripts/validate-libretro-readiness-report.sh`
 - Upstream staging helper: `scripts/prepare-libretro-upstream.sh`
+- Generated docs PR snippets:
+  `build/libretro-upstream/libretro-docs/ALTIRRA-UPSTREAM-SNIPPETS.md`
 - User/build docs: `src/AltirraLibretro/README.md`
 - Canonical local build: `./build.sh --libretro`
 - Local smoke-test build: `./build.sh --libretro --libretro-test`
@@ -42,22 +44,30 @@ target binary.
 Keep `is_experimental = "true"` in `altirra_libretro.info` until these checks
 have been repeated on current code. Use
 `docs/libretro-readiness-report-template.md` for each release-candidate pass so
-the evidence is repeatable and reviewable:
+the results are repeatable and reviewable:
 
 1. Native Linux core builds with `./build.sh --libretro`.
 2. RetroArch Flatpak core builds with `./build.sh --libretro-flatpak`.
 3. Built artifacts pass `scripts/verify-libretro-artifact.sh`, including
    required `retro_*` exports and no SDL3 dependency on platforms where the
-   local toolchain can inspect those properties.
+   local toolchain can inspect those properties. On x86_64 ELF builds, the
+   verifier also checks `retro_get_system_info()` for the known-bad
+   RIP-relative XMM pointer-table codegen that can return invalid metadata
+   pointers during RetroArch shutdown.
 4. Package archives pass `scripts/verify-libretro-package.sh`, including
    required sidecar metadata, license text, README, installer, build
-   provenance, and packaged-core artifact checks.
+   provenance, packaged-core artifact checks, and a dry-run installer smoke
+   test against a temporary RetroArch config.
 5. `./build.sh --libretro --libretro-test` passes. The smoke host loads the
    core and runs no-content boot, disk-control, option-change, geometry,
    audio, input, and save-state paths against core-options V2, V1, and legacy
-   frontend environments.
+   frontend environments. It also queries `retro_get_system_info()` after
+   unload/deinit to catch invalid shutdown metadata pointers.
 6. RetroArch loads and runs representative `.xex`, `.atr`, `.car`, `.cas`,
    `.m3u`, and no-content sessions without frontend errors or crashes.
+   For each content type, test both Close Content and full frontend exit
+   through the window close path, because RetroArch can query
+   `retro_get_system_info()` again while saving frontend state during shutdown.
 7. Save states round-trip in RetroArch for loaded content.
 8. Core options can be changed at runtime without illegal libretro callbacks.
 9. `altirra_libretro.info` is installed into `libretro_info_path` and
@@ -82,6 +92,15 @@ upstream pull request:
 
 ```sh
 bash scripts/validate-libretro-info.sh
+```
+
+The validator enforces `is_experimental = "true"` by default. After completed
+readiness reports prove the core can be promoted, validate a deliberate
+`is_experimental = "false"` change with:
+
+```sh
+ALTIRRA_LIBRETRO_ALLOW_NON_EXPERIMENTAL=1 \
+  bash scripts/validate-libretro-info.sh
 ```
 
 ## Upstream PR Order
@@ -139,6 +158,7 @@ Validate the metadata:
 bash scripts/validate-libretro-info.sh
 bash scripts/validate-libretro-docs.sh
 bash scripts/validate-libretro-readiness-report.sh --self-test
+bash scripts/prepare-libretro-upstream.sh
 bash scripts/verify-libretro-artifact.sh \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.so \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.info
@@ -155,12 +175,20 @@ bash scripts/prepare-libretro-upstream.sh
 The staging helper validates both the source docs draft and the generated
 `build/libretro-upstream/libretro-docs/docs/library/altirra.md` page, so local
 submission notes are not copied into the upstream-facing Markdown by accident.
+It also writes `build/libretro-upstream/libretro-docs/ALTIRRA-UPSTREAM-SNIPPETS.md`
+with candidate entries for `mkdocs.yml`, `docs/guides/core-list.md`,
+`docs/development/licenses.md`, `docs/library/bios.md`, and optional
+`docs/meta/see-also.md` edits. Treat those as review aids; adapt them to the
+current Libretro docs repository sort order and style before opening the docs
+PR.
 
 Create a prefilled RetroArch readiness report for a package under test:
 
 ```sh
 bash scripts/create-libretro-readiness-report.sh \
   --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --smoke-command './build.sh --libretro --libretro-test' \
+  --smoke-result pass \
   --verify-package
 bash scripts/validate-libretro-readiness-report.sh \
   build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md

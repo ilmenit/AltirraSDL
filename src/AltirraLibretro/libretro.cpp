@@ -158,6 +158,31 @@ constexpr const char *kValidExtensions =
 	"altstate|atstate2|"
 	"m3u";
 
+static const char kCoreLibraryName[] = "Altirra";
+static const char kCoreLibraryVersion[] = AT_VERSION;
+
+// Keep these metadata pointers out of compiler-generated pointer tables.
+// RetroArch may query them during shutdown, after saving frontend state.
+#if defined(_MSC_VER)
+#define AT_LIBRETRO_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define AT_LIBRETRO_NOINLINE __attribute__((noinline))
+#else
+#define AT_LIBRETRO_NOINLINE
+#endif
+
+AT_LIBRETRO_NOINLINE const char *GetCoreLibraryName() {
+	return kCoreLibraryName;
+}
+
+AT_LIBRETRO_NOINLINE const char *GetCoreLibraryVersion() {
+	return kCoreLibraryVersion;
+}
+
+AT_LIBRETRO_NOINLINE const char *GetCoreValidExtensions() {
+	return kValidExtensions;
+}
+
 constexpr uint8_t kStateMagic[8] = { 'A', 'L', 'T', 'R', 'L', 'R', 'S', 'T' };
 constexpr uint32 kStateVersion = 1;
 constexpr size_t kStateHeaderSize = 20;
@@ -2651,9 +2676,9 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info) {
 		return;
 
 	std::memset(info, 0, sizeof(*info));
-	info->library_name = "Altirra";
-	info->library_version = AT_VERSION;
-	info->valid_extensions = kValidExtensions;
+	info->library_name = GetCoreLibraryName();
+	info->library_version = GetCoreLibraryVersion();
+	info->valid_extensions = GetCoreValidExtensions();
 	info->need_fullpath = true;
 	info->block_extract = false;
 }

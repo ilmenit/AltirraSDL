@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-REPORT="${1:-}"
+REPORT=""
 SELF_TEST=0
 
 fail() {
@@ -12,10 +12,29 @@ fail() {
     exit 1
 }
 
-if [ "$REPORT" = "--self-test" ]; then
-    SELF_TEST=1
-    REPORT=""
-fi
+usage() {
+    cat <<USAGE
+Usage: $(basename "$0") REPORT.md
+       $(basename "$0") --self-test
+
+Options:
+  --self-test         Run validator self-tests.
+  -h, --help          Show this help.
+USAGE
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --self-test) SELF_TEST=1 ;;
+        --help|-h) usage; exit 0 ;;
+        --*) fail "unknown argument: $1" ;;
+        *)
+            [ -z "$REPORT" ] || fail "multiple report files specified"
+            REPORT="$1"
+            ;;
+    esac
+    shift
+done
 
 is_positive() {
     case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
@@ -78,12 +97,13 @@ validate_report() {
     for label in \
     Date \
     Tester \
-    "Git commit" \
-    "Altirra version" \
-    "Build command" \
-    "Package path" \
-    "Package verifier command" \
-    "Host OS and version" \
+        "Git commit" \
+        "Altirra version" \
+        "Build command" \
+        "Smoke test command" \
+        "Package path" \
+        "Package verifier command" \
+        "Host OS and version" \
     "CPU architecture" \
     "RetroArch distribution" \
     "RetroArch version" \
@@ -94,6 +114,7 @@ validate_report() {
         require_nonempty_field "$label"
     done
 
+    require_positive_field "Smoke test result"
     require_positive_field "Package verifier result"
     require_positive_field '`altirra_libretro.info` installed'
     require_positive_field "Core Information page shows display name"
@@ -119,13 +140,14 @@ require_table_row_positive() {
     row=$(grep -F "| $row_name |" "$REPORT" | head -1 || true)
     [ -n "$row" ] || fail "missing table row: $row_name"
 
-    IFS='|' read -r _ col1 col2 col3 col4 col5 col6 _ <<< "$row"
+    IFS='|' read -r _ col1 col2 col3 col4 col5 col6 col7 _ <<< "$row"
     col1="${col1#"${col1%%[![:space:]]*}"}"; col1="${col1%"${col1##*[![:space:]]}"}"
     col2="${col2#"${col2%%[![:space:]]*}"}"; col2="${col2%"${col2##*[![:space:]]}"}"
     col3="${col3#"${col3%%[![:space:]]*}"}"; col3="${col3%"${col3##*[![:space:]]}"}"
     col4="${col4#"${col4%%[![:space:]]*}"}"; col4="${col4%"${col4##*[![:space:]]}"}"
     col5="${col5#"${col5%%[![:space:]]*}"}"; col5="${col5%"${col5##*[![:space:]]}"}"
     col6="${col6#"${col6%%[![:space:]]*}"}"; col6="${col6%"${col6##*[![:space:]]}"}"
+    col7="${col7#"${col7%%[![:space:]]*}"}"; col7="${col7%"${col7##*[![:space:]]}"}"
 
     [ -n "$col2" ] || fail "table row has empty file/value column: $row_name"
     is_positive "$col3" || fail "table row Load/Pass column is not positive: $row_name"
@@ -133,6 +155,8 @@ require_table_row_positive() {
     is_positive "$col5" || fail "table row Reset/Pass column is not positive: $row_name"
     is_positive "$col6" \
         || fail "table row Close Content column is not positive: $row_name"
+    is_positive "$col7" \
+        || fail "table row Exit RetroArch column is not positive: $row_name"
 }
 
     for row_name in \
@@ -158,7 +182,8 @@ require_table_row_positive() {
     "Disk Control interface opens and reports media" \
     "Audio is present and stable" \
     "RetroArch logs contain no Altirra errors" \
-    "No coredump or frontend crash produced"; do
+    "No coredump or frontend crash produced" \
+    "Alt+F4 / window close exits without crash"; do
         row=$(grep -F "| $feature |" "$REPORT" | head -1 || true)
         [ -n "$row" ] || fail "missing runtime feature row: $feature"
         IFS='|' read -r _ _ pass _ <<< "$row"
@@ -191,6 +216,8 @@ run_self_test() {
 - Git commit: 0000000000000000000000000000000000000000
 - Altirra version: 4.40
 - Build command: ./build.sh --libretro --package
+- Smoke test command: ./build.sh --libretro --libretro-test
+- Smoke test result: pass
 - Package path: /tmp/AltirraLibretro-4.40-linux-x86_64.tar.gz
 - Package verifier command: bash scripts/verify-libretro-package.sh /tmp/AltirraLibretro-4.40-linux-x86_64.tar.gz
 - Package verifier result: pass
@@ -214,15 +241,15 @@ run_self_test() {
 
 ## Content Matrix
 
-| Type | File | Load | Run 60s | Reset | Close Content | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| No-content boot | none | pass | pass | pass | pass | |
-| Executable | smoke.xex | pass | pass | pass | pass | |
-| Disk | smoke.atr | pass | pass | pass | pass | |
-| Cartridge | smoke.car | pass | pass | pass | pass | |
-| Cassette | smoke.cas | pass | pass | pass | pass | |
-| Playlist | smoke.m3u | pass | pass | pass | pass | |
-| Compressed content | smoke.zip | pass | pass | pass | pass | |
+| Type | File | Load | Run 60s | Reset | Close Content | Exit RetroArch | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| No-content boot | none | pass | pass | pass | pass | pass | |
+| Executable | smoke.xex | pass | pass | pass | pass | pass | |
+| Disk | smoke.atr | pass | pass | pass | pass | pass | |
+| Cartridge | smoke.car | pass | pass | pass | pass | pass | |
+| Cassette | smoke.cas | pass | pass | pass | pass | pass | |
+| Playlist | smoke.m3u | pass | pass | pass | pass | pass | |
+| Compressed content | smoke.zip | pass | pass | pass | pass | pass | |
 
 ## Runtime Features
 
@@ -240,6 +267,7 @@ run_self_test() {
 | Audio is present and stable | pass | |
 | RetroArch logs contain no Altirra errors | pass | |
 | No coredump or frontend crash produced | pass | |
+| Alt+F4 / window close exits without crash | pass | |
 
 ## Logs And Diagnostics
 
