@@ -83,7 +83,9 @@ GitHub Actions packages the standalone core for:
 Local cross-build presets are also available:
 
 ```sh
-# Requires gcc-arm-linux-gnueabihf / g++-arm-linux-gnueabihf.
+# Requires a GCC 12+ cross toolchain (the shared headers use C++23
+# `if consteval`), e.g. gcc-12-arm-linux-gnueabihf /
+# g++-12-arm-linux-gnueabihf on Ubuntu 22.04.
 cmake --preset linux-libretro-armv7hf
 cmake --build --preset linux-libretro-armv7hf
 

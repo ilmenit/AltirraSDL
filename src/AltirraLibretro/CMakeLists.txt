@@ -27,7 +27,6 @@ include(${ALTIRRA_SDL_DIR}/cmake/altirra_core_sources.cmake)
 target_sources(AltirraLibretro PRIVATE
     libretro_audio.cpp
     libretro_dirs.cpp
-    libretro_time.cpp
     libretro_video.cpp
     libretro_ui_stubs.cpp
 
@@ -60,7 +59,13 @@ if(WIN32)
 endif()
 
 if(NOT WIN32)
+    # libretro_time.cpp shadows the SDL3 timer object in libsystem.a so the
+    # standalone core does not pull in SDL3.  On Windows libsystem.a already
+    # builds the self-contained Win32 timer (time.cpp, no SDL3 dependency), and
+    # its VDLazyTimer uses a different member layout, so reuse that instead of
+    # compiling this thread-based replacement.
     target_sources(AltirraLibretro PRIVATE
+        libretro_time.cpp
         ${ALTIRRA_SDL_DIR}/source/os/modemtcp_sdl3.cpp
         ${ALTIRRA_SDL_DIR}/source/os/idephysdisk_sdl3.cpp
         ${ALTIRRA_SDL_DIR}/source/os/pipeserial_sdl3.cpp

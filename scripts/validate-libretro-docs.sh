@@ -79,7 +79,12 @@ for ((I = 0; I < FIRMWARE_COUNT; ++I)); do
         || fail "docs draft missing firmware path: $path"
 done
 
-mapfile -t OPTION_NAMES < <(
+# Portable read loop instead of `mapfile`/`readarray`, which are absent from
+# the bash 3.2 shipped on macOS.
+OPTION_NAMES=()
+while IFS= read -r line; do
+    OPTION_NAMES+=("$line")
+done < <(
     sed -n '/static const CompactOptionDefinition kOptionSpecs\[\]/,/};/p' \
         "$CORE_FILE" \
         | sed -n 's/^[[:space:]]*"\([^"]*\)",[[:space:]]*"\([^"]*\)".*/\2/p'

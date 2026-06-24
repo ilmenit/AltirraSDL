@@ -104,6 +104,12 @@ inline int VDFindLowestSetBitFast(uint32 v) {
 		#else
 			return __builtin_ctz(v);
 		#endif
+	#elif defined(VD_COMPILER_MSVC)
+		// MSVC on non-x86 targets (e.g. ARM64) does not provide __builtin_ctz;
+		// use the bit-scan intrinsic, matching VDFindLowestSetBit() above.
+		unsigned long index;
+		_BitScanForward(&index, v);
+		return (int)index;
 	#else
 		return __builtin_ctz(v);
 	#endif
