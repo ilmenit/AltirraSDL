@@ -106,6 +106,7 @@ struct CoreState {
 	uint32 buttonHeldCodes[2][9] {};
 	bool padKeyHeld[6] {};
 	unsigned padKeyHeldKeycodes[6] {};
+	uint32 padKeyHeldInputCodes[6] {};
 	bool mouseButtonsHeld[5] {};
 	std::vector<uint32> keyboardHeldCodes;
 	bool keyboardCallbackEventSeen = false;
@@ -1197,13 +1198,59 @@ static const retro_core_option_value kPadKeyValues[] = {
 	{ "space", "Space" },
 	{ "return", "Return" },
 	{ "escape", "Escape" },
-	{ "f", "F" },
+	{ "backspace", "Backspace" },
+	{ "tab", "Tab" },
+	{ "0", "0" },
+	{ "1", "1" },
+	{ "2", "2" },
+	{ "3", "3" },
+	{ "4", "4" },
+	{ "5", "5" },
+	{ "6", "6" },
+	{ "7", "7" },
+	{ "8", "8" },
+	{ "9", "9" },
 	{ "a", "A" },
+	{ "b", "B" },
+	{ "c", "C" },
+	{ "d", "D" },
+	{ "e", "E" },
+	{ "f", "F" },
 	{ "g", "G" },
+	{ "h", "H" },
+	{ "i", "I" },
+	{ "j", "J" },
+	{ "k", "K" },
+	{ "l", "L" },
 	{ "m", "M" },
-	{ "s", "S" },
-	{ "y", "Y" },
 	{ "n", "N" },
+	{ "o", "O" },
+	{ "p", "P" },
+	{ "q", "Q" },
+	{ "r", "R" },
+	{ "s", "S" },
+	{ "t", "T" },
+	{ "u", "U" },
+	{ "v", "V" },
+	{ "w", "W" },
+	{ "x", "X" },
+	{ "y", "Y" },
+	{ "z", "Z" },
+	{ "5200_0", "5200 0" },
+	{ "5200_1", "5200 1" },
+	{ "5200_2", "5200 2" },
+	{ "5200_3", "5200 3" },
+	{ "5200_4", "5200 4" },
+	{ "5200_5", "5200 5" },
+	{ "5200_6", "5200 6" },
+	{ "5200_7", "5200 7" },
+	{ "5200_8", "5200 8" },
+	{ "5200_9", "5200 9" },
+	{ "5200_star", "5200 *" },
+	{ "5200_pound", "5200 #" },
+	{ "5200_start", "5200 START" },
+	{ "5200_pause", "5200 PAUSE" },
+	{ "5200_reset", "5200 RESET" },
 	{ nullptr, nullptr },
 };
 
@@ -2053,6 +2100,7 @@ struct PadKeyBinding {
 	const char *value;
 	unsigned keycode;
 	uint32_t character;
+	uint32 inputCode5200;
 	const char *description;
 };
 
@@ -2109,16 +2157,62 @@ constexpr PadKeySlot kPadKeySlots[] = {
 };
 
 constexpr PadKeyBinding kPadKeyBindings[] = {
-	{ "space", RETROK_SPACE, ' ', "Space" },
-	{ "return", RETROK_RETURN, '\r', "Return" },
-	{ "escape", RETROK_ESCAPE, 0, "Esc" },
-	{ "f", 'f', 'f', "F" },
-	{ "a", 'a', 'a', "A" },
-	{ "g", 'g', 'g', "G" },
-	{ "m", 'm', 'm', "M" },
-	{ "s", 's', 's', "S" },
-	{ "y", 'y', 'y', "Y" },
-	{ "n", 'n', 'n', "N" },
+	{ "space", RETROK_SPACE, ' ', 0, "Space" },
+	{ "return", RETROK_RETURN, '\r', 0, "Return" },
+	{ "escape", RETROK_ESCAPE, 0, 0, "Esc" },
+	{ "backspace", RETROK_BACKSPACE, 0, 0, "Backspace" },
+	{ "tab", RETROK_TAB, '\t', 0, "Tab" },
+	{ "0", RETROK_0, '0', 0, "0" },
+	{ "1", RETROK_1, '1', 0, "1" },
+	{ "2", RETROK_2, '2', 0, "2" },
+	{ "3", RETROK_3, '3', 0, "3" },
+	{ "4", RETROK_4, '4', 0, "4" },
+	{ "5", RETROK_5, '5', 0, "5" },
+	{ "6", RETROK_6, '6', 0, "6" },
+	{ "7", RETROK_7, '7', 0, "7" },
+	{ "8", RETROK_8, '8', 0, "8" },
+	{ "9", RETROK_9, '9', 0, "9" },
+	{ "a", RETROK_a, 'a', 0, "A" },
+	{ "b", RETROK_b, 'b', 0, "B" },
+	{ "c", RETROK_c, 'c', 0, "C" },
+	{ "d", RETROK_d, 'd', 0, "D" },
+	{ "e", RETROK_e, 'e', 0, "E" },
+	{ "f", RETROK_f, 'f', 0, "F" },
+	{ "g", RETROK_g, 'g', 0, "G" },
+	{ "h", RETROK_h, 'h', 0, "H" },
+	{ "i", RETROK_i, 'i', 0, "I" },
+	{ "j", RETROK_j, 'j', 0, "J" },
+	{ "k", RETROK_k, 'k', 0, "K" },
+	{ "l", RETROK_l, 'l', 0, "L" },
+	{ "m", RETROK_m, 'm', 0, "M" },
+	{ "n", RETROK_n, 'n', 0, "N" },
+	{ "o", RETROK_o, 'o', 0, "O" },
+	{ "p", RETROK_p, 'p', 0, "P" },
+	{ "q", RETROK_q, 'q', 0, "Q" },
+	{ "r", RETROK_r, 'r', 0, "R" },
+	{ "s", RETROK_s, 's', 0, "S" },
+	{ "t", RETROK_t, 't', 0, "T" },
+	{ "u", RETROK_u, 'u', 0, "U" },
+	{ "v", RETROK_v, 'v', 0, "V" },
+	{ "w", RETROK_w, 'w', 0, "W" },
+	{ "x", RETROK_x, 'x', 0, "X" },
+	{ "y", RETROK_y, 'y', 0, "Y" },
+	{ "z", RETROK_z, 'z', 0, "Z" },
+	{ "5200_0", 0, 0, kVkbd5200InputBase + 0, "5200 0" },
+	{ "5200_1", 0, 0, kVkbd5200InputBase + 1, "5200 1" },
+	{ "5200_2", 0, 0, kVkbd5200InputBase + 2, "5200 2" },
+	{ "5200_3", 0, 0, kVkbd5200InputBase + 3, "5200 3" },
+	{ "5200_4", 0, 0, kVkbd5200InputBase + 4, "5200 4" },
+	{ "5200_5", 0, 0, kVkbd5200InputBase + 5, "5200 5" },
+	{ "5200_6", 0, 0, kVkbd5200InputBase + 6, "5200 6" },
+	{ "5200_7", 0, 0, kVkbd5200InputBase + 7, "5200 7" },
+	{ "5200_8", 0, 0, kVkbd5200InputBase + 8, "5200 8" },
+	{ "5200_9", 0, 0, kVkbd5200InputBase + 9, "5200 9" },
+	{ "5200_star", 0, 0, kVkbd5200InputBase + 10, "5200 *" },
+	{ "5200_pound", 0, 0, kVkbd5200InputBase + 11, "5200 #" },
+	{ "5200_start", 0, 0, kVkbd5200InputBase + 12, "5200 START" },
+	{ "5200_pause", 0, 0, kVkbd5200InputBase + 13, "5200 PAUSE" },
+	{ "5200_reset", 0, 0, kVkbd5200InputBase + 14, "5200 RESET" },
 };
 
 constexpr uint32 k5200VkbdTriggers[] = {
@@ -2731,7 +2825,7 @@ void KeyboardCallback(bool down, unsigned keycode, uint32_t character, uint16_t)
 }
 
 void DoWarmReset() {
-	if (!g_core.simulatorInitialized)
+	if (!g_core.simulatorInitialized || !g_core.gameLoaded)
 		return;
 
 	InvalidateSerializeCache();
@@ -2741,7 +2835,7 @@ void DoWarmReset() {
 }
 
 void DoColdReset() {
-	if (!g_core.simulatorInitialized)
+	if (!g_core.simulatorInitialized || !g_core.gameLoaded)
 		return;
 
 	InvalidateSerializeCache();
@@ -3116,6 +3210,8 @@ void ReleaseInput() {
 		held = false;
 	for(unsigned& keycode : g_core.padKeyHeldKeycodes)
 		keycode = 0;
+	for(uint32& inputCode : g_core.padKeyHeldInputCodes)
+		inputCode = 0;
 }
 
 void InvalidateSerializeCache() {
@@ -3124,7 +3220,7 @@ void InvalidateSerializeCache() {
 }
 
 void RefreshSystemRam() {
-	ATMemoryManager *const mem = g_core.simulatorInitialized
+	ATMemoryManager *const mem = g_core.simulatorInitialized && g_core.gameLoaded
 		? g_sim.GetMemoryManager()
 		: nullptr;
 	if (!mem) {
@@ -3237,7 +3333,7 @@ bool ParseCheatCode(const char *code, uint16& address, uint8& value) {
 }
 
 void ApplyCheat(const CoreState::Cheat& cheat) {
-	if (!cheat.enabled || !g_core.simulatorInitialized)
+	if (!cheat.enabled || !g_core.simulatorInitialized || !g_core.gameLoaded)
 		return;
 
 	ATMemoryManager *const mem = g_sim.GetMemoryManager();
@@ -3498,15 +3594,18 @@ bool IsPadKeyMappingSuppressed(const PadKeySlot& slot, uint16 joypadState) {
 	return false;
 }
 
-void UpdatePadKeyMappings(uint16 joypadState, bool enabled) {
+void UpdatePadKeyMappings(uint16 joypadState, bool enabled, bool mode5200) {
 	if (!enabled)
 		joypadState = 0;
+
+	ATInputManager *const im = mode5200 ? g_sim.GetInputManager() : nullptr;
 
 	for(size_t i = 0; i < std::size(kPadKeySlots); ++i) {
 		const PadKeySlot& slot = kPadKeySlots[i];
 		const PadKeyBinding *const binding = GetPadKeyBindingForSlot(i);
 		const bool down = enabled
 			&& binding
+			&& (mode5200 ? binding->inputCode5200 : binding->keycode)
 			&& !IsPadKeyMappingSuppressed(slot, joypadState)
 			&& (joypadState & (uint16)(1U << slot.retroId)) != 0;
 
@@ -3516,15 +3615,28 @@ void UpdatePadKeyMappings(uint16 joypadState, bool enabled) {
 		const unsigned keycode = down
 			? binding->keycode
 			: g_core.padKeyHeldKeycodes[i];
+		const uint32 inputCode5200 = down
+			? binding->inputCode5200
+			: g_core.padKeyHeldInputCodes[i];
 
 		g_core.padKeyHeld[i] = down;
 		g_core.padKeyHeldKeycodes[i] = down ? keycode : 0;
-		if (keycode)
+		g_core.padKeyHeldInputCodes[i] = down ? inputCode5200 : 0;
+
+		if (mode5200) {
+			if (im && inputCode5200) {
+				if (down)
+					im->OnButtonDown(0, inputCode5200);
+				else
+					im->OnButtonUp(0, inputCode5200);
+			}
+		} else if (keycode) {
 			// Use the same Atari computer keyboard path as physical
 			// libretro keyboard input. The input-map Keyboard controller is
 			// external keyboard-controller hardware, not the computer keyboard.
 			HandleKeyboardEvent(down, keycode,
 				down ? binding->character : 0);
+		}
 	}
 }
 
@@ -3582,13 +3694,13 @@ void UpdateInput() {
 
 	if (wasVkbdOpen && !vkbdOpen) {
 		g_core.vkbdCloseSuppressMask = port0JoypadStateForVkbd;
-		UpdatePadKeyMappings(0, false);
+		UpdatePadKeyMappings(0, false, false);
 		PollKeyboardInput();
 		return;
 	}
 
 	if (vkbdOpen) {
-		UpdatePadKeyMappings(0, false);
+		UpdatePadKeyMappings(0, false, false);
 		PollKeyboardInput();
 		return;
 	}
@@ -3684,7 +3796,7 @@ void UpdateInput() {
 	g_core.resetCombosHeld[1] = coldResetCombo;
 
 	UpdatePadKeyMappings(port0JoypadState,
-		port0Active && !port05200 && !warmResetCombo && !coldResetCombo);
+		port0Active && !warmResetCombo && !coldResetCombo, port05200);
 
 	for(size_t i = 0; i < std::size(kConsoleRetroIds); ++i) {
 		const bool down = port0Active
@@ -3928,7 +4040,7 @@ bool InitSimulator() {
 }
 
 void ApplyUpdatedCoreOptions() {
-	if (!g_core.simulatorInitialized || !g_env)
+	if (!g_core.simulatorInitialized || !g_core.gameLoaded || !g_env)
 		return;
 
 	bool optionsUpdated = false;
@@ -4185,7 +4297,7 @@ RETRO_API void retro_set_controller_port_device(unsigned port, unsigned device) 
 }
 
 RETRO_API void retro_reset(void) {
-	if (g_core.simulatorInitialized) {
+	if (g_core.simulatorInitialized && g_core.gameLoaded) {
 		InvalidateSerializeCache();
 		ReadResetOptions();
 		ApplyPendingResetOptions(true);
@@ -4270,11 +4382,11 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 
 	g_sim.ColdReset();
 	g_sim.Resume();
+	g_core.gameLoaded = true;
+	g_core.serializeFixedSize = kStateFixedMaxSize;
 	ApplyEnabledCheats();
 	RefreshSystemRam();
 	InvalidateSerializeCache();
-	g_core.gameLoaded = true;
-	g_core.serializeFixedSize = kStateFixedMaxSize;
 
 	return true;
 }
@@ -4441,11 +4553,11 @@ RETRO_API bool retro_load_game_special(unsigned gameType,
 
 	g_sim.ColdReset();
 	g_sim.Resume();
+	g_core.gameLoaded = true;
+	g_core.serializeFixedSize = kStateFixedMaxSize;
 	ApplyEnabledCheats();
 	RefreshSystemRam();
 	InvalidateSerializeCache();
-	g_core.gameLoaded = true;
-	g_core.serializeFixedSize = kStateFixedMaxSize;
 
 	return true;
 }
@@ -4458,6 +4570,9 @@ RETRO_API unsigned retro_get_region(void) {
 
 RETRO_API void *retro_get_memory_data(unsigned id) {
 	if (id == RETRO_MEMORY_SYSTEM_RAM) {
+		if (!g_core.simulatorInitialized || !g_core.gameLoaded)
+			return nullptr;
+
 		if (!g_core.systemRamValid)
 			RefreshSystemRam();
 

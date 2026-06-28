@@ -647,6 +647,9 @@ static const char *expected_pad_descriptor(unsigned slot) {
 	static char descriptions[6][64];
 	const char *binding = "Unassigned";
 
+	if (slot == 0 && !strcmp(g_padYKeyValue, "t"))
+		binding = "T";
+	else
 	if (!strcmp(scheme, "joystick") || !strcmp(scheme, "5200")) {
 		static const char *const keys[] = {
 			"Unassigned", "Unassigned", "Unassigned", "Unassigned",
@@ -1422,6 +1425,37 @@ static void run_core_frame(void (*retro_run)()) {
 	retro_run();
 }
 
+static bool verify_inactive_state(void (*retro_run)(),
+	void (*retro_reset)(),
+	size_t (*retro_serialize_size)(),
+	void *(*retro_get_memory_data)(unsigned),
+	const char *label)
+{
+	const unsigned framesBefore = g_nonNullFrames;
+
+	retro_reset();
+	g_variablesUpdated = true;
+	run_core_frame(retro_run);
+
+	if (retro_serialize_size() != 0
+		|| retro_get_memory_data(2)
+		|| (g_diskControl.get_num_images && g_diskControl.get_num_images() != 0)
+		|| g_nonNullFrames != framesBefore)
+	{
+		fprintf(stderr,
+			"%s left stale state: state_size=%zu ram=%p disks=%u frames=%u->%u\n",
+			label,
+			retro_serialize_size(),
+			retro_get_memory_data(2),
+			g_diskControl.get_num_images ? g_diskControl.get_num_images() : 0,
+			framesBefore,
+			g_nonNullFrames);
+		return false;
+	}
+
+	return true;
+}
+
 static bool verify_reset_survival(void (*retro_run)(),
 	size_t (*retro_get_memory_size)(unsigned),
 	void *(*retro_get_memory_data)(unsigned),
@@ -2158,6 +2192,11 @@ int main(int argc, char **argv) {
 		run_core_frame(retro_run);
 
 	retro_set_controller_port_device(0, 1);	// RETRO_DEVICE_JOYPAD
+	g_padYKeyValue = "t";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 3; ++i)
+		run_core_frame(retro_run);
+
 	if (!verify_concurrent_joystick_key(retro_run, retro_cheat_reset,
 			retro_cheat_set, retro_get_memory_data))
 	{
@@ -2165,6 +2204,10 @@ int main(int argc, char **argv) {
 		retro_deinit();
 		return 1;
 	}
+	g_padYKeyValue = "auto";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 3; ++i)
+		run_core_frame(retro_run);
 
 	g_joypadMask = (uint16_t)((1U << 0) | (1U << 3) | (1U << 7));
 	for (int i = 0; i < 30; ++i)
@@ -2511,6 +2554,23 @@ int main(int argc, char **argv) {
 		run_core_frame(retro_run);
 
 	retro_unload_game();
+	retro_cheat_set(0, true, "POKE 1536,45");
+	run_core_frame(retro_run);
+	if (retro_get_memory_data(2)) {
+		fprintf(stderr,
+			"system RAM pointer remained visible after unload/cheat\n");
+		retro_cheat_reset();
+		retro_deinit();
+		return 1;
+	}
+	if (!verify_inactive_state(retro_run, retro_reset, retro_serialize_size,
+			retro_get_memory_data, "post-unload reset/option update"))
+	{
+		retro_cheat_reset();
+		retro_deinit();
+		return 1;
+	}
+	retro_cheat_reset();
 
 	char writeDiskPath[320];
 	snprintf(writeDiskPath, sizeof writeDiskPath,
@@ -2641,17 +2701,30 @@ int main(int argc, char **argv) {
 		retro_deinit();
 		return 1;
 	}
+	retro_cheat_set(0, true, "POKE 1536,46");
+	run_core_frame(retro_run);
 
 	if (retro_serialize_size() != 0
+		|| retro_get_memory_data(2)
 		|| (g_diskControl.get_num_images && g_diskControl.get_num_images() != 0))
 	{
 		fprintf(stderr,
-			"failed special load left stale state: state_size=%zu disks=%u\n",
+			"failed special load left stale state: state_size=%zu ram=%p disks=%u\n",
 			retro_serialize_size(),
+			retro_get_memory_data(2),
 			g_diskControl.get_num_images ? g_diskControl.get_num_images() : 0);
+		retro_cheat_reset();
 		retro_deinit();
 		return 1;
 	}
+	if (!verify_inactive_state(retro_run, retro_reset, retro_serialize_size,
+			retro_get_memory_data, "failed special load reset/option update"))
+	{
+		retro_cheat_reset();
+		retro_deinit();
+		return 1;
+	}
+	retro_cheat_reset();
 
 	retro_game_info missingDiskInfo {};
 	missingDiskInfo.path = missingDiskPath;
@@ -2661,17 +2734,30 @@ int main(int argc, char **argv) {
 		retro_deinit();
 		return 1;
 	}
+	retro_cheat_set(0, true, "POKE 1536,47");
+	run_core_frame(retro_run);
 
 	if (retro_serialize_size() != 0
+		|| retro_get_memory_data(2)
 		|| (g_diskControl.get_num_images && g_diskControl.get_num_images() != 0))
 	{
 		fprintf(stderr,
-			"failed disk load left stale state: state_size=%zu disks=%u\n",
+			"failed disk load left stale state: state_size=%zu ram=%p disks=%u\n",
 			retro_serialize_size(),
+			retro_get_memory_data(2),
 			g_diskControl.get_num_images ? g_diskControl.get_num_images() : 0);
+		retro_cheat_reset();
 		retro_deinit();
 		return 1;
 	}
+	if (!verify_inactive_state(retro_run, retro_reset, retro_serialize_size,
+			retro_get_memory_data, "failed disk load reset/option update"))
+	{
+		retro_cheat_reset();
+		retro_deinit();
+		return 1;
+	}
+	retro_cheat_reset();
 
 	char cart5200FixturePath[320];
 	snprintf(cart5200FixturePath, sizeof cart5200FixturePath,

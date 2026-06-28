@@ -2,7 +2,7 @@
 
 This is a local draft for the future `libretro/docs` core page. Copy it to
 `docs/library/altirra.md` in the Libretro docs repository only after the core
-has passed the readiness gates in `docs/libretro-upstream.md`.
+has passed the release checks in `docs/libretro-upstream.md`.
 
 ## Background
 
@@ -186,12 +186,12 @@ and input configuration.
 | Virtual Keyboard Toggle | r_l3_select_r2, r, l3, r3, select_r2, none | r_l3_select_r2 |
 | Warm Reset Combo | select_start, select_r, start_r, none | select_start |
 | Cold Reset Combo | select_l, select_l2, select_r, none | select_l |
-| RetroPad Y Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
-| RetroPad X Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
-| RetroPad L2 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
-| RetroPad R2 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
-| RetroPad L3 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
-| RetroPad R3 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| RetroPad Y Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad X Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad L2 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad R2 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad L3 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad R3 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
 | Keyboard START Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f2 |
 | Keyboard SELECT Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f3 |
 | Keyboard OPTION Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f4 |
@@ -217,6 +217,9 @@ Default RetroPad shortcuts:
   be overridden per button. Auto uses common Atari 8-bit keys, or the 5200
   preset when the active system is 5200. If L3 or R3 is also selected as the
   virtual keyboard toggle, the toggle takes precedence.
+- RetroArch remaps physical controller buttons to RetroPad buttons. The
+  Altirra core options then map those RetroPad buttons to Atari computer keys
+  or explicit 5200 keypad/control targets.
 
 Controller types exposed to RetroArch:
 

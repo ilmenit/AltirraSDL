@@ -6,6 +6,9 @@ set -euo pipefail
 
 ARCHIVE="${1:-}"
 CMAKE_FILE="${2:-CMakeLists.txt}"
+ROOT_DIR=""
+SOURCE_INFO_FILE=""
+SOURCE_README_FILE=""
 
 fail() {
     printf 'error: %s\n' "$*" >&2
@@ -16,9 +19,24 @@ warn() {
     printf 'warning: %s\n' "$*" >&2
 }
 
+require_readme_text() {
+    local text="$1"
+
+    grep -Fq "$text" "$PKG_DIR/README.md" \
+        || fail "packaged README.md missing required guidance: $text"
+}
+
 [ -n "$ARCHIVE" ] || fail "usage: $0 ARCHIVE [CMAKE_FILE]"
 [ -f "$ARCHIVE" ] || fail "package not found: $ARCHIVE"
 [ -f "$CMAKE_FILE" ] || fail "CMake file not found: $CMAKE_FILE"
+
+ROOT_DIR=$(cd "$(dirname "$CMAKE_FILE")" && pwd)
+SOURCE_INFO_FILE="$ROOT_DIR/src/AltirraLibretro/altirra_libretro.info"
+SOURCE_README_FILE="$ROOT_DIR/src/AltirraLibretro/README.md"
+[ -f "$SOURCE_INFO_FILE" ] \
+    || fail "source core info not found: $SOURCE_INFO_FILE"
+[ -f "$SOURCE_README_FILE" ] \
+    || fail "source README not found: $SOURCE_README_FILE"
 
 TMP_DIR=$(mktemp -d)
 cleanup() {
@@ -54,6 +72,24 @@ PKG_DIR="${ROOTS[0]}"
 for required in BUILD-INFO.txt LICENSE README.md altirra_libretro.info \
     install-retroarch.sh; do
     [ -f "$PKG_DIR/$required" ] || fail "package missing $required"
+done
+
+cmp -s "$SOURCE_INFO_FILE" "$PKG_DIR/altirra_libretro.info" \
+    || fail "packaged altirra_libretro.info does not match source metadata"
+cmp -s "$SOURCE_README_FILE" "$PKG_DIR/README.md" \
+    || fail "packaged README.md does not match source README"
+
+for readme_text in \
+    "The core is usable from a controller-only RetroArch device." \
+    "| Left analog | Joystick |" \
+    "| Select+R2 | Toggle virtual keyboard fallback for stickless pads |" \
+    "| Select+Start | Warm reset |" \
+    "| Select+L | Cold reset |" \
+    "The face/shoulder key bindings are concurrent with the joystick" \
+    "and a 5200 keypad page with \`0\`-\`9\`, \`*\`, \`#\`, START, PAUSE, and RESET." \
+    "Disk images mount in virtual read/write mode by default." \
+    "Runtime disk-control replacement accepts disk images and \`.m3u\` playlists."; do
+    require_readme_text "$readme_text"
 done
 
 CORES=()

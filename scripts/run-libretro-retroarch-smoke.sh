@@ -47,8 +47,8 @@ Altirra core and .info file into that config, launches RetroArch with
 fatal log errors. By default it also launches generated .xex, .atr, .a52, .cas,
 .m3u, and .zip smoke fixtures. It defaults to null video/input drivers for
 deterministic automation. Use explicit drivers such as --video-driver gl
---input-driver udev for a visible frontend run. It does not replace the
-manual/device readiness matrix.
+--input-driver udev for a visible frontend run. It is a smoke test only; keep
+short manual notes for any device/controller checks you run.
 USAGE
 }
 
@@ -135,7 +135,7 @@ fi
 
 if [ -z "$OUT_DIR" ]; then
 	STAMP=$(date -u +%Y%m%d-%H%M%S)
-	OUT_DIR="$ROOT_DIR/build/libretro-readiness/retroarch-smoke-$STAMP"
+	OUT_DIR="$ROOT_DIR/build/libretro-smoke/retroarch-smoke-$STAMP"
 fi
 mkdir -p "$OUT_DIR"
 OUT_DIR=$(absolute_path "$OUT_DIR")

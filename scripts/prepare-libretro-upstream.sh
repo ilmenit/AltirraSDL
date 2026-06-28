@@ -179,7 +179,7 @@ Copy these files into forks of the corresponding Libretro repositories:
 
 Before opening pull requests:
 
-1. Confirm the core has passed docs/libretro-upstream.md readiness gates.
+1. Confirm the core has passed docs/libretro-upstream.md release checks.
 2. Verify RetroArch shows the copied info file correctly under
    Information / Core Information.
 3. In libretro/docs, also update:

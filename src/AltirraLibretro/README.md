@@ -60,13 +60,22 @@ direction while pressing `Y`, `X`, `L2`, `R2`, `L3`, or `R3` keeps joystick
 input active and also sends the mapped Atari key. If a stick-click is also
 selected as the virtual-keyboard toggle, the toggle takes precedence.
 
+RetroArch remaps decide which physical controller button becomes each RetroPad
+button. The Altirra core options then decide what Atari input those RetroPad
+buttons send. For example, an Xbox controller can use the left stick/D-pad as
+the Atari joystick, map physical `A` to the RetroPad trigger in RetroArch, and
+use the Altirra `RetroPad Y/X/L2/R2/L3/R3 Key` options for Return, `T`, `B`,
+or other Atari computer keys.
+
 Use the `Control Scheme` core option to switch the spare-button defaults
 between auto, common keys, joystick-only, flight/space-sim keys,
 keyboard-heavy/adventure keys, and 5200. The default `Auto` scheme uses common
 Atari 8-bit keys unless the active system is 5200, where spare keyboard
 bindings stay unassigned and the 5200 keypad is available from the virtual
 keyboard. The `RetroPad Y/X/L2/R2/L3/R3 Key` core options can override each
-spare button individually; `Auto` follows the selected scheme.
+spare button individually with Atari computer letters, digits, Return, Space,
+Escape, Backspace, Tab, or explicit 5200 keypad/control targets. `Auto`
+follows the selected scheme.
 The `Virtual Keyboard Toggle`, `Warm Reset Combo`, and `Cold Reset Combo`
 options can rebind or disable the controller-only system actions while keeping
 the handheld-safe defaults above.
@@ -221,9 +230,9 @@ Validate the source `.info` before copying it to Libretro infrastructure:
 bash scripts/validate-libretro-info.sh
 ```
 
-The validator intentionally requires `is_experimental = "true"` until the
-readiness report matrix is complete. For the eventual reviewed promotion, run
-it with `ALTIRRA_LIBRETRO_ALLOW_NON_EXPERIMENTAL=1`.
+The validator intentionally requires `is_experimental = "true"` by default.
+For an intentional promotion after real RetroArch testing, run it with
+`ALTIRRA_LIBRETRO_ALLOW_NON_EXPERIMENTAL=1`.
 
 Verify a built core and its sidecar `.info`:
 
@@ -265,7 +274,7 @@ bash scripts/run-libretro-retroarch-smoke.sh \
 For Flathub/Flatpak RetroArch, use a package built with
 `./build.sh --libretro-flatpak --package` and pass `--retroarch flatpak`. The
 smoke runner installs the selected core and `.info` under
-`build/libretro-readiness/`, launches RetroArch with `--max-frames`, and checks
+`build/libretro-smoke/`, launches RetroArch with `--max-frames`, and checks
 the log for core load, no-content support, disk-control registration, geometry
 initialization, content handoff, content-specific save paths, and clean unload.
 By default it runs no-content plus generated `.xex`, `.atr`, `.a52`, `.cas`,
@@ -273,8 +282,8 @@ By default it runs no-content plus generated `.xex`, `.atr`, `.a52`, `.cas`,
 frontend no-content path. The default smoke uses RetroArch's `null` video/input
 drivers for deterministic automation; pass explicit drivers such as
 `--video-driver gl --input-driver udev` when intentionally checking a visible
-desktop session. This is a frontend sanity check only; the manual/device
-readiness matrix is still required before promotion out of experimental status.
+desktop session. This is a frontend smoke test, not a replacement for trying
+the package like a user on the devices/controllers you care about.
 
 Install the shared library into RetroArch's cores directory and install
 `altirra_libretro.info` into RetroArch's Core Info directory. If the `.info`
@@ -303,36 +312,22 @@ Logs are written under the configured `logs` directory only when RetroArch
 logging is enabled.
 
 Before submitting the core to Libretro infrastructure, follow the local
-readiness checklist in `docs/libretro-upstream.md`. After the readiness gates
-pass, `bash scripts/prepare-libretro-upstream.sh` stages the `.info` and docs
-draft in a local directory matching the Libretro repository layouts.
-Use `docs/libretro-readiness-report-template.md` to record each RetroArch
-release-candidate test pass before changing `is_experimental` or opening
-upstream pull requests.
-To create a prefilled report for a package:
+checklist in `docs/libretro-upstream.md`. After the checks pass,
+`bash scripts/prepare-libretro-upstream.sh` stages the `.info` and docs draft
+in a local directory matching the Libretro repository layouts.
+
+A practical release-candidate pass is:
 
 ```sh
 bash scripts/run-libretro-retroarch-smoke.sh \
   --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
   --verify-package
-bash scripts/create-libretro-readiness-report.sh \
-  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
-  --retroarch-smoke-summary \
-    build/libretro-readiness/retroarch-smoke-<timestamp>/summary.md \
-  --verify-package
-bash scripts/create-libretro-manual-test-kit.sh \
-  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
-  --retroarch-smoke-summary \
-    build/libretro-readiness/retroarch-smoke-<timestamp>/summary.md \
-  --report build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
-bash scripts/validate-libretro-readiness-report.sh \
-  build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
 ```
 
-The manual test kit copies the package under test, generated smoke fixtures,
-the automated RetroArch smoke summary, and the prefilled report into one
-handoff directory. Use it for visible-session and device testing so manual
-signoff exercises the same package and media that passed automated smoke.
+Then install the same package in RetroArch, test the main content types and
+controller-only controls, and keep short notes with the RetroArch version,
+device, controller, package path, and pass/fail issues. That is enough for
+project-side promotion decisions; no formal generated report is required.
 
 `libretro/libretro.h` is a vendored subset of the canonical libretro ABI header
 covering only the interfaces used by this adapter:

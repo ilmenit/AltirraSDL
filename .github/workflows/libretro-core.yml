@@ -15,8 +15,6 @@ on:
       - 'src/system/**'
       - 'docs/libretro-*.md'
       - 'scripts/build/libretro.sh'
-      - 'scripts/create-libretro-manual-test-kit.sh'
-      - 'scripts/create-libretro-readiness-report.sh'
       - 'scripts/prepare-libretro-upstream.sh'
       - 'scripts/run-libretro-retroarch-smoke.sh'
       - 'scripts/validate-libretro-*.sh'
@@ -50,19 +48,15 @@ jobs:
           set -euo pipefail
           bash -n \
             build.sh \
-            scripts/create-libretro-manual-test-kit.sh \
-            scripts/create-libretro-readiness-report.sh \
             scripts/build/libretro.sh \
             scripts/prepare-libretro-upstream.sh \
             scripts/run-libretro-retroarch-smoke.sh \
             scripts/validate-libretro-docs.sh \
             scripts/validate-libretro-info.sh \
-            scripts/validate-libretro-readiness-report.sh \
             scripts/verify-libretro-artifact.sh \
             scripts/verify-libretro-package.sh
           bash scripts/validate-libretro-info.sh
           bash scripts/validate-libretro-docs.sh
-          bash scripts/validate-libretro-readiness-report.sh --self-test
           bash scripts/prepare-libretro-upstream.sh
           make -f Makefile.libretro validate-info
 
