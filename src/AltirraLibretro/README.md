@@ -22,9 +22,115 @@ Build and run the libretro smoke tests with:
 ```
 
 The smoke tests cover no-content boot, disk control, option changes, geometry,
-audio, input, save states, and a post-shutdown `retro_get_system_info()` query.
+audio, input, virtual-keyboard overlay display, achievement memory exposure,
+cheat POKEs, disk sidecar save-back and reload, `.a52` content-aware 5200
+loading, the exported `retro_reset()` path, keyboard/controller reset bindings,
+save states, metadata capability flags, and a post-shutdown
+`retro_get_system_info()` query.
 The build script also validates the `.info` metadata and verifies the built
 core artifact before reporting success.
+
+## Controls
+
+The core is usable from a controller-only RetroArch device.
+
+Default Atari 8-bit RetroPad controls:
+
+| RetroPad | Atari input |
+|---|---|
+| D-pad | Joystick |
+| Left analog | Joystick |
+| B | Trigger |
+| A | Second trigger |
+| Y | Space |
+| X | Return |
+| Start | START console key |
+| Select | SELECT console key |
+| L | OPTION console key |
+| R or L3 | Toggle virtual keyboard |
+| L2 | Escape |
+| R2 | Return |
+| R3 | Unassigned by default |
+| Select+R2 | Toggle virtual keyboard fallback for stickless pads |
+| Select+Start | Warm reset |
+| Select+L | Cold reset |
+
+The face/shoulder key bindings are concurrent with the joystick: holding a
+direction while pressing `Y`, `X`, `L2`, `R2`, `L3`, or `R3` keeps joystick
+input active and also sends the mapped Atari key. If a stick-click is also
+selected as the virtual-keyboard toggle, the toggle takes precedence.
+
+Use the `Control Scheme` core option to switch the spare-button defaults
+between auto, common keys, joystick-only, flight/space-sim keys,
+keyboard-heavy/adventure keys, and 5200. The default `Auto` scheme uses common
+Atari 8-bit keys unless the active system is 5200, where spare keyboard
+bindings stay unassigned and the 5200 keypad is available from the virtual
+keyboard. The `RetroPad Y/X/L2/R2/L3/R3 Key` core options can override each
+spare button individually; `Auto` follows the selected scheme.
+The `Virtual Keyboard Toggle`, `Warm Reset Combo`, and `Cold Reset Combo`
+options can rebind or disable the controller-only system actions while keeping
+the handheld-safe defaults above.
+Physical keyboard console keys default to F2/F3/F4 for START/SELECT/OPTION,
+and can be rebound with the `Keyboard START/SELECT/OPTION Key` options.
+
+While the virtual keyboard is open, the pad controls the keyboard instead of
+the joystick so no joystick direction or console key can stick:
+
+| RetroPad | Virtual keyboard action |
+|---|---|
+| D-pad | Move selection |
+| B | Press selected key |
+| A | Close keyboard |
+| X | Toggle alpha/console page |
+| Y | Toggle 5200 keypad page in 5200 mode |
+| R, L3, or Select+R2 | Close keyboard |
+
+The virtual keyboard includes letters, numbers, Shift, Ctrl, Escape, Space,
+Return, Backspace, cursor/function keys, START/SELECT/OPTION, warm/cold reset,
+and a 5200 keypad page with `0`-`9`, `*`, `#`, START, PAUSE, and RESET.
+
+Physical keyboard reset shortcuts are also available: F5 performs warm reset
+and Shift+F5 performs cold reset.
+
+The `System` core option defaults to `Auto`: `.a52` cartridges and headered
+5200 cartridge images start as Atari 5200 content, while other extensions start
+as an Atari 800XL. Ambiguous raw `.bin`/`.rom` images are not guessed as 5200
+unless their cartridge header proves it. Selecting a specific system overrides
+auto-detection. `Input Port 1` also defaults to `Auto`, using a 5200 controller
+for the default RetroPad when the active system is 5200 and a joystick
+otherwise; explicit RetroArch device selections such as paddle, mouse, and
+light gun remain honored.
+
+The `Aspect Ratio` core option defaults to `4:3`. `Pixel Perfect` and
+`Square Pixels` report the rendered frame's native pixel ratio to RetroArch;
+`NTSC PAR` reports `3:2`, and `PAL PAR` reports `7:5`.
+
+The `Performance Tier` option defaults to `Quality`. `Performance` keeps
+emulation behavior unchanged but chooses lighter default presentation settings:
+automatic artifacting resolves to none, and `Audio Filters = Auto` disables
+the audio filter chain. Explicit artifacting and audio-filter choices override
+the tier.
+
+RetroArch achievements can read the core's CPU-visible 64K system memory via
+`RETRO_MEMORY_SYSTEM_RAM` and the published memory descriptor map. RetroArch
+cheats support POKE-style byte writes such as `POKE 1536,123`, `$0600:$7B`, or
+`0x0600=0x7B`; enabled cheats are applied each frame.
+
+Disk images mount in virtual read/write mode by default. The original content
+file is not modified; if a disk is changed, the core saves a sidecar disk image
+under RetroArch's save directory in `Altirra/saves/` and reloads that sidecar on
+the next launch. The `Disk Write Mode` core option can be changed from the
+default `Safe Sidecar` mode to `Write Original` when you explicitly want writes
+to go through to the loaded disk image.
+
+The core also exposes a `Cartridge + Disk` subsystem for RetroArch frontends
+that support multi-file loading. The first file is a cartridge/program image
+and the second file is a disk image or `.m3u`; the disk uses the same sidecar
+save-back path as normal disk loading.
+
+Runtime disk-control replacement accepts disk images and `.m3u` playlists. A
+playlist replacement expands into its listed disk images, while non-disk
+content is rejected immediately instead of failing later when the tray closes.
 
 Libretro-style automation can also call the thin repository-root wrapper:
 
@@ -77,6 +183,7 @@ GitHub Actions packages the standalone core for:
 - Linux aarch64
 - Linux ARMv7 hard-float (`armv7hf`)
 - Android ARM64 (`arm64-v8a`)
+- Android ARMv7 (`armeabi-v7a`)
 - macOS arm64 and x86_64
 - Windows x86_64 and ARM64
 
@@ -92,7 +199,16 @@ cmake --build --preset linux-libretro-armv7hf
 # Requires ANDROID_NDK_HOME to point at an Android NDK.
 cmake --preset android-libretro-arm64
 cmake --build --preset android-libretro-arm64
+
+cmake --preset android-libretro-armv7a
+cmake --build --preset android-libretro-armv7a
 ```
+
+Android `armv7hf` Linux builds are not compatible with Android. Use the
+`armeabi-v7a` package for 32-bit Android RetroArch and the `arm64-v8a` package
+for 64-bit Android RetroArch. The CI verifier checks the Android artifacts'
+ELF identity explicitly: `armeabi-v7a` must be `ELF32`/`ARM`, and `arm64-v8a`
+must be `ELF64`/`AArch64`.
 
 The build output directory contains both files RetroArch needs:
 
@@ -117,6 +233,9 @@ bash scripts/verify-libretro-artifact.sh \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.info
 ```
 
+For cross-built ELF packages, set `ALTIRRA_LIBRETRO_EXPECT_ELF_CLASS` and
+`ALTIRRA_LIBRETRO_EXPECT_ELF_MACHINE` to require an exact `readelf -h` match.
+
 On x86_64 ELF builds, the artifact verifier also rejects the known-bad
 `retro_get_system_info()` code shape where the compiler packs metadata
 pointers through an RIP-relative XMM table load. That optimization has produced
@@ -134,6 +253,28 @@ bash scripts/verify-libretro-package.sh \
 The package verifier also runs the packaged installer in `--dry-run` mode
 against a temporary RetroArch config, so installer option regressions are
 caught before a package is handed to testers.
+
+Run the package in a real RetroArch frontend with an isolated config:
+
+```sh
+bash scripts/run-libretro-retroarch-smoke.sh \
+  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --verify-package
+```
+
+For Flathub/Flatpak RetroArch, use a package built with
+`./build.sh --libretro-flatpak --package` and pass `--retroarch flatpak`. The
+smoke runner installs the selected core and `.info` under
+`build/libretro-readiness/`, launches RetroArch with `--max-frames`, and checks
+the log for core load, no-content support, disk-control registration, geometry
+initialization, content handoff, content-specific save paths, and clean unload.
+By default it runs no-content plus generated `.xex`, `.atr`, `.a52`, `.cas`,
+`.m3u`, and `.zip` fixtures; pass `--no-content-only` to restrict it to the
+frontend no-content path. The default smoke uses RetroArch's `null` video/input
+drivers for deterministic automation; pass explicit drivers such as
+`--video-driver gl --input-driver udev` when intentionally checking a visible
+desktop session. This is a frontend sanity check only; the manual/device
+readiness matrix is still required before promotion out of experimental status.
 
 Install the shared library into RetroArch's cores directory and install
 `altirra_libretro.info` into RetroArch's Core Info directory. If the `.info`
@@ -171,14 +312,27 @@ upstream pull requests.
 To create a prefilled report for a package:
 
 ```sh
+bash scripts/run-libretro-retroarch-smoke.sh \
+  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --verify-package
 bash scripts/create-libretro-readiness-report.sh \
   --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
-  --smoke-command './build.sh --libretro --libretro-test' \
-  --smoke-result pass \
+  --retroarch-smoke-summary \
+    build/libretro-readiness/retroarch-smoke-<timestamp>/summary.md \
   --verify-package
+bash scripts/create-libretro-manual-test-kit.sh \
+  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --retroarch-smoke-summary \
+    build/libretro-readiness/retroarch-smoke-<timestamp>/summary.md \
+  --report build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
 bash scripts/validate-libretro-readiness-report.sh \
   build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
 ```
+
+The manual test kit copies the package under test, generated smoke fixtures,
+the automated RetroArch smoke summary, and the prefilled report into one
+handoff directory. Use it for visible-session and device testing so manual
+signoff exercises the same package and media that passed automated smoke.
 
 `libretro/libretro.h` is a vendored subset of the canonical libretro ABI header
 covering only the interfaces used by this adapter:

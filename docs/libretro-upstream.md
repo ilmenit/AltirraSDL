@@ -16,7 +16,10 @@ this repository; upstream pull requests still happen in Libretro-owned repos.
 - RetroArch readiness report template:
   `docs/libretro-readiness-report-template.md`
 - Readiness report helper: `scripts/create-libretro-readiness-report.sh`
+- Manual test kit helper: `scripts/create-libretro-manual-test-kit.sh`
 - Readiness report validator: `scripts/validate-libretro-readiness-report.sh`
+- RetroArch frontend smoke helper:
+  `scripts/run-libretro-retroarch-smoke.sh`
 - Upstream staging helper: `scripts/prepare-libretro-upstream.sh`
 - Generated docs PR snippets:
   `build/libretro-upstream/libretro-docs/ALTIRRA-UPSTREAM-SNIPPETS.md`
@@ -63,17 +66,33 @@ the results are repeatable and reviewable:
    audio, input, and save-state paths against core-options V2, V1, and legacy
    frontend environments. It also queries `retro_get_system_info()` after
    unload/deinit to catch invalid shutdown metadata pointers.
-6. RetroArch loads and runs representative `.xex`, `.atr`, `.car`, `.cas`,
-   `.m3u`, and no-content sessions without frontend errors or crashes.
-   For each content type, test both Close Content and full frontend exit
-   through the window close path, because RetroArch can query
-   `retro_get_system_info()` again while saving frontend state during shutdown.
-7. Save states round-trip in RetroArch for loaded content.
-8. Core options can be changed at runtime without illegal libretro callbacks.
-9. `altirra_libretro.info` is installed into `libretro_info_path` and
+6. `scripts/run-libretro-retroarch-smoke.sh` passes against the package under
+   test and its summary is embedded in the readiness report. This proves
+   no-content plus generated `.xex`, `.atr`, `.a52`, `.cas`, `.m3u`, and `.zip`
+   load/run/unload paths through a real RetroArch frontend with isolated null
+   video/input drivers.
+7. `scripts/create-libretro-manual-test-kit.sh` creates the tester handoff
+   bundle from the package, smoke summary, generated fixtures, and prefilled
+   report so visible/device runs use the same package and media that passed
+   frontend smoke.
+8. RetroArch visible-session/device testing loads and runs representative
+   `.xex`, `.atr`, `.car`/`.a52`, `.cas`, `.m3u`, compressed content, and
+   no-content sessions without frontend errors or crashes. For each content
+   type, test both Close Content and full frontend exit through the window
+   close path, because RetroArch can query `retro_get_system_info()` again
+   while saving frontend state during shutdown.
+9. The readiness report's Gamepad UX table passes on a controller-only setup,
+   including joystick directions, console keys, virtual keyboard typing/page
+   switching, 5200 keypad access, reset bindings, and spare-button remapping.
+10. The readiness report's Disk Control rows pass in a visible frontend,
+    including media reporting, eject/swap/remount, and rejection of media-list
+    changes while the tray is closed.
+11. Save states round-trip in RetroArch for loaded content.
+12. Core options can be changed at runtime without illegal libretro callbacks.
+13. `altirra_libretro.info` is installed into `libretro_info_path` and
    RetroArch shows the expected name, author, firmware, extension, and feature
    information under Information / Core Information.
-10. Linux packages are built against the intended ABI floor. For Flathub
+14. Linux packages are built against the intended ABI floor. For Flathub
    RetroArch, use the Flatpak SDK build path, not a host-native build.
 
 ## Versioning Policy
@@ -164,6 +183,9 @@ bash scripts/verify-libretro-artifact.sh \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.info
 bash scripts/verify-libretro-package.sh \
   build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz
+bash scripts/run-libretro-retroarch-smoke.sh \
+  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --verify-package
 ```
 
 Stage files for future Libretro repository pull requests:
@@ -187,9 +209,14 @@ Create a prefilled RetroArch readiness report for a package under test:
 ```sh
 bash scripts/create-libretro-readiness-report.sh \
   --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
-  --smoke-command './build.sh --libretro --libretro-test' \
-  --smoke-result pass \
+  --retroarch-smoke-summary \
+    build/libretro-readiness/retroarch-smoke-<timestamp>/summary.md \
   --verify-package
+bash scripts/create-libretro-manual-test-kit.sh \
+  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --retroarch-smoke-summary \
+    build/libretro-readiness/retroarch-smoke-<timestamp>/summary.md \
+  --report build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
 bash scripts/validate-libretro-readiness-report.sh \
   build/libretro-readiness/AltirraLibretro-4.40-<commit>-<timestamp>.md
 ```

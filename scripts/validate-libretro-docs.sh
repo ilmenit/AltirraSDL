@@ -7,6 +7,7 @@ set -euo pipefail
 DOC_FILE="${1:-docs/libretro-docs-altirra-draft.md}"
 INFO_FILE="${2:-src/AltirraLibretro/altirra_libretro.info}"
 CORE_FILE="${3:-src/AltirraLibretro/libretro.cpp}"
+README_FILE="${4:-src/AltirraLibretro/README.md}"
 
 fail() {
     printf 'error: %s\n' "$*" >&2
@@ -22,6 +23,7 @@ extract_info_value() {
 [ -f "$DOC_FILE" ] || fail "docs draft not found: $DOC_FILE"
 [ -f "$INFO_FILE" ] || fail "info file not found: $INFO_FILE"
 [ -f "$CORE_FILE" ] || fail "core source not found: $CORE_FILE"
+[ -f "$README_FILE" ] || fail "README not found: $README_FILE"
 
 DISPLAY_NAME=$(extract_info_value display_name)
 AUTHORS=$(extract_info_value authors)
@@ -153,6 +155,8 @@ done
 
 for descriptor in \
     "Joystick Up" \
+    "RetroPad port 1, 5200 Auto" \
+    "VKBD Combo" \
     "Joystick 2 Up" \
     "Paddle Knob" \
     "Mouse X" \
@@ -160,6 +164,25 @@ for descriptor in \
     "Pointer X"; do
     grep -Fq "$descriptor" "$DOC_FILE" \
         || fail "docs draft missing input descriptor: $descriptor"
+done
+
+for readme_text in \
+    "The core is usable from a controller-only RetroArch device." \
+    "| Left analog | Joystick |" \
+    "| R or L3 | Toggle virtual keyboard |" \
+    "| Select+R2 | Toggle virtual keyboard fallback for stickless pads |" \
+    "| Select+Start | Warm reset |" \
+    "| Select+L | Cold reset |" \
+    "The face/shoulder key bindings are concurrent with the joystick" \
+    "| Y | Toggle 5200 keypad page in 5200 mode |" \
+    "and a 5200 keypad page with \`0\`-\`9\`, \`*\`, \`#\`, START, PAUSE, and RESET." \
+    "Physical keyboard reset shortcuts are also available: F5 performs warm reset" \
+    "Disk images mount in virtual read/write mode by default." \
+    "under RetroArch's save directory in \`Altirra/saves/\`" \
+    "Runtime disk-control replacement accepts disk images and \`.m3u\` playlists." \
+    "content is rejected immediately"; do
+    grep -Fq "$readme_text" "$README_FILE" \
+        || fail "README missing required libretro user guidance: $readme_text"
 done
 
 printf 'ok: %s matches current libretro metadata/docs expectations\n' \

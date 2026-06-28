@@ -10,6 +10,8 @@ PACKAGE_PATH=""
 BUILD_COMMAND="./build.sh --libretro --package"
 SMOKE_COMMAND="not run"
 SMOKE_RESULT="not run"
+RETROARCH_SMOKE_SUMMARY=""
+RETROARCH_SMOKE_OUTPUT=""
 RETROARCH_COMMAND=""
 RETROARCH_COMMAND_PROVIDED=0
 VERIFY_PACKAGE=0
@@ -76,6 +78,8 @@ Options:
   --build-command TEXT   Record TEXT as the build command.
   --smoke-command TEXT   Record TEXT as the smoke test command.
   --smoke-result TEXT    Record the smoke test result.
+  --retroarch-smoke-summary FILE
+                         Record FILE from run-libretro-retroarch-smoke.sh.
   --retroarch-command C  Record C as the RetroArch command/distribution.
   --verify-package       Run the package verifier and record its result.
   -h, --help             Show this help.
@@ -97,6 +101,10 @@ while [ $# -gt 0 ]; do
         --build-command) BUILD_COMMAND="$(need_value "$@")"; shift ;;
         --smoke-command) SMOKE_COMMAND="$(need_value "$@")"; shift ;;
         --smoke-result) SMOKE_RESULT="$(need_value "$@")"; shift ;;
+        --retroarch-smoke-summary)
+            RETROARCH_SMOKE_SUMMARY="$(need_value "$@")"
+            shift
+            ;;
         --retroarch-command)
             RETROARCH_COMMAND="$(need_value "$@")"
             RETROARCH_COMMAND_PROVIDED=1
@@ -121,6 +129,28 @@ STAMP=$(date -u +%Y%m%d-%H%M%S)
 
 if [ -z "$OUT_FILE" ]; then
     OUT_FILE="$ROOT_DIR/build/libretro-readiness/AltirraLibretro-${PROJECT_VERSION}-${COMMIT_SHORT}-${STAMP}.md"
+fi
+
+if [ -n "$RETROARCH_SMOKE_SUMMARY" ]; then
+    RETROARCH_SMOKE_SUMMARY=$(absolute_path "$RETROARCH_SMOKE_SUMMARY")
+    [ -f "$RETROARCH_SMOKE_SUMMARY" ] \
+        || fail "RetroArch smoke summary not found: $RETROARCH_SMOKE_SUMMARY"
+    if grep -Fq -- "- Result: pass" "$RETROARCH_SMOKE_SUMMARY"; then
+        RETROARCH_SMOKE_RESULT="pass"
+    else
+        RETROARCH_SMOKE_RESULT="fail"
+    fi
+    RETROARCH_SMOKE_OUTPUT=$(cat "$RETROARCH_SMOKE_SUMMARY")
+
+    if [ "$SMOKE_COMMAND" = "not run" ]; then
+        SMOKE_COMMAND="bash scripts/run-libretro-retroarch-smoke.sh --package PACKAGE --verify-package"
+    fi
+    if [ "$SMOKE_RESULT" = "not run" ]; then
+        SMOKE_RESULT="$RETROARCH_SMOKE_RESULT"
+    fi
+else
+    RETROARCH_SMOKE_SUMMARY="not run"
+    RETROARCH_SMOKE_RESULT="not run"
 fi
 
 if [ -z "$PACKAGE_PATH" ]; then
@@ -152,6 +182,11 @@ else
     PACKAGE_PATH="not selected"
     PACKAGE_VERIFY_COMMAND="not run"
     PACKAGE_VERIFY_RESULT="not run"
+fi
+
+if [ "$RETROARCH_SMOKE_SUMMARY" != "not run" ] \
+    && [ "$SMOKE_COMMAND" = "bash scripts/run-libretro-retroarch-smoke.sh --package PACKAGE --verify-package" ]; then
+    SMOKE_COMMAND="bash scripts/run-libretro-retroarch-smoke.sh --package \"$PACKAGE_PATH\" --verify-package"
 fi
 
 UNAME_S=$(uname -s)
@@ -298,10 +333,33 @@ without errors or coredumps.
 | Input Port 1 joystick works |  |  |
 | Keyboard focus works for Atari keyboard input |  |  |
 | Disk Control interface opens and reports media |  |  |
+| Disk Control can eject, swap, and remount media |  |  |
+| Disk Control rejects media-list changes while tray is closed |  |  |
 | Audio is present and stable |  |  |
 | RetroArch logs contain no Altirra errors |  |  |
 | No coredump or frontend crash produced |  |  |
 | Alt+F4 / window close exits without crash |  |  |
+
+## Gamepad UX
+
+Use a controller-only setup, or ignore/unplug the keyboard after launching the
+frontend. Record pass/fail for the user-facing controller path, not just the
+automated libretro input API.
+
+| Check | Pass | Notes |
+| --- | --- | --- |
+| D-pad drives joystick input |  |  |
+| Left analog drives joystick input |  |  |
+| START console key reachable from pad |  |  |
+| SELECT console key reachable from pad |  |  |
+| OPTION console key reachable from pad |  |  |
+| Virtual keyboard opens and closes from pad |  |  |
+| Virtual keyboard types Atari keys from pad |  |  |
+| Virtual keyboard page switching works from pad |  |  |
+| 5200 keypad page works for 5200 content |  |  |
+| Warm reset binding works from pad |  |  |
+| Cold reset binding works from pad |  |  |
+| Spare button key mappings can be changed from core options |  |  |
 
 ## Logs And Diagnostics
 
@@ -309,6 +367,15 @@ Package verifier output:
 
 \`\`\`text
 ${VERIFY_OUTPUT:-}
+\`\`\`
+
+RetroArch smoke summary:
+
+- Summary path: $RETROARCH_SMOKE_SUMMARY
+- Result: $RETROARCH_SMOKE_RESULT
+
+\`\`\`text
+$RETROARCH_SMOKE_OUTPUT
 \`\`\`
 
 RetroArch log location:

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstddef>
+#include <cctype>
 #include <iterator>
 #include <algorithm>
 #include <array>
@@ -15,6 +16,8 @@
 #include "libretro/libretro.h"
 #include "version.h"
 
+#include "at/atio/cartridgeimage.h"
+#include "at/atio/diskimage.h"
 #include "constants.h"
 #include "cpu.h"
 #include "devicemanager.h"
@@ -23,10 +26,12 @@
 #include "inputdefs.h"
 #include "inputmanager.h"
 #include "inputmap.h"
+#include "memorymanager.h"
 #include "settings.h"
 #include "simulator.h"
 #include "savestateio.h"
 #include "libretro_video.h"
+#include "libretro_vkbd.h"
 #include "uiaccessors.h"
 #include "uikeyboard.h"
 #include <at/ataudio/audiooutput.h>
@@ -93,16 +98,33 @@ struct CoreState {
 	ptrdiff_t lastFramePitch = 0;
 	unsigned reportedGeometryW = 0;
 	unsigned reportedGeometryH = 0;
+	float reportedGeometryAspect = 0.0f;
 	ATVideoStandard lastStandard = kATVideoStandard_PAL;
+	ATHardwareMode contentHardwareMode = kATHardwareMode_800XL;
 	bool inputBitmasksSupported = false;
 	bool buttonsHeld[2][9] {};
 	uint32 buttonHeldCodes[2][9] {};
+	bool padKeyHeld[6] {};
+	unsigned padKeyHeldKeycodes[6] {};
 	bool mouseButtonsHeld[5] {};
 	std::vector<uint32> keyboardHeldCodes;
 	bool keyboardCallbackEventSeen = false;
 	bool consoleHeld[3] {};
 	bool keyboardConsoleHeld[3] {};
+	uint8 vkbdConsolePulseFrames[3] {};
+	uint8 vkbd5200PulseFrames[15] {};
 	bool keyboardBreakHeld = false;
+	bool resetCombosHeld[2] {};
+	uint16 vkbdCloseSuppressMask = 0;
+	std::array<uint8_t, 0x10000> systemRam {};
+	bool systemRamValid = false;
+	struct Cheat {
+		bool enabled = false;
+		uint16 address = 0;
+		uint8 value = 0;
+		std::string code;
+	};
+	std::vector<Cheat> cheats;
 	std::vector<uint8_t> serializeCache;
 	bool serializeCacheValid = false;
 	size_t serializeFixedSize = 0;
@@ -137,6 +159,8 @@ struct CoreState {
 	std::vector<DiskEntry> diskImages;
 	unsigned diskIndex = 0;
 	bool diskEjected = false;
+	std::string mountedDiskOriginalPath;
+	std::string mountedDiskSavePath;
 	bool pendingInitialDiskValid = false;
 	unsigned pendingInitialDiskIndex = 0;
 	std::string pendingInitialDiskPath;
@@ -147,6 +171,12 @@ CoreState g_core;
 void InvalidateSerializeCache();
 void InitDefaultInputMaps();
 void ReleaseInput();
+void DoWarmReset();
+void DoColdReset();
+void RefreshSystemRam();
+void ApplyEnabledCheats();
+void RegisterInputDescriptors();
+bool OptionEquals(const char *key, const char *value);
 
 constexpr const char *kValidExtensions =
 	"atr|xfd|atx|atz|dcm|pro|arc|"
@@ -157,6 +187,11 @@ constexpr const char *kValidExtensions =
 	"zip|gz|"
 	"altstate|atstate2|"
 	"m3u";
+
+constexpr unsigned kSubsystemCartDiskId = 1;
+constexpr const char *kCartProgramExtensions =
+	"bin|rom|car|a52|xex|exe|obx|com|bas";
+constexpr uint32 kVkbd5200InputBase = kATInputCode_JoyButton0 + 32;
 
 static const char kCoreLibraryName[] = "Altirra";
 static const char kCoreLibraryVersion[] = AT_VERSION;
@@ -387,6 +422,36 @@ bool IsDiskPath(const char *path) {
 	return false;
 }
 
+bool IsDiskControlReplacementPath(const std::string& path) {
+	return path.empty()
+		|| IsDiskPath(path.c_str())
+		|| HasExtension(path.c_str(), "m3u");
+}
+
+ATHardwareMode DetectContentHardwareMode(const char *path) {
+	if (HasExtension(path, "a52"))
+		return kATHardwareMode_5200;
+
+	if (HasExtension(path, "car")
+		|| HasExtension(path, "bin")
+		|| HasExtension(path, "rom"))
+	{
+		try {
+			const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path));
+			vdrefptr<IATCartridgeImage> cart;
+			if (ATLoadCartridgeImage(wpath.c_str(), ~cart)
+				&& cart
+				&& ATIsCartridge5200Mode(cart->GetMode()))
+			{
+				return kATHardwareMode_5200;
+			}
+		} catch(...) {
+		}
+	}
+
+	return kATHardwareMode_800XL;
+}
+
 std::string GetPathLabel(const std::string& path) {
 	const char *start = path.c_str();
 	const char *slash = std::strrchr(start, '/');
@@ -400,6 +465,136 @@ std::string GetPathLabel(const std::string& path) {
 		return std::string(leaf, dot);
 
 	return leaf;
+}
+
+uint64 HashPathForSave(const std::string& path) {
+	uint64 h = 1469598103934665603ULL;
+	for(unsigned char c : path) {
+		if (c == '\\')
+			c = '/';
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+
+		h ^= c;
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+std::string SanitizeSaveName(std::string s) {
+	for(char& c : s) {
+		const unsigned char ch = (unsigned char)c;
+		if (!(ch >= 'a' && ch <= 'z')
+			&& !(ch >= 'A' && ch <= 'Z')
+			&& !(ch >= '0' && ch <= '9')
+			&& c != '.'
+			&& c != '-'
+			&& c != '_')
+		{
+			c = '_';
+		}
+	}
+
+	if (s.empty())
+		s = "disk";
+	return s;
+}
+
+const char *GetDiskImageFormatExtension(ATDiskImageFormat format) {
+	switch(format) {
+		case kATDiskImageFormat_ATR: return "atr";
+		case kATDiskImageFormat_XFD: return "xfd";
+		case kATDiskImageFormat_P2: return "pro";
+		case kATDiskImageFormat_P3: return "pro";
+		case kATDiskImageFormat_ATX: return "atx";
+		case kATDiskImageFormat_DCM: return "dcm";
+		default: return "atr";
+	}
+}
+
+ATDiskImageFormat GetDiskImageFormatFromPath(const std::string& path) {
+	if (HasExtension(path.c_str(), "atr")) return kATDiskImageFormat_ATR;
+	if (HasExtension(path.c_str(), "xfd")) return kATDiskImageFormat_XFD;
+	if (HasExtension(path.c_str(), "atx")) return kATDiskImageFormat_ATX;
+	if (HasExtension(path.c_str(), "dcm")) return kATDiskImageFormat_DCM;
+	if (HasExtension(path.c_str(), "pro")) return kATDiskImageFormat_P2;
+	return kATDiskImageFormat_ATR;
+}
+
+std::string GetLibretroSaveRoot() {
+	std::string root = g_core.saveDirectory.empty()
+		? std::string(g_core.configDirectory.c_str())
+		: std::string(g_core.saveDirectory.c_str());
+
+	if (root.empty())
+		root = ".";
+
+	if (!root.empty() && root.back() != '/' && root.back() != '\\')
+		root += '/';
+	root += "Altirra/saves";
+	return root;
+}
+
+bool EnsureDirectoryPath(const VDStringW& path) {
+	if (path.empty())
+		return false;
+
+	try {
+		VDStringW partial;
+		const wchar_t *s = path.c_str();
+		for(const wchar_t *p = s; *p; ++p) {
+			if (*p != L'/' && *p != L'\\')
+				continue;
+
+			if (p == s)
+				continue;
+#ifdef _WIN32
+			if (p == s + 2 && s[1] == L':')
+				continue;
+#endif
+			partial.assign(s, p);
+			if (!partial.empty()
+				&& VDFileGetAttributes(partial.c_str()) == kVDFileAttr_Invalid)
+			{
+				VDCreateDirectory(partial.c_str());
+			}
+		}
+
+		if (VDFileGetAttributes(path.c_str()) == kVDFileAttr_Invalid)
+			VDCreateDirectory(path.c_str());
+		return true;
+	} catch(...) {
+		return false;
+	}
+}
+
+bool FileExists(const std::string& path) {
+	if (path.empty())
+		return false;
+
+	try {
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
+		return VDFileGetAttributes(wpath.c_str()) != kVDFileAttr_Invalid;
+	} catch(...) {
+		return false;
+	}
+}
+
+std::string MakeDiskSavePath(const std::string& sourcePath,
+	ATDiskImageFormat format) {
+	std::string dir = GetLibretroSaveRoot();
+	std::string name = SanitizeSaveName(GetPathLabel(sourcePath));
+	char hash[32] {};
+	std::snprintf(hash, sizeof hash, "-%016llx",
+		(unsigned long long)HashPathForSave(sourcePath));
+
+	if (!dir.empty() && dir.back() != '/' && dir.back() != '\\')
+		dir += '/';
+	dir += name;
+	dir += hash;
+	dir += '.';
+	dir += GetDiskImageFormatExtension(format);
+	return dir;
 }
 
 std::string ResolveRelativePath(const std::string& baseFile,
@@ -462,10 +657,122 @@ void ApplyPendingInitialDiskSelection() {
 	ClearPendingInitialDisk();
 }
 
-bool LoadM3U(const char *path) {
+bool SaveMountedDiskIfDirty() {
+	if (!g_core.simulatorInitialized || g_core.mountedDiskOriginalPath.empty())
+		return true;
+
+	ATDiskInterface& diskIf = g_sim.GetDiskInterface(0);
+	IATDiskImage *const image = diskIf.GetDiskImage();
+	if (!image || !image->IsDirty())
+		return true;
+
+	if (image->IsDynamic()) {
+		std::fprintf(stderr,
+			"[AltirraLibretro] Warning: dynamic disk image cannot be saved: %s\n",
+			g_core.mountedDiskOriginalPath.c_str());
+		return false;
+	}
+
+	ATDiskImageFormat format = image->GetImageFormat();
+	if (format == kATDiskImageFormat_None)
+		format = GetDiskImageFormatFromPath(g_core.mountedDiskOriginalPath);
+
+	const std::string savePath = g_core.mountedDiskSavePath.empty()
+		? MakeDiskSavePath(g_core.mountedDiskOriginalPath, format)
+		: g_core.mountedDiskSavePath;
+
+	if (!EnsureDirectoryPath(U8PathToW(VDStringA(GetLibretroSaveRoot().c_str())))) {
+		std::fprintf(stderr,
+			"[AltirraLibretro] Warning: failed to create disk save directory\n");
+		return false;
+	}
+
+	try {
+		const VDStringW wsavePath = VDTextU8ToW(VDStringSpanA(savePath.c_str()));
+		diskIf.SaveDiskAs(wsavePath.c_str(), format);
+		diskIf.SetWriteMode(kATMediaWriteMode_VRWSafe);
+		g_core.mountedDiskSavePath = savePath;
+		return true;
+	} catch(...) {
+		std::fprintf(stderr,
+			"[AltirraLibretro] Warning: failed to save disk sidecar: %s\n",
+			savePath.c_str());
+		return false;
+	}
+}
+
+void ClearMountedDiskTracking() {
+	g_core.mountedDiskOriginalPath.clear();
+	g_core.mountedDiskSavePath.clear();
+}
+
+void ClearLoadedContentState() {
+	g_core.gameLoaded = false;
+	g_core.serializeFixedSize = 0;
+	InvalidateSerializeCache();
+	g_core.lastFrame.clear();
+	g_core.lastFrameW = 0;
+	g_core.lastFrameH = 0;
+	g_core.lastFramePitch = 0;
+	g_core.systemRamValid = false;
 	g_core.diskImages.clear();
 	g_core.diskIndex = 0;
 	g_core.diskEjected = false;
+	g_core.contentHardwareMode = kATHardwareMode_800XL;
+	ClearMountedDiskTracking();
+	ClearPendingInitialDisk();
+	ATLibretroVkbdReset();
+}
+
+void CleanupAfterLoadFailure() {
+	if (g_core.simulatorInitialized) {
+		ReleaseInput();
+		if (!SaveMountedDiskIfDirty()) {
+			std::fprintf(stderr,
+				"[AltirraLibretro] Warning: disk sidecar save failed during load failure cleanup; changes may be lost\n");
+		}
+		g_sim.Pause();
+		g_sim.UnloadAll();
+	}
+
+	ClearLoadedContentState();
+}
+
+bool IsDiskWriteOriginalEnabled() {
+	return OptionEquals("altirra_disk_write_mode", "original_rw");
+}
+
+ATMediaWriteMode GetDiskMediaWriteMode() {
+	return IsDiskWriteOriginalEnabled()
+		? kATMediaWriteMode_RW
+		: kATMediaWriteMode_VRWSafe;
+}
+
+std::string GetDiskLoadPath(const std::string& path,
+	const std::string& savePath)
+{
+	if (!IsDiskWriteOriginalEnabled() && FileExists(savePath))
+		return savePath;
+
+	return path;
+}
+
+void TrackMountedDisk(const std::string& originalPath,
+	const std::string& savePath)
+{
+	if (IsDiskWriteOriginalEnabled()) {
+		ClearMountedDiskTracking();
+		return;
+	}
+
+	g_core.mountedDiskOriginalPath = originalPath;
+	g_core.mountedDiskSavePath = savePath;
+}
+
+bool ReadM3UDiskEntries(const char *path,
+	std::vector<CoreState::DiskEntry>& entries)
+{
+	entries.clear();
 
 	FILE *f = std::fopen(path, "rb");
 	if (!f)
@@ -478,16 +785,37 @@ bool LoadM3U(const char *path) {
 			continue;
 
 		std::string resolved = ResolveRelativePath(path, s);
-		g_core.diskImages.push_back({ resolved, GetPathLabel(resolved) });
+		if (!IsDiskPath(resolved.c_str())) {
+			std::fclose(f);
+			entries.clear();
+			return false;
+		}
+
+		entries.push_back({ resolved, GetPathLabel(resolved) });
 	}
 
 	std::fclose(f);
-	return !g_core.diskImages.empty();
+	return !entries.empty();
+}
+
+bool LoadM3U(const char *path) {
+	std::vector<CoreState::DiskEntry> entries;
+	if (!ReadM3UDiskEntries(path, entries))
+		return false;
+
+	g_core.diskImages.swap(entries);
+	g_core.diskIndex = 0;
+	g_core.diskEjected = false;
+	return true;
 }
 
 bool MountDiskIndex(unsigned index) {
 	if (!g_core.simulatorInitialized || index >= g_core.diskImages.size())
 		return false;
+
+	if (!SaveMountedDiskIfDirty())
+		return false;
+	ClearMountedDiskTracking();
 
 	const std::string& path = g_core.diskImages[index].path;
 	if (path.empty()) {
@@ -499,8 +827,20 @@ bool MountDiskIndex(unsigned index) {
 	ctx.mLoadIndex = 0;
 
 	g_sim.GetDiskInterface(0).UnloadDisk();
-	const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
-	return g_sim.Load(wpath.c_str(), kATMediaWriteMode_RO, &ctx);
+	const ATDiskImageFormat sidecarFormat = GetDiskImageFormatFromPath(path);
+	const std::string savePath = MakeDiskSavePath(path, sidecarFormat);
+	const std::string loadPath = GetDiskLoadPath(path, savePath);
+
+	try {
+		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(loadPath.c_str()));
+		if (!g_sim.Load(wpath.c_str(), GetDiskMediaWriteMode(), &ctx))
+			return false;
+	} catch(...) {
+		return false;
+	}
+
+	TrackMountedDisk(path, savePath);
+	return true;
 }
 
 bool DiskSetEjectState(bool ejected) {
@@ -508,7 +848,10 @@ bool DiskSetEjectState(bool ejected) {
 		return false;
 
 	if (ejected) {
+		if (!SaveMountedDiskIfDirty())
+			return false;
 		g_sim.GetDiskInterface(0).UnloadDisk();
+		ClearMountedDiskTracking();
 		g_core.diskEjected = true;
 		return true;
 	}
@@ -538,8 +881,12 @@ unsigned DiskGetImageIndex() {
 
 bool DiskSetImageIndex(unsigned index) {
 	if (index >= g_core.diskImages.size()) {
-		if (g_core.simulatorInitialized)
+		if (g_core.simulatorInitialized) {
+			if (!SaveMountedDiskIfDirty())
+				return false;
 			g_sim.GetDiskInterface(0).UnloadDisk();
+			ClearMountedDiskTracking();
+		}
 
 		g_core.diskIndex = index;
 		InvalidateSerializeCache();
@@ -566,6 +913,8 @@ bool DiskReplaceImageIndex(unsigned index, const retro_game_info *info) {
 		return false;
 
 	if (!info) {
+		if (!SaveMountedDiskIfDirty())
+			return false;
 		g_core.diskImages.erase(g_core.diskImages.begin() + index);
 		if (g_core.diskIndex > index)
 			--g_core.diskIndex;
@@ -580,13 +929,41 @@ bool DiskReplaceImageIndex(unsigned index, const retro_game_info *info) {
 	if (info->path)
 		path = info->path;
 
-	g_core.diskImages[index] = { path, path.empty() ? std::string() : GetPathLabel(path) };
+	if (!IsDiskControlReplacementPath(path))
+		return false;
+
+	std::vector<CoreState::DiskEntry> m3uEntries;
+	if (HasExtension(path.c_str(), "m3u")
+		&& !ReadM3UDiskEntries(path.c_str(), m3uEntries))
+	{
+		return false;
+	}
+
+	if (!SaveMountedDiskIfDirty())
+		return false;
+
+	if (!m3uEntries.empty()) {
+		auto pos = g_core.diskImages.begin() + index;
+		pos = g_core.diskImages.erase(pos);
+		g_core.diskImages.insert(pos, m3uEntries.begin(), m3uEntries.end());
+		if (g_core.diskIndex == index)
+			g_core.diskIndex = index;
+		else if (g_core.diskIndex > index)
+			g_core.diskIndex += (unsigned)m3uEntries.size() - 1;
+	} else {
+		g_core.diskImages[index] = {
+			path, path.empty() ? std::string() : GetPathLabel(path)
+		};
+	}
 
 	InvalidateSerializeCache();
 	return true;
 }
 
 bool DiskAddImageIndex() {
+	if (!g_core.diskEjected)
+		return false;
+
 	g_core.diskImages.push_back({});
 	return true;
 }
@@ -669,8 +1046,9 @@ struct CompactOptionDefinition {
 };
 
 static const retro_core_option_value kSystemValues[] = {
-	{ "800", "Atari 800" },
+	{ "auto", "Auto" },
 	{ "800xl", "Atari 800XL" },
+	{ "800", "Atari 800" },
 	{ "1200xl", "Atari 1200XL" },
 	{ "130xe", "Atari 130XE" },
 	{ "xegs", "Atari XEGS" },
@@ -718,6 +1096,13 @@ static const retro_core_option_value kEnabledDisabledValues[] = {
 	{ nullptr, nullptr },
 };
 
+static const retro_core_option_value kAutoEnabledDisabledValues[] = {
+	{ "auto", "Auto" },
+	{ "enabled", "Enabled" },
+	{ "disabled", "Disabled" },
+	{ nullptr, nullptr },
+};
+
 static const retro_core_option_value kCPUValues[] = {
 	{ "6502c", "6502C" },
 	{ "65c02", "65C02" },
@@ -744,6 +1129,19 @@ static const retro_core_option_value kArtifactingValues[] = {
 	{ nullptr, nullptr },
 };
 
+static const retro_core_option_value kPerformanceTierValues[] = {
+	{ "quality", "Quality" },
+	{ "balanced", "Balanced" },
+	{ "performance", "Performance" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kDiskWriteModeValues[] = {
+	{ "safe_sidecar", "Safe Sidecar" },
+	{ "original_rw", "Write Original" },
+	{ nullptr, nullptr },
+};
+
 static const retro_core_option_value kOverscanValues[] = {
 	{ "normal", "Normal" },
 	{ "off", "Off" },
@@ -752,7 +1150,17 @@ static const retro_core_option_value kOverscanValues[] = {
 	{ nullptr, nullptr },
 };
 
+static const retro_core_option_value kAspectValues[] = {
+	{ "4_3", "4:3" },
+	{ "pixel_perfect", "Pixel Perfect" },
+	{ "square_pixels", "Square Pixels" },
+	{ "ntsc_par", "NTSC PAR" },
+	{ "pal_par", "PAL PAR" },
+	{ nullptr, nullptr },
+};
+
 static const retro_core_option_value kInputPort1Values[] = {
+	{ "auto", "Auto" },
 	{ "joystick", "Joystick" },
 	{ "5200_controller", "5200 Controller" },
 	{ "paddle_a", "Paddle A" },
@@ -773,11 +1181,77 @@ static const retro_core_option_value kInputPort2Values[] = {
 	{ nullptr, nullptr },
 };
 
+static const retro_core_option_value kControlSchemeValues[] = {
+	{ "auto", "Auto" },
+	{ "common", "Joystick + Common Keys" },
+	{ "joystick", "Joystick Only" },
+	{ "flight", "Flight / Space Sim" },
+	{ "adventure", "Keyboard-heavy / Adventure" },
+	{ "5200", "5200" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kPadKeyValues[] = {
+	{ "auto", "Auto" },
+	{ "none", "None" },
+	{ "space", "Space" },
+	{ "return", "Return" },
+	{ "escape", "Escape" },
+	{ "f", "F" },
+	{ "a", "A" },
+	{ "g", "G" },
+	{ "m", "M" },
+	{ "s", "S" },
+	{ "y", "Y" },
+	{ "n", "N" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kConsoleKeyValues[] = {
+	{ "f2", "F2" },
+	{ "f3", "F3" },
+	{ "f4", "F4" },
+	{ "f5", "F5" },
+	{ "f6", "F6" },
+	{ "f8", "F8" },
+	{ "f9", "F9" },
+	{ "f10", "F10" },
+	{ "none", "None" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kVkbdToggleValues[] = {
+	{ "r_l3_select_r2", "R, L3, or Select+R2" },
+	{ "r", "R" },
+	{ "l3", "L3" },
+	{ "r3", "R3" },
+	{ "select_r2", "Select+R2" },
+	{ "none", "None" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kWarmResetComboValues[] = {
+	{ "select_start", "Select+Start" },
+	{ "select_r", "Select+R" },
+	{ "start_r", "Start+R" },
+	{ "none", "None" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kColdResetComboValues[] = {
+	{ "select_l", "Select+L" },
+	{ "select_l2", "Select+L2" },
+	{ "select_r", "Select+R" },
+	{ "none", "None" },
+	{ nullptr, nullptr },
+};
+
 static const CompactOptionDefinition kOptionSpecs[] = {
 	{
 		"altirra_system", "System", nullptr,
-		"Selects the emulated Atari computer or console model.",
-		nullptr, "system", kSystemValues, "800xl"
+		"Selects the emulated Atari computer or console model. Auto switches "
+		"to the Atari 5200 for .a52 and headered 5200 cartridges.",
+		nullptr, "system", kSystemValues, "auto"
 	},
 	{
 		"altirra_memory", "Memory Size", nullptr,
@@ -845,9 +1319,22 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 		nullptr, "media", kSioPatchValues, "disk_and_cassette"
 	},
 	{
+		"altirra_disk_write_mode", "Disk Write Mode", nullptr,
+		"Selects how writable disk images are persisted. Safe Sidecar keeps "
+		"the source image untouched and saves changed disks under RetroArch's "
+		"save directory. Write Original writes through to the loaded disk image.",
+		nullptr, "media", kDiskWriteModeValues, "safe_sidecar"
+	},
+	{
 		"altirra_artifacting", "Artifacting", nullptr,
 		"Selects NTSC/PAL artifact color simulation.",
 		nullptr, "video", kArtifactingValues, "auto"
+	},
+	{
+		"altirra_performance_tier", "Performance Tier", nullptr,
+		"Selects conservative defaults for weak devices. Performance mode "
+		"uses lighter video/audio processing unless explicitly overridden.",
+		nullptr, "video", kPerformanceTierValues, "quality"
 	},
 	{
 		"altirra_crop_overscan", "Crop Overscan", nullptr,
@@ -855,9 +1342,15 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 		nullptr, "video", kOverscanValues, "normal"
 	},
 	{
+		"altirra_aspect", "Aspect Ratio", nullptr,
+		"Selects the display aspect ratio reported to RetroArch.",
+		nullptr, "video", kAspectValues, "4_3"
+	},
+	{
 		"altirra_audio_filters", "Audio Filters", nullptr,
-		"Enables Altirra's audio filter chain.",
-		nullptr, "audio", kEnabledDisabledValues, "enabled"
+		"Enables Altirra's audio filter chain. Auto disables filters in "
+		"Performance tier.",
+		nullptr, "audio", kAutoEnabledDisabledValues, "auto"
 	},
 	{
 		"altirra_stereo_as_mono", "Downmix Stereo to Mono", nullptr,
@@ -871,13 +1364,95 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 	},
 	{
 		"altirra_input_port1", "Input Port 1", nullptr,
-		"Selects the first controller port type.",
-		nullptr, "input", kInputPort1Values, "joystick"
+		"Selects the first controller port type. Auto uses a 5200 controller "
+		"for the default RetroPad when the active system is the Atari 5200, "
+		"otherwise a joystick.",
+		nullptr, "input", kInputPort1Values, "auto"
 	},
 	{
 		"altirra_input_port2", "Input Port 2", nullptr,
 		"Selects the second controller port type.",
 		nullptr, "input", kInputPort2Values, "none"
+	},
+	{
+		"altirra_control_scheme", "Control Scheme", nullptr,
+		"Selects the default concurrent key bindings for spare RetroPad "
+		"buttons. Auto uses the 5200 preset when the active system is the "
+		"Atari 5200, otherwise common Atari 8-bit keys.",
+		nullptr, "input", kControlSchemeValues, "auto"
+	},
+	{
+		"altirra_vkbd_toggle", "Virtual Keyboard Toggle", nullptr,
+		"Selects the controller button or combo used to open the virtual "
+		"keyboard.",
+		nullptr, "input", kVkbdToggleValues, "r_l3_select_r2"
+	},
+	{
+		"altirra_warm_reset_combo", "Warm Reset Combo", nullptr,
+		"Selects the controller combo used for warm reset.",
+		nullptr, "input", kWarmResetComboValues, "select_start"
+	},
+	{
+		"altirra_cold_reset_combo", "Cold Reset Combo", nullptr,
+		"Selects the controller combo used for cold reset on Atari 8-bit "
+		"systems.",
+		nullptr, "input", kColdResetComboValues, "select_l"
+	},
+	{
+		"altirra_pad_y_key", "RetroPad Y Key", nullptr,
+		"Overrides the Atari key sent by RetroPad Y while joystick input "
+		"remains active.",
+		nullptr, "input", kPadKeyValues, "auto"
+	},
+	{
+		"altirra_pad_x_key", "RetroPad X Key", nullptr,
+		"Overrides the Atari key sent by RetroPad X while joystick input "
+		"remains active.",
+		nullptr, "input", kPadKeyValues, "auto"
+	},
+	{
+		"altirra_pad_l2_key", "RetroPad L2 Key", nullptr,
+		"Overrides the Atari key sent by RetroPad L2 while joystick input "
+		"remains active.",
+		nullptr, "input", kPadKeyValues, "auto"
+	},
+	{
+		"altirra_pad_r2_key", "RetroPad R2 Key", nullptr,
+		"Overrides the Atari key sent by RetroPad R2 while joystick input "
+		"remains active.",
+		nullptr, "input", kPadKeyValues, "auto"
+	},
+	{
+		"altirra_pad_l3_key", "RetroPad L3 Key", nullptr,
+		"Overrides the Atari key sent by RetroPad L3 while joystick input "
+		"remains active. If L3 is also selected as the virtual keyboard "
+		"toggle, the toggle takes precedence.",
+		nullptr, "input", kPadKeyValues, "auto"
+	},
+	{
+		"altirra_pad_r3_key", "RetroPad R3 Key", nullptr,
+		"Overrides the Atari key sent by RetroPad R3 while joystick input "
+		"remains active. If R3 is selected as the virtual keyboard toggle, "
+		"the toggle takes precedence.",
+		nullptr, "input", kPadKeyValues, "auto"
+	},
+	{
+		"altirra_key_start", "Keyboard START Key", nullptr,
+		"Selects the physical keyboard key mapped to the Atari START console "
+		"switch.",
+		nullptr, "input", kConsoleKeyValues, "f2"
+	},
+	{
+		"altirra_key_select", "Keyboard SELECT Key", nullptr,
+		"Selects the physical keyboard key mapped to the Atari SELECT console "
+		"switch.",
+		nullptr, "input", kConsoleKeyValues, "f3"
+	},
+	{
+		"altirra_key_option", "Keyboard OPTION Key", nullptr,
+		"Selects the physical keyboard key mapped to the Atari OPTION console "
+		"switch.",
+		nullptr, "input", kConsoleKeyValues, "f4"
 	},
 	{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
 };
@@ -938,7 +1513,7 @@ static retro_core_options_v2_intl kOptionsV2Intl = {
 };
 
 static const retro_variable kOptionVariables[] = {
-	{ "altirra_system", "System; 800xl|800|1200xl|130xe|xegs|5200" },
+	{ "altirra_system", "System; auto|800xl|800|1200xl|130xe|xegs|5200" },
 	{ "altirra_memory", "Memory Size; 320K|8K|16K|24K|32K|40K|48K|52K|64K|128K|256K|320K_Compy|576K|576K_Compy|1088K" },
 	{ "altirra_video_standard", "Video Standard; pal|ntsc|secam|ntsc50|pal60" },
 	{ "altirra_basic", "BASIC; disabled|enabled" },
@@ -952,13 +1527,29 @@ static const retro_variable kOptionVariables[] = {
 	{ "altirra_soundboard", "SoundBoard; disabled|enabled" },
 	{ "altirra_rapidus", "Rapidus Accelerator; disabled|enabled" },
 	{ "altirra_sio_patch", "SIO Patch; disk_and_cassette|off|disk|cassette" },
+	{ "altirra_disk_write_mode", "Disk Write Mode; safe_sidecar|original_rw" },
 	{ "altirra_artifacting", "Artifacting; auto|none|ntsc|ntschi|pal|palhi" },
+	{ "altirra_performance_tier", "Performance Tier; quality|balanced|performance" },
 	{ "altirra_crop_overscan", "Crop Overscan; normal|off|extended|full" },
-	{ "altirra_audio_filters", "Audio Filters; enabled|disabled" },
+	{ "altirra_aspect", "Aspect Ratio; 4_3|pixel_perfect|square_pixels|ntsc_par|pal_par" },
+	{ "altirra_audio_filters", "Audio Filters; auto|enabled|disabled" },
 	{ "altirra_stereo_as_mono", "Downmix Stereo to Mono; disabled|enabled" },
 	{ "altirra_drive_sounds", "Drive Sounds; disabled|enabled" },
-	{ "altirra_input_port1", "Input Port 1; joystick|5200_controller|paddle_a|paddle_b|st_mouse|light_pen|light_gun|none" },
+	{ "altirra_input_port1", "Input Port 1; auto|joystick|5200_controller|paddle_a|paddle_b|st_mouse|light_pen|light_gun|none" },
 	{ "altirra_input_port2", "Input Port 2; none|joystick|paddle_a|paddle_b|st_mouse" },
+	{ "altirra_control_scheme", "Control Scheme; auto|common|joystick|flight|adventure|5200" },
+	{ "altirra_vkbd_toggle", "Virtual Keyboard Toggle; r_l3_select_r2|r|l3|r3|select_r2|none" },
+	{ "altirra_warm_reset_combo", "Warm Reset Combo; select_start|select_r|start_r|none" },
+	{ "altirra_cold_reset_combo", "Cold Reset Combo; select_l|select_l2|select_r|none" },
+	{ "altirra_pad_y_key", "RetroPad Y Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
+	{ "altirra_pad_x_key", "RetroPad X Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
+	{ "altirra_pad_l2_key", "RetroPad L2 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
+	{ "altirra_pad_r2_key", "RetroPad R2 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
+	{ "altirra_pad_l3_key", "RetroPad L3 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
+	{ "altirra_pad_r3_key", "RetroPad R3 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
+	{ "altirra_key_start", "Keyboard START Key; f2|f3|f4|f5|f6|f8|f9|f10|none" },
+	{ "altirra_key_select", "Keyboard SELECT Key; f3|f2|f4|f5|f6|f8|f9|f10|none" },
+	{ "altirra_key_option", "Keyboard OPTION Key; f4|f2|f3|f5|f6|f8|f9|f10|none" },
 	{ nullptr, nullptr },
 };
 
@@ -973,17 +1564,35 @@ const retro_core_option_v2_definition *FindOptionDefinition(const char *key) {
 	return nullptr;
 }
 
+bool IsValidOptionValue(const retro_core_option_v2_definition& def,
+	const char *value)
+{
+	if (!value)
+		return false;
+
+	for(const retro_core_option_value *v = def.values; v && v->value; ++v) {
+		if (!std::strcmp(v->value, value))
+			return true;
+	}
+
+	return false;
+}
+
 const char *GetOptionValue(const char *key) {
 	if (!g_env)
 		return nullptr;
 
 	retro_variable var {};
 	var.key = key;
-
-	if (g_env(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-		return var.value;
-
 	const retro_core_option_v2_definition *def = FindOptionDefinition(key);
+
+	if (g_env(RETRO_ENVIRONMENT_GET_VARIABLE, &var)
+		&& def
+		&& IsValidOptionValue(*def, var.value))
+	{
+		return var.value;
+	}
+
 	return def ? def->default_value : nullptr;
 }
 
@@ -994,6 +1603,11 @@ bool OptionEquals(const char *key, const char *value) {
 
 bool OptionEnabled(const char *key) {
 	return OptionEquals(key, "enabled");
+}
+
+bool IsOptionUnsetOrAuto(const char *key) {
+	const char *value = GetOptionValue(key);
+	return !value || !std::strcmp(value, "auto");
 }
 
 void RegisterCoreOptions() {
@@ -1030,7 +1644,31 @@ void QueryInputBitmaskSupport() {
 		g_env(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, &supported) && supported;
 }
 
+void RegisterMemoryMaps() {
+	if (!g_env)
+		return;
+
+	static retro_memory_descriptor descriptors[1] {};
+	descriptors[0].flags = 0;
+	descriptors[0].ptr = g_core.systemRam.data();
+	descriptors[0].offset = 0;
+	descriptors[0].start = 0;
+	descriptors[0].select = 0xFFFF;
+	descriptors[0].disconnect = 0;
+	descriptors[0].len = g_core.systemRam.size();
+	descriptors[0].addrspace = "System RAM";
+
+	static retro_memory_map map {};
+	map.descriptors = descriptors;
+	map.num_descriptors = (unsigned)std::size(descriptors);
+
+	g_env(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &map);
+}
+
 ATHardwareMode ParseHardwareMode() {
+	if (OptionEquals("altirra_system", "auto"))
+		return g_core.contentHardwareMode;
+
 	if (OptionEquals("altirra_system", "800"))
 		return kATHardwareMode_800;
 	if (OptionEquals("altirra_system", "1200xl"))
@@ -1043,6 +1681,10 @@ ATHardwareMode ParseHardwareMode() {
 		return kATHardwareMode_5200;
 
 	return kATHardwareMode_800XL;
+}
+
+bool IsActiveHardware5200() {
+	return g_core.pendingHardwareMode == kATHardwareMode_5200;
 }
 
 ATMemoryMode ParseMemoryMode() {
@@ -1117,6 +1759,11 @@ void ParseCPUMode(ATCPUMode& mode, uint32& subCycles) {
 }
 
 ATArtifactMode ParseArtifactMode() {
+	if (IsOptionUnsetOrAuto("altirra_artifacting")) {
+		if (OptionEquals("altirra_performance_tier", "performance"))
+			return ATArtifactMode::None;
+	}
+
 	if (OptionEquals("altirra_artifacting", "none"))
 		return ATArtifactMode::None;
 	if (OptionEquals("altirra_artifacting", "ntsc"))
@@ -1293,8 +1940,12 @@ void ApplyLiveOptions() {
 	g_sim.GetGTIA().SetArtifactingMode(ParseArtifactMode());
 	g_sim.GetGTIA().SetOverscanMode(ParseOverscanMode());
 
-	if (IATAudioOutput *audio = g_sim.GetAudioOutput())
-		audio->SetFiltersEnabled(!OptionEquals("altirra_audio_filters", "disabled"));
+	if (IATAudioOutput *audio = g_sim.GetAudioOutput()) {
+		const bool filtersEnabled = OptionEquals("altirra_audio_filters", "enabled")
+			|| (IsOptionUnsetOrAuto("altirra_audio_filters")
+				&& !OptionEquals("altirra_performance_tier", "performance"));
+		audio->SetFiltersEnabled(filtersEnabled);
+	}
 
 	g_sim.GetCPU().SetIllegalInsnsEnabled(
 		OptionEnabled("altirra_illegal_instructions"));
@@ -1308,6 +1959,7 @@ void ApplyLiveOptions() {
 
 	ReleaseInput();
 	InitDefaultInputMaps();
+	RegisterInputDescriptors();
 }
 
 void ReadCoreOptions() {
@@ -1385,6 +2037,25 @@ struct ButtonMap {
 	uint32 controller5200Code;
 };
 
+struct PadKeyMap {
+	unsigned retroId;
+	unsigned keycode;
+	uint32_t character;
+	const char *description;
+};
+
+struct PadKeySlot {
+	unsigned retroId;
+	const char *optionKey;
+};
+
+struct PadKeyBinding {
+	const char *value;
+	unsigned keycode;
+	uint32_t character;
+	const char *description;
+};
+
 constexpr ButtonMap kRetropadButtonMap[] = {
 	{ RETRO_DEVICE_ID_JOYPAD_LEFT, kATInputCode_JoyStick1Left, kATInputCode_JoyPOVLeft },
 	{ RETRO_DEVICE_ID_JOYPAD_RIGHT, kATInputCode_JoyStick1Right, kATInputCode_JoyPOVRight },
@@ -1409,9 +2080,83 @@ constexpr uint8 kConsoleSwitchBits[] = {
 	0x04,
 };
 
+constexpr unsigned kRetropadPollIds[] = {
+	RETRO_DEVICE_ID_JOYPAD_B,
+	RETRO_DEVICE_ID_JOYPAD_Y,
+	RETRO_DEVICE_ID_JOYPAD_SELECT,
+	RETRO_DEVICE_ID_JOYPAD_START,
+	RETRO_DEVICE_ID_JOYPAD_UP,
+	RETRO_DEVICE_ID_JOYPAD_DOWN,
+	RETRO_DEVICE_ID_JOYPAD_LEFT,
+	RETRO_DEVICE_ID_JOYPAD_RIGHT,
+	RETRO_DEVICE_ID_JOYPAD_A,
+	RETRO_DEVICE_ID_JOYPAD_X,
+	RETRO_DEVICE_ID_JOYPAD_L,
+	RETRO_DEVICE_ID_JOYPAD_R,
+	RETRO_DEVICE_ID_JOYPAD_L2,
+	RETRO_DEVICE_ID_JOYPAD_R2,
+	RETRO_DEVICE_ID_JOYPAD_L3,
+	RETRO_DEVICE_ID_JOYPAD_R3,
+};
+
+constexpr PadKeySlot kPadKeySlots[] = {
+	{ RETRO_DEVICE_ID_JOYPAD_Y, "altirra_pad_y_key" },
+	{ RETRO_DEVICE_ID_JOYPAD_X, "altirra_pad_x_key" },
+	{ RETRO_DEVICE_ID_JOYPAD_L2, "altirra_pad_l2_key" },
+	{ RETRO_DEVICE_ID_JOYPAD_R2, "altirra_pad_r2_key" },
+	{ RETRO_DEVICE_ID_JOYPAD_L3, "altirra_pad_l3_key" },
+	{ RETRO_DEVICE_ID_JOYPAD_R3, "altirra_pad_r3_key" },
+};
+
+constexpr PadKeyBinding kPadKeyBindings[] = {
+	{ "space", RETROK_SPACE, ' ', "Space" },
+	{ "return", RETROK_RETURN, '\r', "Return" },
+	{ "escape", RETROK_ESCAPE, 0, "Esc" },
+	{ "f", 'f', 'f', "F" },
+	{ "a", 'a', 'a', "A" },
+	{ "g", 'g', 'g', "G" },
+	{ "m", 'm', 'm', "M" },
+	{ "s", 's', 's', "S" },
+	{ "y", 'y', 'y', "Y" },
+	{ "n", 'n', 'n', "N" },
+};
+
+constexpr uint32 k5200VkbdTriggers[] = {
+	kATInputTrigger_5200_0,
+	kATInputTrigger_5200_1,
+	kATInputTrigger_5200_2,
+	kATInputTrigger_5200_3,
+	kATInputTrigger_5200_4,
+	kATInputTrigger_5200_5,
+	kATInputTrigger_5200_6,
+	kATInputTrigger_5200_7,
+	kATInputTrigger_5200_8,
+	kATInputTrigger_5200_9,
+	kATInputTrigger_5200_Star,
+	kATInputTrigger_5200_Pound,
+	kATInputTrigger_5200_Start,
+	kATInputTrigger_5200_Pause,
+	kATInputTrigger_5200_Reset,
+};
+
+constexpr sint16 kAnalogJoystickThreshold = 0x4000;
+
+unsigned GetFrontendPortDevice(unsigned port) {
+	if (port >= std::size(g_controllerDevices))
+		return RETRO_DEVICE_NONE;
+
+	return g_controllerDevices[port] & RETRO_DEVICE_MASK;
+}
+
 bool IsJoystickPortEnabled(unsigned port) {
-	if (port == 0)
+	if (port == 0) {
+		if (OptionEquals("altirra_input_port1", "auto")) {
+			return GetFrontendPortDevice(port) == RETRO_DEVICE_JOYPAD
+				&& !IsActiveHardware5200();
+		}
+
 		return OptionEquals("altirra_input_port1", "joystick");
+	}
 
 	if (port == 1)
 		return OptionEquals("altirra_input_port2", "joystick");
@@ -1420,12 +2165,17 @@ bool IsJoystickPortEnabled(unsigned port) {
 }
 
 bool Is5200PortEnabled(unsigned port) {
-	return port == 0 && OptionEquals("altirra_input_port1", "5200_controller");
+	if (port != 0)
+		return false;
+
+	return OptionEquals("altirra_input_port1", "5200_controller")
+		|| (OptionEquals("altirra_input_port1", "auto")
+			&& IsActiveHardware5200()
+			&& GetFrontendPortDevice(port) == RETRO_DEVICE_JOYPAD);
 }
 
 bool IsPaddlePortEnabled(unsigned port) {
-	if (port < std::size(g_controllerDevices)
-		&& (g_controllerDevices[port] & RETRO_DEVICE_MASK) == RETRO_DEVICE_ANALOG)
+	if (GetFrontendPortDevice(port) == RETRO_DEVICE_ANALOG)
 	{
 		return true;
 	}
@@ -1442,8 +2192,7 @@ bool IsPaddlePortEnabled(unsigned port) {
 }
 
 bool IsSTMousePortEnabled(unsigned port) {
-	if (port < std::size(g_controllerDevices)
-		&& (g_controllerDevices[port] & RETRO_DEVICE_MASK) == RETRO_DEVICE_MOUSE)
+	if (GetFrontendPortDevice(port) == RETRO_DEVICE_MOUSE)
 	{
 		return true;
 	}
@@ -1468,7 +2217,7 @@ bool IsLightGunPortEnabled(unsigned port) {
 	if (port != 0)
 		return false;
 
-	return ((g_controllerDevices[port] & RETRO_DEVICE_MASK) == RETRO_DEVICE_LIGHTGUN)
+	return GetFrontendPortDevice(port) == RETRO_DEVICE_LIGHTGUN
 		|| OptionEquals("altirra_input_port1", "light_gun");
 }
 
@@ -1510,7 +2259,7 @@ uint32 GetRetropadInputCode(unsigned port, const ButtonMap& map) {
 	return 0;
 }
 
-uint16 GetRetropadStateMask(unsigned port) {
+uint16 GetRawRetropadStateMask(unsigned port) {
 	if (!g_inputState)
 		return 0;
 
@@ -1520,10 +2269,20 @@ uint16 GetRetropadStateMask(unsigned port) {
 	}
 
 	uint16 mask = 0;
-	for(size_t i = 0; i < std::size(kRetropadButtonMap); ++i) {
-		const unsigned id = kRetropadButtonMap[i].retroId;
+	for(unsigned id : kRetropadPollIds) {
 		if (g_inputState(port, RETRO_DEVICE_JOYPAD, 0, id))
 			mask |= (uint16)(1U << id);
+	}
+
+	return mask;
+}
+
+uint16 GetRetropadStateMask(unsigned port) {
+	uint16 mask = GetRawRetropadStateMask(port);
+
+	if (port == 0 && g_core.vkbdCloseSuppressMask) {
+		g_core.vkbdCloseSuppressMask &= mask;
+		mask &= (uint16)~g_core.vkbdCloseSuppressMask;
 	}
 
 	return mask;
@@ -1551,6 +2310,24 @@ void AddLibretroPaddleMap(ATInputManager& im, unsigned port) {
 	map->AddMapping(kATInputCode_JoyPOVRight, controller,
 		kATInputTrigger_Right | kATInputTriggerMode_Relative
 			| (5 << kATInputTriggerSpeed_Shift));
+
+	im.AddInputMap(map);
+	im.ActivateInputMap(map, true);
+}
+
+void AddLibretro5200VkbdMap(ATInputManager& im) {
+	vdrefptr<ATInputMap> map(new ATInputMap);
+	const unsigned controller = map->AddController(
+		kATInputControllerType_5200Controller, 0);
+
+	map->SetName(L"Libretro Virtual Keyboard -> 5200 keypad");
+	map->SetQuickMap(true);
+	map->SetSpecificInputUnit(0);
+
+	for(size_t i = 0; i < std::size(k5200VkbdTriggers); ++i) {
+		map->AddMapping(kVkbd5200InputBase + (uint32)i, controller,
+			k5200VkbdTriggers[i]);
+	}
 
 	im.AddInputMap(map);
 	im.ActivateInputMap(map, true);
@@ -1619,6 +2396,42 @@ uint32 MapRetroKeyToInputCode(unsigned keycode) {
 		default:
 			return 0;
 	}
+}
+
+unsigned ParseConsoleKeyOption(const char *key, unsigned fallback) {
+	const char *value = GetOptionValue(key);
+	if (!value)
+		return fallback;
+
+	if (!std::strcmp(value, "none")) return 0;
+	if (!std::strcmp(value, "f2")) return RETROK_F2;
+	if (!std::strcmp(value, "f3")) return RETROK_F3;
+	if (!std::strcmp(value, "f4")) return RETROK_F4;
+	if (!std::strcmp(value, "f5")) return RETROK_F5;
+	if (!std::strcmp(value, "f6")) return RETROK_F6;
+	if (!std::strcmp(value, "f8")) return RETROK_F8;
+	if (!std::strcmp(value, "f9")) return RETROK_F9;
+	if (!std::strcmp(value, "f10")) return RETROK_F10;
+
+	return fallback;
+}
+
+uint32 GetKeyboardConsoleScanCode(unsigned keycode) {
+	const unsigned startKey =
+		ParseConsoleKeyOption("altirra_key_start", RETROK_F2);
+	const unsigned selectKey =
+		ParseConsoleKeyOption("altirra_key_select", RETROK_F3);
+	const unsigned optionKey =
+		ParseConsoleKeyOption("altirra_key_option", RETROK_F4);
+
+	if (startKey && keycode == startKey)
+		return kATUIKeyScanCode_Start;
+	if (selectKey && keycode == selectKey)
+		return kATUIKeyScanCode_Select;
+	if (optionKey && keycode == optionKey)
+		return kATUIKeyScanCode_Option;
+
+	return 0;
 }
 
 bool IsRetroKeyExtended(unsigned keycode) {
@@ -1807,6 +2620,27 @@ void HandleKeyboardEvent(bool down, unsigned keycode, uint32_t character) {
 		return;
 	}
 
+	const uint32 consoleScanCode = GetKeyboardConsoleScanCode(keycode);
+	if (consoleScanCode) {
+		HandleKeyboardSpecialScanCode(consoleScanCode, down);
+		return;
+	}
+
+	if (down && keycode == RETROK_F5) {
+		const bool shift = g_core.keyboardHeldCodes.end() != std::find_if(
+			g_core.keyboardHeldCodes.begin(), g_core.keyboardHeldCodes.end(),
+			[](uint32 code) {
+				return code == kATInputCode_KeyLShift
+					|| code == kATInputCode_KeyRShift;
+			});
+
+		if (shift)
+			DoColdReset();
+		else
+			DoWarmReset();
+		return;
+	}
+
 	auto it = std::find(g_core.keyboardHeldCodes.begin(),
 		g_core.keyboardHeldCodes.end(), inputCode);
 	const bool wasDown = it != g_core.keyboardHeldCodes.end();
@@ -1894,6 +2728,121 @@ void HandleKeyboardEvent(bool down, unsigned keycode, uint32_t character) {
 void KeyboardCallback(bool down, unsigned keycode, uint32_t character, uint16_t) {
 	g_core.keyboardCallbackEventSeen = true;
 	HandleKeyboardEvent(down, keycode, character);
+}
+
+void DoWarmReset() {
+	if (!g_core.simulatorInitialized)
+		return;
+
+	InvalidateSerializeCache();
+	g_sim.WarmReset();
+	ApplyEnabledCheats();
+	RefreshSystemRam();
+}
+
+void DoColdReset() {
+	if (!g_core.simulatorInitialized)
+		return;
+
+	InvalidateSerializeCache();
+	g_sim.ColdReset();
+	ApplyEnabledCheats();
+	RefreshSystemRam();
+}
+
+void PulseVkbdConsoleSwitch(size_t index) {
+	if (index >= std::size(g_core.vkbdConsolePulseFrames))
+		return;
+
+	g_core.vkbdConsolePulseFrames[index] = 4;
+	g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[index], true);
+}
+
+void PulseVkbd5200Key(uint32 trigger) {
+	auto it = std::find(std::begin(k5200VkbdTriggers),
+		std::end(k5200VkbdTriggers), trigger);
+	if (it == std::end(k5200VkbdTriggers))
+		return;
+
+	ATInputManager *const im = g_sim.GetInputManager();
+	if (!im)
+		return;
+
+	const size_t index = (size_t)std::distance(
+		std::begin(k5200VkbdTriggers), it);
+	const uint32 inputCode = kVkbd5200InputBase + (uint32)index;
+	if (!g_core.vkbd5200PulseFrames[index])
+		im->OnButtonDown(0, inputCode);
+
+	g_core.vkbd5200PulseFrames[index] = 4;
+}
+
+void ProcessVkbdEvent(const ATLibretroVkbdEvent& event) {
+	switch(event.type) {
+		case ATLibretroVkbdEvent::kKey:
+			if (event.shift)
+				HandleKeyboardEvent(true, RETROK_LSHIFT, 0);
+			if (event.ctrl)
+				HandleKeyboardEvent(true, RETROK_LCTRL, 0);
+
+			HandleKeyboardEvent(true, event.keycode, event.character);
+			HandleKeyboardEvent(false, event.keycode, 0);
+
+			if (event.ctrl)
+				HandleKeyboardEvent(false, RETROK_LCTRL, 0);
+			if (event.shift)
+				HandleKeyboardEvent(false, RETROK_LSHIFT, 0);
+			break;
+
+		case ATLibretroVkbdEvent::kConsoleStart:
+			PulseVkbdConsoleSwitch(0);
+			break;
+
+		case ATLibretroVkbdEvent::kConsoleSelect:
+			PulseVkbdConsoleSwitch(1);
+			break;
+
+		case ATLibretroVkbdEvent::kConsoleOption:
+			PulseVkbdConsoleSwitch(2);
+			break;
+
+		case ATLibretroVkbdEvent::kWarmReset:
+			DoWarmReset();
+			break;
+
+		case ATLibretroVkbdEvent::kColdReset:
+			DoColdReset();
+			break;
+
+		case ATLibretroVkbdEvent::k5200Key:
+			PulseVkbd5200Key(event.trigger);
+			break;
+
+		case ATLibretroVkbdEvent::kNone:
+			break;
+	}
+}
+
+void UpdateVkbdConsolePulses() {
+	ATInputManager *const im = g_sim.GetInputManager();
+
+	for(size_t i = 0; i < std::size(g_core.vkbdConsolePulseFrames); ++i) {
+		if (!g_core.vkbdConsolePulseFrames[i])
+			continue;
+
+		--g_core.vkbdConsolePulseFrames[i];
+		if (!g_core.vkbdConsolePulseFrames[i])
+			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i], false);
+	}
+
+	for(size_t i = 0; i < std::size(g_core.vkbd5200PulseFrames); ++i) {
+		if (!g_core.vkbd5200PulseFrames[i])
+			continue;
+
+		--g_core.vkbd5200PulseFrames[i];
+		if (!g_core.vkbd5200PulseFrames[i] && im)
+			im->OnButtonUp(0, kVkbd5200InputBase + (uint32)i);
+	}
 }
 
 void PollKeyboardInput() {
@@ -2094,6 +3043,8 @@ void InitDefaultInputMaps() {
 		AddLibretroPaddleMap(*im, 0);
 	if (IsPaddlePortEnabled(1))
 		AddLibretroPaddleMap(*im, 1);
+	if (Is5200PortEnabled(0))
+		AddLibretro5200VkbdMap(*im);
 }
 
 void ReleaseInput() {
@@ -2108,6 +3059,7 @@ void ReleaseInput() {
 					g_core.buttonHeldCodes[unit][i] = 0;
 				}
 			}
+
 		}
 
 		for(uint32 inputCode : g_core.keyboardHeldCodes)
@@ -2120,9 +3072,23 @@ void ReleaseInput() {
 				g_core.mouseButtonsHeld[i] = false;
 			}
 		}
+
+		for(size_t i = 0; i < std::size(g_core.vkbd5200PulseFrames); ++i) {
+			if (g_core.vkbd5200PulseFrames[i]) {
+				im->OnButtonUp(0, kVkbd5200InputBase + (uint32)i);
+				g_core.vkbd5200PulseFrames[i] = 0;
+			}
+		}
+	}
+
+	if (!im) {
+		for(uint8& frames : g_core.vkbd5200PulseFrames)
+			frames = 0;
 	}
 
 	for(size_t i = 0; i < std::size(kConsoleSwitchBits); ++i) {
+		g_core.vkbdConsolePulseFrames[i] = 0;
+
 		if (g_core.consoleHeld[i]) {
 			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i], false);
 			g_core.consoleHeld[i] = false;
@@ -2142,11 +3108,146 @@ void ReleaseInput() {
 	g_sim.GetPokey().SetShiftKeyState(false, true);
 	g_sim.GetPokey().SetControlKeyState(false);
 	g_sim.GetPokey().ReleaseAllRawKeys(true);
+
+	for(bool& held : g_core.resetCombosHeld)
+		held = false;
+	g_core.vkbdCloseSuppressMask = 0;
+	for(bool& held : g_core.padKeyHeld)
+		held = false;
+	for(unsigned& keycode : g_core.padKeyHeldKeycodes)
+		keycode = 0;
 }
 
 void InvalidateSerializeCache() {
 	g_core.serializeCache.clear();
 	g_core.serializeCacheValid = false;
+}
+
+void RefreshSystemRam() {
+	ATMemoryManager *const mem = g_core.simulatorInitialized
+		? g_sim.GetMemoryManager()
+		: nullptr;
+	if (!mem) {
+		g_core.systemRamValid = false;
+		return;
+	}
+
+	for(uint32 address = 0; address < 0x10000; ++address)
+		g_core.systemRam[address] = mem->CPUDebugReadByte((uint16)address);
+	g_core.systemRamValid = true;
+}
+
+bool ParseCheatNumber(const char *s, const char *end, uint32& value) {
+	while(s < end && std::isspace((unsigned char)*s))
+		++s;
+	while(end > s && std::isspace((unsigned char)end[-1]))
+		--end;
+
+	if (s == end)
+		return false;
+
+	int base = 10;
+	if (*s == '$') {
+		base = 16;
+		++s;
+	} else if (end - s > 2 && s[0] == '0'
+		&& (s[1] == 'x' || s[1] == 'X'))
+	{
+		base = 16;
+		s += 2;
+	}
+
+	if (s == end)
+		return false;
+
+	uint32 v = 0;
+	for(; s < end; ++s) {
+		const unsigned char ch = (unsigned char)*s;
+		unsigned digit = 0;
+		if (ch >= '0' && ch <= '9')
+			digit = ch - '0';
+		else if (base == 16 && ch >= 'a' && ch <= 'f')
+			digit = ch - 'a' + 10;
+		else if (base == 16 && ch >= 'A' && ch <= 'F')
+			digit = ch - 'A' + 10;
+		else
+			return false;
+
+		if (digit >= (unsigned)base)
+			return false;
+
+		v = v * (uint32)base + digit;
+	}
+
+	value = v;
+	return true;
+}
+
+bool ParseCheatCode(const char *code, uint16& address, uint8& value) {
+	if (!code)
+		return false;
+
+	const char *s = code;
+	while(*s && std::isspace((unsigned char)*s))
+		++s;
+
+	if ((s[0] == 'P' || s[0] == 'p')
+		&& (s[1] == 'O' || s[1] == 'o')
+		&& (s[2] == 'K' || s[2] == 'k')
+		&& (s[3] == 'E' || s[3] == 'e'))
+	{
+		s += 4;
+	}
+
+	while(*s && std::isspace((unsigned char)*s))
+		++s;
+
+	const char *sep = nullptr;
+	for(const char *p = s; *p; ++p) {
+		if (*p == ':' || *p == '=' || *p == ',' || *p == ' ') {
+			sep = p;
+			break;
+		}
+	}
+
+	if (!sep)
+		return false;
+
+	const char *rhs = sep + 1;
+	while(*rhs == ':' || *rhs == '=' || *rhs == ','
+		|| std::isspace((unsigned char)*rhs))
+	{
+		++rhs;
+	}
+
+	const char *end = rhs + std::strlen(rhs);
+	uint32 addr32 = 0;
+	uint32 value32 = 0;
+	if (!ParseCheatNumber(s, sep, addr32)
+		|| !ParseCheatNumber(rhs, end, value32)
+		|| addr32 > 0xFFFF
+		|| value32 > 0xFF)
+	{
+		return false;
+	}
+
+	address = (uint16)addr32;
+	value = (uint8)value32;
+	return true;
+}
+
+void ApplyCheat(const CoreState::Cheat& cheat) {
+	if (!cheat.enabled || !g_core.simulatorInitialized)
+		return;
+
+	ATMemoryManager *const mem = g_sim.GetMemoryManager();
+	if (mem)
+		mem->CPUWriteByte(cheat.address, cheat.value);
+}
+
+void ApplyEnabledCheats() {
+	for(const CoreState::Cheat& cheat : g_core.cheats)
+		ApplyCheat(cheat);
 }
 
 void WriteLE32(uint8_t *dst, uint32 v) {
@@ -2163,9 +3264,346 @@ uint32 ReadLE32(const uint8_t *src) {
 		| ((uint32)src[3] << 24);
 }
 
+const PadKeyBinding *FindPadKeyBinding(const char *value) {
+	if (!value || !std::strcmp(value, "none"))
+		return nullptr;
+
+	for(const PadKeyBinding& binding : kPadKeyBindings) {
+		if (!std::strcmp(value, binding.value))
+			return &binding;
+	}
+
+	return nullptr;
+}
+
+const char *GetEffectiveControlScheme() {
+	const char *scheme = GetOptionValue("altirra_control_scheme");
+	if (!scheme || !std::strcmp(scheme, "auto"))
+		return IsActiveHardware5200() ? "5200" : "common";
+
+	return scheme;
+}
+
+const char *GetSchemePadKeyValue(size_t slot) {
+	const char *const scheme = GetEffectiveControlScheme();
+
+	if (!std::strcmp(scheme, "joystick") || !std::strcmp(scheme, "5200"))
+		return "none";
+
+	if (!std::strcmp(scheme, "flight")) {
+		static constexpr const char *kFlightKeys[] = {
+			"f", "a", "m", "s", "g", "none"
+		};
+		return slot < std::size(kFlightKeys) ? kFlightKeys[slot] : "none";
+	}
+
+	if (!std::strcmp(scheme, "adventure")) {
+		static constexpr const char *kAdventureKeys[] = {
+			"space", "escape", "n", "return", "y", "none"
+		};
+		return slot < std::size(kAdventureKeys) ? kAdventureKeys[slot] : "none";
+	}
+
+	static constexpr const char *kCommonKeys[] = {
+		"space", "return", "escape", "return", "none", "none"
+	};
+	return slot < std::size(kCommonKeys) ? kCommonKeys[slot] : "none";
+}
+
+const PadKeyBinding *GetPadKeyBindingForSlot(size_t slot) {
+	if (slot >= std::size(kPadKeySlots))
+		return nullptr;
+
+	const char *value = GetOptionValue(kPadKeySlots[slot].optionKey);
+	if (!value || !std::strcmp(value, "auto"))
+		value = GetSchemePadKeyValue(slot);
+
+	return FindPadKeyBinding(value);
+}
+
+bool IsVkbdToggleSelectR2Enabled();
+uint16 GetVkbdToggleButtonMask();
+
+void FormatPadDescriptor(size_t slot, char *dst, size_t dstLen) {
+	const PadKeyBinding *const binding = GetPadKeyBindingForSlot(slot);
+	const bool r2VkbdCombo = slot < std::size(kPadKeySlots)
+		&& kPadKeySlots[slot].retroId == RETRO_DEVICE_ID_JOYPAD_R2
+		&& IsVkbdToggleSelectR2Enabled();
+	const bool directVkbdToggle = slot < std::size(kPadKeySlots)
+		&& (GetVkbdToggleButtonMask()
+			& (uint16)(1U << kPadKeySlots[slot].retroId)) != 0;
+
+	if (directVkbdToggle) {
+		std::snprintf(dst, dstLen, "%s", "Virtual Keyboard");
+		return;
+	}
+
+	if (binding && r2VkbdCombo) {
+		std::snprintf(dst, dstLen, "%s / VKBD Combo",
+			binding->description);
+		return;
+	}
+
+	if (binding) {
+		std::snprintf(dst, dstLen, "%s", binding->description);
+		return;
+	}
+
+	if (r2VkbdCombo) {
+		std::snprintf(dst, dstLen, "%s", "VKBD Combo");
+		return;
+	}
+
+	std::snprintf(dst, dstLen, "%s", "Unassigned");
+}
+
+void RegisterInputDescriptors() {
+	if (!g_env)
+		return;
+
+	static std::array<std::array<char, 64>, std::size(kPadKeySlots)>
+		padDescriptions {};
+	static char vkbdRDescription[32] {};
+
+	for(size_t i = 0; i < std::size(kPadKeySlots); ++i)
+		FormatPadDescriptor(i, padDescriptions[i].data(),
+			padDescriptions[i].size());
+	std::snprintf(vkbdRDescription, sizeof vkbdRDescription, "%s",
+		(GetVkbdToggleButtonMask() & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_R))
+			? "Virtual Keyboard"
+			: "Unassigned");
+
+	static retro_input_descriptor inputDescriptors[] = {
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick Up" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick Down" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick Left" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick Right" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Trigger" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Trigger" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, nullptr },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, nullptr },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "START" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "SELECT" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "OPTION" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, nullptr },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, nullptr },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, nullptr },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, nullptr },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, nullptr },
+		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Joystick Analog Y" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick 2 Up" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick 2 Down" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick 2 Left" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick 2 Right" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Joystick 2 Trigger" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Joystick 2 Trigger" },
+		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Analog X / Paddle Knob" },
+		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Paddle Trigger" },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Paddle 2 Knob" },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Paddle 2 Trigger" },
+		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X, "Mouse X" },
+		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y, "Mouse Y" },
+		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT, "Mouse Left Button" },
+		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT, "Mouse Right Button" },
+		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X, "Mouse 2 X" },
+		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y, "Mouse 2 Y" },
+		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT, "Mouse 2 Left Button" },
+		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT, "Mouse 2 Right Button" },
+		{ 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X, "Light Gun X" },
+		{ 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y, "Light Gun Y" },
+		{ 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER, "Light Gun Trigger" },
+		{ 0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X, "Pointer X" },
+		{ 0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y, "Pointer Y" },
+		{ 0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED, "Pointer Pressed" },
+		{ 0, 0, 0, 0, nullptr },
+	};
+
+	inputDescriptors[6].description = padDescriptions[0].data();
+	inputDescriptors[7].description = padDescriptions[1].data();
+	inputDescriptors[11].description = vkbdRDescription;
+	inputDescriptors[12].description = padDescriptions[2].data();
+	inputDescriptors[13].description = padDescriptions[3].data();
+	inputDescriptors[14].description = padDescriptions[4].data();
+	inputDescriptors[15].description = padDescriptions[5].data();
+
+	g_env(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void *)inputDescriptors);
+}
+
+uint16 GetVkbdToggleButtonMask() {
+	const char *value = GetOptionValue("altirra_vkbd_toggle");
+
+	if (!value || !std::strcmp(value, "r_l3_select_r2"))
+		return (uint16)((1U << RETRO_DEVICE_ID_JOYPAD_R)
+			| (1U << RETRO_DEVICE_ID_JOYPAD_L3));
+	if (!std::strcmp(value, "r"))
+		return (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_R);
+	if (!std::strcmp(value, "l3"))
+		return (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_L3);
+	if (!std::strcmp(value, "r3"))
+		return (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_R3);
+
+	return 0;
+}
+
+bool IsVkbdToggleSelectR2Enabled() {
+	const char *value = GetOptionValue("altirra_vkbd_toggle");
+	return !value
+		|| !std::strcmp(value, "r_l3_select_r2")
+		|| !std::strcmp(value, "select_r2");
+}
+
+bool IsComboDown(const char *value, uint16 joypadState) {
+	if (!value || !std::strcmp(value, "none"))
+		return false;
+
+	if (!std::strcmp(value, "select_start")) {
+		return (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_SELECT))
+			&& (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_START));
+	}
+
+	if (!std::strcmp(value, "select_l")) {
+		return (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_SELECT))
+			&& (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_L));
+	}
+
+	if (!std::strcmp(value, "select_l2")) {
+		return (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_SELECT))
+			&& (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_L2));
+	}
+
+	if (!std::strcmp(value, "select_r")) {
+		return (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_SELECT))
+			&& (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_R));
+	}
+
+	if (!std::strcmp(value, "start_r")) {
+		return (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_START))
+			&& (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_R));
+	}
+
+	return false;
+}
+
+bool IsPadKeyMappingSuppressed(const PadKeySlot& slot, uint16 joypadState) {
+	if (slot.retroId == RETRO_DEVICE_ID_JOYPAD_R2
+		&& IsVkbdToggleSelectR2Enabled()
+		&& (joypadState & (uint16)(1U << RETRO_DEVICE_ID_JOYPAD_SELECT)))
+	{
+		return true;
+	}
+
+	if (GetVkbdToggleButtonMask() & (uint16)(1U << slot.retroId))
+		return true;
+
+	return false;
+}
+
+void UpdatePadKeyMappings(uint16 joypadState, bool enabled) {
+	if (!enabled)
+		joypadState = 0;
+
+	for(size_t i = 0; i < std::size(kPadKeySlots); ++i) {
+		const PadKeySlot& slot = kPadKeySlots[i];
+		const PadKeyBinding *const binding = GetPadKeyBindingForSlot(i);
+		const bool down = enabled
+			&& binding
+			&& !IsPadKeyMappingSuppressed(slot, joypadState)
+			&& (joypadState & (uint16)(1U << slot.retroId)) != 0;
+
+		if (down == g_core.padKeyHeld[i])
+			continue;
+
+		const unsigned keycode = down
+			? binding->keycode
+			: g_core.padKeyHeldKeycodes[i];
+
+		g_core.padKeyHeld[i] = down;
+		g_core.padKeyHeldKeycodes[i] = down ? keycode : 0;
+		if (keycode)
+			// Use the same Atari computer keyboard path as physical
+			// libretro keyboard input. The input-map Keyboard controller is
+			// external keyboard-controller hardware, not the computer keyboard.
+			HandleKeyboardEvent(down, keycode,
+				down ? binding->character : 0);
+	}
+}
+
+bool IsAnalogRetropadDirectionDown(unsigned port, unsigned retroId) {
+	if (!g_inputState)
+		return false;
+
+	switch(retroId) {
+		case RETRO_DEVICE_ID_JOYPAD_LEFT:
+			return g_inputState(port, RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_LEFT,
+				RETRO_DEVICE_ID_ANALOG_X) < -kAnalogJoystickThreshold;
+
+		case RETRO_DEVICE_ID_JOYPAD_RIGHT:
+			return g_inputState(port, RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_LEFT,
+				RETRO_DEVICE_ID_ANALOG_X) > kAnalogJoystickThreshold;
+
+		case RETRO_DEVICE_ID_JOYPAD_UP:
+			return g_inputState(port, RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_LEFT,
+				RETRO_DEVICE_ID_ANALOG_Y) < -kAnalogJoystickThreshold;
+
+		case RETRO_DEVICE_ID_JOYPAD_DOWN:
+			return g_inputState(port, RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_LEFT,
+				RETRO_DEVICE_ID_ANALOG_Y) > kAnalogJoystickThreshold;
+
+		default:
+			return false;
+	}
+}
+
 void UpdateInput() {
 	if (!g_inputState)
 		return;
+
+	const bool wasVkbdOpen = ATLibretroVkbdIsOpen();
+	const uint16 port0JoypadStateForVkbd = GetRawRetropadStateMask(0);
+	ATLibretroVkbdEvent vkbdEvent {};
+	if (ATLibretroVkbdUpdate(port0JoypadStateForVkbd,
+		GetVkbdToggleButtonMask(), IsVkbdToggleSelectR2Enabled(),
+		Is5200PortEnabled(0), vkbdEvent))
+	{
+		ProcessVkbdEvent(vkbdEvent);
+	}
+
+	const bool vkbdOpen = ATLibretroVkbdIsOpen();
+	if (!wasVkbdOpen && vkbdOpen) {
+		g_core.vkbdCloseSuppressMask = 0;
+		ReleaseInput();
+	}
+
+	UpdateVkbdConsolePulses();
+
+	if (wasVkbdOpen && !vkbdOpen) {
+		g_core.vkbdCloseSuppressMask = port0JoypadStateForVkbd;
+		UpdatePadKeyMappings(0, false);
+		PollKeyboardInput();
+		return;
+	}
+
+	if (vkbdOpen) {
+		UpdatePadKeyMappings(0, false);
+		PollKeyboardInput();
+		return;
+	}
+
+	const bool port0Joypad = (g_controllerDevices[0] & RETRO_DEVICE_MASK)
+		== RETRO_DEVICE_JOYPAD;
+	const bool port0Active = port0Joypad && IsJoystickPortEnabled(0);
+	const uint16 port0JoypadState = port0Joypad ? GetRetropadStateMask(0) : 0;
+	const bool port05200 = Is5200PortEnabled(0);
+	const bool warmResetCombo = port0Joypad
+		&& IsComboDown(GetOptionValue("altirra_warm_reset_combo"),
+			port0JoypadState);
+	const bool coldResetCombo = port0Joypad && !port05200
+		&& IsComboDown(GetOptionValue("altirra_cold_reset_combo"),
+			port0JoypadState);
 
 	ATInputManager *im = g_sim.GetInputManager();
 
@@ -2174,7 +3612,11 @@ void UpdateInput() {
 			const bool portJoypad = (g_controllerDevices[port] & RETRO_DEVICE_MASK)
 				== RETRO_DEVICE_JOYPAD;
 			const bool portPaddle = IsPaddlePortEnabled(port);
-			const uint16 joypadState = GetRetropadStateMask(port);
+			const bool resetComboPort =
+				port == 0 && (warmResetCombo || coldResetCombo);
+			const uint16 joypadState = port == 0
+				? port0JoypadState
+				: GetRetropadStateMask(port);
 
 			for(size_t i = 0; i < std::size(kRetropadButtonMap); ++i) {
 				const uint32 inputCode = (portJoypad || portPaddle)
@@ -2183,9 +3625,12 @@ void UpdateInput() {
 				const bool active = inputCode != 0;
 				bool down = false;
 
-				if (active) {
+				if (active && !resetComboPort) {
 					down = (joypadState
 						& (uint16)(1U << kRetropadButtonMap[i].retroId)) != 0;
+					if (!down && portJoypad)
+						down = IsAnalogRetropadDirectionDown(port,
+							kRetropadButtonMap[i].retroId);
 
 					if (!down && portPaddle
 						&& (kRetropadButtonMap[i].retroId == RETRO_DEVICE_ID_JOYPAD_B
@@ -2230,13 +3675,21 @@ void UpdateInput() {
 		PollAbsolutePointerInput(*im);
 	}
 
-	const bool port0Joypad = (g_controllerDevices[0] & RETRO_DEVICE_MASK)
-		== RETRO_DEVICE_JOYPAD;
-	const bool port0Active = port0Joypad && IsJoystickPortEnabled(0);
-	const uint16 port0JoypadState = port0Active ? GetRetropadStateMask(0) : 0;
+	if (warmResetCombo && !g_core.resetCombosHeld[0])
+		DoWarmReset();
+	if (coldResetCombo && !g_core.resetCombosHeld[1])
+		DoColdReset();
+
+	g_core.resetCombosHeld[0] = warmResetCombo;
+	g_core.resetCombosHeld[1] = coldResetCombo;
+
+	UpdatePadKeyMappings(port0JoypadState,
+		port0Active && !port05200 && !warmResetCombo && !coldResetCombo);
 
 	for(size_t i = 0; i < std::size(kConsoleRetroIds); ++i) {
 		const bool down = port0Active
+			&& !warmResetCombo
+			&& !coldResetCombo
 			&& (port0JoypadState & (uint16)(1U << kConsoleRetroIds[i])) != 0;
 
 		if (down == g_core.consoleHeld[i])
@@ -2274,56 +3727,52 @@ void SetStaticEnvironment() {
 	RegisterCoreOptions();
 	RegisterDiskControl();
 	QueryInputBitmaskSupport();
+	RegisterMemoryMaps();
 
 	bool supportsNoGame = true;
 	g_env(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &supportsNoGame);
 
-	bool supportsAchievements = false;
+	bool supportsAchievements = true;
 	g_env(RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS, &supportsAchievements);
 
-	static const retro_input_descriptor inputDescriptors[] = {
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick Up" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick Down" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick Left" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick Right" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Trigger" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Trigger" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "START" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "SELECT" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "OPTION" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick 2 Up" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick 2 Down" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick 2 Left" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick 2 Right" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Joystick 2 Trigger" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Joystick 2 Trigger" },
-		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Paddle Knob" },
-		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Paddle Trigger" },
-		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Paddle 2 Knob" },
-		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Paddle 2 Trigger" },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X, "Mouse X" },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y, "Mouse Y" },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT, "Mouse Left Button" },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT, "Mouse Right Button" },
-		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X, "Mouse 2 X" },
-		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y, "Mouse 2 Y" },
-		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT, "Mouse 2 Left Button" },
-		{ 1, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT, "Mouse 2 Right Button" },
-		{ 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X, "Light Gun X" },
-		{ 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y, "Light Gun Y" },
-		{ 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER, "Light Gun Trigger" },
-		{ 0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X, "Pointer X" },
-		{ 0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y, "Pointer Y" },
-		{ 0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED, "Pointer Pressed" },
-		{ 0, 0, 0, 0, nullptr },
-	};
-
-	g_env(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void *)inputDescriptors);
+	RegisterInputDescriptors();
 
 	static const retro_keyboard_callback keyboardCallback {
 		KeyboardCallback
 	};
 	g_env(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, (void *)&keyboardCallback);
+
+	static const retro_subsystem_rom_info cartDiskRoms[] = {
+		{
+			"Cartridge / Program",
+			kCartProgramExtensions,
+			true,
+			false,
+			true,
+			nullptr,
+			0
+		},
+		{
+			"Disk",
+			"atr|xfd|atx|atz|dcm|pro|arc|m3u",
+			true,
+			false,
+			true,
+			nullptr,
+			0
+		},
+	};
+	static const retro_subsystem_info subsystems[] = {
+		{
+			"Cartridge + Disk",
+			"cart_disk",
+			cartDiskRoms,
+			(unsigned)std::size(cartDiskRoms),
+			kSubsystemCartDiskId
+		},
+		{ nullptr, nullptr, nullptr, 0, 0 },
+	};
+	g_env(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void *)subsystems);
 
 	static const retro_controller_description portControllers[] = {
 		{ "Atari Joystick", RETRO_DEVICE_JOYPAD },
@@ -2341,13 +3790,32 @@ void SetStaticEnvironment() {
 	g_env(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void *)controllerInfo);
 }
 
+float GetGeometryAspectRatio(unsigned w, unsigned h) {
+	if (!w || !h)
+		return 4.0f / 3.0f;
+
+	if (OptionEquals("altirra_aspect", "pixel_perfect")
+		|| OptionEquals("altirra_aspect", "square_pixels"))
+	{
+		return (float)w / (float)h;
+	}
+
+	if (OptionEquals("altirra_aspect", "ntsc_par"))
+		return 3.0f / 2.0f;
+
+	if (OptionEquals("altirra_aspect", "pal_par"))
+		return 7.0f / 5.0f;
+
+	return 4.0f / 3.0f;
+}
+
 retro_game_geometry MakeGeometry(unsigned w, unsigned h) {
 	retro_game_geometry geometry {};
 	geometry.base_width = w;
 	geometry.base_height = h;
 	geometry.max_width = 912;
 	geometry.max_height = 624;
-	geometry.aspect_ratio = 4.0f / 3.0f;
+	geometry.aspect_ratio = GetGeometryAspectRatio(w, h);
 	return geometry;
 }
 
@@ -2401,13 +3869,16 @@ void ReportGeometry(unsigned w, unsigned h, bool force) {
 		&& g_core.reportedGeometryW == w
 		&& g_core.reportedGeometryH == h)
 	{
-		return;
+		retro_game_geometry currentGeometry = MakeGeometry(w, h);
+		if (g_core.reportedGeometryAspect == currentGeometry.aspect_ratio)
+			return;
 	}
 
 	retro_game_geometry geometry = MakeGeometry(w, h);
 	g_env(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
 	g_core.reportedGeometryW = w;
 	g_core.reportedGeometryH = h;
+	g_core.reportedGeometryAspect = geometry.aspect_ratio;
 }
 
 bool InitSimulator() {
@@ -2480,6 +3951,11 @@ void ApplyUpdatedCoreOptions() {
 		g_sim.Resume();
 	}
 
+	unsigned frameW = 0;
+	unsigned frameH = 0;
+	GetCurrentFrameGeometry(frameW, frameH);
+	ReportGeometry(frameW, frameH, false);
+
 	if (oldVideoStandard != g_sim.GetVideoStandard()) {
 		retro_system_av_info av {};
 		FillAvInfo(av);
@@ -2491,6 +3967,7 @@ void ShutdownSimulator() {
 	if (!g_core.simulatorInitialized)
 		return;
 
+	SaveMountedDiskIfDirty();
 	g_sim.Pause();
 	ReleaseInput();
 	g_sim.GetGTIA().SetVideoOutput(nullptr);
@@ -2503,6 +3980,7 @@ void ShutdownSimulator() {
 	ATShutdownDebugger();
 	g_sim.Shutdown();
 	g_core = CoreState {};
+	ATLibretroVkbdReset();
 }
 
 void SubmitCurrentFrame() {
@@ -2522,8 +4000,11 @@ void SubmitCurrentFrame() {
 		g_core.lastFrameH = h;
 		g_core.lastFramePitch = pitch;
 
+		ATLibretroVkbdRenderXrgb8888(g_core.lastFrame.data(), w, h, pitch,
+			Is5200PortEnabled(0));
+
 		ReportGeometry((unsigned)w, (unsigned)h, false);
-		g_video(g_core.frameBuffer.data, (unsigned)w, (unsigned)h, (size_t)pitch);
+		g_video(g_core.lastFrame.data(), (unsigned)w, (unsigned)h, (size_t)pitch);
 		return;
 	}
 
@@ -2698,6 +4179,7 @@ RETRO_API void retro_set_controller_port_device(unsigned port, unsigned device) 
 		if (g_core.simulatorInitialized) {
 			ReleaseInput();
 			InitDefaultInputMaps();
+			RegisterInputDescriptors();
 		}
 	}
 }
@@ -2710,6 +4192,8 @@ RETRO_API void retro_reset(void) {
 		ApplyLiveOptions();
 		g_sim.ColdReset();
 		g_sim.Resume();
+		ApplyEnabledCheats();
+		RefreshSystemRam();
 	}
 }
 
@@ -2721,40 +4205,73 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 	if (game && !game->path)
 		return false;
 
+	g_core.contentHardwareMode = DetectContentHardwareMode(
+		(game && game->path) ? game->path : nullptr);
+
 	if (!InitSimulator())
 		return false;
 
+	ReadCoreOptions();
+	ApplyPendingResetOptions(true);
+
 	if (game && game->path && *game->path) {
 		if (HasExtension(game->path, "m3u")) {
-			if (!LoadM3U(game->path))
+			if (!LoadM3U(game->path)) {
+				CleanupAfterLoadFailure();
 				return false;
+			}
 
 			ApplyPendingInitialDiskSelection();
-			if (!MountDiskIndex(g_core.diskIndex))
+			if (!MountDiskIndex(g_core.diskIndex)) {
+				CleanupAfterLoadFailure();
 				return false;
+			}
 		} else {
 			ATImageLoadContext ctx {};
-			const VDStringW wpath = VDTextU8ToW(VDStringSpanA(game->path));
+			std::string loadPath = game->path;
+			std::string savePath;
+			if (IsDiskPath(game->path)) {
+				const ATDiskImageFormat sidecarFormat =
+					GetDiskImageFormatFromPath(game->path);
+				savePath = MakeDiskSavePath(game->path, sidecarFormat);
+				loadPath = GetDiskLoadPath(game->path, savePath);
+			}
+			bool loaded = false;
+			try {
+				const VDStringW wpath = VDTextU8ToW(VDStringSpanA(loadPath.c_str()));
+				loaded = g_sim.Load(wpath.c_str(),
+					IsDiskPath(game->path) ? GetDiskMediaWriteMode()
+						: kATMediaWriteMode_RO,
+					&ctx);
+			} catch(...) {
+			}
 
-			if (!g_sim.Load(wpath.c_str(), kATMediaWriteMode_RO, &ctx))
+			if (!loaded) {
+				CleanupAfterLoadFailure();
 				return false;
+			}
 
 			if (IsDiskPath(game->path)) {
 				g_core.diskImages.clear();
 				g_core.diskImages.push_back({ game->path, GetPathLabel(game->path) });
 				g_core.diskIndex = 0;
 				g_core.diskEjected = false;
+				TrackMountedDisk(game->path, savePath);
 				ApplyPendingInitialDiskSelection();
 			} else {
+				ClearMountedDiskTracking();
 				ClearPendingInitialDisk();
 			}
 		}
 	} else {
+		ClearMountedDiskTracking();
 		ClearPendingInitialDisk();
 	}
 
 	g_sim.ColdReset();
 	g_sim.Resume();
+	ApplyEnabledCheats();
+	RefreshSystemRam();
 	InvalidateSerializeCache();
 	g_core.gameLoaded = true;
 	g_core.serializeFixedSize = kStateFixedMaxSize;
@@ -2765,21 +4282,15 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 RETRO_API void retro_unload_game(void) {
 	if (g_core.simulatorInitialized) {
 		ReleaseInput();
+		if (!SaveMountedDiskIfDirty()) {
+			std::fprintf(stderr,
+				"[AltirraLibretro] Warning: disk sidecar save failed during unload; changes may be lost\n");
+		}
 		g_sim.Pause();
 		g_sim.UnloadAll();
 	}
 
-	g_core.gameLoaded = false;
-	g_core.serializeFixedSize = 0;
-	InvalidateSerializeCache();
-	g_core.lastFrame.clear();
-	g_core.lastFrameW = 0;
-	g_core.lastFrameH = 0;
-	g_core.lastFramePitch = 0;
-	g_core.diskImages.clear();
-	g_core.diskIndex = 0;
-	g_core.diskEjected = false;
-	ClearPendingInitialDisk();
+	ClearLoadedContentState();
 }
 
 RETRO_API void retro_run(void) {
@@ -2791,6 +4302,7 @@ RETRO_API void retro_run(void) {
 	bool ranFrame = false;
 	if (g_core.gameLoaded) {
 		UpdateInput();
+		ApplyEnabledCheats();
 
 		for (;;) {
 			const ATSimulator::AdvanceResult r = g_sim.Advance(false);
@@ -2803,7 +4315,9 @@ RETRO_API void retro_run(void) {
 				break;
 		}
 
+		ApplyEnabledCheats();
 		SubmitCurrentFrame();
+		RefreshSystemRam();
 		InvalidateSerializeCache();
 		ranFrame = true;
 	} else
@@ -2835,17 +4349,105 @@ RETRO_API bool retro_serialize(void *data, size_t size) {
 }
 
 RETRO_API bool retro_unserialize(const void *data, size_t size) {
-	return LoadSerializedState(data, size);
+	const bool ok = LoadSerializedState(data, size);
+	if (ok) {
+		ApplyEnabledCheats();
+		RefreshSystemRam();
+	}
+	return ok;
 }
 
 RETRO_API void retro_cheat_reset(void) {
+	g_core.cheats.clear();
 }
 
-RETRO_API void retro_cheat_set(unsigned, bool, const char *) {
+RETRO_API void retro_cheat_set(unsigned index, bool enabled, const char *code) {
+	if (index >= g_core.cheats.size())
+		g_core.cheats.resize(index + 1);
+
+	CoreState::Cheat& cheat = g_core.cheats[index];
+	cheat = {};
+	cheat.enabled = enabled;
+	if (code)
+		cheat.code = code;
+
+	if (!ParseCheatCode(code, cheat.address, cheat.value)) {
+		cheat.enabled = false;
+		return;
+	}
+
+	ApplyCheat(cheat);
+	RefreshSystemRam();
 }
 
-RETRO_API bool retro_load_game_special(unsigned, const struct retro_game_info *, size_t) {
-	return false;
+RETRO_API bool retro_load_game_special(unsigned gameType,
+	const struct retro_game_info *info, size_t numInfo)
+{
+	if (gameType != kSubsystemCartDiskId || !info || numInfo != 2)
+		return false;
+
+	if (!info[0].path || !*info[0].path || !info[1].path || !*info[1].path)
+		return false;
+
+	if (!IsDiskPath(info[1].path) && !HasExtension(info[1].path, "m3u"))
+		return false;
+
+	retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
+	if (g_env && !g_env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt))
+		return false;
+
+	g_core.contentHardwareMode = DetectContentHardwareMode(info[0].path);
+
+	if (!InitSimulator())
+		return false;
+
+	ReadCoreOptions();
+	ApplyPendingResetOptions(true);
+
+	ATImageLoadContext cartCtx {};
+	bool cartLoaded = false;
+	try {
+		const VDStringW cartPath = VDTextU8ToW(VDStringSpanA(info[0].path));
+		cartLoaded = g_sim.Load(cartPath.c_str(), kATMediaWriteMode_RO,
+			&cartCtx);
+	} catch(...) {
+	}
+
+	if (!cartLoaded) {
+		CleanupAfterLoadFailure();
+		return false;
+	}
+
+	ClearMountedDiskTracking();
+	ClearPendingInitialDisk();
+
+	if (HasExtension(info[1].path, "m3u")) {
+		if (!LoadM3U(info[1].path)) {
+			CleanupAfterLoadFailure();
+			return false;
+		}
+	} else {
+		g_core.diskImages.clear();
+		g_core.diskImages.push_back({ info[1].path, GetPathLabel(info[1].path) });
+		g_core.diskIndex = 0;
+		g_core.diskEjected = false;
+	}
+
+	ApplyPendingInitialDiskSelection();
+	if (!MountDiskIndex(g_core.diskIndex)) {
+		CleanupAfterLoadFailure();
+		return false;
+	}
+
+	g_sim.ColdReset();
+	g_sim.Resume();
+	ApplyEnabledCheats();
+	RefreshSystemRam();
+	InvalidateSerializeCache();
+	g_core.gameLoaded = true;
+	g_core.serializeFixedSize = kStateFixedMaxSize;
+
+	return true;
 }
 
 RETRO_API unsigned retro_get_region(void) {
@@ -2854,11 +4456,21 @@ RETRO_API unsigned retro_get_region(void) {
 	return RETRO_REGION_NTSC;
 }
 
-RETRO_API void *retro_get_memory_data(unsigned) {
+RETRO_API void *retro_get_memory_data(unsigned id) {
+	if (id == RETRO_MEMORY_SYSTEM_RAM) {
+		if (!g_core.systemRamValid)
+			RefreshSystemRam();
+
+		return g_core.systemRamValid ? g_core.systemRam.data() : nullptr;
+	}
+
 	return nullptr;
 }
 
-RETRO_API size_t retro_get_memory_size(unsigned) {
+RETRO_API size_t retro_get_memory_size(unsigned id) {
+	if (id == RETRO_MEMORY_SYSTEM_RAM)
+		return g_core.systemRam.size();
+
 	return 0;
 }
 

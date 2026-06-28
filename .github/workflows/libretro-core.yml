@@ -15,7 +15,10 @@ on:
       - 'src/system/**'
       - 'docs/libretro-*.md'
       - 'scripts/build/libretro.sh'
+      - 'scripts/create-libretro-manual-test-kit.sh'
+      - 'scripts/create-libretro-readiness-report.sh'
       - 'scripts/prepare-libretro-upstream.sh'
+      - 'scripts/run-libretro-retroarch-smoke.sh'
       - 'scripts/validate-libretro-*.sh'
       - 'scripts/verify-libretro-*.sh'
       - 'build.sh'
@@ -47,9 +50,11 @@ jobs:
           set -euo pipefail
           bash -n \
             build.sh \
+            scripts/create-libretro-manual-test-kit.sh \
             scripts/create-libretro-readiness-report.sh \
             scripts/build/libretro.sh \
             scripts/prepare-libretro-upstream.sh \
+            scripts/run-libretro-retroarch-smoke.sh \
             scripts/validate-libretro-docs.sh \
             scripts/validate-libretro-info.sh \
             scripts/validate-libretro-readiness-report.sh \
@@ -434,9 +439,21 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Standalone ABI (Android arm64-v8a)
+    name: Standalone ABI (Android ${{ matrix.abi }})
     needs: preflight
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            file_pattern: 'aarch64|ARM aarch64|ARM64'
+            elf_class: ELF64
+            elf_machine: 'AArch64'
+          - abi: armeabi-v7a
+            file_pattern: 'ARM|arm'
+            elf_class: ELF32
+            elf_machine: 'ARM'
     env:
       NDK_VERSION: "27.2.12479018"
 
@@ -470,10 +487,10 @@ jobs:
             exit 1
           fi
           echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
-          cmake -S . -B build/android-libretro-arm64 -G Ninja \
+          cmake -S . -B build/android-libretro-${{ matrix.abi }} -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_ABI=${{ matrix.abi }} \
             -DANDROID_PLATFORM=android-23 \
             -DALTIRRA_LIBRETRO=ON \
             -DALTIRRA_SDL3=OFF \
@@ -481,15 +498,15 @@ jobs:
 
       - name: Build standalone core
         shell: bash
-        run: cmake --build build/android-libretro-arm64 --target AltirraLibretro -j"$(nproc)"
+        run: cmake --build build/android-libretro-${{ matrix.abi }} --target AltirraLibretro -j"$(nproc)"
 
       - name: Check exports and dependencies
         shell: bash
         run: |
           set -euo pipefail
-          core=build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so
+          core=build/android-libretro-${{ matrix.abi }}/src/AltirraLibretro/altirra_libretro.so
           test -f "$core"
-          file "$core" | grep -Eq 'aarch64|ARM aarch64|ARM64'
+          file "$core" | grep -Eq '${{ matrix.file_pattern }}'
           "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
             -D --defined-only "$core" | awk '{print $3}' | sort > exports.txt
           for sym in retro_init retro_run retro_load_game retro_get_system_info retro_get_system_av_info retro_serialize_size; do
@@ -505,6 +522,12 @@ jobs:
             echo "Unexpected SDL3/ALSA dependency in standalone libretro core" >&2
             exit 1
           fi
+          ALTIRRA_LIBRETRO_EXPECT_ELF_CLASS='${{ matrix.elf_class }}' \
+            ALTIRRA_LIBRETRO_EXPECT_ELF_MACHINE='${{ matrix.elf_machine }}' \
+            NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            OBJDUMP="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump" \
+            bash scripts/verify-libretro-artifact.sh "$core" src/AltirraLibretro/altirra_libretro.info
 
       - name: Package artifact
         shell: bash
@@ -515,21 +538,23 @@ jobs:
           else
             slug="nightly"
           fi
-          pkg="AltirraLibretro-${slug}-android-arm64-v8a"
+          pkg="AltirraLibretro-${slug}-android-${{ matrix.abi }}"
           mkdir -p "$pkg"
-          cp build/android-libretro-arm64/src/AltirraLibretro/altirra_libretro.so "$pkg/"
+          cp build/android-libretro-${{ matrix.abi }}/src/AltirraLibretro/altirra_libretro.so "$pkg/"
           cp src/AltirraLibretro/altirra_libretro.info "$pkg/"
           cp src/AltirraLibretro/README.md "$pkg/"
           cp src/AltirraLibretro/install-retroarch.sh "$pkg/"
           chmod +x "$pkg/install-retroarch.sh"
           cp LICENSE "$pkg/LICENSE"
           {
-            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - android arm64-v8a"
+            echo "AltirraLibretro $slug ${GITHUB_SHA::7} - android ${{ matrix.abi }}"
             echo "Built $(date -u +%Y-%m-%d) from commit ${GITHUB_SHA}"
             echo "Install altirra_libretro.info into RetroArch's Core Info directory."
           } > "$pkg/BUILD-INFO.txt"
           zip -r "$pkg.zip" "$pkg"
-          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+          ALTIRRA_LIBRETRO_EXPECT_ELF_CLASS='${{ matrix.elf_class }}' \
+            ALTIRRA_LIBRETRO_EXPECT_ELF_MACHINE='${{ matrix.elf_machine }}' \
+            NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
             READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
             OBJDUMP="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump" \
             bash scripts/verify-libretro-package.sh "$pkg.zip"
@@ -537,8 +562,8 @@ jobs:
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: AltirraLibretro-android-arm64-v8a
-          path: AltirraLibretro-*-android-arm64-v8a.zip
+          name: AltirraLibretro-android-${{ matrix.abi }}
+          path: AltirraLibretro-*-android-${{ matrix.abi }}.zip
           if-no-files-found: error
 
   linux-smoke:

@@ -179,6 +179,25 @@
             }
         },
         {
+            "name": "android-libretro-armv7a",
+            "displayName": "Android ARMv7 libretro core (NDK, no SDL3)",
+            "inherits": "base",
+            "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "ANDROID_ABI": "armeabi-v7a",
+                "ANDROID_PLATFORM": "android-23",
+                "ALTIRRA_LIBRETRO": "ON",
+                "ALTIRRA_SDL3": "OFF",
+                "ALTIRRA_LIBRETRO_NO_SDL3": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "$env{ANDROID_NDK_HOME}",
+                "rhs": ""
+            }
+        },
+        {
             "name": "macos-libretro",
             "displayName": "macOS libretro core (native arch, no SDL3)",
             "inherits": "base",
@@ -288,6 +307,11 @@
         {
             "name": "android-libretro-arm64",
             "configurePreset": "android-libretro-arm64",
+            "targets": "AltirraLibretro"
+        },
+        {
+            "name": "android-libretro-armv7a",
+            "configurePreset": "android-libretro-armv7a",
             "targets": "AltirraLibretro"
         },
         {

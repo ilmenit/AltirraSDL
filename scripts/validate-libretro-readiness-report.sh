@@ -134,6 +134,31 @@ validate_report() {
         fail "package verifier output is missing successful package check"
     fi
 
+    if ! grep -Fq "RetroArch smoke summary:" "$REPORT"; then
+        fail "RetroArch smoke summary section is missing"
+    fi
+
+    if ! grep -Fq -- "- Result: pass" "$REPORT"; then
+        fail "RetroArch smoke summary is missing a passing result"
+    fi
+
+    for smoke_case in \
+    "no-content" \
+    "executable-xex" \
+    "disk-atr" \
+    "cartridge-a52" \
+    "cassette-cas" \
+    "playlist-m3u" \
+    "compressed-zip"; do
+        if ! grep -Fq -- "- ${smoke_case}: pass" "$REPORT"; then
+            fail "RetroArch smoke summary is missing passing case: $smoke_case"
+        fi
+    done
+
+    if ! grep -Fq "Content handoff and content-specific save path for content cases" "$REPORT"; then
+        fail "RetroArch smoke summary is missing content handoff verification"
+    fi
+
 require_table_row_positive() {
     local row_name="$1"
     local row
@@ -180,6 +205,8 @@ require_table_row_positive() {
     "Input Port 1 joystick works" \
     "Keyboard focus works for Atari keyboard input" \
     "Disk Control interface opens and reports media" \
+    "Disk Control can eject, swap, and remount media" \
+    "Disk Control rejects media-list changes while tray is closed" \
     "Audio is present and stable" \
     "RetroArch logs contain no Altirra errors" \
     "No coredump or frontend crash produced" \
@@ -191,6 +218,28 @@ require_table_row_positive() {
         pass="${pass%"${pass##*[![:space:]]}"}"
         is_positive "$pass" \
             || fail "runtime feature is not marked positive: $feature"
+    done
+
+    for check in \
+    "D-pad drives joystick input" \
+    "Left analog drives joystick input" \
+    "START console key reachable from pad" \
+    "SELECT console key reachable from pad" \
+    "OPTION console key reachable from pad" \
+    "Virtual keyboard opens and closes from pad" \
+    "Virtual keyboard types Atari keys from pad" \
+    "Virtual keyboard page switching works from pad" \
+    "5200 keypad page works for 5200 content" \
+    "Warm reset binding works from pad" \
+    "Cold reset binding works from pad" \
+    "Spare button key mappings can be changed from core options"; do
+        row=$(grep -F "| $check |" "$REPORT" | head -1 || true)
+        [ -n "$row" ] || fail "missing gamepad UX row: $check"
+        IFS='|' read -r _ _ pass _ <<< "$row"
+        pass="${pass#"${pass%%[![:space:]]*}"}"
+        pass="${pass%"${pass##*[![:space:]]}"}"
+        is_positive "$pass" \
+            || fail "gamepad UX check is not marked positive: $check"
     done
 
     printf 'ok: %s passes libretro readiness report checks\n' "$REPORT"
@@ -264,14 +313,77 @@ run_self_test() {
 | Input Port 1 joystick works | pass | |
 | Keyboard focus works for Atari keyboard input | pass | |
 | Disk Control interface opens and reports media | pass | |
+| Disk Control can eject, swap, and remount media | pass | |
+| Disk Control rejects media-list changes while tray is closed | pass | |
 | Audio is present and stable | pass | |
 | RetroArch logs contain no Altirra errors | pass | |
 | No coredump or frontend crash produced | pass | |
 | Alt+F4 / window close exits without crash | pass | |
 
+## Gamepad UX
+
+| Check | Pass | Notes |
+| --- | --- | --- |
+| D-pad drives joystick input | pass | |
+| Left analog drives joystick input | pass | |
+| START console key reachable from pad | pass | |
+| SELECT console key reachable from pad | pass | |
+| OPTION console key reachable from pad | pass | |
+| Virtual keyboard opens and closes from pad | pass | |
+| Virtual keyboard types Atari keys from pad | pass | |
+| Virtual keyboard page switching works from pad | pass | |
+| 5200 keypad page works for 5200 content | pass | |
+| Warm reset binding works from pad | pass | |
+| Cold reset binding works from pad | pass | |
+| Spare button key mappings can be changed from core options | pass | |
+
 ## Logs And Diagnostics
 
 ok: /tmp/AltirraLibretro-4.40-linux-x86_64.tar.gz passes libretro package checks
+
+RetroArch smoke summary:
+
+- Summary path: /tmp/retroarch-smoke/summary.md
+- Result: pass
+
+```text
+# Altirra Libretro RetroArch Smoke
+
+- Result: pass
+- Date: 2026-06-28
+- RetroArch: Flatpak: org.libretro.RetroArch
+- Frames: 120
+- Timeout: 30s
+- Video driver: null
+- Input driver: null
+- Package: /tmp/AltirraLibretro-4.40-linux-x86_64.tar.gz
+- Core: /tmp/retroarch-smoke/install/cores/altirra_libretro.so
+- Core Info: /tmp/retroarch-smoke/install/info/altirra_libretro.info
+- Config: /tmp/retroarch-smoke/install/retroarch.cfg
+- Log directory: /tmp/retroarch-smoke/logs
+- Coredump check: none
+
+Cases:
+
+- no-content: pass (/tmp/retroarch-smoke/logs/no-content.log)
+- executable-xex: pass (/tmp/retroarch-smoke/logs/executable-xex.log)
+- disk-atr: pass (/tmp/retroarch-smoke/logs/disk-atr.log)
+- cartridge-a52: pass (/tmp/retroarch-smoke/logs/cartridge-a52.log)
+- cassette-cas: pass (/tmp/retroarch-smoke/logs/cassette-cas.log)
+- playlist-m3u: pass (/tmp/retroarch-smoke/logs/playlist-m3u.log)
+- compressed-zip: pass (/tmp/retroarch-smoke/logs/compressed-zip.log)
+
+Verified log markers:
+
+- Core load
+- No-content support
+- Disk-control interface registration
+- Geometry initialization
+- Content handoff and content-specific save path for content cases
+- Game unload
+- Core unload
+- Core symbol unload
+```
 
 ## Verdict
 
@@ -288,6 +400,17 @@ REPORT
     REPORT="$invalid"
     if ( validate_report ) >/dev/null 2>&1; then
         fail "self-test expected incomplete report to fail"
+    fi
+
+    awk '
+        /^RetroArch smoke summary:/ { skip = 1; next }
+        skip && /^## Verdict/ { skip = 0 }
+        !skip { print }
+    ' "$valid" > "$invalid"
+
+    REPORT="$invalid"
+    if ( validate_report ) >/dev/null 2>&1; then
+        fail "self-test expected report without RetroArch smoke summary to fail"
     fi
 
     REPORT="$valid"

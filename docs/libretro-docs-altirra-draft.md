@@ -102,13 +102,13 @@ the platform/content identity, not to this specific emulator core.
 | Feature | Supported |
 | --- | --- |
 | Restart | Yes |
-| Saves | No |
+| Saves | Yes, through libretro save directory sidecars |
 | States | Yes |
 | Rewind | Yes, via serialization |
 | Netplay | Not currently documented for this core |
 | Core Options | Yes |
-| RetroAchievements | No |
-| RetroArch Cheats | No |
+| RetroAchievements | Yes |
+| RetroArch Cheats | Yes, POKE-style memory patches |
 | Native Cheats | No |
 | Controls | Yes |
 | Remapping | Yes |
@@ -117,7 +117,7 @@ the platform/content identity, not to this specific emulator core.
 | Sensors | No |
 | Camera | No |
 | Location | No |
-| Subsystem | No |
+| Subsystem | Yes, cartridge/program plus disk |
 | Softpatching | No, because the core requires full paths |
 | Disk Control | Yes |
 | Username | No |
@@ -134,7 +134,7 @@ The Altirra core requests these frontend directories:
 | Frontend directory | Use |
 | --- | --- |
 | System directory | Optional Atari firmware lookup |
-| Save directory | Core settings and generated save data under `Altirra` |
+| Save directory | Core settings and generated writable disk sidecars under `Altirra` |
 | State directory | RetroArch save states |
 | Content directory | Loaded full-path content and related media |
 
@@ -158,7 +158,7 @@ and input configuration.
 
 | Option | Values | Default |
 | --- | --- | --- |
-| System | 800, 800xl, 1200xl, 130xe, xegs, 5200 | 800xl |
+| System | auto, 800xl, 800, 1200xl, 130xe, xegs, 5200 | auto |
 | Memory Size | 8K, 16K, 24K, 32K, 40K, 48K, 52K, 64K, 128K, 256K, 320K, 320K_Compy, 576K, 576K_Compy, 1088K | 320K |
 | Video Standard | ntsc, pal, secam, ntsc50, pal60 | pal |
 | BASIC | disabled, enabled | disabled |
@@ -172,18 +172,51 @@ and input configuration.
 | SoundBoard | disabled, enabled | disabled |
 | Rapidus Accelerator | disabled, enabled | disabled |
 | SIO Patch | off, disk, cassette, disk_and_cassette | disk_and_cassette |
+| Disk Write Mode | safe_sidecar, original_rw | safe_sidecar |
 | Artifacting | none, ntsc, ntschi, pal, palhi, auto | auto |
+| Performance Tier | quality, balanced, performance | quality |
 | Crop Overscan | normal, off, extended, full | normal |
-| Audio Filters | enabled, disabled | enabled |
+| Aspect Ratio | 4_3, pixel_perfect, square_pixels, ntsc_par, pal_par | 4_3 |
+| Audio Filters | auto, enabled, disabled | auto |
 | Downmix Stereo to Mono | disabled, enabled | disabled |
 | Drive Sounds | disabled, enabled | disabled |
-| Input Port 1 | joystick, 5200_controller, paddle_a, paddle_b, st_mouse, light_pen, light_gun, none | joystick |
+| Input Port 1 | auto, joystick, 5200_controller, paddle_a, paddle_b, st_mouse, light_pen, light_gun, none | auto |
 | Input Port 2 | none, joystick, paddle_a, paddle_b, st_mouse | none |
+| Control Scheme | auto, common, joystick, flight, adventure, 5200 | auto |
+| Virtual Keyboard Toggle | r_l3_select_r2, r, l3, r3, select_r2, none | r_l3_select_r2 |
+| Warm Reset Combo | select_start, select_r, start_r, none | select_start |
+| Cold Reset Combo | select_l, select_l2, select_r, none | select_l |
+| RetroPad Y Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| RetroPad X Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| RetroPad L2 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| RetroPad R2 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| RetroPad L3 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| RetroPad R3 Key | auto, none, space, return, escape, f, a, g, m, s, y, n | auto |
+| Keyboard START Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f2 |
+| Keyboard SELECT Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f3 |
+| Keyboard OPTION Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f4 |
 
 ## Controls
 
-The core supports RetroPad, analog input, keyboard input, mouse input, and
-light-gun style input paths.
+The core supports RetroPad, left analog joystick movement, keyboard input,
+mouse input, and light-gun style input paths. The virtual keyboard is available
+from RetroPad R, RetroPad L3, or Select+R2 by default, and can be changed or
+disabled with the Virtual Keyboard Toggle option.
+Input Port 1 auto-selection uses a 5200 controller for the default RetroPad
+when the active system is 5200, while explicit RetroArch paddle, mouse, and
+light-gun device selections remain active.
+
+Default RetroPad shortcuts:
+
+- START, SELECT, and L map to Atari START, SELECT, and OPTION.
+- Select+Start performs warm reset.
+- Select+L performs cold reset on Atari 8-bit systems.
+- F5 and Shift+F5 on the keyboard perform warm and cold reset.
+- Y, X, L2, R2, L3, and R3 send concurrent Atari keys while joystick input
+  remains active. Their defaults depend on the Control Scheme option and can
+  be overridden per button. Auto uses common Atari 8-bit keys, or the 5200
+  preset when the active system is 5200. If L3 or R3 is also selected as the
+  virtual keyboard toggle, the toggle takes precedence.
 
 Controller types exposed to RetroArch:
 
@@ -193,16 +226,32 @@ Controller types exposed to RetroArch:
 - Atari Light Gun/Pen
 - None
 
-Registered input descriptors:
+Registered input descriptors are refreshed when the active control scheme or
+content-aware 5200 mode changes. The rows below show the default Auto scheme
+for Atari 8-bit content and the Auto scheme after 5200 content is detected.
 
 | Device | Inputs |
 | --- | --- |
-| RetroPad port 1 | Joystick Up, Joystick Down, Joystick Left, Joystick Right, Trigger, START, SELECT, OPTION |
+| RetroPad port 1, Atari 8-bit Auto | Joystick Up, Joystick Down, Joystick Left, Joystick Right, Trigger, Space, Return, START, SELECT, OPTION, Virtual Keyboard, Esc, Return / VKBD Combo, Virtual Keyboard, Unassigned |
+| RetroPad port 1, 5200 Auto | Joystick Up, Joystick Down, Joystick Left, Joystick Right, Trigger, Unassigned, Unassigned, START, SELECT, OPTION, Virtual Keyboard, Unassigned, VKBD Combo, Virtual Keyboard, Unassigned |
 | RetroPad port 2 | Joystick 2 Up, Joystick 2 Down, Joystick 2 Left, Joystick 2 Right, Joystick 2 Trigger |
-| Analog | Paddle Knob, Paddle Trigger, Paddle 2 Knob, Paddle 2 Trigger |
+| Analog | Joystick Analog Y, Analog X / Paddle Knob, Paddle Trigger, Paddle 2 Knob, Paddle 2 Trigger |
 | Mouse | Mouse X, Mouse Y, Mouse Left Button, Mouse Right Button, Mouse 2 X, Mouse 2 Y, Mouse 2 Left Button, Mouse 2 Right Button |
 | Light Gun | Light Gun X, Light Gun Y, Light Gun Trigger |
 | Pointer | Pointer X, Pointer Y, Pointer Pressed |
+
+## Memory And Cheats
+
+The core exposes a 64K system RAM memory descriptor for achievements and
+external tooling. RetroArch cheats are accepted as byte POKEs, for example
+`$0600:$7B`, `0x0600=0x7B`, or `POKE 1536,123`.
+
+## Subsystems
+
+The core exposes a `Cartridge + Disk` subsystem for content that needs a
+cartridge or directly loaded program together with a disk image. The first
+subsystem slot accepts cartridge/program content and the second slot accepts a
+disk image or `.m3u` playlist.
 
 ## Notes For Upstream Submission
 

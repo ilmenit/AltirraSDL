@@ -292,6 +292,29 @@ struct retro_game_info {
    const char *meta;
 };
 
+struct retro_subsystem_memory_info {
+   const char *extension;
+   unsigned type;
+};
+
+struct retro_subsystem_rom_info {
+   const char *desc;
+   const char *valid_extensions;
+   bool need_fullpath;
+   bool block_extract;
+   bool required;
+   const struct retro_subsystem_memory_info *memory;
+   unsigned num_memory;
+};
+
+struct retro_subsystem_info {
+   const char *desc;
+   const char *ident;
+   const struct retro_subsystem_rom_info *roms;
+   unsigned num_roms;
+   unsigned id;
+};
+
 struct retro_system_info {
    const char *library_name;
    const char *library_version;
@@ -316,6 +339,22 @@ struct retro_system_timing {
 struct retro_system_av_info {
    struct retro_game_geometry geometry;
    struct retro_system_timing timing;
+};
+
+struct retro_memory_descriptor {
+   uint64_t flags;
+   void *ptr;
+   size_t offset;
+   size_t start;
+   size_t select;
+   size_t disconnect;
+   size_t len;
+   const char *addrspace;
+};
+
+struct retro_memory_map {
+   const struct retro_memory_descriptor *descriptors;
+   unsigned num_descriptors;
 };
 
 struct retro_variable {

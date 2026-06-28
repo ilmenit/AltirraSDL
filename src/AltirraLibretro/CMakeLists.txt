@@ -5,6 +5,7 @@
 
 add_library(AltirraLibretro SHARED
     libretro.cpp
+    libretro_vkbd.cpp
 )
 
 option(ALTIRRA_LIBRETRO_BUILD_TESTS

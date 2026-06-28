@@ -240,6 +240,36 @@ check_system_info_codegen() {
     fi
 }
 
+check_elf_identity() {
+    local readelf_tool="$1"
+
+    local expected_class="${ALTIRRA_LIBRETRO_EXPECT_ELF_CLASS:-}"
+    local expected_machine="${ALTIRRA_LIBRETRO_EXPECT_ELF_MACHINE:-}"
+
+    if [ -z "$expected_class" ] && [ -z "$expected_machine" ]; then
+        return 0
+    fi
+
+    command -v "$readelf_tool" >/dev/null 2>&1 \
+        || fail "$readelf_tool not found; cannot verify expected ELF identity"
+
+    local elf_header
+    elf_header=$("$readelf_tool" -h "$CORE" 2>/dev/null) \
+        || fail "failed to read ELF header from $CORE"
+
+    if [ -n "$expected_class" ]; then
+        printf '%s\n' "$elf_header" \
+            | grep -Eq "^[[:space:]]*Class:[[:space:]]*$expected_class([[:space:]]|\$)" \
+            || fail "ELF class mismatch for $CORE (expected $expected_class)"
+    fi
+
+    if [ -n "$expected_machine" ]; then
+        printf '%s\n' "$elf_header" \
+            | grep -Eq "^[[:space:]]*Machine:[[:space:]]*$expected_machine([[:space:]]|\$)" \
+            || fail "ELF machine mismatch for $CORE (expected $expected_machine)"
+    fi
+}
+
 case "$CORE_NAME" in
     *.so)
         NM_TOOL="${NM:-nm}"
@@ -252,6 +282,7 @@ case "$CORE_NAME" in
         check_symbols "$SYMBOLS_FILE"
 
         READELF_TOOL="${READELF:-readelf}"
+        check_elf_identity "$READELF_TOOL"
         if command -v "$READELF_TOOL" >/dev/null 2>&1; then
             if "$READELF_TOOL" -d "$CORE" 2>/dev/null \
                 | grep -Eiq 'Shared library: \[(libSDL3|libasound)'; then
