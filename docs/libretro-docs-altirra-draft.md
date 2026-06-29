@@ -180,21 +180,21 @@ and input configuration.
 | Audio Filters | auto, enabled, disabled | auto |
 | Downmix Stereo to Mono | disabled, enabled | disabled |
 | Drive Sounds | disabled, enabled | disabled |
-| Input Port 1 | auto, joystick, 5200_controller, paddle_a, paddle_b, st_mouse, light_pen, light_gun, none | auto |
-| Input Port 2 | none, joystick, paddle_a, paddle_b, st_mouse | none |
-| Control Scheme | auto, common, joystick, flight, adventure, 5200 | auto |
+| Input Port 1 Device | auto, joystick, 5200_controller, paddle_a, paddle_b, st_mouse, light_pen, light_gun, none | auto |
+| Input Port 2 Device | none, joystick, paddle_a, paddle_b, st_mouse | none |
+| RetroPad Extra Button Scheme | auto, common, joystick, flight, adventure, 5200 | auto |
 | Virtual Keyboard Toggle | r_l3_select_r2, r, l3, r3, select_r2, none | r_l3_select_r2 |
-| Warm Reset Combo | select_start, select_r, start_r, none | select_start |
-| Cold Reset Combo | select_l, select_l2, select_r, none | select_l |
-| RetroPad Y Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
-| RetroPad X Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
-| RetroPad L2 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
-| RetroPad R2 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
-| RetroPad L3 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
-| RetroPad R3 Key | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
-| Keyboard START Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f2 |
-| Keyboard SELECT Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f3 |
-| Keyboard OPTION Key | f2, f3, f4, f5, f6, f8, f9, f10, none | f4 |
+| RetroPad Warm Reset Combo | select_start, select_r, start_r, none | select_start |
+| RetroPad Cold Reset Combo | select_l, select_l2, select_r, none | select_l |
+| RetroPad Y Emulator Input | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad X Emulator Input | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad L2 Emulator Input | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad R2 Emulator Input | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad L3 Emulator Input | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| RetroPad R3 Emulator Input | auto, none, space, return, escape, backspace, tab, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 5200_0, 5200_1, 5200_2, 5200_3, 5200_4, 5200_5, 5200_6, 5200_7, 5200_8, 5200_9, 5200_star, 5200_pound, 5200_start, 5200_pause, 5200_reset | auto |
+| Physical Keyboard START Key | none, f2, f3, f4, f5, f6, f8, f9, f10 | none |
+| Physical Keyboard SELECT Key | none, f2, f3, f4, f5, f6, f8, f9, f10 | none |
+| Physical Keyboard OPTION Key | none, f2, f3, f4, f5, f6, f8, f9, f10 | none |
 
 ## Controls
 
@@ -211,15 +211,20 @@ Default RetroPad shortcuts:
 - START, SELECT, and L map to Atari START, SELECT, and OPTION.
 - Select+Start performs warm reset.
 - Select+L performs cold reset on Atari 8-bit systems.
-- F5 and Shift+F5 on the keyboard perform warm and cold reset.
 - Y, X, L2, R2, L3, and R3 send concurrent Atari keys while joystick input
-  remains active. Their defaults depend on the Control Scheme option and can
-  be overridden per button. Auto uses common Atari 8-bit keys, or the 5200
-  preset when the active system is 5200. If L3 or R3 is also selected as the
-  virtual keyboard toggle, the toggle takes precedence.
+  remains active. Their defaults depend on the RetroPad Extra Button Scheme
+  option and can be overridden per button. Auto uses common Atari 8-bit keys,
+  or the 5200 preset when the active system is 5200. If L3 or R3 is also
+  selected as the virtual keyboard toggle, the toggle takes precedence.
 - RetroArch remaps physical controller buttons to RetroPad buttons. The
   Altirra core options then map those RetroPad buttons to Atari computer keys
   or explicit 5200 keypad/control targets.
+- Atari computer key entries apply to Atari 8-bit systems. The explicit 5200
+  entries apply to 5200 mode.
+- Physical keyboard START/SELECT/OPTION shortcuts default to disabled because
+  RetroArch uses common function keys such as F2/F3/F4 for frontend hotkeys.
+  Enable Game Focus or adjust RetroArch hotkeys before binding those core
+  options.
 
 Controller types exposed to RetroArch:
 

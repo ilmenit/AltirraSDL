@@ -1255,6 +1255,7 @@ static const retro_core_option_value kPadKeyValues[] = {
 };
 
 static const retro_core_option_value kConsoleKeyValues[] = {
+	{ "none", "None" },
 	{ "f2", "F2" },
 	{ "f3", "F3" },
 	{ "f4", "F4" },
@@ -1263,7 +1264,6 @@ static const retro_core_option_value kConsoleKeyValues[] = {
 	{ "f8", "F8" },
 	{ "f9", "F9" },
 	{ "f10", "F10" },
-	{ "none", "None" },
 	{ nullptr, nullptr },
 };
 
@@ -1410,22 +1410,22 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 		nullptr, "audio", kDisabledEnabledValues, "disabled"
 	},
 	{
-		"altirra_input_port1", "Input Port 1", nullptr,
+		"altirra_input_port1", "Input Port 1 Device", nullptr,
 		"Selects the first controller port type. Auto uses a 5200 controller "
 		"for the default RetroPad when the active system is the Atari 5200, "
 		"otherwise a joystick.",
 		nullptr, "input", kInputPort1Values, "auto"
 	},
 	{
-		"altirra_input_port2", "Input Port 2", nullptr,
+		"altirra_input_port2", "Input Port 2 Device", nullptr,
 		"Selects the second controller port type.",
 		nullptr, "input", kInputPort2Values, "none"
 	},
 	{
-		"altirra_control_scheme", "Control Scheme", nullptr,
-		"Selects the default concurrent key bindings for spare RetroPad "
-		"buttons. Auto uses the 5200 preset when the active system is the "
-		"Atari 5200, otherwise common Atari 8-bit keys.",
+		"altirra_control_scheme", "RetroPad Extra Button Scheme", nullptr,
+		"Selects default emulator-side inputs for spare RetroPad buttons. "
+		"Auto uses the 5200 preset when the active system is the Atari 5200, "
+		"otherwise common Atari 8-bit keys.",
 		nullptr, "input", kControlSchemeValues, "auto"
 	},
 	{
@@ -1435,71 +1435,77 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 		nullptr, "input", kVkbdToggleValues, "r_l3_select_r2"
 	},
 	{
-		"altirra_warm_reset_combo", "Warm Reset Combo", nullptr,
+		"altirra_warm_reset_combo", "RetroPad Warm Reset Combo", nullptr,
 		"Selects the controller combo used for warm reset.",
 		nullptr, "input", kWarmResetComboValues, "select_start"
 	},
 	{
-		"altirra_cold_reset_combo", "Cold Reset Combo", nullptr,
+		"altirra_cold_reset_combo", "RetroPad Cold Reset Combo", nullptr,
 		"Selects the controller combo used for cold reset on Atari 8-bit "
 		"systems.",
 		nullptr, "input", kColdResetComboValues, "select_l"
 	},
 	{
-		"altirra_pad_y_key", "RetroPad Y Key", nullptr,
-		"Overrides the Atari key sent by RetroPad Y while joystick input "
-		"remains active.",
+		"altirra_pad_y_key", "RetroPad Y Emulator Input", nullptr,
+		"Overrides the emulator-side input sent by RetroPad Y while joystick "
+		"input remains active. Atari computer keys apply to XL/XE systems; "
+		"5200 entries apply to 5200 mode.",
 		nullptr, "input", kPadKeyValues, "auto"
 	},
 	{
-		"altirra_pad_x_key", "RetroPad X Key", nullptr,
-		"Overrides the Atari key sent by RetroPad X while joystick input "
-		"remains active.",
+		"altirra_pad_x_key", "RetroPad X Emulator Input", nullptr,
+		"Overrides the emulator-side input sent by RetroPad X while joystick "
+		"input remains active. Atari computer keys apply to XL/XE systems; "
+		"5200 entries apply to 5200 mode.",
 		nullptr, "input", kPadKeyValues, "auto"
 	},
 	{
-		"altirra_pad_l2_key", "RetroPad L2 Key", nullptr,
-		"Overrides the Atari key sent by RetroPad L2 while joystick input "
-		"remains active.",
+		"altirra_pad_l2_key", "RetroPad L2 Emulator Input", nullptr,
+		"Overrides the emulator-side input sent by RetroPad L2 while joystick "
+		"input remains active. Atari computer keys apply to XL/XE systems; "
+		"5200 entries apply to 5200 mode.",
 		nullptr, "input", kPadKeyValues, "auto"
 	},
 	{
-		"altirra_pad_r2_key", "RetroPad R2 Key", nullptr,
-		"Overrides the Atari key sent by RetroPad R2 while joystick input "
-		"remains active.",
+		"altirra_pad_r2_key", "RetroPad R2 Emulator Input", nullptr,
+		"Overrides the emulator-side input sent by RetroPad R2 while joystick "
+		"input remains active. Atari computer keys apply to XL/XE systems; "
+		"5200 entries apply to 5200 mode.",
 		nullptr, "input", kPadKeyValues, "auto"
 	},
 	{
-		"altirra_pad_l3_key", "RetroPad L3 Key", nullptr,
-		"Overrides the Atari key sent by RetroPad L3 while joystick input "
-		"remains active. If L3 is also selected as the virtual keyboard "
-		"toggle, the toggle takes precedence.",
+		"altirra_pad_l3_key", "RetroPad L3 Emulator Input", nullptr,
+		"Overrides the emulator-side input sent by RetroPad L3 while joystick "
+		"input remains active. Atari computer keys apply to XL/XE systems; "
+		"5200 entries apply to 5200 mode. If L3 is also selected as the "
+		"virtual keyboard toggle, the toggle takes precedence.",
 		nullptr, "input", kPadKeyValues, "auto"
 	},
 	{
-		"altirra_pad_r3_key", "RetroPad R3 Key", nullptr,
-		"Overrides the Atari key sent by RetroPad R3 while joystick input "
-		"remains active. If R3 is selected as the virtual keyboard toggle, "
-		"the toggle takes precedence.",
+		"altirra_pad_r3_key", "RetroPad R3 Emulator Input", nullptr,
+		"Overrides the emulator-side input sent by RetroPad R3 while joystick "
+		"input remains active. Atari computer keys apply to XL/XE systems; "
+		"5200 entries apply to 5200 mode. If R3 is selected as the virtual "
+		"keyboard toggle, the toggle takes precedence.",
 		nullptr, "input", kPadKeyValues, "auto"
 	},
 	{
-		"altirra_key_start", "Keyboard START Key", nullptr,
+		"altirra_key_start", "Physical Keyboard START Key", nullptr,
 		"Selects the physical keyboard key mapped to the Atari START console "
 		"switch.",
-		nullptr, "input", kConsoleKeyValues, "f2"
+		nullptr, "input", kConsoleKeyValues, "none"
 	},
 	{
-		"altirra_key_select", "Keyboard SELECT Key", nullptr,
+		"altirra_key_select", "Physical Keyboard SELECT Key", nullptr,
 		"Selects the physical keyboard key mapped to the Atari SELECT console "
 		"switch.",
-		nullptr, "input", kConsoleKeyValues, "f3"
+		nullptr, "input", kConsoleKeyValues, "none"
 	},
 	{
-		"altirra_key_option", "Keyboard OPTION Key", nullptr,
+		"altirra_key_option", "Physical Keyboard OPTION Key", nullptr,
 		"Selects the physical keyboard key mapped to the Atari OPTION console "
 		"switch.",
-		nullptr, "input", kConsoleKeyValues, "f4"
+		nullptr, "input", kConsoleKeyValues, "none"
 	},
 	{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
 };
@@ -1559,6 +1565,14 @@ static retro_core_options_v2_intl kOptionsV2Intl = {
 	nullptr
 };
 
+#define ALTIRRA_PAD_KEY_LEGACY_VALUES \
+	"auto|none|space|return|escape|backspace|tab|" \
+	"0|1|2|3|4|5|6|7|8|9|" \
+	"a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z|" \
+	"5200_0|5200_1|5200_2|5200_3|5200_4|5200_5|5200_6|5200_7|" \
+	"5200_8|5200_9|5200_star|5200_pound|5200_start|5200_pause|" \
+	"5200_reset"
+
 static const retro_variable kOptionVariables[] = {
 	{ "altirra_system", "System; auto|800xl|800|1200xl|130xe|xegs|5200" },
 	{ "altirra_memory", "Memory Size; 320K|8K|16K|24K|32K|40K|48K|52K|64K|128K|256K|320K_Compy|576K|576K_Compy|1088K" },
@@ -1582,21 +1596,21 @@ static const retro_variable kOptionVariables[] = {
 	{ "altirra_audio_filters", "Audio Filters; auto|enabled|disabled" },
 	{ "altirra_stereo_as_mono", "Downmix Stereo to Mono; disabled|enabled" },
 	{ "altirra_drive_sounds", "Drive Sounds; disabled|enabled" },
-	{ "altirra_input_port1", "Input Port 1; auto|joystick|5200_controller|paddle_a|paddle_b|st_mouse|light_pen|light_gun|none" },
-	{ "altirra_input_port2", "Input Port 2; none|joystick|paddle_a|paddle_b|st_mouse" },
-	{ "altirra_control_scheme", "Control Scheme; auto|common|joystick|flight|adventure|5200" },
+	{ "altirra_input_port1", "Input Port 1 Device; auto|joystick|5200_controller|paddle_a|paddle_b|st_mouse|light_pen|light_gun|none" },
+	{ "altirra_input_port2", "Input Port 2 Device; none|joystick|paddle_a|paddle_b|st_mouse" },
+	{ "altirra_control_scheme", "RetroPad Extra Button Scheme; auto|common|joystick|flight|adventure|5200" },
 	{ "altirra_vkbd_toggle", "Virtual Keyboard Toggle; r_l3_select_r2|r|l3|r3|select_r2|none" },
-	{ "altirra_warm_reset_combo", "Warm Reset Combo; select_start|select_r|start_r|none" },
-	{ "altirra_cold_reset_combo", "Cold Reset Combo; select_l|select_l2|select_r|none" },
-	{ "altirra_pad_y_key", "RetroPad Y Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
-	{ "altirra_pad_x_key", "RetroPad X Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
-	{ "altirra_pad_l2_key", "RetroPad L2 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
-	{ "altirra_pad_r2_key", "RetroPad R2 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
-	{ "altirra_pad_l3_key", "RetroPad L3 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
-	{ "altirra_pad_r3_key", "RetroPad R3 Key; auto|none|space|return|escape|f|a|g|m|s|y|n" },
-	{ "altirra_key_start", "Keyboard START Key; f2|f3|f4|f5|f6|f8|f9|f10|none" },
-	{ "altirra_key_select", "Keyboard SELECT Key; f3|f2|f4|f5|f6|f8|f9|f10|none" },
-	{ "altirra_key_option", "Keyboard OPTION Key; f4|f2|f3|f5|f6|f8|f9|f10|none" },
+	{ "altirra_warm_reset_combo", "RetroPad Warm Reset Combo; select_start|select_r|start_r|none" },
+	{ "altirra_cold_reset_combo", "RetroPad Cold Reset Combo; select_l|select_l2|select_r|none" },
+	{ "altirra_pad_y_key", "RetroPad Y Emulator Input; " ALTIRRA_PAD_KEY_LEGACY_VALUES },
+	{ "altirra_pad_x_key", "RetroPad X Emulator Input; " ALTIRRA_PAD_KEY_LEGACY_VALUES },
+	{ "altirra_pad_l2_key", "RetroPad L2 Emulator Input; " ALTIRRA_PAD_KEY_LEGACY_VALUES },
+	{ "altirra_pad_r2_key", "RetroPad R2 Emulator Input; " ALTIRRA_PAD_KEY_LEGACY_VALUES },
+	{ "altirra_pad_l3_key", "RetroPad L3 Emulator Input; " ALTIRRA_PAD_KEY_LEGACY_VALUES },
+	{ "altirra_pad_r3_key", "RetroPad R3 Emulator Input; " ALTIRRA_PAD_KEY_LEGACY_VALUES },
+	{ "altirra_key_start", "Physical Keyboard START Key; none|f2|f3|f4|f5|f6|f8|f9|f10" },
+	{ "altirra_key_select", "Physical Keyboard SELECT Key; none|f2|f3|f4|f5|f6|f8|f9|f10" },
+	{ "altirra_key_option", "Physical Keyboard OPTION Key; none|f2|f3|f4|f5|f6|f8|f9|f10" },
 	{ nullptr, nullptr },
 };
 
@@ -2512,11 +2526,11 @@ unsigned ParseConsoleKeyOption(const char *key, unsigned fallback) {
 
 uint32 GetKeyboardConsoleScanCode(unsigned keycode) {
 	const unsigned startKey =
-		ParseConsoleKeyOption("altirra_key_start", RETROK_F2);
+		ParseConsoleKeyOption("altirra_key_start", 0);
 	const unsigned selectKey =
-		ParseConsoleKeyOption("altirra_key_select", RETROK_F3);
+		ParseConsoleKeyOption("altirra_key_select", 0);
 	const unsigned optionKey =
-		ParseConsoleKeyOption("altirra_key_option", RETROK_F4);
+		ParseConsoleKeyOption("altirra_key_option", 0);
 
 	if (startKey && keycode == startKey)
 		return kATUIKeyScanCode_Start;
@@ -2717,21 +2731,6 @@ void HandleKeyboardEvent(bool down, unsigned keycode, uint32_t character) {
 	const uint32 consoleScanCode = GetKeyboardConsoleScanCode(keycode);
 	if (consoleScanCode) {
 		HandleKeyboardSpecialScanCode(consoleScanCode, down);
-		return;
-	}
-
-	if (down && keycode == RETROK_F5) {
-		const bool shift = g_core.keyboardHeldCodes.end() != std::find_if(
-			g_core.keyboardHeldCodes.begin(), g_core.keyboardHeldCodes.end(),
-			[](uint32 code) {
-				return code == kATInputCode_KeyLShift
-					|| code == kATInputCode_KeyRShift;
-			});
-
-		if (shift)
-			DoColdReset();
-		else
-			DoWarmReset();
 		return;
 	}
 

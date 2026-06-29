@@ -174,9 +174,12 @@ for readme_text in \
     "| Select+Start | Warm reset |" \
     "| Select+L | Cold reset |" \
     "The face/shoulder key bindings are concurrent with the joystick" \
+    "RetroPad Extra Button Scheme" \
+    "Atari computer key entries apply to Atari 8-bit systems; explicit 5200 entries" \
     "| Y | Toggle 5200 keypad page in 5200 mode |" \
     "and a 5200 keypad page with \`0\`-\`9\`, \`*\`, \`#\`, START, PAUSE, and RESET." \
-    "Physical keyboard reset shortcuts are also available: F5 performs warm reset" \
+    "Physical keyboard console-key shortcuts default to disabled because RetroArch" \
+    "uses function keys such as F2/F3/F4 for frontend hotkeys." \
     "Disk images mount in virtual read/write mode by default." \
     "under RetroArch's save directory in \`Altirra/saves/\`" \
     "Runtime disk-control replacement accepts disk images and \`.m3u\` playlists." \

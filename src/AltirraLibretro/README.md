@@ -61,26 +61,29 @@ input active and also sends the mapped Atari key. If a stick-click is also
 selected as the virtual-keyboard toggle, the toggle takes precedence.
 
 RetroArch remaps decide which physical controller button becomes each RetroPad
-button. The Altirra core options then decide what Atari input those RetroPad
-buttons send. For example, an Xbox controller can use the left stick/D-pad as
-the Atari joystick, map physical `A` to the RetroPad trigger in RetroArch, and
-use the Altirra `RetroPad Y/X/L2/R2/L3/R3 Key` options for Return, `T`, `B`,
-or other Atari computer keys.
+button. The Altirra core options then decide what emulator-side input those
+RetroPad buttons send. For example, an Xbox controller can use the left
+stick/D-pad as the Atari joystick, map physical `A` to the RetroPad trigger in
+RetroArch, and use the Altirra `RetroPad Y/X/L2/R2/L3/R3 Emulator Input`
+options for Return, `T`, `B`, or other Atari computer keys.
 
-Use the `Control Scheme` core option to switch the spare-button defaults
-between auto, common keys, joystick-only, flight/space-sim keys,
+Use the `RetroPad Extra Button Scheme` core option to switch the spare-button
+defaults between auto, common keys, joystick-only, flight/space-sim keys,
 keyboard-heavy/adventure keys, and 5200. The default `Auto` scheme uses common
 Atari 8-bit keys unless the active system is 5200, where spare keyboard
 bindings stay unassigned and the 5200 keypad is available from the virtual
-keyboard. The `RetroPad Y/X/L2/R2/L3/R3 Key` core options can override each
-spare button individually with Atari computer letters, digits, Return, Space,
-Escape, Backspace, Tab, or explicit 5200 keypad/control targets. `Auto`
-follows the selected scheme.
-The `Virtual Keyboard Toggle`, `Warm Reset Combo`, and `Cold Reset Combo`
-options can rebind or disable the controller-only system actions while keeping
-the handheld-safe defaults above.
-Physical keyboard console keys default to F2/F3/F4 for START/SELECT/OPTION,
-and can be rebound with the `Keyboard START/SELECT/OPTION Key` options.
+keyboard. The `RetroPad Y/X/L2/R2/L3/R3 Emulator Input` core options can
+override each spare button individually with Atari computer letters, digits,
+Return, Space, Escape, Backspace, Tab, or explicit 5200 keypad/control targets.
+Atari computer key entries apply to Atari 8-bit systems; explicit 5200 entries
+apply to 5200 mode. `Auto` follows the selected scheme.
+The `Virtual Keyboard Toggle`, `RetroPad Warm Reset Combo`, and `RetroPad Cold
+Reset Combo` options can rebind or disable the controller-only system actions
+while keeping the handheld-safe defaults above.
+Physical keyboard console-key shortcuts default to disabled because RetroArch
+uses function keys such as F2/F3/F4 for frontend hotkeys. If you want physical
+keyboard START/SELECT/OPTION shortcuts, enable Game Focus or adjust RetroArch's
+hotkeys, then set the `Physical Keyboard START/SELECT/OPTION Key` core options.
 
 While the virtual keyboard is open, the pad controls the keyboard instead of
 the joystick so no joystick direction or console key can stick:
@@ -98,17 +101,14 @@ The virtual keyboard includes letters, numbers, Shift, Ctrl, Escape, Space,
 Return, Backspace, cursor/function keys, START/SELECT/OPTION, warm/cold reset,
 and a 5200 keypad page with `0`-`9`, `*`, `#`, START, PAUSE, and RESET.
 
-Physical keyboard reset shortcuts are also available: F5 performs warm reset
-and Shift+F5 performs cold reset.
-
 The `System` core option defaults to `Auto`: `.a52` cartridges and headered
 5200 cartridge images start as Atari 5200 content, while other extensions start
 as an Atari 800XL. Ambiguous raw `.bin`/`.rom` images are not guessed as 5200
 unless their cartridge header proves it. Selecting a specific system overrides
-auto-detection. `Input Port 1` also defaults to `Auto`, using a 5200 controller
-for the default RetroPad when the active system is 5200 and a joystick
-otherwise; explicit RetroArch device selections such as paddle, mouse, and
-light gun remain honored.
+auto-detection. `Input Port 1 Device` also defaults to `Auto`, using a 5200
+controller for the default RetroPad when the active system is 5200 and a
+joystick otherwise; explicit RetroArch device selections such as paddle, mouse,
+and light gun remain honored.
 
 The `Aspect Ratio` core option defaults to `4:3`. `Pixel Perfect` and
 `Square Pixels` report the rendered frame's native pixel ratio to RetroArch;

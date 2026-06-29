@@ -779,11 +779,11 @@ static const char *lookup_variable_value(const char *key) {
 		return "auto";
 	}
 	if (!strcmp(key, "altirra_key_start"))
-		return "f2";
+		return "none";
 	if (!strcmp(key, "altirra_key_select"))
-		return "f3";
+		return "none";
 	if (!strcmp(key, "altirra_key_option"))
-		return "f4";
+		return "none";
 
 	return nullptr;
 }
@@ -1916,44 +1916,6 @@ int main(int argc, char **argv) {
 	retro_reset();
 	if (!verify_reset_effect(retro_run, retro_get_memory_data,
 			"retro_reset", true))
-	{
-		retro_unload_game();
-		retro_deinit();
-		return 1;
-	}
-
-	if (!prepare_reset_probe(retro_run, retro_cheat_reset, retro_cheat_set,
-			retro_get_memory_data, "F5 warm reset"))
-	{
-		retro_unload_game();
-		retro_deinit();
-		return 1;
-	}
-
-	g_keyboardCallback.callback(true, 286, 0, 0);	// RETROK_F5 / warm reset
-	g_keyboardCallback.callback(false, 286, 0, 0);
-	if (!verify_reset_effect(retro_run, retro_get_memory_data,
-			"F5 warm reset", false))
-	{
-		retro_unload_game();
-		retro_deinit();
-		return 1;
-	}
-
-	if (!prepare_reset_probe(retro_run, retro_cheat_reset, retro_cheat_set,
-			retro_get_memory_data, "Shift+F5 cold reset"))
-	{
-		retro_unload_game();
-		retro_deinit();
-		return 1;
-	}
-
-	g_keyboardCallback.callback(true, 304, 0, 0);	// RETROK_LSHIFT
-	g_keyboardCallback.callback(true, 286, 0, 0);	// RETROK_F5 / cold reset
-	g_keyboardCallback.callback(false, 286, 0, 0);
-	g_keyboardCallback.callback(false, 304, 0, 0);
-	if (!verify_reset_effect(retro_run, retro_get_memory_data,
-			"Shift+F5 cold reset", true))
 	{
 		retro_unload_game();
 		retro_deinit();
