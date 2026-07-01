@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <limits.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +37,7 @@ extern "C" {
 
 #define RETRO_DEVICE_TYPE_SHIFT 8
 #define RETRO_DEVICE_MASK ((1 << RETRO_DEVICE_TYPE_SHIFT) - 1)
+#define RETRO_DEVICE_SUBCLASS(base, id) (((id + 1) << RETRO_DEVICE_TYPE_SHIFT) | base)
 #define RETRO_DEVICE_NONE 0
 #define RETRO_DEVICE_JOYPAD 1
 #define RETRO_DEVICE_MOUSE 2
@@ -279,6 +281,28 @@ enum retro_key {
 #define RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2 67
 #define RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL 68
 
+enum retro_log_level {
+   RETRO_LOG_DEBUG = 0,
+   RETRO_LOG_INFO,
+   RETRO_LOG_WARN,
+   RETRO_LOG_ERROR,
+
+   RETRO_LOG_DUMMY = INT_MAX
+};
+
+typedef void (RETRO_CALLCONV *retro_log_printf_t)(
+      enum retro_log_level level, const char *fmt, ...);
+
+struct retro_log_callback {
+   retro_log_printf_t log;
+};
+
+typedef void (RETRO_CALLCONV *retro_set_led_state_t)(int led, int state);
+
+struct retro_led_interface {
+   retro_set_led_state_t set_led_state;
+};
+
 enum retro_pixel_format {
    RETRO_PIXEL_FORMAT_0RGB1555 = 0,
    RETRO_PIXEL_FORMAT_XRGB8888 = 1,
@@ -341,6 +365,15 @@ struct retro_system_av_info {
    struct retro_system_timing timing;
 };
 
+#define RETRO_MEMDESC_CONST     (1 << 0)
+#define RETRO_MEMDESC_BIGENDIAN (1 << 1)
+#define RETRO_MEMDESC_ALIGN_2   (1 << 16)
+#define RETRO_MEMDESC_ALIGN_4   (2 << 16)
+#define RETRO_MEMDESC_ALIGN_8   (3 << 16)
+#define RETRO_MEMDESC_MINSIZE_2 (1 << 24)
+#define RETRO_MEMDESC_MINSIZE_4 (2 << 24)
+#define RETRO_MEMDESC_MINSIZE_8 (3 << 24)
+
 struct retro_memory_descriptor {
    uint64_t flags;
    void *ptr;
@@ -378,6 +411,31 @@ struct retro_disk_control_ext_callback {
 struct retro_keyboard_callback {
    void (*callback)(bool down, unsigned keycode, uint32_t character,
       uint16_t key_modifiers);
+};
+
+typedef int64_t retro_time_t;
+typedef int64_t retro_usec_t;
+
+typedef void (RETRO_CALLCONV *retro_frame_time_callback_t)(
+      retro_usec_t usec);
+
+struct retro_frame_time_callback {
+   retro_frame_time_callback_t callback;
+   retro_usec_t reference;
+};
+
+typedef void (RETRO_CALLCONV *retro_audio_buffer_status_callback_t)(
+      bool active, unsigned occupancy, bool underrun_likely);
+
+struct retro_audio_buffer_status_callback {
+   retro_audio_buffer_status_callback_t callback;
+};
+
+struct retro_fastforwarding_override {
+   float ratio;
+   bool fastforward;
+   bool notification;
+   bool inhibit_toggle;
 };
 
 struct retro_core_option_value {
@@ -420,6 +478,11 @@ struct retro_core_options_v2 {
 struct retro_core_options_v2_intl {
    struct retro_core_options_v2 *us;
    struct retro_core_options_v2 *local;
+};
+
+struct retro_core_option_display {
+   const char *key;
+   bool visible;
 };
 
 struct retro_input_descriptor {

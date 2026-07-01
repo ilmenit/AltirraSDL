@@ -28,6 +28,7 @@ include(${ALTIRRA_SDL_DIR}/cmake/altirra_core_sources.cmake)
 target_sources(AltirraLibretro PRIVATE
     libretro_audio.cpp
     libretro_dirs.cpp
+    libretro_log.cpp
     libretro_video.cpp
     libretro_ui_stubs.cpp
 

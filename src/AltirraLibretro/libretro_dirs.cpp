@@ -6,6 +6,7 @@
 #include <stdafx.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <vector>
 
 #if defined(_WIN32)
@@ -18,6 +19,8 @@
 #include <vd2/system/registry.h>
 #include <vd2/system/registrymemory.h>
 #include <vd2/system/text.h>
+
+#include "libretro_log.h"
 
 void ATUILoadRegistry(const wchar_t *path);
 void ATUISaveRegistry(const wchar_t *fnpath);
@@ -33,11 +36,35 @@ namespace {
 		if (path.empty())
 			return;
 
+		std::string partial;
+		size_t pos = 0;
+
 #if defined(_WIN32)
-		_mkdir(path.c_str());
-#else
-		mkdir(path.c_str(), 0755);
+		if (path.size() >= 2 && path[1] == ':') {
+			partial.assign(path.c_str(), 2);
+			pos = 2;
+		}
 #endif
+
+		while(pos < path.size()) {
+			const char ch = path[pos++];
+			partial += ch;
+
+			if (ch != '/' && ch != '\\' && pos != path.size())
+				continue;
+
+			while(pos < path.size() && (path[pos] == '/' || path[pos] == '\\'))
+				partial += path[pos++];
+
+			if (partial.empty() || partial == "/" || partial == "\\")
+				continue;
+
+#if defined(_WIN32)
+			_mkdir(partial.c_str());
+#else
+			mkdir(partial.c_str(), 0755);
+#endif
+		}
 	}
 
 	VDStringA GetDefaultConfigDir() {
@@ -211,15 +238,15 @@ void ATRegistryLoadFromDisk() {
 		if (f) {
 			fclose(f);
 			ATUILoadRegistry(path.c_str());
-			fprintf(stderr, "[AltirraLibretro] Settings loaded from: %s\n",
+			ATLibretroLog(RETRO_LOG_INFO, "Settings loaded from: %s\n",
 				pathU8.c_str());
 		} else {
-			fprintf(stderr,
-				"[AltirraLibretro] No settings file found, using defaults\n");
+			ATLibretroLog(RETRO_LOG_INFO,
+				"No settings file found, using defaults\n");
 		}
 	} catch (...) {
-		fprintf(stderr,
-			"[AltirraLibretro] Warning: failed to load settings from %s\n",
+		ATLibretroLog(RETRO_LOG_WARN,
+			"failed to load settings from %s\n",
 			pathU8.c_str());
 	}
 }
@@ -230,11 +257,11 @@ void ATRegistryFlushToDisk() {
 
 	try {
 		ATUISaveRegistry(path.c_str());
-		fprintf(stderr, "[AltirraLibretro] Settings saved to: %s\n",
+		ATLibretroLog(RETRO_LOG_INFO, "Settings saved to: %s\n",
 			pathU8.c_str());
 	} catch (...) {
-		fprintf(stderr,
-			"[AltirraLibretro] Warning: failed to save settings to %s\n",
+		ATLibretroLog(RETRO_LOG_WARN,
+			"failed to save settings to %s\n",
 			pathU8.c_str());
 	}
 }

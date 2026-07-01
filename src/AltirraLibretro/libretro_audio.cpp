@@ -34,10 +34,14 @@ static inline const char* SDL_GetError() { return ""; }
 #include <vd2/system/time.h>
 #include <at/atcore/audiosource.h>
 #include <at/atcore/audiomixer.h>
+#include <at/atcore/constants.h>
 #include <at/ataudio/audiofilters.h>
 #include <at/ataudio/audiosampleplayer.h>
 #include <at/ataudio/audiooutput.h>
 #include <at/ataudio/audiosamplepool.h>
+
+#include "libretro_common.h"
+#include "libretro_log.h"
 
 #ifdef ALTIRRA_LIBRETRO
 namespace {
@@ -393,7 +397,7 @@ private:
 	uint32 mBufferLevel = 0;
 	double mTickRate = 1;
 	float mMixingRate = 0;              // POKEY mixing rate = cps / 28
-	uint32 mSamplingRate = 48000;       // Device output rate (set in InitNativeAudio)
+	uint32 mSamplingRate = kLibretroSampleRate; // Device output rate (set in InitNativeAudio)
 	// SDL3 default latency: 60 ms (Windows default is 80 ms).  This is a
 	// deliberate but conservative divergence enabled by the active clock-
 	// recovery loop in main_pacer.cpp — with the queue pinned tightly to
@@ -559,7 +563,7 @@ void ATAudioOutputSDL3::Init(ATScheduler& scheduler) {
 	// default (48 kHz). InitNativeAudio will recompute after picking the
 	// real device rate.
 	RecomputeBuffering();
-	SetCyclesPerSecond(1789772.5, 1.0);
+	SetCyclesPerSecond(kATMasterClock_PAL, 1.0);
 }
 
 // -------------------------------------------------------------------------
@@ -577,7 +581,7 @@ void ATAudioOutputSDL3::InitNativeAudio() {
 	// device rate and reconfigure the stream so that SDL performs no
 	// resampling — Altirra's polyphase filter is the only rate converter.
 	SDL_AudioSpec spec {};
-	spec.freq = 48000;
+	spec.freq = (int)kLibretroSampleRate;
 	spec.format = SDL_AUDIO_S16;
 	spec.channels = 2;
 
@@ -585,8 +589,8 @@ void ATAudioOutputSDL3::InitNativeAudio() {
 		SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
 
 	if (!mpStream) {
-		fprintf(stderr, "[ATAudioOutputSDL3] Failed to open audio: %s\n",
-		        SDL_GetError());
+		ATLibretroLog(RETRO_LOG_ERROR,
+			"Failed to open audio: %s\n", SDL_GetError());
 		return;
 	}
 
@@ -604,11 +608,11 @@ void ATAudioOutputSDL3::InitNativeAudio() {
 		preferredRate = (uint32)devSpec.freq;
 
 	if (preferredRate == 0)
-		mSamplingRate = 48000;
+		mSamplingRate = kLibretroSampleRate;
 	else if (preferredRate < 44100)
 		mSamplingRate = 44100;
 	else if (preferredRate > 48000)
-		mSamplingRate = 48000;
+		mSamplingRate = kLibretroSampleRate;
 	else
 		mSamplingRate = preferredRate;
 
@@ -635,8 +639,9 @@ void ATAudioOutputSDL3::InitNativeAudio() {
 	if (!mPauseCount)
 		SDL_ResumeAudioStreamDevice(mpStream);
 
-	fprintf(stderr, "[ATAudioOutputSDL3] Audio initialized at %u Hz stereo S16 (Altirra polyphase)\n",
-	        mSamplingRate);
+	ATLibretroLog(RETRO_LOG_INFO,
+		"Audio initialized at %u Hz stereo S16 (Altirra polyphase)\n",
+		mSamplingRate);
 #endif
 }
 

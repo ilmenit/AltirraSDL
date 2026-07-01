@@ -8,6 +8,7 @@
 #include <iterator>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include "version.h"
 
 #include "at/atio/cartridgeimage.h"
+#include "at/atio/cartridgetypes.h"
 #include "at/atio/diskimage.h"
 #include "constants.h"
 #include "cpu.h"
@@ -30,6 +32,8 @@
 #include "settings.h"
 #include "simulator.h"
 #include "savestateio.h"
+#include "libretro_common.h"
+#include "libretro_log.h"
 #include "libretro_video.h"
 #include "libretro_vkbd.h"
 #include "uiaccessors.h"
@@ -85,7 +89,17 @@ retro_audio_sample_t g_audioSample = nullptr;
 retro_audio_sample_batch_t g_audioBatch = nullptr;
 retro_input_poll_t g_inputPoll = nullptr;
 retro_input_state_t g_inputState = nullptr;
-unsigned g_controllerDevices[2] = { RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD };
+retro_set_led_state_t g_setLedState = nullptr;
+std::atomic<retro_usec_t> g_lastFrameTimeUsec { 0 };
+std::atomic<bool> g_audioBufferActive { false };
+std::atomic<unsigned> g_audioBufferOccupancy { 0 };
+std::atomic<bool> g_audioUnderrunLikely { false };
+unsigned g_controllerDevices[4] = {
+	RETRO_DEVICE_JOYPAD,
+	RETRO_DEVICE_JOYPAD,
+	RETRO_DEVICE_NONE,
+	RETRO_DEVICE_NONE
+};
 
 struct CoreState {
 	bool simulatorInitialized = false;
@@ -101,9 +115,10 @@ struct CoreState {
 	float reportedGeometryAspect = 0.0f;
 	ATVideoStandard lastStandard = kATVideoStandard_PAL;
 	ATHardwareMode contentHardwareMode = kATHardwareMode_800XL;
+	ATVideoStandard contentVideoStandard = kATVideoStandard_PAL;
 	bool inputBitmasksSupported = false;
-	bool buttonsHeld[2][9] {};
-	uint32 buttonHeldCodes[2][9] {};
+	bool buttonsHeld[4][9] {};
+	uint32 buttonHeldCodes[4][9] {};
 	bool padKeyHeld[6] {};
 	unsigned padKeyHeldKeycodes[6] {};
 	uint32 padKeyHeldInputCodes[6] {};
@@ -174,9 +189,13 @@ void InitDefaultInputMaps();
 void ReleaseInput();
 void DoWarmReset();
 void DoColdReset();
+void RefreshSerializeFixedSize();
 void RefreshSystemRam();
 void ApplyEnabledCheats();
 void RegisterInputDescriptors();
+void UpdateCoreOptionVisibility();
+void RegisterFrameTimeCallback();
+void ClearDiskLeds();
 bool OptionEquals(const char *key, const char *value);
 
 constexpr const char *kValidExtensions =
@@ -223,6 +242,24 @@ constexpr uint8_t kStateMagic[8] = { 'A', 'L', 'T', 'R', 'L', 'R', 'S', 'T' };
 constexpr uint32 kStateVersion = 1;
 constexpr size_t kStateHeaderSize = 20;
 constexpr size_t kStateFixedMaxSize = 64 * 1024 * 1024;
+constexpr size_t kStateFixedSizeGranularity = 64 * 1024;
+constexpr size_t kMaxCheats = 4096;
+constexpr int kMaxAdvancePerFrame = 2000000;
+
+double MasterClockForStandard(ATVideoStandard standard) {
+	if (standard == kATVideoStandard_SECAM)
+		return kATMasterClock_SECAM;
+
+	const bool hz50 =
+		standard != kATVideoStandard_NTSC
+		&& standard != kATVideoStandard_PAL60;
+	return hz50 ? kATMasterClock_PAL : kATMasterClock_NTSC;
+}
+
+void UpdateAudioClockForStandard(ATVideoStandard standard) {
+	if (IATAudioOutput *const audio = g_sim.GetAudioOutput())
+		audio->SetCyclesPerSecond(MasterClockForStandard(standard), 1.0);
+}
 
 void QueryCoreDirectories() {
 	if (!g_env)
@@ -348,11 +385,88 @@ void ScanFirmwareDirectory(ATFirmwareManager& fwm, const VDStringW& dir) {
 	}
 }
 
-void RegisterRetroArchFirmwareDirectories() {
-	ATFirmwareManager *const fwm = g_sim.GetFirmwareManager();
-	if (!fwm)
-		return;
+std::vector<VDStringW> GetRetroArchFirmwareDirectories();
 
+void AddDetectedFirmwareInfo(vdvector<ATFirmwareInfo>& out,
+	const VDStringW& filePath, const vdfastvector<uint8>& data)
+{
+	ATFirmwareInfo detInfo {};
+	ATSpecificFirmwareType specificType = kATSpecificFirmwareType_None;
+	sint32 knownFirmwareIndex = -1;
+
+	if (ATFirmwareAutodetect(data.data(), (uint32)data.size(), detInfo,
+		specificType, knownFirmwareIndex) != ATFirmwareDetection::SpecificImage)
+	{
+		return;
+	}
+
+	const uint64 id = ATGetFirmwareIdFromPath(filePath.c_str());
+	if (std::find_if(out.begin(), out.end(),
+		[id](const ATFirmwareInfo& info) { return info.mId == id; })
+		!= out.end())
+	{
+		return;
+	}
+
+	ATFirmwareInfo fw {};
+	fw.mId = id;
+	fw.mFlags = detInfo.mFlags;
+	fw.mbVisible = true;
+	fw.mbAutoselect = false;
+	fw.mName = detInfo.mName.empty()
+		? VDStringW(VDFileSplitPath(filePath.c_str()))
+		: detInfo.mName;
+	fw.mPath = filePath;
+	fw.mType = detInfo.mType;
+	out.push_back(fw);
+}
+
+void CollectFirmwareDirectory(vdvector<ATFirmwareInfo>& out,
+	const VDStringW& dir)
+{
+	VDStringW pattern = dir;
+	if (!pattern.empty() && pattern.back() != L'/' && pattern.back() != L'\\')
+		pattern += L'/';
+	pattern += L"*.*";
+
+	try {
+		VDDirectoryIterator it(pattern.c_str());
+		while (it.Next()) {
+			if (it.IsDirectory())
+				continue;
+
+			if (it.GetAttributes() & (kVDFileAttr_System | kVDFileAttr_Hidden))
+				continue;
+
+			if (!ATFirmwareAutodetectCheckSize(it.GetSize()))
+				continue;
+
+			const VDStringW filePath = it.GetFullPath();
+			try {
+				VDFile f(filePath.c_str());
+				const sint64 sz = f.size();
+				if (sz <= 0 || sz > 16 * 1024 * 1024)
+					continue;
+
+				vdfastvector<uint8> data((size_t)sz);
+				f.read(data.data(), (long)sz);
+				f.close();
+
+				AddDetectedFirmwareInfo(out, filePath, data);
+			} catch(...) {
+			}
+		}
+	} catch(...) {
+	}
+}
+
+void CollectRetroArchFirmware(vdvector<ATFirmwareInfo>& out) {
+	const std::vector<VDStringW> dirs = GetRetroArchFirmwareDirectories();
+	for (const VDStringW& dir : dirs)
+		CollectFirmwareDirectory(out, dir);
+}
+
+std::vector<VDStringW> GetRetroArchFirmwareDirectories() {
 	std::vector<VDStringW> dirs;
 
 	if (!g_core.systemDirectory.empty()) {
@@ -368,8 +482,21 @@ void RegisterRetroArchFirmwareDirectories() {
 	AddUniqueDirectory(dirs, VDMakePath(configDir.c_str(), L"firmware"));
 	AddUniqueDirectory(dirs, configDir);
 
+	return dirs;
+}
+
+void ScanRetroArchFirmwareDirectories(ATFirmwareManager& fwm) {
+	const std::vector<VDStringW> dirs = GetRetroArchFirmwareDirectories();
 	for (const VDStringW& dir : dirs)
-		ScanFirmwareDirectory(*fwm, dir);
+		ScanFirmwareDirectory(fwm, dir);
+}
+
+void RegisterRetroArchFirmwareDirectories() {
+	ATFirmwareManager *const fwm = g_sim.GetFirmwareManager();
+	if (!fwm)
+		return;
+
+	ScanRetroArchFirmwareDirectories(*fwm);
 }
 
 std::string TrimLine(std::string s) {
@@ -423,6 +550,87 @@ bool IsDiskPath(const char *path) {
 	return false;
 }
 
+bool IsRawCartridgePath(const char *path) {
+	return HasExtension(path, "bin") || HasExtension(path, "rom");
+}
+
+ATCartridgeMode ParseCartMapperOverride() {
+	if (OptionEquals("altirra_cart_mapper", "2k"))
+		return kATCartridgeMode_2K;
+	if (OptionEquals("altirra_cart_mapper", "4k"))
+		return kATCartridgeMode_4K;
+	if (OptionEquals("altirra_cart_mapper", "8k"))
+		return kATCartridgeMode_8K;
+	if (OptionEquals("altirra_cart_mapper", "16k"))
+		return kATCartridgeMode_16K;
+	if (OptionEquals("altirra_cart_mapper", "xegs_32k"))
+		return kATCartridgeMode_XEGS_32K;
+	if (OptionEquals("altirra_cart_mapper", "xegs_64k"))
+		return kATCartridgeMode_XEGS_64K;
+	if (OptionEquals("altirra_cart_mapper", "xegs_128k"))
+		return kATCartridgeMode_XEGS_128K;
+	if (OptionEquals("altirra_cart_mapper", "xegs_256k"))
+		return kATCartridgeMode_XEGS_256K;
+	if (OptionEquals("altirra_cart_mapper", "xegs_512k"))
+		return kATCartridgeMode_XEGS_512K;
+	if (OptionEquals("altirra_cart_mapper", "xegs_1m"))
+		return kATCartridgeMode_XEGS_1M;
+	if (OptionEquals("altirra_cart_mapper", "maxflash_128k"))
+		return kATCartridgeMode_MaxFlash_128K;
+	if (OptionEquals("altirra_cart_mapper", "maxflash_1m"))
+		return kATCartridgeMode_MaxFlash_1024K;
+	if (OptionEquals("altirra_cart_mapper", "megacart_128k"))
+		return kATCartridgeMode_MegaCart_128K;
+	if (OptionEquals("altirra_cart_mapper", "megacart_512k"))
+		return kATCartridgeMode_MegaCart_512K;
+	if (OptionEquals("altirra_cart_mapper", "megacart_1m"))
+		return kATCartridgeMode_MegaCart_1M;
+	if (OptionEquals("altirra_cart_mapper", "5200_4k"))
+		return kATCartridgeMode_5200_4K;
+	if (OptionEquals("altirra_cart_mapper", "5200_8k"))
+		return kATCartridgeMode_5200_8K;
+	if (OptionEquals("altirra_cart_mapper", "5200_16k"))
+		return kATCartridgeMode_5200_16K_OneChip;
+	if (OptionEquals("altirra_cart_mapper", "5200_32k"))
+		return kATCartridgeMode_5200_32K;
+	if (OptionEquals("altirra_cart_mapper", "oss_034m"))
+		return kATCartridgeMode_OSS_034M;
+	if (OptionEquals("altirra_cart_mapper", "oss_m091"))
+		return kATCartridgeMode_OSS_M091;
+	if (OptionEquals("altirra_cart_mapper", "williams_32k"))
+		return kATCartridgeMode_Williams_32K;
+	if (OptionEquals("altirra_cart_mapper", "williams_64k"))
+		return kATCartridgeMode_Williams_64K;
+	if (OptionEquals("altirra_cart_mapper", "db_32k"))
+		return kATCartridgeMode_DB_32K;
+	if (OptionEquals("altirra_cart_mapper", "atrax_128k"))
+		return kATCartridgeMode_Atrax_128K;
+	if (OptionEquals("altirra_cart_mapper", "sic_128k"))
+		return kATCartridgeMode_SIC_128K;
+	if (OptionEquals("altirra_cart_mapper", "sic_256k"))
+		return kATCartridgeMode_SIC_256K;
+	if (OptionEquals("altirra_cart_mapper", "blizzard_16k"))
+		return kATCartridgeMode_Blizzard_16K;
+	if (OptionEquals("altirra_cart_mapper", "blizzard_32k"))
+		return kATCartridgeMode_Blizzard_32K;
+
+	return kATCartridgeMode_None;
+}
+
+void ApplyCartMapperOverride(const char *path, ATImageLoadContext& ctx,
+	ATCartLoadContext& cartCtx)
+{
+	if (!IsRawCartridgePath(path))
+		return;
+
+	const ATCartridgeMode mode = ParseCartMapperOverride();
+	if (mode == kATCartridgeMode_None)
+		return;
+
+	cartCtx.mCartMapper = (int)mode;
+	ctx.mpCartLoadContext = &cartCtx;
+}
+
 bool IsDiskControlReplacementPath(const std::string& path) {
 	return path.empty()
 		|| IsDiskPath(path.c_str())
@@ -451,6 +659,18 @@ ATHardwareMode DetectContentHardwareMode(const char *path) {
 	}
 
 	return kATHardwareMode_800XL;
+}
+
+ATHardwareMode DetectContentHardwareModeWithOptions(const char *path) {
+	const ATCartridgeMode forcedMode =
+		IsRawCartridgePath(path) ? ParseCartMapperOverride() : kATCartridgeMode_None;
+	if (forcedMode != kATCartridgeMode_None) {
+		return ATIsCartridge5200Mode(forcedMode)
+			? kATHardwareMode_5200
+			: kATHardwareMode_800XL;
+	}
+
+	return DetectContentHardwareMode(path);
 }
 
 std::string GetPathLabel(const std::string& path) {
@@ -668,8 +888,8 @@ bool SaveMountedDiskIfDirty() {
 		return true;
 
 	if (image->IsDynamic()) {
-		std::fprintf(stderr,
-			"[AltirraLibretro] Warning: dynamic disk image cannot be saved: %s\n",
+		ATLibretroLog(RETRO_LOG_WARN,
+			"dynamic disk image cannot be saved: %s\n",
 			g_core.mountedDiskOriginalPath.c_str());
 		return false;
 	}
@@ -683,8 +903,8 @@ bool SaveMountedDiskIfDirty() {
 		: g_core.mountedDiskSavePath;
 
 	if (!EnsureDirectoryPath(U8PathToW(VDStringA(GetLibretroSaveRoot().c_str())))) {
-		std::fprintf(stderr,
-			"[AltirraLibretro] Warning: failed to create disk save directory\n");
+		ATLibretroLog(RETRO_LOG_WARN,
+			"failed to create disk save directory\n");
 		return false;
 	}
 
@@ -695,8 +915,8 @@ bool SaveMountedDiskIfDirty() {
 		g_core.mountedDiskSavePath = savePath;
 		return true;
 	} catch(...) {
-		std::fprintf(stderr,
-			"[AltirraLibretro] Warning: failed to save disk sidecar: %s\n",
+		ATLibretroLog(RETRO_LOG_WARN,
+			"failed to save disk sidecar: %s\n",
 			savePath.c_str());
 		return false;
 	}
@@ -720,6 +940,8 @@ void ClearLoadedContentState() {
 	g_core.diskIndex = 0;
 	g_core.diskEjected = false;
 	g_core.contentHardwareMode = kATHardwareMode_800XL;
+	g_core.contentVideoStandard = kATVideoStandard_PAL;
+	UpdateCoreOptionVisibility();
 	ClearMountedDiskTracking();
 	ClearPendingInitialDisk();
 	ATLibretroVkbdReset();
@@ -729,8 +951,8 @@ void CleanupAfterLoadFailure() {
 	if (g_core.simulatorInitialized) {
 		ReleaseInput();
 		if (!SaveMountedDiskIfDirty()) {
-			std::fprintf(stderr,
-				"[AltirraLibretro] Warning: disk sidecar save failed during load failure cleanup; changes may be lost\n");
+			ATLibretroLog(RETRO_LOG_WARN,
+				"disk sidecar save failed during load failure cleanup; changes may be lost\n");
 		}
 		g_sim.Pause();
 		g_sim.UnloadAll();
@@ -807,6 +1029,7 @@ bool LoadM3U(const char *path) {
 	g_core.diskImages.swap(entries);
 	g_core.diskIndex = 0;
 	g_core.diskEjected = false;
+	UpdateCoreOptionVisibility();
 	return true;
 }
 
@@ -854,13 +1077,14 @@ bool DiskSetEjectState(bool ejected) {
 		g_sim.GetDiskInterface(0).UnloadDisk();
 		ClearMountedDiskTracking();
 		g_core.diskEjected = true;
+		RefreshSerializeFixedSize();
 		return true;
 	}
 
 	if (g_core.diskImages.empty() || g_core.diskIndex >= g_core.diskImages.size()) {
 		g_sim.GetDiskInterface(0).UnloadDisk();
 		g_core.diskEjected = false;
-		InvalidateSerializeCache();
+		RefreshSerializeFixedSize();
 		return true;
 	}
 
@@ -868,7 +1092,7 @@ bool DiskSetEjectState(bool ejected) {
 		return false;
 
 	g_core.diskEjected = false;
-	InvalidateSerializeCache();
+	RefreshSerializeFixedSize();
 	return true;
 }
 
@@ -890,7 +1114,7 @@ bool DiskSetImageIndex(unsigned index) {
 		}
 
 		g_core.diskIndex = index;
-		InvalidateSerializeCache();
+		RefreshSerializeFixedSize();
 		return true;
 	}
 
@@ -898,7 +1122,7 @@ bool DiskSetImageIndex(unsigned index) {
 		return false;
 
 	g_core.diskIndex = index;
-	InvalidateSerializeCache();
+	RefreshSerializeFixedSize();
 	return true;
 }
 
@@ -920,9 +1144,12 @@ bool DiskReplaceImageIndex(unsigned index, const retro_game_info *info) {
 		if (g_core.diskIndex > index)
 			--g_core.diskIndex;
 		else if (g_core.diskIndex >= g_core.diskImages.size())
-			g_core.diskIndex = (unsigned)g_core.diskImages.size();
+			g_core.diskIndex = g_core.diskImages.empty()
+				? 0
+				: (unsigned)g_core.diskImages.size() - 1;
 
-		InvalidateSerializeCache();
+		RefreshSerializeFixedSize();
+		UpdateCoreOptionVisibility();
 		return true;
 	}
 
@@ -957,7 +1184,8 @@ bool DiskReplaceImageIndex(unsigned index, const retro_game_info *info) {
 		};
 	}
 
-	InvalidateSerializeCache();
+	RefreshSerializeFixedSize();
+	UpdateCoreOptionVisibility();
 	return true;
 }
 
@@ -966,6 +1194,7 @@ bool DiskAddImageIndex() {
 		return false;
 
 	g_core.diskImages.push_back({});
+	UpdateCoreOptionVisibility();
 	return true;
 }
 
@@ -1046,6 +1275,19 @@ struct CompactOptionDefinition {
 	const char *defaultValue;
 };
 
+struct DynamicOptionValues {
+	std::vector<std::string> values;
+	std::vector<std::string> labels;
+	std::vector<retro_core_option_value> optionValues;
+	std::string legacyValue;
+};
+
+DynamicOptionValues g_osFirmwareValues;
+DynamicOptionValues g_basicFirmwareValues;
+DynamicOptionValues g_5200FirmwareValues;
+std::vector<retro_variable> g_optionVariables;
+std::vector<std::string> g_optionVariableStrings;
+
 static const retro_core_option_value kSystemValues[] = {
 	{ "auto", "Auto" },
 	{ "800xl", "Atari 800XL" },
@@ -1077,11 +1319,23 @@ static const retro_core_option_value kMemoryValues[] = {
 };
 
 static const retro_core_option_value kVideoStandardValues[] = {
+	{ "auto", "Auto" },
 	{ "ntsc", "NTSC" },
 	{ "pal", "PAL" },
 	{ "secam", "SECAM" },
 	{ "ntsc50", "NTSC 50Hz" },
 	{ "pal60", "PAL 60Hz" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kAutoInternalFirmwareValues[] = {
+	{ "auto", "Auto" },
+	{ "internal", "Internal AltirraOS" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kAutoFirmwareValues[] = {
+	{ "auto", "Auto" },
 	{ nullptr, nullptr },
 };
 
@@ -1132,7 +1386,6 @@ static const retro_core_option_value kArtifactingValues[] = {
 
 static const retro_core_option_value kPerformanceTierValues[] = {
 	{ "quality", "Quality" },
-	{ "balanced", "Balanced" },
 	{ "performance", "Performance" },
 	{ nullptr, nullptr },
 };
@@ -1140,6 +1393,40 @@ static const retro_core_option_value kPerformanceTierValues[] = {
 static const retro_core_option_value kDiskWriteModeValues[] = {
 	{ "safe_sidecar", "Safe Sidecar" },
 	{ "original_rw", "Write Original" },
+	{ nullptr, nullptr },
+};
+
+static const retro_core_option_value kCartMapperValues[] = {
+	{ "auto", "Auto" },
+	{ "2k", "2K" },
+	{ "4k", "4K" },
+	{ "8k", "8K" },
+	{ "16k", "16K" },
+	{ "xegs_32k", "XEGS 32K" },
+	{ "xegs_64k", "XEGS 64K" },
+	{ "xegs_128k", "XEGS 128K" },
+	{ "xegs_256k", "XEGS 256K" },
+	{ "xegs_512k", "XEGS 512K" },
+	{ "xegs_1m", "XEGS 1M" },
+	{ "maxflash_128k", "MaxFlash 128K" },
+	{ "maxflash_1m", "MaxFlash 1M" },
+	{ "megacart_128k", "MegaCart 128K" },
+	{ "megacart_512k", "MegaCart 512K" },
+	{ "megacart_1m", "MegaCart 1M" },
+	{ "5200_4k", "5200 4K" },
+	{ "5200_8k", "5200 8K" },
+	{ "5200_16k", "5200 16K One Chip" },
+	{ "5200_32k", "5200 32K" },
+	{ "oss_034m", "OSS 034M" },
+	{ "oss_m091", "OSS M091" },
+	{ "williams_32k", "Williams 32K" },
+	{ "williams_64k", "Williams 64K" },
+	{ "db_32k", "DB 32K" },
+	{ "atrax_128k", "Atrax 128K" },
+	{ "sic_128k", "SIC 128K" },
+	{ "sic_256k", "SIC 256K" },
+	{ "blizzard_16k", "Blizzard 16K" },
+	{ "blizzard_32k", "Blizzard 32K" },
 	{ nullptr, nullptr },
 };
 
@@ -1307,13 +1594,32 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 	},
 	{
 		"altirra_video_standard", "Video Standard", nullptr,
-		"Selects the machine video timing standard.",
-		nullptr, "system", kVideoStandardValues, "pal"
+		"Selects the machine video timing standard. Auto uses NTSC for "
+		"Atari 5200 content and PAL otherwise.",
+		nullptr, "system", kVideoStandardValues, "auto"
 	},
 	{
 		"altirra_basic", "BASIC", nullptr,
 		"Enables or disables internal BASIC where supported.",
 		nullptr, "system", kDisabledEnabledValues, "disabled"
+	},
+	{
+		"altirra_os_firmware", "OS Firmware", nullptr,
+		"Selects the Atari 8-bit OS ROM. Auto uses the normal Altirra "
+		"firmware selection; Internal forces the matching AltirraOS ROM.",
+		nullptr, "system", kAutoInternalFirmwareValues, "auto"
+	},
+	{
+		"altirra_basic_firmware", "BASIC Firmware", nullptr,
+		"Selects the BASIC ROM. Auto uses the normal Altirra firmware "
+		"selection; Internal forces Altirra BASIC.",
+		nullptr, "system", kAutoInternalFirmwareValues, "auto"
+	},
+	{
+		"altirra_5200_bios", "5200 BIOS", nullptr,
+		"Selects the Atari 5200 BIOS used in 5200 mode. Auto uses the "
+		"normal Altirra firmware selection.",
+		nullptr, "system", kAutoFirmwareValues, "auto"
 	},
 	{
 		"altirra_cpu", "CPU", nullptr,
@@ -1371,6 +1677,13 @@ static const CompactOptionDefinition kOptionSpecs[] = {
 		"the source image untouched and saves changed disks under RetroArch's "
 		"save directory. Write Original writes through to the loaded disk image.",
 		nullptr, "media", kDiskWriteModeValues, "safe_sidecar"
+	},
+	{
+		"altirra_cart_mapper", "Raw Cartridge Mapper", nullptr,
+		"Forces the mapper used for headerless .bin/.rom cartridges. Auto "
+		"keeps Altirra's size-based raw cartridge detection and never "
+		"overrides .car headers.",
+		nullptr, "media", kCartMapperValues, "auto"
 	},
 	{
 		"altirra_artifacting", "Artifacting", nullptr,
@@ -1527,6 +1840,125 @@ void CopyOptionValues(retro_core_option_value *dst,
 	}
 }
 
+const retro_core_option_value *GetDynamicOptionValues(const char *key) {
+	if (!key)
+		return nullptr;
+
+	if (!std::strcmp(key, "altirra_os_firmware"))
+		return g_osFirmwareValues.optionValues.data();
+	if (!std::strcmp(key, "altirra_basic_firmware"))
+		return g_basicFirmwareValues.optionValues.data();
+	if (!std::strcmp(key, "altirra_5200_bios"))
+		return g_5200FirmwareValues.optionValues.data();
+
+	return nullptr;
+}
+
+bool IsComputerKernelFirmwareType(ATFirmwareType type) {
+	switch(type) {
+		case kATFirmwareType_Kernel800_OSA:
+		case kATFirmwareType_Kernel800_OSB:
+		case kATFirmwareType_KernelXL:
+		case kATFirmwareType_KernelXEGS:
+		case kATFirmwareType_Kernel1200XL:
+			return true;
+
+		default:
+			return false;
+	}
+}
+
+void AppendFirmwareOption(DynamicOptionValues& out, const char *value,
+	const char *label)
+{
+	if (out.values.size() + 1 >= RETRO_NUM_CORE_OPTION_VALUES_MAX)
+		return;
+
+	out.values.emplace_back(value);
+	out.labels.emplace_back(label);
+}
+
+void AppendFirmwareOption(DynamicOptionValues& out,
+	const ATFirmwareInfo& info)
+{
+	char value[32] {};
+	std::snprintf(value, sizeof value, "fw_%016llx",
+		(unsigned long long)info.mId);
+
+	VDStringA label = VDTextWToU8(info.mName);
+	if (label.empty())
+		label.sprintf("Firmware %016llx", (unsigned long long)info.mId);
+
+	AppendFirmwareOption(out, value, label.c_str());
+}
+
+void FinalizeFirmwareOptionValues(DynamicOptionValues& out) {
+	for(size_t i = 0; i < out.labels.size(); ++i) {
+		bool duplicate = false;
+		for(size_t j = 0; j < out.labels.size(); ++j) {
+			if (i != j && out.labels[i] == out.labels[j]) {
+				duplicate = true;
+				break;
+			}
+		}
+
+		if (duplicate && out.values[i].size() > 3) {
+			out.labels[i] += " [";
+			out.labels[i] += out.values[i].substr(out.values[i].size() - 8);
+			out.labels[i] += "]";
+		}
+	}
+
+	out.optionValues.clear();
+	out.optionValues.reserve(out.values.size() + 1);
+	for(size_t i = 0; i < out.values.size(); ++i)
+		out.optionValues.push_back({ out.values[i].c_str(), out.labels[i].c_str() });
+	out.optionValues.push_back({ nullptr, nullptr });
+
+	out.legacyValue.clear();
+	for(size_t i = 0; i < out.values.size(); ++i) {
+		if (i)
+			out.legacyValue += '|';
+		out.legacyValue += out.values[i];
+	}
+}
+
+void BuildFirmwareOptionValues() {
+	g_osFirmwareValues = {};
+	g_basicFirmwareValues = {};
+	g_5200FirmwareValues = {};
+
+	AppendFirmwareOption(g_osFirmwareValues, "auto", "Auto");
+	AppendFirmwareOption(g_osFirmwareValues, "internal", "Internal AltirraOS");
+	AppendFirmwareOption(g_basicFirmwareValues, "auto", "Auto");
+	AppendFirmwareOption(g_basicFirmwareValues, "internal", "Internal Altirra BASIC");
+	AppendFirmwareOption(g_5200FirmwareValues, "auto", "Auto");
+
+	vdvector<ATFirmwareInfo> firmwares;
+	CollectRetroArchFirmware(firmwares);
+	std::sort(firmwares.begin(), firmwares.end(),
+		[](const ATFirmwareInfo& x, const ATFirmwareInfo& y) {
+			return x.mName.comparei(y.mName) < 0;
+		});
+
+	for(const ATFirmwareInfo& info : firmwares) {
+		if (!info.mbVisible)
+			continue;
+
+		if (IsComputerKernelFirmwareType(info.mType))
+			AppendFirmwareOption(g_osFirmwareValues, info);
+		else if (info.mType == kATFirmwareType_Basic)
+			AppendFirmwareOption(g_basicFirmwareValues, info);
+		else if (info.mType == kATFirmwareType_Kernel5200)
+			AppendFirmwareOption(g_5200FirmwareValues, info);
+	}
+
+	FinalizeFirmwareOptionValues(g_osFirmwareValues);
+	FinalizeFirmwareOptionValues(g_basicFirmwareValues);
+	FinalizeFirmwareOptionValues(g_5200FirmwareValues);
+	g_coreOptionsBuilt = false;
+}
+
 void BuildCoreOptionDefinitions() {
 	if (g_coreOptionsBuilt)
 		return;
@@ -1543,13 +1975,17 @@ void BuildCoreOptionDefinitions() {
 		dstV2.info_categorized = src.infoCategorized;
 		dstV2.category_key = src.categoryKey;
 		dstV2.default_value = src.defaultValue;
-		CopyOptionValues(dstV2.values, src.values);
+		CopyOptionValues(dstV2.values,
+			GetDynamicOptionValues(src.key) ? GetDynamicOptionValues(src.key)
+				: src.values);
 
 		dstV1.key = src.key;
 		dstV1.desc = src.desc;
 		dstV1.info = src.info;
 		dstV1.default_value = src.defaultValue;
-		CopyOptionValues(dstV1.values, src.values);
+		CopyOptionValues(dstV1.values,
+			GetDynamicOptionValues(src.key) ? GetDynamicOptionValues(src.key)
+				: src.values);
 	}
 
 	g_coreOptionsBuilt = true;
@@ -1576,8 +2012,11 @@ static retro_core_options_v2_intl kOptionsV2Intl = {
 static const retro_variable kOptionVariables[] = {
 	{ "altirra_system", "System; auto|800xl|800|1200xl|130xe|xegs|5200" },
 	{ "altirra_memory", "Memory Size; 320K|8K|16K|24K|32K|40K|48K|52K|64K|128K|256K|320K_Compy|576K|576K_Compy|1088K" },
-	{ "altirra_video_standard", "Video Standard; pal|ntsc|secam|ntsc50|pal60" },
+	{ "altirra_video_standard", "Video Standard; auto|pal|ntsc|secam|ntsc50|pal60" },
 	{ "altirra_basic", "BASIC; disabled|enabled" },
+	{ "altirra_os_firmware", "OS Firmware; auto|internal" },
+	{ "altirra_basic_firmware", "BASIC Firmware; auto|internal" },
+	{ "altirra_5200_bios", "5200 BIOS; auto" },
 	{ "altirra_cpu", "CPU; 6502c|65c02|65c816_7mhz|65c816_21mhz" },
 	{ "altirra_illegal_instructions", "Illegal Instructions; enabled|disabled" },
 	{ "altirra_random_launch_delay", "Randomize Launch Delay; enabled|disabled" },
@@ -1589,8 +2028,9 @@ static const retro_variable kOptionVariables[] = {
 	{ "altirra_rapidus", "Rapidus Accelerator; disabled|enabled" },
 	{ "altirra_sio_patch", "SIO Patch; disk_and_cassette|off|disk|cassette" },
 	{ "altirra_disk_write_mode", "Disk Write Mode; safe_sidecar|original_rw" },
+	{ "altirra_cart_mapper", "Raw Cartridge Mapper; auto|2k|4k|8k|16k|xegs_32k|xegs_64k|xegs_128k|xegs_256k|xegs_512k|xegs_1m|maxflash_128k|maxflash_1m|megacart_128k|megacart_512k|megacart_1m|5200_4k|5200_8k|5200_16k|5200_32k|oss_034m|oss_m091|williams_32k|williams_64k|db_32k|atrax_128k|sic_128k|sic_256k|blizzard_16k|blizzard_32k" },
 	{ "altirra_artifacting", "Artifacting; auto|none|ntsc|ntschi|pal|palhi" },
-	{ "altirra_performance_tier", "Performance Tier; quality|balanced|performance" },
+	{ "altirra_performance_tier", "Performance Tier; quality|performance" },
 	{ "altirra_crop_overscan", "Crop Overscan; normal|off|extended|full" },
 	{ "altirra_aspect", "Aspect Ratio; 4_3|pixel_perfect|square_pixels|ntsc_par|pal_par" },
 	{ "altirra_audio_filters", "Audio Filters; auto|enabled|disabled" },
@@ -1613,6 +2053,38 @@ static const retro_variable kOptionVariables[] = {
 	{ "altirra_key_option", "Physical Keyboard OPTION Key; none|f2|f3|f4|f5|f6|f8|f9|f10" },
 	{ nullptr, nullptr },
 };
+
+const char *GetDynamicLegacyOptionValues(const char *key) {
+	if (!std::strcmp(key, "altirra_os_firmware"))
+		return g_osFirmwareValues.legacyValue.c_str();
+	if (!std::strcmp(key, "altirra_basic_firmware"))
+		return g_basicFirmwareValues.legacyValue.c_str();
+	if (!std::strcmp(key, "altirra_5200_bios"))
+		return g_5200FirmwareValues.legacyValue.c_str();
+
+	return nullptr;
+}
+
+void BuildLegacyOptionVariables() {
+	g_optionVariables.clear();
+	g_optionVariableStrings.clear();
+
+	for(const retro_variable *src = kOptionVariables; src->key; ++src) {
+		retro_variable dst = *src;
+		if (const char *values = GetDynamicLegacyOptionValues(src->key)) {
+			const char *semi = std::strchr(src->value, ';');
+			if (semi) {
+				g_optionVariableStrings.emplace_back(
+					src->value, semi + 2);
+				g_optionVariableStrings.back() += values;
+				dst.value = g_optionVariableStrings.back().c_str();
+			}
+		}
+		g_optionVariables.push_back(dst);
+	}
+
+	g_optionVariables.push_back({ nullptr, nullptr });
+}
 
 const retro_core_option_v2_definition *FindOptionDefinition(const char *key) {
 	BuildCoreOptionDefinitions();
@@ -1675,7 +2147,9 @@ void RegisterCoreOptions() {
 	if (!g_env)
 		return;
 
+	BuildFirmwareOptionValues();
 	BuildCoreOptionDefinitions();
+	BuildLegacyOptionVariables();
 
 	unsigned version = 0;
 	if (g_env(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -1693,7 +2167,103 @@ void RegisterCoreOptions() {
 		return;
 	}
 
-	g_env(RETRO_ENVIRONMENT_SET_VARIABLES, (void *)kOptionVariables);
+	g_env(RETRO_ENVIRONMENT_SET_VARIABLES, (void *)g_optionVariables.data());
+}
+
+void UpdateCoreOptionVisibility() {
+	if (!g_env)
+		return;
+
+	retro_core_option_display display {
+		"altirra_disk_write_mode",
+		!g_core.diskImages.empty()
+	};
+	g_env(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);
+}
+
+void FrameTimeCallback(retro_usec_t usec) {
+	g_lastFrameTimeUsec.store(usec, std::memory_order_relaxed);
+}
+
+double FrameRateForStandard(ATVideoStandard standard) {
+	if (standard == kATVideoStandard_SECAM)
+		return (double)kATFrameRate_SECAM;
+
+	return standard != kATVideoStandard_NTSC
+		&& standard != kATVideoStandard_PAL60
+		? (double)kATFrameRate_PAL
+		: (double)kATFrameRate_NTSC;
+}
+
+void RegisterFrameTimeCallback() {
+	if (!g_env)
+		return;
+
+	const ATVideoStandard standard = g_core.simulatorInitialized
+		? g_sim.GetVideoStandard()
+		: g_core.pendingVideoStandard;
+	static retro_frame_time_callback callback {};
+	callback.callback = FrameTimeCallback;
+	callback.reference = (retro_usec_t)(1000000.0 / FrameRateForStandard(standard));
+	g_env(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &callback);
+}
+
+void AudioBufferStatusCallback(bool active, unsigned occupancy,
+	bool underrunLikely)
+{
+	g_audioBufferActive.store(active, std::memory_order_relaxed);
+	g_audioBufferOccupancy.store(occupancy, std::memory_order_relaxed);
+	g_audioUnderrunLikely.store(underrunLikely, std::memory_order_relaxed);
+}
+
+void RegisterAudioBufferStatusCallback() {
+	if (!g_env)
+		return;
+
+	static const retro_audio_buffer_status_callback callback {
+		AudioBufferStatusCallback
+	};
+	g_env(RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK, (void *)&callback);
+}
+
+void RegisterLedInterface() {
+	g_setLedState = nullptr;
+
+	if (!g_env)
+		return;
+
+	retro_led_interface iface {};
+	if (g_env(RETRO_ENVIRONMENT_GET_LED_INTERFACE, &iface) && iface.set_led_state)
+		g_setLedState = iface.set_led_state;
+}
+
+void ClearDiskLeds() {
+	if (!g_setLedState)
+		return;
+
+	for (int i = 0; i < 15; ++i)
+		g_setLedState(i, 0);
+}
+
+unsigned GetPerformanceLevel() {
+	return g_core.pendingRapidusEnabled || g_core.pendingVbxeEnabled ? 6 : 4;
+}
+
+void RegisterPerformanceLevel() {
+	if (!g_env)
+		return;
+
+	unsigned level = GetPerformanceLevel();
+	g_env(RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL, &level);
+}
+
+void ClearFastForwardOverride() {
+	if (!g_env)
+		return;
+
+	retro_fastforwarding_override override {};
+	override.ratio = 0.0f;
+	g_env(RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE, &override);
 }
 
 void QueryInputBitmaskSupport() {
@@ -1710,7 +2280,8 @@ void RegisterMemoryMaps() {
 		return;
 
 	static retro_memory_descriptor descriptors[1] {};
-	descriptors[0].flags = 0;
+	// Frontend memory writes are unsupported; use retro_cheat_set for pokes.
+	descriptors[0].flags = RETRO_MEMDESC_CONST;
 	descriptors[0].ptr = g_core.systemRam.data();
 	descriptors[0].offset = 0;
 	descriptors[0].start = 0;
@@ -1782,6 +2353,10 @@ ATMemoryMode ParseMemoryMode() {
 }
 
 ATVideoStandard ParseVideoStandard() {
+	if (OptionEquals("altirra_video_standard", "auto"))
+		return ParseHardwareMode() == kATHardwareMode_5200
+			? kATVideoStandard_NTSC
+			: g_core.contentVideoStandard;
 	if (OptionEquals("altirra_video_standard", "ntsc"))
 		return kATVideoStandard_NTSC;
 	if (OptionEquals("altirra_video_standard", "pal"))
@@ -1794,6 +2369,145 @@ ATVideoStandard ParseVideoStandard() {
 		return kATVideoStandard_PAL60;
 
 	return kATVideoStandard_PAL;
+}
+
+bool ParseFirmwareOptionId(const char *key, uint64& id) {
+	id = 0;
+
+	const char *value = GetOptionValue(key);
+	if (!value || !std::strncmp(value, "auto", 5)
+		|| !std::strncmp(value, "internal", 9))
+	{
+		return false;
+	}
+
+	if (std::strncmp(value, "fw_", 3))
+		return false;
+
+	char *end = nullptr;
+	const unsigned long long parsed = std::strtoull(value + 3, &end, 16);
+	if (!end || *end)
+		return false;
+
+	id = (uint64)parsed;
+	return id != 0;
+}
+
+uint64 GetInternalKernelForHardware(ATHardwareMode mode) {
+	switch(mode) {
+		case kATHardwareMode_800:
+			return kATFirmwareId_Kernel_LLE;
+
+		case kATHardwareMode_5200:
+			return kATFirmwareId_5200_LLE;
+
+		case kATHardwareMode_1200XL:
+		case kATHardwareMode_800XL:
+		case kATHardwareMode_130XE:
+		case kATHardwareMode_1400XL:
+		case kATHardwareMode_XEGS:
+		default:
+			return kATFirmwareId_Kernel_LLEXL;
+	}
+}
+
+void SetSpecificFirmwareIfDetected(ATFirmwareManager& fwm, uint64 id,
+	const ATFirmwareInfo& info)
+{
+	if (id < kATFirmwareId_Custom || info.mPath.empty())
+		return;
+
+	try {
+		VDFile f(info.mPath.c_str());
+		const sint64 sz = f.size();
+		if (sz <= 0 || sz > 16 * 1024 * 1024)
+			return;
+
+		vdfastvector<uint8> data((size_t)sz);
+		f.read(data.data(), (long)sz);
+		f.close();
+
+		ATFirmwareInfo detInfo {};
+		ATSpecificFirmwareType specificType = kATSpecificFirmwareType_None;
+		sint32 knownFirmwareIndex = -1;
+		if (ATFirmwareAutodetect(data.data(), (uint32)data.size(), detInfo,
+			specificType, knownFirmwareIndex) == ATFirmwareDetection::SpecificImage
+			&& specificType != kATSpecificFirmwareType_None)
+		{
+			fwm.SetSpecificFirmware(specificType, id);
+		}
+	} catch(...) {
+	}
+}
+
+void ApplyFirmwareManagerSelection(ATFirmwareManager& fwm, uint64 id) {
+	if (!id)
+		return;
+
+	ATFirmwareInfo info {};
+	if (!fwm.GetFirmwareInfo(id, info))
+		return;
+
+	info.mbAutoselect = false;
+	fwm.SetDefaultFirmware(info.mType, id);
+	SetSpecificFirmwareIfDetected(fwm, id, info);
+}
+
+uint64 GetSelectedComputerKernelId(ATHardwareMode mode) {
+	if (OptionEquals("altirra_os_firmware", "internal"))
+		return GetInternalKernelForHardware(mode);
+
+	uint64 id = 0;
+	ParseFirmwareOptionId("altirra_os_firmware", id);
+	return id;
+}
+
+uint64 GetSelected5200KernelId() {
+	uint64 id = 0;
+	ParseFirmwareOptionId("altirra_5200_bios", id);
+	return id;
+}
+
+uint64 GetSelectedBasicId() {
+	if (OptionEquals("altirra_basic_firmware", "internal"))
+		return kATFirmwareId_Basic_ATBasic;
+
+	uint64 id = 0;
+	ParseFirmwareOptionId("altirra_basic_firmware", id);
+	return id;
+}
+
+bool ApplyFirmwareOptions() {
+	ATFirmwareManager *const fwm = g_sim.GetFirmwareManager();
+	if (!fwm)
+		return false;
+
+	bool resetRequired = false;
+
+	const ATHardwareMode mode = g_core.pendingHardwareMode;
+	uint64 kernelId = mode == kATHardwareMode_5200
+		? GetSelected5200KernelId()
+		: GetSelectedComputerKernelId(mode);
+	if (mode == kATHardwareMode_5200 && !kernelId
+		&& OptionEquals("altirra_os_firmware", "internal"))
+	{
+		kernelId = GetInternalKernelForHardware(mode);
+	}
+
+	ApplyFirmwareManagerSelection(*fwm, kernelId);
+	if (g_sim.GetKernelId() != kernelId) {
+		g_sim.SetKernel(kernelId);
+		resetRequired = true;
+	}
+
+	const uint64 basicId = GetSelectedBasicId();
+	ApplyFirmwareManagerSelection(*fwm, basicId);
+	if (g_sim.GetBasicId() != basicId) {
+		g_sim.SetBasic(basicId);
+		resetRequired = true;
+	}
+
+	return resetRequired;
 }
 
 void ParseCPUMode(ATCPUMode& mode, uint32& subCycles) {
@@ -1909,6 +2623,8 @@ bool ApplyPendingResetOptions(bool force) {
 		resetRequired = true;
 	}
 
+	resetRequired |= ApplyFirmwareOptions();
+
 	if ((force || g_core.optionMemoryPending)
 		&& g_sim.GetMemoryMode() != g_core.pendingMemoryMode) {
 		g_sim.SetMemoryMode(g_core.pendingMemoryMode);
@@ -1918,6 +2634,7 @@ bool ApplyPendingResetOptions(bool force) {
 	if ((force || g_core.optionVideoPending)
 		&& g_sim.GetVideoStandard() != g_core.pendingVideoStandard) {
 		g_sim.SetVideoStandard(g_core.pendingVideoStandard);
+		UpdateAudioClockForStandard(g_core.pendingVideoStandard);
 		resetRequired = true;
 	}
 
@@ -2248,15 +2965,37 @@ constexpr uint32 k5200VkbdTriggers[] = {
 };
 
 constexpr sint16 kAnalogJoystickThreshold = 0x4000;
+constexpr unsigned kDevice5200Controller =
+	RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 0);
+constexpr unsigned kDevicePaddleA =
+	RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 0);
+constexpr unsigned kDevicePaddleB =
+	RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 1);
+constexpr unsigned kDeviceSTMouse =
+	RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_MOUSE, 0);
+constexpr unsigned kDeviceLightPen =
+	RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_LIGHTGUN, 0);
+constexpr unsigned kDeviceLightGun =
+	RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_LIGHTGUN, 1);
 
-unsigned GetFrontendPortDevice(unsigned port) {
+unsigned GetFrontendPortDeviceFull(unsigned port) {
 	if (port >= std::size(g_controllerDevices))
 		return RETRO_DEVICE_NONE;
 
-	return g_controllerDevices[port] & RETRO_DEVICE_MASK;
+	return g_controllerDevices[port];
+}
+
+unsigned GetFrontendPortDevice(unsigned port) {
+	return GetFrontendPortDeviceFull(port) & RETRO_DEVICE_MASK;
 }
 
 bool IsJoystickPortEnabled(unsigned port) {
+	if (port >= std::size(g_controllerDevices))
+		return false;
+
+	if (port >= 2)
+		return GetFrontendPortDevice(port) == RETRO_DEVICE_JOYPAD;
+
 	if (port == 0) {
 		if (OptionEquals("altirra_input_port1", "auto")) {
 			return GetFrontendPortDevice(port) == RETRO_DEVICE_JOYPAD
@@ -2276,13 +3015,18 @@ bool Is5200PortEnabled(unsigned port) {
 	if (port != 0)
 		return false;
 
-	return OptionEquals("altirra_input_port1", "5200_controller")
+	return GetFrontendPortDeviceFull(port) == kDevice5200Controller
+		|| OptionEquals("altirra_input_port1", "5200_controller")
 		|| (OptionEquals("altirra_input_port1", "auto")
 			&& IsActiveHardware5200()
 			&& GetFrontendPortDevice(port) == RETRO_DEVICE_JOYPAD);
 }
 
 bool IsPaddlePortEnabled(unsigned port) {
+	const unsigned device = GetFrontendPortDeviceFull(port);
+	if (device == kDevicePaddleA || device == kDevicePaddleB)
+		return true;
+
 	if (GetFrontendPortDevice(port) == RETRO_DEVICE_ANALOG)
 	{
 		return true;
@@ -2300,6 +3044,9 @@ bool IsPaddlePortEnabled(unsigned port) {
 }
 
 bool IsSTMousePortEnabled(unsigned port) {
+	if (GetFrontendPortDeviceFull(port) == kDeviceSTMouse)
+		return true;
+
 	if (GetFrontendPortDevice(port) == RETRO_DEVICE_MOUSE)
 	{
 		return true;
@@ -2318,14 +3065,17 @@ bool IsLightPenPortEnabled(unsigned port) {
 	if (port != 0)
 		return false;
 
-	return OptionEquals("altirra_input_port1", "light_pen");
+	return GetFrontendPortDeviceFull(port) == kDeviceLightPen
+		|| OptionEquals("altirra_input_port1", "light_pen");
 }
 
 bool IsLightGunPortEnabled(unsigned port) {
 	if (port != 0)
 		return false;
 
-	return GetFrontendPortDevice(port) == RETRO_DEVICE_LIGHTGUN
+	const unsigned device = GetFrontendPortDeviceFull(port);
+	return device == kDeviceLightGun
+		|| (device == RETRO_DEVICE_LIGHTGUN)
 		|| OptionEquals("altirra_input_port1", "light_gun");
 }
 
@@ -2334,9 +3084,11 @@ bool IsAbsolutePointerPortEnabled(unsigned port) {
 }
 
 unsigned GetPaddleIndexForPort(unsigned port) {
-	const bool second = (port == 0)
+	const unsigned device = GetFrontendPortDeviceFull(port);
+	const bool second = device == kDevicePaddleB
+		|| ((port == 0)
 		? OptionEquals("altirra_input_port1", "paddle_b")
-		: OptionEquals("altirra_input_port2", "paddle_b");
+		: OptionEquals("altirra_input_port2", "paddle_b"));
 
 	return port * 2 + (second ? 1 : 0);
 }
@@ -2837,8 +3589,8 @@ void DoColdReset() {
 	if (!g_core.simulatorInitialized || !g_core.gameLoaded)
 		return;
 
-	InvalidateSerializeCache();
 	g_sim.ColdReset();
+	RefreshSerializeFixedSize();
 	ApplyEnabledCheats();
 	RefreshSystemRam();
 }
@@ -2870,22 +3622,44 @@ void PulseVkbd5200Key(uint32 trigger) {
 	g_core.vkbd5200PulseFrames[index] = 4;
 }
 
+bool IsKeyboardShiftHeld() {
+	return g_core.keyboardHeldCodes.end() != std::find_if(
+		g_core.keyboardHeldCodes.begin(), g_core.keyboardHeldCodes.end(),
+		[](uint32 code) {
+			return code == kATInputCode_KeyLShift
+				|| code == kATInputCode_KeyRShift;
+		});
+}
+
+bool IsKeyboardControlHeld() {
+	return g_core.keyboardHeldCodes.end() != std::find_if(
+		g_core.keyboardHeldCodes.begin(), g_core.keyboardHeldCodes.end(),
+		[](uint32 code) {
+			return code == kATInputCode_KeyLControl
+				|| code == kATInputCode_KeyRControl;
+		});
+}
+
 void ProcessVkbdEvent(const ATLibretroVkbdEvent& event) {
 	switch(event.type) {
-		case ATLibretroVkbdEvent::kKey:
-			if (event.shift)
+		case ATLibretroVkbdEvent::kKey: {
+			const bool shiftHeld = IsKeyboardShiftHeld();
+			const bool ctrlHeld = IsKeyboardControlHeld();
+
+			if (event.shift && !shiftHeld)
 				HandleKeyboardEvent(true, RETROK_LSHIFT, 0);
-			if (event.ctrl)
+			if (event.ctrl && !ctrlHeld)
 				HandleKeyboardEvent(true, RETROK_LCTRL, 0);
 
 			HandleKeyboardEvent(true, event.keycode, event.character);
 			HandleKeyboardEvent(false, event.keycode, 0);
 
-			if (event.ctrl)
+			if (event.ctrl && !ctrlHeld)
 				HandleKeyboardEvent(false, RETROK_LCTRL, 0);
-			if (event.shift)
+			if (event.shift && !shiftHeld)
 				HandleKeyboardEvent(false, RETROK_LSHIFT, 0);
 			break;
+		}
 
 		case ATLibretroVkbdEvent::kConsoleStart:
 			PulseVkbdConsoleSwitch(0);
@@ -2925,7 +3699,8 @@ void UpdateVkbdConsolePulses() {
 
 		--g_core.vkbdConsolePulseFrames[i];
 		if (!g_core.vkbdConsolePulseFrames[i])
-			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i], false);
+			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i],
+				g_core.consoleHeld[i] || g_core.keyboardConsoleHeld[i]);
 	}
 
 	for(size_t i = 0; i < std::size(g_core.vkbd5200PulseFrames); ++i) {
@@ -2939,6 +3714,8 @@ void UpdateVkbdConsolePulses() {
 }
 
 void PollKeyboardInput() {
+	// Once a frontend sends keyboard callbacks, keep using that path for the
+	// session; mixing callbacks and polling can duplicate press/release edges.
 	if (g_core.keyboardCallbackEventSeen)
 		return;
 
@@ -3110,9 +3887,17 @@ void InitDefaultInputMaps() {
 		if (!im->GetInputMapByIndex(i, &map) || !map)
 			continue;
 
-		const bool activate =
-			(IsJoystickPortEnabled(0)
-				&& map->HasController(kATInputControllerType_Joystick, 0))
+		bool activate = false;
+		for(unsigned port = 0; port < std::size(g_controllerDevices); ++port) {
+			if (IsJoystickPortEnabled(port)
+				&& map->HasController(kATInputControllerType_Joystick, port))
+			{
+				activate = true;
+				break;
+			}
+		}
+
+		activate = activate
 			|| (Is5200PortEnabled(0)
 				&& map->HasController(kATInputControllerType_5200Controller, 0))
 			|| (IsPaddlePortEnabled(0)
@@ -3124,8 +3909,6 @@ void InitDefaultInputMaps() {
 				&& map->HasController(kATInputControllerType_LightPen, 0))
 			|| (IsLightGunPortEnabled(0)
 				&& map->HasController(kATInputControllerType_LightGun, 0))
-			|| (IsJoystickPortEnabled(1)
-				&& map->HasController(kATInputControllerType_Joystick, 1))
 			|| (IsSTMousePortEnabled(1)
 				&& map->HasController(kATInputControllerType_STMouse, 1));
 		im->ActivateInputMap(map, activate);
@@ -3172,6 +3955,11 @@ void ReleaseInput() {
 				g_core.vkbd5200PulseFrames[i] = 0;
 			}
 		}
+
+		for(uint32 inputCode : g_core.padKeyHeldInputCodes) {
+			if (inputCode)
+				im->OnButtonUp(0, inputCode);
+		}
 	}
 
 	if (!im) {
@@ -3180,17 +3968,15 @@ void ReleaseInput() {
 	}
 
 	for(size_t i = 0; i < std::size(kConsoleSwitchBits); ++i) {
+		if (g_core.vkbdConsolePulseFrames[i] || g_core.consoleHeld[i]
+			|| g_core.keyboardConsoleHeld[i])
+		{
+			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i], false);
+		}
+
 		g_core.vkbdConsolePulseFrames[i] = 0;
-
-		if (g_core.consoleHeld[i]) {
-			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i], false);
-			g_core.consoleHeld[i] = false;
-		}
-
-		if (g_core.keyboardConsoleHeld[i]) {
-			g_sim.GetGTIA().SetConsoleSwitch(kConsoleSwitchBits[i], false);
-			g_core.keyboardConsoleHeld[i] = false;
-		}
+		g_core.consoleHeld[i] = false;
+		g_core.keyboardConsoleHeld[i] = false;
 	}
 
 	if (g_core.keyboardBreakHeld) {
@@ -3341,6 +4127,7 @@ void ApplyCheat(const CoreState::Cheat& cheat) {
 }
 
 void ApplyEnabledCheats() {
+	// Libretro cheats are single-byte Atari POKEs reapplied each frame.
 	for(const CoreState::Cheat& cheat : g_core.cheats)
 		ApplyCheat(cheat);
 }
@@ -3492,6 +4279,18 @@ void RegisterInputDescriptors() {
 		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick 2 Right" },
 		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Joystick 2 Trigger" },
 		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Joystick 2 Trigger" },
+		{ 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick 3 Up" },
+		{ 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick 3 Down" },
+		{ 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick 3 Left" },
+		{ 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick 3 Right" },
+		{ 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Joystick 3 Trigger" },
+		{ 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Joystick 3 Trigger" },
+		{ 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Joystick 4 Up" },
+		{ 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Joystick 4 Down" },
+		{ 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Joystick 4 Left" },
+		{ 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Joystick 4 Right" },
+		{ 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Joystick 4 Trigger" },
+		{ 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Joystick 4 Trigger" },
 		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Analog X / Paddle Knob" },
 		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Paddle Trigger" },
 		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Paddle 2 Knob" },
@@ -3836,7 +4635,12 @@ void SetStaticEnvironment() {
 
 	QueryCoreDirectories();
 	RegisterCoreOptions();
+	UpdateCoreOptionVisibility();
 	RegisterDiskControl();
+	RegisterFrameTimeCallback();
+	RegisterAudioBufferStatusCallback();
+	RegisterLedInterface();
+	ClearFastForwardOverride();
 	QueryInputBitmaskSupport();
 	RegisterMemoryMaps();
 
@@ -3885,16 +4689,32 @@ void SetStaticEnvironment() {
 	};
 	g_env(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void *)subsystems);
 
-	static const retro_controller_description portControllers[] = {
+	static const retro_controller_description primaryPortControllers[] = {
 		{ "Atari Joystick", RETRO_DEVICE_JOYPAD },
-		{ "Atari Paddle", RETRO_DEVICE_ANALOG },
-		{ "Atari ST Mouse", RETRO_DEVICE_MOUSE },
-		{ "Atari Light Gun/Pen", RETRO_DEVICE_LIGHTGUN },
+		{ "Atari 5200 Controller", kDevice5200Controller },
+		{ "Atari Paddle A", kDevicePaddleA },
+		{ "Atari Paddle B", kDevicePaddleB },
+		{ "Atari ST Mouse", kDeviceSTMouse },
+		{ "Atari Light Pen", kDeviceLightPen },
+		{ "Atari Light Gun", kDeviceLightGun },
+		{ "None", RETRO_DEVICE_NONE },
+	};
+	static const retro_controller_description secondaryPortControllers[] = {
+		{ "Atari Joystick", RETRO_DEVICE_JOYPAD },
+		{ "Atari Paddle A", kDevicePaddleA },
+		{ "Atari Paddle B", kDevicePaddleB },
+		{ "Atari ST Mouse", kDeviceSTMouse },
+		{ "None", RETRO_DEVICE_NONE },
+	};
+	static const retro_controller_description joystickPortControllers[] = {
+		{ "Atari Joystick", RETRO_DEVICE_JOYPAD },
 		{ "None", RETRO_DEVICE_NONE },
 	};
 	static const retro_controller_info controllerInfo[] = {
-		{ portControllers, (unsigned)std::size(portControllers) },
-		{ portControllers, (unsigned)std::size(portControllers) },
+		{ primaryPortControllers, (unsigned)std::size(primaryPortControllers) },
+		{ secondaryPortControllers, (unsigned)std::size(secondaryPortControllers) },
+		{ joystickPortControllers, (unsigned)std::size(joystickPortControllers) },
+		{ joystickPortControllers, (unsigned)std::size(joystickPortControllers) },
 		{ nullptr, 0 },
 	};
 
@@ -3965,11 +4785,8 @@ void FillAvInfo(retro_system_av_info& info) {
 	const ATVideoStandard standard = g_core.simulatorInitialized
 		? g_sim.GetVideoStandard()
 		: g_core.pendingVideoStandard;
-	info.timing.fps =
-		(standard != kATVideoStandard_NTSC && standard != kATVideoStandard_PAL60)
-			? (double)kATFrameRate_PAL
-			: (double)kATFrameRate_NTSC;
-	info.timing.sample_rate = 48000.0;
+	info.timing.fps = FrameRateForStandard(standard);
+	info.timing.sample_rate = (double)kLibretroSampleRate;
 }
 
 void ReportGeometry(unsigned w, unsigned h, bool force) {
@@ -4005,6 +4822,7 @@ bool InitSimulator() {
 	RegisterRetroArchFirmwareDirectories();
 	g_sim.SetRandomSeed((uint32)std::rand() ^ ((uint32)std::rand() << 15));
 	g_sim.LoadROMs();
+	UpdateAudioClockForStandard(g_sim.GetVideoStandard());
 
 	g_core.nullDisplay = ATLibretroCreateNullVideoDisplay();
 	g_sim.GetGTIA().SetVideoOutput(g_core.nullDisplay);
@@ -4053,6 +4871,7 @@ void ApplyUpdatedCoreOptions() {
 	ReadCoreOptions();
 
 	const bool resetRequired = ApplyPendingResetOptions(false);
+	RegisterPerformanceLevel();
 
 	InvalidateSerializeCache();
 	ApplyLiveOptions();
@@ -4060,6 +4879,7 @@ void ApplyUpdatedCoreOptions() {
 	if (resetRequired) {
 		g_sim.ColdReset();
 		g_sim.Resume();
+		RefreshSerializeFixedSize();
 	}
 
 	unsigned frameW = 0;
@@ -4068,6 +4888,8 @@ void ApplyUpdatedCoreOptions() {
 	ReportGeometry(frameW, frameH, false);
 
 	if (oldVideoStandard != g_sim.GetVideoStandard()) {
+		UpdateAudioClockForStandard(g_sim.GetVideoStandard());
+		RegisterFrameTimeCallback();
 		retro_system_av_info av {};
 		FillAvInfo(av);
 		g_env(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
@@ -4090,6 +4912,7 @@ void ShutdownSimulator() {
 
 	ATShutdownDebugger();
 	g_sim.Shutdown();
+	ClearDiskLeds();
 	g_core = CoreState {};
 	ATLibretroVkbdReset();
 }
@@ -4127,7 +4950,7 @@ void SubmitCurrentFrame() {
 	}
 }
 
-bool BuildSerializeCache() {
+bool BuildSerializePayload(std::vector<uint8_t>& payload) {
 	if (!g_core.simulatorInitialized || !g_core.gameLoaded)
 		return false;
 
@@ -4153,26 +4976,63 @@ bool BuildSerializeCache() {
 
 		zip->Finalize();
 
-		const auto payload = stream.GetBuffer();
-		const size_t fixedSize = g_core.serializeFixedSize;
-
-		if (!fixedSize || payload.size() > fixedSize - kStateHeaderSize)
-			return false;
-
-		g_core.serializeCache.assign(fixedSize, 0);
-		std::memcpy(g_core.serializeCache.data(), kStateMagic, sizeof kStateMagic);
-		WriteLE32(g_core.serializeCache.data() + 8, kStateVersion);
-		WriteLE32(g_core.serializeCache.data() + 12, (uint32)payload.size());
-		WriteLE32(g_core.serializeCache.data() + 16,
-			VDCRCTable::CRC32.CRC(payload.data(), payload.size()));
-		std::memcpy(g_core.serializeCache.data() + kStateHeaderSize,
-			payload.data(), payload.size());
-		g_core.serializeCacheValid = true;
+		const auto buffer = stream.GetBuffer();
+		payload.assign(
+			(const uint8_t *)buffer.data(),
+			(const uint8_t *)buffer.data() + buffer.size());
 		return true;
 	} catch(...) {
+		payload.clear();
+		return false;
+	}
+}
+
+size_t RoundSerializeFixedSize(size_t size) {
+	return ((size + kStateFixedSizeGranularity - 1)
+		/ kStateFixedSizeGranularity) * kStateFixedSizeGranularity;
+}
+
+void RefreshSerializeFixedSize() {
+	InvalidateSerializeCache();
+	g_core.serializeFixedSize = kStateFixedMaxSize;
+
+	std::vector<uint8_t> payload;
+	if (!BuildSerializePayload(payload))
+		return;
+
+	if (payload.size() > kStateFixedMaxSize - kStateHeaderSize)
+		return;
+
+	const size_t payloadSlack = std::min(
+		payload.size(),
+		kStateFixedMaxSize - kStateHeaderSize - payload.size());
+	const size_t targetSize = kStateHeaderSize + payload.size() + payloadSlack;
+	g_core.serializeFixedSize =
+		std::min(kStateFixedMaxSize, RoundSerializeFixedSize(targetSize));
+}
+
+bool BuildSerializeCache() {
+	std::vector<uint8_t> payload;
+	if (!BuildSerializePayload(payload)) {
 		InvalidateSerializeCache();
 		return false;
 	}
+
+	const size_t fixedSize = g_core.serializeFixedSize;
+
+	if (!fixedSize || payload.size() > fixedSize - kStateHeaderSize)
+		return false;
+
+	g_core.serializeCache.assign(fixedSize, 0);
+	std::memcpy(g_core.serializeCache.data(), kStateMagic, sizeof kStateMagic);
+	WriteLE32(g_core.serializeCache.data() + 8, kStateVersion);
+	WriteLE32(g_core.serializeCache.data() + 12, (uint32)payload.size());
+	WriteLE32(g_core.serializeCache.data() + 16,
+		VDCRCTable::CRC32.CRC(payload.data(), payload.size()));
+	std::memcpy(g_core.serializeCache.data() + kStateHeaderSize,
+		payload.data(), payload.size());
+	g_core.serializeCacheValid = true;
+	return true;
 }
 
 bool LoadSerializedState(const void *data, size_t size) {
@@ -4214,6 +5074,10 @@ bool LoadSerializedState(const void *data, size_t size) {
 
 		ReleaseInput();
 		const bool ok = g_sim.ApplySnapshot(*snapshot, nullptr);
+		if (!ok) {
+			g_sim.ColdReset();
+			RefreshSerializeFixedSize();
+		}
 		g_sim.Resume();
 		InvalidateSerializeCache();
 		return ok;
@@ -4231,6 +5095,13 @@ RETRO_API unsigned retro_api_version(void) {
 
 RETRO_API void retro_set_environment(retro_environment_t cb) {
 	g_env = cb;
+	g_setLedState = nullptr;
+	ATLibretroSetLogCallback(nullptr);
+	if (g_env) {
+		retro_log_callback log {};
+		if (g_env(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
+			ATLibretroSetLogCallback(log.log);
+	}
 	SetStaticEnvironment();
 }
 
@@ -4303,6 +5174,7 @@ RETRO_API void retro_reset(void) {
 		ApplyLiveOptions();
 		g_sim.ColdReset();
 		g_sim.Resume();
+		RefreshSerializeFixedSize();
 		ApplyEnabledCheats();
 		RefreshSystemRam();
 	}
@@ -4316,14 +5188,20 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 	if (game && !game->path)
 		return false;
 
-	g_core.contentHardwareMode = DetectContentHardwareMode(
+	g_core.contentHardwareMode = DetectContentHardwareModeWithOptions(
 		(game && game->path) ? game->path : nullptr);
+	g_core.contentVideoStandard =
+		g_core.contentHardwareMode == kATHardwareMode_5200
+			? kATVideoStandard_NTSC
+			: kATVideoStandard_PAL;
 
 	if (!InitSimulator())
 		return false;
 
 	ReadCoreOptions();
 	ApplyPendingResetOptions(true);
+	RegisterPerformanceLevel();
+	RegisterFrameTimeCallback();
 
 	if (game && game->path && *game->path) {
 		if (HasExtension(game->path, "m3u")) {
@@ -4339,6 +5217,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 			}
 		} else {
 			ATImageLoadContext ctx {};
+			ATCartLoadContext cartLoadCtx {};
 			std::string loadPath = game->path;
 			std::string savePath;
 			if (IsDiskPath(game->path)) {
@@ -4346,6 +5225,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 					GetDiskImageFormatFromPath(game->path);
 				savePath = MakeDiskSavePath(game->path, sidecarFormat);
 				loadPath = GetDiskLoadPath(game->path, savePath);
+			} else {
+				ApplyCartMapperOverride(game->path, ctx, cartLoadCtx);
 			}
 			bool loaded = false;
 			try {
@@ -4367,6 +5248,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 				g_core.diskImages.push_back({ game->path, GetPathLabel(game->path) });
 				g_core.diskIndex = 0;
 				g_core.diskEjected = false;
+				UpdateCoreOptionVisibility();
 				TrackMountedDisk(game->path, savePath);
 				ApplyPendingInitialDiskSelection();
 			} else {
@@ -4382,10 +5264,9 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 	g_sim.ColdReset();
 	g_sim.Resume();
 	g_core.gameLoaded = true;
-	g_core.serializeFixedSize = kStateFixedMaxSize;
+	RefreshSerializeFixedSize();
 	ApplyEnabledCheats();
 	RefreshSystemRam();
-	InvalidateSerializeCache();
 
 	return true;
 }
@@ -4394,11 +5275,12 @@ RETRO_API void retro_unload_game(void) {
 	if (g_core.simulatorInitialized) {
 		ReleaseInput();
 		if (!SaveMountedDiskIfDirty()) {
-			std::fprintf(stderr,
-				"[AltirraLibretro] Warning: disk sidecar save failed during unload; changes may be lost\n");
+			ATLibretroLog(RETRO_LOG_WARN,
+				"disk sidecar save failed during unload; changes may be lost\n");
 		}
 		g_sim.Pause();
 		g_sim.UnloadAll();
+		ClearDiskLeds();
 	}
 
 	ClearLoadedContentState();
@@ -4415,7 +5297,7 @@ RETRO_API void retro_run(void) {
 		UpdateInput();
 		ApplyEnabledCheats();
 
-		for (;;) {
+		for (int guard = 0; guard < kMaxAdvancePerFrame; ++guard) {
 			const ATSimulator::AdvanceResult r = g_sim.Advance(false);
 
 			if (g_core.nullDisplay
@@ -4423,6 +5305,8 @@ RETRO_API void retro_run(void) {
 				break;
 
 			if (r == ATSimulator::kAdvanceResult_Stopped)
+				break;
+			if (r == ATSimulator::kAdvanceResult_WaitingForFrame)
 				break;
 		}
 
@@ -4473,6 +5357,9 @@ RETRO_API void retro_cheat_reset(void) {
 }
 
 RETRO_API void retro_cheat_set(unsigned index, bool enabled, const char *code) {
+	if (index >= kMaxCheats)
+		return;
+
 	if (index >= g_core.cheats.size())
 		g_core.cheats.resize(index + 1);
 
@@ -4507,20 +5394,28 @@ RETRO_API bool retro_load_game_special(unsigned gameType,
 	if (g_env && !g_env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt))
 		return false;
 
-	g_core.contentHardwareMode = DetectContentHardwareMode(info[0].path);
+	g_core.contentHardwareMode = DetectContentHardwareModeWithOptions(info[0].path);
+	g_core.contentVideoStandard =
+		g_core.contentHardwareMode == kATHardwareMode_5200
+			? kATVideoStandard_NTSC
+			: kATVideoStandard_PAL;
 
 	if (!InitSimulator())
 		return false;
 
 	ReadCoreOptions();
 	ApplyPendingResetOptions(true);
+	RegisterPerformanceLevel();
+	RegisterFrameTimeCallback();
 
-	ATImageLoadContext cartCtx {};
+	ATImageLoadContext cartImageCtx {};
+	ATCartLoadContext cartLoadCtx {};
+	ApplyCartMapperOverride(info[0].path, cartImageCtx, cartLoadCtx);
 	bool cartLoaded = false;
 	try {
 		const VDStringW cartPath = VDTextU8ToW(VDStringSpanA(info[0].path));
 		cartLoaded = g_sim.Load(cartPath.c_str(), kATMediaWriteMode_RO,
-			&cartCtx);
+			&cartImageCtx);
 	} catch(...) {
 	}
 
@@ -4542,6 +5437,7 @@ RETRO_API bool retro_load_game_special(unsigned gameType,
 		g_core.diskImages.push_back({ info[1].path, GetPathLabel(info[1].path) });
 		g_core.diskIndex = 0;
 		g_core.diskEjected = false;
+		UpdateCoreOptionVisibility();
 	}
 
 	ApplyPendingInitialDiskSelection();
@@ -4553,10 +5449,9 @@ RETRO_API bool retro_load_game_special(unsigned gameType,
 	g_sim.ColdReset();
 	g_sim.Resume();
 	g_core.gameLoaded = true;
-	g_core.serializeFixedSize = kStateFixedMaxSize;
+	RefreshSerializeFixedSize();
 	ApplyEnabledCheats();
 	RefreshSystemRam();
-	InvalidateSerializeCache();
 
 	return true;
 }
@@ -4567,7 +5462,17 @@ RETRO_API unsigned retro_get_region(void) {
 	return RETRO_REGION_NTSC;
 }
 
+void ATLibretroSetDiskLedState(uint32 index, bool active) {
+	if (g_setLedState)
+		g_setLedState((int)index, active ? 1 : 0);
+}
+
 RETRO_API void *retro_get_memory_data(unsigned id) {
+	// Cartridge battery/EEPROM RAM is owned by cartridge-specific emulation
+	// devices and has no stable generic backing pointer to expose here.
+	if (id == RETRO_MEMORY_SAVE_RAM)
+		return nullptr;
+
 	if (id == RETRO_MEMORY_SYSTEM_RAM) {
 		if (!g_core.simulatorInitialized || !g_core.gameLoaded)
 			return nullptr;
@@ -4582,8 +5487,11 @@ RETRO_API void *retro_get_memory_data(unsigned id) {
 }
 
 RETRO_API size_t retro_get_memory_size(unsigned id) {
+	if (id == RETRO_MEMORY_SAVE_RAM)
+		return 0;
+
 	if (id == RETRO_MEMORY_SYSTEM_RAM)
-		return g_core.systemRam.size();
+		return retro_get_memory_data(id) ? g_core.systemRam.size() : 0;
 
 	return 0;
 }

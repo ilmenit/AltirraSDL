@@ -91,6 +91,12 @@ static unsigned g_mouseInputPolls;
 static unsigned g_lightGunInputPolls;
 static unsigned g_geometryMatrixChecks;
 static unsigned g_vkbdOverlayFrames;
+static unsigned g_performanceLevelRegistered;
+static unsigned g_frameTimeCallbackRegistered;
+static unsigned g_audioBufferStatusCallbackRegistered;
+static unsigned g_ledInterfaceRegistered;
+static unsigned g_fastForwardOverrideRegistered;
+static unsigned g_lastPerformanceLevel;
 static bool g_variablesUpdated;
 static const char *g_videoStandardValue = "pal";
 static const char *g_cropOverscanValue = "normal";
@@ -238,6 +244,34 @@ struct retro_keyboard_callback {
 		uint16_t key_modifiers);
 };
 
+using retro_usec_t = int64_t;
+using retro_frame_time_callback_t = void (*)(retro_usec_t usec);
+
+struct retro_frame_time_callback {
+	retro_frame_time_callback_t callback;
+	retro_usec_t reference;
+};
+
+using retro_audio_buffer_status_callback_t =
+	void (*)(bool active, unsigned occupancy, bool underrun_likely);
+
+struct retro_audio_buffer_status_callback {
+	retro_audio_buffer_status_callback_t callback;
+};
+
+struct retro_fastforwarding_override {
+	float ratio;
+	bool fastforward;
+	bool notification;
+	bool inhibit_toggle;
+};
+
+using retro_set_led_state_t = void (*)(int led, int state);
+
+struct retro_led_interface {
+	retro_set_led_state_t set_led_state;
+};
+
 struct retro_controller_description {
 	const char *desc;
 	unsigned id;
@@ -246,6 +280,11 @@ struct retro_controller_description {
 struct retro_controller_info {
 	const retro_controller_description *types;
 	unsigned num_types;
+};
+
+struct retro_core_option_display {
+	const char *key;
+	bool visible;
 };
 
 struct retro_input_descriptor {
@@ -258,12 +297,22 @@ struct retro_input_descriptor {
 
 static retro_keyboard_callback g_keyboardCallback {};
 static retro_disk_control_ext_callback g_diskControl {};
+static retro_frame_time_callback g_frameTimeCallback {};
+static retro_audio_buffer_status_callback g_audioBufferStatusCallback {};
+static unsigned g_ledStateCalls;
+
+static void set_led_state(int, int) {
+	++g_ledStateCalls;
+}
 
 static const char *const kRequiredOptionKeys[] = {
 	"altirra_system",
 	"altirra_memory",
 	"altirra_video_standard",
 	"altirra_basic",
+	"altirra_os_firmware",
+	"altirra_basic_firmware",
+	"altirra_5200_bios",
 	"altirra_cpu",
 	"altirra_illegal_instructions",
 	"altirra_random_launch_delay",
@@ -275,6 +324,7 @@ static const char *const kRequiredOptionKeys[] = {
 	"altirra_rapidus",
 	"altirra_sio_patch",
 	"altirra_disk_write_mode",
+	"altirra_cart_mapper",
 	"altirra_artifacting",
 	"altirra_performance_tier",
 	"altirra_crop_overscan",
@@ -722,6 +772,12 @@ static const char *lookup_variable_value(const char *key) {
 		return g_systemValue;
 	if (!strcmp(key, "altirra_video_standard"))
 		return g_videoStandardValue;
+	if (!strcmp(key, "altirra_os_firmware"))
+		return "auto";
+	if (!strcmp(key, "altirra_basic_firmware"))
+		return "auto";
+	if (!strcmp(key, "altirra_5200_bios"))
+		return "auto";
 	if (!strcmp(key, "altirra_input_port1"))
 		return g_inputPort1Value;
 	if (!strcmp(key, "altirra_input_port2"))
@@ -756,6 +812,8 @@ static const char *lookup_variable_value(const char *key) {
 		return g_rapidusValue;
 	if (!strcmp(key, "altirra_disk_write_mode"))
 		return "safe_sidecar";
+	if (!strcmp(key, "altirra_cart_mapper"))
+		return "auto";
 	if (!strcmp(key, "altirra_stereo_as_mono"))
 		return g_stereoAsMonoValue;
 	if (!strcmp(key, "altirra_drive_sounds"))
@@ -790,6 +848,15 @@ static const char *lookup_variable_value(const char *key) {
 
 static bool env_cb(unsigned cmd, void *data) {
 	switch (cmd) {
+		case 8: {	// SET_PERFORMANCE_LEVEL
+			auto *level = (unsigned *)data;
+			if (!level)
+				return false;
+
+			g_lastPerformanceLevel = *level;
+			++g_performanceLevelRegistered;
+			return true;
+		}
 		case 9: {	// GET_SYSTEM_DIRECTORY
 			const char **path = (const char **)data;
 			*path = g_systemDir;
@@ -858,6 +925,15 @@ static bool env_cb(unsigned cmd, void *data) {
 			g_variablesUpdated = false;
 			return true;
 		}
+		case 21: {	// SET_FRAME_TIME_CALLBACK
+			auto *cb = (retro_frame_time_callback *)data;
+			if (!cb || !cb->callback || cb->reference <= 0)
+				return false;
+
+			g_frameTimeCallback = *cb;
+			++g_frameTimeCallbackRegistered;
+			return true;
+		}
 		case 32: {	// SET_SYSTEM_AV_INFO
 			auto *av = (retro_system_av_info *)data;
 			if (g_callbackPhase == CallbackPhase::Run) {
@@ -899,7 +975,7 @@ static bool env_cb(unsigned cmd, void *data) {
 				return false;
 			}
 
-			for (unsigned port = 0; port < 2; ++port) {
+			for (unsigned port = 0; port < 4; ++port) {
 				bool sawJoypad = false;
 				bool sawAnalog = false;
 				bool sawMouse = false;
@@ -907,7 +983,7 @@ static bool env_cb(unsigned cmd, void *data) {
 				bool sawNone = false;
 
 				for (unsigned i = 0; i < info[port].num_types; ++i) {
-					switch (info[port].types[i].id) {
+					switch (info[port].types[i].id & 0xff) {
 						case 0: sawNone = true; break;	// RETRO_DEVICE_NONE
 						case 1: sawJoypad = true; break;	// RETRO_DEVICE_JOYPAD
 						case 2: sawMouse = true; break;	// RETRO_DEVICE_MOUSE
@@ -916,11 +992,14 @@ static bool env_cb(unsigned cmd, void *data) {
 					}
 				}
 
-				if (!sawJoypad || !sawAnalog || !sawMouse
-					|| !sawLightGun || !sawNone)
-				{
+				if (!sawJoypad || !sawNone)
 					return false;
-				}
+
+				if (port < 2 && (!sawAnalog || !sawMouse))
+					return false;
+
+				if (port == 0 && !sawLightGun)
+					return false;
 			}
 
 			++g_controllerInfoRegistered;
@@ -963,6 +1042,14 @@ static bool env_cb(unsigned cmd, void *data) {
 			++g_achievementsEnabled;
 			return true;
 		}
+		case 46: {	// GET_LED_INTERFACE
+			auto *iface = (retro_led_interface *)data;
+			if (iface)
+				iface->set_led_state = set_led_state;
+
+			++g_ledInterfaceRegistered;
+			return true;
+		}
 		case 31: {	// GET_SAVE_DIRECTORY
 			const char **path = (const char **)data;
 			*path = g_saveDir;
@@ -979,6 +1066,10 @@ static bool env_cb(unsigned cmd, void *data) {
 			*version = g_coreOptionsVersion;
 			return true;
 		}
+		case 55: {	// SET_CORE_OPTIONS_DISPLAY
+			auto *display = (retro_core_option_display *)data;
+			return display && display->key;
+		}
 		case 58: {	// SET_DISK_CONTROL_EXT_INTERFACE
 			auto *cb = (retro_disk_control_ext_callback *)data;
 			if (!cb || !cb->set_eject_state || !cb->get_eject_state
@@ -991,6 +1082,26 @@ static bool env_cb(unsigned cmd, void *data) {
 			}
 			g_diskControl = *cb;
 			++g_diskControlRegistered;
+			return true;
+		}
+		case 62: {	// SET_AUDIO_BUFFER_STATUS_CALLBACK
+			auto *cb = (retro_audio_buffer_status_callback *)data;
+			if (!cb || !cb->callback)
+				return false;
+
+			g_audioBufferStatusCallback = *cb;
+			++g_audioBufferStatusCallbackRegistered;
+			return true;
+		}
+		case 64: {	// SET_FASTFORWARDING_OVERRIDE
+			auto *override = (retro_fastforwarding_override *)data;
+			if (!override || override->fastforward
+				|| override->notification || override->inhibit_toggle)
+			{
+				return false;
+			}
+
+			++g_fastForwardOverrideRegistered;
 			return true;
 		}
 		default:
@@ -1770,6 +1881,15 @@ int main(int argc, char **argv) {
 		return 1;
 
 	retro_set_environment(env_cb);
+	if (!g_frameTimeCallbackRegistered
+		|| !g_audioBufferStatusCallbackRegistered
+		|| !g_ledInterfaceRegistered
+		|| !g_fastForwardOverrideRegistered)
+	{
+		fprintf(stderr, "expected static environment callbacks were not registered\n");
+		return 1;
+	}
+
 	retro_set_video_refresh(video_cb);
 	retro_set_audio_sample(audio_cb);
 	retro_set_audio_sample_batch(audio_batch_cb);
@@ -1804,6 +1924,13 @@ int main(int argc, char **argv) {
 
 	if (!load_core_game(retro_load_game, nullptr)) {
 		fprintf(stderr, "retro_load_game(NULL) failed\n");
+		retro_deinit();
+		return 1;
+	}
+
+	if (!g_performanceLevelRegistered || g_lastPerformanceLevel < 1) {
+		fprintf(stderr, "performance level was not registered during load\n");
+		retro_unload_game();
 		retro_deinit();
 		return 1;
 	}
@@ -2109,7 +2236,7 @@ int main(int argc, char **argv) {
 	}
 
 	const char *const standards[] = {
-		"ntsc", "pal", "secam", "ntsc50", "pal60"
+		"auto", "ntsc", "pal", "secam", "ntsc50", "pal60"
 	};
 	const char *const artifacts[] = {
 		"none", "auto", "ntsc", "ntschi", "pal", "palhi"
@@ -2412,9 +2539,19 @@ int main(int argc, char **argv) {
 	g_vbxeValue = "enabled";
 	g_covoxValue = "enabled";
 	g_soundBoardValue = "enabled";
+	const unsigned oldPerformanceRegistrations = g_performanceLevelRegistered;
 	g_variablesUpdated = true;
 	for (int i = 0; i < 8; ++i)
 		run_core_frame(retro_run);
+
+	if (g_performanceLevelRegistered == oldPerformanceRegistrations
+		|| g_lastPerformanceLevel < 6)
+	{
+		fprintf(stderr, "performance level was not refreshed for add-on options\n");
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
 
 	if (!g_lastW || !g_lastH
 		|| g_lastW > av.geometry.max_width
