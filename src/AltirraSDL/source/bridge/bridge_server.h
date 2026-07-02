@@ -75,6 +75,10 @@ void Poll(ATSimulator& sim, ATUIState& ui);
 // gate is active.
 void OnFrameCompleted(ATSimulator& sim);
 
+// True while a FRAME command is waiting for produced frames. This is
+// for main-loop integration only; it does not affect the wire protocol.
+bool IsFrameGateActive();
+
 // True if the user passed --bridge on the command line. Set by Init().
 // Lets the main loop avoid the overhead of calling Poll() / OnFrame
 // hooks when the bridge is disabled at runtime.

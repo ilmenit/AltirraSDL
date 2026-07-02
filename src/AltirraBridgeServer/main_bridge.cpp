@@ -39,6 +39,7 @@
 #include "debugger.h"            // ATGetDebugger() — for --debugbrkrun
 
 #include "bridge_server.h"
+#include <at/atcore/constants.h>
 #include <vd2/VDDisplay/display.h>
 
 // Forward declarations for AltirraSDL frontend symbols we re-use.
@@ -427,6 +428,47 @@ static bool InitSimulator() {
 	return true;
 }
 
+static std::chrono::steady_clock::duration BridgeGetFrameDuration() {
+	double fps = kATFrameRate_NTSC;
+
+	switch (g_sim.GetVideoStandard()) {
+		case kATVideoStandard_SECAM:
+			fps = kATFrameRate_SECAM;
+			break;
+
+		case kATVideoStandard_PAL:
+		case kATVideoStandard_NTSC50:
+			fps = kATFrameRate_PAL;
+			break;
+
+		case kATVideoStandard_NTSC:
+		case kATVideoStandard_PAL60:
+		default:
+			fps = kATFrameRate_NTSC;
+			break;
+	}
+
+	return std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+		std::chrono::duration<double>(1.0 / fps));
+}
+
+static void BridgePollUntil(std::chrono::steady_clock::time_point deadline) {
+	using clock = std::chrono::steady_clock;
+	constexpr auto pollTick = std::chrono::microseconds(500);
+
+	for (;;) {
+		const auto now = clock::now();
+		if (now >= deadline)
+			break;
+
+		const auto tickDeadline = now + pollTick;
+		std::this_thread::sleep_until(tickDeadline < deadline
+			? tickDeadline
+			: deadline);
+		ATBridge::Poll(g_sim, g_uiState);
+	}
+}
+
 // =========================================================================
 // Main loop
 // =========================================================================
@@ -515,69 +557,72 @@ int main(int argc, char** argv) {
 
 	BRIDGE_LOG_INFO("BridgeServer", "entering main loop");
 
-	// NTSC frame target: ~16.68 ms. We don't pace strictly — the
-	// frame gate handles client-driven timing. Outside the gate the
-	// simulator runs at "real-time-ish" speed by sleeping briefly
-	// between frames so the bridge poll latency stays bounded.
+	// The simulator's Advance() runs one bounded scanline chunk, not
+	// one video frame. Pace only at the actual GTIA frame boundary
+	// reported by the null display; otherwise FRAME N runs about
+	// 9-10x too slow because each partial chunk gets a full-frame
+	// sleep. While waiting for a frame deadline, poll the bridge in
+	// short ticks so free-running clients still get low-latency
+	// responses.
 	using clock = std::chrono::steady_clock;
-	const auto frameDuration = std::chrono::microseconds(16680);
-	auto nextFrameDeadline = clock::now() + frameDuration;
+	auto nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
 
 	while (g_running.load()) {
 		// 1. Process bridge commands (non-blocking, capped at 64
 		//    commands/poll).
 		ATBridge::Poll(g_sim, g_uiState);
 
-		// 2. Tick the simulator. Advance() runs until either a
-		//    frame is produced or the simulator is paused. With
-		//    SetFrameSkip(true), GTIA never blocks waiting for
-		//    display consumption.
-		ATSimulator::AdvanceResult result = g_sim.Advance(false);
+		// 2. Tick the simulator until a real frame is produced or
+		//    the simulator stops. With SetFrameSkip(true), GTIA
+		//    should not block waiting for display consumption.
+		ATSimulator::AdvanceResult result = ATSimulator::kAdvanceResult_Running;
+		bool framePosted = false;
 
-		// 3. Notify the frame gate only when GTIA actually posted a
-		//    frame. Advance() returns Running after internal
-		//    scanline chunks too, so using the result alone counts
-		//    partial frames and makes FRAME N finish early.
-		if (ATBridgeNullVideoDisplayConsumeFramePosted(g_pNullDisplay)) {
-			ATBridge::OnFrameCompleted(g_sim);
+		while (g_running.load()) {
+			result = g_sim.Advance(false);
+
+			if (ATBridgeNullVideoDisplayConsumeFramePosted(g_pNullDisplay)) {
+				framePosted = true;
+				break;
+			}
+
+			if (result == ATSimulator::kAdvanceResult_Stopped
+				|| result == ATSimulator::kAdvanceResult_WaitingForFrame)
+				break;
 		}
 
-		// 4. Pace. When the sim is paused, poll the bridge on a
-		//    short sub-tick so command round-trips don't wait for
-		//    the next loop iteration. When running, sleep toward
-		//    the next frame deadline in short chunks, polling the
-		//    bridge between each chunk, so an arriving command is
-		//    serviced within ~1 ms even mid-frame.
-		//
-		//    Historical note: earlier versions of this loop slept
-		//    the entire 5 ms / 16.68 ms in one shot, which turned
-		//    every bridge round-trip into a ~5–16 ms stall because
-		//    the socket was only polled once per iteration. That
-		//    dominated the latency of tight paint-style loops
-		//    (memload + frame(1) + rawscreen = ~30+ ms/iter
-		//    instead of ~20 ms).
-		const auto pollTick = std::chrono::microseconds(500);
-		if (result == ATSimulator::kAdvanceResult_Stopped) {
-			std::this_thread::sleep_for(pollTick);
-			nextFrameDeadline = clock::now() + frameDuration;
-		} else {
+		// 3. Pace once per produced frame. For a frame-gated run,
+		//    keep the gate active during the sleep so the client's
+		//    next command remains queued until the documented
+		//    wall-clock frame has elapsed. For free-running frames,
+		//    notify before sleeping so a FRAME command received
+		//    during the wait starts counting from the next frame.
+		if (framePosted) {
+			const bool frameGateWasActive = ATBridge::IsFrameGateActive();
+
+			if (!frameGateWasActive)
+				ATBridge::OnFrameCompleted(g_sim);
+
 			auto now = clock::now();
-			if (now >= nextFrameDeadline) {
-				// Behind schedule — reset the deadline to avoid
-				// snowballing. The bridge gate handles
-				// deterministic timing for clients that need it.
-				nextFrameDeadline = now + frameDuration;
-			} else {
-				while (now < nextFrameDeadline) {
-					auto until = nextFrameDeadline - now < pollTick
-					             ? nextFrameDeadline
-					             : now + pollTick;
-					std::this_thread::sleep_until(until);
-					ATBridge::Poll(g_sim, g_uiState);
-					now = clock::now();
-				}
-				nextFrameDeadline += frameDuration;
-			}
+			if (now >= nextFrameDeadline)
+				nextFrameDeadline = now;
+			else
+				BridgePollUntil(nextFrameDeadline);
+
+			nextFrameDeadline += BridgeGetFrameDuration();
+
+			if (frameGateWasActive)
+				ATBridge::OnFrameCompleted(g_sim);
+		}
+
+		// 4. When paused, poll on a short sub-tick so command
+		//    round-trips do not wait for a full frame.
+		if (result == ATSimulator::kAdvanceResult_Stopped) {
+			std::this_thread::sleep_for(std::chrono::microseconds(500));
+			nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
+		} else if (result == ATSimulator::kAdvanceResult_WaitingForFrame && !framePosted) {
+			std::this_thread::sleep_for(std::chrono::microseconds(500));
+			nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
 		}
 	}
 

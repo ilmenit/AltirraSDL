@@ -634,6 +634,10 @@ void OnFrameCompleted(ATSimulator& sim) {
 	}
 }
 
+bool IsFrameGateActive() {
+	return g_state.enabled && g_state.framesRemaining != 0;
+}
+
 bool IsEnabled() {
 	return g_state.enabled;
 }
