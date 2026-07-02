@@ -68,11 +68,12 @@ void Shutdown(ATSimulator& sim);
 // No-op if Init() was never called or returned false.
 void Poll(ATSimulator& sim, ATUIState& ui);
 
-// Frame-completion hook. Called from the SDL3 main loop immediately
-// after a new GTIA frame becomes available (the `hadFrame` branch).
-// Decrements the frame-gate counter; when it hits zero, calls
-// sim.Pause() so the next FRAME command can step again. No-op when no
-// gate is active.
+// Frame-completion hook. Called once per produced GTIA frame by the
+// owning main loop. Targets that pace frames before servicing the next
+// command may call this after their frame wait so a FRAME gate is not
+// released early. Decrements the frame-gate counter; when it hits zero,
+// calls sim.Pause() so the next FRAME command can step again. No-op
+// when no gate is active.
 void OnFrameCompleted(ATSimulator& sim);
 
 // True while a FRAME command is waiting for produced frames. This is

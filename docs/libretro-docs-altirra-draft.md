@@ -160,8 +160,11 @@ and input configuration.
 | --- | --- | --- |
 | System | auto, 800xl, 800, 1200xl, 130xe, xegs, 5200 | auto |
 | Memory Size | 8K, 16K, 24K, 32K, 40K, 48K, 52K, 64K, 128K, 256K, 320K, 320K_Compy, 576K, 576K_Compy, 1088K | 320K |
-| Video Standard | ntsc, pal, secam, ntsc50, pal60 | pal |
+| Video Standard | auto, ntsc, pal, secam, ntsc50, pal60 | auto |
 | BASIC | disabled, enabled | disabled |
+| OS Firmware | auto, internal | auto |
+| BASIC Firmware | auto, internal | auto |
+| 5200 BIOS | auto | auto |
 | CPU | 6502c, 65c02, 65c816_7mhz, 65c816_21mhz | 6502c |
 | Illegal Instructions | enabled, disabled | enabled |
 | Randomize Launch Delay | enabled, disabled | enabled |
@@ -173,6 +176,7 @@ and input configuration.
 | Rapidus Accelerator | disabled, enabled | disabled |
 | SIO Patch | off, disk, cassette, disk_and_cassette | disk_and_cassette |
 | Disk Write Mode | safe_sidecar, original_rw | safe_sidecar |
+| Raw Cartridge Mapper | auto, 2k, 4k, 8k, 16k, xegs_32k, xegs_64k, xegs_128k, xegs_256k, xegs_512k, xegs_1m, maxflash_128k, maxflash_1m, megacart_128k, megacart_512k, megacart_1m, 5200_4k, 5200_8k, 5200_16k, 5200_32k, oss_034m, oss_m091, williams_32k, williams_64k, db_32k, atrax_128k, sic_128k, sic_256k, blizzard_16k, blizzard_32k | auto |
 | Artifacting | none, ntsc, ntschi, pal, palhi, auto | auto |
 | Performance Tier | quality, balanced, performance | quality |
 | Crop Overscan | normal, off, extended, full | normal |
