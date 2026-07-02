@@ -677,6 +677,25 @@ static const char *expected_direct_r_descriptor() {
 	return vkbd_toggle_has_button(11) ? "Virtual Keyboard" : "Unassigned";
 }
 
+static const char *expected_pad_y_custom_descriptor() {
+	if (!strcmp(g_padYKeyValue, "t"))
+		return "T";
+	if (!strcmp(g_padYKeyValue, "help"))
+		return "HELP";
+	if (!strcmp(g_padYKeyValue, "break"))
+		return "BREAK";
+	if (!strcmp(g_padYKeyValue, "inverse"))
+		return "Inverse/Fuji";
+	if (!strcmp(g_padYKeyValue, "clear"))
+		return "Clear";
+	if (!strcmp(g_padYKeyValue, "warm_reset"))
+		return "Warm Reset";
+	if (!strcmp(g_padYKeyValue, "cold_reset"))
+		return "Cold Reset";
+
+	return nullptr;
+}
+
 static const char *expected_pad_descriptor(unsigned slot) {
 	const char *scheme = g_controlSchemeValue;
 	if (strcmp(scheme, "auto")
@@ -696,9 +715,12 @@ static const char *expected_pad_descriptor(unsigned slot) {
 
 	static char descriptions[6][64];
 	const char *binding = "Unassigned";
+	const char *const customBinding = slot == 0
+		? expected_pad_y_custom_descriptor()
+		: nullptr;
 
-	if (slot == 0 && !strcmp(g_padYKeyValue, "t"))
-		binding = "T";
+	if (customBinding)
+		binding = customBinding;
 	else
 	if (!strcmp(scheme, "joystick") || !strcmp(scheme, "5200")) {
 		static const char *const keys[] = {
@@ -2094,6 +2116,59 @@ int main(int argc, char **argv) {
 		retro_deinit();
 		return 1;
 	}
+
+	g_padYKeyValue = "warm_reset";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 3; ++i)
+		run_core_frame(retro_run);
+
+	if (!prepare_reset_probe(retro_run, retro_cheat_reset, retro_cheat_set,
+			retro_get_memory_data, "Y warm reset"))
+	{
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
+	g_joypadMask = (uint16_t)(1U << 1);	// Y
+	run_core_frame(retro_run);
+	g_joypadMask = 0;
+	if (!verify_reset_effect(retro_run, retro_get_memory_data,
+			"Y warm reset", false))
+	{
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
+	g_padYKeyValue = "cold_reset";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 3; ++i)
+		run_core_frame(retro_run);
+
+	if (!prepare_reset_probe(retro_run, retro_cheat_reset, retro_cheat_set,
+			retro_get_memory_data, "Y cold reset"))
+	{
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
+	g_joypadMask = (uint16_t)(1U << 1);	// Y
+	run_core_frame(retro_run);
+	g_joypadMask = 0;
+	if (!verify_reset_effect(retro_run, retro_get_memory_data,
+			"Y cold reset", true))
+	{
+		retro_unload_game();
+		retro_deinit();
+		return 1;
+	}
+
+	g_padYKeyValue = "auto";
+	g_variablesUpdated = true;
+	for (int i = 0; i < 3; ++i)
+		run_core_frame(retro_run);
 
 	const unsigned vkbdOverlayFramesBefore = g_vkbdOverlayFrames;
 	g_joypadMask = (uint16_t)(1U << 11);	// RETRO_DEVICE_ID_JOYPAD_R

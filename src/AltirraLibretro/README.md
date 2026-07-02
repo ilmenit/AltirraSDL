@@ -74,7 +74,8 @@ Atari 8-bit keys unless the active system is 5200, where spare keyboard
 bindings stay unassigned and the 5200 keypad is available from the virtual
 keyboard. The `RetroPad Y/X/L2/R2/L3/R3 Emulator Input` core options can
 override each spare button individually with Atari computer letters, digits,
-Return, Space, Escape, Backspace, Tab, or explicit 5200 keypad/control targets.
+Return, Space, Escape, Backspace, Tab, HELP, BREAK, Inverse/Fuji, Clear,
+warm/cold reset actions, or explicit 5200 keypad/control targets.
 Atari computer key entries apply to Atari 8-bit systems; explicit 5200 entries
 apply to 5200 mode. `Auto` follows the selected scheme.
 The `Virtual Keyboard Toggle`, `RetroPad Warm Reset Combo`, and `RetroPad Cold
@@ -98,8 +99,8 @@ the joystick so no joystick direction or console key can stick:
 | R, L3, or Select+R2 | Close keyboard |
 
 The virtual keyboard includes letters, numbers, Shift, Ctrl, Escape, Space,
-Return, Backspace, cursor/function keys, START/SELECT/OPTION, warm/cold reset,
-and a 5200 keypad page with `0`-`9`, `*`, `#`, START, PAUSE, and RESET.
+Return, Backspace, cursor/function keys, START/SELECT/OPTION, HELP, BREAK,
+Clear, Inverse/Fuji, warm/cold reset, and a 5200 keypad page with `0`-`9`, `*`, `#`, START, PAUSE, and RESET.
 
 The `System` core option defaults to `Auto`: `.a52` cartridges and headered
 5200 cartridge images start as Atari 5200 content, while other extensions start

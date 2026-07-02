@@ -122,6 +122,7 @@ struct CoreState {
 	bool padKeyHeld[6] {};
 	unsigned padKeyHeldKeycodes[6] {};
 	uint32 padKeyHeldInputCodes[6] {};
+	uint8 padKeyHeldActions[6] {};
 	bool mouseButtonsHeld[5] {};
 	std::vector<uint32> keyboardHeldCodes;
 	bool keyboardCallbackEventSeen = false;
@@ -1487,6 +1488,12 @@ static const retro_core_option_value kPadKeyValues[] = {
 	{ "escape", "Escape" },
 	{ "backspace", "Backspace" },
 	{ "tab", "Tab" },
+	{ "help", "HELP" },
+	{ "break", "BREAK" },
+	{ "inverse", "Inverse/Fuji" },
+	{ "clear", "Clear" },
+	{ "warm_reset", "Warm Reset" },
+	{ "cold_reset", "Cold Reset" },
 	{ "0", "0" },
 	{ "1", "1" },
 	{ "2", "2" },
@@ -2003,6 +2010,7 @@ static retro_core_options_v2_intl kOptionsV2Intl = {
 
 #define ALTIRRA_PAD_KEY_LEGACY_VALUES \
 	"auto|none|space|return|escape|backspace|tab|" \
+	"help|break|inverse|clear|warm_reset|cold_reset|" \
 	"0|1|2|3|4|5|6|7|8|9|" \
 	"a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z|" \
 	"5200_0|5200_1|5200_2|5200_3|5200_4|5200_5|5200_6|5200_7|" \
@@ -2827,11 +2835,18 @@ struct PadKeySlot {
 	const char *optionKey;
 };
 
+enum class PadKeyAction : uint8 {
+	None,
+	WarmReset,
+	ColdReset,
+};
+
 struct PadKeyBinding {
 	const char *value;
 	unsigned keycode;
 	uint32_t character;
 	uint32 inputCode5200;
+	PadKeyAction action;
 	const char *description;
 };
 
@@ -2888,62 +2903,68 @@ constexpr PadKeySlot kPadKeySlots[] = {
 };
 
 constexpr PadKeyBinding kPadKeyBindings[] = {
-	{ "space", RETROK_SPACE, ' ', 0, "Space" },
-	{ "return", RETROK_RETURN, '\r', 0, "Return" },
-	{ "escape", RETROK_ESCAPE, 0, 0, "Esc" },
-	{ "backspace", RETROK_BACKSPACE, 0, 0, "Backspace" },
-	{ "tab", RETROK_TAB, '\t', 0, "Tab" },
-	{ "0", RETROK_0, '0', 0, "0" },
-	{ "1", RETROK_1, '1', 0, "1" },
-	{ "2", RETROK_2, '2', 0, "2" },
-	{ "3", RETROK_3, '3', 0, "3" },
-	{ "4", RETROK_4, '4', 0, "4" },
-	{ "5", RETROK_5, '5', 0, "5" },
-	{ "6", RETROK_6, '6', 0, "6" },
-	{ "7", RETROK_7, '7', 0, "7" },
-	{ "8", RETROK_8, '8', 0, "8" },
-	{ "9", RETROK_9, '9', 0, "9" },
-	{ "a", RETROK_a, 'a', 0, "A" },
-	{ "b", RETROK_b, 'b', 0, "B" },
-	{ "c", RETROK_c, 'c', 0, "C" },
-	{ "d", RETROK_d, 'd', 0, "D" },
-	{ "e", RETROK_e, 'e', 0, "E" },
-	{ "f", RETROK_f, 'f', 0, "F" },
-	{ "g", RETROK_g, 'g', 0, "G" },
-	{ "h", RETROK_h, 'h', 0, "H" },
-	{ "i", RETROK_i, 'i', 0, "I" },
-	{ "j", RETROK_j, 'j', 0, "J" },
-	{ "k", RETROK_k, 'k', 0, "K" },
-	{ "l", RETROK_l, 'l', 0, "L" },
-	{ "m", RETROK_m, 'm', 0, "M" },
-	{ "n", RETROK_n, 'n', 0, "N" },
-	{ "o", RETROK_o, 'o', 0, "O" },
-	{ "p", RETROK_p, 'p', 0, "P" },
-	{ "q", RETROK_q, 'q', 0, "Q" },
-	{ "r", RETROK_r, 'r', 0, "R" },
-	{ "s", RETROK_s, 's', 0, "S" },
-	{ "t", RETROK_t, 't', 0, "T" },
-	{ "u", RETROK_u, 'u', 0, "U" },
-	{ "v", RETROK_v, 'v', 0, "V" },
-	{ "w", RETROK_w, 'w', 0, "W" },
-	{ "x", RETROK_x, 'x', 0, "X" },
-	{ "y", RETROK_y, 'y', 0, "Y" },
-	{ "z", RETROK_z, 'z', 0, "Z" },
-	{ "5200_0", 0, 0, kVkbd5200InputBase + 0, "5200 0" },
-	{ "5200_1", 0, 0, kVkbd5200InputBase + 1, "5200 1" },
-	{ "5200_2", 0, 0, kVkbd5200InputBase + 2, "5200 2" },
-	{ "5200_3", 0, 0, kVkbd5200InputBase + 3, "5200 3" },
-	{ "5200_4", 0, 0, kVkbd5200InputBase + 4, "5200 4" },
-	{ "5200_5", 0, 0, kVkbd5200InputBase + 5, "5200 5" },
-	{ "5200_6", 0, 0, kVkbd5200InputBase + 6, "5200 6" },
-	{ "5200_7", 0, 0, kVkbd5200InputBase + 7, "5200 7" },
-	{ "5200_8", 0, 0, kVkbd5200InputBase + 8, "5200 8" },
-	{ "5200_9", 0, 0, kVkbd5200InputBase + 9, "5200 9" },
-	{ "5200_star", 0, 0, kVkbd5200InputBase + 10, "5200 *" },
-	{ "5200_pound", 0, 0, kVkbd5200InputBase + 11, "5200 #" },
-	{ "5200_start", 0, 0, kVkbd5200InputBase + 12, "5200 START" },
-	{ "5200_pause", 0, 0, kVkbd5200InputBase + 13, "5200 PAUSE" },
-	{ "5200_reset", 0, 0, kVkbd5200InputBase + 14, "5200 RESET" },
+	{ "space", RETROK_SPACE, ' ', 0, PadKeyAction::None, "Space" },
+	{ "return", RETROK_RETURN, '\r', 0, PadKeyAction::None, "Return" },
+	{ "escape", RETROK_ESCAPE, 0, 0, PadKeyAction::None, "Esc" },
+	{ "backspace", RETROK_BACKSPACE, 0, 0, PadKeyAction::None, "Backspace" },
+	{ "tab", RETROK_TAB, '\t', 0, PadKeyAction::None, "Tab" },
+	{ "help", RETROK_F6, 0, 0, PadKeyAction::None, "HELP" },
+	{ "break", RETROK_F7, 0, 0, PadKeyAction::None, "BREAK" },
+	{ "inverse", RETROK_END, 0, 0, PadKeyAction::None, "Inverse/Fuji" },
+	{ "clear", RETROK_HOME, 0, 0, PadKeyAction::None, "Clear" },
+	{ "warm_reset", 0, 0, 0, PadKeyAction::WarmReset, "Warm Reset" },
+	{ "cold_reset", 0, 0, 0, PadKeyAction::ColdReset, "Cold Reset" },
+	{ "0", RETROK_0, '0', 0, PadKeyAction::None, "0" },
+	{ "1", RETROK_1, '1', 0, PadKeyAction::None, "1" },
+	{ "2", RETROK_2, '2', 0, PadKeyAction::None, "2" },
+	{ "3", RETROK_3, '3', 0, PadKeyAction::None, "3" },
+	{ "4", RETROK_4, '4', 0, PadKeyAction::None, "4" },
+	{ "5", RETROK_5, '5', 0, PadKeyAction::None, "5" },
+	{ "6", RETROK_6, '6', 0, PadKeyAction::None, "6" },
+	{ "7", RETROK_7, '7', 0, PadKeyAction::None, "7" },
+	{ "8", RETROK_8, '8', 0, PadKeyAction::None, "8" },
+	{ "9", RETROK_9, '9', 0, PadKeyAction::None, "9" },
+	{ "a", RETROK_a, 'a', 0, PadKeyAction::None, "A" },
+	{ "b", RETROK_b, 'b', 0, PadKeyAction::None, "B" },
+	{ "c", RETROK_c, 'c', 0, PadKeyAction::None, "C" },
+	{ "d", RETROK_d, 'd', 0, PadKeyAction::None, "D" },
+	{ "e", RETROK_e, 'e', 0, PadKeyAction::None, "E" },
+	{ "f", RETROK_f, 'f', 0, PadKeyAction::None, "F" },
+	{ "g", RETROK_g, 'g', 0, PadKeyAction::None, "G" },
+	{ "h", RETROK_h, 'h', 0, PadKeyAction::None, "H" },
+	{ "i", RETROK_i, 'i', 0, PadKeyAction::None, "I" },
+	{ "j", RETROK_j, 'j', 0, PadKeyAction::None, "J" },
+	{ "k", RETROK_k, 'k', 0, PadKeyAction::None, "K" },
+	{ "l", RETROK_l, 'l', 0, PadKeyAction::None, "L" },
+	{ "m", RETROK_m, 'm', 0, PadKeyAction::None, "M" },
+	{ "n", RETROK_n, 'n', 0, PadKeyAction::None, "N" },
+	{ "o", RETROK_o, 'o', 0, PadKeyAction::None, "O" },
+	{ "p", RETROK_p, 'p', 0, PadKeyAction::None, "P" },
+	{ "q", RETROK_q, 'q', 0, PadKeyAction::None, "Q" },
+	{ "r", RETROK_r, 'r', 0, PadKeyAction::None, "R" },
+	{ "s", RETROK_s, 's', 0, PadKeyAction::None, "S" },
+	{ "t", RETROK_t, 't', 0, PadKeyAction::None, "T" },
+	{ "u", RETROK_u, 'u', 0, PadKeyAction::None, "U" },
+	{ "v", RETROK_v, 'v', 0, PadKeyAction::None, "V" },
+	{ "w", RETROK_w, 'w', 0, PadKeyAction::None, "W" },
+	{ "x", RETROK_x, 'x', 0, PadKeyAction::None, "X" },
+	{ "y", RETROK_y, 'y', 0, PadKeyAction::None, "Y" },
+	{ "z", RETROK_z, 'z', 0, PadKeyAction::None, "Z" },
+	{ "5200_0", 0, 0, kVkbd5200InputBase + 0, PadKeyAction::None, "5200 0" },
+	{ "5200_1", 0, 0, kVkbd5200InputBase + 1, PadKeyAction::None, "5200 1" },
+	{ "5200_2", 0, 0, kVkbd5200InputBase + 2, PadKeyAction::None, "5200 2" },
+	{ "5200_3", 0, 0, kVkbd5200InputBase + 3, PadKeyAction::None, "5200 3" },
+	{ "5200_4", 0, 0, kVkbd5200InputBase + 4, PadKeyAction::None, "5200 4" },
+	{ "5200_5", 0, 0, kVkbd5200InputBase + 5, PadKeyAction::None, "5200 5" },
+	{ "5200_6", 0, 0, kVkbd5200InputBase + 6, PadKeyAction::None, "5200 6" },
+	{ "5200_7", 0, 0, kVkbd5200InputBase + 7, PadKeyAction::None, "5200 7" },
+	{ "5200_8", 0, 0, kVkbd5200InputBase + 8, PadKeyAction::None, "5200 8" },
+	{ "5200_9", 0, 0, kVkbd5200InputBase + 9, PadKeyAction::None, "5200 9" },
+	{ "5200_star", 0, 0, kVkbd5200InputBase + 10, PadKeyAction::None, "5200 *" },
+	{ "5200_pound", 0, 0, kVkbd5200InputBase + 11, PadKeyAction::None, "5200 #" },
+	{ "5200_start", 0, 0, kVkbd5200InputBase + 12, PadKeyAction::None, "5200 START" },
+	{ "5200_pause", 0, 0, kVkbd5200InputBase + 13, PadKeyAction::None, "5200 PAUSE" },
+	{ "5200_reset", 0, 0, kVkbd5200InputBase + 14, PadKeyAction::None, "5200 RESET" },
 };
 
 constexpr uint32 k5200VkbdTriggers[] = {
@@ -3997,6 +4018,8 @@ void ReleaseInput() {
 		keycode = 0;
 	for(uint32& inputCode : g_core.padKeyHeldInputCodes)
 		inputCode = 0;
+	for(uint8& action : g_core.padKeyHeldActions)
+		action = 0;
 }
 
 void InvalidateSerializeCache() {
@@ -4392,6 +4415,22 @@ bool IsPadKeyMappingSuppressed(const PadKeySlot& slot, uint16 joypadState) {
 	return false;
 }
 
+void ExecutePadKeyAction(PadKeyAction action) {
+	switch(action) {
+		case PadKeyAction::WarmReset:
+			DoWarmReset();
+			break;
+
+		case PadKeyAction::ColdReset:
+			DoColdReset();
+			break;
+
+		case PadKeyAction::None:
+		default:
+			break;
+	}
+}
+
 void UpdatePadKeyMappings(uint16 joypadState, bool enabled, bool mode5200) {
 	if (!enabled)
 		joypadState = 0;
@@ -4401,9 +4440,13 @@ void UpdatePadKeyMappings(uint16 joypadState, bool enabled, bool mode5200) {
 	for(size_t i = 0; i < std::size(kPadKeySlots); ++i) {
 		const PadKeySlot& slot = kPadKeySlots[i];
 		const PadKeyBinding *const binding = GetPadKeyBindingForSlot(i);
+		const PadKeyAction action = binding
+			? binding->action
+			: PadKeyAction::None;
 		const bool down = enabled
 			&& binding
-			&& (mode5200 ? binding->inputCode5200 : binding->keycode)
+			&& (action != PadKeyAction::None
+				|| (mode5200 ? binding->inputCode5200 : binding->keycode))
 			&& !IsPadKeyMappingSuppressed(slot, joypadState)
 			&& (joypadState & (uint16)(1U << slot.retroId)) != 0;
 
@@ -4416,12 +4459,18 @@ void UpdatePadKeyMappings(uint16 joypadState, bool enabled, bool mode5200) {
 		const uint32 inputCode5200 = down
 			? binding->inputCode5200
 			: g_core.padKeyHeldInputCodes[i];
+		const PadKeyAction heldAction = down
+			? action
+			: (PadKeyAction)g_core.padKeyHeldActions[i];
 
 		g_core.padKeyHeld[i] = down;
 		g_core.padKeyHeldKeycodes[i] = down ? keycode : 0;
 		g_core.padKeyHeldInputCodes[i] = down ? inputCode5200 : 0;
+		g_core.padKeyHeldActions[i] = down ? (uint8)heldAction : 0;
 
-		if (mode5200) {
+		if (down && heldAction != PadKeyAction::None) {
+			ExecutePadKeyAction(heldAction);
+		} else if (mode5200) {
 			if (im && inputCode5200) {
 				if (down)
 					im->OnButtonDown(0, inputCode5200);
