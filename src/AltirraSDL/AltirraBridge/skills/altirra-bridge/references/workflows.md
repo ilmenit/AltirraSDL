@@ -269,8 +269,8 @@ on this invariant.
 
 ## 9. Drive the Atari as a custom display device
 
-(See `examples/04_paint.py` for a fully worked-out paint program
-that does this.)
+This pattern can be adapted into a paint program or custom display
+driver.
 
 ```python
 DL_ADDR     = 0x1000

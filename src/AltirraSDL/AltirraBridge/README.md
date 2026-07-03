@@ -143,20 +143,24 @@ with AltirraBridge.from_token_file(token_file) as a:
 ```
 
 If RAM still has the reset fill pattern after `frame(300)`, copy the
-server log file. `AltirraBridgeServer` logs the config directory,
-selected profile, machine, memory, BASIC state, kernel IDs, bridge
-commands that change state, BOOT requests, client connect/disconnect,
-and every failed bridge command. The log file is written next to the
-token file (`%TEMP%\altirra-bridge-<pid>.log` on Windows,
+server log file. `AltirraBridgeServer` logs the settings mode, selected
+machine, memory, BASIC state, kernel IDs, bridge commands that change
+state, BOOT requests, client connect/disconnect, and every failed bridge
+command. The log file is written next to the token file
+(`%TEMP%\altirra-bridge-<pid>.log` on Windows,
 `/tmp/altirra-bridge-<pid>.log` on Unix-like systems). The token itself
 is printed to stderr for emergency manual connection but is not written
 to the persistent log.
 
-The standalone server uses the same `settings.ini` profile store as
-AltirraSDL, so a previous GUI run can change the bridge's default
-profile. That is expected, but ordinary XEX booting does not require
-external Atari ROMs: the built-in AltirraOS kernel is used when no
-custom kernel is configured.
+The standalone server is deterministic by default. It does not read the
+Windows registry or `settings.ini`; it uses a private in-memory settings
+store plus code-defined XL/XE defaults. Pass `--settings=user` only when
+you explicitly want to inherit AltirraSDL's settings/profile store
+(Windows registry on Windows, `settings.ini` on other SDL3 platforms).
+Even then, the server works from a private copy and does not write
+settings back. Ordinary XEX booting does not require external Atari ROMs:
+the built-in AltirraOS kernel is used when no custom kernel is
+configured.
 
 ## Writing your own client — Python
 
@@ -408,7 +412,11 @@ difference is that `AltirraSDL` opens a window and plays audio.
 You can also run `AltirraSDL --bridge --headless` to get the full
 SDL3 frontend without a window or audio — useful if you want the
 deferred-action queue and settings persistence behavior of the GUI
-build but are running on a machine with no display.
+build but are running on a machine with no display. Headless mode
+removes wall-clock frame pacing, so bridge-driven frame steps run as
+fast as the host CPU can produce them while preserving internal
+PAL/NTSC timing. Add `--pacing=realtime` if you want headless bridge
+frame gates to complete at real PAL/NTSC speed.
 
 ## Platform support
 

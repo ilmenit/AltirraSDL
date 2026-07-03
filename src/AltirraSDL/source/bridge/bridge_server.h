@@ -69,11 +69,12 @@ void Shutdown(ATSimulator& sim);
 void Poll(ATSimulator& sim, ATUIState& ui);
 
 // Frame-completion hook. Called once per produced GTIA frame by the
-// owning main loop. Targets that pace frames before servicing the next
-// command may call this after their frame wait so a FRAME gate is not
-// released early. Decrements the frame-gate counter; when it hits zero,
-// calls sim.Pause() so the next FRAME command can step again. No-op
-// when no gate is active.
+// owning main loop. Decrements the frame-gate counter; when it hits
+// zero, calls sim.Pause() so the next FRAME command can step again.
+// Frontends that sleep after produced frames still naturally delay the
+// next Poll() until after that sleep; headless targets call this at the
+// same emulated-frame boundary but do not add a wall-clock delay.
+// No-op when no gate is active.
 void OnFrameCompleted(ATSimulator& sim);
 
 // True while a FRAME command is waiting for produced frames. This is

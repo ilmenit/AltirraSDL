@@ -114,7 +114,7 @@ atb_close(c);
   every key, direction, and console switch — a crashed script
   cannot leave the simulator with stuck input.
 
-## Command groups (full reference: `docs/COMMANDS.md`, `docs/PROTOCOL.md`)
+## Command groups
 
 | Group              | Commands                                                                       |
 |--------------------|--------------------------------------------------------------------------------|
@@ -150,10 +150,8 @@ When the user's task warrants deeper detail, read from
   hand-built display list". Each playbook is a complete script
   the user can adapt.
 
-For full wire-protocol details (request/response schemas, error
-formats, versioning, threat model), the canonical reference is
-`docs/PROTOCOL.md` — read it directly when SDK methods don't
-expose what you need.
+For full wire-protocol details not covered here, ask the user for the
+bridge package documentation location before trying to inspect it.
 
 ## Higher-level Python tools (reverse engineering)
 

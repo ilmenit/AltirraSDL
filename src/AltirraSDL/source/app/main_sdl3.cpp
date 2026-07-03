@@ -161,12 +161,45 @@ static IDisplayBackend *g_pBackend = nullptr;
 static IATJoystickManager *g_pJoystickMgr = nullptr;
 static bool g_running = true;
 static bool g_winActive = true;
+static bool g_headless = false;
+enum class ATPacingMode {
+	Auto,
+	Unlimited,
+	Realtime
+};
+static ATPacingMode g_pacingMode = ATPacingMode::Auto;
 // Android/mobile lifecycle: true while the app is backgrounded or the
 // window is minimized/hidden.  When set, RenderAndPresent() and the
 // simulator tick are both skipped so we do not touch a dead EGL surface
 // and do not burn battery while the user cannot see us.
 static bool g_appSuspended = false;
 ATUIState g_uiState;
+
+static bool ATParsePacingMode(const char *value, ATPacingMode& out) {
+	if (!SDL_strcasecmp(value, "auto")) {
+		out = ATPacingMode::Auto;
+		return true;
+	}
+
+	if (!SDL_strcasecmp(value, "unlimited") || !SDL_strcasecmp(value, "full")
+		|| !SDL_strcasecmp(value, "warp") || !SDL_strcasecmp(value, "max")) {
+		out = ATPacingMode::Unlimited;
+		return true;
+	}
+
+	if (!SDL_strcasecmp(value, "realtime") || !SDL_strcasecmp(value, "real")
+		|| !SDL_strcasecmp(value, "palntsc") || !SDL_strcasecmp(value, "pal-ntsc")) {
+		out = ATPacingMode::Realtime;
+		return true;
+	}
+
+	return false;
+}
+
+static bool ATIsFramePacingDisabled() {
+	return g_pacingMode == ATPacingMode::Unlimited
+		|| (g_pacingMode == ATPacingMode::Auto && g_headless);
+}
 
 #ifdef __EMSCRIPTEN__
 extern "C" EMSCRIPTEN_KEEPALIVE
@@ -360,8 +393,9 @@ static void UpdateMousePosition(ATInputManager *im, float mx, float my) {
 //     mid-session background.
 //   * VDSaveFilespecSystemData — per-dialog "last used directory" map
 //     written separately from the main registry, matched to clean exit.
-//   * ATRegistryFlushToDisk — finally serialise the in-memory registry
-//     to settings.ini so a process kill preserves everything above.
+//   * ATRegistryFlushToDisk — finally serialise the registry-backed
+//     settings store (settings.ini on non-Windows SDL3 builds) so a
+//     process kill preserves everything above.
 //
 // Each step has its own try/catch so a failure in any one does not skip
 // the others — the final flush always attempts to run.  Mirrors the
@@ -1482,9 +1516,10 @@ int main(int argc, char *argv[]) {
 	// the dummy audio driver, so AltirraSDL runs without opening a
 	// window or playing audio. Use this for automated testing, CI,
 	// RL training pipelines, or any context where you want the
-	// emulator running but no UI on screen. Same binary, same code
-	// paths, same dependencies — only the SDL3 video/audio backends
-	// differ.
+	// emulator running but no UI on screen. Same binary and same
+	// dependencies as the GUI build, but with headless SDL3 backends
+	// and frame-pacer sleeps disabled by default. Use --pacing=realtime
+	// to keep PAL/NTSC wall-clock speed.
 	//
 	// We use SDL_SetHint() with SDL3's canonical hint names
 	// (SDL_HINT_VIDEO_DRIVER / SDL_HINT_AUDIO_DRIVER) — calling
@@ -1499,12 +1534,30 @@ int main(int argc, char *argv[]) {
 	// foo, not offscreen).
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "--headless") == 0) {
+			g_headless = true;
 			if (SDL_GetHint(SDL_HINT_VIDEO_DRIVER) == nullptr)
 				SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "offscreen");
 			if (SDL_GetHint(SDL_HINT_AUDIO_DRIVER) == nullptr)
 				SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: --headless: SDL_HINT_VIDEO_DRIVER=offscreen SDL_HINT_AUDIO_DRIVER=dummy");
+			for (int j = i; j < argc - 1; ++j)
+				argv[j] = argv[j + 1];
+			--argc;
+			--i;
+		}
+	}
+
+	// Optional frame-pacing override. Defaults are automatic:
+	// visible GUI runs at realtime PAL/NTSC speed, while headless /
+	// offscreen runs as fast as the host CPU allows.
+	for (int i = 1; i < argc; ++i) {
+		if (strncmp(argv[i], "--pacing=", 9) == 0) {
+			if (!ATParsePacingMode(argv[i] + 9, g_pacingMode)) {
+				SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+					"Altirra: unknown --pacing mode: %s", argv[i] + 9);
+				return 2;
+			}
 			for (int j = i; j < argc - 1; ++j)
 				argv[j] = argv[j + 1];
 			--argc;
@@ -1591,6 +1644,11 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	if (const char *videoDriver = SDL_GetCurrentVideoDriver()) {
+		if (!strcmp(videoDriver, "offscreen") || !strcmp(videoDriver, "dummy"))
+			g_headless = true;
+	}
+
 	// Route ATLogChannel output (atcore/logging.h) to stderr AND into
 	// the in-app ring buffer so netplay and other subsystem traces are
 	// visible in the terminal *and* readable from the in-app Debug Log
@@ -1621,7 +1679,9 @@ int main(int argc, char *argv[]) {
 	// any UI is up — the actual viewer render happens later.
 	ATCrashReportLoadPrevious();
 
-	// Load persisted settings from ~/.config/altirra/settings.ini
+	// Load persisted settings from the platform registry provider.
+	// Windows builds use the Windows registry; non-Windows SDL3 builds
+	// use settings.ini in the SDL3 config directory.
 	extern void ATRegistryLoadFromDisk();
 	ATRegistryLoadFromDisk();
 
@@ -2883,6 +2943,15 @@ int main(int argc, char *argv[]) {
 		// the snapshot apply).  Netplay MUST keep ticking while both
 		// peers are connected.
 		bool pauseInactive = ATUIGetPauseWhenInactive() && !g_winActive;
+#ifdef ALTIRRA_BRIDGE_ENABLED
+		// A bridge FRAME command is an explicit automation step. Let it
+		// complete even if the visible window is inactive; otherwise the
+		// frame gate can remain armed forever until the user focuses the
+		// window again. Free-running bridge RESUME still follows the user's
+		// pause-when-inactive preference.
+		if (ATBridge::IsFrameGateActive())
+			pauseInactive = false;
+#endif
 #ifdef ALTIRRA_NETPLAY_ENABLED
 		// Force pause-when-inactive off only once a peer is engaged —
 		// merely hosting (no peer) doesn't suffer from a stalled sim,
@@ -2943,7 +3012,8 @@ int main(int argc, char *argv[]) {
 				if (!ATNetplayGlue::CanAdvanceThisTick()) {
 					RenderAndPresent();
 #ifndef __EMSCRIPTEN__
-					if (!turbo) g_pacer.WaitForNextFrame();
+					if (!turbo && !ATIsFramePacingDisabled())
+						g_pacer.WaitForNextFrame();
 #endif
 					return;
 				}
@@ -3090,10 +3160,12 @@ int main(int argc, char *argv[]) {
 #endif
 
 		// (turbo is declared above for the dropFrame computation.)
+		const bool framePacingDisabled = ATIsFramePacingDisabled();
 
 		// Update GL swap interval based on turbo mode and frame-rate match.
 		//
-		// Turbo: always interval 0 so the GPU can swap as fast as possible.
+		// Turbo/headless: always interval 0 so the GPU can swap as fast as
+		// possible.
 		//
 		// Normal: use g_desiredSwapInterval set by UpdatePacerRate().  When
 		// the display refresh matches the emulation rate (e.g. NTSC ~60 Hz
@@ -3104,7 +3176,8 @@ int main(int argc, char *argv[]) {
 		// behaviour in windowed mode.
 #ifndef __EMSCRIPTEN__
 		{
-			int wantInterval = turbo ? 0 : g_desiredSwapInterval;
+			int wantInterval = (turbo || g_headless || framePacingDisabled)
+				? 0 : g_desiredSwapInterval;
 			static int s_lastInterval = 0;  // matches startup swap interval 0
 			if (wantInterval != s_lastInterval) {
 				s_lastInterval = wantInterval;
@@ -3132,9 +3205,11 @@ int main(int argc, char *argv[]) {
 			// Cheap — just reads a few values and updates if changed.
 			UpdatePacerRate();
 
-			// In turbo mode, skip frame pacing to run as fast as possible.
+			// In turbo/headless mode, skip frame pacing to run as fast as
+			// possible. The simulator still advances with normal internal
+			// PAL/NTSC timing; only the wall-clock sleep is removed.
 #ifndef __EMSCRIPTEN__
-			if (!turbo)
+			if (!turbo && !framePacingDisabled)
 				g_pacer.WaitForNextFrame();
 #endif
 		} else if (result == ATSimulator::kAdvanceResult_WaitingForFrame) {
@@ -3143,7 +3218,7 @@ int main(int argc, char *argv[]) {
 			RenderAndPresent();
 			didRender = true;
 #ifndef __EMSCRIPTEN__
-			if (!turbo)
+			if (!turbo && !framePacingDisabled)
 				g_pacer.WaitForNextFrame();
 #endif
 		} else if (result == ATSimulator::kAdvanceResult_Stopped) {

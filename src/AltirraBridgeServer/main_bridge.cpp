@@ -33,6 +33,8 @@
 
 #include "simulator.h"
 #include "gtia.h"
+#include "disk.h"
+#include "diskinterface.h"
 #include "bridge_logging.h"
 #include "settings.h"            // ATSettingsCategory enum + ATSettingsLoadLastProfile
 #include "constants.h"           // ATHardwareMode, ATMemoryMode enums
@@ -41,6 +43,7 @@
 #include "bridge_server.h"
 #include <at/atcore/constants.h>
 #include <vd2/VDDisplay/display.h>
+#include <vd2/system/registrymemory.h>
 
 // Forward declarations for AltirraSDL frontend symbols we re-use.
 // These functions are defined in source/app/*.cpp / source/ui/core/*.cpp
@@ -271,13 +274,25 @@ static void HandleSignal(int /*sig*/) {
 // =========================================================================
 
 namespace {
+enum class PacingMode {
+	Unlimited,
+	Realtime
+};
+
+enum class SettingsMode {
+	None,
+	User
+};
+
 struct Args {
 	std::string bridgeAddr = "tcp:127.0.0.1:0";
 	bool        printHelp    = false;
-	// CONFIG overrides (applied after settings load, before first ColdReset)
+	PacingMode pacing      = PacingMode::Unlimited;
+	SettingsMode settings  = SettingsMode::None;
+	// CONFIG overrides (applied after initial config, before bridge start)
 	bool        hasNoBasic   = false;
-	std::string machine;             // empty = use settings default
-	std::string memory;              // empty = use settings default
+	std::string machine;             // empty = initial config default
+	std::string memory;              // empty = initial config default
 	bool        debugBrkRun  = false;
 };
 
@@ -295,10 +310,17 @@ void PrintHelp() {
 		"                      unix:/path/to/socket   POSIX filesystem UDS\n"
 		"                      unix-abstract:NAME     Linux abstract namespace UDS\n"
 		"                    Default: tcp:127.0.0.1:0\n"
+		"  --pacing=MODE     Frame pacing: unlimited, realtime. Default: unlimited.\n"
+		"                    unlimited runs as fast as the host CPU allows;\n"
+		"                    realtime sleeps to the selected PAL/NTSC rate.\n"
+		"  --settings=MODE   Settings source: none, user. Default: none.\n"
+		"                    none uses deterministic built-in defaults and an\n"
+		"                    ephemeral in-memory settings store; user reads the\n"
+		"                    same registry/settings.ini store as AltirraSDL.\n"
 		"  --no-basic          Disable built-in BASIC ROM.\n"
 		"  --machine=MODE      Hardware mode: 800, 800XL, 1200XL, 130XE, XEGS,\n"
-		"                        1400XL, 5200. Default: from settings.\n"
-		"  --memory=SIZE       Memory size: 8K..1088K. Default: from settings.\n"
+		"                        1400XL, 5200. Default: 800XL, or user settings.\n"
+		"  --memory=SIZE       Memory size: 8K..1088K. Default: 320K, or user settings.\n"
 		"  --debugbrkrun       Enable break-on-EXE-run-address.\n"
 		"  -h, --help          Show this help.\n"
 		"\n"
@@ -311,10 +333,42 @@ void PrintHelp() {
 		"src/AltirraSDL/AltirraBridge/sdk/. The wire protocol is the\n"
 		"same as `AltirraSDL --bridge`. See AltirraBridge/docs/PROTOCOL.md.\n"
 		"\n"
-		"Settings (kernel ROM paths, video standard, etc.) are read\n"
-		"from ~/.config/altirra/settings.ini at startup, the same\n"
-		"location used by AltirraSDL. The headless server does NOT\n"
-		"write settings on exit.\n");
+		"By default, the standalone server does not read or write user\n"
+		"settings. Pass --settings=user to inherit AltirraSDL settings:\n"
+		"Windows registry on Windows, settings.ini on other SDL3 platforms.\n");
+}
+
+bool ParsePacingMode(const char *value, PacingMode& out) {
+	if (!strcasecmp(value, "unlimited") || !strcasecmp(value, "full")
+		|| !strcasecmp(value, "warp") || !strcasecmp(value, "max")) {
+		out = PacingMode::Unlimited;
+		return true;
+	}
+
+	if (!strcasecmp(value, "realtime") || !strcasecmp(value, "real")
+		|| !strcasecmp(value, "palntsc") || !strcasecmp(value, "pal-ntsc")) {
+		out = PacingMode::Realtime;
+		return true;
+	}
+
+	return false;
+}
+
+bool ParseSettingsMode(const char *value, SettingsMode& out) {
+	if (!strcasecmp(value, "none") || !strcasecmp(value, "off")
+		|| !strcasecmp(value, "deterministic")
+		|| !strcasecmp(value, "isolated")) {
+		out = SettingsMode::None;
+		return true;
+	}
+
+	if (!strcasecmp(value, "user") || !strcasecmp(value, "app")
+		|| !strcasecmp(value, "altirrasdl")) {
+		out = SettingsMode::User;
+		return true;
+	}
+
+	return false;
 }
 
 bool ParseArgs(int argc, char** argv, Args& out) {
@@ -326,6 +380,20 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			out.bridgeAddr = "tcp:127.0.0.1:0";
 		} else if (std::strncmp(a, "--bridge=", 9) == 0) {
 			out.bridgeAddr = a + 9;
+		} else if (std::strncmp(a, "--pacing=", 9) == 0) {
+			if (!ParsePacingMode(a + 9, out.pacing)) {
+				std::fprintf(stderr,
+					"AltirraBridgeServer: unknown --pacing mode: %s\n",
+					a + 9);
+				return false;
+			}
+		} else if (std::strncmp(a, "--settings=", 11) == 0) {
+			if (!ParseSettingsMode(a + 11, out.settings)) {
+				std::fprintf(stderr,
+					"AltirraBridgeServer: unknown --settings mode: %s\n",
+					a + 11);
+				return false;
+			}
 		} else if (std::strcmp(a, "--no-basic") == 0) {
 			out.hasNoBasic = true;
 		} else if (std::strncmp(a, "--machine=", 10) == 0) {
@@ -357,14 +425,103 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 //   - Window placement
 // =========================================================================
 
-static bool InitSimulator() {
-	// Use the same registry namespace as AltirraSDL so kernel ROM
-	// paths and other settings are inherited from the user's GUI
-	// configuration. The headless server does not write back.
-	VDRegistryAppKey::setDefaultKey("AltirraSDL");
+static ATSettingsCategory GetBridgeSettingsMask() {
+	return (ATSettingsCategory)(
+		kATSettingsCategory_All
+		& ~kATSettingsCategory_FullScreen
+		& ~kATSettingsCategory_Input
+		& ~kATSettingsCategory_InputMaps
+	);
+}
 
-	BRIDGE_LOG_INFO("BridgeServer", "config dir = %s", ATGetConfigDir().c_str());
-	ATRegistryLoadFromDisk();
+static void UseEphemeralSettingsStore() {
+	static VDRegistryProviderMemory s_bridgeSettings;
+
+	VDSetRegistryProvider(&s_bridgeSettings);
+	VDRegistryAppKey::setDefaultKey("AltirraBridgeServer");
+}
+
+static void UseReadOnlyUserSettingsStore() {
+#ifdef _WIN32
+	static VDRegistryProviderMemory s_userSettingsCopy;
+	IVDRegistryProvider *srcProvider = VDGetRegistryProvider();
+
+	VDRegistryCopy(s_userSettingsCopy,
+		VDRegistryAppKey::getDefaultKey(),
+		*srcProvider,
+		VDRegistryAppKey::getDefaultKey());
+	VDSetRegistryProvider(&s_userSettingsCopy);
+#endif
+}
+
+static void ApplyDeterministicDefaults() {
+	g_sim.SetKernel(0);
+	g_sim.SetBasic(0);
+	g_sim.SetHardwareMode(kATHardwareMode_800XL);
+	g_sim.SetMemoryMode(kATMemoryMode_320K);
+	g_sim.SetVideoStandard(kATVideoStandard_PAL);
+	g_sim.SetBASICEnabled(false);
+	g_sim.SetKeyboardPresent(true);
+	g_sim.SetForcedSelfTest(false);
+	g_sim.SetCartridgeSwitch(true);
+	g_sim.SetPowerOnDelay(0);
+
+	g_sim.SetCassetteSIOPatchEnabled(true);
+	g_sim.SetCassetteAutoBootEnabled(true);
+	g_sim.SetCassetteAutoBasicBootEnabled(false);
+	g_sim.SetCassetteAutoRewindEnabled(false);
+	g_sim.SetCassetteRandomizedStartEnabled(false);
+
+	g_sim.SetFPPatchEnabled(false);
+	g_sim.SetFastBootEnabled(true);
+	g_sim.SetDiskSIOPatchEnabled(true);
+	g_sim.SetDiskSIOOverrideDetectEnabled(false);
+	g_sim.SetDiskBurstTransfersEnabled(false);
+	g_sim.SetDiskAccurateTimingEnabled(false);
+
+	g_sim.SetDeviceCIOBurstTransfersEnabled(false);
+	g_sim.SetDeviceSIOBurstTransfersEnabled(false);
+	g_sim.SetDeviceSIOPatchEnabled(false);
+	g_sim.SetSIOPatchEnabled(true);
+	g_sim.SetSIOPBIPatchEnabled(false);
+	g_sim.SetCIOPBIPatchEnabled(false);
+
+	g_sim.SetDualPokeysEnabled(false);
+	g_sim.GetPokey().SetStereoAsMonoEnabled(false);
+	g_sim.SetMemoryClearMode(kATMemoryClearMode_DRAM1);
+	g_sim.SetRandomFillEXEEnabled(false);
+	g_sim.SetRandomProgramLaunchDelayEnabled(false);
+	g_sim.SetHLEProgramLoadMode(kATHLEProgramLoadMode_Default);
+
+	for (int i = 0; i < 15; ++i) {
+		ATDiskInterface& diskIf = g_sim.GetDiskInterface(i);
+		diskIf.SetAccurateSectorTimingEnabled(false);
+		diskIf.SetDriveSoundsEnabled(false);
+
+		ATDiskEmulator& disk = g_sim.GetDiskDrive(i);
+		disk.SetEmulationMode(kATDiskEmulationMode_Generic);
+	}
+}
+
+static bool InitSimulator(SettingsMode settingsMode) {
+	if (settingsMode == SettingsMode::User) {
+		// Explicit opt-in: inherit the same user settings store as
+		// AltirraSDL. The headless server still does not write back.
+		VDRegistryAppKey::setDefaultKey("AltirraSDL");
+
+		BRIDGE_LOG_INFO("BridgeServer",
+			"settings mode: user; config dir = %s", ATGetConfigDir().c_str());
+		ATRegistryLoadFromDisk();
+		UseReadOnlyUserSettingsStore();
+	} else {
+		// Default: keep bridge automation deterministic and isolated
+		// from the user's GUI profiles. The in-memory provider also
+		// catches incidental registry probes inside firmware/options
+		// helpers without touching the Windows registry or settings.ini.
+		UseEphemeralSettingsStore();
+		BRIDGE_LOG_INFO("BridgeServer",
+			"settings mode: none; using deterministic in-memory defaults");
+	}
 
 	// Pre-simulator init matching main_sdl3.cpp.
 	ATInitSaveStateDeserializer();
@@ -372,7 +529,13 @@ static bool InitSimulator() {
 
 	BRIDGE_LOG_INFO("BridgeServer", "initialising simulator...");
 	g_sim.Init();
-	g_sim.SetRandomSeed((uint32)std::rand() ^ ((uint32)std::rand() << 15));
+	g_sim.SetRandomSeed(settingsMode == SettingsMode::User
+		? ((uint32)std::rand() ^ ((uint32)std::rand() << 15))
+		: 0x41544252U);
+
+	if (settingsMode == SettingsMode::None)
+		ApplyDeterministicDefaults();
+
 	g_sim.LoadROMs();
 
 	// Install a null IVDVideoDisplay so GTIA actually generates
@@ -399,24 +562,24 @@ static bool InitSimulator() {
 	ATRegisterDeviceXCmds(*g_sim.GetDeviceManager());
 
 	ATSocketInit();
-	ATLoadConfigVars();
-	ATOptionsLoad();
 
-	const bool createdDefaultProfiles = ATLoadDefaultProfiles();
-	if (createdDefaultProfiles)
-		BRIDGE_LOG_INFO("BridgeServer", "created default profiles in settings store");
-	// Load most settings categories. Skip:
-	//   - FullScreen        (window placement, meaningless without a window)
-	//   - Input / InputMaps (call into the joystick manager which is
-	//                        nullptr in headless mode and would crash
-	//                        in ATSettingsExchangeInput)
-	ATSettingsLoadLastProfile((ATSettingsCategory)(
-		kATSettingsCategory_All
-		& ~kATSettingsCategory_FullScreen
-		& ~kATSettingsCategory_Input
-		& ~kATSettingsCategory_InputMaps
-	));
-	BridgeLogSimulatorConfig("loaded");
+	if (settingsMode == SettingsMode::User) {
+		ATLoadConfigVars();
+		ATOptionsLoad();
+
+		const bool createdDefaultProfiles = ATLoadDefaultProfiles();
+		if (createdDefaultProfiles)
+			BRIDGE_LOG_INFO("BridgeServer",
+				"created default profiles in private settings copy");
+
+		// Load most settings categories. Skip:
+		//   - FullScreen        (window placement, meaningless headless)
+		//   - Input / InputMaps (joystick manager is nullptr here)
+		ATSettingsLoadLastProfile(GetBridgeSettingsMask());
+		BridgeLogSimulatorConfig("loaded from user settings");
+	} else {
+		BridgeLogSimulatorConfig("deterministic defaults");
+	}
 
 	// Initialize the debugger engine so Phase 5a commands
 	// (DISASM / CALLSTACK / EVAL) have a valid debug target.
@@ -488,7 +651,7 @@ int main(int argc, char** argv) {
 	ATBridgeLog::Init();
 	BRIDGE_LOG_INFO("BridgeServer", "log-file: %s", ATBridgeLog::GetPath());
 
-	if (!InitSimulator()) {
+	if (!InitSimulator(args.settings)) {
 		std::fprintf(stderr, "AltirraBridgeServer: simulator init failed\n");
 		ATBridgeLog::Shutdown();
 		return 1;
@@ -557,13 +720,6 @@ int main(int argc, char** argv) {
 
 	BRIDGE_LOG_INFO("BridgeServer", "entering main loop");
 
-	// The simulator's Advance() runs one bounded scanline chunk, not
-	// one video frame. Pace only at the actual GTIA frame boundary
-	// reported by the null display; otherwise FRAME N runs about
-	// 9-10x too slow because each partial chunk gets a full-frame
-	// sleep. While waiting for a frame deadline, poll the bridge in
-	// short ticks so free-running clients still get low-latency
-	// responses.
 	using clock = std::chrono::steady_clock;
 	auto nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
 
@@ -591,28 +747,31 @@ int main(int argc, char** argv) {
 				break;
 		}
 
-		// 3. Pace once per produced frame. For a frame-gated run,
-		//    keep the gate active during the sleep so the client's
-		//    next command remains queued until the documented
-		//    wall-clock frame has elapsed. For free-running frames,
-		//    notify before sleeping so a FRAME command received
-		//    during the wait starts counting from the next frame.
+		// 3. Release bridge frame gates at produced-frame boundaries.
+		//    In unlimited mode this happens immediately. In realtime
+		//    mode, keep an active frame gate armed during the sleep so
+		//    the next client command remains queued until the selected
+		//    PAL/NTSC frame duration has elapsed.
 		if (framePosted) {
-			const bool frameGateWasActive = ATBridge::IsFrameGateActive();
+			if (args.pacing == PacingMode::Realtime) {
+				const bool frameGateWasActive = ATBridge::IsFrameGateActive();
 
-			if (!frameGateWasActive)
+				if (!frameGateWasActive)
+					ATBridge::OnFrameCompleted(g_sim);
+
+				auto now = clock::now();
+				if (now >= nextFrameDeadline)
+					nextFrameDeadline = now;
+				else
+					BridgePollUntil(nextFrameDeadline);
+
+				nextFrameDeadline += BridgeGetFrameDuration();
+
+				if (frameGateWasActive)
+					ATBridge::OnFrameCompleted(g_sim);
+			} else {
 				ATBridge::OnFrameCompleted(g_sim);
-
-			auto now = clock::now();
-			if (now >= nextFrameDeadline)
-				nextFrameDeadline = now;
-			else
-				BridgePollUntil(nextFrameDeadline);
-
-			nextFrameDeadline += BridgeGetFrameDuration();
-
-			if (frameGateWasActive)
-				ATBridge::OnFrameCompleted(g_sim);
+			}
 		}
 
 		// 4. When paused, poll on a short sub-tick so command

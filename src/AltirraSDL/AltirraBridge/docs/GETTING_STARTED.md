@@ -104,9 +104,12 @@ environment before launching:
 SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy ./AltirraSDL --bridge
 ```
 
-The simulator runs at full speed, the bridge serves clients
-normally, no window appears, no sound plays. This is how the
-Phase 1-3 smoke tests run.
+The simulator runs at full host CPU speed without frame-pacer sleeps by
+default, the bridge serves clients normally, no window appears, no sound
+plays. Emulated PAL/NTSC timing is still preserved internally; only the
+wall-clock delay between frames is removed. Add `--pacing=realtime` if
+you want headless frame gates to take real PAL/NTSC time. Full-speed
+headless is how the Phase 1-3 smoke tests run.
 
 ### Option B: `--headless` flag (sugar for Option A)
 
@@ -118,8 +121,9 @@ Equivalent to setting the two env vars above. The flag is a
 convenience — it's stripped from argv before SDL3 init, sets the
 two env vars (without overriding any user-set values), and passes
 control to the normal SDL3 startup path. Same binary as the GUI
-build, same dependencies, same code paths — the only difference
-is which SDL3 video/audio backends get loaded.
+build, same dependencies, same startup path, but with headless
+video/audio backends and frame-pacer sleeps disabled by default. Use
+`--pacing=realtime` to keep PAL/NTSC wall-clock speed.
 
 Use this when you want the SDL3 frontend's full feature set
 (deferred actions, settings persistence, the same boot path as the
@@ -144,7 +148,19 @@ emulation libraries (`ATCPU`, `ATEmulation`, `ATDevices`, `ATIO`,
 no ImGui, no shader stack, no display backends, no input layer,
 no UI. Suitable for CI containers, headless servers, RL training
 pipelines, and any environment where graphics dependencies are a
-non-starter.
+non-starter. Like `AltirraSDL --bridge --headless`, it runs emulated
+frames as fast as the host CPU can produce them while preserving
+internal PAL/NTSC timing by default; use `--pacing=realtime` for
+wall-clock PAL/NTSC speed.
+
+By default it is also isolated from user settings: no Windows registry
+or `settings.ini` is read, and a private in-memory settings store is
+used for any incidental registry probes inside the emulator. The
+code-defined baseline is XL/XE, 320K, PAL, BASIC off, built-in/default
+firmware, fast boot enabled, SIO acceleration enabled, and random EXE
+launch delay disabled. Pass `--settings=user` only when you explicitly
+want to inherit AltirraSDL settings/profile data; the server copies that
+store into memory and still does not write back.
 
 The `AltirraBridgeServer` binary speaks the **identical bridge
 protocol** as `AltirraSDL --bridge` — clients written against
@@ -158,9 +174,8 @@ either binary work against the other. Differences:
   `FRAME N` for those after the response arrives. On the headless
   `AltirraBridgeServer` they run synchronously too.
 - No window-related commands (none exist in v1 anyway).
-- No SDL3 settings file lookup — the bridge server reads ROM paths
-  from the same `~/.config/altirra/settings.ini` as AltirraSDL by
-  default, but does not write settings on exit.
+- The bridge server does not read user settings by default. Use
+  `--settings=user` to opt into AltirraSDL's settings/profile data.
 
 ## 5. What's next
 

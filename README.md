@@ -45,9 +45,10 @@ upstream does is taken away — and most of them are only interesting
   Windows `.sln` build is still preserved upstream-identical; this
   fork contributes the SDL3 + Dear ImGui frontend that lets the same
   emulation core run everywhere SDL3 does.
-- **Portable settings** stored as a plain INI at
-  `~/.config/altirra/settings.ini` (same format as Windows portable
-  mode). No registry, no hidden state.
+- **Portable settings on non-Windows SDL3 builds** stored as a plain
+  INI at `~/.config/altirra/settings.ini` (same format as Windows
+  portable mode). The current Windows SDL3 build uses the same Windows
+  registry-backed settings store as native Altirra.
 - **Native OS file dialogs** via SDL3 — open/save dialogs use GTK on
   Linux, Cocoa on macOS, the system picker on Android. Last-used
   directories persist across launches.
@@ -175,7 +176,10 @@ emulator without going through the UI. This is a fork-only feature.
   enumeration makes the UI scriptable for CI and agent-driven QA.
 - **`--headless`** runs the full emulator without opening a window,
   intended for containerised / server-side automation paired with
-  the Bridge.
+  the Bridge. It disables wall-clock frame pacing so emulation runs
+  at host CPU speed while preserving internal PAL/NTSC timing. Add
+  `--pacing=realtime` to keep PAL/NTSC wall-clock speed in headless
+  automation.
 
 ### Small quality-of-life differences
 

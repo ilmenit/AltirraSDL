@@ -178,6 +178,21 @@ next command, send a `PING` (or any read command) — its response
 will not be sent until the gate has released and the simulator is
 paused again.
 
+In GUI mode, the normal frame pacer controls wall-clock speed, so
+gated frames complete at the selected PAL/NTSC rate. In headless or
+offscreen mode, and in `AltirraBridgeServer`, the default is
+`--pacing=unlimited`: no wall-clock sleep is inserted, so the same
+emulated PAL/NTSC frame timing is preserved inside the simulator, but
+frames are produced as fast as the host CPU can run them. Pass
+`--pacing=realtime` to a headless target to sleep to the selected
+PAL/NTSC frame rate instead.
+
+`AltirraBridgeServer` is also settings-isolated by default: it does not
+read the Windows registry or `settings.ini`, and starts from code-defined
+XL/XE, 320K, PAL defaults. Use `AltirraBridgeServer --settings=user` to
+opt into AltirraSDL settings/profile data. `AltirraSDL --bridge` remains
+the full frontend and always uses normal app settings.
+
 If the simulator was paused before `FRAME`, it is `Resume()`d
 implicitly, run for `n` frames, then `Pause()`d again. If it was
 already running, the gate just sets a "pause after `n` more frames"
