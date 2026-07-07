@@ -77,6 +77,7 @@ extern ATSimulator g_sim;
 // the same way the touch controls + virtual keyboard do.  Through the
 // netplay router so a hosted-session host edge propagates to peers.
 #include "../netplay/netplay_input.h"
+#include "../input/touch_controls.h"
 #include "gtia.h"
 
 // Page-bar toggles (PAL/NTSC, CRT, Virtual Keyboard, Touch Controls,
@@ -1484,6 +1485,19 @@ void ATWasmConsoleSwitch(int bit, int down) {
 	const uint8_t b = (uint8_t)(bit & 0x07);   // mask to START|SELECT|OPTION
 	if (!b) return;
 	ATNetplayInput::RouteConsoleSwitch(&g_sim.GetGTIA(), b, down != 0);
+}
+
+// JS-side joystick hook (tilt / gamepad / custom overlay).  Mirrors
+// ATWasmConsoleSwitch: dirMask is the 4-bit direction mask (bit0 L,
+// bit1 R, bit2 U, bit3 D), trigger is non-zero for fire A held.  State
+// persists until the next call; pass (0, 0) to centre the stick and
+// release fire.  Routes through the touch-control layer so it shares
+// the same unit-0 JoyStick1 / JoyButton0 codes the on-screen stick and
+// physical gamepads use — the default input map already binds those to
+// joystick port 0, so no extra binding is required.
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetJoystick(int dirMask, int trigger) {
+	ATTouchControls_SetExternalJoystick((uint8)(dirMask & 0x0F), trigger != 0);
 }
 
 // JS-side bar button (RESET) — cold reset.  The HTML page wraps this

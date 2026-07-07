@@ -44,3 +44,16 @@ bool ATTouchControls_IsActive();
 // changes.  When on, every actionable touch triggers an Android
 // Vibrator pulse (via ATAndroid_Vibrate).  Default: on.
 void ATTouchControls_SetHapticEnabled(bool enabled);
+
+// External-input hook for embedders (e.g. a JS tilt/gamepad driver).
+// Sets the joystick direction mask and trigger (fire A) state directly,
+// bypassing the on-screen touch stick.
+//   dirMask: bit0 = left, bit1 = right, bit2 = up, bit3 = down
+//   trigger: fire A held
+// State persists until the next call; pass (0, false) to centre the
+// stick and release fire.  Only edges are forwarded to ATInputManager,
+// using the same unit-0 kATInputCode_JoyStick1* / JoyButton0 codes the
+// touch stick and physical gamepads use, so the default input map
+// routes it to joystick port 0 with no extra binding.  Independent of
+// the touch-stick state; ATTouchControls_ReleaseAll() clears it too.
+void ATTouchControls_SetExternalJoystick(uint8 dirMask, bool trigger);
