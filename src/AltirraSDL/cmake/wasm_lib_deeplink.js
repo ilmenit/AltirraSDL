@@ -88,6 +88,7 @@
     //   artifact:   0..6|null         (?artifact=none|ntsc|pal|ntschi|palhi|auto|autohi)
     //   vkbd:       true|false|null   (?vkbd=0|1)
     //   stretch:    0..4|null         (?stretch=fill|preserve|square|integral|integral_preserve)
+    //   joystick:   0..2|null         (?joystick=analog|dpad8|dpad4)
     //   ui:         'desktop'|'gaming'|null  (?ui=…)  overrides the
     //              auto-pick that forces Gaming Mode whenever ?lib= is set.
     //   manualStart:true|false        (?autoplay=0)  pause until user clicks
@@ -99,6 +100,7 @@
     artifact:    null,
     vkbd:        null,
     stretch:     null,
+    joystick:    null,
     ui:          null,
     manualStart: false,
     // First-run silent defaults — `?experience=` and `?addons=`.
@@ -527,6 +529,25 @@
               + window.__altirraLib.stretch + ')');
         } else {
           log('ignored unknown stretch value:', stretchRaw);
+        }
+      }
+
+      // ?joystick=analog|dpad8|dpad4 — touch-joystick style for this
+      // launch.  Maps to ATTouchJoystickStyle (touch_layout.h).  Lets
+      // a per-game launcher pick the right stick per title — grid
+      // games (Boulder Dash) want dpad4's cardinal snap, 8-way games
+      // (Bruce Lee) want dpad8/analog diagonals — without touching
+      // the user's saved preference.  Applied via
+      // ATWasmSetJoystickStyle once the runtime is ready.
+      var joystickMap = { analog: 0, dpad8: 1, dpad4: 2 };
+      var joystickRaw = (p.get('joystick') || '').trim().toLowerCase();
+      if (joystickRaw) {
+        if (joystickRaw in joystickMap) {
+          window.__altirraLib.joystick = joystickMap[joystickRaw];
+          log('joystick=' + joystickRaw + ' (style='
+              + window.__altirraLib.joystick + ')');
+        } else {
+          log('ignored unknown joystick value:', joystickRaw);
         }
       }
 
@@ -1102,6 +1123,9 @@
     }
     if (lib.stretch !== null && Module._ATWasmSetStretchMode) {
       try { Module._ATWasmSetStretchMode(lib.stretch); } catch (e) {}
+    }
+    if (lib.joystick !== null && Module._ATWasmSetJoystickStyle) {
+      try { Module._ATWasmSetJoystickStyle(lib.joystick); } catch (e) {}
     }
     // Manual-start (?autoplay=0) needs no work here — the host page
     // (wasm_index.html.in) handles it entirely outside the runtime
