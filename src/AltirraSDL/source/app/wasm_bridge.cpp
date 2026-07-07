@@ -1797,6 +1797,25 @@ void ATWasmSetTouchControls(int on) {
 	g_mobileState.showTouchControls = (on != 0);
 }
 
+// Touch-joystick style override (?joystick= deep link / embedder JS).
+// 0 = Analog, 1 = D-Pad 8, 2 = D-Pad 4 — the ATTouchJoystickStyle
+// values the mobile Settings page cycles through.  Different games
+// want different styles (grid games play best on D-Pad 4, diagonal
+// games on 8-way/analog), so a per-game launcher needs a per-launch
+// override.  The setter only touches the in-memory config: the user's
+// saved preference is untouched unless they later change a setting in
+// the mobile Settings page (which persists the whole layout config).
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetJoystickStyle() {
+	return (int)g_mobileState.layoutConfig.joystickStyle;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetJoystickStyle(int style) {
+	if (style < (int)ATTouchJoystickStyle::Analog || style > (int)ATTouchJoystickStyle::DPad4)
+		return;
+	g_mobileState.layoutConfig.joystickStyle = (ATTouchJoystickStyle)style;
+}
+
 // -----------------------------------------------------------------------
 // Broker mode (M3): chrome suppression + Starting overlay + session-end
 // navigation.
