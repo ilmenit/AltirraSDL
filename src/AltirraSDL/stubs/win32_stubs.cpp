@@ -8,6 +8,7 @@
 #include <vector>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
+#include <vd2/system/error.h>
 #include <vd2/system/refcount.h>
 #include <vd2/system/vdalloc.h>
 #include <vd2/system/function.h>
@@ -212,6 +213,7 @@ const char *ATGetNameForWindowMessageW32(uint32 msgId) { return "(unknown)"; }
 #include "uiclipboard.h"
 #include "uicommondialogs.h"
 #include "uiaccessors.h"
+#include "ui_testmode.h"
 #include "devicemanager.h"
 
 bool ATUIClipIsTextAvailable() {
@@ -256,6 +258,12 @@ bool ATUIClipGetText(VDStringW& s) {
 bool ATUIIsElevationRequiredForMountVHDImage() { return false; }
 
 void ATUIShowWarning(VDGUIHandle, const wchar_t *caption, const wchar_t *msg) {
+	if (ATTestModeRecordMessageBox("warning",
+			caption ? caption : L"Warning",
+			msg ? msg : L"")) {
+		return;
+	}
+
 	VDStringA c = VDTextWToU8(VDStringW(caption ? caption : L"Warning"));
 	VDStringA m = VDTextWToU8(VDStringW(msg ? msg : L""));
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, c.c_str(), m.c_str(), nullptr);
@@ -318,6 +326,10 @@ ATUIGenericResult ATUIShowGenericDialog(const ATUIGenericDialogOptions& opts) {
 	return r;
 }
 
+ATUIGenericResult ATUIShowGenericDialogAutoCenter(const ATUIGenericDialogOptions& opts) {
+	return ATUIShowGenericDialog(opts);
+}
+
 void ATUIGenericDialogUndoAllIgnores() {
 	VDRegistryAppKey key;
 	key.removeKeyRecursive("DialogDefaults");
@@ -337,7 +349,47 @@ void ATUIGenericDialogUndoAllIgnores() {
 #include "uiqueue.h"
 #include <at/atui/uicommandmanager.h>
 
+void ATUIShowInfo(VDGUIHandle, const wchar_t *text) {
+	if (ATTestModeRecordMessageBox("info", L"Altirra", text ? text : L""))
+		return;
+
+	VDStringA msg = VDTextWToU8(VDStringW(text ? text : L""));
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Altirra", msg.c_str(), nullptr);
+}
+
+void ATUIShowError2(VDGUIHandle, const wchar_t *text, const wchar_t *title) {
+	if (ATTestModeRecordMessageBox("error",
+			title ? title : L"Altirra Error",
+			text ? text : L"")) {
+		return;
+	}
+
+	VDStringA t = VDTextWToU8(VDStringW(title ? title : L"Altirra Error"));
+	VDStringA m = VDTextWToU8(VDStringW(text ? text : L""));
+	fprintf(stderr, "[error] %s: %s\n", t.c_str(), m.c_str());
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, t.c_str(), m.c_str(), nullptr);
+}
+
+void ATUIShowError(VDGUIHandle h, const wchar_t *text) {
+	ATUIShowError2(h, text, nullptr);
+}
+
+void ATUIShowError(VDGUIHandle h, const VDException& e) {
+	if (e.visible())
+		ATUIShowError(h, e.wc_str());
+}
+
+void ATUIShowError(const VDException& e) {
+	ATUIShowError(nullptr, e);
+}
+
 vdrefptr<ATUIFutureWithResult<bool>> ATUIShowAlertError(const wchar_t *text, const wchar_t *title) {
+	if (ATTestModeRecordMessageBox("error",
+			title ? title : L"Error",
+			text ? text : L"")) {
+		return vdrefptr<ATUIFutureWithResult<bool>>(new ATUIFutureWithResult<bool>(true));
+	}
+
 	VDStringA t = VDTextWToU8(VDStringW(title ? title : L"Error"));
 	VDStringA m = VDTextWToU8(VDStringW(text ? text : L""));
 	fprintf(stderr, "[error] %s: %s\n", t.c_str(), m.c_str());

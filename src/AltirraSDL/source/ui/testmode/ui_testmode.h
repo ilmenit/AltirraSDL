@@ -21,6 +21,13 @@ class ATSimulator;
 // When false, all test mode code is skipped (zero overhead).
 extern bool g_testModeEnabled;
 
+// Records a blocking native/SDL message box for automation and returns true
+// when test mode consumed it. Normal UI paths should still show the dialog
+// when this returns false.
+bool ATTestModeRecordMessageBox(const char *kind,
+	const wchar_t *title,
+	const wchar_t *message);
+
 // Lifecycle
 bool ATTestModeInit();       // creates socket, enables hooks — call after ATUIInit()
 void ATTestModeShutdown();   // destroys socket, cleans up — call before ATUIShutdown()

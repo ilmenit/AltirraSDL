@@ -341,6 +341,9 @@ static void CmdOpenImage() {
 }
 
 static void CmdOpenSourceFile() {
+	if (!ATUIDebuggerIsOpen())
+		ATUIDebuggerOpen();
+
 	ATUIShowOpenSourceFileDialog(g_pWindow);
 }
 
@@ -408,6 +411,16 @@ static bool TestDebuggerOpen() {
 	return ATUIDebuggerIsOpen();
 }
 
+static bool TestDebuggerRunning() {
+	IATDebugger *dbg = ATGetDebugger();
+
+	return dbg && (dbg->IsRunning() || dbg->AreCommandsQueued());
+}
+
+static bool TestDebuggerNotRunning() {
+	return !g_sim.IsRunning();
+}
+
 static void CmdPaneDisplay() {
 	ATUIDebuggerFocusDisplay();
 }
@@ -436,7 +449,50 @@ static void CmdPaneMemory1() {
 	ATActivateUIPane(kATUIPaneId_MemoryN, true, true);
 }
 
+static void CmdPaneMemory2() {
+	ATActivateUIPane(kATUIPaneId_MemoryN + 1, true, true);
+}
+
+static void CmdPaneMemory3() {
+	ATActivateUIPane(kATUIPaneId_MemoryN + 2, true, true);
+}
+
+static void CmdPaneMemory4() {
+	ATActivateUIPane(kATUIPaneId_MemoryN + 3, true, true);
+}
+
+static void CmdPaneWatch1() {
+	ATActivateUIPane(kATUIPaneId_WatchN, true, true);
+}
+
+static void CmdPaneWatch2() {
+	ATActivateUIPane(kATUIPaneId_WatchN + 1, true, true);
+}
+
+static void CmdPaneWatch3() {
+	ATActivateUIPane(kATUIPaneId_WatchN + 2, true, true);
+}
+
+static void CmdPaneWatch4() {
+	ATActivateUIPane(kATUIPaneId_WatchN + 3, true, true);
+}
+
+static void CmdPaneBreakpoints() {
+	ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
+}
+
+static void CmdPaneTargets() {
+	ATActivateUIPane(kATUIPaneId_Targets, true, true);
+}
+
+static void CmdPaneDebugDisplay() {
+	ATActivateUIPane(kATUIPaneId_DebugDisplay, true, true);
+}
+
 static void CmdPanePrinterOutput() {
+	if (!ATUIDebuggerIsOpen())
+		ATUIDebuggerOpen();
+
 	ATActivateUIPane(kATUIPaneId_PrinterOutput, true, true);
 }
 
@@ -449,7 +505,14 @@ static void CmdPaneProfileView() {
 // =========================================================================
 
 static void CmdDebugRun() {
-	ATUIDebuggerRunStop();
+	ATUIDebuggerRun();
+}
+
+static void CmdDebugToggleDebugger() {
+	if (ATUIDebuggerIsOpen())
+		ATUIDebuggerClose();
+	else
+		ATUIDebuggerOpen();
 }
 
 static void CmdDebugToggleBreakpoint() {
@@ -459,6 +522,25 @@ static void CmdDebugToggleBreakpoint() {
 static void CmdDebugNewBreakpoint() {
 	ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
 	ATUIDebuggerShowBreakpointDialog(-1);
+}
+
+static void CmdDebugOpenSourceFileList() {
+	if (!ATUIDebuggerIsOpen())
+		ATUIDebuggerOpen();
+
+	ATUIDebuggerShowSourceListDialog();
+}
+
+static void CmdDebugVerifierDialog() {
+	ATUIShowDialogVerifier();
+}
+
+static void CmdDebugShowTraceViewer() {
+	ATActivateUIPane(kATUIPaneId_PerformanceAnalyzerSDL, true, true);
+}
+
+static void CmdDebugChangeFontDialog() {
+	ATUIOpenSystemConfigFonts();
 }
 
 static void CmdOpenEmotePicker() {
@@ -968,6 +1050,95 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
 
 	// =====================================================================
+	// Debug (cmddebug.cpp) — debugger option/mode commands that map
+	// directly to portable debugger or simulator state.
+	// =====================================================================
+	{ "Debug.ToggleBreakAtExeRun",
+		[] {
+			if (IATDebugger *dbg = ATGetDebugger())
+				dbg->SetBreakOnEXERunAddrEnabled(!dbg->IsBreakOnEXERunAddrEnabled());
+		}, nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToChecked(dbg && dbg->IsBreakOnEXERunAddrEnabled());
+		} },
+	{ "Debug.ToggleAutoReloadRoms",
+		[] { g_sim.SetROMAutoReloadEnabled(!g_sim.IsROMAutoReloadEnabled()); },
+		nullptr, [] { return ToChecked(g_sim.IsROMAutoReloadEnabled()); } },
+	{ "Debug.ToggleAutoLoadKernelSymbols",
+		[] { g_sim.SetAutoLoadKernelSymbolsEnabled(!g_sim.IsAutoLoadKernelSymbolsEnabled()); },
+		nullptr, [] { return ToChecked(g_sim.IsAutoLoadKernelSymbolsEnabled()); } },
+	{ "Debug.ToggleAutoLoadSystemSymbols",
+		[] {
+			if (IATDebugger *dbg = ATGetDebugger())
+				dbg->SetAutoLoadSystemSymbols(!dbg->IsAutoLoadSystemSymbolsEnabled());
+		}, nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToChecked(dbg && dbg->IsAutoLoadSystemSymbolsEnabled());
+		} },
+	{ "Debug.ToggleDebugLink",
+		[] {
+			if (IATDebugger *dbg = ATGetDebugger())
+				dbg->SetDebugLinkEnabled(!dbg->GetDebugLinkEnabled());
+		}, nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToChecked(dbg && dbg->GetDebugLinkEnabled());
+		} },
+	{ "Debug.PreStartSymbolLoadDisabled",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetSymbolLoadMode(false, ATDebuggerSymbolLoadMode::Disabled); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetSymbolLoadMode(false) == ATDebuggerSymbolLoadMode::Disabled);
+		} },
+	{ "Debug.PreStartSymbolLoadDeferred",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetSymbolLoadMode(false, ATDebuggerSymbolLoadMode::Deferred); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetSymbolLoadMode(false) == ATDebuggerSymbolLoadMode::Deferred);
+		} },
+	{ "Debug.PreStartSymbolLoadEnabled",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetSymbolLoadMode(false, ATDebuggerSymbolLoadMode::Enabled); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetSymbolLoadMode(false) == ATDebuggerSymbolLoadMode::Enabled);
+		} },
+	{ "Debug.PostStartSymbolLoadDisabled",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetSymbolLoadMode(true, ATDebuggerSymbolLoadMode::Disabled); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetSymbolLoadMode(true) == ATDebuggerSymbolLoadMode::Disabled);
+		} },
+	{ "Debug.PostStartSymbolLoadDeferred",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetSymbolLoadMode(true, ATDebuggerSymbolLoadMode::Deferred); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetSymbolLoadMode(true) == ATDebuggerSymbolLoadMode::Deferred);
+		} },
+	{ "Debug.PostStartSymbolLoadEnabled",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetSymbolLoadMode(true, ATDebuggerSymbolLoadMode::Enabled); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetSymbolLoadMode(true) == ATDebuggerSymbolLoadMode::Enabled);
+		} },
+	{ "Debug.ScriptAutoLoadDisabled",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetScriptAutoLoadMode(ATDebuggerScriptAutoLoadMode::Disabled); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetScriptAutoLoadMode() == ATDebuggerScriptAutoLoadMode::Disabled);
+		} },
+	{ "Debug.ScriptAutoLoadAskToLoad",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetScriptAutoLoadMode(ATDebuggerScriptAutoLoadMode::AskToLoad); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetScriptAutoLoadMode() == ATDebuggerScriptAutoLoadMode::AskToLoad);
+		} },
+	{ "Debug.ScriptAutoLoadEnabled",
+		[] { if (IATDebugger *dbg = ATGetDebugger()) dbg->SetScriptAutoLoadMode(ATDebuggerScriptAutoLoadMode::Enabled); },
+		nullptr, [] {
+			IATDebugger *dbg = ATGetDebugger();
+			return ToRadioChecked(dbg && dbg->GetScriptAutoLoadMode() == ATDebuggerScriptAutoLoadMode::Enabled);
+		} },
+
+	// =====================================================================
 	// Cart (cmdcart.cpp) — detach. Attach commands route to the ImGui
 	// cart picker which is opened from the File menu; this only needs
 	// to expose the detach so VM scripts and accelerators can drop the
@@ -1029,14 +1200,16 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "File.BootImage",                CmdBootImage,            IsNetplaySessionNotEngaged, nullptr, nullptr },
 	{ "File.OpenImage",                CmdOpenImage,            IsNetplaySessionNotEngaged, nullptr, nullptr },
 	{ "Debug.OpenSourceFile",          CmdOpenSourceFile,       nullptr, nullptr, nullptr },
+	{ "Debug.OpenSourceFileList",      CmdDebugOpenSourceFileList, nullptr, nullptr, nullptr },
+	{ "Debug.ToggleDebugger",          CmdDebugToggleDebugger,  nullptr, [] { return ToChecked(ATUIDebuggerIsOpen()); }, nullptr },
 	{ "Disk.DrivesDialog",             CmdDrivesDialog,         nullptr, nullptr, nullptr },
 	{ "System.Configure",              CmdConfigure,            IsNetplaySessionNotEngaged, nullptr, nullptr },
 	{ "Cheat.CheatDialog",             CmdCheatDialog,          nullptr, nullptr, nullptr },
 	{ "Debug.RunStop",                 CmdDebugRunStop,         nullptr, nullptr, nullptr },
-	{ "Debug.StepInto",                CmdDebugStepInto,        nullptr, nullptr, nullptr },
-	{ "Debug.StepOver",                CmdDebugStepOver,        nullptr, nullptr, nullptr },
-	{ "Debug.StepOut",                 CmdDebugStepOut,         nullptr, nullptr, nullptr },
-	{ "Debug.Break",                   CmdDebugBreak,           nullptr, nullptr, nullptr },
+	{ "Debug.StepInto",                CmdDebugStepInto,        TestDebuggerNotRunning, nullptr, nullptr },
+	{ "Debug.StepOver",                CmdDebugStepOver,        TestDebuggerNotRunning, nullptr, nullptr },
+	{ "Debug.StepOut",                 CmdDebugStepOut,         TestDebuggerNotRunning, nullptr, nullptr },
+	{ "Debug.Break",                   CmdDebugBreak,           TestDebuggerRunning, nullptr, nullptr },
 	{ "Pane.Display",                  CmdPaneDisplay,          TestDebuggerOpen, nullptr, nullptr },
 	{ "Pane.Console",                  CmdPaneConsole,          TestDebuggerOpen, nullptr, nullptr },
 	{ "Pane.Registers",                CmdPaneRegisters,        TestDebuggerOpen, nullptr, nullptr },
@@ -1044,13 +1217,27 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "Pane.CallStack",                CmdPaneCallStack,        TestDebuggerOpen, nullptr, nullptr },
 	{ "Pane.History",                  CmdPaneHistory,          TestDebuggerOpen, nullptr, nullptr },
 	{ "Pane.Memory1",                  CmdPaneMemory1,          TestDebuggerOpen, nullptr, nullptr },
-	{ "Pane.PrinterOutput",            CmdPanePrinterOutput,    TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Memory2",                  CmdPaneMemory2,          TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Memory3",                  CmdPaneMemory3,          TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Memory4",                  CmdPaneMemory4,          TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Watch1",                   CmdPaneWatch1,           TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Watch2",                   CmdPaneWatch2,           TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Watch3",                   CmdPaneWatch3,           TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Watch4",                   CmdPaneWatch4,           TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Breakpoints",              CmdPaneBreakpoints,      TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.Targets",                  CmdPaneTargets,          TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.DebugDisplay",             CmdPaneDebugDisplay,     TestDebuggerOpen, nullptr, nullptr },
+	{ "Pane.PrinterOutput",            CmdPanePrinterOutput,    nullptr, nullptr, nullptr },
 	{ "Pane.ProfileView",              CmdPaneProfileView,      TestDebuggerOpen, nullptr, nullptr },
 
 	// Debugger context
-	{ "Debug.Run",                     CmdDebugRun,             nullptr, nullptr, nullptr },
-	{ "Debug.ToggleBreakpoint",        CmdDebugToggleBreakpoint, nullptr, nullptr, nullptr },
-	{ "Debug.NewBreakpoint",           CmdDebugNewBreakpoint,   nullptr, nullptr, nullptr },
+	{ "Debug.Run",                     CmdDebugRun,             TestDebuggerNotRunning, nullptr, nullptr },
+	{ "Debug.ToggleBreakpoint",        CmdDebugToggleBreakpoint, TestDebuggerOpen, nullptr, nullptr },
+	{ "Debug.NewBreakpoint",           CmdDebugNewBreakpoint,   TestDebuggerOpen, nullptr, nullptr },
+	{ "Debug.VerifierDialog",          CmdDebugVerifierDialog,  nullptr, [] { return ToChecked(g_sim.IsVerifierEnabled()); }, nullptr },
+	{ "Debug.ShowTraceViewer",         CmdDebugShowTraceViewer, nullptr, nullptr, nullptr },
+	{ "Debug.ChangeFontDialog",        CmdDebugChangeFontDialog, nullptr, nullptr, nullptr },
+	{ "Help.ExportDebuggerHelp",       ATUIExportDebugHelp,     nullptr, nullptr, nullptr },
 };
 
 void ATUIInitSDL3Commands() {

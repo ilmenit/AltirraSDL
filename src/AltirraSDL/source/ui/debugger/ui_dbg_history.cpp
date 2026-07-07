@@ -24,6 +24,7 @@
 #include "disasm.h"
 #include "simulator.h"
 #include "cpu.h"
+#include "uicommondialogs.h"
 
 extern ATSimulator g_sim;
 extern bool ATImGuiConsoleShowSource(uint32 addr);
@@ -71,6 +72,13 @@ void ATImGuiHistoryPaneImpl::OnDebuggerSystemStateUpdate(const ATDebuggerSystemS
 
 void ATImGuiHistoryPaneImpl::OnDebuggerEvent(ATDebugEvent eventId) {
 	mbNeedsUpdate = true;
+}
+
+void *ATImGuiHistoryPaneImpl::AsPaneInterface(uint32 iid) {
+	if (iid == IATUIDebuggerHistoryPane::kTypeID)
+		return static_cast<IATUIDebuggerHistoryPane *>(this);
+
+	return ATImGuiDebuggerPane::AsPaneInterface(iid);
 }
 
 // =========================================================================
@@ -408,17 +416,220 @@ bool ATImGuiHistoryPaneImpl::JumpToCycle(uint32 cycle) {
 	return true;
 }
 
+bool ATImGuiHistoryPaneImpl::DescribeForTest(VDStringA& outState) {
+	uint32 selectedIndex = 0;
+	const bool selectedHasIndex = mSelectedLine
+		&& GetLineHistoryIndex(mSelectedLine, selectedIndex);
+	const char *selectedText = mSelectedLine ? GetLineText(mSelectedLine) : nullptr;
+	const ATHTNode *root = mHistoryTree.GetRootNode();
+	const uint32 totalLines = root && root->mHeight > 0 ? root->mHeight - 1 : 0;
+
+	VDStringA selectedIndexText;
+	if (selectedHasIndex)
+		selectedIndexText.sprintf("%u", selectedIndex);
+	else
+		selectedIndexText = "none";
+
+	outState.sprintf("enabled=%d total=%u selected_valid=%d",
+		mbHistoryEnabled ? 1 : 0,
+		totalLines,
+		mSelectedLine ? 1 : 0);
+	outState.append_sprintf(" selected_index=%s page_lines=%u",
+		selectedIndexText.c_str(),
+		mPageLines);
+	outState.append_sprintf(" search_active=%d search_text=\"%s\"",
+		mbSearchActive ? 1 : 0,
+		mSearchBuf);
+	outState.append_sprintf(" timestamp_mode=%u time_base=%u/%u",
+		(unsigned)mTimestampMode,
+		mTimeBaseCycles,
+		mTimeBaseUnhaltedCycles);
+	outState.append_sprintf(" scroll_x=%.1f scroll_max_x=%.1f",
+		(double)mLastScrollX,
+		(double)mLastScrollMaxX);
+	outState += " selected_text=\"";
+	outState += selectedText ? selectedText : "";
+	outState += "\"";
+
+	return true;
+}
+
+bool ATImGuiHistoryPaneImpl::ExecuteContextActionForTest(const char *action,
+	VDStringA& outState)
+{
+	if (!mSelectedLine)
+		return false;
+
+	CaptureContextFromLine(mSelectedLine);
+
+	bool applied = true;
+	if (!strcmp(action, "go_source")) {
+		applied = GoToContextSource();
+	} else if (!strcmp(action, "set_origin")) {
+		applied = SetContextTimestampOrigin();
+	} else if (!strcmp(action, "reset_origin")) {
+		ResetTimestampOrigin();
+	} else if (!strcmp(action, "mode_beam")) {
+		SetTimestampMode(HistTimestampMode::Beam);
+	} else if (!strcmp(action, "mode_us")) {
+		SetTimestampMode(HistTimestampMode::Microseconds);
+	} else if (!strcmp(action, "mode_cycles")) {
+		SetTimestampMode(HistTimestampMode::Cycles);
+	} else if (!strcmp(action, "mode_unhalted")) {
+		SetTimestampMode(HistTimestampMode::UnhaltedCycles);
+	} else if (!strcmp(action, "mode_tape_samples")) {
+		SetTimestampMode(HistTimestampMode::TapePositionSamples);
+	} else if (!strcmp(action, "mode_tape_seconds")) {
+		SetTimestampMode(HistTimestampMode::TapePositionSeconds);
+	} else {
+		return false;
+	}
+
+	DescribeForTest(outState);
+	return applied;
+}
+
+bool ATImGuiHistoryPaneImpl::SelectInstructionForTest(bool last,
+	VDStringA& outState)
+{
+	ATHTLineIterator selected;
+
+	if (last) {
+		for (ATHTLineIterator it = mHistoryTree.GetNearestVisibleLine(
+				ATHTLineIterator { mHistoryTree.GetBackNode(), 0 });
+			it;
+			it = mHistoryTree.GetPrevVisibleLine(it)) {
+			if (it.mpNode && it.mpNode->mNodeType == kATHTNodeType_Insn) {
+				selected = it;
+				break;
+			}
+		}
+	} else {
+		for (ATHTLineIterator it = mHistoryTree.GetNearestVisibleLine(
+				ATHTLineIterator { mHistoryTree.GetFrontNode(), 0 });
+			it;
+			it = mHistoryTree.GetNextVisibleLine(it)) {
+			if (it.mpNode && it.mpNode->mNodeType == kATHTNodeType_Insn) {
+				selected = it;
+				break;
+			}
+		}
+	}
+
+	if (!selected)
+		return false;
+
+	SelectLine(selected);
+	DescribeForTest(outState);
+	return true;
+}
+
+bool ATImGuiHistoryPaneImpl::OpenContextMenuForTest(VDStringA& outState) {
+	if (!mSelectedLine)
+		return false;
+
+	CaptureContextFromLine(mSelectedLine);
+	mbOpenContextMenu = true;
+	DescribeForTest(outState);
+	return true;
+}
+
+bool ATImGuiHistoryPaneImpl::SetHorizontalScrollForTest(float x,
+	VDStringA& outState)
+{
+	if (x < 0.0f)
+		x = 0.0f;
+
+	mRequestedScrollX = x;
+	mbRequestScrollX = true;
+	DescribeForTest(outState);
+	return true;
+}
+
 // Free helper used by ATConsolePingBeamPosition — looks up the
 // registered History pane and forwards to JumpToCycle. Returns true
 // when the pane exists and accepted the jump (matches the Win32
 // IATUIDebuggerHistoryPane::JumpToCycle return contract that
 // console.cpp:1046 checks).
 bool ATUIDebuggerHistoryPaneJumpToCycle(uint32 cycle) {
-	auto *base = ATUIDebuggerGetPane(kATUIPaneId_History);
-	if (!base)
+	auto *pane = static_cast<IATUIDebuggerHistoryPane *>(
+		ATGetUIPaneAs(kATUIPaneId_History, IATUIDebuggerHistoryPane::kTypeID));
+
+	if (!pane)
 		return false;
-	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(base);
+
 	return pane->JumpToCycle(cycle);
+}
+
+bool ATUIDebuggerDescribeHistoryForTest(VDStringA& outState) {
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_History, true, true);
+
+	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(
+		ATUIDebuggerGetPane(kATUIPaneId_History));
+
+	if (!pane)
+		return false;
+
+	return pane->DescribeForTest(outState);
+}
+
+bool ATUIDebuggerHistoryContextActionForTest(const char *action,
+	VDStringA& outState,
+	bool& outApplied)
+{
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_History, true, true);
+
+	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(
+		ATUIDebuggerGetPane(kATUIPaneId_History));
+
+	if (!pane)
+		return false;
+
+	outApplied = pane->ExecuteContextActionForTest(action, outState);
+	return true;
+}
+
+bool ATUIDebuggerSelectHistoryInstructionForTest(bool last, VDStringA& outState) {
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_History, true, true);
+
+	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(
+		ATUIDebuggerGetPane(kATUIPaneId_History));
+
+	if (!pane)
+		return false;
+
+	return pane->SelectInstructionForTest(last, outState);
+}
+
+bool ATUIDebuggerOpenHistoryContextMenuForTest(VDStringA& outState) {
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_History, true, true);
+
+	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(
+		ATUIDebuggerGetPane(kATUIPaneId_History));
+
+	if (!pane)
+		return false;
+
+	return pane->OpenContextMenuForTest(outState);
+}
+
+bool ATUIDebuggerSetHistoryHorizontalScrollForTest(float x,
+	VDStringA& outState)
+{
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_History, true, true);
+
+	auto *pane = static_cast<ATImGuiHistoryPaneImpl *>(
+		ATUIDebuggerGetPane(kATUIPaneId_History));
+
+	if (!pane)
+		return false;
+
+	return pane->SetHorizontalScrollForTest(x, outState);
 }
 
 // =========================================================================
@@ -429,7 +640,7 @@ bool ATImGuiHistoryPaneImpl::HandleKeyboardInput() {
 	if (ImGui::GetIO().WantTextInput)
 		return false;
 
-	if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+	if (!mbHasFocus)
 		return false;
 
 	if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
@@ -440,6 +651,11 @@ bool ATImGuiHistoryPaneImpl::HandleKeyboardInput() {
 	// Ctrl+C -> copy visible to clipboard
 	if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
 		CopyVisibleLines();
+		return true;
+	}
+
+	if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F)) {
+		mbFocusSearch = true;
 		return true;
 	}
 
@@ -486,7 +702,7 @@ bool ATImGuiHistoryPaneImpl::HandleKeyboardInput() {
 
 	if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
 		ATHTLineIterator target = mSelectedLine;
-		for (int i = 0; i < 20; ++i) {
+		for (uint32 i = 0; i < mPageLines; ++i) {
 			ATHTLineIterator prev = mHistoryTree.GetPrevVisibleLine(target);
 			if (!prev)
 				break;
@@ -498,7 +714,7 @@ bool ATImGuiHistoryPaneImpl::HandleKeyboardInput() {
 
 	if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
 		ATHTLineIterator target = mSelectedLine;
-		for (int i = 0; i < 20; ++i) {
+		for (uint32 i = 0; i < mPageLines; ++i) {
 			ATHTLineIterator next = mHistoryTree.GetNextVisibleLine(target);
 			if (!next)
 				break;
@@ -517,8 +733,15 @@ bool ATImGuiHistoryPaneImpl::HandleKeyboardInput() {
 
 	if (ImGui::IsKeyPressed(ImGuiKey_End)) {
 		ATHTNode *back = mHistoryTree.GetBackNode();
-		if (back)
-			SelectLine(ATHTLineIterator { back, back->mVisibleLines > 0 ? back->mVisibleLines - 1 : 0 });
+		if (back) {
+			ATHTLineIterator it { back, back->mVisibleLines > 0 ? back->mVisibleLines - 1 : 0 };
+
+			if (!mHistoryTree.IsLineVisible(it))
+				it = mHistoryTree.GetPrevVisibleLine(it);
+
+			if (it)
+				SelectLine(it);
+		}
 		return true;
 	}
 
@@ -626,6 +849,11 @@ void ATImGuiHistoryPaneImpl::RenderSearchBar() {
 
 	// Search input field
 	ImGui::SetNextItemWidth(availWidth - buttonWidth - spacing);
+	if (mbFocusSearch) {
+		ImGui::SetKeyboardFocusHere();
+		mbFocusSearch = false;
+	}
+
 	if (ImGui::InputText("##histsearch", mSearchBuf, sizeof(mSearchBuf),
 		ImGuiInputTextFlags_EnterReturnsTrue))
 	{
@@ -640,6 +868,64 @@ void ATImGuiHistoryPaneImpl::RenderSearchBar() {
 // Context Menu
 // =========================================================================
 
+bool ATImGuiHistoryPaneImpl::CaptureContextFromLine(const ATHTLineIterator& it) {
+	const ATCPUHistoryEntry *ctxHe = GetLineHistoryEntry(it);
+	mbContextHasInsn = (ctxHe != nullptr) && it.mpNode
+		&& (it.mpNode->mNodeType == kATHTNodeType_Insn
+		 || it.mpNode->mNodeType == kATHTNodeType_InsnPreview
+		 || it.mpNode->mNodeType == kATHTNodeType_Interrupt);
+	mbContextIsInsnNode = it.mpNode
+		&& it.mpNode->mNodeType == kATHTNodeType_Insn;
+
+	if (ctxHe) {
+		mContextHent = *ctxHe;
+		mContextAddr = GetHistoryAddress(*ctxHe);
+	} else {
+		mContextHent = {};
+		mContextAddr = 0;
+	}
+
+	return mbContextHasInsn;
+}
+
+bool ATImGuiHistoryPaneImpl::GoToContextSource() {
+	if (!mbContextHasInsn)
+		return false;
+
+	if (ATImGuiConsoleShowSource(mContextAddr))
+		return true;
+
+	VDStringW s;
+	if (IATDebugger *dbg = ATGetDebugger()) {
+		s.sprintf(L"There is no source line associated with the address: %hs.",
+			dbg->GetAddressText(mContextAddr, true).c_str());
+	} else {
+		s.sprintf(L"There is no source line associated with the address: $%04X.",
+			mContextAddr & 0xffff);
+	}
+
+	ATUIShowError(nullptr, s.c_str());
+	return false;
+}
+
+bool ATImGuiHistoryPaneImpl::SetContextTimestampOrigin() {
+	if (!mbContextIsInsnNode || !mbContextHasInsn)
+		return false;
+
+	mTimeBaseCycles = mContextHent.mCycle;
+	mTimeBaseUnhaltedCycles = mContextHent.mUnhaltedCycle;
+	return true;
+}
+
+void ATImGuiHistoryPaneImpl::ResetTimestampOrigin() {
+	mTimeBaseCycles = mTimeBaseCyclesDefault;
+	mTimeBaseUnhaltedCycles = mTimeBaseUnhaltedCyclesDefault;
+}
+
+void ATImGuiHistoryPaneImpl::SetTimestampMode(HistTimestampMode mode) {
+	mTimestampMode = mode;
+}
+
 void ATImGuiHistoryPaneImpl::RenderContextMenu() {
 	if (mbOpenContextMenu) {
 		ImGui::OpenPopup("HistCtx");
@@ -650,9 +936,8 @@ void ATImGuiHistoryPaneImpl::RenderContextMenu() {
 		return;
 
 	// Go to Source
-	if (ImGui::MenuItem("Go to Source", nullptr, false, mbContextHasInsn)) {
-		ATImGuiConsoleShowSource(mContextAddr);
-	}
+	if (ImGui::MenuItem("Go to Source", nullptr, false, mbContextHasInsn))
+		GoToContextSource();
 
 	ImGui::Separator();
 
@@ -713,22 +998,18 @@ void ATImGuiHistoryPaneImpl::RenderContextMenu() {
 	ImGui::Separator();
 
 	// Timestamp origin
-	if (ImGui::MenuItem("Reset Timestamp Origin")) {
-		mTimeBaseCycles = mTimeBaseCyclesDefault;
-		mTimeBaseUnhaltedCycles = mTimeBaseUnhaltedCyclesDefault;
-	}
+	if (ImGui::MenuItem("Reset Timestamp Origin"))
+		ResetTimestampOrigin();
 
-	if (ImGui::MenuItem("Set Timestamp Origin", nullptr, false, mbContextIsInsnNode && mbContextHasInsn)) {
-		mTimeBaseCycles = mContextHent.mCycle;
-		mTimeBaseUnhaltedCycles = mContextHent.mUnhaltedCycle;
-	}
+	if (ImGui::MenuItem("Set Timestamp Origin", nullptr, false, mbContextIsInsnNode && mbContextHasInsn))
+		SetContextTimestampOrigin();
 
 	ImGui::Separator();
 
 	// Timestamp mode radio group
 	auto tsRadio = [&](const char *label, HistTimestampMode mode) {
 		if (ImGui::MenuItem(label, nullptr, mTimestampMode == mode))
-			mTimestampMode = mode;
+			SetTimestampMode(mode);
 	};
 	tsRadio("Show Beam Position", HistTimestampMode::Beam);
 	tsRadio("Show Microseconds", HistTimestampMode::Microseconds);
@@ -766,6 +1047,12 @@ void ATImGuiHistoryPaneImpl::RenderTreeContent() {
 
 	ImGui::BeginChild("HistoryScroll", ImVec2(0, 0), ImGuiChildFlags_None,
 		ImGuiWindowFlags_HorizontalScrollbar);
+	mPageLines = std::max<uint32>(1, (uint32)(ImGui::GetWindowHeight() / lineHeight));
+
+	if (mbRequestScrollX) {
+		ImGui::SetScrollX(mRequestedScrollX);
+		mbRequestScrollX = false;
+	}
 
 	IATDebugger *dbg = ATGetDebugger();
 
@@ -873,21 +1160,7 @@ void ATImGuiHistoryPaneImpl::RenderTreeContent() {
 			if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
 				SelectLine(it);
 				mbOpenContextMenu = true;
-
-				const ATCPUHistoryEntry *ctxHe = GetLineHistoryEntry(it);
-				mbContextHasInsn = (ctxHe != nullptr) && it.mpNode
-					&& (it.mpNode->mNodeType == kATHTNodeType_Insn
-					 || it.mpNode->mNodeType == kATHTNodeType_InsnPreview
-					 || it.mpNode->mNodeType == kATHTNodeType_Interrupt);
-				mbContextIsInsnNode = it.mpNode
-					&& it.mpNode->mNodeType == kATHTNodeType_Insn;
-				if (ctxHe) {
-					mContextHent = *ctxHe;
-					mContextAddr = GetHistoryAddress(*ctxHe);
-				} else {
-					mContextHent = {};
-					mContextAddr = 0;
-				}
+				CaptureContextFromLine(it);
 			}
 
 			// Double-click -> jump to disassembly
@@ -945,6 +1218,9 @@ void ATImGuiHistoryPaneImpl::RenderTreeContent() {
 			ImGui::SetScrollY(targetY + lineHeight - windowH);
 		}
 	}
+
+	mLastScrollX = ImGui::GetScrollX();
+	mLastScrollMaxX = ImGui::GetScrollMaxX();
 
 	ImGui::EndChild();
 }

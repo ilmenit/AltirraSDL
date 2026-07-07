@@ -7,12 +7,61 @@
 #include <imgui.h>
 #include <at/atcore/address.h>
 #include <at/atdebugger/target.h>
+#include <at/atnativeui/genericdialog.h>
 #include "ui_dbg_memory.h"
 #include "../core/ui_main.h"
 #include "console.h"
 #include "debugger.h"
 
 extern SDL_Window *g_pWindow;
+
+namespace {
+	void ShowTooManyScreenWatchesError() {
+		ATUIGenericDialogOptions opts {};
+		opts.mpCaption = L"Too many watches";
+		opts.mpTitle = L"Too many watches";
+		opts.mpMessage = L"The limit of on-screen watches has already been reached.";
+		opts.mIconType = kATUIGenericIconType_Error;
+		opts.mResultMask = kATUIGenericResultMask_OK;
+		ATUIShowGenericDialogAutoCenter(opts);
+	}
+
+	void FormatAddToWatchExpression(uint32 addr, bool wordMode, VDStringA& expr) {
+		if (wordMode)
+			expr.sprintf("dw $%04X", addr);
+		else
+			expr.sprintf("db $%04X", addr);
+	}
+
+	bool TrackOnScreenAddress(uint32 addr, int len, bool showError, int& watchIndex) {
+		IATDebugger *debugger = ATGetDebugger();
+		watchIndex = debugger ? debugger->AddWatch(addr, len) : -1;
+
+		if (watchIndex < 0) {
+			if (showError)
+				ShowTooManyScreenWatchesError();
+
+			return false;
+		}
+
+		return true;
+	}
+}
+
+bool ATUIDebuggerFormatMemoryAddToWatchForTest(uint32 addr,
+	bool wordMode,
+	VDStringA& expr)
+{
+	FormatAddToWatchExpression(addr, wordMode, expr);
+	return true;
+}
+
+bool ATUIDebuggerTrackMemoryOnScreenForTest(uint32 addr,
+	int len,
+	int& watchIndex)
+{
+	return TrackOnScreenAddress(addr, len, false, watchIndex);
+}
 
 // =========================================================================
 // Hex dump rendering — interpretation column (text modes)
@@ -450,7 +499,6 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 		if (mbSelectionEnabled && mHighlightedAddress.has_value()
 			&& focused) {
 
-			uint32 hiAddr = mHighlightedAddress.value();
 			bool isHexMode = IsHexMode();
 			bool isWordVal = IsWordMode() && !mbHighlightedData;
 
@@ -465,9 +513,7 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 					mEditPhase++;
 					if (mEditPhase >= maxPhase) {
 						CommitEdit();
-						uint32 nextAddr = hiAddr + StepSize();
-						mHighlightedAddress = nextAddr;
-						EnsureHighlightVisible();
+						AdvanceSelectionHorizontal(1);
 						if (mbNeedsRebuild) RebuildView();
 					}
 				};
@@ -515,13 +561,12 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 								case 0x60: break;
 							}
 						}
-						IATDebugTarget *t = mLastState.mpDebugTarget;
-						if (t && mHighlightedAddress.has_value()) {
-							uint32 curAddr = mHighlightedAddress.value();
-							t->WriteByte(curAddr, byte);
-							mbNeedsRebuild = true;
-							mHighlightedAddress = curAddr + 1;
-							EnsureHighlightVisible();
+						if (mLastState.mpDebugTarget
+							&& mHighlightedAddress.has_value()) {
+							mEditValue = byte;
+							mEditPhase = 1;
+							CommitEdit();
+							AdvanceSelectionHorizontal(1);
 							if (mbNeedsRebuild) RebuildView();
 						}
 					}
@@ -533,9 +578,7 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 			if (ImGui::IsKeyPressed(ImGuiKey_Enter)
 				|| ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
 				CommitEdit();
-				uint32 step = (IsWordMode() && !mbHighlightedData) ? 2 : 1;
-				mHighlightedAddress = hiAddr + step;
-				EnsureHighlightVisible();
+				MoveSelectionHorizontal(1);
 				if (mbNeedsRebuild) RebuildView();
 			}
 
@@ -560,68 +603,27 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 			// ---- Arrow keys ----
 			bool ctrl = ImGui::GetIO().KeyCtrl;
 
-			if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-				CommitEdit();
-				uint32 step = (IsWordMode() && !mbHighlightedData) ? 2 : 1;
-				sint32 off = (sint32)(hiAddr & kATAddressOffsetMask);
-				if (off >= (sint32)step) {
-					mHighlightedAddress = (hiAddr & kATAddressSpaceMask)
-						| (off - step);
-					EnsureHighlightVisible();
-				}
-			}
-			if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-				CommitEdit();
-				uint32 step = (IsWordMode() && !mbHighlightedData) ? 2 : 1;
-				uint32 off = hiAddr & kATAddressOffsetMask;
-				uint32 maxOff = ATAddressGetSpaceSize(hiAddr) - 1;
-				if (off + step <= maxOff) {
-					mHighlightedAddress = (hiAddr & kATAddressSpaceMask)
-						| (off + step);
-					EnsureHighlightVisible();
-				}
-			}
+			if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+				MoveSelectionHorizontal(-1);
+			if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+				MoveSelectionHorizontal(1);
 			if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
 				if (ctrl) {
-					// Scroll view without moving selection
-					uint32 off = mViewStart & kATAddressOffsetMask;
-					if (off >= mColumns) {
-						mViewStart = (mViewStart & kATAddressSpaceMask)
-							| (off - mColumns);
-						mbNeedsRebuild = true;
-					}
+					ScrollViewRows(-1);
 				} else {
-					CommitEdit();
-					sint32 off = (sint32)(hiAddr & kATAddressOffsetMask);
-					if (off >= (sint32)mColumns) {
-						mHighlightedAddress = (hiAddr & kATAddressSpaceMask)
-							| (off - mColumns);
-						EnsureHighlightVisible();
-					}
+					MoveSelectionVertical(-1);
 				}
 			}
 			if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-				uint32 maxOff = ATAddressGetSpaceSize(hiAddr) - 1;
 				if (ctrl) {
-					uint32 off = mViewStart & kATAddressOffsetMask;
-					if (off + mColumns <= maxOff) {
-						mViewStart = (mViewStart & kATAddressSpaceMask)
-							| (off + mColumns);
-						mbNeedsRebuild = true;
-					}
+					ScrollViewRows(1);
 				} else {
-					CommitEdit();
-					uint32 off = hiAddr & kATAddressOffsetMask;
-					if (off + mColumns <= maxOff) {
-						mHighlightedAddress = (hiAddr & kATAddressSpaceMask)
-							| (off + mColumns);
-						EnsureHighlightVisible();
-					}
+					MoveSelectionVertical(1);
 				}
 			}
 		}
 
-		// ---- Escape → focus Console (when no selection) ----
+		// ---- Escape -> focus Console (when no selection) ----
 		if (!mbSelectionEnabled && !mbEditCancelledThisFrame
 			&& ImGui::IsWindowFocused()
 			&& ImGui::IsKeyPressed(ImGuiKey_Escape))
@@ -629,21 +631,10 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 
 		// ---- Page Up / Down ----
 		if (ImGui::IsWindowFocused()) {
-			uint32 spBase = mViewStart & kATAddressSpaceMask;
-			uint32 off = mViewStart & kATAddressOffsetMask;
-			uint32 scrollBytes = mColumns * mVisibleRows;
-
-			if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
-				off = (off >= scrollBytes) ? off - scrollBytes : 0;
-				mViewStart = spBase | off;
-				mbNeedsRebuild = true;
-			}
-			if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
-				uint32 maxOff = ATAddressGetSpaceSize(mViewStart) - 1;
-				off = std::min(off + scrollBytes, maxOff);
-				mViewStart = spBase | off;
-				mbNeedsRebuild = true;
-			}
+			if (ImGui::IsKeyPressed(ImGuiKey_PageUp))
+				ScrollViewPage(-1);
+			if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
+				ScrollViewPage(1);
 		}
 
 		// ================================================================
@@ -746,19 +737,18 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 
 				if (ImGui::MenuItem("Add to Watch Window")) {
 					VDStringA expr;
-					if (IsWordMode())
-						expr.sprintf("dw $%04X",
-							mContextMenuAddr & 0xFFFF);
-					else
-						expr.sprintf("db $%04X",
-							mContextMenuAddr & 0xFFFF);
+					FormatAddToWatchExpression(mContextMenuAddr,
+						IsWordMode(),
+						expr);
 					ATUIDebuggerAddToWatch(expr.c_str());
 				}
 				if (ImGui::MenuItem("Track On-Screen")) {
 					int len = IsWordMode() ? 2 : 1;
-					if (d->AddWatch(mContextMenuAddr, len) < 0) {
-						// All 8 on-screen watch slots are full
-					}
+					int watchIndex = -1;
+					TrackOnScreenAddress(mContextMenuAddr,
+						len,
+						true,
+						watchIndex);
 				}
 			}
 			ImGui::EndPopup();

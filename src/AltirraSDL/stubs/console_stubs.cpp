@@ -186,6 +186,8 @@ void ATConsoleSetFontDpi(unsigned) {}
 void ATUIDebuggerOpen();
 void ATUIDebuggerClose();
 bool ATUIDebuggerIsOpen();
+uint32 ATUIDebuggerGetFocusedPaneId();
+void *ATUIDebuggerGetPaneAs(uint32 paneId, uint32 iid);
 
 // Mirrors console.cpp:106-123. Looks up the source line for an address
 // and opens the source pane focused on it. Returns false if the address
@@ -238,6 +240,7 @@ bool ATIsDebugConsoleActive() {
 // Defined in ui_dbg_source.cpp
 extern IATSourceWindow *ATImGuiFindSourceWindow(const wchar_t *path);
 extern IATSourceWindow *ATImGuiOpenSourceWindow(const wchar_t *path);
+extern IATSourceWindow *ATImGuiOpenSourceWindow(const ATDebuggerSourceFileInfo& sourceFileInfo, bool searchPaths);
 extern void ATUIDebuggerShowSourceListDialog();
 
 IATSourceWindow *ATGetSourceWindow(const wchar_t *s) {
@@ -248,8 +251,8 @@ IATSourceWindow *ATOpenSourceWindow(const wchar_t *s) {
 	return ATImGuiOpenSourceWindow(s);
 }
 
-IATSourceWindow *ATOpenSourceWindow(const ATDebuggerSourceFileInfo& sfi, bool) {
-	return ATImGuiOpenSourceWindow(sfi.mSourcePath.c_str());
+IATSourceWindow *ATOpenSourceWindow(const ATDebuggerSourceFileInfo& sfi, bool searchPaths) {
+	return ATImGuiOpenSourceWindow(sfi, searchPaths);
 }
 
 void ATUIShowSourceListDialog() {
@@ -262,7 +265,7 @@ void ATUIShowSourceListDialog() {
 
 void ATGetUIPanes(vdfastvector<ATUIPane*>&) {}
 ATUIPane *ATGetUIPane(uint32) { return nullptr; }
-void *ATGetUIPaneAs(uint32, uint32) { return nullptr; }
+void *ATGetUIPaneAs(uint32 id, uint32 iid) { return ATUIDebuggerGetPaneAs(id, iid); }
 ATUIPane *ATGetUIPaneByFrame(ATFrameWindow*) { return nullptr; }
 void ATCloseUIPane(uint32 id) {
 	// Delegate to the ImGui pane manager
@@ -271,8 +274,8 @@ void ATCloseUIPane(uint32 id) {
 }
 
 ATUIPane *ATUIGetActivePane() { return nullptr; }
-void *ATUIGetActivePaneAs(uint32) { return nullptr; }
-uint32 ATUIGetActivePaneId() { return 0; }
+void *ATUIGetActivePaneAs(uint32 iid) { return ATUIDebuggerGetPaneAs(ATUIDebuggerGetFocusedPaneId(), iid); }
+uint32 ATUIGetActivePaneId() { return ATUIDebuggerGetFocusedPaneId(); }
 
 bool ATRestorePaneLayout(const char*) { return false; }
 void ATSavePaneLayout(const char*) {}
@@ -297,14 +300,16 @@ void ATConsoleRemoveFontNotification(const vdfunction<void()>*) {}
 //
 // The bridge server has no UI pane registry, so the helper is gated.
 
-#ifndef ALTIRRA_BRIDGE_HEADLESS
-extern bool ATUIDebuggerHistoryPaneJumpToCycle(uint32 cycle);
-#endif
-
 void ATConsolePingBeamPosition(uint32 frame, uint32 vpos, uint32 hpos) {
 #ifdef ALTIRRA_BRIDGE_HEADLESS
 	(void)frame; (void)vpos; (void)hpos;
 #else
+	auto *historyPane = static_cast<IATUIDebuggerHistoryPane *>(
+		ATGetUIPaneAs(kATUIPaneId_History, IATUIDebuggerHistoryPane::kTypeID));
+
+	if (!historyPane)
+		return;
+
 	extern ATSimulator g_sim;
 	const auto& decoder = g_sim.GetTimestampDecoder();
 
@@ -314,7 +319,7 @@ void ATConsolePingBeamPosition(uint32 frame, uint32 vpos, uint32 hpos) {
 		+ 114u * vpos
 		+ hpos;
 
-	if (ATUIDebuggerHistoryPaneJumpToCycle(cycle))
+	if (historyPane->JumpToCycle(cycle))
 		return;
 
 	ATActivateUIPane(kATUIPaneId_History, true);

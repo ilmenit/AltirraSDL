@@ -1184,7 +1184,8 @@ static void RenderHelpMenu(ATUIState &state) {
 	if (ImGui::MenuItem("Command-Line Help"))
 		state.showCommandLineHelp = true;
 
-	ImGui::MenuItem("Export Debugger Help...", nullptr, false, false);  // placeholder
+	if (ImGui::MenuItem("Export Debugger Help..."))
+		ATUIExportDebugHelp();
 	ImGui::MenuItem("Check For Updates", nullptr, false, false);       // placeholder — N/A on Linux
 	if (ImGui::MenuItem("Altirra Home..."))
 		ATLaunchURL(L"https://www.virtualdub.org/altirra.html");

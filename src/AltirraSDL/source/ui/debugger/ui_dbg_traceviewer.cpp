@@ -94,7 +94,7 @@ private:
 static ATImGuiTraceViewerPane *s_pActiveTraceViewerPane = nullptr;
 
 ATImGuiTraceViewerPane::ATImGuiTraceViewerPane()
-	: ATImGuiDebuggerPane(kATUIPaneId_Profiler, "Performance Analyzer")
+	: ATImGuiDebuggerPane(kATUIPaneId_PerformanceAnalyzerSDL, "Performance Analyzer")
 {
 	mContext.mSettings.mbTraceCpuInsns = true;
 
@@ -865,7 +865,7 @@ void ATImGuiTraceViewerPane::RenderMemoryStatisticsPopup() {
 // =========================================================================
 
 void ATUIDebuggerEnsureTraceViewerPane() {
-	if (!ATUIDebuggerGetPane(kATUIPaneId_Profiler)) {
+	if (!ATUIDebuggerGetPane(kATUIPaneId_PerformanceAnalyzerSDL)) {
 		auto *pane = new ATImGuiTraceViewerPane();
 		ATUIDebuggerRegisterPane(pane);
 	}

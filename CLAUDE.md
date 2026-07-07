@@ -185,6 +185,41 @@ defaults rather than relying on the member initialiser.  The canonical
 reference for "what Windows sets" is `settings.cpp` (load path) and the
 `cmd*.cpp` command handlers (UI defaults).
 
+### Persisting fork-only settings
+
+Any user-visible fork-added toggle or selection must survive a restart.
+Two questions decide where it lives:
+
+1. **Where would Windows store it?**
+   - *Per-profile* — anything that would sit in a `settings.cpp`
+     category if upstream had the feature (view modes, emulation
+     toggles, per-profile UI behaviour).  Persist it via the settings
+     callback registry (`ATSettingsRegisterLoadCallback` /
+     `ATSettingsRegisterSaveCallback` in `settings.h`), self-filtered
+     on the matching `kATSettingsCategory_*` bit.  The values land in
+     the same per-profile registry key as native category data, so
+     profile inheritance, temporary-profile suppression (netplay), and
+     the exit/suspend/profile-switch save lifecycle come for free.
+   - *Machine-global* — file paths, window geometry, touch layout,
+     anything meaningless per-profile.  Use direct `VDRegistryAppKey`
+     writes in a fork-owned namespace (`Shader Presets`, `Mobile`,
+     ...).  Add an immediate `ATRegistryFlushToDisk()` only on paths
+     where Android may kill the process before a clean exit.
+
+2. **All fork persistence code lives in fork-owned files.**  Never add
+   new exchange lines to the upstream-tracked `settings.cpp`.
+   `ATUIState` fields belong in the callback pair in
+   `source/ui/core/ui_state_settings.cpp`; conditionally-compiled
+   subsystems register their own callbacks from their own module
+   (see `emote_netplay.cpp`).  Callbacks must be registered before the
+   initial profile load (`ATUIStateSettingsInit()` in `main_sdl3.cpp`)
+   or the first `ATLoadSettings` pass won't restore the values.
+
+The autosuggest block inside `ATSettingsExchangeView` (`settings.cpp`)
+predates this rule and is legacy: migrate it to a callback when
+convenient (keeping the same key names so user settings survive), and
+don't grow it.
+
 ### Debugging rendering or emulation mismatches
 
 When the SDL3 output differs from Windows Altirra, the problem is almost

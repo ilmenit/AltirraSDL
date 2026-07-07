@@ -259,7 +259,19 @@ void DisplayBackendGL::RenderFrame(float dstX, float dstY, float dstW, float dst
 		mRenderTargetFBO = mLibrashaderFBO.fbo;
 
 		// Render built-in effects into the FBO at (0,0,vpW,vpH)
+		const bool savedClipEnabled = mbOutputClipEnabled;
+		const int savedClipX = mOutputClipX;
+		const int savedClipY = mOutputClipY;
+		const int savedClipW = mOutputClipW;
+		const int savedClipH = mOutputClipH;
+		mbOutputClipEnabled = false;
+		glDisable(GL_SCISSOR_TEST);
 		RenderFrameInner(0.0f, 0.0f, dstW, dstH, srcW, srcH);
+		mbOutputClipEnabled = savedClipEnabled;
+		mOutputClipX = savedClipX;
+		mOutputClipY = savedClipY;
+		mOutputClipW = savedClipW;
+		mOutputClipH = savedClipH;
 
 		// Restore
 		mRenderTargetFBO = 0;
@@ -308,18 +320,74 @@ void DisplayBackendGL::RenderFrame(float dstX, float dstY, float dstW, float dst
 		// SDL convention (Y=0 at top).  Flip src Y to compensate.
 		int scrX = (int)dstX;
 		int scrY = savedWinH - (int)(dstY + dstH);
+		ApplyOutputClip();
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, mLibrashaderFBO.fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 		glBlitFramebuffer(
 			0, vpH, vpW, 0,                          // src: flip Y (bottom-up → top-down)
 			scrX, scrY, scrX + vpW, scrY + vpH,      // dst: screen position
 			GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		ClearOutputClip();
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 		glViewport(0, 0, savedWinW, savedWinH);
 		return;
 	}
 
 	RenderFrameInner(dstX, dstY, dstW, dstH, srcW, srcH);
+}
+
+void DisplayBackendGL::RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
+	int srcW, int srcH, float clipX, float clipY, float clipW, float clipH)
+{
+	if (!SetOutputClip(dstX, dstY, dstW, dstH, clipX, clipY, clipW, clipH))
+		return;
+
+	RenderFrame(dstX, dstY, dstW, dstH, srcW, srcH);
+	ClearOutputClip();
+}
+
+bool DisplayBackendGL::SetOutputClip(float dstX, float dstY, float dstW, float dstH,
+	float clipX, float clipY, float clipW, float clipH)
+{
+	ClearOutputClip();
+
+	if (dstW <= 0.0f || dstH <= 0.0f || clipW <= 0.0f || clipH <= 0.0f)
+		return false;
+
+	const float visibleL = std::max(dstX, clipX);
+	const float visibleT = std::max(dstY, clipY);
+	const float visibleR = std::min(dstX + dstW, clipX + clipW);
+	const float visibleB = std::min(dstY + dstH, clipY + clipH);
+
+	if (visibleR <= visibleL || visibleB <= visibleT)
+		return false;
+
+	mOutputClipX = (int)std::floor(visibleL);
+	mOutputClipY = (int)std::floor(visibleT);
+	mOutputClipW = (int)std::ceil(visibleR) - mOutputClipX;
+	mOutputClipH = (int)std::ceil(visibleB) - mOutputClipY;
+
+	if (mOutputClipW <= 0 || mOutputClipH <= 0)
+		return false;
+
+	mbOutputClipEnabled = true;
+	return true;
+}
+
+void DisplayBackendGL::ClearOutputClip() {
+	mbOutputClipEnabled = false;
+	glDisable(GL_SCISSOR_TEST);
+}
+
+void DisplayBackendGL::ApplyOutputClip() {
+	if (!mbOutputClipEnabled) {
+		glDisable(GL_SCISSOR_TEST);
+		return;
+	}
+
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(mOutputClipX, mWinH - (mOutputClipY + mOutputClipH),
+		mOutputClipW, mOutputClipH);
 }
 
 void DisplayBackendGL::RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
@@ -380,7 +448,9 @@ void DisplayBackendGL::RenderFrameInner(float dstX, float dstY, float dstW, floa
 	glBindTexture(GL_TEXTURE_2D, mEmuTexture);
 	glUniform1i(mPassthroughLoc_SourceTex, 0);
 
+	ApplyOutputClip();
 	GLDrawFullscreenTriangle();
+	ClearOutputClip();
 
 	glUseProgram(0);
 	glBindVertexArray(0);
@@ -740,7 +810,9 @@ mPALProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS_NoFlip, kGLSL_PALArtifa
 		glBindTexture(GL_TEXTURE_2D, sourceTex);
 		glUniform1i(mPassthroughLoc_SourceTex, 0);
 
+		ApplyOutputClip();
 		GLDrawFullscreenTriangle();
+		ClearOutputClip();
 		glUseProgram(0);
 		glBindVertexArray(0);
 		glViewport(0, 0, mWinW, mWinH);
@@ -850,7 +922,9 @@ mPALProgram = GLCreateProgram(kGLSL_FullscreenTriangleVS_NoFlip, kGLSL_PALArtifa
 		glUniform1f(u.uVignetteIntensity, mScreenFX.mVignetteIntensity);
 	}
 
+	ApplyOutputClip();
 	GLDrawFullscreenTriangle();
+	ClearOutputClip();
 
 	// Clean up bound textures on auxiliary units
 	if ((features & kSFX_DotMask) && mMaskTexture) {

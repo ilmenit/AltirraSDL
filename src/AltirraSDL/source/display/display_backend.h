@@ -44,6 +44,13 @@ public:
 	virtual void RenderFrame(float dstX, float dstY, float dstW, float dstH,
 		int srcW, int srcH) = 0;
 
+	// Render the emulator frame to the full destination rect while constraining
+	// output to a top-left-origin clip rect. This preserves zoom/pan source
+	// mapping for debugger panes where the destination can extend outside the
+	// visible pane viewport.
+	virtual void RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
+		int srcW, int srcH, float clipX, float clipY, float clipW, float clipH) = 0;
+
 	// Finalize and present the frame (swap buffers / SDL_RenderPresent).
 	virtual void Present() = 0;
 

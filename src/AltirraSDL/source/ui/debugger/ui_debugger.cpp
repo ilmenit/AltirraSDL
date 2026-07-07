@@ -2,27 +2,46 @@
 //	Replaces Win32 ATUIPane / ATContainerWindow docking with ImGui docking.
 
 #include <stdafx.h>
+#include <condition_variable>
+#include <mutex>
 #include <vector>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/error.h>
 #include <vd2/system/vdstl.h>
+#include <vd2/system/text.h>
+#include <vd2/Kasumi/pixmaputils.h>
+#include <at/atcore/configvar.h>
 #include <at/atnativeui/uiframe.h>
+#include <at/atnativeui/genericdialog.h>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "ui_debugger.h"
 #include "ui_main.h"
+#include "ui_frame_capture.h"
 #include "console.h"
 #include "debugger.h"
 #include "simulator.h"
 #include "display_sdl3_impl.h"
 #include "display_backend.h"
 #include "ui_textselection.h"
+#include "ui_autosuggest.h"
 #include "logging.h"
 #include "ui_fonts.h"
+#include "uiaccessors.h"
+#include "uitypes.h"
+#include "gtia.h"
+#include "uidisplay.h"
+#include "videowriter.h"
+#include "oshelper.h"
 
 extern ATSimulator g_sim;
 extern VDVideoDisplaySDL3 *g_pDisplay;
+extern SDL_Window *g_pWindow;
+
+ATConfigVarBool g_ATCVRecordingVideoShowMotionVectors(
+	"recording.video.show_motion_vectors",
+	false);
 
 // =========================================================================
 // ATImGuiDebuggerPane base class
@@ -46,6 +65,20 @@ void ATImGuiDebuggerPane::OnDebuggerEvent(ATDebugEvent eventId) {
 	// Subclasses override as needed
 }
 
+bool ATImGuiDebuggerPane::OnPaneCommand(ATUIPaneCommandId id) {
+	return false;
+}
+
+void ATImGuiDebuggerPane::OnFrame() {
+}
+
+void *ATImGuiDebuggerPane::AsPaneInterface(uint32 iid) {
+	if (iid == IATUIDebuggerPane::kTypeID)
+		return static_cast<IATUIDebuggerPane *>(this);
+
+	return nullptr;
+}
+
 // =========================================================================
 // Pane manager globals
 // =========================================================================
@@ -54,6 +87,20 @@ namespace {
 	struct PaneEntry {
 		uint32 id;
 		vdrefptr<ATImGuiDebuggerPane> pane;
+	};
+
+	struct DisplayPaneRenderCallbackData {
+		IDisplayBackend *backend = nullptr;
+		float x = 0;
+		float y = 0;
+		float w = 0;
+		float h = 0;
+		float clipX = 0;
+		float clipY = 0;
+		float clipW = 0;
+		float clipH = 0;
+		int srcW = 0;
+		int srcH = 0;
 	};
 
 	std::vector<PaneEntry> g_debugPanes;
@@ -68,6 +115,299 @@ namespace {
 		ATPaneClassCreator classCreator;
 	};
 	std::vector<PaneCreatorEntry> g_paneCreators;
+
+	using ATImGuiPaneCreator = void (*)();
+
+	struct ImGuiPaneCreatorEntry {
+		uint32 id;
+		ATImGuiPaneCreator creator;
+	};
+	std::vector<ImGuiPaneCreatorEntry> g_imguiPaneCreators;
+
+	class ATSDLDisplayPaneInterface final : public IATDisplayPane {
+	public:
+		void ReleaseMouse() override {
+			ATUIReleaseMouse();
+		}
+
+		void ToggleCaptureMouse() override {
+			if (ATUIIsMouseCaptured())
+				ATUIReleaseMouse();
+			else
+				ATUICaptureMouse();
+		}
+
+		void OnSize() override {
+			UpdateFilterMode();
+		}
+
+		void ResetDisplay() override {
+			if (g_pDisplay)
+				g_pDisplay->Reset();
+		}
+
+		bool IsTextSelected() const override {
+			return ATUIIsTextSelected();
+		}
+
+		void Deselect() override {
+			ATUITextDeselect();
+		}
+
+		void SelectAll() override {
+			ATUITextSelectAll();
+		}
+
+		void Copy(ATTextCopyMode copyMode) override {
+			ATUITextCopy(copyMode);
+		}
+
+		void CopyFrame(bool trueAspect) override {
+			ATUIRequestCopyFrame(trueAspect);
+		}
+
+		bool CopyFrameImage(bool trueAspect, VDPixmapBuffer& buf) override {
+			return ATUICaptureEmulatorFrame(g_sim,
+				trueAspect ? ATUIFrameCaptureMode::TrueAspect : ATUIFrameCaptureMode::Display,
+				buf);
+		}
+
+		void SaveFrame(bool trueAspect, const wchar_t *path = nullptr) override {
+			if (!path || !*path) {
+				ATUIShowSaveFrameDialog(g_pWindow, trueAspect);
+				return;
+			}
+
+			VDPixmapBuffer frame;
+			if (!CopyFrameImage(trueAspect, frame)) {
+				LOG_ERROR("UI", "Save frame: no emulator frame is available");
+				return;
+			}
+
+			ATSaveFrame(frame, path);
+		}
+
+		void Paste(const wchar_t *s, size_t len) override {
+			ATUIPasteTextDirect(s, len);
+		}
+
+		void UpdateTextDisplay(bool) override {
+			// SDL text selection renders directly over the display and does not use
+			// the native enhanced-text replacement pipeline.
+		}
+
+		void UpdateTextModeFont() override {
+			// No native enhanced-text font pipeline in SDL.
+		}
+
+		void UpdateFilterMode() override {
+			if (g_pDisplay)
+				g_pDisplay->UpdateScaleMode();
+
+			if (IDisplayBackend *backend = ATUIGetDisplayBackend())
+				backend->SetFilterMode(ATUIGetDisplayFilterMode());
+		}
+
+		void UpdateCustomRefreshRate() override {
+			// The SDL frame pacer owns refresh timing.
+		}
+
+		void RequestRenderedFrame(vdfunction<void(const VDPixmap *)> fn) override {
+			VDPixmapBuffer frame;
+			if (ATUICaptureEmulatorFrame(g_sim, ATUIFrameCaptureMode::Display, frame))
+				fn(&frame);
+			else
+				fn(nullptr);
+		}
+
+		void SetVideoWriter(IATVideoWriter *writer) override {
+			mpVideoWriter = writer;
+		}
+
+		IATVideoWriter *GetVideoWriter() const {
+			return mpVideoWriter;
+		}
+
+		void SetAutoSuggestEnabled(bool enabled) override {
+			ATUIAutoSuggest::SetAutoSuggestEnabled(enabled);
+		}
+
+		void ShowSuggestions() override {
+			ATUIAutoSuggest::ShowSuggestionsOnce();
+		}
+
+	private:
+		IATVideoWriter *mpVideoWriter = nullptr;
+	};
+
+	ATSDLDisplayPaneInterface g_displayPaneInterface;
+}
+
+static void RenderDisplayPaneFrameCallback(const ImDrawList *, const ImDrawCmd *cmd) {
+	const auto *data = static_cast<const DisplayPaneRenderCallbackData *>(cmd->UserCallbackData);
+	if (!data || !data->backend)
+		return;
+
+	data->backend->RenderFrameClipped(data->x, data->y, data->w, data->h,
+		data->srcW, data->srcH, data->clipX, data->clipY, data->clipW, data->clipH);
+}
+
+static void DrawDisplayPaneVideoWriterOverlay(
+	ImDrawList *drawList,
+	const ImVec2& imagePos,
+	const ImVec2& imageSize)
+{
+	IATVideoWriter *writer = g_displayPaneInterface.GetVideoWriter();
+	if (!writer || !g_ATCVRecordingVideoShowMotionVectors)
+		return;
+
+	ATVideoRecordingDebugInfo debugInfo;
+	if (!writer->GetDebugInfo(debugInfo)
+		|| debugInfo.mImageWidth == 0
+		|| debugInfo.mImageHeight == 0
+		|| debugInfo.mVideoDestRect.empty()
+		|| imageSize.x <= 0.0f
+		|| imageSize.y <= 0.0f)
+	{
+		return;
+	}
+
+	const float mvScaleX = imageSize.x / debugInfo.mVideoDestRect.width();
+	const float mvScaleY = imageSize.y / debugInfo.mVideoDestRect.height();
+	const float mvBlockStepX = (float)debugInfo.mBlockWidth * mvScaleX;
+	const float mvBlockStepY = (float)debugInfo.mBlockHeight * mvScaleY;
+
+	if (mvBlockStepX <= 0.0f || mvBlockStepY <= 0.0f)
+		return;
+
+	if (debugInfo.mMotionVectors.size()
+		< (size_t)debugInfo.mNumBlocksX * debugInfo.mNumBlocksY)
+	{
+		return;
+	}
+
+	const auto *mv = debugInfo.mMotionVectors.data();
+	drawList->AddRectFilled(
+		imagePos,
+		ImVec2(imagePos.x + imageSize.x, imagePos.y + imageSize.y),
+		IM_COL32(0, 0, 0, 192));
+
+	float y = imagePos.y
+		+ 0.5f * mvBlockStepY
+		- debugInfo.mVideoDestRect.top * mvScaleY;
+
+	for (uint32 by = 0; by < debugInfo.mNumBlocksY; ++by) {
+		float x = imagePos.x
+			+ 0.5f * mvBlockStepX
+			- debugInfo.mVideoDestRect.left * mvScaleX;
+
+		for (uint32 bx = 0; bx < debugInfo.mNumBlocksX; ++bx) {
+			const ImVec2 p0(x, y);
+			const ImVec2 p1(x + mv->mX * mvScaleX, y + mv->mY * mvScaleY);
+
+			drawList->AddLine(p0, p1, IM_COL32(255, 255, 255, 255));
+			drawList->AddRectFilled(
+				ImVec2(x, y),
+				ImVec2(x + 1.0f, y + 1.0f),
+				IM_COL32(255, 255, 255, 255));
+
+			++mv;
+			x += mvBlockStepX;
+		}
+
+		y += mvBlockStepY;
+	}
+}
+
+static void SaveImGuiLayoutNow() {
+	ImGuiIO& io = ImGui::GetIO();
+	if (io.IniFilename && *io.IniFilename)
+		ImGui::SaveIniSettingsToDisk(io.IniFilename);
+}
+
+static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
+	float w = viewportW;
+	float h = viewportH;
+
+	if (w < 1.0f)
+		w = 1.0f;
+	if (h < 1.0f)
+		h = 1.0f;
+
+	const auto& gtia = g_sim.GetGTIA();
+	const ATDisplayStretchMode stretchMode = ATUIGetDisplayStretchMode();
+
+	if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
+		|| stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio)
+	{
+		int sw = 1;
+		int sh = 1;
+		bool rgb32 = false;
+		gtia.GetRawFrameFormat(sw, sh, rgb32);
+
+		const float fsw = (float)((double)sw * gtia.GetPixelAspectRatio());
+		const float fsh = (float)sh;
+		float zoom = std::min(w / fsw, h / fsh);
+
+		if (stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio && zoom > 1.0f)
+			zoom = std::floor(zoom * 1.0001f);
+
+		w = fsw * zoom;
+		h = fsh * zoom;
+	} else if (stretchMode == kATDisplayStretchMode_SquarePixels
+		|| stretchMode == kATDisplayStretchMode_Integral)
+	{
+		int sw = 1;
+		int sh = 1;
+		gtia.GetFrameSize(sw, sh);
+
+		const float fsw = (float)sw;
+		const float fsh = (float)sh;
+
+		const float continuousRatio = std::min(w / fsw, h / fsh);
+		const float integerRatio = std::floor(continuousRatio);
+		const bool wasteTooMuch =
+			(stretchMode == kATDisplayStretchMode_Integral)
+			&& (integerRatio >= 1.0f)
+			&& (continuousRatio - integerRatio >= 0.25f * integerRatio);
+
+		if (integerRatio < 1.0f
+			|| stretchMode == kATDisplayStretchMode_SquarePixels
+			|| wasteTooMuch)
+		{
+			if (w * fsh < h * fsw)
+				h = (fsh * w) / fsw;
+			else
+				w = (fsw * h) / fsh;
+		} else {
+			w = fsw * integerRatio;
+			h = fsh * integerRatio;
+		}
+	}
+
+	const float displayZoom = ATUIGetDisplayZoom();
+	w *= displayZoom;
+	h *= displayZoom;
+
+	const vdfloat2 pan = ATUIGetDisplayPanOffset();
+	const vdfloat2 relOrigin = vdfloat2{0.5f, 0.5f} - pan;
+
+	float left = w * (relOrigin.x - 1.0f) + viewportW * 0.5f;
+	float top = h * (relOrigin.y - 1.0f) + viewportH * 0.5f;
+	float right = w * relOrigin.x + viewportW * 0.5f;
+	float bottom = h * relOrigin.y + viewportH * 0.5f;
+
+	float errL = left - std::round(left);
+	float errR = right - std::round(right);
+	float errT = top - std::round(top);
+	float errB = bottom - std::round(bottom);
+
+	left -= 0.5f * (errL + errR);
+	right -= 0.5f * (errL + errR);
+	top -= 0.5f * (errT + errB);
+	bottom -= 0.5f * (errT + errB);
+
+	return ImVec4(left, top, right, bottom);
 }
 
 // =========================================================================
@@ -96,6 +436,17 @@ void ATRegisterUIPaneClass(uint32 id, ATPaneClassCreator creator) {
 	g_paneCreators.push_back({id, nullptr, creator});
 }
 
+static void ATRegisterImGuiPaneType(uint32 id, ATImGuiPaneCreator creator) {
+	for (auto& e : g_imguiPaneCreators) {
+		if (e.id == id) {
+			e.creator = creator;
+			return;
+		}
+	}
+
+	g_imguiPaneCreators.push_back({id, creator});
+}
+
 // Forward declarations for pane creation functions
 extern void ATUIDebuggerEnsureConsolePane();
 extern void ATUIDebuggerEnsureRegistersPane();
@@ -108,31 +459,37 @@ extern void ATUIDebuggerEnsureCallStackPane();
 extern void ATUIDebuggerEnsureTargetsPane();
 extern void ATUIDebuggerEnsureDebugDisplayPane();
 extern void ATUIDebuggerEnsurePrinterOutputPane();
+extern void ATUIDebuggerEnsureProfileViewPane();
 extern void ATUIDebuggerEnsureTraceViewerPane();
 
 static void EnsurePaneExists(uint32 id) {
-	switch (id) {
-		case kATUIPaneId_Console:     ATUIDebuggerEnsureConsolePane(); break;
-		case kATUIPaneId_Registers:   ATUIDebuggerEnsureRegistersPane(); break;
-		case kATUIPaneId_Disassembly: ATUIDebuggerEnsureDisassemblyPane(); break;
-		case kATUIPaneId_History:     ATUIDebuggerEnsureHistoryPane(); break;
-		case kATUIPaneId_Breakpoints: ATUIDebuggerEnsureBreakpointsPane(); break;
-		case kATUIPaneId_CallStack:   ATUIDebuggerEnsureCallStackPane(); break;
-		case kATUIPaneId_Targets:     ATUIDebuggerEnsureTargetsPane(); break;
-		case kATUIPaneId_DebugDisplay: ATUIDebuggerEnsureDebugDisplayPane(); break;
-		case kATUIPaneId_PrinterOutput: ATUIDebuggerEnsurePrinterOutputPane(); break;
-		case kATUIPaneId_Profiler:   ATUIDebuggerEnsureTraceViewerPane(); break;
-		default:
-			// Memory pane instances: kATUIPaneId_MemoryN + 0..3
-			if (id >= kATUIPaneId_MemoryN && id <= kATUIPaneId_MemoryN + 3) {
-				ATUIDebuggerEnsureMemoryPane(id - kATUIPaneId_MemoryN);
-			} else if (id >= kATUIPaneId_WatchN && id <= kATUIPaneId_WatchN + 3) {
-				ATUIDebuggerEnsureWatchPane(id - kATUIPaneId_WatchN);
-			} else {
-				LOG_INFO("Debugger", "ATActivateUIPane(0x%x) — no ImGui pane implemented yet", id);
-			}
-			break;
+	for (const auto& e : g_imguiPaneCreators) {
+		if (e.id == id) {
+			e.creator();
+			return;
+		}
 	}
+
+	// Memory/Watch are native class-style pane families. Keep the indexed
+	// dispatch centralized here instead of duplicating four fixed IDs.
+	if (id >= kATUIPaneId_MemoryN && id <= kATUIPaneId_MemoryN + 3) {
+		ATUIDebuggerEnsureMemoryPane(id - kATUIPaneId_MemoryN);
+		return;
+	}
+
+	if (id >= kATUIPaneId_WatchN && id <= kATUIPaneId_WatchN + 3) {
+		ATUIDebuggerEnsureWatchPane(id - kATUIPaneId_WatchN);
+		return;
+	}
+
+	for (const auto& e : g_paneCreators) {
+		if (e.id == id || (e.classCreator && id >= e.id && id < e.id + 4)) {
+			LOG_INFO("Debugger", "ATActivateUIPane(0x%x) — native pane is registered but has no SDL ImGui factory", id);
+			return;
+		}
+	}
+
+	LOG_INFO("Debugger", "ATActivateUIPane(0x%x) — no ImGui pane implemented yet", id);
 }
 
 void ATActivateUIPane(uint32 id, bool giveFocus, bool visible, uint32 relid, int reldock) {
@@ -209,11 +566,160 @@ ATImGuiDebuggerPane *ATUIDebuggerGetPane(uint32 paneId) {
 	return nullptr;
 }
 
+void *ATUIDebuggerGetPaneAs(uint32 paneId, uint32 iid) {
+	if (paneId == kATUIPaneId_Display && iid == IATDisplayPane::kTypeID)
+		return &g_displayPaneInterface;
+
+	ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(paneId);
+	return pane ? pane->AsPaneInterface(iid) : nullptr;
+}
+
+IATDisplayPane *ATUIDebuggerGetDisplayPaneInterface() {
+	return &g_displayPaneInterface;
+}
+
 // =========================================================================
 // Init / Shutdown
 // =========================================================================
 
+static bool ATConsoleConfirmScriptLoadSDL() {
+	ATUIGenericDialogOptions opts {};
+
+	opts.mpCaption = L"Debugger script found";
+	opts.mpTitle = L"Debugger script found";
+	opts.mpMessage =
+		L"Do you want to run the debugger script that is included with this image?\n"
+		L"\n"
+		L"Debugger scripts are powerful and should only be run for programs you are debugging and from sources that you trust. "
+		L"Automatic debugger script loading and confirmation settings can be toggled in the Debugger section of Configure System.";
+	opts.mpIgnoreTag = "RunDebuggerScript";
+	opts.mIconType = kATUIGenericIconType_Warning;
+	opts.mResultMask = kATUIGenericResultMask_OKCancel;
+	opts.mValidIgnoreMask = kATUIGenericResultMask_OKCancel;
+	opts.mAspectLimit = 4.0f;
+
+	bool wasIgnored = false;
+	opts.mpCustomIgnoreFlag = &wasIgnored;
+
+	const bool result = (ATUIShowGenericDialogAutoCenter(opts) == kATUIGenericResult_OK);
+
+	if (wasIgnored) {
+		if (IATDebugger *dbg = ATGetDebugger()) {
+			dbg->SetScriptAutoLoadMode(result
+				? ATDebuggerScriptAutoLoadMode::Enabled
+				: ATDebuggerScriptAutoLoadMode::Disabled);
+		}
+	}
+
+	return result;
+}
+
+static bool g_debuggerFileRequestOverrideActive = false;
+static VDStringW g_debuggerFileRequestOverridePath;
+
+#if !defined(__EMSCRIPTEN__)
+struct ATDebuggerFileDialogSyncState {
+	std::mutex mMutex;
+	std::condition_variable mCondition;
+	VDStringW mPath;
+	bool mbDone = false;
+};
+
+static void SDLCALL ATDebuggerFileDialogCallback(void *userdata,
+	const char * const *filelist, int)
+{
+	auto *state = static_cast<ATDebuggerFileDialogSyncState *>(userdata);
+	if (!state)
+		return;
+
+	VDStringW path;
+	if (filelist && filelist[0])
+		path = VDTextU8ToW(filelist[0], -1);
+	else if (!filelist)
+		LOG_ERROR("Debugger", "Debugger file dialog failed: %s", SDL_GetError());
+
+	{
+		std::lock_guard<std::mutex> lock(state->mMutex);
+		state->mPath = path;
+		state->mbDone = true;
+	}
+	state->mCondition.notify_one();
+}
+#endif
+
+static void ATConsoleRequestFileSDL(ATDebuggerRequestFileEvent& event) {
+	if (g_debuggerFileRequestOverrideActive) {
+		event.mPath = g_debuggerFileRequestOverridePath;
+		return;
+	}
+
+#if defined(__EMSCRIPTEN__)
+	LOG_ERROR("Debugger", "Debugger file request ignored: synchronous file requests are unsupported on WebAssembly");
+	event.mPath.clear();
+	return;
+#else
+	if (!SDL_IsMainThread()) {
+		LOG_ERROR("Debugger", "Debugger file request ignored off the SDL main thread");
+		return;
+	}
+
+	static const SDL_DialogFileFilter kAllFilesFilter[] = {
+		{ "All files", "*" },
+	};
+
+	ATDebuggerFileDialogSyncState state;
+
+	if (event.mbSave) {
+		SDL_ShowSaveFileDialog(ATDebuggerFileDialogCallback, &state, g_pWindow,
+			kAllFilesFilter, 1, nullptr);
+	} else {
+		SDL_ShowOpenFileDialog(ATDebuggerFileDialogCallback, &state, g_pWindow,
+			kAllFilesFilter, 1, nullptr, false);
+	}
+
+	std::unique_lock<std::mutex> lock(state.mMutex);
+	while (!state.mbDone) {
+		lock.unlock();
+		SDL_PumpEvents();
+		lock.lock();
+		state.mCondition.wait_for(lock, std::chrono::milliseconds(50));
+	}
+
+	event.mPath = state.mPath;
+#endif
+}
+
+bool ATUIDebuggerRequestFileForTest(bool save, const char *utf8Path, VDStringW& outPath) {
+	ATDebuggerRequestFileEvent event {};
+	event.mbSave = save;
+
+	g_debuggerFileRequestOverridePath = utf8Path ? VDTextU8ToW(utf8Path, -1) : VDStringW();
+	g_debuggerFileRequestOverrideActive = true;
+	ATConsoleRequestFileSDL(event);
+	g_debuggerFileRequestOverrideActive = false;
+	g_debuggerFileRequestOverridePath.clear();
+
+	outPath = event.mPath;
+	return true;
+}
+
 void ATUIDebuggerInit() {
+	ATRegisterImGuiPaneType(kATUIPaneId_Console, ATUIDebuggerEnsureConsolePane);
+	ATRegisterImGuiPaneType(kATUIPaneId_Registers, ATUIDebuggerEnsureRegistersPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_Disassembly, ATUIDebuggerEnsureDisassemblyPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_History, ATUIDebuggerEnsureHistoryPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_Breakpoints, ATUIDebuggerEnsureBreakpointsPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_CallStack, ATUIDebuggerEnsureCallStackPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_Targets, ATUIDebuggerEnsureTargetsPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_DebugDisplay, ATUIDebuggerEnsureDebugDisplayPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_PrinterOutput, ATUIDebuggerEnsurePrinterOutputPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_Profiler, ATUIDebuggerEnsureProfileViewPane);
+	ATRegisterImGuiPaneType(kATUIPaneId_PerformanceAnalyzerSDL, ATUIDebuggerEnsureTraceViewerPane);
+
+	if (IATDebugger *dbg = ATGetDebugger()) {
+		dbg->SetScriptAutoLoadConfirmFn(ATConsoleConfirmScriptLoadSDL);
+		dbg->SetOnRequestFile(ATConsoleRequestFileSDL);
+	}
 }
 
 extern void ATUIDebuggerClearSourceWindows();
@@ -226,6 +732,7 @@ void ATUIDebuggerShutdown() {
 	}
 	g_debugPanes.clear();
 	g_paneCreators.clear();
+	g_imguiPaneCreators.clear();
 	g_debuggerOpen = false;
 	ATUIDebuggerClearSourceWindows();
 }
@@ -239,38 +746,46 @@ static void RenderDisplayPane() {
 	bool open = true;
 	if (ImGui::Begin("Display", &open)) {
 		IDisplayBackend *backend = ATUIGetDisplayBackend();
-		void *texID = backend && backend->HasTexture() ? backend->GetImGuiTextureID() : nullptr;
-		if (texID) {
+		if (backend && backend->HasTexture()) {
 			ImVec2 avail = ImGui::GetContentRegionAvail();
 			if (avail.x > 0 && avail.y > 0) {
-				// Maintain aspect ratio (Atari ~1.2:1 pixel aspect)
 				float texW = (float)backend->GetTextureWidth();
 				float texH = (float)backend->GetTextureHeight();
 				if (texW > 0 && texH > 0) {
-					float aspectRatio = texW / texH;
-					float drawW = avail.x;
-					float drawH = drawW / aspectRatio;
-					if (drawH > avail.y) {
-						drawH = avail.y;
-						drawW = drawH * aspectRatio;
-					}
-					// Center in available space
-					float offsetX = (avail.x - drawW) * 0.5f;
-					float offsetY = (avail.y - drawH) * 0.5f;
-					if (offsetX > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
-					if (offsetY > 0) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
+					const ImVec2 viewportPos = ImGui::GetCursorScreenPos();
+					const ImVec4 frameRect = ComputeDisplayPaneFrameRect(avail.x, avail.y);
+					const ImVec2 imagePos(
+						viewportPos.x + frameRect.x,
+						viewportPos.y + frameRect.y);
+					const ImVec2 imageSize(
+						frameRect.z - frameRect.x,
+						frameRect.w - frameRect.y);
 
-					// Record image position before drawing
-					ImVec2 imagePos = ImGui::GetCursorScreenPos();
-					ImVec2 imageSize(drawW, drawH);
+					ImGui::InvisibleButton("##DisplayFrameViewport", avail);
 
-					ImGui::Image((ImTextureID)texID, imageSize);
+					DisplayPaneRenderCallbackData cbData;
+					cbData.backend = backend;
+					cbData.x = imagePos.x;
+					cbData.y = imagePos.y;
+					cbData.w = imageSize.x;
+					cbData.h = imageSize.y;
+					cbData.clipX = viewportPos.x;
+					cbData.clipY = viewportPos.y;
+					cbData.clipW = avail.x;
+					cbData.clipH = avail.y;
+					cbData.srcW = backend->GetTextureWidth();
+					cbData.srcH = backend->GetTextureHeight();
+
+					ImDrawList *drawList = ImGui::GetWindowDrawList();
+					drawList->AddCallback(RenderDisplayPaneFrameCallback, &cbData, sizeof cbData);
+					drawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+					DrawDisplayPaneVideoWriterOverlay(drawList, imagePos, imageSize);
 
 					// Text selection: handle mouse drag and draw highlight overlay.
 					// Always call when a drag is active (mouse may leave window);
 					// otherwise only when the Display window is hovered.
 					ATTextSelectionState& sel = ATUIGetTextSelection();
-					if (sel.mbDragActive || ImGui::IsWindowHovered())
+					if (sel.mbDragActive || ImGui::IsItemHovered())
 						ATUITextSelectionHandleMouse(imagePos, imageSize);
 					ATUITextSelectionDrawOverlay(imagePos, imageSize);
 				}
@@ -428,6 +943,8 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 
 	g_focusedPaneId = 0;
 	for (auto& e : g_debugPanes) {
+		e.pane->OnFrame();
+
 		if (!e.pane->IsVisible())
 			continue;
 
@@ -479,6 +996,8 @@ void ATUIDebuggerOpen() {
 	if (!dbg)
 		return;
 
+	SaveImGuiLayoutNow();
+
 	g_debuggerOpen = true;
 	g_dockLayoutApplied = false;	// reset so layout is applied on next render
 	dbg->SetEnabled(true);
@@ -495,13 +1014,13 @@ void ATUIDebuggerOpen() {
 
 	// Create default panes — extends Windows ATLoadDefaultPaneLayout
 	// with Memory 1, Watch 1, and Call Stack for a richer default.
-	ATUIDebuggerEnsureConsolePane();
-	ATUIDebuggerEnsureRegistersPane();
-	ATUIDebuggerEnsureDisassemblyPane();
-	ATUIDebuggerEnsureHistoryPane();
-	ATUIDebuggerEnsureMemoryPane(0);
-	ATUIDebuggerEnsureWatchPane(0);
-	ATUIDebuggerEnsureCallStackPane();
+	EnsurePaneExists(kATUIPaneId_Console);
+	EnsurePaneExists(kATUIPaneId_Registers);
+	EnsurePaneExists(kATUIPaneId_Disassembly);
+	EnsurePaneExists(kATUIPaneId_History);
+	EnsurePaneExists(kATUIPaneId_MemoryN);
+	EnsurePaneExists(kATUIPaneId_WatchN);
+	EnsurePaneExists(kATUIPaneId_CallStack);
 
 	dbg->ShowBannerOnce();
 }
@@ -509,6 +1028,8 @@ void ATUIDebuggerOpen() {
 void ATUIDebuggerClose() {
 	if (!g_debuggerOpen)
 		return;
+
+	SaveImGuiLayoutNow();
 
 	IATDebugger *dbg = ATGetDebugger();
 	if (dbg) {
@@ -519,6 +1040,7 @@ void ATUIDebuggerClose() {
 	}
 
 	g_debuggerOpen = false;
+	g_focusedPaneId = 0;
 }
 
 bool ATUIDebuggerIsOpen() {
@@ -535,6 +1057,20 @@ uint32 ATUIDebuggerGetFocusedPaneId() {
 
 void ATUIDebuggerFocusConsole() {
 	ATActivateUIPane(kATUIPaneId_Console, true, true);
+}
+
+bool ATUIDebuggerHandleTextInput(const char *text) {
+	if (!g_debuggerOpen || !text || !*text)
+		return false;
+
+	if (ImGui::GetIO().WantTextInput)
+		return false;
+
+	if (g_focusedPaneId != kATUIPaneId_Disassembly)
+		return false;
+
+	ATUIDebuggerFocusConsoleWithText(text);
+	return true;
 }
 
 // =========================================================================
@@ -557,6 +1093,27 @@ static ATDebugSrcMode GetDebugSrcMode() {
 // Debug commands (for menu/shortcut wiring)
 // =========================================================================
 
+void ATUIDebuggerRun() {
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg)
+		return;
+
+	if (!dbg->IsEnabled()) {
+		ATUIDebuggerOpen();
+		return;
+	}
+
+	if (dbg->IsRunning() || dbg->AreCommandsQueued())
+		return;
+
+	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(g_focusedPaneId)) {
+		if (pane->OnPaneCommand(kATUIPaneCommandId_DebugRun))
+			return;
+	}
+
+	dbg->Run(GetDebugSrcMode());
+}
+
 void ATUIDebuggerRunStop() {
 	IATDebugger *dbg = ATGetDebugger();
 	if (!dbg) return;
@@ -578,8 +1135,15 @@ void ATUIDebuggerRunStop() {
 
 void ATUIDebuggerBreak() {
 	IATDebugger *dbg = ATGetDebugger();
-	if (dbg && dbg->IsEnabled())
-		dbg->Break();
+	if (!dbg)
+		return;
+
+	if (!dbg->IsEnabled()) {
+		ATUIDebuggerOpen();
+		return;
+	}
+
+	dbg->Break();
 }
 
 void ATUIDebuggerToggleBreakpoint() {
@@ -587,26 +1151,27 @@ void ATUIDebuggerToggleBreakpoint() {
 	if (!dbg || !dbg->IsEnabled())
 		return;
 
-	// Toggle breakpoint at the current frame PC — matches Windows
-	// OnCommandDebugToggleBreakpoint which delegates to the active pane.
-	uint32 pc = dbg->GetFramePC();
-	dbg->ToggleBreakpoint(pc);
+	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(g_focusedPaneId))
+		pane->OnPaneCommand(kATUIPaneCommandId_DebugToggleBreakpoint);
 }
 
 void ATUIDebuggerStepInto() {
 	IATDebugger *dbg = ATGetDebugger();
-	if (!dbg || !dbg->IsEnabled()) return;
+	if (!dbg)
+		return;
 
-	ATDebugSrcMode srcMode = GetDebugSrcMode();
+	if (!dbg->IsEnabled()) {
+		ATUIDebuggerOpen();
+		return;
+	}
 
-	// If source pane is focused, delegate to source-level stepping
-	if (srcMode == kATDebugSrcMode_Source) {
-		if (ATUIDebuggerSourceStepInto())
+	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(g_focusedPaneId)) {
+		if (pane->OnPaneCommand(kATUIPaneCommandId_DebugStepInto))
 			return;
 	}
 
 	try {
-		dbg->StepInto(srcMode);
+		dbg->StepInto(GetDebugSrcMode());
 	} catch(const MyError& e) {
 		ATConsolePrintf("%s\n", e.c_str());
 	}
@@ -614,18 +1179,21 @@ void ATUIDebuggerStepInto() {
 
 void ATUIDebuggerStepOver() {
 	IATDebugger *dbg = ATGetDebugger();
-	if (!dbg || !dbg->IsEnabled()) return;
+	if (!dbg)
+		return;
 
-	ATDebugSrcMode srcMode = GetDebugSrcMode();
+	if (!dbg->IsEnabled()) {
+		ATUIDebuggerOpen();
+		return;
+	}
 
-	// If source pane is focused, delegate to source-level stepping
-	if (srcMode == kATDebugSrcMode_Source) {
-		if (ATUIDebuggerSourceStepOver())
+	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(g_focusedPaneId)) {
+		if (pane->OnPaneCommand(kATUIPaneCommandId_DebugStepOver))
 			return;
 	}
 
 	try {
-		dbg->StepOver(srcMode);
+		dbg->StepOver(GetDebugSrcMode());
 	} catch(const MyError& e) {
 		ATConsolePrintf("%s\n", e.c_str());
 	}
@@ -633,7 +1201,19 @@ void ATUIDebuggerStepOver() {
 
 void ATUIDebuggerStepOut() {
 	IATDebugger *dbg = ATGetDebugger();
-	if (!dbg || !dbg->IsEnabled()) return;
+	if (!dbg)
+		return;
+
+	if (!dbg->IsEnabled()) {
+		ATUIDebuggerOpen();
+		return;
+	}
+
+	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(g_focusedPaneId)) {
+		if (pane->OnPaneCommand(kATUIPaneCommandId_DebugStepOut))
+			return;
+	}
+
 	try {
 		dbg->StepOut(GetDebugSrcMode());
 	} catch(const MyError& e) {

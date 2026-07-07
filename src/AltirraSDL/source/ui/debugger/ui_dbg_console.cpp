@@ -4,6 +4,7 @@
 
 #include <stdafx.h>
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -66,6 +67,8 @@ public:
 
 	// ATImGuiDebuggerPane
 	bool Render() override;
+	void AppendInputText(const char *text);
+	const char *GetInputText() const { return mInputBuf; }
 
 	// IATDebuggerClient
 	void OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) override;
@@ -135,6 +138,19 @@ void ATImGuiConsolePaneImpl::Write(const char *s) {
 
 void ATImGuiConsolePaneImpl::ShowEnd() {
 	g_consoleScrollToBottom = true;
+}
+
+void ATImGuiConsolePaneImpl::AppendInputText(const char *text) {
+	if (!text || !*text)
+		return;
+
+	const size_t curLen = strlen(mInputBuf);
+	const size_t avail = sizeof(mInputBuf) - curLen - 1;
+	if (!avail)
+		return;
+
+	strncat(mInputBuf, text, avail);
+	mbFocusInput = true;
 }
 
 void ATImGuiConsolePaneImpl::OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) {
@@ -364,6 +380,17 @@ void ATUIDebuggerEnsureConsolePane() {
 		// vdrefcounted starts at refcount 0; the vdrefptr in the registry
 		// AddRef'd to 1.  No Release() here — that would destroy the object.
 	}
+}
+
+void ATUIDebuggerFocusConsoleWithText(const char *text) {
+	ATUIDebuggerFocusConsole();
+
+	if (g_pConsolePane)
+		g_pConsolePane->AppendInputText(text);
+}
+
+const char *ATUIDebuggerGetConsoleInputTextForTest() {
+	return g_pConsolePane ? g_pConsolePane->GetInputText() : "";
 }
 
 // Console output functions (ATConsoleWrite, ATConsolePrintfImpl, etc.) are

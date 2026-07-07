@@ -659,6 +659,8 @@ static void HandleEvents() {
 		}
 
 		case SDL_EVENT_TEXT_INPUT:
+			if (ATUIDebuggerHandleTextInput(ev.text.text))
+				break;
 			if (!ATUIWantCaptureKeyboard())
 				ATInputSDL3_HandleTextInput(ev.text.text);
 			break;
@@ -2112,6 +2114,11 @@ int main(int argc, char *argv[]) {
 	// while the UI rendered Light until the user toggled it manually.
 	ATUIApplyTheme();
 
+	// Register the fork-only UI-state settings callbacks (screen effects
+	// mode, virtual keyboard placement) before the profile system runs its
+	// initial ATLoadSettings pass below, so the saved values are restored.
+	ATUIStateSettingsInit();
+
 	// Load default profiles and then restore the last active profile.
 	// Windows does this at main.cpp:3941-3979.  ATSettingsLoadLastProfile()
 	// calls ATLoadSettings() internally with the profile's settings,
@@ -2461,7 +2468,9 @@ int main(int argc, char *argv[]) {
 	// may create devices whose debug targets the debugger needs to enumerate.
 	{
 		extern void ATInitDebugger();
+		extern void ATUIDebuggerInit();
 		ATInitDebugger();
+		ATUIDebuggerInit();
 	}
 
 #ifdef __EMSCRIPTEN__
@@ -3394,6 +3403,7 @@ int main(int argc, char *argv[]) {
 	ATTestModeShutdown();
 	ATMacMenuBarShutdown();
 	ATUIShutdown();
+	ATUIStateSettingsShutdown();
 
 	delete g_pDisplay;
 	delete g_pBackend;  // destroys GL context or SDL_Renderer internally

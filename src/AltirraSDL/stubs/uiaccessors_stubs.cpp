@@ -31,6 +31,7 @@
 #include "constants.h"
 #include "settings.h"
 #include "ui_main.h"
+#include "uidisplay.h"
 
 extern ATSimulator g_sim;
 #include <at/atui/uimanager.h>
@@ -45,7 +46,6 @@ namespace { bool ATUINetplayBlocksWarp() { return false; } }
 // Forward declarations for types used in stub signatures
 class ATInputManager;
 class IATAsyncDispatcher;
-class IATDisplayPane;
 enum ATHardwareMode : uint32;
 enum ATMemoryMode : uint32;
 enum ATVideoStandard : uint32;
@@ -476,7 +476,8 @@ void ATUIReleaseMouse() {
 // Misc UI functions — no-ops / simple stubs
 // =========================================================================
 
-IATDisplayPane *ATUIGetDisplayPane() { return nullptr; }
+extern IATDisplayPane *ATUIDebuggerGetDisplayPaneInterface();
+IATDisplayPane *ATUIGetDisplayPane() { return ATUIDebuggerGetDisplayPaneInterface(); }
 
 // ---------------------------------------------------------------------------
 // ATUISwitchHardwareMode — real implementation matching Windows main.cpp

@@ -25,11 +25,12 @@ enum class HistTimestampMode : uint8 {
 	TapePositionSeconds
 };
 
-class ATImGuiHistoryPaneImpl final : public ATImGuiDebuggerPane {
+class ATImGuiHistoryPaneImpl final : public ATImGuiDebuggerPane, public IATUIDebuggerHistoryPane {
 public:
 	ATImGuiHistoryPaneImpl();
 
 	bool Render() override;
+	void *AsPaneInterface(uint32 iid) override;
 	void OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) override;
 	void OnDebuggerEvent(ATDebugEvent eventId) override;
 
@@ -37,7 +38,13 @@ public:
 	// nearest preceding entry when no exact match is present),
 	// select it, and request a scroll. Returns true if the buffer was
 	// non-empty (matches Win32 ATUIHistoryView::JumpToCycle).
-	bool JumpToCycle(uint32 cycle);
+	bool JumpToCycle(uint32 cycle) override;
+
+	bool DescribeForTest(VDStringA& outState);
+	bool ExecuteContextActionForTest(const char *action, VDStringA& outState);
+	bool SelectInstructionForTest(bool last, VDStringA& outState);
+	bool OpenContextMenuForTest(VDStringA& outState);
+	bool SetHorizontalScrollForTest(float x, VDStringA& outState);
 
 private:
 	// Walk the history tree to find the Insn node containing
@@ -62,6 +69,11 @@ private:
 	// === Selection & Navigation (ui_dbg_history.cpp) ===
 	void SelectLine(const ATHTLineIterator& it);
 	bool HandleKeyboardInput();
+	bool CaptureContextFromLine(const ATHTLineIterator& it);
+	bool GoToContextSource();
+	bool SetContextTimestampOrigin();
+	void ResetTimestampOrigin();
+	void SetTimestampMode(HistTimestampMode mode);
 
 	// === Search/filter (ui_dbg_history.cpp) ===
 	void Search(const char *substr);
@@ -141,6 +153,12 @@ private:
 	bool mbScrollToBottom = false;
 	bool mbScrollToSelection = false;    // scroll selected line into view
 	bool mbSearchActive = false;
+	bool mbFocusSearch = false;
+	uint32 mPageLines = 20;
+	float mLastScrollX = 0.0f;
+	float mLastScrollMaxX = 0.0f;
+	float mRequestedScrollX = 0.0f;
+	bool mbRequestScrollX = false;
 	char mSearchBuf[256] = {};
 
 	// Context menu state -- captured at right-click time so we don't

@@ -272,8 +272,11 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 		bool dbgOpen = ATUIDebuggerIsOpen();
 		if (ImGui::MenuItem("Display", nullptr, false, dbgOpen))
 			ATUIDebuggerFocusDisplay();
-		if (ImGui::MenuItem("Printer Output", nullptr, false, dbgOpen))
+		if (ImGui::MenuItem("Printer Output")) {
+			if (!dbgOpen)
+				ATUIDebuggerOpen();
 			ATActivateUIPane(kATUIPaneId_PrinterOutput, true, true);
+		}
 	}
 
 	ImGui::Separator();

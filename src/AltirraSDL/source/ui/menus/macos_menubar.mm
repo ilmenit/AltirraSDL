@@ -1306,7 +1306,7 @@ static void BuildDebugMenu(NSMenu *menu) {
 
 	IATDebugger *dbg = ATGetDebugger();
 	bool dbgEnabled = ATUIDebuggerIsOpen();
-	bool dbgRunning = dbg && dbg->IsRunning();
+	bool dbgRunning = dbg && (dbg->IsRunning() || dbg->AreCommandsQueued());
 
 	AddItem(menu, @"Enable Debugger", dbgEnabled, true, [=]{
 		if (ATUIDebuggerIsOpen())
@@ -1314,10 +1314,14 @@ static void BuildDebugMenu(NSMenu *menu) {
 		else
 			ATUIDebuggerOpen();
 	});
-	AddItem(menu, @"Open Source File...", false, dbgEnabled, [=]{
+	AddItem(menu, @"Open Source File...", false, true, [=]{
+		if (!ATUIDebuggerIsOpen())
+			ATUIDebuggerOpen();
 		ATUIShowOpenSourceFileDialog(g_pWindow);
 	});
-	AddItem(menu, @"Source File List...", false, dbgEnabled, [=]{
+	AddItem(menu, @"Source File List...", false, true, [=]{
+		if (!ATUIDebuggerIsOpen())
+			ATUIDebuggerOpen();
 		ATUIDebuggerShowSourceListDialog();
 	});
 
@@ -1360,8 +1364,12 @@ static void BuildDebugMenu(NSMenu *menu) {
 		AddItem(winMenu, @"Breakpoints", false, true, [=]{
 			ATActivateUIPane(kATUIPaneId_Breakpoints, true);
 		});
-		AddItem(winMenu, @"Targets", false, false, [=]{});
-		AddItem(winMenu, @"Debug Display", false, false, [=]{});
+		AddItem(winMenu, @"Targets", false, true, [=]{
+			ATActivateUIPane(kATUIPaneId_Targets, true);
+		});
+		AddItem(winMenu, @"Debug Display", false, true, [=]{
+			ATActivateUIPane(kATUIPaneId_DebugDisplay, true);
+		});
 	}
 
 	// Visualization
@@ -1382,13 +1390,6 @@ static void BuildDebugMenu(NSMenu *menu) {
 	// Options
 	{
 		NSMenu *optMenu = AddSubmenu(menu, @"Options");
-		if (dbg) {
-			bool breakAtExe = dbg->IsBreakOnEXERunAddrEnabled();
-			AddItem(optMenu, @"Break at EXE Run Address", breakAtExe, true, [=]{
-				IATDebugger *d = ATGetDebugger();
-				if (d) d->SetBreakOnEXERunAddrEnabled(!d->IsBreakOnEXERunAddrEnabled());
-			});
-		}
 		bool autoReload = g_sim.IsROMAutoReloadEnabled();
 		AddItem(optMenu, @"Auto-Reload ROMs on Cold Reset", autoReload, true, [=]{
 			g_sim.SetROMAutoReloadEnabled(!g_sim.IsROMAutoReloadEnabled());
@@ -1397,31 +1398,40 @@ static void BuildDebugMenu(NSMenu *menu) {
 		AddItem(optMenu, @"Randomize Memory On EXE Load", randomEXE, true, [=]{
 			g_sim.SetRandomFillEXEEnabled(!g_sim.IsRandomFillEXEEnabled());
 		});
+		if (dbg) {
+			bool breakAtExe = dbg->IsBreakOnEXERunAddrEnabled();
+			AddItem(optMenu, @"Break at EXE Run Address", breakAtExe, true, [=]{
+				IATDebugger *d = ATGetDebugger();
+				if (d) d->SetBreakOnEXERunAddrEnabled(!d->IsBreakOnEXERunAddrEnabled());
+			});
+		}
 		AddSeparator(optMenu);
-		AddItem(optMenu, @"Change Font...", false, false, [=]{});
+		AddItem(optMenu, @"Change Font...", false, true, [=]{
+			ATUIOpenSystemConfigFonts();
+		});
 	}
 
 	AddSeparator(menu);
 
-	AddItem(menu, @"Run/Break", false, dbgEnabled, [=]{
+	AddItem(menu, @"Run/Break", false, true, [=]{
 		ATUIDebuggerRunStop();
 	});
-	AddItem(menu, @"Break", false, dbgEnabled && dbgRunning, [=]{
+	AddItem(menu, @"Break", false, dbgRunning, [=]{
 		ATUIDebuggerBreak();
 	});
 
 	AddSeparator(menu);
 
-	AddItem(menu, @"Step Into", false, dbgEnabled && !dbgRunning, [=]{
+	AddItem(menu, @"Step Into", false, !g_sim.IsRunning(), [=]{
 		ATUIDebuggerStepInto();
 	});
-	AddItem(menu, @"Step Over", false, dbgEnabled && !dbgRunning, [=]{
+	AddItem(menu, @"Step Over", false, !g_sim.IsRunning(), [=]{
 		ATUIDebuggerStepOver();
 	});
-	AddItem(menu, @"Step Out", false, dbgEnabled && !dbgRunning, [=]{
+	AddItem(menu, @"Step Out", false, !g_sim.IsRunning(), [=]{
 		ATUIDebuggerStepOut();
 	});
-	AddItem(menu, @"Toggle Breakpoint", false, dbgEnabled && !dbgRunning, [=]{
+	AddItem(menu, @"Toggle Breakpoint", false, dbgEnabled, [=]{
 		ATUIDebuggerToggleBreakpoint();
 	});
 	AddItem(menu, @"New Breakpoint...", false, dbgEnabled, [=]{
@@ -1441,7 +1451,7 @@ static void BuildDebugMenu(NSMenu *menu) {
 		ATUIShowDialogVerifier();
 	});
 	AddItem(menu, @"Performance Analyzer...", false, true, [=]{
-		ATActivateUIPane(kATUIPaneId_Profiler, true);
+		ATActivateUIPane(kATUIPaneId_PerformanceAnalyzerSDL, true);
 	});
 }
 
@@ -1644,7 +1654,9 @@ static void BuildHelpMenu(NSMenu *menu) {
 	AddItem(menu, @"Command-Line Help", false, true, [=]{
 		g_uiState.showCommandLineHelp = true;
 	});
-	AddItem(menu, @"Export Debugger Help...", false, false, [=]{});
+	AddItem(menu, @"Export Debugger Help...", false, true, [=]{
+		ATUIExportDebugHelp();
+	});
 	AddItem(menu, @"Check For Updates", false, false, [=]{});
 	AddItem(menu, @"Altirra Home...", false, true, [=]{
 		ATLaunchURL(L"https://www.virtualdub.org/altirra.html");

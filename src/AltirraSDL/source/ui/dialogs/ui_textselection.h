@@ -10,16 +10,9 @@
 #include <vd2/system/vectors.h>
 #include <vd2/system/vdstl.h>
 #include <imgui.h>
+#include "uidisplay.h"
 
 class ATSimulator;
-
-// Copy mode — matches Windows ATTextCopyMode exactly.
-enum class ATTextCopyMode : uint8 {
-	ASCII,
-	Escaped,
-	Hex,
-	Unicode
-};
 
 // One selected span of text on a single mode line (matches Windows TextSpan).
 struct ATTextSpan {

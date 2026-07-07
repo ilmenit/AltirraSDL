@@ -54,6 +54,7 @@
 #include "logging.h"
 
 extern ATSimulator g_sim;
+extern ATUIState g_uiState;
 extern ATUIManager g_ATUIManager;
 void ATUIUpdateSpeedTiming();
 void ATUIResizeDisplay();
@@ -167,6 +168,11 @@ static const TreeEntry kTreeEntries[] = {
 	{ "Online Play",    kCat_OnlinePlay, 1 },
 };
 static const int kNumTreeEntries = sizeof(kTreeEntries) / sizeof(kTreeEntries[0]);
+
+void ATUIOpenSystemConfigFonts() {
+	g_uiState.systemConfigCategory = kCat_Fonts;
+	g_uiState.showSystemConfig = true;
+}
 
 void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 #ifdef ALTIRRA_NETPLAY_ENABLED

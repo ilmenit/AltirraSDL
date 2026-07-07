@@ -75,6 +75,14 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend);
 void ATUIShutdown();
 bool ATUIProcessEvent(const SDL_Event *event);
 
+// Fork-only persistent UI state (ui_state_settings.cpp).  Registers
+// settings load/save callbacks for ATUIState values that Windows would
+// store per-profile (screen effects mode, virtual keyboard placement).
+// Init must run before the initial profile load so the first
+// ATLoadSettings pass restores the values.
+void ATUIStateSettingsInit();
+void ATUIStateSettingsShutdown();
+
 // Theme management
 void ATUIApplyTheme();
 void ATUIUpdateSystemTheme();
@@ -116,6 +124,9 @@ float ATUIGetMeasuredFPS();
 
 void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	IDisplayBackend *backend, ATUIState &state);
+
+void ATUIExportDebugHelp();
+bool ATUIExportDebugHelpForTest(const char *utf8Path, VDStringW& outPath);
 
 // Process deferred file dialog results on main thread (call each frame)
 void ATUIPollDeferredActions();
@@ -243,6 +254,7 @@ void ATUISaveFrameCallback(void *, const char * const *filelist, int);
 
 // Dialog render functions (each in its own .cpp file)
 void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state);
+void ATUIOpenSystemConfigFonts();
 void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *window);
 void ATUIRenderGameLibrary(ATSimulator &sim, ATUIState &state, SDL_Window *window);
 void ATUIRenderCassetteControl(ATSimulator &sim, ATUIState &state, SDL_Window *window);

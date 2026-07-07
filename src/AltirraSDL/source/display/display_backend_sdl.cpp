@@ -5,6 +5,9 @@
 #include "uiaccessors.h"
 #include "uitypes.h"
 
+#include <algorithm>
+#include <cmath>
+
 DisplayBackendSDLRenderer::DisplayBackendSDLRenderer(SDL_Window *window, SDL_Renderer *renderer)
 	: mpWindow(window)
 	, mpRenderer(renderer)
@@ -61,6 +64,39 @@ void DisplayBackendSDLRenderer::RenderFrame(float dstX, float dstY, float dstW, 
 
 	SDL_SetTextureBlendMode(mpTexture, SDL_BLENDMODE_NONE);
 	SDL_RenderTexture(mpRenderer, mpTexture, nullptr, &rect);
+}
+
+void DisplayBackendSDLRenderer::RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
+	int srcW, int srcH, float clipX, float clipY, float clipW, float clipH)
+{
+	if (!mpTexture || dstW <= 0.0f || dstH <= 0.0f || clipW <= 0.0f || clipH <= 0.0f)
+		return;
+
+	const float visibleL = std::max(dstX, clipX);
+	const float visibleT = std::max(dstY, clipY);
+	const float visibleR = std::min(dstX + dstW, clipX + clipW);
+	const float visibleB = std::min(dstY + dstH, clipY + clipH);
+
+	if (visibleR <= visibleL || visibleB <= visibleT)
+		return;
+
+	SDL_Rect clipRect;
+	clipRect.x = (int)std::floor(visibleL);
+	clipRect.y = (int)std::floor(visibleT);
+	clipRect.w = (int)std::ceil(visibleR) - clipRect.x;
+	clipRect.h = (int)std::ceil(visibleB) - clipRect.y;
+
+	if (clipRect.w <= 0 || clipRect.h <= 0)
+		return;
+
+	SDL_Rect oldClip {};
+	const bool oldClipEnabled = SDL_RenderClipEnabled(mpRenderer);
+	if (oldClipEnabled)
+		SDL_GetRenderClipRect(mpRenderer, &oldClip);
+
+	SDL_SetRenderClipRect(mpRenderer, &clipRect);
+	RenderFrame(dstX, dstY, dstW, dstH, srcW, srcH);
+	SDL_SetRenderClipRect(mpRenderer, oldClipEnabled ? &oldClip : nullptr);
 }
 
 void DisplayBackendSDLRenderer::Present() {

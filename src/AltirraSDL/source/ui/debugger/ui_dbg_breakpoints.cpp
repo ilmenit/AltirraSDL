@@ -52,6 +52,181 @@ namespace {
 
 	BreakpointDialogState g_bpDialog;
 
+	bool BuildTraceCommand(const char *traceText,
+		const char *commandSuffix,
+		VDStringA& outCommand,
+		VDStringA& outError)
+	{
+		outCommand.clear();
+		outError.clear();
+
+		if (!traceText || !*traceText)
+			return true;
+
+		VDStringA traceCmdStr(".printf \"");
+
+		for (const char *p = traceText; *p; ++p) {
+			const char ch = *p;
+			if (ch < 0x20 || ch > 0x7E) {
+				outError = "The trace message contains an unsupported character.";
+				return false;
+			}
+			if (ch == '"')
+				traceCmdStr += '\\';
+			else if (ch == '%')
+				traceCmdStr += '%';
+			traceCmdStr += ch;
+		}
+
+		traceCmdStr += '"';
+
+		if (commandSuffix && *commandSuffix) {
+			traceCmdStr += "; ";
+			traceCmdStr += commandSuffix;
+		}
+
+		outCommand = std::move(traceCmdStr);
+		return true;
+	}
+
+	bool SubmitBreakpoint(
+		sint32 userIdx,
+		int locationType,
+		const char *location,
+		bool conditionEnabled,
+		const char *conditionText,
+		bool stopExecution,
+		bool commandEnabled,
+		const char *commandText,
+		bool traceEnabled,
+		const char *traceText,
+		uint32& outUserIdx,
+		VDStringA& outError)
+	{
+		outUserIdx = (uint32)-1;
+		outError.clear();
+
+		IATDebugger *dbg = ATGetDebugger();
+		if (!dbg) {
+			outError = "Debugger is not available.";
+			return false;
+		}
+
+		vdautoptr<ATDebugExpNode> condition;
+		if (conditionEnabled) {
+			try {
+				condition = ATDebuggerParseExpression(
+					conditionText ? conditionText : "",
+					ATGetDebuggerSymbolLookup(),
+					dbg->GetExprOpts());
+			} catch (const ATDebuggerExprParseException& e) {
+				outError.sprintf("Unable to parse condition: %s", e.c_str());
+				return false;
+			}
+		}
+
+		ATDebuggerBreakpointInfo bpInfo;
+		bpInfo.mTargetIndex = dbg->GetTargetIndex();
+
+		VDStringA commandStr;
+		if (commandEnabled && commandText && *commandText)
+			commandStr = commandText;
+
+		if (traceEnabled && traceText && *traceText) {
+			VDStringA traceCmdStr;
+			if (!BuildTraceCommand(traceText, commandStr.c_str(), traceCmdStr, outError))
+				return false;
+
+			commandStr = std::move(traceCmdStr);
+		}
+
+		bpInfo.mpCondition = condition;
+		bpInfo.mpCommand = commandStr.c_str();
+		bpInfo.mbContinueExecution = !stopExecution;
+
+		if (bpInfo.mbContinueExecution && commandStr.empty()) {
+			outError = "A non-stopping breakpoint must be used with a command or a trace message.";
+			return false;
+		}
+
+		if (locationType == 3) {
+			if (!condition) {
+				outError = "A condition must be used with a condition-only breakpoint.";
+				return false;
+			}
+
+			bpInfo.mbBreakOnInsn = true;
+		} else {
+			if (!location || !*location) {
+				outError = "Please enter an address.";
+				return false;
+			}
+
+			try {
+				bpInfo.mAddress = (uint32)dbg->EvaluateThrow(location);
+			} catch (const MyError& e) {
+				outError.sprintf("Unable to parse location: %s", e.c_str());
+				return false;
+			}
+
+			if (locationType == 1)
+				bpInfo.mbBreakOnRead = true;
+			else if (locationType == 2)
+				bpInfo.mbBreakOnWrite = true;
+			else
+				bpInfo.mbBreakOnPC = true;
+		}
+
+		outUserIdx = dbg->SetBreakpoint(userIdx, bpInfo);
+		return true;
+	}
+
+	void FormatBreakpointDescription(
+		IATDebugger& dbg,
+		uint32 userIdx,
+		const ATDebuggerBreakpointInfo& info,
+		VDStringA& desc)
+	{
+		if (info.mbBreakOnPC) {
+			desc = dbg.GetAddressText(info.mAddress, true, true);
+		} else if (info.mbBreakOnRead && info.mbBreakOnWrite) {
+			desc.sprintf("Access %s", dbg.GetAddressText(info.mAddress, true, true).c_str());
+		} else if (info.mbBreakOnRead) {
+			desc.sprintf("Read %s", dbg.GetAddressText(info.mAddress, true, true).c_str());
+		} else if (info.mbBreakOnWrite) {
+			desc.sprintf("Write %s", dbg.GetAddressText(info.mAddress, true, true).c_str());
+		} else if (info.mbBreakOnInsn) {
+			desc = "Any insn";
+		} else {
+			desc.sprintf("$%04X", info.mAddress);
+		}
+
+		ATDebugExpNode *cond = dbg.GetBreakpointCondition(userIdx);
+		if (cond) {
+			VDStringA condStr;
+			cond->ToString(condStr);
+			desc.append_sprintf(" when %s", condStr.c_str());
+		}
+
+		if (info.mpCommand && info.mpCommand[0])
+			desc.append_sprintf(", run command: %s", info.mpCommand);
+
+		if (info.mbOneShot)
+			desc += " [one-shot]";
+		if (info.mbContinueExecution)
+			desc += " [trace]";
+		if (info.mbClearOnReset)
+			desc += " [clear-on-reset]";
+	}
+
+	bool BreakpointGroupLess(const VDStringA& a, const VDStringA& b) {
+		const int ci = a.comparei(b);
+		if (ci)
+			return ci < 0;
+
+		return a.compare(b) < 0;
+	}
+
 	void OpenBreakpointDialog(sint32 userIdx) {
 		auto& d = g_bpDialog;
 		d.mbOpen = true;
@@ -106,54 +281,8 @@ namespace {
 			d.mbActionStop = !info.mbContinueExecution;
 
 			if (info.mpCommand && info.mpCommand[0]) {
-				// Check if command starts with .printf " — if so, it's a trace message
-				// that was wrapped by the dialog on the previous save
-				const char *cmd = info.mpCommand;
-
-				if (strncmp(cmd, ".printf \"", 9) == 0) {
-					// Extract trace message from .printf "..."
-					const char *msgStart = cmd + 9;
-					const char *closeQuote = strchr(msgStart, '"');
-					// Walk forward to find the real closing quote (skip escaped ones)
-					while (closeQuote && closeQuote > msgStart && *(closeQuote - 1) == '\\')
-						closeQuote = strchr(closeQuote + 1, '"');
-
-					if (closeQuote) {
-						// Unescape: \" -> ", %% -> %
-						VDStringA unescaped;
-						for (const char *p = msgStart; p < closeQuote; ++p) {
-							if (p + 1 < closeQuote && *p == '\\' && *(p + 1) == '"') {
-								unescaped += '"';
-								++p;
-							} else if (p + 1 < closeQuote && *p == '%' && *(p + 1) == '%') {
-								unescaped += '%';
-								++p;
-							} else {
-								unescaped += *p;
-							}
-						}
-
-						d.mbActionTraceEnabled = true;
-						snprintf(d.mTraceBuf, sizeof(d.mTraceBuf), "%s", unescaped.c_str());
-
-						// Check for additional command after the .printf "..."
-						const char *rest = closeQuote + 1;
-						// Skip leading "; "
-						while (*rest == ';' || *rest == ' ')
-							++rest;
-						if (*rest) {
-							d.mbActionCommandEnabled = true;
-							snprintf(d.mCommandBuf, sizeof(d.mCommandBuf), "%s", rest);
-						}
-					} else {
-						// Couldn't parse .printf, treat whole thing as command
-						d.mbActionCommandEnabled = true;
-						snprintf(d.mCommandBuf, sizeof(d.mCommandBuf), "%s", info.mpCommand);
-					}
-				} else {
-					d.mbActionCommandEnabled = true;
-					snprintf(d.mCommandBuf, sizeof(d.mCommandBuf), "%s", info.mpCommand);
-				}
+				d.mbActionCommandEnabled = true;
+				snprintf(d.mCommandBuf, sizeof(d.mCommandBuf), "%s", info.mpCommand);
 			}
 		}
 	}
@@ -295,118 +424,27 @@ namespace {
 
 		if (ImGui::Button("OK", ImVec2(buttonWidth, 0))) {
 			// --- Validation and submission ---
-			IATDebugger *dbg = ATGetDebugger();
 			d.mErrorBuf[0] = 0;
 
-			if (dbg) {
-				// Parse condition expression if enabled
-				vdautoptr<ATDebugExpNode> condition;
-				if (d.mbConditionEnabled && d.mConditionBuf[0]) {
-					try {
-						condition = ATDebuggerParseExpression(
-							d.mConditionBuf,
-							ATGetDebuggerSymbolLookup(),
-							dbg->GetExprOpts());
-					} catch (const ATDebuggerExprParseException& e) {
-						snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
-							"Unable to parse condition: %s", e.c_str());
-					}
-				} else if (d.mbConditionEnabled && !d.mConditionBuf[0]) {
-					// Checkbox enabled but empty — just clear it
-					d.mbConditionEnabled = false;
-				}
+			uint32 userIdx = (uint32)-1;
+			VDStringA error;
+			submitted = SubmitBreakpoint(
+				d.mUserIdx,
+				d.mLocationType,
+				d.mLocationBuf,
+				d.mbConditionEnabled,
+				d.mConditionBuf,
+				d.mbActionStop,
+				d.mbActionCommandEnabled,
+				d.mCommandBuf,
+				d.mbActionTraceEnabled,
+				d.mTraceBuf,
+				userIdx,
+				error);
 
-				if (!d.mErrorBuf[0]) {
-					ATDebuggerBreakpointInfo bpInfo;
-					bpInfo.mTargetIndex = dbg->GetTargetIndex();
-
-					// Build command string
-					VDStringA commandStr;
-					if (d.mbActionCommandEnabled && d.mCommandBuf[0])
-						commandStr = d.mCommandBuf;
-
-					// Build trace → .printf command
-					if (d.mbActionTraceEnabled && d.mTraceBuf[0]) {
-						VDStringA traceCmdStr(".printf \"");
-
-						bool traceValid = true;
-						for (const char *p = d.mTraceBuf; *p; ++p) {
-							char ch = *p;
-							if (ch < 0x20 || ch > 0x7E) {
-								snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
-									"The trace message contains an unsupported character.");
-								traceValid = false;
-								break;
-							}
-							if (ch == '"')
-								traceCmdStr += '\\';
-							else if (ch == '%')
-								traceCmdStr += '%';
-							traceCmdStr += ch;
-						}
-
-						if (traceValid) {
-							traceCmdStr += '"';
-
-							if (!commandStr.empty()) {
-								traceCmdStr += "; ";
-								traceCmdStr += commandStr;
-							}
-
-							commandStr = std::move(traceCmdStr);
-						}
-					}
-
-					if (!d.mErrorBuf[0]) {
-						bpInfo.mpCondition = condition;
-						bpInfo.mpCommand = commandStr.c_str();
-						bpInfo.mbContinueExecution = !d.mbActionStop;
-
-						// Validate: non-stopping breakpoint must have a command or trace
-						if (bpInfo.mbContinueExecution && commandStr.empty()) {
-							snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
-								"A non-stopping breakpoint must be used with a command or a trace message.");
-						}
-
-						if (!d.mErrorBuf[0]) {
-							if (d.mLocationType == 3) {
-								// Any instruction with condition
-								if (!condition) {
-									snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
-										"A condition must be used with a condition-only breakpoint.");
-								} else {
-									bpInfo.mbBreakOnInsn = true;
-									dbg->SetBreakpoint(d.mUserIdx, bpInfo);
-									submitted = true;
-								}
-							} else {
-								// PC / Read / Write — need address
-								if (!d.mLocationBuf[0]) {
-									snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
-										"Please enter an address.");
-								} else {
-									try {
-										uint32 address = (uint32)dbg->EvaluateThrow(d.mLocationBuf);
-										bpInfo.mAddress = address;
-
-										if (d.mLocationType == 1)
-											bpInfo.mbBreakOnRead = true;
-										else if (d.mLocationType == 2)
-											bpInfo.mbBreakOnWrite = true;
-										else
-											bpInfo.mbBreakOnPC = true;
-
-										dbg->SetBreakpoint(d.mUserIdx, bpInfo);
-										submitted = true;
-									} catch (const MyError& e) {
-										snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
-											"Unable to parse location: %s", e.c_str());
-									}
-								}
-							}
-						}
-					}
-				}
+			if (!submitted) {
+				snprintf(d.mErrorBuf, sizeof(d.mErrorBuf),
+					"%s", error.c_str());
 			}
 
 			if (submitted) {
@@ -437,6 +475,94 @@ void ATUIDebuggerShowBreakpointDialog(sint32 userIdx) {
 	OpenBreakpointDialog(userIdx);
 }
 
+bool ATUIDebuggerFormatBreakpointTraceForTest(const char *traceText,
+	VDStringA& outCommand,
+	VDStringA& outError)
+{
+	return BuildTraceCommand(traceText, nullptr, outCommand, outError);
+}
+
+bool ATUIDebuggerSubmitBreakpointForTest(
+	int locationType,
+	const char *location,
+	bool conditionEnabled,
+	const char *conditionText,
+	bool stopExecution,
+	bool commandEnabled,
+	const char *commandText,
+	bool traceEnabled,
+	const char *traceText,
+	uint32& outUserIdx,
+	VDStringA& outError)
+{
+	return SubmitBreakpoint(
+		-1,
+		locationType,
+		location,
+		conditionEnabled,
+		conditionText,
+		stopExecution,
+		commandEnabled,
+		commandText,
+		traceEnabled,
+		traceText,
+		outUserIdx,
+		outError);
+}
+
+bool ATUIDebuggerDescribeBreakpointForTest(uint32 userIdx, VDStringA& outDescription) {
+	outDescription.clear();
+
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg)
+		return false;
+
+	ATDebuggerBreakpointInfo info;
+	if (!dbg->GetBreakpointInfo(userIdx, info))
+		return false;
+
+	FormatBreakpointDescription(*dbg, userIdx, info, outDescription);
+	return true;
+}
+
+bool ATUIDebuggerFormatBreakpointDescriptionForTest(
+	bool oneShot,
+	bool clearOnReset,
+	bool continueExecution,
+	VDStringA& outDescription)
+{
+	outDescription.clear();
+
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg)
+		return false;
+
+	ATDebuggerBreakpointInfo info;
+	info.mAddress = 0x2000;
+	info.mbBreakOnPC = true;
+	info.mbOneShot = oneShot;
+	info.mbClearOnReset = clearOnReset;
+	info.mbContinueExecution = continueExecution;
+
+	FormatBreakpointDescription(*dbg, (uint32)-1, info, outDescription);
+	return true;
+}
+
+bool ATUIDebuggerDeleteBreakpointForTest(uint32 userIdx) {
+	IATDebugger *dbg = ATGetDebugger();
+	return dbg && dbg->ClearUserBreakpoint(userIdx, true);
+}
+
+int ATUIDebuggerCountBreakpointsForTest() {
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg)
+		return -1;
+
+	vdfastvector<uint32> bps;
+	dbg->GetBreakpointList(bps);
+	return (int)bps.size();
+}
+
 // =========================================================================
 // Breakpoints pane
 // =========================================================================
@@ -448,10 +574,11 @@ public:
 	bool Render() override;
 	void OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) override;
 	void OnDebuggerEvent(ATDebugEvent eventId) override;
+	bool SelectForTest(uint32 userIdx);
+	bool DeleteSelectedForTest(uint32 userIdx, int& remainingCount);
+	void GetRowOrderForTest(VDStringA& rowOrder);
 
 private:
-	void RebuildList();
-
 	struct BPEntry {
 		uint32 mUserIdx;
 		VDStringA mGroup;
@@ -460,8 +587,13 @@ private:
 		VDStringA mDescription;	// type + address + condition + command
 	};
 
+	void RebuildList();
+	void DeleteSelectedBreakpoint();
+	BPEntry *FindSelectedEntry();
+
 	std::vector<BPEntry> mEntries;
 	bool mbNeedsRebuild = true;
+	sint32 mSelectedUserIdx = -1;
 };
 
 ATImGuiBreakpointsPaneImpl::ATImGuiBreakpointsPaneImpl()
@@ -482,14 +614,17 @@ void ATImGuiBreakpointsPaneImpl::OnDebuggerEvent(ATDebugEvent eventId) {
 void ATImGuiBreakpointsPaneImpl::RebuildList() {
 	mbNeedsRebuild = false;
 	mEntries.clear();
+	bool selectedStillPresent = false;
 
 	IATDebugger *dbg = ATGetDebugger();
-	if (!dbg)
+	if (!dbg) {
+		mSelectedUserIdx = -1;
 		return;
+	}
 
 	// Get all breakpoint groups
 	auto groups = dbg->GetBreakpointGroups();
-	std::sort(groups.begin(), groups.end());
+	std::sort(groups.begin(), groups.end(), BreakpointGroupLess);
 
 	for (const auto& group : groups) {
 		vdfastvector<uint32> bps;
@@ -514,46 +649,83 @@ void ATImGuiBreakpointsPaneImpl::RebuildList() {
 			// Target
 			entry.mTarget.sprintf("%u", info.mTargetIndex);
 
-			// Description: type + address
 			VDStringA desc;
-			if (info.mbBreakOnPC) {
-				desc = dbg->GetAddressText(info.mAddress, true, true);
-			} else if (info.mbBreakOnRead && info.mbBreakOnWrite) {
-				desc.sprintf("Access %s", dbg->GetAddressText(info.mAddress, true, true).c_str());
-			} else if (info.mbBreakOnRead) {
-				desc.sprintf("Read %s", dbg->GetAddressText(info.mAddress, true, true).c_str());
-			} else if (info.mbBreakOnWrite) {
-				desc.sprintf("Write %s", dbg->GetAddressText(info.mAddress, true, true).c_str());
-			} else if (info.mbBreakOnInsn) {
-				desc = "Any insn";
-			} else {
-				desc.sprintf("$%04X", info.mAddress);
-			}
-
-			// Append condition text (matches Windows uidbgbreakpoints.cpp:257-263)
-			ATDebugExpNode *cond = dbg->GetBreakpointCondition(idx);
-			if (cond) {
-				VDStringA condStr;
-				cond->ToString(condStr);
-				desc.append_sprintf(" when %s", condStr.c_str());
-			}
-
-			// Append command if present
-			if (info.mpCommand && info.mpCommand[0]) {
-				desc.append_sprintf(", run command: %s", info.mpCommand);
-			}
-
-			// Annotations
-			if (info.mbOneShot)
-				desc += " [one-shot]";
-			if (info.mbContinueExecution)
-				desc += " [trace]";
-			if (info.mbClearOnReset)
-				desc += " [clear-on-reset]";
+			FormatBreakpointDescription(*dbg, idx, info, desc);
 
 			entry.mDescription = desc;
+			if ((sint32)entry.mUserIdx == mSelectedUserIdx)
+				selectedStillPresent = true;
+
 			mEntries.push_back(std::move(entry));
 		}
+	}
+
+	if (!selectedStillPresent)
+		mSelectedUserIdx = -1;
+}
+
+ATImGuiBreakpointsPaneImpl::BPEntry *ATImGuiBreakpointsPaneImpl::FindSelectedEntry() {
+	if (mSelectedUserIdx < 0)
+		return nullptr;
+
+	for(BPEntry& entry : mEntries) {
+		if ((sint32)entry.mUserIdx == mSelectedUserIdx)
+			return &entry;
+	}
+
+	return nullptr;
+}
+
+void ATImGuiBreakpointsPaneImpl::DeleteSelectedBreakpoint() {
+	BPEntry *entry = FindSelectedEntry();
+	IATDebugger *dbg = ATGetDebugger();
+	if (!entry || !dbg)
+		return;
+
+	dbg->ClearUserBreakpoint(entry->mUserIdx, true);
+	mSelectedUserIdx = -1;
+	mbNeedsRebuild = true;
+}
+
+bool ATImGuiBreakpointsPaneImpl::SelectForTest(uint32 userIdx) {
+	if (mbNeedsRebuild)
+		RebuildList();
+
+	mSelectedUserIdx = (sint32)userIdx;
+	return FindSelectedEntry() != nullptr;
+}
+
+bool ATImGuiBreakpointsPaneImpl::DeleteSelectedForTest(uint32 userIdx, int& remainingCount) {
+	remainingCount = -1;
+
+	if (mbNeedsRebuild)
+		RebuildList();
+
+	mSelectedUserIdx = (sint32)userIdx;
+
+	if (!FindSelectedEntry())
+		return false;
+
+	DeleteSelectedBreakpoint();
+	RebuildList();
+
+	remainingCount = (int)mEntries.size();
+	return true;
+}
+
+void ATImGuiBreakpointsPaneImpl::GetRowOrderForTest(VDStringA& rowOrder) {
+	rowOrder.clear();
+
+	if (mbNeedsRebuild)
+		RebuildList();
+
+	bool first = true;
+	for (const BPEntry& entry : mEntries) {
+		if (!first)
+			rowOrder += '|';
+
+		rowOrder += entry.mId;
+		first = false;
 	}
 }
 
@@ -599,20 +771,26 @@ bool ATImGuiBreakpointsPaneImpl::Render() {
 
 			for (int i = 0; i < (int)mEntries.size(); ++i) {
 				const BPEntry& bp = mEntries[i];
+				const bool selected = (mSelectedUserIdx == (sint32)bp.mUserIdx);
 				ImGui::TableNextRow();
 				ImGui::PushID(i);
 
 				ImGui::TableSetColumnIndex(0);
 				// Invisible selectable spanning full row for click/right-click detection
-				ImGui::Selectable("##row", false,
+				if (ImGui::Selectable("##row", selected,
 					ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap,
-					ImVec2(0, 0));
+					ImVec2(0, 0))) {
+					mSelectedUserIdx = (sint32)bp.mUserIdx;
+				}
 				// Double-click to edit breakpoint (matches Windows behavior)
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+					mSelectedUserIdx = (sint32)bp.mUserIdx;
 					OpenBreakpointDialog(bp.mUserIdx);
 				}
-				if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+				if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+					mSelectedUserIdx = (sint32)bp.mUserIdx;
 					ImGui::OpenPopup("BPCtx");
+				}
 				ImGui::SameLine();
 				ImGui::TextUnformatted(bp.mId.c_str());
 
@@ -630,8 +808,8 @@ bool ATImGuiBreakpointsPaneImpl::Render() {
 						}
 						ImGui::Separator();
 						if (ImGui::MenuItem("Delete")) {
-							dbg->ClearUserBreakpoint(bp.mUserIdx, true);
-							mbNeedsRebuild = true;
+							mSelectedUserIdx = (sint32)bp.mUserIdx;
+							DeleteSelectedBreakpoint();
 						}
 					}
 					ImGui::EndPopup();
@@ -643,6 +821,9 @@ bool ATImGuiBreakpointsPaneImpl::Render() {
 			ImGui::EndTable();
 		}
 	}
+
+	if (mbHasFocus && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete))
+		DeleteSelectedBreakpoint();
 
 	// Right-click on empty area also shows context menu with New Breakpoint
 	if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::IsAnyItemHovered()) {
@@ -679,4 +860,43 @@ void ATUIDebuggerEnsureBreakpointsPane() {
 		auto *pane = new ATImGuiBreakpointsPaneImpl();
 		ATUIDebuggerRegisterPane(pane);
 	}
+}
+
+bool ATUIDebuggerSelectBreakpointForTest(uint32 userIdx) {
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
+
+	ATImGuiDebuggerPane *basePane = ATUIDebuggerGetPane(kATUIPaneId_Breakpoints);
+	if (!basePane)
+		return false;
+
+	return static_cast<ATImGuiBreakpointsPaneImpl *>(basePane)
+		->SelectForTest(userIdx);
+}
+
+bool ATUIDebuggerDeleteBreakpointViaPaneForTest(uint32 userIdx, int& remainingCount) {
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
+
+	ATImGuiDebuggerPane *basePane = ATUIDebuggerGetPane(kATUIPaneId_Breakpoints);
+	if (!basePane)
+		return false;
+
+	return static_cast<ATImGuiBreakpointsPaneImpl *>(basePane)
+		->DeleteSelectedForTest(userIdx, remainingCount);
+}
+
+bool ATUIDebuggerGetBreakpointPaneOrderForTest(VDStringA& rowOrder) {
+	rowOrder.clear();
+
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
+
+	ATImGuiDebuggerPane *basePane = ATUIDebuggerGetPane(kATUIPaneId_Breakpoints);
+	if (!basePane)
+		return false;
+
+	static_cast<ATImGuiBreakpointsPaneImpl *>(basePane)
+		->GetRowOrderForTest(rowOrder);
+	return true;
 }

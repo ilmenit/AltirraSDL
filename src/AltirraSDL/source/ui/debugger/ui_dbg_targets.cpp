@@ -28,9 +28,14 @@ public:
 	bool Render() override;
 	void OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) override;
 	void OnDebuggerEvent(ATDebugEvent eventId) override;
+	bool ActivateSelectedForTest(int row,
+		uint32& outCurrentTarget,
+		uint32& outTargetCount,
+		VDStringA& outError);
 
 private:
 	void RebuildList();
+	bool ActivateSelectedTarget();
 
 	struct TargetEntry {
 		uint32 mIndex;
@@ -41,6 +46,7 @@ private:
 
 	std::vector<TargetEntry> mEntries;
 	bool mbNeedsRebuild = true;
+	int mSelectedRow = -1;
 };
 
 ATImGuiTargetsPaneImpl::ATImGuiTargetsPaneImpl()
@@ -50,9 +56,6 @@ ATImGuiTargetsPaneImpl::ATImGuiTargetsPaneImpl()
 
 void ATImGuiTargetsPaneImpl::OnDebuggerSystemStateUpdate(const ATDebuggerSystemState& state) {
 	ATImGuiDebuggerPane::OnDebuggerSystemStateUpdate(state);
-	// Rebuild on state update to reflect current target indicator
-	if (!state.mbRunning)
-		mbNeedsRebuild = true;
 }
 
 void ATImGuiTargetsPaneImpl::OnDebuggerEvent(ATDebugEvent eventId) {
@@ -94,6 +97,55 @@ void ATImGuiTargetsPaneImpl::RebuildList() {
 
 		mEntries.push_back(std::move(entry));
 	}
+
+	if (mSelectedRow >= (int)mEntries.size())
+		mSelectedRow = -1;
+}
+
+bool ATImGuiTargetsPaneImpl::ActivateSelectedTarget() {
+	if (mSelectedRow < 0 || mSelectedRow >= (int)mEntries.size())
+		return false;
+
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg)
+		return false;
+
+	return dbg->SetTarget(mEntries[mSelectedRow].mIndex);
+}
+
+bool ATImGuiTargetsPaneImpl::ActivateSelectedForTest(int row,
+	uint32& outCurrentTarget,
+	uint32& outTargetCount,
+	VDStringA& outError)
+{
+	if (mbNeedsRebuild)
+		RebuildList();
+
+	outTargetCount = (uint32)mEntries.size();
+
+	IATDebugger *dbg = ATGetDebugger();
+	if (!dbg) {
+		outCurrentTarget = 0;
+		outError = "debugger is not available";
+		return false;
+	}
+
+	outCurrentTarget = dbg->GetTargetIndex();
+
+	if (row < 0 || row >= (int)mEntries.size()) {
+		outError.sprintf("target row %d is out of range", row);
+		return false;
+	}
+
+	mSelectedRow = row;
+
+	const bool activated = ActivateSelectedTarget();
+	outCurrentTarget = dbg->GetTargetIndex();
+	if (!activated)
+		outError.sprintf("target %u could not be activated",
+			mEntries[row].mIndex);
+
+	return activated;
 }
 
 bool ATImGuiTargetsPaneImpl::Render() {
@@ -145,13 +197,16 @@ bool ATImGuiTargetsPaneImpl::Render() {
 
 			// Full-row selectable for double-click detection
 			ImGui::TableSetColumnIndex(0);
-			ImGui::Selectable("##row", entry.mbCurrent,
-				ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
+			if (ImGui::Selectable("##row", i == mSelectedRow,
+				ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+			{
+				mSelectedRow = i;
+			}
 
 			// Double-click to switch target
 			if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-				if (dbg)
-					dbg->SetTarget(entry.mIndex);
+				mSelectedRow = i;
+				ActivateSelectedTarget();
 			}
 
 			// Current target indicator
@@ -179,8 +234,14 @@ bool ATImGuiTargetsPaneImpl::Render() {
 	// Escape → focus Console (matches Windows pattern)
 	if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
 			&& !ImGui::GetIO().WantTextInput
-			&& ImGui::IsKeyPressed(ImGuiKey_Escape))
+			&& ImGui::IsKeyPressed(ImGuiKey_Escape)) {
 		ATUIDebuggerFocusConsole();
+	} else if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+			&& !ImGui::GetIO().WantTextInput
+			&& (ImGui::IsKeyPressed(ImGuiKey_Enter)
+				|| ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))) {
+		ActivateSelectedTarget();
+	}
 
 	ImGui::End();
 	return open;
@@ -195,4 +256,27 @@ void ATUIDebuggerEnsureTargetsPane() {
 		auto *pane = new ATImGuiTargetsPaneImpl();
 		ATUIDebuggerRegisterPane(pane);
 	}
+}
+
+bool ATUIDebuggerActivateTargetForTest(int row,
+	uint32& outCurrentTarget,
+	uint32& outTargetCount,
+	VDStringA& outError)
+{
+	ATUIDebuggerOpen();
+	ATActivateUIPane(kATUIPaneId_Targets, true, true);
+
+	auto *pane = static_cast<ATImGuiTargetsPaneImpl *>(
+		ATUIDebuggerGetPane(kATUIPaneId_Targets));
+	if (!pane) {
+		outError = "targets pane is not available";
+		outCurrentTarget = 0;
+		outTargetCount = 0;
+		return false;
+	}
+
+	return pane->ActivateSelectedForTest(row,
+		outCurrentTarget,
+		outTargetCount,
+		outError);
 }

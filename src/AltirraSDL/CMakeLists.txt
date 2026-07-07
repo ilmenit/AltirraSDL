@@ -75,6 +75,7 @@ target_sources(AltirraSDL PRIVATE
     # --- ui/core/ : ImGui hub, main render, indicators ---
     source/ui/core/ui_main.cpp
     source/ui/core/ui_mode.cpp
+    source/ui/core/ui_state_settings.cpp
     source/ui/core/ui_main_aboutdialogs.cpp
     source/ui/core/ui_main_compat.cpp
     source/ui/core/ui_main_overlays.cpp
@@ -165,6 +166,8 @@ target_sources(AltirraSDL PRIVATE
     source/ui/debugger/ui_dbg_debugdisplay.cpp
     source/ui/debugger/ui_dbg_source.cpp
     source/ui/debugger/ui_dbg_verifier.cpp
+    source/ui/debugger/ui_dbg_profileview.cpp
+    source/ui/debugger/ui_dbg_help_export.cpp
     source/ui/debugger/ui_dbg_traceviewer.cpp
     source/ui/debugger/ui_dbg_traceviewer_timeline.cpp
     source/ui/debugger/ui_dbg_traceviewer_panels.cpp

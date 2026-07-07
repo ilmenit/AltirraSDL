@@ -21,6 +21,8 @@
 #include "sapwriter.h"
 #include "vgmwriter.h"
 #include "simeventmanager.h"
+#include "uidisplay.h"
+#include "uiaccessors.h"
 
 #include <algorithm>
 #include <cmath>
@@ -205,6 +207,8 @@ void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
 		audioTapAttached = true;
 		gtia.AddVideoTap(g_pVideoWriter->AsVideoTap());
 		videoTapAttached = true;
+		if (IATDisplayPane *dp = ATUIGetDisplayPane())
+			dp->SetVideoWriter(g_pVideoWriter);
 
 		LOG_INFO("UI", "Video recording started");
 	} catch (const MyError& e) {
@@ -237,6 +241,8 @@ void ATUIStopRecording() {
 
 	if (g_pVideoWriter) {
 		ATGTIAEmulator& gtia = g_sim.GetGTIA();
+		if (IATDisplayPane *dp = ATUIGetDisplayPane())
+			dp->SetVideoWriter(nullptr);
 		gtia.RemoveVideoTap(g_pVideoWriter->AsVideoTap());
 		g_sim.GetAudioOutput()->SetAudioTap(nullptr);
 

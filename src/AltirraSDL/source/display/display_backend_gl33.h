@@ -67,6 +67,8 @@ public:
 	void BeginFrame() override;
 	void RenderFrame(float dstX, float dstY, float dstW, float dstH,
 		int srcW, int srcH) override;
+	void RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
+		int srcW, int srcH, float clipX, float clipY, float clipW, float clipH) override;
 	void Present() override;
 	bool ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) override;
 	void OnResize(int w, int h) override;
@@ -100,6 +102,11 @@ private:
 	void RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
 		int srcW, int srcH);
 
+	bool SetOutputClip(float dstX, float dstY, float dstW, float dstH,
+		float clipX, float clipY, float clipW, float clipH);
+	void ClearOutputClip();
+	void ApplyOutputClip();
+
 	// Get or compile a screen FX shader program for the given feature flags.
 	const ScreenFXProgram &GetScreenFXProgram(uint32_t features);
 
@@ -132,6 +139,11 @@ private:
 	SDL_GLContext mGLContext;
 	int mWinW = 0;
 	int mWinH = 0;
+	bool mbOutputClipEnabled = false;
+	int mOutputClipX = 0;
+	int mOutputClipY = 0;
+	int mOutputClipW = 0;
+	int mOutputClipH = 0;
 
 	// Emulator frame texture
 	GLuint mEmuTexture = 0;

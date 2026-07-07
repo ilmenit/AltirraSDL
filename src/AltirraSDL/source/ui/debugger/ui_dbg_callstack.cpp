@@ -41,6 +41,7 @@ private:
 	std::vector<FrameEntry> mFrames;
 	bool mbNeedsRebuild = true;
 	uint32 mFrameExtPC = 0;
+	int mSelectedIndex = -1;
 };
 
 ATImGuiCallStackPaneImpl::ATImGuiCallStackPaneImpl()
@@ -63,9 +64,8 @@ void ATImGuiCallStackPaneImpl::RebuildStack() {
 	if (!dbg || !mbStateValid || mLastState.mbRunning)
 		return;
 
-	// Get stack frames (up to 64)
-	ATCallStackFrame rawFrames[64];
-	uint32 count = dbg->GetCallStack(rawFrames, 64);
+	ATCallStackFrame rawFrames[16];
+	uint32 count = dbg->GetCallStack(rawFrames, 16);
 
 	IATDebuggerSymbolLookup *lookup = ATGetDebuggerSymbolLookup();
 
@@ -76,31 +76,29 @@ void ATImGuiCallStackPaneImpl::RebuildStack() {
 		entry.mPC = f.mPC;
 		entry.mSP = f.mSP;
 		entry.mP = f.mP;
-		entry.mbCurrent = (f.mPC == mFrameExtPC);
+		entry.mbCurrent = ((mFrameExtPC ^ f.mPC) & 0xFFFF) == 0;
 
-		// Format: [>]XXXX: [*]XXXX (symbol)
-		// > = current frame, * = break flag set
+		const char *symname = "";
+		if (lookup) {
+			ATSymbol sym;
+			if (lookup->LookupSymbol(f.mPC, kATSymbol_Execute, sym))
+				symname = sym.mpName;
+		}
+
 		VDStringA text;
-		text.sprintf("%c%04X: %c%04X",
+		text.sprintf("%c%04X: %c%04X (%s)",
 			entry.mbCurrent ? '>' : ' ',
 			f.mSP,
 			(f.mP & 0x04) ? '*' : ' ',
-			f.mPC);
-
-		// Look up symbol name
-		if (lookup) {
-			ATSymbol sym;
-			if (lookup->LookupSymbol(f.mPC, kATSymbol_Execute, sym)) {
-				text.append_sprintf(" (%s", sym.mpName);
-				if (sym.mOffset != f.mPC)
-					text.append_sprintf("+%u", f.mPC - sym.mOffset);
-				text += ')';
-			}
-		}
+			f.mPC,
+			symname);
 
 		entry.mText = text;
 		mFrames.push_back(std::move(entry));
 	}
+
+	if (mSelectedIndex >= (int)mFrames.size())
+		mSelectedIndex = -1;
 }
 
 bool ATImGuiCallStackPaneImpl::Render() {
@@ -136,21 +134,16 @@ bool ATImGuiCallStackPaneImpl::Render() {
 	for (int i = 0; i < (int)mFrames.size(); ++i) {
 		const FrameEntry& f = mFrames[i];
 
-		// Highlight current frame
-		if (f.mbCurrent)
-			ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
-
 		ImGui::PushID(i);
-		ImGui::Selectable(f.mText.c_str(), f.mbCurrent);
+		if (ImGui::Selectable(f.mText.c_str(), i == mSelectedIndex))
+			mSelectedIndex = i;
+
 		// Double-click to jump to frame (matches Windows LBN_DBLCLK)
 		if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
 			if (dbg)
 				dbg->SetFramePC(f.mPC);
 		}
 		ImGui::PopID();
-
-		if (f.mbCurrent)
-			ImGui::PopStyleColor();
 	}
 
 	// Escape → focus Console

@@ -17,6 +17,8 @@ public:
 	void BeginFrame() override;
 	void RenderFrame(float dstX, float dstY, float dstW, float dstH,
 		int srcW, int srcH) override;
+	void RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
+		int srcW, int srcH, float clipX, float clipY, float clipW, float clipH) override;
 	void Present() override;
 	bool ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) override;
 	void OnResize(int w, int h) override;

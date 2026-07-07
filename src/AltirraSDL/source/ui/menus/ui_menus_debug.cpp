@@ -24,7 +24,7 @@ extern SDL_Window *g_pWindow;
 void ATUIRenderDebugMenu(ATSimulator &sim) {
 	IATDebugger *dbg = ATGetDebugger();
 	bool dbgEnabled = ATUIDebuggerIsOpen();
-	bool dbgRunning = dbg && dbg->IsRunning();
+	bool dbgRunning = dbg && (dbg->IsRunning() || dbg->AreCommandsQueued());
 
 	if (ImGui::MenuItem("Enable Debugger", nullptr, dbgEnabled)) {
 		if (dbgEnabled)
@@ -32,10 +32,16 @@ void ATUIRenderDebugMenu(ATSimulator &sim) {
 		else
 			ATUIDebuggerOpen();
 	}
-	if (ImGui::MenuItem("Open Source File...", ATUIGetShortcutStringForCommand("Debug.OpenSourceFile"), false, dbgEnabled))
+	if (ImGui::MenuItem("Open Source File...", ATUIGetShortcutStringForCommand("Debug.OpenSourceFile"))) {
+		if (!dbgEnabled)
+			ATUIDebuggerOpen();
 		ATUIShowOpenSourceFileDialog(g_pWindow);
-	if (ImGui::MenuItem("Source File List...", nullptr, false, dbgEnabled))
+	}
+	if (ImGui::MenuItem("Source File List...")) {
+		if (!dbgEnabled)
+			ATUIDebuggerOpen();
 		ATUIDebuggerShowSourceListDialog();
+	}
 
 	if (ImGui::BeginMenu("Window", dbgEnabled)) {
 		if (ImGui::MenuItem("Console"))
@@ -68,8 +74,10 @@ void ATUIRenderDebugMenu(ATSimulator &sim) {
 		}
 		if (ImGui::MenuItem("Breakpoints"))
 			ATActivateUIPane(kATUIPaneId_Breakpoints, true);
-		ImGui::MenuItem("Targets", nullptr, false, false);
-		ImGui::MenuItem("Debug Display", nullptr, false, false);
+		if (ImGui::MenuItem("Targets"))
+			ATActivateUIPane(kATUIPaneId_Targets, true);
+		if (ImGui::MenuItem("Debug Display"))
+			ATActivateUIPane(kATUIPaneId_DebugDisplay, true);
 		ImGui::EndMenu();
 	}
 
@@ -91,11 +99,6 @@ void ATUIRenderDebugMenu(ATSimulator &sim) {
 	}
 
 	if (ImGui::BeginMenu("Options")) {
-		if (dbg) {
-			bool breakAtExe = dbg->IsBreakOnEXERunAddrEnabled();
-			if (ImGui::MenuItem("Break at EXE Run Address", nullptr, breakAtExe))
-				dbg->SetBreakOnEXERunAddrEnabled(!breakAtExe);
-		}
 		{
 			bool autoReload = sim.IsROMAutoReloadEnabled();
 			if (ImGui::MenuItem("Auto-Reload ROMs on Cold Reset", nullptr, autoReload))
@@ -106,8 +109,14 @@ void ATUIRenderDebugMenu(ATSimulator &sim) {
 			if (ImGui::MenuItem("Randomize Memory On EXE Load", nullptr, randomEXE))
 				sim.SetRandomFillEXEEnabled(!randomEXE);
 		}
+		if (dbg) {
+			bool breakAtExe = dbg->IsBreakOnEXERunAddrEnabled();
+			if (ImGui::MenuItem("Break at EXE Run Address", nullptr, breakAtExe))
+				dbg->SetBreakOnEXERunAddrEnabled(!breakAtExe);
+		}
 		ImGui::Separator();
-		ImGui::MenuItem("Change Font...", nullptr, false, false);                   // TODO
+		if (ImGui::MenuItem("Change Font..."))
+			ATUIOpenSystemConfigFonts();
 		ImGui::EndMenu();
 	}
 
@@ -124,21 +133,21 @@ void ATUIRenderDebugMenu(ATSimulator &sim) {
 			snprintf(runBreakHint, sizeof(runBreakHint), "%s", runKey);
 		else
 			snprintf(runBreakHint, sizeof(runBreakHint), "%s", stopKey);
-		if (ImGui::MenuItem("Run/Break", runBreakHint, false, dbgEnabled))
+		if (ImGui::MenuItem("Run/Break", runBreakHint))
 			ATUIDebuggerRunStop();
 	}
-	if (ImGui::MenuItem("Break", nullptr, false, dbgEnabled && dbgRunning))
+	if (ImGui::MenuItem("Break", nullptr, false, dbgRunning))
 		ATUIDebuggerBreak();
 
 	ImGui::Separator();
 
-	if (ImGui::MenuItem("Step Into", ATUIGetShortcutStringForCommand("Debug.StepInto"), false, dbgEnabled && !dbgRunning))
+	if (ImGui::MenuItem("Step Into", ATUIGetShortcutStringForCommand("Debug.StepInto"), false, !sim.IsRunning()))
 		ATUIDebuggerStepInto();
-	if (ImGui::MenuItem("Step Over", ATUIGetShortcutStringForCommand("Debug.StepOver"), false, dbgEnabled && !dbgRunning))
+	if (ImGui::MenuItem("Step Over", ATUIGetShortcutStringForCommand("Debug.StepOver"), false, !sim.IsRunning()))
 		ATUIDebuggerStepOver();
-	if (ImGui::MenuItem("Step Out", ATUIGetShortcutStringForCommand("Debug.StepOut"), false, dbgEnabled && !dbgRunning))
+	if (ImGui::MenuItem("Step Out", ATUIGetShortcutStringForCommand("Debug.StepOut"), false, !sim.IsRunning()))
 		ATUIDebuggerStepOut();
-	if (ImGui::MenuItem("Toggle Breakpoint", ATUIGetShortcutStringForCommand("Debug.ToggleBreakpoint"), false, dbgEnabled && !dbgRunning))
+	if (ImGui::MenuItem("Toggle Breakpoint", ATUIGetShortcutStringForCommand("Debug.ToggleBreakpoint"), false, dbgEnabled))
 		ATUIDebuggerToggleBreakpoint();
 	if (ImGui::MenuItem("New Breakpoint...", ATUIGetShortcutStringForCommand("Debug.NewBreakpoint"), false, dbgEnabled)) {
 		ATActivateUIPane(kATUIPaneId_Breakpoints, true, true);
@@ -155,5 +164,5 @@ void ATUIRenderDebugMenu(ATSimulator &sim) {
 	if (ImGui::MenuItem("Verifier...", nullptr, g_sim.IsVerifierEnabled()))
 		ATUIShowDialogVerifier();
 	if (ImGui::MenuItem("Performance Analyzer..."))
-		ATActivateUIPane(kATUIPaneId_Profiler, true);
+		ATActivateUIPane(kATUIPaneId_PerformanceAnalyzerSDL, true);
 }

@@ -36,6 +36,7 @@
 #endif
 
 extern SDL_Window *g_pWindow;
+extern ATUIState g_uiState;
 
 // =========================================================================
 // Helpers: VDStringA <-> std::string conversion
@@ -199,6 +200,13 @@ static bool LoadShaderPreset(IDisplayBackend *backend, const std::string &path) 
 	SaveLastPresetPath(path);
 	RestoreParameterValues(backend);
 
+	// Sync the master mode immediately for every load path (menu click,
+	// file-dialog poll, startup auto-load) rather than waiting for the
+	// View menu's lazy hasPreset sync — the settings load callback
+	// (ui_state_settings.cpp) keys off Preset mode to decide whether the
+	// persisted None/Basic base state may be applied.
+	g_uiState.screenEffectsMode = ATUIState::kSFXMode_Preset;
+
 	LOG_INFO("ShaderPresets", "Activated preset: %s", path.c_str());
 	return true;
 }
@@ -209,6 +217,14 @@ static void ClearShaderPreset(IDisplayBackend *backend) {
 
 	backend->ClearShaderPreset();
 	SaveLastPresetPath("");
+
+	// Preset mode is derived state (mode == Preset exactly when a preset
+	// is loaded).  Callers switching to None/Basic overwrite this right
+	// after; dropping to Basic here keeps the invariant on paths that
+	// only clear (e.g. the WASM CRT toggle, whose Preset guard in
+	// ApplyPerformancePreset would otherwise leave the mode stuck).
+	if (g_uiState.screenEffectsMode == ATUIState::kSFXMode_Preset)
+		g_uiState.screenEffectsMode = ATUIState::kSFXMode_Basic;
 
 	LOG_INFO("ShaderPresets", "Cleared shader preset — built-in effects restored");
 }

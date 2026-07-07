@@ -41,10 +41,51 @@ public:
 	void LoadSettings();
 
 	// -- Editing (ui_dbg_memory.cpp) --
-	void BeginEdit();
-	void CommitEdit();
-	void CancelEdit();
-	void EnsureHighlightVisible();
+		void BeginEdit();
+		void CommitEdit();
+		void CancelEdit();
+		void EnsureHighlightVisible();
+		void SetHighlightedAddress(std::optional<uint32> highlightAddr,
+			bool highlightData,
+			bool select);
+		void AdvanceSelectionHorizontal(int dir);
+		void MoveSelectionHorizontal(int dir);
+		void MoveSelectionVertical(int dir);
+		void ScrollViewRows(int rows);
+		void ScrollViewPage(int dir);
+		bool TestEnsureHighlightVisible(uint32 viewStart,
+			uint32 columns,
+			uint32 visibleRows,
+			uint32 highlightAddr,
+			uint32& outViewStart);
+		bool TestNavigation(uint32 viewStart,
+			uint32 columns,
+			uint32 visibleRows,
+			uint32 highlightAddr,
+			bool dataColumn,
+			const char *op,
+			uint32& outViewStart,
+			uint32& outHighlightAddr,
+			bool& outDataColumn);
+	bool TestHexByteEdit(uint32 addr,
+		uint8 value,
+		uint8& outBefore,
+		uint8& outAfter);
+	bool TestHexDigitAutoAdvance(int mode,
+		uint32 viewStart,
+		uint32 columns,
+		uint32 visibleRows,
+		uint32 addr,
+		const char *digits,
+		uint16& outValue,
+		uint32& outSelectedAddr,
+		uint32& outViewStart);
+		bool TestHexByteCancel(uint32 addr,
+			uint8 value,
+			uint8& outBefore,
+			uint8& outAfter,
+			uint32& outSelectedAddr,
+			bool& outSelectionEnabled);
 
 	// -- Hex dump rendering (ui_dbg_memory_hexdump.cpp) --
 	void RenderHexDump();
@@ -57,11 +98,31 @@ public:
 	// ---- Enums ----
 
 	enum class ValueMode : uint8 { HexBytes, HexWords, DecBytes, DecWords };
-	enum class InterpretMode : uint8 {
-		None, Atascii, Internal,
-		Font1Bpp, Font2Bpp,
-		Graphics1Bpp, Graphics2Bpp, Graphics4Bpp, Graphics8Bpp
-	};
+		enum class InterpretMode : uint8 {
+			None, Atascii, Internal,
+			Font1Bpp, Font2Bpp,
+			Graphics1Bpp, Graphics2Bpp, Graphics4Bpp, Graphics8Bpp
+		};
+		bool TestValueEdit(ValueMode mode,
+			uint32 addr,
+			uint16 value,
+			uint16& outBefore,
+			uint16& outAfter);
+		bool TestTextEdit(InterpretMode mode,
+			uint32 addr,
+			uint8 ch,
+			uint8& outBefore,
+			uint8& outAfter,
+			uint8& outWritten);
+		bool TestTextAutoAdvance(InterpretMode mode,
+			uint32 viewStart,
+			uint32 columns,
+			uint32 visibleRows,
+			uint32 addr,
+			uint8 ch,
+			uint8& outWritten,
+			uint32& outSelectedAddr,
+			uint32& outViewStart);
 
 	// ---- Inline helpers ----
 
