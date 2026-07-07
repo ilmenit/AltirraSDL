@@ -61,6 +61,13 @@ static float s_joyBaseX = 0, s_joyBaseY = 0;  // Touch-down position (pixels)
 static float s_joyCurX = 0, s_joyCurY = 0;    // Current position (pixels)
 static uint8 s_joyDirMask = 0;                // Active directions (bit 0=L,1=R,2=U,3=D)
 
+// External joystick state (embedder hook: JS tilt/gamepad).  Tracked
+// separately from the touch stick so the two never clobber each other;
+// an embedder that drives this while the touch stick is idle gets clean
+// edge-diffed input.
+static uint8 s_extJoyDirMask = 0;
+static bool s_extTrigHeld = false;
+
 // Fire button finger tracking
 static SDL_FingerID s_fireFinger = 0;
 static bool s_fireActive = false;
@@ -153,6 +160,25 @@ static void ApplyDirectionMask(uint8 newMask, uint8 oldMask) {
 	}
 }
 
+// Embedder hook — see touch_controls.h.  Diffs against the last
+// external state so only press/release edges reach ATInputManager.
+void ATTouchControls_SetExternalJoystick(uint8 dirMask, bool trigger) {
+	dirMask &= 0x0F;
+	if (dirMask != s_extJoyDirMask) {
+		ApplyDirectionMask(dirMask, s_extJoyDirMask);
+		s_extJoyDirMask = dirMask;
+	}
+	if (trigger != s_extTrigHeld) {
+		if (s_pInputManager) {
+			if (trigger)
+				s_pInputManager->OnButtonDown(0, kATInputCode_JoyButton0);
+			else
+				s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
+		}
+		s_extTrigHeld = trigger;
+	}
+}
+
 // -------------------------------------------------------------------------
 // Console switch helpers
 // -------------------------------------------------------------------------
@@ -205,6 +231,16 @@ void ATTouchControls_ReleaseAll() {
 	if (s_optionHeld) { SetConsoleSwitch(0x04, false); s_optionHeld = false; }
 	if (s_warpHeld)   { ATUISetTurboPulse(false); s_warpHeld = false; }
 	s_consoleActive = false;
+
+	// Release external (embedder) joystick + trigger
+	if (s_extJoyDirMask) {
+		ApplyDirectionMask(0, s_extJoyDirMask);
+		s_extJoyDirMask = 0;
+	}
+	if (s_extTrigHeld && s_pInputManager) {
+		s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
+		s_extTrigHeld = false;
+	}
 
 	s_menuTapped = false;
 	s_menuFingerActive = false;
