@@ -1500,6 +1500,21 @@ void ATWasmSetJoystick(int dirMask, int trigger) {
 	ATTouchControls_SetExternalJoystick((uint8)(dirMask & 0x0F), trigger != 0);
 }
 
+// Show/hide the on-canvas console-key row (START/SELECT/OPTION/>>)
+// independently of the rest of the touch controls (?consolekeys= deep
+// link / embedder JS).  Lets a kiosk/arcade shell keep the joystick +
+// fire visible while auto-hiding the console keys after inactivity, or
+// hide them for games that never use them.  The hamburger menu button
+// is unaffected; hiding releases any currently-held console switch.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetConsoleKeys() {
+	return ATTouchControls_GetConsoleKeysVisible() ? 1 : 0;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetConsoleKeys(int on) {
+	ATTouchControls_SetConsoleKeysVisible(on != 0);
+}
+
 // JS-side bar button (RESET) — cold reset.  The HTML page wraps this
 // in a confirm() popup so an accidental click doesn't nuke a save in
 // progress.  Cold reset only — warm reset is rarely useful from the

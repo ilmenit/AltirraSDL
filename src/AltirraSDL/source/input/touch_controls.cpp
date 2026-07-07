@@ -60,11 +60,10 @@ static bool s_joyActive = false;
 static float s_joyBaseX = 0, s_joyBaseY = 0;  // Touch-down position (pixels)
 static float s_joyCurX = 0, s_joyCurY = 0;    // Current position (pixels)
 static uint8 s_joyDirMask = 0;                // Active directions (bit 0=L,1=R,2=U,3=D)
+static uint8 s_effectiveJoyDirMask = 0;
 
 // External joystick state (embedder hook: JS tilt/gamepad).  Tracked
-// separately from the touch stick so the two never clobber each other;
-// an embedder that drives this while the touch stick is idle gets clean
-// edge-diffed input.
+// separately from the touch stick, then combined before events are sent.
 static uint8 s_extJoyDirMask = 0;
 static bool s_extTrigHeld = false;
 
@@ -73,6 +72,7 @@ static SDL_FingerID s_fireFinger = 0;
 static bool s_fireActive = false;
 static bool s_fireAHeld = false;
 static bool s_fireBHeld = false;
+static bool s_effectiveFireAHeld = false;
 
 // Console button tracking (START/SELECT/OPTION/WARP each track independently)
 static SDL_FingerID s_consoleFinger = 0;
@@ -81,6 +81,12 @@ static bool s_startHeld = false;
 static bool s_selectHeld = false;
 static bool s_optionHeld = false;
 static bool s_warpHeld = false;
+
+// Console-key row visibility (embedder hook — see touch_controls.h).
+// When false the START/SELECT/OPTION/>> buttons are neither drawn nor
+// hit-tested; the hamburger menu button is unaffected.  Default on so
+// nothing changes unless an embedder asks.
+static bool s_consoleKeysVisible = true;
 
 // Menu button tap detection — not static, accessed by ui_mobile.cpp.
 // Set when the user has completed a press-and-release on btnMenu so the
@@ -160,23 +166,34 @@ static void ApplyDirectionMask(uint8 newMask, uint8 oldMask) {
 	}
 }
 
-// Embedder hook — see touch_controls.h.  Diffs against the last
-// external state so only press/release edges reach ATInputManager.
-void ATTouchControls_SetExternalJoystick(uint8 dirMask, bool trigger) {
-	dirMask &= 0x0F;
-	if (dirMask != s_extJoyDirMask) {
-		ApplyDirectionMask(dirMask, s_extJoyDirMask);
-		s_extJoyDirMask = dirMask;
+static void UpdateEffectiveJoystick() {
+	const uint8 newMask = (s_joyDirMask | s_extJoyDirMask) & 0x0F;
+	if (newMask != s_effectiveJoyDirMask) {
+		ApplyDirectionMask(newMask, s_effectiveJoyDirMask);
+		s_effectiveJoyDirMask = newMask;
 	}
-	if (trigger != s_extTrigHeld) {
+
+	const bool fireA = s_fireAHeld || s_extTrigHeld;
+	if (fireA != s_effectiveFireAHeld) {
 		if (s_pInputManager) {
-			if (trigger)
+			if (fireA)
 				s_pInputManager->OnButtonDown(0, kATInputCode_JoyButton0);
 			else
 				s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
 		}
-		s_extTrigHeld = trigger;
+		s_effectiveFireAHeld = fireA;
 	}
+}
+
+// Embedder hook — see touch_controls.h.
+void ATTouchControls_SetExternalJoystick(uint8 dirMask, bool trigger) {
+	dirMask &= 0x0F;
+	if (dirMask == s_extJoyDirMask && trigger == s_extTrigHeld)
+		return;
+
+	s_extJoyDirMask = dirMask;
+	s_extTrigHeld = trigger;
+	UpdateEffectiveJoystick();
 }
 
 // -------------------------------------------------------------------------
@@ -209,16 +226,13 @@ void ATTouchControls_Shutdown() {
 void ATTouchControls_ReleaseAll() {
 	// Release joystick
 	if (s_joyActive) {
-		ApplyDirectionMask(0, s_joyDirMask);
 		s_joyDirMask = 0;
 		s_joyActive = false;
 	}
 
 	// Release fire buttons
-	if (s_fireAHeld && s_pInputManager) {
-		s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
+	if (s_fireAHeld)
 		s_fireAHeld = false;
-	}
 	if (s_fireBHeld && s_pInputManager) {
 		s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0 + 1);
 		s_fireBHeld = false;
@@ -233,19 +247,36 @@ void ATTouchControls_ReleaseAll() {
 	s_consoleActive = false;
 
 	// Release external (embedder) joystick + trigger
-	if (s_extJoyDirMask) {
-		ApplyDirectionMask(0, s_extJoyDirMask);
+	if (s_extJoyDirMask)
 		s_extJoyDirMask = 0;
-	}
-	if (s_extTrigHeld && s_pInputManager) {
-		s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
+	if (s_extTrigHeld)
 		s_extTrigHeld = false;
-	}
+	UpdateEffectiveJoystick();
 
 	s_menuTapped = false;
 	s_menuFingerActive = false;
 	s_menuFinger = 0;
 	s_menuMouseActive = false;
+}
+
+// Embedder hook — see touch_controls.h.  Hiding mid-press releases any
+// held console switch so a key can't stay latched while invisible.
+void ATTouchControls_SetConsoleKeysVisible(bool visible) {
+	if (s_consoleKeysVisible == visible)
+		return;
+	s_consoleKeysVisible = visible;
+
+	if (!visible) {
+		if (s_startHeld)  { SetConsoleSwitch(0x01, false); s_startHeld = false; }
+		if (s_selectHeld) { SetConsoleSwitch(0x02, false); s_selectHeld = false; }
+		if (s_optionHeld) { SetConsoleSwitch(0x04, false); s_optionHeld = false; }
+		if (s_warpHeld)   { ATUISetTurboPulse(false); s_warpHeld = false; }
+		s_consoleActive = false;
+	}
+}
+
+bool ATTouchControls_GetConsoleKeysVisible() {
+	return s_consoleKeysVisible;
 }
 
 bool ATTouchControls_IsActive() {
@@ -392,7 +423,7 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 			return false;
 
 		// --- CONSOLE KEYS (top bar) ---
-		if (topBarPx.Contains(px, py) && !s_consoleActive) {
+		if (s_consoleKeysVisible && topBarPx.Contains(px, py) && !s_consoleActive) {
 			// Only claim the finger if it actually hits a console button
 			if (layout.btnStart.Contains(px, py)) {
 				s_consoleFinger = fid;
@@ -451,11 +482,8 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 				newMask = ComputeDirectionMask4(dx, dy, layout.joyDeadZone);
 			else if (style == ATTouchJoystickStyle::DPad8)
 				newMask = ComputeDirectionMask(dx, dy, layout.joyDeadZone);
-			s_joyDirMask = 0;
-			if (newMask) {
-				ApplyDirectionMask(newMask, 0);
-				s_joyDirMask = newMask;
-			}
+			s_joyDirMask = newMask;
+			UpdateEffectiveJoystick();
 			HapticPulse(5);
 			return true;
 		}
@@ -469,8 +497,6 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 
 			if (layout.btnFireA.Contains(px, py)) {
 				s_fireAHeld = true;
-				if (s_pInputManager)
-					s_pInputManager->OnButtonDown(0, kATInputCode_JoyButton0);
 			}
 			if (fireBEnabled && layout.btnFireB.Contains(px, py)) {
 				s_fireBHeld = true;
@@ -481,9 +507,8 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 			// default to Fire A for the whole zone.
 			if (!s_fireAHeld && !s_fireBHeld) {
 				s_fireAHeld = true;
-				if (s_pInputManager)
-					s_pInputManager->OnButtonDown(0, kATInputCode_JoyButton0);
 			}
+			UpdateEffectiveJoystick();
 			HapticPulse(15);
 			return true;
 		}
@@ -519,8 +544,8 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 				newMask = ComputeDirectionMask(dx, dy, layout.joyDeadZone);
 
 			if (newMask != s_joyDirMask) {
-				ApplyDirectionMask(newMask, s_joyDirMask);
 				s_joyDirMask = newMask;
+				UpdateEffectiveJoystick();
 				HapticPulse(3);
 			}
 			return true;
@@ -534,10 +559,10 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 
 			if (nowA && !s_fireAHeld) {
 				s_fireAHeld = true;
-				if (s_pInputManager) s_pInputManager->OnButtonDown(0, kATInputCode_JoyButton0);
+				UpdateEffectiveJoystick();
 			} else if (!nowA && s_fireAHeld) {
 				s_fireAHeld = false;
-				if (s_pInputManager) s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
+				UpdateEffectiveJoystick();
 			}
 
 			if (nowB && !s_fireBHeld) {
@@ -556,17 +581,17 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 	if (ev.type == SDL_EVENT_FINGER_UP) {
 		// --- JOYSTICK RELEASE ---
 		if (s_joyActive && fid == s_joyFinger) {
-			ApplyDirectionMask(0, s_joyDirMask);
 			s_joyDirMask = 0;
 			s_joyActive = false;
+			UpdateEffectiveJoystick();
 			return true;
 		}
 
 		// --- FIRE RELEASE ---
 		if (s_fireActive && fid == s_fireFinger) {
-			if (s_fireAHeld && s_pInputManager) {
-				s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0);
+			if (s_fireAHeld) {
 				s_fireAHeld = false;
+				UpdateEffectiveJoystick();
 			}
 			if (s_fireBHeld && s_pInputManager) {
 				s_pInputManager->OnButtonUp(0, kATInputCode_JoyButton0 + 1);
@@ -762,7 +787,7 @@ void ATTouchControls_Render(const ATTouchLayout &layout, const ATTouchLayoutConf
 	// Get foreground draw list (renders on top of everything)
 	ImDrawList *dl = ImGui::GetForegroundDrawList();
 
-	if (showControls) {
+	if (showControls && s_consoleKeysVisible) {
 		// --- Console keys ---
 		DrawButton(dl, layout.btnStart, "START", btnConsole, textColor, s_startHeld);
 		DrawButton(dl, layout.btnSelect, "SELECT", btnConsole, textColor, s_selectHeld);

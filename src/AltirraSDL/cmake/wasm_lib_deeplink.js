@@ -87,6 +87,7 @@
     //   filter:     0..4|null         (?filter=point|bilinear|sharp|bicubic|auto)
     //   artifact:   0..6|null         (?artifact=none|ntsc|pal|ntschi|palhi|auto|autohi)
     //   vkbd:       true|false|null   (?vkbd=0|1)
+    //   consolekeys:true|false|null   (?consolekeys=0|1)
     //   stretch:    0..4|null         (?stretch=fill|preserve|square|integral|integral_preserve)
     //   joystick:   0..2|null         (?joystick=analog|dpad8|dpad4)
     //   ui:         'desktop'|'gaming'|null  (?ui=…)  overrides the
@@ -99,6 +100,7 @@
     filter:      null,
     artifact:    null,
     vkbd:        null,
+    consolekeys: null,
     stretch:     null,
     joystick:    null,
     ui:          null,
@@ -502,6 +504,22 @@
         log('vkbd=' + (window.__altirraLib.vkbd ? '1' : '0'));
       } else if (vkbdRaw) {
         log('ignored unknown vkbd value:', vkbdRaw);
+      }
+
+      // ?consolekeys=0|1 — show/hide the console-key row
+      // (START/SELECT/OPTION/>>) independently of the rest of the
+      // touch controls.  A kiosk/arcade shell can launch with
+      // ?consolekeys=0 for games that never use the console switches,
+      // or drive Module._ATWasmSetConsoleKeys at runtime to auto-hide
+      // the row after a few seconds of inactivity.  The hamburger menu
+      // button is unaffected.  Applied via ATWasmSetConsoleKeys once
+      // the runtime is ready.
+      var consoleKeysRaw = (p.get('consolekeys') || '').trim();
+      if (consoleKeysRaw === '0' || consoleKeysRaw === '1') {
+        window.__altirraLib.consolekeys = (consoleKeysRaw === '1');
+        log('consolekeys=' + (window.__altirraLib.consolekeys ? '1' : '0'));
+      } else if (consoleKeysRaw) {
+        log('ignored unknown consolekeys value:', consoleKeysRaw);
       }
 
       // ?stretch=fill|preserve|square|integral|integral_preserve —
@@ -1120,6 +1138,9 @@
     }
     if (lib.vkbd !== null && Module._ATWasmSetVirtualKeyboard) {
       try { Module._ATWasmSetVirtualKeyboard(lib.vkbd ? 1 : 0); } catch (e) {}
+    }
+    if (lib.consolekeys !== null && Module._ATWasmSetConsoleKeys) {
+      try { Module._ATWasmSetConsoleKeys(lib.consolekeys ? 1 : 0); } catch (e) {}
     }
     if (lib.stretch !== null && Module._ATWasmSetStretchMode) {
       try { Module._ATWasmSetStretchMode(lib.stretch); } catch (e) {}
