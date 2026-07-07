@@ -2,7 +2,10 @@
 //	Main shell: pane class, menu bar, toolbar, start/stop, file I/O.
 
 #include <stdafx.h>
+#include <atomic>
 #include <cmath>
+#include <mutex>
+#include <vector>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include "ui_file_dialog_sdl3.h"
@@ -11,6 +14,7 @@
 #include <vd2/system/VDString.h>
 #include <vd2/system/refcount.h>
 #include <vd2/system/file.h>
+#include <vd2/system/registry.h>
 #include <vd2/system/zip.h>
 #include <vd2/system/text.h>
 #include <vd2/system/unknown.h>
@@ -31,6 +35,80 @@
 extern ATSimulator g_sim;
 extern SDL_Window *g_pWindow;
 vdrefptr<ATTraceCollection> ATLoadTraceFromAtari800(const wchar_t *file);
+
+namespace {
+
+enum class TraceDialogAction {
+	Load,
+	Save,
+	ImportA800,
+	ExportChrome,
+};
+
+struct PendingTraceDialogAction {
+	uintptr mOwnerId;
+	TraceDialogAction mAction;
+	VDStringA mPathUtf8;
+};
+
+static constexpr uintptr kTraceDialogActionBits = 2;
+static constexpr uintptr kTraceDialogActionMask = (1U << kTraceDialogActionBits) - 1;
+std::atomic<uintptr> g_nextTraceDialogOwnerId { 0 };
+std::atomic<uintptr> g_activeTraceDialogOwnerId { 0 };
+std::mutex g_traceDialogMutex;
+std::vector<PendingTraceDialogAction> g_traceDialogActions;
+
+void QueueTraceDialogAction(uintptr ownerId, TraceDialogAction action, const char *path) {
+	if (!path || !*path)
+		return;
+
+	if (g_activeTraceDialogOwnerId.load(std::memory_order_acquire) != ownerId)
+		return;
+
+	PendingTraceDialogAction pending { ownerId, action, VDStringA(path) };
+
+	std::lock_guard lock(g_traceDialogMutex);
+	g_traceDialogActions.push_back(std::move(pending));
+}
+
+void SDLCALL TraceDialogCallback(void *ud, const char * const *fl, int) {
+	const uintptr packed = reinterpret_cast<uintptr>(ud);
+	const uintptr ownerId = packed >> kTraceDialogActionBits;
+	const TraceDialogAction action = static_cast<TraceDialogAction>(packed & kTraceDialogActionMask);
+
+	if (fl && fl[0])
+		QueueTraceDialogAction(ownerId, action, fl[0]);
+}
+
+void *ToDialogActionUserData(uintptr ownerId, TraceDialogAction action) {
+	const uintptr packed = (ownerId << kTraceDialogActionBits) | static_cast<uintptr>(action);
+	return reinterpret_cast<void *>(packed);
+}
+
+void LoadTraceDefaults(ATTraceSettings& settings) {
+	VDRegistryAppKey key("Debugger", false);
+
+	settings = {};
+	settings.mbTraceVideo = key.getBool("Trace: Enable video", true);
+	settings.mTraceVideoDivisor = key.getInt("Trace: Video divisor", 1);
+	settings.mbTraceCpuInsns = key.getBool("Trace: Enable CPU insns", true);
+	settings.mbTraceBasic = key.getBool("Trace: Enable BASIC", false);
+	settings.mbAutoLimitTraceMemory = key.getBool("Trace: Auto-limit trace memory", true);
+	settings.mVideoFrameSize = std::clamp((uint32)key.getInt("Trace: Video frame size", 128), 16U, 512U);
+}
+
+void SaveTraceDefaults(const ATTraceSettings& settings) {
+	VDRegistryAppKey key("Debugger");
+
+	key.setBool("Trace: Enable video", settings.mbTraceVideo);
+	key.setInt("Trace: Video divisor", settings.mTraceVideoDivisor);
+	key.setBool("Trace: Enable CPU insns", settings.mbTraceCpuInsns);
+	key.setBool("Trace: Enable BASIC", settings.mbTraceBasic);
+	key.setBool("Trace: Auto-limit trace memory", settings.mbAutoLimitTraceMemory);
+	key.setInt("Trace: Video frame size", settings.mVideoFrameSize);
+}
+
+} // namespace
 
 // =========================================================================
 // ZoomDeltaSteps implementation
@@ -74,6 +152,7 @@ private:
 	void DoSave();
 	void DoImportA800();
 	void DoExportChrome();
+	void ProcessPendingDialogActions();
 
 	void ExportToChromeTrace(const wchar_t *path) const;
 	bool Load(const wchar_t *path);
@@ -87,6 +166,7 @@ private:
 	ATImGuiTraceViewerContext mContext;
 	bool mbShowMemStats = false;
 	int mCapturedTraceIndex = 0;
+	uintptr mDialogOwnerId = 0;
 	VDStringW mTraceName;
 };
 
@@ -96,7 +176,9 @@ static ATImGuiTraceViewerPane *s_pActiveTraceViewerPane = nullptr;
 ATImGuiTraceViewerPane::ATImGuiTraceViewerPane()
 	: ATImGuiDebuggerPane(kATUIPaneId_PerformanceAnalyzerSDL, "Performance Analyzer")
 {
-	mContext.mSettings.mbTraceCpuInsns = true;
+	LoadTraceDefaults(mContext.mSettings);
+	mDialogOwnerId = ++g_nextTraceDialogOwnerId;
+	g_activeTraceDialogOwnerId.store(mDialogOwnerId, std::memory_order_release);
 
 	// Register trace limit callback — fires from emulation thread, so set
 	// an atomic flag that the main thread checks each frame.
@@ -117,6 +199,10 @@ ATImGuiTraceViewerPane::ATImGuiTraceViewerPane()
 }
 
 ATImGuiTraceViewerPane::~ATImGuiTraceViewerPane() {
+	uintptr expectedOwnerId = mDialogOwnerId;
+	g_activeTraceDialogOwnerId.compare_exchange_strong(expectedOwnerId, 0,
+		std::memory_order_acq_rel);
+
 	if (mContext.mSimEventIdTraceLimited) {
 		g_sim.GetEventManager()->RemoveEventCallback(mContext.mSimEventIdTraceLimited);
 		mContext.mSimEventIdTraceLimited = 0;
@@ -159,6 +245,7 @@ bool ATImGuiTraceViewerPane::Render() {
 
 	mbHasFocus = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
+	ProcessPendingDialogActions();
 	RenderMenuBar();
 	RenderToolbar();
 
@@ -203,6 +290,56 @@ bool ATImGuiTraceViewerPane::Render() {
 	return open;
 }
 
+void ATImGuiTraceViewerPane::ProcessPendingDialogActions() {
+	std::vector<PendingTraceDialogAction> actions;
+	{
+		std::lock_guard lock(g_traceDialogMutex);
+		actions.swap(g_traceDialogActions);
+	}
+
+	for (const PendingTraceDialogAction& action : actions) {
+		if (action.mOwnerId != mDialogOwnerId)
+			continue;
+
+		try {
+			const VDStringW path = VDTextU8ToW(action.mPathUtf8);
+
+			switch (action.mAction) {
+				case TraceDialogAction::Load:
+					if (Load(path.c_str()))
+						mTraceName = path;
+					break;
+
+				case TraceDialogAction::Save:
+					if (mContext.mpCollection) {
+						Save(path.c_str());
+						mTraceName = path;
+					}
+					break;
+
+				case TraceDialogAction::ImportA800:
+					ImportA800(path.c_str());
+					mTraceName = path;
+					break;
+
+				case TraceDialogAction::ExportChrome:
+					ExportToChromeTrace(path.c_str());
+					break;
+			}
+		} catch (const MyError& e) {
+			const char *operation = "";
+			switch (action.mAction) {
+				case TraceDialogAction::Load:			operation = "Load"; break;
+				case TraceDialogAction::Save:			operation = "Save"; break;
+				case TraceDialogAction::ImportA800:		operation = "Import"; break;
+				case TraceDialogAction::ExportChrome:	operation = "Export"; break;
+			}
+
+			LOG_ERROR("TraceViewer", "%s failed: %s", operation, e.c_str());
+		}
+	}
+}
+
 // =========================================================================
 // Menu bar
 // =========================================================================
@@ -241,28 +378,35 @@ void ATImGuiTraceViewerPane::RenderMenuBar() {
 
 		ImGui::Separator();
 		ImGui::SeparatorText("Settings");
-		ImGui::MenuItem("CPU Instruction History", nullptr, &mContext.mSettings.mbTraceCpuInsns);
-		ImGui::MenuItem("Trace Video", nullptr, &mContext.mSettings.mbTraceVideo);
+		if (ImGui::MenuItem("CPU Instruction History", nullptr, &mContext.mSettings.mbTraceCpuInsns))
+			SaveTraceDefaults(mContext.mSettings);
+		if (ImGui::MenuItem("Trace Video", nullptr, &mContext.mSettings.mbTraceVideo))
+			SaveTraceDefaults(mContext.mSettings);
 
 		if (mContext.mSettings.mbTraceVideo) {
 			ImGui::Indent(16.0f);
 			const char *rateLabels[] = { "All frames", "Every 2 frames", "Every 3 frames" };
 			int rateIdx = mContext.mSettings.mTraceVideoDivisor <= 1 ? 0 : (int)mContext.mSettings.mTraceVideoDivisor - 1;
 			if (rateIdx > 2) rateIdx = 0;
-			if (ImGui::Combo("Video Rate", &rateIdx, rateLabels, 3))
+			if (ImGui::Combo("Video Rate", &rateIdx, rateLabels, 3)) {
 				mContext.mSettings.mTraceVideoDivisor = (uint32)(rateIdx + 1);
+				SaveTraceDefaults(mContext.mSettings);
+			}
 
 			const char *sizeLabels[] = { "Small (128)", "Medium (192)", "Large (256)" };
 			int sizeIdx = mContext.mSettings.mVideoFrameSize <= 128 ? 0 : mContext.mSettings.mVideoFrameSize <= 192 ? 1 : 2;
 			if (ImGui::Combo("Video Size", &sizeIdx, sizeLabels, 3)) {
 				static const uint32 kSizes[] = { 128, 192, 256 };
 				mContext.mSettings.mVideoFrameSize = kSizes[sizeIdx];
+				SaveTraceDefaults(mContext.mSettings);
 			}
 			ImGui::Unindent(16.0f);
 		}
 
-		ImGui::MenuItem("Trace BASIC", nullptr, &mContext.mSettings.mbTraceBasic);
-		ImGui::MenuItem("Auto-Limit Memory", nullptr, &mContext.mSettings.mbAutoLimitTraceMemory);
+		if (ImGui::MenuItem("Trace BASIC", nullptr, &mContext.mSettings.mbTraceBasic))
+			SaveTraceDefaults(mContext.mSettings);
+		if (ImGui::MenuItem("Auto-Limit Memory", nullptr, &mContext.mSettings.mbAutoLimitTraceMemory))
+			SaveTraceDefaults(mContext.mSettings);
 		ImGui::EndMenu();
 	}
 
@@ -424,38 +568,19 @@ void ATImGuiTraceViewerPane::StartNativeTrace() {
 
 void ATImGuiTraceViewerPane::DoLoad() {
 	static const SDL_DialogFileFilter filters[] = {
-		{ "Altirra Trace (*.at2trace)", "at2trace" },
+		{ "Altirra Trace (*.attrace)", "attrace" },
 		{ "All Files", "*" },
 	};
-	ATUIShowOpenFileDialog('trce', [](void *ud, const char * const *fl, int) {
-		if (fl && fl[0]) {
-			auto *self = static_cast<ATImGuiTraceViewerPane *>(ud);
-			try {
-				VDStringW wpath = VDTextU8ToW(VDStringA(fl[0]));
-				if (self->Load(wpath.c_str()))
-					self->mTraceName = wpath;
-			} catch (const MyError& e) {
-				LOG_ERROR("TraceViewer", "Load failed: %s", e.c_str());
-			}
-		}
-	}, this, g_pWindow, filters, 2, false);
+	ATUIShowOpenFileDialog('trce', TraceDialogCallback, ToDialogActionUserData(mDialogOwnerId, TraceDialogAction::Load),
+		g_pWindow, filters, 2, false);
 }
 
 void ATImGuiTraceViewerPane::DoSave() {
 	static const SDL_DialogFileFilter filters[] = {
-		{ "Altirra Trace (*.at2trace)", "at2trace" },
+		{ "Altirra Trace (*.attrace)", "attrace" },
 	};
-	ATUIShowSaveFileDialog('trce', [](void *ud, const char * const *fl, int) {
-		if (fl && fl[0]) {
-			auto *self = static_cast<ATImGuiTraceViewerPane *>(ud);
-			try {
-				VDStringW wpath = VDTextU8ToW(VDStringA(fl[0]));
-				self->Save(wpath.c_str());
-			} catch (const MyError& e) {
-				LOG_ERROR("TraceViewer", "Save failed: %s", e.c_str());
-			}
-		}
-	}, this, g_pWindow, filters, 1);
+	ATUIShowSaveFileDialog('trce', TraceDialogCallback, ToDialogActionUserData(mDialogOwnerId, TraceDialogAction::Save),
+		g_pWindow, filters, 1);
 }
 
 void ATImGuiTraceViewerPane::DoImportA800() {
@@ -463,35 +588,16 @@ void ATImGuiTraceViewerPane::DoImportA800() {
 		{ "Atari800 Trace (*.txt)", "txt" },
 		{ "All Files", "*" },
 	};
-	ATUIShowOpenFileDialog('trce', [](void *ud, const char * const *fl, int) {
-		if (fl && fl[0]) {
-			auto *self = static_cast<ATImGuiTraceViewerPane *>(ud);
-			try {
-				VDStringW wpath = VDTextU8ToW(VDStringA(fl[0]));
-				self->ImportA800(wpath.c_str());
-				self->mTraceName = wpath;
-			} catch (const MyError& e) {
-				LOG_ERROR("TraceViewer", "Import failed: %s", e.c_str());
-			}
-		}
-	}, this, g_pWindow, filters, 2, false);
+	ATUIShowOpenFileDialog('trce', TraceDialogCallback, ToDialogActionUserData(mDialogOwnerId, TraceDialogAction::ImportA800),
+		g_pWindow, filters, 2, false);
 }
 
 void ATImGuiTraceViewerPane::DoExportChrome() {
 	static const SDL_DialogFileFilter filters[] = {
 		{ "Chrome Trace JSON (*.json)", "json" },
 	};
-	ATUIShowSaveFileDialog('ctrc', [](void *ud, const char * const *fl, int) {
-		if (fl && fl[0]) {
-			auto *self = static_cast<ATImGuiTraceViewerPane *>(ud);
-			try {
-				VDStringW wpath = VDTextU8ToW(VDStringA(fl[0]));
-				self->ExportToChromeTrace(wpath.c_str());
-			} catch (const MyError& e) {
-				LOG_ERROR("TraceViewer", "Export failed: %s", e.c_str());
-			}
-		}
-	}, this, g_pWindow, filters, 1);
+	ATUIShowSaveFileDialog('ctrc', TraceDialogCallback, ToDialogActionUserData(mDialogOwnerId, TraceDialogAction::ExportChrome),
+		g_pWindow, filters, 1);
 }
 
 // =========================================================================

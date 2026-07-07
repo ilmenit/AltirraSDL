@@ -480,7 +480,7 @@ void ATImGuiMemoryPaneImpl::RenderHexDump() {
 					}
 				}
 
-				ImGui::NewLine();
+				// Last item already advances to the next row.
 			}
 		}
 

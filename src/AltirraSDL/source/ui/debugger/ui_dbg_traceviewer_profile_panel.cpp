@@ -33,13 +33,7 @@ struct ProfileState {
 	double mLastSelectStart = -1;
 	double mLastSelectEnd = -1;
 	uint32 mLastCollectionGen = 0;
-
-	// Boundary rule state (frame trigger)
-	ATProfileBoundaryRule mBoundaryRule = kATProfileBoundaryRule_None;
-	char mBoundaryAddrExpr[256] = {};
-	char mBoundaryAddrExpr2[256] = {};
-	bool mbEndFunction = false;
-	bool mbShowBoundaryRuleDialog = false;
+	const ATProfileFrame::Records *mpRecords = nullptr;
 
 	struct SortedRecord {
 		uint32 mAddress;
@@ -54,8 +48,6 @@ struct ProfileState {
 
 	// Counter modes captured at profile build time (so CSV/table match)
 	ATProfileCounterMode mCapturedCounterModes[2] = { kATProfileCounterMode_None, kATProfileCounterMode_None };
-
-	ImGuiTableSortSpecs *mpLastSortSpecs = nullptr;
 };
 
 ProfileState s_profState;
@@ -67,6 +59,7 @@ void ResetCPUProfileState() {
 	s_profState.mbNeedsRefresh = true;
 	s_profState.mSortedRecords.clear();
 	s_profState.mpMergedFrame.clear();
+	s_profState.mpRecords = nullptr;
 	s_profState.mLastSelectStart = -1;
 	s_profState.mLastSelectEnd = -1;
 	s_profState.mCapturedCounterModes[0] = kATProfileCounterMode_None;
@@ -82,6 +75,7 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 	s_profState.mbValid = false;
 	s_profState.mSortedRecords.clear();
 	s_profState.mpMergedFrame.clear();
+	s_profState.mpRecords = nullptr;
 
 	if (!ctx.mpCPUHistoryChannel)
 		return;
@@ -96,6 +90,7 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 		builder.SetGlobalAddressesEnabled(ctx.mbGlobalAddressesEnabled);
 
 		const ATCPUTimestampDecoder& tsDecoder = cpuCh.GetTimestampDecoder();
+		const bool useGlobalAddrs = cpuCh.GetDisasmMode() == kATDebugDisasmMode_6502;
 
 		// Determine range
 		double rangeStart = 0;
@@ -118,7 +113,7 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 		if (cpuCh.ReadHistoryEvents(cursor, firstHents, startIdx, 1) == 0)
 			return;
 		builder.SetS(firstHents[0]->mS);
-		builder.OpenFrame(firstHents[0]->mCycle, firstHents[0]->mCycle, tsDecoder);
+		builder.OpenFrame(firstHents[0]->mCycle, firstHents[0]->mUnhaltedCycle, tsDecoder);
 
 		const ATCPUHistoryEntry *hents[257];
 		uint32 pos = startIdx;
@@ -129,14 +124,14 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 			if (n <= 1)
 				break;
 
-			builder.Update(tsDecoder, hents, n - 1, ctx.mbGlobalAddressesEnabled);
+			builder.Update(tsDecoder, hents, n - 1, useGlobalAddrs);
 			pos += n - 1;
 		}
 
 		// Read one more for the final timestamp
 		const ATCPUHistoryEntry *lastHents[1];
 		if (cpuCh.ReadHistoryEvents(cursor, lastHents, endIdx > 0 ? endIdx - 1 : 0, 1) > 0)
-			builder.CloseFrame(lastHents[0]->mCycle, lastHents[0]->mCycle, true);
+			builder.CloseFrame(lastHents[0]->mCycle, lastHents[0]->mUnhaltedCycle, true);
 		else
 			builder.CloseFrame(0, 0, true);
 
@@ -160,8 +155,19 @@ static void BuildProfile(ATImGuiTraceViewerContext& ctx) {
 			s_profState.mCapturedCounterModes[0] = s_profState.mSession.mCounterModes.size() > 0 ? s_profState.mSession.mCounterModes[0] : kATProfileCounterMode_None;
 			s_profState.mCapturedCounterModes[1] = s_profState.mSession.mCounterModes.size() > 1 ? s_profState.mSession.mCounterModes[1] : kATProfileCounterMode_None;
 
+			switch (s_profState.mSession.mProfileMode) {
+				case kATProfileMode_Insns:
+				case kATProfileMode_CallGraph:
+					s_profState.mpRecords = &mergedRaw->mRecords;
+					break;
+
+				default:
+					s_profState.mpRecords = &mergedRaw->mBlockRecords;
+					break;
+			}
+
 			// Build sorted record list
-			for (const auto& rec : mergedRaw->mRecords) {
+			for (const auto& rec : *s_profState.mpRecords) {
 				ProfileState::SortedRecord sr;
 				sr.mAddress = rec.mAddress;
 				sr.mContext = rec.mContext;
@@ -331,124 +337,140 @@ static void CopyProfileAsCsv() {
 	SDL_SetClipboardText(csv.c_str());
 }
 
-static void RenderBoundaryRuleDialog() {
-	// Temporary edit buffers — populated from s_profState on open, committed
-	// back only on OK.  Cancel discards edits (matches Windows behaviour
-	// where the dialog has its own copy of the expressions).
-	static char sEditAddr1[256];
-	static char sEditAddr2[256];
-	static bool sEditEndFunction;
-	static bool sWasOpen;
-	static VDStringA sValidationError;
-
-	if (!s_profState.mbShowBoundaryRuleDialog) {
-		sWasOpen = false;
+static void RenderCallGraphNode(uint32 idx,
+	const vdfastvector<uint32>& firstChild,
+	const vdfastvector<uint32>& nextSibling) {
+	if (!s_profState.mpMergedFrame
+		|| idx >= s_profState.mpMergedFrame->mCallGraphRecords.size()
+		|| idx >= s_profState.mpMergedFrame->mInclusiveRecords.size())
 		return;
-	}
 
-	// First frame the dialog is shown — snapshot current values
-	if (!sWasOpen) {
-		memcpy(sEditAddr1, s_profState.mBoundaryAddrExpr, sizeof(sEditAddr1));
-		memcpy(sEditAddr2, s_profState.mBoundaryAddrExpr2, sizeof(sEditAddr2));
-		sEditEndFunction = s_profState.mbEndFunction;
-		sValidationError.clear();
-		sWasOpen = true;
-	}
+	VDStringA label;
+	const ATProfileCallGraphRecord& cgr = s_profState.mpMergedFrame->mCallGraphRecords[idx];
 
-	ImGui::SetNextWindowSizeConstraints(ImVec2(420, 0), ImVec2(420, FLT_MAX));
-	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
-		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
-	if (ImGui::Begin("Trigger On PC Address", &s_profState.mbShowBoundaryRuleDialog,
-			ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking
-			| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Start frame address");
-		ImGui::SameLine(160.0f);
-		ImGui::SetNextItemWidth(-1);
-		ImGui::InputText("##addr1", sEditAddr1, sizeof(sEditAddr1));
-
-		ImGui::Spacing();
-		ImGui::SetCursorPosX(160.0f);
-		ImGui::Checkbox("End frame when function returns", &sEditEndFunction);
-
-		ImGui::Spacing();
-		ImGui::AlignTextToFramePadding();
-		if (sEditEndFunction)
-			ImGui::BeginDisabled();
-		ImGui::TextUnformatted("End frame address (optional)");
-		ImGui::SameLine(160.0f);
-		ImGui::SetNextItemWidth(-1);
-		ImGui::InputText("##addr2", sEditAddr2, sizeof(sEditAddr2));
-		if (sEditEndFunction)
-			ImGui::EndDisabled();
-
-		ImGui::Spacing();
-		ImGui::Separator();
-		ImGui::Spacing();
-
-		// Show validation error above buttons (if any)
-		if (!sValidationError.empty()) {
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-			ImGui::TextWrapped("%s", sValidationError.c_str());
-			ImGui::PopStyleColor();
-			ImGui::Spacing();
-		}
-
-		float buttonWidth = 80.0f;
-		float spacing = ImGui::GetStyle().ItemSpacing.x;
-		ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - buttonWidth * 2 - spacing + ImGui::GetStyle().WindowPadding.x);
-
-		if (ImGui::Button("OK", ImVec2(buttonWidth, 0))) {
-			IATDebugger *dbg = ATGetDebugger();
-			sValidationError.clear();
-			bool valid = true;
-
-			// Validate start address (required)
-			if (!sEditAddr1[0]) {
-				sValidationError = "Start frame address is required.";
-				valid = false;
-			} else if (dbg) {
-				try {
-					dbg->EvaluateThrow(sEditAddr1);
-				} catch (const MyError& e) {
-					sValidationError.sprintf("Start address: %s", e.c_str());
-					valid = false;
-				}
+	switch (idx) {
+		case 0:
+			label = "Main";
+			break;
+		case 1:
+			label = "IRQ";
+			break;
+		case 2:
+			label = "NMI (VBI)";
+			break;
+		case 3:
+			label = "NMI (DLI)";
+			break;
+		default:
+			if (idx < s_profState.mSession.mContexts.size()) {
+				const uint32 addr = s_profState.mSession.mContexts[idx].mAddress;
+				if (IATDebugger *dbg = ATGetDebugger())
+					label = dbg->GetAddressText(addr, false, true);
+				else
+					label.sprintf("$%04X", addr & 0xffff);
+			} else {
+				label.sprintf("#%u", idx);
 			}
 
-			// Validate end address if applicable
-			if (valid && !sEditEndFunction && sEditAddr2[0] && dbg) {
-				try {
-					dbg->EvaluateThrow(sEditAddr2);
-				} catch (const MyError& e) {
-					sValidationError.sprintf("End address: %s", e.c_str());
-					valid = false;
-				}
-			}
-
-			if (valid) {
-				// Commit edits back to profile state
-				memcpy(s_profState.mBoundaryAddrExpr, sEditAddr1, sizeof(s_profState.mBoundaryAddrExpr));
-				if (sEditEndFunction) {
-					s_profState.mBoundaryRule = kATProfileBoundaryRule_PCAddressFunction;
-					s_profState.mBoundaryAddrExpr2[0] = 0;
-				} else {
-					memcpy(s_profState.mBoundaryAddrExpr2, sEditAddr2, sizeof(s_profState.mBoundaryAddrExpr2));
-					s_profState.mBoundaryRule = kATProfileBoundaryRule_PCAddress;
-				}
-				s_profState.mbEndFunction = sEditEndFunction;
-				s_profState.mbShowBoundaryRuleDialog = false;
-			}
-		}
-
-		ImGui::SameLine();
-		if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
-			s_profState.mbShowBoundaryRuleDialog = false;
-		}
+			label.append_sprintf(" [x%u]", cgr.mCalls);
+			break;
 	}
-	ImGui::End();
+
+	const float cyclesToPercent = s_profState.mpMergedFrame->mTotalCycles
+		? 100.0f / (float)s_profState.mpMergedFrame->mTotalCycles : 0.0f;
+	const float unhaltedCyclesToPercent = s_profState.mpMergedFrame->mTotalUnhaltedCycles
+		? 100.0f / (float)s_profState.mpMergedFrame->mTotalUnhaltedCycles : 0.0f;
+	const float insnsToPercent = s_profState.mpMergedFrame->mTotalInsns
+		? 100.0f / (float)s_profState.mpMergedFrame->mTotalInsns : 0.0f;
+	const ATProfileCallGraphInclusiveRecord& cgir = s_profState.mpMergedFrame->mInclusiveRecords[idx];
+
+	label.append_sprintf(": %u cycles (%.2f%%), %u CPU cycles (%.2f%%), %u insns (%.2f%%)",
+		cgir.mInclusiveCycles,
+		(float)cgir.mInclusiveCycles * cyclesToPercent,
+		cgir.mInclusiveUnhaltedCycles,
+		(float)cgir.mInclusiveUnhaltedCycles * unhaltedCyclesToPercent,
+		cgir.mInclusiveInsns,
+		(float)cgir.mInclusiveInsns * insnsToPercent);
+
+	vdfastvector<uint32> children;
+	for (uint32 child = firstChild[idx]; child; child = nextSibling[child])
+		children.push_back(child);
+
+	std::sort(children.begin(), children.end(),
+		[records = s_profState.mpMergedFrame->mInclusiveRecords.data()](uint32 a, uint32 b) {
+			return records[a].mInclusiveCycles > records[b].mInclusiveCycles;
+		});
+
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(0);
+
+	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
+		| ImGuiTreeNodeFlags_OpenOnDoubleClick
+		| ImGuiTreeNodeFlags_SpanFullWidth;
+	if (children.empty())
+		flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+	const bool open = ImGui::TreeNodeEx((void *)(uintptr)idx, flags, "%s", label.c_str());
+
+	if (open && !children.empty()) {
+		for (uint32 child : children)
+			RenderCallGraphNode(child, firstChild, nextSibling);
+
+		ImGui::TreePop();
+	}
+}
+
+static void RenderCallGraph() {
+	if (!s_profState.mpMergedFrame || s_profState.mSession.mContexts.empty()
+		|| s_profState.mpMergedFrame->mCallGraphRecords.empty())
+		return;
+
+	const uint32 n = (uint32)s_profState.mpMergedFrame->mCallGraphRecords.size();
+	if (!n)
+		return;
+
+	vdfastvector<uint32> nextSibling(n, 0);
+	vdfastvector<uint32> firstChild(n, 0);
+
+	for (uint32 i = 4; i < n; ++i) {
+		if (i >= s_profState.mpMergedFrame->mInclusiveRecords.size()
+			|| !s_profState.mpMergedFrame->mInclusiveRecords[i].mInclusiveInsns
+			|| i >= s_profState.mSession.mContexts.size())
+			continue;
+
+		const uint32 parent = s_profState.mSession.mContexts[i].mParent;
+		if (parent >= n)
+			continue;
+
+		nextSibling[i] = firstChild[parent];
+		firstChild[parent] = i;
+	}
+
+	const auto cgRecordSorter = [records = s_profState.mpMergedFrame->mInclusiveRecords.data()](uint32 a, uint32 b) {
+		return records[a].mInclusiveCycles > records[b].mInclusiveCycles;
+	};
+
+	vdfastvector<uint32> roots;
+	for (uint32 i = 0; i < std::min<uint32>(4, n); ++i)
+		roots.push_back(i);
+
+	std::sort(roots.begin(), roots.end(), cgRecordSorter);
+
+	ImGuiTableFlags tableFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg
+		| ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable
+		| ImGuiTableFlags_SizingStretchProp;
+
+	if (!ImGui::BeginTable("##CPUProfileCallGraph", 1, tableFlags))
+		return;
+
+	ImGui::TableSetupScrollFreeze(0, 1);
+	ImGui::TableSetupColumn("Call Graph");
+	ImGui::TableHeadersRow();
+
+	for (uint32 root : roots)
+		RenderCallGraphNode(root, firstChild, nextSibling);
+
+	ImGui::EndTable();
 }
 
 void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
@@ -467,11 +489,28 @@ void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 		return;
 	}
 
-	// Mode selector
-	const char *modeLabels[] = { "Instructions", "Functions", "Call Graph", "Basic Blocks", "Basic Lines" };
-	int modeIdx = (int)s_profState.mMode;
-	if (ImGui::Combo("Mode", &modeIdx, modeLabels, 5)) {
-		s_profState.mMode = (ATProfileMode)modeIdx;
+	// Mode selector: matches native Performance Analyzer CPU Profile.
+	static constexpr ATProfileMode kModeValues[] = {
+		kATProfileMode_Insns,
+		kATProfileMode_Functions,
+		kATProfileMode_BasicBlock,
+		kATProfileMode_CallGraph
+	};
+	static const char *const kModeLabels[] = {
+		"Instructions",
+		"Functions",
+		"Basic Blocks",
+		"Call Graph"
+	};
+	int modeIdx = 0;
+	for (int i = 0; i < (int)std::size(kModeValues); ++i) {
+		if (s_profState.mMode == kModeValues[i]) {
+			modeIdx = i;
+			break;
+		}
+	}
+	if (ImGui::Combo("Mode", &modeIdx, kModeLabels, (int)std::size(kModeLabels))) {
+		s_profState.mMode = kModeValues[modeIdx];
 		s_profState.mbNeedsRefresh = true;
 	}
 
@@ -519,30 +558,12 @@ void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 		}
 
 		ImGui::Separator();
-
-		if (ImGui::BeginMenu("Frame Trigger")) {
-			if (ImGui::MenuItem("None", nullptr, s_profState.mBoundaryRule == kATProfileBoundaryRule_None))
-				s_profState.mBoundaryRule = kATProfileBoundaryRule_None;
-			if (ImGui::MenuItem("Vertical Blank", nullptr, s_profState.mBoundaryRule == kATProfileBoundaryRule_VBlank))
-				s_profState.mBoundaryRule = kATProfileBoundaryRule_VBlank;
-			if (ImGui::MenuItem("PC Address...", nullptr,
-					s_profState.mBoundaryRule == kATProfileBoundaryRule_PCAddress
-					|| s_profState.mBoundaryRule == kATProfileBoundaryRule_PCAddressFunction)) {
-				s_profState.mbShowBoundaryRuleDialog = true;
-			}
-			ImGui::EndMenu();
-		}
-
-		ImGui::Separator();
 		if (ImGui::MenuItem("Enable Global Addresses", nullptr, ctx.mbGlobalAddressesEnabled)) {
 			ctx.mbGlobalAddressesEnabled = !ctx.mbGlobalAddressesEnabled;
 			s_profState.mbNeedsRefresh = true;
 		}
 		ImGui::EndPopup();
 	}
-
-	// Render boundary rule dialog (outside popup)
-	RenderBoundaryRuleDialog();
 
 	if (ctx.mbSelectionValid) {
 		ImGui::SameLine();
@@ -585,6 +606,11 @@ void RenderCPUProfile(ATImGuiTraceViewerContext& ctx) {
 		ImGui::Text("Total: %u cycles, %u insns",
 			s_profState.mpMergedFrame->mTotalCycles,
 			s_profState.mpMergedFrame->mTotalInsns);
+	}
+
+	if (s_profState.mSession.mProfileMode == kATProfileMode_CallGraph) {
+		RenderCallGraph();
+		return;
 	}
 
 	// Determine column count (base columns + dynamic counter columns)

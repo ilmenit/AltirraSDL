@@ -601,7 +601,7 @@ static void HandleEvents() {
 				// Accelerator table dispatch (matches Windows ATUIActivateVirtKeyMapping)
 				// Priority: Global → Debugger → Display
 				bool handled = false;
-				if (!gamingScreenOpen) {
+				if (!gamingScreenOpen && !ev.key.repeat) {
 					handled = ATUISDLActivateAccelKey(ev.key, false, kATUIAccelContext_Global);
 
 					if (!handled && ATUIDebuggerIsOpen())

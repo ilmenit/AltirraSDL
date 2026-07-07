@@ -895,8 +895,24 @@ static void ApplyDefaultDockLayout() {
 }
 
 void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
-	if (!g_debuggerOpen)
+	if (!g_debuggerOpen) {
+		g_focusedPaneId = 0;
+
+		for (auto& e : g_debugPanes) {
+			if (e.id != kATUIPaneId_PerformanceAnalyzerSDL)
+				continue;
+
+			e.pane->OnFrame();
+
+			if (!e.pane->IsVisible())
+				continue;
+
+			if (!e.pane->Render())
+				e.pane->SetVisible(false);
+		}
+
 		return;
+	}
 
 	// Create a full-window dockspace below the menu bar.
 	// All debugger panes (including Display) dock into this space.

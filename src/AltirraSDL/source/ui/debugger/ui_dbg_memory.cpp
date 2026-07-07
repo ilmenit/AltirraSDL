@@ -912,13 +912,12 @@ bool ATImGuiMemoryPaneImpl::Render() {
 		return open;
 	}
 
-	// Calculate visible rows from window height.
-	// Apply zoom factor to match the scaled font inside the hex dump child
-	// (which uses SetWindowFontScale).  For font bitmap modes, rows are
-	// enlarged to at least 24 px × zoom, rounded to a multiple of 8.
+	// Calculate visible rows from the same compact row height used by
+	// RenderHexDump(). Native ATMemoryWindow advances one mLineHeight per row;
+	// it does not add extra inter-row spacing in normal hex/text modes.
 	float contentH = ImGui::GetContentRegionAvail().y
 		- ImGui::GetFrameHeightWithSpacing() * 2;
-	float lineH = ImGui::GetTextLineHeightWithSpacing() * mZoomFactor;
+	float lineH = ImGui::GetTextLineHeight() * mZoomFactor;
 	if (IsFontMode()) {
 		float fontH = std::max(ImGui::GetTextLineHeight() * mZoomFactor,
 							   24.0f * mZoomFactor);

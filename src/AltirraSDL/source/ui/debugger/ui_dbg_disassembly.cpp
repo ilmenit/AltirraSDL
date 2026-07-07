@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <imgui.h>
+#include <SDL3/SDL.h>
 #include <vd2/system/binary.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -227,6 +228,10 @@ private:
 	void RebuildView();
 	void NavigateToExpression(const char *expr);
 	int ResolveBreakpointLine() const;
+	void SetCursorLine(int line, bool extendSelection);
+	bool HasTextSelection() const;
+	void ClearTextSelection();
+	void CopyTextSelection() const;
 	bool ToggleSelectedBreakpoint();
 	bool GoToSourceForAddress(uint32 addr);
 	void PushAndJump(uint32 fromAddr, uint32 toAddr);
@@ -270,7 +275,10 @@ private:
 	char mAddrInput[64] = {};
 
 	// Selection and context menu state
-	int mSelectedLine = -1;			// line clicked by user (for F9 etc.)
+	int mSelectedLine = -1;			// keyboard/text cursor line (for F9 etc.)
+	int mSelectionAnchorLine = -1;
+	int mSelectionEndLine = -1;
+	bool mbMouseSelecting = false;
 	int mContextLine = -1;
 	uint32 mContextAddr = 0;
 	uint32 mContextTargetAddr = 0;
@@ -412,6 +420,59 @@ int ATImGuiDisassemblyPaneImpl::ResolveBreakpointLine() const {
 	}
 
 	return -1;
+}
+
+void ATImGuiDisassemblyPaneImpl::SetCursorLine(int line, bool extendSelection) {
+	if (mLines.empty()) {
+		mSelectedLine = -1;
+		ClearTextSelection();
+		return;
+	}
+
+	line = std::clamp(line, 0, (int)mLines.size() - 1);
+
+	if (extendSelection) {
+		if (mSelectionAnchorLine < 0)
+			mSelectionAnchorLine = mSelectedLine >= 0 ? mSelectedLine : line;
+
+		mSelectionEndLine = line;
+	} else {
+		mSelectionAnchorLine = -1;
+		mSelectionEndLine = -1;
+	}
+
+	mSelectedLine = line;
+	mScrollToLine = line;
+}
+
+bool ATImGuiDisassemblyPaneImpl::HasTextSelection() const {
+	return mSelectionAnchorLine >= 0
+		&& mSelectionEndLine >= 0
+		&& mSelectionAnchorLine != mSelectionEndLine;
+}
+
+void ATImGuiDisassemblyPaneImpl::ClearTextSelection() {
+	mSelectionAnchorLine = -1;
+	mSelectionEndLine = -1;
+}
+
+void ATImGuiDisassemblyPaneImpl::CopyTextSelection() const {
+	if (!HasTextSelection())
+		return;
+
+	int first = std::min(mSelectionAnchorLine, mSelectionEndLine);
+	int last = std::max(mSelectionAnchorLine, mSelectionEndLine);
+
+	first = std::clamp(first, 0, (int)mLines.size() - 1);
+	last = std::clamp(last, 0, (int)mLines.size() - 1);
+
+	VDStringA text;
+	for (int i = first; i <= last; ++i) {
+		text += mLines[i].mText;
+		text += '\n';
+	}
+
+	SDL_SetClipboardText(text.c_str());
 }
 
 bool ATImGuiDisassemblyPaneImpl::ToggleSelectedBreakpoint() {
@@ -1013,6 +1074,7 @@ void ATImGuiDisassemblyPaneImpl::RebuildView() {
 	mLines.clear();
 	mScrollToLine = -1;
 	mSelectedLine = -1;
+	ClearTextSelection();
 
 	if (!mbStateValid || !mLastState.mpDebugTarget || mLastState.mbRunning)
 		return;
@@ -1318,6 +1380,8 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 			ImGuiWindowFlags_HorizontalScrollbar)) {
 
 		IATDebugger *dbg = ATGetDebugger();
+		if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+			mbMouseSelecting = false;
 
 		ImGuiListClipper clipper;
 		clipper.Begin((int)mLines.size());
@@ -1326,33 +1390,35 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
 				const LineInfo& li = mLines[i];
 
-				// Separator lines (procedure breaks) and source comment lines
-				if (li.mbIsSeparator) {
-					ImGui::TextDisabled("%s", li.mText.c_str());
-					continue;
-				}
-				if (li.mbIsSource) {
-					ImGui::TextColored(ImVec4(0.4f, 0.7f, 0.4f, 1.0f), "%s", li.mText.c_str());
-					continue;
-				}
-
 				// Determine highlight color
 				ImU32 bgColor = 0;
-				if (li.mbIsPC)
+				if (!li.mbIsSeparator && !li.mbIsSource && li.mbIsPC)
 					bgColor = IM_COL32(128, 128, 0, 80);
-				else if (li.mbIsFramePC)
+				else if (!li.mbIsSeparator && !li.mbIsSource && li.mbIsFramePC)
 					bgColor = IM_COL32(0, 128, 128, 80);
-				else if (li.mNestingLevel)
+				else if (!li.mbIsSeparator && !li.mbIsSource && li.mNestingLevel)
 					bgColor = IM_COL32(64, 64, 64, 55);
 
 				bool hasBP = false;
-				if (dbg)
+				if (dbg && !li.mbIsSeparator && !li.mbIsSource)
 					hasBP = dbg->IsBreakpointAtPC(li.mAddress);
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				float width = ImGui::GetContentRegionAvail().x;
 
-				// Background highlight
+				if (HasTextSelection()) {
+					const int first = std::min(mSelectionAnchorLine, mSelectionEndLine);
+					const int last = std::max(mSelectionAnchorLine, mSelectionEndLine);
+					if (i >= first && i <= last) {
+						ImGui::GetWindowDrawList()->AddRectFilled(
+							pos, ImVec2(pos.x + width, pos.y + lineHeight),
+							IM_COL32(80, 120, 200, 75));
+					}
+				}
+
+				// PC/frame/nested background highlight. Draw this ourselves
+				// instead of using Selectable's selected fill so current-PC
+				// coloring stays visible when the keyboard cursor is there.
 				if (bgColor) {
 					ImGui::GetWindowDrawList()->AddRectFilled(
 						pos, ImVec2(pos.x + width, pos.y + lineHeight), bgColor);
@@ -1366,10 +1432,10 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 				}
 
 				// Arrow indicator for current PC
-				if (li.mbIsPC) {
+				if (!li.mbIsSeparator && !li.mbIsSource && li.mbIsPC) {
 					ImGui::TextColored(ATUIColorWarningText(), ">");
 					ImGui::SameLine(0, 0);
-				} else if (li.mbIsFramePC) {
+				} else if (!li.mbIsSeparator && !li.mbIsSource && li.mbIsFramePC) {
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), ">");
 					ImGui::SameLine(0, 0);
 				} else {
@@ -1377,18 +1443,32 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 					ImGui::SameLine(0, 0);
 				}
 
-				// Selectable line — click to select, right-click for context menu.
+				// Selectable line — click to move the text-editor-style cursor,
+				// right-click for context menu. We don't pass selected=true
+				// because ImGui's selected fill can hide PC/frame highlights.
 				// Breakpoints are toggled via F9 or the context menu, matching
 				// Windows Altirra (single click just selects the line).
 				ImGui::PushID(i);
 				if (li.mbHasJumpTarget && !li.mbIsPC && !li.mbIsFramePC)
 					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextLink));
-				if (ImGui::Selectable(li.mText.c_str(), i == mSelectedLine,
-						ImGuiSelectableFlags_AllowOverlap)) {
-					mSelectedLine = i;
-				}
-				if (li.mbHasJumpTarget && !li.mbIsPC && !li.mbIsFramePC)
+				else if (li.mbIsSource)
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 0.4f, 1.0f));
+				else if (li.mbIsSeparator)
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+
+				const bool pushedTextColor =
+					(li.mbHasJumpTarget && !li.mbIsPC && !li.mbIsFramePC)
+					|| li.mbIsSource
+					|| li.mbIsSeparator;
+
+				ImGui::Selectable(li.mText.c_str(), false,
+					ImGuiSelectableFlags_AllowOverlap);
+				if (pushedTextColor)
 					ImGui::PopStyleColor();
+				if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+					SetCursorLine(i, ImGui::GetIO().KeyShift);
+					mbMouseSelecting = true;
+				}
 				if (ImGui::IsItemHovered()
 					&& ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 					bool toggledPreview = false;
@@ -1417,12 +1497,26 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 						PushAndJump(li.mAddress, li.mTargetAddress);
 				}
 				if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-					mSelectedLine = i;
+					SetCursorLine(i, false);
 					mContextLine = i;
 					mContextAddr = li.mAddress;
 					mContextTargetAddr = li.mTargetAddress;
 					mbContextTargetValid = li.mbHasJumpTarget;
 					mbContextAddrValid = true;
+				}
+				if (ImGui::IsItemHovered()
+					&& mbMouseSelecting
+					&& ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)
+					&& ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+					SetCursorLine(i, true);
+				}
+				if (i == mSelectedLine) {
+					ImVec2 rmin = ImGui::GetItemRectMin();
+					ImVec2 rmax = ImGui::GetItemRectMax();
+					ImGui::GetWindowDrawList()->AddRect(
+						ImVec2(pos.x, rmin.y),
+						ImVec2(pos.x + width, rmax.y),
+						IM_COL32(180, 180, 180, 130));
 				}
 				ImGui::PopID();
 			}
@@ -1546,26 +1640,46 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 
 		// Keyboard shortcuts — matching Windows Altirra keybindings
 		if (mbHasFocus && !ImGui::GetIO().WantTextInput) {
-			// F9 — Toggle Breakpoint (matches Windows Debug.ToggleBreakpoint)
-			if (ImGui::IsKeyPressed(ImGuiKey_F9)) {
-				ToggleSelectedBreakpoint();
-			}
+			const bool shift = ImGui::GetIO().KeyShift;
+			const bool ctrl = ImGui::GetIO().KeyCtrl;
+
+			if (ctrl && ImGui::IsKeyPressed(ImGuiKey_C, false))
+				CopyTextSelection();
+
+			if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+				SetCursorLine(mSelectedLine >= 0 ? mSelectedLine - 1 : 0, shift);
+			if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+				SetCursorLine(mSelectedLine >= 0 ? mSelectedLine + 1 : 0, shift);
+			if (ImGui::IsKeyPressed(ImGuiKey_Home))
+				SetCursorLine(0, shift);
+			if (ImGui::IsKeyPressed(ImGuiKey_End))
+				SetCursorLine((int)mLines.size() - 1, shift);
+
 			// Page Up/Down scrolling — preserve bank byte, clamp within 16-bit range
 			if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
-				uint32 bank = mViewAddr & 0xFFFF0000;
-				uint32 offset = mViewAddr & 0xFFFF;
-				uint32 scrollAmt = kTotalLines * 2;
-				offset = (offset >= scrollAmt) ? offset - scrollAmt : 0;
-				mViewAddr = bank | offset;
-				mbNeedsRebuild = true;
+				if (mSelectedLine >= 0)
+					SetCursorLine(std::max(0, mSelectedLine - kLinesAbovePC), shift);
+				else {
+					uint32 bank = mViewAddr & 0xFFFF0000;
+					uint32 offset = mViewAddr & 0xFFFF;
+					uint32 scrollAmt = kTotalLines * 2;
+					offset = (offset >= scrollAmt) ? offset - scrollAmt : 0;
+					mViewAddr = bank | offset;
+					mbNeedsRebuild = true;
+				}
 			}
 			if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
-				uint32 bank = mViewAddr & 0xFFFF0000;
-				uint32 offset = mViewAddr & 0xFFFF;
-				uint32 scrollAmt = kTotalLines * 2;
-				offset = std::min<uint32>(offset + scrollAmt, 0xFFFF);
-				mViewAddr = bank | offset;
-				mbNeedsRebuild = true;
+				if (mSelectedLine >= 0)
+					SetCursorLine(std::min((int)mLines.size() - 1,
+						mSelectedLine + kLinesAbovePC), shift);
+				else {
+					uint32 bank = mViewAddr & 0xFFFF0000;
+					uint32 offset = mViewAddr & 0xFFFF;
+					uint32 scrollAmt = kTotalLines * 2;
+					offset = std::min<uint32>(offset + scrollAmt, 0xFFFF);
+					mViewAddr = bank | offset;
+					mbNeedsRebuild = true;
+				}
 			}
 			// Escape → focus Console
 			if (ImGui::IsKeyPressed(ImGuiKey_Escape))
