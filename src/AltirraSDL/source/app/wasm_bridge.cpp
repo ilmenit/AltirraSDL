@@ -1823,7 +1823,13 @@ int ATWasmGetTouchControls() {
 }
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSetTouchControls(int on) {
-	g_mobileState.showTouchControls = (on != 0);
+	const bool show = (on != 0);
+	if (g_mobileState.showTouchControls == show)
+		return;
+
+	g_mobileState.showTouchControls = show;
+	if (!show)
+		ATTouchControls_ReleaseAll();
 }
 
 // Touch-joystick style override (?joystick= deep link / embedder JS).
