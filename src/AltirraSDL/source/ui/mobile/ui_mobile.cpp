@@ -17,6 +17,7 @@
 #include <vd2/system/registry.h>
 #include <vd2/system/error.h>
 #include <vd2/system/zip.h>
+#include <vd2/system/hash.h>
 #include <at/atcore/media.h>
 #include <at/atcore/vfs.h>
 #include <at/atio/image.h>
@@ -28,6 +29,8 @@
 #include "simulator.h"
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
+#include "cartridge.h"
+#include "cassette.h"
 #include "diskinterface.h"
 #include "disk.h"
 #include <at/atio/diskimage.h>
@@ -43,6 +46,7 @@
 #include "mobile_internal.h"
 #include "mobile_gamepad.h"
 #include "ui_virtual_keyboard.h"
+#include "../app/disk_state.h"
 #include "../gamelibrary/game_library.h"
 #include "ui_emuerror.h"
 
@@ -135,12 +139,90 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobil
 	ATRegistryFlushToDisk();
 }
 
-// Path to the quick save-state file under the config dir.
-// Kept as VDStringW because simulator.SaveState takes wchar_t*.
-VDStringW QuickSaveStatePath() {
+static VDStringW LegacyQuickSaveStatePath() {
 	VDStringA dirU8 = ATGetConfigDir();
 	dirU8 += "/quicksave.atstate2";
 	return VDTextU8ToW(dirU8);
+}
+
+static VDStringW CurrentMediaIdentityPath() {
+	for (int i = 0; i < 2; ++i) {
+		ATCartridgeEmulator *cart = g_sim.GetCartridge((uint32)i);
+		if (cart) {
+			const wchar_t *path = cart->GetPath();
+			if (path && *path)
+				return VDStringW(path);
+		}
+	}
+
+	for (int i = 0; i < 15; ++i) {
+		ATDiskInterface& diskIf = g_sim.GetDiskInterface(i);
+		if (diskIf.IsDiskLoaded()) {
+			const wchar_t *path = diskIf.GetPath();
+			if (path && *path)
+				return ATResolveDiskCanonical(path);
+		}
+	}
+
+	{
+		const wchar_t *path = g_sim.GetCassette().GetPath();
+		if (path && *path)
+			return VDStringW(path);
+	}
+
+	const VDStringW& bootPath = ATGetLastBootMediaPathSDL3();
+	if (!bootPath.empty())
+		return bootPath;
+
+	return VDStringW();
+}
+
+static VDStringW SanitizeSaveStem(VDStringW stem) {
+	if (stem.empty())
+		stem = L"game";
+
+	for (wchar_t& c : stem) {
+		if (c < 32 || c == L'<' || c == L'>' || c == L':' || c == L'"'
+			|| c == L'/' || c == L'\\' || c == L'|' || c == L'?' || c == L'*')
+		{
+			c = L'_';
+		}
+	}
+
+	if (stem.size() > 48)
+		stem.resize(48);
+
+	while (!stem.empty() && (stem.back() == L'.' || stem.back() == L' '))
+		stem.pop_back();
+
+	return stem.empty() ? VDStringW(L"game") : stem;
+}
+
+// Path to the quick save-state file under the config dir.  When a game
+// identity is available, use a per-game slot; otherwise keep the legacy
+// global fallback for no-media emulator sessions.
+VDStringW QuickSaveStatePath() {
+	VDStringW identity = CurrentMediaIdentityPath();
+	if (identity.empty())
+		return LegacyQuickSaveStatePath();
+
+	const uint32 hash = VDHashString32I(identity.c_str());
+	VDStringW name(VDFileSplitPathRight(identity));
+	name = VDFileSplitExtLeft(name);
+	name = SanitizeSaveStem(name);
+	name.append_sprintf(L"-%08x.atstate2", hash);
+
+	VDStringW dir = VDTextU8ToW(ATGetConfigDir());
+	dir = VDMakePath(dir.c_str(), L"saves");
+	if (!VDDoesPathExist(dir.c_str())) {
+		try {
+			VDCreateDirectory(dir.c_str());
+		} catch (...) {
+			return LegacyQuickSaveStatePath();
+		}
+	}
+
+	return VDMakePath(dir.c_str(), name.c_str());
 }
 
 void SaveFileBrowserDir(const VDStringW &dir) {
@@ -215,6 +297,15 @@ void SetPermissionAsked() {
 		key.setBool("PermissionAsked", true);
 	}
 	ATRegistryFlushToDisk();
+}
+
+void ATMobileUI_SetConsoleKeysEnabled(ATMobileUIState &mobileState,
+	bool enabled)
+{
+	mobileState.topBarEnabled = enabled;
+	mobileState.topBarVisible = enabled;
+	mobileState.topBarTimer = 0.0f;
+	ATTouchControls_SetConsoleKeysVisible(enabled);
 }
 
 // -------------------------------------------------------------------------
@@ -649,6 +740,7 @@ void ATMobileUI_InvalidateFileBrowser() {
 // -------------------------------------------------------------------------
 
 extern bool s_menuTapped;
+static constexpr float kConsoleTopBarAutoHideSeconds = 4.0f;
 
 static bool ConsumeMenuTap() {
 	if (s_menuTapped) {
@@ -868,6 +960,21 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 		if (!uiState.showVirtualKeyboard && !ATUIIsEmuErrorDialogOpen()
 			&& (mobileState.showTouchControls || mobileState.showHamburgerMenu))
 		{
+			if (mobileState.topBarEnabled && mobileState.showTouchControls) {
+				if (mobileState.topBarVisible) {
+					if (!ATTouchControls_IsActive())
+						mobileState.topBarTimer += ImGui::GetIO().DeltaTime;
+					else
+						mobileState.topBarTimer = 0.0f;
+
+					if (mobileState.topBarTimer >= kConsoleTopBarAutoHideSeconds)
+						mobileState.topBarVisible = false;
+				}
+				ATTouchControls_SetConsoleKeysVisible(mobileState.topBarVisible);
+			} else {
+				ATTouchControls_SetConsoleKeysVisible(false);
+			}
+
 			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig,
 				mobileState.showTouchControls, mobileState.showHamburgerMenu);
 		}
@@ -991,10 +1098,29 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 		if (!mobileState.showTouchControls && !mobileState.showHamburgerMenu)
 			return false;
 
+		if (mobileState.showTouchControls && mobileState.topBarEnabled
+			&& !mobileState.topBarVisible && ev.type == SDL_EVENT_FINGER_DOWN)
+		{
+			const float px = ev.tfinger.x * mobileState.layout.screenW;
+			const float py = ev.tfinger.y * mobileState.layout.screenH;
+			ATTouchRect topBarPx = ATTouchLayout_ToPixels(mobileState.layout.topBar,
+				mobileState.layout.screenW, mobileState.layout.screenH);
+			if (topBarPx.Contains(px, py)) {
+				mobileState.topBarVisible = true;
+				mobileState.topBarTimer = 0.0f;
+				ATTouchControls_SetConsoleKeysVisible(true);
+				AddGameOwnedFinger(ev.tfinger.fingerID);
+				return true;
+			}
+		}
+
 		bool consumed = ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig,
 			mobileState.showTouchControls, mobileState.showHamburgerMenu);
-		if (consumed && ev.type == SDL_EVENT_FINGER_DOWN)
+		if (consumed && ev.type == SDL_EVENT_FINGER_DOWN) {
+			if (mobileState.topBarEnabled && mobileState.topBarVisible)
+				mobileState.topBarTimer = 0.0f;
 			AddGameOwnedFinger(ev.tfinger.fingerID);
+		}
 		return consumed;
 	}
 

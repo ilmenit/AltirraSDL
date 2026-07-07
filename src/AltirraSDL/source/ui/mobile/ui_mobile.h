@@ -47,6 +47,7 @@ struct ATMobileUIState {
 	// Top bar auto-hide timer (seconds of inactivity)
 	float topBarTimer = 0.0f;
 	bool topBarVisible = true;
+	bool topBarEnabled = true;
 
 	// --- Auto save-state ---
 	// Three independent toggles that together describe how the

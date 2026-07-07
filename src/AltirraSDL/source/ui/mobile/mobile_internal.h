@@ -167,6 +167,8 @@ bool IsPermissionAsked();
 void SetPermissionAsked();
 void SaveMobileConfig(const ATMobileUIState &mobileState);
 VDStringW QuickSaveStatePath();
+void ATMobileUI_SetConsoleKeysEnabled(ATMobileUIState &mobileState,
+	bool enabled);
 
 // Firmware scan function (defined in ui_firmware.cpp)
 extern void ExecuteFirmwareScan(class ATFirmwareManager *fwm,

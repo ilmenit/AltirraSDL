@@ -29,12 +29,10 @@ void ATMobileUI_SaveSuspendState(ATSimulator &sim,
 	// whether to invoke this based on the relevant policy flag (the
 	// background path checks autoSaveOnSuspend; the Exit Emulator
 	// path checks saveStateOnExit).  We only short-circuit when there
-	// is genuinely nothing to snapshot (no game loaded) — in that
-	// case the right thing is to clear any stale snapshot so the
-	// next launch doesn't pick up something the user can no longer
-	// associate with what they were doing.
+	// is genuinely nothing to snapshot (no game loaded).  Do not
+	// clear here: quicksaves are per-game, and the last boot path may
+	// still identify an earlier game whose save must remain intact.
 	if (!mobileState.gameLoaded) {
-		ATMobileUI_ClearSuspendState();
 		return;
 	}
 	VDStringW path = QuickSaveStatePath();

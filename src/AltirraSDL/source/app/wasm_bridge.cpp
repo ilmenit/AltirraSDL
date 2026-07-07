@@ -88,6 +88,7 @@ extern ATSimulator g_sim;
 #include "../ui/core/ui_main.h"
 #include "../ui/core/ui_mode.h"
 #include "../ui/mobile/ui_mobile.h"
+#include "../ui/mobile/mobile_internal.h"
 #include "../ui/ui_virtual_keyboard.h"
 #include "../display/display_backend.h"
 #include "uitypes.h"  // ATDisplayFilterMode / ATDisplayStretchMode
@@ -1508,11 +1509,12 @@ void ATWasmSetJoystick(int dirMask, int trigger) {
 // is unaffected; hiding releases any currently-held console switch.
 extern "C" EMSCRIPTEN_KEEPALIVE
 int ATWasmGetConsoleKeys() {
-	return ATTouchControls_GetConsoleKeysVisible() ? 1 : 0;
+	return (g_mobileState.topBarEnabled && g_mobileState.topBarVisible
+		&& ATTouchControls_GetConsoleKeysVisible()) ? 1 : 0;
 }
 extern "C" EMSCRIPTEN_KEEPALIVE
 void ATWasmSetConsoleKeys(int on) {
-	ATTouchControls_SetConsoleKeysVisible(on != 0);
+	ATMobileUI_SetConsoleKeysEnabled(g_mobileState, on != 0);
 }
 
 // JS-side bar button (RESET) — cold reset.  The HTML page wraps this

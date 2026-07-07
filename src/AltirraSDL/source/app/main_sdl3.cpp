@@ -2804,9 +2804,15 @@ int main(int argc, char *argv[]) {
 		ATMobileUI_ApplyPerformancePreset(g_mobileState);
 	}
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 	{
-		bool restored = ATMobileUI_RestoreSuspendState(g_sim, g_mobileState);
+		bool restored = false;
+#ifdef __ANDROID__
+		restored = ATMobileUI_RestoreSuspendState(g_sim, g_mobileState);
+#else
+		if (ATUIIsGamingMode())
+			restored = ATMobileUI_RestoreSuspendState(g_sim, g_mobileState);
+#endif
 		if (restored) {
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: restored previous session from quicksave");

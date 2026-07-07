@@ -58,6 +58,8 @@ extern ATOptions g_ATOptions;
 
 void ATDebuggerInitAutotestCommands();
 
+static VDStringW g_lastBootMediaPath;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -158,6 +160,7 @@ bool DoLoadDirect(const char *utf8path,
 		try {
 			if (g_sim.Load(mctx)) {
 				loadSuccess = true;
+				g_lastBootMediaPath = wpath;
 				break;
 			}
 		} catch (const MyError& e) {
@@ -248,6 +251,10 @@ const char *ConsumeArg(int argc, char **argv, int &i,
 }
 
 }  // anonymous namespace
+
+const VDStringW& ATGetLastBootMediaPathSDL3() {
+	return g_lastBootMediaPath;
+}
 
 // ---------------------------------------------------------------------------
 // ATProcessCommandLineSDL3

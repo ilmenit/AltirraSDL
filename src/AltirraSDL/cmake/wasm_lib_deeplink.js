@@ -90,6 +90,7 @@
     //   consolekeys:true|false|null   (?consolekeys=0|1)
     //   stretch:    0..4|null         (?stretch=fill|preserve|square|integral|integral_preserve)
     //   joystick:   0..2|null         (?joystick=analog|dpad8|dpad4)
+    //   fullscreen: true|false        (?fullscreen=1)
     //   ui:         'desktop'|'gaming'|null  (?ui=…)  overrides the
     //              auto-pick that forces Gaming Mode whenever ?lib= is set.
     //   manualStart:true|false        (?autoplay=0)  pause until user clicks
@@ -103,6 +104,7 @@
     consolekeys: null,
     stretch:     null,
     joystick:    null,
+    fullscreen:  false,
     ui:          null,
     manualStart: false,
     // First-run silent defaults — `?experience=` and `?addons=`.
@@ -567,6 +569,19 @@
         } else {
           log('ignored unknown joystick value:', joystickRaw);
         }
+      }
+
+      // ?fullscreen=1 — request browser element-fullscreen on the
+      // first user gesture.  Browsers reject Fullscreen API calls
+      // outside a gesture, so wasm_index.html.in performs the actual
+      // request from the manual-start click or a one-shot pointer/key
+      // listener.  This flag only records intent.
+      var fullscreenRaw = (p.get('fullscreen') || '').trim();
+      if (fullscreenRaw === '1') {
+        window.__altirraLib.fullscreen = true;
+        log('fullscreen=1 — will request fullscreen on first gesture');
+      } else if (fullscreenRaw && fullscreenRaw !== '0') {
+        log('ignored unknown fullscreen value:', fullscreenRaw);
       }
 
       // ?ui=desktop|gaming — override the UI-mode auto-pick.

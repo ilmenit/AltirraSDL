@@ -2640,16 +2640,23 @@
         btnFullscreen.textContent = document.fullscreenElement
           ? '⤡ Exit Full Screen' : '⤢ Full Screen';
       };
+      const requestBrowserFullscreen = () => {
+        try {
+          if (document.fullscreenElement)
+            return;
+          const el = document.documentElement;
+          if (el.requestFullscreen) {
+            el.requestFullscreen({ navigationUI: 'hide' })
+              .catch(() => {});
+          }
+        } catch (e) {}
+      };
       btnFullscreen.addEventListener('click', () => {
         try {
           if (document.fullscreenElement) {
             document.exitFullscreen();
           } else {
-            const el = document.documentElement;
-            if (el.requestFullscreen) {
-              el.requestFullscreen({ navigationUI: 'hide' })
-                .catch(() => {});
-            }
+            requestBrowserFullscreen();
           }
         } catch (e) {}
         refocusCanvas();
@@ -2671,6 +2678,7 @@
         });
       });
       updateFullscreenLabel();
+      window.requestAltirraBrowserFullscreen = requestBrowserFullscreen;
     }
 
     // ───────────────────────────────────────────────────────────────────
@@ -7498,9 +7506,19 @@
     const startOverlay = document.getElementById('start-overlay');
     const isManualStart = !!(window.__altirraLib
                              && window.__altirraLib.manualStart);
+    const wantsInitialFullscreen = !!(window.__altirraLib
+                                      && window.__altirraLib.fullscreen);
+    const requestInitialFullscreen = () => {
+      if (!wantsInitialFullscreen) return;
+      try {
+        if (typeof window.requestAltirraBrowserFullscreen === 'function')
+          window.requestAltirraBrowserFullscreen();
+      } catch (_) {}
+    };
     if (isManualStart && startOverlay) {
       const startGo = (e) => {
         if (e) e.preventDefault();
+        requestInitialFullscreen();
         // Hide the overlay immediately for snappy feedback; the wasm
         // download takes a few seconds even on a fast link.
         document.body.classList.remove('manual-start');
@@ -7521,6 +7539,13 @@
         if (e.key === 'Enter' || e.key === ' ') startGo(e);
       });
     } else {
+      if (wantsInitialFullscreen) {
+        const onFirstGesture = () => requestInitialFullscreen();
+        window.addEventListener('pointerdown', onFirstGesture,
+          { once: true, capture: true });
+        window.addEventListener('keydown', onFirstGesture,
+          { once: true, capture: true });
+      }
       // Default path: load AltirraSDL.js immediately.  Behaviour
       // matches every prior release for every URL that doesn't carry
       // ?autoplay=0 (lobby Solo / Together / Bare URL / self-hosted

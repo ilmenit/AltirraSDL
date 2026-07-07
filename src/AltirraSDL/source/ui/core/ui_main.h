@@ -74,6 +74,7 @@ struct ATUIState {
 bool ATUIInit(SDL_Window *window, IDisplayBackend *backend);
 void ATUIShutdown();
 bool ATUIProcessEvent(const SDL_Event *event);
+const VDStringW& ATGetLastBootMediaPathSDL3();
 
 // Fork-only persistent UI state (ui_state_settings.cpp).  Registers
 // settings load/save callbacks for ATUIState values that Windows would
