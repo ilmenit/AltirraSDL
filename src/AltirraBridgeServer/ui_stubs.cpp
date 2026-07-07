@@ -74,15 +74,25 @@ SDL_Window *g_pWindow = nullptr;
 // MSVC's return-type-aware C++ mangling produces matching symbols.
 struct ATDebuggerSourceFileInfo;
 class IATSourceWindow;
+class IATDisplayPane;
 
 void ATUIDebuggerOpen() {}
 void ATUIDebuggerClose() {}
 bool ATUIDebuggerIsOpen() { return false; }
 void ATUIDebuggerShowSourceListDialog() {}
 void ATUIDebuggerClosePaneById(unsigned int /*id*/) {}
+uint32 ATUIDebuggerGetFocusedPaneId() { return 0; }
+void *ATUIDebuggerGetPaneAs(uint32 /*paneId*/, uint32 /*iid*/) { return nullptr; }
+IATDisplayPane *ATUIDebuggerGetDisplayPaneInterface() { return nullptr; }
 
 IATSourceWindow* ATImGuiFindSourceWindow(const wchar_t* /*path*/) { return nullptr; }
 IATSourceWindow* ATImGuiOpenSourceWindow(const wchar_t* /*path*/) { return nullptr; }
+IATSourceWindow* ATImGuiOpenSourceWindow(
+	const ATDebuggerSourceFileInfo& /*sourceFileInfo*/,
+	bool /*searchPaths*/)
+{
+	return nullptr;
+}
 
 void ATUISetPanZoomToolActive(bool /*active*/) {}
 

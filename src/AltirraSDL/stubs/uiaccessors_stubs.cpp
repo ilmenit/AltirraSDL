@@ -476,8 +476,16 @@ void ATUIReleaseMouse() {
 // Misc UI functions — no-ops / simple stubs
 // =========================================================================
 
+#if !defined(ALTIRRA_LIBRETRO) && !defined(ALTIRRA_BRIDGE_HEADLESS)
 extern IATDisplayPane *ATUIDebuggerGetDisplayPaneInterface();
-IATDisplayPane *ATUIGetDisplayPane() { return ATUIDebuggerGetDisplayPaneInterface(); }
+#endif
+IATDisplayPane *ATUIGetDisplayPane() {
+#if defined(ALTIRRA_LIBRETRO) || defined(ALTIRRA_BRIDGE_HEADLESS)
+	return nullptr;
+#else
+	return ATUIDebuggerGetDisplayPaneInterface();
+#endif
+}
 
 // ---------------------------------------------------------------------------
 // ATUISwitchHardwareMode — real implementation matching Windows main.cpp

@@ -2,6 +2,7 @@
 //	Replaces Win32 ATUIPane / ATContainerWindow docking with ImGui docking.
 
 #include <stdafx.h>
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 #include <vector>
