@@ -77,6 +77,7 @@ extern ATSimulator g_sim;
 // the same way the touch controls + virtual keyboard do.  Through the
 // netplay router so a hosted-session host edge propagates to peers.
 #include "../netplay/netplay_input.h"
+#include "../input/touch_controls.h"
 #include "gtia.h"
 
 // Page-bar toggles (PAL/NTSC, CRT, Virtual Keyboard, Touch Controls,
@@ -1484,6 +1485,21 @@ void ATWasmConsoleSwitch(int bit, int down) {
 	const uint8_t b = (uint8_t)(bit & 0x07);   // mask to START|SELECT|OPTION
 	if (!b) return;
 	ATNetplayInput::RouteConsoleSwitch(&g_sim.GetGTIA(), b, down != 0);
+}
+
+// Show/hide the on-canvas console-key row (START/SELECT/OPTION/>>)
+// independently of the rest of the touch controls (?consolekeys= deep
+// link / embedder JS).  Lets a kiosk/arcade shell keep the joystick +
+// fire visible while auto-hiding the console keys after inactivity, or
+// hide them for games that never use them.  The hamburger menu button
+// is unaffected; hiding releases any currently-held console switch.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetConsoleKeys() {
+	return ATTouchControls_GetConsoleKeysVisible() ? 1 : 0;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetConsoleKeys(int on) {
+	ATTouchControls_SetConsoleKeysVisible(on != 0);
 }
 
 // JS-side bar button (RESET) — cold reset.  The HTML page wraps this

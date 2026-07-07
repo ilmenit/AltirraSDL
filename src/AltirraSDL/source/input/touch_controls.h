@@ -44,3 +44,12 @@ bool ATTouchControls_IsActive();
 // changes.  When on, every actionable touch triggers an Android
 // Vibrator pulse (via ATAndroid_Vibrate).  Default: on.
 void ATTouchControls_SetHapticEnabled(bool enabled);
+
+// Show/hide the console-key row (START/SELECT/OPTION/>>) independently
+// of the rest of the touch controls.  Embedder hook (e.g. a JS shell
+// that auto-hides the row after a few seconds of inactivity, or shows
+// START only while a game is at its titlescreen).  The hamburger menu
+// button is unaffected.  Hiding releases any currently-held console
+// switch.  Default: visible.
+void ATTouchControls_SetConsoleKeysVisible(bool visible);
+bool ATTouchControls_GetConsoleKeysVisible();

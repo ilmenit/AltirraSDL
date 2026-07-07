@@ -75,6 +75,12 @@ static bool s_selectHeld = false;
 static bool s_optionHeld = false;
 static bool s_warpHeld = false;
 
+// Console-key row visibility (embedder hook — see touch_controls.h).
+// When false the START/SELECT/OPTION/>> buttons are neither drawn nor
+// hit-tested; the hamburger menu button is unaffected.  Default on so
+// nothing changes unless an embedder asks.
+static bool s_consoleKeysVisible = true;
+
 // Menu button tap detection — not static, accessed by ui_mobile.cpp.
 // Set when the user has completed a press-and-release on btnMenu so the
 // menu opens on FINGER_UP (matching every other button on screen) and
@@ -210,6 +216,26 @@ void ATTouchControls_ReleaseAll() {
 	s_menuFingerActive = false;
 	s_menuFinger = 0;
 	s_menuMouseActive = false;
+}
+
+// Embedder hook — see touch_controls.h.  Hiding mid-press releases any
+// held console switch so a key can't stay latched while invisible.
+void ATTouchControls_SetConsoleKeysVisible(bool visible) {
+	if (s_consoleKeysVisible == visible)
+		return;
+	s_consoleKeysVisible = visible;
+
+	if (!visible) {
+		if (s_startHeld)  { SetConsoleSwitch(0x01, false); s_startHeld = false; }
+		if (s_selectHeld) { SetConsoleSwitch(0x02, false); s_selectHeld = false; }
+		if (s_optionHeld) { SetConsoleSwitch(0x04, false); s_optionHeld = false; }
+		if (s_warpHeld)   { ATUISetTurboPulse(false); s_warpHeld = false; }
+		s_consoleActive = false;
+	}
+}
+
+bool ATTouchControls_GetConsoleKeysVisible() {
+	return s_consoleKeysVisible;
 }
 
 bool ATTouchControls_IsActive() {
@@ -356,7 +382,7 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 			return false;
 
 		// --- CONSOLE KEYS (top bar) ---
-		if (topBarPx.Contains(px, py) && !s_consoleActive) {
+		if (s_consoleKeysVisible && topBarPx.Contains(px, py) && !s_consoleActive) {
 			// Only claim the finger if it actually hits a console button
 			if (layout.btnStart.Contains(px, py)) {
 				s_consoleFinger = fid;
@@ -726,7 +752,7 @@ void ATTouchControls_Render(const ATTouchLayout &layout, const ATTouchLayoutConf
 	// Get foreground draw list (renders on top of everything)
 	ImDrawList *dl = ImGui::GetForegroundDrawList();
 
-	if (showControls) {
+	if (showControls && s_consoleKeysVisible) {
 		// --- Console keys ---
 		DrawButton(dl, layout.btnStart, "START", btnConsole, textColor, s_startHeld);
 		DrawButton(dl, layout.btnSelect, "SELECT", btnConsole, textColor, s_selectHeld);
