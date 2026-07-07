@@ -7,8 +7,6 @@
 
 #include <stdafx.h>
 #include <algorithm>
-#include <chrono>
-#include <condition_variable>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -24,6 +22,7 @@
 #include <vd2/system/error.h>
 #include <at/atdebugger/symbols.h>
 #include "../core/ui_main.h"
+#include "ui_file_dialog_sdl3.h"
 #include "ui_debugger.h"
 #include "console.h"
 #include "debugger.h"
@@ -37,6 +36,13 @@ IATSourceWindow *ATImGuiOpenSourceWindow(const wchar_t *path);
 IATSourceWindow *ATImGuiOpenSourceWindow(const ATDebuggerSourceFileInfo& sourceFileInfo, bool searchPaths);
 class ATImGuiSourcePaneImpl;
 static bool SourceStepWithRanges(ATImGuiSourcePaneImpl *srcPane, bool stepOver);
+static ATImGuiSourcePaneImpl *OpenResolvedSourceWindow(
+	const ATDebuggerSourceFileInfo& sourceFileInfo,
+	const VDStringW& resolvedPath,
+	bool useAlias);
+static bool OpenSourceWindowAndFocusLine(
+	const ATDebuggerSourceFileInfo& sourceFileInfo,
+	int line);
 
 // =========================================================================
 // Source pane — displays loaded source files for debugging
@@ -240,8 +246,12 @@ void ATImGuiSourcePaneImpl::BindToSymbols() {
 		return;
 	}
 
-	// Try to look up this file in the debugger's symbol tables
-	if (!lookup->LookupFile(mPath.c_str(), mModuleId, mFileId)) {
+	// Try to look up this file in the debugger's symbol tables. If the
+	// user mapped a missing symbol path to another on-disk file, the alias
+	// is the original symbol path and must be used for debugger binding.
+	if (!lookup->LookupFile(mPath.c_str(), mModuleId, mFileId)
+		&& (mPathAlias.empty()
+			|| !lookup->LookupFile(mPathAlias.c_str(), mModuleId, mFileId))) {
 		MergeSourceMappings();
 		return;
 	}
@@ -605,11 +615,9 @@ bool ATImGuiSourcePaneImpl::Render() {
 						if (lookup->LookupLine(dbg->GetFramePC(), false, moduleId, lineInfo)) {
 							ATDebuggerSourceFileInfo sourceFileInfo;
 							if (lookup->GetSourceFilePath(moduleId, lineInfo.mFileId, sourceFileInfo) && lineInfo.mLine) {
-								IATSourceWindow *w = ATImGuiOpenSourceWindow(sourceFileInfo.mSourcePath.c_str());
-								if (w) {
-									w->FocusOnLine(lineInfo.mLine - 1);
-									handled = true;
-								}
+								handled = OpenSourceWindowAndFocusLine(
+									sourceFileInfo,
+									(int)lineInfo.mLine - 1);
 							}
 						}
 					}
@@ -737,67 +745,76 @@ static bool AddUniqueSourceSearchDir(std::vector<VDStringW>& dirs, const VDStrin
 
 static bool g_missingSourcePromptOverrideActive = false;
 static VDStringW g_missingSourcePromptOverridePath;
+static bool g_missingSourceDialogStarted = false;
+static int g_missingSourceRequestedFocusLine = -1;
 
-#if !defined(__EMSCRIPTEN__)
-struct SourceFileDialogSyncState {
-	std::mutex mMutex;
-	std::condition_variable mCondition;
-	VDStringW mPath;
-	bool mbDone = false;
+struct PendingMissingSourceResult {
+	ATDebuggerSourceFileInfo mSourceFileInfo;
+	VDStringW mSelectedPath;
+	int mFocusLine = -1;
 };
 
-static void SDLCALL SourceFileDialogCallback(void *userdata,
+static std::mutex g_missingSourceDialogMutex;
+static ATDebuggerSourceFileInfo g_missingSourceDialogInfo;
+static int g_missingSourceDialogFocusLine = -1;
+static uintptr_t g_missingSourceDialogGeneration = 0;
+static std::vector<PendingMissingSourceResult> g_pendingMissingSourceResults;
+
+static void SDLCALL MissingSourceDialogCallback(void *userdata,
 	const char * const *filelist, int)
 {
-	auto *state = static_cast<SourceFileDialogSyncState *>(userdata);
-	if (!state)
+	if (!filelist || !filelist[0] || !*filelist[0])
 		return;
 
-	VDStringW path;
-	if (filelist && filelist[0])
-		path = VDTextU8ToW(filelist[0], -1);
+	const uintptr_t generation = (uintptr_t)userdata;
+	const VDStringW selectedPath = VDTextU8ToW(filelist[0], -1);
 
-	{
-		std::lock_guard<std::mutex> lock(state->mMutex);
-		state->mPath = path;
-		state->mbDone = true;
-	}
-	state->mCondition.notify_one();
+	std::lock_guard<std::mutex> lock(g_missingSourceDialogMutex);
+	if (generation != g_missingSourceDialogGeneration)
+		return;
+
+	g_pendingMissingSourceResults.push_back({
+		g_missingSourceDialogInfo,
+		selectedPath,
+		g_missingSourceDialogFocusLine
+	});
 }
-#endif
 
-static VDStringW PromptForMissingSourceFile(const VDStringW& path) {
-	if (g_missingSourcePromptOverrideActive)
-		return g_missingSourcePromptOverridePath;
+static void PromptForMissingSourceFileAsync(
+	const ATDebuggerSourceFileInfo& sourceFileInfo,
+	int focusLine)
+{
+	g_missingSourceDialogStarted = true;
 
-#if defined(__EMSCRIPTEN__)
-	LOG_ERROR("Debugger", "Missing-source browse prompt ignored: synchronous file selection is unsupported on WebAssembly");
-	return VDStringW();
-#else
-	if (!SDL_IsMainThread())
-		return VDStringW();
+	const VDStringW baseNameW(
+		VDFileSplitPathRightSpan(sourceFileInfo.mSourcePath));
+	const VDStringW fallbackDirW = !sourceFileInfo.mModulePath.empty()
+		? VDFileSplitPathLeftSpan(sourceFileInfo.mModulePath)
+		: VDStringW();
+	const VDStringA fallbackDirU8 = VDTextWToU8(fallbackDirW);
 
-	const VDStringW baseNameW(VDFileSplitPath(path.c_str()));
+	uintptr_t generation = 0;
+	{
+		std::lock_guard<std::mutex> lock(g_missingSourceDialogMutex);
+		g_missingSourceDialogInfo = sourceFileInfo;
+		g_missingSourceDialogFocusLine = focusLine;
+		generation = ++g_missingSourceDialogGeneration;
+	}
+
 	const VDStringA baseNameU8 = VDTextWToU8(baseNameW);
 	const SDL_DialogFileFilter filters[] = {
-		{ baseNameU8.c_str(), baseNameU8.c_str() },
+		{ baseNameU8.empty() ? "Source Files" : baseNameU8.c_str(),
+			"s;asm;src;lst;inc;txt" },
 		{ "All files", "*" },
 	};
 
-	SourceFileDialogSyncState state;
-	SDL_ShowOpenFileDialog(SourceFileDialogCallback, &state, g_pWindow,
-		filters, 2, nullptr, false);
-
-	std::unique_lock<std::mutex> lock(state.mMutex);
-	while (!state.mbDone) {
-		lock.unlock();
-		SDL_PumpEvents();
-		lock.lock();
-		state.mCondition.wait_for(lock, std::chrono::milliseconds(50));
-	}
-
-	return state.mPath;
-#endif
+	ATUIShowOpenFileDialog('src ', MissingSourceDialogCallback,
+		(void *)generation,
+		g_pWindow,
+		filters,
+		2,
+		false,
+		fallbackDirU8.empty() ? nullptr : fallbackDirU8.c_str());
 }
 
 static VDStringW ResolveSourcePath(const ATDebuggerSourceFileInfo& sourceFileInfo, bool searchPaths, bool& useAlias, bool& resolved) {
@@ -841,11 +858,16 @@ static VDStringW ResolveSourcePath(const ATDebuggerSourceFileInfo& sourceFileInf
 		return sourceFileInfo.mSourcePath;
 	}
 
-	VDStringW selectedPath = PromptForMissingSourceFile(sourceFileInfo.mSourcePath);
-	if (!selectedPath.empty()) {
-		useAlias = !VDFileIsPathEqual(selectedPath.c_str(), sourceFileInfo.mSourcePath.c_str());
-		resolved = true;
-		return selectedPath;
+	if (g_missingSourcePromptOverrideActive) {
+		VDStringW selectedPath = g_missingSourcePromptOverridePath;
+		if (!selectedPath.empty()) {
+			useAlias = !VDFileIsPathEqual(selectedPath.c_str(), sourceFileInfo.mSourcePath.c_str());
+			resolved = true;
+			return selectedPath;
+		}
+	} else if (SDL_IsMainThread()) {
+		PromptForMissingSourceFileAsync(sourceFileInfo,
+			g_missingSourceRequestedFocusLine);
 	}
 
 	return VDStringW();
@@ -872,13 +894,7 @@ bool ATImGuiConsoleShowSource(uint32 addr) {
 	if (!lookup->GetSourceFilePath(moduleId, lineInfo.mFileId, sourceFileInfo))
 		return false;
 
-	IATSourceWindow *sourceWindow = ATImGuiOpenSourceWindow(sourceFileInfo, true);
-	auto *w = static_cast<ATImGuiSourcePaneImpl *>(sourceWindow);
-	if (!w)
-		return false;
-
-	w->FocusOnLine((int)lineInfo.mLine - 1);
-	return true;
+	return OpenSourceWindowAndFocusLine(sourceFileInfo, (int)lineInfo.mLine - 1);
 }
 
 // Open a source file by path
@@ -887,6 +903,29 @@ IATSourceWindow *ATImGuiOpenSourceWindow(const wchar_t *path) {
 	sourceFileInfo.mSourcePath = path;
 
 	return ATImGuiOpenSourceWindow(sourceFileInfo, true);
+}
+
+static ATImGuiSourcePaneImpl *OpenResolvedSourceWindow(
+	const ATDebuggerSourceFileInfo& sourceFileInfo,
+	const VDStringW& resolvedPath,
+	bool useAlias)
+{
+	const wchar_t *alias = useAlias ? sourceFileInfo.mSourcePath.c_str() : nullptr;
+
+	ATImGuiSourcePaneImpl *w = FindSourceWindow(resolvedPath.c_str());
+	if (w) {
+		w->RequestFocus();
+		w->SetVisible(true);
+		return w;
+	}
+
+	uint32 paneId = g_nextSourcePaneId++;
+	w = new ATImGuiSourcePaneImpl(paneId, resolvedPath.c_str(), alias);
+	ATUIDebuggerRegisterPane(w);
+	g_sourceWindows.push_back(w);
+	w->RequestFocus();
+	w->SetVisible(true);
+	return w;
 }
 
 IATSourceWindow *ATImGuiOpenSourceWindow(const ATDebuggerSourceFileInfo& sourceFileInfo, bool searchPaths) {
@@ -898,23 +937,52 @@ IATSourceWindow *ATImGuiOpenSourceWindow(const ATDebuggerSourceFileInfo& sourceF
 		if (!resolved || resolvedPath.empty())
 			return nullptr;
 
-		const wchar_t *alias = useAlias ? sourceFileInfo.mSourcePath.c_str() : nullptr;
-
-		w = FindSourceWindow(resolvedPath.c_str());
-		if (w) {
-			w->RequestFocus();
-			w->SetVisible(true);
-			return static_cast<IATSourceWindow *>(w);
-		}
-
-		uint32 paneId = g_nextSourcePaneId++;
-		w = new ATImGuiSourcePaneImpl(paneId, resolvedPath.c_str(), alias);
-		ATUIDebuggerRegisterPane(w);
-		g_sourceWindows.push_back(w);
+		w = OpenResolvedSourceWindow(sourceFileInfo, resolvedPath, useAlias);
 	}
 	w->RequestFocus();
 	w->SetVisible(true);
 	return static_cast<IATSourceWindow *>(w);
+}
+
+static bool OpenSourceWindowAndFocusLine(
+	const ATDebuggerSourceFileInfo& sourceFileInfo,
+	int line)
+{
+	g_missingSourceDialogStarted = false;
+	g_missingSourceRequestedFocusLine = line;
+	IATSourceWindow *sourceWindow = ATImGuiOpenSourceWindow(sourceFileInfo, true);
+	g_missingSourceRequestedFocusLine = -1;
+
+	auto *w = static_cast<ATImGuiSourcePaneImpl *>(sourceWindow);
+	if (!w)
+		return g_missingSourceDialogStarted;
+
+	w->FocusOnLine(line);
+	return true;
+}
+
+void ATUIDebuggerPollPendingSourceDialogs() {
+	std::vector<PendingMissingSourceResult> pendingResults;
+	{
+		std::lock_guard<std::mutex> lock(g_missingSourceDialogMutex);
+		pendingResults.swap(g_pendingMissingSourceResults);
+	}
+
+	for (const PendingMissingSourceResult& result : pendingResults) {
+		if (result.mSelectedPath.empty())
+			continue;
+
+		const bool useAlias = !VDFileIsPathEqual(
+			result.mSelectedPath.c_str(),
+			result.mSourceFileInfo.mSourcePath.c_str());
+
+		ATUIDebuggerOpen();
+		ATImGuiSourcePaneImpl *w = OpenResolvedSourceWindow(result.mSourceFileInfo,
+			result.mSelectedPath,
+			useAlias);
+		if (w && result.mFocusLine >= 0)
+			w->FocusOnLine(result.mFocusLine);
+	}
 }
 
 bool ATUIDebuggerOpenMissingSourceForTest(const char *symbolPathUtf8,

@@ -107,6 +107,7 @@ namespace {
 	bool g_debuggerOpen = false;
 	bool g_dockLayoutApplied = false;
 	uint32 g_focusedPaneId = 0;
+	uint32 g_activePaneId = 0;
 
 	// Pane creator registry (populated by ATRegisterUIPaneType/Class)
 	struct PaneCreatorEntry {
@@ -497,8 +498,10 @@ void ATActivateUIPane(uint32 id, bool giveFocus, bool visible, uint32 relid, int
 	for (auto& e : g_debugPanes) {
 		if (e.id == id) {
 			e.pane->SetVisible(visible);
-			if (giveFocus)
+			if (giveFocus) {
 				e.pane->RequestFocus();
+				g_activePaneId = id;
+			}
 			return;
 		}
 	}
@@ -510,8 +513,10 @@ void ATActivateUIPane(uint32 id, bool giveFocus, bool visible, uint32 relid, int
 	for (auto& e : g_debugPanes) {
 		if (e.id == id) {
 			e.pane->SetVisible(visible);
-			if (giveFocus)
+			if (giveFocus) {
 				e.pane->RequestFocus();
+				g_activePaneId = id;
+			}
 			return;
 		}
 	}
@@ -953,8 +958,10 @@ void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state) {
 			e.pane->SetVisible(false);
 		}
 
-		if (e.pane->HasFocus())
+		if (e.pane->HasFocus()) {
 			g_focusedPaneId = e.id;
+			g_activePaneId = e.id;
+		}
 	}
 
 	if (monoFont)
@@ -1041,6 +1048,7 @@ void ATUIDebuggerClose() {
 
 	g_debuggerOpen = false;
 	g_focusedPaneId = 0;
+	g_activePaneId = 0;
 }
 
 bool ATUIDebuggerIsOpen() {
@@ -1151,7 +1159,8 @@ void ATUIDebuggerToggleBreakpoint() {
 	if (!dbg || !dbg->IsEnabled())
 		return;
 
-	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(g_focusedPaneId))
+	uint32 paneId = g_focusedPaneId ? g_focusedPaneId : g_activePaneId;
+	if (ATImGuiDebuggerPane *pane = ATUIDebuggerGetPane(paneId))
 		pane->OnPaneCommand(kATUIPaneCommandId_DebugToggleBreakpoint);
 }
 
@@ -1256,6 +1265,8 @@ void ATUIDebuggerCloseActivePane() {
 		if (e.id == g_focusedPaneId) {
 			e.pane->SetVisible(false);
 			g_focusedPaneId = 0;
+			if (g_activePaneId == e.id)
+				g_activePaneId = 0;
 			return;
 		}
 	}
@@ -1308,4 +1319,5 @@ void ATUIDebuggerCyclePane(int direction) {
 	auto& target = g_debugPanes[visibleIndices[next]];
 	ImGui::SetWindowFocus(target.pane->GetTitle());
 	g_focusedPaneId = target.id;
+	g_activePaneId = target.id;
 }

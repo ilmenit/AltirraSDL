@@ -226,6 +226,7 @@ public:
 private:
 	void RebuildView();
 	void NavigateToExpression(const char *expr);
+	int ResolveBreakpointLine() const;
 	bool ToggleSelectedBreakpoint();
 	bool GoToSourceForAddress(uint32 addr);
 	void PushAndJump(uint32 fromAddr, uint32 toAddr);
@@ -378,17 +379,52 @@ void *ATImGuiDisassemblyPaneImpl::AsPaneInterface(uint32 iid) {
 	return ATImGuiDebuggerPane::AsPaneInterface(iid);
 }
 
+int ATImGuiDisassemblyPaneImpl::ResolveBreakpointLine() const {
+	if (mLines.empty())
+		return -1;
+
+	int line = mSelectedLine;
+	if (line < 0)
+		line = mScrollToLine;
+
+	if (line < 0)
+		return -1;
+
+	if (line >= (int)mLines.size())
+		line = (int)mLines.size() - 1;
+
+	const auto isInsnLine = [this](int idx) {
+		const LineInfo& li = mLines[idx];
+		return !li.mbIsSeparator && !li.mbIsSource;
+	};
+
+	if (isInsnLine(line))
+		return line;
+
+	for (int i = line + 1; i < (int)mLines.size(); ++i) {
+		if (isInsnLine(i))
+			return i;
+	}
+
+	for (int i = line - 1; i >= 0; --i) {
+		if (isInsnLine(i))
+			return i;
+	}
+
+	return -1;
+}
+
 bool ATImGuiDisassemblyPaneImpl::ToggleSelectedBreakpoint() {
 	IATDebugger *dbg = ATGetDebugger();
 	if (!dbg)
 		return true;
 
-	if (mSelectedLine < 0 || (size_t)mSelectedLine >= mLines.size())
+	const int line = ResolveBreakpointLine();
+	if (line < 0)
 		return true;
 
-	const LineInfo& li = mLines[mSelectedLine];
-	if (!li.mbIsSeparator && !li.mbIsSource)
-		dbg->ToggleBreakpoint(li.mAddress);
+	mSelectedLine = line;
+	dbg->ToggleBreakpoint(mLines[line].mAddress);
 
 	return true;
 }

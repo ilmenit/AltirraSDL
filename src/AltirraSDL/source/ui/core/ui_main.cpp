@@ -2186,6 +2186,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 
 	// Debugger dialogs (self-managed visibility)
 	ATUIRenderVerifierDialog();
+	ATUIDebuggerPollPendingSourceDialogs();
 	ATUIDebuggerRenderSourceListDialog();
 
 	// Virtual on-screen keyboard

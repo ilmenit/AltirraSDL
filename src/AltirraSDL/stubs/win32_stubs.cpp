@@ -213,8 +213,18 @@ const char *ATGetNameForWindowMessageW32(uint32 msgId) { return "(unknown)"; }
 #include "uiclipboard.h"
 #include "uicommondialogs.h"
 #include "uiaccessors.h"
-#include "ui_testmode.h"
 #include "devicemanager.h"
+
+#if defined(ALTIRRA_LIBRETRO) || defined(ALTIRRA_BRIDGE_HEADLESS)
+static bool ATTestModeRecordMessageBox(const char *,
+	const wchar_t *,
+	const wchar_t *)
+{
+	return false;
+}
+#else
+#include "ui_testmode.h"
+#endif
 
 bool ATUIClipIsTextAvailable() {
 	return SDL_HasClipboardText();

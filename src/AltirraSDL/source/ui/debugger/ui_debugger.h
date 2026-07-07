@@ -75,6 +75,7 @@ void ATUIDebuggerShutdown();
 
 // Render all open debugger panes.  Called from ATUIRenderFrame().
 void ATUIDebuggerRenderPanes(ATSimulator &sim, ATUIState &state);
+void ATUIDebuggerPollPendingSourceDialogs();
 
 // Tick the debugger engine (call ATDebugger::Tick).
 // Called from the main loop after ATUIPollDeferredActions().
