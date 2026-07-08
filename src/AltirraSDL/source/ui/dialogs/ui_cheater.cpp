@@ -52,8 +52,8 @@ static const char *kSearchModeLabels[] = {
 };
 
 static void UpdateSearchResults(ATCheatEngine *ce) {
-	s_totalMatches = ce->GetValidOffsets(nullptr, 0);
-	s_resultCount = ce->GetValidOffsets(s_resultOffsets, kMaxSearchResults);
+	s_totalMatches = ce->GetValidOffsets(s_resultOffsets, kMaxSearchResults);
+	s_resultCount = std::min<uint32>(s_totalMatches, kMaxSearchResults);
 	s_selectedResult = -1;
 }
 
@@ -224,9 +224,30 @@ void ATUIRenderCheater(ATSimulator &sim, ATUIState &state) {
 	ImGui::SameLine();
 	if (ImGui::Button("Update")) {
 		uint32 refVal = 0;
-		if (needsValue)
-			sscanf(s_searchValue, "%x", &refVal);
-		ce->Snapshot((ATCheatSnapshotMode)s_searchMode, refVal, s_search16Bit);
+		const bool bit16 = s_search16Bit != 0;
+
+		switch(s_searchMode) {
+			case kATCheatSnapMode_Replace:
+				ce->Snapshot(kATCheatSnapMode_Replace, 0, false);
+				break;
+
+			case kATCheatSnapMode_Equal:
+			case kATCheatSnapMode_NotEqual:
+			case kATCheatSnapMode_Less:
+			case kATCheatSnapMode_LessEqual:
+			case kATCheatSnapMode_Greater:
+			case kATCheatSnapMode_GreaterEqual:
+				ce->Snapshot((ATCheatSnapshotMode)s_searchMode, 0, bit16);
+				break;
+
+			case kATCheatSnapMode_EqualRef:
+				sscanf(s_searchValue, "%x", &refVal);
+				ce->Snapshot(kATCheatSnapMode_EqualRef, refVal, bit16);
+				break;
+
+			default:
+				break;
+		}
 		UpdateSearchResults(ce);
 	}
 

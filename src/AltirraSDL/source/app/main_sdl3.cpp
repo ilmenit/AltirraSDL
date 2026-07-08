@@ -2986,15 +2986,15 @@ int main(int argc, char *argv[]) {
 		// Turbo frame-skip: in turbo mode, drop most frames at the GTIA
 		// framebuffer-allocation level so GTIA skips artifacting / palette
 		// correction / framebuffer writes for (divisor-1) of every divisor
-		// frames. Significant CPU saving in turbo mode on lower-end
-		// Linux/macOS/Android, with no effect at normal speed (turbo=false
-		// → dropFrame=false always). Matches Windows main.cpp:3180 — reads
-		// the same g_ATCVEngineTurboFPSDivisor CVar and clamps to [1,100].
+		// frames. The divisor must be keyed to the emulated frame counter,
+		// not to Advance() calls: a full Atari frame takes several Advance()
+		// chunks, and a chunk-phase drop decision can randomly drop whole
+		// visible frames for the duration of a short F1 warp press.
 		const bool turbo = g_sim.IsTurboModeEnabled();
-		static uint32 s_turboFrameCounter = 0;
 		const uint32 turboDivisor =
 			std::clamp<uint32>((uint32)(sint32)g_ATCVEngineTurboFPSDivisor, 1u, 100u);
-		const bool dropFrame = turbo && ((++s_turboFrameCounter) % turboDivisor) != 0;
+		const uint32 presentedFrame = g_sim.GetAntic().GetPresentedFrameCounter();
+		const bool dropFrame = turbo && (presentedFrame % turboDivisor) != 0;
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 		if (ATNetplayGlue::IsLockstepping()) {

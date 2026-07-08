@@ -194,13 +194,16 @@ void ATCheatEngine::Save(const wchar_t *filename) {
 }
 
 void ATCheatEngine::Snapshot(ATCheatSnapshotMode mode, uint32 value, bool bit16) {
+	if (!mpMemory || mMemorySize == 0)
+		return;
+
 	const uint32 n8 = mMemorySize;
 	const uint32 n16 = mMemorySize - 1;
 
 	VDASSERT(mMemorySize == mLastData.size());
 	VDASSERT(mMemorySize == mValidFlags.size());
 
-	if (bit16)
+	if (bit16 && n16)
 		mValidFlags[n16] = 0;
 
 	uint8 *prev = mLastData.data();
