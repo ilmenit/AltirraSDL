@@ -3,7 +3,11 @@
 //	Provides memory search, active cheat management, and .atcheats file I/O.
 
 #include <stdafx.h>
+#include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <mutex>
+#include <vector>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include "ui_file_dialog_sdl3.h"
@@ -39,6 +43,9 @@ static int  s_editIndex = -1;          // index in cheat list when editing
 static char s_editAddress[8] = "";
 static char s_editValue[8] = "";
 static int s_editIs16Bit = 0;          // 0 = 8-bit, 1 = 16-bit
+static char s_editErrorMessage[96] = "";
+static char s_errorMessage[192] = "";
+static std::vector<uint32> s_cheatOrder;
 
 static const char *kSearchModeLabels[] = {
 	"Start with new snapshot",
@@ -53,14 +60,85 @@ static const char *kSearchModeLabels[] = {
 
 static void UpdateSearchResults(ATCheatEngine *ce) {
 	s_totalMatches = ce->GetValidOffsets(s_resultOffsets, kMaxSearchResults);
-	s_resultCount = std::min<uint32>(s_totalMatches, kMaxSearchResults);
+	s_resultCount = s_totalMatches >= kMaxSearchResults ? 0 : s_totalMatches;
 	s_selectedResult = -1;
+}
+
+static bool ParseUintField(const char *text, uint32& value) {
+	while (*text == ' ' || *text == '\t')
+		++text;
+
+	if (!*text)
+		return false;
+
+	int base = 10;
+	if (*text == '$') {
+		base = 16;
+		++text;
+	}
+
+	errno = 0;
+	char *end = nullptr;
+	unsigned long v = strtoul(text, &end, base);
+	if (end == text || errno == ERANGE)
+		return false;
+
+	while (*end == ' ' || *end == '\t')
+		++end;
+
+	if (*end)
+		return false;
+
+	value = (uint32)v;
+	return true;
+}
+
+static bool ParseSintField(const char *text, sint32& value) {
+	while (*text == ' ' || *text == '\t')
+		++text;
+
+	if (!*text)
+		return false;
+
+	if (*text == '$') {
+		uint32 v = 0;
+		if (!ParseUintField(text, v))
+			return false;
+
+		value = (sint32)v;
+		return true;
+	}
+
+	errno = 0;
+	char *end = nullptr;
+	long v = strtol(text, &end, 10);
+	if (end == text || errno == ERANGE)
+		return false;
+
+	while (*end == ' ' || *end == '\t')
+		++end;
+
+	if (*end)
+		return false;
+
+	value = (sint32)v;
+	return true;
+}
+
+static void AddCheatFromResult(ATCheatEngine *ce, uint32 offset, bool bit16, bool enabled) {
+	ATCheatEngine::Cheat cheat {};
+	cheat.mAddress = offset;
+	cheat.mValue = (uint16)ce->GetOffsetCurrentValue(offset, bit16);
+	cheat.mb16Bit = bit16;
+	cheat.mbEnabled = enabled;
+	ce->AddCheat(cheat);
 }
 
 static void OpenEditCheatPopup(bool isNew, int editIdx, const ATCheatEngine::Cheat *cheat) {
 	s_showEditCheat = true;
 	s_editIsNew = isNew;
 	s_editIndex = editIdx;
+	s_editErrorMessage[0] = 0;
 	if (cheat) {
 		snprintf(s_editAddress, sizeof(s_editAddress), "%04X", cheat->mAddress);
 		if (cheat->mb16Bit)
@@ -98,25 +176,30 @@ static void RenderEditCheatPopupContent(ATCheatEngine *ce) {
 			ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
 		return;
 
-	ImGui::Text("Address (hex):"); ImGui::SameLine();
+	ImGui::Text("Address:"); ImGui::SameLine();
 	ImGui::SetNextItemWidth(80);
-	ImGui::InputText("##addr", s_editAddress, sizeof(s_editAddress),
-		ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+	ImGui::InputText("##addr", s_editAddress, sizeof(s_editAddress));
 
-	ImGui::Text("Value (hex):  "); ImGui::SameLine();
+	ImGui::Text("Value:  "); ImGui::SameLine();
 	ImGui::SetNextItemWidth(80);
-	ImGui::InputText("##val", s_editValue, sizeof(s_editValue),
-		ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+	ImGui::InputText("##val", s_editValue, sizeof(s_editValue));
 
 	ImGui::RadioButton("8-bit (0-255)", &s_editIs16Bit, 0); ImGui::SameLine();
 	ImGui::RadioButton("16-bit (0-65535)", &s_editIs16Bit, 1);
 
+	if (s_editErrorMessage[0]) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
+		ImGui::TextUnformatted(s_editErrorMessage);
+		ImGui::PopStyleColor();
+	}
+
 	ImGui::Separator();
 
 	if (ImGui::Button("OK", ImVec2(80, 0))) {
-		unsigned addr = 0, val = 0;
-		if (sscanf(s_editAddress, "%x", &addr) == 1 &&
-			sscanf(s_editValue, "%x", &val) == 1) {
+		uint32 addr = 0;
+		uint32 val = 0;
+		if (ParseUintField(s_editAddress, addr) &&
+			ParseUintField(s_editValue, val)) {
 			ATCheatEngine::Cheat cheat = {};
 			cheat.mAddress = addr;
 			cheat.mValue = (uint16)val;
@@ -128,12 +211,18 @@ static void RenderEditCheatPopupContent(ATCheatEngine *ce) {
 			} else if (s_editIndex >= 0) {
 				ce->UpdateCheat((uint32)s_editIndex, cheat);
 			}
+			ImGui::CloseCurrentPopup();
+			s_editErrorMessage[0] = 0;
+		} else {
+			snprintf(s_editErrorMessage, sizeof s_editErrorMessage,
+				"Invalid address or value.");
 		}
-		ImGui::CloseCurrentPopup();
 	}
 	ImGui::SameLine();
-	if (ImGui::Button("Cancel", ImVec2(80, 0)))
+	if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+		s_editErrorMessage[0] = 0;
 		ImGui::CloseCurrentPopup();
+	}
 
 	ImGui::EndPopup();
 }
@@ -217,14 +306,14 @@ void ATUIRenderCheater(ATSimulator &sim, ATUIState &state) {
 	bool needsValue = (s_searchMode == kATCheatSnapMode_EqualRef);
 	if (!needsValue) ImGui::BeginDisabled();
 	ImGui::SetNextItemWidth(80);
-	ImGui::InputText("##searchval", s_searchValue, sizeof(s_searchValue),
-		ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+	ImGui::InputText("##searchval", s_searchValue, sizeof(s_searchValue));
 	if (!needsValue) ImGui::EndDisabled();
 
 	ImGui::SameLine();
 	if (ImGui::Button("Update")) {
 		uint32 refVal = 0;
 		const bool bit16 = s_search16Bit != 0;
+		s_errorMessage[0] = 0;
 
 		switch(s_searchMode) {
 			case kATCheatSnapMode_Replace:
@@ -241,24 +330,54 @@ void ATUIRenderCheater(ATSimulator &sim, ATUIState &state) {
 				break;
 
 			case kATCheatSnapMode_EqualRef:
-				sscanf(s_searchValue, "%x", &refVal);
-				ce->Snapshot(kATCheatSnapMode_EqualRef, refVal, bit16);
+				{
+					sint32 signedVal = 0;
+					if (!ParseSintField(s_searchValue, signedVal)) {
+						snprintf(s_errorMessage, sizeof s_errorMessage,
+							"Invalid search value.");
+						break;
+					}
+
+					if (bit16) {
+						if (signedVal < -32768 || signedVal > 65535) {
+							snprintf(s_errorMessage, sizeof s_errorMessage,
+								"Invalid search value. The search value must be within -32768 to 65535.");
+							break;
+						}
+					} else {
+						if (signedVal < -128 || signedVal > 255) {
+							snprintf(s_errorMessage, sizeof s_errorMessage,
+								"Invalid search value. The search value must be within -128 to 255.");
+							break;
+						}
+					}
+
+					refVal = (uint32)signedVal;
+					ce->Snapshot(kATCheatSnapMode_EqualRef, refVal, bit16);
+				}
 				break;
 
 			default:
 				break;
 		}
-		UpdateSearchResults(ce);
+		if (!s_errorMessage[0])
+			UpdateSearchResults(ce);
 	}
 
 	ImGui::SameLine();
 	ImGui::RadioButton("8-bit", &s_search16Bit, 0); ImGui::SameLine();
 	ImGui::RadioButton("16-bit", &s_search16Bit, 1);
 
-	if (s_totalMatches > kMaxSearchResults)
+	if (s_totalMatches >= kMaxSearchResults)
 		ImGui::Text("Results: %u shown of %u matches", s_resultCount, s_totalMatches);
 	else
 		ImGui::Text("Results: %u matches", s_totalMatches);
+
+	if (s_errorMessage[0]) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorWarningText());
+		ImGui::TextUnformatted(s_errorMessage);
+		ImGui::PopStyleColor();
+	}
 
 	// --- Two-column layout: results | transfer buttons | active cheats ---
 	float availW = ImGui::GetContentRegionAvail().x;
@@ -271,21 +390,26 @@ void ATUIRenderCheater(ATSimulator &sim, ATUIState &state) {
 	ImGui::Text("Search Results");
 	ImGui::Separator();
 
-	for (uint32 i = 0; i < s_resultCount; ++i) {
-		uint32 off = s_resultOffsets[i];
-		uint32 val = ce->GetOffsetCurrentValue(off, s_search16Bit);
+	if (!s_totalMatches) {
+		ImGui::TextUnformatted("No results left. Try again.");
+	} else if (s_totalMatches >= kMaxSearchResults) {
+		ImGui::Text("Too many results (%u).", s_totalMatches);
+	} else {
+		for (uint32 i = 0; i < s_resultCount; ++i) {
+			uint32 off = s_resultOffsets[i];
+			uint32 val = ce->GetOffsetCurrentValue(off, s_search16Bit);
 
-		char label[64];
-		if (s_search16Bit)
-			snprintf(label, sizeof(label), "$%04X  $%04X (%u)##r%u", off, val, val, i);
-		else
-			snprintf(label, sizeof(label), "$%04X  $%02X (%u)##r%u", off, val, val, i);
+			char label[64];
+			if (s_search16Bit)
+				snprintf(label, sizeof(label), "$%04X  $%04X (%u)##r%u", off, val, val, i);
+			else
+				snprintf(label, sizeof(label), "$%04X  $%02X (%u)##r%u", off, val, val, i);
 
-		bool selected = (s_selectedResult == (int)i);
-		if (ImGui::Selectable(label, selected, ImGuiSelectableFlags_AllowDoubleClick)) {
-			s_selectedResult = (int)i;
-			if (ImGui::IsMouseDoubleClicked(0)) {
-				ce->AddCheat(off, s_search16Bit);
+			bool selected = (s_selectedResult == (int)i);
+			if (ImGui::Selectable(label, selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+				s_selectedResult = (int)i;
+				if (ImGui::IsMouseDoubleClicked(0))
+					AddCheatFromResult(ce, off, s_search16Bit != 0, false);
 			}
 		}
 	}
@@ -298,15 +422,20 @@ void ATUIRenderCheater(ATSimulator &sim, ATUIState &state) {
 	float midY = listH * 0.4f;
 	ImGui::SetCursorPosY(midY);
 
-	if (ImGui::Button(">", ImVec2(36, 0)) && s_selectedResult >= 0 && s_selectedResult < (int)s_resultCount) {
-		ce->AddCheat(s_resultOffsets[s_selectedResult], s_search16Bit);
-	}
+	const bool canTransfer = s_selectedResult >= 0 && s_selectedResult < (int)s_resultCount;
+	if (!canTransfer) ImGui::BeginDisabled();
+	if (ImGui::Button(">", ImVec2(36, 0)) && canTransfer)
+		AddCheatFromResult(ce, s_resultOffsets[s_selectedResult], s_search16Bit != 0, false);
+	if (!canTransfer) ImGui::EndDisabled();
 	ImGui::SetItemTooltip("Transfer selected result to active cheats");
 
+	const bool canTransferAll = s_totalMatches > 0;
+	if (!canTransferAll) ImGui::BeginDisabled();
 	if (ImGui::Button(">>", ImVec2(36, 0))) {
 		for (uint32 i = 0; i < s_resultCount; ++i)
-			ce->AddCheat(s_resultOffsets[i], s_search16Bit);
+			AddCheatFromResult(ce, s_resultOffsets[i], s_search16Bit != 0, true);
 	}
+	if (!canTransferAll) ImGui::EndDisabled();
 	ImGui::SetItemTooltip("Transfer all results to active cheats");
 	ImGui::EndChild();
 
@@ -320,7 +449,23 @@ void ATUIRenderCheater(ATSimulator &sim, ATUIState &state) {
 	if (s_selectedCheat >= (int)cheatCount)
 		s_selectedCheat = -1;
 
-	for (uint32 i = 0; i < cheatCount; ++i) {
+	s_cheatOrder.clear();
+	s_cheatOrder.reserve(cheatCount);
+	for (uint32 i = 0; i < cheatCount; ++i)
+		s_cheatOrder.push_back(i);
+
+	std::sort(s_cheatOrder.begin(), s_cheatOrder.end(),
+		[ce](uint32 a, uint32 b) {
+			const ATCheatEngine::Cheat& ca = ce->GetCheatByIndex(a);
+			const ATCheatEngine::Cheat& cb = ce->GetCheatByIndex(b);
+
+			if (ca.mAddress != cb.mAddress)
+				return ca.mAddress < cb.mAddress;
+
+			return a < b;
+		});
+
+	for (uint32 i : s_cheatOrder) {
 		ATCheatEngine::Cheat cheat = ce->GetCheatByIndex(i);
 
 		ImGui::PushID((int)i);
