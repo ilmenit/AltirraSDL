@@ -74,6 +74,23 @@ static bool s_fireAHeld = false;
 static bool s_fireBHeld = false;
 static bool s_effectiveFireAHeld = false;
 
+// Auto-fire (embedder hook — see touch_controls.h).  When enabled, a
+// held fire A — the touch fire button or the external trigger from
+// ATTouchControls_SetExternalJoystick — is chopped into ~10 Hz down/up
+// pulses instead of a continuous hold.  The pulse timer is advanced
+// once per frame from ATTouchControls_Render; the phase itself lives
+// in UpdateEffectiveJoystick so touch events, the external trigger,
+// and the timer all share one edge-forwarding code path.
+static bool s_autoFireEnabled = false;
+static bool s_autoFirePulsing = false;    // A held fire A is currently being pulsed
+static bool s_autoFirePhaseDown = false;  // Current phase of the pulse square wave
+static Uint64 s_autoFireNextFlip = 0;     // SDL_GetTicks() time of the next phase flip
+
+// Half-period of the auto-fire square wave: 50 ms down + 50 ms up
+// = 10 Hz, comfortably above the ~6 Hz a human sustains by tapping
+// but slow enough that every pulse spans several frames at 50/60 Hz.
+static const Uint64 kAutoFireHalfPeriodMs = 50;
+
 // Console button tracking (START/SELECT/OPTION/WARP each track independently)
 static SDL_FingerID s_consoleFinger = 0;
 static bool s_consoleActive = false;
@@ -173,7 +190,31 @@ static void UpdateEffectiveJoystick() {
 		s_effectiveJoyDirMask = newMask;
 	}
 
-	const bool fireA = s_fireAHeld || s_extTrigHeld;
+	const bool fireHeld = s_fireAHeld || s_extTrigHeld;
+	bool fireA = fireHeld;
+
+	if (s_autoFireEnabled && fireHeld) {
+		// Auto-fire: replace the continuous hold with a square wave.
+		// Start (or restart) in the DOWN phase so the first shot is
+		// instant, then flip every half-period.  Releasing takes the
+		// `else` branch below, so a release always ends with the
+		// button up regardless of phase; disabling auto-fire mid-hold
+		// falls through with fireA = fireHeld = true, restoring the
+		// normal continuous hold.
+		const Uint64 now = SDL_GetTicks();
+		if (!s_autoFirePulsing) {
+			s_autoFirePulsing = true;
+			s_autoFirePhaseDown = true;
+			s_autoFireNextFlip = now + kAutoFireHalfPeriodMs;
+		} else if (now >= s_autoFireNextFlip) {
+			s_autoFirePhaseDown = !s_autoFirePhaseDown;
+			s_autoFireNextFlip = now + kAutoFireHalfPeriodMs;
+		}
+		fireA = s_autoFirePhaseDown;
+	} else {
+		s_autoFirePulsing = false;
+	}
+
 	if (fireA != s_effectiveFireAHeld) {
 		if (s_pInputManager) {
 			if (fireA)
@@ -277,6 +318,21 @@ void ATTouchControls_SetConsoleKeysVisible(bool visible) {
 
 bool ATTouchControls_GetConsoleKeysVisible() {
 	return s_consoleKeysVisible;
+}
+
+// Embedder hook — see touch_controls.h.  Toggling mid-hold re-runs the
+// effective-state update immediately: enabling starts pulsing from a
+// fresh DOWN phase, disabling restores the normal continuous hold
+// without dropping the press.
+void ATTouchControls_SetAutoFire(bool enabled) {
+	if (s_autoFireEnabled == enabled)
+		return;
+	s_autoFireEnabled = enabled;
+	UpdateEffectiveJoystick();
+}
+
+bool ATTouchControls_GetAutoFire() {
+	return s_autoFireEnabled;
 }
 
 bool ATTouchControls_IsActive() {
@@ -773,6 +829,15 @@ static void DrawJoystick(ImDrawList *dl, float baseX, float baseY,
 void ATTouchControls_Render(const ATTouchLayout &layout, const ATTouchLayoutConfig &config,
 	bool showControls, bool showMenu)
 {
+	// Advance the auto-fire pulse.  Render runs once per frame, which
+	// is the only per-frame entry point the touch layer has; the flip
+	// itself happens inside UpdateEffectiveJoystick so the timer and
+	// the event-driven state changes share one code path.  Placed
+	// before the visibility early-out so an external trigger (which
+	// works with the controls hidden) keeps pulsing too.
+	if (s_autoFireEnabled && (s_fireAHeld || s_extTrigHeld))
+		UpdateEffectiveJoystick();
+
 	if (!showControls && !showMenu)
 		return;
 

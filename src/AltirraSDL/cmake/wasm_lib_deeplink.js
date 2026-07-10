@@ -88,6 +88,7 @@
     //   artifact:   0..6|null         (?artifact=none|ntsc|pal|ntschi|palhi|auto|autohi)
     //   vkbd:       true|false|null   (?vkbd=0|1)
     //   consolekeys:true|false|null   (?consolekeys=0|1)
+    //   autofire:   true|false|null   (?autofire=0|1)
     //   stretch:    0..4|null         (?stretch=fill|preserve|square|integral|integral_preserve)
     //   joystick:   0..2|null         (?joystick=analog|dpad8|dpad4)
     //   fullscreen: true|false        (?fullscreen=1)
@@ -102,6 +103,7 @@
     artifact:    null,
     vkbd:        null,
     consolekeys: null,
+    autofire:    null,
     stretch:     null,
     joystick:    null,
     fullscreen:  false,
@@ -522,6 +524,21 @@
         log('consolekeys=' + (window.__altirraLib.consolekeys ? '1' : '0'));
       } else if (consoleKeysRaw) {
         log('ignored unknown consolekeys value:', consoleKeysRaw);
+      }
+
+      // ?autofire=0|1 — auto-fire for the fire button.  When on,
+      // holding fire A pulses the trigger at ~10 Hz instead of a
+      // continuous hold, so shooters that expect repeated taps stay
+      // playable on glass.  A per-game launcher can pass ?autofire=1
+      // for the titles that benefit, or drive Module._ATWasmSetAutoFire
+      // at runtime from its own toggle.  Applied via ATWasmSetAutoFire
+      // once the runtime is ready.
+      var autoFireRaw = (p.get('autofire') || '').trim();
+      if (autoFireRaw === '0' || autoFireRaw === '1') {
+        window.__altirraLib.autofire = (autoFireRaw === '1');
+        log('autofire=' + (window.__altirraLib.autofire ? '1' : '0'));
+      } else if (autoFireRaw) {
+        log('ignored unknown autofire value:', autoFireRaw);
       }
 
       // ?stretch=fill|preserve|square|integral|integral_preserve —
@@ -1156,6 +1173,9 @@
     }
     if (lib.consolekeys !== null && Module._ATWasmSetConsoleKeys) {
       try { Module._ATWasmSetConsoleKeys(lib.consolekeys ? 1 : 0); } catch (e) {}
+    }
+    if (lib.autofire !== null && Module._ATWasmSetAutoFire) {
+      try { Module._ATWasmSetAutoFire(lib.autofire ? 1 : 0); } catch (e) {}
     }
     if (lib.stretch !== null && Module._ATWasmSetStretchMode) {
       try { Module._ATWasmSetStretchMode(lib.stretch); } catch (e) {}
