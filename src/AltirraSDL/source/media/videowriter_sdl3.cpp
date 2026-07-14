@@ -59,10 +59,24 @@
 #endif
 
 #include <at/atio/wav.h>
+#include <vd2/system/text.h>
 #include "videowriter.h"
 #include "aviwriter.h"
 #include "gtia.h"
 #include "uirender.h"
+
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/audio_fifo.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
+#include <libswresample/swresample.h>
+#include <libswscale/swscale.h>
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // IATVideoEncoder — base interface for video frame compression
@@ -1230,7 +1244,7 @@ public:
 
 class ATAVIEncoder final : public IATMediaEncoder {
 public:
-	ATAVIEncoder(const wchar_t *filename, ATVideoEncoding venc, uint32 w, uint32 h, const VDFraction& frameRate, const uint32 *palette, double samplingRate, bool stereo, bool encodeAllFrames);
+	ATAVIEncoder(const wchar_t *filename, ATVideoEncoding venc, uint32 w, uint32 h, const VDFraction& frameRate, const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, bool encodeAllFrames);
 
 	sint64 GetCurrentSize() override;
 	bool GetDebugInfo(ATVideoRecordingDebugInfo& debugInfo) override;
@@ -1253,7 +1267,7 @@ private:
 	IVDMediaOutputStream *mAudioStream = nullptr;
 };
 
-ATAVIEncoder::ATAVIEncoder(const wchar_t *filename, ATVideoEncoding venc, uint32 w, uint32 h, const VDFraction& frameRate, const uint32 *palette, double samplingRate, bool stereo, bool encodeAllFrames) {
+ATAVIEncoder::ATAVIEncoder(const wchar_t *filename, ATVideoEncoding venc, uint32 w, uint32 h, const VDFraction& frameRate, const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, bool encodeAllFrames) {
 	mbEncodeAllFrames = encodeAllFrames;
 	mKeyCounter = 0;
 
@@ -1265,7 +1279,8 @@ ATAVIEncoder::ATAVIEncoder(const wchar_t *filename, ATVideoEncoding venc, uint32
 	mFile = VDCreateMediaOutputAVIFile();
 
 	mVideoStream = mFile->createVideoStream();
-	mAudioStream = mFile->createAudioStream();
+	if (recordAudio)
+		mAudioStream = mFile->createAudioStream();
 
 	struct {
 		VDAVIBitmapInfoHeader hdr;
@@ -1357,26 +1372,28 @@ ATAVIEncoder::ATAVIEncoder(const wchar_t *filename, ATVideoEncoding venc, uint32
 	wf.mBitsPerSample = 16;
 	wf.mSize = 0;
 
-	mAudioStream->setFormat(&wf, offsetof(nsVDWinFormats::WaveFormatEx, mSize));
-	hdr.fccType					= VDMAKEFOURCC('a', 'u', 'd', 's');
-    hdr.fccHandler				= 0;
-    hdr.dwFlags					= 0;
-    hdr.wPriority				= 0;
-    hdr.wLanguage				= 0;
-    hdr.dwInitialFrames			= 0;
-	hdr.dwScale					= wf.mBlockAlign;
-	hdr.dwRate					= wf.GetAvgBytesPerSec();
-    hdr.dwStart					= 0;
-    hdr.dwLength				= 0;
-    hdr.dwSuggestedBufferSize	= 0;
-    hdr.dwQuality				= (uint32)-1;
-	hdr.dwSampleSize			= wf.mBlockAlign;
-	hdr.rcFrame.left			= 0;
-	hdr.rcFrame.top				= 0;
-	hdr.rcFrame.right			= 0;
-	hdr.rcFrame.bottom			= 0;
+	if (mAudioStream) {
+		mAudioStream->setFormat(&wf, offsetof(nsVDWinFormats::WaveFormatEx, mSize));
+		hdr.fccType					= VDMAKEFOURCC('a', 'u', 'd', 's');
+	    hdr.fccHandler				= 0;
+	    hdr.dwFlags					= 0;
+	    hdr.wPriority				= 0;
+	    hdr.wLanguage				= 0;
+	    hdr.dwInitialFrames			= 0;
+		hdr.dwScale					= wf.mBlockAlign;
+		hdr.dwRate					= wf.GetAvgBytesPerSec();
+	    hdr.dwStart					= 0;
+	    hdr.dwLength				= 0;
+	    hdr.dwSuggestedBufferSize	= 0;
+	    hdr.dwQuality				= (uint32)-1;
+		hdr.dwSampleSize			= wf.mBlockAlign;
+		hdr.rcFrame.left			= 0;
+		hdr.rcFrame.top				= 0;
+		hdr.rcFrame.right			= 0;
+		hdr.rcFrame.bottom			= 0;
 
-	mAudioStream->setStreamInfo(hdr);
+		mAudioStream->setStreamInfo(hdr);
+	}
 
 	mFile->setBuffering(4194304, 524288, IVDFileAsync::kModeAsynchronous);
 	mFile->init(filename);
@@ -1424,15 +1441,18 @@ void ATAVIEncoder::WriteVideo(const VDPixmap& px) {
 }
 
 void ATAVIEncoder::BeginAudioFrame(uint32 bytes, uint32 samples) {
-	mAudioStream->partialWriteBegin(IVDMediaOutputStream::kFlagKeyFrame, bytes, samples);
+	if (mAudioStream)
+		mAudioStream->partialWriteBegin(IVDMediaOutputStream::kFlagKeyFrame, bytes, samples);
 }
 
 void ATAVIEncoder::WriteAudio(const sint16 *data, uint32 bytes) {
-	mAudioStream->partialWrite(data, bytes);
+	if (mAudioStream)
+		mAudioStream->partialWrite(data, bytes);
 }
 
 void ATAVIEncoder::EndAudioFrame() {
-	mAudioStream->partialWriteEnd();
+	if (mAudioStream)
+		mAudioStream->partialWriteEnd();
 }
 
 bool ATAVIEncoder::Finalize(MyError& error) {
@@ -1463,6 +1483,470 @@ bool ATAVIEncoder::Finalize(MyError& error) {
 	return error.empty();
 }
 
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+///////////////////////////////////////////////////////////////////////////////
+// ATFFmpegEncoder — writes H.264/AAC MP4 via static FFmpeg + libx264
+
+namespace {
+	void ATThrowFFmpegError(int err, const char *what) {
+		char errbuf[AV_ERROR_MAX_STRING_SIZE];
+		av_strerror(err, errbuf, sizeof errbuf);
+		throw MyError("%s: %s", what, errbuf);
+	}
+
+	AVSampleFormat ATGetFirstSupportedSampleFormat(const AVCodec *codec) {
+		const void *configs = nullptr;
+		int numConfigs = 0;
+		const int err = avcodec_get_supported_config(nullptr, codec,
+			AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &configs, &numConfigs);
+		if (err < 0 || !configs || numConfigs <= 0)
+			return AV_SAMPLE_FMT_FLTP;
+
+		return static_cast<const AVSampleFormat *>(configs)[0];
+	}
+}
+
+class ATFFmpegEncoder final : public IATMediaEncoder {
+public:
+	ATFFmpegEncoder(const wchar_t *filename, uint32 videoBitRate, uint32 audioBitRate, uint32 w, uint32 h, const VDFraction& frameRate, bool stereo);
+	~ATFFmpegEncoder();
+
+	sint64 GetCurrentSize() override;
+	void WriteVideo(const VDPixmap& px) override;
+	void BeginAudioFrame(uint32 bytes, uint32 samples) override;
+	void WriteAudio(const sint16 *data, uint32 bytes) override;
+	void EndAudioFrame() override;
+	bool Finalize(MyError& e) override;
+
+private:
+	void Init(const wchar_t *filename, uint32 videoBitRate, uint32 audioBitRate, uint32 w, uint32 h, const VDFraction& frameRate, bool stereo);
+	void Shutdown();
+	void EncodeAudioFromFifo(bool flushPartial);
+	void DrainVideoPackets();
+	void DrainAudioPackets();
+
+	bool mbFinalized = false;
+	bool mbRecordAudio = false;
+	int mChannels = 0;
+	int mAudioFrameSize = 0;
+	int64_t mVideoNextPts = 0;
+	int64_t mAudioNextPts = 0;
+
+	AVFormatContext *mpFormatCtx = nullptr;
+	AVStream *mpVideoStream = nullptr;
+	AVStream *mpAudioStream = nullptr;
+	AVCodecContext *mpVideoCodecCtx = nullptr;
+	AVCodecContext *mpAudioCodecCtx = nullptr;
+	AVFrame *mpVideoFrame = nullptr;
+	AVPacket *mpPacket = nullptr;
+	SwsContext *mpSwsCtx = nullptr;
+	SwrContext *mpSwrCtx = nullptr;
+	AVAudioFifo *mpAudioFifo = nullptr;
+
+	VDPixmapBuffer mSourceConversionBuffer;
+	VDPixmapCachedBlitter mSourceConversionBlitter;
+};
+
+ATFFmpegEncoder::ATFFmpegEncoder(const wchar_t *filename, uint32 videoBitRate, uint32 audioBitRate, uint32 w, uint32 h, const VDFraction& frameRate, bool stereo) {
+	try {
+		Init(filename, videoBitRate, audioBitRate, w, h, frameRate, stereo);
+	} catch(...) {
+		Shutdown();
+		throw;
+	}
+}
+
+ATFFmpegEncoder::~ATFFmpegEncoder() {
+	Shutdown();
+}
+
+void ATFFmpegEncoder::Init(const wchar_t *filename, uint32 videoBitRate, uint32 audioBitRate, uint32 w, uint32 h, const VDFraction& frameRate, bool stereo) {
+	const AVCodec *videoCodec = avcodec_find_encoder_by_name("libx264");
+	if (!videoCodec)
+		throw MyError("FFmpeg recording is enabled, but the static build does not contain the libx264 encoder.");
+
+	const bool recordAudio = audioBitRate != 0;
+	const AVCodec *audioCodec = nullptr;
+	if (recordAudio) {
+		audioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+		if (!audioCodec)
+			throw MyError("FFmpeg recording is enabled, but the static build does not contain the AAC encoder.");
+	}
+	mbRecordAudio = recordAudio;
+
+	std::string filenameUtf8 = VDTextWToU8(filename, (int)wcslen(filename)).c_str();
+
+	int err = avformat_alloc_output_context2(&mpFormatCtx, nullptr, "mp4", filenameUtf8.c_str());
+	if (err < 0 || !mpFormatCtx)
+		ATThrowFFmpegError(err < 0 ? err : AVERROR_UNKNOWN, "Unable to create MP4 output context");
+
+	mpPacket = av_packet_alloc();
+	if (!mpPacket)
+		throw MyError("Unable to allocate FFmpeg packet.");
+
+	mpVideoStream = avformat_new_stream(mpFormatCtx, nullptr);
+	if (recordAudio)
+		mpAudioStream = avformat_new_stream(mpFormatCtx, nullptr);
+	if (!mpVideoStream || (recordAudio && !mpAudioStream))
+		throw MyError("Unable to create FFmpeg streams.");
+
+	mpVideoCodecCtx = avcodec_alloc_context3(videoCodec);
+	if (recordAudio)
+		mpAudioCodecCtx = avcodec_alloc_context3(audioCodec);
+	if (!mpVideoCodecCtx || (recordAudio && !mpAudioCodecCtx))
+		throw MyError("Unable to allocate FFmpeg codec contexts.");
+
+	mpVideoCodecCtx->codec_id = videoCodec->id;
+	mpVideoCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
+	mpVideoCodecCtx->bit_rate = std::clamp<uint32>(videoBitRate, 500000, 8000000);
+	mpVideoCodecCtx->width = (int)w;
+	mpVideoCodecCtx->height = (int)h;
+	mpVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+	mpVideoCodecCtx->time_base = AVRational{ (int)frameRate.getLo(), (int)frameRate.getHi() };
+	mpVideoCodecCtx->framerate = AVRational{ (int)frameRate.getHi(), (int)frameRate.getLo() };
+	mpVideoCodecCtx->gop_size = std::max(1, VDRoundToInt(mpVideoCodecCtx->framerate.num / (double)mpVideoCodecCtx->framerate.den));
+	mpVideoCodecCtx->max_b_frames = 0;
+	if (mpFormatCtx->oformat->flags & AVFMT_GLOBALHEADER)
+		mpVideoCodecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+	av_opt_set(mpVideoCodecCtx->priv_data, "preset", "veryfast", 0);
+
+	err = avcodec_open2(mpVideoCodecCtx, videoCodec, nullptr);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to open H.264 encoder");
+
+	err = avcodec_parameters_from_context(mpVideoStream->codecpar, mpVideoCodecCtx);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to export H.264 stream parameters");
+	mpVideoStream->time_base = mpVideoCodecCtx->time_base;
+
+	if (recordAudio) {
+		mChannels = stereo ? 2 : 1;
+		mpAudioCodecCtx->codec_id = audioCodec->id;
+		mpAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
+		mpAudioCodecCtx->sample_rate = 48000;
+		mpAudioCodecCtx->bit_rate = std::clamp<uint32>(audioBitRate, 64000, 256000);
+		mpAudioCodecCtx->time_base = AVRational{ 1, mpAudioCodecCtx->sample_rate };
+		av_channel_layout_default(&mpAudioCodecCtx->ch_layout, mChannels);
+		mpAudioCodecCtx->sample_fmt = ATGetFirstSupportedSampleFormat(audioCodec);
+		if (mpFormatCtx->oformat->flags & AVFMT_GLOBALHEADER)
+			mpAudioCodecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+		err = avcodec_open2(mpAudioCodecCtx, audioCodec, nullptr);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to open AAC encoder");
+
+		err = avcodec_parameters_from_context(mpAudioStream->codecpar, mpAudioCodecCtx);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to export AAC stream parameters");
+		mpAudioStream->time_base = mpAudioCodecCtx->time_base;
+
+		mpSwrCtx = swr_alloc();
+		if (!mpSwrCtx)
+			throw MyError("Unable to allocate FFmpeg audio resampler.");
+
+		av_opt_set_chlayout(mpSwrCtx, "in_chlayout", &mpAudioCodecCtx->ch_layout, 0);
+		av_opt_set_chlayout(mpSwrCtx, "out_chlayout", &mpAudioCodecCtx->ch_layout, 0);
+		av_opt_set_int(mpSwrCtx, "in_sample_rate", mpAudioCodecCtx->sample_rate, 0);
+		av_opt_set_int(mpSwrCtx, "out_sample_rate", mpAudioCodecCtx->sample_rate, 0);
+		av_opt_set_sample_fmt(mpSwrCtx, "in_sample_fmt", AV_SAMPLE_FMT_S16, 0);
+		av_opt_set_sample_fmt(mpSwrCtx, "out_sample_fmt", mpAudioCodecCtx->sample_fmt, 0);
+		err = swr_init(mpSwrCtx);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to initialize FFmpeg audio resampler");
+
+		mAudioFrameSize = mpAudioCodecCtx->frame_size ? mpAudioCodecCtx->frame_size : 1024;
+
+		mpAudioFifo = av_audio_fifo_alloc(mpAudioCodecCtx->sample_fmt, mChannels, mAudioFrameSize * 4);
+		if (!mpAudioFifo)
+			throw MyError("Unable to allocate FFmpeg audio FIFO.");
+	}
+
+	mpVideoFrame = av_frame_alloc();
+	if (!mpVideoFrame)
+		throw MyError("Unable to allocate FFmpeg video frame.");
+
+	mpVideoFrame->format = mpVideoCodecCtx->pix_fmt;
+	mpVideoFrame->width = mpVideoCodecCtx->width;
+	mpVideoFrame->height = mpVideoCodecCtx->height;
+	err = av_frame_get_buffer(mpVideoFrame, 32);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to allocate FFmpeg video frame buffer");
+
+	if (!(mpFormatCtx->oformat->flags & AVFMT_NOFILE)) {
+		err = avio_open(&mpFormatCtx->pb, filenameUtf8.c_str(), AVIO_FLAG_WRITE);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to open MP4 output file");
+	}
+
+	err = avformat_write_header(mpFormatCtx, nullptr);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to write MP4 header");
+}
+
+sint64 ATFFmpegEncoder::GetCurrentSize() {
+	return mpFormatCtx && mpFormatCtx->pb ? avio_tell(mpFormatCtx->pb) : 0;
+}
+
+void ATFFmpegEncoder::WriteVideo(const VDPixmap& px) {
+	const VDPixmap *src = &px;
+
+	if (px.format != nsVDPixmap::kPixFormat_XRGB8888) {
+		if (!mSourceConversionBuffer.format)
+			mSourceConversionBuffer.init(px.w, px.h, nsVDPixmap::kPixFormat_XRGB8888);
+
+		mSourceConversionBlitter.Blit(mSourceConversionBuffer, px);
+		src = &mSourceConversionBuffer;
+	}
+
+	if (!mpSwsCtx) {
+		mpSwsCtx = sws_getCachedContext(nullptr,
+			src->w, src->h, AV_PIX_FMT_BGR0,
+			mpVideoCodecCtx->width, mpVideoCodecCtx->height, mpVideoCodecCtx->pix_fmt,
+			SWS_BILINEAR, nullptr, nullptr, nullptr);
+		if (!mpSwsCtx)
+			throw MyError("Unable to initialize FFmpeg video scaler.");
+	}
+
+	int err = av_frame_make_writable(mpVideoFrame);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to make FFmpeg video frame writable");
+
+	const uint8 *srcData[4] = {
+		static_cast<const uint8 *>(src->data),
+		nullptr, nullptr, nullptr
+	};
+	int srcLinesize[4] = {
+		(int)src->pitch,
+		0, 0, 0
+	};
+
+	sws_scale(mpSwsCtx, srcData, srcLinesize, 0, src->h, mpVideoFrame->data, mpVideoFrame->linesize);
+
+	mpVideoFrame->pts = mVideoNextPts++;
+
+	err = avcodec_send_frame(mpVideoCodecCtx, mpVideoFrame);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to send video frame to H.264 encoder");
+
+	DrainVideoPackets();
+}
+
+void ATFFmpegEncoder::BeginAudioFrame(uint32, uint32) {
+}
+
+void ATFFmpegEncoder::WriteAudio(const sint16 *data, uint32 bytes) {
+	if (!mbRecordAudio)
+		return;
+
+	const int samples = (int)(bytes / (sizeof(sint16) * mChannels));
+
+	uint8 **converted = nullptr;
+	int convertedLinesize = 0;
+	int err = av_samples_alloc_array_and_samples(&converted, &convertedLinesize,
+		mChannels, samples, mpAudioCodecCtx->sample_fmt, 0);
+	if (err < 0)
+		ATThrowFFmpegError(err, "Unable to allocate converted audio buffer");
+
+	const uint8 *input[] = {
+		reinterpret_cast<const uint8 *>(data)
+	};
+
+	const int convertedSamples = swr_convert(mpSwrCtx, converted, samples, input, samples);
+	if (convertedSamples < 0) {
+		av_freep(&converted[0]);
+		av_freep(&converted);
+		ATThrowFFmpegError(convertedSamples, "Unable to convert audio for AAC encoder");
+	}
+
+	err = av_audio_fifo_realloc(mpAudioFifo, av_audio_fifo_size(mpAudioFifo) + convertedSamples);
+	if (err < 0) {
+		av_freep(&converted[0]);
+		av_freep(&converted);
+		ATThrowFFmpegError(err, "Unable to grow FFmpeg audio FIFO");
+	}
+
+	if (av_audio_fifo_write(mpAudioFifo, reinterpret_cast<void **>(converted), convertedSamples) != convertedSamples) {
+		av_freep(&converted[0]);
+		av_freep(&converted);
+		throw MyError("Unable to write audio samples into FFmpeg FIFO.");
+	}
+
+	av_freep(&converted[0]);
+	av_freep(&converted);
+
+	EncodeAudioFromFifo(false);
+}
+
+void ATFFmpegEncoder::EndAudioFrame() {
+}
+
+void ATFFmpegEncoder::EncodeAudioFromFifo(bool flushPartial) {
+	if (!mbRecordAudio)
+		return;
+
+	const bool variableFrameSize = (mpAudioCodecCtx->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE) != 0;
+
+	while(av_audio_fifo_size(mpAudioFifo) >= mAudioFrameSize || (flushPartial && av_audio_fifo_size(mpAudioFifo) > 0)) {
+		const int available = av_audio_fifo_size(mpAudioFifo);
+		const int frameSamples =
+			(flushPartial && variableFrameSize) ? available
+			: (flushPartial ? std::max(available, mAudioFrameSize) : mAudioFrameSize);
+
+		AVFrame *frame = av_frame_alloc();
+		if (!frame)
+			throw MyError("Unable to allocate FFmpeg audio frame.");
+
+		frame->nb_samples = frameSamples;
+		frame->format = mpAudioCodecCtx->sample_fmt;
+		frame->sample_rate = mpAudioCodecCtx->sample_rate;
+		av_channel_layout_copy(&frame->ch_layout, &mpAudioCodecCtx->ch_layout);
+
+		int err = av_frame_get_buffer(frame, 0);
+		if (err < 0) {
+			av_frame_free(&frame);
+			ATThrowFFmpegError(err, "Unable to allocate FFmpeg audio frame buffer");
+		}
+
+		err = av_frame_make_writable(frame);
+		if (err < 0) {
+			av_frame_free(&frame);
+			ATThrowFFmpegError(err, "Unable to make FFmpeg audio frame writable");
+		}
+
+		const int toRead = std::min(available, frameSamples);
+		if (av_audio_fifo_read(mpAudioFifo, reinterpret_cast<void **>(frame->data), toRead) != toRead) {
+			av_frame_free(&frame);
+			throw MyError("Unable to read audio samples from FFmpeg FIFO.");
+		}
+
+		if (toRead < frameSamples)
+			av_samples_set_silence(frame->data, toRead, frameSamples - toRead, mChannels, mpAudioCodecCtx->sample_fmt);
+
+		frame->pts = mAudioNextPts;
+		mAudioNextPts += frameSamples;
+
+		err = avcodec_send_frame(mpAudioCodecCtx, frame);
+		av_frame_free(&frame);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to send audio frame to AAC encoder");
+
+		DrainAudioPackets();
+	}
+}
+
+void ATFFmpegEncoder::DrainVideoPackets() {
+	for(;;) {
+		int err = avcodec_receive_packet(mpVideoCodecCtx, mpPacket);
+		if (err == AVERROR(EAGAIN) || err == AVERROR_EOF)
+			break;
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to receive H.264 packet");
+
+		av_packet_rescale_ts(mpPacket, mpVideoCodecCtx->time_base, mpVideoStream->time_base);
+		mpPacket->stream_index = mpVideoStream->index;
+
+		err = av_interleaved_write_frame(mpFormatCtx, mpPacket);
+		av_packet_unref(mpPacket);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to write H.264 packet to MP4");
+	}
+}
+
+void ATFFmpegEncoder::DrainAudioPackets() {
+	if (!mbRecordAudio)
+		return;
+
+	for(;;) {
+		int err = avcodec_receive_packet(mpAudioCodecCtx, mpPacket);
+		if (err == AVERROR(EAGAIN) || err == AVERROR_EOF)
+			break;
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to receive AAC packet");
+
+		av_packet_rescale_ts(mpPacket, mpAudioCodecCtx->time_base, mpAudioStream->time_base);
+		mpPacket->stream_index = mpAudioStream->index;
+
+		err = av_interleaved_write_frame(mpFormatCtx, mpPacket);
+		av_packet_unref(mpPacket);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to write AAC packet to MP4");
+	}
+}
+
+bool ATFFmpegEncoder::Finalize(MyError& error) {
+	if (mbFinalized)
+		return error.empty();
+
+	mbFinalized = true;
+
+	try {
+		if (mbRecordAudio) {
+			EncodeAudioFromFifo(true);
+
+			int err = avcodec_send_frame(mpAudioCodecCtx, nullptr);
+			if (err < 0)
+				ATThrowFFmpegError(err, "Unable to flush AAC encoder");
+			DrainAudioPackets();
+		}
+
+		int err = avcodec_send_frame(mpVideoCodecCtx, nullptr);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to flush H.264 encoder");
+		DrainVideoPackets();
+
+		err = av_write_trailer(mpFormatCtx);
+		if (err < 0)
+			ATThrowFFmpegError(err, "Unable to finalize MP4 output");
+	} catch(VDException& e) {
+		if (error.empty())
+			error = std::move(e);
+	}
+
+	Shutdown();
+	return error.empty();
+}
+
+void ATFFmpegEncoder::Shutdown() {
+	if (mpAudioFifo) {
+		av_audio_fifo_free(mpAudioFifo);
+		mpAudioFifo = nullptr;
+	}
+
+	if (mpSwrCtx) {
+		swr_free(&mpSwrCtx);
+	}
+
+	if (mpSwsCtx) {
+		sws_freeContext(mpSwsCtx);
+		mpSwsCtx = nullptr;
+	}
+
+	if (mpVideoFrame) {
+		av_frame_free(&mpVideoFrame);
+	}
+
+	if (mpPacket) {
+		av_packet_free(&mpPacket);
+	}
+
+	if (mpVideoCodecCtx) {
+		avcodec_free_context(&mpVideoCodecCtx);
+	}
+
+	if (mpAudioCodecCtx) {
+		avcodec_free_context(&mpAudioCodecCtx);
+	}
+
+	if (mpFormatCtx) {
+		if (!(mpFormatCtx->oformat->flags & AVFMT_NOFILE) && mpFormatCtx->pb)
+			avio_closep(&mpFormatCtx->pb);
+		avformat_free_context(mpFormatCtx);
+		mpFormatCtx = nullptr;
+	}
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // ATVideoWriter — main orchestrator: receives GTIA frames and audio samples,
 // resamples, and feeds to media encoder
@@ -1482,7 +1966,7 @@ public:
 		uint32 w, uint32 h, const VDFraction& frameRate, double pixelAspectRatio,
 		ATVideoRecordingResamplingMode resamplingMode,
 		ATVideoRecordingScalingMode scalingMode,
-		const uint32 *palette, double samplingRate, bool stereo, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r) override;
+		const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r) override;
 	void Shutdown() override;
 
 	bool IsPaused() const override { return mbPaused; }
@@ -1499,6 +1983,7 @@ protected:
 	void RaiseError(MyError&& e);
 
 	bool mbStereo;
+	bool mbRecordAudio;
 	bool mbHalfRate;
 	bool mbErrorState;
 	bool mbPaused = false;
@@ -1566,13 +2051,14 @@ void ATVideoWriter::Init(const wchar_t *filename, ATVideoEncoding venc,
 	uint32 w, uint32 h, const VDFraction& frameRate, double pixelAspectRatio,
 	ATVideoRecordingResamplingMode resamplingMode,
 	ATVideoRecordingScalingMode scalingMode,
-	const uint32 *palette, double samplingRate, bool stereo, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r)
+	const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r)
 {
 	mbStereo = stereo;
+	mbRecordAudio = recordAudio;
 	mbHalfRate = halfRate;
 	mbErrorState = false;
 	mbVideoPreskipTimestampSet = false;
-	mbAudioPreskipSet = false;
+	mbAudioPreskipSet = !recordAudio;
 	mFrameRate = frameRate.asDouble();
 	mSamplingRate = samplingRate;
 	mTimestampRate = timestampRate;
@@ -1684,11 +2170,17 @@ void ATVideoWriter::Init(const wchar_t *filename, ATVideoEncoding venc,
 		case kATVideoEncoding_Raw:
 		case kATVideoEncoding_RLE:
 		case kATVideoEncoding_ZMBV:
-			mpMediaEncoder = new ATAVIEncoder(filename, venc, w, h, encodingFrameRate, palette, samplingRate, stereo, encodeAllFrames);
+			mpMediaEncoder = new ATAVIEncoder(filename, venc, w, h, encodingFrameRate, palette, samplingRate, stereo, recordAudio, encodeAllFrames);
 			break;
 
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+		case kATVideoEncoding_H264_AAC:
+			mpMediaEncoder = new ATFFmpegEncoder(filename, videoBitRate, recordAudio ? audioBitRate : 0, w, h, encodingFrameRate, stereo);
+			break;
+#endif
+
 		default:
-			throw MyError("This video encoding format is not available on the SDL3 build. Use Uncompressed, RLE, or ZMBV.");
+			throw MyError("This video encoding format is not available on the SDL3 build.");
 	}
 }
 
@@ -1723,7 +2215,7 @@ void ATVideoWriter::Resume() {
 
 	mbPaused = false;
 
-	mbAudioPreskipSet = false;
+	mbAudioPreskipSet = !mbRecordAudio;
 	mbVideoPreskipTimestampSet = false;
 	mSyncAudioPreskip = 0;
 	mSyncVideoPreskip = 0;
@@ -1801,6 +2293,11 @@ void ATVideoWriter::WriteRawAudio(const float *left, const float *right, uint32 
 
 	if (mbPaused)
 		return;
+
+	if (!mbRecordAudio) {
+		mAudioSamplesWritten += count;
+		return;
+	}
 
 	if (!mbAudioPreskipSet) {
 		if (!mbVideoPreskipTimestampSet)

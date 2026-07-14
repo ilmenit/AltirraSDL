@@ -233,13 +233,15 @@ void ATUIFrontEnd::RecordVideo(const wchar_t *path, const ATVideoRecordingSettin
 			rgb32 ? NULL : palette,
 			samplingRate,
 			g_sim.IsDualPokeysEnabled(),
+			settings.mbRecordAudio,
 			hz50 ? 1773447.0f : 1789772.5f,
 			settings.mbHalfRate,
 			settings.mbEncodeAll,
 			g_sim.GetUIRenderer()
 		);
 
-		g_sim.GetAudioOutput()->SetAudioTap(mpVideoWriter->AsAudioTap());
+		if (settings.mbRecordAudio)
+			g_sim.GetAudioOutput()->SetAudioTap(mpVideoWriter->AsAudioTap());
 		gtia.AddVideoTap(mpVideoWriter->AsVideoTap());
 
 		if (IATDisplayPane *dp = ATUIGetDisplayPane())

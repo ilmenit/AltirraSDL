@@ -39,6 +39,10 @@
 # SDL3 is auto-fetched and built from source if no system SDL3 is found,
 # so no manual SDL3 install is required.  If you have SDL3 installed and
 # CMake picks up a broken copy, pass --fetch-sdl3 to force the source build.
+# Linux/macOS desktop presets also enable static FFmpeg + libx264 video
+# recording by default, giving AltirraSDL MP4 recording out of the box.
+# Windows SDL3 builds currently need a prebuilt static FFmpeg prefix via
+# --cmake "-DALTIRRA_FFMPEG_ROOT=/path/to/prefix" to enable the MP4 path.
 # Android: ANDROID_HOME set, NDK installed, Java 11+.
 #
 # Output archives (with --package):

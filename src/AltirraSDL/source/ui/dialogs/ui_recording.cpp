@@ -46,6 +46,9 @@ static ATVideoRecordingFrameRate g_videoRecFrameRate = kATVideoRecordingFrameRat
 static ATVideoRecordingResamplingMode g_videoRecResamplingMode = ATVideoRecordingResamplingMode::Nearest;
 static ATVideoRecordingAspectRatioMode g_videoRecAspectRatioMode = ATVideoRecordingAspectRatioMode::IntegerOnly;
 static ATVideoRecordingScalingMode g_videoRecScalingMode = ATVideoRecordingScalingMode::None;
+static uint32 g_videoRecVideoBitRate = 1000000;
+static uint32 g_videoRecAudioBitRate = 128000;
+static bool g_videoRecRecordAudio = true;
 static bool g_videoRecHalfRate = false;
 static bool g_videoRecEncodeAll = false;
 
@@ -112,7 +115,11 @@ void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
 
 	if (encoding != kATVideoEncoding_Raw
 		&& encoding != kATVideoEncoding_RLE
-		&& encoding != kATVideoEncoding_ZMBV)
+		&& encoding != kATVideoEncoding_ZMBV
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+		&& encoding != kATVideoEncoding_H264_AAC
+#endif
+		)
 	{
 		LOG_ERROR("UI", "Unsupported video recording encoding: %d", (int)encoding);
 		return;
@@ -188,8 +195,8 @@ void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
 
 		g_pVideoWriter->Init(path,
 			encoding,
-			0,	// videoBitRate (not used for AVI encodings)
-			0,	// audioBitRate (not used for AVI encodings)
+			g_videoRecVideoBitRate,
+			g_videoRecAudioBitRate,
 			w, h,
 			frameRate,
 			par,
@@ -198,13 +205,16 @@ void ATUIStartVideoRecording(const wchar_t *path, ATVideoEncoding encoding) {
 			rgb32 ? NULL : palette,
 			samplingRate,
 			g_sim.IsDualPokeysEnabled(),
+			g_videoRecRecordAudio,
 			hz50 ? 1773447.0f : 1789772.5f,
 			g_videoRecHalfRate,
 			g_videoRecEncodeAll,
 			nullptr);
 
-		g_sim.GetAudioOutput()->SetAudioTap(g_pVideoWriter->AsAudioTap());
-		audioTapAttached = true;
+		if (g_videoRecRecordAudio) {
+			g_sim.GetAudioOutput()->SetAudioTap(g_pVideoWriter->AsAudioTap());
+			audioTapAttached = true;
+		}
 		gtia.AddVideoTap(g_pVideoWriter->AsVideoTap());
 		videoTapAttached = true;
 		if (IATDisplayPane *dp = ATUIGetDisplayPane())
@@ -422,15 +432,28 @@ void ATUIRenderVideoRecordingDialog(SDL_Window *window) {
 	if (!settingsLoaded) {
 		VDRegistryAppKey key("Settings");
 		g_videoRecEncoding = (ATVideoEncoding)key.getEnumInt("Video Recording: Compression Mode", kATVideoEncodingCount, kATVideoEncoding_ZMBV);
-		// Clamp to AVI-only encodings for SDL3 build
+		// Clamp to the codecs actually exposed by the SDL3 build.
+#ifndef ALTIRRA_ENABLE_FFMPEG_RECORDING
 		if (g_videoRecEncoding > kATVideoEncoding_ZMBV)
 			g_videoRecEncoding = kATVideoEncoding_ZMBV;
+#else
+		if (g_videoRecEncoding != kATVideoEncoding_Raw
+			&& g_videoRecEncoding != kATVideoEncoding_RLE
+			&& g_videoRecEncoding != kATVideoEncoding_ZMBV
+			&& g_videoRecEncoding != kATVideoEncoding_H264_AAC)
+		{
+			g_videoRecEncoding = kATVideoEncoding_ZMBV;
+		}
+#endif
 		g_videoRecFrameRate = (ATVideoRecordingFrameRate)key.getEnumInt("Video Recording: Frame Rate", kATVideoRecordingFrameRateCount, kATVideoRecordingFrameRate_Normal);
 		g_videoRecHalfRate = key.getBool("Video Recording: Half Rate", false);
 		g_videoRecEncodeAll = key.getBool("Video Recording: Encode All Frames", false);
 		g_videoRecAspectRatioMode = (ATVideoRecordingAspectRatioMode)key.getEnumInt("Video Recording: Aspect Ratio Mode", (int)ATVideoRecordingAspectRatioMode::Count, (int)ATVideoRecordingAspectRatioMode::IntegerOnly);
 		g_videoRecResamplingMode = (ATVideoRecordingResamplingMode)key.getEnumInt("Video Recording: Resampling Mode", (int)ATVideoRecordingResamplingMode::Count, (int)ATVideoRecordingResamplingMode::Nearest);
 		g_videoRecScalingMode = (ATVideoRecordingScalingMode)key.getEnumInt("Video Recording: Frame Size Mode", (int)ATVideoRecordingScalingMode::Count, (int)ATVideoRecordingScalingMode::None);
+		g_videoRecVideoBitRate = std::clamp<uint32>(key.getInt("Video Recording: Video Bit Rate", 1000000), 500000, 8000000);
+		g_videoRecAudioBitRate = std::clamp<uint32>(key.getInt("Video Recording: Audio Bit Rate", 128000), 64000, 256000);
+		g_videoRecRecordAudio = key.getBool("Video Recording: Record Audio", true);
 		settingsLoaded = true;
 	}
 
@@ -439,20 +462,62 @@ void ATUIRenderVideoRecordingDialog(SDL_Window *window) {
 		"Uncompressed (AVI)",
 		"Run-Length Encoding (AVI)",
 		"Zipped Motion Block Vector (AVI)",
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+		"H.264 + AAC (MP4)",
+#endif
 	};
-	int codecIdx = (int)g_videoRecEncoding;
-	if (codecIdx > 2) codecIdx = 2;
-	if (ImGui::Combo("Video Codec", &codecIdx, kCodecNames, 3))
-		g_videoRecEncoding = (ATVideoEncoding)codecIdx;
+	int codecIdx = 0;
+	switch(g_videoRecEncoding) {
+		case kATVideoEncoding_Raw:
+			codecIdx = 0;
+			break;
+		case kATVideoEncoding_RLE:
+			codecIdx = 1;
+			break;
+		default:
+		case kATVideoEncoding_ZMBV:
+			codecIdx = 2;
+			break;
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+		case kATVideoEncoding_H264_AAC:
+			codecIdx = 3;
+			break;
+#endif
+	}
+	const int codecCount = (int)(sizeof kCodecNames / sizeof kCodecNames[0]);
+	if (codecIdx >= codecCount) codecIdx = codecCount - 1;
+	if (ImGui::Combo("Video Codec", &codecIdx, kCodecNames, codecCount)) {
+		switch(codecIdx) {
+			case 0:
+				g_videoRecEncoding = kATVideoEncoding_Raw;
+				break;
+			case 1:
+				g_videoRecEncoding = kATVideoEncoding_RLE;
+				break;
+			case 2:
+				g_videoRecEncoding = kATVideoEncoding_ZMBV;
+				break;
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+			case 3:
+				g_videoRecEncoding = kATVideoEncoding_H264_AAC;
+				break;
+#endif
+		}
+	}
 
 	// Codec description
 	static const char *kCodecDescs[] = {
 		"Uncompressed RGB. Largest files, most compatible.",
 		"Lossless RLE compression. Smaller than raw, 8-bit video only.",
 		"Lossless ZMBV (DOSBox). Excellent compression for retro video.\nNeeds ffmpeg/ffdshow to play.",
+#ifdef ALTIRRA_ENABLE_FFMPEG_RECORDING
+		"Lossy H.264 video with AAC audio in MP4. Small files and broad playback support.",
+#endif
 	};
 	ImGui::TextWrapped("%s", kCodecDescs[codecIdx]);
 	ImGui::Separator();
+
+	const bool isMp4 = g_videoRecEncoding == kATVideoEncoding_H264_AAC;
 
 	// Frame rate
 	const bool hz50 = g_sim.GetVideoStandard() != kATVideoStandard_NTSC && g_sim.GetVideoStandard() != kATVideoStandard_PAL60;
@@ -477,7 +542,55 @@ void ATUIRenderVideoRecordingDialog(SDL_Window *window) {
 	g_videoRecFrameRate = (ATVideoRecordingFrameRate)frIdx;
 
 	ImGui::Checkbox("Record at half frame rate", &g_videoRecHalfRate);
-	ImGui::Checkbox("Encode duplicate frames as full frames", &g_videoRecEncodeAll);
+	if (!isMp4) {
+		ImGui::Checkbox("Encode duplicate frames as full frames", &g_videoRecEncodeAll);
+	} else {
+		g_videoRecEncodeAll = false;
+	}
+	ImGui::Checkbox("Record with sound", &g_videoRecRecordAudio);
+
+	if (isMp4) {
+		float videoBitrateMbps = std::clamp(g_videoRecVideoBitRate / 1000000.0f, 0.5f, 8.0f);
+		if (ImGui::SliderFloat("Video Bitrate", &videoBitrateMbps, 0.5f, 8.0f, "%.1f Mbps"))
+			g_videoRecVideoBitRate = (uint32)VDRoundToInt(videoBitrateMbps * 1000000.0f);
+
+		static const uint32 kAudioBitrates[] = {
+			64000u,
+			80000u,
+			96000u,
+			112000u,
+			128000u,
+			160000u,
+			192000u,
+			224000u,
+			256000u,
+		};
+		static const char *kAudioBitrateLabels[] = {
+			"64 Kbps",
+			"80 Kbps",
+			"96 Kbps",
+			"112 Kbps",
+			"128 Kbps",
+			"160 Kbps",
+			"192 Kbps",
+			"224 Kbps",
+			"256 Kbps",
+		};
+		int audioBitrateStep = 0;
+		for (int i = 0; i < (int)(sizeof kAudioBitrates / sizeof kAudioBitrates[0]); ++i) {
+			if (g_videoRecAudioBitRate <= kAudioBitrates[i]) {
+				audioBitrateStep = i;
+				break;
+			}
+
+			audioBitrateStep = i;
+		}
+
+		ImGui::BeginDisabled(!g_videoRecRecordAudio);
+		if (ImGui::SliderInt("Audio Bitrate", &audioBitrateStep, 0, (int)(sizeof kAudioBitrates / sizeof kAudioBitrates[0]) - 1, kAudioBitrateLabels[audioBitrateStep]))
+			g_videoRecAudioBitRate = kAudioBitrates[audioBitrateStep];
+		ImGui::EndDisabled();
+	}
 	ImGui::Separator();
 
 	// Scaling
@@ -525,12 +638,17 @@ void ATUIRenderVideoRecordingDialog(SDL_Window *window) {
 		key.setInt("Video Recording: Aspect Ratio Mode", (int)g_videoRecAspectRatioMode);
 		key.setInt("Video Recording: Resampling Mode", (int)g_videoRecResamplingMode);
 		key.setInt("Video Recording: Frame Size Mode", (int)g_videoRecScalingMode);
+		key.setInt("Video Recording: Video Bit Rate", (int)g_videoRecVideoBitRate);
+		key.setInt("Video Recording: Audio Bit Rate", (int)g_videoRecAudioBitRate);
+		key.setBool("Video Recording: Record Audio", g_videoRecRecordAudio);
 
 		g_showVideoRecordingDialog = false;
 
-		// Show save file dialog
 		static const SDL_DialogFileFilter aviFilters[] = {
 			{ "AVI Video", "avi" }, { "All Files", "*" },
+		};
+		static const SDL_DialogFileFilter mp4Filters[] = {
+			{ "MP4 Video", "mp4" }, { "All Files", "*" },
 		};
 		// Capture encoding to pass through the callback
 		static ATVideoEncoding s_pendingEncoding;
@@ -538,7 +656,7 @@ void ATUIRenderVideoRecordingDialog(SDL_Window *window) {
 		ATUIShowSaveFileDialog('rvid', [](void *, const char * const *fl, int) {
 			if (fl && fl[0])
 				ATUIPushDeferred(kATDeferred_StartRecordVideo, fl[0], (int)s_pendingEncoding);
-		}, nullptr, window, aviFilters, 1);
+		}, nullptr, window, isMp4 ? mp4Filters : aviFilters, 1);
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Cancel", ImVec2(120, 0)))

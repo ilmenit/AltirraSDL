@@ -86,6 +86,12 @@ By default SDL3 and SDL3_image are linked statically (see
 `-DALTIRRA_STATIC_SDL3=ON`, on by default for desktop), so the binary
 archive contains just the self-contained executable plus optional
 librashader:
+
+On Linux and macOS, the default desktop presets also enable static
+FFmpeg + libx264 recording support, so AltirraSDL includes MP4
+recording by default. On Windows SDL3 builds this path currently
+requires a prebuilt static FFmpeg prefix passed with
+`-DALTIRRA_FFMPEG_ROOT=...`.
 ```
 AltirraSDL-4.50-linux.zip
     AltirraSDL          (executable — SDL3 + SDL3_image linked in)

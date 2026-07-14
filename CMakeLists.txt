@@ -24,6 +24,7 @@ endif()
 add_compile_definitions(AT_SDL3_PORTABLE=1)
 
 include(FetchContent)
+include(ExternalProject)
 
 # Self-heal stale FetchContent subbuild caches when the generator
 # changes between CMake runs.  Without this, a user upgrading
@@ -836,6 +837,10 @@ if(ALTIRRA_LIBRETRO_NO_SDL3 AND NOT TARGET SDL3::SDL3)
     # system symbols that otherwise require SDL3. Keep downstream CMake logic
     # unchanged by satisfying the SDL3 target name with an empty import.
     add_library(SDL3::SDL3 INTERFACE IMPORTED)
+endif()
+
+if(ALTIRRA_SDL3)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/altirra_ffmpeg.cmake)
 endif()
 
 add_subdirectory(src)

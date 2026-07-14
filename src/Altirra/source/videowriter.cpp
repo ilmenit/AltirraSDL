@@ -2865,7 +2865,7 @@ public:
 		uint32 w, uint32 h, const VDFraction& frameRate, double pixelAspectRatio,
 		ATVideoRecordingResamplingMode resamplingMode,
 		ATVideoRecordingScalingMode scalingMode,
-		const uint32 *palette, double samplingRate, bool stereo, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r) override;
+		const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r) override;
 	void Shutdown() override;
 
 	bool IsPaused() const override { return mbPaused; }
@@ -2882,6 +2882,7 @@ protected:
 	void RaiseError(MyError&& e);
 
 	bool mbStereo;
+	bool mbRecordAudio;
 	bool mbHalfRate;
 	bool mbErrorState;
 	bool mbPaused = false;
@@ -2953,13 +2954,14 @@ void ATVideoWriter::Init(const wchar_t *filename, ATVideoEncoding venc,
 	uint32 w, uint32 h, const VDFraction& frameRate, double pixelAspectRatio,
 	ATVideoRecordingResamplingMode resamplingMode,
 	ATVideoRecordingScalingMode scalingMode,
-	const uint32 *palette, double samplingRate, bool stereo, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r)
+	const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r)
 {
 	mbStereo = stereo;
+	mbRecordAudio = recordAudio;
 	mbHalfRate = halfRate;
 	mbErrorState = false;
 	mbVideoPreskipTimestampSet = false;
-	mbAudioPreskipSet = false;
+	mbAudioPreskipSet = !recordAudio;
 	mFrameRate = frameRate.asDouble();
 	mSamplingRate = samplingRate;
 	mTimestampRate = timestampRate;
@@ -3147,7 +3149,7 @@ void ATVideoWriter::Resume() {
 	mbPaused = false;
 
 	// Reset sync state so the recorder attempts to resync.
-	mbAudioPreskipSet = false;
+	mbAudioPreskipSet = !mbRecordAudio;
 	mbVideoPreskipTimestampSet = false;
 	mSyncAudioPreskip = 0;
 	mSyncVideoPreskip = 0;
@@ -3225,6 +3227,11 @@ void ATVideoWriter::WriteRawAudio(const float *left, const float *right, uint32 
 
 	if (mbPaused)
 		return;
+
+	if (!mbRecordAudio) {
+		mAudioSamplesWritten += count;
+		return;
+	}
 
 	if (!mbAudioPreskipSet) {
 		if (!mbVideoPreskipTimestampSet)

@@ -53,6 +53,7 @@ struct ATVideoRecordingSettings {
 	uint32 mAudioBitRate {};
 	bool mbHalfRate {};
 	bool mbEncodeAll {};
+	bool mbRecordAudio = true;
 };
 
 struct ATVideoRecordingDebugInfo {
@@ -92,7 +93,7 @@ public:
 		uint32 w, uint32 h, const VDFraction& frameRate, double pixelAspectRatio,
 		ATVideoRecordingResamplingMode resamplingMode,
 		ATVideoRecordingScalingMode scalingMode,
-		const uint32 *palette, double samplingRate, bool stereo, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r) = 0;
+		const uint32 *palette, double samplingRate, bool stereo, bool recordAudio, double timestampRate, bool halfRate, bool encodeAllFrames, IATUIRenderer *r) = 0;
 	virtual void Shutdown() = 0;
 
 	virtual bool IsPaused() const = 0;

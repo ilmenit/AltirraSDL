@@ -35,7 +35,9 @@
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "ALTIRRA_SDL3": "ON"
+                "ALTIRRA_SDL3": "ON",
+                "ALTIRRA_ENABLE_FFMPEG_RECORDING": "ON",
+                "ALTIRRA_FETCH_FFMPEG": "ON"
             },
             "condition": {
                 "type": "equals",
@@ -49,7 +51,9 @@
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "ALTIRRA_SDL3": "ON"
+                "ALTIRRA_SDL3": "ON",
+                "ALTIRRA_ENABLE_FFMPEG_RECORDING": "ON",
+                "ALTIRRA_FETCH_FFMPEG": "ON"
             },
             "condition": {
                 "type": "equals",
@@ -64,6 +68,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "ALTIRRA_SDL3": "ON",
+                "ALTIRRA_ENABLE_FFMPEG_RECORDING": "ON",
+                "ALTIRRA_FETCH_FFMPEG": "ON",
                 "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0"
             },
             "condition": {
@@ -79,6 +85,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "ALTIRRA_SDL3": "ON",
+                "ALTIRRA_ENABLE_FFMPEG_RECORDING": "ON",
+                "ALTIRRA_FETCH_FFMPEG": "ON",
                 "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0"
             },
             "condition": {

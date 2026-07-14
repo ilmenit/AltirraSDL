@@ -886,6 +886,11 @@ target_link_libraries(AltirraSDL PRIVATE
     imgui
 )
 
+if(TARGET altirra_ffmpeg_bundle)
+    target_link_libraries(AltirraSDL PRIVATE altirra_ffmpeg_bundle)
+    target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_ENABLE_FFMPEG_RECORDING=1)
+endif()
+
 # SDL3_image is optional — ALTIRRA_SKIP_SDL3_IMAGE disables it entirely.
 # oshelper_sdl3.cpp compiles stub image entry points in that case.
 if(NOT ALTIRRA_SKIP_SDL3_IMAGE)
