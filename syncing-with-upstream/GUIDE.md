@@ -1,9 +1,9 @@
 # AltirraSDL Upstream Sync — Operator Guide
 
 This guide is the long-form, step-by-step companion to `README.md`. It is
-intentionally version-agnostic: nothing here hard-codes "test8" or
-"test9". Use it for the current `test8 → test9` transition, and for any
-future Altirra release (minor, major, or prerelease).
+intentionally version-agnostic: use it for the next upstream snapshot
+transition, and for any future Altirra release (minor, major, or
+prerelease).
 
 ## Mental model
 
@@ -36,8 +36,8 @@ Every sync has three directories:
 
 | Alias | Role                         | Example path                          |
 |-------|------------------------------|---------------------------------------|
-| OLD   | Last upstream release already synced into the fork | `Altirra-4.50-test13-src` |
-| NEW   | Upstream release we're moving to                    | `Altirra-4.50-test14-src` |
+| OLD   | Last upstream release already synced into the fork | `Altirra-4.50-test14-src` |
+| NEW   | Upstream release we're moving to                    | `Altirra-4.50-test15-src` |
 | FORK  | This repo's current working tree                    | `AltirraSDL`              |
 
 Two assumptions the tooling relies on:

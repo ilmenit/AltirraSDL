@@ -169,9 +169,9 @@ bash scripts/verify-libretro-artifact.sh \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.so \
   build/linux-libretro/src/AltirraLibretro/altirra_libretro.info
 bash scripts/verify-libretro-package.sh \
-  build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz
+  build/linux-libretro/AltirraLibretro-4.50-linux-x86_64.tar.gz
 bash scripts/run-libretro-retroarch-smoke.sh \
-  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --package build/linux-libretro/AltirraLibretro-4.50-linux-x86_64.tar.gz \
   --verify-package
 ```
 

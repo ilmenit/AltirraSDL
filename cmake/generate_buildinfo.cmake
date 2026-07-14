@@ -5,7 +5,7 @@
 # Expected variables (passed via -D on the command line):
 #   OUTPUT_FILE  — absolute path to the generated header
 #   SOURCE_DIR   — repo root (for git)
-#   PROJECT_VER  — project version string (e.g. "4.40")
+#   PROJECT_VER  — project version string (e.g. "4.50")
 
 # ── Git commit ───────────────────────────────────────────────────────────
 find_package(Git QUIET)

@@ -30,7 +30,7 @@ cmake "${BUILD_ARGS[@]}" || die "Package target failed"
 PKG_DIR=$(find "$BUILD_DIR" -maxdepth 1 -name "AltirraSDL-*" -type d | head -1)
 [ -z "$PKG_DIR" ] && die "Package directory not found in $BUILD_DIR"
 
-# Extract version from directory name (AltirraSDL-4.40 → 4.40)
+# Extract version from directory name (AltirraSDL-4.50 → 4.50)
 VERSION=$(basename "$PKG_DIR" | sed 's/AltirraSDL-//')
 
 # ── Generate BUILD-INFO.txt ──────────────────────────────────────────────

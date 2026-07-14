@@ -1847,7 +1847,7 @@ static void RenderDesktopQuickBar(const ATUIState& state) {
 	ImGui::PushStyleColor(ImGuiCol_BorderShadow, ImVec4(0, 0, 0, 0));
 
 	if (ImGui::Begin("##DesktopQuickBar", nullptr, flags)) {
-		// Matches the test13 Windows quick-bar order, adapted to the SDL
+		// Matches the Windows quick-bar order, adapted to the SDL
 		// command names and using tooltips as the accessible labels.
 		ATUIQuickBarButton("Config", "configure", "Configure System", "System.Configure");
 		ATUIQuickBarSameLine();

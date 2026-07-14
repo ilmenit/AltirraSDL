@@ -729,7 +729,7 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 		[] { g_sim.GetCassette().SetTurboDecodeAlgorithm(ATCassetteTurboDecodeAlgorithm::PeakFilter); } },
 
 	// =====================================================================
-	// Disk (cmds.cpp) — quick access toggles also used by the test13
+	// Disk (cmds.cpp) — quick access toggles also used by the Windows
 	// quick bar. Keep the mutation behind the command manager so menu,
 	// shortcut, custom-device, and overlay dispatch all share one path.
 	// =====================================================================

@@ -39,7 +39,7 @@ be removed after equivalent builds are recreated under `build/`.
 
 ## Upstream Baseline
 
-This tree is based on upstream Altirra 4.50 test13 source, with the
+This tree is based on upstream Altirra 4.50 test14 source, with the
 SDL3/CMake frontend and cross-platform adaptations layered on top.
 
 ---
@@ -87,7 +87,7 @@ By default SDL3 and SDL3_image are linked statically (see
 archive contains just the self-contained executable plus optional
 librashader:
 ```
-AltirraSDL-4.40-linux.zip
+AltirraSDL-4.50-linux.zip
     AltirraSDL          (executable — SDL3 + SDL3_image linked in)
     librashader.so      (optional, with --librashader)
     Copying             (GPL v2+ license)
@@ -376,7 +376,7 @@ To create a distributable folder:
 
 ```bash
 cmake --build build/linux-release --target package_altirra
-# Creates: build/linux-release/AltirraSDL-4.40/
+# Creates: build/linux-release/AltirraSDL-4.50/
 ```
 
 ### Install Target

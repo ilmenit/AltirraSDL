@@ -257,7 +257,7 @@ Verify a package archive:
 
 ```sh
 bash scripts/verify-libretro-package.sh \
-  build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz
+  build/linux-libretro/AltirraLibretro-4.50-linux-x86_64.tar.gz
 ```
 
 The package verifier also runs the packaged installer in `--dry-run` mode
@@ -268,7 +268,7 @@ Run the package in a real RetroArch frontend with an isolated config:
 
 ```sh
 bash scripts/run-libretro-retroarch-smoke.sh \
-  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --package build/linux-libretro/AltirraLibretro-4.50-linux-x86_64.tar.gz \
   --verify-package
 ```
 
@@ -321,7 +321,7 @@ A practical release-candidate pass is:
 
 ```sh
 bash scripts/run-libretro-retroarch-smoke.sh \
-  --package build/linux-libretro/AltirraLibretro-4.40-linux-x86_64.tar.gz \
+  --package build/linux-libretro/AltirraLibretro-4.50-linux-x86_64.tar.gz \
   --verify-package
 ```
 
