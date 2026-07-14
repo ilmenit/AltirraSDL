@@ -132,6 +132,8 @@ protected:
 	void EndRenderLine(const RenderLineParams& params);
 	void RenderLineWithFont(const ATPrinterFontDesc& desc, const uint8 *fontData, uint8 *charData, uint32 n, float x, float xStep, float xSpacing, bool bold, const RenderLineParams& param);
 	void FlushRenderedLines(bool fromCIO);
+	void BeginAsyncPrinting();
+	void EndAsyncPrinting();
 
 	bool IsPrinting() const;
 	void BeginPrinting(bool fromCIO);
@@ -140,6 +142,7 @@ protected:
 	void CancelPrinting();
 
 	static constexpr uint32 kEventId_ContinuePrinting = 1;
+	static constexpr uint32 kEventId_SubclassFirst = 16;
 
 	IATDeviceCIOManager *mpCIOMgr = nullptr;
 	IATDeviceSIOManager *mpSIOMgr = nullptr;
@@ -157,13 +160,16 @@ protected:
 	bool mbGraphicsEnabled = false;
 	bool mbAccurateTimingEnabled = false;
 	bool mbSoundEnabled = false;
+	bool mbPrintSIOCommandPending = false;
 
 	uint8		mLastOrientationByte = 0xFF;
 
 	uint8		mCIOBuffer[40] {};
 	uint8		mCIOBufferIndex = 0;
 
-	RenderedLine mRenderedLines[2];
+	// We may need up to 4 lines -- two to handle line wrapping, and another
+	// two for underlining.
+	RenderedLine mRenderedLines[4];
 	uint32 mRenderedLinesQueued = 0;
 	
 	uint32 mRenderedLinesPrinted = 0;
@@ -179,6 +185,7 @@ protected:
 	uint32 mPrintNextColumn = 0;
 	uint32 mPrintLineStartTime = 0;
 	bool mbPrintingFromCIO = false;
+	bool mbAsyncPrinting = false;
 
 	ATPrinterSoundSource mPrinterSoundSource;
 	ATDeviceBusSingleChild mParallelBus;

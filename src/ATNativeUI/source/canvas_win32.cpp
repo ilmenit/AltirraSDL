@@ -94,3 +94,65 @@ void ATUICanvasW32::EndDirect(VDZPAINTSTRUCT& ps) {
 void ATUICanvasW32::Scroll(sint32 dx, sint32 dy) {
 	ScrollWindow(mhwnd, dx, dy, nullptr, nullptr);
 }
+
+vdspan<const vdrect32> ATUICanvasW32::GetDetailedUpdateRects(VDZHDC hdc, const VDZPAINTSTRUCT& ps) {
+	static_assert(sizeof(RegionDataHeaderW32) == sizeof(RGNDATAHEADER));
+	static_assert(alignof(RegionDataHeaderW32) == alignof(RGNDATAHEADER));
+	static_assert(sizeof(RegionDataW32) == sizeof(RGNDATA));
+	static_assert(alignof(RegionDataW32) == alignof(RGNDATA));
+
+	if (ps.rcPaint.right <= ps.rcPaint.left
+		|| ps.rcPaint.bottom <= ps.rcPaint.top)
+	{
+		return {};
+	}
+
+	bool succeeded = false;
+
+	HRGN hrgnUpdate = ::CreateRectRgn(0, 0, 0, 0);
+	if (hrgnUpdate) {
+		if (::GetRandomRgn(hdc, hrgnUpdate, SYSRGN) > 0) {
+			DWORD numBytes = ::GetRegionData(hrgnUpdate, 0, nullptr);
+
+			if (numBytes) {
+				numBytes = std::max<DWORD>(numBytes, sizeof(RegionDataW32));
+
+				if (mRegionData.size() < numBytes)
+					mRegionData.resize(numBytes);
+
+				if (::GetRegionData(hrgnUpdate, mRegionData.size(), (RGNDATA *)mRegionData.data())) {
+					const RGNDATA& rd = *(const RGNDATA *)mRegionData.data();
+					const RECT *paintRects = (const RECT *)rd.Buffer;
+					const size_t numPaintRects = rd.rdh.nCount;
+
+					// convert all rects from screen to client coords
+					mRegionRects.clear();
+					mRegionRects.reserve(numPaintRects);
+
+					for(size_t i = 0; i < numPaintRects; ++i) {
+						const RECT& r = paintRects[i];
+						POINT pts[2] {
+							{ r.left, r.top },
+							{ r.right, r.bottom }
+						};
+
+						MapWindowPoints(nullptr, mhwnd, pts, 2);
+
+						mRegionRects.emplace_back(pts[0].x, pts[0].y, pts[1].x, pts[1].y);
+					}
+
+					succeeded = true;
+				}
+			}
+		}
+
+		::DeleteObject(hrgnUpdate);
+	}
+
+	if (!succeeded) {
+		mRegionRects.resize(1);
+		mRegionRects[0] = vdrect32(ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom);
+	}
+
+	return mRegionRects;
+}

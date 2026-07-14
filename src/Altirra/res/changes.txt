@@ -23,8 +23,8 @@ This prerelease version:
    * HLE: Fast math acceleration now much better matches standard math pack results.
    * PerfAnalyzer: Debugger console logging is now captured into performance traces.
    * Printer: The print position in graphical mode can be adjusted.
-   * Printer: Added SVG export.
-   * Printer: Added 1020 option for accurate line stepping behavior.
+   * Printer: Added SVG and specifically sized PDF export.
+   * Printer: Added 1020 options for accurate line stepping behavior, accurate timing, and sounds.
    * Simulator: Added option to write text files with LF line endings.
    * UI: Removed inner edge on display window when there are no other docked panes visible.
    * UI: Files can now be dragged from folders mapped with the H: device to paste in the emulated path to the file.
@@ -47,8 +47,10 @@ This prerelease version:
    * Disk: Standard disk emulator now turns on motor on disk change for 1050 and Indus GT profiles to emulate density detection.
    * Disk: Fixed Percom AT-88/AT-88SPD not saving 1795 FDC setting.
    * Disk Explorer: Fixed MAC/65 decoder mis-decoding some constants.
+   * HDevice: Fixed a crash when write errors occurred during close operation.
    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.
    * Printer: Improved accuracy of 1020 command parsing and plot behavior.
+   * Printer: Fixed crash when printing long underlined lines on a 1029.
    * Recorder: SAP recorder now uses prescribed text for unknown author/title.
    * SAP: Fixed converter causing player to swap channels when repeating a stereo type R file.
    * UI: 65C816 linear memory setting is now disabled when Rapidus is enabled since Rapidus settings take precedence.

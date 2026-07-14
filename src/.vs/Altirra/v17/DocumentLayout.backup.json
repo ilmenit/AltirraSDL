@@ -3,8 +3,36 @@
   "WorkspaceRootPath": "D:\\p4root2\\Altirra\\dev\\src\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{6638DCCD-01B4-49F8-BC66-696648AA0B84}|VDDisplay\\VDDisplay.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\VDDisplay\\source\\customshaderd3d9.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{6638DCCD-01B4-49F8-BC66-696648AA0B84}|VDDisplay\\VDDisplay.vcxproj|solutionrelative:VDDisplay\\source\\customshaderd3d9.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uivideodisplaywindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|solutionrelative:Altirra\\source\\uivideodisplaywindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\printer1020.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|solutionrelative:Altirra\\source\\printer1020.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uidbgprinteroutput.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|solutionrelative:Altirra\\source\\uidbgprinteroutput.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\ATUI\\source\\uimanager.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|solutionrelative:ATUI\\source\\uimanager.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\ATUI\\source\\uiwidget.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|solutionrelative:ATUI\\source\\uiwidget.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uidragdrop.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{3D2571FC-091D-4845-B581-E8417164BFAE}|Altirra\\Altirra.vcxproj|solutionrelative:Altirra\\source\\uidragdrop.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\h\\at\\atui\\uimanager.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|solutionrelative:h\\at\\atui\\uimanager.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|D:\\p4root2\\Altirra\\dev\\src\\h\\at\\atui\\uidragdrop.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{B37046D2-6E5B-4E2B-8510-E6173B30E12B}|ATUI\\ATUI.vcxproj|solutionrelative:h\\at\\atui\\uidragdrop.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
   "DocumentGroupContainers": [
@@ -14,7 +42,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 233,
-          "SelectedChildIndex": 5,
+          "SelectedChildIndex": 11,
           "Children": [
             {
               "$type": "Bookmark",
@@ -38,16 +66,101 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "customshaderd3d9.cpp",
-              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\VDDisplay\\source\\customshaderd3d9.cpp",
-              "RelativeDocumentMoniker": "VDDisplay\\source\\customshaderd3d9.cpp",
-              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\VDDisplay\\source\\customshaderd3d9.cpp [Read Only]",
-              "RelativeToolTip": "VDDisplay\\source\\customshaderd3d9.cpp [Read Only]",
-              "ViewState": "AgIAAHIDAAAAAAAAAAD4v5cDAAAUAAAAAAAAAA==",
+              "DocumentIndex": 1,
+              "Title": "printer1020.cpp",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\printer1020.cpp",
+              "RelativeDocumentMoniker": "Altirra\\source\\printer1020.cpp",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\printer1020.cpp [Read Only]",
+              "RelativeToolTip": "Altirra\\source\\printer1020.cpp [Read Only]",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2025-05-08T05:58:12.205Z",
+              "WhenOpened": "2026-07-05T23:56:23.567Z",
               "EditorCaption": " [Read Only]"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "uidbgprinteroutput.cpp",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uidbgprinteroutput.cpp",
+              "RelativeDocumentMoniker": "Altirra\\source\\uidbgprinteroutput.cpp",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uidbgprinteroutput.cpp [Read Only]",
+              "RelativeToolTip": "Altirra\\source\\uidbgprinteroutput.cpp [Read Only]",
+              "ViewState": "AgIAAJABAAAAAAAAAAAIwLsBAAAeAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-07-04T03:27:22.581Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "uiwidget.cpp",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\ATUI\\source\\uiwidget.cpp",
+              "RelativeDocumentMoniker": "ATUI\\source\\uiwidget.cpp",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\ATUI\\source\\uiwidget.cpp [Read Only]",
+              "RelativeToolTip": "ATUI\\source\\uiwidget.cpp [Read Only]",
+              "ViewState": "AgIAAHsCAAAAAAAAAAASwJ0CAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-09-13T04:15:21.227Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "uidragdrop.h",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\h\\at\\atui\\uidragdrop.h",
+              "RelativeDocumentMoniker": "h\\at\\atui\\uidragdrop.h",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\h\\at\\atui\\uidragdrop.h [Read Only]",
+              "RelativeToolTip": "h\\at\\atui\\uidragdrop.h [Read Only]",
+              "ViewState": "AgIAABcAAAAAAAAAAAASwDsAAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2025-09-13T02:16:18.757Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "uimanager.cpp",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\ATUI\\source\\uimanager.cpp",
+              "RelativeDocumentMoniker": "ATUI\\source\\uimanager.cpp",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\ATUI\\source\\uimanager.cpp [Read Only]",
+              "RelativeToolTip": "ATUI\\source\\uimanager.cpp [Read Only]",
+              "ViewState": "AgIAAOoCAAAAAAAAAAASwAwDAABRAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-09-13T02:09:29.178Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "uimanager.h",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\h\\at\\atui\\uimanager.h",
+              "RelativeDocumentMoniker": "h\\at\\atui\\uimanager.h",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\h\\at\\atui\\uimanager.h [Read Only]",
+              "RelativeToolTip": "h\\at\\atui\\uimanager.h [Read Only]",
+              "ViewState": "AgIAAL0AAAAAAAAAAAASwN8AAAASAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2025-09-13T02:09:28.034Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "uivideodisplaywindow.cpp",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uivideodisplaywindow.cpp",
+              "RelativeDocumentMoniker": "Altirra\\source\\uivideodisplaywindow.cpp",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uivideodisplaywindow.cpp [Read Only]",
+              "RelativeToolTip": "Altirra\\source\\uivideodisplaywindow.cpp [Read Only]",
+              "ViewState": "AgIAALoGAAAAAAAAAAASwM8GAAAzAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-09-13T01:31:01.653Z",
+              "EditorCaption": " [Read Only]"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "uidragdrop.cpp",
+              "DocumentMoniker": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uidragdrop.cpp",
+              "RelativeDocumentMoniker": "Altirra\\source\\uidragdrop.cpp",
+              "ToolTip": "D:\\p4root2\\Altirra\\dev\\src\\Altirra\\source\\uidragdrop.cpp [Read Only]",
+              "RelativeToolTip": "Altirra\\source\\uidragdrop.cpp [Read Only]",
+              "ViewState": "AgIAAHQAAAAAAAAAAAASwJYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-09-13T01:30:08.729Z"
             }
           ]
         }

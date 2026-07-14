@@ -17,6 +17,15 @@
 #ifndef f_AT_PRINTEREXPORT_H
 #define f_AT_PRINTEREXPORT_H
 
+class ATPrinterGraphicalOutput;
 
+void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output, float pageWidthMM, float pageHeightMM);
+
+// Export printer graphics as SVG.
+//
+// If useBlending=false, the SVG vectors are exported in layers with the lightest colors first
+// to approximate blending. If useBlending=true, darken blending mode is used to improve the
+// approximation.
+void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output, bool useBlending);
 
 #endif

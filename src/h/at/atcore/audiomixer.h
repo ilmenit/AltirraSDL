@@ -70,7 +70,12 @@ enum ATAudioSampleId : uint32 {
 	kATAudioSampleId_Printer1029Platen,
 	kATAudioSampleId_Printer1029Retract,
 	kATAudioSampleId_Printer1029Home,
-	kATAudioSampleId_Printer1025Feed
+	kATAudioSampleId_Printer1025Feed,
+	kATAudioSampleId_Printer1020HeadMove,
+	kATAudioSampleId_Printer1020HeadReverse,
+	kATAudioSampleId_Printer1020PaperFeed,
+	kATAudioSampleId_Printer1020PenDown,
+	kATAudioSampleId_Printer1020PenUp,
 };
 
 enum class ATSoundId : uint32 {

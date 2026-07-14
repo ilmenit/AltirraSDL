@@ -377,6 +377,9 @@
     <ClInclude Include="..\h\vd2\system\vdstl_span.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\h\vd2\system\vectors_double.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="source\a64_thunk.asm">

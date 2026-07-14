@@ -160,6 +160,7 @@
     <ClInclude Include="..\h\vd2\system\vecmath_ref.h" />
     <ClInclude Include="..\h\vd2\system\vecmath_sse2.h" />
     <ClInclude Include="..\h\vd2\system\vectors.h" />
+    <ClInclude Include="..\h\vd2\system\vectors_double.h" />
     <ClInclude Include="..\h\vd2\system\vectors_float.h" />
     <ClInclude Include="..\h\vd2\system\vectors_int.h" />
     <ClInclude Include="..\h\vd2\system\w32assist.h" />

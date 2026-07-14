@@ -180,6 +180,11 @@
 #define IDD_TRACEVIEWER_LOG             274
 #define IDR_PERFANALYZER_LOG_MENU       275
 #define IDR_TAPECONTROL_MENU            276
+#define IDR_PRINTER_1020_HEADMOVE       278
+#define IDR_PRINTER_1020_HEADREVERSE    279
+#define IDR_PRINTER_1020_PAPERFEED      280
+#define IDR_PRINTER_1020_PENDOWN        281
+#define IDR_PRINTER_1020_PENUP          282
 #define IDI_DISK                        500
 #define IDI_TAPE                        501
 #define IDI_XEX                         502
@@ -1520,6 +1525,12 @@
 #define ID_FILE_SAVETAPE                40812
 #define ID_FILE_SAVEAS40813             40813
 #define ID_FILE_UNLOAD                  40814
+#define ID_SAVEAS_PDFPAGESIZE           40822
+#define ID_PDFDOCUMENT_LETTER           40823
+#define ID_PDFDOCUMENT_AUTO             40824
+#define ID_PDFDOCUMENT_PDFA4            40825
+#define ID_PDFDOCUMENT_A4               40826
+#define ID_PDFDOCUMENT_CONT12           40827
 #define ID_INPUT_PORT1_NONE             45000
 #define ID_INPUT_PORT2_NONE             45100
 #define ID_INPUT_PORT3_NONE             45200
@@ -1533,8 +1544,8 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        277
-#define _APS_NEXT_COMMAND_VALUE         40815
+#define _APS_NEXT_RESOURCE_VALUE        283
+#define _APS_NEXT_COMMAND_VALUE         40828
 #define _APS_NEXT_CONTROL_VALUE         1429
 #define _APS_NEXT_SYMED_VALUE           113
 #endif

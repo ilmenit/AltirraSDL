@@ -30,8 +30,18 @@
 #include "oshelper.h"
 #include "uirender.h"
 
+uint8 ATTranslateCurrentExceptionToCIOError();
+
 #ifdef _WIN32
 uint8 ATTranslateWin32ErrorToSIOError(uint32 err);
+#else
+uint8 ATTranslateCurrentExceptionToCIOError() {
+	try {
+		throw;
+	} catch(...) {
+		return kATCIOStat_SystemError;
+	}
+}
 #endif
 
 ///////////////////////////////////////////////////////////////////////////
@@ -285,7 +295,7 @@ class ATHostDeviceChannel {
 public:
 	ATHostDeviceChannel();
 
-	void Close();
+	uint8 Close();
 
 	bool GetLength(uint32& len);
 	uint8 Seek(uint32 pos);
@@ -310,9 +320,11 @@ public:
 ATHostDeviceChannel::ATHostDeviceChannel() {
 }
 
-void ATHostDeviceChannel::Close() {
+uint8 ATHostDeviceChannel::Close() {
+	uint8 status = kATCIOStat_Success;
+
 	if (!mbOpen)
-		return;
+		return status;
 
 	if (mbWriteBackData && mFile.isOpen()) {
 		vdfastvector<uint8> tmp;
@@ -336,10 +348,13 @@ void ATHostDeviceChannel::Close() {
 			}
 		}
 
-		if (mFile.seekNT(0)) {
+		try {
+			mFile.seek(0);
 			mFile.writeData(tmp.data(), (uint32)tmp.size());
-			mFile.truncateNT();
-			mFile.closeNT();
+			mFile.truncate();
+			mFile.close();
+		} catch(...) {
+			status = ATTranslateCurrentExceptionToCIOError();
 		}
 	}
 
@@ -352,6 +367,8 @@ void ATHostDeviceChannel::Close() {
 
 	vdfastvector<uint8> tmp;
 	tmp.swap(mData);
+
+	return status;
 }
 
 bool ATHostDeviceChannel::GetLength(uint32& len) {
@@ -407,8 +424,8 @@ uint8 ATHostDeviceChannel::Read(void *dst, uint32 len, uint32& actual) {
 		else if (mOffset >= mLength && !mbIsDirectory)
 			status = kATCIOStat_SuccessEOF;	// only for files, dirs don't return this
 
-	} catch(const MyError&) {
-		return kATCIOStat_FatalDiskIO;
+	} catch(...) {
+		status = ATTranslateCurrentExceptionToCIOError();
 	}
 
 	return status;
@@ -429,8 +446,8 @@ uint8 ATHostDeviceChannel::Write(const void *buf, uint32 tc) {
 		try {
 			mFile.seek(mOffset);
 			mFile.write(buf, tc);
-		} catch(const MyError&) {
-			return kATCIOStat_FatalDiskIO;
+		} catch(...) {
+			return ATTranslateCurrentExceptionToCIOError();
 		}
 	}
 
@@ -1013,14 +1030,9 @@ sint32 ATHostDeviceEmulator::OnCIOOpen(int channel, uint8 deviceNo, uint8 mode, 
 				} else
 					ch.mOffset = 0;
 			}
-#ifdef _WIN32
-		} catch(const MyWin32Error& e) {
+		} catch(...) {
 			ch.mFile.closeNT();
-			return ATTranslateWin32ErrorToSIOError(e.GetWin32Error());
-#endif
-		} catch(const MyError&) {
-			ch.mFile.closeNT();
-			return kATCIOStat_FileNotFound;
+			return ATTranslateCurrentExceptionToCIOError();
 		}
 
 		// all good
@@ -1033,9 +1045,7 @@ sint32 ATHostDeviceEmulator::OnCIOOpen(int channel, uint8 deviceNo, uint8 mode, 
 sint32 ATHostDeviceEmulator::OnCIOClose(int channel, uint8 deviceNo) {
 	Channel& ch = mChannels[channel];
 
-	ch.Close();
-
-	return kATCIOStat_Success;
+	return ch.Close();
 }
 
 sint32 ATHostDeviceEmulator::OnCIOGetBytes(int channel, uint8 deviceNo, void *buf, uint32 len, uint32& actual) {
@@ -1095,12 +1105,8 @@ sint32 ATHostDeviceEmulator::OnCIOSpecial(int channel, uint8 deviceNo, uint8 com
 		else if (command == 0x2B)	return HandleCmd_SDX_Rmdir(bufadr);					// SDX: Remove Directory
 		else if (command == 0x2C)	return HandleCmd_Chdir(bufadr);						// SDX: Set Current Directory
 		else if (command == 0x30)	return HandleCmd_SDX_Getcwd(bufadr, buflen);		// SDX: Get Current Directory
-#ifdef _WIN32
-	} catch(const MyWin32Error& e) {
-		return ATTranslateWin32ErrorToSIOError(e.GetWin32Error());
-#endif
-	} catch(const MyError&) {
-		return kATCIOStat_FatalDiskIO;
+	} catch(...) {
+		return ATTranslateCurrentExceptionToCIOError();
 	}
 
 	return kATCIOStat_NotSupported;

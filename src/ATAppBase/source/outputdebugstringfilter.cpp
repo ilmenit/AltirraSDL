@@ -18,7 +18,7 @@
 #include <stdafx.h>
 #include <vd2/system/vdtypes.h>
 
-#if defined(WIN32) && defined(ATNRELEASE) && defined(VD_CPU_X64)
+#if defined(WIN32) && defined(ATNRELEASE) && defined(VD_CPU_X64) && !defined(VD_COMPILER_GCC)
 
 #include <windows.h>
 #include <intrin.h>
@@ -53,6 +53,22 @@ void ATSetOutputDebugStringFilter() {
 	//	48 B8 xxxxxxxx xxxxxxxx		movabs rax, addr
 	//	FF E0						jmp rax
 	//	EB F2						jmp *-14
+	//
+	// However, on ARM64 systems emulating x64, the call is a fast forward
+	// sequence (FFS) instead:
+	//
+	// https://learn.microsoft.com/en-us/windows/arm/arm64ec-abi#fast-forward-sequences
+	//
+	//	48 8B C4             mov   rax,rsp
+	//	48 89 58 20          mov   qword ptr [rax+20h],rbx
+	//	55                   push  rbp
+	//	5D                   pop   rbp
+	//	E9 xx xx xx xx       jmp   addr
+	//
+	// This would be hotpatchable as above except that there are only two bytes
+	// before the entry point. Instead, we simply just stomp the whole function and
+	// hope it isn't executing on another thread literally at the same moment. For
+	// this, it's fine.
 
 	MEMORY_BASIC_INFORMATION mbi {};
 	if (!VirtualQuery((void *)fp, &mbi, sizeof mbi))
@@ -68,51 +84,77 @@ void ATSetOutputDebugStringFilter() {
 	if (mbi.Type != MEM_IMAGE)
 		return;
 
-	// check that we have 12 bytes before and 3 bytes after the entry point
-	// within the same memory region
+	// check that we have 12 bytes before and 10 bytes after the entry point
+	// within the same memory region; x64 requires 12+3, x64 emu requires 0+12
 	const uintptr_t fpAddr = (uintptr_t)fp;
 	const uintptr_t regionBase = (uintptr_t)mbi.BaseAddress;
 
 	if (fpAddr < regionBase)
 		return;
-	
+
 	const uint32_t regionOffset = fpAddr - regionBase;
 	if (regionOffset < 12)
 		return;
 
-	if (regionOffset >= mbi.RegionSize || mbi.RegionSize - regionOffset < 3)
+	if (regionOffset >= mbi.RegionSize || mbi.RegionSize - regionOffset < 12)
 		return;
 
 	// double check that all bytes are as we expect
-	static constexpr uint8 kCheckBytes[] {
+	static constexpr uint8 kX64CheckBytes[] {
 		0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
 		0x48, 0x8B, 0xC4
 	};
 
-	if (!memcmp((void *)fp, kCheckBytes, 15))
-		return;
+	static constexpr uint8 kX64EmuCheckBytes[] {
+		0x48, 0x8B, 0xC4,
+		0x48, 0x89, 0x58, 0x20,
+		0x55,
+		0x5D,
+		0xE9,	// 4 unspecified bytes after this
+	};
 
-	// change protection
-	char *patchBase = (char *)fp - 12;
-	DWORD oldProtect = 0;
+	if (!memcmp((char *)fp - 12, kX64CheckBytes, 15)) {		// native X64
+		// change protection
+		char *patchBase = (char *)fp - 12;
+		DWORD oldProtect = 0;
 
-	if (!VirtualProtect(patchBase, 15, PAGE_EXECUTE_READWRITE, &oldProtect))
-		return;
+		if (!VirtualProtect(patchBase, 15, PAGE_EXECUTE_READWRITE, &oldProtect))
+			return;
 
-	// cache the forwarding pointer
-	g_pATOutputDebugStringWFwd = patchBase + 15;
+		// cache the forwarding pointer
+		g_pATOutputDebugStringWFwd = patchBase + 15;
 
-	// write the patch instructions
-	VDWriteUnalignedLEU16(patchBase, 0xB848);
-	VDWriteUnalignedLEU64(patchBase+2, (uint64)ATPatchedOutputDebugStringW);
-	VDWriteUnalignedLEU16(patchBase+10, 0xE0FF);
+		// write the patch instructions
+		VDWriteUnalignedLEU16(patchBase, 0xB848);
+		VDWriteUnalignedLEU64(patchBase+2, (uint64)ATPatchedOutputDebugStringW);
+		VDWriteUnalignedLEU16(patchBase+10, 0xE0FF);
 
-	// interlocked write the final JMP instruction
-	_InterlockedExchange16((volatile short *)(patchBase + 12), (short)0xF2EB);
+		// interlocked write the final JMP instruction
+		_InterlockedExchange16((volatile short *)(patchBase + 12), (short)0xF2EB);
 
-	// restore protection
-	DWORD dummy = 0;
-	VirtualProtect(patchBase, 15, oldProtect, &dummy);
+		// restore protection
+		DWORD dummy = 0;
+		VirtualProtect(patchBase, 15, oldProtect, &dummy);
+	} else if (!memcmp((void *)fp, kX64EmuCheckBytes, 10)) {			// emulated X64
+		// change protection
+		char *patchBase = (char *)fp;
+		DWORD oldProtect = 0;
+
+		if (!VirtualProtect(patchBase, 12, PAGE_EXECUTE_READWRITE, &oldProtect))
+			return;
+
+		// cache the forwarding pointer
+		g_pATOutputDebugStringWFwd = patchBase + 14 + VDReadUnalignedLES32(patchBase + 10);
+
+		// write the patch instructions
+		VDWriteUnalignedLEU16(patchBase, 0xB848);
+		VDWriteUnalignedLEU64(patchBase+2, (uint64)ATPatchedOutputDebugStringW);
+		VDWriteUnalignedLEU16(patchBase+10, 0xE0FF);
+
+		// restore protection
+		DWORD dummy = 0;
+		VirtualProtect(patchBase, 12, oldProtect, &dummy);
+	}
 }
 
 extern "C" void __stdcall ATPatchedOutputDebugStringW(const wchar_t *str) {

@@ -164,7 +164,7 @@ void ATUpdateMRUListMenu() {
 			char valuename[2] = { (char)*it, 0 };
 
 			if (key.getString(valuename, path)) {
-				menustr.sprintf(L"&%c %s", index == 9 ? L'0' : L'1' + index, path.c_str());
+				menustr.sprintf(L"&%c %ls", index == 9 ? L'0' : L'1' + index, path.c_str());
 
 				if (hmenu)
 					VDAppendMenuW32(hmenu, MF_STRING, baseId + index, menustr.c_str());

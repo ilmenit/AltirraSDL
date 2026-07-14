@@ -25,6 +25,7 @@
 #include <vd2/system/unknown.h>
 
 class vdfloat2;
+class vddouble2;
 
 // Interface for output sinks connecting to printer ports and receiving text
 // output. This can either be the default output or a child device with a
@@ -79,16 +80,25 @@ public:
 
 	// Advance the paper upward by the specified number of millimeters. May be
 	// negative for reverse feed.
-	virtual void FeedPaper(float distanceMM) = 0;
+	virtual void FeedPaper(double distanceMM) = 0;
 
 	// Print dots in a column at the specified X position in millimeters from
 	// the left edge of the page.
-	virtual void Print(float x, uint32 dots) = 0;
+	virtual void Print(double x, uint32 dots) = 0;
+
+	// Move the current pen position to the given absolute X and relative Y
+	// in mm, feeding paper to match.
+	virtual void MoveVector(const vddouble2& pt) = 0;
 
 	// Add a vector (line segment) from pt1 to pt2 with the specified dot size.
 	// Both pt1 and pt2 are relative to the current vertical position, and
 	// afterward the vertical position is updated to pt2.
-	virtual void AddVector(const vdfloat2& pt1, const vdfloat2& pt2, uint32 color) = 0;
+	virtual void AddVector(const vddouble2& pt1, const vddouble2& pt2, uint32 color) = 0;
+
+	// Change the current pen color to the given internal pen color. This is
+	// used to show which pen is currently active. The default shown color for
+	// a new output is black.
+	virtual void ChangePenColor(uint32 color) = 0;
 
 	// Convert a standard sRGB color to internal print color.
 	virtual uint32 ConvertColor(uint32 srgb) const = 0;

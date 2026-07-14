@@ -1,7 +1,7 @@
 <html>
 	<head>
 		<meta charset="utf-8" />
-		<title>Altirra 4.40 Build Instructions</title>
+		<title>Altirra 4.50 Build Instructions</title>
 
 		<!--
 			View this file in your web browser. If you are in Visual Studio,
@@ -70,11 +70,12 @@ h3 {
 </style>
 	</head>
 	<body>
-		<h1>Altirra 4.40 Build Instructions</h1>
+		<h1>Altirra 4.50 Build Instructions</h1>
 		<h2>Prerequisites</h2>
 		<h3>Build machine</h3>
 		<ul>
-			<li>Required: Windows 10 x64 or newer</li>
+			<li>Required: Windows 10/11 x64 or Windows 11 ARM64</li>
+			<li>Recommended: Windows 11 x64/ARM64</li>
 		</ul>
 		<p>
             As of 4.20, building on a 32-bit (x86) system is no longer supported.
@@ -96,7 +97,7 @@ h3 {
 		  </li>
 		</ul>
         <p>
-          VS2019 or earlier, MinGW, GCC, and Clang compilers are not supported.
+          VS2019 or earlier, MinGW, and GCC compilers are not supported.
         </p>
 		<p>Additional components to compile for Windows on ARM (ARM64) (<i>not</i> AMD64):</p>
         <ul>
@@ -130,6 +131,10 @@ h3 {
           <li><a href="https://www.python.org/">Python 3</a> (3.10 or later recommended)</li>
           <li><a href="https://www.7-zip.org/">7-zip archiver</a></li>
           <li><a href="https://github.com/amadvance/advancecomp/">AdvanceCOMP recompression utilities</a></li>
+        </ul>
+        <p>Additional optional components for static analysis and portability checks</p>
+        <ul>
+          <li><a href="https://releases.llvm.org/download.html">LLVM 22.x</a>, for the Clang compiler.</li>
         </ul>
         <h3>Outdated components</h3>
 		<p>
@@ -190,6 +195,19 @@ h3 {
           You shouldn't get a dialog from Visual Studio offering to upgrade the projects. If you do, don't do it -- it
           will break the platform setup in the project files. Use the instructions above instead.
         </p>
+		<h3>LLVM version override</h3>
+        <p>
+          The main compiler for Altirra is MSVC, but Clang on Windows is supported as an alternate compiler
+          for static analysis and portability check purposes. It is selected when the "ProfileClang" solution
+          configuration is used. Builds compiled with Clang for Windows are fully featured.
+        </p>
+        <p>
+          LLVM+Clang needs to be downloaded from the LLVM website. The version that is shipped by Microsoft
+          in the VS2022 installer is too old (18.x) and will result in some compile errors as well as assembler errors
+          on ARM64. As of this writing, the code base has been checked against LLVM 22.0. The LLVM
+          version used can be modified by changing the LLVM tools version in <tt>PlatformSetup.props</tt>.
+        </p>
+
         <h2>Building</h2>
         <h3>First time</h3>
         <p>

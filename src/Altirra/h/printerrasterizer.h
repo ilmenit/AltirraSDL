@@ -76,44 +76,105 @@ public:
 	std::optional<VDPixmap> Render(ATPrinterGraphicalOutput *output, const ViewTransform& viewTransform, sint32 x, sint32 y, uint32 w, uint32 h, bool force);
 
 private:
+	void SortCullBuffers(float minY, float scanLineHeightY, sint32 numScanLines, float dotRadius, const vdrect32f& fullDotCullRect);
+
+	std::optional<VDPixmap> RenderBlank(uint32 w, uint32 h);
 	void RenderTrapezoid(const sint32 subSpans[2][8], uint32 linearColor, bool rgb);
 	void RenderTrapezoidRGB_Scalar(const sint32 subSpans[2][8], uint32 linearColor);
 
 #if defined(VD_CPU_X64) || defined(VD_CPU_X86)
 	template<bool T_RGB>
 	void RenderTrapezoid_SSE2(const sint32 subSpans[2][8], uint32 linearColor);
+#if defined(VD_CPU_X64)
+	template<bool T_RGB>
+	VD_CPU_TARGET("avx2,fma")
+	void RenderTrapezoid_AVX2(const sint32 subSpans[2][8], uint32 linearColor);
+#endif
 #elif defined(VD_CPU_ARM64)
 	template<bool T_RGB>
 	void RenderTrapezoid_NEON(const sint32 subSpans[2][8], uint32 linearColor);
 #endif
 
-	void Downsample8x8(uint32 *dst, const uint8 *src, size_t w, bool rgb);
-	void Downsample8x8_Scalar(uint32 *dst, const uint8 *src, size_t w);
+	void Downsample8x8(uint32 *dst, uint8 *src, size_t w, bool rgb);
+	void Downsample8x8_Scalar(uint32 *dst, uint8 *src, size_t w);
 #if defined(VD_CPU_X64)
-	void Downsample8x8_POPCNT64(uint32 *dst, const uint8 *src, size_t w);
+	void Downsample8x8_POPCNT64(uint32 *dst, uint8 *src, size_t w);
 #elif defined(VD_CPU_X86)
-	void Downsample8x8_POPCNT32(uint32 *dst, const uint8 *src, size_t w);
+	void Downsample8x8_POPCNT32(uint32 *dst, uint8 *src, size_t w);
 #elif defined(VD_CPU_ARM64)
-	void Downsample8x8_NEON(uint32 *dst, const uint8 *src, size_t w);
+	void Downsample8x8_NEON(uint32 *dst, uint8 *src, size_t w);
 #endif
 
-	void DownsampleRGB8x8_Scalar(uint32 *dst, const uint8 *src, size_t w);
+	void DownsampleRGB8x8_Scalar(uint32 *dst, uint8 *src, size_t w);
 #if defined(VD_CPU_X64)
-	void DownsampleRGB8x8_POPCNT64(uint32 *dst, const uint8 *src, size_t w);
+	void DownsampleRGB8x8_POPCNT64(uint32 *dst, uint8 *src, size_t w);
+	void DownsampleRGB8x8_AVX2(uint32 *dst, uint8 *src, size_t w);
 #elif defined(VD_CPU_X86)
-	void DownsampleRGB8x8_POPCNT32(uint32 *dst, const uint8 *src, size_t w);
+	void DownsampleRGB8x8_POPCNT32(uint32 *dst, uint8 *src, size_t w);
 #elif defined(VD_CPU_ARM64)
-	void DownsampleRGB8x8_NEON(uint32 *dst, const uint8 *src, size_t w);
+	void DownsampleRGB8x8_NEON(uint32 *dst, uint8 *src, size_t w);
 #endif
+
+	struct IndexBlock {
+		static constexpr size_t kBlockSize = 32;
+
+		uint32 mIndices[kBlockSize];
+		IndexBlock *mpPrev;
+	};
+
+	vdfastvector<IndexBlock *> mIndexBlocks;
 
 	using RenderDot = ATPrinterGraphicalOutput::RenderDot;
 	vdfastvector<RenderDot> mDotCullBuffer;
+	vdfastvector<RenderDot> mDotCullBuffer2;
 
 	using RenderVector = ATPrinterGraphicalOutput::RenderVector;
 	vdfastvector<RenderVector> mVectorCullBuffer;
+	vdfastvector<RenderVector> mVectorCullBuffer2;
 
-	vdfastvector<uint8> mABuffer;
-	vdfastvector<uint32> mFrameBuffer;
+	struct VectorEdge {
+		float x;
+		float slope;
+	};
+
+	struct SortBin {
+		IndexBlock *mpCurrentIndexBlock = nullptr;
+		size_t mIndicesLeftInBlock = 0;
+		size_t mTotalBlocks = 0;
+	};
+
+	vdvector<SortBin> mSortBins;
+
+	struct RenderBin {
+		uint32 mNumVectors;
+		uint32 mDotStart;
+		uint32 mDotEnd;
+	};
+
+	vdfastvector<RenderBin> mRenderBins;
+
+	struct DotHashNode {
+		uint32 mX;
+		uint32 mColorAndMicroY;
+
+		bool operator==(const DotHashNode&) const = default;
+	};
+
+	vdfastvector<DotHashNode> mDotHash;
+
+	struct ExpandedVector {
+		float mCullY1;
+		float mCullY2;
+		uint32 mLinearColor;
+		uint32 mPad;
+		vdfloat32x4 mEdgeX;
+		vdfloat32x4 mEdgeSlope;
+	};
+
+	vdfastvector<ExpandedVector, vdaligned_alloc<ExpandedVector>> mVectorExpansionBuffer;
+
+	vdfastvector<uint8, vdaligned_alloc<uint8, 32>> mABuffer;
+	vdfastvector<uint32, vdaligned_alloc<uint32, 32>> mFrameBuffer;
 
 	uint8 mPopCnt8[256];
 	uint32 mGammaTable[65];

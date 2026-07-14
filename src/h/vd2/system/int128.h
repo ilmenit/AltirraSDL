@@ -28,6 +28,10 @@
 
 #include <vd2/system/vdtypes.h>
 
+#ifdef VD_PLATFORM_WINDOWS
+	#include <vd2/system/win32/intrin.h>
+#endif
+
 struct vdint128;
 struct vduint128;
 
@@ -402,5 +406,39 @@ inline vduint128::vduint128(const vdint128& x) {
 	vduint128 VDCDECL VDUMul64x64To128(uint64 x, uint64 y);
 	uint64 VDUDiv128x64To64(const vduint128& dividend, uint64 divisor, uint64& remainder);
 #endif
+
+///////////////////////////////////////////////////////////////////////////////
+// VDUMul64x64To128Hi
+//
+// Multiply two 64-bit unsigned integers and return the high 64 bits of the
+// 128-bit result.
+//
+inline uint64 VDUMul64x64To128Hi(uint64 x, uint64 y) {
+#if (defined(_M_AMD64) || defined(_M_ARM64) || defined(_M_ARM64EC)) && defined(_MSC_VER)
+	return __umulh(x, y);
+#elif defined(__SIZEOF_INT128__)
+	return (uint64)(((unsigned __int128)x * y) >> 64);
+#else
+	return VDUMul64x64To128(x, y).getHi();
+#endif
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// VDUMul64x32To96Hi32
+//
+// Multiply a 64-bit unsigned int by a 32-bit unsigned int, and return the
+// high 32 bits of the 96-bit result.
+//
+inline uint32 VDUMul64x32To96Hi32(uint64 x, uint32 y) {
+#if (defined(_M_AMD64) || defined(_M_ARM64) || defined(_M_ARM64EC)) && defined(_MSC_VER)
+	return (uint32)__umulh(x, y);
+#elif defined(__SIZEOF_INT128__)
+	return (uint32)(((unsigned __int128)x * y) >> 64);
+#else
+	return (uint32)((
+		(uint64)(uint32)(x >> 32) * y + (((uint64)(uint32)x * y) >> 32)
+	) >> 32);
+#endif
+}
 
 #endif

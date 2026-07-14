@@ -104,6 +104,7 @@ struct VDExpandedDate {
 
 VDDate VDGetCurrentDate();
 sint64 VDGetDateAsTimeT(const VDDate& date);
+VDExpandedDate VDGetUtcDate(const VDDate& date);
 VDExpandedDate VDGetLocalDate(const VDDate& date);
 VDDate VDDateFromLocalDate(const VDExpandedDate& date);
 void VDAppendLocalDateString(VDStringW& dst, const VDExpandedDate& date);

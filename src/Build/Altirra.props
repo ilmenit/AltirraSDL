@@ -199,7 +199,7 @@
         As of Clang 16, we need to strip the minor versions from the directory name.
       -->
       <AdditionalDependencies Condition="'$(PlatformToolset)'=='clangcl' and '$(Platform)'=='x64'">%(AdditionalDependencies);$(LLVMInstallDir)\lib\clang\$([System.Text.RegularExpressions.Regex]::Replace($(LLVMToolsVersion), '^(\d+).*$', '$1'))\lib\windows\clang_rt.builtins-x86_64.lib</AdditionalDependencies>
-      <AdditionalDependencies Condition="'$(PlatformToolset)'=='clangcl' and '$(Platform)'=='ARM64'">%(AdditionalDependencies);$(LLVMInstallDir)\ARM64\lib\clang\$([System.Text.RegularExpressions.Regex]::Replace($(LLVMToolsVersion), '^(\d+).*$', '$1'))\lib\windows\clang_rt.builtins-aarch64.lib</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(PlatformToolset)'=='clangcl' and '$(Platform)'=='ARM64'">%(AdditionalDependencies);$(LLVMInstallDir)\lib\clang\$([System.Text.RegularExpressions.Regex]::Replace($(LLVMToolsVersion), '^(\d+).*$', '$1'))\lib\windows\clang_rt.builtins-aarch64.lib</AdditionalDependencies>
 
       <!--
         Clang-cl needs explicit ASAN linking

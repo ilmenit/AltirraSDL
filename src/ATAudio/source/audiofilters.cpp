@@ -1083,6 +1083,8 @@ void ATAudioFilterIIR::Run(float *p, size_t n) {
 	}
 };
 
+double ATAudioFilter::sDenormalThreshold = 7.56645539953615e-18;
+
 ATAudioFilter::ATAudioFilter() {
 	SetScale(1.0f);
 	SetActiveMode(true);
@@ -1174,7 +1176,7 @@ void ATAudioFilter::PreFilter(float * VDRESTRICT dst, uint32 count, float dcLeve
 	} while(--count);
 
 	// prevent denormals
-	if (fabsf(hiAccum) < 1e-20f)
+	if (fabsf(hiAccum) < sDenormalThreshold)
 		hiAccum = 0;
 
 	mHiPassAccum = hiAccum;
@@ -1225,7 +1227,7 @@ void ATAudioFilter::PreFilterEdges(float * VDRESTRICT dst, uint32 count, float d
 	} while(--count);
 
 	// prevent denormals
-	if (fabsf(y) < 1e-20f)
+	if (fabsf(y) < sDenormalThreshold)
 		y = 0;
 
 	mHiPassAccum = y;

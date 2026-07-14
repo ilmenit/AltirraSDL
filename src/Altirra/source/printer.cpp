@@ -275,7 +275,9 @@ IATDeviceSIO::CmdResponse ATDevicePrinterBase::OnSerialBeginCommand(const ATDevi
 		mpSIOInterface->SendACK();
 		mpSIOInterface->ReceiveData(0, len, true);
 
-		if (!mbAccurateTimingEnabled) {
+		if (mbAccurateTimingEnabled) {
+			mbPrintSIOCommandPending = true;
+		} else {
 			mpSIOInterface->SendComplete();
 			mpSIOInterface->EndCommand();
 		}
@@ -294,10 +296,16 @@ IATDeviceSIO::CmdResponse ATDevicePrinterBase::OnSerialBeginCommand(const ATDevi
 }
 
 void ATDevicePrinterBase::OnSerialAbortCommand() {
+	mbPrintSIOCommandPending = false;
 }
 
 void ATDevicePrinterBase::OnSerialReceiveComplete(uint32 id, const void *data, uint32 len, bool checksumOK) {
 	HandleFrame((const uint8 *)data, len, false);
+
+	if (!IsPrinting()) {
+		mpSIOInterface->SendComplete();
+		mpSIOInterface->EndCommand();
+	}
 }
 
 void ATDevicePrinterBase::OnSerialFence(uint32 id) {
@@ -476,6 +484,9 @@ void ATDevicePrinterBase::EndRenderLine(const RenderLineParams& params) {
 
 void ATDevicePrinterBase::RenderLineWithFont(const ATPrinterFontDesc& desc, const uint8 *fontData, uint8 *charData, uint32 n, float x, float xStep, float xSpacing, bool bold, const RenderLineParams& params) {
 	RenderedLine *rl = BeginRenderLine((desc.mWidth + (bold ? 1 : 0)) * n);
+	if (!rl)
+		return;
+
 	uint8 *dotDst = rl->mDotPatterns.data();
 	float *posDst = rl->mPositions.data();
 
@@ -544,8 +555,18 @@ void ATDevicePrinterBase::FlushRenderedLines(bool fromCIO) {
 	mRenderedLinesPrinted = 0;
 }
 
+void ATDevicePrinterBase::BeginAsyncPrinting() {
+	mbAsyncPrinting = true;
+}
+
+void ATDevicePrinterBase::EndAsyncPrinting() {
+	mbAsyncPrinting = false;
+
+	mpScheduler->SetEvent(1, this, kEventId_ContinuePrinting, mpEventContinuePrinting);
+}
+
 bool ATDevicePrinterBase::IsPrinting() const {
-	return mpEventContinuePrinting != nullptr;
+	return mpEventContinuePrinting != nullptr || mbAsyncPrinting;
 }
 
 void ATDevicePrinterBase::BeginPrinting(bool fromCIO) {
@@ -555,6 +576,9 @@ void ATDevicePrinterBase::BeginPrinting(bool fromCIO) {
 }
 
 void ATDevicePrinterBase::ContinuePrinting() {
+	if (mbAsyncPrinting)
+		return;
+
 	for(;;) {
 		if (mRenderedLinesPrinted >= mRenderedLinesQueued) {
 			CompletePrinting();
@@ -692,7 +716,9 @@ void ATDevicePrinterBase::ContinuePrinting() {
 void ATDevicePrinterBase::CompletePrinting() {
 	VDASSERT(!mpEventContinuePrinting);
 
-	if (!mbPrintingFromCIO) {
+	if (mbPrintSIOCommandPending) {
+		mbPrintSIOCommandPending = false;
+
 		mpSIOInterface->SendComplete();
 		mpSIOInterface->EndCommand();
 	}
@@ -703,6 +729,8 @@ void ATDevicePrinterBase::CompletePrinting() {
 
 void ATDevicePrinterBase::CancelPrinting() {
 	mpScheduler->UnsetEvent(mpEventContinuePrinting);
+
+	mbPrintSIOCommandPending = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1661,37 +1689,38 @@ void ATDevicePrinter1029::FlushLine(bool graphics) {
 			// The underlining buffer has two extra columns due to the possibility
 			// of an elongated character overhang.
 			rl = BeginRenderLine(482);
+			if (rl) {
+				float x = kLeftMarginMM;
 
-			float x = kLeftMarginMM;
+				for(float& v : rl->mPositions) {
+					v = x;
+					x += xStep;
+				}
 
-			for(float& v : rl->mPositions) {
-				v = x;
-				x += xStep;
+				memcpy(rl->mDotPatterns.data(), mUnderlineBuffer, 482);
+
+				const uint32 len = rl->TrimZeroAtEnd();
+				const float advanceDuration = kPrintDelayPerMM * (float)len;
+				const float retractDuration = advanceDuration * 0.5f;
+
+				const RenderLineParams underParams {
+					.mPrintDelay = advanceDuration + retractDuration,
+					.mPrintDelayXHome = kLeftMarginMM,
+					.mPrintDelayPerX = kPrintDelayPerMM,
+					.mPrintDelayPerY = kPrintDelayPerDot,
+					.mPostDelay = 0.3f,
+					.mLineAdvance = mbDenseLines ? 0 : 25.4f * (1.0f/6.0f - 1.0f/9.0f),
+					.mHeadAdvanceSampleId = kATAudioSampleId_Printer1029Platen,
+					.mHeadAdvanceSoundDelay = 0,
+					.mHeadAdvanceSoundDuration = advanceDuration,
+					.mHeadRetractSampleId = kATAudioSampleId_Printer1029Retract,
+					.mHeadRetractSoundDelay = advanceDuration,
+					.mHeadHomeSampleId = kATAudioSampleId_Printer1029Home,
+					.mHeadHomeSoundDelay = advanceDuration + retractDuration
+				};
+
+				EndRenderLine(underParams);
 			}
-
-			memcpy(rl->mDotPatterns.data(), mUnderlineBuffer, 482);
-
-			const uint32 len = rl->TrimZeroAtEnd();
-			const float advanceDuration = kPrintDelayPerMM * (float)len;
-			const float retractDuration = advanceDuration * 0.5f;
-
-			const RenderLineParams underParams {
-				.mPrintDelay = advanceDuration + retractDuration,
-				.mPrintDelayXHome = kLeftMarginMM,
-				.mPrintDelayPerX = kPrintDelayPerMM,
-				.mPrintDelayPerY = kPrintDelayPerDot,
-				.mPostDelay = 0.3f,
-				.mLineAdvance = mbDenseLines ? 0 : 25.4f * (1.0f/6.0f - 1.0f/9.0f),
-				.mHeadAdvanceSampleId = kATAudioSampleId_Printer1029Platen,
-				.mHeadAdvanceSoundDelay = 0,
-				.mHeadAdvanceSoundDuration = advanceDuration,
-				.mHeadRetractSampleId = kATAudioSampleId_Printer1029Retract,
-				.mHeadRetractSoundDelay = advanceDuration,
-				.mHeadHomeSampleId = kATAudioSampleId_Printer1029Home,
-				.mHeadHomeSoundDelay = advanceDuration + retractDuration
-			};
-
-			EndRenderLine(underParams);
 		}
 	} else {
 		// trim off any spaces at the end, just to make the printer output nicer

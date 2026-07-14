@@ -2036,17 +2036,44 @@
     <None Include="manifest\win7.manifest">
       <Filter>Manifest Files</Filter>
     </None>
-    <None Include="res\dbghelp-template.html" />
+    <None Include="res\dbghelp-template.html">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="res\1030relay.pcm">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="res\printer-1029-pin.pcm" />
-    <None Include="res\printer-1029-platen.pcm" />
-    <None Include="res\printer-1029-retract.pcm" />
-    <None Include="res\printer-1029-home.pcm" />
-    <None Include="res\printer-1025-feed.pcm" />
     <None Include="h\uicommandiconinfo.inl">
       <Filter>Header Files</Filter>
+    </None>
+    <None Include="res\printer-1020-headmove.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1020-headreverse.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1020-paperfeed.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1020-pendown.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1020-penup.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1025-feed.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1029-home.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1029-pin.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1029-platen.pcm">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\printer-1029-retract.pcm">
+      <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

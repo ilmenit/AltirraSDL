@@ -41,6 +41,7 @@ bool VDSolveLinearEquation(double *src, int n, ptrdiff_t stride_elements, double
 
 ///////////////////////////////////////////////////////////////////////////
 
+#include <vd2/system/vectors_double.h>
 #include <vd2/system/vectors_float.h>
 #include <vd2/system/vectors_int.h>
 
@@ -461,12 +462,18 @@ public:
 	void add(T x, T y);
 	void add(const VDRect& r);
 	void translate(T x, T y);
+	VDRect translated(T x, T y) const;
 	void scale(T x, T y);
 	void transform(T scaleX, T scaleY, T offsetX, T offsety);
 	void resize(T w, T h);
 
-	bool operator==(const VDRect& r) const;
-	bool operator!=(const VDRect& r) const;
+	bool operator==(const VDRect& r) const = default;
+
+	VDRect operator|(const VDRect& r) const;
+	VDRect operator&(const VDRect& r) const;
+
+	VDRect& operator|=(const VDRect& r);
+	VDRect& operator&=(const VDRect& r);
 
 	T width() const;
 	T height() const;
@@ -552,6 +559,16 @@ void VDRect<T>::translate(T x, T y) {
 }
 
 template<class T>
+VDRect<T> VDRect<T>::translated(T x, T y) const {
+	return VDRect {
+		left + x,
+		top + y,
+		right + x,
+		bottom + y,
+	};
+}
+
+template<class T>
 void VDRect<T>::scale(T x, T y) {
 	left *= x;
 	top *= y;
@@ -574,10 +591,56 @@ void VDRect<T>::resize(T w, T h) {
 }
 
 template<class T>
-bool VDRect<T>::operator==(const VDRect& r) const { return left==r.left && top==r.top && right==r.right && bottom==r.bottom; }
+VDRect<T>& VDRect<T>::operator|=(const VDRect& r) {
+	if (!r.empty()) {
+		if (empty()) {
+			*this = r;
+		} else {
+			left = std::min(left, r.left);
+			top = std::min(top, r.top);
+			right = std::max(right, r.right);
+			bottom = std::max(bottom, r.bottom);
+		}
+	}
+
+	return *this;
+}
 
 template<class T>
-bool VDRect<T>::operator!=(const VDRect& r) const { return left!=r.left || top!=r.top || right!=r.right || bottom!=r.bottom; }
+VDRect<T> VDRect<T>::operator|(const VDRect& r) const {
+	if (r.empty())
+		return *this;
+
+	if (empty())
+		return r;
+
+	return VDRect(
+		std::min(left, r.left),
+		std::min(top, r.top),
+		std::max(right, r.right),
+		std::max(bottom, r.bottom)
+	);
+}
+
+template<class T>
+VDRect<T>& VDRect<T>::operator&=(const VDRect& r) {
+	left = std::max(left, r.left);
+	top = std::max(top, r.top);
+	right = std::min(right, r.right);
+	bottom = std::min(bottom, r.bottom);
+
+	return *this;
+}
+
+template<class T>
+VDRect<T> VDRect<T>::operator&(const VDRect& r) const {
+	return VDRect(
+		std::max(left, r.left),
+		std::max(top, r.top),
+		std::min(right, r.right),
+		std::min(bottom, r.bottom)
+	);
+}
 
 template<class T>
 T VDRect<T>::width() const { return right-left; }

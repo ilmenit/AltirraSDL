@@ -258,21 +258,17 @@ bool ATPrinterGraphicalOutput::VectorQueryRect::IntersectsPrecise(const Vector& 
 
 ATPrinterGraphicalOutput::ATPrinterGraphicalOutput(ATPrinterOutputManager& parent, const wchar_t *name, const ATPrinterGraphicsSpec& spec)
 	: ATPrinterOutputBase(parent, name)
+	, mPageWidthMM(spec.mPageWidthMM)
+	, mPageVBorderMM(spec.mPageVBorderMM)
+	, mDotRadiusMM(spec.mDotRadiusMM)
+	, mHeadFirstBitOffsetY(spec.mDotRadiusMM + (spec.mbBit0Top ? 0 : spec.mVerticalDotPitchMM * (spec.mNumPins - 1)))
+	, mDotStepY(spec.mbBit0Top ? spec.mVerticalDotPitchMM : -spec.mVerticalDotPitchMM)
+	, mHeadWidth(spec.mDotRadiusMM * 2)
+	, mHeadHeight(spec.mDotRadiusMM * 2 + spec.mVerticalDotPitchMM * (spec.mNumPins - 1))
+	, mHeadPinCount(spec.mNumPins)
 	, mGraphicsSpec(spec)
 {
-	mPageWidthMM = spec.mPageWidthMM;
-	mPageVBorderMM = spec.mPageVBorderMM;
-	mDotRadiusMM = spec.mDotRadiusMM;
-
-	mHeadFirstBitOffsetY = spec.mDotRadiusMM;
-	if (!spec.mbBit0Top)
-		mHeadFirstBitOffsetY += spec.mVerticalDotPitchMM * (spec.mNumPins - 1);
-
-	mDotStepY = spec.mbBit0Top ? spec.mVerticalDotPitchMM : -spec.mVerticalDotPitchMM;
-	mHeadWidth = spec.mDotRadiusMM * 2;
-	mHeadHeight = spec.mDotRadiusMM * 2 + spec.mVerticalDotPitchMM * (spec.mNumPins - 1);
-	mHeadPinCount = spec.mNumPins;
-
+	mHeadX = 1.0f;
 	Clear();
 }
 
@@ -320,6 +316,9 @@ bool ATPrinterGraphicalOutput::HasVectors() const {
 void ATPrinterGraphicalOutput::Clear() {
 	mHeadY = mPageVBorderMM + mHeadFirstBitOffsetY;
 	mpCurrentLine = nullptr;
+
+	if (mpOnHorizontalMove)
+		mpOnVerticalMove(mHeadX);
 
 	if (mpOnVerticalMove)
 		mpOnVerticalMove(mHeadY);
@@ -370,6 +369,18 @@ bool ATPrinterGraphicalOutput::ExtractInvalidationRect(bool& all, vdrect32f& r) 
 	return true;
 }
 
+uint32 ATPrinterGraphicalOutput::GetPenColor() const {
+	return mPenColor;
+}
+
+void ATPrinterGraphicalOutput::SetOnPenChange(vdfunction<void(uint32 color)> fn) {
+	mpOnPenChange = std::move(fn);
+}
+
+double ATPrinterGraphicalOutput::GetHorizontalPos() const {
+	return mHeadX;
+}
+
 double ATPrinterGraphicalOutput::GetVerticalPos() const {
 	return mHeadY;
 }
@@ -382,8 +393,16 @@ void ATPrinterGraphicalOutput::SetVerticalPos(double pos) {
 	}
 }
 
+void ATPrinterGraphicalOutput::SetOnHorizontalMove(vdfunction<void(float x)> fn) {
+	mpOnHorizontalMove = std::move(fn);
+}
+
 void ATPrinterGraphicalOutput::SetOnVerticalMove(vdfunction<void(float y)> fn) {
 	mpOnVerticalMove = std::move(fn);
+}
+
+uint32 ATPrinterGraphicalOutput::ConvertLinearColorToSrgb(uint32 linear) const {
+	return VDColorRGB(vdfloat32x4::unpacku8(linear) * (1.0f / 65.0f)).LinearToSRGB().ToBGR8();
 }
 
 bool ATPrinterGraphicalOutput::PreCull(CullInfo& cullInfo, const vdrect32f& r) const {
@@ -580,17 +599,17 @@ void ATPrinterGraphicalOutput::SetOnClear(vdfunction<void()> fn) {
 	mpOnClear = std::move(fn);
 }
 
-void ATPrinterGraphicalOutput::FeedPaper(float distanceMM) {
+void ATPrinterGraphicalOutput::FeedPaper(double distanceMM) {
 	if (distanceMM != 0) {
 		mHeadY += distanceMM;
 		mpCurrentLine = nullptr;
 
 		if (mpOnVerticalMove)
-			mpOnVerticalMove(mHeadY);
+			mpOnVerticalMove((float)mHeadY);
 	}
 }
 
-void ATPrinterGraphicalOutput::Print(float x, uint32 pins) {
+void ATPrinterGraphicalOutput::Print(double x, uint32 pins) {
 	// if no dots, ignore
 	if (!pins)
 		return;
@@ -615,7 +634,7 @@ void ATPrinterGraphicalOutput::Print(float x, uint32 pins) {
 	}
 
 	auto& column = mColumns.emplace_back();
-	column.mX = x;
+	column.mX = (float)x;
 	column.mDots = pins;
 
 	++mpCurrentLine->mColumnCount;
@@ -629,12 +648,38 @@ void ATPrinterGraphicalOutput::Print(float x, uint32 pins) {
 
 		Invalidate(r);
 	}
+
+	if (mHeadX != x) {
+		mHeadX = x;
+
+		if (mpOnHorizontalMove)
+			mpOnHorizontalMove(x);
+	}
 }
 
-void ATPrinterGraphicalOutput::AddVector(const vdfloat2& pt1orig, const vdfloat2& pt2orig, uint32 color) {
+void ATPrinterGraphicalOutput::MoveVector(const vddouble2& pt) {
+	const double newY = pt.y + mHeadY;
+
+	// adjust head vertical position
+	if (mHeadY != newY) {
+		mHeadY = newY;
+
+		if (mpOnVerticalMove)
+			mpOnVerticalMove(mHeadY);
+	}
+
+	if (mHeadX != pt.x) {
+		mHeadX = pt.x;
+
+		if (mpOnHorizontalMove)
+			mpOnHorizontalMove(mHeadX);
+	}
+}
+
+void ATPrinterGraphicalOutput::AddVector(const vddouble2& pt1orig, const vddouble2& pt2orig, uint32 color) {
 	// bias vectors by current vertical position
-	vdfloat2 pt1 = pt1orig + vdfloat2{0, mHeadY};
-	vdfloat2 pt2 = pt2orig + vdfloat2{0, mHeadY};
+	vddouble2 pt1 = pt1orig + vddouble2{0, mHeadY};
+	vddouble2 pt2 = pt2orig + vddouble2{0, mHeadY};
 
 	// add vector, reorienting to top down
 	Vector& v = mVectors.emplace_back();
@@ -696,6 +741,22 @@ void ATPrinterGraphicalOutput::AddVector(const vdfloat2& pt1orig, const vdfloat2
 		if (mpOnVerticalMove)
 			mpOnVerticalMove(mHeadY);
 	}
+
+	if (mHeadX != pt2.x) {
+		mHeadX = pt2.x;
+
+		if (mpOnHorizontalMove)
+			mpOnHorizontalMove(mHeadX);
+	}
+}
+
+void ATPrinterGraphicalOutput::ChangePenColor(uint32 color) {
+	if (mPenColor != color) {
+		mPenColor = color;
+
+		if (mpOnPenChange)
+			mpOnPenChange(color);
+	}
 }
 
 uint32 ATPrinterGraphicalOutput::ConvertColor(uint32 srgb) const {
@@ -719,21 +780,17 @@ std::pair<size_t, bool> ATPrinterGraphicalOutput::FindVectorTile(sint32 tileX, s
 	size_t n2 = mVectorSlotHashSize - n1;
 
 	const VectorTileSlot *slot = &mVectorTileHashTable[idx];
-	for(size_t i = 0; i < n1; ++i, ++slot) {
-		if (!slot->mFirstTile)
-			return { idx + i, false };
 
-		if (slot->mTileX == tileX && slot->mTileY == tileY)
-			return { idx + i, true };
-	}
+	for(int pass = 0; pass < 2; ++pass) {
+		for(size_t i = 0; i < n1; ++i, ++slot) {
+			if (!slot->mFirstTile)
+				return { idx + i, false };
 
-	slot = mVectorTileHashTable.data();
-	for(size_t i = 0; i < n1; ++i, ++slot) {
-		if (!slot->mFirstTile)
-			return { idx + i, false };
+			if (slot->mTileX == tileX && slot->mTileY == tileY)
+				return { idx + i, true };
+		}
 
-		if (slot->mTileX == tileX && slot->mTileY == tileY)
-			return { idx + i, true };
+		slot = mVectorTileHashTable.data();
 	}
 
 	return { n2, false };

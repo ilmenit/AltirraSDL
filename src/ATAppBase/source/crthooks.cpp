@@ -41,6 +41,13 @@ void __cdecl ATOnInvalidParameter(const wchar_t *, const wchar_t *, const wchar_
 	}
 }
 
+void __cdecl ATOnTerminateCall() {
+	AT_EXCEPTIONFILTER_TRY {
+		*(volatile char *)0 = 13;
+	} AT_EXCEPTIONFILTER_EXCEPT {
+	}
+}
+
 void ATInitCRTHooks() {
 	#ifdef _MSC_VER
 		_CrtSetDbgFlag(_CrtSetDbgFlag(_CRTDBG_REPORT_FLAG) | _CRTDBG_LEAK_CHECK_DF);
@@ -50,4 +57,5 @@ void ATInitCRTHooks() {
 
 	_set_purecall_handler(ATOnPureCall);
 	_set_invalid_parameter_handler(ATOnInvalidParameter);
+	set_terminate(ATOnTerminateCall);
 }

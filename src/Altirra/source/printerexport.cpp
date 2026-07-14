@@ -18,14 +18,16 @@
 #include <vd2/system/bitmath.h>
 #include <vd2/system/color.h>
 #include <vd2/system/file.h>
+#include <vd2/system/int128.h>
 #include <vd2/system/vecmath.h>
 #include <vd2/system/zip.h>
 #include "printerexport.h"
 #include "printerttfencoder.h"
 #include "printeroutput.h"
 #include "printerrasterizer.h"
+#include "versioninfo.h"
 
-void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output) {
+void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output, float suggestedPageWidthMM, float suggestedPageHeightMM) {
 	// ZLIB header (Deflate 32K Normal)
 	static constexpr uint8 kZLIBHeader[] { 0x78, 0x9C };
 
@@ -231,8 +233,8 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output)
 	uint32 basePageObj = (uint32)objectOffsets.size() + 1;
 
 	static constexpr float mmToPoints = 72.0f / 25.4f;
-	const float pageWidthMM = spec.mPageWidthMM;
-	const float pageHeightMM = 11.0f * 25.4f;
+	const float pageWidthMM = suggestedPageWidthMM > 0 ? suggestedPageWidthMM : spec.mPageWidthMM;
+	const float pageHeightMM = suggestedPageHeightMM > 0 ? suggestedPageHeightMM : 11.0f * 25.4f;
 	const float headHeightMM = spec.mDotRadiusMM * 2 + spec.mVerticalDotPitchMM * (float)(spec.mNumPins - 1);
 	const int numPages = std::max(1, (int)ceilf(output.GetDocumentBounds().bottom / pageHeightMM));
 
@@ -254,7 +256,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output)
 		textOut.FormatLine("%u 0 obj", (uint32)objectOffsets.size());
 
 		VDStringA s;
-		
+
 		s.sprintf("%.3f g", powf(ATPrinterRasterizer::kBlackLevel, 1.0f/2.2f));
 
 		ATPrinterGraphicalOutput::CullInfo cullInfo {};
@@ -380,7 +382,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output)
 				if (lastLinearColor != rv.mLinearColor) {
 					lastLinearColor = rv.mLinearColor;
 
-					const uint32 rgb = VDColorRGB(vdfloat32x4::unpacku8(rv.mLinearColor) * (1.0f / 65.0f)).LinearToSRGB().ToBGR8();
+					const uint32 rgb = output.ConvertLinearColorToSrgb(rv.mLinearColor);
 
 					s.append_sprintf(
 						" %.2f %.2f %.2f RG"
@@ -441,7 +443,30 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output)
 
 	textOut.PutLine("]");
 	textOut.FormatLine("/Count %u", numPages);
-	textOut.FormatLine("/MediaBox [0 0 %f %f]", spec.mPageWidthMM * mmToPoints, pageHeightMM * mmToPoints);
+	textOut.FormatLine("/MediaBox [0 0 %f %f]", pageWidthMM * mmToPoints, pageHeightMM * mmToPoints);
+	textOut.PutLine(">>");
+	textOut.PutLine("endobj");
+
+	// write info table
+	objectOffsets.push_back((uint32)textOut.Pos());
+	const uint32 infoTableId = (uint32)objectOffsets.size();
+	textOut.FormatLine("%u 0 obj", infoTableId);
+	textOut.FormatLine("<< /Producer (%ls)", AT_PROGRAM_NAME_STR  L" " AT_VERSION_STR);
+
+	VDExpandedDate utcTime = VDGetUtcDate(VDGetCurrentDate());
+
+	// There is a disagreement between ISO 32000 and Adobe's PDF 1.7 reference. ISO 32000 says
+	// that dates have only one apos between the time zone hour and minute offsets; Adobe says
+	// there is an apos at the end as well. We follow Adobe since that seems to be prevailing
+	// practice.
+	textOut.FormatLine("/CreationDate (D:%04u%02u%02u%02u%02u%02uZ00'00')"
+		, utcTime.mYear
+		, utcTime.mMonth
+		, utcTime.mDay
+		, utcTime.mHour
+		, utcTime.mMinute
+		, utcTime.mSecond
+	);
 	textOut.PutLine(">>");
 	textOut.PutLine("endobj");
 
@@ -457,13 +482,14 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output)
 
 	textOut.PutLine("trailer");
 	textOut.PutLine("<< /Root 1 0 R");
+	textOut.FormatLine("/Info %u 0 R", infoTableId);
 	textOut.FormatLine("/Size %u", (unsigned)(objectOffsets.size() + 1));
 	textOut.PutLine(">> startxref");
 	textOut.FormatLine("%u", xrefPos);
 	textOut.PutLine("%%EOF");
 }
 
-void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output) {
+void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output, bool useBlending) {
 	const ATPrinterGraphicsSpec& spec = output.GetGraphicsSpec();
 	vdrect32f docBounds = output.GetDocumentBounds();
 
@@ -506,7 +532,7 @@ void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output)
 		float rawLineY = 0;
 		while(output.ExtractNextLine(cols, rawLineY, cullInfo, docBounds)) {
 			uint32 allDotMask = 0;
-			
+
 			for(auto& renderColumn : cols)
 				allDotMask |= renderColumn.mPins;
 
@@ -565,27 +591,367 @@ void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output)
 		for(const uint32 linearColor : vectorColorList) {
 			const uint32 srgbColor = VDColorRGB(vdfloat32x4::unpacku8(linearColor) * (1.0f / 64.0f)).LinearToSRGB().ToBGR8();
 
-			textOut.FormatLine("<g style=\"stroke:#%06X; stroke-width:%d; stroke-linecap:round; fill:none\">"
+			textOut.FormatLine("<g style=\"stroke:#%06X; stroke-width:%d; stroke-linecap:round; stroke-linejoin:round; fill:none%s\">"
 				, srgbColor
 				, dotRadius*2
+				, useBlending ? "; mix-blend-mode:darken" : ""
 			);
 
-			for(const ATPrinterGraphicalOutput::RenderVector& rv : rvectors) {
-				if (rv.mLinearColor != linearColor)
-					continue;
+			using RenderVector = ATPrinterGraphicalOutput::RenderVector;
 
-				const float x1 = (rv.mX1 - docBounds.left) * kUnitsPerMM;
-				const float y1 = (rv.mY1 - docBounds.top) * kUnitsPerMM;
-				const float x2 = (rv.mX2 - docBounds.left) * kUnitsPerMM;
-				const float y2 = (rv.mY2 - docBounds.top) * kUnitsPerMM;
+			auto it = std::partition(
+				rvectors.begin(),
+				rvectors.end(),
+				[=](const RenderVector& rv) {
+					return rv.mLinearColor != linearColor;
+				}
+			);
 
-				textOut.FormatLine("<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\"/>"
-					, VDRoundToInt(x1)
-					, VDRoundToInt(y1)
-					, VDRoundToInt(x2)
-					, VDRoundToInt(y2)
-				);
+			// isolate vectors for the current color group
+			vdspan<RenderVector> rvsThisColor(it, rvectors.end());
+
+			// sort vectors for determinism
+			std::sort(
+				rvsThisColor.begin(),
+				rvsThisColor.end(),
+				[](const RenderVector& a, const RenderVector& b) {
+					if (a.mY1 != b.mY1) return a.mY1 < b.mY1;
+					if (a.mX1 != b.mX1) return a.mX1 < b.mX1;
+					if (a.mY2 != b.mY2) return a.mY2 < b.mY2;
+					return a.mX2 < b.mX2;
+				}
+			);
+
+			// Connectivity data structures.
+			//
+			// The vectors are preprocessed to link the endpoints of all vectors
+			// into doubly linked lists for each shared point. Each vectors has
+			// two endpoint indices, 2*k+0 and 2*k+1 for k being the vector
+			// index. This allows quickly traversing the undirected graph to
+			// pull out connected lines or line loops.
+
+			struct LinkedVector {
+				uint32 mPrevEndpointIndex[2];
+				uint32 mNextEndpointIndex[2];
+				uint32 mPointIndex[2];
+			};
+
+			struct LinkedPoint {
+				sint32 mX;
+				sint32 mY;
+
+				bool operator==(const LinkedPoint& pt) const = default;
+			};
+
+			struct LinkedPointHash {
+				static size_t operator()(const LinkedPoint& pt) {
+					return pt.mX + (pt.mY << 16);
+				}
+			};
+
+			vdfastvector<LinkedPoint> linkedPoints;
+			vdfastvector<LinkedVector> linkedVectors;
+
+			struct PointLookupInfo {
+				uint32 mPointIndex;			// index in linkedPoints[]
+				uint32 mLastLineEndpoint;	// vector endpoint
+			};
+
+			vdhashmap<LinkedPoint, PointLookupInfo, LinkedPointHash> pointLookup;
+
+			for(const RenderVector& rv : rvsThisColor) {
+				const LinkedPoint pt[2] {
+					LinkedPoint {
+						VDRoundToInt32((rv.mX1 - docBounds.left) * kUnitsPerMM),
+						VDRoundToInt32((rv.mY1 - docBounds.top ) * kUnitsPerMM)
+					},
+					LinkedPoint {
+						VDRoundToInt32((rv.mX2 - docBounds.left) * kUnitsPerMM),
+						VDRoundToInt32((rv.mY2 - docBounds.top ) * kUnitsPerMM)
+					}
+				};
+
+				const uint32 endpointIndex0 = (uint32)linkedVectors.size() * 2;
+				auto& lv = linkedVectors.emplace_back();
+
+				for(int endpoint = 0; endpoint < 2; ++endpoint) {
+					const auto result = pointLookup.insert(pt[endpoint]);
+					PointLookupInfo& lp = result.first->second;
+					if (result.second) {
+						lp.mPointIndex = (uint32)linkedPoints.size();
+
+						linkedPoints.push_back(pt[endpoint]);
+
+						// establish new point loop around this endpoint
+						lv.mPrevEndpointIndex[endpoint] = endpointIndex0 + endpoint;
+						lv.mNextEndpointIndex[endpoint] = endpointIndex0 + endpoint;
+					} else {
+						// link this endpoint into the point loop
+						const uint32 prevEndpointIndex = lp.mLastLineEndpoint;
+						LinkedVector& lvPrev = linkedVectors[prevEndpointIndex >> 1];
+
+						const uint32 nextEndpointIndex = lvPrev.mNextEndpointIndex[prevEndpointIndex & 1];
+						LinkedVector& lvNext = linkedVectors[nextEndpointIndex >> 1];
+
+						lvPrev.mNextEndpointIndex[prevEndpointIndex & 1] = endpointIndex0 + endpoint;
+						lv.mPrevEndpointIndex[endpoint] = prevEndpointIndex;
+						lv.mNextEndpointIndex[endpoint] = nextEndpointIndex;
+						lvNext.mPrevEndpointIndex[nextEndpointIndex & 1] = endpointIndex0 + endpoint;
+					}
+
+					lp.mLastLineEndpoint = endpointIndex0 + endpoint;
+					lv.mPointIndex[endpoint] = lp.mPointIndex;
+				}
 			}
+
+			static constexpr uint32 kAlreadyProcessedVector = UINT32_MAX;
+
+			VDStringA pathStr;
+			sint32 lastX = INT32_MIN;
+			sint32 lastY = INT32_MIN;
+
+			bool lineStarted = false;
+			sint32 lineDX = 0;
+			sint32 lineDY = 0;
+
+			const auto flushLine = [&] {
+				if (!lineStarted)
+					return;
+
+				if (lineDY == 0) {
+					if (lineDX)
+						pathStr.append_sprintf("h%d", lineDX);
+				} else if (lineDX == 0)
+					pathStr.append_sprintf("v%d", lineDY);
+				else
+					pathStr.append_sprintf("l%d%c%d", lineDX, lineDY < 0 ? '-' : ' ', abs(lineDY));
+
+				lineDX = 0;
+				lineDY = 0;
+			};
+
+			const auto isCollinear = [](sint32 dx1, sint32 dy1, sint32 dx2, sint32 dy2) {
+				// Check if two vectors is collinear and in the same direction:
+				//	(A / |A|) * (B / |B|) = 1
+				//
+				// For integer math, this is reorganized to:
+				//	(A*B) == |A|^2 * |B|^2
+				//
+				// As the rhs is non-negative, the math can switch to unsigned mid-way, allowing
+				// slightly simpler unsigned 128-bit math instead of signed 128-bit.
+
+				if ((dx1 | dy1) == 0)
+					return true;
+
+				if ((dx2 | dy2) == 0)
+					return true;
+
+				const sint64 dotProduct = (sint64)dx1 * dx2 + (sint64)dy1 * dy2;
+
+				// since both vectors are non-zero by this point, the dot product must be
+				// positive to pass
+				if (dotProduct <= 0)
+					return false;
+
+				const uint64 prevSq = (uint64)((sint64)dx1 * dx1 + (sint64)dy1 * dy1);
+				const uint64 nextSq = (uint64)((sint64)dx2 * dx2 + (sint64)dy2 * dy2);
+
+				const vduint128 dotSq = VDUMul64x64To128(dotProduct, dotProduct);
+				const vduint128 magSq = VDUMul64x64To128(prevSq, nextSq);
+
+				return dotSq == magSq;
+			};
+
+			// initialize dead end stack with list of vectors that have dead ends
+			vdfastvector<uint32> deadEndStack;
+
+			for(uint32 endpointIndexCounter = 0, endpointIndexLimit = (uint32)linkedVectors.size() * 2;
+				endpointIndexCounter < endpointIndexLimit;
+				endpointIndexCounter += 2)
+			{
+				LinkedVector& lv = linkedVectors[endpointIndexCounter >> 1];
+
+				if (lv.mNextEndpointIndex[0] == endpointIndexCounter)
+					deadEndStack.push_back(endpointIndexCounter);
+				else if (lv.mNextEndpointIndex[1] == endpointIndexCounter + 1)
+					deadEndStack.push_back(endpointIndexCounter + 1);
+			}
+
+			for(uint32 endpointIndexCounter = 0, endpointIndexLimit = (uint32)linkedVectors.size() * 2; ;) {
+				uint32 currentEndpointIndex;
+
+				if (deadEndStack.empty()) {
+					if (endpointIndexCounter >= endpointIndexLimit)
+						break;
+
+					currentEndpointIndex = endpointIndexCounter;
+					endpointIndexCounter += 2;
+				} else {
+					currentEndpointIndex = deadEndStack.back();
+					deadEndStack.pop_back();
+				}
+
+				for(;;) {
+					LinkedVector& lv = linkedVectors[currentEndpointIndex >> 1];
+
+					if (lv.mPrevEndpointIndex[0] == kAlreadyProcessedVector)
+						break;
+
+					// extract and write points
+					const ptrdiff_t epEntry = currentEndpointIndex & 1;
+					const ptrdiff_t epExit = 1 - epEntry;
+					const auto [x1, y1] = linkedPoints[lv.mPointIndex[epEntry]];
+					const auto [x2, y2] = linkedPoints[lv.mPointIndex[epExit]];
+
+					const sint32 dx = x2 - x1;
+					const sint32 dy = y2 - y1;
+
+					if (lastX != x1 || lastY != y1) {
+						// Discontinuity -- flush line and issue move-to
+						flushLine();
+
+						if (lineStarted)
+							pathStr.append_sprintf("m%d%c%d", x1 - lastX, y1 < lastY ? '-' : ' ', abs(y1 - lastY));
+						else
+							pathStr.append_sprintf("M%d%c%d", x1, y1 < 0 ? '-' : ' ', abs(y1));
+
+						lineDX = dx;
+						lineDY = dy;
+						lineStarted = true;
+					} else {
+						// Continuous line -- check if new vector is collinear:
+						//	(A / |A|) * (B / |B|) = 1
+						//
+						// For integer math, this is reorganized to:
+						//	(A*B) == |A|^2 * |B|^2
+						//
+						// As the rhs is non-negative, the math can switch to unsigned mid-way, allowing
+						// slightly simpler unsigned 128-bit math instead of signed 128-bit.
+
+						bool collinear = false;
+
+						if ((lineDX == 0 && lineDY == 0) || (dx == 0 && dy == 0)) {
+							collinear = true;
+						} else {
+							const sint64 dotProduct = (sint64)lineDX * dx + (sint64)lineDY * dy;
+
+							if (dotProduct > 0) {
+								const uint64 prevSq = (uint64)((sint64)lineDX * lineDX + (sint64)lineDY * lineDY);
+								const uint64 nextSq = (uint64)((sint64)dx * dx + (sint64)dy * dy);
+
+								const vduint128 dotSq = VDUMul64x64To128(dotProduct, dotProduct);
+								const vduint128 magSq = VDUMul64x64To128(prevSq, nextSq);
+
+								if (dotSq == magSq)
+									collinear = true;
+							}
+						}
+
+						if (!isCollinear(lineDX, lineDY, dx, dy)) {
+							flushLine();
+							lineDX = 0;
+							lineDY = 0;
+						}
+
+						lineDX += dx;
+						lineDY += dy;
+					}
+
+					lastX = x2;
+					lastY = y2;
+
+					if (pathStr.size() >= 1000) {
+						flushLine();
+
+						textOut.FormatLine("<path d=\"%s\"/>", pathStr.c_str());
+						pathStr.clear();
+
+						lineStarted = false;
+						lastX = INT32_MIN;
+						lastY = INT32_MIN;
+					}
+
+					// unlink starting endpoint
+					const uint32 entryPrevIndex = lv.mPrevEndpointIndex[epEntry];
+					const uint32 entryNextIndex = lv.mNextEndpointIndex[epEntry];
+					const uint32 exitPrevIndex = lv.mPrevEndpointIndex[epExit];
+					const uint32 exitNextIndex = lv.mNextEndpointIndex[epExit];
+
+					// unlink entry endpoint from point list
+					{
+						LinkedVector& lvEntryPrev = linkedVectors[entryPrevIndex >> 1];
+						LinkedVector& lvEntryNext = linkedVectors[entryNextIndex >> 1];
+
+						uint32& entryPrevNext = lvEntryPrev.mNextEndpointIndex[entryPrevIndex & 1];
+						uint32& entryNextPrev = lvEntryNext.mPrevEndpointIndex[entryNextIndex & 1];
+						VDASSERT(entryPrevNext == currentEndpointIndex);
+						VDASSERT(entryNextPrev == currentEndpointIndex);
+
+						entryPrevNext = entryNextIndex;
+						entryNextPrev = entryPrevIndex;
+
+						// if we're leaving a dead end behind on another vector, add that onto the
+						// stack for consideration
+						if (entryNextIndex == entryPrevIndex && entryNextIndex != currentEndpointIndex)
+							deadEndStack.push_back(entryNextIndex);
+					}
+
+					// unlink exit endpoint from point list
+					{
+						LinkedVector& lvExitPrev = linkedVectors[exitPrevIndex >> 1];
+						LinkedVector& lvExitNext = linkedVectors[exitNextIndex >> 1];
+
+						uint32& exitPrevNext = lvExitPrev.mNextEndpointIndex[exitPrevIndex & 1];
+						uint32& exitNextPrev = lvExitNext.mPrevEndpointIndex[exitNextIndex & 1];
+						VDASSERT(exitPrevNext == (currentEndpointIndex ^ 1));
+						VDASSERT(exitNextPrev == (currentEndpointIndex ^ 1));
+
+						exitPrevNext = exitNextIndex;
+						exitNextPrev = exitPrevIndex;
+
+						// we don't push dead ends onto the dead end stack, because we're just going
+						// to continue with it
+					}
+
+					// mark this vector as already processed in case we see it again (such as
+					// because it's on the dead end stack)
+					lv.mPrevEndpointIndex[0] = kAlreadyProcessedVector;
+
+					// Choose the next vector from the vectors linked to the exit end point. If there
+					// is a collinear vector, make sure to choose that.
+
+					currentEndpointIndex = exitNextIndex;
+
+					do {
+						LinkedVector& lvCandidateNext = linkedVectors[currentEndpointIndex >> 1];
+						const uint32 nextEndpointIndex = lvCandidateNext.mNextEndpointIndex[currentEndpointIndex & 1];
+
+						if (nextEndpointIndex == currentEndpointIndex) {
+							// There is only one candidate point, so therefore there's no need to test it.
+							break;
+						}
+
+						const LinkedPoint& candPt1 = linkedPoints[lvCandidateNext.mPointIndex[currentEndpointIndex & 1]];
+						const LinkedPoint& candPt2 = linkedPoints[lvCandidateNext.mPointIndex[1 - (currentEndpointIndex & 1)]];
+						const sint32 cdx = candPt2.mX - candPt1.mX;
+						const sint32 cdy = candPt2.mY - candPt1.mY;
+
+						if (isCollinear(lineDX, lineDY, cdx, cdy))
+							break;
+
+						currentEndpointIndex = nextEndpointIndex;
+					} while(currentEndpointIndex != exitNextIndex);
+				}
+			}
+
+			if (!pathStr.empty()) {
+				flushLine();
+
+				textOut.FormatLine("<path d=\"%s\"/>", pathStr.c_str());
+				pathStr.clear();
+			}
+
+			rvectors.erase(it, rvectors.end());
 
 			textOut.FormatLine("</g>");
 		}

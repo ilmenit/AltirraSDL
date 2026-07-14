@@ -118,7 +118,13 @@ void ATPrinterSoundSource::EnableRetractSound(bool enable) {
 			mRetractSoundId = mpAudioMixer->GetSamplePlayer().AddSound(*mpSoundGroup, 0, kATAudioSampleId_Printer1029Retract, 1.0f);
 	} else {
 		if (mRetractSoundId != ATSoundId{}) {
-			mpAudioMixer->GetSamplePlayer().StopSound(mPlatenSoundId);
+			// Do not change this to mPlatenSoundId when syncing from upstream:
+			// test14 had that typo here. mRetractSoundId is created by this
+			// function for the 1029 retract sample, while mPlatenSoundId is
+			// owned by EnablePlatenSound(). Stopping the platen ID here can
+			// kill a newly-started platen loop and leave mPlatenSoundId stale,
+			// while the retract sound keeps playing without a valid handle.
+			mpAudioMixer->GetSamplePlayer().StopSound(mRetractSoundId);
 			mRetractSoundId = ATSoundId{};
 		}
 	}

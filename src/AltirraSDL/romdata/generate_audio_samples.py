@@ -17,6 +17,11 @@ SAMPLES = [
     ("audio_printer_1029_retract","printer-1029-retract.pcm"),
     ("audio_printer_1029_home",   "printer-1029-home.pcm"),
     ("audio_printer_1025_feed",   "printer-1025-feed.pcm"),
+    ("audio_printer_1020_headmove",   "printer-1020-headmove.pcm"),
+    ("audio_printer_1020_headreverse","printer-1020-headreverse.pcm"),
+    ("audio_printer_1020_paperfeed",  "printer-1020-paperfeed.pcm"),
+    ("audio_printer_1020_pendown",    "printer-1020-pendown.pcm"),
+    ("audio_printer_1020_penup",      "printer-1020-penup.pcm"),
 ]
 
 def main():

@@ -66,6 +66,7 @@ protected:
 
 	void AttachToGraphicsOutput(ATPrinterGraphicalOutput& output);
 	void DetachFromGraphicsOutput();
+	void UpdateGraphicsWindowSettings();
 
 	struct PrinterOutputSort;
 
@@ -74,7 +75,8 @@ protected:
 		kControlId_Toolbar,
 		kControlId_Output,
 		kControlId_Clear,
-		kControlId_ResetView
+		kControlId_ResetView,
+		kControlId_ShowPrintHead
 	};
 
 	vdrefptr<IVDTextEditor> mpTextEditor;
@@ -85,6 +87,7 @@ protected:
 	wchar_t		mLineBuf[133] {};
 
 	size_t mLastTextOffset = 0;
+	bool mbShowPrintHead = true;
 
 	ATPrinterOutput *mpTextOutput = nullptr;
 	ATPrinterGraphicalOutput *mpGraphicsOutput = nullptr;

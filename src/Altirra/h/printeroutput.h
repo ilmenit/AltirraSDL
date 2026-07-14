@@ -115,9 +115,19 @@ public:
 	void SetOnInvalidation(vdfunction<void()> fn);
 	bool ExtractInvalidationRect(bool& all, vdrect32f& r);
 
+	uint32 GetPenColor() const;
+	void SetOnPenChange(vdfunction<void(uint32 color)> fn);
+
+	double GetHorizontalPos() const;
 	double GetVerticalPos() const;
+
 	void SetVerticalPos(double pos);
+	void SetOnHorizontalMove(vdfunction<void(float x)> fn);
 	void SetOnVerticalMove(vdfunction<void(float y)> fn);
+
+	// Convert a linear color from the printer output layer to an sRGB output
+	// color.
+	uint32 ConvertLinearColorToSrgb(uint32 c) const;
 
 	struct CullInfo {
 		size_t mLineStart;
@@ -132,6 +142,8 @@ public:
 		float mX = 0;
 		float mY = 0;
 		uint32 mLinearColor = 0;
+
+		bool operator==(const RenderDot& other) const = default;
 	};
 
 	// Extract dots from a line within the pre-cull rect. The top of the rectangle must be at or below
@@ -149,11 +161,11 @@ public:
 
 	// Vector line. This is always oriented top-down (y2 > y1).
 	struct RenderVector {
-		uint32 mLinearColor = 0;
 		float mX1 = 0;
 		float mY1 = 0;
 		float mX2 = 0;
 		float mY2 = 0;
+		uint32 mLinearColor = 0;
 	};
 
 	// Extract vectors that may intersect the given rectangle (some extras may be returned due to imperfect
@@ -165,9 +177,11 @@ public:
 
 	void SetOnClear(vdfunction<void()> fn) override;
 	
-	void FeedPaper(float distanceMM) override;
-	void Print(float x, uint32 dots) override;
-	void AddVector(const vdfloat2& pt1, const vdfloat2& pt2, uint32 color) override;
+	void FeedPaper(double distanceMM) override;
+	void Print(double x, uint32 dots) override;
+	void MoveVector(const vddouble2& pt) override;
+	void AddVector(const vddouble2& pt1, const vddouble2& pt2, uint32 color) override;
+	void ChangePenColor(uint32 color) override;
 	uint32 ConvertColor(uint32 srgb) const override;
 
 private:
@@ -228,15 +242,18 @@ private:
 	vdrect32 GetVectorTileRect(const vdrect32f& v) const;
 	void Invalidate(const vdrect32f& r);
 
-	float mPageWidthMM = 0;
-	float mPageVBorderMM = 0;
-	float mDotRadiusMM = 0;
-	float mHeadY = 0;
-	float mHeadFirstBitOffsetY = 0;
-	float mDotStepY = 0;
-	float mHeadWidth = 0;
-	float mHeadHeight = 0;
-	int mHeadPinCount = 0;
+	const float mPageWidthMM = 0;
+	const float mPageVBorderMM = 0;
+	const float mDotRadiusMM = 0;
+	const float mHeadFirstBitOffsetY = 0;
+	const float mDotStepY = 0;
+	const float mHeadWidth = 0;
+	const float mHeadHeight = 0;
+	const int mHeadPinCount = 0;
+
+	double mHeadX = 0;
+	double mHeadY = 0;
+	uint32 mPenColor = 0;
 
 	Line *mpCurrentLine = nullptr;
 	vdfastvector<Line> mLines;
@@ -260,6 +277,8 @@ private:
 	vdfunction<void(uint32, uint32)> mpOnPenChangedFn;
 
 	vdfunction<void()> mpOnClear;
+	vdfunction<void(uint32 c)> mpOnPenChange;
+	vdfunction<void(float x)> mpOnHorizontalMove;
 	vdfunction<void(float y)> mpOnVerticalMove;
 
 	const ATPrinterGraphicsSpec mGraphicsSpec;

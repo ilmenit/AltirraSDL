@@ -32,6 +32,18 @@ bool ATUIConfDev1020(VDGUIHandle hParent, ATPropertySet& props) {
 				.SetLabel(L"&Options")
 				.SetText(L"Use accurate line stepping");
 
+			auto& accurateOption = view.AddCheckbox();
+			accurateOption
+				.SetTag("accurate_timing")
+				.SetText(L"Enable accurate &timing");
+
+			view.AddCheckbox()
+				.SetText(L"Enable &sound")
+				.SetTag("sound")
+				.SetEnableExpr(
+					[&] { return accurateOption.GetValue(); }
+				);
+
 			view.AddVerticalSpace();
 
 			view.AddColor().SetValue(0).SetFixedPalette(kPalette).SetCustomPaletteKey("1020 Pens").SetLabel(L"Pen &1 (Black)").SetTag("pencolor0");

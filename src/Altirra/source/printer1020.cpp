@@ -50,7 +50,7 @@ void ATDevicePrinter1020::GetDeviceInfo(ATDeviceInfo& info) {
 }
 
 void ATDevicePrinter1020::GetSettings(ATPropertySet& settings) {
-	settings.Clear();
+	ATDevicePrinterBase::GetSettings(settings);
 
 	VDStringA name;
 	for(int i=0; i<4; ++i) {
@@ -66,6 +66,8 @@ void ATDevicePrinter1020::GetSettings(ATPropertySet& settings) {
 }
 
 bool ATDevicePrinter1020::SetSettings(const ATPropertySet& settings) {
+	ATDevicePrinterBase::SetSettings(settings);
+
 	VDStringA name;
 	for(int i=0; i<4; ++i) {
 		name.sprintf("pencolor%d", i);
@@ -84,10 +86,21 @@ bool ATDevicePrinter1020::SetSettings(const ATPropertySet& settings) {
 	return true;
 }
 
+void ATDevicePrinter1020::Shutdown() {
+	if (mpScheduler)
+		mpScheduler->UnsetEvent(mpEventDrawingAction);
+
+	ATDevicePrinterBase::Shutdown();
+}
+
 void ATDevicePrinter1020::ColdReset() {
 	ATDevicePrinterBase::ColdReset();
 
 	ResetState();
+
+	mLastDrawPosX = ConvertPointFToMM(0.0f, 0.0f).x;
+
+	ResetDrawingEngine();
 }
 
 void ATDevicePrinter1020::OnCreatedGraphicalOutput() {
@@ -104,8 +117,8 @@ void ATDevicePrinter1020::OnCreatedGraphicalOutput() {
 
 ATPrinterGraphicsSpec ATDevicePrinter1020::GetGraphicsSpec() const {
 	ATPrinterGraphicsSpec spec {};
-	spec.mPageWidthMM = 114.5f;				// 4.5" wide paper (based on CGP-115 service manual)
-	spec.mPageVBorderMM = 8.0f;				// vertical border
+	spec.mPageWidthMM = kPaperWidthMM<float>;	// 4.5" wide paper (based on CGP-115 service manual)
+	spec.mPageVBorderMM = kMarginMM<float>;		// vertical border
 	spec.mDotRadiusMM = 0.090f;				// guess for dot radius
 	spec.mVerticalDotPitchMM = 0.403175f;	// 0.0159" vertical pitch (guess)
 	spec.mbBit0Top = true;
@@ -201,8 +214,6 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 				break;
 
 			case LineState::Escape: {
-				bool returnToTextMode = false;
-
 				mLineState = LineState::StartOfLine;
 
 				switch(ch) {
@@ -212,15 +223,15 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 						break;
 					case 0x10:	// ESC CTRL P: 20 char mode and return to text mode
 						mCharSize = 4;
-						returnToTextMode = true;
+						ReturnToTextMode();
 						break;
 					case 0x13:	// ESC CTRL S: 80 char mode and return to text mode
 						mCharSize = 1;
-						returnToTextMode = true;
+						ReturnToTextMode();
 						break;
 					case 0x0E:	// ESC CTRL N: 40 char mode and return to text mode
 						mCharSize = 2;
-						returnToTextMode = true;
+						ReturnToTextMode();
 						break;
 					case 0x17:	// ESC CTRL W: enable international
 						mbIntCharsEnabled = true;
@@ -237,15 +248,6 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 						break;
 				}
 
-				if (returnToTextMode) {
-					// return to text mode
-					mbGraphicsMode = false;
-					mCommandState = CommandState::PrintText;
-					mX = 0;
-					mY = 0;
-					mBaseX = 0;
-					mLineStyle = 0;
-				}
 				continue;
 			}
 
@@ -253,7 +255,9 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 				if (ch == 0x9B) {
 					mLineState = LineState::StartOfLine;
 					if (!mbGraphicsMode) {
+						FillFIFO(1);
 						PrintChar(ch, false);
+						AddDrainFIFOAction(1);
 						continue;
 					}
 				}
@@ -263,6 +267,7 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 		switch(mCommandState) {
 			case CommandState::WaitForCommand:
 				mGraphicsCommand = ch;
+				mPendingCmdFIFOChars = 1;
 
 				switch(ch) {
 					case 'A':	// A		Return to text mode
@@ -276,8 +281,7 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 
 					case 'H':
 						// return to home position
-						if (mpPrinterGraphicalOutput)
-							mpPrinterGraphicalOutput->FeedPaper(ConvertPointToMM(0, -mY).y);
+						AddMoveAction(ConvertPointToMM(mBaseX, -mY));
 
 						mX = mBaseX;
 						mY = 0;
@@ -314,6 +318,8 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 
 					case 'P':	// P<text>	Print text while in graphics mode
 						mCommandState = CommandState::PrintText;
+						FillFIFO(1);
+						AddDrainFIFOAction(1);
 						break;
 				}
 				break;
@@ -323,8 +329,11 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 					mCommandState = CommandState::PrintTextEscape;
 				else if (ch == 0x9B)
 					mCommandState = CommandState::WaitForCommand;
-				else
+				else {
+					FillFIFO(1);
 					PrintChar(ch, mbGraphicsMode);
+					AddDrainFIFOAction(1);
+				}
 				break;
 
 			case CommandState::PrintTextEscape:
@@ -379,16 +388,19 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 				// byte.
 				//
 
-				if (ch == ' ' || ch == 0x09)
+				if (ch == ' ' || ch == 0x09) {
+					++mPendingCmdFIFOChars;
 					break;
+				}
 
 				// Minus signs may be interspersed with spaces/tabs in any order, they do not have
 				// to be adjacent to digits. Also, multiple minus signs are the same as one.
 				if (ch == '-') {
 					mArgSign = -1;
+					++mPendingCmdFIFOChars;
 					break;
 				}
-				
+
 				mCommandState = CommandState::ArgDigit;
 				[[fallthrough]];
 			case CommandState::ArgDigit:
@@ -398,8 +410,10 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 					// shows that 0 is substituted for any overflow, it's not wrapped.
 					mArg1 = (mArg1 * 10 + (int)(ch - 0x30) * mArgSign);
 
-					if (mArg1 >= -999 && mArg1 <= 999)
+					if (mArg1 >= -999 && mArg1 <= 999) {
+						++mPendingCmdFIFOChars;
 						break;
+					}
 
 					// overflow -- force to 0 and ignore rest of argument
 					mArg1 = 0;
@@ -409,6 +423,8 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 				[[fallthrough]];
 			case CommandState::ArgEnd: {
 				bool isEndOfCommand = false;
+
+				++mPendingCmdFIFOChars;
 
 				if (ch == 0x9B || ch == '*' || ch == ';' || ch == ',') {
 					// EOL, asterisk, semicolon, or comma ends the current argument. These are all
@@ -432,15 +448,15 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 					break;
 				}
 
+				// Fill the FIFO by the number of chars sent to the print MCU
+				FillFIFO(mPendingCmdFIFOChars);
+
 				// Execute the command.
 				bool allowContinuation = false;
 
 				switch(mGraphicsCommand) {
 					case 'A':	// A		Return to text mode
-						mbGraphicsMode = false;
-						mX = 0;
-						mBaseX = 0;
-						mLineStyle = 0;
+						ReturnToTextMode();
 						break;
 
 					case 'S':	// S<0-63>	Set text scale
@@ -453,7 +469,7 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 						mLineStyle = mArg1 >= 16 ? 0 : mArg1;
 						break;
 
-					case 'C':	// C0-3		Set color
+					case 'C': {	// C0-3		Set color
 						// Pen colors greater than 3 are forced to 0.
 						//
 						// On the actual 1020, an LSB >= 132 curiously causes it to begin changing
@@ -461,8 +477,28 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 						// accurate timing (and sound) is implemented.
 
 						mArg1 &= 0xFF;
-						mPenIndex = mArg1 > 3 ? 0 : mArg1;
+
+						const uint32 newPenIndex = mArg1 > 3 ? 0 : mArg1;
+
+						// The 1020 needs to return to the left margin and click the head against
+						// the left stop in order to rotate the pen carriage; two clicks are needed
+						// for each pen change.
+
+						if (mPenIndex != newPenIndex) {
+							while(mPenIndex != newPenIndex) {
+								AddMoveAction(vddouble2(0, 0));
+								AddMoveAction(ConvertPointFToMM(0, 0));
+								AddMoveAction(vddouble2(0, 0));
+								AddMoveAction(ConvertPointFToMM(0, 0));
+
+								mPenIndex = (mPenIndex + 1) & 3;
+								AddPenChangeAction(mPenIndex);
+							}
+
+							AddMoveAction(ConvertPointToMM(mX, 0));
+						}
 						break;
+					}
 
 					case 'Q':	// Q<0-3>	Set text orientation
 						mArg1 &= 0xFF;
@@ -470,7 +506,7 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 						break;
 
 					case 'D':	// Dx,y[;x,y...]	Draw line to absolute points
-						DrawToAbsolute(mBaseX + mArg2, mArg1);
+						DrawToAbsolute(mBaseX + mArg2, mArg1, false);
 						allowContinuation = true;
 						break;
 
@@ -485,7 +521,7 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 								return;
 							}
 
-							DrawToAbsolute(mX + mArg2, mY + mArg1);
+							DrawToAbsolute(mX + mArg2, mY + mArg1, false);
 						}
 						allowContinuation = true;
 						break;
@@ -500,16 +536,14 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 							return;
 						}
 
-						if (mpPrinterGraphicalOutput)
-							mpPrinterGraphicalOutput->FeedPaper(ConvertVectorToMM(0, mArg1).y);
+						AddMoveAction(ConvertPointToMM(mX, mArg1));
 
 						allowContinuation = true;
 						break;
 
 					case 'M':	// Mx,y		Move to absolute point
-						if (mY != mArg1) {
-							if (mpPrinterGraphicalOutput)
-								mpPrinterGraphicalOutput->FeedPaper(ConvertVectorToMM(0, mArg1 - mY).y);
+						if (mX != mBaseX + mArg2 || mY != mArg1) {
+							AddMoveAction(ConvertPointToMM(mBaseX + mArg2, mArg1 - mY));
 						}
 
 						mX = mBaseX + mArg2;
@@ -544,6 +578,10 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 							const sint32 stepx = dx * mArg2;
 							const sint32 stepy = dy * mArg2;
 
+							// reset line state to solid -- confirmed on a 1020 that this affects later
+							// draws too
+							mLineStyle = 0;
+
 							// draw ticks
 							//
 							sint32 n = mArg1;
@@ -557,21 +595,17 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 							const sint32 ticky = -2 * dx;
 							for(sint32 i = 0; i < n; ++i) {
 								// draw a line segment
-								if (!DrawToAbsolute(x + stepx, y + stepy))
-									break;
+								DrawToAbsolute(x + stepx, y + stepy, false);
 
 								x += stepx;
 								y += stepy;
 
 								// draw a tick
-								if (!MoveToAbsolute(x + tickx, y + ticky))
-									break;
+								MoveToAbsolute(x + tickx, y + ticky);
 
-								if (!DrawToAbsolute(x - tickx, y - ticky))
-									break;
+								DrawToAbsolute(x - tickx, y - ticky, false);
 
-								if (!MoveToAbsolute(x, y))
-									break;
+								MoveToAbsolute(x, y);
 							}
 						}
 						break;
@@ -579,6 +613,10 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 					default:
 						break;
 				}
+
+				// insert FIFO fence at this point
+				AddDrainFIFOAction(mPendingCmdFIFOChars);
+				mPendingCmdFIFOChars = 0;
 
 				// if the command is continuable and the argument was ended with a comma
 				// or semicolon, parse the next set of args and repeat the command; otherwise,
@@ -597,6 +635,18 @@ void ATDevicePrinter1020::HandleFrameInternal(uint8 orientation, uint8 *buf, uin
 		if (ch == 0x9B)
 			break;
 	}
+
+	ProcessNextDrawingAction();
+}
+
+void ATDevicePrinter1020::OnScheduledEvent(uint32 id) {
+	if (id == kEventId_DrawingAction) {
+		mpEventDrawingAction = nullptr;
+
+		ProcessNextDrawingAction();
+	}
+
+	return ATDevicePrinterBase::OnScheduledEvent(id);
 }
 
 void ATDevicePrinter1020::ResetState() {
@@ -606,10 +656,41 @@ void ATDevicePrinter1020::ResetState() {
 	mX = 0;
 	mY = 0;
 	mBaseX = 0;
+
 	mPenIndex = 0;
+	AddPenChangeAction(0);
+
 	mLineStyle = 0;
 	mCharSize = 2;	// 40 col
+	mCharRotation = 0;
 	mbIntCharsEnabled = false;
+
+	// do not reset the drawing engine here -- status commands don't cancel
+	// drawing in progress
+}
+
+void ATDevicePrinter1020::ResetDrawingEngine() {
+	EndAsyncPrinting();
+	mFIFOLevel = 0;
+	mPendingCmdFIFOChars = 0;
+
+	mpScheduler->UnsetEvent(mpEventDrawingAction);
+	mNextDrawingActionIndex = 0;
+	mDrawingActions.clear();
+	mbDrawingActionPending = false;
+}
+
+void ATDevicePrinter1020::ReturnToTextMode() {
+	mbGraphicsMode = false;
+	mCommandState = CommandState::PrintText;
+	mX = 0;
+	mY = 0;
+	mBaseX = 0;
+	mLineStyle = 0;
+
+	// print an EOL; the 1020 advances with the current line height
+	// after returning to text mode
+	PrintChar(0x9B, false);
 }
 
 void ATDevicePrinter1020::PrintChar(uint8 ch, bool graphical) {
@@ -639,10 +720,16 @@ void ATDevicePrinter1020::PrintChar(uint8 ch, bool graphical) {
 	// character mid-line such that the right side spacing would extend beyond
 	// the right edge, so the assumption is that the P command in graphics mode
 	// does not line wrap.
+	//
+	// Note that the orientation is always left-to-right in text mode.
+
 	if (!graphical && (ch == 0x9B || mX + advanceWidth * size > 480)) {
-		MoveToAbsolute(mBaseX - vx * 12, -vy * 12);
-		mBaseX = mX;
+		// When EOL wrap occurs, the 1020 does a vertical feed first and then
+		// return left.
+		MoveToAbsolute(mX - vx * 12, -vy * 12);
 		mY = 0;
+		MoveToAbsolute(mBaseX - vx * 12, 0);
+		mBaseX = mX;
 
 		if (ch == 0x9B)
 			return;
@@ -662,21 +749,22 @@ void ATDevicePrinter1020::PrintChar(uint8 ch, bool graphical) {
 	if (!(dat[0] & ATPrinterFont1020::kEndBit)) {
 		for(;;) {
 			const uint8 code = *dat++;
-			
+
 			// unpack glyph space point
 			sint32 h = (code >> 4) & 7;
-			sint32 v = code & 7;
+			sint32 v = (code & 7);
 
 			// transform to absolute space
 			sint32 x2 = x + h * hx + v * vx;
 			sint32 y2 = y + h * hy + v * vy;
 
 			if (code & ATPrinterFont1020::kMoveBit) {
-				if (!MoveToAbsolute(x2, y2))
-					break;
+				MoveToAbsolute(x2, y2);
 			} else {
-				if (!DrawToAbsolute(x2, y2))
-					break;
+				// The 1020 always draws characters with solid lines, regardless
+				// of the line style state. However, it does not reset the line
+				// style state when doing so.
+				DrawToAbsolute(x2, y2, true);
 			}
 
 			if (code & ATPrinterFont1020::kEndBit)
@@ -688,22 +776,18 @@ void ATDevicePrinter1020::PrintChar(uint8 ch, bool graphical) {
 	MoveToAbsolute(bx + advanceWidth * hx, by + advanceWidth * hy);
 }
 
-bool ATDevicePrinter1020::MoveToAbsolute(sint32 x, sint32 y) {
-	mX = x;
+void ATDevicePrinter1020::MoveToAbsolute(sint32 x, sint32 y) {
+	if (mX != x || mY != y) {
+		AddMoveAction(ConvertPointToMM(std::clamp<sint32>(x, 0, 480), y - mY));
 
-	if (mY != y) {
-		if (mpPrinterGraphicalOutput)
-			mpPrinterGraphicalOutput->FeedPaper(ConvertVectorToMM(0, y - mY).y);
-
+		mX = x;
 		mY = y;
 	}
-
-	return true;
 }
 
-bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
-	vdfloat2 raw1 { (float)mX, 0.0f };
-	vdfloat2 raw2 { (float)x2, (float)(y2 - mY) };
+void ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2, bool forceSolid) {
+	vddouble2 raw1 { (double)mX, 0.0f };
+	vddouble2 raw2 { (double)x2, (double)(y2 - mY) };
 
 	sint32 x = mX;
 	const sint32 vecx = x2 - mX;
@@ -714,10 +798,10 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 
 	// Null draws do not do a pen down on the 1020.
 	if (!vecx && !vecy)
-		return true;
+		return;
 
 	if (!mpPrinterGraphicalOutput)
-		return true;
+		return;
 
 	// The VIC-1520's dashed line algorithm, which we assume is the same as the Atari 1020's,
 	// is as follows:
@@ -739,7 +823,7 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 
 	const sint32 dx = abs(vecx);
 	const sint32 dy = abs(vecy);
-	sint32 stepsLeft = std::max<sint32>(dx, dy) + 1;
+	sint32 stepsLeft = std::max<sint32>(abs(dx), abs(dy)) + 1;
 
 	if (mbAccurateBresenham) {
 		// Reverse engineered behavior from the SP-400 firmware:
@@ -748,15 +832,13 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 		//   check.
 		// - Minor axis steps on d < 0.
 
-		const uint32 penColor = mPrintPenColors[mPenIndex];
-
 		const sint32 stepx = vecx < 0 ? -1 : vecx > 0 ? +1 : 0;
 		const sint32 stepy = vecy < 0 ? -1 : vecy > 0 ? +1 : 0;
 		const bool xMajor = dx >= dy;
 		const sint32 dmajor = xMajor ? dx : dy;
 		const sint32 dminor = xMajor ? dy : dx;
 
-		sint32 stepCount = dmajor;
+		sint32 stepCount = xMajor ? dx : dy;
 		bool prevInRange = x >= 0 && x <= 480;
 		int dashLen = mLineStyle;
 		bool penDown = false;
@@ -768,6 +850,7 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 
 		sint32 error = dmajor >> 1;
 		sint32 y = 0;
+		bool lastPenDown = false;
 
 		while(stepCount-- > 0) {
 			sint32 xn = x;
@@ -792,13 +875,21 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 			const bool nextInRange = xn >= 0 && xn <= 480;
 
 			if (prevInRange && nextInRange && penDown) {
-				mpPrinterGraphicalOutput->AddVector(
-					ConvertPointFToMM(x, y),
-					ConvertPointFToMM(xn, yn),
-					penColor
-				);
+				AddMoveAction(ConvertPointFToMM(x, y));
+
+				if (!lastPenDown) {
+					lastPenDown = true;
+					AddPenDownAction();
+				}
+
+				AddDrawAction(ConvertPointFToMM(xn, yn));
 
 				yn = 0;
+			} else {
+				if (lastPenDown) {
+					lastPenDown = false;
+					AddPenUpAction();
+				}
 			}
 
 			if (!--dashLen) {
@@ -811,26 +902,25 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 			prevInRange = nextInRange;
 		}
 
+		if (lastPenDown) {
+			lastPenDown = false;
+			AddPenUpAction();
+		}
+
 		if (y)
-			mpPrinterGraphicalOutput->FeedPaper(ConvertVectorFToMM(0, y).y);
-	} else if (mLineStyle) {
-		const vdfloat2 step = (raw2 - raw1) / (float)stepsLeft;
+			AddMoveAction(ConvertPointFToMM(x, y));
+	} else if (mLineStyle && !forceSolid) {
+		const vddouble2 step = (raw2 - raw1) / (double)stepsLeft;
 		const int dashLen = mLineStyle;
 
 		while(stepsLeft > 0) {
+			if (stepsLeft <= dashLen)
+				break;
+
 			stepsLeft -= dashLen;
 
-			if (stepsLeft <= 0) {
-				// check if we have an undrawn part at the end -- we still need to feed paper
-				sint32 finalStepY = stepsLeft + dashLen;
-
-				if (finalStepY)
-					mpPrinterGraphicalOutput->FeedPaper(ConvertVectorFToMM(0.0f, finalStepY * step.y).y);
-
-				break;
-			}
-
 			int drawSteps = std::min<sint32>(stepsLeft, dashLen);
+			stepsLeft -= drawSteps;
 
 			raw1 += step * dashLen;
 			raw2 = raw1 + step * drawSteps;
@@ -839,93 +929,103 @@ bool ATDevicePrinter1020::DrawToAbsolute(sint32 x2, sint32 y2) {
 
 			raw1 = raw2;
 			raw1.y = 0;
-			stepsLeft -= dashLen;
+		}
+
+		if (stepsLeft) {
+			// check if we have an undrawn part at the end -- we still need to feed paper
+			double finalStep = (double)stepsLeft;
+
+			AddMoveAction(ConvertPointFToMM(std::clamp<double>(raw1.x + finalStep * step.x, 0.0, 480.0), finalStep * step.y));
 		}
 	} else {
 		DrawClippedLine(raw1, raw2);
 	}
-
-	return true;
 }
 
-void ATDevicePrinter1020::DrawClippedLine(const vdfloat2& oraw1, const vdfloat2& oraw2) {
+void ATDevicePrinter1020::DrawClippedLine(const vddouble2& oraw1, const vddouble2& oraw2) {
 	// The 1020 allows lines to be drawn with endpoints outside of the 0-480
 	// horizontal range and draws the portion with 0-480. We need to emulate
 	// this. Since our default is to draw continuous lines instead of Bresenham
 	// lines, we need to clip to the edges. Only horizontal clipping is needed
 	// as there is no vertical clipping.
-	vdfloat2 raw1 = oraw1;
-	vdfloat2 raw2 = oraw2;
+	vddouble2 raw1 = oraw1;
+	vddouble2 raw2 = oraw2;
 
 	// entry clipping
-	const vdfloat2 rawd = raw2 - raw1;
+	const vddouble2 rawd = raw2 - raw1;
 
 	do {
-		if (rawd.x == 0.0f) {
-			if (raw1.x < 0.0f || raw1.x > 480.0f)
+		if (rawd.x == 0.0) {
+			if (raw1.x < 0.0 || raw1.x > 480.0)
 				break;
 		} else {
-			float dydx = rawd.y / rawd.x;
+			double dydx = rawd.y / rawd.x;
 
-			if (raw1.x < 0.0f) {
-				if (raw2.x < 0.0f)
+			if (raw1.x < 0.0) {
+				if (raw2.x < 0.0)
 					break;
 
-				const float clipx = -raw1.x;
+				const double clipx = -raw1.x;
 				raw1.y += clipx * dydx;
 				raw1.x = 0;
-			} else if (raw1.x > 480.0f) {
-				if (raw2.x > 480.0f)
+			} else if (raw1.x > 480.0) {
+				if (raw2.x > 480.0)
 					break;
 
-				const float clipx = 480.0f - raw1.x;
+				const double clipx = 480.0f - raw1.x;
 				raw1.y += clipx * dydx;
-				raw1.x = 480.0f;
+				raw1.x = 480.0;
 			}
 
 			// exit clipping
-			if (raw2.x < 0.0f) {
-				const float clipx = -raw2.x;
+			if (raw2.x < 0.0) {
+				const double clipx = -raw2.x;
 
 				raw2.y += clipx * dydx;
-				raw2.x = 0.0f;
-			} else if (raw2.x > 480.0f) {
-				const float clipx = 480.0f - raw2.x;
+				raw2.x = 0.0;
+			} else if (raw2.x > 480.0) {
+				const double clipx = 480.0 - raw2.x;
 
 				raw2.y += clipx * dydx;
-				raw2.x = 480.0f;
+				raw2.x = 480.0;
 			}
 		}
 
-		vdfloat2 pt1 = ConvertPointFToMM(raw1.x, raw1.y);
-		vdfloat2 pt2 = ConvertPointFToMM(raw2.x, raw2.y);
+		vddouble2 pt1 = ConvertPointFToMM(raw1.x, raw1.y);
+		vddouble2 pt2 = ConvertPointFToMM(raw2.x, raw2.y - raw1.y);
 
-		mpPrinterGraphicalOutput->AddVector(pt1, pt2, mPrintPenColors[mPenIndex]);
+		AddMoveAction(pt1);
+
+		if (fabs(pt1.x - pt2.x) > 1e-5 || fabs(pt2.y) > 1e-5) {
+			AddPenDownAction();
+			AddDrawAction(pt2);
+			AddPenUpAction();
+		}
 
 		if (raw2.y != oraw2.y)
-			mpPrinterGraphicalOutput->FeedPaper(ConvertPointFToMM(0.0f, oraw2.y).y - pt2.y);
+			AddMoveAction(ConvertPointFToMM(raw2.x, oraw2.y) - vddouble2(0, pt2.y));
 
 		return;
 	} while(false);
 
 	// We didn't draw anything -- do vertical feed
-	mpPrinterGraphicalOutput->FeedPaper(ConvertPointFToMM(0.0f, raw2.y).y);
+	AddMoveAction(ConvertPointFToMM(std::clamp<double>(raw2.x, 0, 480), raw2.y));
 }
 
-vdfloat2 ATDevicePrinter1020::ConvertPointToMM(sint32 x, sint32 y) const {
-	return ConvertPointFToMM((float)x, (float)y);
+vddouble2 ATDevicePrinter1020::ConvertPointToMM(sint32 x, sint32 y) const {
+	return ConvertPointFToMM((double)x, (double)y);
 }
 
-vdfloat2 ATDevicePrinter1020::ConvertPointFToMM(float x, float y) const {
-	return vdfloat2 { x * kUnitsToMM + 10.0f, y * -kUnitsToMM };
+vddouble2 ATDevicePrinter1020::ConvertPointFToMM(double x, double y) const {
+	return vddouble2 { x * kUnitsToMM<double> + kMarginMM<double>, y * -kUnitsToMM<double> };
 }
 
-vdfloat2 ATDevicePrinter1020::ConvertVectorToMM(sint32 x, sint32 y) const {
-	return ConvertVectorFToMM((float)x, (float)y);
+vddouble2 ATDevicePrinter1020::ConvertVectorToMM(sint32 x, sint32 y) const {
+	return ConvertVectorFToMM((double)x, (double)y);
 }
 
-vdfloat2 ATDevicePrinter1020::ConvertVectorFToMM(float x, float y) const {
-	return vdfloat2 { x * kUnitsToMM, y * -kUnitsToMM };
+vddouble2 ATDevicePrinter1020::ConvertVectorFToMM(double x, double y) const {
+	return vddouble2 { x * kUnitsToMM<double>, y * -kUnitsToMM<double> };
 }
 
 void ATDevicePrinter1020::ReconvertPens() {
@@ -940,5 +1040,287 @@ void ATDevicePrinter1020::ReconvertPens() {
 		for(int i=0; i<4; ++i) {
 			mPrintPenColors[i] = mpPrinterGraphicalOutput->ConvertColor(mPenColors[i] >= 0 ? mPenColors[i] : defaultColors[i]);
 		}
+	}
+}
+
+void ATDevicePrinter1020::FillFIFO(uint32 numChars) {
+	if (!numChars)
+		return;
+
+	if (mFIFOLevel <= kFIFOThreshold && mFIFOLevel + numChars > kFIFOThreshold)
+		BeginAsyncPrinting();
+
+	mFIFOLevel += numChars;
+
+	if (mFIFOLevel > 1000) {
+		VDFAIL("1020 FIFO possible overflow");
+	}
+}
+
+void ATDevicePrinter1020::DrainFIFO(uint32 numChars) {
+	if (!numChars)
+		return;
+
+	if (numChars > mFIFOLevel) {
+		VDFAIL("1020 FIFO underflow");
+		numChars = mFIFOLevel;
+	}
+
+	if (mFIFOLevel > kFIFOThreshold && mFIFOLevel <= kFIFOThreshold + numChars)
+		EndAsyncPrinting();
+
+	mFIFOLevel -= numChars;
+}
+
+void ATDevicePrinter1020::AddDrainFIFOAction(uint32 numChars) {
+	if (!numChars)
+		return;
+
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::DrainFIFO;
+	action.mLength = numChars;
+}
+
+void ATDevicePrinter1020::AddWaitAction(uint32 cycles) {
+	if (!cycles)
+		return;
+
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::Wait;
+	action.mLength = cycles;
+}
+
+void ATDevicePrinter1020::AddMoveAction(const vddouble2& rawPos) {
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::Move;
+	action.mDstPoint = rawPos;
+}
+
+void ATDevicePrinter1020::AddDrawAction(const vddouble2& rawPos) {
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::Draw;
+	action.mDstPoint = rawPos;
+	action.mPenIndex = (uint8)mPenIndex;
+}
+
+void ATDevicePrinter1020::AddPenDownAction() {
+	if (!mbSoundEnabled || !mbAccurateTimingEnabled)
+		return;
+
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::PenDown;
+}
+
+void ATDevicePrinter1020::AddPenUpAction() {
+	if (!mbSoundEnabled || !mbAccurateTimingEnabled)
+		return;
+
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::PenUp;
+}
+
+void ATDevicePrinter1020::AddPenChangeAction(uint32 penIndex) {
+	DrawingAction& action = AddAction();
+
+	action.mType = DrawingActionType::PenChange;
+	action.mPenIndex = (uint8)penIndex;
+}
+
+ATDevicePrinter1020::DrawingAction& ATDevicePrinter1020::AddAction() {
+	if (!mpEventDrawingAction)
+		mpEventDrawingAction = mpScheduler->AddEvent(1, this, kEventId_DrawingAction);
+
+	const size_t n = mDrawingActions.size();
+	if (mNextDrawingActionIndex >= n || (mNextDrawingActionIndex >= 16 && n >= 2*mNextDrawingActionIndex)) {
+		mDrawingActions.erase(mDrawingActions.begin(), mDrawingActions.begin() + mNextDrawingActionIndex);
+		mNextDrawingActionIndex = 0;
+	}
+
+	return mDrawingActions.emplace_back();
+}
+
+void ATDevicePrinter1020::ProcessNextDrawingAction() {
+	if (mpEventDrawingAction)
+		return;
+
+	while(mNextDrawingActionIndex < mDrawingActions.size()) {
+		DrawingAction& action = mDrawingActions[mNextDrawingActionIndex];
+
+		if (mbDrawingActionPending) {
+			if (mpPrinterGraphicalOutput) {
+				switch(action.mType) {
+					case DrawingActionType::Wait:
+						break;
+
+					case DrawingActionType::Move:
+					case DrawingActionType::Draw: {
+						if (!mbAccurateTimingEnabled) {
+							mLastDrawPosX += mDrawMoveVec.x;
+
+							if (mpPrinterGraphicalOutput)
+								mpPrinterGraphicalOutput->MoveVector(vddouble2(mLastDrawPosX, mDrawMoveVec.y));
+						} else {
+							// if there were span cycles, queue a move
+							if (mDrawCurrentSpanCycles > 0) {
+								// compute movement for this span
+								const vddouble2 spanVec = mDrawMoveVec * ((double)mDrawCurrentSpanCycles / (double)mDrawTotalCycles);
+
+								// update tracked horizontal position
+								mLastDrawPosX += spanVec.x;
+
+								// move head
+								if (mpPrinterGraphicalOutput)
+									mpPrinterGraphicalOutput->MoveVector(vddouble2(mLastDrawPosX, spanVec.y));
+
+								// update cycle accounting
+								mDrawRemainingCycles -= mDrawCurrentSpanCycles;
+								mDrawCurrentSpanCycles = 0;
+							}
+
+							// check if there are cycles left
+							if (mDrawRemainingCycles > 0) {
+								// queue update for next span
+								const sint32 nextSpanCycles = std::min<sint32>(mDrawRemainingCycles, 20000);
+
+								mDrawCurrentSpanCycles = nextSpanCycles;
+
+								mpScheduler->SetEvent(nextSpanCycles, this, kEventId_DrawingAction, mpEventDrawingAction);
+								return;
+							}
+						}
+
+						// force X position to ensure accurate alignment
+						mLastDrawPosX = action.mDstPoint.x;
+
+						if (mpPrinterGraphicalOutput) {
+							mpPrinterGraphicalOutput->MoveVector(vddouble2(mLastDrawPosX, 0.0f));
+
+							if (action.mType == DrawingActionType::Draw) {
+								mpPrinterGraphicalOutput->AddVector(
+									vddouble2(mLastDrawStartPosX, -mDrawMoveVec.y),
+									vddouble2(mLastDrawPosX, 0),
+									mPrintPenColors[action.mPenIndex]
+								);
+							}
+						}
+						mbDrawingActionPending = false;
+
+						break;
+					}
+
+					default:
+						VDFAIL("Invalid drawing action type for timed evaluation");
+						mbDrawingActionPending = false;
+						break;
+				}
+			}
+
+			if (!mbDrawingActionPending)
+				++mNextDrawingActionIndex;
+			continue;
+		} else {
+			switch(action.mType) {
+				case DrawingActionType::Wait:
+					if (mbAccurateTimingEnabled)
+						mpScheduler->SetEvent(action.mLength, this, kEventId_DrawingAction, mpEventDrawingAction);
+					break;
+
+				case DrawingActionType::Move:
+				case DrawingActionType::Draw: {
+					// compute delta vector to move
+					vddouble2 deltaVec { action.mDstPoint.x - mLastDrawPosX, action.mDstPoint.y };
+
+					mLastDrawStartPosX = mLastDrawPosX;
+					mDrawMoveVec = deltaVec;
+					mDrawCurrentSpanCycles = 0;
+
+					// compute major axis distance, since the Bresenham does diagonal steps
+					const double lineDistance = std::max(fabs(deltaVec.x), fabs(deltaVec.y));
+
+					// check if any real movement is occurring
+					if (lineDistance < 1e-5) {
+						++mNextDrawingActionIndex;
+						break;
+					}
+
+					// play sound if head direction has reversed
+					if (deltaVec.x != 0) {
+						if (mbSoundEnabled && mbAccurateTimingEnabled && mLastHeadDirection * deltaVec.x < 0)
+							mPrinterSoundSource.ScheduleSound(kATAudioSampleId_Printer1020HeadReverse, false, 0, 0, 1.0f);
+
+						mLastHeadDirection = deltaVec.x;
+					}
+
+					// compute cycles to move
+					const float cyclesF = lineDistance * 20000.0f;
+					const sint32 cycles = VDRoundToInt32(cyclesF);
+
+					if (cycles > 0 && mbSoundEnabled && mbAccurateTimingEnabled) {
+						const double cyclesToSecs = mpScheduler->GetRate().AsInverseDouble();
+
+						if (deltaVec.x != 0)
+							mPrinterSoundSource.ScheduleSound(kATAudioSampleId_Printer1020HeadMove, true, 0, cycles * cyclesToSecs, 1.0f);
+
+						if (deltaVec.y != 0)
+							mPrinterSoundSource.ScheduleSound(kATAudioSampleId_Printer1020PaperFeed, true, 0, cycles * cyclesToSecs, 1.0f);
+					}
+
+					mDrawTotalCycles = cycles;
+					mDrawRemainingCycles = cycles;
+					mbDrawingActionPending = true;
+					break;
+				}
+
+				case DrawingActionType::PenDown:
+					if (mbSoundEnabled && mbAccurateTimingEnabled)
+						mPrinterSoundSource.ScheduleSound(kATAudioSampleId_Printer1020PenDown, false, 0, 0, 1.0f);
+
+					++mNextDrawingActionIndex;
+					break;
+
+				case DrawingActionType::PenUp:
+					if (mbSoundEnabled && mbAccurateTimingEnabled)
+						mPrinterSoundSource.ScheduleSound(kATAudioSampleId_Printer1020PenUp, false, 0, 0, 1.0f);
+
+					++mNextDrawingActionIndex;
+					break;
+
+				case DrawingActionType::PenChange:
+					if (mpPrinterGraphicalOutput)
+						mpPrinterGraphicalOutput->ChangePenColor(mPrintPenColors[action.mPenIndex]);
+
+					++mNextDrawingActionIndex;
+					break;
+
+				case DrawingActionType::DrainFIFO:
+					DrainFIFO(action.mLength);
+					++mNextDrawingActionIndex;
+					break;
+
+				default:
+					VDFAIL("Invalid drawing action type");
+					++mNextDrawingActionIndex;
+					break;
+
+			}
+		}
+
+		if (mpEventDrawingAction)
+			return;
+	}
+
+	// There are no more drawing actions, so the print MCU is idle. This means
+	// that the FIFO level should be empty. If it isn't, we screwed up the
+	// accounting.
+	if (mFIFOLevel) {
+		VDFAIL("FIFO level should be zero when the printer is idle.");
+
+		mFIFOLevel = 0;
 	}
 }

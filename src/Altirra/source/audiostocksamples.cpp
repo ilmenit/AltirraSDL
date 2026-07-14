@@ -15,6 +15,7 @@
 //	with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdafx.h>
+#include <vd2/system/constexpr.h>
 #include <vd2/system/vdstl_algorithm.h>
 #include <at/ataudio/audiosamplepool.h>
 #include <at/atcore/audiomixer.h>
@@ -27,6 +28,14 @@ void ATAudioRegisterStockSamples(ATAudioSamplePool& pool) {
 	struct SampleSourceInfo {
 		uint32 mResId;
 		float mBaseVolume;
+	};
+
+	static constexpr auto dbToAmp = [](float db) {
+		// dB is in power, so we need to convert it to linear amplitude. Every
+		// 20dB is a factor of 10 in amplitude.
+		constexpr float ln10 = 2.3025850929940456840179914546844f;
+
+		return VDCxExp(db / 20.0f * ln10);
 	};
 
 	static constexpr SampleSourceInfo kSampleSources[]={
@@ -42,6 +51,11 @@ void ATAudioRegisterStockSamples(ATAudioSamplePool& pool) {
 		{ IDR_PRINTER_1029_RETRACT,		0.1f	},
 		{ IDR_PRINTER_1029_HOME,		0.2f	},
 		{ IDR_PRINTER_1025_FEED,		0.05f	},
+		{ IDR_PRINTER_1020_HEADMOVE,	dbToAmp(-18.0f) },
+		{ IDR_PRINTER_1020_HEADREVERSE,	dbToAmp( -9.0f) },
+		{ IDR_PRINTER_1020_PAPERFEED,	dbToAmp(-18.0f) },
+		{ IDR_PRINTER_1020_PENDOWN,		dbToAmp(  0.0f) },
+		{ IDR_PRINTER_1020_PENUP,		dbToAmp(-12.0f) },
 	};
 
 	vdfastvector<uint8> data;

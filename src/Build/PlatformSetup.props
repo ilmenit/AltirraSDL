@@ -7,6 +7,8 @@
     <PlatformToolset Condition="'$(Configuration)'!='Analysis' and '$(Configuration)'!='ProfileClang' and '$(Platform)'=='ARM64'">v143</PlatformToolset>
     <PlatformToolset Condition="'$(Configuration)'=='Analysis'">v143</PlatformToolset>
     <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+	<LLVMInstallDir>C:\Program Files\LLVM</LLVMInstallDir>
+	<LLVMToolsVersion>22.0.0</LLVMToolsVersion>
   </PropertyGroup>
   <PropertyGroup Label="Globals">
     <ATUseOutputPaths>True</ATUseOutputPaths>

@@ -29,6 +29,25 @@ sint64 VDGetDateAsTimeT(const VDDate& date) {
 	return ((sint64)date.mTicks - (sint64)kWindowsToUnixTickOffset) / 10000000;
 }
 
+VDExpandedDate VDGetUtcDate(const VDDate& date) {
+	VDExpandedDate r = {};
+
+	time_t t = VDGetDateAsTimeT(date);
+	struct tm gt;
+	if (gmtime_r(&t, &gt)) {
+		r.mYear        = (uint32)(gt.tm_year + 1900);
+		r.mMonth       = (uint8)(gt.tm_mon + 1);
+		r.mDayOfWeek   = (uint8)gt.tm_wday;
+		r.mDay         = (uint8)gt.tm_mday;
+		r.mHour        = (uint8)gt.tm_hour;
+		r.mMinute      = (uint8)gt.tm_min;
+		r.mSecond      = (uint8)gt.tm_sec;
+		r.mMilliseconds = (uint16)((date.mTicks / 10000) % 1000);
+	}
+
+	return r;
+}
+
 VDExpandedDate VDGetLocalDate(const VDDate& date) {
 	VDExpandedDate r = {};
 

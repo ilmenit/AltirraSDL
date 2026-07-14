@@ -41,11 +41,25 @@ public:
 	// point (x,y) is translated to (x+dx,y+dy).
 	void Scroll(sint32 dx, sint32 dy);
 
+	vdspan<const vdrect32> GetDetailedUpdateRects(VDZHDC hdc, const VDZPAINTSTRUCT& ps);
+
 private:
 	IVDDisplayRendererGDI *mpRenderer;
 	VDZHWND mhwnd;
 	VDZHDC mhdc;
 	void *mhPaintBuffer;
+
+	struct RegionDataHeaderW32 {
+		uint32 mData[8];
+	};
+
+	struct RegionDataW32 {
+		RegionDataHeaderW32 mHeader;
+		char mBuffer[1];
+	};
+
+	vdstructex<RegionDataW32> mRegionData;
+	vdfastvector<vdrect32> mRegionRects;
 };
 
 #endif

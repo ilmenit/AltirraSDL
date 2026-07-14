@@ -537,7 +537,13 @@ BEGIN
             MENUITEM "&PNG Image (96 dpi)",         ID_SAVEAS_PNGIMAGE96
             MENUITEM "&PNG Image (300 dpi)",        ID_SAVEAS_PNGIMAGE300
             MENUITEM SEPARATOR
-            MENUITEM "P&DF Document",               ID_SAVEAS_PDF
+            POPUP "P&DF Document"
+            BEGIN
+                MENUITEM "PDF (Auto)",                  ID_PDFDOCUMENT_AUTO
+                MENUITEM "PDF (US Letter, 8.5"" x 11"")", ID_PDFDOCUMENT_LETTER
+                MENUITEM "PDF (A4, 210mm x 297mm)",     ID_PDFDOCUMENT_A4
+                MENUITEM "PDF (Continuous 12"" / 305mm)", ID_PDFDOCUMENT_CONT12
+            END
             MENUITEM "&SVG 1.1 Document",           ID_SAVEAS_SVG
         END
         MENUITEM SEPARATOR
@@ -3907,6 +3913,16 @@ IDR_PRINTER_1029_HOME   STUFF                   "printer-1029-home.pcm"
 
 IDR_PRINTER_1025_FEED   STUFF                   "printer-1025-feed.pcm"
 
+IDR_PRINTER_1020_HEADMOVE STUFF                   "printer-1020-headmove.pcm"
+
+IDR_PRINTER_1020_HEADREVERSE STUFF                   "printer-1020-headreverse.pcm"
+
+IDR_PRINTER_1020_PAPERFEED STUFF                   "printer-1020-paperfeed.pcm"
+
+IDR_PRINTER_1020_PENDOWN STUFF                   "printer-1020-pendown.pcm"
+
+IDR_PRINTER_1020_PENUP  STUFF                   "printer-1020-penup.pcm"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -3992,4 +4008,3 @@ IDB_FIRMWARE_ICONS      PNG                     "firmware.png"
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-

@@ -759,6 +759,11 @@
     <None Include="..\..\out\release\nogame.rom" />
     <None Include="..\..\out\release\nohdbios.rom" />
     <None Include="..\..\out\release\nokernel.rom" />
+    <None Include="res\printer-1020-headmove.pcm" />
+    <None Include="res\printer-1020-headreverse.pcm" />
+    <None Include="res\printer-1020-paperfeed.pcm" />
+    <None Include="res\printer-1020-pendown.pcm" />
+    <None Include="res\printer-1020-penup.pcm" />
     <None Include="res\printer-1025-feed.pcm" />
     <None Include="res\printer-1029-home.pcm" />
     <None Include="res\printer-1029-pin.pcm" />

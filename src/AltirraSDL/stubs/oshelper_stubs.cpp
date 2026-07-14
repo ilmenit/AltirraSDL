@@ -72,6 +72,11 @@ namespace {
 		{ IDR_PRINTER_1029_RETRACT, EmbeddedKind::Stuff, audio_printer_1029_retract, audio_printer_1029_retract_len },
 		{ IDR_PRINTER_1029_HOME,    EmbeddedKind::Stuff, audio_printer_1029_home,    audio_printer_1029_home_len    },
 		{ IDR_PRINTER_1025_FEED,    EmbeddedKind::Stuff, audio_printer_1025_feed,    audio_printer_1025_feed_len    },
+		{ IDR_PRINTER_1020_HEADMOVE,    EmbeddedKind::Stuff, audio_printer_1020_headmove,    audio_printer_1020_headmove_len    },
+		{ IDR_PRINTER_1020_HEADREVERSE, EmbeddedKind::Stuff, audio_printer_1020_headreverse, audio_printer_1020_headreverse_len },
+		{ IDR_PRINTER_1020_PAPERFEED,   EmbeddedKind::Stuff, audio_printer_1020_paperfeed,   audio_printer_1020_paperfeed_len   },
+		{ IDR_PRINTER_1020_PENDOWN,     EmbeddedKind::Stuff, audio_printer_1020_pendown,     audio_printer_1020_pendown_len     },
+		{ IDR_PRINTER_1020_PENUP,       EmbeddedKind::Stuff, audio_printer_1020_penup,       audio_printer_1020_penup_len       },
 		{ IDR_ROMSETREADME,         EmbeddedKind::Stuff, romset_readme,              romset_readme_len              },
 		{ IDR_DEBUG_HELP,           EmbeddedKind::Stuff, dbghelp,                    dbghelp_len                    },
 	};

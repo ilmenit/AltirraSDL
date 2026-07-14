@@ -100,6 +100,8 @@ protected:
 	float	mLoPassCoeffs[kFilterOverlap];
 
 	vdautoptr<ATAudioFilterIIR> mpIIR;
+
+	static double sDenormalThreshold;
 };
 
 #endif

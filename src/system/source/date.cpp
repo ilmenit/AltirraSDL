@@ -81,6 +81,35 @@ sint64 VDGetDateAsTimeT(const VDDate& date) {
 	return ((sint64)date.mTicks - 116444736000000000) / 10000000;
 }
 
+VDExpandedDate VDExpandDateW32(const SYSTEMTIME& st) {
+	VDExpandedDate r = {0};
+	r.mYear = st.wYear;
+	r.mMonth = (uint8)st.wMonth;
+	r.mDayOfWeek = (uint8)st.wDayOfWeek;
+	r.mDay = (uint8)st.wDay;
+	r.mHour = (uint8)st.wHour;
+	r.mMinute = (uint8)st.wMinute;
+	r.mSecond = (uint8)st.wSecond;
+	r.mMilliseconds = (uint16)st.wMilliseconds;
+
+	return r;
+}
+
+VDExpandedDate VDGetUtcDate(const VDDate& date) {
+	VDExpandedDate r = {0};
+
+	FILETIME ft;
+	ft.dwLowDateTime = (uint32)date.mTicks;
+	ft.dwHighDateTime = (uint32)(date.mTicks >> 32);
+
+	SYSTEMTIME st;
+	if (::FileTimeToSystemTime(&ft, &st)) {
+		r = VDExpandDateW32(st);
+	}
+
+	return r;
+}
+
 VDExpandedDate VDGetLocalDate(const VDDate& date) {
 	VDExpandedDate r = {0};
 
@@ -93,22 +122,15 @@ VDExpandedDate VDGetLocalDate(const VDDate& date) {
 	if (::FileTimeToSystemTime(&ft, &st) &&
 		::SystemTimeToTzSpecificLocalTime(NULL, &st, &lt))
 	{
-		r.mYear = lt.wYear; 
-		r.mMonth = (uint8)lt.wMonth; 
-		r.mDayOfWeek = (uint8)lt.wDayOfWeek;
-		r.mDay = (uint8)lt.wDay;
-		r.mHour = (uint8)lt.wHour;
-		r.mMinute = (uint8)lt.wMinute;
-		r.mSecond = (uint8)lt.wSecond;
-		r.mMilliseconds = (uint16)lt.wMilliseconds;
+		r = VDExpandDateW32(lt);
 	}
 
 	return r;
 }
 
 void VDConvertExpandedDateToNativeW32(SYSTEMTIME& dst, const VDExpandedDate& src) {
-	dst.wYear = src.mYear; 
-	dst.wMonth = src.mMonth; 
+	dst.wYear = src.mYear;
+	dst.wMonth = src.mMonth;
 	dst.wDayOfWeek = src.mDayOfWeek;
 	dst.wDay = src.mDay;
 	dst.wHour = src.mHour;

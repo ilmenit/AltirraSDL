@@ -43,8 +43,10 @@ int ATExceptionFilter(DWORD code, EXCEPTION_POINTERS *exp) {
 	if (g_pATExceptionPreFilter)
 		g_pATExceptionPreFilter(code, exp);
 
-	if (IsDebuggerPresent())
+	if (IsDebuggerPresent()) {
+		__debugbreak();
 		return EXCEPTION_CONTINUE_SEARCH;
+	}
 
 	WCHAR buf[1024];
 	bool dumpSucceeded = false;

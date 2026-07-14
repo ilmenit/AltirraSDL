@@ -628,10 +628,16 @@ bool RenderPrinterConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 	}
 
 	ImGui::Checkbox("Enable graphical output", &st.check[0]);
+	if (!st.check[0]) {
+		st.check[1] = false;
+		st.check[2] = false;
+	}
 
 	ImGui::BeginDisabled(!st.check[0]);
 	ImGui::Checkbox("Enable accurate timing", &st.check[1]);
 	ImGui::EndDisabled();
+	if (!st.check[1])
+		st.check[2] = false;
 
 	ImGui::BeginDisabled(!st.check[0] || !st.check[1]);
 	ImGui::Checkbox("Enable sound", &st.check[2]);
@@ -641,8 +647,8 @@ bool RenderPrinterConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 	if (ImGui::Button("OK", ImVec2(120, 0))) {
 		props.Clear();
 		if (st.check[0]) props.SetBool("graphics", true);
-		if (st.check[1]) props.SetBool("accurate_timing", true);
-		if (st.check[2]) props.SetBool("sound", true);
+		if (st.check[0] && st.check[1]) props.SetBool("accurate_timing", true);
+		if (st.check[0] && st.check[1] && st.check[2]) props.SetBool("sound", true);
 		return true;
 	}
 	ImGui::SameLine();
@@ -1119,10 +1125,18 @@ bool Render1020Config(ATPropertySet& props, ATDeviceConfigState& st) {
 		}
 
 		st.check[0] = props.GetBool("accurate_bresenham", false);
+		st.check[1] = props.GetBool("accurate_timing", false);
+		st.check[2] = props.GetBool("sound", false);
 	}
 
 	ImGui::SeparatorText("Options");
 	ImGui::Checkbox("Use accurate line stepping", &st.check[0]);
+	ImGui::Checkbox("Enable accurate timing", &st.check[1]);
+	if (!st.check[1])
+		st.check[2] = false;
+	ImGui::BeginDisabled(!st.check[1]);
+	ImGui::Checkbox("Enable sound", &st.check[2]);
+	ImGui::EndDisabled();
 
 	ImGui::SeparatorText("Pen Colors");
 	for (int i = 0; i < 4; ++i) {
@@ -1146,6 +1160,10 @@ bool Render1020Config(ATPropertySet& props, ATDeviceConfigState& st) {
 		props.Clear();
 		if (st.check[0])
 			props.SetBool("accurate_bresenham", true);
+		if (st.check[1])
+			props.SetBool("accurate_timing", true);
+		if (st.check[1] && st.check[2])
+			props.SetBool("sound", true);
 
 		for (int i = 0; i < 4; ++i) {
 			char key[16];

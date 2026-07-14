@@ -1170,11 +1170,13 @@ void ATPokeyRenderer::UpdateVolume(int index) {
 	const uint8 audc = mRenderState.mAUDC[index];
 	mChannelVolume[index] = mbChannelEnabled[index] ? audc & 15 : 0;
 
-	static constexpr uint8 kVolMixLookup[16] = {
-		 0,  1,  5,  6,
-		25, 26, 30, 31,
-		50, 51, 55, 56,
-		75, 76, 80, 81
+	static constexpr uint8 kVolMixLookup[24] = {
+		  0,  1,  5,  6,
+		 25, 26, 30, 31,
+		 50, 51, 55, 56,
+		 75, 76, 80, 81,
+		 66,109,117,106,
+		115,115, 98, 33
 	};
 
 	mChannelVolMixIndex[index] = kVolMixLookup[mChannelVolume[index]];
