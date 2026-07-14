@@ -249,7 +249,36 @@ cd AltirraSDL
 If you bumped `src/Kernel/source/Shared/version.inc`, force-rebuild the
 kernel ROM (MADS-based build; see `CLAUDE.md`).
 
-### 10. Record what happened
+### 10. Update baseline and version metadata
+
+Before recording the sync as complete, update the repo-owned metadata that
+describes the new upstream baseline and packaged version:
+
+- `BUILD.md` — `Upstream Baseline` should name the newly synced upstream
+  snapshot.
+- `CMakeLists.txt` — bump `project(Altirra VERSION ...)` when the upstream
+  version number changed. This drives the About dialog, package directory
+  names, macOS bundle version, and generated build metadata.
+- `src/AltirraLibretro/altirra_libretro.info` — keep `display_version` in
+  sync with `CMakeLists.txt`; validate it with
+  `scripts/validate-libretro-info.sh`.
+- `syncing-with-upstream/README.md` and this guide — update OLD/NEW examples
+  so the next sync starts from the newly merged snapshot.
+- Package/user docs that show versioned archive names, such as `BUILD.md`,
+  `docs/libretro-upstream.md`, and `src/AltirraLibretro/README.md`.
+
+Then scan for stale version references:
+
+```bash
+rg -n "4\\.50|test13|test14|test15|4\\.40" \
+    BUILD.md CMakeLists.txt docs src/AltirraLibretro syncing-with-upstream
+```
+
+Historical entries in `HISTORY.md` and merge-protection comments may still
+legitimately mention older snapshot names; stale current-baseline or package
+metadata should not.
+
+### 11. Record what happened
 
 Append a one-line summary to `syncing-with-upstream/HISTORY.md`
 (create on first sync):
