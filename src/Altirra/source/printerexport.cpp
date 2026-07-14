@@ -644,7 +644,7 @@ void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output,
 			};
 
 			struct LinkedPointHash {
-				static size_t operator()(const LinkedPoint& pt) {
+				size_t operator()(const LinkedPoint& pt) const {
 					return pt.mX + (pt.mY << 16);
 				}
 			};
