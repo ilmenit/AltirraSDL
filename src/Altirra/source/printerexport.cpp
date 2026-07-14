@@ -644,6 +644,10 @@ void ATPrinterExportAsSVG(const wchar_t *path, ATPrinterGraphicalOutput& output,
 			};
 
 			struct LinkedPointHash {
+				// Keep this as a non-static call operator when syncing from
+				// upstream. test14 used C++23 static operator(), but our CI
+				// compiler floor includes GCC 12, which rejects that form; the
+				// vdhashmap hasher object is instance-callable anyway.
 				size_t operator()(const LinkedPoint& pt) const {
 					return pt.mX + (pt.mY << 16);
 				}
