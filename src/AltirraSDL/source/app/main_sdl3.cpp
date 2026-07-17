@@ -2865,6 +2865,11 @@ int main(int argc, char *argv[]) {
 		HandleEvents();
 		if (!g_running) return;
 
+		// Advance time-dependent touch input independently of UI rendering.
+		// External WASM controls remain active when touch chrome is hidden,
+		// and auto-fire must continue through alternate mobile screens.
+		ATTouchControls_Tick();
+
 		// Update SDL window title from current simulator config
 		// (no-op unless config or active profile actually changed).
 		extern void ATUpdateWindowCaption();

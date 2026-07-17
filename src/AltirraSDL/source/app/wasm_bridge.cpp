@@ -1517,6 +1517,21 @@ void ATWasmSetConsoleKeys(int on) {
 	ATMobileUI_SetConsoleKeysEnabled(g_mobileState, on != 0);
 }
 
+// Auto-fire toggle (?autofire= deep link / embedder JS).  When on,
+// holding fire A — the on-screen fire button or the external trigger
+// from ATWasmSetJoystick — pulses the button at ~10 Hz instead of a
+// continuous hold, so shooters that expect repeated taps (rather than
+// a held trigger) stay playable on glass.  Turning it off mid-hold
+// restores the normal continuous hold; fire B (5200) is unaffected.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int ATWasmGetAutoFire() {
+	return ATTouchControls_GetAutoFire() ? 1 : 0;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE
+void ATWasmSetAutoFire(int on) {
+	ATTouchControls_SetAutoFire(on != 0);
+}
+
 // JS-side bar button (RESET) — cold reset.  The HTML page wraps this
 // in a confirm() popup so an accidental click doesn't nuke a save in
 // progress.  Cold reset only — warm reset is rarely useful from the

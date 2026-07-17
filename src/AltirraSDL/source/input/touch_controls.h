@@ -30,6 +30,10 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 // Release all held touch inputs (call on focus loss, pause, menu open)
 void ATTouchControls_ReleaseAll();
 
+// Advance time-dependent touch input state. Call once from the main loop,
+// independently of whether the controls are currently being rendered.
+void ATTouchControls_Tick();
+
 // Render touch controls as ImGui overlay.  showControls toggles the
 // joystick / fire / console-key layer; showMenu toggles the hamburger
 // icon.  The two are independent so a user watching a demo can leave
@@ -66,3 +70,16 @@ void ATTouchControls_SetExternalJoystick(uint8 dirMask, bool trigger);
 // switch.  Default: visible.
 void ATTouchControls_SetConsoleKeysVisible(bool visible);
 bool ATTouchControls_GetConsoleKeysVisible();
+
+// Enable/disable auto-fire for fire A.  Embedder hook (e.g. a JS
+// shell offering an auto-fire toggle for shooters, sparing thumbs on
+// glass with no tactile trigger).  When on, holding fire A — the
+// on-screen fire button or the external trigger from
+// ATTouchControls_SetExternalJoystick — pulses the button at ~10 Hz
+// instead of a continuous hold.  Turning it off mid-hold restores the
+// normal hold without dropping the press; releasing the finger always
+// ends with the button up; ATTouchControls_ReleaseAll() clears any
+// pulse in flight.  Fire B (5200 second trigger) is unaffected.
+// Default: off.
+void ATTouchControls_SetAutoFire(bool enabled);
+bool ATTouchControls_GetAutoFire();
