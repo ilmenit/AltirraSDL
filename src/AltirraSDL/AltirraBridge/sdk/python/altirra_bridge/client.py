@@ -469,6 +469,24 @@ class AltirraBridge:
         if ctrl:  cmd += " ctrl"
         return self._cmd_ok(cmd)
 
+    def key_raw(self, name: str, down: bool = True,
+                shift: bool = False, ctrl: bool = False) -> dict:
+        """Hold a key down in POKEY's key matrix (``down=True``) or
+        release it, the way the physical keyboard does.
+
+        ``key()`` goes through the cooked queue, which waits for the
+        keyboard IRQ to be enabled and acknowledged; a program that
+        polls SKSTAT/KBCODE with the IRQ off (a firmware setup screen)
+        never sees it. The matrix path drives the scan emulation
+        instead, and the key stays down until released. ``shift`` and
+        ``ctrl`` hold or release the modifier keys alongside.
+        ``key_raw("all", down=False)`` releases every key and modifier.
+        """
+        cmd = f"KEYRAW {name} " + ("down" if down else "up")
+        if shift: cmd += " shift"
+        if ctrl:  cmd += " ctrl"
+        return self._cmd_ok(cmd)
+
     def consol(self, start: bool = False, select: bool = False,
                option: bool = False) -> dict:
         """Hold the named console switches down (active-low). Any

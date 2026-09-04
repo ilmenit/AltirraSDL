@@ -1319,6 +1319,19 @@ for(;;) {
 			END_SUB_CYCLE();
 
 		case kStateJccFalseRead:
+#ifdef AT_CPU_MACHINE_65C816
+			// AltirraSDL: fork fix, not yet in Windows Altirra; preserve when
+			// re-syncing from upstream.
+			// The 65C816 has the 6502's page-crossing penalty cycle only in
+			// emulation mode (W65C816S data sheet, instruction table note 7).
+			// In native mode a taken branch costs one cycle either way and
+			// nothing appears on the bus for it -- and this read must not,
+			// because mAddr is the wrong-page address folded into bank 0:
+			// code running in a higher bank at $xxD5xx would put $D5xx on the
+			// bus, which is cartridge control ($D504 selects MaxFlash bank 4).
+			if (!mbEmulationFlag)
+				break;
+#endif
 			AT_CPU_READ_BYTE(mAddr);
 			END_SUB_CYCLE();
 
@@ -2541,11 +2554,23 @@ for(;;) {
 		case kState816_NatNMIVecToPC:
 			mPC = 0xFFEA;
 			mK = 0;
+
+			// AltirraSDL: fork fix, not yet in Windows Altirra; preserve when
+			// re-syncing from upstream (here and in NatIRQVecToPC below).
+			// As kStateNMIVecToPC / kStateIRQVecToPC do for emulation mode:
+			// the one IRQ let through the SEI shadow has now been taken (or
+			// pre-empted by this NMI), so the flag must go.  Left set, the
+			// IRQ sequence is re-entered at the handler's first opcode fetch
+			// and at every fetch after it, for as long as the source stays
+			// asserted -- SEI with a POKEY IRQ pending in native mode pushed
+			// four bytes per fetch until the stack had wrapped through bank 0.
+			mIntFlags &= ~kIntFlag_IRQSetPending;
 			break;
 
 		case kState816_NatIRQVecToPC:
 			mPC = 0xFFEE;
 			mK = 0;
+			mIntFlags &= ~kIntFlag_IRQSetPending;
 			break;
 
 		case kState816_NatBRKVecToPC:

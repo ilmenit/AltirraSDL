@@ -516,16 +516,40 @@ from the bridge's key table:
 - Special: `RETURN` / `ENTER`, `SPACE`, `ESC` / `ESCAPE`,
   `TAB`, `BACKSPACE` / `DELETE` / `DEL`, `MINUS`, `EQUALS`,
   `COMMA`, `PERIOD`, `SLASH`, `SEMICOLON`, `CAPS` / `CAPSLOCK`,
-  `HELP` (XL/XE Help key).
+  `HELP` (XL/XE Help key), `PLUS`, `ASTERISK` / `STAR`, `LESS`,
+  `GREATER`, `INVERSE` / `ATARI`, `F1`..`F4` (1200XL).
+- Cursor keys: `LEFT`, `RIGHT`, `UP`, `DOWN` — CONTROL + `+ * - =`,
+  carried as the modified KBCODE (`$86 $87 $8E $8F`).
 
 Optional words `shift` and/or `ctrl` set the corresponding KBCODE
-modifier bits (POKEY KBCODE bit 7 = shift, bit 6 = ctrl). The
+modifier bits (POKEY KBCODE bit 6 = shift, bit 7 = ctrl). The
 underlying scan code values come straight from
 `src/AltirraSDL/source/input/input_sdl3.cpp`'s SDL3 keyboard
 mapping table.
 
 ```json
-{"ok":true,"name":"a","kbcode":"$bf"}
+{"ok":true,"name":"a","kbcode":"$7f"}
+```
+
+(`KEY a shift`: `$3F` with bit 6, a capital A.)
+
+#### `KEYRAW name [down|up] [shift] [ctrl]`
+
+Hold a key down in POKEY's key matrix (`down`, the default) or
+release it (`up`), the way the physical keyboard does. `KEY` goes
+through the cooked queue, which waits for the keyboard IRQ to be
+enabled and acknowledged, so a program that polls `SKSTAT`/`KBCODE`
+with the IRQ off (a firmware setup screen such as the U1MB BIOS)
+never sees it. The matrix path drives the keyboard scan emulation
+instead: `KBCODE`, `SKSTAT` bit 2 and the IRQ line all follow, and
+the key stays down until released. `shift`/`ctrl` press or release
+the modifier keys alongside. `KEYRAW all up` releases every key and
+modifier. Same key names as `KEY`; a name that stands for a
+modified key (`LEFT`, `RIGHT`, `UP`, `DOWN` are CONTROL + `+ * - =`
+on an XL) holds the modifier with it.
+
+```json
+{"ok":true,"name":"esc","kbcode":"$1c","down":true}
 ```
 
 #### `CONSOL [start] [select] [option]`
@@ -767,6 +791,8 @@ Set a config key. Returns the full config state after the set.
 | `kernel`      | `default`, `lle`, `llexl`, `hle`, `osa`, `osb`, `xl`, path/id   | Triggers cold reset         |
 | `basicrom`    | `default`, `atbasic`, `reva`, `revb`, `revc`, path/id           | Triggers cold reset         |
 | `debugbrkrun` | `true`, `false`, `on`, `off`, `1`, `0`                          | Break at EXE run address    |
+| `u1mb`        | `true`, `false`, `on`, `off`, `1`, `0`                          | Ultimate1MB; forces `1088K`; cold reset |
+| `u1mbrom`     | path, or a registered U1MB firmware's name/id                  | Registers the file, makes it the default U1MB flash, enables U1MB; cold reset |
 
 Memory modes: `8K`, `16K`, `24K`, `32K`, `40K`, `48K`, `52K`, `64K`,
 `128K`, `256K`, `320K`, `320K_Compy`, `576K`, `576K_Compy`, `1088K`.
