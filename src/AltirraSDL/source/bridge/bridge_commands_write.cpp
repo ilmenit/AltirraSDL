@@ -1445,11 +1445,12 @@ std::string CmdKey(ATSimulator& sim, const std::vector<std::string>& tokens) {
 		else return JsonError("KEY: unexpected modifier");
 	}
 
-	// KBCODE bit 6 = control, bit 7 = shift (Atari keyboard scan
-	// code convention, used by POKEY's KBCODE register at $D209).
+	// KBCODE bit 6 = shift, bit 7 = control, as POKEY's keyboard scan
+	// builds the register ($D209) and as the OS's key table is laid out
+	// (KEYDEF: plain, shift, control).
 	uint8_t code = kb;
-	if (ctrl)  code |= 0x40;
-	if (shift) code |= 0x80;
+	if (shift) code |= 0x40;
+	if (ctrl)  code |= 0x80;
 
 	// useCooldown=true → respects key repeat timing.
 	// flushQueue=false → don't drop pending keystrokes.

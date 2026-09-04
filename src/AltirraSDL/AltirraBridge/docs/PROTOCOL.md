@@ -522,14 +522,16 @@ from the bridge's key table:
   carried as the modified KBCODE (`$86 $87 $8E $8F`).
 
 Optional words `shift` and/or `ctrl` set the corresponding KBCODE
-modifier bits (POKEY KBCODE bit 7 = shift, bit 6 = ctrl). The
+modifier bits (POKEY KBCODE bit 6 = shift, bit 7 = ctrl). The
 underlying scan code values come straight from
 `src/AltirraSDL/source/input/input_sdl3.cpp`'s SDL3 keyboard
 mapping table.
 
 ```json
-{"ok":true,"name":"a","kbcode":"$bf"}
+{"ok":true,"name":"a","kbcode":"$7f"}
 ```
+
+(`KEY a shift`: `$3F` with bit 6, a capital A.)
 
 #### `KEYRAW name [down|up] [shift] [ctrl]`
 
