@@ -8,7 +8,7 @@ examples. For full request/response schemas and field semantics see
 |--------------|----------|
 | [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `QUIT` |
 | [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `KEYRAW`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
 | [Save states](#save-states)           | `STATE_SAVE`, `STATE_LOAD`, `STATE_LIST`, `STATE_DROP` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |
@@ -68,6 +68,7 @@ a.memload(0x4000, open("loader.bin", "rb").read())
 data = a.memdump(0x4000, 0x100)
 a.joy(0, "upright", fire=True)
 a.key("A", shift=True)                  # types capital A
+a.key_raw("ESC"); a.frame(6); a.key_raw("ESC", down=False)   # matrix, for IRQ-off pollers
 a.consol(start=True)
 a.boot("/path/to/game.xex"); a.frame(240)   # wait for OS boot + XEX load
 ```
@@ -78,6 +79,7 @@ atb_memload(c, 0x4000, loader_bytes, loader_len);
 unsigned char dump[256]; atb_memdump(c, 0x4000, 256, dump);
 atb_joy(c, 0, "upright", 1);
 atb_key(c, "A", 1, 0);
+atb_key_raw(c, "ESC", 1, 0, 0); atb_frame(c, 6); atb_key_raw(c, "ESC", 0, 0, 0);
 atb_consol(c, 1, 0, 0);
 atb_boot(c, "/path/to/game.xex"); atb_frame(c, 120);
 ```
@@ -192,6 +194,8 @@ Supported keys:
 | `randmem`, `randdelay` | `on`, `off`                                           | no          |
 | `diskemu`     | `generic`, `fastest`, `810`, `1050`, `xf551`, etc.              | no          |
 | `debugbrkrun` | `true`, `false`, `on`, `off`                                    | no          |
+| `u1mb`        | `true`, `false`, `on`, `off`                                    | yes; forces `1088K` |
+| `u1mbrom`     | path, or a registered U1MB firmware's name/id                   | yes; registers the file, makes it the default flash, enables U1MB |
 
 Device commands:
 

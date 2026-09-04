@@ -762,6 +762,14 @@ const KeyMapEntry kKeyMap[] = {
 	{ "SEMICOLON", 0x02 },
 	{ "CAPS",   0x3C }, { "CAPSLOCK", 0x3C },
 	{ "HELP",   0x11 },
+	{ "PLUS",   0x06 }, { "ASTERISK", 0x07 }, { "STAR", 0x07 },
+	{ "LESS",   0x36 }, { "GREATER",  0x37 },
+	{ "INVERSE", 0x27 }, { "ATARI",   0x27 },
+	{ "F1",     0x03 }, { "F2", 0x04 }, { "F3", 0x13 }, { "F4", 0x14 },
+	// The XL's cursor keys are CONTROL + the arrow-marked keys; these
+	// carry the modifier in bit 7, which KEY passes through as a
+	// KBCODE and KEYRAW turns back into the CONTROL key.
+	{ "LEFT",   0x86 }, { "RIGHT", 0x87 }, { "UP", 0x8E }, { "DOWN", 0x8F },
 };
 
 bool LookupKey(const std::string& name, uint8_t& kbcode) {
@@ -1031,6 +1039,42 @@ bool ResolveBasicRomArg(ATSimulator& sim, const std::string& raw,
 	return true;
 }
 
+// Resolve a `CONFIG u1mbrom <value>` value to a firmware id.
+//
+// Accepts a registered U1MB firmware by ref string (name, filename or
+// path) or a filesystem path, registered on the fly as kernel and
+// basicrom are.  This build embeds no U1MB recovery BIOS, so a U1MB
+// with nothing registered has a blank flash and nothing to boot; this
+// is the way to give it one headlessly.
+bool ResolveU1MBRomArg(ATSimulator& sim, const std::string& raw,
+                       uint64_t& out, std::string& err) {
+	out = 0;
+
+	ATFirmwareManager* fwm = sim.GetFirmwareManager();
+	if (!fwm) { err = "firmware manager unavailable"; return false; }
+
+	const VDStringW wraw = VDTextU8ToW(VDStringSpanA(raw.c_str()));
+	uint64 id = fwm->GetFirmwareByRefString(wraw.c_str(),
+		[](ATFirmwareType type) { return type == kATFirmwareType_U1MB; });
+	if (id) { out = id; return true; }
+
+	if (!VDDoesPathExist(wraw.c_str())) {
+		err = "U1MB firmware not found: " + raw;
+		return false;
+	}
+	ATFirmwareInfo info{};
+	info.mPath        = wraw;
+	info.mName        = VDFileSplitPathRight(wraw);
+	info.mType        = kATFirmwareType_U1MB;
+	info.mbVisible    = false;
+	info.mbAutoselect = false;
+	info.mFlags       = kATFirmwareFlags_None;
+	info.mId          = ATGetFirmwareIdFromPath(wraw.c_str());
+	fwm->AddFirmware(info);
+	out = info.mId;
+	return true;
+}
+
 std::string BuildConfigPayload(ATSimulator& sim) {
 	IATDebugger* dbg = ATGetDebugger();
 	std::string payload;
@@ -1046,6 +1090,11 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 	payload += "\"fastboot\":";
 	payload += (sim.IsFastBootEnabled() ? "true" : "false");
 	payload += ',';
+	payload += "\"u1mb\":";
+	payload += (sim.IsUltimate1MBEnabled() ? "true" : "false");
+	payload += ',';
+	if (ATFirmwareManager* fwm = sim.GetFirmwareManager())
+		payload += "\"u1mbrom_id\":" + Hex64(fwm->GetCompatibleFirmware(kATFirmwareType_U1MB)) + ",";
 	payload += "\"fppatch\":";
 	payload += (sim.IsFPPatchEnabled() ? "true" : "false");
 	payload += ',';
@@ -1410,6 +1459,72 @@ std::string CmdKey(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	std::string payload;
 	AddString(payload, "name", tokens[1]);
 	AddField(payload, "kbcode", Hex8(code));
+	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// KEYRAW name [down|up] [shift] [ctrl]
+//
+// Hold a key down in POKEY's key matrix, or release it, the way the
+// keyboard does.  KEY goes through the cooked queue, which waits for the
+// keyboard IRQ to be enabled and acknowledged -- so a program that polls
+// SKSTAT/KBCODE with the IRQ off (the U1MB BIOS, most firmware setup
+// screens) never sees a KEY.  The matrix path feeds the scan emulation
+// instead: KBCODE, SKSTAT bit 2 and the IRQ line all follow, and the key
+// stays down until it is released here.  `KEYRAW all up` releases
+// everything, modifiers included.
+// ---------------------------------------------------------------------------
+
+std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() < 2)
+		return JsonError("KEYRAW: usage: KEYRAW name [down|up] [shift] [ctrl]");
+
+	bool down = true, shift = false, ctrl = false;
+	for (size_t i = 2; i < tokens.size(); ++i) {
+		if (tokens[i] == "down" || tokens[i] == "press") down = true;
+		else if (tokens[i] == "up" || tokens[i] == "release") down = false;
+		else if (tokens[i] == "shift") shift = true;
+		else if (tokens[i] == "ctrl" || tokens[i] == "control") ctrl = true;
+		else return JsonError("KEYRAW: unexpected word '" + tokens[i] + "'");
+	}
+
+	ATPokeyEmulator& pokey = sim.GetPokey();
+	std::string lower;
+	for (char c : tokens[1]) lower += (char)((c >= 'A' && c <= 'Z') ? (c + 32) : c);
+
+	if (lower == "all") {
+		if (down)
+			return JsonError("KEYRAW: 'all' can only be released");
+		pokey.ReleaseAllRawKeys(false);
+		pokey.SetShiftKeyState(false, false);
+		pokey.SetControlKeyState(false);
+		return JsonOk("\"name\":\"all\",\"down\":false");
+	}
+
+	uint8_t kb = 0;
+	if (!LookupKey(tokens[1], kb))
+		return JsonError("KEYRAW: unknown key name");
+	// A name that carries modifier bits (the cursor keys) means those
+	// keys are held with it; the matrix itself only knows the low six.
+	if (kb & 0x40) shift = true;
+	if (kb & 0x80) ctrl  = true;
+	kb &= 0x3F;
+
+	if (down) {
+		if (shift) pokey.SetShiftKeyState(true, false);
+		if (ctrl)  pokey.SetControlKeyState(true);
+		pokey.PushRawKey(kb, false);
+	} else {
+		pokey.ReleaseRawKey(kb, false);
+		if (shift) pokey.SetShiftKeyState(false, false);
+		if (ctrl)  pokey.SetControlKeyState(false);
+	}
+
+	std::string payload;
+	AddString(payload, "name", tokens[1]);
+	AddField(payload, "kbcode", Hex8(kb));
+	payload += "\"down\":"; payload += (down ? "true" : "false"); payload += ',';
 	StripTrailingComma(payload);
 	return JsonOk(payload);
 }
@@ -2013,6 +2128,13 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 			return JsonOk(std::string("\"selftest\":") + (sim.IsForcedSelfTest() ? "true" : "false"));
 		if (key == "fastboot")
 			return JsonOk(std::string("\"fastboot\":") + (sim.IsFastBootEnabled() ? "true" : "false"));
+		if (key == "u1mb" || key == "ultimate1mb")
+			return JsonOk(std::string("\"u1mb\":") + (sim.IsUltimate1MBEnabled() ? "true" : "false"));
+		if (key == "u1mbrom" || key == "u1mbrom_id") {
+			ATFirmwareManager* fwm = sim.GetFirmwareManager();
+			return JsonOk(std::string("\"u1mbrom_id\":") +
+				Hex64(fwm ? fwm->GetCompatibleFirmware(kATFirmwareType_U1MB) : 0));
+		}
 		if (key == "fppatch")
 			return JsonOk(std::string("\"fppatch\":") + (sim.IsFPPatchEnabled() ? "true" : "false"));
 		if (key == "stereo")
@@ -2163,6 +2285,19 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		if (!ParseBoolLiteral(rawVal, v))
 			return JsonError("CONFIG: expected boolean for fastboot");
 		sim.SetFastBootEnabled(v);
+	}
+	else if (key == "u1mb" || key == "ultimate1mb") {
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for u1mb");
+		if (v != sim.IsUltimate1MBEnabled()) {
+			// As "memory": a system change, so a cold reset -- and enabling
+			// forces the memory mode to 1088K, which the reply shows.
+			const bool wasPaused = sim.IsPaused();
+			sim.SetUltimate1MBEnabled(v);
+			sim.ColdReset();
+			if (wasPaused) sim.Pause(); else sim.Resume();
+		}
 	}
 	else if (key == "fppatch") {
 		bool v = false;
@@ -2339,6 +2474,22 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 			fwm->SetDefaultFirmware(kATFirmwareType_Basic, id);
 		}
 		const bool wasPaused = sim.IsPaused();
+		sim.ColdReset();
+		if (wasPaused) sim.Pause(); else sim.Resume();
+	}
+	else if (key == "u1mbrom") {
+		uint64_t id = 0;
+		std::string err;
+		if (!ResolveU1MBRomArg(sim, rawVal, id, err))
+			return JsonError("CONFIG: u1mbrom: " + err);
+		sim.GetFirmwareManager()->SetDefaultFirmware(kATFirmwareType_U1MB, id);
+		// The flash is loaded when the U1MB is created, or by LoadROMs
+		// if it already exists; either way a system change, so cold.
+		const bool wasPaused = sim.IsPaused();
+		if (sim.IsUltimate1MBEnabled())
+			sim.LoadROMs();
+		else
+			sim.SetUltimate1MBEnabled(true);
 		sim.ColdReset();
 		if (wasPaused) sim.Pause(); else sim.Resume();
 	}

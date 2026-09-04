@@ -205,7 +205,7 @@ bool ShouldLogCommand(const std::string& verb) {
 	return verb == "PAUSE" || verb == "RESUME" || verb == "FRAME"
 		|| verb == "QUIT" || verb == "POKE" || verb == "POKE16"
 		|| verb == "HWPOKE" || verb == "MEMLOAD" || verb == "JOY"
-		|| verb == "KEY" || verb == "CONSOL" || verb == "BOOT"
+		|| verb == "KEY" || verb == "KEYRAW" || verb == "CONSOL" || verb == "BOOT"
 		|| verb == "BOOT_BARE" || verb == "MOUNT" || verb == "EJECT"
 		|| verb == "CART_EJECT" || verb == "COLD_RESET"
 		|| verb == "WARM_RESET" || verb == "FRESH"
@@ -353,6 +353,7 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "MEMLOAD")    return CmdMemLoad(sim, tokens);
 	if (verb == "JOY")        return CmdJoy(sim, tokens);
 	if (verb == "KEY")        return CmdKey(sim, tokens);
+	if (verb == "KEYRAW")     return CmdKeyRaw(sim, tokens);
 	if (verb == "CONSOL")     return CmdConsol(sim, tokens);
 	if (verb == "BOOT")       return CmdBoot(sim, tokens);
 	if (verb == "BOOT_BARE")  return CmdBootBare(sim, tokens);

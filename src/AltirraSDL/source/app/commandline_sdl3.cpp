@@ -316,7 +316,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		// ---- Help ----
 		if (MatchSwitch(sw, "help") || MatchSwitch(sw, "?")) {
 			consumed[i] = true;
-			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "          --renderer <sdlgpu|opengl|sdlrenderer>\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
+			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "          --renderer <sdlgpu|opengl|sdlrenderer>\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
 			continue;
 		}
 
@@ -582,6 +582,65 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		if (MatchSwitch(sw, "nocovox")) {
 			consumed[i] = true;
 			g_sim.GetDeviceManager()->RemoveDevice("covox");
+			continue;
+		}
+
+		// ---- Ultimate1MB ----
+		// The core has had the emulation all along (ATUltimate1MBEmulator);
+		// only the ImGui checkbox and System.ToggleUltimate1MB reached it,
+		// so a headless run could not have it.  Enabling forces 1088K, as
+		// the simulator requires, and needs the cold reset every other
+		// system change here gets.
+		if (MatchSwitch(sw, "ultimate1mb") || MatchSwitch(sw, "u1mb")) {
+			consumed[i] = true;
+			if (!g_sim.IsUltimate1MBEnabled()) {
+				g_sim.SetUltimate1MBEnabled(true);
+				coldResetPending = true;
+			}
+			continue;
+		}
+		if (MatchSwitch(sw, "noultimate1mb") || MatchSwitch(sw, "nou1mb")) {
+			consumed[i] = true;
+			if (g_sim.IsUltimate1MBEnabled()) {
+				g_sim.SetUltimate1MBEnabled(false);
+				coldResetPending = true;
+			}
+			continue;
+		}
+
+		// A U1MB flash image by path.  This build embeds no U1MB recovery
+		// BIOS (oshelper_sdl3.cpp's resource table has none), so with
+		// nothing registered the flash is blank and an enabled U1MB has
+		// nothing to boot.  The manager keys firmware by a hash of the
+		// path, so registering here is idempotent; it becomes the default
+		// U1MB firmware and the U1MB is switched on with it.
+		if ((val = ConsumeArg(argc, argv, i, consumed, "u1mbrom")) != nullptr) {
+			const VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			if (!VDDoesPathExist(wval.c_str())) {
+				LOG_INFO("CmdLine", "U1MB firmware not found: %s", val);
+				continue;
+			}
+			ATFirmwareManager *const fwm = g_sim.GetFirmwareManager();
+			uint64 id = fwm->GetFirmwareByRefString(wval.c_str(),
+				[](ATFirmwareType type) { return type == kATFirmwareType_U1MB; });
+			if (!id) {
+				ATFirmwareInfo info{};
+				info.mPath        = wval;
+				info.mName        = VDFileSplitPathRight(wval);
+				info.mType        = kATFirmwareType_U1MB;
+				info.mbVisible    = true;
+				info.mbAutoselect = false;
+				info.mFlags       = kATFirmwareFlags_None;
+				info.mId          = ATGetFirmwareIdFromPath(wval.c_str());
+				fwm->AddFirmware(info);
+				id = info.mId;
+			}
+			fwm->SetDefaultFirmware(kATFirmwareType_U1MB, id);
+			if (g_sim.IsUltimate1MBEnabled())
+				g_sim.LoadROMs();
+			else
+				g_sim.SetUltimate1MBEnabled(true);
+			coldResetPending = true;
 			continue;
 		}
 

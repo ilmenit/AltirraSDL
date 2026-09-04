@@ -275,6 +275,17 @@ int atb_joy(atb_client_t* c, unsigned int port,
 int atb_key(atb_client_t* c, const char* name, int shift, int ctrl);
 
 /*
+ * Hold a key down in POKEY's key matrix (`down` non-zero) or release
+ * it, the way the physical keyboard does -- for programs that poll
+ * SKSTAT/KBCODE with the keyboard IRQ off, which never see a queued
+ * atb_key(). The key stays down until released. `shift`/`ctrl`
+ * hold or release the modifier keys alongside; name "all" with
+ * `down` zero releases every key and modifier.
+ */
+int atb_key_raw(atb_client_t* c, const char* name, int down,
+                int shift, int ctrl);
+
+/*
  * Set console switch state (active-low). Each non-zero argument
  * holds the corresponding switch down; zero releases it. Pass all
  * zeros to release everything.
