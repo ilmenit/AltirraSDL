@@ -629,6 +629,7 @@ static void BridgePollUntil(std::chrono::steady_clock::time_point deadline) {
 			? tickDeadline
 			: deadline);
 		ATBridge::Poll(g_sim, g_uiState);
+		g_sim.OnWake();
 	}
 }
 
@@ -727,6 +728,7 @@ int main(int argc, char** argv) {
 		// 1. Process bridge commands (non-blocking, capped at 64
 		//    commands/poll).
 		ATBridge::Poll(g_sim, g_uiState);
+		g_sim.OnWake();
 
 		// 2. Tick the simulator until a real frame is produced or
 		//    the simulator stops. With SetFrameSkip(true), GTIA
@@ -778,9 +780,11 @@ int main(int argc, char** argv) {
 		//    round-trips do not wait for a full frame.
 		if (result == ATSimulator::kAdvanceResult_Stopped) {
 			std::this_thread::sleep_for(std::chrono::microseconds(500));
+			g_sim.OnWake();
 			nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
 		} else if (result == ATSimulator::kAdvanceResult_WaitingForFrame && !framePosted) {
 			std::this_thread::sleep_for(std::chrono::microseconds(500));
+			g_sim.OnWake();
 			nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
 		}
 	}

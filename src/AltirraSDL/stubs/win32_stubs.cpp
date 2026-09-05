@@ -128,9 +128,11 @@ void ATAsyncDownloadUrl(const wchar_t *url, const wchar_t *userAgent, size_t max
 // UI accessor stubs are now in uiaccessors_stubs.cpp.
 
 // ============================================================
-// ATTimerService — SDL3 implementation
+// ATTimerService — SDL3 implementation (non-Windows only;
+// Windows uses native threadpool timers in ATCore)
 // ============================================================
 
+#if !defined(_WIN32)
 class ATTimerServiceSDL3 final : public IATTimerService {
 public:
 	ATTimerServiceSDL3(IATAsyncDispatcher& disp) : mpDispatcher(&disp) {}
@@ -200,6 +202,7 @@ private:
 IATTimerService *ATCreateTimerService(IATAsyncDispatcher& disp) {
 	return new ATTimerServiceSDL3(disp);
 }
+#endif
 
 // ============================================================
 // ATGetNameForWindowMessageW32 stub
