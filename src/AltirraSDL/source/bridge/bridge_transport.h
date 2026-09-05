@@ -79,6 +79,14 @@ public:
 	// should try again later (the unsent tail is queued internally).
 	IoResult SendAll(const void* buf, size_t len);
 
+	// Retry the tail SendAll could not fit into the kernel buffer.
+	// A reply bigger than the socket buffer (HISTORY at its full
+	// count is over a megabyte) needs this: the client is blocked
+	// reading the reply, so no further command will arrive to
+	// trigger the retry -- the server's poll loop has to.
+	bool HasPendingSend() const { return !mPendingSend.empty(); }
+	IoResult FlushPending();
+
 	// Drop the active client immediately. Does not affect the
 	// listening socket. Used after Shutdown of the bridge or on
 	// protocol errors that warrant dropping the connection.

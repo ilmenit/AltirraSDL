@@ -579,6 +579,15 @@ void Poll(ATSimulator& sim, ATUIState& /*ui*/) {
 	// the second client races into TryAccept() and gets rejected by
 	// the "we already have a client" branch.
 	if (g_state.transport.HasClient()) {
+		// A reply that did not fit the kernel buffer goes out first:
+		// the client is waiting for the rest of it, not typing.
+		if (g_state.transport.HasPendingSend()) {
+			if (g_state.transport.FlushPending() == IoResult::Error) {
+				g_state.transport.DropClient();
+				OnClientDisconnected(sim);
+				return;
+			}
+		}
 		char buf[4096];
 		size_t got = 0;
 		IoResult rr = g_state.transport.Recv(buf, sizeof buf, &got);

@@ -242,6 +242,19 @@ CPU registers, decoded status flags, cycle counter, and CPU mode.
 | `cycles` | integer | Cycle counter since last reset. Wraps at 2³² (~71 minutes). |
 | `mode`   | string  | `"6502"`, `"65C02"`, or `"65C816"`.                         |
 
+When `mode` is `"65C816"` the reply carries the rest of that CPU's
+state as well, without which a native-mode `PC` or `S` is a 16-bit
+truncation of where the machine really is:
+
+| Field    | Type    | Notes                                                       |
+|----------|---------|-------------------------------------------------------------|
+| `K`      | hex8    | Program bank: `PC` is at `K:PC`.                            |
+| `B`      | hex8    | Data bank.                                                  |
+| `D`      | hex16   | Direct page.                                                |
+| `SH`     | hex8    | High byte of the 16-bit stack pointer: `S` is at `SH:S`.    |
+| `AH`/`XH`/`YH` | hex8 | High bytes of the 16-bit accumulator and index registers. |
+| `E`      | integer | Emulation flag: 1 in emulation mode, 0 in native mode.      |
+
 The `flags` string is `NV-BDIZC` for 6502/65C02/65C816 emulation mode
 and `NVMXDIZC` for 65C816 native mode (bits 4-5 are X/M instead of
 B/unused). Set bits are uppercase letters; clear bits are `-`.
@@ -767,6 +780,7 @@ Set a config key. Returns the full config state after the set.
 | `kernel`      | `default`, `lle`, `llexl`, `hle`, `osa`, `osb`, `xl`, path/id   | Triggers cold reset         |
 | `basicrom`    | `default`, `atbasic`, `reva`, `revb`, `revc`, path/id           | Triggers cold reset         |
 | `debugbrkrun` | `true`, `false`, `on`, `off`, `1`, `0`                          | Break at EXE run address    |
+| `history`     | `true`, `false`, `on`, `off`, `1`, `0`                          | CPU instruction history recording, which `HISTORY` reads; off by default |
 
 Memory modes: `8K`, `16K`, `24K`, `32K`, `40K`, `48K`, `52K`, `64K`,
 `128K`, `256K`, `320K`, `320K_Compy`, `576K`, `576K_Compy`, `1088K`.
@@ -951,6 +965,19 @@ primitive AltirraBridge exposes.**
    "a":"$ff","x":"$ff","y":"$17","s":"$f3","p":"$b1","ea":"$0014",
    "irq":false,"nmi":false}
 ]}
+```
+
+Recording is off unless it has been turned on: `CONFIG history true`
+before the run, `HISTORY n` after it. On a 65C816 each entry also
+carries `k` (the program bank the instruction ran in), `b` (the data
+bank), `sh` (the high byte of the stack pointer), `e` (the emulation
+flag) and `bytes`, the instruction's four bytes, from which a client
+can disassemble what actually ran:
+
+```json
+{"cycle":143006197,"pc":"$ff36","op":"$ad","k":"$01","b":"$00",
+ "sh":"$32","e":0,"bytes":"ad0ed249","a":"$00","x":"$74","y":"$44",
+ "s":"$4a","p":"$37","ea":"$d20e","irq":false,"nmi":false}
 ```
 
 #### `EVAL expr`

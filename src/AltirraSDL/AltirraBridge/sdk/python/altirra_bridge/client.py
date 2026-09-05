@@ -287,6 +287,12 @@ class AltirraBridge:
         ``flags`` (8-char string like ``"N--B-IZC"``), ``cycles``
         (integer cycle counter since reset), ``mode``
         (``"6502"`` / ``"65C02"`` / ``"65C816"``).
+
+        On a 65C816 the reply also carries ``K`` (program bank),
+        ``B`` (data bank), ``D`` (direct page), ``SH`` (high byte of
+        the stack pointer), ``AH``/``XH``/``YH`` (high bytes of the
+        16-bit registers) and ``E`` (1 in emulation mode, 0 in
+        native mode).
         """
         return self._cmd_ok("REGS")
 
@@ -904,11 +910,16 @@ class AltirraBridge:
     def history(self, count: int = 64) -> list:
         """Return the last ``count`` CPU history entries, oldest
         first. Each entry has ``cycle``, ``pc``, ``op``,
-        ``a``/``x``/``y``/``s``/``p``, ``ea``, ``irq``, ``nmi``.
+        ``a``/``x``/``y``/``s``/``p``, ``ea``, ``irq``, ``nmi``; on a
+        65C816, also ``k`` (program bank), ``b`` (data bank), ``sh``
+        (high byte of the stack pointer), ``e`` (emulation flag) and
+        ``bytes``, the instruction's four bytes.
 
-        Altirra keeps a 131072-entry ring buffer; ``count`` is capped
-        server-side at 4096. This is the single biggest RE primitive
-        AltirraBridge exposes over the pyA8 reference.
+        Recording is off by default: ``config("history", "true")``
+        before the run, ``history(n)`` after it. Altirra keeps a
+        131072-entry ring buffer; ``count`` is capped server-side at
+        4096. This is the single biggest RE primitive AltirraBridge
+        exposes over the pyA8 reference.
         """
         resp = self._cmd_ok(f"HISTORY {count}")
         return resp.get("entries", [])
