@@ -71,9 +71,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
         COMPILE_FLAGS "-march=armv8-a+crypto")
 endif()
 
-# Windows-only timer service — excluded when ALTIRRA_SDL3 is ON because
-# win32_stubs.cpp provides ATCreateTimerService() as a stub.
-if(WIN32 AND NOT ALTIRRA_SDL3)
+# Windows-only timer service using native threadpool timers.
+if(WIN32)
     list(APPEND ATCORE_COMMON_SOURCES
         source/timerserviceimpl_win32.cpp
     )

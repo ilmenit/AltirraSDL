@@ -265,13 +265,16 @@ def main() -> int:
                 bridge.device_remove("printer")
                 bridge.quit()
         finally:
-            if proc.poll() is None:
-                proc.terminate()
             try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
                 proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                if proc.poll() is None:
+                    proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
             stderr_thread.join(timeout=1)
 
         if proc.returncode not in (0, -15):

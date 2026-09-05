@@ -326,7 +326,119 @@ void *VDThread::StaticThreadStart(void *pThisAsVoid) {
 #endif
 
 ///////////////////////////////////////////////////////////////////////////
-// VDSignalBase - portable implementation using std::mutex + std::condition_variable
+// VDSignalBase / VDSemaphore
+
+#if defined(VD_OS_WINDOWS) || defined(_WIN32)
+
+VDSignalBase::VDSignalBase() {
+	hEvent = (void *)CreateEvent(NULL, FALSE, FALSE, NULL);
+}
+
+VDSignalBase::VDSignalBase(bool manualReset, bool initialState) {
+	hEvent = (void *)CreateEvent(NULL, manualReset ? TRUE : FALSE, initialState ? TRUE : FALSE, NULL);
+}
+
+VDSignalBase::~VDSignalBase() {
+	if (hEvent) {
+		CloseHandle((HANDLE)hEvent);
+		hEvent = nullptr;
+	}
+}
+
+VDSignal::VDSignal()
+	: VDSignalBase(false, false)
+{
+}
+
+VDSignalPersistent::VDSignalPersistent()
+	: VDSignalBase(true, false)
+{
+}
+
+void VDSignalBase::signal() {
+	SetEvent((HANDLE)hEvent);
+}
+
+bool VDSignalBase::check() {
+	return WaitForSingleObject((HANDLE)hEvent, 0) == WAIT_OBJECT_0;
+}
+
+void VDSignalBase::wait() {
+	WaitForSingleObject((HANDLE)hEvent, INFINITE);
+}
+
+int VDSignalBase::wait(VDSignalBase *second) {
+	HANDLE h[2] = { (HANDLE)hEvent, (HANDLE)second->hEvent };
+	DWORD res = WaitForMultipleObjects(2, h, FALSE, INFINITE);
+	if (res >= WAIT_OBJECT_0 && res < WAIT_OBJECT_0 + 2)
+		return (int)(res - WAIT_OBJECT_0);
+	return -1;
+}
+
+int VDSignalBase::wait(VDSignalBase *second, VDSignalBase *third) {
+	HANDLE h[3] = { (HANDLE)hEvent, (HANDLE)second->hEvent, (HANDLE)third->hEvent };
+	DWORD res = WaitForMultipleObjects(3, h, FALSE, INFINITE);
+	if (res >= WAIT_OBJECT_0 && res < WAIT_OBJECT_0 + 3)
+		return (int)(res - WAIT_OBJECT_0);
+	return -1;
+}
+
+int VDSignalBase::waitMultiple(const VDSignalBase *const *signals, int count) {
+	if (count <= 0)
+		return -1;
+	if (count > MAXIMUM_WAIT_OBJECTS)
+		count = MAXIMUM_WAIT_OBJECTS;
+	HANDLE h[MAXIMUM_WAIT_OBJECTS];
+	for (int i = 0; i < count; ++i)
+		h[i] = (HANDLE)signals[i]->hEvent;
+	DWORD res = WaitForMultipleObjects(count, h, FALSE, INFINITE);
+	if (res >= WAIT_OBJECT_0 && res < WAIT_OBJECT_0 + (DWORD)count)
+		return (int)(res - WAIT_OBJECT_0);
+	return -1;
+}
+
+bool VDSignalBase::tryWait(uint32 timeoutMillisec) {
+	return WaitForSingleObject((HANDLE)hEvent, timeoutMillisec) == WAIT_OBJECT_0;
+}
+
+void VDSignalPersistent::unsignal() {
+	ResetEvent((HANDLE)hEvent);
+}
+
+VDSemaphore::VDSemaphore(int initial) {
+	mKernelSema = (void *)CreateSemaphore(NULL, initial, 0x7fffffff, NULL);
+}
+
+VDSemaphore::~VDSemaphore() {
+	if (mKernelSema) {
+		CloseHandle((HANDLE)mKernelSema);
+		mKernelSema = nullptr;
+	}
+}
+
+void VDSemaphore::Reset(int count) {
+	if (mKernelSema)
+		CloseHandle((HANDLE)mKernelSema);
+	mKernelSema = (void *)CreateSemaphore(NULL, count, 0x7fffffff, NULL);
+}
+
+void VDSemaphore::Wait() {
+	WaitForSingleObject((HANDLE)mKernelSema, INFINITE);
+}
+
+bool VDSemaphore::Wait(int timeout) {
+	return WaitForSingleObject((HANDLE)mKernelSema, timeout) == WAIT_OBJECT_0;
+}
+
+bool VDSemaphore::TryWait() {
+	return WaitForSingleObject((HANDLE)mKernelSema, 0) == WAIT_OBJECT_0;
+}
+
+void VDSemaphore::Post() {
+	ReleaseSemaphore((HANDLE)mKernelSema, 1, NULL);
+}
+
+#else // non-Windows
 
 VDSignal::VDSignal() {
 	mAutoReset = true;
@@ -451,6 +563,8 @@ void VDSemaphore::Post() {
 	}
 	mCondVar.notify_one();
 }
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////
 // VDConditionVariable - wraps std::condition_variable_any
