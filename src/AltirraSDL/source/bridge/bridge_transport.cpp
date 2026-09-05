@@ -462,6 +462,15 @@ IoResult Transport::SendAll(const void* buf, size_t len) {
 	// Append to any previously-pending tail and try to flush
 	// everything in one go.
 	mPendingSend.append((const char*)buf, len);
+	return FlushPending();
+}
+
+IoResult Transport::FlushPending() {
+	if (BR_IS_INVALID(mClientFd))
+		return IoResult::Error;
+	if (mPendingSend.empty())
+		return IoResult::Ok;
+
 	const char* p = mPendingSend.data();
 	size_t remaining = mPendingSend.size();
 
@@ -478,7 +487,8 @@ IoResult Transport::SendAll(const void* buf, size_t len) {
 		}
 		int e = BR_LAST_ERR();
 		if (BR_WOULDBLOCK(e) || BR_INTR(e)) {
-			// Save the unsent tail; the next SendAll will retry.
+			// Save the unsent tail; the next FlushPending (from
+			// Poll or the next SendAll) will retry.
 			mPendingSend.assign(p, remaining);
 			return IoResult::WouldBlock;
 		}
