@@ -3,15 +3,17 @@
 // The bridge server does not link SDL3. Several SDL3-frontend stub
 // files (console_stubs.cpp, uiaccessors_stubs.cpp, win32_stubs.cpp)
 // are shared with AltirraSDL and reference SDL3 for clipboard,
-// message boxes, timers, and window flags. Those code paths are never
-// called in the headless server — no UI, no window, no user
-// interaction — so we provide no-op replacements here instead of
-// forking the files.
+// message boxes, timers, and window flags. The clipboard, URL, message
+// box, and window paths are never called in the headless server, so they
+// use neutral no-op replacements here instead of forking the files.
+// Timers are the exception: the headless custom-device network path uses
+// them for reconnects, so this header provides a small worker-thread
+// implementation with explicit shutdown and cancellation semantics.
 //
-// Every function returns a neutral value (0 / false / nullptr) and
-// every type is a minimal stand-in. If any of these ever fires at
-// runtime in the bridge server, a stub file's code path was reached
-// that shouldn't have been — fix the caller, not this header.
+// Non-timer functions return neutral values (0 / false / nullptr) and
+// every type is a minimal stand-in. If one of those fires at runtime in
+// the bridge server, a stub file's code path was reached that should not
+// have been — fix the caller, not this header.
 
 #pragma once
 
@@ -61,6 +63,7 @@ namespace HeadlessSDLTimer {
 		std::set<SDL_TimerID> active;
 		std::set<SDL_TimerID> cancelled;
 		std::thread worker;
+		std::thread::id workerThreadId;
 		bool running = false;
 		SDL_TimerID nextID = 1;
 
@@ -85,6 +88,7 @@ namespace HeadlessSDLTimer {
 	inline void WorkerThread() {
 		State& state = GetState();
 		std::unique_lock<std::mutex> lock(state.mutex);
+		state.workerThreadId = std::this_thread::get_id();
 		while (state.running) {
 			if (state.timers.empty()) {
 				state.cv.wait(lock, [&] { return !state.running || !state.timers.empty(); });
@@ -151,6 +155,11 @@ inline bool SDL_RemoveTimer(SDL_TimerID id) {
 	}
 	if (state.active.contains(id)) {
 		state.cancelled.insert(id);
+		// SDL permits timer callbacks to cancel their own timer. The
+		// worker must not wait for itself; returning false still leaves
+		// the callback's cancellation recorded for the reschedule check.
+		if (std::this_thread::get_id() == state.workerThreadId)
+			return false;
 		state.cv.wait(lock, [&] { return !state.active.contains(id); });
 	}
 	return false;

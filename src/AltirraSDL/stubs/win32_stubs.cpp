@@ -181,6 +181,10 @@ public:
 
 		uint32 ms = std::max(1u, (uint32)(delay * 1000.0f));
 		s.timerId = SDL_AddTimer(ms, TimerCB, &s);
+		if (!s.timerId) {
+			s.fn = nullptr;
+			return;
+		}
 		*token = (uint64)(idx + 1);
 	}
 
@@ -207,6 +211,8 @@ public:
 
 private:
 	struct Slot {
+		// deque keeps these addresses stable while new timer slots are added;
+		// SDL invokes TimerCB from its worker thread.
 		SDL_TimerID timerId = 0;
 		uint64 dispatchToken = 0;
 		vdfunction<void()> fn;
