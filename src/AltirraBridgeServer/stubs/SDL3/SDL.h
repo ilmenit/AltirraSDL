@@ -42,6 +42,7 @@ inline bool SDL_OpenURL(const char*) { return false; }
 #include <mutex>
 #include <condition_variable>
 #include <map>
+#include <set>
 #include <chrono>
 
 namespace HeadlessSDLTimer {
@@ -53,56 +54,64 @@ namespace HeadlessSDLTimer {
 		void *param;
 	};
 
-	inline std::mutex& GetMutex() {
-		static std::mutex m;
-		return m;
-	}
-	inline std::condition_variable& GetCV() {
-		static std::condition_variable cv;
-		return cv;
-	}
-	inline std::map<SDL_TimerID, TimerEntry>& GetTimers() {
-		static std::map<SDL_TimerID, TimerEntry> timers;
-		return timers;
-	}
-	inline bool& GetRunning() {
-		static bool running = false;
-		return running;
-	}
-	inline std::thread*& GetThread() {
-		static std::thread *t = nullptr;
-		return t;
-	}
-	inline SDL_TimerID& GetNextID() {
-		static SDL_TimerID nextID = 1;
-		return nextID;
+	struct State {
+		std::mutex mutex;
+		std::condition_variable cv;
+		std::map<SDL_TimerID, TimerEntry> timers;
+		std::set<SDL_TimerID> active;
+		std::set<SDL_TimerID> cancelled;
+		std::thread worker;
+		bool running = false;
+		SDL_TimerID nextID = 1;
+
+		~State() {
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				running = false;
+				timers.clear();
+				cancelled.clear();
+			}
+			cv.notify_all();
+			if (worker.joinable())
+				worker.join();
+		}
+	};
+
+	inline State& GetState() {
+		static State state;
+		return state;
 	}
 
 	inline void WorkerThread() {
-		std::unique_lock<std::mutex> lock(GetMutex());
-		while (GetRunning()) {
-			if (GetTimers().empty()) {
-				GetCV().wait(lock, [] { return !GetRunning() || !GetTimers().empty(); });
+		State& state = GetState();
+		std::unique_lock<std::mutex> lock(state.mutex);
+		while (state.running) {
+			if (state.timers.empty()) {
+				state.cv.wait(lock, [&] { return !state.running || !state.timers.empty(); });
 			} else {
-				auto nextIt = GetTimers().begin();
-				for (auto it = GetTimers().begin(); it != GetTimers().end(); ++it) {
+				auto nextIt = state.timers.begin();
+				for (auto it = state.timers.begin(); it != state.timers.end(); ++it) {
 					if (it->second.fireTime < nextIt->second.fireTime)
 						nextIt = it;
 				}
 				auto now = std::chrono::steady_clock::now();
 				if (now >= nextIt->second.fireTime) {
 					TimerEntry entry = nextIt->second;
-					GetTimers().erase(nextIt);
+					state.timers.erase(nextIt);
+					state.active.insert(entry.id);
 					lock.unlock();
 					Uint32 nextInterval = entry.cb(entry.param, entry.id, entry.interval);
 					lock.lock();
-					if (nextInterval > 0) {
+					state.active.erase(entry.id);
+					if (nextInterval > 0 && state.running
+						&& !state.cancelled.erase(entry.id)) {
 						entry.interval = nextInterval;
 						entry.fireTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(nextInterval);
-						GetTimers()[entry.id] = entry;
+						state.timers[entry.id] = entry;
 					}
+					state.cv.notify_all();
 				} else {
-					GetCV().wait_until(lock, nextIt->second.fireTime);
+					state.cv.wait_until(lock, nextIt->second.fireTime);
 				}
 			}
 		}
@@ -111,31 +120,38 @@ namespace HeadlessSDLTimer {
 
 inline SDL_TimerID SDL_AddTimer(Uint32 interval, SDL_TimerCallback callback, void* userdata) {
 	if (!callback || interval == 0) return 0;
-	std::lock_guard<std::mutex> lock(HeadlessSDLTimer::GetMutex());
-	if (!HeadlessSDLTimer::GetRunning()) {
-		HeadlessSDLTimer::GetRunning() = true;
-		HeadlessSDLTimer::GetThread() = new std::thread(HeadlessSDLTimer::WorkerThread);
+	auto& state = HeadlessSDLTimer::GetState();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	if (!state.running) {
+		state.running = true;
+		state.worker = std::thread(HeadlessSDLTimer::WorkerThread);
 	}
-	SDL_TimerID id = HeadlessSDLTimer::GetNextID()++;
+	SDL_TimerID id = state.nextID++;
 	HeadlessSDLTimer::TimerEntry entry;
 	entry.id = id;
 	entry.interval = interval;
 	entry.fireTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(interval);
 	entry.cb = callback;
 	entry.param = userdata;
-	HeadlessSDLTimer::GetTimers()[id] = entry;
-	HeadlessSDLTimer::GetCV().notify_one();
+	state.cancelled.erase(id);
+	state.timers[id] = entry;
+	state.cv.notify_one();
 	return id;
 }
 
 inline bool SDL_RemoveTimer(SDL_TimerID id) {
 	if (id == 0) return false;
-	std::lock_guard<std::mutex> lock(HeadlessSDLTimer::GetMutex());
-	auto it = HeadlessSDLTimer::GetTimers().find(id);
-	if (it != HeadlessSDLTimer::GetTimers().end()) {
-		HeadlessSDLTimer::GetTimers().erase(it);
-		HeadlessSDLTimer::GetCV().notify_one();
+	auto& state = HeadlessSDLTimer::GetState();
+	std::unique_lock<std::mutex> lock(state.mutex);
+	auto it = state.timers.find(id);
+	if (it != state.timers.end()) {
+		state.timers.erase(it);
+		state.cv.notify_one();
 		return true;
+	}
+	if (state.active.contains(id)) {
+		state.cancelled.insert(id);
+		state.cv.wait(lock, [&] { return !state.active.contains(id); });
 	}
 	return false;
 }

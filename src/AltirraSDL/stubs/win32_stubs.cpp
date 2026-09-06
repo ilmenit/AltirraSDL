@@ -5,6 +5,7 @@
 #include <stdafx.h>
 #include <SDL3/SDL.h>
 #include <mutex>
+#include <deque>
 #include <vector>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -138,9 +139,25 @@ public:
 	ATTimerServiceSDL3(IATAsyncDispatcher& disp) : mpDispatcher(&disp) {}
 
 	~ATTimerServiceSDL3() {
+		{
+			std::lock_guard<std::mutex> lock(mMutex);
+			mbDestroying = true;
+		}
+
 		for (auto& s : mSlots) {
-			if (s.timerId)
-				SDL_RemoveTimer(s.timerId);
+			SDL_TimerID timerId;
+			{
+				std::lock_guard<std::mutex> lock(mMutex);
+				timerId = s.timerId;
+			}
+			if (timerId)
+				SDL_RemoveTimer(timerId);
+		}
+
+		for (auto& s : mSlots) {
+			std::lock_guard<std::mutex> lock(mMutex);
+			if (s.dispatchToken)
+				mpDispatcher->Cancel(&s.dispatchToken);
 		}
 	}
 
@@ -148,13 +165,16 @@ public:
 		if (!token) return;
 		if (*token) Cancel(token);
 
+		std::lock_guard<std::mutex> lock(mMutex);
 		size_t idx = mSlots.size();
 		for (size_t i = 0; i < mSlots.size(); ++i) {
-			if (!mSlots[i].fn) { idx = i; break; }
+			if (!mSlots[i].fn && !mSlots[i].timerId) { idx = i; break; }
 		}
 		if (idx == mSlots.size()) mSlots.push_back({});
 
 		auto& s = mSlots[idx];
+		if (s.dispatchToken)
+			mpDispatcher->Cancel(&s.dispatchToken);
 		s.fn = std::move(fn);
 		s.pSelf = this;
 		s.index = idx;
@@ -169,7 +189,17 @@ public:
 		size_t idx = (size_t)(*token - 1);
 		if (idx < mSlots.size()) {
 			auto& s = mSlots[idx];
-			if (s.timerId) { SDL_RemoveTimer(s.timerId); s.timerId = 0; }
+			SDL_TimerID timerId;
+			{
+				std::lock_guard<std::mutex> lock(mMutex);
+				timerId = s.timerId;
+			}
+			if (timerId)
+				SDL_RemoveTimer(timerId);
+			std::lock_guard<std::mutex> lock(mMutex);
+			if (s.dispatchToken)
+				mpDispatcher->Cancel(&s.dispatchToken);
+			s.timerId = 0;
 			s.fn = nullptr;
 		}
 		*token = 0;
@@ -178,6 +208,7 @@ public:
 private:
 	struct Slot {
 		SDL_TimerID timerId = 0;
+		uint64 dispatchToken = 0;
 		vdfunction<void()> fn;
 		ATTimerServiceSDL3 *pSelf = nullptr;
 		size_t index = 0;
@@ -185,18 +216,24 @@ private:
 
 	static uint32 SDLCALL TimerCB(void *ud, SDL_TimerID, uint32) {
 		auto *s = static_cast<Slot *>(ud);
-		if (s && s->pSelf && s->fn) {
+		if (!s || !s->pSelf)
+			return 0;
+
+		ATTimerServiceSDL3 *self = s->pSelf;
+		std::lock_guard<std::mutex> lock(self->mMutex);
+		if (!self->mbDestroying && s->fn) {
 			vdfunction<void()> fn = std::move(s->fn);
-			s->timerId = 0;
-			s->pSelf->mpDispatcher->Queue(&s->pSelf->mDispToken,
+			self->mpDispatcher->Queue(&s->dispatchToken,
 				[fn = std::move(fn)]() { fn(); });
 		}
+		s->timerId = 0;
 		return 0;
 	}
 
 	IATAsyncDispatcher *mpDispatcher;
-	uint64 mDispToken = 0;
-	std::vector<Slot> mSlots;
+	std::mutex mMutex;
+	bool mbDestroying = false;
+	std::deque<Slot> mSlots;
 };
 
 IATTimerService *ATCreateTimerService(IATAsyncDispatcher& disp) {
