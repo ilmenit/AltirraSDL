@@ -1182,6 +1182,8 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 	}
 	payload += "\"debugbrkrun\":";
 	payload += (dbg && dbg->IsBreakOnEXERunAddrEnabled() ? "true" : "false");
+	payload += ",\"history\":";
+	payload += (sim.GetCPU().IsHistoryEnabled() ? "true" : "false");
 	return payload;
 }
 
@@ -2083,6 +2085,7 @@ std::string CmdWarmReset(ATSimulator& sim, const std::vector<std::string>& /*tok
 //   kernel      default/path/id SetKernel / GetKernelId
 //   basicrom    default/path/id SetBasic / GetBasicId
 //   debugbrkrun true/false      SetBreakOnEXERunAddrEnabled
+//   history     true/false      ATCPUEmulator::SetHistoryEnabled
 //
 // Setting machine or memory triggers a cold reset (the simulator
 // requires it — the memory layout changes). The pause state is
@@ -2136,6 +2139,8 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 			return JsonOk(std::string("\"u1mbrom_id\":") +
 				Hex64(fwm ? fwm->GetCompatibleFirmware(kATFirmwareType_U1MB) : 0));
 		}
+		if (key == "history")
+			return JsonOk(std::string("\"history\":") + (sim.GetCPU().IsHistoryEnabled() ? "true" : "false"));
 		if (key == "fppatch")
 			return JsonOk(std::string("\"fppatch\":") + (sim.IsFPPatchEnabled() ? "true" : "false"));
 		if (key == "stereo")
@@ -2299,6 +2304,15 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 			sim.ColdReset();
 			if (wasPaused) sim.Pause(); else sim.Resume();
 		}
+	}
+	else if (key == "history") {
+		// The CPU's instruction history ring, which HISTORY reads: off by
+		// default because recording costs time, on for a run that wants
+		// the last 131072 instructions when something goes wrong.
+		bool v = false;
+		if (!ParseBoolLiteral(rawVal, v))
+			return JsonError("CONFIG: expected boolean for history");
+		sim.GetCPU().SetHistoryEnabled(v);
 	}
 	else if (key == "fppatch") {
 		bool v = false;

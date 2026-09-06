@@ -251,6 +251,19 @@ std::string CmdHistory(ATSimulator& sim, const std::vector<std::string>& tokens)
 		AddField(e, "ea",       Hex16(h.mEA & 0xffff));
 		AddBool (e, "irq",      h.mbIRQ);
 		AddBool (e, "nmi",      h.mbNMI);
+		if (cpu.GetCPUMode() == kATCPUMode_65C816) {
+			// The 65C816's side of an entry: the program bank the PC is
+			// in, the data bank, the high byte of S, the emulation flag
+			// and the instruction's bytes, so a client can disassemble.
+			AddField(e, "k",    Hex8(h.mK));
+			AddField(e, "b",    Hex8(h.mB));
+			AddField(e, "sh",   Hex8(h.mExt.mSH));
+			AddU32  (e, "e",    h.mbEmulation ? 1 : 0);
+			char bytes[16];
+			std::snprintf(bytes, sizeof bytes, "\"%02x%02x%02x%02x\"",
+			              h.mOpcode[0], h.mOpcode[1], h.mOpcode[2], h.mOpcode[3]);
+			AddField(e, "bytes", bytes);
+		}
 		StripTrailingComma(e);
 		entries += e;
 		entries += '}';

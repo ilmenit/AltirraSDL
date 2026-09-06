@@ -127,6 +127,19 @@ std::string BuildCpuPayload(ATSimulator& sim) {
 	AddField(body, "Y",  Hex8(cpu.GetY()));
 	AddField(body, "S",  Hex8(cpu.GetS()));
 	AddField(body, "P",  Hex8(p));
+	if (cpu.GetCPUMode() == kATCPUMode_65C816) {
+		// The 65C816's other half: the bank registers, the direct page,
+		// the high bytes of the 16-bit registers and the emulation flag.
+		// PC is bank K; S, A, X and Y are 16 bits wide in native mode.
+		AddField(body, "K",  Hex8(cpu.GetK()));
+		AddField(body, "B",  Hex8(cpu.GetB()));
+		AddField(body, "D",  Hex16(cpu.GetD()));
+		AddField(body, "SH", Hex8(cpu.GetSH()));
+		AddField(body, "AH", Hex8(cpu.GetAH()));
+		AddField(body, "XH", Hex8(cpu.GetXH()));
+		AddField(body, "YH", Hex8(cpu.GetYH()));
+		AddU32  (body, "E",  cpu.GetEmulationFlag() ? 1 : 0);
+	}
 	body += "\"flags\":\"";
 	body += flagStr;
 	body += "\",";
