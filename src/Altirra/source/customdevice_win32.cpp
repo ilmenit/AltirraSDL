@@ -91,7 +91,7 @@ void ATDeviceCustomNetworkEngine::Shutdown() {
 
 bool ATDeviceCustomNetworkEngine::IsConnected() {
 	mMutex.Lock();
-	bool success = mpSocket && (!mSocketStatus.mbConnecting && !mSocketStatus.mbClosed);
+	bool success = mpSocket && (!mSocketStatus.mbConnecting && !mSocketStatus.mbClosed && !mSocketStatus.mbRemoteClosed);
 	mMutex.Unlock();
 
 	return success;
@@ -102,7 +102,9 @@ bool ATDeviceCustomNetworkEngine::WaitForFirstConnectionAttempt() {
 
 	for(;;) {
 		vdsynchronized(mMutex) {
-			success = mpSocket && !mSocketStatus.mbConnecting;
+			if (!mpSocket)
+				return false;
+			success = !mSocketStatus.mbConnecting;
 		}
 
 		if (success)
@@ -120,7 +122,7 @@ bool ATDeviceCustomNetworkEngine::Restore() {
 	if (mpSocket) {
 		vdsynchronized(mMutex) {
 			if (mbRestoreRequired) {
-				if (!mSocketStatus.mbConnecting && !mSocketStatus.mbClosed) {
+				if (!mSocketStatus.mbConnecting && !mSocketStatus.mbClosed && !mSocketStatus.mbRemoteClosed) {
 					mbRestoreRequired = false;
 					success = true;
 				}
@@ -234,7 +236,7 @@ void ATDeviceCustomNetworkEngine::Connect() {
 				vdsynchronized(mMutex) {
 					mSocketStatus = status;
 
-					if (status.mbClosed)
+					if (status.mbClosed || status.mbRemoteClosed)
 						mbRestoreRequired = true;
 					else if ((status.mbCanRead && mbRecvNotifyNeeded) || (!status.mbConnecting && mbInitialNotifyNeeded)) {
 						mbRecvNotifyNeeded = false;
@@ -248,7 +250,7 @@ void ATDeviceCustomNetworkEngine::Connect() {
 
 				mSocketEvent.signal();
 
-				if (status.mbClosed)
+				if (status.mbClosed || status.mbRemoteClosed)
 					QueueReconnect();
 			},
 			true
@@ -271,7 +273,7 @@ void ATDeviceCustomNetworkEngine::QueueReconnect() {
 				bool socketClosed;
 
 				vdsynchronized(mMutex) {
-					socketClosed = mSocketStatus.mbClosed;
+					socketClosed = mSocketStatus.mbClosed || mSocketStatus.mbRemoteClosed;
 				}
 
 				if (socketClosed) {

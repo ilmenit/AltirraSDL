@@ -38,8 +38,107 @@ inline void SDL_free(void*) {}
 inline bool SDL_OpenURL(const char*) { return false; }
 
 // Timers
-inline SDL_TimerID SDL_AddTimer(Uint32, SDL_TimerCallback, void*) { return 0; }
-inline bool SDL_RemoveTimer(SDL_TimerID) { return false; }
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <map>
+#include <chrono>
+
+namespace HeadlessSDLTimer {
+	struct TimerEntry {
+		SDL_TimerID id;
+		std::chrono::steady_clock::time_point fireTime;
+		Uint32 interval;
+		SDL_TimerCallback cb;
+		void *param;
+	};
+
+	inline std::mutex& GetMutex() {
+		static std::mutex m;
+		return m;
+	}
+	inline std::condition_variable& GetCV() {
+		static std::condition_variable cv;
+		return cv;
+	}
+	inline std::map<SDL_TimerID, TimerEntry>& GetTimers() {
+		static std::map<SDL_TimerID, TimerEntry> timers;
+		return timers;
+	}
+	inline bool& GetRunning() {
+		static bool running = false;
+		return running;
+	}
+	inline std::thread*& GetThread() {
+		static std::thread *t = nullptr;
+		return t;
+	}
+	inline SDL_TimerID& GetNextID() {
+		static SDL_TimerID nextID = 1;
+		return nextID;
+	}
+
+	inline void WorkerThread() {
+		std::unique_lock<std::mutex> lock(GetMutex());
+		while (GetRunning()) {
+			if (GetTimers().empty()) {
+				GetCV().wait(lock, [] { return !GetRunning() || !GetTimers().empty(); });
+			} else {
+				auto nextIt = GetTimers().begin();
+				for (auto it = GetTimers().begin(); it != GetTimers().end(); ++it) {
+					if (it->second.fireTime < nextIt->second.fireTime)
+						nextIt = it;
+				}
+				auto now = std::chrono::steady_clock::now();
+				if (now >= nextIt->second.fireTime) {
+					TimerEntry entry = nextIt->second;
+					GetTimers().erase(nextIt);
+					lock.unlock();
+					Uint32 nextInterval = entry.cb(entry.param, entry.id, entry.interval);
+					lock.lock();
+					if (nextInterval > 0) {
+						entry.interval = nextInterval;
+						entry.fireTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(nextInterval);
+						GetTimers()[entry.id] = entry;
+					}
+				} else {
+					GetCV().wait_until(lock, nextIt->second.fireTime);
+				}
+			}
+		}
+	}
+}
+
+inline SDL_TimerID SDL_AddTimer(Uint32 interval, SDL_TimerCallback callback, void* userdata) {
+	if (!callback || interval == 0) return 0;
+	std::lock_guard<std::mutex> lock(HeadlessSDLTimer::GetMutex());
+	if (!HeadlessSDLTimer::GetRunning()) {
+		HeadlessSDLTimer::GetRunning() = true;
+		HeadlessSDLTimer::GetThread() = new std::thread(HeadlessSDLTimer::WorkerThread);
+	}
+	SDL_TimerID id = HeadlessSDLTimer::GetNextID()++;
+	HeadlessSDLTimer::TimerEntry entry;
+	entry.id = id;
+	entry.interval = interval;
+	entry.fireTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(interval);
+	entry.cb = callback;
+	entry.param = userdata;
+	HeadlessSDLTimer::GetTimers()[id] = entry;
+	HeadlessSDLTimer::GetCV().notify_one();
+	return id;
+}
+
+inline bool SDL_RemoveTimer(SDL_TimerID id) {
+	if (id == 0) return false;
+	std::lock_guard<std::mutex> lock(HeadlessSDLTimer::GetMutex());
+	auto it = HeadlessSDLTimer::GetTimers().find(id);
+	if (it != HeadlessSDLTimer::GetTimers().end()) {
+		HeadlessSDLTimer::GetTimers().erase(it);
+		HeadlessSDLTimer::GetCV().notify_one();
+		return true;
+	}
+	return false;
+}
 
 // Message box
 enum { SDL_MESSAGEBOX_INFORMATION = 0, SDL_MESSAGEBOX_WARNING = 1, SDL_MESSAGEBOX_ERROR = 2 };

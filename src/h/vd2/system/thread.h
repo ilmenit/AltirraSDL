@@ -185,6 +185,69 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////
 
+#if defined(VD_OS_WINDOWS) || defined(_WIN32)
+
+class VDSignalBase {
+	VDSignalBase(const VDSignalBase&) = delete;
+	VDSignalBase& operator=(const VDSignalBase&) = delete;
+protected:
+	void *hEvent;
+
+	VDSignalBase(bool manualReset, bool initialState);
+
+public:
+	VDSignalBase();
+	~VDSignalBase();
+
+	void signal();
+	bool check();
+	void wait();
+	int wait(VDSignalBase *second);
+	int wait(VDSignalBase *second, VDSignalBase *third);
+	static int waitMultiple(const VDSignalBase *const *signals, int count);
+
+	bool tryWait(uint32 timeoutMillisec);
+
+	void *getHandle() { return hEvent; }
+	const void *getHandle() const { return hEvent; }
+
+	void operator()() { signal(); }
+};
+
+class VDSignal : public VDSignalBase {
+public:
+	VDSignal();
+};
+
+class VDSignalPersistent : public VDSignalBase {
+public:
+	VDSignalPersistent();
+
+	void unsignal();
+};
+
+///////////////////////////////////////////////////////////////////////////
+
+class VDSemaphore {
+public:
+	VDSemaphore(int initial);
+	~VDSemaphore();
+
+	void *GetHandle() const { return mKernelSema; }
+
+	void Reset(int count);
+
+	void Wait();
+	bool Wait(int timeout);
+	bool TryWait();
+	void Post();
+
+private:
+	void *mKernelSema;
+};
+
+#else
+
 class VDSignalBase {
 	VDSignalBase(const VDSignalBase&) = delete;
 	VDSignalBase& operator=(const VDSignalBase&) = delete;
@@ -208,6 +271,7 @@ public:
 	bool tryWait(uint32 timeoutMillisec);
 
 	void *getHandle() { return nullptr; }
+	const void *getHandle() const { return nullptr; }
 
 	void operator()() { signal(); }
 };
@@ -245,6 +309,8 @@ private:
 	std::condition_variable mCondVar;
 	int mCount;
 };
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////
 
