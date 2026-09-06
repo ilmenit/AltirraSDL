@@ -44,6 +44,7 @@ std::string CmdMemLoad(ATSimulator& sim, const std::vector<std::string>& tokens)
 
 std::string CmdJoy(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdKey(ATSimulator& sim, const std::vector<std::string>& tokens);
+std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens);

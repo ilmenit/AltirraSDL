@@ -821,6 +821,17 @@ int atb_key(atb_client_t* c, const char* name, int shift, int ctrl) {
 	return atb_simple_cmd(c, cmd);
 }
 
+int atb_key_raw(atb_client_t* c, const char* name, int down,
+                int shift, int ctrl) {
+	if (!name) return ATB_ERR_BAD_ARG;
+	char cmd[96];
+	int n = snprintf(cmd, sizeof cmd, "KEYRAW %s %s%s%s",
+		name, down ? "down" : "up",
+		shift ? " shift" : "", ctrl ? " ctrl" : "");
+	if (n <= 0 || (size_t)n >= sizeof cmd) return ATB_ERR_BAD_ARG;
+	return atb_simple_cmd(c, cmd);
+}
+
 int atb_consol(atb_client_t* c, int start, int select, int option) {
 	char cmd[64];
 	int n = snprintf(cmd, sizeof cmd, "CONSOL%s%s%s",
