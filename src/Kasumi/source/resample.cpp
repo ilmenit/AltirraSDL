@@ -338,6 +338,10 @@ void VDPixmapResampler::ApplyFilters(VDPixmapUberBlitterGenerator& gen, uint32 d
 		case kFilterSharpLinear:
 			gen.sharplinearh(xoffset, xfactor, dw, mSharpnessFactorX);
 			break;
+
+		case kFilterCount:
+			VDNEVERHERE;
+			break;
 	}
 
 	switch(mFilterV) {
@@ -359,6 +363,10 @@ void VDPixmapResampler::ApplyFilters(VDPixmapUberBlitterGenerator& gen, uint32 d
 
 		case kFilterSharpLinear:
 			gen.sharplinearv(yoffset, yfactor, dh, mSharpnessFactorY);
+			break;
+
+		case kFilterCount:
+			VDNEVERHERE;
 			break;
 	}
 }

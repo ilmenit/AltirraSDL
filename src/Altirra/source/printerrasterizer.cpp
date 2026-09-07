@@ -646,12 +646,14 @@ void ATPrinterRasterizer::SortCullBuffers(float minY, float scanLineHeightY, sin
 	i = mDotCullBuffer.size();
 	mDotCullBuffer.resize(i + mVectorCullBuffer.size() * 2);
 
+	// MERGE NOTE: Keep brace initialization here. Apple Clang 15 does not
+	// accept the upstream parenthesized aggregate form for RenderDot.
 	for (const RenderVector& v : mVectorCullBuffer) {
 		if (fullDotCullRect.contains(vdpoint32f { v.mX1, v.mY1 }))
-			mDotCullBuffer[i++] = RenderDot(v.mX1, v.mY1, v.mLinearColor);
+			mDotCullBuffer[i++] = RenderDot { v.mX1, v.mY1, v.mLinearColor };
 
 		if (fullDotCullRect.contains(vdpoint32f { v.mX2, v.mY2 }))
-			mDotCullBuffer[i++] = RenderDot(v.mX2, v.mY2, v.mLinearColor);
+			mDotCullBuffer[i++] = RenderDot { v.mX2, v.mY2, v.mLinearColor };
 	}
 
 	mDotCullBuffer.resize(i);

@@ -22,7 +22,7 @@ jobs:
       matrix:
         sanitizer: [false, true]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install compiler and mandatory export validators
         run: |
           sudo apt-get update
@@ -68,8 +68,8 @@ jobs:
             preset: windows-sdl-release
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install compatible CMake

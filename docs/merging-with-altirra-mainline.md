@@ -318,6 +318,9 @@ helper on future merges.
   Deflate match probes in `system/source/zip.cpp` must use
   `VDReadUnalignedU32`, since match offsets are only byte-aligned. Both defects
   were reproduced by GCC 12 UBSan before correction.
+- Apple Clang 15 requires brace initialization for the `RenderDot` aggregate
+  in `printerrasterizer.cpp`. Do not restore upstream's parenthesized aggregate
+  form; it fails the macOS native regression build.
 
 Focused tests live in `tests/upstream`, enabled by `ALTIRRA_BUILD_TESTS`.
 The export validation uses Python's standard-library PNG decoder and Poppler
