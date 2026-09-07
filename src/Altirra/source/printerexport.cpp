@@ -445,7 +445,10 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 						// begin text object, update text transform, and begin array for TJ command
 						s.append_sprintf(" BT %d %d Td [", fxx0, fxy0);
 
-						float xoff = (-pageRect.left * mmToUnits - fxx0) * 1000.0f / dotFontSize;
+						// MERGE NOTE: the TJ adjustment must retain the dot-radius
+						// offset too; otherwise it cancels the corrected line origin.
+						// Test19 shifts character glyphs to match that raw-dot error.
+						float xoff = (-(pageRect.left + dotRadiusMM) * mmToUnits - fxx0) * 1000.0f / dotFontSize;
 						for(const auto& col : bandColumns) {
 							uint32 pins = (col.mPins >> bandPinShift) & 0x7F;
 
@@ -597,6 +600,10 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 			ttf->MapCharacter(chIndex++, ttf->BeginCompositeGlyph());
 
 			for(const auto& cc : output.GetCharColumns(ch)) {
+				// MERGE NOTE: test19 removes this subtraction to align with
+				// the raw-dot TJ offset error corrected above. Keep both paths
+				// centered on the actual printer dot: this glyph's center is
+				// +radius, so cancel that displacement here.
 				const sint32 cx = VDRoundToInt32((cc.mXOffset - spec.mDotRadiusMM) * charMMToUnits);
 
 				for(uint32 dots = cc.mDots; dots; dots &= dots - 1) {

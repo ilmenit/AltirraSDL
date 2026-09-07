@@ -1,20 +1,16 @@
 //	AltirraSDL - Tools dialog (split from ui_tools.cpp, Phase 2k)
 //
-//	Phase 3d note: a 4-way split was planned (convert / import / export /
-//	main) but every helper in this file references g_diskExplorer (the
-//	~640-line DiskExplorerState struct) and the import/export callbacks
-//	are tightly interleaved with the in-place file dialog state.  Promoting
-//	the entire DiskExplorerState definition to a header — the only way to
-//	let the helpers be moved verbatim — would relocate ~640 lines of
-//	struct + member functions into a public-ish header for very little
-//	maintainability win.  Like ui/media/videowriter_sdl3.cpp (3e), this
-//	file is intentionally left intact.
+// User-requested document UI extension of the Windows Disk Explorer.
+// Helpers use a scoped main-thread document context; dialog results are queued
+// by ui_explorer_document.h and drained only within the owning context.
 
 #include <stdafx.h>
 #include <algorithm>
+#include <cctype>
 #include <string>
 #include <mutex>
 #include <thread>
+#include <tuple>
 #include <vector>
 #include <cstring>
 #include <cstdio>
@@ -39,6 +35,7 @@
 #include <at/atio/cassetteimage.h>
 #include <vd2/Dita/accel.h>
 #include "ui_main.h"
+#include "ui_explorer_document.h"
 #include "accel_sdl3.h"
 #include "simulator.h"
 #include "gtia.h"
@@ -54,6 +51,9 @@
 #include "uitypes.h"
 #include "options.h"
 #include "oshelper.h"
+#include "ui_atascii.h"
+#include "ui_diskexplorer_views.h"
+#include "ui_fonts.h"
 
 extern ATSimulator g_sim;
 
@@ -75,16 +75,22 @@ enum DiskExplorerViewMode {
 	kDEView_None = -1,
 	kDEView_Text = 0,      // Text: no line wrapping
 	kDEView_TextWrap,       // Text: wrap to window
-	kDEView_TextGR0,        // Text: wrap to GR.0 screen (38 columns)
+	kDEView_TextGR0,        // Text: wrap to a user-selected screen width
 	kDEView_Hex,            // Hex dump
 	kDEView_Executable,     // Executable
 	kDEView_MAC65,          // MAC/65
+	kDEView_AtariBasic,     // Atari BASIC tokenized source
+	kDEView_SynAssembler,   // Syn assembler tokenized source
+	kDEView_6502,           // 6502 disassembly
+	kDEView_ASCII,          // 7-bit text interpretation
 };
 
-static struct DiskExplorerState {
+struct DiskExplorerState {
 	vdrefptr<IATDiskImage> pImage;
 	IATDiskFS *pFS = nullptr;
 	bool readOnly = true;
+	bool modified = false;
+	bool sortDirty = true;
 	ATDiskFSKey currentDir = ATDiskFSKey::None;
 
 	// Block device / partition support
@@ -142,18 +148,43 @@ static struct DiskExplorerState {
 		}
 	}
 	void SelectRange(int from, int to) {
+		if (selected.empty())
+			return;
+
 		if (from > to) std::swap(from, to);
-		for (int i = from; i <= to && i < (int)selected.size(); ++i)
+		from = std::max(from, 0);
+		to = std::min(to, (int)selected.size() - 1);
+		if (from > to)
+			return;
+
+		for (int i = from; i <= to; ++i)
 			selected[i] = true;
 		selectedEntry = to;
 		lastClickedEntry = to;
 	}
 
 	// File viewer
-	DiskExplorerViewMode viewMode = kDEView_TextGR0;
+	DiskExplorerViewMode viewMode = kDEView_Hex;
 	vdfastvector<uint8> viewData;
 	VDStringA viewText;
 	bool viewValid = false;
+
+	// Native disk-inspection tools.  These are kept separate from the file
+	// viewer so changing a directory or closing the image cannot leave a
+	// dangling sector buffer behind.
+	bool showImageProperties = false;
+	bool showSectorViewer = false;
+	bool showBootRecord = false;
+	bool showSectorMap = false;
+	bool showFileInfo = false;
+	ATDiskFSKey fileInfoKey = ATDiskFSKey::None;
+	uint32 sectorNumber = 1; // user-facing sector numbers are 1-based
+	uint32 loadedSectorNumber = 0;
+	vdfastvector<uint8> sectorData;
+	VDStringA sectorError;
+	ATDiskFSValidationReport validationReport;
+	bool validationValid = false; // validation has been run
+	bool validationProblems = false;
 
 	// Path breadcrumb
 	VDStringA pathStr;
@@ -164,6 +195,7 @@ static struct DiskExplorerState {
 	~DiskExplorerState() { delete pFS; }
 
 	void Reset() {
+		modified = false;
 		delete pFS; pFS = nullptr;
 		pImage = nullptr;
 		pBlockDevice = nullptr;
@@ -180,11 +212,62 @@ static struct DiskExplorerState {
 		viewData.clear();
 		viewText.clear();
 		viewValid = false;
+		showImageProperties = false;
+		showSectorViewer = false;
+		showBootRecord = false;
+		showSectorMap = false;
+		showFileInfo = false;
+		fileInfoKey = ATDiskFSKey::None;
+		sectorNumber = 1;
+		loadedSectorNumber = 0;
+		sectorData.clear();
+		sectorError.clear();
+		validationValid = false;
+		validationProblems = false;
 		pathStr = "/";
 		statusMsg.clear();
 	}
 
+	IATDiskImage *GetActiveImage() const {
+		return pImage ? pImage.get() : pPartitionView.get();
+	}
+
+	bool LoadSector(uint32 oneBasedSector) {
+		sectorData.clear();
+		sectorError.clear();
+		loadedSectorNumber = 0;
+		IATDiskImage *image = GetActiveImage();
+		if (!image) {
+			sectorError = "No disk image is open.";
+			return false;
+		}
+		if (!oneBasedSector || oneBasedSector > image->GetVirtualSectorCount()) {
+			sectorError = "The selected sector is outside the image.";
+			return false;
+		}
+		try {
+			const uint32 sectorSize = image->GetSectorSize(oneBasedSector - 1);
+			if (!sectorSize || sectorSize > 1024 * 1024) {
+				sectorError = "The image returned an unsupported sector size.";
+				return false;
+			}
+			sectorData.resize(sectorSize);
+			const uint32 actual = image->ReadVirtualSector(oneBasedSector - 1, sectorData.data(), sectorSize);
+			if (actual != sectorSize) {
+				sectorData.clear();
+				sectorError.sprintf("Short sector read (%u of %u bytes).", actual, sectorSize);
+				return false;
+			}
+			loadedSectorNumber = oneBasedSector;
+			return true;
+		} catch (const MyError& e) {
+			sectorError.sprintf("Sector read failed: %s", e.c_str());
+			return false;
+		}
+	}
+
 	void RefreshDirectory() {
+		sortDirty = true;
 		entries.clear();
 		selected.clear();
 		selectedEntry = -1;
@@ -310,6 +393,7 @@ static struct DiskExplorerState {
 	// Centralized post-modification handler — mirrors Windows OnFSModified().
 	// Flushes filesystem, auto-flushes image if configured, notifies emulator.
 	void OnFSModified() {
+		modified = true;
 		try {
 			if (pFS)
 				pFS->Flush();
@@ -363,6 +447,7 @@ static struct DiskExplorerState {
 		viewValid = false;
 		viewData.clear();
 		viewText.clear();
+		selectedEntry = entryIdx;
 		if (entryIdx < 0 || entryIdx >= (int)entries.size()) return;
 
 		auto &e = entries[entryIdx];
@@ -437,7 +522,7 @@ static struct DiskExplorerState {
 				}
 			};
 
-			const int lineWidth = (viewMode == kDEView_TextGR0) ? 38 : INT_MAX;
+			const int lineWidth = (viewMode == kDEView_TextGR0) ? ATUIGetTextColumns() : INT_MAX;
 			int col = 0;
 
 			viewText.reserve(viewData.size() * 2);
@@ -717,49 +802,116 @@ static struct DiskExplorerState {
 			break;
 		}
 
+		case kDEView_AtariBasic:
+		case kDEView_SynAssembler:
+		case kDEView_6502: {
+			VDStringA error;
+			bool ok = false;
+			if (viewMode == kDEView_AtariBasic)
+				ok = ATUIDecodeAtariBasic(viewData.data(), viewData.size(), viewText, error);
+			else if (viewMode == kDEView_SynAssembler)
+				ok = ATUIDecodeSynAssembler(viewData.data(), viewData.size(), viewText, error);
+			else
+				ok = ATUIDisassemble6502(viewData.data(), viewData.size(), 0, viewText, error);
+			if (!ok) {
+				viewText = "[Viewer could not decode this file]\n";
+				viewText += error;
+				viewText += '\n';
+			}
+			break;
+		}
+
 		default:
 			viewText = "(unknown view mode)";
 			break;
 		}
 	}
-} g_diskExplorer;
+};
 
-// Thread-safe pending path for disk explorer open (file dialog callback -> main thread)
-static std::mutex g_diskExplorerMutex;
-static std::string g_diskExplorerPendingOpen;
-static std::string g_diskExplorerPendingImport;
+struct DiskExportInfo {
+	ATDiskFSKey key;
+	bool dateValid;
+	VDExpandedDate date;
+};
+struct DiskMultiExportEntry {
+	ATDiskFSKey key;
+	VDStringA name;
+	bool dateValid;
+	VDExpandedDate date;
+};
 
-static void DiskExplorerOpenCallback(void *, const char * const *filelist, int) {
-	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingOpen = filelist[0];
+struct DiskExplorerDocument : ATUIExplorerDocument {
+	DiskExplorerState state;
+	bool closeRequested = false;
+	bool actionsRequested = false;
+	char newDirName[64] = {};
+	bool wantRename = false;
+	bool wantNewDir = false;
+	ATDiskFSKey renameKey = ATDiskFSKey::None;
+	char renameBuf[64] = {};
+
+	std::string diskExplorerPendingImport;
+
+	DiskExportInfo diskExportInfo;
+	std::string diskExplorerPendingExport;
+	std::vector<DiskMultiExportEntry> diskMultiExportEntries;
+	std::string diskExplorerPendingMultiExport;
+	bool diskMultiExportAsText = false;
+	std::string diskExplorerPendingImportText;
+	std::string diskExplorerPendingExportText;
+	DiskExportInfo diskExportTextInfo;
+	int diskExplorerPartitionImportIdx = -1;
+	std::string diskExplorerPendingPartitionImport;
+	int diskExplorerPartitionExportIdx = -1;
+	std::string diskExplorerPendingPartitionExport;
+	bool diskExplorerSettingsLoaded = false;
+};
+static std::vector<std::shared_ptr<DiskExplorerDocument>> documents;
+static DiskExplorerDocument *currentDocument = nullptr;
+static ATUIExplorerDocument openRequest;
+static std::vector<std::string> pendingDocuments;
+static void QueueOpen(void *, const char * const *paths, int) {
+	if (paths) for (; *paths; ++paths) pendingDocuments.emplace_back(*paths);
+}
+// Dialog results are dispatched on the main thread by the document mailbox.
+
+static void DiskExplorerOpenCallback(void *u, const char * const *paths, int f) {
+	QueueOpen(u, paths, f);
 }
 
+static void DiskExplorerLoadSettings();
+
 static void DiskExplorerDoOpen(const char *utf8path) {
+	const std::string source = ATUIExplorerFullPath(utf8path);
+	for (auto& doc : documents) {
+		if (doc->open && doc->source == source) { doc->focus = true; return; }
+	}
+	auto document = std::make_shared<DiskExplorerDocument>();
+	document->source = source;
+	documents.push_back(document);
+	ATUIExplorerScope<DiskExplorerDocument> scope(currentDocument, document.get());
+	DiskExplorerLoadSettings();
 	try {
 		VDStringW wpath = VDTextU8ToW(utf8path, -1);
-		g_diskExplorer.Reset();
+		currentDocument->state.Reset();
 
 		IATDiskImage *pImageRaw = nullptr;
 		ATLoadDiskImage(wpath.c_str(), &pImageRaw);
-		g_diskExplorer.pImage = pImageRaw;
+		currentDocument->state.pImage = pImageRaw;
 		if (pImageRaw) pImageRaw->Release();
 
-		g_diskExplorer.pFS = ATDiskMountImage(g_diskExplorer.pImage, true);
-		if (!g_diskExplorer.pFS) {
-			g_diskExplorer.statusMsg = "Unable to detect filesystem on disk image.";
-			g_diskExplorer.pImage = nullptr;
+		currentDocument->state.pFS = ATDiskMountImage(currentDocument->state.pImage, true);
+		if (!currentDocument->state.pFS) {
+			currentDocument->state.statusMsg = "Unable to detect filesystem on disk image.";
 			return;
 		}
-		g_diskExplorer.pFS->SetStrictNameChecking(g_diskExplorer.mbStrictFilenames);
-		g_diskExplorer.readOnly = true;
-		g_diskExplorer.NavigateTo(ATDiskFSKey::None);
+		currentDocument->state.pFS->SetStrictNameChecking(currentDocument->state.mbStrictFilenames);
+		currentDocument->state.readOnly = true;
+		currentDocument->state.NavigateTo(ATDiskFSKey::None);
 	} catch (const MyError &e) {
-		g_diskExplorer.Reset();
-		g_diskExplorer.statusMsg.sprintf("Failed to open: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Failed to open: %s", e.c_str());
 	}
 }
-
 
 // Open disk explorer for a mounted drive's disk image (called from disk context menu).
 void ATUIOpenDiskExplorerForDrive(int driveIdx, bool writable, bool autoFlush) {
@@ -768,33 +920,40 @@ void ATUIOpenDiskExplorerForDrive(int driveIdx, bool writable, bool autoFlush) {
 	if (!img)
 		return;
 
-	g_diskExplorer.Reset();
-	g_diskExplorer.pImage = img;
-	g_diskExplorer.pDiskInterface = &di;
-	g_diskExplorer.mbAutoFlush = autoFlush;
+	for (const auto& doc : documents) {
+		if (doc->open && doc->state.pImage == img) { doc->focus = true; return; }
+	}
+	auto document = std::make_shared<DiskExplorerDocument>();
+	document->source = std::string("D") + std::to_string(driveIdx + 1) + ": " + (di.GetPath() ? VDTextWToU8(di.GetPath(), -1).c_str() : "Mounted disk");
+	documents.push_back(document);
+	ATUIExplorerScope<DiskExplorerDocument> scope(currentDocument, document.get());
+	DiskExplorerLoadSettings();
+
+	currentDocument->state.Reset();
+	currentDocument->state.pImage = img;
+	currentDocument->state.pDiskInterface = &di;
+	currentDocument->state.mbAutoFlush = autoFlush;
 
 	bool readOnly = !writable;
-	g_diskExplorer.pFS = ATDiskMountImage(g_diskExplorer.pImage, readOnly);
-	if (!g_diskExplorer.pFS) {
-		g_diskExplorer.statusMsg = "Unable to detect filesystem on disk image.";
-		g_diskExplorer.pImage = nullptr;
-		g_diskExplorer.pDiskInterface = nullptr;
+	currentDocument->state.pFS = ATDiskMountImage(currentDocument->state.pImage, readOnly);
+	if (!currentDocument->state.pFS) {
+		currentDocument->state.statusMsg = "Unable to detect filesystem on disk image.";
 		return;
 	}
-	g_diskExplorer.pFS->SetStrictNameChecking(g_diskExplorer.mbStrictFilenames);
-	g_diskExplorer.readOnly = readOnly;
+	currentDocument->state.pFS->SetStrictNameChecking(currentDocument->state.mbStrictFilenames);
+	currentDocument->state.readOnly = readOnly;
 
 	// Validate filesystem before allowing writes (matches Windows MountFS)
 	if (writable) {
-		if (img->IsUpdatable() && g_diskExplorer.pFS->IsReadOnly()) {
-			g_diskExplorer.readOnly = true;
-			g_diskExplorer.statusMsg = "This disk format is only supported in read-only mode.";
+		if (img->IsUpdatable() && currentDocument->state.pFS->IsReadOnly()) {
+			currentDocument->state.readOnly = true;
+			currentDocument->state.statusMsg = "This disk format is only supported in read-only mode.";
 		} else {
-			g_diskExplorer.ValidateForWrites();
+			currentDocument->state.ValidateForWrites();
 		}
 	}
 
-	g_diskExplorer.NavigateTo(ATDiskFSKey::None);
+	currentDocument->state.NavigateTo(ATDiskFSKey::None);
 }
 
 // Open disk explorer for a block device (shows partition list).
@@ -802,10 +961,19 @@ void ATUIOpenDiskExplorerForBlockDevice(IATBlockDevice *dev) {
 	if (!dev)
 		return;
 
-	g_diskExplorer.Reset();
-	g_diskExplorer.pBlockDevice = dev;
-	g_diskExplorer.readOnly = dev->IsReadOnly();
-	g_diskExplorer.RefreshPartitions();
+	for (const auto& doc : documents) {
+		if (doc->open && doc->state.pBlockDevice == dev) { doc->focus = true; return; }
+	}
+	auto document = std::make_shared<DiskExplorerDocument>();
+	document->source = "Block device";
+	documents.push_back(document);
+	ATUIExplorerScope<DiskExplorerDocument> scope(currentDocument, document.get());
+	DiskExplorerLoadSettings();
+
+	currentDocument->state.Reset();
+	currentDocument->state.pBlockDevice = dev;
+	currentDocument->state.readOnly = dev->IsReadOnly();
+	currentDocument->state.RefreshPartitions();
 }
 
 // Convert host line endings (CR/LF, LF, CR) to Atari EOL (0x9B) in place.
@@ -861,7 +1029,7 @@ static void ConvertAtariToHost(vdfastvector<uint8>& data) {
 // Normalize a host filename to 8.3 DOS format.
 // Reference: uidiskexplorer.cpp WriteFile() lines 1924-2037
 static void NormalizeDOSFilename(const char *src, char *dst, int &nameLen) {
-	bool strict = g_diskExplorer.mbStrictFilenames;
+	bool strict = currentDocument->state.mbStrictFilenames;
 	int sectionLen = 0;
 	int sectionLimit = 8;
 	bool inExt = false;
@@ -913,16 +1081,16 @@ static void DiskExplorerWriteFile(const char *origFilename, const void *data, ui
 
 	for (;;) {
 		try {
-			auto fileKey = g_diskExplorer.pFS->WriteFile(
-				g_diskExplorer.currentDir, filename, data, len);
+			auto fileKey = currentDocument->state.pFS->WriteFile(
+				currentDocument->state.currentDir, filename, data, len);
 			if (date)
-				g_diskExplorer.pFS->SetFileTimestamp(fileKey, *date);
+				currentDocument->state.pFS->SetFileTimestamp(fileKey, *date);
 			return;
 		} catch (const ATDiskFSException &e) {
 			if (e.GetErrorCode() != kATDiskFSError_InvalidFileName &&
 				e.GetErrorCode() != kATDiskFSError_FileExists)
 				throw;
-			if (!g_diskExplorer.mbAdjustFilenames)
+			if (!currentDocument->state.mbAdjustFilenames)
 				throw;
 			if (++pass >= 100)
 				throw;
@@ -951,7 +1119,7 @@ static void DiskExplorerWriteFile(const char *origFilename, const void *data, ui
 				}
 
 				// In strict mode, if pos < 0 (at start), prepend 'X' first
-				if (pos < 0 && g_diskExplorer.mbStrictFilenames) {
+				if (pos < 0 && currentDocument->state.mbStrictFilenames) {
 					memmove(fnbuf + 1, fnbuf, 12);
 					fnbuf[0] = 'X';
 					++nameLen;
@@ -968,20 +1136,52 @@ static void DiskExplorerWriteFile(const char *origFilename, const void *data, ui
 }
 
 // Last known window rect of the Disk Explorer (updated each frame during rendering).
-static ImVec2 g_diskExplorerWinPos = {0, 0};
-static ImVec2 g_diskExplorerWinSize = {0, 0};
 
 // Handle a file drop into the Disk Explorer — returns true if the drop was
-// consumed (explorer is open, writable, cursor is over window, and filesystem is mounted).
-bool ATUIDiskExplorerHandleDrop(const char *utf8path, float dropX, float dropY) {
-	if (!g_diskExplorer.pFS || g_diskExplorer.readOnly)
+// consumed (the cursor is over the explorer window, or the dropped path is a
+// recognized disk image while the explorer is open).  Disk images open in the
+// explorer; ordinary files retain the existing import-to-disk behavior.
+static bool DiskExplorerPathLooksLikeImage(const char *utf8path) {
+	if (!utf8path || !*utf8path)
 		return false;
 
-	// Check if drop position is within the Disk Explorer window
-	if (dropX < g_diskExplorerWinPos.x || dropY < g_diskExplorerWinPos.y
-		|| dropX > g_diskExplorerWinPos.x + g_diskExplorerWinSize.x
-		|| dropY > g_diskExplorerWinPos.y + g_diskExplorerWinSize.y)
+	const char *base = utf8path;
+	if (const char *slash = strrchr(base, '/'))
+		base = slash + 1;
+	if (const char *backslash = strrchr(base, '\\'))
+		base = backslash + 1;
+	const char *dot = strrchr(base, '.');
+	if (!dot || dot == base)
 		return false;
+
+	std::string extension(dot);
+	for (char& c : extension)
+		c = (char)std::tolower((unsigned char)c);
+	return extension == ".atr" || extension == ".xfd" || extension == ".dcm"
+		|| extension == ".pro" || extension == ".atx" || extension == ".gz"
+		|| extension == ".zip" || extension == ".atz";
+}
+
+bool ATUIDiskExplorerHandleDrop(const char *utf8path, float dropX, float dropY) {
+	if (!utf8path) return false;
+	std::shared_ptr<DiskExplorerDocument> target;
+	for (const auto& doc : documents) if (doc->Hit(dropX, dropY)) target = doc;
+	if (!target) return false;
+	if (target->dialogPending) return true;
+	ATUIExplorerScope<DiskExplorerDocument> scope(currentDocument, target.get());
+
+	// A disk image dropped onto the explorer must never fall through to the
+	// application's global boot handler, even when the currently displayed
+	// filesystem is read-only or has not been mounted yet.
+	if (DiskExplorerPathLooksLikeImage(utf8path)) {
+		DiskExplorerDoOpen(utf8path);
+		return true;
+	}
+
+	if (!currentDocument->state.pFS || currentDocument->state.readOnly) {
+		currentDocument->state.statusMsg = "Drop an Atari disk image here to open it, or use a writable disk to import files.";
+		return true;
+	}
 
 	try {
 		VDStringW wpath = VDTextU8ToW(utf8path, -1);
@@ -1006,30 +1206,27 @@ bool ATUIDiskExplorerHandleDrop(const char *utf8path, float dropX, float dropY) 
 
 		VDStringA filename = VDTextWToA(VDFileSplitPathRightSpan(wpath));
 		DiskExplorerWriteFile(filename.c_str(), buf.data(), (uint32)buf.size(), pDate);
-		g_diskExplorer.OnFSModified();
+		currentDocument->state.OnFSModified();
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Drop import failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Drop import failed: %s", e.c_str());
 	}
 	return true;
 }
 
-bool ATUIDiskExplorerGetDropRect(ImVec2 &pos, ImVec2 &size) {
-	if (!g_diskExplorer.pFS || g_diskExplorer.readOnly
-		|| g_diskExplorerWinSize.x <= 0 || g_diskExplorerWinSize.y <= 0)
-		return false;
-	pos = g_diskExplorerWinPos;
-	size = g_diskExplorerWinSize;
-	return true;
+bool ATUIDiskExplorerGetDropRect(ImVec2 &pos, ImVec2 &size, float x, float y) {
+	for (const auto& doc : documents)
+		if (doc->Hit(x, y, &pos, &size)) return true;
+	return false;
 }
 
 static void DiskExplorerImportCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingImport = filelist[0];
+
+	currentDocument->diskExplorerPendingImport = filelist[0];
 }
 
 static void DiskExplorerDoImport(const char *utf8path) {
-	if (!g_diskExplorer.pFS) return;
+	if (!currentDocument->state.pFS) return;
 
 	try {
 		VDStringW wpath = VDTextU8ToW(utf8path, -1);
@@ -1058,79 +1255,63 @@ static void DiskExplorerDoImport(const char *utf8path) {
 		VDStringA filename = VDTextWToA(VDFileSplitPathRightSpan(wpath));
 
 		DiskExplorerWriteFile(filename.c_str(), buf.data(), (uint32)buf.size(), pDate);
-		g_diskExplorer.OnFSModified();
+		currentDocument->state.OnFSModified();
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Import failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Import failed: %s", e.c_str());
 	}
 }
 
 // Export stores the file key and date info at the time the dialog is opened,
 // so it remains valid even if the user navigates to a different directory
 // while the save dialog is showing.
-struct DiskExportInfo {
-	ATDiskFSKey key;
-	bool dateValid;
-	VDExpandedDate date;
-};
-static DiskExportInfo g_diskExportInfo;
-static std::string g_diskExplorerPendingExport;
 
 static void DiskExplorerExportCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingExport = filelist[0];
+
+	currentDocument->diskExplorerPendingExport = filelist[0];
 }
 
 static void DiskExplorerDoExport(const char *utf8path) {
-	if (!g_diskExplorer.pFS) return;
+	if (!currentDocument->state.pFS) return;
 
 	try {
 		vdfastvector<uint8> buf;
-		g_diskExplorer.pFS->ReadFile(g_diskExportInfo.key, buf);
+		currentDocument->state.pFS->ReadFile(currentDocument->diskExportInfo.key, buf);
 
 		VDStringW wpath = VDTextU8ToW(utf8path, -1);
 		VDFile f(wpath.c_str(), nsVDFile::kWrite | nsVDFile::kCreateAlways | nsVDFile::kSequential);
 		f.write(buf.data(), (long)buf.size());
 
 		// Preserve file timestamp if available
-		if (g_diskExportInfo.dateValid) {
+		if (currentDocument->diskExportInfo.dateValid) {
 			try {
-				f.setCreationTime(VDDateFromLocalDate(g_diskExportInfo.date));
+				f.setCreationTime(VDDateFromLocalDate(currentDocument->diskExportInfo.date));
 			} catch (...) {
 				// Timestamp preservation is best-effort
 			}
 		}
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Export failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Export failed: %s", e.c_str());
 	}
 }
 
 // Multi-file export: export all selected files to a folder
-struct DiskMultiExportEntry {
-	ATDiskFSKey key;
-	VDStringA name;
-	bool dateValid;
-	VDExpandedDate date;
-};
-static std::vector<DiskMultiExportEntry> g_diskMultiExportEntries;
-static std::string g_diskExplorerPendingMultiExport;
-static bool g_diskMultiExportAsText = false;
 
 static void DiskExplorerMultiExportCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingMultiExport = filelist[0];
+
+	currentDocument->diskExplorerPendingMultiExport = filelist[0];
 }
 
 static void DiskExplorerDoMultiExport(const char *utf8folder) {
-	if (!g_diskExplorer.pFS) return;
+	if (!currentDocument->state.pFS) return;
 	int exported = 0;
-	for (auto &me : g_diskMultiExportEntries) {
+	for (auto &me : currentDocument->diskMultiExportEntries) {
 		try {
 			vdfastvector<uint8> buf;
-			g_diskExplorer.pFS->ReadFile(me.key, buf);
+			currentDocument->state.pFS->ReadFile(me.key, buf);
 
-			if (g_diskMultiExportAsText)
+			if (currentDocument->diskMultiExportAsText)
 				ConvertAtariToHost(buf);
 
 			VDStringW wfolder = VDTextU8ToW(utf8folder, -1);
@@ -1143,25 +1324,24 @@ static void DiskExplorerDoMultiExport(const char *utf8folder) {
 			}
 			++exported;
 		} catch (const MyError &e) {
-			g_diskExplorer.statusMsg.sprintf("Export '%s' failed: %s", me.name.c_str(), e.c_str());
+			currentDocument->state.statusMsg.sprintf("Export '%s' failed: %s", me.name.c_str(), e.c_str());
 		}
 	}
-	if (g_diskExplorer.statusMsg.empty() || exported > 0)
-		g_diskExplorer.statusMsg.sprintf("Exported %d file(s).", exported);
-	g_diskMultiExportEntries.clear();
+	if (currentDocument->state.statusMsg.empty() || exported > 0)
+		currentDocument->state.statusMsg.sprintf("Exported %d file(s).", exported);
+	currentDocument->diskMultiExportEntries.clear();
 }
 
 // Import as text: read host file, convert CR/LF -> Atari 0x9B, write to disk
-static std::string g_diskExplorerPendingImportText;
 
 static void DiskExplorerImportTextCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingImportText = filelist[0];
+
+	currentDocument->diskExplorerPendingImportText = filelist[0];
 }
 
 static void DiskExplorerDoImportText(const char *utf8path) {
-	if (!g_diskExplorer.pFS) return;
+	if (!currentDocument->state.pFS) return;
 
 	try {
 		VDStringW wpath = VDTextU8ToW(utf8path, -1);
@@ -1190,28 +1370,26 @@ static void DiskExplorerDoImportText(const char *utf8path) {
 
 		VDStringA filename = VDTextWToA(VDFileSplitPathRightSpan(wpath));
 		DiskExplorerWriteFile(filename.c_str(), buf.data(), (uint32)buf.size(), pDate);
-		g_diskExplorer.OnFSModified();
+		currentDocument->state.OnFSModified();
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Import as text failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Import as text failed: %s", e.c_str());
 	}
 }
 
 // Export as text: read Atari file, convert 0x9B -> CR/LF, save to host
-static std::string g_diskExplorerPendingExportText;
-static DiskExportInfo g_diskExportTextInfo;
 
 static void DiskExplorerExportTextCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingExportText = filelist[0];
+
+	currentDocument->diskExplorerPendingExportText = filelist[0];
 }
 
 static void DiskExplorerDoExportText(const char *utf8path) {
-	if (!g_diskExplorer.pFS) return;
+	if (!currentDocument->state.pFS) return;
 
 	try {
 		vdfastvector<uint8> buf;
-		g_diskExplorer.pFS->ReadFile(g_diskExportTextInfo.key, buf);
+		currentDocument->state.pFS->ReadFile(currentDocument->diskExportTextInfo.key, buf);
 
 		// Convert Atari EOL to host CR/LF
 		ConvertAtariToHost(buf);
@@ -1220,35 +1398,33 @@ static void DiskExplorerDoExportText(const char *utf8path) {
 		VDFile f(wpath.c_str(), nsVDFile::kWrite | nsVDFile::kCreateAlways | nsVDFile::kSequential);
 		f.write(buf.data(), (long)buf.size());
 
-		if (g_diskExportTextInfo.dateValid) {
+		if (currentDocument->diskExportTextInfo.dateValid) {
 			try {
-				f.setCreationTime(VDDateFromLocalDate(g_diskExportTextInfo.date));
+				f.setCreationTime(VDDateFromLocalDate(currentDocument->diskExportTextInfo.date));
 			} catch (...) {
 			}
 		}
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Export as text failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Export as text failed: %s", e.c_str());
 	}
 }
 
 // Partition import: import a disk image file into a partition
-static int g_diskExplorerPartitionImportIdx = -1;
-static std::string g_diskExplorerPendingPartitionImport;
 
 static void DiskExplorerPartitionImportCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingPartitionImport = filelist[0];
+
+	currentDocument->diskExplorerPendingPartitionImport = filelist[0];
 }
 
 static void DiskExplorerDoPartitionImport(const char *utf8path) {
-	if (!g_diskExplorer.pBlockDevice) return;
-	int idx = g_diskExplorerPartitionImportIdx;
-	if (idx < 0 || idx >= (int)g_diskExplorer.partitions.size()) return;
+	if (!currentDocument->state.pBlockDevice) return;
+	int idx = currentDocument->diskExplorerPartitionImportIdx;
+	if (idx < 0 || idx >= (int)currentDocument->state.partitions.size()) return;
 
 	try {
-		const ATPartitionInfo &pi = g_diskExplorer.partitions[idx];
-		vdrefptr<ATPartitionDiskView> pdview(new ATPartitionDiskView(*g_diskExplorer.pBlockDevice, pi));
+		const ATPartitionInfo &pi = currentDocument->state.partitions[idx];
+		vdrefptr<ATPartitionDiskView> pdview(new ATPartitionDiskView(*currentDocument->state.pBlockDevice, pi));
 
 		if (!pdview->IsUpdatable())
 			throw MyError("Cannot import disk image as partition is read-only.");
@@ -1277,7 +1453,7 @@ static void DiskExplorerDoPartitionImport(const char *utf8path) {
 				"Image: %u sectors of %u bytes",
 				partSectorCount, partSectorSize,
 				imageSectorCount, imageSectorSize);
-			g_diskExplorer.statusMsg = msg;
+			currentDocument->state.statusMsg = msg;
 			return;
 		}
 
@@ -1291,30 +1467,28 @@ static void DiskExplorerDoPartitionImport(const char *utf8path) {
 			pdview->WriteVirtualSector(i, secbuf, len);
 		}
 
-		g_diskExplorer.statusMsg = "Disk image imported to partition successfully.";
+		currentDocument->state.statusMsg = "Disk image imported to partition successfully.";
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Partition import failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Partition import failed: %s", e.c_str());
 	}
 }
 
 // Partition export: export a partition as a disk image file
-static int g_diskExplorerPartitionExportIdx = -1;
-static std::string g_diskExplorerPendingPartitionExport;
 
 static void DiskExplorerPartitionExportCallback(void *, const char * const *filelist, int) {
 	if (!filelist || !filelist[0]) return;
-	std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-	g_diskExplorerPendingPartitionExport = filelist[0];
+
+	currentDocument->diskExplorerPendingPartitionExport = filelist[0];
 }
 
 static void DiskExplorerDoPartitionExport(const char *utf8path) {
-	if (!g_diskExplorer.pBlockDevice) return;
-	int idx = g_diskExplorerPartitionExportIdx;
-	if (idx < 0 || idx >= (int)g_diskExplorer.partitions.size()) return;
+	if (!currentDocument->state.pBlockDevice) return;
+	int idx = currentDocument->diskExplorerPartitionExportIdx;
+	if (idx < 0 || idx >= (int)currentDocument->state.partitions.size()) return;
 
 	try {
-		const ATPartitionInfo &pi = g_diskExplorer.partitions[idx];
-		vdrefptr<ATPartitionDiskView> pdview(new ATPartitionDiskView(*g_diskExplorer.pBlockDevice, pi));
+		const ATPartitionInfo &pi = currentDocument->state.partitions[idx];
+		vdrefptr<ATPartitionDiskView> pdview(new ATPartitionDiskView(*currentDocument->state.pBlockDevice, pi));
 		vdrefptr<IATDiskImage> newImage;
 
 		ATCreateDiskImage(pdview->GetGeometry(), ~newImage);
@@ -1331,45 +1505,415 @@ static void DiskExplorerDoPartitionExport(const char *utf8path) {
 		VDStringW wpath = VDTextU8ToW(utf8path, -1);
 		newImage->Save(wpath.c_str(), kATDiskImageFormat_ATR);
 
-		g_diskExplorer.statusMsg = "Partition exported as disk image successfully.";
+		currentDocument->state.statusMsg = "Partition exported as disk image successfully.";
 	} catch (const MyError &e) {
-		g_diskExplorer.statusMsg.sprintf("Partition export failed: %s", e.c_str());
+		currentDocument->state.statusMsg.sprintf("Partition export failed: %s", e.c_str());
 	}
 }
 
-static bool g_diskExplorerSettingsLoaded = false;
-
 static void DiskExplorerLoadSettings() {
-	if (g_diskExplorerSettingsLoaded) return;
-	g_diskExplorerSettingsLoaded = true;
+	if (currentDocument->diskExplorerSettingsLoaded) return;
+	currentDocument->diskExplorerSettingsLoaded = true;
 	VDRegistryAppKey key("Settings", false);
-	g_diskExplorer.mbStrictFilenames = key.getBool("Disk Explorer: Strict filenames", g_diskExplorer.mbStrictFilenames);
-	g_diskExplorer.mbAdjustFilenames = key.getBool("Disk Explorer: Adjust filenames", g_diskExplorer.mbAdjustFilenames);
-	int vm = key.getEnumInt("File Viewer: View mode", 6, (int)kDEView_TextGR0);
-	g_diskExplorer.viewMode = (DiskExplorerViewMode)vm;
+	currentDocument->state.mbStrictFilenames = key.getBool("Disk Explorer: Strict filenames", currentDocument->state.mbStrictFilenames);
+	currentDocument->state.mbAdjustFilenames = key.getBool("Disk Explorer: Adjust filenames", currentDocument->state.mbAdjustFilenames);
+	int vm = key.getEnumInt("File Viewer: View mode", (int)kDEView_ASCII + 1, (int)kDEView_Hex);
+	if (vm < (int)kDEView_Text || vm > (int)kDEView_ASCII)
+		vm = (int)kDEView_TextGR0;
+	currentDocument->state.viewMode = (DiskExplorerViewMode)vm;
 }
 
 static void DiskExplorerSaveSettings() {
 	VDRegistryAppKey key("Settings", true);
-	key.setBool("Disk Explorer: Strict filenames", g_diskExplorer.mbStrictFilenames);
-	key.setBool("Disk Explorer: Adjust filenames", g_diskExplorer.mbAdjustFilenames);
-	key.setInt("File Viewer: View mode", (int)g_diskExplorer.viewMode);
+	key.setBool("Disk Explorer: Strict filenames", currentDocument->state.mbStrictFilenames);
+	key.setBool("Disk Explorer: Adjust filenames", currentDocument->state.mbAdjustFilenames);
+	key.setInt("File Viewer: View mode", (int)currentDocument->state.viewMode);
 }
 
-void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
+static const char *DiskExplorerFormatName(ATDiskImageFormat format) {
+	switch (format) {
+	case kATDiskImageFormat_ATR: return "ATR";
+	case kATDiskImageFormat_XFD: return "XFD";
+	case kATDiskImageFormat_P2: return "PRO (P2)";
+	case kATDiskImageFormat_P3: return "PRO (P3)";
+	case kATDiskImageFormat_ATX: return "ATX";
+	case kATDiskImageFormat_DCM: return "DCM";
+	default: return "memory / virtual";
+	}
+}
+
+static void DiskExplorerRenderHex(const uint8 *data, size_t len) {
+	if (!data || !len) {
+		ImGui::TextDisabled("No data.");
+		return;
+	}
+	ImGui::BeginChild("HexData", ImVec2(0, 0), ImGuiChildFlags_Borders,
+		ImGuiWindowFlags_HorizontalScrollbar);
+	ATUIRenderHexDump(data, len);
+	ImGui::EndChild();
+}
+
+static bool DiskExplorerReadBootRecord(IATDiskImage *image, vdfastvector<uint8>& data, VDStringA& error) {
+	data.clear();
+	error.clear();
+	if (!image) { error = "No disk image is open."; return false; }
+	const uint32 count = std::min(image->GetBootSectorCount(), image->GetVirtualSectorCount());
+	if (!count) { error = "The image has no boot sectors."; return false; }
+	for (uint32 i = 0; i < count; ++i) {
+		const uint32 size = image->GetSectorSize(i);
+		if (!size || data.size() > 1024 * 1024 - size) {
+			error = "The boot record is too large to display.";
+			return false;
+		}
+		const size_t oldSize = data.size();
+		data.resize(oldSize + size);
+		try {
+			if (image->ReadVirtualSector(i, data.data() + oldSize, size) != size) {
+				error.sprintf("Short read in boot sector %u.", i + 1);
+				data.clear();
+				return false;
+			}
+		} catch (const MyError& e) {
+			error.sprintf("Boot record read failed: %s", e.c_str());
+			data.clear();
+			return false;
+		}
+	}
+	return true;
+}
+
+// DOS 1/2 and MyDOS store the allocation bitmap at VTOC offset 10.  This is
+// the same layout used by ATDiskFSDOS2, including the DOS 2.5 extension.  We
+// intentionally report unknown for other filesystems instead of presenting a
+// misleading allocation map.
+static bool DiskExplorerBuildDOS2Map(IATDiskImage *image, std::vector<uint8>& map, VDStringA& note) {
+	map.clear();
+	note.clear();
+	if (!image || image->GetVirtualSectorCount() <= 359) return false;
+	try {
+		const uint32 sectorSize = image->GetSectorSize(359);
+		if (sectorSize != 128 && sectorSize != 256) return false;
+		std::vector<uint8> vtoc(sectorSize);
+		if (image->ReadVirtualSector(359, vtoc.data(), sectorSize) != sectorSize || vtoc[0] == 0 || vtoc[0] > 35)
+			return false;
+		const uint32 pages = vtoc[0] >= 2 ? vtoc[0] - 2 : 0;
+		std::vector<uint8> bitmap(pages ? 256 * pages : sectorSize, 0);
+		memcpy(bitmap.data(), vtoc.data(), sectorSize);
+		const uint32 extra = pages ? ((sectorSize > 128 ? pages : pages * 2) - 1) : 0;
+		for (uint32 i = 0; i < extra; ++i) {
+			const uint32 vsec = 358 - i;
+			if (image->ReadVirtualSector(vsec, bitmap.data() + sectorSize * (i + 1), sectorSize) != sectorSize)
+				return false;
+		}
+		const uint32 count = image->GetVirtualSectorCount();
+		if (count == 1040 && sectorSize == 128 && vtoc[0] == 2) {
+			std::vector<uint8> extension(128);
+			if (image->ReadVirtualSector(1023, extension.data(), 128) != 128) return false;
+			bitmap.resize(256, 0);
+			memcpy(bitmap.data() + 100, extension.data() + 84, 38);
+			note = "Atari DOS 2.5 allocation bitmap";
+		} else {
+			note = vtoc[0] == 1 ? "Atari DOS 1.x allocation bitmap" : "DOS 2.x / MyDOS allocation bitmap";
+		}
+		map.resize(count, 2); // 2 = unknown / outside bitmap
+		for (uint32 sector = 1; sector <= count; ++sector) {
+			const uint32 bit = sector;
+			const uint32 byteIndex = 10 + (bit >> 3);
+			if (byteIndex >= bitmap.size()) break;
+			map[sector - 1] = (bitmap[byteIndex] & (0x80 >> (bit & 7))) ? 1 : 0;
+		}
+		return true;
+	} catch (const MyError&) {
+		return false;
+	}
+}
+
+static void DiskExplorerBeginToolWindow(const char *title, bool *open, ImVec2 size) {
+	ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+}
+
+static void DiskExplorerRenderInspectionWindows() {
+	IATDiskImage *image = currentDocument->state.GetActiveImage();
+	if (!image) return;
+
+	if (currentDocument->state.showImageProperties) {
+		DiskExplorerBeginToolWindow("Disk Image Properties", &currentDocument->state.showImageProperties, ImVec2(520, 430));
+		if (ImGui::Begin(currentDocument->ToolTitle("Disk Image Properties").c_str(), &currentDocument->state.showImageProperties, ImGuiWindowFlags_NoSavedSettings)) {
+			const ATDiskGeometryInfo geom = image->GetGeometry();
+			ImGui::Text("Format: %s", DiskExplorerFormatName(image->GetImageFormat()));
+			ImGui::Text("Virtual sectors: %u", image->GetVirtualSectorCount());
+			ImGui::Text("Physical sectors: %u", image->GetPhysicalSectorCount());
+			ImGui::Text("Geometry: %u tracks, %u side(s), %u sectors/track",
+				(unsigned)geom.mTrackCount, (unsigned)geom.mSideCount, (unsigned)geom.mSectorsPerTrack);
+			ImGui::Text("Sector size: %u bytes (boot: %u)", image->GetSectorSize(), image->GetBootSectorCount());
+			ImGui::Text("Access: %s%s%s", image->IsUpdatable() ? "updatable" : "read-only",
+				image->IsDynamic() ? ", dynamic" : "", image->IsDirty() ? ", dirty" : "");
+			if (currentDocument->state.pDiskInterface && currentDocument->state.pDiskInterface->GetPath())
+				ImGui::TextWrapped("Path: %s", VDTextWToA(currentDocument->state.pDiskInterface->GetPath()).c_str());
+			if (currentDocument->state.pFS) {
+				ATDiskFSInfo info;
+				currentDocument->state.pFS->GetInfo(info);
+				ImGui::Separator();
+				ImGui::Text("Filesystem: %s", info.mFSType.c_str());
+				ImGui::Text("Free: %u blocks (%u bytes each)", info.mFreeBlocks, info.mBlockSize);
+				if (ImGui::Button("Validate filesystem")) {
+					currentDocument->state.validationValid = true;
+					currentDocument->state.validationProblems = !currentDocument->state.pFS->Validate(currentDocument->state.validationReport);
+				}
+				if (currentDocument->state.validationValid) {
+					if (!currentDocument->state.validationReport.IsSerious() && currentDocument->state.validationReport.mbBitmapIncorrectLostSectorsOnly)
+						ImGui::TextColored(ImVec4(1, .8f, .2f, 1), "Validation: minor lost-sector bitmap issue.");
+					else if (currentDocument->state.validationReport.IsSerious())
+						ImGui::TextColored(ImVec4(1, .3f, .3f, 1), "Validation: serious filesystem problems found.");
+					else
+						ImGui::TextColored(ImVec4(.3f, 1, .3f, 1), "Validation: no problems found.");
+				}
+			}
+		}
+		ImGui::End();
+	}
+
+	if (currentDocument->state.showSectorViewer) {
+		DiskExplorerBeginToolWindow("Sector Viewer", &currentDocument->state.showSectorViewer, ImVec2(760, 560));
+		if (ImGui::Begin(currentDocument->ToolTitle("Sector Viewer").c_str(), &currentDocument->state.showSectorViewer, ImGuiWindowFlags_NoSavedSettings)) {
+			const uint32 count = image->GetVirtualSectorCount();
+			ImGui::SetNextItemWidth(120);
+			if (ImGui::InputScalar("Sector (1-based)", ImGuiDataType_U32, &currentDocument->state.sectorNumber)) {
+				currentDocument->state.sectorNumber = std::max<uint32>(1, std::min(count, currentDocument->state.sectorNumber));
+				currentDocument->state.LoadSector(currentDocument->state.sectorNumber);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Previous") && currentDocument->state.sectorNumber > 1) {
+				--currentDocument->state.sectorNumber;
+				currentDocument->state.LoadSector(currentDocument->state.sectorNumber);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Next") && currentDocument->state.sectorNumber < count) {
+				++currentDocument->state.sectorNumber;
+				currentDocument->state.LoadSector(currentDocument->state.sectorNumber);
+			}
+			if (currentDocument->state.loadedSectorNumber != currentDocument->state.sectorNumber)
+				currentDocument->state.LoadSector(currentDocument->state.sectorNumber);
+			if (!currentDocument->state.sectorError.empty())
+				ImGui::TextColored(ImVec4(1, .35f, .35f, 1), "%s", currentDocument->state.sectorError.c_str());
+			if (currentDocument->state.loadedSectorNumber) {
+				ImGui::Text("%u bytes", (unsigned)currentDocument->state.sectorData.size());
+				if (ImGui::BeginTabBar("SectorViews")) {
+					if (ImGui::BeginTabItem("Hex")) { DiskExplorerRenderHex(currentDocument->state.sectorData.data(), currentDocument->state.sectorData.size()); ImGui::EndTabItem(); }
+					if (ImGui::BeginTabItem("ATASCII")) { ImGui::TextDisabled("High-bit bytes are rendered as inverse video; $9B is Atari EOL."); ATUIRenderTextColumnControls("SectorATASCIIColumns"); ImGui::BeginChild("SectorATASCII", ImVec2(0, 0), ImGuiChildFlags_Borders); ATUIRenderATASCII(currentDocument->state.sectorData.data(), currentDocument->state.sectorData.size(), ATUIGetTextColumns()); ImGui::EndChild(); ImGui::EndTabItem(); }
+					if (ImGui::BeginTabItem("ASCII")) { ImGui::TextDisabled("Inverse-video bits are stripped; $9B is shown as a line break."); ATUIRenderTextColumnControls("SectorASCIIColumns"); ImGui::BeginChild("SectorASCII", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar); ATUIRenderASCII(currentDocument->state.sectorData.data(), currentDocument->state.sectorData.size(), ATUIGetTextColumns()); ImGui::EndChild(); ImGui::EndTabItem(); }
+					ImGui::EndTabBar();
+				}
+			}
+		}
+		ImGui::End();
+	}
+
+	if (currentDocument->state.showBootRecord) {
+		DiskExplorerBeginToolWindow("Boot Record", &currentDocument->state.showBootRecord, ImVec2(760, 560));
+		if (ImGui::Begin(currentDocument->ToolTitle("Boot Record").c_str(), &currentDocument->state.showBootRecord, ImGuiWindowFlags_NoSavedSettings)) {
+			vdfastvector<uint8> boot;
+			VDStringA error;
+			if (DiskExplorerReadBootRecord(image, boot, error)) {
+				ImGui::Text("Boot sectors: %u (%u bytes)", image->GetBootSectorCount(), (unsigned)boot.size());
+				if (ImGui::BeginTabBar("BootViews")) {
+					if (ImGui::BeginTabItem("Hex")) { DiskExplorerRenderHex(boot.data(), boot.size()); ImGui::EndTabItem(); }
+					if (ImGui::BeginTabItem("6502")) {
+						VDStringA disasm, disasmError;
+						ATUIDisassemble6502(boot.data(), boot.size(), 0, disasm, disasmError);
+						ImGui::BeginChild("BootDisassembly", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+						ImGui::PushFont(ATUIGetFontMono());
+						ImGui::TextUnformatted(disasm.empty() ? disasmError.c_str() : disasm.c_str());
+						ImGui::PopFont();
+						ImGui::EndChild();
+						ImGui::EndTabItem();
+					}
+					if (ImGui::BeginTabItem("ATASCII")) { ImGui::TextDisabled("High-bit bytes are rendered as inverse video; $9B is Atari EOL."); ATUIRenderTextColumnControls("BootATASCIIColumns"); ImGui::BeginChild("BootATASCII", ImVec2(0, 0), ImGuiChildFlags_Borders); ATUIRenderATASCII(boot.data(), boot.size(), ATUIGetTextColumns()); ImGui::EndChild(); ImGui::EndTabItem(); }
+					if (ImGui::BeginTabItem("ASCII")) { ImGui::TextDisabled("Inverse-video bits are stripped; $9B is shown as a line break."); ATUIRenderTextColumnControls("BootASCIIColumns"); ImGui::BeginChild("BootASCII", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar); ATUIRenderASCII(boot.data(), boot.size(), ATUIGetTextColumns()); ImGui::EndChild(); ImGui::EndTabItem(); }
+					ImGui::EndTabBar();
+				}
+			} else ImGui::TextColored(ImVec4(1, .35f, .35f, 1), "%s", error.c_str());
+		}
+		ImGui::End();
+	}
+
+	if (currentDocument->state.showSectorMap) {
+		DiskExplorerBeginToolWindow("Sector Map", &currentDocument->state.showSectorMap, ImVec2(760, 560));
+		if (ImGui::Begin(currentDocument->ToolTitle("Sector Map").c_str(), &currentDocument->state.showSectorMap, ImGuiWindowFlags_NoSavedSettings)) {
+			std::vector<uint8> map;
+			VDStringA note;
+			if (DiskExplorerBuildDOS2Map(image, map, note)) {
+				ImGui::TextUnformatted(note.c_str());
+				ImGui::TextDisabled("Green = free, blue = allocated, gray = unavailable");
+				if (ImGui::BeginChild("SectorMapGrid", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
+					if (ImGui::BeginTable("SectorMapTable", 16, ImGuiTableFlags_SizingFixedFit)) {
+						for (uint32 i = 0; i < map.size(); ++i) {
+							ImGui::TableNextColumn();
+							ImGui::PushID((int)i);
+							const ImVec4 color = map[i] == 1 ? ImVec4(.25f, .75f, .25f, 1) : map[i] == 0 ? ImVec4(.25f, .45f, .85f, 1) : ImVec4(.35f, .35f, .35f, 1);
+							ImGui::ColorButton("##sector", color, ImGuiColorEditFlags_NoTooltip, ImVec2(18, 18));
+							if (ImGui::IsItemHovered()) { ImGui::BeginTooltip(); ImGui::Text("Sector %u: %s", i + 1, map[i] == 1 ? "free" : map[i] == 0 ? "allocated" : "unknown"); ImGui::EndTooltip(); }
+							ImGui::PopID();
+						}
+						ImGui::EndTable();
+					}
+					ImGui::EndChild();
+				}
+			} else {
+				ImGui::TextWrapped("An allocation bitmap is not available for this filesystem. Physical/virtual sector details are available in Image Properties.");
+			}
+		}
+		ImGui::End();
+	}
+
+	if (currentDocument->state.showFileInfo && currentDocument->state.pFS) {
+		DiskExplorerBeginToolWindow("File Information", &currentDocument->state.showFileInfo, ImVec2(420, 260));
+		if (ImGui::Begin(currentDocument->ToolTitle("File Information").c_str(), &currentDocument->state.showFileInfo, ImGuiWindowFlags_NoSavedSettings)) {
+			ATDiskFSEntryInfo info;
+			try {
+				currentDocument->state.pFS->GetFileInfo(currentDocument->state.fileInfoKey, info);
+				ImGui::Text("Name: %s", info.mFileName.c_str());
+				ImGui::Text("Type: %s", info.mbIsDirectory ? "directory" : "file");
+				ImGui::Text("Sectors: %u", info.mSectors);
+				ImGui::Text("Bytes: %u", info.mBytes);
+				if (info.mbDateValid) ImGui::Text("Date: %02u/%02u/%04u %02u:%02u:%02u", info.mDate.mMonth, info.mDate.mDay, info.mDate.mYear, info.mDate.mHour, info.mDate.mMinute, info.mDate.mSecond);
+			} catch (const MyError& e) { ImGui::TextColored(ImVec4(1, .35f, .35f, 1), "%s", e.c_str()); }
+		}
+		ImGui::End();
+	}
+}
+
+static void DiskExplorerSort(ImGuiTableSortSpecs *specs) {
+	auto& state = currentDocument->state;
+	if (!specs || (!specs->SpecsDirty && !state.sortDirty)) return;
+	state.sortDirty = false;
+	specs->SpecsDirty = false;
+	if (specs->SpecsCount == 0) return;
+	const auto spec = specs->Specs[0];
+	std::vector<int> order(state.entries.size());
+	for (size_t i = 0; i < order.size(); ++i) order[i] = (int)i;
+	std::stable_sort(order.begin(), order.end(), [&](int ai, int bi) {
+		const auto& a = state.entries[ai]; const auto& b = state.entries[bi];
+		if (a.name == ".." || b.name == "..") return a.name == ".." && b.name != "..";
+		if (a.isDir != b.isDir) return a.isDir;
+		int cmp = 0;
+		auto compare = [](const auto& x, const auto& y) { return x < y ? -1 : x > y ? 1 : 0; };
+		if (spec.ColumnIndex == 1) cmp = compare(a.sectors, b.sectors);
+		else if (spec.ColumnIndex == 2) cmp = compare(a.bytes, b.bytes);
+		else if (spec.ColumnIndex == 3) {
+			auto date = [](const auto& e) { return std::make_tuple(e.dateValid, e.date.mYear,
+				e.date.mMonth, e.date.mDay, e.date.mHour, e.date.mMinute, e.date.mSecond); };
+			cmp = compare(date(a), date(b));
+		}
+		if (!cmp) cmp = a.name.comparei(b.name.c_str());
+		return spec.SortDirection == ImGuiSortDirection_Descending ? cmp > 0 : cmp < 0;
+	});
+	auto entries = state.entries;
+	auto selected = state.selected;
+	const int active = state.selectedEntry, anchor = state.lastClickedEntry;
+	for (size_t i = 0; i < order.size(); ++i) {
+		state.entries[i] = std::move(entries[order[i]]);
+		state.selected[i] = selected[order[i]];
+		if (order[i] == active) state.selectedEntry = (int)i;
+		if (order[i] == anchor) state.lastClickedEntry = (int)i;
+	}
+}
+
+static bool DiskExplorerNeedsSave(const DiskExplorerDocument& doc) {
+	return doc.state.modified && doc.state.pImage && !doc.state.pDiskInterface && !doc.state.pBlockDevice;
+}
+static void DiskExplorerSaveImageCallback(void *, const char * const *paths, int filter) {
+	if (!paths || !paths[0]) { currentDocument->closeRequested = false; return; }
+	try {
+		// Filter determines the format explicitly; the canonical saver rejects
+		// conversions that cannot preserve this image's sector characteristics.
+		static const ATDiskImageFormat formats[] = {kATDiskImageFormat_ATR,
+			kATDiskImageFormat_XFD, kATDiskImageFormat_ATX, kATDiskImageFormat_DCM,
+			kATDiskImageFormat_P2, kATDiskImageFormat_P3};
+		if (filter < 0 || filter >= 6) filter = 0;
+		if (currentDocument->state.pFS) currentDocument->state.pFS->Flush();
+		currentDocument->state.pImage->Save(VDTextU8ToW(paths[0], -1).c_str(), formats[filter]);
+		currentDocument->source = ATUIExplorerFullPath(paths[0]);
+		currentDocument->state.modified = false;
+		currentDocument->state.statusMsg = "Saved disk image.";
+		if (currentDocument->closeRequested) currentDocument->open = false;
+	} catch (const MyError& e) {
+		currentDocument->state.statusMsg.sprintf("Save failed: %s", e.c_str());
+		currentDocument->closeRequested = false;
+	}
+}
+static void DiskExplorerSaveAs(SDL_Window *window) {
+	static const SDL_DialogFileFilter filters[] = {{"ATR disk image", "atr"},
+		{"XFD disk image", "xfd"}, {"ATX disk image", "atx"}, {"DCM disk image", "dcm"},
+		{"PRO type 2 disk image", "pro"}, {"PRO type 3 disk image", "pro"}};
+	ATUIExplorerFileDialog(*currentDocument, true, 'disk', DiskExplorerSaveImageCallback,
+		nullptr, window, filters, 6);
+}
+static void DiskExplorerClosePrompt(SDL_Window *window) {
+	auto& doc = *currentDocument;
+	if (!doc.open && DiskExplorerNeedsSave(doc)) { doc.open = true; doc.closeRequested = true; }
+	if (!doc.closeRequested || doc.dialogPending) return;
+	const std::string title = doc.ToolTitle("Save disk changes?");
+	ImGui::OpenPopup(title.c_str());
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(.5f, .5f));
+	if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+		ImGui::TextUnformatted("Save the modified disk image before closing?");
+		ImGui::TextUnformatted(doc.source.c_str());
+		if (ImGui::Button("Save as...")) { ImGui::CloseCurrentPopup(); DiskExplorerSaveAs(window); }
+		ImGui::SameLine();
+		if (ImGui::Button("Discard changes")) {
+			doc.state.modified = false; doc.open = false; doc.closeRequested = false; ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel")) { doc.closeRequested = false; ImGui::CloseCurrentPopup(); }
+		ImGui::EndPopup();
+	}
+}
+static bool DiskExplorerSelectedIsXEX(VDStringA *error = nullptr) {
+	const auto& state = currentDocument->state;
+	if (state.GetSelectionCount() != 1 || !state.viewValid) {
+		if (error) *error = "Select one file to run.";
+		return false;
+	}
+	std::vector<ATUIXEXSegmentInfo> segments;
+	VDStringA parseError;
+	const bool valid = ATUIParseXEX(state.viewData.data(), state.viewData.size(),
+		segments, parseError);
+	if (error) *error = valid ? VDStringA() : parseError;
+	return valid;
+}
+static std::string DiskExplorerSelectedOrigin() {
+	const auto& state = currentDocument->state;
+	return currentDocument->source + " > " + state.pathStr.c_str()
+		+ state.entries[state.selectedEntry].name.c_str();
+}
+static void DiskExplorerRunSelectedXEX() {
+	const auto& state = currentDocument->state;
+	if (!DiskExplorerSelectedIsXEX() || state.selectedEntry < 0) return;
+	const std::string origin = DiskExplorerSelectedOrigin();
+	ATUIBootProgramData(origin.c_str(), state.viewData.data(), state.viewData.size());
+	currentDocument->state.statusMsg.sprintf("Running %s from the disk image.",
+		state.entries[state.selectedEntry].name.c_str());
+}
+static void DiskExplorerOpenSelectedXEX() {
+	const auto& state = currentDocument->state;
+	if (!DiskExplorerSelectedIsXEX() || state.selectedEntry < 0) return;
+	const std::string origin = DiskExplorerSelectedOrigin();
+	ATUIOpenXEXExplorerData(origin.c_str(), state.viewData.data(), state.viewData.size());
+}
+
+static void RenderDocument(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
 	DiskExplorerLoadSettings();
 
 	// Process pending file dialog results on main thread
 	{
-		std::string openPath, importPath, importTextPath;
+		std::string importPath, importTextPath;
 		{
-			std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-			openPath.swap(g_diskExplorerPendingOpen);
-			importPath.swap(g_diskExplorerPendingImport);
-			importTextPath.swap(g_diskExplorerPendingImportText);
+
+			importPath.swap(currentDocument->diskExplorerPendingImport);
+			importTextPath.swap(currentDocument->diskExplorerPendingImportText);
 		}
-		if (!openPath.empty())
-			DiskExplorerDoOpen(openPath.c_str());
 		if (!importPath.empty())
 			DiskExplorerDoImport(importPath.c_str());
 		if (!importTextPath.empty())
@@ -1377,11 +1921,11 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 
 		std::string exportPath, exportTextPath, partImportPath, partExportPath;
 		{
-			std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-			exportPath.swap(g_diskExplorerPendingExport);
-			exportTextPath.swap(g_diskExplorerPendingExportText);
-			partImportPath.swap(g_diskExplorerPendingPartitionImport);
-			partExportPath.swap(g_diskExplorerPendingPartitionExport);
+
+			exportPath.swap(currentDocument->diskExplorerPendingExport);
+			exportTextPath.swap(currentDocument->diskExplorerPendingExportText);
+			partImportPath.swap(currentDocument->diskExplorerPendingPartitionImport);
+			partExportPath.swap(currentDocument->diskExplorerPendingPartitionExport);
 		}
 		if (!exportPath.empty())
 			DiskExplorerDoExport(exportPath.c_str());
@@ -1394,54 +1938,56 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 
 		std::string multiExportPath;
 		{
-			std::lock_guard<std::mutex> lock(g_diskExplorerMutex);
-			multiExportPath.swap(g_diskExplorerPendingMultiExport);
+
+			multiExportPath.swap(currentDocument->diskExplorerPendingMultiExport);
 		}
 		if (!multiExportPath.empty())
 			DiskExplorerDoMultiExport(multiExportPath.c_str());
 	}
 
-	ImGui::SetNextWindowSize(ImVec2(850, 620), ImGuiCond_Appearing);
-	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	currentDocument->Prepare();
+	if (!ImGui::Begin(currentDocument->Title("Disk Explorer").c_str(), &currentDocument->open, ImGuiWindowFlags_MenuBar)) {
+		currentDocument->Track();
 
-	if (!ImGui::Begin("Disk Explorer", &state.showDiskExplorer, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar)) {
-		g_diskExplorerWinPos = ImGui::GetWindowPos();
-		g_diskExplorerWinSize = ImGui::GetWindowSize();
 		ImGui::End();
+		DiskExplorerRenderInspectionWindows();
 		return;
 	}
 
 	// Save window rect for drop hit-testing
-	g_diskExplorerWinPos = ImGui::GetWindowPos();
-	g_diskExplorerWinSize = ImGui::GetWindowSize();
+	currentDocument->Track();
 
 	if (ATUICheckEscClose()) {
 		DiskExplorerSaveSettings();
-		g_diskExplorer.Reset();
-		g_diskExplorerWinSize = {0, 0};
-		state.showDiskExplorer = false;
+
+		currentDocument->open = false;
 		ImGui::End();
 		return;
 	}
 
-	if (!state.showDiskExplorer) {
+	if (!currentDocument->open) {
 		DiskExplorerSaveSettings();
-		g_diskExplorer.Reset();
-		g_diskExplorerWinSize = {0, 0};
+
 		ImGui::End();
 		return;
 	}
 
+	ATUIExplorerSource(currentDocument->source);
+	if (DiskExplorerNeedsSave(*currentDocument)) ImGui::TextUnformatted("Modified image - changes are not saved to disk.");
 	// Menu bar
 	if (ImGui::BeginMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
-			if (ImGui::MenuItem("Open Disk Image...")) {
+			if (ImGui::MenuItem("Open another...")) {
 				static const SDL_DialogFileFilter kFilters[] = {
 					{ "Disk Images", "atr;xfd;dcm;pro;atx;gz;zip;atz" },
 					{ "All Files", "*" },
 				};
-				ATUIShowOpenFileDialog('disk', DiskExplorerOpenCallback, nullptr, window, kFilters, 2, false);
+				ATUIExplorerFileDialog(*currentDocument, false, 'disk', DiskExplorerOpenCallback, nullptr, window, kFilters, 2, false);
 			}
+
+			if (ImGui::MenuItem("Save disk image as...", nullptr, false,
+				currentDocument->state.pImage && !currentDocument->state.pDiskInterface))
+				DiskExplorerSaveAs(window);
 			// Open from mounted drives
 			if (ImGui::BeginMenu("Open Mounted Drive")) {
 				bool anyMounted = false;
@@ -1453,19 +1999,7 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 						VDStringA label;
 						label.sprintf("D%d:", d + 1);
 						if (ImGui::MenuItem(label.c_str())) {
-							g_diskExplorer.Reset();
-							g_diskExplorer.pImage = dimg;
-							g_diskExplorer.pDiskInterface = &di;
-							g_diskExplorer.pFS = ATDiskMountImage(dimg, true);
-							if (!g_diskExplorer.pFS) {
-								g_diskExplorer.statusMsg = "Unable to detect filesystem.";
-								g_diskExplorer.pImage = nullptr;
-								g_diskExplorer.pDiskInterface = nullptr;
-							} else {
-								g_diskExplorer.pFS->SetStrictNameChecking(g_diskExplorer.mbStrictFilenames);
-								g_diskExplorer.readOnly = true;
-								g_diskExplorer.NavigateTo(ATDiskFSKey::None);
-							}
+							ATUIOpenDiskExplorerForDrive(d, false, false);
 						}
 					}
 				}
@@ -1476,46 +2010,77 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 			ImGui::Separator();
 			if (ImGui::MenuItem("Close")) {
 				DiskExplorerSaveSettings();
-				g_diskExplorer.Reset();
-				state.showDiskExplorer = false;
+				currentDocument->open = false;
 			}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
 			auto setMode = [](DiskExplorerViewMode m) {
-				g_diskExplorer.viewMode = m;
-				g_diskExplorer.FormatView();
-				g_diskExplorer.viewValid = !g_diskExplorer.viewData.empty();
+				currentDocument->state.viewMode = m;
+				currentDocument->state.FormatView();
+				currentDocument->state.viewValid = !currentDocument->state.viewData.empty();
 			};
-			if (ImGui::MenuItem("Text: no line wrapping", nullptr, g_diskExplorer.viewMode == kDEView_Text))
+			if (ImGui::MenuItem("ATASCII: no line wrapping", nullptr, currentDocument->state.viewMode == kDEView_Text))
 				setMode(kDEView_Text);
-			if (ImGui::MenuItem("Text: wrap to window", nullptr, g_diskExplorer.viewMode == kDEView_TextWrap))
+			if (ImGui::MenuItem("ATASCII: wrap to window", nullptr, currentDocument->state.viewMode == kDEView_TextWrap))
 				setMode(kDEView_TextWrap);
-			if (ImGui::MenuItem("Text: wrap to GR.0 screen (38 columns)", nullptr, g_diskExplorer.viewMode == kDEView_TextGR0))
+			VDStringA atasciiColumnsLabel;
+			atasciiColumnsLabel.sprintf("ATASCII: %d columns", ATUIGetTextColumns());
+			if (ImGui::MenuItem(atasciiColumnsLabel.c_str(), nullptr, currentDocument->state.viewMode == kDEView_TextGR0))
 				setMode(kDEView_TextGR0);
-			if (ImGui::MenuItem("Hex dump", nullptr, g_diskExplorer.viewMode == kDEView_Hex))
+			if (ImGui::MenuItem("ASCII (7-bit)", nullptr, currentDocument->state.viewMode == kDEView_ASCII))
+				setMode(kDEView_ASCII);
+			if (ImGui::MenuItem("Hex dump", nullptr, currentDocument->state.viewMode == kDEView_Hex))
 				setMode(kDEView_Hex);
-			if (ImGui::MenuItem("Executable", nullptr, g_diskExplorer.viewMode == kDEView_Executable))
+			if (ImGui::MenuItem("Executable", nullptr, currentDocument->state.viewMode == kDEView_Executable))
 				setMode(kDEView_Executable);
-			if (ImGui::MenuItem("MAC/65", nullptr, g_diskExplorer.viewMode == kDEView_MAC65))
+			if (ImGui::MenuItem("MAC/65", nullptr, currentDocument->state.viewMode == kDEView_MAC65))
 				setMode(kDEView_MAC65);
+			if (ImGui::MenuItem("Atari BASIC", nullptr, currentDocument->state.viewMode == kDEView_AtariBasic))
+				setMode(kDEView_AtariBasic);
+			if (ImGui::MenuItem("Syn assembler", nullptr, currentDocument->state.viewMode == kDEView_SynAssembler))
+				setMode(kDEView_SynAssembler);
+			if (ImGui::MenuItem("6502 disassembly", nullptr, currentDocument->state.viewMode == kDEView_6502))
+				setMode(kDEView_6502);
+			ImGui::EndMenu();
+		}
+		if (ImGui::BeginMenu("Disk")) {
+			const bool haveImage = currentDocument->state.GetActiveImage() != nullptr;
+			ImGui::BeginDisabled(!haveImage);
+			if (ImGui::MenuItem("View Sectors...")) {
+				currentDocument->state.showSectorViewer = true;
+				currentDocument->state.sectorNumber = 1;
+				currentDocument->state.loadedSectorNumber = 0;
+			}
+			if (ImGui::MenuItem("Show Boot Record")) currentDocument->state.showBootRecord = true;
+			if (ImGui::MenuItem("Show Image Properties")) currentDocument->state.showImageProperties = true;
+			if (ImGui::MenuItem("Show Sector Map")) currentDocument->state.showSectorMap = true;
+			ImGui::EndDisabled();
+			ImGui::Separator();
+			ImGui::BeginDisabled(!currentDocument->state.pFS);
+			if (ImGui::MenuItem("Validate File System")) {
+				currentDocument->state.validationValid = true;
+				currentDocument->state.validationProblems = !currentDocument->state.pFS->Validate(currentDocument->state.validationReport);
+				currentDocument->state.statusMsg = currentDocument->state.validationProblems ? "Filesystem validation found problems." : "Filesystem validation passed.";
+			}
+			ImGui::EndDisabled();
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Options")) {
 			if (ImGui::BeginMenu("Filename Checking")) {
-				if (ImGui::MenuItem("Strict", nullptr, g_diskExplorer.mbStrictFilenames)) {
-					g_diskExplorer.mbStrictFilenames = true;
-					if (g_diskExplorer.pFS)
-						g_diskExplorer.pFS->SetStrictNameChecking(true);
+				if (ImGui::MenuItem("Strict", nullptr, currentDocument->state.mbStrictFilenames)) {
+					currentDocument->state.mbStrictFilenames = true;
+					if (currentDocument->state.pFS)
+						currentDocument->state.pFS->SetStrictNameChecking(true);
 				}
-				if (ImGui::MenuItem("Relaxed", nullptr, !g_diskExplorer.mbStrictFilenames)) {
-					g_diskExplorer.mbStrictFilenames = false;
-					if (g_diskExplorer.pFS)
-						g_diskExplorer.pFS->SetStrictNameChecking(false);
+				if (ImGui::MenuItem("Relaxed", nullptr, !currentDocument->state.mbStrictFilenames)) {
+					currentDocument->state.mbStrictFilenames = false;
+					if (currentDocument->state.pFS)
+						currentDocument->state.pFS->SetStrictNameChecking(false);
 				}
 				ImGui::Separator();
-				if (ImGui::MenuItem("Adjust Conflicting Filenames", nullptr, g_diskExplorer.mbAdjustFilenames))
-					g_diskExplorer.mbAdjustFilenames = !g_diskExplorer.mbAdjustFilenames;
+				if (ImGui::MenuItem("Adjust Conflicting Filenames", nullptr, currentDocument->state.mbAdjustFilenames))
+					currentDocument->state.mbAdjustFilenames = !currentDocument->state.mbAdjustFilenames;
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -1524,11 +2089,11 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 	}
 
 	// Partition list view: when a block device is loaded but no filesystem is mounted
-	if (!g_diskExplorer.pFS && g_diskExplorer.pBlockDevice) {
-		ImGui::Text("Block Device - %d partition(s)", (int)g_diskExplorer.partitions.size());
+	if (!currentDocument->state.pFS && currentDocument->state.pBlockDevice) {
+		ImGui::Text("Block Device - %d partition(s)", (int)currentDocument->state.partitions.size());
 
-		if (!g_diskExplorer.statusMsg.empty())
-			ImGui::TextDisabled("%s", g_diskExplorer.statusMsg.c_str());
+		if (!currentDocument->state.statusMsg.empty())
+			ImGui::TextDisabled("%s", currentDocument->state.statusMsg.c_str());
 
 		ImGui::Separator();
 
@@ -1544,23 +2109,24 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 			ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthStretch, 0.20f);
 			ImGui::TableHeadersRow();
 
-			for (int i = 0; i < (int)g_diskExplorer.partitions.size(); ++i) {
-				const ATPartitionInfo &pi = g_diskExplorer.partitions[i];
+			for (int i = 0; i < (int)currentDocument->state.partitions.size(); ++i) {
+				const ATPartitionInfo &pi = currentDocument->state.partitions[i];
 				ImGui::TableNextRow();
 				ImGui::PushID(i);
 
 				ImGui::TableNextColumn();
 				VDStringA name = VDTextWToA(pi.mName);
-				bool selected = (g_diskExplorer.selectedPartition == i);
+				bool selected = (currentDocument->state.selectedPartition == i);
 				if (ImGui::Selectable(name.c_str(), selected,
-					ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
-					g_diskExplorer.selectedPartition = i;
+					ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)
+				|| ImGui::GetCurrentContext()->NavJustMovedToId == ImGui::GetItemID()) {
+					currentDocument->state.selectedPartition = i;
 
 					if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 						try {
-							g_diskExplorer.OpenPartition(i);
+							currentDocument->state.OpenPartition(i);
 						} catch (const MyError &e) {
-							g_diskExplorer.statusMsg.sprintf("Open partition failed: %s", e.c_str());
+							currentDocument->state.statusMsg.sprintf("Open partition failed: %s", e.c_str());
 						}
 						ImGui::PopID();
 						ImGui::EndTable();
@@ -1577,9 +2143,9 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 						ImGui::PopID();
 						ImGui::EndTable();
 						try {
-							g_diskExplorer.OpenPartition(openIdx);
+							currentDocument->state.OpenPartition(openIdx);
 						} catch (const MyError &e) {
-							g_diskExplorer.statusMsg.sprintf("Open partition failed: %s", e.c_str());
+							currentDocument->state.statusMsg.sprintf("Open partition failed: %s", e.c_str());
 						}
 						ImGui::End();
 						return;
@@ -1587,25 +2153,25 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 
 					ImGui::Separator();
 
-					bool writable = !g_diskExplorer.pBlockDevice->IsReadOnly() && !pi.mbWriteProtected;
+					bool writable = !currentDocument->state.pBlockDevice->IsReadOnly() && !pi.mbWriteProtected;
 					ImGui::BeginDisabled(!writable);
 					if (ImGui::MenuItem("Import Disk Image...")) {
-						g_diskExplorerPartitionImportIdx = i;
+						currentDocument->diskExplorerPartitionImportIdx = i;
 						static const SDL_DialogFileFilter kFilters[] = {
 							{ "Disk Images", "atr;xfd;dcm;pro;atx;gz;zip;atz" },
 							{ "All Files", "*" },
 						};
-						ATUIShowOpenFileDialog('disk', DiskExplorerPartitionImportCallback, nullptr, window, kFilters, 2, false);
+						ATUIExplorerFileDialog(*currentDocument, false, 'disk', DiskExplorerPartitionImportCallback, nullptr, window, kFilters, 2, false);
 					}
 					ImGui::EndDisabled();
 
 					if (ImGui::MenuItem("Export Disk Image...")) {
-						g_diskExplorerPartitionExportIdx = i;
+						currentDocument->diskExplorerPartitionExportIdx = i;
 						static const SDL_DialogFileFilter kFilters[] = {
 							{ "Atari Disk Image", "atr" },
 							{ "All Files", "*" },
 						};
-						ATUIShowSaveFileDialog('disk', DiskExplorerPartitionExportCallback, nullptr, window, kFilters, 2);
+						ATUIExplorerFileDialog(*currentDocument, true, 'disk', DiskExplorerPartitionExportCallback, nullptr, window, kFilters, 2);
 					}
 
 					ImGui::EndPopup();
@@ -1630,101 +2196,102 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 		return;
 	}
 
-	if (!g_diskExplorer.pFS) {
-		ImGui::TextWrapped("No disk image loaded. Use File > Open Disk Image to browse a disk.");
-		if (!g_diskExplorer.statusMsg.empty())
-			ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g_diskExplorer.statusMsg.c_str());
+	if (!currentDocument->state.pFS) {
+		ImGui::TextWrapped("No recognized filesystem. Use the Disk menu to inspect sectors, the boot record, and image properties.");
+		ImGui::TextDisabled("You can also drop an ATR, XFD, ATX, DCM, PRO, ZIP, GZ, or ATZ image onto this window.");
+		if (!currentDocument->state.statusMsg.empty())
+			ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", currentDocument->state.statusMsg.c_str());
 		ImGui::End();
+		DiskExplorerRenderInspectionWindows();
 		return;
 	}
 
 	// Toolbar
-	ImGui::Text("Path: %s", g_diskExplorer.pathStr.c_str());
-	ImGui::SameLine(ImGui::GetContentRegionAvail().x - 200);
+	ImGui::Text("Path: %s", currentDocument->state.pathStr.c_str());
 
-	bool canWrite = !g_diskExplorer.readOnly;
+	bool canWrite = !currentDocument->state.readOnly;
 	ImGui::BeginDisabled(!canWrite);
 	if (ImGui::SmallButton("Import...")) {
 		static const SDL_DialogFileFilter kFilters[] = { { "All Files", "*" } };
-		ATUIShowOpenFileDialog('dexp', DiskExplorerImportCallback, nullptr, window, kFilters, 1, false);
+		ATUIExplorerFileDialog(*currentDocument, false, 'dexp', DiskExplorerImportCallback, nullptr, window, kFilters, 1, false);
 	}
 	ImGui::EndDisabled();
 	ImGui::SameLine();
 
 	// Count selected exportable files for the toolbar Export button
 	int toolbarSelFiles = 0;
-	for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-		if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-			&& !g_diskExplorer.entries[j].isDir
-			&& g_diskExplorer.entries[j].name != ".."
-			&& g_diskExplorer.entries[j].key != ATDiskFSKey::None)
+	for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+		if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+			&& !currentDocument->state.entries[j].isDir
+			&& currentDocument->state.entries[j].name != ".."
+			&& currentDocument->state.entries[j].key != ATDiskFSKey::None)
 			++toolbarSelFiles;
 	}
 	ImGui::BeginDisabled(toolbarSelFiles == 0);
-	if (ImGui::SmallButton("Export...") && toolbarSelFiles > 0) {
+	if (ImGui::SmallButton("Export selected...") && toolbarSelFiles > 0) {
 		if (toolbarSelFiles > 1) {
-			g_diskMultiExportEntries.clear();
-			g_diskMultiExportAsText = false;
-			for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-				if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-					&& !g_diskExplorer.entries[j].isDir
-					&& g_diskExplorer.entries[j].name != ".."
-					&& g_diskExplorer.entries[j].key != ATDiskFSKey::None) {
-					auto &ej = g_diskExplorer.entries[j];
-					g_diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
+			currentDocument->diskMultiExportEntries.clear();
+			currentDocument->diskMultiExportAsText = false;
+			for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+				if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+					&& !currentDocument->state.entries[j].isDir
+					&& currentDocument->state.entries[j].name != ".."
+					&& currentDocument->state.entries[j].key != ATDiskFSKey::None) {
+					auto &ej = currentDocument->state.entries[j];
+					currentDocument->diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
 				}
 			}
-			ATUIShowOpenFolderDialog('dexp',
+			ATUIExplorerFolderDialog(*currentDocument, 'dexp',
 				DiskExplorerMultiExportCallback, nullptr, window);
 		} else {
 			// Single file export
-			for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-				if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-					&& !g_diskExplorer.entries[j].isDir) {
-					auto &ej = g_diskExplorer.entries[j];
-					g_diskExportInfo.key = ej.key;
-					g_diskExportInfo.dateValid = ej.dateValid;
-					g_diskExportInfo.date = ej.date;
+			for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+				if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+					&& !currentDocument->state.entries[j].isDir) {
+					auto &ej = currentDocument->state.entries[j];
+					currentDocument->diskExportInfo.key = ej.key;
+					currentDocument->diskExportInfo.dateValid = ej.dateValid;
+					currentDocument->diskExportInfo.date = ej.date;
 					break;
 				}
 			}
 			static const SDL_DialogFileFilter kFilters[] = { { "All Files", "*" } };
-			ATUIShowSaveFileDialog('dexp', DiskExplorerExportCallback, nullptr, window, kFilters, 1);
+			ATUIExplorerFileDialog(*currentDocument, true, 'dexp', DiskExplorerExportCallback, nullptr, window, kFilters, 1);
 		}
 	}
 	ImGui::EndDisabled();
 
 	ImGui::SameLine();
 	ImGui::BeginDisabled(!canWrite);
-	if (ImGui::SmallButton("New Dir..."))
+	if (ImGui::SmallButton("New folder..."))
 		ImGui::OpenPopup("NewDirPopup");
 	ImGui::EndDisabled();
 
 	// New Directory popup
 	if (ImGui::BeginPopup("NewDirPopup")) {
-		if (!g_diskExplorer.pFS) {
+		if (!currentDocument->state.pFS) {
 			ImGui::CloseCurrentPopup();
 			ImGui::EndPopup();
 		} else {
-			static char newDirName[64] = {};
+
 			ImGui::Text("Directory name:");
 			ImGui::SetNextItemWidth(200);
-			bool submitted = ImGui::InputText("##dirname", newDirName, sizeof(newDirName),
+			bool submitted = ImGui::InputText("##dirname", currentDocument->newDirName, sizeof(currentDocument->newDirName),
 				ImGuiInputTextFlags_EnterReturnsTrue);
 			ImGui::SameLine();
-			if ((ImGui::Button("OK") || submitted) && newDirName[0]) {
+			if ((ImGui::Button("OK") || submitted) && currentDocument->newDirName[0]) {
 				try {
-					g_diskExplorer.pFS->CreateDir(g_diskExplorer.currentDir, newDirName);
-					g_diskExplorer.OnFSModified();
-					newDirName[0] = 0;
+					currentDocument->state.pFS->CreateDir(currentDocument->state.currentDir, currentDocument->newDirName);
+					currentDocument->state.OnFSModified();
+					currentDocument->newDirName[0] = 0;
 					ImGui::CloseCurrentPopup();
 				} catch (const MyError &err) {
-					g_diskExplorer.statusMsg.sprintf("Create dir failed: %s", err.c_str());
+					currentDocument->state.statusMsg.sprintf("Create dir failed: %s", err.c_str());
 				}
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Cancel")) {
-				newDirName[0] = 0;
+				currentDocument->newDirName[0] = 0;
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::EndPopup();
@@ -1732,48 +2299,67 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 	}
 
 	ImGui::SameLine();
-	bool rwToggle = !g_diskExplorer.readOnly;
+	bool rwToggle = !currentDocument->state.readOnly;
 	if (ImGui::Checkbox("Write", &rwToggle)) {
-		g_diskExplorer.readOnly = !rwToggle;
+		currentDocument->state.readOnly = !rwToggle;
 		// Remount with new read/write mode — use pImage for standalone images,
 		// pPartitionView for partition filesystems
-		IATDiskImage *mountImage = g_diskExplorer.pImage
-			? g_diskExplorer.pImage.get()
-			: g_diskExplorer.pPartitionView.get();
+		IATDiskImage *mountImage = currentDocument->state.pImage
+			? currentDocument->state.pImage.get()
+			: currentDocument->state.pPartitionView.get();
 		if (mountImage) {
 			try {
-				delete g_diskExplorer.pFS;
-				g_diskExplorer.pFS = ATDiskMountImage(mountImage, g_diskExplorer.readOnly);
-				if (g_diskExplorer.pFS)
-					g_diskExplorer.pFS->SetStrictNameChecking(g_diskExplorer.mbStrictFilenames);
+				delete currentDocument->state.pFS;
+				currentDocument->state.pFS = nullptr;
+				currentDocument->state.pFS = ATDiskMountImage(mountImage, currentDocument->state.readOnly);
+				if (currentDocument->state.pFS)
+					currentDocument->state.pFS->SetStrictNameChecking(currentDocument->state.mbStrictFilenames);
 
 				// Check if writes are actually possible — matches Windows MountFS logic
-				if (!g_diskExplorer.readOnly && g_diskExplorer.pFS) {
-					if (mountImage->IsUpdatable() && g_diskExplorer.pFS->IsReadOnly()) {
+				if (!currentDocument->state.readOnly && currentDocument->state.pFS) {
+					if (mountImage->IsUpdatable() && currentDocument->state.pFS->IsReadOnly()) {
 						// Image format is updatable but FS can only be mounted read-only
-						g_diskExplorer.readOnly = true;
-						g_diskExplorer.statusMsg = "This disk format is only supported in read-only mode.";
+						currentDocument->state.readOnly = true;
+						currentDocument->state.statusMsg = "This disk format is only supported in read-only mode.";
 					} else {
-						g_diskExplorer.ValidateForWrites();
+						currentDocument->state.ValidateForWrites();
 					}
 				}
 
-				g_diskExplorer.RefreshDirectory();
+				currentDocument->state.RefreshDirectory();
 			} catch (const MyError &e) {
-				g_diskExplorer.statusMsg.sprintf("Remount failed: %s", e.c_str());
+				currentDocument->state.statusMsg.sprintf("Remount failed: %s", e.c_str());
 			}
 		}
 	}
 
 	ImGui::Separator();
 
+	ImGui::BeginDisabled(currentDocument->state.GetSelectionCount() == 0);
+	if (ImGui::Button("Selection actions...")) currentDocument->actionsRequested = true;
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button("Select all")) {
+		for (size_t i = 0; i < currentDocument->state.entries.size(); ++i)
+			currentDocument->state.selected[i] = currentDocument->state.entries[i].name != "..";
+		if (!currentDocument->state.entries.empty()) currentDocument->state.selectedEntry = 0;
+	}
+	ImGui::SameLine();
+	VDStringA runError;
+	const bool canRunXEX = DiskExplorerSelectedIsXEX(&runError);
+	ImGui::BeginDisabled(!canRunXEX);
+	if (ImGui::Button("Run")) DiskExplorerRunSelectedXEX();
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", canRunXEX ?
+			"Load and run this executable directly from the disk image." : runError.c_str());
+	ImGui::SameLine();
+	ImGui::BeginDisabled(!canRunXEX);
+	if (ImGui::Button("Open in XEX Explorer")) DiskExplorerOpenSelectedXEX();
+	ImGui::EndDisabled();
 	// Split: file list (top) and viewer (bottom)
-	float listH = ImGui::GetContentRegionAvail().y * 0.55f;
-
-	static bool s_wantRename = false;
-	static bool s_wantNewDir = false;
-	static ATDiskFSKey s_renameKey = ATDiskFSKey::None;
-	static char s_renameBuf[64] = {};
+	const float splitHeight = ImGui::GetContentRegionAvail().y;
+	float listH = ATUIExplorerListHeight(*currentDocument);
 
 	// File list
 	if (ImGui::BeginTable("FileList", 4,
@@ -1787,15 +2373,16 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 		ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthStretch, 0.20f);
 		ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthStretch, 0.25f);
 		ImGui::TableHeadersRow();
+		DiskExplorerSort(ImGui::TableGetSortSpecs());
 
-		for (int i = 0; i < (int)g_diskExplorer.entries.size(); ++i) {
-			auto &e = g_diskExplorer.entries[i];
+		for (int i = 0; i < (int)currentDocument->state.entries.size(); ++i) {
+			auto &e = currentDocument->state.entries[i];
 			ImGui::TableNextRow();
 			ImGui::PushID(i);
 
 			// Name
 			ImGui::TableNextColumn();
-			bool isSel = (i < (int)g_diskExplorer.selected.size()) && g_diskExplorer.selected[i];
+			bool isSel = (i < (int)currentDocument->state.selected.size()) && currentDocument->state.selected[i];
 			VDStringA label;
 			if (e.isDir)
 				label.sprintf("[%s]", e.name.c_str());
@@ -1803,46 +2390,59 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 				label = e.name;
 
 			if (ImGui::Selectable(label.c_str(), isSel,
-				ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
+				ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)
+				|| ImGui::GetCurrentContext()->NavJustMovedToId == ImGui::GetItemID()) {
 				ImGuiIO &io = ImGui::GetIO();
-				if (io.KeyCtrl) {
-					g_diskExplorer.ToggleSelection(i);
-				} else if (io.KeyShift && g_diskExplorer.lastClickedEntry >= 0) {
-					g_diskExplorer.ClearSelection();
-					g_diskExplorer.SelectRange(g_diskExplorer.lastClickedEntry, i);
+				if (io.KeyCtrl || io.KeySuper) {
+					currentDocument->state.ToggleSelection(i);
+				} else if (io.KeyShift && currentDocument->state.lastClickedEntry >= 0) {
+					const int rangeAnchor = currentDocument->state.lastClickedEntry;
+					currentDocument->state.ClearSelection();
+					currentDocument->state.SelectRange(rangeAnchor, i);
+					currentDocument->state.lastClickedEntry = rangeAnchor;
 				} else {
-					g_diskExplorer.SelectSingle(i);
+					currentDocument->state.SelectSingle(i);
 				}
 				if (!e.isDir)
-					g_diskExplorer.LoadFileView(i);
+					currentDocument->state.LoadFileView(i);
 
-				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && e.isDir) {
-					if (e.name == ".." && g_diskExplorer.currentDir == ATDiskFSKey::None
-						&& g_diskExplorer.pBlockDevice) {
+				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !e.isDir &&
+					DiskExplorerSelectedIsXEX()) {
+					DiskExplorerRunSelectedXEX();
+				} else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && e.isDir) {
+					if (e.name == ".." && currentDocument->state.currentDir == ATDiskFSKey::None
+						&& currentDocument->state.pBlockDevice) {
 						// At root of a partition — return to partition list
 						ImGui::PopID();
-						g_diskExplorer.ReturnToPartitionList();
+						currentDocument->state.ReturnToPartitionList();
 						break;
 					}
 					// Capture key before NavigateTo invalidates entries
 					ATDiskFSKey navKey = (e.name == "..") ?
-						g_diskExplorer.pFS->GetParentDirectory(g_diskExplorer.currentDir) : e.key;
+						currentDocument->state.pFS->GetParentDirectory(currentDocument->state.currentDir) : e.key;
 					ImGui::PopID();
-					g_diskExplorer.NavigateTo(navKey);
+					currentDocument->state.NavigateTo(navKey);
 					break;  // entries invalidated
 				}
 			}
 
 			// Context menu
 			bool deleted = false;
-			if (ImGui::BeginPopupContextItem()) {
+			if (currentDocument->actionsRequested && i == currentDocument->state.selectedEntry) {
+				ImGui::OpenPopup("ItemActions"); currentDocument->actionsRequested = false;
+			}
+			if (ImGui::BeginPopupContextItem("ItemActions")) {
+				if (!currentDocument->state.selected[i]) {
+					currentDocument->state.SelectSingle(i);
+					if (!e.isDir) currentDocument->state.LoadFileView(i);
+				}
 				// Compute selection state — matches Windows enable/disable logic
 				// (uidiskexplorer.cpp lines 1596-1629)
 				bool anyFiles = false, anyDirs = false, anySpecials = false;
 				int selCount = 0;
-				for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-					if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]) {
-						auto &ej = g_diskExplorer.entries[j];
+				for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+					if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]) {
+						auto &ej = currentDocument->state.entries[j];
 						if (ej.name == ".." || ej.key == ATDiskFSKey::None)
 							anySpecials = true;
 						else if (ej.isDir)
@@ -1855,16 +2455,35 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 				const bool anyItemsSelected = !anySpecials && selCount > 0;
 				const bool singleItemSelected = !anySpecials && selCount == 1;
 				const bool singleFileSelected = !anyDirs && !anySpecials && singleItemSelected;
-				const bool writable = !g_diskExplorer.readOnly;
+				const bool writable = !currentDocument->state.readOnly;
 
 				// Context menu order matches Windows IDR_DISK_EXPLORER_CONTEXT_MENU:
 				// View | sep | New Folder, Rename, Delete | sep | Import, Import Text | sep | Export, Export Text
 
+				if (ImGui::MenuItem("Run", nullptr, false, DiskExplorerSelectedIsXEX()))
+					DiskExplorerRunSelectedXEX();
+				if (ImGui::MenuItem("Open in XEX Explorer", nullptr, false, DiskExplorerSelectedIsXEX()))
+					DiskExplorerOpenSelectedXEX();
+				if (ImGui::MenuItem("Copy details", nullptr, false, anyItemsSelected)) {
+					VDStringA details;
+					for (size_t j = 0; j < currentDocument->state.entries.size(); ++j) {
+						if (!currentDocument->state.selected[j]) continue;
+						const auto& entry = currentDocument->state.entries[j];
+						details.append_sprintf("%s\t%u bytes\t%u sectors\n", entry.name.c_str(), entry.bytes, entry.sectors);
+					}
+					ImGui::SetClipboardText(details.c_str());
+				}
 				// View — only enabled for single file selection (matches Windows)
 				ImGui::BeginDisabled(!singleFileSelected);
 				if (ImGui::MenuItem("View")) {
-					g_diskExplorer.selectedEntry = i;
-					g_diskExplorer.LoadFileView(i);
+					currentDocument->state.selectedEntry = i;
+					currentDocument->state.LoadFileView(i);
+				}
+				ImGui::EndDisabled();
+				ImGui::BeginDisabled(!singleItemSelected);
+				if (ImGui::MenuItem("File Information") && singleItemSelected) {
+					currentDocument->state.fileInfoKey = e.key;
+					currentDocument->state.showFileInfo = true;
 				}
 				ImGui::EndDisabled();
 
@@ -1873,20 +2492,20 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 				// New Folder / Rename / Delete
 				ImGui::BeginDisabled(!writable);
 				if (ImGui::MenuItem("New Folder..."))
-					s_wantNewDir = true;
+					currentDocument->wantNewDir = true;
 				ImGui::EndDisabled();
 
 				ImGui::BeginDisabled(!singleItemSelected || !writable);
 				if (ImGui::MenuItem("Rename...") && singleItemSelected && writable) {
 					// Find the single selected non-special entry
-					for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-						if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-							&& g_diskExplorer.entries[j].name != ".."
-							&& g_diskExplorer.entries[j].key != ATDiskFSKey::None) {
-							s_renameKey = g_diskExplorer.entries[j].key;
-							strncpy(s_renameBuf, g_diskExplorer.entries[j].name.c_str(), sizeof(s_renameBuf) - 1);
-							s_renameBuf[sizeof(s_renameBuf) - 1] = 0;
-							s_wantRename = true;
+					for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+						if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+							&& currentDocument->state.entries[j].name != ".."
+							&& currentDocument->state.entries[j].key != ATDiskFSKey::None) {
+							currentDocument->renameKey = currentDocument->state.entries[j].key;
+							strncpy(currentDocument->renameBuf, currentDocument->state.entries[j].name.c_str(), sizeof(currentDocument->renameBuf) - 1);
+							currentDocument->renameBuf[sizeof(currentDocument->renameBuf) - 1] = 0;
+							currentDocument->wantRename = true;
 							break;
 						}
 					}
@@ -1894,22 +2513,22 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 				ImGui::EndDisabled();
 
 				ImGui::BeginDisabled(!anyItemsSelected || !writable);
-				if (ImGui::MenuItem("Delete") && anyItemsSelected && writable && g_diskExplorer.pFS) {
+				if (ImGui::MenuItem("Delete") && anyItemsSelected && writable && currentDocument->state.pFS) {
 					// Delete all selected non-special entries
-					for (int j = (int)g_diskExplorer.entries.size() - 1; j >= 0; --j) {
-						if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-							&& j < (int)g_diskExplorer.entries.size()) {
-							auto &ej = g_diskExplorer.entries[j];
+					for (int j = (int)currentDocument->state.entries.size() - 1; j >= 0; --j) {
+						if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+							&& j < (int)currentDocument->state.entries.size()) {
+							auto &ej = currentDocument->state.entries[j];
 							if (ej.name != ".." && ej.key != ATDiskFSKey::None) {
 								try {
-									g_diskExplorer.pFS->DeleteFile(ej.key);
+									currentDocument->state.pFS->DeleteFile(ej.key);
 								} catch (const MyError &err) {
-									g_diskExplorer.statusMsg.sprintf("Delete '%s' failed: %s", ej.name.c_str(), err.c_str());
+									currentDocument->state.statusMsg.sprintf("Delete '%s' failed: %s", ej.name.c_str(), err.c_str());
 								}
 							}
 						}
 					}
-					g_diskExplorer.OnFSModified();
+					currentDocument->state.OnFSModified();
 					deleted = true;
 				}
 				ImGui::EndDisabled();
@@ -1920,11 +2539,11 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 				ImGui::BeginDisabled(!writable);
 				if (ImGui::MenuItem("Import File...")) {
 					static const SDL_DialogFileFilter kFilters[] = { { "All Files", "*" } };
-					ATUIShowOpenFileDialog('dexp', DiskExplorerImportCallback, nullptr, window, kFilters, 1, false);
+					ATUIExplorerFileDialog(*currentDocument, false, 'dexp', DiskExplorerImportCallback, nullptr, window, kFilters, 1, false);
 				}
 				if (ImGui::MenuItem("Import File as Text...")) {
 					static const SDL_DialogFileFilter kFilters[] = { { "All Files", "*" } };
-					ATUIShowOpenFileDialog('dexp', DiskExplorerImportTextCallback, nullptr, window, kFilters, 1, false);
+					ATUIExplorerFileDialog(*currentDocument, false, 'dexp', DiskExplorerImportTextCallback, nullptr, window, kFilters, 1, false);
 				}
 				ImGui::EndDisabled();
 
@@ -1934,11 +2553,11 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 				{
 					// Count selected exportable files
 					int selFileCount = 0;
-					for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-						if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-							&& !g_diskExplorer.entries[j].isDir
-							&& g_diskExplorer.entries[j].name != ".."
-							&& g_diskExplorer.entries[j].key != ATDiskFSKey::None)
+					for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+						if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+							&& !currentDocument->state.entries[j].isDir
+							&& currentDocument->state.entries[j].name != ".."
+							&& currentDocument->state.entries[j].key != ATDiskFSKey::None)
 							++selFileCount;
 					}
 					bool canExport = !anyDirs && anyItemsSelected;
@@ -1946,50 +2565,50 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 					ImGui::BeginDisabled(!canExport);
 					if (ImGui::MenuItem("Export File...") && canExport) {
 						if (selFileCount > 1) {
-							g_diskMultiExportEntries.clear();
-							g_diskMultiExportAsText = false;
-							for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-								if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-									&& !g_diskExplorer.entries[j].isDir
-									&& g_diskExplorer.entries[j].name != ".."
-									&& g_diskExplorer.entries[j].key != ATDiskFSKey::None) {
-									auto &ej = g_diskExplorer.entries[j];
-									g_diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
+							currentDocument->diskMultiExportEntries.clear();
+							currentDocument->diskMultiExportAsText = false;
+							for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+								if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+									&& !currentDocument->state.entries[j].isDir
+									&& currentDocument->state.entries[j].name != ".."
+									&& currentDocument->state.entries[j].key != ATDiskFSKey::None) {
+									auto &ej = currentDocument->state.entries[j];
+									currentDocument->diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
 								}
 							}
-							ATUIShowOpenFolderDialog('dexp',
+							ATUIExplorerFolderDialog(*currentDocument, 'dexp',
 								DiskExplorerMultiExportCallback, nullptr,
 								window);
 						} else {
-							g_diskExportInfo.key = e.key;
-							g_diskExportInfo.dateValid = e.dateValid;
-							g_diskExportInfo.date = e.date;
+							currentDocument->diskExportInfo.key = e.key;
+							currentDocument->diskExportInfo.dateValid = e.dateValid;
+							currentDocument->diskExportInfo.date = e.date;
 							static const SDL_DialogFileFilter kFilters[] = { { "All Files", "*" } };
-							ATUIShowSaveFileDialog('dexp', DiskExplorerExportCallback, nullptr, window, kFilters, 1);
+							ATUIExplorerFileDialog(*currentDocument, true, 'dexp', DiskExplorerExportCallback, nullptr, window, kFilters, 1);
 						}
 					}
 					if (ImGui::MenuItem("Export File as Text...") && canExport) {
 						if (selFileCount > 1) {
-							g_diskMultiExportEntries.clear();
-							g_diskMultiExportAsText = true;
-							for (int j = 0; j < (int)g_diskExplorer.entries.size(); ++j) {
-								if (j < (int)g_diskExplorer.selected.size() && g_diskExplorer.selected[j]
-									&& !g_diskExplorer.entries[j].isDir
-									&& g_diskExplorer.entries[j].name != ".."
-									&& g_diskExplorer.entries[j].key != ATDiskFSKey::None) {
-									auto &ej = g_diskExplorer.entries[j];
-									g_diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
+							currentDocument->diskMultiExportEntries.clear();
+							currentDocument->diskMultiExportAsText = true;
+							for (int j = 0; j < (int)currentDocument->state.entries.size(); ++j) {
+								if (j < (int)currentDocument->state.selected.size() && currentDocument->state.selected[j]
+									&& !currentDocument->state.entries[j].isDir
+									&& currentDocument->state.entries[j].name != ".."
+									&& currentDocument->state.entries[j].key != ATDiskFSKey::None) {
+									auto &ej = currentDocument->state.entries[j];
+									currentDocument->diskMultiExportEntries.push_back({ej.key, ej.name, ej.dateValid, ej.date});
 								}
 							}
-							ATUIShowOpenFolderDialog('dexp',
+							ATUIExplorerFolderDialog(*currentDocument, 'dexp',
 								DiskExplorerMultiExportCallback, nullptr,
 								window);
 						} else {
-							g_diskExportTextInfo.key = e.key;
-							g_diskExportTextInfo.dateValid = e.dateValid;
-							g_diskExportTextInfo.date = e.date;
+							currentDocument->diskExportTextInfo.key = e.key;
+							currentDocument->diskExportTextInfo.dateValid = e.dateValid;
+							currentDocument->diskExportTextInfo.date = e.date;
 							static const SDL_DialogFileFilter kFilters[] = { { "All Files", "*" } };
-							ATUIShowSaveFileDialog('dexp', DiskExplorerExportTextCallback, nullptr, window, kFilters, 1);
+							ATUIExplorerFileDialog(*currentDocument, true, 'dexp', DiskExplorerExportTextCallback, nullptr, window, kFilters, 1);
 						}
 					}
 					ImGui::EndDisabled();
@@ -2004,12 +2623,12 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 			// Sectors
 			ImGui::TableNextColumn();
 			if (!e.isDir)
-				ImGui::Text("%u", e.sectors);
+				ATUIExplorerNumber("%u", e.sectors);
 
 			// Size
 			ImGui::TableNextColumn();
 			if (!e.isDir)
-				ImGui::Text("%u", e.bytes);
+				ATUIExplorerNumber("%u", e.bytes);
 
 			// Date
 			ImGui::TableNextColumn();
@@ -2024,35 +2643,35 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 		ImGui::EndTable();
 	}
 
-	// New directory popup -- s_wantNewDir is set in the context menu above
-	if (s_wantNewDir) {
+	// New directory popup -- currentDocument->wantNewDir is set in the context menu above
+	if (currentDocument->wantNewDir) {
 		ImGui::OpenPopup("NewDirPopup");
-		s_wantNewDir = false;
+		currentDocument->wantNewDir = false;
 	}
 
-	// Rename popup — s_wantRename is set in the context menu above
-	if (s_wantRename) {
+	// Rename popup — currentDocument->wantRename is set in the context menu above
+	if (currentDocument->wantRename) {
 		ImGui::OpenPopup("RenamePopup");
-		s_wantRename = false;
+		currentDocument->wantRename = false;
 	}
 	if (ImGui::BeginPopup("RenamePopup")) {
-		if (!g_diskExplorer.pFS) {
+		if (!currentDocument->state.pFS) {
 			ImGui::CloseCurrentPopup();
 			ImGui::EndPopup();
 		} else {
 			ImGui::Text("New name:");
 			ImGui::SetNextItemWidth(200);
-			bool submitted = ImGui::InputText("##rename", s_renameBuf, sizeof(s_renameBuf),
+			bool submitted = ImGui::InputText("##rename", currentDocument->renameBuf, sizeof(currentDocument->renameBuf),
 				ImGuiInputTextFlags_EnterReturnsTrue);
 			ImGui::SameLine();
-			if ((ImGui::Button("OK") || submitted) && s_renameBuf[0] &&
-				s_renameKey != ATDiskFSKey::None) {
+			if ((ImGui::Button("OK") || submitted) && currentDocument->renameBuf[0] &&
+				currentDocument->renameKey != ATDiskFSKey::None) {
 				try {
-					g_diskExplorer.pFS->RenameFile(s_renameKey, s_renameBuf);
-					g_diskExplorer.OnFSModified();
+					currentDocument->state.pFS->RenameFile(currentDocument->renameKey, currentDocument->renameBuf);
+					currentDocument->state.OnFSModified();
 					ImGui::CloseCurrentPopup();
 				} catch (const MyError &err) {
-					g_diskExplorer.statusMsg.sprintf("Rename failed: %s", err.c_str());
+					currentDocument->state.statusMsg.sprintf("Rename failed: %s", err.c_str());
 				}
 			}
 			ImGui::SameLine();
@@ -2063,22 +2682,90 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 	}
 
 	// File viewer
-	ImGui::Separator();
 
-	static const char *kViewModeNames[] = { "Text", "Text (wrap)", "GR.0 (38 col)", "Hex dump", "Executable", "MAC/65" };
-	ImGui::Text("View: %s", kViewModeNames[g_diskExplorer.viewMode]);
+	ATUIExplorerSplitter(*currentDocument, splitHeight);
+
+	static const char *kViewModeNames[] = { "ATASCII", "ATASCII (wrap)", "ATASCII (columns)", "Hex dump", "Executable", "MAC/65", "Atari BASIC", "Syn assembler", "6502 disassembly", "ASCII (7-bit)" };
+	if (currentDocument->state.selectedEntry >= 0 &&
+		currentDocument->state.selectedEntry < (int)currentDocument->state.entries.size() &&
+		!currentDocument->state.entries[currentDocument->state.selectedEntry].isDir) {
+		ImGui::Text("%s   %u bytes   %d selected",
+			currentDocument->state.entries[currentDocument->state.selectedEntry].name.c_str(),
+			(unsigned)currentDocument->state.viewData.size(), currentDocument->state.GetSelectionCount());
+	}
+	ImGui::Text("Preview");
 	ImGui::SameLine();
-	if (g_diskExplorer.viewValid)
-		ImGui::Text("(%u bytes)", (uint32)g_diskExplorer.viewData.size());
+	ImGui::SetNextItemWidth(210);
+	const int currentViewMode = std::max(0, std::min((int)kDEView_ASCII, (int)currentDocument->state.viewMode));
+	VDStringA currentViewLabel;
+	if (currentViewMode == (int)kDEView_TextGR0)
+		currentViewLabel.sprintf("ATASCII (%d columns)", ATUIGetTextColumns());
+	else if (currentViewMode == (int)kDEView_ASCII)
+		currentViewLabel.sprintf("ASCII (%d columns)", ATUIGetTextColumns());
+	else
+		currentViewLabel = kViewModeNames[currentViewMode];
+	if (ImGui::BeginCombo("##DiskPreviewMode", currentViewLabel.c_str())) {
+		for (int i = 0; i <= (int)kDEView_ASCII; ++i) {
+			const bool selected = i == currentViewMode;
+			VDStringA itemLabel;
+			if (i == (int)kDEView_TextGR0)
+				itemLabel.sprintf("ATASCII (%d columns)", ATUIGetTextColumns());
+			else
+				itemLabel = kViewModeNames[i];
+			if (ImGui::Selectable(itemLabel.c_str(), selected)) {
+				currentDocument->state.viewMode = (DiskExplorerViewMode)i;
+				currentDocument->state.FormatView();
+				currentDocument->state.viewValid = !currentDocument->state.viewData.empty();
+			}
+			if (selected)
+				ImGui::SetItemDefaultFocus();
+		}
+		ImGui::EndCombo();
+	}
 
-	if (g_diskExplorer.viewValid) {
-		bool wrap = (g_diskExplorer.viewMode == kDEView_TextWrap);
+	if (currentDocument->state.viewValid && (currentDocument->state.viewMode == kDEView_Text ||
+		currentDocument->state.viewMode == kDEView_TextWrap || currentDocument->state.viewMode == kDEView_TextGR0)) {
+		ImGui::SameLine();
+		ImGui::TextDisabled("ATASCII: high-bit bytes are inverse video");
+	}
+	if (currentDocument->state.viewValid && (currentDocument->state.viewMode == kDEView_TextGR0 ||
+		currentDocument->state.viewMode == kDEView_ASCII)) {
+		ATUIRenderTextColumnControls("DiskFilePreviewColumns");
+	}
+
+	if (!currentDocument->state.statusMsg.empty())
+		ImGui::TextWrapped("%s", currentDocument->state.statusMsg.c_str());
+
+	if (currentDocument->state.viewValid) {
+		const bool isATASCIIView = currentDocument->state.viewMode == kDEView_Text
+			|| currentDocument->state.viewMode == kDEView_TextWrap
+			|| currentDocument->state.viewMode == kDEView_TextGR0;
+		const bool isASCIIView = currentDocument->state.viewMode == kDEView_ASCII;
+		bool wrap = (currentDocument->state.viewMode == kDEView_TextWrap);
 		ImGui::BeginChild("FileView", ImVec2(0, 0), ImGuiChildFlags_Borders,
 			wrap ? 0 : ImGuiWindowFlags_HorizontalScrollbar);
-		if (wrap)
-			ImGui::TextWrapped("%s", g_diskExplorer.viewText.c_str());
-		else
-			ImGui::TextUnformatted(g_diskExplorer.viewText.c_str());
+		if (isATASCIIView) {
+			int columns = 0;
+			if (currentDocument->state.viewMode == kDEView_TextGR0)
+				columns = ATUIGetTextColumns();
+			else if (wrap)
+				columns = std::max(1, (int)(ImGui::GetContentRegionAvail().x / 16.0f));
+
+			ATUIRenderATASCII(currentDocument->state.viewData.data(),
+				currentDocument->state.viewData.size(), columns);
+		} else if (currentDocument->state.viewMode == kDEView_Hex) {
+			ATUIRenderHexDump(currentDocument->state.viewData.data(), currentDocument->state.viewData.size(), 0);
+		} else if (isASCIIView) {
+			ATUIRenderASCII(currentDocument->state.viewData.data(), currentDocument->state.viewData.size(),
+				ATUIGetTextColumns());
+		} else {
+			ImGui::PushFont(ATUIGetFontMono());
+			if (wrap)
+				ImGui::TextWrapped("%s", currentDocument->state.viewText.c_str());
+			else
+				ImGui::TextUnformatted(currentDocument->state.viewText.c_str());
+			ImGui::PopFont();
+		}
 		ImGui::EndChild();
 	} else {
 		ImGui::BeginChild("FileView", ImVec2(0, 0), ImGuiChildFlags_Borders);
@@ -2086,11 +2773,62 @@ void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *wind
 		ImGui::EndChild();
 	}
 
-	// Status bar
-	if (!g_diskExplorer.statusMsg.empty()) {
-		ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetTextLineHeightWithSpacing());
-		ImGui::TextDisabled("%s", g_diskExplorer.statusMsg.c_str());
-	}
-
 	ImGui::End();
+	DiskExplorerRenderInspectionWindows();
+}
+
+void ATUIRequestDiskExplorer(SDL_Window *window) {
+	static const SDL_DialogFileFilter filters[] = { { "Disk images", "atr;xfd;dcm;pro;atx;gz;zip;atz" }, { "All files", "*" } };
+	ATUIExplorerFileDialog(openRequest, false, 'disk', QueueOpen, nullptr, window, filters, 2, true);
+}
+
+void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
+	openRequest.Drain();
+	std::vector<std::string> paths;
+	paths.swap(pendingDocuments);
+	for (const auto& path : paths) DiskExplorerDoOpen(path.c_str());
+	// Snapshot: opening another document while drawing must not invalidate iteration.
+	const auto snapshot = documents;
+	for (const auto& doc : snapshot) {
+		if (!doc->open) continue;
+		ATUIExplorerScope<DiskExplorerDocument> scope(currentDocument, doc.get());
+		// Keep an opened image inspectable after its drive is ejected/replaced,
+		// but never send changes to the replacement disk in that drive.
+		if (doc->state.pDiskInterface && doc->state.pDiskInterface->GetDiskImage() != doc->state.pImage) {
+			doc->state.pDiskInterface = nullptr;
+			doc->state.mbAutoFlush = false;
+			doc->state.modified = doc->state.pImage && doc->state.pImage->IsDirty();
+			doc->source += " (detached from drive)";
+		}
+		doc->Drain();
+		if (!doc->open) continue;
+		ImGui::BeginDisabled(doc->dialogPending);
+		RenderDocument(sim, state, window);
+		ImGui::EndDisabled();
+		if (doc->requestClose) { doc->requestClose = false; doc->open = false; }
+		DiskExplorerClosePrompt(window);
+	}
+	documents.erase(std::remove_if(documents.begin(), documents.end(),
+		[](const auto& doc) { return !doc->open; }), documents.end());
+	state.showDiskExplorer = !documents.empty() || openRequest.dialogPending;
+}
+
+bool ATUIDiskExplorerHasUnsavedChanges() {
+	for (const auto& doc : documents) if (DiskExplorerNeedsSave(*doc)) return true;
+	return false;
+}
+
+void ATUIOpenDiskExplorerFile(const char *path) {
+	if (path && *path) pendingDocuments.emplace_back(path);
+}
+
+void ATUICloseDiskExplorers() {
+	for (const auto& doc : documents) doc->requestClose = true;
+}
+void ATUIShutdownDiskExplorers() {
+	for (const auto& doc : documents) {
+		ATUIExplorerScope<DiskExplorerDocument> scope(currentDocument, doc.get());
+		DiskExplorerSaveSettings();
+	}
+	documents.clear();
 }

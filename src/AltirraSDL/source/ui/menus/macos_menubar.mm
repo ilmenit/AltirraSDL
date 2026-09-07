@@ -1545,8 +1545,15 @@ static void BuildRecordMenu(NSMenu *menu) {
 static void BuildToolsMenu(NSMenu *menu) {
 	SDL_Window *window = g_pWindow;
 
-	AddItem(menu, @"Disk Explorer...", false, true, [=]{
-		g_uiState.showDiskExplorer = true;
+	NSMenu *explorers = AddSubmenu(menu, @"Explorers");
+	AddItem(explorers, @"Disk Explorer...", false, true, [=]{
+		ATUIRequestDiskExplorer(window);
+	});
+	AddItem(explorers, @"Cartridge Explorer...", false, true, [=]{
+		ATUIRequestCartridgeExplorer(window);
+	});
+	AddItem(explorers, @"XEX Explorer...", false, true, [=]{
+		ATUIRequestXEXExplorer(window);
 	});
 
 	AddItem(menu, @"Convert SAP to EXE...", false, true, [=]{

@@ -1656,7 +1656,7 @@ uint8 ATHostDeviceEmulator::ReadFilename(const uint8 *rawfn, bool allowDir, bool
 	mNativeSearchPath += L"*.*";
 	mFilePattern = VDTextWToA(*nativeFile == L'!' ? nativeFile + 1 : nativeFile);
 
-	if (mFilePattern.find('.') == VDStringW::npos)
+	if (!mbLongFileNames && mFilePattern.find('.') == VDStringW::npos)
 		mFilePattern += '.';
 
 	return 0;

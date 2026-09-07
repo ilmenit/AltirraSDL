@@ -89,6 +89,16 @@ class TestDialogOpenClose:
         # Verify closed initially
         assert not emu.get_dialog_state(dialog), f"{dialog} should start closed"
 
+        # Explorers now open a picker first; cancellation creates no document.
+        if dialog == "DiskExplorer":
+            emu.send("file_dialog_builtin on")
+            emu.open_dialog(dialog)
+            emu.wait_frames(8)
+            emu.click("Open File", "Cancel")
+            emu.wait_frames(8)
+            assert not emu.get_dialog_state(dialog), emu.query_state()
+            return
+
         # Open
         emu.open_dialog(dialog)
         emu.wait_frames(3)

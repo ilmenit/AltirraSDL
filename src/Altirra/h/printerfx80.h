@@ -61,6 +61,35 @@ private:
 		DoubleStrike = 0x80,
 		Emphasized = 0x100
 	};
+	AT_IMPLEMENT_ENUM_FLAGS_FRIEND_STATIC(CharAttr);
+
+	enum class UniCharSetIndex : uint8 {
+		Normal			= 0,
+		Elite			= 1,
+		Proportional	= 2,
+		Emphasized		= 3,
+		Compressed		= 4,
+		EliteCompressed	= 5,
+
+		PitchCount = 6,
+
+		Expanded		= 6,
+
+		Count = 12
+	};
+
+	friend inline constexpr uint8 operator+(UniCharSetIndex x) {
+		return (uint8)x;
+	}
+
+	friend inline constexpr UniCharSetIndex operator+(UniCharSetIndex x, UniCharSetIndex y) {
+		return UniCharSetIndex((uint8)x + (uint8)y);
+	}
+
+	friend inline constexpr UniCharSetIndex& operator+=(UniCharSetIndex& x, UniCharSetIndex y) {
+		x = UniCharSetIndex((uint8)x + (uint8)y);
+		return x;
+	}
 
 	void RecreateGraphicsOutput();
 	void ResetState();
@@ -170,9 +199,8 @@ private:
 
 	State mState = State::None;
 
-	AT_IMPLEMENT_ENUM_FLAGS_FRIEND_STATIC(CharAttr);
-
 	CharAttr mActiveCharAttr {};
+	UniCharSetIndex mActiveUniCharSet {};
 
 	uint8 mEighthBitAndMask = 0xFF;
 	uint8 mEighthBitXorMask = 0x00;
@@ -259,6 +287,8 @@ private:
 
 	uint16 mUserFontData[256][12] {};
 	uint8 mUserFontStartStop[256][2] {};
+
+	static const uint16 kIntlToUnicodeTable[32];
 };
 
 #endif

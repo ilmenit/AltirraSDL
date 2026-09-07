@@ -196,6 +196,11 @@ public:
 	}
 
 	void assign(const T *p1, const T *p2) {
+		// Empty ranges may use null iterators; don't pass them to memcpy.
+		if (p1 == p2) {
+			clear();
+			return;
+		}
 		resize((size_type)(p2 - p1));
 		memcpy(mpBegin, p1, (char *)p2 - (char *)p1);
 	}
@@ -236,6 +241,8 @@ public:
 	}
 
 	iterator erase(iterator it1, iterator it2) {
+		if (it1 == it2)
+			return it1;
 		VDASSERT(it1 - mpBegin <= mpEnd - mpBegin);
 		VDASSERT(it2 - mpBegin <= mpEnd - mpBegin);
 		VDASSERT(it1 <= it2);
@@ -265,6 +272,8 @@ public:
 	}
 
 	iterator insert(iterator it, size_type n, const T& value) {
+		if (!n)
+			return it;
 		const T temp(value);		// copy in case value is inside container.
 
 		ptrdiff_t bytesToInsert = n * sizeof(T);
@@ -284,6 +293,8 @@ public:
 	}
 
 	iterator insert(iterator it, const T *p1, const T *p2) {
+		if (p1 == p2)
+			return it;
 		ptrdiff_t elementsToCopy = p2 - p1;
 		ptrdiff_t bytesToCopy = (char *)p2 - (char *)p1;
 
@@ -378,7 +389,9 @@ protected:
 		T *oldStorage = mpBegin;
 		T *newStorage = m.allocate(n, NULL);
 
-		memcpy(newStorage, mpBegin, (char *)mpEnd - (char *)mpBegin);
+		// MERGE NOTE: UBSan rejects a null source even for a zero-byte copy.
+		if (oldSize)
+			memcpy(newStorage, mpBegin, sizeof(T) * oldSize);
 		if (static_cast<const S&>(m).is_deallocatable_storage(oldStorage))
 			m.deallocate(oldStorage, m.eos - mpBegin);
 		mpBegin = newStorage;
@@ -451,7 +464,8 @@ public:
 		mpBegin = m.allocate(n, NULL);
 		mpEnd = mpBegin + n;
 		m.eos = mpEnd;
-		memcpy(mpBegin, x.mpBegin, sizeof(T) * n);
+		if (n)
+			memcpy(mpBegin, x.mpBegin, sizeof(T) * n);
 	}
 
 	vdnothrow vdfastvector(vdfastvector&& x) vdnoexcept {

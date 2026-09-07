@@ -77,6 +77,7 @@ struct ATVBXEXDLHistoryEntry {
 };
 
 class ATVBXEEmulator final : public IATSchedulerCallback {
+	friend struct ATVBXERegressionTests;
 	ATVBXEEmulator(const ATVBXEEmulator&) = delete;
 	ATVBXEEmulator& operator=(const ATVBXEEmulator&) = delete;
 public:
@@ -117,7 +118,7 @@ public:
 	bool IsBlitLoggingEnabled() const { return mbBlitLogging; }
 	void SetBlitLoggingEnabled(bool enable, bool compact);
 	void DumpStatus();
-	void DumpBlitList(sint32 addrOpt, bool compact);
+	void DumpBlitList(sint32 addrOpt, bool compact, uint32 maxCount);
 	bool DumpBlitListEntry(uint32 addr, bool compact, bool autologging);
 	void DumpXDL();
 	void DumpXDLHistory(ATConsoleOutput& output);
@@ -168,12 +169,17 @@ private:
 	int RenderAttrPixels(int x1, int x2);
 	void RenderAttrDefaultPixels(int x1h, int x2h);
 
-	template<bool T_Version126> void RenderLores(int x1, int x2);
-	template<bool T_Version126> void RenderLoresBlank(int x1, int x2, bool attmap);
-	template<bool T_Version126> void RenderMode8(int x1, int x2);
-	template<bool T_Version126> void RenderMode9(int x1, int x2);
-	template<bool T_Version126> void RenderMode10(int x1, int x2);
-	template<bool T_Version126> void RenderMode11(int x1, int x2);
+	enum class RenderMode : uint8 {
+		Lores,
+		Hires,
+		HiresXcolor,
+		Mode9,
+		Mode10,
+		Mode11,
+	};
+
+	template<bool T_Blank, RenderMode T_Mode>
+	void Render(int x1, int x2, bool attmap);
 
 	template<bool T_EnableCollisions> void RenderOverlay(int x1, int x2);
 	void RenderOverlayLR(uint8 *dst, int x1, int w);
@@ -337,8 +343,15 @@ private:
 	bool mbAnalysisMode;
 	uint8 mPRIOR;
 
-	const uint8 (*mpPriTable)[2];
-	const uint8 (*mpPriTableHi)[2];
+	struct PriorityInfo {
+		uint8 mMapColor;
+		uint8 mPalColor;
+		uint8 mOvPri;
+		uint8 unused;
+	};
+
+	const PriorityInfo *mpPriTable;
+	const PriorityInfo *mpPriTableHi;
 	const uint8 *mpColorTable;
 
 	ATMemoryLayer *mpMemLayerMEMACA;
@@ -364,8 +377,8 @@ private:
 
 	uint8	mColorTable[24];
 	uint8	mColorTableExt[24];
-	uint8	mPriorityTables[32][256][2];
-	uint8	mPriorityTablesHi[32][256][2];
+	PriorityInfo	mPriorityTables[32][256] {};	// 32K
+	PriorityInfo	mPriorityTablesHi[32][256] {};	// 32K
 
 	uint32	mPalette[4][256];			// render palette (corrected version)
 	uint32	mArchPalette[4][256];		// architectural palette (uncorrected version)
@@ -376,10 +389,7 @@ private:
 	uint8	mOvTextTrans[912];			// 28MHz (640) - text translucency pixel masks
 
 	struct AttrPixel {
-		uint8 mPFK;
-		uint8 mPF0;
-		uint8 mPF1;
-		uint8 mPF2;
+		uint8 mColors[4];	// BAK/PF0/PF1/PF2
 		uint8 mCtrl;
 		uint8 mHiresFlag;
 		uint8 mPriority;
@@ -387,6 +397,7 @@ private:
 	};
 
 	AttrPixel	mAttrPixels[456];
+	uint8	mAttrBuffer[64 * 4] {};
 
 	uint8	mTempMergeBuffer[228];
 	uint8	mTempAnticData[228];

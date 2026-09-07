@@ -1339,7 +1339,8 @@ void VDDeflateEncoder::Compress2(bool flush) {
 
 		if (hpos >= hlimit && limit >= minmatch) {
 			const unsigned char *s2 = hist + pos;
-			const uint32 matchWord = *(const uint32 *)s2;
+			// MERGE NOTE: match positions are byte-aligned, not uint32-aligned.
+			const uint32 matchWord = VDReadUnalignedU32(s2);
 			ptrdiff_t hoffsetneg = 0;
 
 			[[maybe_unused]] uint32 patience = 16;
@@ -1358,7 +1359,7 @@ void VDDeflateEncoder::Compress2(bool flush) {
 					, HASH2(pos - hoffsetneg)
 				);
 
-				if (s1[bestlen] == s2[bestlen] && ((*(const uint32 *)s1 ^ matchWord) & kMatchMask) == 0) {
+				if (s1[bestlen] == s2[bestlen] && ((VDReadUnalignedU32(s1) ^ matchWord) & kMatchMask) == 0) {
 					uint32 mlen = kHashLen;
 
 #if VD_PTR_SIZE >= 8

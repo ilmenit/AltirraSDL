@@ -155,6 +155,7 @@ struct ATDeferredAction {
 	ATDeferredActionType type;
 	VDStringW path;
 	VDStringW path2;   // second path for two-file operations (SAP->EXE, tape analysis)
+	vdfastvector<uint8> payload;
 	int mInt = 0;
 };
 
@@ -178,6 +179,18 @@ void ATUIPushDeferred(ATDeferredActionType type, const char *utf8path, int extra
 	action.path = VDTextU8ToW(utf8path, -1);
 	action.mInt = extra;
 
+	std::lock_guard<std::mutex> lock(g_deferredMutex);
+	g_deferredActions.push_back(std::move(action));
+}
+
+void ATUIBootProgramData(const char *utf8origin, const void *data, size_t size) {
+	if (!data || !size || size > UINT32_MAX)
+		return;
+	ATDeferredAction action;
+	action.type = kATDeferred_BootProgramData;
+	action.path = VDTextU8ToW(utf8origin, -1);
+	const uint8 *src = static_cast<const uint8 *>(data);
+	action.payload.assign(src, src + size);
 	std::lock_guard<std::mutex> lock(g_deferredMutex);
 	g_deferredActions.push_back(std::move(action));
 }
@@ -287,6 +300,7 @@ void ATUIPollDeferredActions() {
 		try {
 			switch (a.type) {
 			case kATDeferred_BootImage:
+			case kATDeferred_BootProgramData:
 			case kATDeferred_OpenImage: {
 				// Matches Windows DoLoadStream retry loop (main.cpp:1186-1369):
 				// 1. Unload storage before boot (per user-configured mask)
@@ -323,7 +337,10 @@ void ATUIPollDeferredActions() {
 				}
 #endif
 
-				if (a.type == kATDeferred_BootImage)
+				const bool boot = a.type == kATDeferred_BootImage ||
+					a.type == kATDeferred_BootProgramData;
+				const bool memoryProgram = a.type == kATDeferred_BootProgramData;
+				if (boot)
 					g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 
 				vdfastvector<uint8> captureBuffer;
@@ -342,6 +359,8 @@ void ATUIPollDeferredActions() {
 				ATImageLoadContext ctx {};
 				ctx.mpCartLoadContext = &cartCtx;
 				ctx.mpStateLoadContext = &stateCtx;
+				if (memoryProgram)
+					ctx.mLoadType = kATImageType_Program;
 
 				// Build full ATMediaLoadContext with stop flags (matches Windows).
 				//
@@ -365,11 +384,14 @@ void ATUIPollDeferredActions() {
 				// rationale.
 				ATMediaLoadContext mctx;
 				mctx.mWriteMode = g_ATOptions.mDefaultWriteMode;
-				VDStringW resolvedPath = ATResolveDiskMount(a.path.c_str(),
-					mctx.mWriteMode);
+				VDStringW resolvedPath = memoryProgram ? a.path :
+					ATResolveDiskMount(a.path.c_str(), mctx.mWriteMode);
+				const uint8 emptyStreamByte = 0;
+				VDMemoryStream memoryStream(memoryProgram ? a.payload.data() : &emptyStreamByte,
+					memoryProgram ? (uint32)a.payload.size() : 0);
 				mctx.mOriginalPath = resolvedPath;
 				mctx.mImageName = resolvedPath;
-				mctx.mpStream = nullptr;
+				mctx.mpStream = memoryProgram ? &memoryStream : nullptr;
 				mctx.mbStopOnModeIncompatibility = true;
 				mctx.mbStopAfterImageLoaded = true;
 				mctx.mbStopOnMemoryConflictBasic = true;
@@ -436,7 +458,8 @@ void ATUIPollDeferredActions() {
 				}
 
 				if (loadSuccess) {
-					ATAddMRU(a.path.c_str());
+					if (!memoryProgram)
+						ATAddMRU(a.path.c_str());
 
 					// Register the boot with the Game Library: record it
 					// as the currently-playing file, bump its play
@@ -459,7 +482,7 @@ void ATUIPollDeferredActions() {
 					if (ctx.mLoadType == kATImageType_SaveState || ctx.mLoadType == kATImageType_SaveState2)
 						suppressColdReset = true;
 
-					if (a.type == kATDeferred_BootImage && !suppressColdReset)
+					if (boot && !suppressColdReset)
 						g_sim.ColdReset();
 
 					// Check compatibility before resuming (matches Windows
@@ -482,7 +505,7 @@ void ATUIPollDeferredActions() {
 					}
 					// Only resume for Boot Image (matches Windows — Open Image
 					// does not resume; user may be paused to inspect media)
-					if (!compatIssue && a.type == kATDeferred_BootImage)
+					if (!compatIssue && boot)
 						g_sim.Resume();
 				}
 				break;
@@ -1366,6 +1389,9 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 }
 
 void ATUIShutdown() {
+	ATUIShutdownDiskExplorers();
+	ATUIShutdownCartridgeExplorers();
+	ATUIShutdownXEXExplorers();
 #ifdef ALTIRRA_NETPLAY_ENABLED
 	ATNetplayUI_Shutdown();
 #endif
@@ -1884,6 +1910,8 @@ static bool ATUIQuickBarSuppressedByDialog(const ATUIState& state) {
 		state.showCompatWarning ||
 		state.showHelpContents ||
 		state.showDiskExplorer ||
+		state.showCartridgeExplorer ||
+		state.showXEXExplorer ||
 		state.showSetupWizard ||
 		state.showKeyboardShortcuts ||
 		state.showKeyboardCustomize ||
@@ -2271,7 +2299,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showHelpContents && !ATUIIsGamingMode())
 		ATUIRenderHelpContents(state);
 	if (state.showExitConfirm)       ATUIRenderExitConfirm(sim, state);
-	if (state.showDiskExplorer)      ATUIRenderDiskExplorer(sim, state, window);
+	ATUIRenderDiskExplorer(sim, state, window);
+	ATUIRenderCartridgeExplorer(state, window);
+	ATUIRenderXEXExplorer(state, window);
 	// Setup wizard: in Gaming Mode the wizard is rendered through
 	// ATMobileUI_Render's screen dispatch (currentScreen ==
 	// ATMobileUIScreen::SetupWizard) so it gets the same touch chrome

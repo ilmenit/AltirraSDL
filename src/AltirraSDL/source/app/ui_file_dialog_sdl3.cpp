@@ -84,6 +84,7 @@ namespace {
 		VDStringA				defaultLocationUtf8;	// keeps the c_str alive until SDL returns
 		DialogMode				mode = DialogMode::OpenFile;
 		bool					allowMany = false;
+		bool					notifyCancellation = false;
 		int						selectedFilter = 0;
 
 		// Expanded filter storage — keeps strings alive until callback fires
@@ -248,8 +249,12 @@ namespace {
 		}
 
 		// filelist == nullptr means an SDL error.  An empty list or empty
-		// filename means cancel; do not forward it as a user action.
+		// filename means cancel. Only lifecycle-aware callers opt into notification.
 		if (!filelist[0] || !*filelist[0]) {
+			if (ctx->notifyCancellation && ctx->userCb) {
+				const char *empty[] = {nullptr};
+				ctx->userCb(ctx->userUd, empty, filter);
+			}
 			delete ctx;
 			return;
 		}
@@ -819,9 +824,11 @@ void ATUIShowOpenFileDialog(
 	const SDL_DialogFileFilter *filters,
 	int nfilters,
 	bool allow_many,
-	const char *fallbackLocation)
+	const char *fallbackLocation,
+	bool notifyCancellation)
 {
 	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFile;
 	ctx->allowMany = allow_many;
 	ExpandFilters(ctx, filters, nfilters);
@@ -856,9 +863,11 @@ void ATUIShowSaveFileDialog(
 	SDL_Window *window,
 	const SDL_DialogFileFilter *filters,
 	int nfilters,
-	const char *fallbackLocation)
+	const char *fallbackLocation,
+	bool notifyCancellation)
 {
 	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::SaveFile;
 	ExpandFilters(ctx, filters, nfilters);
 
@@ -887,9 +896,11 @@ void ATUIShowOpenFolderDialog(
 	void *userdata,
 	SDL_Window *window,
 	const char *fallbackLocation,
-	bool allow_many)
+	bool allow_many,
+	bool notifyCancellation)
 {
 	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFolder;
 	ctx->allowMany = allow_many;
 
@@ -915,9 +926,11 @@ void ATUIShowOpenFileDialog(
 	const SDL_DialogFileFilter *filters,
 	int nfilters,
 	bool allow_many,
-	const char *fallbackLocation)
+	const char *fallbackLocation,
+	bool notifyCancellation)
 {
 	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFile;
 	ctx->allowMany = allow_many;
 	ExpandFilters(ctx, filters, nfilters);
@@ -939,9 +952,11 @@ void ATUIShowSaveFileDialog(
 	SDL_Window *window,
 	const SDL_DialogFileFilter *filters,
 	int nfilters,
-	const char *fallbackLocation)
+	const char *fallbackLocation,
+	bool notifyCancellation)
 {
 	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::SaveFile;
 	ExpandFilters(ctx, filters, nfilters);
 	const char *defLoc = ctx->defaultLocationUtf8.empty() ? nullptr : ctx->defaultLocationUtf8.c_str();
@@ -961,9 +976,11 @@ void ATUIShowOpenFolderDialog(
 	void *userdata,
 	SDL_Window *window,
 	const char *fallbackLocation,
-	bool allow_many)
+	bool allow_many,
+	bool notifyCancellation)
 {
 	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFolder;
 	ctx->allowMany = allow_many;
 	const char *defLoc = ctx->defaultLocationUtf8.empty()

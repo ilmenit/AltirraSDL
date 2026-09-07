@@ -122,6 +122,10 @@ target_sources(AltirraSDL PRIVATE
     # --- ui/tools/ : Advanced Config, Disk Explorer, Setup Wizard, etc. ---
     source/ui/tools/ui_tools.cpp
     source/ui/tools/ui_tools_diskexplorer.cpp
+    source/ui/tools/ui_diskexplorer_views.cpp
+    source/ui/core/ui_atascii.cpp
+    source/ui/tools/ui_tools_cartexplorer.cpp
+    source/ui/tools/ui_tools_xexexplorer.cpp
     source/ui/tools/ui_tools_setup_wizard.cpp
     source/ui/tools/ui_tools_shortcuts.cpp
     source/ui/tools/ui_tools_compatdb.cpp

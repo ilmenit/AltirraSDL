@@ -56,6 +56,8 @@ public:
 	void	SetGutters(int x, int y);
 
 	bool	IsSelectionPresent() override;
+	bool	IsSelectionMultiLine() override;
+	bool	IsPointWithinSelection(int x, int y) override;
 	bool	IsCutPossible() override;
 	bool	IsCopyPossible() override;
 	bool	IsPastePossible() override;
@@ -72,6 +74,7 @@ public:
 	void	SetCursorPos(int line, int offset) override;
 	bool	GetCursorPixelPos(int& x, int& y) override;
 	void	SetCursorPixelPos(int x, int y) override;
+	void	SetCursorPixelPosIfOutsideSelection(int x, int y) override;
 
 	vdpoint32	GetScreenPosForContextMenu() override;
 
@@ -286,6 +289,26 @@ bool TextEditor::IsSelectionPresent() {
 	return mSelectionAnchor && mSelectionAnchor != mCaretPos;
 }
 
+bool TextEditor::IsSelectionMultiLine() {
+	if (!IsSelectionPresent())
+		return false;
+
+	return mSelectionAnchor.mPara != mCaretPos.mPara || mSelectionAnchor.mLine != mCaretPos.mLine;
+}
+
+bool TextEditor::IsPointWithinSelection(int x, int y) {
+	if (!IsSelectionPresent())
+		return false;
+
+	Iterator it = ClientToPos(x, y);
+
+	if (mSelectionAnchor > mCaretPos)
+		return it >= mCaretPos && it <= mSelectionAnchor;
+	else
+		return it >= mSelectionAnchor && it <= mCaretPos;
+
+}
+
 bool TextEditor::IsCutPossible() {
 	if (mbReadOnly)
 		return false;
@@ -392,6 +415,11 @@ bool TextEditor::GetCursorPixelPos(int& x, int& y) {
 
 void TextEditor::SetCursorPixelPos(int x, int y) {
 	MoveCaret(ClientToPos(x, y), false, false);
+}
+
+void TextEditor::SetCursorPixelPosIfOutsideSelection(int x, int y) {
+	if (!IsPointWithinSelection(x, y))
+		SetCursorPixelPos(x, y);
 }
 
 namespace {
@@ -635,6 +663,9 @@ void TextEditor::Clear() {
 }
 
 void TextEditor::Cut() {
+	if (mbReadOnly)
+		return;
+
 	CutCopy(true);
 }
 
@@ -643,6 +674,9 @@ void TextEditor::Copy() {
 }
 
 void TextEditor::Paste() {
+	if (mbReadOnly)
+		return;
+
 	if (mSelectionAnchor)
 		DeleteSelection();
 
@@ -966,12 +1000,24 @@ LRESULT TextEditor::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 	case WM_KEYDOWN:
 		OnKeyDown(wParam);
 		break;
+
 	case WM_CHAR:
 		if (IsWindowUnicode(mhwnd))
 			OnWideChar((uint16)wParam);
 		else
 			OnNarrowChar((uint8)wParam);
 		break;
+
+	case WM_UNICHAR:
+		// Skip UNICODE_NOCHAR, which is a probe.
+		// Reject surrogates since WM_UNICHAR sends UTF-32.
+		// MERGE NOTE: WM_UNICHAR must contain a valid Unicode scalar.
+		if (wParam != UNICODE_NOCHAR && wParam <= 0x10FFFF
+			&& (wParam < 0xD800 || wParam >= 0xE000))
+			OnUnicodeChar(wParam);
+
+		return TRUE;
+
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONDBLCLK:
 		::SetFocus(mhwnd);

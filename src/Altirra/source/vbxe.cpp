@@ -40,14 +40,14 @@ using namespace ATGTIA;
 #define VBXE_WRITE(addr, value) ((void)(mpMemory[(addr) & 0x7FFFF] = (value)))
 
 namespace {
-	uint8 ConvertPriorityToNative(uint8 pri) {
+	constexpr uint8 ConvertPriorityToNative(uint8 pri) {
 		pri = ~pri;
 
 		pri = (pri << 4) + (pri >> 4);
 		return pri;
 	}
 
-	uint8 ConvertPriorityFromNative(uint8 pri) {
+	constexpr uint8 ConvertPriorityFromNative(uint8 pri) {
 		pri = ~pri;
 
 		pri = (pri << 4) + (pri >> 4);
@@ -243,7 +243,13 @@ void ATVBXEEmulator::ColdReset() {
 	mOvMode			= ATVBXEOverlayMode::Disabled;
 	mOvWidth		= kOvWidth_Normal;
 	mOvMainPriority	= 0;
-	memset(mOvPriority, 0, sizeof mOvPriority);
+
+	// P0-P3 register contents are not guaranteed on power-up, but reports
+	// are that the hardware typically powers up $00 -- which is significant
+	// as it puts the overlay below everything else.
+	for(auto& v : mOvPriority)
+		v = ConvertPriorityToNative(0x00);
+
 	mOvCollMask		= 0;
 	mOvCollState	= 0;
 	mOvAddr			= 0;
@@ -348,6 +354,8 @@ void ATVBXEEmulator::SetVersion(uint32 version) {
 		mVersion = 0x20;
 
 	mbVersion126 = (mVersion >= 0x26);
+
+	InitPriorityTables();
 }
 
 void ATVBXEEmulator::SetAnalysisMode(bool enable) {
@@ -777,13 +785,13 @@ const ATVBXEXDLHistoryEntry *ATVBXEEmulator::GetXDLHistory(uint32 y) const {
 		return nullptr;
 }
 
-void ATVBXEEmulator::DumpBlitList(sint32 addrOpt, bool compact) {
+void ATVBXEEmulator::DumpBlitList(sint32 addrOpt, bool compact, uint32 maxCount) {
 	uint32 addr = addrOpt >= 0 ? (uint32)addrOpt : mBlitListAddr;
 	uint32 count = 0;
 
 	for(;;) {
-		if (++count > 256) {
-			ATConsoleWrite("Blit list exceeds 256 entries -- ending dump.\n");
+		if (++count > maxCount) {
+			ATConsoleWrite("Blit list exceeds max entries -- ending dump.\n");
 			break;
 		}
 		
@@ -1446,7 +1454,7 @@ void ATVBXEEmulator::InitMemoryMaps() {
 	ShutdownMemoryMaps();
 
 	// Window A has priority over window B
-	uint8 *dummyRam = &mPriorityTables[0][0][0];
+	uint8 *dummyRam = &mPriorityTables[0][0].mMapColor;
 	mpMemLayerMEMACA = mpMemMan->CreateLayer(kATMemoryPri_Extsel+1, dummyRam, 0xD8, 0x10, false);
 	mpMemMan->SetLayerName(mpMemLayerMEMACA, "VBXE MEMAC A");
 	mpMemLayerMEMACB = mpMemMan->CreateLayer(kATMemoryPri_Extsel, dummyRam, 0x40, 0x40, false);
@@ -1801,7 +1809,19 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 		};
 
 		// VBXE always reads 43 attribute map cells regardless of cell width
-		mDMACyclesAttrMap += 43 * 4;
+		const uint32 toRead = 43 * 4;
+		mDMACyclesAttrMap += toRead;
+
+		// read the attribute map cells
+		const uint32 offset = mAttrAddr & 0x7FFFF;
+		size_t split = 0x80000 - offset;
+
+		if (split < toRead) {
+			memcpy(mAttrBuffer, &mpMemory[offset], split);
+			memcpy(mAttrBuffer + split, &mpMemory[0], toRead - split);
+		} else {
+			memcpy(mAttrBuffer, &mpMemory[offset], toRead);
+		}
 	}
 
 	// deduct overlay map cycles
@@ -1873,6 +1893,22 @@ void ATVBXEEmulator::RenderScanline(int xend, bool pfpmrendered) {
 
 			VDASSERT(xth > x1h);
 
+			// 40 column mode is set by ANTIC during horizontal blank if ANTIC modes 2, 3, or
+			// F are used. 40 column mode has the following effects:
+			//
+			//	* The priority logic always sees PF2.
+			//	* The collision logic sees either BAK or PF2. Adjacent bits are ORed each color
+			//	  clock to determine this (PF2C in schematic).
+			//	* The playfield bits are used instead to substitute the luminance of PF1 on top
+			//	  of the priority logic output. This happens even if players have priority.
+			//
+			// The flip-flip in the GTIA that controls 40 column mode can only be set by the
+			// horizontal sync command, but can be reset at any time whenever either of the
+			// top two bits of PRIOR are set. If this happens, the GTIA will begin interpreting
+			// AN0-AN2 in lores mode, but ANTIC will continue sending in hires mode. The result
+			// is that the bit pair patterns 00-11 produce PF0-PF3 instead of BAK + PF0-PF2 as
+			// usual.
+
 			bool hiresMode = mbHiresMode;
 			bool revMode = false;
 
@@ -1910,76 +1946,69 @@ void ATVBXEEmulator::RenderScanline(int xend, bool pfpmrendered) {
 
 						if (d & PF2) {
 							uint8 c = mpAnticBuffer0[x];
-							mTempMergeBuffer[x] = (d & ~PF) | (1 << c);
+							d = (d & ~PF) | (1 << c);
 						}
+
+						// MERGE NOTE: pixels without PF2 still need their original
+						// background/player bits; never reuse an earlier span's data.
+						mTempMergeBuffer[x] = d;
 					}
 
 					mpMergeBuffer = mTempMergeBuffer;
 				}
 			}
 
-			// 40 column mode is set by ANTIC during horizontal blank if ANTIC modes 2, 3, or
-			// F are used. 40 column mode has the following effects:
-			//
-			//	* The priority logic always sees PF2.
-			//	* The collision logic sees either BAK or PF2. Adjacent bits are ORed each color
-			//	  clock to determine this (PF2C in schematic).
-			//	* The playfield bits are used instead to substitute the luminance of PF1 on top
-			//	  of the priority logic output. This happens even if players have priority.
-			//
-			// The flip-flip in the GTIA that controls 40 column mode can only be set by the
-			// horizontal sync command, but can be reset at any time whenever either of the
-			// top two bits of PRIOR are set. If this happens, the GTIA will begin interpreting
-			// AN0-AN2 in lores mode, but ANTIC will continue sending in hires mode. The result
-			// is that the bit pair patterns 00-11 produce PF0-PF3 instead of BAK + PF0-PF2 as
-			// usual.
+			// If we're starting on an odd pixel, back off one pixel and save off the previous
+			// pixel, then restore it afterward. This simplifies the rendering code by allowing
+			// it to always render pixel pairs.
+			uint32 saveColor0 = 0;
+			uint32 saveColor1 = 0;
+			uint8 savePri0 = 0;
+			uint8 savePri1 = 0;
+			bool oddRestore = false;
 
-			if (mbVersion126) {
-				switch(mPRIOR & 0xc0) {
-					case 0x00:
-						if (hiresMode)
-							RenderMode8<true>(x1h, xth);
-						else if (pfpmrendered)
-							RenderLores<true>(x1h, xth);
+			if (x1h & 1) {
+				--x1h;
+
+				saveColor0 = mpDst[x1h*2 + 0];
+				saveColor1 = mpDst[x1h*2 + 1];
+				savePri0 = mOvPriDecode[x1h*2 + 0];
+				savePri1 = mOvPriDecode[x1h*2 + 1];
+
+				oddRestore = true;
+			}
+
+			switch(mPRIOR & 0xc0) {
+				case 0x00:
+					if (hiresMode) {
+						if (mbExtendedColor)
+							Render<false, RenderMode::HiresXcolor>(x1h, xth, mbAttrMapEnabled);
 						else
-							RenderLoresBlank<true>(x1h, xth, mbAttrMapEnabled);
-						break;
+							Render<false, RenderMode::Hires>(x1h, xth, mbAttrMapEnabled);
+					} else if (pfpmrendered)
+						Render<false, RenderMode::Lores>(x1h, xth, mbAttrMapEnabled);
+					else
+						Render<true, RenderMode::Lores>(x1h, xth, mbAttrMapEnabled);
+					break;
 
-					case 0x40:
-						RenderMode9<true>(x1h, xth);
-						break;
+				case 0x40:
+					Render<false, RenderMode::Mode9>(x1h, xth, mbAttrMapEnabled);
+					break;
 
-					case 0x80:
-						RenderMode10<true>(x1h, xth);
-						break;
+				case 0x80:
+					Render<false, RenderMode::Mode10>(x1h, xth, mbAttrMapEnabled);
+					break;
 
-					case 0xC0:
-						RenderMode11<true>(x1h, xth);
-						break;
-				}
-			} else {
-				switch(mPRIOR & 0xc0) {
-					case 0x00:
-						if (hiresMode)
-							RenderMode8<false>(x1h, xth);
-						else if (pfpmrendered)
-							RenderLores<false>(x1h, xth);
-						else
-							RenderLoresBlank<false>(x1h, xth, mbAttrMapEnabled);
-						break;
+				case 0xC0:
+					Render<false, RenderMode::Mode11>(x1h, xth, mbAttrMapEnabled);
+					break;
+			}
 
-					case 0x40:
-						RenderMode9<false>(x1h, xth);
-						break;
-
-					case 0x80:
-						RenderMode10<false>(x1h, xth);
-						break;
-
-					case 0xC0:
-						RenderMode11<false>(x1h, xth);
-						break;
-				}
+			if (oddRestore) {
+				mpDst[x1h*2 + 0] = saveColor0;
+				mpDst[x1h*2 + 1] = saveColor1;
+				mOvPriDecode[x1h*2 + 0] = savePri0;
+				mOvPriDecode[x1h*2 + 1] = savePri1;
 			}
 
 			if (revMode) {
@@ -2241,10 +2270,6 @@ int ATVBXEEmulator::RenderAttrPixels(int x1h, int x2h) {
 	const int effectiveHscroll = (int)mAttrHscroll + (mAttrHscroll >= mAttrWidth ? -32 : 0);
 
 	// attribute map fetch is constrained to 172 bytes (43 cells)
-	int xrh2 = (xlh - effectiveHscroll) + 43 * mAttrWidth;
-	if (xrh > xrh2)
-		xrh = xrh2;
-
 	if (x2h > xrh) {
 		if (x1h >= xrh) {
 			RenderAttrDefaultPixels(x1h, x2h);
@@ -2259,13 +2284,13 @@ int ATVBXEEmulator::RenderAttrPixels(int x1h, int x2h) {
 
 	// Compute horizontal offset into the attribute map.
 	const int attrOffset = (x1h - xlh) + effectiveHscroll;
-	uint32 srcAddr = mAttrAddr;
+	uint32 attrIndex = 0;
 
 	int offset = attrOffset;
-	
+
 	if (offset >= 0) {
 		offset %= mAttrWidth;
-		srcAddr += (attrOffset / mAttrWidth) * 4;
+		attrIndex = attrOffset / mAttrWidth;
 	}
 
 	// The hires bitmap is 1 bit/px for widths 1-8, 2 bit/px for 9-16, and 4 bit/px for 17-32.
@@ -2274,15 +2299,15 @@ int ATVBXEEmulator::RenderAttrPixels(int x1h, int x2h) {
 	const uint8 colorMask = mbExtendedColor ? 0xFF : 0xFE;
 
 	AttrPixel px;
-	px.mPFK = 0;
+	px.mColors[0] = 0;
 
-	uint8 hrMaskOrPF0 = VBXE_FETCH(srcAddr + 0);
-	px.mPF0 = hrMaskOrPF0 & colorMask;
-	px.mPF1 = VBXE_FETCH(srcAddr + 1) & colorMask;
-	px.mPF2 = VBXE_FETCH(srcAddr + 2) & colorMask;
-	px.mCtrl = VBXE_FETCH(srcAddr + 3);
+	const uint8 *attrSrc = &mAttrBuffer[(attrIndex++ & 63)*4];
+	uint8 hrMaskOrPF0 = attrSrc[0];
+	px.mColors[1] = hrMaskOrPF0 & colorMask;
+	px.mColors[2] = attrSrc[1] & colorMask;
+	px.mColors[3] = attrSrc[2] & colorMask;
+	px.mCtrl = attrSrc[3];
 	px.mPriority = mOvPriority[px.mCtrl & 3];
-	srcAddr += 4;
 
 	const uint8 resBit = px.mCtrl;
 
@@ -2296,13 +2321,13 @@ int ATVBXEEmulator::RenderAttrPixels(int x1h, int x2h) {
 		mAttrPixels[x1h] = px;
 
 		if (++offset >= (int)mAttrWidth) {
-			hrMaskOrPF0 = VBXE_FETCH(srcAddr + 0);
-			px.mPF0 = hrMaskOrPF0 & colorMask;
-			px.mPF1 = VBXE_FETCH(srcAddr + 1) & colorMask;
-			px.mPF2 = VBXE_FETCH(srcAddr + 2) & colorMask;
-			px.mCtrl = VBXE_FETCH(srcAddr + 3);
+			attrSrc = &mAttrBuffer[(attrIndex++ & 63)*4];
+			hrMaskOrPF0 = attrSrc[0];
+			px.mColors[1] = hrMaskOrPF0 & colorMask;
+			px.mColors[2] = attrSrc[1] & colorMask;
+			px.mColors[3] = attrSrc[2] & colorMask;
+			px.mCtrl = attrSrc[3];
 			px.mPriority = mOvPriority[px.mCtrl & 3];
-			srcAddr += 4;
 			offset = 0;
 
 			// force break in span rendering if RES bit is set
@@ -2340,798 +2365,240 @@ void ATVBXEEmulator::RenderAttrDefaultPixels(int x1h, int x2h) {
 		mAttrPixels[x] = px;
 }
 
-template<bool T_Version126>
-void ATVBXEEmulator::RenderLores(int x1h, int x2h) {
-	const uint8 *__restrict colorTable = mpColorTable;
-	const uint8 (*__restrict priTable)[2] = mpPriTable;
+////////////////////////////////////////////////////////////////////////////////
 
-	uint32 *dst = mpDst + x1h*2;
-	uint8 *priDst = mOvPriDecode + x1h * 2;
-	const uint8 *src = mpMergeBuffer + (x1h >> 1);
+template<bool T_Blank, ATVBXEEmulator::RenderMode T_Mode>
+void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
+	// MERGE NOTE: use the portable attribute spelling for GCC/Clang.
+	auto run = [this](uint32 *VDRESTRICT dst, int x1h, int x2h, auto v126, auto attrMapEnabledConst) VDNOINLINE {
+		constexpr bool T_AttrMapEnabled = attrMapEnabledConst;
+		constexpr bool T_Hires = T_Mode == RenderMode::Hires
+			|| T_Mode == RenderMode::HiresXcolor;
+		constexpr bool T_Version126 = v126;
 
-	const AttrPixel *apx = &mAttrPixels[x1h];
+		const uint8 *VDRESTRICT colorTable = mpColorTable;
+		// MERGE NOTE: preserve the hires PF0 handling from RenderMode8.
+		const auto *VDRESTRICT priTable = T_Hires ? mpPriTableHi : mpPriTable;
 
-	if (x1h & 1) {
-		uint8 i0 = *src++;
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = colorTable[b0];
-		uint8 d1 = (&apx->mPFK)[a0] | c0;
+		uint8 *VDRESTRICT priDst = mOvPriDecode + x1h * 2;
+		const uint8 *VDRESTRICT src = mpMergeBuffer + (x1h >> 1);
+		const uint8 *VDRESTRICT lumasrc = &mpAnticBuffer[x1h >> 1];
 
-		dst[0] = dst[1] = mPalette[apx[1].mCtrl >> 6][d1];
+		const AttrPixel *VDRESTRICT apx = &mAttrPixels[x1h];
 
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx->mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx->mCtrl & 0x08);
-		} else {
-			priDst[0] = apx->mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx->mCtrl & 0x08);
+		const auto& VDRESTRICT palette = mPalette;
+
+		uint8 i0 = 0;
+
+		[[maybe_unused]] AttrPixel apx0[2];
+		if constexpr (!T_AttrMapEnabled) {
+			apx0[0] = apx[0];
+			apx0[1] = apx[0];
+
+			apx = apx0;
 		}
 
-		++apx;
-		dst += 2;
-		priDst += 2;
-		++x1h;
-	}
+		int w = (x2h - x1h + 1) >> 1;
+		[[maybe_unused]] int x1 = x1h >> 1;
 
-	int w = (x2h - x1h) >> 1;
-
-	for(int i=0; i<w; ++i) {
-		uint8 i0 = *src++;
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = colorTable[b0];
-		uint8 d0 = (&apx[0].mPFK)[a0] | c0;
-		uint8 d1 = (&apx[1].mPFK)[a0] | c0;
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][d0];
-		dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][d1];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & pri;
-			priDst[3] = (pri & 0xF7) | (apx[1].mCtrl & 0x08);
-		} else {
-			const uint8 coll = kCollisionLookup.v[i0];
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = coll | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & i0;
-			priDst[3] = coll | (apx[1].mCtrl & 0x08);
-		}
-
-		apx += 2;
-		dst += 4;
-		priDst += 4;
-	}
-
-	if (x2h & 1) {
-		uint8 i0 = *src;
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = colorTable[b0];
-		uint8 d0 = (&apx->mPFK)[a0] | c0;
-
-		dst[0] = dst[1] = mPalette[apx->mCtrl >> 6][d0];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx->mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx->mCtrl & 0x08);
-		} else {
-			priDst[0] = apx->mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx->mCtrl & 0x08);
-		}
-	}
-}
-
-template<bool T_Version126>
-void ATVBXEEmulator::RenderLoresBlank(int x1h, int x2h, bool attrMapEnabled) {
-	const uint8 *__restrict colorTable = mpColorTable;
-	const uint8 (*__restrict priTable)[2] = mpPriTable;
-
-	uint32 *dst = mpDst + x1h*2;
-	uint8 *priDst = mOvPriDecode + x1h*2;
-
-	const AttrPixel *apx = &mAttrPixels[x1h];
-
-	const uint8 a0 = priTable[0][0];
-	const uint8 b0 = priTable[0][1];
-	const uint8 c0 = colorTable[b0];
-
-	if (attrMapEnabled) {
-		if (x1h & 1) {
-			uint8 d1 = (&apx->mPFK)[a0] | c0;
-
-			dst[0] = dst[1] = mPalette[apx[1].mCtrl >> 6][d1];
-
-			if (T_Version126)
-				*priDst++ = apx->mPriority & kPriorityTranslation.v[0];
-			else
-				*priDst++ = 0;
-
-			*priDst++ = apx->mCtrl & 0x08;
-
-			++apx;
-			dst += 2;
-			++x1h;
-		}
-
-		int w = (x2h - x1h) >> 1;
-
-		for(int i=0; i<w; ++i) {
-			uint8 d0 = (&apx[0].mPFK)[a0] | c0;
-			uint8 d1 = (&apx[1].mPFK)[a0] | c0;
-
-			dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][d0];
-			dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][d1];
-
-			if (T_Version126) {
-				priDst[0] = apx[0].mPriority & kPriorityTranslation.v[0];
-				priDst[2] = apx[1].mPriority & kPriorityTranslation.v[0];
-			} else {
-				priDst[0] = 0;
-				priDst[2] = 0;
+		do {
+			if constexpr (!T_Blank) {
+				i0 = *src++;
 			}
 
-			priDst[1] = apx[0].mCtrl & 0x08;
-			priDst[3] = apx[1].mCtrl & 0x08;
+			// MERGE NOTE: the old mode 9/11 renderers masked PF0-PF2
+			// before both color and collision lookup. Preserve that gating.
+			if constexpr (T_Mode == RenderMode::Mode9 || T_Mode == RenderMode::Mode11)
+				i0 &= P0 | P1 | P2 | P3 | PF3;
 
-			priDst += 4;
-			apx += 2;
-			dst += 4;
-		}
+			// mode 10 (9 colors)
+			//
+			// This mode works by using AN0-AN1 to trigger either the playfield or the player/missle
+			// bits going into the priority logic. This means that when player colors are used, the
+			// playfield takes the same priority as that player. Playfield collisions are triggered
+			// only for PF0-PF3; P0-P3 colors coming from the playfield do not trigger collisions.
+			if constexpr (T_Mode == RenderMode::Mode10) {
+				// MERGE NOTE: keep lambda-local tables compatible with GCC 12.
+				constexpr uint8 kMode10Lookup[16]={
+					P0,		P1,		P2,		P3,
+					PF0,	PF1,	PF2,	PF3,
+					0,		0,		0,		0,
+					PF0,	PF1,	PF2,	PF3
+				};
 
-		if (x2h & 1) {
-			uint8 d0 = (&apx->mPFK)[a0] | c0;
+				const uint8 *VDRESTRICT l2src = &mpAnticBuffer[(x1++ - 1) & ~1];
+				const uint8 code = l2src[0]*4 + l2src[1];
 
-			dst[0] = dst[1] = mPalette[apx->mCtrl >> 6][d0];
-
-			if (T_Version126)
-				*priDst++ = apx->mPriority & kPriorityTranslation.v[0];
-			else
-				*priDst++ = 0;
-
-			*priDst++ = apx->mCtrl & 0x08;
-		}
-	} else {
-		// The attribute map is disabled, so we can assume that all attributes are
-		// the same.
-		const uint32 pixel = mPalette[apx[0].mCtrl >> 6][(&apx[0].mPFK)[a0] | c0];
-
-		const int w = (x2h - x1h) * 2;
-		for(int x = 0; x < w; ++x)
-			*dst++ = pixel;
-
-		if (T_Version126) {
-			const uint8 pri = apx[0].mPriority & kPriorityTranslation.v[0];
-			const uint8 coll = (pri & 0xF7) | (apx[0].mCtrl & 0x80);
-			for(int x = 0; x < w; ++x) {
-				priDst[0] = pri;
-				priDst[1] = coll;
-				priDst += 2;
-			}
-		}
-	}
-
-	if (!T_Version126)
-		memset(priDst, 0, (x2h - x1h) * 2);
-}
-
-template<bool T_Version126>
-void ATVBXEEmulator::RenderMode8(int x1h, int x2h) {
-	const uint8 *__restrict colorTable = mpColorTable;
-
-	const uint8 *__restrict lumasrc = &mpAnticBuffer[x1h >> 1];
-	uint32 *__restrict dst = mpDst + x1h*2;
-	uint8 *__restrict priDst = mOvPriDecode + x1h * 2;
-	const uint8 *__restrict src = mpMergeBuffer + (x1h >> 1);
-	const AttrPixel *__restrict apx = &mAttrPixels[x1h];
-	const uint8 (*__restrict priTable)[2] = mpPriTableHi;
-
-	if (mbExtendedColor) {
-		if (x1h & 1) {
-			uint8 lb = *lumasrc++;
-			uint8 i1 = *src++;
-
-			// For V1.26+, use PF1 priority for set pixels.
-			// For V1.25-, use PF2/PF3 priority for all pixels.
-			uint8 ic1 = i1;
-
-			if (lb & 1)
-				ic1 -= (ic1 & PF2) >> 1;
-
-			if (T_Version126) {
-				ic1 += (ic1 & PF2) & apx->mHiresFlag;
-				i1 = ic1;
-			} else {
-				i1 += (i1 & PF2) & apx->mHiresFlag;
-				ic1 += (ic1 & PF2) & apx->mHiresFlag;
+				i0 = kMode10Lookup[code] | (i0 & 0xf8);
 			}
 
-			uint8 a1 = priTable[ic1][0];
-			uint8 b1 = priTable[ic1][1];
-			uint8 c1 = (&apx->mPFK)[a1] | colorTable[b1];
-
-			dst[0] = dst[1] = mPalette[apx->mCtrl >> 6][c1];
-
-			if (T_Version126) {
-				const uint8 pri = kPriorityTranslation.v[i1];
-				priDst[0] = apx->mPriority & pri;
-				priDst[1] = (pri & 0xF7) | (apx->mCtrl & 0x08);
-			} else {
-				priDst[0] = apx->mPriority & i1;
-				priDst[1] = kCollisionLookup.v[i1] | (apx->mCtrl & 0x08);
-			}
-
-			++apx;
-			dst += 2;
-			priDst += 2;
-			++x1h;
-		}
-
-		int w = (x2h - x1h) >> 1;
-		while(w--) {
-			uint8 lb = *lumasrc++;
-			uint8 i0 = *src++;
 			uint8 i1 = i0;
-
-			// For V1.26+, use PF1 priority for set pixels.
-			// For V1.25-, only do so for the color.
 			uint8 ic0 = i0;
 			uint8 ic1 = i1;
 
-			if (lb & 2)
-				ic0 -= (ic0 & PF2) >> 1;
+			[[maybe_unused]] uint8 lb;
+			if constexpr (T_Hires) {
+				// For V1.26+, use PF1 priority for set pixels.
+				// For V1.25-, use PF2/PF3 priority for all pixels.
+				lb = *lumasrc++;
 
-			if (lb & 1)
-				ic1 -= (ic1 & PF2) >> 1;
+				if constexpr (T_Mode == RenderMode::HiresXcolor) {
+					// if hires bit is set, switch collision layer from PF2 to PF1
+					if (lb & 2)
+						ic0 -= (ic0 & PF2) >> 1;
 
-			if (T_Version126) {
-				// promote PF2 to PF3 according to attribute map bitmap
-				ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
-				ic1 += (ic1 & PF2) & apx[1].mHiresFlag;
+					if (lb & 1)
+						ic1 -= (ic1 & PF2) >> 1;
 
-				i0 = ic0;
-				i1 = ic1;
-			} else {
-				// promote PF2 to PF3 according to attribute map bitmap
-				i0 += (i0 & PF2) & apx[0].mHiresFlag;
-				i1 += (i1 & PF2) & apx[1].mHiresFlag;
-				ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
-				ic1 += (ic1 & PF2) & apx[1].mHiresFlag;
+					// for non-set pixels, switch PF2 to PF3 based on hires mask
+					ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
+					ic1 += (ic1 & PF2) & apx[1].mHiresFlag;
+
+					if (T_Version126) {
+						// for V1.26+, both collision and display use PF1/PF2/PF3
+						i0 = ic0;
+						i1 = ic1;
+					} else {
+						// for V1.25-, collision uses PF2/PF3 but not PF1
+						i0 += (i0 & PF2) & apx[0].mHiresFlag;
+						i1 += (i1 & PF2) & apx[1].mHiresFlag;
+					}
+				} else {
+					i0 += (i0 & PF2) & apx[0].mHiresFlag;
+					i1 += (i1 & PF2) & apx[1].mHiresFlag;
+					// MERGE NOTE: color lookup must see the same PF2/PF3 swap.
+					ic0 = i0;
+					ic1 = i1;
+				}
 			}
 
-			uint8 a0 = priTable[ic0][0];
-			uint8 a1 = priTable[ic1][0];
-			uint8 b0 = priTable[ic0][1];
-			uint8 b1 = priTable[ic1][1];
-			uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-			uint8 c1 = (&apx[1].mPFK)[a1] | colorTable[b1];
+			uint8 a0 = priTable[ic0].mMapColor;
+			uint8 b0 = priTable[ic0].mPalColor;
+			uint8 c0 = colorTable[b0];
 
-			dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-			dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][c1];
+			uint8 d0 = apx[0].mColors[a0] | c0;
+			uint8 d1;
 			
-			if (T_Version126) {
-				const uint8 pri0 = kPriorityTranslation.v[i0];
-				const uint8 pri1 = kPriorityTranslation.v[i1];
-				priDst[0] = apx[0].mPriority & pri0;
-				priDst[1] = (pri0 & 0xF7) | (apx[0].mCtrl & 0x08);
-				priDst[2] = apx[1].mPriority & pri1;
-				priDst[3] = (pri1 & 0xF7) | (apx[1].mCtrl & 0x08);
+			if constexpr (T_Hires) {
+				uint8 a1 = priTable[ic1].mMapColor;
+				uint8 b1 = priTable[ic1].mPalColor;
+				uint8 c1 = colorTable[b1];
+
+				d1 = apx[1].mColors[a1] | c1;
 			} else {
-				priDst[0] = apx[0].mPriority & i0;
-				priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
-				priDst[2] = apx[1].mPriority & i1;
-				priDst[3] = kCollisionLookup.v[i1] | (apx[1].mCtrl & 0x08);
+				d1 = apx[1].mColors[a0] | c0;
 			}
-			apx += 2;
+
+			// if hires non-xcolor is active, apply PF1 luma to color when
+			// hires pixels are active
+			if constexpr (T_Mode == RenderMode::Hires) {
+				if (lb & 2)
+					d0 = (d0 & 0xf0) + (apx[0].mColors[2] & 0x0f);
+
+				if (lb & 1)
+					d1 = (d1 & 0xf0) + (apx[1].mColors[2] & 0x0f);
+			}
+
+			// mode 9 (1 color / 16 luma)
+			//
+			// In this mode, PF0-PF3 are forced off, so no playfield collisions ever register
+			// and the playfield always registers as the background color. Luminance is
+			// ORed in after the priority logic, but its substitution is gated by all P/M bits
+			// and so it does not affect players or missiles. It does, however, affect PF3 if
+			// the fifth player is enabled.
+			if constexpr (T_Mode == RenderMode::Mode9) {
+				constexpr uint8 kPlayerMaskLookup[16]={0xff};
+
+				const uint8 *VDRESTRICT l2src = &mpAnticBuffer[x1++ & ~1];
+				const uint8 luma = ((l2src[0] << 2) + l2src[1]) & kPlayerMaskLookup[i0 >> 4];
+
+				d0 |= luma;
+				d1 |= luma;
+			}
+
+			// 16 colors / 1 luma
+			//
+			// In this mode, PF0-PF3 are forced off, so no playfield collisions ever register
+			// and the playfield always registers as the background color. Chroma is
+			// ORed in after the priority logic, but its substitution is gated by all P/M bits
+			// and so it does not affect players or missiles. It does, however, affect PF3 if
+			// the fifth player is enabled.
+			if constexpr (T_Mode == RenderMode::Mode11) {
+				static const uint8 kMode11Lookup[16][2][2]={
+					{{0xff,0xff},{0xff,0xf0}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}},
+					{{0x00,0xff},{0x00,0xff}}
+				};
+
+				const uint8 *VDRESTRICT l2src = &mpAnticBuffer[x1++ & ~1];
+				uint8 l0 = (l2src[0] << 6) + (l2src[1] << 4);
+
+				const uint8 (&colorInfo)[2] = kMode11Lookup[i0 >> 4][l0 == 0 && T_Version126];
+
+				d0 = (d0 | (l0 & colorInfo[0])) & colorInfo[1];
+				d1 = (d1 | (l0 & colorInfo[0])) & colorInfo[1];
+			}
+
+			dst[0] = dst[1] = palette[apx[0].mCtrl >> 6][d0];
+			dst[2] = dst[3] = palette[apx[1].mCtrl >> 6][d1];
+
+			priDst[0] = apx[0].mPriority & priTable[i0].mOvPri;
+			priDst[2] = apx[1].mPriority & priTable[i1].mOvPri;
+
+			if constexpr (T_Hires) {
+				if (T_Version126) {
+					priDst[1] = (kPriorityTranslation.v[i0] & 0xF7) | (apx[0].mCtrl & 0x08);
+					priDst[3] = (kPriorityTranslation.v[i1] & 0xF7) | (apx[1].mCtrl & 0x08);
+				} else {
+					priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
+					priDst[3] = kCollisionLookup.v[i1] | (apx[1].mCtrl & 0x08);
+				}
+			} else {
+				if (T_Version126) {
+					const uint8 pri = kPriorityTranslation.v[i0];
+					priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
+					priDst[3] = (pri & 0xF7) | (apx[1].mCtrl & 0x08);
+				} else {
+					const uint8 coll = kCollisionLookup.v[i0];
+					priDst[1] = coll | (apx[0].mCtrl & 0x08);
+					priDst[3] = coll | (apx[1].mCtrl & 0x08);
+				}
+			}
+
+			if constexpr (T_AttrMapEnabled) {
+				apx += 2;
+			}
+
 			dst += 4;
 			priDst += 4;
-		}
+		} while(--w);
+	};
 
-		if (x2h & 1) {
-			uint8 lb = *lumasrc++;
-			uint8 i0 = *src++;
+	uint32 *dst = mpDst + _x1h*2;
 
-			// For V1.26+, use PF1 priority for set pixels.
-			// For V1.25-, only do so for the color.
-			uint8 ic0 = i0;
-
-			if (lb & 2)
-				ic0 -= (ic0 & PF2) >> 1;
-
-			if (T_Version126) {
-				ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
-				i0 = ic0;
-			} else {
-				i0 += (i0 & PF2) & apx[0].mHiresFlag;
-				ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
-			}
-
-			uint8 a0 = priTable[ic0][0];
-			uint8 b0 = priTable[ic0][1];
-			uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-			dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-
-			if (T_Version126) {
-				const uint8 pri0 = kPriorityTranslation.v[i0];
-				priDst[0] = apx[0].mPriority & pri0;
-				priDst[1] = (pri0 & 0xF7) | (apx[0].mCtrl & 0x08);
-			} else {
-				priDst[0] = apx[0].mPriority & i0;
-				priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
-			}
-		}
+	if (mbVersion126) {
+		if (_attrMapEnabled)
+			run(dst, _x1h, _x2h, std::true_type(), std::true_type());
+		else
+			run(dst, _x1h, _x2h, std::true_type(), std::false_type());
 	} else {
-		if (x1h & 1) {
-			uint8 lb = *lumasrc++;
-			uint8 i0 = *src++;
-			uint8 i1 = i0;
-
-			i1 += (i1 & PF2) & apx->mHiresFlag;
-
-			uint8 a1 = priTable[i1][0];
-			uint8 b1 = priTable[i1][1];
-			uint8 c1 = (&apx[1].mPFK)[a1] | colorTable[b1];
-
-			if (lb & 1) {
-				c1 = (c1 & 0xf0) + (apx->mPF1 & 0x0f);
-			}
-
-			dst[0] = dst[1] = mPalette[apx->mCtrl >> 6][c1];
-
-			if (T_Version126) {
-				const uint8 pri = kPriorityTranslation.v[i1];
-				priDst[0] = apx->mPriority & pri;
-				priDst[1] = (pri & 0xF7) | (apx->mCtrl & 0x08);
-			} else {
-				const uint8 pri = i1;
-				priDst[0] = apx->mPriority & pri;
-				priDst[1] = kCollisionLookup.v[pri] | (apx->mCtrl & 0x08);
-			}
-
-			++apx;
-			dst += 2;
-			priDst += 2;
-			++x1h;
-		}
-
-		int w = (x2h - x1h) >> 1;
-		while(w--) {
-			uint8 lb = *lumasrc++;
-			uint8 i0 = *src++;
-			uint8 i1 = i0;
-
-			i0 += (i0 & PF2) & apx[0].mHiresFlag;
-			i1 += (i1 & PF2) & apx[1].mHiresFlag;
-
-			uint8 a0 = priTable[i0][0];
-			uint8 a1 = priTable[i1][0];
-			uint8 b0 = priTable[i0][1];
-			uint8 b1 = priTable[i1][1];
-			uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-			uint8 c1 = (&apx[1].mPFK)[a1] | colorTable[b1];
-
-			if (lb & 2) {
-				c0 = (c0 & 0xf0) + (apx[0].mPF1 & 0x0f);
-			}
-
-			if (lb & 1) {
-				c1 = (c1 & 0xf0) + (apx[1].mPF1 & 0x0f);
-			}
-
-			dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-			dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][c1];
-
-			if (T_Version126) {
-				const uint8 pri0 = kPriorityTranslation.v[i0];
-				const uint8 pri1 = kPriorityTranslation.v[i1];
-
-				priDst[0] = apx[0].mPriority & pri0;
-				priDst[1] = (pri0 & 0xF7) | (apx[0].mCtrl & 0x08);
-				priDst[2] = apx[1].mPriority & pri1;
-				priDst[3] = (pri1 & 0xF7) | (apx[1].mCtrl & 0x08);
-			} else {
-				const uint8 pri0 = i0;
-				const uint8 pri1 = i1;
-
-				priDst[0] = apx[0].mPriority & pri0;
-				priDst[1] = kCollisionLookup.v[pri0] | (apx[0].mCtrl & 0x08);
-				priDst[2] = apx[1].mPriority & pri1;
-				priDst[3] = kCollisionLookup.v[pri1] | (apx[1].mCtrl & 0x08);
-			}
-			apx += 2;
-			dst += 4;
-			priDst += 4;
-		}
-
-		if (x2h & 1) {
-			uint8 lb = *lumasrc++;
-			uint8 i0 = *src++;
-
-			i0 += (i0 & PF2) & apx[0].mHiresFlag;
-
-			uint8 a0 = priTable[i0][0];
-			uint8 b0 = priTable[i0][1];
-			uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-			if (lb & 2) {
-				c0 = (c0 & 0xf0) + (apx[0].mPF1 & 0x0f);
-			}
-
-			dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-
-			if (T_Version126) {
-				const uint8 pri0 = kPriorityTranslation.v[i0];
-				priDst[0] = apx[0].mPriority & pri0;
-				priDst[1] = (pri0 & 0xF7) | (apx[0].mCtrl & 0x08);
-			} else {
-				const uint8 pri0 = i0;
-				priDst[0] = apx[0].mPriority & pri0;
-				priDst[1] = kCollisionLookup.v[pri0] | (apx[0].mCtrl & 0x08);
-			}
-		}
-	}
-}
-
-template<bool T_Version126>
-void ATVBXEEmulator::RenderMode9(int x1h, int x2h) {
-	static const uint8 kPlayerMaskLookup[16]={0xff};
-
-	const uint8 *__restrict colorTable = mpColorTable;
-	const uint8 (*__restrict priTable)[2] = mpPriTable;
-
-	uint32 *__restrict dst = mpDst + x1h*2;
-	uint8 *__restrict priDst = mOvPriDecode + x1h*2;
-	const uint8 *__restrict src = mpMergeBuffer + (x1h >> 1);
-
-	// 1 color / 16 luma mode
-	//
-	// In this mode, PF0-PF3 are forced off, so no playfield collisions ever register
-	// and the playfield always registers as the background color. Luminance is
-	// ORed in after the priority logic, but its substitution is gated by all P/M bits
-	// and so it does not affect players or missiles. It does, however, affect PF3 if
-	// the fifth player is enabled.
-
-	const AttrPixel *__restrict apx = &mAttrPixels[x1h];
-
-	if (x1h & 1) {
-		uint8 i0 = *src++ & (P0|P1|P2|P3|PF3);
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c1 = (&apx[1].mPFK)[a0] | colorTable[b0];
-
-		const uint8 *lumasrc = &mpAnticBuffer[(x1h >> 1) & ~1];
-		uint8 l0 = ((lumasrc[0] << 2) + lumasrc[1]) & kPlayerMaskLookup[i0 >> 4];
-
-		dst[0] = dst[1] = mPalette[apx->mCtrl >> 6][c1 | l0];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-		} else {
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
-		}
-
-		++apx;
-		dst += 2;
-		priDst += 2;
-		++x1h;
-	}
-
-	int w = (x2h - x1h) >> 1;
-
-	int x1 = x1h >> 1;
-	while(w--) {
-		uint8 i0 = *src++ & (P0|P1|P2|P3|PF3);
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-		uint8 c1 = (&apx[1].mPFK)[a0] | colorTable[b0];
-
-		const uint8 *lumasrc = &mpAnticBuffer[x1++ & ~1];
-		uint8 l0 = ((lumasrc[0] << 2) + lumasrc[1]) & kPlayerMaskLookup[i0 >> 4];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0 | l0];
-		dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][c1 | l0];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & pri;
-			priDst[3] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-		} else {
-			const uint8 coll = kCollisionLookup.v[i0];
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = coll | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & i0;
-			priDst[3] = coll | (apx[1].mCtrl & 0x08);
-		}
-
-		apx += 2;
-		dst += 4;
-		priDst += 4;
-	}
-
-	if (x2h & 1) {
-		uint8 i0 = *src++ & (P0|P1|P2|P3|PF3);
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-		const uint8 *lumasrc = &mpAnticBuffer[x1++ & ~1];
-		uint8 l0 = ((lumasrc[0] << 2) + lumasrc[1]) & kPlayerMaskLookup[i0 >> 4];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0 | l0];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-		} else {
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
-		}
-	}
-}
-
-template<bool T_Version126>
-void ATVBXEEmulator::RenderMode10(int x1h, int x2h) {
-	const uint8 *__restrict colorTable = mpColorTable;
-	const uint8 (*__restrict priTable)[2] = mpPriTable;
-
-	uint32 *__restrict dst = mpDst + x1h*2;
-	uint8 *__restrict priDst = mOvPriDecode + x1h*2;
-	const uint8 *__restrict src = mpMergeBuffer + (x1h >> 1);
-
-	// 9 colors
-	//
-	// This mode works by using AN0-AN1 to trigger either the playfield or the player/missle
-	// bits going into the priority logic. This means that when player colors are used, the
-	// playfield takes the same priority as that player. Playfield collisions are triggered
-	// only for PF0-PF3; P0-P3 colors coming from the playfield do not trigger collisions.
-
-	static const uint8 kMode10Lookup[16]={
-		P0,
-		P1,
-		P2,
-		P3,
-		PF0,
-		PF1,
-		PF2,
-		PF3,
-		0,
-		0,
-		0,
-		0,
-		PF0,
-		PF1,
-		PF2,
-		PF3
-	};
-
-	const AttrPixel *apx = &mAttrPixels[x1h];
-
-	if (x1h & 1) {
-		const uint8 *lumasrc = &mpAnticBuffer[((x1h >> 1) - 1) & ~1];
-		uint8 l0 = lumasrc[0]*4 + lumasrc[1];
-
-		uint8 i0 = kMode10Lookup[l0] | (*src++ & 0xf8);
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c1 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c1];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-		} else {
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
-		}
-
-		++apx;
-		dst += 2;
-		priDst += 2;
-		++x1h;
-	}
-
-	int w = (x2h - x1h) >> 1;
-	int x1 = x1h >> 1;
-	while(w--) {
-		const uint8 *lumasrc = &mpAnticBuffer[(x1++ - 1) & ~1];
-		uint8 l0 = lumasrc[0]*4 + lumasrc[1];
-
-		uint8 i0 = kMode10Lookup[l0] | (*src++ & 0xf8);
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-		uint8 c1 = (&apx[1].mPFK)[a0] | colorTable[b0];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-		dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][c1];
-		
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & pri;
-			priDst[3] = (pri & 0xF7) | (apx[1].mCtrl & 0x08);
-		} else {
-			const uint8 pri = kCollisionLookup.v[i0];
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = pri | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & i0;
-			priDst[3] = pri | (apx[1].mCtrl & 0x08);
-		}
-
-		apx += 2;
-		dst += 4;
-		priDst += 4;
-	}
-
-	if (x2h & 1) {
-		const uint8 *lumasrc = &mpAnticBuffer[(x1 - 1) & ~1];
-		uint8 l0 = lumasrc[0]*4 + lumasrc[1];
-
-		uint8 i0 = kMode10Lookup[l0] | (*src++ & 0xf8);
-		uint8 a0 = priTable[i0][0];
-		uint8 b0 = priTable[i0][1];
-		uint8 c0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0xF8);
-		} else {
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0xF8);
-		}
-	}
-}
-
-template<bool T_Version126>
-void ATVBXEEmulator::RenderMode11(int x1h, int x2h) {
-	const uint8 *__restrict colorTable = mpColorTable;
-	const uint8 (*__restrict priTable)[2] = mpPriTable;
-
-	uint32 *__restrict dst = mpDst + x1h*2;
-	uint8 *__restrict priDst = mOvPriDecode + x1h*2;
-	const uint8 *__restrict src = mpMergeBuffer + (x1h >> 1);
-
-	// 16 colors / 1 luma
-	//
-	// In this mode, PF0-PF3 are forced off, so no playfield collisions ever register
-	// and the playfield always registers as the background color. Chroma is
-	// ORed in after the priority logic, but its substitution is gated by all P/M bits
-	// and so it does not affect players or missiles. It does, however, affect PF3 if
-	// the fifth player is enabled.
-
-	static const uint8 kMode11Lookup[16][2][2]={
-		{{0xff,0xff},{0xff,0xf0}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}},
-		{{0x00,0xff},{0x00,0xff}}
-	};
-
-	const AttrPixel *apx = &mAttrPixels[x1h];
-
-	if (x1h & 1) {
-		const uint8 i0 = *src++ & (P0|P1|P2|P3|PF3);
-		const uint8 a0 = priTable[i0][0];
-		const uint8 b0 = priTable[i0][1];
-		uint8 pri1 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-		const uint8 *lumasrc = &mpAnticBuffer[(x1h >> 1) & ~1];
-		uint8 l0 = (lumasrc[0] << 6) + (lumasrc[1] << 4);
-
-		// FX 1.24 doesn't implement zero luminance for hue 0. FX
-		// 1.26 does.
-		const uint8 (&colorInfo)[2] = kMode11Lookup[i0 >> 4][l0 == 0 && T_Version126];
-		uint8 c1 = (pri1 | (l0 & colorInfo[0])) & colorInfo[1];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c1];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-		} else {
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0xF8);
-		}
-
-		++apx;
-		dst += 2;
-		priDst += 2;
-	}
-
-	int w = (x2h - x1h) >> 1;
-	int x1 = x1h >> 1;
-	while(w--) {
-		const uint8 i0 = *src++ & (P0|P1|P2|P3|PF3);
-		const uint8 a0 = priTable[i0][0];
-		const uint8 b0 = priTable[i0][1];
-		uint8 pri0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-		uint8 pri1 = (&apx[1].mPFK)[a0] | colorTable[b0];
-
-		const uint8 *lumasrc = &mpAnticBuffer[x1++ & ~1];
-		uint8 l0 = (lumasrc[0] << 6) + (lumasrc[1] << 4);
-
-		const uint8 (&colorInfo)[2] = kMode11Lookup[i0 >> 4][l0 == 0 && T_Version126];
-
-		uint8 c0 = (pri0 | (l0 & colorInfo[0])) & colorInfo[1];
-		uint8 c1 = (pri1 | (l0 & colorInfo[0])) & colorInfo[1];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-		dst[2] = dst[3] = mPalette[apx[1].mCtrl >> 6][c1];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & pri;
-			priDst[3] = (pri & 0xF7) | (apx[1].mCtrl & 0x08);
-		} else {
-			const uint8 coll = kCollisionLookup.v[i0];
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = coll | (apx[0].mCtrl & 0x08);
-			priDst[2] = apx[1].mPriority & i0;
-			priDst[3] = coll | (apx[1].mCtrl & 0x08);
-		}
-
-		apx += 2;
-		dst += 4;
-		priDst += 4;
-	}
-
-	if (x2h & 1) {
-		const uint8 i0 = *src++ & (P0|P1|P2|P3|PF3);
-		const uint8 a0 = priTable[i0][0];
-		const uint8 b0 = priTable[i0][1];
-		uint8 pri0 = (&apx[0].mPFK)[a0] | colorTable[b0];
-
-		const uint8 *lumasrc = &mpAnticBuffer[x1++ & ~1];
-		uint8 l0 = (lumasrc[0] << 6) + (lumasrc[1] << 4);
-
-		const uint8 (&colorInfo)[2] = kMode11Lookup[i0 >> 4][l0 == 0 && T_Version126];
-		uint8 c0 = (pri0 | (l0 & colorInfo[0])) & colorInfo[1];
-
-		dst[0] = dst[1] = mPalette[apx[0].mCtrl >> 6][c0];
-
-		if (T_Version126) {
-			const uint8 pri = kPriorityTranslation.v[i0];
-			priDst[0] = apx[0].mPriority & pri;
-			priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
-		} else {
-			priDst[0] = apx[0].mPriority & i0;
-			priDst[1] = kCollisionLookup.v[i0] | (apx[0].mCtrl & 0x08);
-		}
+		if (_attrMapEnabled)
+			run(dst, _x1h, _x2h, std::false_type(), std::true_type());
+		else
+			run(dst, _x1h, _x2h, std::false_type(), std::false_type());
 	}
 }
 
@@ -3936,165 +3403,194 @@ void ATVBXEEmulator::InitPriorityTables() {
 	// the former can change so often with VBXE.
 	for(int table=0; table<32; ++table) {
 		const uint8 *src = tab[table];
-		uint8 *dst = mPriorityTables[table][0];
-		uint8 *dst2 = mPriorityTablesHi[table][0];
 
 		for(int idx=0; idx<256; ++idx) {
+			auto& dst = mPriorityTables[table][idx];
+			auto& dst2 = mPriorityTablesHi[table][idx];
+
 			// The first value is the index in the attribute cell (0-3); the
 			// second value is from the color table. PF0-PF2 must come from
 			// the attribute cell in CCR modes; in hires modes only PF1 and
 			// PF2 come from there since the PF0 cell is used for the PF2/PF3
 			// selector instead.
 
+			uint8 ovpri = 0;
+
 			switch(src[idx]) {
 				case kColorP0:
-					dst[0] = 0;
-					dst[1] = kColorP0;
-					dst2[0] = 0;
-					dst2[1] = kColorP0;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorP0;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorP0;
+					ovpri = 0x10;
 					break;
 				case kColorP1:
-					dst[0] = 0;
-					dst[1] = kColorP1;
-					dst2[0] = 0;
-					dst2[1] = kColorP1;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorP1;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorP1;
+					ovpri = 0x20;
 					break;
 				case kColorP2:
-					dst[0] = 0;
-					dst[1] = kColorP2;
-					dst2[0] = 0;
-					dst2[1] = kColorP2;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorP2;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorP2;
+					ovpri = 0x40;
 					break;
 				case kColorP3:
-					dst[0] = 0;
-					dst[1] = kColorP3;
-					dst2[0] = 0;
-					dst2[1] = kColorP3;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorP3;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorP3;
+					ovpri = 0x80;
 					break;
 				case kColorPF0:
-					dst[0] = 1;
-					dst[1] = kColorBlack;
-					dst2[0] = 0;
-					dst2[1] = kColorPF0;
+					dst.mMapColor = 1;
+					dst.mPalColor = kColorBlack;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF0;
+					ovpri = 0x01;
 					break;
 				case kColorPF1:
-					dst[0] = 2;
-					dst[1] = kColorBlack;
-					dst2[0] = 2;
-					dst2[1] = kColorBlack;
+					dst.mMapColor = 2;
+					dst.mPalColor = kColorBlack;
+					dst2.mMapColor = 2;
+					dst2.mPalColor = kColorBlack;
+					ovpri = 0x02;
 					break;
 				case kColorPF2:
-					dst[0] = 3;
-					dst[1] = kColorBlack;
-					dst2[0] = 3;
-					dst2[1] = kColorBlack;
+					dst.mMapColor = 3;
+					dst.mPalColor = kColorBlack;
+					dst2.mMapColor = 3;
+					dst2.mPalColor = kColorBlack;
+					ovpri = 0x04;
 					break;
 				case kColorPF3:
-					dst[0] = 0;
-					dst[1] = kColorPF3;
-					dst2[0] = 0;
-					dst2[1] = kColorPF3;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorPF3;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF3;
+					ovpri = mbVersion126 ? 0x04 : 0x08;
 					break;
 				case kColorBAK:
-					dst[0] = 0;
-					dst[1] = kColorBAK;
-					dst2[0] = 0;
-					dst2[1] = kColorBAK;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorBAK;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorBAK;
+					ovpri = mbVersion126 ? 0x08 : 0x00;
 					break;
 				case kColorBlack:
-					dst[0] = 0;
-					dst[1] = kColorBlack;
-					dst2[0] = 0;
-					dst2[1] = kColorBlack;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorBlack;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorBlack;
+					ovpri = 0x00;
 					break;
 				case kColorP0P1:
-					dst[0] = 0;
-					dst[1] = kColorP0P1;
-					dst2[0] = 0;
-					dst2[1] = kColorP0P1;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorP0P1;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorP0P1;
+					ovpri = 0x30;
 					break;
 				case kColorP2P3:
-					dst[0] = 0;
-					dst[1] = kColorP2P3;
-					dst2[0] = 0;
-					dst2[1] = kColorP2P3;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorP2P3;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorP2P3;
+					ovpri = 0xC0;
 					break;
 				case kColorPF0P0:
-					dst[0] = 1;
-					dst[1] = kColorP0;
-					dst2[0] = 0;
-					dst2[1] = kColorPF0P0;
+					dst.mMapColor = 1;
+					dst.mPalColor = kColorP0;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF0P0;
+					ovpri = 0x11;
 					break;
 				case kColorPF0P1:
-					dst[0] = 1;
-					dst[1] = kColorP1;
-					dst2[0] = 0;
-					dst2[1] = kColorPF0P1;
+					dst.mMapColor = 1;
+					dst.mPalColor = kColorP1;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF0P1;
+					ovpri = 0x21;
 					break;
 				case kColorPF0P0P1:
-					dst[0] = 1;
-					dst[1] = kColorP0P1;
-					dst2[0] = 0;
-					dst2[1] = kColorPF0P0P1;
+					dst.mMapColor = 1;
+					dst.mPalColor = kColorP0P1;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF0P0P1;
+					ovpri = 0x31;
 					break;
 				case kColorPF1P0:
-					dst[0] = 2;
-					dst[1] = kColorP0;
-					dst2[0] = 2;
-					dst2[1] = kColorP0;
+					dst.mMapColor = 2;
+					dst.mPalColor = kColorP0;
+					dst2.mMapColor = 2;
+					dst2.mPalColor = kColorP0;
+					ovpri = 0x12;
 					break;
 				case kColorPF1P1:
-					dst[0] = 2;
-					dst[1] = kColorP1;
-					dst2[0] = 2;
-					dst2[1] = kColorP1;
+					dst.mMapColor = 2;
+					dst.mPalColor = kColorP1;
+					dst2.mMapColor = 2;
+					dst2.mPalColor = kColorP1;
+					ovpri = 0x22;
 					break;
 				case kColorPF1P0P1:
-					dst[0] = 2;
-					dst[1] = kColorP0P1;
-					dst2[0] = 2;
-					dst2[1] = kColorP0P1;
+					dst.mMapColor = 2;
+					dst.mPalColor = kColorP0P1;
+					dst2.mMapColor = 2;
+					dst2.mPalColor = kColorP0P1;
+					ovpri = 0x32;
 					break;
 				case kColorPF2P2:
-					dst[0] = 3;
-					dst[1] = kColorP2;
-					dst2[0] = 3;
-					dst2[1] = kColorP2;
+					dst.mMapColor = 3;
+					dst.mPalColor = kColorP2;
+					dst2.mMapColor = 3;
+					dst2.mPalColor = kColorP2;
+					// MERGE NOTE: test19 used P1 instead of P2 here.
+					ovpri = PF2 | P2;
 					break;
 				case kColorPF2P3:
-					dst[0] = 3;
-					dst[1] = kColorP3;
-					dst2[0] = 3;
-					dst2[1] = kColorP3;
+					dst.mMapColor = 3;
+					dst.mPalColor = kColorP3;
+					dst2.mMapColor = 3;
+					dst2.mPalColor = kColorP3;
+					// MERGE NOTE: test19 used P2 instead of P3 here.
+					ovpri = PF2 | P3;
 					break;
 				case kColorPF2P2P3:
-					dst[0] = 3;
-					dst[1] = kColorP2P3;
-					dst2[0] = 3;
-					dst2[1] = kColorP2P3;
+					dst.mMapColor = 3;
+					dst.mPalColor = kColorP2P3;
+					dst2.mMapColor = 3;
+					dst2.mPalColor = kColorP2P3;
+					ovpri = PF2 | P2 | P3;
 					break;
 				case kColorPF3P2:
-					dst[0] = 0;
-					dst[1] = kColorPF3P2;
-					dst2[0] = 0;
-					dst2[1] = kColorPF3P2;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorPF3P2;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF3P2;
+					ovpri = mbVersion126 ? 0x44 : 0x48;
 					break;
 				case kColorPF3P3:
-					dst[0] = 0;
-					dst[1] = kColorPF3P3;
-					dst2[0] = 0;
-					dst2[1] = kColorPF3P3;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorPF3P3;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF3P3;
+					ovpri = mbVersion126 ? 0x84 : 0x88;
 					break;
 				case kColorPF3P2P3:
-					dst[0] = 0;
-					dst[1] = kColorPF3P2P3;
-					dst2[0] = 0;
-					dst2[1] = kColorPF3P2P3;
+					dst.mMapColor = 0;
+					dst.mPalColor = kColorPF3P2P3;
+					dst2.mMapColor = 0;
+					dst2.mPalColor = kColorPF3P2P3;
+					ovpri = mbVersion126 ? 0xC4 : 0xC8;
 					break;
 			}
 
-			dst += 2;
-			dst2 += 2;
+			dst.mOvPri = ovpri;
+			dst2.mOvPri = ovpri;
 		}
 	}
 }

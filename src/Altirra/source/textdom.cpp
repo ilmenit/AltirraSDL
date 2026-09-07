@@ -699,8 +699,8 @@ void Document::SetCallback(IDocumentCallback *pCB) {
 	mpCB = pCB;
 }
 
-int Document::GetParagraphFromY(int y) {
-	Paragraphs::iterator it(std::upper_bound(mParagraphs.begin(), mParagraphs.end(), y, ParagraphsByYPred()));
+int Document::GetParagraphFromY(int y) const {
+	auto it = std::upper_bound(mParagraphs.begin(), mParagraphs.end(), y, ParagraphsByYPred());
 	int para = 0;
 
 	if (it != mParagraphs.begin())
@@ -709,7 +709,7 @@ int Document::GetParagraphFromY(int y) {
 	return para;
 }
 
-void Document::GetParagraphText(int paraIdx, vdfastvector<wchar_t>& buf) {
+void Document::GetParagraphText(int paraIdx, vdfastvector<wchar_t>& buf) const {
 	const Paragraph *para = mParagraphs[paraIdx];
 
 	buf = para->mText;

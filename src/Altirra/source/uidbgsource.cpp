@@ -248,7 +248,7 @@ LRESULT ATSourceWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 				} else {
 					POINT pt = {x, y};
 					if (ScreenToClient(mhwndTextEditor, &pt))
-						mpTextEditor->SetCursorPixelPos(pt.x, pt.y);
+						mpTextEditor->SetCursorPixelPosIfOutsideSelection(pt.x, pt.y);
 				}
 
 				TrackPopupMenu(ATUIGetSourceContextMenuW32(), TPM_LEFTALIGN|TPM_TOPALIGN, x, y, 0, mhwnd, NULL);

@@ -1110,30 +1110,22 @@ void ATDiskFSDOS2::DecodeDirEnt(DirEnt& de, const uint8 *src) const {
 	de.mFlags = src[0];
 	de.mFirstSector = VDReadUnalignedLEU16(src + 3);
 
-	const uint8 *fnstart = src + 5;
-	const uint8 *fnend = src + 13;
+	size_t nameLen = 8;
+	while(nameLen && src[5 + nameLen - 1] == 0x20)
+		--nameLen;
 
-	while(fnend != fnstart && fnend[-1] == 0x20)
-		--fnend;
+	size_t extLen = 3;
+	while(extLen && src[13 + extLen - 1] == 0x20)
+		--extLen;
 
-	char *namedst = de.mName;
-	while(fnstart != fnend)
-		*namedst++ = *fnstart++;
-
-	const uint8 *extstart = src + 13;
-	const uint8 *extend = src + 16;
-
-	while(extend != extstart && extend[-1] == 0x20)
-		--extend;
-
-	if (extstart != extend) {
-		*namedst++ = '.';
-
-		while(extstart != extend)
-			*namedst++ = *extstart++;
+	memcpy(de.mName, src + 5, nameLen);
+	size_t dstLen = nameLen;
+	if (extLen) {
+		de.mName[dstLen++] = '.';
+		memcpy(de.mName + dstLen, src + 13, extLen);
+		dstLen += extLen;
 	}
-
-	*namedst = 0;
+	de.mName[dstLen] = 0;
 
 	// The sector count in the directory can be WRONG, so we recompute it
 	// from the sector chain.

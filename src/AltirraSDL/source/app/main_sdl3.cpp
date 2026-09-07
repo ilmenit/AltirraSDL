@@ -926,26 +926,36 @@ static void HandleEvents() {
 
 		case SDL_EVENT_DROP_BEGIN:
 			g_dragDropState.active = true;
+			g_dragDropState.hasPosition = false;
 			g_dragDropState.x = ev.drop.x;
 			g_dragDropState.y = ev.drop.y;
 			break;
 		case SDL_EVENT_DROP_POSITION:
+			g_dragDropState.hasPosition = true;
 			g_dragDropState.x = ev.drop.x;
 			g_dragDropState.y = ev.drop.y;
 			break;
 		case SDL_EVENT_DROP_COMPLETE:
 			g_dragDropState.active = false;
+			g_dragDropState.hasPosition = false;
 			break;
 		case SDL_EVENT_DROP_FILE: {
 			g_dragDropState.active = false;
 			const char *file = ev.drop.data;
 			if (file) {
-				float dx = ev.drop.x, dy = ev.drop.y;
-				// Priority chain for file drops (matches Windows behavior):
-				// 1. Disk Explorer open + writable + cursor over it → import into disk image
-				// 2. Firmware Manager open + cursor over it → add firmware ROM
-				// 3. Otherwise → boot image (like dragging .xex/.atr/.car onto main window)
-				if (!ATUIDiskExplorerHandleDrop(file, dx, dy)
+				// Some SDL platform backends provide the final file event without
+				// coordinates even though DROP_POSITION was delivered.  Prefer the
+				// last valid position in that case, otherwise a file dropped onto an
+				// explorer can incorrectly fall through to the boot handler.
+				float dx = g_dragDropState.hasPosition ? g_dragDropState.x : ev.drop.x;
+				float dy = g_dragDropState.hasPosition ? g_dragDropState.y : ev.drop.y;
+				if (!g_dragDropState.hasPosition && dx == 0.0f && dy == 0.0f)
+					SDL_GetMouseState(&dx, &dy);
+				// Each Explorer checks the actual ImGui window stack, so the
+				// visible destination owns the drop regardless of render order.
+				if (!ATUIXEXExplorerHandleDrop(file, dx, dy)
+					&& !ATUICartridgeExplorerHandleDrop(file, dx, dy)
+					&& !ATUIDiskExplorerHandleDrop(file, dx, dy)
 					&& !ATUIFirmwareManagerHandleDrop(file, dx, dy)) {
 					ATUIPushDeferred(kATDeferred_BootImage, file);
 				}

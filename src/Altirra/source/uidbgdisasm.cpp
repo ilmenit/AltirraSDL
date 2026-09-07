@@ -183,6 +183,12 @@ bool ATDisassemblyWindow::OnMessage(VDZUINT msg, VDZWPARAM wParam, VDZLPARAM lPa
 
 				VDCheckMenuItemByCommandW32(menu, ID_CONTEXT_USEDPREGISTERSTATE, mb816PredictD);
 
+				const bool multiLineSelected = mpTextEditor->IsSelectionMultiLine();
+
+				VDEnableMenuItemByCommandW32(menu, ID_CONTEXT_GOTOSOURCE, !multiLineSelected);
+				VDEnableMenuItemByCommandW32(menu, ID_CONTEXT_SETNEXTSTATEMENT, !multiLineSelected);
+				VDEnableMenuItemByCommandW32(menu, ID_CONTEXT_TOGGLEBREAKPOINT, !multiLineSelected);
+
 				if (x == -1 && y == -1) {
 					const vdpoint32& pt = mpTextEditor->GetScreenPosForContextMenu();
 					x = pt.x;
@@ -191,7 +197,7 @@ bool ATDisassemblyWindow::OnMessage(VDZUINT msg, VDZWPARAM wParam, VDZLPARAM lPa
 					POINT pt = {x, y};
 
 					if (ScreenToClient(mhwndTextEditor, &pt))
-						mpTextEditor->SetCursorPixelPos(pt.x, pt.y);
+						mpTextEditor->SetCursorPixelPosIfOutsideSelection(pt.x, pt.y);
 				}
 
 				TrackPopupMenu(menu, TPM_LEFTALIGN|TPM_TOPALIGN, x, y, 0, mhwnd, NULL);

@@ -233,17 +233,32 @@ void VDImageEncoderPNG::Encode(const VDPixmap& px, const void *&p, uint32& len, 
 		uint32	mChunkLength;
 		uint32	mChunkType;
 	} idat;
-	idat.mChunkLength		= VDToBE32((uint32)encoutput.size());
+	idat.mChunkLength		= VDToBE32((uint32)(encoutput.size() + 6));
 	idat.mChunkType			= VDMAKEFOURCC('I', 'D', 'A', 'T');
 
 	mOutput.insert(mOutput.end(), (const uint8 *)&idat, (const uint8 *)&idat + 8);
-	mOutput.insert(mOutput.end(), encoutput.begin(), encoutput.end());
+
+	static const uint8 kZlibHeader[] {
+		0x78,	// 32K window, Deflate
+		0xDA,	// maximum compression, no dictionary, check offset = 0x1A
+	};
+
+	mOutput.append_range(kZlibHeader);
+	mOutput.append_range(encoutput);
+
+	alignas(4) uint8 adler32[4];
+	VDWriteUnalignedBEU32(adler32, enc->Adler32());
+	mOutput.append_range(adler32);
 
 	VDCRCChecker crcChecker(crcTable);
 	crcChecker.Process(&idat.mChunkType, 4);
+	crcChecker.Process(kZlibHeader, sizeof kZlibHeader);
 	crcChecker.Process(encoutput.data(), (sint32)encoutput.size());
-	uint32 idat_crc = VDToBE32(crcChecker.CRC());
-	mOutput.insert(mOutput.end(), (const uint8 *)&idat_crc, (const uint8 *)&idat_crc + 4);
+	crcChecker.Process(adler32, sizeof adler32);
+
+	alignas(4) uint8 idat_crc[4];
+	VDWriteUnalignedBEU32(idat_crc, crcChecker.CRC());
+	mOutput.append_range(idat_crc);
 
 	uint8 footer[]={
 		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0, 0, 0, 0
@@ -251,7 +266,7 @@ void VDImageEncoderPNG::Encode(const VDPixmap& px, const void *&p, uint32& len, 
 
 	VDWriteUnalignedBEU32(footer+8, crcTable.CRC(footer + 4, 4));
 
-	mOutput.insert(mOutput.end(), footer, footer+12);
+	mOutput.append_range(footer);
 
 	p = mOutput.data();
 	len = (uint32)mOutput.size();

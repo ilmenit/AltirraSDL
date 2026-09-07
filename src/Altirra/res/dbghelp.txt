@@ -2341,9 +2341,10 @@
 
     Displays the current or an alternate VBXE blit list.
 
-      .vbxe_bl [-c] [<address>]
+      .vbxe_bl [-c] [-m maxcount] [<address>]
 
       -c    Use compact output format
+      -m    Override default maximum count
 
     The address must be a VBXE address (v:offset) or a CPU address currently
     within a CPU-enabled MEMAC window. If the address is omitted, the

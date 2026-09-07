@@ -21,6 +21,7 @@
 #include "testmode_ipc.h"
 #include "ui_testmode.h"
 #include "ui_main.h"
+#include "ui_file_dialog_sdl3.h"
 #include "uiaccessors.h"
 #include "ui_frame_capture.h"
 #include "ui_mode.h"
@@ -370,6 +371,8 @@ static const DialogMapping kDialogMap[] = {
 	{ "ChangeLog",         &ATUIState::showChangeLog },
 	{ "CompatWarning",     &ATUIState::showCompatWarning },
 	{ "DiskExplorer",      &ATUIState::showDiskExplorer },
+	{ "CartridgeExplorer", &ATUIState::showCartridgeExplorer },
+	{ "XEXExplorer",       &ATUIState::showXEXExplorer },
 	{ "SetupWizard",       &ATUIState::showSetupWizard },
 	{ "KeyboardShortcuts", &ATUIState::showKeyboardShortcuts },
 	{ "KeyboardCustomize", &ATUIState::showKeyboardCustomize },
@@ -577,8 +580,10 @@ static ImGuiKey ParseTestKey(const std::string& keyName) {
 		return ImGuiKey_LeftArrow;
 	if (keyName == "right" || keyName == "Right")
 		return ImGuiKey_RightArrow;
-	if (keyName == "f" || keyName == "F")
-		return ImGuiKey_F;
+	if (keyName.size() == 1) {
+		const char key = (char)std::tolower((unsigned char)keyName[0]);
+		if (key >= 'a' && key <= 'z') return (ImGuiKey)(ImGuiKey_A + key - 'a');
+	}
 
 	return ImGuiKey_None;
 }
@@ -2088,6 +2093,9 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 	// --- Dialog control ---
 	if (verb == "open_dialog") {
 		std::string name = NextToken(cmd);
+		if (name == "DiskExplorer") { ATUIRequestDiskExplorer(g_pWindow); return JsonOk(); }
+		if (name == "CartridgeExplorer") { ATUIRequestCartridgeExplorer(g_pWindow); return JsonOk(); }
+		if (name == "XEXExplorer") { ATUIRequestXEXExplorer(g_pWindow); return JsonOk(); }
 		bool *field = FindDialogField(state, name);
 		if (!field)
 			return JsonError("unknown dialog: " + name);
@@ -2097,6 +2105,9 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 
 	if (verb == "close_dialog") {
 		std::string name = NextToken(cmd);
+		if (name == "DiskExplorer") { ATUICloseDiskExplorers(); return JsonOk(); }
+		if (name == "CartridgeExplorer") { ATUICloseCartridgeExplorers(); return JsonOk(); }
+		if (name == "XEXExplorer") { ATUICloseXEXExplorers(); return JsonOk(); }
 		bool *field = FindDialogField(state, name);
 		if (!field)
 			return JsonError("unknown dialog: " + name);
@@ -2290,6 +2301,16 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		// This ensures response ordering is preserved.
 		g_commandsBlocked = true;
 		return {};  // response sent when frames elapse
+	}
+
+	if (verb == "ui_screenshot") {
+		const std::string path = RestOfLine(cmd);
+		if (path.empty()) return JsonError("usage: ui_screenshot <path>");
+		SDL_Surface *surface = ATUIReadFramebuffer();
+		if (!surface) return JsonError("framebuffer is unavailable");
+		const bool saved = SDL_SavePNG(surface, path.c_str());
+		SDL_DestroySurface(surface);
+		return saved ? JsonOk() : JsonError(SDL_GetError());
 	}
 
 	// --- Screenshot ---
@@ -2547,6 +2568,33 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return JsonOk();
 	}
 
+
+	if (verb == "file_dialog_builtin") {
+		ATUISetForceBuiltinFileDialog(NextToken(cmd) == "on");
+		return JsonOk();
+	}
+
+	if (verb == "explorer_drop") {
+		const float x = (float)atof(NextToken(cmd).c_str());
+		const float y = (float)atof(NextToken(cmd).c_str());
+		const std::string path = RestOfLine(cmd);
+		if (path.empty()) return JsonError("usage: explorer_drop <x> <y> <path>");
+		const bool handled = ATUIXEXExplorerHandleDrop(path.c_str(), x, y)
+			|| ATUICartridgeExplorerHandleDrop(path.c_str(), x, y)
+			|| ATUIDiskExplorerHandleDrop(path.c_str(), x, y);
+		return handled ? "{\"ok\":true,\"handled\":true}" : "{\"ok\":true,\"handled\":false}";
+	}
+
+	if (verb == "explore_file") {
+		const std::string type = NextToken(cmd);
+		const std::string path = RestOfLine(cmd);
+		if (path.empty()) return JsonError("usage: explore_file disk|xex|cartridge <path>");
+		if (type == "disk") ATUIOpenDiskExplorerFile(path.c_str());
+		else if (type == "xex") ATUIOpenXEXExplorerFile(path.c_str());
+		else if (type == "cartridge") ATUIOpenCartridgeExplorerFile(path.c_str());
+		else return JsonError("unknown explorer type");
+		return JsonOk();
+	}
 	if (verb == "boot_image") {
 		std::string path = RestOfLine(cmd);
 		if (path.empty())
@@ -2673,6 +2721,10 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"quit\","
 			"\"run_command <command>\","
 			"\"debugger_console <command>\","
+			"\"ui_screenshot <path>\","
+			"\"file_dialog_builtin on|off\","
+			"\"explorer_drop <x> <y> <path>\","
+			"\"explore_file disk|xex|cartridge <path>\","
 			"\"boot_image <path>\","
 			"\"attach_disk <drive> <path>\","
 			"\"load_state <path>\","

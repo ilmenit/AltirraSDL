@@ -41,6 +41,8 @@ struct ATUIState {
 
 	// Tools menu dialogs
 	bool showDiskExplorer = false;
+	bool showCartridgeExplorer = false;
+	bool showXEXExplorer = false;
 	bool showSetupWizard = false;
 	bool showKeyboardShortcuts = false;
 	bool showKeyboardCustomize = false;
@@ -176,6 +178,7 @@ void ATUIRenderMainDisplayTextSelection();
 // Deferred action types — shared between ui_main.cpp and ui_cartmapper.cpp
 enum ATDeferredActionType {
 	kATDeferred_BootImage,
+	kATDeferred_BootProgramData,   // path = display origin; payload = validated XEX bytes
 	kATDeferred_OpenImage,
 	kATDeferred_AttachCartridge,
 	kATDeferred_AttachSecondaryCartridge,
@@ -204,6 +207,7 @@ enum ATDeferredActionType {
 
 // Push a deferred action (thread-safe — may be called from file dialog callbacks)
 void ATUIPushDeferred(ATDeferredActionType type, const char *utf8path, int extra = 0);
+void ATUIBootProgramData(const char *utf8origin, const void *data, size_t size);
 
 // Tape editor request from trace viewer (ui_dbg_traceviewer_timeline.cpp)
 struct ATTapeEditorRequest {
@@ -269,11 +273,31 @@ void ATUIRenderInputSetup(ATSimulator &sim, ATUIState &state);
 void ATUIRenderProfiles(ATSimulator &sim, ATUIState &state);
 
 // Tools menu dialogs
+void ATUICloseDiskExplorers();
+void ATUIShutdownDiskExplorers();
+void ATUICloseCartridgeExplorers();
+void ATUIShutdownCartridgeExplorers();
+void ATUICloseXEXExplorers();
+void ATUIShutdownXEXExplorers();
+bool ATUIDiskExplorerHasUnsavedChanges();
+void ATUIOpenXEXExplorerData(const char *origin, const uint8 *data, size_t size);
+void ATUIOpenDiskExplorerFile(const char *path);
+void ATUIOpenCartridgeExplorerFile(const char *path);
+void ATUIOpenXEXExplorerFile(const char *path);
+void ATUIRequestDiskExplorer(SDL_Window *window);
+void ATUIRequestCartridgeExplorer(SDL_Window *window);
+void ATUIRequestXEXExplorer(SDL_Window *window);
 void ATUIRenderDiskExplorer(ATSimulator &sim, ATUIState &state, SDL_Window *window);
+void ATUIRenderCartridgeExplorer(ATUIState &state, SDL_Window *window);
+void ATUIRenderXEXExplorer(ATUIState &state, SDL_Window *window);
+bool ATUICartridgeExplorerHandleDrop(const char *utf8path, float dropX, float dropY);
+bool ATUIXEXExplorerHandleDrop(const char *utf8path, float dropX, float dropY);
+bool ATUICartridgeExplorerGetDropRect(ImVec2 &pos, ImVec2 &size, float x, float y);
+bool ATUIXEXExplorerGetDropRect(ImVec2 &pos, ImVec2 &size, float x, float y);
 void ATUIOpenDiskExplorerForDrive(int driveIdx, bool writable, bool autoFlush);
 void ATUIOpenDiskExplorerForBlockDevice(IATBlockDevice *dev);
 bool ATUIDiskExplorerHandleDrop(const char *utf8path, float dropX, float dropY);
-bool ATUIDiskExplorerGetDropRect(ImVec2 &pos, ImVec2 &size); // returns true if open+writable
+bool ATUIDiskExplorerGetDropRect(ImVec2 &pos, ImVec2 &size, float x, float y); // frontmost Explorer at the drop position
 void ATUIRenderSetupWizard(ATSimulator &sim, ATUIState &state, SDL_Window *window);
 void ATUIRenderCheater(ATSimulator &sim, ATUIState &state);
 bool ATUIOpenRewindDialog();
@@ -352,6 +376,7 @@ inline bool ATUICheckEscClose() {
 // Drag-and-drop visual feedback state (updated by event loop, drawn by UI)
 struct ATUIDragDropState {
 	bool active = false;      // true between DROP_BEGIN and DROP_COMPLETE/DROP_FILE
+	bool hasPosition = false; // true once SDL has delivered a DROP_POSITION event
 	float x = 0, y = 0;      // current cursor position during drag
 };
 extern ATUIDragDropState g_dragDropState;

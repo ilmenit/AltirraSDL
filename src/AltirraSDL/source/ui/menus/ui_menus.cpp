@@ -1071,8 +1071,15 @@ static void TapeAnalysisOpenCallback(void *, const char * const *filelist, int) 
 }
 
 static void RenderToolsMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
-	if (ImGui::MenuItem("Disk Explorer..."))
-		state.showDiskExplorer = true;
+	if (ImGui::BeginMenu("Explorers")) {
+		if (ImGui::MenuItem("Disk Explorer..."))
+			ATUIRequestDiskExplorer(window);
+		if (ImGui::MenuItem("Cartridge Explorer..."))
+			ATUIRequestCartridgeExplorer(window);
+		if (ImGui::MenuItem("XEX Explorer..."))
+			ATUIRequestXEXExplorer(window);
+		ImGui::EndMenu();
+	}
 
 	if (ImGui::MenuItem("Convert SAP to EXE...")) {
 		static const SDL_DialogFileFilter kSAPFilters[] = {

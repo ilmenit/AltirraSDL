@@ -64,6 +64,8 @@ public:
 	virtual void SetMsgFilter(IVDUIMessageFilterW32 *pFilter) = 0;
 
 	virtual bool IsSelectionPresent() = 0;
+	virtual bool IsSelectionMultiLine() = 0;
+	virtual bool IsPointWithinSelection(int x, int y) = 0;
 	virtual bool IsCutPossible() = 0;
 	virtual bool IsCopyPossible() = 0;
 	virtual bool IsPastePossible() = 0;
@@ -80,6 +82,7 @@ public:
 	virtual void SetCursorPos(int line, int offset) = 0;
 	virtual bool GetCursorPixelPos(int& clientX, int& clientY) = 0;
 	virtual void SetCursorPixelPos(int x, int y) = 0;
+	virtual void SetCursorPixelPosIfOutsideSelection(int x, int y) = 0;
 
 	virtual vdpoint32 GetScreenPosForContextMenu() = 0;
 

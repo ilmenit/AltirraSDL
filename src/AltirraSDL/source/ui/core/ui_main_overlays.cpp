@@ -127,6 +127,13 @@ void ATUIRenderExitConfirm(ATSimulator &sim, ATUIState &state) {
 	if (g_exitConfirmMsgUtf8.empty())
 		g_exitConfirmMsgUtf8 = "Any unsaved work in emulation memory will be lost.\n\nAre you sure you want to exit?";
 
+	if (ATUIDiskExplorerHasUnsavedChanges()) {
+		VDStringA message("Modified disk images in Explorer have not been saved. "
+			"Cancel and use File > Save disk image as... in each Explorer to keep those changes.\n\n");
+		message += g_exitConfirmMsgUtf8;
+		g_exitConfirmMsgUtf8 = message;
+	}
+
 	ATUIConfirmOptions opts;
 	opts.title        = "Confirm Exit";
 	opts.message      = g_exitConfirmMsgUtf8.c_str();
@@ -162,9 +169,15 @@ void ATUIRenderDragDropOverlay() {
 	DropTarget target = {};
 
 	ImVec2 p, s;
-	if (ATUIDiskExplorerGetDropRect(p, s)
+	if (ATUIXEXExplorerGetDropRect(p, s, cx, cy)
 		&& cx >= p.x && cy >= p.y && cx <= p.x + s.x && cy <= p.y + s.y) {
-		target = {p, s, "Import to disk image"};
+		target = {p, s, "Open in XEX Explorer"};
+	} else if (ATUICartridgeExplorerGetDropRect(p, s, cx, cy)
+		&& cx >= p.x && cy >= p.y && cx <= p.x + s.x && cy <= p.y + s.y) {
+		target = {p, s, "Open in Cart Explorer"};
+	} else if (ATUIDiskExplorerGetDropRect(p, s, cx, cy)
+		&& cx >= p.x && cy >= p.y && cx <= p.x + s.x && cy <= p.y + s.y) {
+		target = {p, s, "Open/import in Disk Explorer"};
 	} else if (ATUIFirmwareManagerGetDropRect(p, s)
 		&& cx >= p.x && cy >= p.y && cx <= p.x + s.x && cy <= p.y + s.y) {
 		target = {p, s, "Add firmware"};
@@ -205,4 +218,3 @@ void ATUIRenderDragDropOverlay() {
 	fg->AddText(ImVec2(labelPos.x + padding.x, labelPos.y + padding.y),
 		IM_COL32(255, 255, 255, 255), target.label);
 }
-

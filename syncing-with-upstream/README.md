@@ -7,7 +7,7 @@ Upstream Altirra has no public git repository — it is distributed as
 zipped source snapshots on
 [virtualdub.org/altirra.html](https://www.virtualdub.org/altirra.html).
 Each release is delivered as a self-contained folder (e.g.
-`Altirra-4.50-test18-src`).
+`Altirra-4.50-test19-src`).
 
 **The sync is strictly one-way: upstream → fork.** The upstream author
 does not accept patches from this fork, so none of the tooling below
@@ -19,7 +19,7 @@ Sync therefore works by **three-way comparison** between:
 
 | Role | Path (example)                         |
 |------|----------------------------------------|
-| OLD  | `../Altirra-4.50-test18-src` (last synced release)  |
+| OLD  | `../Altirra-4.50-test19-src` (last synced release)  |
 | NEW  | `../Altirra-4.50-test19-src` (target release)       |
 | FORK | `..` (the AltirraSDL root)                          |
 
@@ -97,7 +97,7 @@ cd AltirraSDL/syncing-with-upstream
 
 # Produce the reports/ folder for this sync
 ./tools/sync_diff.sh \
-    --old  ../../Altirra-4.50-test18-src \
+    --old  ../../Altirra-4.50-test19-src \
     --new  ../../Altirra-4.50-test19-src \
     --fork ../
 

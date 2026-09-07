@@ -17,6 +17,7 @@ This prerelease version:
    * Debugger: Added .custom command to dump the status of a custom device.
    * Debugger: @value now works within read access breakpoint conditions and actions.
    * Debugger: ln command has options for specific read/write/execute symbol lookups.
+   * Debugger: .vbxe_bl now has an option to raise the max blit list length.
    * Devices: Added Karin Maxi Drive.
    * Devices: Add Device UI now has a checkbox to show all devices for browsing.
    * Disk: Added option to reinterleave disks to 815 16:1 DD interleave.
@@ -53,17 +54,22 @@ This prerelease version:
    * Disk: Fixed Percom AT-88/AT-88SPD not saving 1795 FDC setting.
    * Disk Explorer: Fixed MAC/65 decoder mis-decoding some constants.
    * HDevice: Fixed a crash when write errors occurred during close operation.
+   * HDevice: Fixed matching of filenames with no extension in long filename mode.
    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.
    * Printer: Improved accuracy of 1020 command parsing and plot behavior.
    * Printer: Fixed crash when printing long underlined lines on a 1029.
    * Printer: Fixed 1029 handling of EOL characters in graphics mode.
    * Recorder: SAP recorder now uses prescribed text for unknown author/title.
    * SAP: Fixed converter causing player to swap channels when repeating a stereo type R file.
+   * Save States: Fixed occasional invalid save state errors when loading a save state with 16-bit linked channels in use.
    * UI: 65C816 linear memory setting is now disabled when Rapidus is enabled since Rapidus settings take precedence.
    * UI: An error is now reported interactively if a single instance launch fails because the existing instance is running elevated as admin.
    * UI: Reset Window Layout wasn't resetting undocked panes.
    * UI: Layout restore is more robust at fixing panes that are off-screen or unreasonably small.
    * UI: Fixed regression where Quit option in side panel didn't work.
+   * VBXE: P0-P3 registers now power up $00 to better match non-guaranteed hardware behavior.
+   * VBXE: Attribute map repeating above 43 cells is now emulated.
+   * VBXE: Fixed interaction between GTIA priorities and overlay priorities.
 
 Version 4.40 [December 31, 2025]
    [changes]

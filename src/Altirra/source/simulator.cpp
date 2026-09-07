@@ -335,6 +335,8 @@ public:
 
 	void ApplyHardwareState();
 	void FlushPokeyWriteLog();
+	sint32 DebugReadPokey(uint32 addr) const;
+	sint32 ReadPokey(uint32 addr);
 	bool WritePokeyWithLogging(uint32 addr, uint8 data);
 
 	ATSimulator& mParent;
@@ -762,6 +764,14 @@ bool ATSimulator::PrivateData::WritePokeyWithLogging(uint32 addr, uint8 data) {
 	mParent.mPokey.WriteByte(addr, data);
 
 	return true;
+}
+
+sint32 ATSimulator::PrivateData::DebugReadPokey(uint32 addr) const {
+	return mParent.mPokey.DebugReadByte(addr);
+}
+
+sint32 ATSimulator::PrivateData::ReadPokey(uint32 addr) {
+	return mParent.mPokey.ReadByte(addr);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -5485,13 +5495,6 @@ void ATSimulator::InitMemoryMap() {
 	}
 }
 
-// offsetof() is conditionally supported starting with C++17 and works fine, but
-// Clang still warns on it.
-#ifdef VD_COMPILER_CLANG
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Winvalid-offsetof"
-#endif
-
 void ATSimulator::RecreateMemLayerPOKEY() {
 	mpMemMan->DeleteLayerPtr(&mpMemLayerPOKEY);
 
@@ -5501,11 +5504,10 @@ void ATSimulator::RecreateMemLayerPOKEY() {
 	handlerTable.mpReadHandler = BindReadHandler<ATPokeyEmulator, &ATPokeyEmulator::ReadByte>;
 
 	if (mpPrivateData->mpPokeyWriteLogger) {
-		handlerTable.mpWriteHandler = [](void *context, uint32 addr, uint8 data) -> bool {
-			ATSimulator *self = (ATSimulator *)((char *)context - offsetof(ATSimulator, mPokey));
-
-			return self->mpPrivateData->WritePokeyWithLogging(addr, data);
-		};
+		handlerTable.mpThis = mpPrivateData;
+		handlerTable.BindDebugReadHandler<&PrivateData::DebugReadPokey>();
+		handlerTable.BindReadHandler<&PrivateData::ReadPokey>();
+		handlerTable.BindWriteHandler<&PrivateData::WritePokeyWithLogging>();
 	} else {
 		handlerTable.mpWriteHandler = BindWriteHandler<ATPokeyEmulator, &ATPokeyEmulator::WriteByte>;
 	}
@@ -5522,10 +5524,6 @@ void ATSimulator::RecreateMemLayerPOKEY() {
 	mpMemMan->EnableLayer(mpMemLayerGTIA, true);
 	mpMemMan->EnableLayer(mpMemLayerPOKEY, true);
 }
-
-#ifdef VD_COMPILER_CLANG
-#pragma clang diagnostic pop
-#endif
 
 void ATSimulator::ShutdownMemoryMap() {
 	if (mpUltimate1MB) {

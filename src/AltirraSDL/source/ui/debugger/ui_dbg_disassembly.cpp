@@ -1505,7 +1505,10 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 						PushAndJump(li.mAddress, li.mTargetAddress);
 				}
 				if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-					SetCursorLine(i, false);
+					if (!HasTextSelection()
+						|| i < std::min(mSelectionAnchorLine, mSelectionEndLine)
+						|| i > std::max(mSelectionAnchorLine, mSelectionEndLine))
+						SetCursorLine(i, false);
 					mContextLine = i;
 					mContextAddr = li.mAddress;
 					mContextTargetAddr = li.mTargetAddress;
@@ -1546,11 +1549,11 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 		if (ImGui::BeginPopup("DisasmCtx")) {
 			if (dbg) {
 				// Go to Source — matches Windows ID_CONTEXT_GOTOSOURCE
-				if (ImGui::MenuItem("Go to Source"))
+				if (ImGui::MenuItem("Go to Source", nullptr, false, !HasTextSelection()))
 					GoToSourceForAddress(mContextAddr);
 				ImGui::Separator();
 				// Set Next Statement — matches Windows SetPC
-				if (ImGui::MenuItem("Set Next Statement")) {
+				if (ImGui::MenuItem("Set Next Statement", nullptr, false, !HasTextSelection())) {
 					dbg->SetPC((uint16)(mContextAddr & 0xFFFF));
 				}
 				// Show Next Statement — jump to current PC
@@ -1571,7 +1574,7 @@ bool ATImGuiDisassemblyPaneImpl::Render() {
 					PushAndJump(mContextAddr, mContextTargetAddr);
 				}
 				ImGui::Separator();
-				if (ImGui::MenuItem("Toggle Breakpoint")) {
+				if (ImGui::MenuItem("Toggle Breakpoint", nullptr, false, !HasTextSelection())) {
 					dbg->ToggleBreakpoint(mContextAddr);
 				}
 				ImGui::Separator();

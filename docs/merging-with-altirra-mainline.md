@@ -289,6 +289,42 @@ helper on future merges.
 
 ---
 
+## Test19 local merge notes
+
+- POKEY save-state validation already accepts linked-channel borrow offsets
+  through 6. Keep the fork's reader-only validation and quad-pair serialization.
+- FX-80 selectable glyphs must preserve raw-dot geometry: enable proportional
+  handling explicitly, use positive advances, and retain the full 12-column
+  span for non-proportional styles. The ROM-to-user-RAM regression comparison
+  exercises both rendering paths, including expanded and proportional styles.
+- PDF tracked-character coordinates use the fork's physical dot centers.
+  Keep the radius subtraction in composite glyphs and the matching radius
+  correction in raw-dot TJ positioning. Copying test19's composite offset alone
+  misaligns these paths. Poppler render comparisons cover the combined fix.
+- VBXE priority combinations use named PF/PM masks; test19's numeric PF2/P2/P3
+  combinations do not match those bit assignments. Retain the hires priority
+  table, GTIA 9/11 input mask, and hires color-index swap in the shared renderer.
+- Use `VDNOINLINE` for the renderer lambda and non-static local `constexpr`
+  tables inside it. Do not reintroduce MSVC-only attributes or P2647-dependent
+  static locals on the supported compiler floor.
+- Keep the fork's existing PNG quick/filtered selection, PDF Unicode/font
+  validation, FX-80 ESC command fixes, printer wheel fix, and POSIX H: errors.
+- Follow-up review: FX-80 master select must explicitly clear proportional
+  mode after ESC p; a two-character spacing regression reproduces the omitted
+  reset. VBXE hires-to-lores RES conversion must write every temporary merge
+  pixel, including those without PF2, to avoid stale background/player bits.
+- Sanitizer follow-up: preserve empty-range guards in `vdstl_fastvector.h`;
+  C memory functions reject null arguments even when the count is zero.
+  Deflate match probes in `system/source/zip.cpp` must use
+  `VDReadUnalignedU32`, since match offsets are only byte-aligned. Both defects
+  were reproduced by GCC 12 UBSan before correction.
+
+Focused tests live in `tests/upstream`, enabled by `ALTIRRA_BUILD_TESTS`.
+The export validation uses Python's standard-library PNG decoder and Poppler
+for PDF geometry and selectable-text checks. Regression CI requires these
+tools with `ALTIRRA_REQUIRE_EXPORT_VALIDATION=ON`. These tests
+do not substitute for hardware-reference VBXE or native-platform UI testing.
+
 ## Test17 local merge notes
 
 The test16 → test17 merge preserves the fork's stricter printer corrections

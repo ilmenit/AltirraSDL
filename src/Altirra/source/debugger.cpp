@@ -10206,7 +10206,8 @@ void ATConsoleCmdDumpVBXEState(ATDebuggerCmdParser& parser) {
 void ATConsoleCmdDumpVBXEBL(ATDebuggerCmdParser& parser) {
 	ATDebuggerCmdAddress addrArg(true, false);
 	ATDebuggerCmdSwitch compactArg("c", false);
-	parser >> compactArg >> addrArg >> 0;
+	ATDebuggerCmdSwitchNumArg maxCountArg("m", 1, 65536, 256);
+	parser >> compactArg >> maxCountArg >> addrArg >> 0;
 
 	ATVBXEEmulator *vbxe = g_sim.GetVBXE();
 
@@ -10225,9 +10226,9 @@ void ATConsoleCmdDumpVBXEBL(ATDebuggerCmdParser& parser) {
 		if (localAddr < 0)
 			throw MyError("Address does not correspond to a MEMAC window or a VBXE local address (v:offset).");
 
-		vbxe->DumpBlitList(localAddr, compactArg);
+		vbxe->DumpBlitList(localAddr, compactArg, maxCountArg.GetValue());
 	} else {
-		vbxe->DumpBlitList(-1, compactArg);
+		vbxe->DumpBlitList(-1, compactArg, maxCountArg.GetValue());
 	}
 }
 

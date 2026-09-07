@@ -2026,7 +2026,7 @@ LRESULT ATPrinterOutputWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 						POINT pt = {x, y};
 
 						if (!mpGraphicWindow && ScreenToClient(mhwndTextEditor, &pt))
-							mpTextEditor->SetCursorPixelPos(pt.x, pt.y);
+							mpTextEditor->SetCursorPixelPosIfOutsideSelection(pt.x, pt.y);
 					}
 
 					if (mpGraphicWindow)

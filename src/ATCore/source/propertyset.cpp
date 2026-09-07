@@ -120,6 +120,13 @@ void ATPropertySet::Unset(const char *name) {
 	if (it != mProperties.end()) {
 		const char *name = it->first;
 
+		if (it->second.mType == kATPropertyType_String16) {
+			wchar_t *s = it->second.mValStr16;
+			it->second.mValStr16 = nullptr;
+
+			delete[] s;
+		}
+
 		mProperties.erase(it);
 		delete[] name;
 	}
@@ -848,4 +855,3 @@ bool ATPropertySet::IsValidFPNumber(const wchar_t *s) {
 	// all good
 	return true;
 }
-

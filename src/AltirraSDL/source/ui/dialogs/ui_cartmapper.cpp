@@ -54,7 +54,7 @@ struct ATCartridgeMapperDialogState {
 static ATCartridgeMapperDialogState g_cartMapperState;
 
 // Cartridge mapper mode name — matches Windows uicartmapper.cpp GetModeName()
-static const char *ATUIGetCartridgeModeName(int mode) {
+const char *ATUIGetCartridgeModeName(int mode) {
 	switch(mode) {
 		case kATCartridgeMode_8K:                    return "8K";
 		case kATCartridgeMode_16K:                   return "16K";
@@ -166,7 +166,7 @@ static const char *ATUIGetCartridgeModeName(int mode) {
 }
 
 // Cartridge mapper mode description — matches Windows uicartmapper.cpp GetModeDesc()
-static const char *ATUIGetCartridgeModeDesc(int mode) {
+const char *ATUIGetCartridgeModeDesc(int mode) {
 	switch(mode) {
 		case kATCartridgeMode_8K:                    return "8K fixed";
 		case kATCartridgeMode_16K:                   return "16K fixed";

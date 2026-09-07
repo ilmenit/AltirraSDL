@@ -28,6 +28,41 @@ void ATCreateDevicePrinterFX80(const ATPropertySet& pset, IATDevice **dev) {
 
 extern const ATDeviceDefinition g_ATDeviceDefPrinterFX80 = { "fx80", "fx80", L"Epson FX-80/FX-80+ 80-Column Printer", ATCreateDevicePrinterFX80, 0, "parallel" };
 
+constinit const uint16 ATDevicePrinterFX80::kIntlToUnicodeTable[32] {
+0x00E0,		// 00 Latin small letter A with grave
+0x00E8,		// 01 Latin small letter E with grave
+0x00F9,		// 02 Latin small letter U with grave
+0x00F2,		// 03 Latin small letter O with grave
+0x00EC,		// 04 Latin small letter I with grave
+0x00B0,		// 05 Degree sign
+0x00A3,		// 06 Pound sign
+0x00A1,		// 07 Inverted exclamation mark
+0x00BF,		// 08 Inverted question mark
+0x00D1,		// 09 Latin capital letter N with tilde
+0x00F1,		// 0A Latin small letter N with tilde
+0x00A4,		// 0B Currency sign
+0x20A7,		// 0C Peseta sign
+0x00C5,		// 0D Latin capital letter A with ring above
+0x0227,		// 0E Latin small letter A with dot above
+0x00E7,		// 0F Latin small letter C with cedilla
+0x00A7,		// 10 Section sign
+0x00DF,		// 11 Latin small letter sharp S
+0x00C6,		// 12 Latin capital letter Ae
+0x00E6,		// 13 Latin small letter Ae
+0x00D8,		// 14 Latin capital letter O with stroke
+0x00F8,		// 15 Latin small letter O with stroke
+0x00A8,		// 16 Diaeresis
+0x00C4,		// 17 Latin capital letter A with diaeresis
+0x00D6,		// 18 Latin capital letter O with diaeresis
+0x00DC,		// 19 Latin capital letter U with diaeresis
+0x00E4,		// 1A Latin small letter A with diaeresis
+0x00F6,		// 1B Latin small letter O with diaeresis
+0x00FC,		// 1C Latin small letter U with diaeresis
+0x00C9,		// 1D Latin capital letter E with acute
+0x00E9,		// 1E Latin small letter E with acute
+0x00A5,		// 1F Yen sign
+};
+
 ATDevicePrinterFX80::ATDevicePrinterFX80() {
 	SetSaveStateAgnostic();
 }
@@ -61,6 +96,103 @@ void ATDevicePrinterFX80::RecreateGraphicsOutput() {
 	spec.mNumPins = 9;
 	spec.mBaselinePin = 2;
 	mpGraphicsOutput = GetService<IATPrinterOutputManager>()->CreatePrinterGraphicalOutput(g_ATDeviceDefPrinterFX80.mpName, spec);
+	IATPrinterGraphicalOutput::CharColumn charColumns[24];
+
+	for(int uniCharSet = 0; uniCharSet < +UniCharSetIndex::Count; ++uniCharSet) {
+		double pitch = 0;
+		double advance = 0;
+		bool prop = false;
+		bool emphasized = false;
+
+		switch(uniCharSet % +UniCharSetIndex::PitchCount) {
+			case +UniCharSetIndex::Normal:
+				pitch = kMMPerHorizUnit<double> * 6.0;
+				advance = kMMPerHorizUnit<double> * kWidthUnitsPerCharPica;
+				break;
+
+			case +UniCharSetIndex::Proportional:
+				// MERGE NOTE: test19 never enabled proportional metrics.
+				prop = true;
+				[[fallthrough]];
+			case +UniCharSetIndex::Emphasized:
+				pitch = kMMPerHorizUnit<double> * 6.0;
+				advance = kMMPerHorizUnit<double> * kWidthUnitsPerCharPica;
+				emphasized = true;
+				break;
+
+			case +UniCharSetIndex::Elite:
+				pitch = kMMPerHorizUnit<double> * 4.0;
+				advance = kMMPerHorizUnit<double> * kWidthUnitsPerCharElite;
+				break;
+
+			case +UniCharSetIndex::Compressed:
+				pitch = kMMPerHorizUnit<double> * 3.0;
+				advance = kMMPerHorizUnit<double> * kWidthUnitsPerCharCompressed;
+				break;
+
+			case +UniCharSetIndex::EliteCompressed:
+				pitch = kMMPerHorizUnit<double> * 3.0;
+				advance = kMMPerHorizUnit<double> * kWidthUnitsPerCharCompressedElite;
+				break;
+		}
+
+		bool expanded = false;
+		if (uniCharSet >= +UniCharSetIndex::Expanded) {
+			expanded = true;
+			pitch *= 2;
+			advance *= 2;
+		}
+
+		for(int ch = 0; ch < 256; ++ch) {
+			uint32 uniChar = ch & 127;
+
+			if (uniChar < 32)
+				uniChar = kIntlToUnicodeTable[uniChar];
+			else if (uniChar == 127)
+				uniChar = 0x0030;
+
+			int startCol = g_ATPrinterFontFX80.mPropStartStop[ch][0];
+			int stopCol = g_ATPrinterFontFX80.mPropStartStop[ch][1];
+			const auto& dotColumns = g_ATPrinterFontFX80.mFont[ch];
+			int numCharCols = 0;
+			// Keep dot positions identical to the raw-dot rendering path.
+			int xOffset = 0;
+			if (!prop) {
+				startCol = 0;
+				stopCol = 11;
+			}
+			uint16 prevDots = 0;
+
+			for(int col = startCol; col <= stopCol; ++col) {
+				uint16 dots = dotColumns[col];
+
+				if (expanded || emphasized) {
+					uint16 newDots = dots | prevDots;
+					prevDots = dots;
+					dots = newDots;
+				}
+
+				if (dots) {
+					double x = pitch * (col - xOffset);
+					charColumns[numCharCols].mXOffset = (float)x;
+					charColumns[numCharCols].mDots = dots;
+					++numCharCols;
+
+					if (emphasized) {
+						charColumns[numCharCols].mXOffset = (float)(x + pitch * 0.5);
+						charColumns[numCharCols].mDots = dots;
+						++numCharCols;
+					}
+				}
+			}
+
+			mpGraphicsOutput->DefineChar(
+				prop ? (advance / 12.0) * (stopCol + 1 - startCol) : advance,
+				vdspan(charColumns, numCharCols),
+				uniChar
+			);
+		}
+	}
 }
 
 void ATDevicePrinterFX80::Shutdown() {
@@ -176,6 +308,7 @@ void ATDevicePrinterFX80::ResetState() {
 	mbItalic = false;
 	mbSuperscript = false;
 	mbSubscript = false;
+	mbUserCharsEnabled = false;
 
 	mXPos = 0;
 	mYPos = 0;
@@ -240,6 +373,7 @@ void ATDevicePrinterFX80::ProcessChar(uint8 ch) {
 
 		case 0x0E:	// SO	expanded mode on (1-line)
 			mbExpandedCurrentLine = true;
+			UpdateActiveState();
 			return;
 
 		case 0x0F:	// SI	compressed on
@@ -266,6 +400,7 @@ void ATDevicePrinterFX80::ProcessChar(uint8 ch) {
 
 		case 0x14:	// DC4	expanded mode off (1-line)
 			mbExpandedCurrentLine = false;
+			UpdateActiveState();
 			return;
 
 		case 0x18:	// CAN	cancel text in line buffer
@@ -890,6 +1025,8 @@ void ATDevicePrinterFX80::ProcessCmdMasterSelect() {
 
 	const uint8 mode = mCommandArgBuf[0];
 
+	// MERGE NOTE: honor the master-select contract above even after ESC p.
+	mbProportional = false;
 	mbElite = (mode & 0x01) != 0;
 	mbCompressed = (mode & 0x04) != 0;
 	mbEmphasized = (mode & 0x08) != 0;
@@ -1188,27 +1325,46 @@ void ATDevicePrinterFX80::UpdateActiveState() {
 	// Super/subscript implies Double Strike.
 
 	mActiveCharAttr = {};
+	mActiveUniCharSet = {};
 
-	if (mbElite)
-		mActiveCharAttr |= CharAttr::Elite;
-	else if (mbProportional)
+	// - Normal
+	// - Elite
+	// - Proportional
+	// - Emphasized
+	// - Compressed
+	// - Elite Compressed
+	if (mbElite) {
+		if (mbCompressed) {
+			mActiveCharAttr |= CharAttr::Compressed | CharAttr::Elite;
+			mActiveUniCharSet = UniCharSetIndex::EliteCompressed;
+		} else {
+			mActiveCharAttr |= CharAttr::Elite;
+			mActiveUniCharSet = UniCharSetIndex::Elite;
+		}
+	} else if (mbProportional) {
 		mActiveCharAttr |= CharAttr::Proportional | CharAttr::Emphasized;
-	else if (mbEmphasized)
+		mActiveUniCharSet = UniCharSetIndex::Proportional;
+	} else if (mbEmphasized) {
 		mActiveCharAttr |= CharAttr::Emphasized;
-
-	if (!(mActiveCharAttr & CharAttr::Emphasized) && mbCompressed)
+		mActiveUniCharSet = UniCharSetIndex::Emphasized;
+	} else if (mbCompressed) {
 		mActiveCharAttr |= CharAttr::Compressed;
+		mActiveUniCharSet = UniCharSetIndex::Compressed;
+	}
 
 	// Superscript and subscript rely on double strike to work.
-	if (mbSuperscript)
+	if (mbSuperscript) {
 		mActiveCharAttr |= CharAttr::Superscript | CharAttr::DoubleStrike;
-	else if (mbSubscript)
+	} else if (mbSubscript) {
 		mActiveCharAttr |= CharAttr::Subscript | CharAttr::DoubleStrike;
-	else if (mbDoubleStrike)
+	} else if (mbDoubleStrike) {
 		mActiveCharAttr |= CharAttr::DoubleStrike;
+	}
 
-	if (mbExpandedCurrentLine)
+	if (mbExpandedCurrentLine) {
 		mActiveCharAttr |= CharAttr::Expanded;
+		mActiveUniCharSet += UniCharSetIndex::Expanded;
+	}
 
 	if (mbUnderline)
 		mActiveCharAttr |= CharAttr::Underline;
@@ -1350,57 +1506,79 @@ void ATDevicePrinterFX80::FlushPrintBuffer() {
 
 			// for the second and third passes, skip chars that don't have the required attribute bit
 			if ((ch.mAttributes & requiredAttrBit) == requiredAttrBit) {
-				uint32 prevPins = 0;
-				uint32 underlinePins = 0;
-				uint32 activeUnderlinePins = 0;
+				// if we have no underline, double strike, or super/subscript, we can print a char directly instead of dots
+				if (!mbUserCharsEnabled && pass == 0 && !(ch.mAttributes & (CharAttr::DoubleStrike | CharAttr::Subscript | CharAttr::Superscript))) {
+					uint32 pch = ch.mChar;
 
-				if (doingUnderline) {
-					underlinePins = 1;
-					activeUnderlinePins = mbSlowPrintSpeed && (xpos & 1) ? 0 : 1;
-				}
+					if (+(ch.mAttributes & CharAttr::Proportional))
+						pch += (uint32)+UniCharSetIndex::Proportional << 8;
+					else if (+(ch.mAttributes & CharAttr::Emphasized))
+						pch += (uint32)+UniCharSetIndex::Emphasized << 8;
+					else {
+						if (+(ch.mAttributes & CharAttr::Elite))
+							pch += (uint32)+UniCharSetIndex::Elite << 8;
 
-				for(int i = startColumn; i <= stopColumn; ++i) {
-					uint32 pins = 0;
-
-					// if not at half speed, underline only every other pin
-					if (doingUnderline) {
-						pins = activeUnderlinePins;
-
-						if (!mbSlowPrintSpeed)
-							activeUnderlinePins ^= underlinePins;
-					} else {
-						pins = charDat[i];
-
-						if (+(ch.mAttributes & (CharAttr::Emphasized | CharAttr::Expanded))) {
-							const uint32 newPins = pins | prevPins;
-
-							prevPins = pins;
-							pins = newPins;
-						}
-
-						if (+(ch.mAttributes & (CharAttr::Subscript | CharAttr::Superscript))) {
-							// select even/odd pins
-							if (!pass)
-								pins <<= 1;
-
-							// compress pins
-							pins = (pins & 0x100)
-								+ ((pins & 0x40) << 1)
-								+ ((pins & 0x10) << 2)
-								+ ((pins & 0x4) << 3)
-								+ ((pins & 0x1) << 4);
-
-							// shift pins down for subscript
-							if (+(ch.mAttributes & CharAttr::Subscript))
-								pins >>= 4;
-						}
+						if (+(ch.mAttributes & CharAttr::Compressed))
+							pch += (uint32)+UniCharSetIndex::Compressed << 8;
 					}
 
-					if (pins) {
-						mpGraphicsOutput->Print(paperXPos + paperDXPos * (double)i, pins);
+					if (+(ch.mAttributes & CharAttr::Expanded))
+						pch += (uint32)+UniCharSetIndex::Expanded << 8;
 
-						if (+(ch.mAttributes & CharAttr::Emphasized))
-							mpGraphicsOutput->Print(paperXPos + paperDXPos * ((double)i + 0.5), pins);
+					mpGraphicsOutput->PrintChar(paperXPos, pch);
+				} else {
+					uint32 prevPins = 0;
+					uint32 underlinePins = 0;
+					uint32 activeUnderlinePins = 0;
+
+					if (doingUnderline) {
+						underlinePins = 1;
+						activeUnderlinePins = mbSlowPrintSpeed && (xpos & 1) ? 0 : 1;
+					}
+
+					for(int i = startColumn; i <= stopColumn; ++i) {
+						uint32 pins = 0;
+
+						// if not at half speed, underline only every other pin
+						if (doingUnderline) {
+							pins = activeUnderlinePins;
+
+							if (!mbSlowPrintSpeed)
+								activeUnderlinePins ^= underlinePins;
+						} else {
+							pins = charDat[i];
+
+							if (+(ch.mAttributes & (CharAttr::Emphasized | CharAttr::Expanded))) {
+								const uint32 newPins = pins | prevPins;
+
+								prevPins = pins;
+								pins = newPins;
+							}
+
+							if (+(ch.mAttributes & (CharAttr::Subscript | CharAttr::Superscript))) {
+								// select even/odd pins
+								if (!pass)
+									pins <<= 1;
+
+								// compress pins
+								pins = (pins & 0x100)
+									+ ((pins & 0x40) << 1)
+									+ ((pins & 0x10) << 2)
+									+ ((pins & 0x4) << 3)
+									+ ((pins & 0x1) << 4);
+
+								// shift pins down for subscript
+								if (+(ch.mAttributes & CharAttr::Subscript))
+									pins >>= 4;
+							}
+						}
+
+						if (pins) {
+							mpGraphicsOutput->Print(paperXPos + paperDXPos * (double)i, pins);
+
+							if (+(ch.mAttributes & CharAttr::Emphasized))
+								mpGraphicsOutput->Print(paperXPos + paperDXPos * ((double)i + 0.5), pins);
+						}
 					}
 				}
 			}

@@ -22,6 +22,8 @@
 
 #include <SDL3/SDL.h>
 
+// notifyCancellation opts into the SDL cancellation callback (an empty list).
+// Existing callers keep their historical success-only callback behavior.
 void ATUIShowOpenFileDialog(
 	long nKey,
 	SDL_DialogFileCallback callback,
@@ -30,7 +32,8 @@ void ATUIShowOpenFileDialog(
 	const SDL_DialogFileFilter *filters,
 	int nfilters,
 	bool allow_many,
-	const char *fallbackLocation = nullptr);
+	const char *fallbackLocation = nullptr,
+	bool notifyCancellation = false);
 
 void ATUIShowSaveFileDialog(
 	long nKey,
@@ -39,7 +42,8 @@ void ATUIShowSaveFileDialog(
 	SDL_Window *window,
 	const SDL_DialogFileFilter *filters,
 	int nfilters,
-	const char *fallbackLocation = nullptr);
+	const char *fallbackLocation = nullptr,
+	bool notifyCancellation = false);
 
 void ATUIShowOpenFolderDialog(
 	long nKey,
@@ -47,7 +51,8 @@ void ATUIShowOpenFolderDialog(
 	void *userdata,
 	SDL_Window *window,
 	const char *fallbackLocation = nullptr,
-	bool allow_many = false);
+	bool allow_many = false,
+	bool notifyCancellation = false);
 
 void ATUIRenderFileDialogFallback();
 

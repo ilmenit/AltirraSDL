@@ -1,0 +1,84 @@
+name: Upstream regressions
+
+on:
+  push:
+    branches: [main, net-play]
+  pull_request:
+    branches: [main, net-play]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [false, true]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and mandatory export validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-12 python3-pip poppler-utils pkg-config
+          python3 -m pip install 'cmake>=3.24,<4.4'
+      - name: Configure regression build
+        shell: bash
+        env:
+          SANITIZER: ${{ matrix.sanitizer }}
+        run: |
+          flags=()
+          if [[ "$SANITIZER" == true ]]; then
+            flags+=('-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer')
+            flags+=('-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer')
+            flags+=('-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined')
+          fi
+          cmake -S . -B build/upstream-regressions -G Ninja \
+            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DALTIRRA_BUILD_TESTS=ON \
+            -DALTIRRA_SDL3=OFF \
+            -DALTIRRA_REQUIRE_EXPORT_VALIDATION=ON -DALTIRRA_FETCH_SDL3=ON \
+            -DALTIRRA_SKIP_SDL3_IMAGE=ON -DALTIRRA_ENABLE_FFMPEG_RECORDING=OFF \
+            -DSDL_UNIX_CONSOLE_BUILD=ON \
+            -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_ALSA=OFF \
+            -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_KMSDRM=OFF \
+            "${flags[@]}"
+      - name: Build production-code regression targets
+        run: cmake --build build/upstream-regressions --target altirra-upstream-regression-test altirra-vbxe-regression-test --parallel 2
+      - name: Run regressions including PDF rendering
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build/upstream-regressions -R '^upstream-' --output-on-failure --no-tests=error
+
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            preset: macos-release
+          - os: windows-latest
+            preset: windows-sdl-release
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install compatible CMake
+        run: python -m pip install "cmake>=3.24,<4.4"
+      - name: Configure native regression targets
+        run: cmake --preset ${{ matrix.preset }} -DALTIRRA_BUILD_TESTS=ON -DALTIRRA_SKIP_SDL3_IMAGE=ON -DALTIRRA_ENABLE_FFMPEG_RECORDING=OFF
+      - name: Build native regression targets
+        run: cmake --build --preset ${{ matrix.preset }} --config Release --target altirra-upstream-regression-test altirra-vbxe-regression-test --parallel 2
+      # PDF validation is mandatory in both Linux jobs above. These jobs
+      # specifically exercise native C++ code and platform libraries.
+      - name: Run native C++ regressions
+        run: ctest --test-dir build/${{ matrix.preset }} -C Release -R '^upstream-(regressions|vbxe)$' --output-on-failure --no-tests=error

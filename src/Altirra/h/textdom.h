@@ -145,11 +145,11 @@ namespace nsVDTextDOM {
 
 		int GetParagraphCount() const { return (int)mParagraphs.size(); }
 
-		const Paragraph *GetParagraph(int para) { return (unsigned)para < mParagraphs.size() ? mParagraphs[para] : NULL; }
+		const Paragraph *GetParagraph(int para) const { return (unsigned)para < mParagraphs.size() ? mParagraphs[para] : NULL; }
 		int GetParagraphFromPos(int pos);
-		int GetParagraphFromY(int y);
+		int GetParagraphFromY(int y) const;
 
-		void GetParagraphText(int paraIdx, vdfastvector<wchar_t>& buf);
+		void GetParagraphText(int paraIdx, vdfastvector<wchar_t>& buf) const;
 		void GetText(const Iterator& it1, const Iterator& it2, bool forceCRLF, vdfastvector<wchar_t>& buf);
 
 		void Insert(const Iterator& it, const wchar_t *text, size_t len, Iterator *after);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(Altirra VERSION 4.50.18 LANGUAGES C CXX)
+project(Altirra VERSION 4.50.19 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -791,10 +791,11 @@ endif()
 # build stays as small and quiet as before; turn ON when developing
 # netplay or running CI: -DALTIRRA_BUILD_TESTS=ON.
 option(ALTIRRA_BUILD_TESTS
-    "Build netplay self-test executables and wire them to ctest." OFF)
+    "Build netplay, media, bridge and upstream regression tests for CTest." OFF)
 if(ALTIRRA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(src/AltirraSDL/source/netplay/tests)
     add_subdirectory(src/AltirraSDL/source/media/tests)
     add_subdirectory(src/AltirraSDL/source/bridge/tests)
+    add_subdirectory(tests/upstream)
 endif()
