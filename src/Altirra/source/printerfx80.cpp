@@ -189,7 +189,8 @@ void ATDevicePrinterFX80::RecreateGraphicsOutput() {
 			mpGraphicsOutput->DefineChar(
 				prop ? (advance / 12.0) * (stopCol + 1 - startCol) : advance,
 				vdspan(charColumns, numCharCols),
-				uniChar
+				uniChar,
+				uniCharSet
 			);
 		}
 	}

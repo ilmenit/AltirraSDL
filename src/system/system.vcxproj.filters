@@ -30,9 +30,6 @@
     <ClCompile Include="source\bitmath.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\cache.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="source\cmdline.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -43,9 +40,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\debug.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="source\debugx86.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\Error.cpp">
@@ -117,9 +111,6 @@
     <ClCompile Include="source\time.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\tls.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="source\vdalloc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -176,9 +167,6 @@
     <ClInclude Include="..\h\vd2\system\bitmath.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\h\vd2\system\cache.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\h\vd2\system\cmdline.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -189,9 +177,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\vd2\system\debug.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\h\vd2\system\debugx86.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\VD2\system\error.h">
@@ -263,16 +248,10 @@
     <ClInclude Include="..\h\vd2\system\time.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\h\VD2\system\tls.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\h\vd2\system\unknown.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\VD2\system\vdalloc.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\h\VD2\system\VDQueue.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\VD2\system\VDRingBuffer.h">
@@ -375,6 +354,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\vd2\system\vdstl_span.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\h\vd2\system\vdstl_any.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\h\vd2\system\vectors_double.h">

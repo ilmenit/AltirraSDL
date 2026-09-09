@@ -6,6 +6,7 @@
 #   OUTPUT_FILE  — absolute path to the generated header
 #   SOURCE_DIR   — repo root (for git)
 #   PROJECT_VER  — project version string (e.g. "4.50")
+#   VERSION_FILE — optional human-readable build information file
 
 # ── Git commit ───────────────────────────────────────────────────────────
 find_package(Git QUIET)
@@ -54,3 +55,12 @@ file(WRITE "${OUTPUT_FILE}"
 
 #endif
 ")
+
+if(DEFINED VERSION_FILE)
+    file(WRITE "${VERSION_FILE}"
+"AltirraSDL ${PROJECT_VER}
+Built: ${BUILD_DATETIME}
+Commit: ${GIT_COMMIT_SHORT}
+Commit (full): ${GIT_COMMIT_FULL}
+")
+endif()

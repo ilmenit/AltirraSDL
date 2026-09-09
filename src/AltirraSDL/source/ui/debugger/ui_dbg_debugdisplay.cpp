@@ -34,9 +34,9 @@ static constexpr int kDebugDisplayH = 240;
 
 // =========================================================================
 // Null IVDVideoDisplay — minimal no-op implementation used by ATDebugDisplay
-// to avoid needing a full display pipeline.  ATDebugDisplay::Update() calls
-// SetSourcePersistent() at the end; we simply ignore it and read the
-// protected mDisplayBuffer directly via a subclass.
+// to avoid needing a full display pipeline. ATDebugDisplay::Update() calls
+// SetSourcePersistent() at the end; the pane reads the resulting frame through
+// ATDebugDisplay's stable presentation accessors.
 // =========================================================================
 
 class ATNullVideoDisplay final : public IVDVideoDisplay {
@@ -87,17 +87,6 @@ public:
 };
 
 // =========================================================================
-// ATDebugDisplay subclass that exposes the protected buffer
-// =========================================================================
-
-class ATDebugDisplayImGui : public ATDebugDisplay {
-public:
-	const VDPixmapBuffer& GetBuffer() const { return mDisplayBuffer; }
-	const uint32 *GetPalette() const { return mPalette; }
-	sint32 GetDLAddrOverride() const { return mDLAddrOverride; }
-	sint32 GetPFAddrOverride() const { return mPFAddrOverride; }
-};
-
 // =========================================================================
 // Debug Display pane
 // =========================================================================
@@ -125,7 +114,7 @@ private:
 	void SetFilterMode(IVDVideoDisplay::FilterMode mode);
 
 	ATNullVideoDisplay mNullDisplay;
-	ATDebugDisplayImGui mDebugDisplay;
+	ATDebugDisplay mDebugDisplay;
 
 	SDL_Texture *mpTexture = nullptr;
 	SDL_Texture *mpBicubicTexture = nullptr;
@@ -195,7 +184,7 @@ void ATImGuiDebugDisplayPaneImpl::RebuildDisplay() {
 }
 
 void ATImGuiDebugDisplayPaneImpl::UpdateTexture() {
-	const VDPixmapBuffer& buf = mDebugDisplay.GetBuffer();
+	const VDPixmapBuffer& buf = mDebugDisplay.GetDisplayBuffer();
 	const uint32 *palette = mDebugDisplay.GetPalette();
 
 	if (buf.w <= 0 || buf.h <= 0)
@@ -517,7 +506,7 @@ bool ATImGuiDebugDisplayPaneImpl::SetFilterModeForTest(int mode,
 bool ATImGuiDebugDisplayPaneImpl::SetPaletteModeForTest(int mode,
 	VDStringA& outState)
 {
-	if (mode < 0 || mode >= ATDebugDisplay::kPaletteModeCount) {
+	if (mode < 0 || mode > (int)ATDebugDisplay::PaletteMode::ColorTrace) {
 		DescribeForTest(outState);
 		return false;
 	}
@@ -580,10 +569,10 @@ bool ATImGuiDebugDisplayPaneImpl::Render() {
 		ImGui::SameLine();
 
 		// Palette mode — query authoritative state from mDebugDisplay
-		const char *palModes[] = { "Registers", "Analysis" };
+		const char *palModes[] = { "Registers", "Analysis", "Color trace" };
 		int palCurrent = (int)mDebugDisplay.GetPaletteMode();
 		ImGui::SetNextItemWidth(100);
-		if (ImGui::Combo("##pal", &palCurrent, palModes, 2)) {
+		if (ImGui::Combo("##pal", &palCurrent, palModes, 3)) {
 			mDebugDisplay.SetPaletteMode((ATDebugDisplay::PaletteMode)palCurrent);
 			mbNeedsRebuild = true;
 		}
@@ -651,6 +640,11 @@ bool ATImGuiDebugDisplayPaneImpl::Render() {
 			mDebugDisplay.Update();
 			UpdateTexture();
 		}
+		if (ImGui::MenuItem("Player/Missile Graphics", nullptr,
+				mDebugDisplay.GetPMGraphicsEnabled())) {
+			mDebugDisplay.SetPMGraphicsEnabled(!mDebugDisplay.GetPMGraphicsEnabled());
+			mbNeedsRebuild = true;
+		}
 
 		ImGui::Separator();
 
@@ -668,13 +662,18 @@ bool ATImGuiDebugDisplayPaneImpl::Render() {
 
 		const auto curPal = mDebugDisplay.GetPaletteMode();
 		if (ImGui::MenuItem("Current Register Values", nullptr,
-				curPal == ATDebugDisplay::kPaletteMode_Registers)) {
-			mDebugDisplay.SetPaletteMode(ATDebugDisplay::kPaletteMode_Registers);
+				curPal == ATDebugDisplay::PaletteMode::CurrentRegisters)) {
+			mDebugDisplay.SetPaletteMode(ATDebugDisplay::PaletteMode::CurrentRegisters);
 			mbNeedsRebuild = true;
 		}
 		if (ImGui::MenuItem("Analysis Palette", nullptr,
-				curPal == ATDebugDisplay::kPaletteMode_Analysis)) {
-			mDebugDisplay.SetPaletteMode(ATDebugDisplay::kPaletteMode_Analysis);
+				curPal == ATDebugDisplay::PaletteMode::Analysis)) {
+			mDebugDisplay.SetPaletteMode(ATDebugDisplay::PaletteMode::Analysis);
+			mbNeedsRebuild = true;
+		}
+		if (ImGui::MenuItem("Color Trace", nullptr,
+				curPal == ATDebugDisplay::PaletteMode::ColorTrace)) {
+			mDebugDisplay.SetPaletteMode(ATDebugDisplay::PaletteMode::ColorTrace);
 			mbNeedsRebuild = true;
 		}
 

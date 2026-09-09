@@ -115,6 +115,19 @@ jobs:
           name: AltirraSDL-windows-x86_64
           path: dist
 
+      - name: Use stable nightly filename
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          matches=(dist/AltirraSDL-*-windows.zip)
+          if [ "${#matches[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one Windows zip, found ${#matches[@]}" >&2
+            exit 1
+          fi
+          mv "${matches[0]}" dist/AltirraSDL-nightly-windows-x86_64.zip
+          ls -lh dist/
+
       - name: Delete stale Windows assets from nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

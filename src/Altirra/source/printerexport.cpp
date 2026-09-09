@@ -231,10 +231,6 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		true);
 
 
-	// reserve object space for character print font object (7)
-	objectOffsets.push_back((uint32)textOut.Pos());
-	const uint32 print2Obj = (uint32)objectOffsets.size();
-
 	// add blend state object
 	objectOffsets.push_back((uint32)textOut.Pos());
 	const uint32 blendStateObj = (uint32)objectOffsets.size();
@@ -243,19 +239,59 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 	textOut.PutLine("<< /Type /ExtGState /BM /Darken >>");
 	textOut.PutLine("endobj");
 
-	vdfastvector<uint32> assignedChars;
-	vdfastvector<sint32> assignedCharLookup;
+	struct AssignedChar {
+		sint32 mCharSetIndex = -1;
+		uint32 mChar = 0;
+	};
+
+	vdvector<AssignedChar> assignedCharLookup;
+
+	struct AssignedCharSet {
+		uint32 mCharSetId;
+		uint32 mObjectId;
+		vdfastvector<uint32> mAssignedChars;
+
+		// Maximum character bound for the character set, in millimeters, with
+		// (0,0) at the character origin on the baseline.
+		vdrect32f mCharBoundsMM;
+
+		// The em-square size of the generated font at the desired size, in
+		// millimeters.
+		float mFontEmSizeMM;
+
+		// The PDF font size necessary to achieve the desired em-square size
+		// in mm.
+		float mFontSize;
+
+		// Conversion from mm to text units, which are 1000 glyph units.
+		float mMmToTextUnits;
+	};
+
+	vdvector<AssignedCharSet> assignedCharSets;
 
 	// render pages
-	uint32 basePageObj = (uint32)objectOffsets.size() + 1;
-
 	static constexpr float mmToPoints = 72.0f / 25.4f;
 	const float pageWidthMM = suggestedPageWidthMM > 0 ? suggestedPageWidthMM : spec.mPageWidthMM;
 	const float pageHeightMM = suggestedPageHeightMM > 0 ? suggestedPageHeightMM : 11.0f * 25.4f;
 	const float headHeightMM = spec.mDotRadiusMM * 2 + spec.mVerticalDotPitchMM * (float)(spec.mNumPins - 1);
 	const int numPages = std::max(1, (int)ceilf(output.GetDocumentBounds().bottom / pageHeightMM));
 
-	const float lineToBaselineAdjustMM = spec.mbBit0Top ? headHeightMM - spec.mDotRadiusMM : spec.mDotRadiusMM;
+	// The dot font has its baseline tangent to the bottom of the bottom pin.
+	const float dotLineToBaselineAdjustMM = (spec.mbBit0Top ? headHeightMM : 0);
+
+	// Character fonts have their baseline adjusted to be more natural taking descenders into account, so they
+	// require an additional vertical offset for their elevated baseline.
+	const int ascentPins = spec.mbBit0Top ? spec.mBaselinePin + 1 : spec.mNumPins - spec.mBaselinePin;
+	const int descentPins = spec.mNumPins - ascentPins;
+	// Keep the rasterized selectable glyph tangent to the corresponding dot
+	// output. The TrueType outline begins at the baseline edge, so its PDF
+	// baseline needs a small inward adjustment for the dot radius.
+	const float charLineToBaselineAdjustMM = dotLineToBaselineAdjustMM - (float)descentPins * spec.mVerticalDotPitchMM - spec.mDotRadiusMM * 0.25f;
+
+	// For nice numbers, we set the master transformation matrix to encode
+	// 10000 units / 1" per tile.
+	const float unitsPerPoint = 10000.0f / 72.0f;
+	const float pointsPerUnit = 1.0f / unitsPerPoint;
 
 	// PDF by default scales the font's em size to 1 unit high, so
 	// we need to scale by the desired height of the em square -- which
@@ -263,23 +299,14 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 	const float mmToUnits = 10000.0f / 25.4f;
 	const float dotFontSize = ttfAscentMM * mmToUnits * 1024.0f / 1000.0f;
 
-	// compute basic ttf metrics for the char font
-	const vdrect32f& charFontBox = output.GetMaxCharBounds();
-	const float charEmSize = std::max<float>(-charFontBox.top, charFontBox.right);
-	const float charFontSize = charEmSize * mmToUnits * 1024.0f / 1000.0f;
-
-	const float charMMToUnits = 1000.0f / charEmSize;
-	const sint32 charFontAscentUnits = VDRoundToInt32(-charFontBox.top * charMMToUnits);
-	const sint32 charFontDescentUnits = VDRoundToInt32(-charFontBox.bottom * charMMToUnits);
-	const sint32 charFontMinXUnits = VDRoundToInt32(charFontBox.left * charMMToUnits);
-	const sint32 charFontMaxAdvanceUnits = VDRoundToInt32(charFontBox.right * charMMToUnits);
-
-	bool print2Used = false;
+	vdfastvector<uint32> pageObjectIds;
 
 	for(int page = 0; page < numPages; ++page) {
 		// preallocate object IDs for page and page content objects
 		objectOffsets.push_back((uint32)textOut.Pos());
 		const uint32 pageObj = (uint32)objectOffsets.size();
+
+		pageObjectIds.push_back(pageObj);
 
 		objectOffsets.push_back((uint32)textOut.Pos());
 		const uint32 pageContentsObj = (uint32)objectOffsets.size();
@@ -320,8 +347,6 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 				const float dotFontAdvanceWidth = 2 * ttfDotRadius;
 
 				const float dotFontMmToMils = 1000.0f * mmToUnits / dotFontSize;
-				const float charFontMmToMils = 1000.0f * mmToUnits / charFontSize;
-
 				vdspan<ATPrinterGraphicalOutput::RenderColumn> charColumns(cols.begin(), itCharSplit);
 
 				if (!charColumns.empty()) {
@@ -331,50 +356,118 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 						}
 					);
 
-					// Set the line origin and begin the text object. X is easy as it's just the left
-					// edge, but Y needs to be adjusted. In PDF, it needs to be set to the baseline,
-					// but it's the center of the first dot in the printer output.
-					const int fxx0 = VDRoundToInt32((cols[0].mX - pageRect.left) * mmToUnits);
-					const int fxy0 = VDRoundToInt32((pageRect.bottom - (lineY + lineToBaselineAdjustMM)) * mmToUnits);
+					// pretranslate all characters
+					vdfastvector<AssignedChar> translatedChars;
 
-					// begin text object, update text transform, and begin array for TJ command
-					print2UsedOnPage = true;
+					translatedChars.reserve(charColumns.size());
 
-					s.append_sprintf(
-						" /Print2 %.2f Tf"
-						, charFontSize
-					);
-
-					s.append_sprintf(" BT %d %d Td [", fxx0, fxy0);
-
-					float xoff = (-pageRect.left * mmToUnits - fxx0) * 1000.0f / charFontSize;
 					for(const ATPrinterGraphicalOutput::RenderColumn& col : charColumns) {
-						const int dx = VDRoundToInt32(col.mX * charFontMmToMils + xoff);
-
-						// apply horizontal offset if needed
-						if (dx)
-							s.append_sprintf("%d", -dx);
-
-						// print pins using character
-
 						const uint32 ch = col.mPins - col.kCharBit;
 						if (assignedCharLookup.size() <= ch)
-							assignedCharLookup.resize(ch + 1, -1);
+							assignedCharLookup.resize(ch + 1);
 
-						sint32& chIndex = assignedCharLookup[ch];
-						if (chIndex < 0) {
-							chIndex = (sint32)assignedChars.size() + 2;
-							assignedChars.push_back(ch);
+						AssignedChar& ach = assignedCharLookup[ch];
+						if (ach.mCharSetIndex < 0) {
+							const uint32 charSet = output.GetCharSet(ch);
+							uint32 charSetIndex = 0;
+
+							for(;;) {
+								if (charSetIndex >= assignedCharSets.size()) {
+									objectOffsets.push_back(0);
+
+									auto& newAcs = assignedCharSets.emplace_back();
+									newAcs.mCharSetId = charSet;
+									newAcs.mObjectId = (uint32)objectOffsets.size();
+
+									newAcs.mCharBoundsMM = output.GetMaxCharSetBounds(charSet);
+									newAcs.mFontEmSizeMM = std::max<float>(-newAcs.mCharBoundsMM.top + newAcs.mCharBoundsMM.bottom, newAcs.mCharBoundsMM.right);
+
+									// PDF by default maps 1000 units of glyph space per unit of text space. We figure out how
+									// many text units the TTF encoder's em square will produce, and that can then be divided
+									// into the desired em square size to get the required font size. Note that this is combined
+									// with the global transformation matrix mapping the 1" tile to 10000 units.
+
+									const float defaultEmsPerTextUnit = 1000.0f / ATTrueTypeEncoder::kUnitsPerEm<float>;
+									const float desiredTextUnitsPerEm = newAcs.mFontEmSizeMM * mmToUnits;
+									newAcs.mFontSize = desiredTextUnitsPerEm * defaultEmsPerTextUnit;
+
+									// There are 1000 glyph units per text unit.
+									newAcs.mMmToTextUnits = mmToUnits * (1000.0f / newAcs.mFontSize);
+									break;
+								}
+
+								if (assignedCharSets[charSetIndex].mCharSetId == charSet)
+									break;
+
+								++charSetIndex;
+							}
+
+							auto& acs = assignedCharSets[charSetIndex];
+
+							ach.mCharSetIndex = charSetIndex;
+							ach.mChar = (sint32)acs.mAssignedChars.size() + 2;
+
+							acs.mAssignedChars.push_back(ch);
 						}
 
-						s.append_sprintf("<%04X>", (unsigned)chIndex);
-
-						// Update X offset tracking based on advance width and applied adjustment.
-						xoff -= output.GetCharAdvance(ch) * charFontMmToMils + (float)dx;
+						translatedChars.push_back(ach);
 					}
 
-					// print text and end text object
-					s += "] TJ ET";
+					// process spans sharing the same character set
+					size_t nextSpanStartIndex = 0;
+					size_t spanEndIndex = charColumns.size();
+
+					while(nextSpanStartIndex < spanEndIndex) {
+						const sint32 charSetIndex = translatedChars[nextSpanStartIndex].mCharSetIndex;
+
+						size_t nextSpanEndIndex = nextSpanStartIndex + 1;
+						while(nextSpanEndIndex < spanEndIndex && translatedChars[nextSpanEndIndex].mCharSetIndex == charSetIndex)
+							++nextSpanEndIndex;
+
+						const AssignedCharSet& acs = assignedCharSets[charSetIndex];
+						const float charFontMmToTextUnits = acs.mMmToTextUnits;
+
+						// Set the line origin and begin the text object. X is easy as it's just the left
+						// edge, but Y needs to be adjusted. In PDF, it needs to be set to the baseline,
+						// but it's the center of the first dot in the printer output.
+						const int fxx0 = VDRoundToInt32((cols[nextSpanStartIndex].mX - pageRect.left) * mmToUnits);
+						const int fxy0 = VDRoundToInt32((pageRect.bottom - (lineY + charLineToBaselineAdjustMM)) * mmToUnits);
+
+						// begin text object, update text transform, and begin array for TJ command
+						s.append_sprintf(
+							" /Print%u %.2f Tf"
+							, charSetIndex + 2
+							, acs.mFontSize
+						);
+
+						s.append_sprintf(" BT %d %d Td [", fxx0, fxy0);
+
+						float xoff = (-pageRect.left * mmToUnits - fxx0) * 1000.0f / acs.mFontSize;
+
+						for(size_t i = nextSpanStartIndex; i < nextSpanEndIndex; ++i) {
+							const ATPrinterGraphicalOutput::RenderColumn& col = charColumns[i];
+							const uint32 ch = col.mPins - col.kCharBit;
+							const int dx = VDRoundToInt32(col.mX * charFontMmToTextUnits + xoff);
+
+							// apply horizontal offset if needed
+							if (dx)
+								s.append_sprintf("%d", -dx);
+
+							// print pins using character
+							const uint32 chIndex = translatedChars[i].mChar;
+
+							s.append_sprintf("<%04X>", (unsigned)chIndex);
+
+							// Update X offset tracking based on advance width and applied adjustment.
+							xoff -= output.GetCharAdvance(ch) * charFontMmToTextUnits + (float)dx;
+						}
+
+						// print text and end text object
+						s += "] TJ ET";
+
+						// process next span using the same charset
+						nextSpanStartIndex = nextSpanEndIndex;
+					}
 				}
 
 				vdspan<ATPrinterGraphicalOutput::RenderColumn> dotColumns(itCharSplit, cols.end());
@@ -432,7 +525,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 						// output tracks the centerline of the left column of dots, so there is also a
 						// half dot horizontal offset to account for.
 						const int fxx0 = VDRoundToInt32((bandColumns[0].mX - pageRect.left - dotRadiusMM) * mmToUnits);
-						const int fxy0 = VDRoundToInt32((pageRect.bottom - (lineY + lineToBaselineAdjustMM - spec.mVerticalDotPitchMM * bandPinShift)) * mmToUnits);
+						const int fxy0 = VDRoundToInt32((pageRect.bottom - (lineY + dotLineToBaselineAdjustMM - spec.mVerticalDotPitchMM * bandPinShift)) * mmToUnits);
 
 						// Sort the columns in the band by ascending X position so we have the smallest
 						// delta X offsets.
@@ -445,9 +538,6 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 						// begin text object, update text transform, and begin array for TJ command
 						s.append_sprintf(" BT %d %d Td [", fxx0, fxy0);
 
-						// MERGE NOTE: the TJ adjustment must retain the dot-radius
-						// offset too; otherwise it cancels the corrected line origin.
-						// Test19 shifts character glyphs to match that raw-dot error.
 						float xoff = (-(pageRect.left + dotRadiusMM) * mmToUnits - fxx0) * 1000.0f / dotFontSize;
 						for(const auto& col : bandColumns) {
 							uint32 pins = (col.mPins >> bandPinShift) & 0x7F;
@@ -514,7 +604,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 			s += " Q";
 		}
 
-		// write page -- this is delayed so we know if the Print2 font was used
+		// write page -- this is delayed so we know which char fonts were used
 		beginObject(pageObj);
 		textOut.FormatLine("%u 0 obj", pageObj);
 		textOut.PutLine("<< /Type /Page");
@@ -523,10 +613,9 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		textOut.PutLine(" /Font <<");
 		textOut.PutLine(" /Print 3 0 R");
 
-		if (print2UsedOnPage) {
-			print2Used = true;
-
-			textOut.PutLine(" /Print2 6 0 R");
+		uint32 charFontIndex = 2;
+		for(const AssignedCharSet& acs : assignedCharSets) {
+			textOut.FormatLine(" /Print%u %u 0 R", charFontIndex++, acs.mObjectId);
 		}
 
 		textOut.PutLine(" >>");
@@ -553,8 +642,8 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 	textOut.PutLine("<< /Type /Pages");
 	textOut.PutLine("/Kids [");
 
-	for(int i=0; i<numPages; ++i)
-		textOut.FormatLine("%u 0 R", basePageObj + i*2);
+	for(uint32 pageObjectId : pageObjectIds)
+		textOut.FormatLine("%u 0 R", pageObjectId);
 
 	textOut.PutLine("]");
 	textOut.FormatLine("/Count %u", numPages);
@@ -562,20 +651,52 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 	textOut.PutLine(">>");
 	textOut.PutLine("endobj");
 
-	// define character font, if needed (6)
-	if (!print2Used) {
-		// no character font needed -- just define it as a dummy object
-		beginObject(print2Obj);
-		textOut.FormatLine("%u 0 obj 0 endobj", print2Obj);
-	} else {
-		//////////////////////////////////////
-		// build char font
-
+	// Define character fonts if needed.
+	//
+	// It is crucial that the ascent/descent split of the character font match the printed dot matrix font, and
+	// that monospace characters are split into different character sets with consistent widths. The reason
+	// is Firefox's pdf.js reader. Most other PDF readers like Acrobat Reader and Chrome's PDF reader use the
+	// actual TrueType font metrics, and Just Work(tm). Pdf.js, however, uses a broken hack of mapping either
+	// Lucida Console or Calibri to the font as an invisible text selection layer.
+	//
+	// This means a few things:
+	//
+	//	- The baseline pin needs to be set correctly so the baseline is natural.
+	//
+	//	- Proportional fonts basically never match exactly, because there is zero chance that a classic
+	//	  dot matrix font will match Calibri's metrics. Pdf.js does try to scale Calibri to match the
+	//	  metrics for each text _span_, but the individual character bounds will never match.
+	//
+	//	- Fixed-width fonts must be marked as such so pdf.js will match them to Lucida Console, which is a far
+	//	  better match than the Calibri font. We do this below for any character set where all used
+	//	  characters have the same advance width.
+	//
+	//	- Characters with different overall widths must not be mixed in the same character set. Fixed
+	//	  width fonts of different widths need to be partitioned from with each other and from proportional
+	//	  fonts. Otherwise, pdf.js will match the composite font to Calibri with the average of the widths
+	//	  for the span, which will be highly erroneous.
+	//
+	//	- Pdf.js seems to scale Lucida Console / Calibri to match font height, and then offsets to match
+	//	  baseline. This means that the vertical bounds are often erroneous and increasingly so as the
+	//	  ascent to descent ratio differs. Lucida Console has a 79%/21% split between ascent/descent, so
+	//	  it's a good fit for the FX-80 (7/2) but poorer for the 1025 (7/1).
+	//
+	// Essentially, character sets need to be used to partition characters into sets that can produce
+	// TrueType fonts with as natural metrics as possible.
+	//
+	uint32 fontIndex = 2;
+	for(const AssignedCharSet& acs : assignedCharSets) {
 		vdautoptr<ATTrueTypeEncoder> ttf(new ATTrueTypeEncoder);
-		const sint32 charFontDotRadius = VDRoundToInt32(charMMToUnits * spec.mDotRadiusMM);
 
-		const sint32 charFontDefaultAdvanceWidth = charFontDotRadius * 2;
-		ttf->SetDefaultAdvanceWidth(charFontDefaultAdvanceWidth);
+		const float charMMToUnits = ATTrueTypeEncoder::kUnitsPerEm<float> / acs.mFontEmSizeMM;
+		const sint32 charFontDotRadius = VDRoundToInt32(charMMToUnits * spec.mDotRadiusMM);
+		const sint32 charFontAscentUnits = VDRoundToInt32(-acs.mCharBoundsMM.top * charMMToUnits);
+		const sint32 charFontDescentUnits = VDRoundToInt32(acs.mCharBoundsMM.bottom * charMMToUnits);
+		const sint32 charFontMinXUnits = VDRoundToInt32(acs.mCharBoundsMM.left * charMMToUnits);
+		const sint32 charFontMaxAdvanceUnits = VDRoundToInt32(acs.mCharBoundsMM.right * charMMToUnits);
+
+		const sint32 charFontDefaultAdvanceWidth = charFontMaxAdvanceUnits;
+		ttf->SetDefaultAdvanceWidth(charFontMaxAdvanceUnits);
 
 		// create initial dot / break char
 		const auto dotGlyph = ttf->BeginSimpleGlyph();
@@ -592,18 +713,16 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		// print characters
 		vdfastvector<sint32> cidAdvanceWidths;
 		uint32 chIndex = 0x21;
-		for(uint32 ch : assignedChars) {
+		for(uint32 ch : acs.mAssignedChars) {
 			const float charAdvance = output.GetCharAdvance(ch);
 			const float dotdy = spec.mbBit0Top ? -spec.mVerticalDotPitchMM : spec.mVerticalDotPitchMM;
-			const float doty0 = spec.mbBit0Top ? -dotdy * (float)(spec.mNumPins - 1) : 0;
+			const float doty0 = (spec.mbBit0Top ? -dotdy * (float)(spec.mNumPins - 1) : 0) - spec.mVerticalDotPitchMM * (float)descentPins;
 
 			ttf->MapCharacter(chIndex++, ttf->BeginCompositeGlyph());
 
 			for(const auto& cc : output.GetCharColumns(ch)) {
-				// MERGE NOTE: test19 removes this subtraction to align with
-				// the raw-dot TJ offset error corrected above. Keep both paths
-				// centered on the actual printer dot: this glyph's center is
-				// +radius, so cancel that displacement here.
+				// The glyph's dot outline starts at its origin, while the
+				// printer column position is the dot centerline.
 				const sint32 cx = VDRoundToInt32((cc.mXOffset - spec.mDotRadiusMM) * charMMToUnits);
 
 				for(uint32 dots = cc.mDots; dots; dots &= dots - 1) {
@@ -619,13 +738,20 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 			ttf->EndCompositeGlyph();
 		}
 
+		VDStringA s;
 		ttf->SetName(ATTrueTypeName::Copyright, "None - autogenerated");
-		ttf->SetName(ATTrueTypeName::FontFamily, "Altirra Print 2");
+
+		s.sprintf("Altirra Print %u", fontIndex);
+		ttf->SetName(ATTrueTypeName::FontFamily, s.c_str());
 		ttf->SetName(ATTrueTypeName::FontSubfamily, "Normal");
-		ttf->SetName(ATTrueTypeName::FullFontName, "Altirra Print 2 Normal");
-		ttf->SetName(ATTrueTypeName::UniqueFontIdentifier, "Altirra Print 2 Normal");
+
+		s.sprintf("Altirra Print %u Normal", fontIndex);
+		ttf->SetName(ATTrueTypeName::FullFontName, s.c_str());
+		ttf->SetName(ATTrueTypeName::UniqueFontIdentifier, s.c_str());
 		ttf->SetName(ATTrueTypeName::Version, "Version 1.0");
-		ttf->SetName(ATTrueTypeName::PostScriptName, "Print2");
+
+		s.sprintf("Print%u", fontIndex);
+		ttf->SetName(ATTrueTypeName::PostScriptName, s.c_str());
 
 		const vdspan<const uint8> fontData = ttf->Finalize();
 
@@ -643,15 +769,12 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		const uint32 charTrueTypeFontObj = (uint32)objectOffsets.size();
 
 		// define character font
-		beginObject(print2Obj);
-		textOut.FormatLine("%u 0 obj", print2Obj);
+		beginObject(acs.mObjectId);
+		textOut.FormatLine("%u 0 obj", acs.mObjectId);
 		textOut.PutLine("<<");
 		textOut.PutLine("/Type /Font");
 		textOut.PutLine("/Subtype /Type0");
-		// MERGE NOTE: For a Type 2 CIDFont descendant, PDF requires the
-		// Type 0 and CIDFont BaseFont names to match. test15 appended a
-		// second "-Print2" here.
-		textOut.PutLine("/BaseFont /AAAAAA+Print2 ");
+		textOut.FormatLine("/BaseFont /AAAAAA+Print%u ", fontIndex);
 		textOut.PutLine("/Encoding /Identity-H ");
 		textOut.FormatLine("/DescendantFonts [%u 0 R]", charFontObj);
 		textOut.FormatLine("/ToUnicode %u 0 R", charFontToUnicodeObj);
@@ -663,17 +786,24 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		textOut.PutLine("<<");
 		textOut.PutLine("/Type /Font");
 		textOut.PutLine("/Subtype /CIDFontType2");
-		textOut.PutLine("/BaseFont /AAAAAA+Print2");
+		textOut.FormatLine("/BaseFont /AAAAAA+Print%u", fontIndex);
 		textOut.PutLine("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >>");
 		textOut.FormatLine("/FontDescriptor %u 0 R", charFontDescriptorObj);
-		textOut.FormatLine("/DW %u", (charFontDefaultAdvanceWidth * 1000 + 512) / 1024);
-		textOut.PutLine("/W [2 [");
+		textOut.FormatLine("/DW %u", charFontDefaultAdvanceWidth);
 
-		for(sint32 advanceWidth : cidAdvanceWidths) {
-			textOut.FormatLine("%d", (advanceWidth * 1000 + 512) / 1024);
+		// If all widths match the default width, we can omit the /W array.
+		if (!std::all_of(cidAdvanceWidths.begin(), cidAdvanceWidths.end(),
+			[=](sint32 w) { return w == charFontDefaultAdvanceWidth; }))
+		{
+			textOut.PutLine("/W [2 [");
+
+			for(sint32 advanceWidth : cidAdvanceWidths) {
+				textOut.FormatLine("%d", advanceWidth);
+			}
+
+			textOut.PutLine("]]");
 		}
 
-		textOut.PutLine("]]");
 		textOut.PutLine("/CIDToGIDMap /Identity");
 		textOut.PutLine(">>");
 		textOut.PutLine("endobj");
@@ -683,12 +813,10 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		textOut.FormatLine("%u 0 obj", charFontDescriptorObj);
 		textOut.FormatLine(
 			"<< /Type /FontDescriptor "
-			// MERGE NOTE: test15 accidentally reused the dot font's name
-			// here. A subset's FontName and BaseFont must identify the same
-			// font.
-			"/FontName /AAAAAA+Print2 "
+			"/FontName /AAAAAA+Print%u "
 			"/Flags 4 "
 			"/FontBBox [%d %d %d %d] ",
+			fontIndex,
 			charFontMinXUnits,
 			-charFontDescentUnits,
 			charFontMaxAdvanceUnits,
@@ -723,7 +851,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 					uniTbl += "/Ordering (UCS) ";
 					uniTbl += "/Supplement 0 ";
 					uniTbl += ">> def ";
-					uniTbl += "/CMapName /Print2 def ";
+					uniTbl.append_sprintf("/CMapName /Print%u def ", fontIndex);
 					uniTbl += "/CMapType 2 def ";
 
 					uniTbl += "1 begincodespacerange ";
@@ -731,7 +859,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 					uniTbl += "endcodespacerange ";
 
 					// emit character to Unicode mappings in batches of 100 max (spec limit)
-					const size_t numCharMappings = assignedChars.size();
+					const size_t numCharMappings = acs.mAssignedChars.size();
 					for(size_t i = 0; i < numCharMappings; i += 100) {
 						const size_t m = std::min<size_t>(100, numCharMappings - i);
 
@@ -742,7 +870,7 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 								const uint32 cid = i+j+2;
 
 								// break surrogates if needed
-								const uint32 ch = assignedChars[i+j];
+								const uint32 ch = acs.mAssignedChars[i+j];
 								const uint32 uch = output.GetCharUnicodeChar(ch);
 
 								if (uch >= 0x10000 && uch <= 0x10FFFF) {
@@ -760,10 +888,6 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 									&& (uch < 0xD800 || uch > 0xDFFF))
 									uniTbl.append_sprintf("<%04X> <%04X> ", cid, uch);
 								else {
-									// Ideally, we'd be able to suppress copying for characters that don't have an
-									// equivalent. But it seems that there isn't such a capability; attempting to
-									// use an empty mapping <> results in Acrobat Reader copying out broken
-									// characters. Thus, we use spaces for now.
 									uniTbl.append_sprintf("<%04X> <0020> ", cid);
 								}
 							}
@@ -777,20 +901,15 @@ void ATPrinterExportAsPDF(const wchar_t *path, ATPrinterGraphicalOutput& output,
 		uniTbl += "end ";
 
 		beginObject(charFontToUnicodeObj);
-		textOut.FormatLine("%u 0 obj", charFontToUnicodeObj);
-		textOut.FormatLine("<</Length %u>>", uniTbl.size());
-		textOut.PutLine("stream");
-		textOut.Write(uniTbl.data(), uniTbl.size());
-		textOut.PutLine();
-		textOut.PutLine("endstream");
-		textOut.PutLine("endobj");
+		ATPDFWriteStreamObject(textOut, charFontToUnicodeObj,
+			vdspan<const uint8>((const uint8 *)uniTbl.data(), uniTbl.size()),
+			false
+		);
 
 		beginObject(charTrueTypeFontObj);
-		ATPDFWriteStreamObject(
-			textOut,
-			charTrueTypeFontObj,
-			fontData,
-			true);
+		ATPDFWriteStreamObject(textOut, charTrueTypeFontObj, fontData, true);
+
+		++fontIndex;
 	}
 
 	// write info table

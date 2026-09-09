@@ -141,7 +141,7 @@ protected:
 		BoldDuplicate
 	};
 
-	uint32 UploadFont(const ATPrinterFontDesc& desc, const uint8 *fontData, float xStep, float xAdvance, FontUploadStyle style, vdspan<const uint32> uniChars);
+	uint32 UploadFont(const ATPrinterFontDesc& desc, const uint8 *fontData, float xStep, float xAdvance, FontUploadStyle style, vdspan<const uint32> uniChars, uint32 charSet);
 
 	RenderedLine *BeginRenderLine(uint32 entries);
 	void EndRenderLine(const RenderLineParams& params);

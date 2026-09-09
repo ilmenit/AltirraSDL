@@ -409,22 +409,33 @@ uint32 ATPrinterGraphicalOutput::ConvertLinearColorToSrgb(uint32 linear) const {
 	return VDColorRGB(vdfloat32x4::unpacku8(linear) * (1.0f / 65.0f)).LinearToSRGB().ToBGR8();
 }
 
-vdrect32f ATPrinterGraphicalOutput::GetMaxCharBounds() const {
+vdrect32f ATPrinterGraphicalOutput::GetMaxCharSetBounds(uint32 charSet) const {
 	// compute horizontal bounds by the max advance of all chars
 	float maxAdvance = 0;
 
 	for(const CharInfo& ci : mCharInfos) {
-		maxAdvance = std::max(maxAdvance, ci.mAdvance);
+		if (ci.mCharSet == charSet)
+			maxAdvance = std::max(maxAdvance, ci.mAdvance);
 	}
+
+	// compute the number of ascent pins
+	const int numAscentPins = mGraphicsSpec.mbBit0Top ? mGraphicsSpec.mBaselinePin + 1 : mGraphicsSpec.mNumPins - mGraphicsSpec.mBaselinePin;
+	const int numDescentPins = mGraphicsSpec.mNumPins - numAscentPins;
 
 	// compute vertical bounds by the union of the head -- we don't look at the
 	// actual patterns for consistency in font metrics
+
+	// MERGE NOTE: keep left dot extent (-mGraphicsSpec.mDotRadiusMM) per test17/19 merge notes.
 	return vdrect32f(
 		-mGraphicsSpec.mDotRadiusMM,
-		-((float)(mGraphicsSpec.mNumPins - 1) * mGraphicsSpec.mVerticalDotPitchMM + 2 * mGraphicsSpec.mDotRadiusMM),
+		-((float)(numAscentPins - 1) * mGraphicsSpec.mVerticalDotPitchMM + 2 * mGraphicsSpec.mDotRadiusMM),
 		maxAdvance,
-		0.0f
+		(float)numDescentPins * mGraphicsSpec.mVerticalDotPitchMM
 	);
+}
+
+uint32 ATPrinterGraphicalOutput::GetCharSet(uint32 c) const {
+	return mCharInfos[c].mCharSet;
 }
 
 bool ATPrinterGraphicalOutput::PreCull(CullInfo& cullInfo, const vdrect32f& r) const {
@@ -735,7 +746,7 @@ void ATPrinterGraphicalOutput::Print(double x, uint32 pins) {
 	}
 }
 
-uint32 ATPrinterGraphicalOutput::DefineChar(double advance, vdspan<const CharColumn> columns, uint32 uniChar) {
+uint32 ATPrinterGraphicalOutput::DefineChar(double advance, vdspan<const CharColumn> columns, uint32 uniChar, uint32 charSet) {
 	const uint32 ch = (uint32)mCharInfos.size();
 
 	CharInfo& ci = mCharInfos.emplace_back();
@@ -743,6 +754,7 @@ uint32 ATPrinterGraphicalOutput::DefineChar(double advance, vdspan<const CharCol
 	ci.mDotPatternStart = (uint32)mCharColumns.size();
 	ci.mDotPatternCount = columns.size();
 	ci.mUnicodeChar = uniChar;
+	ci.mCharSet = charSet;
 
 	mCharColumns.append_range(columns);
 

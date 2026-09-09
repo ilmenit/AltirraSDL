@@ -263,6 +263,26 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Use stable nightly filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for ext in zip dmg; do
+            matches=(dist/AltirraSDL-*-macos-*.${ext})
+            if [ "${#matches[@]}" -eq 0 ]; then
+              echo "ERROR: no macOS ${ext} found" >&2
+              exit 1
+            fi
+            for source in "${matches[@]}"; do
+              filename=$(basename "$source")
+              arch="${filename##*-macos-}"
+              arch="${arch%.${ext}}"
+              mv "$source" "dist/AltirraSDL-nightly-macos-${arch}.${ext}"
+            done
+          done
+          ls -lh dist/
+
       - name: Delete stale macOS assets from nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

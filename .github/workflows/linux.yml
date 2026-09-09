@@ -178,6 +178,21 @@ jobs:
       - name: List downloaded artifacts
         run: ls -lh dist/
 
+      - name: Use stable nightly filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for arch in x86_64 aarch64; do
+            matches=(dist/AltirraSDL-*-linux-${arch}.AppImage)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "ERROR: expected exactly one AppImage for ${arch}, found ${#matches[@]}" >&2
+              exit 1
+            fi
+            mv "${matches[0]}" "dist/AltirraSDL-nightly-linux-${arch}.AppImage"
+          done
+          ls -lh dist/
+
       # action-gh-release replaces same-name files but does not remove assets
       # whose version changed. Delete only Linux AppImages so concurrent
       # platform publishers cannot remove one another's artifacts.
@@ -233,8 +248,8 @@ jobs:
 
             | Architecture | File                                      | Targets |
             |--------------|-------------------------------------------|---------|
-            | x86_64       | `AltirraSDL-*-linux-x86_64.AppImage`      | Intel / AMD 64-bit desktops & laptops |
-            | aarch64      | `AltirraSDL-*-linux-aarch64.AppImage`     | Raspberry Pi 4 / 5 / 500 (64-bit OS), generic arm64 Linux |
+            | x86_64       | `AltirraSDL-nightly-linux-x86_64.AppImage`  | Intel / AMD 64-bit desktops & laptops |
+            | aarch64      | `AltirraSDL-nightly-linux-aarch64.AppImage` | Raspberry Pi 4 / 5 / 500 (64-bit OS), generic arm64 Linux |
 
             Requires glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+ /
             Raspberry Pi OS Bookworm+, Fedora 36+, RHEL 9+).

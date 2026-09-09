@@ -17,8 +17,6 @@ compile to no-op inline functions and retain their existing behavior.
   `ALTIRRA_MAC_OS_LEAK_DEBUG` option.
 - `run-macos-memory-diagnostic.sh` launches a packaged app in one of four
   controlled modes and saves the Terminal output.
-- `.github/workflows/macos-memory-diagnostic.yml` builds and packages only
-  this diagnostic configuration and can replace the prerelease asset.
 
 Each report contains process physical footprint, resident/virtual/compressed
 memory, default malloc-zone used/allocated bytes, pause and window state,
@@ -66,15 +64,11 @@ cmake --build --preset macos-debug --target AltirraSDL
 The option deliberately fails configuration on non-Apple platforms when ON.
 Build once with the option OFF to verify the normal code path.
 
-## GitHub release process
+## Distribution
 
-Run the `macOS memory diagnostic` workflow manually on the commit to test.
-Leave `publish_release` disabled for an artifact-only validation run. Enable it
-to replace `AltirraSDL-macos-memory-diagnostic.zip` on the existing
-`memory-diagnostic-bad4452f` prerelease. The asset includes the app, launcher,
-and this document. Release notes record the actual source commit, so the fixed
-historical tag name does not imply that newly replaced assets came from the
-old commit.
+The diagnostic is no longer built or published by GitHub CI. Build it locally
+with the commands above when investigating a macOS memory issue. Normal macOS
+release builds continue to use `.github/workflows/macos.yml`.
 
 ## Reading results
 

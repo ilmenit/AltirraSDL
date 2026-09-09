@@ -44,7 +44,6 @@
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/thread.h>
-#include <vd2/system/tls.h>
 #include <vd2/system/bitmath.h>
 
 #if defined(VD_OS_WINDOWS) || defined(_WIN32)
@@ -234,11 +233,10 @@ unsigned __stdcall VDThread::StaticThreadStart(void *pThisAsVoid) {
 	if (pThis->mpszDebugName)
 		VDSetCurrentThreadDebugName(pThis->mpszDebugName);
 
-	VDInitThreadData(pThis->mpszDebugName);
-
 	pThis->ThreadRun();
 
-	VDDeinitThreadData();
+	// NOTE: Do not put anything referencing this here, since our object
+	//       may have been destroyed by the threaded code.
 
 	return 0;
 }
@@ -314,11 +312,10 @@ void *VDThread::StaticThreadStart(void *pThisAsVoid) {
 	if (pThis->mpszDebugName)
 		VDSetCurrentThreadDebugName(pThis->mpszDebugName);
 
-	VDInitThreadData(pThis->mpszDebugName);
-
 	pThis->ThreadRun();
 
-	VDDeinitThreadData();
+	// NOTE: Do not put anything referencing this here, since our object
+	//       may have been destroyed by the threaded code.
 
 	return nullptr;
 }

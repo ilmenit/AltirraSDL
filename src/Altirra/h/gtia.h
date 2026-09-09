@@ -248,8 +248,13 @@ struct ATGTIARegisterState {
 	uint8	mReg[0x20];
 };
 
-struct ATGTIAColorTrace {
-	uint8	mColors[240][9];
+struct ATGTIALineRegisterState {
+	uint8 mColors[9];
+	uint8 mPRIOR;
+};
+
+struct ATGTIARegisterTrace {
+	ATGTIALineRegisterState mLineStates[240];
 };
 
 class ATGTIALightSensor {
@@ -335,8 +340,8 @@ public:
 	void GetPalette(uint32 pal[256]) const;
 	void GetNTSCArtifactColors(uint32 c[2]) const;
 
-	const ATGTIAColorTrace& GetColorTrace() const {
-		return mColorTrace;
+	const ATGTIARegisterTrace& GetRegisterTrace() const {
+		return mRegisterTrace;
 	}
 
 	bool IsFrameInProgress() const { return mpFrame != NULL; }
@@ -751,7 +756,7 @@ protected:
 	vdfunction<void()> mpOnRetryFrame;
 	bool mbWaitingForFrame = false;
 
-	ATGTIAColorTrace mColorTrace {};
+	ATGTIARegisterTrace mRegisterTrace {};
 
 	ATNotifyList<const ATGTIARawFrameFn *> mRawFrameCallbacks;
 

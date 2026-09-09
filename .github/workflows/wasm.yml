@@ -483,6 +483,19 @@ jobs:
       - name: List downloaded artifacts
         run: ls -lh dist/
 
+      - name: Use stable nightly filename
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          matches=(dist/AltirraSDL-*-wasm.zip)
+          if [ "${#matches[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one WebAssembly zip, found ${#matches[@]}" >&2
+            exit 1
+          fi
+          mv "${matches[0]}" dist/AltirraSDL-nightly-wasm.zip
+          ls -lh dist/
+
       - name: Delete stale WebAssembly assets from nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

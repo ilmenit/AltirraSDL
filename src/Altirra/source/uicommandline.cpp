@@ -20,6 +20,7 @@
 #include <vd2/system/filesys.h>
 #include <vd2/system/strutil.h>
 #include <vd2/Dita/services.h>
+#include <at/atcore/deviceparent.h>
 #include <at/atcore/media.h>
 #include <at/atcore/propertyset.h>
 #include <at/atio/cartridgetypes.h>
@@ -110,6 +111,10 @@ private:
 	void HandleClearDevices();
 	void HandleAddDevice(const wchar_t *arg);
 	void HandleSetDevice(const wchar_t *arg);
+
+	static IATDeviceParent *ResolveDeviceParent(ATDeviceManager& dm, ATPropertySet& pset, VDStringW& parentTag);
+	static void AddDevice(ATDeviceManager& dm, const ATDeviceDefinition& def, const ATPropertySet& pset, IATDeviceParent *parent, const VDStringW& parentTag);
+
 	void HandleRemoveDevice(const wchar_t *arg);
 	void HandleCmd(const wchar_t *arg);
 	void HandleCmd1(const wchar_t *arg1, const wchar_t *arg2);
@@ -876,13 +881,19 @@ void ATUICommandLineProcessor::HandleAddDevice(const wchar_t *arg) {
 	VDStringRefW tag;
 
 	if (!params.split(L',', tag)) {
-		params.clear();
 		tag = params;
+		params.clear();
 	}
 
 	// parse parameters, if any
 	ATPropertySet pset;
-	pset.ParseFromCommandLineString(params.data());
+
+	if (!params.empty())
+		pset.ParseFromCommandLineString(params.data());
+
+	// check for a parent parameter
+	VDStringW parentTag;
+	IATDeviceParent *parent = ResolveDeviceParent(dm, pset, parentTag);
 
 	const VDStringA tagA = VDTextWToA(tag);
 	const ATDeviceDefinition *def = dm.GetDeviceDefinition(tagA.c_str());
@@ -902,7 +913,7 @@ void ATUICommandLineProcessor::HandleAddDevice(const wchar_t *arg) {
 		dm.ReconfigureDevice(*dev, pset);
 	} else {
 		// external device -- add it
-		dm.AddDevice(def, pset);
+		AddDevice(dm, *def, pset, parent, parentTag);
 	}
 }
 
@@ -912,13 +923,19 @@ void ATUICommandLineProcessor::HandleSetDevice(const wchar_t *arg) {
 	VDStringRefW tag;
 
 	if (!params.split(L',', tag)) {
-		params.clear();
 		tag = params;
+		params.clear();
 	}
 
 	// parse parameters, if any
 	ATPropertySet pset;
-	pset.ParseFromCommandLineString(params.data());
+
+	if (!params.empty())
+		pset.ParseFromCommandLineString(params.data());
+
+	// check for a parent parameter
+	VDStringW parentTag;
+	IATDeviceParent *parent = ResolveDeviceParent(dm, pset, parentTag);
 
 	const VDStringA tagA = VDTextWToA(tag);
 	const ATDeviceDefinition *def = dm.GetDeviceDefinition(tagA.c_str());
@@ -928,7 +945,25 @@ void ATUICommandLineProcessor::HandleSetDevice(const wchar_t *arg) {
 		throw VDException(L"Unknown device type: %.*ls", (int)tag.size(), tag.data());
 
 	// look for the device
-	IATDevice *dev = dm.GetDeviceByTag(tagA.c_str());
+	IATDevice *dev = nullptr;
+	uint32 index = 0;
+
+	for(;;) {
+		dev = dm.GetDeviceByTag(tagA.c_str(), index, true);
+
+		if (!dev)
+			break;
+
+		if (!parent)
+			break;
+
+		// we have a candidate device and a desired parent, check for a match
+		if (dev->GetParent() == parent)
+			break;
+
+		// mismatched parent, next
+		++index;
+	}
 
 	// check if the device is internal
 	if (def->mFlags & kATDeviceDefFlag_Internal) {
@@ -943,9 +978,65 @@ void ATUICommandLineProcessor::HandleSetDevice(const wchar_t *arg) {
 		if (dev)
 			dm.ReconfigureDevice(*dev, pset);
 		else
-			dm.AddDevice(def, pset);
+			AddDevice(dm, *def, pset, parent, parentTag);
 
 	}
+}
+
+void ATUICommandLineProcessor::AddDevice(ATDeviceManager& dm, const ATDeviceDefinition& def, const ATPropertySet& pset, IATDeviceParent *parent, const VDStringW& parentTag) {
+	IATDevice *dev = dm.AddDevice(&def, pset, parent != nullptr);
+
+	// try to attach to parent device
+	if (parent) {
+		try {
+			uint32 busIdx = 0;
+
+			for(;;) {
+				auto busId = parent->GetDeviceBusIdByIndex(busIdx);
+				if (busId < 0) {
+					throw VDException(L"Device \"%hs\" cannot attach to any bus on parent device \"%ls\"."
+						, def.mpTag
+						, parentTag.c_str()
+					);
+				}
+
+				IATDeviceBus *bus = parent->GetDeviceBusById(busId);
+				if (bus) {
+					bus->AddChildDevice(dev);
+
+					if (dev->GetParent())
+						break;
+				}
+
+				++busIdx;
+			}
+		} catch(...) {
+			dm.RemoveDevice(dev);
+			throw;
+		}
+	}
+}
+
+IATDeviceParent *ATUICommandLineProcessor::ResolveDeviceParent(ATDeviceManager& dm, ATPropertySet& pset, VDStringW& parentTag) {
+	IATDeviceParent *parent = nullptr;
+
+	parentTag = pset.GetString("parent", L"");
+
+	pset.Unset("parent");
+
+	if (!parentTag.empty()) {
+		// try to find parent device
+		IATDevice *parentDevice = dm.GetDeviceByTag(VDTextWToA(parentTag).c_str());
+
+		if (!parentDevice)
+			throw VDException(L"Can't find parent device: %ls", parentTag.c_str());
+
+		parent = vdpoly_cast<IATDeviceParent *>(parentDevice);
+		if (!parent || parent->GetDeviceBusIdByIndex(0) < 0)
+			throw VDException(L"Device '%ls' does not have a bus for child devices.", parentTag.c_str());
+	}
+
+	return parent;
 }
 
 void ATUICommandLineProcessor::HandleRemoveDevice(const wchar_t *arg) {

@@ -25,13 +25,11 @@
   <ItemGroup>
     <ClCompile Include="source\binary.cpp" />
     <ClCompile Include="source\bitmath.cpp" />
-    <ClCompile Include="source\cache.cpp" />
     <ClCompile Include="source\cmdline.cpp" />
     <ClCompile Include="source\constexpr.cpp" />
     <ClCompile Include="source\cpuaccel.cpp" />
     <ClCompile Include="source\date.cpp" />
     <ClCompile Include="source\debug.cpp" />
-    <ClCompile Include="source\debugx86.cpp" />
     <ClCompile Include="source\Error.cpp" />
     <ClCompile Include="source\error_win32.cpp" />
     <ClCompile Include="source\event.cpp" />
@@ -67,8 +65,6 @@
     <ClCompile Include="source\thunk.cpp" />
     <ClCompile Include="source\time.cpp">
     </ClCompile>
-    <ClCompile Include="source\tls.cpp">
-    </ClCompile>
     <ClCompile Include="source\vdalloc.cpp" />
     <ClCompile Include="source\vdstl.cpp" />
     <ClCompile Include="source\vdstl_hash.cpp" />
@@ -100,14 +96,12 @@
     <ClInclude Include="..\h\vd2\system\atomic.h" />
     <ClInclude Include="..\h\vd2\system\binary.h" />
     <ClInclude Include="..\h\vd2\system\bitmath.h" />
-    <ClInclude Include="..\h\vd2\system\cache.h" />
     <ClInclude Include="..\h\vd2\system\cmdline.h" />
     <ClInclude Include="..\h\vd2\system\color.h" />
     <ClInclude Include="..\h\vd2\system\constexpr.h" />
     <ClInclude Include="..\h\VD2\system\cpuaccel.h" />
     <ClInclude Include="..\h\vd2\system\date.h" />
     <ClInclude Include="..\h\vd2\system\debug.h" />
-    <ClInclude Include="..\h\vd2\system\debugx86.h" />
     <ClInclude Include="..\h\VD2\system\error.h" />
     <ClInclude Include="..\h\vd2\system\event.h" />
     <ClInclude Include="..\h\vd2\system\file.h" />
@@ -139,10 +133,8 @@
     <ClInclude Include="..\h\VD2\system\thread.h" />
     <ClInclude Include="..\h\vd2\system\thunk.h" />
     <ClInclude Include="..\h\vd2\system\time.h" />
-    <ClInclude Include="..\h\VD2\system\tls.h" />
     <ClInclude Include="..\h\vd2\system\unknown.h" />
     <ClInclude Include="..\h\VD2\system\vdalloc.h" />
-    <ClInclude Include="..\h\VD2\system\VDQueue.h" />
     <ClInclude Include="..\h\VD2\system\VDRingBuffer.h" />
     <ClInclude Include="..\h\vd2\system\vdstdc.h" />
     <ClInclude Include="..\h\vd2\system\vdstl.h" />

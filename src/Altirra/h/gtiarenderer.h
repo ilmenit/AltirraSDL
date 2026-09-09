@@ -40,8 +40,9 @@ namespace ATGTIA {
 	const uint8 P2		= 0x40;
 	const uint8 P3		= 0x80;
 	const uint8 P23		= 0xc0;
+	const uint8 P0123	= 0xf0;
 
-	enum {
+	enum : uint8 {
 		kColorP0		= 0,
 		kColorP1,
 		kColorP2,
@@ -67,6 +68,8 @@ namespace ATGTIA {
 		kColorPF3P3,
 		kColorPF3P2P3
 	};
+
+	static constexpr size_t kColorCount = kColorPF3P2P3 + 1;
 };
 
 struct ATGTIAColorRegisters {

@@ -516,7 +516,7 @@
   </Type>
   
   <Type Name="ATVBXEEmulator::AttrPixel">
-    <DisplayString>Colors:[{mPFK,nvoXb} {mPF0,nvoXb} {mPF1,nvoXb} {mPF2,nvoXb}] Ctrl:{mCtrl,nvoXb} Pri:{mPriority,nvoXb}</DisplayString>
+    <DisplayString>Colors:[{mColors[0],nvoXb} {mColors[1],nvoXb} {mColors[2],nvoXb} {mColors[3],nvoXb}] Ctrl:{mCtrl,nvoXb} Pri:{mPriority,nvoXb}</DisplayString>
   </Type>
   
   <Type Name="__m256">

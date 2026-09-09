@@ -1789,11 +1789,11 @@ void ATUIAutoHideContainer::UpdateHideState() {
 		mbHide = shouldHide;
 
 		if (shouldHide) {
-			mHideTimer = StartTimer(0.2f, 0.0f,
+			mHideTimer = StartTimer(0.25f, 0.0f,
 				[this] {
 					if (mpAutoHideAnimator) {
 						mpAutoHideAnimator->SetForward(true);
-						mpAutoHideAnimator->SetRate(2.0f);
+						mpAutoHideAnimator->SetRate(4.0f);
 						mpAutoHideAnimator->Start();
 					}
 				}
@@ -1804,7 +1804,7 @@ void ATUIAutoHideContainer::UpdateHideState() {
 
 			if (mpAutoHideAnimator) {
 				mpAutoHideAnimator->SetForward(false);
-				mpAutoHideAnimator->SetRate(4.0f);
+				mpAutoHideAnimator->SetRate(8.0f);
 				mpAutoHideAnimator->Start();
 			}
 

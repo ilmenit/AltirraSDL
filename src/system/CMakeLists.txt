@@ -1,7 +1,6 @@
 set(SYSTEM_COMMON_SOURCES
     source/binary.cpp
     source/bitmath.cpp
-    source/cache.cpp
     source/cmdline.cpp
     source/constexpr.cpp
     source/cpuaccel.cpp
@@ -22,7 +21,6 @@ set(SYSTEM_COMMON_SOURCES
     source/stdafx.cpp
     source/strutil.cpp
     source/thread.cpp
-    source/tls.cpp
     source/vdalloc.cpp
     source/vdstl.cpp
     source/vdstl_hash.cpp
@@ -38,7 +36,6 @@ if(WIN32)
         # already in SYSTEM_COMMON_SOURCES and must not be listed again here.
         source/date.cpp
         source/debug.cpp
-        source/debugx86.cpp
         source/error_win32.cpp
         source/file.cpp
         source/fileasync.cpp

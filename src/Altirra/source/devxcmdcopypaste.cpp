@@ -111,6 +111,13 @@ void ATDeviceXCmdCopyCmdLine::Invoke(ATDeviceManager& devmgr, IATDevice *dev, in
 	ATPropertySet pset;
 	dev->GetSettings(pset);
 
+	if (IATDevice *parent = vdpoly_cast<IATDevice *>(dev->GetParent())) {
+		ATDeviceInfo info;
+		parent->GetDeviceInfo(info);
+
+		pset.SetString("parent", VDTextAToW(info.mpDef->mpTag).c_str());
+	}
+
 	if (!pset.IsEmpty()) {
 		s += L',';
 		s += pset.ToCommandLineString();

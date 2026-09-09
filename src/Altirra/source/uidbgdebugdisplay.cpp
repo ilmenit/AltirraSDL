@@ -72,14 +72,17 @@ LRESULT ATDebugDisplayWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 
 				HMENU menu = GetSubMenu(mhmenu, 0);
 
+				VDCheckMenuItemByCommandW32(menu, ID_CONTEXT_PMGRAPHICS, mDebugDisplay.GetPMGraphicsEnabled());
+
 				const IVDVideoDisplay::FilterMode filterMode = mpDisplay->GetFilterMode();
 				VDCheckRadioMenuItemByCommandW32(menu, ID_FILTERMODE_POINT, filterMode == IVDVideoDisplay::kFilterPoint);
-				VDCheckRadioMenuItemByCommandW32(menu, ID_FILTERMODE_BILINEAR, filterMode == IVDVideoDisplay::kFilterBilinear);
-				VDCheckRadioMenuItemByCommandW32(menu, ID_FILTERMODE_BICUBIC, filterMode == IVDVideoDisplay::kFilterBicubic);
+				VDCheckRadioMenuItemByCommandW32(menu, ID_FILTERMODE_BILINEAR, filterMode == IVDVideoDisplay::kFilterBilinear && !mbSharpBilinear);
+				VDCheckRadioMenuItemByCommandW32(menu, ID_FILTERMODE_SHARPBILINEAR, filterMode == IVDVideoDisplay::kFilterBilinear && mbSharpBilinear);
 
 				const ATDebugDisplay::PaletteMode paletteMode = mDebugDisplay.GetPaletteMode();
-				VDCheckRadioMenuItemByCommandW32(menu, ID_PALETTE_CURRENTREGISTERVALUES, paletteMode == ATDebugDisplay::kPaletteMode_Registers);
-				VDCheckRadioMenuItemByCommandW32(menu, ID_PALETTE_ANALYSIS, paletteMode == ATDebugDisplay::kPaletteMode_Analysis);
+				VDCheckRadioMenuItemByCommandW32(menu, ID_PALETTE_CURRENTREGISTERVALUES, paletteMode == ATDebugDisplay::PaletteMode::CurrentRegisters);
+				VDCheckRadioMenuItemByCommandW32(menu, ID_PALETTE_ANALYSIS, paletteMode == ATDebugDisplay::PaletteMode::Analysis);
+				VDCheckRadioMenuItemByCommandW32(menu, ID_PALETTE_COLORTRACE, paletteMode == ATDebugDisplay::PaletteMode::ColorTrace);
 
 				if (x != -1 && y != -1) {
 					TrackPopupMenu(menu, TPM_LEFTALIGN|TPM_TOPALIGN, x, y, 0, mhwnd, NULL);
@@ -99,6 +102,11 @@ LRESULT ATDebugDisplayWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 						mDebugDisplay.Update();
 						break;
 
+					case ID_CONTEXT_PMGRAPHICS:
+						mDebugDisplay.SetPMGraphicsEnabled(!mDebugDisplay.GetPMGraphicsEnabled());
+						mDebugDisplay.Update();
+						break;
+
 					case ID_FILTERMODE_POINT:
 						mpDisplay->SetFilterMode(IVDVideoDisplay::kFilterPoint);
 						mDebugDisplay.Update();
@@ -106,21 +114,30 @@ LRESULT ATDebugDisplayWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 
 					case ID_FILTERMODE_BILINEAR:
 						mpDisplay->SetFilterMode(IVDVideoDisplay::kFilterBilinear);
+						mpDisplay->SetPixelSharpness(1.0f, 1.0f);
+						mbSharpBilinear = false;
 						mDebugDisplay.Update();
 						break;
 
-					case ID_FILTERMODE_BICUBIC:
-						mpDisplay->SetFilterMode(IVDVideoDisplay::kFilterBicubic);
+					case ID_FILTERMODE_SHARPBILINEAR:
+						mpDisplay->SetFilterMode(IVDVideoDisplay::kFilterBilinear);
+						mpDisplay->SetPixelSharpness(2.0f, 2.0f);
+						mbSharpBilinear = true;
 						mDebugDisplay.Update();
 						break;
 
 					case ID_PALETTE_CURRENTREGISTERVALUES:
-						mDebugDisplay.SetPaletteMode(ATDebugDisplay::kPaletteMode_Registers);
+						mDebugDisplay.SetPaletteMode(ATDebugDisplay::PaletteMode::CurrentRegisters);
 						mDebugDisplay.Update();
 						break;
 
 					case ID_PALETTE_ANALYSIS:
-						mDebugDisplay.SetPaletteMode(ATDebugDisplay::kPaletteMode_Analysis);
+						mDebugDisplay.SetPaletteMode(ATDebugDisplay::PaletteMode::Analysis);
+						mDebugDisplay.Update();
+						break;
+
+					case ID_PALETTE_COLORTRACE:
+						mDebugDisplay.SetPaletteMode(ATDebugDisplay::PaletteMode::ColorTrace);
 						mDebugDisplay.Update();
 						break;
 				}
@@ -180,6 +197,7 @@ bool ATDebugDisplayWindow::OnCreate() {
 
 	mpDisplay = VDGetIVideoDisplay((VDGUIHandle)mhwndDisplay);
 	mpDisplay->SetFilterMode(IVDVideoDisplay::kFilterBilinear);
+	mpDisplay->SetPixelSharpness(2.0f, 2.0f);
 	mpDisplay->SetAccelerationMode(IVDVideoDisplay::kAccelAlways);
 
 	mDebugDisplay.Init(g_sim.GetMemoryManager(), &g_sim.GetAntic(), &g_sim.GetGTIA(), mpDisplay);

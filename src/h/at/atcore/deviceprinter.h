@@ -74,8 +74,10 @@ struct ATPrinterGraphicsSpec {
 	// Number of pins in the print head.
 	uint32 mNumPins = 0;
 
-	// Pin number corresponding to the bottom-most dot above the text baseline.
-	// All pins below this pin are for descenders or spacing.
+	// Pin bit number corresponding to the bottom-most dot above the text
+	// baseline. All pins below this pin are for descenders or spacing. For
+	// instance, bit0top=true, numPins=9, baselinePin=6 means 7 pins above
+	// the baseline and 2 pins below the baseline.
 	uint32 mBaselinePin = 0;
 };
 
@@ -117,8 +119,13 @@ public:
 	//
 	// UniChar is the equivalent Unicode character. 0 means no equivalent.
 	//
+	// CharSet partitions characters into different sets. The ID has no meaning
+	// otherwise. It's recommended that characters be partitioned into different
+	// sets based on the advance width; this improves text selection in some
+	// PDF readers.
+	//
 	// The character ID for the new character is returned.
-	virtual uint32 DefineChar(double advance, vdspan<const CharColumn> columns, uint32 uniChar) = 0;
+	virtual uint32 DefineChar(double advance, vdspan<const CharColumn> columns, uint32 uniChar, uint32 charSet) = 0;
 
 	// Return the advance distance previously defined for a character, by ID.
 	virtual float GetCharAdvance(uint32 ch) const = 0;

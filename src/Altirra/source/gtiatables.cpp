@@ -84,7 +84,7 @@ extern const ATPALPhaseInfo kATPALPhaseLookup[15] = {
 	{  0.0f,  1,  0.0f,  1 },
 };
 
-void ATInitGTIAPriorityTables(uint8 priorityTables[32][256]) {
+void ATInitGTIAPriorityTables(uint8 (&priorityTables)[32][256]) {
 	// Priority table initialization
 	//
 	// The priority logic in the GTIA works as follows:

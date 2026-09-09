@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(Altirra VERSION 4.50.19 LANGUAGES C CXX)
+project(Altirra VERSION 4.50.20 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

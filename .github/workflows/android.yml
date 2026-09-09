@@ -5,7 +5,7 @@ name: Android build
 # under android/ and the existing scripts/build/android.sh pipeline.
 # Per-ABI APK splits are configured in android/app/build.gradle's
 # `splits.abi` block so a single Gradle invocation produces both
-# slices; sideload-friendly versionCodes (2440 for arm64, 1440 for v7a)
+# slices; sideload-friendly versionCodes (245020 for arm64, 145020 for v7a)
 # guarantee an arm64 device can still upgrade cleanly if the user
 # happened to install the v7a slice first.
 #
@@ -120,11 +120,32 @@ jobs:
           done
           ls -lh "$OUT_DIR"/*.apk
 
+          # Keep a copy in the CI build folder with the same version/date/
+          # commit fields shown by the About dialog. The native Android
+          # CMake build also generates this file inside its CMake output;
+          # use it when available so the timestamp is the one compiled into
+          # the APK, and fall back to the shared generator otherwise.
+          BUILD_VERSION=$(find android/app/.cxx -type f -name build-version.txt \
+            -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)
+          if [ -n "$BUILD_VERSION" ]; then
+              cp "$BUILD_VERSION" "$OUT_DIR/build-version.txt"
+          else
+              cmake \
+                -DOUTPUT_FILE="$OUT_DIR/buildinfo.h" \
+                -DVERSION_FILE="$OUT_DIR/build-version.txt" \
+                -DSOURCE_DIR="$GITHUB_WORKSPACE" \
+                -DPROJECT_VER="$VERSION" \
+                -P cmake/generate_buildinfo.cmake
+          fi
+          cat "$OUT_DIR/build-version.txt"
+
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AltirraSDL-android
-          path: build/android-release/AltirraSDL-*-android-*.apk
+          path: |
+            build/android-release/AltirraSDL-*-android-*.apk
+            build/android-release/build-version.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -141,10 +162,24 @@ jobs:
           name: AltirraSDL-android
           path: dist
 
-      # Wipe any previously-uploaded *.apk assets from the nightly release
-      # so old per-commit builds (e.g. AltirraSDL-nightly-12-g9c2638d-*.apk
-      # left over from before we pinned the filename to the project
-      # version) don't accumulate.  softprops/action-gh-release replaces
+      - name: Use stable nightly filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for abi in arm64-v8a armeabi-v7a; do
+            matches=(dist/AltirraSDL-*-android-${abi}.apk)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "ERROR: expected exactly one APK for ${abi}, found ${#matches[@]}" >&2
+              exit 1
+            fi
+            mv "${matches[0]}" "dist/AltirraSDL-nightly-android-${abi}.apk"
+          done
+          ls -lh dist/
+
+      # Wipe any previously-uploaded APK assets from the nightly release
+      # so old versioned or per-commit builds don't accumulate.
+      # softprops/action-gh-release replaces
       # files with the same name but never deletes orphans, so we do it
       # explicitly with the gh CLI.
       - name: Delete stale APK assets from nightly release
@@ -156,7 +191,7 @@ jobs:
           if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release view nightly --repo "$GITHUB_REPOSITORY" \
                   --json assets --jq '.assets[].name' \
-                  | grep -E '\.apk$' \
+                  | grep -E '^AltirraSDL-.*-android-(arm64-v8a|armeabi-v7a)\.apk$' \
                   | while read -r asset; do
                       echo "Deleting stale asset: $asset"
                       gh release delete-asset nightly "$asset" \

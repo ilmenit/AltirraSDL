@@ -28,7 +28,7 @@ struct ATPALPhaseInfo {
 
 extern const ATPALPhaseInfo kATPALPhaseLookup[15];
 
-void ATInitGTIAPriorityTables(uint8 priorityTables[32][256]);
+void ATInitGTIAPriorityTables(uint8 (&priorityTables)[32][256]);
 
 enum ATLumaRampMode : uint8;
 

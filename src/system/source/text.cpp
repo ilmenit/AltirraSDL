@@ -37,7 +37,6 @@
 #include <vd2/system/vdstdc.h>
 #include <vd2/system/vdstl.h>
 #include <vd2/system/text.h>
-#include <vd2/system/tls.h>
 #include <vd2/system/VDString.h>
 
 int VDTextWToA(char *dst, int max_dst, const wchar_t *src, int max_src) {

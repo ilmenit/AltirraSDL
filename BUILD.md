@@ -50,7 +50,7 @@ be removed after equivalent builds are recreated under `build/`.
 
 ## Upstream Baseline
 
-This tree is based on upstream Altirra 4.50 test19 source, with the
+This tree is based on upstream Altirra 4.50 test20 source, with the
 SDL3/CMake frontend and cross-platform adaptations layered on top.
 
 ---
@@ -112,14 +112,22 @@ packages in one error. To build without FFmpeg/libx264 and MP4 recording, pass
 |------|----------|
 | `build/<preset>/src/AltirraSDL/AltirraSDL` | Executable (SDL3 statically linked in) |
 | `build/<preset>/AltirraSDL-<ver>-<platform>.zip` | Binary distribution (with `--package`) |
+| `build/<preset>/build-version.txt` | Version, build timestamp, and commit used by the About dialog |
 | `build/<preset>/AltirraSDL-<ver>-macos.dmg` | macOS disk image (with `--package`, macOS only) |
 | `build/linux/AltirraSDL-<ver>-linux-<arch>.AppImage` | Linux AppImage (with `--appimage`) |
 | `build/<preset>/AltirraSDL-<ver>-src.tar.gz` | Source archive (with `--source`) |
 
 The CI workflows rename the macOS `.zip` / `.dmg` to include the CPU
 architecture (e.g. `AltirraSDL-<ver>-macos-arm64.dmg`) before
-uploading release artifacts.  Local `./build.sh --package` output
-keeps the unsuffixed names shown above.
+uploading release artifacts. Nightly release assets use stable names such as
+`AltirraSDL-nightly-android-arm64-v8a.apk`,
+`AltirraSDL-nightly-linux-x86_64.AppImage`, and
+`AltirraSDL-nightly-macos-arm64.zip`,
+`AltirraSDL-nightly-macos-arm64.dmg`,
+`AltirraSDL-nightly-windows-x86_64.zip`, and
+`AltirraSDL-nightly-wasm.zip`; versioned releases keep their version in the
+filename. Local `./build.sh --package` output keeps the versioned names shown
+above.
 
 By default SDL3 and SDL3_image are linked statically (see
 `-DALTIRRA_STATIC_SDL3=ON`, on by default for desktop), so the binary
@@ -131,8 +139,9 @@ recording by default. On Windows SDL3 builds this path currently
 requires a prebuilt static FFmpeg prefix passed with
 `-DALTIRRA_FFMPEG_ROOT=...`.
 ```
-AltirraSDL-4.50.19-linux.zip
+AltirraSDL-4.50.20-linux.zip
     AltirraSDL          (executable — SDL3 + SDL3_image linked in)
+    build-version.txt    (version, build timestamp, and commit)
     Copying             (GPL v2+ license)
     extras/
         customeffects/  (shader/effect presets)
@@ -397,7 +406,7 @@ To create a distributable folder:
 
 ```bash
 cmake --build build/linux-release --target package_altirra
-# Creates: build/linux-release/AltirraSDL-4.50.19/
+# Creates: build/linux-release/AltirraSDL-4.50.20/
 ```
 
 ### Install Target
@@ -618,7 +627,7 @@ tagged releases are ad-hoc signed only.
 ### What the CI does
 
 `.github/workflows/macos.yml` runs `./build.sh --release --package` on
-`macos-14` (Apple Silicon), then verifies both archives
+`macos-26` (Apple Silicon), then verifies both archives
 with sanity checks: the zip is inspected with `cmake -E tar tf` and
 the DMG is mounted with `hdiutil attach` to confirm the
 `AltirraSDL.app/Contents/MacOS/AltirraSDL` binary and the `altirra.icns`
@@ -766,8 +775,10 @@ A CI workflow (`.github/workflows/wasm.yml`) automatically:
 
 - Builds `wasm-release` on every push to `main`, `net-play`, and
   `WASM-target` (and on PRs / tags).
-- Packages the three files into `AltirraSDL-<version>-wasm.zip` and
-  attaches it to the rolling `nightly` GitHub Release.
+- Packages the three files into `AltirraSDL-<version>-wasm.zip`, then the
+  nightly publisher renames it to `AltirraSDL-nightly-wasm.zip` before
+  attaching it to the rolling `nightly` GitHub Release. Tagged releases keep
+  the versioned filename.
 - Deploys the bundle to GitHub Pages on every `main` push — see
   https://ilmenit.github.io/AltirraSDL/
 

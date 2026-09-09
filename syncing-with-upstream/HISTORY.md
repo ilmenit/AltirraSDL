@@ -4,6 +4,8 @@ One line per sync, newest first.
 
 Format:  `YYYY-MM-DD  <OLD> → <NEW>  <summary>`
 
+2026-09-09  4.50-test19 → 4.50-test20  Integrated upstream debug display P/M and mid-screen color support, IR mode 3 correction, printer PDF character-set splitting, parent-device command support, and system-source removals while retaining portable SDL adaptations and correcting selectable PDF alignment. Version advanced to 4.50.20. Nightly desktop and Android release assets now use stable `AltirraSDL-nightly-*` names; builds generate `build-version.txt` with the About-dialog version, timestamp, and commit.
+
 2026-09-07  test19 regression infrastructure  Added production-code VBXE regression tests, 540 international/multi-pass printer comparisons, mandatory Linux CI PDF validation (with a missing-tool negative test), and native Windows/macOS plus GCC 12 ASan/UBSan CI jobs. The local sanitizer run exposed and verified fixes for null empty-vector memory operations and unaligned Deflate match reads. All 13 Linux CTests and four focused ASan/UBSan/leak tests passed. Android arm64/ARMv7 native builds passed before the final shared-library guards; both final guards passed NDK syntax checks on both ABIs. Remote native jobs were not dispatched.
 
 2026-09-07  test19 follow-up review  Fixed FX-80 master select retaining proportional mode (reproduced by a failing spacing test) and VBXE RES conversion leaving non-PF2 temporary pixels stale. Expanded printer regression coverage to 2,280 upright/italic ASCII style combinations with adjacent characters, independent raw/tracked-path assertions, glyph-advance checks, and explicit DC4 width restoration. Linux CTest and UI suites and libretro smoke checks passed again.

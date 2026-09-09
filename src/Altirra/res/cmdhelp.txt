@@ -85,8 +85,10 @@ Usage: Altirra [switches] <disk/cassette/cartridge images...>
   /cleardevices
               Remove all devices
   /adddevice <device-tag>[,param1=value[,param2=value...]]
+        [,parent=<parent-device-tag>]
               Add new device by tag name
   /setdevice <device-tag>[,param1=value[,param2=value...]]
+        [,parent=<parent-device-tag>]
               Add or reconfigure existing device by tag name
   /removedevice <device-tag>
               Remove device by tag name

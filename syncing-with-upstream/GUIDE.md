@@ -36,8 +36,8 @@ Every sync has three directories:
 
 | Alias | Role                         | Example path                          |
 |-------|------------------------------|---------------------------------------|
-| OLD   | Last upstream release already synced into the fork | `Altirra-4.50-test18-src` |
-| NEW   | Upstream release we're moving to                    | `Altirra-4.50-test18-src` |
+| OLD   | Last upstream release already synced into the fork | `Altirra-4.50-test20-src` |
+| NEW   | Upstream release we're moving to                    | `Altirra-4.50-test21-src` |
 | FORK  | This repo's current working tree                    | `AltirraSDL`              |
 
 Two assumptions the tooling relies on:

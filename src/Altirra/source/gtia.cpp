@@ -2350,14 +2350,15 @@ void ATGTIAEmulator::EndScanline(uint8 dlControl, bool pfrendered) {
 	mLastSyncX = -2;
 
 	if (mY >= 8 && mY < 248) {
-		auto& lineColors = mColorTrace.mColors[mY - 8];
+		auto& lineState = mRegisterTrace.mLineStates[mY - 8];
 
 		for(int i=0; i<4; ++i) {
-			lineColors[i] = mPMColor[i];
-			lineColors[i+4] = mPFColor[i];
+			lineState.mColors[i] = mPMColor[i];
+			lineState.mColors[i+4] = mPFColor[i];
 		}
 
-		lineColors[8] = mPFBAK;
+		lineState.mColors[8] = mPFBAK;
+		lineState.mPRIOR = mPRIOR;
 	}
 
 	if (!mpDst)

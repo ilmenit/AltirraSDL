@@ -750,7 +750,7 @@ void ATUIVideoDisplayWindow::ReadScreen(ATUIDisplayAccessibilityScreen& screenIn
 	screenInfo.mFormatSpans.clear();
 
 	const ATGTIAEmulator& gtia = g_sim.GetGTIA();
-	const ATGTIAColorTrace& colorTrace = gtia.GetColorTrace();
+	const ATGTIARegisterTrace& gtiaRegisterTrace = gtia.GetRegisterTrace();
 	uint32 pal[256];
 	gtia.GetPalette(pal);
 
@@ -787,7 +787,7 @@ void ATUIVideoDisplayWindow::ReadScreen(ATUIDisplayAccessibilityScreen& screenIn
 		lineInfo.mTextOffset = (uint32)screenInfo.mText.size();
 		lineInfo.mTextLength = 0;
 
-		const auto& lineColorTrace = colorTrace.mColors[y - 8];
+		const auto& lineColorTrace = gtiaRegisterTrace.mLineStates[y - 8].mColors;
 		uint32 bg = 0;
 		uint32 fg = 0;
 		bool mode67 = false;

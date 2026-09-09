@@ -52,6 +52,7 @@ protected:
 	HWND	mhwndDisplay;
 	HMENU	mhmenu;
 	int		mComboResizeInProgress;
+	bool	mbSharpBilinear = true;
 
 	VDUIProxyComboBoxControl mDLAddrCombo;
 	VDUIProxyComboBoxControl mPFAddrCombo;

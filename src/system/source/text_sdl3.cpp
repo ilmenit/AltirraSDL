@@ -13,7 +13,6 @@
 #include <vd2/system/vdstdc.h>
 #include <vd2/system/vdstl.h>
 #include <vd2/system/text.h>
-#include <vd2/system/tls.h>
 #include <vd2/system/VDString.h>
 
 // -------------------------------------------------------------------------

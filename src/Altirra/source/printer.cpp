@@ -465,7 +465,7 @@ IATPrinterOutput *ATDevicePrinterBase::GetTextOutput() {
 	return printer;
 }
 
-uint32 ATDevicePrinterBase::UploadFont(const ATPrinterFontDesc& desc, const uint8 *fontData, float xStep, float xAdvance, FontUploadStyle style, vdspan<const uint32> uniChars) {
+uint32 ATDevicePrinterBase::UploadFont(const ATPrinterFontDesc& desc, const uint8 *fontData, float xStep, float xAdvance, FontUploadStyle style, vdspan<const uint32> uniChars, uint32 charSet) {
 	if (!mpPrinterGraphicalOutput) {
 		VDFAIL("No printer graphical output.");
 		return 0;
@@ -503,7 +503,7 @@ uint32 ATDevicePrinterBase::UploadFont(const ATPrinterFontDesc& desc, const uint
 		if (style == FontUploadStyle::BoldOneOver && lastDots)
 			columns.emplace_back(CharColumn { lastDots, xStep * (float)desc.mWidth });
 
-		index = mpPrinterGraphicalOutput->DefineChar(xAdvance, columns, uniChars[ch - desc.mCharFirst]);
+		index = mpPrinterGraphicalOutput->DefineChar(xAdvance, columns, uniChars[ch - desc.mCharFirst], charSet);
 	}
 
 	return index - (desc.mCharLast - desc.mCharFirst);
@@ -1021,7 +1021,8 @@ void ATDevicePrinter820::OnCreatedGraphicalOutput() {
 		kXStepMM,
 		kXStepMM * (float)g_ATPrinterFont820.mDesc.mWidth + kXSpacingMM,
 		FontUploadStyle::Normal,
-		vdspan(uniChars, 0x5F));
+		vdspan(uniChars, 0x5F),
+		0);
 
 	// The sideways font contains characters $30-5F, matching ATASCII.
 	// The difference is in $5E-5F, which are arrows. Our font also has
@@ -1041,7 +1042,8 @@ void ATDevicePrinter820::OnCreatedGraphicalOutput() {
 		kXStepMM,
 		kXStepMM * (float)g_ATPrinterFont820S.mDesc.mWidth + kXSpacingMM,
 		FontUploadStyle::Normal,
-		vdspan(uniChars, 0x31));
+		vdspan(uniChars, 0x31),
+		1);
 }
 
 ATPrinterGraphicsSpec ATDevicePrinter820::GetGraphicsSpec() const {
@@ -1223,9 +1225,9 @@ void ATDevicePrinter1025::OnCreatedGraphicalOutput() {
 	for(uint32 i = 0; i < 128; ++i)
 		uniChars[i] = kATATASCIITables.mATASCIIToUnicode[1][i];
 
-	mCharBase10Cpi = UploadFont(g_ATPrinterFont1025.mDesc, g_ATPrinterFont1025.mColumns, kXStep10CpiMM, kXAdvance10CpiMM, FontUploadStyle::Normal, uniChars);
-	mCharBase5Cpi = UploadFont(g_ATPrinterFont1025.mDesc, g_ATPrinterFont1025.mColumns, kXStep10CpiMM * 2.0f, kXAdvance10CpiMM * 2.0f, FontUploadStyle::BoldOneOver, uniChars);
-	mCharBase16_5Cpi = UploadFont(g_ATPrinterFont1025.mDesc, g_ATPrinterFont1025.mColumns, kXStep10CpiMM * (10.0f / 16.5f), kXAdvance10CpiMM * (10.0f / 16.5f), FontUploadStyle::Normal, uniChars);
+	mCharBase10Cpi = UploadFont(g_ATPrinterFont1025.mDesc, g_ATPrinterFont1025.mColumns, kXStep10CpiMM, kXAdvance10CpiMM, FontUploadStyle::Normal, uniChars, 0);
+	mCharBase5Cpi = UploadFont(g_ATPrinterFont1025.mDesc, g_ATPrinterFont1025.mColumns, kXStep10CpiMM * 2.0f, kXAdvance10CpiMM * 2.0f, FontUploadStyle::BoldOneOver, uniChars, 1);
+	mCharBase16_5Cpi = UploadFont(g_ATPrinterFont1025.mDesc, g_ATPrinterFont1025.mColumns, kXStep10CpiMM * (10.0f / 16.5f), kXAdvance10CpiMM * (10.0f / 16.5f), FontUploadStyle::Normal, uniChars, 2);
 }
 
 void ATDevicePrinter1025::InitSIOReceiveTimeout() {
@@ -1592,7 +1594,8 @@ void ATDevicePrinter1029::OnCreatedGraphicalOutput() {
 		kXStep,
 		kXStep * 6,
 		FontUploadStyle::Normal,
-		uniChars
+		uniChars,
+		0
 	);
 
 	mCharBaseElongated = UploadFont(
@@ -1601,7 +1604,8 @@ void ATDevicePrinter1029::OnCreatedGraphicalOutput() {
 		kXStep * 2,
 		kXStep * 12,
 		FontUploadStyle::BoldDuplicate,
-		uniChars
+		uniChars,
+		1
 	);
 }
 

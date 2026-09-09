@@ -47,6 +47,9 @@ class ATTrueTypeEncoder {
 	ATTrueTypeEncoder& operator=(const ATTrueTypeEncoder&) = delete;
 
 public:
+	template<typename T>
+	static constexpr T kUnitsPerEm = T(1024);
+
 	ATTrueTypeEncoder();
 	~ATTrueTypeEncoder();
 

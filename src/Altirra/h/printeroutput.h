@@ -133,7 +133,14 @@ public:
 	// color.
 	uint32 ConvertLinearColorToSrgb(uint32 c) const;
 
-	vdrect32f GetMaxCharBounds() const;
+	// Get the max bounding rectangle in mm for all characters. The character
+	// origin is at (0,0), with the right bound being the max advance, the top
+	// being the max ascent (negative) and the bottom being the max descent
+	// (positive).
+	vdrect32f GetMaxCharSetBounds(uint32 charSet) const;
+
+	// Return the character set ID associated with the given character.
+	uint32 GetCharSet(uint32 c) const;
 
 	struct CullInfo {
 		size_t mLineStart;
@@ -163,8 +170,11 @@ public:
 		uint32 mPins;
 	};
 
-	// Extract columns from a line within the pre-cull rect. The top of the rectangle must be at or below
-	// the top height of the last rectangle.
+	// Extract columns from a line within or overlapping the pre-cull rect. The top of the rectangle must be
+	// at or below the top height of the last rectangle.
+	//
+	// The returned render Y is tangent to the top of the top line of dots. One dot radius below the render
+	// Y is the centerline of the top pin.
 	bool ExtractNextLineAsDots(vdfastvector<RenderColumn>& renderColumns, float& renderY, CullInfo& cullInfo, const vdrect32f& r) const;
 	bool ExtractNextLineAsDotsOrChars(vdfastvector<RenderColumn>& renderColumns, float& renderY, CullInfo& cullInfo, const vdrect32f& r) const;
 
@@ -188,7 +198,7 @@ public:
 	
 	void FeedPaper(double distanceMM) override;
 	void Print(double x, uint32 dots) override;
-	uint32 DefineChar(double advance, vdspan<const CharColumn> dotColumns, uint32 uniChar) override;
+	uint32 DefineChar(double advance, vdspan<const CharColumn> dotColumns, uint32 uniChar, uint32 charSet) override;
 	float GetCharAdvance(uint32 ch) const override;
 	uint32 GetCharUnicodeChar(uint32 ch) const override;
 	vdspan<const ATPrinterGraphicalOutput::CharColumn> GetCharColumns(uint32 ch) const override;
@@ -295,6 +305,7 @@ private:
 		uint32 mDotPatternCount;
 		float mAdvance;
 		uint32 mUnicodeChar;
+		uint32 mCharSet;
 	};
 
 	vdfastvector<CharInfo> mCharInfos;

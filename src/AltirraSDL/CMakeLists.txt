@@ -857,14 +857,16 @@ target_sources(AltirraSDL PRIVATE ${HELP_GEN_C}
 # ===========================================================================
 set(BUILDINFO_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/buildinfo")
 set(BUILDINFO_HEADER "${BUILDINFO_DIR}/buildinfo.h")
+set(BUILDINFO_VERSION_FILE "${CMAKE_BINARY_DIR}/build-version.txt")
 
 add_custom_target(generate_buildinfo ALL
     COMMAND ${CMAKE_COMMAND}
         -DOUTPUT_FILE=${BUILDINFO_HEADER}
         -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
         -DPROJECT_VER=${PROJECT_VERSION}
+        -DVERSION_FILE=${BUILDINFO_VERSION_FILE}
         -P ${CMAKE_SOURCE_DIR}/cmake/generate_buildinfo.cmake
-    COMMENT "Generating build info header (version, date, git commit)"
+    COMMENT "Generating build info header and build-version.txt"
     VERBATIM
 )
 add_dependencies(AltirraSDL generate_buildinfo)
@@ -1453,6 +1455,9 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy
             "${CMAKE_SOURCE_DIR}/Copying"
             "${ALTIRRA_PKG_DIR}/Copying"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${BUILDINFO_VERSION_FILE}"
+            "${ALTIRRA_PKG_DIR}/build-version.txt"
         COMMENT "Packaging AltirraSDL.app ${PROJECT_VERSION} -> ${ALTIRRA_PKG_DIR}"
     )
 else()
@@ -1470,6 +1475,9 @@ else()
         COMMAND ${CMAKE_COMMAND} -E copy
             "${CMAKE_SOURCE_DIR}/Copying"
             "${ALTIRRA_PKG_DIR}/Copying"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${BUILDINFO_VERSION_FILE}"
+            "${ALTIRRA_PKG_DIR}/build-version.txt"
         COMMENT "Packaging AltirraSDL ${PROJECT_VERSION} -> ${ALTIRRA_PKG_DIR}"
     )
 endif()
