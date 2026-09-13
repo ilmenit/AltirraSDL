@@ -44,6 +44,15 @@ uint8 ATTranslateCurrentExceptionToCIOError() {
 }
 #endif
 
+// Separator for the native paths handed to the host OS.  The Atari side of a
+// filename accepts both '>' and '\' on every host; this is only for what is
+// built from it.
+#ifdef _WIN32
+constexpr wchar_t kATHostNativeSep = L'\\';
+#else
+constexpr wchar_t kATHostNativeSep = L'/';
+#endif
+
 ///////////////////////////////////////////////////////////////////////////
 
 void ATHostDeviceMergeWildPath(VDStringW& dst, const wchar_t *s, const wchar_t *pat) {
@@ -159,7 +168,7 @@ bool ATHostDeviceParseFilename(const char *s, bool allowDir, bool allowWild, boo
 							return false;
 
 						// remove a component
-						if (!nativeRelPath.empty() && nativeRelPath.back() == '\\')
+						if (!nativeRelPath.empty() && VDIsPathSeparator(nativeRelPath.back()))
 							nativeRelPath.pop_back();
 
 						while(!nativeRelPath.empty()) {
@@ -167,7 +176,7 @@ bool ATHostDeviceParseFilename(const char *s, bool allowDir, bool allowWild, boo
 
 							nativeRelPath.pop_back();
 
-							if (c == '\\')
+							if (VDIsPathSeparator(c))
 								break;
 						}
 
@@ -193,7 +202,7 @@ bool ATHostDeviceParseFilename(const char *s, bool allowDir, bool allowWild, boo
 
 		if (!fnchars) {
 			if (!nativeRelPath.empty())
-				nativeRelPath += '\\';
+				nativeRelPath += kATHostNativeSep;
 
 			componentStart = nativeRelPath.size();
 		}
@@ -261,6 +270,16 @@ namespace {
 		ATTest_HostDeviceParseFilename() {
 			VDStringW nativeRelPath;
 
+			// the tests are written with '\\'; the parser emits the host's separator
+			const auto N = [](const wchar_t *s) {
+				VDStringW r(s);
+				for(wchar_t& c : r) {
+					if (c == L'\\')
+						c = kATHostNativeSep;
+				}
+				return r;
+			};
+
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"TEST.TXT");
 			nativeRelPath = L""; VDASSERT(!ATHostDeviceParseFilename("*.TXT", false, false, true, false, false, nativeRelPath));
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("*.TXT", false, true, true, false, false, nativeRelPath) && nativeRelPath == L"*.TXT");
@@ -270,21 +289,21 @@ namespace {
 			nativeRelPath = L""; VDASSERT(!ATHostDeviceParseFilename("", false, false, true, false, false, nativeRelPath));
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("", true, false, true, false, false, nativeRelPath) && nativeRelPath == L"");
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>", true, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO");
-			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR", true, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAR");
-			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR>", true, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAR");
-			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR>.", true, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAR");
+			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR", true, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAR"));
+			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR>", true, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAR"));
+			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR>.", true, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAR"));
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("FOO>BAR>..", true, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO");
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("CON", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"!CON");
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("CON.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"!CON.TXT");
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("CONX.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"CONX.TXT");
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"TEST.TXT");
 			nativeRelPath = L""; VDASSERT( ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"TEST.TXT");
-			nativeRelPath = L"FOO"; VDASSERT(ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\TEST.TXT");
-			nativeRelPath = L"FOO\\BAR"; VDASSERT(ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAR\\TEST.TXT");
-			nativeRelPath = L"FOO\\BAR"; VDASSERT(ATHostDeviceParseFilename("BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAR\\BAZ\\TEST.TXT");
-			nativeRelPath = L"FOO\\BAR"; VDASSERT(ATHostDeviceParseFilename("..\\BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAZ\\TEST.TXT");
-			nativeRelPath = L"FOO\\BAR\\BLAH"; VDASSERT(ATHostDeviceParseFilename("..\\..\\BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"FOO\\BAZ\\TEST.TXT");
-			nativeRelPath = L"FOO\\BAR\\BLAH"; VDASSERT(ATHostDeviceParseFilename("..\\..\\..\\..\\BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == L"BAZ\\TEST.TXT");
+			nativeRelPath = L"FOO"; VDASSERT(ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\TEST.TXT"));
+			nativeRelPath = N(L"FOO\\BAR"); VDASSERT(ATHostDeviceParseFilename("TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAR\\TEST.TXT"));
+			nativeRelPath = N(L"FOO\\BAR"); VDASSERT(ATHostDeviceParseFilename("BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAR\\BAZ\\TEST.TXT"));
+			nativeRelPath = N(L"FOO\\BAR"); VDASSERT(ATHostDeviceParseFilename("..\\BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAZ\\TEST.TXT"));
+			nativeRelPath = N(L"FOO\\BAR\\BLAH"); VDASSERT(ATHostDeviceParseFilename("..\\..\\BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"FOO\\BAZ\\TEST.TXT"));
+			nativeRelPath = N(L"FOO\\BAR\\BLAH"); VDASSERT(ATHostDeviceParseFilename("..\\..\\..\\..\\BAZ>TEST.TXT", false, false, true, false, false, nativeRelPath) && nativeRelPath == N(L"BAZ\\TEST.TXT"));
 		}
 	} g_ATTest_HostDeviceParseFilename;
 }
@@ -620,7 +639,7 @@ void ATHostDeviceEmulator::SetBasePath(int index, const wchar_t *basePath) {
 
 	if (!nbpath.empty()) {
 		if (!VDIsPathSeparator(nbpath.back()))
-			nbpath += L'\\';
+			nbpath += kATHostNativeSep;
 	}
 }
 
@@ -1632,7 +1651,7 @@ uint8 ATHostDeviceEmulator::ReadFilename(const uint8 *rawfn, bool allowDir, bool
 
 			parsedPath.pop_back();
 
-			if (c == L'\\')
+			if (VDIsPathSeparator(c))
 				break;
 		}
 	}
