@@ -12,6 +12,7 @@
 #include "bridge_protocol.h"
 
 #include "simulator.h"
+#include <at/atcore/address.h>   // kATAddressSpace_CPU: PEEK above $FFFF
 #include "cpu.h"
 #include "cpumemory.h"
 #include "antic.h"
@@ -326,8 +327,14 @@ std::string CmdPeek(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	uint32_t addr = 0;
 	if (!ParseUint(tokens[1], addr))
 		return JsonError("PEEK: bad address");
-	if (addr > 0xFFFF)
-		return JsonError("PEEK: address > $FFFF (use PEEK_BANK for extended memory; coming in phase 5)");
+	if (addr > 0xFFFFFF)
+		return JsonError("PEEK: address > $FFFFFF");
+	// Above $FFFF the address is the 65C816's linear space, bank in the
+	// high byte, read through the memory manager's banked debug path
+	// (DebugGlobalReadByte, address space CPU): the CPU's own view of
+	// the bank, an accelerator's fast RAM included.  Bank 0 keeps the
+	// 16-bit path below unchanged.
+	const bool wide = addr > 0xFFFF;
 	uint32_t length = 1;
 	if (tokens.size() >= 3) {
 		if (!ParseUint(tokens[2], length))
@@ -337,8 +344,10 @@ std::string CmdPeek(ATSimulator& sim, const std::vector<std::string>& tokens) {
 		if (length > kMaxPeekLen)
 			return JsonError("PEEK: length too large (max 16384)");
 	}
-	if (addr + length > 0x10000)
+	if (!wide && addr + length > 0x10000)
 		return JsonError("PEEK: range crosses end of 64K address space");
+	if (wide && addr + length > 0x1000000)
+		return JsonError("PEEK: range crosses end of 24-bit address space");
 
 	std::vector<uint8_t> buf(length);
 	for (uint32_t i = 0; i < length; ++i) {
@@ -348,11 +357,12 @@ std::string CmdPeek(ATSimulator& sim, const std::vector<std::string>& tokens) {
 		// "Debug" prefix bypasses I/O register side effects so
 		// reading $D000-$D7FF doesn't trigger ANTIC/GTIA/POKEY
 		// state changes.
-		buf[i] = sim.DebugReadByte((uint16_t)(addr + i));
+		buf[i] = wide ? sim.DebugGlobalReadByte(kATAddressSpace_CPU + addr + i)
+		              : sim.DebugReadByte((uint16_t)(addr + i));
 	}
 
 	std::string payload;
-	AddField(payload, "addr",   Hex16(addr));
+	AddField(payload, "addr",   wide ? Hex24(addr) : Hex16(addr));
 	AddU32  (payload, "length", length);
 	payload += "\"data\":\"";
 	payload += HexBytes(buf.data(), buf.size());
@@ -370,15 +380,20 @@ std::string CmdPeek16(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	uint32_t addr = 0;
 	if (!ParseUint(tokens[1], addr))
 		return JsonError("PEEK16: bad address");
-	if (addr > 0xFFFE)
+	if (addr > 0xFFFFFE)
+		return JsonError("PEEK16: address > $FFFFFE");
+	const bool wide = addr > 0xFFFF;            // as PEEK: the 24-bit space
+	if (!wide && addr > 0xFFFE)
 		return JsonError("PEEK16: address > $FFFE");
 
-	uint8_t lo = sim.DebugReadByte((uint16_t)addr);
-	uint8_t hi = sim.DebugReadByte((uint16_t)(addr + 1));
+	uint8_t lo = wide ? sim.DebugGlobalReadByte(kATAddressSpace_CPU + addr)
+	                  : sim.DebugReadByte((uint16_t)addr);
+	uint8_t hi = wide ? sim.DebugGlobalReadByte(kATAddressSpace_CPU + addr + 1)
+	                  : sim.DebugReadByte((uint16_t)(addr + 1));
 	uint16_t value = (uint16_t)lo | ((uint16_t)hi << 8);
 
 	std::string payload;
-	AddField(payload, "addr",  Hex16(addr));
+	AddField(payload, "addr",  wide ? Hex24(addr) : Hex16(addr));
 	AddField(payload, "value", Hex16(value));
 	StripTrailingComma(payload);
 	return JsonOk(payload);
