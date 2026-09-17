@@ -316,7 +316,8 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		// ---- Help ----
 		if (MatchSwitch(sw, "help") || MatchSwitch(sw, "?")) {
 			consumed[i] = true;
-			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "          --renderer <sdlgpu|opengl|sdlrenderer>\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
+			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "          --renderer <sdlgpu|opengl|sdlrenderer>\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n"
+			"          --cpu <6502|65c02|65c816[,mult]>  --highbanks <na|N>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
 			continue;
 		}
 
@@ -803,6 +804,82 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			else if (strcasecmp(val, "576KCOMPY") == 0) g_sim.SetMemoryMode(kATMemoryMode_576K_Compy);
 			else if (strcasecmp(val, "1088K") == 0) g_sim.SetMemoryMode(kATMemoryMode_1088K);
 			else LOG_INFO("CmdLine", "Invalid memory mode: %s", val);
+			continue;
+		}
+
+		// ---- CPU model, and the high memory a 65C816 can address ----
+		//
+		// Altirra's core has always had both; only this front end had no
+		// way to ask for them, so the only 65C816 an SDL build could get
+		// was the one inside an accelerator device.  A plain 65C816 with
+		// high banks is a different machine from a Rapidus -- it is the
+		// shape of an Antonia, and it is what gem4xe wanted to test
+		// against so that nothing of its own depends on one accelerator.
+		//
+		//   --cpu 6502|65c02|65c816[,multiplier]
+		//   --highbanks na|0|1|3|15|63
+		//
+		// The multiplier is the 65C816's sub-cycle count: 1 is stock
+		// speed, higher runs the CPU faster against the same bus, which
+		// is what SetCPUMode's second argument means.  It is ignored for
+		// the 8-bit models, as the simulator itself requires.
+		//
+		// High banks are overridden while a Rapidus is fitted
+		// (ATSimulator::GetHighMemoryBanksOverridden), so the two are not
+		// in competition: with the device present the device wins, and
+		// without it this is how a program gets linear RAM.
+		if ((val = ConsumeArg(argc, argv, i, consumed, "cpu")) != nullptr) {
+			char buf[64];
+			strncpy(buf, val, sizeof buf - 1);
+			buf[sizeof buf - 1] = 0;
+
+			uint32 subCycles = 1;
+			char *comma = strchr(buf, ',');
+			if (comma) {
+				*comma = 0;
+				int n = atoi(comma + 1);
+				if (n >= 1 && n <= 12)
+					subCycles = (uint32)n;
+				else
+					LOG_INFO("CmdLine", "CPU multiplier out of range (1-12): %s", comma + 1);
+			}
+
+			ATCPUMode mode = kATCPUMode_6502;
+			bool known = true;
+			if (strcasecmp(buf, "6502") == 0) mode = kATCPUMode_6502;
+			else if (strcasecmp(buf, "65c02") == 0 || strcasecmp(buf, "65802") == 0)
+				mode = kATCPUMode_65C02;
+			else if (strcasecmp(buf, "65c816") == 0 || strcasecmp(buf, "65816") == 0)
+				mode = kATCPUMode_65C816;
+			else {
+				known = false;
+				LOG_INFO("CmdLine", "Invalid CPU mode: %s (6502, 65c02, 65c816)", buf);
+			}
+
+			if (known) {
+				if (mode != kATCPUMode_65C816)
+					subCycles = 1;
+				g_sim.SetCPUMode(mode, subCycles);
+				coldResetPending = true;
+			}
+			continue;
+		}
+
+		if ((val = ConsumeArg(argc, argv, i, consumed, "highbanks")) != nullptr) {
+			sint32 banks = -1;
+			if (strcasecmp(val, "na") == 0 || strcasecmp(val, "none") == 0)
+				banks = -1;
+			else {
+				int n = atoi(val);
+				if (n >= 0 && n <= 255)
+					banks = (sint32)n;
+				else {
+					LOG_INFO("CmdLine", "Invalid high bank count: %s", val);
+					continue;
+				}
+			}
+			g_sim.SetHighMemoryBanks(banks);
+			coldResetPending = true;
 			continue;
 		}
 
