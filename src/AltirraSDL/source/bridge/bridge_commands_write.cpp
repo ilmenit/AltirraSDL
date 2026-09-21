@@ -101,6 +101,7 @@ bool ParseAddr16(const std::string& tok, uint16_t& addr) {
 // purpose so each file is self-contained. The total LOC is tiny.
 std::string Hex8(uint32_t v)  { char b[8];  std::snprintf(b, sizeof b, "\"$%02x\"",  v & 0xff);   return b; }
 std::string Hex16(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%04x\"",  v & 0xffff); return b; }
+std::string Hex24(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%06x\"",  v & 0xffffff); return b; }
 std::string Hex64(uint64_t v) { char b[24]; std::snprintf(b, sizeof b, "\"$%016llx\"", (unsigned long long)v); return b; }
 
 // key=value option parsing -- mirrors the helpers in
@@ -1333,8 +1334,6 @@ std::string CmdPoke16(ATSimulator& sim, const std::vector<std::string>& tokens) 
 // $FFFFFF.  Addresses in bank 0 keep the 16-bit path and its rules, so
 // nothing that read bank 0 before reads differently now.
 // ---------------------------------------------------------------------------
-
-static std::string Hex24(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%06x\"", v & 0xffffff); return b; }
 
 std::string CmdMemDump(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 3)

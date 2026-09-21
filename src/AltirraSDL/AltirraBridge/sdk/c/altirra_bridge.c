@@ -740,7 +740,9 @@ int atb_memload(atb_client_t* c, unsigned int addr,
 		atb_set_error(c, "out of memory");
 		return ATB_ERR_NETWORK;
 	}
-	int n = snprintf(cmd, 32, "MEMLOAD $%x ", addr & 0xFFFF);
+	/* 24-bit: above $FFFF this is the 65C816's linear space (bank in
+	 * the high byte), as PROTOCOL.md documents for MEMDUMP/MEMLOAD. */
+	int n = snprintf(cmd, 32, "MEMLOAD $%x ", addr & 0xFFFFFF);
 	atb_base64_encode(data, length, cmd + n);
 	int rc = atb_simple_cmd(c, cmd);
 	free(cmd);
@@ -785,7 +787,7 @@ int atb_memdump(atb_client_t* c, unsigned int addr, unsigned int length,
                 unsigned char* out_buf) {
 	if (!out_buf || length == 0) return ATB_ERR_BAD_ARG;
 	char cmd[64];
-	snprintf(cmd, sizeof cmd, "MEMDUMP $%x %u", addr & 0xFFFF, length);
+	snprintf(cmd, sizeof cmd, "MEMDUMP $%x %u", addr & 0xFFFFFF, length);
 	int rc = atb_simple_cmd(c, cmd);
 	if (rc != ATB_OK) return rc;
 	const char* p = strstr(c->response, "\"data\":\"");
