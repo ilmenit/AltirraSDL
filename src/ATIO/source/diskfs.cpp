@@ -19,10 +19,6 @@
 #include <at/atio/diskfs.h>
 #include <at/atio/diskimage.h>
 
-IATDiskFS *ATDiskMountImageDOS2(IATDiskImage *image, bool readOnly);
-IATDiskFS *ATDiskMountImageDOS3(IATDiskImage *image, bool readOnly);
-IATDiskFS *ATDiskMountImageSDX2(IATDiskImage *image, bool readOnly);
-
 ATDiskFSException::ATDiskFSException(ATDiskFSError error)
 	: mErrorCode(error)
 {

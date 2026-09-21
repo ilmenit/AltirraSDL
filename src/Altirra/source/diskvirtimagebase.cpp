@@ -38,3 +38,12 @@ uint32 ATDiskImageVirtualFolderBase::GetPhysicalSectorCount() const {
 bool ATDiskImageVirtualFolderBase::IsValidPhysicalSector(uint32 physIndex) const {
 	return physIndex < GetVirtualSectorCount();
 }
+
+void ATDiskImageVirtualFolderBase::WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus) {
+	ATThrowDiskReadOnlyException();
+}
+
+bool ATDiskImageVirtualFolderBase::WriteVirtualSector(uint32 index, const void *data, uint32 len) {
+	ATThrowDiskReadOnlyException();
+	return false;
+}

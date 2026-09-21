@@ -152,6 +152,8 @@ IATDiskFS *ATDiskFormatImageSDX2(IATDiskImage *image, const char *volNameHint = 
 IATDiskFS *ATDiskMountImage(IATDiskImage *image, bool readOnly);
 IATDiskFS *ATDiskMountImageARC(const wchar_t *path);
 IATDiskFS *ATDiskMountImageARC(IVDRandomAccessStream& stream, const wchar_t *path);
+IATDiskFS *ATDiskMountImageDOS2(IATDiskImage *image, bool readOnly);
+IATDiskFS *ATDiskMountImageDOS3(IATDiskImage *image, bool readOnly);
 IATDiskFS *ATDiskMountImageSDX2(IATDiskImage *image, bool readOnly);
 IATDiskFS *ATDiskMountImageCPM(IATDiskImage *image, bool readOnly);
 
