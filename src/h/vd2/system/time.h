@@ -31,11 +31,6 @@
 #include <vd2/system/function.h>
 #include <vd2/system/thread.h>
 #include <vd2/system/win32/miniwindows.h>
-#if !defined(VD_OS_WINDOWS) && !defined(_WIN32)
-#include <thread>
-#include <atomic>
-#include <memory>
-#endif
 
 class VDFunctionThunkInfo;
 
@@ -67,12 +62,15 @@ public:
 // precision is low (>1 frame) and callbacks can be skipped if the thread is
 // busy.
 //
-// AltirraSDL: upstream additionally guarantees that lazy timer callbacks are
-// invoked on the main thread as part of the event loop.  That holds for the
-// WASM backend (drained by VDWASMTimerTick() in the main loop), but the
-// native SDL3 and libretro backends still dispatch from a worker thread, so
-// callbacks must not assume main-thread affinity there.  See
-// src/system/source/time_sdl3.cpp.  Preserve this note on upstream resync.
+// Lazy timers must be created on the main thread and are always invoked on
+// the main thread as part of the event loop; no synchronization is needed
+// between mainline and callback code.
+//
+// AltirraSDL: the non-Win32 backends honour that contract with a
+// cooperative scheduler that the host loop drains by calling
+// VDLazyTimerTick() once per iteration — see src/system/source/time_sdl3.cpp
+// (and src/AltirraLibretro/libretro_time.cpp) for the implementation and the
+// list of drain sites.  Preserve this note on upstream resync.
 //
 class VDLazyTimer {
 	VDLazyTimer(const VDLazyTimer&) = delete;
@@ -94,9 +92,6 @@ protected:
 	bool				mbPeriodic = false;
 #if defined(VD_OS_WINDOWS) || defined(_WIN32)
 	VDFunctionThunkInfo	*mpThunk = nullptr;
-#else
-	std::thread			mTimerThread;
-	std::shared_ptr<std::atomic<bool>>	mpTimerRunning;
 #endif
 	vdfunction<void()>	mpFn;
 };

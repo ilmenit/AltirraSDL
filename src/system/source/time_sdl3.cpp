@@ -3,20 +3,17 @@
 
 #include <stdafx.h>
 #include <chrono>
-#include <thread>
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/time.h>
 #include <vd2/system/thread.h>
 
-#if defined(__EMSCRIPTEN__)
-// WASM single-threaded timer scheduler — see the VDLazyTimer block at the
+// Cooperative lazy-timer scheduler — see the VDLazyTimer block at the
 // bottom of this file.  Needs vector / mutex / function / algorithm.
 #include <vector>
 #include <mutex>
 #include <functional>
 #include <algorithm>
-#endif
 
 // -------------------------------------------------------------------------
 // Tick / precision timer
@@ -78,38 +75,33 @@ double VDGetPreciseSecondsPerTick() {
 // -------------------------------------------------------------------------
 // VDLazyTimer
 // -------------------------------------------------------------------------
-
-VDLazyTimer::VDLazyTimer() {}
-
-VDLazyTimer::~VDLazyTimer() {
-	Stop();
-}
-
-#if defined(__EMSCRIPTEN__)
-
-// -------------------------------------------------------------------------
-// WASM single-threaded VDLazyTimer
 //
-// The native backend uses detached std::threads that sleep_for(ms) and
-// then fire the callback.  That cannot work in a browser build without
-// -pthread, and even with pthreads it would be overkill: VDLazyTimer
-// callbacks are infrequent, non-real-time things like "close this
-// virtual-disk file N ms after the last access" or "pulse a UI status
-// line".
+// Lazy timers are drained cooperatively from the host's main loop rather
+// than from a worker thread.  <vd2/system/time.h> documents the contract
+// upstream relies on: a lazy timer callback runs on the main thread as
+// part of the event loop, so mainline code and callback code need no
+// synchronization.  Win32 gets that for free from SetTimer/WM_TIMER; this
+// backend gets it by registering the callback in a process-wide list that
+// VDLazyTimerTick() walks once per iteration of the host loop.
 //
-// Under WASM we instead register the delay + callback in a process-
-// wide list.  The main loop (main_sdl3.cpp) calls VDWASMTimerTick()
-// once per frame; it walks the list and fires any due callbacks
-// inline.  Periodic timers rearm themselves after firing.
+// An earlier version of this file used a detached std::thread per one-shot
+// and a worker thread per periodic timer.  That broke the contract in two
+// ways that matter: the callbacks (disk auto-flush, IDE flush, virtual
+// folder file close) ran concurrently with the emulation thread that owns
+// the same objects, and a detached one-shot could not be cancelled, so
+// Stop() — including the one in ~VDLazyTimer — left a thread that would
+// later call into a destroyed object.  Do not reintroduce threads here.
 //
-// This scheduler is strictly single-threaded and all accesses happen
-// on the main thread — the std::mutex below is belt-and-suspenders
-// for any hypothetical future concurrent access and compiles to a
-// no-op in practice.
+// Drain sites (each host loop must call VDLazyTimerTick() every iteration,
+// or its lazy timers simply never fire):
+//	 - src/AltirraSDL/source/app/main_sdl3.cpp   (desktop, Android, WASM)
+//	 - src/AltirraBridgeServer/main_bridge.cpp   (headless bridge server)
+//	 - src/AltirraLibretro/libretro.cpp          (retro_run; that target
+//	   has its own copy of this scheduler in libretro_time.cpp)
 // -------------------------------------------------------------------------
 
 namespace {
-	struct WASMTimerEntry {
+	struct LazyTimerEntry {
 		uint32                  mTimerId    = 0;   // matches VDLazyTimer::mTimerId
 		uint32                  mPeriodMs   = 0;
 		uint64                  mNextFireMs = 0;   // absolute ms
@@ -117,55 +109,73 @@ namespace {
 		vdfunction<void()>      mFn;
 	};
 
-	std::mutex                          g_wasmTimerMutex;
-	std::vector<WASMTimerEntry>         g_wasmTimerList;
-	uint32                              g_wasmTimerNextId = 1;
+	// Scheduler state.  Deliberately immortal (allocated once, never
+	// destroyed): VDLazyTimer objects can be reached from globals — the
+	// simulator owns the disk interfaces, which own the auto-flush timers
+	// — and those destructors run during static destruction in an order
+	// that is not defined relative to this translation unit.  An immortal
+	// state block means a late ~VDLazyTimer can always unregister safely.
+	//
+	// The mutex guards registration only; callbacks always run on the
+	// thread that calls VDLazyTimerTick().  Registration from a non-main
+	// thread is rare but legal, so the list stays locked.
+	struct LazyTimerState {
+		std::mutex                  mMutex;
+		std::vector<LazyTimerEntry> mList;
+		uint32                      mNextId = 1;
+	};
 
-	uint32 WASMTimer_Register(const vdfunction<void()>& fn, uint32 delayMs, bool periodic) {
-		std::lock_guard<std::mutex> lk(g_wasmTimerMutex);
-		WASMTimerEntry e;
-		e.mTimerId    = g_wasmTimerNextId++;
-		e.mPeriodMs   = delayMs;
-		e.mNextFireMs = (uint64)VDGetCurrentTick64() + delayMs;
-		e.mbPeriodic  = periodic;
-		e.mFn         = fn;
-		g_wasmTimerList.push_back(std::move(e));
-		return e.mTimerId;
+	LazyTimerState& GetLazyTimerState() {
+		static LazyTimerState *const state = new LazyTimerState;
+		return *state;
 	}
 
-	void WASMTimer_Unregister(uint32 id) {
+	uint32 LazyTimer_Register(const vdfunction<void()>& fn, uint32 delayMs, bool periodic) {
+		LazyTimerState& st = GetLazyTimerState();
+		std::lock_guard<std::mutex> lk(st.mMutex);
+
+		LazyTimerEntry e;
+		e.mTimerId    = st.mNextId++;
+		e.mPeriodMs   = delayMs;
+		e.mNextFireMs = VDGetCurrentTick64() + delayMs;
+		e.mbPeriodic  = periodic;
+		e.mFn         = fn;
+		st.mList.push_back(std::move(e));
+		return st.mList.back().mTimerId;
+	}
+
+	void LazyTimer_Unregister(uint32 id) {
 		if (!id) return;
-		std::lock_guard<std::mutex> lk(g_wasmTimerMutex);
-		g_wasmTimerList.erase(
-			std::remove_if(g_wasmTimerList.begin(), g_wasmTimerList.end(),
-				[id](const WASMTimerEntry& e) { return e.mTimerId == id; }),
-			g_wasmTimerList.end());
+
+		LazyTimerState& st = GetLazyTimerState();
+		std::lock_guard<std::mutex> lk(st.mMutex);
+		st.mList.erase(
+			std::remove_if(st.mList.begin(), st.mList.end(),
+				[id](const LazyTimerEntry& e) { return e.mTimerId == id; }),
+			st.mList.end());
 	}
 }
 
-// Drain due timers.  Called once per main-loop tick from main_sdl3.cpp
-// under __EMSCRIPTEN__.  Callback invocation is done on a copy of the
-// entry so that a callback which re-registers or stops itself doesn't
-// invalidate the iteration.  Extern "C" linkage keeps the symbol
-// addressable from the wider build without pulling a header in just
-// for this one call.
-extern "C" void VDWASMTimerTick() {
+// Drain due timers.  Called once per host main-loop iteration.  Callbacks
+// are invoked on copies of the entries and outside the lock, so a callback
+// that stops itself, re-arms itself, or registers another timer can safely
+// mutate the timer list.  Extern "C" linkage keeps the symbol addressable
+// without pulling in a header just for this one call.
+extern "C" void VDLazyTimerTick() {
 	const uint64 now = VDGetCurrentTick64();
+	LazyTimerState& st = GetLazyTimerState();
 
-	// Snapshot the list under the lock, then invoke each callback
-	// unlocked so a callback that calls Stop() / another SetOneShot
-	// can safely mutate g_wasmTimerList.
-	std::vector<WASMTimerEntry> fireNow;
+	std::vector<LazyTimerEntry> fireNow;
 	{
-		std::lock_guard<std::mutex> lk(g_wasmTimerMutex);
-		for (auto it = g_wasmTimerList.begin(); it != g_wasmTimerList.end(); ) {
+		std::lock_guard<std::mutex> lk(st.mMutex);
+		for (auto it = st.mList.begin(); it != st.mList.end(); ) {
 			if (it->mNextFireMs <= now) {
 				fireNow.push_back(*it);
 				if (it->mbPeriodic) {
 					it->mNextFireMs = now + it->mPeriodMs;
 					++it;
 				} else {
-					it = g_wasmTimerList.erase(it);
+					it = st.mList.erase(it);
 				}
 			} else {
 				++it;
@@ -178,6 +188,12 @@ extern "C" void VDWASMTimerTick() {
 	}
 }
 
+VDLazyTimer::VDLazyTimer() {}
+
+VDLazyTimer::~VDLazyTimer() {
+	Stop();
+}
+
 void VDLazyTimer::SetOneShot(IVDTimerCallback *pCB, uint32 delay) {
 	SetOneShotFn([=]() { pCB->TimerCallback(); }, delay);
 }
@@ -186,7 +202,7 @@ void VDLazyTimer::SetOneShotFn(const vdfunction<void()>& fn, uint32 delay) {
 	Stop();
 	mpFn       = fn;
 	mbPeriodic = false;
-	mTimerId   = WASMTimer_Register(fn, delay, false);
+	mTimerId   = LazyTimer_Register(fn, delay, false);
 }
 
 void VDLazyTimer::SetPeriodic(IVDTimerCallback *pCB, uint32 delay) {
@@ -197,88 +213,15 @@ void VDLazyTimer::SetPeriodicFn(const vdfunction<void()>& fn, uint32 delay) {
 	Stop();
 	mpFn       = fn;
 	mbPeriodic = true;
-	mTimerId   = WASMTimer_Register(fn, delay, true);
+	mTimerId   = LazyTimer_Register(fn, delay, true);
 }
 
 void VDLazyTimer::Stop() {
 	if (mTimerId) {
-		WASMTimer_Unregister(mTimerId);
+		LazyTimer_Unregister(mTimerId);
 		mTimerId = 0;
 	}
-	// mTimerThread / mpTimerRunning are not used on the WASM backend —
-	// they remain default-constructed.
 }
 
-// Unused on WASM (the header provides it for the native backends that
-// route through a Win32 timer proc).  Empty stub keeps the vtable happy.
+// Unused outside Win32 (the header declares it for the Win32 timer proc).
 void VDLazyTimer::StaticTimeCallback(VDZHWND, VDZUINT, VDZUINT_PTR, VDZDWORD) {}
-
-#else // !__EMSCRIPTEN__
-
-void VDLazyTimer::SetOneShot(IVDTimerCallback *pCB, uint32 delay) {
-	SetOneShotFn([=]() { pCB->TimerCallback(); }, delay);
-}
-
-void VDLazyTimer::SetOneShotFn(const vdfunction<void()>& fn, uint32 delay) {
-	Stop();
-	mpFn = fn;
-	mbPeriodic = false;
-	mTimerId = 1;
-
-	vdfunction<void()> f = fn;
-	std::thread([f, delay]() {
-		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-		f();
-	}).detach();
-}
-
-void VDLazyTimer::SetPeriodic(IVDTimerCallback *pCB, uint32 delay) {
-	SetPeriodicFn([=]() { pCB->TimerCallback(); }, delay);
-}
-
-void VDLazyTimer::SetPeriodicFn(const vdfunction<void()>& fn, uint32 delay) {
-	Stop();
-	mpFn = fn;
-	mbPeriodic = true;
-	mTimerId = 1;
-
-	auto running = std::make_shared<std::atomic<bool>>(true);
-	mpTimerRunning = running;
-
-	uint32 ms = delay;
-	vdfunction<void()> f = fn;
-	mTimerThread = std::thread([running, f, ms]() {
-		while (running->load(std::memory_order_relaxed)) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-			if (!running->load(std::memory_order_relaxed))
-				break;
-			f();
-		}
-	});
-}
-
-void VDLazyTimer::Stop() {
-	if (mpTimerRunning)
-		mpTimerRunning->store(false, std::memory_order_release);
-
-	if (mTimerThread.joinable()) {
-		if (mTimerThread.get_id() == std::this_thread::get_id()) {
-			// Called from the timer callback itself (e.g. OnFlushTimerFire).
-			// Cannot join — detach and let the thread exit naturally after
-			// the callback returns.  The shared_ptr<atomic<bool>> captured
-			// by the thread keeps the running flag alive even if this
-			// VDLazyTimer is destroyed before the thread finishes.
-			mTimerThread.detach();
-		} else {
-			mTimerThread.join();
-		}
-	}
-
-	mpTimerRunning.reset();
-	mTimerId = 0;
-}
-
-// StaticTimeCallback is unused on non-Windows
-void VDLazyTimer::StaticTimeCallback(VDZHWND, VDZUINT, VDZUINT_PTR, VDZDWORD) {}
-
-#endif // __EMSCRIPTEN__

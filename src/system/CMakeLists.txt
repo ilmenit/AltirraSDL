@@ -86,7 +86,12 @@ target_include_directories(system
 )
 
 if(WIN32)
-    # time.cpp uses timeBeginPeriod/timeEndPeriod (winmm)
+    # winmm: upstream 4.50-test21 dropped timeBeginPeriod/timeEndPeriod from
+    #   time.cpp along with VDCallbackTimer, but the Windows SDL3 build still
+    #   needs winmm for the MidiMate backend's midiOut* calls
+    #   (source/os/midimate_sdl3.cpp). Upstream's own fix was to move the
+    #   winmm pragma into the Win32 main.cpp, which this build does not
+    #   compile, so keep the explicit link here.
     # registry.cpp uses SHDeleteKeyA (shlwapi)
     target_link_libraries(system PUBLIC winmm shlwapi)
 else()
