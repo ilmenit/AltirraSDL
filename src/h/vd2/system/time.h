@@ -70,7 +70,10 @@ public:
 // cooperative scheduler that the host loop drains by calling
 // VDLazyTimerTick() once per iteration — see src/system/source/time_sdl3.cpp
 // (and src/AltirraLibretro/libretro_time.cpp) for the implementation and the
-// list of drain sites.  Preserve this note on upstream resync.
+// list of drain sites.  On Win32 the callbacks arrive via WM_TIMER from
+// SetTimer(), so the drain is a no-op there and the call sites stay free of
+// #ifdef (src/system/source/time_lazytick_win32.cpp).  Preserve this note on
+// upstream resync.
 //
 class VDLazyTimer {
 	VDLazyTimer(const VDLazyTimer&) = delete;

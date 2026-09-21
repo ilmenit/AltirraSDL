@@ -46,6 +46,10 @@ if(WIN32)
         source/text.cpp
         source/thunk.cpp
         source/time.cpp
+        # Windows no-op for the cooperative lazy-timer drain; the Win32
+        # VDLazyTimer dispatches through WM_TIMER on its own.  Keeps
+        # VDLazyTimerTick() callable without #ifdef at every host loop.
+        source/time_lazytick_win32.cpp
         source/w32assist.cpp
     )
     if(ALTIRRA_SDL3)

@@ -57,6 +57,10 @@ target_sources(AltirraLibretro PRIVATE
 if(WIN32)
     target_sources(AltirraLibretro PRIVATE
         ${CMAKE_SOURCE_DIR}/src/Altirra/source/pclink_win32.cpp
+        # No-op ATLibretroLazyTimerTick(); the Win32 VDLazyTimer in
+        # libsystem.a dispatches through WM_TIMER on its own, so retro_run
+        # has nothing to drain.  Keeps the call site free of #ifdef.
+        libretro_time_win32.cpp
     )
 endif()
 
