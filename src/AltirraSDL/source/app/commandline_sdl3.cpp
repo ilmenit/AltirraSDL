@@ -317,7 +317,8 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		if (MatchSwitch(sw, "help") || MatchSwitch(sw, "?")) {
 			consumed[i] = true;
 			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "          --renderer <sdlgpu|opengl|sdlrenderer>\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n"
-			"          --cpu <6502|65c02|65c816[,mult]>  --highbanks <na|N>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
+			"          --cpu <6502|65c02|65c816[,mult]>\n"
+			"          --highbanks <na|0|1|3|15|63>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
 			continue;
 		}
 
@@ -809,20 +810,28 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 
 		// ---- CPU model, and the high memory a 65C816 can address ----
 		//
-		// Altirra's core has always had both; only this front end had no
-		// way to ask for them, so the only 65C816 an SDL build could get
-		// was the one inside an accelerator device.  A plain 65C816 with
-		// high banks is a different machine from a Rapidus -- it is the
-		// shape of an Antonia, and it is what gem4xe wanted to test
-		// against so that nothing of its own depends on one accelerator.
+		// --highbanks is parity with Windows Altirra, which has had the
+		// switch (uicommandline.cpp) with exactly this value set; the SDL
+		// command-line help already documented it, but nothing implemented
+		// it, so the front end silently ignored it.
+		//
+		// --cpu is a fork addition: Windows exposes the CPU model only
+		// through System > CPU in the menu, which a headless run cannot
+		// reach, so the only 65C816 an SDL build could get was the one
+		// inside an accelerator device.  A plain 65C816 with high banks is
+		// a different machine from a Rapidus -- it is the shape of an
+		// Antonia -- and being able to ask for it is what lets a program
+		// prove it does not depend on one particular board.  The values
+		// mirror the System > CPU menu (cmdcpu.cpp), whose multipliers run
+		// 1..23.
 		//
 		//   --cpu 6502|65c02|65c816[,multiplier]
 		//   --highbanks na|0|1|3|15|63
 		//
-		// The multiplier is the 65C816's sub-cycle count: 1 is stock
-		// speed, higher runs the CPU faster against the same bus, which
-		// is what SetCPUMode's second argument means.  It is ignored for
-		// the 8-bit models, as the simulator itself requires.
+		// The multiplier is the 65C816's sub-cycle count: 1 is stock speed,
+		// higher runs the CPU faster against the same bus, which is what
+		// SetCPUMode's second argument means.  It is ignored for the 8-bit
+		// models, as the simulator itself requires.
 		//
 		// High banks are overridden while a Rapidus is fitted
 		// (ATSimulator::GetHighMemoryBanksOverridden), so the two are not
@@ -838,16 +847,17 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			if (comma) {
 				*comma = 0;
 				int n = atoi(comma + 1);
-				if (n >= 1 && n <= 12)
+				if (n >= 1 && n <= 23)
 					subCycles = (uint32)n;
 				else
-					LOG_INFO("CmdLine", "CPU multiplier out of range (1-12): %s", comma + 1);
+					LOG_INFO("CmdLine", "CPU multiplier out of range (1-23): %s", comma + 1);
 			}
 
 			ATCPUMode mode = kATCPUMode_6502;
 			bool known = true;
-			if (strcasecmp(buf, "6502") == 0) mode = kATCPUMode_6502;
-			else if (strcasecmp(buf, "65c02") == 0 || strcasecmp(buf, "65802") == 0)
+			if (strcasecmp(buf, "6502") == 0)
+				mode = kATCPUMode_6502;
+			else if (strcasecmp(buf, "65c02") == 0)
 				mode = kATCPUMode_65C02;
 			else if (strcasecmp(buf, "65c816") == 0 || strcasecmp(buf, "65816") == 0)
 				mode = kATCPUMode_65C816;
@@ -866,19 +876,24 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		}
 
 		if ((val = ConsumeArg(argc, argv, i, consumed, "highbanks")) != nullptr) {
-			sint32 banks = -1;
-			if (strcasecmp(val, "na") == 0 || strcasecmp(val, "none") == 0)
-				banks = -1;
+			// Same value set as Windows: na, 0, 1, 3, 15, 63.
+			if (strcasecmp(val, "na") == 0)
+				g_sim.SetHighMemoryBanks(-1);
+			else if (strcmp(val, "0") == 0)
+				g_sim.SetHighMemoryBanks(0);
+			else if (strcmp(val, "1") == 0)
+				g_sim.SetHighMemoryBanks(1);
+			else if (strcmp(val, "3") == 0)
+				g_sim.SetHighMemoryBanks(3);
+			else if (strcmp(val, "15") == 0)
+				g_sim.SetHighMemoryBanks(15);
+			else if (strcmp(val, "63") == 0)
+				g_sim.SetHighMemoryBanks(63);
 			else {
-				int n = atoi(val);
-				if (n >= 0 && n <= 255)
-					banks = (sint32)n;
-				else {
-					LOG_INFO("CmdLine", "Invalid high bank count: %s", val);
-					continue;
-				}
+				LOG_INFO("CmdLine", "Invalid high bank count: %s (na, 0, 1, 3, 15, 63)", val);
+				continue;
 			}
-			g_sim.SetHighMemoryBanks(banks);
+
 			coldResetPending = true;
 			continue;
 		}
