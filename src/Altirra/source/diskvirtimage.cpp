@@ -97,114 +97,26 @@
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
 #include <vd2/system/strutil.h>
-#include <vd2/system/time.h>
 #include <at/atio/diskimage.h>
 #include <at/atio/diskfsdos2util.h>
 #include "directorywatcher.h"
 #include "debuggerlog.h"
 #include "hostdeviceutils.h"
-#include "diskvirtimagebase.h"
+#include "diskvirtimage.h"
 
 ATDebuggerLogChannel g_ATLCVDisk(false, false, "VDISK", "Virtual disk activity");
-
-class ATDiskImageVirtualFolder final : public ATDiskImageVirtualFolderBase, public IVDTimerCallback {
-public:
-	ATDiskImageVirtualFolder();
-
-	void Init(const wchar_t *path);
-
-	ATDiskGeometryInfo GetGeometry() const override;
-	uint32 GetSectorSize() const override;
-	uint32 GetSectorSize(uint32 virtIndex) const override;
-	uint32 GetBootSectorCount() const override;
-
-	void GetPhysicalSectorInfo(uint32 index, ATDiskPhysicalSectorInfo& info) const override;
-
-	void ReadPhysicalSector(uint32 index, void *data, uint32 len) override;
-	void WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus) override;
-
-	uint32 GetVirtualSectorCount() const override;
-	void GetVirtualSectorInfo(uint32 index, ATDiskVirtualSectorInfo& info) const override;
-
-	uint32 ReadVirtualSector(uint32 index, void *data, uint32 len) override;
-	bool WriteVirtualSector(uint32 index, const void *data, uint32 len) override;
-
-	void Reinterleave(ATDiskInterleave interleave) override;
-
-public:
-	void TimerCallback() override;
-
-protected:
-	void UpdateDirectory(bool reportNewFiles);
-
-	struct DirEnt {
-		enum {
-			kFlagDeleted	= 0x80,
-			kFlagInUse		= 0x40,
-			kFlagLocked		= 0x20,
-			kFlagDOS2		= 0x02,
-			kFlagOpenWrite	= 0x01
-		};
-
-		uint8	mFlags;
-		uint8	mSectorCount[2];
-		uint8	mFirstSector[2];
-		uint8	mName[11];
-	};
-
-	struct XDirBaseEnt {
-		VDStringW mPath;
-		uint32	mSize = 0;				// File size in bytes.
-		uint32	mSectorCount = 0;		// Number of data sectors in the file.
-		uint32	mLockedSector = 0;		// Virtual sector number of the next data sector after the last read one, or 0 if none.
-	};
-
-	struct XDirEnt : public XDirBaseEnt {
-		VDFile	mFile;
-		bool	mbValid = false;
-		uint32	mSectorsAllocated = 1;
-		uint32	mNextPrealloc = 0;
-	};
-
-	struct SectorEnt {
-		bool	mbInCache;				// True if sector is in the LRU cache and can be reassigned. Locked and special sectors are not.
-		sint8	mFileIndex;				// File index, or -1 if not assigned to a file.
-		uint16	mSectorIndex;			// 0-based index of sector in file, in file order.
-		uint16	mLRUPrev;
-		uint16	mLRUNext;
-	};
-
-	void PromoteDataSector(uint32 sector);
-	uint32 FindDataSector(sint8 fileIndex, uint16 sectorIndex) const;
-	void UnlinkDataSector(uint32 sector);
-	void LinkDataSector(uint32 sector);
-	uint32 FindBestNextDataSector(sint8 fileIndex, uint32 prevSectorIndex);
-	void PreallocateTrack(uint32 baseSectorIndex);
-
-	VDStringW mPath;
-	uint32	mSectorCount;
-	uint32	mFreeSectorCount;
-	bool mbBootFilePresent;
-	VDDate mBootFileLastDate;
-	int mDosEntry;
-
-	vdfunction<float(uint32)> mpInterleaveFn;
-
-	VDLazyTimer mCloseTimer;
-	ATDirectoryWatcher mDirWatcher;
-
-	DirEnt	mDirEnt[64];
-	XDirEnt	mXDirEnt[64];
-
-	SectorEnt mSectorMap[720];
-
-	uint8 mBootSectors[384];
-};
 
 ATDiskImageVirtualFolder::ATDiskImageVirtualFolder()
 	: mSectorCount(720)
 {
-	Reinterleave(kATDiskInterleave_Default);
+	Reinterleave(mSectorCount > 720 ? kATDiskInterleave_ED_13_1 : kATDiskInterleave_Default);
+}
+
+void *ATDiskImageVirtualFolder::AsInterface(uint32 iid) {
+	if (iid == IATDeviceAutoSuggest::kTypeID)
+		return static_cast<IATDeviceAutoSuggest *>(this);
+
+	return ATDiskImageVirtualFolderBase::AsInterface(iid);
 }
 
 void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
@@ -214,8 +126,19 @@ void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
 	mDosEntry = -1;
 	memset(mDirEnt, 0, sizeof mDirEnt);
 
-	// Mark all sectors as in use.
-	for(uint32 i=0; i<(uint32)vdcountof(mSectorMap); ++i) {
+	// Initialize disk geometry.
+	mGeometryInfo.mSectorSize = 128;
+	mGeometryInfo.mBootSectorCount = 3;
+	mGeometryInfo.mTotalSectorCount = mSectorCount;
+	mGeometryInfo.mTrackCount = 40;
+	mGeometryInfo.mSectorsPerTrack = mSectorCount > 720 ? 26 : 18;
+	mGeometryInfo.mSideCount = 1;
+	mGeometryInfo.mbMFM = mSectorCount > 720;
+
+	// Initialize sector map by marking all sectors as in use.
+	mSectorMap.resize(mSectorCount);
+
+	for(uint32 i=0; i<mSectorCount; ++i) {
 		SectorEnt& se = mSectorMap[i];
 		se.mbInCache = false;
 		se.mFileIndex = -1;
@@ -224,20 +147,30 @@ void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
 		se.mSectorIndex = 0;
 	}
 
-	// Sectors 3-66 are permanently dedicated to the first sector of each file.
-	for(uint32 i=3; i<=66; ++i) {
+	// Sectors 4-67 are permanently dedicated to the first sector of each file.
+	// (Our internal sector indices are -1 from the SIO sector number.)
+	for(uint32 i = 3; i <= 66; ++i) {
 		mSectorMap[i].mFileIndex = i-3;
 		mSectorMap[i].mSectorIndex = 0;
 	}
 
-	// Put sectors 67-358 and 368-718 in the pool for rotating data sector use.
+	// Put sectors 68-359 and 369-719 in the pool for rotating data sector use.
 	mFreeSectorCount = 0;
 
-	for(uint32 i=67; i<=358; ++i)
+	for(uint32 i = 67; i <= 358; ++i)
 		LinkDataSector(i);
 
-	for(uint32 i=368; i<=718; ++i)
+	for(uint32 i = 368; i <= 718; ++i)
 		LinkDataSector(i);
+
+	// If we are using an enhanced density disk geometry (1040 sectors), mimic
+	// the DOS 2.5 extensions; add sectors 721-1023 to the sector pool. Sector
+	// 720 is still not used, sector 1024 is reserved for the extended VTOC,
+	// and sectors 1025-1040 are unused.
+	if (mSectorCount > 720) {
+		for(uint32 i = 720; i <= 1022; ++i)
+			LinkDataSector(i);
+	}
 
 	UpdateDirectory(false);
 
@@ -249,15 +182,7 @@ void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
 }
 
 ATDiskGeometryInfo ATDiskImageVirtualFolder::GetGeometry() const {
-	ATDiskGeometryInfo info {};
-	info.mSectorSize = 128;
-	info.mBootSectorCount = 3;
-	info.mTotalSectorCount = 720;
-	info.mTrackCount = 40;
-	info.mSectorsPerTrack = 18;
-	info.mSideCount = 1;
-	info.mbMFM = false;
-	return info;
+	return mGeometryInfo;
 }
 
 uint32 ATDiskImageVirtualFolder::GetSectorSize() const {
@@ -278,7 +203,7 @@ void ATDiskImageVirtualFolder::GetPhysicalSectorInfo(uint32 index, ATDiskPhysica
 	info.mPhysicalSize = 128;
 	info.mImageSize = 128;
 	info.mbDirty = false;
-	info.mbMFM = false;
+	info.mbMFM = mGeometryInfo.mbMFM;
 	info.mRotPos = mpInterleaveFn(index);
 	info.mFDCStatus = 0xFF;
 	info.mWeakDataOffset = -1;
@@ -287,7 +212,7 @@ void ATDiskImageVirtualFolder::GetPhysicalSectorInfo(uint32 index, ATDiskPhysica
 void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint32 len) {
 	memset(data, 0, len);
 
-	if (len != 128 || index >= 720)
+	if (len != 128 || index >= mSectorCount)
 		return;
 
 	// check for updates
@@ -336,6 +261,14 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 		return;
 	}
 
+	// check for extended VTOC
+	if (index == 1024) {
+		// bytes 0-122 track free sectors 48-1023
+		// bytes 122-123 contain free sector count for 720-1023
+		// all bytes should be zero, which is already the case
+		return;
+	}
+
 	// Must be data sector.
 	//
 	// We have a total of 707 data sectors to play with, 3-358 and 368-718 (we are zero-based
@@ -346,8 +279,11 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 	SectorEnt& se = mSectorMap[index];
 
 	if (se.mFileIndex < 0) {
-		if (!se.mbInCache)
+		// check if this sector is in the cache pool
+		if (!se.mbInCache) {
+			// nope, reserved
 			return;
+		}
 
 		// Sector is not allocated. Try to preallocate all sectors on the track, and then check if
 		// the sector is still unallocated; if so, blacklist the sector by moving it to the end.
@@ -406,7 +342,7 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 			xd.mFile.seek(offset);
 			xd.mFile.read(data, validLen);
 
-			mCloseTimer.SetOneShot(this, 3000);
+			mCloseTimer.SetOneShotFn([this] { TimerCallback(); }, 3000);
 		}
 
 		// Check if there will be another sector. If so, we need to determine the sector link and
@@ -469,12 +405,8 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 	dst[127] = validLen;
 }
 
-void ATDiskImageVirtualFolder::WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus) {
-	ATThrowDiskReadOnlyException();
-}
-
 uint32 ATDiskImageVirtualFolder::GetVirtualSectorCount() const {
-	return 720;
+	return mSectorCount;
 }
 
 void ATDiskImageVirtualFolder::GetVirtualSectorInfo(uint32 index, ATDiskVirtualSectorInfo& info) const {
@@ -490,13 +422,36 @@ uint32 ATDiskImageVirtualFolder::ReadVirtualSector(uint32 index, void *data, uin
 	return 128;
 }
 
-bool ATDiskImageVirtualFolder::WriteVirtualSector(uint32 index, const void *data, uint32 len) {
-	ATThrowDiskReadOnlyException();
-	return false;
-}
-
 void ATDiskImageVirtualFolder::Reinterleave(ATDiskInterleave interleave) {
 	mpInterleaveFn = ATDiskGetInterleaveFn(interleave, GetGeometry());
+}
+
+void ATDiskImageVirtualFolder::AutoSuggestCIOPaths(char /*cioDevice*/, uint8 /*unit*/, const VDStringA& path, IATDeviceAutoSuggestSink& sink) {
+	// cioDevice and unit are ignored, because we aren't a device and don't know what we're
+	// connected to (though it is most likely some D: unit). Assumption is that the caller
+	// does these checks.
+
+	for(size_t i = 0; i < vdcountof(mDirEnt); ++i) {
+		const XDirEnt& xde = mXDirEnt[i];
+
+		// MERGE NOTE (AltirraSDL): upstream 4.50-test21 scans every directory
+		// slot here without checking mbValid. Unused slots hold an empty
+		// mDosFileName, which matches the empty partial path produced when
+		// auto-suggest fires off a bare "D1:" reference, so the popup fills
+		// with blank rows; stale slots from deleted files also keep their old
+		// name. Skip invalid slots. Preserve on upstream resync.
+		if (!xde.mbValid)
+			continue;
+
+		// check if the supplied path is a subset of this entry's DOS path
+		if (xde.mDosFileName.subspan(0, path.size()) == path) {
+			sink.AddSuggestion(
+				xde.mDosFileName.c_str() + path.size(),
+				VDTextAToW(xde.mDosFileName).c_str(),
+				VDFileSplitPath(xde.mPath.c_str())
+			);
+		}
+	}
 }
 
 void ATDiskImageVirtualFolder::TimerCallback() {
@@ -519,7 +474,7 @@ void ATDiskImageVirtualFolder::PromoteDataSector(uint32 sector) {
 }
 
 uint32 ATDiskImageVirtualFolder::FindDataSector(sint8 fileIndex, uint16 sectorIndex) const {
-	for(uint32 i=1; i<720; ++i) {
+	for(uint32 i=1; i<mSectorCount; ++i) {
 		if (mSectorMap[i].mFileIndex == fileIndex && mSectorMap[i].mSectorIndex == sectorIndex)
 			return i;
 	}
@@ -528,7 +483,7 @@ uint32 ATDiskImageVirtualFolder::FindDataSector(sint8 fileIndex, uint16 sectorIn
 }
 
 void ATDiskImageVirtualFolder::UnlinkDataSector(uint32 sector) {
-	VDASSERT(sector > 0 && sector < 720);
+	VDASSERT(sector > 0 && sector < mSectorCount);
 
 	// unlink sector
 	SectorEnt& se = mSectorMap[sector];
@@ -548,7 +503,7 @@ void ATDiskImageVirtualFolder::UnlinkDataSector(uint32 sector) {
 }
 
 void ATDiskImageVirtualFolder::LinkDataSector(uint32 sector) {
-	VDASSERT(sector > 0 && sector < 720);
+	VDASSERT(sector > 0 && sector < mSectorCount);
 
 	// relink sector at head
 	SectorEnt& se = mSectorMap[sector];
@@ -771,7 +726,7 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 
 	bool bootPresent = false;
 
-	for(VDDirectoryIterator it(VDMakePath(mPath.c_str(), L"*.*").c_str()); it.Next();) {
+	for(VDDirectoryIterator it(VDMakePath(mPath.c_str(), L"*").c_str()); it.Next();) {
 		if (it.IsDirectory())
 			continue;
 
@@ -802,6 +757,13 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 
 			continue;
 		}
+
+		// Skip filenames that we can't map, so they don't take up directory
+		// slots.
+		const wchar_t *s = it.GetName();
+
+		if (!IsMappableHostFilename(s))
+			continue;
 
 		// If we still have room in the emulated directory, add the file. Note that we
 		// must continue to scan the host directory in case the boot sector is present.
@@ -844,6 +806,11 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 			xde.mLockedSector = 0;
 			xde.mSectorCount = 0;
 			xde.mSize = 0;
+
+			// MERGE NOTE (AltirraSDL): also drop the cached auto-suggest name
+			// so a retired slot can't resurface as a suggestion. Preserve on
+			// upstream resync.
+			xde.mDosFileName.clear();
 		}
 	}
 
@@ -868,7 +835,7 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 		memset(de.mName, 0x20, sizeof de.mName);
 
 		for(size_t j=0, k=0; k<8 && j<len1; ++j) {
-			unsigned char c = toupper(s[j]);
+			unsigned char c = toupper((unsigned char)s[j]);
 
 			if ((c>='A' && c<='Z') || (c>='0' && c<='9'))
 				de.mName[k++] = c;
@@ -916,6 +883,26 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 				}
 			}
 		}
+
+		// Reformat the encoded name back to a canonical CIO path to use for
+		// autosuggest.
+		xe.mDosFileName.clear();
+
+		for(size_t j=0; j<11; ++j) {
+			const uint8 ch = de.mName[j];
+
+			if (ch == ' ') {
+				if (j >= 8)
+					break;
+
+				j = 7;
+			} else {
+				if (j == 8)
+					xe.mDosFileName += '.';
+
+				xe.mDosFileName += (char)ch;
+			}
+		}
 	}
 
 	// Fill in all holes in the directory with the deleted flag.
@@ -931,7 +918,7 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 	// either the file slot is no longer in use or the index extends beyond the new
 	// length of the file. Scan in reverse so the sectors are placed in ascending order
 	// on the disk.
-	for(uint32 i=718; i>=67; --i) {
+	for(uint32 i=mSectorCount-2; i>=67; --i) {
 		SectorEnt& se = mSectorMap[i];
 
 		if (se.mFileIndex >= 0) {
@@ -982,6 +969,44 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 			de.mFirstSector[1] = 0;
 			de.mFlags = DirEnt::kFlagDOS2 | DirEnt::kFlagInUse;
 		}
+	}
+}
+
+bool ATDiskImageVirtualFolder::IsMappableHostFilename(const wchar_t *s) {
+	// Check if the filename can map to a legal DOS 2.x filename. DOS 2.x
+	// filenames must satisfy the following rules:
+	//	- Name start with a letter
+	//	- Name may contain up to 7 more alphanumeric characters
+	//	- If extension is present, up to 3 alphanumeric characters
+	//
+	// Currently we don't support MyDOS relaxations which allow @ and _.
+	// Note that we do allow longer names and extensions; they get
+	// truncated and then disambiguated during the mapping stage.
+
+	uint32 ch = *s;
+
+	// filename first char must be alpha
+	if ((uint32)((ch | 0x20) - 0x61) > 26)
+		return false;
+
+	// filename subsequent chars must be alphanumeric
+	bool foundDot = false;
+	for(;;) {
+		ch = *++s;
+
+		if (!ch)
+			return true;
+
+		if (ch == '.') {
+			if (foundDot)
+				return false;
+
+			foundDot = true;
+			continue;
+		}
+
+		if ((uint32)(ch - 0x30) >= 10 && (uint32)((ch | 0x20) - 0x61) > 26)
+			return false;
 	}
 }
 

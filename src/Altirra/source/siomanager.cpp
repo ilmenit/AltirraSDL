@@ -342,7 +342,7 @@ public:
 	uint32 mTransferCyclesPerBitRecvMin = 0;
 	uint32 mTransferCyclesPerBitRecvMax = 0;
 	uint32 mTransferCyclesPerByte = 0;
-	uint32 mTransferStartTime = 0;	// starting cycle timestamp for transfer
+	uint64 mTransferStartTime = 0;	// starting cycle timestamp for transfer
 	uint32 mTransferBurstOffset = 0;
 	uint32 mTransferLastBurstOffset = 0;
 	
@@ -1022,7 +1022,7 @@ bool ATSIOManager::SIOInterface::OnReceive(uint8 c, uint32 cyclesPerBit, bool fr
 		// Adjust queue time for the time actually taken during the transfer. Note that this
 		// is an offset instead of just resetting the queue time as there can be commands already
 		// queued afterward, especially for auto-protocol receives.
-		mCommandQueueTime += (uint32)(mParent.mpScheduler->GetTick() - mTransferStartTime);
+		mCommandQueueTime += mParent.mpScheduler->GetTick64() - mTransferStartTime;
 
 		if (mCurrentStep.mType == kStepType_ReceiveAutoProtocol) {
 			if (!checksumOK) {
@@ -1179,7 +1179,7 @@ void ATSIOManager::SIOInterface::ExecuteNextStep() {
 				} else {
 					mParent.BeginReceive(*this);
 					mReceiveTimeoutBase = mParent.mpScheduler->GetTick64();
-					mTransferStartTime = (uint32)mReceiveTimeoutBase;
+					mTransferStartTime = mReceiveTimeoutBase;
 				}
 				break;
 

@@ -31,11 +31,56 @@ class IATDeviceAutoSuggest {
 public:
 	static constexpr auto kTypeID = "IATDeviceAutoSuggest"_vdtypeid;
 
+	// Scan for automatic completion suggestions based on the CIO paths that
+	// this device knows about. This is based on a partial path that is matched
+	// against known or suggested CIO paths, and turned into suggestions to
+	// complete the partial path.
+	//
+	// Suggestions are currently always pure appends, they cannot replace part
+	// of the partial path that triggered the suggestion.
+	//
+	// cioDevice:
+	//		CIO device character, i.e. 'D' for disk.
+	//
+	// unit:
+	//		CIO unit number, i.e. 2 for D2:.
+	//
+	// path:
+	//		Partial relative CIO file path to complete. Does not include the
+	//		CIO device name, unit number, or colon. May be empty if
+	//		auto-suggestion was triggered off only a CIO device reference.
+	//
+	// sink:
+	//		Output sink for any paths discovered by the implementation.
 	virtual void AutoSuggestCIOPaths(char cioDevice, uint8 unit, const VDStringA& path, IATDeviceAutoSuggestSink& sink) = 0;
 };
 
 class IATDeviceAutoSuggestSink {
 public:
+	// Add a suggestion.
+	//
+	// insertText:
+	//		Text to insert at the caret if suggestion is accepted, after the
+	//		original partial path. This should not include the partial path.
+	//		This is the only part that actually affects what the suggestion
+	//		does when applied.
+	//
+	// itemText:
+	//		Text to represent the completed token. This should generally contain
+	//		both the original partial token and the completed remainder, but may
+	//		omit parts for brevity. For instance, a suggestion may complete
+	//		"D1:HE" as "D1:HELLO.BAS", but just show "HELLO.BAS" in the UI as
+	//		the token being completed.
+	//
+	// descriptionText:
+	//		Additional, optional text to show elaborating on the suggestion that
+	//		is not part of the token. For instance, a suggestion to complete
+	//		"POKE 542" as "POKE 54272" may use a description of "$D400 (DMACTL)"
+	//		to describe the suggestion, even though those aren't part of the
+	//		completion.
+	//
+	//		This may be empty or null if there is no useful description.
+	// 
 	virtual void AddSuggestion(const char *insertText, const wchar_t *itemText, const wchar_t *descriptionText) = 0;
 };
 

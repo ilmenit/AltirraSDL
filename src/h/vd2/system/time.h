@@ -50,62 +50,30 @@ uint64 VDGetCurrentTick64();
 // Win32). This is very precise, often <1us, but often suffers from various bugs.
 // that make it undesirable for high-accuracy requirements. On x64 Windows it
 // can run at 1/2 speed when CPU throttling is enabled, and on some older buggy
-// chipsets it can skip around occasionally.
+// CPUs it can skip around occasionally (Athlon 64 X2 era, particularly). On
+// modern CPUs it is better behaved and driven from a stable lock.
 uint64 VDGetPreciseTick();
 uint64 VDGetPreciseTicksPerSecondI();
 double VDGetPreciseTicksPerSecond();
 double VDGetPreciseSecondsPerTick();
-
-// VDGetAccurateTick: Reads a timer with good precision and accuracy, in
-// milliseconds. On Win9x, it has 1ms precision; on WinNT, it may have anywhere
-// from 1ms to 10-15ms, although 1ms can be forced with timeBeginPeriod().
-uint32 VDGetAccurateTick();
-
-// VDCallbackTimer is an abstraction of the Windows multimedia timer.  As such, it
-// is rather expensive to instantiate, and should only be used for critical timing
-// needs... such as multimedia.  Basically, there should only really be one or two
-// of these running.  Win32 typically implements these as separate threads
-// triggered off a timer, so despite the outdated documentation -- which still hasn't
-// been updated from Windows 3.1 -- you can call almost any function from the
-// callback.  Execution time in the callback delays other timers, however, so the
-// callback should still execute as quickly as possible.
 
 class VDINTERFACE IVDTimerCallback {
 public:
 	virtual void TimerCallback() = 0;
 };
 
-class VDCallbackTimer : private VDThread {
-public:
-	VDCallbackTimer();
-	~VDCallbackTimer();
-
-	bool Init(IVDTimerCallback *pCB, uint32 period_ms);
-	bool Init2(IVDTimerCallback *pCB, uint32 period_100ns);
-	bool Init3(IVDTimerCallback *pCB, uint32 period_100ns, uint32 accuracy_100ns, bool precise);
-	void Shutdown();
-
-	void SetRateDelta(int delta_100ns);
-	void AdjustRate(int adjustment_100ns);
-
-	bool IsTimerRunning() const;
-
-private:
-	void ThreadRun();
-
-	IVDTimerCallback *mpCB;
-	unsigned		mTimerAccuracy;
-	uint32			mTimerPeriod;
-	VDAtomicInt		mTimerPeriodDelta;
-	VDAtomicInt		mTimerPeriodAdjustment;
-
-	VDSignal		msigExit;
-
-	volatile bool	mbExit;				// this doesn't really need to be atomic -- think about it
-	bool			mbPrecise;
-};
-
-
+// Lazy timers are used for low priority tasks that aren't too critical and can
+// accommodate timing slop, such as periodically flushing data to disk. Timer
+// precision is low (>1 frame) and callbacks can be skipped if the thread is
+// busy.
+//
+// AltirraSDL: upstream additionally guarantees that lazy timer callbacks are
+// invoked on the main thread as part of the event loop.  That holds for the
+// WASM backend (drained by VDWASMTimerTick() in the main loop), but the
+// native SDL3 and libretro backends still dispatch from a worker thread, so
+// callbacks must not assume main-thread affinity there.  See
+// src/system/source/time_sdl3.cpp.  Preserve this note on upstream resync.
+//
 class VDLazyTimer {
 	VDLazyTimer(const VDLazyTimer&) = delete;
 	VDLazyTimer& operator=(const VDLazyTimer&) = delete;
