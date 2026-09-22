@@ -134,14 +134,19 @@ jobs:
         shell: bash
         run: |
           if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release view nightly --repo "$GITHUB_REPOSITORY" \
+              # grep exits 1 when no asset matches (e.g. first-ever run);
+              # `|| true` here keeps that from tripping pipefail below.
+              # Pattern must include the arch suffix to match the stable
+              # filename produced above (AltirraSDL-nightly-windows-x86_64.zip).
+              stale_assets=$(gh release view nightly --repo "$GITHUB_REPOSITORY" \
                   --json assets --jq '.assets[].name' \
-                  | grep -E '^AltirraSDL-.*-windows\.zip$' \
-                  | while read -r asset; do
-                      echo "Deleting stale asset: $asset"
-                      gh release delete-asset nightly "$asset" \
-                          --repo "$GITHUB_REPOSITORY" --yes || true
-                  done
+                  | grep -E '^AltirraSDL-.*-windows-[^.]+\.zip$' || true)
+              while IFS= read -r asset; do
+                  [ -z "$asset" ] && continue
+                  echo "Deleting stale asset: $asset"
+                  gh release delete-asset nightly "$asset" \
+                      --repo "$GITHUB_REPOSITORY" --yes || true
+              done <<< "$stale_assets"
           fi
 
       # Force-move the rolling `nightly` tag to the commit that was just

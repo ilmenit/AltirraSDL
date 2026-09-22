@@ -201,14 +201,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release view nightly --repo "$GITHUB_REPOSITORY" \
+              # grep exits 1 when no asset matches (e.g. first-ever run);
+              # `|| true` here keeps that from tripping pipefail below.
+              stale_assets=$(gh release view nightly --repo "$GITHUB_REPOSITORY" \
                   --json assets --jq '.assets[].name' \
-                  | grep -E '^AltirraSDL-.*-linux-(x86_64|aarch64)\.AppImage$' \
-                  | while read -r asset; do
-                      echo "Deleting stale asset: $asset"
-                      gh release delete-asset nightly "$asset" \
-                          --repo "$GITHUB_REPOSITORY" --yes || true
-                  done
+                  | grep -E '^AltirraSDL-.*-linux-(x86_64|aarch64)\.AppImage$' || true)
+              while IFS= read -r asset; do
+                  [ -z "$asset" ] && continue
+                  echo "Deleting stale asset: $asset"
+                  gh release delete-asset nightly "$asset" \
+                      --repo "$GITHUB_REPOSITORY" --yes || true
+              done <<< "$stale_assets"
           fi
 
       # Force-move the rolling `nightly` tag to the commit that was just
