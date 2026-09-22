@@ -45,6 +45,10 @@
 #include <vd2/VDDisplay/display.h>
 #include <vd2/system/registrymemory.h>
 
+// Cooperative lazy-timer scheduler drain (src/system/source/time_sdl3.cpp).
+// See the call in the main loop below.
+extern "C" void VDLazyTimerTick();
+
 // Forward declarations for AltirraSDL frontend symbols we re-use.
 // These functions are defined in source/app/*.cpp / source/ui/core/*.cpp
 // in the AltirraSDL frontend, but their bodies are platform-agnostic
@@ -725,6 +729,15 @@ int main(int argc, char** argv) {
 	auto nextFrameDeadline = clock::now() + BridgeGetFrameDuration();
 
 	while (g_running.load()) {
+		// 0. Drain the cooperative lazy-timer scheduler (see
+		//    src/system/source/time_sdl3.cpp).  Disk auto-flush, IDE
+		//    flush and virtual-folder file close are VDLazyTimer
+		//    callbacks and are dispatched only from here, on this
+		//    thread, matching the main-thread contract in
+		//    <vd2/system/time.h>.  Without this call they never fire
+		//    and dirty disk images are only written on unmount/exit.
+		VDLazyTimerTick();
+
 		// 1. Process bridge commands (non-blocking, capped at 64
 		//    commands/poll).
 		ATBridge::Poll(g_sim, g_uiState);

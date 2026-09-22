@@ -50,7 +50,7 @@ be removed after equivalent builds are recreated under `build/`.
 
 ## Upstream Baseline
 
-This tree is based on upstream Altirra 4.50 test20 source, with the
+This tree is based on upstream Altirra 4.50 test21 source, with the
 SDL3/CMake frontend and cross-platform adaptations layered on top.
 
 ---
@@ -139,7 +139,7 @@ recording by default. On Windows SDL3 builds this path currently
 requires a prebuilt static FFmpeg prefix passed with
 `-DALTIRRA_FFMPEG_ROOT=...`.
 ```
-AltirraSDL-4.50.20-linux.zip
+AltirraSDL-4.50.21-linux.zip
     AltirraSDL          (executable — SDL3 + SDL3_image linked in)
     build-version.txt    (version, build timestamp, and commit)
     Copying             (GPL v2+ license)
@@ -406,7 +406,7 @@ To create a distributable folder:
 
 ```bash
 cmake --build build/linux-release --target package_altirra
-# Creates: build/linux-release/AltirraSDL-4.50.20/
+# Creates: build/linux-release/AltirraSDL-4.50.21/
 ```
 
 ### Install Target

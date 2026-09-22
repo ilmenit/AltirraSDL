@@ -33,6 +33,22 @@ target_include_directories(altirra-vbxe-regression-test PRIVATE
 target_link_libraries(altirra-vbxe-regression-test PRIVATE ATCore Kasumi system SDL3::SDL3)
 add_test(NAME upstream-vbxe COMMAND altirra-vbxe-regression-test)
 set_tests_properties(upstream-regressions upstream-vbxe PROPERTIES TIMEOUT 60)
+
+# Contract test for the fork's cooperative VDLazyTimer backend
+# (src/system/source/time_sdl3.cpp). Win32 uses SetTimer/WM_TIMER instead,
+# so there is nothing here to pin down on that platform.
+if(NOT WIN32)
+    add_executable(altirra-lazy-timer-test lazytimer.cpp)
+    target_include_directories(altirra-lazy-timer-test PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+        ${PROJECT_SOURCE_DIR}/src/Altirra/h
+        ${PROJECT_SOURCE_DIR}/src/compat
+        ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default
+    )
+    target_link_libraries(altirra-lazy-timer-test PRIVATE system SDL3::SDL3)
+    add_test(NAME lazy-timer-contract COMMAND altirra-lazy-timer-test)
+    set_tests_properties(lazy-timer-contract PROPERTIES TIMEOUT 60)
+endif()
 set_tests_properties(upstream-regressions PROPERTIES FIXTURES_SETUP upstream_exports)
 option(ALTIRRA_REQUIRE_EXPORT_VALIDATION
     "Require Python and Poppler for upstream export regression tests" OFF)

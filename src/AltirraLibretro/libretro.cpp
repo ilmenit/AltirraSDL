@@ -5336,6 +5336,14 @@ RETRO_API void retro_unload_game(void) {
 }
 
 RETRO_API void retro_run(void) {
+	// Drain the cooperative lazy-timer scheduler (libretro_time.cpp).
+	// Disk auto-flush, IDE flush and virtual-folder file close are
+	// VDLazyTimer callbacks; they are dispatched only from here, on the
+	// frontend's core thread, matching the main-thread contract in
+	// <vd2/system/time.h>.  Timers therefore do not fire while the
+	// frontend has the core paused, which is intentional.
+	ATLibretroLazyTimerTick();
+
 	if (g_inputPoll)
 		g_inputPoll();
 

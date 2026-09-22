@@ -31,6 +31,7 @@
 #include "bridge_savestate.h"   // ATBridge::SlotStore + memory I/O
 
 #include "simulator.h"
+#include <at/atcore/address.h>   // kATAddressSpace_CPU: MEMDUMP/MEMLOAD above $FFFF
 #include "cpu.h"              // ATCPUEmulator::GetInsnPC (used by BOOT_BARE settle)
 #include "cpumemory.h"        // ATCPUEmulatorMemory::WriteByte (hardware-register path)
 #include "antic.h"
@@ -100,6 +101,7 @@ bool ParseAddr16(const std::string& tok, uint16_t& addr) {
 // purpose so each file is self-contained. The total LOC is tiny.
 std::string Hex8(uint32_t v)  { char b[8];  std::snprintf(b, sizeof b, "\"$%02x\"",  v & 0xff);   return b; }
 std::string Hex16(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%04x\"",  v & 0xffff); return b; }
+std::string Hex24(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%06x\"",  v & 0xffffff); return b; }
 std::string Hex64(uint64_t v) { char b[24]; std::snprintf(b, sizeof b, "\"$%016llx\"", (unsigned long long)v); return b; }
 
 // key=value option parsing -- mirrors the helpers in
@@ -1323,13 +1325,21 @@ std::string CmdPoke16(ATSimulator& sim, const std::vector<std::string>& tokens) 
 // per-server filesystem paths; we always use inline so the same
 // command works over `adb forward` on Android. Cap matches PEEK
 // (16384 bytes) by default; can be raised if a use case appears.
+//
+// An address above $FFFF is a 24-bit address in the 65C816's linear
+// space -- bank in the high byte -- read through the memory manager's
+// banked debug path (ATSimulator::DebugGlobalReadByte, address space
+// CPU), which is the CPU's own view of that bank: an accelerator's
+// fast RAM included.  A range may cross a bank there; it may not cross
+// $FFFFFF.  Addresses in bank 0 keep the 16-bit path and its rules, so
+// nothing that read bank 0 before reads differently now.
 // ---------------------------------------------------------------------------
 
 std::string CmdMemDump(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 3)
 		return JsonError("MEMDUMP: usage: MEMDUMP addr length");
-	uint16_t addr = 0;
-	if (!ParseAddr16(tokens[1], addr))
+	uint32_t addr = 0;
+	if (!ParseUint(tokens[1], addr) || addr > 0xFFFFFFu)
 		return JsonError("MEMDUMP: bad address");
 	uint32_t length = 0;
 	if (!ParseUint(tokens[2], length))
@@ -1338,15 +1348,19 @@ std::string CmdMemDump(ATSimulator& sim, const std::vector<std::string>& tokens)
 		return JsonError("MEMDUMP: length must be >= 1");
 	if (length > 65536u)
 		return JsonError("MEMDUMP: length too large (max 65536)");
-	if ((uint32_t)addr + length > 0x10000u)
+	const bool wide = addr > 0xFFFFu;
+	if (!wide && addr + length > 0x10000u)
 		return JsonError("MEMDUMP: range crosses end of 64K address space");
+	if (wide && addr + length > 0x1000000u)
+		return JsonError("MEMDUMP: range crosses end of 24-bit address space");
 
 	std::vector<uint8_t> buf(length);
 	for (uint32_t i = 0; i < length; ++i)
-		buf[i] = sim.DebugReadByte((uint16_t)(addr + i));
+		buf[i] = wide ? sim.DebugGlobalReadByte(kATAddressSpace_CPU + addr + i)
+		              : sim.DebugReadByte((uint16_t)(addr + i));
 
 	std::string payload;
-	AddField(payload, "addr",   Hex16(addr));
+	AddField(payload, "addr",   wide ? Hex24(addr) : Hex16(addr));
 	AddU32  (payload, "length", length);
 	payload += "\"format\":\"base64\",";
 	payload += "\"data\":\"";
@@ -1366,22 +1380,27 @@ std::string CmdMemDump(ATSimulator& sim, const std::vector<std::string>& tokens)
 std::string CmdMemLoad(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 3)
 		return JsonError("MEMLOAD: usage: MEMLOAD addr base64data");
-	uint16_t addr = 0;
-	if (!ParseAddr16(tokens[1], addr))
+	// A 24-bit address writes the 65C816's linear space, as MEMDUMP
+	// reads it; the write path was global already.
+	uint32_t addr = 0;
+	if (!ParseUint(tokens[1], addr) || addr > 0xFFFFFFu)
 		return JsonError("MEMLOAD: bad address");
 	std::vector<uint8_t> bytes;
 	if (!Base64Decode(tokens[2], bytes))
 		return JsonError("MEMLOAD: bad base64 payload");
 	if (bytes.empty())
 		return JsonError("MEMLOAD: empty payload");
-	if ((uint32_t)addr + bytes.size() > 0x10000u)
+	const bool wide = addr > 0xFFFFu;
+	if (!wide && addr + bytes.size() > 0x10000u)
 		return JsonError("MEMLOAD: payload exceeds 64K address space");
+	if (wide && addr + bytes.size() > 0x1000000u)
+		return JsonError("MEMLOAD: payload exceeds 24-bit address space");
 
 	for (size_t i = 0; i < bytes.size(); ++i)
-		sim.DebugGlobalWriteByte((uint32_t)(addr + i), bytes[i]);
+		sim.DebugGlobalWriteByte(kATAddressSpace_CPU + (uint32_t)(addr + i), bytes[i]);
 
 	std::string payload;
-	AddField(payload, "addr",   Hex16(addr));
+	AddField(payload, "addr",   wide ? Hex24(addr) : Hex16(addr));
 	AddU32  (payload, "length", (uint32_t)bytes.size());
 	StripTrailingComma(payload);
 	return JsonOk(payload);

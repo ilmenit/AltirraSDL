@@ -268,9 +268,15 @@ memory pane shows. The "Debug" prefix bypasses I/O register side
 effects, so reading $D000-$D7FF does NOT trigger ANTIC/GTIA/POKEY
 state changes.
 
-`addr` must be 0..$FFFF; the range must not cross $FFFF. For raw
-banked-memory access (RAMBO/130XE/cartridge banks bypassing PORTB),
-see `PEEK_BANK` in Phase 5.
+`addr` is 0..$FFFFFF. In bank 0 (`addr` up to $FFFF) the range must
+not cross $FFFF and the read is as above. Above $FFFF the address is
+the 65C816's 24-bit linear space, bank in the high byte -- `$013740`
+is bank 1 -- read through the memory manager's banked debug path
+(`DebugGlobalReadByte`, address space CPU): the CPU's own view of
+that bank, an accelerator's fast RAM included; the range may cross
+a bank but not $FFFFFF, and `addr` comes back as six hex digits. For
+raw banked-memory access (RAMBO/130XE/cartridge banks bypassing
+PORTB), see `PEEK_BANK` in Phase 5.
 
 ```json
 {"ok":true,"addr":"$0080","length":16,"data":"00000018781f00..."}
@@ -473,8 +479,10 @@ Convenience: write a little-endian 16-bit word. `addr` 0..$FFFE.
 
 Read `length` bytes (1..65536) from `addr` and return them inline
 as base64. Same debug-safe read path as `PEEK` (CPU view, banking
-applied, no I/O side effects). The base64 wire format makes this
-work over `adb forward` on Android with no shared filesystem.
+applied, no I/O side effects), and the same 24-bit addresses: above
+$FFFF the 65C816's linear space, bank in the high byte, `addr` back
+as six hex digits. The base64 wire format makes this work over
+`adb forward` on Android with no shared filesystem.
 
 ```json
 {"ok":true,"addr":"$0700","length":64,"format":"base64","data":"AAECAwQF..."}
@@ -482,9 +490,11 @@ work over `adb forward` on Android with no shared filesystem.
 
 #### `MEMLOAD addr base64data`
 
-Write the base64-decoded payload starting at `addr`. The full
-range must fit within $0000-$FFFF. Bytes are written via the
-debug-safe path (no I/O side effects).
+Write the base64-decoded payload starting at `addr`. In bank 0 the
+full range must fit within $0000-$FFFF; above $FFFF `addr` is the
+65C816's 24-bit linear space, as `MEMDUMP` reads it, and the range
+must fit within $FFFFFF. Bytes are written via the debug-safe path
+(no I/O side effects).
 
 ```json
 {"ok":true,"addr":"$0700","length":64}

@@ -4,15 +4,17 @@
 // pulling the SDL3-oriented system timer object out of libsystem.a.
 
 #include <stdafx.h>
-#include <atomic>
+#include <algorithm>
 #include <chrono>
-#include <memory>
-#include <thread>
+#include <mutex>
+#include <vector>
 
 #include <vd2/system/function.h>
 #include <vd2/system/thread.h>
 #include <vd2/system/time.h>
 #include <vd2/system/vdtypes.h>
+
+#include "libretro_common.h"
 
 namespace {
 	std::chrono::steady_clock::time_point ATLibretroTimerStart() {
@@ -51,107 +53,108 @@ double VDGetPreciseSecondsPerTick() {
 	return 1.0 / 1000000000.0;
 }
 
-uint32 VDGetAccurateTick() {
-	return VDGetCurrentTick();
-}
+// VDGetAccurateTick and VDCallbackTimer were removed upstream in Altirra
+// 4.50-test21 (nothing referenced them any more); this backend drops them
+// too so it keeps matching <vd2/system/time.h>.
 
-VDCallbackTimer::VDCallbackTimer()
-	: mpCB(nullptr)
-	, mTimerAccuracy(0)
-	, mTimerPeriod(0)
-	, mTimerPeriodDelta(0)
-	, mTimerPeriodAdjustment(0)
-	, mbExit(false)
-	, mbPrecise(true)
-{
-}
+// -------------------------------------------------------------------------
+// VDLazyTimer
+// -------------------------------------------------------------------------
+//
+// Same cooperative scheduler as src/system/source/time_sdl3.cpp (this
+// target deliberately does not link libsystem's timer TU, so the code is
+// duplicated rather than shared).  <vd2/system/time.h> requires lazy timer
+// callbacks to run on the main thread as part of the host loop, which for
+// the libretro core means retro_run: ATLibretroLazyTimerTick() is called
+// once per retro_run, and lazy timers do not fire while the frontend has
+// the core paused — matching what a message loop does on Win32.
+//
+// Callbacks used to run on detached worker threads here, which raced the
+// emulation thread over the disk image during auto-flush and could not be
+// cancelled by Stop().  Do not reintroduce threads.
+// -------------------------------------------------------------------------
 
-VDCallbackTimer::~VDCallbackTimer() {
-	Shutdown();
-}
+namespace {
+	struct LazyTimerEntry {
+		uint32             mTimerId    = 0;
+		uint32             mPeriodMs   = 0;
+		uint64             mNextFireMs = 0;
+		bool               mbPeriodic  = false;
+		vdfunction<void()> mFn;
+	};
 
-bool VDCallbackTimer::Init(IVDTimerCallback *pCB, uint32 period_ms) {
-	return Init2(pCB, period_ms * 10000);
-}
+	// Immortal scheduler state — same reasoning as the SDL3 backend: the
+	// simulator is a global and owns disk interfaces that own flush
+	// timers, so ~VDLazyTimer can run after this TU's statics would have
+	// been destroyed.
+	struct LazyTimerState {
+		std::mutex                  mMutex;
+		std::vector<LazyTimerEntry> mList;
+		uint32                      mNextId = 1;
+	};
 
-bool VDCallbackTimer::Init2(IVDTimerCallback *pCB, uint32 period_100ns) {
-	return Init3(pCB, period_100ns, period_100ns >> 1, true);
-}
-
-bool VDCallbackTimer::Init3(IVDTimerCallback *pCB, uint32 period_100ns,
-	uint32, bool precise)
-{
-	Shutdown();
-
-	mpCB = pCB;
-	mTimerAccuracy = 1;
-	mTimerPeriod = period_100ns;
-	mTimerPeriodDelta = 0;
-	mTimerPeriodAdjustment = 0;
-	mbExit = false;
-	mbPrecise = precise;
-
-	if (ThreadStart())
-		return true;
-
-	Shutdown();
-	return false;
-}
-
-void VDCallbackTimer::Shutdown() {
-	if (isThreadAttached()) {
-		mbExit = true;
-		msigExit.signal();
-		ThreadWait();
+	LazyTimerState& GetLazyTimerState() {
+		static LazyTimerState *const state = new LazyTimerState;
+		return *state;
 	}
 
-	mTimerAccuracy = 0;
+	uint32 LazyTimer_Register(const vdfunction<void()>& fn, uint32 delayMs,
+		bool periodic)
+	{
+		LazyTimerState& st = GetLazyTimerState();
+		std::lock_guard<std::mutex> lk(st.mMutex);
+
+		LazyTimerEntry e;
+		e.mTimerId    = st.mNextId++;
+		e.mPeriodMs   = delayMs;
+		e.mNextFireMs = VDGetCurrentTick64() + delayMs;
+		e.mbPeriodic  = periodic;
+		e.mFn         = fn;
+		st.mList.push_back(std::move(e));
+		return st.mList.back().mTimerId;
+	}
+
+	void LazyTimer_Unregister(uint32 id) {
+		if (!id)
+			return;
+
+		LazyTimerState& st = GetLazyTimerState();
+		std::lock_guard<std::mutex> lk(st.mMutex);
+		st.mList.erase(
+			std::remove_if(st.mList.begin(), st.mList.end(),
+				[id](const LazyTimerEntry& e) { return e.mTimerId == id; }),
+			st.mList.end());
+	}
 }
 
-void VDCallbackTimer::SetRateDelta(int delta_100ns) {
-	mTimerPeriodDelta = delta_100ns;
-}
+// Drains due timers; called once per retro_run.  Callbacks run on copies of
+// the entries and outside the lock so a callback may stop, re-arm, or add
+// timers.
+void ATLibretroLazyTimerTick() {
+	const uint64 now = VDGetCurrentTick64();
+	LazyTimerState& st = GetLazyTimerState();
 
-void VDCallbackTimer::AdjustRate(int adjustment_100ns) {
-	mTimerPeriodAdjustment += adjustment_100ns;
-}
-
-bool VDCallbackTimer::IsTimerRunning() const {
-	return mTimerAccuracy != 0;
-}
-
-void VDCallbackTimer::ThreadRun() {
-	using namespace std::chrono;
-
-	auto periodNs = nanoseconds((uint64)mTimerPeriod * 100);
-	auto next = steady_clock::now() + periodNs;
-	const auto maxDelay = periodNs * 2;
-
-	while (!mbExit) {
-		const auto now = steady_clock::now();
-		const auto remaining = next - now;
-
-		if (remaining > nanoseconds(0)) {
-			const uint32 ms = (uint32)(
-				duration_cast<milliseconds>(remaining).count() + 1);
-			msigExit.tryWait(ms);
+	std::vector<LazyTimerEntry> fireNow;
+	{
+		std::lock_guard<std::mutex> lk(st.mMutex);
+		for (auto it = st.mList.begin(); it != st.mList.end(); ) {
+			if (it->mNextFireMs <= now) {
+				fireNow.push_back(*it);
+				if (it->mbPeriodic) {
+					it->mNextFireMs = now + it->mPeriodMs;
+					++it;
+				} else {
+					it = st.mList.erase(it);
+				}
+			} else {
+				++it;
+			}
 		}
+	}
 
-		if (mbExit)
-			break;
-
-		if (mpCB)
-			mpCB->TimerCallback();
-
-		const int adjust = mTimerPeriodAdjustment.xchg(0);
-		const int perdelta = mTimerPeriodDelta;
-		const uint64 ep = (uint64)mTimerPeriod + adjust + perdelta;
-		periodNs = nanoseconds(ep * 100);
-		next += periodNs;
-
-		const auto late = steady_clock::now() - next;
-		if (late > maxDelay)
-			next = steady_clock::now() + periodNs;
+	for (const auto& e : fireNow) {
+		if (e.mFn)
+			e.mFn();
 	}
 }
 
@@ -170,18 +173,7 @@ void VDLazyTimer::SetOneShotFn(const vdfunction<void()>& fn, uint32 delay) {
 	Stop();
 	mpFn = fn;
 	mbPeriodic = false;
-	mTimerId = 1;
-
-	auto running = std::make_shared<std::atomic<bool>>(true);
-	mpTimerRunning = running;
-
-	vdfunction<void()> f = fn;
-	mTimerThread = std::thread([running, f, delay]() {
-		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-		if (running->load(std::memory_order_acquire))
-			f();
-	});
-	mTimerThread.detach();
+	mTimerId = LazyTimer_Register(fn, delay, false);
 }
 
 void VDLazyTimer::SetPeriodic(IVDTimerCallback *pCB, uint32 delay) {
@@ -192,35 +184,14 @@ void VDLazyTimer::SetPeriodicFn(const vdfunction<void()>& fn, uint32 delay) {
 	Stop();
 	mpFn = fn;
 	mbPeriodic = true;
-	mTimerId = 1;
-
-	auto running = std::make_shared<std::atomic<bool>>(true);
-	mpTimerRunning = running;
-
-	vdfunction<void()> f = fn;
-	mTimerThread = std::thread([running, f, delay]() {
-		while (running->load(std::memory_order_acquire)) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-			if (!running->load(std::memory_order_acquire))
-				break;
-			f();
-		}
-	});
+	mTimerId = LazyTimer_Register(fn, delay, true);
 }
 
 void VDLazyTimer::Stop() {
-	if (mpTimerRunning)
-		mpTimerRunning->store(false, std::memory_order_release);
-
-	if (mTimerThread.joinable()) {
-		if (mTimerThread.get_id() == std::this_thread::get_id())
-			mTimerThread.detach();
-		else
-			mTimerThread.join();
+	if (mTimerId) {
+		LazyTimer_Unregister(mTimerId);
+		mTimerId = 0;
 	}
-
-	mpTimerRunning.reset();
-	mTimerId = 0;
 }
 
 void VDLazyTimer::StaticTimeCallback(VDZHWND, VDZUINT, VDZUINT_PTR,

@@ -33,6 +33,7 @@
 #include <stdafx.h>
 
 #include <numeric>
+#include <string>
 
 #if defined(VD_CPU_X86) || defined(VD_CPU_AMD64)
 	#include <emmintrin.h>

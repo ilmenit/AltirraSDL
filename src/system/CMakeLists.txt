@@ -46,6 +46,10 @@ if(WIN32)
         source/text.cpp
         source/thunk.cpp
         source/time.cpp
+        # Windows no-op for the cooperative lazy-timer drain; the Win32
+        # VDLazyTimer dispatches through WM_TIMER on its own.  Keeps
+        # VDLazyTimerTick() callable without #ifdef at every host loop.
+        source/time_lazytick_win32.cpp
         source/w32assist.cpp
     )
     if(ALTIRRA_SDL3)
@@ -86,7 +90,12 @@ target_include_directories(system
 )
 
 if(WIN32)
-    # time.cpp uses timeBeginPeriod/timeEndPeriod (winmm)
+    # winmm: upstream 4.50-test21 dropped timeBeginPeriod/timeEndPeriod from
+    #   time.cpp along with VDCallbackTimer, but the Windows SDL3 build still
+    #   needs winmm for the MidiMate backend's midiOut* calls
+    #   (source/os/midimate_sdl3.cpp). Upstream's own fix was to move the
+    #   winmm pragma into the Win32 main.cpp, which this build does not
+    #   compile, so keep the explicit link here.
     # registry.cpp uses SHDeleteKeyA (shlwapi)
     target_link_libraries(system PUBLIC winmm shlwapi)
 else()

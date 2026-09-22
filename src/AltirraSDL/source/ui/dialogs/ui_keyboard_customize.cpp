@@ -12,6 +12,7 @@
 #include <stdafx.h>
 #include <algorithm>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <SDL3/SDL.h>
 #include "ui_file_dialog_sdl3.h"

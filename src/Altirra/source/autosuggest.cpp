@@ -20,8 +20,10 @@
 #include <vd2/system/text.h>
 #include <at/atcore/deviceautosuggest.h>
 #include <at/atdebugger/defsymbols.h>
+#include <at/atio/diskfs.h>
 #include "autosuggest.h"
 #include "devicemanager.h"
+#include "diskinterface.h"
 #include "simulator.h"
 
 extern ATSimulator g_sim;
@@ -953,15 +955,77 @@ void ATAutoSuggestEngine::HandleCIOPath(const ResultSink& resultSink, const Matc
 			ResultInfo ri;
 			ri.mInsertionText = insertText;
 			ri.mItemText = itemText;
-			ri.mDescriptionText = descriptionText;
+
+			if (descriptionText)
+				ri.mDescriptionText = descriptionText;
+
 			mResultSink(ri);
 		}
 
 		const ResultSink& mResultSink;
 	} sink(resultSink);
 
+	// scan all devices that support the CIO auto-suggestion interface
 	for(IATDeviceAutoSuggest *devAS : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceAutoSuggest>(false, false, false)) {
 		devAS->AutoSuggestCIOPaths(cioDevice, unit, cioRelativePath, sink);
+	}
+
+	// if this path is for a disk path, scan all disk interfaces for dynamic
+	// images that support the CIO auto-suggestion interface
+	if (cioDevice == 'D') {
+		ATDiskInterface& diskIface = g_sim.GetDiskInterface(unit - 1);
+
+		IATDiskImage *image = diskIface.GetDiskImage();
+		if (image) {
+			IATDeviceAutoSuggest *diskAS = vdpoly_cast<IATDeviceAutoSuggest *>(image);
+
+			if (diskAS) {
+				diskAS->AutoSuggestCIOPaths(cioDevice, unit, cioRelativePath, sink);
+			} else {
+				// The disk image doesn't support auto-suggestion itself. Check if it is a non-dynamic
+				// image that could be plausibly a DOS 2 / MyDOS disk, and mount it as such if so. We
+				// use the DOS filesystem directly as we don't want some of the more complex or non-CIO
+				// filesystems. SDFS is plausible, but has unconstrained complexity.
+				if (!image->IsDynamic()) {
+					const ATDiskGeometryInfo& geom = image->GetGeometry();
+
+					if ((geom.mSectorSize == 128 || geom.mSectorSize == 256) && geom.mTotalSectorCount >= 720) {
+						try {
+							vduniqueptr fs { ATDiskMountImageDOS2(image, true) };
+
+							ATDiskFSEntryInfo info;
+							ATDiskFSFindHandle h = fs->FindFirst(ATDiskFSKey::None, info);
+							if (h != ATDiskFSFindHandle::Invalid) {
+								try {
+									do {
+										// check if the filename contains any non-printable chars and skip it if so
+										if (std::any_of(info.mFileName.begin(), info.mFileName.end(), [](char ch) { return ch < 0x20 || ch >= 0x7F; }))
+											continue;
+
+										// check if the supplied relative path is a prefix of the filename
+										if (info.mFileName.subspan(0, cioRelativePath.size()) == cioRelativePath) {
+											// add suggestion
+											sink.AddSuggestion(
+												info.mFileName.c_str() + cioRelativePath.size(),
+												VDTextAToW(info.mFileName).c_str(),
+												nullptr
+											);
+										}
+									} while(fs->FindNext(h, info));
+								} catch(...) {
+									fs->FindEnd(h);
+									throw;
+								}
+
+								fs->FindEnd(h);
+							}
+						} catch(...) {
+							// ignore errors
+						}
+					}
+				}
+			}
+		}
 	}
 }
 

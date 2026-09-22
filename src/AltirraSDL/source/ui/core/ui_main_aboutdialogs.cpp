@@ -56,6 +56,8 @@ void ATUIRenderCommandLineHelpDialog(ATUIState &state) {
 				"  --memsize <size>      8K..1088K (e.g. 64K, 128K, 320KCOMPY)\n"
 				"  --axlonmemsize <size> none, 64K..4096K\n"
 				"  --highbanks <n>       na, 0, 1, 3, 15, 63\n"
+				"  --cpu <model[,mult]>  6502, 65c02, 65c816; mult 1-23 is the\n"
+				"                        65C816 sub-cycle count (65C816 only)\n"
 				"  --stereo / --nostereo Enable/disable dual POKEY\n"
 				"  --basic / --nobasic   Enable/disable BASIC ROM");
 		}

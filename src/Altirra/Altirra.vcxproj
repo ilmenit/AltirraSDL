@@ -94,6 +94,7 @@
     <ClInclude Include="h\diskinterface.h" />
     <ClInclude Include="h\diskprofile.h" />
     <ClInclude Include="h\disktrace.h" />
+    <ClInclude Include="h\diskvirtimage.h" />
     <ClInclude Include="h\diskvirtimagebase.h" />
     <ClInclude Include="h\errordecode.h" />
     <ClInclude Include="h\fdc.h" />

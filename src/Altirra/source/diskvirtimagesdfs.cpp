@@ -162,13 +162,11 @@ public:
 	void GetPhysicalSectorInfo(uint32 index, ATDiskPhysicalSectorInfo& info) const override;
 
 	void ReadPhysicalSector(uint32 index, void *data, uint32 len) override;
-	void WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus) override;
 
 	uint32 GetVirtualSectorCount() const override;
 	void GetVirtualSectorInfo(uint32 index, ATDiskVirtualSectorInfo& info) const override;
 
 	uint32 ReadVirtualSector(uint32 index, void *data, uint32 len) override;
-	bool WriteVirtualSector(uint32 index, const void *data, uint32 len) override;
 	
 	void Reinterleave(ATDiskInterleave interleave) override;
 
@@ -659,10 +657,6 @@ void ATDiskImageVirtualFolderSDFS::ReadPhysicalSector(uint32 index, void *data, 
 	}
 }
 
-void ATDiskImageVirtualFolderSDFS::WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus) {
-	ATThrowDiskReadOnlyException();
-}
-
 uint32 ATDiskImageVirtualFolderSDFS::GetVirtualSectorCount() const {
 	return 65535;
 }
@@ -680,11 +674,6 @@ uint32 ATDiskImageVirtualFolderSDFS::ReadVirtualSector(uint32 index, void *data,
 
 	ReadPhysicalSector(index, data, len > vsize ? vsize : len);
 	return vsize;
-}
-
-bool ATDiskImageVirtualFolderSDFS::WriteVirtualSector(uint32 index, const void *data, uint32 len) {
-	ATThrowDiskReadOnlyException();
-	return false;
 }
 
 void ATDiskImageVirtualFolderSDFS::Reinterleave(ATDiskInterleave interleave) {

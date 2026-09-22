@@ -173,6 +173,7 @@
 #pragma comment(lib, "comdlg32")
 #pragma comment(lib, "advapi32")
 #pragma comment(lib, "dwmapi")
+#pragma comment(lib, "winmm")
 
 void ATUIInitControlStylesW32();
 void ATUIShutdownControlStylesW32();

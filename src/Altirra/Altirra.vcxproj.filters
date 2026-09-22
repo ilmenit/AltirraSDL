@@ -1917,6 +1917,9 @@
     <ClInclude Include="h\printerfontfx80.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="h\diskvirtimage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="h\cpumachine.inl">

@@ -677,6 +677,19 @@ void ATPCLinkDevice::SetReadOnly(bool readOnly) {
 	mbReadOnly = readOnly;
 }
 
+// AltirraSDL: fork fix, not yet in Windows Altirra; preserve when re-syncing
+// from upstream.  PCLink keeps its SDX-side "net path" with '\' separators,
+// which is correct and unchanged, but ResolveNativePath used to copy that
+// path verbatim into the native path handed to the host OS.  On Linux/macOS
+// a '\' is an ordinary filename character, so every PCLink subdirectory
+// collapsed into one impossible file name in the mount's parent.  Only the
+// native side is translated here.
+#ifdef _WIN32
+constexpr wchar_t kATPCLinkNativeSep = L'\\';
+#else
+constexpr wchar_t kATPCLinkNativeSep = L'/';
+#endif
+
 void ATPCLinkDevice::SetBasePath(const wchar_t *basePath) {
 	if (VDFileIsRelativePath(basePath))
 		mBasePathNative = VDMakePath(VDGetProgramPath().c_str(), basePath);
@@ -684,7 +697,7 @@ void ATPCLinkDevice::SetBasePath(const wchar_t *basePath) {
 		mBasePathNative = basePath;
 
 	if (!mBasePathNative.empty() && !VDIsPathSeparator(mBasePathNative.back()))
-		mBasePathNative += '\\';
+		mBasePathNative += kATPCLinkNativeSep;
 }
 
 void ATPCLinkDevice::GetDeviceInfo(ATDeviceInfo& info) {
@@ -2039,12 +2052,13 @@ bool ATPCLinkDevice::ResolveNativePath(VDStringW& resultPath, const VDStringA& n
 		if (c >= 'A' && c <= 'Z')
 			c &= ~0x20;
 
-		resultPath += (wchar_t)c;	
+		// AltirraSDL: the net path's separators become the host's.
+		resultPath += c == '\\' ? kATPCLinkNativeSep : (wchar_t)c;
 	}
 
 	// ensure trailing separator
-	if (!resultPath.empty() && resultPath.back() != L'\\')
-		resultPath += L'\\';
+	if (!resultPath.empty() && resultPath.back() != kATPCLinkNativeSep)
+		resultPath += kATPCLinkNativeSep;
 
 	return true;
 }

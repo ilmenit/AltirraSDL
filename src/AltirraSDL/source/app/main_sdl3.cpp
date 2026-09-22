@@ -11,14 +11,18 @@
 #include <stdafx.h>
 #include <SDL3/SDL.h>
 
+// Cooperative lazy-timer scheduler drain (src/system/source/time_sdl3.cpp).
+// VDLazyTimer callbacks — disk auto-flush, IDE flush, virtual-folder file
+// close — are only dispatched from here, so this must run on every tick of
+// the main loop on every platform, not just the browser build.
+extern "C" void VDLazyTimerTick();
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
-// Forward declarations of the per-tick drains added for the browser
-// build — the WASM single-threaded scheduler (src/system/source/time_sdl3.cpp)
-// and the JS upload/boot bridge (wasm_bridge.cpp).  Both are main-thread
-// only; they are invoked from the tick lambda inside main().
-extern "C" void VDWASMTimerTick();
+// Forward declaration of the per-tick drain added for the browser build:
+// the JS upload/boot bridge (wasm_bridge.cpp).  Main-thread only; invoked
+// from the tick lambda inside main().
 extern void ATWasmBridgeTick();
 extern "C" void ATWasmSyncFSOut();
 extern "C" void ATWasmPersistSettings();
@@ -2853,16 +2857,19 @@ int main(int argc, char *argv[]) {
 		ATNetplayUI_Poll(SDL_GetTicks());
 #endif
 
+		// Drain the cooperative lazy-timer scheduler (see
+		// src/system/source/time_sdl3.cpp).  Every VDLazyTimer callback
+		// in the build — disk auto-flush, IDE flush, virtual-folder file
+		// close — runs from here, on the main thread, matching the Win32
+		// WM_TIMER contract documented in <vd2/system/time.h>.  Must be
+		// called every tick, on every platform.
+		VDLazyTimerTick();
+
 #ifdef __EMSCRIPTEN__
-		// Drain the WASM-only timer scheduler (replaces the detached
-		// std::thread-based VDLazyTimer path on native — see
-		// src/system/source/time_sdl3.cpp).  Must be called every tick
-		// before anything that might register or cancel a timer.
 		// Drain any pending upload / boot / library-refresh requests
 		// posted by the JS shell via ATWasmOnFileUploaded (see
 		// wasm_bridge.cpp).  Safe to call every tick; no-op when the
 		// queue is empty.  Forward-declared at file scope above.
-		VDWASMTimerTick();
 		ATWasmBridgeTick();
 
 		// Periodically snapshot live settings and flush IDBFS so writes
