@@ -222,18 +222,26 @@ int atb_palette_reset(atb_client_t* c);
  * acknowledgement), inspect atb_last_response().
  */
 
+/*
+ * Write one byte (atb_poke) or a little-endian word (atb_poke16)
+ * at `addr`, in bank 0. Both are real CPU bus writes with the CPU's
+ * view of memory applied (PORTB banking, cartridge mapping, OS ROM
+ * overlay), and neither is side-effect free: a write into an I/O
+ * page ($D000-$D7FF) runs the chip's write handler exactly as a
+ * `STA $Dxxx` would. Altirra's memory manager has no side-effect-
+ * free write, so there is nothing quieter to fall back to.
+ */
 int atb_poke(atb_client_t* c, unsigned int addr, unsigned int value);
 int atb_poke16(atb_client_t* c, unsigned int addr, unsigned int value);
 
 /*
- * Hardware-register poke. Unlike atb_poke(), which writes the
- * debug-safe RAM latch and has no side effects on ANTIC / GTIA /
- * POKEY / PIA registers, atb_hwpoke() routes the write through
- * the real CPU bus, triggering the same chip write handlers a
- * `STA $Dxxx` instruction would on the 6502. Use this to drive
- * ANTIC's DLIST / DMACTL / NMIEN, GTIA's colour registers, etc.
- * from a bare-metal client that has parked the CPU via
- * atb_boot_bare().
+ * Hardware-register poke: the same kind of CPU bus write as
+ * atb_poke(), differing only in the bank it targets -- atb_poke()
+ * forces bank 0, atb_hwpoke() uses the bank the CPU is currently
+ * executing in, so on a 6502 or 65C02 the two are equivalent.
+ * Use either to drive ANTIC's DLIST / DMACTL / NMIEN, GTIA's colour
+ * registers, etc. from a bare-metal client that has parked the CPU
+ * via atb_boot_bare().
  */
 int atb_hwpoke(atb_client_t* c, unsigned int addr, unsigned int value);
 

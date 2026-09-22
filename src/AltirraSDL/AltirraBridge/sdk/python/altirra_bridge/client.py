@@ -402,26 +402,30 @@ class AltirraBridge:
     # ------------------------------------------------------------------
 
     def poke(self, addr: int, value: int) -> dict:
-        """Write a byte at ``addr`` (0..$FFFF). Uses the debug-safe
-        write path: I/O register addresses ($D000-$D7FF) write the
-        underlying latch without triggering ANTIC/GTIA/POKEY side
-        effects.
+        """Write a byte at ``addr`` (0..$FFFF), in bank 0.
+
+        This is a real CPU bus write with the CPU's view of memory
+        applied (PORTB banking, cartridge mapping, OS ROM overlay).
+        It is **not** side-effect free: writing an I/O page
+        ($D000-$D7FF) runs the chip's write handler exactly as a
+        ``STA $Dxxx`` would. Altirra's memory manager has no
+        side-effect-free write, so there is nothing quieter to use.
         """
         return self._cmd_ok(f"POKE ${addr:x} ${value & 0xFF:02x}")
 
     def poke16(self, addr: int, value: int) -> dict:
-        """Write a little-endian 16-bit word at ``addr``."""
+        """Write a little-endian 16-bit word at ``addr``. Same write
+        path and the same I/O side effects as :meth:`poke`."""
         return self._cmd_ok(f"POKE16 ${addr:x} ${value & 0xFFFF:04x}")
 
     def hwpoke(self, addr: int, value: int) -> dict:
-        """Hardware-register poke. Unlike :meth:`poke`, which
-        writes the debug-safe RAM latch with no side effects,
-        ``hwpoke`` routes the write through the real CPU bus —
-        for addresses in the ``$D000-$D7FF`` I/O range it
-        triggers the same ANTIC / GTIA / POKEY / PIA handlers a
-        ``STA $Dxxx`` 6502 instruction would.
+        """Hardware-register poke: the same kind of CPU bus write as
+        :meth:`poke`, differing only in the bank it targets —
+        :meth:`poke` forces bank 0, ``hwpoke`` uses the bank the CPU
+        is currently executing in. On a 6502 or 65C02 the two are
+        equivalent.
 
-        Use this to drive ANTIC's ``DLISTL``/``DLISTH``/``DMACTL``,
+        Either one drives ANTIC's ``DLISTL``/``DLISTH``/``DMACTL``,
         GTIA's colour registers, POKEY audio registers, etc. from
         a bare-metal client that has parked the CPU via
         :meth:`boot_bare`.

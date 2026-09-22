@@ -263,11 +263,11 @@ begin
   Bridge.MemLoad(DL_ADDR, Dl[0], DlLen);
   Bridge.MemLoadBytes(SCREEN_ADDR, Clear);
 
-  // Point ANTIC at the custom DL. Uses HwPoke (not Poke) because
-  // the debug-safe Poke path bypasses I/O register write handlers —
-  // writing to the RAM latch at $D402 has no effect on ANTIC's
-  // real DLISTL/DLISTH. HwPoke goes through the same CPU bus path
-  // as a STA $D402 instruction would.
+  // Point ANTIC at the custom DL. HwPoke is the call named for
+  // hardware registers: it goes through the same CPU bus path as a
+  // STA $D402 instruction, in the bank the CPU is executing in.
+  // Poke is the same kind of bus write forced to bank 0, so here it
+  // would do the same thing - neither one is side-effect free.
   Bridge.HwPoke(ANTIC_DLISTL, DL_ADDR and $FF);
   Bridge.HwPoke(ANTIC_DLISTH, DL_ADDR shr 8);
 

@@ -174,13 +174,14 @@ type
     procedure Poke(Addr: Word; Value: Byte);
     procedure Poke16(Addr: Word; Value: Word);
 
-    { Hardware-register poke. Unlike Poke, which writes the
-      debug-safe RAM latch and has no side effects on ANTIC /
-      GTIA / POKEY / PIA registers, HwPoke routes the write
-      through the real CPU bus, triggering the same chip write
-      handlers a `STA $Dxxx` instruction would. Use this to drive
-      ANTIC DLIST / DMACTL / NMIEN, GTIA colour registers, etc.
-      from a bare-metal client that has parked the CPU via
+    { Hardware-register poke: the same kind of real CPU bus write
+      as Poke, differing only in the bank it targets -- Poke forces
+      bank 0, HwPoke uses the bank the CPU is currently executing
+      in, so on a 6502 or 65C02 the two are equivalent. Neither is
+      side-effect free: a write into $D000-$D7FF runs the chip's
+      write handler exactly as a `STA $Dxxx` would. Use either to
+      drive ANTIC DLIST / DMACTL / NMIEN, GTIA colour registers,
+      etc. from a bare-metal client that has parked the CPU via
       BootBare. Mirrors atb_hwpoke from the C SDK. }
     procedure HwPoke(Addr: Word; Value: Byte);
 

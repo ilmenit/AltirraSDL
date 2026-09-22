@@ -455,13 +455,22 @@ fight with real-gamepad input from the host.
 
 #### `POKE addr value`
 
-Write one byte. `addr` is 0..$FFFF; `value` is 0..$FF. Uses the
-debug-safe write path: writes to I/O register addresses
-($D000-$D7FF) update the underlying latch *without* invoking the
-ANTIC/GTIA/POKEY register write handlers, so reads don't trigger
-side effects. To deliberately trigger hardware side effects (e.g.
-to switch banks via `PORTB`), use a future Phase 5 `POKE_HW`
-command.
+Write one byte. `addr` is 0..$FFFF; `value` is 0..$FF. This is a
+real CPU bus write with the CPU's view of memory applied (PORTB
+banking, cartridge mapping, OS ROM overlay), addressed in bank 0.
+**It is not side-effect free**: a write into an I/O page
+($D000-$D7FF) runs the chip's write handler exactly as a `STA
+$Dxxx` would, so poking `PORTB` ($D301) really does switch banks
+and poking `COLBK` ($D01A) really does change the border. Altirra's
+memory manager has no side-effect-free write at all — even the
+Windows debugger's memory editor goes through this same path — so
+there is nothing quieter to fall back to. If you want to change RAM
+that an I/O layer currently covers, unmap it first (e.g. clear the
+OS ROM overlay) rather than expecting the write to land underneath.
+
+`HWPOKE` is the same kind of write and differs only in which bank
+it targets: `POKE` forces bank 0, `HWPOKE` uses the bank the CPU is
+currently executing in. On a 6502 or 65C02 the two are equivalent.
 
 ```json
 {"ok":true,"addr":"$0600","value":"$ab"}
@@ -470,6 +479,7 @@ command.
 #### `POKE16 addr value`
 
 Convenience: write a little-endian 16-bit word. `addr` 0..$FFFE.
+Same write path and the same I/O side effects as `POKE`.
 
 ```json
 {"ok":true,"addr":"$0602","value":"$1234"}
@@ -493,8 +503,9 @@ as six hex digits. The base64 wire format makes this work over
 Write the base64-decoded payload starting at `addr`. In bank 0 the
 full range must fit within $0000-$FFFF; above $FFFF `addr` is the
 65C816's 24-bit linear space, as `MEMDUMP` reads it, and the range
-must fit within $FFFFFF. Bytes are written via the debug-safe path
-(no I/O side effects).
+must fit within $FFFFFF. Bytes go through the same write path as
+`POKE`, so a payload that overlaps an I/O page triggers that page's
+write handlers — see `POKE` above.
 
 ```json
 {"ok":true,"addr":"$0700","length":64}

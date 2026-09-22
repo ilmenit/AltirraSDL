@@ -268,7 +268,10 @@ bool ATHostDeviceParseFilename(const char *s, bool allowDir, bool allowWild, boo
 		nativeRelPath.insert(nativeRelPath.begin() + componentStart, L'!');
 
 	// strip off trailing separator if present
-	if (!nativeRelPath.empty() && nativeRelPath.back() == '\\')
+	//
+	// AltirraSDL: the separator this function emits, as above -- comparing
+	// against '\\' here would leave a trailing '/' on the path off Windows.
+	if (!nativeRelPath.empty() && nativeRelPath.back() == kATHostNativeSep)
 		nativeRelPath.pop_back();
 
 	return true;
@@ -839,7 +842,11 @@ sint32 ATHostDeviceEmulator::OnCIOOpen(int channel, uint8 deviceNo, uint8 mode, 
 						if (c == L'$' || c == L'!')
 							continue;
 
-						if (c == '\\')
+						// AltirraSDL: mNativeCurDir is built with the host's
+						// separator (VDMakePath / ATHostDeviceParseFilename),
+						// so the Atari-side '>' must be translated from that,
+						// not from a hard-coded '\\'.
+						if (c == kATHostNativeSep)
 							c = L'>';
 
 						ch.mData.push_back((uint8)c);
@@ -1514,7 +1521,9 @@ sint32 ATHostDeviceEmulator::HandleCmd_SDX_Getcwd(uint16 bufadr, uint16 buflen) 
 			if (c == L'$' || c == L'!')
 				continue;
 
-			if (c == '\\')
+			// AltirraSDL: as in the H: directory header -- translate from the
+			// separator mNativeCurDir actually holds on this host.
+			if (c == kATHostNativeSep)
 				c = L'>';
 
 			path.push_back((uint8)c);

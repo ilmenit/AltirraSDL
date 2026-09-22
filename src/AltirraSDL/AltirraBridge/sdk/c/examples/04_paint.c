@@ -166,11 +166,11 @@ static int setup_machine(atb_client_t* c) {
     if (atb_memload(c, DL_ADDR,     dl,    (unsigned int)dl_len) != ATB_OK) return -1;
     if (atb_memload(c, SCREEN_ADDR, clear, SCREEN_LEN)           != ATB_OK) return -1;
 
-    /* Point ANTIC at the custom DL. Uses HWPOKE (not POKE) because
-     * the debug-safe POKE path bypasses I/O register write
-     * handlers — writing to the RAM latch at $D402 has no effect
-     * on ANTIC's real DLISTL/DLISTH. HWPOKE goes through the same
-     * CPU bus path as a `STA $D402` instruction would. */
+    /* Point ANTIC at the custom DL. HWPOKE is the call named for
+     * hardware registers: it goes through the same CPU bus path as a
+     * `STA $D402` instruction, in the bank the CPU is executing in.
+     * POKE is the same kind of bus write forced to bank 0, so here it
+     * would do the same thing — neither one is side-effect free. */
     if (atb_hwpoke(c, ANTIC_DLISTL, DL_ADDR & 0xFF) != ATB_OK) return -1;
     if (atb_hwpoke(c, ANTIC_DLISTH, DL_ADDR >> 8)   != ATB_OK) return -1;
 

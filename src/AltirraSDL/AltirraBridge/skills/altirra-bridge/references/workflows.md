@@ -469,11 +469,15 @@ source of truth that drives it.
   immediately after queuing the gate. The *next* command after it
   blocks server-side until the gate releases. So `frame(60); regs()`
   reads the registers as of the end of the run, not the start.
-- **Don't `poke()` directly into ANTIC/POKEY/GTIA hardware
-  registers expecting side effects.** `poke()` is debug-safe — it
-  writes the latch without invoking the chip's write-handler.
-  Address the OS shadow ($02xx range) instead, or use a future
-  `POKE_HW` if you really need the hardware-trigger semantics.
+- **Don't `poke()` into ANTIC/POKEY/GTIA hardware registers
+  expecting *no* side effects.** `poke()` is a real CPU bus write:
+  it runs the chip's write handler exactly as a `STA $Dxxx` would,
+  so poking `PORTB` ($D301) really does switch banks. Altirra's
+  memory manager has no side-effect-free write, so there is nothing
+  quieter to fall back to — use `hwpoke()` when you *want* a
+  hardware register write (it is the same write, in the CPU's
+  current bank rather than bank 0), and address the OS shadow
+  ($02xx range) when you want the kernel to do it for you.
 - **Don't `peek()` `$D40A` (WSYNC) expecting a wait.** Same
   reason — debug reads don't trigger chip side effects.
 - **Don't share an `AltirraBridge` across threads.** Use one per

@@ -847,10 +847,16 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			if (comma) {
 				*comma = 0;
 				int n = atoi(comma + 1);
-				if (n >= 1 && n <= 23)
-					subCycles = (uint32)n;
-				else
+				if (n < 1 || n > 23) {
+					// Reject the whole switch rather than quietly
+					// falling back to x1, which would leave the caller
+					// believing it got the speed it asked for.  This is
+					// what every other value check in this file does.
 					LOG_INFO("CmdLine", "CPU multiplier out of range (1-23): %s", comma + 1);
+					continue;
+				}
+
+				subCycles = (uint32)n;
 			}
 
 			ATCPUMode mode = kATCPUMode_6502;

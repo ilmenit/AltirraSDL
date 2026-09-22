@@ -81,12 +81,13 @@ From that point the client owns the machine. It can:
    screen RAM shows up in the next Atari frame** with no kernel
    interference
 
-> **Important:** ANTIC and GTIA register writes must use **`hwpoke`**
-> (C: `atb_hwpoke`, Python: `bridge.hwpoke`), not plain `poke`. The
-> regular `poke` writes the debug-safe RAM latch and has no effect on
-> the actual chip registers in the `$D000-$D7FF` range. `hwpoke`
-> routes the write through the CPU bus the same way a `STA $Dxxx`
-> instruction would.
+> **Note:** ANTIC and GTIA register writes should use **`hwpoke`**
+> (C: `atb_hwpoke`, Python: `bridge.hwpoke`) — it is the call named
+> for the job. It routes the write through the CPU bus the same way a
+> `STA $Dxxx` instruction would, in the bank the CPU is executing in.
+> Plain `poke` is the same kind of bus write, just forced to bank 0,
+> so on a 6502 or 65C02 the two behave identically; neither is
+> side-effect free.
 
 ### The `boot_bare` primitive
 

@@ -581,6 +581,19 @@ VDDirectoryIterator::VDDirectoryIterator(const wchar_t *path)
 	const wchar_t *last = lastSepPtr ? lastSepPtr + 1 : raw;
 	if (wcschr(last, L'*') || wcschr(last, L'?')) {
 		filter = last;
+
+		// Win32's FindFirstFile treats "*.*" as "everything", including
+		// names with no dot at all -- an MS-DOS legacy quirk that lives in
+		// the filesystem call, not in the wildcard matcher.  Callers written
+		// against the Windows build rely on it: the H: host device searches
+		// with "<dir>\*.*" and would otherwise never see a subdirectory
+		// (directory names rarely contain a dot), so XIO 41 could not change
+		// into one and directory listings dropped every dotless entry.
+		// VDFileWildMatch is a plain portable matcher and requires the
+		// literal '.', so normalise the pattern here instead.
+		if (filter == L"*.*")
+			filter = L"*";
+
 		if (lastSepPtr) {
 			size_t sepIdx = (size_t)(lastSepPtr - raw);
 			dir.resize(sepIdx);

@@ -1,9 +1,12 @@
 // AltirraBridge - Phase 3 state-write commands (impl)
 //
-// Memory writes use ATSimulator::DebugGlobalWriteByte (the debug-safe
-// path that goes through the underlying-RAM latch without invoking
-// I/O register write handlers — same semantics as the Windows
-// debugger memory pane edit feature).
+// Memory writes use ATSimulator::DebugGlobalWriteByte — the same
+// path the Windows debugger's memory pane edit uses.  Despite the
+// "Debug" prefix it is a real bus write: for a special (I/O) page it
+// reaches ATMemoryManager::CPUExtWriteByte, which runs the layer's
+// write handler.  Altirra's memory manager has no side-effect-free
+// write, so POKE/POKE16/MEMLOAD all carry I/O side effects and the
+// SDK docs say so.
 //
 // Joystick injection uses ATPIAEmulator::AllocInput +
 // ATPIAEmulator::SetInputBits for direction lines and
@@ -1241,9 +1244,10 @@ std::string CmdPoke(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (value > 0xFF)
 		return JsonError("POKE: value > $FF");
 
-	// DebugGlobalWriteByte writes the underlying RAM latch, bypassing
-	// I/O register write handlers (no ANTIC/GTIA/POKEY side effects).
-	// Address space 0 (kATAddressSpace_CPU) is the default.
+	// A real bus write in the CPU's view of memory, addressed in bank 0
+	// — address space 0 (kATAddressSpace_CPU) is the default.  Writing
+	// an I/O page runs that chip's write handler, exactly as a `STA
+	// $Dxxx` would; there is no quieter write path in the core.
 	sim.DebugGlobalWriteByte((uint32_t)addr, (uint8_t)value);
 
 	std::string payload;
@@ -1256,18 +1260,18 @@ std::string CmdPoke(ATSimulator& sim, const std::vector<std::string>& tokens) {
 // ---------------------------------------------------------------------------
 // HWPOKE addr value
 //
-// Same parameters as POKE, but routes the write through the real
-// CPU bus (ATCPUEmulatorMemory::WriteByte) instead of the debug
-// RAM latch. For addresses in the $D000-$D7FF I/O range this
-// actually hits the ANTIC / GTIA / POKEY / PIA write handlers,
-// with the same cycle-accurate effect a running 6502 `STA` would
-// have.
+// Same parameters as POKE, and the same kind of write: both reach
+// the ANTIC / GTIA / POKEY / PIA write handlers for $D000-$D7FF.
+// They differ only in the bank they address — POKE forces bank 0
+// (ATMemoryManager::ExtWriteByte with an explicit bank), HWPOKE uses
+// the bank the CPU is currently executing in
+// (ATCPUEmulatorMemory::WriteByte, the current page map).  On a 6502
+// or 65C02 the two are equivalent.
 //
-// Use POKE for RAM writes that must be debug-safe (no side
-// effects). Use HWPOKE for hardware register writes from a
-// bare-metal client that has parked the CPU and wants to drive
-// ANTIC/GTIA directly — the normal case is 04_paint's
-// setup_machine writing $D400/$D402/$D403 and $D016..$D01A.
+// HWPOKE stays as the name a bare-metal client reaches for when it
+// has parked the CPU and wants to drive ANTIC/GTIA directly — the
+// normal case is 04_paint's setup_machine writing $D400/$D402/$D403
+// and $D016..$D01A.
 // ---------------------------------------------------------------------------
 
 std::string CmdHwPoke(ATSimulator& sim, const std::vector<std::string>& tokens) {
@@ -1373,8 +1377,9 @@ std::string CmdMemDump(ATSimulator& sim, const std::vector<std::string>& tokens)
 // MEMLOAD addr base64
 //
 // Inline-only for now (matches MEMDUMP). The base64 data must be the
-// 3rd token. The bytes are written via DebugGlobalWriteByte so I/O
-// register side effects are NOT triggered.
+// 3rd token. The bytes go through DebugGlobalWriteByte, the same
+// write path as POKE, so a payload overlapping an I/O page triggers
+// that page's write handlers.
 // ---------------------------------------------------------------------------
 
 std::string CmdMemLoad(ATSimulator& sim, const std::vector<std::string>& tokens) {
