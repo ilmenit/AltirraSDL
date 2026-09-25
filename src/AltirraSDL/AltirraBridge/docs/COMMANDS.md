@@ -363,6 +363,13 @@ atb_profile_stop(c);
 atb_profile_dump(c, 20);
 ```
 
+Each row's `addr` is the 16-bit PC. On a 65C816, code at the same
+offset in two banks would be one address to the reader, so every row
+also carries `addr24` — the program bank and PC, `"$01a378"` — and
+`gaddr`, the profiler's own 32-bit record address: `addr24` plus the
+base of the address space the code was fetched from, when that is a
+banked space (a cartridge bank, an extended-memory window).
+
 **Note:** `PROFILE_DUMP*` is destructive — calling it twice returns
 empty data the second time. Restart the profiler to collect a new
 session.

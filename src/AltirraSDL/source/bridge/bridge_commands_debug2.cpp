@@ -104,6 +104,15 @@ namespace {
 std::string Hex8 (uint32_t v) { char b[8];  std::snprintf(b, sizeof b, "\"$%02x\"", v & 0xff);   return b; }
 std::string Hex16(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%04x\"", v & 0xffff); return b; }
 
+// The profiler's addresses, whole.  A record's address is PC + (K << 16)
+// plus, with global addresses on, the base of the address space the code
+// was fetched from (cartridge bank, extended-memory window, ...).  "addr"
+// stays the 16-bit PC it always was, for existing clients; "addr24" adds
+// the 65C816's program bank, without which code at the same offset in
+// two banks is one row to the reader; "gaddr" is the record's own value.
+static std::string ProfHex24(uint32_t v) { char b[12]; std::snprintf(b, sizeof b, "\"$%06x\"", v & 0xffffff); return b; }
+static std::string ProfHex32(uint32_t v) { char b[14]; std::snprintf(b, sizeof b, "\"$%08x\"", v); return b; }
+
 void AddField(std::string& o, const char* k, const std::string& v) { o += '"';  o += k; o += "\":";  o += v;  o += ','; }
 void AddU32  (std::string& o, const char* k, uint32_t v)           { o += '"';  o += k; o += "\":";  o += std::to_string(v); o += ','; }
 void AddI32  (std::string& o, const char* k, int32_t v)            { o += '"';  o += k; o += "\":";  o += std::to_string(v); o += ','; }
@@ -800,6 +809,8 @@ std::string CmdProfileDump(ATSimulator& sim, const std::vector<std::string>& tok
 		arr += '{';
 		std::string e;
 		AddField(e, "addr",   Hex16(rows[i].addr & 0xffff));
+		AddField(e, "addr24", ProfHex24(rows[i].addr));
+		AddField(e, "gaddr",  ProfHex32(rows[i].addr));
 		AddU32  (e, "cycles", (uint32_t)rows[i].cycles);
 		AddU32  (e, "insns",  (uint32_t)rows[i].insns);
 		AddU32  (e, "calls",  (uint32_t)rows[i].calls);
@@ -874,6 +885,8 @@ std::string CmdProfileDumpTree(ATSimulator& sim, const std::vector<std::string>&
 		AddU32  (e, "ctx",               (uint32_t)i);
 		AddU32  (e, "parent",            session.mContexts[i].mParent);
 		AddField(e, "addr",              Hex16(session.mContexts[i].mAddress & 0xffff));
+		AddField(e, "addr24",            ProfHex24(session.mContexts[i].mAddress));
+		AddField(e, "gaddr",             ProfHex32(session.mContexts[i].mAddress));
 		AddU32  (e, "calls",             merged[i].mCalls);
 		AddU32  (e, "excl_cycles",       merged[i].mCycles);
 		AddU32  (e, "excl_insns",        merged[i].mInsns);
