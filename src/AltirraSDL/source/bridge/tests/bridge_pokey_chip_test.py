@@ -33,17 +33,21 @@ def main() -> None:
             with AltirraBridge.from_token_file(str(token_file)) as bridge:
                 # Mono machine: chip 1 answers, chip 2 is an error.
                 bridge.boot_bare()
+                # CONFIG stereo cold-resets the machine. Keep it paused so
+                # OS startup cannot overwrite the registers under test.
+                bridge.pause()
                 assert bridge.pokey()["ok"]
                 try:
                     bridge.pokey(2)
                     raise AssertionError("POKEY 2 must fail without dual POKEY")
                 except RemoteError as e:
                     assert "stereo" in str(e), e
-                try:
-                    bridge.pokey(3)
-                    raise AssertionError("POKEY 3 must be rejected")
-                except RemoteError as e:
-                    assert "chip" in str(e), e
+                for chip in (0, -1, 3, 4294967296, "bad"):
+                    try:
+                        bridge.pokey(chip)
+                        raise AssertionError(f"POKEY {chip} must be rejected")
+                    except RemoteError as e:
+                        assert "chip" in str(e), e
 
                 # Stereo machine: the chips are distinct - a write to the
                 # slave's AUDF1 ($D210) shows up in chip 2 only, a write to
@@ -55,6 +59,18 @@ def main() -> None:
                 slave = bridge.pokey(2)
                 assert primary["AUDF1"] == "$a5", primary
                 assert slave["AUDF1"] == "$5a", slave
+
+                assert bridge.pokey(1) == primary
+                assert bridge.hwstate()["pokey"] == {
+                    k: v for k, v in primary.items() if k != "ok"}
+
+                bridge.config("stereo", "false")
+                assert bridge.pokey()["ok"]
+                try:
+                    bridge.pokey(2)
+                    raise AssertionError("Disabled chip 2 must be inaccessible")
+                except RemoteError as e:
+                    assert "stereo" in str(e), e
 
                 bridge.quit()
             assert proc.wait(timeout=10) == 0
