@@ -256,8 +256,7 @@ const char* PokeyRegName(int idx) {
 	return nullptr;
 }
 
-std::string BuildPokeyPayload(ATSimulator& sim) {
-	auto& pokey = sim.GetPokey();
+std::string BuildPokeyPayload(const ATPokeyEmulator& pokey) {
 	ATPokeyRegisterState rs;
 	pokey.GetRegisterState(rs);
 
@@ -411,8 +410,22 @@ std::string CmdGtia(ATSimulator& sim, const std::vector<std::string>& /*tokens*/
 	return JsonOk(BuildGtiaPayload(sim));
 }
 
-std::string CmdPokey(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
-	return JsonOk(BuildPokeyPayload(sim));
+std::string CmdPokey(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	// POKEY [chip]: chip 1 (the default) is the primary POKEY, chip 2 the
+	// stereo slave - so a register-level consumer (e.g. a SAP type R
+	// recorder) can capture both halves of a dual-POKEY machine.
+	uint32_t chip = 1;
+	if (tokens.size() >= 2) {
+		if (!ParseUint(tokens[1], chip) || chip < 1 || chip > 2)
+			return JsonError("POKEY: chip must be 1 (primary) or 2 (stereo slave)");
+	}
+	if (chip == 2) {
+		const ATPokeyEmulator *slave = sim.GetPokey().GetSlave();
+		if (!slave)
+			return JsonError("POKEY: chip 2 needs dual POKEY (CONFIG stereo true)");
+		return JsonOk(BuildPokeyPayload(*slave));
+	}
+	return JsonOk(BuildPokeyPayload(sim.GetPokey()));
 }
 
 std::string CmdPia(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
@@ -529,7 +542,7 @@ std::string CmdHwstate(ATSimulator& sim, const std::vector<std::string>& /*token
 	payload += "\"cpu\":{";   payload += BuildCpuPayload(sim);   payload += "},";
 	payload += "\"antic\":{"; payload += BuildAnticPayload(sim); payload += "},";
 	payload += "\"gtia\":{";  payload += BuildGtiaPayload(sim);  payload += "},";
-	payload += "\"pokey\":{"; payload += BuildPokeyPayload(sim); payload += "},";
+	payload += "\"pokey\":{"; payload += BuildPokeyPayload(sim.GetPokey()); payload += "},";
 	payload += "\"pia\":{";   payload += BuildPiaPayload(sim);   payload += "}";
 	return JsonOk(payload);
 }

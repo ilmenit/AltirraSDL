@@ -30,4 +30,12 @@ if(TARGET AltirraBridgeServer)
 	set_tests_properties(bridge-custom-device PROPERTIES
 		TIMEOUT 30
 		ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+	add_test(NAME bridge-pokey-chip
+		COMMAND ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/bridge_pokey_chip_test.py
+			$<TARGET_FILE:AltirraBridgeServer>
+			${CMAKE_SOURCE_DIR}/src/AltirraSDL/AltirraBridge/sdk/python)
+	set_tests_properties(bridge-pokey-chip PROPERTIES
+		TIMEOUT 30
+		ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
