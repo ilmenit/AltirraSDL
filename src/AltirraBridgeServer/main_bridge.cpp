@@ -35,6 +35,7 @@
 #include "gtia.h"
 #include "disk.h"
 #include "diskinterface.h"
+#include "cassette.h"
 #include "bridge_logging.h"
 #include "settings.h"            // ATSettingsCategory enum + ATSettingsLoadLastProfile
 #include "constants.h"           // ATHardwareMode, ATMemoryMode enums
@@ -42,6 +43,7 @@
 
 #include "bridge_server.h"
 #include <at/atcore/constants.h>
+#include <at/atio/cassetteimage.h>
 #include <vd2/VDDisplay/display.h>
 #include <vd2/system/registrymemory.h>
 
@@ -160,8 +162,9 @@ static void BridgeLogSimulatorConfig(const char *stage) {
 
 	BRIDGE_LOG_INFO("BridgeServer",
 		"%s config: profile=%08x '%s', machine=%s, memory=%u, "
-		"basic=%s, video=%d, kernel_id=$%016llx actual_kernel=$%016llx '%s', "
-		"basic_id=$%016llx actual_basic=$%016llx '%s'",
+		"basic=%s, video=%d, gtia_defect=%s, "
+		"kernel_id=$%016llx actual_kernel=$%016llx '%s', "
+		"basic_id=$%016llx actual_basic=$%016llx '%s', cassette_decode=%s",
 		stage,
 		(unsigned)profileId,
 		profileName.c_str(),
@@ -169,12 +172,14 @@ static void BridgeLogSimulatorConfig(const char *stage) {
 		(unsigned)g_sim.GetMemoryMode(),
 		g_sim.IsBASICEnabled() ? "on" : "off",
 		(int)g_sim.GetVideoStandard(),
+		ATEnumToString(g_sim.GetGTIA().GetDefectMode()),
 		(unsigned long long)g_sim.GetKernelId(),
 		(unsigned long long)g_sim.GetActualKernelId(),
 		kernelName.c_str(),
 		(unsigned long long)g_sim.GetBasicId(),
 		(unsigned long long)g_sim.GetActualBasicId(),
-		basicName.c_str());
+		basicName.c_str(),
+		ATEnumToString(g_sim.GetCassette().GetTurboDecodeAlgorithm()));
 }
 
 bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
@@ -582,6 +587,15 @@ static bool InitSimulator(SettingsMode settingsMode) {
 		ATSettingsLoadLastProfile(GetBridgeSettingsMask());
 		BridgeLogSimulatorConfig("loaded from user settings");
 	} else {
+		// Run the canonical Windows/SDL settings initialization against
+		// our empty in-memory store. Core member defaults are not always
+		// user defaults (GTIA, for example, starts with a Type I defect).
+		// Do this after registering devices/sockets, then reapply the
+		// intentional automation overrides such as PAL and BASIC off.
+		// The same headless exclusions as user mode avoid the absent
+		// joystick manager and window; no user settings are accessed.
+		ATSettingsLoadLastProfile(GetBridgeSettingsMask());
+		ApplyDeterministicDefaults();
 		BridgeLogSimulatorConfig("deterministic defaults");
 	}
 

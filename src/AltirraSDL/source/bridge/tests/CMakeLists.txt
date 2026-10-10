@@ -14,6 +14,14 @@ add_test(NAME bridge-pokey-audio
 
 if(TARGET AltirraBridgeServer)
 	find_package(Python3 REQUIRED COMPONENTS Interpreter)
+	add_test(NAME bridge-defaults
+		COMMAND ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/bridge_defaults_test.py
+			$<TARGET_FILE:AltirraBridgeServer>
+			${CMAKE_SOURCE_DIR}/src/AltirraSDL/AltirraBridge/sdk/python)
+	set_tests_properties(bridge-defaults PROPERTIES
+		TIMEOUT 30
+		ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 	add_test(NAME bridge-custom-device
 		COMMAND ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/bridge_custom_device_test.py
