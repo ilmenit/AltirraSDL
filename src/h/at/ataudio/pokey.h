@@ -124,6 +124,10 @@ public:
 	bool	IsStereoEnabled() const;
 	void	SetSlave(ATPokeyEmulator *slave);
 
+	// Read-only access to the stereo slave (the second POKEY), for state
+	// inspection; null when dual POKEY is disabled.
+	const ATPokeyEmulator *GetSlave() const { return mpSlave; }
+
 	// Quad POKEY support (PokeyMax). The master drives up to three audio-only
 	// slaves: slave1 (P2) via SetSlave for stereo, plus slave3 (P3) / slave4
 	// (P4) for quad. Panning: P1+P3 -> left, P2+P4 -> right. Passing null

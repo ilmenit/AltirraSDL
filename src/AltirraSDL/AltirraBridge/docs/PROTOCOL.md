@@ -337,12 +337,18 @@ completeness; for actual collision state and console-switch input,
 use the dedicated read-side fields (`consol_in` here; collision
 register access in Phase 5).
 
-#### `POKEY`
+#### `POKEY [chip]`
 
 POKEY register state. Includes the four audio channels' frequency
 and control bytes (`AUDF1..4`, `AUDC1..4`), plus `AUDCTL`, `IRQEN`,
 `SKCTL`, and the write-trigger registers (`STIMER`, `SKREST`,
 `POTGO`, `SEROUT`) which reflect the last value written.
+
+On a dual-POKEY (stereo) machine, `chip` selects which chip: `1`
+(the default) is the primary POKEY at `$D200`, `2` the stereo slave
+at `$D210`. `POKEY 2` without `CONFIG stereo true` is an error.
+This is what a register-level consumer needs — for example recording
+a SAP type R stream of both halves of a stereo tune.
 
 ```json
 {

@@ -328,11 +328,18 @@ class AltirraBridge:
         """
         return self._cmd_ok("GTIA")
 
-    def pokey(self) -> dict:
+    def pokey(self, chip: int = 1) -> dict:
         """POKEY register state — AUDF/AUDC for all four channels,
         AUDCTL, IRQEN, SKCTL, and the other write-side registers.
+
+        ``chip`` selects the chip on a dual-POKEY (stereo) machine:
+        ``1`` (default) is the primary POKEY, ``2`` the stereo slave.
+        Asking for chip 2 without ``config("stereo", "true")`` is an
+        error.
         """
-        return self._cmd_ok("POKEY")
+        if chip == 1:
+            return self._cmd_ok("POKEY")
+        return self._cmd_ok(f"POKEY {chip}")
 
     def pia(self) -> dict:
         """PIA register state — PORTA/B, DDRA/B, CRA/B, plus the
