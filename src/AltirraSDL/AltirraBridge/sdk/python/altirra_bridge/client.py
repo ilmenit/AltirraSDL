@@ -256,7 +256,7 @@ class AltirraBridge:
         return self._cmd_ok("PAUSE")
 
     def resume(self) -> dict:
-        """Resume free-running emulation. Cancels any active FRAME gate."""
+        """Resume free-running emulation after any active step gate."""
         return self._cmd_ok("RESUME")
 
     def frame(self, n: int = 1) -> dict:
@@ -269,6 +269,53 @@ class AltirraBridge:
         if not isinstance(n, int) or n < 1:
             raise BridgeError("frame count must be an integer >= 1")
         return self._cmd_ok(f"FRAME {n}")
+
+    def cycles(self, n: int = 1) -> dict:
+        """Run n emulated machine cycles and pause. The next command is
+        a completion barrier; clock() reports whether a breakpoint ended
+        the step early. Includes DMA/WSYNC time, not CPU instruction count.
+        """
+        if type(n) is not int or not 1 <= n <= 100_000_000:
+            raise BridgeError("cycle count must be between 1 and 100000000")
+        return self._cmd_ok(f"CYCLES {n}")
+
+    def scanlines(self, n: int = 1) -> dict:
+        """Run n scanline durations (114 machine cycles each), then pause.
+        Retains the current horizontal beam position; does not align to
+        the start of a scanline. The next command waits for completion.
+        """
+        if type(n) is not int or not 1 <= n <= 100_000_000 // 114:
+            raise BridgeError("scanline count must be between 1 and 877192")
+        return self._cmd_ok(f"SCANLINES {n}")
+
+    def clock(self) -> dict:
+        """64-bit emulated tick and last cycle/scanline step result."""
+        return self._cmd_ok("CLOCK")
+
+    def pokey_trace_start(self, capacity: int = 65536) -> dict:
+        """Start/restart a bus-write trace. Returns initial register
+        snapshots for all enabled chips. Require valid=True on each read;
+        overflow or resets/state replacement invalidate the stream.
+        """
+        if type(capacity) is not int or not 1 <= capacity <= 1_000_000:
+            raise BridgeError("trace capacity must be between 1 and 1000000")
+        return self._cmd_ok(f"POKEY_TRACE start {capacity}")
+
+    def pokey_trace_read(self, max_events: int = 4096) -> dict:
+        """Drain ordered {tick, chip, reg, value} events, preserving
+        repeated writes. tick is absolute emulated machine-cycle time.
+        """
+        if type(max_events) is not int or not 1 <= max_events <= 4096:
+            raise BridgeError("trace read count must be between 1 and 4096")
+        return self._cmd_ok(f"POKEY_TRACE read {max_events}")
+
+    def pokey_trace_stop(self) -> dict:
+        """Stop capture; queued events remain available to read."""
+        return self._cmd_ok("POKEY_TRACE stop")
+
+    def pokey_trace_status(self) -> dict:
+        """Report recording, validity, queue/capacity, tick and dropped count."""
+        return self._cmd_ok("POKEY_TRACE status")
 
     def quit(self) -> dict:
         """Ask the AltirraSDL process to exit cleanly. The socket

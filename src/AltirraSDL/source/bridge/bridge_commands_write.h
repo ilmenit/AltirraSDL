@@ -48,7 +48,11 @@ std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens);
+// BOOT_BARE defers its reply until PollBareBoot returns a response.
 std::string CmdBootBare(ATSimulator& sim, const std::vector<std::string>& tokens);
+bool IsBareBootGateActive();
+std::string PollBareBoot(ATSimulator& sim);
+void CancelBareBoot();
 std::string CmdMount(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdEject(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdCartEject(ATSimulator& sim, const std::vector<std::string>& tokens);

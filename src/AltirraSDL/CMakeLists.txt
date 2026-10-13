@@ -319,6 +319,7 @@ endif()
 if(ALTIRRA_BRIDGE)
     target_sources(AltirraSDL PRIVATE
         source/bridge/bridge_server.cpp
+        source/bridge/bridge_commands_timing.cpp
         source/bridge/bridge_logging.cpp
         source/bridge/bridge_protocol.cpp
         source/bridge/bridge_transport.cpp

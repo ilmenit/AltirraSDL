@@ -24,6 +24,8 @@
 #include <stdafx.h>
 
 #include "bridge_bare_stub.h"
+#include "simulator.h"
+#include "cpu.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -125,6 +127,17 @@ bool WriteStubFile(const std::string& path) {
 }
 
 }  // namespace
+
+bool IsBareStubReady(ATSimulator& sim) {
+	// XEX magic + segment header occupy six bytes; the code is the
+	// 18-byte segment at $0600 above. Use the embedded canonical bytes.
+	for (unsigned i = 0; i < 18; ++i) {
+		if (sim.DebugGlobalReadByte(0x0600 + i) != kBareStubXex[6 + i])
+			return false;
+	}
+	const uint16 pc = sim.GetCPU().GetInsnPC();
+	return pc >= 0x060F && pc <= 0x0612;
+}
 
 std::string EnsureBareStubXexPath() {
     static std::mutex mtx;

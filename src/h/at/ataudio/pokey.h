@@ -127,6 +127,12 @@ public:
 	// Read-only access to the stereo slave (the second POKEY), for state
 	// inspection; null when dual POKEY is disabled.
 	const ATPokeyEmulator *GetSlave() const { return mpSlave; }
+	// Additional read-only chip inspection: 1 = stereo slave (P2),
+	// 2 = P3, 3 = P4. Null if the selected slave is not wired.
+	const ATPokeyEmulator *GetSlave(unsigned index) const {
+		return index == 1 ? mpSlave : index == 2 ? mpSlave3
+			: index == 3 ? mpSlave4 : nullptr;
+	}
 
 	// Quad POKEY support (PokeyMax). The master drives up to three audio-only
 	// slaves: slave1 (P2) via SetSlave for stereo, plus slave3 (P3) / slave4
@@ -142,6 +148,17 @@ public:
 
 	void	SetCassette(IATPokeyCassetteDevice *dev);
 	void	SetAudioLog(ATPokeyAudioLog *log);
+	// Observes bus writes after address decoding, before register effects.
+	// Install on the master to include routed stereo/quad writes (reg banks
+	// 0-3). Repeated writes are reported. The observer must not mutate POKEY.
+	// invalidatedFn reports changes not expressible as bus writes: resets,
+	// snapshot loads, and slave wiring changes. Both callbacks run on the
+	// emulation thread and must not mutate POKEY.
+	void SetRegisterWriteObserver(vdfunction<void(uint64, uint8, uint8)> fn,
+		vdfunction<void()> invalidatedFn = {}) {
+		mRegisterWriteObserver = std::move(fn);
+		mRegisterStateInvalidatedObserver = std::move(invalidatedFn);
+	}
 	void	SetConsoleOutput(ATConsoleOutput *output);
 
 	void	Set5200Mode(bool enable);
@@ -555,6 +572,8 @@ private:
 	bool	mbTraceIrqPending = false;
 	uint64	mTraceIrqStart = 0;
 
+	vdfunction<void(uint64, uint8, uint8)> mRegisterWriteObserver;
+	vdfunction<void()> mRegisterStateInvalidatedObserver;
 	vdfunction<void()> mpNotifyBiClockChangeFn;
 };
 

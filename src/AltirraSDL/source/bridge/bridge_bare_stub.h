@@ -48,6 +48,8 @@
 
 #include <string>
 
+class ATSimulator;
+
 namespace ATBridge {
 
 // Write the embedded bare-metal XEX to a cross-platform temp file
@@ -56,6 +58,9 @@ namespace ATBridge {
 // path. Returns an empty string on failure. The caller should pass
 // the result to ATBridgeDispatchBoot() to actually load it.
 std::string EnsureBareStubXexPath();
+
+// Verify the whole embedded code segment and the CPU park-loop PC.
+bool IsBareStubReady(ATSimulator& sim);
 
 }  // namespace ATBridge
 

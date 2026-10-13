@@ -99,6 +99,17 @@ int atb_ping(atb_client_t* c);
 int atb_pause(atb_client_t* c);
 int atb_resume(atb_client_t* c);
 int atb_frame(atb_client_t* c, unsigned int n);
+/* Like FRAME: the following command waits until stepping ends. CLOCK
+ * reports exact elapsed cycles/completion, including early breakpoint stops.
+ * SCANLINES retains beam X and advances n * 114 machine cycles.
+ * Trace and clock JSON payloads are available via atb_last_response(). */
+int atb_cycles(atb_client_t* c, unsigned int n);
+int atb_scanlines(atb_client_t* c, unsigned int n);
+int atb_clock(atb_client_t* c);
+int atb_pokey_trace_start(atb_client_t* c, unsigned int capacity);
+int atb_pokey_trace_read(atb_client_t* c, unsigned int max_events);
+int atb_pokey_trace_stop(atb_client_t* c);
+int atb_pokey_trace_status(atb_client_t* c);
 int atb_quit(atb_client_t* c);
 
 /*

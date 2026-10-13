@@ -146,13 +146,13 @@ Liveness check. Returns `{"ok":true}`. Does not advance emulation.
 
 #### `PAUSE`
 
-Pause the simulator. Cancels any active `FRAME` gate. Returns
-`{"ok":true}`. Idempotent.
+Pause the simulator when dispatched. Ordered behind active frame/cycle
+gates like other commands. Returns `{"ok":true}`. Idempotent.
 
 #### `RESUME`
 
-Resume free-running emulation. Cancels any active `FRAME` gate.
-Returns `{"ok":true}`. Idempotent.
+Resume free-running emulation when dispatched. Ordered behind active
+frame/cycle gates. Returns `{"ok":true}`. Idempotent.
 
 #### `FRAME [n]`
 
@@ -197,6 +197,88 @@ If the simulator was paused before `FRAME`, it is `Resume()`d
 implicitly, run for `n` frames, then `Pause()`d again. If it was
 already running, the gate just sets a "pause after `n` more frames"
 deadline.
+
+#### `CYCLES [n]`, `SCANLINES [n]`, `CLOCK`
+
+`CYCLES` advances exactly `n` emulated machine cycles, including DMA and
+WSYNC time, then pauses. `SCANLINES` advances `n * 114` machine cycles,
+retaining the current horizontal beam position (it does not align to a
+scanline boundary). Both default to 1. Limits: 100000000 cycles or 877192
+scanlines. The scanline duration is the same for PAL and NTSC.
+
+Like `FRAME`, the response acknowledges the scheduled run immediately;
+the **next command waits until it ends**. A breakpoint or external pause
+can end the run early and releases the gate. Closing the connection
+cancels the scheduled stop, leaving the simulator's running state intact.
+`PAUSE`, `RESUME`, and `QUIT` are ordered behind the gate; disconnect to
+interrupt an active run. A frame gate also releases on an early stop.
+
+```
+> CYCLES 114
+< {"ok":true,"cycles":114,"start_tick":123456,"target_tick":123570}
+> CLOCK
+< {"ok":true,"tick":123570,"running":false,"step_requested":114,"step_elapsed":114,"step_completed":true}
+```
+
+`CLOCK` reports absolute 64-bit emulated machine-cycle time. The last
+cycle/scanline step's requested and elapsed counts remain stable until
+another cycle/scanline step. `step_completed=false` indicates an early
+stop (or no step yet); inspect it before treating a sample as occurring
+at the requested deadline. This clock is independent of host audio
+latency and wall-clock pacing. Stepping across a frame still runs the
+normal video/audio pipeline; a sub-frame step does not force a new video
+frame or flush a host audio buffer.
+
+#### `POKEY_TRACE start [capacity] | stop | read [max] | status`
+
+Capture POKEY bus writes at their emulated cycle, preserving order and
+repeated writes of the same value. This is suitable for validating RMT
+XEX output with multiple player updates per video frame. It observes the
+master's decoded write path, including writes routed to stereo/quad
+chips and bridge `POKE`/`HWPOKE` writes; debug memory loads and reset/state
+replacement are not bus-write events. Start after configuring/booting
+the machine, and restart after resets or loading states to obtain a new
+baseline. It does not record audible samples.
+
+`start` clears any previous trace, enables capture, and returns initial
+16-register snapshots for every enabled chip, in `initial` (array
+indexed by chip minus one; null for gaps in the wiring). It also returns
+`start_tick`, `recording`, `valid`, `invalidated`, `capacity`, `queued`,
+and `dropped`. Before the first `start`, `valid` is false.
+Capacity defaults to 65536 events, with a range of 1..1000000.
+
+`read` drains up to `max` oldest events (default 4096, range 1..4096):
+
+```
+> POKEY_TRACE read 2
+< {"ok":true,"recording":true,"valid":true,"invalidated":false,"start_tick":123456,"capacity":65536,"queued":0,"dropped":0,"events":[{"tick":123460,"chip":1,"reg":0,"value":17},{"tick":123464,"chip":2,"reg":0,"value":23}]}
+```
+
+`chip` is 1-based, `reg` is the decoded register offset 0..15, and
+`value` is 0..255. `tick` is absolute 64-bit machine-cycle time, in the
+same domain as `CLOCK`. Events on the same tick retain write order.
+Stereo/quad routing uses the actual POKEY address mask; mirrors are
+normalized. Quad write events and initial snapshots identify chips 3/4.
+
+`stop` disables capture and retains unread events. `status` returns the
+metadata without consuming events. Disconnect/shutdown disables capture
+and clears the buffer, as does `FRESH`. Reset, state restoration, or
+POKEY wiring changes while recording set `invalidated=true` and
+`valid=false`: the initial snapshot no longer reconstructs the stream.
+A finished trace is unaffected by later resets. Capture is bounded:
+when full, new events are
+dropped and the cumulative `dropped` count increases until the next
+`start`. **Require `valid=true` for an exact comparison.** A nonzero
+`dropped` count also sets `valid=false`. Drain frequently or increase
+capacity; overflow and baseline invalidation are never silent.
+
+For SAP-R comparison, reconstruct register snapshots at the export's
+update cadence from the baseline and ordered writes. A bus-write trace
+is finer than SAP-R snapshots, so compare register state at matching
+player update boundaries rather than equating individual bus writes
+with SAP-R records. Audio register offsets 0..8 correspond to the nine
+bytes per chip used by the existing SAP recorder. The existing GUI SAP
+recorder remains a once-per-VBlank recorder.
 
 #### `QUIT`
 
@@ -625,6 +707,22 @@ the read command. Typical cold XEX boots need hundreds of frames; use
 
 Quote paths containing spaces to preserve them exactly. The legacy
 unquoted form remains supported by re-joining trailing path tokens.
+
+#### `BOOT_BARE`
+
+Boot the embedded XEX that disables IRQs, NMIs, and ANTIC DMA and parks
+at a `JMP *` loop. The response is deferred until the stub has actually
+reached that loop. The normal main loop processes the GUI boot queue,
+video frames, and disconnects while settling. Later commands remain
+queued until the boot response is sent; no additional `FRAME` is needed.
+The caller's initial pause state is restored on completion. A breakpoint
+or external stop before the park loop returns an error and releases the
+gate. The timeout is 600 emulated frame durations. Disconnect cancels
+the pending reply without changing running state.
+
+```json
+{"ok":true,"path":"/tmp/altirra-bridge-bare-12345.xex","settle_frames":340}
+```
 
 #### `MOUNT drive path`
 
