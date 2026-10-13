@@ -21,6 +21,7 @@
     <ClCompile Include="source\TestEmu_PokeyTimers.cpp" />
     <ClCompile Include="source\TestHLE_FPAccel.cpp" />
     <ClCompile Include="source\TestIO_Vorbis.cpp" />
+    <ClCompile Include="source\TestJson.cpp" />
     <ClCompile Include="source\TestMisc_TTF.cpp" />
     <ClCompile Include="source\TestNet_NativeDatagramLiveTest.cpp" />
     <ClCompile Include="source\TestNet_NativeSockets.cpp" />

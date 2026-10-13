@@ -47,12 +47,8 @@ void VDDisplayCreateGammaRamp(uint32 *gammaTex, uint32 len, bool enableInputConv
 	}
 }
 
-void VDDisplayCreateScanlineMaskTexture(uint32 *scanlineTex, ptrdiff_t pitch, uint32 srcH, uint32 dstH, uint32 texSize, float intensity, bool renderLinear) {
-	VDDisplayCreateScanlineMaskTexture(scanlineTex, pitch, srcH, dstH, 0, dstH, texSize, intensity, renderLinear);
-}
-
-void VDDisplayCreateScanlineMaskTexture(uint32 *scanlineTex, ptrdiff_t pitch, uint32 srcH, uint32 dstH, float outY, float outH, uint32 texSize, float intensity, bool renderLinear) {
-	vdblock<float> rawMask(dstH);
+void VDDisplayCreateScanlineMaskTexture(uint32 *scanlineTex, ptrdiff_t pitch, uint32 srcH, uint32 dstH, float outY, float outH, uint32 texSize, float intensity, bool halfLineOffset, bool renderLinear) {
+	vdfastvector<float> rawMask(texSize, 1.0f);
 
 	// Compute the stepping rate over the scanline mask pattern and check if we are
 	// undersampling the mask (vertical resolution below 2 pixel rows per scanline).
@@ -91,18 +87,20 @@ void VDDisplayCreateScanlineMaskTexture(uint32 *scanlineTex, ptrdiff_t pitch, ui
 			y = powf(y, 1.0f / 2.2f);
 	}
 
+	// Repeat the last entry to the end of the texture so it clamps cleanly.
+	if (dstH < texSize && dstH > 0)
+		std::fill(rawMask.begin() + dstH, rawMask.end(), rawMask[dstH - 1]);
+
 	// Convert the mask to texels.
-	for(uint32 i=0; i<dstH; ++i) {
+	for(uint32 i=0; i<texSize; ++i) {
 		float y = rawMask[i];
 
 		uint32 px = (uint32)(y * 255.0f + 0.5f) * 0x01010101;
 
-		scanlineTex[i] = px;
-	}
+		*scanlineTex = px;
 
-	// Repeat the last entry to the end of the texture so it clamps cleanly.
-	if (dstH < texSize)
-		std::fill(scanlineTex + dstH, scanlineTex + texSize, scanlineTex[dstH - 1]); 
+		scanlineTex = (uint32 *)((char *)scanlineTex + pitch);
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

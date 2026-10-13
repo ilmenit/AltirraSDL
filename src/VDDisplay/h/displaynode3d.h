@@ -404,6 +404,7 @@ public:
 	IVDTFragmentProgram *mpFPBlit = nullptr;
 	IVDTSamplerState *mpSSPoint = nullptr;
 	IVDTSamplerState *mpSSBilinear = nullptr;
+	IVDTSamplerState *mpSSBilinearRepeat = nullptr;
 	IVDTSamplerState *mpSSBilinearRepeatMip = nullptr;
 	IVDTBlendState *mpBSOver = nullptr;
 

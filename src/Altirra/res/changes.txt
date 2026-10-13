@@ -23,6 +23,8 @@ This prerelease version:
    * Devices: Added Karin Maxi Drive.
    * Devices: Add Device UI now has a checkbox to show all devices for browsing.
    * Disk: Added option to reinterleave disks to 815 16:1 DD interleave.
+   * Disk: Added support for MyDOS virtual disks with larger than single density capacity.
+   * Disk: Added support for SpartaDOS virtual disks with 256 byte sectors.
    * Display: Added support for rendering to Wide Color Gamut (WCG) displays without HDR support.
    * GTIA: Added emulation of known defective GTIA types.
    * HLE: Fast math acceleration now much better matches standard math pack results.
@@ -46,10 +48,15 @@ This prerelease version:
    * AltirraOS: Fixed occasional bogus timeout errors in SIO routines. (3.49)
    * Cartridge: Added DCart to cartridge type autodetection list.
    * Command Line: Fixed 5200 cartridges not loading if passed on the command line without /cart.
+   * CPU: 65C816 COP now resets program bank correctly in emulation mode.
+   * CPU: Fixed spurious interrupts after SEI in 65C816 native mode.
+   * CPU: Fixed 65C816 (dp,X) addressing mode sometimes not accessing non-zero banks in emulation mode.
+   * CPU: Fixed 65C816 issues with double-carry/borrow and V flag state in decimal mode.
    * Debugger: Computer OS ROM symbols are no longer loaded in 5200 mode.
    * Debugger: Fixed tracing not being disabled after interrupting a gt command.
    * Debugger: Fixed breakpoint dialog sometimes editing/deleting the wrong breakpoints.
    * Debugger: Debug display now decodes IR mode 3 properly.
+   * Debugger: Fixed 65C816 CPU state issues on some debugger driven changes B/D registers and M/X flags.
    * Devices: Fixed Rapidus $4000-7FFF fast read shadow not toggling reliably on PORTB extended RAM accesses.
    * Devices: Standard device emulators now support SIO timeouts where implemented by the original devices.
    * Devices: Fixed erroneous control signal inputs on 850 full emulation serial port 1.
@@ -58,6 +65,8 @@ This prerelease version:
    * Disk: Fixed Percom AT-88/AT-88SPD not saving 1795 FDC setting.
    * Disk: Files with invalid filenames no longer count against the 64 file limit for virtual DOS 2 disks.
    * Disk Explorer: Fixed MAC/65 decoder mis-decoding some constants.
+   * Display: Reverted IN.outputSize value to old behavior in custom effects for compatibility.
+   * Display: Improved quality of scanlines and mask effects with distortion enabled.
    * HDevice: Fixed a crash when write errors occurred during close operation.
    * HDevice: Fixed matching of filenames with no extension in long filename mode.
    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.

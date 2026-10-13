@@ -412,11 +412,13 @@ bool VDDCustomEffectPassD3D11::Run(
 		}
 	);
 
+	// This explicitly can't be the current pass output size or whole chain size;
+	// some old shaders like VINTAGE TV otherwise break.
 	varStorage.SetVector(
 		mPassParamOffsets.mOutputSize,
 		vdfloat4 {
-			(float)renderSize.x,
-			(float)renderSize.y,
+			(float)srcImage.mImageWidth,
+			(float)srcImage.mImageHeight,
 			0.0f,
 			0.0f
 		}

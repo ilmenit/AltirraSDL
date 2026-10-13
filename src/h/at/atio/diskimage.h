@@ -276,7 +276,7 @@ public:
 
 void ATLoadDiskImage(const wchar_t *path, IATDiskImage **ppImage);
 void ATLoadDiskImage(const wchar_t *origPath, const wchar_t *imagePath, IVDRandomAccessStream& stream, IATDiskImage **ppImage);
-void ATMountDiskImageVirtualFolder(const wchar_t *path, uint32 sectorCount, IATDiskImage **ppImage);
+void ATMountDiskImageVirtualFolder(const wchar_t *path, uint32 tracks, uint32 sectorsPerTrack, uint32 sectorSize, IATDiskImage **ppImage);
 void ATMountDiskImageVirtualFolderSDFS(const wchar_t *path, uint32 sectorSize, uint64 uniquenessValue, IATDiskImage **ppImage);
 void ATCreateDiskImage(uint32 sectorCount, uint32 bootSectorCount, uint32 sectorSize, IATDiskImage **ppImage);
 void ATCreateDiskImage(const ATDiskGeometryInfo& geometry, IATDiskImage **ppImage);

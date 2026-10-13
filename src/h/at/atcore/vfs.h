@@ -43,14 +43,19 @@
 class IVDRandomAccessStream;
 class VDZipArchive;
 
-class ATInvalidVFSPathException : public MyError {
+class ATInvalidVFSPathException final : public VDException {
 public:
 	ATInvalidVFSPathException(const wchar_t *badPath);
 };
 
-class ATUnsupportedVFSPathException : public MyError {
+class ATUnsupportedVFSPathException final : public VDException {
 public:
 	ATUnsupportedVFSPathException(const wchar_t *badPath);
+};
+
+class ATUnsupportedVFSPathDiskOnlyException final : public VDException {
+public:
+	ATUnsupportedVFSPathDiskOnlyException(const wchar_t *badPath);
 };
 
 class ATVFSException : public MyError {
@@ -101,18 +106,55 @@ public:
 
 enum ATVFSProtocol : uint8 {
 	kATVFSProtocol_None,
+
+	// file:// references a regular filesystem path, but with URL encoding. The path can be either
+	// relative or absolute.
 	kATVFSProtocol_File,
+
+	// zip://file.zip!innerfile references innerfile within a zip archive.
 	kATVFSProtocol_Zip,
+
+	// gz://file.gz references a GZIP-compressed file (RFC1952).
 	kATVFSProtocol_GZip,
+
+	// atfs://image!innerfile references innerfile within a supported Atari 8-bit file system.
 	kATVFSProtocol_Atfs,
+
+	// blob://id accesses an in-memory blob (currently used by unit tests).
 	kATVFSProtocol_Blob,
-	kATVFSProtocol_Special
+
+	// special://id accesses an internal data file.
+	kATVFSProtocol_Special,
+
+	// atvdisk://basepath?args accesses a virtual disk. This is only supported by disk mounting
+	// paths.
+	kATVFSProtocol_Atvdisk,
 };
 
-bool ATDecodeVFSPath(VDStringW& dst, const VDStringSpanW& src);
-void ATEncodeVFSPath(VDStringW& dst, const VDStringSpanW& src, bool filepath);
+bool ATDecodeVFSString(VDStringW& dst, const VDStringSpanW& src, bool decodeAsQuery = false);
+void ATEncodeVFSString(VDStringW& dst, const VDStringSpanW& src, bool filepath);
 
-ATVFSProtocol ATParseVFSPath(const wchar_t *s, VDStringW& basePath, VDStringW& subPath);
+struct ATVFSPathParam {
+	uint32 mNameHash;
+	VDStringW mName;
+	VDStringW mValue;
+};
+
+using ATVFSPathParams = vdvector<ATVFSPathParam>;
+
+struct ATVFSParsedPath {
+	ATVFSProtocol mProtocol {};
+	VDStringW mBasePath;
+	VDStringW mSubPath;
+	ATVFSPathParams mParams;
+
+	bool IsValid() const { return mProtocol != kATVFSProtocol_None; }
+	const wchar_t *FindParam(const wchar_t *name, const wchar_t *defaultValue = nullptr) const;
+};
+
+ATVFSProtocol ATParseVFSPath(const wchar_t *s, VDStringW& basePath, VDStringW& subPath, ATVFSPathParams* params = nullptr);
+ATVFSParsedPath ATParseVFSPath(const wchar_t *s);
+
 VDStringW ATMakeVFSPath(ATVFSProtocol protocol, const wchar_t *basePath, const wchar_t *subPath);
 VDStringW ATMakeVFSPath(const wchar_t *protocolAndBasePath, const wchar_t *subPath);
 
@@ -178,6 +220,7 @@ vdrefptr<IATVFSZipArchive> ATVFSOpenZipArchiveFromView(ATVFSFileView& view);
 
 void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, ATVFSFileView **viewOut);
 void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, bool update, ATVFSFileView **viewOut);
+vdrefptr<ATVFSFileView> ATVFSOpenFileView(const wchar_t *vfsPath, const ATVFSParsedPath& parsedPath, bool write, bool update);
 
 vdrefptr<ATVFSFileView> ATVFSWrapStream(IVDRandomAccessStream& stream, const wchar_t *imagePath);
 

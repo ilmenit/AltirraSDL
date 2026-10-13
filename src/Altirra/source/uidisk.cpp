@@ -33,11 +33,13 @@
 #include <vd2/system/vdstl_vectorview.h>
 #include <vd2/Dita/services.h>
 #include <at/atcore/media.h>
+#include <at/atcore/propertyset.h>
 #include <at/atcore/vfs.h>
 #include <at/atio/diskfs.h>
 #include <at/atio/diskfsutil.h>
 #include <at/atio/diskimage.h>
 #include <at/atio/image.h>
+#include <at/atio/vdiskimage.h>
 #include <at/atnativeui/dialog.h>
 #include <at/atnativeui/dragdrop.h>
 #include <at/atnativeui/messageloop.h>
@@ -47,6 +49,7 @@
 #include "disk.h"
 #include "simulator.h"
 #include "uiaccessors.h"
+#include "uiconfgeneric.h"
 #include "uifilefilters.h"
 #include "options.h"
 #include "oshelper.h"
@@ -309,6 +312,142 @@ void ATNewDiskDialog::ExchangeGeometry(bool write) {
 		CBSetSelectedIndex(IDC_FORMAT, mFormatTypeIndex);
 		UpdateEnables();
 	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+VDStringW ATUIShowDialogMountVirtualFolder(const wchar_t *prevPathOpt) {
+	ATVFSParsedPath parsedPath;
+
+	if (prevPathOpt)
+		parsedPath = ATParseVFSPath(prevPathOpt);
+
+	ATPropertySet pset;
+
+		vdrefptr<IATVirtualDiskImage> vdiskImage;
+		if (parsedPath.mProtocol == kATVFSProtocol_Atvdisk)
+			vdiskImage = ATLoadVirtualDiskImage(parsedPath);
+		else
+			vdiskImage = ATTryLoadVirtualDiskImageFromWildFilePath(parsedPath);
+
+		if (vdiskImage) {
+			pset.SetString("path", vdiskImage->GetBasePath());
+
+			const ATVirtualDiskFileSystem fs = vdiskImage->GetFileSystem();
+			pset.SetUint32("fs", fs == ATVirtualDiskFileSystem::SDFS ? 1 : 0);
+
+			pset.SetUint32("ssize", vdiskImage->GetSectorSize() > 128 ? 1 : 0);
+			// MERGE NOTE: initialize the preset to the restored geometry.
+			const uint32 sectors = std::clamp<uint32>(vdiskImage->GetSectorCount(), 720, 65535);
+			pset.SetInt32("format", sectors == 720 ? (vdiskImage->GetSectorSize() > 128 ? 2 : 0)
+				: sectors == 1040 && vdiskImage->GetSectorSize() <= 128 ? 1 : -1);
+
+			if (fs == ATVirtualDiskFileSystem::DOS)
+				pset.SetUint32("sectors", std::clamp<sint32>(vdiskImage->GetSectorCount(), 720, 65535));
+		}
+
+	if (!ATUIShowDialogGenericConfig(
+		ATUIGetNewPopupOwner(),
+		pset,
+		L"Mount folder as virtual disk",
+		[&](IATUIConfigView& view) {
+			auto& pathView = view.AddPath()
+				.SetTag("path")
+				.SetLabel(L"&Path")
+				.SetTypeDirectory()
+				.SetBrowseKey("VirtualFolderPath"_vdtypeid)
+				.SetBrowseCaption(L"Select base folder location");
+
+			view.AddVerticalSpace();
+
+			auto& fsView = view.AddIntDropDown()
+				.SetTag("fs")
+				.SetLabel(L"&Filesystem")
+				.AddChoice(0, L"DOS 2.x / MyDOS")
+				.AddChoice(1, L"SpartaDOS");
+
+			view.AddVerticalSpace();
+
+			auto& formatView = view.AddIntDropDown();
+			auto& sectorsView = view.AddIntEdit();
+			auto& sectorSizeView = view.AddIntDropDown();
+
+			formatView
+				.SetTag("format")
+				.SetLabel(L"F&ormat")
+				.AddChoice(0, L"Single density (90K)")
+				.AddChoice(1, L"Enhanced density (130K)")
+				.AddChoice(2, L"Double density (180K)")
+				.AddChoice(-1, L"Custom")
+				.SetDefault(0)
+				.SetEnableExpr([&] { return fsView.GetValue() == 0; })
+				.SetOnChanged(
+					[&] {
+						switch(formatView.GetValue()) {
+							case 0:
+								sectorsView.SetValue(720);
+								sectorSizeView.SetValue(0);
+								break;
+
+							case 1:
+								sectorsView.SetValue(1040);
+								sectorSizeView.SetValue(0);
+								break;
+
+							case 2:
+								sectorsView.SetValue(720);
+								sectorSizeView.SetValue(1);
+								break;
+
+							default:
+								break;
+						}
+					}
+				);
+
+			sectorsView
+				.SetTag("sectors")
+				.SetLabel(L"&Sectors")
+				.SetRange(720, 65535)
+				.SetEnableExpr([&] { return fsView.GetValue() == 0 && formatView.GetValue() < 0; });
+
+			sectorSizeView
+				.SetTag("ssize")
+				.SetLabel(L"Sector si&ze")
+				.AddChoice(0, L"128 bytes")
+				.AddChoice(1, L"256 bytes")
+				.SetEnableExpr([&] { return fsView.GetValue() != 0 || formatView.GetValue() < 0; });
+
+			fsView.SetOnChanged([&] {
+				if (fsView.GetValue() == 0) {
+					const auto sectors = sectorsView.GetValue();
+					const bool dd = sectorSizeView.GetValue() != 0;
+					formatView.SetValue(sectors == 720 ? (dd ? 2 : 0)
+						: sectors == 1040 && !dd ? 1 : -1);
+				}
+			});
+
+			view.SetCustomWrite(
+				[&](ATPropertySet& fn) {
+					const wchar_t *path = pathView.GetValue();
+
+					if (!VDDoesDirectoryExist(path))
+						throw ATUIGenericConfigValidationException(&pathView, L"The specified folder does not exist.");
+				}
+			);
+		}
+	))
+	{
+
+		return VDStringW();
+	}
+
+	return ATMakeVirtualDiskImagePath(
+		VDStringSpanW(pset.GetString("path", L"")),
+		pset.GetUint32("sectors"),
+		pset.GetUint32("ssize") > 0 ? 256 : 128,
+		pset.GetUint32("fs") > 0 ? ATVirtualDiskFileSystem::SDFS : ATVirtualDiskFileSystem::DOS
+	);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1202,14 +1341,15 @@ bool ATDiskDriveDialog::OnCommand(uint32 id, uint32 extcode) {
 						}
 						break;
 
-					case ID_CONTEXT_MOUNTFOLDERDOS2:
-					case ID_CONTEXT_MOUNTFOLDERSDFS:
+					case ID_CONTEXT_MOUNTFOLDER:
 						if (ConfirmEject(driveIndex)) {
-							const VDStringW& path = VDGetDirectory("vfol"_vdfcctypeid, (VDGUIHandle)mhdlg, L"Select folder for virtual disk image");
+							const wchar_t *prevPath = diskIf.GetPath();
+
+							const VDStringW& path = ATUIShowDialogMountVirtualFolder(prevPath);
 
 							if (!path.empty()) {
 								try {
-									diskIf.MountFolder(path.c_str(), selectedId == ID_CONTEXT_MOUNTFOLDERSDFS);
+									diskIf.LoadDisk(path.c_str());
 
 									if (diskIf.GetClientCount() < 2)
 										disk.SetEnabled(true);

@@ -29,6 +29,7 @@
 #include <at/atio/cartridgeimage.h>
 #include <at/atio/blobimage.h>
 #include <at/atio/diskimage.h>
+#include <at/atio/internal/vdiskimageimpl.h>
 
 ATImageType ATGetImageTypeForFileExtension(const wchar_t *ext) {
 	static const struct ExtEntry {
@@ -177,6 +178,37 @@ vdrefptr<IATImage> ATImageLoadFromFile(const wchar_t *path, ATImageLoadContext *
 	(void)ATImageLoadAuto(path, path, fs, loadCtx, nullptr, nullptr, ~image);
 
 	return image;
+}
+
+bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, const ATVFSParsedPath& parsedPath, ATImageLoadContext *loadCtx, VDStringW *imagePathOut, VDStringW *resultPath, bool *canUpdate, IATImage **ppImage) {
+	// check if we have a virtual disk path
+	auto vdiskImage = ATTryLoadVirtualDiskImageFromWildFilePath(parsedPath);
+	if (vdiskImage || parsedPath.mProtocol == kATVFSProtocol_Atvdisk) {
+		// check if loading a virtual disk is allowed
+		if (!loadCtx || loadCtx->mLoadType == kATImageType_VDisk || loadCtx->mLoadType == kATImageType_Disk || loadCtx->mLoadType == kATImageType_None) {
+			if (!vdiskImage)
+				vdiskImage = ATLoadVirtualDiskImage(parsedPath);
+
+			if (canUpdate)
+				*canUpdate = false;
+
+			if (imagePathOut)
+				imagePathOut->clear();
+
+			if (resultPath)
+				resultPath->clear();
+
+			*ppImage = vdiskImage.release();
+			return true;
+		}
+	}
+
+	auto view = ATVFSOpenFileView(origPath, parsedPath, false, false);
+
+	if (imagePathOut)
+		*imagePathOut = view->GetFileName();
+
+	return ATImageLoadAuto(origPath, imagePath, *view, loadCtx, resultPath, canUpdate, ppImage);
 }
 
 bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, IVDRandomAccessStream& stream, ATImageLoadContext *loadCtx, VDStringW *resultPath, bool *canUpdate, IATImage **ppImage) {
@@ -397,7 +429,7 @@ bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, ATVFSFil
 	}
 
 	if (canUpdate)
-		*canUpdate = true;
+		*canUpdate = !view.IsSourceReadOnly();
 
 	return true;
 }

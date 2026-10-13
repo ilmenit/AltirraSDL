@@ -19,6 +19,7 @@
 #include <vd2/system/error.h>
 #include <vd2/system/filesys.h>
 #include <at/atcore/vfs.h>
+#include <at/atio/vdiskimage.h>
 #include "diskinterface.h"
 #include "simulator.h"
 #include "uirender.h"
@@ -204,16 +205,41 @@ bool ATDiskInterface::RevertDisk() {
 	return true;
 }
 
-void ATDiskInterface::MountFolder(const wchar_t *path, bool sdfs) {
+void ATDiskInterface::MountFolder(const IATVirtualDiskImage& vdiskImage) {
+	MountFolder(
+		vdiskImage.GetBasePath(),
+		vdiskImage.GetFileSystem() == ATVirtualDiskFileSystem::SDFS,
+		vdiskImage.GetSectorCount(),
+		vdiskImage.GetSectorSize()
+	);
+}
+
+void ATDiskInterface::MountFolder(const wchar_t *path, bool sdfs, uint32 sectorCount, uint32 sectorSize) {
 	UnloadDisk();
 
 	try {
-		if (sdfs)
-			ATMountDiskImageVirtualFolderSDFS(path, 128, (uint64)this, ~mpDiskImage);
+		if (sectorSize > 128)
+			sectorSize = 256;
 		else
-			ATMountDiskImageVirtualFolder(path, 720, ~mpDiskImage);
+			sectorSize = 128;
 
-		mPath = VDMakePath(path, &L"**"[sdfs ? 0 : 1]);
+		if (sdfs)
+			ATMountDiskImageVirtualFolderSDFS(path, sectorSize, (uint64)this, ~mpDiskImage);
+		else {
+			sectorCount = std::clamp<uint32>(sectorCount, 720, 65535);
+
+			const uint32 sectorsPerTrack = sectorCount == 1040 ? 26 : 18;
+			const uint32 trackCount = std::min<uint32>((sectorCount + sectorsPerTrack - 1) / sectorsPerTrack, 65535 / sectorsPerTrack);
+
+			ATMountDiskImageVirtualFolder(path, trackCount, sectorsPerTrack, sectorSize > 128 ? 256 : 128, ~mpDiskImage);
+		}
+
+		mPath = ATMakeVirtualDiskImagePath(
+			VDStringSpanW(path),
+			sectorCount,
+			sectorSize,
+			sdfs ? ATVirtualDiskFileSystem::SDFS : ATVirtualDiskFileSystem::DOS
+		);
 	} catch(const MyError&) {
 		UnloadDisk();
 		throw;
@@ -229,36 +255,16 @@ void ATDiskInterface::LoadDisk(const wchar_t *s) {
 	VDStringW path(s);
 	s = path.c_str();
 
-	size_t len = wcslen(s);
+	const ATVFSParsedPath& parsedPath = ATParseVFSPath(s);
+	vdrefptr<IATVirtualDiskImage> vdiskImage = ATTryLoadVirtualDiskImageFromWildFilePath(parsedPath);
 
-	// Virtual-folder mounts are persisted by appending /* (DOS 2) or
-	// /** (SpartaDOS) to the host directory. Non-Windows SDL platforms
-	// use '/', while Windows (including Windows-SDL) uses '\\'. Accept
-	// both spellings so the persisted path round-trips everywhere.
-	if (len >= 3) {
-		const wchar_t separator = s[len - 3];
+	if (!vdiskImage && parsedPath.mProtocol == kATVFSProtocol_Atvdisk)
+		vdiskImage = ATLoadVirtualDiskImage(parsedPath);
 
-		if ((separator == L'\\' || separator == L'/')
-			&& s[len - 2] == L'*' && s[len - 1] == L'*') {
-			// Keep the separator. Besides being harmless to VDMakePath(), this
-			// preserves root folders (/** -> / and C:\\** -> C:\\).
-			VDStringW t(s, s + len - 2);
-			return MountFolder(t.c_str(), true);
-		}
-	}
+	if (vdiskImage)
+		return MountFolder(*vdiskImage);
 
-	if (len >= 2) {
-		const wchar_t separator = s[len - 2];
-
-		if ((separator == L'\\' || separator == L'/')
-			&& s[len - 1] == L'*') {
-			VDStringW t(s, s + len - 1);
-			return MountFolder(t.c_str(), false);
-		}
-	}
-
-	vdrefptr<ATVFSFileView> view;
-	ATVFSOpenFileView(s, false, ~view);
+	vdrefptr<ATVFSFileView> view = ATVFSOpenFileView(s, parsedPath, false, false);
 
 	vdrefptr<IATDiskImage> image;
 	ATLoadDiskImage(s, view->GetFileName(), view->GetStream(), ~image);

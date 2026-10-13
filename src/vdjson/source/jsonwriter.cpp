@@ -349,7 +349,7 @@ void VDJSONWriteValue(VDJSONWriter& writer, const VDJSONValue& value, const VDJS
 			break;
 
 		case VDJSONValue::kTypeObject:
-			writer.OpenArray();
+			writer.OpenObject();
 			for(const VDJSONMember *member = value.mpObject; member; member = member->mpNext) {
 				const uint32 nameToken = member->mNameToken;
 				const wchar_t *name = nameTable.GetName(nameToken);
@@ -362,7 +362,7 @@ void VDJSONWriteValue(VDJSONWriter& writer, const VDJSONValue& value, const VDJS
 			break;
 
 		case VDJSONValue::kTypeArray:
-			writer.OpenObject();
+			writer.OpenArray();
 			{
 				const VDJSONArray arr(*value.mpArray);
 

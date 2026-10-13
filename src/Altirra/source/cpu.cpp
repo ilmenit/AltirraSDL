@@ -22,12 +22,12 @@
 #include <at/atcore/snapshotimpl.h>
 #include <at/atdebugger/target.h>
 #include "cpu.h"
+#include "cpumemory.h"
 #include "cpustates.h"
 #include "console.h"
 #include "disasm.h"
 #include "profiler.h"
 #include "savestate.h"
-#include "simulator.h"
 #include "verifier.h"
 #include "bkptmanager.h"
 #include "cpuhookmanager.h"
@@ -395,18 +395,23 @@ void ATCPUEmulator::SetP(uint8 p) {
 		p |= 0x30;
 
 	if (mP != p) {
+		const bool needRedecode = ((mP ^ p) & 0x30) != 0;
+
 		mP = p;
 
-		if (!(p & AT6502::kFlagX)) {
+		// MERGE NOTE: X=1 means 8-bit indexes; only then clear high bytes.
+		if (p & AT6502::kFlagX) {
 			mXH = 0;
 			mYH = 0;
 		}
+
+		if (needRedecode)
+			Update65816DecodeTable();
 	}
 }
 
 void ATCPUEmulator::SetAH(uint8 a) {
-	if (!(mP & AT6502::kFlagM))
-		mAH = a;
+	mAH = a;
 }
 
 void ATCPUEmulator::SetXH(uint8 x) {
@@ -425,8 +430,16 @@ void ATCPUEmulator::SetSH(uint8 s) {
 }
 
 void ATCPUEmulator::SetD(uint16 dp) {
-	if (mCPUMode == kATCPUMode_65C816)
+	if (mCPUMode == kATCPUMode_65C816) {
+		// MERGE NOTE: DP alignment adds a cycle in native mode as well.
+		// Refresh both modes when crossing between aligned and unaligned.
+		const bool needRedecode = ((mDP ^ dp) & 0xFF) && (!(dp & 0xFF) || !(mDP & 0xFF));
+
 		mDP = dp;
+
+		if (needRedecode)
+			Update65816DecodeTable();
+	}
 }
 
 void ATCPUEmulator::SetK(uint8 k) {

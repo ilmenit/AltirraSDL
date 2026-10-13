@@ -22,6 +22,8 @@
 #include <vd2/system/vdstl.h>
 
 class VDStringW;
+class VDStringSpanW;
+class VDJSONValuePool;
 
 struct VDJSONNameToken {
 	VDJSONNameToken(uint32 token) : mToken(token) {}
@@ -29,9 +31,12 @@ struct VDJSONNameToken {
 	const uint32 mToken;
 };
 
-class VDJSONNameTable {
+class VDJSONNameTable final {
+	VDJSONNameTable(const VDJSONNameTable&) = delete;
+	VDJSONNameTable& operator=(const VDJSONNameTable&) = delete;
+
 public:
-	VDJSONNameTable();
+	explicit VDJSONNameTable(VDJSONValuePool& pool);
 	~VDJSONNameTable();
 
 	const wchar_t *GetName(uint32 token) const;
@@ -42,12 +47,14 @@ public:
 	VDJSONNameToken GetToken(const char *s) const;
 	VDJSONNameToken GetToken(const wchar_t *s) const;
 
-protected:
-	typedef vdfastvector<const VDStringW *> NameTable;
+private:
+	typedef vdfastvector<VDStringSpanW> NameTable;
 	NameTable mNameTable;
 
-	typedef vdhashmap<VDStringW, uint32, vdhash<VDStringW>, vdstringpred> NameMap;
+	typedef vdhashmap<VDStringSpanW, uint32, vdhash<VDStringW>> NameMap;
 	NameMap mNameMap;
+
+	VDJSONValuePool& mPool;
 };
 
 #endif

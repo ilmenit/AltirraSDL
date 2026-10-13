@@ -57,6 +57,7 @@
 #include <at/atio/image.h>
 #include <at/atio/programimage.h>
 #include <at/atio/savestate.h>
+#include <at/atio/vdiskimage.h>
 #include "simulator.h"
 #include "cassette.h"
 #include "console.h"
@@ -2959,6 +2960,8 @@ bool ATSimulator::Load(ATMediaLoadContext& ctx) {
 	ctx.mbModeComputerRequired = false;
 	ctx.mbIncompatibleDiskFormat = false;
 
+	ATVFSParsedPath vfsParsedPath;
+
 	if (!ctx.mpImage) {
 		VDStringW resultPath;
 		bool canUpdate = false;
@@ -2967,17 +2970,11 @@ bool ATSimulator::Load(ATMediaLoadContext& ctx) {
 			if (!origPath)
 				throw MyError("Cannot load image: no name specified.");
 
-			vdrefptr<ATVFSFileView> view;
-		
-			ATVFSOpenFileView(origPath, false, ~view);
+			vfsParsedPath = ATParseVFSPath(origPath);
 
-			if (view->IsSourceReadOnly())
-				ctx.mWriteMode = (ATMediaWriteMode)(ctx.mWriteMode & ~kATMediaWriteMode_AutoFlush);
-
-			if (!ATImageLoadAuto(origPath, imagePath, *view, loadCtx, &resultPath, &canUpdate, ~ctx.mpImage))
+			if (!ATImageLoadAuto(origPath, imagePath, vfsParsedPath, loadCtx, &ctx.mImageName, &resultPath, &canUpdate, ~ctx.mpImage))
 				return false;
 
-			ctx.mImageName = view->GetFileName();
 			imagePath = ctx.mImageName.c_str();
 
 			if (!resultPath.empty()) {
@@ -2996,6 +2993,7 @@ bool ATSimulator::Load(ATMediaLoadContext& ctx) {
 	if (ctx.mbStopOnModeIncompatibility || ctx.mbStopAfterImageLoaded) {
 		switch(ctx.mpImage->GetImageType()) {
 			case kATImageType_Disk:
+			case kATImageType_VDisk:
 			case kATImageType_Tape:
 			case kATImageType_Program:
 			case kATImageType_BasicProgram:
@@ -3099,7 +3097,7 @@ bool ATSimulator::Load(ATMediaLoadContext& ctx) {
 		mpCassette->Load(vdpoly_cast<IATCassetteImage *>(image), origPath ? origPath : imagePath, origPath != nullptr);
 		mpCassette->Play();
 		return true;
-	} else if (loadType == kATImageType_Disk) {
+	} else if (loadType == kATImageType_Disk || loadType == kATImageType_VDisk) {
 		if (append) {
 			for(;;) {
 				if (loadIndex >= std::ssize(mpPrivateData->mpDiskInterfaces))
@@ -3118,17 +3116,23 @@ bool ATSimulator::Load(ATMediaLoadContext& ctx) {
 		ATDiskInterface& diskIf = *mpPrivateData->mpDiskInterfaces[loadIndex];
 		IATDiskImage *diskImage = vdpoly_cast<IATDiskImage *>(image);
 
-		if (!diskIf.IsImageSupported(*diskImage)) {
-			ctx.mbIncompatibleDiskFormat = true;
+		if (diskImage) {
+			if (!diskIf.IsImageSupported(*diskImage)) {
+				ctx.mbIncompatibleDiskFormat = true;
 
-			if (ctx.mbStopOnIncompatibleDiskFormat)
-				return false;
+				if (ctx.mbStopOnIncompatibleDiskFormat)
+					return false;
+			}
+
+			diskIf.LoadDisk(origPath, imagePath, diskImage);
+
+			if (!diskImage->IsUpdatable())
+				writeMode = (ATMediaWriteMode)(writeMode & ~kATMediaWriteMode_AutoFlush);
+		} else {
+			diskIf.MountFolder(*vdpoly_cast<IATVirtualDiskImage *>(image));
+
+			writeMode = kATMediaWriteMode_RO;
 		}
-
-		diskIf.LoadDisk(origPath, imagePath, diskImage);
-
-		if (!diskImage->IsUpdatable())
-			writeMode = (ATMediaWriteMode)(writeMode & ~kATMediaWriteMode_AutoFlush);
 
 		diskIf.SetWriteMode(writeMode);
 

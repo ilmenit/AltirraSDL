@@ -263,9 +263,9 @@ bool ATUIGetVFSPathFromShellIDListW32(HGLOBAL hGlobal, VDStringW& vfsPath) {
 									CoTaskMemFree(s);
 
 									vfsPath = L"zip://";
-									ATEncodeVFSPath(vfsPath, lastValidPath, true);
+									ATEncodeVFSString(vfsPath, lastValidPath, true);
 									vfsPath += L'!';
-									ATEncodeVFSPath(vfsPath, relPath, true);
+									ATEncodeVFSString(vfsPath, relPath, true);
 
 									success = true;
 								}

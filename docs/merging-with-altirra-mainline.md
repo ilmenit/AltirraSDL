@@ -349,3 +349,31 @@ Test17 adds `ATPrinterGraphicsSpec::mBaselinePin` and uses it to position the
 Windows graphical-printer cursor. The SDL debugger mirrors that behavior in
 `src/AltirraSDL/source/ui/debugger/ui_dbg_printer.cpp`, including subtracting
 the offset when setting the print position from a click.
+
+## Test22 local merge notes
+
+- Preserve the fork's 65C816 decimal arithmetic, pointer wrap, RTL stack and
+  native branch fixes. Test22's 8-bit ADC overflow calculation is adopted;
+  the existing 16-bit arithmetic passed all selected reference cases.
+- The debugger `SetP` setter clears index high bytes when X is set, not clear.
+  Preserve that correction alongside upstream's decode-table refresh.
+  `SetD` must refresh alignment timing in native mode as well as emulation
+  mode; the setter regression checks both directions and their cycle counts.
+- Virtual images must be accepted by disk-specific and automatic loaders,
+  including legacy `/*` and `/**` paths. Legacy SpartaDOS paths cannot encode
+  256-byte sectors; retain URL serialization for those mounts.
+- SpartaDOS boot sectors use the boot size and data sectors use the selected
+  size. The old ternary had these reversed; 256-byte mounts expose the bug.
+- Preserve POSIX absolute file-URL roots and relative parent components when
+  adopting upstream's canonical path parsing. Implement new filesystem APIs
+  in the portable backend as well as the Windows backend.
+- JSON keeps upstream's empty-object and two-/three-byte UTF-8 corrections.
+  Additionally retain full four-byte scalars on 32-bit wchar_t platforms,
+  correct UTF-16 surrogate decoding and buffer refills, guard empty-array copies and support a
+  large first allocation in the value pool. The upstream UTF-32 test helper
+  must use sizeof(char32_t) for its input byte count.
+- Screen masks remain anchored to physical pixels on SDL_GPU and OpenGL.
+  Scanlines follow the distorted raster independently, suppressing frequencies
+  above Nyquist. Rebuild SPIR-V, DXIL and MSL headers after shader changes.
+- Keep fork-specific changelog entries, autosuggest validity checks, netplay
+  seeding, quad POKEY support, bridge tracing and native resource adjustments.

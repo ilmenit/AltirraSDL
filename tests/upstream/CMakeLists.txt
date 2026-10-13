@@ -76,3 +76,42 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(upstream-export-requires-tools PROPERTIES
         FIXTURES_REQUIRED upstream_exports WILL_FAIL TRUE TIMEOUT 60)
 endif()
+
+add_executable(altirra-test22-regression-test
+    test22.cpp
+    ${PROJECT_SOURCE_DIR}/src/ATTest/source/TestJson.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/diskvirtimage.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/diskvirtimagebase.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/diskvirtimagesdfs.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/os/directorywatcher_sdl3.cpp)
+target_compile_definitions(altirra-test22-regression-test PRIVATE AT_TESTS_ENABLED=1)
+target_include_directories(altirra-test22-regression-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/test22_support
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${PROJECT_SOURCE_DIR}/src/compat
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-test22-regression-test PRIVATE ATIO vdjson ATCore system SDL3::SDL3)
+add_test(NAME upstream-test22 COMMAND altirra-test22-regression-test)
+set_tests_properties(upstream-test22 PROPERTIES TIMEOUT 60)
+
+add_executable(altirra-test22-cpu-test
+    cpu65816.cpp
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app/cputest_runner.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/cpu.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/cpu6502.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/cpu6502ill.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/cpu65c02.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/cpu65c816.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/savestate.cpp)
+target_include_directories(altirra-test22-cpu-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${PROJECT_SOURCE_DIR}/src/compat
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-test22-cpu-test PRIVATE ATCPU ATCore vdjson system SDL3::SDL3)
+add_test(NAME upstream-test22-cpu COMMAND altirra-test22-cpu-test
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpu65816-test22.json)
+set_tests_properties(upstream-test22-cpu PROPERTIES TIMEOUT 60)

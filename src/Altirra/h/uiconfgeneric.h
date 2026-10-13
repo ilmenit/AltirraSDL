@@ -46,14 +46,21 @@ public:
 	// automatically re-evaluated when any view changes.
 	template<typename T>
 	T& SetEnableExpr(this T& self, vdfunction<bool()> fn) {
-		self.SetEnableExprImpl(fn);
+		self.SetEnableExprImpl(std::move(fn));
+		return self;
+	}
+
+	template<typename T>
+	T& SetOnChanged(this T& self, vdfunction<void()> fn) {
+		self.SetOnChangedImpl(std::move(fn));
 		return self;
 	}
 
 protected:
 	virtual void SetTagImpl(const char *tag) = 0;
 	virtual void SetLabelImpl(const wchar_t *label) = 0;
-	virtual void SetEnableExprImpl(vdfunction<bool()> fn) = 0;
+	virtual void SetEnableExprImpl(vdfunction<bool()>&& fn) = 0;
+	virtual void SetOnChangedImpl(vdfunction<void()>&& fn) = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////

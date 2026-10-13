@@ -439,7 +439,8 @@ uint32 ATDiskImageVirtualFolderSDFS::GetSectorSize() const {
 }
 
 uint32 ATDiskImageVirtualFolderSDFS::GetSectorSize(uint32 virtIndex) const {
-	return virtIndex >= mBootSectorCount ? mBootSectorSize : mSectorSize;
+	// MERGE NOTE: boot sectors are short; data sectors use the selected size.
+	return virtIndex < mBootSectorCount ? mBootSectorSize : mSectorSize;
 }
 
 uint32 ATDiskImageVirtualFolderSDFS::GetBootSectorCount() const {

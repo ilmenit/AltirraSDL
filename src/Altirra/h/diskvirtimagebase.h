@@ -43,9 +43,9 @@ public:
 	uint32 GetPhysicalSectorCount() const final;
 	bool IsValidPhysicalSector(uint32 physIndex) const final;
 	uint32 GetNextPhysicalSector(uint32 physIndex) const final { return physIndex; }
-	void WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus);
+	void WritePhysicalSector(uint32 index, const void *data, uint32 len, uint8 fdcStatus) override;
 
-	bool WriteVirtualSector(uint32 index, const void *data, uint32 len);
+	bool WriteVirtualSector(uint32 index, const void *data, uint32 len) override;
 
 	bool IsSafeToReinterleave() const override final { return true; }
 };

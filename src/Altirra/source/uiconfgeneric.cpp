@@ -125,8 +125,12 @@ public:
 		UpdateLabel();
 	}
 
-	void SetEnableExprImpl(vdfunction<bool()> fn) override {
+	void SetEnableExprImpl(vdfunction<bool()>&& fn) override {
 		mpEnableExpr = std::move(fn);
+	}
+
+	void SetOnChangedImpl(vdfunction<void()>&& fn) override {
+		mpOnChangedExpr = std::move(fn);
 	}
 
 	void UpdateEnable() {
@@ -155,12 +159,21 @@ protected:
 	virtual void UpdateLabel() = 0;
 	virtual void UpdateView() = 0;
 
+	void OnValueChanged() {
+		if (mpOnChangedExpr)
+			mpOnChangedExpr();
+
+		// Re-evaluate dependent controls after the callback updates values.
+		mpParent->OnValueChanged();
+	}
+
 	ATUIConfDialogGenericPanel *mpParent = nullptr;
 	uint32 mViewIndex = 0;
 	sint32 mPaddingTopDLUs = 0;
 	VDStringA mTag;
 	VDStringW mLabel;
 	vdfunction<bool()> mpEnableExpr;
+	vdfunction<void()> mpOnChangedExpr;
 };
 
 class ATUIConfDialogGenericPanel::BoolView : public BaseView, public virtual IATUIConfigBoolView {
@@ -410,7 +423,7 @@ public:
 				const bool v = mCheckView.GetChecked();
 				if (mbValue != v) {
 					mbValue = v;
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -463,7 +476,7 @@ public:
 
 				if (mbValue != v) {
 					mbValue = v;
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -474,7 +487,7 @@ public:
 
 				if (mbValue != v) {
 					mbValue = v;
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -557,7 +570,7 @@ public:
 				if (mValue != s) {
 					mValue = s;
 
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -673,7 +686,7 @@ public:
 				if (mValue != s) {
 					mValue = s;
 
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -726,7 +739,7 @@ public:
 					mValue = val;
 					mbValueSet = true;
 
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -776,7 +789,7 @@ public:
 					mbValueSet = true;
 
 					UpdateValue();
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -973,7 +986,7 @@ public:
 			[this](int idx) {
 				if ((unsigned)idx < mChoices.size()) {
 					mValue = mChoices[idx].mValue;
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);
@@ -1085,7 +1098,7 @@ public:
 			[this](int idx) {
 				if ((unsigned)idx < mChoices.size()) {
 					mValue = mChoices[idx].mValue;
-					mpParent->OnValueChanged();
+					OnValueChanged();
 				}
 			}
 		);

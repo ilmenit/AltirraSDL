@@ -35,6 +35,7 @@
     <ClCompile Include="source\stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="source\vdiskimageimpl.cpp" />
     <ClCompile Include="source\vorbisbitreader.cpp" />
     <ClCompile Include="source\vorbisdecoder.cpp" />
     <ClCompile Include="source\vorbismisc.cpp" />
@@ -60,11 +61,13 @@
     <ClInclude Include="..\h\at\atio\partitiontable.h" />
     <ClInclude Include="..\h\at\atio\programimage.h" />
     <ClInclude Include="..\h\at\atio\savestate.h" />
+    <ClInclude Include="..\h\at\atio\vdiskimage.h" />
     <ClInclude Include="..\h\at\atio\wav.h" />
     <ClInclude Include="h\at\atio\audioreaderflac.h" />
     <ClInclude Include="h\at\atio\audioutils.h" />
     <ClInclude Include="h\at\atio\cassetteaudiofilters.h" />
     <ClInclude Include="h\at\atio\diskimageutil.h" />
+    <ClInclude Include="h\at\atio\internal\vdiskimageimpl.h" />
     <ClInclude Include="h\at\atio\tapepiecetable.h" />
     <ClInclude Include="h\at\atio\audioreaderwav.h" />
     <ClInclude Include="h\at\atio\vorbisbitreader.h" />

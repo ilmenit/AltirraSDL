@@ -19,6 +19,7 @@
 #ifndef f_VD2_VDJSON_JSONVALUE_H
 #define f_VD2_VDJSON_JSONVALUE_H
 
+#include <vd2/system/VDString.h>
 #include <vd2/vdjson/jsonnametable.h>
 
 #include <vd2/system/error.h>
@@ -97,11 +98,8 @@ class VDJSONValuePool {
 	VDJSONValuePool(const VDJSONValuePool&) = delete;
 	VDJSONValuePool& operator=(const VDJSONValuePool&) = delete;
 public:
-	VDJSONValuePool(bool enableLineInfo, uint32 initialBlockSize = 256, uint32 maxBlockSize = 4096, uint32 largeBlockThreshold = 128);
+	VDJSONValuePool(uint32 initialBlockSize = 1024, uint32 maxBlockSize = 32768, uint32 largeBlockThreshold = 512);
 	~VDJSONValuePool();
-
-	void AdvanceLine();
-	uint32 GetLineForObject(const void *p) const;
 
 	VDJSONValue *AddValue();
 	void AddArray(VDJSONValue& dst, const VDJSONValue *const *values, size_t n);
@@ -110,6 +108,8 @@ public:
 	const VDJSONString *AddString(const wchar_t *s, size_t len);
 	void AddString(VDJSONValue& dst, const wchar_t *s);
 	void AddString(VDJSONValue& dst, const wchar_t *s, size_t n);
+
+	const wchar_t *AddRawString(const wchar_t *s, size_t len);
 
 protected:
 	static constexpr uint32 kCellSize = 8;
@@ -120,26 +120,15 @@ protected:
 	static constexpr uint32 kLargeBlockLineOverhead = kCellSize + 2;
 
 	void *Allocate(size_t n);
-	static uint8 *EncodeRevVarint(uint8 *dst, uint32 value);
 
 	union BlockNode {
 		BlockNode *mpNext;
 		double mAlign;
 	};
 
-	struct BlockLineHeader {
-		uint32 mBlockSize;
-		uint32 mStartingLineno;
-	};
-
 	BlockNode *mpHead = nullptr;
 	char *mpAllocNext = nullptr;
 	uint32 mAllocLeft = 0;
-	uint8 *mpLineInfoDst = nullptr;
-	bool mbLineInfoEnabled = false;
-	char *mpAllocNextLineBase = nullptr;
-	uint32 mLineno = 1;
-	uint32 mLinenoLast = 1;
 
 	uint32 mBlockSize = 0;
 	uint32 mMaxBlockSize = 0;
@@ -303,6 +292,15 @@ struct VDJSONValueRef {
 	sint64 AsInt64() const { return mpRef->mType == VDJSONValue::kTypeInt ? mpRef->mIntValue : 0; }
 	double AsDouble() const { return mpRef->mType == VDJSONValue::kTypeReal ? mpRef->mRealValue : ConvertToReal(); }
 	const wchar_t *AsString() const { return mpRef->mType == VDJSONValue::kTypeString ? mpRef->mpString->mpChars : L""; }
+
+	VDStringSpanW AsStringSpan() const {
+		if (mpRef->mType != VDJSONValue::kTypeString)
+			return VDStringSpanW();
+
+		const VDJSONString& str = *mpRef->mpString;
+		return VDStringSpanW(str.mpChars, str.mpChars + str.mLength);
+	}
+
 	VDJSONMemberSet AsObject() const { return VDJSONMemberSet{ VDJSONMemberIterator(mpRef->mType == VDJSONValue::kTypeObject ? mpRef->mpObject : nullptr, mpDoc) }; };
 
 	VDJSONArrayEnum AsArray() const {
@@ -330,8 +328,6 @@ struct VDJSONValueRef {
 	sint64 GetRequiredInt64(const char *key) const;
 	const wchar_t *GetRequiredString(const char *key) const;
 
-	uint32 GetLineNumber() const;
-
 protected:
 	double ConvertToReal() const;
 
@@ -351,9 +347,7 @@ class VDJSONDocument {
 public:
 	VDJSONValue mValue;
 	VDJSONValuePool mPool;
-	VDJSONNameTable mNameTable;
-
-	VDJSONDocument(bool enableLineInfo = false) : mPool(enableLineInfo) {}
+	VDJSONNameTable mNameTable { mPool };
 
 	VDJSONValueRef Root() { return VDJSONValueRef(this, &mValue); }
 	const VDJSONValueRef Root() const { return VDJSONValueRef(this, &mValue); }

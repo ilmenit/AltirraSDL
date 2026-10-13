@@ -34,6 +34,8 @@
 #include "simulator.h"
 #include "settings.h"
 #include "cpu.h"
+#include "diskinterface.h"
+#include <at/atio/diskimage.h>
 #include "devicemanager.h"
 #include <at/atcore/scheduler.h>
 #include "gtia.h"
@@ -448,6 +450,19 @@ static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	json += std::to_string((int)hwMode);
 
 	json += "}";
+
+	json += ",\"toolResult\":\"" + JsonEscape(ATUIGetToolsResultMessage()) + "\"";
+	json += ",\"disks\":[";
+	for (int i = 0; i < 15; ++i) {
+		if (i) json += ',';
+		const auto& disk = sim.GetDiskInterface(i);
+		const auto *image = disk.GetDiskImage();
+		const auto path = VDTextWToU8(disk.GetPath(), -1);
+		json += "{\"path\":\"" + JsonEscape(path.c_str()) + "\"";
+		json += ",\"sectorSize\":" + std::to_string(image ? image->GetSectorSize() : 0);
+		json += ",\"sectors\":" + std::to_string(image ? image->GetVirtualSectorCount() : 0) + "}";
+	}
+	json += "]";
 
 	json += ",\"configurationPage\":" + std::to_string(state.systemConfigCategory);
 	json += ",\"profiles\":{\"current\":" + std::to_string(ATSettingsGetCurrentProfileId());

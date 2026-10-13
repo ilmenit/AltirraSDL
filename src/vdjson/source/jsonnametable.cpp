@@ -18,11 +18,14 @@
 
 #include <stdafx.h>
 #include <vd2/vdjson/jsonnametable.h>
+#include <vd2/vdjson/jsonvalue.h>
 #include <vd2/system/VDString.h>
 
 ///////////////////////////////////////////////////////////////////////////
 
-VDJSONNameTable::VDJSONNameTable() {
+VDJSONNameTable::VDJSONNameTable(VDJSONValuePool& pool)
+	: mPool(pool)
+{
 }
 
 VDJSONNameTable::~VDJSONNameTable() {
@@ -31,13 +34,13 @@ VDJSONNameTable::~VDJSONNameTable() {
 const wchar_t *VDJSONNameTable::GetName(uint32 token) const {
 	--token;
 
-	return token < mNameTable.size() ? mNameTable[token]->c_str() : L"";
+	return token < mNameTable.size() ? mNameTable[token].data() : L"";
 }
 
 uint32 VDJSONNameTable::GetNameLength(uint32 token) const {
 	--token;
 
-	return token < mNameTable.size() ? mNameTable[token]->size() : 0;
+	return token < mNameTable.size() ? (uint32)mNameTable[token].size() : 0;
 }
 
 uint32 VDJSONNameTable::AddName(const wchar_t *s) {
@@ -45,13 +48,19 @@ uint32 VDJSONNameTable::AddName(const wchar_t *s) {
 }
 
 uint32 VDJSONNameTable::AddName(const wchar_t *s, size_t len) {
-	std::pair<NameMap::iterator, uint32> r(mNameMap.insert(NameMap::value_type(VDStringW(s, s+len), 0)));
-	if (!r.second)
-		return r.first->second;
+	VDStringSpanW name(s, s + len);
 
-	mNameTable.push_back(&r.first->first);
-	uint32 token = mNameMap.size();
-	r.first->second = token;
+	const auto findResult = mNameMap.find(name);
+	if (findResult != mNameMap.end())
+		return findResult->second;
+
+	const wchar_t *t = mPool.AddRawString(s, len);
+
+	VDStringSpanW storedName(t, t + len);
+	mNameTable.push_back(storedName);
+
+	const uint32 token = (uint32)(mNameMap.size() + 1);
+	mNameMap.insert(NameMap::value_type(storedName, token));
 
 	return token;
 }
@@ -73,7 +82,9 @@ VDJSONNameToken VDJSONNameTable::GetToken(const char *s) const {
 }
 
 VDJSONNameToken VDJSONNameTable::GetToken(const wchar_t *s) const {
-	NameMap::const_iterator it(mNameMap.find_as(s));
+	VDStringSpanW name(s);
+
+	NameMap::const_iterator it(mNameMap.find(name));
 	uint32 token = 0;
 
 	if (it != mNameMap.end())

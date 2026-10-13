@@ -6,6 +6,8 @@
 #include <stdafx.h>
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_stdlib.h>
+#include <at/atio/vdiskimage.h>
 #include "ui_file_dialog_sdl3.h"
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
@@ -328,30 +330,62 @@ static void BootSectorSaveCallback(void *userdata, const char * const *filelist,
 	}
 }
 
-// Callback for mount folder as virtual disk
-struct MountFolderInfo {
-	int driveIdx;
-	bool sdfs;
-};
+// Folder-picker results are dispatched on the UI thread. A generation rejects
+// results from a dialog that was closed or reopened while browsing.
+static struct {
+	bool show = false;
+	int drive = 0;
+	int generation = 0;
+	int fs = 0;
+	int format = 0;
+	int sectors = 720;
+	int sectorSize = 0;
+	std::string path;
+	std::string error;
+} g_mountFolder;
 
-static void MountFolderCallback(void *userdata, const char * const *filelist, int) {
-	MountFolderInfo *info = (MountFolderInfo *)userdata;
-	if (!filelist || !filelist[0] || !info) {
-		delete info;
+void ATUISetVirtualFolderPath(const wchar_t *path, int generation) {
+	if (g_mountFolder.show && generation == g_mountFolder.generation)
+		g_mountFolder.path = VDTextWToU8(path, -1).c_str();
+}
+
+static void MountFolderCallback(void *userdata,
+	const char * const *filelist, int) {
+	const int generation = (int)(intptr_t)userdata;
+	if (filelist && filelist[0])
+		ATUIPushDeferred(kATDeferred_SelectVirtualFolder, filelist[0], generation);
+}
+
+static void OpenMountFolderDialog(int drive) {
+	g_mountFolder.show = true;
+	g_mountFolder.drive = drive;
+	++g_mountFolder.generation;
+	g_mountFolder.fs = 0;
+	g_mountFolder.format = 0;
+	g_mountFolder.sectors = 720;
+	g_mountFolder.sectorSize = 0;
+	g_mountFolder.path.clear();
+	g_mountFolder.error.clear();
+	const wchar_t *prev = g_sim.GetDiskInterface(drive).GetPath();
+	if (!prev || !*prev)
 		return;
+	try {
+		const auto parsed = ATParseVFSPath(prev);
+		auto image = ATTryLoadVirtualDiskImageFromWildFilePath(parsed);
+		if (!image && parsed.mProtocol == kATVFSProtocol_Atvdisk)
+			image = ATLoadVirtualDiskImage(parsed);
+		if (image) {
+			g_mountFolder.path = VDTextWToU8(image->GetBasePath(), -1).c_str();
+			g_mountFolder.fs = image->GetFileSystem() == ATVirtualDiskFileSystem::SDFS;
+			g_mountFolder.sectorSize = image->GetSectorSize() > 128;
+			g_mountFolder.sectors = std::clamp<int>(image->GetSectorCount(), 720, 65535);
+			g_mountFolder.format = g_mountFolder.sectors == 720
+				? (g_mountFolder.sectorSize ? 2 : 0)
+				: g_mountFolder.sectors == 1040 && !g_mountFolder.sectorSize ? 1 : 3;
+		}
+	} catch (const MyError& e) {
+		g_mountFolder.error = e.c_str();
 	}
-
-	int driveIdx = info->driveIdx;
-	bool sdfs = info->sdfs;
-	delete info;
-
-	if (driveIdx < 0 || driveIdx >= 15)
-		return;
-
-	// SDL may invoke native file-dialog callbacks on an arbitrary thread.
-	// Defer all simulator access to the main UI thread.
-	ATUIPushDeferred(kATDeferred_MountFolder, filelist[0],
-		driveIdx | (sdfs ? 0x100 : 0));
 }
 
 static const SDL_DialogFileFilter kDiskFilters[] = {
@@ -444,6 +478,100 @@ static void ConfirmDiscardIfDirty(int driveIdx, std::function<void()> onProceed)
 	opts.destructive  = true;        // default focus on Cancel
 	opts.onConfirm    = std::move(onProceed);
 	ATUIShowConfirm(std::move(opts));
+}
+
+static void RenderMountFolderDialog(SDL_Window *window) {
+	if (!g_mountFolder.show)
+		return;
+	ImGui::SetNextWindowSize(ATUIFitDialogSize(ImVec2(500, 310)), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (!ImGui::Begin("Mount folder as virtual disk", &g_mountFolder.show,
+		ImGuiWindowFlags_NoSavedSettings)) {
+		ImGui::End();
+		return;
+	}
+	if (ATUICheckEscClose()) {
+		g_mountFolder.show = false;
+		ImGui::End();
+		return;
+	}
+	// Native generic configuration puts labels in a left column.
+	if (ImGui::BeginTable("##VirtualFolderFields", 2, ImGuiTableFlags_SizingFixedFit)) {
+		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+		ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+		auto row = [](const char *label) {
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(label);
+			ImGui::TableNextColumn();
+			ImGui::SetNextItemWidth(-FLT_MIN);
+		};
+		row("Path");
+		ImGui::SetNextItemWidth(std::max(40.0f, ImGui::GetContentRegionAvail().x - 40.0f));
+		ImGui::InputText("##Path", &g_mountFolder.path);
+		ImGui::SameLine();
+		if (ImGui::Button("..."))
+			ATUIShowOpenFolderDialog('vfol', MountFolderCallback,
+				(void *)(intptr_t)g_mountFolder.generation, window, g_mountFolder.path.c_str());
+		row("Filesystem");
+		if (ImGui::Combo("##Filesystem", &g_mountFolder.fs, "DOS 2.x / MyDOS\0SpartaDOS\0")
+			&& g_mountFolder.fs == 0) {
+			// Keep the DOS preset consistent after a SpartaDOS size change.
+			g_mountFolder.format = g_mountFolder.sectors == 720
+				? (g_mountFolder.sectorSize ? 2 : 0)
+				: g_mountFolder.sectors == 1040 && !g_mountFolder.sectorSize ? 1 : 3;
+		}
+		row("Format");
+		ImGui::BeginDisabled(g_mountFolder.fs != 0);
+		if (ImGui::Combo("##Format", &g_mountFolder.format,
+			"Single density (90K)\0Enhanced density (130K)\0Double density (180K)\0Custom\0")) {
+			if (g_mountFolder.format != 3) {
+				g_mountFolder.sectors = g_mountFolder.format == 1 ? 1040 : 720;
+				g_mountFolder.sectorSize = g_mountFolder.format == 2;
+			}
+		}
+		ImGui::EndDisabled();
+		row("Sectors");
+		ImGui::BeginDisabled(g_mountFolder.fs != 0 || g_mountFolder.format != 3);
+		ImGui::InputInt("##Sectors", &g_mountFolder.sectors);
+		ImGui::EndDisabled();
+		row("Sector size");
+		ImGui::BeginDisabled(g_mountFolder.fs == 0 && g_mountFolder.format != 3);
+		ImGui::Combo("##Sector size", &g_mountFolder.sectorSize, "128 bytes\0" "256 bytes\0");
+		ImGui::EndDisabled();
+		ImGui::EndTable();
+	}
+	if (!g_mountFolder.error.empty())
+		ImGui::TextWrapped("%s", g_mountFolder.error.c_str());
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
+		ImGui::GetWindowWidth() - 176.0f));
+	if (ImGui::Button("OK", ImVec2(80, 0))) {
+		const VDStringW path = VDTextU8ToW(g_mountFolder.path.c_str(), -1);
+		if (!VDDoesDirectoryExist(path.c_str()))
+			g_mountFolder.error = "The specified folder does not exist.";
+		else if (!g_mountFolder.fs && (g_mountFolder.sectors < 720 || g_mountFolder.sectors > 65535))
+			g_mountFolder.error = "Sectors must be between 720 and 65535.";
+		else {
+			const VDStringW url = ATMakeVirtualDiskImagePath(VDStringSpanW(path),
+				g_mountFolder.fs ? 0 : g_mountFolder.sectors,
+				g_mountFolder.sectorSize ? 256 : 128,
+				g_mountFolder.fs ? ATVirtualDiskFileSystem::SDFS : ATVirtualDiskFileSystem::DOS);
+			const int drive = g_mountFolder.drive;
+			ConfirmDiscardIfDirty(drive, [url, drive]() {
+				const auto path8 = VDTextWToU8(url);
+				ATUIPushDeferred(kATDeferred_MountFolder, path8.c_str(), drive);
+			});
+			g_mountFolder.show = false;
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(80, 0)))
+		g_mountFolder.show = false;
+	ImGui::End();
 }
 
 // Convenience wrapper: eject the disk in the given drive, prompting first
@@ -828,26 +956,9 @@ static void RenderDiskDriveContextMenu(int driveIdx, ATDiskInterface& di,
 
 	ImGui::Separator();
 
-	// --- Virtual disk operations ---
-	// MountFolder() internally calls UnloadDisk(), so no pre-eject needed.
-	// The folder dialog is async — don't eject until the user actually
-	// picks a folder.  Windows does prompt if the current image is dirty
-	// (uidisk.cpp ID_CONTEXT_MOUNTFOLDERDOS2/SDFS).
-	if (ImGui::MenuItem("Mount folder as virtual DOS 2 disk...")) {
-		ConfirmDiscardIfDirty(driveIdx, [driveIdx, window]() {
-			auto *info = new MountFolderInfo{driveIdx, false};
-			ATUIShowOpenFolderDialog('disk', MountFolderCallback, info,
-				window);
-		});
-	}
-
-	if (ImGui::MenuItem("Mount folder as virtual SpartaDOS disk...")) {
-		ConfirmDiscardIfDirty(driveIdx, [driveIdx, window]() {
-			auto *info = new MountFolderInfo{driveIdx, true};
-			ATUIShowOpenFolderDialog('disk', MountFolderCallback, info,
-				window);
-		});
-	}
+	// Matches test22's single configurable virtual-folder mount action.
+	if (ImGui::MenuItem("Mount folder as virtual disk..."))
+		OpenMountFolderDialog(driveIdx);
 
 	if (ImGui::MenuItem("Extract boot sectors for virtual DOS 2 disk...", nullptr, false, haveDisk)) {
 		IATDiskImage *image = di.GetDiskImage();
@@ -993,6 +1104,7 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 	// Merely hosting (WaitingForJoiner) shouldn't block disk swaps.
 	if (ATNetplayGlue::IsSessionEngaged()) {
 		state.showDiskManager = false;
+		g_mountFolder.show = false;
 		return;
 	}
 #endif
@@ -1186,4 +1298,8 @@ void ATUIRenderDiskManager(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 	// Create Disk sub-dialog (opened from context menu)
 	RenderCreateDiskDialog();
+	if (state.showDiskManager)
+		RenderMountFolderDialog(window);
+	else
+		g_mountFolder.show = false;
 }
