@@ -8,6 +8,7 @@
 
 #include "bridge_server.h"
 #include "bridge_commands_state.h"
+#include "bridge_commands_timing.h"
 #include "bridge_commands_write.h"
 #include "bridge_commands_render.h"
 #include "bridge_commands_debug.h"
@@ -179,6 +180,8 @@ void RemoveTokenFile() {
 // ---------------------------------------------------------------------------
 
 void OnClientDisconnected(ATSimulator& sim) {
+	CleanupTimingCommands(sim);
+	CancelBareBoot();
 	g_state.authenticated = false;
 	g_state.recvBuf.clear();
 	// Cancel any active frame gate. Without this a client that
@@ -203,6 +206,7 @@ void OnClientDisconnected(ATSimulator& sim) {
 
 bool ShouldLogCommand(const std::string& verb) {
 	return verb == "PAUSE" || verb == "RESUME" || verb == "FRAME"
+		|| verb == "CYCLES" || verb == "SCANLINES" || verb == "POKEY_TRACE"
 		|| verb == "QUIT" || verb == "POKE" || verb == "POKE16"
 		|| verb == "HWPOKE" || verb == "MEMLOAD" || verb == "JOY"
 		|| verb == "KEY" || verb == "KEYRAW" || verb == "CONSOL" || verb == "BOOT"
@@ -320,6 +324,10 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 		std::string payload = "\"frames\":" + std::to_string(n);
 		return JsonOk(payload);
 	}
+
+	if (verb == "CYCLES" || verb == "SCANLINES" || verb == "CLOCK"
+		|| verb == "POKEY_TRACE")
+		return CmdTiming(sim, tokens);
 
 	if (verb == "QUIT") {
 		// Asks main_sdl3.cpp to flip g_running to false. The simulator
@@ -451,7 +459,7 @@ bool TryDispatchOneLine(ATSimulator& sim) {
 	if (nl == std::string::npos)
 		return false;
 
-	// While the frame gate is active, leave the line untouched in
+	// While an emulation gate is active, leave the line untouched in
 	// the buffer. We'll dispatch it on a future Poll() once the gate
 	// releases. This implements the documented synchronisation
 	// contract: a client that sends `frame(60); peek(...)` sees the
@@ -462,7 +470,8 @@ bool TryDispatchOneLine(ATSimulator& sim) {
 	// Interrupting an in-flight FRAME run requires closing the
 	// socket (which clears the gate via OnClientDisconnected) and
 	// reconnecting.
-	if (g_state.framesRemaining > 0)
+	if (g_state.framesRemaining > 0 || IsTimingGateActive()
+		|| IsBareBootGateActive())
 		return false;
 
 	std::string line = g_state.recvBuf.substr(0, nl);
@@ -478,6 +487,8 @@ bool TryDispatchOneLine(ATSimulator& sim) {
 	}
 
 	std::string response = DispatchCommand(line, sim);
+	if (response.empty() && IsBareBootGateActive())
+		return true; // BOOT_BARE replies later from the normal main loop.
 	if (response.rfind("{\"ok\":false", 0) == 0) {
 		std::string logLine = line;
 		if (logLine.size() > 256) {
@@ -542,6 +553,8 @@ bool Init(const std::string& addrSpec) {
 }
 
 void Shutdown(ATSimulator& sim) {
+	CleanupTimingCommands(sim);
+	CancelBareBoot();
 	if (!g_state.enabled && !g_state.transport.IsListening() && !g_state.writeInitialised)
 		return;
 	if (g_state.writeInitialised) {
@@ -570,6 +583,21 @@ void Poll(ATSimulator& sim, ATUIState& /*ui*/) {
 	if (!g_state.writeInitialised) {
 		InitWriteCommands(sim);
 		g_state.writeInitialised = true;
+	}
+
+	// A breakpoint or external pause ends a run early. Never leave queued
+	// commands blocked waiting for cycles/frames that cannot now elapse.
+	UpdateTimingCommands(sim);
+	if (!sim.IsRunning())
+		g_state.framesRemaining = 0;
+
+	const std::string bootResponse = PollBareBoot(sim);
+	if (!bootResponse.empty()
+		&& g_state.transport.SendAll(bootResponse.data(), bootResponse.size())
+			== IoResult::Error) {
+		g_state.transport.DropClient();
+		OnClientDisconnected(sim);
+		return;
 	}
 
 	// Step 1. If we already have a client, probe it for data (or for

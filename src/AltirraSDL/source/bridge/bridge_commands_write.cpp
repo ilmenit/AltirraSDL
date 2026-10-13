@@ -49,6 +49,7 @@
 #include "devicemanager.h"
 #include "customdevice.h"
 
+#include "bridge_commands_timing.h"
 #include "bridge_commands_debug2.h"  // BridgeSymClearAllInternal, BridgeProfileResetInternal, BridgeVerifierResetInternal
 
 #include "bridge_logging.h"
@@ -87,6 +88,15 @@ struct WriteState {
 };
 
 WriteState g_write;
+
+struct BareBootState {
+	bool active = false;
+	bool wasPaused = false;
+	uint64 startTick = 0;
+	uint64 maxCycles = 0;
+	uint32 startFrame = 0;
+	std::string path;
+} g_bareBoot;
 
 // ---------------------------------------------------------------------------
 // Memory address parsing helpers.
@@ -1657,90 +1667,67 @@ std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens) {
 // debugging / tracing only — clients should not depend on it.
 // ---------------------------------------------------------------------------
 
-std::string CmdBootBare(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
+bool IsBareBootGateActive() {
+	return g_bareBoot.active;
+}
+
+void CancelBareBoot() {
+	g_bareBoot = {};
+}
+
+std::string CmdBootBare(ATSimulator& sim,
+	const std::vector<std::string>& tokens) {
+	if (tokens.size() != 1)
+		return JsonError("BOOT_BARE: no arguments expected");
 	const std::string path = EnsureBareStubXexPath();
 	if (path.empty())
 		return JsonError("BOOT_BARE: failed to materialise stub xex");
+	const bool wasPaused = sim.IsPaused();
+	const uint64 startTick = sim.GetScheduler()->GetTick64();
+	const uint32 startFrame = sim.GetAntic().GetRawFrameCounter();
 	if (!ATBridgeDispatchBoot(sim, path))
 		return JsonError("BOOT_BARE: dispatch failed");
 
-	// The XEX load is asynchronous from the bridge's point of
-	// view: ATBridgeDispatchBoot either queues a deferred boot
-	// (SDL3 target) or immediately calls sim.Load + sim.ColdReset
-	// (headless target). Either way, the actual "our stub code is
-	// now in $0600 and the CPU is parked in its JMP * loop" state
-	// only arrives several *hundred* frames later, once the OS
-	// cold-boot completes, the OS XEX loader runs, our stub's
-	// segment is written to RAM, and RUNAD has fired. Earlier
-	// versions of this command returned after a fixed 180-frame
-	// settle, which was NOT long enough on NTSC cold boot and
-	// caused a race where setup commands issued immediately
-	// afterward were clobbered by the still-running OS VBI.
-	//
-	// Fix: advance the simulator in small chunks and actively poll
-	// for the stub's "fully landed" signature — the known 18-byte
-	// byte sequence at $0600 and a CPU PC inside the JMP * loop at
-	// $060F..$0611. Bail out with success as soon as we see it, or
-	// return an error if we never see it within an absolute cap.
-	static constexpr uint8 kStubSig[18] = {
-		0x78, 0xD8, 0xA9, 0xFF, 0x8D, 0x01, 0xD3, 0xA9,
-		0x00, 0x8D, 0x0E, 0xD4, 0x8d, 0x00, 0xD4, 0x4C, 0x0F, 0x06,
-	};
-	// Normalise case of one hand-typed nibble above.
-	uint8 stubSig[18];
-	std::memcpy(stubSig, kStubSig, sizeof stubSig);
-	stubSig[12] = 0x8D;
+	g_bareBoot.active = true;
+	g_bareBoot.wasPaused = wasPaused;
+	g_bareBoot.startTick = startTick;
+	g_bareBoot.startFrame = startFrame;
+	// The simulator uses 114 machine cycles per ANTIC scanline. Limit
+	// the boot to 600 actual frame durations, not 600 Advance() slices.
+	g_bareBoot.maxCycles = 600ull * sim.GetAntic().GetScanlineCount() * 114;
+	g_bareBoot.path = path;
+	sim.Resume();
+	// Defer the response while the main loop processes the GUI boot
+	// queue and consumes video frames. No nested simulator advance.
+	return {};
+}
 
-	auto stub_ready = [&]() -> bool {
-		// Cheap-to-read CPU PC and $0600 bytes. No allocation.
-		for (int i = 0; i < 18; ++i) {
-			if (sim.DebugGlobalReadByte((uint16)(0x0600 + i)) != stubSig[i])
-				return false;
-		}
-		const uint16 pc = sim.GetCPU().GetInsnPC();
-		// The stub parks at JMP * which is three bytes at $060F
-		// ($4C $0F $06). A CPU executing that loop will be seen
-		// at either the start of the JMP ($060F) or within its
-		// three-cycle execution window; in practice the debug
-		// snapshot reliably reads PC = $060F or $0612 (next
-		// fetch). Accept the whole $060F..$0612 window.
-		return pc >= 0x060F && pc <= 0x0612;
-	};
+std::string PollBareBoot(ATSimulator& sim) {
+	if (!g_bareBoot.active)
+		return {};
+	const bool ready = IsBareStubReady(sim);
+	const bool timedOut = sim.GetScheduler()->GetTick64()
+		- g_bareBoot.startTick >= g_bareBoot.maxCycles;
+	if (!ready && !timedOut && sim.IsRunning())
+		return {};
 
-	// Advance up to ~10 seconds of wall-clock Atari time (600 frames
-	// NTSC). OS cold boot on an 800XL typically finishes in ~300
-	// frames; XEX load + RUNAD adds another ~50. 600 gives a wide
-	// margin without being unbearable if something is wrong.
-	constexpr int kMaxSettleFrames = 600;
-	constexpr int kSettleStep      = 20;
-	int total = 0;
-	while (total < kMaxSettleFrames) {
-		// We cannot call atb_frame() from inside a command handler
-		// — that's a client-side convenience. Directly poke the
-		// sim's frame counter: resume, advance N frames, re-pause.
-		const bool wasPaused = sim.IsPaused();
-		if (wasPaused) sim.Resume();
-		for (int i = 0; i < kSettleStep; ++i)
-			sim.Advance(true);
-		if (wasPaused) sim.Pause();
-
-		total += kSettleStep;
-		if (stub_ready())
-			break;
+	if (g_bareBoot.wasPaused)
+		sim.Pause();
+	std::string result;
+	if (ready) {
+		std::string payload;
+		AddString(payload, "path", g_bareBoot.path);
+		AddU32(payload, "settle_frames",
+			sim.GetAntic().GetRawFrameCounter() - g_bareBoot.startFrame);
+		StripTrailingComma(payload);
+		result = JsonOk(payload);
+	} else {
+		result = JsonError(timedOut
+			? "BOOT_BARE: stub did not reach its park loop within 600 frames"
+			: "BOOT_BARE: emulation stopped before the stub reached its park loop");
 	}
-
-	if (!stub_ready()) {
-		return JsonError(
-			"BOOT_BARE: stub did not reach its JMP * park loop "
-			"within the settle budget — is the kernel missing or "
-			"the bootloader broken?");
-	}
-
-	std::string payload;
-	AddString(payload, "path", path);
-	AddU32   (payload, "settle_frames", (uint32_t)total);
-	StripTrailingComma(payload);
-	return JsonOk(payload);
+	CancelBareBoot();
+	return result;
 }
 
 std::string CmdMount(ATSimulator& sim, const std::vector<std::string>& tokens) {
@@ -2943,6 +2930,9 @@ std::string CmdFresh(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (!keep.media) {
 		sim.UnloadAll();
 	}
+
+	// FRESH also clears transient stepping history and register capture.
+	CleanupTimingCommands(sim);
 
 	// Always cleanly release injected input — the agent loop should
 	// see a centred joystick and released console switches after

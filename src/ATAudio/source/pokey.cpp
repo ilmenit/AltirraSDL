@@ -173,6 +173,9 @@ void ATPokeyEmulator::Init(IATPokeyEmulatorConnections *mem, ATScheduler *sched,
 }
 
 void ATPokeyEmulator::ColdReset() {
+	if (mRegisterStateInvalidatedObserver)
+		mRegisterStateInvalidatedObserver();
+
 	mKeyScanCode = 0;
 	mKeyScanState = 0;
 	mbKeyboardIRQPending = false;
@@ -332,6 +335,9 @@ void ATPokeyEmulator::InitSlave(ATPokeyEmulator *slave) {
 }
 
 void ATPokeyEmulator::SetSlave(ATPokeyEmulator *slave) {
+	if (mRegisterStateInvalidatedObserver)
+		mRegisterStateInvalidatedObserver();
+
 	if (mpSlave)
 		mpSlave->ColdReset();
 
@@ -355,6 +361,9 @@ void ATPokeyEmulator::SetSlave(ATPokeyEmulator *slave) {
 }
 
 void ATPokeyEmulator::SetExtraSlaves(ATPokeyEmulator *slave3, ATPokeyEmulator *slave4) {
+	if (mRegisterStateInvalidatedObserver)
+		mRegisterStateInvalidatedObserver();
+
 	if (mpSlave3 && mpSlave3 != slave3)
 		mpSlave3->ColdReset();
 	if (mpSlave4 && mpSlave4 != slave4)
@@ -2645,6 +2654,10 @@ uint8 ATPokeyEmulator::ReadByte(uint8 reg) {
 void ATPokeyEmulator::WriteByte(uint8 reg, uint8 value) {
 	reg &= mAddressMask;
 
+	if (mRegisterWriteObserver
+		&& (!(reg & 0x20) || ((reg & 0x10) ? mpSlave4 : mpSlave3)))
+		mRegisterWriteObserver(mpScheduler->GetTick64(), reg, value);
+
 	// Quad bank routing for P3/P4 (reg 0x20-0x3F). This must happen BEFORE the
 	// mState.mReg[reg] store below, which is sized for banks 0-1 (0x00-0x1F)
 	// and would overflow at quad reg 0x20-0x3F. Banks 0/1 (mono/stereo) fall
@@ -3223,6 +3236,9 @@ void ATPokeyEmulator::LoadState(const IATObjectState *state) {
 }
 
 void ATPokeyEmulator::LoadState(const ATSaveStatePokey& pstate) {
+	if (mRegisterStateInvalidatedObserver)
+		mRegisterStateInvalidatedObserver();
+
 	for(int i=0; i<4; ++i) {
 		mAUDF[i] = pstate.mAUDF[i];
 		mAUDC[i] = pstate.mAUDC[i];

@@ -147,6 +147,13 @@ type
     procedure Pause;
     procedure ResumeEmu;   // 'Resume' is reserved by the TThread API
     procedure Frame(N: LongWord);
+    procedure Cycles(N: LongWord);
+    procedure Scanlines(N: LongWord);
+    function Clock: String;
+    function PokeyTraceStart(Capacity: LongWord = 65536): String;
+    function PokeyTraceRead(MaxEvents: LongWord = 4096): String;
+    function PokeyTraceStop: String;
+    function PokeyTraceStatus: String;
 
     // ---- Phase 2 — state read -------------------------------------
 
@@ -780,6 +787,46 @@ end;
 // ---------------------------------------------------------------------
 //  Phase 2 — state read
 // ---------------------------------------------------------------------
+
+procedure TAltirraBridge.Cycles(N: LongWord);
+begin
+  CheckOk(Rpc(Format('CYCLES %d', [N])), 'CYCLES');
+end;
+
+procedure TAltirraBridge.Scanlines(N: LongWord);
+begin
+  CheckOk(Rpc(Format('SCANLINES %d', [N])), 'SCANLINES');
+end;
+
+function TAltirraBridge.Clock: String;
+begin
+  Result := Rpc('CLOCK');
+  CheckOk(Result, 'CLOCK');
+end;
+
+function TAltirraBridge.PokeyTraceStart(Capacity: LongWord): String;
+begin
+  Result := Rpc(Format('POKEY_TRACE start %d', [Capacity]));
+  CheckOk(Result, 'POKEY_TRACE');
+end;
+
+function TAltirraBridge.PokeyTraceRead(MaxEvents: LongWord): String;
+begin
+  Result := Rpc(Format('POKEY_TRACE read %d', [MaxEvents]));
+  CheckOk(Result, 'POKEY_TRACE');
+end;
+
+function TAltirraBridge.PokeyTraceStop: String;
+begin
+  Result := Rpc('POKEY_TRACE stop');
+  CheckOk(Result, 'POKEY_TRACE');
+end;
+
+function TAltirraBridge.PokeyTraceStatus: String;
+begin
+  Result := Rpc('POKEY_TRACE status');
+  CheckOk(Result, 'POKEY_TRACE');
+end;
 
 function TAltirraBridge.Regs: TCpuState;
 var

@@ -415,6 +415,34 @@ int atb_frame(atb_client_t* c, unsigned int n) {
 	return atb_simple_cmd(c, cmd);
 }
 
+int atb_cycles(atb_client_t* c, unsigned int n) {
+	char cmd[64];
+	snprintf(cmd, sizeof cmd, "CYCLES %u", n);
+	return atb_simple_cmd(c, cmd);
+}
+int atb_scanlines(atb_client_t* c, unsigned int n) {
+	char cmd[64];
+	snprintf(cmd, sizeof cmd, "SCANLINES %u", n);
+	return atb_simple_cmd(c, cmd);
+}
+int atb_clock(atb_client_t* c) { return atb_simple_cmd(c, "CLOCK"); }
+int atb_pokey_trace_start(atb_client_t* c, unsigned int capacity) {
+	char cmd[64];
+	snprintf(cmd, sizeof cmd, "POKEY_TRACE start %u", capacity);
+	return atb_simple_cmd(c, cmd);
+}
+int atb_pokey_trace_read(atb_client_t* c, unsigned int max_events) {
+	char cmd[64];
+	snprintf(cmd, sizeof cmd, "POKEY_TRACE read %u", max_events);
+	return atb_simple_cmd(c, cmd);
+}
+int atb_pokey_trace_stop(atb_client_t* c) {
+	return atb_simple_cmd(c, "POKEY_TRACE stop");
+}
+int atb_pokey_trace_status(atb_client_t* c) {
+	return atb_simple_cmd(c, "POKEY_TRACE status");
+}
+
 int atb_config_get(atb_client_t* c, const char* key) {
 	if (key && *key) {
 		size_t cmd_size = 16 + strlen(key);

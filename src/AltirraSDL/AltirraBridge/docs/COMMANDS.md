@@ -6,7 +6,7 @@ examples. For full request/response schemas and field semantics see
 
 | Group        | Commands |
 |--------------|----------|
-| [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `QUIT` |
+| [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `CYCLES`, `SCANLINES`, `CLOCK`, `POKEY_TRACE`, `QUIT` |
 | [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
 | [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `KEYRAW`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
 | [Save states](#save-states)           | `STATE_SAVE`, `STATE_LOAD`, `STATE_LIST`, `STATE_DROP` |
@@ -41,6 +41,42 @@ atb_frame(c, 60);
 atb_quit(c);
 atb_close(c);
 ```
+
+## Sub-frame music validation
+
+```python
+# Configure and boot the XEX first, then pause at the intended capture start.
+a.pause()
+baseline = a.pokey_trace_start()
+a.scanlines(78)                  # 1/4 PAL frame; 114 cycles per scanline
+clock = a.clock()                # completion barrier
+assert clock["step_completed"]
+batch = a.pokey_trace_read()
+assert batch["valid"]           # rejects overflow or baseline replacement
+writes = batch["events"]        # ordered {tick, chip, reg, value}
+while batch["queued"]:
+    batch = a.pokey_trace_read()
+    assert batch["valid"]
+    writes.extend(batch["events"])
+a.cycles(1)                      # single machine cycle, including DMA time
+a.clock()                        # wait until the cycle has completed
+a.pokey_trace_stop()             # unread events can still be drained
+```
+
+Repeat stepping/draining for the desired capture length. Both stepping
+commands acknowledge immediately and gate the next command. Scanline
+stepping retains beam X; it does not round to a scanline boundary.
+`clock()` reports an early debugger stop with `step_completed=false`.
+The trace preserves updates that register polling could miss, even within
+one scanline; it is independent of host audio latency. See
+[the wire contract](PROTOCOL.md#cycles-n-scanlines-n-clock) for limits,
+trace lifecycle, and SAP-R comparison semantics.
+
+C: `atb_cycles`, `atb_scanlines`, `atb_clock`, `atb_pokey_trace_start`,
+`atb_pokey_trace_read`, `atb_pokey_trace_stop`, `atb_pokey_trace_status`;
+JSON payloads are available through `atb_last_response`.
+Pascal: `Cycles`, `Scanlines`, `Clock`, `PokeyTraceStart`,
+`PokeyTraceRead`, `PokeyTraceStop`, `PokeyTraceStatus`.
 
 ## State read
 
