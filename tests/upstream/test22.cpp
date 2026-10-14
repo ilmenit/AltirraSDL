@@ -118,7 +118,12 @@ int main() {
 		// URL paths use forward slashes; compare filesystem paths in OS form.
 		Check(VDFileGetCanonicalPath(parsed.mBasePath.c_str()) == specialPath &&
 			!wcscmp(parsed.FindParam(L"sectors"), L"1040"), "Virtual URL escaping");
+		// Windows roots require a drive; POSIX roots use the leading slash.
+#ifdef _WIN32
+		for (const wchar_t *root : {L"C:/*", L"C:/**"}) {
+#else
 		for (const wchar_t *root : {L"/*", L"/**"}) {
+#endif
 			auto image = ATTryLoadVirtualDiskImageFromWildFilePath(ATParseVFSPath(root));
 			Check(image && !VDFileIsRelativePath(image->GetBasePath()), "Legacy mount lost root");
 		}
