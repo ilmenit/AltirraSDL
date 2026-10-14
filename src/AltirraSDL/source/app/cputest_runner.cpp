@@ -25,6 +25,7 @@
 //	against the expected final state.  Per the design, only registers
 //	and RAM are verified; cycle counts are ignored.
 
+#include <stdafx.h>
 #include "cputest_runner.h"
 
 #include <stdio.h>
