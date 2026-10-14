@@ -111,10 +111,13 @@ int main() {
 				Check(loaded->GetImageType() == kATImageType_VDisk && !update, "Virtual mount write mode");
 			}
 		}
-		const auto specialPath = path + L"/\u00e7 \u4e2d\U0001f600+%?!";
+		const auto specialPath = VDMakePath(VDStringSpanW(path),
+			VDStringSpanW(L"\u00e7 \u4e2d\U0001f600+%?!"));
 		const auto mount = ATMakeVirtualDiskImagePath(VDStringSpanW(specialPath), 1040, 128, ATVirtualDiskFileSystem::DOS);
 		const auto parsed = ATParseVFSPath(mount.c_str());
-		Check(parsed.mBasePath == specialPath && !wcscmp(parsed.FindParam(L"sectors"), L"1040"), "Virtual URL escaping");
+		// URL paths use forward slashes; compare filesystem paths in OS form.
+		Check(VDFileGetCanonicalPath(parsed.mBasePath.c_str()) == specialPath &&
+			!wcscmp(parsed.FindParam(L"sectors"), L"1040"), "Virtual URL escaping");
 		for (const wchar_t *root : {L"/*", L"/**"}) {
 			auto image = ATTryLoadVirtualDiskImageFromWildFilePath(ATParseVFSPath(root));
 			Check(image && !VDFileIsRelativePath(image->GetBasePath()), "Legacy mount lost root");
