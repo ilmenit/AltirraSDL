@@ -308,7 +308,11 @@ ATVFSParsedPath ATParseVFSPath(const wchar_t *s) {
 			if (!ATDecodeVFSString(argName, argRawName, true) || !ATDecodeVFSString(argValue, argRawValue, true))
 				return ATVFSParsedPath();
 
-			parsedPath.mParams.emplace_back(VDHashString32I(argName.data(), argName.size()), std::move(argName), std::move(argValue));
+			// MERGE NOTE: Apple Clang 15 requires braces for aggregate initialization.
+			parsedPath.mParams.emplace_back(ATVFSPathParam {
+				VDHashString32I(argName.data(), argName.size()),
+				std::move(argName), std::move(argValue)
+			});
 
 			if (nextArgPos == args.npos)
 				break;

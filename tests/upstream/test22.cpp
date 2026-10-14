@@ -1,3 +1,4 @@
+#include <stdafx.h>
 #include <vd2/system/VDString.h>
 #include <vd2/system/text.h>
 #include <vd2/system/filesys.h>

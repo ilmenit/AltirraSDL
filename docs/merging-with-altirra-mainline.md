@@ -377,3 +377,11 @@ the offset when setting the print position from a click.
   above Nyquist. Rebuild SPIR-V, DXIL and MSL headers after shader changes.
 - Keep fork-specific changelog entries, autosuggest validity checks, netplay
   seeding, quad POKEY support, bridge tracing and native resource adjustments.
+
+- Construct `ATVFSPathParam` with braces before inserting it into the vector.
+  Apple Clang 15 cannot use the parenthesized aggregate construction inside
+  `emplace_back`. Keep this alongside the same correction for `RenderDot`.
+- Regression sources that include system string headers must include
+  `stdafx.h` first. It supplies the guarded x86/x64 intrinsic declarations
+  required by Windows SDK 10.0.26100 UCRT `wchar.h`, without including x86
+  intrinsics on ARM64.
