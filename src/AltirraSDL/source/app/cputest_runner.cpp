@@ -25,6 +25,7 @@
 //	against the expected final state.  Per the design, only registers
 //	and RAM are verified; cycle counts are ignored.
 
+#include <stdafx.h>
 #include "cputest_runner.h"
 
 #include <stdio.h>
@@ -739,6 +740,43 @@ bool VerifyCycles(const CTTest& t, const std::vector<CycleRecord>& trace,
 	return ok;
 }
 
+// Regression coverage for debugger-driven changes that must also update
+// decode state. These setters are not exercised by the corpus state loader.
+bool VerifyDebuggerSetters(ATCPUTestHarness& cpu, ATCPUTestMemory& mem) {
+	cpu.LoadTestState(0x0200, 0, 0x1234, 0x5678, 0x01FF, 0, 0, 0, 0, 0);
+	cpu.SetP(AT6502::kFlagM);
+	cpu.SetAH(0x9A);
+	if (cpu.GetAH() != 0x9A || cpu.GetXH() != 0x12 || cpu.GetYH() != 0x56)
+		return false;
+	cpu.SetP(AT6502::kFlagX);
+	if (cpu.GetXH() || cpu.GetYH())
+		return false;
+	cpu.SetP(0);
+	mem.Ram()[0x0200] = 0xA9; // LDA immediate, decoded as 16-bit after SetP.
+	mem.Ram()[0x0201] = 0x34;
+	mem.Ram()[0x0202] = 0x12;
+	if (cpu.StepOneInstruction(3) != 0x0203 || cpu.GetA() != 0x34 || cpu.GetAH() != 0x12)
+		return false;
+	for (uint8 emu : {uint8(0), uint8(1)}) {
+		cpu.LoadTestState(0x0200, 0, 0, 0, 0x01FF, 0, 0, 0, 0x30, emu);
+		mem.Ram()[0x0200] = 0xA5; // LDA direct page.
+		mem.Ram()[0x0201] = 0x10;
+		mem.Ram()[0x0010] = 0x49;
+		mem.Ram()[0x0011] = 0x6A;
+		cpu.SetD(1);
+		if (cpu.StepOneInstruction(4) != 0x0202 || cpu.GetA() != 0x6A
+			|| cpu.LastStepCycles() - (cpu.LastStepOverran() ? 1 : 0) != 4)
+			return false;
+		cpu.SetPC(0x0200);
+		cpu.SetD(0);
+		if (cpu.StepOneInstruction(3) != 0x0202 || cpu.GetA() != 0x49
+			|| cpu.LastStepCycles() - (cpu.LastStepOverran() ? 1 : 0) != 3)
+			return false;
+	}
+
+	return true;
+}
+
 // =========================================================================
 // File I/O
 // =========================================================================
@@ -887,6 +925,11 @@ int ATRunCPUTests(const ATCPUTestOptions& opts) {
 	cpu.SetHistoryEnabled(false);
 	cpu.SetStopOnBRK(false);
 	cpu.SetCPUMode(kATCPUMode_65C816, 1);
+	cpu.ColdReset();
+	if (!VerifyDebuggerSetters(cpu, mem)) {
+		printf("cpu-test: debugger setter regression failed\n");
+		return 1;
+	}
 	cpu.ColdReset();
 
 	// In cycle mode, route every CPU bus access through the recording

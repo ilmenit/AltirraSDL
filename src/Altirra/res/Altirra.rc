@@ -321,8 +321,7 @@ BEGIN
             MENUITEM "SpartaDOS (512)",             ID_CONVERTTO_SPARTADOS_512
         END
         MENUITEM SEPARATOR
-        MENUITEM "Mount &folder as virtual DOS 2 disk...", ID_CONTEXT_MOUNTFOLDERDOS2
-        MENUITEM "Mount folder as virtual S&partaDOS disk...", ID_CONTEXT_MOUNTFOLDERSDFS
+        MENUITEM "Mount &folder as virtual disk...", ID_CONTEXT_MOUNTFOLDER
         MENUITEM "Extract boot sectors for virtual DOS 2 disk...", ID_CONTEXT_EXTRACTBOOTSECTORS
         MENUITEM "Recursively expand all .ARChive files...", ID_CONTEXT_EXPANDARCS
     END

@@ -329,35 +329,37 @@ VDParsedPath::VDParsedPath()
 }
 
 VDParsedPath::VDParsedPath(const wchar_t *path) {
-	mbIsRelative = (*path != L'/');
+	mbIsRelative = (*path != L'/' && *path != L'\\');
 	if (!mbIsRelative) {
 		mRoot = L"/";
 		++path;
 	}
 	VDStringW seg;
-	while (*path) {
-		if (*path == L'/' || *path == L'\\') {
-			if (!seg.empty()) {
-				if (seg == L"..") {
-					if (!mComponents.empty()) mComponents.pop_back();
-				} else if (seg != L".") {
-					mComponents.push_back_as(seg.c_str());
-				}
-				seg.clear();
-			}
-		} else {
-			seg += *path;
+	auto appendSegment = [&] {
+		if (seg == L"..") {
+			if (!mComponents.empty() && mComponents.back() != L"..")
+				mComponents.pop_back();
+			else if (mbIsRelative)
+				mComponents.push_back_as(seg.c_str());
+		} else if (!seg.empty() && seg != L".") {
+			mComponents.push_back_as(seg.c_str());
 		}
+		seg.clear();
+	};
+	while (*path) {
+		if (*path == L'/' || *path == L'\\')
+			appendSegment();
+		else
+			seg += *path;
 		++path;
 	}
-	if (!seg.empty() && seg != L".")
-		mComponents.push_back_as(seg.c_str());
+	appendSegment();
 }
 
 VDStringW VDParsedPath::ToString() const {
 	VDStringW result = mRoot;
 	for (size_t i = 0; i < mComponents.size(); ++i) {
-		if (i > 0 || !mRoot.empty()) result += L'/';
+		if (!result.empty() && result.back() != L'/') result += L'/';
 		result += mComponents[i].c_str();
 	}
 	return result;
@@ -686,3 +688,16 @@ bool VDDirectoryIterator::ResolveLinkSize() {
 #include <vd2/system/date.h>
 
 // VDDate is defined in date.h — just provide the stubs needed
+
+// Match the native filesystem API using portable file attributes.
+bool VDDoesDirectoryExist(const wchar_t *path) {
+	const auto attr = VDFileGetAttributes(path);
+	return attr != kVDFileAttr_Invalid && (attr & kVDFileAttr_Directory);
+}
+
+void VDFileNormalizePathSeparators(VDStringW& path) {
+	for (wchar_t& c : path) {
+		if (c == L'\\')
+			c = L'/';
+	}
+}

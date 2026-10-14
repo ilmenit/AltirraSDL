@@ -198,6 +198,10 @@ static std::vector<ATDeferredAction> g_deferredActions;
 static bool g_showToolsResult = false;
 static VDStringA g_toolsResultMessage;
 
+const char *ATUIGetToolsResultMessage() {
+	return g_showToolsResult ? g_toolsResultMessage.c_str() : "";
+}
+
 // Export ROM Set confirmation state
 static bool g_showExportROMOverwrite = false;
 static VDStringW g_exportROMPath;
@@ -338,6 +342,11 @@ void ATUIPollDeferredActions() {
 	}
 
 	for (auto& a : actions) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		// A file picker/confirmation may finish after a session has started.
+		if (a.type == kATDeferred_MountFolder && ATNetplayGlue::IsSessionEngaged())
+			continue;
+#endif
 		try {
 			switch (a.type) {
 			case kATDeferred_BootImage:
@@ -640,11 +649,11 @@ void ATUIPollDeferredActions() {
 			}
 			case kATDeferred_MountFolder: {
 				const int idx = a.mInt & 0xff;
-				const bool sdfs = (a.mInt & 0x100) != 0;
+
 
 				if (idx >= 0 && idx < 15) {
 					ATDiskInterface& diskIf = g_sim.GetDiskInterface(idx);
-					diskIf.MountFolder(a.path.c_str(), sdfs);
+					diskIf.LoadDisk(a.path.c_str());
 
 					ATDiskEmulator& disk = g_sim.GetDiskDrive(idx);
 					if (diskIf.GetClientCount() < 2)
@@ -652,10 +661,13 @@ void ATUIPollDeferredActions() {
 
 					VDStringA path8 = VDTextWToU8(a.path);
 					LOG_INFO("UI", "Mounted folder on D%d: %s (%s)",
-						idx + 1, path8.c_str(), sdfs ? "SDFS" : "DOS2");
+						idx + 1, path8.c_str(), "virtual disk");
 				}
 				break;
 			}
+			case kATDeferred_SelectVirtualFolder:
+				ATUISetVirtualFolderPath(a.path.c_str(), a.mInt);
+				break;
 			case kATDeferred_LoadState: {
 				ATImageLoadContext ctx {};
 				if (g_sim.Load(a.path.c_str(), kATMediaWriteMode_RO, &ctx))

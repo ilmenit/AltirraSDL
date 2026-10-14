@@ -298,6 +298,8 @@ protected:
 	vdfastvector<IDirect3DVertexShader9 *>	mVertexShaders;
 	vdfastvector<IDirect3DPixelShader9 *>	mPixelShaders;
 
+	vdfastvector<Vertex> mVertexWorkspace;
+
 	CubicMode			mCubicMode;
 	int					mCubicRefCount;
 	int					mCubicTempSurfacesRefCount;
@@ -960,22 +962,6 @@ bool VDVideoDisplayDX9Manager::RunEffect2(const EffectContext& ctx, const nsVDDi
 	if (clippedWidth <= 0 || clippedHeight <= 0)
 		return true;
 
-	struct StdParamData {
-		float vpsize[4];			// (viewport size)			vpwidth, vpheight, 1/vpheight, 1/vpwidth
-		float srcsize[4];			// (source size)			srcwidth, srcheight, 1/srcheight, 1/srcwidth
-		float texsize[4];			// (texture size)			texwidth, texheight, 1/texheight, 1/texwidth
-		float tex2size[4];			// (texture2 size)			tex2width, tex2height, 1/tex2height, 1/tex2width
-		float tempsize[4];			// (temp rtt size)			tempwidth, tempheight, 1/tempheight, 1/tempwidth
-		float interphtexsize[4];	// (cubic htex interp info)
-		float interpvtexsize[4];	// (cubic vtex interp info)
-		float interptexsize[4];		// (interp tex info)
-		float srcarea[4];			// (source area in texels)	u1, v1, u2, v2
-		float chromauvscale[4];		// (chroma UV scale)		U scale, V scale, und, und
-		float chromauvoffset[4];	// (chroma UV offset)		U offset, V offset, und, und
-		float pixelsharpness[4];	// (pixel sharpness)		X factor, Y factor, ?, ?
-		float outputxform[4];		// (output transform)		X scale, Y scale, Y offset, X offset (maps 0-1 to output area,includes half pixel offset)
-	};
-
 	VDASSERT(ctx.mOutputW);
 	VDASSERT(ctx.mOutputH);
 	VDASSERT(ctx.mSourceTexW);
@@ -1274,30 +1260,35 @@ bool VDVideoDisplayDX9Manager::RunEffect2(const EffectContext& ctx, const nsVDDi
 		const int numVertices = (ctx.mOutputTessellationX + 1) * (ctx.mOutputTessellationY + 1);
 		bool tessellated = false;
 		if (ctx.mOutputTessellationX > 1 || ctx.mOutputTessellationY > 1) {
-			if (Vertex *pvx = mpManager->LockVertices(numVertices)) {
-				vd_seh_guard_try {
-					for(int y = 0; y <= ctx.mOutputTessellationY; ++y) {
-						const float yf1 = (float)y / (float)ctx.mOutputTessellationY;
-						const float yf0 = 1.0f - yf1;
+			mVertexWorkspace.resize(numVertices);
 
-						for(int x = 0; x <= ctx.mOutputTessellationX; ++x) {
-							const float xf1 = (float)x / (float)ctx.mOutputTessellationX;
-							const float xf0 = 1.0f - xf1;
+			Vertex *VDRESTRICT dst = mVertexWorkspace.data();
 
-							(pvx++)->SetFF2(
-								x0*xf0 + x1*xf1,
-								y0*yf0 + y1*yf1,
-								0xFFFFFFFF,
-								u0*xf0 + u1*xf1,
-								v0*yf0 + v1*yf1,
-								u2*xf0 + u3*xf1,
-								v2*yf0 + v3*yf1
-							);
-						}
-					}
-				} vd_seh_guard_except {
-					validDraw = false;
+			for(int y = 0; y <= ctx.mOutputTessellationY; ++y) {
+				const float yf1 = (float)y / (float)ctx.mOutputTessellationY;
+				const float yf0 = 1.0f - yf1;
+
+				for(int x = 0; x <= ctx.mOutputTessellationX; ++x) {
+					const float xf1 = (float)x / (float)ctx.mOutputTessellationX;
+					const float xf0 = 1.0f - xf1;
+
+					(dst++)->SetFF2(
+						x0*xf0 + x1*xf1,
+						y0*yf0 + y1*yf1,
+						0xFFFFFFFF,
+						u0*xf0 + u1*xf1,
+						v0*yf0 + v1*yf1,
+						u2*xf0 + u3*xf1,
+						v2*yf0 + v3*yf1
+					);
 				}
+			}
+
+			if (ctx.mVertexProcessor)
+				(*ctx.mVertexProcessor)(mVertexWorkspace, data);
+
+			if (Vertex *pvx = mpManager->LockVertices(numVertices)) {
+				validDraw = VDMemcpyGuarded(pvx, mVertexWorkspace.data(), sizeof(Vertex) * numVertices);
 
 				mpManager->UnlockVertices();
 			} else {
@@ -2307,6 +2298,7 @@ protected:
 	float mCachedScanlineOutY = 0;
 	float mCachedScanlineOutH = 0;
 	float mCachedScanlineIntensity = 0;
+	bool mbCachedScanlineWrapMapped = false;
 
 	vdrefptr<IDirect3DTexture9> mpD3DScreenMaskTexture;
 	uint32 mCachedScreenMaskSrcW = 0;
@@ -3801,19 +3793,28 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 				}
 
 				// rebuild the scanline texture if necessary
+				const bool useDistortion = mScreenFXInfo.mDistortionX > 0;
+				const bool useScanlineWrapMapping = useDistortion;
+
 				if (scanlinesEnabled && (!mpD3DScanlineMaskTexture
 					|| maskVertChanged
-					|| mCachedScanlineIntensity != mScreenFXInfo.mScanlineIntensity))
+					|| mCachedScanlineIntensity != mScreenFXInfo.mScanlineIntensity
+					|| mbCachedScanlineWrapMapped != useScanlineWrapMapping
+					))
 				{
 					vdsaferelease <<= mpD3DScanlineMaskTexture;
 
-					const int texh = mScreenMaskTexH;
+					const int texh = useScanlineWrapMapping ? 256 : mScreenMaskTexH;
 
 					vdrefptr<IVDD3D9InitTexture> initTex;
 					if (mpManager->CreateInitTexture(1, texh, 1, D3DFMT_A8R8G8B8, ~initTex)) {
 						VDD3D9LockInfo lockInfo;
 						if (initTex->Lock(0, lockInfo)) {
-							VDDisplayCreateScanlineMaskTexture((uint32 *)lockInfo.mpData, lockInfo.mPitch, ctx.mSourceH, mDrawRect.height(), ctx.mOutputY, ctx.mOutputH, texh, mScreenFXInfo.mScanlineIntensity, false);
+							if (useScanlineWrapMapping)
+								VDDisplayCreateScanlineMaskTexture((uint32 *)lockInfo.mpData, lockInfo.mPitch, 1.0f, 256.0f, 0, 256.0f, texh, mScreenFXInfo.mScanlineIntensity, false, false);
+							else
+								VDDisplayCreateScanlineMaskTexture((uint32 *)lockInfo.mpData, lockInfo.mPitch, ctx.mSourceH, mDrawRect.height(), ctx.mOutputY, ctx.mOutputH, texh, mScreenFXInfo.mScanlineIntensity, true, false);
+
 							initTex->Unlock(0);
 
 							vdrefptr<IVDD3D9Texture> tex;
@@ -3821,6 +3822,7 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 								mpD3DScanlineMaskTexture = tex->GetD3DTexture();
 
 								mCachedScanlineIntensity = mScreenFXInfo.mScanlineIntensity;
+								mbCachedScanlineWrapMapped = useDistortion;
 							} else {
 								bSuccess = false;
 							}
@@ -3914,7 +3916,11 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 					vdsaferelease <<= mpD3DScreenMaskTexture;
 				}
 
-				static constexpr const TechniqueInfo *kTechniques[2][2][4] = {
+				static constexpr const TechniqueInfo *kTechniques
+					[2]		// sharp
+					[3]		// scanline mode
+					[4]		// color mode
+				{
 					{
 						{
 							&g_technique_screenfx_ptlinear_noscanlines_linear,
@@ -3927,6 +3933,12 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 							&g_technique_screenfx_ptlinear_scanlines_gamma,
 							&g_technique_screenfx_ptlinear_scanlines_cc,
 							&g_technique_screenfx_ptlinear_scanlines_mask_cc
+						},
+						{
+							&g_technique_screenfx_ptlinear_scanlines_linear_distort,
+							&g_technique_screenfx_ptlinear_scanlines_gamma_distort,
+							&g_technique_screenfx_ptlinear_scanlines_cc_distort,
+							&g_technique_screenfx_ptlinear_scanlines_mask_cc_distort
 						},
 					},
 					{
@@ -3942,10 +3954,15 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 							&g_technique_screenfx_sharp_scanlines_cc,
 							&g_technique_screenfx_sharp_scanlines_mask_cc
 						},
+						{
+							&g_technique_screenfx_sharp_scanlines_linear_distort,
+							&g_technique_screenfx_sharp_scanlines_gamma_distort,
+							&g_technique_screenfx_sharp_scanlines_cc_distort,
+							&g_technique_screenfx_sharp_scanlines_mask_cc_distort
+						},
 					},
 				};
 
-				const bool useDistortion = mScreenFXInfo.mDistortionX > 0;
 				const bool useSharpBilinear = mPixelSharpnessX > 1 || mPixelSharpnessY > 1;
 				const bool useScanlines = mScreenFXInfo.mScanlineIntensity > 0.0f;
 				const bool useScreenMask = mScreenFXInfo.mScreenMaskParams.mType != VDDScreenMaskType::None;
@@ -3954,15 +3971,28 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 
 				struct VSConstants {
 					float mScanlineInfo[4];
+					float mMaskInfo[4];
 					float mDistortionInfo[4];
 					float mDistortionScales[4];
-					float mImageUVSize[4];
+					float mSrcUVArea[4];
 				} vsConstants {};
 
-				vsConstants.mScanlineInfo[0] = mCachedMaskHScale;
-				vsConstants.mScanlineInfo[1] = mCachedMaskVScale;
-				vsConstants.mScanlineInfo[2] = mCachedMaskVBase;
-				vsConstants.mScanlineInfo[3] = mCachedMaskHBase;
+				if (useScanlineWrapMapping) {
+					vsConstants.mScanlineInfo[0] = 0.0f;
+					vsConstants.mScanlineInfo[1] = ctx.mSourceH;
+					vsConstants.mScanlineInfo[2] = 0.0f;
+					vsConstants.mScanlineInfo[3] = 0.0f;
+				} else {
+					vsConstants.mScanlineInfo[0] = mCachedMaskHScale;
+					vsConstants.mScanlineInfo[1] = mCachedMaskVScale;
+					vsConstants.mScanlineInfo[2] = mCachedMaskVBase;
+					vsConstants.mScanlineInfo[3] = mCachedMaskHBase;
+				}
+
+				vsConstants.mMaskInfo[0] = mCachedMaskHScale;
+				vsConstants.mMaskInfo[1] = mCachedMaskVScale;
+				vsConstants.mMaskInfo[2] = mCachedMaskVBase;
+				vsConstants.mMaskInfo[3] = mCachedMaskHBase;
 				vsConstants.mDistortionInfo[0] = 1.0f;
 				vsConstants.mDistortionInfo[1] = useDistortion ? -0.5f : 0.0f;
 
@@ -3973,10 +4003,10 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 				vsConstants.mDistortionScales[1] = distortionMapping.mScaleY;
 				vsConstants.mDistortionScales[2] = distortionMapping.mSqRadius;
 
-				vsConstants.mImageUVSize[0] = useSharpBilinear ? (float)ctx.mSourceW : (float)ctx.mSourceW / (float)ctx.mSourceTexW;
-				vsConstants.mImageUVSize[1] = useSharpBilinear ? (float)ctx.mSourceH : (float)ctx.mSourceH / (float)ctx.mSourceTexH;
-				vsConstants.mImageUVSize[2] = useScanlines ? useSharpBilinear ? 0.25f : 0.25f / (float)ctx.mSourceTexH : 0.0f;
-				vsConstants.mImageUVSize[3] = 0;
+				vsConstants.mSrcUVArea[0] = useSharpBilinear ? (float)ctx.mSourceW : (float)ctx.mSourceW / (float)ctx.mSourceTexW;
+				vsConstants.mSrcUVArea[1] = useSharpBilinear ? (float)ctx.mSourceH : (float)ctx.mSourceH / (float)ctx.mSourceTexH;
+				vsConstants.mSrcUVArea[2] = useScanlines ? useSharpBilinear ? 0.25f : 0.25f / (float)ctx.mSourceTexH : 0.0f;
+				vsConstants.mSrcUVArea[3] = 0;
 
 				struct PSConstants {
 					float mSharpnessInfo[4];
@@ -3994,10 +4024,10 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 				psConstants.mDistortionScales[1] = vsConstants.mDistortionScales[1];
 				psConstants.mDistortionScales[2] = vsConstants.mDistortionScales[2];
 
-				psConstants.mImageUVSize[0] = vsConstants.mImageUVSize[0];
-				psConstants.mImageUVSize[1] = vsConstants.mImageUVSize[1];
-				psConstants.mImageUVSize[2] = vsConstants.mImageUVSize[2];
-				psConstants.mImageUVSize[3] = vsConstants.mImageUVSize[3];
+				psConstants.mImageUVSize[0] = vsConstants.mSrcUVArea[0];
+				psConstants.mImageUVSize[1] = vsConstants.mSrcUVArea[1];
+				psConstants.mImageUVSize[2] = vsConstants.mSrcUVArea[2];
+				psConstants.mImageUVSize[3] = vsConstants.mSrcUVArea[3];
 
 				psConstants.mDistortionScales[0] = distortionMapping.mScaleX;
 				psConstants.mDistortionScales[1] = distortionMapping.mScaleY;
@@ -4060,16 +4090,46 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 					ctx.mUV0Scale = vdfloat2{(float)ctx.mSourceTexW, (float)ctx.mSourceTexH};
 				}
 
-				const TechniqueInfo& technique = *kTechniques[useSharpBilinear][useScanlines][useScreenMask ? 3 : useColorCorrection ? 2 : useGammaCorrection ? 1 : 0];
+				const size_t scanlineMode = useScanlines ? useDistortion ? 2 : 1 : 0;
+				const TechniqueInfo& technique = *kTechniques[useSharpBilinear][scanlineMode][useScreenMask ? 3 : useColorCorrection ? 2 : useGammaCorrection ? 1 : 0];
+				vdfunction<void(vdspan<nsVDD3D9::Vertex> vx, const IVDVideoDisplayDX9Manager::StdParamData& data)> vertexProcessor;
+
+				const auto distortionProcessor = [&](vdspan<nsVDD3D9::Vertex> vxs, const IVDVideoDisplayDX9Manager::StdParamData& data) {
+					for(nsVDD3D9::Vertex& vx : vxs) {
+						vdfloat2 v = vdfloat2 { vx.u1, vx.v1 } - vdfloat2 { 0.5f, 0.5f };
+						vdfloat2 v2 = v * vdfloat2 { distortionMapping.mScaleX, distortionMapping.mScaleY };
+						vdfloat2 pos = v * sqrtf(distortionMapping.mSqRadius / (1.0f + nsVDMath::dot(v2, v2))) + vdfloat2 { 0.5f, 0.5f };
+
+						float xmul = data.outputxform[0];
+						float ymul = data.outputxform[1];
+						float xadd = data.outputxform[3];
+						float yadd = data.outputxform[2];
+
+						vx.x = pos.x * xmul + xadd;
+						vx.y = pos.y * ymul + yadd;
+						vx.u0 = pos.x;
+						vx.v0 = pos.y;
+					}
+				};
 
 				if (useDistortion) {
 					ctx.mbOutputClear = true;
 					ctx.mOutputTessellationX = 24;
 					ctx.mOutputTessellationY = 24;
+
+					vertexProcessor = [&](vdspan<nsVDD3D9::Vertex> vxs, const IVDVideoDisplayDX9Manager::StdParamData& data) {
+						distortionProcessor(vxs, data);
+					};
 				}
 
 				if (!mScreenFXInfo.mbBloomEnabled) {
+
+					if (vertexProcessor)
+						ctx.mVertexProcessor = &vertexProcessor;
+
 					bSuccess = mpVideoManager->RunEffect(ctx, technique, pRTMain);
+
+					ctx.mVertexProcessor = nullptr;
 				} else {
 					// compute input and pyramid level sizes
 					vdsize32 inputSize(destW, destH);
@@ -4197,7 +4257,13 @@ bool VDVideoDisplayMinidriverDX9::UpdateBackbuffer(const RECT& rClient0, UpdateM
 					if (bSuccess) {
 						vdrefptr<IDirect3DSurface9> inputSurface;
 						hr = mpD3DBloomInputRTT->GetSurfaceLevel(0, ~inputSurface);
+
+						if (vertexProcessor)
+							ctx2.mVertexProcessor = &vertexProcessor;
+
 						bSuccess = SUCCEEDED(hr) && mpVideoManager->RunEffect(ctx2, technique, inputSurface);
+
+						ctx2.mVertexProcessor = nullptr;
 					}
 
 					// input conversion

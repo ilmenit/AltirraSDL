@@ -29,6 +29,7 @@
 
 class IATUIRenderer;
 class IATDiskImage;
+class IATVirtualDiskImage;
 
 // ATDiskInterface
 //
@@ -96,7 +97,9 @@ public:
 	bool CanRevert() const;
 	bool RevertDisk();
 
-	void MountFolder(const wchar_t *path, bool sdfs);
+	void MountFolder(const IATVirtualDiskImage& vdiskImage);
+	void MountFolder(const wchar_t *path, bool sdfs, uint32 sectorCount = 0, uint32 sectorSize = 0);
+
 	void LoadDisk(const wchar_t *s);
 	void LoadDisk(const wchar_t *origPath, const wchar_t *imagePath, IATDiskImage *image);
 

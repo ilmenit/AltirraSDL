@@ -26,6 +26,10 @@ struct IDirect3DTexture9;
 class IVDVideoDisplayDX9Manager;
 class VDD3D9Manager;
 
+namespace nsVDD3D9 {
+	struct Vertex;
+}
+
 namespace nsVDDisplay {
 	struct TechniqueInfo;
 }
@@ -62,69 +66,88 @@ public:
 		kMaxCubicMode = kCubicUsePS2_0Path
 	};
 
+	struct StdParamData {
+		float vpsize[4];			// (viewport size)			vpwidth, vpheight, 1/vpheight, 1/vpwidth
+		float srcsize[4];			// (source size)			srcwidth, srcheight, 1/srcheight, 1/srcwidth
+		float texsize[4];			// (texture size)			texwidth, texheight, 1/texheight, 1/texwidth
+		float tex2size[4];			// (texture2 size)			tex2width, tex2height, 1/tex2height, 1/tex2width
+		float tempsize[4];			// (temp rtt size)			tempwidth, tempheight, 1/tempheight, 1/tempwidth
+		float interphtexsize[4];	// (cubic htex interp info)
+		float interpvtexsize[4];	// (cubic vtex interp info)
+		float interptexsize[4];		// (interp tex info)
+		float srcarea[4];			// (source area in texels)	u1, v1, u2, v2
+		float chromauvscale[4];		// (chroma UV scale)		U scale, V scale, und, und
+		float chromauvoffset[4];	// (chroma UV offset)		U offset, V offset, und, und
+		float pixelsharpness[4];	// (pixel sharpness)		X factor, Y factor, ?, ?
+		float outputxform[4];		// (output transform)		X scale, Y scale, Y offset, X offset (maps 0-1 to output area,includes half pixel offset)
+	};
+
+
 	struct EffectContext {
-		IDirect3DTexture9 *mpSourceTexture1;
-		IDirect3DTexture9 *mpSourceTexture2;
-		IDirect3DTexture9 *mpSourceTexture3;
-		IDirect3DTexture9 *mpSourceTexture4;
-		IDirect3DTexture9 *mpSourceTexture5;
-		IDirect3DTexture9 *mpPaletteTexture;
-		IDirect3DTexture9 *mpInterpFilterH;
-		IDirect3DTexture9 *mpInterpFilterV;
-		IDirect3DTexture9 *mpInterpFilter;
-		uint32 mSourceW;
-		uint32 mSourceH;
-		uint32 mSourceTexW;
-		uint32 mSourceTexH;
-		float mInterpHTexW;
-		float mInterpHTexH;
-		float mInterpVTexW;
-		float mInterpVTexH;
-		uint32 mInterpTexW;
-		uint32 mInterpTexH;
+		IDirect3DTexture9 *mpSourceTexture1 = nullptr;
+		IDirect3DTexture9 *mpSourceTexture2 = nullptr;
+		IDirect3DTexture9 *mpSourceTexture3 = nullptr;
+		IDirect3DTexture9 *mpSourceTexture4 = nullptr;
+		IDirect3DTexture9 *mpSourceTexture5 = nullptr;
+		IDirect3DTexture9 *mpPaletteTexture = nullptr;
+		IDirect3DTexture9 *mpInterpFilterH = nullptr;
+		IDirect3DTexture9 *mpInterpFilterV = nullptr;
+		IDirect3DTexture9 *mpInterpFilter = nullptr;
+		uint32 mSourceW = 0;
+		uint32 mSourceH = 0;
+		uint32 mSourceTexW = 0;
+		uint32 mSourceTexH = 0;
+		float mInterpHTexW = 0;
+		float mInterpHTexH = 0;
+		float mInterpVTexW = 0;
+		float mInterpVTexH = 0;
+		uint32 mInterpTexW = 0;
+		uint32 mInterpTexH = 0;
 
 		/// Source rect.
-		vdrect32f mSourceArea;
+		vdrect32f mSourceArea { 0.0f, 0.0f, 0.0f, 0.0f };
 
 		/// Output viewport.
-		int mViewportX;
-		int mViewportY;
-		int mViewportW;
-		int mViewportH;
+		int mViewportX = 0;
+		int mViewportY = 0;
+		int mViewportW = 0;
+		int mViewportH = 0;
 
 		/// Desired output width and height. May extend outside of viewport, in which case clipping is desired.
-		float mOutputX;
-		float mOutputY;
-		float mOutputW;
-		float mOutputH;
+		float mOutputX = 0;
+		float mOutputY = 0;
+		float mOutputW = 0;
+		float mOutputH = 0;
 
 		bool mbOutputClear = false;
 		int mOutputTessellationX = 1;
 		int mOutputTessellationY = 1;
 
-		float mDefaultUVScaleCorrectionX;
-		float mDefaultUVScaleCorrectionY;
+		float mDefaultUVScaleCorrectionX = 0;
+		float mDefaultUVScaleCorrectionY = 0;
 
-		float mChromaScaleU;
-		float mChromaScaleV;
-		float mChromaOffsetU;
-		float mChromaOffsetV;
+		float mChromaScaleU = 0;
+		float mChromaScaleV = 0;
+		float mChromaOffsetU = 0;
+		float mChromaOffsetV = 0;
 
-		float mPixelSharpnessX;
-		float mPixelSharpnessY;
+		float mPixelSharpnessX = 0;
+		float mPixelSharpnessY = 0;
 
-		bool mbHighPrecision;
+		bool mbHighPrecision = false;
 
 		// If enabled, map 'autobilinear' samplers to bilinear instead of point.
-		bool mbAutoBilinear;
+		bool mbAutoBilinear = false;
 
-		bool mbUseUV0Scale;
-		bool mbUseUV0Area;
-		bool mbUseUV1Area;
+		bool mbUseUV0Scale = false;
+		bool mbUseUV0Area = false;
+		bool mbUseUV1Area = false;
 
-		vdfloat2 mUV0Scale;
-		vdrect32f mUV0Area;
-		vdrect32f mUV1Area;
+		vdfloat2 mUV0Scale { 0.0f, 0.0f };
+		vdrect32f mUV0Area { 0.0f, 0.0f, 0.0f, 0.0f };
+		vdrect32f mUV1Area { 0.0f, 0.0f, 0.0f, 0.0f };
+
+		const vdfunction<void(vdspan<nsVDD3D9::Vertex> vxs, const StdParamData& data)> *mVertexProcessor = nullptr;
 	};
 
 	virtual bool IsPS20Enabled() const = 0;

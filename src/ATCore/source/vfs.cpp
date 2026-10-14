@@ -22,6 +22,7 @@
 #include <stdafx.h>
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
+#include <vd2/system/hash.h>
 #include <vd2/system/strutil.h>
 #include <vd2/system/zip.h>
 #include <at/atcore/vfs.h>
@@ -37,6 +38,11 @@ ATInvalidVFSPathException::ATInvalidVFSPathException(const wchar_t *badPath)
 
 ATUnsupportedVFSPathException::ATUnsupportedVFSPathException(const wchar_t *badPath)
 	: VDException(L"Unsupported VFS path: %s.", badPath)
+{
+}
+
+ATUnsupportedVFSPathDiskOnlyException::ATUnsupportedVFSPathDiskOnlyException(const wchar_t *badPath)
+	: VDException(L"VFS path can only be used for a disk image and not a file: %s.", badPath)
 {
 }
 
@@ -72,7 +78,7 @@ ATVFSNotAvailableException::ATVFSNotAvailableException(const wchar_t *path)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool ATDecodeVFSPath(VDStringW& dst, const VDStringSpanW& src) {
+bool ATDecodeVFSString(VDStringW& dst, const VDStringSpanW& src, bool decodeAsQuery) {
 	auto it = src.begin();
 	const auto itEnd = src.end();
 
@@ -154,6 +160,10 @@ bool ATDecodeVFSPath(VDStringW& dst, const VDStringSpanW& src) {
 			// check for unterminated UTF-8 sequence
 			if (extsleft)
 				return false;
+
+			// for a query string specifically, convert + to space
+			if (c == L'+' && decodeAsQuery)
+				c = L' ';
 		}
 
 		dst += c;
@@ -166,7 +176,7 @@ bool ATDecodeVFSPath(VDStringW& dst, const VDStringSpanW& src) {
 	return true;
 }
 
-void ATEncodeVFSPath(VDStringW& dst, const VDStringSpanW& src, bool filepath) {
+void ATEncodeVFSString(VDStringW& dst, const VDStringSpanW& src, bool filepath) {
 	uint32 surrogateOffset = 0;
 
 	for(wchar_t cw : src) {
@@ -188,24 +198,26 @@ void ATEncodeVFSPath(VDStringW& dst, const VDStringSpanW& src, bool filepath) {
 		if (filepath && c == L'\\')
 			c = L'/';
 
+		// Apply URL escaping according to RFC3986.
 		bool escapingNeeded = false;
 		switch(c) {
-			case 0x21:
-			case 0x23:
-			case 0x24:
-			case 0x26:
-			case 0x27:
-			case 0x28:
-			case 0x29:
-			case 0x2A:
-			case 0x2B:
-			case 0x2C:
-			case 0x3B:
-			case 0x3D:
-			case 0x3F:
-			case 0x40:
-			case 0x5B:
-			case 0x5D:
+			case 0x21:	// !
+			case 0x23:	// #
+			case 0x24:	// $
+			case 0x25:	// %
+			case 0x26:	// &
+			case 0x27:	// '
+			case 0x28:	// (
+			case 0x29:	// )
+			case 0x2A:	// *
+			case 0x2B:	// +
+			case 0x2C:	// ,
+			case 0x3B:	// ;
+			case 0x3D:	// =
+			case 0x3F:	// ?
+			case 0x40:	// @
+			case 0x5B:	// [
+			case 0x5D:	// ]
 				escapingNeeded = true;
 				break;
 
@@ -231,77 +243,160 @@ void ATEncodeVFSPath(VDStringW& dst, const VDStringSpanW& src, bool filepath) {
 	}
 }
 
-ATVFSProtocol ATParseVFSPath(const wchar_t *s, VDStringW& basePath, VDStringW& subPath) {
+const wchar_t *ATVFSParsedPath::FindParam(const wchar_t *name, const wchar_t *defaultValue) const {
+	uint32 nameHash = VDHashString32I(name);
+
+	for(const ATVFSPathParam& param : mParams) {
+		if (param.mNameHash == nameHash && param.mName.comparei(name) == 0)
+			return param.mValue.c_str();
+	}
+
+	return defaultValue;
+}
+
+ATVFSProtocol ATParseVFSPath(const wchar_t *s, VDStringW& basePath, VDStringW& subPath, ATVFSPathParams* params) {
+	ATVFSParsedPath parsedPath = ATParseVFSPath(s);
+
+	if (!parsedPath.IsValid())
+		return kATVFSProtocol_None;
+
+	basePath = std::move(parsedPath.mBasePath);
+	subPath = std::move(parsedPath.mSubPath);
+
+	if (params)
+		*params = std::move(parsedPath.mParams);
+
+	return parsedPath.mProtocol;
+}
+
+ATVFSParsedPath ATParseVFSPath(const wchar_t *s) {
+	ATVFSParsedPath parsedPath;
+
 	// check for a protocol
 	const wchar_t *colon = wcschr(s, ':');
 	if (!colon || colon - s < 2 || colon[1] != '/' || colon[2] != '/') {
 		// no protocol -- assume it's a straight path
-		basePath = s;
-		return kATVFSProtocol_File;
+		parsedPath.mProtocol = kATVFSProtocol_File;
+		parsedPath.mBasePath = VDFileGetCanonicalPath(s);
+
+		return parsedPath;
+	}
+
+	// check for arguments
+	VDStringSpanW relPath(colon + 3);
+
+	auto argPos = relPath.rfind('?');
+	if (argPos != relPath.npos) {
+		// split off the arguments
+		VDStringSpanW args = relPath.subspan(argPos + 1);
+		relPath = relPath.subspan(0, argPos);
+
+		// parse the arguments; if no arguments were requested, validate but discard
+		while(!args.empty()) {
+			const auto nextArgPos = args.find(L'&');
+			const VDStringSpanW arg = args.subspan(0, nextArgPos);
+
+			const auto argSplitPos = arg.find(L'=');
+			if (argSplitPos == arg.npos)
+				return ATVFSParsedPath();
+
+			VDStringSpanW argRawName = arg.subspan(0, argSplitPos);
+			VDStringSpanW argRawValue = arg.subspan(argSplitPos + 1);
+
+			VDStringW argName;
+			VDStringW argValue;
+			if (!ATDecodeVFSString(argName, argRawName, true) || !ATDecodeVFSString(argValue, argRawValue, true))
+				return ATVFSParsedPath();
+
+			// MERGE NOTE: Apple Clang 15 requires braces for aggregate initialization.
+			parsedPath.mParams.emplace_back(ATVFSPathParam {
+				VDHashString32I(argName.data(), argName.size()),
+				std::move(argName), std::move(argValue)
+			});
+
+			if (nextArgPos == args.npos)
+				break;
+
+			args = args.subspan(nextArgPos + 1);
+		}
 	}
 
 	const VDStringSpanW protocol(s, colon);
 
 	if (protocol == L"file") {
-		if (colon[3] != L'/')
-			return kATVFSProtocol_None;
+		// file:// URLs must use a null hostname, so only file:/// is accepted.
+		if (relPath.empty() || relPath[0] != L'/')
+			return ATVFSParsedPath();
 
-		if (!ATDecodeVFSPath(basePath, VDStringSpanW(colon + 4)))
-			return kATVFSProtocol_None;
+		// MERGE NOTE: retain the absolute root on POSIX; Windows file:///C:
+		// has a URL separator before the drive letter.
+#ifdef _WIN32
+		const auto filePath = relPath.subspan(1);
+#else
+		const auto filePath = relPath;
+#endif
+		if (!ATDecodeVFSString(parsedPath.mBasePath, filePath))
+			return ATVFSParsedPath();
 
-		// convert forward slashes to back slashes
-		for(auto& c : basePath) {
-			if (c == L'/')
-				c = L'\\';
-		}
+		// normalize path separators to OS convention
+		parsedPath.mBasePath = VDFileGetCanonicalPath(parsedPath.mBasePath.c_str());
 
-		return kATVFSProtocol_File;
+		parsedPath.mProtocol = kATVFSProtocol_File;
 	} else if (protocol == L"zip") {
-		const wchar_t *zipPathStart = colon + 3;
-		const wchar_t *zipPathEnd = wcsrchr(zipPathStart, L'!');
+		const auto splitPos = relPath.rfind(L'!');
 
-		if (!zipPathEnd)
-			return kATVFSProtocol_None;
+		if (splitPos == relPath.npos)
+			return ATVFSParsedPath();
 
-		if (!ATDecodeVFSPath(basePath, VDStringSpanW(zipPathStart, zipPathEnd)))
-			return kATVFSProtocol_None;
+		if (!ATDecodeVFSString(parsedPath.mBasePath, relPath.subspan(0, splitPos)))
+			return ATVFSParsedPath();
 
-		if (!ATDecodeVFSPath(subPath, VDStringSpanW(zipPathEnd + 1)))
-			return kATVFSProtocol_None;
+		if (!ATDecodeVFSString(parsedPath.mSubPath, relPath.subspan(splitPos + 1)))
+			return ATVFSParsedPath();
 
-		return kATVFSProtocol_Zip;
+		parsedPath.mProtocol = kATVFSProtocol_Zip;
 	} else if (protocol == L"gz") {
-		if (!ATDecodeVFSPath(basePath, VDStringSpanW(colon + 3)))
-			return kATVFSProtocol_None;
+		if (!ATDecodeVFSString(parsedPath.mBasePath, relPath))
+			return ATVFSParsedPath();
 
-		return kATVFSProtocol_GZip;
+		parsedPath.mProtocol = kATVFSProtocol_GZip;
 	} else if (protocol == L"atfs") {
-		const wchar_t *fsPathStart = colon + 3;
-		const wchar_t *fsPathEnd = wcsrchr(fsPathStart, L'!');
+		const auto splitPos = relPath.rfind(L'!');
 
-		if (!fsPathEnd)
-			return kATVFSProtocol_None;
+		if (splitPos == relPath.npos)
+			return ATVFSParsedPath();
 
-		if (!ATDecodeVFSPath(basePath, VDStringSpanW(fsPathStart, fsPathEnd)))
-			return kATVFSProtocol_None;
+		if (!ATDecodeVFSString(parsedPath.mBasePath, relPath.subspan(0, splitPos)))
+			return ATVFSParsedPath();
 
-		if (!ATDecodeVFSPath(subPath, VDStringSpanW(fsPathEnd + 1)))
-			return kATVFSProtocol_None;
+		if (!ATDecodeVFSString(parsedPath.mSubPath, relPath.subspan(splitPos + 1)))
+			return ATVFSParsedPath();
 
-		return kATVFSProtocol_Atfs;
+		parsedPath.mProtocol = kATVFSProtocol_Atfs;
 	} else if (protocol == L"blob") {
-		if (colon[3] && g_ATVFSBlobHandler) {
-			basePath = colon + 3;
-			return kATVFSProtocol_Blob;
+		if (!relPath.empty() && g_ATVFSBlobHandler) {
+			if (!ATDecodeVFSString(parsedPath.mBasePath, relPath))
+				return ATVFSParsedPath();
+
+			parsedPath.mProtocol = kATVFSProtocol_Blob;
 		}
 	} else if (protocol == L"special") {
-		if (colon[3] && g_ATVFSSpecialHandler) {
-			basePath = colon + 3;
-			return kATVFSProtocol_Special;
+		if (!relPath.empty() && g_ATVFSSpecialHandler) {
+			if (!ATDecodeVFSString(parsedPath.mBasePath, relPath))
+				return ATVFSParsedPath();
+
+			parsedPath.mProtocol = kATVFSProtocol_Special;
+		}
+	} else if (protocol == L"atvdisk") {
+		if (!relPath.empty()) {
+			if (!ATDecodeVFSString(parsedPath.mBasePath, relPath))
+				return ATVFSParsedPath();
+
+			parsedPath.mProtocol = kATVFSProtocol_Atvdisk;
 		}
 	}
 
-	return kATVFSProtocol_None;
+	return parsedPath;
 }
 
 VDStringW ATMakeVFSPath(ATVFSProtocol protocol, const wchar_t *basePath, const wchar_t *subPath) {
@@ -320,14 +415,14 @@ VDStringW ATMakeVFSPath(ATVFSProtocol protocol, const wchar_t *basePath, const w
 		else
 			path = L"atfs://";
 
-		ATEncodeVFSPath(path, VDStringSpanW(basePath), true);
+		ATEncodeVFSString(path, VDStringSpanW(basePath), true);
 		path += L'!';
 
-		ATEncodeVFSPath(path, VDStringSpanW(subPath), true);
+		ATEncodeVFSString(path, VDStringSpanW(subPath), true);
 	} else if (protocol == kATVFSProtocol_GZip) {
 		path = L"gz://";
 
-		ATEncodeVFSPath(path, VDStringSpanW(basePath), true);
+		ATEncodeVFSString(path, VDStringSpanW(basePath), true);
 	}
 
 	return path;
@@ -357,7 +452,7 @@ VDStringW ATMakeVFSPath(const wchar_t *protocolAndBasePath, const wchar_t *relat
 		if (path.back() != '/')
 			path += '/';
 
-		ATEncodeVFSPath(path, VDStringSpanW(relativePath), true);
+		ATEncodeVFSString(path, VDStringSpanW(relativePath), true);
 		return path;
 	} else {
 		return VDMakePath(protocolAndBasePath, relativePath);
@@ -578,21 +673,23 @@ void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, ATVFSFileView **viewO
 }
 
 void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, bool update, ATVFSFileView **viewOut) {
-	VDStringW basePath;
-	VDStringW subPath;
-	ATVFSProtocol protocol = ATParseVFSPath(vfsPath, basePath, subPath);
+	const ATVFSParsedPath& parsedPath = ATParseVFSPath(vfsPath);
 
-	if (!protocol)
+	*viewOut = ATVFSOpenFileView(vfsPath, parsedPath, write, update).release();
+}
+
+vdrefptr<ATVFSFileView> ATVFSOpenFileView(const wchar_t *vfsPath, const ATVFSParsedPath& parsedPath, bool write, bool update) {
+	if (!parsedPath.IsValid())
 		throw ATInvalidVFSPathException(vfsPath);
 
 	vdrefptr<ATVFSFileView> view;
 
 	try {
-		switch(protocol) {
+		switch(parsedPath.mProtocol) {
 			case kATVFSProtocol_File:
-				view = new ATVFSFileViewDirect(basePath.c_str(), write, update);
+				view = new ATVFSFileViewDirect(parsedPath.mBasePath.c_str(), write, update);
 				view->SetTryOpenSibling(
-					[baseDir = VDFileSplitPathLeft(basePath)](const wchar_t *name) -> vdrefptr<ATVFSFileView> {
+					[baseDir = VDFileSplitPathLeft(parsedPath.mBasePath)](const wchar_t *name) -> vdrefptr<ATVFSFileView> {
 						VDFileStream f;
 
 						if (!f.tryOpen(VDMakePath(baseDir, VDStringSpanW(name)).c_str()))
@@ -605,24 +702,24 @@ void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, bool update, ATVFSFil
 
 			case kATVFSProtocol_Zip:
 				if (write)
-					throw VDException(L"Cannot open .zip file for write access: %ls", basePath.c_str());
+					throw VDException(L"Cannot open .zip file for write access: %ls", parsedPath.mBasePath.c_str());
 
 				{
-					ATVFSOpenFileView(basePath.c_str(), false, ~view);
+					ATVFSOpenFileView(parsedPath.mBasePath.c_str(), false, ~view);
 					vdrefptr zipArchive(new ATVFSZipArchive(*view));
 
-					view = zipArchive->TryOpenStream(subPath.c_str());
+					view = zipArchive->TryOpenStream(parsedPath.mSubPath.c_str());
 
 					if (!view)
-						throw VDException(L"Cannot find within zip file: %ls", subPath.c_str());
+						throw VDException(L"Cannot find within zip file: %ls", parsedPath.mSubPath.c_str());
 				}
 				break;
 
 			case kATVFSProtocol_GZip:
 				if (write)
-					throw VDException(L"Cannot open .gz file for write access: %ls", basePath.c_str());
+					throw VDException(L"Cannot open .gz file for write access: %ls", parsedPath.mBasePath.c_str());
 
-				ATVFSOpenFileView(basePath.c_str(), false, ~view);
+				ATVFSOpenFileView(parsedPath.mBasePath.c_str(), false, ~view);
 				view = new ATVFSFileViewGZip(view);
 				break;
 
@@ -631,12 +728,12 @@ void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, bool update, ATVFSFil
 					throw MyError("Inner filesystems are not supported.");
 
 				if (write)
-					throw VDException(L"Cannot open inner filesystem for write access: %ls", basePath.c_str());
+					throw VDException(L"Cannot open inner filesystem for write access: %ls", parsedPath.mBasePath.c_str());
 
-				ATVFSOpenFileView(basePath.c_str(), false, ~view);
+				ATVFSOpenFileView(parsedPath.mBasePath.c_str(), false, ~view);
 				{
 					vdrefptr<ATVFSFileView> view2;
-					g_ATVFSAtfsHandler(view, subPath.c_str(), ~view2);
+					g_ATVFSAtfsHandler(view, parsedPath.mSubPath.c_str(), ~view2);
 
 					view = std::move(view2);
 				}
@@ -646,15 +743,18 @@ void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, bool update, ATVFSFil
 				if (!g_ATVFSBlobHandler)
 					throw MyError("Blob URLs are not supported.");
 
-				g_ATVFSBlobHandler(basePath.c_str(), write, update, ~view);
+				g_ATVFSBlobHandler(parsedPath.mBasePath.c_str(), write, update, ~view);
 				break;
 
 			case kATVFSProtocol_Special:
 				if (!g_ATVFSSpecialHandler)
 					throw ATUnsupportedVFSPathException(vfsPath);
 
-				g_ATVFSSpecialHandler(basePath.c_str(), write, update, ~view);
+				g_ATVFSSpecialHandler(parsedPath.mBasePath.c_str(), write, update, ~view);
 				break;
+
+			case kATVFSProtocol_Atvdisk:
+				throw ATUnsupportedVFSPathDiskOnlyException(vfsPath);
 
 			default:
 				throw ATUnsupportedVFSPathException(vfsPath);
@@ -666,7 +766,7 @@ void ATVFSOpenFileView(const wchar_t *vfsPath, bool write, bool update, ATVFSFil
 		ex.RethrowWithPath(vfsPath);
 	}
 
-	*viewOut = view.release();
+	return view;
 }
 
 class ATVFSWrappedStreamView final : public ATVFSFileView {

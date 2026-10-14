@@ -39,8 +39,8 @@ android {
         applicationId "org.altirra.app"
         minSdk 24           // Android 7.0 — covers 99%+ of active devices
         targetSdk 36
-        versionCode 45021
-        versionName "4.50.21"
+        versionCode 45022
+        versionName "4.50.22"
 
         // Note: `ndk.abiFilters` would conflict with `splits.abi`
         // below.  When ABI splits are enabled, splits.abi.include is

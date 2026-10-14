@@ -81,8 +81,8 @@ void main() {
 		float d = max(1e-5, uDistortionScales.z - dot(v2, v2));
 		uv = v / sqrt(d) + vec2(0.5);
 	}
-	// uvScanMask stays as the original screen UV — the mask/scanline
-	// pattern is screen-aligned and must not follow the distortion.
+	// Scanlines follow the source raster; dot masks use gl_FragCoord.
+	uvScanMask = uv;
 
 	// Discard pixels outside the distorted image boundary
 	if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
@@ -94,7 +94,7 @@ void main() {
 	// Map viewport UV [0,1] to window-space UV for scanline/mask textures.
 	// In D3D9 this is always computed in the vertex shader; here it must
 	// run whenever scanlines or mask are active.
-#if defined(FEAT_SCANLINES) || defined(FEAT_DOT_MASK)
+#if (defined(FEAT_SCANLINES) || defined(FEAT_DOT_MASK)) && !defined(FEAT_DISTORTION)
 	uvScanMask = uvScanMask * uScanlineInfo.xy + uScanlineInfo.zw;
 #endif
 
@@ -164,7 +164,17 @@ void main() {
 
 #ifdef FEAT_SCANLINES
 	// Scanline mask multiplication (gamma-corrected mask already baked)
+	#ifdef FEAT_DISTORTION
+	// Match test22's periodic raster pattern. Suppress frequencies above
+	// Nyquist instead of stretching a destination-resolution lookup.
+	float rasterY = uvScanMask.y * uScanlineInfo.y;
+	float scan = fwidth(rasterY) <= 0.5
+		? 0.5 - 0.5 * cos((0.25 + rasterY) * 6.28318530718) : 0.5;
+	float intensity = pow(clamp(uScanlineInfo.w, 0.0, 1.0), 2.2);
+	vec3 scanMask = vec3(pow(scan * (1.0 - intensity) + intensity, 1.0 / 2.2));
+	#else
 	vec3 scanMask = texture(uScanlineTex, uvScanMask).rgb;
+	#endif
 	c *= scanMask;
 #endif
 

@@ -1475,11 +1475,12 @@ for(;;) {
 				if (lowResult >= 0x20)
 					lowResult -= 0x10;
 
-				uint32 highResult = (mA & 0xf0) + (mData & 0xf0) + lowResult;
+				uint32 highResultCarry7 = (mA & 0x70) + (mData & 0x70) + lowResult;
+				uint32 highResult = highResultCarry7 + (mA & 0x80) + (mData & 0x80);
 
 				mP &= ~(kFlagC | kFlagN | kFlagZ | kFlagV);
 
-				mP |= (((highResult ^ mA) & ~(mData ^ mA)) >> 1) & kFlagV;
+				mP |= ((highResult >> 2) ^ (highResultCarry7 >> 1)) & kFlagV;
 
 				if (highResult >= 0xA0)
 					highResult += 0x60;
@@ -2590,6 +2591,7 @@ for(;;) {
 			break;
 
 		case kState816_SetI_ClearD:
+			mIntFlags &= ~kIntFlag_IRQSetPending;
 			mP |= kFlagI;
 			mP &= ~kFlagD;
 			break;

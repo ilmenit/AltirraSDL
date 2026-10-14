@@ -19,6 +19,9 @@
     <Filter Include="Interface Header Files">
       <UniqueIdentifier>{dfb6432a-ac67-46c0-8c39-7bd44b34cd6c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\internal">
+      <UniqueIdentifier>{ed362c92-3728-4c2b-bb1a-3dba0124176c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\stdafx.cpp">
@@ -129,6 +132,9 @@
     <ClCompile Include="source\diskimageutil.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\vdiskimageimpl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="h\stdafx.h">
@@ -217,6 +223,12 @@
     </ClInclude>
     <ClInclude Include="h\at\atio\diskimageutil.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\h\at\atio\vdiskimage.h">
+      <Filter>Interface Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="h\at\atio\internal\vdiskimageimpl.h">
+      <Filter>Header Files\internal</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

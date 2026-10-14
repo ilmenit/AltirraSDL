@@ -32,10 +32,7 @@ public:
 	VDJSONReader();
 	~VDJSONReader();
 
-	void SetMemberNameFilter(vdfunction<bool(const wchar_t *)> fn);
-
 	bool Parse(const void *buf, size_t len, VDJSONDocument& doc);
-	void GetErrorLocation(int& line, int& offset) const;
 
 protected:
 	bool ParseDocument();
@@ -47,8 +44,16 @@ protected:
 	bool Expect(wchar_t c);
 
 	void ClearNameBuffer();
-	bool AddNameChar(wchar_t c);
-	bool EndName();
+
+	void AddNameChar(wchar_t c) {
+		if (mNameBufferIndex >= mNameBufferLength) [[unlikely]]
+			ExpandNameCharBuffer();
+
+		mNameBuffer[mNameBufferIndex++] = c;
+	}
+
+	void ExpandNameCharBuffer();
+	void EndName();
 
 	static bool IsWhitespaceChar(wchar_t c);
 
@@ -70,23 +75,16 @@ protected:
 	const wchar_t *mpInputBase;
 	const wchar_t *mpInputNext;
 	const wchar_t *mpInputEnd;
-	uint32 mInputLine;
-	uint32 mInputChar;
-	uint32 mInputLineNext;
-	uint32 mInputCharNext;
 
 	wchar_t mInputBuffer[kInputBufferSize];
 
-	bool mbPendingCR;
 	bool mbUTF16Mode;
 	bool mbUTF32Mode;
 	bool mbBigEndian;
 	const uint8 *mpSrc;
 	const uint8 *mpSrcEnd;
 	bool mbSrcError;
-	bool mbSuppressAdvanceLine;
 
-	vdfunction<bool(const wchar_t *)> mpMemberFilter;
 	vdfastvector<const VDJSONValue *> mArrayStack;
 };
 

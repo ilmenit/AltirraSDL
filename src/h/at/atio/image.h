@@ -26,6 +26,7 @@
 class VDStringW;
 struct ATCartLoadContext;
 struct ATCassetteLoadContext;
+struct ATVFSParsedPath;
 class IVDRandomAccessStream;
 class ATVFSFileView;
 
@@ -42,6 +43,7 @@ enum ATImageType : uint8 {
 	kATImageType_SAP,
 	kATImageType_SaveState2,
 	kATImageType_VGM,
+	kATImageType_VDisk,
 };
 
 // Paired images are files that are associated by their filename alone.
@@ -86,6 +88,7 @@ ATImageType ATDetectImageType(const wchar_t *imagePath, IVDRandomAccessStream& s
 ATPairedImageType ATDetectPairedImageType(const wchar_t *imageName);
 vdrefptr<IATImage> ATImageLoadFromFile(const wchar_t *path, ATImageLoadContext *loadCtx);
 
+bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, const ATVFSParsedPath& parsedPath, ATImageLoadContext *loadCtx, VDStringW *imagePathOut, VDStringW *resultPath, bool *canUpdate, IATImage **ppImage);
 bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, IVDRandomAccessStream& stream, ATImageLoadContext *loadCtx, VDStringW *resultPath, bool *canUpdate, IATImage **ppImage);
 bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, ATVFSFileView& view, ATImageLoadContext *loadCtx, VDStringW *resultPath, bool *canUpdate, IATImage **ppImage);
 

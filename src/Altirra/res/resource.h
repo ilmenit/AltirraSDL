@@ -1541,6 +1541,7 @@
 #define ID_PAPERTYPE_A4                 40833
 #define ID_PAPERTYPE_CONTINOUS12        40834
 #define ID_PAPERTYPE_CONT12             40835
+#define ID_CONTEXT_MOUNTFOLDER          40842
 #define ID_INPUT_PORT1_NONE             45000
 #define ID_INPUT_PORT2_NONE             45100
 #define ID_INPUT_PORT3_NONE             45200
@@ -1555,8 +1556,8 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        284
-#define _APS_NEXT_COMMAND_VALUE         40838
-#define _APS_NEXT_CONTROL_VALUE         1429
+#define _APS_NEXT_COMMAND_VALUE         40843
+#define _APS_NEXT_CONTROL_VALUE         1432
 #define _APS_NEXT_SYMED_VALUE           113
 #endif
 #endif

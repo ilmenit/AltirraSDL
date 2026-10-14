@@ -509,8 +509,8 @@ void DisplayBackendGL::UpdateLookupTextures() {
 		mLookupBuffer.resize(texH);
 		VDDisplayCreateScanlineMaskTexture(mLookupBuffer.data(),
 			sizeof(uint32),  // pitch: 1 pixel wide, 4 bytes per pixel
-			mTexH, texH, texH,
-			mScreenFX.mScanlineIntensity, false);
+			mTexH, texH, 0.0f, (float)texH, texH,
+			mScreenFX.mScanlineIntensity, false, false);
 
 		if (!mScanlineTexture || mScanlineTexH != texH) {
 			if (mScanlineTexture) glDeleteTextures(1, &mScanlineTexture);
@@ -818,6 +818,10 @@ void DisplayBackendGL::RenderScreenFX(float dstX, float dstY, float dstW, float 
 		float scaleY = dstH / mWinH;
 		float offsetX = dstX / mWinW;
 		float offsetY = dstY / mWinH;
+		if (features & kSFX_Distortion) {
+			scaleY = (float)srcH;
+			offsetY = mScreenFX.mScanlineIntensity;
+		}
 		glUniform4f(u.uScanlineInfo, scaleX, scaleY, offsetX, offsetY);
 	}
 

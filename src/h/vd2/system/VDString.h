@@ -998,6 +998,20 @@ public:
 		return npos;
 	}
 
+	[[nodiscard]] size_type rfind(value_type c, size_type pos = npos) const {
+		auto len = size();
+
+		if (pos > len)
+			pos = len;
+
+		while(pos-- > 0) {
+			if (mpBegin[pos] == c)
+				return pos;
+		}
+
+		return pos;
+	}
+
 	int compare(const VDStringSpanW& s) const {
 		size_type l1 = (size_type)(mpEnd - mpBegin);
 		size_type l2 = (size_type)(s.mpEnd - s.mpBegin);

@@ -575,6 +575,12 @@ bool VDDoesPathExist(const wchar_t *fileName) {
 	return bExists;
 }
 
+bool VDDoesDirectoryExist(const wchar_t *path) {
+	const auto attr = VDFileGetAttributes(path);
+
+	return attr != kVDFileAttr_Invalid && (attr & kVDFileAttr_Directory);
+}
+
 void VDCreateDirectory(const wchar_t *path) {
 	// can't create dir with trailing slash
 	VDStringW::size_type l(wcslen(path));
@@ -821,6 +827,13 @@ void VDFileFixDirPath(VDStringW& path) {
 
 		if (c != L'/' && c != L'\\' && c != L':')
 			path += L'\\';
+	}
+}
+
+void VDFileNormalizePathSeparators(VDStringW& path) {
+	for(wchar_t& c : path) {
+		if (c == L'/')
+			c = L'\\';
 	}
 }
 

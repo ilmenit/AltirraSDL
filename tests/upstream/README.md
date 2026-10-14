@@ -59,3 +59,23 @@ operations and unaligned Deflate match reads. Android arm64-v8a and
 armeabi-v7a native library builds passed before these final shared-library
 guards; both final fixes also passed NDK syntax checks for both ABIs. Native
 Windows/macOS jobs and device execution remain pending.
+
+Test22 adds `altirra-test22-regression-test` and `altirra-test22-cpu-test`.
+The first runs upstream's JSON suite plus Unicode strings across buffer
+boundaries, a large first member name, URL and legacy mount persistence,
+POSIX path roots, and actual multi-sector DOS/MyDOS and SpartaDOS file reads
+from a Unicode host directory at both sector sizes. Settings migration
+services are strict test doubles; directory watching and filesystem reads
+use production code.
+
+The CPU target compiles the production CPU and the existing conformance
+runner. It checks debugger setters and 240 reference cases, including invalid
+BCD operands, with the runner's cycle-count and bus-access assertions.
+Optional debugger services are strict test doubles. The fixture comes from
+[SingleStepTests/65816](https://github.com/SingleStepTests/65816), revision
+`db6b10401729d5f20f2181dde5d3d7b037093a4a`: the first 12 cases in each emulation
+and native file for opcodes 02, 69, E9, 78, A1, 6B, B7 and D0, plus the first
+12 decimal cases with a low accumulator nibble above nine in each 69/E9 file.
+Local validation also ran all 160,000 cases in those 16 files. The runner
+permits internal bus cycles as documented in its implementation; this does
+not replace testing IRQ timing or running programs on hardware.

@@ -150,6 +150,25 @@ float3 BloomBaseFilter(float2 uv) {
 		+ center * bloomBaseWeights.z;
 }
 
+// Masks remain in physical pixels. Scanlines follow the distorted source
+// raster, with the local sampling rate determining the Nyquist cutoff.
+float ScanlineFactor(float2 screenUV) {
+	float dvdy = maskParams.y / max(colorFlags.w, 1.0);
+	float rasterY = dvdy * (maskParams.w + screenUV.y * sourceDestSize.w);
+	if (effectParams2.z > 0.0) {
+		float2 v = screenUV - 0.5;
+		float2 scaled = v * effectParams2.xy;
+		float d = max(0.00001, effectParams2.z - dot(scaled, scaled));
+		float2 sourceUV = v / sqrt(d) + 0.5;
+		rasterY = sourceUV.y * maskParams.y;
+		dvdy = fwidth(rasterY);
+	}
+	float scan = dvdy <= 0.5
+		? 0.5 - 0.5 * cos(frac(0.25 + rasterY) * 6.28318530718) : 0.5;
+	float intensity = pow(saturate(effectParams1.z), 2.2);
+	return pow(scan * (1.0 - intensity) + intensity, 1.0 / 2.2);
+}
+
 PSOutput main(PSInput input) {
 	PSOutput output;
 	float2 uv = input.uv;
@@ -214,16 +233,7 @@ PSOutput main(PSInput input) {
 			c = pow(max(c, 0.0), 1.0 / max(effectParams1.y, 0.0001));
 		c = pow(saturate(c), 1.0 / max(effectParams1.x, 0.0001));
 		if (effectParams1.z > 0.0) {
-			float dvdy = maskParams.y / max(colorFlags.w, 1.0);
-			float scan = 0.5;
-			if (dvdy <= 0.5) {
-				float phase = frac(0.25 + dvdy
-					* (maskParams.w + screenUV.y * sourceDestSize.w));
-				scan = 0.5 - 0.5 * cos(phase * 6.28318530718);
-			}
-			float intensity = pow(saturate(effectParams1.z), 2.2);
-			scan = pow(scan * (1.0 - intensity) + intensity, 1.0 / 2.2);
-			c *= scan;
+			c *= ScanlineFactor(screenUV);
 		}
 		if (effectParams1.w > 0.0) {
 			float2 vc = screenUV - 0.5;
@@ -287,16 +297,7 @@ PSOutput main(PSInput input) {
 	c = pow(saturate(c), 1.0 / gamma);
 
 	if (effectParams1.z > 0.0) {
-		float dvdy = maskParams.y / max(colorFlags.w, 1.0);
-		float scan = 0.5;
-		if (dvdy <= 0.5) {
-			float phase = frac(0.25 + dvdy
-				* (maskParams.w + screenUV.y * sourceDestSize.w));
-			scan = 0.5 - 0.5 * cos(phase * 6.28318530718);
-		}
-		float intensity = pow(saturate(effectParams1.z), 2.2);
-		scan = pow(scan * (1.0 - intensity) + intensity, 1.0 / 2.2);
-		c *= scan;
+		c *= ScanlineFactor(screenUV);
 	}
 
 	if (effectParams1.w > 0.0) {

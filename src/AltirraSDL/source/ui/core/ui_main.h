@@ -189,7 +189,8 @@ enum ATDeferredActionType {
 	kATDeferred_AttachCartridge,
 	kATDeferred_AttachSecondaryCartridge,
 	kATDeferred_AttachDisk,        // uses mInt for drive index
-	kATDeferred_MountFolder,       // mInt: drive index | 0x100 for SDFS
+	kATDeferred_MountFolder,       // path: virtual disk URL, mInt: drive index
+	kATDeferred_SelectVirtualFolder, // folder-picker result, mInt: dialog generation
 	kATDeferred_LoadState,
 	kATDeferred_SaveState,
 	kATDeferred_SaveCassette,
@@ -401,3 +402,8 @@ void ATUIRenderDragDropOverlay();
 // Set state.showExitConfirm = true to trigger; the render function handles
 // building the message, showing the popup, and pushing SDL_EVENT_QUIT on OK.
 void ATUIRenderExitConfirm(ATSimulator &sim, ATUIState &state);
+
+void ATUISetVirtualFolderPath(const wchar_t *path, int generation);
+
+// Read-only diagnostics used by the UI test protocol.
+const char *ATUIGetToolsResultMessage();

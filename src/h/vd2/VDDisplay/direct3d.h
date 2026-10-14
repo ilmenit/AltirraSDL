@@ -50,7 +50,7 @@ namespace nsVDD3D9 {
 		uint32 diffuse;
 		float u0, v0, u1, v1;
 
-		Vertex() {}
+		Vertex() = default;
 		Vertex(float x_, float y_, uint32 c_, float u0_, float v0_, float u1_=0.f, float v1_=0.f) : x(x_), y(y_), z(0), diffuse(c_), u0(u0_), v0(v0_), u1(u1_), v1(v1_) {}
 
 		VDFORCEINLINE void SetFF2(float x_, float y_, uint32 c_, float u0_, float v0_, float u1_, float v1_) {

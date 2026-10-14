@@ -23,6 +23,7 @@ set(ATIO_SOURCES
     source/diskimage.cpp
     source/diskimageutil.cpp
     source/image.cpp
+    source/vdiskimageimpl.cpp
     source/partitiondiskview.cpp
     source/partitiontable.cpp
     source/programimage.cpp

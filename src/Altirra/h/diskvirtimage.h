@@ -21,10 +21,10 @@
 #include <at/atcore/deviceautosuggest.h>
 #include "diskvirtimagebase.h"
 
-// Virtual disk handler using the Atari DOS 2.x filesystem.
+// Virtual disk handler using the Atari DOS 2.x/MyDOS filesystem.
 class ATDiskImageVirtualFolder final : public ATDiskImageVirtualFolderBase, public IATDeviceAutoSuggest {
 public:
-	ATDiskImageVirtualFolder();
+	ATDiskImageVirtualFolder(uint32 tracks, uint32 sectorsPerTrack, uint32 sectorSize);
 
 	void *AsInterface(uint32 iid) override;
 
@@ -60,6 +60,7 @@ private:
 			kFlagDeleted	= 0x80,
 			kFlagInUse		= 0x40,
 			kFlagLocked		= 0x20,
+			kFlagExtFile	= 0x04,		// MyDOS only: file ID not in sector links
 			kFlagDOS2		= 0x02,
 			kFlagOpenWrite	= 0x01
 		};
@@ -101,11 +102,18 @@ private:
 	void PreallocateTrack(uint32 baseSectorIndex);
 
 	VDStringW mPath;
-	uint32	mSectorCount;
-	uint32	mFreeSectorCount;
-	bool mbBootFilePresent;
-	VDDate mBootFileLastDate;
-	int mDosEntry;
+	const uint32 mSectorSize;
+	const uint32 mSectorCount;
+	const uint32 mSectorsPerTrack;
+	const uint32 mTrackCount;
+	const bool mbMyDOS;
+	const bool mbDOS25;
+	uint32	mVtocSectorCount = 0;
+	uint32	mTotalDataSectorCount = 0;
+	uint32	mFreeSectorCount = 0;
+	bool mbBootFilePresent = false;
+	VDDate mBootFileLastDate { 0 };
+	int mDosEntry = 0;
 
 	vdfunction<float(uint32)> mpInterleaveFn;
 	ATDiskGeometryInfo mGeometryInfo {};

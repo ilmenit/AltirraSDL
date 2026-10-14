@@ -1201,6 +1201,8 @@ void ATAdjustScreenEffectsDialog::SetPageIndex(int pageIndex) {
 
 	mPageIndex = pageIndex;
 
+	mTabView.SetSelection(pageIndex);
+
 	if (mpPageView) {
 		mResizer.Remove(mpPageView->GetHandleW32());
 		mpPageView->Destroy();

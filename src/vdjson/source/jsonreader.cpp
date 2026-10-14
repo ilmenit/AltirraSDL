@@ -37,10 +37,6 @@ VDJSONReader::~VDJSONReader() {
 		delete[] mNameBuffer;
 }
 
-void VDJSONReader::SetMemberNameFilter(vdfunction<bool(const wchar_t *)> fn) {
-	mpMemberFilter = std::move(fn);
-}
-
 bool VDJSONReader::Parse(const void *buf, size_t len, VDJSONDocument& doc) {
 	mpNameTable = &doc.mNameTable;
 	mpDocument = &doc;
@@ -51,12 +47,6 @@ bool VDJSONReader::Parse(const void *buf, size_t len, VDJSONDocument& doc) {
 	mpInputBase = NULL;
 	mpInputNext = NULL;
 	mpInputEnd = NULL;
-	mInputLine = 0;
-	mInputLineNext = 0;
-	mInputChar = 0;
-	mInputCharNext = 0;
-	mbPendingCR = false;
-	mbSuppressAdvanceLine = false;
 
 	mbUTF16Mode = false;
 	mbUTF32Mode = false;
@@ -103,22 +93,10 @@ bool VDJSONReader::Parse(const void *buf, size_t len, VDJSONDocument& doc) {
 	return ParseDocument();
 }
 
-void VDJSONReader::GetErrorLocation(int& line, int& offset) const {
-	int ln = mInputLine;
-	int of = mInputChar;
-
-	for(const wchar_t *p = mpInputBase; p != mpInputNext; ++p) {
-		++of;
-		if (*p == L'\n') {
-			++ln;
-			of = 0;
-		}
-	}
-
-	line = ln;
-	offset = of;
-}
-
+// We use an early strict definition of JSON that requires an object or array
+// at the top level (RFC 4627). This is lifted in RFC 8259, which we don't
+// support yet.
+//
 // JSON-text := object | array
 // object := '{' member (',' member)* '}'
 // member := string ':' value
@@ -155,56 +133,80 @@ bool VDJSONReader::ParseObject(VDJSONValue& obj) {
 
 	VDJSONMember *tail = nullptr;
 
-	// AltirraSDL: was `if (c != L'{')`, which can never be true — the
-	// caller has already consumed the opening brace, so the next
-	// character is either '}' (empty object) or '"' (first member name).
-	// The effect was that `{}` — and any document containing one, at any
-	// depth — failed to parse at all, while `[]` parsed fine because
-	// ParseArray below tests the correct closing character.  Compare it
-	// against '}' as ParseArray does against ']'.
-	// PRESERVE ON UPSTREAM RESYNC.
 	wchar_t c = GetNonWhitespaceChar();
-	if (c != L'}') {
-		UngetChar();
+	if (c == L'}')
+		return true;
 
-		typedef vdhashmap<uint32, VDJSONValue *> Lookup;
-		Lookup lookup;
+	UngetChar();
 
-		for(;;) {
-			if (GetNonWhitespaceChar() != L'"')
-				return false;
+	typedef vdhashmap<uint32, VDJSONValue *> Lookup;
+	Lookup lookup;
 
-			if (!ParseString())
-				return false;
+	constexpr size_t kFastSize = 16;
+	uint32 fastTokens[kFastSize];
+	VDJSONValue *fastValues[kFastSize];
+	size_t numFastValues = 0;
 
-			uint32 nameToken = GetTokenForName();
+	for(;;) {
+		if (GetNonWhitespaceChar() != L'"')
+			return false;
 
-			if (GetNonWhitespaceChar() != L':')
-				return false;
+		if (!ParseString())
+			return false;
 
-			wchar_t c = GetNonWhitespaceChar();
+		uint32 nameToken = GetTokenForName();
 
-			// add entry now to lock in current line number
-			std::pair<Lookup::iterator, bool> result(lookup.insert(Lookup::value_type(nameToken, (VDJSONValue *)nullptr)));
-			if (result.second) {
-				if (!mpMemberFilter || mpMemberFilter(mpDocument->mNameTable.GetName(nameToken)))
-					result.first->second = mpDocument->mPool.AddObjectMember(obj, nameToken, tail);
+		if (GetNonWhitespaceChar() != L':')
+			return false;
+
+		wchar_t c = GetNonWhitespaceChar();
+
+		VDJSONValue val;
+		if (!ParseValue(c, val))
+			return false;
+
+		if (numFastValues <= kFastSize) {
+			size_t index = 0;
+
+			while(index < numFastValues) {
+				if (fastTokens[index] == nameToken) {
+					*fastValues[index] = val;
+					break;
+				}
+
+				++index;
 			}
 
-			VDJSONValue val;
-			if (!ParseValue(c, val))
-				return false;
+			if (index >= numFastValues) {
+				++numFastValues;
 
-			if (result.first->second)
-				*result.first->second = val;
+				VDJSONValue *newValue = mpDocument->mPool.AddObjectMember(obj, nameToken, tail);
+				*newValue = val;
 
-			c = GetNonWhitespaceChar();
-			if (c == L'}')
-				break;
+				if (numFastValues <= kFastSize) {
+					fastTokens[index] = nameToken;
+					fastValues[index] = newValue;
+				} else {
+					for(size_t i = 0; i < kFastSize; ++i)
+						lookup.insert(Lookup::value_type(fastTokens[i], fastValues[i]));
 
-			if (c != L',')
-				return false;
+					lookup.insert(Lookup::value_type(nameToken, newValue));
+				}
+			}
+		} else {
+			std::pair<Lookup::iterator, bool> result(lookup.insert(Lookup::value_type(nameToken, (VDJSONValue *)nullptr)));
+			if (result.second)
+				result.first->second = mpDocument->mPool.AddObjectMember(obj, nameToken, tail);
+
+			*result.first->second = val;
 		}
+
+		c = GetNonWhitespaceChar();
+		if (c == L'}')
+			break;
+
+		if (c != L',')
+			return false;
 	}
 
 	return true;
@@ -309,10 +311,10 @@ bool VDJSONReader::ParseValue(wchar_t c, VDJSONValue& val) {
 			} while(c >= L'0' && c <= L'9');
 
 			if (neg) {
-				if (v > 0x7FFFFFFFFFFFFFFFULL)
+				if (v > UINT64_C(0x8000'0000'0000'0000))
 					isReal = true;
 			} else {
-				if (v > 0x8000000000000000ULL)
+				if (v > UINT64_C(0x7FFF'FFFF'FFFF'FFFF))
 					isReal = true;
 			}
 		} else
@@ -320,6 +322,14 @@ bool VDJSONReader::ParseValue(wchar_t c, VDJSONValue& val) {
 
 		if (c == L'.') {
 			isReal = true;
+
+			AddNameChar(c);
+
+			// at least one fractional digit required
+			c = GetChar();
+
+			if (c < L'0' || c > L'9')
+				return false;
 
 			do {
 				AddNameChar(c);
@@ -333,8 +343,11 @@ bool VDJSONReader::ParseValue(wchar_t c, VDJSONValue& val) {
 			AddNameChar(c);
 			c = GetChar();
 
-			if (c != L'-' && c != L'+')
-				return false;
+			// optional sign
+			if (c == L'-' || c == L'+') {
+				AddNameChar(c);
+				c = GetChar();
+			}
 
 			do {
 				AddNameChar(c);
@@ -347,7 +360,7 @@ bool VDJSONReader::ParseValue(wchar_t c, VDJSONValue& val) {
 		if (isReal)
 			val.Set(wcstod(mNameBuffer, NULL));
 		else if (neg)
-			val.Set(-(sint64)v);
+			val.Set((sint64)(UINT64_C(0)-v));
 		else
 			val.Set((sint64)v);
 
@@ -384,7 +397,7 @@ bool VDJSONReader::ParseString() {
 					break;
 
 				case L'f':
-					c = (wchar_t)L'\b';
+					c = (wchar_t)L'\f';
 					break;
 
 				case L'n':
@@ -399,14 +412,70 @@ bool VDJSONReader::ParseString() {
 					c = (wchar_t)L'\t';
 					break;
 
-				case L'u':
-					for(int i=0; i<4; ++i) {
-						c = GetChar();
+				case L'u': {
+					uint32 ch = 0;
 
-						if ((c < L'0' || c > '9') && (c < L'a' || c > 'f') && (c < L'A' || c > 'F'))
-							return false;
+					// Character escapes in JSON are always UTF-16 encoded, so any escaped
+					// characters outside of the BMP must be encoded as an adjacent pair
+					// of escapes.
+					for(int pass = 0; pass < 2; ++pass) {
+						uint32 hexVal = 0;
+
+						for(int i=0; i<4; ++i) {
+							c = GetChar();
+
+							hexVal <<= 4;
+
+							if (c >= L'0' && c <= '9')
+								hexVal += (uint32)(c - L'0');
+							else if (c >= L'a' && c <= 'f')
+								hexVal += (uint32)(c - L'a') + 10;
+							else if (c >= L'A' && c <= 'F')
+								hexVal += (uint32)(c - L'A') + 10;
+							else
+								return false;
+						}
+
+						if (pass == 0) {
+							// save off the first character
+							ch = hexVal;
+
+							// if the escaped character is not a surrogate, done
+							if (ch < 0xD800 || ch >= 0xE000) {
+								c = (wchar_t)ch;
+								break;
+							}
+
+							// starting with a low surrogate is invalid
+							if (ch >= 0xDC00)
+								return false;
+
+							// check that another escape immediately follows
+							if (GetChar() != L'\\')
+								return false;
+
+							if (GetChar() != L'u')
+								return false;
+						} else {
+							// second escape must be low surrogate
+							if (hexVal < 0xDC00 || hexVal >= 0xE000)
+								return false;
+
+							// store or decode surrogates
+							if constexpr (sizeof(wchar_t) >= 4) {
+								c = (wchar_t)(0x10000 + ((ch - 0xD800) << 10) + (hexVal - 0xDC00));
+							} else {
+								AddNameChar((wchar_t)ch);
+								c = (wchar_t)hexVal;
+							}
+						}
 					}
 					break;
+				}
+
+				default:
+					// invalid escape character
+					return false;
 			}
 		}
 
@@ -431,29 +500,19 @@ void VDJSONReader::ClearNameBuffer() {
 	mNameBufferIndex = 0;
 }
 
-bool VDJSONReader::AddNameChar(wchar_t c) {
-	if (mNameBufferIndex >= mNameBufferLength) {
-		int newLen = mNameBufferLength ? mNameBufferLength*2 : 64;
-		wchar_t *newbuf = new wchar_t[newLen];
-		if (!newbuf)
-			return false;
-
+void VDJSONReader::ExpandNameCharBuffer() {
+	int newLen = mNameBufferLength ? mNameBufferLength + (mNameBufferLength >> 1) : 64;
+	wchar_t *newbuf = new wchar_t[newLen];
+	if (mNameBufferIndex)
 		memcpy(newbuf, mNameBuffer, mNameBufferIndex * sizeof(mNameBuffer[0]));
-		delete[] mNameBuffer;
-		mNameBuffer = newbuf;
-		mNameBufferLength = newLen;
-	}
-
-	mNameBuffer[mNameBufferIndex++] = c;
-	return true;
+	delete[] mNameBuffer;
+	mNameBuffer = newbuf;
+	mNameBufferLength = newLen;
 }
 
-bool VDJSONReader::EndName() {
-	if (!AddNameChar(0))
-		return false;
-
+void VDJSONReader::EndName() {
+	AddNameChar(0);
 	--mNameBufferIndex;
-	return true;
 }
 
 bool VDJSONReader::IsWhitespaceChar(wchar_t c) {
@@ -463,8 +522,6 @@ bool VDJSONReader::IsWhitespaceChar(wchar_t c) {
 void VDJSONReader::UngetChar() {
 	if (mpInputNext != mpInputBase) {
 		--mpInputNext;
-		if (*mpInputNext == '\n')
-			mbSuppressAdvanceLine = true;
 	}
 }
 
@@ -483,13 +540,6 @@ wchar_t VDJSONReader::GetChar() {
 
 	wchar_t c = *mpInputNext++;
 
-	if (c == '\n') {
-		if (mbSuppressAdvanceLine)
-			mbSuppressAdvanceLine = false;
-		else
-			mpDocument->mPool.AdvanceLine();
-	}
-
 	return c;
 }
 
@@ -498,35 +548,33 @@ wchar_t VDJSONReader::GetCharSlow() {
 		return 0;
 	
 	if (mpSrc != mpSrcEnd) {
+		const uint8 *VDRESTRICT src = mpSrc;
+		const uint8 *const VDRESTRICT srcEnd = mpSrcEnd;
+		wchar_t *VDRESTRICT dst = mInputBuffer;
+
 		int len = 0;
-
-		if (mbPendingCR) {
-			mInputBuffer[0] = L'\n';
-			len = 1;
-		}
-
 		bool encodingError = false;
 
 		if (mbUTF32Mode) {
 			if constexpr (sizeof(wchar_t) >= 4) {
-				int tc = (mpSrcEnd - mpSrc) >> 2;
+				int tc = (srcEnd - src) >> 2;
 
 				if (tc > kInputBufferSize - len)
 					tc = kInputBufferSize - len;
 
 				if (mbBigEndian) {
 					for(int i=0; i<tc; ++i) {
-						mInputBuffer[i+len] = (wchar_t)(((uint32)mpSrc[0] << 24) + ((uint32)mpSrc[1] << 16) + ((uint32)mpSrc[2] << 8) + mpSrc[3]);
-						mpSrc += 4;
+						dst[i+len] = (wchar_t)(((uint32)src[0] << 24) + ((uint32)src[1] << 16) + ((uint32)src[2] << 8) + src[3]);
+						src += 4;
 					}
 				} else {
-					memcpy(mInputBuffer + len, mpSrc, tc * sizeof(wchar_t));
-					mpSrc += tc*4;
+					memcpy(dst + len, src, tc * sizeof(wchar_t));
+					src += tc*4;
 				}
 
 				// validate code points
 				for(int i=0; i<tc; ++i) {
-					uint32 c = mInputBuffer[i + len];
+					uint32 c = dst[i + len];
 
 					if ((c - 0xD800) < 0x0800 || c >= 0x110000) {
 						encodingError = true;
@@ -538,9 +586,9 @@ wchar_t VDJSONReader::GetCharSlow() {
 				len += tc;
 			} else {
 				if (mbBigEndian) {
-					while(len < kInputBufferSize && mpSrcEnd - mpSrc > 4) {
-						uint32 c = ((uint32)mpSrc[0] << 24) + ((uint32)mpSrc[1] << 16) + ((uint32)mpSrc[2] << 8) + mpSrc[3];
-						mpSrc += 4;
+					while(len < kInputBufferSize && srcEnd - src >= 4) {
+						uint32 c = ((uint32)src[0] << 24) + ((uint32)src[1] << 16) + ((uint32)src[2] << 8) + src[3];
+						src += 4;
 
 						// validate code point
 						if ((c - 0xD800) < 0x0800 || c >= 0x110000) {
@@ -551,22 +599,25 @@ wchar_t VDJSONReader::GetCharSlow() {
 						// check if we need to fragment
 						if (c >= 0x10000) {
 							// check if have space for the second surrogate
-							if (len >= kInputBufferSize - 1)
+							if (len >= kInputBufferSize - 1) {
+								// MERGE NOTE: retry this scalar after the UTF-16 refill.
+								src -= 4;
 								break;
+							}
 
 							// write the first surrogate
 							c -= 0x10000;
 
-							mInputBuffer[len++] = 0xD800 + (c >> 10);
+							dst[len++] = 0xD800 + (c >> 10);
 							c = (wchar_t)(0xDC00 + (c & 0x03FF));
 						}
 
-						mInputBuffer[len++] = (wchar_t)c;
+						dst[len++] = (wchar_t)c;
 					}
 				} else {
-					while(len < kInputBufferSize && mpSrcEnd - mpSrc > 4) {
-						uint32 c = ((uint32)mpSrc[3] << 24) + ((uint32)mpSrc[2] << 16) + ((uint32)mpSrc[1] << 8) + mpSrc[0];
-						mpSrc += 4;
+					while(len < kInputBufferSize && srcEnd - src >= 4) {
+						uint32 c = ((uint32)src[3] << 24) + ((uint32)src[2] << 16) + ((uint32)src[1] << 8) + src[0];
+						src += 4;
 
 						// validate code point
 						if ((c - 0xD800) < 0x0800 || c >= 0x110000) {
@@ -577,236 +628,191 @@ wchar_t VDJSONReader::GetCharSlow() {
 						// check if we need to fragment
 						if (c >= 0x10000) {
 							// check if have space for the second surrogate
-							if (len >= kInputBufferSize - 1)
+							if (len >= kInputBufferSize - 1) {
+								// MERGE NOTE: retry this scalar after the UTF-16 refill.
+								src -= 4;
 								break;
+							}
 
 							// write the first surrogate
 							c -= 0x10000;
 
-							mInputBuffer[len++] = 0xD800 + (c >> 10);
+							dst[len++] = 0xD800 + (c >> 10);
 							c = (wchar_t)(0xDC00 + (c & 0x03FF));
 						}
 
-						mInputBuffer[len++] = (wchar_t)c;
+						dst[len++] = (wchar_t)c;
 					}
 				}
 			}
 		} else if (mbUTF16Mode) {
 			if constexpr (sizeof(wchar_t) > 2) {		// UTF-16 -> UTF-32 conversion
 				if (mbBigEndian) {
-					while(len < kInputBufferSize && (mpSrcEnd - mpSrc) > 2) {
-						uint32 c0 = ((uint32)mpSrc[0] << 8) + mpSrc[1];
-						mpSrc += 2;
+					while(len < kInputBufferSize && (srcEnd - src) >= 2) {
+						uint32 c0 = ((uint32)src[0] << 8) + src[1];
+						src += 2;
 
 						if ((c0 - 0xD800) < 0x0800) {
-							if (c0 >= 0xDC00 || mpSrcEnd - mpSrc < 2) {
+							if (c0 >= 0xDC00 || srcEnd - src < 2) {
 								encodingError = true;
 								break;
 							}
 
-							uint32 c1 = ((uint32)mpSrc[0] << 8) + mpSrc[1];
-							mpSrc += 2;
+							uint32 c1 = ((uint32)src[0] << 8) + src[1];
+							src += 2;
 
-							if ((c0 - 0xDC00) >= 0x0800) {
+							if ((c1 - 0xDC00) >= 0x0400) {
 								encodingError = true;
 								break;
 							}
 
-							c0 = (c0 << 10) + c1 - ((0xD800 << 10) + 0xDC00);
+							c0 = 0x10000 + (c0 << 10) + c1 - ((0xD800 << 10) + 0xDC00);
 						}
 
-						mInputBuffer[len++] = c0;
+						dst[len++] = c0;
 					}
 				} else {
-					while(len < kInputBufferSize && (mpSrcEnd - mpSrc) > 2) {
-						uint32 c0 = ((uint32)mpSrc[1] << 8) + mpSrc[0];
-						mpSrc += 2;
+					while(len < kInputBufferSize && (srcEnd - src) >= 2) {
+						uint32 c0 = ((uint32)src[1] << 8) + src[0];
+						src += 2;
 
 						if ((c0 - 0xD800) < 0x0800) {
-							if (c0 >= 0xDC00 || mpSrcEnd - mpSrc < 2) {
+							if (c0 >= 0xDC00 || srcEnd - src < 2) {
 								encodingError = true;
 								break;
 							}
 
-							uint32 c1 = ((uint32)mpSrc[1] << 8) + mpSrc[0];
-							mpSrc += 2;
+							uint32 c1 = ((uint32)src[1] << 8) + src[0];
+							src += 2;
 
-							if ((c0 - 0xDC00) >= 0x0800) {
+							if ((c1 - 0xDC00) >= 0x0400) {
 								encodingError = true;
 								break;
 							}
 
-							c0 = (c0 << 10) + c1 - ((0xD800 << 10) + 0xDC00);
+							c0 = 0x10000 + (c0 << 10) + c1 - ((0xD800 << 10) + 0xDC00);
 						}
 
-						mInputBuffer[len++] = c0;
+						dst[len++] = c0;
 					}
 				}
 			} else {
-				int tc = (mpSrcEnd - mpSrc) >> 1;
+				int tc = (srcEnd - src) >> 1;
 
 				if (tc > kInputBufferSize - len)
 					tc = kInputBufferSize - len;
 
 				if (mbBigEndian) {
 					for(int i=0; i<tc; ++i) {
-						mInputBuffer[i+len] = (wchar_t)((mpSrc[0] << 8) + mpSrc[1]);
-						mpSrc += 2;
+						mInputBuffer[i+len] = (wchar_t)((src[0] << 8) + src[1]);
+						src += 2;
 					}
 				} else {
-					memcpy(mInputBuffer + len, mpSrc, tc * sizeof(wchar_t));
-					mpSrc += tc*2;
+					memcpy(dst + len, src, tc * sizeof(wchar_t));
+					src += tc*2;
 				}
 
 				len += tc;
 			}
 		} else {
-			while(len < kInputBufferSize && mpSrc != mpSrcEnd) {
-				uint8 c = *mpSrc++;
+			while(len < kInputBufferSize && src != srcEnd) {
+				uint8 c = *src++;
 				wchar_t d = c;
 
-				if ((c >= 0x80 && c < 0xC2) || c >= 0xF5) {		// invalid: follower without leader or too high of a code point
-					encodingError = true;
-					break;
-				// AltirraSDL: two fixes to the two-byte sequence decode,
-				// preserve on upstream resync.
-				//   1. the range test excluded 0xDF, so U+07C0..U+07FF
-				//      fell through to the "no branch" case and emitted
-				//      the lead byte raw;
-				//   2. the continuation byte was added without removing
-				//      its 0x80 tag, so every U+0080..U+07FF character
-				//      decoded 0x80 too high (U+00E7 became U+0167).
-				// Together these made every accented character in a
-				// UTF-8 document decode wrongly or fail outright.
-				} else if (c >= 0xC2 && c <= 0xDF) {		// U+0080 to U+07FF
-					if (mpSrc == mpSrcEnd) {
+				if (c >= 0x80) {
+					if ((c >= 0x80 && c < 0xC2) || c >= 0xF5) {		// invalid: follower without leader or too high of a code point
 						encodingError = true;
 						break;
-					}
-
-					uint8 x0 = *mpSrc++;
-					if (x0 < 0x80 || x0 > 0xBF) {
-						encodingError = true;
-						break;
-					}
-
-					d = ((c - 0xC0) << 6) + (x0 - 0x80);
-				} else if (c >= 0xE0 && c <= 0xEF) {	// U+0800 to U+FFFF
-					if (mpSrcEnd - mpSrc < 2) {
-						encodingError = true;
-						break;
-					}
-
-					uint8 x0 = *mpSrc++;
-					uint8 x1 = *mpSrc++;
-					if (x0 < 0x80 || x0 > 0xBF || x1 < 0x80 || x1 > 0xBF) {
-						encodingError = true;
-						break;
-					}
-
-					d = ((c - 0xE0) << 12) + (((wchar_t)x0 - 0x80) << 6) + (wchar_t)(x1 - 0x80);
-
-					// reject invalid code points
-					//
-					// AltirraSDL: the surrogate test must be done in
-					// unsigned arithmetic; preserve on upstream resync.
-					// wchar_t is a SIGNED 32-bit type on Linux and
-					// macOS, so `(d - 0xD800) < 0x0800` was a signed
-					// comparison that came out true for every code
-					// point below U+D800 — rejecting the whole
-					// U+0800..U+D7FF range, i.e. all three-byte UTF-8.
-					// On Windows wchar_t is unsigned 16-bit and the
-					// intended wraparound happens to work.
-					if ((uint32)d < 0x0800 || ((uint32)d - 0xD800) < 0x0800) {
-						encodingError = true;
-						break;
-					}
-				} else if (c >= 0xF0 && c <= 0xF7) {
-					if (mpSrcEnd - mpSrc < 3) {
-						encodingError = true;
-						break;
-					}
-
-					uint8 x0 = *mpSrc++;
-					uint8 x1 = *mpSrc++;
-					uint8 x2 = *mpSrc++;
-					if (x0 < 0x80 || x0 > 0xBF || x1 < 0x80 || x1 > 0xBF || x2 < 0x80 || x2 > 0xBF) {
-						encodingError = true;
-						break;
-					}
-
-					uint32 e = ((uint32)(c - 0xF0) << 18) + (((uint32)x0 - 0x80) << 12) + (((uint32)x1 - 0x80) << 6) + (uint32)(x2 - 0x80);
-					if (e < 0x10000) {
-						encodingError = true;
-						break;
-					}
-
-					// fragment into surrogates if required
-					if constexpr (sizeof(wchar_t) <= 2) {
-						if (len >= kInputBufferSize - 1)
+					} else if (c >= 0xC2 && c <= 0xDF) {		// U+0080 to U+07FF
+						if (src == srcEnd) {
+							encodingError = true;
 							break;
+						}
 
-						e -= 0x10000;
+						uint8 x0 = *src++;
+						if (x0 < 0x80 || x0 > 0xBF) {
+							encodingError = true;
+							break;
+						}
 
-						mInputBuffer[len++] = (wchar_t)(0xD800 + (e >> 10));
-						d = (wchar_t)(0xDC00 + (e & 0x03FF));
+						d = ((c - 0xC0) << 6) + (x0 - 0x80);
+					} else if (c >= 0xE0 && c <= 0xEF) {	// U+0800 to U+FFFF
+						if (srcEnd - src < 2) {
+							encodingError = true;
+							break;
+						}
+
+						uint8 x0 = *src++;
+						uint8 x1 = *src++;
+						if (x0 < 0x80 || x0 > 0xBF || x1 < 0x80 || x1 > 0xBF) {
+							encodingError = true;
+							break;
+						}
+
+						d = ((c - 0xE0) << 12) + (((wchar_t)x0 - 0x80) << 6) + (wchar_t)(x1 - 0x80);
+
+						// reject invalid code points
+						if (d < 0x0800 || (uint32)(d - 0xD800) < 0x0800) {
+							encodingError = true;
+							break;
+						}
+					} else if (c >= 0xF0 && c <= 0xF7) {
+						if (srcEnd - src < 3) {
+							encodingError = true;
+							break;
+						}
+
+						uint8 x0 = *src++;
+						uint8 x1 = *src++;
+						uint8 x2 = *src++;
+						if (x0 < 0x80 || x0 > 0xBF || x1 < 0x80 || x1 > 0xBF || x2 < 0x80 || x2 > 0xBF) {
+							encodingError = true;
+							break;
+						}
+
+						uint32 e = ((uint32)(c - 0xF0) << 18) + (((uint32)x0 - 0x80) << 12) + (((uint32)x1 - 0x80) << 6) + (uint32)(x2 - 0x80);
+						if (e < 0x10000 || e >= 0x110000) {
+							encodingError = true;
+							break;
+						}
+
+						// fragment into surrogates if required
+						if constexpr (sizeof(wchar_t) <= 2) {
+							if (len >= kInputBufferSize - 1) {
+								// MERGE NOTE: retry this scalar after the UTF-16 refill.
+								src -= 4;
+								break;
+							}
+
+							e -= 0x10000;
+
+							dst[len++] = (wchar_t)(0xD800 + (e >> 10));
+							d = (wchar_t)(0xDC00 + (e & 0x03FF));
+						} else {
+							// MERGE NOTE: POSIX wchar_t stores the full scalar.
+							d = (wchar_t)e;
+						}
 					}
 				}
 
-				mInputBuffer[len++] = d;
+				dst[len++] = d;
 			}
 		}
 
-		mbPendingCR = false;
-
-		wchar_t *dst = mInputBuffer;
-
-		mInputLine = mInputLineNext;
-		mInputChar = mInputCharNext;
-
-		for(int i=0; i<len; ++i) {
-			wchar_t c = mInputBuffer[i];
-
-			if (c == L'\r') {
-				mbPendingCR = true;
-				c = L'\n';
-			} else if (mbPendingCR) {
-				mbPendingCR = false;
-
-				if (c == L'\n')
-					continue;
-			}
-
-			*dst++ = c;
-
-			++mInputCharNext;
-			if (c == L'\n') {
-				mInputCharNext = 0;
-				++mInputLineNext;
-			}
-		}
+		mpSrc = src;
 
 		mpInputBase = mInputBuffer;
 		mpInputNext = mInputBuffer;
-		mpInputEnd = dst;
+		mpInputEnd = &mInputBuffer[len];
 
 		if (encodingError) {
-			mpInputNext = dst;
+			mpInputNext = mpInputEnd;
 			mbSrcError = true;
 			return 0;
 		}
 
-		if (dst != mInputBuffer)
+		if (len)
 			return *mpInputNext++;
-	}
-
-	if (mbPendingCR) {
-		mbPendingCR = false;
-		mInputBuffer[0] = L'\n';
-		mpInputBase = mInputBuffer;
-		mpInputNext = mInputBuffer;
-		mpInputEnd = mInputBuffer + 1;
-		return L'\n';
 	}
 
 	mpInputBase = NULL;

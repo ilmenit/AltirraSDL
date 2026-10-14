@@ -295,9 +295,11 @@ bool VDDisplayCustomShaderD3D9::Run(const vdrect32f *dstRect, vdspan<const VDDTe
 		0.0f			
 	});
 
+	// This explicitly can't be the current pass output size or whole chain size;
+	// some old shaders like VINTAGE TV otherwise break.
 	varStorage.SetVector(mPassParamOffsets.mOutputSize, vdfloat4 {
-		(float)renderWidth,
-		(float)renderHeight,
+		(float)srcTexSpec.mImageWidth,
+		(float)srcTexSpec.mImageHeight,
 		0.0f,
 		0.0f			
 	});
@@ -1029,6 +1031,8 @@ void VDDisplayCustomShaderPipelineD3D9::Run(IDirect3DTexture9 *const *srcTexture
 		origTexSpec.mTexWidth = texSize.x;
 		origTexSpec.mTexHeight = texSize.y;
 		origTexSpec.mpTexture = *srcTextures++;
+		origTexSpec.mbLinear = false;
+		origTexSpec.mbSrgb = false;
 	}
 
 	std::ranges::fill(mInputInvalidationTable, false);

@@ -1,6 +1,6 @@
 ﻿//	Altirra - Atari 800/800XL/5200 emulator
 //	Atari DOS 2.x virtual filesystem handler
-//	Copyright (C) 2009-2020 Avery Lee
+//	Copyright (C) 2009-2026 Avery Lee
 //
 //	This program is free software; you can redistribute it and/or modify
 //	it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 //
 // Disk layout
 // -----------
-// The disk is laid out as follows:
+// The disk is laid out as follows (SD):
 //
 // +------+---------------+----------------+------------------+---------------+
 // | boot | start sectors | sector pool 1  | VTOC + directory | sector pool 2 |
@@ -61,6 +61,11 @@
 // allows the virtual disk to be accessed by operating systems that have
 // dynamic disk caching (SpartaDOS X), or by applications that make extensive
 // use of direct reseeking via POINT.
+//
+// For ED, sectors 721-1023 are additionally added to the sector pool, still
+// avoiding sector 720 and stopping at the extended VTOC at 1024.
+//
+// For MyDOS, sectors 369+ are simply put into the sector pool.
 //
 // Preallocation
 // -------------
@@ -105,11 +110,17 @@
 #include "diskvirtimage.h"
 
 ATDebuggerLogChannel g_ATLCVDisk(false, false, "VDISK", "Virtual disk activity");
+ATDebuggerLogChannel g_ATLCVDiskAlloc(false, false, "VDISKALLOC", "Virtual disk allocation");
 
-ATDiskImageVirtualFolder::ATDiskImageVirtualFolder()
-	: mSectorCount(720)
+ATDiskImageVirtualFolder::ATDiskImageVirtualFolder(uint32 tracks, uint32 sectorsPerTrack, uint32 sectorSize)
+	: mSectorSize(sectorSize)
+	, mSectorCount(tracks * sectorsPerTrack)
+	, mSectorsPerTrack(sectorsPerTrack)
+	, mTrackCount(tracks)
+	, mbMyDOS(mSectorCount > 1040 || sectorSize > 128)
+	, mbDOS25(mSectorCount == 1040 && sectorSize == 128)
 {
-	Reinterleave(mSectorCount > 720 ? kATDiskInterleave_ED_13_1 : kATDiskInterleave_Default);
+	Reinterleave(mSectorSize > 128 ? kATDiskInterleave_DD_16_1 : mSectorCount > 720 ? kATDiskInterleave_ED_13_1 : kATDiskInterleave_Default);
 }
 
 void *ATDiskImageVirtualFolder::AsInterface(uint32 iid) {
@@ -127,13 +138,13 @@ void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
 	memset(mDirEnt, 0, sizeof mDirEnt);
 
 	// Initialize disk geometry.
-	mGeometryInfo.mSectorSize = 128;
+	mGeometryInfo.mSectorSize = mSectorSize;
 	mGeometryInfo.mBootSectorCount = 3;
 	mGeometryInfo.mTotalSectorCount = mSectorCount;
-	mGeometryInfo.mTrackCount = 40;
-	mGeometryInfo.mSectorsPerTrack = mSectorCount > 720 ? 26 : 18;
+	mGeometryInfo.mTrackCount = mTrackCount;
+	mGeometryInfo.mSectorsPerTrack = mSectorsPerTrack;
 	mGeometryInfo.mSideCount = 1;
-	mGeometryInfo.mbMFM = mSectorCount > 720;
+	mGeometryInfo.mbMFM = mSectorsPerTrack > 18 || mGeometryInfo.mSectorSize > 128;
 
 	// Initialize sector map by marking all sectors as in use.
 	mSectorMap.resize(mSectorCount);
@@ -147,6 +158,30 @@ void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
 		se.mSectorIndex = 0;
 	}
 
+	// Compute the number of primary VTOC sectors needed.
+	//
+	// DOS 2.x always uses a single primary VTOC sector at 360, with 2.5 using
+	// an extended VTOC at 1024.
+	//
+	// MyDOS uses a single sector up to 944 sectors, then allocates an additional
+	// DD sector or pairs of ED/SD sectors for every 2048 sectors beyond that.
+	mVtocSectorCount = std::max<uint32>(1, (mSectorCount + 1104) >> 11);
+
+	// Compute total number of data sectors, which is reflected in the VTOC.
+	// This is nomimally 707 for DOS 2.x.
+	mTotalDataSectorCount = 707;
+
+	if (mbMyDOS) {
+		// Of the total sector count, deduct:
+		//	- 3 boot sectors
+		//	- 1+ VTOC sectors
+		//	- 8 main directory sectors
+		//
+		// Note that MyDOS does make sector 720 available.
+
+		mTotalDataSectorCount = mSectorCount - mVtocSectorCount - 11;
+	}
+
 	// Sectors 4-67 are permanently dedicated to the first sector of each file.
 	// (Our internal sector indices are -1 from the SIO sector number.)
 	for(uint32 i = 3; i <= 66; ++i) {
@@ -154,22 +189,28 @@ void ATDiskImageVirtualFolder::Init(const wchar_t *path) {
 		mSectorMap[i].mSectorIndex = 0;
 	}
 
-	// Put sectors 68-359 and 369-719 in the pool for rotating data sector use.
+	// Put sectors 68-359 in the pool for rotating data sector use.
 	mFreeSectorCount = 0;
 
-	for(uint32 i = 67; i <= 358; ++i)
+	for(uint32 i = 67; i <= 359 - mVtocSectorCount; ++i)
 		LinkDataSector(i);
 
-	for(uint32 i = 368; i <= 718; ++i)
-		LinkDataSector(i);
-
-	// If we are using an enhanced density disk geometry (1040 sectors), mimic
-	// the DOS 2.5 extensions; add sectors 721-1023 to the sector pool. Sector
-	// 720 is still not used, sector 1024 is reserved for the extended VTOC,
-	// and sectors 1025-1040 are unused.
-	if (mSectorCount > 720) {
-		for(uint32 i = 720; i <= 1022; ++i)
+	if (mbMyDOS) {
+		for(uint32 i = 368; i < mSectorCount; ++i)
 			LinkDataSector(i);
+	} else {
+		// Put sectors 369-719 in the pool for rotating data sector use.
+		for(uint32 i = 368; i <= 718; ++i)
+			LinkDataSector(i);
+
+		if (mbDOS25) {
+			// If we are using an enhanced density disk geometry (1040 sectors), mimic
+			// the DOS 2.5 extensions; add sectors 721-1023 to the sector pool. Sector
+			// 720 is still not used, sector 1024 is reserved for the extended VTOC,
+			// and sectors 1025-1040 are unused.
+			for(uint32 i = 720; i <= 1022; ++i)
+				LinkDataSector(i);
+		}
 	}
 
 	UpdateDirectory(false);
@@ -186,11 +227,11 @@ ATDiskGeometryInfo ATDiskImageVirtualFolder::GetGeometry() const {
 }
 
 uint32 ATDiskImageVirtualFolder::GetSectorSize() const {
-	return 128;
+	return mSectorSize;
 }
 
 uint32 ATDiskImageVirtualFolder::GetSectorSize(uint32 virtIndex) const {
-	return 128;
+	return virtIndex >= 3 ? mSectorSize : 128;
 }
 
 uint32 ATDiskImageVirtualFolder::GetBootSectorCount() const {
@@ -200,8 +241,8 @@ uint32 ATDiskImageVirtualFolder::GetBootSectorCount() const {
 void ATDiskImageVirtualFolder::GetPhysicalSectorInfo(uint32 index, ATDiskPhysicalSectorInfo& info) const {
 	info.mImageOffset = 0;
 	info.mDiskOffset = -1;
-	info.mPhysicalSize = 128;
-	info.mImageSize = 128;
+	info.mPhysicalSize = mSectorSize;
+	info.mImageSize = index >= 3 ? mSectorSize : 128;
 	info.mbDirty = false;
 	info.mbMFM = mGeometryInfo.mbMFM;
 	info.mRotPos = mpInterleaveFn(index);
@@ -212,7 +253,7 @@ void ATDiskImageVirtualFolder::GetPhysicalSectorInfo(uint32 index, ATDiskPhysica
 void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint32 len) {
 	memset(data, 0, len);
 
-	if (len != 128 || index >= mSectorCount)
+	if (len != GetSectorSize(index) || index >= mSectorCount)
 		return;
 
 	// check for updates
@@ -245,24 +286,30 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 		return;
 	}
 
-	// check for VTOC
+	// check for primary VTOC sectors
 	if (index == 359) {
-		static const uint8 kVTOCSector[]={
-			0x02, 0xC3, 0x02
-		};
+		uint8 vtocSector[3] {};
 
-		memcpy(data, kVTOCSector, sizeof kVTOCSector);
+		vtocSector[0] = 1 + mVtocSectorCount;
+		VDWriteUnalignedLEU16(&vtocSector[1], mTotalDataSectorCount);
+
+		memcpy(data, vtocSector, sizeof vtocSector);
 		return;
 	}
 
+	// check for additional VTOC sectors
+
+
 	// check for directory
 	if (index >= 360 && index < 368) {
+		// In the MyDOS format, only the first 128 bytes of each directory sector are used.
 		memcpy(data, &mDirEnt[(index - 360) << 3], 128);
 		return;
 	}
 
 	// check for extended VTOC
-	if (index == 1024) {
+	// Sector 1024 is index 1023 (matching the DOS 2.5 filesystem reader).
+	if (index == 1023 && mbDOS25) {
 		// bytes 0-122 track free sectors 48-1023
 		// bytes 122-123 contain free sector count for 720-1023
 		// all bytes should be zero, which is already the case
@@ -314,8 +361,8 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 	
 	g_ATLCVDisk("Reading sector %u [%2u:%2u] (sector %u/%u of file %d / %ls)\n"
 		, index+1
-		, index/18
-		, index%18+1
+		, index / mSectorsPerTrack
+		, index % mSectorsPerTrack + 1
 		, se.mSectorIndex
 		, xd.mSectorCount
 		, se.mFileIndex
@@ -332,10 +379,10 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 			xd.mFile.open(xd.mPath.c_str());
 		}
 
-		const uint32 offset = (uint32)se.mSectorIndex * 125;
+		const uint32 offset = (uint32)se.mSectorIndex * (mSectorSize - 3);
 		const uint32 remainder = xd.mSize - offset;
 
-		validLen = (uint8)std::min<uint32>(125, remainder);
+		validLen = (uint8)std::min<uint32>(mSectorSize - 3, remainder);
 
 		// Read in the file data.
 		if (validLen) {
@@ -347,7 +394,7 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 
 		// Check if there will be another sector. If so, we need to determine the sector link and
 		// pre-allocate that sector if needed.
-		if (remainder > 125) {
+		if (remainder > mSectorSize - 3) {
 			link = xd.mLockedSector;
 
 			if (!link || mSectorMap[link].mSectorIndex != se.mSectorIndex + 1) {
@@ -373,8 +420,8 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 					g_ATLCVDisk("%s sector %u [%2u:%2u] as sector %u of file %ls\n"
 						, le.mFileIndex >= 0 ? "Reassigning" : "Allocating"
 						, link + 1
-						, link / 18
-						, link % 18 + 1
+						, link / mSectorsPerTrack
+						, link % mSectorsPerTrack + 1
 						, se.mSectorIndex + 1
 						, VDFileSplitPath(xd.mPath.c_str()));
 
@@ -400,9 +447,13 @@ void ATDiskImageVirtualFolder::ReadPhysicalSector(uint32 index, void *data, uint
 	// Byte 127 contains the number of valid data bytes.
 	uint8 *dst = (uint8 *)data;
 
-	dst[125] = (uint8)(((int)se.mFileIndex << 2) + ((link + 1) >> 8));
-	dst[126] = (uint8)(link + 1);
-	dst[127] = validLen;
+	if (mbMyDOS)
+		dst[mSectorSize - 3] = (uint8)((link + 1) >> 8);
+	else
+		dst[mSectorSize - 3] = (uint8)(((int)se.mFileIndex << 2) + ((link + 1) >> 8));
+
+	dst[mSectorSize - 2] = (uint8)(link + 1);
+	dst[mSectorSize - 1] = validLen;
 }
 
 uint32 ATDiskImageVirtualFolder::GetVirtualSectorCount() const {
@@ -415,11 +466,12 @@ void ATDiskImageVirtualFolder::GetVirtualSectorInfo(uint32 index, ATDiskVirtualS
 }
 
 uint32 ATDiskImageVirtualFolder::ReadVirtualSector(uint32 index, void *data, uint32 len) {
-	if (len < 128)
+	const uint32 sectorSize = GetSectorSize(index);
+	if (len < sectorSize)
 		return 0;
 
-	ReadPhysicalSector(index, data, len > 128 ? 128 : len);
-	return 128;
+	ReadPhysicalSector(index, data, len > sectorSize ? sectorSize : len);
+	return sectorSize;
 }
 
 void ATDiskImageVirtualFolder::Reinterleave(ATDiskInterleave interleave) {
@@ -548,13 +600,13 @@ uint32 ATDiskImageVirtualFolder::FindBestNextDataSector(sint8 fileIndex, uint32 
 	// pollution with track buffered drives.
 	
 	// 1) If there are unallocated sectors within the same track, use them.
-	uint32 trackStart = prevSectorIndex - prevSectorIndex % 18;
+	uint32 trackStart = prevSectorIndex - prevSectorIndex % mSectorsPerTrack;
 
-	for(uint32 i=0, testSec = prevSectorIndex; i<18; ++i) {
+	for(uint32 i=0, testSec = prevSectorIndex; i < mSectorsPerTrack; ++i) {
 		if (mSectorMap[testSec].mbInCache && mSectorMap[testSec].mFileIndex < 0)
 			return testSec;
 
-		if (++testSec >= trackStart + 18)
+		if (++testSec >= trackStart + mSectorsPerTrack)
 			testSec = trackStart;
 	}
 
@@ -568,18 +620,18 @@ uint32 ATDiskImageVirtualFolder::FindBestNextDataSector(sint8 fileIndex, uint32 
 	uint32 bestTrackScore = 0;
 	uint32 bestFreeSector = 0;
 
-	for(uint32 track = 4; track < 40; ++track) {
+	for(uint32 track = 4; track < mTrackCount; ++track) {
 		if (track == 20)
 			continue;
 
-		const uint32 trackStartIndex = track * 18;
+		const uint32 trackStartIndex = track * mSectorsPerTrack;
 		bool fileMap[64] = {false};
 		fileMap[fileIndex] = true;
 		uint32 otherFilesOnTrack = 0;
 		uint32 freeSectorsOnTrack = 0;
 		uint32 firstFreeSector = 0;
 
-		for(uint32 i=0; i<18; ++i) {
+		for(uint32 i=0; i<mSectorsPerTrack; ++i) {
 			const SectorEnt& se = mSectorMap[trackStartIndex + i];
 			if (se.mFileIndex >= 0) {
 				if (!fileMap[se.mFileIndex]) {
@@ -594,7 +646,9 @@ uint32 ATDiskImageVirtualFolder::FindBestNextDataSector(sint8 fileIndex, uint32 
 		}
 
 		if (freeSectorsOnTrack) {
-			uint32 trackScore = ((18 - otherFilesOnTrack) << 8) + freeSectorsOnTrack;
+			uint32 trackScore = ((mSectorsPerTrack - otherFilesOnTrack) << 8) + freeSectorsOnTrack;
+
+			g_ATLCVDiskAlloc("Evaluating track %2u: %u other files, %u free sectors\n", track, otherFilesOnTrack, freeSectorsOnTrack);
 
 			if (trackScore > bestTrackScore) {
 				bestTrackScore = trackScore;
@@ -616,8 +670,8 @@ uint32 ATDiskImageVirtualFolder::FindBestNextDataSector(sint8 fileIndex, uint32 
 }
 
 void ATDiskImageVirtualFolder::PreallocateTrack(uint32 baseSectorIndex) {
-	const uint32 trackStart = baseSectorIndex - baseSectorIndex % 18;
-	const uint32 trackEnd = trackStart + 18;
+	const uint32 trackStart = baseSectorIndex - baseSectorIndex % mSectorsPerTrack;
+	const uint32 trackEnd = trackStart + mSectorsPerTrack;
 	uint32 nextSectorIndex = baseSectorIndex;
 
 	// Construct file order for track. Use the files that we currently have on the track,
@@ -681,8 +735,8 @@ void ATDiskImageVirtualFolder::PreallocateTrack(uint32 baseSectorIndex) {
 
 				g_ATLCVDisk("Preallocating sector %u [%2u:%2u] as sector %u/%u of file %d / %ls\n"
 					, nextSectorIndex+1
-					, nextSectorIndex/18
-					, nextSectorIndex%18 + 1
+					, nextSectorIndex / mSectorsPerTrack
+					, nextSectorIndex % mSectorsPerTrack + 1
 					, se.mSectorIndex
 					, xdpre.mSectorCount
 					, fileIndex
@@ -787,7 +841,7 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 			}
 
 			uint32 size = VDClampToUint32(it.GetSize());
-			uint32 sectors = VDClampToUint16((size + 124) / 125);
+			uint32 sectors = VDClampToUint16((size + mSectorSize - 4) / (mSectorSize - 3));
 			xdst->mSize = size;
 			xdst->mSectorCount = sectors;
 		}
@@ -968,6 +1022,9 @@ void ATDiskImageVirtualFolder::UpdateDirectory(bool reportNewFiles) {
 			de.mFirstSector[0] = (uint8)(4 + i);
 			de.mFirstSector[1] = 0;
 			de.mFlags = DirEnt::kFlagDOS2 | DirEnt::kFlagInUse;
+
+			if (mbMyDOS)
+				de.mFlags |= DirEnt::kFlagExtFile;
 		}
 	}
 }
@@ -1012,8 +1069,8 @@ bool ATDiskImageVirtualFolder::IsMappableHostFilename(const wchar_t *s) {
 
 ///////////////////////////////////////////////////////////////////////////
 
-void ATMountDiskImageVirtualFolder(const wchar_t *path, uint32 sectorCount, IATDiskImage **ppImage) {
-	vdrefptr<ATDiskImageVirtualFolder> p(new ATDiskImageVirtualFolder);
+void ATMountDiskImageVirtualFolder(const wchar_t *path, uint32 tracks, uint32 sectorsPerTrack, uint32 sectorSize, IATDiskImage **ppImage) {
+	vdrefptr<ATDiskImageVirtualFolder> p(new ATDiskImageVirtualFolder(tracks, sectorsPerTrack, sectorSize));
 	
 	p->Init(path);
 	*ppImage = p.release();

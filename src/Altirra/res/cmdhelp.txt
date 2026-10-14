@@ -194,6 +194,9 @@ Usage: Altirra [switches] <disk/cassette/cartridge images...>
   atfs://image.ext!innerfil.ext
               Access file within Atari file system
 
+  atvdisk://base/path?fs=dos|sdfs&sectors=720&ssize=128
+              Mount folder as virtual disk
+
   special://<firmware-id>
               Access built-in or registered images
 
@@ -204,6 +207,7 @@ Usage: Altirra [switches] <disk/cassette/cartridge images...>
               ataribas-c.bin/car  Atari BASIC rev. C (if registered)
 
   All URL forms except plain file paths use URL encoding (%20). URL forms can
-  be nested, e.g.: atfs://zip://dos.zip!dos.atr!autorun.sys
+  be nested, e.g.: atfs://zip://dos.zip!dos.atr!autorun.sys. ^ must be used to
+  quote & and ! with cmd.exe.
 
 (end)

@@ -195,6 +195,7 @@ void VDRemoveFileEx(const wchar_t *path);		// throws exception on failure
 void VDMoveFile(const wchar_t *srcPath, const wchar_t *dstPath);
 
 bool VDDoesPathExist(const wchar_t *fileName);
+bool VDDoesDirectoryExist(const wchar_t *fileName);
 
 uint64 VDFileGetLastWriteTime(const wchar_t *path);
 VDStringW VDFileGetRootPath(const wchar_t *partialPath);

@@ -78,6 +78,13 @@
 		</Expand>
 	</Type>
 	
+	<Type Name="VDStringSpanA" IncludeView="utf8">
+		<DisplayString IncludeView="plain">{mpBegin,[mpEnd-mpBegin]s8b}</DisplayString>
+		<DisplayString Condition="mpEnd&gt;=mpBegin">len={mpEnd-mpBegin,i} "{mpBegin,[mpEnd-mpBegin]s8b}"</DisplayString>
+		<DisplayString Condition="mpEnd&lt;mpBegin">invalid!</DisplayString>
+		<StringView>mpBegin,s8</StringView>
+	</Type>
+
 	<Type Name="VDStringSpanA">
 		<DisplayString IncludeView="plain">{mpBegin,[mpEnd-mpBegin]sb}</DisplayString>
 		<DisplayString Condition="mpEnd&gt;=mpBegin">len={mpEnd-mpBegin,i} "{mpBegin,[mpEnd-mpBegin]sb}"</DisplayString>

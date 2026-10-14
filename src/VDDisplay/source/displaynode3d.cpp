@@ -933,9 +933,16 @@ bool VDDisplayNodeContext3D::Init(IVDTContext& ctx, bool preferLinear) {
 		return false;
 	}
 
-	ssdesc.mFilterMode = kVDTFilt_BilinearMip;
+	ssdesc.mFilterMode = kVDTFilt_Bilinear;
 	ssdesc.mAddressU = kVDTAddr_Wrap;
 	ssdesc.mAddressV = kVDTAddr_Wrap;
+
+	if (!ctx.CreateSamplerState(ssdesc, &mpSSBilinearRepeat)) {
+		Shutdown();
+		return false;
+	}
+
+	ssdesc.mFilterMode = kVDTFilt_BilinearMip;
 
 	if (!ctx.CreateSamplerState(ssdesc, &mpSSBilinearRepeatMip)) {
 		Shutdown();
@@ -982,6 +989,7 @@ void VDDisplayNodeContext3D::Shutdown() {
 		mpVPTexture2T,
 		mpVPTexture3T,
 		mpSSBilinearRepeatMip,
+		mpSSBilinearRepeat,
 		mpSSBilinear,
 		mpSSPoint,
 		mpBSOver;
@@ -2513,7 +2521,8 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 	// done in linear space, but the math is transformed to push the gamma correction
 	// into the texture where we can precompute it.
 
-	uint32 scanlineMaskH = std::max<uint32>(1, mParams.mClipDstH);
+	const bool useDistortion = mParams.mDistortionX > 0;
+	uint32 scanlineMaskH = useDistortion ? 256 : std::max<uint32>(1, mParams.mClipDstH);
 	uint32 scanlineMaskTexH = scanlineMaskH;
 
 	// If the device doesn't support pow2, round up the texture size. We'll only
@@ -2522,17 +2531,23 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 		scanlineMaskTexH = VDCeilToPow2(scanlineMaskTexH);
 	}
 
-	const float maskVScale = (float)mParams.mDstH / (float)scanlineMaskTexH;
-	const float maskVBase = (mParams.mDstY - mParams.mClipDstY) / (float)scanlineMaskTexH;
+	const float scanlineMaskVScale = useDistortion ? mParams.mSrcH : (float)mParams.mDstH / (float)scanlineMaskTexH;
+	const float scanlineMaskVBase = useDistortion ? 0.0f : (mParams.mDstY - mParams.mClipDstY) / (float)scanlineMaskTexH;
 
-	vdblock<uint32> imageMask(scanlineMaskTexH);
-	std::fill(imageMask.begin(), imageMask.end(), 0);
-	VDDisplayCreateScanlineMaskTexture(imageMask.data(), sizeof(imageMask[0]), mParams.mSrcH, scanlineMaskH, mParams.mDstY - mParams.mClipDstY, mParams.mDstH, scanlineMaskTexH, mParams.mScanlineIntensity, mParams.mbRenderLinear);
+	{
+		vdblock<uint32> imageMask(scanlineMaskTexH);
+		std::fill(imageMask.begin(), imageMask.end(), 0);
 
-	VDTInitData2D initDataScanlineMask { imageMask.data(), sizeof(imageMask[0]) };
-	if (!ctx.CreateTexture2D(1, scanlineMaskTexH, dctx.mBGRAFormat, 1, VDTUsage::Shader, &initDataScanlineMask, &mpScanlineMaskTex)) {
-		Shutdown();
-		return false;
+		if (useDistortion)
+			VDDisplayCreateScanlineMaskTexture(imageMask.data(), sizeof(imageMask[0]), 1.0f, 256.0f, 0, 256.0f, scanlineMaskTexH, mParams.mScanlineIntensity, false, mParams.mbRenderLinear);
+		else
+			VDDisplayCreateScanlineMaskTexture(imageMask.data(), sizeof(imageMask[0]), mParams.mSrcH, scanlineMaskH, mParams.mDstY - mParams.mClipDstY, mParams.mDstH, scanlineMaskTexH, mParams.mScanlineIntensity, false, mParams.mbRenderLinear);
+
+		VDTInitData2D initDataScanlineMask { imageMask.data(), sizeof(imageMask[0]) };
+		if (!ctx.CreateTexture2D(1, scanlineMaskTexH, dctx.mBGRAFormat, 1, VDTUsage::Shader, &initDataScanlineMask, &mpScanlineMaskTex)) {
+			Shutdown();
+			return false;
+		}
 	}
 
 	// init dot mask
@@ -2548,8 +2563,10 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 		dotMaskTexH = VDCeilToPow2(dotMaskTexH);
 	}
 
-	const float maskHScale = (float)mParams.mDstW / (float)dotMaskTexW;
-	const float maskHBase = (mParams.mDstX - mParams.mClipDstX) / (float)dotMaskTexW;
+	const float dotMaskHScale = (float)mParams.mDstW / (float)dotMaskTexW;
+	const float dotMaskHBase = (mParams.mDstX - mParams.mClipDstX) / (float)dotMaskTexW;
+	const float dotMaskVScale = (float)mParams.mDstH / (float)dotMaskTexH;
+	const float dotMaskVBase = (mParams.mDstY - mParams.mClipDstY) / (float)dotMaskTexH;
 
 	if (useDotMask) {
 		if (mParams.mScreenMaskParams.mType == VDDScreenMaskType::DotTriad) {
@@ -2613,11 +2630,9 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 	}
 
 	// set up mesh draw
-	const bool useDistortion = mParams.mDistortionX > 0;
-
 	mb.InitSamplers(mpDotMaskTex ? 4 : 3);
 	mb.SetSampler(0, mParams.mbLinear ? dctx.mpSSBilinear : dctx.mpSSPoint);
-	mb.SetSampler(1, mParams.mDistortionX > 0 ? dctx.mpSSBilinear : dctx.mpSSPoint);
+	mb.SetSampler(1, useDistortion ? dctx.mpSSBilinearRepeat : dctx.mpSSPoint);
 	mb.SetSampler(2, dctx.mpSSBilinear);
 
 	if (mpDotMaskTex)
@@ -2670,11 +2685,16 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 
 	mb.SetFPConstData(params);
 	
-	float vsParams[16] = {
-		maskHScale,
-		maskVScale,
-		maskVBase,
-		maskHBase,
+	float vsParams[20] = {
+		0,
+		scanlineMaskVScale,
+		scanlineMaskVBase,
+		0,
+
+		dotMaskHScale,
+		dotMaskVScale,
+		dotMaskVBase,
+		dotMaskHBase,
 
 		1.0f,
 		useDistortion ? -0.5f : 0.0f,
@@ -2687,11 +2707,11 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 		distortionMapping.mSqRadius,
 		0,
 
-		// output transform
-		2.0f,
-		-2.0f,
-		1.0f,
-		-1.0f
+		// source UV area
+		u1 - u0,
+		v1 - v0,
+		v0,
+		u0
 	};
 
 	mb.SetVPConstData(vsParams);
@@ -2733,8 +2753,8 @@ bool VDDisplayScreenFXNode3D::Init(IVDTContext& ctx, VDDisplayNodeContext3D& dct
 					pos.x * 2.0f - 1.0f,
 					pos.y * -2.0f + 1.0f,
 					0.0f,
-					u0 * xf0 + u1 * xf1,
-					v0 * yf0 + v1 * yf1,
+					pos.x,
+					pos.y,
 					uv1.x,
 					uv1.y
 				};
