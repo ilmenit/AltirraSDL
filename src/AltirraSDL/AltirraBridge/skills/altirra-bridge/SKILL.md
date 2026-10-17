@@ -56,6 +56,12 @@ The token file contains the bound address on line 1 and a 128-bit
 hex session token on line 2. Every client must read this file to
 connect.
 
+If a script launches the server with stderr piped, it must keep
+reading that pipe for the whole session (e.g. a daemon thread), not
+only until the token line: the server keeps logging to stderr and
+blocks once the pipe buffer is full, which looks like a hang or a
+crash. See `references/workflows.md`, "Headless CI test".
+
 ## Quick start — Python
 
 ```python
