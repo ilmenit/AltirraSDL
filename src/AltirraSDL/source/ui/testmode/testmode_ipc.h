@@ -46,7 +46,13 @@ private:
 	void *mListenPipe = nullptr;   // HANDLE, INVALID_HANDLE_VALUE when unused
 	void *mClientPipe = nullptr;   // same handle after ConnectNamedPipe succeeds
 	void *mConnectEvent = nullptr; // OVERLAPPED event for async ConnectNamedPipe
+	// OVERLAPPED for the pending ConnectNamedPipe. It must outlive the
+	// call that starts the connect: the kernel writes the completion into
+	// it when a client connects, so it cannot live on the stack.
+	void *mpConnectOverlapped = nullptr;
 	bool  mConnectPending = false; // true while ConnectNamedPipe is in progress
+
+	bool StartConnect();           // arm ConnectNamedPipe; false on hard error
 	std::string mPipeName;
 #else
 	// POSIX Unix domain socket fds

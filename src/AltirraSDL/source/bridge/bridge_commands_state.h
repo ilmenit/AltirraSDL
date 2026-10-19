@@ -85,4 +85,9 @@ std::string CmdPaletteLoadAct(ATSimulator& sim, const std::vector<std::string>& 
 // PALETTE_LOAD_ACT. Response: {"ok":true}.
 std::string CmdPaletteReset(ATSimulator& sim, const std::vector<std::string>& tokens);
 
+// SCREEN_TEXT — decode the current screen's ANTIC text-mode rows to
+// ATASCII/Unicode, top to bottom, via ANTIC's own DMA memory view
+// (not the CPU's). See bridge_screentext.h for the decode logic.
+std::string CmdScreenText(ATSimulator& sim, const std::vector<std::string>& tokens);
+
 }  // namespace ATBridge

@@ -61,6 +61,8 @@ std::string EnsureBareStubXexPath();
 
 // Verify the whole embedded code segment and the CPU park-loop PC.
 bool IsBareStubReady(ATSimulator& sim);
+// The embedded stub XEX image (what EnsureBareStubXexPath() writes).
+const unsigned char *GetBareStubXex(size_t& size);
 
 }  // namespace ATBridge
 

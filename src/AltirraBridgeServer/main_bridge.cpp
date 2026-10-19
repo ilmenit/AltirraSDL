@@ -42,6 +42,9 @@
 #include "debugger.h"            // ATGetDebugger() — for --debugbrkrun
 
 #include "bridge_server.h"
+#ifdef ALTIRRA_MCP_ENABLED
+#include "mcp/mcp_server.h"
+#endif
 #include <at/atcore/constants.h>
 #include <at/atio/cassetteimage.h>
 #include <vd2/VDDisplay/display.h>
@@ -188,7 +191,10 @@ bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
 		ATMediaLoadContext ctx;
 		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
 		ctx.mOriginalPath = wpath.c_str();
-		ctx.mImageName = wpath.c_str();
+		// Leave mImageName empty, as the SDL3 frontend does: Load() fills it
+		// with the file view's base name, which then no longer matches
+		// mOriginalPath, so the disk image is loaded as not updatable and
+		// a Real R/W mount silently never writes back to the file.
 		ctx.mWriteMode = kATMediaWriteMode_RW;
 		if (!sim.Load(ctx)) {
 			BRIDGE_LOG_ERROR("BridgeServer", "BOOT load failed: %s", path.c_str());
@@ -209,21 +215,30 @@ bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path) {
 	}
 }
 
-bool ATBridgeDispatchMount(ATSimulator& sim, int drive, const std::string& path) {
+bool ATBridgeDispatchMount(ATSimulator& sim, int drive, const std::string& path,
+	const ATMediaWriteMode* writeMode) {
 	if (path.empty() || drive < 0 || drive > 14) return false;
 	try {
+		// Target a specific drive via ATImageLoadContext::mLoadIndex,
+		// same as the SDL3 GUI target's kATDeferred_AttachDisk handler
+		// (ui_main.cpp). Without this, Load() dispatches by file type
+		// alone and picks whatever drive its own heuristic prefers,
+		// ignoring the caller's drive argument.
+		ATImageLoadContext imgCtx{};
+		imgCtx.mLoadType  = kATImageType_Disk;
+		imgCtx.mLoadIndex = drive;
+
 		ATMediaLoadContext ctx;
 		const VDStringW wpath = VDTextU8ToW(VDStringSpanA(path.c_str()));
 		ctx.mOriginalPath = wpath.c_str();
-		ctx.mImageName = wpath.c_str();
-		ctx.mWriteMode = kATMediaWriteMode_RW;
-		// MOUNT targets a specific drive — use the cart load context
-		// to express it. Phase 1 of the headless build uses Load()
-		// which dispatches by file type; an .atr image goes to a
-		// disk drive selected by the loader. For drive-specific
-		// mounting we'd need to call lower-level disk APIs; defer
-		// to a follow-up if needed.
-		(void)drive;
+		// Leave mImageName empty, as the SDL3 frontend does: Load() fills it
+		// with the file view's base name, which then no longer matches
+		// mOriginalPath, so the disk image is loaded as not updatable and
+		// a Real R/W mount silently never writes back to the file.
+		// Keep the hardcoded-RW behaviour when the MOUNT command's
+		// optional mode= argument is absent.
+		ctx.mWriteMode = writeMode ? *writeMode : kATMediaWriteMode_RW;
+		ctx.mpImageLoadContext = &imgCtx;
 		if (!sim.Load(ctx)) {
 			BRIDGE_LOG_ERROR("BridgeServer", "MOUNT load failed: %s", path.c_str());
 			return false;
@@ -303,6 +318,10 @@ struct Args {
 	std::string machine;             // empty = initial config default
 	std::string memory;              // empty = initial config default
 	bool        debugBrkRun  = false;
+	// Embedded MCP server (--mcp[=PORT], --mcp-token=TOKEN).
+	bool        mcp          = false;
+	uint16_t    mcpPort      = 7750;
+	std::string mcpToken;            // empty = no token required
 };
 
 void PrintHelp() {
@@ -331,12 +350,22 @@ void PrintHelp() {
 		"                        1400XL, 5200. Default: 800XL, or user settings.\n"
 		"  --memory=SIZE       Memory size: 8K..1088K. Default: 320K, or user settings.\n"
 		"  --debugbrkrun       Enable break-on-EXE-run-address.\n"
+#ifdef ALTIRRA_MCP_ENABLED
+		"  --mcp[=PORT]        Also serve the MCP (Model Context Protocol) server\n"
+		"                        at http://127.0.0.1:PORT/mcp. Default port: 7750.\n"
+		"                        Loopback only; runs alongside the bridge socket.\n"
+		"  --mcp-token=TOKEN   Require \"Authorization: Bearer TOKEN\" on every MCP\n"
+		"                        request. Default: no token.\n"
+#endif
 		"  -h, --help          Show this help.\n"
 		"\n"
 		"On startup the server prints connection and diagnostic paths on stderr:\n"
 		"  [Bridge] listening on tcp:127.0.0.1:54321\n"
 		"  [Bridge] token-file: /tmp/altirra-bridge-12345.token\n"
 		"  [Bridge] log-file: /tmp/altirra-bridge-12345.log\n"
+#ifdef ALTIRRA_MCP_ENABLED
+		"  [MCP] listening on http://127.0.0.1:7750/mcp   (with --mcp)\n"
+#endif
 		"\n"
 		"Connect with the Python or C SDK from\n"
 		"src/AltirraSDL/AltirraBridge/sdk/. The wire protocol is the\n"
@@ -411,6 +440,26 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			out.memory = a + 9;
 		} else if (std::strcmp(a, "--debugbrkrun") == 0) {
 			out.debugBrkRun = true;
+#ifdef ALTIRRA_MCP_ENABLED
+		} else if (std::strcmp(a, "--mcp") == 0) {
+			out.mcp = true;
+		} else if (std::strncmp(a, "--mcp=", 6) == 0) {
+			char *end = nullptr;
+			const unsigned long port = std::strtoul(a + 6, &end, 10);
+			if (!a[6] || *end || port < 1 || port > 65535) {
+				std::fprintf(stderr,
+					"AltirraBridgeServer: --mcp port must be 1..65535: %s\n", a + 6);
+				return false;
+			}
+			out.mcp = true;
+			out.mcpPort = (uint16_t)port;
+		} else if (std::strncmp(a, "--mcp-token=", 12) == 0) {
+			out.mcpToken = a + 12;
+			if (out.mcpToken.empty()) {
+				std::fprintf(stderr, "AltirraBridgeServer: --mcp-token needs a value\n");
+				return false;
+			}
+#endif
 		} else {
 			std::fprintf(stderr, "AltirraBridgeServer: unknown argument: %s\n", a);
 			return false;
@@ -647,6 +696,9 @@ static void BridgePollUntil(std::chrono::steady_clock::time_point deadline) {
 			? tickDeadline
 			: deadline);
 		ATBridge::Poll(g_sim, g_uiState);
+#ifdef ALTIRRA_MCP_ENABLED
+		ATMCPServer::Poll(g_sim);
+#endif
 		g_sim.OnWake();
 	}
 }
@@ -737,6 +789,43 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+#ifdef ALTIRRA_MCP_ENABLED
+	if (!args.mcpToken.empty() && !args.mcp) {
+		std::fprintf(stderr, "AltirraBridgeServer: --mcp-token needs --mcp\n");
+		ATBridge::Shutdown(g_sim);
+		return 2;
+	}
+
+	if (args.mcp) {
+		// Settings come from the command line only; the registry /
+		// settings.ini MCP settings of AltirraSDL are never read.
+		ATMCPServer::Config config;
+		config.enabled = true;
+		config.port = args.mcpPort;
+		config.requireToken = !args.mcpToken.empty();
+		config.token = args.mcpToken;
+		ATMCPServer::SetConfig(config);
+		ATMCPServer::Poll(g_sim);   // binds now, so a busy port fails at startup
+
+		const ATMCPServer::Status st = ATMCPServer::GetStatus();
+		if (st.state != ATMCPServer::State::Listening) {
+			if (st.state == ATMCPServer::State::PortInUse)
+				std::fprintf(stderr, "AltirraBridgeServer: MCP port %u is in use\n", (unsigned)args.mcpPort);
+			else
+				std::fprintf(stderr, "AltirraBridgeServer: could not listen on MCP port %u (error %d)\n",
+					(unsigned)args.mcpPort, st.osError);
+			ATMCPServer::Shutdown(g_sim);
+			ATBridge::Shutdown(g_sim);
+			ATBridgeLog::Shutdown();
+			return 1;
+		}
+
+		std::fprintf(stderr, "[MCP] listening on http://127.0.0.1:%u/mcp%s\n",
+			(unsigned)args.mcpPort, config.requireToken ? " (access token required)" : "");
+		BRIDGE_LOG_INFO("BridgeServer", "MCP listening on http://127.0.0.1:%u/mcp", (unsigned)args.mcpPort);
+	}
+#endif
+
 	BRIDGE_LOG_INFO("BridgeServer", "entering main loop");
 
 	using clock = std::chrono::steady_clock;
@@ -755,6 +844,11 @@ int main(int argc, char** argv) {
 		// 1. Process bridge commands (non-blocking, capped at 64
 		//    commands/poll).
 		ATBridge::Poll(g_sim, g_uiState);
+#ifdef ALTIRRA_MCP_ENABLED
+		// 1b. Embedded MCP server (no-op without --mcp). Its frame gate
+		//     is released by ATBridge::OnFrameCompleted() below.
+		ATMCPServer::Poll(g_sim);
+#endif
 		g_sim.OnWake();
 
 		// 2. Tick the simulator until a real frame is produced or
@@ -818,6 +912,9 @@ int main(int argc, char** argv) {
 
 	BRIDGE_LOG_INFO("BridgeServer", "shutting down");
 
+#ifdef ALTIRRA_MCP_ENABLED
+	ATMCPServer::Shutdown(g_sim);
+#endif
 	ATBridge::Shutdown(g_sim);
 	ATShutdownDebugger();
 

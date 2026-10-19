@@ -81,6 +81,12 @@ void OnFrameCompleted(ATSimulator& sim);
 // for main-loop integration only; it does not affect the wire protocol.
 bool IsFrameGateActive();
 
+// True while any automation step is waiting for emulated time to pass:
+// a frame gate, a CYCLES/SCANLINES step or a BOOT_BARE settle (from the
+// bridge socket or the embedded MCP server). The main loop keeps the
+// simulator running for these even when pause-when-inactive applies.
+bool IsAutomationGateActive();
+
 // True if the user passed --bridge on the command line. Set by Init().
 // Lets the main loop avoid the overhead of calling Poll() / OnFrame
 // hooks when the bridge is disabled at runtime.

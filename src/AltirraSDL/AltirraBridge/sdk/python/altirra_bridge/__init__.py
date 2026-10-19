@@ -33,6 +33,7 @@ See ``altirra_bridge.analyzer`` subpackage for the full RE toolkit.
 from .client import AltirraBridge, BridgeError, AuthError, RemoteError, RawFrame
 from .loader import XexImage, XexSegment, parse_xex, load_xex
 from .project import Project, Note
+from .macro import run_macro
 from . import install_skills
 
 __all__ = [
@@ -42,6 +43,8 @@ __all__ = [
     "XexImage", "XexSegment", "parse_xex", "load_xex",
     # RE project
     "Project", "Note",
+    # Macro runner (also available as AltirraBridge.macro(steps))
+    "run_macro",
     # Skills installer
     "install_skills",
 ]

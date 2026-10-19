@@ -128,6 +128,11 @@ bool WriteStubFile(const std::string& path) {
 
 }  // namespace
 
+const unsigned char *GetBareStubXex(size_t& size) {
+	size = sizeof kBareStubXex;
+	return kBareStubXex;
+}
+
 bool IsBareStubReady(ATSimulator& sim) {
 	// XEX magic + segment header occupy six bytes; the code is the
 	// 18-byte segment at $0600 above. Use the embedded canonical bytes.

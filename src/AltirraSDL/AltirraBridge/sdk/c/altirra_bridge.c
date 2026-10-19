@@ -918,14 +918,27 @@ static int atb_cmd_with_key_path(atb_client_t* c, const char* verb,
 }
 
 int atb_mount(atb_client_t* c, unsigned int drive, const char* path) {
+	return atb_mount_mode(c, drive, path, NULL);
+}
+
+int atb_mount_mode(atb_client_t* c, unsigned int drive, const char* path, const char* write_mode) {
 	if (!path) return ATB_ERR_BAD_ARG;
-	size_t cmd_size = 16 + strlen(path) + 1;
+	if (write_mode &&
+		strcmp(write_mode, "ro") != 0 && strcmp(write_mode, "rw") != 0 &&
+		strcmp(write_mode, "vrw") != 0 && strcmp(write_mode, "vrwsafe") != 0) {
+		atb_set_error(c, "write_mode must be one of ro, rw, vrw, vrwsafe");
+		return ATB_ERR_BAD_ARG;
+	}
+	size_t cmd_size = 16 + strlen(path) + (write_mode ? strlen(write_mode) + 8 : 0) + 1;
 	char* cmd = (char*)malloc(cmd_size);
 	if (!cmd) {
 		atb_set_error(c, "out of memory");
 		return ATB_ERR_NETWORK;
 	}
-	snprintf(cmd, cmd_size, "MOUNT %u %s", drive, path);
+	if (write_mode)
+		snprintf(cmd, cmd_size, "MOUNT %u %s mode=%s", drive, path, write_mode);
+	else
+		snprintf(cmd, cmd_size, "MOUNT %u %s", drive, path);
 	int rc = atb_simple_cmd(c, cmd);
 	free(cmd);
 	return rc;

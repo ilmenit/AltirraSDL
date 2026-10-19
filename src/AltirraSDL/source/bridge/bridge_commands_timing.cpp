@@ -99,6 +99,10 @@ void UpdateTimingCommands(ATSimulator& sim) {
 		g_gate.Cancel(sim);
 }
 
+void CancelTimingStep(ATSimulator& sim) {
+	g_gate.Cancel(sim);
+}
+
 void CleanupTimingCommands(ATSimulator& sim) {
 	g_gate.Cancel(sim);
 	g_gate.sim = nullptr;

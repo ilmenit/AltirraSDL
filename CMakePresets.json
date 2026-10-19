@@ -132,6 +132,24 @@
             }
         },
         {
+            "name": "windows-sdl-arm64-debug",
+            "displayName": "Windows ARM64 Debug (SDL3 + ImGui)",
+            "inherits": "windows-sdl-debug",
+            "architecture": {
+                "value": "ARM64",
+                "strategy": "set"
+            }
+        },
+        {
+            "name": "windows-sdl-arm64-release",
+            "displayName": "Windows ARM64 Release (SDL3 + ImGui)",
+            "inherits": "windows-sdl-release",
+            "architecture": {
+                "value": "ARM64",
+                "strategy": "set"
+            }
+        },
+        {
             "name": "windows-libs-only",
             "displayName": "Windows Libraries Only (no frontend — use .sln for native)",
             "inherits": "base",
@@ -297,6 +315,14 @@
         {
             "name": "windows-sdl-release",
             "configurePreset": "windows-sdl-release"
+        },
+        {
+            "name": "windows-sdl-arm64-debug",
+            "configurePreset": "windows-sdl-arm64-debug"
+        },
+        {
+            "name": "windows-sdl-arm64-release",
+            "configurePreset": "windows-sdl-arm64-release"
         },
         {
             "name": "windows-libs-only",

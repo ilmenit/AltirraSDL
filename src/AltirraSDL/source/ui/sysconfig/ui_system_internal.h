@@ -44,6 +44,9 @@ void RenderDebuggerCfgCategory(ATSimulator &sim);
 void RenderUICategory(ATSimulator &sim);
 void RenderDisplay2Category(ATSimulator &sim);
 void RenderSettingsCfgCategory(ATSimulator &sim);
+
+// MCP Server page (ui_system_pages_mcp.cpp).
+void RenderMCPServerCategory(ATSimulator &sim);
 #ifdef ALTIRRA_NETPLAY_ENABLED
 // Defined in ui_system_pages_netplay.cpp, which is only compiled when
 // the netplay module is enabled.  The sysconfig sidebar's kCat_OnlinePlay
