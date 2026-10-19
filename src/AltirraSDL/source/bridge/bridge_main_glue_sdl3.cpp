@@ -33,6 +33,7 @@
 #include <stdafx.h>
 
 #include "bridge_main_glue.h"
+#include "bridge_bare_stub.h"
 #include "ui_main.h"            // ATUIPushDeferred, kATDeferred_*
 
 #include "simulator.h"
@@ -44,13 +45,26 @@
 
 bool ATBridgeDispatchBoot(ATSimulator& /*sim*/, const std::string& path) {
 	if (path.empty()) return false;
+
+	// BOOT_BARE's internal stub is booted from memory: a Boot Image of the
+	// temp file would record it (and its folder, the temp directory) in
+	// the Game Library and MRU list when "Add booted games to library" is
+	// on, and the library would then scan the whole temp directory.
+	if (path == ATBridge::EnsureBareStubXexPath()) {
+		size_t size = 0;
+		const unsigned char *stub = ATBridge::GetBareStubXex(size);
+		ATUIBootProgramData(path.c_str(), stub, size);
+		return true;
+	}
+
 	ATUIPushDeferred(kATDeferred_BootImage, path.c_str());
 	return true;
 }
 
-bool ATBridgeDispatchMount(ATSimulator& /*sim*/, int drive, const std::string& path) {
+bool ATBridgeDispatchMount(ATSimulator& /*sim*/, int drive, const std::string& path,
+	const ATMediaWriteMode* writeMode) {
 	if (path.empty()) return false;
-	ATUIPushDeferred(kATDeferred_AttachDisk, path.c_str(), drive);
+	ATUIPushDeferredMount(path.c_str(), drive, writeMode);
 	return true;
 }
 

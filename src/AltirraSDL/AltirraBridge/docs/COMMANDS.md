@@ -7,8 +7,8 @@ examples. For full request/response schemas and field semantics see
 | Group        | Commands |
 |--------------|----------|
 | [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `CYCLES`, `SCANLINES`, `CLOCK`, `POKEY_TRACE`, `QUIT` |
-| [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `KEYRAW`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
+| [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET`, `SCREEN_TEXT` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `KEYRAW`, `TYPE`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
 | [Save states](#save-states)           | `STATE_SAVE`, `STATE_LOAD`, `STATE_LIST`, `STATE_DROP` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |

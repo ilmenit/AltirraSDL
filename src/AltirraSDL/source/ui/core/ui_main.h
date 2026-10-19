@@ -5,6 +5,7 @@
 
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
+#include <at/atcore/media.h>
 #include <imgui.h>
 
 // Configuration dialog geometry helpers implemented by the SDL UI.
@@ -214,6 +215,13 @@ enum ATDeferredActionType {
 
 // Push a deferred action (thread-safe — may be called from file dialog callbacks)
 void ATUIPushDeferred(ATDeferredActionType type, const char *utf8path, int extra = 0);
+
+// Push a kATDeferred_AttachDisk action with an explicit write-mode
+// override (used by the AltirraBridge MOUNT command's optional
+// `mode=ro|rw|vrw|vrwsafe` argument). Pass writeMode == nullptr for the
+// default resolution logic — identical to ATUIPushDeferred(kATDeferred_
+// AttachDisk, path, drive), which the menu-driven File > Mount path uses.
+void ATUIPushDeferredMount(const char *utf8path, int drive, const ATMediaWriteMode *writeMode);
 void ATUIBootWithProfile(const char *utf8path, uint32 profile);
 void ATUIBootProgramData(const char *utf8origin, const void *data, size_t size);
 

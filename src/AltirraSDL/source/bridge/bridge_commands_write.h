@@ -19,16 +19,22 @@ class ATSimulator;
 
 namespace ATBridge {
 
-// One-time init: allocate the PIA input slot for joystick injection.
-// Called from bridge_server.cpp Init() after the simulator exists.
-// Idempotent.
+struct InputState;
+
+// Select which client context's InputState the input commands (JOY,
+// CONSOL, KEYRAW) and the lifecycle functions below operate on. Called
+// by Execute() before every command; nullptr selects a private default.
+void SelectInputState(InputState *state);
+
+// Register the selected context and allocate its PIA input slot for
+// joystick injection. Idempotent.
 void InitWriteCommands(ATSimulator& sim);
 
-// Tear down PIA input slot. Called from bridge_server.cpp Shutdown().
-// Idempotent.
+// Release the selected context's input, free its PIA input slot and
+// unregister it. Idempotent.
 void ShutdownWriteCommands(ATSimulator& sim);
 
-// Release every input the bridge has acquired: joystick directions
+// Release every input the selected context has acquired: joystick directions
 // for all 4 ports → centred, fire buttons → released, console
 // switches → released, POKEY key matrix → cleared. Called from
 // bridge_server.cpp OnClientDisconnected().
@@ -44,6 +50,10 @@ std::string CmdMemLoad(ATSimulator& sim, const std::vector<std::string>& tokens)
 
 std::string CmdJoy(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdKey(ATSimulator& sim, const std::vector<std::string>& tokens);
+// TYPE text — push one keystroke per character via
+// ATUIGetDefaultScanCodeForCharacter(). Response includes "typed"
+// (count) and "skipped" (characters with no key mapping).
+std::string CmdType(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens);
 std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens);
 

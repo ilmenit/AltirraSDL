@@ -189,6 +189,12 @@ struct ATDeferredAction {
 	vdfastvector<uint8> payload;
 	int mInt = 0;
 	uint32 mProfile = kATProfileId_Invalid;
+	// kATDeferred_AttachDisk only: explicit write-mode override from the
+	// bridge MOUNT command's mode= argument. mbWriteModeOverride is false
+	// for every other producer (menu File > Mount, mobile file browser,
+	// macOS menu bar, ...), which all want the default resolution logic.
+	bool mbWriteModeOverride = false;
+	ATMediaWriteMode mWriteMode = kATMediaWriteMode_RO;
 };
 
 static std::mutex g_deferredMutex;
@@ -214,6 +220,20 @@ void ATUIPushDeferred(ATDeferredActionType type, const char *utf8path, int extra
 	action.type = type;
 	action.path = VDTextU8ToW(utf8path, -1);
 	action.mInt = extra;
+
+	std::lock_guard<std::mutex> lock(g_deferredMutex);
+	g_deferredActions.push_back(std::move(action));
+}
+
+void ATUIPushDeferredMount(const char *utf8path, int drive, const ATMediaWriteMode *writeMode) {
+	ATDeferredAction action;
+	action.type = kATDeferred_AttachDisk;
+	action.path = VDTextU8ToW(utf8path, -1);
+	action.mInt = drive;
+	if (writeMode) {
+		action.mbWriteModeOverride = true;
+		action.mWriteMode = *writeMode;
+	}
 
 	std::lock_guard<std::mutex> lock(g_deferredMutex);
 	g_deferredActions.push_back(std::move(action));
@@ -611,8 +631,10 @@ void ATUIPollDeferredActions() {
 				if (idx >= 0 && idx < 15) {
 					ATDiskInterface& diskIf = g_sim.GetDiskInterface(idx);
 					ATDiskEmulator& disk = g_sim.GetDiskDrive(idx);
-					ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
-						? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
+					ATMediaWriteMode wm = a.mbWriteModeOverride
+						? a.mWriteMode
+						: (disk.IsEnabled() || diskIf.GetClientCount() > 1
+							? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode);
 
 					// Disk-state interception (see disk_state.h):  this
 					// is the deferred "attach disk to D<N>" path that

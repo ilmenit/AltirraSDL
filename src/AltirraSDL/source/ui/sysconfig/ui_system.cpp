@@ -108,6 +108,7 @@ enum {
 	kCat_Display2,      // Emulator > Display Effects
 	kCat_SettingsCfg,   // Emulator > Settings
 	kCat_OnlinePlay,    // Emulator > Online Play (SDL3-only: netplay prefs)
+	kCat_MCPServer,     // Emulator > MCP Server (SDL3-only)
 	kCat_Count
 };
 
@@ -167,6 +168,7 @@ static const TreeEntry kTreeEntries[] = {
 	{ "Display Effects", kCat_Display2, 1 },
 	{ "Settings",       kCat_SettingsCfg, 1 },
 	{ "Online Play",    kCat_OnlinePlay, 1 },
+	{ "MCP Server",     kCat_MCPServer, 1 },
 };
 static const int kNumTreeEntries = sizeof(kTreeEntries) / sizeof(kTreeEntries[0]);
 
@@ -277,6 +279,7 @@ void ATUIRenderSystemConfig(ATSimulator &sim, ATUIState &state) {
 		// suppressed by the caller; the empty break keeps the switch
 		// exhaustive so the compiler doesn't warn about a missing case.
 		break;
+	case kCat_MCPServer:      RenderMCPServerCategory(sim); break;
 	}
 	ImGui::EndChild();
 

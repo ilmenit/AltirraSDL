@@ -528,6 +528,42 @@ R1, G1, B1, ... in increasing color-index order. The palette is
 consistent across calls within a session (it depends only on the
 chosen color preset, which is settings-loaded at startup).
 
+#### `SCREEN_TEXT`
+
+Decode every currently-displayed ANTIC text-mode row (modes 2/3/6/7)
+to ATASCII/Unicode text, top to bottom, and return one string per row.
+Reads via ANTIC's own DMA memory view (`DebugAnticReadMemory`), not
+the CPU's — so it returns the correct bytes even when the playfield
+address falls in a banked or ROM-shadowed region, unlike a
+client-side reconstruction built on `PEEK`/`DLIST`. Shares its decode
+logic with the GUI's mouse click-drag text selection / copy feature
+(`source/ui/dialogs/ui_textselection.cpp`) via
+`source/bridge/bridge_screentext.h`.
+
+```json
+{"ok":true,"lines":["Waiting for call...","[Command]"]}
+```
+
+Each line has leading/trailing spaces trimmed; a row that's entirely
+blank (or currently in a graphics mode) contributes nothing, so a
+title screen with no active text mode returns `{"ok":true,"lines":[]}`
+rather than an error. This covers standard ANTIC text modes only — a
+bitmap-font game menu needs `SCREENSHOT` + pixel comparison instead.
+
+### Phase 3 commands — state write & input injection
+
+Phase 3 adds memory writes, joystick/keyboard/console-switch input
+injection, the boot/reset/save-state lifecycle commands.
+
+All input-injection commands acquire state in the simulator that
+the bridge owns and is responsible for releasing. On client
+disconnect (clean or otherwise) the bridge automatically releases:
+joystick directions for all 4 ports, fire buttons, console
+switches, and the POKEY key matrix. The bridge holds its own
+PIA input slot allocated at startup, so injected input does not
+fight with real-gamepad input from the host.
+
+
 ### Phase 3 commands — state write & input injection
 
 Phase 3 adds memory writes, joystick/keyboard/console-switch input
@@ -655,6 +691,30 @@ mapping table.
 
 (`KEY a shift`: `$3F` with bit 6, a capital A.)
 
+#### `TYPE text`
+
+Push one keystroke per character of `text` into POKEY's queue,
+unlike `KEY` this takes a whole string in one call, and covers full
+punctuation (`!@#$%^&*()"':` etc.), not just the small named-key set
+`KEY` documents above. `text` is the remainder of the line, so it may
+contain spaces (same tokenisation caveat as `MOUNT`/`BOOT`).
+
+Uses the same character-to-KBCODE table as Windows Altirra's "paste
+text as keystrokes" feature, ported to `source/input/
+keyboard_keymap_sdl3.cpp`'s `ATUIGetDefaultScanCodeForCharacter()` —
+so shifted punctuation resolves correctly without the caller having
+to know Atari's keyboard shift layout.
+
+```json
+{"ok":true,"typed":8,"skipped":[]}
+```
+
+`typed` is the number of characters successfully queued. `skipped`
+lists any characters with no key mapping (e.g. emoji, most non-Latin
+scripts) — they are reported, not silently dropped, so the caller can
+see what didn't get typed.
+
+
 #### `KEYRAW name [down|up] [shift] [ctrl]`
 
 Hold a key down in POKEY's key matrix (`down`, the default) or
@@ -724,13 +784,35 @@ the pending reply without changing running state.
 {"ok":true,"path":"/tmp/altirra-bridge-bare-12345.xex","settle_frames":340}
 ```
 
-#### `MOUNT drive path`
+#### `MOUNT drive path [mode=ro|rw|vrw|vrwsafe]`
 
 Mount a disk image into a drive slot (0..14, where 0 = D1:).
 Same async semantics as `BOOT`. Same path tokenisation caveat.
 
+Without `mode=`, the mount uses the drive's existing write mode if it's
+already attached (or shared with another client), otherwise the
+simulator's global default write mode -- the same resolution the
+menu-driven File > Mount path uses, typically Virtual R/W (`vrw`) or
+Virtual R/W Safe (`vrwsafe`) unless changed in Configure System.
+
+`mode=` overrides that resolution for this mount only:
+
+| Mode      | Meaning                                                    |
+|-----------|-------------------------------------------------------------|
+| `ro`      | Read-only                                                    |
+| `rw`      | Real R/W -- writes flush straight back to the image file     |
+| `vrw`     | Virtual R/W -- writes stay in memory, format allowed         |
+| `vrwsafe` | Virtual R/W -- writes stay in memory, format not allowed     |
+
+Only the *last* token is checked for `mode=`, and only when there's
+still at least one token left for the path -- `MOUNT 0 mode=rw` (with
+nothing else) is a literal one-token filename called `mode=rw`, not a
+mode override with a missing path. This matches `EJECT`'s and
+`STATE_DROP`'s existing `key=value` handling.
+
 ```json
 {"ok":true,"drive":0,"path":"/path/to/disk.atr"}
+{"ok":true,"drive":0,"path":"/path/to/disk.atr","mode":"rw"}
 ```
 
 #### `COLD_RESET`
@@ -1012,6 +1094,19 @@ response has `"ok":false` and includes the device payload and its
 `diagnostics`. The device remains present so that hot reload and subsequent
 reconfiguration can recover it without first removing it. Runtime diagnostics
 do not fail `DEVICE_SET`; inspect `healthy` and `diagnostics` to detect them.
+
+`DEVICE_SET tag on parent=<tag|bus-path> [key=value...]` adds a child
+device under a parent. A parent tag (`parent=850`) picks that device's
+first bus that accepts the child; a bus path (`parent=/850/serial`) names
+the bus exactly, as `DEVICE_ADD` does. Example:
+
+```
+DEVICE_SET 850 on
+DEVICE_SET modem on parent=850 port=9000 unthrottled=true telnet=false
+```
+
+`dialaddr` and `dialsvc` are always stored as strings, so a numeric
+service such as `dialsvc=24242` is not turned into a number.
 
 #### `DEVICE_REMOVE tag-or-path` / `DEVICE_CLEAR`
 

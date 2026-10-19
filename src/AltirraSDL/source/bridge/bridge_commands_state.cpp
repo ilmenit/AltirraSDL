@@ -10,6 +10,7 @@
 
 #include "bridge_commands_state.h"
 #include "bridge_protocol.h"
+#include "bridge_screentext.h"
 
 #include "simulator.h"
 #include <at/atcore/address.h>   // kATAddressSpace_CPU: PEEK above $FFFF
@@ -710,6 +711,30 @@ std::string CmdPaletteReset(ATSimulator& sim, const std::vector<std::string>& /*
 	(ATColorParams&)settings.mPALParams  = ATGetColorPresetByIndex((uint32)palIdx);
 	gtia.SetColorSettings(settings);
 	return JsonOk();
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN_TEXT — decode all currently-visible ANTIC text-mode rows.
+// Shares ReadTextLine() with the GUI's mouse click-drag text selection
+// (source/ui/dialogs/ui_textselection.cpp) via bridge_screentext.h, so
+// both features are provably reading screen memory the same way.
+// ---------------------------------------------------------------------------
+
+std::string CmdScreenText(ATSimulator& sim, const std::vector<std::string>& /*tokens*/) {
+	vdvector<VDStringA> lines;
+	ReadScreenText(sim, lines);
+
+	std::string arr = "[";
+	for (size_t i = 0; i < lines.size(); ++i) {
+		if (i) arr += ',';
+		arr += '"';
+		arr += JsonEscape(std::string(lines[i].c_str()));
+		arr += '"';
+	}
+	arr += ']';
+
+	std::string body = "\"lines\":" + arr;
+	return JsonOk(body);
 }
 
 }  // namespace ATBridge

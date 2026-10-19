@@ -321,6 +321,15 @@ int atb_boot(atb_client_t* c, const char* path);
 int atb_mount(atb_client_t* c, unsigned int drive, const char* path);
 
 /*
+ * Mount a disk image with an explicit write-mode override instead of
+ * the drive's existing write mode (if already attached) or the global
+ * default. write_mode is one of "ro", "rw" (Real R/W -- writes flush
+ * back to the image file), "vrw", or "vrwsafe". Pass NULL for
+ * write_mode to get atb_mount()'s default-resolution behaviour.
+ */
+int atb_mount_mode(atb_client_t* c, unsigned int drive, const char* path, const char* write_mode);
+
+/*
  * Boot the embedded "bare-metal" stub: a 30-byte XEX shipped inside
  * the server that disables IRQs, NMIs, BASIC, and ANTIC DMA and then
  * parks the CPU in an infinite JMP * loop. After this returns, the

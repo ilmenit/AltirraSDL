@@ -9,5 +9,7 @@ std::string CmdTiming(ATSimulator&, const std::vector<std::string>&);
 bool IsTimingGateActive();
 void UpdateTimingCommands(ATSimulator&);
 void CleanupTimingCommands(ATSimulator&);
+// Cancel an in-flight CYCLES/SCANLINES step only (POKEY trace untouched).
+void CancelTimingStep(ATSimulator&);
 }
 #endif

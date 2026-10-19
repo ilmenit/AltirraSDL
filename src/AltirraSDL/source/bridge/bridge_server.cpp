@@ -7,6 +7,7 @@
 #include <stdafx.h>
 
 #include "bridge_server.h"
+#include "bridge_context.h"
 #include "bridge_commands_state.h"
 #include "bridge_commands_timing.h"
 #include "bridge_commands_write.h"
@@ -66,21 +67,22 @@ namespace {
 
 struct ServerState {
 	bool        enabled = false;       // --bridge was passed and Init succeeded
-	bool        authenticated = false; // current client passed HELLO
-	bool        writeInitialised = false; // InitWriteCommands has been called against a sim
 	Transport   transport;
 	std::string token;                 // 32 hex chars (128 bits)
 	std::string tokenFilePath;         // path on disk; written by Init
 	std::string boundDescription;      // e.g. "tcp:127.0.0.1:54321"
 
-	// Frame gate. While > 0, the simulator is running through queued
-	// frames and the bridge does NOT dispatch any commands. Bytes
-	// continue to accumulate in recvBuf so that they're ready to
-	// process the moment the gate releases. This gives the documented
-	// `frame(60); peek(...)` synchronisation contract: the peek waits
-	// in the buffer for ~60 frames, then dispatches against a paused
-	// simulator at exactly the right cycle.
-	uint32_t    framesRemaining = 0;
+	// The socket client's execution context: HELLO authentication, its
+	// frame gate and its injected input (see bridge_context.h).
+	//
+	// Frame gate: while ctx.framesRemaining > 0, the simulator is
+	// running through queued frames and the bridge does NOT dispatch
+	// any commands. Bytes continue to accumulate in recvBuf so that
+	// they're ready to process the moment the gate releases. This gives
+	// the documented `frame(60); peek(...)` synchronisation contract:
+	// the peek waits in the buffer for ~60 frames, then dispatches
+	// against a paused simulator at exactly the right cycle.
+	ClientContext ctx { "bridge" };
 
 	// Recv assembly buffer for line-delimited commands.
 	std::string recvBuf;
@@ -98,6 +100,14 @@ struct ServerState {
 };
 
 ServerState g_state;
+
+// Every attached client context (bridge socket, MCP server). Used to
+// drive the per-context frame gates from OnFrameCompleted().
+std::vector<ClientContext *> g_contexts;
+
+// Context that started the in-flight CYCLES/SCANLINES step or BOOT_BARE
+// (the timing and bare-boot modules hold a single global gate each).
+ClientContext *g_asyncOwner = nullptr;
 
 // ---------------------------------------------------------------------------
 // Token generation and token file
@@ -180,24 +190,26 @@ void RemoveTokenFile() {
 // ---------------------------------------------------------------------------
 
 void OnClientDisconnected(ATSimulator& sim) {
-	CleanupTimingCommands(sim);
-	CancelBareBoot();
-	g_state.authenticated = false;
+	// The timing module (steps, POKEY trace) and BOOT_BARE are reset for
+	// the next socket client -- unless another front end owns the step or
+	// bare boot in flight.
+	if (!g_asyncOwner || g_asyncOwner == &g_state.ctx) {
+		CleanupTimingCommands(sim);
+		CancelBareBoot();
+		g_asyncOwner = nullptr;
+	}
+	g_state.ctx.authenticated = false;
 	g_state.recvBuf.clear();
-	// Cancel any active frame gate. Without this a client that
-	// crashes mid-FRAME-loop would leave the next client connecting
-	// to a sim that's still counting down through queued frames.
-	// We do NOT call sim.Pause() here — leave the sim in whatever
-	// running state it currently has so the new client sees
-	// consistent state.
-	g_state.framesRemaining = 0;
-	// Release every input the disconnected client may have left
-	// asserted: joystick directions/fire for all 4 ports, console
-	// switches, and the POKEY key matrix. The bridge is the sole
-	// owner of the PIA input slot it allocated, so this never
-	// stomps on real-gamepad or real-keyboard input.
-	if (g_state.writeInitialised)
-		CleanupInjectedInput(sim);
+	// Cancel the client's frame gate and release every input it may
+	// have left asserted: joystick directions/fire for all 4 ports,
+	// console switches, and its held raw keys. Without the gate reset
+	// a client that crashes mid-FRAME-loop would leave the next client
+	// connecting to a sim that's still counting down through queued
+	// frames. We do NOT call sim.Pause() here — leave the sim in
+	// whatever running state it currently has so the new client sees
+	// consistent state. The context owns its own PIA input slot, so
+	// this never stomps on real-gamepad, real-keyboard or MCP input.
+	ReleaseContext(g_state.ctx, sim);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +221,7 @@ bool ShouldLogCommand(const std::string& verb) {
 		|| verb == "CYCLES" || verb == "SCANLINES" || verb == "POKEY_TRACE"
 		|| verb == "QUIT" || verb == "POKE" || verb == "POKE16"
 		|| verb == "HWPOKE" || verb == "MEMLOAD" || verb == "JOY"
-		|| verb == "KEY" || verb == "KEYRAW" || verb == "CONSOL" || verb == "BOOT"
+		|| verb == "KEY" || verb == "KEYRAW" || verb == "TYPE" || verb == "CONSOL" || verb == "BOOT"
 		|| verb == "BOOT_BARE" || verb == "MOUNT" || verb == "EJECT"
 		|| verb == "CART_EJECT" || verb == "COLD_RESET"
 		|| verb == "WARM_RESET" || verb == "FRESH"
@@ -270,7 +282,7 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 			BRIDGE_LOG_INFO("Bridge", "HELLO with wrong token from client (rejecting)");
 			return JsonError("bad token");
 		}
-		g_state.authenticated = true;
+		g_state.ctx.authenticated = true;
 		BRIDGE_LOG_INFO("Bridge", "HELLO accepted");
 		// Echo a small payload so the client can confirm and pin the
 		// protocol version it's talking to.
@@ -281,8 +293,105 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	}
 
 	// Everything else requires authentication.
-	if (!g_state.authenticated)
+	if (!g_state.ctx.authenticated)
 		return JsonError("auth required");
+
+	return Execute(tokens, sim, g_state.ctx);
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Client contexts and shared command execution (see bridge_context.h)
+// ---------------------------------------------------------------------------
+
+void AttachContext(ClientContext& ctx, ATSimulator& sim) {
+	SelectInputState(&ctx.input);
+	if (ctx.attached)
+		return;
+	InitWriteCommands(sim);
+	g_contexts.push_back(&ctx);
+	ctx.attached = true;
+}
+
+void ReleaseContext(ClientContext& ctx, ATSimulator& sim) {
+	ctx.framesRemaining = 0;
+	if (!ctx.attached)
+		return;
+	SelectInputState(&ctx.input);
+	CleanupInjectedInput(sim);
+}
+
+void DetachContext(ClientContext& ctx, ATSimulator& sim) {
+	ctx.framesRemaining = 0;
+	if (!ctx.attached)
+		return;
+	SelectInputState(&ctx.input);
+	ShutdownWriteCommands(sim);
+	SelectInputState(nullptr);
+	for (auto it = g_contexts.begin(); it != g_contexts.end(); ++it) {
+		if (*it == &ctx) {
+			g_contexts.erase(it);
+			break;
+		}
+	}
+	ctx.attached = false;
+}
+
+bool IsAsyncBusy() {
+	return IsTimingGateActive() || IsBareBootGateActive();
+}
+
+bool IsAsyncOwnedBy(const ClientContext& ctx) {
+	return g_asyncOwner == &ctx && (IsTimingGateActive() || IsBareBootGateActive());
+}
+
+bool PollAsync(ClientContext& ctx, ATSimulator& sim, std::string& reply) {
+	reply.clear();
+	if (g_asyncOwner != &ctx)
+		return true;
+
+	if (IsBareBootGateActive()) {
+		reply = PollBareBoot(sim);
+		if (reply.empty())
+			return false;
+		g_asyncOwner = nullptr;
+		return true;
+	}
+
+	// A breakpoint or pause ends a step early (CLOCK then reports
+	// step_completed=false).
+	UpdateTimingCommands(sim);
+	if (IsTimingGateActive())
+		return false;
+
+	g_asyncOwner = nullptr;
+	return true;
+}
+
+void CancelAsync(ClientContext& ctx, ATSimulator& sim) {
+	if (g_asyncOwner != &ctx)
+		return;
+	CancelTimingStep(sim);
+	CancelBareBoot();
+	g_asyncOwner = nullptr;
+}
+
+bool IsContextGated(const ClientContext& ctx) {
+	return ctx.framesRemaining > 0 || IsTimingGateActive()
+		|| IsBareBootGateActive();
+}
+
+std::string Execute(const std::vector<std::string>& tokens, ATSimulator& sim,
+	ClientContext& ctx)
+{
+	if (tokens.empty())
+		return JsonError("empty command");
+
+	const std::string& verb = tokens[0];
+
+	// Input commands act on this context's InputState.
+	AttachContext(ctx, sim);
 
 	LogCommandStart(tokens);
 
@@ -292,13 +401,13 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 
 	if (verb == "PAUSE") {
 		sim.Pause();
-		g_state.framesRemaining = 0;
+		ctx.framesRemaining = 0;
 		return JsonOk();
 	}
 
 	if (verb == "RESUME") {
 		sim.Resume();
-		g_state.framesRemaining = 0;
+		ctx.framesRemaining = 0;
 		return JsonOk();
 	}
 
@@ -319,14 +428,21 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 		// client's NEXT command will sit in the recv buffer
 		// (un-dispatched) until the gate releases — see the gate
 		// check at the top of TryDispatchOneLine().
-		g_state.framesRemaining = n;
+		ctx.framesRemaining = n;
+		ctx.framesInterrupted = 0;
 		sim.Resume();
 		std::string payload = "\"frames\":" + std::to_string(n);
 		return JsonOk(payload);
 	}
 
-	if (verb == "CYCLES" || verb == "SCANLINES" || verb == "CLOCK"
-		|| verb == "POKEY_TRACE")
+	if (verb == "CYCLES" || verb == "SCANLINES") {
+		std::string reply = CmdTiming(sim, tokens);
+		if (IsTimingGateActive())
+			g_asyncOwner = &ctx;
+		return reply;
+	}
+
+	if (verb == "CLOCK" || verb == "POKEY_TRACE")
 		return CmdTiming(sim, tokens);
 
 	if (verb == "QUIT") {
@@ -351,6 +467,7 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "PALETTE")          return CmdPalette(sim, tokens);
 	if (verb == "PALETTE_LOAD_ACT") return CmdPaletteLoadAct(sim, tokens);
 	if (verb == "PALETTE_RESET")    return CmdPaletteReset(sim, tokens);
+	if (verb == "SCREEN_TEXT")      return CmdScreenText(sim, tokens);
 
 	// ----- Phase 3: state-write and input-injection commands.
 	// All implemented in bridge_commands_write.cpp.
@@ -362,9 +479,15 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "JOY")        return CmdJoy(sim, tokens);
 	if (verb == "KEY")        return CmdKey(sim, tokens);
 	if (verb == "KEYRAW")     return CmdKeyRaw(sim, tokens);
+	if (verb == "TYPE")       return CmdType(sim, tokens);
 	if (verb == "CONSOL")     return CmdConsol(sim, tokens);
 	if (verb == "BOOT")       return CmdBoot(sim, tokens);
-	if (verb == "BOOT_BARE")  return CmdBootBare(sim, tokens);
+	if (verb == "BOOT_BARE") {
+		std::string reply = CmdBootBare(sim, tokens);
+		if (IsBareBootGateActive())
+			g_asyncOwner = &ctx;
+		return reply;
+	}
 	if (verb == "MOUNT")      return CmdMount(sim, tokens);
 	if (verb == "EJECT")      return CmdEject(sim, tokens);
 	if (verb == "CART_EJECT") return CmdCartEject(sim, tokens);
@@ -429,6 +552,8 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	return JsonError(std::string("unknown command: ") + verb);
 }
 
+namespace {
+
 // Append received bytes to recvBuf, enforcing the per-connection
 // inbound cap. Returns false (and drops the client) if the cap would
 // be exceeded — protects against a misbehaving client sending bytes
@@ -470,8 +595,7 @@ bool TryDispatchOneLine(ATSimulator& sim) {
 	// Interrupting an in-flight FRAME run requires closing the
 	// socket (which clears the gate via OnClientDisconnected) and
 	// reconnecting.
-	if (g_state.framesRemaining > 0 || IsTimingGateActive()
-		|| IsBareBootGateActive())
+	if (IsContextGated(g_state.ctx))
 		return false;
 
 	std::string line = g_state.recvBuf.substr(0, nl);
@@ -546,8 +670,8 @@ bool Init(const std::string& addrSpec) {
 	std::fprintf(stderr, "[Bridge] token: %s\n", g_state.token.c_str());
 
 	g_state.enabled = true;
-	g_state.authenticated = false;
-	g_state.framesRemaining = 0;
+	g_state.ctx.authenticated = false;
+	g_state.ctx.framesRemaining = 0;
 	g_state.recvBuf.clear();
 	return true;
 }
@@ -555,43 +679,52 @@ bool Init(const std::string& addrSpec) {
 void Shutdown(ATSimulator& sim) {
 	CleanupTimingCommands(sim);
 	CancelBareBoot();
-	if (!g_state.enabled && !g_state.transport.IsListening() && !g_state.writeInitialised)
+	g_asyncOwner = nullptr;
+	if (!g_state.enabled && !g_state.transport.IsListening() && !g_state.ctx.attached)
 		return;
-	if (g_state.writeInitialised) {
-		ShutdownWriteCommands(sim);
-		g_state.writeInitialised = false;
-	}
+	DetachContext(g_state.ctx, sim);
 	g_state.transport.Shutdown();
 	RemoveTokenFile();
 	g_state.enabled = false;
-	g_state.authenticated = false;
-	g_state.framesRemaining = 0;
+	g_state.ctx.authenticated = false;
 	g_state.recvBuf.clear();
 	BRIDGE_LOG_INFO("Bridge", "shutdown");
 	ATBridgeLog::Shutdown();
 }
 
 void Poll(ATSimulator& sim, ATUIState& /*ui*/) {
+	// A breakpoint or external pause ends a run early. Never leave queued
+	// commands blocked waiting for frames that cannot now elapse. This
+	// covers every attached context (bridge socket and MCP server).
+	if (!sim.IsRunning()) {
+		for (ClientContext *ctx : g_contexts) {
+			if (ctx->framesRemaining) {
+				ctx->framesInterrupted = ctx->framesRemaining;
+				ctx->framesRemaining = 0;
+			}
+		}
+	}
+
 	if (!g_state.enabled)
 		return;
 
-	// Lazy-init the Phase 3 write-side state on the first Poll
+	// Allocate the socket context's PIA input slot on the first Poll
 	// after Init(). The bridge module deliberately does not store a
-	// long-lived simulator reference, so we wait until we have one
-	// in hand here before allocating the PIA input slot for
-	// joystick injection.
-	if (!g_state.writeInitialised) {
-		InitWriteCommands(sim);
-		g_state.writeInitialised = true;
-	}
+	// long-lived simulator reference, so we wait until we have one in
+	// hand here.
+	AttachContext(g_state.ctx, sim);
 
-	// A breakpoint or external pause ends a run early. Never leave queued
-	// commands blocked waiting for cycles/frames that cannot now elapse.
+	// Same rule for CYCLES/SCANLINES steps.
 	UpdateTimingCommands(sim);
-	if (!sim.IsRunning())
-		g_state.framesRemaining = 0;
 
-	const std::string bootResponse = PollBareBoot(sim);
+	// The socket client's BOOT_BARE reply (another front end polls its
+	// own through PollAsync()).
+	std::string bootResponse;
+	if (g_asyncOwner == &g_state.ctx) {
+		bootResponse = PollBareBoot(sim);
+		if (!bootResponse.empty())
+			g_asyncOwner = nullptr;
+	}
 	if (!bootResponse.empty()
 		&& g_state.transport.SendAll(bootResponse.data(), bootResponse.size())
 			== IoResult::Error) {
@@ -668,16 +801,33 @@ void Poll(ATSimulator& sim, ATUIState& /*ui*/) {
 }
 
 void OnFrameCompleted(ATSimulator& sim) {
-	if (!g_state.enabled || g_state.framesRemaining == 0)
-		return;
-	--g_state.framesRemaining;
-	if (g_state.framesRemaining == 0) {
-		sim.Pause();
+	// Each context counts down its own gate. The simulator re-pauses
+	// once the last active gate releases, so one client's FRAME run is
+	// never cut short by another's.
+	bool released = false;
+	bool stillRunning = false;
+	for (ClientContext *ctx : g_contexts) {
+		if (ctx->framesRemaining == 0)
+			continue;
+		if (--ctx->framesRemaining == 0)
+			released = true;
+		else
+			stillRunning = true;
 	}
+	if (released && !stillRunning)
+		sim.Pause();
 }
 
 bool IsFrameGateActive() {
-	return g_state.enabled && g_state.framesRemaining != 0;
+	for (const ClientContext *ctx : g_contexts) {
+		if (ctx->framesRemaining != 0)
+			return true;
+	}
+	return false;
+}
+
+bool IsAutomationGateActive() {
+	return IsFrameGateActive() || IsTimingGateActive() || IsBareBootGateActive();
 }
 
 bool IsEnabled() {
