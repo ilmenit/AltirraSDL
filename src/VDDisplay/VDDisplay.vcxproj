@@ -57,6 +57,7 @@
     <ClCompile Include="source\renderergdi.cpp" />
     <ClCompile Include="source\renderersoft.cpp" />
     <ClCompile Include="source\screenfx.cpp" />
+    <ClCompile Include="source\test.cpp" />
     <ClCompile Include="source\textrenderer.cpp" />
     <ClCompile Include="source\stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>

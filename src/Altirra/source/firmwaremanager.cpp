@@ -120,6 +120,16 @@ bool ATIsKernelFirmwareType(ATFirmwareType type) {
 	}
 }
 
+bool ATIsBasicFirmwareType(ATFirmwareType type) {
+	switch(type) {
+		case kATFirmwareType_Basic:
+			return true;
+
+		default:
+			return false;
+	}
+}
+
 const char *ATGetFirmwareTypeName(ATFirmwareType type) {
 	return kATFirmwareTypeNames[type];
 }
@@ -569,12 +579,26 @@ uint64 ATFirmwareManager::GetFirmwareByRefString(const wchar_t *refstr, vdfuncti
 	if (!*refstr)
 		return 0;
 
-	if (!wcsncmp(refstr, L"internal:", 9))
-		return wcstoul(refstr + 9, NULL, 16);
+	ATFirmwareInfo info;
+
+	if (!wcsncmp(refstr, L"internal:", 9)) {
+		const uint64 id = wcstoull(refstr + 9, NULL, 16);
+
+		if (id >= kATFirmwareId_Custom)
+			return 0;
+
+		// verify validity
+		if (!GetFirmwareInfo(id, info))
+			return 0;
+
+		if (typeFilter && !typeFilter(info.mType))
+			return 0;
+
+		return id;
+	}
 
 	// try to find firmware by path
 	uint64 id = ATGetFirmwareIdFromPath(refstr);
-	ATFirmwareInfo info;
 
 	if (GetFirmwareInfo(id, info)) {
 		if (!typeFilter || typeFilter(info.mType))
@@ -582,7 +606,10 @@ uint64 ATFirmwareManager::GetFirmwareByRefString(const wchar_t *refstr, vdfuncti
 	}
 
 	// try to find firmware by name
-	const VDStringSpanW refspan(refstr);
+	const VDStringSpanW refspan(VDFileSplitExtLeftSpan(VDFileSplitPathRightSpan(VDStringSpanW(refstr))));
+	// MERGE NOTE: Preserve complete descriptions, which may themselves
+	// contain periods or path separators. Only filenames are normalized.
+	const VDStringSpanW descriptionSpan(refstr);
 
 	vdvector<ATFirmwareInfo> fws;
 	GetFirmwareList(fws);
@@ -597,7 +624,7 @@ uint64 ATFirmwareManager::GetFirmwareByRefString(const wchar_t *refstr, vdfuncti
 			return fw.mId;
 
 		// try to match by description
-		if (fw.mName.comparei(refspan) == 0)
+		if (fw.mName.comparei(descriptionSpan) == 0)
 			return fw.mId;
 	}
 

@@ -123,6 +123,7 @@ enum ATFirmwareType : uint32 {
 };
 
 bool ATIsKernelFirmwareType(ATFirmwareType type);
+bool ATIsBasicFirmwareType(ATFirmwareType type);
 
 enum ATSpecificFirmwareType : uint32 {
 	kATSpecificFirmwareType_None,

@@ -1,5 +1,5 @@
 //	Altirra - Atari 800/800XL emulator
-//	Copyright (C) 2008-2010 Avery Lee
+//	Copyright (C) 2008-2026 Avery Lee
 //
 //	This program is free software; you can redistribute it and/or modify
 //	it under the terms of the GNU General Public License as published by
@@ -11,11 +11,11 @@
 //	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 //	GNU General Public License for more details.
 //
-//	You should have received a copy of the GNU General Public License
-//	along with this program; if not, write to the Free Software
-//	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+//	You should have received a copy of the GNU General Public License along
+//	with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdafx.h>
+#include <vd2/system/binary.h>
 #include <at/atcore/consoleoutput.h>
 #include <at/atcore/deviceimpl.h>
 #include <at/atcore/devicesnapshot.h>
@@ -108,8 +108,9 @@ ATVBXEEmulator::ATVBXEEmulator()
 	, mMemAcBankB(0)
 	, mb5200Mode(false)
 	, mbSharedMemory(false)
-	, mVersion(0x26)
-	, mbVersion126(true)
+	, mVersion(0x27)
+	, mbVersion126OrHigher(true)
+	, mbVersion127OrHigher(true)
 	, mRegBase(0)
 	, mXdlBaseAddr(0)
 	, mXdlAddr(0)
@@ -128,7 +129,8 @@ ATVBXEEmulator::ATVBXEEmulator()
 	, mChAddr(0)
 	, mPfPaletteIndex(0)
 	, mOvPaletteIndex(0)
-	, mbExtendedColor(false)
+	, mbExtendedColor1(false)
+	, mbExtendedColor0(false)
 	, mbAttrMapEnabled(false)
 	, mAttrAddr(0)
 	, mAttrStep(0)
@@ -142,8 +144,8 @@ ATVBXEEmulator::ATVBXEEmulator()
 	, mbIRQEnabled(false)
 	, mbIRQRequest(false)
 	, mConfigLatch(0)
-	, mbBlitterContinue(false)
 	, mBlitterMode(0)
+	, mBlitterSubMode(0)
 	, mBlitCyclesLeft(0)
 	, mBlitCyclesPerRow(0)
 	, mBlitListAddr(0)
@@ -270,9 +272,12 @@ void ATVBXEEmulator::ColdReset() {
 	mAttrRow		= 0;
 	mChAddr			= 0;
 
+	mFeatureControl = 0;
+
 	mConfigLatch	= 0;
 
-	mbExtendedColor	= false;
+	mbExtendedColor1 = false;
+	mbExtendedColor0 = false;
 	mbAttrMapEnabled = false;
 
 	UpdateColorTable();
@@ -281,11 +286,20 @@ void ATVBXEEmulator::ColdReset() {
 }
 
 void ATVBXEEmulator::WarmReset() {
-	// VIDEO_CONTROL: set to 0
+	// FEATURE_CONTROL: reset if bit 7 cleared
+	if (!(mFeatureControl & 0x80))
+		mFeatureControl = 0;
+
+	mPfPaletteIndexInit = mFeatureControl & 0x03;
+
+	// VIDEO_CONTROL: set to 0 (1.26+), condition (1.27+)
 	mbXdlEnabled	= false;
-	mbExtendedColor = false;
+	mbExtendedColor1 = (mFeatureControl & 0x10) != 0;
+	mbExtendedColor0 = (mFeatureControl & 0x08) != 0;
 	mbOvTrans		= true;
 	mbOvTrans15		= false;
+	// MERGE NOTE: reset can change the XCOLOR table selection as well.
+	UpdateColorTable();
 
 	// MEMAC_CONTROL: MCE and MAE set to 0
 	mMemAcControl &= 0xf3;
@@ -346,15 +360,26 @@ uint32 ATVBXEEmulator::GetVersion() const {
 void ATVBXEEmulator::SetVersion(uint32 version) {
 	// We only support specific versions, so clamp as appropriate. Also, we need
 	// to convert to BCD.
-	if (version >= 126)
+	if (version >= 127)
+		mVersion = 0x27;
+	else if (version >= 126)
 		mVersion = 0x26;
 	else if (version >= 124)
 		mVersion = 0x24;
 	else
 		mVersion = 0x20;
 
-	mbVersion126 = (mVersion >= 0x26);
+	mbVersion126OrHigher = (mVersion >= 0x26);
+	mbVersion127OrHigher = (mVersion >= 0x27);
 
+	// if downgrading below 1.27, enforce invariants
+	if (!mbVersion127OrHigher) {
+		mPfPaletteIndexInit = 0;
+		mFeatureControl = 0;
+		mbExtendedColor0 = false;
+	}
+
+	UpdateColorTable();
 	InitPriorityTables();
 }
 
@@ -798,19 +823,23 @@ void ATVBXEEmulator::DumpBlitList(sint32 addrOpt, bool compact, uint32 maxCount)
 		if (!compact)
 			ATConsolePrintf("$%05X:\n", addr);
 
-		bool more = DumpBlitListEntry(addr, compact, false);
+		sint32 nextAddr = DumpBlitListEntry(addr, compact, false);
 
-		if (!more)
+		if (nextAddr < 0)
 			break;
 
-		addr += 21;
+		addr = (uint32)nextAddr;
 	}
 }
 
-bool ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologging) {
+sint32 ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologging) {
+	const uint32 baseAddr = addr;
+
 	const uint32 srcAddr = (uint32)VBXE_FETCH(addr) + ((uint32)VBXE_FETCH(addr + 1) << 8) + ((uint32)(VBXE_FETCH(addr + 2) & 0x7) << 16);
 	const sint32 srcXInc = (sint8)VBXE_FETCH(addr + 5);
-	const sint32 srcYInc = ((((uint32)VBXE_FETCH(addr + 3) + ((uint32)VBXE_FETCH(addr + 4) << 8)) & 0x1FFF) + 0xFFFFF000) ^ 0xFFFFF000;
+
+	const uint32 srcYInc16 = (uint32)VBXE_FETCH(addr + 3) + ((uint32)VBXE_FETCH(addr + 4) << 8);
+	const sint32 srcYInc = ((srcYInc16 & 0x1FFF) + 0xFFFFF000) ^ 0xFFFFF000;
 
 	const uint32 dstAddr = (uint32)VBXE_FETCH(addr + 6) + ((uint32)VBXE_FETCH(addr + 7) << 8) + ((uint32)(VBXE_FETCH(addr + 8) & 0x7) << 16);
 	const sint32 dstXInc = (sint8)VBXE_FETCH(addr + 11);
@@ -824,9 +853,65 @@ bool ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologgi
 	const uint8 collMask = VBXE_FETCH(addr + 17);
 	const uint8 zoomByte = VBXE_FETCH(addr + 18);
 	const uint8 patternByte = VBXE_FETCH(addr + 19);
-	const uint8 controlByte = VBXE_FETCH(addr + 20);
+	uint8 controlByte = VBXE_FETCH(addr + 20);
+	addr += 21;
 
-	const bool next = (controlByte & 0x08) != 0;
+	bool next = (controlByte & 0x08) != 0;
+	bool invalidContainer = false;
+
+	bool raycast = false;
+	uint32 rcInitX = 0;
+	uint32 rcInitY = 0;
+	uint32 rcIncX = 0;
+	uint32 rcIncY = 0;
+	uint32 rcIncDX = 0;
+	uint32 rcIncDY = 0;
+	uint32 rcTexW = 0;
+	uint32 rcTexH = 0;
+
+	for(int i=0; (controlByte & 0x80) && i<4; ++i) {
+		controlByte = VBXE_FETCH(addr++);
+
+		if (controlByte & 0x40) {
+			// invalid container
+			next = false;
+			invalidContainer = true;
+		}
+
+		if (controlByte & 0x20) {
+			// raycasting
+			raycast = true;
+			rcInitX = (uint32)VBXE_FETCH(addr++);
+			rcInitX += ((uint32)VBXE_FETCH(addr++) & 0x7F) << 8;
+			rcInitY = (uint32)VBXE_FETCH(addr++);
+			rcInitY += ((uint32)VBXE_FETCH(addr++) & 0x7F) << 8;
+			rcIncX = ((uint32)srcXInc & 0xFF) + (((uint32)VBXE_FETCH(addr++) & 0x7F) << 8);
+			rcIncY = srcYInc16 & 0x7FFF;;
+
+			rcIncDX = rcIncX;
+			rcIncDY = rcIncY;
+
+			if (rcIncDX & 0x4000)
+				rcIncDX -= 0x8000;
+
+			if (rcIncDY & 0x4000)
+				rcIncDY -= 0x8000;
+
+			rcTexW = 8 << std::min<int>(patternByte & 7, 4);
+			rcTexH = 8 << std::min<int>((patternByte >> 3) & 7, 4);
+		} else {
+			// jump
+			uint32 jumpOffset = VBXE_FETCH(addr++);
+			jumpOffset += (uint32)VBXE_FETCH(addr++) << 8;
+			jumpOffset += (uint32)VBXE_FETCH(addr++) << 16;
+
+			if (controlByte & 0x01) {
+				addr = (addr - 1) + (uint32)(sint32)(sint16)jumpOffset;
+			} else {
+				addr = jumpOffset & 0x7FFFF;
+			}
+		}
+	}
 
 	static constexpr const char *kModeNames[]={
 		"Copy",
@@ -839,13 +924,33 @@ bool ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologgi
 		"Reserved"
 	};
 
+	const char *modeName = kModeNames[controlByte & 7];
+
+	if (mbVersion127OrHigher) {
+		switch(controlByte & 7) {
+			default:
+				break;
+
+			case 2:
+				if (controlByte & 0x10)
+					modeName = "AddCarry";
+				else if (controlByte & 0x20)
+					modeName = "AddSat";
+				break;
+
+			case 7:
+				modeName = "Table";
+				break;
+		}
+	}
+
 	if (compact) {
 		VDStringA s;
 
 		if (autologging)
 			s = "VBXE: Starting new blit at ";
 
-		s.append_sprintf("$%05X: %10s  %3dx%-3d ", addr, kModeNames[controlByte & 7], sizeX, sizeY);
+		s.append_sprintf("$%05X: %10s  %3dx%-3d ", baseAddr, modeName, sizeX, sizeY);
 		
 		// check if we have a 1D operation
 		const bool hasZoom = (zoomByte & 0x77) != 0;
@@ -853,29 +958,47 @@ bool ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologgi
 		const bool hasConst = (andMask == 0);
 		const bool linear = !hasZoom && !hasPattern && (hasConst || (srcYInc == srcXInc * sizeX && dstXInc == srcXInc)) && dstYInc == dstXInc * sizeX && (dstXInc == 1 || dstXInc == -1);
 
-		// check if the source is used
-		if (andMask) {
-			if (sizeX == 1 && sizeY == 1)
-				s.append_sprintf(" [$%05X]           ", srcAddr);
-			else if (linear)
-				s.append_sprintf(" [$%05X-$%05X]    ", srcAddr, srcAddr + srcYInc * sizeY - 1);
-			else
-				s.append_sprintf(" [$%05X,%+4d,%+5d]", srcAddr, srcXInc, srcYInc);
-
-			if (andMask != 0xFF)
-				s.append_sprintf(" &$%02X", andMask);
-			else
-				s += "     ";
-
-			if (xorMask)
-				s.append_sprintf("^$%02X", xorMask);
-			else
-				s += "    ";
-
-			if (hasPattern)
-				s.append_sprintf(" pattern:%2d", patternByte & 0x7F);
+		if (raycast) {
+			s.append_sprintf("tex $%05X [%3ux%-3u] @ [%03X.%02X,%03X.%02X] + [%c%03X.%02X,%c%03X.%02X]"
+				, srcAddr & 0x7FFC0
+				, rcTexW
+				, rcTexH
+				, rcInitX >> 8
+				, rcInitX & 0xFF
+				, rcInitY >> 8
+				, rcInitY & 0xFF
+				, rcIncX & 0x4000 ? '-' : '+'
+				, rcIncDX >> 8
+				, rcIncDX & 0xFF
+				, rcIncY & 0x4000 ? '-' : '+'
+				, rcIncDY >> 8
+				, rcIncDY & 0xFF
+			);
 		} else {
-			s.append_sprintf("                 $%02X         ", xorMask);
+			// check if the source is used
+			if (andMask) {
+				if (sizeX == 1 && sizeY == 1)
+					s.append_sprintf(" [$%05X]           ", srcAddr);
+				else if (linear)
+					s.append_sprintf(" [$%05X-$%05X]    ", srcAddr, srcAddr + srcYInc * sizeY - 1);
+				else
+					s.append_sprintf(" [$%05X,%+4d,%+5d]", srcAddr, srcXInc, srcYInc);
+
+				if (andMask != 0xFF)
+					s.append_sprintf(" &$%02X", andMask);
+				else
+					s += "     ";
+
+				if (xorMask)
+					s.append_sprintf("^$%02X", xorMask);
+				else
+					s += "    ";
+
+				if (hasPattern)
+					s.append_sprintf(" pattern:%2d", patternByte & 0x7F);
+			} else {
+				s.append_sprintf("                 $%02X         ", xorMask);
+			}
 		}
 
 		if (hasZoom)
@@ -894,6 +1017,9 @@ bool ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologgi
 		if (collMask)
 			s.append_sprintf(" [coll $%02X]", collMask);
 
+		if (invalidContainer)
+			s += " [error]";
+
 		s += '\n';
 
 		if (autologging)
@@ -904,26 +1030,43 @@ bool ATVBXEEmulator::DumpBlitListEntry(uint32 addr, bool compact, bool autologgi
 		if (autologging)
 			ATConsoleTaggedPrintf("VBXE: Starting new blit at $%05X:\n", addr);
 
-		ATConsolePrintf("  Source: $%05X Xinc=%+d Yinc=%+d\n", srcAddr, srcXInc, srcYInc);
-		ATConsolePrintf("  Dest:   $%05X Xinc=%+d Yinc=%+d\n", dstAddr, dstXInc, dstYInc);
-		ATConsolePrintf("  Size:   %u x %u\n", sizeX, sizeY);
-		ATConsolePrintf("  Masks:  AND=$%02X, XOR=$%02X, COLL=$%02X\n"
+		ATConsolePrintf("  Source:  $%05X Xinc=%+d Yinc=%+d\n", srcAddr, srcXInc, srcYInc);
+		ATConsolePrintf("  Dest:    $%05X Xinc=%+d Yinc=%+d\n", dstAddr, dstXInc, dstYInc);
+		ATConsolePrintf("  Size:    %u x %u\n", sizeX, sizeY);
+		ATConsolePrintf("  Masks:   AND=$%02X, XOR=$%02X, COLL=$%02X\n"
 			, andMask
 			, xorMask
 			, collMask
 			);
 
-		ATConsolePrintf("  Zoom:   %d x %d\n", (zoomByte & 7) + 1, ((zoomByte >> 4) & 7) + 1);
+		ATConsolePrintf("  Zoom:    %d x %d\n", (zoomByte & 7) + 1, ((zoomByte >> 4) & 7) + 1);
 
-		if (patternByte & 0x80)
-			ATConsolePrintf("  Patt:   repeat every %d\n", (patternByte & 0x3F) + 1);
-		else
-			ATConsolePrintf("  Patt:   disabled\n");
+		if (raycast) {
+			ATConsolePrintf("  Raycast: Texture %ux%u, init $%03X.%02X,$%03X.%02X, step %c$%03X.%02X,%c$%03X.%02X\n"
+				, rcTexW
+				, rcTexH
+				, rcInitX >> 8
+				, rcInitX & 0xFF
+				, rcInitY >> 8
+				, rcInitY & 0xFF
+				, rcIncX & 0x4000 ? '-' : '+'
+				, rcIncDX >> 8
+				, rcIncDX & 0xFF
+				, rcIncY & 0x4000 ? '-' : '+'
+				, rcIncDY >> 8
+				, rcIncDY & 0xFF
+			);
+		} else {
+			if (patternByte & 0x80)
+				ATConsolePrintf("  Patt:    repeat every %d\n", (patternByte & 0x3F) + 1);
+			else
+				ATConsolePrintf("  Patt:    disabled\n");
+		}
 
-		ATConsolePrintf("  Mode:   %d (%s)\n", controlByte & 7, kModeNames[controlByte & 7]);
+		ATConsolePrintf("  Mode:    %d (%s)\n", controlByte & 7, modeName);
 	}
 
-	return next;
+	return next ? addr & 0x7FFFF : -1;
 }
 
 void ATVBXEEmulator::LoadState(const IATObjectState *state) {
@@ -943,7 +1086,13 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 		}
 	}
 
+	// MERGE NOTE: old snapshots have no FEATURE_CONTROL. Clear a previous
+	// FX1.27 configuration before restoring their VIDEO_CONTROL defaults.
+	mFeatureControl = 0;
+	mPfPaletteIndexInit = 0;
 	WriteControl(0x40, vstate.mVideoControl);
+	if (vstate.mbFeatureControlPresent)
+		WriteControl(0x4B, (uint8)vstate.mFeatureControl);
 	mXdlBaseAddr = vstate.mXdlAddr & kLocalAddrMask;
 	mXdlAddr = vstate.mXdlAddrActive & kLocalAddrMask;
 	WriteControl(0x44, vstate.mCsel);
@@ -1032,6 +1181,20 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 
 		LoadBCB(vstate.mIntBlitState);
 
+		// MERGE NOTE: LoadBCB reconstructs legacy parameters, but cannot
+		// reconstruct a consumed raycasting container or its current coords.
+		if (mbVersion127OrHigher && vstate.mbIntBlitRaycast) {
+			mbBlitRCMode = true;
+			mBlitRCSrcX = vstate.mIntBlitRaycastCoords[0];
+			mBlitRCSrcY = vstate.mIntBlitRaycastCoords[1];
+			mBlitRCSrcInitX = vstate.mIntBlitRaycastCoords[2];
+			mBlitRCSrcInitY = vstate.mIntBlitRaycastCoords[3];
+			mBlitRCSrcStepX = vstate.mIntBlitRaycastCoords[4];
+			mBlitRCSrcStepY = vstate.mIntBlitRaycastCoords[5];
+			mBlitRCTexSizeBitsX = std::clamp<int>(vstate.mIntBlitRaycastTextureBits[0], 3, 7);
+			mBlitRCTexSizeBitsY = std::clamp<int>(vstate.mIntBlitRaycastTextureBits[1], 3, 7);
+		}
+
 		mBlitActiveCollisionMask = vstate.mbIntBlitCollisionLatched ? 0 : mBlitCollisionMask;
 
 		mBlitHeightLeft = std::min<uint32>(vstate.mIntBlitHeightLeft, mBlitHeight);
@@ -1041,7 +1204,9 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 		if (vstate.mIntBlitStopDelay > 0) {
 			mBlitState = BlitState::Stopping;
 			mpScheduler->SetEvent(vstate.mIntBlitStopDelay, this, 1, mpEventBlitterIrq);
-		} else if (mBlitHeightLeft > 0)
+		} else if (mbVersion127OrHigher && vstate.mbIntBlitContainersPending)
+			mBlitState = BlitState::ProcessContainers;
+		else if (mBlitHeightLeft > 0)
 			mBlitState = BlitState::ProcessBlit;
 		else
 			mBlitState = BlitState::Reload;
@@ -1090,10 +1255,12 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 
 	state->mVideoControl
 		= (mbXdlEnabled ? 0x01 : 0x00)
-		+ (mbExtendedColor ? 0x02 : 0x00)
+		+ (mbExtendedColor1 ? 0x02 : 0x00)
 		+ (mbOvTrans ? 0x00 : 0x04)
 		+ (mbOvTrans15 ? 0x08 : 0x00);
 
+	state->mbFeatureControlPresent = mbVersion127OrHigher;
+	state->mFeatureControl = (uint8)mFeatureControl;
 	state->mXdlAddr = mXdlBaseAddr;
 	state->mXdlAddrActive = mXdlAddr;
 
@@ -1115,6 +1282,7 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 			break;
 
 		case BlitState::Reload:
+		case BlitState::ProcessContainers:
 			state->mArchBlitterBusy = 0x01;
 			break;
 
@@ -1184,6 +1352,16 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 
 	// save blitter internal state
 	if (mBlitState != BlitState::Stopped) {
+		state->mbIntBlitContainersPending = mBlitState == BlitState::ProcessContainers;
+		state->mbIntBlitRaycast = mbBlitRCMode;
+		state->mIntBlitRaycastCoords[0] = mBlitRCSrcX;
+		state->mIntBlitRaycastCoords[1] = mBlitRCSrcY;
+		state->mIntBlitRaycastCoords[2] = mBlitRCSrcInitX;
+		state->mIntBlitRaycastCoords[3] = mBlitRCSrcInitY;
+		state->mIntBlitRaycastCoords[4] = mBlitRCSrcStepX;
+		state->mIntBlitRaycastCoords[5] = mBlitRCSrcStepY;
+		state->mIntBlitRaycastTextureBits[0] = (uint8)mBlitRCTexSizeBitsX;
+		state->mIntBlitRaycastTextureBits[1] = (uint8)mBlitRCTexSizeBitsY;
 		state->mIntBlitListAddr = mBlitListFetchAddr;
 		state->mIntBlitCyclesPending = mBlitCyclesLeft;
 		state->mIntBlitYZoomCounter = mBlitZoomCounterY;
@@ -1195,7 +1373,7 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 
 		if (mpEventBlitterIrq)
 			state->mIntBlitStopDelay = mpScheduler->GetTicksToEvent(mpEventBlitterIrq);
-		else if (mBlitState == BlitState::ProcessBlit)
+		else if (mBlitState == BlitState::ProcessBlit || mBlitState == BlitState::ProcessContainers)
 			state->mIntBlitHeightLeft = mBlitHeightLeft;
 	}
 
@@ -1241,6 +1419,12 @@ sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
 			// convert native collision back to defined order
 			return (mOvCollState << 4) + (mOvCollState >> 4);
 
+		case 0x4B:	// FEATURE_CONTROL (FX 1.27+)
+			if (!mbVersion127OrHigher)
+				break;
+
+			return mFeatureControl;
+
 		case 0x50:	// BLT_COLLISION_CODE
 			return mBlitCollisionCode;
 
@@ -1248,7 +1432,8 @@ sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
 			// D7-D2: RAZ
 			// D1: BUSY (1 = busy)
 			// D0: BCB_LOAD (1 = loading from blit list)
-			return (IsBlitterActive() ? 0x02 : 0x00) | (mBlitState == BlitState::Reload ? 0x01 : 0x00);
+			return (IsBlitterActive() ? 0x02 : 0x00) |
+				(mBlitState == BlitState::Reload || mBlitState == BlitState::ProcessContainers ? 0x01 : 0x00);
 
 		case 0x54:	// IRQ_STATUS
 			return mbIRQRequest ? 0x01 : 0x00;
@@ -1278,9 +1463,13 @@ bool ATVBXEEmulator::WriteControl(uint8 addrLo, uint8 value) {
 	switch(addrLo) {
 		case 0x40:	// VIDEO_CONTROL
 			mbXdlEnabled = (value & 0x01) != 0;
-			mbExtendedColor = (value & 0x02) != 0;
+			mbExtendedColor1 = (value & 0x02) != 0;
+			mbExtendedColor0 = 0;
 			mbOvTrans = (value & 0x04) == 0;
 			mbOvTrans15 = (value & 0x08) != 0;
+
+			mFeatureControl = (mFeatureControl & 0xE7) + (mbExtendedColor1 ? 0x10 : 0x00);
+
 			UpdateColorTable();
 			break;
 
@@ -1329,6 +1518,18 @@ bool ATVBXEEmulator::WriteControl(uint8 addrLo, uint8 value) {
 
 		case 0x4A:	// COLCLR
 			mOvCollState = 0;
+			break;
+
+		case 0x4B:	// FEATURE_CONTROL (FX 1.27+)
+			if (!mbVersion127OrHigher)
+				return false;
+
+			mFeatureControl = value & 0xBB;
+			mbExtendedColor1 = (value & 0x10) != 0;
+			mbExtendedColor0 = (value & 0x08) != 0;
+			mPfPaletteIndexInit = value & 0x03;
+			// MERGE NOTE: XCOLOR changes must also select the extended GTIA table.
+			UpdateColorTable();
 			break;
 
 		case 0x50:	// BL_ADR0
@@ -1590,7 +1791,7 @@ void ATVBXEEmulator::BeginFrame(int correctionMode, bool signedPalette) {
 
 	mpPfPalette = mPalette[0];
 	mpOvPalette = mPalette[1];
-	mPfPaletteIndex = 0;
+	mPfPaletteIndex = mPfPaletteIndexInit;
 	mOvPaletteIndex = 1;
 
 	mbAttrMapEnabled = false;
@@ -1644,8 +1845,23 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 	mDMACyclesOverlayStart = 0;
 	mBlitterEndScanTime = ATSCHEDULER_GETTIME(mpScheduler) + 114;
 
-	if (dst)
-		VDMemset32(dst, mpPfPalette[mpColorTable[kColorBAK]], 68*2);
+	if (dst) {
+		// clear color cycles $00-$21 (V1.26-)			(188 cc visible)
+		// clear color cycles $00-$25 (V1.27+ CLIP=0)	(180 cc visible)
+		// clear color cycles $00-$2B (V1.27+ CLIP=1)	(168 cc visible)
+		size_t leftBorderWidthHRPixels = 34 * 4;
+
+		if (mbVersion127OrHigher) {
+			if (mFeatureControl & 0x20)
+				leftBorderWidthHRPixels = 44 * 4;
+			else
+				leftBorderWidthHRPixels = 38 * 4;
+		}
+
+		VDMemset32(dst, mpPfPalette[mpColorTable[kColorBAK]], leftBorderWidthHRPixels);
+
+		mX = leftBorderWidthHRPixels >> 2;
+	}
 
 	bool reloadAttrMap = false;
 
@@ -1981,10 +2197,17 @@ void ATVBXEEmulator::RenderScanline(int xend, bool pfpmrendered) {
 			switch(mPRIOR & 0xc0) {
 				case 0x00:
 					if (hiresMode) {
-						if (mbExtendedColor)
-							Render<false, RenderMode::HiresXcolor>(x1h, xth, mbAttrMapEnabled);
-						else
-							Render<false, RenderMode::Hires>(x1h, xth, mbAttrMapEnabled);
+						if (mbExtendedColor1) {
+							if (mbExtendedColor0)
+								Render<false, RenderMode::HiresXcolorPF0>(x1h, xth, mbAttrMapEnabled);
+							else
+								Render<false, RenderMode::HiresXcolor>(x1h, xth, mbAttrMapEnabled);
+						} else {
+							if (mbExtendedColor0)
+								Render<false, RenderMode::HiresXcolorForcedPF1>(x1h, xth, mbAttrMapEnabled);
+							else
+								Render<false, RenderMode::Hires>(x1h, xth, mbAttrMapEnabled);
+						}
 					} else if (pfpmrendered)
 						Render<false, RenderMode::Lores>(x1h, xth, mbAttrMapEnabled);
 					else
@@ -2060,7 +2283,19 @@ uint32 ATVBXEEmulator::SenseScanline(int hpx1, int hpx2, const uint8 *weights) c
 
 void ATVBXEEmulator::EndScanline() {
 	if (mpDst) {
-		VDMemset32(mpDst + 444*2, mpPfPalette[mpColorTable[8]], (456 - 444) * 2);
+		// FX 1.26-			right border $DE (222)
+		// FX 1.27+ CLIP=0	right border $DA (218)
+		// FX 1.27+ CLIP=1	right border $D4 (212)
+		int rightBorderHR = 222*4;
+
+		if (mbVersion127OrHigher) {
+			if (mFeatureControl & 0x20)
+				rightBorderHR = 212*4;
+			else
+				rightBorderHR = 218*4;
+		}
+
+		VDMemset32(mpDst + rightBorderHR, mpPfPalette[mpColorTable[8]], 456*2 - rightBorderHR);
 		mpDst = NULL;
 	}
 
@@ -2135,7 +2370,7 @@ bool ATVBXEEmulator::IsBlitterActive() const {
 void ATVBXEEmulator::AssertBlitterIrq() {
 	mBlitState = BlitState::Stopped;
 
-	if (!mbIRQRequest) {
+	if (!mbIRQRequest && mbIRQEnabled) {
 		mbIRQRequest = true;
 
 		if (mbIRQEnabled)
@@ -2291,17 +2526,27 @@ int ATVBXEEmulator::RenderAttrPixels(int x1h, int x2h) {
 	if (offset >= 0) {
 		offset %= mAttrWidth;
 		attrIndex = attrOffset / mAttrWidth;
+
+		if (mbVersion127OrHigher)
+			attrIndex %= 43;
+		else
+			attrIndex &= 63;
 	}
 
 	// The hires bitmap is 1 bit/px for widths 1-8, 2 bit/px for 9-16, and 4 bit/px for 17-32.
 	const int hiresShift = mAttrWidth > 16 ? 2 : mAttrWidth > 8 ? 1 : 0;
 
-	const uint8 colorMask = mbExtendedColor ? 0xFF : 0xFE;
+	const uint8 colorMask = mbExtendedColor1 || mbExtendedColor0 ? 0xFF : 0xFE;
 
 	AttrPixel px;
 	px.mColors[0] = 0;
 
-	const uint8 *attrSrc = &mAttrBuffer[(attrIndex++ & 63)*4];
+	const uint8 *attrSrc = &mAttrBuffer[attrIndex*4];
+	// MERGE NOTE: pre-1.27 wraps all 64 cells, including cell 63.
+	const uint32 attrLimit = mbVersion127OrHigher ? 43 : 64;
+	if (++attrIndex >= attrLimit)
+		attrIndex = 0;
+
 	uint8 hrMaskOrPF0 = attrSrc[0];
 	px.mColors[1] = hrMaskOrPF0 & colorMask;
 	px.mColors[2] = attrSrc[1] & colorMask;
@@ -2321,7 +2566,10 @@ int ATVBXEEmulator::RenderAttrPixels(int x1h, int x2h) {
 		mAttrPixels[x1h] = px;
 
 		if (++offset >= (int)mAttrWidth) {
-			attrSrc = &mAttrBuffer[(attrIndex++ & 63)*4];
+			attrSrc = &mAttrBuffer[attrIndex*4];
+			if (++attrIndex >= attrLimit)
+				attrIndex = 0;
+
 			hrMaskOrPF0 = attrSrc[0];
 			px.mColors[1] = hrMaskOrPF0 & colorMask;
 			px.mColors[2] = attrSrc[1] & colorMask;
@@ -2373,8 +2621,10 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 	auto run = [this](uint32 *VDRESTRICT dst, int x1h, int x2h, auto v126, auto attrMapEnabledConst) VDNOINLINE {
 		constexpr bool T_AttrMapEnabled = attrMapEnabledConst;
 		constexpr bool T_Hires = T_Mode == RenderMode::Hires
-			|| T_Mode == RenderMode::HiresXcolor;
-		constexpr bool T_Version126 = v126;
+			|| T_Mode == RenderMode::HiresXcolor
+			|| T_Mode == RenderMode::HiresXcolorForcedPF1
+			|| T_Mode == RenderMode::HiresXcolorPF0;
+		constexpr bool T_Version126OrHigher = v126;
 
 		const uint8 *VDRESTRICT colorTable = mpColorTable;
 		// MERGE NOTE: preserve the hires PF0 handling from RenderMode8.
@@ -2442,7 +2692,45 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 				// For V1.25-, use PF2/PF3 priority for all pixels.
 				lb = *lumasrc++;
 
-				if constexpr (T_Mode == RenderMode::HiresXcolor) {
+				if constexpr (T_Mode == RenderMode::HiresXcolorForcedPF1) {
+					// V1.27 XCOLOR[1:0] = %01
+
+					// if hires bit is set, force PF1 -- stomping all layers including P/M
+					if (lb & 2)
+						ic0 = PF1;
+
+					if (lb & 1)
+						ic1 = PF1;
+
+					// for non-set pixels, switch PF2 to PF0 based on hires mask
+					if (ic0 & (PF2 & apx[0].mHiresFlag))
+						ic0 ^= PF0 ^ PF2;
+
+					if (ic1 & (PF2 & apx[1].mHiresFlag))
+						ic1 ^= PF0 ^ PF2;
+
+					i0 = ic0;
+					i1 = ic1;
+				} else if constexpr (T_Mode == RenderMode::HiresXcolorPF0) {
+					// V1.27 XCOLOR[1:0] = %11
+
+					// if hires bit is set, switch layer from PF2 to PF1
+					if (lb & 2)
+						ic0 -= (ic0 & PF2) >> 1;
+
+					if (lb & 1)
+						ic1 -= (ic1 & PF2) >> 1;
+
+					// for non-set pixels, switch PF2 to PF0 based on hires mask
+					if (ic0 & (PF2 & apx[0].mHiresFlag))
+						ic0 ^= PF0 ^ PF2;
+
+					if (ic1 & (PF2 & apx[1].mHiresFlag))
+						ic1 ^= PF0 ^ PF2;
+
+					i0 = ic0;
+					i1 = ic1;
+				} else if constexpr (T_Mode == RenderMode::HiresXcolor) {
 					// if hires bit is set, switch collision layer from PF2 to PF1
 					if (lb & 2)
 						ic0 -= (ic0 & PF2) >> 1;
@@ -2454,7 +2742,7 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 					ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
 					ic1 += (ic1 & PF2) & apx[1].mHiresFlag;
 
-					if (T_Version126) {
+					if (T_Version126OrHigher) {
 						// for V1.26+, both collision and display use PF1/PF2/PF3
 						i0 = ic0;
 						i1 = ic1;
@@ -2464,11 +2752,11 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 						i1 += (i1 & PF2) & apx[1].mHiresFlag;
 					}
 				} else {
-					i0 += (i0 & PF2) & apx[0].mHiresFlag;
-					i1 += (i1 & PF2) & apx[1].mHiresFlag;
-					// MERGE NOTE: color lookup must see the same PF2/PF3 swap.
-					ic0 = i0;
-					ic1 = i1;
+					// switch PF2 to PF3 based on hires mask
+					ic0 += (ic0 & PF2) & apx[0].mHiresFlag;
+					ic1 += (ic1 & PF2) & apx[1].mHiresFlag;
+					// Plain hires changes color selection only; collision and
+					// priority retain the original PF2 layer (test24).
 				}
 			}
 
@@ -2546,7 +2834,7 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 				const uint8 *VDRESTRICT l2src = &mpAnticBuffer[x1++ & ~1];
 				uint8 l0 = (l2src[0] << 6) + (l2src[1] << 4);
 
-				const uint8 (&colorInfo)[2] = kMode11Lookup[i0 >> 4][l0 == 0 && T_Version126];
+				const uint8 (&colorInfo)[2] = kMode11Lookup[i0 >> 4][l0 == 0 && T_Version126OrHigher];
 
 				d0 = (d0 | (l0 & colorInfo[0])) & colorInfo[1];
 				d1 = (d1 | (l0 & colorInfo[0])) & colorInfo[1];
@@ -2559,7 +2847,7 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 			priDst[2] = apx[1].mPriority & priTable[i1].mOvPri;
 
 			if constexpr (T_Hires) {
-				if (T_Version126) {
+				if (T_Version126OrHigher) {
 					priDst[1] = (kPriorityTranslation.v[i0] & 0xF7) | (apx[0].mCtrl & 0x08);
 					priDst[3] = (kPriorityTranslation.v[i1] & 0xF7) | (apx[1].mCtrl & 0x08);
 				} else {
@@ -2567,7 +2855,7 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 					priDst[3] = kCollisionLookup.v[i1] | (apx[1].mCtrl & 0x08);
 				}
 			} else {
-				if (T_Version126) {
+				if (T_Version126OrHigher) {
 					const uint8 pri = kPriorityTranslation.v[i0];
 					priDst[1] = (pri & 0xF7) | (apx[0].mCtrl & 0x08);
 					priDst[3] = (pri & 0xF7) | (apx[1].mCtrl & 0x08);
@@ -2589,7 +2877,7 @@ void ATVBXEEmulator::Render(int _x1h, int _x2h, bool _attrMapEnabled) {
 
 	uint32 *dst = mpDst + _x1h*2;
 
-	if (mbVersion126) {
+	if (mbVersion126OrHigher) {
 		if (_attrMapEnabled)
 			run(dst, _x1h, _x2h, std::true_type(), std::true_type());
 		else
@@ -2997,9 +3285,16 @@ void ATVBXEEmulator::RunBlitter() {
 			}
 
 			LoadBlitter();
+			continue;
+		} else if (mBlitState == BlitState::ProcessContainers) {
+			LoadNextBCBContainer();
 			
-			if (mBlitCyclesLeft <= 0)
-				break;
+			if (mBlitState == BlitState::ProcessBlit)
+				StartBlit();
+
+			continue;
+		} else if (mBlitState == BlitState::Stopped) {
+			break;
 		}
 
 		uint32 zeroSourceBytes = RunBlitterRow();
@@ -3022,7 +3317,9 @@ void ATVBXEEmulator::RunBlitter() {
 
 		if (++mBlitZoomCounterY >= mBlitZoomY) {
 			mBlitZoomCounterY = 0;
-			mBlitSrcAddr += mBlitSrcStepY;
+
+			if (!mbBlitRCMode)
+				mBlitSrcAddr += mBlitSrcStepY;
 
 			if (!--mBlitHeightLeft) {
 				mBlitState = BlitState::Reload;
@@ -3036,19 +3333,56 @@ void ATVBXEEmulator::RunBlitter() {
 }
 
 uint32 ATVBXEEmulator::RunBlitterRow() {
-	switch(mBlitterMode) {
-		default:
-		case 0:	return RunBlitterRow<0>(); break;
-		case 1:	return RunBlitterRow<1>(); break;
-		case 2:	return RunBlitterRow<2>(); break;
-		case 3:	return RunBlitterRow<3>(); break;
-		case 4:	return RunBlitterRow<4>(); break;
-		case 5:	return RunBlitterRow<5>(); break;
-		case 6:	return RunBlitterRow<6>(); break;
-	}
+	const auto runMode = [this](auto rc) {
+		switch(mBlitterMode) {
+			default:
+			case 0:
+				if (mBlitZoomX != 1 || (!rc && (mBlitPatternMode & 0x80))) {
+					// copy with pattern or x-zoom
+					return RunBlitterRow<BlitterMode::Copy, true, true, rc>();
+				} else if (mBlitAndMask != 0) {
+					// copy with non-zero and mask
+					return RunBlitterRow<BlitterMode::Copy, false, false, rc>();
+				} else if constexpr (rc) {
+					// copy with zero and mask (fill), raycasting on
+					return RunBlitterRow<BlitterMode::Copy, false, false, rc>();
+				} else {
+					// copy with zero and mask (fill), raycasting off
+					return RunBlitterRow<BlitterMode::Fill, false, false, rc>();
+				}
+				break;
+
+			case 1:	return RunBlitterRow<BlitterMode::Overlay, true, true, rc>();
+			case 2:
+				if (mbVersion127OrHigher) {
+					if (mBlitterSubMode & 0x10)
+						return RunBlitterRow<BlitterMode::AddCarry, true, true, rc>();
+
+					if (mBlitterSubMode & 0x20)
+						return RunBlitterRow<BlitterMode::AddSat, true, true, rc>();
+				}
+
+				return RunBlitterRow<BlitterMode::Add, true, true, rc>();
+
+			case 3:	return RunBlitterRow<BlitterMode::Or, true, true, rc>();
+			case 4:	return RunBlitterRow<BlitterMode::And, true, true, rc>();
+			case 5:	return RunBlitterRow<BlitterMode::Xor, true, true, rc>();
+			case 6:	return RunBlitterRow<BlitterMode::HrOverlay, true, true, rc>();
+			case 7:
+				if (mbVersion127OrHigher)
+					return RunBlitterRow<BlitterMode::Table, true, true, rc>();
+				else
+					return RunBlitterRow<BlitterMode::Copy, true, true, rc>();
+		}
+	};
+
+	if (mbBlitRCMode)
+		return runMode(std::true_type());
+	else
+		return runMode(std::false_type());
 }
 
-template<uint8 T_Mode>
+template<ATVBXEEmulator::BlitterMode T_Mode, bool T_ZoomX, bool T_Pattern, bool T_RayCast>
 uint32 ATVBXEEmulator::RunBlitterRow() {
 	// Process one row.
 	//
@@ -3078,9 +3412,25 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 	uint32 dstStepXZoomed = mBlitDstStepX * mBlitZoomX;
 	uint32 zeroSourceBytes = 0;
 
+	[[maybe_unused]] uint32 rcSrcX = mBlitRCSrcX;
+	[[maybe_unused]] uint32 rcSrcY = mBlitRCSrcY;
+	[[maybe_unused]] uint32 rcSrcStepX = mBlitRCSrcStepX;
+	[[maybe_unused]] uint32 rcSrcStepY = mBlitRCSrcStepY;
+	[[maybe_unused]] int rcShift = mBlitRCTexSizeBitsX;
+	[[maybe_unused]] uint32 rcSrcMaskX = (UINT32_C(1) << mBlitRCTexSizeBitsX) - 1;
+	[[maybe_unused]] uint32 rcSrcMaskY = (UINT32_C(1) << mBlitRCTexSizeBitsY) - 1;
+
+	[[maybe_unused]] uint32 tableBaseAddr = ((uint32)mBlitterSubMode << (16-4)) + ((uint32)mBlitCollisionMask << 8);
+
 	const uint8 andMask = mBlitAndMask;
 	const uint8 xorMask = mBlitXorMask;
-	const uint8 zoomX = mBlitZoomX;
+
+	uint8 zoomX = 1;
+
+	if constexpr (T_ZoomX) {
+		zoomX = mBlitZoomX;
+	}
+
 	const uint32 width = mBlitWidth;
 	const sint32 srcStepX = mBlitSrcStepX;
 	const sint32 dstStepX = mBlitDstStepX;
@@ -3093,74 +3443,89 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 		VDNEVERHERE;
 	}
 
-	if constexpr (T_Mode == 0) {
-		if (zoomX == 1 && !(mBlitPatternMode & 0x80)) {
-			if (andMask == 0) {
-				for(uint32 x=0; x<width; ++x) {
-					VBXE_WRITE(dstRowAddr, xorMask);
-					dstRowAddr += dstStepX;
-				}
+	if constexpr (T_Mode == BlitterMode::Fill) {
+		static_assert(T_Mode == BlitterMode::Fill && !T_ZoomX && !T_Pattern && !T_RayCast,
+			"Fill can only be used without x-zoom, pattern, or raycast"
+		);
 
-				srcRowAddr += srcStepX * width;
-
-			} else {
-				for(uint32 x=0; x<width; ++x) {
-					uint8 c = VBXE_FETCH(srcRowAddr);
-
-					c &= andMask;
-					c ^= xorMask;
-
-					VBXE_WRITE(dstRowAddr, c);
-					dstRowAddr += dstStepX;
-						
-					srcRowAddr += srcStepX;
-				}
-			}
-		} else {
-			for(uint32 x=0; x<width; ++x) {
-				uint8 c = VBXE_FETCH(srcRowAddr);
-
-				c &= andMask;
-				c ^= xorMask;
-
-				for(uint8 i=0; i<zoomX; ++i) {
-					VBXE_WRITE(dstRowAddr, c);
-					dstRowAddr += dstStepX;
-				}
-
-				srcRowAddr += srcStepX;
-
-				if (!--patCounter) {
-					patCounter = patWidth;
-					srcRowAddr = mBlitSrcAddr;
-				}
-			}
+		for(uint32 x=0; x<width; ++x) {
+			VBXE_WRITE(dstRowAddr, xorMask);
+			dstRowAddr += dstStepX;
 		}
 
+		srcRowAddr += srcStepX * width;
 		return 0;
 	}
 
+	// mask off bits 0-5 of the source address in raycasting mode; upper bits
+	// merge by OR even if they overlap the texture offset
+	if constexpr (T_RayCast) {
+		srcRowAddr &= 0xFFFFFFC0;
+	}
+
 	for(uint32 x=0; x<width; ++x) {
-		uint8 c = VBXE_FETCH(srcRowAddr);
+		uint8 c;
+
+		if constexpr (T_RayCast) {
+			uint32 texAddr = srcRowAddr
+				|  ((rcSrcX >> 8) & rcSrcMaskX)
+				| (((rcSrcY >> 8) & rcSrcMaskY) << rcShift);
+
+			rcSrcX += rcSrcStepX;
+			rcSrcY += rcSrcStepY;
+
+			c = VBXE_FETCH(texAddr);
+		} else {
+			c = VBXE_FETCH(srcRowAddr);
+		}
 
 		c &= andMask;
 		c ^= xorMask;
 
-		if (c) {
+		if constexpr (T_Mode == BlitterMode::Table) {
+			for(uint8 i=0; i<zoomX; ++i) {
+				VBXE_WRITE(dstRowAddr, VBXE_FETCH(tableBaseAddr + c));
+
+				dstRowAddr += dstStepX;
+			}
+		} else if constexpr(T_Mode == BlitterMode::Copy) {
+			for(uint8 i=0; i<zoomX; ++i) {
+				VBXE_WRITE(dstRowAddr, c);
+
+				dstRowAddr += dstStepX;
+			}
+		} else if constexpr(T_Mode == BlitterMode::AddCarry) {
 			for(uint8 i=0; i<zoomX; ++i) {
 				uint8 d = VBXE_FETCH(dstRowAddr);
 
-				if constexpr (T_Mode == 6) {
+				if (d && ((1 << (d >> 5)) & mBlitActiveCollisionMask)) {
+					mBlitCollisionCode = d;
+					mBlitActiveCollisionMask = 0;
+				}
+
+				uint32 sum = (uint32)d + (uint32)c;
+				d = sum > 0xFF ? 0xFF : 0;
+
+				VBXE_WRITE(dstRowAddr, d);
+
+				dstRowAddr += dstStepX;
+			}
+		} else if (c) {
+			for(uint8 i=0; i<zoomX; ++i) {
+				uint8 d = VBXE_FETCH(dstRowAddr);
+
+				if constexpr (T_Mode == BlitterMode::HrOverlay) {
 					const uint8 cl = c & 0x0f;
 					const uint8 ch = c & 0xf0;
 					uint8 dl = d & 0x0f;
 					uint8 dh = d & 0xf0;
+					bool coll = false;
 
 					if (cl) {
 						if (dl) {
 							if ((1 << ((d >> 1) & 7)) & mBlitActiveCollisionMask) {
 								mBlitCollisionCode = (mBlitCollisionCode & 0xf0) + dl;
-								mBlitActiveCollisionMask = 0;
+								coll = true;
 							}
 						}
 
@@ -3171,12 +3536,15 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 						if (dh) {
 							if ((1 << ((d >> 5) & 7)) & mBlitActiveCollisionMask) {
 								mBlitCollisionCode = (mBlitCollisionCode & 0x0f) + dh;
-								mBlitActiveCollisionMask = 0;
+								coll = true;
 							}
 						}
 
 						dh = ch;
 					}
+
+					if (coll)
+						mBlitActiveCollisionMask = 0;
 
 					VBXE_WRITE(dstRowAddr, dl + dh);
 				} else {
@@ -3185,16 +3553,23 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 						mBlitActiveCollisionMask = 0;
 					}
 
-					if constexpr (T_Mode == 1)
-						VBXE_WRITE(dstRowAddr, c);
-					else if constexpr (T_Mode == 2)
-						VBXE_WRITE(dstRowAddr, c + d);
-					else if constexpr (T_Mode == 3)
-						VBXE_WRITE(dstRowAddr, c | d);
-					else if constexpr (T_Mode == 4)
-						VBXE_WRITE(dstRowAddr, c & d);
-					else if constexpr (T_Mode == 5)
-						VBXE_WRITE(dstRowAddr, c ^ d);
+					if constexpr (T_Mode == BlitterMode::Overlay) {
+						d = c;
+					} else if constexpr (T_Mode == BlitterMode::Add) {
+						d += c;
+					} else if constexpr (T_Mode == BlitterMode::AddSat) {
+						uint32 sum = (uint32)d + (uint32)c;
+
+						d = sum > 0xFF ? 0xFF : sum;
+					} else if constexpr (T_Mode == BlitterMode::Or) {
+						d |= c;
+					} else if constexpr (T_Mode == BlitterMode::And) {
+						d &= c;
+					} else if constexpr (T_Mode == BlitterMode::Xor) {
+						d ^= c;
+					}
+
+					VBXE_WRITE(dstRowAddr, d);
 				}
 
 				dstRowAddr += dstStepX;
@@ -3202,7 +3577,7 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 		} else {
 			++zeroSourceBytes;
 
-			if constexpr (T_Mode == 4) {
+			if constexpr (T_Mode == BlitterMode::And) {
 				for(uint8 i=0; i<zoomX; ++i) {
 					VBXE_WRITE(dstRowAddr, 0);
 					dstRowAddr += dstStepX;
@@ -3212,13 +3587,21 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 			}
 		}
 
-		srcRowAddr += srcStepX;
+		if constexpr (!T_RayCast) {
+			srcRowAddr += srcStepX;
 
-		if (!--patCounter) {
-			patCounter = patWidth;
-			srcRowAddr = mBlitSrcAddr;
+			if constexpr (T_Pattern) {
+				if (!--patCounter) {
+					patCounter = patWidth;
+					srcRowAddr = mBlitSrcAddr;
+				}
+			}
 		}
+	}
 
+	if constexpr (T_RayCast) {
+		mBlitRCSrcX = rcSrcX;
+		mBlitRCSrcY = rcSrcY;
 	}
 
 	return zeroSourceBytes;
@@ -3264,15 +3647,98 @@ void ATVBXEEmulator::LoadBlitter() {
 	mBlitState = BlitState::ProcessBlit;
 	mBlitHeightLeft = mBlitHeight;
 	mBlitZoomCounterY = 0;
-	mBlitCollisionCode = 0;
 
 	// deduct cycles for blit list
 	mBlitCyclesLeft -= 21;
+
+	// check if a container is present and load up to two containers immediately
+	if (mbVersion127OrHigher && bcb[20] & 0x80) {
+		mBlitState = BlitState::ProcessContainers;
+
+		for(int i=0; i<2 && mBlitState == BlitState::ProcessContainers; ++i) {
+			if (!LoadNextBCBContainer())
+				return;
+		}
+	}
 
 	// deduct a single cycle for constant read, since the source read cycle cannot initially
 	// be skipped
 	if (mBlitAndMask == 0)
 		--mBlitCyclesLeft;
+
+	if (mBlitState == BlitState::ProcessBlit)
+		StartBlit();
+}
+
+bool ATVBXEEmulator::LoadNextBCBContainer() {
+	uint8 container[6];
+
+	container[0] = VBXE_FETCH(mBlitListFetchAddr++);
+
+	// check for invalid container types -- this will stop the blitter without
+	// raising an IRQ
+	if (container[0] & 0x40) {
+		--mBlitCyclesLeft;
+		return StopBlitterOnInvalidState();
+	}
+
+	// read the remainder of the container
+	uint32 clen = container[0] & 0x20 ? 6 : 4;
+
+	for(uint32 i = 1; i < clen; ++i) {
+		container[i] = VBXE_FETCH(mBlitListFetchAddr++);
+	}
+
+	// deduct cycles for reading BCB container
+	mBlitCyclesLeft -= clen;
+
+	// process container
+	if (container[0] & 0x20) {
+		// raycasting container
+		mBlitRCSrcInitX = VDReadUnalignedLEU16(&container[1]) & 0x7FFF;
+		mBlitRCSrcInitY = VDReadUnalignedLEU16(&container[3]) & 0x7FFF;
+		mBlitRCSrcStepX = ((uint32)mBlitSrcStepX & 0xFF) + ((uint32)(container[5] & 0x7F) << 8);
+		// raycast source step Y already inited from BCB processing
+
+		// enable raycasting
+		mBlitRCSrcX = mBlitRCSrcInitX;
+		mBlitRCSrcY = mBlitRCSrcInitY;
+
+		// invalid texture sizes are clamped instead of failing the BCB
+		mBlitRCTexSizeBitsX = std::min<int>((mBlitPatternMode & 7) + 3, 7);
+		mBlitRCTexSizeBitsY = std::min<int>(((mBlitPatternMode >> 3) & 7) + 3, 7);
+
+		mbBlitRCMode = true;
+	} else {
+		// jump container
+		const uint32 offset = VDReadUnalignedLEU32(container) >> 8;
+
+		if (container[0] & 0x01) {
+			// relative jump (relative to last byte, 16 bit signed only)
+			mBlitListFetchAddr += (uint32)(sint32)(sint16)offset - 1;
+		} else {
+			// absolute jump
+			mBlitListFetchAddr = offset;
+		}
+	}
+
+	// check for another container
+	if (!(container[0] & 0x80))
+		mBlitState = BlitState::ProcessBlit;
+
+	return true;
+}
+
+void ATVBXEEmulator::StartBlit() {
+	mBlitCollisionCode = 0;
+}
+
+bool ATVBXEEmulator::StopBlitterOnInvalidState() {
+	if (mbBlitLogging)
+		ATConsoleTaggedPrintf("VBXE: Blit list abnormally stopped due to reserved value\n");
+
+	mBlitState = BlitState::Stopped;
+	return false;
 }
 
 // Load blitter state from a blit control block as it appears in VBXE local memory.
@@ -3316,9 +3782,14 @@ void ATVBXEEmulator::LoadBCB(const uint8 (&bcb)[21]) {
 	mbBlitterContinue = (rawBltControl & 0x08) != 0;
 
 	mBlitterMode = rawBltControl & 7;
+	mBlitterSubMode = rawBltControl & 0x70;
+	mbBlitRCMode = false;
 
 	mBlitZoomX = (rawBltZoom & 7) + 1;
 	mBlitZoomY = ((rawBltZoom >> 4) & 7) + 1;
+
+	// save off full Y step if raycasting container is later seen
+	mBlitRCSrcStepY = ((uint32)rawSrcStepY0 + ((uint32)rawSrcStepY1 << 8)) & 0x7FFF;
 
 	// recompute derived parameters that are constant for the entire blit
 	// Compute memory cycles per row blitted.
@@ -3391,7 +3862,7 @@ void ATVBXEEmulator::SaveBCB(uint8 (&bcb)[21]) const {
 	bcb[17] = mBlitCollisionMask;
 	bcb[18] = (mBlitZoomX - 1) + ((mBlitZoomY - 1) << 4);
 	bcb[19] = mBlitPatternMode;
-	bcb[20] = (mbBlitterContinue ? 0x08 : 0x00) + mBlitterMode;
+	bcb[20] = (mbBlitterContinue ? 0x08 : 0x00) + mBlitterMode + mBlitterSubMode;
 }
 
 void ATVBXEEmulator::InitPriorityTables() {
@@ -3471,14 +3942,14 @@ void ATVBXEEmulator::InitPriorityTables() {
 					dst.mPalColor = kColorPF3;
 					dst2.mMapColor = 0;
 					dst2.mPalColor = kColorPF3;
-					ovpri = mbVersion126 ? 0x04 : 0x08;
+					ovpri = mbVersion126OrHigher ? 0x04 : 0x08;
 					break;
 				case kColorBAK:
 					dst.mMapColor = 0;
 					dst.mPalColor = kColorBAK;
 					dst2.mMapColor = 0;
 					dst2.mPalColor = kColorBAK;
-					ovpri = mbVersion126 ? 0x08 : 0x00;
+					ovpri = mbVersion126OrHigher ? 0x08 : 0x00;
 					break;
 				case kColorBlack:
 					dst.mMapColor = 0;
@@ -3571,21 +4042,21 @@ void ATVBXEEmulator::InitPriorityTables() {
 					dst.mPalColor = kColorPF3P2;
 					dst2.mMapColor = 0;
 					dst2.mPalColor = kColorPF3P2;
-					ovpri = mbVersion126 ? 0x44 : 0x48;
+					ovpri = mbVersion126OrHigher ? 0x44 : 0x48;
 					break;
 				case kColorPF3P3:
 					dst.mMapColor = 0;
 					dst.mPalColor = kColorPF3P3;
 					dst2.mMapColor = 0;
 					dst2.mPalColor = kColorPF3P3;
-					ovpri = mbVersion126 ? 0x84 : 0x88;
+					ovpri = mbVersion126OrHigher ? 0x84 : 0x88;
 					break;
 				case kColorPF3P2P3:
 					dst.mMapColor = 0;
 					dst.mPalColor = kColorPF3P2P3;
 					dst2.mMapColor = 0;
 					dst2.mPalColor = kColorPF3P2P3;
-					ovpri = mbVersion126 ? 0xC4 : 0xC8;
+					ovpri = mbVersion126OrHigher ? 0xC4 : 0xC8;
 					break;
 			}
 
@@ -3596,7 +4067,7 @@ void ATVBXEEmulator::InitPriorityTables() {
 }
 
 void ATVBXEEmulator::UpdateColorTable() {
-	mpColorTable = mbAnalysisMode ? kATAnalysisColorTable : mbExtendedColor ? mColorTableExt : mColorTable;
+	mpColorTable = mbAnalysisMode ? kATAnalysisColorTable : mbExtendedColor1 || mbExtendedColor0 ? mColorTableExt : mColorTable;
 }
 
 void ATVBXEEmulator::RecorrectPalettes() {

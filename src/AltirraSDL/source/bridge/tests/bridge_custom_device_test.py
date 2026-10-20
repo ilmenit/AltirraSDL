@@ -189,6 +189,32 @@ def main() -> int:
 
                 bridge.device_remove("custom")
 
+                high_memory = temp_dir / "high memory descriptor.atdevice"
+                high_memory.write_text(
+                    'option "name": "24-bit memory regression";\n'
+                    'Segment ram: { size: $200 };\n'
+                    'MemoryLayer high: {\n'
+                    '  name: "High fast RAM", address: $12FF00, size: $200,\n'
+                    '  fast: true, segment: { source: ram, mode: "rw" }\n'
+                    '};\n', encoding="utf-8")
+                response = bridge.device_set(
+                    "custom", True, path=str(high_memory), allowunsafe=True)
+                check(response.get("config_loaded") is True,
+                      f"24-bit fast memory layer did not load: {response!r}")
+                bridge.pause()
+                # MEMLOAD/MEMDUMP expose the existing 24-bit bus path.
+                # Cross a bank boundary and verify bank 0 is independent.
+                bridge.memload(0x0000, b"\x31\x42")
+                check(bridge.memdump(0x130000, 2) == b"\0\0",
+                      "high memory unexpectedly aliases bank 0")
+                payload = bytes(range(32))
+                bridge.memload(0x12FFF0, payload)
+                check(bridge.memdump(0x12FFF0, len(payload)) == payload,
+                      "custom memory did not round-trip across a bank boundary")
+                check(bridge.memdump(0x0000, 2) == b"\x31\x42",
+                      "high memory writes changed bank 0")
+                bridge.device_remove("custom")
+
                 printer = bridge.device_add(
                     "printer", parent="/", translation_mode="default")
                 check(printer.get("path") == "/printer",

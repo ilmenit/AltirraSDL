@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <?xml-stylesheet type="text/xsl" href="index.xsl" ?>
-<topic title="Custom device specification, v0.6">
+<topic title="Custom device specification, v1.1">
   <toc/>
   <h2>Basic device description structure</h2>
   <p>
@@ -646,6 +646,17 @@
     layers overlapping these regions so that the hook page can relocated to avoid them.
     This happens whether or not the layers are enabled, as the layer modes can be changed
     on the fly.
+  </p>
+
+  <h3>65C816 layers<span class="req">v1.1+</span></h3>
+  <p>
+    For 65C816-based systems, memory layers can be positioned above bank 0 by specifying a base
+    address of <tt>$10000</tt> or above.
+  </p>
+  <p>
+    By default, memory layers will force an accelerated CPU to slow down to 1.8MHz on access. A memory layer
+    can be enabled for fast access with the member <tt>fast: true</tt>, which will enable
+    single cycle access.
   </p>
 
   <h2>Serial I/O (SIO) devices</h2>
@@ -2315,6 +2326,14 @@
   };]]></pre>
   <h2>Changes</h2>
   <dl>
+    <dt><span class="req">v1.1</span> (Altirra 4.50-test23)</dt>
+    <dd>
+      <ul>
+        <li>Memory layers can be positioned above bank 0.</li>
+        <li>Added <tt>fast</tt> member to memory layers to enable fast memory access for 65C816 accelerators. </li>
+      </ul>
+    </dd>
+
     <dt><span class="req">v1.0</span> (Altirra 4.50-test4)</dt>
     <dd>
       <ul>

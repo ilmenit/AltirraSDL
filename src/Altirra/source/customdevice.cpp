@@ -2014,10 +2014,10 @@ bool ATDeviceCustom::OnDefineMemoryLayer(ATVMCompiler& compiler, const char *nam
 	const uint32 address = mlMembers.RequiredUint32("address");
 	const uint32 size = mlMembers.RequiredUint32("size");
 
-	if (address >= 0x10000 || (address & 0xFF))
+	if (address >= 0x1000000 || (address & 0xFF))
 		throw ATVMCompileError(*initializers, "Memory layer address is invalid.");
 
-	if (size == 0 || 0x10000 - address < size || (size & 0xFF))
+	if (size == 0 || 0x1000000 - address < size || (size & 0xFF))
 		throw ATVMCompileError(*initializers, "Memory layer size is invalid.");
 
 	MemoryLayer& ml = *mConfigAllocator.Allocate<MemoryLayer>();
@@ -2412,6 +2412,9 @@ bool ATDeviceCustom::OnDefineMemoryLayer(ATVMCompiler& compiler, const char *nam
 		} else
 			throw ATVMCompileError(*cartModeRef, "Invalid cartridge mode.");
 	}
+
+	if (mlMembers.OptionalBool("fast").value_or(false))
+		mpMemMan->SetLayerFastBus(ml.mpPhysLayer, true);
 
 	VDStringA layerName(mlMembers.RequiredString("name"));
 

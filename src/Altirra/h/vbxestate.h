@@ -27,6 +27,9 @@ public:
 	vdrefptr<ATSaveStateMemoryBuffer> mpMemory;
 
 	// architectural write registers
+	// MERGE NOTE: presence flag preserves legacy VIDEO_CONTROL defaults.
+	bool mbFeatureControlPresent = false;
+	uint8 mFeatureControl = 0;
 	uint8 mVideoControl = 0;			// $Dx40 VIDEO_CONTROL
 	uint32 mXdlAddr = 0;				// $Dx41-3 XDL_ADR0-2
 	uint8 mCsel = 0;					// $Dx44 CSEL
@@ -76,6 +79,12 @@ public:
 
 	uint8 mIntBlitState[21] {};				// current blit state, in the form of the blit control block
 	bool mbIntBlitCollisionLatched = false;	// true if blitter has encountered a collision
+
+	// MERGE NOTE: FX1.27 can suspend between BCB containers or texture pixels.
+	bool mbIntBlitContainersPending = false;
+	bool mbIntBlitRaycast = false;
+	uint32 mIntBlitRaycastCoords[6] {}; // X,Y,initial X,Y,step X,Y
+	uint8 mIntBlitRaycastTextureBits[2] {};
 
 	uint8 mGtiaPal[9] {};
 	uint8 mGtiaPrior {};

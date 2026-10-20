@@ -637,12 +637,12 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					}
 				};
 
-				// VBXE — defaults match RenderVBXEConfig: FX 1.26, $D600,
+				// VBXE — defaults match RenderVBXEConfig: FX 1.27, $D600,
 				// no shared memory.  Only "version" needs to be written;
 				// "alt_page" and "shared_mem" are absent for defaults.
 				toggleDevice("vbxe", "VideoBoard XE (VBXE)",
 					[](ATPropertySet &p) {
-						p.SetUint32("version", 126);
+						p.SetUint32("version", 127);
 					});
 
 				// Covox — defaults match RenderCovoxConfig: $D600-D6FF,

@@ -385,3 +385,39 @@ the offset when setting the print position from a click.
   `stdafx.h` first. It supplies the guarded x86/x64 intrinsic declarations
   required by Windows SDK 10.0.26100 UCRT `wchar.h`, without including x86
   intrinsics on ARM64.
+
+
+## Test24 local merge notes
+
+The test22 → test24 sync includes test23; the previously recorded baseline
+was test22. The 20-file upstream delta retains all earlier fork corrections.
+
+- FX 1.27's NTSC offset check must compare the stored BCD version against
+  `0x27`, not decimal 127. Keep the core-version regression assertions.
+- Preserve named priority masks, the 64-cell wrap on older VBXE cores,
+  initialized RES pixels, and portable noinline/constexpr renderer code.
+  FX 1.27 intentionally wraps the attribute map at the 43 fetched cells.
+- FEATURE_CONTROL changes, resets, and version downgrades must refresh the
+  active color table. Save states must preserve FEATURE_CONTROL, blitter
+  submodes, raycast state, pending containers, and the collision latch.
+  Optional serialized fields preserve older snapshots' defaults.
+- The AVX2 dot-mask renderer must advance each vertical subsample and require
+  both AVX2 and FMA at dispatch. The scalar/accelerated comparison reproduces
+  the unmodified upstream sampling defect. Physical mask anchoring and SDL
+  scanline behavior remain in the fork's display implementation.
+- Firmware filename fallback uses a basename without extension, while
+  description matching keeps the entire original string. Descriptions may
+  contain periods or path separators. The bridge regression checks both
+  description matching and relocated Windows filename references on POSIX.
+- New VBXE choices/defaults in desktop, Gaming Mode, setup wizard and bridge
+  use FX 1.27; existing explicitly selected core versions remain supported.
+
+Focused coverage lives in `tests/upstream/vbxe.cpp` and `display.cpp`, plus
+bridge firmware/custom-device tests. The parity review and proposed follow-up
+work are in `docs/altirra-windows-parity-review.md`.
+
+Test24 CI follow-up: regression targets must use `ALTIRRA_COMPAT_DIR`,
+which is empty on MSVC, rather than unconditionally adding `src/compat`.
+Otherwise the non-MSVC `intrin.h` shim shadows the real Windows intrinsic
+header and `<future>` fails in `savestateio.cpp` with missing `_ReturnAddress`.
+The display test's FMA flag check is x86/x64-only, like the production path.

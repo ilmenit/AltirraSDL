@@ -1,3 +1,5 @@
+# Use the root's non-MSVC shim path. On MSVC, src/compat/intrin.h
+# would shadow the native header and hide _ReturnAddress from <future>.
 add_executable(altirra-upstream-regression-test
     regression.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/printerfx80.cpp
@@ -12,7 +14,7 @@ add_executable(altirra-upstream-regression-test
 target_include_directories(altirra-upstream-regression-test PRIVATE
     ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
     ${PROJECT_SOURCE_DIR}/src/Altirra/h
-    ${PROJECT_SOURCE_DIR}/src/compat
+    ${ALTIRRA_COMPAT_DIR}
     ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default
 )
 target_link_libraries(altirra-upstream-regression-test PRIVATE
@@ -20,6 +22,7 @@ target_link_libraries(altirra-upstream-regression-test PRIVATE
 add_test(NAME upstream-regressions COMMAND altirra-upstream-regression-test)
 add_executable(altirra-vbxe-regression-test
     vbxe.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/savestateio.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/vbxe.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/vbxestate.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/gtiatables.cpp
@@ -28,9 +31,9 @@ add_executable(altirra-vbxe-regression-test
 target_include_directories(altirra-vbxe-regression-test PRIVATE
     ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
     ${PROJECT_SOURCE_DIR}/src/Altirra/h
-    ${PROJECT_SOURCE_DIR}/src/compat
+    ${ALTIRRA_COMPAT_DIR}
     ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
-target_link_libraries(altirra-vbxe-regression-test PRIVATE ATCore Kasumi system SDL3::SDL3)
+target_link_libraries(altirra-vbxe-regression-test PRIVATE ATIO vdjson ATCore Kasumi system SDL3::SDL3)
 add_test(NAME upstream-vbxe COMMAND altirra-vbxe-regression-test)
 set_tests_properties(upstream-regressions upstream-vbxe PROPERTIES TIMEOUT 60)
 
@@ -42,7 +45,7 @@ if(NOT WIN32)
     target_include_directories(altirra-lazy-timer-test PRIVATE
         ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
         ${PROJECT_SOURCE_DIR}/src/Altirra/h
-        ${PROJECT_SOURCE_DIR}/src/compat
+        ${ALTIRRA_COMPAT_DIR}
         ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default
     )
     target_link_libraries(altirra-lazy-timer-test PRIVATE system SDL3::SDL3)
@@ -90,7 +93,7 @@ target_include_directories(altirra-test22-regression-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/test22_support
     ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
     ${PROJECT_SOURCE_DIR}/src/Altirra/h
-    ${PROJECT_SOURCE_DIR}/src/compat
+    ${ALTIRRA_COMPAT_DIR}
     ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
 target_link_libraries(altirra-test22-regression-test PRIVATE ATIO vdjson ATCore system SDL3::SDL3)
 add_test(NAME upstream-test22 COMMAND altirra-test22-regression-test)
@@ -109,9 +112,23 @@ target_include_directories(altirra-test22-cpu-test PRIVATE
     ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
     ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app
     ${PROJECT_SOURCE_DIR}/src/Altirra/h
-    ${PROJECT_SOURCE_DIR}/src/compat
+    ${ALTIRRA_COMPAT_DIR}
     ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
 target_link_libraries(altirra-test22-cpu-test PRIVATE ATCPU ATCore vdjson system SDL3::SDL3)
 add_test(NAME upstream-test22-cpu COMMAND altirra-test22-cpu-test
     ${CMAKE_CURRENT_SOURCE_DIR}/cpu65816-test22.json)
 set_tests_properties(upstream-test22-cpu PROPERTIES TIMEOUT 60)
+
+add_executable(altirra-display-regression-test
+    display.cpp
+    ${PROJECT_SOURCE_DIR}/src/VDDisplay/source/screenfx.cpp
+    ${PROJECT_SOURCE_DIR}/src/VDDisplay/source/bloom.cpp)
+target_include_directories(altirra-display-regression-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${PROJECT_SOURCE_DIR}/src/VDDisplay/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-display-regression-test PRIVATE system SDL3::SDL3)
+add_test(NAME upstream-display COMMAND altirra-display-regression-test)
+set_tests_properties(upstream-display PROPERTIES TIMEOUT 60)

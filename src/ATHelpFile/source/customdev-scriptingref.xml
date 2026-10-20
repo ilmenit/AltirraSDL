@@ -217,6 +217,9 @@
     <dd>
       Starting address of the memory layer. Must be a multiple of 256 (page aligned).
     </dd>
+    <dd>
+      Addresses above $10000 create memory layers in bank 1+ when a 65C816 CPU is in use.
+    </dd>
 
     <dt>size: <i>int</i></dt>
     <dd>
@@ -246,6 +249,12 @@
     <dd>
       Optional. Automatically disables the memory layer according to PBI, OS ROM, BASIC ROM, or self-test ROM
       selection state.
+    </dd>
+
+    <dt>fast: <i>bool</i> <span class="req">v1.1+</span></dt>
+    <dd>
+      Optional. If <tt>true</tt>, enables fast memory access for accelerated 65C816 CPUs. Otherwise, all accesses
+      to the memory layer will slow down the CPU to 1.8MHz.
     </dd>
 
     <dt>void set_offset(int offset);</dt>

@@ -33,6 +33,19 @@ def main():
                        '"Current profile" = 0\n'
                        '[User\\AltirraSDL\\Profiles\\00000000]\n'
                        '"GTIA: Defect mode" = "type1"\n')
+            if expected_defect == "type1":
+                # Exercise real firmware resolution through CONFIG. Both
+                # descriptions are legal names, not filesystem paths.
+                for index, description in enumerate(
+                        ("Parity BASIC 1.2", "Parity BASIC/XL"), 1):
+                    rom = Path(td) / f"parity-basic-{index}.rom"
+                    rom.write_bytes(bytes([0xFF]) * 8192)
+                    fixture += (
+                        '[User\\AltirraSDL\\Firmware\\Available\\'
+                        f'800000000000000{index}]\n'
+                        f'"Path" = "{rom.as_posix()}"\n'
+                        f'"Name" = "{description}"\n'
+                        '"Type" = "basic"\n')
             settings.write_text(fixture)
             proc = subprocess.Popen(
                 [str(server), "--bridge=tcp:127.0.0.1:0", *args],
@@ -47,6 +60,23 @@ def main():
                     assert bridge.ping()["ok"]
                     bridge.frame(20)
                     assert bridge.screenshot()[:8] == b"\x89PNG\r\n\x1a\n"
+                    if expected_defect == "type1":
+                        for index, description in enumerate(
+                                ("Parity BASIC 1.2", "Parity BASIC/XL"), 1):
+                            bridge.config("basicrom", f'"{description}"')
+                            # CONFIG changes the default firmware slot;
+                            # a hardware-mode change reloads the selected
+                            # ROMs so the actual ID is observable here.
+                            bridge.config("machine", "800")
+                            bridge.config("machine", "800XL")
+                            assert bridge.config("actual_basic")["actual_basic_id"] == (
+                                f"$800000000000000{index}")
+                        # test24 also improves references imported from a
+                        # different machine: missing original directories
+                        # must not prevent a filename-stem match.
+                        bridge.config("basicrom", '"C:/old-roms/parity-basic-2.rom"')
+                        assert bridge.config("actual_basic")["actual_basic_id"] == (
+                            "$8000000000000002")
                     bridge.quit()
                 assert proc.wait(timeout=10) == 0
                 reader.join(timeout=5)

@@ -332,7 +332,7 @@ bool ParseDeviceSettingToken(const std::string& tok, ATPropertySet& pset, std::s
 
 void ApplyQuickDeviceDefaults(const std::string& tag, ATPropertySet& pset) {
 	if (tag == "vbxe") {
-		pset.SetUint32("version", 126);
+		pset.SetUint32("version", 127);
 	} else if (tag == "covox") {
 		pset.SetUint32("base", 0xD600);
 		pset.SetUint32("size", 0x100);

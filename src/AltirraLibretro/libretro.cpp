@@ -2678,7 +2678,7 @@ bool ApplyPendingResetOptions(bool force) {
 
 	resetRequired |= ApplyPendingDeviceOption(force,
 		g_core.optionVbxePending, "vbxe", g_core.pendingVbxeEnabled,
-		[](ATPropertySet& p) { p.SetUint32("version", 126); });
+		[](ATPropertySet& p) { p.SetUint32("version", 127); });
 
 	resetRequired |= ApplyPendingDeviceOption(force,
 		g_core.optionCovoxPending, "covox", g_core.pendingCovoxEnabled,

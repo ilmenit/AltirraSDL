@@ -27,6 +27,7 @@ bool ATUIConfDevVBXE(VDGUIHandle hParent, ATPropertySet& props) {
 			view.AddIntDropDown()
 				.SetLabel(L"&Core version")
 				.SetTag("version")
+				.AddChoice(127, L"FX 1.27")
 				.AddChoice(126, L"FX 1.26")
 				.AddChoice(124, L"FX 1.24")
 				.AddChoice(120, L"FX 1.20");

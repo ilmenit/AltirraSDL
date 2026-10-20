@@ -166,7 +166,7 @@ void Wiz_SetVBXE(ATSimulator &sim, bool enable) {
 	// Defaults match RenderVBXEConfig in ui_devconfig_devices.cpp:
 	// VBXE 1.26 at $D6xx, no shared memory, no alt page.
 	Wiz_ToggleDevice(sim, "vbxe", enable, [](ATPropertySet &p) {
-		p.SetUint32("version", 126);
+		p.SetUint32("version", 127);
 	});
 }
 
