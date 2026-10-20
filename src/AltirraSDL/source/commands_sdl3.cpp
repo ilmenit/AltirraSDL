@@ -8,6 +8,8 @@
 #include <at/ataudio/pokey.h>
 #include <at/ataudio/audiooutput.h>
 #include <at/atcore/constants.h>
+#include <at/atcore/devicevideo.h>
+#include "video_output.h"
 
 #include "simulator.h"
 #include "uiaccessors.h"
@@ -813,7 +815,29 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	{ "View.PanZoomTool",
 		[] { ATUIActivatePanZoomTool(); } },
 	{ "View.VideoOutputNormal",
-		[] { ATUISetAltViewEnabled(false); } },
+		[] { ATUISetAltViewEnabled(false); }, nullptr,
+		[] { return ToRadioChecked(!ATUIGetAltViewEnabled()); } },
+	{ "View.VideoOutputPrev", ATUISelectPrevAltOutput,
+		ATUIIsAltOutputAvailable },
+	{ "View.VideoOutputNext", ATUISelectNextAltOutput,
+		ATUIIsAltOutputAvailable },
+	{ "View.ToggleVideoOutputAutoswitching",
+		[] { ATUISetAltViewAutoswitchingEnabled(
+			!ATUIGetAltViewAutoswitchingEnabled()); },
+		ATUIIsAltOutputAvailable,
+		[] { return ToChecked(ATUIGetAltViewAutoswitchingEnabled()); } },
+	{ "View.ToggleXEP80ViewAutoswitching",
+		[] { ATUISetAltViewAutoswitchingEnabled(
+			!ATUIGetAltViewAutoswitchingEnabled()); },
+		ATUIIsAltOutputAvailable,
+		[] { return ToChecked(ATUIGetAltViewAutoswitchingEnabled()); } },
+	{ "View.ToggleXEP80View",
+		[] { ATUIToggleAltOutput("xep80"); },
+		[] {
+			auto *manager = ATSDLGetVideoOutputManager();
+			return manager && manager->GetOutputByName("xep80");
+		},
+		[] { return ToChecked(ATUIIsXEPViewEnabled()); } },
 
 	// =====================================================================
 	// Video (cmdsystem.cpp) — quick-bar and command-palette display modes.

@@ -12,6 +12,7 @@
 #include <at/atcore/configvar.h>
 
 #include "ui_frame_capture.h"
+#include "video_output.h"
 #include "simulator.h"
 #include "gtia.h"
 
@@ -26,7 +27,13 @@ bool ATUICaptureEmulatorFrame(ATSimulator& sim, ATUIFrameCaptureMode mode,
 
 	ATGTIAEmulator& gtia = sim.GetGTIA();
 
-	if (mode == ATUIFrameCaptureMode::Raw) {
+	ATSDLVideoOutputUpdate();
+	if (const auto *alt = ATSDLGetVideoOutputFrame()) {
+		frameView = *alt;
+		int width, height;
+		bool exactPixels;
+		ATSDLGetVideoOutputGeometry(width, height, par, exactPixels);
+	} else if (mode == ATUIFrameCaptureMode::Raw) {
 		float rawPAR = 1.0f;
 		if (!gtia.GetLastFrameBufferRaw(frameStorage, frameView, rawPAR))
 			return false;

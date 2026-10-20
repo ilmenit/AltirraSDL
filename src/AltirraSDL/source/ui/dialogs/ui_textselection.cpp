@@ -17,6 +17,8 @@
 #include <at/atcore/atascii.h>
 
 #include "ui_textselection.h"
+#include "video_output.h"
+#include <at/atcore/devicevideo.h>
 #include "simulator.h"
 #include "antic.h"
 #include "gtia.h"
@@ -30,11 +32,37 @@ extern ATSimulator g_sim;
 // ---------------------------------------------------------------------------
 
 static ATTextSelectionState s_sel;
+static VDStringA s_selectionOutput;
+static IATDeviceVideoOutput *s_selectionDevice = nullptr;
+static uint32 s_selectionLayout = 0;
+static uint32 s_selectionOutputList = 0;
+static const char *SelectionSource() {
+	auto *output = ATSDLGetActiveVideoOutput();
+	return output ? output->GetName() : "";
+}
+static void CaptureSelectionSource() {
+	s_selectionOutput = SelectionSource();
+	s_selectionDevice = ATSDLGetActiveVideoOutput();
+	s_selectionLayout = s_selectionDevice
+		? s_selectionDevice->GetVideoInfo().mFrameBufferLayoutChangeCount : 0;
+	const auto *manager = ATSDLGetVideoOutputManager();
+	s_selectionOutputList = manager ? manager->GetOutputListChangeCount() : 0;
+}
+static bool SelectionSourceMatches() {
+	auto *output = ATSDLGetActiveVideoOutput();
+	if (s_selectionOutput != SelectionSource() || s_selectionDevice != output)
+		return false;
+	if (!output)
+		return true;
+	const auto *manager = ATSDLGetVideoOutputManager();
+	return manager && s_selectionOutputList == manager->GetOutputListChangeCount()
+		&& s_selectionLayout == output->GetVideoInfo().mFrameBufferLayoutChangeCount;
+}
 
 ATTextSelectionState& ATUIGetTextSelection() { return s_sel; }
 
 bool ATUIIsTextSelected() {
-	return !s_sel.mSpans.empty();
+	return SelectionSourceMatches() && !s_sel.mSpans.empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +81,20 @@ static bool MapPixelToBeam(const ImVec2& imagePos, const ImVec2& imageSize,
 
 	if (dx < 0.0f) dx = 0.0f; if (dx > imageSize.x) dx = imageSize.x;
 	if (dy < 0.0f) dy = 0.0f; if (dy > imageSize.y) dy = imageSize.y;
+
+	if (auto *output = ATSDLGetActiveVideoOutput()) {
+		const auto& area = output->GetVideoInfo().mDisplayArea;
+		if (area.empty()) {
+			beamX = beamY = 0;
+			return false;
+		}
+		const auto caret = output->PixelToCaretPos(vdpoint32(
+			area.left + (int)(dx * area.width() / imageSize.x),
+			area.top + (int)(dy * area.height() / imageSize.y)));
+		beamX = caret.x;
+		beamY = caret.y;
+		return true;
+	}
 
 	ATGTIAEmulator& gtia = g_sim.GetGTIA();
 	const vdrect32 scanArea(gtia.GetFrameScanArea());
@@ -79,6 +121,8 @@ static bool MapPixelToBeam(const ImVec2& imagePos, const ImVec2& imageSize,
 // yc, which requires them to be the mode line *start* scanlines.  Without
 // the snap, every selection collapses to full horizontal lines.
 static int GetModeLineYPos(int ys) {
+	if (ATSDLGetActiveVideoOutput())
+		return ys;
 	ATAnticEmulator& antic = g_sim.GetAntic();
 	const ATAnticEmulator::DLHistoryEntry *dlhist = antic.GetDLHistory();
 
@@ -95,6 +139,13 @@ static int GetModeLineYPos(int ys) {
 // Map beam coordinates back to screen-space pixel position.
 static ImVec2 MapBeamToPixel(const ImVec2& imagePos, const ImVec2& imageSize,
 							 int beamX, int beamY) {
+	if (auto *output = ATSDLGetActiveVideoOutput()) {
+		const auto& area = output->GetVideoInfo().mDisplayArea;
+		if (area.empty())
+			return imagePos;
+		return ImVec2(imagePos.x + (beamX - area.left) * imageSize.x / area.width(),
+			imagePos.y + (beamY - area.top) * imageSize.y / area.height());
+	}
 	ATGTIAEmulator& gtia = g_sim.GetGTIA();
 	const vdrect32 scanArea(gtia.GetFrameScanArea());
 
@@ -110,6 +161,38 @@ static ImVec2 MapBeamToPixel(const ImVec2& imagePos, const ImVec2& imageSize,
 // ---------------------------------------------------------------------------
 
 static void SelectByBeamPosition(int xc1, int yc1, int xc2, int yc2) {
+	CaptureSelectionSource();
+	if (auto *output = ATSDLGetActiveVideoOutput()) {
+		const auto& vi = output->GetVideoInfo();
+		xc1 = std::clamp(xc1, 0, vi.mTextColumns);
+		xc2 = std::clamp(xc2, 0, vi.mTextColumns);
+		yc1 = std::clamp(yc1, 0, std::max(0, vi.mTextRows - 1));
+		yc2 = std::clamp(yc2, 0, std::max(0, vi.mTextRows - 1));
+		if (yc1 > yc2 || (yc1 == yc2 && xc1 > xc2)) {
+			std::swap(xc1, xc2);
+			std::swap(yc1, yc2);
+		}
+		s_sel.mSpans.clear();
+		for (int y = yc1; y <= yc2; ++y) {
+			const int left = y == yc1 ? xc1 : 0;
+			const int right = y == yc2 ? xc2 : vi.mTextColumns;
+			if (right <= left)
+				continue;
+			const auto rect = output->CharToPixelRect(vdrect32(left, y, right, y + 1));
+			ATTextSpan span {};
+			span.mX = rect.left;
+			span.mY = rect.top;
+			span.mWidth = rect.width();
+			span.mHeight = rect.height();
+			span.mCharX = left;
+			span.mCharWidth = right - left;
+			// Unlike ANTIC spans, alternate spans need a separate row
+			// for ReadRawText; pixel Y is recoverable from CharToPixelRect.
+			span.mAltRow = y;
+			s_sel.mSpans.push_back(span);
+		}
+		return;
+	}
 	xc1 = std::clamp(xc1, 0, 228);
 	xc2 = std::clamp(xc2, 0, 228);
 	yc1 = std::clamp(yc1, 8, 248);
@@ -206,8 +289,21 @@ static void UpdateHighlightRects(const ImVec2& imagePos, const ImVec2& imageSize
 		if (!ts.mWidth || !ts.mHeight)
 			continue;
 
-		ImVec2 p1 = MapBeamToPixel(imagePos, imageSize, ts.mX, ts.mY);
-		ImVec2 p2 = MapBeamToPixel(imagePos, imageSize, ts.mX + ts.mWidth, ts.mY + ts.mHeight);
+		ImVec2 p1, p2;
+		if (auto *output = ATSDLGetActiveVideoOutput()) {
+			vdrect32f rect;
+			if (!ATSDLGetVideoOutputTextRect(*output, ts.mCharX, ts.mAltRow,
+				ts.mCharWidth, rect))
+				continue;
+			p1 = ImVec2(imagePos.x + rect.left * imageSize.x,
+				imagePos.y + rect.top * imageSize.y);
+			p2 = ImVec2(imagePos.x + rect.right * imageSize.x,
+				imagePos.y + rect.bottom * imageSize.y);
+		} else {
+			p1 = MapBeamToPixel(imagePos, imageSize, ts.mX, ts.mY);
+			p2 = MapBeamToPixel(imagePos, imageSize,
+				ts.mX + ts.mWidth, ts.mY + ts.mHeight);
+		}
 
 		ATTextSelectionState::HighlightRect hr;
 		hr.x1 = p1.x;
@@ -288,7 +384,11 @@ static int ReadText(uint8 *dst, int yc, int startChar, int numChars, bool& intl)
 // ---------------------------------------------------------------------------
 
 void ATUITextSelectAll() {
-	SelectByBeamPosition(0, 8, 228, 248);
+	if (auto *output = ATSDLGetActiveVideoOutput()) {
+		const auto& vi = output->GetVideoInfo();
+		SelectByBeamPosition(0, 0, vi.mTextColumns, vi.mTextRows - 1);
+	} else
+		SelectByBeamPosition(0, 8, 228, 248);
 }
 
 void ATUITextDeselect() {
@@ -300,6 +400,10 @@ void ATUITextDeselect() {
 }
 
 void ATUITextCopy(ATTextCopyMode mode) {
+	if (!SelectionSourceMatches()) {
+		ATUITextDeselect();
+		return;
+	}
 	if (s_sel.mSpans.empty())
 		return;
 
@@ -308,7 +412,11 @@ void ATUITextCopy(ATTextCopyMode mode) {
 
 	for (const ATTextSpan& ts : s_sel.mSpans) {
 		bool intl = false;
-		int actual = ReadText(data, ts.mY, ts.mCharX, ts.mCharWidth, intl);
+		auto *output = ATSDLGetActiveVideoOutput();
+		int actual = output
+			? output->ReadRawText(data, ts.mCharX, ts.mAltRow,
+				std::min(ts.mCharWidth, (int)sizeof data))
+			: ReadText(data, ts.mY, ts.mCharX, ts.mCharWidth, intl);
 		if (!actual)
 			continue;
 
@@ -442,6 +550,10 @@ void ATUITextCopy(ATTextCopyMode mode) {
 // ---------------------------------------------------------------------------
 
 bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSize) {
+	if (!SelectionSourceMatches()) {
+		ATUITextDeselect();
+		CaptureSelectionSource();
+	}
 	if (imageSize.x <= 0 || imageSize.y <= 0)
 		return false;
 
@@ -457,7 +569,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInImage
 		&& !ATUIIsMouseCaptured()) {
 		int bx, by;
-		MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
+		if (!MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by)) {
+			ATUITextDeselect();
+			return false;
+		}
 		s_sel.mbDragActive = true;
 		s_sel.mbDragInitial = true;
 		s_sel.mAnchorBeamX = bx;
@@ -506,7 +621,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 			// which matches Windows' behaviour (its GetModeLineYPos
 			// returns 0 in the same case, also clamped to 8).
 			int bx, by;
-			MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
+			if (!MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by)) {
+			ATUITextDeselect();
+			return false;
+		}
 			const int yc1 = GetModeLineYPos(s_sel.mAnchorBeamY);
 			const int yc2 = GetModeLineYPos(by);
 			SelectByBeamPosition(s_sel.mAnchorBeamX, yc1, bx, yc2);
@@ -516,7 +634,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 		}
 
 		int bx, by;
-		MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
+		if (!MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by)) {
+			ATUITextDeselect();
+			return false;
+		}
 
 		// Drag threshold: suppress selection preview until the mouse
 		// moves to a different beam position from the anchor.  Matches
@@ -550,6 +671,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 
 void ATUITextSelectionDrawOverlay(const ImVec2& imagePos, const ImVec2& imageSize,
 	ImDrawList *drawList) {
+	if (!SelectionSourceMatches()) {
+		ATUITextDeselect();
+		return;
+	}
 	if (s_sel.mSpans.empty())
 		return;
 

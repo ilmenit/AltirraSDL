@@ -21,6 +21,7 @@ cbuffer Context : register(b0, space3) {
 	float4 bloomShoulder;        // cubic shoulder coefficients
 	float4 bloomThresholds;      // mid slope, shoulder X, limit X, reserved
 	float4 bloomBaseWeights;     // corner, side, center, reserved
+	float4 hdrParams;            // output nits/80 (0=SDR target), sRGB sampler, HDR, linear sampling
 };
 
 Texture2D sourceTexture : register(t0, space2);
@@ -50,6 +51,46 @@ float3 LinearToSRGB(float3 c) {
 	return lerp(hi, lo, c <= 0.0031308);
 }
 
+// SDL's linear renderer installs an sRGB sampler for uploaded 8-bit
+// textures. Restore each texel's encoded value BEFORE interpolation: doing
+// this after hardware bilinear sampling changes Altirra's existing filters.
+float4 SampleEncodedTexel(float2 uv) {
+	float4 c = sourceTexture.SampleLevel(sourceSampler, uv, 0.0);
+	c.rgb = LinearToSRGB(max(c.rgb, 0.0));
+	return c;
+}
+
+float4 SampleTexture(float2 uv) {
+	[branch]
+	if (hdrParams.y <= 0.5)
+		return sourceTexture.SampleLevel(sourceSampler, uv, 0.0);
+	[branch]
+	if (hdrParams.w <= 0.5)
+		return SampleEncodedTexel(uv);
+
+	uint width, height;
+	sourceTexture.GetDimensions(width, height);
+	float2 size = float2(width, height);
+	float2 pos = uv * size - 0.5;
+	float2 base = floor(pos);
+	float2 f = frac(pos);
+	// Texel-center samples work with the supplied linear sampler too; the
+	// sampler's clamp addressing retains the established edge behavior.
+	float4 a = SampleEncodedTexel((base + float2(0.5, 0.5)) / size);
+	float4 b = SampleEncodedTexel((base + float2(1.5, 0.5)) / size);
+	float4 c = SampleEncodedTexel((base + float2(0.5, 1.5)) / size);
+	float4 d = SampleEncodedTexel((base + float2(1.5, 1.5)) / size);
+	return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+
+float3 OutputColor(float3 c) {
+	return hdrParams.x > 0.0 ? SRGBToLinear(max(c, 0.0)) * hdrParams.x : c;
+}
+
+float3 LimitColor(float3 c) {
+	return hdrParams.z > 0.5 ? max(c, 0.0) : saturate(c);
+}
+
 float CubicWeight(float x) {
 	// Altirra's established bicubic kernel uses A=-0.75. This is slightly
 	// sharper than Catmull-Rom (A=-0.5) and matches VDDisplayCreateBicubicTexture.
@@ -77,7 +118,7 @@ float4 SampleBicubic(float2 uv) {
 			float wx = CubicWeight((float)x - f.x);
 			float w = wx * wy;
 			float2 tapUV = (base + float2(x, y) + 0.5) / size;
-			sum += sourceTexture.SampleLevel(sourceSampler, tapUV, 0.0) * w;
+			sum += SampleTexture(tapUV) * w;
 			weightSum += w;
 		}
 	}
@@ -97,7 +138,7 @@ float4 SampleSource(float2 uv) {
 			+ 0.5) * texel;
 	}
 
-	return sourceTexture.SampleLevel(sourceSampler, uv, 0.0);
+	return SampleTexture(uv);
 }
 
 float3 BloomDown(float2 uv) {
@@ -106,15 +147,15 @@ float3 BloomDown(float2 uv) {
 	const float w3 = 32.0 / 124.0;
 	float2 off = passParams0.yz * 1.75;
 	float3 c = 0.0;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(-off.x, -off.y), 0.0).rgb * w1;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(+off.x, -off.y), 0.0).rgb * w1;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(-off.x, +off.y), 0.0).rgb * w1;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(+off.x, +off.y), 0.0).rgb * w1;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(0.0, -off.y), 0.0).rgb * w2;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(-off.x, 0.0), 0.0).rgb * w2;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(0.0, +off.y), 0.0).rgb * w2;
-	c += sourceTexture.SampleLevel(sourceSampler, uv + float2(+off.x, 0.0), 0.0).rgb * w2;
-	c += sourceTexture.SampleLevel(sourceSampler, uv, 0.0).rgb * w3;
+	c += SampleTexture(uv + float2(-off.x, -off.y)).rgb * w1;
+	c += SampleTexture(uv + float2(+off.x, -off.y)).rgb * w1;
+	c += SampleTexture(uv + float2(-off.x, +off.y)).rgb * w1;
+	c += SampleTexture(uv + float2(+off.x, +off.y)).rgb * w1;
+	c += SampleTexture(uv + float2(0.0, -off.y)).rgb * w2;
+	c += SampleTexture(uv + float2(-off.x, 0.0)).rgb * w2;
+	c += SampleTexture(uv + float2(0.0, +off.y)).rgb * w2;
+	c += SampleTexture(uv + float2(+off.x, 0.0)).rgb * w2;
+	c += SampleTexture(uv).rgb * w3;
 	return c;
 }
 
@@ -126,10 +167,10 @@ float3 BloomUpsample(float2 uv) {
 	float2 uvA = uv + stepUV * (-0.75 - 1.0 / 6.0);
 	float2 uvB = uv + stepUV * (+0.25 + 0.3);
 	float3 c = 0.0;
-	c += sourceTexture.SampleLevel(sourceSampler, float2(uvA.x, uvA.y), 0.0).rgb * (36.0 / 256.0);
-	c += sourceTexture.SampleLevel(sourceSampler, float2(uvB.x, uvA.y), 0.0).rgb * (60.0 / 256.0);
-	c += sourceTexture.SampleLevel(sourceSampler, float2(uvA.x, uvB.y), 0.0).rgb * (60.0 / 256.0);
-	c += sourceTexture.SampleLevel(sourceSampler, float2(uvB.x, uvB.y), 0.0).rgb * (100.0 / 256.0);
+	c += SampleTexture(float2(uvA.x, uvA.y)).rgb * (36.0 / 256.0);
+	c += SampleTexture(float2(uvB.x, uvA.y)).rgb * (60.0 / 256.0);
+	c += SampleTexture(float2(uvA.x, uvB.y)).rgb * (60.0 / 256.0);
+	c += SampleTexture(float2(uvB.x, uvB.y)).rgb * (100.0 / 256.0);
 	return c;
 }
 
@@ -137,15 +178,15 @@ float3 BloomBaseFilter(float2 uv) {
 	float2 stepUV = float2(passParams1.w, colorFlags.w);
 	float3 corners = 0.0;
 	float3 sides = 0.0;
-	corners += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(-1.0, -1.0), 0.0).rgb;
-	corners += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(+1.0, -1.0), 0.0).rgb;
-	corners += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(-1.0, +1.0), 0.0).rgb;
-	corners += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(+1.0, +1.0), 0.0).rgb;
-	sides += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(-1.0, 0.0), 0.0).rgb;
-	sides += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(+1.0, 0.0), 0.0).rgb;
-	sides += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(0.0, -1.0), 0.0).rgb;
-	sides += sourceTexture.SampleLevel(sourceSampler, uv + stepUV * float2(0.0, +1.0), 0.0).rgb;
-	float3 center = sourceTexture.SampleLevel(sourceSampler, uv, 0.0).rgb;
+	corners += SampleTexture(uv + stepUV * float2(-1.0, -1.0)).rgb;
+	corners += SampleTexture(uv + stepUV * float2(+1.0, -1.0)).rgb;
+	corners += SampleTexture(uv + stepUV * float2(-1.0, +1.0)).rgb;
+	corners += SampleTexture(uv + stepUV * float2(+1.0, +1.0)).rgb;
+	sides += SampleTexture(uv + stepUV * float2(-1.0, 0.0)).rgb;
+	sides += SampleTexture(uv + stepUV * float2(+1.0, 0.0)).rgb;
+	sides += SampleTexture(uv + stepUV * float2(0.0, -1.0)).rgb;
+	sides += SampleTexture(uv + stepUV * float2(0.0, +1.0)).rgb;
+	float3 center = SampleTexture(uv).rgb;
 	return corners * bloomBaseWeights.x + sides * bloomBaseWeights.y
 		+ center * bloomBaseWeights.z;
 }
@@ -175,10 +216,13 @@ PSOutput main(PSInput input) {
 	float2 screenUV = uv;
 	int passMode = (int)(passParams0.x + 0.5);
 
+	if (passMode == 11) {
+		output.color = float4(SampleTexture(uv).rgb, 1.0);
+		return output;
+	}
 	if (passMode == 1) {
-		float3 c = sourceTexture.SampleLevel(sourceSampler, uv, 0.0).rgb;
-		float3 c2 = sourceTexture.SampleLevel(sourceSampler,
-			uv + float2(0.0, -filterParams.w / max(sourceDestSize.y, 1.0)), 0.0).rgb;
+		float3 c = SampleTexture(uv).rgb;
+		float3 c2 = SampleTexture(uv + float2(0.0, -filterParams.w / max(sourceDestSize.y, 1.0))).rgb;
 		float3 chroma = c2 - c;
 		chroma -= dot(chroma, float3(0.30, 0.59, 0.11));
 		c += chroma * 0.5;
@@ -190,8 +234,12 @@ PSOutput main(PSInput input) {
 		return output;
 	}
 	if (passMode == 2) {
-		output.color = float4(SRGBToLinear(
-			sourceTexture.SampleLevel(sourceSampler, uv, 0.0).rgb), 0.0);
+		float3 c = SampleTexture(uv).rgb;
+		if (effectParams2.w > 0.5) {
+			const float scale = 255.0 / 127.0;
+			c = c * scale - (64.0 / 255.0) * scale;
+		}
+		output.color = float4(SRGBToLinear(max(c, 0.0)), 0.0);
 		return output;
 	}
 	if (passMode == 3) {
@@ -212,7 +260,7 @@ PSOutput main(PSInput input) {
 		return output;
 	}
 	if (passMode == 7) {
-		float3 x = min(sourceTexture.SampleLevel(sourceSampler, uv, 0.0).rgb,
+		float3 x = min(SampleTexture(uv).rgb,
 			bloomThresholds.z);
 		float3 mid = bloomThresholds.x * x;
 		float3 shoulder = ((bloomShoulder.x * x + bloomShoulder.y) * x
@@ -226,12 +274,12 @@ PSOutput main(PSInput input) {
 		return output;
 	}
 	if (passMode == 10) {
-		float3 c = sourceTexture.SampleLevel(sourceSampler, uv, 0.0).rgb;
+		float3 c = SampleTexture(uv).rgb;
 		if (effectParams1.y <= 0.0)
 			c = LinearToSRGB(max(c, 0.0));
 		else
 			c = pow(max(c, 0.0), 1.0 / max(effectParams1.y, 0.0001));
-		c = pow(saturate(c), 1.0 / max(effectParams1.x, 0.0001));
+		c = pow(LimitColor(c), 1.0 / max(effectParams1.x, 0.0001));
 		if (effectParams1.z > 0.0) {
 			c *= ScanlineFactor(screenUV);
 		}
@@ -240,7 +288,7 @@ PSOutput main(PSInput input) {
 			float vd = dot(vc, vc) * 4.0;
 			c *= saturate(1.0 - effectParams1.w * vd);
 		}
-		output.color = float4(c, 1.0) * input.color;
+		output.color = float4(OutputColor(c), 1.0) * input.color;
 		return output;
 	}
 
@@ -273,8 +321,8 @@ PSOutput main(PSInput input) {
 
 	if (colorFlags.x > 0.5 || colorFlags.y > 0.5) {
 		c = (effectParams1.y <= 0.0)
-			? SRGBToLinear(saturate(c))
-			: pow(saturate(c), effectParams1.y);
+			? SRGBToLinear(LimitColor(c))
+			: pow(LimitColor(c), effectParams1.y);
 		float3 corrected;
 		corrected.r = dot(c, colorMatrix0.xyz);
 		corrected.g = dot(c, colorMatrix1.xyz);
@@ -294,7 +342,7 @@ PSOutput main(PSInput input) {
 		else
 			c = pow(max(c, 0.0), 1.0 / max(effectParams1.y, 0.0001));
 	}
-	c = pow(saturate(c), 1.0 / gamma);
+	c = pow(LimitColor(c), 1.0 / gamma);
 
 	if (effectParams1.z > 0.0) {
 		c *= ScanlineFactor(screenUV);
@@ -306,6 +354,6 @@ PSOutput main(PSInput input) {
 		c *= saturate(1.0 - effectParams1.w * vd);
 	}
 
-	output.color = float4(c, 1.0) * input.color;
+	output.color = float4(OutputColor(c), 1.0) * input.color;
 	return output;
 }

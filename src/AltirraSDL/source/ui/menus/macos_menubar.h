@@ -6,6 +6,8 @@
 #ifndef f_AT_MACOS_MENUBAR_H
 #define f_AT_MACOS_MENUBAR_H
 
+#include <functional>
+
 struct ATMacSearchMenuState {
 	bool present = false;
 	unsigned int key = 0;
@@ -27,6 +29,8 @@ void ATMacMenuBarShutdown();
 // Returns true when the native macOS menu bar is active and the ImGui
 // menu bar should be skipped.
 bool ATMacMenuBarIsActive();
+bool ATMacMenuBarIsTracking();
+void ATMacMenuBarSetTrackingCallback(std::function<bool()> callback);
 void ATMacMenuBarRefreshShortcuts();
 ATMacSearchMenuState ATMacMenuBarGetSearchState();
 bool ATMacMenuBarInvokeSearch();
@@ -36,6 +40,8 @@ bool ATMacMenuBarInvokeSearch();
 inline void ATMacMenuBarInit() {}
 inline void ATMacMenuBarShutdown() {}
 inline bool ATMacMenuBarIsActive() { return false; }
+inline bool ATMacMenuBarIsTracking() { return false; }
+inline void ATMacMenuBarSetTrackingCallback(std::function<bool()>) {}
 inline void ATMacMenuBarRefreshShortcuts() {}
 inline ATMacSearchMenuState ATMacMenuBarGetSearchState() { return {}; }
 inline bool ATMacMenuBarInvokeSearch() { return false; }

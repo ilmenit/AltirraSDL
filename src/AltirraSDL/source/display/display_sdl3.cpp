@@ -121,6 +121,7 @@ void VDVideoDisplaySDL3::FlushBuffers() {
 }
 
 bool VDVideoDisplaySDL3::PrepareFrame() {
+	ATSDLVideoOutputUpdate();
 	if (!mPendingFrame)
 		return mHasFramePixels;
 

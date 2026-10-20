@@ -26,6 +26,7 @@
 #include "display_sdl3_impl.h"
 #include "display_backend.h"
 #include "ui_textselection.h"
+#include "video_output.h"
 #include "ui_autosuggest.h"
 #include "logging.h"
 #include "ui_fonts.h"
@@ -351,16 +352,26 @@ static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
 
 	const auto& gtia = g_sim.GetGTIA();
 	const ATDisplayStretchMode stretchMode = ATUIGetDisplayStretchMode();
+	int altW = 1, altH = 1;
+	double altPAR = 1.0;
+	bool exact = false;
+	const bool alt = ATSDLGetVideoOutputGeometry(altW, altH, altPAR, exact);
 
-	if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
+	if (alt) {
+		const auto size = ATSDLComputeVideoOutputSize(altW, altH, altPAR,
+			exact, w, h, stretchMode, ImGui::GetIO().DisplayFramebufferScale.x);
+		w = size.x;
+		h = size.y;
+	} else if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
 		|| stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio)
 	{
 		int sw = 1;
 		int sh = 1;
 		bool rgb32 = false;
 		gtia.GetRawFrameFormat(sw, sh, rgb32);
+		double par = gtia.GetPixelAspectRatio();
 
-		const float fsw = (float)((double)sw * gtia.GetPixelAspectRatio());
+		const float fsw = (float)((double)sw * par);
 		const float fsh = (float)sh;
 		float zoom = std::min(w / fsw, h / fsh);
 
@@ -400,11 +411,11 @@ static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
 		}
 	}
 
-	const float displayZoom = ATUIGetDisplayZoom();
+	const float displayZoom = alt && exact ? 1.0f : ATUIGetDisplayZoom();
 	w *= displayZoom;
 	h *= displayZoom;
 
-	const vdfloat2 pan = ATUIGetDisplayPanOffset();
+	const vdfloat2 pan = alt && exact ? vdfloat2{0, 0} : ATUIGetDisplayPanOffset();
 	const vdfloat2 relOrigin = vdfloat2{0.5f, 0.5f} - pan;
 
 	float left = w * (relOrigin.x - 1.0f) + viewportW * 0.5f;

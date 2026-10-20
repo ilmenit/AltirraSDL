@@ -10,6 +10,7 @@
 
 #include <stdafx.h>
 #include <algorithm>
+#include <cmath>
 #include <SDL3/SDL.h>
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/vectors.h>
@@ -157,28 +158,6 @@ void ATUISetMenuFullScreenHidden(bool) {}
 // View / output
 // =========================================================================
 
-static VDStringA s_altOutputName;
-const char *ATUIGetCurrentAltOutputName() { return s_altOutputName.c_str(); }
-void ATUISetCurrentAltOutputName(const char *s) { s_altOutputName = s ? s : ""; }
-void ATUIToggleAltOutput(const char *) {}
-bool ATUIIsAltOutputAvailable() { return false; }
-
-bool ATUIIsXEPViewEnabled() { return false; }
-void ATUISetXEPViewEnabled(bool) {}
-
-static bool s_altViewEnabled = false;
-bool ATUIGetAltViewEnabled() { return s_altViewEnabled; }
-void ATUISetAltViewEnabled(bool v) { s_altViewEnabled = v; }
-
-sint32 ATUIGetCurrentAltViewIndex() { return -1; }
-void ATUISetAltViewByIndex(sint32) {}
-void ATUISelectPrevAltOutput() {}
-void ATUISelectNextAltOutput() {}
-
-static bool s_altViewAutoSwitch = true;
-bool ATUIGetAltViewAutoswitchingEnabled() { return s_altViewAutoSwitch; }
-void ATUISetAltViewAutoswitchingEnabled(bool v) { s_altViewAutoSwitch = v; }
-
 static bool s_showFPS = false;
 bool ATUIGetShowFPS() { return s_showFPS; }
 void ATUISetShowFPS(bool v) { s_showFPS = v; }
@@ -259,7 +238,7 @@ void ATUISetSpeedModifier(float v) {
 	// convention) so one peer can't run faster than the other and desync
 	// the lockstep ring.
 	if (ATUINetplayBlocksWarp()) v = 0.0f;
-	s_speedModifier = v;
+	s_speedModifier = std::isfinite(v) ? std::clamp(v, -0.99f, 99.0f) : 0.0f;
 }
 
 static ATFrameRateMode s_frameRateMode = kATFrameRateMode_Hardware;

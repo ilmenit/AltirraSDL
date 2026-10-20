@@ -5,6 +5,11 @@
 #include "logging.h"
 #include "uiaccessors.h"
 #include "uitypes.h"
+#include "simulator.h"
+#include "gtia.h"
+#include "video_output.h"
+
+extern ATSimulator g_sim;
 
 #include <vd2/VDDisplay/internal/screenfx.h>
 #include <vd2/VDDisplay/internal/bloom.h>
@@ -16,6 +21,73 @@
 #include "shaders/generated/sdlgpu_screenfx_frag_dxil.h"
 #include "shaders/generated/sdlgpu_screenfx_frag_spv.h"
 #include "shaders/generated/sdlgpu_screenfx_frag_msl.h"
+
+// SDL owns the swapchain. Never change its parameters behind the renderer:
+// its backbuffer format and all cached pipelines must agree with the composition.
+SDL_Renderer *DisplayBackendSDLGPU::CreateRenderer(SDL_Window *window) {
+	const auto windowProps = SDL_GetWindowProperties(window);
+	if (SDL_GetBooleanProperty(windowProps,
+		SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false))
+	{
+		const auto props = SDL_CreateProperties();
+		SDL_SetStringProperty(props, SDL_PROP_RENDERER_CREATE_NAME_STRING, SDL_GPU_RENDERER);
+		SDL_SetPointerProperty(props, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, window);
+		SDL_SetNumberProperty(props, SDL_PROP_RENDERER_CREATE_OUTPUT_COLORSPACE_NUMBER,
+			SDL_COLORSPACE_SRGB_LINEAR);
+		SDL_Renderer *renderer = SDL_CreateRendererWithProperties(props);
+		SDL_DestroyProperties(props);
+		if (renderer) {
+			SDL_GPUDevice *device = SDL_GetGPURendererDevice(renderer);
+			if (device && SDL_WindowSupportsGPUSwapchainComposition(device, window,
+				SDL_GPU_SWAPCHAINCOMPOSITION_HDR_EXTENDED_LINEAR)
+				&& SDL_GetGPUSwapchainTextureFormat(device, window)
+					== SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT)
+			{
+				LOG_INFO("SDL_GPU", "Linear HDR swapchain available");
+				return renderer;
+			}
+			SDL_DestroyRenderer(renderer);
+		}
+		LOG_INFO("SDL_GPU", "HDR composition unavailable; using SDR: %s", SDL_GetError());
+	}
+	return SDL_CreateGPURenderer(nullptr, window);
+}
+
+bool DisplayBackendSDLGPU::SupportsHDR() const {
+	return SDL_GetNumberProperty(SDL_GetRendererProperties(mpRenderer),
+		SDL_PROP_RENDERER_OUTPUT_COLORSPACE_NUMBER, SDL_COLORSPACE_SRGB)
+		== SDL_COLORSPACE_SRGB_LINEAR;
+}
+
+bool DisplayBackendSDLGPU::IsHDREnabled() const {
+	return SupportsHDR() && SDL_GetBooleanProperty(
+		SDL_GetRendererProperties(mpRenderer),
+		SDL_PROP_RENDERER_HDR_ENABLED_BOOLEAN, false);
+}
+
+ATHDROutputLevels DisplayBackendSDLGPU::GetOutputLevels() const {
+	const auto& params = g_sim.GetGTIA().GetArtifactingParams();
+	return ATComputeHDROutputLevels(SupportsHDR(), IsHDREnabled(),
+		params.mbEnableHDR, g_sim.GetGTIA().GetAccelScreenFXEnabled(),
+		SDL_GetFloatProperty(SDL_GetRendererProperties(mpRenderer),
+			SDL_PROP_RENDERER_SDR_WHITE_POINT_FLOAT, 1.0f),
+		params.mbUseSystemSDRAsHDR, params.mHDRIntensity,
+		params.mbUseSystemSDR, params.mSDRIntensity,
+		ATSDLGetActiveVideoOutput() != nullptr);
+}
+
+void DisplayBackendSDLGPU::SetOutputConstants(ShaderConstants& constants,
+	SDL_Texture *source) const
+{
+	const auto levels = GetOutputLevels();
+	constants.hdrParams[0] = levels.mFrameScale;
+	constants.hdrParams[1] = SupportsHDR()
+		&& (source == mpTexture || source == mpMaskTexture) ? 1.0f : 0.0f;
+	constants.hdrParams[2] = levels.mbHDR ? 1.0f : 0.0f;
+	SDL_ScaleMode scaleMode = SDL_SCALEMODE_NEAREST;
+	SDL_GetTextureScaleMode(source, &scaleMode);
+	constants.hdrParams[3] = scaleMode == SDL_SCALEMODE_LINEAR ? 1.0f : 0.0f;
+}
 
 DisplayBackendSDLGPU::DisplayBackendSDLGPU(SDL_Window *window,
 	SDL_Renderer *renderer, SDL_GPUDevice *device, SDL_GPUShader *shader,
@@ -132,6 +204,9 @@ void DisplayBackendSDLGPU::UploadFrame(const void *pixels, int width, int height
 
 void DisplayBackendSDLGPU::BeginFrame() {
 	SDL_SetRenderTarget(mpRenderer, nullptr);
+	// ImGui and normal SDL draws use SDR brightness; the emulator's custom
+	// shader uses its own independently calibrated HDR brightness.
+	SDL_SetRenderColorScale(mpRenderer, GetOutputLevels().mUIScale);
 	// Scale is render-target state in SDL3. Reassert the window scale every
 	// frame so that an aborted offscreen pass cannot leave Retina/HiDPI output
 	// in physical-pixel coordinates.
@@ -249,7 +324,8 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 
 	if (mScreenFX.mPALBlendingOffset != 0.0f
 		&& EnsureTarget(mpPALTexture, mPALW, mPALH, srcW, srcH,
-			SDL_PIXELFORMAT_RGBA8888))
+			SupportsHDR() ? SDL_PIXELFORMAT_RGBA64_FLOAT
+			: SDL_PIXELFORMAT_RGBA8888))
 	{
 		SDL_ScaleMode oldScaleMode = SDL_SCALEMODE_LINEAR;
 		SDL_GetTextureScaleMode(source, &oldScaleMode);
@@ -284,7 +360,8 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 		const int filterH = std::clamp((int)std::ceil(physicalDstH), 1,
 			outputH);
 		if (EnsureTarget(mpFilterTexture, mFilterW, mFilterH,
-				filterW, filterH, SDL_PIXELFORMAT_RGBA8888))
+				filterW, filterH, SupportsHDR() ? SDL_PIXELFORMAT_RGBA64_FLOAT
+					: SDL_PIXELFORMAT_RGBA8888))
 		{
 			ShaderConstants bicubic = constants;
 			bicubic.passParams0[0] = 8.0f;
@@ -299,7 +376,8 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 				constants.filterParams[0] =
 					(float)kATDisplayFilterMode_Bilinear;
 				constants.filterParams[3] = 0.0f;
-				constants.effectParams2[3] = 0.0f;
+				constants.effectParams2[3] = SupportsHDR()
+					? bicubic.effectParams2[3] : 0.0f;
 			}
 		}
 	}
@@ -312,7 +390,8 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 		const int bloomH = mOutputH > 0 ? mOutputH
 			: std::max(1, (int)std::ceil(physicalDstH));
 		if (SDL_Texture *bloom = RenderBloom(source, sourceW, sourceH,
-			bloomW, bloomH, srcW))
+			bloomW, bloomH, srcW,
+			SupportsHDR() && constants.effectParams2[3] > 0.5f))
 		{
 			source = bloom;
 			sourceW = bloomW;
@@ -377,6 +456,7 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 				postMask.passParams0[0] = 10.0f;
 				postMask.sourceDestSize[0] = (float)effectW;
 				postMask.sourceDestSize[1] = (float)srcH;
+				SetOutputConstants(postMask, mpScreenFXLinear);
 				if (ApplyShaderConstants(postMask)
 					&& SDL_SetGPURenderState(mpRenderer, mpRenderState))
 				{
@@ -404,6 +484,7 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 		}
 	}
 
+	SetOutputConstants(constants, source);
 	const bool customStateActive = ApplyShaderConstants(constants)
 		&& SDL_SetGPURenderState(mpRenderer, mpRenderState);
 	if (!customStateActive) {
@@ -455,7 +536,10 @@ bool DisplayBackendSDLGPU::RenderPass(SDL_Texture *source, SDL_Texture *target,
 		SDL_SetRenderDrawColorFloat(mpRenderer, 0.0f, 0.0f, 0.0f, 0.0f);
 		SDL_RenderClear(mpRenderer);
 	}
-	if (!ApplyShaderConstants(constants)) {
+	ShaderConstants passConstants = constants;
+	SetOutputConstants(passConstants, source);
+	passConstants.hdrParams[0] = 0.0f;
+	if (!ApplyShaderConstants(passConstants)) {
 		SDL_SetRenderTarget(mpRenderer, nullptr);
 		SDL_SetRenderScale(mpRenderer, mRenderScaleX, mRenderScaleY);
 		return false;
@@ -556,6 +640,15 @@ bool DisplayBackendSDLGPU::EnsureScreenMask(float dstX, float dstY, int dstW,
 }
 
 bool DisplayBackendSDLGPU::ApplyScreenMask(SDL_Texture *target) {
+	if (SupportsHDR()) {
+		ShaderConstants constants {};
+		constants.passParams0[0] = 11.0f;
+		// Avoid SDL's SDR-white scaling of this linear multiplier. The mask
+		// stays anchored to physical pixels with the same intensity as SDR.
+		return RenderPass(mpMaskTexture, target, constants, SDL_BLENDMODE_MOD,
+			false);
+	}
+
 	if (!target || !mpMaskTexture || !SDL_SetRenderTarget(mpRenderer, target))
 		return false;
 
@@ -571,7 +664,7 @@ bool DisplayBackendSDLGPU::ApplyScreenMask(SDL_Texture *target) {
 }
 
 SDL_Texture *DisplayBackendSDLGPU::RenderBloom(SDL_Texture *source, int srcW,
-	int srcH, int dstW, int dstH, int baseSourceW)
+	int srcH, int dstW, int dstH, int baseSourceW, bool sourceSigned)
 {
 	if (mBloomW != dstW || mBloomH != dstH) {
 		if (mpBloomLinear) SDL_DestroyTexture(mpBloomLinear);
@@ -586,12 +679,14 @@ SDL_Texture *DisplayBackendSDLGPU::RenderBloom(SDL_Texture *source, int srcW,
 	if (!EnsureTarget(mpBloomLinear, mBloomW, mBloomH, dstW, dstH)
 		|| !EnsureTarget(mpBloomCombined, mBloomW, mBloomH, dstW, dstH)
 		|| !EnsureTarget(mpBloomOutput, mBloomW, mBloomH, dstW, dstH,
-			SDL_PIXELFORMAT_RGBA8888))
+			SupportsHDR() ? SDL_PIXELFORMAT_RGBA64_FLOAT
+			: SDL_PIXELFORMAT_RGBA8888))
 		return nullptr;
 
 	ShaderConstants constants = BuildShaderConstants((float)dstW, (float)dstH,
 		srcW, srcH);
 	constants.passParams0[0] = 2.0f;
+	constants.effectParams2[3] = sourceSigned ? 1.0f : 0.0f;
 	if (!RenderPass(source, mpBloomLinear, constants, SDL_BLENDMODE_NONE, true))
 		return nullptr;
 
@@ -748,6 +843,14 @@ bool DisplayBackendSDLGPU::ReadPixels(void *dst, int dstPitch, int x, int y,
 	if (!surface)
 		return false;
 
+	// SDL returns the actual render-target format, including half floats for
+	// HDR. Screenshots remain conventional SDR XRGB8888 images.
+	SDL_Surface *converted = SDL_ConvertSurfaceAndColorspace(surface,
+		SDL_PIXELFORMAT_XRGB8888, nullptr, SDL_COLORSPACE_SRGB, 0);
+	SDL_DestroySurface(surface);
+	if (!converted)
+		return false;
+	surface = converted;
 	const int copyW = std::min(w, surface->w) * 4;
 	const int copyH = std::min(h, surface->h);
 	for (int row = 0; row < copyH; ++row) {

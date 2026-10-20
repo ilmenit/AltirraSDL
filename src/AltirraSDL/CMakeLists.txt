@@ -37,6 +37,7 @@ endif()
 target_sources(AltirraSDL PRIVATE
     # --- app/ : process lifecycle, main loop, CLI, crash ---
     source/app/main_sdl3.cpp
+    source/app/instance_reuse.cpp
     source/app/macos_leak_debug.cpp
     source/app/main_pacer.cpp
     source/app/main_window.cpp
@@ -53,6 +54,7 @@ target_sources(AltirraSDL PRIVATE
 
     # --- display/ : SDL display + GL backends + shaders ---
     source/display/display_sdl3.cpp
+    source/display/video_output.cpp
     source/display/display_backend.cpp
     source/display/display_backend_sdlgpu.cpp
     source/display/display_backend_sdl.cpp
@@ -1215,6 +1217,9 @@ else()
 endif()
 
 # Platform-specific link libraries
+if(WIN32)
+    target_link_libraries(AltirraSDL PRIVATE advapi32)
+endif()
 # Note: winmm and ws2_32 propagate transitively from system and ATNetworkSockets.
 if(APPLE)
     target_link_libraries(AltirraSDL PRIVATE

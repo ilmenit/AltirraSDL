@@ -132,3 +132,49 @@ target_include_directories(altirra-display-regression-test PRIVATE
 target_link_libraries(altirra-display-regression-test PRIVATE system SDL3::SDL3)
 add_test(NAME upstream-display COMMAND altirra-display-regression-test)
 set_tests_properties(upstream-display PROPERTIES TIMEOUT 60)
+
+add_executable(altirra-video-output-test
+    video_output.cpp
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/display/video_output.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/videomanager.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/simeventmanager.cpp)
+target_include_directories(altirra-video-output-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/display
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-video-output-test PRIVATE ATCore Kasumi system SDL3::SDL3)
+add_test(NAME video-output-routing COMMAND altirra-video-output-test)
+
+add_executable(altirra-instance-reuse-test-fixture
+    ../instance_reuse_fixture.cpp
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app/instance_reuse.cpp)
+target_include_directories(altirra-instance-reuse-test-fixture PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app)
+if(WIN32)
+    target_link_libraries(altirra-instance-reuse-test-fixture PRIVATE ws2_32 advapi32)
+endif()
+if(Python3_Interpreter_FOUND)
+    add_test(NAME instance-reuse
+        COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/test_instance_reuse.py
+            $<TARGET_FILE:altirra-instance-reuse-test-fixture>)
+    set_tests_properties(instance-reuse PROPERTIES TIMEOUT 120)
+endif()
+
+add_executable(altirra-frame-scheduler-test frame_scheduler.cpp)
+target_include_directories(altirra-frame-scheduler-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app)
+add_test(NAME frame-scheduler COMMAND altirra-frame-scheduler-test)
+
+add_executable(altirra-display-sampling-test display_sampling.cpp)
+target_include_directories(altirra-display-sampling-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/h
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-display-sampling-test PRIVATE SDL3::SDL3)
+add_test(NAME upstream-display-sampling COMMAND altirra-display-sampling-test)
+set_tests_properties(upstream-display-sampling PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 60)

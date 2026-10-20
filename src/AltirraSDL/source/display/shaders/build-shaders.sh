@@ -15,10 +15,16 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-command -v shadercross >/dev/null 2>&1 || {
-    echo "shadercross is required (https://github.com/libsdl-org/SDL_shadercross)" >&2
+# shadercross is the preferred all-in-one compiler. Its upstream DXC +
+# SPIRV-Cross tools can also produce the identical resource layout.
+if command -v shadercross >/dev/null 2>&1; then
+    use_shadercross=true
+elif command -v dxc >/dev/null 2>&1 && command -v spirv-cross >/dev/null 2>&1; then
+    use_shadercross=false
+else
+    echo "shadercross (or dxc and spirv-cross) is required" >&2
     exit 1
-}
+fi
 command -v xxd >/dev/null 2>&1 || {
     echo "xxd is required" >&2
     exit 1
@@ -37,9 +43,16 @@ make_header() {
 
 mkdir -p "$generated_dir"
 
-shadercross "$shader" -o "$temp_dir/screenfx.spv"
-shadercross "$shader" -o "$temp_dir/screenfx.msl"
-shadercross "$shader" -o "$temp_dir/screenfx.dxil"
+if "$use_shadercross"; then
+    shadercross "$shader" -o "$temp_dir/screenfx.spv"
+    shadercross "$shader" -o "$temp_dir/screenfx.msl"
+    shadercross "$shader" -o "$temp_dir/screenfx.dxil"
+else
+    dxc -T ps_6_0 -E main -spirv "$shader" -Fo "$temp_dir/screenfx.spv"
+    dxc -T ps_6_0 -E main "$shader" -Fo "$temp_dir/screenfx.dxil"
+    spirv-cross "$temp_dir/screenfx.spv" --msl --msl-version 20100 \
+        --output "$temp_dir/screenfx.msl"
+fi
 
 make_header "$temp_dir/screenfx.spv" kATSDLGPU_ScreenFX_SPIRV \
     "$generated_dir/sdlgpu_screenfx_frag_spv.h"
@@ -47,3 +60,25 @@ make_header "$temp_dir/screenfx.msl" kATSDLGPU_ScreenFX_MSL \
     "$generated_dir/sdlgpu_screenfx_frag_msl.h"
 make_header "$temp_dir/screenfx.dxil" kATSDLGPU_ScreenFX_DXIL \
     "$generated_dir/sdlgpu_screenfx_frag_dxil.h"
+
+# The offscreen GPU regression exercises the production fragment shader with
+# a full-screen triangle. Keep its tiny platform vertex shaders reproducible.
+test_shader="$script_dir/../../../../../tests/upstream/display_sampling.vert.hlsl"
+test_generated="$script_dir/../../../../../tests/upstream/generated"
+if [ -f "$test_shader" ]; then
+    mkdir -p "$test_generated"
+    if "$use_shadercross"; then
+        shadercross "$test_shader" -o "$temp_dir/sampling.spv"
+        shadercross "$test_shader" -o "$temp_dir/sampling.msl"
+        shadercross "$test_shader" -o "$temp_dir/sampling.dxil"
+    else
+        dxc -T vs_6_0 -E main -spirv "$test_shader" -Fo "$temp_dir/sampling.spv"
+        dxc -T vs_6_0 -E main "$test_shader" -Fo "$temp_dir/sampling.dxil"
+        spirv-cross "$temp_dir/sampling.spv" --msl --msl-version 20100 \
+            --output "$temp_dir/sampling.msl"
+    fi
+    for format in spv msl dxil; do
+        make_header "$temp_dir/sampling.$format" kATSamplingVertex \
+            "$test_generated/display_sampling_vert_$format.h"
+    done
+fi

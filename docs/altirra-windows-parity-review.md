@@ -3,9 +3,10 @@
 Review date: **2026-10-20**. Reference: **Altirra 4.50-test24** Windows
 sources and the corresponding AltirraSDL working tree after integration.
 This is a source-based review, not an exhaustive runtime or GUI audit.
-The items below are proposed follow-up work; this review does not implement
-the catch-up changes. Line references describe the reviewed source revision
-and may move during later edits.
+The follow-up implementation now covers arbitrary speed, alternate video
+outputs, menu pausing, desktop instance reuse and supported SDL_GPU HDR.
+Remaining gaps and hardware validation limits are identified below. Line
+references in the original findings may move during later edits.
 
 The objective is equivalent functionality while preserving useful SDL fork
 features. Windows-only implementation details such as Direct3D selectors
@@ -17,64 +18,42 @@ belongs in the parity scope.
 
 ### Arbitrary speed adjustment
 
-The SDL Speed page exposes only 1x, 2x, 4x and 8x
-([SDL controls](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_computer.cpp#L860)).
-Its tooltip promises slower operation, although the selection has no
-below-normal value. Moreover, an arbitrary value restored from settings
-falls through to the displayed normal-speed selection.
+Implemented in Configure System → Speed: a **1–800%** slider, direct
+percentage entry with Ctrl+click, and the existing 1x/2x/4x/8x presets.
+The slider replaces the Slow Motion checkbox. Custom values no longer
+appear as the normal preset. Speed uses upstream's whole-percentage
+profile persistence and retains Online Play speed locks.
 
-Windows uses a slider with raw positions 1–550 and a broad normal-speed
-detent, mapping to **1–500%**
-([range](../src/Altirra/source/uiconfiguresystem.cpp#L2641),
-[mapping and percentage label](../src/Altirra/source/uiconfiguresystem.cpp#L2694)).
-SDL's existing accessor accepts arbitrary modifiers
-([setter](../src/AltirraSDL/stubs/uiaccessors_stubs.cpp#L255)), and its
-[pacer](../src/AltirraSDL/source/app/main_pacer.cpp#L400) consumes them.
-
-Implement the Windows percentage range and normal-speed detent through
-`ATUISetSpeedModifier`, using the existing shared
-[percentage persistence](../src/Altirra/source/settings.cpp#L649).
-Keep the convenient existing presets available, preserve their selected
-value accurately, and retain the
-[Online Play speed locks](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_computer.cpp#L841).
-Verify representative values such as 1%, 25%, 75%, 100%, 125% and 500%
-against elapsed emulated frames and audio behavior, including restart and
-profile-switch restoration.
+Very slow rates use cooperative scheduling so event handling and rendering
+remain responsive between emulated frames. Tests verify 25% core timing,
+1% command responsiveness, arbitrary values and restart persistence.
+Browser scheduling now permits multiple frames per animation tick, preserves
+partial-frame credit, and avoids pause/catch-up debt. Its clock regression
+covers 1–800% at 30/60/120/144Hz browser refresh rates.
 
 ### Slow Motion factor
 
-SDL already has a working **Slow Motion** checkbox
-([control](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_computer.cpp#L852));
-it is not a missing toggle. The separate parity gap is its fixed factor:
-SDL [hardcodes 0.5](../src/AltirraSDL/source/app/main_pacer.cpp#L406), while
-Windows registers the Advanced Configuration variable
-[`engine.slowmo_scale`](../src/Altirra/source/main.cpp#L253) and
-[uses it in timing](../src/Altirra/source/main.cpp#L531).
-
-Register and consume the same configuration variable in the SDL timing
-path. Test interaction with the baseline speed modifier and warp mode.
-This variable and the arbitrary-speed slider are distinct mechanisms.
+The separate checkbox was removed as requested. The legacy slow-motion
+accessor remains for existing command/API compatibility; the percentage
+control displays the effective speed and clears that factor on adjustment.
+Windows' configurable `engine.slowmo_scale` remains a distinct backend
+parity gap; this change does not introduce a second speed UI control.
 
 ## Controls with incomplete runtime behavior
 
 ### Alternate video outputs
 
-SDL exposes a
-[Video Outputs submenu and autoswitch toggle](../src/AltirraSDL/source/ui/menus/ui_menus_view.cpp#L181),
-but the
-[output accessors](../src/AltirraSDL/stubs/uiaccessors_stubs.cpp#L160)
-hardcode availability to false and leave output selection, previous/next,
-and XEP80 operations empty. Device choices already include
-[1090](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L82),
-[Bit 3](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L109),
-and [XEP80](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L127).
-Windows implements
-[output selection and routing](../src/Altirra/source/uivideodisplaywindow.cpp#L113).
+Implemented device discovery, direct selection, previous/next cycling,
+autoswitch, pass-through and invalid-signal handling through the existing
+video manager. Both ImGui and native macOS menus enumerate real outputs.
+Device pixels reach the main display, debugger display, capture and text
+selection paths. Pixel-exact outputs retain native sizing, shrinking only
+when necessary to fit.
 
-Implement device-output discovery, frame presentation, direct selection,
-previous/next and autoswitch. Test insertion/removal of output devices,
-switching back to the computer output, saved selection behavior, and both
-the ImGui and native macOS menu paths.
+Routing regression tests cover activation, removal, cropping, packed
+pixels and blank signals. Real desktop tests verify XEP80, 1090 and Bit 3
+selection, cycling and removal while menu pausing is active. Native macOS
+menu behavior still needs runtime validation on macOS.
 
 ### Screen-reader support
 
@@ -93,27 +72,32 @@ backed by its advertised behavior.
 
 ### Pause while menus are open
 
-SDL exposes and saves
-[`mbPauseDuringMenu`](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L920),
-but no runtime consumer was found in the SDL source tree. Windows applies
-it in the [modal loop](../src/Altirra/source/main.cpp#L3122).
+Implemented the saved option for ImGui menus/context menus and the native
+macOS menu tracking loop. Menu pausing gates emulation without changing
+the simulator's running/paused state. Online Play suppresses local menu
+pausing to avoid stalling peers; bridge frame gates retain their control.
 
-Implement menu-open pause behavior and restore the previous running state
-when the last relevant menu closes. Verify escape, selection, focus loss,
-an already-paused simulator, and Online Play, where pausing one peer can
-stall the other. Do not confuse this with the existing mobile pause menu.
+Behavioral tests verify frozen emulation ticks while menus are open,
+resume after Escape and focus loss, preservation of an already-paused simulator and
+continued emulation when the option is disabled. Native macOS tracking
+uses a main-thread run-loop timer and needs runtime validation on macOS.
 
 ### Reuse program instance
 
-SDL exposes and saves
-[`mbSingleInstance`](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L932),
-but no SDL runtime consumer was found. Windows handles
-[instance reuse at startup](../src/Altirra/source/main.cpp#L3723).
+Implemented desktop instance election and authenticated local argument
+forwarding before window creation. The saved option and explicit
+`--singleinstance` / `--si`, `--nosingleinstance` / `--nosi` switches are
+supported. Relative media paths resolve against the sender's working
+directory. Requests are applied on the main thread and deferred during
+Online Play/native menu tracking. Headless, bridge and test-mode sessions
+remain independent. Elevated Windows launches also remain independent.
+See [instance reuse](instance-reuse.md) for the platform details.
 
-Implement platform instance discovery and argument forwarding, including
-opening or booting media from a second invocation. Test simultaneous
-startup, stale instance endpoints, and normal multi-instance operation
-when the option is disabled.
+Process tests cover concurrent startup, stale endpoints, authentication,
+partial messages and multi-instance operation. A real desktop test boots
+a Unicode relative XEX in the existing process and verifies its RAM,
+independent launches and forwarded debugger behavior. Foregrounding uses
+SDL's window activation request; compositor focus policy still applies.
 
 ### Custom display effects
 
@@ -133,16 +117,17 @@ Direct3D-specific controls alone would not deliver the functionality.
 
 ### HDR output
 
-SDL explicitly marks HDR unavailable and
-[disables all HDR controls](../src/AltirraSDL/source/ui/dialogs/ui_screenfx.cpp#L196).
-Windows has
-[HDR capability and luminance controls](../src/Altirra/source/uiscreeneffects.cpp#L469).
+Implemented HDR for SDL_GPU using a verified extended-linear float
+swapchain, floating-point effect intermediates, calibrated Atari and UI
+white levels, upstream profile settings and live capability reporting.
+Unsupported backends/displays keep the SDR path and explain the limitation.
+A session launched in SDR requires a restart after enabling OS HDR or
+moving to an HDR display. A linear session adapts when HDR is disabled or
+the window moves to SDR.
 
-Complete capability detection, output color-space/swapchain configuration,
-SDR and HDR luminance handling, and monitor/status reporting for supported
-SDL backends. Keep unavailable controls disabled on unsupported displays
-and backends. Validate on HDR hardware, including display changes and
-window/fullscreen transitions.
+Math regressions verify SDR preservation and luminance handling. Physical
+HDR presentation, Metal/D3D behavior and monitor transitions still require
+HDR-capable hardware. See [HDR output and validation](hdr-output.md).
 
 ## Fork features and behavior to preserve
 

@@ -3,6 +3,8 @@
 
 #pragma once
 #include <SDL3/SDL.h>
+#include "video_output.h"
+#include "display_backend.h"
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/refcount.h>
 #include <vd2/system/vdstl.h>
@@ -61,7 +63,12 @@ public:
 	VDDMonitorInfo GetMonitorInformation() override { return {}; }
 	bool IsScreenFXPreferred() const override { return mbScreenFXPreferred; }
 	VDDHighColorAvailability GetHDRCapability() const override {
-		return VDDHighColorAvailability::NoMinidriverSupport;
+		auto *backend = ATUIGetDisplayBackend();
+		return backend && backend->IsHDREnabled()
+			? VDDHighColorAvailability::Available
+			: backend && backend->SupportsHDR()
+				? VDDHighColorAvailability::NotEnabledOnDisplay
+				: VDDHighColorAvailability::NoMinidriverSupport;
 	}
 	VDDHighColorAvailability GetWCGCapability() const override {
 		return VDDHighColorAvailability::NoMinidriverSupport;
@@ -76,13 +83,26 @@ public:
 	bool PrepareFrame();
 
 	// Expose converted pixel data for the selected display backend.
-	const void *GetFramePixels() const { return mHasFramePixels ? mConvertBuffer.data() : nullptr; }
-	int GetFramePixelWidth() const { return mFrameW; }
-	int GetFramePixelHeight() const { return mFrameH; }
-	int GetFramePixelPitch() const { return mFrameW * 4; }
+	const void *GetFramePixels() const {
+		const auto *alt = ATSDLGetVideoOutputFrame();
+		return alt ? alt->data
+			: (mHasFramePixels ? mConvertBuffer.data() : nullptr);
+	}
+	int GetFramePixelWidth() const {
+		const auto *alt = ATSDLGetVideoOutputFrame();
+		return alt ? alt->w : mFrameW;
+	}
+	int GetFramePixelHeight() const {
+		const auto *alt = ATSDLGetVideoOutputFrame();
+		return alt ? alt->h : mFrameH;
+	}
+	int GetFramePixelPitch() const {
+		const auto *alt = ATSDLGetVideoOutputFrame();
+		return alt ? (int)alt->pitch : mFrameW * 4;
+	}
 
 	// GL path: screen FX info from GTIA's SetSourcePersistent call
-	bool HasScreenFX() const { return mHasScreenFX; }
+	bool HasScreenFX() const { return mHasScreenFX && !ATSDLGetActiveVideoOutput(); }
 	const VDVideoDisplayScreenFXInfo &GetLastScreenFX() const { return mLastScreenFX; }
 
 	// Set by the main loop based on whether the GL backend is active
