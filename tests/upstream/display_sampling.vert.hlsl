@@ -1,7 +1,7 @@
 // Full-screen triangle for the production fragment shader regression.
 struct VSOutput {
-	float4 color : COLOR0;
-	float2 uv : TEXCOORD0;
+	float4 color : TEXCOORD0;
+	float2 uv : TEXCOORD1;
 	float4 position : SV_Position;
 };
 VSOutput main(uint index : SV_VertexID) {
