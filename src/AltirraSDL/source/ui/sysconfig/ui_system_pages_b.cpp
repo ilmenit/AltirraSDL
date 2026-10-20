@@ -924,6 +924,9 @@ void RenderUICategory(ATSimulator &) {
 		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
 	}
 
+	ImGui::SetItemTooltip("Pause emulation while a menu is open. "
+		"Disabled during Online Play.");
+
 	bool quickBar = ATUIGetQuickBarEnabled();
 	if (ImGui::Checkbox("Enable quick bar", &quickBar))
 		ATUISetQuickBarEnabled(quickBar);

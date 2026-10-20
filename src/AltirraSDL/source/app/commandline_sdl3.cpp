@@ -25,6 +25,8 @@
 #include <vd2/system/strutil.h>
 #include <vd2/system/text.h>
 #include <at/atcore/media.h>
+#include <at/atcore/vfs.h>
+#include "instance_reuse.h"
 #include <at/atcore/propertyset.h>
 #include <at/atcore/enumparse.h>
 #include <at/atio/cartridgeimage.h>
@@ -50,6 +52,8 @@
 #include "uikeyboard.h"
 #include "ui_main.h"
 #include "ui_mode.h"
+#include "touch_widgets.h"
+#include <exception>
 #include "logging.h"
 #include "ui/netplay/ui_netplay_deeplink.h"
 
@@ -261,7 +265,35 @@ const VDStringW& ATGetLastBootMediaPathSDL3() {
 // ATProcessCommandLineSDL3
 // ---------------------------------------------------------------------------
 
-bool ATProcessCommandLineSDL3(int argc, char **argv) {
+static bool ProcessCommandLine(int argc, char **argv, const char* workingDirectory) {
+	const VDStringW origin = workingDirectory
+		? VDTextU8ToW(VDStringSpanA(workingDirectory)) : VDStringW();
+	const auto ResolveWidePath = [&origin](auto&& self,
+		const wchar_t* path) -> VDStringW {
+		if (origin.empty())
+			return VDStringW(path);
+		const ATVFSParsedPath parsed = ATParseVFSPath(path);
+		if (parsed.mProtocol == kATVFSProtocol_File) {
+			if (VDFileIsRelativePath(parsed.mBasePath.c_str()))
+				return VDMakePath(origin.c_str(), parsed.mBasePath.c_str());
+		} else if (parsed.mProtocol == kATVFSProtocol_Zip ||
+			parsed.mProtocol == kATVFSProtocol_GZip ||
+			parsed.mProtocol == kATVFSProtocol_Atfs) {
+			const VDStringW base = self(self, parsed.mBasePath.c_str());
+			return ATMakeVFSPath(parsed.mProtocol, base.c_str(),
+				parsed.mSubPath.c_str());
+		}
+		return VDStringW(path);
+	};
+	const auto ResolvePath = [&](const char* path) {
+		const VDStringW wide = VDTextU8ToW(VDStringSpanA(path));
+		return ResolveWidePath(ResolveWidePath, wide.c_str());
+	};
+	const auto LoadDirect = [&](const char* path,
+		const ATMediaWriteMode* mode, int mapper, ATImageType type, int index) {
+		const VDStringA resolved = VDTextWToU8(ResolvePath(path));
+		return DoLoadDirect(resolved.c_str(), mode, mapper, type, index);
+	};
 	// Capture the auto-host MRU baseline BEFORE any image-loading arg
 	// (--run/--disk/--cart/--tape) can call ATAddMRU.  DriveAutoHost
 	// uses this to detect "cmdline-driven load happened" by comparing
@@ -313,12 +345,21 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		const char *sw = arg + 2;  // skip "--"
 		const char *val = nullptr;
 
+		// Desktop startup consumes these switches before forwarding. Excluded
+		// modes (test/bridge/headless/mobile) deliberately ignore reuse, but
+		// still accept its switches without treating them as unknown options.
+		if (MatchSwitch(sw, "singleinstance") || MatchSwitch(sw, "si") ||
+			MatchSwitch(sw, "nosingleinstance") || MatchSwitch(sw, "nosi")) {
+			consumed[i] = true;
+			continue;
+		}
+
 		// ---- Help ----
 		if (MatchSwitch(sw, "help") || MatchSwitch(sw, "?")) {
 			consumed[i] = true;
 			LOG_INFO("CmdLine", "Usage: AltirraSDL [options] [image-file ...]\n\n" "Display:  --f  --ntsc --pal --secam --ntsc50 --pal60\n" "          --artifact <mode>  --vsync/--novsync\n" "          --renderer <sdlgpu|opengl|sdlrenderer>\n" "Hardware: --hardware <mode>  --kernel <name>  --memsize <size>\n"
 			"          --cpu <6502|65c02|65c816[,mult]>\n"
-			"          --highbanks <na|0|1|3|15|63>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
+			"          --highbanks <na|0|1|3|15|63>\n" "          --stereo/--nostereo  --basic/--nobasic\n" "          --ultimate1mb/--noultimate1mb  --u1mbrom <file>\n" "Media:    --cart/--disk/--run/--runbas/--tape <file>\n" "          --bootro/--bootrw/--bootvrw/--bootvrwsafe\n" "Devices:  --adddevice/--setdevice/--removedevice <spec>\n" "          --cleardevices  --pclink <mode,path>  --hdpath <path>\n" "Online:   --join-session <id>  --join-code <code>\n" "          --host-session <title>\n" "Debugger: --debug  --debugcmd <cmd>  --autotest\n" "Other:    --singleinstance/--nosingleinstance (--si/--nosi)\n" "          --type <text>  --rawkeys  --diskemu <mode>\n\n" "Use Help > Command-Line Help in the menu for full details.");
 			continue;
 		}
 
@@ -617,7 +658,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		// path, so registering here is idempotent; it becomes the default
 		// U1MB firmware and the U1MB is switched on with it.
 		if ((val = ConsumeArg(argc, argv, i, consumed, "u1mbrom")) != nullptr) {
-			const VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			const VDStringW wval = ResolvePath(val);
 			if (!VDDoesPathExist(wval.c_str())) {
 				LOG_INFO("CmdLine", "U1MB firmware not found: %s", val);
 				continue;
@@ -769,6 +810,9 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		// ---- Kernel/BASIC by reference ----
 		if ((val = ConsumeArg(argc, argv, i, consumed, "kernelref")) != nullptr) {
 			VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			const VDStringW resolved = ResolvePath(val);
+			if (VDDoesPathExist(resolved.c_str()))
+				wval = resolved;
 			const auto id = g_sim.GetFirmwareManager()->GetFirmwareByRefString(wval.c_str(), ATIsKernelFirmwareType);
 			if (!id)
 				LOG_INFO("CmdLine", "No matching kernel for reference: %s", val);
@@ -778,6 +822,9 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		}
 		if ((val = ConsumeArg(argc, argv, i, consumed, "basicref")) != nullptr) {
 			VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			const VDStringW resolved = ResolvePath(val);
+			if (VDDoesPathExist(resolved.c_str()))
+				wval = resolved;
 			const auto id = g_sim.GetFirmwareManager()->GetFirmwareByRefString(wval.c_str(),
 				[](ATFirmwareType type) { return type == kATFirmwareType_Basic; });
 			if (!id)
@@ -1030,7 +1077,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			}
 
 			ATPropertySet pset;
-			pset.SetString("path", VDTextU8ToW(VDStringSpanA(path.c_str())).c_str());
+			pset.SetString("path", ResolvePath(path.c_str()).c_str());
 			if (write)
 				pset.SetBool("write", true);
 
@@ -1055,7 +1102,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			continue;
 		}
 		if ((val = ConsumeArg(argc, argv, i, consumed, "hdpath")) != nullptr) {
-			VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			VDStringW wval = ResolvePath(val);
 			auto *dm = g_sim.GetDeviceManager();
 			IATDevice *dev = dm->GetDeviceByTag("hostfs");
 			if (!dev)
@@ -1069,7 +1116,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			continue;
 		}
 		if ((val = ConsumeArg(argc, argv, i, consumed, "hdpathrw")) != nullptr) {
-			VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			VDStringW wval = ResolvePath(val);
 			auto *dm = g_sim.GetDeviceManager();
 			IATDevice *dev = dm->GetDeviceByTag("hostfs");
 			if (!dev)
@@ -1118,7 +1165,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		}
 		if ((val = ConsumeArg(argc, argv, i, consumed, "cheats")) != nullptr) {
 			g_sim.SetCheatEngineEnabled(true);
-			VDStringW wval = VDTextU8ToW(VDStringSpanA(val));
+			VDStringW wval = ResolvePath(val);
 			g_sim.GetCheatEngine()->Load(wval.c_str());
 			continue;
 		}
@@ -1141,7 +1188,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 				haveUnloadedAllImages = true;
 			}
-			DoLoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Cartridge, -1);
+			LoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Cartridge, -1);
 			coldResetPending = true;
 			hadBootImage = true;
 			continue;
@@ -1155,7 +1202,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 				haveUnloadedAllImages = true;
 			}
-			DoLoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Disk, diskIndex++);
+			LoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Disk, diskIndex++);
 			coldResetPending = true;
 			hadBootImage = true;
 			continue;
@@ -1165,7 +1212,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 				haveUnloadedAllImages = true;
 			}
-			DoLoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Program, -1);
+			LoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Program, -1);
 			coldResetPending = true;
 			hadBootImage = true;
 			continue;
@@ -1175,7 +1222,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 				haveUnloadedAllImages = true;
 			}
-			DoLoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_BasicProgram, -1);
+			LoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_BasicProgram, -1);
 			coldResetPending = true;
 			hadBootImage = true;
 			continue;
@@ -1185,7 +1232,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 				g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 				haveUnloadedAllImages = true;
 			}
-			DoLoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Tape, -1);
+			LoadDirect(val, bootImageWriteMode, imageCartMapper, kATImageType_Tape, -1);
 			coldResetPending = true;
 			hadBootImage = true;
 			continue;
@@ -1319,7 +1366,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 		int joinEnd = i;  // inclusive index of last arg to join
 		{
 			VDStringA candidate(argv[i]);
-			VDStringW wcandidate = VDTextU8ToW(VDStringSpanA(candidate));
+			VDStringW wcandidate = ResolvePath(candidate.c_str());
 			bool exists = VDDoesPathExist(wcandidate.c_str());
 			if (!exists) {
 				for (int j = i + 1; j < argc; ++j) {
@@ -1327,7 +1374,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 						break;
 					candidate += ' ';
 					candidate += argv[j];
-					wcandidate = VDTextU8ToW(VDStringSpanA(candidate));
+					wcandidate = ResolvePath(candidate.c_str());
 					if (VDDoesPathExist(wcandidate.c_str())) {
 						joinEnd = j;
 						exists = true;
@@ -1350,7 +1397,7 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 			haveUnloadedAllImages = true;
 		}
 
-		bool suppressColdReset = DoLoadDirect(pathU8.c_str(), bootImageWriteMode,
+		bool suppressColdReset = LoadDirect(pathU8.c_str(), bootImageWriteMode,
 											  imageCartMapper, kATImageType_None,
 											  ATImageLoadContext::kLoadIndexNextFree);
 
@@ -1377,8 +1424,8 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 	if (initialTapePos > 0)
 		g_sim.GetCassette().SeekToTime(initialTapePos);
 
-	// Load startup.atdbg from program directory
-	{
+	// Load startup.atdbg once, rather than rerunning it on instance hand-off.
+	if (!workingDirectory) {
 		const VDStringW dbgInitPath(VDMakePath(VDGetProgramPath().c_str(), L"startup.atdbg"));
 		if (VDDoesPathExist(dbgInitPath.c_str())) {
 			try {
@@ -1394,10 +1441,9 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 	// The queued `g -n command will resume emulation once all debugger
 	// commands have been processed.
 	if (debugModeSuspend) {
-		// If no boot image was loaded, we need to cold reset first so the
-		// emulation is in a known state (matches Windows where the simulator
-		// was already running before command-line processing).
-		if (!hadBootImage && !coldResetPending)
+		// Initial startup needs a known hardware state. A forwarded debugger
+		// command must inspect the running instance without resetting it.
+		if (!workingDirectory && !hadBootImage && !coldResetPending)
 			g_sim.ColdReset();
 
 		g_sim.Suspend();
@@ -1428,4 +1474,25 @@ bool ATProcessCommandLineSDL3(int argc, char **argv) {
 	// active, or any config switch was processed that requires us to suppress
 	// the default ColdReset+Resume in the caller)
 	return hadBootImage || debugModeSuspend;
+}
+
+bool ATProcessCommandLineSDL3(int argc, char** argv) {
+	return ProcessCommandLine(argc, argv, nullptr);
+}
+
+bool ATProcessForwardedCommandLineSDL3(int argc, char** argv,
+	const char* workingDirectory) {
+	// Invalid forwarded media/options must not terminate the running emulator.
+	try {
+		return ProcessCommandLine(argc, argv, workingDirectory);
+	} catch (const MyError& e) {
+		LOG_ERROR("CmdLine", "Forwarded command failed: %s", e.c_str());
+		ATTouchPushFeedback("Unable to apply launch options", e.c_str(),
+			ATTouchToastSeverity::Danger);
+	} catch (const std::exception& e) {
+		LOG_ERROR("CmdLine", "Forwarded command failed: %s", e.what());
+		ATTouchPushFeedback("Unable to apply launch options", e.what(),
+			ATTouchToastSeverity::Danger);
+	}
+	return false;
 }

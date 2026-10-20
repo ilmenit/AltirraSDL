@@ -23,6 +23,7 @@ set(ALTIRRA_SDL_DIR ${CMAKE_SOURCE_DIR}/src/AltirraSDL)
 
 add_executable(AltirraBridgeServer
     main_bridge.cpp
+    ${ALTIRRA_SDL_DIR}/source/display/video_output.cpp
     # No-op stubs for SDL3-frontend symbols that the AltirraSDL stubs/
     # files reference but the bridge server has no real implementation
     # for. Includes ATBridgeRequestAppQuit (which the bridge module

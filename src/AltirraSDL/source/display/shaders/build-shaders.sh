@@ -15,10 +15,16 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-command -v shadercross >/dev/null 2>&1 || {
-    echo "shadercross is required (https://github.com/libsdl-org/SDL_shadercross)" >&2
+# shadercross is the preferred all-in-one compiler. Its upstream DXC +
+# SPIRV-Cross tools can also produce the identical resource layout.
+if command -v shadercross >/dev/null 2>&1; then
+    use_shadercross=true
+elif command -v dxc >/dev/null 2>&1 && command -v spirv-cross >/dev/null 2>&1; then
+    use_shadercross=false
+else
+    echo "shadercross (or dxc and spirv-cross) is required" >&2
     exit 1
-}
+fi
 command -v xxd >/dev/null 2>&1 || {
     echo "xxd is required" >&2
     exit 1
@@ -37,9 +43,16 @@ make_header() {
 
 mkdir -p "$generated_dir"
 
-shadercross "$shader" -o "$temp_dir/screenfx.spv"
-shadercross "$shader" -o "$temp_dir/screenfx.msl"
-shadercross "$shader" -o "$temp_dir/screenfx.dxil"
+if "$use_shadercross"; then
+    shadercross "$shader" -o "$temp_dir/screenfx.spv"
+    shadercross "$shader" -o "$temp_dir/screenfx.msl"
+    shadercross "$shader" -o "$temp_dir/screenfx.dxil"
+else
+    dxc -T ps_6_0 -E main -spirv "$shader" -Fo "$temp_dir/screenfx.spv"
+    dxc -T ps_6_0 -E main "$shader" -Fo "$temp_dir/screenfx.dxil"
+    spirv-cross "$temp_dir/screenfx.spv" --msl --msl-version 20100 \
+        --output "$temp_dir/screenfx.msl"
+fi
 
 make_header "$temp_dir/screenfx.spv" kATSDLGPU_ScreenFX_SPIRV \
     "$generated_dir/sdlgpu_screenfx_frag_spv.h"

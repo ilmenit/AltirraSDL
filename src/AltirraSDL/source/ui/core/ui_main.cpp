@@ -7,6 +7,8 @@
 #include <stdafx.h>
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
+#include "macos_menubar.h"
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 // imgui_impl_opengl3 + DisplayBackendGL are now used on every platform,
@@ -1497,6 +1499,35 @@ bool ATUIProcessEvent(const SDL_Event *event) {
 			ATUIApplyTheme();
 	}
 	return ImGui_ImplSDL3_ProcessEvent(event);
+}
+
+bool ATUIIsMenuOpen() {
+	if (ATMacMenuBarIsTracking())
+		return true;
+	ImGuiContext *context = ImGui::GetCurrentContext();
+	if (!context)
+		return false;
+	for (const ImGuiPopupData& popup : context->OpenPopupStack) {
+		const ImGuiWindow *window = popup.Window;
+		if (!window || (window->Flags & ImGuiWindowFlags_Modal))
+			continue;
+		// BeginMenu windows have ChildMenu; root context popups acquire
+		// menu columns when MenuItem renders. Combos and other popups do
+		// not acquire those columns and do not pause emulation.
+		if ((window->Flags & ImGuiWindowFlags_ChildMenu)
+			|| window->DC.MenuColumns.TotalWidth > 0
+			|| window->DC.MenuColumns.NextTotalWidth > 0)
+			return true;
+	}
+	return false;
+}
+
+bool ATUIShouldPauseForMenus() {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (ATNetplayGlue::IsSessionEngaged())
+		return false;
+#endif
+	return g_ATOptions.mbPauseDuringMenu && ATUIIsMenuOpen();
 }
 
 bool ATUIWantCaptureKeyboard() { return ImGui::GetIO().WantCaptureKeyboard; }

@@ -40,6 +40,7 @@ target_sources(AltirraLibretro PRIVATE
     ${ALTIRRA_SDL_DIR}/stubs/win32_stubs.cpp
     ${ALTIRRA_SDL_DIR}/stubs/device_stubs.cpp
 
+    ${ALTIRRA_SDL_DIR}/source/display/video_output.cpp
     ${ALTIRRA_SDL_DIR}/source/os/directorywatcher_sdl3.cpp
     libretro_midimate.cpp
     ${ALTIRRA_SDL_DIR}/source/input/keyboard_keymap_sdl3.cpp

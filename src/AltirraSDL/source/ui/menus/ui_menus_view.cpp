@@ -8,6 +8,9 @@
 #include <vd2/system/VDString.h>
 
 #include "display_backend.h"
+#include "video_output.h"
+#include <at/atcore/devicevideo.h>
+#include <vd2/system/text.h>
 #include "ui_main.h"
 #include "ui_autosuggest.h"
 #include "ui_debugger.h"
@@ -184,13 +187,25 @@ void ATUIRenderViewMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window, 
 		if (ImGui::MenuItem("1 Computer Output", nullptr, !altView))
 			ATUISetAltViewEnabled(false);
 
-		if (ATUIIsAltOutputAvailable()) {
-			if (ImGui::MenuItem("Next Output"))
-				ATUISelectNextAltOutput();
+		if (auto *manager = ATSDLGetVideoOutputManager()) {
+			for (uint32 i = 0; i < manager->GetOutputCount(); ++i) {
+				auto *output = manager->GetOutput(i);
+				VDStringA label;
+				label.sprintf("%u %s", i + 2,
+					VDTextWToU8(output->GetDisplayName(), -1).c_str());
+				if (ImGui::MenuItem(label.c_str(), nullptr,
+					ATUIGetCurrentAltViewIndex() == (sint32)i))
+					ATUISetAltViewByIndex((sint32)i);
+			}
 		}
+		ImGui::Separator();
+		if (ImGui::MenuItem("Next Output", nullptr, false,
+			ATUIIsAltOutputAvailable()))
+			ATUISelectNextAltOutput();
 
 		bool autoSwitch = ATUIGetAltViewAutoswitchingEnabled();
-		if (ImGui::MenuItem("Auto-Switch Video Output", nullptr, autoSwitch))
+		if (ImGui::MenuItem("Auto-Switch Video Output", nullptr, autoSwitch,
+			ATUIIsAltOutputAvailable()))
 			ATUISetAltViewAutoswitchingEnabled(!autoSwitch);
 
 		ImGui::EndMenu();

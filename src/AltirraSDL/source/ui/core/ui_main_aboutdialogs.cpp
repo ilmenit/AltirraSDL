@@ -129,6 +129,13 @@ void ATUIRenderCommandLineHelpDialog(ATUIState &state) {
 
 		if (ImGui::CollapsingHeader("Other")) {
 			ImGui::TextWrapped(
+				"  --singleinstance / --si\n"
+				"                        Reuse the running program instance\n"
+#ifdef _WIN32
+				"                        Elevated launches remain independent\n"
+#endif
+				"  --nosingleinstance / --nosi\n"
+				"                        Start an independent program instance\n"
 				"  --type <text>         Type text into emulator after boot\n"
 				"                        (~ = Enter, ` = quote)\n"
 				"  --rawkeys / --norawkeys\n"

@@ -238,6 +238,10 @@ extern bool g_showFirmwareManager;
 bool ATUIFirmwareManagerHandleDrop(const char *utf8path, float dropX, float dropY);
 bool ATUIFirmwareManagerGetDropRect(ImVec2 &pos, ImVec2 &size); // returns true if open
 
+// True while a menu (including context menus) is open.
+bool ATUIIsMenuOpen();
+bool ATUIShouldPauseForMenus();
+
 // Menu bar (ui_menus.cpp)
 void ATUIRenderMainMenu(ATSimulator &sim, SDL_Window *window, IDisplayBackend *backend, ATUIState &state);
 void ATUIPushDeferred2(ATDeferredActionType type, const char *utf8path1, const char *utf8path2);

@@ -6,9 +6,11 @@
 #include <vd2/VDDisplay/display.h>
 #include <vector>
 #include "display_backend.h"
+#include "display_hdr.h"
 
 class DisplayBackendSDLGPU final : public IDisplayBackend {
 public:
+	static SDL_Renderer *CreateRenderer(SDL_Window *window);
 	static DisplayBackendSDLGPU *Create(SDL_Window *window, SDL_Renderer *renderer);
 	~DisplayBackendSDLGPU() override;
 
@@ -25,6 +27,8 @@ public:
 	void OnResize(int w, int h) override;
 
 	bool SupportsScreenFX() const override { return true; }
+	bool SupportsHDR() const override;
+	bool IsHDREnabled() const override;
 	void UpdateScreenFX(const VDVideoDisplayScreenFXInfo &info) override;
 	void SetFilterMode(int mode) override;
 	void SetFilterSharpness(float sharpness) override;
@@ -57,10 +61,13 @@ private:
 		float bloomShoulder[4];
 		float bloomThresholds[4];
 		float bloomBaseWeights[4];
+		float hdrParams[4];
 	};
 
 	ShaderConstants BuildShaderConstants(float dstW, float dstH,
 		int srcW, int srcH) const;
+	ATHDROutputLevels GetOutputLevels() const;
+	void SetOutputConstants(ShaderConstants& constants, SDL_Texture *source) const;
 	bool ApplyShaderConstants(const ShaderConstants& constants);
 	bool EnsureTarget(SDL_Texture *&texture, int& currentW, int& currentH,
 		int width, int height,
@@ -69,7 +76,7 @@ private:
 		const ShaderConstants& constants, SDL_BlendMode blendMode,
 		bool clearTarget);
 	SDL_Texture *RenderBloom(SDL_Texture *source, int srcW, int srcH,
-		int dstW, int dstH, int baseSourceW);
+		int dstW, int dstH, int baseSourceW, bool sourceSigned);
 	bool EnsureScreenMask(float dstX, float dstY, int dstW, int dstH,
 		int srcW);
 	bool ApplyScreenMask(SDL_Texture *target);

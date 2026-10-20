@@ -16,6 +16,7 @@ class ATSimulator;
 
 // One selected span of text on a single mode line (matches Windows TextSpan).
 struct ATTextSpan {
+	int mAltRow = 0; // device text row for alternate video outputs
 	int mX;			// beam X (left edge, color clocks)
 	int mWidth;		// beam width (color clocks)
 	int mY;			// beam Y (scanline)

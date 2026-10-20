@@ -11,6 +11,7 @@
 
 #include <stdafx.h>
 #include <imgui.h>
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
 
@@ -194,30 +195,49 @@ static void RenderBloomPage(ATArtifactingParams &params, bool &changed) {
 }
 
 static void RenderHDRPage(ATArtifactingParams &params, bool &changed) {
-	ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
-		"HDR support requires platform-specific display capabilities.\n"
-		"This feature is not yet available in the SDL3 build.");
+	IDisplayBackend *backend = ATUIGetDisplayBackend();
+	const bool supported = backend && backend->SupportsHDR();
+	const bool active = supported && backend->IsHDREnabled();
+	if (!supported) {
+		ImGui::TextWrapped("HDR requires the SDL_GPU renderer and an HDR display "
+			"with extended linear output support. Enable HDR in the operating "
+			"system and restart AltirraSDL on that display.");
+	} else if (!active) {
+		ImGui::TextWrapped("HDR is currently disabled on this display. "
+			"Enable HDR in the operating system or move the window to an HDR display.");
+	}
 	ImGui::Spacing();
-
-	ImGui::BeginDisabled(true);
-
-	ImGui::Checkbox("Enable HDR", &params.mbEnableHDR);
-	ImGui::Checkbox("Use System SDR Brightness", &params.mbUseSystemSDR);
-	ImGui::Checkbox("Use System HDR Brightness", &params.mbUseSystemSDRAsHDR);
-
-	float sdrNits = params.mSDRIntensity;
-	ImGui::Text("SDR Brightness: %.0f nits", sdrNits);
-	ImGui::SliderFloat("##SDRBright", &sdrNits, 80.0f, 500.0f, "");
-
-	float hdrNits = params.mHDRIntensity;
-	ImGui::Text("HDR Brightness: %.0f nits", hdrNits);
-	ImGui::SliderFloat("##HDRBright", &hdrNits, 80.0f, 1000.0f, "");
-
-	ImGui::Spacing();
-	ImGui::Text("Monitor: (not available)");
-	ImGui::Text("Current Mode: SDR");
-
+	ImGui::BeginDisabled(!supported);
+	if (ImGui::Checkbox("Enable HDR", &params.mbEnableHDR))
+		changed = true;
+	ImGui::BeginDisabled(!active || !params.mbEnableHDR
+		|| !g_sim.GetGTIA().GetAccelScreenFXEnabled());
+	if (ImGui::Checkbox("Use System SDR Brightness", &params.mbUseSystemSDR))
+		changed = true;
+	if (ImGui::Checkbox("Use System HDR Brightness", &params.mbUseSystemSDRAsHDR))
+		changed = true;
+	ImGui::BeginDisabled(params.mbUseSystemSDR);
+	ImGui::Text("SDR Brightness: %.0f nits", params.mSDRIntensity);
+	if (SliderFloatLog("##SDRBright", &params.mSDRIntensity, 80.0f, 320.0f, ""))
+		changed = true;
 	ImGui::EndDisabled();
+	ImGui::BeginDisabled(params.mbUseSystemSDRAsHDR);
+	ImGui::Text("HDR Brightness: %.0f nits", params.mHDRIntensity);
+	if (SliderFloatLog("##HDRBright", &params.mHDRIntensity, 80.0f, 1280.0f, ""))
+		changed = true;
+	ImGui::EndDisabled();
+	ImGui::EndDisabled();
+	ImGui::EndDisabled();
+
+	ImGui::Spacing();
+	SDL_Window *window = backend ? backend->GetWindow() : nullptr;
+	const SDL_DisplayID display = window ? SDL_GetDisplayForWindow(window) : 0;
+	const char *name = display ? SDL_GetDisplayName(display) : nullptr;
+	ImGui::Text("Monitor: %s", name ? name : "Unavailable");
+	ImGui::Text("Current Mode: %s", active ? "HDR (extended linear)" : "SDR");
+	if (active && !g_sim.GetGTIA().GetAccelScreenFXEnabled())
+		ImGui::TextWrapped("Enable hardware accelerated display effects in "
+			"Configure System to apply HDR to the emulated display.");
 }
 
 static void RenderMaskPage(VDDScreenMaskParams &maskParams, bool &changed) {
@@ -370,7 +390,7 @@ void ATUIRenderScreenEffects(ATSimulator &sim, ATUIState &state) {
 	}
 
 	// Update GTIA params — the per-frame SyncScreenFXToBackend() in main_sdl3.cpp
-	// will pick up the changes and push them to the GL backend automatically.
+	// will pick up the changes and push them to the active backend.
 	if (changed)
 		gtia.SetArtifactingParams(params);
 

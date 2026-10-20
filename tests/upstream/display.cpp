@@ -7,6 +7,7 @@
 #include <vd2/VDDisplay/displaytypes.h>
 #include <vd2/VDDisplay/internal/bloom.h>
 #include <vd2/VDDisplay/internal/screenfx.h>
+#include "../../src/AltirraSDL/source/display/display_hdr.h"
 
 static void Check(bool ok, const char *message) {
 	if (!ok) {
@@ -16,6 +17,36 @@ static void Check(bool ok, const char *message) {
 }
 
 int main() {
+	// A linear swapchain must keep SDR content at system white, apply HDR
+	// luminance in absolute 80-nit scRGB units, and restore SDR on monitor loss.
+	const auto outputLevels = [](bool linear, bool display, bool enabled,
+		bool fx, bool systemHDR = false, bool systemSDR = false) {
+		return ATComputeHDROutputLevels(linear, display, enabled, fx, 2.5f,
+			systemHDR, 400.0f, systemSDR, 160.0f);
+	};
+	const auto sdr = outputLevels(false, true, true, true);
+	Check(sdr.mFrameScale == 0 && sdr.mUIScale == 1 && !sdr.mbHDR,
+		"SDR renderer must retain its original shader path");
+	const auto hdr = outputLevels(true, true, true, true);
+	Check(hdr.mFrameScale == 5.0f && hdr.mUIScale == 0.8f && hdr.mbHDR,
+		"HDR and UI luminance must use independent calibrated white levels");
+	const auto system = outputLevels(true, true, true, true, true, true);
+	Check(system.mFrameScale == 2.5f && system.mUIScale == 1,
+		"System brightness must not be scaled a second time");
+	for (const auto fallback : {
+		outputLevels(true, false, true, true),
+		outputLevels(true, true, false, true),
+		outputLevels(true, true, true, false)})
+	{
+		Check(fallback.mFrameScale == 2.5f && fallback.mUIScale == 1
+			&& !fallback.mbHDR,
+			"HDR loss, disabled effects, or unchecked HDR must restore SDR white");
+	}
+	const auto invalid = ATComputeHDROutputLevels(true, true, true, true,
+		NAN, false, NAN, false, NAN);
+	Check(std::isfinite(invalid.mFrameScale) && std::isfinite(invalid.mUIScale),
+		"Invalid brightness data must not poison the HDR output");
+
 	uint32 gamma[256];
 	VDDisplayCreateGammaRamp(gamma, 256, false, 1.0f, 1.0f);
 	Check(gamma[0] == 0 && gamma[255] == 0xFFFFFFFF,

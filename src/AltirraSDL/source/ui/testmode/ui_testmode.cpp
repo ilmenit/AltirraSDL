@@ -50,6 +50,12 @@
 #include "ui/netplay/ui_netplay_state.h"
 #endif
 #include "logging.h"
+#include "video_output.h"
+#include "display_sdl3_impl.h"
+#include "display_backend.h"
+extern VDVideoDisplaySDL3 *g_pDisplay;
+#include <at/atcore/devicevideo.h>
+#include <cmath>
 
 bool g_testModeEnabled = false;
 extern ATMobileUIState g_mobileState;
@@ -423,6 +429,36 @@ static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	}
 	json += "}";
 
+	json += ",\"videoOutput\":{\"name\":\"";
+	json += JsonEscape(ATUIGetCurrentAltOutputName());
+	json += "\",\"index\":" + std::to_string(ATUIGetCurrentAltViewIndex());
+	json += ",\"active\":";
+	json += ATSDLGetActiveVideoOutput() ? "true" : "false";
+	int outputWidth = 0, outputHeight = 0;
+	double outputPAR = 1;
+	bool exactOutput = false;
+	ATSDLGetVideoOutputGeometry(outputWidth, outputHeight, outputPAR, exactOutput);
+	json += ",\"width\":" + std::to_string(outputWidth);
+	json += ",\"height\":" + std::to_string(outputHeight);
+	json += ",\"frameWidth\":" + std::to_string(g_pDisplay->GetFramePixelWidth());
+	json += ",\"frameHeight\":" + std::to_string(g_pDisplay->GetFramePixelHeight());
+	if (auto *backend = ATUIGetDisplayBackend()) {
+		json += ",\"textureWidth\":" + std::to_string(backend->GetTextureWidth());
+		json += ",\"textureHeight\":" + std::to_string(backend->GetTextureHeight());
+	}
+	json += ",\"available\":[";
+	if (auto *manager = ATSDLGetVideoOutputManager()) {
+		for (uint32 i = 0; i < manager->GetOutputCount(); ++i) {
+			if (i) json += ',';
+			auto *output = manager->GetOutput(i);
+			json += "{\"name\":\"" + JsonEscape(output->GetName());
+			json += "\",\"displayName\":\"";
+			json += JsonEscape(VDTextWToU8(output->GetDisplayName(), -1).c_str());
+			json += "\"}";
+		}
+	}
+	json += "]}";
+
 	// Simulator state
 	json += ",\"sim\":{";
 	json += "\"running\":";
@@ -432,6 +468,12 @@ static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	json += ",\"turbo\":";
 	json += sim.IsTurboModeEnabled() ? "true" : "false";
 
+	json += ",\"speedPercent\":" + std::to_string(
+		(ATUIGetSpeedModifier() + 1.0f) * (ATUIGetSlowMotion() ? 50.0f : 100.0f));
+	json += ",\"menuOpen\":";
+	json += ATUIIsMenuOpen() ? "true" : "false";
+	json += ",\"menuPaused\":";
+	json += ATUIShouldPauseForMenus() ? "true" : "false";
 	json += ",\"fileDialogPaused\":";
 	json += ATUIIsFileDialogPaused() ? "true" : "false";
 	json += ",\"emulationTick\":";
@@ -2680,7 +2722,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 
 	// --- Speed control ---
 	//
-	// Format:  set_speed <turbo|warp|normal|real>
+	// Format:  set_speed <turbo|warp|normal|real|percent>
 	//          get_speed
 	//
 	// `turbo` / `warp` enable the sticky turbo mode (== Tab key in
@@ -2701,21 +2743,34 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 	if (verb == "set_speed") {
 		std::string mode = NextToken(cmd);
 		if (mode.empty())
-			return JsonError("usage: set_speed <turbo|warp|normal|real>");
+			return JsonError("usage: set_speed <turbo|warp|normal|real|percent>");
 		if (mode == "turbo" || mode == "warp") {
 			ATUISetTurbo(true);
 			return JsonOk();
 		}
 		if (mode == "normal" || mode == "real") {
 			ATUISetTurbo(false);
+			ATUISetSlowMotion(false);
+			ATUISetSpeedModifier(0.0f);
 			return JsonOk();
 		}
-		return JsonError("unknown speed mode: " + mode);
+		char *end = nullptr;
+		const float percent = strtof(mode.c_str(), &end);
+		if (end != mode.c_str() && !*end && std::isfinite(percent)
+			&& percent >= 1.0f && percent <= 800.0f) {
+			ATUISetTurbo(false);
+			ATUISetSlowMotion(false);
+			ATUISetSpeedModifier(percent / 100.0f - 1.0f);
+			return JsonOk();
+		}
+		return JsonError("unknown speed mode or percentage outside 1..800: " + mode);
 	}
 
 	if (verb == "get_speed") {
 		std::string body = "{\"ok\":true,\"turbo\":";
 		body += ATUIGetTurbo() ? "true" : "false";
+		body += ",\"percent\":" + std::to_string((ATUIGetSpeedModifier() + 1.0f)
+			* (ATUIGetSlowMotion() ? 50.0f : 100.0f));
 		body += "}";
 		return body;
 	}
@@ -2925,7 +2980,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"mem_read <hex_addr> [<count>]\","
 			"\"input joy <unit> <left|right|up|down|fire|release_all>\","
 			"\"input console <start|select|option> [up]\","
-			"\"set_speed <turbo|warp|normal|real>\","
+			"\"set_speed <turbo|warp|normal|real|percent>\","
 			"\"get_speed\","
 			"\"cold_reset\","
 			"\"warm_reset\","

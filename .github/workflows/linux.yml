@@ -131,6 +131,21 @@ jobs:
           chmod +x ./build.sh ./scripts/build/*.sh
           ./build.sh --appimage
 
+      - name: Test speed, menu pausing and real video outputs
+        if: matrix.arch == 'x86_64'
+        shell: bash
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          ALTIRRA_DISPLAY_BACKEND: sdlrenderer
+        run: |
+          python3 -m pip install --disable-pip-version-check 'pytest>=7,<10'
+          test_config=$(mktemp -d)
+          trap 'rm -rf "$test_config"' EXIT
+          XDG_CONFIG_HOME="$test_config" python3 -m pytest -q \
+            tests/ui/test_speed_menu_pause.py tests/ui/test_video_outputs.py \
+            --emu-path=build/linux-release/src/AltirraSDL/AltirraSDL
+
       - name: Inspect AppImage
         shell: bash
         run: |

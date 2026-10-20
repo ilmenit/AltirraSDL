@@ -849,27 +849,32 @@ void RenderSpeedCategory(ATSimulator &sim) {
 		? "Disabled while Playing Online — both peers must run at 1x."
 		: "Disable the speed limiter and run the emulation as fast as possible.");
 
-	bool slowmo = ATUIGetSlowMotion();
-	ImGui::BeginDisabled(netplayLocksSpeed);
-	if (ImGui::Checkbox("Slow Motion", &slowmo))
-		ATUISetSlowMotion(slowmo);
-	ImGui::EndDisabled();
-
 	ImGui::SeparatorText("Speed adjustment");
 
-	float spd = ATUIGetSpeedModifier();
-	static const float kSpdValues[] = { 0.0f, 1.0f, 3.0f, 7.0f };
-	static const char *kSpdLabels[] = { "1x (Normal)", "2x", "4x", "8x" };
-	int spdIdx = 0;
-	for (int i = 0; i < 4; ++i)
-		if (kSpdValues[i] == spd) { spdIdx = i; break; }
+	// Keep the fork's 8x preset while allowing precise below-normal rates.
+	// Slow Motion is replaced here by a single effective speed control.
+	float percent = (ATUIGetSpeedModifier() + 1.0f)
+		* (ATUIGetSlowMotion() ? 50.0f : 100.0f);
 	ImGui::BeginDisabled(netplayLocksSpeed);
-	if (ImGui::Combo("Speed", &spdIdx, kSpdLabels, 4))
-		ATUISetSpeedModifier(kSpdValues[spdIdx]);
-	ImGui::EndDisabled();
+	if (ImGui::SliderFloat("Speed", &percent, 1.0f, 800.0f, "%.0f%%",
+		ImGuiSliderFlags_AlwaysClamp)) {
+		ATUISetSlowMotion(false);
+		ATUISetSpeedModifier(percent / 100.0f - 1.0f);
+	}
 	ImGui::SetItemTooltip(netplayLocksSpeed
 		? "Disabled while Playing Online — both peers must run at 1x."
-		: "Scale the baseline rate to run the emulation faster or slower.");
+		: "Scale emulation from 1% to 800%. Ctrl+click to enter a percentage.");
+
+	static const float kSpdValues[] = { 100.0f, 200.0f, 400.0f, 800.0f };
+	static const char *kSpdLabels[] = { "Custom", "1x (Normal)", "2x", "4x", "8x" };
+	int spdIdx = 0;
+	for (int i = 0; i < 4; ++i)
+		if (fabsf(kSpdValues[i] - percent) < 0.001f) { spdIdx = i + 1; break; }
+	if (ImGui::Combo("Preset", &spdIdx, kSpdLabels, 5) && spdIdx > 0) {
+		ATUISetSlowMotion(false);
+		ATUISetSpeedModifier(kSpdValues[spdIdx - 1] / 100.0f - 1.0f);
+	}
+	ImGui::EndDisabled();
 
 	ImGui::SeparatorText("Frame rate");
 

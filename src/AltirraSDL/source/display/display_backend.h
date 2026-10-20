@@ -81,6 +81,10 @@ public:
 	// Returns true if this backend supports GPU shader effects.
 	virtual bool SupportsScreenFX() const = 0;
 
+	// HDR is available only when the active renderer owns a linear swapchain.
+	virtual bool SupportsHDR() const { return false; }
+	virtual bool IsHDREnabled() const { return false; }
+
 	// Update screen FX parameters (scanlines, bloom, masks, etc.).
 	// No-op if SupportsScreenFX() returns false.
 	virtual void UpdateScreenFX(const VDVideoDisplayScreenFXInfo &info) = 0;

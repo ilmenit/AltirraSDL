@@ -54,6 +54,8 @@
 #include "diskinterface.h"
 #include "constants.h"
 #include "uiaccessors.h"
+#include "video_output.h"
+#include <at/atcore/devicevideo.h>
 #include "uiconfirm.h"
 #include "uikeyboard.h"
 #include "accel_sdl3.h"
@@ -112,10 +114,20 @@ static void ClearMenuActions() {
 	g_nextActionTag = 1;
 }
 
+// Cocoa tracks native menus in a nested main-thread run loop. Keep our
+// tick alive in that mode; the regular SDL event pump must not be reentered.
+static bool s_menuTracking = false;
+static bool s_trackingTickActive = false;
+static NSTimer *s_trackingTimer = nil;
+static std::function<bool()> s_trackingCallback;
+
 // Singleton target for all menu items.
 @interface ATMenuTarget : NSObject
 + (instancetype)shared;
 - (void)menuItemClicked:(NSMenuItem *)sender;
+- (void)menuTrackingBegan:(NSNotification *)notification;
+- (void)menuTrackingEnded:(NSNotification *)notification;
+- (void)menuTrackingTick:(NSTimer *)timer;
 @end
 
 @implementation ATMenuTarget
@@ -127,6 +139,34 @@ static void ClearMenuActions() {
 	auto it = g_menuActions.find(sender.tag);
 	if (it != g_menuActions.end())
 		it->second();
+}
+- (void)menuTrackingBegan:(NSNotification *)notification {
+	if (![NSThread isMainThread]) return;
+	s_menuTracking = true;
+	if (!s_trackingTimer) {
+		s_trackingTimer = [NSTimer timerWithTimeInterval:0.001
+			target:self selector:@selector(menuTrackingTick:)
+			userInfo:nil repeats:YES];
+		[[NSRunLoop mainRunLoop] addTimer:s_trackingTimer
+			forMode:NSEventTrackingRunLoopMode];
+	}
+}
+- (void)menuTrackingEnded:(NSNotification *)notification {
+	if (![NSThread isMainThread]) return;
+	s_menuTracking = false;
+	[s_trackingTimer invalidate];
+	s_trackingTimer = nil;
+}
+- (void)menuTrackingTick:(NSTimer *)timer {
+	if (![NSThread isMainThread] || s_trackingTickActive
+		|| !s_menuTracking || !s_trackingCallback) return;
+	s_trackingTickActive = true;
+	struct TrackingTickGuard {
+		~TrackingTickGuard() { s_trackingTickActive = false; }
+	} guard;
+	const bool keepRunning = s_trackingCallback();
+	if (!keepRunning)
+		[[NSApp mainMenu] cancelTrackingWithoutAnimation];
 }
 @end
 
@@ -769,13 +809,25 @@ static void BuildViewMenu(NSMenu *menu) {
 		AddItem(voMenu, @"1 Computer Output", !altView, true, [=]{
 			ATUISetAltViewEnabled(false);
 		});
-		if (ATUIIsAltOutputAvailable()) {
-			AddItem(voMenu, @"Next Output", false, true, [=]{
-				ATUISelectNextAltOutput();
-			});
+		if (auto *manager = ATSDLGetVideoOutputManager()) {
+			for (uint32 i = 0; i < manager->GetOutputCount(); ++i) {
+				auto *output = manager->GetOutput(i);
+				NSString *title = [NSString stringWithFormat:@"%u %s", i + 2,
+					VDTextWToU8(output->GetDisplayName(), -1).c_str()];
+				// Capture the stable output name: devices may change while a
+				// native menu is open, invalidating output pointers/indices.
+				VDStringA name(output->GetName());
+				AddItem(voMenu, title, ATUIGetCurrentAltViewIndex() == (sint32)i,
+					true, [=]{ ATUISetCurrentAltOutputName(name.c_str()); });
+			}
 		}
+		AddSeparator(voMenu);
+		AddItem(voMenu, @"Next Output", false, ATUIIsAltOutputAvailable(),
+			[=]{ ATUISelectNextAltOutput(); });
+
 		bool autoSwitch = ATUIGetAltViewAutoswitchingEnabled();
-		AddItem(voMenu, @"Auto-Switch Video Output", autoSwitch, true, [=]{
+		AddItem(voMenu, @"Auto-Switch Video Output", autoSwitch,
+			ATUIIsAltOutputAvailable(), [=]{
 			ATUISetAltViewAutoswitchingEnabled(!ATUIGetAltViewAutoswitchingEnabled());
 		});
 	}
@@ -1880,6 +1932,12 @@ void ATMacMenuBarInit() {
 		}
 
 		[NSApp setMainMenu:mainMenu];
+		[[NSNotificationCenter defaultCenter] addObserver:[ATMenuTarget shared]
+			selector:@selector(menuTrackingBegan:)
+			name:NSMenuDidBeginTrackingNotification object:nil];
+		[[NSNotificationCenter defaultCenter] addObserver:[ATMenuTarget shared]
+			selector:@selector(menuTrackingEnded:)
+			name:NSMenuDidEndTrackingNotification object:nil];
 		g_macMenuInitialized = true;
 
 		LOG_INFO("UI", "Native macOS menu bar initialized");
@@ -1889,6 +1947,14 @@ void ATMacMenuBarInit() {
 void ATMacMenuBarShutdown() {
 	if (!g_macMenuInitialized) return;
 	@autoreleasepool {
+		[[NSNotificationCenter defaultCenter] removeObserver:[ATMenuTarget shared]
+			name:NSMenuDidBeginTrackingNotification object:nil];
+		[[NSNotificationCenter defaultCenter] removeObserver:[ATMenuTarget shared]
+			name:NSMenuDidEndTrackingNotification object:nil];
+		[s_trackingTimer invalidate];
+		s_trackingTimer = nil;
+		s_menuTracking = false;
+		s_trackingCallback = {};
 		[NSApp setHelpMenu:nil];
 		[NSApp setMainMenu:nil];
 		g_menuDelegates = nil;
@@ -1929,6 +1995,11 @@ bool ATMacMenuBarInvokeSearch() {
 		if ([item.title isEqualToString:@"Search actions and settings..."])
 			return [NSApp sendAction:item.action to:item.target from:item];
 	return false;
+}
+
+bool ATMacMenuBarIsTracking() { return s_menuTracking; }
+void ATMacMenuBarSetTrackingCallback(std::function<bool()> callback) {
+	s_trackingCallback = std::move(callback);
 }
 
 #endif // VD_OS_MACOS

@@ -203,7 +203,7 @@ class TestSpeedPage:
 
     EXPECTED = [
         "Run as fast as possible (warp)",
-        "Slow Motion",
+        "Speed", "Preset",
         "Pause when emulator window is inactive",
     ]
 
