@@ -415,3 +415,9 @@ was test22. The 20-file upstream delta retains all earlier fork corrections.
 Focused coverage lives in `tests/upstream/vbxe.cpp` and `display.cpp`, plus
 bridge firmware/custom-device tests. The parity review and proposed follow-up
 work are in `docs/altirra-windows-parity-review.md`.
+
+Test24 CI follow-up: regression targets must use `ALTIRRA_COMPAT_DIR`,
+which is empty on MSVC, rather than unconditionally adding `src/compat`.
+Otherwise the non-MSVC `intrin.h` shim shadows the real Windows intrinsic
+header and `<future>` fails in `savestateio.cpp` with missing `_ReturnAddress`.
+The display test's FMA flag check is x86/x64-only, like the production path.

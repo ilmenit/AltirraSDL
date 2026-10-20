@@ -69,11 +69,14 @@ int main() {
 						"Accelerated dot mask differs from scalar filtering");
 				}
 			}
+#if defined(VD_CPU_X86) || defined(VD_CPU_X64)
+			// FMA flags only exist on x86/x64; ARM tests the scalar path above.
 			// AVX2 without FMA must still use the scalar implementation.
 			CPUEnableExtensions(detected & ~VDCPUF_SUPPORTS_FMA);
 			VDDisplayCreateTriadDotMaskTexture(accelerated.data(), w * 4,
 				w, h, offset, offset, w, h, params);
 			Check(scalar == accelerated, "Dot mask dispatch requires FMA");
+#endif
 		}
 	}
 	CPUEnableExtensions(detected);

@@ -1,11 +1,15 @@
 # Upstream merge regression tests
 
 Configure with `-DALTIRRA_BUILD_TESTS=ON` and
-`-DALTIRRA_REQUIRE_EXPORT_VALIDATION=ON`, build both
-`altirra-upstream-regression-test` and `altirra-vbxe-regression-test`, then run:
+`-DALTIRRA_REQUIRE_EXPORT_VALIDATION=ON`, build all five targets and run:
 
 ```sh
-ctest --test-dir build/linux-release -R upstream --output-on-failure
+cmake --build build/linux-release --target \
+  altirra-upstream-regression-test altirra-vbxe-regression-test \
+  altirra-test22-regression-test altirra-test22-cpu-test \
+  altirra-display-regression-test --parallel 2
+ctest --test-dir build/linux-release -R '^upstream-' \
+  --output-on-failure --no-tests=error
 ```
 
 The C++ fixture exercises the production FX-80, PNG and PDF exporters. It
