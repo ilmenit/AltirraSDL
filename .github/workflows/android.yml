@@ -5,7 +5,7 @@ name: Android build
 # under android/ and the existing scripts/build/android.sh pipeline.
 # Per-ABI APK splits are configured in android/app/build.gradle's
 # `splits.abi` block so a single Gradle invocation produces both
-# slices; sideload-friendly versionCodes (245020 for arm64, 145020 for v7a)
+# slices; sideload-friendly versionCodes (base + 200000/100000 by ABI)
 # guarantee an arm64 device can still upgrade cleanly if the user
 # happened to install the v7a slice first.
 #
@@ -106,12 +106,30 @@ jobs:
               echo "ERROR: could not parse version from CMakeLists.txt"
               exit 1
           fi
+          BASE_VERSION_CODE=$(sed -n 's/^[[:space:]]*versionCode \([0-9]*\).*/\1/p' android/app/build.gradle | head -1)
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt2 | sort -V | tail -1)
+          if [ -z "$BASE_VERSION_CODE" ] || [ ! -x "$AAPT2" ]; then
+              echo "ERROR: missing Android base version code or aapt2"
+              exit 1
+          fi
           OUT_DIR="build/android-release"
           mkdir -p "$OUT_DIR"
           for ABI in arm64-v8a armeabi-v7a; do
               SRC="$APK_DIR/app-${ABI}-release.apk"
               if [ ! -f "$SRC" ]; then
                   echo "ERROR: expected ABI APK missing: $SRC"
+                  exit 1
+              fi
+              case "$ABI" in
+                  arm64-v8a) ABI_CODE=2 ;;
+                  armeabi-v7a) ABI_CODE=1 ;;
+              esac
+              EXPECTED_CODE=$((ABI_CODE * 100000 + BASE_VERSION_CODE))
+              PACKAGE_LINE=$("$AAPT2" dump badging "$SRC" | sed -n '1p')
+              if [[ "$PACKAGE_LINE" != *" versionCode='$EXPECTED_CODE' "* ]] || \
+                 [[ "$PACKAGE_LINE" != *" versionName='$VERSION' "* ]]; then
+                  echo "ERROR: $SRC has incorrect manifest version: $PACKAGE_LINE"
+                  echo "Expected versionName=$VERSION, versionCode=$EXPECTED_CODE"
                   exit 1
               fi
               DST="$OUT_DIR/AltirraSDL-${VERSION}-android-${ABI}.apk"
