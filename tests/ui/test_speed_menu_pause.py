@@ -124,3 +124,19 @@ def test_disabled_menu_pause_keeps_running(speed_desktop):
     time.sleep(0.15)
     assert state(emu)["emulationTick"] > before["emulationTick"]
     emu.send("key escape")
+
+
+def test_focus_loss_dismisses_menu_and_releases_menu_pause(speed_desktop):
+    emu = speed_desktop
+    click(emu, "##MainMenuBar", "File")
+    assert state(emu)["menuPaused"]
+    emu.send("physical_focus lost")
+    emu.wait_frames(4)
+    assert not state(emu)["menuOpen"]
+    assert not state(emu)["menuPaused"]
+    assert state(emu)["running"]
+    emu.send("physical_focus gained")
+    emu.wait_frames(4)
+    before = state(emu)["emulationTick"]
+    time.sleep(0.1)
+    assert state(emu)["emulationTick"] > before

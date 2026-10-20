@@ -91,7 +91,7 @@ class InstanceReuseTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "FORWARDED")
             cwd, args = self.read_request(server)
-            self.assertEqual(Path(cwd), Path(origin))
+            self.assertEqual(Path(cwd).resolve(), Path(origin).resolve())
             self.assertEqual(args[1:], ["client", "--run", filename,
                                        "--type", 'hello "world"\n~'])
 

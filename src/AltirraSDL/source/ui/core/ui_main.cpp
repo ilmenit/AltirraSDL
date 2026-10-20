@@ -1491,7 +1491,29 @@ void ATUIShutdown() {
 	ImGui::DestroyContext();
 }
 
+static bool IsMenuPopup(const ImGuiWindow *window) {
+	if (!window || (window->Flags & ImGuiWindowFlags_Modal))
+		return false;
+	// BeginMenu windows have ChildMenu; root context popups acquire
+	// menu columns when MenuItem renders. Combos do not acquire them.
+	return (window->Flags & ImGuiWindowFlags_ChildMenu)
+		|| window->DC.MenuColumns.TotalWidth > 0
+		|| window->DC.MenuColumns.NextTotalWidth > 0;
+}
+
 bool ATUIProcessEvent(const SDL_Event *event) {
+	if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+		// Native menus dismiss on deactivation. Release ImGui menu pausing
+		// too, without closing modal dialogs or unrelated combo popups.
+		if (auto *context = ImGui::GetCurrentContext()) {
+			for (int i = 0; i < context->OpenPopupStack.Size; ++i) {
+				if (IsMenuPopup(context->OpenPopupStack[i].Window)) {
+					ImGui::ClosePopupToLevel(i, false);
+					break;
+				}
+			}
+		}
+	}
 	// React to OS dark/light theme changes in real time
 	if (event->type == SDL_EVENT_SYSTEM_THEME_CHANGED) {
 		ATUIUpdateSystemTheme();
@@ -1508,15 +1530,7 @@ bool ATUIIsMenuOpen() {
 	if (!context)
 		return false;
 	for (const ImGuiPopupData& popup : context->OpenPopupStack) {
-		const ImGuiWindow *window = popup.Window;
-		if (!window || (window->Flags & ImGuiWindowFlags_Modal))
-			continue;
-		// BeginMenu windows have ChildMenu; root context popups acquire
-		// menu columns when MenuItem renders. Combos and other popups do
-		// not acquire those columns and do not pause emulation.
-		if ((window->Flags & ImGuiWindowFlags_ChildMenu)
-			|| window->DC.MenuColumns.TotalWidth > 0
-			|| window->DC.MenuColumns.NextTotalWidth > 0)
+		if (IsMenuPopup(popup.Window))
 			return true;
 	}
 	return false;

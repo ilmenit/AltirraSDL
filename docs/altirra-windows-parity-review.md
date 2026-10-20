@@ -75,7 +75,7 @@ the simulator's running/paused state. Online Play suppresses local menu
 pausing to avoid stalling peers; bridge frame gates retain their control.
 
 Behavioral tests verify frozen emulation ticks while menus are open,
-resume after Escape, preservation of an already-paused simulator and
+resume after Escape and focus loss, preservation of an already-paused simulator and
 continued emulation when the option is disabled. Native macOS tracking
 uses a main-thread run-loop timer and needs runtime validation on macOS.
 
