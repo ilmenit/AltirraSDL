@@ -2,6 +2,7 @@
 #include <stdafx.h>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <vd2/system/VDString.h>
 #include <vd2/Kasumi/pixmap.h>
 #include <vd2/Kasumi/pixmaputils.h>
@@ -10,6 +11,56 @@
 #include "video_output.h"
 #include "simeventmanager.h"
 #include "uiaccessors.h"
+#include "uitypes.h"
+
+vdfloat2 ATSDLComputeVideoOutputSize(int width, int height, double par,
+	bool exactPixels, float viewportWidth, float viewportHeight,
+	ATDisplayStretchMode mode, float pixelsPerUnit)
+{
+	if (!std::isfinite(pixelsPerUnit) || pixelsPerUnit <= 0)
+		pixelsPerUnit = 1.0f;
+	viewportWidth *= pixelsPerUnit;
+	viewportHeight *= pixelsPerUnit;
+	const float sourceWidth = (float)std::max(1, width);
+	const float sourceHeight = (float)std::max(1, height);
+	if (exactPixels) {
+		const float ratio = std::min(1.0f,
+			std::min(viewportWidth / sourceWidth, viewportHeight / sourceHeight));
+		return {sourceWidth * ratio / pixelsPerUnit,
+			sourceHeight * ratio / pixelsPerUnit};
+	}
+	if (mode == kATDisplayStretchMode_Unconstrained)
+		return {viewportWidth / pixelsPerUnit, viewportHeight / pixelsPerUnit};
+	const double effectivePAR = mode == kATDisplayStretchMode_SquarePixels
+		|| mode == kATDisplayStretchMode_Integral ? 0.5 : par;
+	const float fitWidth = (float)(sourceWidth * effectivePAR);
+	float scale = std::min(viewportWidth / fitWidth, viewportHeight / sourceHeight);
+	if (scale > 1.0f && (mode == kATDisplayStretchMode_Integral
+		|| mode == kATDisplayStretchMode_IntegralPreserveAspectRatio))
+		scale = std::floor(scale);
+	return {fitWidth * scale / pixelsPerUnit, sourceHeight * scale / pixelsPerUnit};
+}
+
+bool ATSDLGetVideoOutputTextRect(IATDeviceVideoOutput& output, int column,
+	int row, int length, vdrect32f& rect)
+{
+	const auto& info = output.GetVideoInfo();
+	const auto& area = info.mDisplayArea;
+	if (area.empty() || row < 0 || row >= info.mTextRows || column < 0
+		|| column >= info.mTextColumns || length <= 0)
+		return false;
+	length = std::min(length, info.mTextColumns - column);
+	const auto pixels = output.CharToPixelRect(
+		vdrect32(column, row, column + length, row + 1));
+	if (pixels.empty())
+		return false;
+	rect = vdrect32f(
+		(float)(pixels.left - area.left) / area.width(),
+		(float)(pixels.top - area.top) / area.height(),
+		(float)(pixels.right - area.left) / area.width(),
+		(float)(pixels.bottom - area.top) / area.height());
+	return true;
+}
 
 namespace {
 IATDeviceVideoManager *s_manager = nullptr;

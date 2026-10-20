@@ -136,6 +136,57 @@ class InstanceReuseTests(unittest.TestCase):
             self.assertEqual(self.client("client").stdout.strip(), "FORWARDED")
             self.read_request(server)
 
+    def test_malformed_utf8_requests_are_rejected_without_losing_owner(self):
+        server = self.server()
+        port, token = self.endpoint().read_text().split()
+
+        def string(value):
+            return struct.pack("!I", len(value)) + value
+
+        origin = str(Path(self.home.name).resolve()).encode("utf-8")
+        # Invalid continuation, overlong encodings, truncated sequences,
+        # surrogate code points and values beyond Unicode's scalar range.
+        invalid_values = [b"\x80", b"\xc0\xaf", b"\xe0\x80\xaf", b"\xe2\x82",
+                          b"\xed\xa0\x80", b"\xf4\x90\x80\x80"]
+        for invalid in invalid_values:
+            for bad_origin in (True, False):
+                payload = (string(token.encode()) +
+                           string(origin + invalid if bad_origin else origin) +
+                           struct.pack("!I", 1) +
+                           string(b"launcher" if bad_origin else invalid))
+                with socket.create_connection(("127.0.0.1", int(port))) as connection:
+                    connection.settimeout(5)
+                    connection.sendall(struct.pack("!I", len(payload)) + payload)
+                    self.assertEqual(connection.recv(1), b"\0")
+                self.assertIsNone(server.poll(), "Malformed UTF-8 killed the owner")
+        self.assertEqual(self.client("client").stdout.strip(), "FORWARDED")
+        self.read_request(server)
+
+    def test_full_accept_backlog_respects_handoff_deadline(self):
+        server = self.server("backlog-server")
+        port, _ = self.endpoint().read_text().split()
+        connections = []
+        try:
+            # The owner deliberately never accepts. Fill its native backlog;
+            # surplus nonblocking connects may stay pending on either OS.
+            for _ in range(32):
+                connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                connections.append(connection)
+                connection.setblocking(False)
+                connection.connect_ex(("127.0.0.1", int(port)))
+            started = time.monotonic()
+            result = self.client("client")
+            elapsed = time.monotonic() - started
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("The running Altirra instance", result.stderr)
+            self.assertGreaterEqual(elapsed, 14)
+            self.assertLess(elapsed, 19,
+                            "A blocking connect escaped the 15-second handoff deadline")
+            self.assertIsNone(server.poll(), "Deadline test owner exited prematurely")
+        finally:
+            for connection in connections:
+                connection.close()
+
     def test_simultaneous_startup_claims_one_owner(self):
         processes = [subprocess.Popen([FIXTURE, "server"], env=self.env,
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,

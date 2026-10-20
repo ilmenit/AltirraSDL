@@ -289,6 +289,31 @@ static bool ProcessCommandLine(int argc, char **argv, const char* workingDirecto
 		const VDStringW wide = VDTextU8ToW(VDStringSpanA(path));
 		return ResolveWidePath(ResolveWidePath, wide.c_str());
 	};
+	const auto ResolveDevicePaths = [&](const VDStringA& tag, ATPropertySet& props) {
+		if (origin.empty())
+			return;
+		const auto resolveProperty = [&](const char* key) {
+			const wchar_t* value = props.GetString(key);
+			// Empty paths disable a mapping/device; retain that meaning.
+			if (value && *value)
+				props.SetString(key, ResolveWidePath(ResolveWidePath, value).c_str());
+		};
+		// ATPropertySet stores only string types, without path metadata.
+		// These keys are native paths in the named devices' SetSettings or
+		// creation routines (exeloader.cpp, parfilewriter.cpp, pclink.cpp,
+		// idediskdevices.cpp, blockdev{virtfat32,diskadapter}.cpp,
+		// customdevice.cpp, videostillimage.cpp, and hostdevice.cpp).
+		// Do not rewrite other strings such as host addresses or pipe names.
+		if (tag == "exeloader" || tag == "parfilewriter" || tag == "pclink"
+			|| tag == "harddisk" || tag == "hdvirtfat16" || tag == "hdvirtfat32"
+			|| tag == "hdvirtsdfs" || tag == "custom" || tag == "videostillimage")
+		{
+			resolveProperty("path");
+		} else if (tag == "hostfs") {
+			for (const char* key : {"path1", "path2", "path3", "path4"})
+				resolveProperty(key);
+		}
+	};
 	const auto LoadDirect = [&](const char* path,
 		const ATMediaWriteMode* mode, int mapper, ATImageType type, int index) {
 		const VDStringA resolved = VDTextWToU8(ResolvePath(path));
@@ -1266,6 +1291,7 @@ static bool ProcessCommandLine(int argc, char **argv, const char* workingDirecto
 				pset.ParseFromCommandLineString(params.data());
 
 			const VDStringA tagA = VDTextWToA(tag);
+			ResolveDevicePaths(tagA, pset);
 			const ATDeviceDefinition *def = dm.GetDeviceDefinition(tagA.c_str());
 
 			if (!def || (def->mFlags & kATDeviceDefFlag_Hidden)) {
@@ -1303,6 +1329,7 @@ static bool ProcessCommandLine(int argc, char **argv, const char* workingDirecto
 				pset.ParseFromCommandLineString(params.data());
 
 			const VDStringA tagA = VDTextWToA(tag);
+			ResolveDevicePaths(tagA, pset);
 			const ATDeviceDefinition *def = dm.GetDeviceDefinition(tagA.c_str());
 
 			if (!def || (def->mFlags & kATDeviceDefFlag_Hidden)) {

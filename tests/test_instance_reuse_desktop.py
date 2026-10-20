@@ -209,6 +209,35 @@ class DesktopInstanceReuse(unittest.TestCase):
                 (media / filename).write_bytes(
                     b"\xff\xff" + struct.pack("<HH", 0x600, 0x607) + signature +
                     struct.pack("<HHH", 0x2E0, 0x2E1, 0x600))
+                def verify_ram(expected, label):
+                    observed_bytes = None
+                    for attempt in range(16):
+                        time.sleep(0.5)
+                        observed = root / f"{label}-{attempt}.bin"
+                        forwarded("--debugcmd", f'.writemem "{observed}" 0600 L8')
+                        eventually(lambda: observed.exists() and observed.stat().st_size == 8,
+                                   "Forwarded debugger command did not execute in the primary")
+                        observed_bytes = observed.read_bytes()
+                        if observed_bytes == expected:
+                            return
+                    self.assertEqual(observed_bytes, expected,
+                                     "Forwarded device did not load its sender-relative executable")
+
+                # EXE loader is a standalone device whose path setting opens
+                # a real file. Boot through SIO after both add and reconfigure,
+                # observing RAM to prove the correct executable was selected.
+                for action, marker in (("adddevice", b"ADD!!"),
+                                       ("setdevice", b"SET!!")):
+                    device_signature = b"\x4c\x00\x06" + marker
+                    device_name = f"loader {action}.xex"
+                    (media / device_name).write_bytes(
+                        b"\xff\xff" + struct.pack("<HH", 0x600, 0x607) +
+                        device_signature + struct.pack("<HHH", 0x2E0, 0x2E1, 0x600))
+                    forwarded(f"--{action}", f'exeloader,path="{device_name}"', cwd=media)
+                    forwarded("--debugcmd", ".restart")
+                    verify_ram(device_signature, f"device-{action}")
+                forwarded("--removedevice", "exeloader")
+
                 forwarded("--run", filename, cwd=media)
                 observed_bytes = None
                 for attempt in range(12):

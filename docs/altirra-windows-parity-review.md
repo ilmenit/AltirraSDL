@@ -27,6 +27,9 @@ profile persistence and retains Online Play speed locks.
 Very slow rates use cooperative scheduling so event handling and rendering
 remain responsive between emulated frames. Tests verify 25% core timing,
 1% command responsiveness, arbitrary values and restart persistence.
+Browser scheduling now permits multiple frames per animation tick, preserves
+partial-frame credit, and avoids pause/catch-up debt. Its clock regression
+covers 1–800% at 30/60/120/144Hz browser refresh rates.
 
 ### Slow Motion factor
 

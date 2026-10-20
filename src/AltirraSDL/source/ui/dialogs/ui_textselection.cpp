@@ -33,15 +33,36 @@ extern ATSimulator g_sim;
 
 static ATTextSelectionState s_sel;
 static VDStringA s_selectionOutput;
+static IATDeviceVideoOutput *s_selectionDevice = nullptr;
+static uint32 s_selectionLayout = 0;
+static uint32 s_selectionOutputList = 0;
 static const char *SelectionSource() {
 	auto *output = ATSDLGetActiveVideoOutput();
 	return output ? output->GetName() : "";
+}
+static void CaptureSelectionSource() {
+	s_selectionOutput = SelectionSource();
+	s_selectionDevice = ATSDLGetActiveVideoOutput();
+	s_selectionLayout = s_selectionDevice
+		? s_selectionDevice->GetVideoInfo().mFrameBufferLayoutChangeCount : 0;
+	const auto *manager = ATSDLGetVideoOutputManager();
+	s_selectionOutputList = manager ? manager->GetOutputListChangeCount() : 0;
+}
+static bool SelectionSourceMatches() {
+	auto *output = ATSDLGetActiveVideoOutput();
+	if (s_selectionOutput != SelectionSource() || s_selectionDevice != output)
+		return false;
+	if (!output)
+		return true;
+	const auto *manager = ATSDLGetVideoOutputManager();
+	return manager && s_selectionOutputList == manager->GetOutputListChangeCount()
+		&& s_selectionLayout == output->GetVideoInfo().mFrameBufferLayoutChangeCount;
 }
 
 ATTextSelectionState& ATUIGetTextSelection() { return s_sel; }
 
 bool ATUIIsTextSelected() {
-	return s_selectionOutput == SelectionSource() && !s_sel.mSpans.empty();
+	return SelectionSourceMatches() && !s_sel.mSpans.empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +84,10 @@ static bool MapPixelToBeam(const ImVec2& imagePos, const ImVec2& imageSize,
 
 	if (auto *output = ATSDLGetActiveVideoOutput()) {
 		const auto& area = output->GetVideoInfo().mDisplayArea;
+		if (area.empty()) {
+			beamX = beamY = 0;
+			return false;
+		}
 		const auto caret = output->PixelToCaretPos(vdpoint32(
 			area.left + (int)(dx * area.width() / imageSize.x),
 			area.top + (int)(dy * area.height() / imageSize.y)));
@@ -116,6 +141,8 @@ static ImVec2 MapBeamToPixel(const ImVec2& imagePos, const ImVec2& imageSize,
 							 int beamX, int beamY) {
 	if (auto *output = ATSDLGetActiveVideoOutput()) {
 		const auto& area = output->GetVideoInfo().mDisplayArea;
+		if (area.empty())
+			return imagePos;
 		return ImVec2(imagePos.x + (beamX - area.left) * imageSize.x / area.width(),
 			imagePos.y + (beamY - area.top) * imageSize.y / area.height());
 	}
@@ -134,7 +161,7 @@ static ImVec2 MapBeamToPixel(const ImVec2& imagePos, const ImVec2& imageSize,
 // ---------------------------------------------------------------------------
 
 static void SelectByBeamPosition(int xc1, int yc1, int xc2, int yc2) {
-	s_selectionOutput = SelectionSource();
+	CaptureSelectionSource();
 	if (auto *output = ATSDLGetActiveVideoOutput()) {
 		const auto& vi = output->GetVideoInfo();
 		xc1 = std::clamp(xc1, 0, vi.mTextColumns);
@@ -262,8 +289,21 @@ static void UpdateHighlightRects(const ImVec2& imagePos, const ImVec2& imageSize
 		if (!ts.mWidth || !ts.mHeight)
 			continue;
 
-		ImVec2 p1 = MapBeamToPixel(imagePos, imageSize, ts.mX, ts.mY);
-		ImVec2 p2 = MapBeamToPixel(imagePos, imageSize, ts.mX + ts.mWidth, ts.mY + ts.mHeight);
+		ImVec2 p1, p2;
+		if (auto *output = ATSDLGetActiveVideoOutput()) {
+			vdrect32f rect;
+			if (!ATSDLGetVideoOutputTextRect(*output, ts.mCharX, ts.mAltRow,
+				ts.mCharWidth, rect))
+				continue;
+			p1 = ImVec2(imagePos.x + rect.left * imageSize.x,
+				imagePos.y + rect.top * imageSize.y);
+			p2 = ImVec2(imagePos.x + rect.right * imageSize.x,
+				imagePos.y + rect.bottom * imageSize.y);
+		} else {
+			p1 = MapBeamToPixel(imagePos, imageSize, ts.mX, ts.mY);
+			p2 = MapBeamToPixel(imagePos, imageSize,
+				ts.mX + ts.mWidth, ts.mY + ts.mHeight);
+		}
 
 		ATTextSelectionState::HighlightRect hr;
 		hr.x1 = p1.x;
@@ -360,7 +400,7 @@ void ATUITextDeselect() {
 }
 
 void ATUITextCopy(ATTextCopyMode mode) {
-	if (s_selectionOutput != SelectionSource()) {
+	if (!SelectionSourceMatches()) {
 		ATUITextDeselect();
 		return;
 	}
@@ -510,9 +550,9 @@ void ATUITextCopy(ATTextCopyMode mode) {
 // ---------------------------------------------------------------------------
 
 bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSize) {
-	if (s_selectionOutput != SelectionSource()) {
+	if (!SelectionSourceMatches()) {
 		ATUITextDeselect();
-		s_selectionOutput = SelectionSource();
+		CaptureSelectionSource();
 	}
 	if (imageSize.x <= 0 || imageSize.y <= 0)
 		return false;
@@ -529,7 +569,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInImage
 		&& !ATUIIsMouseCaptured()) {
 		int bx, by;
-		MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
+		if (!MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by)) {
+			ATUITextDeselect();
+			return false;
+		}
 		s_sel.mbDragActive = true;
 		s_sel.mbDragInitial = true;
 		s_sel.mAnchorBeamX = bx;
@@ -578,7 +621,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 			// which matches Windows' behaviour (its GetModeLineYPos
 			// returns 0 in the same case, also clamped to 8).
 			int bx, by;
-			MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
+			if (!MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by)) {
+			ATUITextDeselect();
+			return false;
+		}
 			const int yc1 = GetModeLineYPos(s_sel.mAnchorBeamY);
 			const int yc2 = GetModeLineYPos(by);
 			SelectByBeamPosition(s_sel.mAnchorBeamX, yc1, bx, yc2);
@@ -588,7 +634,10 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 		}
 
 		int bx, by;
-		MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by);
+		if (!MapPixelToBeam(imagePos, imageSize, mouse.x, mouse.y, bx, by)) {
+			ATUITextDeselect();
+			return false;
+		}
 
 		// Drag threshold: suppress selection preview until the mouse
 		// moves to a different beam position from the anchor.  Matches
@@ -622,7 +671,7 @@ bool ATUITextSelectionHandleMouse(const ImVec2& imagePos, const ImVec2& imageSiz
 
 void ATUITextSelectionDrawOverlay(const ImVec2& imagePos, const ImVec2& imageSize,
 	ImDrawList *drawList) {
-	if (s_selectionOutput != SelectionSource()) {
+	if (!SelectionSourceMatches()) {
 		ATUITextDeselect();
 		return;
 	}

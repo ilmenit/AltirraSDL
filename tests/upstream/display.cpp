@@ -30,6 +30,23 @@ int main() {
 	const auto hdr = outputLevels(true, true, true, true);
 	Check(hdr.mFrameScale == 5.0f && hdr.mUIScale == 0.8f && hdr.mbHDR,
 		"HDR and UI luminance must use independent calibrated white levels");
+	// Device outputs are composited at the UI's SDR white level in
+	// native Altirra, even while the GTIA scene has HDR enabled.
+	const auto alternate = ATComputeHDROutputLevels(true, true, true,
+		true, 2.5f, false, 400.0f, false, 160.0f, true);
+	Check(alternate.mFrameScale == 2.0f && alternate.mUIScale == 0.8f
+		&& !alternate.mbHDR,
+		"Alternate output must retain manual SDR white without HDR headroom");
+	const auto alternateSystem = ATComputeHDROutputLevels(true, true,
+		true, true, 2.5f, false, 400.0f, true, 160.0f, true);
+	Check(alternateSystem.mFrameScale == 2.5f
+		&& alternateSystem.mUIScale == 1.0f && !alternateSystem.mbHDR,
+		"Alternate output must respect system SDR white");
+	const auto alternateSDR = ATComputeHDROutputLevels(false, true,
+		true, true, 2.5f, false, 400.0f, false, 160.0f, true);
+	Check(alternateSDR.mFrameScale == sdr.mFrameScale
+		&& alternateSDR.mUIScale == sdr.mUIScale && !alternateSDR.mbHDR,
+		"Alternate SDR renderer must retain its unchanged shader path");
 	const auto system = outputLevels(true, true, true, true, true, true);
 	Check(system.mFrameScale == 2.5f && system.mUIScale == 1,
 		"System brightness must not be scaled a second time");

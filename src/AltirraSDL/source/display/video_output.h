@@ -7,6 +7,16 @@ class IATDeviceVideoManager;
 class IATDeviceVideoOutput;
 class ATSimulatorEventManager;
 struct VDPixmap;
+enum ATDisplayStretchMode : uint32;
+
+// Windows GetAltDisplayArea uses half-dot pixels for the square-pixel modes.
+// Fit/snapping uses physical pixels; returned dimensions use viewport units.
+vdfloat2 ATSDLComputeVideoOutputSize(int width, int height, double par,
+	bool exactPixels, float viewportWidth, float viewportHeight,
+	ATDisplayStretchMode mode, float pixelsPerUnit = 1.0f);
+// Normalized visible-image rectangle, recomputed from current character layout.
+bool ATSDLGetVideoOutputTextRect(IATDeviceVideoOutput& output, int column,
+	int row, int length, vdrect32f& rect);
 
 void ATSDLVideoOutputInit(IATDeviceVideoManager&, ATSimulatorEventManager&);
 void ATSDLVideoOutputShutdown();

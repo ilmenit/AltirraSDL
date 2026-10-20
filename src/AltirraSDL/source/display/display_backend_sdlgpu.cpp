@@ -7,6 +7,7 @@
 #include "uitypes.h"
 #include "simulator.h"
 #include "gtia.h"
+#include "video_output.h"
 
 extern ATSimulator g_sim;
 
@@ -71,7 +72,8 @@ ATHDROutputLevels DisplayBackendSDLGPU::GetOutputLevels() const {
 		SDL_GetFloatProperty(SDL_GetRendererProperties(mpRenderer),
 			SDL_PROP_RENDERER_SDR_WHITE_POINT_FLOAT, 1.0f),
 		params.mbUseSystemSDRAsHDR, params.mHDRIntensity,
-		params.mbUseSystemSDR, params.mSDRIntensity);
+		params.mbUseSystemSDR, params.mSDRIntensity,
+		ATSDLGetActiveVideoOutput() != nullptr);
 }
 
 void DisplayBackendSDLGPU::SetOutputConstants(ShaderConstants& constants,
@@ -82,6 +84,9 @@ void DisplayBackendSDLGPU::SetOutputConstants(ShaderConstants& constants,
 	constants.hdrParams[1] = SupportsHDR()
 		&& (source == mpTexture || source == mpMaskTexture) ? 1.0f : 0.0f;
 	constants.hdrParams[2] = levels.mbHDR ? 1.0f : 0.0f;
+	SDL_ScaleMode scaleMode = SDL_SCALEMODE_NEAREST;
+	SDL_GetTextureScaleMode(source, &scaleMode);
+	constants.hdrParams[3] = scaleMode == SDL_SCALEMODE_LINEAR ? 1.0f : 0.0f;
 }
 
 DisplayBackendSDLGPU::DisplayBackendSDLGPU(SDL_Window *window,

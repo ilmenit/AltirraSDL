@@ -45,6 +45,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include <string>
 #include <deque>
 #include "instance_reuse.h"
+#include "browser_frame_scheduler.h"
 #include "video_output.h"
 #include "devicemanager.h"
 #include <at/atcore/devicevideo.h>
@@ -176,6 +177,15 @@ static SDL_Renderer *g_pRenderer = nullptr;
 static IDisplayBackend *g_pBackend = nullptr;
 static IATJoystickManager *g_pJoystickMgr = nullptr;
 static bool g_running = true;
+#ifdef __EMSCRIPTEN__
+static ATBrowserFrameScheduler s_browserFrameScheduler;
+#endif
+
+static void SuspendBrowserFrameSchedule() {
+#ifdef __EMSCRIPTEN__
+	s_browserFrameScheduler.Suspend(SDL_GetTicksNS() * 1e-9);
+#endif
+}
 static bool g_winActive = true;
 static bool g_headless = false;
 enum class ATPacingMode {
@@ -451,6 +461,26 @@ static void ATPersistAllForSuspend() {
 		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
 			"Altirra: registry flush failed during suspend");
 	}
+}
+
+static void ReleaseEmulatorInputsForUI() {
+	g_panZoomDragging = false;
+	g_panZoomZooming = false;
+	ATInputSDL3_ReleaseAllKeys();
+	// AppKit may consume the release of a held warp accelerator. Preserve
+	// sticky turbo, but always release the temporary key-held pulse.
+	ATUISetTurboPulse(false);
+	if (auto *im = g_sim.GetInputManager()) {
+		im->OnButtonUp(0, kATInputCode_MouseLMB);
+		im->OnButtonUp(0, kATInputCode_MouseMMB);
+		im->OnButtonUp(0, kATInputCode_MouseRMB);
+		im->OnButtonUp(0, kATInputCode_MouseX1B);
+		im->OnButtonUp(0, kATInputCode_MouseX2B);
+	}
+	ATUIReleaseMouse();
+	ATTouchControls_ReleaseAll();
+	ATMobileGamepad_ReleaseAll(g_sim);
+	ATUIVirtualKeyboard_ReleaseAll(g_sim);
 }
 
 static void HandleEvents() {
@@ -1178,28 +1208,7 @@ static void HandleEvents() {
 			// the Windows path uses.
 			if (ATInputManager *im = g_sim.GetInputManager())
 				im->SetRestrictedMode(true);
-			// Release pan/zoom drag state to prevent stuck drag
-			g_panZoomDragging = false;
-			g_panZoomZooming = false;
-			// Release all held keys/buttons to prevent stuck input
-			ATInputSDL3_ReleaseAllKeys();
-			// Release held mouse buttons in input manager
-			{
-				ATInputManager *im = g_sim.GetInputManager();
-				if (im) {
-					im->OnButtonUp(0, kATInputCode_MouseLMB);
-					im->OnButtonUp(0, kATInputCode_MouseMMB);
-					im->OnButtonUp(0, kATInputCode_MouseRMB);
-					im->OnButtonUp(0, kATInputCode_MouseX1B);
-					im->OnButtonUp(0, kATInputCode_MouseX2B);
-				}
-			}
-			// Release mouse capture on focus loss
-			ATUIReleaseMouse();
-			// Release all touch controls on focus loss
-			ATTouchControls_ReleaseAll();
-			ATMobileGamepad_ReleaseAll(g_sim);
-			ATUIVirtualKeyboard_ReleaseAll(g_sim);
+			ReleaseEmulatorInputsForUI();
 			break;
 
 		default:
@@ -1253,12 +1262,12 @@ static SDL_FRect ComputeDisplayRect() {
 		sourceW, sourceH, sourcePAR, exactPixels);
 	const ATDisplayStretchMode stretchMode = ATUIGetDisplayStretchMode();
 
-	if (exactPixels) {
-		// Device raster is already in physical pixel units (e.g. XEP80).
-		const float scale = std::min(1.0f,
-			std::min(w / sourceW, h / sourceH));
-		w = sourceW * scale;
-		h = sourceH * scale;
+	if (alternate) {
+		const auto size = ATSDLComputeVideoOutputSize(sourceW, sourceH,
+			sourcePAR, exactPixels, w, h, stretchMode,
+			SDL_GetWindowPixelDensity(g_pWindow));
+		w = size.x;
+		h = size.y;
 	} else if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
 		|| stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio)
 	{
@@ -1277,8 +1286,7 @@ static SDL_FRect ComputeDisplayRect() {
 		|| stretchMode == kATDisplayStretchMode_Integral)
 	{
 		int sw = 1, sh = 1;
-		if (alternate) { sw = sourceW; sh = sourceH; }
-		else gtia.GetFrameSize(sw, sh);
+		gtia.GetFrameSize(sw, sh);
 
 		const float fsw = (float)sw;
 		const float fsh = (float)sh;
@@ -2881,7 +2889,12 @@ int main(int argc, char *argv[]) {
 	auto tickBody = []() {
 		ATMacAutoreleasePool tickAutoreleasePool;
 
-		if (!ATMacMenuBarIsTracking())
+		static bool wasTrackingNativeMenu = false;
+		const bool trackingNativeMenu = ATMacMenuBarIsTracking();
+		if (trackingNativeMenu && !wasTrackingNativeMenu)
+			ReleaseEmulatorInputsForUI();
+		wasTrackingNativeMenu = trackingNativeMenu;
+		if (!trackingNativeMenu)
 			HandleEvents();
 		if (!g_running) return;
 
@@ -2991,6 +3004,7 @@ int main(int argc, char *argv[]) {
 		// be checked BEFORE pauseInactive so we take the cheap path and
 		// avoid even the no-op RenderAndPresent call.
 		if (g_appSuspended) {
+			SuspendBrowserFrameSchedule();
 #ifndef __EMSCRIPTEN__
 			// On WASM the browser already throttles hidden-tab rAF to
 			// ~1 Hz, so the equivalent of this sleep happens outside
@@ -3005,6 +3019,7 @@ int main(int argc, char *argv[]) {
 			&& (g_mobileState.currentScreen == ATMobileUIScreen::FileBrowser
 				|| g_mobileState.currentScreen == ATMobileUIScreen::GameBrowser);
 		if (ATUIPollFileDialogPause(mobileFileBrowserOpen)) {
+			SuspendBrowserFrameSchedule();
 			for (int i = 0; i < 16; ++i) {
 				if (!ATUIGetQueue().Run())
 					break;
@@ -3046,7 +3061,26 @@ int main(int argc, char *argv[]) {
 		if (ATBridge::IsFrameGateActive()) pauseMenu = false;
 #endif
 		if (pauseInactive || pauseMenu) {
+			SuspendBrowserFrameSchedule();
 			// Window inactive — render for UI responsiveness, sleep.
+			RenderAndPresent();
+#ifndef __EMSCRIPTEN__
+			SDL_Delay(16);
+#endif
+			return;
+		}
+
+		if (!g_sim.IsRunning()) {
+			// A 1% frame deadline must not delay paused UI/deferred work.
+			SuspendBrowserFrameSchedule();
+			for (int i = 0; i < 16; ++i) {
+				if (!ATUIGetQueue().Run())
+					break;
+			}
+			g_sim.FlushDeferredEvents();
+			g_macLeakNewFrame = g_pDisplay->IsFramePending();
+			g_pDisplay->PrepareFrame();
+			ATMacLeakDebugSetPaused(true);
 			RenderAndPresent();
 #ifndef __EMSCRIPTEN__
 			SDL_Delay(16);
@@ -3093,8 +3127,10 @@ int main(int argc, char *argv[]) {
 #endif
 		const uint32 turboDivisor =
 			std::clamp<uint32>((uint32)(sint32)g_ATCVEngineTurboFPSDivisor, 1u, 100u);
+#ifndef __EMSCRIPTEN__
 		const uint32 presentedFrame = g_sim.GetAntic().GetPresentedFrameCounter();
 		const bool dropFrame = turbo && (presentedFrame % turboDivisor) != 0;
+#endif
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 		if (ATNetplayGlue::IsLockstepping()) {
@@ -3125,6 +3161,7 @@ int main(int argc, char *argv[]) {
 				// the user can see the "Peer: N ms ago" HUD go
 				// red.  Retry next iteration.
 				if (!ATNetplayGlue::CanAdvanceThisTick()) {
+					SuspendBrowserFrameSchedule();
 					RenderAndPresent();
 #ifndef __EMSCRIPTEN__
 					if (!turbo && !ATIsFramePacingDisabled())
@@ -3158,80 +3195,56 @@ int main(int argc, char *argv[]) {
 		// frame.  That gives cycle-accurate Hardware / Broadcast /
 		// Integral pacing driven by g_pacer.targetSecsPerFrame.
 		//
-		// On WASM there is exactly one tick invocation per browser
-		// requestAnimationFrame (~60 Hz on most displays, 120+ Hz on
-		// gaming monitors, sub-1 Hz when the tab is hidden).  We
-		// cannot sleep inside the tick (that would burn the rAF
-		// slot), so we instead use a real-time accumulator:
-		//
-		//   - Measure real time elapsed since the previous tick.
-		//   - When the accumulated real time >= targetSecsPerFrame,
-		//     emulate one frame and subtract the target period.
-		//   - Otherwise, skip the Advance() call this tick — the
-		//     render section further down still presents so UI
-		//     stays responsive.
-		//
-		// This reuses the exact targetSecsPerFrame the native pacer
-		// would apply, so Config → Speed (Hardware / Integral /
-		// Broadcast), video standard (NTSC / PAL / SECAM), the speed
-		// modifier, and slow motion all work identically on WASM.
-		// Turbo bypasses the accumulator and emulates every rAF so
-		// fast-forward still speeds up as much as the browser allows.
+		// Browser animation ticks may owe several emulated frames (e.g.
+		// 800% at 60Hz, or normal speed on a 30Hz display). Consume clock
+		// credit only after each completed frame and keep a shared 14ms
+		// execution budget so input/rendering remain responsive.
 		ATSimulator::AdvanceResult result = ATSimulator::kAdvanceResult_Running;
 		bool hadFrame = false;
 #ifdef __EMSCRIPTEN__
-		bool doEmulate = turbo;
-		{
-			// Real-time accumulator carried across ticks.  Static
-			// locals are zeroed on first entry, which gives us the
-			// right behaviour: initial delta == 0, no emulation until
-			// the second tick measures real elapsed time.
-			static uint64_t s_wasmLastRealMs = 0;
-			static double   s_wasmAccumMs   = 0.0;
-
-			const uint64_t nowMs = SDL_GetTicks();
-			if (s_wasmLastRealMs == 0) s_wasmLastRealMs = nowMs;
-			double deltaMs = (double)(nowMs - s_wasmLastRealMs);
-			s_wasmLastRealMs = nowMs;
-
-			// Cap runaway deltas (tab backgrounded for a while,
-			// throttled to 1 Hz, then regains focus).  Without this
-			// the accumulator would suddenly hold many seconds of
-			// real time and the emulator would try to catch up all
-			// at once, freezing the tab for a visible moment.
-			if (deltaMs > 250.0) deltaMs = 250.0;
-			s_wasmAccumMs += deltaMs;
-
-			// targetSecsPerFrame is set by UpdatePacerRate from the
-			// user's Speed settings and video standard.  Defaults:
-			// NTSC Hardware 1/59.9227 s, NTSC Integral 1/60 s, PAL
-			// Hardware 1/49.8607 s, PAL Integral 1/50 s.
-			const double targetMs = g_pacer.targetSecsPerFrame * 1000.0;
-
-			if (!turbo && targetMs > 0.0 && s_wasmAccumMs >= targetMs) {
-				doEmulate = true;
-				s_wasmAccumMs -= targetMs;
-				// Drop stale accumulation so an unusually long stall
-				// doesn't produce a burst of frames afterwards.
-				if (s_wasmAccumMs > targetMs * 3.0) s_wasmAccumMs = 0.0;
-				if (s_wasmAccumMs < 0.0)            s_wasmAccumMs = 0.0;
+		UpdatePacerRate();
+		s_browserFrameScheduler.BeginTick(SDL_GetTicksNS() * 1e-9,
+			g_pacer.targetSecsPerFrame, turbo);
+		const uint64_t advStartNS = SDL_GetTicksNS();
+		constexpr uint64_t tickBudgetNS = 14000000;
+		while (s_browserFrameScheduler.IsFrameDue()) {
+			if (SDL_GetTicksNS() - advStartNS >= tickBudgetNS) {
+				s_browserFrameScheduler.OnBudgetExhausted();
+				break;
 			}
-		}
-
-		if (doEmulate) {
-			// Spin Advance() until a frame completes or the per-tick
-			// budget is exhausted.  Budget < one 60 Hz slot so the
-			// tick can't overshoot into the next rAF.
-			const uint64_t advStartMs = SDL_GetTicks();
-			constexpr uint64_t tickBudgetMs = 14;
-			for (;;) {
-				result = g_sim.Advance(dropFrame);
-				hadFrame = g_pDisplay->IsFramePending();
-				if (hadFrame) break;
-				if (result == ATSimulator::kAdvanceResult_WaitingForFrame) break;
-				if (result == ATSimulator::kAdvanceResult_Stopped)          break;
-				if (SDL_GetTicks() - advStartMs > tickBudgetMs) break;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			// Every completed frame changes the lockstep input index.
+			// Never reuse the previous frame's inputs during catch-up.
+			if (ATNetplayGlue::IsLockstepping()) {
+				ATNetplayGlue::SubmitLocalInput();
+				if (!ATNetplayGlue::CanAdvanceThisTick()) {
+					SuspendBrowserFrameSchedule();
+					break;
+				}
+				ATNetplayGlue::ApplyFrameInputsToSim();
 			}
+#endif
+			const uint32 browserFrame = g_sim.GetAntic().GetPresentedFrameCounter();
+			const bool browserDrop = turbo && (browserFrame % turboDivisor) != 0;
+			result = g_sim.Advance(browserDrop);
+			const bool completedThisAdvance = g_pDisplay->IsFramePending();
+			if (completedThisAdvance) {
+				hadFrame = true;
+				// Release the pending buffer before producing another frame.
+				// Upload/present the final prepared pixels once per rAF.
+				g_pDisplay->PrepareFrame();
+				s_browserFrameScheduler.OnFrameCompleted();
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				ATNetplayGlue::OnFrameAdvanced();
+#endif
+			}
+			if (result == ATSimulator::kAdvanceResult_Stopped) {
+				SuspendBrowserFrameSchedule();
+				break;
+			}
+			if (result == ATSimulator::kAdvanceResult_WaitingForFrame
+				&& !completedThisAdvance)
+				break;
 		}
 #else
 		result = g_sim.Advance(dropFrame);
@@ -3245,7 +3258,7 @@ int main(int argc, char *argv[]) {
 				break;
 		}
 
-		g_macLeakNewFrame = g_pDisplay->IsFramePending();
+		g_macLeakNewFrame = hadFrame || g_pDisplay->IsFramePending();
 		g_pDisplay->PrepareFrame();
 		if (ATSDLGetActiveVideoOutput())
 			g_macLeakNewFrame = true;
@@ -3275,9 +3288,11 @@ int main(int argc, char *argv[]) {
 		// one emu frame on both peers, regardless of how Advance is
 		// internally chunked or how many no-op WaitingForFrame calls
 		// occurred.
+#ifndef __EMSCRIPTEN__
 		if (hadFrame) {
 			ATNetplayGlue::OnFrameAdvanced();
 		}
+#endif
 #endif
 
 		// Turbo and pacing policy were computed before Advance().

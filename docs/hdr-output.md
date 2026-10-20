@@ -16,7 +16,9 @@ The emulator brightness uses scRGB's absolute 80-nit reference. SDR/UI
 brightness is independent; SDL's system SDR-white scale is accounted for
 once. “Use System HDR Brightness” uses the system SDR-white level, matching
 the native option's `mbUseSystemSDRAsHDR` meaning. Masks retain their physical
-pixel origin, and floating-point intermediates retain HDR values through
+pixel origin. Alternate device video uses the SDR/UI white level. Encoded
+texel interpolation preserves SDR filter behavior even on a linear swapchain;
+floating-point intermediates retain HDR values through
 PAL blending, bicubic filtering and mask application. Standard screenshots
 remain SDR XRGB images through SDL's color conversion and tone mapping.
 
@@ -37,6 +39,16 @@ nonfinite input handling. Rebuild its target and run `ctest -R upstream-display`
 in the build tree. The bundled shader headers are regenerated with
 `source/display/shaders/build-shaders.sh` under `src/AltirraSDL`; this accepts
 SDL_shadercross or upstream DXC plus SPIRV-Cross.
+
+The `altirra-display-sampling-test` target executes the production fragment
+shader on offscreen GPU textures, without an HDR monitor. It checks SDR,
+HDR-disabled linear output, encoded PAL/bicubic intermediates, HDR
+bilinear/sharp filtering, nearest filtering and masks. CTest reports a skip
+when no GPU is available. On a host with Vulkan, Metal or D3D12:
+
+```sh
+ctest --test-dir build/linux-release -R upstream-display-sampling --output-on-failure
+```
 
 Physical presentation needs an HDR monitor and OS/compositor support. On
 each supported platform/backend combination:

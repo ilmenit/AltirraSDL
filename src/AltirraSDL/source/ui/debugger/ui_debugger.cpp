@@ -352,8 +352,17 @@ static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
 
 	const auto& gtia = g_sim.GetGTIA();
 	const ATDisplayStretchMode stretchMode = ATUIGetDisplayStretchMode();
+	int altW = 1, altH = 1;
+	double altPAR = 1.0;
+	bool exact = false;
+	const bool alt = ATSDLGetVideoOutputGeometry(altW, altH, altPAR, exact);
 
-	if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
+	if (alt) {
+		const auto size = ATSDLComputeVideoOutputSize(altW, altH, altPAR,
+			exact, w, h, stretchMode, ImGui::GetIO().DisplayFramebufferScale.x);
+		w = size.x;
+		h = size.y;
+	} else if (stretchMode == kATDisplayStretchMode_PreserveAspectRatio
 		|| stretchMode == kATDisplayStretchMode_IntegralPreserveAspectRatio)
 	{
 		int sw = 1;
@@ -361,8 +370,6 @@ static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
 		bool rgb32 = false;
 		gtia.GetRawFrameFormat(sw, sh, rgb32);
 		double par = gtia.GetPixelAspectRatio();
-		bool exact = false;
-		ATSDLGetVideoOutputGeometry(sw, sh, par, exact);
 
 		const float fsw = (float)((double)sw * par);
 		const float fsh = (float)sh;
@@ -379,9 +386,6 @@ static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
 		int sw = 1;
 		int sh = 1;
 		gtia.GetFrameSize(sw, sh);
-		double par = 1.0;
-		bool exact = false;
-		ATSDLGetVideoOutputGeometry(sw, sh, par, exact);
 
 		const float fsw = (float)sw;
 		const float fsh = (float)sh;
@@ -407,16 +411,6 @@ static ImVec4 ComputeDisplayPaneFrameRect(float viewportW, float viewportH) {
 		}
 	}
 
-	int altW = 1, altH = 1;
-	double altPAR = 1.0;
-	bool exact = false;
-	const bool alt = ATSDLGetVideoOutputGeometry(altW, altH, altPAR, exact);
-	if (alt && exact) {
-		const float ratio = std::min(1.0f,
-			std::min(viewportW / altW, viewportH / altH));
-		w = altW * ratio;
-		h = altH * ratio;
-	}
 	const float displayZoom = alt && exact ? 1.0f : ATUIGetDisplayZoom();
 	w *= displayZoom;
 	h *= displayZoom;

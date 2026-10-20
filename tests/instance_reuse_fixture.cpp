@@ -13,7 +13,8 @@ static void PrintHex(const std::string& text) {
 }
 
 int main(int argc, char** argv) {
-	const bool idle = argc > 1 && std::string(argv[1]) == "idle-server";
+	const bool backlog = argc > 1 && std::string(argv[1]) == "backlog-server";
+	const bool idle = backlog || (argc > 1 && std::string(argv[1]) == "idle-server");
 	const bool server = idle || (argc > 1 && std::string(argv[1]) == "server");
 	const bool enabled = argc <= 1 || std::string(argv[1]) != "independent";
 	std::string error;
@@ -28,7 +29,7 @@ int main(int argc, char** argv) {
 	}
 	std::cout << "CONTINUE\n" << std::flush;
 	if (server) {
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(backlog ? 30 : 10);
 		while (std::chrono::steady_clock::now() < deadline) {
 			ATInstanceReuseRequest request;
 			if (!idle && ATInstanceReusePoll(request)) {

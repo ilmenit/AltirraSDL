@@ -10,12 +10,19 @@ When both are supplied, the enabling switch takes precedence, matching Windows
 Altirra. These switches do not change the saved preference.
 
 The receiver processes requests on its main thread. Media, firmware, cheat-file,
-PCLink and H: paths resolve against the sender's working directory. Nested
+PCLink, H: and known native device-property paths resolve against the sender's working directory. Nested
 ZIP/GZIP/Atari filesystem paths are supported. Forwarded debugger commands
 inspect the current emulation state without a startup reset or rerunning
 `startup.atdbg`. Paths embedded inside debugger command strings retain the
 debugger's normal path semantics; use absolute paths there when launching from
 another working directory.
+
+Generic `--adddevice`/`--setdevice` forwarding rebases only source-defined
+filename/directory properties. Device addresses, names and other strings are
+unchanged, and custom-device resources retain their configuration-relative
+resolution. The existing SDL command-line parser does not yet implement
+Windows' `parent=` bus attachment semantics for child devices; instance reuse
+does not change that limitation.
 
 Requests wait while Online Play is engaged or the native macOS menu is being
 tracked. Invalid launch options report an error in the existing instance.

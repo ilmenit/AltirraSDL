@@ -60,3 +60,25 @@ make_header "$temp_dir/screenfx.msl" kATSDLGPU_ScreenFX_MSL \
     "$generated_dir/sdlgpu_screenfx_frag_msl.h"
 make_header "$temp_dir/screenfx.dxil" kATSDLGPU_ScreenFX_DXIL \
     "$generated_dir/sdlgpu_screenfx_frag_dxil.h"
+
+# The offscreen GPU regression exercises the production fragment shader with
+# a full-screen triangle. Keep its tiny platform vertex shaders reproducible.
+test_shader="$script_dir/../../../../../tests/upstream/display_sampling.vert.hlsl"
+test_generated="$script_dir/../../../../../tests/upstream/generated"
+if [ -f "$test_shader" ]; then
+    mkdir -p "$test_generated"
+    if "$use_shadercross"; then
+        shadercross "$test_shader" -o "$temp_dir/sampling.spv"
+        shadercross "$test_shader" -o "$temp_dir/sampling.msl"
+        shadercross "$test_shader" -o "$temp_dir/sampling.dxil"
+    else
+        dxc -T vs_6_0 -E main -spirv "$test_shader" -Fo "$temp_dir/sampling.spv"
+        dxc -T vs_6_0 -E main "$test_shader" -Fo "$temp_dir/sampling.dxil"
+        spirv-cross "$temp_dir/sampling.spv" --msl --msl-version 20100 \
+            --output "$temp_dir/sampling.msl"
+    fi
+    for format in spv msl dxil; do
+        make_header "$temp_dir/sampling.$format" kATSamplingVertex \
+            "$test_generated/display_sampling_vert_$format.h"
+    done
+fi

@@ -161,3 +161,20 @@ if(Python3_Interpreter_FOUND)
             $<TARGET_FILE:altirra-instance-reuse-test-fixture>)
     set_tests_properties(instance-reuse PROPERTIES TIMEOUT 120)
 endif()
+
+add_executable(altirra-frame-scheduler-test frame_scheduler.cpp)
+target_include_directories(altirra-frame-scheduler-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app)
+add_test(NAME frame-scheduler COMMAND altirra-frame-scheduler-test)
+
+add_executable(altirra-display-sampling-test display_sampling.cpp)
+target_include_directories(altirra-display-sampling-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/h
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-display-sampling-test PRIVATE SDL3::SDL3)
+add_test(NAME upstream-display-sampling COMMAND altirra-display-sampling-test)
+set_tests_properties(upstream-display-sampling PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 60)

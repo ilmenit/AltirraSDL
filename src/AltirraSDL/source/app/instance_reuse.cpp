@@ -22,6 +22,7 @@
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -86,6 +87,50 @@ void ConfigureSocket(Socket socket) {
 	setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof enabled);
 #endif
 }
+bool ConnectBeforeDeadline(Socket socket, const sockaddr_in& address,
+	Clock::time_point deadline)
+{
+	if (!SetNonblocking(socket)) return false;
+	if (!connect(socket, reinterpret_cast<const sockaddr*>(&address), sizeof address))
+		return true;
+#ifdef _WIN32
+	const int initialError = WSAGetLastError();
+	if (initialError != WSAEWOULDBLOCK && initialError != WSAEINPROGRESS
+		&& initialError != WSAEALREADY && initialError != WSAEINTR) return false;
+#else
+	if (errno != EINPROGRESS && errno != EWOULDBLOCK && errno != EINTR)
+		return false;
+#endif
+	while (Clock::now() < deadline) {
+#ifdef _WIN32
+		fd_set writable, failed;
+		FD_ZERO(&writable); FD_ZERO(&failed);
+		FD_SET(socket, &writable); FD_SET(socket, &failed);
+		timeval timeout{0, 20000};
+		const int ready = select(0, nullptr, &writable, &failed, &timeout);
+#else
+		pollfd descriptor{socket, POLLOUT, 0};
+		const int ready = poll(&descriptor, 1, 20);
+#endif
+		if (ready < 0) {
+			if (WouldBlock()) continue;
+			return false;
+		}
+		if (!ready) continue;
+		int error = 0;
+#ifdef _WIN32
+		int size = sizeof error;
+		const int result = getsockopt(socket, SOL_SOCKET, SO_ERROR,
+			reinterpret_cast<char*>(&error), &size);
+#else
+		socklen_t size = sizeof error;
+		const int result = getsockopt(socket, SOL_SOCKET, SO_ERROR, &error, &size);
+#endif
+		return !result && !error;
+	}
+	return false;
+}
+
 void AppendWord(std::string& buffer, uint32_t value) {
 	value = htonl(value);
 	buffer.append(reinterpret_cast<const char*>(&value), sizeof value);
@@ -101,13 +146,39 @@ void AppendString(std::string& buffer, const std::string& value) {
 	AppendWord(buffer, (uint32_t)value.size());
 	buffer += value;
 }
+// All protocol strings are UTF-8. Reject malformed input before filesystem
+// conversion (which can throw on Windows) or the emulator's text conversion.
+bool IsValidUTF8(const std::string& value) {
+	for (size_t i = 0; i < value.size();) {
+		const unsigned lead = (unsigned char)value[i++];
+		if (lead < 0x80) continue;
+		unsigned count, codepoint, minimum;
+		if (lead >= 0xC2 && lead <= 0xDF) {
+			count = 1; codepoint = lead & 0x1F; minimum = 0x80;
+		} else if (lead >= 0xE0 && lead <= 0xEF) {
+			count = 2; codepoint = lead & 0x0F; minimum = 0x800;
+		} else if (lead >= 0xF0 && lead <= 0xF4) {
+			count = 3; codepoint = lead & 0x07; minimum = 0x10000;
+		} else return false;
+		if (count > value.size() - i) return false;
+		while (count--) {
+			const unsigned next = (unsigned char)value[i++];
+			if ((next & 0xC0) != 0x80) return false;
+			codepoint = (codepoint << 6) | (next & 0x3F);
+		}
+		if (codepoint < minimum || codepoint > 0x10FFFF
+			|| (codepoint >= 0xD800 && codepoint <= 0xDFFF)) return false;
+	}
+	return true;
+}
+
 bool ReadString(const std::string& buffer, size_t& offset, std::string& value) {
 	uint32_t length;
 	if (!ReadWord(buffer, offset, length) || length > buffer.size() - offset)
 		return false;
 	value.assign(buffer.data() + offset, length);
 	offset += length;
-	return value.find('\0') == std::string::npos;
+	return value.find('\0') == std::string::npos && IsValidUTF8(value);
 }
 std::filesystem::path PathFromUTF8(const std::string& value) {
 #ifdef __cpp_char8_t
@@ -118,7 +189,7 @@ std::filesystem::path PathFromUTF8(const std::string& value) {
 #endif
 }
 
-bool Decode(const std::string& buffer, ATInstanceReuseRequest& request) {
+bool DecodePacket(const std::string& buffer, ATInstanceReuseRequest& request) {
 	size_t offset = 4;
 	std::string token;
 	uint32_t count;
@@ -134,6 +205,16 @@ bool Decode(const std::string& buffer, ATInstanceReuseRequest& request) {
 		request.mArguments.push_back(std::move(value));
 	}
 	return offset == buffer.size();
+}
+
+bool Decode(const std::string& buffer, ATInstanceReuseRequest& request) {
+	try {
+		return DecodePacket(buffer, request);
+	} catch (const std::filesystem::filesystem_error&) {
+		// Malformed external paths must reject only their launch request,
+		// never terminate the already-running emulator.
+		return false;
+	}
 }
 
 bool TryAcquireInstanceLock() {
@@ -169,7 +250,9 @@ ForwardResult Forward(int argc, char** argv, std::string& error) {
 			address.sin_family = AF_INET;
 			address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 			address.sin_port = htons((uint16_t)port);
-			if (!connect(socket, reinterpret_cast<sockaddr*>(&address), sizeof address))
+			// connect must share the same deadline as metadata discovery and
+			// acknowledgement, even if the owner's accept backlog is full.
+			if (ConnectBeforeDeadline(socket, address, deadline))
 				break;
 			CloseSocket(socket);
 			socket = kInvalidSocket;

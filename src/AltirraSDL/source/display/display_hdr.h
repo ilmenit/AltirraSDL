@@ -13,7 +13,7 @@ struct ATHDROutputLevels {
 inline ATHDROutputLevels ATComputeHDROutputLevels(bool linearOutput,
 	bool displayHDR, bool enableHDR, bool accelFX, float systemWhite,
 	bool systemHDRBrightness, float hdrNits, bool systemSDRBrightness,
-	float sdrNits)
+	float sdrNits, bool alternateOutput = false)
 {
 	if (!linearOutput)
 		return {};
@@ -33,6 +33,13 @@ inline ATHDROutputLevels ATComputeHDROutputLevels(bool linearOutput,
 			: nits(hdrNits, 350.0f) / 80.0f;
 		levels.mUIScale = systemSDRBrightness ? 1.0f
 			: nits(sdrNits, 80.0f) / (80.0f * systemWhite);
+	}
+	if (alternateOutput) {
+		// Native Altirra composites device video through its SDR UI
+		// renderer. Keep its selected SDR white independent of GTIA's
+		// HDR scene intensity, while retaining the same UI calibration.
+		levels.mFrameScale = systemWhite * levels.mUIScale;
+		levels.mbHDR = false;
 	}
 	return levels;
 }

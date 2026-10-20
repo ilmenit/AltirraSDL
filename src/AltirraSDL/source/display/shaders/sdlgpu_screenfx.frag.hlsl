@@ -21,7 +21,7 @@ cbuffer Context : register(b0, space3) {
 	float4 bloomShoulder;        // cubic shoulder coefficients
 	float4 bloomThresholds;      // mid slope, shoulder X, limit X, reserved
 	float4 bloomBaseWeights;     // corner, side, center, reserved
-	float4 hdrParams;            // output nits/80 (0=SDR target), sRGB sampler, HDR, reserved
+	float4 hdrParams;            // output nits/80 (0=SDR target), sRGB sampler, HDR, linear sampling
 };
 
 Texture2D sourceTexture : register(t0, space2);
@@ -51,14 +51,36 @@ float3 LinearToSRGB(float3 c) {
 	return lerp(hi, lo, c <= 0.0031308);
 }
 
-// SDL's linear renderer installs an sRGB sampler for the uploaded 8-bit
-// frame. Restore encoded values before Altirra's existing PAL/filter passes;
-// intermediate targets already contain the exact values written by our shader.
-float4 SampleTexture(float2 uv) {
+// SDL's linear renderer installs an sRGB sampler for uploaded 8-bit
+// textures. Restore each texel's encoded value BEFORE interpolation: doing
+// this after hardware bilinear sampling changes Altirra's existing filters.
+float4 SampleEncodedTexel(float2 uv) {
 	float4 c = sourceTexture.SampleLevel(sourceSampler, uv, 0.0);
-	if (hdrParams.y > 0.5)
-		c.rgb = LinearToSRGB(max(c.rgb, 0.0));
+	c.rgb = LinearToSRGB(max(c.rgb, 0.0));
 	return c;
+}
+
+float4 SampleTexture(float2 uv) {
+	[branch]
+	if (hdrParams.y <= 0.5)
+		return sourceTexture.SampleLevel(sourceSampler, uv, 0.0);
+	[branch]
+	if (hdrParams.w <= 0.5)
+		return SampleEncodedTexel(uv);
+
+	uint width, height;
+	sourceTexture.GetDimensions(width, height);
+	float2 size = float2(width, height);
+	float2 pos = uv * size - 0.5;
+	float2 base = floor(pos);
+	float2 f = frac(pos);
+	// Texel-center samples work with the supplied linear sampler too; the
+	// sampler's clamp addressing retains the established edge behavior.
+	float4 a = SampleEncodedTexel((base + float2(0.5, 0.5)) / size);
+	float4 b = SampleEncodedTexel((base + float2(1.5, 0.5)) / size);
+	float4 c = SampleEncodedTexel((base + float2(0.5, 1.5)) / size);
+	float4 d = SampleEncodedTexel((base + float2(1.5, 1.5)) / size);
+	return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
 }
 
 float3 OutputColor(float3 c) {
