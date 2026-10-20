@@ -34,8 +34,12 @@ void ATUIContainer::AddChild(ATUIWidget *w) {
 
 	mWidgets.push_back(w);
 
-	mbHasAnimation = true;
-	mbDescendantMayHaveAnimation = true;
+	if (w->mbHasAnimation) {
+		for(ATUIContainer *c = this; c && !c->mbDescendantMayHaveAnimation; c = c->mpParent) {
+			c->mbDescendantMayHaveAnimation = true;
+			c->mbHasAnimation = true;
+		}
+	}
 
 	if (w->IsVisible())
 		Invalidate();

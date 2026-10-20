@@ -105,6 +105,10 @@ public:
 	uint32 GetVersion() const;
 	void SetVersion(uint32 version);
 
+	// Return true if NTSC is misaligned vertically by one scanline (FX 1.26 or older).
+	// MERGE NOTE: mVersion stores BCD (0x27), not decimal 127.
+	bool HasNTSCVerticalOffset() const { return !mbVersion127OrHigher; }
+
 	void SetAnalysisMode(bool analysisMode);
 	void SetDefaultPalette(const uint32 pal[256], ATPaletteCorrector *palcorr);
 	uint32 GetRawPaletteAndSEL(uint32 pal[1024]) const;
@@ -119,7 +123,7 @@ public:
 	void SetBlitLoggingEnabled(bool enable, bool compact);
 	void DumpStatus();
 	void DumpBlitList(sint32 addrOpt, bool compact, uint32 maxCount);
-	bool DumpBlitListEntry(uint32 addr, bool compact, bool autologging);
+	sint32 DumpBlitListEntry(uint32 addr, bool compact, bool autologging);
 	void DumpXDL();
 	void DumpXDLHistory(ATConsoleOutput& output);
 
@@ -173,6 +177,8 @@ private:
 		Lores,
 		Hires,
 		HiresXcolor,
+		HiresXcolorForcedPF1,	// V1.27+
+		HiresXcolorPF0,			// V1.27+
 		Mode9,
 		Mode10,
 		Mode11,
@@ -190,11 +196,28 @@ private:
 	void RunBlitter();
 	uint32 RunBlitterRow();
 	
-	template<uint8 T_Mode>
+	enum class BlitterMode : uint8 {
+		Fill,			// mode 0, and mask == 0
+		Copy,			// mode 0, and mask != 0
+		Overlay,		// mode 1
+		Add,			// mode 2, submode %x00
+		AddCarry,		// mode 2, submode %xx1
+		AddSat,			// mode 2, submode %x10
+		Or,				// mode 3
+		And,			// mode 4
+		Xor,			// mode 5
+		HrOverlay,		// mode 6
+		Table			// mode 7
+	};
+
+	template<BlitterMode T_Mode, bool T_ZoomX, bool T_Pattern, bool T_RayCast>
 	uint32 RunBlitterRow();
 
 	uint64 GetBlitTime() const;
 	void LoadBlitter();
+	bool LoadNextBCBContainer();
+	void StartBlit();
+	bool StopBlitterOnInvalidState();
 	void LoadBCB(const uint8 (&bcb)[21]);
 	void SaveBCB(uint8 (&bcb)[21]) const;
 
@@ -215,7 +238,8 @@ private:
 	bool	mb5200Mode;
 	bool	mbSharedMemory;
 	uint8	mVersion;			// MINOR_REVISION value, sans shared mem flag.
-	bool	mbVersion126;
+	bool	mbVersion126OrHigher;
+	bool	mbVersion127OrHigher;
 	uint8	mRegBase;
 
 	uint32 mXdlBaseAddr;
@@ -249,10 +273,12 @@ private:
 	uint32 mOvTextRow;
 	uint32 mChAddr;
 
+	uint8 mPfPaletteIndexInit = 0;	// initial GTIA playfield palette (1.27+)
 	uint8 mPfPaletteIndex;
 	uint8 mOvPaletteIndex;
 
-	bool mbExtendedColor;
+	bool mbExtendedColor1;			// XCOLOR[1]
+	bool mbExtendedColor0;			// XCOLOR[0]
 	bool mbAttrMapEnabled;
 	uint32 mAttrAddr;
 	uint32 mAttrStep;
@@ -261,6 +287,8 @@ private:
 	uint32 mAttrHscroll;
 	uint32 mAttrVscroll;
 	uint32 mAttrRow;
+
+	uint32 mFeatureControl = 0;		// FEATURE_CONTROL register (1.27+)
 
 	// RAMDAC
 	uint8 mPsel;
@@ -288,6 +316,9 @@ private:
 		// blitter should read next control block, or stop if end of blit list
 		Reload,
 
+		// blitter should continue reading extension containers
+		ProcessContainers,
+
 		// blitter is processing a blit
 		ProcessBlit,
 
@@ -298,9 +329,11 @@ private:
 	bool mbBlitLogging = false;
 	bool mbBlitLoggingCompact = false;
 	bool mbBlitterContinue = false;		// true if start of blit list or last blit indicated another blit follows
+	bool mbBlitRCMode = false;
 	uint32 mBlitterStopTime = 0;
 	uint32 mBlitterEndScanTime = 0;
 	uint8 mBlitterMode;
+	uint8 mBlitterSubMode;
 	sint32 mBlitCyclesLeft;
 	sint32 mBlitCyclesPerRow;
 	sint32 mBlitCyclesSavedPerZero;
@@ -324,6 +357,14 @@ private:
 	uint8 mBlitZoomX;
 	uint8 mBlitZoomY;
 	uint8 mBlitZoomCounterY;
+	uint32 mBlitRCSrcX = 0;			// raycasting current source X (7.8)
+	uint32 mBlitRCSrcY = 0;			// raycasting current source Y (7.8)
+	uint32 mBlitRCSrcInitX = 0;		// raycasting initial source X (7.8)
+	uint32 mBlitRCSrcInitY = 0;		// raycasting initial source Y (7.8)
+	uint32 mBlitRCSrcStepX = 0;		// raycasting source X increment (7.8)
+	uint32 mBlitRCSrcStepY = 0;		// raycasting source Y increment (7.8)
+	int mBlitRCTexSizeBitsX = 0;	// raycasting texture width address bits (3-7)
+	int mBlitRCTexSizeBitsY = 0;	// raycasting texture height address bits (3-7)
 
 	// scan out
 	const uint32 *mpPfPalette;

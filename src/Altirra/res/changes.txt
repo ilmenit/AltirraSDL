@@ -15,6 +15,7 @@ This prerelease version:
    * Custom Devices: Added continue statement.
    * Custom Devices: Added C-style hex constants (0x prefix).
    * Custom Devices: Added $sio.set_external_clock().
+   * Custom Devices: Added support for 65C816 fast and high memory layers.
    * Debugger: Added .custom command to dump the status of a custom device.
    * Debugger: @value now works within read access breakpoint conditions and actions.
    * Debugger: ln command has options for specific read/write/execute symbol lookups.
@@ -26,6 +27,7 @@ This prerelease version:
    * Disk: Added support for MyDOS virtual disks with larger than single density capacity.
    * Disk: Added support for SpartaDOS virtual disks with 256 byte sectors.
    * Display: Added support for rendering to Wide Color Gamut (WCG) displays without HDR support.
+   * Display: Reduced aliasing artifacts with dot mask.
    * GTIA: Added emulation of known defective GTIA types.
    * HLE: Fast math acceleration now much better matches standard math pack results.
    * PerfAnalyzer: Debugger console logging is now captured into performance traces.
@@ -34,12 +36,14 @@ This prerelease version:
    * Printer: Added 1020 options for accurate line stepping behavior, accurate timing, and sounds.
    * Printer: PDF export now preserves characters when printed from HLE printer devices.
    * Printer: Added Epson FX-80+ emulation.
+   * Save States: Improved fuzzy matching of firmware references.
    * Simulator: Added option to write text files with LF line endings.
    * UI: Removed inner edge on display window when there are no other docked panes visible.
    * UI: Files can now be dragged from folders mapped with the H: device to paste in the emulated path to the file.
    * UI: Added auto-suggest feature for H: paths and PEEK/POKE addresses.
    * UI: Added UI commands for cycling to quick maps with specific controller types.
    * UI: Added quick bar in lower right for shortcut access to common commands.
+   * VBXE: Added FX 1.27 core emulation.
 
    [bugs fixed]
    * SDL3: Fixed unbounded macOS memory growth by draining autoreleased Cocoa objects on every main-loop iteration.
@@ -67,6 +71,7 @@ This prerelease version:
    * Disk Explorer: Fixed MAC/65 decoder mis-decoding some constants.
    * Display: Reverted IN.outputSize value to old behavior in custom effects for compatibility.
    * Display: Improved quality of scanlines and mask effects with distortion enabled.
+   * Display: Fixed bloom breaking at extreme zoom factors.
    * HDevice: Fixed a crash when write errors occurred during close operation.
    * HDevice: Fixed matching of filenames with no extension in long filename mode.
    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.
@@ -84,6 +89,8 @@ This prerelease version:
    * VBXE: P0-P3 registers now power up $00 to better match non-guaranteed hardware behavior.
    * VBXE: Attribute map repeating above 43 cells is now emulated.
    * VBXE: Fixed interaction between GTIA priorities and overlay priorities.
+   * VBXE: Blitter IRQ status bit is no longer set when blitter IRQ are disabled.
+   * VBXE: Blitter HR collisions can now latch both low and high nibbles simultaneously.
 
 Version 4.40 [December 31, 2025]
    [changes]

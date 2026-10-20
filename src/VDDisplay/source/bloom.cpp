@@ -53,8 +53,17 @@ VDDBloomV2RenderParams VDDComputeBloomV2Parameters(const VDDBloomV2ControlParams
 	for(int i=0; i<8; ++i)
 		pyramidWeights[i] = filter((float)i - filterBias);
 
+	float pyramidWeightSum = std::accumulate(std::begin(pyramidWeights), std::end(pyramidWeights), 0.0f);
+
+	// if the sum is zero, it means that the pyramid is too small to accommodate the blur --
+	// push everything to the smallest pyramid
+	if (pyramidWeightSum < 1e-10f) {
+		pyramidWeights[7] = 1.0f;
+		pyramidWeightSum = 1.0f;
+	}
+
 	// normalize weights
-	float pyramidWeightScale = controlParams.mIndirectIntensity / std::accumulate(std::begin(pyramidWeights), std::end(pyramidWeights), 0.0f);
+	float pyramidWeightScale = controlParams.mIndirectIntensity / pyramidWeightSum;
 
 	for(float& weight : pyramidWeights)
 		weight *= pyramidWeightScale;

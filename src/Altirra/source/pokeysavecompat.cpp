@@ -73,20 +73,26 @@ void ATPokeyEmulatorOldStateLoader::LoadStatePrivate(ATSaveStateReader& reader) 
 
 	pstate.mPoly9Offset = reader.ReadUint16() % 511;
 	pstate.mPoly17Offset = reader.ReadUint32() % 131071;
-	pstate.mPolyShutOffTime = reader.ReadUint64();
 
-	pstate.mRendererState.mPoly4Offset = reader.ReadUint8() % 15;
-	pstate.mRendererState.mPoly5Offset = reader.ReadUint8() % 31;
-	pstate.mRendererState.mPoly9Offset = reader.ReadUint16() % 511;
-	pstate.mRendererState.mPoly17Offset = reader.ReadUint32() % 131071;
-	pstate.mRendererState.mOutputFlipFlops = 0;
+	if (reader.CheckAvailable(8)) {
+		if (reader.CheckAvailable(26))
+			pstate.mPolyShutOffTime = reader.ReadUint64();
 
-	for(int i=0; i<6; ++i)
-		pstate.mRendererState.mOutputFlipFlops += (reader.ReadUint8() & 1) << i;
+		if (reader.CheckAvailable(18)) {
+			pstate.mRendererState.mPoly4Offset = reader.ReadUint8() % 15;
+			pstate.mRendererState.mPoly5Offset = reader.ReadUint8() % 31;
+			pstate.mRendererState.mPoly9Offset = reader.ReadUint16() % 511;
+			pstate.mRendererState.mPoly17Offset = reader.ReadUint32() % 131071;
+			pstate.mRendererState.mOutputFlipFlops = 0;
 
-	// discard outputs (no longer needed -- high-pass XOR is done dynamically now)
-	for(int i=0; i<4; ++i)
-		reader.ReadUint8();
+			for(int i=0; i<6; ++i)
+				pstate.mRendererState.mOutputFlipFlops += (reader.ReadUint8() & 1) << i;
+
+			// discard outputs (no longer needed -- high-pass XOR is done dynamically now)
+			for(int i=0; i<4; ++i)
+				reader.ReadUint8();
+		}
+	}
 
 	mEmu.LoadState(mpState);
 }

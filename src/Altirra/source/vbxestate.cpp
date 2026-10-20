@@ -23,6 +23,8 @@ void ATSaveStateVbxe::Exchange(T& ex) {
 	ex.Transfer("memory", &mpMemory);
 
 	ex.Transfer("arch_video_control", &mVideoControl);
+	ex.Transfer("arch_feature_control", &mFeatureControl);
+	ex.Transfer("arch_feature_control_present", &mbFeatureControlPresent);
 	ex.Transfer("arch_xdl_adr_x", &mXdlAddr);
 	ex.Transfer("arch_csel", &mCsel);
 	ex.Transfer("arch_psel", &mPsel);
@@ -68,12 +70,25 @@ void ATSaveStateVbxe::Exchange(T& ex) {
 	ex.Transfer("int_blit_height_left", &mIntBlitHeightLeft);
 	ex.Transfer("int_blit_yzoom_counter", &mIntBlitYZoomCounter);
 	ex.Transfer("int_blit_stop_delay", &mIntBlitStopDelay);
+	ex.Transfer("int_blit_collision_latched", &mbIntBlitCollisionLatched);
+	ex.Transfer("int_blit_containers_pending", &mbIntBlitContainersPending);
+	ex.Transfer("int_blit_raycast", &mbIntBlitRaycast);
+	ex.TransferArray("int_blit_raycast_coords", mIntBlitRaycastCoords);
+	ex.TransferArray("int_blit_raycast_texture_bits", mIntBlitRaycastTextureBits);
 
 	ex.TransferArray("int_gtia_pal", mGtiaPal);
 	ex.Transfer("int_gtia_prior", &mGtiaPrior);
 	ex.Transfer("int_gtia_changes", &mGtiaRegisterChanges);
 
 	if constexpr (T::IsReader) {
+		if ((mFeatureControl & ~0xBB)
+			|| (mbIntBlitRaycast
+				&& (mIntBlitRaycastTextureBits[0] < 3
+					|| mIntBlitRaycastTextureBits[0] > 7
+					|| mIntBlitRaycastTextureBits[1] < 3
+					|| mIntBlitRaycastTextureBits[1] > 7)))
+			throw ATInvalidSaveStateException();
+
 		// validate that register changes have ascending position and full triples
 		size_t rcn = mGtiaRegisterChanges.size();
 

@@ -23,7 +23,7 @@
 
 void VDDisplayCreateGammaRamp(uint32 *gammaTex, uint32 len, bool enableInputConversion, float outputGamma, float gammaAdjust) {
 	float correctionFactor = 1.0f / gammaAdjust;
-	
+
 	bool useSRGB = false;
 	if (enableInputConversion) {
 		if (outputGamma > 0)
@@ -32,8 +32,9 @@ void VDDisplayCreateGammaRamp(uint32 *gammaTex, uint32 len, bool enableInputConv
 			useSRGB = true;
 	}
 
+	float inputScale = 1.0f / (float)(len - 1);
 	for(uint32 i=0; i<len; ++i) {
-		float x = (float)i / (float)len;
+		float x = (float)i * inputScale;
 
 		if (useSRGB) {
 			// sRGB gamma
@@ -442,10 +443,11 @@ VDDisplayTriadDotMaskParams::VDDisplayTriadDotMaskParams(const VDDScreenMaskPara
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void VDDisplayRenderDotMaskChannel(uint32 *tex, uint32 w, uint32 channelMask,
-	float pixelsPerTriadH, 
-	float pixelsPerTriadV, 
-	float posX1, float posY1, float posX2, float posY2, float dotRadius, float dstX, float dstY)
+void VDDisplayRenderDotMaskChannel_Scalar(uint32 *tex, uint32 w, uint32 channelMask,
+	float pixelsPerTriadH,
+	float pixelsPerTriadV,
+	float posX1, float posY1, float posX2, float posY2, float dotRadius, float dstX, float dstY,
+	float *prevScan0)
 {
 	// establish Y centerlines
 	const float yc1 = posY1;
@@ -464,31 +466,65 @@ void VDDisplayRenderDotMaskChannel(uint32 *tex, uint32 w, uint32 channelMask,
 
 	const float dotRadiusSq = dotRadius * dotRadius;
 	for(int i=0; i<8; ++i) {
-		float y = ((float)i + 0.5f) / 8.0f + dstY;
+		float y0 = ((float)i + 0.5f) / 8.0f + dstY;
 
-		float dy1 = yc1 - y;
-		float dy2 = yc2 - y;
+		float dx1a = 0;
+		float dx2a = 0;
 
-		dy1 -= roundf(dy1 / pixelsPerTriadV) * pixelsPerTriadV;
-		dy2 -= roundf(dy2 / pixelsPerTriadV) * pixelsPerTriadV;
+		for(int j=0; j<8; ++j) {
+			float y = y0 + ((float)j - 3.5f) / 64.0f;
+			float dy1 = yc1 - y;
+			float dy2 = yc2 - y;
 
-		const float rsq1 = std::max<float>(0.0f, dotRadiusSq - dy1*dy1);
-		const float rsq2 = std::max<float>(0.0f, dotRadiusSq - dy2*dy2);
-		const float dx1 = sqrtf(rsq1);
-		const float dx2 = sqrtf(rsq2);
+			dy1 -= roundf(dy1 / pixelsPerTriadV) * pixelsPerTriadV;
+			dy2 -= roundf(dy2 / pixelsPerTriadV) * pixelsPerTriadV;
 
-		dotSpans[0][0][i] = -dotRadius - dx1;
-		dotSpans[0][1][i] = -dotRadius + dx1;
-		dotSpans[1][0][i] = -dotRadius - dx2;
-		dotSpans[1][1][i] = -dotRadius + dx2;
+			const float rsq1 = std::max<float>(0.0f, dotRadiusSq - dy1*dy1);
+			const float rsq2 = std::max<float>(0.0f, dotRadiusSq - dy2*dy2);
+			const float dx1 = sqrtf(rsq1);
+			const float dx2 = sqrtf(rsq2);
+
+			dx1a += dx1;
+			dx2a += dx2;
+		}
+
+		dx1a *= 1.0f / 8.0f;
+		dx2a *= 1.0f / 8.0f;
+
+		dotSpans[0][0][i] = -dotRadius - dx1a;
+		dotSpans[0][1][i] = -dotRadius + dx1a;
+		dotSpans[1][0][i] = -dotRadius - dx2a;
+		dotSpans[1][1][i] = -dotRadius + dx2a;
 	}
 
 	// render scanlines
 	const uint32 channelScale = 0x010101 & channelMask;
-	float prevLeftSum = 0;
+	const float encodingScale = 255.0f * (float)channelScale / 256.0f;
+	const float encodingAdd = (float)channelScale * 0.5f;
+
+	const float triMask[8] {
+		 1.0f * encodingScale,
+		 3.0f * encodingScale,
+		 5.0f * encodingScale,
+		 7.0f * encodingScale,
+		 9.0f * encodingScale,
+		11.0f * encodingScale,
+		13.0f * encodingScale,
+		15.0f * encodingScale,
+	};
+
+	const float invTriMask = 16.0f * encodingScale;
+
+	// scalar implementation
+	float *VDRESTRICT prevScan = prevScan0;
+
+	float prevLeftSum1 = 0;
+	float prevLeftSum2 = 0;
 	while(w--) {
-		float rightSum = 0;
-		float leftSum = 0;
+		float rightSum1 = 0;
+		float leftSum1 = 0;
+		float rightSum2 = 0;
+		float leftSum2 = 0;
 
 		for(int i = 0; i < 2; ++i) {
 			float xbase = dotRightPos[i];
@@ -514,10 +550,22 @@ void VDDisplayRenderDotMaskChannel(uint32 *tex, uint32 w, uint32 channelMask,
 						x1 = x1 > 0.0f ? x1 : 0.0f;
 						x1 = x1 < x2 ? x1 : x2;
 
-						// integrate range over both halves of triangle filter
+						// integrate range over both halves of horizontal triangle filter
 						// (1-x1)*(1-x1) - (1-x2)*(1-x2) = 2(x2-x1) - (x2^2 - x1^2)
-						leftSum += x2*x2 - x1*x1;
-						rightSum += x2-x1;	// *2 and -leftSum done at end
+						const float xs = x2+x1;
+						const float dx = x2-x1;
+						const float ls = dx*xs;
+						const float rs = dx;			// *2 and -leftSum done at end
+
+						const float s2 = triMask[j];
+						const float s1 = invTriMask - s2;
+
+						// accumulate sums for vertical triangle filter
+						leftSum1 += ls * s1;
+						rightSum1 += rs * s1;
+
+						leftSum2 += ls * s2;
+						rightSum2 += rs * s2;
 					}
 
 					xbase2 += pixelsPerTriadH;
@@ -527,17 +575,208 @@ void VDDisplayRenderDotMaskChannel(uint32 *tex, uint32 w, uint32 channelMask,
 			dotRightPos[i] = xbase - 1.0f;
 		}
 
-		const float intensity = rightSum * 2 - leftSum + prevLeftSum;
-		prevLeftSum = leftSum;
+		const float intensity1 = (rightSum1 * 2 - leftSum1 + prevLeftSum1);
+		const float intensity2 = (rightSum2 * 2 - leftSum2 + prevLeftSum2);
 
-		*tex++ |= channelScale * (int)(0.5f + intensity * (255.0f / 16.0f));
+		prevLeftSum1 = leftSum1;
+		prevLeftSum2 = leftSum2;
+
+		*tex++ |= channelMask & (int)((intensity1 + *prevScan) + encodingAdd);
+
+		*prevScan++ = intensity2;
+	}
+}
+
+#if defined(VD_CPU_X86) || defined(VD_CPU_X64)
+VD_CPU_TARGET("avx2,fma")
+void VDDisplayRenderDotMaskChannel_AVX2(uint32 *tex, uint32 w, uint32 channelMask,
+	float pixelsPerTriadH,
+	float pixelsPerTriadV,
+	float posX1, float posY1, float posX2, float posY2, float dotRadius, float dstX, float dstY,
+	float *prevScan0)
+{
+	// establish Y centerlines
+	const float yc1 = posY1;
+	const float yc2 = posY2;
+
+	// set up X positions and spans
+	posX1 += dotRadius + dstX;
+	posX2 += dotRadius + dstX;
+
+	__m256 dotRightPos[2] {
+		_mm256_set1_ps(posX1 - ceilf(posX1 / pixelsPerTriadH) * pixelsPerTriadH),
+		_mm256_set1_ps(posX2 - ceilf(posX2 / pixelsPerTriadH) * pixelsPerTriadH)
+	};
+
+	alignas(32) float dotSpans[2][2][8] {};
+
+	const __m256 vppth = _mm256_set1_ps(pixelsPerTriadH);
+	const __m256 vone = _mm256_set1_ps(1.0f);
+
+	alignas(32) static constexpr float kSublineOffsets[8] {
+		0.5f / 8.0f - 3.5f / 64.0f,
+		1.5f / 8.0f - 3.5f / 64.0f,
+		2.5f / 8.0f - 3.5f / 64.0f,
+		3.5f / 8.0f - 3.5f / 64.0f,
+		4.5f / 8.0f - 3.5f / 64.0f,
+		5.5f / 8.0f - 3.5f / 64.0f,
+		6.5f / 8.0f - 3.5f / 64.0f,
+		7.5f / 8.0f - 3.5f / 64.0f,
+	};
+
+	{
+		__m256 vdotRadius = _mm256_set1_ps(dotRadius);
+		__m256 vdotRadiusSq = _mm256_mul_ps(vdotRadius, vdotRadius);
+
+		__m256 vpptv = _mm256_set1_ps(pixelsPerTriadV);
+		__m256 vinvpptv = _mm256_div_ps(vone, vpptv);
+
+		__m256 vy = _mm256_add_ps(_mm256_load_ps(kSublineOffsets), _mm256_broadcast_ss(&dstY));
+		__m256 vdy1 = _mm256_sub_ps(_mm256_broadcast_ss(&yc1), vy);
+		__m256 vdy2 = _mm256_sub_ps(_mm256_broadcast_ss(&yc2), vy);
+
+		__m256 vdx1a = _mm256_setzero_ps();
+		__m256 vdx2a = _mm256_setzero_ps();
+
+		for(int i=0; i<8; ++i) {
+			__m256 vdy1a = _mm256_fnmadd_ps(_mm256_round_ps(_mm256_mul_ps(vdy1, vinvpptv), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC), vpptv, vdy1);
+			__m256 vdy2a = _mm256_fnmadd_ps(_mm256_round_ps(_mm256_mul_ps(vdy2, vinvpptv), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC), vpptv, vdy2);
+
+			__m256 vdx1 = _mm256_sqrt_ps(_mm256_max_ps(_mm256_setzero_ps(), _mm256_fnmadd_ps(vdy1a, vdy1a, vdotRadiusSq)));
+			__m256 vdx2 = _mm256_sqrt_ps(_mm256_max_ps(_mm256_setzero_ps(), _mm256_fnmadd_ps(vdy2a, vdy2a, vdotRadiusSq)));
+
+			vdx1a = _mm256_add_ps(vdx1a, vdx1);
+			vdx2a = _mm256_add_ps(vdx2a, vdx2);
+
+			// MERGE NOTE: advance all eight subline samples, as the scalar
+			// renderer does; repeating the first sample aliases the dot rows.
+			const __m256 sublineStep = _mm256_set1_ps(1.0f / 64.0f);
+			vdy1 = _mm256_sub_ps(vdy1, sublineStep);
+			vdy2 = _mm256_sub_ps(vdy2, sublineStep);
+		}
+
+		__m256 vone8 = _mm256_set1_ps(1.0f / 8.0f);
+		_mm256_store_ps(&dotSpans[0][0][0], _mm256_fnmsub_ps(vdx1a, vone8, vdotRadius));
+		_mm256_store_ps(&dotSpans[0][1][0], _mm256_fmsub_ps(vdx1a, vone8, vdotRadius));
+		_mm256_store_ps(&dotSpans[1][0][0], _mm256_fnmsub_ps(vdx2a, vone8, vdotRadius));
+		_mm256_store_ps(&dotSpans[1][1][0], _mm256_fmsub_ps(vdx2a, vone8, vdotRadius));
 	}
 
+	// render scanlines
+	const uint32 channelScale = 0x010101 & channelMask;
+	const float encodingScale = 255.0f * (float)channelScale / 256.0f;
+
+	alignas(32) const float triMaskBase[8] {
+		 1.0f,
+		 3.0f,
+		 5.0f,
+		 7.0f,
+		 9.0f,
+		11.0f,
+		13.0f,
+		15.0f,
+	};
+
+	const __m256 vtriMask2 = _mm256_mul_ps(_mm256_load_ps(triMaskBase), _mm256_set1_ps(encodingScale));
+	__m256 vtriMask1 = _mm256_permute_ps(vtriMask2, 0b00'01'10'11);
+	vtriMask1 = _mm256_permute2f128_ps(vtriMask1, vtriMask1, 0x01);
+
+	// scalar implementation
+	float *VDRESTRICT prevScan = prevScan0;
+
+	const __m256 vhalf = _mm256_set1_ps(0.5f);
+
+	__m256 vprevLeftSum = _mm256_setzero_ps();
+	const float rightMargin = 1.0f + 2*dotRadius;
+	while(w--) {
+		__m256 vrightSum = _mm256_mul_ps(vprevLeftSum, vhalf);
+		__m256 vleftSum = _mm256_setzero_ps();
+
+		for(int i = 0; i < 2; ++i) {
+			__m256 vxbase = dotRightPos[i];
+
+			while(_mm256_cvtss_f32(vxbase) <= 0.0f)
+				vxbase = _mm256_add_ps(vxbase, vppth);
+
+			if (_mm256_cvtss_f32(vxbase) < rightMargin) {
+				__m256 vxbase2 = vxbase;
+				const __m256 vdotSpansX1 = _mm256_load_ps(dotSpans[i][0]);
+				const __m256 vdotSpansX2 = _mm256_load_ps(dotSpans[i][1]);
+
+				do {
+					// compute scanline intersection with disc
+					// clip span to pixel width
+					__m256 vx1 = _mm256_max_ps(_mm256_add_ps(vxbase2, vdotSpansX1), _mm256_setzero_ps());
+					__m256 vx2 = _mm256_min_ps(_mm256_add_ps(vxbase2, vdotSpansX2), vone);
+					vx1 = _mm256_min_ps(vx1, vx2);
+
+					// integrate range over both halves of triangle filter
+					// (1-x1)*(1-x1) - (1-x2)*(1-x2) = 2(x2-x1) - (x2^2 - x1^2)
+					const __m256 vxs = _mm256_add_ps(vx2, vx1);
+					const __m256 vdx = _mm256_sub_ps(vx2, vx1);
+
+					// *2 and -leftSum done at end
+					vleftSum = _mm256_fmadd_ps(vdx, vxs, vleftSum);
+					vrightSum = _mm256_add_ps(vrightSum, vdx);
+
+					vxbase2 = _mm256_add_ps(vxbase2, vppth);
+				} while(_mm256_cvtss_f32(vxbase2) < rightMargin);
+			}
+
+			dotRightPos[i] = _mm256_sub_ps(vxbase, vone);
+		}
+
+		__m256 vintensity = _mm256_fmsub_ps(vrightSum, _mm256_set1_ps(2.0f), vleftSum);
+		vprevLeftSum = vleftSum;
+
+		// apply vertical triangle filter
+		__m256 vintensity1 = _mm256_mul_ps(vintensity, vtriMask1);
+		__m256 vintensity2 = _mm256_mul_ps(vintensity, vtriMask2);
+
+		// horizontal reduction of both vertical triangle filter halves in parallel
+		__m256 vintensity3 = _mm256_add_ps(
+			_mm256_permute2f128_ps(vintensity1, vintensity2, 0x20),
+			_mm256_permute2f128_ps(vintensity1, vintensity2, 0x31)
+		);
+
+		vintensity3 = _mm256_add_ps(vintensity3, _mm256_permute_ps(vintensity3, 0b01'00'11'10));
+		vintensity3 = _mm256_add_ps(vintensity3, _mm256_permute_ps(vintensity3, 0b10'11'00'01));
+
+		*tex++ |= channelMask & _mm_cvt_ss2si(
+			_mm_add_ss(_mm256_castps256_ps128(vintensity3), _mm_load_ss(prevScan))
+		);
+
+		_mm_store_ss(prevScan++, _mm256_extractf128_ps(vintensity3, 1));
+	}
+
+	_mm256_zeroupper();
+}
+#endif
+
+void VDDisplayRenderDotMaskChannel(uint32 *tex, uint32 w, uint32 channelMask,
+	float pixelsPerTriadH,
+	float pixelsPerTriadV,
+	float posX1, float posY1, float posX2, float posY2, float dotRadius, float dstX, float dstY,
+	float *prevScan)
+{
+	// The AVX code is horrifically slow in MSVC -Od due to the compiler mixing
+	// VEX and non-VEX instructions, more than 100x compared to optimized builds.
+#if !defined(_DEBUG) && (defined(VD_CPU_X86) || defined(VD_CPU_X64))
+	// MERGE NOTE: this renderer uses FMA intrinsics as well as AVX2.
+	if (VDCheckAllExtensionsEnabled(VDCPUF_SUPPORTS_AVX2 | VDCPUF_SUPPORTS_FMA))
+		return VDDisplayRenderDotMaskChannel_AVX2(tex, w, channelMask, pixelsPerTriadH, pixelsPerTriadV, posX1, posY1, posX2, posY2, dotRadius, dstX, dstY, prevScan);
+#endif
+
+	VDDisplayRenderDotMaskChannel_Scalar(tex, w, channelMask, pixelsPerTriadH, pixelsPerTriadV, posX1, posY1, posX2, posY2, dotRadius, dstX, dstY, prevScan);
 }
 
 void VDDisplayCreateTriadDotMaskTexture(uint32 *tex, ptrdiff_t pitch, uint32 w, uint32 h, float dstX, float dstY, float dstW, float dstH, const VDDisplayTriadDotMaskParams& params) {
+	VDFastMathScope fastMathScope;
+
 	const float pptH = params.mPixelsPerTriadH;
 	const float pptV = params.mPixelsPerTriadV;
+
+	vdfastvector<float> prevScan(w * 3, 0.0f);
 
 	for(uint32 y = 0; y < h; ++y) {
 		memset(tex, 0, sizeof(tex[0]) * w);
@@ -554,7 +793,8 @@ void VDDisplayCreateTriadDotMaskTexture(uint32 *tex, ptrdiff_t pitch, uint32 w, 
 			params.mRedCenter[1][1],
 			params.mRedWidth,
 			dstX,
-			dstY + (float)y
+			dstY + (float)y,
+			prevScan.data()
 		);
 
 		VDDisplayRenderDotMaskChannel(
@@ -569,7 +809,8 @@ void VDDisplayCreateTriadDotMaskTexture(uint32 *tex, ptrdiff_t pitch, uint32 w, 
 			params.mGrnCenter[1][1],
 			params.mGrnWidth,
 			dstX,
-			dstY + (float)y
+			dstY + (float)y,
+			prevScan.data() + w
 		);
 
 		VDDisplayRenderDotMaskChannel(
@@ -584,7 +825,8 @@ void VDDisplayCreateTriadDotMaskTexture(uint32 *tex, ptrdiff_t pitch, uint32 w, 
 			params.mBluCenter[1][1],
 			params.mBluWidth,
 			dstX,
-			dstY + (float)y
+			dstY + (float)y,
+			prevScan.data() + (size_t)w * 2
 		);
 
 		tex = (uint32 *)((char *)tex + pitch);
@@ -667,7 +909,7 @@ bool VDDisplayDistortionMapping::MapImageToScreen(vdfloat2& pt) const {
 	vdfloat2 pt2 { std::clamp(pt.x, 0.0f, 1.0f), std::clamp(pt.y, 0.0f, 1.0f) };
 
 	bool valid = (pt2 == pt);
-	
+
 	// Forward projection:
 	//
 	//	-- warp coordinate system to change ellipsoid to unit sphere

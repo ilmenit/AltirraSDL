@@ -79,3 +79,18 @@ and native file for opcodes 02, 69, E9, 78, A1, 6B, B7 and D0, plus the first
 Local validation also ran all 160,000 cases in those 16 files. The runner
 permits internal bus cycles as documented in its implementation; this does
 not replace testing IRQ timing or running programs on hardware.
+
+
+Test24 extends the production VBXE fixture with FX 1.27 version/NTSC checks,
+hires PF0, disabled IRQ completion, HR two-nibble collisions, extended add,
+table lookup, raycast sampling, invalid containers, and serialized ZIP
+save-state round trips with legacy absent-field defaults. IRQ and palette
+services remain strict doubles except during explicit save/load assertions.
+The display target checks gamma endpoints, extreme-radius bloom energy,
+scalar/AVX2 dot-mask agreement and FMA dispatch. Unmodified test24 fails the
+sampling comparison. All five targets run in Linux normal/sanitizer and
+native Windows/macOS regression CI.
+
+Bridge tests additionally exercise complete firmware descriptions containing
+periods/slashes, relocated filename references, and a fast custom memory layer
+across a high-bank boundary. Run them with `ALTIRRA_BRIDGE_SERVER=ON`.

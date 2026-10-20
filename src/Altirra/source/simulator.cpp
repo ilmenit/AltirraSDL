@@ -850,6 +850,10 @@ void ATSimulator::Init() {
 
 	mpPrivateData = new PrivateData(*this);
 	mpMemMan = new ATMemoryManager;
+
+	// enable this by default since high memory banks defaults to 0 (none + 24-bit addressing)
+	mpMemMan->SetHighMemoryEnabled(true);
+
 	mpMMU = new ATMMUEmulator;
 	mpMMU->Init(mpMemMan);
 	mpPBIManager = new ATPBIManager;
@@ -4128,13 +4132,15 @@ void ATSimulator::LoadStateMachineDesc(ATSaveStateReader& reader) {
 	if (kernelRefPresent) {
 		uint64 kernelFirmware = mpFirmwareManager->GetFirmwareByRefString(kernelRefString.c_str());
 
-		SetKernel(kernelFirmware);
+		if (kernelFirmware)
+			SetKernel(kernelFirmware);
 	}
 
 	if (basicRefPresent) {
 		uint64 basicFirmware = mpFirmwareManager->GetFirmwareByRefString(basicRefString.c_str());
 
-		SetBasic(basicFirmware);
+		if (basicFirmware)
+			SetBasic(basicFirmware);
 	}
 
 
@@ -4580,12 +4586,12 @@ void ATSimulator::CreateSnapshot(IATSerializable **ppSnapshot, IATSerializable *
 	root->mbStereo = mbDualPokeys;
 
 	vdrefptr<ATSaveStateFirmwareReference> osRef(new ATSaveStateFirmwareReference);
-	osRef->mRefString = mpFirmwareManager->GetFirmwareRefString(mKernelId);
+	osRef->mRefString = mpFirmwareManager->GetFirmwareRefString(mActualKernelId);
 	osRef->mCRC32 = ComputeKernelCRC32();
 	root->mpOsRom = std::move(osRef);
 
 	vdrefptr<ATSaveStateFirmwareReference> basicRef(new ATSaveStateFirmwareReference);
-	basicRef->mRefString = mpFirmwareManager->GetFirmwareRefString(mBasicId);
+	basicRef->mRefString = mpFirmwareManager->GetFirmwareRefString(mActualBasicId);
 	basicRef->mCRC32 = ComputeBasicCRC32();
 	root->mpBasicRom = std::move(basicRef);
 
@@ -4634,7 +4640,7 @@ bool ATSimulator::ApplySnapshot(const IATSerializable& snapshot, ATStateLoadCont
 			uint64 kernelFirmware = 0;
 			
 			if (savestate.mpOsRom)
-				kernelFirmware = mpFirmwareManager->GetFirmwareByRefString(savestate.mpOsRom->mRefString.c_str());
+				kernelFirmware = mpFirmwareManager->GetFirmwareByRefString(savestate.mpOsRom->mRefString.c_str(), ATIsKernelFirmwareType);
 
 			if (stateLoadCtx) {
 				// warn if we had a reference to an OS ROM in the save state and could not match it, either with
@@ -4789,13 +4795,17 @@ bool ATSimulator::ApplySnapshot(const IATSerializable& snapshot, ATStateLoadCont
 				SetAxlonMemoryMode(0);
 			}
 
-			if (kernelFirmware)
+			// Try to switch to the found OS and BASIC ROMs, if matched. Note that we check against
+			// the currently actual firmware IDs too, so as to not switch off of [Autoselect]
+			// unnecessarily.
+			if (kernelFirmware && kernelFirmware != mActualKernelId)
 				SetKernel(kernelFirmware);
 
 			if (savestate.mpBasicRom) {
-				uint64 basicFirmware = mpFirmwareManager->GetFirmwareByRefString(savestate.mpBasicRom->mRefString.c_str());
+				uint64 basicFirmware = mpFirmwareManager->GetFirmwareByRefString(savestate.mpBasicRom->mRefString.c_str(), ATIsBasicFirmwareType);
 
-				SetBasic(basicFirmware);
+				if (basicFirmware && basicFirmware != mActualBasicId)
+					SetBasic(basicFirmware);
 			}
 
 			mCPU.LoadState(savestate.mpCpu);

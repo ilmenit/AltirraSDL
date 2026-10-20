@@ -2231,7 +2231,7 @@ void ATGTIAEmulator::BeginScanline(int y, bool hires) {
 
 	if (mpVBXE) {
 		if (y >= 8 && y <= 9) {
-			if (y == (!mbPALMode && g_ATCVDevicesVbxeNtscOffset ? 9 : 8))
+			if (y == (!mbPALMode && g_ATCVDevicesVbxeNtscOffset && mpVBXE->HasNTSCVerticalOffset() ? 9 : 8))
 				mpVBXE->BeginFrame(mFrameProperties.mbPaletteOutputCorrection ? (int)mActiveColorParams.mColorMatchingMode : 0, mFrameProperties.mbOutputExtendedRange);
 		} else if (y == 248)
 			mpVBXE->EndFrame();

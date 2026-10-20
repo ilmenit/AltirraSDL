@@ -1233,20 +1233,20 @@ bool RenderBlackBoxConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 
 bool RenderVBXEConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 	// test10: order so the latest core version is first (and the default).
-	static const char *kVersionLabels[] = { "FX 1.26", "FX 1.24", "FX 1.20" };
-	static const uint32 kVersionValues[] = { 126, 124, 120 };
+	static const char *kVersionLabels[] = { "FX 1.27", "FX 1.26", "FX 1.24", "FX 1.20" };
+	static const uint32 kVersionValues[] = { 127, 126, 124, 120 };
 
 	if (st.justOpened) {
-		uint32 ver = props.GetUint32("version", 126);
+		uint32 ver = props.GetUint32("version", 127);
 		st.combo[0] = 0;
-		for (int i = 0; i < 3; ++i)
+		for (int i = 0; i < 4; ++i)
 			if (kVersionValues[i] == ver) st.combo[0] = i;
 
 		st.combo[1] = props.GetBool("alt_page", false) ? 1 : 0;
 		st.check[0] = props.GetBool("shared_mem", false);
 	}
 
-	ImGui::Combo("Core version", &st.combo[0], kVersionLabels, 3);
+	ImGui::Combo("Core version", &st.combo[0], kVersionLabels, 4);
 
 	static const char *kBaseLabels[] = { "$D600 (standard)", "$D700 (alternate)" };
 	ImGui::Combo("Base address", &st.combo[1], kBaseLabels, 2);
