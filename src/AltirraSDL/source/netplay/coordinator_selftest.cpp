@@ -12,6 +12,7 @@
 //   /tmp/netplay_selftest/coordinator_run
 
 #include "coordinator.h"
+#include "protocol.h"
 #include "netplay_profile.h"
 
 #include <chrono>
@@ -176,6 +177,11 @@ static void testEndToEndSession() {
 	CHECK(joiner.Loop().CurrentFrame() >= kFrames);
 	// Both peers applied the same number of frames.
 	CHECK(host.Loop().CurrentFrame() == joiner.Loop().CurrentFrame());
+
+	CHECK(spinUntil(host, joiner, [&] {
+		return host.PeerRttMs() > 0 && joiner.PeerRttMs() > 0;
+	}, 2500));
+	CHECK(host.PeerRttMs() < 1000); CHECK(joiner.PeerRttMs() < 1000);
 
 	// Clean termination.
 	host.End();
@@ -496,6 +502,8 @@ static void testHeartbeatPeriodicity() {
 	// (monotonic per-sender) to count without an exposed counter.
 	const uint16_t hostStartSeq   = host.GetPeerHeartbeat().seq;
 	const uint16_t joinerStartSeq = joiner.GetPeerHeartbeat().seq;
+	const uint32_t hostReplies = host.PingRepliesSent();
+	const uint32_t joinerReplies = joiner.PingRepliesSent();
 
 	const uint64_t spinUntilMs = nowMs() + 2500;
 	while (nowMs() < spinUntilMs) {
@@ -524,6 +532,9 @@ static void testHeartbeatPeriodicity() {
 	const uint16_t joinerDelta = (uint16_t)(joinerEndSeq - joinerStartSeq);
 	CHECK(hostDelta   >= 1 && hostDelta   <= 4);
 	CHECK(joinerDelta >= 1 && joinerDelta <= 4);
+	CHECK(host.RttSamples() > 0); CHECK(joiner.RttSamples() > 0);
+	CHECK(host.PingRepliesSent() - hostReplies <= 4);
+	CHECK(joiner.PingRepliesSent() - joinerReplies <= 4);
 
 	host.End();
 	spinUntil(host, joiner, [&]{
@@ -531,7 +542,109 @@ static void testHeartbeatPeriodicity() {
 	}, 500);
 }
 
+static void testDeferredUploadWithRetryAndUnrelatedSender() {
+	Coordinator host, joiner;
+	auto boot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "host", "deferred", 1, 2, 0, 3, nullptr, boot));
+	host.SetPromptAccept(true);
+	char endpoint[48]; std::snprintf(endpoint, sizeof endpoint, "127.0.0.1:%u", host.BoundPort());
+	CHECK(joiner.BeginJoinMulti(endpoint, 0, "joiner", 1, 2, true, nullptr));
+	CHECK(spinUntil(host, joiner, [&]{ return host.PendingDecisionCount() == 1; }, 1000));
+	host.AcceptPendingJoiner(0);
+	// Several candidate retries may arrive before the deferred application
+	// action can prepare the game. They must not announce a zero-byte file.
+	spinUntil(host, joiner, []{ return false; }, 600);
+	CHECK(joiner.GetPhase() == Coordinator::Phase::Handshaking);
+	auto bytes = makeMockSnapshot(4000); host.SubmitSnapshotForUpload(bytes.data(), bytes.size());
+	CHECK(spinUntil(host, joiner, [&]{ return joiner.GetPhase() == Coordinator::Phase::SnapshotReady; }, 3000));
+	CHECK(joiner.GetReceivedSnapshot() == bytes);
+	joiner.AcknowledgeSnapshotApplied();
+	CHECK(spinUntil(host, joiner, [&]{ return host.GetPhase() == Coordinator::Phase::Lockstepping; }, 1000));
+	UdpTransport stranger; CHECK(stranger.Listen(0)); Endpoint target;
+	CHECK(UdpTransport::Resolve(endpoint, target));
+	NetInputPacket forged{}; forged.baseFrame = 3; forged.count = 1;
+	forged.inputs[0].stickDir = 15; forged.stateHashLow32 = 0xDEADBEEF;
+	uint8_t wire[kWireInputPktSize]; size_t n = EncodeInputPacket(forged, wire, sizeof wire);
+	CHECK(stranger.SendTo(wire, n, target));
+	// Even a copied session nonce does not authorize a different endpoint.
+	uint8_t bound[kWireSessionHeaderSize + kWireInputPktSize] = {};
+	for (int i = 0; i < 4; ++i) bound[i] = uint8_t(kMagicSession >> (8 * i));
+	joiner.GetSessionNonce(bound + 4);
+	std::memcpy(bound + kWireSessionHeaderSize, wire, n);
+	CHECK(stranger.SendTo(bound, sizeof bound, target));
+	spinUntil(host, joiner, []{ return false; }, 20);
+	CHECK(host.GetPhase() == Coordinator::Phase::Lockstepping);
+	NetInput local{}; host.SubmitLocalInput(local);
+	NetInput p1, p2;
+	CHECK(!host.Loop().GetInputsForFrame(3, p1, p2));
+	host.End(); joiner.End();
+}
+
+static void testFederatedRelayContexts() {
+	Coordinator host;
+	auto boot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "host", "federated", 1, 2, 0, 3, nullptr, boot));
+	host.SetPromptAccept(true);
+	UdpTransport relayA, relayB;
+	CHECK(relayA.Listen(0)); CHECK(relayB.Listen(0));
+	char a[48], b[48], targetText[48];
+	std::snprintf(a, sizeof a, "127.0.0.1:%u", relayA.BoundPort());
+	std::snprintf(b, sizeof b, "127.0.0.1:%u", relayB.BoundPort());
+	std::snprintf(targetText, sizeof targetText, "127.0.0.1:%u", host.BoundPort());
+	uint8_t sidA[16] = {1}, sidB[16] = {2};
+	uint8_t ticketA[16] = {3}, ticketB[16] = {4};
+	host.SetRelayTicket(ticketA); host.SetRelayContext(sidA, a);
+	host.SetRelayTicket(ticketB); host.SetRelayContext(sidB, b);
+	auto receive = [&](UdpTransport& relay, uint32_t wanted, std::vector<uint8_t>& packet) {
+		const uint64_t end = nowMs() + 1000;
+		while (nowMs() < end) {
+			host.Poll(nowMs());
+			uint8_t bytes[kMaxRelayDatagramSize]; size_t n = 0; Endpoint from;
+			if (relay.RecvFrom(bytes, sizeof bytes, n, from) == RecvResult::Ok) {
+				uint32_t magic = 0;
+				if (PeekMagic(bytes, n, magic) && magic == wanted) {
+					packet.assign(bytes, bytes + n); return true;
+				}
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		return false;
+	};
+	std::vector<uint8_t> packet;
+	CHECK(receive(relayA, kMagicRelayRegister, packet));
+	NetRelayRegister registration;
+	CHECK(DecodeRelayRegister(packet.data(), packet.size(), registration) == DecodeResult::Ok);
+	CHECK(!std::memcmp(registration.ticket, ticketA, 16));
+	CHECK(receive(relayB, kMagicRelayRegister, packet));
+	CHECK(DecodeRelayRegister(packet.data(), packet.size(), registration) == DecodeResult::Ok);
+	CHECK(!std::memcmp(registration.ticket, ticketB, 16));
+	NetHello hello;
+	hello.osRomHash = 1; hello.basicRomHash = 2; hello.acceptTos = 1;
+	hello.sessionNonce[0] = 9;
+	HandleFromString("relay joiner", hello.playerHandle);
+	uint8_t bytes[kWireHelloSize]; const size_t n = EncodeHello(hello, bytes, sizeof bytes);
+	Endpoint target; CHECK(UdpTransport::Resolve(targetText, target));
+	CHECK(relayB.SendTo(bytes, n, target));
+	const uint64_t deadline = nowMs() + 1000;
+	while (!host.HasPendingDecision() && nowMs() < deadline) host.Poll(nowMs());
+	CHECK(host.PendingDecisionCount() == 1);
+	// A heartbeat for another service must not replace the accepted route.
+	host.SetRelayTicket(ticketA); host.SetRelayContext(sidA, a);
+	host.AcceptPendingJoiner(0);
+	auto game = makeMockSnapshot(4000);
+	host.SubmitSnapshotForUpload(game.data(), game.size());
+	CHECK(receive(relayB, kMagicRelayData, packet));
+	NetRelayDataHeader forwarded; const uint8_t* inner = nullptr; size_t length = 0;
+	CHECK(DecodeRelayFrame(packet.data(), packet.size(), forwarded, inner, length) == DecodeResult::Ok);
+	CHECK(!std::memcmp(forwarded.sessionId, sidB, 16));
+	CHECK(!std::memcmp(forwarded.ticket, ticketB, 16));
+	CHECK(!std::memcmp(forwarded.routeNonce, hello.sessionNonce, 16));
+	host.End();
+}
+
 int main() {
+	testFederatedRelayContexts();
+	testDeferredUploadWithRetryAndUnrelatedSender();
 	testEndToEndSession();
 	testHostRejectsWrongOsRom();
 	testPrivateSessionAcceptsCorrectCode();

@@ -46,6 +46,7 @@
 #include "transport.h"
 
 #include <cstdint>
+#include <cstring>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -305,6 +306,9 @@ public:
 	// stamps as zero-meaning, see packets.h NetInput).  Inline body in
 	// coordinator.cpp keeps the dependency on mPeerRttMsEwma local.
 	void SubmitLocalInput(const NetInput& in);
+	void SetRollbackWindow(uint32_t frames) { mRollbackWindow = frames > 32 ? 32 : frames; mLoop.SetRollbackWindow(mRollbackWindow); }
+	void SetFramePeriodUs(uint32_t period) { mFramePeriodUs = period; mLoop.SetFramePeriodUs(period); }
+	void SetJoinNonce(const uint8_t nonce[16]) { std::memcpy(mPresetJoinNonce, nonce, 16); mHasPresetJoinNonce = true; }
 	bool CanAdvance() const { return mLoop.CanAdvance(); }
 	bool GetInputsForCurrentFrame(NetInput& p1, NetInput& p2) const {
 		return mLoop.GetInputsForCurrentFrame(p1, p2);
@@ -377,6 +381,8 @@ public:
 	// LobbyClient::Create returns, on the joiner before BeginJoinMulti.
 	// `lobbyHostPort` is "host:port" (typically kReflectorPortDefault,
 	// 8081) and resolved once here.  Safe to call multiple times.
+	// Credential is issued privately by the lobby and never inferred from SID.
+	void SetRelayTicket(const uint8_t ticket16[16]);
 	void SetRelayContext(const uint8_t sessionIdBytes16[16],
 	                     const char* lobbyHostPort);
 
@@ -461,6 +467,9 @@ public:
 	PhaseBroadcast GetPeerPhase()           const { return mPeerPhase; }
 	uint16_t       GetPeerPhaseProgNum()    const { return mPeerPhaseProgNum; }
 	uint16_t       GetPeerPhaseProgDen()    const { return mPeerPhaseProgDen; }
+	uint16_t PeerRttMs() const { return mPeerRttMsEwma; }
+	uint32_t RttSamples() const { return mRttSamples; }
+	uint32_t PingRepliesSent() const { return mPingRepliesSent; }
 	NetHeartbeat   GetPeerHeartbeat()       const { return mPeerHeartbeat; }
 	int64_t        PeerPhaseSeenMs()        const { return mPeerPhaseSeenMs; }
 	int64_t        PeerHeartbeatSeenMs()    const { return mPeerHeartbeatSeenMs; }
@@ -554,7 +563,7 @@ private:
 	// next Poll, matching pre-v5 behaviour.
 	void SendWelcome(uint64_t nowMs = 0);
 	// v6: reason narrowed u32→u16 to match NetReject/NetBye wire layout.
-	void SendReject(uint16_t reason, const Endpoint& to);
+	void SendReject(uint16_t reason, const Endpoint& to, const uint8_t* nonce = nullptr);
 	void SendBye(uint16_t reason);
 	void PumpSnapshotSender(uint64_t nowMs);
 	void PumpLockstepSend();
@@ -633,14 +642,16 @@ private:
 	uint64_t       mSessionStartMs      = 0;
 	std::vector<NetEvent> mPendingEvents;
 
-	// RTT estimation.  Per-frame outgoing-stamps; matched against
-	// peer's ackedFrame in incoming input packets to compute round-
-	// trip samples.  EWMA-smoothed into mPeerRttMsEwma.  Bounded so
-	// a long lockstep gap (peer paused, networks blip) doesn't
-	// balloon memory.
-	struct InputTxStamp { uint32_t frame; int64_t txMs; };
-	std::deque<InputTxStamp> mInputTxStamps;   // ≤64
-	uint16_t       mPeerRttMsEwma        = 0;
+	// Immediate echo measurements exclude frame pacing / input ACK delay.
+	uint16_t mPeerRttMsEwma = 0;
+	uint32_t mPingSequence = 0;
+	uint32_t mRttSamples = 0;
+	uint32_t mPingRepliesSent = 0;
+	uint64_t mPingSentMs = 0;
+	bool mPingOutstanding = false;
+	uint64_t mLastPingReplyMs = 0;
+	void SendPing(uint64_t nowMs);
+	void HandlePing(const NetPing& ping, uint64_t nowMs);
 
 	// Handshake state.
 	char     mPlayerHandle[kHandleLen] = {};
@@ -766,6 +777,10 @@ private:
 	static constexpr uint64_t kWelcomeAckGraceMs = 250;
 
 	// Lockstep.
+	uint32_t mRollbackWindow = 0;
+	uint32_t mFramePeriodUs = 16667;
+	uint8_t mPresetJoinNonce[16] = {};
+	bool mHasPresetJoinNonce = false;
 	LockstepLoop mLoop;
 
 	// Buffers.  RX must accommodate ASDF-wrapped relay frames (24-byte
@@ -810,6 +825,8 @@ private:
 	// emit one per Poll() call — the main loop ticks at 60 Hz, so
 	// that's the rate the peer expects.
 	bool mWantsOutgoingInput = false;
+	uint64_t mLastInputSentMs = 0;
+	uint64_t mLastPollMs = 0;
 
 	// ---- Resync state ----------------------------------------------------
 	//
@@ -904,8 +921,27 @@ private:
 	// (PeerPath enum is declared in the public section above.)
 	PeerPath mPeerPath = PeerPath::Direct;
 
+	struct RelayContextRecord {
+		Endpoint endpoint;
+		std::string host;
+		uint8_t sessionId[16] = {};
+		uint8_t ticket[16] = {};
+		bool hasTicket = false;
+		uint64_t registeredMs = 0;
+	};
+	std::vector<RelayContextRecord> mRelayContexts;
+	struct HintRelayContext { uint8_t nonce[16] = {}; Endpoint endpoint; };
+	std::vector<HintRelayContext> mHintRelayContexts;
+	Endpoint mLastConfiguredRelayEndpoint;
+	void SelectPeerRelayContext(const uint8_t nonce[16], const Endpoint& source);
+	uint8_t mConfiguredRelayTicket[16] = {};
+	bool mHasConfiguredRelayTicket = false;
+	bool SelectRelayContext(const Endpoint& endpoint);
+	void RefreshHostRelayContexts(uint64_t nowMs);
 	bool    mHasRelaySessionId = false;
 	uint8_t mRelaySessionId[16] = {};
+	uint8_t mRelayTicket[16] = {};
+	bool mHasRelayTicket = false;
 	bool    mLobbyRelayKnown = false;
 	Endpoint mLobbyRelayEndpoint;
 	// Cached "host:port" string we last successfully resolved, used

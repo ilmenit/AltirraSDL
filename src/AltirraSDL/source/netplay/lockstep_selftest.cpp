@@ -15,6 +15,7 @@
 #include "lockstep.h"
 
 #include <cstdio>
+#include <deque>
 #include <cstdint>
 #include <cstring>
 
@@ -57,6 +58,7 @@ static void ferryPackets(LockstepLoop& from, LockstepLoop& to, uint64_t nowMs) {
 	NetInputPacket pkt;
 	from.BuildOutgoingInputPacket(pkt);
 	to.OnPeerInputPacket(pkt, nowMs);
+	if (from.BuildRepairInputPacket(pkt)) to.OnPeerInputPacket(pkt, nowMs);
 }
 
 // One wall tick from both peers' perspective.  Matches the design §6
@@ -251,9 +253,9 @@ static void testRatchetTargetMapping() {
 	// or the ratchet desyncs the input rings.
 	CHECK(LockstepLoop::TargetDelayFromRttClass(0)   == 3);   // floor
 	CHECK(LockstepLoop::TargetDelayFromRttClass(4)   == 3);   // 2+1=3 → floor
-	CHECK(LockstepLoop::TargetDelayFromRttClass(8)   == 4);   // 2+2
-	CHECK(LockstepLoop::TargetDelayFromRttClass(64)  == 18);  // 2+16
-	CHECK(LockstepLoop::TargetDelayFromRttClass(112) == 30);  // 2+28 → cap
+	CHECK(LockstepLoop::TargetDelayFromRttClass(8)   == 3);   // 2+2
+	CHECK(LockstepLoop::TargetDelayFromRttClass(64)  == 10);  // 2+16
+	CHECK(LockstepLoop::TargetDelayFromRttClass(112) == 16);  // 2+28 → cap
 	CHECK(LockstepLoop::TargetDelayFromRttClass(255) == 30);  // cap
 
 	// And the round-trip encoding.
@@ -321,8 +323,8 @@ static void testRatchetUpAndConverge() {
 
 	// Both peers must agree on the new D and stay in lockstep.
 	CHECK(host.InputDelay()   == joiner.InputDelay());
-	CHECK(host.InputDelay()   == 18);
-	CHECK(joiner.InputDelay() == 18);
+	CHECK(host.InputDelay()   == 10);
+	CHECK(joiner.InputDelay() == 10);
 	CHECK(host.CurrentFrame() == joiner.CurrentFrame());
 	CHECK(!host.IsDesynced());
 	CHECK(!joiner.IsDesynced());
@@ -401,7 +403,146 @@ static void testOutgoingPacketShape() {
 	// 5, so window start = 0 and we get 4 populated slots.
 }
 
+// Regression network driver hashes the INPUT ACTUALLY APPLIED. A fixed
+// synthetic per-frame hash masks divergent input timelines.
+static uint32_t inputHash(const NetInput& a, const NetInput& b) {
+	return 0x10000000u + a.stickDir * 65536u + b.stickDir * 256u + a.buttons;
+}
+
+static void testDelayedInputTimeline(unsigned latency, bool ratchet, bool changing) {
+	struct Delivery { unsigned due; NetInputPacket packet; };
+	std::deque<Delivery> hj, jh;
+	LockstepLoop h, j;
+	h.Begin(Slot::Host, 3); j.Begin(Slot::Joiner, 3);
+	h.SetRatchetTuning(10, 32); j.SetRatchetTuning(10, 32);
+	for (unsigned tick = 0; tick < 1000; ++tick) {
+		while (!hj.empty() && hj.front().due <= tick) { j.OnPeerInputPacket(hj.front().packet, tick + 1); hj.pop_front(); }
+		while (!jh.empty() && jh.front().due <= tick) { h.OnPeerInputPacket(jh.front().packet, tick + 1); jh.pop_front(); }
+		NetInput hi{}, ji{};
+		hi.stickDir = changing ? tick % 15 + 1 : 1;
+		ji.stickDir = 2; hi.rttClass = ratchet ? 64 : 0;
+		h.SubmitLocalInput(hi); j.SubmitLocalInput(ji);
+		NetInput p1, p2;
+		if (h.CanAdvance()) { CHECK(h.GetInputsForCurrentFrame(p1, p2)); h.OnFrameAdvanced(inputHash(p1, p2)); }
+		if (j.CanAdvance()) { CHECK(j.GetInputsForCurrentFrame(p1, p2)); j.OnFrameAdvanced(inputHash(p1, p2)); }
+		NetInputPacket hp, jp;
+		h.BuildOutgoingInputPacket(hp); j.BuildOutgoingInputPacket(jp);
+		hj.push_back({tick + latency, hp}); jh.push_back({tick + latency, jp});
+		if (h.BuildRepairInputPacket(hp)) hj.push_back({tick + latency, hp});
+		if (j.BuildRepairInputPacket(jp)) jh.push_back({tick + latency, jp});
+		CHECK(!h.IsDesynced()); CHECK(!j.IsDesynced());
+	}
+	CHECK(h.CurrentFrame() > 300); CHECK(j.CurrentFrame() > 300);
+	if (ratchet) { CHECK(h.InputDelay() == 10); CHECK(j.InputDelay() == 10); }
+}
+
+static void testBurstLossRepair() {
+	for (unsigned delay : {3u, 8u}) {
+		LockstepLoop h, j; h.Begin(Slot::Host, delay); j.Begin(Slot::Joiner, delay);
+		for (unsigned tick = 0; tick < 500; ++tick) {
+			NetInput in{}; h.SubmitLocalInput(in); j.SubmitLocalInput(in);
+			if (h.CanAdvance()) h.OnFrameAdvanced(1);
+			if (j.CanAdvance()) j.OnFrameAdvanced(1);
+			NetInputPacket hp, jp; h.BuildOutgoingInputPacket(hp); j.BuildOutgoingInputPacket(jp);
+			if (tick >= 10) j.OnPeerInputPacket(hp, tick + 1);
+			h.OnPeerInputPacket(jp, tick + 1);
+			if (tick >= 10 && h.BuildRepairInputPacket(hp)) j.OnPeerInputPacket(hp, tick + 1);
+			if (j.BuildRepairInputPacket(jp)) h.OnPeerInputPacket(jp, tick + 1);
+		}
+		CHECK(h.CurrentFrame() > 450); CHECK(j.CurrentFrame() > 450);
+		CHECK(!h.IsDesynced()); CHECK(!j.IsDesynced());
+	}
+}
+
+static void testHashBeyond65536Frames() {
+	LockstepLoop h, j; h.Begin(Slot::Host, 3); j.Begin(Slot::Joiner, 3);
+	for (unsigned tick = 0; tick < 65550; ++tick) {
+		NetInput in{}; h.SubmitLocalInput(in); j.SubmitLocalInput(in);
+		NetInputPacket hp, jp; h.BuildOutgoingInputPacket(hp); j.BuildOutgoingInputPacket(jp);
+		j.OnPeerInputPacket(hp, tick + 1); h.OnPeerInputPacket(jp, tick + 1);
+		if (h.CanAdvance()) h.OnFrameAdvanced(0x12345678);
+		if (j.CanAdvance()) j.OnFrameAdvanced(tick >= 65540 ? 0x12345679 : 0x12345678);
+		if (h.IsDesynced() || j.IsDesynced()) { CHECK(tick == 65541); return; }
+	}
+	CHECK(false);
+}
+
+static void testBoundedRollbackCorrection() {
+	LockstepLoop loop; loop.SetRollbackWindow(4); loop.Begin(Slot::Host, 0);
+	for (unsigned frame = 0; frame < 4; ++frame) {
+		NetInput local{}; loop.SubmitLocalInput(local);
+		CHECK(!loop.NeedsLocalInput()); CHECK(loop.CanAdvance());
+		loop.OnFrameAdvanced(100 + frame);
+	}
+	NetInput local{}; loop.SubmitLocalInput(local);
+	CHECK(!loop.CanAdvance()); CHECK(loop.ConfirmedFrame() == 0);
+	NetInputPacket remote{}; remote.count = 4;
+	remote.inputs[0].stickDir = 1;
+	loop.OnPeerInputPacket(remote, 10);
+	CHECK(loop.RollbackFrame() == 0); CHECK(!loop.CanAdvance());
+	CHECK(loop.RewindTo(0)); CHECK(loop.RollbackFrame() == -1);
+	NetInput p1, p2;
+	CHECK(loop.GetInputsForFrame(0, p1, p2)); CHECK(p2.stickDir == 1);
+	for (unsigned frame = 0; frame < 4; ++frame) { CHECK(loop.CanAdvance()); loop.OnFrameAdvanced(200 + frame); }
+	CHECK(loop.ConfirmedFrame() == 4);
+	NetInputPacket sent{}; loop.BuildOutgoingInputPacket(sent);
+	CHECK(sent.ackedFrame == 3); CHECK(sent.stateHashLow32 == 203);
+	CHECK(!loop.RewindTo(UINT32_MAX));
+}
+
+static void testFrameRolloverAndInvalidWindow() {
+	LockstepLoop loop; loop.Begin(Slot::Host, 3); loop.ResumeAt(UINT32_MAX - 1, 1);
+	for (unsigned i = 0; i < 3; ++i) {
+		NetInput in{}; loop.SubmitLocalInput(in); CHECK(loop.CanAdvance()); loop.OnFrameAdvanced(1);
+	}
+	CHECK(loop.CurrentFrame() == 1);
+	NetInputPacket invalid{}; invalid.baseFrame = loop.CurrentFrame() + LockstepLoop::kRingSize; invalid.count = 1;
+	loop.OnPeerInputPacket(invalid, 1);
+	CHECK(!loop.CanAdvance());
+}
+
+static void testPartialFrameCorrection() {
+	LockstepLoop loop; loop.SetRollbackWindow(4); loop.Begin(Slot::Host, 0);
+	NetInput local{}; loop.SubmitLocalInput(local);
+	NetInput p1, p2;
+	CHECK(loop.GetInputsForCurrentFrame(p1, p2)); CHECK(p2.stickDir == 0);
+	// Input was applied, but ANTIC has not completed this frame yet.
+	NetInputPacket remote{}; remote.count = 1; remote.inputs[0].stickDir = 1;
+	loop.OnPeerInputPacket(remote, 1);
+	CHECK(loop.RollbackFrame() == 0); CHECK(!loop.CanAdvance());
+	loop.OnFrameAdvanced(100); CHECK(loop.CurrentFrame() == 0);
+	CHECK(loop.RewindTo(0));
+	CHECK(loop.GetInputsForCurrentFrame(p1, p2)); CHECK(p2.stickDir == 1);
+	loop.OnFrameAdvanced(200); CHECK(loop.CurrentFrame() == 1);
+}
+
+static void testOldHoleBoundsPredictionEvenWithCurrentInput() {
+	LockstepLoop loop; loop.SetRollbackWindow(4); loop.Begin(Slot::Host, 0);
+	for (uint32_t frame = 0; frame < 4; ++frame) {
+		NetInput local{}; loop.SubmitLocalInput(local);
+		if (frame > 0) {
+			NetInputPacket remote{}; remote.baseFrame = frame; remote.count = 1;
+			loop.OnPeerInputPacket(remote, frame + 1);
+		}
+		CHECK(loop.CanAdvance()); loop.OnFrameAdvanced(1);
+	}
+	NetInput local{}; loop.SubmitLocalInput(local);
+	NetInputPacket remote{}; remote.baseFrame = 4; remote.count = 1;
+	loop.OnPeerInputPacket(remote, 10);
+	CHECK(loop.ConfirmedFrame() == 0); CHECK(!loop.CanAdvance());
+	remote.baseFrame = 0; loop.OnPeerInputPacket(remote, 11);
+	CHECK(loop.ConfirmedFrame() == 4); CHECK(loop.CanAdvance());
+}
+
 int main() {
+	testPartialFrameCorrection();
+	testOldHoleBoundsPredictionEvenWithCurrentInput();
+	testDelayedInputTimeline(2, true, false);
+	testDelayedInputTimeline(5, false, true);
+	testBurstLossRepair();
+	testHashBeyond65536Frames();
+	testBoundedRollbackCorrection();
+	testFrameRolloverAndInvalidWindow();
 	testCleanConvergence();
 	testInducedDesyncIsDetected();
 	testWarmupAdvances();
