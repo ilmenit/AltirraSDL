@@ -79,6 +79,11 @@ Two hardware details differ from Atari800's implementation:
   40-column pass-through when **clear**. Atari800's inverted output flag
   must not be copied literally.
 
+The character ROM stores each scanline least-significant bit first.
+The original glyphs and Atari800's SDL video renderer confirm that bit 0
+is the leftmost dot. An asymmetric synthetic glyph regression checks this
+orientation; interpreting bit 7 as the left edge mirrors each character.
+
 On October 21, 2026, a Linux release build was also tested with the
 original 2009 AF80 ROM dumps from that thread, Atari OS-B NTSC, 48KB RAM,
 and a left-slot Atari BASIC rev. C cartridge. After 600 frames the real
@@ -86,7 +91,10 @@ firmware initialized the CRTC and wrote `READY` into AF80 display RAM.
 The serialized device state contained control `$B0` and ROM control
 `$28`, independently confirming active-high bit 7. Without a left-slot
 BASIC cartridge, the same setup initialized the AF80 memo-pad display.
-These external ROMs were used only in temporary local test directories.
+The GUI also automatically selected the AF80's 640×250 output and displayed
+`READY`; a framebuffer capture was visually checked after correcting the
+glyph bit order. These external ROMs were used only in temporary local test
+directories.
 
 The synthetic regression target additionally checks mapping gates, ROM
 and VRAM banks, mirrors, firmware status, glyph/attribute rendering,

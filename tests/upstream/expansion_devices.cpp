@@ -39,7 +39,11 @@ bool ATFirmwareManager::LoadFirmware(uint64 id, void *dst, uint32 offset,
 		Check(id == kATFirmwareType_AF80Charset, "Wrong firmware type");
 		memset(p, 0, len);
 		for (unsigned line = 0; line < 10; ++line)
-			p['A' * 16 + line] = 0x80;
+			p['A' * 16 + line] = 0x01;
+		// Original synthetic five-column E: LSB is the left edge. Keep
+		// the asymmetric stem so mirrored character rendering fails.
+		const uint8 e[] = {0x1F, 0x01, 0x07, 0x01, 0x1F};
+		memcpy(p + 'E' * 16, e, sizeof e);
 	}
 	if (changed) *changed = true;
 	if (actualLen) *actualLen = gFirmwareMode == 2 ? len - 1 : len;
@@ -195,8 +199,14 @@ static void TestAF80() {
 		"AF80 ready register foldback wrong");
 	mem.CPUWriteByte(0xD5F6, 0);
 	mem.CPUWriteByte(0xD600, 'A');
+	mem.CPUWriteByte(0xD601, 'E');
 	mem.CPUWriteByte(0xD5F6, 0x90);
 	mem.CPUWriteByte(0xD600, 0xF0);
+	mem.CPUWriteByte(0xD601, 0xF0);
+	Check(Pixel(dev, 8, 1) == 0xFFFFFF && Pixel(dev, 9, 1) == 0
+		&& Pixel(dev, 15, 1) == 0 && Pixel(dev, 12, 0) == 0xFFFFFF
+		&& Pixel(dev, 13, 0) == 0,
+		"AF80 character ROM dots must render left to right from bit 0");
 	Check(Pixel(dev, 0, 0) == 0xFFFFFF && Pixel(dev, 1, 0) == 0,
 		"AF80 glyph raster/attribute color wrong");
 	mem.CPUWriteByte(0xD600, 0x10);

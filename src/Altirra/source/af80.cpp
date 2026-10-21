@@ -246,8 +246,11 @@ void ATDeviceAF80::UpdateFrame() {
 		for (unsigned x = 0; x < 80; ++x) {
 			const uint8 bits = (mControl & 0x80) ? GetPixels(y / 10, x, y % 10) : 0;
 			const uint32 color = colors[mAttributes[GetTextAddress(y / 10, x)] >> 4];
+			// AF80 charset bytes put the leftmost dot in bit 0, as in
+			// Atari800's src/sdl/video.c AF80 renderer. MSB-first mirrors
+			// every glyph in the original board's character ROM.
 			for (unsigned b = 0; b < 8; ++b)
-				*dst++ = (bits & (0x80 >> b)) ? color : 0;
+				*dst++ = (bits & (1U << b)) ? color : 0;
 		}
 	}
 	++mInfo.mFrameBufferChangeCount;
