@@ -131,3 +131,34 @@ def test_gaming_file_browser_opens_url(emu, monkeypatch, tmp_path, image_server)
         assert wait_download(fresh)['error'] == ''
         assert fresh.query_state()['state']['disks'][0]['sectors'] == 720
         assert not fresh.query_window('##FileBrowser').get('visible', False)
+
+
+@pytest.mark.parametrize('font_size', [12, 32])
+def test_url_dialog_controls_remain_reachable_after_resize(emu, monkeypatch, tmp_path, font_size):
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))
+    config = tmp_path / 'config' / 'altirra'
+    config.mkdir(parents=True)
+    (config / 'settings.ini').write_text(
+        '[User\\AltirraSDL\\Settings]\n"UI: Font point size tenths" = '
+        + str(font_size * 10) + '\n')
+    monkeypatch.setenv('SDL_VIDEODRIVER', 'dummy')
+    monkeypatch.setenv('SDL_AUDIODRIVER', 'dummy')
+    monkeypatch.setenv('ALTIRRA_DISPLAY_BACKEND', 'sdlrenderer')
+    with AltirraTestHarness(executable=emu.executable,
+                           extra_args=['--ui-mode', 'desktop']) as fresh:
+        fresh.close_dialog('SetupWizard')
+        fresh.send('set_window_size 1280 900')
+        fresh.send('open_url open invalid-url')
+        fresh.wait_frames(3)
+        fresh.send('set_window_size 430 800')
+        fresh.wait_frames(5)
+        items = fresh.list_items('Open Image from URL')
+        for label in ('Open Image', 'Boot Image', 'Close'):
+            control = next(item for item in items if item['label'] == label)
+            assert control['x'] >= 0
+            assert control['x'] + control['w'] <= 430
+            assert control['y'] >= 0
+            assert control['y'] + control['h'] <= 800
+        click(fresh, 'Open Image from URL', 'Close')
+        fresh.wait_frames(3)
+        assert not fresh.query_window('Open Image from URL').get('visible', False)

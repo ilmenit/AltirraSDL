@@ -149,8 +149,16 @@ def test_managed_runtime_start_stop_and_preferences(fujinet_desktop, tmp_path):
     assert (runtime / 'fnconfig.ini').read_text() == template
     assert (state / 'SD' / 'received-arguments.txt').is_file()
     # UI text input and reconfiguration API both honour active process ownership.
-    assert emu.find_item('FujiNet', 'Executable')['disabled']
+    assert emu.find_item('FujiNet', '##Executable')['disabled']
     assert not emu.send_raw(f'fujinet listen {free_port()} 0 100')['ok']
+    # Disconnecting a managed runtime leaves an explicit recovery action,
+    # without requiring a boot/reset or stopping its process.
+    click(emu, 'FujiNet', 'Disconnect')
+    assert not emu.send('fujinet status')['listening']
+    click(emu, 'FujiNet', 'Reconnect NetSIO')
+    restored = wait_status(emu, lambda s: s['listening'])
+    assert restored['running'] and not restored['bootPending']
+    assert not emu.query_state()['state']['sim']['running']
     click(emu, 'FujiNet', 'Stop FujiNet-PC')
     status = wait_status(emu, lambda s: not s['running'])
     assert not status['stopping']
@@ -219,3 +227,51 @@ def test_open_panel_tracks_profile_switch_before_start(fujinet_desktop, tmp_path
     switch_profile(emu, 'FujiNet other profile')
     restored = wait_status(emu, lambda s: s['port'] == other_port and s['listening'])
     assert restored['present']
+
+
+def test_panel_resize_fields_and_recovery_buttons_fit(fujinet_desktop, tmp_path):
+    emu = fujinet_desktop
+    emu.send('set_window_size 1280 900')
+    emu.send('fujinet show')
+    emu.wait_frames(5)
+    assert emu.find_item('FujiNet', 'Disconnect')['disabled']
+    assert emu.find_item('FujiNet', 'Boot FujiNet (disable local D1)')['disabled']
+    for width, height in [(430, 800), (640, 480), (1280, 900)]:
+        emu.send(f'set_window_size {width} {height}')
+        emu.wait_frames(8)
+        window = emu.send('query_window_label FujiNet')
+        assert window['visible']
+        assert 0 <= window['x'] < window['x'] + window['w'] <= width
+        assert 0 <= window['y'] < window['y'] + window['h'] <= height
+        for item in emu.list_items('FujiNet'):
+            if item['type'] in ('input', 'checkbox', 'button') and item['label'] != 'FujiNet':
+                assert item['x'] >= window['x'], item
+                assert item['x'] + item['w'] <= window['x'] + window['w'], item
+        # Primary action stays at the top, accessible before scrolling.
+        primary = emu.find_item('FujiNet', 'Start and Boot FujiNet')
+        assert primary['y'] + primary['h'] <= height
+    emu.send('set_window_size 430 800')
+    emu.wait_frames(5)
+    emu.send('ui_screenshot ' + str(tmp_path / 'fujinet-narrow.png'))
+
+
+def test_panel_large_font_keeps_primary_action_visible(emu, monkeypatch, tmp_path):
+    directory = tmp_path / 'large font config' / 'altirra'
+    directory.mkdir(parents=True)
+    (directory / 'settings.ini').write_text(
+        '[User\\AltirraSDL\\Settings]\n"UI: Font point size tenths" = 320\n')
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(directory.parent))
+    with AltirraTestHarness(executable=emu.executable,
+                           extra_args=['--ui-mode', 'desktop']) as fresh:
+        fresh.close_dialog('SetupWizard')
+        fresh.send('set_window_size 430 800')
+        fresh.send('fujinet show')
+        fresh.wait_frames(8)
+        window = fresh.send('query_window_label FujiNet')
+        primary = next(item for item in fresh.list_items('FujiNet')
+                       if '###Start and Boot FujiNet' in item['label'])
+        assert '\n' in primary['label']
+        assert primary['x'] + primary['w'] <= window['x'] + window['w']
+        assert primary['y'] + primary['h'] < 800
+        assert fresh.find_item('FujiNet', '##Executable')['w'] > 100
+        fresh.send('ui_screenshot ' + str(tmp_path / 'fujinet-large-font.png'))

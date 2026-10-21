@@ -23,6 +23,27 @@ bool Cancelled(const Progress& progress) {
 	return progress.cancel.load(std::memory_order_relaxed);
 }
 
+bool IsHTML(const std::vector<uint8_t>& body) {
+	// Download/error pages are sometimes served as octet-stream under an
+	// image filename. A BOM or a leading comment must not hide their HTML
+	// header from validation (the image detector trusts .xex/.bin names).
+	std::string prefix(body.begin(), body.begin() +
+		std::min<size_t>(body.size(), 4096));
+	for (char& c : prefix)
+		if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+	size_t pos = prefix.compare(0, 3, "\xef\xbb\xbf") == 0 ? 3 : 0;
+	for (;;) {
+		pos = prefix.find_first_not_of(" \t\r\n", pos);
+		if (pos == std::string::npos) return false;
+		if (prefix.compare(pos, 4, "<!--") != 0) break;
+		const auto end = prefix.find("-->", pos + 4);
+		if (end == std::string::npos) return false;
+		pos = end + 3;
+	}
+	return prefix.compare(pos, 5, "<html") == 0 ||
+		prefix.compare(pos, 14, "<!doctype html") == 0;
+}
+
 std::string Filename(const std::string& url) {
 	const size_t end = url.find_first_of("?#");
 	const std::string path = url.substr(0, end);
@@ -208,16 +229,7 @@ Result Download(const std::string& url, const std::string& cacheDirectory,
 		if (response.body.empty())
 			throw std::runtime_error("The downloaded image is empty.");
 		if (response.contentType == "text/html" ||
-			response.contentType == "application/xhtml+xml")
-			throw std::runtime_error("The URL returned a web page. Use a direct image download link.");
-		std::string prefix(response.body.begin(), response.body.begin() +
-			std::min<size_t>(response.body.size(), 256));
-		for (char& c : prefix)
-			if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-		const auto first = prefix.find_first_not_of(" \t\r\n");
-		if (first != std::string::npos &&
-			(prefix.compare(first, 5, "<html") == 0 ||
-			 prefix.compare(first, 14, "<!doctype html") == 0))
+			response.contentType == "application/xhtml+xml" || IsHTML(response.body))
 			throw std::runtime_error("The URL returned a web page. Use a direct image download link.");
 		const std::string name = Filename(url);
 		uint64_t expanded = 0;

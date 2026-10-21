@@ -40,7 +40,8 @@
   rendering, cartridge-gating and serialized save-state tests.
 - Added local HTTP tests for redirects, limits, archives, cancellation,
   malformed responses and cache preservation, plus native image-loader
-  integration tests.
+  integration tests. HTML error pages with a UTF-8 BOM or leading comments
+  are rejected even when served under an image filename.
 - Included the new production-code regression targets in Linux normal
   and sanitizer CI and native Windows/macOS regression jobs.
 
@@ -67,6 +68,13 @@
   management limitations are explained in the panel.
 - Fixed socket address comparison and UDP send-queue reporting on the
   portable and Windows backends, preventing silent loss when a queue fills.
+- Fixed rapid NetSIO disconnect/reconnect racing an asynchronous socket
+  close. Managed runtimes can reconnect directly without rebooting the Atari.
+- Improved FujiNet and URL dialogs when resizing the emulator window.
+  FujiNet fields and actions fit narrow windows and large fonts, connection
+  errors are prominent, and unavailable actions reflect the current state.
+  The web-interface button uses the managed runtime's local port while it
+  is running and restores the saved external URL when it stops.
 - Added real UDP protocol, process ownership and UI regression tests,
   plus an opt-in end-to-end test using actual FujiNet-PC and Atari OS SIO
   calls for configuration boot, network/JSON, SD/TNFS and local-drive

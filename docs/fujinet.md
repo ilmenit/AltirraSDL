@@ -40,8 +40,8 @@ continuously, with a bounded log and an in-panel log tail.
 
 Select **Connect NetSIO**. The default listener is `127.0.0.1:9997`.
 Configure an independently running FujiNet-PC to send NetSIO to that
-address. For a FujiNet on the network, enable **Accept FujiNet from
-LAN**, then configure FujiNet's SIO-over-network settings with this
+address. For a FujiNet on the network, enable **Allow LAN**, then
+configure FujiNet's SIO-over-network settings with this
 computer's LAN address and the selected UDP port. Allow that port in
 the host firewall when needed.
 
@@ -50,6 +50,15 @@ the connected peer, packet counters, synchronization timeouts and errors.
 **Apply / Reconnect** discards the previous transaction and waits for a
 fresh connection. **Disconnect** stops the listener. An external web
 interface URL can be saved independently of the local runtime's web port.
+**Reconnect NetSIO** restores a disconnected listener while keeping a
+managed runtime running and leaving the Atari's state unchanged. While
+the local runtime is running, **Open Web Interface** opens its local web
+port; once it stops, the button uses the saved external URL if present.
+
+The panel keeps **Start and Boot FujiNet** at the top and shows connection
+errors beside the status. Fields and button captions adapt to narrow
+windows and large UI fonts; open panels stay inside the canvas after a
+resize. Unavailable actions are disabled until their prerequisites exist.
 
 Native Android builds can connect to an external FujiNet. Local desktop
 process management is unavailable there. Browsers cannot accept native

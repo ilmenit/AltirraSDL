@@ -250,6 +250,15 @@ int main() {
 			"Receive overflow did not release the bus and disconnect");
 		peer.Send({0xC1});
 		Wait(services, [&] { return control->GetNetSIOStatus().connected; });
+		// Native socket close is asynchronous. Rebinding must await release
+		// of the previous OS handle, including rapid same-port cycles.
+		for (unsigned i = 0; i < 20; ++i) {
+			control->Disconnect();
+			control->Reconnect();
+			Wait(services, [&] { return control->GetNetSIOStatus().listening; });
+			peer.Send({0xC1});
+			Wait(services, [&] { return control->GetNetSIOStatus().connected; });
+		}
 		device->Shutdown();
 		Check(!services.raw && !services.clock, "Shutdown leaked raw device or clock");
 		peer.Send({0x01, 0xEE});

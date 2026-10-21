@@ -34,6 +34,14 @@ bool s_open = false;
 char s_url[4096] = {};
 std::string s_error;
 
+void SameLineIfFits(const char* label) {
+	const auto& style = ImGui::GetStyle();
+	const float used = ImGui::GetItemRectMax().x - ImGui::GetCursorScreenPos().x;
+	const float width = ImGui::CalcTextSize(label).x + style.FramePadding.x * 2;
+	if (used + style.ItemSpacing.x + width <= ImGui::GetContentRegionAvail().x)
+		ImGui::SameLine();
+}
+
 void Start(const std::string& url, bool boot) {
 	if (s_job)
 		return;
@@ -109,30 +117,32 @@ void ATUIPollMediaURLDownload() {
 void ATUIRenderMediaURLDialog() {
 	if (!s_open)
 		return;
+	ATUIConstrainDialogSize();
 	ImGui::SetNextWindowSize(ImVec2(std::min(620.0f,
 		ImGui::GetMainViewport()->WorkSize.x - 24.0f), 0), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	if (ImGui::Begin("Open Image from URL", &s_open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
-		ImGui::TextWrapped("Enter a direct HTTP(S) link to an image, ZIP or gzip archive. "
-			"Downloads are limited to 64 MiB and retained in the downloads cache.");
+		ATUIClampDialogPosition();
+		ImGui::TextWrapped("Paste a direct HTTP(S) image, ZIP or gzip URL.");
 		ImGui::BeginDisabled(s_job != nullptr || !ATHttp::Available());
 		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##image-url", s_url, sizeof s_url);
 		if (ImGui::Button("Open Image"))
 			Start(s_url, false);
-		ImGui::SameLine();
+		SameLineIfFits("Boot Image");
 		if (ImGui::Button("Boot Image"))
 			Start(s_url, true);
 		ImGui::EndDisabled();
-		ImGui::SameLine();
+		SameLineIfFits(s_job ? "Cancel Download" : "Close");
 		if (ImGui::Button(s_job ? "Cancel Download" : "Close")) {
 			if (s_job)
 				s_job->progress.cancel.store(true, std::memory_order_relaxed);
 			else
 				s_open = false;
 		}
+		ImGui::TextWrapped("Downloads are limited to 64 MiB and retained in the downloads cache.");
 		if (s_job) {
 			const auto received = s_job->progress.received.load(std::memory_order_relaxed);
 			const auto total = s_job->progress.total.load(std::memory_order_relaxed);

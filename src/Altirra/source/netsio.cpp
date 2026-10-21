@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <thread>
 #include <vector>
 #include <at/atcore/asyncdispatcher.h>
 #include <at/atcore/deviceimpl.h>
@@ -149,6 +150,7 @@ private:
 	IATAsyncDispatcher *mpDispatcher = nullptr;
 	IATTimerService *mpTimers = nullptr;
 	vdrefptr<IATDatagramSocket> mpSocket;
+	vdrefptr<IATDatagramSocket> mpClosingSocket;
 	ATEvent *mpEvent = nullptr;
 	uint64 mWakeToken = 0, mTimerToken = 0;
 	bool mbRawRegistered = false;
@@ -284,6 +286,21 @@ void ATDeviceNetSIO::Reconnect() {
 	std::lock_guard lock(mMutex);
 	mStatus.lastError = L"Native UDP NetSIO is unavailable in a web browser.";
 #else
+	// CloseSocket queues work on the native socket thread. Keep the old
+	// socket until it has released its OS port before binding a replacement.
+	// This also covers rapid disconnect/reconnect and profile changes.
+	if (mpClosingSocket) {
+		const auto deadline = Clock::now() + std::chrono::milliseconds(100);
+		while (!mpClosingSocket->GetSocketStatus().mbClosed
+			&& Clock::now() < deadline)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		if (!mpClosingSocket->GetSocketStatus().mbClosed) {
+			std::lock_guard lock(mMutex);
+			mStatus.lastError = L"NetSIO is waiting for its previous UDP socket to close; retrying shortly.";
+			return;
+		}
+		mpClosingSocket = nullptr;
+	}
 	mpSocket = ATNetBind(ATSocketAddress::CreateIPv4(mBindAddress, (uint16)mPort), false);
 	{
 		std::lock_guard lock(mMutex);
@@ -303,7 +320,7 @@ void ATDeviceNetSIO::Disconnect() {
 	if (mpSocket) {
 		mpSocket->SetOnEvent(nullptr, nullptr, false);
 		mpSocket->CloseSocket(true);
-		mpSocket = nullptr;
+		mpClosingSocket = std::move(mpSocket);
 	}
 	if (mpDispatcher) mpDispatcher->Cancel(&mWakeToken);
 	{

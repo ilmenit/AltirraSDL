@@ -71,7 +71,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     '/corrupt.xex.gz': bytes(CORRUPT_GZIP),
                     '/bad.gz': b'\x1f\x8b' + b'broken gzip',
                     '/short.gz': gzip.compress(IMAGE)[:10],
-                    '/empty': b'', '/html': b'<html>download page</html>'}
+                    '/empty': b'', '/html': b'<html>download page</html>',
+                    '/bom.xex': b'\xef\xbb\xbf \r\n<!DOCTYPE HTML><html>Error</html>',
+                    '/comment.bin': b'<!-- CDN -->\n<!-- download -->\t<HTML>Error</HTML>'}
         if self.path == '/slow.xex':
             self.send_response(200)
             self.send_header('Content-Length', '65536')
@@ -148,6 +150,8 @@ def main():
         run('/missing', 'HTTP 404')
         run('/empty', 'empty')
         run('/html', 'web page')
+        run('/bom.xex', 'web page')
+        run('/comment.bin', 'web page')
         run('/bomb.zip', 'exceeds')
         run('/no-media.zip', 'no recognized')
         run('/corrupt.zip', 'CRC')
