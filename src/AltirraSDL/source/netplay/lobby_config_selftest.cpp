@@ -38,9 +38,9 @@ static void testDefaultIni() {
 		CHECK(xs[0].section == "official");
 		CHECK(xs[0].kind == LobbyKind::Http);
 #if defined(__EMSCRIPTEN__)
-		CHECK(xs[0].url == "http://lobby.atari.org.pl");
+		CHECK(xs[0].url == "https://lobby.atari.org.pl");
 #else
-		CHECK(xs[0].url == "http://lobby.atari.org.pl:8080");
+		CHECK(xs[0].url == "https://lobby.atari.org.pl");
 #endif
 		CHECK(xs[0].enabled);
 
@@ -191,7 +191,20 @@ static void testLanDiscoveryLoopback() {
 	CHECK(found);
 }
 
+static void testOfficialHttpsMigrationKeepsCustomServers() {
+	const char* text = "[official]\nurl=http://lobby.atari.org.pl:8080\n[backup]\nurl=http://altirra-lobby.duckdns.org:8080\n[custom]\nurl=http://127.0.0.1:8092/base\n";
+	std::vector<LobbyEntry> entries;
+	ParseLobbyIni(text, std::strlen(text), entries, nullptr);
+	CHECK(entries.size() == 3);
+	if (entries.size() == 3) {
+		CHECK(entries[0].url == "https://lobby.atari.org.pl");
+		CHECK(entries[1].url == "https://altirra-lobby.duckdns.org");
+		CHECK(entries[2].url == "http://127.0.0.1:8092/base");
+	}
+}
+
 int main() {
+	testOfficialHttpsMigrationKeepsCustomServers();
 	testDefaultIni();
 	testIniParseEdgeCases();
 	testLanAdRoundTrip();

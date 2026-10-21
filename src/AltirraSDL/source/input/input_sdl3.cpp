@@ -278,13 +278,25 @@ public:
 	void SetConsoleTrigger(uint32 id, bool state) override {
 		switch (id) {
 		case kATInputTrigger_Start:
+			#ifdef ALTIRRA_NETPLAY_ENABLED
+			ATNetplayInput::RouteConsoleSwitch(&g_sim.GetGTIA(), 0x01, state);
+#else
 			g_sim.GetGTIA().SetConsoleSwitch(0x01, state);
+#endif
 			break;
 		case kATInputTrigger_Select:
+			#ifdef ALTIRRA_NETPLAY_ENABLED
+			ATNetplayInput::RouteConsoleSwitch(&g_sim.GetGTIA(), 0x02, state);
+#else
 			g_sim.GetGTIA().SetConsoleSwitch(0x02, state);
+#endif
 			break;
 		case kATInputTrigger_Option:
+			#ifdef ALTIRRA_NETPLAY_ENABLED
+			ATNetplayInput::RouteConsoleSwitch(&g_sim.GetGTIA(), 0x04, state);
+#else
 			g_sim.GetGTIA().SetConsoleSwitch(0x04, state);
+#endif
 			break;
 		case kATInputTrigger_ColdReset:
 			if (state) {
@@ -400,7 +412,10 @@ static void ATInputSDL3_PushAtariKey(SDL_Scancode sdlSc, uint8 atariCode, bool r
 	// instead of pushing straight to POKEY, so both peers see the
 	// same Atari key events on the same emulated frame.
 	if (ATNetplayInput::IsSuppressingLocalInput()) {
-		if (!repeat) ATNetplayInput::OnLocalKeyDown(atariCode);
+		if (g_kbdOpts.mbRawKeys && !repeat)
+			g_rawActiveKeys[sdlSc] = atariCode;
+		ATNetplayInput::OnLocalKeyDown(atariCode, repeat,
+			g_kbdOpts.mbRawKeys);
 		return;
 	}
 #endif
@@ -901,9 +916,23 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 		extern ATUIKeyboardOptions g_kbdOpts;
 		auto it = g_rawActiveKeys.find(ev.scancode);
 		if (it != g_rawActiveKeys.end()) {
-			if (g_inputState.mpPokey)
-				g_inputState.mpPokey->ReleaseRawKey(it->second, !g_kbdOpts.mbFullRawKeys);
-			g_rawActiveKeys.erase(it);
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (ATNetplayInput::IsSuppressingLocalInput()) {
+				const uint8 scan = it->second;
+				g_rawActiveKeys.erase(it);
+				const bool stillHeld = std::any_of(g_rawActiveKeys.begin(),
+					g_rawActiveKeys.end(), [scan](const auto& key) {
+						return (key.second & 63) == (scan & 63);
+					});
+				if (!stillHeld) ATNetplayInput::OnLocalKeyUp(scan);
+			} else
+#endif
+			{
+				if (g_inputState.mpPokey)
+					g_inputState.mpPokey->ReleaseRawKey(it->second,
+						!g_kbdOpts.mbFullRawKeys);
+				g_rawActiveKeys.erase(it);
+			}
 		}
 	}
 
@@ -930,6 +959,9 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 		auto it = g_customBreakKeys.find(ev.scancode);
 		if (it != g_customBreakKeys.end()) {
 			extern ATUIKeyboardOptions g_kbdOpts;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			if (!ATNetplayInput::ShouldSuppressBreak())
+#endif
 			if (g_inputState.mpPokey)
 				g_inputState.mpPokey->SetBreakKeyState(false, !g_kbdOpts.mbFullRawKeys);
 			g_customBreakKeys.erase(it);
@@ -940,6 +972,9 @@ void ATInputSDL3_HandleKeyUp(const SDL_KeyboardEvent& ev) {
 	// Release Break for the standard (Natural/Raw) PAUSE path.
 	if (ev.scancode == SDL_SCANCODE_PAUSE) {
 		extern ATUIKeyboardOptions g_kbdOpts;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		if (!ATNetplayInput::ShouldSuppressBreak())
+#endif
 		if (g_inputState.mpPokey)
 			g_inputState.mpPokey->SetBreakKeyState(false, !g_kbdOpts.mbFullRawKeys);
 		return;
@@ -1020,6 +1055,11 @@ void ATInputSDL3_ReleaseAllKeys() {
 	// ReleaseAllRawKeys ensures raw keyboard keys don't stick on focus loss
 	// (matches Windows OnForceKeysUp)
 	extern ATUIKeyboardOptions g_kbdOpts;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	const bool netplay = ATNetplayInput::IsSuppressingLocalInput();
+	if (netplay) ATNetplayInput::ReleaseLocalInputs();
+	if (!netplay)
+#endif
 	if (g_inputState.mpPokey) {
 		g_inputState.mpPokey->SetShiftKeyState(false, !g_kbdOpts.mbFullRawKeys);
 		g_inputState.mpPokey->SetControlKeyState(false);
@@ -1028,7 +1068,10 @@ void ATInputSDL3_ReleaseAllKeys() {
 		g_inputState.mpPokey->SetBreakKeyState(false, !g_kbdOpts.mbFullRawKeys);
 	}
 
-	// Release console switches (including any custom-mapped ones)
+	// Live netplay capture must not change the simulator ahead of its peer.
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (!netplay)
+#endif
 	if (g_inputState.mpGTIA)
 		g_inputState.mpGTIA->SetConsoleSwitch(0x07, false);
 	g_customConsoleSwitches.clear();

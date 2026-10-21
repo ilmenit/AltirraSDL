@@ -68,12 +68,21 @@ altirra_netplay_selftest(
     SOURCES lockstep.cpp lockstep_selftest.cpp)
 
 altirra_netplay_selftest(
+    NAME input-state
+    SOURCES netplay_input_state_selftest.cpp)
+
+altirra_netplay_selftest(
     NAME transport
     SOURCES transport.cpp transport_selftest.cpp)
 
 altirra_netplay_selftest(
     NAME lobby-client
     SOURCES http_minimal.cpp lobby_client.cpp lobby_client_selftest.cpp)
+target_sources(altirra-netplay-lobby-client-test PRIVATE ${_np_root}/../media/http_client.cpp)
+target_link_libraries(altirra-netplay-lobby-client-test PRIVATE ${CMAKE_DL_LIBS})
+if(WIN32)
+    target_link_libraries(altirra-netplay-lobby-client-test PRIVATE winhttp)
+endif()
 
 altirra_netplay_selftest(
     NAME lobby-config
@@ -113,3 +122,16 @@ add_test(NAME altirra-netplay-coordinator-test
 # surprise this test, and pad enough for slow CI runners.
 set_tests_properties(altirra-netplay-coordinator-test PROPERTIES
     TIMEOUT 120)
+
+add_executable(altirra-netplay-disk-test
+    ${_np_root}/netplay_disk.cpp
+    ${_np_root}/netplay_disk_selftest.cpp)
+target_include_directories(altirra-netplay-disk-test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${CMAKE_SOURCE_DIR}/src/Altirra/h ${CMAKE_SOURCE_DIR}/src/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${CMAKE_SOURCE_DIR}/src/Altirra/autobuild_default
+    ${_np_root})
+target_link_libraries(altirra-netplay-disk-test PRIVATE
+    ATIO vdjson ATCore Kasumi system SDL3::SDL3)
+add_test(NAME altirra-netplay-disk-test COMMAND altirra-netplay-disk-test)

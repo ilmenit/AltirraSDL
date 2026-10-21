@@ -24,6 +24,8 @@
 #include <at/atcore/randomization.h>
 #include <at/atcore/vfs.h>
 #include <at/atio/blobimage.h>
+#include <at/atcore/snapshotimpl.h>
+#include <at/atcore/savestate.h>
 #include "hleprogramloader.h"
 #include "hleutils.h"
 #include "kerneldb.h"
@@ -228,6 +230,119 @@ const ATHLEProgramLoader::DiskSector ATHLEProgramLoader::kDiskSectors[] {
 	},
 };
 
+// Fork extension: native rollback shares immutable program bytes. The same
+// object embeds those bytes into portable savestates for resynchronization.
+class ATSaveStateHLEProgram final : public ATSnapExchangeObject<ATSaveStateHLEProgram, "ATSaveStateHLEProgram"> {
+public:
+	template<ATExchanger T> void Exchange(T& rw) {
+		rw.Transfer("image", &mpImage);
+		rw.Transfer("load_index", &mLoadIndex);
+		rw.Transfer("launch_time_present", &mbLaunchTimePresent);
+		rw.Transfer("launch_time_offset", &mLaunchTimeOffset);
+		rw.Transfer("launch_hook", &mbLaunchHook);
+		rw.Transfer("continue_hook", &mbContinueHook);
+		rw.Transfer("sio_attached", &mbSIOAttached);
+		rw.Transfer("sio_command", &mpSIOCommand);
+		rw.Transfer("last_kernel_enabled", &mbLastKernelEnabled);
+		rw.Transfer("type3_active", &mbType3Active);
+		rw.Transfer("type3_enabled", &mbType3Enabled);
+		rw.Transfer("disk_boot", &mbDiskBoot);
+		rw.Transfer("random_delay", &mbRandomDelay);
+		rw.Transfer("random_memory", &mbRandomMemory);
+		rw.Transfer("launch_pending", &mbLaunchPending);
+		if constexpr (T::IsReader) {
+			if (!mpImage) throw ATInvalidSaveStateException();
+		}
+	}
+	void PostDeserialize() override {
+		// Referenced bulk-data objects are populated after Exchange.
+		const auto& bytes = mpImage->GetReadBuffer();
+		if (bytes.size() > UINT32_MAX || mLoadIndex > bytes.size())
+			throw ATInvalidSaveStateException();
+	}
+	vdrefptr<ATSaveStateMemoryBuffer> mpImage;
+	vdrefptr<IATBlobImage> mpOriginalImage; // Native-only identity, immutable.
+	vdrefptr<IATObjectState> mpSIOCommand;
+	uint32 mLoadIndex = 0;
+	uint64 mLaunchTimeOffset = 0;
+	bool mbLaunchTimePresent = false;
+	bool mbLaunchHook = false, mbContinueHook = false, mbSIOAttached = false;
+	bool mbLastKernelEnabled = false, mbType3Active = false;
+	bool mbType3Enabled = false, mbDiskBoot = false, mbRandomDelay = false;
+	bool mbRandomMemory = false, mbLaunchPending = false;
+};
+
+void ATHLEProgramLoader::SaveState(IATObjectState **state) {
+	if (!mpImage) { *state = nullptr; return; }
+	if (!mpSnapshotImage) {
+		vdrefptr<ATSaveStateMemoryBuffer> bytes(new ATSaveStateMemoryBuffer);
+		const uint8 *data = static_cast<const uint8 *>(mpImage->GetBuffer());
+		bytes->GetWriteBuffer().assign(data, data + mpImage->GetSize());
+		bytes->mpDirectName = L"hle-program.bin";
+		mpSnapshotImage = bytes;
+	}
+	vdrefptr<ATSaveStateHLEProgram> saved(new ATSaveStateHLEProgram);
+	saved->mpImage = &atser_cast<ATSaveStateMemoryBuffer&>(*mpSnapshotImage);
+	saved->mpImage->mpDirectName = L"hle-program.bin";
+	saved->mpOriginalImage = mpImage;
+	saved->mLoadIndex = mProgramLoadIndex;
+	saved->mbLaunchTimePresent = mLaunchTime != 0;
+	saved->mLaunchTimeOffset = mLaunchTime - mpSim->GetScheduler()->GetTick64();
+	saved->mbLaunchHook = mpLaunchHook != nullptr;
+	saved->mbContinueHook = mpLoadContinueHook != nullptr;
+	saved->mbSIOAttached = mpSIOInterface != nullptr;
+	if (mpSIOInterface) mpSIOInterface->SaveActiveCommandState(~saved->mpSIOCommand);
+	saved->mbLastKernelEnabled = mbLastKernelEnabledState;
+	saved->mbType3Active = mbType3PollActive;
+	saved->mbType3Enabled = mbType3PollEnabled;
+	saved->mbDiskBoot = mbDiskBootEnabled;
+	saved->mbRandomDelay = mbRandomizeLaunchDelay;
+	saved->mbRandomMemory = mbRandomizeMemoryOnLoad;
+	saved->mbLaunchPending = mbLaunchPending;
+	*state = saved.release();
+}
+
+void ATHLEProgramLoader::LoadState(const IATObjectState *state) {
+	const auto& saved = atser_cast<const ATSaveStateHLEProgram&>(*state);
+	if (!saved.mpImage) throw ATInvalidSaveStateException();
+	const auto& bytes = saved.mpImage->GetReadBuffer();
+	if (bytes.size() > UINT32_MAX || saved.mLoadIndex > bytes.size())
+		throw ATInvalidSaveStateException();
+	vdrefptr<IATBlobImage> image = saved.mpOriginalImage;
+	if (!image) ATCreateBlobImage(kATImageType_Program, bytes.data(), (uint32)bytes.size(), ~image);
+	mpCPUHookMgr->UnsetHook(mpLaunchHook);
+	mpCPUHookMgr->UnsetHook(mpLoadContinueHook);
+	mpSIOInterface = nullptr;
+	vdsaferelease <<= mpImage;
+	mpImage = image.release();
+	mpSnapshotImage = saved.mpImage;
+	mProgramLoadIndex = saved.mLoadIndex;
+	mLaunchTime = saved.mbLaunchTimePresent
+		? mpSim->GetScheduler()->GetTick64() + saved.mLaunchTimeOffset : 0;
+	mbLastKernelEnabledState = saved.mbLastKernelEnabled;
+	mbType3PollActive = saved.mbType3Active;
+	mbType3PollEnabled = saved.mbType3Enabled;
+	mbDiskBootEnabled = saved.mbDiskBoot;
+	mbRandomizeLaunchDelay = saved.mbRandomDelay;
+	mbRandomizeMemoryOnLoad = saved.mbRandomMemory;
+	mbLaunchPending = saved.mbLaunchPending;
+	if (saved.mbLaunchHook) {
+		if (saved.mbSIOAttached)
+			mpCPUHookMgr->SetHookMethod(mpLaunchHook, kATCPUHookMode_Always,
+				0x1FF, 0, this, &ATHLEProgramLoader::OnDeferredLaunch);
+		else
+			mpCPUHookMgr->SetHookMethod(mpLaunchHook, kATCPUHookMode_KernelROMOnly,
+				ATKernelSymbols::DSKINV, 10, this, &ATHLEProgramLoader::OnDSKINV);
+	}
+	if (saved.mbContinueHook)
+		mpCPUHookMgr->SetHookMethod(mpLoadContinueHook, kATCPUHookMode_Always,
+			0x01FE, 0, this, &ATHLEProgramLoader::OnLoadContinue);
+	if (saved.mbSIOAttached) {
+		mpSIOInterface = mpSIOMgr->AddDevice(this);
+		mpSIOInterface->LoadActiveCommandState(saved.mpSIOCommand);
+	}
+}
+
 ATHLEProgramLoader::ATHLEProgramLoader() {
 }
 
@@ -261,10 +376,12 @@ void ATHLEProgramLoader::Shutdown() {
 
 	mbLaunchPending = false;
 
+	mpSnapshotImage = nullptr;
 	vdsaferelease <<= mpImage;
 }
 
 void ATHLEProgramLoader::LoadProgram(const wchar_t *symbolHintPath, IATBlobImage *image, ATHLEProgramLoadMode launchMode, bool randomizeLaunchDelay) {
+	mpSnapshotImage = nullptr;
 	vdsaferelease <<= mpImage;
 
 	mbRandomizeLaunchDelay = randomizeLaunchDelay;
@@ -600,7 +717,8 @@ launch:
 
 			mpSimEventMgr->NotifyEvent(kATSimEvent_EXERunSegment);
 
-			vdsaferelease <<= mpImage;
+			mpSnapshotImage = nullptr;
+	vdsaferelease <<= mpImage;
 			return 0x4C;
 		}
 

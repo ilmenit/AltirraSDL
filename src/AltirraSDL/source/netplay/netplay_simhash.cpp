@@ -3,6 +3,7 @@
 #include <stdafx.h>
 
 #include "netplay_simhash.h"
+#include "netplay_disk.h"
 
 #include "simulator.h"
 #include "cpu.h"
@@ -126,6 +127,7 @@ uint32_t ComputeSimStateHash(ATSimulator& sim) {
 	// a non-disk session pays only the function-call cost per drive.
 	for (int i = 0; i < 15; ++i) {
 		FnvFoldU32(h, sim.GetDiskDrive(i).GetNetplayDeterminismFingerprint());
+		FnvFoldU64(h, HashRollbackDisk(sim.GetDiskInterface(i).GetDiskImage()));
 	}
 
 	// FNV-1a never produces the 0 value from non-empty input in a way

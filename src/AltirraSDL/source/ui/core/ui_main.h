@@ -72,6 +72,9 @@ struct ATUIState {
 	// Virtual on-screen keyboard
 	bool showVirtualKeyboard = false;
 	int oskPlacement = 0;  // ATOSKPlacement: 0=Auto, 1=Bottom, 2=Right
+	// Fork extension: preferred maximum for a newly hosted online game.
+	// Zero selects delay-only; the host negotiates this before starting.
+	int netplayRollbackWindow = 8;
 
 	// System config sidebar selection
 	int systemConfigCategory = 0;

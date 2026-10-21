@@ -41,6 +41,8 @@
 #include "savestateio.h"
 
 #include <at/atcore/logging.h>
+#include <at/atcore/checksum.h>
+#include <random>
 
 extern ATLogChannel g_ATLCNetplay;
 
@@ -127,24 +129,10 @@ namespace {
 
 // Parse "http://host:port[/...]" into a LobbyEndpoint.  Returns empty
 // host on malformed input.
-ATNetplay::LobbyEndpoint EndpointFromUrl(const std::string& urlIn) {
-	ATNetplay::LobbyEndpoint ep;
-	std::string url = urlIn;
-	const std::string prefix = "http://";
-	if (url.compare(0, prefix.size(), prefix) == 0)
-		url.erase(0, prefix.size());
-	size_t slash = url.find('/');
-	if (slash != std::string::npos) url.resize(slash);
-	size_t colon = url.rfind(':');
-	if (colon != std::string::npos) {
-		ep.host.assign(url, 0, colon);
-		ep.port = (uint16_t)std::atoi(url.c_str() + colon + 1);
-	} else {
-		ep.host = url;
-		ep.port = 80;
-	}
-	ep.timeoutMs = 5000;
-	return ep;
+ATNetplay::LobbyEndpoint EndpointFromUrl(const std::string& url) {
+	ATNetplay::LobbyEndpoint endpoint;
+	if (!ATNetplay::ParseLobbyEndpoint(url, endpoint)) endpoint.host.clear();
+	return endpoint;
 }
 
 } // namespace anonymous (close so AllEnabledHttpLobbies has the
@@ -190,16 +178,8 @@ ATNetplay::LobbyEndpoint FirstHttpLobby(std::string& sectionOut) {
 // buffer untouched) if the string is empty or the offer isn't private.
 const uint8_t* FoldEntryCode(const HostedGame& o, uint8_t (&hash)[16]) {
 	if (!o.isPrivate || o.entryCode.empty()) return nullptr;
-	uint64_t h1 = 1469598103934665603ull;
-	uint64_t h2 = 0x9E3779B185EBCA87ull;
-	for (unsigned char c : o.entryCode) {
-		h1 = (h1 ^ c) * 1099511628211ull;
-		h2 = (h2 * 31ull) + c;
-	}
-	for (int i = 0; i < 8; ++i) {
-		hash[i]     = (uint8_t)((h1 >> (i * 8)) & 0xFF);
-		hash[i + 8] = (uint8_t)((h2 >> (i * 8)) & 0xFF);
-	}
+	const auto digest = ATComputeChecksumSHA256(o.entryCode.data(), o.entryCode.size());
+	std::copy_n(digest.mDigest, 16, hash);
 	return hash;
 }
 
@@ -237,7 +217,7 @@ uint32_t OfferTag(const HostedGame& o) {
 // LobbyRegistration keyed by the sourceLobby (section name).  A
 // lobby that fails (network error, 5xx) simply yields no
 // registration — the other lobbies still accept the game.
-void PostLobbyCreate(HostedGame& o) {
+void PostLobbyCreate(HostedGame& o, const std::string& onlySection = {}) {
 	auto lobbies = AllEnabledHttpLobbies();
 	if (lobbies.empty()) {
 		g_ATLCNetplay("lobby Create skipped for \"%s\": "
@@ -245,6 +225,16 @@ void PostLobbyCreate(HostedGame& o) {
 			o.gameName.c_str());
 		return;
 	}
+
+#if defined(__EMSCRIPTEN__)
+	// A browser host owns one WSS connection. Publish only where that
+	// transport is reachable; independent directories would require one
+	// transport each. Failed registration rotates to the next directory.
+	if (onlySection.empty() && lobbies.size() > 1) {
+		const auto selected = lobbies[o.lobbyCandidateIndex % lobbies.size()];
+		lobbies.assign(1, selected);
+	}
+#endif
 
 	ATNetplay::LobbyCreateRequest cr;
 	cr.cartName        = o.gameName;
@@ -402,10 +392,11 @@ void PostLobbyCreate(HostedGame& o) {
 	// register).  Pre-increment matters: posting then bumping would
 	// race with a torn-down coord whose late Create response carried
 	// the new (post-bump) value and would falsely match.
-	++o.coordGen;
+	if (onlySection.empty()) ++o.coordGen;
 	const uint32_t coordGenAtPost = o.coordGen;
 
 	for (const auto& L : lobbies) {
+		if (!onlySection.empty() && L.section != onlySection) continue;
 		g_ATLCNetplay("lobby Create posting for \"%s\" -> %s:%u "
 			"(section \"%s\", gen=%u)",
 			o.gameName.c_str(),
@@ -416,6 +407,7 @@ void PostLobbyCreate(HostedGame& o) {
 		req.op        = LobbyOp::Create;
 		req.endpoint  = L.endpoint;
 		req.createReq = cr;
+		if (!onlySection.empty()) req.state = "registration-recovery";
 		req.tag       = tag;
 		req.coordGen  = coordGenAtPost;
 		GetWorker().Post(std::move(req), L.section);
@@ -428,7 +420,7 @@ void PostLobbyCreate(HostedGame& o) {
 	o.createInFlight = true;
 	// Wipe stale registrations from a previous session; Create
 	// responses will repopulate as they arrive.
-	o.lobbyRegistrations.clear();
+	if (onlySection.empty()) o.lobbyRegistrations.clear();
 }
 
 void PostLobbyDelete(HostedGame& o) {
@@ -669,14 +661,22 @@ void StartCoordForHostedGame(HostedGame& o) {
 				// will already be gone from the lobby (the host's WS
 				// closed when the Disable ran StopCoord, and 3 s
 				// later the lobby's WS-presence sweep deleted it).
-				// The joiner-handle / intent stay set so the
-				// auto-accept gate keeps working on the in-flight
-				// session (and on any future broker-spawned joiner
-				// during this WASM tab's lifetime).
+				// The joiner handle/intent stay set for this approved
+				// in-flight session. A later directory loss returns to
+				// the broker instead of recreating an unapproved offer.
 				ATWasmBrokerClearAdoption();
 				return;
 			}
 		}
+	}
+
+	// An auto-accepting broker host must keep the exact directory
+	// identity whose owner approved the join. Recreating a plain session
+	// here (after a disconnect/retry) would lose that approval boundary.
+	if (ATWasmBrokerIsActive() && ATWasmBrokerRole() == 1) {
+		o.lastError = "The approved browser session ended. Start again from the lobby.";
+		ATNetplayUI_EndSession();
+		return;
 	}
 
 	// WASM (browser) host: WS handshake requires the lobby's host
@@ -773,14 +773,19 @@ void StopCoordForHostedGame(HostedGame& o) {
 // fire ATNetplayProfile::EndSession mid-resync — that would tear
 // down the canonical session profile while the resync transfer is
 // still in flight.
+bool IsSessionPhase(ATNetplayGlue::Phase phase) {
+	using P = ATNetplayGlue::Phase;
+	return phase == P::Handshaking || phase == P::SendingSnapshot
+		|| phase == P::ReceivingSnapshot || phase == P::SnapshotReady
+		|| phase == P::Lockstepping || phase == P::Resyncing
+		|| phase == P::Desynced;
+}
+
 bool AnyHostedGameInSession() {
 	for (auto& o : GetState().hostedGames) {
 		using P = ATNetplayGlue::Phase;
 		P p = ATNetplayGlue::HostPhase(o.id.c_str());
-		if (p == P::Handshaking || p == P::SendingSnapshot ||
-		    p == P::ReceivingSnapshot || p == P::SnapshotReady ||
-		    p == P::Lockstepping ||
-		    p == P::Resyncing || p == P::Desynced) return true;
+		if (IsSessionPhase(p)) return true;
 	}
 	return false;
 }
@@ -790,10 +795,7 @@ bool AnyHostedGameInSession() {
 bool JoinerInSession() {
 	using P = ATNetplayGlue::Phase;
 	P p = ATNetplayGlue::JoinPhase();
-	return p == P::Handshaking || p == P::SendingSnapshot ||
-	       p == P::ReceivingSnapshot || p == P::SnapshotReady ||
-	       p == P::Lockstepping ||
-	       p == P::Resyncing || p == P::Desynced;
+	return IsSessionPhase(p);
 }
 
 } // anonymous
@@ -888,6 +890,36 @@ void SyncDeleteAllRegistrationsForShutdown() {
 	}
 }
 
+void RecoverLobbyRegistration(HostedGame& offer, const std::string& section) {
+	if (!offer.enabled) return;
+#if defined(__EMSCRIPTEN__)
+	if (ATWasmBrokerIsActive() && ATWasmBrokerRole() == 1) {
+		// A broker approval belongs to its original directory identity.
+		// Recreating a plain waiting session would drop that authority
+		// while this browser host still auto-accepts incoming handshakes.
+		offer.lastError = "The approved browser session is no longer available.";
+		ATNetplayUI_EndSession();
+		return;
+	}
+	if (ATNetplayGlue::HostPhase(offer.id.c_str()) != ATNetplayGlue::Phase::WaitingForJoiner) {
+		offer.lastError = "Lobby registration was lost; the current match will not migrate.";
+		return;
+	}
+#endif
+	auto& registrations = offer.lobbyRegistrations;
+	const auto entry = std::find_if(registrations.begin(), registrations.end(),
+		[&](const auto& reg) { return reg.section == section; });
+	if (entry == registrations.end()) return; // another failed heartbeat already recovered
+	registrations.erase(entry);
+	#if defined(__EMSCRIPTEN__)
+	ATNetplayGlue::StopHost(offer.id.c_str());
+	++offer.lobbyCandidateIndex;
+	PostLobbyCreate(offer);
+#else
+	PostLobbyCreate(offer, section);
+#endif
+}
+
 void OnLobbyCreateSucceeded(HostedGame& o,
                             const std::string& section,
                             const std::string& sessionId,
@@ -911,9 +943,13 @@ void OnLobbyCreateSucceeded(HostedGame& o,
 	const uint8_t* codePtr = FoldEntryCode(o, codeHash);
 	ATNetplay::NetBootConfig bc = BuildBootConfig(o);
 
+	std::string advertised;
+	for (const auto& reg : o.lobbyRegistrations)
+		if (reg.section == section) { advertised = reg.webSocketUrl; break; }
+	const std::string webSocketUrl = ATNetplay::LobbyWebSocketUrl(*ep, advertised);
 	bool ok = ATNetplayGlue::StartHostWss(
 		o.id.c_str(),
-		ep->host.c_str(),
+		webSocketUrl.c_str(),
 		sessionId.c_str(),
 		token.c_str(),
 		ResolvedNickname().c_str(),
@@ -1020,8 +1056,10 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		// In-app feedback so the user knows their normal config
 		// came back.  Platform notifications don't cover this
 		// since nothing "arrived" — the session simply ended.
-		PushToast("Session ended — your normal settings were restored.",
-			ToastSeverity::Info, 4000);
+		PushToast(ATNetplayProfile::WasGameRestored()
+			? "Session ended — your previous game and settings were restored."
+			: "Session ended — your settings and media were restored, but the running game could not be resumed.",
+			ATNetplayProfile::WasGameRestored() ? ToastSeverity::Info : ToastSeverity::Warning, 5000);
 	}
 
 	// Stamp the joiner-side "waiting since" clock on the None → non-None
@@ -1068,7 +1106,7 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		// historically diverged (URL trim vs registry-stored prefs
 		// vs NetHello fixed-length pad), and a missed match leaves
 		// the host stuck on the prompt modal indefinitely.  The
-		// lobby's session-state filter is the correct authority for
+		// lobby's approved-intent-bound ticket is the authority for
 		// "is this joiner allowed in"; the in-emulator prompt is for
 		// the non-broker public-listing scenario, not this one.
 		//
@@ -1242,11 +1280,7 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		o.state = PhaseToHostedGameState(p, o.enabled, o.state);
 
 		// If this offer is *in* a session, it MUST stay listed.
-		bool thisInSession = (p == P::Handshaking ||
-		                      p == P::SendingSnapshot ||
-		                      p == P::ReceivingSnapshot ||
-		                      p == P::SnapshotReady ||
-		                      p == P::Lockstepping);
+		const bool thisInSession = IsSessionPhase(p);
 
 		// Edge detection on lastPhase → current phase.  First time we
 		// see a non-Waiting non-None phase, a peer has connected:
@@ -1350,7 +1384,7 @@ void ReconcileHostedGames(uint64_t nowMs) {
 		// keep showing the row as "waiting" after a session ended,
 		// but joiners hitting it would time out.
 		const bool coordTerminal = coordRunning &&
-			(p == P::Ended || p == P::Desynced || p == P::Failed);
+			(p == P::Ended || p == P::Failed);
 
 		if (wantRunning && !coordRunning) {
 			StartCoordForHostedGame(o);
@@ -1394,11 +1428,11 @@ void ReconcileHostedGames(uint64_t nowMs) {
 				char lobbyHostPort[128];
 				std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
 					"%s:%u", ep->host.c_str(),
-					(unsigned)ATLobby::kReflectorPortDefault);
+					(unsigned)reg.relayPort);
 				ATNetplayGlue::HostSetRelayContext(
 					o.id.c_str(),
 					reg.sessionId.c_str(),
-					lobbyHostPort);
+					lobbyHostPort, reg.token.c_str());
 			}
 		}
 
@@ -1444,7 +1478,7 @@ void ReconcileHostedGames(uint64_t nowMs) {
 			    || nowMs - o.lastHeartbeatMs >= kHeartbeatMs
 			    || stateEdge) {
 				auto lobbies = AllEnabledHttpLobbies();
-				const int playerCount = (p == P::Lockstepping) ? 2 : 1;
+				const int playerCount = thisInSession ? 2 : 1;
 				const char *state = thisInSession
 					? ATLobby::kStatePlaying : ATLobby::kStateWaiting;
 				// Mirror into the HostedGame so the UI can render a
@@ -1752,6 +1786,19 @@ uint32_t NextBrokerTag() {
 	return kBrokerTagBase | (s_next & kBrokerTagMask);
 }
 
+// Broker pages already collected approval and hide the in-emulator UI.
+// Their joiner can still be waiting for the host's WASM startup.
+bool IsExternalBrokerSpawn() {
+#if defined(__EMSCRIPTEN__)
+	const auto& session = GetState().session;
+	return ATWasmBrokerIsActive() && ATWasmBrokerRole() == 0
+		&& session.brokerAccepted && !session.brokerSessionId.empty()
+		&& session.brokerTag != 0;
+#else
+	return false;
+#endif
+}
+
 // Post a CreateIntent against the resolved sourceLobby.  Falls back
 // to the first enabled lobby if the source isn't configured (e.g.
 // the user added the lobby, browsed, removed it, then clicked Join
@@ -1848,6 +1895,12 @@ void EnterBrokerError(const char* msg) {
 	st.session.brokerSpawnDeadlineMs = 0;
 	st.session.brokerLast404Streak   = 0;
 	st.session.brokerTag = 0;
+#if defined(__EMSCRIPTEN__)
+	if (ATWasmBrokerIsActive()) {
+		ATNetplayUI_EndSession();
+		return;
+	}
+#endif
 	Navigate(Screen::Error);
 }
 
@@ -1871,6 +1924,27 @@ bool BeginBrokerJoinFlow(const ATNetplay::LobbySession& target,
 		                                   : Screen::BrokerAsking);
 		return true;
 	}
+
+#if defined(__EMSCRIPTEN__)
+	if (ATWasmBrokerIsActive() && ATWasmBrokerRole() == 0) {
+		const char* approved = ATWasmBrokerIntentId();
+		if (approved && *approved) {
+			// Host and joiner load separate WASM instances concurrently.
+			// Reuse the page's approval if the joiner starts first;
+			// posting another intent would ask an absent broker page.
+			st.session.brokerIntentId = approved;
+			st.session.brokerSessionId = target.sessionId;
+			st.session.brokerAccepted = true;
+			st.session.brokerInFlight = false;
+			st.session.brokerStartedMs = SDL_GetTicks();
+			st.session.brokerLastPollMs = 0;
+			st.session.brokerLast404Streak = 0;
+			st.session.brokerSpawnDeadlineMs = SDL_GetTicks() + kBrokerSpawnDeadlineMs;
+			st.session.brokerTag = NextBrokerTag();
+			return true;
+		}
+	}
+#endif
 
 	// Fresh start — clear any stale state and post the intent.
 	st.session.brokerIntentId.clear();
@@ -1932,7 +2006,8 @@ void CancelBrokerJoinFlow() {
 void Tick_BrokerWait(uint64_t nowMs) {
 	State& st = GetState();
 	const Screen scr = st.screen;
-	if (scr != Screen::BrokerAsking && scr != Screen::BrokerSpawning) {
+	if (scr != Screen::BrokerAsking && scr != Screen::BrokerSpawning
+		&& !IsExternalBrokerSpawn()) {
 		// User navigated away from the broker UI without an explicit
 		// Cancel (Esc / Back / menu close on Desktop, where the
 		// global Esc handler bypasses ScreenHeader's Cancel hook).
@@ -2021,7 +2096,7 @@ bool OnBrokerLobbyResult(LobbyResult& r) {
 	// intent expire on its own (60 s TTL).  Without this hook a late
 	// Allow click would yank the user back into BrokerSpawning.
 	if (st.screen != Screen::BrokerAsking &&
-	    st.screen != Screen::BrokerSpawning) {
+	    st.screen != Screen::BrokerSpawning && !IsExternalBrokerSpawn()) {
 		g_ATLCNetplay("broker: late result on screen=%d — dropping",
 			(int)st.screen);
 		st.session.brokerTag = 0;
@@ -2176,10 +2251,9 @@ bool OnBrokerLobbyResult(LobbyResult& r) {
 			refreshed.sourceLobby = st.session.joinTarget.sourceLobby;
 			st.session.joinTarget = std::move(refreshed);
 
-			// Clear the broker latch BEFORE re-entering so the
-			// awaiting_approval check sees state="waiting" + no
-			// pending intent and routes through the normal path.
-			st.session.brokerIntentId.clear();
+			// Clear the polling latch before re-entering the live join
+			// path. Retain the approved intent as authority for the
+			// private relay-ticket request; public state is now waiting.
 			st.session.brokerSessionId.clear();
 			st.session.brokerAccepted = false;
 			st.session.brokerSpawnDeadlineMs = 0;
@@ -2225,12 +2299,7 @@ void StartJoiningAction() {
 			}
 			if (isOwn) break;
 		}
-		if (!isOwn && !target.hostHandle.empty()) {
-			if (NormalizeHandle(target.hostHandle)
-			 == NormalizeHandle(ResolvedNickname())) {
-				isOwn = true;
-			}
-		}
+
 		if (isOwn) {
 			st.session.lastError =
 				"That session is the one you're hosting — "
@@ -2250,16 +2319,8 @@ void StartJoiningAction() {
 	uint8_t codeHash[16] = {};
 	const uint8_t* codePtr = nullptr;
 	if (!st.session.joinEntryCode.empty()) {
-		uint64_t h1 = 1469598103934665603ull;
-		uint64_t h2 = 0x9E3779B185EBCA87ull;
-		for (unsigned char c : st.session.joinEntryCode) {
-			h1 = (h1 ^ c) * 1099511628211ull;
-			h2 = (h2 * 31ull) + c;
-		}
-		for (int i = 0; i < 8; ++i) {
-			codeHash[i]     = (uint8_t)((h1 >> (i * 8)) & 0xFF);
-			codeHash[i + 8] = (uint8_t)((h2 >> (i * 8)) & 0xFF);
-		}
+		const auto digest = ATComputeChecksumSHA256(st.session.joinEntryCode.data(), st.session.joinEntryCode.size());
+		std::copy_n(digest.mDigest, 16, codeHash);
 		codePtr = codeHash;
 	}
 
@@ -2287,6 +2348,39 @@ void StartJoiningAction() {
 	}() : std::string())) {
 		return;
 	}
+
+	// Acquire a private, per-attempt relay credential before opening transport.
+	// A public session ID never authorizes endpoint ownership.
+	if (!st.session.joinTarget.sessionId.empty() && !st.session.relayAuthReady) {
+		if (st.session.relayAuthPending) return;
+		auto lobbies = AllEnabledHttpLobbies();
+		const EnabledHttpLobby* selected = nullptr;
+		for (const auto& lobby : lobbies)
+			if (lobby.section == st.session.joinTarget.sourceLobby) { selected = &lobby; break; }
+		if (!selected && !lobbies.empty()) selected = &lobbies.front();
+		if (!selected) { st.session.lastError = "No lobby is configured for this game."; Navigate(Screen::Error); return; }
+		std::random_device random;
+		static constexpr char hex[] = "0123456789abcdef";
+		std::string nonce;
+		for (int i = 0; i < 16; ++i) { const unsigned byte = random() & 255; nonce += hex[byte >> 4]; nonce += hex[byte & 15]; }
+		st.session.relayAuth = ATNetplay::LobbyRelayTicket();
+		st.session.relayAuth.sessionNonce = nonce;
+		st.session.relayAuthSessionId = st.session.joinTarget.sessionId;
+		LobbyRequest request;
+		request.op = LobbyOp::AcquireRelayTicket; request.endpoint = selected->endpoint;
+		request.sessionId = st.session.relayAuthSessionId; request.token = nonce;
+		request.intentId = st.session.brokerIntentId;
+#if defined(__EMSCRIPTEN__)
+		if (ATWasmBrokerIsActive() && request.intentId.empty())
+			request.intentId = ATWasmBrokerIntentId();
+#endif
+		request.tag = ++st.session.relayAuthTag;
+		st.session.relayAuthPending = GetWorker().Post(std::move(request), selected->section);
+		if (!st.session.relayAuthPending) { st.session.lastError = "Could not start the connection."; Navigate(Screen::Error); return; }
+		Navigate(Screen::Waiting);
+		return;
+	}
+	st.session.relayAuthReady = false; // each subsequent attempt obtains a fresh route
 
 	bool ok = false;
 #if defined(__EMSCRIPTEN__)
@@ -2333,14 +2427,16 @@ void StartJoiningAction() {
 		g_ATLCNetplay("joiner (WASM): StartJoinWss host=%s sid=%s",
 			ep->host.c_str(),
 			st.session.joinTarget.sessionId.c_str());
+		const std::string webSocketUrl = ATNetplay::LobbyWebSocketUrl(*ep, st.session.relayAuth.webSocketUrl);
 		ok = ATNetplayGlue::StartJoinWss(
-			ep->host.c_str(),
+			webSocketUrl.c_str(),
 			st.session.joinTarget.sessionId.c_str(),
 			ResolvedNickname().c_str(),
 			/*osRomHash*/    0,
 			/*basicRomHash*/ 0,
 			/*acceptTos*/    true,
-			codePtr);
+			codePtr, st.session.relayAuth.ticket.c_str(),
+			st.session.relayAuth.sessionNonce.c_str());
 	}
 #else
 	// Native v3 joiner targeting a wssRelayOnly host: skip candidate
@@ -2372,7 +2468,7 @@ void StartJoiningAction() {
 		char lobbyHostPort[128];
 		std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
 			"%s:%u", ep->host.c_str(),
-			(unsigned)ATLobby::kReflectorPortDefault);
+			(unsigned)st.session.relayAuth.relayPort);
 		g_ATLCNetplay(
 			"joiner: WSS-only host — StartJoinRelay sid=%s lobby=%s",
 			st.session.joinTarget.sessionId.c_str(), lobbyHostPort);
@@ -2383,7 +2479,8 @@ void StartJoiningAction() {
 			/*osRomHash*/    0,
 			/*basicRomHash*/ 0,
 			/*acceptTos*/    true,
-			codePtr);
+			codePtr, st.session.relayAuth.ticket.c_str(),
+			st.session.relayAuth.sessionNonce.c_str());
 	} else {
 		// v3 NAT traversal: prefer the candidates list (LAN;srflx;loopback)
 		// over the single hostEndpoint when the host published one.  The
@@ -2403,7 +2500,8 @@ void StartJoiningAction() {
 			/*osRomHash*/    0,
 			/*basicRomHash*/ 0,
 			/*acceptTos*/    true,
-			codePtr);
+			codePtr, st.session.relayAuth.ticket.c_str(),
+			st.session.relayAuth.sessionNonce.c_str());
 	}
 #endif
 	if (!ok) {
@@ -2455,7 +2553,7 @@ void StartJoiningAction() {
 			char lobbyHostPort[128];
 			std::snprintf(lobbyHostPort, sizeof lobbyHostPort,
 				"%s:%u", ep->host.c_str(),
-				(unsigned)ATLobby::kReflectorPortDefault);
+				(unsigned)st.session.relayAuth.relayPort);
 
 			// Build the joiner's candidate list BEFORE arming the
 			// relay context so the SRFLX probe doesn't race with
@@ -2488,7 +2586,7 @@ void StartJoiningAction() {
 				std::string probeErr;
 				bool probeOk = probe.Run(
 					ep->host.c_str(),
-					ATLobby::kReflectorPortDefault,
+					st.session.relayAuth.relayPort,
 					joinerPort,
 					/*timeoutMs=*/1500,
 					srflx, probeErr);
@@ -2524,7 +2622,7 @@ void StartJoiningAction() {
 			// start forwarding ASDF to our game socket.
 			ATNetplayGlue::JoinerSetRelayContext(
 				st.session.joinTarget.sessionId.c_str(),
-				lobbyHostPort);
+				lobbyHostPort, st.session.relayAuth.ticket.c_str());
 
 			char nonceHex[33] = "";
 			ATNetplayGlue::JoinerGetSessionNonceHex(nonceHex);

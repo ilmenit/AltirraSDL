@@ -28,6 +28,7 @@
 
 #include "input/touch_widgets.h"
 #include "ui/core/ui_mode.h"
+#include "ui/core/ui_main.h"
 #include "ui/emotes/emote_netplay.h"
 #include "settings.h"
 #include "altirra_icons.h"
@@ -46,6 +47,7 @@
 #include <SDL3/SDL_dialog.h>
 
 extern SDL_Window *g_pWindow;
+extern ATUIState g_uiState;
 
 #include <vd2/system/registry.h>
 #include <vd2/system/VDString.h>
@@ -356,23 +358,10 @@ void RenderDeepLinkPrep() {
 
 // Parse "http://host:port[/...]" into a LobbyEndpoint.  Shared by the
 // browser-refresh and stats-refresh fan-out paths.
-static ATNetplay::LobbyEndpoint EndpointForLobby(const ATNetplay::LobbyEntry& e) {
-	ATNetplay::LobbyEndpoint ep;
-	std::string url = e.url;
-	const std::string prefix = "http://";
-	if (url.compare(0, prefix.size(), prefix) == 0) url.erase(0, prefix.size());
-	size_t slash = url.find('/');
-	if (slash != std::string::npos) url.resize(slash);
-	size_t colon = url.rfind(':');
-	if (colon != std::string::npos) {
-		ep.host.assign(url, 0, colon);
-		ep.port = (uint16_t)std::atoi(url.c_str() + colon + 1);
-	} else {
-		ep.host = url;
-		ep.port = 80;
-	}
-	ep.timeoutMs = 5000;
-	return ep;
+static ATNetplay::LobbyEndpoint EndpointForLobby(const ATNetplay::LobbyEntry& entry) {
+	ATNetplay::LobbyEndpoint endpoint;
+	if (!ATNetplay::ParseLobbyEndpoint(entry.url, endpoint)) endpoint.host.clear();
+	return endpoint;
 }
 
 void EnqueueBrowserRefresh() {
@@ -701,16 +690,7 @@ void RenderBrowser() {
 					}
 					if (isSelfHosted) break;
 				}
-				if (!isSelfHosted && !s.hostHandle.empty()) {
-					if (NormalizeHandle(s.hostHandle)
-					 == NormalizeHandle(ResolvedNickname())) {
-						isSelfHosted = true;
-					}
-				}
-				// Block Join on missing firmware.  The tile still
-				// registers the click (users get the hover feedback
-				// + selection) but the navigation is suppressed and
-				// a toast explains why.
+
 				if (isSelfHosted) {
 					PushToast("That's your own hosted session — "
 						"open My Hosted Games to manage it.",
@@ -1411,11 +1391,26 @@ void RenderOnlinePlayPrefsBody() {
 	ATTouchToggle("Chime", &st.prefs.notif.playChime);
 
 	ImGui::Spacing();
-	ATTouchSection("Input delay");
+	ATTouchSection("Response and connection");
+	int mode = g_uiState.netplayRollbackWindow > 0 ? 0 : 1;
+	ImGui::BeginDisabled(ATNetplayGlue::IsLockstepping());
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	if (ImGui::Combo("##online-play-mode", &mode,
+		"Automatic (rollback)\0Delay only\0")) {
+		g_uiState.netplayRollbackWindow = mode == 0 ? 8 : 0;
+		ATNetplayGlue::SetRollbackPreference(g_uiState.netplayRollbackWindow);
+		ATSaveSettings(kATSettingsCategory_View);
+	}
+	ImGui::EndDisabled();
+	ATTouchMutedText(mode == 0
+		? "Responsive controls with bounded rollback. Applies to new hosted games."
+		: "Waits for both players. A larger buffer adds response delay.");
+	ImGui::BeginDisabled(mode == 0 || ATNetplayGlue::IsLockstepping());
 	ATTouchSlider("LAN (frames)",
 		&st.prefs.defaultInputDelayLan, 1, 10, "%d frames");
 	ATTouchSlider("Internet (frames)",
 		&st.prefs.defaultInputDelayInternet, 1, 10, "%d frames");
+	ImGui::EndDisabled();
 
 	ImGui::Spacing();
 	ATTouchSection("Display");

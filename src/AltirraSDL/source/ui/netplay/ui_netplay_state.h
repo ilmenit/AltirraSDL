@@ -149,8 +149,11 @@ struct HostedGame {
 		std::string section;     // lobby.ini [section] key
 		std::string sessionId;   // returned by POST /v1/session
 		std::string token;       // required for heartbeat/delete
+		uint16_t relayPort = 8081;
+		std::string webSocketUrl;
 	};
 	std::vector<LobbyRegistration> lobbyRegistrations;
+	size_t lobbyCandidateIndex = 0; // transient browser-directory failover cursor
 
 	uint16_t    boundPort      = 0;
 	uint64_t    lastHeartbeatMs = 0;
@@ -434,6 +437,11 @@ struct Session {
 	// lobby list refresh doesn't yank it from underneath the dialog.
 	ATNetplay::LobbySession joinTarget;
 	std::string             joinEntryCode;
+	ATNetplay::LobbyRelayTicket relayAuth;
+	std::string relayAuthSessionId;
+	uint32_t relayAuthTag = 0;
+	bool relayAuthPending = false;
+	bool relayAuthReady = false;
 
 	// Error string to display on the Error screen.  Set from failed
 	// transitions; cleared when the sheet is dismissed.

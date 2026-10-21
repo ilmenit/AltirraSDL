@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 
 #if defined(_WIN32)
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -42,6 +43,8 @@ namespace {
 
 void EnsureNetSubsystem() {
 #if defined(_WIN32)
+	static std::mutex lock;
+	std::lock_guard<std::mutex> guard(lock);
 	static bool ok = false;
 	if (ok) return;
 	WSADATA wsa;

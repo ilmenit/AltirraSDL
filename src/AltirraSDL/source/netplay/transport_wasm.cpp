@@ -53,7 +53,8 @@ constexpr size_t kOutboundCap = 64;
 
 std::string BuildSubprotocolList(const std::string& sidHex,
                                  uint8_t role,
-                                 const std::string& tokenHex) {
+                                 const std::string& tokenHex,
+                                 const std::string& nonceHex) {
 	std::string s = "altirra-netplay.v1,session.";
 	s += sidHex;
 	s += ",role.";
@@ -66,6 +67,7 @@ std::string BuildSubprotocolList(const std::string& sidHex,
 		s += ",token.";
 		s += tokenHex;
 	}
+	if (!nonceHex.empty()) s += ",nonce." + nonceHex;
 	return s;
 }
 
@@ -87,10 +89,12 @@ Endpoint MakeWsPeerEndpoint() {
 WasmTransport::WasmTransport(std::string lobbyHost,
                              std::string sidHex32,
                              uint8_t     role,
-                             std::string tokenHex)
+                             std::string tokenHex,
+                             std::string nonceHex)
 	: mLobbyHost(std::move(lobbyHost))
 	, mSidHex(std::move(sidHex32))
 	, mTokenHex(std::move(tokenHex))
+	, mNonceHex(std::move(nonceHex))
 	, mRole(role)
 {
 }
@@ -105,11 +109,13 @@ bool WasmTransport::Listen(uint16_t /*port*/) {
 
 	mHandshakeStartMs = emscripten_get_now();
 
-	std::string url = "wss://";
-	url += mLobbyHost;
-	url += "/netplay";
+	std::string url;
+	if (mLobbyHost.rfind("wss://", 0) == 0 || mLobbyHost.rfind("ws://", 0) == 0)
+		url = mLobbyHost;
+	else
+		url = "wss://" + mLobbyHost + "/netplay";
 
-	std::string subp = BuildSubprotocolList(mSidHex, mRole, mTokenHex);
+	std::string subp = BuildSubprotocolList(mSidHex, mRole, mTokenHex, mNonceHex);
 
 	// Tee the connect attempt to the browser DevTools console so a
 	// user with adblock / corporate proxy / mixed-content blocking

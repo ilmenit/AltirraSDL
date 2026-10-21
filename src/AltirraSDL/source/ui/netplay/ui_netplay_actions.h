@@ -197,6 +197,8 @@ void PostLobbyDeleteForSession(const std::string& section,
 // HostExists==false, subsequent (federated) Creates just add a
 // LobbyRegistration.
 struct HostedGame;
+void RecoverLobbyRegistration(HostedGame& offer, const std::string& section);
+
 void OnLobbyCreateSucceeded(HostedGame& o,
                             const std::string& section,
                             const std::string& sessionId,

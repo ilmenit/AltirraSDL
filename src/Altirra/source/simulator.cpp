@@ -4246,6 +4246,29 @@ public:
 	double mRealRunTimeSeconds = 0;
 	uint32 mColdStartId = 0;
 
+	// SDL fork: exact checkpoints preserve time and entropy rather than
+	// reseeding after a load. Optional fields keep old states readable.
+	bool mbExactRuntime = false;
+	uint64 mSchedulerTick = 0;
+	uint64 mSlowSchedulerTick = 0;
+	uint32 mRandomSeed = 0;
+	uint32 mLockedRandomSeed = 0;
+	vdvector<uint32> mRandomizationSeeds;
+	uint32 mPIARandomSeed = 0;
+	uint8 mPIAFloatingMask = 0;
+	uint32 mPIADecayTimeMin = 0;
+	uint32 mPIADecayTimeRange = 0;
+	bool mbPIADeterministicSeedMix = false;
+	vdvector<uint64> mPIAFloatTimers;
+	uint32 mStartupDelay = 0;
+	uint32 mStartupDelay2 = 0;
+	bool mbStartupHeldKey = false;
+	sint32 mPendingHeldKey = -1;
+	uint8 mPendingHeldSwitches = 0;
+	uint8 mForcedConsoleSwitches = 15;
+	bool mbMMURuntimePresent = false;
+	ATMMUSnapshotRuntimeState mMMURuntime;
+
 	vdrefptr<ATSaveStateMemoryBuffer> mpMemory;
 	uint8 mXmemPortbMask = 0;
 	bool mbXmemAnticBanking = false;
@@ -4270,6 +4293,9 @@ public:
 	vdrefptr<IATObjectState> mpCart2;
 	vdvector<vdrefptr<IATObjectState>> mpDiskDrives;
 	vdrefptr<IATObjectState> mpSIOManager;
+	bool mbHLELoaderStatePresent = false;
+	vdrefptr<IATObjectState> mpHLEProgram;
+	vdrefptr<IATObjectState> mpHLEBasic;
 	vdrefptr<IATObjectState> mpU1mb;
 	vdrefptr<IATObjectState> mpDeviceStates;
 
@@ -4288,6 +4314,28 @@ public:
 		rw.Transfer("sim_run_time_seconds", &mSimRunTimeSeconds);
 		rw.Transfer("real_run_time_seconds", &mRealRunTimeSeconds);
 		rw.Transfer("cold_start_id", &mColdStartId);
+		rw.Transfer("exact_runtime", &mbExactRuntime);
+		rw.Transfer("mmu_runtime_present", &mbMMURuntimePresent);
+		rw.Transfer("mmu_bank", &mMMURuntime.mBank);
+		rw.Transfer("mmu_basic_latched", &mMMURuntime.mbBasicLatched);
+		rw.Transfer("mmu_selftest_latched", &mMMURuntime.mbSelfTestLatched);
+		rw.Transfer("scheduler_tick", &mSchedulerTick);
+		rw.Transfer("slow_scheduler_tick", &mSlowSchedulerTick);
+		rw.Transfer("random_seed", &mRandomSeed);
+		rw.Transfer("locked_random_seed", &mLockedRandomSeed);
+		rw.Transfer("randomization_seeds", &mRandomizationSeeds);
+		rw.Transfer("pia_random_seed", &mPIARandomSeed);
+		rw.Transfer("pia_floating_mask", &mPIAFloatingMask);
+		rw.Transfer("pia_decay_time_min", &mPIADecayTimeMin);
+		rw.Transfer("pia_decay_time_range", &mPIADecayTimeRange);
+		rw.Transfer("pia_deterministic_seed_mix", &mbPIADeterministicSeedMix);
+		rw.Transfer("pia_float_timers", &mPIAFloatTimers);
+		rw.Transfer("startup_delay", &mStartupDelay);
+		rw.Transfer("startup_delay_2", &mStartupDelay2);
+		rw.Transfer("startup_held_key", &mbStartupHeldKey);
+		rw.Transfer("pending_held_key", &mPendingHeldKey);
+		rw.Transfer("pending_held_switches", &mPendingHeldSwitches);
+		rw.Transfer("forced_console_switches", &mForcedConsoleSwitches);
 
 		rw.TransferEnum("hardware_mode", &mHardwareMode);
 		rw.TransferEnum("memory_mode", &mMemoryMode);
@@ -4314,6 +4362,9 @@ public:
 		rw.Transfer("cart2", &mpCart2);
 		rw.Transfer("disk_drives", &mpDiskDrives);
 		rw.Transfer("sio_manager", &mpSIOManager);
+		rw.Transfer("hle_loader_exact", &mbHLELoaderStatePresent);
+		rw.Transfer("hle_program", &mpHLEProgram);
+		rw.Transfer("hle_basic", &mpHLEBasic);
 		rw.Transfer("u1mb", &mpU1mb);
 		rw.Transfer("device_states", &mpDeviceStates);
 
@@ -4326,6 +4377,13 @@ public:
 		rw.Transfer("front_end", &mpFrontEnd);
 
 		if constexpr (T::IsReader) {
+			if (mbExactRuntime && (mRandomizationSeeds.size() != 9
+				|| mPIAFloatTimers.size() != 8
+				|| mStartupDelay > 0x7FFFFFFF || mStartupDelay2 > 0x7FFFFFFF
+				|| mPendingHeldKey < -1 || mPendingHeldKey > 255
+				|| (mPendingHeldSwitches & ~7) || (mForcedConsoleSwitches & ~15)))
+				throw ATInvalidSaveStateException();
+
 			// if aliasing is specified, there must be more than two bits
 			if (mbXmemAliasing && VDCountBits8(mXmemPortbMask) < 3)
 				throw ATInvalidSaveStateException();
@@ -4498,7 +4556,7 @@ void ATSimulator::CreateSnapshot(IATSerializable **ppSnapshot, IATSerializable *
 	VDPixmapBuffer pxbuf;
 	VDPixmap px;
 	float par;
-	if (mGTIA.GetLastFrameBufferRaw(pxbuf, px, par)) {
+	if (ppSnapInfo && mGTIA.GetLastFrameBufferRaw(pxbuf, px, par)) {
 		if (pxbuf.data)
 			info->mImage = std::move(pxbuf);
 		else
@@ -4548,6 +4606,36 @@ void ATSimulator::CreateSnapshot(IATSerializable **ppSnapshot, IATSerializable *
 
 	root->mSimRunTimeSeconds = info->mSimRunTimeSeconds;
 	root->mRealRunTimeSeconds = RealSecondsSinceColdReset();
+	root->mColdStartId = info->mColdStartId;
+	root->mbExactRuntime = true;
+	root->mbMMURuntimePresent = true;
+	root->mMMURuntime = mpMMU->GetSnapshotRuntimeState();
+	root->mSchedulerTick = mScheduler.GetTick64();
+	root->mSlowSchedulerTick = mSlowScheduler.GetTick64();
+	root->mRandomSeed = mpPrivateData->mRandomSeed;
+	root->mLockedRandomSeed = mpPrivateData->mLockedRandomSeed;
+	const auto& seeds = g_ATRandomizationSeeds;
+	const uint32 randomizationSeeds[] = {
+		seeds.mMainMemory, seeds.mHighMemory, seeds.mAxlonMemory,
+		seeds.mVBXEMemory, seeds.mProgramLaunchDelay, seeds.mPIAFloatingInputs,
+		seeds.mDiskStartPos, seeds.mCassetteStartPos, seeds.mProgramMemory
+	};
+	root->mRandomizationSeeds.assign(std::begin(randomizationSeeds),
+		std::end(randomizationSeeds));
+	const auto& floating = mpPrivateData->mFloatingInputs;
+	root->mPIARandomSeed = floating.mRandomSeed;
+	root->mPIAFloatingMask = floating.mFloatingInputMask;
+	root->mPIADecayTimeMin = floating.mDecayTimeMin;
+	root->mPIADecayTimeRange = floating.mDecayTimeRange;
+	root->mbPIADeterministicSeedMix = floating.mbDeterministicSeedMix;
+	root->mPIAFloatTimers.assign(std::begin(floating.mFloatTimers),
+		std::end(floating.mFloatTimers));
+	root->mStartupDelay = mStartupDelay;
+	root->mStartupDelay2 = mStartupDelay2;
+	root->mbStartupHeldKey = mbStartupHeldKey;
+	root->mPendingHeldKey = mPendingHeldKey;
+	root->mPendingHeldSwitches = mPendingHeldSwitches;
+	root->mForcedConsoleSwitches = mGTIA.GetForcedConsoleSwitches();
 
 	root->mpMemory = membuf;
 	root->mXmemPortbMask = memorySerMap.mPortbBankMask;
@@ -4618,6 +4706,9 @@ void ATSimulator::CreateSnapshot(IATSerializable **ppSnapshot, IATSerializable *
 	}
 
 	root->mpSIOManager = mpSIOManager->SaveState();
+	root->mbHLELoaderStatePresent = true;
+	if (mpHLEProgramLoader) mpHLEProgramLoader->SaveState(~root->mpHLEProgram);
+	if (mpHLEBasicLoader) mpHLEBasicLoader->SaveState(~root->mpHLEBasic);
 	
 	ATSnapshotContext ctx;
 	if (mpUltimate1MB)
@@ -4629,7 +4720,8 @@ void ATSimulator::CreateSnapshot(IATSerializable **ppSnapshot, IATSerializable *
 		root->mpFrontEnd = mpPrivateData->mpFrontEnd->SaveState(ctx);
 
 	*ppSnapshot = root.release();
-	*ppSnapInfo = info.release();
+	if (ppSnapInfo)
+		*ppSnapInfo = info.release();
 }
 
 bool ATSimulator::ApplySnapshot(const IATSerializable& snapshot, ATStateLoadContext *stateLoadCtx) {
@@ -4654,6 +4746,14 @@ bool ATSimulator::ApplySnapshot(const IATSerializable& snapshot, ATStateLoadCont
 			}
 
 			// === point of no return: cold reset on failure past this point ===
+
+			if (savestate.mbExactRuntime) {
+				if (savestate.mRandomizationSeeds.size() != 9
+					|| savestate.mPIAFloatTimers.size() != 8)
+					throw ATInvalidSaveStateException();
+				mScheduler.RebaseTick64(savestate.mSchedulerTick);
+				mSlowScheduler.RebaseTick64(savestate.mSlowSchedulerTick);
+			}
 
 			mpSIOManager->PreLoadState();
 
@@ -4845,6 +4945,28 @@ bool ATSimulator::ApplySnapshot(const IATSerializable& snapshot, ATStateLoadCont
 			if (mpUltimate1MB)
 				mpUltimate1MB->LoadState(savestate.mpU1mb, ctx);
 
+			if (savestate.mbHLELoaderStatePresent) {
+				if (savestate.mpHLEProgram) {
+					if (!mpHLEProgramLoader) {
+						mpHLEProgramLoader = new ATHLEProgramLoader;
+						mpHLEProgramLoader->Init(&mCPU, mpSimEventManager, this, mpSIOManager);
+					}
+					mpHLEProgramLoader->LoadState(savestate.mpHLEProgram);
+				} else if (mpHLEProgramLoader) {
+					delete mpHLEProgramLoader;
+					mpHLEProgramLoader = nullptr;
+				}
+				if (savestate.mpHLEBasic) {
+					if (!mpHLEBasicLoader) {
+						mpHLEBasicLoader = new ATHLEBasicLoader;
+						mpHLEBasicLoader->Init(&mCPU, mpSimEventManager, this);
+					}
+					mpHLEBasicLoader->LoadState(savestate.mpHLEBasic);
+				} else if (mpHLEBasicLoader) {
+					delete mpHLEBasicLoader;
+					mpHLEBasicLoader = nullptr;
+				}
+			}
 			mpSIOManager->LoadState(savestate.mpSIOManager);
 
 			mpDeviceManager->LoadState(savestate.mpDeviceStates);
@@ -4862,9 +4984,44 @@ bool ATSimulator::ApplySnapshot(const IATSerializable& snapshot, ATStateLoadCont
 
 			mPokey.PostLoadState();
 			mPIA.PostLoadState();
+			// MERGE NOTE: PIA restores PORTB pins, but banked ROM-control
+			// lines retain history that those pins cannot reconstruct.
+			if (savestate.mbMMURuntimePresent)
+				mpMMU->SetSnapshotRuntimeState(savestate.mMMURuntime);
 
 			// must be after PIA toggles command lines
 			mpSIOManager->PostLoadState();
+
+			// MERGE NOTE: the generic post-load refresh above rebuilds
+			// events; exact checkpoints retain their original phases.
+			mPokey.RestoreRuntimeEvents(savestate.mpPokey);
+
+			if (savestate.mbExactRuntime) {
+				mpPrivateData->mRandomSeed = savestate.mRandomSeed;
+				mpPrivateData->mLockedRandomSeed = savestate.mLockedRandomSeed;
+				const auto& seeds = savestate.mRandomizationSeeds;
+				g_ATRandomizationSeeds = {seeds[0], seeds[1], seeds[2],
+					seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], seeds[8]};
+				auto& floating = mpPrivateData->mFloatingInputs;
+				floating.mRandomSeed = savestate.mPIARandomSeed;
+				floating.mFloatingInputMask = savestate.mPIAFloatingMask;
+				floating.mDecayTimeMin = savestate.mPIADecayTimeMin;
+				floating.mDecayTimeRange = savestate.mPIADecayTimeRange;
+				floating.mbDeterministicSeedMix = savestate.mbPIADeterministicSeedMix;
+				std::copy(savestate.mPIAFloatTimers.begin(),
+					savestate.mPIAFloatTimers.end(), floating.mFloatTimers);
+				// Boot-time OPTION/START holds are external to GTIA's
+				// register snapshot. Their release timers must rewind too.
+				mStartupDelay = (int)savestate.mStartupDelay;
+				mStartupDelay2 = (int)savestate.mStartupDelay2;
+				mbStartupHeldKey = savestate.mbStartupHeldKey;
+				mPendingHeldKey = savestate.mPendingHeldKey;
+				mPendingHeldSwitches = savestate.mPendingHeldSwitches;
+				mGTIA.SetForcedConsoleSwitches(savestate.mForcedConsoleSwitches);
+				mpUIRenderer->SetHeldButtonStatus(~savestate.mForcedConsoleSwitches);
+				mpUIRenderer->SetPendingHeldButtons(mPendingHeldSwitches);
+				mpUIRenderer->SetPendingHeldKey(mPendingHeldKey);
+			}
 
 			if (mpPrivateData->mpFrontEnd)
 				mpPrivateData->mpFrontEnd->LoadState(savestate.mpFrontEnd, ctx);

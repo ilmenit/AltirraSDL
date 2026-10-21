@@ -236,6 +236,7 @@ void ATPokeyEmulator::ColdReset() {
 	mSerialOutputShiftRegister = 0;
 	mSerialOutputCounter = 0;
 	mSerialInputCounter = 0;
+	mSerialInputPendingStatus = 0xFF;
 	mbSerOutValid = false;
 	mbSerShiftValid = false;
 	mbSerClockPhase = false;
@@ -3211,6 +3212,62 @@ void ATPokeyEmulator::SaveState(IATObjectState **pp) {
 	obj2->mPotMasterCounter = mPotMasterCounter;
 	obj2->mbPotScanActive = mbPotScanActive;
 
+	obj2->mbPotRuntimePresent = true;
+	vdcopy_checked_r(obj2->mPotHiPositions, mPotHiPositions);
+	vdcopy_checked_r(obj2->mPotChargeRates, mPotChargeRates);
+	obj2->mPotGroundedMask = mPotGroundedMask;
+	obj2->mPotLastScanAge = mpScheduler->GetTick64() - mPotLastScanTime;
+	obj2->mPotLastFastOffset = mPotLastTimeFast - t;
+	obj2->mPotLastSlowOffset = mPotLastTimeSlow - t;
+
+	obj2->mbSerialStatePresent = true;
+	obj2->mSERIN = mSERIN;
+	obj2->mSEROUT = mSEROUT;
+	obj2->mSerialInputPendingStatus = mSerialInputPendingStatus;
+	obj2->mSerInEventDelay = mpEventSerialInput
+		? mpScheduler->GetTicksToEvent(mpEventSerialInput) : 0;
+	obj2->mSerialOutputStartAge = mpScheduler->GetTick64() - mSerialOutputStartTime;
+	obj2->mbSerialOutputState = mbSerialOutputState;
+	obj2->mbSerialRateChanged = mbSerialRateChanged;
+	obj2->mbSerInBurstPendingIRQ1 = mbSerInBurstPendingIRQ1;
+	obj2->mbSerInBurstPendingIRQ2 = mbSerInBurstPendingIRQ2;
+	obj2->mbSerInBurstPendingData = mbSerInBurstPendingData;
+	obj2->mbSerOutBurstDeadlinePresent = mSerOutBurstDeadline != 0;
+	obj2->mSerOutBurstDeadlineOffset = mSerOutBurstDeadline - t;
+	obj2->mSerialInputResetCounter = mSerialInputResetCounter;
+	obj2->mSerialSimulateInputBaseOffset = mSerialSimulateInputBaseTime - t;
+	obj2->mSerialSimulateInputCyclesPerBit = mSerialSimulateInputCyclesPerBit;
+	obj2->mSerialSimulateInputData = mSerialSimulateInputData;
+	obj2->mbSerialSimulateInputPort = mbSerialSimulateInputPort;
+	obj2->mSerialExtBaseOffset = mSerialExtBaseTime - t;
+	obj2->mSerialExtPeriod = mSerialExtPeriod;
+	obj2->mbSerialDataInFlipPresent = mSerialDataInFlipTime != ~uint64(0);
+	obj2->mSerialDataInFlipOffset = mSerialDataInFlipTime - mpScheduler->GetTick64();
+
+	obj2->mbKeyboardStatePresent = true;
+	obj2->mKeyCodeTimer = mKeyCodeTimer;
+	obj2->mKeyCooldownTimer = mKeyCooldownTimer;
+	obj2->mbKeyboardIRQPending = mbKeyboardIRQPending;
+	obj2->mbUseKeyCooldownTimer = mbUseKeyCooldownTimer;
+	obj2->mbCookedKeyMode = mbCookedKeyMode;
+	obj2->mbKeyboardScanEnabled = mbKeyboardScanEnabled;
+	obj2->mbShiftKeyState = mbShiftKeyState;
+	obj2->mbShiftKeyLatchedState = mbShiftKeyLatchedState;
+	obj2->mbControlKeyState = mbControlKeyState;
+	obj2->mbControlKeyLatchedState = mbControlKeyLatchedState;
+	obj2->mbBreakKeyState = mbBreakKeyState;
+	obj2->mbBreakKeyLatchedState = mbBreakKeyLatchedState;
+	obj2->mKeyScanState = mKeyScanState;
+	obj2->mKeyScanCode = mKeyScanCode;
+	obj2->mKeyScanLatch = mKeyScanLatch;
+	vdcopy_checked_r(obj2->mKeyMatrix, mKeyMatrix);
+	vdcopy_checked_r(obj2->mEffectiveKeyMatrix, mEffectiveKeyMatrix);
+	obj2->mKeyQueue.assign(mKeyQueue.begin(), mKeyQueue.end());
+	obj2->mKeyboardIRQDelay = mpKeyboardIRQEvent
+		? mpScheduler->GetTicksToEvent(mpKeyboardIRQEvent) : 0;
+	obj2->mKeyboardScanDelay = mpKeyboardScanEvent
+		? mpScheduler->GetTicksToEvent(mpKeyboardScanEvent) : 0;
+
 	obj2->mRendererState = mpRenderer->SaveState();
 
 	obj->mpInternalState = std::move(obj2);
@@ -3236,6 +3293,11 @@ void ATPokeyEmulator::LoadState(const IATObjectState *state) {
 }
 
 void ATPokeyEmulator::LoadState(const ATSaveStatePokey& pstate) {
+	// MERGE NOTE: exact checkpoints may rewind the scheduler. Clear
+	// future audio edges and re-anchor the renderer before restoring its
+	// saved counters; otherwise Flush sees a near-2^32 cycle backlog.
+	mpRenderer->ColdReset();
+
 	if (mRegisterStateInvalidatedObserver)
 		mRegisterStateInvalidatedObserver();
 
@@ -3359,6 +3421,61 @@ void ATPokeyEmulator::LoadState(const ATSaveStatePokey& pstate) {
 		// fast 229 right when the save state occurs.
 		mPotMasterCounter = (uint8)std::min<uint32>(pistate.mPotMasterCounter, 229);
 
+		if (pistate.mbPotRuntimePresent) {
+			vdcopy_checked_r(mPotHiPositions, pistate.mPotHiPositions);
+			vdcopy_checked_r(mPotChargeRates, pistate.mPotChargeRates);
+			mPotGroundedMask = pistate.mPotGroundedMask;
+			mPotLastScanTime = t64 - pistate.mPotLastScanAge;
+			mPotLastTimeFast = t + pistate.mPotLastFastOffset;
+			mPotLastTimeSlow = t + pistate.mPotLastSlowOffset;
+		}
+
+		if (pistate.mbSerialStatePresent) {
+			mSERIN = pistate.mSERIN;
+			mSEROUT = pistate.mSEROUT;
+			mSerialInputPendingStatus = pistate.mSerialInputPendingStatus;
+			mSerialOutputStartTime = t64 - pistate.mSerialOutputStartAge;
+			mbSerialOutputState = pistate.mbSerialOutputState;
+			mbSerialRateChanged = pistate.mbSerialRateChanged;
+			mbSerInBurstPendingIRQ1 = pistate.mbSerInBurstPendingIRQ1;
+			mbSerInBurstPendingIRQ2 = pistate.mbSerInBurstPendingIRQ2;
+			mbSerInBurstPendingData = pistate.mbSerInBurstPendingData;
+			mSerOutBurstDeadline = pistate.mbSerOutBurstDeadlinePresent
+				? t + pistate.mSerOutBurstDeadlineOffset : 0;
+			mSerialInputResetCounter = pistate.mSerialInputResetCounter;
+			mSerialSimulateInputBaseTime = t + pistate.mSerialSimulateInputBaseOffset;
+			mSerialSimulateInputCyclesPerBit = pistate.mSerialSimulateInputCyclesPerBit;
+			mSerialSimulateInputData = pistate.mSerialSimulateInputData;
+			mbSerialSimulateInputPort = pistate.mbSerialSimulateInputPort;
+			mSerialExtBaseTime = t + pistate.mSerialExtBaseOffset;
+			mSerialExtPeriod = pistate.mSerialExtPeriod;
+			mSerialDataInFlipTime = pistate.mbSerialDataInFlipPresent
+				? t64 + pistate.mSerialDataInFlipOffset : ~uint64(0);
+		}
+
+		if (pistate.mbKeyboardStatePresent) {
+			mSKSTAT = pstate.mSKSTAT;
+			mKeyCodeTimer = pistate.mKeyCodeTimer;
+			mKeyCooldownTimer = pistate.mKeyCooldownTimer;
+			mbKeyboardIRQPending = pistate.mbKeyboardIRQPending;
+			mbUseKeyCooldownTimer = pistate.mbUseKeyCooldownTimer;
+			mbCookedKeyMode = pistate.mbCookedKeyMode;
+			mbKeyboardScanEnabled = pistate.mbKeyboardScanEnabled;
+			mbShiftKeyState = pistate.mbShiftKeyState;
+			mbShiftKeyLatchedState = pistate.mbShiftKeyLatchedState;
+			mbControlKeyState = pistate.mbControlKeyState;
+			mbControlKeyLatchedState = pistate.mbControlKeyLatchedState;
+			mbBreakKeyState = pistate.mbBreakKeyState;
+			mbBreakKeyLatchedState = pistate.mbBreakKeyLatchedState;
+			mKeyScanState = pistate.mKeyScanState;
+			mKeyScanCode = pistate.mKeyScanCode;
+			mKeyScanLatch = pistate.mKeyScanLatch;
+			vdcopy_checked_r(mKeyMatrix, pistate.mKeyMatrix);
+			vdcopy_checked_r(mEffectiveKeyMatrix, pistate.mEffectiveKeyMatrix);
+			mKeyQueue.clear();
+			for (uint8 key : pistate.mKeyQueue) mKeyQueue.push_back(key);
+		}
+
 		mpRenderer->LoadState(pistate.mRendererState);
 	} else {
 		mpRenderer->LoadState({});
@@ -3376,6 +3493,50 @@ void ATPokeyEmulator::LoadState(const ATSaveStatePokey& pstate) {
 		mpSlave4->LoadState(pstate.mpQuadPair4);
 
 	PostLoadState();
+	RestoreRuntimeEvents(pstate);
+}
+
+void ATPokeyEmulator::RestoreRuntimeEvents(const IATObjectState *state) {
+	if (state) RestoreRuntimeEvents(atser_cast<const ATSaveStatePokey&>(*state));
+}
+
+void ATPokeyEmulator::RestoreRuntimeEvents(const ATSaveStatePokey& state) {
+	if (state.mpInternalState && state.mpInternalState->mbSerialStatePresent) {
+		const auto& serial = *state.mpInternalState;
+		// PIA/device restoration can drive the input line while loading.
+		// Restore its saved phase after all upstreams have been rebuilt.
+		mSKSTAT = state.mSKSTAT;
+		mSerialDataInFlipTime = serial.mbSerialDataInFlipPresent
+			? mpScheduler->GetTick64() + serial.mSerialDataInFlipOffset
+			: ~uint64(0);
+		mpScheduler->UnsetEvent(mpEventSerialInput);
+		mpScheduler->UnsetEvent(mpEventSerialOutput);
+		if (serial.mSerInEventDelay)
+			mpScheduler->SetEvent(serial.mSerInEventDelay, this,
+				kATPokeyEventSerialInput, mpEventSerialInput);
+		if (serial.mSerOutEventTime)
+			mpScheduler->SetEvent(serial.mSerOutEventTime, this,
+				kATPokeyEventSerialOutput, mpEventSerialOutput);
+	}
+	if (state.mpInternalState && state.mpInternalState->mbKeyboardStatePresent) {
+		const auto& keyboard = *state.mpInternalState;
+		mpScheduler->UnsetEvent(mpKeyboardIRQEvent);
+		mpScheduler->UnsetEvent(mpKeyboardScanEvent);
+		if (keyboard.mKeyboardIRQDelay)
+			mpScheduler->SetEvent(keyboard.mKeyboardIRQDelay, this,
+				kATPokeyEventKeyboardIRQ, mpKeyboardIRQEvent);
+		if (keyboard.mKeyboardScanDelay)
+			mpScheduler->SetEvent(keyboard.mKeyboardScanDelay, this,
+				kATPokeyEventKeyboardScan, mpKeyboardScanEvent);
+	}
+	// The parent's PostLoadState refreshes every child once more. Reapply
+	// their exact event phases after that final recursive refresh.
+	if (mpSlave && state.mpStereoPair)
+		mpSlave->RestoreRuntimeEvents(atser_cast<const ATSaveStatePokey&>(*state.mpStereoPair));
+	if (mpSlave3 && state.mpQuadPair3)
+		mpSlave3->RestoreRuntimeEvents(atser_cast<const ATSaveStatePokey&>(*state.mpQuadPair3));
+	if (mpSlave4 && state.mpQuadPair4)
+		mpSlave4->RestoreRuntimeEvents(atser_cast<const ATSaveStatePokey&>(*state.mpQuadPair4));
 }
 
 void ATPokeyEmulator::PostLoadState() {

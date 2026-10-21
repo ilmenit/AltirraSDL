@@ -273,6 +273,7 @@ public:
 
 	void Pause() override;
 	void Resume() override;
+	void SetReplayMode(bool replay) override { mbReplay = replay; }
 
 	void WriteAudio(
 		const float *left,
@@ -329,6 +330,7 @@ protected:
 	int		mLatency = 100;
 	int		mExtraBuffer = 100;
 	bool	mbMute = false;
+	bool mbReplay = false;
 	bool	mbNativeAudioEnabled = false;
 	uint32	mBlockInternalAudioCount = 0;
 
@@ -606,6 +608,8 @@ void ATAudioOutput::WriteAudio(
 	bool pushStereoAsMono,
 	uint64 timestamp)
 {
+	if (mbReplay) return;
+
 	if (!count)
 		return;
 

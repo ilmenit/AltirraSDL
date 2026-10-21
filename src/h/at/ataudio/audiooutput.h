@@ -105,6 +105,9 @@ public:
 	virtual void Pause() = 0;
 	virtual void Resume() = 0;
 
+	// Replay executes chip logic without submitting duplicate output.
+	virtual void SetReplayMode(bool replay) = 0;
+
 	virtual void WriteAudio(
 		const float *left,
 		const float *right,

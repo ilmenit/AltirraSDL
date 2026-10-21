@@ -27,6 +27,7 @@
 
 #include <at/atcore/logging.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -51,17 +52,24 @@ LobbyWorker::~LobbyWorker() { Stop(); }
 void LobbyWorker::Start() {
 	if (mRunning.exchange(true)) return;
 	mStop.store(false);
-	mThread = std::thread(&LobbyWorker::ThreadMain, this);
+	for (int i = 0; i < 4; ++i) mThreads.emplace_back(&LobbyWorker::ThreadMain, this);
 }
 
 void LobbyWorker::Stop() {
 	if (!mRunning.exchange(false)) {
-		if (mThread.joinable()) mThread.join();
+		for (auto& thread : mThreads) if (thread.joinable()) thread.join();
+		mThreads.clear();
 		return;
 	}
 	mStop.store(true);
+	{
+		std::lock_guard<std::mutex> lock(mMu);
+		mInFlight.fetch_sub(mInQueue.size());
+		mInQueue.clear();
+	}
 	mCv.notify_all();
-	if (mThread.joinable()) mThread.join();
+	for (auto& thread : mThreads) if (thread.joinable()) thread.join();
+	mThreads.clear();
 
 	// Drain remaining queues so subsequent Poll() sees no stale data.
 	std::lock_guard<std::mutex> lk(mMu);
@@ -75,6 +83,16 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 	if (!mRunning.load()) return false;
 	{
 		std::lock_guard<std::mutex> lk(mMu);
+		if (mStop.load() || !mRunning.load()) return false;
+		// Coalesce refreshes/leases while a service is slow.
+		if (req.op == LobbyOp::List || req.op == LobbyOp::Stats || req.op == LobbyOp::Heartbeat) {
+			for (auto& pending : mInQueue) {
+				if (pending.req.op == req.op && pending.source == source && pending.req.tag == req.tag) {
+					pending.req = std::move(req);
+					return true;
+				}
+			}
+		}
 		mInQueue.push_back({std::move(req), source});
 		++mInFlight;
 	}
@@ -97,22 +115,39 @@ void LobbyWorker::ThreadMain() {
 	ATNetplay::LobbyClient client;
 	for (;;) {
 		Queued q;
+		std::string service;
 		{
-			std::unique_lock<std::mutex> lk(mMu);
-			mCv.wait(lk, [&]{ return mStop.load() || !mInQueue.empty(); });
-			if (mStop.load() && mInQueue.empty()) return;
-			q = std::move(mInQueue.front());
-			mInQueue.pop_front();
+			std::unique_lock<std::mutex> lock(mMu);
+			auto serviceKey = [](const Queued& request) {
+				return request.req.endpoint.host + ":" + std::to_string(request.req.endpoint.port);
+			};
+			auto eligible = [&]() {
+				return std::find_if(mInQueue.begin(), mInQueue.end(), [&](const Queued& request) {
+					return !mBusyServices.count(serviceKey(request));
+				});
+			};
+			mCv.wait(lock, [&]{ return mStop.load() || eligible() != mInQueue.end(); });
+			if (mStop.load()) return;
+			const auto next = eligible();
+			service = serviceKey(*next);
+			q = std::move(*next);
+			mInQueue.erase(next);
+			mBusyServices.insert(service);
 		}
 
+		q.req.endpoint.cancel = &mStop;
 		client.SetEndpoint(q.req.endpoint);
 		LobbyResult out{};
 		out.op          = q.req.op;
+		out.requestSessionId = q.req.sessionId;
 		out.tag         = q.req.tag;
 		out.coordGen    = q.req.coordGen;
 		out.sourceLobby = q.source;
 
 		switch (q.req.op) {
+			case LobbyOp::AcquireRelayTicket:
+				out.ok = client.AcquireRelayTicket(q.req.sessionId, q.req.token, out.relayTicket, q.req.intentId);
+				break;
 			case LobbyOp::List:
 				out.ok = client.List(out.sessions);
 				// LobbyClient stamps the GET RTT regardless of HTTP
@@ -150,7 +185,7 @@ void LobbyWorker::ThreadMain() {
 						gamePort = (uint16_t)std::atoi(ep.c_str() + colon + 1);
 					}
 				}
-				if (gamePort != 0) {
+				if (gamePort != 0 && q.req.state != "registration-recovery") {
 					// Step A: try NAT-PMP / PCP router-assisted port
 					// mapping first — this is the BitTorrent-style
 					// auto-forward that makes NAT traversal Just Work
@@ -391,8 +426,10 @@ void LobbyWorker::ThreadMain() {
 		{
 			std::lock_guard<std::mutex> lk(mMu);
 			mOutQueue.push_back(std::move(out));
+			mBusyServices.erase(service);
 			--mInFlight;
 		}
+		mCv.notify_all();
 	}
 }
 
@@ -572,7 +609,9 @@ bool ParseCreateResp(const char* data, size_t len,
 		if (!c.match(':'))     return false;
 		if      (k == "sessionId")  c.parseString(out.sessionId);
 		else if (k == "token")      c.parseString(out.token);
+		else if (k == "webSocketUrl") c.parseString(out.webSocketUrl);
 		else if (k == "ttlSeconds") c.parseInt(out.ttlSeconds);
+		else if (k == "relayPort") { int port = 0; c.parseInt(port); if (port >= 0 && port <= 65535) out.relayPort = (uint16_t)port; }
 		else c.skipValue();
 		if (!c.ok) return false;
 		if (c.match(',')) continue;
@@ -708,6 +747,7 @@ bool ParseStatsResp(const char* data, size_t len,
 // ---- per-fetch context -----------------------------------------------
 
 struct FetchCtx {
+	std::string requestSessionId;
 	LobbyWorker* worker = nullptr;
 	LobbyOp      op     = LobbyOp::List;
 	uint32_t     tag    = 0;
@@ -754,6 +794,7 @@ void OnSuccess(emscripten_fetch_t* f) {
 	auto* ctx = static_cast<FetchCtx*>(f->userData);
 	LobbyResult out{};
 	out.op          = ctx->op;
+	out.requestSessionId = ctx->requestSessionId;
 	out.tag         = ctx->tag;
 	out.coordGen    = ctx->coordGen;
 	out.sourceLobby = ctx->source;
@@ -765,6 +806,24 @@ void OnSuccess(emscripten_fetch_t* f) {
 
 	if (out.ok) {
 		switch (ctx->op) {
+			case LobbyOp::AcquireRelayTicket: {
+				ATLobby::JsonCursor cursor{body, body + len};
+				out.ok = cursor.match('{');
+				while (out.ok && !cursor.peek('}')) {
+					std::string key;
+					if (!cursor.parseString(key) || !cursor.match(':')) { out.ok = false; break; }
+					if (key == "ticket") cursor.parseString(out.relayTicket.ticket);
+					else if (key == "webSocketUrl") cursor.parseString(out.relayTicket.webSocketUrl);
+					else if (key == "sessionNonce") cursor.parseString(out.relayTicket.sessionNonce);
+					else if (key == "relayPort") { int port = 0; cursor.parseInt(port); if (port > 0 && port <= 65535) out.relayTicket.relayPort = (uint16_t)port; }
+					else cursor.skipValue();
+					if (!cursor.ok) { out.ok = false; break; }
+					if (!cursor.match(',')) break;
+				}
+				out.ok = out.ok && cursor.match('}') && out.relayTicket.ticket.size() == 32 && out.relayTicket.sessionNonce.size() == 32 ;
+				if (!out.ok) out.error = "invalid authenticated relay response";
+				break;
+			}
 			case LobbyOp::List:
 				out.ok = ParseListResp(body, len, out.sessions);
 				if (!out.ok) out.error = "malformed list response";
@@ -829,6 +888,7 @@ void OnError(emscripten_fetch_t* f) {
 	auto* ctx = static_cast<FetchCtx*>(f->userData);
 	LobbyResult out{};
 	out.op          = ctx->op;
+	out.requestSessionId = ctx->requestSessionId;
 	out.tag         = ctx->tag;
 	out.coordGen    = ctx->coordGen;
 	out.sourceLobby = ctx->source;
@@ -878,6 +938,7 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 
 	auto* ctx       = new FetchCtx();
 	ctx->worker     = this;
+	ctx->requestSessionId = req.sessionId;
 	ctx->op         = req.op;
 	ctx->tag        = req.tag;
 	ctx->coordGen   = req.coordGen;
@@ -893,14 +954,26 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 	// Construct URL.  All requests go to the configured lobby host;
 	// the scheme is forced to https because the WASM build is loaded
 	// over https (mixed-content rule).  Path varies per op.
-	std::string url = "https://";
+	std::string url = req.endpoint.secure ? "https://" : "http://";
 	url += req.endpoint.host;
+	url += ":" + std::to_string(req.endpoint.port);
+	url += req.endpoint.basePath;
 	// Ignore req.endpoint.port — the public TLS edge listens on 443
 	// (Caddy) and routes all /v1/* and /netplay paths internally.
 	std::string path;
 	const char* methodStr = "GET";
 
 	switch (req.op) {
+		case LobbyOp::AcquireRelayTicket: {
+			path = "/v1/session/" + req.sessionId + "/relay-ticket";
+			methodStr = "POST";
+			ctx->body = "{";
+			bool first = true;
+			AppendKV(ctx->body, "sessionNonce", req.token, first);
+			if (!req.intentId.empty()) AppendKV(ctx->body, "intentId", req.intentId, first);
+			ctx->body += '}';
+			break;
+		}
 		case LobbyOp::List:
 			// `include_awaiting=1` opts into broker-pre-spawn
 			// (awaiting_approval) rows so the in-app browser surfaces
@@ -1005,7 +1078,8 @@ bool LobbyWorker::Post(LobbyRequest req, const std::string& source) {
 	} else if (req.op == LobbyOp::Create ||
 	           req.op == LobbyOp::Heartbeat ||
 	           req.op == LobbyOp::PeerHint ||
-	           req.op == LobbyOp::CreateIntent) {
+	           req.op == LobbyOp::CreateIntent ||
+	           req.op == LobbyOp::AcquireRelayTicket) {
 		attr.requestHeaders = postHeaders;
 		attr.requestData     = ctx->body.data();
 		attr.requestDataSize = ctx->body.size();

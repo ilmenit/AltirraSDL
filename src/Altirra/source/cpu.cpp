@@ -159,6 +159,10 @@ ATCPUEmulator::ATCPUEmulator()
 	mSBrk = 0x100;
 	mbTrace = false;
 	mbStep = false;
+	// MERGE NOTE: decode construction reads these flags before Init or
+	// frontend settings run. Do not depend on static-storage zero fill.
+	mbStepOver = false;
+	mbHistoryEnabled = false;
 	mDebugFlags = 0;
 	mpNextState = mStates;
 	mStates[0] = kStateReadOpcode;
@@ -911,6 +915,8 @@ public:
 		rw.Transfer("s", &mS);
 		rw.Transfer("ext816", &mp816);
 		rw.Transfer("unused_cycle", &mbUnusedCycle);
+		// MERGE NOTE: preserve pending interrupts in serialized netplay resyncs.
+		rw.Transfer("int_flags", &mIntFlags);
 		rw.Transfer("irq_assert_time", &mIrqAssertTime);
 		rw.Transfer("irq_acknowledge_time", &mIrqAcknowledgeTime);
 		rw.Transfer("nmi_assert_time", &mNmiAssertTime);
@@ -922,6 +928,14 @@ public:
 		rw.Transfer("int_rel_offset", &mRelOffset);
 		rw.Transfer("int_data", &mData);
 		rw.Transfer("int_data16", &mData16);
+		// MERGE NOTE: exact rollback also retains the interrupt inhibit
+		// window and accelerated CPU cycle position.
+		rw.Transfer("runtime_exact", &mbRuntimeExact);
+		rw.Transfer("nmi_ignore_cycle_offset", &mNMIIgnoreCycleOffset);
+		rw.Transfer("actual_insn_pc", &mActualInsnPC);
+		rw.Transfer("nmi_forced", &mbNMIForced);
+		rw.Transfer("subcycles_left", &mSubCyclesLeft);
+		rw.Transfer("force_next_cycle_slow", &mbForceNextCycleSlow);
 
 		if constexpr (!T::IsWriter) {
 			if (mCurrentExtOpcode >= ATCPUEmulator::kNumExtOpcodes)
@@ -957,6 +971,12 @@ public:
 	uint8 mData = 0;
 	uint16 mData16 = 0;
 	uint8 mAddrBank = 0;
+	bool mbRuntimeExact = false;
+	uint32 mNMIIgnoreCycleOffset = 0;
+	uint16 mActualInsnPC = 0;
+	bool mbNMIForced = false;
+	uint32 mSubCyclesLeft = 1;
+	bool mbForceNextCycleSlow = false;
 };
 
 namespace {
@@ -1130,6 +1150,7 @@ namespace {
 			case kStateReadAddrDpY:
 			case kStateReadAddrDpYInPage:
 			case kState816ReadIndAddrDpInPage:
+			case kState816ReadIndAddrDpXInPage:
 			case kStateReadIndAddrDp:
 			case kStateReadIndAddrDpY:
 			case kStateReadIndAddrDpLongH:
@@ -1163,6 +1184,7 @@ namespace {
 			case kStateStoD16:
 			case kStateDPtoD16:
 			case kStateDtoB:
+			case kStateDtoK: // reserved register move; no bus cycle
 			case kStateDtoA16:
 			case kStateDtoX16:
 			case kStateDtoY16:
@@ -1182,6 +1204,7 @@ namespace {
 			case kStateReadL16:
 			case kStateReadH16:
 			case kStateReadH16_DpBank:
+			case kStateReadH16_DpBankNoWrap:
 				return true;
 
 			case kStateAnd16:
@@ -1219,6 +1242,9 @@ namespace {
 			case kStatePopPCHNative:
 			case kStatePopPCHP1Native:
 			case kStatePopPBKNative:
+			case kStatePopPCLRtl:
+			case kStatePopPCHP1Rtl:
+			case kStatePopPBKRtl:
 			case kStateRep:
 			case kStateSep:
 			case kStateJ16:
@@ -1289,6 +1315,12 @@ void ATCPUEmulator::SaveState(IATObjectState **result) {
 	obj->mIrqAssertTime = mIRQAssertTime - t;
 	obj->mIrqAcknowledgeTime = mIRQAcknowledgeTime - t;
 	obj->mNmiAssertTime = mNMIAssertTime - t;
+	obj->mbRuntimeExact = true;
+	obj->mNMIIgnoreCycleOffset = mNMIIgnoreUnhaltedCycle - t;
+	obj->mActualInsnPC = mInsnPC;
+	obj->mbNMIForced = mbNMIForced;
+	obj->mSubCyclesLeft = mSubCyclesLeft;
+	obj->mbForceNextCycleSlow = mbForceNextCycleSlow;
 
 	obj->mAddr = mAddr;
 	obj->mAddr2 = mAddr2;
@@ -1350,6 +1382,14 @@ void ATCPUEmulator::LoadState(const ATSaveStateCPU& cpustate) {
 	mIRQAssertTime = cpustate.mIrqAssertTime + t;
 	mIRQAcknowledgeTime = cpustate.mIrqAcknowledgeTime + t;
 	mNMIAssertTime = cpustate.mNmiAssertTime + t;
+	if (cpustate.mbRuntimeExact) {
+		if (!cpustate.mSubCyclesLeft || cpustate.mSubCyclesLeft > 24)
+			throw ATInvalidSaveStateException();
+		mNMIIgnoreUnhaltedCycle = cpustate.mNMIIgnoreCycleOffset + t;
+		mbNMIForced = cpustate.mbNMIForced;
+		mSubCyclesLeft = cpustate.mSubCyclesLeft;
+		mbForceNextCycleSlow = cpustate.mbForceNextCycleSlow;
+	}
 
 	mOpcode = (uint8)cpustate.mCurrentExtOpcode;
 
@@ -1409,6 +1449,18 @@ void ATCPUEmulator::LoadState(const ATSaveStateCPU& cpustate) {
 		}
 
 		mpNextState = insnStates;
+	}
+
+	// Preserve the actual instruction latch for exact checkpoints. The
+	// canonical insn_pc above intentionally normalizes opcode fetches for
+	// older snapshots and is still used to rebuild their instruction phase.
+	if (cpustate.mbRuntimeExact) {
+		mInsnPC = cpustate.mActualInsnPC;
+		// JSL/RTL can temporarily cross the page-1 stack boundary
+		// even in emulation mode; normalization applies at instruction
+		// completion, not in the middle of a saved instruction.
+		if (mCPUMode == kATCPUMode_65C816 && cpustate.mp816)
+			mSH = cpustate.mp816->mSH;
 	}
 }
 

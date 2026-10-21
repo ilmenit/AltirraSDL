@@ -1028,6 +1028,15 @@ AT5200ControllerController::~AT5200ControllerController() {
 }
 
 bool AT5200ControllerController::Select5200Controller(int index, bool potsEnabled) {
+	if (IsRedirected()) {
+		// Capture the physical controller independently of which remote
+		// controller the game currently scans. Never write local POKEY.
+		mbPotsEnabled = true;
+		UpdatePot(0);
+		UpdatePot(1);
+		mpControllerPort->Set5200KeyboardState(mbKeyMatrix, mbTopButton);
+		return index == mIndex;
+	}
 	bool active = (index == mIndex);
 
 	if (active != mbActive) {
@@ -1292,12 +1301,18 @@ void AT5200ControllerController::SetKeyState(uint8 index, bool state) {
 		mbKeyMatrix[index+0x20] = state;
 		mbKeyMatrix[index+0x21] = state;
 
-		if (mbActive)
+		if (IsRedirected())
+			mpControllerPort->Set5200KeyboardState(mbKeyMatrix, mbTopButton);
+		else if (mbActive)
 			mpPokey->SetKeyMatrix(mbKeyMatrix);
 	}
 }
 
 void AT5200ControllerController::UpdateTopButtonState() {
+	if (IsRedirected()) {
+		mpControllerPort->Set5200KeyboardState(mbKeyMatrix, mbTopButton);
+		return;
+	}
 	if (!mbActive)
 		return;
 

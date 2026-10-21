@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -98,6 +99,8 @@ struct LobbyCreateRequest {
 };
 
 struct LobbyCreateResponse {
+	uint16_t relayPort = 8081;
+	std::string webSocketUrl;
 	std::string sessionId;
 	std::string token;
 	int         ttlSeconds = 0;
@@ -150,17 +153,32 @@ struct LobbyIntentStatus {
 	int         ttlSeconds = 0;       // remaining lifetime before sweep
 };
 
+struct LobbyRelayTicket {
+	std::string webSocketUrl;
+	std::string ticket;
+	std::string sessionNonce;
+	uint16_t relayPort = 0;
+	int ttlSeconds = 0;
+};
+
 struct LobbyEndpoint {
 	// HTTP transport.  Default points at the public lobby; clients can
 	// override per-call from the user's lobby.ini.
 	std::string host       = "lobby.atari.org.pl";
 	uint16_t    port       = 8080;
+	bool        secure     = false;
+	std::string basePath;
+	uint16_t    relayPort = 8081;
+	const std::atomic<bool>* cancel = nullptr;
 	// Fail fast — the lobby is optional infrastructure (peers can
 	// still connect via direct IP).  A 5 s wait on every Create /
 	// Heartbeat / List when the lobby is down made sessions feel
 	// broken even though the coordinator was listening fine.
 	uint32_t    timeoutMs  = 2000;
 };
+
+bool ParseLobbyEndpoint(const std::string& url, LobbyEndpoint& out);
+std::string LobbyWebSocketUrl(const LobbyEndpoint& endpoint, const std::string& advertised = {});
 
 class LobbyClient {
 public:
@@ -192,6 +210,9 @@ public:
 	// routes through CreateIntent / GetIntent before issuing the actual
 	// netplay handshake (see ui_netplay_actions for the join flow).
 	bool List(std::vector<LobbySession>& out);
+	bool AcquireRelayTicket(const std::string& sessionId,
+		const std::string& nonce, LobbyRelayTicket& out,
+		const std::string& approvedIntent = {});
 
 	// v4 broker handshake.  POST /v1/session/{id}/intents.  Returns
 	// true on HTTP 201; on success `out` carries the intentId + ttl.

@@ -28,6 +28,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "netplay/lobby_client.h"
@@ -38,6 +39,7 @@ namespace ATNetplayUI {
 // to one method on ATNetplay::LobbyClient.  Parameters are packed
 // into Request::{str1, str2, i1, createReq} as appropriate.
 enum class LobbyOp {
+	AcquireRelayTicket,
 	List,
 	Create,
 	Heartbeat,
@@ -86,6 +88,7 @@ struct LobbyRequest {
 	ATNetplay::LobbyCreateRequest createReq;   // op == Create
 	std::string                   sessionId;   // heartbeat/delete
 	std::string                   token;       // heartbeat/delete
+	std::string                   intentId;    // approved broker relay handoff
 	int                           playerCount = 1;  // heartbeat
 	std::string                   state;       // heartbeat: "" | "waiting" | "playing"
 	uint32_t                      tag = 0;     // caller cookie (round-trip)
@@ -108,6 +111,7 @@ struct LobbyResult {
 	LobbyOp                             op = LobbyOp::List;
 	bool                                ok = false;
 	std::string                         error;
+	std::string                         requestSessionId;
 	int                                 httpStatus = 0;  // 0 = network-level failure
 	uint32_t                            tag = 0;
 
@@ -117,6 +121,7 @@ struct LobbyResult {
 
 	// Populated depending on op:
 	std::vector<ATNetplay::LobbySession> sessions;  // List
+	ATNetplay::LobbyRelayTicket          relayTicket;
 	ATNetplay::LobbyCreateResponse       create;    // Create
 	ATNetplay::LobbyStats                stats;     // Stats
 	ATNetplay::LobbyIntentResponse       intentResp;   // CreateIntent
@@ -186,7 +191,8 @@ private:
 	std::atomic<bool>       mRunning{false};
 	std::atomic<bool>       mStop{false};
 	std::atomic<size_t>     mInFlight{0};
-	std::thread             mThread;
+	std::vector<std::thread> mThreads;
+	std::unordered_set<std::string> mBusyServices;
 
 	// WASM build's emscripten_fetch_t callbacks (in
 	// ui_netplay_lobby_worker.cpp under __EMSCRIPTEN__) need to push

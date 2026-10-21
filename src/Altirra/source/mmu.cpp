@@ -534,6 +534,21 @@ void ATMMUEmulator::SetBankRegister(uint8 bank) {
 	UpdateROMMappingHook();
 }
 
+ATMMUSnapshotRuntimeState ATMMUEmulator::GetSnapshotRuntimeState() const {
+	return {mCurrentBank, mLatchedBasic != 0, mLatchedSelfTest != 0};
+}
+
+void ATMMUEmulator::SetSnapshotRuntimeState(
+	const ATMMUSnapshotRuntimeState& state) {
+	mLatchedBasic = state.mbBasicLatched ? kMapInfo_BASIC : 0;
+	mLatchedSelfTest = state.mbSelfTestLatched ? kMapInfo_SelfTest : 0;
+	// Recompute the visible mapping even if PORTB is unchanged. Restore
+	// callers apply this after PIA has driven its saved output pins.
+	mCurrentBank = ~state.mBank;
+	mCurrentBankInfo = ~mCurrentBankInfo;
+	SetBankRegister(state.mBank);
+}
+
 void ATMMUEmulator::SetBasicSelfTestLatchEnabled(bool enabled) {
 	if (mbLatchEnabled == enabled)
 		return;

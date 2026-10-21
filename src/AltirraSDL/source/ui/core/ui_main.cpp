@@ -1022,7 +1022,7 @@ void ATUIPollDeferredActions() {
 				}
 
 				if (!loadSuccess) {
-					ATNetplayProfile::EndSession();
+					ATNetplayGlue::DisconnectActive();
 					ATNetplayUI_HostBootFailed(gameIdU8.c_str(),
 						failReason.empty()
 						    ? "image could not be loaded"
@@ -1189,7 +1189,7 @@ void ATUIPollDeferredActions() {
 					}
 					ATNetplayUI_JoinerSnapshotApplied();
 				} else {
-					ATNetplayProfile::EndSession();
+					ATNetplayGlue::DisconnectActive();
 					ATNetplayUI_JoinerSnapshotFailed(
 						reason.empty() ? "cold-boot failed"
 						               : reason.c_str());

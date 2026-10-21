@@ -2196,7 +2196,7 @@ void ATAnticEmulator::EndLoadState(ATSaveStateReader& reader) {
 	EndLoadStateInternal();
 }
 
-void ATAnticEmulator::EndLoadStateInternal() {
+void ATAnticEmulator::EndLoadStateInternal(bool preserveFetchPointers) {
 	// Enforce some safety limits for parameters.
 	SetPALMode(mScanlineLimit > 262);
 
@@ -2231,9 +2231,13 @@ void ATAnticEmulator::EndLoadStateInternal() {
 	UpdateFont();
 	UpdateCurrentCharRow();
 
-	mpPFDataWrite = mPFDataBuffer;
-	mpPFDataRead = mPFDataBuffer;
-	mpPFCharFetchPtr = mPFCharBuffer;
+	// Exact snapshots retain the in-flight DMA buffer positions. The legacy
+	// loader keeps its historical scanline restart behavior.
+	if (!preserveFetchPointers) {
+		mpPFDataWrite = mPFDataBuffer;
+		mpPFDataRead = mPFDataBuffer;
+		mpPFCharFetchPtr = mPFCharBuffer;
+	}
 
 	UpdateDMAPattern();
 
@@ -2447,7 +2451,7 @@ void ATAnticEmulator::TransferInternalState(T& obj2) {
 		mRegisterUpdates.resize(n);
 
 		for(uint32 i=0, j=0; i<n; ++i, j+=3) {
-			mRegisterUpdates[j] = QueuedRegisterUpdate {
+			mRegisterUpdates[i] = QueuedRegisterUpdate {
 				t + obj2.mRegisterUpdates[j + 0],
 				(uint8)obj2.mRegisterUpdates[j + 1],
 				(uint8)obj2.mRegisterUpdates[j + 2]
@@ -2590,7 +2594,7 @@ void ATAnticEmulator::LoadState(const ATSaveStateAntic& astate) {
 
 	TransferInternalState<false>(istate);
 
-	EndLoadStateInternal();
+	EndLoadStateInternal(true);
 
 	if (istate.mbRNMIPending)
 		RequestNMI();

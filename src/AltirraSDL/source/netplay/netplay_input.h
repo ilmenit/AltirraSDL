@@ -23,11 +23,19 @@ namespace ATNetplay { struct NetInput; }
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 
+#include "netplay_input_state.h"
+
 namespace ATNetplayInput {
+
+AppliedState CaptureAppliedState();
+void RestoreAppliedState(const AppliedState& state);
 
 // Begin/end tied to the aggregate IsLockstepping state in
 // netplay_glue.  Safe to call multiple times.
 void BeginSession();
+// Local automation may exercise input routing without a coordinator.
+void BeginTestSession();
+bool IsTestSession();
 void EndSession();
 bool IsActive();
 
@@ -47,11 +55,15 @@ bool IsSuppressingLocalInput();
 
 // Called from input_sdl3 HandleKeyDown *before* it pushes to POKEY.
 // Queues one edge-triggered key event for the next PollLocal().
-// Auto-repeats are dropped (only the initial press goes on the wire).
-void OnLocalKeyDown(uint8_t atariScanCode);
+// Cooked repeats remain explicit events; raw repeats are ignored.
+void OnLocalKeyDown(uint8_t atariScanCode, bool repeat = false,
+	bool raw = false);
+void OnLocalKeyUp(uint8_t atariScanCode);
+// Focus loss/UI capture releases the live input shadow, never hardware.
+void ReleaseLocalInputs();
 
 // Called from input_sdl3 on Shift / Ctrl state changes.  Latched into
-// the next PollLocal()'s keyScan high bits, same encoding POKEY uses.
+// the next PollLocal()'s extFlags; encoded keyScan modifiers stay intact.
 void OnLocalShiftCtrlState(bool shift, bool ctrl);
 
 // Called from input_sdl3 HandleSpecialScanCode for Start / Select /
@@ -68,8 +80,8 @@ ATNetplay::NetInput PollLocal();
 //   - controller port 0 ← p1 stick+trigger
 //   - controller port 1 ← p2 stick+trigger
 //   - GTIA console switches ← OR of p1 and p2 console bits
-//   - POKEY PushKey ← whichever peer's keyScan changed this frame
-//                     (edge-triggered, so held keys don't repeat)
+//   - POKEY keyboard ← explicit cooked events or the held raw matrix
+//   - analog pot positions and 5200 keypad follow the same frame inputs
 void ApplyFrameInputs(const ATNetplay::NetInput& p1,
                       const ATNetplay::NetInput& p2);
 

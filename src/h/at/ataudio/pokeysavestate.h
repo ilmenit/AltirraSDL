@@ -63,6 +63,62 @@ public:
 
 	uint32 mTraceByteIndex = 0;
 
+	// Optional exact runtime state. Older snapshots retain their existing
+	// host-keyboard behavior when this marker is absent.
+	bool mbKeyboardStatePresent = false;
+	uint16 mKeyMatrix[8]{};
+	uint16 mEffectiveKeyMatrix[8]{};
+	uint32 mKeyCodeTimer = 0;
+	uint32 mKeyCooldownTimer = 0;
+	uint32 mKeyboardIRQDelay = 0;
+	uint32 mKeyboardScanDelay = 0;
+	bool mbKeyboardIRQPending = false;
+	bool mbUseKeyCooldownTimer = false;
+	bool mbCookedKeyMode = false;
+	bool mbKeyboardScanEnabled = false;
+	bool mbShiftKeyState = false;
+	bool mbShiftKeyLatchedState = false;
+	bool mbControlKeyState = false;
+	bool mbControlKeyLatchedState = false;
+	bool mbBreakKeyState = false;
+	bool mbBreakKeyLatchedState = false;
+	uint8 mKeyScanState = 0;
+	uint8 mKeyScanCode = 0;
+	uint8 mKeyScanLatch = 0;
+	vdfastvector<uint8> mKeyQueue;
+
+	bool mbPotRuntimePresent = false;
+	uint32 mPotHiPositions[8]{};
+	uint32 mPotChargeRates[8]{};
+	uint8 mPotGroundedMask = 0;
+	uint64 mPotLastScanAge = 0;
+	uint32 mPotLastFastOffset = 0;
+	uint32 mPotLastSlowOffset = 0;
+
+	// Exact serial engine state, with clocks relative to snapshot time.
+	bool mbSerialStatePresent = false;
+	uint8 mSERIN = 0;
+	uint8 mSEROUT = 0;
+	uint8 mSerialInputPendingStatus = 0xFF;
+	uint32 mSerInEventDelay = 0;
+	uint64 mSerialOutputStartAge = 0;
+	bool mbSerialOutputState = false;
+	bool mbSerialRateChanged = false;
+	bool mbSerInBurstPendingIRQ1 = false;
+	bool mbSerInBurstPendingIRQ2 = false;
+	bool mbSerInBurstPendingData = false;
+	bool mbSerOutBurstDeadlinePresent = false;
+	uint32 mSerOutBurstDeadlineOffset = 0;
+	uint32 mSerialInputResetCounter = 0;
+	uint32 mSerialSimulateInputBaseOffset = 0;
+	uint32 mSerialSimulateInputCyclesPerBit = 0;
+	uint32 mSerialSimulateInputData = 0;
+	bool mbSerialSimulateInputPort = false;
+	uint32 mSerialExtBaseOffset = 0;
+	uint32 mSerialExtPeriod = 0;
+	bool mbSerialDataInFlipPresent = false;
+	uint64 mSerialDataInFlipOffset = 0;
+
 	ATSaveStatePokeyRenderer mRendererState;
 };
 

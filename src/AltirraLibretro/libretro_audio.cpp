@@ -264,6 +264,7 @@ public:
 
 	bool GetMute() override { return mbMute; }
 	void SetMute(bool mute) override { mbMute = mute; }
+	void SetReplayMode(bool replay) override { mbReplay = replay; }
 
 	float GetVolume() override { return mFilters[0].GetScale(); }
 	void SetVolume(float vol) override {
@@ -412,6 +413,7 @@ private:
 	int mLatency = 60;
 	int mExtraBuffer = 100;             // Matches Windows settings.cpp default
 	bool mbMute = false;
+	bool mbReplay = false;
 	bool mbFilterStereo = false;
 	uint32 mFilterMonoSamples = 0;
 	uint32 mBlockInternalAudioCount = 0;
@@ -961,6 +963,7 @@ void ATAudioOutputSDL3::WriteAudio(
 	bool pushStereoAsMono,
 	uint64 timestamp)
 {
+	if (mbReplay) return;
 	if (!count)
 		return;
 

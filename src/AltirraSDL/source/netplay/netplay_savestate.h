@@ -27,9 +27,8 @@ namespace ATNetplay {
 // would race.
 bool CaptureSavestate(std::vector<uint8_t>& out);
 
-// Apply a previously-captured snapshot back into the live simulator,
-// then re-normalise any RNG state that the savestate format does not
-// round-trip (see netplay_glue.cpp:187-214 for the documented gap).
+// Apply a previously captured snapshot, preserving its exact scheduler
+// and randomization state for deterministic continuation.
 // Returns false on any deserialization error or if ApplySnapshot
 // refused the data — in that case the caller must treat the session
 // as terminally desynced.

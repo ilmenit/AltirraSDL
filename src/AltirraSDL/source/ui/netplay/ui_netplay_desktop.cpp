@@ -37,6 +37,7 @@
 #include <imgui.h>
 
 extern ATSimulator g_sim;
+extern ATUIState g_uiState;
 
 extern SDL_Window *g_pWindow;
 extern VDStringA ATGetConfigDir();
@@ -1107,10 +1108,28 @@ void DesktopPrefs() {
 			// the pref is a dead field (no runtime code reads it).
 
 			ImGui::Spacing();
-			ImGui::SeparatorText("Default input delay");
-			ImGui::TextDisabled("  Buffer for the joiner's input — bigger absorbs more jitter, costs feel.");
+			ImGui::SeparatorText("Response and connection");
+			int mode = g_uiState.netplayRollbackWindow > 0 ? 0 : 1;
+			ImGui::BeginDisabled(ATNetplayGlue::IsLockstepping());
+			if (ImGui::Combo("Play mode", &mode,
+				"Automatic (rollback)\0Delay only\0")) {
+				g_uiState.netplayRollbackWindow = mode == 0 ? 8 : 0;
+				ATNetplayGlue::SetRollbackPreference(
+					g_uiState.netplayRollbackWindow);
+				ATSaveSettings(kATSettingsCategory_View);
+			}
+			ImGui::EndDisabled();
+			ImGui::TextWrapped(mode == 0
+				? "Keeps controls responsive by predicting remote input and "
+				  "correcting recent frames. Pauses briefly if the connection "
+				  "or device cannot keep up. Applies to new hosted games."
+				: "Waits for both players before advancing. Uses less CPU; "
+				  "a larger buffer adds response delay. Applies to new hosted games.");
+			ImGui::TextDisabled("Delay-only input buffer");
+			ImGui::BeginDisabled(mode == 0 || ATNetplayGlue::IsLockstepping());
 			ImGui::SliderInt("LAN (frames)",      &st.prefs.defaultInputDelayLan, 1, 10);
 			ImGui::SliderInt("Internet (frames)", &st.prefs.defaultInputDelayInternet, 1, 10);
+			ImGui::EndDisabled();
 
 			ImGui::Spacing();
 			ImGui::SeparatorText("Display");

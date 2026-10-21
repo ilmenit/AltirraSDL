@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -74,6 +75,8 @@ constexpr uint16_t kNatPmpPort = 5351;
 
 void EnsureNetSubsystem() {
 #if defined(_WIN32)
+	static std::mutex lock;
+	std::lock_guard<std::mutex> guard(lock);
 	static bool ok = false;
 	if (ok) return;
 	WSADATA wsa;

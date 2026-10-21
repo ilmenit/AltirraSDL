@@ -1,23 +1,10 @@
-// Altirra SDL3 netplay - minimal HTTP/1.1 client
-//
-// Scope: one request, one response, one TCP connection.  Blocking with
-// a hard overall timeout.  Used for the lobby directory, where:
-//
-//   - payloads are a few hundred bytes of JSON,
-//   - only GET / POST / DELETE are needed,
-//   - the server is plain HTTP (no TLS in v1.0),
-//   - total per-call latency is bounded by the UI's 5 s spinner.
-//
-// This is deliberately NOT a general-purpose HTTP stack: no chunked
-// transfer, no keep-alive, no redirects, no compression, no TLS.  If
-// any of those become required, we should pull in a real library
-// rather than extend this one.
-//
-// Thread safety: none.  Each Request() call opens and closes a fresh
-// socket.
+// Altirra SDL netplay lobby HTTP(S) adapter.
+// Blocking and bounded by an overall deadline; uses the platform HTTPS
+// implementation shared with media downloads. Called only from workers.
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -29,6 +16,8 @@ struct HttpRequest {
 	const char* method    = "GET";  // "GET" | "POST" | "DELETE"
 	const char* host      = "";     // "lobby.atari.org.pl" or other lobby host
 	uint16_t    port      = 80;
+	bool        secure    = false;
+	const char* basePath  = "";
 	const char* path      = "/";    // starts with '/'
 	const char* contentType = nullptr;  // set when body is non-empty
 	const uint8_t* body   = nullptr;
@@ -38,6 +27,7 @@ struct HttpRequest {
 	const char* extraHeader = nullptr;
 	// Hard deadline for connect+send+recv, milliseconds.
 	uint32_t    timeoutMs = 5000;
+	const std::atomic<bool>* cancel = nullptr;
 };
 
 struct HttpResponse {
