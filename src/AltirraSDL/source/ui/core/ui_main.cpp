@@ -41,6 +41,9 @@
 #include <at/atcore/serializable.h>
 
 #include "ui_main.h"
+#include "../dialogs/ui_media_url.h"
+#include "../dialogs/ui_fujinet.h"
+#include "../../media/media_url.h"
 #include "ui_guided_input.h"
 #include "ui/dialogs/ui_game_metadata.h"
 #include "ui/gamelibrary/game_library.h"
@@ -62,6 +65,7 @@ extern void GameBrowser_OnBootedGame(const VDStringW &variantPath);
 #include "netplay/netplay_profile.h"
 #include "netplay/packets.h"
 #endif
+#include "../dialogs/ui_library_url.h"
 #include "ui_main_internal.h"
 #include "ui_mobile.h"
 #include "ui_mode.h"
@@ -337,6 +341,9 @@ void ATUIRequestCopyFrame(bool trueAspect) {
 // =========================================================================
 
 void ATUIPollDeferredActions() {
+	ATUIPollMediaURLDownload();
+	ATUIPollLibraryURLImport();
+	ATUIPollFujiNet();
 	std::vector<ATDeferredAction> actions;
 	{
 		std::lock_guard<std::mutex> lock(g_deferredMutex);
@@ -354,8 +361,9 @@ void ATUIPollDeferredActions() {
 			case kATDeferred_BootImage:
 			case kATDeferred_BootProgramData:
 			case kATDeferred_OpenImage: {
-				// Matches Windows DoLoadStream retry loop (main.cpp:1186-1369):
-				// 1. Unload storage before boot (per user-configured mask)
+				// Windows DoLoadStream retry flow (main.cpp:1186-1369).
+				// Fork safety extension: parse before unloading current media.
+				// 1. Parse the image before unloading storage for boot
 				// 2. Load with retry loop for hardware mode switching, BASIC conflicts
 				// 3. Cold reset (boot only)
 				// 4. Check compatibility
@@ -392,11 +400,17 @@ void ATUIPollDeferredActions() {
 				if (a.mProfile != kATProfileId_Invalid)
 					ATUIActivateGameProfile(a.mProfile);
 
+				// Fork extension: remote media uses the same deferred loader
+				// after an asynchronous download, before any media is unloaded.
+				if (ATMediaURL::IsURL(VDTextWToU8(a.path).c_str())) {
+					ATUIStartMediaURLDownload(VDTextWToU8(a.path).c_str(),
+						a.type == kATDeferred_BootImage);
+					break;
+				}
+
 				const bool boot = a.type == kATDeferred_BootImage ||
 					a.type == kATDeferred_BootProgramData;
 				const bool memoryProgram = a.type == kATDeferred_BootProgramData;
-				if (boot)
-					g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 
 				vdfastvector<uint8> captureBuffer;
 				ATCartLoadContext cartCtx {};
@@ -453,6 +467,7 @@ void ATUIPollDeferredActions() {
 				mctx.mbStopOnIncompatibleDiskFormat = true;
 				mctx.mpImageLoadContext = &ctx;
 
+				bool storageUnloaded = false;
 				bool loadSuccess = false;
 				bool suppressColdReset = false;
 
@@ -462,6 +477,16 @@ void ATUIPollDeferredActions() {
 					if (g_sim.Load(mctx)) {
 						loadSuccess = true;
 						break;
+					}
+
+					// The first pass only parses (mbStopAfterImageLoaded).
+					// Keep existing media when parsing fails or a cartridge
+					// still needs mapper selection. Retain the parsed image
+					// for the retry, so validation and installation use the
+					// same bytes even for asynchronous URL downloads.
+					if (boot && mctx.mpImage && !storageUnloaded) {
+						g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
+						storageUnloaded = true;
 					}
 
 					if (!--safetyCounter)
@@ -513,6 +538,14 @@ void ATUIPollDeferredActions() {
 				}
 
 				if (loadSuccess) {
+					// URL downloads finish asynchronously while a gaming file
+					// browser may still be open. Return to the emulated display
+					// only after the image has actually loaded successfully.
+					if (ATUIIsGamingMode()) {
+						extern ATMobileUIState g_mobileState;
+						g_mobileState.gameLoaded = true;
+						g_mobileState.currentScreen = ATMobileUIScreen::None;
+					}
 					if (!memoryProgram)
 						ATAddMRU(a.path.c_str());
 
@@ -1465,6 +1498,9 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 }
 
 void ATUIShutdown() {
+	ATUIShutdownMediaURLDownload();
+	ATUIShutdownLibraryURLImport();
+	ATUIShutdownFujiNet();
 	ATUIShutdownDiskExplorers();
 	ATUIShutdownCartridgeExplorers();
 	ATUIShutdownXEXExplorers();
@@ -2401,6 +2437,9 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showSystemConfig)      ATUIRenderSystemConfig(sim, state);
 	if (state.showDiskManager)       ATUIRenderDiskManager(sim, state, window);
 	if (state.showGameLibrary)       ATUIRenderGameLibrary(sim, state, window);
+	ATUIRenderMediaURLDialog();
+	ATUIRenderLibraryURLDialog();
+	ATUIRenderFujiNetDialog();
 	if (state.showCassetteControl)   ATUIRenderCassetteControl(sim, state, window);
 	if (state.showAdjustColors)      ATUIRenderAdjustColors(sim, state);
 	if (state.showDisplaySettings)   ATUIRenderDisplaySettings(sim, state);
@@ -2418,8 +2457,8 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showCommandLineHelp)   ATUIRenderCommandLineHelpDialog(state);
 	if (state.showChangeLog)         ATUIRenderChangeLogDialog(state);
 	if (state.showCompatWarning)     ATUIRenderCompatWarning(sim, state);
-	if (state.showHelpContents && !ATUIIsGamingMode())
-		ATUIRenderHelpContents(state);
+	if (ATUIHelpHasPendingTopic()) state.showHelpContents = true;
+	if (state.showHelpContents) ATUIRenderHelpContents(state);
 	if (state.showExitConfirm)       ATUIRenderExitConfirm(sim, state);
 	ATUIRenderDiskExplorer(sim, state, window);
 	ATUIRenderCartridgeExplorer(state, window);

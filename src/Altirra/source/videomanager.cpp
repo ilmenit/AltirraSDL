@@ -83,13 +83,15 @@ void ATVideoManager::AddVideoOutput(IATDeviceVideoOutput *output) {
 		output, output->GetActivityCounter()
 	};
 
-	uint32 index = (uint32)mOutputs.size();
 	auto it = std::lower_bound(mOutputs.begin(), mOutputs.end(), newEntry,
 		[](const OutputInfo& a, const OutputInfo& b) {
 			return VDStringSpanW(a.mpOutput->GetDisplayName()).comparei(b.mpOutput->GetDisplayName()) < 0;
 		}
 	);
 
+	// Fork: outputs are sorted, so notify observers of the insertion
+	// position rather than the old size when a new adapter sorts first.
+	const uint32 index = (uint32)(it - mOutputs.begin());
 	mOutputs.insert(it, newEntry);
 
 	++mListChangeCount;

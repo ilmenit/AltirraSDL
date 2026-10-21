@@ -436,8 +436,9 @@ void ATTestSystem_ZipBenchReZip() {
 	for(sint32 i = 0; i < n; ++i) {
 		const auto& fileInfo = arch.GetFileInfo(i);
 
-		buf.resize(fileInfo.mUncompressedSize);
 		vdautoptr<IVDInflateStream> ds { arch.OpenDecodedStream(i, true) };
+		// Validate the 64-bit member size before a 32-bit allocation.
+		buf.resize((size_t)fileInfo.mUncompressedSize);
 		ds->Read(buf.data(), buf.size());
 		ds = nullptr;
 
@@ -480,9 +481,9 @@ void ATTestSystem_ZipBenchReZip() {
 		double dsecs = (double)dmindt * VDGetPreciseSecondsPerTick();
 		uint64 len = mbs.Pos();
 
-		printf("%10u | %10u | %7.1f ms / %7.1f MB/sec / %7.1f MB/sec | %7.1f ms / %7.1f MB/sec | %10u (%5.1f%%) | %s\n"
-			, fileInfo.mUncompressedSize
-			, fileInfo.mCompressedSize
+		printf("%10llu | %10llu | %7.1f ms / %7.1f MB/sec / %7.1f MB/sec | %7.1f ms / %7.1f MB/sec | %10u (%5.1f%%) | %s\n"
+			, (unsigned long long)fileInfo.mUncompressedSize
+			, (unsigned long long)fileInfo.mCompressedSize
 			, csecs * 1000.0
 			, (double)buf.size() / 1000000.0 / csecs
 			, (double)mbs.GetBuffer().size() / 1000000.0 / csecs

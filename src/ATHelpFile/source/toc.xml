@@ -96,5 +96,10 @@
     <t name="Program-specific issues" href="compatibility.html"/>
     <t name="Bugs to avoid in new programs" href="common-errors.html"/>
   </t>
+  <t name="AltirraSDL additions">
+    <t name="FujiNet setup and troubleshooting" href="sdl-fujinet.html"/>
+    <t name="RAM cartridges and alternate displays" href="sdl-expansions.html"/>
+    <t name="URL media and game packs" href="sdl-remote-media.html"/>
+  </t>
   <t name="License" href="license.html"/>
 </toc>

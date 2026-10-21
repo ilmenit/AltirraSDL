@@ -35,6 +35,7 @@
 #include <at/ataudio/pokey.h>
 
 #include "ui_main.h"
+#include "ui_main_internal.h"
 #include "ui_guided_input.h"
 #include "ui_search.h"
 #include "ui_profile_services.h"
@@ -47,6 +48,8 @@
 #include "gtia.h"
 #include "antic.h"
 #include "cartridge.h"
+#include "ramcart_settings.h"
+#include "ui_fujinet.h"
 #include "cassette.h"
 #include "autosavemanager.h"
 #include "oshelper.h"
@@ -308,6 +311,9 @@ static const SDL_DialogFileFilter kMacCasSaveFilters[] = {
 	{ "All Files", "*" },
 };
 
+// Fork extension: shared native download dialog, same as the ImGui menu.
+extern void ATUIShowMediaURLDialog();
+
 static void BuildFileMenu(NSMenu *menu) {
 	SDL_Window *window = g_pWindow;
 
@@ -318,6 +324,9 @@ static void BuildFileMenu(NSMenu *menu) {
 
 	AddItem(menu, @"Open Image...", @"o", NSEventModifierFlagCommand, false, true, [=]{
 		ATUIShowOpenImageDialog(window);
+	});
+	AddItem(menu, @"Open Image from URL...", false, true, []{
+		ATUIShowMediaURLDialog();
 	});
 
 	// Recently Booted (MRU list)
@@ -516,6 +525,16 @@ static void BuildFileMenu(NSMenu *menu) {
 			{ "Empty 256K J(Atari)Cart",                            kATCartridgeMode_JAtariCart_256K },
 			{ "Empty 512K J(Atari)Cart",                            kATCartridgeMode_JAtariCart_512K },
 			{ "Empty 1024K J(Atari)Cart",                           kATCartridgeMode_JAtariCart_1024K },
+			{ "Empty RAM-Cart 64KB", kATCartridgeMode_RamCart_64K },
+			{ "Empty RAM-Cart 128KB", kATCartridgeMode_RamCart_128K },
+			{ "Empty Double RAM-Cart 256KB", kATCartridgeMode_DoubleRamCart_256K },
+			{ "Empty RAM-Cart 1MB", kATCartridgeMode_RamCart_1M },
+			{ "Empty RAM-Cart 2MB", kATCartridgeMode_RamCart_2M },
+			{ "Empty RAM-Cart 4MB", kATCartridgeMode_RamCart_4M },
+			{ "Empty RAM-Cart 8MB", kATCartridgeMode_RamCart_8M },
+			{ "Empty RAM-Cart 16MB", kATCartridgeMode_RamCart_16M },
+			{ "Empty RAM-Cart 32MB", kATCartridgeMode_RamCart_32M },
+			{ "Empty SiDiCar 32KB", kATCartridgeMode_SiDiCar_32K },
 			{ "Empty DCart",                                        kATCartridgeMode_DCart },
 			{ "Empty SIC! 512K flash cartridge",                    kATCartridgeMode_SIC_512K },
 			{ "Empty SIC! 256K flash cartridge",                    kATCartridgeMode_SIC_256K },
@@ -1182,6 +1201,29 @@ static void BuildSystemMenu(NSMenu *menu) {
 			g_sim.SetCartridgeSwitch(!g_sim.GetCartridgeSwitch());
 		});
 
+		// Fork extension matching the ImGui physical RAM-Cart controls.
+		for (uint32 unit = 0; unit < 2; ++unit) {
+			auto *cart = g_sim.GetCartridge(unit);
+			if (!cart || !ATIsCartridgeRAMMode(cart->GetMode()))
+				continue;
+			NSMenu *ramMenu = AddSubmenu(csMenu, unit ? @"Secondary RAM-Cart switches" : @"RAM-Cart switches");
+			const uint32 mask = cart->GetRamCartSwitchMask();
+			for (const auto& item : kATRamCartSwitchItems) {
+				const uint32 bit = item.mask;
+				if (!(mask & bit))
+					continue;
+				const uint32 state = cart->GetRamCartSwitches();
+				AddItem(ramMenu, [NSString stringWithUTF8String:item.label], (state & bit) != 0, true, [=]{
+					if (auto *current = g_sim.GetCartridge(unit))
+						current->SetRamCartSwitches(current->GetRamCartSwitches() ^ bit);
+				});
+			}
+			AddItem(ramMenu, @"Reset cartridge latch", false, true, [=]{
+				if (auto *current = g_sim.GetCartridge(unit))
+					current->ActivateButton(kATDeviceButton_CartridgeResetBank, true);
+			});
+		}
+
 		static const struct { ATDeviceButton btn; const char *label; } kDevButtons[] = {
 			{ kATDeviceButton_BlackBoxDumpScreen, "BlackBox: Dump Screen" },
 			{ kATDeviceButton_BlackBoxMenu, "BlackBox: Menu" },
@@ -1605,6 +1647,11 @@ static void BuildRecordMenu(NSMenu *menu) {
 
 static void BuildToolsMenu(NSMenu *menu) {
 	SDL_Window *window = g_pWindow;
+	// Fork extension, matching the native NetSIO controls in the ImGui UI.
+	AddItem(menu, @"FujiNet...", false, true, []{
+		ATUIShowFujiNetDialog();
+	});
+	AddSeparator(menu);
 
 	NSMenu *explorers = AddSubmenu(menu, @"Explorers");
 	AddItem(explorers, @"Disk Explorer...", false, true, [=]{
@@ -1787,7 +1834,15 @@ static void BuildHelpMenu(NSMenu *menu) {
 		ATUIOpenGlobalSearch();
 	});
 	UpdateSearchShortcut(search);
-	AddItem(menu, @"Contents", false, false, [=]{});
+	AddItem(menu, @"Contents", false, true, [=]{
+		g_uiState.showHelpContents = true;
+	});
+	AddItem(menu, @"FujiNet setup", false, true, [=]{
+		ATUIShowHelpTopic("sdl-fujinet.html", nullptr);
+	});
+	AddItem(menu, @"New hardware and URL features", false, true, [=]{
+		ATUIShowHelpTopic("sdl-expansions.html", nullptr);
+	});
 	AddItem(menu, @"About", false, true, [=]{
 		g_uiState.showAboutDialog = true;
 	});

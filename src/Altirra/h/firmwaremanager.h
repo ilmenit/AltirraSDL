@@ -119,6 +119,8 @@ enum ATFirmwareType : uint32 {
 	kATFirmwareType_BlackBoxFloppy,
 	kATFirmwareType_SpeedyXF,
 	kATFirmwareType_KarinMaxiDrive,
+	kATFirmwareType_AF80Firmware,
+	kATFirmwareType_AF80Charset,
 	kATFirmwareTypeCount
 };
 

@@ -26,6 +26,9 @@
 #include <at/ataudio/pokey.h>
 
 #include "ui_main.h"
+#include "ui_main_internal.h"
+#include "../dialogs/ui_media_url.h"
+#include "../dialogs/ui_fujinet.h"
 #include "ui_guided_input.h"
 #include "ui_menus_internal.h"
 #include "ui_debugger.h"
@@ -484,6 +487,12 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		ATUIShowOpenImageDialog(window);
 	ShortcutContextMenu("File.OpenImage");
 
+#ifndef __EMSCRIPTEN__
+	// Authorized fork extension; Windows has no remote image picker.
+	if (ImGui::MenuItem("Open Image from URL..."))
+		ATUIShowMediaURLDialog();
+#endif
+
 	if (ImGui::MenuItem("Game Library..."))
 		state.showGameLibrary = true;
 
@@ -672,6 +681,16 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 			{ "Empty 256K J(Atari)Cart",                            kATCartridgeMode_JAtariCart_256K },
 			{ "Empty 512K J(Atari)Cart",                            kATCartridgeMode_JAtariCart_512K },
 			{ "Empty 1024K J(Atari)Cart",                           kATCartridgeMode_JAtariCart_1024K },
+			{ "Empty RAM-Cart 64KB", kATCartridgeMode_RamCart_64K },
+			{ "Empty RAM-Cart 128KB", kATCartridgeMode_RamCart_128K },
+			{ "Empty Double RAM-Cart 256KB", kATCartridgeMode_DoubleRamCart_256K },
+			{ "Empty RAM-Cart 1MB", kATCartridgeMode_RamCart_1M },
+			{ "Empty RAM-Cart 2MB", kATCartridgeMode_RamCart_2M },
+			{ "Empty RAM-Cart 4MB", kATCartridgeMode_RamCart_4M },
+			{ "Empty RAM-Cart 8MB", kATCartridgeMode_RamCart_8M },
+			{ "Empty RAM-Cart 16MB", kATCartridgeMode_RamCart_16M },
+			{ "Empty RAM-Cart 32MB", kATCartridgeMode_RamCart_32M },
+			{ "Empty SiDiCar 32KB", kATCartridgeMode_SiDiCar_32K },
 			{ "Empty DCart",                                        kATCartridgeMode_DCart },
 			{ "Empty SIC! 512K flash cartridge",                    kATCartridgeMode_SIC_512K },
 			{ "Empty SIC! 256K flash cartridge",                    kATCartridgeMode_SIC_256K },
@@ -1095,6 +1114,10 @@ static void TapeAnalysisOpenCallback(void *, const char * const *filelist, int) 
 }
 
 static void RenderToolsMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
+	// Fork extension: native FujiNet/NetSIO setup and runtime controls.
+	if (ImGui::MenuItem("FujiNet..."))
+		ATUIShowFujiNetDialog();
+	ImGui::Separator();
 	if (ImGui::BeginMenu("Explorers")) {
 		if (ImGui::MenuItem("Disk Explorer..."))
 			ATUIRequestDiskExplorer(window);
@@ -1207,6 +1230,12 @@ static void RenderHelpMenu(ATUIState &state) {
 	ImGui::Separator();
 	if (ImGui::MenuItem("Contents"))
 		state.showHelpContents = true;
+
+	// Fork guides for the explicitly requested SDL additions.
+	if (ImGui::MenuItem("FujiNet setup"))
+		ATUIShowHelpTopic("sdl-fujinet.html", nullptr);
+	if (ImGui::MenuItem("New hardware and URL features"))
+		ATUIShowHelpTopic("sdl-expansions.html", nullptr);
 
 	if (ImGui::MenuItem("About"))
 		state.showAboutDialog = true;

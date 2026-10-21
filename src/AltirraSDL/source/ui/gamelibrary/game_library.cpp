@@ -30,73 +30,6 @@
 // Extension classification
 // =========================================================================
 
-GameMediaType ClassifyExtension(const wchar_t *ext) {
-	VDStringW e;
-	for (const wchar_t *p = ext; *p; ++p)
-		e += (wchar_t)std::towlower(*p);
-
-	if (e == L"atr" || e == L"atx" || e == L"xfd" || e == L"dcm" || e == L"pro")
-		return GameMediaType::Disk;
-	if (e == L"xex" || e == L"obx" || e == L"com" || e == L"exe" || e == L"bas")
-		return GameMediaType::Executable;
-	if (e == L"car" || e == L"rom" || e == L"bin" || e == L"a52")
-		return GameMediaType::Cartridge;
-	if (e == L"cas" || e == L"wav" || e == L"flac" || e == L"ogg")
-		return GameMediaType::Cassette;
-
-	return GameMediaType::Unknown;
-}
-
-bool IsSupportedGameExtension(const wchar_t *name) {
-	const wchar_t *ext = wcsrchr(name, L'.');
-	if (!ext) return false;
-	ext++;
-
-	VDStringW e;
-	for (const wchar_t *p = ext; *p; ++p)
-		e += (wchar_t)std::towlower(*p);
-
-	static const wchar_t *kExtensions[] = {
-		L"xex", L"atr", L"car", L"bin", L"rom", L"cas",
-		L"dcm", L"atz", L"zip", L"gz", L"xfd", L"atx",
-		L"obx", L"com", L"exe", L"pro", L"a52", L"bas",
-		L"wav", L"flac", L"ogg", L"sap", L"vgm", L"vgz",
-		L"arc",
-		nullptr
-	};
-
-	for (const wchar_t **p = kExtensions; *p; ++p) {
-		if (e == *p)
-			return true;
-	}
-	return false;
-}
-
-bool IsArchiveExtension(const wchar_t *name) {
-	const wchar_t *ext = wcsrchr(name, L'.');
-	if (!ext) return false;
-	ext++;
-
-	VDStringW e;
-	for (const wchar_t *p = ext; *p; ++p)
-		e += (wchar_t)std::towlower(*p);
-
-	return e == L"zip" || e == L"gz" || e == L"atz" || e == L"arc";
-}
-
-bool IsSupportedImageExtension(const wchar_t *name) {
-	const wchar_t *ext = wcsrchr(name, L'.');
-	if (!ext) return false;
-	ext++;
-
-	VDStringW e;
-	for (const wchar_t *p = ext; *p; ++p)
-		e += (wchar_t)std::towlower(*p);
-
-	return e == L"png" || e == L"jpg" || e == L"jpeg"
-		|| e == L"bmp" || e == L"webp";
-}
-
 // =========================================================================
 // Canonical name extraction (variant tag stripping)
 // =========================================================================
@@ -1205,7 +1138,7 @@ static bool BuildEntryForFile(const VDStringW &path, GameEntry &outEntry) {
 	if (!ext) return false;
 	ext++;
 
-	GameMediaType mediaType = ClassifyExtension(ext);
+	GameMediaType mediaType = ClassifyGameFilename(fname.c_str());
 	if (mediaType == GameMediaType::Unknown)
 		return false;
 
@@ -1884,14 +1817,14 @@ void ATGameLibrary::ScanFolder(const VDStringW &path, bool recursive,
 				ctx->images->push_back(fullPath);
 			}
 
-			if (IsArchiveExtension(wname.c_str())) {
+			if (IsArchiveExtension(wname.c_str()) && ClassifyGameFilename(wname.c_str()) == GameMediaType::Unknown) {
 				ctx->self->ScanArchive(fullPath, *ctx->entries, *ctx->images);
 			} else if (IsSupportedGameExtension(wname.c_str())) {
 				const wchar_t *ext = wcsrchr(wname.c_str(), L'.');
 				if (!ext) return SDL_ENUM_CONTINUE;
 				ext++;
 
-				GameMediaType mediaType = ClassifyExtension(ext);
+				GameMediaType mediaType = ClassifyGameFilename(wname.c_str());
 				if (mediaType == GameMediaType::Unknown)
 					return SDL_ENUM_CONTINUE;
 
@@ -1947,6 +1880,10 @@ void ATGameLibrary::ScanArchive(const VDStringW &path,
 
 			const VDZipArchive::FileInfo &info = zip.GetFileInfo(i);
 			const VDStringW &rawName = info.mDecodedFileName;
+			// Shared with URL-pack validation: never index an unsupported
+			// or oversized member that the normal launch path cannot load.
+			if (!info.mbSupported || info.mUncompressedSize > kATLibraryMaxMemberBytes)
+				continue;
 
 			// Skip directories
 			if (!rawName.empty() && rawName.back() == L'/')
@@ -1966,16 +1903,14 @@ void ATGameLibrary::ScanArchive(const VDStringW &path,
 				continue;
 			}
 
-			if (!IsSupportedGameExtension(fileName.c_str()))
-				continue;
-			if (IsArchiveExtension(fileName.c_str()))
+			if (!IsLibraryGameMember(fileName.c_str(), info.mUncompressedSize))
 				continue;
 
 			const wchar_t *ext = wcsrchr(fileName.c_str(), L'.');
 			if (!ext) continue;
 			ext++;
 
-			GameMediaType mediaType = ClassifyExtension(ext);
+			GameMediaType mediaType = ClassifyGameFilename(fileName.c_str());
 			if (mediaType == GameMediaType::Unknown)
 				continue;
 

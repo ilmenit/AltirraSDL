@@ -1204,6 +1204,10 @@ bool ATTouchButton(const char *label, const ImVec2 &sizeArg,
 	}
 	dl->PopClipRect();
 
+	// Custom-drawn buttons need the same label hook as ImGui::Button
+	// so touch workflows (including the remote image picker) are testable.
+	ImGuiContext& g = *GImGui;
+	IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);
 	return pressed;
 }
 

@@ -47,6 +47,8 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "instance_reuse.h"
 #include "browser_frame_scheduler.h"
 #include "video_output.h"
+#include "ramcart_settings.h"
+#include "ui_fujinet.h"
 #include "devicemanager.h"
 #include <at/atcore/devicevideo.h>
 
@@ -2300,6 +2302,7 @@ int main(int argc, char *argv[]) {
 	// mode, virtual keyboard placement) before the profile system runs its
 	// initial ATLoadSettings pass below, so the saved values are restored.
 	ATUIStateSettingsInit();
+	ATUIRamCartSettingsInit();
 
 	// Load default profiles and then restore the last active profile.
 	// Windows does this at main.cpp:3941-3979.  ATSettingsLoadLastProfile()
@@ -3519,6 +3522,10 @@ int main(int argc, char *argv[]) {
 	ATShutdownDebugger();
 	ATUIDebuggerShutdown();
 
+	// Stop the managed peer while its SIO device and socket worker still
+	// exist. The UI shutdown hook is idempotent for later UI teardown.
+	ATUIShutdownFujiNet();
+
 	// Shut down network sockets before simulator shutdown
 	extern void ATSocketPreShutdown();
 	ATSocketPreShutdown();
@@ -3544,6 +3551,7 @@ int main(int argc, char *argv[]) {
 	ATMacMenuBarShutdown();
 	ATUIShutdown();
 	ATUIStateSettingsShutdown();
+	ATUIRamCartSettingsShutdown();
 
 	delete g_pDisplay;
 	delete g_pBackend;  // destroys backend-owned textures, shaders, or GL context

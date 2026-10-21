@@ -101,6 +101,8 @@ static constexpr const char *kATFirmwareTypeNames[]={
 	"blackboxfloppy",
 	"speedyxf",
 	"karinmaxidrive",
+	"af80firmware",
+	"af80charset",
 };
 
 VDASSERTCT(vdcountof(kATFirmwareTypeNames) == kATFirmwareTypeCount);

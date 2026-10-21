@@ -115,8 +115,17 @@ int main() {
 	ATVideoManager manager;
 	ATSimulatorEventManager events;
 	Output xep("xep80", L"XEP80"), bit3("bit3", L"Bit 3");
+	uint32 addedIndex = ~uint32(0);
+	vdfunction<void(uint32)> onAdded = [&](uint32 index) {
+		addedIndex = index;
+	};
+	manager.OnAddedOutput().Add(&onAdded);
 	manager.AddVideoOutput(&xep);
+	Check(addedIndex == 0, "First output insertion index was incorrect");
 	manager.AddVideoOutput(&bit3);
+	Check(addedIndex == 0 && manager.GetOutput(addedIndex) == &bit3,
+		"Output notification did not identify the sorted insertion position");
+	manager.OnAddedOutput().Remove(&onAdded);
 	ATSDLVideoOutputInit(manager, events);
 	Check(ATUIIsAltOutputAvailable(), "Devices not enumerated");
 	ATUISelectNextAltOutput();

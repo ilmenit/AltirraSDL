@@ -5,11 +5,29 @@
 
 #include "http_client.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <chrono>
 #include <cstring>
+#include <limits>
 #include <mutex>
+#include <string_view>
 
 namespace ATHttp {
+
+void Get(const Request& in, Response& out) {
+	if (in.method == Method::Get) { Perform(in, out); return; }
+	Request request = in;
+	request.method = Method::Get;
+	request.requestBody.clear();
+	Perform(request, out);
+}
+void Post(const Request& in, Response& out) {
+	if (in.method == Method::Post) { Perform(in, out); return; }
+	Request request = in;
+	request.method = Method::Post;
+	Perform(request, out);
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -65,6 +83,112 @@ std::string NormalizeContentType(const char* raw) {
 bool IsCancelled(const Request& in) {
 	return in.cancel && in.cancel->load(std::memory_order_relaxed);
 }
+
+// One decoded-body accounting/error path shared by all native backends.
+// No exception may cross libcurl's C callback boundary, including errors
+// from a user-provided sink or vector allocation.
+struct BodyReceiver {
+	const Request& request;
+	Response& response;
+	uint64_t received = 0;
+	uint64_t expected = 0;
+	bool haveExpected = false;
+	bool encoded = false;
+	bool rejectedError = false;
+	bool rejectedRedirect = false;
+	std::string redirectLocation;
+	enum Failure { None, Cancelled, TooLarge, SinkFailed, OutOfMemory,
+		Incomplete } failure = None;
+
+	BodyReceiver(const Request& in, Response& out) : request(in), response(out) {
+		if (request.bytesReceived) request.bytesReceived->store(0, std::memory_order_relaxed);
+		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
+	}
+	void Begin(int status) noexcept {
+		response.status = status;
+		response.body.clear();
+		received = expected = 0;
+		haveExpected = encoded = false;
+		rejectedError = rejectedRedirect = false;
+		redirectLocation.clear();
+		if (request.bytesReceived) request.bytesReceived->store(0, std::memory_order_relaxed);
+		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
+	}
+	bool SkipBody() const noexcept {
+		return request.bodySink && (response.status < 200 || response.status >= 300);
+	}
+	void Length(std::string_view text) noexcept {
+		while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) text.remove_prefix(1);
+		while (!text.empty() && (text.back() == ' ' || text.back() == '\t' ||
+			text.back() == '\r' || text.back() == '\n')) text.remove_suffix(1);
+		uint64_t value = 0;
+		if (text.empty()) return;
+		for (const char c : text) {
+			if (c < '0' || c > '9' || value > (UINT64_MAX - (c - '0')) / 10) return;
+			value = value * 10 + (c - '0');
+		}
+		expected = value;
+		haveExpected = true;
+	}
+	void Encoded() noexcept {
+		encoded = true;
+		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
+	}
+	bool HeadersDone() noexcept {
+		const bool accepted = response.status >= 200 && response.status < 300;
+		if (accepted && haveExpected && !encoded) {
+			if (request.bytesTotal) request.bytesTotal->store(expected, std::memory_order_relaxed);
+			if (request.maxBodyBytes && expected > request.maxBodyBytes) {
+				failure = TooLarge;
+				return false;
+			}
+		}
+		return true;
+	}
+	bool Append(const void* data, size_t size) noexcept {
+		if (IsCancelled(request)) { failure = Cancelled; return false; }
+		// Streaming archive consumers must never receive login/error pages
+		// or intermediate redirects. Memory clients still receive error JSON.
+		if (SkipBody()) return true;
+		if (size > UINT64_MAX - received ||
+			(request.maxBodyBytes && size > request.maxBodyBytes - received)) {
+			failure = TooLarge;
+			return false;
+		}
+		try {
+			if (request.bodySink) {
+				if (!request.bodySink(data, size)) { failure = SinkFailed; return false; }
+			} else {
+				const auto* bytes = (const uint8_t*)data;
+				response.body.insert(response.body.end(), bytes, bytes + size);
+			}
+		} catch (...) {
+			failure = request.bodySink ? SinkFailed : OutOfMemory;
+			return false;
+		}
+		received += size;
+		if (request.bytesReceived) request.bytesReceived->store(received, std::memory_order_relaxed);
+		return true;
+	}
+	bool Finish() noexcept {
+		if (IsCancelled(request)) failure = Cancelled;
+		if (failure == None && response.status >= 200 && response.status < 300 &&
+			haveExpected && !encoded && received != expected) failure = Incomplete;
+		return failure == None;
+	}
+	void ReportFailure() {
+		response.status = 0;
+		response.body.clear();
+		switch (failure) {
+			case Cancelled: response.error = "cancelled"; break;
+			case TooLarge: response.error = "response too large"; break;
+			case SinkFailed: response.error = "download sink failed"; break;
+			case OutOfMemory: response.error = "unable to allocate HTTP response"; break;
+			case Incomplete: response.error = "incomplete HTTP response"; break;
+			default: break;
+		}
+	}
+};
 
 }  // namespace
 
@@ -125,8 +249,12 @@ std::string LastErrorText(const char* where) {
 
 }  // namespace
 
-void Get(const Request& in, Response& out) {
+static void GetWindowsOnce(const Request& in, Response& out,
+	std::string& redirectURL) {
 	out = Response();
+	BodyReceiver receiver(in, out);
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 
 	if (in.url.empty()) {
 		out.error = "empty URL";
@@ -135,21 +263,21 @@ void Get(const Request& in, Response& out) {
 
 	const std::wstring wurl = WidenUtf8(in.url);
 
-	// Crack the URL into components.  WinHttpCrackUrl wants writable
-	// component buffers when the lengths are zero-initialised, so give
-	// it explicit storage.
-	wchar_t hostBuf[256] = {};
-	wchar_t pathBuf[2048] = {};
-	wchar_t extraBuf[2048] = {};
-
+	// Borrow components from wurl; fixed buffers would reject long signed
+	// download URLs. wurl stays alive throughout the request.
 	URL_COMPONENTSW uc = {};
 	uc.dwStructSize = sizeof(uc);
-	uc.lpszHostName = hostBuf;      uc.dwHostNameLength = 255;
-	uc.lpszUrlPath = pathBuf;       uc.dwUrlPathLength = 2047;
-	uc.lpszExtraInfo = extraBuf;    uc.dwExtraInfoLength = 2047;
+	uc.dwHostNameLength = (DWORD)-1;
+	uc.dwUrlPathLength = (DWORD)-1;
+	uc.dwExtraInfoLength = (DWORD)-1;
 
 	if (!WinHttpCrackUrl(wurl.c_str(), (DWORD)wurl.size(), 0, &uc)) {
 		out.error = LastErrorText("WinHttpCrackUrl");
+		return;
+	}
+
+	if (uc.nScheme != INTERNET_SCHEME_HTTP && uc.nScheme != INTERNET_SCHEME_HTTPS) {
+		out.error = "only HTTP and HTTPS URLs are supported";
 		return;
 	}
 
@@ -176,10 +304,18 @@ void Get(const Request& in, Response& out) {
 	}
 
 	const DWORD tmo = in.timeoutMs ? in.timeoutMs : 20000;
-	WinHttpSetTimeouts(session.h, (int)tmo, (int)tmo, (int)tmo, (int)tmo);
+	// Keep cancellation/shutdown bounded even while a synchronous OS
+	// request is waiting on an unresponsive server. The complete transfer
+	// retains its longer deadline, checked between network operations.
+	const int wait = (int)(tmo < 2000 ? tmo : 2000);
+	if (!WinHttpSetTimeouts(session.h, wait, wait, wait, wait)) {
+		out.error = LastErrorText("WinHttpSetTimeouts");
+		return;
+	}
 
 	HInternetGuard connect;
-	connect.h = WinHttpConnect(session.h, hostBuf, uc.nPort, 0);
+	const std::wstring host(uc.lpszHostName ? uc.lpszHostName : L"", uc.dwHostNameLength);
+	connect.h = WinHttpConnect(session.h, host.c_str(), uc.nPort, 0);
 	if (!connect.h) {
 		out.error = LastErrorText("WinHttpConnect");
 		return;
@@ -187,8 +323,11 @@ void Get(const Request& in, Response& out) {
 
 	// "https://host" cracks to an empty path; WinHttpOpenRequest needs
 	// "/" for that, not an empty object name.
-	std::wstring objectName(pathBuf);
-	objectName += extraBuf;
+	std::wstring objectName;
+	if (uc.dwUrlPathLength) objectName.append(uc.lpszUrlPath, uc.dwUrlPathLength);
+	if (uc.dwExtraInfoLength) objectName.append(uc.lpszExtraInfo, uc.dwExtraInfoLength);
+	const auto fragment = objectName.find(L'#');
+	if (fragment != std::wstring::npos) objectName.resize(fragment);
 	if (objectName.empty())
 		objectName = L"/";
 
@@ -197,11 +336,27 @@ void Get(const Request& in, Response& out) {
 		reqFlags |= WINHTTP_FLAG_SECURE;
 
 	HInternetGuard request;
-	request.h = WinHttpOpenRequest(connect.h, L"GET", objectName.c_str(),
+	request.h = WinHttpOpenRequest(connect.h,
+		in.method == Method::Post ? L"POST" : L"GET", objectName.c_str(),
 		nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
 		reqFlags);
 	if (!request.h) {
 		out.error = LastErrorText("WinHttpOpenRequest");
+		return;
+	}
+	// Do not let WinHTTP drain a redirect's arbitrary-size body before it
+	// follows Location (its default drain limit is only 1 MiB). The outer
+	// loop closes this request and follows a bounded number of headers only.
+	DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+	if (!WinHttpSetOption(request.h, WINHTTP_OPTION_REDIRECT_POLICY,
+		&redirectPolicy, sizeof redirectPolicy)) {
+		out.error = LastErrorText("WinHttpSetOption redirect policy");
+		return;
+	}
+	// Apply on the request as well: the body must use this cancellation
+	// bound independently of proxy/session defaults.
+	if (!WinHttpSetTimeouts(request.h, wait, wait, wait, wait)) {
+		out.error = LastErrorText("WinHttpSetTimeouts");
 		return;
 	}
 
@@ -212,17 +367,33 @@ void Get(const Request& in, Response& out) {
 
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
-	if (!WinHttpSendRequest(request.h, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-		WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
+	std::wstring headers;
+	void* upload = WINHTTP_NO_REQUEST_DATA;
+	DWORD uploadSize = 0;
+	if (in.method == Method::Post) {
+		if (in.requestBody.size() > MAXDWORD ||
+			in.requestContentType.find_first_of("\r\n") != std::string::npos) {
+			out.error = "invalid HTTP request body or content type";
+			return;
+		}
+		headers = L"Content-Type: " + WidenUtf8(in.requestContentType.empty()
+			? "application/octet-stream" : in.requestContentType) + L"\r\n";
+		upload = const_cast<char*>(in.requestBody.data());
+		uploadSize = (DWORD)in.requestBody.size();
+	}
+	if (!WinHttpSendRequest(request.h, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+		(DWORD)headers.size(), upload, uploadSize, uploadSize, 0))
 	{
-		out.error = LastErrorText("WinHttpSendRequest");
+		out.error = IsCancelled(in) ? "cancelled" : LastErrorText("WinHttpSendRequest");
 		return;
 	}
+	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
 	if (!WinHttpReceiveResponse(request.h, nullptr)) {
-		out.error = LastErrorText("WinHttpReceiveResponse");
+		out.error = IsCancelled(in) ? "cancelled" : LastErrorText("WinHttpReceiveResponse");
 		return;
 	}
+	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
 	DWORD statusCode = 0;
 	DWORD statusSize = sizeof statusCode;
@@ -233,6 +404,55 @@ void Get(const Request& in, Response& out) {
 	{
 		out.status = (int)statusCode;
 	}
+	if (out.status == 301 || out.status == 302 || out.status == 303 ||
+		out.status == 307 || out.status == 308) {
+		DWORD size = 0;
+		WinHttpQueryHeaders(request.h, WINHTTP_QUERY_LOCATION,
+			WINHTTP_HEADER_NAME_BY_INDEX, nullptr, &size, WINHTTP_NO_HEADER_INDEX);
+		if (!size || size > 65536 || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+			out.error = "redirect has no valid Location";
+			return;
+		}
+		std::wstring location(size / sizeof(wchar_t), L'\0');
+		if (!WinHttpQueryHeaders(request.h, WINHTTP_QUERY_LOCATION,
+			WINHTTP_HEADER_NAME_BY_INDEX, location.data(), &size, WINHTTP_NO_HEADER_INDEX)) {
+			out.error = LastErrorText("WinHttpQueryHeaders Location");
+			return;
+		}
+		// Use Windows' URI resolver for relative paths, queries and dot
+		// segments. Load this system component without adding a link-time
+		// dependency to standalone HTTP clients.
+		struct Module {
+			HMODULE h = LoadLibraryExW(L"shlwapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+			~Module() { if (h) FreeLibrary(h); }
+		} module;
+		using Combine = HRESULT (WINAPI*)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD, DWORD);
+		const auto combine = module.h ? reinterpret_cast<Combine>(
+			GetProcAddress(module.h, "UrlCombineW")) : nullptr;
+		if (!combine) { out.error = "Windows URL resolver unavailable"; return; }
+		std::wstring target(32768, L'\0');
+		DWORD length = (DWORD)target.size();
+		if (FAILED(combine(wurl.c_str(), location.c_str(), target.data(), &length, 0))) {
+			out.error = "invalid redirect URL";
+			return;
+		}
+		target.resize(length);
+		const auto fragment = target.find(L'#');
+		if (fragment != std::wstring::npos) target.resize(fragment);
+		redirectURL = NarrowUtf8(target.data(), target.size());
+		return;
+	}
+	const auto header = [&](DWORD type) {
+		wchar_t text[256] {};
+		DWORD size = sizeof text;
+		if (!WinHttpQueryHeaders(request.h, type, WINHTTP_HEADER_NAME_BY_INDEX,
+			text, &size, WINHTTP_NO_HEADER_INDEX)) return std::string();
+		return NarrowUtf8(text, wcslen(text));
+	};
+	receiver.Length(header(WINHTTP_QUERY_CONTENT_LENGTH));
+	receiver.encoded = !header(WINHTTP_QUERY_CONTENT_ENCODING).empty() ||
+		!header(WINHTTP_QUERY_TRANSFER_ENCODING).empty();
+	if (!receiver.HeadersDone()) { receiver.ReportFailure(); return; }
 
 	// Content-Type (optional).
 	{
@@ -255,45 +475,63 @@ void Get(const Request& in, Response& out) {
 			}
 		}
 	}
+	if (receiver.SkipBody()) return;
 
-	// Body.
+	// Read directly into a fixed chunk. QueryDataAvailable is unnecessary
+	// for streaming and can wait for the remote server even while the user
+	// has cancelled. A bounded ReadData wait gives us a cancellation check
+	// between each receive, including when the server has stopped sending.
+	uint8_t chunk[32768];
 	for (;;) {
-		if (IsCancelled(in)) {
+		if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
 			out.status = 0;
 			out.body.clear();
-			out.error = "cancelled";
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
 			return;
 		}
 
-		DWORD avail = 0;
-		if (!WinHttpQueryDataAvailable(request.h, &avail)) {
-			out.error = LastErrorText("WinHttpQueryDataAvailable");
-			out.status = 0;
-			return;
-		}
-		if (!avail)
-			break;
-
-		if (in.maxBodyBytes && out.body.size() + avail > in.maxBodyBytes) {
-			out.status = 0;
-			out.body.clear();
-			out.error = "response too large";
-			return;
-		}
-
-		const size_t base = out.body.size();
-		out.body.resize(base + avail);
 		DWORD read = 0;
-		if (!WinHttpReadData(request.h, out.body.data() + base, avail,
-			&read))
-		{
-			out.error = LastErrorText("WinHttpReadData");
+		if (!WinHttpReadData(request.h, chunk, sizeof chunk, &read)) {
+			out.error = IsCancelled(in) ? "cancelled" : LastErrorText("WinHttpReadData");
 			out.status = 0;
 			return;
 		}
-		out.body.resize(base + read);
 		if (!read)
 			break;
+		if (IsCancelled(in)) { out.error = "cancelled"; return; }
+
+		if (!receiver.Append(chunk, read)) { receiver.ReportFailure(); return; }
+	}
+	if (!receiver.Finish()) receiver.ReportFailure();
+}
+
+void Perform(const Request& in, Response& out) {
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
+	Request hop = in;
+	for (unsigned redirects = 0;; ++redirects) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (IsCancelled(in) || remaining <= 0) {
+			out = Response();
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+			return;
+		}
+		hop.timeoutMs = (uint32_t)remaining;
+		std::string redirectURL;
+		GetWindowsOnce(hop, out, redirectURL);
+		if (IsCancelled(in)) { out = Response(); out.error = "cancelled"; return; }
+		if (!out.error.empty() || redirectURL.empty()) return;
+		if (redirects == 5) {
+			out = Response();
+			out.error = "too many redirects";
+			return;
+		}
+		if (out.status == 301 || out.status == 302 || out.status == 303) {
+			hop.method = Method::Get;
+			hop.requestBody.clear();
+		}
+		hop.url = std::move(redirectURL);
 	}
 }
 
@@ -350,8 +588,12 @@ std::string JStringToUtf8(JNIEnv* env, jstring s) {
 
 }  // namespace
 
-void Get(const Request& in, Response& out) {
+static void GetAndroidOnce(const Request& in, Response& out,
+	std::string& redirectURL) {
 	out = Response();
+	BodyReceiver receiver(in, out);
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 
 	if (in.url.empty()) {
 		out.error = "empty URL";
@@ -402,8 +644,13 @@ void Get(const Request& in, Response& out) {
 	jclass httpConnClass = env->FindClass("java/net/HttpURLConnection");
 	if (!httpConnClass) { ClearException(env); out.error = "no HttpURLConnection"; return; }
 	JLocal httpConnClassRef(env, httpConnClass);
+	if (!env->IsInstanceOf(conn, httpConnClass)) {
+		out.error = "only HTTP and HTTPS URLs are supported";
+		return;
+	}
 
-	const jint tmo = (jint)(in.timeoutMs ? in.timeoutMs : 20000);
+	const jint tmo = (jint)(in.timeoutMs && in.timeoutMs < 5000
+		? in.timeoutMs : 5000);
 
 	jmethodID setConnectTimeout = env->GetMethodID(httpConnClass,
 		"setConnectTimeout", "(I)V");
@@ -435,7 +682,7 @@ void Get(const Request& in, Response& out) {
 	env->CallVoidMethod(conn, setConnectTimeout, tmo);
 	env->CallVoidMethod(conn, setReadTimeout, tmo);
 	if (setFollow)
-		env->CallVoidMethod(conn, setFollow, JNI_TRUE);
+		env->CallVoidMethod(conn, setFollow, JNI_FALSE);
 	if (setRequestProperty && !in.userAgent.empty()) {
 		JLocal key(env, (jobject)env->NewStringUTF("User-Agent"));
 		JLocal val(env, (jobject)env->NewStringUTF(in.userAgent.c_str()));
@@ -454,12 +701,111 @@ void Get(const Request& in, Response& out) {
 
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
+	if (in.method == Method::Post) {
+		if (in.requestContentType.find_first_of("\r\n") != std::string::npos) {
+			out.error = "invalid HTTP content type";
+			return;
+		}
+		const auto setMethod = env->GetMethodID(httpConnClass, "setRequestMethod", "(Ljava/lang/String;)V");
+		const auto setOutput = env->GetMethodID(httpConnClass, "setDoOutput", "(Z)V");
+		const auto setLength = env->GetMethodID(httpConnClass, "setFixedLengthStreamingMode", "(J)V");
+		const auto getOutput = env->GetMethodID(httpConnClass, "getOutputStream", "()Ljava/io/OutputStream;");
+		if (ClearException(env) || !setMethod || !setOutput || !setLength || !getOutput || !setRequestProperty) {
+			out.error = "HTTP POST methods unavailable";
+			return;
+		}
+		JLocal method(env, (jobject)env->NewStringUTF("POST"));
+		JLocal key(env, (jobject)env->NewStringUTF("Content-Type"));
+		JLocal value(env, (jobject)env->NewStringUTF(in.requestContentType.empty()
+			? "application/octet-stream" : in.requestContentType.c_str()));
+		if (ClearException(env) || !method || !key || !value) {
+			out.error = "HTTP POST headers unavailable";
+			return;
+		}
+		env->CallVoidMethod(conn, setMethod, method.obj);
+		env->CallVoidMethod(conn, setOutput, JNI_TRUE);
+		env->CallVoidMethod(conn, setLength, (jlong)in.requestBody.size());
+		env->CallVoidMethod(conn, setRequestProperty, key.obj, value.obj);
+		if (ClearException(env)) { out.error = "HTTP POST setup failed"; return; }
+		JLocal output(env, env->CallObjectMethod(conn, getOutput));
+		if (ClearException(env) || !output) { out.error = "HTTP POST connection failed"; return; }
+		JLocal outputClass(env, env->FindClass("java/io/OutputStream"));
+		const auto write = outputClass ? env->GetMethodID((jclass)outputClass.obj, "write", "([BII)V") : nullptr;
+		const auto close = outputClass ? env->GetMethodID((jclass)outputClass.obj, "close", "()V") : nullptr;
+		if (ClearException(env) || !write || !close) { out.error = "HTTP POST stream unavailable"; return; }
+		struct OutputCloser {
+			JNIEnv* env; jobject stream; jmethodID close;
+			~OutputCloser() { env->CallVoidMethod(stream, close); env->ExceptionClear(); }
+		} outputCloser{env, output.obj, close};
+		JLocal buffer(env, (jobject)env->NewByteArray(32768));
+		if (ClearException(env) || !buffer) { out.error = "HTTP POST buffer unavailable"; return; }
+		for (size_t offset = 0; offset < in.requestBody.size();) {
+			if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
+				out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+				return;
+			}
+			const auto count = (jint)std::min<size_t>(32768, in.requestBody.size() - offset);
+			env->SetByteArrayRegion((jbyteArray)buffer.obj, 0, count,
+				(const jbyte*)in.requestBody.data() + offset);
+			if (ClearException(env)) { out.error = "HTTP POST buffer failed"; return; }
+			env->CallVoidMethod(output, write, buffer.obj, 0, count);
+			if (ClearException(env)) { out.error = "HTTP POST upload failed"; return; }
+			offset += (size_t)count;
+		}
+	}
+
 	const jint code = env->CallIntMethod(conn, getResponseCode);
 	if (ClearException(env)) {
 		out.error = "connection failed";
 		return;
 	}
 	out.status = (int)code;
+
+	// Android's automatic redirect handling refuses HTTP/HTTPS changes.
+	// Resolve Location with java.net.URL, then follow a bounded number of
+	// HTTP(S) hops in Get(), sharing the original transfer deadline.
+	if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+		jmethodID getHeader = env->GetMethodID(httpConnClass,
+			"getHeaderField", "(Ljava/lang/String;)Ljava/lang/String;");
+		jmethodID resolve = env->GetMethodID(urlClass, "<init>",
+			"(Ljava/net/URL;Ljava/lang/String;)V");
+		jmethodID protocol = env->GetMethodID(urlClass, "getProtocol",
+			"()Ljava/lang/String;");
+		jmethodID external = env->GetMethodID(urlClass, "toExternalForm",
+			"()Ljava/lang/String;");
+		if (ClearException(env) || !getHeader || !resolve || !protocol || !external) {
+			out.error = "redirect methods unavailable";
+			return;
+		}
+		JLocal name(env, (jobject)env->NewStringUTF("Location"));
+		JLocal location(env, env->CallObjectMethod(conn, getHeader, name.obj));
+		if (ClearException(env) || !location) {
+			out.error = "redirect has no Location";
+			return;
+		}
+		JLocal target(env, env->NewObject(urlClass, resolve, jurl.obj, location.obj));
+		if (ClearException(env) || !target) {
+			out.error = "invalid redirect URL";
+			return;
+		}
+		JLocal scheme(env, env->CallObjectMethod(target, protocol));
+		if (ClearException(env) || !scheme) {
+			out.error = "invalid redirect scheme";
+			return;
+		}
+		const auto schemeText = JStringToUtf8(env, (jstring)scheme.obj);
+		if (schemeText != "http" && schemeText != "https") {
+			out.error = "redirect must use HTTP or HTTPS";
+			return;
+		}
+		JLocal urlText(env, env->CallObjectMethod(target, external));
+		if (ClearException(env) || !urlText) {
+			out.error = "invalid redirect URL";
+			return;
+		}
+		redirectURL = JStringToUtf8(env, (jstring)urlText.obj);
+		return;
+	}
 
 	if (getContentType) {
 		JLocal ct(env, env->CallObjectMethod(conn, getContentType));
@@ -468,6 +814,22 @@ void Get(const Request& in, Response& out) {
 			out.contentType = NormalizeContentType(
 				JStringToUtf8(env, (jstring)ct.obj).c_str());
 	}
+	jmethodID getHeader = env->GetMethodID(httpConnClass,
+		"getHeaderField", "(Ljava/lang/String;)Ljava/lang/String;");
+	if (!ClearException(env) && getHeader) {
+		const auto header = [&](const char* key) {
+			JLocal name(env, (jobject)env->NewStringUTF(key));
+			if (ClearException(env) || !name) return std::string();
+			JLocal value(env, env->CallObjectMethod(conn, getHeader, name.obj));
+			if (ClearException(env) || !value) return std::string();
+			return JStringToUtf8(env, (jstring)value.obj);
+		};
+		receiver.Length(header("Content-Length"));
+		receiver.encoded = !header("Content-Encoding").empty() ||
+			!header("Transfer-Encoding").empty();
+	}
+	if (!receiver.HeadersDone()) { receiver.ReportFailure(); return; }
+	if (receiver.SkipBody()) return;
 
 	// 4xx/5xx bodies arrive on the error stream; the provider encodes
 	// its quota / not-found messages there, so we must read it.
@@ -477,7 +839,10 @@ void Get(const Request& in, Response& out) {
 		rawStream = nullptr;
 	JLocal stream(env, rawStream);
 	if (!stream)
+	{
+		if (!receiver.Finish()) receiver.ReportFailure();
 		return;   // status is set; empty body is legitimate here
+	}
 
 	jclass isClass = env->FindClass("java/io/InputStream");
 	if (!isClass) { ClearException(env); return; }
@@ -490,12 +855,13 @@ void Get(const Request& in, Response& out) {
 	const jint kChunk = 32768;
 	JLocal buf(env, (jobject)env->NewByteArray(kChunk));
 	if (!buf) { ClearException(env); return; }
+	jbyte chunk[kChunk];
 
 	for (;;) {
-		if (IsCancelled(in)) {
+		if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
 			out.status = 0;
 			out.body.clear();
-			out.error = "cancelled";
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
 			break;
 		}
 
@@ -510,30 +876,55 @@ void Get(const Request& in, Response& out) {
 		if (n <= 0)
 			break;
 
-		if (in.maxBodyBytes
-			&& out.body.size() + (size_t)n > in.maxBodyBytes)
-		{
-			out.status = 0;
-			out.body.clear();
-			out.error = "response too large";
-			break;
-		}
-
-		const size_t base = out.body.size();
-		out.body.resize(base + (size_t)n);
-		env->GetByteArrayRegion((jbyteArray)buf.obj, 0, n,
-			(jbyte*)(out.body.data() + base));
+		env->GetByteArrayRegion((jbyteArray)buf.obj, 0, n, chunk);
 		if (ClearException(env)) {
 			out.status = 0;
 			out.body.clear();
 			out.error = "read failed";
 			break;
 		}
+		if (!receiver.Append(chunk, (size_t)n)) { receiver.ReportFailure(); break; }
 	}
+	if (out.error.empty() && !receiver.Finish()) receiver.ReportFailure();
 
 	if (closeMid) {
 		env->CallVoidMethod(stream, closeMid);
 		env->ExceptionClear();
+	}
+}
+
+void Perform(const Request& in, Response& out) {
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
+	Request hop = in;
+	for (unsigned redirects = 0;; ++redirects) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (IsCancelled(in) || remaining <= 0) {
+			out = Response();
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+			return;
+		}
+		hop.timeoutMs = (uint32_t)remaining;
+		std::string redirectURL;
+		GetAndroidOnce(hop, out, redirectURL);
+		if (IsCancelled(in)) {
+			out = Response();
+			out.error = "cancelled";
+			return;
+		}
+		if (!out.error.empty() || redirectURL.empty())
+			return;
+		if (redirects == 5) {
+			out = Response();
+			out.error = "too many redirects";
+			return;
+		}
+		if (out.status == 301 || out.status == 302 || out.status == 303) {
+			hop.method = Method::Get;
+			hop.requestBody.clear();
+		}
+		hop.url = std::move(redirectURL);
 	}
 }
 
@@ -555,7 +946,7 @@ namespace ATHttp {
 bool Available() { return false; }
 const char* BackendName() { return "none"; }
 
-void Get(const Request&, Response& out) {
+void Perform(const Request&, Response& out) {
 	out = Response();
 	out.error = "HTTPS is not available in the browser build";
 }
@@ -593,6 +984,12 @@ enum : int {
 	kOptURL               = kOptObjectPoint + 2,
 	kOptWriteData         = kOptObjectPoint + 1,
 	kOptWriteFunction     = kOptFunctionPoint + 11,
+	kOptHeaderData        = kOptObjectPoint + 29,
+	kOptHeaderFunction    = kOptFunctionPoint + 79,
+	kOptPost              = kOptLong + 47,
+	kOptPostFields        = kOptObjectPoint + 15,
+	kOptPostFieldSize     = 30000 + 120,
+	kOptHttpHeader        = kOptObjectPoint + 23,
 	kOptUserAgent         = kOptObjectPoint + 18,
 	kOptAcceptEncoding    = kOptObjectPoint + 102,
 	kOptXferInfoData      = kOptObjectPoint + 57,
@@ -621,6 +1018,13 @@ typedef int   (*fn_easy_getinfo)(void*, int, ...);
 typedef void  (*fn_easy_cleanup)(void*);
 typedef int   (*fn_global_init)(long);
 typedef const char* (*fn_easy_strerror)(int);
+typedef void* (*fn_slist_append)(void*, const char*);
+typedef void (*fn_slist_free_all)(void*);
+typedef void* (*fn_url)();
+typedef int (*fn_url_set)(void*, int, const char*, unsigned);
+typedef int (*fn_url_get)(void*, int, char**, unsigned);
+typedef void (*fn_url_cleanup)(void*);
+typedef void (*fn_free)(void*);
 
 struct Curl {
 	void* lib = nullptr;
@@ -630,6 +1034,13 @@ struct Curl {
 	fn_easy_getinfo  easy_getinfo = nullptr;
 	fn_easy_cleanup  easy_cleanup = nullptr;
 	fn_easy_strerror easy_strerror = nullptr;
+	fn_slist_append slist_append = nullptr;
+	fn_slist_free_all slist_free_all = nullptr;
+	fn_url url = nullptr;
+	fn_url_set url_set = nullptr;
+	fn_url_get url_get = nullptr;
+	fn_url_cleanup url_cleanup = nullptr;
+	fn_free free = nullptr;
 	bool ok = false;
 };
 
@@ -665,10 +1076,18 @@ void LoadCurl() {
 	g_curl.easy_getinfo  = (fn_easy_getinfo)sym("curl_easy_getinfo");
 	g_curl.easy_cleanup  = (fn_easy_cleanup)sym("curl_easy_cleanup");
 	g_curl.easy_strerror = (fn_easy_strerror)sym("curl_easy_strerror");
+	g_curl.slist_append = (fn_slist_append)sym("curl_slist_append");
+	g_curl.slist_free_all = (fn_slist_free_all)sym("curl_slist_free_all");
+	g_curl.url = (fn_url)sym("curl_url");
+	g_curl.url_set = (fn_url_set)sym("curl_url_set");
+	g_curl.url_get = (fn_url_get)sym("curl_url_get");
+	g_curl.url_cleanup = (fn_url_cleanup)sym("curl_url_cleanup");
+	g_curl.free = (fn_free)sym("curl_free");
 	fn_global_init globalInit = (fn_global_init)sym("curl_global_init");
 
 	if (!g_curl.easy_init || !g_curl.easy_setopt || !g_curl.easy_perform
-		|| !g_curl.easy_getinfo || !g_curl.easy_cleanup || !globalInit)
+		|| !g_curl.easy_getinfo || !g_curl.easy_cleanup || !globalInit
+		|| !g_curl.slist_append || !g_curl.slist_free_all)
 	{
 		dlclose(g_curl.lib);
 		g_curl.lib = nullptr;
@@ -692,29 +1111,84 @@ const Curl& GetCurl() {
 	return g_curl;
 }
 
-struct WriteCtx {
-	std::vector<uint8_t>* body;
-	size_t maxBytes;
-	bool overflow;
-};
-
 size_t WriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
-	WriteCtx* ctx = (WriteCtx*)userdata;
-	const size_t n = size * nmemb;
-	if (ctx->maxBytes && ctx->body->size() + n > ctx->maxBytes) {
-		ctx->overflow = true;
-		return 0;   // signals an error to libcurl, aborting the transfer
+	auto& receiver = *(BodyReceiver*)userdata;
+	if (size && nmemb > SIZE_MAX / size) {
+		receiver.failure = BodyReceiver::TooLarge;
+		return 0;
 	}
-	const size_t base = ctx->body->size();
-	ctx->body->resize(base + n);
-	memcpy(ctx->body->data() + base, ptr, n);
+	const size_t n = size * nmemb;
+	return receiver.Append(ptr, n) ? n : 0;
+}
+
+bool HeaderStarts(std::string_view text, std::string_view prefix) noexcept {
+	if (text.size() < prefix.size()) return false;
+	for (size_t i = 0; i < prefix.size(); ++i) {
+		char c = text[i];
+		if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+		if (c != prefix[i]) return false;
+	}
+	return true;
+}
+
+size_t HeaderCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+	auto& receiver = *(BodyReceiver*)userdata;
+	if (size && nmemb > SIZE_MAX / size) return 0;
+	const size_t n = size * nmemb;
+	const std::string_view line(ptr, n);
+	if (HeaderStarts(line, "http/")) {
+		const auto space = line.find(' ');
+		if (space != std::string_view::npos && space + 3 < line.size()) {
+			int status = 0;
+			for (size_t i = space + 1; i <= space + 3; ++i) {
+				if (line[i] < '0' || line[i] > '9') return 0;
+				status = status * 10 + line[i] - '0';
+			}
+			receiver.Begin(status);
+		}
+	} else if (HeaderStarts(line, "location:")) {
+		auto location = line.substr(9);
+		while (!location.empty() && (location.front() == ' ' || location.front() == '\t')) location.remove_prefix(1);
+		while (!location.empty() && (location.back() == '\r' || location.back() == '\n' ||
+			location.back() == ' ' || location.back() == '\t')) location.remove_suffix(1);
+		try { receiver.redirectLocation.assign(location.data(), location.size()); }
+		catch (...) { receiver.failure = BodyReceiver::OutOfMemory; return 0; }
+	} else if (HeaderStarts(line, "content-length:")) {
+		receiver.Length(line.substr(15));
+	} else if (HeaderStarts(line, "content-encoding:") || HeaderStarts(line, "transfer-encoding:")) {
+		// Content-Length counts encoded bytes, not the decoded chunks
+		// delivered by libcurl. Chunked framing also supersedes length.
+		receiver.Encoded();
+	} else if (line == "\r\n" || line == "\n") {
+		if (!receiver.HeadersDone()) return 0;
+		const auto status = receiver.response.status;
+		if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+			// Stop at the headers. Automatic redirects can drain an
+			// arbitrarily large or stalled body before following Location.
+			receiver.rejectedRedirect = true;
+			return 0;
+		}
+		if (receiver.request.bodySink && receiver.response.status >= 400) {
+			// Keep the HTTP status, but do not download a potentially huge
+			// error page into an archive destination or wait for its body.
+			receiver.rejectedError = true;
+			return 0;
+		}
+	}
 	return n;
 }
 
-int XferCallback(void* userdata, int64_t, int64_t, int64_t, int64_t) {
-	const std::atomic<bool>* cancel = (const std::atomic<bool>*)userdata;
+int XferCallback(void* userdata, int64_t total, int64_t, int64_t, int64_t) {
+	const auto& receiver = *(const BodyReceiver*)userdata;
+	const Request& request = receiver.request;
+	// HeadersDone owns an advertised decoded length. Some curl versions
+	// report dltotal=0 after a header rejection; do not erase that known
+	// size (or replace it with a wire-size estimate during a transfer).
+	if (request.bytesTotal && !receiver.encoded && !receiver.haveExpected)
+		request.bytesTotal->store(total > 0 ? (uint64_t)total : 0,
+			std::memory_order_relaxed);
 	// Non-zero aborts the transfer with CURLE_ABORTED_BY_CALLBACK.
-	return (cancel && cancel->load(std::memory_order_relaxed)) ? 1 : 0;
+	return IsCancelled(request) ? 1 : 0;
 }
 
 }  // namespace
@@ -723,7 +1197,8 @@ bool Available() { return GetCurl().ok; }
 
 const char* BackendName() { return GetCurl().ok ? "libcurl" : "none"; }
 
-void Get(const Request& in, Response& out) {
+static void GetCurlOnce(const Request& in, Response& out,
+	std::string& redirectURL) {
 	out = Response();
 
 	const Curl& c = GetCurl();
@@ -746,13 +1221,43 @@ void Get(const Request& in, Response& out) {
 		return;
 	}
 
-	WriteCtx ctx{&out.body, in.maxBodyBytes, false};
+	struct Cleanup {
+		const Curl& curl;
+		void* handle;
+		void* headers = nullptr;
+		~Cleanup() {
+			curl.easy_cleanup(handle);
+			if (headers) curl.slist_free_all(headers);
+		}
+	} cleanup{c, eh, nullptr};
+	BodyReceiver receiver(in, out);
 
 	c.easy_setopt(eh, kOptURL, in.url.c_str());
+	if (in.method == Method::Post) {
+		if (in.requestContentType.find_first_of("\r\n") != std::string::npos) {
+			out.error = "invalid HTTP content type";
+			return;
+		}
+		const std::string contentType = "Content-Type: " + (in.requestContentType.empty()
+			? "application/octet-stream" : in.requestContentType);
+		cleanup.headers = c.slist_append(nullptr, contentType.c_str());
+		if (!cleanup.headers) { out.error = "unable to allocate HTTP headers"; return; }
+		c.easy_setopt(eh, kOptHttpHeader, cleanup.headers);
+		c.easy_setopt(eh, kOptPost, (long)1);
+		c.easy_setopt(eh, kOptPostFields, in.requestBody.c_str());
+		c.easy_setopt(eh, kOptPostFieldSize, (int64_t)in.requestBody.size());
+	}
 	c.easy_setopt(eh, kOptWriteFunction, (void*)&WriteCallback);
-	c.easy_setopt(eh, kOptWriteData, (void*)&ctx);
-	c.easy_setopt(eh, kOptFollowLocation, (long)1);
+	c.easy_setopt(eh, kOptWriteData, (void*)&receiver);
+	c.easy_setopt(eh, kOptHeaderFunction, (void*)&HeaderCallback);
+	c.easy_setopt(eh, kOptHeaderData, (void*)&receiver);
+	c.easy_setopt(eh, kOptFollowLocation, (long)0);
 	c.easy_setopt(eh, kOptMaxRedirs, (long)5);
+	// CURLOPT_PROTOCOLS / CURLOPT_REDIR_PROTOCOLS (curl's stable ABI).
+	// A redirect from a media server must not access file:// or other
+	// protocols supported by the host's libcurl.
+	c.easy_setopt(eh, kOptLong + 181, (long)3); // HTTP | HTTPS
+	c.easy_setopt(eh, kOptLong + 182, (long)3);
 	// Required when libcurl is used from threads: without it libcurl
 	// installs signal handlers / uses alarm() for DNS timeouts.
 	c.easy_setopt(eh, kOptNoSignal, (long)1);
@@ -763,10 +1268,10 @@ void Get(const Request& in, Response& out) {
 	if (!in.userAgent.empty())
 		c.easy_setopt(eh, kOptUserAgent, in.userAgent.c_str());
 
-	if (in.cancel) {
+	if (in.cancel || in.bytesTotal) {
 		c.easy_setopt(eh, kOptNoProgress, (long)0);
 		c.easy_setopt(eh, kOptXferInfoFunction, (void*)&XferCallback);
-		c.easy_setopt(eh, kOptXferInfoData, (void*)in.cancel);
+		c.easy_setopt(eh, kOptXferInfoData, (void*)&receiver);
 	}
 
 	const int rc = c.easy_perform(eh);
@@ -779,11 +1284,35 @@ void Get(const Request& in, Response& out) {
 		const char* ct = nullptr;
 		c.easy_getinfo(eh, kInfoContentType, &ct);
 		out.contentType = NormalizeContentType(ct);
+		if (!receiver.Finish()) receiver.ReportFailure();
+	} else if (receiver.rejectedRedirect) {
+		// CURLINFO_REDIRECT_URL is not set when aborting at headers. Use
+		// libcurl's URI API to resolve Location without draining its body.
+		if (!c.url || !c.url_set || !c.url_get || !c.url_cleanup || !c.free) {
+			out.error = "HTTP redirects require libcurl 7.62 or newer";
+			return;
+		}
+		struct URL {
+			const Curl& curl;
+			void* handle;
+			char* target = nullptr;
+			~URL() { if (target) curl.free(target); if (handle) curl.url_cleanup(handle); }
+		} url{c, c.url()};
+		// CURLUPART_URL = 0. Setting a relative URL resolves it against
+		// the URL already stored in the handle (curl's stable URL API).
+		if (!url.handle || receiver.redirectLocation.empty() ||
+			c.url_set(url.handle, 0, in.url.c_str(), 0) ||
+			c.url_set(url.handle, 0, receiver.redirectLocation.c_str(), 0) ||
+			c.url_get(url.handle, 0, &url.target, 0) || !url.target)
+			out.error = "redirect has no valid HTTP Location";
+		else redirectURL = url.target;
+	} else if (receiver.rejectedError) {
+		out.body.clear();
 	} else {
 		out.status = 0;
 		out.body.clear();
-		if (ctx.overflow)
-			out.error = "response too large";
+		if (receiver.failure != BodyReceiver::None)
+			receiver.ReportFailure();
 		else if (rc == kErrAbortedByCallback)
 			out.error = "cancelled";
 		else if (c.easy_strerror)
@@ -792,7 +1321,36 @@ void Get(const Request& in, Response& out) {
 			out.error = "transfer failed";
 	}
 
-	c.easy_cleanup(eh);
+}
+
+void Perform(const Request& in, Response& out) {
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
+	Request hop = in;
+	for (unsigned redirects = 0;; ++redirects) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (IsCancelled(in) || remaining <= 0) {
+			out = Response();
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+			return;
+		}
+		hop.timeoutMs = (uint32_t)remaining;
+		std::string redirectURL;
+		GetCurlOnce(hop, out, redirectURL);
+		if (IsCancelled(in)) { out = Response(); out.error = "cancelled"; return; }
+		if (!out.error.empty() || redirectURL.empty()) return;
+		if (redirects == 5) {
+			out = Response();
+			out.error = "too many redirects";
+			return;
+		}
+		if (out.status == 301 || out.status == 302 || out.status == 303) {
+			hop.method = Method::Get;
+			hop.requestBody.clear();
+		}
+		hop.url = std::move(redirectURL);
+	}
 }
 
 }  // namespace ATHttp

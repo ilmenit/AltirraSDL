@@ -63,6 +63,7 @@ public:
 
 	virtual void Update() {}
 	virtual void HandlePollEvents(short revents) {}
+	virtual short GetPollEvents_Locked() const { return 0; }
 
 	int GetSocketFd() const { return mSocketHandle; }
 
@@ -153,6 +154,7 @@ public:
 
 	void Update() override;
 	void HandlePollEvents(short revents) override;
+	short GetPollEvents_Locked() const override;
 	ATSocketStatus GetSocketStatus_Locked() const override;
 
 private:
@@ -191,6 +193,7 @@ public:
 	void Shutdown() override;
 	void Update() override;
 	void HandlePollEvents(short revents) override;
+	short GetPollEvents_Locked() const override;
 	ATSocketStatus GetSocketStatus_Locked() const override;
 
 private:
@@ -212,6 +215,7 @@ public:
 
 	void Update() override;
 	void HandlePollEvents(short revents) override;
+	short GetPollEvents_Locked() const override;
 	ATSocketStatus GetSocketStatus_Locked() const override;
 
 private:

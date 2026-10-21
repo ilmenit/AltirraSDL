@@ -66,6 +66,9 @@
     <ClInclude Include="h\autosavemanager.h" />
     <ClInclude Include="h\autosuggest.h" />
     <ClInclude Include="h\bit3.h" />
+    <ClInclude Include="h\af80.h" />
+    <ClInclude Include="h\mosaic.h" />
+    <ClInclude Include="h\netsio.h" />
     <ClInclude Include="h\blackboxfloppy.h" />
     <ClInclude Include="h\blockdevdiskadapter.h" />
     <ClInclude Include="h\blockdevvirtfat32.h" />
@@ -186,6 +189,9 @@
     <ClCompile Include="source\aviwriter.cpp" />
     <ClCompile Include="source\asyncdownloader_win32.cpp" />
     <ClCompile Include="source\bit3.cpp" />
+    <ClCompile Include="source\af80.cpp" />
+    <ClCompile Include="source\mosaic.cpp" />
+    <ClCompile Include="source\netsio.cpp" />
     <ClCompile Include="source\bkptmanager.cpp" />
     <ClCompile Include="source\blackbox.cpp" />
     <ClCompile Include="source\blackboxfloppy.cpp" />

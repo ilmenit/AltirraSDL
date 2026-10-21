@@ -102,6 +102,9 @@ static const DeviceCatalogEntry kCartridgeDevices[] = {
 };
 
 static const DeviceCatalogEntry kInternalDevices[] = {
+	// Fork extensions: user-requested Atari800 hardware coverage.
+	{ "af80", "Austin Franklin 80 column board", "80x25 RGBI display board and right-slot firmware cartridge for the Atari 800." },
+	{ "mosaic", "Mosaic 64K Select", "Atari 400/800 RAM expansion with 4K banks at $C000-$CFFF. Configure the base machine for 48K RAM." },
 	{ "1450xldisk",     "1450XLD Disk Controller", "Internal PBI-based disk controller in the 1450XLD." },
 	{ "1450xldiskfull", "1450XLD Disk Controller (full emulation)", "Internal PBI-based disk controller with full 8040 controller emulation." },
 	{ "1450xltongdiskfull", "1450XLD \"TONG\" Disk Controller (full emulation)", "Internal PBI-based disk controller in the TONG 1450XLD variant." },
@@ -180,6 +183,8 @@ static const DeviceCatalogEntry kDiskDriveDevices[] = {
 };
 
 static const DeviceCatalogEntry kSIODevices[] = {
+	// Fork extension: the same connection is managed from Tools > FujiNet.
+	{ "netsio", "FujiNet / NetSIO", "Native SIO over UDP for FujiNet-PC or a FujiNet device. Open Tools > FujiNet for setup and connection status." },
 	{ "820",            "820 40-Column Printer", "Basic 40 column dot-matrix printer." },
 	{ "820full",        "820 40-Column Printer (full emulation)", "Full 6507 emulation with dot matrix rendering." },
 	{ "835",            "835 Modem", "300 baud SIO modem." },

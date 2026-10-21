@@ -15,6 +15,8 @@
 #include "uikeyboard.h"
 #include "accel_sdl3.h"
 #include "settings.h"
+#include "cartridge.h"
+#include "ramcart_settings.h"
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_glue.h"
@@ -306,6 +308,27 @@ void ATUIRenderSystemMenu(ATSimulator &sim, ATUIState &state) {
 		bool cartSwitch = sim.GetCartridgeSwitch();
 		if (ImGui::MenuItem("Enable Cart Switch", nullptr, cartSwitch))
 			sim.SetCartridgeSwitch(!cartSwitch);
+
+		// Fork extension: physical controls for the newly supported RAM-Cart
+		// hardware. Keep them beside Windows' cartridge switches.
+		for (uint32 unit = 0; unit < 2; ++unit) {
+			auto *cart = sim.GetCartridge(unit);
+			if (!cart || !ATIsCartridgeRAMMode(cart->GetMode()))
+				continue;
+			if (ImGui::BeginMenu(unit ? "Secondary RAM-Cart switches" : "RAM-Cart switches")) {
+				const uint32 mask = cart->GetRamCartSwitchMask();
+				for (const auto& item : kATRamCartSwitchItems) {
+					if (!(mask & item.mask))
+						continue;
+					const uint32 state = cart->GetRamCartSwitches();
+					if (ImGui::MenuItem(item.label, nullptr, (state & item.mask) != 0))
+						cart->SetRamCartSwitches(state ^ item.mask);
+				}
+				if (ImGui::MenuItem("Reset cartridge latch"))
+					cart->ActivateButton(kATDeviceButton_CartridgeResetBank, true);
+				ImGui::EndMenu();
+			}
+		}
 
 		// Device buttons (shown only when the device is present)
 		static const struct { ATDeviceButton btn; const char *label; } kDevButtons[] = {

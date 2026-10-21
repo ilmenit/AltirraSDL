@@ -21,6 +21,13 @@
 #include "testmode_ipc.h"
 #include "ui_testmode.h"
 #include "ui_main.h"
+#include "ui/dialogs/ui_media_url.h"
+#include "ui/dialogs/ui_library_url.h"
+#include "ui/gamelibrary/game_library.h"
+#include "ui_main_internal.h"
+
+extern ATGameLibrary* GetGameLibrary();
+#include "ui/dialogs/ui_fujinet.h"
 #include "ui_search.h"
 #include "ui_fonts.h"
 #include "macos_menubar.h"
@@ -2861,6 +2868,115 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			return JsonError("usage: boot_image <path>");
 		ATUIPushDeferred(kATDeferred_BootImage, path.c_str());
 		return JsonOk();
+	}
+	if (verb == "open_url") {
+		const std::string mode = NextToken(cmd);
+		const std::string url = RestOfLine(cmd);
+		if ((mode != "open" && mode != "boot") || url.empty())
+			return JsonError("usage: open_url open|boot <http(s)_url>");
+		ATUIStartMediaURLDownload(url.c_str(), mode == "boot");
+		return JsonOk();
+	}
+	if (verb == "library_url") {
+		const auto action = NextToken(cmd);
+		if (action == "show") ATUIShowLibraryURLDialog();
+		else if (action == "import") {
+			if (!ATUIStartLibraryURLImport(RestOfLine(cmd).c_str()))
+				return JsonError(ATUIGetLibraryURLStatus().error);
+		} else if (action == "destination") {
+			if (!ATUISetLibraryURLDestination(RestOfLine(cmd).c_str()))
+				return JsonError("Destination cannot change during an import");
+		} else if (action == "cancel") ATUICancelLibraryURLImport();
+		else if (action != "status") return JsonError("usage: library_url show|import <url>|destination <path>|cancel|status");
+		const auto status = ATUIGetLibraryURLStatus();
+		auto* lib = GetGameLibrary();
+		return std::string("{\"ok\":true,\"pending\":") +
+			(status.pending ? "true" : "false") + ",\"scanning\":" +
+			(status.scanning ? "true" : "false") + ",\"open\":" +
+			(status.open ? "true" : "false") + ",\"added\":" +
+			(status.added ? "true" : "false") + ",\"received\":" +
+			std::to_string(status.received) + ",\"total\":" + std::to_string(status.total) +
+			",\"files\":" + std::to_string(status.files) + ",\"sources\":" +
+			std::to_string(lib ? lib->GetSources().size() : 0) + ",\"games\":" +
+			std::to_string(lib ? lib->GetEntryCount() : 0) + ",\"error\":\"" +
+			JsonEscape(status.error.c_str()) + "\",\"path\":\"" + JsonEscape(status.path.c_str()) +
+			"\",\"destination\":\"" + JsonEscape(status.destination.c_str()) + "\"}";
+	}
+	if (verb == "help_status")
+		return std::string("{\"ok\":true,\"topic\":\"") +
+			JsonEscape(ATUIGetCurrentHelpTopic()) + "\"}";
+	if (verb == "help_topic") {
+		ATUIShowHelpTopic(RestOfLine(cmd).c_str(), nullptr);
+		return JsonOk();
+	}
+	if (verb == "media_url_status") {
+		return std::string("{\"ok\":true,\"pending\":") +
+			(ATUIIsMediaURLDownloadPending() ? "true" : "false") +
+			",\"error\":\"" + JsonEscape(ATUIGetMediaURLDownloadError()) + "\"}";
+	}
+
+	if (verb == "fujinet") {
+		const std::string action = NextToken(cmd);
+		bool success = true;
+		if (action == "show") ATUIShowFujiNetDialog();
+		else if (action == "runtime") {
+			const auto port = NextToken(cmd);
+			const auto path = RestOfLine(cmd);
+			if (path.empty()) return JsonError("usage: fujinet runtime <web_port> <executable>");
+			success = ATUIFujiNetSetRuntime(path.c_str(), (unsigned)atoi(port.c_str()));
+		} else if (action == "listen") {
+			const auto port = NextToken(cmd), lan = NextToken(cmd), timeout = NextToken(cmd);
+			success = ATUIFujiNetConfigureListener(lan == "1", (unsigned)atoi(port.c_str()),
+				timeout.empty() ? 100U : (unsigned)atoi(timeout.c_str()));
+		} else if (action == "start") success = ATUIFujiNetStartRuntime();
+		else if (action == "start_boot") success = ATUIFujiNetStartAndBoot();
+		else if (action == "stop") ATUIFujiNetStopRuntime();
+		else if (action == "run") success = ATUIFujiNetRunFile(RestOfLine(cmd).c_str());
+		else if (action == "cancel_file") ATUIFujiNetCancelFile();
+		else if (action == "reconnect") success = ATUIFujiNetReconnect();
+		else if (action == "disconnect") success = ATUIFujiNetDisconnect();
+		else if (action == "boot") success = ATUIFujiNetBoot();
+		else if (action == "local_d1") success = ATUIFujiNetEnableLocalD1();
+		else if (action != "status") return JsonError("unknown fujinet action");
+		const auto status = ATUIGetFujiNetStatus();
+		if (!success) return JsonError(status.error);
+		std::string result = "{\"ok\":true";
+		const auto flag = [&](const char* name, bool value) {
+			result += std::string(",\"") + name + "\":" + (value ? "true" : "false");
+		};
+		const auto number = [&](const char* name, uint64 value) {
+			result += std::string(",\"") + name + "\":" + std::to_string(value);
+		};
+		const auto string = [&](const char* name, const std::string& value) {
+			result += std::string(",\"") + name + "\":\"" + JsonEscape(value) + "\"";
+		};
+		flag("open", status.open);
+		flag("present", status.present);
+		flag("processAvailable", status.processAvailable);
+		flag("running", status.running);
+		flag("stopping", status.stopping);
+		flag("bootPending", status.bootPending);
+		flag("filePending", status.filePending);
+		number("fileReceived", status.fileReceived);
+		number("fileTotal", status.fileTotal);
+		flag("listening", status.listening);
+		flag("connected", status.connected);
+		flag("localD1Enabled", status.localD1Enabled);
+		flag("fastBoot", status.fastBoot);
+		number("port", status.port);
+		number("webPort", status.webPort);
+		number("restarts", status.restarts);
+		result += ",\"exitCode\":" + std::to_string(status.exitCode);
+		number("rxPackets", status.rxPackets);
+		number("txPackets", status.txPackets);
+		number("droppedPackets", status.droppedPackets);
+		number("syncTimeouts", status.syncTimeouts);
+		string("executable", status.executable);
+		string("stateDirectory", status.stateDirectory);
+		string("peer", status.peer);
+		string("error", status.error);
+		string("logTail", status.logTail);
+		return result + "}";
 	}
 
 	if (verb == "attach_disk") {

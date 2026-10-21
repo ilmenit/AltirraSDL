@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet type="text/xsl" href="index.xsl" ?>
+<topic title="URL media and game packs in AltirraSDL">
+  <p>Use Open Image from URL for a single image you want to open or boot now. Use Add from URL in Game Library to keep a game or a large ZIP collection in your library without booting it.</p>
+  <h2>Open or boot a single image</h2>
+  <ol>
+    <li>Choose File &gt; Open Image from URL. In gaming/mobile mode use Load Game &gt; From URL.</li>
+    <li>Paste a direct HTTP or HTTPS file link, rather than a web page containing a download button.</li>
+    <li>Choose Open Image to attach through the normal open workflow, or Boot Image to load, reset and run through the normal boot workflow.</li>
+  </ol>
+  <p>This path limits downloads and individual expanded archive members to 64 MiB. Compressed-media preflight also limits aggregate expansion to 128 MiB, ZIP entries to 4096 and nested compression to four levels. ZIP and gzip files go through the existing media loader; opening a ZIP normally selects its first supported image.</p>
+  <p>Cancel Download or closing this dialog cancels the pending transfer. Download failures and cancellation preserve mounted media and running/paused state. Normal image parsing, cartridge mapper selection and compatibility handling follow download completion.</p>
+  <h2>Add games or large ZIP packs to Game Library</h2>
+  <ol>
+    <li>Open Game Library and Add from URL.</li>
+    <li>Expand Download location and choose a folder on a drive with enough free space. The default is <tt>library-downloads/</tt> below the Altirra configuration directory.</li>
+    <li>Paste a direct game-file or ZIP-pack URL, then select Import. ZIP downloads stream to disk and can be multiple gigabytes; the single-image 64 MiB download limit does not apply to the whole pack. The importer looks for supported game members of 64 MiB or less.</li>
+    <li>After completion the archive/file is added as a library source and scanned. Choose a game from the library when you want to play it. Import does not boot or replace mounted media.</li>
+  </ol>
+  <p>Packs stay intact as archives; member paths are not extracted onto the host filesystem. A progress bar appears when the server supplies a total size, and the dialog shows received bytes. Hide or closing the import window leaves the transfer running; reopen Add from URL to see it. Cancel Import explicitly cancels. Incomplete staging files are removed after cancellation/failure.</p>
+  <p>Downloads use content-derived storage names to avoid overwriting another import. Removing a source from the library leaves its downloaded file on disk. Keep the destination available while using that source; moving/deleting the file breaks that source until you update it. The destination choice persists across restarts.</p>
+  <h2>Troubleshooting and storage</h2>
+  <ul>
+    <li>HTML/web-page error: copy the direct file URL. A repository page, login page or download landing page is not an Atari image.</li>
+    <li>Single-image size limit: use Game Library's importer for a large ZIP collection. It is a separate workflow, not a larger boot-image limit.</li>
+    <li>No games found: the ZIP must contain supported media files. At least one supported game member of 64 MiB or less must be present.</li>
+    <li>Write/disk-full error: choose a writable destination with enough space for the entire downloaded pack. The importer does not expand all members onto disk.</li>
+    <li>HTTPS/certificate error: check the computer's date, network/proxy configuration and system certificate store. Verification stays enabled.</li>
+    <li>Backend unavailable: Linux/macOS require the host libcurl library. Windows uses WinHTTP; Android uses Java HTTP connections. Browser builds retain their existing browser game-pack workflow.</li>
+  </ul>
+  <p>Single-image downloads remain in <tt>downloads/</tt> below the configuration directory. Library imports use their chosen destination instead. Neither store is automatically evicted; remove files only after they are no longer mounted or needed by library sources, profiles or recent-image entries.</p>
+</topic>

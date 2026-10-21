@@ -88,21 +88,21 @@ bool ATNetSocket::IsHardClosing_Locked() const {
 }
 
 int ATNetSocket::Release() {
-	const int rc = vdrefcounted::Release();
-
-	if (rc == 1) {
-		// We might be the final release -- check if we need to request a
-		// socket update. If we are in the table, the table will be holding a
-		// ref on the socket, so reaching 1 is final release.
-		vdsynchronized(mpSyncContext->mMutex) {
-			if (mSocketIndex >= 0) {
-				// yup, we are registered in the table -- request an update so this socket gets collected
-				if (mpSyncContext->mpWorker)
-					mpSyncContext->mpWorker->RequestSocketUpdate_Locked(*this);
-			}
-		}
+	// Fork: releasing the caller's ref and notifying the collector must be
+	// atomic with the worker's abandonment check. Otherwise the worker can
+	// delete this socket after the decrement but before mSocketIndex is read.
+	vdrefptr context(mpSyncContext);
+	int rc;
+	vdsynchronized(context->mMutex) {
+		rc = --mRefCount;
+		VDASSERT(rc >= 0);
+		if (rc == 1 && mSocketIndex >= 0 && context->mpWorker)
+			context->mpWorker->RequestSocketUpdate_Locked(*this);
 	}
 
+	// Never run destruction (including captured callback releases) under
+	// the socket mutex. The context ref keeps the mutex alive through unlock.
+	if (!rc) delete this;
 	return rc;
 }
 
@@ -538,6 +538,18 @@ void ATNetStreamSocket::Update() {
 	FlushEvent();
 }
 
+short ATNetStreamSocket::GetPollEvents_Locked() const {
+	if (mError != ATSocketError::None) return 0;
+	if (mState == State::Connecting) return POLLIN | POLLOUT;
+	if (mState != State::Connected && mState != State::Closing) return 0;
+	short events = 0;
+	if (mState == State::Connected && !mbSocketCanRead
+		&& !mbSocketRemoteClosed && !mbSocketShutdownRecv)
+		events |= POLLIN;
+	if (mWriteLevel && !mbSocketCanWrite) events |= POLLOUT;
+	return events;
+}
+
 void ATNetStreamSocket::HandlePollEvents(short revents) {
 	if (mSocketHandle == -1)
 		return;
@@ -712,7 +724,12 @@ void ATNetStreamSocket::DoRead() {
 
 		if (r == 0) {
 			mbSocketCanRead = false;
-			// soft close occurred
+			// A peer's send-half close can report POLLIN without POLLHUP.
+			// Record EOF here as well, so it neither spins nor goes unseen.
+			vdsynchronized(mpSyncContext->mMutex) {
+				mbSocketRemoteClosed = true;
+				QueueEvent_Locked();
+			}
 			break;
 		}
 
@@ -912,6 +929,11 @@ void ATNetListenSocket::Update() {
 	FlushEvent();
 }
 
+short ATNetListenSocket::GetPollEvents_Locked() const {
+	return mError == ATSocketError::None && mState == State::Listening
+		&& mPendingSocket == -1 ? POLLIN : 0;
+}
+
 void ATNetListenSocket::HandlePollEvents(short revents) {
 	if (mSocketHandle == -1)
 		return;
@@ -1096,7 +1118,8 @@ bool ATNetDatagramSocket::SendTo(const ATSocketAddress& address, const void *dat
 
 			if (avail < neededLen) {
 				mbWaitingForCanWriteSocket = true;
-				break;
+				// Fork: no datagram was queued; let the caller retry.
+				return false;
 			}
 		}
 
@@ -1179,6 +1202,15 @@ void ATNetDatagramSocket::Update() {
 	FlushEvent();
 }
 
+short ATNetDatagramSocket::GetPollEvents_Locked() const {
+	if (mError != ATSocketError::None
+		|| (mState != State::Connected && mState != State::Closing)) return 0;
+	short events = 0;
+	if (mState == State::Connected && !mbSocketCanRead) events |= POLLIN;
+	if (mWriteLevel && !mbSocketCanWrite) events |= POLLOUT;
+	return events;
+}
+
 void ATNetDatagramSocket::HandlePollEvents(short revents) {
 	if (mSocketHandle == -1)
 		return;
@@ -1255,7 +1287,7 @@ void ATNetDatagramSocket::DoRead() {
 			avail = rsize - mReadLevel;
 		}
 
-		if (avail < kMaxDatagramSize + sizeof(ATSocketAddress)) {
+		if (avail < kMaxDatagramSize + sizeof(ATSocketAddress) + sizeof(uint16)) {
 			ATNETSOCKET_TRACE("datagram socket suspending read for space\n");
 			break;
 		}
@@ -1323,14 +1355,17 @@ void ATNetDatagramSocket::DoWrite() {
 		if (avail < sizeof(ATSocketAddress)+sizeof(uint16))
 			break;
 
+		// Decode speculatively: a nonblocking send can leave this datagram
+		// queued, so commit the read position only after sendto succeeds.
+		uint32 nextHead = mWriteHeadOffset;
 		uint16 len16 = 0;
 		ATSocketAddress toAddr;
-		mWriteHeadOffset = SplitRead(&len16, sizeof len16, mWriteBuffer.data(), mWriteHeadOffset, wsize);
-		mWriteHeadOffset = SplitRead(&toAddr, sizeof toAddr, mWriteBuffer.data(), mWriteHeadOffset, wsize);
+		nextHead = SplitRead(&len16, sizeof len16, mWriteBuffer.data(), nextHead, wsize);
+		nextHead = SplitRead(&toAddr, sizeof toAddr, mWriteBuffer.data(), nextHead, wsize);
 
 		VDASSERT(len16 <= kMaxDatagramSize);
 		VDASSERT(avail >= sizeof(ATSocketAddress) + sizeof(uint16) + len16);
-		mWriteHeadOffset = SplitRead(buf, len16, mWriteBuffer.data(), mWriteHeadOffset, wsize);
+		nextHead = SplitRead(buf, len16, mWriteBuffer.data(), nextHead, wsize);
 
 		ATSocketNativeAddress natToAddr(toAddr);
 
@@ -1345,6 +1380,7 @@ void ATNetDatagramSocket::DoWrite() {
 			return;
 		}
 
+		mWriteHeadOffset = nextHead;
 		wasWritten = sizeof(uint16) + sizeof(ATSocketAddress) + len16;
 	}
 }
@@ -1562,7 +1598,12 @@ void ATNetSocketWorker::ThreadRun() {
 			pfds[nfds].fd = fd;
 			pfds[nfds].events = 0;
 			if (fd != -1) {
-				pfds[nfds].events = POLLIN | POLLOUT;
+				vdsynchronized(mpSyncContext->mMutex) {
+					pfds[nfds].events = mSocketTable[i]->GetPollEvents_Locked();
+				}
+				// poll reports HUP/ERR even with events=0. Dormant sockets
+				// are rearmed by a worker update when the consumer makes room.
+				if (!pfds[nfds].events) pfds[nfds].fd = -1;
 			}
 			pfds[nfds].revents = 0;
 			++nfds;
@@ -1654,6 +1695,11 @@ void ATNetSocketWorker::ThreadRun() {
 				socketsToDestroy.back()->Shutdown();
 				socketsToDestroy.pop_back();
 			}
+
+			// Socket updates can add, remove, or compact table entries. The
+			// poll snapshot describes the old table; rebuild it before using
+			// any readiness flags (new slots have no flags in this snapshot).
+			continue;
 		}
 
 		// Process socket poll events

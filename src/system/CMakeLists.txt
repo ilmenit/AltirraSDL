@@ -99,6 +99,10 @@ if(WIN32)
     # registry.cpp uses SHDeleteKeyA (shlwapi)
     target_link_libraries(system PUBLIC winmm shlwapi)
 else()
+    # Keep POSIX file offsets 64-bit on 32-bit Linux/Android too. This is
+    # PUBLIC because off_t/stat declarations must have the same ABI in
+    # every consumer, before any system header is included.
+    target_compile_definitions(system PUBLIC _FILE_OFFSET_BITS=64)
     target_link_libraries(system PUBLIC SDL3::SDL3)
 endif()
 

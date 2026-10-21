@@ -22,6 +22,7 @@
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include <atomic>
 #include <cstdint>
@@ -37,6 +38,7 @@
 #include "ui/gamelibrary/game_library.h"
 #include "ui/gamelibrary/game_library_art.h"
 #include "ui_game_metadata.h"
+#include "ui_library_url.h"
 #include "media/metadata_scraper.h"
 #include "ui_file_dialog_sdl3.h"
 #include "ui_profile_services.h"
@@ -226,6 +228,15 @@ bool ClassifyAddFile(const VDStringW &path, GameSource &out) {
 		return true;
 	}
 	return false;
+}
+
+bool BeginLibraryTab(const char* label) {
+	const bool visible = ImGui::BeginTabItem(label);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+	IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), label, 0);
+#endif
+	return visible;
 }
 
 // ----- Tab: Games ----------------------------------------------------------
@@ -839,7 +850,7 @@ void RenderTabSources(ATGameLibrary &lib, SDL_Window *window) {
 	if (ImGui::BeginTable("##SourcesTbl", 3,
 		ImGuiTableFlags_Borders    | ImGuiTableFlags_RowBg     |
 		ImGuiTableFlags_Resizable  | ImGuiTableFlags_ScrollY,
-		ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 4.0f)))
+		ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 2 - 8.0f)))
 	{
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch);
@@ -912,6 +923,9 @@ void RenderTabSources(ATGameLibrary &lib, SDL_Window *window) {
 		ATUIShowOpenFileDialog('glib', AddFileCallback, nullptr, window,
 			kAddFileFilters, 2, false);
 	}
+	if (ImGui::Button(ATUIGetLibraryURLStatus().pending
+		? "Import progress..." : "Add from URL..."))
+		ATUIShowLibraryURLDialog();
 	ImGui::SameLine();
 	// Stash the typed path for the post-render apply step (matches the
 	// async-callback path on native — keeps the apply logic in one place).
@@ -1158,10 +1172,10 @@ void ATUIRenderGameLibrary(ATSimulator & /*sim*/, ATUIState &state, SDL_Window *
 
 	// Tab bar.
 	if (ImGui::BeginTabBar("##GameLibTabs")) {
-		if (ImGui::BeginTabItem("Games"))    { RenderTabGames(lib);            ImGui::EndTabItem(); }
-		if (ImGui::BeginTabItem("Sources"))  { RenderTabSources(lib, window);  ImGui::EndTabItem(); }
-		if (ImGui::BeginTabItem("Metadata")) { ATUIRenderMetadataTab(lib);     ImGui::EndTabItem(); }
-		if (ImGui::BeginTabItem("Options"))  { RenderTabOptions(lib);          ImGui::EndTabItem(); }
+		if (BeginLibraryTab("Games"))    { RenderTabGames(lib);            ImGui::EndTabItem(); }
+		if (BeginLibraryTab("Sources"))  { RenderTabSources(lib, window);  ImGui::EndTabItem(); }
+		if (BeginLibraryTab("Metadata")) { ATUIRenderMetadataTab(lib);     ImGui::EndTabItem(); }
+		if (BeginLibraryTab("Options"))  { RenderTabOptions(lib);          ImGui::EndTabItem(); }
 		ImGui::EndTabBar();
 	}
 

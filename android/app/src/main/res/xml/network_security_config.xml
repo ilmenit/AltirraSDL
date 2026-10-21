@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Users can import games and libraries from arbitrary HTTP URLs, and
+         HTTPS download links can redirect to HTTP mirrors. Permit those
+         explicitly selected sources. Omitting trust-anchors retains Android's
+         default system CA validation for HTTPS; no certificate checks change. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -317,8 +317,8 @@ public:
 	struct FileInfo {
 		VDString	mRawFileName;
 		VDStringW	mDecodedFileName;
-		uint32		mCompressedSize = 0;
-		uint32		mUncompressedSize = 0;
+		uint64		mCompressedSize = 0;
+		uint64		mUncompressedSize = 0;
 		uint32		mCRC32 = 0;
 		bool		mbPacked = false;
 		bool		mbEnhancedDeflate = false;
@@ -348,7 +348,7 @@ public:
 
 protected:
 	struct FileInfoInternal : public FileInfo {
-		uint32		mDataStart;
+		uint64		mDataStart;
 	};
 
 	vdvector<FileInfoInternal>	mDirectory;

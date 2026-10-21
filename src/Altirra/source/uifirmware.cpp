@@ -573,6 +573,8 @@ static const ATUIFirmwareCategoryEntry kATUIFirmwareCategories[] {
 			{ kATFirmwareType_WarpOS,			L"APE Warp+", L"APE Warp+ OS 32-in-1 Firmware" },
 			{ kATFirmwareType_1090Firmware,		L"1090 Firmware", L"1090 80-Column Video Card Firmware" },
 			{ kATFirmwareType_1090Charset,		L"1090 Charset", L"1090 80-Column Video Card Charset" },
+			{ kATFirmwareType_AF80Firmware, L"AF80 Firmware", L"Austin Franklin 80 Firmware (4K)" },
+			{ kATFirmwareType_AF80Charset, L"AF80 Charset", L"Austin Franklin 80 Charset (4K)" },
 			{ kATFirmwareType_Bit3Firmware,		L"Bit3 Firmware", L"Bit 3 Full-View 80 Firmware" },
 			{ kATFirmwareType_Bit3Charset,		L"Bit3 Charset", L"Bit 3 Full-View 80 Charset" },
 			{ kATFirmwareType_KarinMaxiDrive,	L"Karin Maxi Drive", L"Karin Maxi Drive Firmware" },

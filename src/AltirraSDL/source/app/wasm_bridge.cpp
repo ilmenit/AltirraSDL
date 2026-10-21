@@ -504,8 +504,8 @@ int ATWasmUnpackArchive(const char *zipPath, const char *destDir) {
 			vdfastvector<uint8> buf;
 			try {
 				if (info.mUncompressedSize > 256 * 1024 * 1024) {
-					fprintf(stderr, "[wasm] UnpackArchive: skip oversized '%ls' (%u bytes)\n",
-						info.mDecodedFileName.c_str(), info.mUncompressedSize);
+					fprintf(stderr, "[wasm] UnpackArchive: skip oversized '%ls' (%llu bytes)\n",
+						info.mDecodedFileName.c_str(), (unsigned long long)info.mUncompressedSize);
 					continue;
 				}
 				vdautoptr<IVDInflateStream> zs(zip.OpenDecodedStream(i, true));
@@ -998,8 +998,8 @@ namespace {
 		try {
 			const auto &fi = zip.GetFileInfo(idx);
 			if (fi.mUncompressedSize > 64 * 1024 * 1024) {
-				fprintf(stderr, "[wasm] FirstRun: skip oversized entry '%ls' (%u bytes)\n",
-					nameForLog, fi.mUncompressedSize);
+				fprintf(stderr, "[wasm] FirstRun: skip oversized entry '%ls' (%llu bytes)\n",
+					nameForLog, (unsigned long long)fi.mUncompressedSize);
 				return false;
 			}
 			vdautoptr<IVDInflateStream> zs(zip.OpenDecodedStream(idx));

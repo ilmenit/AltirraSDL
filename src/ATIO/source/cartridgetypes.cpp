@@ -123,6 +123,17 @@ ATCartridgeMode ATGetCartridgeModeForMapper(int mapper) {
 		case 92: return kATCartridgeMode_XEMulticart_512K;
 		case 93: return kATCartridgeMode_XEMulticart_1M;
 
+		case 94: return kATCartridgeMode_RamCart_64K;
+		case 95: return kATCartridgeMode_RamCart_128K;
+		case 96: return kATCartridgeMode_DoubleRamCart_256K;
+		case 97: return kATCartridgeMode_RamCart_1M;
+		case 98: return kATCartridgeMode_RamCart_2M;
+		case 99: return kATCartridgeMode_RamCart_4M;
+		case 100: return kATCartridgeMode_RamCart_8M;
+		case 101: return kATCartridgeMode_RamCart_16M;
+		case 102: return kATCartridgeMode_RamCart_32M;
+		case 103: return kATCartridgeMode_SiDiCar_32K;
+
 		case 104: return kATCartridgeMode_JAtariCart_8K;
 		case 105: return kATCartridgeMode_JAtariCart_16K;
 		case 106: return kATCartridgeMode_JAtariCart_32K;
@@ -248,6 +259,16 @@ int ATGetCartridgeMapperForMode(ATCartridgeMode mode, uint32 size) {
 		case kATCartridgeMode_XEMulticart_512K:			return 92;
 		case kATCartridgeMode_XEMulticart_1M:			return 93;
 
+		case kATCartridgeMode_RamCart_64K: return 94;
+		case kATCartridgeMode_RamCart_128K: return 95;
+		case kATCartridgeMode_DoubleRamCart_256K: return 96;
+		case kATCartridgeMode_RamCart_1M: return 97;
+		case kATCartridgeMode_RamCart_2M: return 98;
+		case kATCartridgeMode_RamCart_4M: return 99;
+		case kATCartridgeMode_RamCart_8M: return 100;
+		case kATCartridgeMode_RamCart_16M: return 101;
+		case kATCartridgeMode_RamCart_32M: return 102;
+		case kATCartridgeMode_SiDiCar_32K: return 103;
 		case kATCartridgeMode_JAtariCart_8K:			return 104;
 		case kATCartridgeMode_JAtariCart_16K:			return 105;
 		case kATCartridgeMode_JAtariCart_32K:			return 106;
@@ -386,6 +407,16 @@ uint32 ATGetImageSizeForCartridgeType(ATCartridgeMode mode) {
 		case kATCartridgeMode_MDDOS:				return 0x10000;
 		case kATCartridgeMode_COS32K:				return 0x8000;
 		case kATCartridgeMode_Pronto:				return 0x4000;
+		case kATCartridgeMode_RamCart_64K: return 0x10000;
+		case kATCartridgeMode_RamCart_128K: return 0x20000;
+		case kATCartridgeMode_DoubleRamCart_256K: return 0x40000;
+		case kATCartridgeMode_RamCart_1M: return 0x100000;
+		case kATCartridgeMode_RamCart_2M: return 0x200000;
+		case kATCartridgeMode_RamCart_4M: return 0x400000;
+		case kATCartridgeMode_RamCart_8M: return 0x800000;
+		case kATCartridgeMode_RamCart_16M: return 0x1000000;
+		case kATCartridgeMode_RamCart_32M: return 0x2000000;
+		case kATCartridgeMode_SiDiCar_32K: return 0x8000;
 		case kATCartridgeMode_JAtariCart_8K:		return 0x2000;
 		case kATCartridgeMode_JAtariCart_16K:		return 0x4000;
 		case kATCartridgeMode_JAtariCart_32K:		return 0x8000;
@@ -399,4 +430,9 @@ uint32 ATGetImageSizeForCartridgeType(ATCartridgeMode mode) {
 		default:
 			return 0;
 	}
+}
+
+bool ATIsCartridgeRAMMode(ATCartridgeMode mode) {
+	return mode >= kATCartridgeMode_RamCart_64K
+		&& mode <= kATCartridgeMode_SiDiCar_32K;
 }

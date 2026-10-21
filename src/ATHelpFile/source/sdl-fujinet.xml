@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet type="text/xsl" href="index.xsl" ?>
+<topic title="FujiNet in AltirraSDL">
+  <p>Open <b>Tools &gt; FujiNet</b>. Choose Local PC when AltirraSDL should start FujiNet-PC, or External when you already run FujiNet-PC or use a FujiNet on your network. An existing NetSIO custom-device bridge gets its own manual view.</p>
+  <p>Guided setup is an optional path through connection choice, startup and first use. Entering it does not change devices or start a process. Full controls returns to the normal panel.</p>
+  <h2>Start a local FujiNet-PC</h2>
+  <ol>
+    <li>Choose Local PC. Download the official ATARI release for your operating system and processor, and extract the entire archive.</li>
+    <li>Choose FujiNet-PC and select the extracted <tt>fujinet</tt> executable, or <tt>fujinet.exe</tt> on Windows. Keep <tt>data/</tt> and <tt>fnconfig.ini</tt> beside it. Select the executable, not the run-fujinet launcher script.</li>
+    <li>Select Start and Boot FujiNet. The panel waits for a connection, then resets and runs the Atari. The FujiNet CONFIG screen lists your host and drive slots.</li>
+    <li>Use CONFIG or Open Web Interface to choose software. Boot Atari resets the computer while leaving FujiNet running. Start without booting starts only FujiNet-PC.</li>
+  </ol>
+  <p>Runtime settings contains the executable and local web port. Diagnostics contains the runtime log and Open Data Folder. AltirraSDL keeps a private configuration, SD card and logs in <tt>FujiNet/</tt> below its configuration directory. It preserves your private host slots on subsequent starts. Stop FujiNet-PC stops only the process this launcher owns; closing AltirraSDL also stops it. A normal FujiNet restart request is handled automatically.</p>
+  <h2>Browse and boot your first program</h2>
+  <p>FujiNet-PC uses this computer's network connection. Hardware Wi-Fi provisioning, SSID/password entry and a 2.4GHz adapter are not needed for the local runtime.</p>
+  <ol>
+    <li>After boot reaches CONFIG's HOST LIST, select a host with 1-8 or arrows, then press Return. The public hosts fujinet.online, apps.irata.online and fujinet.diller.org were verified with the real runtime. Browse their current Atari folders; directory names and availability may change. To edit an unused host slot, select it and press E.</li>
+    <li>Use arrows and Return to enter directories and select an XEX program or bootable ATR image. Escape returns to the hosts; Backspace goes up a directory.</li>
+    <li>Choose drive 1, press Return, then Return again for read-only access. Use write mode only when needed for an image you control.</li>
+    <li>Press Atari OPTION to mount and boot. The default PC binding is F4; remapped keyboards may differ. Follow the footer shown by your running CONFIG version.</li>
+  </ol>
+  <p>FujiNet mounts normal load-and-go XEX programs directly using its PicoBoot virtual-disk loader; ATR conversion and a separate DOS boot are not required. A program written for a particular DOS or extra hardware still needs that environment. Leave BASIC unchanged unless the program requires it disabled. In that case use System &gt; Internal BASIC (Boot Without Option Key), or hold Atari OPTION during the program boot.</p>
+  <p>CONFIG also offers L to boot its Game Lobby after confirmation. Network functions require compatible software; adding FujiNet does not add multiplayer to arbitrary games.</p>
+  <h2>Run a local file or URL through FujiNet</h2>
+  <p>When the managed Local PC runtime is connected, choose Run a file through FujiNet. Select Choose local game, or paste a direct HTTP(S) link and choose Download, mount and boot. AltirraSDL copies the game to its private virtual SD, finds the configured SD host, verifies the web interface serves this same SD directory, mounts D1 read-only, verifies the mount and boots the Atari through real SIO. XEX uses FujiNet's PicoBoot loader.</p>
+  <p>This shortcut accepts individual XEX/COM/EXE/OBX and ATR/ATX images up to 64 MiB. ZIP collections belong in Game Library. Internal BASIC changes the existing current-profile setting; turn it off if the game requires OPTION at boot. A DOS-specific program still needs its required DOS or environment.</p>
+  <p>Cancel file operation prevents automatic boot. If mounting has already begun, check the web interface because the remote request may have completed. Profile/connection changes also cancel automatic boot. This shortcut requires the managed runtime's mount API. External/manual setups continue using CONFIG or their own web interface.</p>
+  <h2>Manual SD workflow</h2>
+  <ol>
+    <li>Download a program from its author or another source you trust.</li>
+    <li>Open Diagnostics &gt; Open Data Folder and copy the XEX into its SD directory. This private SD card is separate from the extracted release's original SD folder, which is seeded only on first use.</li>
+    <li>In CONFIG choose the SD host, select the XEX, mount it on D1 read-only and press Atari OPTION. FujiNet supplies the program over SIO.</li>
+  </ol>
+  <h2>Connect an existing process or external FujiNet</h2>
+  <ol>
+    <li>Choose External, then Connect NetSIO. AltirraSDL listens on UDP; FujiNet sends to the listener.</li>
+    <li>For a process on the same computer, use <tt>127.0.0.1</tt> and the panel's UDP port, normally 9997, in its BOIP configuration.</li>
+    <li>For a network device, expand Connection settings and enable Allow LAN. Set FujiNet's SIO-over-network/BOIP destination to this computer's LAN address and that UDP port. Allow inbound traffic on this port in the computer's firewall.</li>
+    <li>Wait for Connected, then select Boot Atari. An optional web URL in Connection settings enables Open Web Interface.</li>
+  </ol>
+  <p>Disconnect stops the listener. Reconnect NetSIO restores it without resetting the Atari. An existing external connection is preserved: starting another managed runtime is rejected until you disconnect it. Android can use an external FujiNet; browser builds cannot listen for native UDP NetSIO.</p>
+  <h2>Keep an existing manual bridge</h2>
+  <p>If the profile already runs the published NetSIO custom descriptor and Python hub, keep starting the hub and FujiNet-PC as before. The manual view offers Boot Atari and an optional web URL; it does not replace your descriptor, filters or process ownership. Recognition follows the descriptor actually loaded in the custom-device VM, including when hot reload is disabled.</p>
+  <p>Use one transport per profile. Native activation is blocked for a recognized manual bridge; if a native listener is already present, disconnect it before manual boot. To migrate, remove the NetSIO custom device and stop its hub first. Separate profiles let you retain both arrangements. Partially recognized scripts produce a caution rather than automatic migration.</p>
+  <h2>Local drives and save states</h2>
+  <p>Boot disables the built-in local D1 drive and Fast boot, selects normal speed, and resumes the Atari. Its D1 image and unsaved changes remain mounted. Local disks &gt; Enable local D1 restores access. D2-D15 and BASIC remain unchanged. Give local and FujiNet disks different drive numbers. A full-drive emulator on D1 must be disabled explicitly in Configure System before boot.</p>
+  <p>Save states preserve local device configuration, but cannot rewind FujiNet's external files or network sessions. Reconnect or reboot when necessary after restoring a state.</p>
+  <h2>Troubleshooting</h2>
+  <ul>
+    <li>Runtime does not start: read Diagnostics and its log. Extract all release files and install any runtime dependencies named by your operating system. Use a build matching your processor. Check executable permissions on Unix systems.</li>
+    <li>Waiting for connection: check BOIP destination, UDP port, Allow LAN and firewall rules. The web port is separate from the NetSIO UDP port. Do not run a Python hub and native listener on the same UDP port.</li>
+    <li>Blank or failed CONFIG boot: confirm Connected, resolve any D1 full-drive conflict, and use Boot Atari. Avoid Warp speed for network software: Atari OS timeouts must allow actual network time.</li>
+    <li>HTTPS fails: inspect the runtime log, certificate files supplied with the complete release, the computer's clock and network access. AltirraSDL does not disable certificate verification.</li>
+    <li>Cannot change ports: stop the managed runtime first. Configuration and boot actions are unavailable during netplay.</li>
+  </ul>
+  <p><a href="https://forums.atariage.com/topic/393713-fujinet-pc-on-linuxmint-waltirra-sdl/">AtariAge: FujiNet-PC and Altirra SDL</a> · <a href="https://github.com/a8jan/fujinet-pc-launcher/blob/master/Install.md">Original launcher setup guide</a> · <a href="https://github.com/FujiNetWIFI/fujinet-config/blob/master/src/atari/input.c">CONFIG keyboard reference source</a></p>
+  <p><a href="https://github.com/FujiNetWIFI/fujinet-firmware/releases">Official FujiNet releases</a> · <a href="https://fujinetwifi.github.io/fujinet-docs/">FujiNet documentation</a></p>
+</topic>

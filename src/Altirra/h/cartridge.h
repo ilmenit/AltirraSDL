@@ -38,6 +38,10 @@ class ATScheduler;
 class IATObjectState;
 struct ATCartridgeModeTable;
 
+// Per-mapper physical defaults; the SDL frontend persists these per profile.
+uint32 ATGetRamCartDefaultSwitches(ATCartridgeMode mode);
+void ATSetRamCartDefaultSwitches(ATCartridgeMode mode, uint32 switches);
+
 class ATCartridgeEmulator final
 	: public ATDeviceT<IATDeviceCartridge, IATDeviceButtons>
 	, public IATSchedulerCallback
@@ -76,6 +80,13 @@ public:
 	void Unload();
 
 	void Save(const wchar_t *fn, bool includeHeader);
+
+	// RAM-Cart physical controls. Bit encoding follows Atari800's cartridge
+	// state: R/W=12, P1=13, P2=14, ABC jumpers=15, decoder=16,
+	// readback=17; A/B/C=2/6/7 and upper modules=8/9.
+	uint32 GetRamCartSwitchMask() const;
+	uint32 GetRamCartSwitches() const;
+	void SetRamCartSwitches(uint32 switches);
 
 	void ColdReset() override;
 
@@ -256,6 +267,12 @@ protected:
 	static sint32 ReadByte_CCTL_aDawliah_64K(void *thisptr0, uint32 address);
 	static bool WriteByte_CCTL_aDawliah_32K(void *thisptr0, uint32 address, uint8 value);
 	static bool WriteByte_CCTL_aDawliah_64K(void *thisptr0, uint32 address, uint8 value);
+
+	static sint32 ReadByte_RamCart(void *thisptr, uint32 address);
+	static bool WriteByte_RamCart(void *thisptr, uint32 address, uint8 value);
+	static sint32 ReadByte_CCTL_RamCart(void *thisptr, uint32 address);
+	static bool WriteByte_CCTL_RamCart(void *thisptr, uint32 address, uint8 value);
+	sint32 GetRamCartOffset(uint32 address) const;
 
 	static sint32 ReadByte_CCTL_JRC_RAMBOX(void *thisptr0, uint32 address);
 	static bool WriteByte_CCTL_JRC_RAMBOX(void *thisptr0, uint32 address, uint8 value);

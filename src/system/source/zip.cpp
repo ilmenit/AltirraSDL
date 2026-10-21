@@ -2722,75 +2722,91 @@ VDZipArchive::~VDZipArchive() {
 void VDZipArchive::Init(IVDRandomAccessStream *pSrc) {
 	mpStream = pSrc;
 
-	// First, see if the central directory is at the end (common case).
-	const sint64 streamLen = mpStream->Length();
-
-	if (streamLen < sizeof(ZipCentralDir)) {
-		if (streamLen == 0)
-			throw MyError("The .zip file is empty.");
-		else
-			throw MyError("The file is too short to be a .zip archive.");
-	}
-
-	mpStream->Seek(streamLen - sizeof(ZipCentralDir));
-
-	ZipCentralDir cdirhdr;
-
-	mpStream->Read(&cdirhdr, sizeof cdirhdr);
-	if (cdirhdr.signature != ZipCentralDir::kSignature) {
-		// Okay, the central directory isn't at the end. Read the last 64K of the file
-		// and see if we can spot it. 
-		uint32 buflen = 65536 + sizeof(ZipCentralDir);
-
-		if ((sint64)buflen > streamLen)
-			buflen = (uint32)streamLen;
-
-		vdfastvector<uint8> buf(buflen);
-		const uint8 *bufp = buf.data();
-
-		const sint64 bufOffset = streamLen - buflen;
-		mpStream->Seek(bufOffset);
-		mpStream->Read(buf.data(), buflen);
-
-		// Search for valid end-of-central-dir signature.
-		const uint32 kNativeEndSig = VDFromLE32(ZipCentralDir::kSignature);
-		const uint32 kNativeStartSig = VDFromLE32(ZipFileEntry::kSignature);
-
-		for(uint32 i=0; i<buflen-4; ++i) {
-			if (VDReadUnalignedU32(bufp + i) == kNativeEndSig) {
-				const uint32 diroffset = VDReadUnalignedLEU32(bufp + i + offsetof(ZipCentralDir, diroffset));
-				const uint32 dirsize = VDReadUnalignedLEU32(bufp + i + offsetof(ZipCentralDir, dirsize));
-
-				if (diroffset + dirsize == bufOffset + i) {
-					uint32 testsig;
-					mpStream->Seek(diroffset);
-					mpStream->Read(&testsig, 4);
-
-					if (testsig == kNativeStartSig) {
-						memcpy(&cdirhdr, bufp + i, sizeof(ZipCentralDir));
-						goto found_directory;
-					}
-				}
-			}
+	// AltirraSDL extension: bounded ZIP64 index parsing (PKWARE APPNOTE
+	// 4.3.14-4.3.16 and 4.5.3). Archive offsets remain 64-bit even when
+	// individual emulator images are small. Never allocate from unchecked
+	// archive counts or directory sizes.
+	mDirectory.clear();
+	const sint64 signedLength = mpStream->Length();
+	if (signedLength < (sint64)sizeof(ZipCentralDir))
+		throw MyError("The file is too short to be a .zip archive.");
+	const uint64 streamLen = (uint64)signedLength;
+	const uint32 tailSize = (uint32)std::min<uint64>(streamLen, 65535 + sizeof(ZipCentralDir));
+	vdfastvector<uint8> tail(tailSize);
+	mpStream->Seek((sint64)(streamLen - tailSize));
+	mpStream->Read(tail.data(), tailSize);
+	sint64 endIndex = -1;
+	for (sint64 i = tailSize - sizeof(ZipCentralDir); i >= 0; --i) {
+		if (VDReadUnalignedLEU32(tail.data() + i) == ZipCentralDir::kSignature
+			&& (uint64)i + sizeof(ZipCentralDir)
+				+ VDReadUnalignedLEU16(tail.data() + i + 20) == tailSize) {
+			endIndex = i;
+			break;
 		}
-
-		throw MyError("Zip file has missing or bad central directory");
 	}
+	if (endIndex < 0)
+		throw MyError("Zip file has missing or bad central directory.");
+	const uint64 endOffset = streamLen - tailSize + (uint64)endIndex;
+	ZipCentralDir end;
+	memcpy(&end, tail.data() + endIndex, sizeof end);
+	uint64 entries = end.dirents_total;
+	uint64 directorySize = end.dirsize;
+	uint64 directoryOffset = end.diroffset;
+	uint64 directoryLimit = endOffset;
+	if (end.diskno || end.diskno_dir || end.dirents != end.dirents_total)
+		throw MyError("Split ZIP archives are not supported.");
+	bool haveZip64 = false;
+	if (endOffset >= 20) {
+		uint8 locator[20];
+		mpStream->Seek((sint64)(endOffset - sizeof locator));
+		mpStream->Read(locator, sizeof locator);
+		if (VDReadUnalignedLEU32(locator) == 0x07064B50) {
+			haveZip64 = true;
+			if (VDReadUnalignedLEU32(locator + 4) || VDReadUnalignedLEU32(locator + 16) != 1)
+				throw MyError("Split ZIP64 archives are not supported.");
+			const uint64 recordOffset = VDReadUnalignedLEU64(locator + 8);
+			if (recordOffset > endOffset - 20 || endOffset - 20 - recordOffset < 56)
+				throw MyError("Invalid ZIP64 directory locator.");
+			uint8 record[56];
+			mpStream->Seek((sint64)recordOffset);
+			mpStream->Read(record, sizeof record);
+			const uint64 recordSize = VDReadUnalignedLEU64(record + 4);
+			if (VDReadUnalignedLEU32(record) != 0x06064B50 || recordSize < 44
+				|| recordSize != endOffset - 20 - recordOffset - 12)
+				throw MyError("Invalid ZIP64 end-of-directory record.");
+			if (VDReadUnalignedLEU32(record + 16) || VDReadUnalignedLEU32(record + 20)
+				|| VDReadUnalignedLEU64(record + 24) != VDReadUnalignedLEU64(record + 32))
+				throw MyError("Split ZIP64 archives are not supported.");
+			entries = VDReadUnalignedLEU64(record + 32);
+			directorySize = VDReadUnalignedLEU64(record + 40);
+			directoryOffset = VDReadUnalignedLEU64(record + 48);
+			directoryLimit = recordOffset;
+		}
+	}
+	if (!haveZip64 && (directorySize == 0xFFFFFFFF
+		|| directoryOffset == 0xFFFFFFFF))
+		throw MyError("ZIP64 directory locator is missing.");
+	if (entries > 250000 || directorySize > 64 * 1024 * 1024)
+		throw MyError("ZIP index exceeds 250000 entries or 64 MiB.");
+	if (directoryOffset > directoryLimit || directorySize > directoryLimit - directoryOffset
+		|| entries > directorySize / sizeof(ZipFileEntry))
+		throw MyError("Zip directory extends outside the archive.");
+	const uint64 directoryEnd = directoryOffset + directorySize;
+	mDirectory.resize((size_t)entries);
+	mpStream->Seek((sint64)directoryOffset);
 
-found_directory:
-	mDirectory.resize(cdirhdr.dirents_total);
-
-	mpStream->Seek(cdirhdr.diroffset);
-
-	const int numEnts = cdirhdr.dirents_total;
-	for(int i=0; i<numEnts; ++i) {
+	for (size_t i = 0; i < (size_t)entries; ++i) {
 		FileInfoInternal& fii = mDirectory[i];
 		ZipFileEntry ent;
-
+		if ((uint64)mpStream->Pos() > directoryEnd
+			|| directoryEnd - (uint64)mpStream->Pos() < sizeof ent)
+			throw MyError("Truncated ZIP directory.");
 		mpStream->Read(&ent, sizeof ent);
 		if (ent.signature != ZipFileEntry::kSignature)
-			throw MyError("Zip directory is bad");
-
+			throw MyError("Zip directory is bad.");
+		const uint64 variableSize = (uint32)ent.filename_len + (uint32)ent.extrafield_len + (uint32)ent.comment_len;
+		if (variableSize > directoryEnd - (uint64)mpStream->Pos())
+			throw MyError("Truncated ZIP directory entry.");
 		fii.mbSupported = false;
 		fii.mbPacked = false;
 		fii.mbEnhancedDeflate = false;
@@ -2814,6 +2830,7 @@ found_directory:
 				break;
 		}
 
+		fii.mbSupported &= !(ent.flags & (1 | 0x40));
 		fii.mDataStart			= ent.reloff_localhdr;
 		fii.mCompressedSize		= ent.compressed_size;
 		fii.mUncompressedSize	= ent.uncompressed_size;
@@ -2821,6 +2838,46 @@ found_directory:
 		fii.mRawFileName.resize(ent.filename_len);
 
 		mpStream->Read(&*fii.mRawFileName.begin(), ent.filename_len);
+
+		vdfastvector<uint8> extra((uint32)ent.extrafield_len);
+		if (!extra.empty()) mpStream->Read(extra.data(), (sint32)extra.size());
+		bool zip64Sizes = false;
+		uint32 disk = ent.diskno;
+		for (size_t pos = 0; pos < extra.size();) {
+			if (extra.size() - pos < 4)
+				throw MyError("Malformed ZIP extra field.");
+			const uint16 tag = VDReadUnalignedLEU16(extra.data() + pos);
+			const uint16 size = VDReadUnalignedLEU16(extra.data() + pos + 2);
+			pos += 4;
+			if (size > extra.size() - pos)
+				throw MyError("Truncated ZIP extra field.");
+			if (tag == 1) {
+				if (zip64Sizes) throw MyError("Duplicate ZIP64 size field.");
+				zip64Sizes = true;
+				size_t offset = pos;
+				const auto read64 = [&]() -> uint64 {
+					if (pos + size - offset < 8) throw MyError("Truncated ZIP64 size field.");
+					const uint64 value = VDReadUnalignedLEU64(extra.data() + offset);
+					offset += 8;
+					return value;
+				};
+				if (ent.uncompressed_size == 0xFFFFFFFF) fii.mUncompressedSize = read64();
+				if (ent.compressed_size == 0xFFFFFFFF) fii.mCompressedSize = read64();
+				if (ent.reloff_localhdr == 0xFFFFFFFF) fii.mDataStart = read64();
+				if (ent.diskno == 0xFFFF) {
+					if (pos + size - offset < 4) throw MyError("Truncated ZIP64 disk field.");
+					disk = VDReadUnalignedLEU32(extra.data() + offset);
+				}
+			}
+			pos += size;
+		}
+		if (!zip64Sizes && (ent.uncompressed_size == 0xFFFFFFFF
+			|| ent.compressed_size == 0xFFFFFFFF || ent.reloff_localhdr == 0xFFFFFFFF || ent.diskno == 0xFFFF))
+			throw MyError("ZIP64 entry size field is missing.");
+		if (disk) throw MyError("Split ZIP entries are not supported.");
+		if (fii.mDataStart > directoryOffset || directoryOffset - fii.mDataStart < sizeof(ZipFileHeader)
+			|| fii.mCompressedSize > directoryOffset - fii.mDataStart - sizeof(ZipFileHeader))
+			throw MyError("ZIP file data extends outside the archive.");
 
 		// Attempt to decode the filename. If general bit 11 is set, then the
 		// filename is encoded as UTF-8.
@@ -2884,7 +2941,7 @@ found_directory:
 			);
 		}
 		
-		mpStream->Seek(mpStream->Pos() + ent.extrafield_len + ent.comment_len);
+		mpStream->Seek(mpStream->Pos() + ent.comment_len);
 	}
 }
 
@@ -2943,7 +3000,11 @@ IVDStream *VDZipArchive::OpenRawStream(sint32 idx) {
 	if (hdr.signature != ZipFileHeader::kSignature)
 		throw MyError("Bad header for file in zip archive");
 
-	mpStream->Seek(fi.mDataStart + sizeof(hdr) + hdr.filename_len + hdr.extrafield_len);
+	const uint64 start = fi.mDataStart + sizeof(hdr) + (uint32)hdr.filename_len + (uint32)hdr.extrafield_len;
+	const uint64 length = (uint64)mpStream->Length();
+	if (start > length || fi.mCompressedSize > length - start)
+		throw MyError("Truncated ZIP member data.");
+	mpStream->Seek((sint64)start);
 
 	return mpStream;
 }
@@ -2989,6 +3050,8 @@ bool VDZipArchive::ReadRawStream(sint32 idx, vdfastvector<uint8>& buf, bool allo
 
 void VDZipArchive::DecompressStream(sint32 idx, vdfastvector<uint8>& buf) const {
 	const FileInfo& info = GetFileInfo(idx);
+	if (info.mCompressedSize > 0x7FFFFFFF || info.mUncompressedSize > 0x7FFFFFFF)
+		throw MyError("ZIP member exceeds the in-memory decode limit.");
 
 	if (!info.mbPacked)
 		return;

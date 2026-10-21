@@ -66,6 +66,18 @@ private:
 	sint32 mBusId = -1;
 };
 
+// Fork extension: diagnostics for the descriptor currently running in the VM.
+// All queries run on the emulation thread. Source spans remain valid until
+// reload/shutdown; large descriptors omit the source to bound diagnostics RAM.
+class IATDeviceCustomDescriptor {
+public:
+	static constexpr uint32 kTypeID = "IATDeviceCustomDescriptor"_vdtypeid;
+	static constexpr size_t kSourceLimit = 256 * 1024;
+	virtual uint64 GetLoadedDescriptorRevision() const = 0;
+	enum class SourceStatus { NotLoaded, Available, TooLarge };
+	virtual SourceStatus GetLoadedDescriptorSource(VDStringSpanA& source) const = 0;
+};
+
 class ATDeviceCustom final
 	: public ATDevice
 	, public IATDeviceMemMap
@@ -80,6 +92,7 @@ class ATDeviceCustom final
 	, public IATDeviceDiagnostics
 	, public IATPBIDevice
 	, public IVDFileWatcherCallback
+	, public IATDeviceCustomDescriptor
 {
 	friend struct ATDeviceCustomScriptCondition;
 
@@ -88,6 +101,13 @@ public:
 	~ATDeviceCustom();
 
 	void *AsInterface(uint32 iid) override;
+	uint64 GetLoadedDescriptorRevision() const override { return mDescriptorRevision; }
+	SourceStatus GetLoadedDescriptorSource(VDStringSpanA& source) const override {
+		source = VDStringSpanA(mLoadedDescriptorSource.c_str(),
+			mLoadedDescriptorSource.c_str() + mLoadedDescriptorSource.size());
+		return !mbInitedCustomDevice ? SourceStatus::NotLoaded
+			: mbDescriptorSourceCaptured ? SourceStatus::Available : SourceStatus::TooLarge;
+	}
 
 	void GetDeviceInfo(ATDeviceInfo& info) override;
 	void GetSettingsBlurb(VDStringW& buf) override;
@@ -316,6 +336,9 @@ private:
 	bool mbHasSerialPort = false;
 	bool mbHasPrinterPort = false;
 	uint64 mLastReloadAttempt = 0;
+	uint64 mDescriptorRevision = 0;
+	VDStringA mLoadedDescriptorSource;
+	bool mbDescriptorSourceCaptured = false;
 	uint32 mCartId = 0;
 
 	IATAsyncDispatcher *mpAsyncDispatcher = nullptr;

@@ -129,6 +129,16 @@ enum ATCartridgeMode : uint32 {
 	kATCartridgeMode_JAtariCart_512K,
 	kATCartridgeMode_JAtariCart_1024K,
 	kATCartridgeMode_DCart,					// DCart by Grzegorz "GienekP" Karpiel (https://dcart.pl)
+	kATCartridgeMode_RamCart_64K,
+	kATCartridgeMode_RamCart_128K,
+	kATCartridgeMode_DoubleRamCart_256K,
+	kATCartridgeMode_RamCart_1M,
+	kATCartridgeMode_RamCart_2M,
+	kATCartridgeMode_RamCart_4M,
+	kATCartridgeMode_RamCart_8M,
+	kATCartridgeMode_RamCart_16M,
+	kATCartridgeMode_RamCart_32M,
+	kATCartridgeMode_SiDiCar_32K,
 	kATCartridgeModeCount
 };
 
@@ -136,6 +146,8 @@ static constexpr uint32 kATCartridgeMapper_Max = 160;
 
 ATCartridgeMode ATGetCartridgeModeForMapper(int mapper);
 int ATGetCartridgeMapperForMode(ATCartridgeMode mode, uint32 size);
+// Battery-backed RAM cartridge images are mutable and included in snapshots.
+bool ATIsCartridgeRAMMode(ATCartridgeMode mode);
 bool ATIsCartridge5200Mode(ATCartridgeMode cartmode);
 uint32 ATGetImageSizeForCartridgeType(ATCartridgeMode mode);
 
