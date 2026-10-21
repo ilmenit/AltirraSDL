@@ -62,8 +62,10 @@ Result Install(const ATFujiNetPCPackage& package, const std::string& installRoot
 void Extract(const std::string& archive, const std::string& directory, Progress& progress);
 
 // After switching to a new version: delete the other installed versions.
-// Versions still in use (e.g. by another AltirraSDL on Windows) are kept.
-void RemoveOtherVersions(const std::string& installRoot, const std::string& keepExecutable);
+// Hold the runtime state lease throughout cleanup. If another instance is
+// running FujiNet-PC, retain all versions until a later cleanup.
+void RemoveOtherVersions(const std::string& installRoot,
+	const std::string& keepExecutable, const std::string& stateDirectory);
 // Remove interrupted staging folders older than an hour.
 void RemoveStale(const std::string& installRoot);
 

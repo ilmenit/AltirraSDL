@@ -843,7 +843,7 @@ void ATUIPollFujiNet() {
 			s_runtimeVersion = result.version;
 			Save();
 			// Only now that the new version is selected may older ones go.
-			ATFujiNetInstall::RemoveOtherVersions(InstallRoot(), s_executable);
+			ATFujiNetInstall::RemoveOtherVersions(InstallRoot(), s_executable, StateDirectory());
 #ifdef __APPLE__
 			s_missingPath = s_executable;
 			s_missing = std::move(result.missing);

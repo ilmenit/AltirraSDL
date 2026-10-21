@@ -58,6 +58,10 @@ public:
 	ATFujiNetPC(const ATFujiNetPC&) = delete;
 	ATFujiNetPC& operator=(const ATFujiNetPC&) = delete;
 	static bool Available();
+	// Run maintenance while excluding every managed runtime using this
+	// state directory. Returns false if ownership cannot be acquired.
+	static bool WithStateDirectoryLease(const std::string& directory,
+		const std::function<void()>& action);
 	bool Start(const ATFujiNetPCOptions& options);
 	void Stop();
 	// Called on the caller/main thread after the previous child exits and

@@ -491,6 +491,22 @@ bool ATFujiNetPC::Available() {
 	return true;
 #endif
 }
+bool ATFujiNetPC::WithStateDirectoryLease(const std::string& directory,
+	const std::function<void()>& action) {
+	if (!Available()) return false;
+	Impl maintenance;
+	try {
+		maintenance.AcquireLease(directory);
+	} catch (const std::exception&) {
+		return false;
+	}
+	struct Guard {
+		Impl& owner;
+		~Guard() { owner.ReleaseLease(); }
+	} guard{maintenance};
+	action();
+	return true;
+}
 const ATFujiNetPCStatus& ATFujiNetPC::GetStatus() const { return mpImpl->status; }
 
 bool ATFujiNetPC::Start(const ATFujiNetPCOptions& options) {

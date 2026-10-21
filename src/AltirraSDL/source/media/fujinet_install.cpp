@@ -380,30 +380,36 @@ void RemoveStale(const std::string& installRoot) {
 	}
 }
 
-void RemoveOtherVersions(const std::string& installRoot, const std::string& keepExecutable) {
-	const auto root = Path(installRoot);
-	const auto keep = Path(keepExecutable);
-	std::error_code error;
-	std::vector<fs::path> retired;
-	fs::directory_iterator it(root, error), end;
-	for (; !error && it != end; it.increment(error)) {
-		const auto& path = it->path();
-		if (UTF8(path.filename()).compare(0, 17, "fujinet-pc-ATARI_")) continue;
-		const auto relative = keep.lexically_relative(path);
-		if (!relative.empty() && relative.begin()->string() != "..") continue;
-		retired.push_back(path);
-	}
-	for (size_t i = 0; i < retired.size(); ++i) {
-		// Renaming first fails while another AltirraSDL runs that version
-		// on Windows, leaving it intact instead of half deleted.
-		std::error_code renamed;
-		const auto trash = root / (".old-" + std::to_string(i) + "-" +
-			std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-		fs::rename(retired[i], trash, renamed);
-		if (renamed) continue;
-		std::error_code ignored;
-		fs::remove_all(trash, ignored);
-	}
+void RemoveOtherVersions(const std::string& installRoot,
+	const std::string& keepExecutable, const std::string& stateDirectory) {
+	// Unix permits unlinking a running executable and its data files.
+	// The shared state lease excludes both an active runtime and a new
+	// launch for the entire retirement operation on every platform.
+	ATFujiNetPC::WithStateDirectoryLease(stateDirectory, [&] {
+		const auto root = Path(installRoot);
+		const auto keep = Path(keepExecutable);
+		std::error_code error;
+		std::vector<fs::path> retired;
+		fs::directory_iterator it(root, error), end;
+		for (; !error && it != end; it.increment(error)) {
+			const auto& path = it->path();
+			if (UTF8(path.filename()).compare(0, 17, "fujinet-pc-ATARI_")) continue;
+			const auto relative = keep.lexically_relative(path);
+			if (!relative.empty() && relative.begin()->string() != "..") continue;
+			retired.push_back(path);
+		}
+		for (size_t i = 0; i < retired.size(); ++i) {
+			// Renaming first fails while another AltirraSDL runs that version
+			// on Windows, leaving it intact instead of half deleted.
+			std::error_code renamed;
+			const auto trash = root / (".old-" + std::to_string(i) + "-" +
+				std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+			fs::rename(retired[i], trash, renamed);
+			if (renamed) continue;
+			std::error_code ignored;
+			fs::remove_all(trash, ignored);
+		}
+	});
 }
 
 bool SelectAsset(const char* json, size_t length, const std::vector<std::string>& suffixes,

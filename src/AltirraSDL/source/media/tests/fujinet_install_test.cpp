@@ -24,6 +24,16 @@ int main(int argc, char** argv) {
 		}
 		return 0;
 	}
+	if (mode == "retire" && argc >= 6) {
+		const auto retire = [&] {
+			ATFujiNetInstall::RemoveOtherVersions(argv[2], argv[3], argv[4]);
+		};
+		if (std::string(argv[5]) == "held") {
+			if (!ATFujiNetPC::WithStateDirectoryLease(argv[4], retire)) return 3;
+		} else retire();
+		std::printf("ERROR \n");
+		return 0;
+	}
 	if (mode != "install" || argc < 5) return 2;
 	// install <releases-url> <install-root> <suffix>[,<suffix>...]
 	ATFujiNetPCPackage package;
@@ -35,7 +45,8 @@ int main(int argc, char** argv) {
 	}
 	const auto result = ATFujiNetInstall::Install(package, argv[3], progress, argv[2]);
 	// The panel retires older versions once the new one is selected.
-	if (result.error.empty()) ATFujiNetInstall::RemoveOtherVersions(argv[3], result.executable);
+	if (result.error.empty()) ATFujiNetInstall::RemoveOtherVersions(argv[3], result.executable,
+		std::string(argv[3]) + ".state");
 	std::printf("EXECUTABLE %s\nVERSION %s\nERROR %s\n", result.executable.c_str(),
 		result.version.c_str(), result.error.c_str());
 	for (const auto& library : result.missing)

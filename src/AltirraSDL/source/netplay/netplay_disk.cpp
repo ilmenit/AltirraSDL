@@ -155,7 +155,10 @@ private:
 		return sector;
 	}
 	void Store(uint32 index, std::shared_ptr<Sector> sector) {
-		if (!mVersion.unique()) mVersion = std::make_shared<DiskVersion>(*mVersion);
+		// Versions are owned only by the emulator thread. unique() was
+		// removed in C++20 and is unavailable in Android's libc++.
+		if (mVersion.use_count() != 1)
+			mVersion = std::make_shared<DiskVersion>(*mVersion);
 		const auto previous = mVersion->sectors.find(index);
 		if (previous != mVersion->sectors.end())
 			mVersion->fingerprint ^= HashSector(index, *previous->second);

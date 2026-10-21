@@ -167,6 +167,18 @@ def main():
         Handler.downloads.clear()
         again = run(binary, 'install', url, str(root), 'ubuntu-24.04-amd64.tar.gz')
         assert again['EXECUTABLE'] == result['EXECUTABLE'] and not Handler.downloads
+        # A second instance must retain the executable AND data of a
+        # running version, including on Unix where unlinking is allowed.
+        retired = root / 'fujinet-pc-ATARI_old'
+        retired.mkdir()
+        sentinel = retired / 'data.bin'
+        sentinel.write_bytes(b'runtime still uses this')
+        state = str(root) + '.state'
+        run(binary, 'retire', str(root), str(program), state, 'held')
+        assert sentinel.read_bytes() == b'runtime still uses this'
+        assert program.is_file()
+        run(binary, 'retire', str(root), str(program), state, 'free')
+        assert not retired.exists() and program.is_file()
         # Preference order applies within the newest release; pax headers parse.
         pax = run(binary, 'install', url, str(root), 'ubuntu-22.04-amd64.tar.gz')
         assert not pax['ERROR'] and pax['VERSION'].endswith('ubuntu-22.04-amd64'), pax
