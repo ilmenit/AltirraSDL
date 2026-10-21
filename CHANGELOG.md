@@ -35,6 +35,8 @@
   Archives remain intact and are indexed without extracting the collection;
   completed sources and the download destination survive restarts. POSIX
   builds use 64-bit file offsets, including 32-bit Android.
+- Android explicitly permits user-selected HTTP game/library URLs and HTTP
+  download redirects while retaining normal HTTPS certificate validation.
 - Fixed the insertion index reported when a newly attached video output
   sorts before existing outputs. Expanded presentation regressions for
   XEP80, Bit 3, 1090 and AF80, including valid programmed rasters,
