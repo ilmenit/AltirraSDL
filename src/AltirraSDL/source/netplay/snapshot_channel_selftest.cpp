@@ -290,7 +290,18 @@ static void testReceiverDedupsDuplicates() {
 	CHECK(rx.IsComplete());
 }
 
+static void testAllocationBounds() {
+	SnapshotReceiver rx;
+	CHECK(!rx.Begin(1, kMaxSnapshotBytes + 1));
+	CHECK(!rx.Begin(UINT32_MAX, 1));
+	CHECK(!rx.Begin(1, 1201));
+	CHECK(!rx.Begin(0, 0));
+	CHECK(rx.Data().empty());
+	CHECK(rx.Begin(2, 1201));
+}
+
 int main() {
+	testAllocationBounds();
 	testSinglePerfectTransfer();
 	testEmptyTransfer();
 	testExactOneChunk();

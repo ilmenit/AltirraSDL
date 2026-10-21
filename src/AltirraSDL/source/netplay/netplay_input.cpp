@@ -22,6 +22,8 @@
 extern ATLogChannel g_ATLCNetplay;
 
 #include <cstring>
+#include <algorithm>
+#include "constants.h"
 
 extern ATSimulator g_sim;
 
@@ -44,13 +46,16 @@ constexpr uint8_t kBtnOption  = 1 << 3;   // GTIA console 0x04
 // NetInput::extFlags bit assignments (active-high):
 constexpr uint8_t kExtShift = 1 << 0;
 constexpr uint8_t kExtCtrl  = 1 << 1;
+constexpr uint8_t kExt5200Top = 1 << 2;
 
 // Per-player owned controller port.  Allocated in BeginSession,
 // released in EndSession.
 IATDeviceControllerPort *g_port[2] = { nullptr, nullptr };
 
 bool g_active        = false;
+bool g_testSession   = false;
 bool g_wasRestricted = false;
+bool g_wasConsoleCapture = false;
 
 // ---------------------------------------------------------------------------
 // Port-1 capture proxy.
@@ -96,27 +101,53 @@ public:
 		mTrigger = down;
 	}
 
-	void ResetPotPosition(bool /*potB*/) override {}
-	void SetPotPosition(bool /*potB*/, sint32 /*pos*/) override {}
-	void SetPotHiresPosition(bool /*potB*/, sint32 /*hiPos*/, bool /*grounded*/) override {}
+	void ResetPotPosition(bool potB) override {
+		mPot[potB ? 1 : 0] = ATPokeyEmulator::kPotHiPosUnconnected;
+	}
+	void SetPotPosition(bool potB, sint32 pos) override {
+		SetPotHiresPosition(potB, std::clamp(pos, 0, 228) * 65536,
+			false);
+	}
+	void SetPotHiresPosition(bool potB, sint32 hiPos, bool grounded) override {
+		mPot[potB ? 1 : 0] = grounded
+			? ATPokeyEmulator::kPotHiPosGrounded
+			: std::clamp(hiPos, 1, 228 << 16);
+	}
+	void Set5200KeyboardState(const bool matrix[64], bool top) override {
+		m5200Keys = 0;
+		for (unsigned i = 0; i < 64; ++i)
+			if (matrix[i]) m5200Keys |= uint64_t{1} << i;
+		m5200Top = top;
+	}
 	uint32 GetCyclesToBeamPosition(int, int) const override { return 1; }
 
 	// Snapshot of the captured state for PollLocal.
 	uint8 GetDirMask() const { return mDirMask; }
 	bool  GetTriggerDown() const { return mTrigger; }
+	uint32_t GetPot(unsigned index) const { return mPot[index]; }
+	uint64_t Get5200Keys() const { return m5200Keys; }
+	bool Get5200Top() const { return m5200Top; }
 
 	void Reset() {
 		mDirMask = 0x0F;  // all high = no direction
 		mTrigger = false;
+		mPot[0] = mPot[1] = ATPokeyEmulator::kPotHiPosUnconnected;
+		m5200Keys = 0;
+		m5200Top = false;
 	}
 
 private:
 	int mRefs = 1;
 	uint8 mDirMask = 0x0F;  // Active-low: 0x0F = neutral, bit clear = pressed.
 	bool mTrigger = false;
+	uint32_t mPot[2] = {ATPokeyEmulator::kPotHiPosUnconnected,
+		ATPokeyEmulator::kPotHiPosUnconnected};
+	uint64_t m5200Keys = 0;
+	bool m5200Top = false;
 };
 
 NetplayCapturePort g_capturePort;
+NetplayCapturePort g_discardPorts[3];
 
 // Pre-session CPU debug-flag snapshot.  Netplay demands the two peers
 // execute the same opcode stream — if one peer has e.g.
@@ -135,36 +166,49 @@ bool g_cpuPathBrkSaved = false;
 // per-frame overhead when netplay is active).  The CPU register dump
 // in ATEmuErrorHandlerSDL3 covers real trap diagnostics already.
 
-// Capture-side event state.
-struct KeyEvent { uint8_t scan; };
-constexpr int kKeyQueueCap = 16;
-KeyEvent g_keyQueue[kKeyQueueCap] = {};
-int      g_keyHead = 0;  // read index
-int      g_keyTail = 0;  // write index
-int      g_keyCount = 0;
-bool     g_shiftHeld = false;
-bool     g_ctrlHeld  = false;
+// Capture events are wall-clock input and must never be rolled back.
+KeyboardCapture g_keyboard;
+// Apply bookkeeping is restored with the emulator checkpoint.
+AppliedState g_applied;
 
-// Apply-side edge tracking for console switches.  We hold a "last
-// applied" mask per port so we only toggle GTIA when the aggregate
-// mask actually changes.
-uint8_t g_lastConsoleMask = 0;
+void Apply5200Keyboard(int index) {
+	bool matrix[64]{};
+	bool top = false;
+	if (index >= 0 && index < 2) {
+		const auto& input = g_applied.inputs[index];
+		for (unsigned bit = 0; bit < 64; ++bit)
+			matrix[bit] = (input.keyHeldMask & (uint64_t{1} << bit)) != 0;
+		top = (input.extFlags & kExt5200Top) != 0;
+	}
+	auto& pokey = g_sim.GetPokey();
+	pokey.SetKeyMatrix(matrix);
+	pokey.SetShiftKeyState(top, false);
+	pokey.SetControlKeyState(top);
+	pokey.SetBreakKeyState(top, false);
+}
 
-// Apply-side edge tracking for keyScan so we don't re-push a held
-// key every frame (PushKey is transient; repeat=true only makes sense
-// when we know the key is still down AND the host layer is queueing
-// auto-repeats, which we aren't).  Two separate trackers because p1
-// and p2 are independent keyboards.
-uint8_t g_lastKeyScan[2] = { 0, 0 };
+void ApplyPorts() {
+	for (int i = 0; i < 2; ++i) {
+		if (!g_port[i]) continue;
+		const auto& input = g_applied.inputs[i];
+		g_port[i]->SetDirInput(uint8_t(~input.stickDir & 15));
+		g_port[i]->SetTriggerDown((input.buttons & kBtnTrigger) != 0);
+		for (unsigned pot = 0; pot < 2; ++pot) {
+			const uint32_t pos = input.pot[pot];
+			if (pos == ATPokeyEmulator::kPotHiPosUnconnected)
+				g_port[i]->ResetPotPosition(pot != 0);
+			else
+				g_port[i]->SetPotHiresPosition(pot != 0,
+					(sint32)std::min(pos, uint32_t(228 << 16)),
+					pos == ATPokeyEmulator::kPotHiPosGrounded);
+		}
+	}
+}
 
 // Capture-side shadow of the locally-driven console-switch state.
 // OnLocalConsoleSwitch sets/clears bits here; PollLocal reads them.
 uint8_t g_localConsoleMask = 0;
 
-void ResetKeyQueue() {
-	g_keyHead = g_keyTail = g_keyCount = 0;
-	g_shiftHeld = g_ctrlHeld = false;
-}
 
 } // anonymous
 
@@ -194,7 +238,9 @@ void BeginSession() {
 		// escape hatch below (IsTriggerRestricted checks
 		// IsRedirected()), so they flow through ATInputManager's
 		// full pipeline into our capture proxy.
-		g_wasRestricted = false;  // documented default (see input_sdl3.cpp:329)
+		g_wasRestricted = im->IsRestrictedMode();
+		g_wasConsoleCapture = im->IsConsoleCaptureEnabled();
+		im->SetConsoleCaptureEnabled(true);
 		im->SetRestrictedMode(true);
 
 		// Capture everything that would write to port 1 (port index 0).
@@ -203,6 +249,14 @@ void BeginSession() {
 		// ATPortInputController the user has mapped onto port 1.
 		g_capturePort.Reset();
 		im->SetPortRedirect(0, &g_capturePort);
+		// Other locally mapped controllers must not leak jitter or pot
+		// writes into hardware; the two network slots own those ports.
+		for (int i = 1; i < 4; ++i) {
+			g_discardPorts[i - 1].Reset();
+			im->SetPortRedirect(i, &g_discardPorts[i - 1]);
+		}
+		if (g_sim.GetHardwareMode() == kATHardwareMode_5200)
+			im->Set5200ControllerOverride(Apply5200Keyboard);
 	}
 
 	// Force CPU debug flags to gameplay-safe values so the two peers
@@ -240,20 +294,23 @@ void BeginSession() {
 		}
 	}
 
-	ResetKeyQueue();
-	g_lastConsoleMask = 0;
+	g_keyboard.Reset();
+	g_applied = {};
 	g_localConsoleMask = 0;
-	g_lastKeyScan[0] = g_lastKeyScan[1] = 0;
+
 	g_active = true;
 }
 
 void EndSession() {
 	if (!g_active) return;
+	g_testSession = false;
 
 	for (int i = 0; i < 2; ++i) {
 		if (g_port[i]) {
 			g_port[i]->SetDirInput(0x0F);
 			g_port[i]->SetTriggerDown(false);
+			g_port[i]->ResetPotPosition(false);
+			g_port[i]->ResetPotPosition(true);
 			g_port[i]->Release();
 			g_port[i] = nullptr;
 		}
@@ -264,7 +321,8 @@ void EndSession() {
 		gtia->SetConsoleSwitch(0x07, false);
 
 	if (ATInputManager *im = g_sim.GetInputManager()) {
-		im->SetPortRedirect(0, nullptr);
+		im->Set5200ControllerOverride(nullptr);
+		for (int i = 0; i < 4; ++i) im->SetPortRedirect(i, nullptr);
 		// Release every tracked input code, not just joystick-class:
 		// during the session, non-joy input codes (e.g. a keyboard key
 		// bound to fire/direction) can have activated mappings for
@@ -274,6 +332,7 @@ void EndSession() {
 		// fresh press after the session ends.
 		im->ReleaseButtons(0, 0xFFFFFFFF);
 		im->SetRestrictedMode(g_wasRestricted);
+		im->SetConsoleCaptureEnabled(g_wasConsoleCapture);
 	}
 	g_capturePort.Reset();
 
@@ -286,12 +345,17 @@ void EndSession() {
 	}
 
 	DetachEventLogger();
-
-	ResetKeyQueue();
+	g_sim.GetPokey().ReleaseAllRawKeys(true);
+	g_sim.GetPokey().SetShiftKeyState(false, true);
+	g_sim.GetPokey().SetControlKeyState(false);
+	ReleaseLocalInputs();
+	g_applied = {};
 	g_active = false;
 }
 
 bool IsActive()                { return g_active; }
+bool IsTestSession()           { return g_testSession; }
+void BeginTestSession() { BeginSession(); g_testSession = true; }
 bool IsSuppressingLocalInput() { return g_active; }
 
 // No-op stubs: the sim-event logger was removed (see comment above).
@@ -300,24 +364,59 @@ bool IsSuppressingLocalInput() { return g_active; }
 void AttachEventLogger() {}
 void DetachEventLogger() {}
 
-void OnLocalKeyDown(uint8_t atariScanCode) {
-	if (!g_active) return;
-	if (atariScanCode == 0) return;
-	if (g_keyCount >= kKeyQueueCap) {
-		// Queue full — drop oldest to make room (favours freshest
-		// keypresses, which is what the user actually sees on screen).
-		g_keyHead = (g_keyHead + 1) & (kKeyQueueCap - 1);
-		--g_keyCount;
+AppliedState CaptureAppliedState() {
+	auto state = g_applied;
+	state.rawKeyMask = g_sim.GetPokey().GetRawKeyMask();
+	state.shiftHeld = g_sim.GetPokey().GetShiftKeyState();
+	state.ctrlHeld = g_sim.GetPokey().GetControlKeyState();
+	state.consoleMask = uint8_t(~g_sim.GetGTIA().GetConsoleSwitchInputState() & 7);
+	if (auto* input = g_sim.GetInputManager()) {
+		state.selected5200 = input->Get5200ControllerIndex();
+		state.pots5200Enabled = input->Are5200PotsEnabled();
 	}
-	g_keyQueue[g_keyTail].scan = atariScanCode;
-	g_keyTail = (g_keyTail + 1) & (kKeyQueueCap - 1);
-	++g_keyCount;
+	return state;
+}
+
+void RestoreAppliedState(const AppliedState& state) {
+	// Restore ports before the emulator snapshot restores POKEY/GTIA.
+	g_applied = state;
+	ApplyPorts();
+	auto& pokey = g_sim.GetPokey();
+	const uint64 currentKeys = pokey.GetRawKeyMask();
+	for (unsigned key = 0; key < 64; ++key) {
+		const uint64 bit = uint64_t{1} << key;
+		if ((currentKeys & bit) && !(state.rawKeyMask & bit))
+			pokey.ReleaseRawKey((uint8)key, false);
+		if (state.rawKeyMask & bit) pokey.PushRawKey((uint8)key, false);
+	}
+	pokey.SetShiftKeyState(state.shiftHeld, true);
+	pokey.SetControlKeyState(state.ctrlHeld);
+	g_sim.GetGTIA().SetConsoleSwitch(7, false);
+	g_sim.GetGTIA().SetConsoleSwitch(state.consoleMask, true);
+	// Preserve the selected port even when the snapshot will switch hardware
+	// from XL back to 5200. Selection bookkeeping is hardware independent;
+	// the following core restore replaces any temporary chip side effects.
+	if (auto* input = g_sim.GetInputManager())
+		input->Select5200Controller(state.selected5200,
+			state.pots5200Enabled);
+}
+
+void OnLocalKeyDown(uint8_t scan, bool repeat, bool raw) {
+	if (g_active) g_keyboard.Press(scan, repeat, raw);
+}
+
+void OnLocalKeyUp(uint8_t scan) {
+	if (g_active) g_keyboard.Release(scan);
+}
+
+void ReleaseLocalInputs() {
+	g_keyboard.Reset();
+	g_localConsoleMask = 0;
+	g_capturePort.Reset();
 }
 
 void OnLocalShiftCtrlState(bool shift, bool ctrl) {
-	if (!g_active) return;
-	g_shiftHeld = shift;
-	g_ctrlHeld  = ctrl;
+	if (g_active) g_keyboard.SetModifiers(shift, ctrl);
 }
 
 void OnLocalConsoleSwitch(uint8_t switchMask, bool down) {
@@ -351,20 +450,15 @@ ATNetplay::NetInput PollLocal() {
 	if (g_localConsoleMask & 0x02) in.buttons |= kBtnSelect;
 	if (g_localConsoleMask & 0x04) in.buttons |= kBtnOption;
 
-	// --- diagonal normalisation ---
-	if ((in.stickDir & (kDirUp | kDirDown)) == (kDirUp | kDirDown))
-		in.stickDir &= ~(kDirUp | kDirDown);
-	if ((in.stickDir & (kDirLeft | kDirRight)) == (kDirLeft | kDirRight))
-		in.stickDir &= ~(kDirLeft | kDirRight);
-
-	// --- keyboard (event-queued, one per frame) ---
-	if (g_keyCount > 0) {
-		in.keyScan = g_keyQueue[g_keyHead].scan;
-		g_keyHead = (g_keyHead + 1) & (kKeyQueueCap - 1);
-		--g_keyCount;
+	// Port writes include paddle fire and driving-controller quadrature;
+	// preserve their exact direction bits instead of normalizing them.
+	in.pot[0] = g_capturePort.GetPot(0);
+	in.pot[1] = g_capturePort.GetPot(1);
+	g_keyboard.Poll(in);
+	if (g_sim.GetHardwareMode() == kATHardwareMode_5200) {
+		in.keyHeldMask = g_capturePort.Get5200Keys();
+		if (g_capturePort.Get5200Top()) in.extFlags |= kExt5200Top;
 	}
-	if (g_shiftHeld) in.extFlags |= kExtShift;
-	if (g_ctrlHeld)  in.extFlags |= kExtCtrl;
 
 	return in;
 }
@@ -375,18 +469,9 @@ void ApplyFrameInputs(const ATNetplay::NetInput& p1,
 
 	const ATNetplay::NetInput *inputs[2] = { &p1, &p2 };
 
-	// Stick + trigger per-port.
-	for (int i = 0; i < 2; ++i) {
-		if (!g_port[i]) continue;
-		const ATNetplay::NetInput& in = *inputs[i];
-		uint8_t dirMask = 0x0F;
-		if (in.stickDir & kDirUp)    dirMask &= ~0x01;
-		if (in.stickDir & kDirDown)  dirMask &= ~0x02;
-		if (in.stickDir & kDirLeft)  dirMask &= ~0x04;
-		if (in.stickDir & kDirRight) dirMask &= ~0x08;
-		g_port[i]->SetDirInput(dirMask);
-		g_port[i]->SetTriggerDown((in.buttons & kBtnTrigger) != 0);
-	}
+	g_applied.inputs[0] = p1;
+	g_applied.inputs[1] = p2;
+	ApplyPorts();
 
 	// Console switches — OR both players.  On the Atari these are
 	// shared physical switches on the machine, so either player
@@ -401,39 +486,43 @@ void ApplyFrameInputs(const ATNetplay::NetInput& p1,
 	};
 	consoleMask |= mapConsole(p1.buttons);
 	consoleMask |= mapConsole(p2.buttons);
-	if (consoleMask != g_lastConsoleMask) {
+	if (consoleMask != g_applied.consoleMask) {
 		ATGTIAEmulator *gtia = &g_sim.GetGTIA();
-		uint8_t changed = consoleMask ^ g_lastConsoleMask;
+		uint8_t changed = consoleMask ^ g_applied.consoleMask;
 		uint8_t down    = consoleMask & changed;
 		uint8_t up      = ~consoleMask & changed;
 		if (down) gtia->SetConsoleSwitch(down, true);
 		if (up)   gtia->SetConsoleSwitch(up,   false);
-		g_lastConsoleMask = consoleMask;
+		g_applied.consoleMask = consoleMask;
 	}
 
-	// POKEY keyboard — edge-triggered per peer.  PushKey is transient
-	// (one character appears in the input queue); we only push when
-	// keyScan transitions 0→N or N→M, to avoid one key fire per
-	// frame while held.
-	ATPokeyEmulator& pokey = g_sim.GetPokey();
-	for (int i = 0; i < 2; ++i) {
-		const uint8_t k = inputs[i]->keyScan;
-		if (k != 0 && k != g_lastKeyScan[i]) {
-			// Apply shift/ctrl state first so PushKey's latched
-			// scan code sees the right modifiers.  This is a
-			// shared POKEY register — we write the OR of both
-			// players' modifier state so neither side loses
-			// modifiers to the other.
-			const bool shift =
-				(p1.extFlags & kExtShift) || (p2.extFlags & kExtShift);
-			const bool ctrl =
-				(p1.extFlags & kExtCtrl)  || (p2.extFlags & kExtCtrl);
-			pokey.SetShiftKeyState(shift, true);
-			pokey.SetControlKeyState(ctrl);
-			pokey.PushKey(k, false);
-		}
-		g_lastKeyScan[i] = k;
+	if (g_sim.GetHardwareMode() == kATHardwareMode_5200) {
+		if (auto* input = g_sim.GetInputManager())
+			Apply5200Keyboard(input->Get5200ControllerIndex());
+		return;
 	}
+
+	// Modifier release is state, not a keypress: apply it every frame.
+	ATPokeyEmulator& pokey = g_sim.GetPokey();
+	pokey.SetShiftKeyState(((p1.extFlags | p2.extFlags) & kExtShift) != 0,
+		true);
+	pokey.SetControlKeyState(((p1.extFlags | p2.extFlags) & kExtCtrl) != 0);
+
+	const uint64_t rawMask = p1.keyHeldMask | p2.keyHeldMask;
+	for (unsigned key = 0; key < 64; ++key) {
+		const uint64_t bit = uint64_t{1} << key;
+		if ((g_applied.rawKeyMask & bit) && !(rawMask & bit))
+			pokey.ReleaseRawKey((uint8_t)key, false);
+		// Reassert held keys after any cooked event switched modes.
+		if (rawMask & bit) pokey.PushRawKey((uint8_t)key, false);
+	}
+	g_applied.rawKeyMask = rawMask;
+	for (const auto* input : inputs) {
+		if ((input->keyFlags & (kKeyEvent | kKeyRaw)) == kKeyEvent)
+			pokey.PushKey(input->keyScan,
+				(input->keyFlags & kKeyRepeat) != 0);
+	}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +553,7 @@ void RouteRawKeyDown(ATPokeyEmulator* pokey, uint8_t scanCode,
 		// netplay mode POKEY's shift register is intentionally NOT
 		// kept in sync with the local user's modifier state, since
 		// modifiers are applied at the lockstep apply step instead.
-		OnLocalKeyDown(scanCode);
+		OnLocalKeyDown(scanCode | (g_keyboard.Modifiers() << 6));
 		return;
 	}
 	if (pokey) pokey->PushRawKey(scanCode, naturalKb);

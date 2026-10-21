@@ -140,53 +140,44 @@ static bool ParseSessionId(const char* s, size_t len, uint8_t out[16]) {
 
 struct WsRegistryHandle {
 	mutable std::mutex mu;
-	struct Slot {
-		unsigned long hostConnId   = 0;   // 0 = vacant
-		unsigned long joinerConnId = 0;
-	};
-	std::unordered_map<std::string, Slot> bySid;   // key = 16 raw bytes
-	struct mg_mgr* mgr = nullptr;     // set by RunWsBridge
-
-	static std::string Key(const uint8_t sid[16]) {
-		return std::string(reinterpret_cast<const char*>(sid), 16);
+	std::unordered_map<std::string, unsigned long> slots;
+	struct mg_mgr* mgr = nullptr;
+	static std::string Key(const uint8_t sid[16], uint8_t role,
+		const uint8_t* nonce = nullptr) {
+		std::string key(reinterpret_cast<const char*>(sid), 16);
+		if (role == kRelayRoleJoiner)
+			key.append(nonce ? reinterpret_cast<const char*>(nonce) : std::string(16, '\0').data(), 16);
+		return key;
 	}
-
-	// Returns true if (sid, role) was vacant and we registered.  False
-	// if the slot was already taken — caller should reject the upgrade
-	// with 409 Conflict.
-	bool Register(const uint8_t sid[16], uint8_t role, unsigned long id) {
-		std::lock_guard<std::mutex> lk(mu);
-		auto& slot = bySid[Key(sid)];
-		unsigned long& target = (role == kRelayRoleHost)
-			? slot.hostConnId : slot.joinerConnId;
-		if (target != 0) return false;
-		target = id;
-		return true;
+	bool Register(const uint8_t sid[16], uint8_t role, unsigned long id,
+		const uint8_t* nonce = nullptr) {
+		std::lock_guard<std::mutex> lock(mu);
+		return slots.emplace(Key(sid, role, nonce), id).second;
 	}
-
-	// Idempotent unregister by id.  Erases the slot entry entirely if
-	// both halves are vacant after the operation.
 	void Unregister(const uint8_t sid[16], unsigned long id) {
-		std::lock_guard<std::mutex> lk(mu);
-		auto it = bySid.find(Key(sid));
-		if (it == bySid.end()) return;
-		auto& slot = it->second;
-		if (slot.hostConnId   == id) slot.hostConnId   = 0;
-		if (slot.joinerConnId == id) slot.joinerConnId = 0;
-		if (slot.hostConnId == 0 && slot.joinerConnId == 0)
-			bySid.erase(it);
+		std::lock_guard<std::mutex> lock(mu);
+		for (auto it = slots.begin(); it != slots.end(); ) {
+			if (it->second == id && it->first.compare(0,16,Key(sid,0)) == 0) it = slots.erase(it);
+			else ++it;
+		}
 	}
-
-	// Returns the connection id of the OTHER side, or 0 if no peer.
-	unsigned long Other(const uint8_t sid[16], uint8_t senderRole) const {
-		std::lock_guard<std::mutex> lk(mu);
-		auto it = bySid.find(Key(sid));
-		if (it == bySid.end()) return 0;
-		const auto& slot = it->second;
-		return (senderRole == kRelayRoleHost)
-			? slot.joinerConnId : slot.hostConnId;
+	unsigned long Other(const uint8_t sid[16], uint8_t senderRole,
+		const uint8_t* nonce = nullptr) const {
+		std::lock_guard<std::mutex> lock(mu);
+		const auto found = slots.find(Key(sid, senderRole == kRelayRoleHost ? kRelayRoleJoiner : kRelayRoleHost, nonce));
+		return found == slots.end() ? 0 : found->second;
 	}
 };
+
+// Extract routing identity without interpreting emulation payloads.
+const uint8_t* PacketRouteNonce(const uint8_t* inner, size_t size) {
+	if (size < 4) return nullptr;
+	if (!std::memcmp(inner, "ANPU", 4) || !std::memcmp(inner, "NAPP", 4))
+		return size >= 20 ? inner + 4 : nullptr;
+	if (!std::memcmp(inner, "ANPL", 4)) return size >= 24 ? inner + 8 : nullptr;
+	if (!std::memcmp(inner, "ANPR", 4)) return size >= 22 ? inner + 6 : nullptr;
+	return nullptr;
+}
 
 // ---------------------------------------------------------------------
 // Per-connection state (bridge-thread-only; no mutex)
@@ -196,6 +187,8 @@ namespace {
 
 struct PerConn {
 	uint8_t sid[16]    = {};
+	uint8_t routeNonce[16] = {};
+	std::string ticket;
 	uint8_t role       = 0;
 	bool    registered = false;     // true between WS_OPEN and CLOSE
 	int64_t lastRecvMs = 0;         // updated on each WS msg AND pong
@@ -254,6 +247,8 @@ int64_t NowMs() {
 
 struct ParsedAuth {
 	uint8_t sid[16] = {};
+	uint8_t routeNonce[16] = {};
+	bool nonceOk = false;
 	uint8_t role    = 0;
 	std::string tokenHex;     // null-separated null-terminated copy
 	bool versionOk  = false;
@@ -315,6 +310,8 @@ static bool ParseSubprotocol(struct mg_str hdr, ParsedAuth& out) {
 			} else if (v.len == 6 && std::memcmp(v.buf, "joiner", 6) == 0) {
 				out.role = kRelayRoleJoiner; out.roleOk = true;
 			}
+		} else if (TokenStartsWith(t, "nonce.", v)) {
+			out.nonceOk = v.len == 32 && ParseSessionId(v.buf, v.len, out.routeNonce);
 		} else if (TokenStartsWith(t, "token.", v)) {
 			if (v.len == 32) {
 				// Validate hex shape; token validation happens in the
@@ -334,15 +331,10 @@ static bool ParseSubprotocol(struct mg_str hdr, ParsedAuth& out) {
 		}
 		// Unknown tokens are tolerated (forward-compat).
 	}
-	// Token is required for role=host (proves we are the legitimate
-	// host of this session — same secret as DELETE /v1/session/{id}).
-	// For role=joiner, token is OPTIONAL: anyone can ask the lobby to
-	// bridge them into a session, exactly as anyone can ASGR a UDP
-	// session id today.  The actual auth happens at the inner Altirra
-	// protocol level via NetHello + entry codes; the WS bridge is just
-	// a transport.
+	// Both roles require private authority. Joiners also bind a per-attempt
+	// nonce, so concurrent pending requests never claim the same route.
 	if (!out.versionOk || !out.sidOk || !out.roleOk) return false;
-	if (out.role == kRelayRoleHost && !out.tokenOk) return false;
+	if (!out.tokenOk || (out.role == kRelayRoleJoiner && !out.nonceOk)) return false;
 	return true;
 }
 
@@ -418,9 +410,9 @@ static bool ForwardToWsPeer(BridgeState& st, unsigned long otherConnId,
 bool WsBridgeForwardToWs(WsRegistryHandle* reg,
                          const uint8_t sidRaw[16], uint8_t senderRole,
                          const uint8_t* inner, size_t innerLen,
-                         WsBridgeStats& stats) {
+                         WsBridgeStats& stats, const uint8_t* routeNonce) {
 	if (!reg || !reg->mgr) return false;
-	unsigned long otherId = reg->Other(sidRaw, senderRole);
+	unsigned long otherId = reg->Other(sidRaw, senderRole, routeNonce ? routeNonce : PacketRouteNonce(inner, innerLen));
 	if (otherId == 0) return false;
 
 	uint8_t recipientRole = (senderRole == kRelayRoleHost)
@@ -674,7 +666,7 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 	// 403 (bad token) from 410 (gone).  Use the upgrade-then-close
 	// path so the browser can read the close code + reason.
 	WsAuthResult vr = st.validateFn(auth.sid, auth.role,
-		auth.tokenHex.c_str(), st.validateCtx);
+		auth.tokenHex.c_str(), auth.routeNonce, st.validateCtx);
 	if (vr != WsAuthResult::kOk) {
 		st.stats->droppedAuth.fetch_add(1, std::memory_order_relaxed);
 		st.stats->upgradesRejectedAuth.fetch_add(1,
@@ -702,7 +694,7 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 	// task for slice 6 which unifies the registries.)  Like the
 	// validate path above, upgrade-then-close so the browser sees a
 	// real close code (4009) instead of an opaque 1006.
-	if (!st.reg->Register(auth.sid, auth.role, c->id)) {
+	if (!st.reg->Register(auth.sid, auth.role, c->id, auth.routeNonce)) {
 		st.stats->upgradesRejectedConflict.fetch_add(1,
 			std::memory_order_relaxed);
 		RejectAfterUpgrade(c, hm, kWsCloseRoleTaken,
@@ -714,6 +706,8 @@ static void HandleHttpMsg(BridgeState& st, struct mg_connection* c,
 	// raw sid; per-conn state here mirrors it for fast path on close.
 	PerConn& pc = GetPerConn(st, c);
 	std::memcpy(pc.sid, auth.sid, 16);
+	std::memcpy(pc.routeNonce, auth.routeNonce, 16);
+	pc.ticket = auth.tokenHex;
 	pc.role       = auth.role;
 	pc.registered = true;
 	pc.lastRecvMs = NowMs();
@@ -769,6 +763,12 @@ static void HandleWsMsg(BridgeState& st, struct mg_connection* c,
 		return;
 	}
 	PerConn& pc = it->second;
+	if (st.validateFn(pc.sid, pc.role, pc.ticket.c_str(), pc.routeNonce,
+		st.validateCtx) != WsAuthResult::kOk) {
+		st.stats->droppedAuth.fetch_add(1, std::memory_order_relaxed);
+		c->is_closing = 1;
+		return;
+	}
 
 	uint8_t envelopeRole = (uint8_t)wm->data.buf[0];
 	if (envelopeRole != pc.role) {
@@ -786,6 +786,12 @@ static void HandleWsMsg(BridgeState& st, struct mg_connection* c,
 	const uint8_t* inner    = (const uint8_t*)wm->data.buf + 1;
 	size_t         innerLen = wm->data.len - 1;
 
+	const auto* packetNonce = PacketRouteNonce(inner, innerLen);
+	if (!packetNonce || (pc.role == kRelayRoleJoiner
+		&& std::memcmp(packetNonce, pc.routeNonce, 16))) {
+		st.stats->droppedAuth.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
 	// Snapshot-channel diagnostic: count chunks ingested from the WS
 	// host so the metrics endpoint can pinpoint which leg of a failed
 	// snapshot transfer dropped the traffic.
@@ -801,22 +807,25 @@ static void HandleWsMsg(BridgeState& st, struct mg_connection* c,
 	// whether anyone's listening.  We only peek + count; decoding
 	// (re-using the netplay protocol's decoders) happens inside the
 	// callback to keep the bridge protocol-format-agnostic.
-	if (innerLen >= 4) {
-		const uint32_t innerMagic = PeekInnerMagicLE(inner);
+	const uint8_t* observed = inner;
+	size_t observedLen = innerLen;
+	if (innerLen >= 28 && !std::memcmp(inner, "ANPU", 4)) { observed += 24; observedLen -= 24; }
+	if (observedLen >= 4) {
+		const uint32_t innerMagic = PeekInnerMagicLE(observed);
 		if (innerMagic == kNetPhaseMagicLE
 		 || innerMagic == kNetEventsMagicLE
 		 || innerMagic == kNetHeartbeatMagicLE) {
 			st.stats->eventsObserved.fetch_add(1, std::memory_order_relaxed);
 			if (st.eventsObserveFn) {
 				st.eventsObserveFn(pc.sid, pc.role, innerMagic,
-				                   inner, innerLen,
+				                   observed, observedLen,
 				                   st.eventsObserveCtx);
 			}
 		}
 	}
 
 	// Try WS-WS first; fall back to UDP relay table.
-	unsigned long otherId = st.reg->Other(pc.sid, pc.role);
+	unsigned long otherId = st.reg->Other(pc.sid, pc.role, PacketRouteNonce(inner, innerLen));
 	if (otherId != 0) {
 		ForwardToWsPeer(st, otherId, pc.role, inner, innerLen);
 		return;
@@ -831,7 +840,7 @@ static void HandleClose(BridgeState& st, struct mg_connection* c) {
 	if (pc.registered) {
 		// Send synthetic Bye to the surviving peer (if any) so it
 		// transitions to ended state immediately.
-		SendSyntheticBye(st, pc);
+		// Peer liveness is handled by authenticated gameplay heartbeats.
 		st.reg->Unregister(pc.sid, c->id);
 		// v6 — host-WS gone; arm the Store's grace timer.  After
 		// kHostWsLostGraceMs the session is dropped from the listing

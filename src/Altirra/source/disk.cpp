@@ -16,6 +16,8 @@
 //	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 #include <stdafx.h>
+#include <algorithm>
+#include <iterator>
 #include <vd2/system/error.h>
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
@@ -343,7 +345,11 @@ public:
 		rw.Transfer("active_command_sector", &mActiveCommandSector);
 		rw.Transfer("active_command_phys_sector", &mActiveCommandPhysSectorPlus1);
 		rw.Transfer("active_command_timer", &mActiveCommandTimer);
-		rw.Transfer("active_command_buffered", &mActiveCommandTimer);
+		// MERGE NOTE: upstream exchanged the timer twice. Keep its numeric
+		// legacy field readable and use a separate key for the missing flag.
+		uint32 legacyBufferedTimer = mActiveCommandTimer;
+		rw.Transfer("active_command_buffered", &legacyBufferedTimer);
+		rw.Transfer("active_command_buffered_v2", &mbActiveCommandBuffered);
 		rw.Transfer("active_command_buffered_read_track", &mbActiveCommandReadTrack);
 		rw.Transfer("active_command_buffered_read_error", &mbActiveCommandReadError);
 		rw.Transfer("active_command_buffered_write_track", &mbActiveCommandWriteTrack);
@@ -353,7 +359,72 @@ public:
 		rw.Transfer("last_read_sector", &mLastReadSector);
 		rw.Transfer("active_command", &mpActiveCommand);
 
+		// Fork extension: frame rollback also preserves drive firmware and
+		// transfer state that ordinary mechanical-position snapshots omit.
+		rw.Transfer("exact_runtime", &mbExactRuntime);
+		rw.Transfer("runtime_firmware_profile", &mRuntimeFirmwareProfile);
+		rw.Transfer("motor_event_delay", &mMotorEventDelay);
+		rw.Transfer("motor_deadline_offset", &mMotorDeadlineOffset);
+		rw.Transfer("rotation_counter", &mRotationalCounter);
+		rw.Transfer("rotation_update_offset", &mRotationUpdateOffset);
+		rw.Transfer("rotations", &mRotations);
+		rw.Transfer("exact_command_start_offset", &mExactCommandStartOffset);
+		rw.Transfer("exact_command_sector", &mExactCommandSector);
+		rw.Transfer("exact_last_read_sector", &mExactLastReadSector);
+		rw.Transfer("exact_motor_off_time_suspended", &mbMotorOffTimeSuspended);
+		rw.Transfer("exact_last_accel_time_skew", &mLastAccelTimeSkew);
+		rw.Transfer("exact_receive_checksum_ok", &mbReceiveChecksumOK);
+		rw.Transfer("exact_transfer_length", &mTransferLength);
+		rw.Transfer("exact_transfer_complete_rot_pos", &mTransferCompleteRotPos);
+		rw.Transfer("exact_fdcstatus", &mFDCStatus);
+		rw.Transfer("exact_original_device", &mOriginalDevice);
+		rw.Transfer("exact_original_command", &mOriginalCommand);
+		rw.Transfer("exact_active_command_high_speed", &mbActiveCommandHighSpeed);
+		rw.Transfer("exact_active_command_wait", &mbActiveCommandWait);
+		rw.Transfer("exact_active_command_start_rot_pos", &mActiveCommandStartRotPos);
+		rw.Transfer("exact_active_command_search_start_rot_pos", &mActiveCommandSearchStartRotPos);
+		rw.Transfer("exact_custom_code_state", &mCustomCodeState);
+		rw.Transfer("exact_phantom_sector_counter", &mPhantomSectorCounter);
+		rw.Transfer("exact_weak_bit_lfsr", &mWeakBitLFSR);
+		rw.Transfer("exact_sectors_per_track", &mSectorsPerTrack);
+		rw.Transfer("exact_track_count", &mTrackCount);
+		rw.Transfer("exact_side_count", &mSideCount);
+		rw.Transfer("exact_mfm", &mbMFM);
+		rw.Transfer("exact_high_density", &mbHighDensity);
+		rw.Transfer("exact_track_buffering_enabled", &mbTrackBufferingEnabled);
+		rw.Transfer("exact_command_valid", &mbCommandValid);
+		rw.Transfer("exact_command_frame_high_speed", &mbCommandFrameHighSpeed);
+		rw.Transfer("exact_last_op_error", &mbLastOpError);
+		rw.Transfer("exact_boot_sector_count", &mBootSectorCount);
+		rw.Transfer("exact_total_sector_count", &mTotalSectorCount);
+		rw.Transfer("exact_sector_size", &mSectorSize);
+		rw.Transfer("exact_last_sector", &mLastSector);
+		rw.Transfer("exact_format_sector_size", &mFormatSectorSize);
+		rw.Transfer("exact_format_sector_count", &mFormatSectorCount);
+		rw.Transfer("exact_format_boot_sector_count", &mFormatBootSectorCount);
+		rw.Transfer("exact_cycles_per_siobit_current", &mCyclesPerSIOBitCurrent);
+		rw.Transfer("exact_cycles_per_siobyte_current", &mCyclesPerSIOByteCurrent);
+		rw.Transfer("exact_send_packet", &mSendPacket);
+		rw.Transfer("exact_receive_packet", &mReceivePacket);
+		rw.Transfer("exact_drive_ram", &mDriveRAM);
+		rw.Transfer("exact_forced_sector_order", &mForcedSectorOrder);
+		rw.Transfer("exact_phantom_sector_counters", &mPhantomSectorCounters);
+		rw.TransferArray("exact_percom", mPERCOM);
+
 		if constexpr (T::IsReader) {
+			if (mbExactRuntime &&
+				(mRuntimeFirmwareProfile > 2
+				|| mSendPacket.size() != 8192 + 16
+				|| mReceivePacket.size() != 8192 + 16
+				|| mDriveRAM.size() != 8192
+				|| mMotorEventDelay >= 0x80000000u
+				|| mTransferLength > 8192 + 16
+				|| mSectorSize < 0 || mSectorSize > 8192
+				|| mBootSectorCount < 0 || mTotalSectorCount < 0
+				|| mFormatSectorSize < 0 || mFormatSectorSize > 8192
+				|| mFormatSectorCount < 0 || mFormatBootSectorCount < 0
+				|| !mCyclesPerSIOBitCurrent || !mCyclesPerSIOByteCurrent))
+				throw ATInvalidSaveStateException();
 			// Allow for up to a ~10 minute idle time -- beyond that consider it broken.
 			if (mIdleTimer >= 0x40000000)
 				throw ATInvalidSaveStateException();
@@ -380,15 +451,67 @@ public:
 	sint32 mBufferedTrack = 0;
 	uint16 mLastReadSector = 0;
 
+	// Packet sizes mirror ATDiskEmulator's existing 8K command buffers.
+	bool mbExactRuntime = false;
+	uint8 mRuntimeFirmwareProfile = 0;
+	uint32 mMotorEventDelay = 0;
+	uint32 mMotorDeadlineOffset = 0;
+	uint32 mRotationalCounter = 0;
+	uint32 mRotationUpdateOffset = 0;
+	uint32 mRotations = 0;
+	uint32 mExactCommandStartOffset = 0;
+	uint32 mExactCommandSector = 0;
+	uint32 mExactLastReadSector = 0;
+	bool mbMotorOffTimeSuspended = {};
+	uint32 mLastAccelTimeSkew = {};
+	bool mbReceiveChecksumOK = {};
+	uint32 mTransferLength = {};
+	uint32 mTransferCompleteRotPos = {};
+	uint8 mFDCStatus = {};
+	uint8 mOriginalDevice = {};
+	uint8 mOriginalCommand = {};
+	bool mbActiveCommandHighSpeed = {};
+	bool mbActiveCommandWait = {};
+	float mActiveCommandStartRotPos = {};
+	float mActiveCommandSearchStartRotPos = {};
+	uint8 mCustomCodeState = {};
+	uint32 mPhantomSectorCounter = {};
+	uint32 mWeakBitLFSR = {};
+	uint32 mSectorsPerTrack = {};
+	uint32 mTrackCount = {};
+	uint32 mSideCount = {};
+	bool mbMFM = {};
+	bool mbHighDensity = {};
+	bool mbTrackBufferingEnabled = {};
+	bool mbCommandValid = {};
+	bool mbCommandFrameHighSpeed = {};
+	bool mbLastOpError = {};
+	int mBootSectorCount = {};
+	int mTotalSectorCount = {};
+	int mSectorSize = {};
+	uint32 mLastSector = {};
+	int mFormatSectorSize = {};
+	int mFormatSectorCount = {};
+	int mFormatBootSectorCount = {};
+	uint32 mCyclesPerSIOBitCurrent = {};
+	uint32 mCyclesPerSIOByteCurrent = {};
+	vdvector<uint8> mSendPacket;
+	vdvector<uint8> mReceivePacket;
+	vdvector<uint8> mDriveRAM;
+	vdvector<sint8> mForcedSectorOrder;
+	vdvector<uint32> mPhantomSectorCounters;
+	uint8 mPERCOM[12] {};
+
 	vdrefptr<IATObjectState> mpActiveCommand;
 };
 
 void ATDiskEmulator::SaveState(IATObjectState **pp) const {
-	const uint32 t = mMotorOffTime - mpScheduler->GetTick();
+	// MERGE NOTE: timers are relative to now, not the motor deadline.
+	const uint32 t = mpScheduler->GetTick();
 	vdrefptr<ATSaveStateDisk> state(new ATSaveStateDisk);
 
 	if (mpMotorOffEvent)
-		state->mIdleTimer = mMotorOffTime - t;
+		state->mIdleTimer = (uint32)std::max<sint32>(1, (sint32)(mMotorOffTime - t));
 	else
 		state->mIdleTimer = 0;
 
@@ -411,6 +534,65 @@ void ATDiskEmulator::SaveState(IATObjectState **pp) const {
 	state->mBufferedTrack = mBufferedTrack;
 	state->mLastReadSector = mLastReadSector;
 
+	state->mbExactRuntime = true;
+	// Indus firmware upload changes runtime timing without changing the
+	// user's configured drive model. Preserve that firmware choice too.
+	state->mRuntimeFirmwareProfile =
+		mpProfile == &ATGetDiskProfileIndusGTSynchromesh() ? 1 :
+		mpProfile == &ATGetDiskProfileIndusGTSuperSynchromesh() ? 2 : 0;
+	state->mMotorEventDelay = mpMotorOffEvent
+		? mpSlowScheduler->GetTicksToEvent(mpMotorOffEvent) : 0;
+	state->mMotorDeadlineOffset = mMotorOffTime - t;
+	state->mRotationalCounter = mRotationalCounter;
+	state->mRotationUpdateOffset = mLastRotationUpdateCycle - t;
+	state->mRotations = mRotations;
+	state->mExactCommandStartOffset = mActiveCommandStartTime - t;
+	state->mExactCommandSector = mActiveCommandSector;
+	state->mExactLastReadSector = mLastReadSector;
+	state->mbMotorOffTimeSuspended = mbMotorOffTimeSuspended;
+	state->mLastAccelTimeSkew = mLastAccelTimeSkew;
+	state->mbReceiveChecksumOK = mbReceiveChecksumOK;
+	state->mTransferLength = mTransferLength;
+	state->mTransferCompleteRotPos = mTransferCompleteRotPos;
+	state->mFDCStatus = mFDCStatus;
+	state->mOriginalDevice = mOriginalDevice;
+	state->mOriginalCommand = mOriginalCommand;
+	state->mbActiveCommandHighSpeed = mbActiveCommandHighSpeed;
+	state->mbActiveCommandWait = mbActiveCommandWait;
+	state->mActiveCommandStartRotPos = mActiveCommandStartRotPos;
+	state->mActiveCommandSearchStartRotPos = mActiveCommandSearchStartRotPos;
+	state->mCustomCodeState = mCustomCodeState;
+	state->mPhantomSectorCounter = mPhantomSectorCounter;
+	state->mWeakBitLFSR = mWeakBitLFSR;
+	state->mSectorsPerTrack = mSectorsPerTrack;
+	state->mTrackCount = mTrackCount;
+	state->mSideCount = mSideCount;
+	state->mbMFM = mbMFM;
+	state->mbHighDensity = mbHighDensity;
+	state->mbTrackBufferingEnabled = mbTrackBufferingEnabled;
+	state->mbCommandValid = mbCommandValid;
+	state->mbCommandFrameHighSpeed = mbCommandFrameHighSpeed;
+	state->mbLastOpError = mbLastOpError;
+	state->mBootSectorCount = mBootSectorCount;
+	state->mTotalSectorCount = mTotalSectorCount;
+	state->mSectorSize = mSectorSize;
+	state->mLastSector = mLastSector;
+	state->mFormatSectorSize = mFormatSectorSize;
+	state->mFormatSectorCount = mFormatSectorCount;
+	state->mFormatBootSectorCount = mFormatBootSectorCount;
+	state->mCyclesPerSIOBitCurrent = mCyclesPerSIOBitCurrent;
+	state->mCyclesPerSIOByteCurrent = mCyclesPerSIOByteCurrent;
+	state->mSendPacket.assign(std::begin(mSendPacket), std::end(mSendPacket));
+	state->mReceivePacket.assign(std::begin(mReceivePacket), std::end(mReceivePacket));
+	state->mDriveRAM.assign(std::begin(mDriveRAM), std::end(mDriveRAM));
+	std::copy(std::begin(mPERCOM), std::end(mPERCOM), state->mPERCOM);
+	state->mForcedSectorOrder.reserve(mExtPhysSectors.size());
+	for (const auto& sector : mExtPhysSectors)
+		state->mForcedSectorOrder.push_back(sector.mForcedOrder);
+	state->mPhantomSectorCounters.reserve(mExtVirtSectors.size());
+	for (const auto& sector : mExtVirtSectors)
+		state->mPhantomSectorCounters.push_back(sector.mPhantomSectorCounter);
+
 	mpSIOInterface->SaveActiveCommandState(~state->mpActiveCommand);
 
 	*pp = state.release();
@@ -418,7 +600,27 @@ void ATDiskEmulator::SaveState(IATObjectState **pp) const {
 
 void ATDiskEmulator::LoadState(const IATObjectState& state0) {
 	const ATSaveStateDisk& state = atser_cast<const ATSaveStateDisk&>(state0);
-	const uint32 t = mpScheduler->GetTick(); 
+	const uint32 t = mpScheduler->GetTick();
+
+	const ATDiskProfile* restoredProfile = &ATGetDiskProfile(mEmuMode);
+	if (state.mbExactRuntime && state.mRuntimeFirmwareProfile) {
+		if (mEmuMode != kATDiskEmulationMode_IndusGT)
+			throw ATInvalidSaveStateException();
+		restoredProfile = state.mRuntimeFirmwareProfile == 1
+			? &ATGetDiskProfileIndusGTSynchromesh()
+			: &ATGetDiskProfileIndusGTSuperSynchromesh();
+	}
+
+	// A rollback must restore the same mounted geometry. Check before
+	// installing any bytes; never resize sector metadata to untrusted sizes.
+	if (state.mbExactRuntime &&
+		(state.mForcedSectorOrder.size() != mExtPhysSectors.size()
+		|| state.mPhantomSectorCounters.size() != mExtVirtSectors.size()
+		|| state.mRotationalCounter >= restoredProfile->mCyclesPerDiskRotation))
+		throw ATInvalidSaveStateException();
+
+	if (state.mbExactRuntime)
+		mpProfile = restoredProfile;
 
 	if (state.mIdleTimer > 0) {
 		TurnOnMotor();
@@ -453,6 +655,60 @@ void ATDiskEmulator::LoadState(const IATObjectState& state0) {
 		mActiveCommandStartTime = t - state.mActiveCommandTimer;
 
 	mpSIOInterface->LoadActiveCommandState(state.mpActiveCommand);
+	if (state.mbExactRuntime) {
+		mRotationalCounter = state.mRotationalCounter;
+		mLastRotationUpdateCycle = t + state.mRotationUpdateOffset;
+		mRotations = state.mRotations;
+		mActiveCommandStartTime = t + state.mExactCommandStartOffset;
+		mActiveCommandSector = state.mExactCommandSector;
+		mLastReadSector = state.mExactLastReadSector;
+		mbMotorOffTimeSuspended = state.mbMotorOffTimeSuspended;
+		mLastAccelTimeSkew = state.mLastAccelTimeSkew;
+		mbReceiveChecksumOK = state.mbReceiveChecksumOK;
+		mTransferLength = state.mTransferLength;
+		mTransferCompleteRotPos = state.mTransferCompleteRotPos;
+		mFDCStatus = state.mFDCStatus;
+		mOriginalDevice = state.mOriginalDevice;
+		mOriginalCommand = state.mOriginalCommand;
+		mbActiveCommandHighSpeed = state.mbActiveCommandHighSpeed;
+		mbActiveCommandWait = state.mbActiveCommandWait;
+		mActiveCommandStartRotPos = state.mActiveCommandStartRotPos;
+		mActiveCommandSearchStartRotPos = state.mActiveCommandSearchStartRotPos;
+		mCustomCodeState = state.mCustomCodeState;
+		mPhantomSectorCounter = state.mPhantomSectorCounter;
+		mWeakBitLFSR = state.mWeakBitLFSR;
+		mSectorsPerTrack = state.mSectorsPerTrack;
+		mTrackCount = state.mTrackCount;
+		mSideCount = state.mSideCount;
+		mbMFM = state.mbMFM;
+		mbHighDensity = state.mbHighDensity;
+		mbTrackBufferingEnabled = state.mbTrackBufferingEnabled;
+		mbCommandValid = state.mbCommandValid;
+		mbCommandFrameHighSpeed = state.mbCommandFrameHighSpeed;
+		mbLastOpError = state.mbLastOpError;
+		mBootSectorCount = state.mBootSectorCount;
+		mTotalSectorCount = state.mTotalSectorCount;
+		mSectorSize = state.mSectorSize;
+		mLastSector = state.mLastSector;
+		mFormatSectorSize = state.mFormatSectorSize;
+		mFormatSectorCount = state.mFormatSectorCount;
+		mFormatBootSectorCount = state.mFormatBootSectorCount;
+		mCyclesPerSIOBitCurrent = state.mCyclesPerSIOBitCurrent;
+		mCyclesPerSIOByteCurrent = state.mCyclesPerSIOByteCurrent;
+		std::copy(state.mSendPacket.begin(), state.mSendPacket.end(), mSendPacket);
+		std::copy(state.mReceivePacket.begin(), state.mReceivePacket.end(), mReceivePacket);
+		std::copy(state.mDriveRAM.begin(), state.mDriveRAM.end(), mDriveRAM);
+		std::copy(std::begin(state.mPERCOM), std::end(state.mPERCOM), mPERCOM);
+		for (size_t i = 0; i < mExtPhysSectors.size(); ++i)
+			mExtPhysSectors[i].mForcedOrder = state.mForcedSectorOrder[i];
+		for (size_t i = 0; i < mExtVirtSectors.size(); ++i)
+			mExtVirtSectors[i].mPhantomSectorCounter = state.mPhantomSectorCounters[i];
+		mMotorOffTime = t + state.mMotorDeadlineOffset;
+		mpSlowScheduler->UnsetEvent(mpMotorOffEvent);
+		if (state.mMotorEventDelay)
+			mpSlowScheduler->SetEvent(state.mMotorEventDelay, this,
+				kATDiskEventMotorOff, mpMotorOffEvent);
+	}
 }
 
 uint32 ATDiskEmulator::GetNetplayDeterminismFingerprint() const {

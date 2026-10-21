@@ -5,6 +5,7 @@
 #include "lockstep.h"
 
 #include <cstring>
+#include <algorithm>
 
 namespace ATNetplay {
 
@@ -96,7 +97,10 @@ void LockstepLoop::PutPeerHash(uint32_t frame, uint32_t v) {
 
 void LockstepLoop::Begin(Slot slot, uint32_t inputDelay) {
 	mSlot = slot;
-	mInputDelay = inputDelay;
+	mInputDelay = std::min(inputDelay, kDelayMax);
+	inputDelay = mInputDelay;
+	mStartFrame = 0; mPeerReceivedNext = inputDelay; mPeerAckNext = 0;
+	mRollbackFrame = -1;
 	mCurrentFrame = 0;
 	mDesyncFrame = -1;
 	// mDesyncInjectFrame left as set by SetDesyncInjectFrame()
@@ -120,6 +124,7 @@ void LockstepLoop::Begin(Slot slot, uint32_t inputDelay) {
 		mPeerInputs[i]  = InputSlot{};
 		mLocalHashes[i] = HashSlot{};
 		mPeerHashes[i]  = HashSlot{};
+		mUsedPeerInputs[i] = InputSlot{};
 	}
 
 	// Warmup: the first `inputDelay` emu frames have no inputs from
@@ -143,7 +148,7 @@ void LockstepLoop::SubmitLocalInput(const NetInput& local) {
 	// (key = currentFrame + D_old) never gets ferried (the post-switch
 	// window starts at currentFrame + D_new - 4, ahead of D_old).  See
 	// the §11.4 design notes in docs/netplay-architecture.md.
-	if (mPendingDelay != 0 && mCurrentFrame >= mPendingDelaySwitchFrame) {
+	if (mPendingDelay != 0 && (int32_t)(mCurrentFrame - mPendingDelaySwitchFrame) >= 0) {
 		ApplyDelayRatchet();
 	}
 
@@ -151,65 +156,139 @@ void LockstepLoop::SubmitLocalInput(const NetInput& local) {
 	// is ready when emulation reaches that frame `inputDelay` ticks
 	// from now.  See design doc §4.
 	const uint32_t keyFrame = mCurrentFrame + mInputDelay;
-	PutLocalInput(keyFrame, local);
+	NetInput existing;
+	if (!GetLocalInput(keyFrame, existing)) PutLocalInput(keyFrame, local);
+}
+
+bool LockstepLoop::NeedsLocalInput() const {
+	NetInput input;
+	if (mPendingDelay && (int32_t)(mCurrentFrame - mPendingDelaySwitchFrame) >= 0)
+		return !GetLocalInput(mCurrentFrame + mPendingDelay, input);
+	return !GetLocalInput(mCurrentFrame + mInputDelay, input);
+}
+
+static bool SameInput(const NetInput& a, const NetInput& b) {
+	return a.stickDir == b.stickDir && a.buttons == b.buttons &&
+		a.keyScan == b.keyScan && a.extFlags == b.extFlags &&
+		a.keyFlags == b.keyFlags && a.keyHeldMask == b.keyHeldMask &&
+		a.pot[0] == b.pot[0] && a.pot[1] == b.pot[1];
+}
+
+void LockstepLoop::UpdateConfirmedInputs() {
+	NetInput input;
+	for (uint32_t n = 0; n < kRingSize && GetPeerInput(mPeerReceivedNext, input); ++n)
+		++mPeerReceivedNext;
+}
+
+uint32_t LockstepLoop::ConfirmedFrame() const {
+	return (int32_t)(mPeerReceivedNext - mCurrentFrame) < 0
+		? mPeerReceivedNext : mCurrentFrame;
 }
 
 void LockstepLoop::OnPeerInputPacket(const NetInputPacket& pkt, uint64_t nowMs) {
+	// A bounded signed frame window prevents stale/future datagrams from
+	// evicting the live ring. Unsigned subtraction supports frame rollover.
+	const int32_t delta = (int32_t)(pkt.baseFrame - mCurrentFrame);
+	if (pkt.count > kRedundancyR || delta < -(int32_t)(kRingSize / 2) ||
+		delta > (int32_t)(kRingSize / 2)) return;
 	mLastPeerRecvMs = nowMs;
 	mAnyPeerPacketSeen = true;
-
-	// Merge sliding-window inputs.
-	for (uint16_t i = 0; i < pkt.count && i < (uint16_t)kRedundancyR; ++i) {
-		const uint32_t f = pkt.baseFrame + (uint32_t)i;
-		PutPeerInput(f, pkt.inputs[i]);
-	}
-
-	// Record peer's claimed hash at their ackedFrame.  ackedFrame is
-	// uint16 on the wire — for PoC this is fine; a production version
-	// widens this when sessions exceed ~18 minutes at 60 Hz.  For
-	// now, retro-check using the low 16 bits is consistent with how
-	// the peer built the packet.
-	if (pkt.stateHashLow32 != 0) {
-		const uint32_t f = (uint32_t)pkt.ackedFrame;
-		PutPeerHash(f, pkt.stateHashLow32);
-
-		// Retro-check: if we've already applied frame f locally,
-		// compare now — the peer's apply-time check wouldn't have
-		// fired if we computed our hash after they already had
-		// theirs.  Only the receiving side can notice in that case.
-		uint32_t mine = 0;
-		if (GetLocalHash(f, mine) &&
-		    mine != pkt.stateHashLow32 &&
-		    mDesyncFrame < 0) {
-			mDesyncFrame = (int64_t)f;
+	const uint32_t localEnd = mCurrentFrame + mInputDelay + 1;
+	if ((int32_t)(pkt.receivedThrough - mPeerAckNext) > 0 &&
+		(int32_t)(pkt.receivedThrough - localEnd) <= 0)
+		mPeerAckNext = pkt.receivedThrough;
+	for (uint16_t i = 0; i < pkt.count; ++i) {
+		const uint32_t f = pkt.baseFrame + i;
+		InputSlot& used = mUsedPeerInputs[f & kRingMask];
+		NetInput existing;
+		if (!GetPeerInput(f, existing)) {
+			if (used.occupied && used.frame == f && !SameInput(used.input, pkt.inputs[i]) &&
+				(int32_t)(f - mCurrentFrame) <= 0 &&
+				(mRollbackFrame < 0 || (int32_t)(f - (uint32_t)mRollbackFrame) < 0))
+				mRollbackFrame = f;
+			PutPeerInput(f, pkt.inputs[i]);
 		}
 	}
+	UpdateConfirmedInputs();
+	if (pkt.stateHashLow32 && mRollbackFrame < 0 &&
+		(int32_t)(pkt.ackedFrame - ConfirmedFrame()) < 0 &&
+		(int32_t)(pkt.ackedFrame - mCurrentFrame) >= -(int32_t)(kRingSize / 2)) {
+		PutPeerHash(pkt.ackedFrame, pkt.stateHashLow32);
+		uint32_t mine = 0;
+		if (GetLocalHash(pkt.ackedFrame, mine) && mine != pkt.stateHashLow32 && mDesyncFrame < 0)
+			mDesyncFrame = pkt.ackedFrame;
+	}
+}
+
+bool LockstepLoop::PredictPeerInput(uint32_t frame, NetInput& out) const {
+	if (!mRollbackWindow || (int32_t)(frame - mPeerReceivedNext) < 0 ||
+		(uint32_t)(frame - mPeerReceivedNext) >= mRollbackWindow) return false;
+	for (uint32_t back = 1; back < kRingSize / 2; ++back) {
+		if (GetPeerInput(frame - back, out)) {
+			// Predict levels, never generate a second cooked key event.
+			out.keyFlags = 0;
+			out.keyScan = 0;
+			return true;
+		}
+	}
+	out = NetInput{};
+	return true;
 }
 
 bool LockstepLoop::CanAdvance() const {
-	if (mDesyncFrame >= 0) return false;
-	NetInput li, pi;
-	return GetLocalInput(mCurrentFrame, li) &&
-	       GetPeerInput(mCurrentFrame, pi);
+	if (mDesyncFrame >= 0 || mRollbackFrame >= 0) return false;
+	if (mRollbackWindow && (int32_t)(mCurrentFrame - mPeerReceivedNext) >= (int32_t)mRollbackWindow) return false;
+	NetInput local, peer;
+	return GetLocalInput(mCurrentFrame, local) &&
+		(GetPeerInput(mCurrentFrame, peer) || PredictPeerInput(mCurrentFrame, peer));
+}
+
+bool LockstepLoop::GetInputsForFrame(uint32_t frame, NetInput& outP1, NetInput& outP2) const {
+	NetInput local, peer;
+	if (!GetLocalInput(frame, local) ||
+		(!GetPeerInput(frame, peer) && !PredictPeerInput(frame, peer))) return false;
+	if (mSlot == Slot::Host) { outP1 = local; outP2 = peer; }
+	else { outP1 = peer; outP2 = local; }
+	return true;
 }
 
 bool LockstepLoop::GetInputsForCurrentFrame(NetInput& outP1, NetInput& outP2) const {
-	NetInput li, pi;
-	if (!GetLocalInput(mCurrentFrame, li)) return false;
-	if (!GetPeerInput(mCurrentFrame, pi))  return false;
-
-	// Canonical slot ordering: the host's input is always P1, the
-	// joiner's is always P2.  The emulated machine sees the same
-	// assignment no matter which peer is "us".
-	if (mSlot == Slot::Host) {
-		outP1 = li; outP2 = pi;
-	} else {
-		outP1 = pi; outP2 = li;
+	// The frontend advances a frame in several scanline chunks. Freeze
+	// the input when applied, not after its final chunk; a packet arriving
+	// between those points must correct the partially simulated frame.
+	InputSlot& used = mUsedPeerInputs[mCurrentFrame & kRingMask];
+	if (used.occupied && used.frame == mCurrentFrame) {
+		NetInput local;
+		if (!GetLocalInput(mCurrentFrame, local)) return false;
+		if (mSlot == Slot::Host) { outP1 = local; outP2 = used.input; }
+		else { outP1 = used.input; outP2 = local; }
+		return true;
 	}
+	if (!GetInputsForFrame(mCurrentFrame, outP1, outP2)) return false;
+	used.frame = mCurrentFrame;
+	used.input = mSlot == Slot::Host ? outP2 : outP1;
+	used.occupied = 1;
+	return true;
+}
+
+bool LockstepLoop::RewindTo(uint32_t frame) {
+	if ((int32_t)(mCurrentFrame - frame) < 0 ||
+		mCurrentFrame - frame > mRollbackWindow) return false;
+	const uint32_t distance = mCurrentFrame - frame;
+	for (uint32_t n = 0; n <= distance; ++n) {
+		const uint32_t f = frame + n;
+		mLocalHashes[f & kRingMask] = HashSlot{};
+		mPeerHashes[f & kRingMask] = HashSlot{};
+		mUsedPeerInputs[f & kRingMask] = InputSlot{};
+	}
+	mCurrentFrame = frame;
+	mRollbackFrame = -1;
+	mDesyncFrame = -1;
 	return true;
 }
 
 void LockstepLoop::OnFrameAdvanced(uint32_t simStateHash) {
+	if (mRollbackFrame >= 0) return;
 	// Precondition: caller checked CanAdvance() before the sim advance.
 	// Violating that would leave our hash stream diverged from the
 	// peer's, so bail without bumping rather than baking in permanent
@@ -227,11 +306,16 @@ void LockstepLoop::OnFrameAdvanced(uint32_t simStateHash) {
 	}
 
 	PutLocalHash(mCurrentFrame, myHashLow);
+	InputSlot& used = mUsedPeerInputs[mCurrentFrame & kRingMask];
+	used.frame = mCurrentFrame;
+	used.input = mSlot == Slot::Host ? p2 : p1;
+	used.occupied = 1;
 
 	// Apply-time desync check: did peer's hash for this frame arrive
 	// before we applied?
 	uint32_t peerHash = 0;
-	if (GetPeerHash(mCurrentFrame, peerHash) &&
+	if ((int32_t)(mCurrentFrame - mPeerReceivedNext) < 0 &&
+	    GetPeerHash(mCurrentFrame, peerHash) &&
 	    peerHash != myHashLow &&
 	    mDesyncFrame < 0) {
 		mDesyncFrame = (int64_t)mCurrentFrame;
@@ -241,7 +325,7 @@ void LockstepLoop::OnFrameAdvanced(uint32_t simStateHash) {
 	// frame.  Both peers see the same authoritative rttClass(F) (the
 	// host's stamp, delivered via NetInput on the wire) and reach the
 	// same scheduling + apply decisions.
-	EvaluateDelayRatchet();
+	if (!mRollbackWindow) EvaluateDelayRatchet();
 
 	++mCurrentFrame;
 }
@@ -261,19 +345,14 @@ void LockstepLoop::OnFrameAdvanced(uint32_t simStateHash) {
 // rules on both sides yield identical decisions.
 //
 // At the switch frame the gap slots [F+D_old, F+D_new) are filled by
-// repeating slot F+D_old-1 (the highest captured input from the old
-// regime) in BOTH the local and peer rings.  Both peers apply the
+// repeating slot F-1 (the last applied authoritative input) in BOTH the local and peer rings.  Both peers apply the
 // same fill rule, so the rings stay byte-identical.
 
-uint32_t LockstepLoop::TargetDelayFromRttClass(uint8_t cls) {
-	// rttMs ≈ cls * 4.  Frames at 60 Hz ≈ rttMs / 16.67.
-	// target = 2 (margin) + frames-equivalent of one-way RTT.
-	// At cls=0 → target=2, clamped up to kDelayMin=3.
-	// At cls=64 (≈256 ms RTT) → target = 2 + 16 = 18 frames (≈300 ms).
-	uint32_t target = 2u + ((uint32_t)cls / 4u);
-	if (target < kDelayMin) target = kDelayMin;
-	if (target > kDelayMax) target = kDelayMax;
-	return target;
+uint32_t LockstepLoop::TargetDelayFromRttClass(uint8_t cls, uint32_t framePeriodUs) {
+	// Budget one-way latency plus two frames of jitter headroom.
+	const uint32_t period = std::clamp<uint32_t>(framePeriodUs, 10000, 40000);
+	return std::clamp<uint32_t>(2u + ((uint32_t)cls * 2000u + period - 1) / period,
+		kDelayMin, kDelayMax);
 }
 
 uint8_t LockstepLoop::RttClassFromMs(uint16_t rttMs) {
@@ -298,7 +377,7 @@ void LockstepLoop::EvaluateDelayRatchet() {
 	// the frame we just applied (mCurrentFrame, before the post-Apply
 	// increment).  Both peers run this identically.
 	const uint8_t cls = AuthoritativeRttClass(mCurrentFrame);
-	const uint32_t target = TargetDelayFromRttClass(cls);
+	const uint32_t target = TargetDelayFromRttClass(cls, mFramePeriodUs);
 
 	if (target > mInputDelay) {
 		// Target wants a bigger D than we currently have; build streak.
@@ -352,15 +431,12 @@ void LockstepLoop::ApplyDelayRatchet() {
 		return;
 	}
 
-	// Source slot for the gap fill: the highest-keyed input from the
-	// pre-switch regime is W + D_old - 1.  After the switch, the next
-	// SubmitLocalInput() call (on wall frame W) will key at W + D_new,
-	// so slots [W + D_old, W + D_new) would otherwise be empty — the
-	// lockstep gate would stall waiting for them.  Repeat the last
-	// pre-switch input deterministically into both rings.
+	// Both peers have committed W-1, so its canonical inputs exist on
+	// both machines. A future captured frame may still be in flight;
+	// synthesizing it from a default value would produce divergent gaps.
 	NetInput localFill {};
 	NetInput peerFill  {};
-	const uint32_t srcFrame = W + D_old - 1;
+	const uint32_t srcFrame = W - 1;
 	GetLocalInput(srcFrame, localFill);
 	GetPeerInput(srcFrame, peerFill);
 
@@ -374,6 +450,7 @@ void LockstepLoop::ApplyDelayRatchet() {
 	}
 
 	mInputDelay = D_new;
+	UpdateConfirmedInputs();
 	mPendingDelay = 0;
 	mPendingDelaySwitchFrame = 0;
 }
@@ -382,51 +459,40 @@ void LockstepLoop::BuildOutgoingInputPacket(NetInputPacket& out) const {
 	out = NetInputPacket{};
 	out.magic = kMagicInput;
 
-	// Sliding window of the last R LOCAL inputs we've captured.  With
-	// input delay D, the highest local key is currentFrame + D; the
-	// window ends there and extends back R-1 frames (clamped at 0).
-	// Count reflects the number of actually-populated slots so the
-	// peer's first-seen dedup doesn't lock in zeros for frames we
-	// haven't captured for yet.
-	const uint32_t windowEndExcl = mCurrentFrame + mInputDelay + 1;
-	const uint32_t windowStart =
-		(windowEndExcl >= (uint32_t)kRedundancyR)
-			? (windowEndExcl - (uint32_t)kRedundancyR)
-			: 0;
-
-	out.baseFrame = windowStart;
-	uint16_t count = 0;
-	for (uint32_t f = windowStart;
-	     f < windowEndExcl && count < (uint16_t)kRedundancyR; ++f) {
-		NetInput in;
-		if (GetLocalInput(f, in)) {
-			out.inputs[count] = in;
-			++count;
-		}
+	// Fresh redundancy must continue independently of repair ACKs: a
+	// packet-sized stop-and-wait window would cap throughput at R/RTT.
+	uint32_t end = mCurrentFrame + mInputDelay;
+	NetInput input;
+	for (uint32_t n = 0; n < kRedundancyR && !GetLocalInput(end, input); ++n) --end;
+	out.baseFrame = end - (kRedundancyR - 1);
+	if ((int32_t)(out.baseFrame - mStartFrame) < 0) out.baseFrame = mStartFrame;
+	for (uint16_t n = 0; n < kRedundancyR; ++n) {
+		if (!GetLocalInput(out.baseFrame + n, input)) break;
+		out.inputs[out.count++] = input;
 	}
-	out.count = count;
-
-	// ackedFrame is the highest frame we've APPLIED locally, not the
-	// highest peer-input frame we hold.  Two reasons:
-	//   (1) we're guaranteed to have a hash for a frame we've
-	//       applied — sending a frame number we don't have a hash
-	//       for defeats the whole point of the ack field, and
-	//   (2) the peer uses this to do retro-check: they compare their
-	//       own hash at `ackedFrame` against ours.  They can only do
-	//       that if they've also applied it.  In lockstep the two
-	//       "highest applied" values differ by at most one frame,
-	//       guaranteeing the check can fire.
-	if (mCurrentFrame > 0) {
-		const uint32_t applied = mCurrentFrame - 1;
-		out.ackedFrame = (uint16_t)(applied & 0xFFFF);
-		uint32_t h = 0;
-		if (GetLocalHash(applied, h)) {
-			out.stateHashLow32 = h;
-		}
+	out.receivedThrough = mPeerReceivedNext;
+	const uint32_t confirmed = ConfirmedFrame();
+	if (mRollbackFrame < 0) {
+		out.ackedFrame = confirmed - 1;
+		GetLocalHash(out.ackedFrame, out.stateHashLow32);
 	}
 }
 
-void LockstepLoop::ResumeAt(uint32_t resumeFrame, uint32_t seedHash) {
+bool LockstepLoop::BuildRepairInputPacket(NetInputPacket& out) const {
+	BuildOutgoingInputPacket(out);
+	if ((int32_t)(mPeerAckNext - out.baseFrame) >= 0) return false;
+	out.baseFrame = mPeerAckNext;
+	out.count = 0;
+	for (uint16_t n = 0; n < kRedundancyR; ++n) {
+		NetInput input;
+		if (!GetLocalInput(out.baseFrame + n, input)) break;
+		out.inputs[out.count++] = input;
+	}
+	return out.count != 0;
+}
+
+void LockstepLoop::ResumeAt(uint32_t resumeFrame, uint32_t seedHash, uint32_t inputDelay) {
+	if (inputDelay != UINT32_MAX) mInputDelay = std::min(inputDelay, kDelayMax);
 	// Wipe every ring — the pre-resync timeline no longer describes the
 	// state we are about to run from.
 	for (uint32_t i = 0; i < kRingSize; ++i) {
@@ -434,9 +500,14 @@ void LockstepLoop::ResumeAt(uint32_t resumeFrame, uint32_t seedHash) {
 		mPeerInputs[i]  = InputSlot{};
 		mLocalHashes[i] = HashSlot{};
 		mPeerHashes[i]  = HashSlot{};
+		mUsedPeerInputs[i] = InputSlot{};
 	}
 
 	mCurrentFrame = resumeFrame;
+	mStartFrame = resumeFrame;
+	mPeerReceivedNext = resumeFrame + mInputDelay;
+	mPeerAckNext = resumeFrame;
+	mRollbackFrame = -1;
 	mDesyncFrame = -1;
 	// Keep peer-silence watchdog state — packet flow continued during
 	// the resync (host sent ResyncStart/chunks, joiner sent ResyncDone)

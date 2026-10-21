@@ -24,13 +24,10 @@
 //      known.  Otherwise the main loop stalls, pacer still runs, and
 //      we poll the transport again.
 //
-//   3. Rolling hash is FNV-1a 64 over (frameLE, p1.raw4, p2.raw4) at
-//      apply-time, with a CANONICAL slot ordering so both peers fold
-//      bytes in the same sequence.  Low 32 bits go on the wire.
-//
-//   4. Desync is reported twice: at apply-time (if the peer's hash
-//      for that frame has already arrived) and at receive-time (if
-//      the peer's hash arrives for a frame we already applied).
+//   3. Each captured frame is immutable. The wire carries fresh input
+//      redundancy and separate cumulative-ACK-driven historical repair.
+//   4. State hashes describe confirmed frames. Predicted frames never
+//      trigger a desync until corrected input has been replayed.
 
 #pragma once
 
@@ -75,7 +72,7 @@ public:
 
 	// Begin a new session.  `inputDelay` is the number of wall frames
 	// between local capture and emulation apply (D in the design
-	// doc).  Valid range 0..32; 3 is the LAN default, 4 the internet
+	// doc).  Valid range 0..30; 3 is the LAN default, 4 the internet
 	// default.  Slot chooses the canonical hash-folding order.
 	void Begin(Slot slot, uint32_t inputDelay);
 
@@ -85,14 +82,30 @@ public:
 	// Both peers MUST configure identical values; the ratchet decision
 	// is deterministic only if the streak threshold and modulus match.
 	void SetRatchetTuning(uint32_t streakFrames, uint32_t switchModulus) {
-		mRatchetStreakFrames = streakFrames;
-		mRatchetSwitchModulus = switchModulus;
+		mRatchetStreakFrames = streakFrames ? streakFrames : 1;
+		mRatchetSwitchModulus = switchModulus ? switchModulus : 1;
 	}
 
 	// Record this wall-tick's local input.  Internally keyed at the
 	// emu frame (CurrentFrame() + inputDelay), matching invariant #1.
 	// Call at most once per wall tick.
 	void SubmitLocalInput(const NetInput& local);
+
+	// Check before sampling queued keyboard events. Repeated submissions
+	// for an already-captured frame do not replace its authoritative input.
+	bool NeedsLocalInput() const;
+	// Zero selects strict delay lockstep. A non-zero bound allows held-level
+	// prediction; the caller must provide exact checkpoints and replay.
+	void SetRollbackWindow(uint32_t frames) { mRollbackWindow = frames > 32 ? 32 : frames; }
+	uint32_t RollbackWindow() const { return mRollbackWindow; }
+	void SetFramePeriodUs(uint32_t period) { mFramePeriodUs = period >= 10000 && period <= 40000 ? period : 16667; }
+	// Exclusive applied-frame cursor with authoritative peer input.
+	uint32_t ConfirmedFrame() const;
+	// Earliest incorrect predicted frame, or -1. Restore its BEFORE-frame
+	// emulator checkpoint, RewindTo, then replay to the former CurrentFrame.
+	int64_t RollbackFrame() const { return mRollbackFrame; }
+	bool RewindTo(uint32_t frame);
+	bool GetInputsForFrame(uint32_t frame, NetInput& p1, NetInput& p2) const;
 
 	// Feed a decoded NetInputPacket from the peer.  Merges the
 	// sliding-window inputs into the peer-input ring (first-seen
@@ -132,11 +145,11 @@ public:
 	void OnFrameAdvanced(uint32_t simStateHash = 0);
 
 	// Build the outgoing input packet describing our own last R
-	// frames of local input plus the highest peer frame we've
-	// received (for acking) and our hash at that frame (for desync
-	// detection).  The caller marshals with EncodeInputPacket and
+	// frames of local input plus a cumulative input receipt
+	// acknowledgement and the last confirmed state hash.  The caller marshals with EncodeInputPacket and
 	// sends over Transport.
 	void BuildOutgoingInputPacket(NetInputPacket& out) const;
+	bool BuildRepairInputPacket(NetInputPacket& out) const;
 
 	uint32_t CurrentFrame() const { return mCurrentFrame; }
 	uint32_t InputDelay() const { return mInputDelay; }
@@ -155,7 +168,7 @@ public:
 	// Public so selftests + Coordinator telemetry can reuse the same
 	// quantisation rule; both peers must agree on this function for the
 	// ratchet to converge.
-	static uint32_t TargetDelayFromRttClass(uint8_t cls);
+	static uint32_t TargetDelayFromRttClass(uint8_t cls, uint32_t framePeriodUs = 16667);
 
 	// Inverse direction: encode a smoothed-RTT value (in ms) into the
 	// rttClass byte.  4 ms per unit, capped at 255 (≈1020 ms).  Used by
@@ -207,7 +220,7 @@ public:
 	// waiting for pre-captured inputs that no longer exist.  `seedHash`
 	// is stored for the (resumeFrame-1) slot so the first outgoing
 	// InputPacket carries a valid ackedFrame/hash pair.
-	void ResumeAt(uint32_t resumeFrame, uint32_t seedHash);
+	void ResumeAt(uint32_t resumeFrame, uint32_t seedHash, uint32_t inputDelay = UINT32_MAX);
 
 private:
 	struct InputSlot {
@@ -235,6 +248,15 @@ private:
 	// the end of OnFrameAdvanced for the just-applied frame and
 	// possibly schedules / applies a bump.  ApplyDelayRatchet performs
 	// the gap fill and writes the new mInputDelay.
+	bool PredictPeerInput(uint32_t frame, NetInput& input) const;
+	void UpdateConfirmedInputs();
+	mutable InputSlot mUsedPeerInputs[kRingSize] = {};
+	uint32_t mPeerReceivedNext = 0;
+	uint32_t mPeerAckNext = 0;
+	uint32_t mStartFrame = 0;
+	uint32_t mRollbackWindow = 0;
+	uint32_t mFramePeriodUs = 16667;
+	int64_t mRollbackFrame = -1;
 	uint8_t  AuthoritativeRttClass(uint32_t frame) const;
 	void     EvaluateDelayRatchet();
 	void     ApplyDelayRatchet();

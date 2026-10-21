@@ -111,6 +111,24 @@ void Poll(uint64_t nowMs);
 // can gate emulation.
 bool CanAdvanceThisTick();
 
+// Applied to newly hosted sessions; active sessions retain negotiated values.
+void SetRollbackPreference(uint32_t frames);
+uint32_t RollbackPreference();
+struct RollbackStats {
+	uint32_t window = 0;
+	uint32_t confirmedFrame = 0;
+	uint32_t peerRttMs = 0;
+	uint32_t rttSamples = 0;
+	uint64_t corrections = 0;
+	uint64_t replayedFrames = 0;
+	uint64_t replayTimeUs = 0;
+	uint64_t worstReplayUs = 0;
+};
+RollbackStats GetRollbackStats();
+using ReplayFrameFn = bool (*)();
+void SetReplayFrameCallback(ReplayFrameFn callback);
+bool ProcessRollback();
+
 // Signal that the simulator just advanced one frame.  Drives the
 // active-lockstep coordinator's hash + frame counter.  No-op when no
 // coordinator is lockstepping.
@@ -234,7 +252,9 @@ bool StartJoin(const char* hostAddress,
                uint64_t osRomHash,
                uint64_t basicRomHash,
                bool acceptTos,
-               const uint8_t* entryCodeHash);
+               const uint8_t* entryCodeHash,
+                  const char* relayTicketHex = nullptr,
+                  const char* sessionNonceHex = nullptr);
 
 // Native v3 joiner targeting a `wssRelayOnly` host: relay-from-T=0
 // through the lobby reflector.  The host has no UDP path of its own,
@@ -248,7 +268,9 @@ bool StartJoinRelay(const char* lobbyHostPort,
                     uint64_t osRomHash,
                     uint64_t basicRomHash,
                     bool acceptTos,
-                    const uint8_t* entryCodeHash);
+                    const uint8_t* entryCodeHash,
+                  const char* relayTicketHex = nullptr,
+                  const char* sessionNonceHex = nullptr);
 
 #if defined(__EMSCRIPTEN__)
 // WASM joiner: open a WSS connection to `lobbyHost` (e.g.
@@ -267,7 +289,9 @@ bool StartJoinWss(const char* lobbyHost,
                   uint64_t osRomHash,
                   uint64_t basicRomHash,
                   bool acceptTos,
-                  const uint8_t* entryCodeHash);
+                  const uint8_t* entryCodeHash,
+                  const char* relayTicketHex = nullptr,
+                  const char* sessionNonceHex = nullptr);
 
 // WASM host: must be called AFTER lobby Create returns (we need
 // `sessionIdHex32` + `tokenHex32`).  Opens a WSS to the lobby tagged
@@ -403,12 +427,14 @@ bool SendEmote(uint8_t iconId);
 // `lobbyHostPort` is typically "lobby.example.com:8081".
 void HostSetRelayContext(const char* gameId,
                          const char* sessionIdHex,
-                         const char* lobbyHostPort);
+                         const char* lobbyHostPort,
+                         const char* ticketHex = nullptr);
 
 // Joiner version.  Must be called after StartJoin so the coordinator
 // already exists.  Same field semantics.
 void JoinerSetRelayContext(const char* sessionIdHex,
-                           const char* lobbyHostPort);
+                           const char* lobbyHostPort,
+                         const char* ticketHex = nullptr);
 
 // Write the joiner coordinator's per-attempt sessionNonce as 32 hex
 // chars + NUL into `out33`.  Returns false if no joiner exists (in

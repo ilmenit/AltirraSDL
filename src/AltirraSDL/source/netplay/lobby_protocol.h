@@ -85,12 +85,11 @@ inline constexpr int kMaxSessions = 1000;
 // users see the limit before they hit it.  Shared between client and
 // server so a future bump only changes one number.
 //
-// Why 5: a single user heartbeats every 30 s, so 5 hosted games is
-// 10 req/min — comfortably under the lobby's 120-req-burst per-IP
-// rate limit even with two players sharing a NAT.  At the same time
-// it's enough headroom that no realistic player runs out of slots
-// (the public list has historically averaged single-digit waiting
-// games across all hosts).
+// The client limits its own simultaneous offers to five. The public
+// display name is not authenticated and therefore cannot own a server
+// quota. Lease heartbeats have a separate authenticated session budget
+// (2/s, burst8) so five waiting offers at3s cannot exhaust discovery's
+// per-source-IP budget.
 inline constexpr int kMaxHostedGamesPerHost = 5;
 
 // Maximum sessions returned in a single List response.

@@ -18,6 +18,8 @@
 #ifndef f_AT_HLEBASICLOADER_H
 #define f_AT_HLEBASICLOADER_H
 
+#include <at/atcore/snapshot.h>
+
 class ATCPUEmulator;
 class ATCPUHookManager;
 class ATSimulator;
@@ -34,6 +36,8 @@ public:
 
 	void Init(ATCPUEmulator *cpu, ATSimulatorEventManager *simEventMan, ATSimulator *sim);
 	void Shutdown();
+	void SaveState(IATObjectState **state);
+	void LoadState(const IATObjectState *state);
 
 	bool IsLaunchPending() const { return mbLaunchPending; }
 
@@ -50,6 +54,7 @@ protected:
 	ATCPUHookNode *mpLaunchHook = nullptr;
 
 	IATBlobImage *mpImage = nullptr;
+	vdrefptr<IATObjectState> mpSnapshotImage;
 
 	enum class State : uint8 {
 		None,

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <random>
+#include <algorithm>
 
 // Single shared channel for every netplay subsystem.  Default ON
 // (unlike most Altirra log channels) so users can copy diagnostics
@@ -92,7 +93,9 @@ bool Coordinator::BeginHost(uint16_t localPort,
 	mOsRomHash = osRomHash;
 	mBasicRomHash = basicRomHash;
 	mSettingsHash = settingsHash;
-	mInputDelay = inputDelayFrames;
+	mInputDelay = std::min<uint16_t>(inputDelayFrames, LockstepLoop::kDelayMax);
+	mResyncEpoch = 0;
+	mHostHasPendingJoiner = false;
 	if (entryCodeHash) {
 		std::memcpy(mEntryCodeHash, entryCodeHash, kEntryCodeHashLen);
 		mHasEntryCode = !IsZeroEntryCode(mEntryCodeHash);
@@ -487,6 +490,7 @@ bool Coordinator::BeginJoinRelay(const char* lobbyHostPort,
 // ---------------------------------------------------------------------------
 
 void Coordinator::Poll(uint64_t nowMs) {
+	mLastPollMs = nowMs;
 	if (mPhase == Phase::Idle ||
 	    mPhase == Phase::Ended ||
 	    mPhase == Phase::Failed ||
@@ -510,6 +514,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 	}
 
 	if (mPhaseStartMs == 0) mPhaseStartMs = nowMs;
+	RefreshHostRelayContexts(nowMs);
 
 	// Drain the socket.
 	for (int drained = 0; drained < 64; ++drained) {
@@ -550,6 +555,9 @@ void Coordinator::Poll(uint64_t nowMs) {
 			continue;
 		}
 
+		if (mRole == Role::Host && mPhase == Phase::WaitingForJoiner &&
+			(magic == kMagicHello || magic == kMagicRelayData)) SelectRelayContext(from);
+
 		// Track whether this packet arrived via the lobby (ASDF
 		// unwrap) or directly off the wire.  Used by the passive
 		// direct-rescue path below to detect "peer is sending us
@@ -562,6 +570,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 		// (the other side is wrapping and hitting us directly, or a
 		// future design change), unwrap in place and re-dispatch.
 		if (magic == kMagicRelayData) {
+			if (!mLobbyRelayKnown || !from.Equals(mLobbyRelayEndpoint)) continue;
 			unwrappedFromRelay = true;
 			NetRelayDataHeader hdr;
 			const uint8_t* inner = nullptr;
@@ -628,6 +637,27 @@ void Coordinator::Poll(uint64_t nowMs) {
 			}
 		}
 
+		const bool fromLobby = mLobbyRelayKnown && from.Equals(mLobbyRelayEndpoint);
+		const bool fromPeer = mPeerKnown && from.Equals(mPeer);
+		bool candidate = fromPeer || fromLobby;
+		for (const auto& endpoint : mHelloCandidates) candidate |= from.Equals(endpoint);
+		bool sessionBound = false;
+		if (magic == kMagicSession) {
+			if (!candidate || n < kWireSessionHeaderSize + 4) continue;
+			const uint8_t* nonce = mRole == Role::Host ? mAcceptedJoinerNonce : mSessionNonce;
+			if (std::memcmp(mRxBuf + 4, nonce, kSessionNonceLen)) continue;
+			uint32_t epoch = 0;
+			for (int i = 0; i < 4; ++i) epoch |= (uint32_t)mRxBuf[20 + i] << (8 * i);
+			uint32_t innerMagic = 0;
+			if (!PeekMagic(mRxBuf + kWireSessionHeaderSize, n - kWireSessionHeaderSize, innerMagic)) continue;
+			if (epoch != mResyncEpoch && !(innerMagic == kMagicResyncStart && epoch == mResyncEpoch + 1)) continue;
+			std::memmove(mRxBuf, mRxBuf + kWireSessionHeaderSize, n - kWireSessionHeaderSize);
+			n -= kWireSessionHeaderSize;
+			magic = innerMagic;
+			sessionBound = true;
+		}
+		if (!sessionBound && magic != kMagicHello && magic != kMagicPunch && magic != kMagicReject) continue;
+		if (magic == kMagicReject && !candidate) continue;
 		BumpCandidateRx(from, magic == kMagicReject);
 
 		// Passive direct-rescue flip: if a non-ASDF, non-NetPunch
@@ -855,6 +885,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 				NetReject rj;
 				{ DecodeResult dr = DecodeReject(mRxBuf, n, rj);
 				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
+				if (n >= kWireRejectSize && std::memcmp(rj.sessionNonce, mSessionNonce, kSessionNonceLen)) continue;
 				// Only accept a Reject from the host we asked — an
 				// arbitrary bystander sending a Reject to our
 				// ephemeral port mustn't be able to abort the join.
@@ -981,6 +1012,13 @@ void Coordinator::Poll(uint64_t nowMs) {
 				{ DecodeResult dr = DecodeEventBatch(mRxBuf, n, b);
 				  if (dr != DecodeResult::Ok) { BumpDecodeCounter(dr); continue; } }
 				HandleEventBatchFromPeer(b, nowMs);
+				break;
+			}
+			case kMagicPing: {
+				NetPing ping;
+				const DecodeResult result = DecodePing(mRxBuf, n, ping);
+				if (result != DecodeResult::Ok) { BumpDecodeCounter(result); continue; }
+				HandlePing(ping, nowMs);
 				break;
 			}
 			case kMagicNetHeartbeat: {
@@ -1124,7 +1162,8 @@ void Coordinator::Poll(uint64_t nowMs) {
 	if (mPhase == Phase::SendingSnapshot || mPhase == Phase::Resyncing) {
 		PumpSnapshotSender(nowMs);
 	}
-	if (mPhase == Phase::Lockstepping && mWantsOutgoingInput) {
+	if (mPhase == Phase::Lockstepping && (mWantsOutgoingInput ||
+		nowMs - mLastInputSentMs >= std::max<uint32_t>(1, mFramePeriodUs / 1000))) {
 		PumpLockstepSend();
 		mWantsOutgoingInput = false;
 	}
@@ -1164,6 +1203,8 @@ void Coordinator::Poll(uint64_t nowMs) {
 		s.stateChunks  = mSnapTx.TotalChunks();
 		s.resumeFrame  = mResyncResumeFrame;
 		s.seedHash     = mResyncSeedHash;
+		s.inputDelayFrames = mLoop.InputDelay();
+		s.stateCRC32 = Crc32(mResyncTxBuffer.data(), mResyncTxBuffer.size());
 		size_t nn = EncodeResyncStart(s, mTxBuf, sizeof mTxBuf);
 		if (nn) {
 			WrapAndSend(mTxBuf, nn, mPeer);
@@ -1268,6 +1309,7 @@ void Coordinator::Poll(uint64_t nowMs) {
 		if (curSec != mLastHeartbeatSec) {
 			mLastHeartbeatSec = curSec;
 			BuildAndSendHeartbeat(nowMs);
+			if (mPhase == Phase::Lockstepping) SendPing(nowMs);
 		}
 
 		// Flush events when the queue has aged past 100 ms or filled
@@ -1325,6 +1367,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 				sameJoiner = mPeer.Equals(from);
 			}
 			if (sameJoiner) {
+				if (mHostHasPendingJoiner) return;
 				g_ATLCNetplay("host: retry-Hello from accepted joiner — "
 					"re-sending Welcome (Welcome lost on the wire)");
 				SendWelcome(nowMs);
@@ -1335,7 +1378,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		// progress, snapshot streaming, or in lockstep).  Tell the
 		// joiner we're full so they get a clear message instead of
 		// hanging in "Connecting…" until their handshake timeout.
-		SendReject(kRejectHostFull, from);
+		SendReject(kRejectHostFull, from, hello.sessionNonce);
 		return;
 	}
 
@@ -1360,14 +1403,14 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 				match = rp.peer.Equals(from);
 			}
 			if (match) {
-				SendReject(kRejectHostRejected, from);
+				SendReject(kRejectHostRejected, from, hello.sessionNonce);
 				return;
 			}
 		}
 	}
 
 	if (hello.protocolVersion != kProtocolVersion) {
-		SendReject(kRejectVersionSkew, from);
+		SendReject(kRejectVersionSkew, from, hello.sessionNonce);
 		return;
 	}
 	// Note: cross-Altirra-release canonical-profile mismatches
@@ -1378,20 +1421,20 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	// Hello does not carry the field, so there is nothing for the
 	// host to compare here.
 	if (hello.osRomHash != mOsRomHash) {
-		SendReject(kRejectOsMismatch, from);
+		SendReject(kRejectOsMismatch, from, hello.sessionNonce);
 		return;
 	}
 	if (hello.basicRomHash != mBasicRomHash) {
-		SendReject(kRejectBasicMismatch, from);
+		SendReject(kRejectBasicMismatch, from, hello.sessionNonce);
 		return;
 	}
 	if ((hello.acceptTos & 1u) == 0) {
-		SendReject(kRejectTosNotAccept, from);
+		SendReject(kRejectTosNotAccept, from, hello.sessionNonce);
 		return;
 	}
 	if (mHasEntryCode) {
 		if (!EntryCodeMatches(hello.entryCodeHash, mEntryCodeHash)) {
-			SendReject(kRejectBadEntryCode, from);
+			SendReject(kRejectBadEntryCode, from, hello.sessionNonce);
 			return;
 		}
 	}
@@ -1455,7 +1498,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 		if (mPendingDecisions.size() >= kMaxPendingDecisions) {
 			// Queue is full.  Bounce the joiner with HostFull so they
 			// get a clear error instead of a silent timeout.
-			SendReject(kRejectHostFull, from);
+			SendReject(kRejectHostFull, from, hello.sessionNonce);
 			return;
 		}
 		PendingDecision pd;
@@ -1475,6 +1518,7 @@ void Coordinator::HandleHelloFromJoiner(const NetHello& hello,
 	}
 
 	// Hello accepted.  Lock in the peer.
+	SelectPeerRelayContext(hello.sessionNonce, from);
 	mPeer = from;
 	mPeerKnown = true;
 	// Capture nonce on auto-accept so a Hello-retry (Welcome lost on
@@ -1571,9 +1615,9 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	// all they need (their own spray stops when Welcome arrives).
 	for (size_t k = 0; k < mPendingDecisions.size(); ++k) {
 		if (k == i) continue;
-		SendReject(kRejectHostFull, mPendingDecisions[k].peer);
+		SendReject(kRejectHostFull, mPendingDecisions[k].peer, mPendingDecisions[k].sessionNonce);
 		for (const auto& alt : mPendingDecisions[k].altPeers) {
-			SendReject(kRejectHostFull, alt);
+			SendReject(kRejectHostFull, alt, mPendingDecisions[k].sessionNonce);
 		}
 	}
 
@@ -1584,6 +1628,7 @@ void Coordinator::AcceptPendingJoiner(size_t i) {
 	// branch used to (see HandleHelloFromJoiner).
 	mPeer      = chosen.peer;
 	mPeerKnown = true;
+	SelectPeerRelayContext(chosen.sessionNonce, mPeer);
 
 	// Capture nonce so a retry-Hello with the same nonce (Welcome lost
 	// on the wire) re-triggers Welcome instead of being kRejectHostFull-d.
@@ -1640,9 +1685,9 @@ void Coordinator::RejectPendingJoiner(size_t i) {
 	// Reject on every path we saw this joiner on, for the same reason
 	// the accept branch does: otherwise the joiner's v3 spray keeps
 	// hammering the unrejected candidates until the hard timeout.
-	SendReject(kRejectHostRejected, pd.peer);
+	SendReject(kRejectHostRejected, pd.peer, pd.sessionNonce);
 	for (const auto& alt : pd.altPeers) {
-		SendReject(kRejectHostRejected, alt);
+		SendReject(kRejectHostRejected, alt, pd.sessionNonce);
 	}
 
 	// Remember this joiner as rejected so a Hello that arrives AFTER
@@ -1676,6 +1721,7 @@ void Coordinator::RejectPendingJoiner(size_t i) {
 
 void Coordinator::SubmitSnapshotForUpload(const uint8_t* data, size_t len) {
 	if (mRole != Role::Host) return;
+	if (!data || !len || len > kMaxSnapshotBytes) { FailWith("invalid game file size"); return; }
 	mSnapTxBuffer.assign(data, data + len);
 	// Compute the CRC32 once; ship in NetWelcome.snapshotCRC32 so the
 	// joiner can verify the assembled bytes before applying.  Uses the
@@ -1721,13 +1767,19 @@ void Coordinator::HandleWelcomeFromHost(const NetWelcome& w, uint64_t nowMs) {
 	}
 
 	// Adopt host-chosen parameters.
+	if (w.inputDelayFrames > LockstepLoop::kDelayMax || w.rollbackFrames > 32 ||
+		w.framePeriodUs < 10000 || w.framePeriodUs > 40000) { FailWith("invalid peer timing settings"); return; }
 	mInputDelay = w.inputDelayFrames;
+	mRollbackWindow = w.rollbackFrames;
+	mFramePeriodUs = w.framePeriodUs;
+	mLoop.SetRollbackWindow(mRollbackWindow);
+	mLoop.SetFramePeriodUs(mFramePeriodUs);
 	std::memcpy(mCartName, w.cartName, kCartLen);
 	mSettingsHash = w.settingsHash;
 	mBootConfig = w.boot;
 
 	// Prepare receiver.
-	mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes);
+	if (!mSnapRx.Begin(w.snapshotChunks, w.snapshotBytes)) { FailWith("invalid game transfer size"); return; }
 	mSnapProgressMilestone = 0;
 	mExpectedSnapCrc = w.snapshotCRC32;   // v5: verify on assembly
 	SetPhaseAndBroadcast(Phase::ReceivingSnapshot);
@@ -1939,6 +1991,9 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 	}
 
 	if (mSnapRx.IsComplete()) {
+		if (midResync && Crc32(mSnapRx.Data().data(), mSnapRx.Data().size()) != mExpectedSnapCrc) {
+			FailWith("resync CRC mismatch"); return;
+		}
 		if (sessionStart) {
 			// v5: verify the assembled bytes against the CRC the host
 			// shipped in NetWelcome.  Catches silent recv-side
@@ -2176,6 +2231,7 @@ void Coordinator::SubmitLocalInput(const NetInput& in) {
 		stamped.rttClass = 0;
 	}
 	mLoop.SubmitLocalInput(stamped);
+	mWantsOutgoingInput = true;
 }
 
 void Coordinator::OnFrameAdvanced(uint32_t simStateHash) {
@@ -2196,7 +2252,11 @@ void Coordinator::PumpLockstepSend() {
 	NetInputPacket pkt;
 	mLoop.BuildOutgoingInputPacket(pkt);
 	size_t n = EncodeInputPacket(pkt, mTxBuf, sizeof mTxBuf);
-	if (n) WrapAndSend(mTxBuf, n, mPeer);
+	if (n) { WrapAndSend(mTxBuf, n, mPeer); mLastInputSentMs = mLastPollMs; }
+	if (mLoop.BuildRepairInputPacket(pkt)) {
+		n = EncodeInputPacket(pkt, mTxBuf, sizeof mTxBuf);
+		if (n) WrapAndSend(mTxBuf, n, mPeer);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2265,9 +2325,9 @@ void Coordinator::End(uint16_t byeReason) {
 	// fires.  Use kRejectHostFull; the session is ending from under
 	// them, not a per-peer rejection.
 	for (const auto& pd : mPendingDecisions) {
-		SendReject(kRejectHostFull, pd.peer);
+		SendReject(kRejectHostFull, pd.peer, pd.sessionNonce);
 		for (const auto& alt : pd.altPeers) {
-			SendReject(kRejectHostFull, alt);
+			SendReject(kRejectHostFull, alt, pd.sessionNonce);
 		}
 	}
 	mPendingDecisions.clear();
@@ -2336,6 +2396,12 @@ void Coordinator::SendHello() {
 }
 
 void Coordinator::GenerateSessionNonce() {
+	mResyncEpoch = 0;
+	if (mHasPresetJoinNonce) {
+		std::memcpy(mSessionNonce, mPresetJoinNonce, kSessionNonceLen);
+		mHasPresetJoinNonce = false;
+		return;
+	}
 	// std::random_device seeds a 32-bit engine; draw 4x to fill 16 B.
 	// Not cryptographically strong, but the nonce only needs to be
 	// collision-resistant within a host's pending-decision window
@@ -2361,6 +2427,8 @@ void Coordinator::SendWelcome(uint64_t nowMs) {
 	w.snapshotCRC32 = mSnapTxCrc;     // v5
 	w.settingsHash = mSettingsHash;
 	w.boot = mBootConfig;
+	w.rollbackFrames = (uint16_t)mRollbackWindow;
+	w.framePeriodUs = mFramePeriodUs;
 
 	size_t n = EncodeWelcome(w, mTxBuf, sizeof mTxBuf);
 	if (n && mPeerKnown) WrapAndSend(mTxBuf, n, mPeer);
@@ -2384,10 +2452,31 @@ void Coordinator::SendWelcome(uint64_t nowMs) {
 	mWelcomeSentMs = nowMs;
 }
 
-void Coordinator::SendReject(uint16_t reason, const Endpoint& to) {
+void Coordinator::SendReject(uint16_t reason, const Endpoint& to, const uint8_t* nonce) {
 	NetReject r { kMagicReject, reason };
+	if (nonce) std::memcpy(r.sessionNonce, nonce, kSessionNonceLen);
 	size_t n = EncodeReject(r, mTxBuf, sizeof mTxBuf);
-	if (n) mTransport->SendTo(mTxBuf, n, to);
+	if (n) {
+		bool sent = false;
+		if (mRole == Role::Host) {
+			for (const auto& context : mRelayContexts) {
+				if (!context.endpoint.Equals(to) || !context.hasTicket) continue;
+				NetRelayDataHeader header;
+				std::memcpy(header.sessionId, context.sessionId, 16);
+				std::memcpy(header.ticket, context.ticket, 16);
+				if (nonce) std::memcpy(header.routeNonce, nonce, 16);
+				header.role = kRelayRoleHost;
+				uint8_t bytes[kWireRelayHeaderSize + kWireRejectSize];
+				const size_t count = EncodeRelayFrame(header, mTxBuf, n, bytes, sizeof bytes);
+				if (count) mTransport->SendTo(bytes, count, to);
+				sent = true; break;
+			}
+		}
+		if (!sent) {
+			if (mLobbyRelayKnown && to.Equals(mLobbyRelayEndpoint)) SendWrappedViaLobby(mTxBuf, n);
+			else mTransport->SendTo(mTxBuf, n, to);
+		}
+	}
 }
 
 void Coordinator::HandleWelcomeAckFromJoiner(const Endpoint& from) {
@@ -2445,6 +2534,7 @@ void Coordinator::BeginHostResync(uint64_t nowMs) {
 	// the very state it's about to serialise.
 	++mResyncEpoch;
 	mResyncResumeFrame = mLoop.CurrentFrame();
+	mInputDelay = (uint16_t)mLoop.InputDelay();
 	// Seed hash = our local hash of the last-applied frame, which is
 	// exactly the hash the joiner will compute post-apply if the
 	// savestate round-tripped cleanly.  Falls back to 0 if the slot
@@ -2482,7 +2572,7 @@ void Coordinator::SubmitResyncCapture(const uint8_t* data, size_t len) {
 	if (!mNeedsResyncCapture) return;
 	mNeedsResyncCapture = false;
 
-	if (!data || len == 0) {
+	if (!data || len == 0 || len > kMaxSnapshotBytes) {
 		SendBye(kByeDesyncDetected);
 		SetPhaseAndBroadcast(Phase::Desynced);
 		mLastError = "host failed to capture savestate";
@@ -2505,6 +2595,8 @@ void Coordinator::SubmitResyncCapture(const uint8_t* data, size_t len) {
 	s.stateChunks  = chunks;
 	s.resumeFrame  = mResyncResumeFrame;
 	s.seedHash     = mResyncSeedHash;
+	s.inputDelayFrames = mLoop.InputDelay();
+	s.stateCRC32 = Crc32(mResyncTxBuffer.data(), mResyncTxBuffer.size());
 	size_t n = EncodeResyncStart(s, mTxBuf, sizeof mTxBuf);
 	if (n && mPeerKnown) {
 		WrapAndSend(mTxBuf, n, mPeer);
@@ -2539,6 +2631,9 @@ void Coordinator::HandleResyncStart(const NetResyncStart& s, uint64_t nowMs) {
 }
 
 void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t nowMs) {
+	if (s.inputDelayFrames > LockstepLoop::kDelayMax || s.epoch != mResyncEpoch + 1) return;
+	mInputDelay = (uint16_t)s.inputDelayFrames;
+	mExpectedSnapCrc = s.stateCRC32;
 	mResyncEpoch       = s.epoch;
 	mResyncResumeFrame = s.resumeFrame;
 	mResyncSeedHash    = s.seedHash;
@@ -2547,7 +2642,7 @@ void Coordinator::BeginJoinerResync(const NetResyncStart& s, uint64_t nowMs) {
 	// queue can't race with the new timeline.
 	mLoop.ClearDesync();
 
-	mSnapRx.Begin(s.stateChunks, s.stateBytes);
+	if (!mSnapRx.Begin(s.stateChunks, s.stateBytes)) { FailWith("invalid resync transfer size"); return; }
 	mSnapProgressMilestone = 0;
 	mNeedsResyncApply = false;
 	mResyncStartMs = nowMs;
@@ -2571,7 +2666,7 @@ void Coordinator::AcknowledgeResyncApplied() {
 
 	// Resume LockstepLoop at the agreed frame with ring state wiped.
 	// Host will do the same on its side when ResyncDone arrives.
-	mLoop.ResumeAt(mResyncResumeFrame, mResyncSeedHash);
+	mLoop.ResumeAt(mResyncResumeFrame, mResyncSeedHash, mInputDelay);
 	mDesyncLogged = false;
 
 	NetResyncDone d;
@@ -2606,7 +2701,7 @@ void Coordinator::HandleResyncDone(const NetResyncDone& d, uint64_t /*nowMs*/) {
 	// Host now resumes its own lockstep at the same frame the joiner
 	// jumped to.  Ring state wiped; hash ring re-seeded from our local
 	// post-capture hash.
-	mLoop.ResumeAt(mResyncResumeFrame, mResyncSeedHash);
+	mLoop.ResumeAt(mResyncResumeFrame, mResyncSeedHash, mInputDelay);
 	mDesyncLogged = false;
 	SetPhaseAndBroadcast(Phase::Lockstepping);
 	mResyncTxBuffer.clear();    // free memory
@@ -2768,58 +2863,113 @@ void Coordinator::EmitSessionSummary(const char* reason) {
 // v4 NAT traversal — two-sided punch + relay fallback
 // ---------------------------------------------------------------------------
 
-void Coordinator::SetRelayContext(const uint8_t sessionIdBytes16[16],
-                                  const char* lobbyHostPort) {
-	// IDEMPOTENT — safe to call every Poll tick.  Caller (the action
-	// loop in ui_netplay_actions.cpp) does call this per-tick after
-	// the relay-first hoist, so any work done here multiplies by the
-	// frame rate.  Cheap fast path: if the new args match the cached
-	// state, do nothing — no Resolve(), no log line.
-	const bool emptyInput =
-		(!sessionIdBytes16 || !lobbyHostPort || !*lobbyHostPort);
-	if (emptyInput) {
-		// Empty input means "tear down".  Only act if we currently
-		// have something to tear down — otherwise the per-tick caller
-		// would generate spurious state churn.
-		if (mHasRelaySessionId || mLobbyRelayKnown) {
-			mHasRelaySessionId = false;
-			mLobbyRelayKnown   = false;
+void Coordinator::SetRelayTicket(const uint8_t ticket16[16]) {
+	std::memset(mConfiguredRelayTicket, 0, sizeof mConfiguredRelayTicket);
+	mHasConfiguredRelayTicket = false;
+	if (ticket16) {
+		std::memcpy(mConfiguredRelayTicket, ticket16, 16);
+		for (uint8_t b : mConfiguredRelayTicket) mHasConfiguredRelayTicket |= b != 0;
+	}
+	// Hosting publishes to several sections. A subsequent section's
+	// credential must never replace the active peer's selected context.
+	if (mRole != Role::Host) {
+		if (std::memcmp(mRelayTicket, mConfiguredRelayTicket, 16)) mRelayRegisteredMs = 0;
+		std::memcpy(mRelayTicket, mConfiguredRelayTicket, 16);
+		mHasRelayTicket = mHasConfiguredRelayTicket;
+	}
+}
+
+bool Coordinator::SelectRelayContext(const Endpoint& endpoint) {
+	for (const auto& context : mRelayContexts) {
+		if (!context.endpoint.Equals(endpoint)) continue;
+		const bool changed = !mLobbyRelayKnown || !mLobbyRelayEndpoint.Equals(endpoint) ||
+			std::memcmp(mRelaySessionId, context.sessionId, 16);
+		mLobbyRelayEndpoint = context.endpoint;
+		mLobbyHostPortCached = context.host;
+		std::memcpy(mRelaySessionId, context.sessionId, 16);
+		std::memcpy(mRelayTicket, context.ticket, 16);
+		mLobbyRelayKnown = mHasRelaySessionId = true;
+		mHasRelayTicket = context.hasTicket;
+		if (changed) mRelayRegisteredMs = context.registeredMs;
+		return true;
+	}
+	return false;
+}
+
+void Coordinator::SelectPeerRelayContext(const uint8_t nonce[16], const Endpoint& source) {
+	if (SelectRelayContext(source)) return;
+	for (const auto& hint : mHintRelayContexts) {
+		if (!std::memcmp(hint.nonce, nonce, 16)) {
+			SelectRelayContext(hint.endpoint);
+			return;
 		}
+	}
+}
+
+void Coordinator::RefreshHostRelayContexts(uint64_t nowMs) {
+	if (mRole != Role::Host || mTransport->IsRelayOnly()) return;
+	for (auto& context : mRelayContexts) {
+		if (!context.hasTicket || (context.registeredMs &&
+			nowMs - context.registeredMs < ATLobby::kRelayRegisterIntervalMs)) continue;
+		NetRelayRegister registration;
+		std::memcpy(registration.sessionId, context.sessionId, 16);
+		std::memcpy(registration.ticket, context.ticket, 16);
+		registration.role = kRelayRoleHost;
+		uint8_t bytes[kWireRelayRegisterSize];
+		const size_t n = EncodeRelayRegister(registration, bytes, sizeof bytes);
+		if (n && mTransport->SendTo(bytes, n, context.endpoint))
+			context.registeredMs = nowMs ? nowMs : 1;
+	}
+}
+
+void Coordinator::SetRelayContext(const uint8_t sessionIdBytes16[16],
+	const char* lobbyHostPort) {
+	if (!sessionIdBytes16 || !lobbyHostPort || !*lobbyHostPort) {
+		mRelayContexts.clear();
+		mHintRelayContexts.clear();
+		mLastConfiguredRelayEndpoint = Endpoint{};
+		mHasRelaySessionId = mLobbyRelayKnown = false;
 		return;
 	}
-
-	const bool sessionIdMatches =
-		mHasRelaySessionId &&
-		std::memcmp(mRelaySessionId, sessionIdBytes16, 16) == 0;
-	const bool lobbyStrMatches =
-		mLobbyRelayKnown &&
-		mLobbyHostPortCached == lobbyHostPort;
-
-	if (sessionIdMatches && lobbyStrMatches) {
-		// No change — nothing to do, nothing to log.
+	if (mRole == Role::Host) {
+		RelayContextRecord* record = nullptr;
+		for (auto& context : mRelayContexts)
+			if (context.host == lobbyHostPort) { record = &context; break; }
+		if (!record) {
+			if (mRelayContexts.size() >= 64) return;
+			Endpoint endpoint;
+			if (!Transport::Resolve(lobbyHostPort, endpoint)) return;
+			// One relay listener represents one configured service. Avoid
+			// ambiguous duplicate source endpoints with different aliases.
+			for (auto& context : mRelayContexts)
+				if (context.endpoint.Equals(endpoint)) { record = &context; break; }
+			if (!record) {
+				mRelayContexts.emplace_back();
+				record = &mRelayContexts.back();
+				record->endpoint = endpoint;
+			}
+			record->host = lobbyHostPort;
+		}
+		if (std::memcmp(record->sessionId, sessionIdBytes16, 16) ||
+			std::memcmp(record->ticket, mConfiguredRelayTicket, 16))
+			record->registeredMs = 0;
+		std::memcpy(record->sessionId, sessionIdBytes16, 16);
+		std::memcpy(record->ticket, mConfiguredRelayTicket, 16);
+		record->hasTicket = mHasConfiguredRelayTicket;
+		mLastConfiguredRelayEndpoint = record->endpoint;
+		if (!mLobbyRelayKnown || (mPhase == Phase::WaitingForJoiner && !mPeerKnown))
+			SelectRelayContext(mRelayContexts.front().endpoint);
 		return;
 	}
-
-	// At least one input differs from the cached state.  Re-resolve
-	// the lobby endpoint (a numeric "ip:port" form skips DNS, but
-	// hostnames may not — we cache the result either way) and
-	// update the flags atomically (single-threaded coord, no race).
+	if (mHasRelaySessionId && mLobbyRelayKnown && mLobbyHostPortCached == lobbyHostPort &&
+		!std::memcmp(mRelaySessionId, sessionIdBytes16, 16)) return;
+	Endpoint endpoint;
+	if (!Transport::Resolve(lobbyHostPort, endpoint)) return;
 	std::memcpy(mRelaySessionId, sessionIdBytes16, 16);
-	mHasRelaySessionId = true;
-
-	Endpoint ep;
-	if (Transport::Resolve(lobbyHostPort, ep)) {
-		mLobbyRelayEndpoint = ep;
-		mLobbyRelayKnown = true;
-		mLobbyHostPortCached = lobbyHostPort;
-		char fmt[64];
-		ep.Format(fmt, sizeof fmt);
-		g_ATLCNetplay("relay context set: lobby=%s (auto-fallback armed)", fmt);
-	} else {
-		mLobbyRelayKnown = false;
-		mLobbyHostPortCached.clear();
-		g_ATLCNetplay("relay context: failed to resolve \"%s\"", lobbyHostPort);
-	}
+	mHasRelaySessionId = mLobbyRelayKnown = true;
+	mLobbyRelayEndpoint = endpoint;
+	mLobbyHostPortCached = lobbyHostPort;
+	mRelayRegisteredMs = 0;
 }
 
 void Coordinator::GetSessionNonce(uint8_t out[kSessionNonceLen]) const {
@@ -2829,6 +2979,20 @@ void Coordinator::GetSessionNonce(uint8_t out[kSessionNonceLen]) const {
 void Coordinator::IngestPeerHint(const uint8_t nonce16[kSessionNonceLen],
                                  const char* candidatesSemicolonList) {
 	if (mRole != Role::Host) return;
+	if (nonce16 && mLastConfiguredRelayEndpoint.IsValid()) {
+		HintRelayContext* record = nullptr;
+		for (auto& hint : mHintRelayContexts)
+			if (!std::memcmp(hint.nonce, nonce16, 16)) { record = &hint; break; }
+		if (!record) {
+			if (mHintRelayContexts.size() >= 64) mHintRelayContexts.erase(mHintRelayContexts.begin());
+			mHintRelayContexts.emplace_back(); record = &mHintRelayContexts.back();
+		}
+		std::memcpy(record->nonce, nonce16, 16);
+		record->endpoint = mLastConfiguredRelayEndpoint;
+		if (mPeerKnown && !std::memcmp(mAcceptedJoinerNonce, nonce16, 16))
+			SelectRelayContext(record->endpoint);
+	}
+
 	if (!candidatesSemicolonList || !*candidatesSemicolonList) return;
 	// During the handshake (WaitingForJoiner) we DO add to mPunchTargets
 	// for the immediate punch-burst.  After handshake we only refresh
@@ -2956,6 +3120,20 @@ void Coordinator::PumpPunchProbes(uint64_t nowMs) {
 
 bool Coordinator::WrapAndSend(const uint8_t* bytes, size_t n,
                               const Endpoint& peer) {
+	uint8_t bound[kMaxDatagramSize];
+	uint32_t magic = 0;
+	if (!PeekMagic(bytes, n, magic)) return false;
+	if (magic != kMagicHello && magic != kMagicReject && magic != kMagicPunch && magic != kMagicSession) {
+		if (n + kWireSessionHeaderSize > sizeof bound) return false;
+		for (int i = 0; i < 4; ++i) bound[i] = uint8_t(kMagicSession >> (8 * i));
+		const uint8_t* nonce = mRole == Role::Host ? mAcceptedJoinerNonce : mSessionNonce;
+		std::memcpy(bound + 4, nonce, kSessionNonceLen);
+		for (int i = 0; i < 4; ++i) bound[20 + i] = uint8_t(mResyncEpoch >> (8 * i));
+		std::memcpy(bound + kWireSessionHeaderSize, bytes, n);
+		bytes = bound;
+		n += kWireSessionHeaderSize;
+	}
+
 	// WsRelay: WasmTransport::SendTo carries the bytes through the
 	// WS bridge; no ASDF wrapping (the WS frame is already
 	// session+role-bound at handshake time).  The transport ignores
@@ -3127,6 +3305,42 @@ void Coordinator::HandleEventBatchFromPeer(const NetEventBatch& b,
 	}
 }
 
+void Coordinator::SendPing(uint64_t nowMs) {
+	if (mPingSentMs && nowMs - mPingSentMs < 500) return;
+	NetPing ping;
+	ping.sequence = ++mPingSequence;
+	ping.sentMs = nowMs;
+	uint8_t bytes[kWirePingSize];
+	const size_t n = EncodePing(ping, bytes, sizeof bytes);
+	if (n && WrapAndSend(bytes, n, mPeer)) {
+		mPingSentMs = nowMs;
+		mPingOutstanding = true;
+	}
+}
+
+void Coordinator::HandlePing(const NetPing& ping, uint64_t nowMs) {
+	if (mPhase != Phase::Lockstepping || !mPeerKnown) return;
+	if (!ping.reply) {
+		if (mLastPingReplyMs && nowMs - mLastPingReplyMs < 500) return;
+		NetPing response = ping;
+		response.reply = 1;
+		uint8_t bytes[kWirePingSize];
+		const size_t n = EncodePing(response, bytes, sizeof bytes);
+		if (n && WrapAndSend(bytes, n, mPeer)) {
+			mLastPingReplyMs = nowMs ? nowMs : 1;
+			++mPingRepliesSent;
+		}
+		return;
+	}
+	if (!mPingOutstanding || ping.sequence != mPingSequence ||
+		ping.sentMs != mPingSentMs || nowMs < mPingSentMs || nowMs - mPingSentMs > 10000) return;
+	mPingOutstanding = false;
+	++mRttSamples;
+	const uint16_t sample = (uint16_t)std::max<uint64_t>(1, nowMs - mPingSentMs);
+	mPeerRttMsEwma = mPeerRttMsEwma
+		? (uint16_t)((7u * mPeerRttMsEwma + sample + 4u) / 8u) : sample;
+}
+
 void Coordinator::HandleHeartbeatFromPeer(const NetHeartbeat& h,
                                           uint64_t nowMs) {
 	mPeerHeartbeat       = h;
@@ -3134,7 +3348,7 @@ void Coordinator::HandleHeartbeatFromPeer(const NetHeartbeat& h,
 }
 
 bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {
-	if (!mLobbyRelayKnown || !mHasRelaySessionId) return false;
+	if (!mLobbyRelayKnown || !mHasRelaySessionId || !mHasRelayTicket) return false;
 	// Wrap in ASDF frame targeted at the lobby.  The server strips the
 	// header and delivers inner bytes to the other side's registered
 	// srflx.  Inner max is kSnapshotChunkSize + header = ~1216 bytes,
@@ -3142,6 +3356,15 @@ bool Coordinator::SendWrappedViaLobby(const uint8_t* bytes, size_t n) {
 	uint8_t buf[kMaxDatagramSize + kWireRelayHeaderSize];
 	NetRelayDataHeader h;
 	std::memcpy(h.sessionId, mRelaySessionId, 16);
+	std::memcpy(h.ticket, mRelayTicket, 16);
+	if (mRole == Role::Joiner)
+		std::memcpy(h.routeNonce, mSessionNonce, 16);
+	else if (n >= 20 && ((bytes[0] == 'A' && bytes[1] == 'N' && bytes[2] == 'P' && bytes[3] == 'U') || (bytes[0] == 'N' && bytes[1] == 'A' && bytes[2] == 'P' && bytes[3] == 'P')))
+		std::memcpy(h.routeNonce, bytes + 4, 16);
+	else if (n >= 22 && !std::memcmp(bytes, "ANPR", 4))
+		std::memcpy(h.routeNonce, bytes + 6, 16);
+	else
+		std::memcpy(h.routeNonce, mAcceptedJoinerNonce, 16);
 	h.role = (mRole == Role::Host) ? kRelayRoleHost : kRelayRoleJoiner;
 	size_t wn = EncodeRelayFrame(h, bytes, n, buf, sizeof buf);
 	if (!wn) return false;
@@ -3174,8 +3397,12 @@ void Coordinator::SendRelayRegister(uint64_t nowMs, bool force) {
 		return;
 	}
 
+	if (!mHasRelayTicket) return;
 	NetRelayRegister r;
 	std::memcpy(r.sessionId, mRelaySessionId, 16);
+	std::memcpy(r.ticket, mRelayTicket, 16);
+	if (mRole == Role::Joiner)
+		std::memcpy(r.routeNonce, mSessionNonce, 16);
 	r.role = (mRole == Role::Host) ? kRelayRoleHost : kRelayRoleJoiner;
 	uint8_t buf[kWireRelayRegisterSize];
 	size_t n = EncodeRelayRegister(r, buf, sizeof buf);

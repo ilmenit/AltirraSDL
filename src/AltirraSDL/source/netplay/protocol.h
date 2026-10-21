@@ -100,6 +100,9 @@ DecodeResult DecodeEventBatch(const uint8_t* buf, size_t len, NetEventBatch& out
 size_t EncodeHeartbeat(const NetHeartbeat& h, uint8_t* buf, size_t bufSize);
 DecodeResult DecodeHeartbeat(const uint8_t* buf, size_t len, NetHeartbeat& out);
 
+size_t EncodePing(const NetPing& p, uint8_t* buf, size_t bufSize);
+DecodeResult DecodePing(const uint8_t* buf, size_t len, NetPing& out);
+
 // --- NetPunch (v4 two-sided punch) -----------------------------------------
 size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize);
 DecodeResult DecodePunch(const uint8_t* buf, size_t len, NetPunch& out);

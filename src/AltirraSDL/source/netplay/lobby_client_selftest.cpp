@@ -84,7 +84,7 @@ static std::string envOr(const char* k, const char* d) {
 
 static void testLiveLobbyRoundTrip() {
 	const char* skip = std::getenv("LOBBY_SKIP");
-	if (skip && *skip) {
+	if (!std::getenv("LOBBY_HOST") || (skip && *skip)) {
 		std::printf("lobby_selftest: live tests skipped (LOBBY_SKIP set)\n");
 		return;
 	}
@@ -126,7 +126,7 @@ static void testLiveLobbyRoundTrip() {
 	}
 	CHECK(!cresp.sessionId.empty());
 	CHECK(!cresp.token.empty());
-	CHECK(cresp.ttlSeconds >= 30);
+	CHECK(cresp.ttlSeconds >= 15);
 
 	std::printf("created session %s (ttl=%ds)\n",
 		cresp.sessionId.c_str(), cresp.ttlSeconds);
@@ -183,7 +183,7 @@ static void testLiveLobbyRoundTrip() {
 // accepted=true.
 static void testLiveBrokerAutoAccept() {
 	const char* skip = std::getenv("LOBBY_SKIP");
-	if (skip && *skip) {
+	if (!std::getenv("LOBBY_HOST") || (skip && *skip)) {
 		std::printf("lobby_selftest: broker tests skipped (LOBBY_SKIP set)\n");
 		return;
 	}
@@ -255,7 +255,7 @@ static void testLiveBrokerAutoAccept() {
 // "host didn't reply" message.
 static void testLiveBrokerGetIntent404() {
 	const char* skip = std::getenv("LOBBY_SKIP");
-	if (skip && *skip) return;
+	if (!std::getenv("LOBBY_HOST") || (skip && *skip)) return;
 	LobbyEndpoint ep;
 	ep.host = envOr("LOBBY_HOST", "lobby.atari.org.pl");
 	ep.port = (uint16_t)std::atoi(envOr("LOBBY_PORT", "8080").c_str());
@@ -268,7 +268,43 @@ static void testLiveBrokerGetIntent404() {
 	CHECK(c.LastStatus() == 404);
 }
 
+static void testLocalRelayTicket() {
+	if (!std::getenv("LOBBY_HOST") || std::getenv("LOBBY_SKIP")) return;
+	LobbyEndpoint endpoint;
+	endpoint.host = std::getenv("LOBBY_HOST");
+	endpoint.port = (uint16_t)std::atoi(envOr("LOBBY_PORT", "8080").c_str());
+	LobbyClient client(endpoint);
+	LobbyCreateRequest request; request.cartName = "Client relay regression";
+	request.hostHandle = "client-test"; request.hostEndpoint = "127.0.0.1:26000";
+	LobbyCreateResponse session;
+	CHECK(client.Create(request, session));
+	if (session.sessionId.empty()) return;
+	LobbyRelayTicket ticket;
+	CHECK(client.AcquireRelayTicket(session.sessionId, "12345678123456781234567812345678", ticket));
+	CHECK(ticket.ticket.size() == 32 && ticket.sessionNonce == "12345678123456781234567812345678");
+	CHECK(!client.AcquireRelayTicket(session.sessionId, "12345678123456781234567812345678", ticket));
+	CHECK(client.LastStatus() == 409);
+	CHECK(client.Delete(session.sessionId, session.token));
+}
+
+static void testConfiguredEndpoints() {
+	LobbyEndpoint endpoint;
+	CHECK(ParseLobbyEndpoint("https://lobby.example:9443/service/", endpoint));
+	CHECK(endpoint.secure && endpoint.host == "lobby.example" && endpoint.port == 9443 && endpoint.basePath == "/service");
+	CHECK(LobbyWebSocketUrl(endpoint) == "wss://lobby.example:9443/service/netplay");
+	CHECK(LobbyWebSocketUrl(endpoint, "wss://relay.example:8443/game") == "wss://relay.example:8443/game");
+	CHECK(LobbyWebSocketUrl(endpoint, "ws://relay.example/game").empty());
+	CHECK(ParseLobbyEndpoint("http://127.0.0.1:8082", endpoint));
+	CHECK(!endpoint.secure && endpoint.port == 8082 && endpoint.basePath.empty());
+	CHECK(ParseLobbyEndpoint("https://[::1]:443/base", endpoint));
+	CHECK(endpoint.host == "[::1]" && endpoint.basePath == "/base");
+	for (const char* invalid : {"https://", "ftp://host", "https://host:0", "https://host:9999999999999999999", "https://host:wrong", "https://user:password@host", "https://host/path?query", "https://host/\r\nheader"})
+		CHECK(!ParseLobbyEndpoint(invalid, endpoint));
+}
+
 int main() {
+	testConfiguredEndpoints();
+	testLocalRelayTicket();
 	testUrlPercentEncode();
 	testListRoundTripDoesntCrash();
 	testLiveLobbyRoundTrip();

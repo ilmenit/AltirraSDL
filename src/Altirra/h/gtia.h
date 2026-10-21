@@ -482,6 +482,7 @@ public:
 
 	void SetConsoleSwitch(uint8 c, bool down);
 	uint8 ReadConsoleSwitchInputs() const;
+	uint8 GetConsoleSwitchInputState() const { return mSwitchInput; }
 	uint8 ReadConsoleSwitches() const;
 
 	uint8 GetForcedConsoleSwitches() const { return mForcedSwitchInput; }

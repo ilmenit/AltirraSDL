@@ -41,7 +41,7 @@ Standalone (no AltirraSDL build wiring), as the Dockerfile does:
 
 ```bash
 # Run from the repo root so shared headers resolve.
-cmake -S . -B build/lobby-only -DCMAKE_BUILD_TYPE=Release
+cmake -S server/lobby -B build/lobby-only -DCMAKE_BUILD_TYPE=Release
 cmake --build build/lobby-only --target altirra-lobby
 ```
 
@@ -130,8 +130,9 @@ curl -sS http://localhost:8080/healthz   # → ok sessions=0
   silent NetHello timeouts.  Native clients that have implemented
   the broker intent dance pass this flag.
 - **v4** `POST /v1/session/{id}/intents` — joiner posts an intent
-  against an `awaiting_approval` (or auto-accepting `waiting`)
-  session.  Body `{joinerHandle, codeHash}`; returns
+  against an `awaiting_approval` (or native auto-accepting `waiting`)
+  session. A browser broker session keeps requiring the owner's decision
+  after its emulator starts and publishes `waiting`.  Body `{joinerHandle, codeHash}`; returns
   `{intentId, sessionId, ttlSeconds}`.
 - **v4** `GET /v1/intent/{iid}` — non-SSE polling endpoint mirroring
   the SSE stream below.  Returns
@@ -339,3 +340,60 @@ version passed functional parity.
 The WebSocket bridge was added in 2026 to let browser (WASM)
 builds participate in netplay sessions; the inner Altirra wire
 protocol is unchanged.
+
+## Authenticated relay and recovery (gameplay protocol 8)
+
+Native clients use HTTPS for the official directory. Existing shipped HTTP
+entries for the two official hostnames migrate to HTTPS; custom HTTP URLs keep
+their explicit configuration. API URLs may include a custom port and path prefix.
+Use `PUBLIC_WEBSOCKET_URL=wss://your-host:port/path` when the WebSocket endpoint
+is different from the directory origin. Without it clients derive the endpoint
+from the configured origin and prefix, ending in `/netplay`.
+
+`GET /v1/capabilities` advertises relay authorization version, UDP port, WebSocket
+endpoint and supported gameplay protocol. Create responses include transport
+addresses. `UDP_REFLECTOR_PORT=0` and `WS_BRIDGE_PORT=0` disable those listeners.
+A disabled UDP relay still permits direct native peer connections.
+
+A public session ID or nickname grants no authority. The host uses its private
+session token for relay registration. Before joining, a client generates a fresh
+128-bit attempt nonce and POSTs `{ "sessionNonce": "32 lowercase hex digits" }`
+to `/v1/session/{id}/relay-ticket`. The response contains a private `ticket`, the
+nonce, `relayPort`, optional `webSocketUrl`, and an idle lease of 60 seconds.
+At most 16 pending routes exist per session. Requesting an occupied nonce returns
+409 and never reveals its ticket. Authenticated traffic renews the lease.
+Browser broker sessions additionally require `intentId` in this request. The
+intent must have been explicitly accepted by the owner; an unused approval
+can authorize the startup handoff for five minutes. This requirement survives
+heartbeat state changes to `waiting`, and a new intent is never automatically
+approved merely because the browser emulator has started. The existing private
+ticket then owns the live connection independently of the startup grant.
+
+UDP relay headers are 56 bytes: magic, session ID, role and three zero bytes,
+then the private 16-byte ticket and 16-byte route nonce. Both registration and
+data validate the ticket before allocating or changing an endpoint. Distinct
+pending joiners have independent routes; only the same private authority can
+rebind its route after a NAT/source-port change. Host responses carry the
+pending/accepted nonce. WSS upgrades require `token.<ticket>` for both roles and
+`nonce.<hex>` for joiners. Native hosts retain their explicit in-emulator
+approval and private-code checks. Browser broker hosts auto-accept only traffic
+whose private ticket was minted from the owner's approved intent. Protocol-8 session envelopes remain opaque to the relay except for
+routing and optional phase/heartbeat diagnostics.
+
+Authenticated lease heartbeats have a separate per-session rate budget, so five
+waiting offers or another user behind the same NAT cannot exhaust their lease
+maintenance allowance by browsing. Display-name collisions never replace another
+owner's room or consume a nickname-owned quota. The client retains its own
+five-offer limit; global capacity and source request limits protect the service.
+Expired registrations are recreated, with stale responses ignored.
+
+Native hosts can register with multiple directories and keep independent relay
+contexts. A browser host uses one active directory because it owns one WSS
+transport. Registration failure tries another enabled directory. A running
+browser match is not silently migrated between services.
+
+Tests include real loopback UDP registration/forwarding, rejected endpoint
+replacement, authenticated NAT rebinding, independent simultaneous pending UDP
+and WSS routes, lease maintenance after discovery-rate exhaustion, and frontend
+cancellation with delayed responses. Unit tests make no public session writes;
+lobby-client live checks require an explicit `LOBBY_HOST` test endpoint.

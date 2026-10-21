@@ -31,17 +31,17 @@ static int fails = 0;
 static void testWireSizes() {
 	CHECK(kWireHelloSize          == 90);
 	CHECK(kWireBootCfgSize        == 36);
-	CHECK(kWireWelcomeSize        == 128);   // v5: +4 for snapshotCRC32
+	CHECK(kWireWelcomeSize        == 134);   // v5: +4 for snapshotCRC32
 	CHECK(kWireWelcomeAckSize     == 4);     // v5: new
 	// v6: NetReject reason u32→u16 (8→6); NetBye gains u16 reason (8→6).
-	CHECK(kWireRejectSize         == 6);
+	CHECK(kWireRejectSize         == 22);
 	CHECK(kWireByeSize            == 6);
-	CHECK(kWireInputPktSize       == 41);   // v7: NetInput +1 byte for rttClass
-	CHECK(kWireInputSize          == 5);    // v7
+	CHECK(kWireInputPktSize       == 132);   // v7: NetInput +1 byte for rttClass
+	CHECK(kWireInputSize          == 22);    // v7
 	CHECK(kWireChunkHdrSize       == 16);
 	CHECK(kWireAckSize            == 8);
 	CHECK(kRedundancyR            == 5);
-	CHECK(kProtocolVersion        == 7);
+	CHECK(kProtocolVersion        == 8);
 	// v6 observability layer.
 	CHECK(kWireNetPhaseSize       == 12);
 	CHECK(kWireNetEventSize       == 8);
@@ -53,7 +53,7 @@ static void testWireSizes() {
 static void testMagicAnchors() {
 	// Bytes on the wire: 41 4E 50 XX.  Anchored because the magic is
 	// part of the spec, not an implementation detail.
-	uint8_t buf[kWireByeSize];
+	uint8_t buf[kWireRejectSize];
 	uint32_t m = 0;
 
 	NetBye b; b.reason = 0;
@@ -100,6 +100,8 @@ static void testHelloRoundTrip() {
 
 static void testWelcomeRoundTrip() {
 	NetWelcome in;
+	in.rollbackFrames = 8;
+	in.framePeriodUs = 20000;
 	in.inputDelayFrames = 4;
 	in.playerSlot = 2;
 	CartFromString("Joust.atr", in.cartName);
@@ -125,6 +127,8 @@ static void testWelcomeRoundTrip() {
 	NetWelcome out;
 	CHECK(DecodeWelcome(buf, n, out) == DecodeResult::Ok);
 	CHECK(out.inputDelayFrames == 4);
+	CHECK(out.rollbackFrames == 8);
+	CHECK(out.framePeriodUs == 20000);
 	CHECK(out.playerSlot == 2);
 	CHECK(std::strcmp(CartToCStr(out.cartName), "Joust.atr") == 0);
 	CHECK(out.snapshotBytes == 65536);
@@ -221,14 +225,19 @@ static void testInputPacketRoundTrip() {
 	NetInputPacket in;
 	in.baseFrame = 12345;
 	in.count = 5;
-	in.ackedFrame = 12340;
+	in.ackedFrame = 123400;
+	in.receivedThrough = 123456;
 	in.stateHashLow32 = 0xCAFEBABEu;
 	for (int i = 0; i < kRedundancyR; ++i) {
 		in.inputs[i].stickDir = (uint8_t)(0x0F & (i + 1));
 		in.inputs[i].buttons  = (uint8_t)(0x10 + i);
 		in.inputs[i].keyScan  = (uint8_t)(0x20 + i);
 		in.inputs[i].extFlags = (uint8_t)(0x30 + i);
-		in.inputs[i].rttClass = (uint8_t)(0x40 + i);   // v7
+		in.inputs[i].rttClass = (uint8_t)(0x40 + i);
+		in.inputs[i].keyFlags = (uint8_t)i;
+		in.inputs[i].keyHeldMask = 0xAABBCCDDEE000001ULL << i;
+		in.inputs[i].pot[0] = 0x7FFFFFFEu;
+		in.inputs[i].pot[1] = 0x12340000u + i;
 	}
 
 	uint8_t buf[kMaxDatagramSize];
@@ -239,14 +248,19 @@ static void testInputPacketRoundTrip() {
 	CHECK(DecodeInputPacket(buf, n, out) == DecodeResult::Ok);
 	CHECK(out.baseFrame == 12345);
 	CHECK(out.count == 5);
-	CHECK(out.ackedFrame == 12340);
+	CHECK(out.ackedFrame == 123400);
+	CHECK(out.receivedThrough == 123456);
 	CHECK(out.stateHashLow32 == 0xCAFEBABEu);
 	for (int i = 0; i < kRedundancyR; ++i) {
 		CHECK(out.inputs[i].stickDir == (uint8_t)(0x0F & (i + 1)));
 		CHECK(out.inputs[i].buttons  == (uint8_t)(0x10 + i));
 		CHECK(out.inputs[i].keyScan  == (uint8_t)(0x20 + i));
 		CHECK(out.inputs[i].extFlags == (uint8_t)(0x30 + i));
-		CHECK(out.inputs[i].rttClass == (uint8_t)(0x40 + i));   // v7
+		CHECK(out.inputs[i].rttClass == (uint8_t)(0x40 + i));
+		CHECK(out.inputs[i].keyFlags == i);
+		CHECK(out.inputs[i].keyHeldMask == (0xAABBCCDDEE000001ULL << i));
+		CHECK(out.inputs[i].pot[0] == 0x7FFFFFFEu);
+		CHECK(out.inputs[i].pot[1] == 0x12340000u + i);
 	}
 
 	// Oversize count is rejected by both encoder and decoder.
@@ -518,7 +532,79 @@ static void testShortAndBadMagic() {
 	CHECK(DecodeReject(buf, sizeof(buf), out) == DecodeResult::BadMagic);
 }
 
+static void testResyncTimingAndChecksum() {
+	NetResyncStart in;
+	in.epoch = 9; in.stateBytes = 123456; in.stateChunks = 103;
+	in.resumeFrame = 70000; in.seedHash = 0xA1B2C3D4;
+	in.inputDelayFrames = 10; in.stateCRC32 = 0xEF012345;
+	uint8_t bytes[kWireResyncStartSize];
+	CHECK(EncodeResyncStart(in, bytes, sizeof bytes) == sizeof bytes);
+	NetResyncStart out;
+	CHECK(DecodeResyncStart(bytes, sizeof bytes, out) == DecodeResult::Ok);
+	CHECK(out.epoch == 9); CHECK(out.resumeFrame == 70000);
+	CHECK(out.stateBytes == 123456); CHECK(out.stateChunks == 103);
+	CHECK(out.seedHash == 0xA1B2C3D4);
+	CHECK(out.inputDelayFrames == 10); CHECK(out.stateCRC32 == 0xEF012345);
+}
+
+static void testRelayCredentialRoundTrip() {
+	CHECK(kWireRelayRegisterSize == 56);
+	CHECK(kWireRelayHeaderSize == 56);
+	NetRelayRegister in;
+	in.role = kRelayRoleJoiner;
+	for (int i = 0; i < 16; ++i) {
+		in.sessionId[i] = uint8_t(i + 1);
+		in.ticket[i] = uint8_t(i + 33);
+		in.routeNonce[i] = uint8_t(i + 65);
+	}
+	uint8_t bytes[kMaxRelayDatagramSize];
+	CHECK(EncodeRelayRegister(in, bytes, sizeof bytes) == 56);
+	NetRelayRegister out;
+	CHECK(DecodeRelayRegister(bytes, 56, out) == DecodeResult::Ok);
+	CHECK(std::memcmp(in.sessionId, out.sessionId, 16) == 0);
+	CHECK(std::memcmp(in.ticket, out.ticket, 16) == 0);
+	CHECK(std::memcmp(in.routeNonce, out.routeNonce, 16) == 0);
+	CHECK(out.role == kRelayRoleJoiner);
+	CHECK(DecodeRelayRegister(bytes, 24, out) == DecodeResult::TooShort);
+	CHECK(DecodeRelayRegister(bytes, 57, out) == DecodeResult::BadSize);
+	NetRelayDataHeader header;
+	header.role = kRelayRoleHost;
+	std::memcpy(header.sessionId, in.sessionId, 16);
+	std::memcpy(header.ticket, in.ticket, 16);
+	std::memcpy(header.routeNonce, in.routeNonce, 16);
+	const uint8_t payload[] = {1, 2, 3, 4, 5};
+	CHECK(EncodeRelayFrame(header, payload, sizeof payload, bytes, sizeof bytes) == 61);
+	NetRelayDataHeader decoded;
+	const uint8_t* inner = nullptr;
+	size_t length = 0;
+	CHECK(DecodeRelayFrame(bytes, 61, decoded, inner, length) == DecodeResult::Ok);
+	CHECK(length == sizeof payload);
+	CHECK(std::memcmp(inner, payload, sizeof payload) == 0);
+	CHECK(std::memcmp(header.sessionId, decoded.sessionId, 16) == 0);
+	CHECK(std::memcmp(header.ticket, decoded.ticket, 16) == 0);
+	CHECK(std::memcmp(header.routeNonce, decoded.routeNonce, 16) == 0);
+	CHECK(decoded.role == kRelayRoleHost);
+	CHECK(DecodeRelayFrame(bytes, 24, decoded, inner, length) == DecodeResult::TooShort);
+}
+
+static void testPingRoundTrip() {
+	NetPing in; in.sequence = 0x12345678; in.reply = 1;
+	in.sentMs = 0x1122334455667788ULL;
+	uint8_t bytes[kWirePingSize];
+	CHECK(EncodePing(in, bytes, sizeof bytes) == sizeof bytes);
+	NetPing out;
+	CHECK(DecodePing(bytes, sizeof bytes, out) == DecodeResult::Ok);
+	CHECK(out.sequence == in.sequence); CHECK(out.sentMs == in.sentMs);
+	CHECK(out.reply == 1);
+	CHECK(DecodePing(bytes, sizeof bytes - 1, out) == DecodeResult::BadSize);
+	bytes[8] = 2;
+	CHECK(DecodePing(bytes, sizeof bytes, out) == DecodeResult::BadSize);
+}
+
 int main() {
+	testPingRoundTrip();
+	testRelayCredentialRoundTrip();
+	testResyncTimingAndChecksum();
 	testWireSizes();
 	testMagicAnchors();
 	testHelloRoundTrip();

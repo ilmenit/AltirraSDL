@@ -21,35 +21,27 @@ packet flow, NAT traversal), see
 
 ## How netplay works
 
-**Short version**: both peers cold-boot the same game from the same
-master seed with the same machine configuration, then advance their
-simulators in lockstep — each peer waits for the other's input for
-frame N before committing frame N. Because the emulator is cycle
-deterministic given identical inputs, both screens show pixel-exact
-identical frames indefinitely.
+Both peers cold-boot the host's selected game under the same deterministic
+machine configuration. Controller inputs travel frame by frame. In
+**Automatic** mode, each emulator can predict a short stretch of missing
+remote input and replay corrected frames when the real input arrives.
+**Delay only** waits for both inputs before advancing.
 
-**Less short**: AltirraSDL ships a tiny matchmaking lobby (a session
-directory — see [server/lobby/](server/lobby/)) where hosts advertise
-"I'm hosting Joust at 1.2.3.4:26100". Browsers pull the directory,
-the joiner connects to the host's UDP port directly (the lobby
-doesn't proxy), and the two peers exchange handshake + `NetWelcome`
-packets carrying the host's game-file bytes and machine config. Both
-peers then `ColdReset` with the same locked random seed and enter
-lockstep.
+Open **Online Play → Preferences → Hosting** to select the mode before hosting.
+Automatic uses two frames of input delay (about 33 ms NTSC / 40 ms PAL)
+and an eight-frame prediction limit. Delay only retains the configured
+input delay and adjusts upward for sustained latency. A connection outage
+beyond the prediction limit still pauses gameplay.
 
-Key implications:
+The lobby provides discovery and authenticated relay paths in addition to
+direct UDP. Browser peers use WebSocket relay transport. Both players need
+protocol 8 builds and matching OS/BASIC firmware; firmware is never sent.
+The host transfers the selected game image, so the joiner does not need it
+in their own library.
 
-- **Latency is real**: lockstep waits for both inputs before
-  advancing. Default input delay is 4 frames (~66 ms) which adds
-  ~100 ms round-trip feel on typical connections.
-- **Same machine config required**: kernel ROM CRC32, BASIC ROM
-  CRC32, hardware mode (800/XL/XE/5200), memory, video standard —
-  all frozen into the `NetBootConfig` the host ships. The joiner
-  refuses to connect if it doesn't have matching-CRC32 firmware
-  installed locally.
-- **Game file is transferred** from host → joiner on connect, so
-  the joiner doesn't need the file in their library. This covers
-  common XEX/ATR/CAR images up to ~32 MB.
+Your running game and media are preserved before the session and restored
+when you leave, including unsaved disk changes and the paused/running state.
+Writes made during online play stay in the session's reversible disk overlay.
 
 ---
 
@@ -119,7 +111,7 @@ The first time Online Play is opened, AltirraSDL writes
 
 [official]
 name    = Altirra Official Lobby
-url     = http://lobby.atari.org.pl:8080
+url     = https://lobby.atari.org.pl
 region  = global
 enabled = true
 
@@ -128,7 +120,7 @@ enabled = true
 ; enabling both aliases duplicates traffic to the same service.
 [backup]
 name    = Altirra Lobby (DuckDNS backup)
-url     = http://altirra-lobby.duckdns.org:8080
+url     = https://altirra-lobby.duckdns.org
 region  = global
 enabled = false
 
@@ -395,27 +387,16 @@ heartbeat refreshes it.
 
 **Joiner stuck on "Asking the host to let you in…" forever**
 
-The handshake is direct UDP between joiner and host — the lobby is
-only a directory, not a relay. If the joiner is reaching the lobby
-but never completing the handshake, something is dropping the UDP
-packets between the two peers. Common causes:
+The client tries the host's available candidates and relay paths. Check
+that both peers run compatible builds and the lobby service supports the
+current relay-ticket protocol. Private entry codes and manual approval
+still apply to relayed joins.
 
-- **Host behind a restrictive NAT / CGNAT.** The host's router drops
-  inbound UDP from the joiner's IP because the mapping was never
-  established. Workaround: the host port-forwards the UDP port
-  (default 26100) on their router. See
-  [docs/netplay-architecture.md §8](docs/netplay-architecture.md#8-nat-traversal)
-  for the full NAT-traversal picture.
-- **Mobile / cellular data on the joiner.** Carrier-grade NAT
-  (CGNAT) often uses symmetric mapping that breaks hole-punching.
-  Switch to Wi-Fi if possible.
-- **Corporate / school network on either side.** These frequently
-  block outbound UDP to arbitrary ports; the only fix is to try a
-  different network.
-
-The client now sprays `NetHello` to every host candidate (LAN,
-server-reflexive / public, loopback) for up to 15 seconds before
-giving up, so transient packet loss is no longer a failure mode.
+For a self-hosted lobby, expose its advertised UDP relay port and WebSocket
+endpoint as well as HTTP(S). A custom HTTPS port or reverse-proxy base path
+must appear in `lobby.ini`. If UDP is blocked, a browser relay can help;
+ordered WebSocket transport can still stall during packet loss. Consult
+[connection paths](docs/netplay-architecture.md#4-connection-paths).
 
 ---
 
@@ -427,3 +408,6 @@ giving up, so transient packet loss is no longer a failure mode.
   protocol-level design: packet formats, lockstep math, NAT
   traversal, determinism contract, known limitations.
 - [BUILD.md](BUILD.md) — AltirraSDL client build instructions.
+
+Implementation details and measured test results are in the
+[netplay validation report](docs/netplay-validation.md).

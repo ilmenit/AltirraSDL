@@ -58,6 +58,53 @@ void UrlEncode(const std::string& s, std::string& out) {
 
 namespace {
 
+bool ValidateHeaders(const Request& in, Response& out) {
+	size_t bytes = 0;
+	if (in.headers.size() > 32) {
+		out = Response(); out.error = "too many HTTP request headers"; return false;
+	}
+	for (const auto& header : in.headers) {
+		bytes += header.first.size() + header.second.size();
+		bool valid = !header.first.empty() && bytes <= 16384;
+		for (unsigned char c : header.first)
+			valid = valid && ((c >= 'A' && c <= 'Z') ||
+				(c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-');
+		for (unsigned char c : header.second)
+			valid = valid && c >= 0x20 && c != 0x7f;
+		std::string name = header.first;
+		for (char& c : name) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+		valid = valid && name != "host" && name != "content-length"
+			&& name != "transfer-encoding" && name != "connection";
+		if (!valid) {
+			out = Response(); out.error = "invalid HTTP request header"; return false;
+		}
+	}
+	return true;
+}
+
+// The backend resolves Location first. Comparing the resulting absolute
+// authorities conservatively avoids sending private lobby tokens elsewhere.
+std::string RequestOrigin(const std::string& url) {
+	const auto schemeEnd = url.find("://");
+	if (schemeEnd == std::string::npos) return {};
+	const auto end = url.find_first_of("/?#", schemeEnd + 3);
+	std::string origin = url.substr(0, end);
+	if (origin.find('@') != std::string::npos) return {};
+	for (char& c : origin) {
+		if ((unsigned char)c <= 0x20 || c == 0x7f) return {};
+		if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+	}
+	return origin;
+}
+
+bool AllowRedirect(const Request& in, const std::string& target, Response& out) {
+	if (in.headers.empty()) return true;
+	const auto origin = RequestOrigin(in.url);
+	if (!origin.empty() && origin == RequestOrigin(target)) return true;
+	out = Response(); out.error = "authenticated HTTP redirect crosses origin";
+	return false;
+}
+
 // Normalise a Content-Type header value: lower-case, parameters stripped.
 // "image/PNG; charset=binary" -> "image/png"
 std::string NormalizeContentType(const char* raw) {
@@ -337,7 +384,8 @@ static void GetWindowsOnce(const Request& in, Response& out,
 
 	HInternetGuard request;
 	request.h = WinHttpOpenRequest(connect.h,
-		in.method == Method::Post ? L"POST" : L"GET", objectName.c_str(),
+		in.method == Method::Post ? L"POST" :
+		in.method == Method::Delete ? L"DELETE" : L"GET", objectName.c_str(),
 		nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
 		reqFlags);
 	if (!request.h) {
@@ -381,6 +429,8 @@ static void GetWindowsOnce(const Request& in, Response& out,
 		upload = const_cast<char*>(in.requestBody.data());
 		uploadSize = (DWORD)in.requestBody.size();
 	}
+	for (const auto& header : in.headers)
+		headers += WidenUtf8(header.first) + L": " + WidenUtf8(header.second) + L"\r\n";
 	if (!WinHttpSendRequest(request.h, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
 		(DWORD)headers.size(), upload, uploadSize, uploadSize, 0))
 	{
@@ -506,6 +556,7 @@ static void GetWindowsOnce(const Request& in, Response& out,
 }
 
 void Perform(const Request& in, Response& out) {
+	if (!ValidateHeaders(in, out)) return;
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 	Request hop = in;
@@ -522,12 +573,14 @@ void Perform(const Request& in, Response& out) {
 		GetWindowsOnce(hop, out, redirectURL);
 		if (IsCancelled(in)) { out = Response(); out.error = "cancelled"; return; }
 		if (!out.error.empty() || redirectURL.empty()) return;
+		if (!AllowRedirect(in, redirectURL, out)) return;
 		if (redirects == 5) {
 			out = Response();
 			out.error = "too many redirects";
 			return;
 		}
-		if (out.status == 301 || out.status == 302 || out.status == 303) {
+		if (out.status == 303 ||
+			((out.status == 301 || out.status == 302) && hop.method == Method::Post)) {
 			hop.method = Method::Get;
 			hop.requestBody.clear();
 		}
@@ -700,6 +753,22 @@ static void GetAndroidOnce(const Request& in, Response& out,
 	} disconnector{env, conn.obj, disconnect};
 
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
+
+	for (const auto& header : in.headers) {
+		if (!setRequestProperty) { out.error = "HTTP request headers unavailable"; return; }
+		JLocal key(env, (jobject)env->NewStringUTF(header.first.c_str()));
+		JLocal value(env, (jobject)env->NewStringUTF(header.second.c_str()));
+		if (ClearException(env) || !key || !value) { out.error = "HTTP request header allocation failed"; return; }
+		env->CallVoidMethod(conn, setRequestProperty, key.obj, value.obj);
+		if (ClearException(env)) { out.error = "HTTP request header setup failed"; return; }
+	}
+	if (in.method == Method::Delete) {
+		const auto setMethod = env->GetMethodID(httpConnClass, "setRequestMethod", "(Ljava/lang/String;)V");
+		JLocal method(env, (jobject)env->NewStringUTF("DELETE"));
+		if (ClearException(env) || !setMethod || !method) { out.error = "HTTP DELETE unavailable"; return; }
+		env->CallVoidMethod(conn, setMethod, method.obj);
+		if (ClearException(env)) { out.error = "HTTP DELETE setup failed"; return; }
+	}
 
 	if (in.method == Method::Post) {
 		if (in.requestContentType.find_first_of("\r\n") != std::string::npos) {
@@ -894,6 +963,7 @@ static void GetAndroidOnce(const Request& in, Response& out,
 }
 
 void Perform(const Request& in, Response& out) {
+	if (!ValidateHeaders(in, out)) return;
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 	Request hop = in;
@@ -915,12 +985,14 @@ void Perform(const Request& in, Response& out) {
 		}
 		if (!out.error.empty() || redirectURL.empty())
 			return;
+		if (!AllowRedirect(in, redirectURL, out)) return;
 		if (redirects == 5) {
 			out = Response();
 			out.error = "too many redirects";
 			return;
 		}
-		if (out.status == 301 || out.status == 302 || out.status == 303) {
+		if (out.status == 303 ||
+			((out.status == 301 || out.status == 302) && hop.method == Method::Post)) {
 			hop.method = Method::Get;
 			hop.requestBody.clear();
 		}
@@ -1233,6 +1305,8 @@ static void GetCurlOnce(const Request& in, Response& out,
 	BodyReceiver receiver(in, out);
 
 	c.easy_setopt(eh, kOptURL, in.url.c_str());
+	if (in.method == Method::Delete)
+		c.easy_setopt(eh, kOptObjectPoint + 36, "DELETE");
 	if (in.method == Method::Post) {
 		if (in.requestContentType.find_first_of("\r\n") != std::string::npos) {
 			out.error = "invalid HTTP content type";
@@ -1247,6 +1321,13 @@ static void GetCurlOnce(const Request& in, Response& out,
 		c.easy_setopt(eh, kOptPostFields, in.requestBody.c_str());
 		c.easy_setopt(eh, kOptPostFieldSize, (int64_t)in.requestBody.size());
 	}
+	for (const auto& header : in.headers) {
+		const std::string line = header.first + ": " + header.second;
+		void* updated = c.slist_append(cleanup.headers, line.c_str());
+		if (!updated) { out.error = "unable to allocate HTTP headers"; return; }
+		cleanup.headers = updated;
+	}
+	if (cleanup.headers) c.easy_setopt(eh, kOptHttpHeader, cleanup.headers);
 	c.easy_setopt(eh, kOptWriteFunction, (void*)&WriteCallback);
 	c.easy_setopt(eh, kOptWriteData, (void*)&receiver);
 	c.easy_setopt(eh, kOptHeaderFunction, (void*)&HeaderCallback);
@@ -1324,6 +1405,7 @@ static void GetCurlOnce(const Request& in, Response& out,
 }
 
 void Perform(const Request& in, Response& out) {
+	if (!ValidateHeaders(in, out)) return;
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 	Request hop = in;
@@ -1340,12 +1422,14 @@ void Perform(const Request& in, Response& out) {
 		GetCurlOnce(hop, out, redirectURL);
 		if (IsCancelled(in)) { out = Response(); out.error = "cancelled"; return; }
 		if (!out.error.empty() || redirectURL.empty()) return;
+		if (!AllowRedirect(in, redirectURL, out)) return;
 		if (redirects == 5) {
 			out = Response();
 			out.error = "too many redirects";
 			return;
 		}
-		if (out.status == 301 || out.status == 302 || out.status == 303) {
+		if (out.status == 303 ||
+			((out.status == 301 || out.status == 302) && hop.method == Method::Post)) {
 			hop.method = Method::Get;
 			hop.requestBody.clear();
 		}

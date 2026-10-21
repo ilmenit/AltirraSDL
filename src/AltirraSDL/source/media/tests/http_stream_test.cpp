@@ -23,6 +23,11 @@ int main(int argc, char** argv) {
 		request.requestBody.assign("POST\0DATA", 9);
 		request.requestContentType = "application/octet-stream";
 	}
+	if (mode == "delete-auth") request.method = ATHttp::Method::Delete;
+	if (mode == "delete-auth" || mode == "auth")
+		request.headers.emplace_back("X-Session-Token", "private-fixture-token");
+	if (mode == "bad-header")
+		request.headers.emplace_back("X-Session-Token", "bad\r\nInjected: header");
 	std::atomic<bool> cancel{false};
 	std::atomic<uint64_t> received{123}, total{123};
 	request.cancel = &cancel;
@@ -46,7 +51,7 @@ int main(int argc, char** argv) {
 		cancel.store(true);
 	});
 	ATHttp::Response response;
-	if (mode == "post-perform") ATHttp::Perform(request, response);
+	if (mode == "post-perform" || mode == "delete-auth") ATHttp::Perform(request, response);
 	else if (mode == "post" || mode == "post-memory" || mode == "post-binary") ATHttp::Post(request, response);
 	else ATHttp::Get(request, response);
 	if (canceller.joinable()) canceller.join();

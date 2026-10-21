@@ -1,7 +1,7 @@
 # Upstream merge regression tests
 
 Configure with `-DALTIRRA_BUILD_TESTS=ON` and
-`-DALTIRRA_REQUIRE_EXPORT_VALIDATION=ON`, build all five targets and run:
+`-DALTIRRA_REQUIRE_EXPORT_VALIDATION=ON`, then build all five targets and run:
 
 ```sh
 cmake --build build/linux-release --target \
@@ -53,16 +53,16 @@ mandatory PDF validation on Linux/GCC 12, both normally and with ASan/UBSan
 and leak detection. Separate Windows/MSVC and macOS native jobs run the C++
 tests; PDF validation is assigned explicitly to Linux, not silently skipped
 as part of those native jobs. Existing platform workflows still build the
-full desktop and Android applications. Adding CI jobs does not mean those
-remote jobs have already run; this task does not push or dispatch workflows.
+full desktop and Android applications. Check results for the exact PR head;
+local builds do not establish remote CI success.
 
-Local verification: all 13 Linux CTest tests passed; all four focused tests
-passed in an Ubuntu 22.04/GCC 12 container with ASan, UBSan and leak detection.
+Historical test19 verification: all 13 Linux CTest tests passed; all four
+focused tests passed in an Ubuntu 22.04/GCC 12 container with ASan, UBSan and leak detection.
 That sanitizer run exposed and verified fixes for empty fast-vector memory
 operations and unaligned Deflate match reads. Android arm64-v8a and
 armeabi-v7a native library builds passed before these final shared-library
 guards; both final fixes also passed NDK syntax checks for both ABIs. Native
-Windows/macOS jobs and device execution remain pending.
+Windows/macOS jobs and device execution had not been run at that stage. See the test22 results below for later CI validation.
 
 Test22 adds `altirra-test22-regression-test` and `altirra-test22-cpu-test`.
 The first runs upstream's JSON suite plus Unicode strings across buffer
@@ -83,6 +83,25 @@ and native file for opcodes 02, 69, E9, 78, A1, 6B, B7 and D0, plus the first
 Local validation also ran all 160,000 cases in those 16 files. The runner
 permits internal bus cycles as documented in its implementation; this does
 not replace testing IRQ timing or running programs on hardware.
+
+Cross-platform fixture rules:
+
+- Include the appropriate `stdafx.h` before CRT/string headers in standalone
+  sources using the application headers; retain the x86/x64 intrinsic guard.
+- Use native filesystem helpers for path construction and canonicalize URL
+  round trips before comparing paths. Check query values independently.
+- Test POSIX roots on POSIX and drive-qualified roots on Windows.
+- Build and run all four targets on Windows/macOS as well as Linux;
+  successive targets can expose independent compile or runtime failures.
+
+Test22 validation completed on 2026-10-14 for
+[PR #98](https://github.com/ilmenit/AltirraSDL/pull/98), head `ffa2dd82`:
+all 21 GitHub CI build/test jobs passed, including native Windows/macOS and
+Linux normal/sanitizer regressions, desktop packages, Android APKs,
+WebAssembly and the libretro architecture matrix. Fourteen PR-only
+release/deployment jobs were correctly skipped. The final local Linux build
+and all 21 CTests passed; the CPU runner passed 160,000 selected reference
+cases. Android device execution remains unverified.
 
 
 Test24 extends the production VBXE fixture with FX 1.27 version/NTSC checks,

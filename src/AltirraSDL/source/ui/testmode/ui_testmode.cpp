@@ -51,10 +51,22 @@ extern ATGameLibrary* GetGameLibrary();
 #include "inputdefs.h"
 #include "inputmap.h"
 #include "input_capture.h"
+#include "input/input_sdl3.h"
 #include "ui/debugger/ui_debugger.h"
 #include "netplay/netplay_input.h"
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "ui/netplay/ui_netplay_state.h"
+#include "ui/netplay/ui_netplay.h"
+#include "netplay/netplay_checkpoint.h"
+#include "netplay/netplay_savestate.h"
+#include "netplay/netplay_disk.h"
+#include "netplay/netplay_profile.h"
+#include "cartridge.h"
+#include "cassette.h"
+#include <at/atio/cartridgeimage.h>
+#include "netplay/netplay_simhash.h"
+#include "netplay/netplay_glue.h"
+#include <chrono>
 #endif
 #include "logging.h"
 #include "video_output.h"
@@ -2902,6 +2914,266 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			JsonEscape(status.error.c_str()) + "\",\"path\":\"" + JsonEscape(status.path.c_str()) +
 			"\",\"destination\":\"" + JsonEscape(status.destination.c_str()) + "\"}";
 	}
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (verb == "netplay_input") {
+		static ATNetplay::NetInput frameInputs[2];
+		static ATNetplay::NetInput polled;
+		const auto action = NextToken(cmd);
+		auto number = [&]() {
+			const auto token = NextToken(cmd);
+			return std::strtoull(token.c_str(), nullptr, 0);
+		};
+		if (action == "begin") {
+			ATNetplayInput::BeginTestSession();
+			frameInputs[0] = frameInputs[1] = {};
+		} else if (action == "end") ATNetplayInput::EndSession();
+		else if (action == "physical") {
+			if (ATNetplayInput::IsActive())
+				return JsonError("physical input requires an inactive injector");
+			const uint64 held = number();
+			auto& pokey = sim.GetPokey();
+			pokey.ReleaseAllRawKeys(true);
+			for (unsigned key = 0; key < 64; ++key)
+				if (held & (uint64{1} << key))
+					pokey.PushRawKey((uint8)key, false);
+			pokey.SetShiftKeyState(number() != 0, true);
+			pokey.SetControlKeyState(number() != 0);
+			sim.GetGTIA().SetConsoleSwitch(7, false);
+			sim.GetGTIA().SetConsoleSwitch((uint8)number() & 7, true);
+		}
+		else if (action == "select5200") {
+			const int index = (int)number();
+			sim.GetInputManager()->Select5200Controller(index, number() != 0);
+		}
+		else if (action == "press") {
+			const uint8_t scan = (uint8_t)number();
+			const bool repeat = number() != 0;
+			const bool raw = number() != 0;
+			ATNetplayInput::OnLocalKeyDown(scan, repeat, raw);
+		} else if (action == "up") ATNetplayInput::OnLocalKeyUp((uint8_t)number());
+		else if (action == "modifiers") {
+			const bool shift = number() != 0;
+			ATNetplayInput::OnLocalShiftCtrlState(shift, number() != 0);
+		} else if (action == "console") {
+			const uint8_t mask = (uint8_t)number();
+			ATNetplayInput::OnLocalConsoleSwitch(mask, number() != 0);
+		} else if (action == "release") ATInputSDL3_ReleaseAllKeys();
+		else if (action == "poll") polled = ATNetplayInput::PollLocal();
+		else if (action == "apply_polled" || action == "apply") {
+			const unsigned slot = (unsigned)number();
+			if (slot > 1) return JsonError("slot must be 0 or 1");
+			if (action == "apply_polled") frameInputs[slot] = polled;
+			else {
+				auto& input = frameInputs[slot];
+				input = {};
+				input.stickDir = (uint8_t)number();
+				input.buttons = (uint8_t)number();
+				input.keyScan = (uint8_t)number();
+				input.keyFlags = (uint8_t)number();
+				input.keyHeldMask = number();
+				input.extFlags = (uint8_t)number();
+				const auto firstPot = NextToken(cmd);
+				if (!firstPot.empty()) {
+					input.pot[0] = (uint32_t)std::strtoul(firstPot.c_str(), nullptr, 0);
+					input.pot[1] = (uint32_t)number();
+				}
+			}
+			ATNetplayInput::ApplyFrameInputs(frameInputs[0], frameInputs[1]);
+		} else if (action != "status") return JsonError("netplay_input begin|end|press <scan> <repeat> <raw>|up <scan>|modifiers <shift> <ctrl>|console <mask> <down>|release|poll|apply_polled <slot>|apply <slot> <stick> <buttons> <scan> <flags> <held> <ext> [pot0 pot1]|status");
+		const auto applied = ATNetplayInput::CaptureAppliedState();
+		return std::string("{\"ok\":true,\"active\":")
+			+ (ATNetplayInput::IsActive() ? "true" : "false")
+			+ ",\"restricted\":" + (sim.GetInputManager()
+				&& sim.GetInputManager()->IsRestrictedMode() ? "true" : "false")
+			+ ",\"keyScan\":" + std::to_string(polled.keyScan)
+			+ ",\"keyFlags\":" + std::to_string(polled.keyFlags)
+			+ ",\"keyHeldMask\":" + std::to_string(polled.keyHeldMask)
+			+ ",\"extFlags\":" + std::to_string(polled.extFlags)
+			+ ",\"buttons\":" + std::to_string(polled.buttons)
+			+ ",\"stick\":" + std::to_string(polled.stickDir)
+			+ ",\"rawMask\":" + std::to_string(sim.GetPokey().GetRawKeyMask())
+			+ ",\"shift\":" + (sim.GetPokey().GetShiftKeyState() ? "true" : "false")
+			+ ",\"ctrl\":" + (sim.GetPokey().GetControlKeyState() ? "true" : "false")
+			+ ",\"console\":" + std::to_string(applied.consoleMask)
+			+ ",\"capturedPot0\":" + std::to_string(polled.pot[0])
+			+ ",\"capturedPot1\":" + std::to_string(polled.pot[1])
+			+ ",\"selected5200\":" + std::to_string(applied.selected5200)
+			+ ",\"pots5200Enabled\":" + (applied.pots5200Enabled ? "true" : "false")
+			+ ",\"pot0\":" + std::to_string(applied.inputs[0].pot[0])
+			+ ",\"pot1\":" + std::to_string(applied.inputs[0].pot[1]) + "}";
+	}
+	if (verb == "netplay_transfer") {
+		static std::map<std::string, std::vector<uint8_t>> states;
+		const auto action = NextToken(cmd);
+		const auto name = NextToken(cmd);
+		if (action == "wrap_disks") {
+			for (unsigned i = 0; i < 15; ++i) {
+				auto& disk = sim.GetDiskInterface(i);
+				if (!disk.GetDiskImage()) continue;
+				vdrefptr<IATDiskImage> wrapped;
+				if (!ATNetplay::CreateRollbackDisk(disk.GetDiskImage(), ~wrapped))
+					return JsonError("unsupported dynamic disk");
+				const VDStringW path(disk.GetPath());
+				const bool persistent = disk.IsDiskBacked();
+				const auto mode = disk.GetWriteMode();
+				disk.LoadDisk(persistent ? path.c_str() : nullptr, path.c_str(), wrapped);
+				disk.SetWriteMode(mode);
+			}
+		} else if (action == "save") {
+			if (name.empty() || states.size() >= 32
+				|| !ATNetplay::CaptureSavestate(states[name]))
+				return JsonError("serialized capture failed");
+		} else if (action == "restore") {
+			const auto found = states.find(name);
+			if (found == states.end() || !ATNetplay::ApplySavestate(
+				found->second.data(), found->second.size()))
+				return JsonError("serialized restore failed");
+		} else if (action == "clear") states.clear();
+		else return JsonError("netplay_transfer wrap_disks|save name|restore name|clear");
+		return JsonOk();
+	}
+	if (verb == "netplay_profile") {
+		const auto action = NextToken(cmd);
+		if (action == "cart_create") {
+			vdrefptr<IATCartridgeImage> image;
+			ATCreateCartridgeImage(kATCartridgeMode_RamCart_64K, ~image);
+			sim.LoadCartridge(0, nullptr, image);
+		} else if (action == "cart_write") {
+			auto* cart = sim.GetCartridge(0);
+			if (!cart || !cart->GetImage()) return JsonError("no cartridge image");
+			const auto value = NextToken(cmd);
+			static_cast<uint8*>(cart->GetImage()->GetBuffer())[0] =
+				(uint8)std::strtoul(value.c_str(), nullptr, 0);
+			cart->GetImage()->SetDirty();
+		} else if (action == "tape_create") {
+			sim.GetCassette().LoadNew();
+			sim.GetCassette().SetImageDirty();
+		} else if (action == "prefs") {
+			ATNetplayUI::Navigate(ATNetplayUI::Screen::Prefs);
+		} else if (action == "disk_create") {
+			sim.GetDiskInterface(0).CreateDisk(720, 3, 128);
+		} else if (action == "disk_write") {
+			auto* image = sim.GetDiskInterface(0).GetDiskImage();
+			if (!image) return JsonError("no D1 image");
+			const auto value = NextToken(cmd);
+			std::vector<uint8> sector(image->GetSectorSize(0),
+				(uint8)std::strtoul(value.c_str(), nullptr, 0));
+			if (!image->WriteVirtualSector(0, sector.data(), (uint32)sector.size()))
+				return JsonError("write failed");
+		} else if (action == "begin") {
+			const auto machine = ATNetplayUI::CaptureCurrentMachineConfig();
+			ATNetplayProfile::PerGameOverrides overrides;
+			overrides.hardwareMode = machine.hardwareMode;
+			overrides.memoryMode = machine.memoryMode;
+			overrides.videoStandard = machine.videoStandard;
+			overrides.basicEnabled = machine.basicEnabled;
+			overrides.kernelCRC32 = machine.kernelCRC32;
+			overrides.basicCRC32 = machine.basicCRC32;
+			if (NextToken(cmd) == "xl") {
+				overrides.hardwareMode = kATHardwareMode_800XL;
+				overrides.memoryMode = kATMemoryMode_64K;
+				overrides.kernelCRC32 = overrides.basicCRC32 = 0;
+			}
+			if (!ATNetplayProfile::BeginSession(overrides))
+				return JsonError("cannot preserve game or apply session configuration");
+		} else if (action == "end") {
+			ATNetplayInput::EndSession();
+			ATNetplayProfile::EndSession();
+		} else if (action != "status") return JsonError("netplay_profile begin|end|status");
+		auto& disk = sim.GetDiskInterface(0);
+		uint8 firstSectorByte = 0;
+		if (disk.GetDiskImage())
+			disk.GetDiskImage()->ReadVirtualSector(0, &firstSectorByte, 1);
+		auto* cart = sim.GetCartridge(0);
+		auto* cartImage = cart ? cart->GetImage() : nullptr;
+		return std::string("{\"ok\":true,\"active\":")
+			+ (ATNetplayProfile::IsActive() ? "true" : "false")
+			+ ",\"restored\":" + (ATNetplayProfile::WasGameRestored() ? "true" : "false")
+			+ ",\"paused\":" + (sim.IsPaused() ? "true" : "false")
+			+ ",\"diskObject\":" + std::to_string((uintptr_t)disk.GetDiskImage())
+			+ ",\"diskByte\":" + std::to_string(firstSectorByte)
+			+ ",\"diskDirty\":" + (disk.GetDiskImage() && disk.GetDiskImage()->IsDirty() ? "true" : "false")
+			+ ",\"diskPath\":\"" + JsonEscape(VDTextWToU8(VDStringSpanW(disk.GetPath())).c_str())
+			+ "\",\"writeMode\":" + std::to_string(disk.GetWriteMode())
+			+ ",\"cartObject\":" + std::to_string((uintptr_t)cartImage)
+			+ ",\"cartByte\":" + std::to_string(cartImage ? static_cast<uint8*>(cartImage->GetBuffer())[0] : 0)
+			+ ",\"cartDirty\":" + (cartImage && cartImage->IsDirty() ? "true" : "false")
+			+ ",\"tapeObject\":" + std::to_string((uintptr_t)sim.GetCassette().GetImage())
+			+ ",\"tapeDirty\":" + (sim.GetCassette().IsImageDirty() ? "true" : "false") + "}";
+	}
+	if (verb == "netplay_disconnect") {
+		// Exercise the same synchronous cleanup as the user's Leave action.
+		ATNetplayUI_EndSession();
+		return JsonOk();
+	}
+	if (verb == "netplay_status") {
+		const auto stats = ATNetplayGlue::GetRollbackStats();
+		int64_t desyncFrame = -1;
+		const bool desynced = ATNetplayGlue::IsDesynced(&desyncFrame);
+		return std::string("{\"ok\":true,\"active\":")
+			+ (ATNetplayGlue::IsLockstepping() ? "true" : "false")
+			+ ",\"resyncing\":" + (ATNetplayGlue::IsResyncing() ? "true" : "false")
+			+ ",\"frame\":" + std::to_string(ATNetplayGlue::CurrentFrame())
+			+ ",\"confirmedFrame\":" + std::to_string(stats.confirmedFrame)
+			+ ",\"peerRttMs\":" + std::to_string(stats.peerRttMs)
+			+ ",\"rttSamples\":" + std::to_string(stats.rttSamples)
+			+ ",\"delay\":" + std::to_string(ATNetplayGlue::CurrentInputDelay())
+			+ ",\"window\":" + std::to_string(stats.window)
+			+ ",\"corrections\":" + std::to_string(stats.corrections)
+			+ ",\"replayedFrames\":" + std::to_string(stats.replayedFrames)
+			+ ",\"replayTimeUs\":" + std::to_string(stats.replayTimeUs)
+			+ ",\"worstReplayUs\":" + std::to_string(stats.worstReplayUs)
+			+ ",\"desynced\":" + (desynced ? "true" : "false")
+			+ ",\"desyncFrame\":" + std::to_string(desyncFrame)
+			+ ",\"joinPhase\":" + std::to_string((int)ATNetplayGlue::JoinPhase())
+			+ ",\"joinError\":\"" + JsonEscape(ATNetplayGlue::JoinLastError()) + "\"}";
+	}
+	if (verb == "netplay_checkpoint") {
+		static std::map<std::string, std::unique_ptr<ATNetplay::Checkpoint>> checkpoints;
+		const std::string action = NextToken(cmd);
+		const std::string name = NextToken(cmd);
+		if (action == "save") {
+			if (name.empty() || (checkpoints.size() >= 64 && !checkpoints.count(name)))
+				return JsonError("checkpoint name required (maximum 64)");
+			if (!ATNetplay::CaptureCheckpoint(checkpoints[name]))
+				return JsonError("checkpoint capture failed");
+		} else if (action == "restore") {
+			auto it = checkpoints.find(name);
+			if (it == checkpoints.end() || !ATNetplay::RestoreCheckpoint(*it->second))
+				return JsonError("checkpoint restore failed");
+		} else if (action == "clear") {
+			checkpoints.clear();
+		} else if (action == "benchmark" || action == "benchmark_serialized") {
+			if (!sim.IsPaused()) return JsonError("pause before benchmarking checkpoints");
+			const int count = std::clamp(std::atoi(name.c_str()), 1, 1000);
+			uint64_t captureNs = 0, restoreNs = 0, bytes = 0;
+			for (int i = 0; i < count; ++i) {
+				std::unique_ptr<ATNetplay::Checkpoint> checkpoint;
+				std::vector<uint8_t> serialized;
+				const bool wire = action == "benchmark_serialized";
+				auto start = std::chrono::steady_clock::now();
+				if (wire ? !ATNetplay::CaptureSavestate(serialized) : !ATNetplay::CaptureCheckpoint(checkpoint)) return JsonError("capture failed");
+				bytes += serialized.size();
+				auto captured = std::chrono::steady_clock::now();
+				if (wire ? !ATNetplay::ApplySavestate(serialized.data(), serialized.size()) : !ATNetplay::RestoreCheckpoint(*checkpoint)) return JsonError("restore failed");
+				auto restored = std::chrono::steady_clock::now();
+				captureNs += std::chrono::duration_cast<std::chrono::nanoseconds>(captured - start).count();
+				restoreNs += std::chrono::duration_cast<std::chrono::nanoseconds>(restored - captured).count();
+			}
+			return "{\"ok\":true,\"count\":" + std::to_string(count)
+				+ ",\"bytes\":" + std::to_string(bytes / count)
+				+ ",\"captureNs\":" + std::to_string(captureNs / count)
+				+ ",\"restoreNs\":" + std::to_string(restoreNs / count) + "}";
+		} else if (action != "hash") return JsonError("netplay_checkpoint save|restore|clear|benchmark|hash");
+		ATNetplay::SimHashBreakdown br{};
+		ATNetplay::ComputeSimStateHashBreakdown(sim, br);
+		return "{\"ok\":true,\"hash\":" + std::to_string(br.total)
+			+ ",\"cpu\":" + std::to_string(br.cpuRegs)
+			+ ",\"pokey\":" + std::to_string(br.pokeyRegs)
+			+ ",\"antic\":" + std::to_string(br.anticRegs)
+			+ ",\"tick\":" + std::to_string(sim.GetScheduler()->GetTick64()) + "}";
+	}
+#endif
 	if (verb == "help_status")
 		return std::string("{\"ok\":true,\"topic\":\"") +
 			JsonEscape(ATUIGetCurrentHelpTopic()) + "\"}";

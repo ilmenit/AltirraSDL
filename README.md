@@ -19,13 +19,20 @@ For the full feature list and documentation, see the [official Altirra page](htt
 
 ## What is AltirraSDL?
 
-AltirraSDL is a fork that replaces the Win32-based frontend with SDL3 for graphics, input, and audio, and Dear ImGui for the user interface. The emulation core is unchanged — all accuracy and compatibility comes directly from upstream Altirra.
+AltirraSDL provides an SDL3 frontend for graphics, input, and audio,
+and Dear ImGui for the user interface. It uses upstream Altirra’s
+emulation engine, with cross-platform adaptations
+and targeted fixes maintained in this fork. The current upstream baseline is
+**Altirra 4.50 test22** (project/package version **4.50.22**).
 
 ### Goals
 
-- Make Altirra runnable on Linux (the primary target), macOS and Android.
+- Make Altirra runnable on Linux (the primary target), macOS, Windows,
+  Android, and in web browsers.
 - Keep the delta from upstream as small as possible to ease merging of future releases
-- Provide a functional UI close to original one, but not a pixel-perfect recreation of the Windows frontend
+- Match the native Windows frontend’s functionality, menu structure,
+  and configuration options using SDL3 + Dear ImGui, while preserving
+  explicitly added fork features.
 
 ### Non-goals
 
@@ -33,24 +40,23 @@ AltirraSDL is a fork that replaces the Win32-based frontend with SDL3 for graphi
 
 ## What this fork adds on top of upstream Altirra
 
-Because the Windows and SDL frontends have different audiences and
-different constraints, AltirraSDL ships a handful of features that do
-not exist in the Windows-native build. They are additive — nothing
-upstream does is taken away — and most of them are only interesting
-*because* you're running on Linux, macOS, or Android.
+AltirraSDL adds cross-platform frontends, scripting, online play, and
+additional tools. Full native Windows functionality remains the goal;
+the SDL frontend is still a work in progress, and feature availability
+depends on the platform and build options.
 
 ### Cross-platform foundation
 
 - **Runs on Linux, macOS, and Android** in addition to Windows. The
-  Windows `.sln` build is still preserved upstream-identical; this
-  fork contributes the SDL3 + Dear ImGui frontend that lets the same
-  emulation core run everywhere SDL3 does.
-- **Portable settings on non-Windows SDL3 builds** stored as a plain
-  INI at `~/.config/altirra/settings.ini` (same format as Windows
-  portable mode). The current Windows SDL3 build uses the same Windows
-  registry-backed settings store as native Altirra.
-- **Native OS file dialogs** via SDL3 — open/save dialogs use GTK on
-  Linux, Cocoa on macOS, the system picker on Android. Last-used
+  native Windows `.sln` build is preserved alongside the CMake build;
+  the SDL3 + Dear ImGui frontend uses the same emulation engine.
+- **Portable settings on Linux/macOS SDL3 builds** stored as a plain
+  INI at `$XDG_CONFIG_HOME/altirra/settings.ini`, defaulting to
+  `~/.config/altirra/settings.ini` (same format as Windows portable mode). The current Windows SDL3 build uses the same Windows
+  registry-backed settings store as native Altirra. Android uses its
+  app configuration directory; browser builds use persistent browser storage.
+- **Native OS file dialogs** via SDL3 and platform integrations, with
+  a built-in file picker available as a fallback. Last-used
   directories persist across launches.
 - **Window drag-and-drop** of disk, cassette, cartridge, and executable
   images directly onto the running window.
@@ -85,7 +91,7 @@ toggled on desktop.
   `NavEnableGamepad`), so the emulator is usable on a phone with a
   clip-on controller and no touchscreen interaction at all.
 - **Virtual Atari XL/XE keyboard** overlay (virtual keyboard,
-  clickable keys) for entering BASIC or DOS commands on  touch devices. Navigable by touch, mouse, or gamepad d-pad.
+  clickable keys) for entering BASIC or DOS commands on touch devices. Navigable by touch, mouse, or gamepad d-pad.
 - **First-run firmware setup wizard** that walks new users through
   picking an OS/BASIC/game ROM once, instead of diving straight into
   the full Configure System dialog.
@@ -99,33 +105,37 @@ toggled on desktop.
   walks user-configured game folders, matches cover art / screenshots
   from sibling directories, and remembers last-played times and play
   counts. List and grid views at three sizes. The Windows build has
-  no equivalent browser — it relies on the OS file manager.
+  no equivalent browser — it relies on the OS file manager. Games can
+  also be assigned reusable launch profiles, including shared profiles
+  for multiple titles; temporary game sessions protect saved settings.
 
 ### Online play (netplay)
 
 Two-player lockstep netplay over the internet or LAN — a fork-only
-feature with no upstream equivalent. Because the core is cycle
-deterministic, both peers show pixel-identical frames indefinitely
-once the game boots.
+feature with no upstream equivalent. Peers boot with matching machine
+configuration and synchronize inputs frame by frame. Native clients
+use UDP with NAT traversal and a lobby relay fallback; browser clients
+use a WebSocket bridge to play with browser or native peers.
 
 - **Lockstep determinism** — both peers cold-boot the same game from
   the same master seed and advance frame-by-frame, each waiting for
   the other's input for frame N before committing it. Default input
   delay is 4 frames (~66 ms).
-- **Matchmaking via a lightweight HTTP lobby** — hosts advertise
-  "I'm hosting Joust at 1.2.3.4:26100" to a session directory; the
-  joiner then connects directly to the host's UDP port (the lobby
-  doesn't proxy traffic). A public community lobby is configured out
-  of the box.
+- **Matchmaking via an HTTP lobby** — hosts advertise their games
+  to a session directory. Native peers attempt a direct UDP connection
+  and can fall back to the lobby relay. A public community lobby is
+  configured out of the box.
+- **Browser netplay** — the lobby’s WebSocket bridge carries browser
+  traffic over WSS and translates it for native UDP peers. Self-hosted
+  lobbies need the WebSocket listener and reverse-proxy route; see the
+  [server guide](server/lobby/README.md#websocket-bridge-browser-netplay).
 - **Federated lobbies** — `~/.config/altirra/lobby.ini` lists any
   number of lobby servers; Browse merges entries from all enabled
   ones and Host announces to all of them. LAN discovery via UDP
   broadcast is supported alongside HTTP lobbies.
 - **Reference lobby server** ships in-tree ([`server/lobby/`](server/lobby/))
-  — ~400 KB stripped C++ binary, in-memory state, no database, with
-  a Dockerfile and a hardened systemd unit. A $5/month VPS hosts
-  hundreds of concurrent sessions; a single `docker run` is enough
-  for LAN play.
+  — a C++ service with in-memory state, no database, a Dockerfile,
+  and a hardened systemd unit.
 - **Game file transfer on connect** — the host ships the XEX / ATR /
   CAR bytes (up to ~32 MB) to the joiner as part of the handshake,
   so the joiner doesn't need the ROM in their own library.
@@ -141,7 +151,9 @@ once the game boots.
   the lobby reads `X-Forwarded-For` so per-IP rate limiting still
   works correctly behind a proxy.
 
-See [NETPLAY.md](NETPLAY.md) for the full user and operator guide.
+See [NETPLAY.md](NETPLAY.md) for the user and operator guide, and
+[server/lobby/README.md](server/lobby/README.md) for relay and browser
+transport details.
 
 ### AltirraBridge: JSON-over-socket scripting / automation
 
@@ -152,23 +164,33 @@ emulator without going through the UI. This is a fork-only feature.
 - Covers execution control (pause/resume/step/reset), register and
   memory access (peek/poke/PEEK/POKE), input injection (joystick,
   keyboard), boot / load commands, screenshot capture, and frame
-  synchronisation. Beta phases add symbol loading, disassembly,
-  breakpoints, watchpoints, a profiler, save states, and history
-  export.
+  synchronisation, symbol loading, disassembly, breakpoints,
+  watchpoints, profiling, save states, and execution history.
 - **Three first-party client SDKs** ship alongside: Python
-  (stdlib-only, async-friendly), C (single file, libc + winsock),
-  and Free Pascal — all three expose the same surface.
+  (stdlib-only), C (libc + Winsock on Windows),
+  and Free Pascal. See the SDK documentation for each client’s API.
 - **Analyzer toolkit** (Python) on top of the Bridge: hardware
   register classification, PORTB decoding, recursive-descent
   disassembly, variable cross-referencing, PC sampling, DLI chain
   tracking, memory diffing, and a MADS-source exporter that can
   round-trip a running XEX back to reassemblable 6502 source.
+- **Standalone `AltirraBridgeServer`** target provides the same protocol
+  without the ImGui frontend. It uses private, deterministic settings
+  by default; `--settings=user` reads a private copy of the user’s
+  settings without writing them back. Build it with
+  `-DALTIRRA_BRIDGE_SERVER=ON`; the GUI bridge is enabled by default
+  and activated with `--bridge`.
+
+See the [Bridge overview](src/AltirraSDL/AltirraBridge/README.md),
+[getting started guide](src/AltirraSDL/AltirraBridge/docs/GETTING_STARTED.md),
+and [command reference](src/AltirraSDL/AltirraBridge/docs/COMMANDS.md).
 
 ### Automation & headless operation
 
 - **`--test-mode`** activates ImGui Test Engine integration and opens
-  a Unix domain socket (or named pipe on Windows) at
-  `/tmp/altirra-test-<pid>.sock`. A small text protocol (`ping`,
+  a Unix domain socket at `/tmp/altirra-test-<pid>.sock` on POSIX
+  platforms, or a named pipe at `\\.\pipe\altirra-test-<pid>` on Windows.
+  A small text protocol (`ping`,
   `click <window> <label>`, `boot_image`, `wait_frames`,
   `screenshot`, `query_state`, etc.) plus automatic widget
   enumeration makes the UI scriptable for CI and agent-driven QA.
@@ -179,6 +201,39 @@ emulator without going through the UI. This is a fork-only feature.
   `--pacing=realtime` to keep PAL/NTSC wall-clock speed in headless
   automation.
 
+### Desktop search, fonts, and Explorer tools
+
+- **Search actions and settings** with **Ctrl+K** (default shortcut),
+  including device names and descriptions. Results execute registered
+  commands or open and highlight existing configuration controls.
+- **Configurable UI and debugger fonts**, with separate family, style,
+  and size selections, installed-font discovery, and bundled fallbacks.
+- **Disk, XEX, and Cartridge Explorers** under **Tools > Explorers**,
+  with independent document windows, byte previews, multiple selection,
+  and exports. Disk Explorer also supports filesystem editing, sector
+  inspection, and running embedded executables.
+- **Native macOS menu bar** integrates desktop menus with the system
+  menu bar.
+
+See [desktop search and profiles](docs/desktop-search-profiles.md) and
+[Explorer tools](docs/sdl-explorers.md) for usage and verification details.
+
+### Browser and libretro targets
+
+- **Experimental WebAssembly build** runs the SDL frontend in a browser,
+  with uploaded games and firmware kept in persistent browser storage.
+  It uses SDL_Renderer/WebGL2 and supports netplay through the lobby’s
+  WebSocket bridge. Native screen effects and AltirraBridge are
+  unavailable in this target. See
+  [BUILD.md](BUILD.md#webassembly-build-experimental-browser-target)
+  and the [embedding kit](src/AltirraSDL/cmake/embed_kit/README.md).
+- **RetroArch/libretro core** builds independently of the SDL frontend
+  on Linux, macOS, Windows, and Android. It includes controller mappings,
+  a virtual Atari/5200 keyboard, save states, disk playlists, safe disk
+  sidecar saves, and memory access for achievements and POKE cheats.
+  Build with `./build.sh --libretro`; see the
+  [core guide](src/AltirraLibretro/README.md) for controls and options.
+
 ### Small quality-of-life differences
 
 - The palette solver (Color Image Reference equivalent) is also
@@ -187,17 +242,53 @@ emulator without going through the UI. This is a fork-only feature.
   Graph2Font — can load `.act` tables into a running emulator
   without going through the UI.
 - Explicit Configure System sidebar layout rather than the Windows
-  tree-sidebar, chosen to match ImGui's docking idioms. Same option
-  set, same groupings, different widget style.
+  tree-sidebar, retaining the native category groupings with ImGui
+  widgets. Configuration pages stay together in Configure System.
 
-If something is in Windows Altirra but missing from this list, the
-intent is that the fork matches upstream exactly — not that the
-feature has been replaced. The upstream Altirra page is the canonical
-reference for everything that is *not* called out above.
+The [official Altirra documentation](https://www.virtualdub.org/altirra.html)
+remains the reference for the emulation engine and native Windows frontend.
+The linked repository guides describe SDL-specific behavior and limitations.
 
 ## Current status
 
-**Work in progress.** Core emulation works. The ImGui-based UI covers most of functionality, but some elements aren't finished.
+**Work in progress.** The SDL frontend runs the emulation engine and
+provides desktop and Gaming Mode interfaces, configuration pages, debugger
+panes, and tools. Full parity with the native Windows UI is still being
+worked on; this README does not imply that every Windows command or
+device dialog has been ported. WebAssembly remains experimental.
+
+CI builds desktop packages, Android APKs, the standalone Bridge server,
+WebAssembly, and libretro cores. Regression checks cover upstream CPU,
+JSON, and virtual-disk behavior, with native Windows/macOS and Linux
+sanitizer jobs, alongside UI and subsystem tests. Build success does not
+establish runtime coverage on every device.
+
+## Build and run
+
+For a desktop release build on the current platform:
+
+```sh
+./build.sh
+```
+
+For example, on Linux the executable is
+`build/linux-release/src/AltirraSDL/AltirraSDL`. The Linux CMake preset
+can also be used directly:
+
+```sh
+cmake --preset linux-release
+cmake --build --preset linux-release --parallel
+./build/linux-release/src/AltirraSDL/AltirraSDL
+```
+
+Requirements include **CMake 3.24+**, a **C++23 compiler**, Git, and
+platform build dependencies. SDL3, SDL3_image, and Dear ImGui are fetched
+as needed. Default Linux/macOS desktop presets also build static FFmpeg
+and libx264 for MP4 recording; this requires `pkg-config` and a
+Make-compatible build tool. See [BUILD.md](BUILD.md) for system packages,
+recording options, packaging, and Android/browser builds.
+
+The native Windows build remains available through `src/Altirra.sln`.
 
 ## AI disclosure
 
@@ -207,23 +298,39 @@ This frontend is developed heavily with the assistance of AI coding tools. Depen
 
 - The emulation core is Altirra, written by Avery Lee. All the hard work is his.
 - The upstream author is aware of this fork and does not object to it, but is not involved in its development and does not provide support for it.
-- Cross-compiler portability fixes in platform-agnostic files are kept minimal and behind `#ifdef` guards. They do not change behavior on Windows.
+- Cross-compiler portability adaptations are kept minimal. Targeted core
+  bug fixes and their regression tests are recorded in the
+  [upstream sync history](syncing-with-upstream/HISTORY.md).
 - This fork tracks upstream Altirra releases manually (diff + merge), since the upstream source is distributed as zip snapshots rather than via a git repository.
 
 ## License
 
-Altirra is licensed under the **GNU General Public License v2 (GPLv2)**, with a GPLv2 + exemption for certain core libraries. This fork inherits the same license. See [LICENSE](LICENSE) for details.
+Altirra is licensed under the **GNU General Public License v2 or later (GPLv2+)**, with a GPLv2 + exemption for certain core libraries. This fork inherits the same license. See [LICENSE](LICENSE) for details.
 
 ## Documentation
 
 - [BUILD.md](BUILD.md) — building AltirraSDL from source on Linux,
-  macOS, Windows (CMake) and Android.
+  macOS, Windows (CMake), Android, and WebAssembly.
 - [NETPLAY.md](NETPLAY.md) — playing online: host a game, join a
   game, point at a different lobby, and step-by-step instructions
   for running your own lobby server (localhost, Docker, VPS with
   systemd, and behind an HTTPS reverse proxy).
 - [server/lobby/README.md](server/lobby/README.md) — lobby server
   build / API reference / protocol coupling with the client.
+- [AltirraBridge](src/AltirraSDL/AltirraBridge/README.md) — scripting,
+  standalone headless server, SDKs, and examples.
+- [Libretro core](src/AltirraLibretro/README.md) — RetroArch controls,
+  core options, disk handling, and builds.
+- [Desktop search and profiles](docs/desktop-search-profiles.md) —
+  finding settings, font selection, and reusable game configurations.
+- [Explorer tools](docs/sdl-explorers.md) — disk, executable, and
+  cartridge inspection and editing.
+- [Browser embedding kit](src/AltirraSDL/cmake/embed_kit/README.md) —
+  embedding and configuring the WebAssembly frontend.
+- [Upstream synchronization](syncing-with-upstream/README.md) and
+  [history](syncing-with-upstream/HISTORY.md) — merge workflow and baseline.
+- [Regression tests](tests/upstream/README.md) — production-code tests
+  and platform validation.
 
 ## Links
 
@@ -231,4 +338,4 @@ Altirra is licensed under the **GNU General Public License v2 (GPLv2)**, with a 
 
 ## Acknowledgments
 
-All credit for the emulation engine, hardware research, reimplemented firmware, debugger, and everything that makes Altirra extraordinary goes to **Avery Lee (phaeron)**. 
+All credit for the emulation engine, hardware research, reimplemented firmware, debugger, and everything that makes Altirra extraordinary goes to **Avery Lee (phaeron)**.

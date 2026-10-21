@@ -66,6 +66,16 @@ public:
 		rw.Transfer("command_cycles_per_bit", &mCommandCyclesPerBit);
 		rw.Transfer("command_buffer_index", &mCommandBufferIndex);
 		rw.TransferArray("command_buffer", mCommandBuffer);
+		// Fork extension: command history affects subsequent poll and timing.
+		rw.Transfer("runtime_exact", &mbRuntimeExact);
+		rw.Transfer("command_frame_end_offset", &mCommandFrameEndOffset);
+		rw.Transfer("command_deassert_offset", &mCommandDeassertOffset);
+		rw.Transfer("poll_count", &mPollCount);
+		rw.Transfer("ready_state", &mbReadyState);
+		rw.Transfer("accessed_disks", &mAccessedDisks);
+		rw.Transfer("command_state", &mbCommandState);
+		rw.Transfer("motor_state", &mbMotorState);
+		rw.Transfer("pia_output", &mPIAOutput);
 
 		if constexpr (T::IsReader) {
 			if (mCommandBufferIndex > 5)
@@ -76,6 +86,15 @@ public:
 	uint32 mCommandCyclesPerBit = 0;
 	uint8 mCommandBufferIndex = 0;
 	uint8 mCommandBuffer[5] {};
+	bool mbRuntimeExact = false;
+	uint64 mCommandFrameEndOffset = 0;
+	uint64 mCommandDeassertOffset = 0;
+	uint8 mPollCount = 0;
+	bool mbReadyState = false;
+	uint32 mAccessedDisks = 0;
+	bool mbCommandState = false;
+	bool mbMotorState = false;
+	sint32 mPIAOutput = 0;
 };
 
 class ATSaveStateSioCommandStep; // forward declaration for ATSaveStateSioActiveCommand
@@ -98,6 +117,15 @@ public:
 		rw.Transfer("queue_cycles_per_byte", &mQueueCyclesPerByte);
 		rw.Transfer("command_frame_end_time", &mCommandFrameEndTime);
 		rw.Transfer("command_deassert_time", &mCommandDeassertTime);
+		rw.Transfer("runtime_exact", &mbRuntimeExact);
+		rw.Transfer("command_active_exact", &mbCommandActiveExact);
+		rw.Transfer("transfer_start_offset_exact", &mTransferStartOffsetExact);
+		rw.Transfer("receive_timeout_base_offset", &mReceiveTimeoutBaseOffset);
+		rw.Transfer("receive_byte_timeout", &mReceiveByteTimeout);
+		rw.Transfer("receive_frame_timeout", &mReceiveFrameTimeout);
+		rw.Transfer("transfer_burst_offset", &mTransferBurstOffset);
+		rw.Transfer("transfer_last_burst_offset", &mTransferLastBurstOffset);
+		rw.Transfer("accel_time_skew", &mAccelTimeSkew);
 
 		if constexpr (T::IsReader) {
 			if (mTransferIndex > ATSIOManager::kMaxTransferSize)
@@ -105,6 +133,15 @@ public:
 		}
 	}
 
+	bool mbRuntimeExact = false;
+	bool mbCommandActiveExact = false;
+	uint64 mTransferStartOffsetExact = 0;
+	uint64 mReceiveTimeoutBaseOffset = 0;
+	uint64 mReceiveByteTimeout = UINT64_MAX;
+	uint64 mReceiveFrameTimeout = UINT64_MAX;
+	uint32 mTransferBurstOffset = 0;
+	uint32 mTransferLastBurstOffset = 0;
+	uint32 mAccelTimeSkew = 0;
 	uint8 mDeviceId = 0;
 	sint32 mTransferStartTime = 0;
 	uint32 mTransferIndex = 0;
@@ -685,12 +722,23 @@ void ATSIOManager::SIOInterface::HandleCommand(const void *data, uint32 len, boo
 }
 
 void ATSIOManager::SIOInterface::SaveActiveCommandState(IATObjectState **ppState) const {
-	if (!IsCommandActive()) {
-		*ppState = nullptr;
+	vdrefptr state(new ATSaveStateSioActiveCommand);
+	// Even an idle interface retains acceleration/receive accounting that
+	// affects its next command. Preserve it without inventing an active step.
+	state->mbRuntimeExact = true;
+	state->mbCommandActiveExact = IsCommandActive();
+	state->mAccelTimeSkew = mAccelTimeSkew;
+	state->mReceiveByteTimeout = mReceiveByteTimeout;
+	state->mReceiveFrameTimeout = mReceiveFrameTimeout;
+	state->mTransferBurstOffset = mTransferBurstOffset;
+	state->mTransferLastBurstOffset = mTransferLastBurstOffset;
+	const uint64 t64 = mParent.mpScheduler->GetTick64();
+	state->mTransferStartOffsetExact = mTransferStartTime - t64;
+	state->mReceiveTimeoutBaseOffset = mReceiveTimeoutBase - t64;
+	if (!state->mbCommandActiveExact) {
+		*ppState = state.release();
 		return;
 	}
-
-	vdrefptr state(new ATSaveStateSioActiveCommand);
 
 	uint32 transferPos = mTransferEnd;
 	if (mCurrentStep.mType) {
@@ -725,6 +773,11 @@ void ATSIOManager::SIOInterface::SaveActiveCommandState(IATObjectState **ppState
 			savedStep->mTransferData.assign_range(vdspan(mTransferBuffer).subspan(transferPos, step.mTransferLength));
 
 			transferPos += step.mTransferLength;
+		} else if (step.mType == kStepType_Receive
+			|| step.mType == kStepType_ReceiveAutoProtocol) {
+			// ReceiveData reserves space too; a following send begins after
+			// that reservation even though no received bytes exist yet.
+			transferPos += step.mTransferLength;
 		}
 	}
 
@@ -735,7 +788,6 @@ void ATSIOManager::SIOInterface::SaveActiveCommandState(IATObjectState **ppState
 	state->mTransferCyclesPerBit = mTransferCyclesPerBit;
 	state->mbTransmitSynchronous = mbTransmitSynchronous;
 
-	const uint64 t64 = mParent.mpScheduler->GetTick64();
 	state->mTransferStartTime = mpTransferEvent ? (sint32)(mTransferStartTime - (uint32)t64) : 0;
 	state->mQueueTime = (sint64)(mCommandQueueTime - t64);
 	state->mQueueCyclesPerByte = mCommandQueueCyclesPerByte;
@@ -759,6 +811,17 @@ void ATSIOManager::SIOInterface::LoadActiveCommandState(IATObjectState *state0) 
 
 		CancelCommand();
 		ResetTransferParams();
+		if (state.mbRuntimeExact && !state.mbCommandActiveExact) {
+			mAccelTimeSkew = state.mAccelTimeSkew;
+			mReceiveByteTimeout = state.mReceiveByteTimeout;
+			mReceiveFrameTimeout = state.mReceiveFrameTimeout;
+			mTransferBurstOffset = state.mTransferBurstOffset;
+			mTransferLastBurstOffset = state.mTransferLastBurstOffset;
+			const uint64 now = mParent.mpScheduler->GetTick64();
+			mTransferStartTime = now + state.mTransferStartOffsetExact;
+			mReceiveTimeoutBase = now + state.mReceiveTimeoutBaseOffset;
+			return;
+		}
 
 		if (state.mTransferCyclesPerByte)
 			mTransferCyclesPerByte = state.mTransferCyclesPerByte;
@@ -781,6 +844,21 @@ void ATSIOManager::SIOInterface::LoadActiveCommandState(IATObjectState *state0) 
 		mCommandFrameEndTime = (uint64)state.mCommandFrameEndTime + t64;
 		mCommandDeassertTime = (uint64)state.mCommandDeassertTime + t64;
 
+		uint64 totalTransfer = 0;
+		auto validateStep = [&](const ATSaveStateSioCommandStep* step) {
+			if (!step) throw ATInvalidSaveStateException();
+			const auto type = step->mStep.mType;
+			if (type == kStepType_Send || type == kStepType_SendAutoProtocol
+				|| type == kStepType_Receive || type == kStepType_ReceiveAutoProtocol) {
+				totalTransfer += step->mStep.mTransferLength;
+				if (totalTransfer > kMaxTransferSize)
+					throw ATInvalidSaveStateException();
+			}
+		};
+		if (state.mSteps.size() > kMaxTransferSize)
+			throw ATInvalidSaveStateException();
+		if (state.mpCurrentStep) validateStep(state.mpCurrentStep);
+		for (const auto& step : state.mSteps) validateStep(step);
 		mTransferBuffer.clear();
 
 		if (state.mpCurrentStep) {
@@ -821,14 +899,23 @@ void ATSIOManager::SIOInterface::LoadActiveCommandState(IATObjectState *state0) 
 			}
 		}
 
+		if (state.mbRuntimeExact) {
+			mTransferStartTime = t64 + state.mTransferStartOffsetExact;
+			mReceiveTimeoutBase = t64 + state.mReceiveTimeoutBaseOffset;
+			mReceiveByteTimeout = state.mReceiveByteTimeout;
+			mReceiveFrameTimeout = state.mReceiveFrameTimeout;
+			mTransferBurstOffset = state.mTransferBurstOffset;
+			mTransferLastBurstOffset = state.mTransferLastBurstOffset;
+			mAccelTimeSkew = state.mAccelTimeSkew;
+		}
 		mTransferIndex = state.mTransferIndex;
 		
 		if (mTransferIndex > mTransferEnd)
 			throw ATInvalidSaveStateException();
 
 		for(const auto& step : state.mSteps) {
-			if (step)
-				mStepQueue.push_back(step->mStep);
+			if (!step) throw ATInvalidSaveStateException();
+			mStepQueue.push_back(step->mStep);
 
 			switch(step->mStep.mType) {
 				case kStepType_Send:
@@ -1433,10 +1520,17 @@ void ATSIOManager::WarmReset() {
 }
 
 vdrefptr<IATObjectState> ATSIOManager::SaveState() const {
-	if (!mbCommandState && (mCommandBufferIndex == 0 || mCommandBufferIndex == 5))
-		return nullptr;
-
 	vdrefptr state(new ATSaveStateSioManager);
+	state->mbRuntimeExact = true;
+	const uint64 now = mpScheduler->GetTick64();
+	state->mCommandFrameEndOffset = mCommandFrameEndTime - now;
+	state->mCommandDeassertOffset = mCommandDeassertTime - now;
+	state->mPollCount = mPollCount;
+	state->mbReadyState = mbReadyState;
+	state->mAccessedDisks = mAccessedDisks;
+	state->mbCommandState = mbCommandState;
+	state->mbMotorState = mbMotorState;
+	state->mPIAOutput = mPIAOutput;
 
 	state->mCommandCyclesPerBit = mCommandCyclesPerBit;
 	state->mCommandBufferIndex = mCommandBufferIndex;
@@ -1925,6 +2019,17 @@ void ATSIOManager::LoadState(IATObjectState *obj) {
 	if (obj) {
 		const ATSaveStateSioManager& state = atser_cast<const ATSaveStateSioManager&>(*obj);
 
+		if (state.mbRuntimeExact) {
+			const uint64 now = mpScheduler->GetTick64();
+			mCommandFrameEndTime = now + state.mCommandFrameEndOffset;
+			mCommandDeassertTime = now + state.mCommandDeassertOffset;
+			mPollCount = state.mPollCount;
+			mbReadyState = state.mbReadyState;
+			mAccessedDisks = state.mAccessedDisks;
+			mbCommandState = state.mbCommandState;
+			mbMotorState = state.mbMotorState;
+			mPIAOutput = state.mPIAOutput;
+		}
 		mCommandBufferIndex = std::min<uint8>(5, state.mCommandBufferIndex);
 		mCommandCyclesPerBit = state.mCommandCyclesPerBit;
 

@@ -38,6 +38,14 @@ struct ATMemoryMapState {
 	uint8 mAxlonBankMask;
 };
 
+// Fork extension: PORTB alone cannot reconstruct ROM latch history while
+// its ROM-control bits are reused as extended-memory bank address lines.
+struct ATMMUSnapshotRuntimeState {
+	uint8 mBank = 0xFF;
+	bool mbBasicLatched = false;
+	bool mbSelfTestLatched = false;
+};
+
 class ATMMUEmulator {
 	ATMMUEmulator(const ATMMUEmulator&) = delete;
 	ATMMUEmulator& operator=(const ATMMUEmulator&) = delete;
@@ -85,6 +93,8 @@ public:
 
 	uint8 GetBankRegister() const { return mCurrentBank; }
 	void SetBankRegister(uint8 bank);
+	ATMMUSnapshotRuntimeState GetSnapshotRuntimeState() const;
+	void SetSnapshotRuntimeState(const ATMMUSnapshotRuntimeState& state);
 
 	// AltirraSDL extension (not present in Windows Altirra; user-approved,
 	// exposed in Configure System > Memory).  Toggles the BASIC / self-test

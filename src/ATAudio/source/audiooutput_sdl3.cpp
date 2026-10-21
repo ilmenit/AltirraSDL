@@ -292,6 +292,7 @@ public:
 
 	void Pause() override;
 	void Resume() override;
+	void SetReplayMode(bool replay) override { mbReplay = replay; }
 
 	void WriteAudio(const float* left, const float* right,
 	                uint32 count, bool pushAudio, bool pushStereoAsMono,
@@ -406,6 +407,7 @@ private:
 	int mLatency = 60;
 	int mExtraBuffer = 100;             // Matches Windows settings.cpp default
 	bool mbMute = false;
+	bool mbReplay = false;
 	bool mbFilterStereo = false;
 	uint32 mFilterMonoSamples = 0;
 	uint32 mBlockInternalAudioCount = 0;
@@ -960,6 +962,8 @@ void ATAudioOutputSDL3::WriteAudio(
 	bool pushStereoAsMono,
 	uint64 timestamp)
 {
+	if (mbReplay) return;
+
 	if (!count)
 		return;
 

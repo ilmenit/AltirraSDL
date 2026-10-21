@@ -18,6 +18,8 @@
 #ifndef f_AT_HLEPROGRAMLOADER_H
 #define f_AT_HLEPROGRAMLOADER_H
 
+#include <at/atcore/snapshot.h>
+
 #include <at/atcore/devicesio.h>
 #include <at/atcore/devicesioimpl.h>
 #include "constants.h"
@@ -38,6 +40,8 @@ public:
 
 	void Init(ATCPUEmulator *cpu, ATSimulatorEventManager *simEventMan, ATSimulator *sim, IATDeviceSIOManager *siomgr);
 	void Shutdown();
+	void SaveState(IATObjectState **state);
+	void LoadState(const IATObjectState *state);
 
 	void SetRandomizeMemoryOnLoad(bool enable) { mbRandomizeMemoryOnLoad = enable; }
 
@@ -68,6 +72,7 @@ protected:
 	ATCPUHookNode *mpLoadContinueHook = nullptr;
 
 	IATBlobImage *mpImage = nullptr;
+	vdrefptr<IATObjectState> mpSnapshotImage;
 	uint32		mProgramLoadIndex = 0;
 	uint64		mLaunchTime = 0;
 

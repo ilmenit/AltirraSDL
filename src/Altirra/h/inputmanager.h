@@ -232,6 +232,12 @@ public:
 	void SetConsoleCallback(IATInputConsoleCallback *cb) { mpCB = cb; }
 
 	void Select5200Controller(int index, bool potsEnabled);
+	int Get5200ControllerIndex() const { return m5200ControllerIndex; }
+	bool Are5200PotsEnabled() const { return mb5200PotsEnabled; }
+	void Set5200ControllerOverride(vdfunction<void(int)> callback) {
+		mp5200ControllerOverride = std::move(callback);
+		if (mp5200ControllerOverride) Update5200Controller();
+	}
 	void SelectMultiJoy(int multiIndex);
 
 	void ColdReset();
@@ -246,6 +252,11 @@ public:
 	/// Enables or disables restricted mode. Restricted mode limits triggers
 	/// UI triggers only. All other triggers are forced off.
 	void SetRestrictedMode(bool restricted);
+	bool IsRestrictedMode() const { return mbRestrictedMode; }
+	// A frontend may opt in only when console callbacks capture input
+	// instead of writing hardware. Reset/turbo remain restricted.
+	void SetConsoleCaptureEnabled(bool enabled) { mbConsoleCapture = enabled; }
+	bool IsConsoleCaptureEnabled() const { return mbConsoleCapture; }
 
 	/// Redirect port output for all controllers bound to srcPortIdx into
 	/// |dstPort| (a caller-owned proxy IATDeviceControllerPort) instead
@@ -352,6 +363,8 @@ protected:
 	// after fresh config" report on Linux Mint.  Keep the default here so
 	// the field is safe regardless of which frontend instantiates us.
 	bool mbRestrictedMode = false;
+	bool mbConsoleCapture = false;
+	vdfunction<void(int)> mp5200ControllerOverride;
 	// Netplay port-capture state: when mPortRedirectSrc >= 0,
 	// controllers bound to that port index are redirected to
 	// mpPortRedirectDst. Re-applied after every RebuildMappings.

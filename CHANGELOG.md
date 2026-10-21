@@ -2,6 +2,28 @@
 
 ## Unreleased — 2026-10-21
 
+### Online play
+
+- Added bounded rollback with two frames of input delay, plus a delay-only
+  compatibility mode selected before hosting. Corrected frames replay from
+  native checkpoints without duplicate audio submission.
+- Fixed changing inputs under latency, retransmission during stalls,
+  historical packet repair, long-session hash cursors and deferred host
+  approval/upload races. Protocol 8 requires both peers to update.
+- Preserve exact runtime clocks, random state, keyboard/analog input and
+  versioned session disk writes when rewinding. Restore the original local
+  game, media objects and running state on leaving online play. Pending
+  XEX/BASIC loaders, startup key holds, CPU interrupt phases and drive/SIO
+  buffers now survive native checkpoints and serialized resyncs. Fixed
+  mid-scanline ANTIC DMA restoration and banked BASIC/self-test ROM latches.
+- Authenticate lobby relay routes with private role tickets bound to the
+  join attempt; public names and session IDs cannot claim another host's
+  listing or relay slot. Browser-host relay admission also requires the
+  owner's approved join intent. Recover expired registrations and separate
+  authenticated offer heartbeats from public request limits.
+- Use HTTPS-capable native lobby requests and advertised relay endpoints.
+  Cancelled browser joins cannot resume after a delayed response.
+
 ### Hardware and media
 
 - Added RAM-Cart 64/128 KiB, Double RAM-Cart 256 KiB, RAM-Cart

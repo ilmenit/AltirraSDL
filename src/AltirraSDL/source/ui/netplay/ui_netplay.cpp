@@ -143,6 +143,15 @@ void ATNetplayUI_Shutdown() {
 void ATNetplayUI_Poll(uint64_t nowMs) {
 	auto& st = ATNetplayUI::GetState();
 
+	bool hiddenBrokerJoin = false;
+#if defined(__EMSCRIPTEN__)
+	hiddenBrokerJoin = ATWasmBrokerIsActive();
+#endif
+	if (st.session.relayAuthPending && st.screen != ATNetplayUI::Screen::Waiting
+		&& !hiddenBrokerJoin) {
+		st.session.relayAuthPending = false;
+		++st.session.relayAuthTag;
+	}
 	// v4 broker join — drive the BrokerAsking/BrokerSpawning poll
 	// cadence.  Idempotent; no-op when the user isn't mid-broker.
 	ATNetplayUI::Tick_BrokerWait(nowMs);
@@ -152,6 +161,27 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 		(ATNetplayUI::GetWorker().InFlightCount() > 0);
 	ATNetplayUI::GetWorker().Poll(
 		[&](ATNetplayUI::LobbyResult& r) {
+			if (r.op == ATNetplayUI::LobbyOp::AcquireRelayTicket) {
+				if (!st.session.relayAuthPending || r.tag != st.session.relayAuthTag) return;
+				st.session.relayAuthPending = false;
+				if (!r.ok || r.relayTicket.sessionNonce != st.session.relayAuth.sessionNonce) {
+					st.session.lastError = r.httpStatus == 403
+						? "This browser session needs the host's approval. Request to join from the lobby."
+						: "Could not authorize the connection. Please try again.";
+#if defined(__EMSCRIPTEN__)
+					if (ATWasmBrokerIsActive()) {
+						ATNetplayUI_EndSession();
+						return;
+					}
+#endif
+					ATNetplayUI::Navigate(ATNetplayUI::Screen::Error);
+					return;
+				}
+				st.session.relayAuth = std::move(r.relayTicket);
+				st.session.relayAuthReady = true;
+				ATNetplayUI::StartJoiningAction();
+				return;
+			}
 			// v4 broker join — first crack at intent + spawn-poll
 			// results.  Tag-matched, so a stale response from a
 			// cancelled flow is silently dropped.
@@ -230,6 +260,8 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 					reg.section   = r.sourceLobby;
 					reg.sessionId = r.create.sessionId;
 					reg.token     = r.create.token;
+					reg.relayPort = r.create.relayPort;
+					reg.webSocketUrl = r.create.webSocketUrl;
 					// De-dup on section (a quick Enable/Disable/Enable
 					// cycle could leave a stale entry).
 					bool replaced = false;
@@ -322,7 +354,12 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 					// offer or down lobby (would DDoS the server on
 					// Oracle Free Tier).  The gate is in
 					// StartCoordForHostedGame.
-					o->createRetryAfterMs = nowMs + 30000;
+					#if defined(__EMSCRIPTEN__)
+						++o->lobbyCandidateIndex;
+						o->createRetryAfterMs = nowMs + 3000;
+#else
+						o->createRetryAfterMs = nowMs + 30000;
+#endif
 				}
 				return;
 			}
@@ -333,7 +370,17 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 						r.error.empty() ? "(no detail)"
 						                : r.error.c_str());
 				}
-				// v4 two-sided punch: hand any buffered joiner hints
+				if (!r.ok && (r.httpStatus == 404 || r.httpStatus == 401)) {
+						if (auto* offer = ATNetplayUI::FindHostedGameByTag(r.tag)) {
+							for (const auto& registration : offer->lobbyRegistrations) {
+								if (registration.section == r.sourceLobby && registration.sessionId == r.requestSessionId) {
+									ATNetplayUI::RecoverLobbyRegistration(*offer, r.sourceLobby);
+									break;
+								}
+							}
+						}
+					}
+					// v4 two-sided punch: hand any buffered joiner hints
 				// to the host coordinator so it can fire outbound
 				// NetPunch probes and pre-open its NAT pinhole before
 				// the joiner's Hello spray arrives.  Routed by tag
@@ -343,6 +390,16 @@ void ATNetplayUI_Poll(uint64_t nowMs) {
 					ATNetplayUI::HostedGame* o =
 						ATNetplayUI::FindHostedGameByTag(r.tag);
 					if (o) {
+						// Keep peer hints bound to the service that supplied them.
+						const auto lobbies = ATNetplayUI::AllEnabledHttpLobbies();
+						for (const auto& registration : o->lobbyRegistrations) {
+							if (registration.section != r.sourceLobby) continue;
+							for (const auto& lobby : lobbies) {
+								if (lobby.section != r.sourceLobby) continue;
+								const auto endpoint = lobby.endpoint.host + ":" + std::to_string(registration.relayPort);
+								ATNetplayGlue::HostSetRelayContext(o->id.c_str(), registration.sessionId.c_str(), endpoint.c_str(), registration.token.c_str());
+							}
+						}
 						for (const auto& h : r.hints) {
 							g_ATLCNetplay("lobby Heartbeat: peer-hint "
 								"\"%s\" nonce=%s cands=\"%s\" (age %dms)",
@@ -766,17 +823,13 @@ void ATNetplayUI_OpenMyHostedGames() {
 
 void ATNetplayUI_EndSession() {
 	// "End Session" from the menu means: stop joining AND disable
-	// every currently-running offer.  User keeps the list around.
+	// every currently-running offer. User keeps the list around. Release
+	// session inputs before restoring the original game and its held keys.
+	ATNetplayGlue::DisconnectActive();
 	ATNetplayGlue::StopJoin();
 	for (auto& o : ATNetplayUI::GetState().hostedGames) {
 		ATNetplayUI::DisableHostedGame(o.id);
 	}
-	// Tear down the canonical netplay profile immediately rather
-	// than waiting for the next ReconcileHostedGames tick to catch
-	// the activity edge.  Makes the menu click feel synchronous and
-	// guarantees the user's pre-session profile is restored before
-	// any later poll could observe a transient phase.  Idempotent.
-	ATNetplayProfile::EndSession();
 	ATNetplayUI::Navigate(ATNetplayUI::Screen::MyHostedGames);
 #if defined(__EMSCRIPTEN__)
 	// In broker mode, an explicit End Session click also navigates

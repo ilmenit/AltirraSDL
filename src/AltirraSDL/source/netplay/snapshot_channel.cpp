@@ -20,6 +20,7 @@ void SnapshotSender::Begin(const uint8_t* data, size_t bytes) {
 	mNextNew = 0;
 	mAckedCount = 0;
 
+	if (bytes > kMaxSnapshotBytes) { mStatus = Status::Failed; return; }
 	if (bytes == 0 || data == nullptr) {
 		mTotalChunks = 0;
 		mAcked.clear();
@@ -138,12 +139,24 @@ void SnapshotSender::ForceDone() {
 // SnapshotReceiver
 // ---------------------------------------------------------------------------
 
-void SnapshotReceiver::Begin(uint32_t expectedChunks, uint32_t expectedBytes) {
+bool SnapshotReceiver::Begin(uint32_t expectedChunks, uint32_t expectedBytes) {
+	mData.clear(); mFilled.clear();
+	mExpectedChunks = mExpectedBytes = mReceived = 0;
+	if (!expectedBytes || expectedBytes > kMaxSnapshotBytes ||
+		expectedChunks != (expectedBytes + kSnapshotChunkSize - 1) / kSnapshotChunkSize)
+		return false;
 	mExpectedChunks = expectedChunks;
 	mExpectedBytes = expectedBytes;
 	mReceived = 0;
-	mData.assign(expectedBytes, 0u);
-	mFilled.assign(expectedChunks, 0u);
+	try {
+		mData.assign(expectedBytes, 0u);
+		mFilled.assign(expectedChunks, 0u);
+	} catch (...) {
+		mData.clear(); mFilled.clear();
+		mExpectedChunks = mExpectedBytes = 0;
+		return false;
+	}
+	return true;
 }
 
 bool SnapshotReceiver::OnChunk(const NetSnapChunk& c) {
@@ -162,6 +175,7 @@ bool SnapshotReceiver::OnChunk(const NetSnapChunk& c) {
 	// host that sends short chunks in the middle of a transfer.
 	const bool isTail = (c.chunkIdx + 1 == mExpectedChunks);
 	if (!isTail && c.payloadLen != kSnapshotChunkSize) return false;
+	if (isTail && c.payloadLen != mExpectedBytes - start) return false;
 
 	// A claim-with-no-payload is never valid: either the sender said
 	// N bytes and provided a pointer, or neither.  Reject rather than
@@ -184,7 +198,8 @@ bool SnapshotReceiver::AdoptBytes(const uint8_t* data, size_t len) {
 	// Begin(1, len) was called.  Subsequent calls require the size
 	// to match what Begin already set.
 	if (mExpectedChunks == 0) {
-		Begin(1, (uint32_t)len);
+		if (!len || len > kMaxSnapshotBytes ||
+			!Begin((uint32_t)((len + kSnapshotChunkSize - 1) / kSnapshotChunkSize), (uint32_t)len)) return false;
 	} else if ((uint64_t)len != (uint64_t)mExpectedBytes) {
 		return false;
 	}

@@ -132,7 +132,7 @@ public:
 	// Prepare to receive an expected total.  Clears any previous
 	// buffer.  `expectedBytes` and `expectedChunks` come from the
 	// host's NetWelcome.
-	void Begin(uint32_t expectedChunks, uint32_t expectedBytes);
+	bool Begin(uint32_t expectedChunks, uint32_t expectedBytes);
 
 	// Merge a decoded chunk into the reassembly buffer.  Returns
 	// true when the chunk is consistent with this transfer — new

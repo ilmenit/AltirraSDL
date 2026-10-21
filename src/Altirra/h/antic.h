@@ -195,7 +195,7 @@ private:
 	template<bool write, typename T>
 	void	TransferInternalState(T& obj2);
 
-	void	EndLoadStateInternal();
+	void	EndLoadStateInternal(bool preserveFetchPointers = false);
 
 	uint8	AdvanceSpecial();
 	void	AdvanceScanline();

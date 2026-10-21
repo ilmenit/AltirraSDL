@@ -12,6 +12,12 @@
 #include "netplay_profile.h"
 #include "netplay_savestate.h"
 #include "netplay_simhash.h"
+#include "netplay_checkpoint.h"
+#include "netplay_disk.h"
+#include "disk.h"
+#include <at/atcore/constants.h>
+#include <array>
+#include <chrono>
 
 #if defined(__EMSCRIPTEN__)
 #include "transport_wasm.h"
@@ -46,6 +52,56 @@ void ATUISetSpeedModifier(float);
 #include <vector>
 
 namespace ATNetplayGlue {
+namespace {
+ATNetplay::Coordinator* ActiveLockstep();
+uint32_t g_rollbackPreference = 8;
+ReplayFrameFn g_replayFrame = nullptr;
+RollbackStats g_rollbackStats;
+struct SavedFrame {
+	uint32_t frame = UINT32_MAX;
+	std::unique_ptr<ATNetplay::Checkpoint> state;
+};
+std::array<SavedFrame, 33> g_savedFrames;
+ATNetplay::Coordinator* g_historyOwner = nullptr;
+uint32_t g_appliedFrame = 0;
+bool g_hasAppliedFrame = false;
+
+void ClearFrameHistory() {
+	for (auto& frame : g_savedFrames) frame = SavedFrame{};
+	g_historyOwner = nullptr;
+	g_hasAppliedFrame = false;
+}
+
+uint32_t FramePeriodUs(const ATNetplay::NetBootConfig& config) {
+	double rate = kATFrameRate_NTSC;
+	switch ((ATVideoStandard)config.videoStandard) {
+		case kATVideoStandard_PAL: rate = kATFrameRate_PAL; break;
+		case kATVideoStandard_SECAM: rate = kATFrameRate_SECAM; break;
+		case kATVideoStandard_PAL60: rate = kATMasterClock_PAL / (114.0 * 262.0); break;
+		case kATVideoStandard_NTSC50: rate = kATMasterClock_NTSC / (114.0 * 312.0); break;
+		default: break;
+	}
+	return (uint32_t)(1000000.0 / rate + 0.5);
+}
+
+bool ConfigureJoinAuth(ATNetplay::Coordinator& coord,
+	const char* ticket, const char* nonce) {
+	if ((!ticket || !*ticket) && (!nonce || !*nonce)) return true;
+	uint8_t ticketBytes[16], nonceBytes[16];
+	if (!ticket || !nonce || !ATNetplay::UuidHexToBytes16(ticket, ticketBytes)
+		|| !ATNetplay::UuidHexToBytes16(nonce, nonceBytes)) return false;
+	coord.SetRelayTicket(ticketBytes);
+	coord.SetJoinNonce(nonceBytes);
+	return true;
+}
+}
+
+void SetRollbackPreference(uint32_t frames) {
+	g_rollbackPreference = std::min<uint32_t>(frames, 32);
+}
+uint32_t RollbackPreference() { return g_rollbackPreference; }
+void SetReplayFrameCallback(ReplayFrameFn callback) { g_replayFrame = callback; }
+
 
 namespace {
 
@@ -125,6 +181,17 @@ HostSlot* FindHost(const char* gameId) {
 // pre-session pause that happens to be lingering when a Bye arrives.
 bool g_resyncOwnsPause = false;
 
+void ReleaseSessionStateForRestore() {
+	// Release the injector while the session machine is still installed.
+	// Doing this after profile restoration would release the user's keys
+	// and overwrite their restored ports and CPU debug settings.
+	if (ATNetplayInput::IsActive()) ATNetplayInput::EndSession();
+	g_sim.GetGTIA().SetFrameDropInhibited(false);
+	ClearFrameHistory();
+	if (g_resyncOwnsPause) g_sim.Resume();
+	g_resyncOwnsPause = false;
+}
+
 void DriveResyncIO(ATNetplay::Coordinator& coord) {
 	if (coord.GetPhase() != ATNetplay::Coordinator::Phase::Resyncing)
 		return;
@@ -144,7 +211,10 @@ void DriveResyncIO(ATNetplay::Coordinator& coord) {
 
 	if (coord.NeedsResyncCapture()) {
 		std::vector<uint8_t> buf;
-		if (ATNetplay::CaptureSavestate(buf)) {
+		// Normalize the host through the same serialized restoration as
+		// its peer, including partial-frame display and input resources.
+		if (ATNetplay::CaptureSavestate(buf)
+			&& ATNetplay::ApplySavestate(buf.data(), buf.size())) {
 			coord.SubmitResyncCapture(buf.data(), buf.size());
 		} else {
 			// Capture failed — submit empty payload so coordinator
@@ -283,6 +353,21 @@ void Poll(uint64_t nowMs) {
 	// is belt-and-braces and cheap (Resume is idempotent).
 	const bool lock = IsLockstepping();
 	if (lock && !ATNetplayInput::IsActive()) {
+		// Session writes must be reversible before the first prediction.
+		// Keep the loaded image immutable and checkpoint overlay versions.
+		for (unsigned i = 0; i < 15; ++i) {
+			auto& disk = g_sim.GetDiskInterface(i);
+			if (!disk.GetDiskImage()) continue;
+			vdrefptr<IATDiskImage> overlay;
+			if (!ATNetplay::CreateRollbackDisk(disk.GetDiskImage(), ~overlay)) {
+				if (auto* coord = ActiveLockstep()) coord->End(ATNetplay::kByeDesyncDetected);
+				return;
+			}
+			const VDStringW path(disk.GetPath());
+			const auto writeMode = disk.GetWriteMode();
+			disk.LoadDisk(nullptr, path.c_str(), overlay);
+			disk.SetWriteMode(writeMode);
+		}
 		// Align both peers' absolute scheduler tick BEFORE re-anchoring
 		// subsystem state.  Each peer's mScheduler.GetTick64() reflects
 		// the total cycles it has ticked since process launch, so two
@@ -449,7 +534,8 @@ void Poll(uint64_t nowMs) {
 		ATUISetSlowMotion(false);
 		ATUISetSpeedModifier(0.0f);
 		g_ATLCNetplay("lockstep entry: cleared warp/slow/speed-mod");
-	} else if (!lock && ATNetplayInput::IsActive()) {
+	} else if (!lock && !IsResyncing() && ATNetplayInput::IsActive()
+		&& !ATNetplayInput::IsTestSession()) {
 		ATNetplayInput::EndSession();
 		g_ATLCNetplay("input: EndSession");
 		// Restore GTIA's normal wall-clock frame-drop behaviour.
@@ -483,6 +569,7 @@ void Poll(uint64_t nowMs) {
 		g_resyncOwnsPause = false;
 	}
 
+	if (!lock) ClearFrameHistory();
 	// (Lockstep heartbeat log removed — too noisy for normal runs.)
 }
 
@@ -667,6 +754,7 @@ void OnFrameAdvanced() {
 	}
 
 	c->OnFrameAdvanced(h);
+	g_hasAppliedFrame = false;
 	LogDesyncBreakdownOnce(c);
 }
 
@@ -687,19 +775,90 @@ ATNetplay::Coordinator *ActiveLockstep() {
 
 } // anonymous
 
+RollbackStats GetRollbackStats() {
+	auto stats = g_rollbackStats;
+	if (auto* coord = ActiveLockstep()) {
+		stats.window = coord->Loop().RollbackWindow();
+		stats.confirmedFrame = coord->Loop().ConfirmedFrame();
+		stats.peerRttMs = coord->PeerRttMs();
+		stats.rttSamples = coord->RttSamples();
+	}
+	return stats;
+}
+
+bool ProcessRollback() {
+	auto* coord = ActiveLockstep();
+	if (!coord || coord->Loop().RollbackFrame() < 0) return true;
+	const auto begin = std::chrono::steady_clock::now();
+	const uint32_t target = coord->Loop().CurrentFrame();
+	const uint32_t first = (uint32_t)coord->Loop().RollbackFrame();
+	auto& saved = g_savedFrames[first % (coord->Loop().RollbackWindow() + 1)];
+	if (!g_replayFrame || g_historyOwner != coord || saved.frame != first
+		|| !saved.state || !ATNetplay::RestoreCheckpoint(*saved.state)
+		|| !coord->Loop().RewindTo(first)) {
+		coord->End(ATNetplay::kByeDesyncDetected);
+		return false;
+	}
+	g_hasAppliedFrame = false;
+	uint32_t replayed = 0;
+	while (coord->Loop().CurrentFrame() != target) {
+		const uint32_t frame = coord->Loop().CurrentFrame();
+		auto& next = g_savedFrames[frame % (coord->Loop().RollbackWindow() + 1)];
+		if (!ATNetplay::CaptureCheckpoint(next.state)) {
+			coord->End(ATNetplay::kByeDesyncDetected); return false;
+		}
+		next.frame = frame;
+		ATNetplay::NetInput p1{}, p2{};
+		if (!coord->Loop().GetInputsForCurrentFrame(p1, p2)) {
+			coord->End(ATNetplay::kByeDesyncDetected); return false;
+		}
+		ATNetplayInput::ApplyFrameInputs(p1, p2);
+		if (!g_replayFrame()) {
+			coord->End(ATNetplay::kByeDesyncDetected); return false;
+		}
+		coord->Loop().OnFrameAdvanced(ATNetplay::ComputeSimStateHash(g_sim));
+		if (coord->Loop().IsDesynced() || ++replayed > 32) {
+			coord->End(ATNetplay::kByeDesyncDetected); return false;
+		}
+	}
+	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+		std::chrono::steady_clock::now() - begin).count();
+	++g_rollbackStats.corrections;
+	g_rollbackStats.replayedFrames += replayed;
+	g_rollbackStats.replayTimeUs += elapsed;
+	g_rollbackStats.worstReplayUs = std::max<uint64_t>(g_rollbackStats.worstReplayUs, elapsed);
+	return true;
+}
+
 void SubmitLocalInput() {
 	ATNetplay::Coordinator *c = ActiveLockstep();
-	if (!c) return;
+	if (!c || !c->Loop().NeedsLocalInput()) return;
 	ATNetplay::NetInput in = ATNetplayInput::PollLocal();
 	c->SubmitLocalInput(in);
 }
 
 void ApplyFrameInputsToSim() {
 	ATNetplay::Coordinator *c = ActiveLockstep();
-	if (!c) return;
+	if (!c || !ProcessRollback()) return;
+	const uint32_t frame = c->Loop().CurrentFrame();
+	if (g_historyOwner != c) {
+		ClearFrameHistory();
+		g_historyOwner = c;
+		g_rollbackStats = RollbackStats{};
+	}
+	if (g_hasAppliedFrame && g_appliedFrame == frame) return;
 	ATNetplay::NetInput p1{}, p2{};
 	if (c->GetInputsForCurrentFrame(p1, p2)) {
+		if (c->Loop().RollbackWindow()) {
+			auto& saved = g_savedFrames[frame % (c->Loop().RollbackWindow() + 1)];
+			if (!ATNetplay::CaptureCheckpoint(saved.state)) {
+				c->End(ATNetplay::kByeDesyncDetected); return;
+			}
+			saved.frame = frame;
+		}
 		ATNetplayInput::ApplyFrameInputs(p1, p2);
+		g_appliedFrame = frame;
+		g_hasAppliedFrame = true;
 	}
 }
 
@@ -724,9 +883,8 @@ void Shutdown() {
 	// user likely just wants to exit, but running the hook keeps
 	// behaviour consistent with the runtime DisconnectActive path.
 	// Safe to call whether or not a session was active.
+	ReleaseSessionStateForRestore();
 	if (g_sessionEndCleanupHook) g_sessionEndCleanupHook();
-
-	if (ATNetplayInput::IsActive()) ATNetplayInput::EndSession();
 }
 
 // -------------------------------------------------------------------
@@ -751,6 +909,9 @@ bool StartHost(const char* gameId,
 	HostSlot slot;
 	slot.gameId = gameId;
 	slot.coord   = std::make_unique<ATNetplay::Coordinator>();
+	slot.coord->SetRollbackWindow(g_rollbackPreference);
+	slot.coord->SetFramePeriodUs(FramePeriodUs(bootConfig));
+	if (g_rollbackPreference) inputDelayFrames = 2;
 	bool ok = slot.coord->BeginHost(localPort, playerHandle, cartName,
 		osRomHash, basicRomHash, settingsHash, inputDelayFrames,
 		entryCodeHash, bootConfig);
@@ -859,7 +1020,9 @@ bool StartJoin(const char* hostAddress,
                uint64_t osRomHash,
                uint64_t basicRomHash,
                bool acceptTos,
-               const uint8_t* entryCodeHash) {
+               const uint8_t* entryCodeHash,
+                  const char* relayTicketHex,
+                  const char* sessionNonceHex) {
 	if (g_joiner) {
 		g_joiner->End();
 		g_joiner.reset();
@@ -870,6 +1033,13 @@ bool StartJoin(const char* hostAddress,
 	g_lastJoinError.clear();
 	g_joinerTerminalTicks = 0;
 	g_joiner = std::make_unique<ATNetplay::Coordinator>();
+	if (!ConfigureJoinAuth(*g_joiner, relayTicketHex, sessionNonceHex)) {
+		g_lastJoinError = "invalid relay ticket or session nonce";
+		g_lastJoinPhase = Phase::Failed;
+		g_joiner.reset();
+		return false;
+	}
+
 
 	// Item 4d/4e cache-hook install DISABLED in lockstep with the
 	// joiner-side cache-lookup short-circuit in coordinator.cpp
@@ -897,7 +1067,9 @@ bool StartJoinRelay(const char* lobbyHostPort,
                     uint64_t osRomHash,
                     uint64_t basicRomHash,
                     bool acceptTos,
-                    const uint8_t* entryCodeHash) {
+                    const uint8_t* entryCodeHash,
+                  const char* relayTicketHex,
+                  const char* sessionNonceHex) {
 	if (!lobbyHostPort || !*lobbyHostPort ||
 	    !sessionIdHex || !*sessionIdHex) {
 		g_lastJoinError = "missing lobby endpoint or session id";
@@ -920,6 +1092,13 @@ bool StartJoinRelay(const char* lobbyHostPort,
 	g_joinerTerminalTicks = 0;
 
 	g_joiner = std::make_unique<ATNetplay::Coordinator>();
+	if (!ConfigureJoinAuth(*g_joiner, relayTicketHex, sessionNonceHex)) {
+		g_lastJoinError = "invalid relay ticket or session nonce";
+		g_lastJoinPhase = Phase::Failed;
+		g_joiner.reset();
+		return false;
+	}
+
 	bool ok = g_joiner->BeginJoinRelay(lobbyHostPort, sid,
 		/*localPort*/ 0, playerHandle,
 		osRomHash, basicRomHash, acceptTos, entryCodeHash);
@@ -934,7 +1113,9 @@ bool StartJoinWss(const char* lobbyHost,
                   uint64_t osRomHash,
                   uint64_t basicRomHash,
                   bool acceptTos,
-                  const uint8_t* entryCodeHash) {
+                  const uint8_t* entryCodeHash,
+                  const char* relayTicketHex,
+                  const char* sessionNonceHex) {
 	if (!lobbyHost || !*lobbyHost || !sessionIdHex32 || !*sessionIdHex32) {
 		g_lastJoinError = "missing lobby host or session id";
 		g_lastJoinPhase = Phase::Failed;
@@ -950,11 +1131,19 @@ bool StartJoinWss(const char* lobbyHost,
 	g_joinerTerminalTicks = 0;
 
 	g_joiner = std::make_unique<ATNetplay::Coordinator>();
+	if (!ConfigureJoinAuth(*g_joiner, relayTicketHex, sessionNonceHex)) {
+		g_lastJoinError = "invalid relay ticket or session nonce";
+		g_lastJoinPhase = Phase::Failed;
+		g_joiner.reset();
+		return false;
+	}
+
 	auto t = std::make_unique<ATNetplay::WasmTransport>(
 		std::string(lobbyHost),
 		std::string(sessionIdHex32),
 		/*role=*/ ATNetplay::kRelayRoleJoiner,
-		/*tokenHex=*/ std::string());
+		/*tokenHex=*/ std::string(relayTicketHex ? relayTicketHex : ""),
+		std::string(sessionNonceHex ? sessionNonceHex : ""));
 	g_joiner->SetTransport(std::move(t));
 
 	// Empty candidates list — the relay-only branch in BeginJoinMulti
@@ -995,6 +1184,9 @@ bool StartHostWss(const char* gameId,
 		std::string(tokenHex32));
 	slot.coord->SetTransport(std::move(t));
 
+	slot.coord->SetRollbackWindow(g_rollbackPreference);
+	slot.coord->SetFramePeriodUs(FramePeriodUs(bootConfig));
+	if (g_rollbackPreference) inputDelayFrames = 2;
 	bool ok = slot.coord->BeginHost(
 		/*localPort*/ 0,
 		playerHandle, cartName,
@@ -1220,6 +1412,7 @@ void DisconnectActive() {
 	// the order used by ReconcileHostedGames (coords reach terminal
 	// phases first, then the activity edge fires the restore).
 	// Hook is a no-op if no snapshot was taken.
+	ReleaseSessionStateForRestore();
 	if (g_sessionEndCleanupHook) g_sessionEndCleanupHook();
 }
 
@@ -1233,21 +1426,29 @@ bool SendEmote(uint8_t iconId) {
 
 void HostSetRelayContext(const char* gameId,
                          const char* sessionIdHex,
-                         const char* lobbyHostPort) {
+                         const char* lobbyHostPort,
+                         const char* ticketHex) {
 	HostSlot* h = FindHost(gameId);
 	if (!h || !h->coord) return;
 	uint8_t sid[16] = {};
 	if (!sessionIdHex ||
 	    !ATNetplay::UuidHexToBytes16(sessionIdHex, sid)) return;
+	uint8_t ticket[16] = {};
+	if (ticketHex && *ticketHex && ATNetplay::UuidHexToBytes16(ticketHex, ticket))
+		h->coord->SetRelayTicket(ticket);
 	h->coord->SetRelayContext(sid, lobbyHostPort);
 }
 
 void JoinerSetRelayContext(const char* sessionIdHex,
-                           const char* lobbyHostPort) {
+                           const char* lobbyHostPort,
+                         const char* ticketHex) {
 	if (!g_joiner) return;
 	uint8_t sid[16] = {};
 	if (!sessionIdHex ||
 	    !ATNetplay::UuidHexToBytes16(sessionIdHex, sid)) return;
+	uint8_t ticket[16] = {};
+	if (ticketHex && *ticketHex && ATNetplay::UuidHexToBytes16(ticketHex, ticket))
+		g_joiner->SetRelayTicket(ticket);
 	g_joiner->SetRelayContext(sid, lobbyHostPort);
 }
 

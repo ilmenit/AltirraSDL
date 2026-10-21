@@ -490,6 +490,8 @@ if(ALTIRRA_NETPLAY)
         source/netplay/coordinator.cpp
         source/netplay/netplay_glue.cpp
         source/netplay/netplay_input.cpp
+        source/netplay/netplay_disk.cpp
+        source/netplay/netplay_checkpoint.cpp
         source/netplay/netplay_savestate.cpp
         source/netplay/netplay_simhash.cpp
         source/netplay/lobby_client.cpp

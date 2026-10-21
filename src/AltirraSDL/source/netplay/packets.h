@@ -24,6 +24,8 @@ namespace ATNetplay {
 constexpr uint32_t kMagicHello        = 0x4C504E41u; // 'ANPL'
 constexpr uint32_t kMagicWelcome      = 0x57504E41u; // 'ANPW'
 constexpr uint32_t kMagicReject       = 0x52504E41u; // 'ANPR'
+constexpr uint32_t kMagicPing         = 0x51504E41u; // ANPQ
+constexpr uint32_t kMagicSession      = 0x55504E41u; // ANPU: nonce + epoch + inner packet
 constexpr uint32_t kMagicInput        = 0x49504E41u; // 'ANPI'
 constexpr uint32_t kMagicBye          = 0x42504E41u; // 'ANPB'
 constexpr uint32_t kMagicChunk        = 0x43504E41u; // 'ANPC'
@@ -155,7 +157,9 @@ constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 // Wire-incompatible with v6: v6 peers expect kWireInputSize=4 and
 // will read the 5-byte v7 inputs as misaligned garbage.  Version
 // skew is detected by the existing NetWelcome.protocolVersion check.
-constexpr uint16_t kProtocolVersion   = 7;
+// v8 binds session traffic to nonce + resync epoch, adds repair ACKs,
+// full keyboard/analog state, negotiated rollback timing and bounded transfers.
+constexpr uint16_t kProtocolVersion   = 8;
 constexpr int      kRedundancyR       = 5;       // sliding input-window length
 constexpr int      kFrameHz           = 60;      // simulated emulator frame rate
 constexpr uint32_t kSnapshotChunkSize = 1200;    // payload bytes per NetSnapChunk
@@ -319,6 +323,8 @@ struct NetWelcome {
 	uint32_t snapshotCRC32 = 0;    // CRC32 over the snapshot bytes (v5)
 	uint64_t settingsHash = 0;     // digest over BootConfig + CRCs
 	NetBootConfig boot;
+	uint16_t rollbackFrames = 0;
+	uint32_t framePeriodUs = 16667;
 };
 
 // NetWelcomeAck — joiner → host.  4 bytes on the wire (magic only).
@@ -337,6 +343,7 @@ struct NetWelcomeAck {
 struct NetReject {
 	uint32_t magic = kMagicReject;
 	uint16_t reason = 0;     // SessionTermination raw value
+	uint8_t sessionNonce[kSessionNonceLen] = {};
 };
 
 // NetInput — 5 bytes per frame per player (v7).
@@ -364,15 +371,19 @@ struct NetInput {
 	uint8_t keyScan  = 0;  // ATUIGetScanCodeForVirtualKey() or 0
 	uint8_t extFlags = 0;  // bit 0: paddle/5200 extension follows (v2 reserved)
 	uint8_t rttClass = 0;  // v7: host-stamped RTT bucket; 0 on joiner
+	uint8_t keyFlags = 0; // event valid, repeat, raw; scan zero is L
+	uint64_t keyHeldMask = 0; // raw Atari keyboard matrix, modifiers separate
+	uint32_t pot[2] = {0x7FFFFFFEu, 0x7FFFFFFEu}; // native 16.16, disconnected/grounded sentinels
 };
 
-// NetInputPacket — 36 bytes at R=5.  Hot path, sent every frame per peer.
+// v8 input packet: 32-bit frame/hash and independent cumulative receipt ACK.
 struct NetInputPacket {
 	uint32_t magic = kMagicInput;
 	uint32_t baseFrame = 0;
 	uint16_t count = 0;       // ≤ kRedundancyR; unused slots zeroed
-	uint16_t ackedFrame = 0;  // highest frame received from peer
+	uint32_t ackedFrame = 0;  // confirmed state-hash frame
 	uint32_t stateHashLow32 = 0;
+	uint32_t receivedThrough = 0; // next missing authoritative peer input
 	NetInput inputs[kRedundancyR] = {};
 };
 
@@ -448,6 +459,14 @@ struct NetHeartbeat {
 	uint16_t wallMsLow     = 0;   // wallclock millis low 16 bits (cadence)
 };
 
+// Session-bound RTT request/reply. Only the requester interprets its clock.
+struct NetPing {
+	uint32_t magic = kMagicPing;
+	uint32_t sequence = 0;
+	uint32_t reply = 0;
+	uint64_t sentMs = 0;
+};
+
 // NetSnapChunk — chunked snapshot.  16-byte header + variable payload.
 struct NetSnapChunk {
 	uint32_t magic = kMagicChunk;
@@ -481,6 +500,8 @@ struct NetResyncStart {
 	uint32_t stateChunks = 0;     // ceil(stateBytes / kSnapshotChunkSize)
 	uint32_t resumeFrame = 0;     // frame at which both peers continue
 	uint32_t seedHash = 0;        // post-apply sim hash (sanity check only)
+	uint32_t inputDelayFrames = 3;
+	uint32_t stateCRC32 = 0;
 };
 
 // NetEmote — either direction.  Fire-and-forget communication icon.
@@ -526,6 +547,8 @@ struct NetRelayRegister {
 	uint8_t  sessionId[16] = {};   // first 16 bytes of UUID (dashes stripped, hex-decoded)
 	uint8_t  role = 0;             // kRelayRoleHost / kRelayRoleJoiner
 	uint8_t  reserved[3] = {};
+	uint8_t  ticket[16] = {};      // private role credential
+	uint8_t  routeNonce[16] = {};  // join attempt; zero for host registration
 };
 
 // NetRelayData — peer → lobby (24-byte header + inner packet).  The
@@ -537,6 +560,8 @@ struct NetRelayDataHeader {
 	uint8_t  sessionId[16] = {};
 	uint8_t  role = 0;             // sender's role
 	uint8_t  reserved[3] = {};
+	uint8_t  ticket[16] = {};      // private role credential
+	uint8_t  routeNonce[16] = {};  // join attempt; zero for host registration
 };
 
 // NetResyncDone — joiner → host.  Confirms the savestate applied
@@ -581,16 +606,16 @@ constexpr size_t kWireHelloSize     = 4 + 2 + 2 + kSessionNonceLen + 8 + 8 + kHa
 constexpr size_t kWireBootCfgSize   = 2 + 2 + 1 + 1 + 1 + 1 + 4 + 4 + 4 + 8 + 8;                                   // 36
 // v5: 4 magic + 2 delay + 2 slot + 64 cart + 4 bytes + 4 chunks +
 // 4 crc + 8 settings + 36 bootcfg = 128
-constexpr size_t kWireWelcomeSize   = 4 + 2 + 2 + kCartLen + 4 + 4 + 4 + 8 + kWireBootCfgSize;                    // 128
+constexpr size_t kWireWelcomeSize   = 4 + 2 + 2 + kCartLen + 4 + 4 + 4 + 8 + kWireBootCfgSize + 6;                    // 128
 // New in v5.  4-byte ack with no payload.
 constexpr size_t kWireWelcomeAckSize = 4;
 // v6: NetReject narrowed reason u32→u16 → 4 + 2 = 6.  NetBye gained
 // a real u16 reason (replacing the v5 unused 4-byte tail) → 4 + 2 = 6.
 // Asymmetric wire compatibility with v5 — see the kProtocolVersion
 // comment above for the full v5↔v6 decode-rule analysis.
-constexpr size_t kWireRejectSize    = 6;
-constexpr size_t kWireInputSize     = 5;                                                                          // v7: +rttClass
-constexpr size_t kWireInputPktSize  = 4 + 4 + 2 + 2 + 4 + kRedundancyR * kWireInputSize;                           // 41 at R=5 (v7)
+constexpr size_t kWireRejectSize    = 22;
+constexpr size_t kWireInputSize     = 22;                                                                          // v7: +rttClass
+constexpr size_t kWireInputPktSize  = 22 + kRedundancyR * kWireInputSize;
 constexpr size_t kWireByeSize       = 6;
 // v6 observability layer (M5).
 constexpr size_t kWireNetPhaseSize     = 4 + 1 + 1 + 2 + 2 + 2;       // 12
@@ -598,20 +623,23 @@ constexpr size_t kWireNetEventSize     = 2 + 1 + 1 + 4;               // 8
 constexpr size_t kWireNetEventBatchHdrSize = 4 + 1 + 1;               // 6
 constexpr size_t kWireNetEventBatchMaxSize =
 	kWireNetEventBatchHdrSize + kMaxEventBatchEvents * kWireNetEventSize; // 6 + 28*8 = 230
+constexpr size_t kWirePingSize = 20;
 constexpr size_t kWireNetHeartbeatSize = 4 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2; // 16
 constexpr size_t kWireChunkHdrSize  = 16;                              // + payloadLen bytes
 constexpr size_t kWireAckSize       = 8;
-constexpr size_t kWireResyncStartSize = 24;
+constexpr size_t kWireResyncStartSize = 32;
 constexpr size_t kWireResyncDoneSize  = 12;
 constexpr size_t kWireEmoteSize       = 8;
 constexpr size_t kWireSimHashDiagSize = 4 * 13;   // 52
 constexpr size_t kWirePunchSize         = 4 + kSessionNonceLen;   // 20
 constexpr size_t kWireSnapSkipSize      = 4 + kSessionNonceLen + 4; // 24
-constexpr size_t kWireRelayHeaderSize   = 4 + 16 + 1 + 3;         // 24
+constexpr size_t kWireRelayHeaderSize   = 4 + 16 + 1 + 3 + 16 + 16; // 56
 constexpr size_t kWireRelayRegisterSize = kWireRelayHeaderSize;   // 24
 
 // Maximum UDP datagram we need to send at once; chunks are the biggest.
-constexpr size_t kMaxDatagramSize = kWireChunkHdrSize + kSnapshotChunkSize;
+constexpr size_t kWireSessionHeaderSize = 24;
+constexpr uint32_t kMaxSnapshotBytes = 64u * 1024u * 1024u;
+constexpr size_t kMaxDatagramSize = kWireSessionHeaderSize + kWireChunkHdrSize + kSnapshotChunkSize;
 
 // Maximum UDP datagram we need to RECEIVE on a relay-attached socket.
 // Anything inbound from a peer on PeerPath::Relay arrives ASDF-wrapped
@@ -633,26 +661,26 @@ constexpr size_t kMaxRelayDatagramSize =
 // canonical-profile contract (defaults applied per session) must also
 // bump ATNetplayProfile::kCanonicalProfileVersion in netplay_profile.h.
 static_assert(kWireBootCfgSize == 36, "NetBootConfig wire layout drift");
-static_assert(kWireWelcomeSize == 128, "NetWelcome wire layout drift");
+static_assert(kWireWelcomeSize == 134, "NetWelcome wire layout drift");
 
 // Resync messages: 6 × uint32 and 3 × uint32 respectively.  Guarding
 // against silent drift if someone reorders or adds fields to the
 // structs above.
-static_assert(kWireResyncStartSize == 4 * 6, "NetResyncStart wire drift");
+static_assert(kWireResyncStartSize == 4 * 8, "NetResyncStart wire drift");
 static_assert(kWireResyncDoneSize  == 4 * 3, "NetResyncDone wire drift");
 static_assert(kWireSimHashDiagSize == 4 * 13, "NetSimHashDiag wire drift");
 
 // v6 wire-size guards.  Bumping kProtocolVersion alone isn't enough
 // to catch silent drift — these asserts will trip the build the
 // moment someone adds a field without updating the size constant.
-static_assert(kWireRejectSize == 6,    "v6 NetReject wire drift");
+static_assert(kWireRejectSize == 22,    "v8 NetReject wire drift");
 static_assert(kWireByeSize    == 6,    "v6 NetBye wire drift");
 static_assert(kWireNetPhaseSize     == 12,  "NetPhase wire drift");
 static_assert(kWireNetEventSize     == 8,   "NetEvent wire drift");
 static_assert(kWireNetHeartbeatSize == 16,  "NetHeartbeat wire drift");
-static_assert(kWireInputSize    == 5,    "v7 NetInput wire drift");
-static_assert(kWireInputPktSize == 41,   "v7 NetInputPacket wire drift");
-static_assert(kProtocolVersion == 7,
-	"v7 release: bump kProtocolVersion when wire format changes");
+static_assert(kWireInputSize    == 22,    "v8 NetInput wire drift");
+static_assert(kWireInputPktSize == 132,   "v8 NetInputPacket wire drift");
+static_assert(kProtocolVersion == 8,
+	"bump kProtocolVersion when wire format changes");
 
 } // namespace ATNetplay

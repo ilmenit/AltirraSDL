@@ -23,6 +23,8 @@
 #include <vd2/system/vdstl_vectorview.h>
 #include <at/atcore/cio.h>
 #include <at/atio/blobimage.h>
+#include <at/atcore/snapshotimpl.h>
+#include <at/atcore/savestate.h>
 #include "hlebasicloader.h"
 #include "hleutils.h"
 #include "kerneldb.h"
@@ -32,6 +34,87 @@
 #include "debugger.h"
 #include "simeventmanager.h"
 #include "simulator.h"
+
+class ATSaveStateHLEBasic final : public ATSnapExchangeObject<ATSaveStateHLEBasic, "ATSaveStateHLEBasic"> {
+public:
+	template<ATExchanger T> void Exchange(T& rw) {
+		rw.Transfer("image", &mpImage);
+		rw.Transfer("index", &mIndex);
+		rw.Transfer("state", &mState);
+		rw.Transfer("iocb", &mIOCB);
+		rw.Transfer("push_tape_key", &mbPushTapeKey);
+		rw.Transfer("launch_hook", &mbLaunchHook);
+		rw.Transfer("launch_pending", &mbLaunchPending);
+		if constexpr (T::IsReader) {
+			if (mState > 2 || (mIOCB & 0x8F)
+				|| (!mpImage && (mIndex || mIOCB || mState == 1)))
+				throw ATInvalidSaveStateException();
+		}
+	}
+	void PostDeserialize() override {
+		// Referenced bulk-data objects are populated after Exchange.
+		if (mpImage) {
+			const auto& bytes = mpImage->GetReadBuffer();
+			if (bytes.size() > UINT32_MAX || bytes.size() < 14
+				|| mIndex > bytes.size()) throw ATInvalidSaveStateException();
+		}
+	}
+	vdrefptr<ATSaveStateMemoryBuffer> mpImage;
+	vdrefptr<IATBlobImage> mpOriginalImage;
+	uint32 mIndex = 0;
+	uint8 mState = 0, mIOCB = 0;
+	bool mbPushTapeKey = false, mbLaunchHook = false, mbLaunchPending = false;
+};
+
+void ATHLEBasicLoader::SaveState(IATObjectState **state) {
+	vdrefptr<ATSaveStateHLEBasic> saved(new ATSaveStateHLEBasic);
+	if (mpImage && !mpSnapshotImage) {
+		vdrefptr<ATSaveStateMemoryBuffer> bytes(new ATSaveStateMemoryBuffer);
+		const uint8 *data = static_cast<const uint8 *>(mpImage->GetBuffer());
+		bytes->GetWriteBuffer().assign(data, data + mpImage->GetSize());
+		bytes->mpDirectName = L"hle-basic.bin";
+		mpSnapshotImage = bytes;
+	}
+	if (mpSnapshotImage) {
+		saved->mpImage = &atser_cast<ATSaveStateMemoryBuffer&>(*mpSnapshotImage);
+		saved->mpImage->mpDirectName = L"hle-basic.bin";
+	}
+	saved->mpOriginalImage = mpImage;
+	saved->mIndex = mProgramIndex;
+	saved->mState = (uint8)mState;
+	saved->mIOCB = mProgramIOCB;
+	saved->mbPushTapeKey = mbPushKeyToLoadTape;
+	saved->mbLaunchHook = mpLaunchHook != nullptr;
+	saved->mbLaunchPending = mbLaunchPending;
+	*state = saved.release();
+}
+
+void ATHLEBasicLoader::LoadState(const IATObjectState *state) {
+	const auto& saved = atser_cast<const ATSaveStateHLEBasic&>(*state);
+	if (saved.mState > 2 || (saved.mIOCB & 0x8F)
+		|| (saved.mpImage && (saved.mpImage->GetReadBuffer().size() > UINT32_MAX
+			|| saved.mpImage->GetReadBuffer().size() < 14
+			|| saved.mIndex > saved.mpImage->GetReadBuffer().size()))
+		|| (!saved.mpImage && (saved.mIndex || saved.mIOCB || saved.mState == 1)))
+		throw ATInvalidSaveStateException();
+	vdrefptr<IATBlobImage> image = saved.mpOriginalImage;
+	if (!image && saved.mpImage) {
+		const auto& bytes = saved.mpImage->GetReadBuffer();
+		ATCreateBlobImage(kATImageType_BasicProgram, bytes.data(), (uint32)bytes.size(), ~image);
+	}
+	mpCPUHookMgr->UnsetHook(mpLaunchHook);
+	vdsaferelease <<= mpImage;
+	mpImage = image.release();
+	mpSnapshotImage = saved.mpImage;
+	mProgramIndex = saved.mIndex;
+	mState = (State)saved.mState;
+	mProgramIOCB = saved.mIOCB;
+	mbPushKeyToLoadTape = saved.mbPushTapeKey;
+	mbLaunchPending = saved.mbLaunchPending;
+	if (saved.mbLaunchHook)
+		mpCPUHookMgr->SetHookMethod(mpLaunchHook, kATCPUHookMode_KernelROMOnly,
+			ATKernelSymbols::CIOV, 10, this, &ATHLEBasicLoader::OnCIOV);
+}
 
 ATHLEBasicLoader::ATHLEBasicLoader() {
 }
@@ -49,6 +132,7 @@ void ATHLEBasicLoader::Init(ATCPUEmulator *cpu, ATSimulatorEventManager *simEven
 }
 
 void ATHLEBasicLoader::Shutdown() {
+	mpSnapshotImage = nullptr;
 	vdsaferelease <<= mpImage;
 
 	if (mpCPUHookMgr) {
@@ -64,6 +148,7 @@ void ATHLEBasicLoader::Shutdown() {
 }
 
 void ATHLEBasicLoader::LoadProgram(IATBlobImage *image) {
+	mpSnapshotImage = nullptr;
 	vdsaferelease <<= mpImage;
 
 	mpImage = image;
@@ -81,6 +166,7 @@ void ATHLEBasicLoader::LoadProgram(IATBlobImage *image) {
 }
 
 void ATHLEBasicLoader::LoadTape(bool pushKeyToLoadTape) {
+	mpSnapshotImage = nullptr;
 	vdsaferelease <<= mpImage;
 
 	mpCPUHookMgr->SetHookMethod(mpLaunchHook, kATCPUHookMode_KernelROMOnly, ATKernelSymbols::CIOV, 10, this, &ATHLEBasicLoader::OnCIOV);

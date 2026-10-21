@@ -55,7 +55,86 @@ void ATSaveStatePokeyInternal::Exchange(T& rw) {
 	rw.Transfer("pot_master_counter", &mPotMasterCounter);
 	rw.Transfer("pot_scan_active", &mbPotScanActive);
 
+	// Preserve the electrical input state and scan phase when rewinding.
+	rw.Transfer("pot_runtime_exact", &mbPotRuntimePresent);
+	rw.TransferArray("pot_hi_positions", mPotHiPositions);
+	rw.TransferArray("pot_charge_rates", mPotChargeRates);
+	rw.Transfer("pot_grounded_mask", &mPotGroundedMask);
+	rw.Transfer("pot_last_scan_age", &mPotLastScanAge);
+	rw.Transfer("pot_last_fast_offset", &mPotLastFastOffset);
+	rw.Transfer("pot_last_slow_offset", &mPotLastSlowOffset);
+
+	// Fork extension: exact serial engine replay. Missing fields in old
+	// snapshots retain the upstream compatibility behavior.
+	rw.Transfer("serial_serial_state_present", &mbSerialStatePresent);
+	rw.Transfer("serial_serin", &mSERIN);
+	rw.Transfer("serial_serout", &mSEROUT);
+	rw.Transfer("serial_serial_input_pending_status", &mSerialInputPendingStatus);
+	rw.Transfer("serial_ser_in_event_delay", &mSerInEventDelay);
+	rw.Transfer("serial_serial_output_start_age", &mSerialOutputStartAge);
+	rw.Transfer("serial_serial_output_state", &mbSerialOutputState);
+	rw.Transfer("serial_serial_rate_changed", &mbSerialRateChanged);
+	rw.Transfer("serial_ser_in_burst_pending_irq1", &mbSerInBurstPendingIRQ1);
+	rw.Transfer("serial_ser_in_burst_pending_irq2", &mbSerInBurstPendingIRQ2);
+	rw.Transfer("serial_ser_in_burst_pending_data", &mbSerInBurstPendingData);
+	rw.Transfer("serial_ser_out_burst_deadline_present", &mbSerOutBurstDeadlinePresent);
+	rw.Transfer("serial_ser_out_burst_deadline_offset", &mSerOutBurstDeadlineOffset);
+	rw.Transfer("serial_serial_input_reset_counter", &mSerialInputResetCounter);
+	rw.Transfer("serial_serial_simulate_input_base_offset", &mSerialSimulateInputBaseOffset);
+	rw.Transfer("serial_serial_simulate_input_cycles_per_bit", &mSerialSimulateInputCyclesPerBit);
+	rw.Transfer("serial_serial_simulate_input_data", &mSerialSimulateInputData);
+	rw.Transfer("serial_serial_simulate_input_port", &mbSerialSimulateInputPort);
+	rw.Transfer("serial_serial_ext_base_offset", &mSerialExtBaseOffset);
+	rw.Transfer("serial_serial_ext_period", &mSerialExtPeriod);
+	rw.Transfer("serial_serial_data_in_flip_present", &mbSerialDataInFlipPresent);
+	rw.Transfer("serial_serial_data_in_flip_offset", &mSerialDataInFlipOffset);
+	rw.Transfer("serial_ser_clock_phase", &mbSerClockPhase);
+
+	// Fork extension: exact keyboard replay, optional for old snapshots.
+	rw.Transfer("keyboard_exact", &mbKeyboardStatePresent);
+	rw.Transfer("keyboard_key_code_timer", &mKeyCodeTimer);
+	rw.Transfer("keyboard_key_cooldown_timer", &mKeyCooldownTimer);
+	rw.Transfer("keyboard_irqdelay", &mKeyboardIRQDelay);
+	rw.Transfer("keyboard_scan_delay", &mKeyboardScanDelay);
+	rw.Transfer("keyboard_irqpending", &mbKeyboardIRQPending);
+	rw.Transfer("keyboard_use_key_cooldown_timer", &mbUseKeyCooldownTimer);
+	rw.Transfer("keyboard_cooked_key_mode", &mbCookedKeyMode);
+	rw.Transfer("keyboard_scan_enabled", &mbKeyboardScanEnabled);
+	rw.Transfer("keyboard_shift_key_state", &mbShiftKeyState);
+	rw.Transfer("keyboard_shift_key_latched_state", &mbShiftKeyLatchedState);
+	rw.Transfer("keyboard_control_key_state", &mbControlKeyState);
+	rw.Transfer("keyboard_control_key_latched_state", &mbControlKeyLatchedState);
+	rw.Transfer("keyboard_break_key_state", &mbBreakKeyState);
+	rw.Transfer("keyboard_break_key_latched_state", &mbBreakKeyLatchedState);
+	rw.Transfer("keyboard_key_scan_state", &mKeyScanState);
+	rw.Transfer("keyboard_key_scan_code", &mKeyScanCode);
+	rw.Transfer("keyboard_key_scan_latch", &mKeyScanLatch);
+	rw.Transfer("keyboard_key_queue", &mKeyQueue);
+	rw.TransferArray("keyboard_matrix", mKeyMatrix);
+	rw.TransferArray("keyboard_effective_matrix", mEffectiveKeyMatrix);
+
 	if constexpr (T::IsReader) {
+		if (mbPotRuntimePresent) {
+			for (uint32 rate : mPotChargeRates)
+				if (rate > 0x40000000) throw ATInvalidSaveStateException();
+			for (uint32 position : mPotHiPositions)
+				if (position > 0x7FFFFFFF) throw ATInvalidSaveStateException();
+		}
+		if (mbSerialStatePresent &&
+			(mSerInEventDelay >= 0x80000000u || mSerOutEventTime >= 0x80000000u
+			|| mSerialExtPeriod >= 0x80000000u
+			|| (mbSerialSimulateInputPort && !mSerialSimulateInputCyclesPerBit)))
+			throw ATInvalidSaveStateException();
+		if (mbKeyboardStatePresent) {
+			if (mKeyboardIRQDelay > 114 || mKeyboardScanDelay > 114
+				|| mKeyScanState > 3 || mKeyScanLatch >= 64
+				|| mKeyQueue.size() > 1024 * 1024)
+				throw ATInvalidSaveStateException();
+			for (uint16 row : mKeyMatrix)
+				if (row & ~0x1FF) throw ATInvalidSaveStateException();
+			for (uint16 row : mEffectiveKeyMatrix)
+				if (row & ~0x1FF) throw ATInvalidSaveStateException();
+		}
 		if (mClock15Offset >= 114)
 			throw ATInvalidSaveStateException();
 

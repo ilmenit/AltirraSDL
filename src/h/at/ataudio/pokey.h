@@ -257,6 +257,7 @@ public:
 	void	LoadState(const IATObjectState *state);
 	void	LoadState(const class ATSaveStatePokey& state);
 	void	PostLoadState();
+	void RestoreRuntimeEvents(const IATObjectState *state);
 
 	void	GetRegisterState(ATPokeyRegisterState& state) const;
 
@@ -333,6 +334,7 @@ private:
 
 	void	SetKeyboardModes(bool cooked, bool scanEnabled);
 	void	UpdateKeyboardScanEvent();
+	void RestoreRuntimeEvents(const class ATSaveStatePokey& state);
 	void	QueueKeyboardIRQ();
 	void	AssertKeyboardIRQ();
 	void	AssertBreakIRQ();
@@ -430,7 +432,7 @@ private:
 	uint8	mSerialOutputShiftRegister;
 	uint8	mSerialInputCounter;
 	uint8	mSerialOutputCounter;
-	uint8	mSerialInputPendingStatus;
+	uint8	mSerialInputPendingStatus = 0xFF;
 	bool	mbSerOutValid;
 	bool	mbSerShiftValid;
 	bool	mbSerClockPhase = false;		// Internal serial clock phase. false = init state

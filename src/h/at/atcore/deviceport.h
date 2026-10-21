@@ -105,6 +105,10 @@ public:
 	// Sets whether the joystick trigger is held down.
 	virtual void SetTriggerDown(bool down) = 0;
 
+	// Optional input capture hook. Real hardware ports ignore keyboard
+	// state; a frontend proxy uses this for redirected 5200 controllers.
+	virtual void Set5200KeyboardState(const bool matrix[64], bool top) {}
+
 	// Reset a pot input as if nothing were connected.
 	virtual void ResetPotPosition(bool potB) = 0;
 

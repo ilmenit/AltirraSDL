@@ -26,9 +26,9 @@ const char* const kDefaultLobbyIni =
 	// ports.  The scheme is informational here — the WASM lobby worker
 	// always upgrades to https:// and the WS transport always uses
 	// wss:// on port 443.
-	"url     = http://lobby.atari.org.pl\n"
+	"url     = https://lobby.atari.org.pl\n"
 #else
-	"url     = http://lobby.atari.org.pl:8080\n"
+	"url     = https://lobby.atari.org.pl\n"
 #endif
 	"region  = global\n"
 	"enabled = true\n"
@@ -54,11 +54,11 @@ const char* const kDefaultLobbyIni =
 	"[backup]\n"
 	"name    = Altirra Lobby (DuckDNS backup)\n"
 #if defined(__EMSCRIPTEN__)
-	"url     = http://altirra-lobby.duckdns.org\n"
+	"url     = https://altirra-lobby.duckdns.org\n"
 	"region  = global\n"
 	"enabled = false\n"
 #else
-	"url     = http://altirra-lobby.duckdns.org:8080\n"
+	"url     = https://altirra-lobby.duckdns.org\n"
 	"region  = global\n"
 	"enabled = false\n"
 #endif
@@ -187,6 +187,10 @@ size_t ParseLobbyIni(const char* text, size_t len,
 			continue;
 		}
 
+		if (key == "url" && (val == "http://lobby.atari.org.pl:8080" || val == "http://lobby.atari.org.pl"))
+			val = "https://lobby.atari.org.pl";
+		if (key == "url" && (val == "http://altirra-lobby.duckdns.org:8080" || val == "http://altirra-lobby.duckdns.org"))
+			val = "https://altirra-lobby.duckdns.org";
 		if      (key == "name")      cur.name   = val;
 		else if (key == "url")       cur.url    = val;
 		else if (key == "region")    cur.region = val;

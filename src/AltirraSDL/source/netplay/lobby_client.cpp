@@ -280,8 +280,10 @@ bool ReadCreateResp(JsonCursor& c, LobbyCreateResponse& r) {
 		if (!c.match(':')) return false;
 
 		if      (key == "sessionId")  c.parseString(r.sessionId);
+		else if (key == "webSocketUrl") c.parseString(r.webSocketUrl);
 		else if (key == "token")      c.parseString(r.token);
 		else if (key == "ttlSeconds") c.parseInt(r.ttlSeconds);
+		else if (key == "relayPort") { int port = 0; c.parseInt(port); if (port >= 0 && port <= 65535) r.relayPort = (uint16_t)port; }
 		else { if (!c.parseNull() && !c.skipValue()) return false; }
 
 		if (!c.ok) return false;
@@ -328,6 +330,89 @@ void FormatHttpError(std::string& out, const HttpResponse& r) {
 // LobbyClient
 // ---------------------------------------------------------------------
 
+bool ParseLobbyEndpoint(const std::string& url, LobbyEndpoint& out) {
+	LobbyEndpoint endpoint;
+	size_t start;
+	if (url.compare(0, 8, "https://") == 0) { endpoint.secure = true; endpoint.port = 443; start = 8; }
+	else if (url.compare(0, 7, "http://") == 0) { endpoint.secure = false; endpoint.port = 80; start = 7; }
+	else return false;
+	if (url.find_first_of("\r\n?#@", start) != std::string::npos) return false;
+	const auto slash = url.find('/', start);
+	const std::string authority = url.substr(start, slash == std::string::npos ? slash : slash - start);
+	if (authority.empty()) return false;
+	size_t colon = authority.rfind(':');
+	if (authority[0] == '[') {
+		const auto close = authority.find(']');
+		if (close == std::string::npos) return false;
+		colon = close + 1 < authority.size() ? close + 1 : std::string::npos;
+		if (colon != std::string::npos && authority[colon] != ':') return false;
+	} else if (colon != std::string::npos && authority.find(':') != colon) return false;
+	endpoint.host = authority.substr(0, colon);
+	if (endpoint.host.empty()) return false;
+	if (colon != std::string::npos) {
+		const std::string port = authority.substr(colon + 1);
+		if (port.empty() || port.find_first_not_of("0123456789") != std::string::npos) return false;
+		const unsigned long number = std::strtoul(port.c_str(), nullptr, 10);
+		if (!number || number > 65535) return false;
+		endpoint.port = (uint16_t)number;
+	}
+	if (slash != std::string::npos) endpoint.basePath = url.substr(slash);
+	while (!endpoint.basePath.empty() && endpoint.basePath.back() == '/') endpoint.basePath.pop_back();
+	out = std::move(endpoint);
+	return true;
+}
+
+std::string LobbyWebSocketUrl(const LobbyEndpoint& endpoint, const std::string& advertised) {
+	if (!advertised.empty()) {
+		if (advertised.find_first_of("\r\n@#") != std::string::npos) return {};
+		if (advertised.compare(0, 6, "wss://") == 0) return advertised;
+		if (!endpoint.secure && advertised.compare(0, 5, "ws://") == 0) return advertised;
+		if (advertised[0] != '/') return {};
+	}
+	std::string result = endpoint.secure ? "wss://" : "ws://";
+	result += endpoint.host + ":" + std::to_string(endpoint.port);
+	result += advertised.empty() ? endpoint.basePath + "/netplay" : advertised;
+	return result;
+}
+
+bool LobbyClient::AcquireRelayTicket(const std::string& sessionId,
+	const std::string& nonce, LobbyRelayTicket& out,
+	const std::string& approvedIntent) {
+	out = LobbyRelayTicket();
+	std::string body = "{";
+	bool first = true;
+	AppendKV(body, "sessionNonce", nonce, first);
+	if (!approvedIntent.empty()) AppendKV(body, "intentId", approvedIntent, first);
+	body += '}';
+	const std::string path = "/v1/session/" + sessionId + "/relay-ticket";
+	HttpRequest request;
+	request.method = "POST"; request.host = mEp.host.c_str();
+	request.port = mEp.port; request.secure = mEp.secure; request.basePath = mEp.basePath.c_str();
+	request.path = path.c_str(); request.contentType = "application/json";
+	request.body = reinterpret_cast<const uint8_t*>(body.data()); request.bodyLen = body.size();
+	request.timeoutMs = mEp.timeoutMs;
+	request.cancel = mEp.cancel;
+	HttpResponse response; HttpRequestSync(request, response); mLastStatus = response.status;
+	if (response.status != 201 || !response.error.empty()) { FormatHttpError(mLastError, response); return false; }
+	JsonCursor cursor{reinterpret_cast<const char*>(response.body.data()), reinterpret_cast<const char*>(response.body.data()) + response.body.size()};
+	if (!cursor.match('{')) return false;
+	while (!cursor.peek('}')) {
+		std::string key; if (!cursor.parseString(key) || !cursor.match(':')) return false;
+		if (key == "ticket") cursor.parseString(out.ticket);
+		else if (key == "webSocketUrl") cursor.parseString(out.webSocketUrl);
+		else if (key == "sessionNonce") cursor.parseString(out.sessionNonce);
+		else if (key == "relayPort") { int port = 0; cursor.parseInt(port); if (port > 0 && port <= 65535) out.relayPort = (uint16_t)port; }
+		else if (key == "ttlSeconds") cursor.parseInt(out.ttlSeconds);
+		else cursor.skipValue();
+		if (!cursor.ok) return false;
+		if (!cursor.match(',')) break;
+	}
+	if (!cursor.match('}') || out.ticket.size() != 32 || out.sessionNonce != nonce) {
+		mLastError = "invalid authenticated relay response"; return false;
+	}
+	mLastError.clear(); return true;
+}
+
 bool LobbyClient::Create(const LobbyCreateRequest& req,
                          LobbyCreateResponse& out) {
 	std::string body;
@@ -370,11 +455,14 @@ bool LobbyClient::Create(const LobbyCreateRequest& req,
 	hr.method      = "POST";
 	hr.host        = mEp.host.c_str();
 	hr.port        = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path        = "/v1/session";
 	hr.contentType = "application/json";
 	hr.body        = (const uint8_t*)body.data();
 	hr.bodyLen     = body.size();
 	hr.timeoutMs   = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -398,6 +486,8 @@ bool LobbyClient::List(std::vector<LobbySession>& out) {
 	hr.method    = "GET";
 	hr.host      = mEp.host.c_str();
 	hr.port      = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	// `include_awaiting=1` opts into broker-pre-spawn (awaiting_approval)
 	// sessions so the in-app browser can surface games hosted from the
 	// lobby web page's Play Together flow.  Without this flag the
@@ -406,6 +496,7 @@ bool LobbyClient::List(std::vector<LobbySession>& out) {
 	// runs the broker intent dance before the netplay handshake.
 	hr.path      = "/v1/sessions?include_awaiting=1";
 	hr.timeoutMs = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	// RTT measurement.  Wraps the synchronous request only; we don't
 	// charge JSON parse time to "lobby latency" since that's local
@@ -464,8 +555,11 @@ bool LobbyClient::GetById(const std::string& sessionId,
 	hr.method    = "GET";
 	hr.host      = mEp.host.c_str();
 	hr.port      = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path      = path.c_str();
 	hr.timeoutMs = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -511,11 +605,14 @@ bool LobbyClient::CreateIntent(const std::string& sessionId,
 	hr.method      = "POST";
 	hr.host        = mEp.host.c_str();
 	hr.port        = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path        = path.c_str();
 	hr.contentType = "application/json";
 	hr.body        = (const uint8_t*)body.data();
 	hr.bodyLen     = body.size();
 	hr.timeoutMs   = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -568,8 +665,11 @@ bool LobbyClient::GetIntent(const std::string& intentId,
 	hr.method    = "GET";
 	hr.host      = mEp.host.c_str();
 	hr.port      = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path      = path.c_str();
 	hr.timeoutMs = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -638,11 +738,14 @@ bool LobbyClient::HeartbeatWithHints(const std::string& sessionId,
 	hr.method      = "POST";
 	hr.host        = mEp.host.c_str();
 	hr.port        = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path        = path.c_str();
 	hr.contentType = "application/json";
 	hr.body        = (const uint8_t*)body.data();
 	hr.bodyLen     = body.size();
 	hr.timeoutMs   = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -717,11 +820,14 @@ bool LobbyClient::PostPeerHint(const std::string& sessionId,
 	hr.method      = "POST";
 	hr.host        = mEp.host.c_str();
 	hr.port        = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path        = path.c_str();
 	hr.contentType = "application/json";
 	hr.body        = (const uint8_t*)body.data();
 	hr.bodyLen     = body.size();
 	hr.timeoutMs   = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -745,9 +851,12 @@ bool LobbyClient::Delete(const std::string& sessionId,
 	hr.method      = "DELETE";
 	hr.host        = mEp.host.c_str();
 	hr.port        = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path        = path.c_str();
 	hr.extraHeader = header.c_str();
 	hr.timeoutMs   = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;
@@ -765,8 +874,11 @@ bool LobbyClient::Stats(LobbyStats& out) {
 	hr.method    = "GET";
 	hr.host      = mEp.host.c_str();
 	hr.port      = mEp.port;
+	hr.secure = mEp.secure;
+	hr.basePath = mEp.basePath.c_str();
 	hr.path      = "/v1/stats";
 	hr.timeoutMs = mEp.timeoutMs;
+	hr.cancel = mEp.cancel;
 
 	HttpResponse resp;
 	HttpRequestSync(hr, resp); mLastStatus = resp.status;

@@ -171,6 +171,8 @@ void ATInputManager::Update5200Controller() {
 		ATPortInputController *pc = it->mpInputController;
 		pc->Select5200Controller(m5200ControllerIndex, mb5200PotsEnabled);
 	}
+	if (mp5200ControllerOverride)
+		mp5200ControllerOverride(m5200ControllerIndex);
 }
 
 void ATInputManager::ColdReset() {
@@ -2422,6 +2424,10 @@ bool ATInputManager::IsTriggerRestricted(const Trigger& trigger) const {
 
 	// UI triggers always pass through restricted mode.
 	if ((trigger.mId & 0xff00) == kATInputTrigger_UILeft)
+		return false;
+	if (mbConsoleCapture && (trigger.mId == kATInputTrigger_Start
+		|| trigger.mId == kATInputTrigger_Select
+		|| trigger.mId == kATInputTrigger_Option))
 		return false;
 
 	// Triggers whose controller has been redirected to a capture proxy

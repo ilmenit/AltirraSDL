@@ -168,6 +168,8 @@ size_t EncodeWelcome(const NetWelcome& w, uint8_t* buf, size_t bufSize) {
 	put_u32(b + 16, w.boot.gameFileCRC32);                          // 16..20
 	std::memcpy(b + 20, w.boot.gameExtension, 8);                   // 20..28
 	std::memcpy(b + 28, w.boot.reserved1, 8);                       // 28..36
+	put_u16(buf + 128, w.rollbackFrames);
+	put_u32(buf + 130, w.framePeriodUs);
 	return kWireWelcomeSize;
 }
 
@@ -194,6 +196,8 @@ DecodeResult DecodeWelcome(const uint8_t* buf, size_t len, NetWelcome& out) {
 	out.boot.gameFileCRC32 = get_u32(b + 16);
 	std::memcpy(out.boot.gameExtension, b + 20, 8);
 	std::memcpy(out.boot.reserved1, b + 28, 8);
+	out.rollbackFrames = get_u16(buf + 128);
+	out.framePeriodUs = get_u32(buf + 130);
 	return DecodeResult::Ok;
 }
 
@@ -223,14 +227,18 @@ size_t EncodeReject(const NetReject& r, uint8_t* buf, size_t bufSize) {
 	if (bufSize < kWireRejectSize) return 0;
 	put_u32(buf + 0, kMagicReject);
 	put_u16(buf + 4, r.reason);
+	std::memcpy(buf + 6, r.sessionNonce, kSessionNonceLen);
 	return kWireRejectSize;
 }
 
 DecodeResult DecodeReject(const uint8_t* buf, size_t len, NetReject& out) {
-	if (len < kWireRejectSize) return DecodeResult::TooShort;
+	if (len < 6) return DecodeResult::TooShort;
+	if (len != 6 && len != 8 && len != kWireRejectSize) return DecodeResult::BadSize;
 	out.magic = get_u32(buf);
 	if (out.magic != kMagicReject) return DecodeResult::BadMagic;
 	out.reason = get_u16(buf + 4);
+	std::memset(out.sessionNonce, 0, kSessionNonceLen);
+	if (len >= kWireRejectSize) std::memcpy(out.sessionNonce, buf + 6, kSessionNonceLen);
 	return DecodeResult::Ok;
 }
 
@@ -240,42 +248,50 @@ DecodeResult DecodeReject(const uint8_t* buf, size_t len, NetReject& out) {
 // ---------------------------------------------------------------------------
 
 size_t EncodeInputPacket(const NetInputPacket& p, uint8_t* buf, size_t bufSize) {
-	if (bufSize < kWireInputPktSize) return 0;
-	// Fail fast rather than emit a packet the peer will reject.
-	if (p.count > (uint16_t)kRedundancyR) return 0;
-	put_u32(buf + 0, kMagicInput);
+	if (bufSize < kWireInputPktSize || p.count > kRedundancyR) return 0;
+	put_u32(buf, kMagicInput);
 	put_u32(buf + 4, p.baseFrame);
 	put_u16(buf + 8, p.count);
-	put_u16(buf + 10, p.ackedFrame);
-	put_u32(buf + 12, p.stateHashLow32);
-	uint8_t* off = buf + 16;
+	put_u32(buf + 10, p.ackedFrame);
+	put_u32(buf + 14, p.stateHashLow32);
+	put_u32(buf + 18, p.receivedThrough);
+	uint8_t* off = buf + 22;
 	for (int i = 0; i < kRedundancyR; ++i) {
 		off[0] = p.inputs[i].stickDir;
 		off[1] = p.inputs[i].buttons;
 		off[2] = p.inputs[i].keyScan;
 		off[3] = p.inputs[i].extFlags;
-		off[4] = p.inputs[i].rttClass;   // v7
+		off[4] = p.inputs[i].rttClass;
+		off[5] = p.inputs[i].keyFlags;
+		put_u64(off + 6, p.inputs[i].keyHeldMask);
+		put_u32(off + 14, p.inputs[i].pot[0]);
+		put_u32(off + 18, p.inputs[i].pot[1]);
 		off += kWireInputSize;
 	}
 	return kWireInputPktSize;
 }
 
 DecodeResult DecodeInputPacket(const uint8_t* buf, size_t len, NetInputPacket& out) {
-	if (len < kWireInputPktSize) return DecodeResult::TooShort;
-	out.magic = get_u32(buf);
-	if (out.magic != kMagicInput) return DecodeResult::BadMagic;
+	if (len != kWireInputPktSize) return DecodeResult::BadSize;
+	if (get_u32(buf) != kMagicInput) return DecodeResult::BadMagic;
+	out.magic = kMagicInput;
 	out.baseFrame = get_u32(buf + 4);
 	out.count = get_u16(buf + 8);
-	out.ackedFrame = get_u16(buf + 10);
-	out.stateHashLow32 = get_u32(buf + 12);
-	if (out.count > (uint16_t)kRedundancyR) return DecodeResult::BadSize;
-	const uint8_t* off = buf + 16;
+	out.ackedFrame = get_u32(buf + 10);
+	out.stateHashLow32 = get_u32(buf + 14);
+	out.receivedThrough = get_u32(buf + 18);
+	if (out.count > kRedundancyR) return DecodeResult::BadSize;
+	const uint8_t* off = buf + 22;
 	for (int i = 0; i < kRedundancyR; ++i) {
 		out.inputs[i].stickDir = off[0];
 		out.inputs[i].buttons = off[1];
 		out.inputs[i].keyScan = off[2];
 		out.inputs[i].extFlags = off[3];
-		out.inputs[i].rttClass = off[4];   // v7
+		out.inputs[i].rttClass = off[4];
+		out.inputs[i].keyFlags = off[5];
+		out.inputs[i].keyHeldMask = get_u64(off + 6);
+		out.inputs[i].pot[0] = get_u32(off + 14);
+		out.inputs[i].pot[1] = get_u32(off + 18);
 		off += kWireInputSize;
 	}
 	return DecodeResult::Ok;
@@ -476,6 +492,8 @@ size_t EncodeResyncStart(const NetResyncStart& s, uint8_t* buf, size_t bufSize) 
 	put_u32(buf + 12, s.stateChunks);
 	put_u32(buf + 16, s.resumeFrame);
 	put_u32(buf + 20, s.seedHash);
+	put_u32(buf + 24, s.inputDelayFrames);
+	put_u32(buf + 28, s.stateCRC32);
 	return kWireResyncStartSize;
 }
 
@@ -488,6 +506,8 @@ DecodeResult DecodeResyncStart(const uint8_t* buf, size_t len, NetResyncStart& o
 	out.stateChunks = get_u32(buf + 12);
 	out.resumeFrame = get_u32(buf + 16);
 	out.seedHash    = get_u32(buf + 20);
+	out.inputDelayFrames = get_u32(buf + 24);
+	out.stateCRC32 = get_u32(buf + 28);
 	return DecodeResult::Ok;
 }
 
@@ -635,6 +655,21 @@ DecodeResult DecodeEmote(const uint8_t* buf, size_t len, NetEmote& out) {
 // NetPunch (20 bytes)
 // ---------------------------------------------------------------------------
 
+size_t EncodePing(const NetPing& p, uint8_t* buf, size_t bufSize) {
+	if (bufSize < kWirePingSize || p.reply > 1) return 0;
+	put_u32(buf, kMagicPing); put_u32(buf + 4, p.sequence);
+	put_u32(buf + 8, p.reply); put_u64(buf + 12, p.sentMs);
+	return kWirePingSize;
+}
+
+DecodeResult DecodePing(const uint8_t* buf, size_t len, NetPing& out) {
+	if (len != kWirePingSize) return DecodeResult::BadSize;
+	if (get_u32(buf) != kMagicPing) return DecodeResult::BadMagic;
+	out.magic = kMagicPing; out.sequence = get_u32(buf + 4);
+	out.reply = get_u32(buf + 8); out.sentMs = get_u64(buf + 12);
+	return out.reply <= 1 ? DecodeResult::Ok : DecodeResult::BadSize;
+}
+
 size_t EncodePunch(const NetPunch& p, uint8_t* buf, size_t bufSize) {
 	if (bufSize < kWirePunchSize) return 0;
 	put_u32(buf + 0, kMagicPunch);
@@ -677,24 +712,30 @@ DecodeResult DecodeSnapSkip(const uint8_t* buf, size_t len, NetSnapSkip& out) {
 
 size_t EncodeRelayRegister(const NetRelayRegister& r,
                            uint8_t* buf, size_t bufSize) {
-	if (bufSize < kWireRelayRegisterSize) return 0;
+	if (!buf || bufSize < kWireRelayRegisterSize || r.role > 1) return 0;
 	put_u32(buf + 0, kMagicRelayRegister);
 	std::memcpy(buf + 4, r.sessionId, 16);
 	buf[20] = r.role;
 	buf[21] = buf[22] = buf[23] = 0;
+	std::memcpy(buf + 24, r.ticket, 16);
+	std::memcpy(buf + 40, r.routeNonce, 16);
 	return kWireRelayRegisterSize;
 }
 
 DecodeResult DecodeRelayRegister(const uint8_t* buf, size_t len,
                                  NetRelayRegister& out) {
-	if (len < kWireRelayRegisterSize) return DecodeResult::TooShort;
+	if (!buf || len < kWireRelayRegisterSize) return DecodeResult::TooShort;
+	if (len != kWireRelayRegisterSize) return DecodeResult::BadSize;
 	out.magic = get_u32(buf);
 	if (out.magic != kMagicRelayRegister) return DecodeResult::BadMagic;
 	std::memcpy(out.sessionId, buf + 4, 16);
 	out.role = buf[20];
+	if (out.role > 1 || buf[21] || buf[22] || buf[23]) return DecodeResult::BadSize;
 	out.reserved[0] = buf[21];
 	out.reserved[1] = buf[22];
 	out.reserved[2] = buf[23];
+	std::memcpy(out.ticket, buf + 24, 16);
+	std::memcpy(out.routeNonce, buf + 40, 16);
 	return DecodeResult::Ok;
 }
 
@@ -705,11 +746,14 @@ DecodeResult DecodeRelayRegister(const uint8_t* buf, size_t len,
 size_t EncodeRelayFrame(const NetRelayDataHeader& h,
                         const uint8_t* inner, size_t innerLen,
                         uint8_t* buf, size_t bufSize) {
-	if (bufSize < kWireRelayHeaderSize + innerLen) return 0;
+	if (!buf || h.role > 1 || bufSize < kWireRelayHeaderSize
+		|| innerLen > bufSize - kWireRelayHeaderSize || (innerLen && !inner)) return 0;
 	put_u32(buf + 0, kMagicRelayData);
 	std::memcpy(buf + 4, h.sessionId, 16);
 	buf[20] = h.role;
 	buf[21] = buf[22] = buf[23] = 0;
+	std::memcpy(buf + 24, h.ticket, 16);
+	std::memcpy(buf + 40, h.routeNonce, 16);
 	if (innerLen > 0) {
 		std::memcpy(buf + kWireRelayHeaderSize, inner, innerLen);
 	}
@@ -720,14 +764,17 @@ DecodeResult DecodeRelayFrame(const uint8_t* buf, size_t len,
                               NetRelayDataHeader& outHeader,
                               const uint8_t*& outInner,
                               size_t& outInnerLen) {
-	if (len < kWireRelayHeaderSize) return DecodeResult::TooShort;
+	if (!buf || len < kWireRelayHeaderSize) return DecodeResult::TooShort;
 	outHeader.magic = get_u32(buf);
 	if (outHeader.magic != kMagicRelayData) return DecodeResult::BadMagic;
 	std::memcpy(outHeader.sessionId, buf + 4, 16);
 	outHeader.role = buf[20];
+	if (outHeader.role > 1 || buf[21] || buf[22] || buf[23]) return DecodeResult::BadSize;
 	outHeader.reserved[0] = buf[21];
 	outHeader.reserved[1] = buf[22];
 	outHeader.reserved[2] = buf[23];
+	std::memcpy(outHeader.ticket, buf + 24, 16);
+	std::memcpy(outHeader.routeNonce, buf + 40, 16);
 	outInner = buf + kWireRelayHeaderSize;
 	outInnerLen = len - kWireRelayHeaderSize;
 	return DecodeResult::Ok;

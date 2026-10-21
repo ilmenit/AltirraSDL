@@ -20,6 +20,7 @@
 #include <settings.h>
 
 #include "ui_main.h"
+#include "netplay/netplay_glue.h"
 
 extern ATUIState g_uiState;
 
@@ -44,6 +45,13 @@ void LoadCallback(uint32 /*profileId*/, ATSettingsCategory mask, VDRegistryKey& 
 	if (placement < 0 || placement > 2)
 		placement = 0;
 	g_uiState.oskPlacement = placement;
+	const int rollback = key.getInt("View: Online play rollback window",
+		g_uiState.netplayRollbackWindow);
+	g_uiState.netplayRollbackWindow = rollback >= 0 && rollback <= 32
+		? rollback : 8;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	ATNetplayGlue::SetRollbackPreference(g_uiState.netplayRollbackWindow);
+#endif
 }
 
 void SaveCallback(uint32 /*profileId*/, ATSettingsCategory mask, VDRegistryKey& key) {
@@ -54,6 +62,8 @@ void SaveCallback(uint32 /*profileId*/, ATSettingsCategory mask, VDRegistryKey& 
 		g_uiState.screenEffectsMode != ATUIState::kSFXMode_None);
 
 	key.setInt("View: Virtual keyboard placement", g_uiState.oskPlacement);
+	key.setInt("View: Online play rollback window",
+		g_uiState.netplayRollbackWindow);
 }
 
 } // namespace

@@ -112,6 +112,7 @@ extern "C" bool ATWasmBrokerIsActive();
 // call sites in this file without `#ifdef` clutter.  See netplay_glue.h
 // for the rationale.
 #include "netplay/netplay_glue.h"
+#include "netplay/netplay_input.h"
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_profile.h"
 #endif
@@ -1090,8 +1091,12 @@ static void HandleEvents() {
 			g_winActive = true;
 			// Match Windows uivideodisplaywindow.cpp:1693 (OnSetFocus) —
 			// re-enable input mapping when the window regains focus.
-			if (ATInputManager *im = g_sim.GetInputManager())
-				im->SetRestrictedMode(false);
+			if (ATInputManager *im = g_sim.GetInputManager()) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (!ATNetplayInput::IsActive())
+#endif
+					im->SetRestrictedMode(false);
+			}
 			break;
 
 		// -------- Android / mobile lifecycle --------
@@ -1110,16 +1115,13 @@ static void HandleEvents() {
 			ATMobileGamepad_ReleaseAll(g_sim);
 			ATUIVirtualKeyboard_ReleaseAll(g_sim);
 #ifdef __ANDROID__
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			// Stop gameplay and release session inputs before restoring the
+			// user's game. Save the restored game, never the online session.
+			ATNetplayGlue::DisconnectActive();
+#endif
 			if (g_mobileState.autoSaveOnSuspend)
 				ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
-#ifdef ALTIRRA_NETPLAY_ENABLED
-			// Restore user's pre-session profile + scrub the netplay-
-			// loaded media BEFORE persist-to-disk so the saved state
-			// reflects the user's normal config, not the canonical
-			// session state.  Same rationale as the desktop shutdown
-			// path.  Idempotent.
-			ATNetplayProfile::EndSession();
-#endif
 			// Persist Machine/Display/Acceleration/Boot/View state plus
 			// the game library cache — they are not held in the registry
 			// until ATSaveSettings runs, and the OS will likely kill the
@@ -1171,17 +1173,12 @@ static void HandleEvents() {
 			// refreshed from the live simulator.
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: TERMINATING — flushing settings");
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			ATNetplayGlue::DisconnectActive();
+#endif
 #ifdef __ANDROID__
 			if (g_mobileState.autoSaveOnSuspend)
 				ATMobileUI_SaveSuspendState(g_sim, g_mobileState);
-#endif
-#ifdef ALTIRRA_NETPLAY_ENABLED
-			// Restore user's pre-session profile + scrub the netplay-
-			// loaded media BEFORE persist-to-disk so the saved state
-			// reflects the user's normal config, not the canonical
-			// session state.  Same rationale as the desktop shutdown
-			// path.  Idempotent.
-			ATNetplayProfile::EndSession();
 #endif
 			ATPersistAllForSuspend();
 			g_running = false;
@@ -2893,6 +2890,32 @@ int main(int argc, char *argv[]) {
 	// would dangle.  Every symbol the body references is either a
 	// global, a file-static, a function, or a static-local inside
 	// the lambda itself.
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	ATNetplayGlue::SetReplayFrameCallback([]() -> bool {
+		const bool paused = g_sim.IsPaused();
+		auto* audio = g_sim.GetAudioOutput();
+		struct ReplayGuard {
+			IATAudioOutput* audio; bool paused;
+			~ReplayGuard() {
+				if (audio) audio->SetReplayMode(false);
+				if (paused) g_sim.Pause();
+			}
+		} guard{audio, paused};
+		if (audio) audio->SetReplayMode(true);
+		g_sim.Resume();
+		// Advance may be configured to yield after a single scanline.
+		const uint32 maxParts = g_sim.GetAntic().GetScanlineCount() + 2;
+		for (uint32 part = 0; part < maxParts; ++part) {
+			const auto result = g_sim.Advance(false);
+			if (g_pDisplay->IsFramePending()) {
+				g_pDisplay->PrepareFrame();
+				return true;
+			}
+			if (result == ATSimulator::kAdvanceResult_Stopped) return false;
+		}
+		return false;
+	});
+#endif
 	auto tickBody = []() {
 		ATMacAutoreleasePool tickAutoreleasePool;
 
@@ -3144,6 +3167,7 @@ int main(int argc, char *argv[]) {
 			// Capture local SDL input state and push to the
 			// coordinator (keyed D frames ahead per the lockstep
 			// invariant).
+			if (!ATNetplayGlue::ProcessRollback()) return;
 			ATNetplayGlue::SubmitLocalInput();
 
 			// If the peer hasn't delivered their input for the
@@ -3162,6 +3186,7 @@ int main(int argc, char *argv[]) {
 				       && SDL_GetTicks() - stallStartMs < stallBudgetMs) {
 					SDL_Delay(0);  // yield to OS, no block
 					ATNetplayGlue::Poll(SDL_GetTicks());
+					if (!ATNetplayGlue::ProcessRollback()) return;
 				}
 				// Still closed after the budget — fall back to
 				// render + vsync so the UI stays responsive and
@@ -3179,6 +3204,7 @@ int main(int argc, char *argv[]) {
 				// Gate opened inside the fast-poll budget —
 				// resubmit local input (currentFrame may have
 				// shifted) and fall through to Advance.
+				if (!ATNetplayGlue::ProcessRollback()) return;
 				ATNetplayGlue::SubmitLocalInput();
 			}
 
@@ -3223,6 +3249,7 @@ int main(int argc, char *argv[]) {
 			// Every completed frame changes the lockstep input index.
 			// Never reuse the previous frame's inputs during catch-up.
 			if (ATNetplayGlue::IsLockstepping()) {
+				if (!ATNetplayGlue::ProcessRollback()) return;
 				ATNetplayGlue::SubmitLocalInput();
 				if (!ATNetplayGlue::CanAdvanceThisTick()) {
 					SuspendBrowserFrameSchedule();
@@ -3467,27 +3494,9 @@ int main(int argc, char *argv[]) {
 	ATSaveWindowPlacement(g_pWindow);
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
-	// MUST run BEFORE ATPersistAllForSuspend (which saves and flushes
-	// settings to disk).  If a netplay session is still active at app
-	// shutdown:
-	//   * The current profile id is kNetplayProfileId and temporary-
-	//     mode is on, so ATSaveSettings would no-op for category data
-	//     but `Profiles\Current profile` would be flushed pointing at
-	//     the netplay profile — guaranteeing the next launch comes up
-	//     in the empty canonical profile (or worse, RecoverFromCrash
-	//     fires because the lock file is still present).
-	//   * The netplay-loaded media (.atr / .car / .cas) would be live
-	//     in the simulator and end up persisted into the user's
-	//     profile chain MountedImages by the post-cleanup save below
-	//     after the cleanup-hook EndSession reverts back to the user
-	//     profile (turning temp-mode off, leaving the netplay media
-	//     mounted because the snapshot captured it that way).
-	// Calling EndSession HERE — while g_sim is still alive and the
-	// settings save hasn't run yet — does the full restore (profile
-	// reload + snapshot apply + session-media scrub + MountedImages
-	// flush) so ATPersistAllForSuspend captures the user's clean
-	// pre-session state.  Idempotent: no-op if no session is active.
-	ATNetplayProfile::EndSession();
+	// Release session-owned input and pause state before restoring the
+	// original game, then persist the user's profile and media.
+	ATNetplayGlue::DisconnectActive();
 #endif
 
 	// Save settings before shutdown (must happen before joystick manager

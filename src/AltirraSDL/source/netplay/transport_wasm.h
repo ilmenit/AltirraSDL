@@ -58,7 +58,8 @@ public:
 	WasmTransport(std::string lobbyHost,
 	              std::string sidHex32,
 	              uint8_t     role,
-	              std::string tokenHex);
+	              std::string tokenHex,
+	              std::string nonceHex = {});
 	~WasmTransport() override;
 
 	WasmTransport(const WasmTransport&) = delete;
@@ -110,6 +111,7 @@ private:
 	std::string mLobbyHost;
 	std::string mSidHex;
 	std::string mTokenHex;
+	std::string mNonceHex;
 	uint8_t     mRole = 0;
 
 	// Inbound queue of fully-received netplay packets.  Each entry is
