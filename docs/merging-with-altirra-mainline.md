@@ -4,14 +4,15 @@ This document catalogues recurring build failures we see in CI **after**
 merging code from upstream Altirra test branches (test10 → test11 →
 test12 → …) and how to fix them.
 
-The root cause in every case is **toolchain divergence**: upstream
-Altirra is developed with MSVC on Windows; AltirraSDL contributors
-typically work on bleeding-edge Linux (GCC 14/15+) or macOS Apple
-Silicon. Both of those toolchains tolerate language extensions and
-implicit standard-library includes that our **CI floor** does not:
+Recurring causes include **toolchain divergence**, standalone-target
+header initialization and platform-specific test assumptions. Upstream
+Altirra is developed with MSVC on Windows; a successful build on a recent
+local compiler does not establish compatibility with our **CI floor**:
 
 - **macOS CI** — Apple Clang 15 (Xcode 15 on the `macos-14` runner)
 - **Linux CI** — GCC 12 (from the `ubuntu:22.04` container)
+- **Windows CI** — MSVC with Windows SDK 10.0.26100 UCRT headers;
+  standalone test targets must initialize their own intrinsic headers
 
 So code merged from mainline can build cleanly locally and break the
 moment it hits CI. The failures are mechanical to fix once you know the
@@ -210,6 +211,59 @@ file ever becomes part of the cross-platform build.
 
 ---
 
+## Issue 3 — Parenthesized aggregate construction in `emplace_back`
+
+Apple Clang 15 reports `no matching constructor for initialization of
+'ATVFSPathParam'` from `vdvector<T>::emplace_back`. The aggregate has no
+three-argument constructor; the vector internally uses `T(args...)`, and
+this compiler does not support that aggregate initialization form.
+
+Construct the aggregate with braces, then move it into the vector:
+
+```cpp
+parsedPath.mParams.emplace_back(ATVFSPathParam {
+    VDHashString32I(argName.data(), argName.size()),
+    std::move(argName), std::move(argValue)
+});
+```
+
+Review added `emplace_back` calls and the element types, not just direct
+aggregate construction. Keep the `MERGE NOTE` in
+`src/ATCore/source/vfs.cpp`; `RenderDot` in `printerrasterizer.cpp` has the
+same compiler constraint.
+
+## Issue 4 — Windows SDK intrinsics missing in standalone test sources
+
+Windows SDK 10.0.26100 `wchar.h` can report undeclared `__m128i`, `__m256i`
+or `_mm_movemask_epi8`. A source can build in the application target yet
+fail when compiled in a standalone regression target with different header
+initialization.
+
+Include the appropriate application `stdafx.h` before CRT/string headers.
+`src/Altirra/h/stdafx.h` already initializes the MSVC intrinsics and includes
+`<immintrin.h>` only on x86/x64. Preserve that architecture guard for ARM64.
+The test22 fixes are in `tests/upstream/test22.cpp` and
+`src/AltirraSDL/source/app/cputest_runner.cpp`. Audit every source compiled
+by a new test target; fixing the first source can expose the same problem
+in a later target.
+
+## Issue 5 — Tests assuming POSIX path syntax on Windows
+
+A native Windows test can compile successfully and then fail with
+`Virtual URL escaping` or `Legacy mount lost root`.
+
+URL encoding converts backslashes to forward slashes. Build native paths
+with `VDMakePath` and compare decoded URL paths after
+`VDFileGetCanonicalPath`, while still asserting Unicode, escaped punctuation
+and query values. Root wildcard tests use `/*` and `/**` on POSIX and
+`C:/*` and `C:/**` on Windows. The Windows filesystem helpers require a
+qualified drive or UNC root for their absolute-path classification.
+
+These are test portability corrections, not reasons to change the native
+filesystem implementation. See `tests/upstream/test22.cpp`.
+
+---
+
 ## Workflow recommendation
 
 Before pushing a mainline merge:
@@ -217,11 +271,24 @@ Before pushing a mainline merge:
 1. **Build locally** with the most recent toolchain you have. A clean
    local build proves the code is syntactically and semantically valid
    but does **not** prove it will build on the CI floor.
-2. **Run the audit recipes** from Issues 1 and 2 above. Anything they
-   surface is a hard CI failure waiting to happen.
+2. **Run the audits** from Issues 1–5 above, including aggregate
+   construction, standalone-target header ordering and OS-specific paths.
 3. If you can, build inside the same ubuntu:22.04 container the Linux
    CI uses (`docker run --rm -v $PWD:/src ubuntu:22.04 …`) to catch
    anything the recipes miss.
+4. **Build every regression target**, using the commands in
+   `tests/upstream/README.md`. Run the native Windows/macOS and Linux
+   normal/sanitizer jobs; a Linux-only result cannot validate Windows SDK
+   includes or Windows path semantics.
+5. **Verify the exact PR head** passes all regression and affected platform
+   build jobs before merging. Expected release/deployment skips on PR builds
+   are not failures. Record CI results separately from local/device results.
+
+A package installation failure before compilation may be external to the
+code: test22 encountered Ubuntu package downloads returning HTTP 404 and
+Chocolatey returning HTTP 504. Read the failed step before changing source;
+retry such jobs when appropriate. GitHub may require the workflow to finish
+before allowing a failed-job rerun.
 
 After CI fails on a known pattern, fix it the way this document
 prescribes, add an in-source comment if the offending code is in a

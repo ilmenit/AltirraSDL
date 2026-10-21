@@ -417,3 +417,26 @@ added `static constexpr` declaration. If it is local to a `constexpr` or
 with C++23 P2647 support. A non-static local remains compile-time-only when
 the enclosing evaluation is constant. Leave a `MERGE NOTE` at corrected
 upstream sites so a later sync does not restore the incompatible form.
+
+**Mandatory portability audit:** Before pushing an upstream merge, also review
+added `emplace_back` calls that construct aggregates. Apple Clang 15 does not
+support the parenthesized aggregate initialization used inside those calls;
+construct an explicit brace-initialized aggregate and pass it to
+`emplace_back` to preserve moves. Review every source in new standalone test
+targets for header ordering: sources using the Altirra application headers
+must include the appropriate `stdafx.h` before CRT/string headers so the
+Windows SDK's intrinsic declarations are available. Preserve the x86/x64
+guard around `<immintrin.h>`; it must not be included on ARM64.
+
+**Cross-platform test paths:** Use filesystem helpers for native paths and
+compare URL round trips in canonical filesystem form. Keep POSIX root tests
+(`/*`, `/**`) on POSIX; use drive-qualified roots on Windows. Do not alter
+production path semantics to satisfy a test with another OS's assumptions.
+
+**CI validation:** Build every regression target, including standalone CPU
+and JSON/virtual-disk targets. Require the Linux normal/sanitizer and native
+Windows/macOS regression jobs, plus affected platform build jobs, to pass on
+the exact PR head before merging. Distinguish package-service failures before
+compilation from compiler/test failures; inspect their logs and retry failed
+jobs when appropriate. Detailed examples and commands are in
+`docs/merging-with-altirra-mainline.md` and `tests/upstream/README.md`.

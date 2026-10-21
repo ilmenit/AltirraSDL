@@ -26,6 +26,11 @@ Short form of `GUIDE.md`. Tick each box in the PR description.
 - [ ] Gaming Mode (`mobile/`) updated only for gameplay-relevant changes
 
 ## Verify
+- [ ] Mandatory constexpr and portability audits in `../AGENTS.md` and `../docs/merging-with-altirra-mainline.md` completed
+- [ ] Added aggregate construction, standalone test header ordering and OS-specific path assertions reviewed
+- [ ] Every upstream regression target built and run (commands in `../tests/upstream/README.md`)
+- [ ] Linux normal/sanitizer and native Windows/macOS regression jobs pass on the exact PR head
+- [ ] All affected platform build jobs pass; external package-service failures inspected and retried as appropriate
 - [ ] `./build.sh` builds cleanly
 - [ ] SDL binary launches and loads a ROM
 - [ ] Kernel ROM rebuilt if `Kernel/source/Shared/version.inc` changed
