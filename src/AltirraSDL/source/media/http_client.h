@@ -1,15 +1,10 @@
 //	AltirraSDL - HTTPS client for online metadata providers
 //
-//	Blocking HTTP(S) GET/POST, redirects followed, cancellable; optional
+//	Blocking HTTP(S) GET/POST/DELETE, redirects followed, cancellable; optional
 //	streaming response sink for large downloads. Also used by metadata.
 //
-//	This is deliberately NOT the netplay client.  netplay/http_minimal.*
-//	is a plain-HTTP, no-TLS, 5-second-bounded client for the lobby
-//	directory, and its header explicitly says that anything needing TLS,
-//	redirects or compression should use a real library rather than extend
-//	it.  This module is that "real library" path: it wraps whatever HTTPS
-//	facility the platform already provides, so no new bundled dependency
-//	enters the tree.
+//	Shared by metadata, media downloads and the native lobby adapter.
+//	Uses platform HTTPS facilities without a new bundled dependency.
 //
 //	  Linux / macOS   libcurl, dlopen()ed at runtime (never link-time, so
 //	                  the AppImage uses the host's libcurl and therefore
@@ -34,10 +29,11 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace ATHttp {
 
-enum class Method { Get, Post };
+enum class Method { Get, Post, Delete };
 
 struct Request {
 	// Absolute URL.  https:// and http:// are both accepted; providers
@@ -46,6 +42,9 @@ struct Request {
 	Method method = Method::Get;
 	std::string requestBody;
 	std::string requestContentType;
+	// Custom application headers. Names/values are validated; credentials
+	// are never forwarded across origins on a redirect.
+	std::vector<std::pair<std::string, std::string>> headers;
 
 	// Hard deadline for the whole transfer (connect + headers + body).
 	uint32_t timeoutMs = 20000;

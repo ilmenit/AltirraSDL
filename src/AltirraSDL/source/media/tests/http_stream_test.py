@@ -33,6 +33,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         finally:
             self.close_connection = True
 
+    def do_DELETE(self):
+        assert self.headers.get('X-Session-Token') == 'private-fixture-token'
+        self.send_response(204)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+        self.close_connection = True
+
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
         valid = ((self.headers.get('Content-Type') == 'application/json' and
@@ -54,6 +61,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.close_connection = True
 
     def serve(self):
+        if self.path in ('/auth-same', '/auth-other'):
+            self.send_response(307)
+            self.send_header('Location', '/auth-ok' if self.path == '/auth-same'
+                             else f'http://localhost:{self.server.server_port}/auth-leak')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        if self.path == '/auth-leak':
+            raise AssertionError('private request reached another origin')
+        if self.path == '/auth-ok':
+            assert self.headers.get('X-Session-Token') == 'private-fixture-token'
+            self.send_response(200)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
         size = LARGE
         redirects = {
             '/redirect-stall': '/small',
@@ -183,6 +205,14 @@ def main():
             result = run('/post', mode=mode)
             assert result['STATUS'] == 200 and not result['ERROR'], result
             assert result['SUM'] == sum(b'{"status":"success"}'), result
+        result = run('/auth-ok', mode='delete-auth')
+        assert result['STATUS'] == 204 and not result['ERROR'], result
+        result = run('/auth-same', mode='auth')
+        assert result['STATUS'] == 200 and not result['ERROR'], result
+        result = run('/auth-other', mode='auth')
+        assert result['STATUS'] == 0 and 'crosses origin' in result['ERROR'], result
+        result = run('/auth-ok', mode='bad-header')
+        assert result['STATUS'] == 0 and 'invalid HTTP request header' in result['ERROR'], result
         result = run('/small', mode='get-forced')
         assert result['STATUS'] == 200 and result['SUM'] == 4096 * 90, result
         result = run('/post-303', mode='post')
