@@ -29,7 +29,6 @@
 #include "netplay/netplay_glue.h"
 #endif
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -109,9 +108,11 @@ ATFujiNetCompat::LegacyDescriptor LegacyTransport(bool refresh = false) {
 		const auto modified = std::filesystem::last_write_time(
 			ATFujiNetCompat::NativePath(paths.back()), error);
 		if (!error) {
-			const auto stamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-				modified.time_since_epoch()).count();
-			signature += "@" + std::to_string(static_cast<long long>(stamp));
+			// Keep native clock units: converting the Windows 1601 epoch
+			// to nanoseconds would overflow a signed 64-bit duration.
+			// The cast also handles libc++'s wider file-clock integer.
+			signature += "@" + std::to_string(static_cast<long long>(
+				modified.time_since_epoch().count()));
 		}
 	}
 	if (refresh || signature != observed) {
