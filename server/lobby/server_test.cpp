@@ -176,7 +176,7 @@ void TestCreateAndList() {
 // a fresh sessionId; the old one must no longer appear in /v1/sessions.
 // Sessions with empty hostHandle or empty cartName are exempt (we'd
 // otherwise collapse all anonymous / no-cart legacy clients into one).
-void TestCreateDedupReplacesPriorSession() {
+void TestCreatePreservesOtherOwnersWithSameNickname() {
 	++g_testsRun;
 	Fixture f;
 	auto c = f.client();
@@ -200,8 +200,8 @@ void TestCreateDedupReplacesPriorSession() {
 
 	auto list = c.Get(kPathSessions);
 	T_EXPECT(list && list->status == 200, "list 200");
-	T_EXPECT(list->body.find(id1) == std::string::npos,
-		"old id evicted from list");
+	T_EXPECT(list->body.find(id1) != std::string::npos,
+		"nickname collision preserves original owner");
 	T_EXPECT(list->body.find(id2) != std::string::npos,
 		"new id present in list");
 
@@ -843,9 +843,8 @@ void TestHostCap() {
 			T_FAIL("unexpected create status");
 		}
 	}
-	T_EXPECT_EQ_INT(created, kMaxHostedGamesPerHost,
-		"first N creates succeed");
-	T_EXPECT_EQ_INT(capped, 1, "(N+1)th create returns 429 host limit");
+	T_EXPECT_EQ_INT(created, 6, "public display name cannot impose another user quota");
+	T_EXPECT_EQ_INT(capped, 0, "no unauthenticated nickname quota");
 }
 
 // Cap bucket key is normalised: trim + ASCII-lowercase.  "Alice",
@@ -874,9 +873,7 @@ void TestHostCapCaseInsensitive() {
 		MakeCreateBody("G6", "AlIcE", "1.2.3.4:1"),
 		"application/json");
 	T_EXPECT(r, "got response");
-	T_EXPECT_EQ_INT(r->status, 429, "case-fold spelling caps too");
-	T_EXPECT(r->body.find("host limit reached") != std::string::npos,
-		"error body is host-limit");
+	T_EXPECT_EQ_INT(r->status, 201, "another spelling does not grant quota ownership");
 }
 
 // Public projection /v1/public/sessions: returns an array, contains
@@ -1647,40 +1644,17 @@ void TestBrokerIntentRejectedOnPlayingSession() {
 //      another session for the same host+cart), the OLD session is
 //      evicted by the existing dedup logic.  Joiner SSE must see
 //      "expired" rather than wait out the 60-s intent TTL.
-void TestBrokerDedupCancelsPendingIntents() {
+void TestBrokerNicknameCollisionPreservesPendingIntents() {
 	++g_testsRun;
-	Fixture f;
-	auto host   = f.client();
-	auto joiner = f.client();
-	std::string sid1, tok1;
-	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid1, tok1),
-		"first broker session");
-	std::string iid; int hs = 0;
-	T_EXPECT(PostIntent(joiner, sid1, "bob", "", iid, hs),
-		"joiner posts intent on first session");
-
-	SseClient joinerStream;
-	joinerStream.Start(f.port,
-		std::string(kPathIntent) + "/" + iid + kPathIntentStreamTail,
-		"");
-	// Wait for the SSE handler to register its listener before
-	// triggering the dedup eviction — otherwise the GET could land
-	// on the server AFTER dedup has fired and the intent is already
-	// gone, producing a 404 instead of the expected expired event.
-	// The ": ready" comment line is emitted on the first provider
-	// invocation, immediately after RegisterDecisionListener returns.
-	T_EXPECT(joinerStream.WaitForSubstring(": ready", 2000),
-		"joiner SSE registered listener");
-
-	// Re-create with same host+cart → triggers dedup, evicting sid1.
-	std::string sid2, tok2;
-	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid2, tok2),
-		"second broker session (dedup eviction)");
-	T_EXPECT(sid1 != sid2, "fresh session id");
-
-	T_EXPECT(joinerStream.WaitForSubstring("event: expired", 2000),
-		"intent listener sees expired event from dedup eviction");
-	joinerStream.Stop();
+	Fixture fixture;
+	auto host = fixture.client(); auto joiner = fixture.client();
+	std::string sid, token, iid; int status = 0;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", sid, token), "create original");
+	T_EXPECT(PostIntent(joiner, sid, "bob", "", iid, status), "create intent");
+	std::string collision, collisionToken;
+	T_EXPECT(CreateBrokerSession(host, "Joust", "alice", collision, collisionToken), "display-name collision allowed");
+	T_EXPECT(fixture.store.SessionExists(sid), "original owner survives collision");
+	T_EXPECT_EQ_INT(fixture.store.Heartbeat(sid, token, 1, kStateAwaitingApproval), 200, "original token remains valid");
 }
 
 // 14c. Audit fix: codeHash with non-hex characters is rejected.
@@ -1989,10 +1963,59 @@ void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
 	T_EXPECT_EQ_INT(r->status, 400, "endpoint+awaiting_approval rejected");
 }
 
+void TestPrivateRelayTicketsAndIndependentRoutes() {
+	++g_testsRun;
+	Fixture fixture;
+	auto client = fixture.client();
+	const auto response = client.Post(kPathSession, MakeCreateBody("Relay", "owner", "127.0.0.1:26000"), "application/json");
+	std::string sid, hostToken; int ttl = 0;
+	T_EXPECT(response && ReadCreateRespJson(response->body, sid, hostToken, ttl), "create relay owner");
+	const std::string nonceA(32, '1'), nonceB(32, '2');
+	std::string ticketA, ticketB, ignored;
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, nonceA, ticketA, 1000), 201, "first private route");
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, nonceB, ticketB, 1000), 201, "second pending route independent");
+	T_EXPECT(ticketA != ticketB && ticketA != hostToken, "separate authority secrets");
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, nonceA, ignored, 1001), 409, "nonce collision cannot reveal credential");
+	T_EXPECT(!fixture.store.ValidateRelayTicket(sid, 1, ticketB, nonceA, 1002), "other route cannot take over");
+	T_EXPECT(!fixture.store.ValidateRelayTicket("missing", 0, hostToken, nonceA, 1002), "unknown session never relays");
+	T_EXPECT(fixture.store.ValidateRelayTicket(sid, 0, hostToken, "", 1002), "host authority valid");
+	T_EXPECT(fixture.store.ValidateRelayTicket(sid, 1, ticketA, nonceA, 1002), "own route authority valid");
+	T_EXPECT(!fixture.store.ValidateRelayTicket(sid, 1, ticketA, nonceA, 62003), "inactive credential expires");
+
+	uint8_t session[16] = {1}, a[16] = {1}, b[16] = {2};
+	RelayTable relay;
+	sockaddr_in host{}, first{}, second{}, other{};
+	host.sin_port = htons(26000); first.sin_port = htons(26001); second.sin_port = htons(26002);
+	relay.Register(session, 0, host, 1000);
+	relay.Register(session, 1, first, 1000, a);
+	relay.Register(session, 1, second, 1000, b);
+	T_EXPECT(relay.LookupOther(session, 0, host, 1001, other, a) && other.sin_port == first.sin_port, "host routes only to requested joiner A");
+	T_EXPECT(relay.LookupOther(session, 0, host, 1001, other, b) && other.sin_port == second.sin_port, "host routes only to requested joiner B");
+}
+
+void TestLeaseBudgetSurvivesDiscoveryExhaustion() {
+	++g_testsRun;
+	Fixture fixture;
+	auto client = fixture.client();
+	const auto response = client.Post(kPathSession, MakeCreateBody("Lease", "owner", "127.0.0.1:26000"), "application/json");
+	std::string sid, token; int ttl = 0;
+	T_EXPECT(response && ReadCreateRespJson(response->body, sid, token, ttl), "create lease");
+	for (int i = 0; i < 10001; ++i) fixture.store.Rate().Allow("127.0.0.1", NowMs());
+	const auto heartbeat = client.Post((std::string(kPathSession) + "/" + sid + "/heartbeat").c_str(),
+		"{\"token\":\"" + token + "\",\"playerCount\":1}", "application/json");
+	T_EXPECT(heartbeat && heartbeat->status == 200, "authenticated heartbeat independent of exhausted discovery budget");
+	Config config; Store store(config);
+	for (int64_t elapsed = 1000; elapsed < 601000; elapsed += 3000)
+		for (int offer = 0; offer < 5; ++offer)
+			T_EXPECT(store.LeaseRate().Allow("offer" + std::to_string(offer), elapsed), "five authorized offers retain every heartbeat for ten minutes");
+}
+
 int RunAll() {
+	TestPrivateRelayTicketsAndIndependentRoutes();
+	TestLeaseBudgetSurvivesDiscoveryExhaustion();
 	TestHealthz();
 	TestCreateAndList();
-	TestCreateDedupReplacesPriorSession();
+	TestCreatePreservesOtherOwnersWithSameNickname();
 	TestListEchoesMachineFields();
 	TestCreateValidation();
 	TestHostCap();
@@ -2037,7 +2060,7 @@ int RunAll() {
 	TestBrokerIntentAgainstWaitingSessionAccepted();
 	TestBrokerAutoAcceptLiveNotify();
 	TestBrokerIntentRejectedOnPlayingSession();
-	TestBrokerDedupCancelsPendingIntents();
+	TestBrokerNicknameCollisionPreservesPendingIntents();
 	TestBrokerIntentRejectsNonHexCodeHash();
 	TestBrokerSessionDeletionClearsAutoAcceptedIntents();
 	TestBrokerAutoAcceptCounterIncrements();

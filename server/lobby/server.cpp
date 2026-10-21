@@ -380,6 +380,8 @@ struct Config {
 	std::string bind          = "0.0.0.0";
 	int         port          = 8080;
 	int         ttlSeconds    = kSessionTTLSeconds;
+	uint16_t    reflectorPort = kReflectorPortDefault;
+	std::string webSocketUrl;
 	int         maxSessions   = kMaxSessions;
 	int         rateBurst     = kRateBurst;
 	int         rateRefillMs  = kRateRefillMillis;
@@ -452,9 +454,30 @@ private:
 	double                                  mRefillMs;
 };
 
+// Relay authority is separate from the publicly listed session/route identifiers.
+struct RelayLease {
+	std::string ticket;
+	int64_t lastSeenMs = 0;
+};
+std::string Hex16(const uint8_t* bytes) {
+	static constexpr char digits[] = "0123456789abcdef";
+	std::string result(32, '0');
+	for (size_t i = 0; i < 16; ++i) {
+		result[2*i] = digits[bytes[i] >> 4];
+		result[2*i+1] = digits[bytes[i] & 15];
+	}
+	return result;
+}
+bool IsNonceHex(const std::string& value) {
+	if (value.size() != 32 || value == std::string(32, '0')) return false;
+	for (char c : value) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+	return true;
+}
+
 class Store {
 public:
-	explicit Store(const Config& cfg) : mCfg(cfg), mRate(cfg) {}
+	explicit Store(const Config& cfg) : mCfg(cfg), mRate(cfg), mLeaseRate(LeaseConfig(cfg)) {}
+	static Config LeaseConfig(Config cfg) { cfg.rateBurst = 8; cfg.rateRefillMs = 500; return cfg; }
 
 	// Reasons Create can fail.  Each maps to a distinct 429 response
 	// body so the client UI can show specific guidance.
@@ -472,64 +495,12 @@ public:
 
 		const std::string handleNorm = NormalizeHandle(in.hostHandle);
 
-		// Identity-based dedup: when the same host (normalized
-		// hostHandle) is re-creating a session for the same cart
-		// (cartName), expire the prior entry so the public list
-		// doesn't show a ghost alongside the live one.  The scenario
-		// that motivated this: client crashed / killed / lost network
-		// → no clean Delete reached us → user reconnects → both old
-		// and new sessions are visible until TTL.  Replacing on
-		// (hostHandleNorm, cartName) collapses that to one entry.
-		//
-		// Conditions:
-		//   - handleNorm non-empty (legacy clients without a handle
-		//     are exempt — we'd otherwise collapse all of them).
-		//   - cartName non-empty (same reason).
-		// Collisions across genuinely different users with identical
-		// nicknames are rare and the cost (loser is evicted from the
-		// list) is acceptable; nicknames are user identity in this
-		// protocol.  No token check here: this is a server-side
-		// housekeeping step, not a per-request action.
-		if (!handleNorm.empty() && !in.cartName.empty()) {
-			std::vector<std::string> evictedIds;
-			for (auto it = mItems.begin(); it != mItems.end();) {
-				if (it->second.hostHandleNorm == handleNorm &&
-				    it->second.cartName       == in.cartName) {
-					evictedIds.push_back(it->first);
-					it = mItems.erase(it);
-				} else {
-					++it;
-				}
-			}
-			// v4: cascade the dedup eviction into the broker layer
-			// so any pending intents on the evicted session(s) get
-			// cancelled and SSE listeners (host's intents stream,
-			// joiner's decision stream) wake immediately rather
-			// than wait for kIntentTtlMs to fire.  No-op for the
-			// common case (legacy native session being re-created
-			// with no broker artifacts attached).
-			for (const auto& sid : evictedIds) {
-				BrokerOnSessionRemovedLocked(sid);
-			}
-		}
+		// A display name is not an ownership credential. Never replace another
+		// session on nickname/title collision; authenticated DELETE and TTL
+		// own removal. Multiple users may legitimately share a nickname.
 
-		// Per-host cap: count remaining sessions belonging to this
-		// normalized handle and reject the request if the host is
-		// already at the configured limit.  Runs AFTER the dedup
-		// loop so re-creating an existing entry (same cart) doesn't
-		// itself count toward the cap.  Empty handles are exempt —
-		// they represent un-attributed legacy clients and we don't
-		// have a fair way to bucket them.
-		if (!handleNorm.empty()) {
-			int count = 0;
-			for (const auto& kv : mItems) {
-				if (kv.second.hostHandleNorm == handleNorm) ++count;
-			}
-			if (count >= kMaxHostedGamesPerHost) {
-				errOut = CreateError::HostLimit;
-				return Session{};
-			}
-		}
+		// Global capacity and source rate budgets protect the service. A
+		// public nickname cannot own a quota that another user could fill.
 
 		if ((int)mItems.size() >= mCfg.maxSessions) {
 			errOut = CreateError::LobbyFull;
@@ -544,6 +515,41 @@ public:
 		if (s.state.empty()) s.state = kStateWaiting;
 		mItems[s.id] = s;
 		return s;
+	}
+
+	// Each pending joiner owns one bounded nonce route. A newcomer never
+	// replaces another joiner's ticket or changes an existing route endpoint.
+	int AcquireRelayTicket(const std::string& id, const std::string& nonce,
+		std::string& ticket, int64_t nowMs = NowMs()) {
+		if (!IsNonceHex(nonce)) return 400;
+		std::lock_guard<std::mutex> lock(mMu);
+		if (mItems.find(id) == mItems.end()) return 404;
+		auto& routes = mRelayLeases[id];
+		for (auto it = routes.begin(); it != routes.end(); ) {
+			if (nowMs - it->second.lastSeenMs > 60000) it = routes.erase(it);
+			else ++it;
+		}
+		if (routes.find(nonce) != routes.end()) return 409;
+		if (routes.size() >= 16) return 429;
+		ticket = NewToken();
+		routes.emplace(nonce, RelayLease{ticket, nowMs});
+		return 201;
+	}
+	bool ValidateRelayTicket(const std::string& id, uint8_t role,
+		const std::string& ticket, const std::string& nonce,
+		int64_t nowMs = NowMs()) {
+		std::lock_guard<std::mutex> lock(mMu);
+		const auto session = mItems.find(id);
+		if (session == mItems.end()) return false;
+		if (role == 0) return session->second.token == ticket;
+		if (role != 1) return false;
+		const auto group = mRelayLeases.find(id);
+		if (group == mRelayLeases.end()) return false;
+		auto found = group->second.find(nonce);
+		if (found == group->second.end() || found->second.ticket != ticket
+			|| nowMs - found->second.lastSeenMs > 60000) return false;
+		found->second.lastSeenMs = nowMs;
+		return true;
 	}
 
 	// Heartbeat: verify token, update lastSeen + playerCount + state.
@@ -1144,6 +1150,8 @@ public:
 	}
 
 	RateLimiter& Rate()          { return mRate; }
+	RateLimiter& LeaseRate()     { return mLeaseRate; }
+	void SetReflectorPort(uint16_t port) { mCfg.reflectorPort = port; }
 	const Config& Cfg() const    { return mCfg; }
 
 	// Signal every active SSE listener that the process is going
@@ -1259,6 +1267,7 @@ private:
 	// session is gone so their connections close.  MUST be called with
 	// mMu held.
 	void BrokerOnSessionRemovedLocked(const std::string& sessionId) {
+		mRelayLeases.erase(sessionId);
 		// Pending intents on this session → cancel.
 		std::vector<std::string> pendingIds;
 		for (auto& kv : mIntents) {
@@ -1338,7 +1347,9 @@ private:
 	mutable std::mutex                       mMu;
 	Config                                   mCfg;
 	std::unordered_map<std::string, Session> mItems;
+	std::unordered_map<std::string, std::unordered_map<std::string, RelayLease>> mRelayLeases;
 	RateLimiter                              mRate;
+	RateLimiter                              mLeaseRate;
 
 	// v4 broker handshake state.  All access goes through mMu — there
 	// is no separate broker mutex because every operation needs a
@@ -2004,6 +2015,12 @@ void Install(httplib::Server& srv, Store& store) {
 			}
 			if (req.method == "GET") SetCorsForGet(res);
 
+			// cpp-httplib invokes this hook before reading the body. Heartbeat
+			// authentication and its independent budget run in the body handler.
+			std::string leaseId, suffix;
+			if (req.method == "POST" && ParseSessionPath(req.path, leaseId, suffix)
+				&& suffix == kPathHeartbeatSuffix)
+				return httplib::Server::HandlerResponse::Unhandled;
 			if (!store.Rate().Allow(ip, NowMs())) {
 				int retryS = store.Cfg().rateRefillMs / 1000 + 1;
 				if (retryS < 1) retryS = 1;
@@ -2276,6 +2293,35 @@ void Install(httplib::Server& srv, Store& store) {
 			res.set_content(std::move(b.s), "application/json");
 		});
 
+	srv.Get("/v1/capabilities", [&store](const httplib::Request&, httplib::Response& res) {
+		JsonBuilder body;
+		body.raw("{\"relayAuthVersion\":1,\"relayHeaderBytes\":56,\"maxPlayers\":2,\"gameplayProtocolVersions\":[8],\"relayPort\":");
+		body.num(store.Cfg().reflectorPort);
+		body.raw(",\"webSocketPath\":\"/netplay\",\"pendingRoutesPerSession\":16,\"webSocketUrl\":");
+		body.str(store.Cfg().webSocketUrl); body.raw('}');
+		res.set_content(body.s, "application/json");
+	});
+	srv.Post(R"(/v1/session/([^/]+)/relay-ticket)",
+		[&store](const httplib::Request& req, httplib::Response& res) {
+			JsonCursor cursor{req.body.data(), req.body.data() + req.body.size()};
+			std::string nonce;
+			if (!cursor.match('{')) { WriteErr(res, 400, "invalid ticket request"); return; }
+			while (!cursor.peek('}')) {
+				std::string key;
+				if (!cursor.parseString(key) || !cursor.match(':')) break;
+				if (key == "sessionNonce") cursor.parseString(nonce); else cursor.skipValue();
+				if (!cursor.ok || !cursor.match(',')) break;
+			}
+			std::string ticket;
+			const int status = cursor.ok ? store.AcquireRelayTicket(req.matches[1], nonce, ticket) : 400;
+			if (status != 201) { WriteErr(res, status, status == 409 ? "join attempt already exists" : "relay ticket unavailable"); return; }
+			JsonBuilder body; body.raw("{\"ticket\":"); body.str(ticket);
+			body.raw(",\"sessionNonce\":"); body.str(nonce);
+			body.raw(",\"relayPort\":"); body.num(store.Cfg().reflectorPort);
+			body.raw(",\"ttlSeconds\":60,\"webSocketUrl\":"); body.str(store.Cfg().webSocketUrl); body.raw('}');
+			res.status = 201; res.set_content(body.s, "application/json");
+		});
+
 	srv.Post(kPathSession,
 		[&store](const httplib::Request& req, httplib::Response& res) {
 			CreateReq r;
@@ -2328,7 +2374,9 @@ void Install(httplib::Server& srv, Store& store) {
 			b.raw('{');
 			b.key(Field::kSessionId);  b.str(s.id);    b.raw(',');
 			b.key(Field::kToken);      b.str(s.token); b.raw(',');
-			b.key(Field::kTTLSeconds); b.num(store.Cfg().ttlSeconds);
+			b.key(Field::kTTLSeconds); b.num(store.Cfg().ttlSeconds); b.raw(',');
+			b.key("relayPort"); b.num(store.Cfg().reflectorPort); b.raw(',');
+			b.key("webSocketUrl"); b.str(store.Cfg().webSocketUrl);
 			b.raw('}');
 			res.status = 201;
 			res.set_content(std::move(b.s), "application/json");
@@ -2357,9 +2405,13 @@ void Install(httplib::Server& srv, Store& store) {
 		if (req.method == "POST" && suffix == kPathHeartbeatSuffix) {
 			HeartbeatReq hr;
 			std::string err;
-			if (!ParseHeartbeat(req.body, hr, err)) {
-				WriteErr(res, 400, err); return true;
-			}
+			const bool parsed = ParseHeartbeat(req.body, hr, err);
+			const bool authorized = parsed && store.ValidateSessionToken(id, hr.token);
+			const bool allowed = authorized
+				? store.LeaseRate().Allow(id, NowMs())
+				: store.Rate().Allow(ClientIp(req, store.Cfg().trustedProxies), NowMs());
+			if (!allowed) { res.set_header("Retry-After", "1"); WriteErr(res, 429, "rate limit exceeded"); return true; }
+			if (!parsed) { WriteErr(res, 400, err); return true; }
 			int code = store.Heartbeat(id, hr.token, hr.playerCount,
 			                           hr.state);
 			if (code == 200) {
@@ -3037,6 +3089,7 @@ private:
 			int64_t now = NowMs();
 			mStore.ExpireOnce(now);
 			mStore.Rate().Prune(now, kRateBucketKeepMillis);
+			mStore.LeaseRate().Prune(now, kRateBucketKeepMillis);
 			RelayPruneNow(now);
 
 			// Egress soft-cap warning: emit at most one per hour while
@@ -3120,6 +3173,7 @@ Config LoadConfig() {
 			pos = comma + 1;
 		}
 	}
+	if (const char* url = std::getenv("PUBLIC_WEBSOCKET_URL")) cfg.webSocketUrl = url;
 	return cfg;
 }
 
@@ -3145,7 +3199,7 @@ Config LoadConfig() {
 // 'A' 'S' 'D' 'R' — reflector (existing).
 // 'A' 'S' 'D' 'F' — relay data  (v4).
 // 'A' 'S' 'G' 'R' — relay register (v4).
-constexpr size_t  kWireRelayHeaderSize   = 4 + 16 + 1 + 3;  // 24
+constexpr size_t  kWireRelayHeaderSize   = 56; // SID/role + private ticket + route nonce
 constexpr size_t  kWireRelayRegisterSize = kWireRelayHeaderSize;
 constexpr uint8_t kRelayRoleHost   = 0;
 constexpr uint8_t kRelayRoleJoiner = 1;
@@ -3197,10 +3251,26 @@ public:
 		return std::string(reinterpret_cast<const char*>(sid), 16);
 	}
 
+	static Key RouteKey(const uint8_t sid[16], const uint8_t* nonce) {
+		Key result = MakeKey(sid);
+		result.append(nonce ? reinterpret_cast<const char*>(nonce) : std::string(16, '\0').data(), 16);
+		return result;
+	}
+
 	void Register(const uint8_t sid[16], uint8_t role,
-	              const sockaddr_in& from, int64_t nowMs) {
+	              const sockaddr_in& from, int64_t nowMs,
+	              const uint8_t* nonce = nullptr) {
 		std::lock_guard<std::mutex> lk(mMu);
-		auto& pair = mByKey[MakeKey(sid)];
+		if (role == kRelayRoleHost) {
+			auto& host = mHosts[MakeKey(sid)];
+			host.known = true; host.addr = from; host.lastSeenMs = nowMs;
+			for (auto& entry : mByKey)
+				if (entry.first.compare(0, 16, MakeKey(sid)) == 0) entry.second.host = host;
+			return;
+		}
+		auto& pair = mByKey[RouteKey(sid, nonce)];
+		const auto host = mHosts.find(MakeKey(sid));
+		if (host != mHosts.end()) pair.host = host->second;
 		RelayEndpoint& slot = (role == kRelayRoleHost)
 			? pair.host : pair.joiner;
 		slot.known      = true;
@@ -3220,9 +3290,9 @@ public:
 	// through LookupAndConsumeForward.
 	bool LookupOther(const uint8_t sid[16], uint8_t senderRole,
 	                 const sockaddr_in& from, int64_t nowMs,
-	                 sockaddr_in& outOther) {
+	                 sockaddr_in& outOther, const uint8_t* nonce = nullptr) {
 		std::lock_guard<std::mutex> lk(mMu);
-		auto it = mByKey.find(MakeKey(sid));
+		auto it = mByKey.find(RouteKey(sid, nonce));
 		if (it == mByKey.end()) return false;
 		auto& pair = it->second;
 		RelayEndpoint& me    = (senderRole == kRelayRoleHost)
@@ -3241,7 +3311,7 @@ public:
 	ForwardResult LookupAndConsumeForward(
 		const uint8_t sid[16], uint8_t senderRole,
 		const sockaddr_in& from, int64_t nowMs,
-		sockaddr_in& outOther)
+		sockaddr_in& outOther, const uint8_t* nonce = nullptr)
 	{
 		std::lock_guard<std::mutex> lk(mMu);
 		// Auto-create the pair entry on first ASDF if it doesn't
@@ -3269,7 +3339,9 @@ public:
 		// the SENDER's half, leaving the OTHER side untouched until
 		// it sends its own packet (or this branch fires the other
 		// way).
-		auto& pair = mByKey[MakeKey(sid)];
+		auto& pair = mByKey[RouteKey(sid, nonce)];
+		const auto host = mHosts.find(MakeKey(sid));
+		if (host != mHosts.end()) pair.host = host->second;
 		RelayEndpoint& me    = (senderRole == kRelayRoleHost)
 			? pair.host : pair.joiner;
 		RelayEndpoint& other = (senderRole == kRelayRoleHost)
@@ -3277,11 +3349,11 @@ public:
 		me.known      = true;
 		me.addr       = from;
 		me.lastSeenMs = nowMs;
+		if (!pair.TryForward(nowMs)) return ForwardResult::kRateLimited;
 		if (!other.known) return ForwardResult::kNoPeer;
 		if (nowMs - other.lastSeenMs > kRelayPeerIdleMs)
 			return ForwardResult::kNoPeer;
-		if (!pair.TryForward(nowMs))
-			return ForwardResult::kRateLimited;
+
 		outOther = other.addr;
 		return ForwardResult::kForward;
 	}
@@ -3295,10 +3367,19 @@ public:
 	// bucket once a UDP peer arrives.
 	ForwardResult BridgeLookupAndConsumeForward(
 		const uint8_t sid[16], uint8_t senderRole, int64_t nowMs,
-		sockaddr_in& outOther)
+		sockaddr_in& outOther, const uint8_t* nonce = nullptr)
 	{
 		std::lock_guard<std::mutex> lk(mMu);
-		auto it = mByKey.find(MakeKey(sid));
+		if (senderRole == kRelayRoleJoiner) {
+			const auto host = mHosts.find(MakeKey(sid));
+			if (host == mHosts.end() || nowMs - host->second.lastSeenMs > kRelayPeerIdleMs)
+				return ForwardResult::kNoPeer;
+			auto& pair = mByKey[RouteKey(sid, nonce)];
+			if (!pair.TryForward(nowMs)) return ForwardResult::kRateLimited;
+			outOther = host->second.addr;
+			return ForwardResult::kForward;
+		}
+		auto it = mByKey.find(RouteKey(sid, nonce));
 		if (it == mByKey.end()) return ForwardResult::kNoPeer;
 		auto& pair = it->second;
 		RelayEndpoint& other = (senderRole == kRelayRoleHost)
@@ -3313,9 +3394,9 @@ public:
 	}
 
 	bool IsRegisteredFromSource(const uint8_t sid[16], uint8_t role,
-	                            const sockaddr_in& from, int64_t nowMs) {
+	                            const sockaddr_in& from, int64_t nowMs, const uint8_t* nonce = nullptr) {
 		std::lock_guard<std::mutex> lk(mMu);
-		auto it = mByKey.find(MakeKey(sid));
+		auto it = mByKey.find(RouteKey(sid, nonce));
 		if (it == mByKey.end()) return false;
 		auto& pair = it->second;
 		const RelayEndpoint& slot = (role == kRelayRoleHost)
@@ -3342,6 +3423,10 @@ public:
 				++n;
 			} else ++it;
 		}
+		for (auto it = mHosts.begin(); it != mHosts.end(); ) {
+			if (nowMs - it->second.lastSeenMs > kRelayPeerIdleMs) it = mHosts.erase(it);
+			else ++it;
+		}
 		return n;
 	}
 
@@ -3353,6 +3438,7 @@ public:
 private:
 	mutable std::mutex                 mMu;
 	std::unordered_map<Key, RelayPair> mByKey;
+	std::unordered_map<Key, RelayEndpoint> mHosts;
 };
 
 RelayTable& Relay() {
@@ -3420,7 +3506,7 @@ bool ConstTimeEqual(const std::string& a, const char* b) {
 
 ATLobby::WsAuthResult WsValidateSession(
 	const uint8_t sidRaw[16], uint8_t role,
-	const char* tokenHex, void* ctx)
+	const char* tokenHex, const uint8_t routeNonce[16], void* ctx)
 {
 	auto* cb = static_cast<WsCallbackCtx*>(ctx);
 	if (!cb || !cb->store) return ATLobby::WsAuthResult::kInternal;
@@ -3429,17 +3515,8 @@ ATLobby::WsAuthResult WsValidateSession(
 	Session s;
 	if (!cb->store->Get(id, s)) return ATLobby::WsAuthResult::kGone;
 
-	// Hosts MUST present the same token they got from Create — that's
-	// the only way to authenticate as the legitimate host of an
-	// existing session record.  Joiners do NOT need it: anyone can
-	// ask the lobby to bridge them into a session (mirroring the UDP
-	// relay's open-registration model).  Wire-level auth (entry
-	// codes, ROM/firmware checks) happens at the Altirra protocol
-	// layer, not here.
-	if (role == 0 /* kRelayRoleHost */) {
-		if (!ConstTimeEqual(s.token, tokenHex))
-			return ATLobby::WsAuthResult::kForbidden;
-	}
+	if (!cb->store->ValidateRelayTicket(id, role, tokenHex ? tokenHex : "",
+		Hex16(routeNonce))) return ATLobby::WsAuthResult::kForbidden;
 	return ATLobby::WsAuthResult::kOk;
 }
 
@@ -3545,6 +3622,13 @@ void WsOnHostPresence(const uint8_t sidRaw[16], bool present,
 	store->OnHostWsPresence(SidRawToUuid(sidRaw), present);
 }
 
+const uint8_t* RelayPacketNonce(const uint8_t* bytes, size_t size) {
+	if (size >= 20 && (!std::memcmp(bytes, "ANPU", 4) || !std::memcmp(bytes, "NAPP", 4))) return bytes + 4;
+	if (size >= 24 && !std::memcmp(bytes, "ANPL", 4)) return bytes + 8;
+	if (size >= 22 && !std::memcmp(bytes, "ANPR", 4)) return bytes + 6;
+	return nullptr;
+}
+
 // UDP forwarder callback for the WS bridge.  Builds an ASDF frame
 // addressed to the OTHER UDP peer (looked up in RelayTable) and sends
 // it via the reflector socket FD shared by the reflector thread.  The
@@ -3558,7 +3642,7 @@ bool WsForwardToUdp(const uint8_t sidRaw[16], uint8_t senderRole,
 	int64_t nowMs = NowMs();
 	sockaddr_in other{};
 	auto r = Relay().BridgeLookupAndConsumeForward(
-		sidRaw, senderRole, nowMs, other);
+		sidRaw, senderRole, nowMs, other, RelayPacketNonce(inner, innerLen));
 	if (r == RelayTable::ForwardResult::kNoPeer) {
 		gWsBridgeStats.droppedNoPeer.fetch_add(
 			1, std::memory_order_relaxed);
@@ -3577,20 +3661,8 @@ bool WsForwardToUdp(const uint8_t sidRaw[16], uint8_t senderRole,
 		return false;
 	}
 
-	// Frame: 4-byte 'ASDF' magic + 16-byte sid + 1-byte role + 3-byte
-	// pad + inner.  Identical to the v4 wire format the native UDP
-	// path uses (packets.h NetRelayData).
-	std::vector<uint8_t> frame(kWireRelayHeaderSize + innerLen);
-	frame[0] = 'A'; frame[1] = 'S'; frame[2] = 'D'; frame[3] = 'F';
-	std::memcpy(frame.data() + 4, sidRaw, 16);
-	frame[20] = senderRole;
-	frame[21] = 0; frame[22] = 0; frame[23] = 0;
-	if (innerLen > 0)
-		std::memcpy(frame.data() + kWireRelayHeaderSize, inner, innerLen);
-
-	int sent = ::sendto(fd, (const char*)frame.data(),
-		(int)frame.size(), 0,
-		(const sockaddr*)&other, sizeof other);
+	int sent = ::sendto(fd, (const char*)inner,
+		(int)innerLen, 0, (const sockaddr*)&other, sizeof other);
 	if (sent <= 0) return false;
 
 	gWsBridgeStats.forwardsCrossTransport.fetch_add(
@@ -3639,7 +3711,7 @@ bool WsForwardToUdp(const uint8_t sidRaw[16], uint8_t senderRole,
 // state.  Bandwidth cost is negligible: ~30 bytes per probe, each
 // client probes once per session.
 
-void RunReflector(uint16_t port, std::atomic<bool>& stop) {
+void RunReflector(uint16_t port, std::atomic<bool>& stop, Store& store) {
 	int s = ::socket(AF_INET, SOCK_DGRAM, 0);
 	if (s < 0) {
 		std::fprintf(stderr, "reflector: socket() failed: %s\n",
@@ -3723,7 +3795,12 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 					1, std::memory_order_relaxed);
 				continue;
 			}
-			Relay().Register(sid, role, from, nowMs);
+			if (!store.ValidateRelayTicket(SidRawToUuid(sid), role,
+				Hex16(buf + 24), Hex16(buf + 40), nowMs)) {
+				gLC.relayDroppedAuth.fetch_add(1, std::memory_order_relaxed);
+				continue;
+			}
+			Relay().Register(sid, role, from, nowMs, buf + 40);
 			gLC.relayRegistersTotal.fetch_add(
 				1, std::memory_order_relaxed);
 			continue;  // one-shot register, no reply
@@ -3737,6 +3814,17 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 			if (role != kRelayRoleHost && role != kRelayRoleJoiner) {
 				gLC.relayDroppedAuth.fetch_add(
 					1, std::memory_order_relaxed);
+				continue;
+			}
+			if (!store.ValidateRelayTicket(SidRawToUuid(sid), role,
+				Hex16(buf + 24), Hex16(buf + 40), nowMs)) {
+				gLC.relayDroppedAuth.fetch_add(1, std::memory_order_relaxed);
+				continue;
+			}
+			const auto* senderNonce = RelayPacketNonce(buf + kWireRelayHeaderSize,
+				(size_t)n - kWireRelayHeaderSize);
+			if (!senderNonce || std::memcmp(senderNonce, buf + 40, 16)) {
+				gLC.relayDroppedAuth.fetch_add(1, std::memory_order_relaxed);
 				continue;
 			}
 			gLC.relayPacketsIn.fetch_add(
@@ -3758,8 +3846,12 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 			// under the 240 pps cap so this doesn't degrade traffic.
 			sockaddr_in other{};
 			auto r = Relay().LookupAndConsumeForward(
-				sid, role, from, nowMs, other);
+				sid, role, from, nowMs, other, buf + 40);
 
+			if (r == RelayTable::ForwardResult::kRateLimited) {
+				gLC.relayDroppedRateLimit.fetch_add(1, std::memory_order_relaxed);
+				continue;
+			}
 			// Cross-transport: if the other side is on WS, route the
 			// inner bytes there before considering the UDP forward.
 			// We do this even on a kNoPeer UDP result, because the
@@ -3789,7 +3881,7 @@ void RunReflector(uint16_t port, std::atomic<bool>& stop) {
 				bool wsOk = ATLobby::WsBridgeForwardToWs(
 					gWsBridgeCtx.reg, sid, role,
 					innerBytes, (size_t)innerLen,
-					gWsBridgeStats);
+					gWsBridgeStats, buf + 40);
 				if (wsOk) {
 					// Cross-transport delivery succeeded.  Don't also
 					// send via UDP — the other peer is on WS.
@@ -3896,13 +3988,14 @@ int main(int argc, char **argv) {
 	uint16_t reflectorPort = kReflectorPortDefault;
 	if (const char* e = std::getenv("UDP_REFLECTOR_PORT")) {
 		int v = std::atoi(e);
-		if (v > 0 && v < 65536) reflectorPort = (uint16_t)v;
+		if (v >= 0 && v < 65536) reflectorPort = (uint16_t)v;
 	}
+	store.SetReflectorPort(reflectorPort);
 	std::atomic<bool> reflectorStop{false};
 	std::thread reflectorThread;
 	if (reflectorPort > 0) {
 		reflectorThread = std::thread(
-			[&] { RunReflector(reflectorPort, reflectorStop); });
+			[&] { RunReflector(reflectorPort, reflectorStop, store); });
 	}
 
 	// WebSocket bridge port: default 8090, env override.  The bridge
@@ -3914,7 +4007,7 @@ int main(int argc, char **argv) {
 	uint16_t wsBridgePort = 8090;
 	if (const char* e = std::getenv("WS_BRIDGE_PORT")) {
 		int v = std::atoi(e);
-		if (v > 0 && v < 65536) wsBridgePort = (uint16_t)v;
+		if (v >= 0 && v < 65536) wsBridgePort = (uint16_t)v;
 	}
 	std::atomic<bool> wsBridgeStop{false};
 	std::thread wsBridgeThread;

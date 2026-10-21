@@ -45,7 +45,7 @@ using ATLobby::WsAuthResult;
 constexpr const char* kFakeToken = "0123456789abcdef0123456789abcdef";
 
 WsAuthResult StubValidate(const uint8_t /*sid*/[16], uint8_t role,
-                          const char* tokenHex, void* /*ctx*/) {
+                          const char* tokenHex, const uint8_t /*nonce*/[16], void* /*ctx*/) {
 	// Mirror production semantics (server.cpp::WsValidateSession):
 	// host MUST present the canonical token; joiner is auth-free.
 	if (role == 0 /* host */) {
@@ -176,13 +176,14 @@ struct Bridge {
 };
 
 std::string BuildSubprotocol(const char* sessionHex32, const char* role,
-                             const char* tokenHex) {
+                             const char* tokenHex, const char* nonce = "11111111111111111111111111111111") {
 	std::string s = "altirra-netplay.v1, session.";
 	s.append(sessionHex32);
 	s.append(", role.");
 	s.append(role);
 	s.append(", token.");
 	s.append(tokenHex);
+	if (!std::strcmp(role, "joiner")) { s.append(",nonce."); s.append(nonce); }
 	return s;
 }
 
@@ -245,7 +246,7 @@ bool TestUpgradeBadToken(Bridge& b) {
 // (entry codes, ROM hash mismatch, etc.).  Mirrors UDP relay
 // semantics where ASGR carries no auth.
 bool TestUpgradeJoinerNoToken(Bridge& b) {
-	std::printf("test: joiner upgrade accepted with no token... ");
+	std::printf("test: joiner upgrade rejected without private ticket... ");
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
 	ClientCtx cc;
@@ -262,9 +263,9 @@ bool TestUpgradeJoinerNoToken(Bridge& b) {
 	struct mg_connection* c = mg_ws_connect(
 		&mgr, url, ClientFn, &cc, "%s", hdr.c_str());
 	(void)c;
-	bool ok = WaitFor(mgr, [&]{ return cc.connected; }, 1000);
+	bool ok = WaitFor(mgr, [&]{ return cc.closed; }, 1000);
 	mg_mgr_free(&mgr);
-	if (!ok) { std::printf("FAIL\n"); return false; }
+	if (!ok || cc.connected) { std::printf("FAIL\n"); return false; }
 	std::printf("OK\n");
 	return true;
 }
@@ -300,27 +301,31 @@ bool TestPairExchange(Bridge& b) {
 
 	// Host sends [role=0][0xAA, 0xBB, 0xCC, 0xDD] — minimum 5 bytes
 	// (1 envelope + 4 inner magic).
-	uint8_t framed[5] = {0, 0xAA, 0xBB, 0xCC, 0xDD};
+	uint8_t framed[29] = {0, 'A', 'N', 'P', 'U'};
+	std::memset(framed + 5, 0x11, 16);
+	framed[25] = 0xAA; framed[26] = 0xBB; framed[27] = 0xCC; framed[28] = 0xDD;
 	mg_ws_send(hc, framed, sizeof framed, WEBSOCKET_OP_BINARY);
 
 	// Joiner should see the inner bytes prepended with recipient_role=1.
 	ok = WaitFor(mgr, [&]{ return !joiner.lastBinary.empty(); }, 2000);
-	if (!ok || joiner.lastBinary.size() != 5 ||
+	if (!ok || joiner.lastBinary.size() != 29 ||
 	    joiner.lastBinary[0] != 1 ||
-	    joiner.lastBinary[1] != 0xAA ||
-	    joiner.lastBinary[4] != 0xDD) {
+	    joiner.lastBinary[25] != 0xAA ||
+	    joiner.lastBinary[28] != 0xDD) {
 		std::printf("FAIL (joiner saw %zu bytes)\n",
 			joiner.lastBinary.size());
 		mg_mgr_free(&mgr); return false;
 	}
 
 	// Joiner replies; host should see role=0 prepended.
-	uint8_t reply[5] = {1, 0x11, 0x22, 0x33, 0x44};
+	uint8_t reply[29] = {1, 'A', 'N', 'P', 'U'};
+	std::memset(reply + 5, 0x11, 16);
+	reply[25] = 0x11; reply[26] = 0x22; reply[27] = 0x33; reply[28] = 0x44;
 	mg_ws_send(jc, reply, sizeof reply, WEBSOCKET_OP_BINARY);
 	ok = WaitFor(mgr, [&]{ return !host.lastBinary.empty(); }, 2000);
-	if (!ok || host.lastBinary.size() != 5 ||
+	if (!ok || host.lastBinary.size() != 29 ||
 	    host.lastBinary[0] != 0 ||
-	    host.lastBinary[1] != 0x11) {
+	    host.lastBinary[25] != 0x11) {
 		std::printf("FAIL (host saw %zu bytes)\n",
 			host.lastBinary.size());
 		mg_mgr_free(&mgr); return false;
@@ -329,6 +334,42 @@ bool TestPairExchange(Bridge& b) {
 	mg_mgr_free(&mgr);
 	std::printf("OK\n");
 	return true;
+}
+
+bool TestIndependentPendingJoiners(Bridge& bridge) {
+	std::printf("test: pending joiners route independently and cannot impersonate another nonce... ");
+	struct mg_mgr manager; mg_mgr_init(&manager);
+	ClientCtx host, first, second;
+	const char* sid = "abcdefabcdefabcdefabcdefabcdefab";
+	char url[80]; std::snprintf(url,sizeof url,"ws://127.0.0.1:%u/netplay",bridge.port);
+	auto connect = [&](ClientCtx& ctx, const char* role, const char* nonce) {
+		const std::string header = "Sec-WebSocket-Protocol: " + BuildSubprotocol(sid,role,kFakeToken,nonce) + "\r\n";
+		return mg_ws_connect(&manager,url,ClientFn,&ctx,"%s",header.c_str());
+	};
+	auto* hc = connect(host,"host","");
+	auto* ac = connect(first,"joiner","11111111111111111111111111111111");
+	auto* bc = connect(second,"joiner","22222222222222222222222222222222");
+	if (!hc || !ac || !bc || !WaitFor(manager,[&]{return host.connected && first.connected && second.connected;},2000)) {
+		mg_mgr_free(&manager); std::printf("FAIL (upgrade)\n"); return false;
+	}
+	uint8_t frame[29] = {0,'A','N','P','U'};
+	std::memset(frame+5,0x11,16); frame[25]=0xA1;
+	mg_ws_send(hc,frame,sizeof frame,WEBSOCKET_OP_BINARY);
+	if (!WaitFor(manager,[&]{return first.lastBinary.size()==sizeof frame;},1000) || !second.lastBinary.empty()) {
+		mg_mgr_free(&manager); std::printf("FAIL (first route)\n"); return false;
+	}
+	std::memset(frame+5,0x22,16); frame[25]=0xB2;
+	mg_ws_send(hc,frame,sizeof frame,WEBSOCKET_OP_BINARY);
+	if (!WaitFor(manager,[&]{return second.lastBinary.size()==sizeof frame;},1000) || second.lastBinary[25]!=0xB2 || first.lastBinary[25]!=0xA1) {
+		mg_mgr_free(&manager); std::printf("FAIL (second route)\n"); return false;
+	}
+	frame[0]=1;
+	mg_ws_send(ac,frame,sizeof frame,WEBSOCKET_OP_BINARY); // A attempts B's nonce.
+	WaitFor(manager,[&]{return !host.lastBinary.empty();},100);
+	if (!host.lastBinary.empty()) { mg_mgr_free(&manager); std::printf("FAIL (nonce takeover)\n"); return false; }
+	mg_ws_send(bc,frame,sizeof frame,WEBSOCKET_OP_BINARY);
+	const bool ok = WaitFor(manager,[&]{return host.lastBinary.size()==sizeof frame;},1000);
+	mg_mgr_free(&manager); std::printf(ok ? "OK\n" : "FAIL (authorized sender)\n"); return ok;
 }
 
 bool TestRoleConflict(Bridge& b) {
@@ -394,7 +435,7 @@ bool TestOversizedFrame(Bridge& b) {
 }
 
 bool TestSyntheticByeOnClose(Bridge& b) {
-	std::printf("test: surviving peer receives synthetic Bye on close... ");
+	std::printf("test: relay does not forge gameplay Bye on close... ");
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
 	ClientCtx host, joiner;
@@ -419,24 +460,11 @@ bool TestSyntheticByeOnClose(Bridge& b) {
 	// Close the host gracefully.
 	hc->is_draining = 1;
 
-	// Joiner should receive a NetBye-shaped binary frame from the
-	// bridge: 9 bytes (1 envelope + 8 NetBye), envelope byte = 1
-	// (joiner side), magic 'A','N','P','B' little-endian = 41 4E 50 42.
-	ok = WaitFor(mgr,
-		[&]{ return joiner.lastBinary.size() == 9; }, 2000);
+	// A relay must not manufacture unauthenticated gameplay packets.
+	WaitFor(mgr, [&]{ return !joiner.lastBinary.empty(); }, 100);
 	mg_mgr_free(&mgr);
-	if (!ok) {
-		std::printf("FAIL (joiner saw %zu bytes)\n",
-			joiner.lastBinary.size());
-		return false;
-	}
-	const auto& b9 = joiner.lastBinary;
-	if (b9[0] != 1 || b9[1] != 'A' || b9[2] != 'N' ||
-	    b9[3] != 'P' || b9[4] != 'B') {
-		std::printf("FAIL (bad bye contents: %02x %02x %02x %02x %02x)\n",
-			b9[0], b9[1], b9[2], b9[3], b9[4]);
-		return false;
-	}
+	if (!joiner.lastBinary.empty()) { std::printf("FAIL (fabricated packet)\n"); return false; }
+
 	std::printf("OK\n");
 	return true;
 }
@@ -451,6 +479,7 @@ int main() {
 	if (!TestUpgradeBadToken(b))             ++fails;
 	if (!TestUpgradeJoinerNoToken(b))        ++fails;
 	if (!TestPairExchange(b))                ++fails;
+	if (!TestIndependentPendingJoiners(b)) ++fails;
 	if (!TestRoleConflict(b))                ++fails;
 	if (!TestOversizedFrame(b))              ++fails;
 	if (!TestSyntheticByeOnClose(b))         ++fails;

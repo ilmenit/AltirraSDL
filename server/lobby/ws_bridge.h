@@ -113,17 +113,16 @@ enum class WsAuthResult : int {
 //
 //   sidRaw  — 16 raw bytes (UUID stripped of dashes, hex-decoded)
 //   role    — 0 (host) or 1 (joiner), from the existing UDP relay enum
-//   tokenHex — null-terminated token string from the subprotocol header
+//   tokenHex — host owner token or private joiner route ticket
+//   routeNonce — zero for host, the authorized attempt nonce for joiner
 //   ctx     — opaque pointer (Store*)
 //
 // Returns kOk iff the upgrade should be allowed.  The bridge also
-// rejects upgrades where the (sid, role) slot is already occupied by
-// another WS connection or a registered UDP relay endpoint — that
-// check happens after this callback so the role-already-occupied case
-// can be distinguished from token-mismatch in metrics/logs.
+// rejects duplicate WS host slots and duplicate (sid, joiner nonce) slots.
+// Distinct pending joiners have independent authorized routes.
 using WsSessionValidatorFn = WsAuthResult(*)(
 	const uint8_t sidRaw[16], uint8_t role,
-	const char* tokenHex, void* ctx);
+	const char* tokenHex, const uint8_t routeNonce[16], void* ctx);
 
 // Callback: send an ASDF-wrapped UDP frame to a peer registered in the
 // RelayTable.  Implementation lives in server.cpp with access to
@@ -208,7 +207,7 @@ struct WsRegistryHandle;  // opaque to consumers; defined in ws_bridge.cpp
 bool WsBridgeForwardToWs(WsRegistryHandle* reg,
                          const uint8_t sidRaw[16], uint8_t senderRole,
                          const uint8_t* inner, size_t innerLen,
-                         WsBridgeStats& stats);
+                         WsBridgeStats& stats, const uint8_t* routeNonce = nullptr);
 
 // Returned to the caller (server.cpp's main()) so it can hand the
 // registry pointer to the reflector thread.  Lifetime is tied to

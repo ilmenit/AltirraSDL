@@ -115,3 +115,11 @@ endif()
 enable_testing()
 add_test(NAME altirra-lobby-test    COMMAND altirra-lobby-test)
 add_test(NAME altirra-lobby-ws-test COMMAND altirra-lobby-ws-test)
+
+# Exercise the actual listener/authorization path, not only Store helpers.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME altirra-lobby-relay-integration
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/relay_integration_test.py $<TARGET_FILE:altirra-lobby>)
+    set_tests_properties(altirra-lobby-relay-integration PROPERTIES TIMEOUT 30)
+endif()
