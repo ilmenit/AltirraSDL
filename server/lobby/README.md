@@ -130,8 +130,9 @@ curl -sS http://localhost:8080/healthz   # → ok sessions=0
   silent NetHello timeouts.  Native clients that have implemented
   the broker intent dance pass this flag.
 - **v4** `POST /v1/session/{id}/intents` — joiner posts an intent
-  against an `awaiting_approval` (or auto-accepting `waiting`)
-  session.  Body `{joinerHandle, codeHash}`; returns
+  against an `awaiting_approval` (or native auto-accepting `waiting`)
+  session. A browser broker session keeps requiring the owner's decision
+  after its emulator starts and publishes `waiting`.  Body `{joinerHandle, codeHash}`; returns
   `{intentId, sessionId, ttlSeconds}`.
 - **v4** `GET /v1/intent/{iid}` — non-SSE polling endpoint mirroring
   the SSE stream below.  Returns
@@ -361,6 +362,12 @@ to `/v1/session/{id}/relay-ticket`. The response contains a private `ticket`, th
 nonce, `relayPort`, optional `webSocketUrl`, and an idle lease of 60 seconds.
 At most 16 pending routes exist per session. Requesting an occupied nonce returns
 409 and never reveals its ticket. Authenticated traffic renews the lease.
+Browser broker sessions additionally require `intentId` in this request. The
+intent must have been explicitly accepted by the owner; an unused approval
+can authorize the startup handoff for five minutes. This requirement survives
+heartbeat state changes to `waiting`, and a new intent is never automatically
+approved merely because the browser emulator has started. The existing private
+ticket then owns the live connection independently of the startup grant.
 
 UDP relay headers are 56 bytes: magic, session ID, role and three zero bytes,
 then the private 16-byte ticket and 16-byte route nonce. Both registration and
@@ -368,8 +375,9 @@ data validate the ticket before allocating or changing an endpoint. Distinct
 pending joiners have independent routes; only the same private authority can
 rebind its route after a NAT/source-port change. Host responses carry the
 pending/accepted nonce. WSS upgrades require `token.<ticket>` for both roles and
-`nonce.<hex>` for joiners. Approval and private-code checks remain in the gameplay
-handshake. Protocol-8 session envelopes remain opaque to the relay except for
+`nonce.<hex>` for joiners. Native hosts retain their explicit in-emulator
+approval and private-code checks. Browser broker hosts auto-accept only traffic
+whose private ticket was minted from the owner's approved intent. Protocol-8 session envelopes remain opaque to the relay except for
 routing and optional phase/heartbeat diagnostics.
 
 Authenticated lease heartbeats have a separate per-session rate budget, so five

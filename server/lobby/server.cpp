@@ -263,6 +263,7 @@ struct Session {
 	int         protocolVer    = 0;
 	std::string visibility;        // "public" | "private"
 	bool        requiresCode   = false;
+	bool        brokerApprovalRequired = false; // immutable after creation
 	std::string cartArtHash;       // optional
 	std::string createdAt;         // ISO-8601
 	int64_t     lastSeenMs     = 0;  // monotonic ms
@@ -513,6 +514,7 @@ public:
 		s.lastSeenMs       = NowMs();
 		s.hostHandleNorm   = handleNorm;
 		if (s.state.empty()) s.state = kStateWaiting;
+		s.brokerApprovalRequired = s.state == kStateAwaitingApproval;
 		mItems[s.id] = s;
 		return s;
 	}
@@ -520,10 +522,19 @@ public:
 	// Each pending joiner owns one bounded nonce route. A newcomer never
 	// replaces another joiner's ticket or changes an existing route endpoint.
 	int AcquireRelayTicket(const std::string& id, const std::string& nonce,
-		std::string& ticket, int64_t nowMs = NowMs()) {
+		std::string& ticket, int64_t nowMs = NowMs(),
+		const std::string& approvedIntent = {}) {
 		if (!IsNonceHex(nonce)) return 400;
 		std::lock_guard<std::mutex> lock(mMu);
-		if (mItems.find(id) == mItems.end()) return 404;
+		const auto session = mItems.find(id);
+		if (session == mItems.end()) return 404;
+		if (session->second.brokerApprovalRequired) {
+			const auto approval = mBrokerRelayApprovals.find(approvedIntent);
+			if (approval == mBrokerRelayApprovals.end()
+				|| approval->second.sessionId != id
+				|| nowMs - approval->second.decidedAtMs > 300000)
+				return 403;
+		}
 		auto& routes = mRelayLeases[id];
 		for (auto it = routes.begin(); it != routes.end(); ) {
 			if (nowMs - it->second.lastSeenMs > 60000) it = routes.erase(it);
@@ -902,7 +913,7 @@ public:
 			// connects in time) or via the snapshot replay branch
 			// in the GET handler.  We mark the intent decided
 			// in-place so the per-intent TTL still applies cleanly.
-			if (s.state == kStateWaiting) {
+			if (s.state == kStateWaiting && !s.brokerApprovalRequired) {
 				autoAcceptForLegacy = true;
 				it.decided          = true;
 				autoDecision.intentId    = newId;
@@ -988,6 +999,11 @@ public:
 			d.reason      = reason;
 			d.decidedAtMs = NowMs();
 			mDecisions[intentId] = d;
+			// The broker host emulator auto-accepts transport handshakes.
+			// Only an intent explicitly approved by its owner can acquire
+			// a join credential, including after the host starts running.
+			if (accepted && sit->second.brokerApprovalRequired)
+				mBrokerRelayApprovals[intentId] = d;
 			iit->second.decided  = true;
 
 			auto lit = mDecisionListeners.find(intentId);
@@ -1250,6 +1266,11 @@ private:
 	// intent (it stays alive only as long as the decision lasts).
 	// MUST be called with mMu held.
 	void BrokerExpireDecisionsLocked(int64_t nowMs) {
+		for (auto it = mBrokerRelayApprovals.begin(); it != mBrokerRelayApprovals.end();) {
+			if (nowMs - it->second.decidedAtMs > 300000)
+				it = mBrokerRelayApprovals.erase(it);
+			else ++it;
+		}
 		const int64_t cutoff = nowMs - (int64_t)kDecisionTtlMs;
 		for (auto it = mDecisions.begin(); it != mDecisions.end();) {
 			if (it->second.decidedAtMs < cutoff) {
@@ -1268,6 +1289,11 @@ private:
 	// mMu held.
 	void BrokerOnSessionRemovedLocked(const std::string& sessionId) {
 		mRelayLeases.erase(sessionId);
+		for (auto it = mBrokerRelayApprovals.begin(); it != mBrokerRelayApprovals.end();) {
+			if (it->second.sessionId == sessionId)
+				it = mBrokerRelayApprovals.erase(it);
+			else ++it;
+		}
 		// Pending intents on this session → cancel.
 		std::vector<std::string> pendingIds;
 		for (auto& kv : mIntents) {
@@ -1356,6 +1382,7 @@ private:
 	// session-or-intent lookup that already lives under mMu.
 	std::unordered_map<std::string, Intent>   mIntents;
 	std::unordered_map<std::string, Decision> mDecisions;
+	std::unordered_map<std::string, Decision> mBrokerRelayApprovals;
 	std::unordered_map<std::string,
 	                   std::vector<std::shared_ptr<IntentListener>>> mIntentListeners;
 	std::unordered_map<std::string,
@@ -2304,17 +2331,19 @@ void Install(httplib::Server& srv, Store& store) {
 	srv.Post(R"(/v1/session/([^/]+)/relay-ticket)",
 		[&store](const httplib::Request& req, httplib::Response& res) {
 			JsonCursor cursor{req.body.data(), req.body.data() + req.body.size()};
-			std::string nonce;
+			std::string nonce, approvedIntent;
 			if (!cursor.match('{')) { WriteErr(res, 400, "invalid ticket request"); return; }
 			while (!cursor.peek('}')) {
 				std::string key;
 				if (!cursor.parseString(key) || !cursor.match(':')) break;
-				if (key == "sessionNonce") cursor.parseString(nonce); else cursor.skipValue();
+				if (key == "sessionNonce") cursor.parseString(nonce);
+				else if (key == "intentId") cursor.parseString(approvedIntent);
+				else cursor.skipValue();
 				if (!cursor.ok || !cursor.match(',')) break;
 			}
 			std::string ticket;
-			const int status = cursor.ok ? store.AcquireRelayTicket(req.matches[1], nonce, ticket) : 400;
-			if (status != 201) { WriteErr(res, status, status == 409 ? "join attempt already exists" : "relay ticket unavailable"); return; }
+			const int status = cursor.ok ? store.AcquireRelayTicket(req.matches[1], nonce, ticket, NowMs(), approvedIntent) : 400;
+			if (status != 201) { WriteErr(res, status, status == 409 ? "join attempt already exists" : status == 403 ? "host approval is required for this browser session" : "relay ticket unavailable"); return; }
 			JsonBuilder body; body.raw("{\"ticket\":"); body.str(ticket);
 			body.raw(",\"sessionNonce\":"); body.str(nonce);
 			body.raw(",\"relayPort\":"); body.num(store.Cfg().reflectorPort);

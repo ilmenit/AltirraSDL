@@ -1963,6 +1963,35 @@ void TestBrokerAwaitingApprovalRequiresWssRelayOnly() {
 	T_EXPECT_EQ_INT(r->status, 400, "endpoint+awaiting_approval rejected");
 }
 
+void TestBrokerRelayRequiresApprovedIntentAfterSpawn() {
+	++g_testsRun;
+	Fixture fixture;
+	auto host = fixture.client();
+	auto joiner = fixture.client();
+	std::string sid, token, iid;
+	int status = 0;
+	T_EXPECT(CreateBrokerSession(host, "Relay", "owner", sid, token), "create broker host");
+	const std::string nonce(32, '4');
+	std::string ticket;
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, nonce, ticket), 403, "public SID cannot bypass broker approval");
+	T_EXPECT(PostIntent(joiner, sid, "guest", "", iid, status), "request broker approval");
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, nonce, ticket, NowMs(), iid), 403, "pending intent grants no transport authority");
+	T_EXPECT_EQ_INT(PostDecision(host, sid, iid, token, true, 0), 200, "host explicitly approves");
+	// Host adoption changes the public state to waiting. Its approval
+	// requirement must survive that ordinary heartbeat transition.
+	T_EXPECT_EQ_INT(fixture.store.Heartbeat(sid, token, 1, kStateWaiting), 200, "host emulator spawned");
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, nonce, ticket), 403, "spawn cannot remove approval requirement");
+	const std::string path = std::string(kPathSession) + "/" + sid + "/relay-ticket";
+	auto allowed = joiner.Post(path.c_str(), "{\"sessionNonce\":\"" + nonce + "\",\"intentId\":\"" + iid + "\"}", "application/json");
+	T_EXPECT(allowed && allowed->status == 201, "approved intent obtains private nonce-bound credential");
+	std::string newcomer;
+	T_EXPECT(PostIntent(joiner, sid, "other", "", newcomer, status), "post-spawn requester must still seek owner approval");
+	Decision decision;
+	T_EXPECT(!fixture.store.GetDecision(newcomer, decision), "post-spawn broker intent is never auto-approved");
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, std::string(32, '5'), ticket, NowMs(), newcomer), 403, "unapproved newcomer cannot connect to auto-accepting browser host");
+	T_EXPECT_EQ_INT(fixture.store.AcquireRelayTicket(sid, std::string(32, '6'), ticket, NowMs() + 300001, iid), 403, "unused spawn grant expires");
+}
+
 void TestPrivateRelayTicketsAndIndependentRoutes() {
 	++g_testsRun;
 	Fixture fixture;
@@ -2012,6 +2041,7 @@ void TestLeaseBudgetSurvivesDiscoveryExhaustion() {
 
 int RunAll() {
 	TestPrivateRelayTicketsAndIndependentRoutes();
+	TestBrokerRelayRequiresApprovedIntentAfterSpawn();
 	TestLeaseBudgetSurvivesDiscoveryExhaustion();
 	TestHealthz();
 	TestCreateAndList();
