@@ -97,6 +97,8 @@
   capacity checks on Windows and portable builds. Portable sockets now
   rebuild readiness after socket-table updates, sleep while idle, and
   report TCP half-close EOF correctly.
+- Serialize socket reference release with worker collection to prevent
+  an asynchronous close from freeing a socket during its final release.
 - Fixed rapid NetSIO disconnect/reconnect racing an asynchronous socket
   close. Managed runtimes can reconnect directly without rebooting the Atari.
 - Improved FujiNet and URL dialogs when resizing the emulator window.

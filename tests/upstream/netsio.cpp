@@ -399,6 +399,20 @@ int main() {
 			}
 			listener->CloseSocket(true);
 		}
+		Phase("asynchronous socket close and final release");
+		for (unsigned i = 0; i < 1024; ++i) {
+			// Closing wakes the worker before the last external ref drops.
+			// Collection must not delete the socket while Release is still
+			// inspecting its table membership (ASan exercises this race).
+			vdrefptr<IATListenSocket> listener;
+			Wait(services, [&] {
+				if (!listener)
+					listener = ATNetListen(ATSocketAddress::CreateLocalhostIPv4(0), false);
+				return listener != nullptr;
+			});
+			listener->CloseSocket(true);
+			listener = nullptr;
+		}
 		Phase("native UDP backpressure");
 #ifndef _WIN32
 		{

@@ -88,21 +88,21 @@ bool ATNetSocket::IsHardClosing_Locked() const {
 }
 
 int ATNetSocket::Release() {
-	const int rc = vdrefcounted::Release();
-
-	if (rc == 1) {
-		// We might be the final release -- check if we need to request a
-		// socket update. If we are in the table, the table will be holding a
-		// ref on the socket, so reaching 1 is final release.
-		vdsynchronized(mpSyncContext->mMutex) {
-			if (mSocketIndex >= 0) {
-				// yup, we are registered in the table -- request an update so this socket gets collected
-				if (mpSyncContext->mpWorker)
-					mpSyncContext->mpWorker->RequestSocketUpdate_Locked(*this);
-			}
-		}
+	// Fork: releasing the caller's ref and notifying the collector must be
+	// atomic with the worker's abandonment check. Otherwise the worker can
+	// delete this socket after the decrement but before mSocketIndex is read.
+	vdrefptr context(mpSyncContext);
+	int rc;
+	vdsynchronized(context->mMutex) {
+		rc = --mRefCount;
+		VDASSERT(rc >= 0);
+		if (rc == 1 && mSocketIndex >= 0 && context->mpWorker)
+			context->mpWorker->RequestSocketUpdate_Locked(*this);
 	}
 
+	// Never run destruction (including captured callback releases) under
+	// the socket mutex. The context ref keeps the mutex alive through unlock.
+	if (!rc) delete this;
 	return rc;
 }
 
