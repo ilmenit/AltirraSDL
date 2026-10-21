@@ -7,6 +7,8 @@ Example (runtime directory must contain the official `fujinet` and `data/`):
     --runtime /path/to/fujinet-pc-ATARI --tnfsd /path/to/tnfsd --public --keep
 
 The default checks need only the supplied runtime and a local HTTP fixture.
+--legacy-bridge /path/to/fujinet-emulator-bridge runs the same checks through
+its custom .atdevice and Python NetSIO hub, using private descriptor/ports.
 --tnfsd adds a real local TNFS daemon (UDP/TCP port 16384 must be free).
 --public records actual results from the official runtime's public TNFS hosts
 and an official FujiNet HTTPS JSON file; availability is reported separately unless
@@ -19,6 +21,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import socket
@@ -48,10 +51,21 @@ def check(condition, message):
         raise AssertionError(message)
 
 
-def free_port(kind=socket.SOCK_STREAM):
-    with socket.socket(socket.AF_INET, kind) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def free_port(kind=socket.SOCK_STREAM, maximum=65535):
+    for _ in range(128):
+        with socket.socket(socket.AF_INET, kind) as s:
+            # macOS can allocate ephemeral ports entirely above the
+            # legacy VM's allowed range. Probe within that range instead.
+            candidate = (1024 + int.from_bytes(os.urandom(2), "little") % (maximum - 1023)
+                         if maximum < 65535 else 0)
+            try:
+                s.bind(("127.0.0.1", candidate))
+            except OSError:
+                continue
+            port = s.getsockname()[1]
+            if port <= maximum:
+                return port
+    raise RuntimeError(f"No available port at or below {maximum}")
 
 
 def atr(payload: bytes) -> bytes:
@@ -241,6 +255,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bridge", required=True, type=Path)
     parser.add_argument("--runtime", required=True, type=Path)
+    parser.add_argument("--legacy-bridge", type=Path,
+                        help="Test the custom .atdevice and Python hub from this fujinet-emulator-bridge checkout")
     parser.add_argument("--tnfsd", type=Path)
     parser.add_argument("--public", action="store_true")
     parser.add_argument("--basic", choices=("on", "off"), default="off",
@@ -254,6 +270,12 @@ def main():
     args.bridge, args.runtime = args.bridge.resolve(), args.runtime.resolve()
     if args.tnfsd:
         args.tnfsd = args.tnfsd.resolve()
+    if args.legacy_bridge:
+        args.legacy_bridge = args.legacy_bridge.resolve()
+        check((args.legacy_bridge / "altirra-custom-device/netsio.atdevice").is_file() and
+              (args.legacy_bridge / "fujinet-bridge/netsiohub/__main__.py").is_file(),
+              "--legacy-bridge must point to a complete fujinet-emulator-bridge checkout")
+    transport = "legacy-custom-device" if args.legacy_bridge else "native-netsio"
     check(args.bridge.is_file(), "--bridge executable missing")
     check((args.runtime / "fujinet").is_file() and (args.runtime / "data/autorun.atr").is_file(),
           "--runtime must contain official fujinet and data/autorun.atr")
@@ -262,7 +284,7 @@ def main():
     children = Processes()
     results = []
     def record(name, value=None):
-        item = {"test": name, "passed": True}
+        item = {"test": name, "transport": transport, "passed": True}
         if value is not None:
             item["result"] = value
         results.append(item)
@@ -274,7 +296,7 @@ def main():
         try:
             record(name, operation().decode(errors="replace")[:160])
         except Exception as exc:
-            item = {"test": name, "passed": False, "error": str(exc)}
+            item = {"test": name, "transport": transport, "passed": False, "error": str(exc)}
             results.append(item)
             print(json.dumps(item), flush=True)
             if args.require_public:
@@ -299,6 +321,31 @@ def main():
                     probe.bind(("127.0.0.1", 16384))
             children.start([args.tnfsd, "-r", "-a", "-p", "16384", sd], root, root / "tnfsd.log")
         port, web_port = free_port(socket.SOCK_DGRAM), free_port()
+        legacy_descriptor = None
+        if args.legacy_bridge:
+            # The published custom-device VM accepts ports 1024..49150.
+            # Change only this port in a private, deliberately renamed
+            # descriptor; the checkout and user profiles stay untouched.
+            tcp_port = free_port(maximum=49150)
+            descriptor = (args.legacy_bridge / "altirra-custom-device/netsio.atdevice").read_text()
+            descriptor, count = re.subn(
+                r'(option\s+"network"\s*:\s*\{[^}]*?\bport\s*:\s*)\d+',
+                lambda match: match[1] + str(tcp_port), descriptor,
+                count=1, flags=re.IGNORECASE)
+            check(count == 1, "Legacy descriptor has no recognizable network port setting")
+            legacy_descriptor = root / "renamed legacy transport.atdevice"
+            legacy_descriptor.write_text(descriptor)
+            hub_log = root / "netsiohub.log"
+            hub_env = os.environ.copy()
+            hub_env["PYTHONDONTWRITEBYTECODE"] = "1"
+            hub = children.start(
+                [sys.executable, "-u", "-m", "netsiohub", "--port", tcp_port, "--netsio-port", port],
+                args.legacy_bridge / "fujinet-bridge", hub_log, hub_env)
+            deadline = time.monotonic() + 10
+            while "Waiting for localhost connection" not in hub_log.read_text(errors="replace"):
+                check(hub.poll() is None, f"Legacy NetSIO hub exited; see {hub_log}")
+                check(time.monotonic() < deadline, f"Legacy NetSIO hub did not start; see {hub_log}")
+                time.sleep(.05)
         fnconfig = root / "fnconfig.ini"
         config = (args.runtime / "fnconfig.ini").read_text()
         import configparser
@@ -338,10 +385,21 @@ def main():
             b.config("basic", args.basic)
             b.config("fastboot", "off")
             b.config("siopatch", "off")
-            b.device_set("netsio", True, port=port, bind_address="127.0.0.1", sync_timeout_ms=100)
+            if legacy_descriptor:
+                b.device_set("custom", True, path=str(legacy_descriptor))
+            else:
+                b.device_set("netsio", True, port=port, bind_address="127.0.0.1", sync_timeout_ms=100)
+            record("SIO transport", {"udpPort": port,
+                   "descriptor": str(legacy_descriptor) if legacy_descriptor else None})
+            if legacy_descriptor:
+                # Reset the custom VM before a peer starts transmitting.
+                # Resetting its script while a hub memory request is in
+                # flight can invalidate that request's segment indices.
+                b.cold_reset()
             runtime = start_fn()
             time.sleep(1)
-            b.cold_reset()
+            if not legacy_descriptor:
+                b.cold_reset()
             record("FujiNet CONFIG boot", wait_config(b, runtime, root))
             if args.boot_only:
                 b.quit()
@@ -421,7 +479,7 @@ def main():
         check(server.wait(timeout=10) == 0, "Bridge did not shut down cleanly")
         success = True
     except Exception as exc:
-        results.append({"test": "integration", "passed": False, "error": str(exc)})
+        results.append({"test": "integration", "transport": transport, "passed": False, "error": str(exc)})
         print(json.dumps(results[-1]), flush=True)
         print(f"Logs retained: {root}", file=sys.stderr)
         raise

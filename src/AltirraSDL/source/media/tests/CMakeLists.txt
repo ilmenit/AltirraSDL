@@ -72,6 +72,14 @@ if(NOT ANDROID AND NOT EMSCRIPTEN)
 endif()
 
 if(NOT ANDROID AND NOT EMSCRIPTEN)
+    add_executable(altirra-fujinet-compat-test fujinet_compat_test.cpp)
+    target_include_directories(altirra-fujinet-compat-test PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/shim
+        ${_media_root}
+        ${PROJECT_SOURCE_DIR}/src/h)
+    target_compile_features(altirra-fujinet-compat-test PRIVATE cxx_std_17)
+    add_test(NAME fujinet-compatibility COMMAND altirra-fujinet-compat-test)
+
     add_executable(altirra-fujinet-pc-test
         ${_media_root}/fujinet_pc.cpp
         fujinet_pc_test.cpp)

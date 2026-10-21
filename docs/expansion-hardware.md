@@ -5,6 +5,15 @@ Atari800's source. Hardware-specific differences from Atari800 are intentional.
 The normal regression suite uses synthetic firmware and does not redistribute
 commercial ROM images.
 
+RAM-Cart register decoding is a source-assisted adaptation of Atari800's
+`src/cartridge.c` by Piotr Fusik and the Atari800 development team
+(GPL-2.0-or-later). AF80 adapts the hardware and glyph/attribute model in
+Atari800's `src/af80.c` by Perry McFarlane and the Atari800 development
+team, with the primary-source corrections described below. Mosaic is a
+new implementation based on its hardware manual. All three use Altirra's
+native memory, cartridge or device frameworks, including its snapshot
+support; AF80 also uses Altirra's firmware and video-output services.
+
 ## RAM-Cart and SiDiCar
 
 CART mapper IDs 94–102 cover RAM-Cart 64KB, 128KB, Double RAM-Cart

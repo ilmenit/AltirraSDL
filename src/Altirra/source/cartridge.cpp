@@ -2326,9 +2326,12 @@ bool ATCartridgeEmulator::WriteByte_CCTL_aDawliah_64K(void *thisptr0, uint32 add
 	return true;
 }
 
-// RAM-Cart physical switches and register encodings follow Atari800's
-// DOC/cart.txt (types 94-103) and src/cartridge.c. The SiDiCar memory
-// address diagram specifies four *8KB* banks, i.e. bank bits at A13/A14.
+// RAM-Cart/SiDiCar register decoding below adapts logic from Atari800's
+// src/cartridge.c, Copyright (C) 2001-2010 Piotr Fusik and Copyright (C)
+// 2001-2023 Atari800 development team, under GPL-2.0-or-later. Physical
+// switches and register encodings also follow DOC/cart.txt (types 94-103).
+// Storage, mapping and snapshots use Altirra's cartridge framework.
+// SiDiCar's address diagram specifies four *8KB* banks at A13/A14.
 // Primary hardware design: Tajemnice Atari 8/92, "Dysk krzemowy":
 // https://tajemnice.atari8.info/8_92/8_92_dyskkrzemowy.html
 // Do not copy Atari800's Calculate_SiDiCar_Address <<11: that overlaps banks.

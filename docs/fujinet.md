@@ -7,16 +7,24 @@ FujiNet** for connection, boot, runtime and diagnostic controls.
 
 ## Local FujiNet-PC
 
-1. Use **Download FujiNet-PC** to open the official releases. Download
+1. Select **Local PC**. Use **Download FujiNet-PC** to open the official releases. Download
    the **ATARI** archive matching your operating system and processor,
    then extract the complete archive.
-2. In the FujiNet panel, select the extracted `fujinet` executable
+2. Use **Choose FujiNet-PC** to select the extracted `fujinet` executable
    (`fujinet.exe` on Windows). Keep `data/`, `SD/` and `fnconfig.ini`
    beside it. Select the executable itself, rather than `run-fujinet`.
 3. Select **Start and Boot FujiNet**. AltirraSDL starts the listener and
    process, waits for their connection, then boots the Atari.
-4. Use FujiNet's on-screen configuration program to select a host and
-   mount software, or select **Open Web Interface**.
+4. Use **Open Web Interface** or FujiNet's on-screen configuration program
+   to mount software, then **Boot Atari**. **Start without booting** starts
+   only the runtime and leaves the Atari's state unchanged.
+
+The main view shows connection state, the selected runtime and the actions
+available now. **Runtime settings**, **Connection settings**, **Local disks**
+and **Diagnostics** hold optional controls. Installation instructions appear
+under **Installation help** before a runtime has been selected. The dialog
+adapts its height to the current view, keeps its position inside the canvas,
+and wraps actions when using narrow windows or large fonts.
 
 The launcher passes argument arrays directly through SDL's process API.
 It supports paths containing spaces and keeps its configuration, virtual
@@ -38,16 +46,17 @@ continuously, with a bounded log and an in-panel log tail.
 
 ## Existing process or external FujiNet
 
-Select **Connect NetSIO**. The default listener is `127.0.0.1:9997`.
+Select **External**, then **Connect NetSIO**. The default listener is `127.0.0.1:9997`.
 Configure an independently running FujiNet-PC to send NetSIO to that
 address. For a FujiNet on the network, enable **Allow LAN**, then
 configure FujiNet's SIO-over-network settings with this
-computer's LAN address and the selected UDP port. Allow that port in
+computer's LAN address and the selected UDP port. **Connection settings**
+holds the LAN choice, port, timing and optional web URL. Allow that port in
 the host firewall when needed.
 
 AltirraSDL listens; FujiNet initiates the connection. The panel displays
 the connected peer, packet counters, synchronization timeouts and errors.
-**Apply / Reconnect** discards the previous transaction and waits for a
+**Apply connection settings** discards the previous transaction and waits for a
 fresh connection. **Disconnect** stops the listener. An external web
 interface URL can be saved independently of the local runtime's web port.
 **Reconnect NetSIO** restores a disconnected listener while keeping a
@@ -55,10 +64,49 @@ managed runtime running and leaving the Atari's state unchanged. While
 the local runtime is running, **Open Web Interface** opens its local web
 port; once it stops, the button uses the saved external URL if present.
 
-The panel keeps **Start and Boot FujiNet** at the top and shows connection
-errors beside the status. Fields and button captions adapt to narrow
-windows and large UI fonts; open panels stay inside the canvas after a
-resize. Unavailable actions are disabled until their prerequisites exist.
+An already connected external peer is preserved. Opening the panel selects
+the External view; trying to start a second managed runtime is rejected
+before reconnecting, resetting the Atari or launching a process. Stopping a
+managed runtime clears its old peer while retaining a healthy listener, so
+an immediate managed restart does not mistake stale peer state for an
+externally owned runtime.
+
+## Existing custom-device / Python-hub setup
+
+The earlier manual route remains supported:
+
+`Atari SIO → NetSIO custom .atdevice → TCP hub → UDP → FujiNet`
+
+The panel recognizes the published NetSIO descriptor, including renamed
+copies, and displays **Manual FujiNet connection**. It does not replace the
+descriptor, alter its hot-reload/unsafe options, start the hub, or take
+ownership of your existing FujiNet process. **Boot Atari** resets only the
+computer; the custom-device VM and hub remain running. The optional web URL
+and local-drive controls remain available.
+
+Native activation is blocked while a recognized legacy NetSIO custom device
+is configured. Running both routes can duplicate SIO traffic; the hub and
+native listener also both default to UDP 9997. If both are already present,
+the panel offers **Disconnect native NetSIO** before manual boot. Descriptor
+edits invalidate detection, including in-place hot-reload updates. Other
+custom devices are left usable. Partially recognizable descriptors produce
+a caution; detection cannot prove the purpose of arbitrary user scripts.
+
+Choose the arrangement that matches your setup:
+
+| Arrangement | Transport | Process ownership |
+| --- | --- | --- |
+| Local PC | Native UDP NetSIO | AltirraSDL starts/stops one selected FujiNet-PC |
+| External | Native UDP NetSIO | You start and configure FujiNet or FujiNet-PC |
+| Existing manual bridge | Custom device and Python hub | You retain the descriptor, hub and runtime |
+
+Transport selection stays separate from process ownership. Automatic
+migration would lose hub fan-out and user-edited filters, so it is not used.
+To switch to native NetSIO, remove the NetSIO custom device from that profile
+and stop the hub first. Separate profiles let you retain both arrangements
+without routing one Atari's SIO traffic through both at once. Multiple native
+NetSIO devices also require selecting one in Configure System before the
+panel will reconfigure or boot them.
 
 Native Android builds can connect to an external FujiNet. Local desktop
 process management is unavailable there. Browsers cannot accept native
@@ -116,6 +164,12 @@ python3 tests/integration/test_fujinet_pc.py \
   --tnfsd /path/to/tnfsd --public --keep
 ```
 
+Add `--legacy-bridge /path/to/fujinet-emulator-bridge` to exercise the
+published custom descriptor and Python hub instead of native NetSIO. This
+uses a private renamed descriptor, isolated TCP/UDP ports, and the same
+Atari OS SIO tests. It never modifies your bridge checkout. Both routes
+support the optional public-service and TNFS checks.
+
 Local fixtures remain separate from public-service availability. The
 test retains a machine-readable report, runtime logs and a configuration
 screen capture. See the script's help for required tools and options.
@@ -127,13 +181,20 @@ SIOV, preserved local D2 alongside FujiNet D1, read a mounted TNFS image,
 and completed local N: HTTP and JSON requests. With the SIO patch enabled,
 local D2 reads remained accelerated (no external SIO disk command), while
 FujiNet control, N: HTTP/JSON and TNFS transactions continued to work.
-Runtime disconnect and restart recovery also passed. Public SIO transactions listed directories
+
+Native runtime disconnect and restart recovery also passed. Public SIO transactions listed directories
 on `fujinet.online`, `apps.irata.online` and `fujinet.diller.org`, retrieved
 `http://fujinet.online/`, and parsed `/name` from the official HTTPS board
 JSON on `raw.githubusercontent.com` as `#FujiNet v1`. The bridge runs with
 `--pacing=realtime` for these checks: WAN operations require wall-clock
 time while Atari OS timeouts use emulated time. Public-service results
 remain dependent on those services and the test machine's network.
+
+The original manual descriptor/hub route also passed CONFIG boot, control
+commands, accelerated local D2 coexistence, local N: HTTP/JSON, SD directory
+and sector reads, and runtime disconnect/reconnect with the official runtime.
+That legacy verification used local fixtures; public WAN and a separate TNFS
+daemon were not part of the legacy run.
 
 - [Official FujiNet-PC ATARI builds](https://github.com/FujiNetWIFI/fujinet-firmware/releases/tag/nightly_fn_pc_v1.6.2-dev)
 - [FujiNet emulator bridge and NetSIO protocol](https://github.com/FujiNetWIFI/fujinet-emulator-bridge)

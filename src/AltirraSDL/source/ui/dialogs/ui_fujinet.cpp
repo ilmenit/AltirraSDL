@@ -3,11 +3,16 @@
 #include <stdafx.h>
 #include "ui_fujinet.h"
 #include "ui_main.h"
+#include "ui_fonts.h"
 #include "../../media/fujinet_pc.h"
+#include "../../media/fujinet_compat.h"
 #include "../../media/media_url.h"
 #include "../../app/ui_file_dialog_sdl3.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+#include <imgui_internal.h>
+#endif
 #include <vd2/system/registry.h>
 #include <vd2/system/error.h>
 #include <vd2/system/refcount.h>
@@ -24,9 +29,11 @@
 #include "netplay/netplay_glue.h"
 #endif
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <mutex>
 #include <string>
+#include <vector>
 
 extern ATSimulator g_sim;
 extern SDL_Window* g_pWindow;
@@ -34,10 +41,21 @@ extern VDStringA ATGetConfigDir();
 extern void ATRegistryFlushToDisk();
 
 namespace {
+bool DetailHeader(const char* label) {
+	ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+	const bool open = ImGui::CollapsingHeader(label);
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor();
+	return open;
+}
 ATFujiNetPC s_runtime;
 bool s_open = false;
 bool s_loaded = false;
 bool s_lan = false;
+bool s_external = false;
+bool s_openConnection = false;
+bool s_selectMode = true;
 int s_port = 9997;
 int s_timeout = 100;
 int s_webPort = 8000;
@@ -74,6 +92,62 @@ IATDeviceNetSIOControl* Control() {
 	auto* device = Device();
 	return vdpoly_cast<IATDeviceNetSIOControl*>(device);
 }
+ATFujiNetCompat::LegacyDescriptor LegacyTransport(bool refresh = false) {
+	static std::string observed;
+	static ATFujiNetCompat::LegacyDescriptor cached;
+	std::string signature = std::to_string(ATSettingsGetCurrentProfileId());
+	std::vector<std::string> paths;
+	for (auto* device : g_sim.GetDeviceManager()->GetDevices(false, false, false)) {
+		ATDeviceInfo info;
+		device->GetDeviceInfo(info);
+		if (!info.mpDef || !info.mpDef->mpTag || strcmp(info.mpDef->mpTag, "custom")) continue;
+		ATPropertySet properties;
+		device->GetSettings(properties);
+		paths.emplace_back(VDTextWToU8(VDStringSpanW(properties.GetString("path", L""))).c_str());
+		signature += "|" + paths.back();
+		std::error_code error;
+		const auto modified = std::filesystem::last_write_time(
+			ATFujiNetCompat::NativePath(paths.back()), error);
+		if (!error) {
+			const auto stamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+				modified.time_since_epoch()).count();
+			signature += "@" + std::to_string(static_cast<long long>(stamp));
+		}
+	}
+	if (refresh || signature != observed) {
+		observed = signature;
+		const auto previous = cached;
+		cached = {};
+		for (const auto& path : paths) {
+			auto descriptor = ATFujiNetCompat::InspectLegacyDescriptor(path);
+			// A loaded VM can keep running after its source is deleted or
+			// unreadable. Retain known ownership until the device is removed
+			// or a readable replacement actually changes the descriptor.
+			if (!descriptor.sourceRead && previous.recognizedLegacy && previous.path == path)
+				descriptor = previous;
+			if (descriptor.recognizedLegacy) { cached = std::move(descriptor); break; }
+			if (descriptor.suspectedLegacy) cached = std::move(descriptor);
+		}
+	}
+	return cached;
+}
+bool CanUseNative() {
+	if (LegacyTransport(true).recognizedLegacy) {
+		s_error = "This profile uses the NetSIO custom-device bridge. Keep that manual setup, or remove its custom device and stop the hub before using native NetSIO.";
+		return false;
+	}
+	unsigned count = 0;
+	for (auto* device : g_sim.GetDeviceManager()->GetDevices(false, false, false)) {
+		ATDeviceInfo info;
+		device->GetDeviceInfo(info);
+		if (info.mpDef && info.mpDef->mpTag && !strcmp(info.mpDef->mpTag, "netsio")) ++count;
+	}
+	if (count > 1) {
+		s_error = "This profile has multiple NetSIO devices. Keep one listener in Configure System > Devices before using the FujiNet panel.";
+		return false;
+	}
+	return true;
+}
 void Load() {
 	if (s_loaded) return;
 	VDRegistryAppKey key("FujiNet", false);
@@ -83,14 +157,21 @@ void Load() {
 	snprintf(s_executable, sizeof s_executable, "%s", VDTextWToU8(executable).c_str());
 	snprintf(s_webURL, sizeof s_webURL, "%s", VDTextWToU8(web).c_str());
 	s_webPort = std::clamp(key.getInt("WebPort", 8000), 1, 65535);
+	s_external = key.getBool("ExternalMode", false) || !ATFujiNetPC::Available();
 	s_loaded = true;
 }
 void Save() {
 	if (!s_loaded) return;
+	// A fresh XDG_CONFIG_HOME may not exist yet. Settings-only use must
+	// persist even before launching a runtime creates its private SD tree.
+	const auto directory = ATGetConfigDir();
+	if (!directory.empty() && !SDL_CreateDirectory(directory.c_str()))
+		s_error = std::string("Could not create the settings directory: ") + SDL_GetError();
 	VDRegistryAppKey key("FujiNet", true);
 	key.setString("RuntimeExecutable", VDTextU8ToW(VDStringSpanA(s_executable)).c_str());
 	key.setString("WebURL", VDTextU8ToW(VDStringSpanA(s_webURL)).c_str());
 	key.setInt("WebPort", s_webPort);
+	key.setBool("ExternalMode", s_external);
 #ifdef __ANDROID__
 	ATRegistryFlushToDisk();
 #endif
@@ -205,6 +286,10 @@ bool ActionButton(const char* label) {
 void ATUIShowFujiNetDialog() {
 	Load();
 	ReadDeviceSettings();
+	if (!s_runtime.GetStatus().running && Control() && Control()->GetNetSIOStatus().connected)
+		s_external = true;
+	s_selectMode = true;
+	LegacyTransport(true);
 	s_open = true;
 }
 bool ATUIFujiNetSetRuntime(const char* executable, unsigned webPort) {
@@ -226,7 +311,7 @@ bool ATUIFujiNetSetRuntime(const char* executable, unsigned webPort) {
 }
 bool ATUIFujiNetConfigureListener(bool allowLAN, unsigned port, unsigned timeout) {
 	Load();
-	if (!CanChange()) return false;
+	if (!CanChange() || !CanUseNative()) return false;
 	if (s_runtime.GetStatus().running) {
 		s_error = "Stop the managed runtime before changing the NetSIO listener.";
 		return false;
@@ -305,7 +390,11 @@ bool ATUIFujiNetConfigureListener(bool allowLAN, unsigned port, unsigned timeout
 }
 bool ATUIFujiNetStartRuntime() {
 	Load();
-	if (!CanChange()) return false;
+	if (!CanChange() || !CanUseNative()) return false;
+	if (!s_runtime.GetStatus().running && Control() && Control()->GetNetSIOStatus().connected) {
+		s_error = "A FujiNet peer is already connected outside this launcher. Use External to boot that connection; disconnect it before starting another runtime.";
+		return false;
+	}
 	SyncDeviceDraft();
 	if (!ATFujiNetPC::Available()) {
 		s_error = "This platform connects to an external FujiNet; local process management is unavailable.";
@@ -362,6 +451,7 @@ void ATUIFujiNetStopRuntime() {
 	s_runtime.Stop();
 }
 bool ATUIFujiNetReconnect() {
+	if (!CanUseNative()) return false;
 	IATDeviceNetSIOControl* control;
 	if (!RequireControl(control)) return false;
 	control->Reconnect();
@@ -379,9 +469,15 @@ bool ATUIFujiNetDisconnect() {
 }
 bool ATUIFujiNetBoot() {
 	s_bootPending = false;
-	IATDeviceNetSIOControl* control;
-	if (!RequireControl(control)) return false;
-	if (!control->GetNetSIOStatus().connected) {
+	if (!CanChange()) return false;
+	const bool legacy = LegacyTransport(true).recognizedLegacy;
+	if (legacy && Control() && Control()->GetNetSIOStatus().listening) {
+		s_error = "Both NetSIO routes are configured. Disconnect the native listener before booting through the custom-device bridge.";
+		return false;
+	}
+	if (!legacy && !CanUseNative()) return false;
+	auto* control = Control();
+	if (!legacy && (!control || !control->GetNetSIOStatus().connected)) {
 		s_error = "No FujiNet peer is connected. Start FujiNet-PC or point an external FujiNet at this listener, then retry.";
 		return false;
 	}
@@ -453,8 +549,18 @@ void ATUIPollFujiNet() {
 		picked.swap(s_pickedPath);
 	}
 	if (!picked.empty()) ATUIFujiNetSetRuntime(picked.c_str(), (unsigned)s_webPort);
+	const bool wasRunning = s_runtime.GetStatus().running;
 	s_runtime.Poll();
+	if (wasRunning && !s_runtime.GetStatus().running &&
+		ListenerEndpoint() == s_runtimeEndpoint && Control() && Control()->GetNetSIOStatus().listening)
+		Control()->Reconnect();
 	SyncDeviceDraft();
+	if (s_runtime.GetStatus().running && !s_runtime.GetStatus().stopping &&
+		LegacyTransport().recognizedLegacy) {
+		s_bootPending = false;
+		s_runtime.Stop();
+		s_error = "A NetSIO custom-device bridge was added to this profile. The managed runtime is stopping to prevent duplicate SIO traffic.";
+	}
 	if (s_runtime.GetStatus().running && !s_runtime.GetStatus().stopping &&
 		ListenerEndpoint() != s_runtimeEndpoint) {
 		s_bootPending = false;
@@ -483,155 +589,359 @@ void ATUIShutdownFujiNet() {
 	s_open = false;
 }
 
+namespace {
+void Heading(const char* text) {
+	ImGui::PushFont(ATUIGetFontHeading(), ImGui::GetFontSize() * 1.2f);
+	ImGui::TextWrapped("%s", text);
+	ImGui::PopFont();
+}
+void Hint(const char* text) {
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	ImGui::TextWrapped("%s", text);
+	ImGui::PopStyleColor();
+}
+bool PrimaryAction(const char* label) {
+	ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+		ImVec2(ImGui::GetStyle().FramePadding.x + 8, ImGui::GetStyle().FramePadding.y + 4));
+	const bool pressed = ActionButton(label);
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor();
+	return pressed;
+}
+void OpenWebInterface(const ATFujiNetUIStatus& status) {
+	const std::string url = !status.running && s_webURL[0] ? s_webURL :
+		"http://127.0.0.1:" + std::to_string(s_webPort);
+	if (!ATMediaURL::IsURL(url)) s_error = "Enter a complete HTTP(S) web-interface URL.";
+	else if (!SDL_OpenURL(url.c_str())) s_error = SDL_GetError();
+}
+void OpenDataFolder() {
+	const auto directory = StateDirectory();
+	if (directory.empty()) return;
+	if (!SDL_CreateDirectory(directory.c_str())) {
+		s_error = SDL_GetError();
+		return;
+	}
+	std::string url = "file://";
+	if (directory[0] != '/') url += '/';
+	static constexpr char hex[] = "0123456789ABCDEF";
+	for (unsigned char c : directory) {
+		if (c == '\\') c = '/';
+		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '/' || c == ':' ||
+			c == '-' || c == '_' || c == '.' || c == '~') url += (char)c;
+		else { url += '%'; url += hex[c >> 4]; url += hex[c & 15]; }
+	}
+	if (!SDL_OpenURL(url.c_str())) s_error = SDL_GetError();
+}
+void BootNote() {
+	Hint("Boot uses FujiNet for D1 and normal speed. Local disk images stay mounted.");
+}
+void ConnectionDetails(const ATFujiNetUIStatus& status) {
+	if (s_openConnection) {
+		ImGui::SetNextItemOpen(true);
+		s_openConnection = false;
+	}
+	if (!DetailHeader("Connection settings")) return;
+	ImGui::Indent();
+	ImGui::BeginDisabled(Locked() || status.running);
+	ImGui::Checkbox("Allow LAN", &s_lan);
+	Hint(s_lan ? "Accept NetSIO from other computers on all IPv4 interfaces." :
+		"Accept NetSIO on this computer only (127.0.0.1).");
+	const int columns = ImGui::GetContentRegionAvail().x > ImGui::GetFontSize() * 32 ? 2 : 1;
+	if (ImGui::BeginTable("##connection-fields", columns, ImGuiTableFlags_SizingStretchSame)) {
+		ImGui::TableNextColumn();
+		FieldLabel("UDP port");
+		ImGui::InputInt("##UDP port", &s_port, 0, 0);
+		ImGui::TableNextColumn();
+		FieldLabel("Synchronization timeout (ms)");
+		ImGui::InputInt("##Synchronization timeout", &s_timeout, 0, 0);
+		ImGui::EndTable();
+	}
+	if (ActionButton("Apply connection settings"))
+		ATUIFujiNetConfigureListener(s_lan, s_port, s_timeout);
+	ImGui::EndDisabled();
+	if (status.running) Hint("Stop FujiNet-PC before changing the listener.");
+	ImGui::BeginDisabled(Locked());
+	if (status.listening) {
+		if (ActionButton("Disconnect")) ATUIFujiNetDisconnect();
+	} else if (status.present) {
+		if (ActionButton("Reconnect NetSIO")) ATUIFujiNetReconnect();
+	}
+	ImGui::EndDisabled();
+	if (s_external) {
+		ImGui::Spacing();
+		FieldLabel("Web interface URL (optional)");
+		ImGui::SetNextItemWidth(-1);
+		ImGui::InputTextWithHint("##External web URL", "http://fujinet/", s_webURL, sizeof s_webURL);
+		if (ImGui::IsItemDeactivatedAfterEdit()) Save();
+		Hint("Enable SIO over Network / BOIP in FujiNet and send it to this computer's address and UDP port.");
+	}
+	ImGui::Unindent();
+}
+void LocalDiskDetails(const ATFujiNetUIStatus& status) {
+	if (!DetailHeader("Local disks")) return;
+	ImGui::Indent();
+	ImGui::TextWrapped("Local D1: %s", status.localD1Enabled ? "enabled" : "disabled for FujiNet");
+	ImGui::TextWrapped("Fast boot: %s", status.fastBoot ? "enabled" : "disabled");
+	ImGui::BeginDisabled(Locked() || status.localD1Enabled);
+	if (ActionButton("Enable local D1")) ATUIFujiNetEnableLocalD1();
+	ImGui::EndDisabled();
+	Hint("Boot disables local D1 and Fast boot, selects 100% speed, then resets and runs the Atari. "
+		"The D1 image and unsaved changes stay mounted. D2-D15 and BASIC stay unchanged. "
+		"Use different drive numbers for active local and FujiNet disks.");
+	ImGui::Unindent();
+}
+void Diagnostics(const ATFujiNetUIStatus& status) {
+	if (!DetailHeader("Diagnostics")) return;
+	ImGui::Indent();
+	ImGui::TextWrapped("Listener: %s", status.listening ? ListenerEndpoint().c_str() : "stopped");
+	ImGui::TextWrapped("Peer: %s", status.connected ? status.peer.c_str() : "none");
+	ImGui::TextWrapped("Packets: %llu received, %llu sent",
+		(unsigned long long)status.rxPackets, (unsigned long long)status.txPackets);
+	ImGui::TextWrapped("Dropped: %llu | Synchronization timeouts: %llu",
+		(unsigned long long)status.droppedPackets, (unsigned long long)status.syncTimeouts);
+	if (status.processAvailable) {
+		ImGui::TextWrapped("Last runtime exit: %d | Restarts: %u", status.exitCode, status.restarts);
+		if (ActionButton("Open Data Folder")) OpenDataFolder();
+		Hint(status.stateDirectory.c_str());
+		if (ImGui::TreeNode("Runtime log")) {
+			ImGui::BeginChild("##FujiNetLog", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8),
+				ImGuiChildFlags_Borders);
+			ImGui::TextUnformatted(status.logTail.c_str());
+			ImGui::EndChild();
+			ImGui::TreePop();
+		}
+	}
+	ImGui::Unindent();
+}
+void ManualConnection(const ATFujiNetUIStatus& status,
+	const ATFujiNetCompat::LegacyDescriptor& legacy) {
+	Heading("Manual FujiNet connection");
+	Hint("This profile uses your NetSIO custom device and external hub.");
+	if (!status.error.empty()) ImGui::TextWrapped("%s", status.error.c_str());
+	ImGui::Spacing();
+	ImGui::BeginDisabled(Locked());
+	if (status.listening) {
+		ImGui::TextWrapped("A native NetSIO listener is also active. Disconnect it to keep one SIO route.");
+		if (ActionButton("Disconnect native NetSIO")) ATUIFujiNetDisconnect();
+	} else {
+		if (PrimaryAction("Boot Atari")) ATUIFujiNetBoot();
+		SameLineIfFits(s_webURL[0] ? "Open Web Interface" : "Set web address");
+		if (ActionButton(s_webURL[0] ? "Open Web Interface" : "Set web address")) {
+			if (s_webURL[0]) OpenWebInterface(status);
+			else s_openConnection = true;
+		}
+		BootNote();
+	}
+	ImGui::EndDisabled();
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+	if (s_openConnection) { ImGui::SetNextItemOpen(true); s_openConnection = false; }
+	if (DetailHeader("Web interface")) {
+		ImGui::Indent();
+		FieldLabel("FujiNet web URL");
+		ImGui::InputTextWithHint("##External web URL", "http://fujinet/", s_webURL, sizeof s_webURL);
+		if (ImGui::IsItemDeactivatedAfterEdit()) Save();
+		ImGui::Unindent();
+	}
+	LocalDiskDetails(status);
+	if (DetailHeader("Manual setup")) {
+		ImGui::Indent();
+		ImGui::TextWrapped("Custom device: %s", legacy.path.c_str());
+		Hint("Keep starting your hub and FujiNet-PC as before. Your descriptor, filters, "
+			"host settings and external processes stay under your control.");
+		ImGui::Spacing();
+		Hint("To use native NetSIO instead, remove the NetSIO custom device in Configure System > Devices "
+			"and stop its hub. Use a separate profile if you want to keep both setups.");
+		ImGui::Unindent();
+	}
+}
+} // namespace
+
 void ATUIRenderFujiNetDialog() {
 	if (!s_open) return;
 	Load();
 	const auto status = ATUIGetFujiNetStatus();
-	ImGui::SetNextWindowSize(ATUIFitDialogSize(ImVec2(760, 700)), ImGuiCond_Appearing);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+#endif
+	const float scale = ImGui::GetFontSize() / 13.0f;
+	const float spacingScale = std::min(scale, 1.4f);
+	const auto* viewport = ImGui::GetMainViewport();
+	const ImVec2 available = ATUIFitDialogSize(ImVec2(620 * scale, 100000));
+	ImGui::SetNextWindowSize(ImVec2(available.x, 0), ImGuiCond_Appearing);
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-	ATUIConstrainDialogSize();
-	if (ImGui::Begin("FujiNet", &s_open, ImGuiWindowFlags_NoSavedSettings)) {
-		ATUIClampDialogPosition();
+	ImGui::SetNextWindowSizeConstraints(ImVec2(available.x, 0), available);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18 * spacingScale, 14 * spacingScale));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8 * spacingScale, 9 * spacingScale));
+	if (ImGui::Begin("FujiNet", &s_open, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+		static ImVec2 lastSize, lastViewport;
+		const ImVec2 size = ImGui::GetWindowSize();
+		if (ImGui::IsWindowAppearing() || size.x != lastSize.x || size.y != lastSize.y ||
+			viewport->WorkSize.x != lastViewport.x || viewport->WorkSize.y != lastViewport.y) {
+			ImGui::SetWindowPos(ImVec2(viewport->WorkPos.x + (viewport->WorkSize.x - size.x) * 0.5f,
+				viewport->WorkPos.y + (viewport->WorkSize.y - size.y) * 0.5f));
+		} else ATUIClampDialogPosition();
+		lastSize = size;
+		lastViewport = viewport->WorkSize;
 #ifdef __EMSCRIPTEN__
-		ImGui::TextWrapped("The browser cannot listen for native UDP NetSIO packets. "
-			"Use a native AltirraSDL build to connect FujiNet.");
+		Heading("FujiNet needs a native build");
+		Hint("Browsers cannot listen for UDP NetSIO. Use a native AltirraSDL build to connect FujiNet.");
 #else
-		ImGui::BeginDisabled(Locked());
-		if (status.processAvailable) {
-			ImGui::BeginDisabled(status.bootPending || status.stopping);
-			if (ActionButton("Start and Boot FujiNet")) ATUIFujiNetStartAndBoot();
-			ImGui::EndDisabled();
-			if (status.bootPending) {
-				SameLineIfFits("Cancel Pending Boot");
-				if (ActionButton("Cancel Pending Boot")) s_bootPending = false;
-				ImGui::TextWrapped("Waiting for FujiNet to connect before booting...");
-			}
-		}
-		ImGui::EndDisabled();
-		ImGui::TextWrapped("Listener: %s | Peer: %s", status.listening ? "listening" : "stopped",
-			status.connected ? status.peer.c_str() : "waiting for FujiNet");
-		if (!status.error.empty()) ImGui::TextWrapped("%s", status.error.c_str());
-		ImGui::TextWrapped("Connect the Atari SIO bus to FujiNet-PC or an external FujiNet.");
-		ImGui::BeginDisabled(Locked());
-		ImGui::SeparatorText("Local FujiNet-PC");
-		if (status.processAvailable) {
-			ImGui::BeginDisabled(status.running);
-			FieldLabel("Executable");
-			ImGui::InputText("##Executable", s_executable, sizeof s_executable);
-			if (ImGui::IsItemDeactivatedAfterEdit()) Save();
-			if (ActionButton("Browse...")) Browse();
-			SameLineIfFits("Download FujiNet-PC");
-			if (ActionButton("Download FujiNet-PC"))
-				SDL_OpenURL("https://github.com/FujiNetWIFI/fujinet-firmware/releases");
-			FieldLabel("Local web port");
-			ImGui::InputInt("##Local web port", &s_webPort);
-			if (ImGui::IsItemDeactivatedAfterEdit()) {
-				s_webPort = std::clamp(s_webPort, 1, 65535);
-				Save();
-			}
-			ImGui::TextWrapped("Download the ATARI archive for your operating system. "
-				"Select the executable inside the fully extracted official FujiNet-PC release, "
-				"with its data folder and fnconfig.ini beside it. "
-				"A private configuration and virtual SD card are kept under the data folder below.");
-			if (ActionButton("Start FujiNet-PC")) ATUIFujiNetStartRuntime();
-			ImGui::EndDisabled();
-			SameLineIfFits("Stop FujiNet-PC");
-			ImGui::BeginDisabled(!status.running || status.stopping);
-			if (ActionButton("Stop FujiNet-PC")) ATUIFujiNetStopRuntime();
-			ImGui::EndDisabled();
-			ImGui::TextWrapped("Runtime: %s | Last exit: %d | Restarts: %u",
-				status.stopping ? "stopping" : status.running ? "running" : "stopped",
-				status.exitCode, status.restarts);
+		const auto legacy = LegacyTransport();
+		if (legacy.recognizedLegacy) {
+			ManualConnection(status, legacy);
 		} else {
-			ImGui::TextWrapped("This platform uses an external FujiNet or FujiNet-PC. "
-				"Local process management is unavailable.");
-		}
-		ImGui::EndDisabled();
-
-		ImGui::SeparatorText("NetSIO connection");
-		ImGui::BeginDisabled(Locked());
-		ImGui::BeginDisabled(status.running);
-		ImGui::Checkbox("Allow LAN", &s_lan);
-		FieldLabel("UDP port");
-		ImGui::InputInt("##UDP port", &s_port);
-		FieldLabel("Synchronization timeout (ms)");
-		ImGui::InputInt("##Synchronization timeout", &s_timeout);
-		if (ActionButton(status.present ? "Apply / Reconnect" : "Connect NetSIO"))
-			ATUIFujiNetConfigureListener(s_lan, s_port, s_timeout);
-		ImGui::EndDisabled();
-		SameLineIfFits("Disconnect");
-		ImGui::BeginDisabled(!status.listening);
-		if (ActionButton("Disconnect")) ATUIFujiNetDisconnect();
-		ImGui::EndDisabled();
-		if (status.present && !status.listening) {
-			SameLineIfFits("Reconnect NetSIO");
-			if (ActionButton("Reconnect NetSIO")) ATUIFujiNetReconnect();
-		}
-		ImGui::TextWrapped("External FujiNet: enable SIO over Network / BOIP in its web "
-			"settings and point it at this computer's address and UDP port. "
-			"Use 127.0.0.1 for a local FujiNet-PC runtime.");
-		ImGui::TextWrapped("Bind endpoint: %s", ListenerEndpoint().c_str());
-		ImGui::TextWrapped("Packets: %llu received, %llu sent | Dropped: %llu | Sync timeouts: %llu",
-			(unsigned long long)status.rxPackets, (unsigned long long)status.txPackets,
-			(unsigned long long)status.droppedPackets, (unsigned long long)status.syncTimeouts);
-
-		ImGui::SeparatorText("Boot from FujiNet");
-		ImGui::TextWrapped("Boot disables the built-in local D1 drive and Fast boot, sets "
-			"100%% speed, then cold-resets the computer and runs. The D1 image and unsaved changes stay mounted; D2–D15 remain unchanged. "
-			"External FujiNet disk slots must use different numbers from active local drives.");
-		ImGui::BeginDisabled(!status.connected || status.bootPending || status.stopping);
-		if (ActionButton("Boot FujiNet (disable local D1)")) ATUIFujiNetBoot();
-		ImGui::EndDisabled();
-		SameLineIfFits("Enable local D1");
-		ImGui::BeginDisabled(status.localD1Enabled);
-		if (ActionButton("Enable local D1")) ATUIFujiNetEnableLocalD1();
-		ImGui::EndDisabled();
-		ImGui::TextWrapped("Local D1: %s | Fast boot: %s", status.localD1Enabled ? "enabled" : "disabled",
-			status.fastBoot ? "enabled" : "disabled");
-		ImGui::EndDisabled();
-		if (Locked()) ImGui::TextWrapped("FujiNet changes are disabled during an active netplay session.");
-
-		ImGui::SeparatorText("Web interface and data");
-		FieldLabel("External web URL (used while local runtime is stopped)");
-		ImGui::BeginDisabled(status.running);
-		ImGui::InputText("##External web URL", s_webURL, sizeof s_webURL);
-		if (ImGui::IsItemDeactivatedAfterEdit()) Save();
-		ImGui::EndDisabled();
-		if (ActionButton("Open Web Interface")) {
-			const std::string url = !status.running && s_webURL[0] ? s_webURL :
-				"http://127.0.0.1:" + std::to_string(s_webPort);
-			if (ATMediaURL::IsURL(url)) SDL_OpenURL(url.c_str());
-			else s_error = "Enter a complete HTTP(S) web-interface URL.";
-		}
-		SameLineIfFits("Open Data Folder");
-		if (ActionButton("Open Data Folder")) {
-			const auto directory = StateDirectory();
-			if (!directory.empty()) {
-				SDL_CreateDirectory(directory.c_str());
-				std::string url = "file://";
-				if (directory[0] != '/') url += '/';
-				static constexpr char hex[] = "0123456789ABCDEF";
-				for (unsigned char c : directory) {
-					if (c == '\\') c = '/';
-					if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-						(c >= '0' && c <= '9') || c == '/' || c == ':' ||
-						c == '-' || c == '_' || c == '.' || c == '~') {
-						url += (char)c;
-					} else {
-						url += '%'; url += hex[c >> 4]; url += hex[c & 15];
-					}
+			const bool unmanagedPeer = status.connected && !status.running;
+			if (unmanagedPeer && !s_external) { s_external = true; s_selectMode = true; }
+			const bool selectingMode = ImGui::IsWindowAppearing() || s_selectMode;
+			const bool requestedExternal = s_external;
+			bool selectedExternal = s_external;
+			if (status.processAvailable && ImGui::BeginTabBar("##FujiNetMode")) {
+				ImGui::BeginDisabled(unmanagedPeer);
+				const bool localTab = ImGui::BeginTabItem("Local PC", nullptr, selectingMode && !requestedExternal ? ImGuiTabItemFlags_SetSelected : 0);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+				IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "Local PC", 0);
+#endif
+				if (localTab) {
+					if (!selectingMode) selectedExternal = false;
+					ImGui::EndTabItem();
 				}
-				if (!SDL_OpenURL(url.c_str())) s_error = SDL_GetError();
+				ImGui::EndDisabled();
+				if (unmanagedPeer && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("Disconnect the external peer before starting a managed runtime.");
+				ImGui::BeginDisabled(status.running);
+				const bool externalTab = ImGui::BeginTabItem("External", nullptr, selectingMode && requestedExternal ? ImGuiTabItemFlags_SetSelected : 0);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+				IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "External", 0);
+#endif
+				if (externalTab) {
+					if (!selectingMode) selectedExternal = true;
+					ImGui::EndTabItem();
+				}
+				ImGui::EndDisabled();
+				ImGui::EndTabBar();
+				s_selectMode = false;
+				if (selectedExternal != s_external) {
+					s_external = selectedExternal;
+					s_openConnection = s_external && !status.present;
+					Save();
+				}
 			}
-		}
-		ImGui::TextWrapped("Data and logs: %s", status.stateDirectory.c_str());
-		if (ImGui::CollapsingHeader("Runtime log")) {
-			ImGui::BeginChild("##FujiNetLog", ImVec2(0, 150), ImGuiChildFlags_Borders);
-			ImGui::TextUnformatted(status.logTail.c_str());
-			ImGui::EndChild();
+			ImGui::Spacing();
+			const bool needsRuntime = !s_external && !s_executable[0];
+			const char* title = status.stopping ? "Stopping FujiNet-PC" :
+				status.connected ? "Connected to FujiNet" : status.bootPending ? "Starting FujiNet" :
+				needsRuntime ? "Set up FujiNet-PC" : status.running ? "Waiting for FujiNet" :
+				status.listening && s_external ? "Waiting for FujiNet" : s_external ? "Connect an external FujiNet" : "Ready to start";
+			Heading(title);
+			if (legacy.suspectedLegacy)
+				Hint("A custom device may already provide NetSIO. Check it before enabling a second SIO route.");
+			if (!status.error.empty()) {
+				const auto background = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+				const bool light = background.x + background.y + background.z > 1.5f;
+				ImGui::PushStyleColor(ImGuiCol_Text, light ? ImVec4(0.60f, 0.18f, 0.12f, 1) : ImVec4(1, 0.63f, 0.57f, 1));
+				ImGui::TextWrapped("%s", status.error.c_str());
+				ImGui::PopStyleColor();
+			}
+			ImGui::Spacing();
+			ImGui::BeginDisabled(Locked());
+			if (!s_external) {
+				if (needsRuntime) {
+					if (PrimaryAction("Choose FujiNet-PC")) Browse();
+					SameLineIfFits("Download FujiNet-PC");
+					if (ActionButton("Download FujiNet-PC"))
+						SDL_OpenURL("https://github.com/FujiNetWIFI/fujinet-firmware/releases");
+					Hint("Use an official ATARI release for your operating system.");
+				} else {
+					const std::string executable(s_executable);
+					const auto separator = executable.find_last_of("/\\");
+					ImGui::TextWrapped("Runtime: %s", executable.substr(separator == std::string::npos ? 0 : separator + 1).c_str());
+					if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s_executable);
+					if (status.running) {
+						SameLineIfFits("Stop FujiNet-PC");
+						ImGui::BeginDisabled(status.stopping);
+						if (ActionButton("Stop FujiNet-PC")) ATUIFujiNetStopRuntime();
+						ImGui::EndDisabled();
+					} else {
+						SameLineIfFits("Change...");
+						if (ActionButton("Change...")) Browse();
+					}
+					ImGui::Spacing();
+					ImGui::BeginDisabled(status.stopping || status.bootPending);
+					if (status.connected) {
+						if (PrimaryAction("Boot Atari")) ATUIFujiNetBoot();
+					} else if (PrimaryAction(status.running ? "Boot when connected" : "Start and Boot FujiNet")) {
+						ATUIFujiNetStartAndBoot();
+					}
+					ImGui::EndDisabled();
+					if (status.bootPending) {
+						SameLineIfFits("Cancel boot");
+						if (ActionButton("Cancel boot")) s_bootPending = false;
+					} else if (!status.running) {
+						SameLineIfFits("Start without booting");
+						if (ActionButton("Start without booting")) ATUIFujiNetStartRuntime();
+					}
+					if (status.running) {
+						SameLineIfFits("Open Web Interface");
+						if (ActionButton("Open Web Interface")) OpenWebInterface(status);
+					}
+					if (status.running && !status.listening && !status.stopping) {
+						if (ActionButton("Reconnect NetSIO")) ATUIFujiNetReconnect();
+					}
+					BootNote();
+					if (status.bootPending) Hint("The Atari will boot as soon as FujiNet connects.");
+				}
+			} else {
+				if (status.connected) {
+					if (PrimaryAction("Boot Atari")) ATUIFujiNetBoot();
+					SameLineIfFits(s_webURL[0] ? "Open Web Interface" : "Set web address");
+					if (ActionButton(s_webURL[0] ? "Open Web Interface" : "Set web address")) {
+						if (s_webURL[0]) OpenWebInterface(status);
+						else s_openConnection = true;
+					}
+					BootNote();
+				} else if (!status.listening) {
+					if (PrimaryAction(status.present ? "Reconnect NetSIO" : "Connect NetSIO"))
+						ATUIFujiNetConfigureListener(s_lan, s_port, s_timeout);
+				}
+				if (status.listening) {
+					ImGui::TextWrapped("Listening on %s", ListenerEndpoint().c_str());
+					if (ActionButton("Disconnect")) ATUIFujiNetDisconnect();
+				}
+				if (!status.connected) Hint("Send NetSIO from your FujiNet or existing FujiNet-PC to this computer.");
+			}
+			ImGui::EndDisabled();
+			if (Locked()) Hint("FujiNet changes are disabled during netplay.");
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Spacing();
+			if (!s_external && DetailHeader(needsRuntime ? "Installation help" : "Runtime settings")) {
+				ImGui::Indent();
+				Hint("Extract the official ATARI archive for your system. Select fujinet (fujinet.exe on Windows), "
+					"with data/ and fnconfig.ini beside it. AltirraSDL keeps a private configuration and SD card.");
+				ImGui::BeginDisabled(Locked() || status.running);
+				FieldLabel("Executable");
+				ImGui::InputText("##Executable", s_executable, sizeof s_executable);
+				if (ImGui::IsItemDeactivatedAfterEdit()) Save();
+				FieldLabel("Local web port");
+				ImGui::InputInt("##Local web port", &s_webPort, 0, 0);
+				if (ImGui::IsItemDeactivatedAfterEdit()) {
+					s_webPort = std::clamp(s_webPort, 1, 65535);
+					Save();
+				}
+				ImGui::EndDisabled();
+				ImGui::Unindent();
+			}
+			ConnectionDetails(status);
+			LocalDiskDetails(status);
+			Diagnostics(status);
 		}
 #endif
 	}
 	ImGui::End();
+	ImGui::PopStyleVar(2);
 }

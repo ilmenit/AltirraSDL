@@ -75,6 +75,13 @@
   errors are prominent, and unavailable actions reflect the current state.
   The web-interface button uses the managed runtime's local port while it
   is running and restores the saved external URL when it stops.
+- Reorganized FujiNet into Local PC and External workflows, with a compact
+  state-dependent action area and expandable runtime, connection, drive and
+  diagnostic controls. Existing custom-device/Python-hub setups retain their
+  own manual view. Native/legacy route conflicts and attempts to replace an
+  existing external peer with a managed process are rejected before mutation.
+  Mode preferences also persist when the configuration directory is new.
+  Added a live legacy-bridge test option and descriptor-detection regressions.
 - Added real UDP protocol, process ownership and UI regression tests,
   plus an opt-in end-to-end test using actual FujiNet-PC and Atari OS SIO
   calls for configuration boot, network/JSON, SD/TNFS and local-drive

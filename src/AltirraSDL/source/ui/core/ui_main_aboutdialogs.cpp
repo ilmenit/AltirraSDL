@@ -179,7 +179,7 @@ void ATUIRenderChangeLogDialog(ATUIState &state) {
 		"  - Mosaic 64K Select memory expansion\n"
 		"  - Austin Franklin 80-column video board\n"
 		"  - HTTP/HTTPS image downloads from File > Open Image from URL\n"
-		"  - Native NetSIO and managed FujiNet-PC in Tools > FujiNet\n"
+		"  - Native NetSIO, managed and manual FujiNet workflows\n"
 		"  - Additional 80-column output presentation checks\n\n"
 		"Current status:\n"
 		"  - Full emulation core (CPU, ANTIC, GTIA, POKEY, PIA)\n"
