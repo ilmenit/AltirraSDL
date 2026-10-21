@@ -147,11 +147,12 @@ private:
 	unsigned mEntries = 0;
 };
 
-void ExtractZip(const fs::path& archive, Writer& writer) {
+void ExtractZip(const fs::path& archive, Writer& writer, Progress& progress) {
 	VDFileStream input(Wide(archive).c_str());
 	VDZipArchive zip;
 	zip.Init(&input);
 	for (sint32 i = 0; i < zip.GetFileCount(); ++i) {
+		CheckCancel(progress);
 		const auto& info = zip.GetFileInfo(i);
 		const std::string name = UTF8(info.mDecodedFileName.c_str());
 		if (!name.empty() && (name.back() == '/' || name.back() == '\\')) {
@@ -195,10 +196,23 @@ void ExtractTarGz(const fs::path& archive, Writer& writer, Progress& progress) {
 	VDGUnzipStream gzip(&input, (uint64)length);
 	gzip.EnableCRC();
 	gzip.SetExpectedCRC(VDReadUnalignedLEU32(trailer));
+	// Bound every decompressed byte, including skipped special members,
+	// metadata and trailing blocks. Writer only counts extracted files.
+	uint64_t expanded = 0;
+	const auto readSome = [&](void* buffer, sint32 count) {
+		CheckCancel(progress);
+		const sint32 n = gzip.ReadData(buffer, count);
+		if (n > 0) {
+			expanded += (uint64_t)n;
+			if (expanded > kMaxExpandedBytes)
+				throw std::runtime_error("The FujiNet-PC archive is unexpectedly large.");
+		}
+		return n;
+	};
 	const auto read = [&](void* buffer, size_t count) {
 		size_t done = 0;
 		while (done < count) {
-			const sint32 n = gzip.ReadData((char*)buffer + done, (sint32)(count - done));
+			const sint32 n = readSome((char*)buffer + done, (sint32)(count - done));
 			if (n <= 0) throw std::runtime_error("The FujiNet-PC archive ends unexpectedly.");
 			done += (size_t)n;
 		}
@@ -224,6 +238,8 @@ void ExtractTarGz(const fs::path& archive, Writer& writer, Progress& progress) {
 		if (sum != Octal(header + 148, 8))
 			throw std::runtime_error("The FujiNet-PC archive is damaged (tar header checksum).");
 		const uint64_t size = Octal(header + 124, 12);
+		if (size > kMaxExpandedBytes - expanded)
+			throw std::runtime_error("The FujiNet-PC archive is unexpectedly large.");
 		const char type = (char)header[156];
 		std::string name = Field(header, 100);
 		// POSIX ustar ("ustar\0" + "00") has a name prefix; the older GNU
@@ -268,7 +284,7 @@ void ExtractTarGz(const fs::path& archive, Writer& writer, Progress& progress) {
 	}
 	// Consume the remaining blocks so the gzip CRC and length are verified.
 	char rest[4096];
-	while (gzip.ReadData(rest, sizeof rest) > 0) {}
+	while (readSome(rest, sizeof rest) > 0) {}
 	gzip.VerifyCRC();
 }
 
@@ -433,7 +449,7 @@ void Extract(const std::string& archive, const std::string& directory, Progress&
 	const auto source = Path(archive);
 	const auto name = UTF8(source.filename());
 	Writer writer(Path(directory), progress);
-	if (EndsWith(name, ".zip")) ExtractZip(source, writer);
+	if (EndsWith(name, ".zip")) ExtractZip(source, writer, progress);
 	else if (EndsWith(name, ".tar.gz") || EndsWith(name, ".tgz")) ExtractTarGz(source, writer, progress);
 	else throw std::runtime_error("Unsupported FujiNet-PC archive type.");
 }

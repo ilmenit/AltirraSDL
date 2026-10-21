@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """One-click FujiNet-PC install against a local mock of GitHub's release API."""
+import gzip
 import hashlib
 import http.server
 import io
@@ -198,6 +199,16 @@ def main():
         assert not run(binary, 'extract', str(archive), str(target))['ERROR']
         assert (target / 'fujinet-pc-ATARI' / 'fujinet.exe').stat().st_size == 4098
         assert (target / 'fujinet-pc-ATARI' / 'data' / '850relocator.bin').read_bytes() == b'data'
+        # Cancellation also applies to ZIPs containing only empty entries.
+        empty = pathlib.Path(temp) / 'empty.zip'
+        with zipfile.ZipFile(empty, 'w') as entries:
+            entries.writestr('data/', b'')
+            entries.writestr('data/empty', b'')
+        cancelled = pathlib.Path(temp) / 'cancelled out'
+        cancelled.mkdir()
+        assert 'cancelled' in run(binary, 'extract-cancel', str(empty),
+                                  str(cancelled))['ERROR']
+        assert not list(cancelled.iterdir())
         # Hostile member names are rejected before anything escapes.
         for index, name in enumerate(['../escaped.txt', '/tmp/altirra-escaped.txt',
                                       'ok/../../escaped.txt', 'ok/D:escaped.txt',
@@ -209,6 +220,29 @@ def main():
             error = run(binary, 'extract', str(archive), str(target))['ERROR']
             assert 'path' in error, (name, error)
             assert not (pathlib.Path(temp) / 'escaped.txt').exists()
+        # Skipped tar members must obey the expansion bound too. A header
+        # alone suffices: reject its impossible size before reading payload.
+        for index, kind in enumerate([tarfile.DIRTYPE, tarfile.SYMTYPE,
+                                      tarfile.XHDTYPE]):
+            info = tarfile.TarInfo('oversized')
+            info.type = kind
+            info.size = 513 * 1024 * 1024
+            archive = pathlib.Path(temp) / f'oversized{index}.tar.gz'
+            archive.write_bytes(gzip.compress(info.tobuf()))
+            target = pathlib.Path(temp) / f'oversized out {index}'
+            target.mkdir()
+            error = run(binary, 'extract', str(archive), str(target))['ERROR']
+            assert 'unexpectedly large' in error, (kind, error)
+        # A zero tar end marker must not permit an unlimited gzip tail.
+        archive = pathlib.Path(temp) / 'oversized-tail.tar.gz'
+        with gzip.open(archive, 'wb') as compressed:
+            block = bytes(1024 * 1024)
+            for _ in range(513):
+                compressed.write(block)
+        target = pathlib.Path(temp) / 'oversized tail out'
+        target.mkdir()
+        error = run(binary, 'extract', str(archive), str(target))['ERROR']
+        assert 'unexpectedly large' in error, error
         # A damaged archive is reported, not half-installed silently.
         archive = pathlib.Path(temp) / 'damaged.tar.gz'
         data = bytearray(FILES['fujinet-pc-ATARI_v9.9-dev_ubuntu-24.04-amd64.tar.gz'])

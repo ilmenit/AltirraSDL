@@ -11,8 +11,9 @@ int main(int argc, char** argv) {
 	if (argc < 4) return 2;
 	const std::string mode = argv[1];
 	ATFujiNetInstall::Progress progress;
-	if (mode == "extract") {
-		// extract <archive> <directory>
+	if (mode == "extract" || mode == "extract-cancel") {
+		// extract[-cancel] <archive> <directory>
+		progress.cancel = mode == "extract-cancel";
 		try {
 			ATFujiNetInstall::Extract(argv[2], argv[3], progress);
 			std::printf("ERROR \n");
