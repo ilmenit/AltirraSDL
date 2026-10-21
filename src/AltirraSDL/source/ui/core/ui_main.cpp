@@ -538,6 +538,12 @@ void ATUIPollDeferredActions() {
 				}
 
 				if (loadSuccess) {
+					// Executables have no mounted-media object retaining their
+					// path. Keep UI loads consistent with command-line loads so
+					// per-game checkpoints can identify this session too.
+					if (ctx.mLoadType != kATImageType_SaveState
+						&& ctx.mLoadType != kATImageType_SaveState2)
+						ATSetLastBootMediaPathSDL3(a.path);
 					// URL downloads finish asynchronously while a gaming file
 					// browser may still be open. Return to the emulated display
 					// only after the image has actually loaded successfully.

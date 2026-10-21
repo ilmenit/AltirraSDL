@@ -15,7 +15,7 @@ name: Android build
 #
 # The mobile touch UI lives in src/AltirraSDL/source/ui/mobile/ and the
 # Java SDLActivity shim is wired up by android/setup_sdl3.sh, which
-# scripts/build/android.sh runs as needed.
+# scripts/build/android.sh runs before every build.
 #
 # Triggers:
 #   - push to main       → updates the rolling "nightly" prerelease
@@ -59,6 +59,9 @@ jobs:
       # scripts/build/android.sh fetches via android/setup_sdl3.sh, and the
       # Gradle native build tree (.cxx contains CMake configure output and
       # ninja build state for the SDL3 + AltirraSDL .so compilation).
+      # Fallback restores may contain an older SDL release. The build always
+      # runs setup_sdl3.sh to synchronize clean clones, verify Java linkage,
+      # and invalidate .cxx when its SDL revision stamp differs or is absent.
       # The Android SDK itself lives outside $HOME on GH-hosted runners
       # (/usr/local/lib/android/sdk) and is preinstalled, so no SDK cache.
       - name: Cache Gradle + SDL3 source + native build

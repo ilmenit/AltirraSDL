@@ -202,6 +202,10 @@ static ATPacingMode g_pacingMode = ATPacingMode::Auto;
 // simulator tick are both skipped so we do not touch a dead EGL surface
 // and do not burn battery while the user cannot see us.
 static bool g_appSuspended = false;
+
+bool ATIsAppSuspendedSDL3() {
+	return g_appSuspended;
+}
 // MACLEAK DEBUG: true only between PrepareFrame consuming a new emulator
 // frame and the next RenderAndPresent upload decision. See MAC_OS_LEAK_DEBUG.md.
 static bool g_macLeakNewFrame = false;
@@ -1104,16 +1108,12 @@ static void HandleEvents() {
 		// or the OS is about to kill the process.  While suspended, the
 		// EGL surface may be destroyed — we MUST NOT call into the display
 		// backend (glViewport / SDL_GL_SwapWindow) until we are resumed,
-		// or the app will SIGSEGV.  These also fire on desktop for
-		// minimize/restore, and the same guard is correct there.
+		// or the app will SIGSEGV. Desktop minimize/restore events are
+		// handled independently and must not suspend emulation.
 		case SDL_EVENT_WILL_ENTER_BACKGROUND:
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: WILL_ENTER_BACKGROUND — releasing input");
-			ATInputSDL3_ReleaseAllKeys();
-			ATUIReleaseMouse();
-			ATTouchControls_ReleaseAll();
-			ATMobileGamepad_ReleaseAll(g_sim);
-			ATUIVirtualKeyboard_ReleaseAll(g_sim);
+			ReleaseEmulatorInputsForUI();
 #ifdef __ANDROID__
 #ifdef ALTIRRA_NETPLAY_ENABLED
 			// Stop gameplay and release session inputs before restoring the
@@ -1734,6 +1734,10 @@ int main(int argc, char *argv[]) {
 	// if the manifest meta-data ever drops out.  See main_sdl3.cpp
 	// SDL_SCANCODE_AC_BACK rewrite below for the rest of the chain.
 	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+	// Deliver background events before SDL blocks, so the main thread can
+	// save progress before Android kills a background process. Our suspended
+	// tick path owns the render/simulation guard and low-CPU wait.
+	SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
 #endif
 
 	phase = "SDL_Init";
@@ -2834,7 +2838,7 @@ int main(int argc, char *argv[]) {
 	}
 
 #if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
-	{
+	if (!cmdLineHadBootImage) {
 		bool restored = false;
 #ifdef __ANDROID__
 		restored = ATMobileUI_RestoreSuspendState(g_sim, g_mobileState);

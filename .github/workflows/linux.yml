@@ -131,7 +131,7 @@ jobs:
           chmod +x ./build.sh ./scripts/build/*.sh
           ./build.sh --appimage
 
-      - name: Test speed, video, URL imports and FujiNet workflows
+      - name: Test mobile suspend, netplay, video and FujiNet workflows
         if: matrix.arch == 'x86_64'
         shell: bash
         env:
@@ -150,6 +150,7 @@ jobs:
             tests/ui/test_fujinet.py tests/ui/test_fujinet_restart.py \
             tests/ui/test_fujinet_file.py tests/ui/test_fujinet_install.py \
             tests/ui/test_netplay_input.py tests/ui/test_netplay_teardown.py \
+            tests/ui/test_mobile_suspend.py tests/test_android_sdl_setup.py \
             --emu-path=build/linux-release/src/AltirraSDL/AltirraSDL
 
       - name: Inspect AppImage

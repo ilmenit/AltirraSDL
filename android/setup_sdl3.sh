@@ -3,16 +3,18 @@
 # setup_sdl3.sh — Fetch SDL3 source and set up Java sources for Android build.
 #
 # SDL3 on Android requires both:
-#   1. Native C library (built by CMake via FetchContent — automatic)
+#   1. Native C library (built by CMake from android/SDL3)
 #   2. Java SDLActivity class (must be in the Android project's Java source path)
 #
-# This script clones the SDL3 source (if not already present) and symlinks
-# the Java sources into the Android project so Gradle can compile them.
+# This script synchronizes a clean SDL3 clone to the pinned release and
+# symlinks its Java sources into the Android project. Dirty clones and real
+# Java directories are preserved with an error; move local work aside before
+# retrying. Native CMake caches are invalidated when SDL revisions change.
 #
 # Usage:
 #   cd android && ./setup_sdl3.sh
 #
-# Run once before the first `./gradlew assembleDebug`.
+# Run before each build, including when restoring CI caches.
 
 set -euo pipefail
 
@@ -23,15 +25,35 @@ SDL3_TAG="release-3.4.14"  # Keep Java SDLActivity sources aligned with CMake.
 
 echo "=== Altirra Android — SDL3 Setup ==="
 
+fail() {
+    echo "[error] $*" >&2
+    exit 1
+}
+
 # ── Step 1: Get SDL3 source ──────────────────────────────────────────────
-if [ -d "$SDL3_DIR" ]; then
-    echo "[ok] SDL3 source already present at $SDL3_DIR"
+if [ -e "$SDL3_DIR" ] || [ -L "$SDL3_DIR" ]; then
+    [ ! -L "$SDL3_DIR" ] && [ -d "$SDL3_DIR/.git" ] \
+        || fail "$SDL3_DIR must be an SDL3 Git clone; move it aside and rerun setup."
+    # Never overwrite developer changes, even if HEAD already has the pin.
+    [ -z "$(git -C "$SDL3_DIR" status --porcelain --untracked-files=all)" ] \
+        || fail "SDL3 has local changes in $SDL3_DIR. Commit or move them aside before building the pinned $SDL3_TAG."
 else
     echo "[info] Cloning SDL3 ($SDL3_TAG)..."
     git clone --depth 1 --branch "$SDL3_TAG" \
         https://github.com/libsdl-org/SDL.git "$SDL3_DIR"
     echo "[ok] SDL3 source cloned"
 fi
+
+if ! git -C "$SDL3_DIR" rev-parse --verify "refs/tags/$SDL3_TAG^{commit}" >/dev/null 2>&1; then
+    git -C "$SDL3_DIR" fetch --depth 1 https://github.com/libsdl-org/SDL.git \
+        "refs/tags/$SDL3_TAG:refs/tags/$SDL3_TAG"
+fi
+SDL3_REVISION="$(git -C "$SDL3_DIR" rev-parse "refs/tags/$SDL3_TAG^{commit}")"
+if [ "$(git -C "$SDL3_DIR" rev-parse HEAD)" != "$SDL3_REVISION" ]; then
+    echo "[info] Updating SDL3 to $SDL3_TAG"
+    git -C "$SDL3_DIR" checkout --detach "$SDL3_REVISION"
+fi
+echo "[ok] SDL3 $SDL3_TAG ($SDL3_REVISION)"
 
 # ── Step 2: Symlink Java sources ─────────────────────────────────────────
 # SDL3's Java sources (SDLActivity.java etc.) must be on Gradle's Java
@@ -48,15 +70,32 @@ if [ ! -d "$SDL3_JAVA_PKG" ]; then
 fi
 
 if [ -L "$LINK_TARGET" ]; then
-    echo "[ok] SDL3 Java symlink already exists"
-elif [ -d "$LINK_TARGET" ]; then
-    echo "[warn] $LINK_TARGET exists as directory — replacing with symlink"
-    rm -rf "$LINK_TARGET"
+    if [ "$(readlink "$LINK_TARGET")" != "$SDL3_JAVA_PKG" ]; then
+        rm "$LINK_TARGET"
+        ln -s "$SDL3_JAVA_PKG" "$LINK_TARGET"
+    fi
+    echo "[ok] SDL3 Java symlink verified"
+elif [ -e "$LINK_TARGET" ]; then
+    fail "$LINK_TARGET is not a symlink. Move it aside before setup; its contents have been preserved."
+else
+    mkdir -p "$(dirname "$LINK_TARGET")"
     ln -s "$SDL3_JAVA_PKG" "$LINK_TARGET"
     echo "[ok] SDL3 Java symlink created"
-else
-    ln -s "$SDL3_JAVA_PKG" "$LINK_TARGET"
-    echo "[ok] SDL3 Java symlink created: $LINK_TARGET -> $SDL3_JAVA_PKG"
+fi
+
+# AGP caches CMake configuration and Ninja outputs here. A restored cache
+# may belong to another SDL release, or predate revision tracking entirely.
+NATIVE_CACHE="$SCRIPT_DIR/app/.cxx"
+REVISION_STAMP="$NATIVE_CACHE/.altirra-sdl3-revision"
+PREVIOUS_REVISION=""
+if [ -f "$REVISION_STAMP" ]; then
+    PREVIOUS_REVISION="$(cat "$REVISION_STAMP")"
+fi
+if [ "$PREVIOUS_REVISION" != "$SDL3_REVISION" ]; then
+    echo "[info] Invalidating native CMake cache for SDL3 $SDL3_TAG"
+    rm -rf "$NATIVE_CACHE"
+    mkdir -p "$NATIVE_CACHE"
+    echo "$SDL3_REVISION" > "$REVISION_STAMP"
 fi
 
 # ── Step 3: Verify Gradle wrapper ────────────────────────────────────────

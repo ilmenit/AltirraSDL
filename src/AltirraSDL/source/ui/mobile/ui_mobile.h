@@ -161,11 +161,11 @@ void ATMobileUI_InvalidateFileBrowser();
 // response to Android lifecycle events.  Safe no-ops if the feature
 // is disabled in the user's settings, or if no game is loaded.
 //
-// SaveSuspendState: writes the current emulator state to a
-//   well-known file under the config dir.  Called from
+// SaveSuspendState: atomically replaces the per-game checkpoint and records
+//   its identity under the machine-global Mobile key. Called from
 //   SDL_EVENT_WILL_ENTER_BACKGROUND and SDL_EVENT_TERMINATING.
-// RestoreSuspendStateIfAny: at startup, loads the file if present
-//   and restores the emulator to the previous state.  Returns true
+// RestoreSuspendState: at startup, loads the last recorded checkpoint
+//   and restores the emulator and explicit pause state. Returns true
 //   if a state was restored.  The file is kept so a subsequent
 //   crash can still recover.
 void ATMobileUI_SaveSuspendState(class ATSimulator &sim,
@@ -173,6 +173,7 @@ void ATMobileUI_SaveSuspendState(class ATSimulator &sim,
 bool ATMobileUI_RestoreSuspendState(class ATSimulator &sim,
 	ATMobileUIState &mobileState);
 void ATMobileUI_ClearSuspendState();
+VDStringW ATMobileUI_GetSuspendStatePath();
 
 // Check if this is a first run (no firmware configured or wizard
 // not yet completed).  True until ATMobileUI_FinishFirstRun is called.

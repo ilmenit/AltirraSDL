@@ -19,6 +19,9 @@
 #include "firmwaremanager.h"
 
 class ATSimulator;
+// Ignore the hamburger's temporary pause when checkpointing a session.
+bool MobileSessionWasPaused(const ATSimulator& sim,
+	const ATMobileUIState& mobileState);
 struct ATUIState;
 struct SDL_Window;
 

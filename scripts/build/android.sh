@@ -255,10 +255,9 @@ info "Debug keystore: $KEYSTORE"
 # =========================================================================
 
 info "Checking SDL3 Android setup..."
-if [ ! -d "$ANDROID_DIR/SDL3" ] || [ ! -L "$ANDROID_DIR/app/src/main/java/org/libsdl" ]; then
-    info "Running SDL3 setup..."
-    (cd "$ANDROID_DIR" && bash setup_sdl3.sh)
-fi
+# Always verify the source pin: CI's fallback cache may contain an older
+# checkout even when both the directory and Java symlink already exist.
+(cd "$ANDROID_DIR" && bash setup_sdl3.sh)
 ok "SDL3 ready"
 
 # Gradle wrapper setup.

@@ -263,6 +263,10 @@ const VDStringW& ATGetLastBootMediaPathSDL3() {
 	return g_lastBootMediaPath;
 }
 
+void ATSetLastBootMediaPathSDL3(const VDStringW& path) {
+	g_lastBootMediaPath = path;
+}
+
 // ---------------------------------------------------------------------------
 // ATProcessCommandLineSDL3
 // ---------------------------------------------------------------------------

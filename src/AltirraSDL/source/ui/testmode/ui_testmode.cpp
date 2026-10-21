@@ -432,8 +432,16 @@ static bool* FindDialogField(ATUIState &state, const std::string &name) {
 }
 
 // Build the query_state JSON response
+extern bool ATIsAppSuspendedSDL3();
+
 static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	std::string json = "{\"ok\":true,\"state\":{";
+
+	json += "\"appSuspended\":";
+	json += ATIsAppSuspendedSDL3() ? "true" : "false";
+	json += ",\"mobile\":{\"gameLoaded\":";
+	json += g_mobileState.gameLoaded ? "true" : "false";
+	json += ",\"currentScreen\":" + std::to_string((int)g_mobileState.currentScreen) + "},";
 
 	// Dialog flags
 	json += "\"dialogs\":{";
@@ -2319,6 +2327,32 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 
 	// Physical-event regression helpers exercise SDL routing, not just ImGui
 	// navigation or direct emulated joystick injection.
+	if (verb == "app_lifecycle") {
+		const auto direction = NextToken(cmd);
+		if (direction != "background" && direction != "foreground")
+			return JsonError("usage: app_lifecycle <background|foreground>");
+		SDL_Event event {};
+		event.type = direction == "background"
+			? SDL_EVENT_WILL_ENTER_BACKGROUND : SDL_EVENT_WILL_ENTER_FOREGROUND;
+		if (!SDL_PushEvent(&event)) return JsonError(SDL_GetError());
+		event.type = direction == "background"
+			? SDL_EVENT_DID_ENTER_BACKGROUND : SDL_EVENT_DID_ENTER_FOREGROUND;
+		return SDL_PushEvent(&event) ? JsonOk() : JsonError(SDL_GetError());
+	}
+	if (verb == "suspend_state") {
+		const auto action = NextToken(cmd);
+		if (action == "save") ATMobileUI_SaveSuspendState(sim, g_mobileState);
+		else if (action == "clear") ATMobileUI_ClearSuspendState();
+		else if (action == "restore") {
+			const bool restored = ATMobileUI_RestoreSuspendState(sim, g_mobileState);
+			return std::string("{\"ok\":true,\"restored\":")
+				+ (restored ? "true}" : "false}");
+		} else if (action == "path") {
+			return "{\"ok\":true,\"path\":\"" + JsonEscape(
+				VDTextWToU8(ATMobileUI_GetSuspendStatePath()).c_str()) + "\"}";
+		} else return JsonError("usage: suspend_state <save|restore|clear|path>");
+		return JsonOk();
+	}
 	if (verb == "physical_focus") {
 		const std::string direction = NextToken(cmd);
 		if (direction != "lost" && direction != "gained")
@@ -3358,6 +3392,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"input_maps\","
 			"\"input_map_add_binding <map index> <controller index> <source code> <target code>\","
 			"\"physical_key <down|up> <SDL scancode name>\","
+			"\"app_lifecycle <background|foreground>\","
+			"\"suspend_state <save|restore|clear|path>\","
 			"\"physical_focus <lost|gained>\","
 			"\"virtual_controller <attach raw|attach gamepad|detach N|axis N I V|button N I V|hat N I V>\","
 			"\"list_dialogs\","

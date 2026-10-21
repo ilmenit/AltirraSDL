@@ -755,9 +755,19 @@ static bool ConsumeMenuTap() {
 // -------------------------------------------------------------------------
 
 static bool s_wasPausedBeforeMenu = false;
+static bool s_menuPauseActive = false;
+
+bool MobileSessionWasPaused(const ATSimulator& sim,
+	const ATMobileUIState& mobileState)
+{
+	return s_menuPauseActive
+		&& mobileState.currentScreen != ATMobileUIScreen::None
+		? s_wasPausedBeforeMenu : sim.IsPaused();
+}
 
 void ATMobileUI_OpenMenu(ATSimulator &sim, ATMobileUIState &mobileState) {
 	s_wasPausedBeforeMenu = sim.IsPaused();
+	s_menuPauseActive = true;
 	sim.Pause();
 	ATTouchControls_ReleaseAll();
 	mobileState.currentScreen = ATMobileUIScreen::HamburgerMenu;
@@ -765,6 +775,7 @@ void ATMobileUI_OpenMenu(ATSimulator &sim, ATMobileUIState &mobileState) {
 
 void ATMobileUI_CloseMenu(ATSimulator &sim, ATMobileUIState &mobileState) {
 	mobileState.currentScreen = ATMobileUIScreen::None;
+	s_menuPauseActive = false;
 	if (!s_wasPausedBeforeMenu)
 		sim.Resume();
 }
