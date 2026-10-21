@@ -182,8 +182,11 @@ void Get(const Request& in, Response& out) {
 	// Keep cancellation/shutdown bounded even while a synchronous OS
 	// request is waiting on an unresponsive server. The complete transfer
 	// retains its longer deadline, checked between network operations.
-	const int wait = (int)(tmo < 5000 ? tmo : 5000);
-	WinHttpSetTimeouts(session.h, wait, wait, wait, wait);
+	const int wait = (int)(tmo < 2000 ? tmo : 2000);
+	if (!WinHttpSetTimeouts(session.h, wait, wait, wait, wait)) {
+		out.error = LastErrorText("WinHttpSetTimeouts");
+		return;
+	}
 
 	HInternetGuard connect;
 	connect.h = WinHttpConnect(session.h, hostBuf, uc.nPort, 0);
@@ -209,6 +212,12 @@ void Get(const Request& in, Response& out) {
 		reqFlags);
 	if (!request.h) {
 		out.error = LastErrorText("WinHttpOpenRequest");
+		return;
+	}
+	// Apply on the request as well: the body must use this cancellation
+	// bound independently of proxy/session defaults.
+	if (!WinHttpSetTimeouts(request.h, wait, wait, wait, wait)) {
+		out.error = LastErrorText("WinHttpSetTimeouts");
 		return;
 	}
 
@@ -265,7 +274,11 @@ void Get(const Request& in, Response& out) {
 		}
 	}
 
-	// Body.
+	// Read directly into a fixed chunk. QueryDataAvailable is unnecessary
+	// for streaming and can wait for the remote server even while the user
+	// has cancelled. A bounded ReadData wait gives us a cancellation check
+	// between each receive, including when the server has stopped sending.
+	uint8_t chunk[32768];
 	for (;;) {
 		if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
 			out.status = 0;
@@ -274,38 +287,26 @@ void Get(const Request& in, Response& out) {
 			return;
 		}
 
-		DWORD avail = 0;
-		if (!WinHttpQueryDataAvailable(request.h, &avail)) {
-			out.error = LastErrorText("WinHttpQueryDataAvailable");
+		DWORD read = 0;
+		if (!WinHttpReadData(request.h, chunk, sizeof chunk, &read)) {
+			out.error = LastErrorText("WinHttpReadData");
 			out.status = 0;
 			return;
 		}
-		if (!avail)
+		if (!read)
 			break;
 		if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
-		if (in.maxBodyBytes && out.body.size() + avail > in.maxBodyBytes) {
+		if (in.maxBodyBytes && out.body.size() + read > in.maxBodyBytes) {
 			out.status = 0;
 			out.body.clear();
 			out.error = "response too large";
 			return;
 		}
 
-		const size_t base = out.body.size();
-		out.body.resize(base + avail);
-		DWORD read = 0;
-		if (!WinHttpReadData(request.h, out.body.data() + base, avail,
-			&read))
-		{
-			out.error = LastErrorText("WinHttpReadData");
-			out.status = 0;
-			return;
-		}
-		out.body.resize(base + read);
+		out.body.insert(out.body.end(), chunk, chunk + read);
 		if (in.bytesReceived)
 			in.bytesReceived->store(out.body.size(), std::memory_order_relaxed);
-		if (!read)
-			break;
 	}
 }
 

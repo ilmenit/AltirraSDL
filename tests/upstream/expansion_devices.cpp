@@ -1,4 +1,5 @@
 #include <stdafx.h>
+#include <memory>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -72,7 +73,9 @@ static vdrefptr<IATObjectState> RoundTrip(IATObjectState *state) {
 }
 
 static void TestMosaic() {
-	ATMemoryManager mem;
+	// Allocate the large page tables outside the Windows 1 MiB stack.
+	auto storage = std::make_unique<ATMemoryManager>();
+	auto& mem = *storage;
 	mem.Init();
 	uint8 base[65536];
 	memset(base, 0x5A, sizeof base);
@@ -125,7 +128,9 @@ static uint32 Pixel(ATDeviceAF80& dev, unsigned x, unsigned y) {
 	return ((const uint32 *)((const char *)frame.data + y * frame.pitch))[x];
 }
 static void TestAF80() {
-	ATMemoryManager mem;
+	// Allocate the large page tables outside the Windows 1 MiB stack.
+	auto storage = std::make_unique<ATMemoryManager>();
+	auto& mem = *storage;
 	mem.Init();
 	uint8 base[65536];
 	memset(base, 0x5A, sizeof base);

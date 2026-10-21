@@ -1,4 +1,5 @@
 #include <stdafx.h>
+#include <memory>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -102,7 +103,9 @@ int main() {
 		Check(mode != kATCartridgeMode_None && ATGetImageSizeForCartridgeType(mode) == size,
 			"RAM cartridge mapper/size missing");
 		Check(ATGetCartridgeMapperForMode(mode, size) == mapper, "Mapper roundtrip failed");
-		Services services;
+		// The memory manager exceeds the Windows default stack reserve.
+		auto storage = std::make_unique<Services>();
+		auto& services = *storage;
 		ATCartridgeEmulator cart(100, kATCartridgePriority_Default, false);
 		cart.SetManager(&services);
 		cart.InitCartridge(&services);
@@ -230,7 +233,9 @@ int main() {
 		ATUIExchangeRamCartSwitchDefaults(false, profileA);
 		Check(ATGetRamCartDefaultSwitches(kATCartridgeMode_RamCart_4M) == 0x13C4,
 			"Returning to saved profile lost physical switches");
-		Services services;
+		// The memory manager exceeds the Windows default stack reserve.
+		auto storage = std::make_unique<Services>();
+		auto& services = *storage;
 		ATCartridgeEmulator cart(100, kATCartridgePriority_Default, false);
 		cart.SetManager(&services);
 		cart.InitCartridge(&services);
