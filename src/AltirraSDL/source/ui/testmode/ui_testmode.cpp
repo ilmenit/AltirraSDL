@@ -2941,6 +2941,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		else if (action == "install") success = ATUIFujiNetInstallRuntime(false);
 		else if (action == "cancel_install") ATUIFujiNetCancelInstall();
 		else if (action == "recheck") success = ATUIFujiNetRecheckLibraries();
+		else if (action == "autostart") success = ATUIFujiNetSetAutoStart(NextToken(cmd) == "1");
 		else if (action != "status") return JsonError("unknown fujinet action");
 		const auto status = ATUIGetFujiNetStatus();
 		if (!success) return JsonError(status.error);
@@ -2963,6 +2964,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		flag("filePending", status.filePending);
 		flag("installing", status.installing);
 		flag("autoSetupPending", status.autoSetupPending);
+		flag("autoStart", status.autoStart);
 		number("installReceived", status.installReceived);
 		number("installTotal", status.installTotal);
 		string("runtimeVersion", status.runtimeVersion);

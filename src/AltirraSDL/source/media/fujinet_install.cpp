@@ -286,7 +286,10 @@ fs::path FindExecutable(const fs::path& root) {
 	return {};
 }
 
-void Download(const Asset& asset, const fs::path& target, Progress& progress) {
+// One attempt; returns an error worth retrying (connection dropped or
+// stalled, server error, short file), or empty on success. Permanent
+// failures throw.
+std::string DownloadOnce(const Asset& asset, const fs::path& target, Progress& progress) {
 	std::ofstream file(target, std::ios::binary | std::ios::trunc);
 	if (!file) throw std::runtime_error("Unable to save the FujiNet-PC download.");
 	ATChecksumEngineSHA256 sha;
@@ -305,15 +308,14 @@ void Download(const Asset& asset, const fs::path& target, Progress& progress) {
 	ATHttp::Response response;
 	ATHttp::Get(request, response);
 	CheckCancel(progress);
-	if (!response.error.empty())
-		throw std::runtime_error("Downloading FujiNet-PC failed: " + response.error);
+	if (!response.error.empty()) return response.error;
+	if (response.status >= 500) return "HTTP " + std::to_string(response.status);
 	if (response.status != 200)
 		throw std::runtime_error("Downloading FujiNet-PC failed: HTTP " + std::to_string(response.status) + ".");
 	file.close();
 	if (!file) throw std::runtime_error("Unable to save the FujiNet-PC download.");
+	if (asset.size && fs::file_size(target) != asset.size) return "the file was incomplete";
 	progress.phase = Phase::Verifying;
-	if (asset.size && fs::file_size(target) != asset.size)
-		throw std::runtime_error("The FujiNet-PC download is incomplete. Try again.");
 	if (!asset.sha256.empty()) {
 		const auto digest = sha.Finalize();
 		static constexpr char hex[] = "0123456789abcdef";
@@ -321,6 +323,25 @@ void Download(const Asset& asset, const fs::path& target, Progress& progress) {
 		for (uint8_t c : digest.mDigest) { text += hex[c >> 4]; text += hex[c & 15]; }
 		if (text != asset.sha256)
 			throw std::runtime_error("The FujiNet-PC download does not match its published checksum. Try again.");
+	}
+	return {};
+}
+// A few megabytes are cheap to fetch again, so a dropped or stalled transfer
+// (WinHTTP gives up after a 2 s receive stall) restarts from the beginning.
+void Download(const Asset& asset, const fs::path& target, Progress& progress) {
+	constexpr unsigned kAttempts = 3;
+	for (unsigned attempt = 1; ; ++attempt) {
+		progress.phase = Phase::Downloading;
+		progress.received = 0;
+		const auto error = DownloadOnce(asset, target, progress);
+		if (error.empty()) return;
+		if (attempt == kAttempts)
+			throw std::runtime_error("Downloading FujiNet-PC failed: " + error +
+				". Check the internet connection and try again.");
+		for (unsigned wait = 0; wait < 10; ++wait) {
+			CheckCancel(progress);
+			std::this_thread::sleep_for(std::chrono::milliseconds(100 * attempt));
+		}
 	}
 }
 } // namespace

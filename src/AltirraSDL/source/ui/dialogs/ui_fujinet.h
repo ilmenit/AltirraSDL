@@ -27,6 +27,11 @@ bool ATUIFujiNetAutoSetup();
 bool ATUIFujiNetInstallRuntime(bool thenStart);
 void ATUIFujiNetCancelInstall();
 bool ATUIFujiNetRecheckLibraries();
+// Called once after startup media is loaded. With the user's "start with
+// AltirraSDL" preference, starts FujiNet-PC (and boots it in Desktop Mode)
+// unless the command line loaded a program.
+void ATUIFujiNetLaunchStartup(bool commandLineBootImage);
+bool ATUIFujiNetSetAutoStart(bool enabled);
 
 struct ATFujiNetUIStatus {
 	bool open = false;
@@ -42,6 +47,7 @@ struct ATFujiNetUIStatus {
 	bool filePending = false;
 	bool installing = false;
 	bool autoSetupPending = false;
+	bool autoStart = false;
 	uint64_t installReceived = 0;
 	uint64_t installTotal = 0;
 	uint64_t fileReceived = 0;

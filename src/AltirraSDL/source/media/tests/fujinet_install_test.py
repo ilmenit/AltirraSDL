@@ -71,6 +71,8 @@ DRAFT = 'fujinet-pc-ATARI_v10-draft_ubuntu-24.04-amd64.tar.gz'
 class Handler(http.server.BaseHTTPRequestHandler):
     downloads = []
     bad_digest = False
+    # Number of upcoming file requests that drop the connection mid-body.
+    drops = 0
 
     def log_message(self, *args):
         pass
@@ -109,6 +111,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith('/files/'):
             name = self.path[len('/files/'):]
             Handler.downloads.append(name)
+            if Handler.drops:
+                Handler.drops -= 1
+                data = FILES[name]
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data[:len(data) // 3])
+                self.close_connection = True
+                return
             self.send(200, FILES[name])
         else:
             self.send(404, b'missing')
@@ -160,6 +171,16 @@ def main():
         assert not pax['ERROR'] and pax['VERSION'].endswith('ubuntu-22.04-amd64'), pax
         # Updating replaces the previous private install.
         assert not program.exists() and pathlib.Path(pax['EXECUTABLE']).is_file()
+        # A dropped transfer is fetched again; three failures give up cleanly.
+        Handler.drops = 1
+        Handler.downloads.clear()
+        retried = run(binary, 'install', url, str(root / 'retry'), 'macos-15-x64.tar.gz')
+        assert not retried['ERROR'] and len(Handler.downloads) == 2, (retried, Handler.downloads)
+        Handler.drops = 3
+        failed = run(binary, 'install', url, str(root / 'dropped'), 'macos-15-x64.tar.gz')
+        Handler.drops = 0
+        assert 'try again' in failed['ERROR'] and not failed['EXECUTABLE'], failed
+        assert not [p for p in (root / 'dropped').iterdir()]
         # Firmware and other machines never match.
         none = run(binary, 'install', url, str(root / 'none'), 'macos-14-arm64.tar.gz')
         assert 'no FujiNet-PC build' in none['ERROR'] and not none['EXECUTABLE'], none

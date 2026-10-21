@@ -2762,6 +2762,10 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	// Fork extension: optional "Start FujiNet when AltirraSDL starts".
+	// A program named on the command line always takes precedence.
+	ATUIFujiNetLaunchStartup(cmdLineHadBootImage);
+
 	// Auto-show setup wizard on first run (matches Windows uicommandline.cpp:824-840).
 	// Skip if: already shown before, command line had arguments, or registry had data
 	// (meaning the program has been run before).

@@ -60,6 +60,18 @@ only decision a newcomer needs:
    AltirraSDL window or a hub holds it) up to 20 following ports are tried;
    the managed runtime is always told the port actually used.
 
+A transport failure, server error or short file is downloaded again (three
+attempts) before an error is reported; a 4xx response or checksum mismatch is
+reported at once.
+
+**Start FujiNet when AltirraSDL starts** (`FujiNet\StartWithAltirra`,
+machine-global, test-mode `fujinet autostart 0|1`) is offered on the guide's
+ready page and in the This computer view. `ATUIFujiNetLaunchStartup()` runs
+once after startup media is loaded: with a valid runtime it calls Start and
+Boot in Desktop Mode and only starts the runtime in Gaming Mode. It does
+nothing when the command line loaded a program, when Other FujiNet is
+selected, or when a manual NetSIO bridge is recognized.
+
 Failures are shown beside the failed checklist step with **Try again** and a
 manual-download fallback. A loader failure during boot keeps the runtime's
 plain-language explanation instead of a generic "exited" message.

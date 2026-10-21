@@ -186,3 +186,57 @@ def test_boot_failure_keeps_the_missing_library_explanation(emu, monkeypatch, tm
         status = wait_status(fresh, lambda s: not s['running'] and not s['bootPending'])
         assert 'OpenSSL 3 (libcrypto.so.3)' in status['error'], status['error']
         assert not fresh.query_state()['state']['sim']['running']
+
+
+def test_start_with_altirra_option_boots_unless_command_line_names_a_program(
+        emu, monkeypatch, tmp_path):
+    from .test_explorers import make_disk
+    suffix = '.exe' if emu.executable.lower().endswith('.exe') else ''
+    fixture = Path(emu.executable).resolve().parents[2] / (
+        'src/AltirraSDL/source/media/tests/altirra-fujinet-pc-test' + suffix)
+    if not fixture.is_file():
+        pytest.skip('Build altirra-fujinet-pc-test for automatic start coverage')
+    runtime = tmp_path / 'fujinet-pc-ATARI'
+    (runtime / 'data').mkdir(parents=True)
+    executable = runtime / ('fujinet' + suffix)
+    executable.write_bytes(fixture.read_bytes())
+    executable.chmod(0o755)
+    (runtime / 'fnconfig.ini').write_text('[BOIP]\nenabled=1\n')
+    for name, value in (('SDL_VIDEODRIVER', 'dummy'), ('SDL_AUDIODRIVER', 'dummy'),
+                        ('ALTIRRA_DISPLAY_BACKEND', 'sdlrenderer'),
+                        ('XDG_CONFIG_HOME', str(tmp_path / 'config'))):
+        monkeypatch.setenv(name, value)
+    port = free_port()
+    with AltirraTestHarness(executable=emu.executable,
+                            extra_args=['--ui-mode', 'desktop']) as fresh:
+        fresh.close_dialog('SetupWizard')
+        fresh.send(f'fujinet listen {port} 0 100')
+        fresh.send(f'fujinet runtime 18000 {executable}')
+        assert not fresh.send('fujinet status')['autoStart']
+        # The option is offered on the panel once a runtime is selected.
+        fresh.send('fujinet show')
+        fresh.wait_frames(5)
+        click(fresh, 'FujiNet', 'Start FujiNet when AltirraSDL starts')
+        assert fresh.send('fujinet status')['autoStart']
+        assert not fresh.send('fujinet status')['running']
+        fresh.send('quit')
+        fresh._proc.wait(timeout=10)
+    with AltirraTestHarness(executable=emu.executable,
+                            extra_args=['--ui-mode', 'desktop']) as fresh:
+        status = wait_status(fresh, lambda s: s['running'] and s['bootPending'])
+        assert status['autoStart'] and status['port'] == port
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
+            peer.bind(('127.0.0.1', 0))
+            peer.sendto(b'\xc1', ('127.0.0.1', port))
+            booted = wait_status(fresh, lambda s: s['connected'] and not s['bootPending'])
+            assert not booted['localD1Enabled']
+        fresh.send('quit')
+        fresh._proc.wait(timeout=10)
+    # A program named on the command line wins over the preference.
+    disk = tmp_path / 'command line.atr'
+    make_disk(disk)
+    with AltirraTestHarness(executable=emu.executable,
+                            extra_args=['--ui-mode', 'desktop', str(disk)]) as fresh:
+        fresh.wait_frames(30)
+        status = fresh.send('fujinet status')
+        assert status['autoStart'] and not status['running'] and not status['bootPending']

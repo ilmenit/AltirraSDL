@@ -3,6 +3,7 @@
 #include <stdafx.h>
 #include "ui_fujinet.h"
 #include "ui_main.h"
+#include "ui_mode.h"
 #include "ui_fonts.h"
 #include "../../media/fujinet_pc.h"
 #include "../../media/fujinet_mount.h"
@@ -93,6 +94,8 @@ int s_webPort = 8000;
 char s_executable[4096] = {};
 char s_webURL[1024] = {};
 std::string s_runtimeVersion;
+// Machine-global like the runtime path: start FujiNet-PC with AltirraSDL.
+bool s_autoStart = false;
 struct InstallJob {
 	ATFujiNetInstall::Progress progress;
 	ATFujiNetInstall::Result result;
@@ -213,6 +216,7 @@ void Load() {
 	VDStringW version;
 	key.getString("RuntimeVersion", version);
 	s_runtimeVersion = VDTextWToU8(version).c_str();
+	s_autoStart = key.getBool("StartWithAltirra", false);
 	s_external = key.getBool("ExternalMode", false) || !ATFujiNetPC::Available();
 	s_loaded = true;
 }
@@ -228,6 +232,7 @@ void Save() {
 	key.setString("WebURL", VDTextU8ToW(VDStringSpanA(s_webURL)).c_str());
 	key.setInt("WebPort", s_webPort);
 	key.setString("RuntimeVersion", VDTextU8ToW(VDStringSpanA(s_runtimeVersion.c_str())).c_str());
+	key.setBool("StartWithAltirra", s_autoStart);
 	key.setBool("ExternalMode", s_external);
 #ifdef __ANDROID__
 	ATRegistryFlushToDisk();
@@ -749,6 +754,23 @@ bool ATUIFujiNetAutoSetup() {
 	s_autoContinue = true;
 	return ContinueAutoSetup();
 }
+bool ATUIFujiNetSetAutoStart(bool enabled) {
+	Load();
+	s_autoStart = enabled;
+	Save();
+	return true;
+}
+void ATUIFujiNetLaunchStartup(bool commandLineBootImage) {
+	Load();
+	if (!s_autoStart || commandLineBootImage || s_external || !ATFujiNetPC::Available() ||
+		!RuntimeReady() || LegacyTransport(true).recognizedLegacy)
+		return;
+	// Gaming Mode's home screen is the Game Library; start FujiNet-PC there
+	// without rebooting the Atari behind it.
+	const bool started = ATUIIsGamingMode() ? ATUIFujiNetStartRuntime() : ATUIFujiNetStartAndBoot();
+	if (!started)
+		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "FujiNet: automatic start failed: %s", s_error.c_str());
+}
 ATFujiNetUIStatus ATUIGetFujiNetStatus() {
 	Load();
 	ATFujiNetUIStatus result;
@@ -775,6 +797,7 @@ ATFujiNetUIStatus ATUIGetFujiNetStatus() {
 		result.installTotal = s_installJob->progress.total.load(std::memory_order_relaxed);
 	}
 	result.autoSetupPending = s_autoContinue;
+	result.autoStart = s_autoStart;
 	result.runtimeVersion = s_runtimeVersion;
 	for (const auto& library : MissingLibraries()) result.missingLibraries.push_back(library.path);
 	if (s_fileJob) {
@@ -1417,6 +1440,14 @@ void ConfigInstructions() {
 		"turned off: System > Internal BASIC, then Boot Atari. Server contents change over time. "
 		"Drag this window aside by its title bar if it covers the Atari screen.");
 }
+void AutoStartOption() {
+	bool enabled = s_autoStart;
+	if (ImGui::Checkbox("Start FujiNet when AltirraSDL starts", &enabled))
+		ATUIFujiNetSetAutoStart(enabled);
+	Tooltip("Every time AltirraSDL starts, FujiNet-PC starts in the background and the Atari "
+		"boots into FujiNet's menu. Opening a program from the command line skips this. In "
+		"Gaming Mode FujiNet-PC starts without restarting the Atari.");
+}
 void GuidedWelcome(const ATFujiNetUIStatus& status) {
 	const auto& package = Package();
 	const bool ready = RuntimeReady();
@@ -1565,6 +1596,9 @@ void GuidedReady(const ATFujiNetUIStatus& status) {
 			SameLineIfFits("Open virtual SD folder");
 			if (ActionButton("Open virtual SD folder")) OpenFolder(StateDirectory() + "/SD");
 			Tooltip("Files copied here appear under the SD server in FujiNet's menu.");
+			ImGui::Spacing();
+			// Offered once it worked, so next time needs no clicks at all.
+			AutoStartOption();
 		}
 	}
 	if (ActionButton("Read the CONFIG and XEX guide")) ATUIShowHelpTopic("sdl-fujinet.html", nullptr);
@@ -1665,6 +1699,7 @@ void LocalView(const ATFujiNetUIStatus& status, bool needsRuntime) {
 			"you choose a game from the internet.");
 	BootNote();
 	RunFileButton(status);
+	AutoStartOption();
 }
 void ExternalView(const ATFujiNetUIStatus& status) {
 	if (status.connected) {
