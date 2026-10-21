@@ -31,3 +31,33 @@ states, game emulation, rendering, audio, real network stacks or network
 connection setup. Real emulator checkpoint and two-process integration
 measurements must be reported separately. Historical failures remain in
 the CSV; only divergence in current configurations causes a failing exit.
+
+## Actual emulator sessions
+
+Build AltirraSDL and the standalone lobby, then run:
+
+```bash
+python3 tests/netplay/emulator_session.py --disk-rw --video pal --mode automatic --rtt-ms 60 --loss 0.01 --seconds 20 --resync-test
+```
+
+Use `--emu` and `--lobby` to select their executable paths. Repeat with
+`--video ntsc` and `--mode delay`. The fixture starts a private loopback
+lobby and two emulator processes, forces the real UDP relay through a
+seeded delay/loss proxy, and changes keyboard and console input. Artifacts
+under `build/_scratch/netplay-emulator` retain logs, frame/rollback/RTT
+telemetry, resource accounting where `/proc` is available, and failure
+screenshots. Frame pacing is real time by default; `--pacing unlimited`
+is useful for stress tests and changes the relation to wall-clock delay.
+
+The default image is an original XEX that reads Atari input and RANDOM
+registers. `--image` accepts a local boot image. `--disk-rw` generates an
+original bootable ATR that repeatedly writes input-dependent data to
+sector 4, reads it into another buffer, and compares every byte. Its
+marker and guest error counters must remain valid. No game download or
+external lobby is involved.
+
+Normal runs reject every desync or resync. `--resync-test` deliberately
+changes one host RAM byte after the normal interval, requires exactly one
+resync, and continues changing input for at least 1000 further frames.
+It also checks that the lobby session identity and endpoint survive, and
+that Leave restores the original disk, cartridge and cassette state.
