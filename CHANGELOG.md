@@ -26,10 +26,26 @@
   configuration directory's `downloads` cache. Browser builds retain
   their existing From URL workflow. Android follows relative and
   HTTP/HTTPS redirects with a shared deadline and five-hop limit.
+- Failed image parsing now preserves mounted media before a boot attempt,
+  including malformed disks inside downloaded ZIP and gzip archives. ZIP
+  validation also checks the actual decoded member length before its CRC.
+- Added Game Library → Sources → Add from URL and the matching Gaming
+  Mode library action. Games and multi-gigabyte ZIP/ZIP64 packs stream to a
+  chosen disk folder, with progress, cancellation and background importing.
+  Archives remain intact and are indexed without extracting the collection;
+  completed sources and the download destination survive restarts. POSIX
+  builds use 64-bit file offsets, including 32-bit Android.
 - Fixed the insertion index reported when a newly attached video output
   sorts before existing outputs. Expanded presentation regressions for
   XEP80, Bit 3, 1090 and AF80, including valid programmed rasters,
   computer-video pass-through, paused switching and device removal.
+
+### Help
+
+- Added offline setup and troubleshooting guides for FujiNet, RAM-Cart,
+  SiDiCar, Mosaic, AF80/80-column video and URL media/game packs. FujiNet
+  and URL dialogs link directly to their guides, including in Gaming Mode.
+  Narrow windows show articles at full width with a Contents toggle.
 
 ### Regression coverage
 
@@ -42,6 +58,8 @@
   malformed responses and cache preservation, plus native image-loader
   integration tests. HTML error pages with a UTF-8 BOM or leading comments
   are rejected even when served under an image filename.
+- Added streamed HTTP and ZIP64 regressions, including sparse offsets above
+  4 GiB, malformed indexes, sink failures and 64-bit progress accounting.
 - Included the new production-code regression targets in Linux normal
   and sanitizer CI and native Windows/macOS regression jobs.
 
@@ -82,7 +100,26 @@
   existing external peer with a managed process are rejected before mutation.
   Mode preferences also persist when the configuration directory is new.
   Added a live legacy-bridge test option and descriptor-detection regressions.
+  Detection follows the loaded custom-device VM, preserving manual ownership
+  when its source is edited or deleted with hot reload disabled.
+- Fixed peer restarts during pending NetSIO synchronization and reset the
+  reported baud when the connection changes. Expanded real-time expiry,
+  signal-release and stale-packet regressions.
+- Fixed relative private-runtime paths and recursive SD seeding when private
+  storage is below the release SD directory. Release-directory aliases are
+  rejected before writing configuration or lock files.
+- Added optional Guided setup and Run a file through FujiNet for the managed
+  runtime. Local files or direct URLs are copied to its private SD, mounted
+  read-only through the official API, verified, then booted through real SIO.
+  A fresh SD ownership probe prevents mounting through another web service.
+  Cancellation and profile changes suppress automatic boot.
+- Clear the previous managed UDP peer before an automatic runtime restart,
+  including when its final disconnect packet was lost.
 - Added real UDP protocol, process ownership and UI regression tests,
   plus an opt-in end-to-end test using actual FujiNet-PC and Atari OS SIO
   calls for configuration boot, network/JSON, SD/TNFS and local-drive
   coexistence. See `docs/fujinet.md` for setup and verification.
+
+- Fixed custom-device hot reload on portable builds: callback timers now
+  run from the host loop while paused, and precise metadata detects rapid
+  edits, replacement and deletion without newer sibling files hiding changes.

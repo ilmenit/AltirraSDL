@@ -42,6 +42,7 @@
 
 #include "mobile_internal.h"
 #include "ui/dialogs/ui_game_metadata.h"
+#include "ui/dialogs/ui_library_url.h"
 #include "media/metadata_scraper.h"
 #include "altirra_icons.h"
 #include "ui_fonts.h"
@@ -1400,6 +1401,12 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 					ImGui::PopID();
 				}
 			}
+
+			if (ATTouchButton(ATUIGetLibraryURLStatus().pending
+				? "Import progress" : "Add from URL",
+				ImVec2(-1, dp(44.0f)), ATTouchButtonStyle::Accent,
+				ICON_MD_ARCHIVE))
+				ATUIShowLibraryURLDialog();
 
 			if (ATTouchButton("Add Archive (ZIP)",
 				ImVec2(-1, dp(44.0f)), ATTouchButtonStyle::Accent,

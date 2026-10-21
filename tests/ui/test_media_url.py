@@ -1,4 +1,5 @@
 """Native URL downloads must feed the real image loader on the main thread."""
+import gzip
 import http.server
 import io
 import threading
@@ -20,6 +21,15 @@ def image_server(tmp_path):
     with zipfile.ZipFile(zipped, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('download.atr', body)
 
+    malformed_zip = io.BytesIO()
+    with zipfile.ZipFile(malformed_zip, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('bad.atr', b'bad disk')
+    malformed = {
+        '/bad.atr': b'bad disk',
+        '/bad.zip': malformed_zip.getvalue(),
+        '/bad.atr.gz': gzip.compress(b'bad disk'),
+    }
+
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -28,7 +38,8 @@ def image_server(tmp_path):
             if self.path == '/missing':
                 self.send_error(404)
                 return
-            content = zipped.getvalue() if self.path == '/disk.zip' else body
+            content = malformed.get(self.path,
+                                    zipped.getvalue() if self.path == '/disk.zip' else body)
             self.send_response(200)
             self.send_header('Content-Length', str(len(content)))
             self.end_headers()
@@ -162,3 +173,28 @@ def test_url_dialog_controls_remain_reachable_after_resize(emu, monkeypatch, tmp
         click(fresh, 'Open Image from URL', 'Close')
         fresh.wait_frames(3)
         assert not fresh.query_window('Open Image from URL').get('visible', False)
+
+
+@pytest.mark.parametrize('filename', ['bad.atr', 'bad.zip', 'bad.atr.gz'])
+def test_malformed_download_preserves_all_mounted_disks(
+        emu, monkeypatch, tmp_path, image_server, filename):
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('SDL_VIDEODRIVER', 'dummy')
+    monkeypatch.setenv('SDL_AUDIODRIVER', 'dummy')
+    monkeypatch.setenv('ALTIRRA_DISPLAY_BACKEND', 'sdlrenderer')
+    with AltirraTestHarness(executable=emu.executable,
+                           extra_args=['--ui-mode', 'desktop']) as fresh:
+        fresh.close_dialog('SetupWizard')
+        fresh.pause()
+        for index in range(2):
+            path = tmp_path / f'keep D{index + 1}.atr'
+            make_disk(path)
+            fresh.send(f'attach_disk {index} {path}')
+        fresh.wait_frames(5)
+        before = fresh.query_state()['state']
+        fresh.send(f'open_url boot {image_server}/{filename}')
+        wait_download(fresh)
+        assert fresh.query_window('Tool Result').get('visible'), 'Parser error was not shown'
+        after = fresh.query_state()['state']
+        assert after['disks'] == before['disks']
+        assert not after['sim']['running']

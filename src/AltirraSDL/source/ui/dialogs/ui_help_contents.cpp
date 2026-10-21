@@ -50,6 +50,8 @@ bool s_pushOnNavigate = true;     // false during back/forward
 
 // Splitter state.
 float s_sidebarWidth = 280.0f;
+// Narrow windows show either contents or the article at full width.
+bool s_showContents = false;
 
 // Find state.
 char s_findBuf[128] = {0};
@@ -90,6 +92,7 @@ void DoNavigate(int topicIndex, const std::string &anchor, bool pushHistory)
 	}
 
 	s_currentTopic = topicIndex;
+	s_showContents = false;
 	s_pendingScrollBlock = -1;
 	s_pendingScrollFrames = 0;
 
@@ -219,7 +222,16 @@ void RenderTocNode(uint16_t firstSiblingOff, int depth)
 	}
 }
 
-void RenderToolbar()
+void ToolbarSameLine(const char* label)
+{
+	const auto& style = ImGui::GetStyle();
+	const float used = ImGui::GetItemRectMax().x - ImGui::GetCursorScreenPos().x;
+	const float width = ImGui::CalcTextSize(label).x + style.FramePadding.x * 2;
+	if (used + style.ItemSpacing.x + width <= ImGui::GetContentRegionAvail().x)
+		ImGui::SameLine();
+}
+
+void RenderToolbar(bool compact)
 {
 	bool canBack = (s_histIndex > 0);
 	bool canFwd = (s_histIndex + 1 < s_history.size());
@@ -233,7 +245,7 @@ void RenderToolbar()
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered()) ImGui::SetTooltip("Back");
 
-	ImGui::SameLine();
+	ToolbarSameLine("▶");
 	ImGui::BeginDisabled(!canFwd);
 	if (ImGui::Button("▶##fwd") && canFwd) {
 		++s_histIndex;
@@ -243,18 +255,29 @@ void RenderToolbar()
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered()) ImGui::SetTooltip("Forward");
 
-	ImGui::SameLine();
+	ToolbarSameLine("Home");
 	if (ImGui::Button("Home")) {
 		auto &data = ATHelp::GetHelpData();
 		int idx = data.FindTopicByFilename("index.html");
 		if (idx >= 0) DoNavigate(idx, "", true);
 	}
 
-	ImGui::SameLine();
-	ImGui::Spacing();
-	ImGui::SameLine();
+	if (compact) {
+		const char* label = s_showContents ? "Back to topic" : "Contents";
+		ToolbarSameLine(label);
+		if (ImGui::Button(label)) s_showContents = !s_showContents;
+	}
 
-	ImGui::SetNextItemWidth(220);
+	// Keep Find + Next together on a fresh row when navigation uses the
+	// available width, including at larger font sizes.
+	const auto& style = ImGui::GetStyle();
+	const float nextWidth = ImGui::CalcTextSize("Next").x + style.FramePadding.x * 2;
+	const float used = ImGui::GetItemRectMax().x - ImGui::GetCursorScreenPos().x;
+	if (used + ImGui::GetFontSize() * 17 + nextWidth + style.ItemSpacing.x * 2
+		<= ImGui::GetContentRegionAvail().x)
+		ImGui::SameLine();
+	ImGui::SetNextItemWidth(std::max(1.0f, std::min(ImGui::GetFontSize() * 17,
+		ImGui::GetContentRegionAvail().x - nextWidth - style.ItemSpacing.x)));
 	bool changed = ImGui::InputTextWithHint("##find", "Find in topic",
 		s_findBuf, sizeof(s_findBuf));
 	if (changed) {
@@ -289,7 +312,7 @@ void RenderContentPane()
 		f->Scale = oldScale * 1.55f;
 		ImGui::PushFont(f);
 	}
-	ImGui::TextUnformatted(title);
+	ImGui::TextWrapped("%s", title);
 	if (f) {
 		ImGui::PopFont();
 		f->Scale = oldScale;
@@ -346,6 +369,7 @@ void ATUIHelpShutdown()
 	s_pendingScrollBlock = -1;
 	s_findBuf[0] = 0;
 	s_lastFind.clear();
+	s_showContents = false;
 }
 
 void ATUIShowHelpTopic(const char *page, const char *anchor)
@@ -355,11 +379,19 @@ void ATUIShowHelpTopic(const char *page, const char *anchor)
 	int idx = data.FindTopicByFilename(page ? page : "index.html");
 	if (idx < 0) idx = data.FindTopicByFilename("index.html");
 	if (idx < 0) return;
-	// We can't reach into ATUIState here; the caller must set
-	// state.showHelpContents = true.  Document this in the header.
+	// The main render loop opens the help pane for pending requests, so
+	// contextual help works from both desktop dialogs and Gaming Mode.
 	s_pendingTopic = idx;
 	s_pendingAnchor = anchor ? anchor : "";
 	s_pushOnNavigate = true;
+}
+
+bool ATUIHelpHasPendingTopic() { return s_pendingTopic >= 0; }
+
+const char* ATUIGetCurrentHelpTopic() {
+	auto& data = ATHelp::GetHelpData();
+	return s_currentTopic < 0 || !data.EnsureLoaded() ? ""
+		: data.GetString(data.GetTopic(s_currentTopic).filenameIdx);
 }
 
 void ATUIRenderHelpContents(ATUIState &state)
@@ -399,16 +431,34 @@ void ATUIRenderHelpContents(ATUIState &state)
 		s_pushOnNavigate = true;
 	}
 
+	ATUIConstrainDialogSize();
 	ImGui::SetNextWindowSize(ImVec2(960, 720), ImGuiCond_FirstUseEver);
 	if (!ImGui::Begin("Help — Contents", &state.showHelpContents)) {
 		ImGui::End();
 		return;
 	}
+	ATUIClampDialogPosition();
 	if (ATUICheckEscClose())
 		state.showHelpContents = false;
 
-	RenderToolbar();
+	const bool compact = ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 52;
+	RenderToolbar(compact);
 	ImGui::Separator();
+
+	if (compact) {
+		if (s_showContents) {
+			ImGui::BeginChild("##toc", ImVec2(0, 0), ImGuiChildFlags_Borders);
+			RenderTocNode(data.TocFirstRootOff(), 0);
+			ImGui::EndChild();
+		} else {
+			ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_Borders,
+				ImGuiWindowFlags_HorizontalScrollbar);
+			RenderContentPane();
+			ImGui::EndChild();
+		}
+		ImGui::End();
+		return;
+	}
 
 	// Two-pane layout via splitter.
 	const float availW = ImGui::GetContentRegionAvail().x;

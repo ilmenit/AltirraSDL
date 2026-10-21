@@ -15,6 +15,8 @@ bool ATUIFujiNetConfigureListener(bool allowLAN, unsigned port,
 bool ATUIFujiNetStartRuntime();
 bool ATUIFujiNetStartAndBoot();
 void ATUIFujiNetStopRuntime();
+bool ATUIFujiNetRunFile(const char* pathOrURL);
+void ATUIFujiNetCancelFile();
 bool ATUIFujiNetReconnect();
 bool ATUIFujiNetDisconnect();
 bool ATUIFujiNetBoot();
@@ -31,6 +33,9 @@ struct ATFujiNetUIStatus {
 	bool localD1Enabled = false;
 	bool fastBoot = false;
 	bool bootPending = false;
+	bool filePending = false;
+	uint64_t fileReceived = 0;
+	uint64_t fileTotal = 0;
 	unsigned port = 9997;
 	unsigned webPort = 8000;
 	unsigned restarts = 0;

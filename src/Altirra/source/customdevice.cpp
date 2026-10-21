@@ -151,8 +151,13 @@ ATDeviceCustom::ATDeviceCustom()
 
 ATDeviceCustom::~ATDeviceCustom() = default;
 
+// Emulation-thread serial distinguishes removed/recreated devices as well as
+// successful and failed reloads, even when an allocator reuses an address.
+static uint64 g_ATCustomDescriptorRevision = 0;
+
 void *ATDeviceCustom::AsInterface(uint32 iid) {
 	switch(iid) {
+		case IATDeviceCustomDescriptor::kTypeID: return static_cast<IATDeviceCustomDescriptor *>(this);
 		case IATDeviceMemMap::kTypeID: return static_cast<IATDeviceMemMap *>(this);
 		case IATDeviceCartridge::kTypeID: return static_cast<IATDeviceCartridge *>(this);
 		case IATDeviceIndicators::kTypeID: return static_cast<IATDeviceIndicators *>(this);
@@ -1120,6 +1125,10 @@ void ATDeviceCustom::ResetPBIInterrupt() {
 }
 
 void ATDeviceCustom::ShutdownCustomDevice() {
+	mDescriptorRevision = ++g_ATCustomDescriptorRevision;
+	mLoadedDescriptorSource.clear();
+	mbDescriptorSourceCaptured = false;
+
 	auto& sem = *g_sim.GetEventManager();
 
 	if (mpScheduler) {
@@ -1433,6 +1442,13 @@ void ATDeviceCustom::ReloadConfig() {
 			stream.Read(buf.data(), len);
 
 			ProcessDesc(buf.data(), buf.size());
+			// Retain exactly the bytes compiled above, independent of later
+			// edits/deletion when hot reload is disabled. Failed setup below
+			// clears this snapshot through ShutdownCustomDevice().
+			if (buf.size() <= IATDeviceCustomDescriptor::kSourceLimit) {
+				mLoadedDescriptorSource.assign(buf.data(), buf.size());
+				mbDescriptorSourceCaptured = true;
+			}
 		}
 
 		bool needCart = false;

@@ -22,6 +22,11 @@
 #include "ui_testmode.h"
 #include "ui_main.h"
 #include "ui/dialogs/ui_media_url.h"
+#include "ui/dialogs/ui_library_url.h"
+#include "ui/gamelibrary/game_library.h"
+#include "ui_main_internal.h"
+
+extern ATGameLibrary* GetGameLibrary();
 #include "ui/dialogs/ui_fujinet.h"
 #include "ui_search.h"
 #include "ui_fonts.h"
@@ -2872,6 +2877,38 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		ATUIStartMediaURLDownload(url.c_str(), mode == "boot");
 		return JsonOk();
 	}
+	if (verb == "library_url") {
+		const auto action = NextToken(cmd);
+		if (action == "show") ATUIShowLibraryURLDialog();
+		else if (action == "import") {
+			if (!ATUIStartLibraryURLImport(RestOfLine(cmd).c_str()))
+				return JsonError(ATUIGetLibraryURLStatus().error);
+		} else if (action == "destination") {
+			if (!ATUISetLibraryURLDestination(RestOfLine(cmd).c_str()))
+				return JsonError("Destination cannot change during an import");
+		} else if (action == "cancel") ATUICancelLibraryURLImport();
+		else if (action != "status") return JsonError("usage: library_url show|import <url>|destination <path>|cancel|status");
+		const auto status = ATUIGetLibraryURLStatus();
+		auto* lib = GetGameLibrary();
+		return std::string("{\"ok\":true,\"pending\":") +
+			(status.pending ? "true" : "false") + ",\"scanning\":" +
+			(status.scanning ? "true" : "false") + ",\"open\":" +
+			(status.open ? "true" : "false") + ",\"added\":" +
+			(status.added ? "true" : "false") + ",\"received\":" +
+			std::to_string(status.received) + ",\"total\":" + std::to_string(status.total) +
+			",\"files\":" + std::to_string(status.files) + ",\"sources\":" +
+			std::to_string(lib ? lib->GetSources().size() : 0) + ",\"games\":" +
+			std::to_string(lib ? lib->GetEntryCount() : 0) + ",\"error\":\"" +
+			JsonEscape(status.error.c_str()) + "\",\"path\":\"" + JsonEscape(status.path.c_str()) +
+			"\",\"destination\":\"" + JsonEscape(status.destination.c_str()) + "\"}";
+	}
+	if (verb == "help_status")
+		return std::string("{\"ok\":true,\"topic\":\"") +
+			JsonEscape(ATUIGetCurrentHelpTopic()) + "\"}";
+	if (verb == "help_topic") {
+		ATUIShowHelpTopic(RestOfLine(cmd).c_str(), nullptr);
+		return JsonOk();
+	}
 	if (verb == "media_url_status") {
 		return std::string("{\"ok\":true,\"pending\":") +
 			(ATUIIsMediaURLDownloadPending() ? "true" : "false") +
@@ -2894,6 +2931,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		} else if (action == "start") success = ATUIFujiNetStartRuntime();
 		else if (action == "start_boot") success = ATUIFujiNetStartAndBoot();
 		else if (action == "stop") ATUIFujiNetStopRuntime();
+		else if (action == "run") success = ATUIFujiNetRunFile(RestOfLine(cmd).c_str());
+		else if (action == "cancel_file") ATUIFujiNetCancelFile();
 		else if (action == "reconnect") success = ATUIFujiNetReconnect();
 		else if (action == "disconnect") success = ATUIFujiNetDisconnect();
 		else if (action == "boot") success = ATUIFujiNetBoot();
@@ -2917,6 +2956,9 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		flag("running", status.running);
 		flag("stopping", status.stopping);
 		flag("bootPending", status.bootPending);
+		flag("filePending", status.filePending);
+		number("fileReceived", status.fileReceived);
+		number("fileTotal", status.fileTotal);
 		flag("listening", status.listening);
 		flag("connected", status.connected);
 		flag("localD1Enabled", status.localD1Enabled);

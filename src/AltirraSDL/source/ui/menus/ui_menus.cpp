@@ -26,6 +26,7 @@
 #include <at/ataudio/pokey.h>
 
 #include "ui_main.h"
+#include "ui_main_internal.h"
 #include "../dialogs/ui_media_url.h"
 #include "../dialogs/ui_fujinet.h"
 #include "ui_guided_input.h"
@@ -1229,6 +1230,12 @@ static void RenderHelpMenu(ATUIState &state) {
 	ImGui::Separator();
 	if (ImGui::MenuItem("Contents"))
 		state.showHelpContents = true;
+
+	// Fork guides for the explicitly requested SDL additions.
+	if (ImGui::MenuItem("FujiNet setup"))
+		ATUIShowHelpTopic("sdl-fujinet.html", nullptr);
+	if (ImGui::MenuItem("New hardware and URL features"))
+		ATUIShowHelpTopic("sdl-expansions.html", nullptr);
 
 	if (ImGui::MenuItem("About"))
 		state.showAboutDialog = true;

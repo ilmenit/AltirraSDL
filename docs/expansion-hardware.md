@@ -1,5 +1,48 @@
 # RAM cartridges and 80-column/RAM expansions
 
+The in-app guide is available in **Help → Contents → AltirraSDL additions →
+RAM cartridges and alternate displays**.
+
+## Set up and use these devices
+
+For a blank RAM cartridge, use **File → Attach Special Cartridge** and choose
+an **Empty RAM-Cart**, **Empty Double RAM-Cart 256KB**, or **Empty SiDiCar
+32KB** entry. Existing CART/raw images use the normal cartridge attachment
+workflow; a raw image may ask you to select its mapper. Choose controls under
+**System → Console Switches → RAM-Cart switches** to match the cartridge
+software and hardware model. RAM-Cart starts write-protected. It supplies
+banked storage rather than automatically increasing the computer's main RAM.
+
+Use **File → Save Cartridge...** to preserve modified cartridge data. The
+physical switch defaults persist per profile; snapshots also store the latch
+and the entire writable cartridge image. **Reset cartridge latch** resets the
+selection while retaining the physical switches and stored bytes. Save the
+image before detaching or replacing it.
+
+For Mosaic, select an **Atari 400/800** machine and **48K base RAM** in
+**System → Configure System...**, then add **Mosaic 64K Select** on the
+**Devices** page. Its **Total RAM** selector includes the base memory. Use
+software that understands Mosaic bank selection; this is not an XL/XE PORTB
+expansion or the manual's separate 1200-strapped modification.
+
+For AF80, assign both **AF80 Firmware** and **AF80 Charset** in Firmware
+Manager: each is a separate 4KB ROM. Configure an Atari 800, add **Austin
+Franklin 80 column board** through **Configure System → Devices**, and run
+compatible software. Atari 800 BASIC needs a left-slot BASIC cartridge.
+Select the output under **View → Video Outputs**, or enable **Auto-Switch
+Video Output**. **Computer Output** returns to normal Atari video. The same
+routing supports XEP80, Bit 3 and 1090 outputs; their own firmware/driver
+requirements still apply. A game that directly draws through ANTIC/GTIA does
+not become an 80-column application simply by adding a display board.
+
+If RAM cartridge writes fail, check physical write protection, the selected
+mapper and the software's expected module/jumper settings. If an alternate
+screen is blank, check both required firmware assignments, the machine model,
+compatible software and the selected video output before changing rendering
+settings.
+
+## Implementation and hardware references
+
 These implementations use the hardware references below in addition to
 Atari800's source. Hardware-specific differences from Atari800 are intentional.
 The normal regression suite uses synthetic firmware and does not redistribute

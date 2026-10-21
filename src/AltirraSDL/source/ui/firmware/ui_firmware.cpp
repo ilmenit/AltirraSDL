@@ -626,7 +626,8 @@ void ExecuteFirmwareScan(ATFirmwareManager *fwm, const VDStringW &scanDir) {
 					for (sint32 j = 0; j < n; j++) {
 						const VDZipArchive::FileInfo &info = zip.GetFileInfo(j);
 						if (!info.mbSupported) continue;
-						if (!ATFirmwareAutodetectCheckSize(info.mUncompressedSize))
+						if (info.mUncompressedSize > UINT32_MAX
+							|| !ATFirmwareAutodetectCheckSize((uint32)info.mUncompressedSize))
 							continue;
 
 						vdfastvector<uint8> data;

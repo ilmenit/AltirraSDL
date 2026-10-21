@@ -35,6 +35,7 @@
 #include <at/ataudio/pokey.h>
 
 #include "ui_main.h"
+#include "ui_main_internal.h"
 #include "ui_guided_input.h"
 #include "ui_search.h"
 #include "ui_profile_services.h"
@@ -1833,7 +1834,15 @@ static void BuildHelpMenu(NSMenu *menu) {
 		ATUIOpenGlobalSearch();
 	});
 	UpdateSearchShortcut(search);
-	AddItem(menu, @"Contents", false, false, [=]{});
+	AddItem(menu, @"Contents", false, true, [=]{
+		g_uiState.showHelpContents = true;
+	});
+	AddItem(menu, @"FujiNet setup", false, true, [=]{
+		ATUIShowHelpTopic("sdl-fujinet.html", nullptr);
+	});
+	AddItem(menu, @"New hardware and URL features", false, true, [=]{
+		ATUIShowHelpTopic("sdl-expansions.html", nullptr);
+	});
 	AddItem(menu, @"About", false, true, [=]{
 		g_uiState.showAboutDialog = true;
 	});

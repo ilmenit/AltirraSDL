@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet type="text/xsl" href="index.xsl" ?>
+<topic title="RAM cartridges and alternate displays in AltirraSDL">
+  <h2>RAM-Cart and SiDiCar</h2>
+  <ol>
+    <li>To create a blank cartridge, choose File &gt; Attach Special Cartridge and an Empty RAM-Cart size, Empty Double RAM-Cart 256KB, or Empty SiDiCar 32KB. To use an existing image, attach/open the cartridge file normally. CART headers identify mapper IDs 94-103; a raw image may require mapper selection.</li>
+    <li>For RAM-Cart physical controls, open System &gt; Console Switches &gt; RAM-Cart switches. Available switches depend on the attached model. Set the controls required by the cartridge software; RAM-Cart starts with its physical switches clear and write protection active.</li>
+    <li>Run software designed for that RAM cartridge. Adding the cartridge does not turn its banked storage into ordinary computer RAM.</li>
+    <li>Use File &gt; Save Cartridge to preserve changed cartridge memory as an image. A snapshot also stores the complete writable image and current latch state.</li>
+  </ol>
+  <p>Physical switch defaults persist in the active profile's Hardware category. Reset cartridge latch resets the electronic selection while preserving physical switches and cartridge contents. SiDiCar has four independent 8KB banks; its control arrangement differs from RAM-Cart.</p>
+  <p>If writes appear ineffective, check the selected RAM-Cart model, physical write protection and the software's expected jumper/module arrangement. Save the image before replacing or detaching it. Snapshots and cartridge image files serve different purposes: loading a snapshot rewinds cartridge contents too.</p>
+  <h2>Mosaic 64K Select</h2>
+  <ol>
+    <li>In System &gt; Configure System, select an Atari 400/800 machine and 48K base RAM.</li>
+    <li>On the Devices page, add Mosaic 64K Select and choose Total RAM. The listed 64K-192K totals include the base 48K; the device supplies selectable 4KB banks.</li>
+    <li>Use Mosaic-aware software. The selected bank occupies <tt>$C000-$CFFF</tt>; this is not the XL/XE PORTB expansion scheme.</li>
+  </ol>
+  <p>This models the 800-strapped bank-select wiring. The separate 1200-strapped modification, PIA wire and OS-under-RAM behavior are not implemented. Warm reset preserves the bank selection; cold reset clears expansion RAM. Snapshots preserve its banks and selection.</p>
+  <h2>Austin Franklin 80</h2>
+  <ol>
+    <li>Obtain the AF80 firmware and character ROM from your own board or an appropriate source. Each is 4KB; they are different ROMs.</li>
+    <li>In Firmware Manager, assign AF80 Firmware and AF80 Charset. Adding the display device alone does not supply these ROMs.</li>
+    <li>Configure an Atari 800 and add Austin Franklin 80 column board through Configure System &gt; Devices. Load software that uses the board.</li>
+    <li>Select its display in View &gt; Video Outputs, or enable Auto-Switch Video Output. Choose Computer Output to return to the Atari display.</li>
+  </ol>
+  <p>The board has its own 80x25 RGBI text output. A normal game drawing directly through ANTIC/GTIA does not become an 80-column program. If output stays blank, check both firmware assignments, machine type, compatible software and selected video output. Atari 800 BASIC requires a left-slot BASIC cartridge; the AF80 firmware occupies the right-cartridge arrangement.</p>
+  <h2>Other alternate video outputs</h2>
+  <p>View &gt; Video Outputs also routes registered outputs from devices such as XEP80, Bit 3 and the 1090 display board. Next Output cycles them; Auto-Switch Video Output follows active output. Each device still needs its own compatible firmware and/or driver. For XEP80 driver setup see <a href="devices-xep80.html">XEP80 Interface Module</a>; the SDL output menu replaces the older help's XEP80 View terminology.</p>
+</topic>

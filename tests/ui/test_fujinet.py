@@ -9,6 +9,7 @@ import pytest
 from .harness import AltirraTestHarness
 from .test_explorers import make_disk, click
 from .test_video_outputs import AltirraBridge
+from altirra_bridge import RemoteError
 import tempfile
 
 
@@ -360,12 +361,74 @@ def test_custom_bridge_is_preserved_and_unrelated_custom_devices_work(
                 # hot-reload paths whose configured filename stays fixed.
                 descriptor.write_text(source + '// $network.post_message network_interrupt '
                                       'sync_ack_on_command_frame buffer_to_server\n')
-                fresh.wait_frames(8)
+                # File-watcher delivery uses wall time; paused UI frames
+                # alone do not guarantee that the VM has reloaded yet.
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if 'Choose FujiNet-PC' not in fresh.get_item_labels('FujiNet'):
+                        break
+                    time.sleep(.05)
                 assert 'Choose FujiNet-PC' not in fresh.get_item_labels('FujiNet')
                 assert 'Boot Atari' not in fresh.get_item_labels('FujiNet')
                 assert 'Disconnect native NetSIO' in fresh.get_item_labels('FujiNet')
                 assert not fresh.send_raw('fujinet reconnect')['ok']
                 assert bridge.device_get('custom')['settings'] == before
+
+
+@pytest.mark.parametrize('source_change', ['replace', 'delete'])
+def test_manual_transport_tracks_loaded_vm_without_hot_reload(
+        emu, monkeypatch, tmp_path, source_change):
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))
+    descriptor = tmp_path / 'running custom bus.atdevice'
+    generic = 'option "name": "Custom bus fixture";\n'
+    generic += 'event "init": function { $sio.enable_raw(true); };\n'
+    legacy = generic + ('// $network.post_message network_interrupt '
+                        'sync_ack_on_command_frame buffer_to_server\n')
+    descriptor.write_text(legacy)
+    with AltirraTestHarness(executable=emu.executable,
+                           extra_args=['--bridge', '--ui-mode', 'desktop']) as fresh:
+        fresh.close_dialog('SetupWizard')
+        fresh.send('set_window_size 1280 900')
+        token = Path(tempfile.gettempdir()) / f'altirra-bridge-{fresh._proc.pid}.token'
+        with AltirraBridge.from_token_file(str(token)) as bridge:
+            bridge.device_add('custom', path=str(descriptor), hotreload=False)
+            bridge.pause()
+            fresh.send('fujinet show')
+            fresh.wait_frames(5)
+            assert 'Boot Atari' in fresh.get_item_labels('FujiNet')
+            if source_change == 'replace':
+                descriptor.write_text(generic)
+            else:
+                descriptor.unlink()
+            fresh.wait_frames(10)
+            # Disk contents have changed, but the original VM still owns
+            # raw SIO. Starting a native route must remain blocked.
+            assert 'Boot Atari' in fresh.get_item_labels('FujiNet')
+            assert not fresh.send_raw(f'fujinet listen {free_port()} 0 100')['ok']
+            descriptor.write_text(generic)
+            bridge.device_set('custom', path=str(descriptor), hotreload=True)
+            fresh.wait_frames(5)
+            assert 'Boot Atari' not in fresh.get_item_labels('FujiNet')
+            assert fresh.send_raw(f'fujinet listen {free_port()} 0 100')['ok']
+            # Recreating the same tag/path must identify the new VM even
+            # when the allocator reuses the previous device's address.
+            bridge.device_remove('custom')
+            descriptor.write_text(legacy)
+            bridge.device_add('custom', path=str(descriptor), hotreload=False)
+            fresh.wait_frames(5)
+            assert not fresh.send_raw('fujinet reconnect')['ok']
+            descriptor.write_text('invalid descriptor syntax')
+            with pytest.raises(RemoteError, match='unable to load custom device'):
+                bridge.device_set('custom', path=str(descriptor), hotreload=True)
+            fresh.wait_frames(5)
+            # Reload tears down the old VM before parsing; a failed reload
+            # must release its ownership instead of retaining a stale cache.
+            assert fresh.send_raw('fujinet reconnect')['ok']
+            bridge.device_remove('custom')
+            descriptor.write_text(generic)
+            bridge.device_add('custom', path=str(descriptor), hotreload=False)
+            fresh.wait_frames(5)
+            assert fresh.send_raw('fujinet reconnect')['ok']
 
 
 def test_connection_mode_and_advanced_fields_are_optional_and_persist(fujinet_desktop):
@@ -399,3 +462,35 @@ def test_connection_mode_and_advanced_fields_are_optional_and_persist(fujinet_de
         fresh.wait_frames(8)
         assert 'Connect NetSIO' in fresh.get_item_labels('FujiNet')
         assert 'Choose FujiNet-PC' not in fresh.get_item_labels('FujiNet')
+
+
+def test_optional_guided_setup_keeps_manual_actions_explicit(fujinet_desktop):
+    emu = fujinet_desktop
+    emu.send('fujinet show')
+    emu.wait_frames(5)
+    click(emu, 'FujiNet', 'Guided setup')
+    assert 'On this computer' in emu.get_item_labels('FujiNet')
+    assert '##UDP port' not in emu.get_item_labels('FujiNet')
+    click(emu, 'FujiNet', 'On this computer')
+    assert 'Choose FujiNet-PC' in emu.get_item_labels('FujiNet')
+    assert not emu.send('fujinet status')['running']
+    assert not emu.query_state()['state']['sim']['running']
+    click(emu, 'FujiNet', 'Back')
+    click(emu, 'FujiNet', 'Use an existing connection')
+    emu.send(f'fujinet listen {free_port()} 0 100')
+    port = emu.send('fujinet status')['port']
+    assert emu.find_item('FujiNet', 'Boot and continue')['disabled']
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
+        peer.bind(('127.0.0.1', 0))
+        peer.sendto(b'\xc1', ('127.0.0.1', port))
+        wait_status(emu, lambda s: s['connected'])
+        click(emu, 'FujiNet', 'Boot and continue')
+        assert emu.query_state()['state']['sim']['running']
+        assert 'Read the CONFIG and XEX guide' in emu.get_item_labels('FujiNet')
+        assert 'Run a file through FujiNet...' not in emu.get_item_labels('FujiNet')
+        assert not emu.send_raw('fujinet run /must-not-mount-on-an-external-runtime.xex')['ok']
+        # The rejected operation adds an inline error above the actions.
+        # Let its new layout settle before resolving the next mouse target.
+        emu.wait_frames(6)
+    click(emu, 'FujiNet', 'Full controls')
+    assert 'Guided setup' in emu.get_item_labels('FujiNet')

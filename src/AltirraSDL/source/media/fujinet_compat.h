@@ -5,6 +5,7 @@
 #include <exception>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace ATFujiNetCompat {
@@ -23,7 +24,10 @@ struct LegacyDescriptor {
 	std::string path;
 };
 
-inline LegacyDescriptor InspectLegacyDescriptor(const std::string& path) {
+// Inspect immutable source bytes supplied by the actual descriptor loader.
+// The file wrapper below is also used by standalone import diagnostics/tests.
+inline LegacyDescriptor InspectLegacyDescriptorSource(const std::string& path,
+	std::string_view bytes, bool available = true) {
 	LegacyDescriptor result;
 	result.path = path;
 	if (path.empty()) return result;
@@ -38,38 +42,38 @@ inline LegacyDescriptor InspectLegacyDescriptor(const std::string& path) {
 	// deserves an explicit choice. Its filename alone is not proof.
 	result.suspectedLegacy = filename == "netsio.atdevice" ||
 		filename == "fujinet-emulator-bridge.atdevice";
-	try {
-		std::ifstream input(NativePath(path), std::ios::binary);
-		if (input) {
-			constexpr size_t limit = 256 * 1024;
-			std::string source(limit + 1, '\0');
-			input.read(source.data(), (std::streamsize)source.size());
-			const auto size = input.gcount();
-			if (!input.bad() && size <= (std::streamsize)limit) {
-				result.sourceRead = true;
-				source.resize((size_t)size);
-				source = lower(std::move(source));
-				const auto has = [&](const char* text) {
-					return source.find(text) != std::string::npos;
-				};
-				// Fingerprint behavior, not the path or editable display name.
-				// These markers identify the published bridge and renamed or
-				// locally configured copies; generic custom network/SIO
-				// devices must not be mistaken for a competing FujiNet bus.
-				result.recognizedLegacy = has("$sio.enable_raw") &&
-					has("$network.post_message") && has("network_interrupt") &&
-					has("sync_ack_on_command_frame") && has("buffer_to_server");
-				result.suspectedLegacy |= !result.recognizedLegacy &&
-					has("netsio") && has("$sio.enable_raw") && has("$network");
-			}
-		}
-	} catch (const std::exception&) {
-		// Detection must not make a profile containing a stale descriptor
-		// unusable. The normal custom-device loader owns its diagnostics.
+	if (available && bytes.size() <= 256 * 1024) {
+		result.sourceRead = true;
+		const auto source = lower(std::string(bytes));
+		const auto has = [&](const char* text) {
+			return source.find(text) != std::string::npos;
+		};
+		// Fingerprint behavior, not the path or editable display name.
+		result.recognizedLegacy = has("$sio.enable_raw") &&
+			has("$network.post_message") && has("network_interrupt") &&
+			has("sync_ack_on_command_frame") && has("buffer_to_server");
+		result.suspectedLegacy |= !result.recognizedLegacy &&
+			has("netsio") && has("$sio.enable_raw") && has("$network");
 	}
 	result.suspectedLegacy &= !result.recognizedLegacy;
 	if (result.recognizedLegacy) result.label = "NetSIO custom device";
 	else if (result.suspectedLegacy) result.label = "Possible NetSIO custom device";
 	return result;
+}
+inline LegacyDescriptor InspectLegacyDescriptor(const std::string& path) {
+	try {
+		std::ifstream input(NativePath(path), std::ios::binary);
+		if (input) {
+			std::string source(256 * 1024 + 1, '\0');
+			input.read(source.data(), (std::streamsize)source.size());
+			if (!input.bad()) {
+				source.resize((size_t)input.gcount());
+				return InspectLegacyDescriptorSource(path, source);
+			}
+		}
+	} catch (const std::exception&) {
+		// Descriptor load diagnostics belong to the custom-device loader.
+	}
+	return InspectLegacyDescriptorSource(path, {}, false);
 }
 } // namespace ATFujiNetCompat

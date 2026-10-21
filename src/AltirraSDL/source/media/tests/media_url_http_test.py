@@ -32,6 +32,23 @@ CORRUPT = bytearray(archive('game.xex', IMAGE))
 struct.pack_into('<I', CORRUPT, CORRUPT.index(b'PK\x01\x02') + 16, 0)
 CORRUPT_GZIP = bytearray(gzip.compress(IMAGE))
 CORRUPT_GZIP[-8] ^= 0x80
+UNDERSIZED = bytearray(archive('game.xex', IMAGE + b'!'))
+# CRC describes all nine bytes, but the directory claims only eight.
+# Inflaters can compute the full CRC while returning just the first eight;
+# the importer must also verify EOF at the advertised uncompressed size.
+struct.pack_into('<I', UNDERSIZED, UNDERSIZED.index(b'PK\x01\x02') + 24, len(IMAGE))
+struct.pack_into('<I', UNDERSIZED, 22, len(IMAGE))
+NESTED_GZIP = IMAGE
+NESTED_ZIP = IMAGE
+for _ in range(4):
+    NESTED_GZIP = gzip.compress(NESTED_GZIP)
+    # The real loader detects the member's ZIP signature recursively even
+    # when the member uses a recognized image extension.
+    NESTED_ZIP = archive('nested.xex', NESTED_ZIP)
+MANY = io.BytesIO()
+with zipfile.ZipFile(MANY, 'w', zipfile.ZIP_DEFLATED) as many:
+    for index in range(4097):
+        many.writestr(f'{index}.xex', IMAGE)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -67,6 +84,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         fixtures = {'/game.xex': IMAGE, '/race.xex': IMAGE, '/collection.zip': ZIP,
                     '/no-media.zip': archive('readme.txt', b'No Atari image'),
                     '/bomb.zip': bytes(BOMB), '/corrupt.zip': bytes(CORRUPT),
+                    '/undersized.zip': bytes(UNDERSIZED),
+                    '/nested.gz': NESTED_GZIP, '/nested.zip': NESTED_ZIP,
+                    '/too-deep.gz': gzip.compress(NESTED_GZIP),
+                    '/too-deep.zip': archive('nested.xex', NESTED_ZIP),
+                    '/too-many.zip': MANY.getvalue(),
                     '/game.xex.gz': gzip.compress(IMAGE),
                     '/corrupt.xex.gz': bytes(CORRUPT_GZIP),
                     '/bad.gz': b'\x1f\x8b' + b'broken gzip',
@@ -147,6 +169,8 @@ def main():
         assert run('/collection.zip').read_bytes() == ZIP
         assert not (pathlib.Path(td) / 'game.xex').exists()  # no extraction
         assert gzip.decompress(run('/game.xex.gz').read_bytes()) == IMAGE
+        assert run('/nested.gz').read_bytes() == NESTED_GZIP
+        assert run('/nested.zip').read_bytes() == NESTED_ZIP
         run('/missing', 'HTTP 404')
         run('/empty', 'empty')
         run('/html', 'web page')
@@ -155,6 +179,10 @@ def main():
         run('/bomb.zip', 'exceeds')
         run('/no-media.zip', 'no recognized')
         run('/corrupt.zip', 'CRC')
+        run('/undersized.zip', 'length')
+        run('/too-deep.gz', 'nesting')
+        run('/too-deep.zip', 'nesting')
+        run('/too-many.zip', 'too many')
         run('/bad.gz', 'ERROR')
         run('/short.gz', 'truncated')
         run('/corrupt.xex.gz', 'CRC')

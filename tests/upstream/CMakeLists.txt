@@ -226,3 +226,15 @@ target_link_libraries(altirra-netsio-test PRIVATE
     ATNetworkSockets ATNetwork ATCore vdjson system SDL3::SDL3)
 add_test(NAME netsio-protocol COMMAND altirra-netsio-test)
 set_tests_properties(netsio-protocol PROPERTIES TIMEOUT 60)
+
+if(NOT WIN32)
+    add_executable(altirra-file-watcher-test filewatcher.cpp)
+    target_include_directories(altirra-file-watcher-test PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+        ${PROJECT_SOURCE_DIR}/src/Altirra/h
+        ${ALTIRRA_COMPAT_DIR}
+        ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+    target_link_libraries(altirra-file-watcher-test PRIVATE system SDL3::SDL3)
+    add_test(NAME file-watcher-contract COMMAND altirra-file-watcher-test)
+    set_tests_properties(file-watcher-contract PROPERTIES TIMEOUT 30)
+endif()

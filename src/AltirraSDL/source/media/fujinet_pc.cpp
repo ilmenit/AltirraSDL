@@ -107,8 +107,18 @@ void Prepare(const ATFujiNetPCOptions& options) {
 		}
 		try {
 			if (fs::is_directory(runtime / "SD")) {
-				for (const auto& entry : fs::recursive_directory_iterator(runtime / "SD")) {
+				const auto privateRoot = fs::weakly_canonical(root);
+				for (auto it = fs::recursive_directory_iterator(runtime / "SD");
+					it != fs::recursive_directory_iterator(); ++it) {
+					const auto& entry = *it;
 					if (entry.is_symlink()) continue;
+					// Private storage may be placed below the supplied SD. Do
+					// not copy our lease/config/staging tree back into itself.
+					if (entry.is_directory()
+						&& fs::weakly_canonical(entry.path()) == privateRoot) {
+						it.disable_recursion_pending();
+						continue;
+					}
 					const auto dest = staging / entry.path().lexically_relative(runtime / "SD");
 					if (entry.is_directory()) fs::create_directories(dest);
 					else if (entry.is_regular_file()) {
@@ -266,10 +276,22 @@ bool ATFujiNetPC::Start(const ATFujiNetPCOptions& options) {
 		return false;
 	}
 	try {
-		p.AcquireLease(options.stateDirectory);
-		Prepare(options);
-		p.options = options;
-		const auto root = Path(options.stateDirectory);
+		// The child runs from its release directory. Resolve private paths
+		// once against the caller's cwd so preparation, the lease and -c/-s
+		// all refer to the same files, including with relative API inputs.
+		ATFujiNetPCOptions prepared = options;
+		if (!prepared.stateDirectory.empty())
+			prepared.stateDirectory = UTF8(fs::absolute(Path(prepared.stateDirectory)));
+		const auto root = Path(prepared.stateDirectory);
+		const auto runtime = Path(prepared.executable).parent_path();
+		if (fs::is_directory(root) && fs::is_directory(runtime) &&
+			(fs::equivalent(root, runtime) || (fs::is_directory(runtime / "SD")
+				&& fs::equivalent(root, runtime / "SD"))))
+			throw std::runtime_error("Choose a private data directory separate "
+				"from the FujiNet-PC release and its supplied SD directory.");
+		p.AcquireLease(prepared.stateDirectory);
+		Prepare(prepared);
+		p.options = prepared;
 		const auto log = root / "fujinet-pc.log";
 		if (fs::exists(log) && !SDL_RenamePath(UTF8(log).c_str(),
 			UTF8(root / "fujinet-pc.previous.log").c_str()))
@@ -294,7 +316,8 @@ void ATFujiNetPC::Stop() {
 	p.stopAt = SDL_GetTicks();
 	if (!SDL_KillProcess(p.process, false)) p.status.error = SDL_GetError();
 }
-void ATFujiNetPC::Poll() {
+void ATFujiNetPC::PollOutput() { mpImpl->Drain(); }
+void ATFujiNetPC::Poll(const std::function<void()>& beforeRestart) {
 	auto& p = *mpImpl;
 	if (!p.process) return;
 	p.Drain();
@@ -316,7 +339,17 @@ void ATFujiNetPC::Poll() {
 			p.status.restarts = 0;
 		}
 		if (++p.status.restarts <= 5) {
-			if (p.Spawn()) return;
+			bool prepared = true;
+			try {
+				if (beforeRestart) beforeRestart();
+			} catch (const std::exception& error) {
+				p.status.error = "Unable to prepare FujiNet-PC restart: " + std::string(error.what());
+				prepared = false;
+			} catch (...) {
+				p.status.error = "Unable to prepare FujiNet-PC restart: the restart callback failed.";
+				prepared = false;
+			}
+			if (prepared && p.Spawn()) return;
 		} else {
 			p.status.error = "FujiNet-PC repeatedly requested a restart. Check its log before starting again.";
 		}

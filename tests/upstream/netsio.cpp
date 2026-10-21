@@ -12,6 +12,7 @@
 #include <at/atcore/devicesio.h>
 #include <at/atcore/propertyset.h>
 #include <at/atcore/scheduler.h>
+#include <at/atcore/timerservice.h>
 #include <at/atnetworksockets/nativesockets.h>
 #include "netsio.h"
 
@@ -19,7 +20,7 @@ extern const ATDeviceDefinition g_ATDeviceDefNetSIO;
 static void Check(bool value, const char *text) {
 	if (!value) { fprintf(stderr, "%s\n", text); std::exit(1); }
 }
-struct Services final : IATDeviceManager, IATDeviceSIOManager {
+struct Services final : IATDeviceManager, IATDeviceSIOManager, IATTimerService {
 	ATAsyncDispatcher dispatcher;
 	ATScheduler scheduler;
 	std::thread::id mainThread = std::this_thread::get_id();
@@ -29,9 +30,24 @@ struct Services final : IATDeviceManager, IATDeviceSIOManager {
 	IATDeviceRawSIO *raw = nullptr;
 	bool command = false, motor = false, proceed = false, interrupt = false;
 	uint32 clock = 0;
+	uint64 timerSerial = 0;
+	vdfunction<void()> timerCallback;
 	Services() { scheduler.SetRate(VDFraction(1789773, 1)); }
 	void *GetService(uint32 id) override {
-		return id == IATAsyncDispatcher::kTypeID ? &dispatcher : nullptr;
+		if (id == IATAsyncDispatcher::kTypeID) return &dispatcher;
+		if (id == IATTimerService::kTypeID) return static_cast<IATTimerService*>(this);
+		return nullptr;
+	}
+	void Request(uint64 *token, float, vdfunction<void()> fn) override {
+		if (token) *token = ++timerSerial;
+		timerCallback = std::move(fn);
+	}
+	void Cancel(uint64 *token) override {
+		if (token && *token) { *token = 0; timerCallback = nullptr; }
+	}
+	void FireTimer() {
+		auto callback = std::move(timerCallback);
+		if (callback) callback();
 	}
 	void NotifyDeviceStatusChanged(IATDevice&) override {}
 	vdrefptr<IATDeviceSIOInterface> AddDevice(IATDeviceSIO*) override { return {}; }
@@ -73,6 +89,7 @@ public:
 	std::vector<std::vector<uint8>> received;
 	bool ack = true;
 	bool duplicateAck = false;
+	bool restartOnSync = false;
 	uint16 writeSize = 0;
 	uint8 lastSequence = 0;
 	Peer(uint16 port, uint16 emulatorPort) {
@@ -85,16 +102,21 @@ public:
 			for (;;) {
 				const auto size = socket->RecvFrom(from, data, sizeof data);
 				if (size < 0) break;
-				bool doAck = false, duplicate = false; uint16 sizeHint = 0;
+				bool doAck = false, duplicate = false, restart = false; uint16 sizeHint = 0;
 				{
 					std::lock_guard lock(mutex);
 					received.emplace_back(data, data + size);
 					if (size && (data[0] == 0x18 || data[0] == 0x09)) {
 						lastSequence = data[data[0] == 0x18 ? 1 : 2];
 						doAck = ack; duplicate = duplicateAck; sizeHint = writeSize;
+						restart = restartOnSync;
 					}
 				}
-				if (doAck) {
+				if (restart) {
+					const uint8 joined = 0xC1;
+					std::lock_guard sendLock(sendMutex);
+					socket->SendTo(from, &joined, 1);
+				} else if (doAck) {
 					const uint8 reply[] = { 0x81, lastSequence, 1, 'A',
 						(uint8)sizeHint, (uint8)(sizeHint >> 8) };
 					std::lock_guard sendLock(sendMutex);
@@ -201,6 +223,14 @@ int main() {
 			"Data sync was not used, or ACK turnaround was too short");
 		Wait(services, [&] { return services.bytes.size() > beforeWriteAck; });
 		Check(services.bytes.back() == 'A', "Data sync ACK lost");
+		{ std::lock_guard lock(peer.mutex); peer.restartOnSync = true; }
+		services.command = true; services.raw->OnCommandStateChanged(true);
+		services.command = false; services.raw->OnCommandStateChanged(false);
+		Check(control->GetNetSIOStatus().syncTimeouts == 0,
+			"Peer restart did not cancel pending synchronization");
+		Check(control->GetNetSIOStatus().baud == 19200,
+			"Peer restart left stale receive baud in status");
+		{ std::lock_guard lock(peer.mutex); peer.restartOnSync = false; }
 		{ std::lock_guard lock(peer.mutex); peer.ack = false; }
 		services.command = true; services.raw->OnCommandStateChanged(true);
 		services.command = false;
@@ -226,9 +256,18 @@ int main() {
 				"Turbo host bytes lost/reordered in UDP send queue");
 		services.motor = true; services.raw->OnMotorStateChanged(true);
 		Check(services.clock > 0, "Concurrent serial clock missing");
+		const auto beforeResetPackets = control->GetNetSIOStatus().rxPackets;
+		peer.Send({0x88, 200, 0}); peer.Send({0x01, 0xED});
+		Wait(services, [&] {
+			return control->GetNetSIOStatus().rxPackets >= beforeResetPackets + 2;
+		});
+		const auto beforeResetBytes = services.bytes.size();
 		device->WarmReset();
 		Check(!services.proceed && !services.interrupt && !services.clock,
 			"Reset left signals or external clock acquired");
+		services.Advance(400000);
+		Check(services.bytes.size() == beforeResetBytes,
+			"Reset retained scheduled idle/data from the previous transaction");
 		Wait(services, [&] { return peer.Saw(0xFE); });
 		device->ColdReset(); Wait(services, [&] { return peer.Saw(0xFF); });
 		peer.Send({0x31}); peer.Send({0x01, 0xEE}); peer.Send({0xC0});
@@ -259,7 +298,24 @@ int main() {
 			peer.Send({0xC1});
 			Wait(services, [&] { return control->GetNetSIOStatus().connected; });
 		}
+		peer.Send({0x31}); peer.Send({0x41});
+		Wait(services, [&] { return services.proceed && services.interrupt; });
+		services.motor = true; services.raw->OnMotorStateChanged(true);
+		std::this_thread::sleep_for(std::chrono::milliseconds(15100));
+		services.FireTimer();
+		Check(!control->GetNetSIOStatus().connected && !services.proceed
+			&& !services.interrupt && !services.clock,
+			"Silent peer expiry retained its connection or bus signals");
+		const auto beforeExpiredData = services.bytes.size();
+		peer.Send({0x01, 0xEF});
+		services.Advance();
+		peer.Send({0xC1});
+		Wait(services, [&] { return control->GetNetSIOStatus().connected; });
+		Check(services.bytes.size() == beforeExpiredData,
+			"Expired peer injected serial data before rejoining");
+		Check(control->GetNetSIOStatus().lastError.empty(), "New peer did not clear expiry error");
 		device->Shutdown();
+		Check(!services.timerCallback, "Shutdown retained heartbeat timer callback");
 		Check(!services.raw && !services.clock, "Shutdown leaked raw device or clock");
 		peer.Send({0x01, 0xEE});
 		std::this_thread::sleep_for(std::chrono::milliseconds(10)); services.dispatcher.RunCallbacks();

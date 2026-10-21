@@ -131,7 +131,7 @@ jobs:
           chmod +x ./build.sh ./scripts/build/*.sh
           ./build.sh --appimage
 
-      - name: Test speed, menu pausing and real video outputs
+      - name: Test speed, video, URL imports and FujiNet workflows
         if: matrix.arch == 'x86_64'
         shell: bash
         env:
@@ -140,10 +140,15 @@ jobs:
           ALTIRRA_DISPLAY_BACKEND: sdlrenderer
         run: |
           python3 -m pip install --disable-pip-version-check 'pytest>=7,<10'
+          cmake -S . -B build/linux-release -DALTIRRA_BUILD_TESTS=ON
+          cmake --build build/linux-release --target altirra-fujinet-pc-test --parallel 2
           test_config=$(mktemp -d)
           trap 'rm -rf "$test_config"' EXIT
           XDG_CONFIG_HOME="$test_config" python3 -m pytest -q \
             tests/ui/test_speed_menu_pause.py tests/ui/test_video_outputs.py \
+            tests/ui/test_media_url.py tests/ui/test_library_url.py \
+            tests/ui/test_fujinet.py tests/ui/test_fujinet_restart.py \
+            tests/ui/test_fujinet_file.py \
             --emu-path=build/linux-release/src/AltirraSDL/AltirraSDL
 
       - name: Inspect AppImage

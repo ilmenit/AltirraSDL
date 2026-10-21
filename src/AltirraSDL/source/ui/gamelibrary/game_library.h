@@ -10,13 +10,7 @@
 #include <vector>
 #include <vd2/system/VDString.h>
 
-enum class GameMediaType {
-	Disk,
-	Executable,
-	Cartridge,
-	Cassette,
-	Unknown,
-};
+#include "../../media/library_extensions.h"
 
 struct GameVariant {
 	VDStringW     mPath;

@@ -10,6 +10,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #ifndef _WIN32
 #include <csignal>
 #endif
@@ -47,9 +48,17 @@ int Child(int argc, char** argv) {
 	std::fflush(stdout);
 	if (configuration.find("test-mode=exit42") != std::string::npos) return 42;
 	if (configuration.find("test-mode=loop") != std::string::npos) return 75;
-	if (configuration.find("test-mode=restart") != std::string::npos) {
+	if (configuration.find("test-mode=restart-trigger") != std::string::npos) {
+		const auto directory = fs::path(argv[4]);
+		if (!fs::exists(directory / "restart-triggered")) {
+			while (!fs::exists(directory / "restart-now")) SDL_Delay(5);
+			Write(directory / "restart-triggered", "once");
+			return 75;
+		}
+	} else if (configuration.find("test-mode=restart") != std::string::npos) {
 		const auto marker = fs::path(argv[4]) / "restarted";
 		if (!fs::exists(marker)) { Write(marker, "once"); return 75; }
+		Write(fs::path(argv[4]) / "after-restart", "replacement started");
 	}
 	if (configuration.find("test-mode=flood") != std::string::npos) {
 		const std::string block(8192, 'x');
@@ -136,10 +145,35 @@ int main(int argc, char** argv) {
 		Write(templateFile, ";test-mode=restart\n" + base);
 		options.stateDirectory = UTF8(root / "restart test");
 		Check(runtime.Start(options), "restart fixture start failed");
-		Pump(runtime, [&] { return runtime.GetStatus().restarts == 1 &&
-			runtime.GetStatus().running; });
+		const auto mainThread = std::this_thread::get_id();
+		unsigned restartCallbacks = 0;
+		const auto restartSD = fs::path(options.stateDirectory) / "SD";
+		const auto restartDeadline = SDL_GetTicks() + 10000;
+		while (!fs::exists(restartSD / "after-restart") && SDL_GetTicks() < restartDeadline) {
+			runtime.Poll([&] {
+				++restartCallbacks;
+				Check(std::this_thread::get_id() == mainThread && !runtime.GetStatus().running,
+					"restart preparation did not run on main after reaping the child");
+				Check(!fs::exists(restartSD / "after-restart"), "replacement started before restart preparation");
+				Check(!otherOwner.Start(options), "restart preparation released the state-directory lease");
+			});
+			SDL_Delay(5);
+		}
+		Check(restartCallbacks == 1 && fs::exists(restartSD / "after-restart")
+			&& runtime.GetStatus().running, "restart preparation was not followed by one replacement");
 		runtime.Shutdown();
 		Check(!runtime.GetStatus().running, "shutdown left a child running");
+		options.stateDirectory = UTF8(root / "restart callback failure test");
+		Check(runtime.Start(options), "restart failure fixture start failed");
+		const auto failureDeadline = SDL_GetTicks() + 10000;
+		while (runtime.GetStatus().running && SDL_GetTicks() < failureDeadline) {
+			runtime.Poll([] { throw std::runtime_error("fixture callback failure"); });
+			SDL_Delay(5);
+		}
+		Check(!runtime.GetStatus().running && runtime.GetStatus().error.find("fixture callback failure") != std::string::npos,
+			"restart preparation failure was not reported");
+		Check(otherOwner.Start(options), "restart preparation failure leaked the state-directory lease");
+		otherOwner.Shutdown();
 		Write(templateFile, ";test-mode=loop\n" + base);
 		options.stateDirectory = UTF8(root / "restart loop test");
 		Check(runtime.Start(options), "restart-loop fixture start failed");
@@ -166,6 +200,41 @@ int main(int argc, char** argv) {
 		Check(SDL_GetTicks() - start >= 1900 && SDL_GetTicks() - start < 4000 && !runtime.GetStatus().running,
 			"shutdown did not force-stop a child ignoring SIGTERM");
 #endif
+		Write(templateFile, base);
+		const auto relativeState = root / "relative state";
+		options.stateDirectory = "relative state";
+		const auto callerDirectory = fs::current_path();
+		fs::current_path(root);
+		const bool relativeStarted = runtime.Start(options);
+		fs::current_path(callerDirectory);
+		Check(relativeStarted, "relative state fixture start failed");
+		Pump(runtime, [&] { return fs::exists(relativeState / "SD" / "received-arguments.txt")
+			|| !runtime.GetStatus().running; });
+		Check(fs::exists(relativeState / "SD" / "received-arguments.txt"),
+			"relative state path was resolved against the child working directory");
+		Check(Read(relativeState / "SD" / "received-arguments.txt").find(UTF8(relativeState))
+			!= std::string::npos, "child did not receive absolute private paths");
+		runtime.Shutdown();
+		const auto nestedState = runtimeDirectory / "SD" / "private state";
+		options.stateDirectory = UTF8(nestedState);
+		Check(runtime.Start(options), "private state below the supplied SD failed to start");
+		Pump(runtime, [&] { return fs::exists(nestedState / "SD" / "received-arguments.txt"); });
+		Check(Read(nestedState / "SD" / "seed.txt") == "seeded SD contents",
+			"nested private SD did not receive the release seed");
+		Check(!fs::exists(nestedState / "SD" / "private state"),
+			"SD seeding recursively copied its own private state directory");
+		runtime.Shutdown();
+		options.stateDirectory = UTF8(runtimeDirectory);
+		Check(!runtime.Start(options), "distribution directory accepted as private state");
+		Check(Read(templateFile) == base, "rejected private path rewrote the release config");
+		Check(!fs::exists(runtimeDirectory / "runtime.lock"),
+			"rejected private path created a lease in the release directory");
+		options.stateDirectory = UTF8(runtimeDirectory / "SD");
+		Check(!runtime.Start(options), "supplied SD accepted as its own private state");
+		Check(Read(runtimeDirectory / "SD" / "seed.txt") == "seeded SD contents",
+			"rejected private path changed the release SD");
+		Check(!fs::exists(runtimeDirectory / "SD" / "runtime.lock"),
+			"rejected private path created a lease in the release SD");
 		options.executable = UTF8(root / "does not exist");
 		Check(!runtime.Start(options) && !runtime.GetStatus().error.empty(),
 			"missing runtime was silently accepted");

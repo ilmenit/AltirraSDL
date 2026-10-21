@@ -18,6 +18,8 @@ void ATUIRenderAboutDialog(ATUIState &state);
 // Help → Contents (defined in ui/dialogs/ui_help_contents.cpp).
 void ATUIRenderHelpContents(ATUIState &state);
 void ATUIShowHelpTopic(const char *page, const char *anchor);
+bool ATUIHelpHasPendingTopic();
+const char* ATUIGetCurrentHelpTopic();
 void ATUIHelpShutdown();
 
 // -------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include "filemetadata_posix.h"
 #include <sys/types.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -18,6 +19,9 @@
 #include <vd2/system/text.h>
 
 using namespace nsVDFile;
+
+static_assert(sizeof(off_t) >= sizeof(sint64),
+	"The portable file backend requires 64-bit off_t (_FILE_OFFSET_BITS=64).");
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -333,7 +337,7 @@ void VDFile::setCreationTime(const VDDate& date) {
 VDDate VDFile::getLastWriteTime() const {
 	struct stat st;
 	if (fstat(mhFile, &st) != 0) return VDDate{};
-	return TimeToVDDate(st.st_mtime);
+	return VDDate { VDPosixFileTime(VDPosixModificationTime(st)) };
 }
 
 void VDFile::setLastWriteTime(const VDDate& date) {

@@ -433,9 +433,14 @@ void ATDeviceNetSIO::OnSocketEvent(const ATSocketStatus& status) {
 				++mGeneration;
 				mInbox.clear();
 				mOutstanding = 0;
+				// A restarted peer begins a new session even if its UDP
+				// endpoint is unchanged. Abort the previous transaction.
+				mWaitSync = -1;
+				mbSyncDone = false;
+				mbCreditRequested = false;
 				mInbox.push_back({ { Joined }, mGeneration });
 				reply = { Grant, 3 };
-				wake = true;
+				wake = sync = true;
 			} else if (!mStatus.connected || from != mPeer) {
 				++mStatus.droppedPackets;
 			} else {
@@ -535,6 +540,11 @@ void ATDeviceNetSIO::DrainTransport() {
 		mReceiveBaud = 19200;
 		mTransmitBaud = 0;
 		mActiveGeneration = generation;
+		{
+			std::lock_guard lock(mMutex);
+			mStatus.baud = 19200;
+			++mSyncNumber;
+		}
 		if (mpSIO) {
 			mpSIO->SetSIOProceed(this, false);
 			mpSIO->SetSIOInterrupt(this, false);

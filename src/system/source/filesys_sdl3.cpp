@@ -3,6 +3,7 @@
 
 #include <stdafx.h>
 #include <sys/stat.h>
+#include "filemetadata_posix.h"
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <dirent.h>
@@ -436,7 +437,7 @@ bool VDDoesPathExist(const wchar_t *fileName) {
 uint64 VDFileGetLastWriteTime(const wchar_t *path) {
 	struct stat st;
 	if (stat(ToUTF8(path).c_str(), &st) != 0) return 0;
-	return (uint64)st.st_mtime;
+	return VDPosixFileTime(VDPosixModificationTime(st));
 }
 
 VDStringW VDFileGetRootPath(const wchar_t *partialPath) {

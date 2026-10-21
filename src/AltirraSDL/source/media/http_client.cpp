@@ -5,12 +5,29 @@
 
 #include "http_client.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <chrono>
 #include <cstring>
+#include <limits>
 #include <mutex>
+#include <string_view>
 
 namespace ATHttp {
+
+void Get(const Request& in, Response& out) {
+	if (in.method == Method::Get) { Perform(in, out); return; }
+	Request request = in;
+	request.method = Method::Get;
+	request.requestBody.clear();
+	Perform(request, out);
+}
+void Post(const Request& in, Response& out) {
+	if (in.method == Method::Post) { Perform(in, out); return; }
+	Request request = in;
+	request.method = Method::Post;
+	Perform(request, out);
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -66,6 +83,109 @@ std::string NormalizeContentType(const char* raw) {
 bool IsCancelled(const Request& in) {
 	return in.cancel && in.cancel->load(std::memory_order_relaxed);
 }
+
+// One decoded-body accounting/error path shared by all native backends.
+// No exception may cross libcurl's C callback boundary, including errors
+// from a user-provided sink or vector allocation.
+struct BodyReceiver {
+	const Request& request;
+	Response& response;
+	uint64_t received = 0;
+	uint64_t expected = 0;
+	bool haveExpected = false;
+	bool encoded = false;
+	bool rejectedError = false;
+	enum Failure { None, Cancelled, TooLarge, SinkFailed, OutOfMemory,
+		Incomplete } failure = None;
+
+	BodyReceiver(const Request& in, Response& out) : request(in), response(out) {
+		if (request.bytesReceived) request.bytesReceived->store(0, std::memory_order_relaxed);
+		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
+	}
+	void Begin(int status) noexcept {
+		response.status = status;
+		response.body.clear();
+		received = expected = 0;
+		haveExpected = encoded = false;
+		rejectedError = false;
+		if (request.bytesReceived) request.bytesReceived->store(0, std::memory_order_relaxed);
+		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
+	}
+	bool SkipBody() const noexcept {
+		return request.bodySink && (response.status < 200 || response.status >= 300);
+	}
+	void Length(std::string_view text) noexcept {
+		while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) text.remove_prefix(1);
+		while (!text.empty() && (text.back() == ' ' || text.back() == '\t' ||
+			text.back() == '\r' || text.back() == '\n')) text.remove_suffix(1);
+		uint64_t value = 0;
+		if (text.empty()) return;
+		for (const char c : text) {
+			if (c < '0' || c > '9' || value > (UINT64_MAX - (c - '0')) / 10) return;
+			value = value * 10 + (c - '0');
+		}
+		expected = value;
+		haveExpected = true;
+	}
+	void Encoded() noexcept {
+		encoded = true;
+		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
+	}
+	bool HeadersDone() noexcept {
+		const bool accepted = response.status >= 200 && response.status < 300;
+		if (accepted && haveExpected && !encoded) {
+			if (request.bytesTotal) request.bytesTotal->store(expected, std::memory_order_relaxed);
+			if (request.maxBodyBytes && expected > request.maxBodyBytes) {
+				failure = TooLarge;
+				return false;
+			}
+		}
+		return true;
+	}
+	bool Append(const void* data, size_t size) noexcept {
+		if (IsCancelled(request)) { failure = Cancelled; return false; }
+		// Streaming archive consumers must never receive login/error pages
+		// or intermediate redirects. Memory clients still receive error JSON.
+		if (SkipBody()) return true;
+		if (size > UINT64_MAX - received ||
+			(request.maxBodyBytes && size > request.maxBodyBytes - received)) {
+			failure = TooLarge;
+			return false;
+		}
+		try {
+			if (request.bodySink) {
+				if (!request.bodySink(data, size)) { failure = SinkFailed; return false; }
+			} else {
+				const auto* bytes = (const uint8_t*)data;
+				response.body.insert(response.body.end(), bytes, bytes + size);
+			}
+		} catch (...) {
+			failure = request.bodySink ? SinkFailed : OutOfMemory;
+			return false;
+		}
+		received += size;
+		if (request.bytesReceived) request.bytesReceived->store(received, std::memory_order_relaxed);
+		return true;
+	}
+	bool Finish() noexcept {
+		if (IsCancelled(request)) failure = Cancelled;
+		if (failure == None && response.status >= 200 && response.status < 300 &&
+			haveExpected && !encoded && received != expected) failure = Incomplete;
+		return failure == None;
+	}
+	void ReportFailure() {
+		response.status = 0;
+		response.body.clear();
+		switch (failure) {
+			case Cancelled: response.error = "cancelled"; break;
+			case TooLarge: response.error = "response too large"; break;
+			case SinkFailed: response.error = "download sink failed"; break;
+			case OutOfMemory: response.error = "unable to allocate HTTP response"; break;
+			case Incomplete: response.error = "incomplete HTTP response"; break;
+			default: break;
+		}
+	}
+};
 
 }  // namespace
 
@@ -126,8 +246,9 @@ std::string LastErrorText(const char* where) {
 
 }  // namespace
 
-void Get(const Request& in, Response& out) {
+void Perform(const Request& in, Response& out) {
 	out = Response();
+	BodyReceiver receiver(in, out);
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 
@@ -207,7 +328,8 @@ void Get(const Request& in, Response& out) {
 		reqFlags |= WINHTTP_FLAG_SECURE;
 
 	HInternetGuard request;
-	request.h = WinHttpOpenRequest(connect.h, L"GET", objectName.c_str(),
+	request.h = WinHttpOpenRequest(connect.h,
+		in.method == Method::Post ? L"POST" : L"GET", objectName.c_str(),
 		nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
 		reqFlags);
 	if (!request.h) {
@@ -228,16 +350,30 @@ void Get(const Request& in, Response& out) {
 
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
-	if (!WinHttpSendRequest(request.h, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-		WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
+	std::wstring headers;
+	void* upload = WINHTTP_NO_REQUEST_DATA;
+	DWORD uploadSize = 0;
+	if (in.method == Method::Post) {
+		if (in.requestBody.size() > MAXDWORD ||
+			in.requestContentType.find_first_of("\r\n") != std::string::npos) {
+			out.error = "invalid HTTP request body or content type";
+			return;
+		}
+		headers = L"Content-Type: " + WidenUtf8(in.requestContentType.empty()
+			? "application/octet-stream" : in.requestContentType) + L"\r\n";
+		upload = const_cast<char*>(in.requestBody.data());
+		uploadSize = (DWORD)in.requestBody.size();
+	}
+	if (!WinHttpSendRequest(request.h, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+		(DWORD)headers.size(), upload, uploadSize, uploadSize, 0))
 	{
-		out.error = LastErrorText("WinHttpSendRequest");
+		out.error = IsCancelled(in) ? "cancelled" : LastErrorText("WinHttpSendRequest");
 		return;
 	}
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
 	if (!WinHttpReceiveResponse(request.h, nullptr)) {
-		out.error = LastErrorText("WinHttpReceiveResponse");
+		out.error = IsCancelled(in) ? "cancelled" : LastErrorText("WinHttpReceiveResponse");
 		return;
 	}
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
@@ -251,6 +387,17 @@ void Get(const Request& in, Response& out) {
 	{
 		out.status = (int)statusCode;
 	}
+	const auto header = [&](DWORD type) {
+		wchar_t text[256] {};
+		DWORD size = sizeof text;
+		if (!WinHttpQueryHeaders(request.h, type, WINHTTP_HEADER_NAME_BY_INDEX,
+			text, &size, WINHTTP_NO_HEADER_INDEX)) return std::string();
+		return NarrowUtf8(text, wcslen(text));
+	};
+	receiver.Length(header(WINHTTP_QUERY_CONTENT_LENGTH));
+	receiver.encoded = !header(WINHTTP_QUERY_CONTENT_ENCODING).empty() ||
+		!header(WINHTTP_QUERY_TRANSFER_ENCODING).empty();
+	if (!receiver.HeadersDone()) { receiver.ReportFailure(); return; }
 
 	// Content-Type (optional).
 	{
@@ -273,6 +420,7 @@ void Get(const Request& in, Response& out) {
 			}
 		}
 	}
+	if (receiver.SkipBody()) return;
 
 	// Read directly into a fixed chunk. QueryDataAvailable is unnecessary
 	// for streaming and can wait for the remote server even while the user
@@ -289,7 +437,7 @@ void Get(const Request& in, Response& out) {
 
 		DWORD read = 0;
 		if (!WinHttpReadData(request.h, chunk, sizeof chunk, &read)) {
-			out.error = LastErrorText("WinHttpReadData");
+			out.error = IsCancelled(in) ? "cancelled" : LastErrorText("WinHttpReadData");
 			out.status = 0;
 			return;
 		}
@@ -297,17 +445,9 @@ void Get(const Request& in, Response& out) {
 			break;
 		if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
-		if (in.maxBodyBytes && out.body.size() + read > in.maxBodyBytes) {
-			out.status = 0;
-			out.body.clear();
-			out.error = "response too large";
-			return;
-		}
-
-		out.body.insert(out.body.end(), chunk, chunk + read);
-		if (in.bytesReceived)
-			in.bytesReceived->store(out.body.size(), std::memory_order_relaxed);
+		if (!receiver.Append(chunk, read)) { receiver.ReportFailure(); return; }
 	}
+	if (!receiver.Finish()) receiver.ReportFailure();
 }
 
 }  // namespace ATHttp
@@ -366,6 +506,7 @@ std::string JStringToUtf8(JNIEnv* env, jstring s) {
 static void GetAndroidOnce(const Request& in, Response& out,
 	std::string& redirectURL) {
 	out = Response();
+	BodyReceiver receiver(in, out);
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 
@@ -475,6 +616,59 @@ static void GetAndroidOnce(const Request& in, Response& out,
 
 	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
+	if (in.method == Method::Post) {
+		if (in.requestContentType.find_first_of("\r\n") != std::string::npos) {
+			out.error = "invalid HTTP content type";
+			return;
+		}
+		const auto setMethod = env->GetMethodID(httpConnClass, "setRequestMethod", "(Ljava/lang/String;)V");
+		const auto setOutput = env->GetMethodID(httpConnClass, "setDoOutput", "(Z)V");
+		const auto setLength = env->GetMethodID(httpConnClass, "setFixedLengthStreamingMode", "(J)V");
+		const auto getOutput = env->GetMethodID(httpConnClass, "getOutputStream", "()Ljava/io/OutputStream;");
+		if (ClearException(env) || !setMethod || !setOutput || !setLength || !getOutput || !setRequestProperty) {
+			out.error = "HTTP POST methods unavailable";
+			return;
+		}
+		JLocal method(env, (jobject)env->NewStringUTF("POST"));
+		JLocal key(env, (jobject)env->NewStringUTF("Content-Type"));
+		JLocal value(env, (jobject)env->NewStringUTF(in.requestContentType.empty()
+			? "application/octet-stream" : in.requestContentType.c_str()));
+		if (ClearException(env) || !method || !key || !value) {
+			out.error = "HTTP POST headers unavailable";
+			return;
+		}
+		env->CallVoidMethod(conn, setMethod, method.obj);
+		env->CallVoidMethod(conn, setOutput, JNI_TRUE);
+		env->CallVoidMethod(conn, setLength, (jlong)in.requestBody.size());
+		env->CallVoidMethod(conn, setRequestProperty, key.obj, value.obj);
+		if (ClearException(env)) { out.error = "HTTP POST setup failed"; return; }
+		JLocal output(env, env->CallObjectMethod(conn, getOutput));
+		if (ClearException(env) || !output) { out.error = "HTTP POST connection failed"; return; }
+		JLocal outputClass(env, env->FindClass("java/io/OutputStream"));
+		const auto write = outputClass ? env->GetMethodID((jclass)outputClass.obj, "write", "([BII)V") : nullptr;
+		const auto close = outputClass ? env->GetMethodID((jclass)outputClass.obj, "close", "()V") : nullptr;
+		if (ClearException(env) || !write || !close) { out.error = "HTTP POST stream unavailable"; return; }
+		struct OutputCloser {
+			JNIEnv* env; jobject stream; jmethodID close;
+			~OutputCloser() { env->CallVoidMethod(stream, close); env->ExceptionClear(); }
+		} outputCloser{env, output.obj, close};
+		JLocal buffer(env, (jobject)env->NewByteArray(32768));
+		if (ClearException(env) || !buffer) { out.error = "HTTP POST buffer unavailable"; return; }
+		for (size_t offset = 0; offset < in.requestBody.size();) {
+			if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
+				out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+				return;
+			}
+			const auto count = (jint)std::min<size_t>(32768, in.requestBody.size() - offset);
+			env->SetByteArrayRegion((jbyteArray)buffer.obj, 0, count,
+				(const jbyte*)in.requestBody.data() + offset);
+			if (ClearException(env)) { out.error = "HTTP POST buffer failed"; return; }
+			env->CallVoidMethod(output, write, buffer.obj, 0, count);
+			if (ClearException(env)) { out.error = "HTTP POST upload failed"; return; }
+			offset += (size_t)count;
+		}
+	}
+
 	const jint code = env->CallIntMethod(conn, getResponseCode);
 	if (ClearException(env)) {
 		out.error = "connection failed";
@@ -535,6 +729,22 @@ static void GetAndroidOnce(const Request& in, Response& out,
 			out.contentType = NormalizeContentType(
 				JStringToUtf8(env, (jstring)ct.obj).c_str());
 	}
+	jmethodID getHeader = env->GetMethodID(httpConnClass,
+		"getHeaderField", "(Ljava/lang/String;)Ljava/lang/String;");
+	if (!ClearException(env) && getHeader) {
+		const auto header = [&](const char* key) {
+			JLocal name(env, (jobject)env->NewStringUTF(key));
+			if (ClearException(env) || !name) return std::string();
+			JLocal value(env, env->CallObjectMethod(conn, getHeader, name.obj));
+			if (ClearException(env) || !value) return std::string();
+			return JStringToUtf8(env, (jstring)value.obj);
+		};
+		receiver.Length(header("Content-Length"));
+		receiver.encoded = !header("Content-Encoding").empty() ||
+			!header("Transfer-Encoding").empty();
+	}
+	if (!receiver.HeadersDone()) { receiver.ReportFailure(); return; }
+	if (receiver.SkipBody()) return;
 
 	// 4xx/5xx bodies arrive on the error stream; the provider encodes
 	// its quota / not-found messages there, so we must read it.
@@ -544,7 +754,10 @@ static void GetAndroidOnce(const Request& in, Response& out,
 		rawStream = nullptr;
 	JLocal stream(env, rawStream);
 	if (!stream)
+	{
+		if (!receiver.Finish()) receiver.ReportFailure();
 		return;   // status is set; empty body is legitimate here
+	}
 
 	jclass isClass = env->FindClass("java/io/InputStream");
 	if (!isClass) { ClearException(env); return; }
@@ -557,6 +770,7 @@ static void GetAndroidOnce(const Request& in, Response& out,
 	const jint kChunk = 32768;
 	JLocal buf(env, (jobject)env->NewByteArray(kChunk));
 	if (!buf) { ClearException(env); return; }
+	jbyte chunk[kChunk];
 
 	for (;;) {
 		if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
@@ -577,28 +791,16 @@ static void GetAndroidOnce(const Request& in, Response& out,
 		if (n <= 0)
 			break;
 
-		if (in.maxBodyBytes
-			&& out.body.size() + (size_t)n > in.maxBodyBytes)
-		{
-			out.status = 0;
-			out.body.clear();
-			out.error = "response too large";
-			break;
-		}
-
-		const size_t base = out.body.size();
-		out.body.resize(base + (size_t)n);
-		env->GetByteArrayRegion((jbyteArray)buf.obj, 0, n,
-			(jbyte*)(out.body.data() + base));
-		if (in.bytesReceived)
-			in.bytesReceived->store(out.body.size(), std::memory_order_relaxed);
+		env->GetByteArrayRegion((jbyteArray)buf.obj, 0, n, chunk);
 		if (ClearException(env)) {
 			out.status = 0;
 			out.body.clear();
 			out.error = "read failed";
 			break;
 		}
+		if (!receiver.Append(chunk, (size_t)n)) { receiver.ReportFailure(); break; }
 	}
+	if (out.error.empty() && !receiver.Finish()) receiver.ReportFailure();
 
 	if (closeMid) {
 		env->CallVoidMethod(stream, closeMid);
@@ -606,7 +808,7 @@ static void GetAndroidOnce(const Request& in, Response& out,
 	}
 }
 
-void Get(const Request& in, Response& out) {
+void Perform(const Request& in, Response& out) {
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 	Request hop = in;
@@ -621,12 +823,21 @@ void Get(const Request& in, Response& out) {
 		hop.timeoutMs = (uint32_t)remaining;
 		std::string redirectURL;
 		GetAndroidOnce(hop, out, redirectURL);
+		if (IsCancelled(in)) {
+			out = Response();
+			out.error = "cancelled";
+			return;
+		}
 		if (!out.error.empty() || redirectURL.empty())
 			return;
 		if (redirects == 5) {
 			out = Response();
 			out.error = "too many redirects";
 			return;
+		}
+		if (out.status == 301 || out.status == 302 || out.status == 303) {
+			hop.method = Method::Get;
+			hop.requestBody.clear();
 		}
 		hop.url = std::move(redirectURL);
 	}
@@ -650,7 +861,7 @@ namespace ATHttp {
 bool Available() { return false; }
 const char* BackendName() { return "none"; }
 
-void Get(const Request&, Response& out) {
+void Perform(const Request&, Response& out) {
 	out = Response();
 	out.error = "HTTPS is not available in the browser build";
 }
@@ -688,6 +899,12 @@ enum : int {
 	kOptURL               = kOptObjectPoint + 2,
 	kOptWriteData         = kOptObjectPoint + 1,
 	kOptWriteFunction     = kOptFunctionPoint + 11,
+	kOptHeaderData        = kOptObjectPoint + 29,
+	kOptHeaderFunction    = kOptFunctionPoint + 79,
+	kOptPost              = kOptLong + 47,
+	kOptPostFields        = kOptObjectPoint + 15,
+	kOptPostFieldSize     = 30000 + 120,
+	kOptHttpHeader        = kOptObjectPoint + 23,
 	kOptUserAgent         = kOptObjectPoint + 18,
 	kOptAcceptEncoding    = kOptObjectPoint + 102,
 	kOptXferInfoData      = kOptObjectPoint + 57,
@@ -716,6 +933,8 @@ typedef int   (*fn_easy_getinfo)(void*, int, ...);
 typedef void  (*fn_easy_cleanup)(void*);
 typedef int   (*fn_global_init)(long);
 typedef const char* (*fn_easy_strerror)(int);
+typedef void* (*fn_slist_append)(void*, const char*);
+typedef void (*fn_slist_free_all)(void*);
 
 struct Curl {
 	void* lib = nullptr;
@@ -725,6 +944,8 @@ struct Curl {
 	fn_easy_getinfo  easy_getinfo = nullptr;
 	fn_easy_cleanup  easy_cleanup = nullptr;
 	fn_easy_strerror easy_strerror = nullptr;
+	fn_slist_append slist_append = nullptr;
+	fn_slist_free_all slist_free_all = nullptr;
 	bool ok = false;
 };
 
@@ -760,10 +981,13 @@ void LoadCurl() {
 	g_curl.easy_getinfo  = (fn_easy_getinfo)sym("curl_easy_getinfo");
 	g_curl.easy_cleanup  = (fn_easy_cleanup)sym("curl_easy_cleanup");
 	g_curl.easy_strerror = (fn_easy_strerror)sym("curl_easy_strerror");
+	g_curl.slist_append = (fn_slist_append)sym("curl_slist_append");
+	g_curl.slist_free_all = (fn_slist_free_all)sym("curl_slist_free_all");
 	fn_global_init globalInit = (fn_global_init)sym("curl_global_init");
 
 	if (!g_curl.easy_init || !g_curl.easy_setopt || !g_curl.easy_perform
-		|| !g_curl.easy_getinfo || !g_curl.easy_cleanup || !globalInit)
+		|| !g_curl.easy_getinfo || !g_curl.easy_cleanup || !globalInit
+		|| !g_curl.slist_append || !g_curl.slist_free_all)
 	{
 		dlclose(g_curl.lib);
 		g_curl.lib = nullptr;
@@ -787,31 +1011,63 @@ const Curl& GetCurl() {
 	return g_curl;
 }
 
-struct WriteCtx {
-	std::vector<uint8_t>* body;
-	size_t maxBytes;
-	bool overflow;
-	const Request* request;
-};
-
 size_t WriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
-	WriteCtx* ctx = (WriteCtx*)userdata;
-	const size_t n = size * nmemb;
-	if (ctx->maxBytes && ctx->body->size() + n > ctx->maxBytes) {
-		ctx->overflow = true;
-		return 0;   // signals an error to libcurl, aborting the transfer
+	auto& receiver = *(BodyReceiver*)userdata;
+	if (size && nmemb > SIZE_MAX / size) {
+		receiver.failure = BodyReceiver::TooLarge;
+		return 0;
 	}
-	const size_t base = ctx->body->size();
-	ctx->body->resize(base + n);
-	memcpy(ctx->body->data() + base, ptr, n);
-	if (ctx->request->bytesReceived)
-		ctx->request->bytesReceived->store(base + n, std::memory_order_relaxed);
+	const size_t n = size * nmemb;
+	return receiver.Append(ptr, n) ? n : 0;
+}
+
+bool HeaderStarts(std::string_view text, std::string_view prefix) noexcept {
+	if (text.size() < prefix.size()) return false;
+	for (size_t i = 0; i < prefix.size(); ++i) {
+		char c = text[i];
+		if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+		if (c != prefix[i]) return false;
+	}
+	return true;
+}
+
+size_t HeaderCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+	auto& receiver = *(BodyReceiver*)userdata;
+	if (size && nmemb > SIZE_MAX / size) return 0;
+	const size_t n = size * nmemb;
+	const std::string_view line(ptr, n);
+	if (HeaderStarts(line, "http/")) {
+		const auto space = line.find(' ');
+		if (space != std::string_view::npos && space + 3 < line.size()) {
+			int status = 0;
+			for (size_t i = space + 1; i <= space + 3; ++i) {
+				if (line[i] < '0' || line[i] > '9') return 0;
+				status = status * 10 + line[i] - '0';
+			}
+			receiver.Begin(status);
+		}
+	} else if (HeaderStarts(line, "content-length:")) {
+		receiver.Length(line.substr(15));
+	} else if (HeaderStarts(line, "content-encoding:") || HeaderStarts(line, "transfer-encoding:")) {
+		// Content-Length counts encoded bytes, not the decoded chunks
+		// delivered by libcurl. Chunked framing also supersedes length.
+		receiver.Encoded();
+	} else if (line == "\r\n" || line == "\n") {
+		if (!receiver.HeadersDone()) return 0;
+		if (receiver.request.bodySink && receiver.response.status >= 400) {
+			// Keep the HTTP status, but do not download a potentially huge
+			// error page into an archive destination or wait for its body.
+			receiver.rejectedError = true;
+			return 0;
+		}
+	}
 	return n;
 }
 
 int XferCallback(void* userdata, int64_t total, int64_t, int64_t, int64_t) {
-	const Request& request = *(const Request*)userdata;
-	if (request.bytesTotal)
+	const auto& receiver = *(const BodyReceiver*)userdata;
+	const Request& request = receiver.request;
+	if (request.bytesTotal && !receiver.encoded)
 		request.bytesTotal->store(total > 0 ? (uint64_t)total : 0,
 			std::memory_order_relaxed);
 	// Non-zero aborts the transfer with CURLE_ABORTED_BY_CALLBACK.
@@ -824,7 +1080,7 @@ bool Available() { return GetCurl().ok; }
 
 const char* BackendName() { return GetCurl().ok ? "libcurl" : "none"; }
 
-void Get(const Request& in, Response& out) {
+void Perform(const Request& in, Response& out) {
 	out = Response();
 
 	const Curl& c = GetCurl();
@@ -847,11 +1103,36 @@ void Get(const Request& in, Response& out) {
 		return;
 	}
 
-	WriteCtx ctx{&out.body, in.maxBodyBytes, false, &in};
+	struct Cleanup {
+		const Curl& curl;
+		void* handle;
+		void* headers = nullptr;
+		~Cleanup() {
+			curl.easy_cleanup(handle);
+			if (headers) curl.slist_free_all(headers);
+		}
+	} cleanup{c, eh, nullptr};
+	BodyReceiver receiver(in, out);
 
 	c.easy_setopt(eh, kOptURL, in.url.c_str());
+	if (in.method == Method::Post) {
+		if (in.requestContentType.find_first_of("\r\n") != std::string::npos) {
+			out.error = "invalid HTTP content type";
+			return;
+		}
+		const std::string contentType = "Content-Type: " + (in.requestContentType.empty()
+			? "application/octet-stream" : in.requestContentType);
+		cleanup.headers = c.slist_append(nullptr, contentType.c_str());
+		if (!cleanup.headers) { out.error = "unable to allocate HTTP headers"; return; }
+		c.easy_setopt(eh, kOptHttpHeader, cleanup.headers);
+		c.easy_setopt(eh, kOptPost, (long)1);
+		c.easy_setopt(eh, kOptPostFields, in.requestBody.c_str());
+		c.easy_setopt(eh, kOptPostFieldSize, (int64_t)in.requestBody.size());
+	}
 	c.easy_setopt(eh, kOptWriteFunction, (void*)&WriteCallback);
-	c.easy_setopt(eh, kOptWriteData, (void*)&ctx);
+	c.easy_setopt(eh, kOptWriteData, (void*)&receiver);
+	c.easy_setopt(eh, kOptHeaderFunction, (void*)&HeaderCallback);
+	c.easy_setopt(eh, kOptHeaderData, (void*)&receiver);
 	c.easy_setopt(eh, kOptFollowLocation, (long)1);
 	c.easy_setopt(eh, kOptMaxRedirs, (long)5);
 	// CURLOPT_PROTOCOLS / CURLOPT_REDIR_PROTOCOLS (curl's stable ABI).
@@ -872,7 +1153,7 @@ void Get(const Request& in, Response& out) {
 	if (in.cancel || in.bytesTotal) {
 		c.easy_setopt(eh, kOptNoProgress, (long)0);
 		c.easy_setopt(eh, kOptXferInfoFunction, (void*)&XferCallback);
-		c.easy_setopt(eh, kOptXferInfoData, (void*)&in);
+		c.easy_setopt(eh, kOptXferInfoData, (void*)&receiver);
 	}
 
 	const int rc = c.easy_perform(eh);
@@ -885,11 +1166,14 @@ void Get(const Request& in, Response& out) {
 		const char* ct = nullptr;
 		c.easy_getinfo(eh, kInfoContentType, &ct);
 		out.contentType = NormalizeContentType(ct);
+		if (!receiver.Finish()) receiver.ReportFailure();
+	} else if (receiver.rejectedError) {
+		out.body.clear();
 	} else {
 		out.status = 0;
 		out.body.clear();
-		if (ctx.overflow)
-			out.error = "response too large";
+		if (receiver.failure != BodyReceiver::None)
+			receiver.ReportFailure();
 		else if (rc == kErrAbortedByCallback)
 			out.error = "cancelled";
 		else if (c.easy_strerror)
@@ -898,7 +1182,6 @@ void Get(const Request& in, Response& out) {
 			out.error = "transfer failed";
 	}
 
-	c.easy_cleanup(eh);
 }
 
 }  // namespace ATHttp

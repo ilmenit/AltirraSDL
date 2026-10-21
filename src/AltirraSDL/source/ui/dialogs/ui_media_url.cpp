@@ -3,6 +3,7 @@
 #include <stdafx.h>
 #include "ui_media_url.h"
 #include "ui_main.h"
+#include "ui_main_internal.h"
 #include "../../media/media_url.h"
 #include "../../media/http_client.h"
 #include <vd2/system/VDString.h>
@@ -153,6 +154,8 @@ void ATUIRenderMediaURLDialog() {
 		}
 		if (!ATHttp::Available())
 			ImGui::TextWrapped("HTTP(S) downloads are unavailable in this build.");
+		if (ImGui::Button("URL help"))
+			ATUIShowHelpTopic("sdl-remote-media.html", nullptr);
 		if (!s_error.empty())
 			ImGui::TextWrapped("%s", s_error.c_str());
 	}

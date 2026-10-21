@@ -120,8 +120,19 @@ void CheckArchive(std::vector<uint8_t>& body, const std::wstring& name,
 			haveImage = true;
 			vdautoptr<IVDInflateStream> decoded(zip.OpenDecodedStream(i));
 			std::vector<uint8_t> member(info.mUncompressedSize);
-			if (!member.empty())
-				decoded->Read(member.data(), (sint32)member.size());
+			for (size_t offset = 0; offset < member.size();) {
+				if (Cancelled(progress))
+					throw std::runtime_error("cancelled");
+				const size_t count = std::min<size_t>(32768, member.size() - offset);
+				decoded->Read(member.data() + offset, (sint32)count);
+				offset += count;
+			}
+			// Reaching the advertised size is not sufficient: a malformed
+			// directory can understate it, and an exact read may leave the
+			// deflate end marker unconsumed. Check EOF before trusting CRC.
+			uint8_t extra;
+			if (decoded->ReadData(&extra, 1))
+				throw std::runtime_error("The ZIP media length does not match its directory.");
 			decoded->VerifyCRC();
 			CheckArchive(member, info.mDecodedFileName.c_str(), progress,
 				expanded, depth + 1);

@@ -1,7 +1,7 @@
 //	AltirraSDL - HTTPS client for online metadata providers
 //
-//	Scope: one blocking HTTPS GET, redirects followed, cancellable.
-//	Used by the Game Library metadata scraper (see metadata_scraper.h).
+//	Blocking HTTP(S) GET/POST, redirects followed, cancellable; optional
+//	streaming response sink for large downloads. Also used by metadata.
 //
 //	This is deliberately NOT the netplay client.  netplay/http_minimal.*
 //	is a plain-HTTP, no-TLS, 5-second-bounded client for the lobby
@@ -23,7 +23,7 @@
 //	is false the metadata feature disables itself with an explanation
 //	rather than failing at every call site.
 //
-//	Threading: Get() is blocking and reentrant.  Several worker threads
+//	Threading: requests are blocking and reentrant. Several worker threads
 //	may call it concurrently; each call owns its own connection.  The
 //	one-time backend initialisation is serialised internally.
 
@@ -31,15 +31,21 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace ATHttp {
 
+enum class Method { Get, Post };
+
 struct Request {
 	// Absolute URL.  https:// and http:// are both accepted; providers
 	// are https, but media CDNs occasionally redirect through http.
 	std::string url;
+	Method method = Method::Get;
+	std::string requestBody;
+	std::string requestContentType;
 
 	// Hard deadline for the whole transfer (connect + headers + body).
 	uint32_t timeoutMs = 20000;
@@ -54,7 +60,14 @@ struct Request {
 	// Cap on the response body.  A media URL that unexpectedly returns
 	// a huge file is truncated and reported as an error rather than
 	// exhausting memory.  0 = no limit.
-	size_t maxBodyBytes = 32u * 1024u * 1024u;
+	uint64_t maxBodyBytes = 32u * 1024u * 1024u;
+
+	// Optional streaming destination. Called synchronously on Get()'s
+	// calling thread with decoded chunks from successful HTTP2xx responses.
+	// Response::body stays empty; redirects/error bodies never reach it.
+	// Return false (or throw) to abort with "download sink failed". The
+	// caller owns rollback/removal of any partially written destination.
+	std::function<bool(const void*, size_t)> bodySink;
 
 	// Optional transfer counters owned by the caller. Total may remain zero
 	// when the server does not supply a length (or uses compression).
@@ -77,8 +90,11 @@ bool Available();
 // "unavailable" explanation ("libcurl", "WinHTTP", "Android", "none").
 const char* BackendName();
 
-// Blocking HTTPS GET.  Always returns; inspect out.status and out.error.
+// Blocking request. Perform honors method; Get/Post explicitly select a
+// verb. Body sinks and progress describe the response, not the upload.
+void Perform(const Request& in, Response& out);
 void Get(const Request& in, Response& out);
+void Post(const Request& in, Response& out);
 
 // Percent-encode `s` into `out` (appends).  Everything outside the
 // unreserved set RFC 3986 defines is escaped, so the result is safe in

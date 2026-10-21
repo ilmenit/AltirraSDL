@@ -1,6 +1,7 @@
 // Optional managed FujiNet-PC runtime. All methods run on the main thread.
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -30,7 +31,13 @@ public:
 	static bool Available();
 	bool Start(const ATFujiNetPCOptions& options);
 	void Stop();
-	void Poll();
+	// Called on the caller/main thread after the previous child exits and
+	// before an exit-75 replacement starts; the data lease remains held.
+	// The callback may reset transports, but must not reenter this controller.
+	// A thrown callback aborts restart, reports the error and releases ownership.
+	void Poll(const std::function<void()>& beforeRestart = {});
+	// Drain output while a worker holds the managed runtime data lease.
+	void PollOutput();
 	void Shutdown();
 	const ATFujiNetPCStatus& GetStatus() const;
 private:
