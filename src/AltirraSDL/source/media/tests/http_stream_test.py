@@ -55,6 +55,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def serve(self):
         size = LARGE
+        redirects = {
+            '/redirect-stall': '/small',
+            '/redirect-cancel': '/stall',
+            '/redirect-relative': 'nested/../small?query=1#ignored',
+            '/redirect-query': '?done=1',
+            '/redirect-authority': f'//127.0.0.1:{self.server.server_port}/small',
+            '/redirect-loop': '/redirect-loop',
+            '/redirect-protocol': 'file:///not-an-http-download',
+        }
+        if self.path in redirects:
+            self.send_response(302)
+            self.send_header('Location', redirects[self.path])
+            self.send_header('Content-Length', str(5 * 1024**3))
+            self.end_headers()
+            # A redirect body must not be drained before following Location.
+            # This exceeds WinHTTP's default 1 MiB response-drain limit and
+            # would also delay cancellation if read by the client.
+            if self.path in ('/redirect-stall', '/redirect-cancel'):
+                time.sleep(8)
+            return
         if self.path == '/error-stall':
             self.send_response(503)
             self.send_header('Content-Length', str(2 * 1024**3))
@@ -67,7 +87,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.close_connection = True
             return
-        if self.path in ('/small', '/truncated'):
+        if (self.path in ('/small', '/small?query=1', '/redirect-query?done=1', '/truncated')
+                or self.path.startswith('/small?long=')):
             size = 4096
         if self.path == '/error':
             size = 2 * 1024 * 1024
@@ -117,9 +138,9 @@ def main():
         return {key: value if key == 'ERROR' else int(value) for key, value in fields.items()}
 
     try:
-        for path in ('/large', '/redirect', '/gzip', '/chunked'):
+        for path in ('/large', '/large#ignored', '/redirect', '/gzip', '/chunked'):
             result = run(path)
-            assert result['STATUS'] == 200 and not result['ERROR'], result
+            assert result['STATUS'] == 200 and not result['ERROR'], (path, result)
             assert result['BUFFER'] == 0 and result['SINK_BYTES'] == LARGE, result
             assert result['RECEIVED'] == LARGE and result['SUM'] == LARGE * 90, result
             assert result['TOTAL'] == (0 if path in ('/gzip', '/chunked') else LARGE), result
@@ -127,10 +148,25 @@ def main():
             result = run('/large', mode=mode)
             assert result['ERROR'] == 'download sink failed', result
             assert result['BUFFER'] == result['SINK_BYTES'] == 0, result
+        for path in ('/redirect-stall', '/redirect-relative', '/redirect-query', '/redirect-authority'):
+            start = time.monotonic()
+            result = run(path)
+            assert result['STATUS'] == 200 and not result['ERROR'], (path, result)
+            assert result['SINK_BYTES'] == result['RECEIVED'] == result['TOTAL'] == 4096, (path, result)
+            assert time.monotonic() - start < 2, (path, 'redirect body was drained')
+        # Signed media links often exceed the old WinHTTP 2 KiB query buffer.
+        result = run('/small?long=' + 'x' * 3500)
+        assert result['STATUS'] == 200 and not result['ERROR'] and result['SINK_BYTES'] == 4096, result
+        for path in ('/redirect-loop', '/redirect-protocol'):
+            result = run(path)
+            assert result['STATUS'] == 0 and result['ERROR'] and result['CALLS'] == 0, (path, result)
+        start = time.monotonic()
+        result = run('/redirect-cancel', mode='cancel')
+        assert result['ERROR'] == 'cancelled' and time.monotonic() - start < 7.5, result
         result = run('/large', limit=64 * 1024 * 1024)
         assert result['ERROR'] == 'response too large' and result['SINK_BYTES'] == 0, result
         result = run('/advertised', limit=100)
-        assert result['ERROR'] == 'response too large' and result['TOTAL'] > 2**32, result
+        assert result['ERROR'] == 'response too large' and result['TOTAL'] == 5 * 1024**3 + 17, result
         result = run('/gzip', limit=64 * 1024 * 1024)
         assert result['ERROR'] == 'response too large' and result['SINK_BYTES'] <= 64 * 1024 * 1024, result
         result = run('/error')

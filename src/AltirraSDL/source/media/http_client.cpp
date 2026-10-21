@@ -95,6 +95,8 @@ struct BodyReceiver {
 	bool haveExpected = false;
 	bool encoded = false;
 	bool rejectedError = false;
+	bool rejectedRedirect = false;
+	std::string redirectLocation;
 	enum Failure { None, Cancelled, TooLarge, SinkFailed, OutOfMemory,
 		Incomplete } failure = None;
 
@@ -107,7 +109,8 @@ struct BodyReceiver {
 		response.body.clear();
 		received = expected = 0;
 		haveExpected = encoded = false;
-		rejectedError = false;
+		rejectedError = rejectedRedirect = false;
+		redirectLocation.clear();
 		if (request.bytesReceived) request.bytesReceived->store(0, std::memory_order_relaxed);
 		if (request.bytesTotal) request.bytesTotal->store(0, std::memory_order_relaxed);
 	}
@@ -246,7 +249,8 @@ std::string LastErrorText(const char* where) {
 
 }  // namespace
 
-void Perform(const Request& in, Response& out) {
+static void GetWindowsOnce(const Request& in, Response& out,
+	std::string& redirectURL) {
 	out = Response();
 	BodyReceiver receiver(in, out);
 	const auto deadline = std::chrono::steady_clock::now() +
@@ -259,21 +263,21 @@ void Perform(const Request& in, Response& out) {
 
 	const std::wstring wurl = WidenUtf8(in.url);
 
-	// Crack the URL into components.  WinHttpCrackUrl wants writable
-	// component buffers when the lengths are zero-initialised, so give
-	// it explicit storage.
-	wchar_t hostBuf[256] = {};
-	wchar_t pathBuf[2048] = {};
-	wchar_t extraBuf[2048] = {};
-
+	// Borrow components from wurl; fixed buffers would reject long signed
+	// download URLs. wurl stays alive throughout the request.
 	URL_COMPONENTSW uc = {};
 	uc.dwStructSize = sizeof(uc);
-	uc.lpszHostName = hostBuf;      uc.dwHostNameLength = 255;
-	uc.lpszUrlPath = pathBuf;       uc.dwUrlPathLength = 2047;
-	uc.lpszExtraInfo = extraBuf;    uc.dwExtraInfoLength = 2047;
+	uc.dwHostNameLength = (DWORD)-1;
+	uc.dwUrlPathLength = (DWORD)-1;
+	uc.dwExtraInfoLength = (DWORD)-1;
 
 	if (!WinHttpCrackUrl(wurl.c_str(), (DWORD)wurl.size(), 0, &uc)) {
 		out.error = LastErrorText("WinHttpCrackUrl");
+		return;
+	}
+
+	if (uc.nScheme != INTERNET_SCHEME_HTTP && uc.nScheme != INTERNET_SCHEME_HTTPS) {
+		out.error = "only HTTP and HTTPS URLs are supported";
 		return;
 	}
 
@@ -310,7 +314,8 @@ void Perform(const Request& in, Response& out) {
 	}
 
 	HInternetGuard connect;
-	connect.h = WinHttpConnect(session.h, hostBuf, uc.nPort, 0);
+	const std::wstring host(uc.lpszHostName ? uc.lpszHostName : L"", uc.dwHostNameLength);
+	connect.h = WinHttpConnect(session.h, host.c_str(), uc.nPort, 0);
 	if (!connect.h) {
 		out.error = LastErrorText("WinHttpConnect");
 		return;
@@ -318,8 +323,11 @@ void Perform(const Request& in, Response& out) {
 
 	// "https://host" cracks to an empty path; WinHttpOpenRequest needs
 	// "/" for that, not an empty object name.
-	std::wstring objectName(pathBuf);
-	objectName += extraBuf;
+	std::wstring objectName;
+	if (uc.dwUrlPathLength) objectName.append(uc.lpszUrlPath, uc.dwUrlPathLength);
+	if (uc.dwExtraInfoLength) objectName.append(uc.lpszExtraInfo, uc.dwExtraInfoLength);
+	const auto fragment = objectName.find(L'#');
+	if (fragment != std::wstring::npos) objectName.resize(fragment);
 	if (objectName.empty())
 		objectName = L"/";
 
@@ -334,6 +342,15 @@ void Perform(const Request& in, Response& out) {
 		reqFlags);
 	if (!request.h) {
 		out.error = LastErrorText("WinHttpOpenRequest");
+		return;
+	}
+	// Do not let WinHTTP drain a redirect's arbitrary-size body before it
+	// follows Location (its default drain limit is only 1 MiB). The outer
+	// loop closes this request and follows a bounded number of headers only.
+	DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+	if (!WinHttpSetOption(request.h, WINHTTP_OPTION_REDIRECT_POLICY,
+		&redirectPolicy, sizeof redirectPolicy)) {
+		out.error = LastErrorText("WinHttpSetOption redirect policy");
 		return;
 	}
 	// Apply on the request as well: the body must use this cancellation
@@ -386,6 +403,44 @@ void Perform(const Request& in, Response& out) {
 		WINHTTP_NO_HEADER_INDEX))
 	{
 		out.status = (int)statusCode;
+	}
+	if (out.status == 301 || out.status == 302 || out.status == 303 ||
+		out.status == 307 || out.status == 308) {
+		DWORD size = 0;
+		WinHttpQueryHeaders(request.h, WINHTTP_QUERY_LOCATION,
+			WINHTTP_HEADER_NAME_BY_INDEX, nullptr, &size, WINHTTP_NO_HEADER_INDEX);
+		if (!size || size > 65536 || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+			out.error = "redirect has no valid Location";
+			return;
+		}
+		std::wstring location(size / sizeof(wchar_t), L'\0');
+		if (!WinHttpQueryHeaders(request.h, WINHTTP_QUERY_LOCATION,
+			WINHTTP_HEADER_NAME_BY_INDEX, location.data(), &size, WINHTTP_NO_HEADER_INDEX)) {
+			out.error = LastErrorText("WinHttpQueryHeaders Location");
+			return;
+		}
+		// Use Windows' URI resolver for relative paths, queries and dot
+		// segments. Load this system component without adding a link-time
+		// dependency to standalone HTTP clients.
+		struct Module {
+			HMODULE h = LoadLibraryExW(L"shlwapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+			~Module() { if (h) FreeLibrary(h); }
+		} module;
+		using Combine = HRESULT (WINAPI*)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD, DWORD);
+		const auto combine = module.h ? reinterpret_cast<Combine>(
+			GetProcAddress(module.h, "UrlCombineW")) : nullptr;
+		if (!combine) { out.error = "Windows URL resolver unavailable"; return; }
+		std::wstring target(32768, L'\0');
+		DWORD length = (DWORD)target.size();
+		if (FAILED(combine(wurl.c_str(), location.c_str(), target.data(), &length, 0))) {
+			out.error = "invalid redirect URL";
+			return;
+		}
+		target.resize(length);
+		const auto fragment = target.find(L'#');
+		if (fragment != std::wstring::npos) target.resize(fragment);
+		redirectURL = NarrowUtf8(target.data(), target.size());
+		return;
 	}
 	const auto header = [&](DWORD type) {
 		wchar_t text[256] {};
@@ -448,6 +503,36 @@ void Perform(const Request& in, Response& out) {
 		if (!receiver.Append(chunk, read)) { receiver.ReportFailure(); return; }
 	}
 	if (!receiver.Finish()) receiver.ReportFailure();
+}
+
+void Perform(const Request& in, Response& out) {
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
+	Request hop = in;
+	for (unsigned redirects = 0;; ++redirects) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (IsCancelled(in) || remaining <= 0) {
+			out = Response();
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+			return;
+		}
+		hop.timeoutMs = (uint32_t)remaining;
+		std::string redirectURL;
+		GetWindowsOnce(hop, out, redirectURL);
+		if (IsCancelled(in)) { out = Response(); out.error = "cancelled"; return; }
+		if (!out.error.empty() || redirectURL.empty()) return;
+		if (redirects == 5) {
+			out = Response();
+			out.error = "too many redirects";
+			return;
+		}
+		if (out.status == 301 || out.status == 302 || out.status == 303) {
+			hop.method = Method::Get;
+			hop.requestBody.clear();
+		}
+		hop.url = std::move(redirectURL);
+	}
 }
 
 }  // namespace ATHttp
@@ -935,6 +1020,11 @@ typedef int   (*fn_global_init)(long);
 typedef const char* (*fn_easy_strerror)(int);
 typedef void* (*fn_slist_append)(void*, const char*);
 typedef void (*fn_slist_free_all)(void*);
+typedef void* (*fn_url)();
+typedef int (*fn_url_set)(void*, int, const char*, unsigned);
+typedef int (*fn_url_get)(void*, int, char**, unsigned);
+typedef void (*fn_url_cleanup)(void*);
+typedef void (*fn_free)(void*);
 
 struct Curl {
 	void* lib = nullptr;
@@ -946,6 +1036,11 @@ struct Curl {
 	fn_easy_strerror easy_strerror = nullptr;
 	fn_slist_append slist_append = nullptr;
 	fn_slist_free_all slist_free_all = nullptr;
+	fn_url url = nullptr;
+	fn_url_set url_set = nullptr;
+	fn_url_get url_get = nullptr;
+	fn_url_cleanup url_cleanup = nullptr;
+	fn_free free = nullptr;
 	bool ok = false;
 };
 
@@ -983,6 +1078,11 @@ void LoadCurl() {
 	g_curl.easy_strerror = (fn_easy_strerror)sym("curl_easy_strerror");
 	g_curl.slist_append = (fn_slist_append)sym("curl_slist_append");
 	g_curl.slist_free_all = (fn_slist_free_all)sym("curl_slist_free_all");
+	g_curl.url = (fn_url)sym("curl_url");
+	g_curl.url_set = (fn_url_set)sym("curl_url_set");
+	g_curl.url_get = (fn_url_get)sym("curl_url_get");
+	g_curl.url_cleanup = (fn_url_cleanup)sym("curl_url_cleanup");
+	g_curl.free = (fn_free)sym("curl_free");
 	fn_global_init globalInit = (fn_global_init)sym("curl_global_init");
 
 	if (!g_curl.easy_init || !g_curl.easy_setopt || !g_curl.easy_perform
@@ -1046,6 +1146,13 @@ size_t HeaderCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
 			}
 			receiver.Begin(status);
 		}
+	} else if (HeaderStarts(line, "location:")) {
+		auto location = line.substr(9);
+		while (!location.empty() && (location.front() == ' ' || location.front() == '\t')) location.remove_prefix(1);
+		while (!location.empty() && (location.back() == '\r' || location.back() == '\n' ||
+			location.back() == ' ' || location.back() == '\t')) location.remove_suffix(1);
+		try { receiver.redirectLocation.assign(location.data(), location.size()); }
+		catch (...) { receiver.failure = BodyReceiver::OutOfMemory; return 0; }
 	} else if (HeaderStarts(line, "content-length:")) {
 		receiver.Length(line.substr(15));
 	} else if (HeaderStarts(line, "content-encoding:") || HeaderStarts(line, "transfer-encoding:")) {
@@ -1054,6 +1161,13 @@ size_t HeaderCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
 		receiver.Encoded();
 	} else if (line == "\r\n" || line == "\n") {
 		if (!receiver.HeadersDone()) return 0;
+		const auto status = receiver.response.status;
+		if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+			// Stop at the headers. Automatic redirects can drain an
+			// arbitrarily large or stalled body before following Location.
+			receiver.rejectedRedirect = true;
+			return 0;
+		}
 		if (receiver.request.bodySink && receiver.response.status >= 400) {
 			// Keep the HTTP status, but do not download a potentially huge
 			// error page into an archive destination or wait for its body.
@@ -1067,7 +1181,10 @@ size_t HeaderCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
 int XferCallback(void* userdata, int64_t total, int64_t, int64_t, int64_t) {
 	const auto& receiver = *(const BodyReceiver*)userdata;
 	const Request& request = receiver.request;
-	if (request.bytesTotal && !receiver.encoded)
+	// HeadersDone owns an advertised decoded length. Some curl versions
+	// report dltotal=0 after a header rejection; do not erase that known
+	// size (or replace it with a wire-size estimate during a transfer).
+	if (request.bytesTotal && !receiver.encoded && !receiver.haveExpected)
 		request.bytesTotal->store(total > 0 ? (uint64_t)total : 0,
 			std::memory_order_relaxed);
 	// Non-zero aborts the transfer with CURLE_ABORTED_BY_CALLBACK.
@@ -1080,7 +1197,8 @@ bool Available() { return GetCurl().ok; }
 
 const char* BackendName() { return GetCurl().ok ? "libcurl" : "none"; }
 
-void Perform(const Request& in, Response& out) {
+static void GetCurlOnce(const Request& in, Response& out,
+	std::string& redirectURL) {
 	out = Response();
 
 	const Curl& c = GetCurl();
@@ -1133,7 +1251,7 @@ void Perform(const Request& in, Response& out) {
 	c.easy_setopt(eh, kOptWriteData, (void*)&receiver);
 	c.easy_setopt(eh, kOptHeaderFunction, (void*)&HeaderCallback);
 	c.easy_setopt(eh, kOptHeaderData, (void*)&receiver);
-	c.easy_setopt(eh, kOptFollowLocation, (long)1);
+	c.easy_setopt(eh, kOptFollowLocation, (long)0);
 	c.easy_setopt(eh, kOptMaxRedirs, (long)5);
 	// CURLOPT_PROTOCOLS / CURLOPT_REDIR_PROTOCOLS (curl's stable ABI).
 	// A redirect from a media server must not access file:// or other
@@ -1167,6 +1285,27 @@ void Perform(const Request& in, Response& out) {
 		c.easy_getinfo(eh, kInfoContentType, &ct);
 		out.contentType = NormalizeContentType(ct);
 		if (!receiver.Finish()) receiver.ReportFailure();
+	} else if (receiver.rejectedRedirect) {
+		// CURLINFO_REDIRECT_URL is not set when aborting at headers. Use
+		// libcurl's URI API to resolve Location without draining its body.
+		if (!c.url || !c.url_set || !c.url_get || !c.url_cleanup || !c.free) {
+			out.error = "HTTP redirects require libcurl 7.62 or newer";
+			return;
+		}
+		struct URL {
+			const Curl& curl;
+			void* handle;
+			char* target = nullptr;
+			~URL() { if (target) curl.free(target); if (handle) curl.url_cleanup(handle); }
+		} url{c, c.url()};
+		// CURLUPART_URL = 0. Setting a relative URL resolves it against
+		// the URL already stored in the handle (curl's stable URL API).
+		if (!url.handle || receiver.redirectLocation.empty() ||
+			c.url_set(url.handle, 0, in.url.c_str(), 0) ||
+			c.url_set(url.handle, 0, receiver.redirectLocation.c_str(), 0) ||
+			c.url_get(url.handle, 0, &url.target, 0) || !url.target)
+			out.error = "redirect has no valid HTTP Location";
+		else redirectURL = url.target;
 	} else if (receiver.rejectedError) {
 		out.body.clear();
 	} else {
@@ -1182,6 +1321,36 @@ void Perform(const Request& in, Response& out) {
 			out.error = "transfer failed";
 	}
 
+}
+
+void Perform(const Request& in, Response& out) {
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
+	Request hop = in;
+	for (unsigned redirects = 0;; ++redirects) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (IsCancelled(in) || remaining <= 0) {
+			out = Response();
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+			return;
+		}
+		hop.timeoutMs = (uint32_t)remaining;
+		std::string redirectURL;
+		GetCurlOnce(hop, out, redirectURL);
+		if (IsCancelled(in)) { out = Response(); out.error = "cancelled"; return; }
+		if (!out.error.empty() || redirectURL.empty()) return;
+		if (redirects == 5) {
+			out = Response();
+			out.error = "too many redirects";
+			return;
+		}
+		if (out.status == 301 || out.status == 302 || out.status == 303) {
+			hop.method = Method::Get;
+			hop.requestBody.clear();
+		}
+		hop.url = std::move(redirectURL);
+	}
 }
 
 }  // namespace ATHttp

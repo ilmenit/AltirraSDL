@@ -1,8 +1,10 @@
 #include <stdafx.h>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <mutex>
 #include <source_location>
 #include <thread>
@@ -15,6 +17,38 @@
 #include <at/atcore/timerservice.h>
 #include <at/atnetworksockets/nativesockets.h>
 #include "netsio.h"
+
+#ifndef _WIN32
+#include <cerrno>
+#include <dlfcn.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
+// Interpose only this executable's native send: exercise a real transient
+// UDP failure without introducing a production socket API test hook.
+static std::atomic<unsigned> gWouldBlockPort {0};
+static std::atomic<unsigned> gWouldBlockCount {0};
+extern "C" ssize_t sendto(int fd, const void *data, size_t size, int flags,
+	const sockaddr *address, socklen_t addressSize) {
+	using SendToFn = ssize_t (*)(int, const void*, size_t, int,
+		const sockaddr*, socklen_t);
+	static const auto realSendTo = reinterpret_cast<SendToFn>(dlsym(RTLD_NEXT, "sendto"));
+	if (!realSendTo) std::abort();
+	if (address && address->sa_family == AF_INET && size == 2
+		&& ((const uint8*)data)[0] == 1 && ((const uint8*)data)[1] == 0xD9
+		&& ntohs(((const sockaddr_in*)address)->sin_port) == gWouldBlockPort.load()
+		&& gWouldBlockPort.exchange(0)) {
+		++gWouldBlockCount;
+		errno = EAGAIN;
+		return -1;
+	}
+	return realSendTo(fd, data, size, flags, address, addressSize);
+}
+#endif
+static void Phase(const char *text) {
+	fprintf(stderr, "NetSIO: %s\n", text);
+	fflush(stderr);
+}
 
 extern const ATDeviceDefinition g_ATDeviceDefNetSIO;
 static void Check(bool value, const char *text) {
@@ -170,6 +204,7 @@ int main() {
 	Check(v6 != other6, "IPv6 peer identity ignored scope");
 	other6 = v6; other6.mPort = 9998;
 	Check(v6 != other6, "IPv6 peer identity ignored port");
+	Phase("socket initialization and protocol");
 	Check(ATSocketInit(), "Socket initialization failed");
 	{
 		Services services;
@@ -188,6 +223,16 @@ int main() {
 		device->Init();
 		Wait(services, [&] { return control->GetNetSIOStatus().listening; });
 		Peer peer(port + 1, port), stranger(port + 2, port);
+#ifndef _WIN32
+		// An idle bound UDP listener must block in poll, not continuously
+		// observe its always-writable native descriptor.
+		Phase("idle UDP CPU usage");
+		std::this_thread::sleep_for(std::chrono::milliseconds(30));
+		const auto idleCPU = std::clock();
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		Check(double(std::clock() - idleCPU) / CLOCKS_PER_SEC < 0.2,
+			"Idle UDP listeners spin instead of waiting for readiness");
+#endif
 		peer.Send({0xC2});
 		Wait(services, [&] { return peer.Saw(0xC3); });
 		Check(!control->GetNetSIOStatus().connected, "Ping must not attach a peer");
@@ -291,6 +336,7 @@ int main() {
 		Wait(services, [&] { return control->GetNetSIOStatus().connected; });
 		// Native socket close is asynchronous. Rebinding must await release
 		// of the previous OS handle, including rapid same-port cycles.
+		Phase("rapid disconnect/reconnect");
 		for (unsigned i = 0; i < 20; ++i) {
 			control->Disconnect();
 			control->Reconnect();
@@ -301,6 +347,7 @@ int main() {
 		peer.Send({0x31}); peer.Send({0x41});
 		Wait(services, [&] { return services.proceed && services.interrupt; });
 		services.motor = true; services.raw->OnMotorStateChanged(true);
+		Phase("silent peer expiry");
 		std::this_thread::sleep_for(std::chrono::milliseconds(15100));
 		services.FireTimer();
 		Check(!control->GetNetSIOStatus().connected && !services.proceed
@@ -314,6 +361,7 @@ int main() {
 		Check(services.bytes.size() == beforeExpiredData,
 			"Expired peer injected serial data before rejoining");
 		Check(control->GetNetSIOStatus().lastError.empty(), "New peer did not clear expiry error");
+		Phase("device shutdown");
 		device->Shutdown();
 		Check(!services.timerCallback, "Shutdown retained heartbeat timer callback");
 		Check(!services.raw && !services.clock, "Shutdown leaked raw device or clock");
@@ -321,8 +369,57 @@ int main() {
 		std::this_thread::sleep_for(std::chrono::milliseconds(10)); services.dispatcher.RunCallbacks();
 		// Isolate the portable datagram API's full-buffer contract. Hold its
 		// OS worker in a callback, then fill the write ring from this thread.
+		Phase("native TCP listener and stream readiness");
+		{
+			const auto address = ATSocketAddress::CreateLocalhostIPv4(port + 4);
+			auto listener = ATNetListen(address, false);
+			Check(listener != nullptr, "TCP listener creation failed");
+			// A second queued connection exercises accept rearming after a
+			// pending accepted descriptor temporarily disables read interest.
+			for (unsigned connection = 0; connection < 2; ++connection) {
+				auto client = ATNetConnect(address, false);
+				Check(client != nullptr, "TCP client creation failed");
+				Wait(services, [&] { return listener->GetSocketStatus().mbCanAccept; });
+				auto server = listener->Accept();
+				Check(server != nullptr, "TCP accept failed");
+				Wait(services, [&] { return !client->GetSocketStatus().mbConnecting; });
+				const uint8 request[] = {0x12, 0x34, 0x56};
+				Check(client->Send(request, sizeof request) == sizeof request, "TCP request enqueue failed");
+				Wait(services, [&] { return server->GetSocketStatus().mbCanRead; });
+				uint8 received[3] {};
+				Check(server->Recv(received, sizeof received) == sizeof received
+					&& received[0] == 0x12 && received[2] == 0x56, "TCP request lost");
+				Check(server->Send(request, sizeof request) == sizeof request, "TCP reply enqueue failed");
+				Wait(services, [&] { return client->GetSocketStatus().mbCanRead; });
+				Check(client->Recv(received, sizeof received) == sizeof received
+					&& received[1] == 0x34, "TCP reply lost");
+				client->ShutdownSocket(true, false);
+				Wait(services, [&] { return server->GetSocketStatus().mbRemoteClosed; });
+				client->CloseSocket(true); server->CloseSocket(true);
+			}
+			listener->CloseSocket(true);
+		}
+		Phase("native UDP backpressure");
+#ifndef _WIN32
+		{
+			const auto before = peer.DataBytes().size();
+			auto sender = ATNetBind(ATSocketAddress::CreateLocalhostIPv4(0), false);
+			Check(sender != nullptr, "Retry fixture bind failed");
+			const auto destination = ATSocketAddress::CreateLocalhostIPv4(port + 1);
+			gWouldBlockPort = port + 1;
+			const uint8 first[] = {1, 0xD9}, second[] = {1, 0xDA};
+			Check(sender->SendTo(destination, first, sizeof first)
+				&& sender->SendTo(destination, second, sizeof second), "Retry fixture enqueue failed");
+			Wait(services, [&] { return peer.DataBytes().size() >= before + 2; });
+			const auto after = peer.DataBytes();
+			Check(gWouldBlockCount == 1 && after[before] == 0xD9 && after[before + 1] == 0xDA,
+				"UDP would-block lost or corrupted the queued datagram");
+			sender->CloseSocket(true);
+		}
+#endif
 		const auto probeAddress = ATSocketAddress::CreateLocalhostIPv4(port + 3);
 		auto probe = ATNetBind(probeAddress, false);
+		Check(probe != nullptr, "Backpressure fixture bind failed");
 		std::mutex gateMutex;
 		std::condition_variable gate;
 		bool holding = true, entered = false;
@@ -351,6 +448,7 @@ int main() {
 		probe->SetOnEvent(nullptr, nullptr, false); probe->CloseSocket(true);
 		Check(workerEntered && full, "UDP SendTo must report false when its write queue is full");
 	}
+	Phase("socket worker shutdown");
 	ATSocketPreShutdown(); ATSocketShutdown();
 	puts("Native NetSIO UDP, synchronization, pacing and cleanup tests passed");
 }

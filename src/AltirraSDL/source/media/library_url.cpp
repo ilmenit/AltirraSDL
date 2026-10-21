@@ -58,6 +58,14 @@ std::string Name(const std::string& url) {
 	}
 	if (safe.empty() || safe == "." || safe == "..") safe = "download";
 	if (safe.size() > 120) safe.erase(0, safe.size() - 120);
+	// Windows reserves these basenames even with an extension. Use the
+	// same portable cache name on every platform, including URL-decoded names.
+	std::string stem = safe.substr(0, safe.find('.'));
+	for (char& c : stem) if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+	if (stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL"
+		|| (stem.size() == 4 && stem[3] >= '1' && stem[3] <= '9'
+			&& (stem.compare(0, 3, "COM") == 0 || stem.compare(0, 3, "LPT") == 0)))
+		safe.insert(0, "download-");
 	return safe;
 }
 bool HTML(std::string prefix) {

@@ -33,7 +33,7 @@ struct.pack_into('<I', GIANT, GIANT.index(b'PK\x01\x02') + 24, 0xF0000000)
 BOMB = bytearray(archive([('huge.xex', IMAGE)]))
 struct.pack_into('<I', BOMB, BOMB.index(b'PK\x01\x02') + 24, 65 * 1024 * 1024)
 BROKEN = PACK[:-30]
-FIXTURES = {'/game%2Exex': IMAGE, '/game.xex': IMAGE, '/pack.zip': PACK,
+FIXTURES = {'/game%2Exex': IMAGE, '/game.xex': IMAGE, '/CON.xex': IMAGE, '/pack.zip': PACK,
             '/no-games.zip': archive([('notes.txt', b'text')]),
             '/compressed-games.zip': archive([('program.xex.gz', gzip.compress(IMAGE))]),
             '/nested-only.zip': archive([('nested.zip', PACK)]),
@@ -126,13 +126,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body or b'')
 
 
-def run(binary, root, url, okay=True, cancel=None, timeout=30):
+def run(binary, root, url, okay=True, cancel=None, timeout=30, check_staging=True):
     args = [binary, url, str(root)]
     if cancel is not None:
         args.append(str(cancel))
     response = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     assert (response.returncode == 0) is okay, response.stdout + response.stderr
-    assert not list(root.glob('.library-download-*')), 'staging leaked'
+    if check_staging:
+        assert not list(root.glob('.library-download-*')), 'staging leaked'
     fields = {}
     for line in response.stdout.splitlines():
         key, _, value = line.partition(' ')
@@ -160,6 +161,9 @@ def main():
         cache.mkdir()
         game = run(binary, cache, base + '/game%2Exex')
         assert game['ARCHIVE'] == '0' and Path(game['PATH']).read_bytes() == IMAGE
+        reserved = run(binary, cache, base + '/CON.xex')
+        assert Path(reserved['PATH']).name == 'download-CON.xex'
+        assert Path(reserved['PATH']).read_bytes() == IMAGE
         pack = run(binary, cache, base + '/pack.zip')
         assert pack['ARCHIVE'] == '1' and pack['COUNT'] == '2' and pack['GAME_BYTES'] == '8'
         assert Path(pack['PATH']).read_bytes() == PACK
@@ -167,7 +171,11 @@ def main():
         again = run(binary, cache, base + '/pack.zip')
         assert again['PATH'] == pack['PATH']
         with concurrent.futures.ThreadPoolExecutor(2) as pool:
-            parallel = list(pool.map(lambda _: run(binary, cache, base + '/pack.zip'), range(2)))
+            parallel = list(pool.map(lambda _: run(binary, cache, base + '/pack.zip',
+                                                  check_staging=False), range(2)))
+        # A completed import can overlap its peer's legitimate staging file.
+        # Check shared cleanup only after both processes have exited.
+        assert not list(cache.glob('.library-download-*')), 'staging leaked'
         assert all(item['PATH'] == pack['PATH'] for item in parallel)
         assert run(binary, cache, base + '/redirect')['COUNT'] == '2'
         assert run(binary, cache, base + '/single.atz')['ARCHIVE'] == '0'

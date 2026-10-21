@@ -223,7 +223,7 @@ target_include_directories(altirra-netsio-test PRIVATE
     ${ALTIRRA_COMPAT_DIR}
     ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
 target_link_libraries(altirra-netsio-test PRIVATE
-    ATNetworkSockets ATNetwork ATCore vdjson system SDL3::SDL3)
+    ATNetworkSockets ATNetwork ATCore vdjson system SDL3::SDL3 ${CMAKE_DL_LIBS})
 add_test(NAME netsio-protocol COMMAND altirra-netsio-test)
 set_tests_properties(netsio-protocol PROPERTIES TIMEOUT 60)
 

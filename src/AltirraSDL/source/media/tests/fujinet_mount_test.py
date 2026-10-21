@@ -93,7 +93,10 @@ def main():
             Handler.sd_root = state / 'SD'
             sentinel = state / 'SD' / 'keep-user-file.txt'
             sentinel.write_text('unchanged')
-            xex = root / 'selected "game".xex'
+            # Literal quotes are valid POSIX names but forbidden by Windows.
+            # Keep spaces on both platforms and quote coverage where valid.
+            xex = root / ('selected game.xex' if sys.platform == 'win32'
+                          else 'selected "game".xex')
             xex.write_bytes(XEX)
             atr = root / 'game.atr'
             atr.write_bytes(ATR)

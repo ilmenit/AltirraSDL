@@ -62,6 +62,11 @@
   are rejected even when served under an image filename.
 - Added streamed HTTP and ZIP64 regressions, including sparse offsets above
   4 GiB, malformed indexes, sink failures and 64-bit progress accounting.
+- Preserve advertised download sizes when libcurl rejects an oversized
+  response before body transfer begins.
+- Follow HTTP redirects without draining large or stalled intermediate
+  bodies. Windows uses the same bounded redirect and cancellation behavior,
+  and supports long signed download URLs.
 - Included the new production-code regression targets in Linux normal
   and sanitizer CI and native Windows/macOS regression jobs.
 
@@ -88,6 +93,10 @@
   management limitations are explained in the panel.
 - Fixed socket address comparison and UDP send-queue reporting on the
   portable and Windows backends, preventing silent loss when a queue fills.
+- Fixed UDP retries after a temporary OS send failure and receive-queue
+  capacity checks on Windows and portable builds. Portable sockets now
+  rebuild readiness after socket-table updates, sleep while idle, and
+  report TCP half-close EOF correctly.
 - Fixed rapid NetSIO disconnect/reconnect racing an asynchronous socket
   close. Managed runtimes can reconnect directly without rebooting the Atari.
 - Improved FujiNet and URL dialogs when resizing the emulator window.
