@@ -24,7 +24,8 @@
   cancellation and errors, and use the normal image loader for local
   files, ZIP and gzip media. Downloaded media is retained in the
   configuration directory's `downloads` cache. Browser builds retain
-  their existing From URL workflow.
+  their existing From URL workflow. Android follows relative and
+  HTTP/HTTPS redirects with a shared deadline and five-hop limit.
 - Fixed the insertion index reported when a newly attached video output
   sorts before existing outputs. Expanded presentation regressions for
   XEP80, Bit 3, 1090 and AF80, including valid programmed rasters,

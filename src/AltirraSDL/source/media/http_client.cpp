@@ -362,7 +362,8 @@ std::string JStringToUtf8(JNIEnv* env, jstring s) {
 
 }  // namespace
 
-void Get(const Request& in, Response& out) {
+static void GetAndroidOnce(const Request& in, Response& out,
+	std::string& redirectURL) {
 	out = Response();
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
@@ -416,6 +417,10 @@ void Get(const Request& in, Response& out) {
 	jclass httpConnClass = env->FindClass("java/net/HttpURLConnection");
 	if (!httpConnClass) { ClearException(env); out.error = "no HttpURLConnection"; return; }
 	JLocal httpConnClassRef(env, httpConnClass);
+	if (!env->IsInstanceOf(conn, httpConnClass)) {
+		out.error = "only HTTP and HTTPS URLs are supported";
+		return;
+	}
 
 	const jint tmo = (jint)(in.timeoutMs && in.timeoutMs < 5000
 		? in.timeoutMs : 5000);
@@ -450,7 +455,7 @@ void Get(const Request& in, Response& out) {
 	env->CallVoidMethod(conn, setConnectTimeout, tmo);
 	env->CallVoidMethod(conn, setReadTimeout, tmo);
 	if (setFollow)
-		env->CallVoidMethod(conn, setFollow, JNI_TRUE);
+		env->CallVoidMethod(conn, setFollow, JNI_FALSE);
 	if (setRequestProperty && !in.userAgent.empty()) {
 		JLocal key(env, (jobject)env->NewStringUTF("User-Agent"));
 		JLocal val(env, (jobject)env->NewStringUTF(in.userAgent.c_str()));
@@ -475,6 +480,52 @@ void Get(const Request& in, Response& out) {
 		return;
 	}
 	out.status = (int)code;
+
+	// Android's automatic redirect handling refuses HTTP/HTTPS changes.
+	// Resolve Location with java.net.URL, then follow a bounded number of
+	// HTTP(S) hops in Get(), sharing the original transfer deadline.
+	if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+		jmethodID getHeader = env->GetMethodID(httpConnClass,
+			"getHeaderField", "(Ljava/lang/String;)Ljava/lang/String;");
+		jmethodID resolve = env->GetMethodID(urlClass, "<init>",
+			"(Ljava/net/URL;Ljava/lang/String;)V");
+		jmethodID protocol = env->GetMethodID(urlClass, "getProtocol",
+			"()Ljava/lang/String;");
+		jmethodID external = env->GetMethodID(urlClass, "toExternalForm",
+			"()Ljava/lang/String;");
+		if (ClearException(env) || !getHeader || !resolve || !protocol || !external) {
+			out.error = "redirect methods unavailable";
+			return;
+		}
+		JLocal name(env, (jobject)env->NewStringUTF("Location"));
+		JLocal location(env, env->CallObjectMethod(conn, getHeader, name.obj));
+		if (ClearException(env) || !location) {
+			out.error = "redirect has no Location";
+			return;
+		}
+		JLocal target(env, env->NewObject(urlClass, resolve, jurl.obj, location.obj));
+		if (ClearException(env) || !target) {
+			out.error = "invalid redirect URL";
+			return;
+		}
+		JLocal scheme(env, env->CallObjectMethod(target, protocol));
+		if (ClearException(env) || !scheme) {
+			out.error = "invalid redirect scheme";
+			return;
+		}
+		const auto schemeText = JStringToUtf8(env, (jstring)scheme.obj);
+		if (schemeText != "http" && schemeText != "https") {
+			out.error = "redirect must use HTTP or HTTPS";
+			return;
+		}
+		JLocal urlText(env, env->CallObjectMethod(target, external));
+		if (ClearException(env) || !urlText) {
+			out.error = "invalid redirect URL";
+			return;
+		}
+		redirectURL = JStringToUtf8(env, (jstring)urlText.obj);
+		return;
+	}
 
 	if (getContentType) {
 		JLocal ct(env, env->CallObjectMethod(conn, getContentType));
@@ -551,6 +602,32 @@ void Get(const Request& in, Response& out) {
 	if (closeMid) {
 		env->CallVoidMethod(stream, closeMid);
 		env->ExceptionClear();
+	}
+}
+
+void Get(const Request& in, Response& out) {
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
+	Request hop = in;
+	for (unsigned redirects = 0;; ++redirects) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (IsCancelled(in) || remaining <= 0) {
+			out = Response();
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
+			return;
+		}
+		hop.timeoutMs = (uint32_t)remaining;
+		std::string redirectURL;
+		GetAndroidOnce(hop, out, redirectURL);
+		if (!out.error.empty() || redirectURL.empty())
+			return;
+		if (redirects == 5) {
+			out = Response();
+			out.error = "too many redirects";
+			return;
+		}
+		hop.url = std::move(redirectURL);
 	}
 }
 
