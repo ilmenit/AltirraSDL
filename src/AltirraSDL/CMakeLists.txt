@@ -77,6 +77,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/dialogs/ui_library_url.cpp
     source/media/fujinet_pc.cpp
     source/media/fujinet_mount.cpp
+    source/media/fujinet_install.cpp
     source/ui/dialogs/ui_media_url.cpp
     source/ui/dialogs/ui_fujinet.cpp
     source/media/accel_sdl3.cpp

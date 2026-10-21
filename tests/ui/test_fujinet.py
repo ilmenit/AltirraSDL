@@ -153,16 +153,16 @@ def test_managed_runtime_start_stop_and_preferences(fujinet_desktop, tmp_path):
     assert (runtime / 'fnconfig.ini').read_text() == template
     assert (state / 'SD' / 'received-arguments.txt').is_file()
     # UI text input and reconfiguration API both honour active process ownership.
-    click(emu, 'FujiNet', 'Runtime settings')
+    click(emu, 'FujiNet', 'FujiNet-PC program')
     assert emu.find_item('FujiNet', '##Executable')['disabled']
-    click(emu, 'FujiNet', 'Runtime settings')
+    click(emu, 'FujiNet', 'FujiNet-PC program')
     assert not emu.send_raw(f'fujinet listen {free_port()} 0 100')['ok']
     # Disconnecting a managed runtime leaves an explicit recovery action,
     # without requiring a boot/reset or stopping its process.
     click(emu, 'FujiNet', 'Connection settings')
-    click(emu, 'FujiNet', 'Disconnect')
+    click(emu, 'FujiNet', 'Close connection')
     assert not emu.send('fujinet status')['listening']
-    click(emu, 'FujiNet', 'Reconnect NetSIO')
+    click(emu, 'FujiNet', 'Reopen connection')
     restored = wait_status(emu, lambda s: s['listening'])
     assert restored['running'] and not restored['bootPending']
     assert not emu.query_state()['state']['sim']['running']
@@ -242,8 +242,11 @@ def test_panel_resize_fields_and_recovery_buttons_fit(fujinet_desktop, tmp_path)
     emu.send('set_window_size 1280 900')
     emu.send('fujinet show')
     emu.wait_frames(5)
+    # A first-time panel opens on the welcome page; this test covers the
+    # full controls' layout.
+    click(emu, 'FujiNet', 'Full controls')
     labels = emu.get_item_labels('FujiNet')
-    assert 'Disconnect' not in labels and 'Boot Atari' not in labels
+    assert 'Close connection' not in labels and 'Boot Atari' not in labels
     assert '##UDP port' not in labels and 'Runtime log' not in labels
     for width, height in [(430, 800), (640, 480), (1280, 900)]:
         emu.send(f'set_window_size {width} {height}')
@@ -257,7 +260,7 @@ def test_panel_resize_fields_and_recovery_buttons_fit(fujinet_desktop, tmp_path)
                 assert item['x'] >= window['x'], item
                 assert item['x'] + item['w'] <= window['x'] + window['w'], item
         # Primary action stays at the top, accessible before scrolling.
-        primary = emu.find_item('FujiNet', 'Choose FujiNet-PC')
+        primary = emu.find_item('FujiNet', 'Install FujiNet-PC')
         assert primary['y'] + primary['h'] <= height
     emu.send('set_window_size 430 800')
     emu.wait_frames(5)
@@ -277,9 +280,10 @@ def test_panel_large_font_keeps_primary_action_visible(emu, monkeypatch, tmp_pat
         fresh.send('fujinet show')
         fresh.wait_frames(8)
         window = fresh.send('query_window_label FujiNet')
+        # First use opens on the welcome page; its one-click setup button
+        # is the first action and stays visible.
         primary = next(item for item in fresh.list_items('FujiNet')
-                       if '###Choose FujiNet-PC' in item['label'])
-        assert '\n' in primary['label']
+                       if item['label'].endswith('Set up FujiNet automatically'))
         assert primary['x'] + primary['w'] <= window['x'] + window['w']
         assert primary['y'] + primary['h'] < 800
         assert '##Executable' not in fresh.get_item_labels('FujiNet')
@@ -365,7 +369,7 @@ def test_custom_bridge_is_preserved_and_unrelated_custom_devices_work(
                 # alone do not guarantee that the VM has reloaded yet.
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
-                    if 'Choose FujiNet-PC' not in fresh.get_item_labels('FujiNet'):
+                    if 'Disconnect native NetSIO' in fresh.get_item_labels('FujiNet'):
                         break
                     time.sleep(.05)
                 assert 'Choose FujiNet-PC' not in fresh.get_item_labels('FujiNet')
@@ -435,9 +439,10 @@ def test_connection_mode_and_advanced_fields_are_optional_and_persist(fujinet_de
     emu = fujinet_desktop
     emu.send('fujinet show')
     emu.wait_frames(5)
+    click(emu, 'FujiNet', 'Full controls')
     assert '##UDP port' not in emu.get_item_labels('FujiNet')
-    click(emu, 'FujiNet', 'External')
-    assert 'Connect NetSIO' in emu.get_item_labels('FujiNet')
+    click(emu, 'FujiNet', 'Other FujiNet')
+    assert 'Open connection' in emu.get_item_labels('FujiNet')
     assert '##UDP port' in emu.get_item_labels('FujiNet')
     click(emu, 'FujiNet', 'Connection settings')
     assert '##UDP port' not in emu.get_item_labels('FujiNet')
@@ -447,11 +452,11 @@ def test_connection_mode_and_advanced_fields_are_optional_and_persist(fujinet_de
     assert not emu.send('fujinet status')['open']
     emu.send('fujinet show')
     emu.wait_frames(5)
-    assert 'Connect NetSIO' in emu.get_item_labels('FujiNet')
-    click(emu, 'FujiNet', 'Local PC')
+    assert 'Open connection' in emu.get_item_labels('FujiNet')
+    click(emu, 'FujiNet', 'This computer')
     assert 'Choose FujiNet-PC' in emu.get_item_labels('FujiNet')
-    click(emu, 'FujiNet', 'External')
-    assert 'Connect NetSIO' in emu.get_item_labels('FujiNet')
+    click(emu, 'FujiNet', 'Other FujiNet')
+    assert 'Open connection' in emu.get_item_labels('FujiNet')
     emu.send('quit')
     emu._proc.wait(timeout=10)
     emu.stop()
@@ -460,7 +465,7 @@ def test_connection_mode_and_advanced_fields_are_optional_and_persist(fujinet_de
         fresh.close_dialog('SetupWizard')
         fresh.send('fujinet show')
         fresh.wait_frames(8)
-        assert 'Connect NetSIO' in fresh.get_item_labels('FujiNet')
+        assert 'Open connection' in fresh.get_item_labels('FujiNet')
         assert 'Choose FujiNet-PC' not in fresh.get_item_labels('FujiNet')
 
 
@@ -468,15 +473,13 @@ def test_optional_guided_setup_keeps_manual_actions_explicit(fujinet_desktop):
     emu = fujinet_desktop
     emu.send('fujinet show')
     emu.wait_frames(5)
-    click(emu, 'FujiNet', 'Guided setup')
-    assert 'On this computer' in emu.get_item_labels('FujiNet')
+    # Nothing is set up yet, so the panel opens on the welcome page with one
+    # recommended action; opening it changes nothing.
+    assert 'Set up FujiNet automatically' in emu.get_item_labels('FujiNet')
     assert '##UDP port' not in emu.get_item_labels('FujiNet')
-    click(emu, 'FujiNet', 'On this computer')
-    assert 'Choose FujiNet-PC' in emu.get_item_labels('FujiNet')
     assert not emu.send('fujinet status')['running']
     assert not emu.query_state()['state']['sim']['running']
-    click(emu, 'FujiNet', 'Back')
-    click(emu, 'FujiNet', 'Use an existing connection')
+    click(emu, 'FujiNet', 'I have a FujiNet device or run FujiNet-PC myself')
     emu.send(f'fujinet listen {free_port()} 0 100')
     port = emu.send('fujinet status')['port']
     assert emu.find_item('FujiNet', 'Boot and continue')['disabled']
@@ -493,4 +496,30 @@ def test_optional_guided_setup_keeps_manual_actions_explicit(fujinet_desktop):
         # Let its new layout settle before resolving the next mouse target.
         emu.wait_frames(6)
     click(emu, 'FujiNet', 'Full controls')
-    assert 'Guided setup' in emu.get_item_labels('FujiNet')
+    assert 'Step-by-step guide' in emu.get_item_labels('FujiNet')
+
+
+def test_connection_actions_are_drawn_once(fujinet_desktop):
+    # Duplicate labels share an ImGui ID and raise its conflicting-ID error.
+    # Reported with Other FujiNet selected and Connection settings expanded.
+    emu = fujinet_desktop
+    emu.send(f'fujinet listen {free_port()} 0 100')
+    emu.send('fujinet show')
+    emu.wait_frames(5)
+    click(emu, 'FujiNet', 'Other FujiNet')
+    if '##UDP port' not in emu.get_item_labels('FujiNet'):
+        click(emu, 'FujiNet', 'Connection settings')
+    labels = emu.get_item_labels('FujiNet')
+    assert '##UDP port' in labels and labels.count('Close connection') == 1, labels
+    click(emu, 'FujiNet', 'Close connection')
+    wait_status(emu, lambda s: not s['listening'])
+    emu.wait_frames(3)
+    labels = emu.get_item_labels('FujiNet')
+    assert labels.count('Reopen connection') == 1, labels
+    click(emu, 'FujiNet', 'Reopen connection')
+    wait_status(emu, lambda s: s['listening'])
+    emu.wait_frames(3)
+    click(emu, 'FujiNet', 'This computer')
+    if '##UDP port' not in emu.get_item_labels('FujiNet'):
+        click(emu, 'FujiNet', 'Connection settings')
+    assert emu.get_item_labels('FujiNet').count('Close connection') == 1

@@ -152,4 +152,21 @@ if(NOT ANDROID AND NOT EMSCRIPTEN)
         $<TARGET_FILE:altirra-fujinet-mount-test>)
     set_tests_properties(fujinet-mount-http PROPERTIES TIMEOUT 60
         ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+
+    add_executable(altirra-fujinet-install-test fujinet_install_test.cpp
+        ${_media_root}/fujinet_install.cpp ${_media_root}/fujinet_pc.cpp
+        ${_media_root}/http_client.cpp)
+    target_include_directories(altirra-fujinet-install-test PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/shim ${_media_root} ${PROJECT_SOURCE_DIR}/src/h)
+    target_compile_features(altirra-fujinet-install-test PRIVATE cxx_std_17)
+    target_link_libraries(altirra-fujinet-install-test PRIVATE
+        ATCore system vdjson SDL3::SDL3 Threads::Threads ${CMAKE_DL_LIBS})
+    if(WIN32)
+        target_link_libraries(altirra-fujinet-install-test PRIVATE winhttp)
+    endif()
+    add_test(NAME fujinet-install-http COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/fujinet_install_test.py
+        $<TARGET_FILE:altirra-fujinet-install-test>)
+    set_tests_properties(fujinet-install-http PROPERTIES TIMEOUT 60
+        ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()

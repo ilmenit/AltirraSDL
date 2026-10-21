@@ -208,7 +208,7 @@ def test_fujinet_context_help_opens_offline_guide(library_desktop):
     emu = library_desktop
     emu.send('fujinet show')
     emu.wait_frames(5)
-    click(emu, 'FujiNet', 'Setup help')
+    click(emu, 'FujiNet', 'Help')
     emu.wait_frames(5)
     assert emu.query_window('Help — Contents')['visible']
     assert emu.send('help_status')['topic'] == 'sdl-fujinet.xml'

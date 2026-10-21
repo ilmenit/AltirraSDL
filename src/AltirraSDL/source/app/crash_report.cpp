@@ -14,6 +14,7 @@
 #include <imgui.h>
 
 #include <vd2/system/VDString.h>
+#include <vd2/system/text.h>
 
 // Provided by src/system/source/configdir_sdl3.cpp.
 extern VDStringA ATGetConfigDir();
@@ -48,12 +49,23 @@ const char *CrashLogSeenPath() {
 	return s_path.c_str();
 }
 
+// The config directory is UTF-8; narrow fopen on Windows would use the
+// legacy code page and fail for non-ASCII user names.
+FILE *OpenUtf8(const char *path, const char *mode) {
+#ifdef _WIN32
+	return _wfopen(VDTextU8ToW(VDStringSpanA(path)).c_str(),
+		VDTextU8ToW(VDStringSpanA(mode)).c_str());
+#else
+	return fopen(path, mode);
+#endif
+}
+
 } // namespace
 
 void ATCrashReportWrite(const char *phase, const char *message) {
 	// Best-effort.  Must not throw.  Must not depend on anything that
 	// might itself be in a broken state at the moment we are called.
-	FILE *f = fopen(CrashLogPath(), "a");
+	FILE *f = OpenUtf8(CrashLogPath(), "a");
 	if (!f)
 		return;
 
@@ -78,7 +90,7 @@ void ATCrashReportWrite(const char *phase, const char *message) {
 }
 
 void ATCrashReportLoadPrevious() {
-	FILE *f = fopen(CrashLogPath(), "rb");
+	FILE *f = OpenUtf8(CrashLogPath(), "rb");
 	if (!f)
 		return;
 
@@ -99,9 +111,10 @@ void ATCrashReportLoadPrevious() {
 	// Rename so we show it at most once.  If rename fails (readonly FS,
 	// etc.) fall back to unlink; if that also fails we will show it
 	// again next launch, which is annoying but not dangerous.
-	::remove(CrashLogSeenPath());  // clear any prior "seen" copy
-	if (::rename(CrashLogPath(), CrashLogSeenPath()) != 0)
-		::remove(CrashLogPath());
+	// SDL's path functions take UTF-8 on every platform.
+	SDL_RemovePath(CrashLogSeenPath());  // clear any prior "seen" copy
+	if (!SDL_RenamePath(CrashLogPath(), CrashLogSeenPath()))
+		SDL_RemovePath(CrashLogPath());
 
 	if (!s_pendingReport.empty()) {
 		s_viewerOpen = true;

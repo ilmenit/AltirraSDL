@@ -11,8 +11,9 @@
 #include <vd2/system/VDString.h>
 
 #ifdef _WIN32
-#include <direct.h>   // _mkdir
-#include <shlobj.h>   // SHGetFolderPathA
+#include <direct.h>   // _wmkdir
+#include <shlobj.h>   // SHGetFolderPathW
+#include <vd2/system/text.h>
 #endif
 
 #if defined(__ANDROID__) && !defined(ALTIRRA_LIBRETRO_NO_SDL3)
@@ -27,19 +28,21 @@ VDStringA ATGetConfigDir() {
 		VDStringA dir;
 
 #ifdef _WIN32
-		// Use %APPDATA%/altirra on Windows
-		char appdata[MAX_PATH];
-		if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_APPDATA, nullptr, 0, appdata))) {
-			dir = appdata;
+		// Use %APPDATA%/altirra on Windows. Callers treat the result as
+		// UTF-8 (SDL file APIs, VDTextU8ToW), so query the wide path: the
+		// ANSI API returns the legacy code page and mangles non-ASCII user
+		// names such as C:\\Users\\Żółw.
+		wchar_t appdata[MAX_PATH];
+		VDStringW wide;
+		if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, appdata))) {
+			wide = appdata;
 		} else {
-			const char *env = getenv("APPDATA");
-			if (env && *env)
-				dir = env;
-			else
-				dir = ".";
+			const wchar_t *env = _wgetenv(L"APPDATA");
+			wide = env && *env ? env : L".";
 		}
-		dir += "\\altirra";
-		_mkdir(dir.c_str());
+		wide += L"\\altirra";
+		_wmkdir(wide.c_str());
+		dir = VDTextWToU8(wide);
 #elif defined(__ANDROID__) && !defined(ALTIRRA_LIBRETRO_NO_SDL3)
 		// On Android the only reliable writable location is the app's
 		// internal storage directory.  SDL_GetPrefPath returns something

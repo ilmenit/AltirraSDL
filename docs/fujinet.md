@@ -5,11 +5,110 @@ FujiNet using the UDP NetSIO protocol. The connection does not need the
 Python hub or an Altirra custom-device descriptor. Open **Tools →
 FujiNet** for connection, boot, runtime and diagnostic controls.
 
+## Panel layout
+
+The panel has two tabs, explained on screen in plain language:
+
+- **This computer** (recommended) — AltirraSDL starts and stops the free
+  FujiNet-PC program itself.
+- **Other FujiNet** — a physical FujiNet on the network, or a FujiNet-PC the
+  user starts and manages. AltirraSDL opens a UDP listener ("connection") and
+  waits for FujiNet to connect.
+
+**Step-by-step guide** has four pages: a welcome page with one recommended
+button, an Other FujiNet connection page, a checklist for the automatic setup
+(get, start, boot), and a "pick a game" page with the CONFIG keys.
+
+## One-click setup
+
+The first time **Tools → FujiNet** opens (no runtime selected, no NetSIO
+device in the profile, Other FujiNet not chosen before, and Full controls not
+chosen this session) it shows the guide's welcome page. **Set up FujiNet
+automatically** (`ATUIFujiNetAutoSetup()`, test-mode `fujinet auto`) is the
+only decision a newcomer needs:
+
+1. If no valid runtime is selected, `ATFujiNetInstall::Install()`
+   (`media/fujinet_install.cpp`) runs on a worker thread. It reads GitHub's
+   release list, takes the newest non-draft release with a
+   `fujinet-pc-ATARI_*_<suffix>` asset for the host's preference list,
+   downloads it through `ATHttp` (redirects followed, streamed to disk),
+   verifies size and the published SHA-256 `digest`, and unpacks it. ZIP and
+   tar.gz (ustar, GNU long names, pax `path`) are supported; absolute paths,
+   `..` components, links and special files are refused or skipped, sizes and
+   entry counts are bounded, and Unix execute bits are kept. The folder is
+   published atomically as
+   `<config>/FujiNet-PC/<asset name>-<asset id>/`. The rename is retried
+   while Windows antivirus scanning holds the new program, and staging names
+   are short to stay under the 260-character path limit. A complete install
+   of the same asset is reused. Only after the new program is selected does
+   the main thread retire older versions, renaming each first so a version
+   still used by another AltirraSDL on Windows is kept; interrupted staging
+   folders older than an hour are swept. The installed version is recorded
+   as `FujiNet\RuntimeVersion`. Asset names must be plain `[A-Za-z0-9._-]`,
+   and archive members with drive letters, `..` or dot/space-only components
+   are refused.
+2. macOS builds link Homebrew's `libcrypto` by absolute path.
+   `FindMissingLibraries()` scans the program for `/opt/homebrew/opt/…` and
+   `/usr/local/opt/…` dylibs that do not exist. If any are missing the
+   checklist shows the exact `brew install` command (prefixed with the
+   official Homebrew installer when `brew` is absent), **Copy command**,
+   **Install in Terminal** (writes and opens a `.command` file, so Terminal
+   shows Homebrew's prompts and AltirraSDL never sees the password) and
+   **Check again**, which resumes setup. On Apple Silicon with macOS 15, the
+   macOS 14 build is preferred when only `openssl@3` is installed.
+3. Start and Boot. If the profile's UDP port cannot be opened (another
+   AltirraSDL window or a hub holds it) up to 20 following ports are tried;
+   the managed runtime is always told the port actually used.
+
+Failures are shown beside the failed checklist step with **Try again** and a
+manual-download fallback. A loader failure during boot keeps the runtime's
+plain-language explanation instead of a generic "exited" message.
+**FujiNet-PC program → Install latest FujiNet-PC** reinstalls the newest build
+while FujiNet-PC is stopped; private settings and SD data are untouched.
+
+`ALTIRRA_FUJINET_RELEASES_URL` replaces the GitHub release-list URL. The
+`fujinet-install-http` CTest and `tests/ui/test_fujinet_install.py` use it with
+local mock servers; when the list is HTTPS, asset links must be HTTPS too.
+
+## Which FujiNet-PC download
+
+FujiNet-PC builds are published only in the rolling **FujiNet-PC Nightly**
+pre-release (`nightly_fn_pc_v<version>` tag, renamed on every version bump,
+so the panel links the release search rather than the tag). Assets are named
+`fujinet-pc-<MACHINE>_<version>_<suffix>`. The numbered releases' assets
+`fujinet-ATARI-v*.zip` / `fujinet-ATARI-8mb-v*.zip` are ESP32 firmware for
+the physical device (`firmware.bin`, `bootloader.bin`, …) and contain no PC
+program; this was the most common wrong download.
+
+`ATFujiNetPCDetectHost()` / `ATFujiNetPCSelectPackage()` in
+`media/fujinet_pc.cpp` name the suffix for the running system, and the panel
+shows it verbatim. The minimums were read from the published binaries on
+2026-10-21 (Mach-O `LC_BUILD_VERSION` minos, glibc symbol versions, linked
+Homebrew `libcrypto`):
+
+| System | Suffix | Requirement |
+| --- | --- | --- |
+| Windows x64 / ARM64 | `windows-x64.zip` | ARM64 needs Windows 11's x64 emulation (checked with `IsWow64GuestMachineSupported`) |
+| Linux x86-64, glibc ≥ 2.38 | `ubuntu-24.04-amd64.tar.gz` | OpenSSL 3, Expat |
+| Linux x86-64, glibc 2.34–2.37 | `ubuntu-22.04-amd64.tar.gz` | OpenSSL 3, Expat |
+| Linux arm64 / armhf, glibc ≥ 2.38 | `ubuntu-24.04-arm64.tar.gz` / `ubuntu-24.04-armhf.tar.gz` | OpenSSL 3, Expat |
+| macOS ≥ 15, Apple Silicon | `macos-15-arm64.tar.gz` | Homebrew `openssl@4` |
+| macOS 14, Apple Silicon | `macos-14-arm64.tar.gz` | Homebrew `openssl@3` |
+| macOS ≥ 15, Intel | `macos-15-x64.tar.gz` | Homebrew `openssl@3` (`/usr/local`) |
+
+`ATFujiNetPCCheckExecutable()` explains wrong selections in plain language
+(device firmware, an unextracted archive, `run-fujinet`, another machine's
+build, a missing `data/` folder, a non-executable file). A wrong selection
+returns the panel to the download steps instead of offering Start. When the
+process exits early, loader output in the log (`error while loading shared
+libraries`, `GLIBC_… not found`, dyld `Library not loaded`) is translated
+into the package or Homebrew formula to install.
+
 ## Local FujiNet-PC
 
-1. Select **Local PC**. Use **Download FujiNet-PC** to open the official releases. Download
-   the **ATARI** archive matching your operating system and processor,
-   then extract the complete archive.
+1. Select **This computer**. Use **Download FujiNet-PC** to open the official
+   releases and download the file named in the panel, then extract the
+   complete archive.
 2. Use **Choose FujiNet-PC** to select the extracted `fujinet` executable
    (`fujinet.exe` on Windows). Keep `data/`, `SD/` and `fnconfig.ini`
    beside it. Select the executable itself, rather than `run-fujinet`.
@@ -20,9 +119,9 @@ FujiNet** for connection, boot, runtime and diagnostic controls.
    only the runtime and leaves the Atari's state unchanged.
 
 The main view shows connection state, the selected runtime and the actions
-available now. **Runtime settings**, **Connection settings**, **Local disks**
-and **Diagnostics** hold optional controls. Installation instructions appear
-under **Installation help** before a runtime has been selected. The dialog
+available now. **FujiNet-PC program**, **Connection settings**, **Emulator drives**
+and **Diagnostics** hold optional controls. Download steps for this computer
+appear in the main view until a valid runtime has been selected. The dialog
 adapts its height to the current view, keeps its position inside the canvas,
 and wraps actions when using narrow windows or large fonts.
 
@@ -93,14 +192,14 @@ Game Lobby (confirm the prompt). This exercises FujiNet's own networking;
 network features require software designed to use them. Adding FujiNet does
 not make arbitrary games support online multiplayer.
 
-## Guided setup and running a downloaded game
+## Step-by-step guide and running a downloaded game
 
-**Guided setup** in Tools → FujiNet is optional. It walks through choosing
-Local PC or an existing connection, starting and booting, and browsing
+**Step-by-step guide** in Tools → FujiNet is optional. It walks through choosing
+This computer or another FujiNet, starting and booting, and browsing
 software. Entering the guide does not change devices or start a process.
 The usual panel remains available through **Full controls**.
 
-Once the managed Local PC runtime is connected, choose **Run a file through
+Once the managed This computer runtime is connected, choose **Run a file through
 FujiNet...**. Select **Choose local game...**, or paste a direct HTTP(S)
 URL and choose **Download, mount and boot**. AltirraSDL copies the game to
 its private virtual SD card, finds the configured SD host, verifies that
@@ -119,14 +218,15 @@ Cancellation never requests an automatic boot. If cancellation happens
 after a mount request has begun, check FujiNet's web interface because
 that remote request may already have completed. Profile/connection changes
 also cancel automatic boot. This shortcut requires the managed runtime's
-mount API; External and manual setups continue using CONFIG or their own
+mount API; Other FujiNet and manual setups continue using CONFIG or their own
 web interface. Their host slots, hub and process ownership are preserved.
 
 ## Existing process or external FujiNet
 
-Select **External**, then **Connect NetSIO**. The default listener is `127.0.0.1:9997`.
+Select **Other FujiNet**, then **Open connection**. The default listener is `127.0.0.1:9997`.
 Configure an independently running FujiNet-PC to send NetSIO to that
-address. For a FujiNet on the network, enable **Allow LAN**, then
+address. For a FujiNet on the network, enable **Allow other devices on my
+network to connect**, then
 configure FujiNet's SIO-over-network settings with this
 computer's LAN address and the selected UDP port. **Connection settings**
 holds the LAN choice, port, timing and optional web URL. Allow that port in
@@ -135,15 +235,15 @@ the host firewall when needed.
 AltirraSDL listens; FujiNet initiates the connection. The panel displays
 the connected peer, packet counters, synchronization timeouts and errors.
 **Apply connection settings** discards the previous transaction and waits for a
-fresh connection. **Disconnect** stops the listener. An external web
+fresh connection. **Close connection** stops the listener. An external web
 interface URL can be saved independently of the local runtime's web port.
-**Reconnect NetSIO** restores a disconnected listener while keeping a
+**Reopen connection** restores a disconnected listener while keeping a
 managed runtime running and leaving the Atari's state unchanged. While
 the local runtime is running, **Open Web Interface** opens its local web
 port; once it stops, the button uses the saved external URL if present.
 
 An already connected external peer is preserved. Opening the panel selects
-the External view; trying to start a second managed runtime is rejected
+the Other FujiNet view; trying to start a second managed runtime is rejected
 before reconnecting, resetting the Atari or launching a process. Stopping a
 managed runtime clears its old peer while retaining a healthy listener, so
 an immediate managed restart does not mistake stale peer state for an
@@ -175,8 +275,8 @@ Choose the arrangement that matches your setup:
 
 | Arrangement | Transport | Process ownership |
 | --- | --- | --- |
-| Local PC | Native UDP NetSIO | AltirraSDL starts/stops one selected FujiNet-PC |
-| External | Native UDP NetSIO | You start and configure FujiNet or FujiNet-PC |
+| This computer | Native UDP NetSIO | AltirraSDL starts/stops one selected FujiNet-PC |
+| Other FujiNet | Native UDP NetSIO | You start and configure FujiNet or FujiNet-PC |
 | Existing manual bridge | Custom device and Python hub | You retain the descriptor, hub and runtime |
 
 Transport selection stays separate from process ownership. Automatic
@@ -197,7 +297,7 @@ UDP NetSIO connections; the panel explains this limitation.
 normal 100% speed, resets the computer while leaving FujiNet powered,
 and resumes execution. WAN operations need wall-clock time; Warp speed
 can otherwise outrun Atari OS network timeouts. BASIC stays unchanged. The D1
-image and unsaved changes remain mounted. **Enable local D1** makes that
+image and unsaved changes remain mounted. **Emulator drives → Use emulator's D1 again** makes that
 drive available again. Other local drives keep their settings and media.
 Assign different drive numbers to active local and FujiNet drives.
 
@@ -231,8 +331,9 @@ network connections and FujiNet's filesystem state cannot be rewound.
   Extract the complete official ATARI archive, choose the matching processor
   build, and install any runtime dependencies reported by the operating
   system. On Unix systems check that the selected executable is executable.
-- **Waiting for a peer:** check BOIP host and UDP port, **Allow LAN**, and
-  firewall rules. The local web port is a separate TCP service. A Python hub
+- **Waiting for a peer:** check BOIP host and UDP port, **Allow other devices**,
+  and firewall rules. "Could not open port" means another program (often a
+  second AltirraSDL or a NetSIO hub) holds the UDP port. The local web port is a separate TCP service. A Python hub
   and native listener must not bind the same UDP port.
 - **CONFIG does not boot:** first confirm the connection, resolve any full-drive
   D1 conflict, then use **Boot Atari**. Keep normal speed while using network

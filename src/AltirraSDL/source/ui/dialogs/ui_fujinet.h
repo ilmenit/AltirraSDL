@@ -2,6 +2,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 void ATUIShowFujiNetDialog();
 void ATUIRenderFujiNetDialog();
@@ -21,6 +22,11 @@ bool ATUIFujiNetReconnect();
 bool ATUIFujiNetDisconnect();
 bool ATUIFujiNetBoot();
 bool ATUIFujiNetEnableLocalD1();
+// One click: install FujiNet-PC when needed, then start it and boot.
+bool ATUIFujiNetAutoSetup();
+bool ATUIFujiNetInstallRuntime(bool thenStart);
+void ATUIFujiNetCancelInstall();
+bool ATUIFujiNetRecheckLibraries();
 
 struct ATFujiNetUIStatus {
 	bool open = false;
@@ -34,6 +40,10 @@ struct ATFujiNetUIStatus {
 	bool fastBoot = false;
 	bool bootPending = false;
 	bool filePending = false;
+	bool installing = false;
+	bool autoSetupPending = false;
+	uint64_t installReceived = 0;
+	uint64_t installTotal = 0;
 	uint64_t fileReceived = 0;
 	uint64_t fileTotal = 0;
 	unsigned port = 9997;
@@ -49,5 +59,7 @@ struct ATFujiNetUIStatus {
 	std::string peer;
 	std::string error;
 	std::string logTail;
+	std::string runtimeVersion;
+	std::vector<std::string> missingLibraries;
 };
 ATFujiNetUIStatus ATUIGetFujiNetStatus();

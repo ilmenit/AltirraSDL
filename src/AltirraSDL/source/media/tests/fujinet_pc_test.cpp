@@ -47,6 +47,13 @@ int Child(int argc, char** argv) {
 	std::puts("FujiNet test child started");
 	std::fflush(stdout);
 	if (configuration.find("test-mode=exit42") != std::string::npos) return 42;
+	if (configuration.find("test-mode=missing-library") != std::string::npos) {
+		// Text printed by the glibc loader when OpenSSL 3 is absent.
+		std::puts("./fujinet: error while loading shared libraries: libcrypto.so.3: "
+			"cannot open shared object file: No such file or directory");
+		std::fflush(stdout);
+		return 127;
+	}
 	if (configuration.find("test-mode=loop") != std::string::npos) return 75;
 	if (configuration.find("test-mode=restart-trigger") != std::string::npos) {
 		const auto directory = fs::path(argv[4]);
@@ -102,6 +109,67 @@ int main(int argc, char** argv) {
 		options.stateDirectory = UTF8(root / "private data with spaces");
 		options.netsioPort = 29997;
 		options.webPort = 18000;
+		// Download advice names the archive matching the official binaries'
+		// minimum OS/glibc versions; the panel shows it verbatim.
+		using Host = ATFujiNetPCHost;
+		const auto suffix = [](Host::OS os, Host::Arch arch, int major, int minor) {
+			Host host;
+			host.os = os;
+			host.arch = arch;
+			host.versionMajor = major;
+			host.versionMinor = minor;
+			return ATFujiNetPCSelectPackage(host).assetSuffix;
+		};
+		Check(suffix(Host::OS::Windows, Host::Arch::X64, 0, 0) == "windows-x64.zip", "Windows x64 package");
+		Check(suffix(Host::OS::Windows, Host::Arch::Arm64, 0, 0) == "windows-x64.zip", "Windows ARM package");
+		{
+			Host windows10Arm;
+			windows10Arm.os = Host::OS::Windows;
+			windows10Arm.arch = Host::Arch::Arm64;
+			windows10Arm.windowsX64Emulation = false;
+			Check(ATFujiNetPCSelectPackage(windows10Arm).assetSuffixes.empty(),
+				"x64 build offered to Windows 10 on ARM");
+		}
+		Check(suffix(Host::OS::Linux, Host::Arch::X64, 2, 42) == "ubuntu-24.04-amd64.tar.gz", "new glibc package");
+		Check(suffix(Host::OS::Linux, Host::Arch::X64, 2, 35) == "ubuntu-22.04-amd64.tar.gz", "older glibc package");
+		Check(suffix(Host::OS::Linux, Host::Arch::X64, 2, 31).empty(), "too-old glibc accepted");
+		Check(suffix(Host::OS::Linux, Host::Arch::Arm64, 2, 39) == "ubuntu-24.04-arm64.tar.gz", "Linux arm64 package");
+		Check(suffix(Host::OS::Linux, Host::Arch::Arm32, 2, 38) == "ubuntu-24.04-armhf.tar.gz", "Linux armhf package");
+		Check(suffix(Host::OS::Linux, Host::Arch::Arm64, 2, 35).empty(), "old ARM glibc accepted");
+		Check(suffix(Host::OS::MacOS, Host::Arch::Arm64, 15, 4) == "macos-15-arm64.tar.gz", "macOS 15 arm package");
+		Check(suffix(Host::OS::MacOS, Host::Arch::Arm64, 14, 6) == "macos-14-arm64.tar.gz", "macOS 14 arm package");
+		Check(suffix(Host::OS::MacOS, Host::Arch::Arm64, 13, 0).empty(), "macOS 13 accepted");
+		Check(suffix(Host::OS::MacOS, Host::Arch::X64, 15, 0) == "macos-15-x64.tar.gz", "macOS Intel package");
+		Check(suffix(Host::OS::MacOS, Host::Arch::X64, 14, 0).empty(), "macOS 14 Intel accepted");
+		Check(!ATFujiNetPCSelectPackage(ATFujiNetPCDetectHost()).system.empty(), "host not described");
+
+		// The extracted release passes; common wrong selections are explained.
+		const auto named = runtimeDirectory / ("fujinet" + executable.extension().string());
+		fs::copy_file(executable, named);
+		Check(ATFujiNetPCCheckExecutable(UTF8(named)).empty(), "valid runtime rejected");
+		fs::remove(named);
+		Check(ATFujiNetPCCheckExecutable(UTF8(runtimeDirectory / "fnconfig.ini")).find("named fujinet") != std::string::npos,
+			"non-program file not identified");
+		const auto firmware = root / "fujinet-ATARI-v1.6.1";
+		fs::create_directories(firmware);
+		Write(firmware / "firmware.bin", "");
+		Write(firmware / "update.bin", "");
+		Check(ATFujiNetPCCheckExecutable(UTF8(firmware / "update.bin")).find("firmware") != std::string::npos,
+			"device firmware not identified");
+		Check(ATFujiNetPCCheckExecutable(UTF8(root / "fujinet-ATARI-v1.6.1.zip")).find("firmware") != std::string::npos,
+			"device firmware archive not identified");
+		Check(ATFujiNetPCCheckExecutable(UTF8(root / "fujinet-pc-ATARI_v1.6.2-dev_windows-x64.zip")).find("Extract") != std::string::npos,
+			"unextracted archive not identified");
+		Check(ATFujiNetPCCheckExecutable(UTF8(runtimeDirectory / "run-fujinet")).find("run-fujinet") != std::string::npos,
+			"launcher script not identified");
+		const auto apple = root / "fujinet-pc-APPLE";
+		fs::create_directories(apple / "data");
+		Check(ATFujiNetPCCheckExecutable(UTF8(apple / "fujinet")).find("APPLE") != std::string::npos,
+			"other-machine build not identified");
+		Write(root / "fujinet", "");
+		Check(ATFujiNetPCCheckExecutable(UTF8(root / "fujinet")).find("data folder") != std::string::npos,
+			"incomplete extraction not identified");
+
 		ATFujiNetPC runtime;
 		Check(runtime.Start(options), "runtime start failed");
 		const auto state = fs::path(options.stateDirectory);
@@ -141,6 +209,13 @@ int main(int argc, char** argv) {
 		Pump(runtime, [&] { return !runtime.GetStatus().running; });
 		Check(runtime.GetStatus().exitCode == 42 && !runtime.GetStatus().error.empty(),
 			"unexpected runtime exit was not reported");
+
+		Write(templateFile, ";test-mode=missing-library\n" + base);
+		options.stateDirectory = UTF8(root / "missing library test");
+		Check(runtime.Start(options), "missing-library fixture start failed");
+		Pump(runtime, [&] { return !runtime.GetStatus().running; });
+		Check(runtime.GetStatus().error.find("OpenSSL 3 (libcrypto.so.3)") != std::string::npos,
+			"missing runtime library was not explained");
 
 		Write(templateFile, ";test-mode=restart\n" + base);
 		options.stateDirectory = UTF8(root / "restart test");

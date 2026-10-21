@@ -3,6 +3,8 @@
 #include "fujinet_pc.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -17,6 +19,11 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
+#endif
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#elif defined(__GLIBC__)
+#include <gnu/libc-version.h>
 #endif
 
 namespace {
@@ -50,6 +57,40 @@ std::string ReadConfig(const fs::path& path) {
 	contents << file.rdbuf();
 	if (file.bad()) throw std::runtime_error("Cannot read FujiNet-PC configuration.");
 	return contents.str();
+}
+
+// Loader failures are the usual first-run problem: the official builds link
+// the system's OpenSSL/Expat (Linux) or Homebrew's OpenSSL (macOS).
+std::string ExplainStartFailure(const std::string& log) {
+	const auto library = [&](const char* marker) -> std::string {
+		const auto at = log.find(marker);
+		if (at == std::string::npos) return {};
+		const auto begin = at + strlen(marker);
+		const auto end = log.find_first_of(":\r\n", begin);
+		auto text = log.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+		const auto first = text.find_first_not_of(' ');
+		return first == std::string::npos ? std::string() : text.substr(first);
+	};
+	if (log.find("GLIBC_") != std::string::npos && log.find("not found") != std::string::npos)
+		return " This FujiNet-PC build is too new for this Linux. Download the ubuntu-22.04 build instead.";
+	auto missing = library("error while loading shared libraries:");
+	if (!missing.empty()) {
+		if (missing.find("libcrypto") != std::string::npos || missing.find("libssl") != std::string::npos)
+			return " It needs OpenSSL 3 (" + missing + "). Install your distribution's OpenSSL 3 "
+				"library package, for example libssl3 or openssl-libs.";
+		return " It needs the system library " + missing + ". Install the package that provides it.";
+	}
+	missing = library("Library not loaded:");
+	if (!missing.empty()) {
+		const auto formula = missing.find("openssl@");
+		if (formula != std::string::npos) {
+			const auto name = missing.substr(formula, missing.find('/', formula) - formula);
+			return " It needs Homebrew's " + name + ". Install Homebrew from https://brew.sh, then run \"brew install "
+				+ name + "\" in Terminal.";
+		}
+		return " It needs " + missing + ", which is missing.";
+	}
+	return {};
 }
 
 // Only our private copy is edited. Keep all host slots, disks, credentials,
@@ -256,6 +297,191 @@ struct ATFujiNetPC::Impl {
 	}
 };
 
+ATFujiNetPCHost ATFujiNetPCDetectHost() {
+	ATFujiNetPCHost host;
+#if defined(__x86_64__) || defined(_M_X64)
+	host.arch = ATFujiNetPCHost::Arch::X64;
+#elif defined(__aarch64__) || defined(_M_ARM64)
+	host.arch = ATFujiNetPCHost::Arch::Arm64;
+#elif defined(__arm__)
+	host.arch = ATFujiNetPCHost::Arch::Arm32;
+#endif
+#if defined(_WIN32)
+	host.os = ATFujiNetPCHost::OS::Windows;
+	if (host.arch == ATFujiNetPCHost::Arch::Arm64) {
+		// IsWow64GuestMachineSupported exists from Windows 11, the first
+		// ARM release able to run x64 programs.
+		using Query = HRESULT (WINAPI*)(USHORT, BOOL*);
+		const auto query = (Query)(void*)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
+			"IsWow64GuestMachineSupported");
+		BOOL supported = FALSE;
+		host.windowsX64Emulation = query &&
+			SUCCEEDED(query(IMAGE_FILE_MACHINE_AMD64, &supported)) && supported;
+	}
+#elif defined(__APPLE__)
+	host.os = ATFujiNetPCHost::OS::MacOS;
+	// An Intel build running under Rosetta should still get the native
+	// Apple Silicon download.
+	int translated = 0;
+	size_t size = sizeof translated;
+	if (!sysctlbyname("sysctl.proc_translated", &translated, &size, nullptr, 0) && translated)
+		host.arch = ATFujiNetPCHost::Arch::Arm64;
+	char version[32] = {};
+	size = sizeof version - 1;
+	if (!sysctlbyname("kern.osproductversion", version, &size, nullptr, 0))
+		sscanf(version, "%d.%d", &host.versionMajor, &host.versionMinor);
+	// Homebrew's prefix differs between Apple Silicon and Intel; the builds
+	// link these exact paths.
+	const char* prefix = host.arch == ATFujiNetPCHost::Arch::Arm64 ? "/opt/homebrew" : "/usr/local";
+	std::error_code error;
+	host.homebrewOpenSSL3 = fs::exists(fs::path(prefix) / "opt/openssl@3/lib/libcrypto.3.dylib", error);
+	host.homebrewOpenSSL4 = fs::exists(fs::path(prefix) / "opt/openssl@4/lib/libcrypto.4.dylib", error);
+#elif defined(__linux__) && !defined(__ANDROID__)
+	host.os = ATFujiNetPCHost::OS::Linux;
+#ifdef __GLIBC__
+	sscanf(gnu_get_libc_version(), "%d.%d", &host.versionMajor, &host.versionMinor);
+#endif
+#endif
+	return host;
+}
+
+ATFujiNetPCPackage ATFujiNetPCSelectPackage(const ATFujiNetPCHost& host) {
+	using OS = ATFujiNetPCHost::OS;
+	using Arch = ATFujiNetPCHost::Arch;
+	ATFujiNetPCPackage package;
+	const bool known = host.versionMajor > 0;
+	const auto atLeast = [&](int major, int minor) {
+		return host.versionMajor > major ||
+			(host.versionMajor == major && host.versionMinor >= minor);
+	};
+	// Minimum versions come from the published binaries: macOS LC_BUILD_VERSION
+	// minos, glibc symbol versions, and the Homebrew libcrypto each links.
+	switch (host.os) {
+	case OS::Windows:
+		package.system = host.arch == Arch::Arm64 ? "Windows on ARM" : "Windows, 64-bit";
+		if (host.arch == Arch::X64 || (host.arch == Arch::Arm64 && host.windowsX64Emulation))
+			package.assetSuffixes = { "windows-x64.zip" };
+		if (host.arch == Arch::Arm64)
+			package.requirement = host.windowsX64Emulation ?
+				"Windows runs this 64-bit Intel/AMD program through its built-in emulation." :
+				"FujiNet-PC on Windows on ARM needs Windows 11, which can run 64-bit Intel/AMD programs.";
+		else if (host.arch != Arch::X64)
+			package.requirement = "Official FujiNet-PC builds need 64-bit Windows.";
+		break;
+	case OS::MacOS: {
+		const auto brew = [](const char* formula) {
+			return std::string("One-time step: install Homebrew from https://brew.sh, then run \"brew install ")
+				+ formula + "\" in Terminal.";
+		};
+		if (host.arch == Arch::Arm64) {
+			package.system = "macOS, Apple Silicon";
+			if (!known || atLeast(15, 0)) {
+				// The macOS 14 build (minimum 14.0) also runs on 15; choose
+				// whichever OpenSSL the user already has to skip a step.
+				if (host.homebrewOpenSSL3 && !host.homebrewOpenSSL4)
+					package.assetSuffixes = { "macos-14-arm64.tar.gz", "macos-15-arm64.tar.gz" };
+				else
+					package.assetSuffixes = { "macos-15-arm64.tar.gz", "macos-14-arm64.tar.gz" };
+				if (!host.homebrewOpenSSL3 && !host.homebrewOpenSSL4)
+					package.requirement = brew("openssl@4");
+			} else if (atLeast(14, 0)) {
+				package.assetSuffixes = { "macos-14-arm64.tar.gz" };
+				if (!host.homebrewOpenSSL3) package.requirement = brew("openssl@3");
+			} else {
+				package.requirement = "Official FujiNet-PC builds need macOS 14 or newer.";
+			}
+		} else {
+			package.system = "macOS, Intel";
+			if (host.arch == Arch::X64 && (!known || atLeast(15, 0))) {
+				package.assetSuffixes = { "macos-15-x64.tar.gz" };
+				if (!host.homebrewOpenSSL3) package.requirement = brew("openssl@3");
+			} else {
+				package.requirement = "Official FujiNet-PC builds for Intel Macs need macOS 15 or newer.";
+			}
+		}
+		break;
+	}
+	case OS::Linux:
+		package.system = host.arch == Arch::X64 ? "Linux, 64-bit Intel/AMD" :
+			host.arch == Arch::Arm64 ? "Linux, 64-bit ARM" :
+			host.arch == Arch::Arm32 ? "Linux, 32-bit ARM" : "Linux";
+		if (!known) {
+			// musl and other non-glibc systems cannot load these binaries.
+			if (host.arch == Arch::X64) package.assetSuffixes = { "ubuntu-22.04-amd64.tar.gz" };
+			package.requirement = "Official builds need a glibc-based Linux, as used by most distributions.";
+		} else if (host.arch == Arch::X64 && atLeast(2, 38)) {
+			// The 22.04 build needs only glibc 2.34; keep it as a fallback.
+			package.assetSuffixes = { "ubuntu-24.04-amd64.tar.gz", "ubuntu-22.04-amd64.tar.gz" };
+		} else if (host.arch == Arch::X64 && atLeast(2, 34)) {
+			package.assetSuffixes = { "ubuntu-22.04-amd64.tar.gz" };
+		} else if ((host.arch == Arch::Arm64 || host.arch == Arch::Arm32) && atLeast(2, 38)) {
+			package.assetSuffixes = { host.arch == Arch::Arm64 ?
+				"ubuntu-24.04-arm64.tar.gz" : "ubuntu-24.04-armhf.tar.gz" };
+		} else if (host.arch == Arch::X64) {
+			package.requirement = "Official builds need glibc 2.34 or newer (Ubuntu 22.04 or a similar Linux).";
+		} else if (host.arch == Arch::Arm64 || host.arch == Arch::Arm32) {
+			package.requirement = "Official ARM builds need glibc 2.38 or newer (Ubuntu 24.04 or a similar Linux).";
+		} else {
+			package.requirement = "No official FujiNet-PC build exists for this processor.";
+		}
+		break;
+	default:
+		package.system = "this system";
+		package.requirement = "No official FujiNet-PC build exists for this system.";
+		break;
+	}
+	if (!package.assetSuffixes.empty()) package.assetSuffix = package.assetSuffixes.front();
+	return package;
+}
+
+std::string ATFujiNetPCCheckExecutable(const std::string& executable) {
+	if (executable.empty()) return {};
+	const auto path = Path(executable);
+	const auto name = LowerTrim(UTF8(path.filename()));
+	const auto endsWith = [&](const char* suffix) {
+		const size_t n = strlen(suffix);
+		return name.size() >= n && !name.compare(name.size() - n, n, suffix);
+	};
+	// The regular release's fujinet-ATARI-v*.zip is ESP32 firmware for the
+	// physical device and is the download most often chosen by mistake.
+	const auto parent = path.parent_path();
+	std::error_code error;
+	const bool firmwareFolder = fs::is_regular_file(parent / "firmware.bin", error) ||
+		fs::is_regular_file(parent / "bootloader.bin", error) ||
+		fs::is_regular_file(parent / "partitions.bin", error);
+	if (firmwareFolder || endsWith(".bin") ||
+		(!name.compare(0, 14, "fujinet-atari-") && endsWith(".zip")))
+		return "This is firmware for a physical FujiNet device, not the FujiNet-PC program. "
+			"Download the file whose name starts with fujinet-pc-ATARI from the FujiNet-PC "
+			"Nightly release, extract it, and choose the fujinet program inside.";
+	if (endsWith(".zip") || endsWith(".tar.gz") || endsWith(".tgz") || endsWith(".gz") || endsWith(".tar"))
+		return "This is the downloaded archive. Extract (unzip) it first, then choose the "
+			"fujinet program inside the extracted fujinet-pc-ATARI folder.";
+	if (!name.compare(0, 11, "run-fujinet"))
+		return "Choose the program named fujinet (fujinet.exe on Windows), not the run-fujinet script.";
+	const auto folder = LowerTrim(UTF8(parent.filename()));
+	if (!folder.compare(0, 11, "fujinet-pc-") && folder.compare(0, 16, "fujinet-pc-atari")) {
+		std::string machine = UTF8(parent.filename()).substr(11);
+		return "This FujiNet-PC is made for a different computer (" + machine +
+			"). Download the ATARI version instead.";
+	}
+	if (!fs::is_regular_file(path, error))
+		return "This file cannot be found. Choose the fujinet program again.";
+	if (!fs::is_directory(parent / "data", error))
+		return "The data folder is missing next to this file. Extract the complete archive "
+			"and choose fujinet from the extracted folder.";
+	const auto stem = LowerTrim(UTF8(path.stem()));
+	if (stem.compare(0, 7, "fujinet") || (path.has_extension() && !endsWith(".exe")))
+		return "Expected the program named fujinet (fujinet.exe on Windows) from the extracted folder.";
+#ifndef _WIN32
+	const auto perms = fs::status(path, error).permissions();
+	if (!error && (perms & fs::perms::owner_exec) == fs::perms::none)
+		return "This file is not marked as a program. Extract the archive again with its "
+			"permissions, or run: chmod +x on the fujinet file.";
+#endif
+	return {};
+}
+
 ATFujiNetPC::ATFujiNetPC() : mpImpl(new Impl) {}
 ATFujiNetPC::~ATFujiNetPC() { Shutdown(); }
 bool ATFujiNetPC::Available() {
@@ -354,7 +580,9 @@ void ATFujiNetPC::Poll(const std::function<void()>& beforeRestart) {
 			p.status.error = "FujiNet-PC repeatedly requested a restart. Check its log before starting again.";
 		}
 	} else if (!stopped && exitCode != 0) {
-		p.status.error = "FujiNet-PC exited with code " + std::to_string(exitCode) + ". See the runtime log.";
+		const auto reason = ExplainStartFailure(p.status.logTail);
+		p.status.error = "FujiNet-PC exited with code " + std::to_string(exitCode) + "." +
+			(reason.empty() ? std::string(" See the runtime log under Diagnostics.") : reason);
 	}
 	if (p.log) SDL_CloseIO(p.log);
 	p.log = nullptr;
