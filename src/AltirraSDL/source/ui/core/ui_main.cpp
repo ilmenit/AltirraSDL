@@ -41,6 +41,8 @@
 #include <at/atcore/serializable.h>
 
 #include "ui_main.h"
+#include "../dialogs/ui_media_url.h"
+#include "../../media/media_url.h"
 #include "ui_guided_input.h"
 #include "ui/dialogs/ui_game_metadata.h"
 #include "ui/gamelibrary/game_library.h"
@@ -337,6 +339,7 @@ void ATUIRequestCopyFrame(bool trueAspect) {
 // =========================================================================
 
 void ATUIPollDeferredActions() {
+	ATUIPollMediaURLDownload();
 	std::vector<ATDeferredAction> actions;
 	{
 		std::lock_guard<std::mutex> lock(g_deferredMutex);
@@ -391,6 +394,14 @@ void ATUIPollDeferredActions() {
 
 				if (a.mProfile != kATProfileId_Invalid)
 					ATUIActivateGameProfile(a.mProfile);
+
+				// Fork extension: remote media uses the same deferred loader
+				// after an asynchronous download, before any media is unloaded.
+				if (ATMediaURL::IsURL(VDTextWToU8(a.path).c_str())) {
+					ATUIStartMediaURLDownload(VDTextWToU8(a.path).c_str(),
+						a.type == kATDeferred_BootImage);
+					break;
+				}
 
 				const bool boot = a.type == kATDeferred_BootImage ||
 					a.type == kATDeferred_BootProgramData;
@@ -513,6 +524,14 @@ void ATUIPollDeferredActions() {
 				}
 
 				if (loadSuccess) {
+					// URL downloads finish asynchronously while a gaming file
+					// browser may still be open. Return to the emulated display
+					// only after the image has actually loaded successfully.
+					if (ATUIIsGamingMode()) {
+						extern ATMobileUIState g_mobileState;
+						g_mobileState.gameLoaded = true;
+						g_mobileState.currentScreen = ATMobileUIScreen::None;
+					}
 					if (!memoryProgram)
 						ATAddMRU(a.path.c_str());
 
@@ -1465,6 +1484,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 }
 
 void ATUIShutdown() {
+	ATUIShutdownMediaURLDownload();
 	ATUIShutdownDiskExplorers();
 	ATUIShutdownCartridgeExplorers();
 	ATUIShutdownXEXExplorers();
@@ -2401,6 +2421,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showSystemConfig)      ATUIRenderSystemConfig(sim, state);
 	if (state.showDiskManager)       ATUIRenderDiskManager(sim, state, window);
 	if (state.showGameLibrary)       ATUIRenderGameLibrary(sim, state, window);
+	ATUIRenderMediaURLDialog();
 	if (state.showCassetteControl)   ATUIRenderCassetteControl(sim, state, window);
 	if (state.showAdjustColors)      ATUIRenderAdjustColors(sim, state);
 	if (state.showDisplaySettings)   ATUIRenderDisplaySettings(sim, state);

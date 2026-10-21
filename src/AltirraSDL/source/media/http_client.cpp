@@ -6,6 +6,7 @@
 #include "http_client.h"
 
 #include <cstdio>
+#include <chrono>
 #include <cstring>
 #include <mutex>
 
@@ -127,6 +128,8 @@ std::string LastErrorText(const char* where) {
 
 void Get(const Request& in, Response& out) {
 	out = Response();
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 
 	if (in.url.empty()) {
 		out.error = "empty URL";
@@ -176,7 +179,11 @@ void Get(const Request& in, Response& out) {
 	}
 
 	const DWORD tmo = in.timeoutMs ? in.timeoutMs : 20000;
-	WinHttpSetTimeouts(session.h, (int)tmo, (int)tmo, (int)tmo, (int)tmo);
+	// Keep cancellation/shutdown bounded even while a synchronous OS
+	// request is waiting on an unresponsive server. The complete transfer
+	// retains its longer deadline, checked between network operations.
+	const int wait = (int)(tmo < 5000 ? tmo : 5000);
+	WinHttpSetTimeouts(session.h, wait, wait, wait, wait);
 
 	HInternetGuard connect;
 	connect.h = WinHttpConnect(session.h, hostBuf, uc.nPort, 0);
@@ -218,11 +225,13 @@ void Get(const Request& in, Response& out) {
 		out.error = LastErrorText("WinHttpSendRequest");
 		return;
 	}
+	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
 	if (!WinHttpReceiveResponse(request.h, nullptr)) {
 		out.error = LastErrorText("WinHttpReceiveResponse");
 		return;
 	}
+	if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
 	DWORD statusCode = 0;
 	DWORD statusSize = sizeof statusCode;
@@ -258,10 +267,10 @@ void Get(const Request& in, Response& out) {
 
 	// Body.
 	for (;;) {
-		if (IsCancelled(in)) {
+		if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
 			out.status = 0;
 			out.body.clear();
-			out.error = "cancelled";
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
 			return;
 		}
 
@@ -273,6 +282,7 @@ void Get(const Request& in, Response& out) {
 		}
 		if (!avail)
 			break;
+		if (IsCancelled(in)) { out.error = "cancelled"; return; }
 
 		if (in.maxBodyBytes && out.body.size() + avail > in.maxBodyBytes) {
 			out.status = 0;
@@ -292,6 +302,8 @@ void Get(const Request& in, Response& out) {
 			return;
 		}
 		out.body.resize(base + read);
+		if (in.bytesReceived)
+			in.bytesReceived->store(out.body.size(), std::memory_order_relaxed);
 		if (!read)
 			break;
 	}
@@ -352,6 +364,8 @@ std::string JStringToUtf8(JNIEnv* env, jstring s) {
 
 void Get(const Request& in, Response& out) {
 	out = Response();
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::milliseconds(in.timeoutMs ? in.timeoutMs : 20000);
 
 	if (in.url.empty()) {
 		out.error = "empty URL";
@@ -403,7 +417,8 @@ void Get(const Request& in, Response& out) {
 	if (!httpConnClass) { ClearException(env); out.error = "no HttpURLConnection"; return; }
 	JLocal httpConnClassRef(env, httpConnClass);
 
-	const jint tmo = (jint)(in.timeoutMs ? in.timeoutMs : 20000);
+	const jint tmo = (jint)(in.timeoutMs && in.timeoutMs < 5000
+		? in.timeoutMs : 5000);
 
 	jmethodID setConnectTimeout = env->GetMethodID(httpConnClass,
 		"setConnectTimeout", "(I)V");
@@ -492,10 +507,10 @@ void Get(const Request& in, Response& out) {
 	if (!buf) { ClearException(env); return; }
 
 	for (;;) {
-		if (IsCancelled(in)) {
+		if (IsCancelled(in) || std::chrono::steady_clock::now() >= deadline) {
 			out.status = 0;
 			out.body.clear();
-			out.error = "cancelled";
+			out.error = IsCancelled(in) ? "cancelled" : "transfer timed out";
 			break;
 		}
 
@@ -523,6 +538,8 @@ void Get(const Request& in, Response& out) {
 		out.body.resize(base + (size_t)n);
 		env->GetByteArrayRegion((jbyteArray)buf.obj, 0, n,
 			(jbyte*)(out.body.data() + base));
+		if (in.bytesReceived)
+			in.bytesReceived->store(out.body.size(), std::memory_order_relaxed);
 		if (ClearException(env)) {
 			out.status = 0;
 			out.body.clear();
@@ -696,6 +713,7 @@ struct WriteCtx {
 	std::vector<uint8_t>* body;
 	size_t maxBytes;
 	bool overflow;
+	const Request* request;
 };
 
 size_t WriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -708,13 +726,18 @@ size_t WriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
 	const size_t base = ctx->body->size();
 	ctx->body->resize(base + n);
 	memcpy(ctx->body->data() + base, ptr, n);
+	if (ctx->request->bytesReceived)
+		ctx->request->bytesReceived->store(base + n, std::memory_order_relaxed);
 	return n;
 }
 
-int XferCallback(void* userdata, int64_t, int64_t, int64_t, int64_t) {
-	const std::atomic<bool>* cancel = (const std::atomic<bool>*)userdata;
+int XferCallback(void* userdata, int64_t total, int64_t, int64_t, int64_t) {
+	const Request& request = *(const Request*)userdata;
+	if (request.bytesTotal)
+		request.bytesTotal->store(total > 0 ? (uint64_t)total : 0,
+			std::memory_order_relaxed);
 	// Non-zero aborts the transfer with CURLE_ABORTED_BY_CALLBACK.
-	return (cancel && cancel->load(std::memory_order_relaxed)) ? 1 : 0;
+	return IsCancelled(request) ? 1 : 0;
 }
 
 }  // namespace
@@ -746,13 +769,18 @@ void Get(const Request& in, Response& out) {
 		return;
 	}
 
-	WriteCtx ctx{&out.body, in.maxBodyBytes, false};
+	WriteCtx ctx{&out.body, in.maxBodyBytes, false, &in};
 
 	c.easy_setopt(eh, kOptURL, in.url.c_str());
 	c.easy_setopt(eh, kOptWriteFunction, (void*)&WriteCallback);
 	c.easy_setopt(eh, kOptWriteData, (void*)&ctx);
 	c.easy_setopt(eh, kOptFollowLocation, (long)1);
 	c.easy_setopt(eh, kOptMaxRedirs, (long)5);
+	// CURLOPT_PROTOCOLS / CURLOPT_REDIR_PROTOCOLS (curl's stable ABI).
+	// A redirect from a media server must not access file:// or other
+	// protocols supported by the host's libcurl.
+	c.easy_setopt(eh, kOptLong + 181, (long)3); // HTTP | HTTPS
+	c.easy_setopt(eh, kOptLong + 182, (long)3);
 	// Required when libcurl is used from threads: without it libcurl
 	// installs signal handlers / uses alarm() for DNS timeouts.
 	c.easy_setopt(eh, kOptNoSignal, (long)1);
@@ -763,10 +791,10 @@ void Get(const Request& in, Response& out) {
 	if (!in.userAgent.empty())
 		c.easy_setopt(eh, kOptUserAgent, in.userAgent.c_str());
 
-	if (in.cancel) {
+	if (in.cancel || in.bytesTotal) {
 		c.easy_setopt(eh, kOptNoProgress, (long)0);
 		c.easy_setopt(eh, kOptXferInfoFunction, (void*)&XferCallback);
-		c.easy_setopt(eh, kOptXferInfoData, (void*)in.cancel);
+		c.easy_setopt(eh, kOptXferInfoData, (void*)&in);
 	}
 
 	const int rc = c.easy_perform(eh);

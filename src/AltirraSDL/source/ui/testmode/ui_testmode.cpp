@@ -21,6 +21,7 @@
 #include "testmode_ipc.h"
 #include "ui_testmode.h"
 #include "ui_main.h"
+#include "ui/dialogs/ui_media_url.h"
 #include "ui_search.h"
 #include "ui_fonts.h"
 #include "macos_menubar.h"
@@ -2861,6 +2862,19 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			return JsonError("usage: boot_image <path>");
 		ATUIPushDeferred(kATDeferred_BootImage, path.c_str());
 		return JsonOk();
+	}
+	if (verb == "open_url") {
+		const std::string mode = NextToken(cmd);
+		const std::string url = RestOfLine(cmd);
+		if ((mode != "open" && mode != "boot") || url.empty())
+			return JsonError("usage: open_url open|boot <http(s)_url>");
+		ATUIStartMediaURLDownload(url.c_str(), mode == "boot");
+		return JsonOk();
+	}
+	if (verb == "media_url_status") {
+		return std::string("{\"ok\":true,\"pending\":") +
+			(ATUIIsMediaURLDownloadPending() ? "true" : "false") +
+			",\"error\":\"" + JsonEscape(ATUIGetMediaURLDownloadError()) + "\"}";
 	}
 
 	if (verb == "attach_disk") {

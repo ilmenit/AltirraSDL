@@ -160,6 +160,16 @@ const char *ATUIGetCartridgeModeName(int mode) {
 		case kATCartridgeMode_JAtariCart_256K:        return "J(atari)Cart 256K";
 		case kATCartridgeMode_JAtariCart_512K:        return "J(atari)Cart 512K";
 		case kATCartridgeMode_JAtariCart_1024K:       return "J(atari)Cart 1MB";
+		case kATCartridgeMode_RamCart_64K: return "RAM-Cart 64KB";
+		case kATCartridgeMode_RamCart_128K: return "RAM-Cart 128KB";
+		case kATCartridgeMode_DoubleRamCart_256K: return "Double RAM-Cart 256KB";
+		case kATCartridgeMode_RamCart_1M: return "RAM-Cart 1MB";
+		case kATCartridgeMode_RamCart_2M: return "RAM-Cart 2MB";
+		case kATCartridgeMode_RamCart_4M: return "RAM-Cart 4MB";
+		case kATCartridgeMode_RamCart_8M: return "RAM-Cart 8MB";
+		case kATCartridgeMode_RamCart_16M: return "RAM-Cart 16MB";
+		case kATCartridgeMode_RamCart_32M: return "RAM-Cart 32MB";
+		case kATCartridgeMode_SiDiCar_32K: return "SiDiCar 32KB";
 		case kATCartridgeMode_DCart:                  return "DCart";
 		default:                                     return "Unknown";
 	}
@@ -272,6 +282,17 @@ const char *ATUIGetCartridgeModeDesc(int mode) {
 		case kATCartridgeMode_JAtariCart_256K:
 		case kATCartridgeMode_JAtariCart_512K:
 		case kATCartridgeMode_JAtariCart_1024K:       return "8K banked by CCTL address (switchable)";
+		case kATCartridgeMode_RamCart_64K:
+		case kATCartridgeMode_RamCart_128K:
+		case kATCartridgeMode_DoubleRamCart_256K:
+		case kATCartridgeMode_RamCart_1M:
+		case kATCartridgeMode_RamCart_2M:
+		case kATCartridgeMode_RamCart_4M:
+		case kATCartridgeMode_RamCart_8M:
+		case kATCartridgeMode_RamCart_16M:
+		case kATCartridgeMode_RamCart_32M:
+			return "Battery-backed SRAM, banked by CCTL; physical R/W and module switches";
+		case kATCartridgeMode_SiDiCar_32K: return "Battery-backed SRAM, four writable 8K banks at $8000-$9FFF";
 		case kATCartridgeMode_DCart:                  return "8K banked by CCTL write (switchable) + keyhole";
 		default:                                     return "";
 	}

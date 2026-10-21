@@ -2,6 +2,7 @@
 //	Verbatim move; helpers/state shared via mobile_internal.h.
 
 #include <stdafx.h>
+#include "../dialogs/ui_media_url.h"
 #include <cwctype>
 #include <cctype>
 #include <vector>
@@ -607,6 +608,17 @@ void RenderFileBrowser(ATSimulator &sim, ATUIState &uiState,
 				}
 			}
 		}
+
+#ifndef __EMSCRIPTEN__
+		// Authorized fork extension: remote game images use the same
+		// importer on touch devices. Other picker modes select local
+		// folders, firmware or a specific disk drive and keep their scope.
+		if (!s_folderPickerMode && !s_romFolderMode &&
+			!s_archiveFilePickerMode && s_diskMountTargetDrive < 0) {
+			if (ATTouchButton("From URL...", ImVec2(0, dp(44.0f))))
+				ATUIShowMediaURLDialog();
+		}
+#endif
 
 		// --- Quick filter (type-to-filter) — mirrors the Game Library
 		// search.  A "Search" chip morphs into a full-width filter input

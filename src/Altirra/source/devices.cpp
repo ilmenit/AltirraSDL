@@ -104,6 +104,8 @@ extern const ATDeviceDefinition g_ATDeviceDefBlockDevVSDFS;
 extern const ATDeviceDefinition g_ATDeviceDefBlockDevTemporaryWriteFilter;
 extern const ATDeviceDefinition g_ATDeviceDef1090;
 extern const ATDeviceDefinition g_ATDeviceDefBit3FullView;
+extern const ATDeviceDefinition g_ATDeviceDefAF80;
+extern const ATDeviceDefinition g_ATDeviceDefMosaic;
 extern const ATDeviceDefinition g_ATDeviceDefComputerEyes;
 extern const ATDeviceDefinition g_ATDeviceDefVideoGenerator;
 extern const ATDeviceDefinition g_ATDeviceDefVideoStillImage;
@@ -215,6 +217,8 @@ void ATRegisterDevices(ATDeviceManager& dm) {
 		&g_ATDeviceDefBlockDevTemporaryWriteFilter,
 		&g_ATDeviceDef1090,
 		&g_ATDeviceDefBit3FullView,
+		&g_ATDeviceDefAF80,
+		&g_ATDeviceDefMosaic,
 		&g_ATDeviceDefComputerEyes,
 		&g_ATDeviceDefVideoGenerator,
 		&g_ATDeviceDefVideoStillImage,

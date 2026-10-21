@@ -44,3 +44,29 @@ target_link_libraries(altirra-metadata-parser-test PRIVATE
 
 add_test(NAME metadata-parser
     COMMAND altirra-metadata-parser-test)
+
+# Local HTTP fixtures cover transport, redirects, cancellation, cache
+# publication and bounded/corrupt archives without external network access.
+if(NOT ANDROID AND NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(altirra-media-url-test
+        ${_media_root}/media_url.cpp
+        ${_media_root}/http_client.cpp
+        media_url_test.cpp)
+    target_include_directories(altirra-media-url-test PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/shim
+        ${_media_root})
+    target_compile_features(altirra-media-url-test PRIVATE cxx_std_17)
+    target_link_libraries(altirra-media-url-test PRIVATE
+        ATIO ATCore system Threads::Threads ${CMAKE_DL_LIBS})
+    if(WIN32)
+        target_link_libraries(altirra-media-url-test PRIVATE winhttp)
+    endif()
+    add_test(NAME media-url-http
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/media_url_http_test.py
+            $<TARGET_FILE:altirra-media-url-test>)
+    set_tests_properties(media-url-http PROPERTIES TIMEOUT 60
+        ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+endif()

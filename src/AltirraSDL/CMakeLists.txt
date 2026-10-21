@@ -71,6 +71,8 @@ target_sources(AltirraSDL PRIVATE
 
     # --- media/ : video recording, accelerator table, online metadata ---
     source/media/videowriter_sdl3.cpp
+    source/media/media_url.cpp
+    source/ui/dialogs/ui_media_url.cpp
     source/media/accel_sdl3.cpp
     source/media/http_client.cpp
     source/media/metadata_settings.cpp
@@ -82,6 +84,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/core/ui_main.cpp
     source/ui/core/ui_mode.cpp
     source/ui/core/ui_state_settings.cpp
+    source/ui/core/ramcart_settings.cpp
     source/ui/core/ui_main_aboutdialogs.cpp
     source/ui/core/ui_main_compat.cpp
     source/ui/core/ui_main_overlays.cpp

@@ -204,6 +204,28 @@ void ATUIBeginAddDevice(ATDeviceManager *devMgr, const char *tag) {
 
 // Dispatch to the appropriate per-device dialog renderer
 static bool DispatchDeviceDialog(const char *tag, ATPropertySet& props, ATDeviceConfigState& st) {
+	// Fork extension: user-requested Mosaic expansion, configured in the
+	// existing Devices settings flow. Device properties persist per profile.
+	if (!strcmp(tag, "mosaic")) {
+		if (st.justOpened)
+			st.combo[0] = (int)props.GetUint32("banks", 4) / 4 - 1;
+		st.combo[0] = std::clamp(st.combo[0], 0, 8);
+		const char *labels[] = { "64K (4 banks)", "80K (8 banks)",
+			"96K (12 banks)", "112K (16 banks)", "128K (20 banks)",
+			"144K (24 banks)", "160K (28 banks)", "176K (32 banks)",
+			"192K (36 banks)" };
+		ImGui::Combo("Total RAM", &st.combo[0], labels, 9);
+		ImGui::TextWrapped("For Atari 400/800 with 48K base RAM. "
+			"Uses bank-select mode; the 1200 OS RAM modification is separate.");
+		if (ImGui::Button("OK", ImVec2(120, 0))) {
+			props.SetUint32("banks", (st.combo[0] + 1) * 4);
+			return true;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0)))
+			st.open = false;
+		return false;
+	}
 	// Covox
 	if (!strcmp(tag, "covox")) return RenderCovoxConfig(props, st);
 

@@ -178,3 +178,38 @@ target_link_libraries(altirra-display-sampling-test PRIVATE SDL3::SDL3)
 add_test(NAME upstream-display-sampling COMMAND altirra-display-sampling-test)
 set_tests_properties(upstream-display-sampling PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 60)
+
+add_executable(altirra-ramcart-regression-test
+    ramcart_regression.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/uiregistry.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/cartridge.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/memorymanager.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/savestate.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/savestateio.cpp)
+target_include_directories(altirra-ramcart-regression-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${PROJECT_SOURCE_DIR}/src/Altirra/res
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-ramcart-regression-test PRIVATE
+    ATIO ATEmulation vdjson ATCore Kasumi system SDL3::SDL3)
+add_test(NAME ramcart-regressions COMMAND altirra-ramcart-regression-test)
+set_tests_properties(ramcart-regressions PROPERTIES TIMEOUT 60)
+
+add_executable(altirra-expansion-device-test
+    expansion_devices.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/mosaic.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/af80.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/memorymanager.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/savestate.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/savestateio.cpp)
+target_include_directories(altirra-expansion-device-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-expansion-device-test PRIVATE
+    ATIO vdjson ATCore Kasumi system SDL3::SDL3)
+add_test(NAME expansion-devices COMMAND altirra-expansion-device-test)
+set_tests_properties(expansion-devices PROPERTIES TIMEOUT 60)

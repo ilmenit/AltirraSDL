@@ -35,10 +35,14 @@ def video_desktop(request, monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Exercises the ImGui menu pause path")
-@pytest.mark.parametrize("device", ["xep80", "1090", "bit3"])
+@pytest.mark.parametrize("device", ["xep80", "1090", "bit3", "af80"])
 def test_real_video_device_switches_while_paused(video_desktop, device):
     emu, bridge = video_desktop
     bridge.device_add(device)
+    if device == "af80":
+        # AF80 powers up in 40-column pass-through. D5F6 bit 7 selects
+        # the board's 80-column signal, as used by its original ROM.
+        bridge.poke(0xD5F6, 0x80)
     # A firmware warning does not prevent enumeration: an unprogrammed
     # output must still replace computer output with a blank signal.
     emu.wait_frames(3)
@@ -77,3 +81,36 @@ def test_real_video_device_switches_while_paused(video_desktop, device):
     assert state["available"] == []
     assert state["name"] == ""
     assert not state["active"]
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="Exercises the ImGui display path")
+@pytest.mark.parametrize("device,address", [("1090", 0xD1FA), ("bit3", 0xD580)])
+def test_programmed_video_raster_and_passthrough(video_desktop, device, address):
+    emu, bridge = video_desktop
+    bridge.device_add(device)
+    emu.send("run_command View.ToggleVideoOutputAutoswitching")
+    # MC6845/SY6545 register layout: synthetic 80x24 raster, eight
+    # scanlines/cell, 114 character clocks/line and 262 lines/frame.
+    # This gives a valid NTSC-rate signal at the device's character clock.
+    registers = [113, 80, 96, 8, 31, 6, 24, 28, 0, 7, 0x20, 7, 0, 0, 0, 0]
+    for index, value in enumerate(registers):
+        bridge.poke(address, index)
+        bridge.poke(address + 1, value)
+    if device == "bit3":
+        # bit3.cpp control port: unblank and select the adapter signal.
+        bridge.poke(0xD508, 0x18)
+    emu.send("run_command View.VideoOutputNext")
+    bridge.frame(2)
+    bridge.ping()  # FRAME completion barrier, including device Tick().
+    emu.wait_frames(3)
+    state = emu.query_state()["state"]["videoOutput"]
+    assert state["name"] == device and state["active"]
+    assert (state["frameWidth"], state["frameHeight"]) == (640, 192)
+    assert (state["textureWidth"], state["textureHeight"]) == (640, 192)
+
+    if device == "bit3":
+        bridge.poke(0xD508, 0x08)  # retain the raster, pass computer video through
+        emu.wait_frames(3)
+        state = emu.query_state()["state"]["videoOutput"]
+        assert state["name"] == "bit3" and not state["active"]
+        assert (state["frameWidth"], state["frameHeight"]) != (640, 192)

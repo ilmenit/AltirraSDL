@@ -120,6 +120,9 @@ static const FwTypeNameEntry kFwTypes_Hardware[] = {
 	{ kATFirmwareType_WarpOS, "APE Warp+", "APE Warp+ OS 32-in-1 Firmware" },
 	{ kATFirmwareType_1090Firmware, "1090 Firmware", "1090 80-Column Video Card Firmware" },
 	{ kATFirmwareType_1090Charset, "1090 Charset", "1090 80-Column Video Card Charset" },
+	// Fork extension: user-requested Austin Franklin board firmware.
+	{ kATFirmwareType_AF80Firmware, "AF80 Firmware", "Austin Franklin 80 Firmware (4K)" },
+	{ kATFirmwareType_AF80Charset, "AF80 Charset", "Austin Franklin 80 Charset (4K)" },
 	{ kATFirmwareType_Bit3Firmware, "Bit3 Firmware", "Bit 3 Full-View 80 Firmware" },
 	{ kATFirmwareType_Bit3Charset, "Bit3 Charset", "Bit 3 Full-View 80 Charset" },
 	{ kATFirmwareType_KarinMaxiDrive, "Karin Maxi Drive", "Karin Maxi Drive Firmware" },

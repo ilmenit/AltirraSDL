@@ -55,6 +55,11 @@ struct Request {
 	// a huge file is truncated and reported as an error rather than
 	// exhausting memory.  0 = no limit.
 	size_t maxBodyBytes = 32u * 1024u * 1024u;
+
+	// Optional transfer counters owned by the caller. Total may remain zero
+	// when the server does not supply a length (or uses compression).
+	std::atomic<uint64_t>* bytesReceived = nullptr;
+	std::atomic<uint64_t>* bytesTotal = nullptr;
 };
 
 struct Response {

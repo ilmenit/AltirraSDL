@@ -51,6 +51,8 @@
 #include "uiaccessors.h"
 #include "uikeyboard.h"
 #include "ui_main.h"
+#include "ui/dialogs/ui_media_url.h"
+#include "media/media_url.h"
 #include "ui_mode.h"
 #include "touch_widgets.h"
 #include <exception>
@@ -1419,6 +1421,16 @@ static bool ProcessCommandLine(int argc, char **argv, const char* workingDirecto
 		}
 
 		// Treat as boot image
+		if (ATMediaURL::IsURL(pathU8.c_str())) {
+			// Fork extension: keep startup responsive and apply the normal
+			// Boot Image workflow after the download completes.
+			ATUIStartMediaURLDownload(pathU8.c_str(), true);
+			hadBootImage = true;
+			for (int j = i; j <= joinEnd; ++j)
+				consumed[j] = true;
+			i = joinEnd;
+			continue;
+		}
 		if (!haveUnloadedAllImages) {
 			g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
 			haveUnloadedAllImages = true;

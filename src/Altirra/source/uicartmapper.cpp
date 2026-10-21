@@ -381,6 +381,27 @@ const wchar_t *ATUIDialogCartridgeMapper::GetModeName(int mode) {
 		case kATCartridgeMode_JAtariCart_256K:		return L"J(atari)Cart 256K";
 		case kATCartridgeMode_JAtariCart_512K:		return L"J(atari)Cart 512K";
 		case kATCartridgeMode_JAtariCart_1024K:		return L"J(atari)Cart 1MB";
+		case kATCartridgeMode_RamCart_64K: return L"RAM-Cart 64KB";
+		case kATCartridgeMode_RamCart_128K: return L"RAM-Cart 128KB";
+		case kATCartridgeMode_DoubleRamCart_256K: return L"Double RAM-Cart 256KB";
+		case kATCartridgeMode_RamCart_1M: return L"RAM-Cart 1MB";
+		case kATCartridgeMode_RamCart_2M: return L"RAM-Cart 2MB";
+		case kATCartridgeMode_RamCart_4M: return L"RAM-Cart 4MB";
+		case kATCartridgeMode_RamCart_8M: return L"RAM-Cart 8MB";
+		case kATCartridgeMode_RamCart_16M: return L"RAM-Cart 16MB";
+		case kATCartridgeMode_RamCart_32M: return L"RAM-Cart 32MB";
+		case kATCartridgeMode_SiDiCar_32K: return L"SiDiCar 32KB";
+		case kATCartridgeMode_RamCart_64K:
+		case kATCartridgeMode_RamCart_128K:
+		case kATCartridgeMode_DoubleRamCart_256K:
+		case kATCartridgeMode_RamCart_1M:
+		case kATCartridgeMode_RamCart_2M:
+		case kATCartridgeMode_RamCart_4M:
+		case kATCartridgeMode_RamCart_8M:
+		case kATCartridgeMode_RamCart_16M:
+		case kATCartridgeMode_RamCart_32M:
+			return L"Battery-backed SRAM, banked by CCTL; physical R/W and module switches";
+		case kATCartridgeMode_SiDiCar_32K: return L"Battery-backed SRAM, four writable 8K banks at $8000-$9FFF";
 		case kATCartridgeMode_DCart:				return L"DCart";
 
 		// These modes should not be hit

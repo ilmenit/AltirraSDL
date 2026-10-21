@@ -838,6 +838,12 @@
     <ClCompile Include="source\uivideooutputmenu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\af80.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\mosaic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="source\bit3.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1678,6 +1684,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="h\1090.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="h\af80.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="h\mosaic.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="h\bit3.h">
