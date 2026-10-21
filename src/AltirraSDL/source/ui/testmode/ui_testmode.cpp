@@ -22,6 +22,7 @@
 #include "ui_testmode.h"
 #include "ui_main.h"
 #include "ui/dialogs/ui_media_url.h"
+#include "ui/dialogs/ui_fujinet.h"
 #include "ui_search.h"
 #include "ui_fonts.h"
 #include "macos_menubar.h"
@@ -2875,6 +2876,65 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return std::string("{\"ok\":true,\"pending\":") +
 			(ATUIIsMediaURLDownloadPending() ? "true" : "false") +
 			",\"error\":\"" + JsonEscape(ATUIGetMediaURLDownloadError()) + "\"}";
+	}
+
+	if (verb == "fujinet") {
+		const std::string action = NextToken(cmd);
+		bool success = true;
+		if (action == "show") ATUIShowFujiNetDialog();
+		else if (action == "runtime") {
+			const auto port = NextToken(cmd);
+			const auto path = RestOfLine(cmd);
+			if (path.empty()) return JsonError("usage: fujinet runtime <web_port> <executable>");
+			success = ATUIFujiNetSetRuntime(path.c_str(), (unsigned)atoi(port.c_str()));
+		} else if (action == "listen") {
+			const auto port = NextToken(cmd), lan = NextToken(cmd), timeout = NextToken(cmd);
+			success = ATUIFujiNetConfigureListener(lan == "1", (unsigned)atoi(port.c_str()),
+				timeout.empty() ? 100U : (unsigned)atoi(timeout.c_str()));
+		} else if (action == "start") success = ATUIFujiNetStartRuntime();
+		else if (action == "start_boot") success = ATUIFujiNetStartAndBoot();
+		else if (action == "stop") ATUIFujiNetStopRuntime();
+		else if (action == "reconnect") success = ATUIFujiNetReconnect();
+		else if (action == "disconnect") success = ATUIFujiNetDisconnect();
+		else if (action == "boot") success = ATUIFujiNetBoot();
+		else if (action == "local_d1") success = ATUIFujiNetEnableLocalD1();
+		else if (action != "status") return JsonError("unknown fujinet action");
+		const auto status = ATUIGetFujiNetStatus();
+		if (!success) return JsonError(status.error);
+		std::string result = "{\"ok\":true";
+		const auto flag = [&](const char* name, bool value) {
+			result += std::string(",\"") + name + "\":" + (value ? "true" : "false");
+		};
+		const auto number = [&](const char* name, uint64 value) {
+			result += std::string(",\"") + name + "\":" + std::to_string(value);
+		};
+		const auto string = [&](const char* name, const std::string& value) {
+			result += std::string(",\"") + name + "\":\"" + JsonEscape(value) + "\"";
+		};
+		flag("open", status.open);
+		flag("present", status.present);
+		flag("processAvailable", status.processAvailable);
+		flag("running", status.running);
+		flag("stopping", status.stopping);
+		flag("bootPending", status.bootPending);
+		flag("listening", status.listening);
+		flag("connected", status.connected);
+		flag("localD1Enabled", status.localD1Enabled);
+		flag("fastBoot", status.fastBoot);
+		number("port", status.port);
+		number("webPort", status.webPort);
+		number("restarts", status.restarts);
+		result += ",\"exitCode\":" + std::to_string(status.exitCode);
+		number("rxPackets", status.rxPackets);
+		number("txPackets", status.txPackets);
+		number("droppedPackets", status.droppedPackets);
+		number("syncTimeouts", status.syncTimeouts);
+		string("executable", status.executable);
+		string("stateDirectory", status.stateDirectory);
+		string("peer", status.peer);
+		string("error", status.error);
+		string("logTail", status.logTail);
+		return result + "}";
 	}
 
 	if (verb == "attach_disk") {

@@ -43,3 +43,31 @@
   integration tests.
 - Included the new production-code regression targets in Linux normal
   and sanitizer CI and native Windows/macOS regression jobs.
+
+### FujiNet and NetSIO
+
+- Added a native UDP NetSIO device for FujiNet-PC and external FujiNet,
+  with command/data synchronization, serial pacing, baud changes,
+  PROCEED/INTERRUPT signals, packet credits, reset and reconnect handling.
+  Local drives retain their own SIO acceleration. Network callbacks queue
+  data for the emulation thread; bounded queues and transmit waits handle
+  backpressure during fast emulation.
+- Added Tools → FujiNet on the ImGui and native macOS menus. The panel
+  configures a local or LAN listener, shows the peer and diagnostics, and
+  optionally manages an extracted official FujiNet-PC runtime. Start and
+  Boot waits for the connection before resetting the computer. Private
+  configuration, SD data and bounded logs preserve the installed runtime
+  and its distribution files. Expected runtime restarts are automatic.
+- FujiNet boot disables the built-in D1 drive and Fast boot and selects
+  normal speed while retaining mounted images and unsaved changes.
+  Full-drive conflicts are reported. An exclusive runtime-data lock
+  prevents concurrent managed processes from sharing the same SD/config.
+  The web interface and data folder can be opened directly. Native Android
+  can use an external FujiNet; browser UDP and local mobile process
+  management limitations are explained in the panel.
+- Fixed socket address comparison and UDP send-queue reporting on the
+  portable and Windows backends, preventing silent loss when a queue fills.
+- Added real UDP protocol, process ownership and UI regression tests,
+  plus an opt-in end-to-end test using actual FujiNet-PC and Atari OS SIO
+  calls for configuration boot, network/JSON, SD/TNFS and local-drive
+  coexistence. See `docs/fujinet.md` for setup and verification.

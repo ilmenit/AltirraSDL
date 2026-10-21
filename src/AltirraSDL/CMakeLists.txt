@@ -72,7 +72,9 @@ target_sources(AltirraSDL PRIVATE
     # --- media/ : video recording, accelerator table, online metadata ---
     source/media/videowriter_sdl3.cpp
     source/media/media_url.cpp
+    source/media/fujinet_pc.cpp
     source/ui/dialogs/ui_media_url.cpp
+    source/ui/dialogs/ui_fujinet.cpp
     source/media/accel_sdl3.cpp
     source/media/http_client.cpp
     source/media/metadata_settings.cpp

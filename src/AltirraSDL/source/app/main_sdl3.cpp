@@ -48,6 +48,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "browser_frame_scheduler.h"
 #include "video_output.h"
 #include "ramcart_settings.h"
+#include "ui_fujinet.h"
 #include "devicemanager.h"
 #include <at/atcore/devicevideo.h>
 
@@ -3520,6 +3521,10 @@ int main(int argc, char *argv[]) {
 	extern void ATShutdownDebugger();
 	ATShutdownDebugger();
 	ATUIDebuggerShutdown();
+
+	// Stop the managed peer while its SIO device and socket worker still
+	// exist. The UI shutdown hook is idempotent for later UI teardown.
+	ATUIShutdownFujiNet();
 
 	// Shut down network sockets before simulator shutdown
 	extern void ATSocketPreShutdown();

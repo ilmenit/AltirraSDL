@@ -18,6 +18,24 @@
 #include <vd2/system/binary.h>
 #include <at/atnetwork/socket.h>
 
+// Fork: the public comparison was declared without a definition. Native
+// NetSIO uses it to reject packets from a different peer. Compare fields,
+// rather than union storage or structure padding, on every platform.
+bool ATSocketAddress::operator==(const ATSocketAddress& other) const {
+	if (mType != other.mType || mPort != other.mPort)
+		return false;
+	switch (mType) {
+		case ATSocketAddressType::IPv4:
+			return mIPv4Address == other.mIPv4Address;
+		case ATSocketAddressType::IPv6:
+			return mIPv6.mScopeId == other.mIPv6.mScopeId
+				&& !memcmp(mIPv6.mAddress, other.mIPv6.mAddress,
+					sizeof mIPv6.mAddress);
+		default:
+			return true;
+	}
+}
+
 ATSocketAddress ATSocketAddress::CreateIPv4InIPv6(const ATSocketAddress& ipv4) {
 	ATSocketAddress addr;
 	addr.mType = ATSocketAddressType::IPv6;

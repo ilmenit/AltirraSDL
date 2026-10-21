@@ -23,6 +23,7 @@
 #include "devicemanager.h"
 #include "ui_devconfig_internal.h"
 #include "ui_main.h"
+#include "../dialogs/ui_fujinet.h"
 #include "ui_devconfig.h"
 #include "logging.h"
 #include "uicommondialogs.h"
@@ -204,6 +205,42 @@ void ATUIBeginAddDevice(ATDeviceManager *devMgr, const char *tag) {
 
 // Dispatch to the appropriate per-device dialog renderer
 static bool DispatchDeviceDialog(const char *tag, ATPropertySet& props, ATDeviceConfigState& st) {
+	// Authorized fork extension: native NetSIO replaces the external Python
+	// bridge; its device properties use the standard profile lifecycle.
+	if (!strcmp(tag, "netsio")) {
+		if (st.justOpened) {
+			st.check[0] = !wcscmp(props.GetString("bind_address", L"127.0.0.1"), L"0.0.0.0");
+			st.intVal[0] = (int)props.GetUint32("port", 9997);
+			st.intVal[1] = (int)props.GetUint32("sync_timeout_ms", 100);
+		}
+		const bool runtimeActive = ATUIGetFujiNetStatus().running;
+		ImGui::BeginDisabled(runtimeActive);
+		ImGui::Checkbox("Accept FujiNet from LAN (all IPv4 interfaces)", &st.check[0]);
+		ImGui::InputInt("UDP port", &st.intVal[0]);
+		ImGui::InputInt("Synchronization timeout (ms)", &st.intVal[1]);
+		ImGui::EndDisabled();
+		ImGui::TextWrapped("FujiNet sends to this UDP listener. For local FujiNet-PC "
+			"use 127.0.0.1; for an external FujiNet, enable LAN access and configure "
+			"the emulator computer's address in FujiNet's SIO over Network settings.");
+		if (ImGui::Button("FujiNet panel...")) ATUIShowFujiNetDialog();
+		if (runtimeActive)
+			ImGui::TextWrapped("Stop the managed runtime in the FujiNet panel before changing its listener.");
+		const bool valid = st.intVal[0] > 0 && st.intVal[0] <= 65535 &&
+			st.intVal[1] >= 10 && st.intVal[1] <= 1000;
+		if (!valid) ImGui::TextWrapped("Port: 1–65535. Timeout: 10–1000 ms.");
+		ImGui::BeginDisabled(!valid || runtimeActive);
+		const bool apply = ImGui::Button("OK", ImVec2(120, 0));
+		ImGui::EndDisabled();
+		if (apply) {
+			props.SetString("bind_address", st.check[0] ? L"0.0.0.0" : L"127.0.0.1");
+			props.SetUint32("port", st.intVal[0]);
+			props.SetUint32("sync_timeout_ms", st.intVal[1]);
+			return true;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0))) g_devCfg.Reset();
+		return false;
+	}
 	// Fork extension: user-requested Mosaic expansion, configured in the
 	// existing Devices settings flow. Device properties persist per profile.
 	if (!strcmp(tag, "mosaic")) {

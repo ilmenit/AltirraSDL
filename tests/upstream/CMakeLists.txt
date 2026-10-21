@@ -213,3 +213,16 @@ target_link_libraries(altirra-expansion-device-test PRIVATE
     ATIO vdjson ATCore Kasumi system SDL3::SDL3)
 add_test(NAME expansion-devices COMMAND altirra-expansion-device-test)
 set_tests_properties(expansion-devices PROPERTIES TIMEOUT 60)
+
+add_executable(altirra-netsio-test
+    netsio.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/netsio.cpp)
+target_include_directories(altirra-netsio-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-netsio-test PRIVATE
+    ATNetworkSockets ATNetwork ATCore vdjson system SDL3::SDL3)
+add_test(NAME netsio-protocol COMMAND altirra-netsio-test)
+set_tests_properties(netsio-protocol PROPERTIES TIMEOUT 60)

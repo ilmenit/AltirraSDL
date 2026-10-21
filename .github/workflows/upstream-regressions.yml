@@ -50,12 +50,12 @@ jobs:
             -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_KMSDRM=OFF \
             "${flags[@]}"
       - name: Build production-code regression targets
-        run: cmake --build build/upstream-regressions --target altirra-upstream-regression-test altirra-vbxe-regression-test altirra-test22-regression-test altirra-test22-cpu-test altirra-display-regression-test altirra-video-output-test altirra-instance-reuse-test-fixture altirra-frame-scheduler-test altirra-display-sampling-test altirra-ramcart-regression-test altirra-expansion-device-test altirra-media-url-test --parallel 2
+        run: cmake --build build/upstream-regressions --target altirra-upstream-regression-test altirra-vbxe-regression-test altirra-test22-regression-test altirra-test22-cpu-test altirra-display-regression-test altirra-video-output-test altirra-instance-reuse-test-fixture altirra-frame-scheduler-test altirra-display-sampling-test altirra-ramcart-regression-test altirra-expansion-device-test altirra-media-url-test altirra-netsio-test altirra-fujinet-pc-test --parallel 2
       - name: Run regressions including PDF rendering
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build/upstream-regressions -R '^(upstream-|video-output-routing$|instance-reuse$|frame-scheduler$|ramcart-regressions$|expansion-devices$|media-url-http$)' --output-on-failure --no-tests=error
+        run: ctest --test-dir build/upstream-regressions -R '^(upstream-|video-output-routing$|instance-reuse$|frame-scheduler$|ramcart-regressions$|expansion-devices$|media-url-http$|netsio-protocol$|fujinet-pc-process$)' --output-on-failure --no-tests=error
 
   native:
     strategy:
@@ -77,8 +77,8 @@ jobs:
       - name: Configure native regression targets
         run: cmake --preset ${{ matrix.preset }} -DALTIRRA_BUILD_TESTS=ON -DALTIRRA_SKIP_SDL3_IMAGE=ON -DALTIRRA_ENABLE_FFMPEG_RECORDING=OFF
       - name: Build native regression targets
-        run: cmake --build --preset ${{ matrix.preset }} --config Release --target altirra-upstream-regression-test altirra-vbxe-regression-test altirra-test22-regression-test altirra-test22-cpu-test altirra-display-regression-test altirra-video-output-test altirra-instance-reuse-test-fixture altirra-frame-scheduler-test altirra-display-sampling-test altirra-ramcart-regression-test altirra-expansion-device-test altirra-media-url-test --parallel 2
+        run: cmake --build --preset ${{ matrix.preset }} --config Release --target altirra-upstream-regression-test altirra-vbxe-regression-test altirra-test22-regression-test altirra-test22-cpu-test altirra-display-regression-test altirra-video-output-test altirra-instance-reuse-test-fixture altirra-frame-scheduler-test altirra-display-sampling-test altirra-ramcart-regression-test altirra-expansion-device-test altirra-media-url-test altirra-netsio-test altirra-fujinet-pc-test --parallel 2
       # PDF validation is mandatory in both Linux jobs above. These jobs
       # specifically exercise native C++ code and platform libraries.
       - name: Run native C++ regressions
-        run: ctest --test-dir build/${{ matrix.preset }} -C Release -R '^(upstream-(regressions|vbxe|display|test22|test22-cpu|display-sampling)|video-output-routing|instance-reuse|frame-scheduler|ramcart-regressions|expansion-devices|media-url-http)$' --output-on-failure --no-tests=error
+        run: ctest --test-dir build/${{ matrix.preset }} -C Release -R '^(upstream-(regressions|vbxe|display|test22|test22-cpu|display-sampling)|video-output-routing|instance-reuse|frame-scheduler|ramcart-regressions|expansion-devices|media-url-http|netsio-protocol|fujinet-pc-process)$' --output-on-failure --no-tests=error

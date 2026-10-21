@@ -42,6 +42,7 @@
 
 #include "ui_main.h"
 #include "../dialogs/ui_media_url.h"
+#include "../dialogs/ui_fujinet.h"
 #include "../../media/media_url.h"
 #include "ui_guided_input.h"
 #include "ui/dialogs/ui_game_metadata.h"
@@ -340,6 +341,7 @@ void ATUIRequestCopyFrame(bool trueAspect) {
 
 void ATUIPollDeferredActions() {
 	ATUIPollMediaURLDownload();
+	ATUIPollFujiNet();
 	std::vector<ATDeferredAction> actions;
 	{
 		std::lock_guard<std::mutex> lock(g_deferredMutex);
@@ -1485,6 +1487,7 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 
 void ATUIShutdown() {
 	ATUIShutdownMediaURLDownload();
+	ATUIShutdownFujiNet();
 	ATUIShutdownDiskExplorers();
 	ATUIShutdownCartridgeExplorers();
 	ATUIShutdownXEXExplorers();
@@ -2422,6 +2425,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showDiskManager)       ATUIRenderDiskManager(sim, state, window);
 	if (state.showGameLibrary)       ATUIRenderGameLibrary(sim, state, window);
 	ATUIRenderMediaURLDialog();
+	ATUIRenderFujiNetDialog();
 	if (state.showCassetteControl)   ATUIRenderCassetteControl(sim, state, window);
 	if (state.showAdjustColors)      ATUIRenderAdjustColors(sim, state);
 	if (state.showDisplaySettings)   ATUIRenderDisplaySettings(sim, state);

@@ -183,6 +183,8 @@ static const DeviceCatalogEntry kDiskDriveDevices[] = {
 };
 
 static const DeviceCatalogEntry kSIODevices[] = {
+	// Fork extension: the same connection is managed from Tools > FujiNet.
+	{ "netsio", "FujiNet / NetSIO", "Native SIO over UDP for FujiNet-PC or a FujiNet device. Open Tools > FujiNet for setup and connection status." },
 	{ "820",            "820 40-Column Printer", "Basic 40 column dot-matrix printer." },
 	{ "820full",        "820 40-Column Printer (full emulation)", "Full 6507 emulation with dot matrix rendering." },
 	{ "835",            "835 Modem", "300 baud SIO modem." },

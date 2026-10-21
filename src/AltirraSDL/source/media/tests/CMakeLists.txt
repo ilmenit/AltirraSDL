@@ -70,3 +70,17 @@ if(NOT ANDROID AND NOT EMSCRIPTEN)
     set_tests_properties(media-url-http PROPERTIES TIMEOUT 60
         ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
+
+if(NOT ANDROID AND NOT EMSCRIPTEN)
+    add_executable(altirra-fujinet-pc-test
+        ${_media_root}/fujinet_pc.cpp
+        fujinet_pc_test.cpp)
+    target_include_directories(altirra-fujinet-pc-test PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/shim
+        ${_media_root}
+        ${PROJECT_SOURCE_DIR}/src/h)
+    target_compile_features(altirra-fujinet-pc-test PRIVATE cxx_std_17)
+    target_link_libraries(altirra-fujinet-pc-test PRIVATE SDL3::SDL3)
+    add_test(NAME fujinet-pc-process COMMAND altirra-fujinet-pc-test)
+    set_tests_properties(fujinet-pc-process PROPERTIES TIMEOUT 30)
+endif()

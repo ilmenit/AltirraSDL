@@ -48,6 +48,7 @@
 #include "antic.h"
 #include "cartridge.h"
 #include "ramcart_settings.h"
+#include "ui_fujinet.h"
 #include "cassette.h"
 #include "autosavemanager.h"
 #include "oshelper.h"
@@ -1645,6 +1646,11 @@ static void BuildRecordMenu(NSMenu *menu) {
 
 static void BuildToolsMenu(NSMenu *menu) {
 	SDL_Window *window = g_pWindow;
+	// Fork extension, matching the native NetSIO controls in the ImGui UI.
+	AddItem(menu, @"FujiNet...", false, true, []{
+		ATUIShowFujiNetDialog();
+	});
+	AddSeparator(menu);
 
 	NSMenu *explorers = AddSubmenu(menu, @"Explorers");
 	AddItem(explorers, @"Disk Explorer...", false, true, [=]{

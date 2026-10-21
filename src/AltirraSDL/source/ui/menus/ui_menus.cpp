@@ -27,6 +27,7 @@
 
 #include "ui_main.h"
 #include "../dialogs/ui_media_url.h"
+#include "../dialogs/ui_fujinet.h"
 #include "ui_guided_input.h"
 #include "ui_menus_internal.h"
 #include "ui_debugger.h"
@@ -1112,6 +1113,10 @@ static void TapeAnalysisOpenCallback(void *, const char * const *filelist, int) 
 }
 
 static void RenderToolsMenu(ATSimulator &sim, ATUIState &state, SDL_Window *window) {
+	// Fork extension: native FujiNet/NetSIO setup and runtime controls.
+	if (ImGui::MenuItem("FujiNet..."))
+		ATUIShowFujiNetDialog();
+	ImGui::Separator();
 	if (ImGui::BeginMenu("Explorers")) {
 		if (ImGui::MenuItem("Disk Explorer..."))
 			ATUIRequestDiskExplorer(window);

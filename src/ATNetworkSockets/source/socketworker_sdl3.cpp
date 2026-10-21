@@ -1096,7 +1096,8 @@ bool ATNetDatagramSocket::SendTo(const ATSocketAddress& address, const void *dat
 
 			if (avail < neededLen) {
 				mbWaitingForCanWriteSocket = true;
-				break;
+				// Fork: no datagram was queued; let the caller retry.
+				return false;
 			}
 		}
 
