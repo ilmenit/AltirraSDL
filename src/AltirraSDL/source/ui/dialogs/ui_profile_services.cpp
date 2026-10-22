@@ -99,6 +99,9 @@ bool ATUIIsGameProfileSession() {
 		&& ATSettingsGetTemporaryProfileMode();
 }
 
+uint32 ATUIGetGameProfileMarker() { return g_gameProfile; }
+void ATUIRestoreGameProfileMarker(uint32 profile) { g_gameProfile = profile; }
+
 void ATUIUpdateGameProfile() {
 	if (!ATUIIsGameProfileSession())
 		return;

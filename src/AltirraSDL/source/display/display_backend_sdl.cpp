@@ -2,6 +2,7 @@
 
 #include <stdafx.h>
 #include "display_backend_sdl.h"
+#include "display_custom_effect.h"
 #include "uiaccessors.h"
 #include "uitypes.h"
 
@@ -59,6 +60,10 @@ void DisplayBackendSDLRenderer::BeginFrame() {
 void DisplayBackendSDLRenderer::RenderFrame(float dstX, float dstY, float dstW, float dstH,
 	int /*srcW*/, int /*srcH*/)
 {
+	if (!ATDisplayCustomEffectGetPath().empty())
+		ATDisplayCustomEffectReportResult("Custom effects require SDL_GPU or OpenGL. Select one in Display settings and restart.");
+	else
+		ATDisplayCustomEffectReportResult("");
 	if (!mpTexture)
 		return;
 

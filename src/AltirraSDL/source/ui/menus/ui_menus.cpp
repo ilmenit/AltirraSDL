@@ -618,7 +618,7 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 		ImGui::Separator();
 
 		if (ImGui::MenuItem("New Tape"))
-			cas.LoadNew();
+			ATUIPushDeferred(kATDeferred_NewCassette, "");
 
 		if (ImGui::MenuItem("Load...")) {
 			static const SDL_DialogFileFilter casFilters[] = {
@@ -705,20 +705,14 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 
 		for (auto& sc : kSpecialCarts) {
 			if (ImGui::MenuItem(sc.label)) {
-				sim.LoadNewCartridge(sc.mode);
-				if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-					sim.ColdReset();
-				sim.Resume();
+				ATUIPushDeferred(kATDeferred_NewCartridge, "", sc.mode);
 			}
 		}
 
 		ImGui::Separator();
 
 		if (ImGui::MenuItem("BASIC")) {
-			sim.LoadCartridgeBASIC();
-			if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-				sim.ColdReset();
-			sim.Resume();
+			ATUIPushDeferred(kATDeferred_BasicCartridge, "");
 		}
 
 		ImGui::EndMenu();
@@ -732,27 +726,16 @@ static void RenderFileMenu(ATSimulator &sim, ATUIState &state, SDL_Window *windo
 					ATUIPushDeferred(kATDeferred_AttachSecondaryCartridge, fl[0]);
 			}, nullptr, window, kCartFilters, 2, false);
 
-		if (ImGui::MenuItem("Detach", nullptr, false, sim.IsCartridgeAttached(1))) {
-			sim.UnloadCartridge(1);
-			if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-				sim.ColdReset();
-			sim.Resume();
-		}
+		if (ImGui::MenuItem("Detach", nullptr, false, sim.IsCartridgeAttached(1)))
+			ATUIPushDeferred(kATDeferred_DetachCartridge, "", 1);
 		ImGui::EndMenu();
 	}
 
 	if (ImGui::MenuItem("Attach Cartridge..."))
 		ATUIShowOpenFileDialog('cart', CartridgeAttachCallback, nullptr, window, kCartFilters, 2, false);
 
-	if (ImGui::MenuItem("Detach Cartridge", nullptr, false, sim.IsCartridgeAttached(0))) {
-		if (sim.GetHardwareMode() == kATHardwareMode_5200)
-			sim.LoadCartridge5200Default();
-		else
-			sim.UnloadCartridge(0);
-		if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-			sim.ColdReset();
-		sim.Resume();
-	}
+	if (ImGui::MenuItem("Detach Cartridge", nullptr, false, sim.IsCartridgeAttached(0)))
+		ATUIPushDeferred(kATDeferred_DetachCartridge, "", 0);
 
 	// Save Firmware submenu
 	if (ImGui::BeginMenu("Save Firmware")) {

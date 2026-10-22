@@ -14,6 +14,9 @@ bool ATUIProfileCanParent(uint32 profile, uint32 parent);
 uint32 ATUICreateProfileCopy(bool independent);
 void ATUIActivateGameProfile(uint32 profile);
 bool ATUIIsGameProfileSession();
+// Transactional media loads restore this marker with the original profile.
+uint32 ATUIGetGameProfileMarker();
+void ATUIRestoreGameProfileMarker(uint32 profile);
 void ATUIUpdateGameProfile();
 void ATUISwitchProfile(uint32 profile);
 

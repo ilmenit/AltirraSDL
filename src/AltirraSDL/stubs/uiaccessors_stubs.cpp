@@ -28,6 +28,10 @@
 #include "firmwaremanager.h"
 #include <at/ataudio/pokey.h>
 #include <at/atcore/device.h>
+#include <at/atdebugger/target.h>
+#include "cpu.h"
+#include "debugger.h"
+#include "uirender.h"
 #include <vd2/system/text.h>
 #include "constants.h"
 #include "settings.h"
@@ -39,6 +43,7 @@ extern ATSimulator g_sim;
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
 #include "netplay/netplay_glue.h"
+#include "netplay/netplay_input.h"
 namespace { bool ATUINetplayBlocksWarp() { return ATNetplayGlue::IsActive(); } }
 #else
 namespace { bool ATUINetplayBlocksWarp() { return false; } }
@@ -59,15 +64,27 @@ ATUIKeyboardOptions g_kbdOpts = {};
 ATUIManager g_ATUIManager;
 
 // ATUIManager stub methods
-static VDStringW s_customEffectPath;
+#if !defined(ALTIRRA_LIBRETRO) && !defined(ALTIRRA_BRIDGE_HEADLESS)
+#include "display/display_custom_effect.h"
 
+const wchar_t *ATUIManager::GetCustomEffectPath() const {
+	return ATDisplayCustomEffectGetPath().c_str();
+}
+
+void ATUIManager::SetCustomEffectPath(const wchar_t *s, bool reload) {
+	ATDisplayCustomEffectSetPath(s, reload);
+}
+#else
+// Libretro and the headless bridge do not own a display pipeline. Keep the
+// profile's native path intact without linking a frontend shader loader.
+static VDStringW s_customEffectPath;
 const wchar_t *ATUIManager::GetCustomEffectPath() const {
 	return s_customEffectPath.c_str();
 }
-
 void ATUIManager::SetCustomEffectPath(const wchar_t *s, bool) {
 	s_customEffectPath = s ? s : L"";
 }
+#endif
 
 // =========================================================================
 // Display filter / stretch
@@ -101,7 +118,7 @@ static bool s_drawPadBounds = false;
 bool ATUIGetDrawPadBoundsEnabled() { return s_drawPadBounds; }
 void ATUISetDrawPadBoundsEnabled(bool v) { s_drawPadBounds = v; }
 
-static bool s_drawPadPointers = false;
+static bool s_drawPadPointers = true;
 bool ATUIGetDrawPadPointersEnabled() { return s_drawPadPointers; }
 void ATUISetDrawPadPointersEnabled(bool v) { s_drawPadPointers = v; }
 
@@ -117,7 +134,7 @@ static bool s_constrainMouseFS = false;
 bool ATUIGetConstrainMouseFullScreen() { return s_constrainMouseFS; }
 void ATUISetConstrainMouseFullScreen(bool v) { s_constrainMouseFS = v; }
 
-static bool s_targetPointerVisible = false;
+static bool s_targetPointerVisible = true;
 bool ATUIGetTargetPointerVisible() { return s_targetPointerVisible; }
 void ATUISetTargetPointerVisible(bool v) { s_targetPointerVisible = v; }
 
@@ -384,10 +401,20 @@ void ATReloadPortMenus() {}
 bool ATUIHandlePortMenuCommand(uint32) { return false; }
 
 // =========================================================================
-// Functions forward-declared in settings.cpp — no-ops for SDL3
+// Functions forward-declared in settings.cpp
 // =========================================================================
 
-void ATSyncCPUHistoryState() {}
+void ATSyncCPUHistoryState() {
+	const bool enabled = g_sim.GetCPU().IsHistoryEnabled();
+	for (auto *device : g_sim.GetDeviceManager()
+		->GetInterfaces<IATDeviceDebugTarget>(false, false, false)) {
+		uint32 index = 0;
+		while (IATDebugTarget *target = device->GetDebugTarget(index++)) {
+			if (auto *history = vdpoly_cast<IATDebugTargetHistory *>(target))
+				history->SetHistoryEnabled(enabled);
+		}
+	}
+}
 
 // No-op by design. Windows main.cpp:491-553 recomputes frame timing
 // constants and pushes audioOutput->SetCyclesPerSecond on every speed/
@@ -443,12 +470,17 @@ void ATUICaptureMouse() {
 }
 
 void ATUIReleaseMouse() {
-	if (!s_mouseCaptured || !s_pMouseCaptureWindow)
+	s_mouseCaptured = false;
+	if (!s_pMouseCaptureWindow)
 		return;
 
-	s_mouseCaptured = false;
+	// Full-screen confinement also acquires a grab without mouse-input
+	// capture. Release it on every focus/UI/suspend exit path as well.
 	SDL_SetWindowRelativeMouseMode(s_pMouseCaptureWindow, false);
 	SDL_SetWindowMouseGrab(s_pMouseCaptureWindow, false);
+#if !defined(ALTIRRA_LIBRETRO) && !defined(ALTIRRA_BRIDGE_HEADLESS)
+	SDL_ShowCursor();
+#endif
 }
 
 // =========================================================================
@@ -784,14 +816,35 @@ void ATUIRecalibrateLightPen() {
 }
 void ATUIActivatePanZoomTool() { ATUISetPanZoomToolActive(true); }
 void ATUIOpenOnScreenKeyboard() {}
+// Pending reset input survives focus changes, independently of physical keys.
 static bool s_holdKeysActive = false;
+bool ATInputSDL3_IsHoldingKeys() { return s_holdKeysActive; }
+void ATInputSDL3_SetHoldKeysMode(bool enabled) {
+	// This mode is independent of the simulator's pending key selection.
+	// A cancelled media load restores both state axes separately.
+	s_holdKeysActive = enabled;
+	if (auto *renderer = g_sim.GetUIRenderer())
+		renderer->SetPendingHoldMode(enabled);
+}
+void ATInputSDL3_EndHoldKeys() {
+	// WarmReset notifies before consuming pending input. Leave that input
+	// intact for the simulator's subsequent SetupPendingHeldButtons().
+	ATInputSDL3_SetHoldKeysMode(false);
+}
 void ATUIToggleHoldKeys() {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (ATNetplayInput::IsSuppressingLocalInput())
+		return;
+#endif
+	if (ATUINetplayBlocksWarp())
+		return;
 	s_holdKeysActive = !s_holdKeysActive;
-
 	if (!s_holdKeysActive) {
 		g_sim.ClearPendingHeldKey();
 		g_sim.SetPendingHeldSwitches(0);
 	}
+	if (auto *renderer = g_sim.GetUIRenderer())
+		renderer->SetPendingHoldMode(s_holdKeysActive);
 }
 bool ATUICanManipulateWindows() { return false; }
 bool ATUIIsModalActive() { return false; }
@@ -801,7 +854,12 @@ VDGUIHandle ATUIGetNewPopupOwner() { return nullptr; }
 static bool s_appActive = true;
 bool ATUIGetAppActive() { return s_appActive; }
 void ATUISetAppActive(bool v) { s_appActive = v; }
-void ATUIExit(bool) {}
+void ATUIExit(bool forceNoConfirm) {
+#if !defined(ALTIRRA_LIBRETRO) && !defined(ALTIRRA_BRIDGE_HEADLESS)
+	extern void ATUIRequestExitSDL3(bool);
+	ATUIRequestExitSDL3(forceNoConfirm);
+#endif
+}
 
 // Device button support — real implementation matching Windows main.cpp.
 static uint32 g_devBtnMask = 0;

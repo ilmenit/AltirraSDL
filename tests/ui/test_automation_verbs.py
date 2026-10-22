@@ -55,7 +55,7 @@ def wait_reg(emu: AltirraTestHarness, addr: int, expected: int,
     return val
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def booted(emu: AltirraTestHarness):
     """Wait until the OS has finished booting.
 

@@ -49,6 +49,8 @@
 #include "devicemanager.h"
 #include "customdevice.h"
 
+extern void ATSyncCPUHistoryState();
+
 #include "bridge_commands_timing.h"
 #include "bridge_commands_debug2.h"  // BridgeSymClearAllInternal, BridgeProfileResetInternal, BridgeVerifierResetInternal
 
@@ -2324,6 +2326,7 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		if (!ParseBoolLiteral(rawVal, v))
 			return JsonError("CONFIG: expected boolean for history");
 		sim.GetCPU().SetHistoryEnabled(v);
+		ATSyncCPUHistoryState();
 	}
 	else if (key == "fppatch") {
 		bool v = false;

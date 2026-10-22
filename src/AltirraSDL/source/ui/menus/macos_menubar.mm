@@ -449,7 +449,7 @@ static void BuildFileMenu(NSMenu *menu) {
 		});
 		AddSeparator(casMenu);
 		AddItem(casMenu, @"New Tape", false, true, [=]{
-			g_sim.GetCassette().LoadNew();
+			ATUIPushDeferred(kATDeferred_NewCassette, "");
 		});
 		AddItem(casMenu, @"Load...", false, true, [=]{
 			static const SDL_DialogFileFilter casFilters[] = {
@@ -461,7 +461,7 @@ static void BuildFileMenu(NSMenu *menu) {
 			}, nullptr, window, casFilters, 2, false);
 		});
 		AddItem(casMenu, @"Unload", false, loaded, [=]{
-			g_sim.GetCassette().Unload();
+			ATUIPushDeferred(kATDeferred_UnloadCassette, "");
 		});
 		AddItem(casMenu, @"Save...", false, loaded, [=]{
 			ATUIShowSaveFileDialog('cass',
@@ -549,18 +549,12 @@ static void BuildFileMenu(NSMenu *menu) {
 		for (auto& sc : kSpecialCarts) {
 			int mode = sc.mode;
 			AddItem(specCart, [NSString stringWithUTF8String:sc.label], false, true, [=]{
-				g_sim.LoadNewCartridge(mode);
-				if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-					g_sim.ColdReset();
-				g_sim.Resume();
+				ATUIPushDeferred(kATDeferred_NewCartridge, "", mode);
 			});
 		}
 		AddSeparator(specCart);
 		AddItem(specCart, @"BASIC", false, true, [=]{
-			g_sim.LoadCartridgeBASIC();
-			if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-				g_sim.ColdReset();
-			g_sim.Resume();
+			ATUIPushDeferred(kATDeferred_BasicCartridge, "");
 		});
 	}
 
@@ -574,10 +568,7 @@ static void BuildFileMenu(NSMenu *menu) {
 			}, nullptr, window, kMacCartFilters, 2, false);
 		});
 		AddItem(secCart, @"Detach", false, g_sim.IsCartridgeAttached(1), [=]{
-			g_sim.UnloadCartridge(1);
-			if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-				g_sim.ColdReset();
-			g_sim.Resume();
+			ATUIPushDeferred(kATDeferred_DetachCartridge, "", 1);
 		});
 	}
 
@@ -590,13 +581,7 @@ static void BuildFileMenu(NSMenu *menu) {
 	});
 
 	AddItem(menu, @"Detach Cartridge", false, g_sim.IsCartridgeAttached(0), [=]{
-		if (g_sim.GetHardwareMode() == kATHardwareMode_5200)
-			g_sim.LoadCartridge5200Default();
-		else
-			g_sim.UnloadCartridge(0);
-		if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange))
-			g_sim.ColdReset();
-		g_sim.Resume();
+		ATUIPushDeferred(kATDeferred_DetachCartridge, "", 0);
 	});
 
 	// Save Firmware submenu

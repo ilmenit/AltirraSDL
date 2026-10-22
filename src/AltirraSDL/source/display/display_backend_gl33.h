@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 #include "display_backend.h"
+#include "display_custom_effect.h"
 #include "gl_funcs.h"
 #include "gl_helpers.h"
 #include <vd2/VDDisplay/display.h>
@@ -88,6 +89,19 @@ public:
 	SDL_GLContext GetGLContext() const { return mGLContext; }
 
 private:
+	GLuint RenderCustomEffect(float viewportW, float viewportH, int& w, int& h);
+	struct CustomPass {
+		ATDisplayCustomEffectPass spec;
+		GLuint program = 0;
+		GLRenderTarget target;
+	};
+	std::vector<CustomPass> mCustomPasses;
+	uint64_t mCustomRevision = 0, mCustomFrame = 0;
+	bool mCustomLoadValid = true, mCustomRuntimeFailed = false;
+	int mCustomRenderW = 0, mCustomRenderH = 0;
+	void SyncCustomEffect(float viewportW, float viewportH, int sourceW, int sourceH);
+	void DestroyCustomEffect();
+
 	// Inner rendering for built-in effects.
 	void RenderFrameInner(float dstX, float dstY, float dstW, float dstH,
 		int srcW, int srcH);

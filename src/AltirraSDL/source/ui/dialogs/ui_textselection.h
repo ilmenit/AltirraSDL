@@ -55,6 +55,10 @@ void ATUITextSelectAll();
 void ATUITextDeselect();
 void ATUITextCopy(ATTextCopyMode mode);
 
+// Shared with the screen-reader snapshot capture; reads the current ANTIC
+// display list on the emulator thread without changing the user's selection.
+int ATUITextReadAnticLine(uint8 *dst, int y, int start, int count, bool& intl);
+
 // Mouse interaction — call from the Display pane render function.
 // imagePos/imageSize are the screen-space rectangle of the emulator texture.
 // Returns true if the selection system consumed the mouse event.

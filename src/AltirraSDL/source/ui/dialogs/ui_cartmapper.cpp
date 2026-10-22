@@ -33,6 +33,8 @@ extern void ATUIPushDeferred(ATDeferredActionType type, const char *utf8path, in
 
 struct ATCartridgeMapperDialogState {
 	bool initialized = false;
+	std::function<void(int)> selected;
+	std::function<void()> cancelled;
 	VDStringW pendingPath;
 	ATDeferredActionType originalAction = kATDeferred_AttachCartridge;
 	int cartSlot = 0;                   // 0 = primary, 1 = secondary
@@ -298,6 +300,20 @@ const char *ATUIGetCartridgeModeDesc(int mode) {
 	}
 }
 
+static void FinishCartridgeMapper(bool accepted, int mode = 0) {
+	auto selected = std::move(g_cartMapperState.selected);
+	auto cancelled = std::move(g_cartMapperState.cancelled);
+	if (accepted) {
+		if (selected) selected(mode);
+		else ATUIPushDeferred(g_cartMapperState.originalAction,
+			VDTextWToU8(g_cartMapperState.pendingPath).c_str(), mode);
+	} else if (cancelled) cancelled();
+}
+
+void ATUICancelCartridgeMapper() {
+	FinishCartridgeMapper(false);
+}
+
 // Pending flag — set by deferred actions, consumed by render loop
 bool g_cartMapperPending = false;
 
@@ -305,9 +321,12 @@ bool g_cartMapperPending = false;
 // Populates g_cartMapperState; render loop picks up g_cartMapperPending.
 void ATUIOpenCartridgeMapperDialog(ATDeferredActionType origAction,
 	const VDStringW &path, int slot, bool coldReset,
-	const vdfastvector<uint8> &capturedData, uint32 cartSize)
+	const vdfastvector<uint8> &capturedData, uint32 cartSize,
+	std::function<void(int)> selected, std::function<void()> cancelled)
 {
 	auto &s = g_cartMapperState;
+	s.selected = std::move(selected);
+	s.cancelled = std::move(cancelled);
 	s.pendingPath = path;
 	s.originalAction = origAction;
 	s.cartSlot = slot;
@@ -430,12 +449,14 @@ void ATUIRenderCartridgeMapper(ATUIState &state) {
 	if (!ImGui::Begin("Select Cartridge Mapper", &state.showCartridgeMapper,
 			ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
 		ImGui::End();
+		if (!state.showCartridgeMapper) FinishCartridgeMapper(false);
 		return;
 	}
 
 	if (ATUICheckEscClose()) {
 		state.showCartridgeMapper = false;
 		ImGui::End();
+		FinishCartridgeMapper(false);
 		return;
 	}
 
@@ -503,8 +524,7 @@ void ATUIRenderCartridgeMapper(ATUIState &state) {
 					if (ImGui::IsMouseDoubleClicked(0)) {
 						// Double-click = accept
 						int chosenMode = s.displayMappers[s.selectedIndex];
-						ATUIPushDeferred(s.originalAction,
-							VDTextWToU8(s.pendingPath).c_str(), chosenMode);
+						FinishCartridgeMapper(true, chosenMode);
 						state.showCartridgeMapper = false;
 					}
 				}
@@ -537,8 +557,7 @@ void ATUIRenderCartridgeMapper(ATUIState &state) {
 	bool canOK = (s.selectedIndex >= 0 && s.selectedIndex < (int)s.displayMappers.size());
 	if (ImGui::Button("OK", ImVec2(buttonWidth, 0)) && canOK) {
 		int chosenMode = s.displayMappers[s.selectedIndex];
-		ATUIPushDeferred(s.originalAction,
-			VDTextWToU8(s.pendingPath).c_str(), chosenMode);
+		FinishCartridgeMapper(true, chosenMode);
 		state.showCartridgeMapper = false;
 	}
 
@@ -547,4 +566,5 @@ void ATUIRenderCartridgeMapper(ATUIState &state) {
 		state.showCartridgeMapper = false;
 
 	ImGui::End();
+	if (!state.showCartridgeMapper) FinishCartridgeMapper(false);
 }

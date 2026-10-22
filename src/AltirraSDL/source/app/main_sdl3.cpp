@@ -93,6 +93,8 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "ui_mode.h"
 #include "options.h"
 #include "ui_main.h"
+#include "input_pointer_sdl3.h"
+#include "ui_accessibility.h"
 #include "ui_file_dialog_sdl3.h"
 #include "ui_autosuggest.h"
 #include "ui_debugger.h"
@@ -373,13 +375,13 @@ float g_menuBarHeight = 0.0f;
 // so that scaling/aspect ratio correction doesn't break light pen or paddle input.
 static void UpdateMousePosition(ATInputManager *im, float mx, float my) {
 	// Map mouse position relative to the display rect.
-	const float dw = g_displayRect.w;
-	const float dh = g_displayRect.h;
-	if (dw < 1.0f || dh < 1.0f)
+	float dx = 0, dy = 0, dw = 0, dh = 0;
+	if (!ATInputSDL3_GetDisplayRect(dx, dy, dw, dh)
+		|| dw < 1.0f || dh < 1.0f)
 		return;
 
-	const float relX = std::clamp((mx - g_displayRect.x) / dw, 0.0f, 1.0f);
-	const float relY = std::clamp((my - g_displayRect.y) / dh, 0.0f, 1.0f);
+	const float relX = std::clamp((mx - dx) / dw, 0.0f, 1.0f);
+	const float relY = std::clamp((my - dy) / dh, 0.0f, 1.0f);
 
 	// Pad position: map display area to [-0x10000, +0x10000]
 	int padX = (int)(relX * 131072.0f - 0x10000);
@@ -490,6 +492,10 @@ static void ReleaseEmulatorInputsForUI() {
 	ATUIVirtualKeyboard_ReleaseAll(g_sim);
 }
 
+void ATUIReleaseGameplayInputsSDL3() {
+	ReleaseEmulatorInputsForUI();
+}
+
 static void HandleEvents() {
 	ATInputCapture::Update(static_cast<ATJoystickManagerSDL3 *>(
 		g_sim.GetJoystickManager()));
@@ -512,9 +518,23 @@ static void HandleEvents() {
 	g_prevImGuiCapture = uiOwnsKeyboard;
 
 	// Release mouse capture when ImGui wants the mouse (menu/dialog open)
-	bool imguiMouseCapture = ATUIWantCaptureMouse();
-	if (imguiMouseCapture && !g_prevImGuiMouseCapture)
+	bool imguiMouseCapture = !ATInputSDL3_CanRouteMouseToDisplay();
+	if (imguiMouseCapture && !g_prevImGuiMouseCapture) {
 		ATUIReleaseMouse();
+		if (auto *im = g_sim.GetInputManager()) {
+			// The image can lose mouse ownership without losing SDL focus
+			// (another debugger pane, menu, or dialog). Release every source
+			// whose physical button-up may now be consumed by that UI.
+			// Keep the normal input-manager path: netplay redirects these
+			// releases to its local capture port, then applies them in sync.
+			im->OnButtonUp(0, kATInputCode_MouseLMB);
+			im->OnButtonUp(0, kATInputCode_MouseMMB);
+			im->OnButtonUp(0, kATInputCode_MouseRMB);
+			im->OnButtonUp(0, kATInputCode_MouseX1B);
+			im->OnButtonUp(0, kATInputCode_MouseX2B);
+			im->SetMouseVirtualStickPos(0, 0);
+		}
+	}
 	g_prevImGuiMouseCapture = imguiMouseCapture;
 
 	SDL_Event ev;
@@ -754,7 +774,7 @@ static void HandleEvents() {
 
 		case SDL_EVENT_MOUSE_MOTION:
 			// Pan/Zoom tool: handle drag
-			if (g_panZoomActive && !ATUIWantCaptureMouse() && (g_panZoomDragging || g_panZoomZooming)) {
+			if (g_panZoomActive && ATInputSDL3_CanRouteMouseToDisplay() && (g_panZoomDragging || g_panZoomZooming)) {
 				float dx = ev.motion.x - g_panZoomLastX;
 				float dy = ev.motion.y - g_panZoomLastY;
 				g_panZoomLastX = ev.motion.x;
@@ -782,7 +802,7 @@ static void HandleEvents() {
 				}
 				break;
 			}
-			if (!ATUIWantCaptureMouse()) {
+			if (ATInputSDL3_CanRouteMouseToDisplay()) {
 				ATInputManager *im = g_sim.GetInputManager();
 				// Forward motion when captured, or in absolute mode without
 				// auto-capture (matches Windows OnMouseMove line 1400).
@@ -801,7 +821,7 @@ static void HandleEvents() {
 
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			// Pan/Zoom tool: start drag
-			if (g_panZoomActive && !ATUIWantCaptureMouse() &&
+			if (g_panZoomActive && ATInputSDL3_CanRouteMouseToDisplay() &&
 				ev.button.button == SDL_BUTTON_LEFT) {
 				g_panZoomLastX = ev.button.x;
 				g_panZoomLastY = ev.button.y;
@@ -815,7 +835,7 @@ static void HandleEvents() {
 				}
 				break;
 			}
-			if (!ATUIWantCaptureMouse()) {
+			if (ATInputSDL3_CanRouteMouseToDisplay()) {
 				// Middle-click releases mouse capture when MMB isn't mapped
 				// as an input (matches Windows behavior).
 				if (ev.button.button == SDL_BUTTON_MIDDLE &&
@@ -872,7 +892,7 @@ static void HandleEvents() {
 				g_panZoomZooming = false;
 				break;
 			}
-			if (!ATUIWantCaptureMouse()) {
+			if (ATInputSDL3_CanRouteMouseToDisplay()) {
 				ATInputManager *im = g_sim.GetInputManager();
 				if (im && (ATUIIsMouseCaptured() || im->IsMouseAbsoluteMode())) {
 					uint32 code = 0;
@@ -891,7 +911,7 @@ static void HandleEvents() {
 
 		case SDL_EVENT_MOUSE_WHEEL:
 			// Pan/Zoom tool: wheel to zoom (pinned to cursor)
-			if (g_panZoomActive && !ATUIWantCaptureMouse() && ev.wheel.y != 0) {
+			if (g_panZoomActive && ATInputSDL3_CanRouteMouseToDisplay() && ev.wheel.y != 0) {
 				float oldZoom = ATUIGetDisplayZoom();
 				float newZoom = oldZoom * powf(2.0f, ev.wheel.y / 4.0f);
 				newZoom = std::clamp(newZoom, 0.01f, 100.0f);
@@ -929,7 +949,7 @@ static void HandleEvents() {
 			}
 			// Mouse wheel is always forwarded to input manager (matches
 			// Windows which doesn't require capture for wheel events).
-			if (!ATUIWantCaptureMouse()) {
+			if (ATInputSDL3_CanRouteMouseToDisplay()) {
 				ATInputManager *im = g_sim.GetInputManager();
 				if (im) {
 					if (ev.wheel.y != 0)
@@ -1114,6 +1134,7 @@ static void HandleEvents() {
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: WILL_ENTER_BACKGROUND — releasing input");
 			ReleaseEmulatorInputsForUI();
+			ATUICancelPendingMediaLoads();
 #ifdef __ANDROID__
 #ifdef ALTIRRA_NETPLAY_ENABLED
 			// Stop gameplay and release session inputs before restoring the
@@ -1164,6 +1185,7 @@ static void HandleEvents() {
 			break;
 
 		case SDL_EVENT_TERMINATING:
+			ATUICancelPendingMediaLoads();
 			// Last chance before the OS kills the process.  Snapshot
 			// the emulator state (mobile only) and persist every piece
 			// of mutable settings + cache state to disk.  Without the
@@ -1200,6 +1222,7 @@ static void HandleEvents() {
 		// not WINDOW_HIDDEN, so those handlers would only muddle things.
 
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			ATSDLAccessibilityFocusLost();
 			g_winActive = false;
 			// Match Windows uivideodisplaywindow.cpp:1699 (OnKillFocus) —
 			// restrict input mapping BEFORE releasing keys, so that any
@@ -1497,10 +1520,29 @@ static void RenderAndPresent() {
 
 	// Draw ImGui UI on top
 	ATUIRenderFrame(g_sim, *g_pDisplay, g_pBackend, g_uiState);
+	float accessibilityX = g_displayRect.x, accessibilityY = g_displayRect.y;
+	float accessibilityW = g_displayRect.w, accessibilityH = g_displayRect.h;
+	bool accessibilityFocused = (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_INPUT_FOCUS) != 0;
+	if (dbgOpen) {
+		bool paneFocused = false;
+		if (!ATUIDebuggerGetDisplayRect(accessibilityX, accessibilityY,
+			accessibilityW, accessibilityH, paneFocused)) accessibilityW = accessibilityH = 0;
+		accessibilityFocused = accessibilityFocused && paneFocused;
+	}
+	ATSDLAccessibilityUpdate(g_pWindow, g_sim, g_ATOptions.mbAccEnabled,
+		accessibilityFocused, accessibilityX, accessibilityY, accessibilityW, accessibilityH);
 
 	if (ATMacLeakDebugShouldPresent())
 		g_pBackend->Present();
 	ATMacLeakDebugTick();
+}
+
+// Same main-thread quit policy for native commands and automation.
+void ATUIRequestExitSDL3(bool forceNoConfirm) {
+	if (forceNoConfirm) g_uiState.exitConfirmed = true;
+	SDL_Event event {};
+	event.type = SDL_EVENT_QUIT;
+	SDL_PushEvent(&event);
 }
 
 #ifdef ALTIRRA_BRIDGE_ENABLED
@@ -3094,7 +3136,7 @@ int main(int argc, char *argv[]) {
 #ifdef ALTIRRA_BRIDGE_ENABLED
 		if (ATBridge::IsFrameGateActive()) pauseMenu = false;
 #endif
-		if (pauseInactive || pauseMenu) {
+		if (pauseInactive || pauseMenu || ATUIIsMediaConfirmationActive()) {
 			SuspendBrowserFrameSchedule();
 			// Window inactive — render for UI responsiveness, sleep.
 			RenderAndPresent();
@@ -3511,6 +3553,8 @@ int main(int argc, char *argv[]) {
 	// try/catch, so a failure in one step does not skip the others.
 	// Using the same helper as the TERMINATING path keeps clean exit
 	// and forced-shutdown behaviour in lockstep.
+	ATUIShutdownFileDialogs();
+	ATUICancelPendingMediaLoads();
 	ATPersistAllForSuspend();
 
 	// Detach and destroy joystick manager before simulator shutdown
@@ -3547,6 +3591,7 @@ int main(int argc, char *argv[]) {
 	extern void ATSocketPreShutdown();
 	ATSocketPreShutdown();
 
+	ATInputSDL3_Shutdown();
 	ATSDLVideoOutputShutdown();
 	g_sim.Shutdown();
 
@@ -3566,6 +3611,7 @@ int main(int argc, char *argv[]) {
 	GameBrowser_Shutdown();
 	ATTestModeShutdown();
 	ATMacMenuBarShutdown();
+	ATSDLAccessibilityShutdown();
 	ATUIShutdown();
 	ATUIStateSettingsShutdown();
 	ATUIRamCartSettingsShutdown();

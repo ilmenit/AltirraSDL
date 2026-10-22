@@ -38,6 +38,8 @@
 #include <SDL3/SDL.h>
 #include <at/ataudio/pokey.h>
 #include <at/atui/constants.h>
+#include "input_sdl3.h"
+#include "simeventmanager.h"
 #include "inputmanager.h"
 #include "inputmap.h"
 #include "inputdefs.h"
@@ -273,6 +275,24 @@ static uint32 SDLKeycodeToVK_Layout(SDL_Keycode kc) {
 
 extern ATSimulator g_sim;
 
+extern bool ATInputSDL3_IsHoldingKeys();
+
+static bool CaptureHeldKey(uint8 key, bool repeat) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (ATNetplayInput::IsSuppressingLocalInput())
+		return false;
+#endif
+	if (!ATInputSDL3_IsHoldingKeys())
+		return false;
+	if (!repeat) {
+		if (g_sim.GetPendingHeldKey() == key)
+			g_sim.ClearPendingHeldKey();
+		else
+			g_sim.SetPendingHeldKey(key);
+	}
+	return true;
+}
+
 class ATInputConsoleCallbackSDL3 : public IATInputConsoleCallback {
 public:
 	void SetConsoleTrigger(uint32 id, bool state) override {
@@ -328,8 +348,34 @@ struct ATInputStateSDL3 {
 };
 
 static ATInputStateSDL3 g_inputState;
+static ATSimulatorEventManager *g_inputEvents = nullptr;
+static uint32 g_coldResetCallback = 0;
+static uint32 g_warmResetCallback = 0;
+
+void ATInputSDL3_Shutdown() {
+	if (g_inputEvents) {
+		g_inputEvents->RemoveEventCallback(g_coldResetCallback);
+		g_inputEvents->RemoveEventCallback(g_warmResetCallback);
+		g_inputEvents = nullptr;
+	}
+	if (g_inputState.mpInputManager) {
+		ATInputSDL3_ReleaseAllKeys();
+		g_inputState.mpInputManager->SetConsoleCallback(nullptr);
+	}
+	g_inputState = {};
+}
 
 void ATInputSDL3_Init(ATPokeyEmulator *pokey, ATInputManager *inputMgr, ATGTIAEmulator *gtia) {
+	ATInputSDL3_Shutdown();
+	// Core reset events are synchronous on the emulator's main thread.
+	// Native ATUIVideoDisplayWindow::OnReset also leaves hold mode after
+	// both resets. In particular, do not clear pending input on WarmReset:
+	// SetupPendingHeldButtons() runs immediately after this notification.
+	g_inputEvents = g_sim.GetEventManager();
+	g_coldResetCallback = g_inputEvents->AddEventCallback(
+		kATSimEvent_ColdReset, ATInputSDL3_EndHoldKeys);
+	g_warmResetCallback = g_inputEvents->AddEventCallback(
+		kATSimEvent_WarmReset, ATInputSDL3_EndHoldKeys);
 	g_inputState.mpPokey = pokey;
 	g_inputState.mpInputManager = inputMgr;
 	g_inputState.mpGTIA = gtia;
@@ -407,6 +453,8 @@ static void ATInputSDL3_PushAtariKey(SDL_Scancode sdlSc, uint8 atariCode, bool r
 	extern ATUIKeyboardOptions g_kbdOpts;
 	if (!g_inputState.mpPokey)
 		return;
+	if (CaptureHeldKey(atariCode, repeat))
+		return;
 #ifdef ALTIRRA_NETPLAY_ENABLED
 	// Netplay: forward keyboard edges into the lockstep pipeline
 	// instead of pushing straight to POKEY, so both peers see the
@@ -472,6 +520,12 @@ static void HandleSpecialScanCode(uint32 scanCode, bool down, SDL_Scancode sdlSc
 		return;
 	}
 #endif
+
+	if (ATInputSDL3_IsHoldingKeys()) {
+		if (down)
+			g_sim.SetPendingHeldSwitches(g_sim.GetPendingHeldSwitches() ^ switchBit);
+		return;
+	}
 
 	g_inputState.mpGTIA->SetConsoleSwitch(switchBit, down);
 
@@ -1032,6 +1086,8 @@ void ATInputSDL3_HandleTextInput(const char *text) {
 		uint32 scanCode = 0;
 		if (ATUIGetScanCodeForCharacter32(ch, scanCode)) {
 			if (scanCode < kATUIKeyScanCodeFirst) {
+				if (CaptureHeldKey((uint8)scanCode, false))
+					continue;
 #ifdef ALTIRRA_NETPLAY_ENABLED
 				if (ATNetplayInput::IsSuppressingLocalInput()) {
 					ATNetplayInput::OnLocalKeyDown((uint8)scanCode);

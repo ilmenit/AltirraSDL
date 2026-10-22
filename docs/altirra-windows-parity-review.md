@@ -1,6 +1,6 @@
 # AltirraSDL / Windows Altirra parity review
 
-Review date: **2026-10-20**. Reference: **Altirra 4.50-test24** Windows
+Review updated: **2026-10-22**. Reference: **Altirra 4.50-test24** Windows
 sources and the corresponding AltirraSDL working tree after integration.
 This is a source-based review, not an exhaustive runtime or GUI audit.
 The follow-up implementation now covers arbitrary speed, alternate video
@@ -57,18 +57,16 @@ menu behavior still needs runtime validation on macOS.
 
 ### Screen-reader support
 
-SDL's
-[accessibility checkbox](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L859)
-updates and saves `mbAccEnabled`. No SDL runtime consumer of that flag was
-found. Windows
-[applies the option](../src/Altirra/source/main.cpp#L3872),
-[creates its accessibility provider](../src/Altirra/source/uidisplay.cpp#L1436),
-and [publishes changed emulated-screen text](../src/Altirra/source/uidisplay.cpp#L1929).
+Implemented main-thread emulated-text snapshots and native desktop publication:
+Windows UI Automation, Linux AT-SPI and macOS NSAccessibility. The existing
+option now controls provider attachment and text/focus updates. Linux reports
+missing runtime dependencies and reconnects when the accessibility registry
+restarts. Unsupported mobile/browser platforms explain the capability limit.
 
-Implement platform accessibility publication of emulated text, focus and
-updates. Validate with an actual supported screen reader, in addition to
-testing the stored checkbox value. A visible enabled option should be
-backed by its advertised behavior.
+Tests exercise ANTIC text, reverse video, paused updates, actual isolated
+AT-SPI registration, text ranges, selection, events and provider teardown.
+Narrator and VoiceOver still require native runtime validation. See
+[emulated screen accessibility](emulated-screen-accessibility.md).
 
 ### Pause while menus are open
 
@@ -101,17 +99,33 @@ SDL's window activation request; compositor focus policy still applies.
 
 ### Custom display effects
 
-SDL's [Effect file field](../src/AltirraSDL/source/ui/sysconfig/ui_system_pages_b.cpp#L1100)
-calls a [setter that only stores an in-memory string](../src/AltirraSDL/stubs/uiaccessors_stubs.cpp#L61).
-The reviewed path does not load an effect into a display backend.
-Windows provides
-[load, browse, reload and clear operations](../src/Altirra/source/uiconfiguresystem.cpp#L3020);
-its existing custom-effect support is explicitly D3D9-specific.
+Implemented validated portable `.altfx` packages on OpenGL/GLES and SDL_GPU,
+including multiple passes, source/viewport scaling, browse, reload, clear and
+profile persistence. Loading and target allocation are transactional: a failed
+replacement preserves the working effect. Unsupported renderers show a useful
+error while retaining the normal display.
 
-Implement a portable effect loading and validation contract, with useful
-errors, reload, clear and appropriate persistence. Establish compatibility
-or a documented conversion strategy for Windows effect files. Copying
-Direct3D-specific controls alone would not deliver the functionality.
+Loader regressions cover malformed and oversized packages, path escapes and
+shader assets. Real OpenGL and SDL_GPU tests verify image transforms,
+orientation, multipass output, reload, rejected replacements and resize
+recovery. Native Windows D3D9 effects need conversion to portable shaders;
+this is documented in [custom display effects](custom-display-effects.md).
+
+### Media decisions, input and automation
+
+Boot, cartridge and tape replacement now respect native unsaved-media
+confirmation. BASIC overlap offers Yes/No/Cancel; incompatible disks and ROM
+mismatches require explicit decisions. Cancellation restores the original
+profile, live settings, unsaved image objects and emulator state, including
+running/paused status. URL downloads apply their selected profile only after
+successful completion. Online Play guards remain in force.
+
+Hold Keys for Reset now captures actual keyboard/console input, CPU history
+changes propagate to existing peripheral CPUs, and automation exit requests
+reach the normal application exit path. Mouse auto-hide, fullscreen confinement
+and tablet/light-pen overlays have runtime consumers and explicit release paths.
+These cases have input/media regression tests; physical pointer confinement
+and native platform behavior still require desktop validation.
 
 ## Display capabilities
 
@@ -161,6 +175,27 @@ HDR-capable hardware. See [HDR output and validation](hdr-output.md).
 - **SDL_GPU/OpenGL screen effects:** preserve supported effects and
   capability-aware fallback behavior
   ([backend capability check](../src/AltirraSDL/source/ui/dialogs/ui_screenfx.cpp#L301)).
+
+## Follow-up validation
+
+The Linux release build and libretro build pass, as do all 41 CTest
+regressions. ASan/UBSan targets pass individually; the NetSIO UDP stress
+fixture passed on an isolated retry after a timing timeout in the full run.
+Display-sampling intentionally skips under sanitizers. Changed frontend
+sources also pass Android NDK syntax compilation for arm64-v8a and
+armeabi-v7a; this is not an APK or device execution test.
+
+The completed UI regression matrix has **410 passes and three skips**
+(native macOS and optional Python fontTools coverage), with no remaining
+expected failures. UI regressions exercise actual GL/SDL_GPU transforms, real isolated Linux
+AT-SPI publication, native file-picker paths, worker completion lifetimes,
+profile/media rollback, reset-key collection and debugger pointer geometry.
+The test harness now isolates modules and cancels outstanding pickers during
+cleanup, so earlier tests cannot leave a stopped CPU or modal picker behind.
+
+Windows/macOS native builds, interactive screen-reader use, and physical
+Android foreground recovery still require CI or device validation. These
+checks do not establish exhaustive parity across every Windows feature.
 
 ## Repeatable parity audit
 

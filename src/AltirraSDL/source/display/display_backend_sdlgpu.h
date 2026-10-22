@@ -6,6 +6,7 @@
 #include <vd2/VDDisplay/display.h>
 #include <vector>
 #include "display_backend.h"
+#include "display_custom_effect.h"
 #include "display_hdr.h"
 
 class DisplayBackendSDLGPU final : public IDisplayBackend {
@@ -42,6 +43,20 @@ public:
 	void *GetImGuiTextureID() const override { return (void *)mpTexture; }
 
 private:
+	SDL_Texture *RenderCustomEffect(float viewportW, float viewportH, int& w, int& h);
+	struct CustomPass {
+		ATDisplayCustomEffectPass spec;
+		SDL_GPUShader *shader = nullptr;
+		SDL_GPURenderState *state = nullptr;
+		SDL_Texture *target = nullptr;
+		int w = 0, h = 0;
+	};
+	std::vector<CustomPass> mCustomPasses;
+	uint64_t mCustomRevision = 0, mCustomFrame = 0;
+	bool mCustomLoadValid = true, mCustomRuntimeFailed = false;
+	void SyncCustomEffect(float viewportW, float viewportH, int sourceW, int sourceH);
+	void DestroyCustomEffect();
+
 	DisplayBackendSDLGPU(SDL_Window *window, SDL_Renderer *renderer,
 		SDL_GPUDevice *device, SDL_GPUShader *shader, SDL_GPURenderState *state);
 

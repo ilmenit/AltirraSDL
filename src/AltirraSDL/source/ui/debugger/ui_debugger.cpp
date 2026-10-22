@@ -777,7 +777,28 @@ void ATUIDebuggerShutdown() {
 // Display pane — renders emulation texture inside an ImGui dockable window
 // =========================================================================
 
+static ImVec4 s_displayAccessibilityRect;
+static bool s_displayAccessibilityFocused = false;
+static bool s_displayImageHovered = false;
+
+bool ATUIDebuggerGetDisplayRect(float& x, float& y, float& w, float& h,
+	bool& focused) {
+	x = s_displayAccessibilityRect.x;
+	y = s_displayAccessibilityRect.y;
+	w = s_displayAccessibilityRect.z;
+	h = s_displayAccessibilityRect.w;
+	focused = s_displayAccessibilityFocused;
+	return w > 0 && h > 0;
+}
+
+bool ATUIDebuggerIsDisplayImageHovered() {
+	return g_debuggerOpen && s_displayImageHovered;
+}
+
 static void RenderDisplayPane() {
+	s_displayAccessibilityRect = ImVec4(0, 0, 0, 0);
+	s_displayAccessibilityFocused = false;
+	s_displayImageHovered = false;
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 	bool open = true;
 	if (ImGui::Begin("Display", &open)) {
@@ -801,8 +822,18 @@ static void RenderDisplayPane() {
 					const ImVec2 imageSize(
 						frameRect.z - frameRect.x,
 						frameRect.w - frameRect.y);
+					const auto viewportOrigin = ImGui::GetMainViewport()->Pos;
+					s_displayAccessibilityRect = ImVec4(imagePos.x - viewportOrigin.x,
+						imagePos.y - viewportOrigin.y, imageSize.x, imageSize.y);
+					s_displayAccessibilityFocused = ImGui::IsWindowFocused(
+						ImGuiFocusedFlags_RootAndChildWindows);
 
 					ImGui::InvisibleButton("##DisplayFrameViewport", avail);
+					const ImVec2 mouse = ImGui::GetIO().MousePos;
+					s_displayImageHovered = ImGui::IsItemHovered()
+						&& mouse.x >= imagePos.x && mouse.y >= imagePos.y
+						&& mouse.x < imagePos.x + imageSize.x
+						&& mouse.y < imagePos.y + imageSize.y;
 					if (ImGui::IsItemClicked()) {
 						ImGui::SetWindowFocus();
 						g_focusedPaneId = kATUIPaneId_Display;

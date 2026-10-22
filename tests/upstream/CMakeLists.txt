@@ -238,3 +238,14 @@ if(NOT WIN32)
     add_test(NAME file-watcher-contract COMMAND altirra-file-watcher-test)
     set_tests_properties(file-watcher-contract PROPERTIES TIMEOUT 30)
 endif()
+
+add_executable(altirra-display-custom-effect-test
+    display_custom_effect.cpp
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/display/display_custom_effect.cpp)
+target_include_directories(altirra-display-custom-effect-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/Altirra/h
+    ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/display
+    ${ALTIRRA_COMPAT_DIR}
+    ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
+target_link_libraries(altirra-display-custom-effect-test PRIVATE vdjson system SDL3::SDL3)
+add_test(NAME display-custom-effect COMMAND altirra-display-custom-effect-test)

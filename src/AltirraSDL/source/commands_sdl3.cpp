@@ -665,7 +665,10 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	// panels.
 	// =====================================================================
 	{ "Cassette.Unload",
-		[] { g_sim.GetCassette().Unload(); } },
+		[] {
+			if (!ATNetplayGlue::IsSessionEngaged())
+				ATUIPushDeferred(kATDeferred_UnloadCassette, "");
+		} },
 	{ "Cassette.ToggleSIOPatch",
 		[] {
 			if (ATNetplayGlue::IsSessionEngaged()) return;

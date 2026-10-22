@@ -6,6 +6,7 @@
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/VDString.h>
 #include <imgui.h>
+#include <functional>
 
 // Configuration dialog geometry helpers implemented by the SDL UI.
 ImVec2 ATUIFitDialogSize(ImVec2 preferred);
@@ -193,11 +194,17 @@ enum ATDeferredActionType {
 	kATDeferred_OpenImage,
 	kATDeferred_AttachCartridge,
 	kATDeferred_AttachSecondaryCartridge,
+	kATDeferred_NewCartridge,
+	kATDeferred_BasicCartridge,
+	kATDeferred_NewCassette,
+	kATDeferred_DetachCartridge, // mInt: slot; guarded against dirty media
+	kATDeferred_UnloadCassette,
 	kATDeferred_AttachDisk,        // uses mInt for drive index
 	kATDeferred_MountFolder,       // path: virtual disk URL, mInt: drive index
 	kATDeferred_SelectVirtualFolder, // folder-picker result, mInt: dialog generation
 	kATDeferred_LoadState,
 	kATDeferred_SaveState,
+	kATDeferred_SetCustomEffectPath,
 	kATDeferred_SaveCassette,
 	kATDeferred_ExportCassetteAudio,
 	kATDeferred_SaveCartridge,
@@ -219,7 +226,15 @@ enum ATDeferredActionType {
 
 // Push a deferred action (thread-safe — may be called from file dialog callbacks)
 void ATUIPushDeferred(ATDeferredActionType type, const char *utf8path, int extra = 0);
+bool ATUIIsMediaConfirmationActive();
+bool ATUICancelPendingMediaLoads();
+void ATUIConfirmDiscardStorage(uint32 storageMask, std::function<void()> proceed, int unit = -1,
+	std::function<void()> cancelled = {});
 void ATUIBootWithProfile(const char *utf8path, uint32 profile);
+// Disk Drives confirms before opening its picker; other entry points confirm
+// at the deferred execution boundary. Callbacks only enqueue plain data.
+void ATUIAttachDiskImage(const char *utf8path, int drive,
+	bool discardConfirmed = false);
 void ATUIBootProgramData(const char *utf8origin, const void *data, size_t size);
 
 // Tape editor request from trace viewer (ui_dbg_traceviewer_timeline.cpp)
@@ -235,8 +250,10 @@ extern ATTapeEditorRequest g_tapeEditorRequest;
 extern bool g_cartMapperPending;
 void ATUIOpenCartridgeMapperDialog(ATDeferredActionType origAction,
 	const VDStringW &path, int slot, bool coldReset,
-	const vdfastvector<uint8> &capturedData, uint32 cartSize);
+	const vdfastvector<uint8> &capturedData, uint32 cartSize,
+	std::function<void(int)> selected = {}, std::function<void()> cancelled = {});
 void ATUIRenderCartridgeMapper(ATUIState &state);
+void ATUICancelCartridgeMapper();
 
 // Firmware Manager — global visibility flag and drop handler (ui_system.cpp)
 extern bool g_showFirmwareManager;

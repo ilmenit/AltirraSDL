@@ -4,6 +4,13 @@
 
 #pragma once
 
+// Current emulation image in SDL logical client coordinates. Returns false
+// when the debugger Display pane is hidden or has no emulation image.
+bool ATUIDebuggerGetDisplayRect(float& x, float& y, float& w, float& h,
+	bool& focused);
+// True only over the visible emulator image, excluding letterbox/popup overlap.
+bool ATUIDebuggerIsDisplayImageHovered();
+
 #include <vd2/system/vdtypes.h>
 #include <vd2/system/refcount.h>
 #include <vd2/system/VDString.h>

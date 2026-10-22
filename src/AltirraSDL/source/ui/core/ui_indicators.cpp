@@ -15,6 +15,7 @@
 #include <vd2/system/text.h>
 #include <at/ataudio/audiooutput.h>
 #include "uirender.h"
+#include "uikeyboard.h"
 #include "ui_main.h"
 
 // =========================================================================
@@ -309,6 +310,27 @@ void ATUIRendererImGui::RenderOverlay() {
 		ImVec2 sz = ImGui::CalcTextSize(mErrorMessage.c_str());
 		dl->AddText(ImVec2((vp.x - sz.x) * 0.5f, y - 34),
 			IM_COL32(255, 80, 80, 255), mErrorMessage.c_str());
+	}
+
+	// Match the native pending-reset prompt and key labels. This selection
+	// is independent of physical key state and remains visible after focus loss.
+	if (hud.showHeldButtons && (mbPendingHold || mPendingButtons || mPendingKey >= 0)) {
+		VDStringW held;
+		if (mbPendingHold) held = L"Press keys to hold on next reset: ";
+		if (mPendingButtons & 1) held += L"Start+";
+		if (mPendingButtons & 2) held += L"Select+";
+		if (mPendingButtons & 4) held += L"Option+";
+		if (mPendingKey >= 0) {
+			if (const wchar_t *label = ATUIGetNameForKeyCode((uint8)mPendingKey))
+				held += label;
+			else
+				held.append_sprintf(L"[$%02X]", mPendingKey);
+		}
+		if (!held.empty() && held.back() == L'+') held.pop_back();
+		const VDStringA text = VDTextWToU8(held);
+		const ImVec2 size = ImGui::CalcTextSize(text.c_str());
+		dl->AddText(ImVec2((vp.x - size.x) * 0.5f, y - 52),
+			IM_COL32(255, 255, 200, 255), text.c_str());
 	}
 
 	// On-screen watches (top-left, below any other HUD)

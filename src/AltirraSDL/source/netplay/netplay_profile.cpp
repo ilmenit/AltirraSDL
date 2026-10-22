@@ -77,6 +77,10 @@ extern ATMobileUIState g_mobileState;  // main_sdl3.cpp:197
 // netplay-side dependency surface from pulling in the UI state header.
 namespace ATNetplayUI { uint32_t ComputeFirmwareCRC32(uint64_t); }
 
+#if !defined(ALTIRRA_LIBRETRO) && !defined(ALTIRRA_BRIDGE_HEADLESS)
+extern bool ATUICancelPendingMediaLoads();
+#endif
+
 namespace ATNetplayProfile {
 
 namespace {
@@ -588,12 +592,17 @@ void RegisterSessionImage(const wchar_t *path) {
 }
 
 bool BeginSession(const PerGameOverrides& ov) {
+
 	if (g_active) {
 		g_ATLCNetplay("netplay-profile: BeginSession called while "
 			"already active (defensive)");
 		return false;
 	}
 
+#if !defined(ALTIRRA_LIBRETRO) && !defined(ALTIRRA_BRIDGE_HEADLESS)
+	// Complete cancelled local media transactions before preserving this game.
+	if (!::ATUICancelPendingMediaLoads()) return false;
+#endif
 	uint32_t pre = ATSettingsGetCurrentProfileId();
 	// Pathological-state guard: if the live profile is somehow
 	// already kNetplayProfileId (a prior crash that didn't run

@@ -27,6 +27,7 @@
 #include "uicommondialogs.h"
 
 extern ATSimulator g_sim;
+extern void ATSyncCPUHistoryState();
 extern bool ATImGuiConsoleShowSource(uint32 addr);
 
 // =========================================================================
@@ -1262,6 +1263,7 @@ bool ATImGuiHistoryPaneImpl::Render() {
 		ImGui::Spacing();
 		if (ImGui::Button("Enable CPU History")) {
 			g_sim.GetCPU().SetHistoryEnabled(true);
+			ATSyncCPUHistoryState();
 			mbNeedsUpdate = true;
 		}
 		ImGui::End();

@@ -165,6 +165,7 @@ DisplayBackendSDLGPU *DisplayBackendSDLGPU::Create(SDL_Window *window,
 }
 
 DisplayBackendSDLGPU::~DisplayBackendSDLGPU() {
+	DestroyCustomEffect();
 	DestroyIntermediateTargets();
 	if (mpMaskTexture)
 		SDL_DestroyTexture(mpMaskTexture);
@@ -318,9 +319,14 @@ void DisplayBackendSDLGPU::RenderFrame(float dstX, float dstY, float dstW,
 	const float physicalDstH = dstH * mRenderScaleY;
 	ShaderConstants constants = BuildShaderConstants(
 		physicalDstW, physicalDstH, srcW, srcH);
-	SDL_Texture *source = mpTexture;
-	int sourceW = srcW;
-	int sourceH = srcH;
+	SyncCustomEffect(physicalDstW, physicalDstH, srcW, srcH);
+	int sourceW = srcW, sourceH = srcH;
+	SDL_Texture *source = RenderCustomEffect(physicalDstW, physicalDstH,
+		sourceW, sourceH);
+	if (!source) { source = mpTexture; sourceW = srcW; sourceH = srcH; }
+	constants = BuildShaderConstants(physicalDstW, physicalDstH, sourceW, sourceH);
+	srcW = sourceW;
+	srcH = sourceH;
 
 	if (mScreenFX.mPALBlendingOffset != 0.0f
 		&& EnsureTarget(mpPALTexture, mPALW, mPALH, srcW, srcH,
@@ -904,4 +910,155 @@ void DisplayBackendSDLGPU::SetFilterMode(int mode) {
 
 void DisplayBackendSDLGPU::SetFilterSharpness(float sharpness) {
 	mFilterSharpness = sharpness;
+}
+
+void DisplayBackendSDLGPU::DestroyCustomEffect() {
+	for (auto& pass : mCustomPasses) {
+		if (pass.target) SDL_DestroyTexture(pass.target);
+		if (pass.state) SDL_DestroyGPURenderState(pass.state);
+		if (pass.shader) SDL_ReleaseGPUShader(mpDevice, pass.shader);
+	}
+	mCustomPasses.clear();
+}
+
+void DisplayBackendSDLGPU::SyncCustomEffect(float viewportW, float viewportH,
+	int sourceW, int sourceH) {
+	if (mCustomRevision == ATDisplayCustomEffectGetRevision()) return;
+	mCustomRevision = ATDisplayCustomEffectGetRevision();
+	mCustomLoadValid = false;
+	ATDisplayCustomEffectPackage package;
+	std::string error;
+	if (!ATDisplayCustomEffectLoad(ATDisplayCustomEffectGetPath().c_str(), package, error)) {
+		ATDisplayCustomEffectReportResult(error);
+		return;
+	}
+	std::vector<CustomPass> next;
+	for (auto& spec : package.passes) {
+		SDL_GPUShaderCreateInfo info {};
+		info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+		info.num_samplers = 1;
+		info.num_uniform_buffers = 1;
+		info.entrypoint = spec.entrypoint.c_str();
+		const auto formats = SDL_GetGPUShaderFormats(mpDevice);
+		if ((formats & SDL_GPU_SHADERFORMAT_DXIL) && !spec.dxil.empty()) {
+			info.format = SDL_GPU_SHADERFORMAT_DXIL;
+			info.code = spec.dxil.data(); info.code_size = spec.dxil.size();
+		} else if ((formats & SDL_GPU_SHADERFORMAT_SPIRV) && !spec.spirv.empty()) {
+			info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+			info.code = spec.spirv.data(); info.code_size = spec.spirv.size();
+		} else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && !spec.msl.empty()) {
+			info.format = SDL_GPU_SHADERFORMAT_MSL;
+			info.code = (const uint8_t *)spec.msl.c_str(); info.code_size = spec.msl.size() + 1;
+			info.entrypoint = spec.mslEntrypoint.c_str();
+		} else {
+			error = "The effect lacks a shader representation supported by the current SDL_GPU driver.";
+			break;
+		}
+		CustomPass pass;
+		pass.shader = SDL_CreateGPUShader(mpDevice, &info);
+		if (!pass.shader) { error = std::string("Effect shader creation failed: ") + SDL_GetError(); break; }
+		SDL_GPURenderStateCreateInfo state {};
+		state.fragment_shader = pass.shader;
+		pass.state = SDL_CreateGPURenderState(mpRenderer, &state);
+		if (!pass.state) {
+			error = std::string("Effect render state creation failed: ") + SDL_GetError();
+			SDL_ReleaseGPUShader(mpDevice, pass.shader);
+			break;
+		}
+		pass.spec = std::move(spec);
+		int w = 0, h = 0;
+		if (!ATDisplayCustomEffectSize(pass.spec, sourceW, sourceH, viewportW, viewportH, w, h)
+			|| !EnsureTarget(pass.target, pass.w, pass.h, w, h,
+				SupportsHDR() ? SDL_PIXELFORMAT_RGBA64_FLOAT : SDL_PIXELFORMAT_RGBA8888))
+		{
+			error = "Effect target exceeds limits or cannot be allocated (8192 per axis, 16 million pixels).";
+			SDL_DestroyGPURenderState(pass.state);
+			SDL_ReleaseGPUShader(mpDevice, pass.shader);
+			break;
+		}
+		sourceW = w;
+		sourceH = h;
+		next.push_back(std::move(pass));
+	}
+	if (!error.empty()) {
+		for (auto& pass : next) {
+			if (pass.target) SDL_DestroyTexture(pass.target);
+			SDL_DestroyGPURenderState(pass.state);
+			SDL_ReleaseGPUShader(mpDevice, pass.shader);
+		}
+		ATDisplayCustomEffectReportResult(error);
+		return;
+	}
+	DestroyCustomEffect();
+	mCustomPasses = std::move(next);
+	mCustomFrame = 0;
+	mCustomLoadValid = true;
+	mCustomRuntimeFailed = false;
+	ATDisplayCustomEffectReportResult("");
+}
+
+SDL_Texture *DisplayBackendSDLGPU::RenderCustomEffect(float viewportW,
+	float viewportH, int& w, int& h)
+{
+	if (mCustomPasses.empty()) return nullptr;
+	SDL_Texture *source = mpTexture;
+	SDL_Rect oldClip {};
+	const bool clipped = SDL_RenderClipEnabled(mpRenderer);
+	if (clipped) SDL_GetRenderClipRect(mpRenderer, &oldClip);
+	bool success = true;
+	for (auto& pass : mCustomPasses) {
+		int tw = 0, th = 0;
+		if (!ATDisplayCustomEffectSize(pass.spec, w, h, viewportW, viewportH, tw, th)
+			|| !EnsureTarget(pass.target, pass.w, pass.h, tw, th,
+				SupportsHDR() ? SDL_PIXELFORMAT_RGBA64_FLOAT : SDL_PIXELFORMAT_RGBA8888))
+		{
+			if (mCustomLoadValid) {
+				ATDisplayCustomEffectReportResult("Effect target exceeds limits or cannot be allocated (8192 per axis, 16 million pixels).");
+				mCustomRuntimeFailed = true;
+			}
+			success = false;
+			break;
+		}
+		SDL_ScaleMode oldScale;
+		SDL_GetTextureScaleMode(source, &oldScale);
+		SDL_SetTextureScaleMode(source, pass.spec.linear ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+		const ATDisplayCustomEffectUniforms uniforms {
+			{(float)w, (float)h, 1.0f / w, 1.0f / h},
+			{(float)tw, (float)th, 1.0f / tw, 1.0f / th},
+			{(float)mCustomFrame, (float)(SDL_GetTicks() * 0.001), SupportsHDR() && source == mpTexture ? 1.0f : 0.0f, mScreenFX.mbSignedRGBEncoding ? 1.0f : 0.0f}
+		};
+		const bool targetOK = SDL_SetRenderTarget(mpRenderer, pass.target);
+		SDL_SetRenderScale(mpRenderer, 1, 1);
+		SDL_SetRenderClipRect(mpRenderer, nullptr);
+		SDL_SetRenderColorScale(mpRenderer, 1);
+		SDL_SetTextureBlendMode(source, SDL_BLENDMODE_NONE);
+		success = targetOK && SDL_SetGPURenderStateFragmentUniforms(pass.state, 0, &uniforms, sizeof(uniforms))
+			&& SDL_SetGPURenderState(mpRenderer, pass.state)
+			&& SDL_RenderTexture(mpRenderer, source, nullptr, nullptr);
+		SDL_SetGPURenderState(mpRenderer, nullptr);
+		SDL_SetTextureScaleMode(source, oldScale);
+		if (!success) {
+			if (mCustomLoadValid) {
+				ATDisplayCustomEffectReportResult(std::string("Effect rendering failed: ") + SDL_GetError());
+				mCustomRuntimeFailed = true;
+			}
+			break;
+		}
+		source = pass.target;
+		w = tw;
+		h = th;
+	}
+	if (success && mCustomRuntimeFailed && mCustomLoadValid) {
+		ATDisplayCustomEffectReportResult("");
+		mCustomRuntimeFailed = false;
+	}
+	++mCustomFrame;
+	SDL_SetRenderTarget(mpRenderer, nullptr);
+	SDL_SetRenderScale(mpRenderer, mRenderScaleX, mRenderScaleY);
+	SDL_SetRenderColorScale(mpRenderer, GetOutputLevels().mUIScale);
+	SDL_SetRenderClipRect(mpRenderer, clipped ? &oldClip : nullptr);
+	if (success) SDL_SetTextureScaleMode(source,
+		mFilterMode == kATDisplayFilterMode_Point || mFilterMode == kATDisplayFilterMode_Bicubic
+			? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
+	return success ? source : nullptr;
 }

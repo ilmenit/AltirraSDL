@@ -29,6 +29,8 @@
 #include <at/atcore/media.h>
 #include <at/atcore/device.h>
 #include <at/atio/image.h>
+#include <at/atio/blobimage.h>
+#include <at/atio/programimage.h>
 #include <at/atio/cartridgeimage.h>
 #include <at/atio/cartridgetypes.h>
 
@@ -41,6 +43,7 @@
 #include <at/atcore/serializable.h>
 
 #include "ui_main.h"
+#include "ui_media_session.h"
 #include "../dialogs/ui_media_url.h"
 #include "../dialogs/ui_fujinet.h"
 #include "../../media/media_url.h"
@@ -72,8 +75,11 @@ extern void GameBrowser_OnBootedGame(const VDStringW &variantPath);
 #include "ui_debugger.h"
 #include "ui_textselection.h"
 #include "uiaccessors.h"
+#include <at/atui/uimanager.h>
+extern ATUIManager g_ATUIManager;
 #include "accel_sdl3.h"
 #include "inputmanager.h"
+#include "input_pointer_sdl3.h"
 #include "ui_testmode.h"
 #include "ui_progress.h"
 #include "ui_emuerror.h"
@@ -96,10 +102,12 @@ extern void GameBrowser_OnBootedGame(const VDStringW &variantPath);
 #include <at/atui/uicommandmanager.h>
 #include "debugger.h"
 #include <algorithm>
+#include <memory>
 #include "videowriter.h"
 #include "oshelper.h"
 #include <at/ataudio/pokey.h>
 #include "uiconfirm.h"
+#include "uicommondialogs.h"
 #include "uikeyboard.h"
 #include "uitypes.h"
 #include "options.h"
@@ -188,6 +196,8 @@ extern "C" void ATWasmSetStartingOverlay(int);
 
 // ATDeferredActionType enum is now in ui_main.h
 
+struct ATDeferredLoad;
+
 struct ATDeferredAction {
 	ATDeferredActionType type;
 	VDStringW path;
@@ -195,10 +205,140 @@ struct ATDeferredAction {
 	vdfastvector<uint8> payload;
 	int mInt = 0;
 	uint32 mProfile = kATProfileId_Invalid;
+	bool discardConfirmed = false;
+	bool profileApplied = false;
+	std::shared_ptr<ATDeferredLoad> load;
 };
+
+// Own all parser/retry state across asynchronous confirmation dialogs. The
+// image validated before a prompt is the exact image installed afterwards.
+struct ATDeferredLoad {
+	vdfastvector<uint8> captureBuffer;
+	ATCartLoadContext cartCtx {};
+	ATStateLoadContext stateCtx {};
+	ATImageLoadContext ctx {};
+	ATMediaLoadContext media;
+	bool initialized = false;
+	bool storageUnloaded = false;
+	bool disableBasic = false;
+	bool mapperSelected = false;
+	bool awaitingDecision = false;
+	int safetyCounter = 10;
+	bool cancelled = false;
+	std::unique_ptr<ATUIMediaSessionBackup> backup;
+};
+
+static std::vector<std::weak_ptr<ATDeferredLoad>> g_mediaLoads;
+
+extern void ATUIReleaseGameplayInputsSDL3();
+
+static bool RestoreMediaLoad(const std::shared_ptr<ATDeferredLoad>& load) {
+	if (!load || !load->backup) return true;
+	std::string error;
+	const bool restored = load->backup->Restore(error);
+	if (!restored) {
+		LOG_ERROR("UI", "Cannot restore cancelled media load: %s", error.c_str());
+		ATUIShowWarning(nullptr, L"Cannot restore previous session", VDTextU8ToW(error.c_str(), -1).c_str());
+	}
+	if (restored) ATUIReleaseGameplayInputsSDL3();
+	load->backup.reset();
+	return restored;
+}
+
+static void PreserveMediaLoad(const std::shared_ptr<ATDeferredLoad>& load) {
+	if (load->backup) return;
+	load->backup = std::make_unique<ATUIMediaSessionBackup>();
+	std::string error;
+	extern ATUIState g_uiState;
+	if (!load->backup->Capture(g_sim, g_uiState, error)) {
+		load->backup.reset();
+		throw MyError("Cannot preserve current session: %s", error.c_str());
+	}
+	ATSettingsSetTemporaryProfileMode(true);
+}
 
 static std::mutex g_deferredMutex;
 static std::vector<ATDeferredAction> g_deferredActions;
+
+static void QueueDeferred(ATDeferredAction action) {
+	std::lock_guard<std::mutex> lock(g_deferredMutex);
+	g_deferredActions.push_back(std::move(action));
+}
+
+namespace {
+unsigned g_mediaConfirmationCount = 0;
+struct MediaConfirmationLifetime {
+	MediaConfirmationLifetime() { ++g_mediaConfirmationCount; }
+	~MediaConfirmationLifetime() { --g_mediaConfirmationCount; }
+};
+void ShowMediaConfirmation(ATUIConfirmOptions opts) {
+	auto lifetime = std::make_shared<MediaConfirmationLifetime>();
+	auto wrap = [lifetime](std::function<void()> fn) {
+		return [lifetime, fn = std::move(fn)] { if (fn) fn(); };
+	};
+	opts.group = 1;
+	opts.onConfirm = wrap(std::move(opts.onConfirm));
+	opts.onCancel = wrap(std::move(opts.onCancel));
+	opts.onAlternate = wrap(std::move(opts.onAlternate));
+	ATUIShowConfirm(std::move(opts));
+}
+}
+bool ATUIIsMediaConfirmationActive() { return g_mediaConfirmationCount != 0; }
+
+bool ATUICancelPendingMediaLoads() {
+	bool restored = true;
+	for (auto& entry : g_mediaLoads) {
+		if (auto load = entry.lock()) {
+			load->cancelled = true;
+			restored = RestoreMediaLoad(load) && restored;
+		}
+	}
+	g_mediaLoads.clear();
+	ATUICancelCartridgeMapper();
+	extern ATUIState g_uiState;
+	g_uiState.showCartridgeMapper = false;
+	g_cartMapperPending = false;
+	ATUICancelConfirmations(1);
+	return restored;
+}
+
+static vdfastvector<ATStorageId> GetDirtyStorageForLoad(uint32 mask, int unitFilter) {
+	vdfastvector<ATStorageId> dirty;
+	g_sim.GetDirtyStorage(dirty, mask);
+	if (unitFilter >= 0) {
+		dirty.erase(std::remove_if(dirty.begin(), dirty.end(), [unitFilter](ATStorageId id) {
+			return (id & kATStorageId_UnitMask) != (uint32)unitFilter;
+		}), dirty.end());
+	}
+	return dirty;
+}
+
+void ATUIConfirmDiscardStorage(uint32 mask, std::function<void()> proceed, int unitFilter,
+	std::function<void()> cancelled) {
+	auto dirty = GetDirtyStorageForLoad(mask, unitFilter);
+	if (dirty.empty()) {
+		proceed();
+		return;
+	}
+	VDStringA message("The following modified items have not been saved:\n\n");
+	for (const auto id : dirty) {
+		const uint32 unit = id & kATStorageId_UnitMask;
+		switch (id & kATStorageId_TypeMask) {
+			case kATStorageId_Disk: message.append_sprintf("  Disk (D%u:)\n", unit + 1); break;
+			case kATStorageId_Cartridge: message.append_sprintf("  Cartridge %u\n", unit + 1); break;
+			case kATStorageId_Tape: message += "  Tape\n"; break;
+			default: message += "  Device firmware\n"; break;
+		}
+	}
+	message += "\nOK to discard?";
+	ATUIConfirmOptions opts;
+	opts.title = "Unsaved Items";
+	opts.message = message.c_str();
+	opts.destructive = true;
+	opts.onConfirm = std::move(proceed);
+	opts.onCancel = std::move(cancelled);
+	ShowMediaConfirmation(std::move(opts));
+}
 
 // Tools result popup state
 static bool g_showToolsResult = false;
@@ -232,6 +372,15 @@ void ATUIBootWithProfile(const char *utf8path, uint32 profile) {
 	action.mProfile = profile;
 	std::lock_guard<std::mutex> lock(g_deferredMutex);
 	g_deferredActions.push_back(std::move(action));
+}
+
+void ATUIAttachDiskImage(const char *utf8path, int drive, bool discardConfirmed) {
+	ATDeferredAction action;
+	action.type = kATDeferred_AttachDisk;
+	action.path = VDTextU8ToW(utf8path, -1);
+	action.mInt = drive;
+	action.discardConfirmed = discardConfirmed;
+	QueueDeferred(std::move(action));
 }
 
 void ATUIBootProgramData(const char *utf8origin, const void *data, size_t size) {
@@ -341,6 +490,7 @@ void ATUIRequestCopyFrame(bool trueAspect) {
 // =========================================================================
 
 void ATUIPollDeferredActions() {
+	ATUIPollFileDialogCompletions();
 	ATUIPollMediaURLDownload();
 	ATUIPollLibraryURLImport();
 	ATUIPollFujiNet();
@@ -351,16 +501,64 @@ void ATUIPollDeferredActions() {
 	}
 
 	for (auto& a : actions) {
-#ifdef ALTIRRA_NETPLAY_ENABLED
-		// A file picker/confirmation may finish after a session has started.
-		if (a.type == kATDeferred_MountFolder && ATNetplayGlue::IsSessionEngaged())
+		if (a.load && a.load->cancelled) continue;
+		if (ATUIIsMediaConfirmationActive()
+			&& a.type < kATDeferred_NetplayHostSnapshot) {
+			QueueDeferred(a);
 			continue;
+		}
+#ifdef ALTIRRA_NETPLAY_ENABLED
+		const bool changesMedia = a.type == kATDeferred_BootImage
+			|| a.type == kATDeferred_BootProgramData || a.type == kATDeferred_OpenImage
+			|| a.type == kATDeferred_LoadState || a.type == kATDeferred_AttachCartridge
+			|| a.type == kATDeferred_AttachSecondaryCartridge || a.type == kATDeferred_DetachCartridge
+			|| a.type == kATDeferred_NewCartridge || a.type == kATDeferred_BasicCartridge
+			|| a.type == kATDeferred_AttachDisk || a.type == kATDeferred_MountFolder
+			|| a.type == kATDeferred_NewCassette || a.type == kATDeferred_LoadCassette
+			|| a.type == kATDeferred_UnloadCassette;
+		if (changesMedia && ATNetplayGlue::IsSessionEngaged()) continue;
 #endif
 		try {
+			// Download before selecting a profile or acquiring a media transaction.
+			// Failed/cancelled downloads must leave the live session untouched;
+			// the completed file re-enters this loader with its selected profile.
+			if ((a.type == kATDeferred_BootImage || a.type == kATDeferred_OpenImage)
+				&& ATMediaURL::IsURL(VDTextWToU8(a.path).c_str())) {
+				ATUIStartMediaURLDownload(VDTextWToU8(a.path).c_str(),
+					a.type == kATDeferred_BootImage, a.mProfile);
+				continue;
+			}
+			uint32 discardMask = 0;
+			int discardUnit = -1;
+			if (a.type == kATDeferred_BootImage || a.type == kATDeferred_BootProgramData)
+				discardMask = ATUIGetBootUnloadStorageMask();
+			else if (a.type == kATDeferred_AttachCartridge
+				|| a.type == kATDeferred_AttachSecondaryCartridge
+				|| a.type == kATDeferred_DetachCartridge
+				|| a.type == kATDeferred_NewCartridge || a.type == kATDeferred_BasicCartridge) {
+				discardMask = kATStorageTypeMask_Cartridge;
+				discardUnit = a.type == kATDeferred_AttachSecondaryCartridge ? 1
+					: a.type == kATDeferred_DetachCartridge ? a.mInt : 0;
+			}
+			else if (a.type == kATDeferred_AttachDisk && a.mInt >= 0 && a.mInt < 15) {
+				discardMask = kATStorageTypeMask_Disk;
+				discardUnit = a.mInt;
+			}
+			else if (a.type == kATDeferred_NewCassette || a.type == kATDeferred_UnloadCassette || a.type == kATDeferred_LoadCassette)
+				discardMask = kATStorageTypeMask_Tape;
+			if (discardMask && !a.discardConfirmed) {
+				a.discardConfirmed = true;
+				if (!GetDirtyStorageForLoad(discardMask, discardUnit).empty()) {
+					ATUIConfirmDiscardStorage(discardMask,
+						[a] { QueueDeferred(a); }, discardUnit);
+					continue;
+				}
+			}
 			switch (a.type) {
 			case kATDeferred_BootImage:
 			case kATDeferred_BootProgramData:
-			case kATDeferred_OpenImage: {
+			case kATDeferred_OpenImage:
+			case kATDeferred_LoadState: {
 				// Windows DoLoadStream retry flow (main.cpp:1186-1369).
 				// Fork safety extension: parse before unloading current media.
 				// 1. Parse the image before unloading storage for boot
@@ -397,110 +595,166 @@ void ATUIPollDeferredActions() {
 				}
 #endif
 
-				if (a.mProfile != kATProfileId_Invalid)
-					ATUIActivateGameProfile(a.mProfile);
-
-				// Fork extension: remote media uses the same deferred loader
-				// after an asynchronous download, before any media is unloaded.
-				if (ATMediaURL::IsURL(VDTextWToU8(a.path).c_str())) {
-					ATUIStartMediaURLDownload(VDTextWToU8(a.path).c_str(),
-						a.type == kATDeferred_BootImage);
-					break;
+				if (!a.load) {
+					a.load = std::make_shared<ATDeferredLoad>();
+					g_mediaLoads.erase(std::remove_if(g_mediaLoads.begin(),
+						g_mediaLoads.end(), [](const auto& weak) {
+							return weak.expired();
+						}), g_mediaLoads.end());
+					g_mediaLoads.push_back(a.load);
 				}
+				if (a.mProfile != kATProfileId_Invalid && !a.profileApplied) {
+					PreserveMediaLoad(a.load);
+					ATUIActivateGameProfile(a.mProfile);
+					a.profileApplied = true;
+				}
+
 
 				const bool boot = a.type == kATDeferred_BootImage ||
 					a.type == kATDeferred_BootProgramData;
 				const bool memoryProgram = a.type == kATDeferred_BootProgramData;
 
-				vdfastvector<uint8> captureBuffer;
-				ATCartLoadContext cartCtx {};
-				cartCtx.mbReturnOnUnknownMapper = true;
-				cartCtx.mpCaptureBuffer = &captureBuffer;
+				if (!a.load) a.load = std::make_shared<ATDeferredLoad>();
+				auto& captureBuffer = a.load->captureBuffer;
+				auto& cartCtx = a.load->cartCtx;
+				auto& stateCtx = a.load->stateCtx;
+				auto& ctx = a.load->ctx;
+				auto& mctx = a.load->media;
+				auto& storageUnloaded = a.load->storageUnloaded;
+				if (!a.load->initialized) {
 
-				if (a.mInt > 0) {
-					// Re-load with user-selected mapper (from mapper dialog)
-					cartCtx.mbReturnOnUnknownMapper = false;
-					cartCtx.mCartMapper = a.mInt;
-					cartCtx.mpCaptureBuffer = nullptr;
+
+					cartCtx.mbReturnOnUnknownMapper = true;
+					cartCtx.mpCaptureBuffer = &captureBuffer;
+
+					if (a.mInt > 0) {
+						// Re-load with user-selected mapper (from mapper dialog)
+						cartCtx.mbReturnOnUnknownMapper = false;
+						cartCtx.mCartMapper = a.mInt;
+						cartCtx.mpCaptureBuffer = nullptr;
+					}
+
+
+
+					ctx.mpCartLoadContext = &cartCtx;
+					ctx.mpStateLoadContext = &stateCtx;
+					if (memoryProgram)
+						ctx.mLoadType = kATImageType_Program;
+					else if (a.type == kATDeferred_LoadState)
+						ctx.mLoadType = kATImageType_SaveState;
+
+					// Build full ATMediaLoadContext with stop flags (matches Windows).
+					//
+					// Disk-state interception:  when the user's default write mode
+					// is Real R/W, route the mount path through ATResolveDiskMount.
+					// That helper substitutes a per-image working copy under
+					// {configDir}/disk_state/<SHA256>/disk{ext} (lazily created on
+					// first launch), so writes from games that save progress or
+					// high scores persist across sessions WITHOUT touching the
+					// source .atr.  The pristine source bytes are mirrored under
+					// the same dir, keeping Game Library CRC32 / netplay handshake
+					// / custom art keying stable forever.
+					//
+					// For all other write modes (RO, VRWSafe, VRW) and for non-disk
+					// extensions (cart, tape, EXE), ATResolveDiskMount returns the
+					// original path unchanged — no behavioural change there.
+					//
+					// We update `mOriginalPath` AND `mImageName` so the simulator's
+					// downstream "where did this come from" reporting reflects the
+					// path actually being read.  See disk_state.h for the full
+					// rationale.
+
+					mctx.mWriteMode = g_ATOptions.mDefaultWriteMode;
+					VDStringW resolvedPath = memoryProgram ? a.path :
+						ATResolveDiskMount(a.path.c_str(), mctx.mWriteMode);
+
+					mctx.mOriginalPath = resolvedPath;
+					mctx.mImageName = resolvedPath;
+					mctx.mpStream = nullptr;
+					mctx.mbStopOnModeIncompatibility = true;
+					mctx.mbStopAfterImageLoaded = true;
+					mctx.mbStopOnMemoryConflictBasic = true;
+					mctx.mbStopOnIncompatibleDiskFormat = true;
+					mctx.mpImageLoadContext = &ctx;
+					a.load->initialized = true;
+				}
+				const uint8 emptyStreamByte = 0;
+				const bool capturedCartridge = a.load->mapperSelected && !captureBuffer.empty();
+				VDMemoryStream memoryStream(capturedCartridge ? captureBuffer.data()
+					: memoryProgram ? a.payload.data() : &emptyStreamByte,
+					capturedCartridge ? (uint32)captureBuffer.size() : memoryProgram ? (uint32)a.payload.size() : 0);
+				mctx.mpStream = (memoryProgram || capturedCartridge) && !mctx.mpImage ? &memoryStream : nullptr;
+				a.load->awaitingDecision = false;
+				if (a.load->disableBasic) {
+					PreserveMediaLoad(a.load);
+					g_sim.SetBASICEnabled(false);
 				}
 
-				ATStateLoadContext stateCtx {};
-				ATImageLoadContext ctx {};
-				ctx.mpCartLoadContext = &cartCtx;
-				ctx.mpStateLoadContext = &stateCtx;
-				if (memoryProgram)
-					ctx.mLoadType = kATImageType_Program;
-
-				// Build full ATMediaLoadContext with stop flags (matches Windows).
-				//
-				// Disk-state interception:  when the user's default write mode
-				// is Real R/W, route the mount path through ATResolveDiskMount.
-				// That helper substitutes a per-image working copy under
-				// {configDir}/disk_state/<SHA256>/disk{ext} (lazily created on
-				// first launch), so writes from games that save progress or
-				// high scores persist across sessions WITHOUT touching the
-				// source .atr.  The pristine source bytes are mirrored under
-				// the same dir, keeping Game Library CRC32 / netplay handshake
-				// / custom art keying stable forever.
-				//
-				// For all other write modes (RO, VRWSafe, VRW) and for non-disk
-				// extensions (cart, tape, EXE), ATResolveDiskMount returns the
-				// original path unchanged — no behavioural change there.
-				//
-				// We update `mOriginalPath` AND `mImageName` so the simulator's
-				// downstream "where did this come from" reporting reflects the
-				// path actually being read.  See disk_state.h for the full
-				// rationale.
-				ATMediaLoadContext mctx;
-				mctx.mWriteMode = g_ATOptions.mDefaultWriteMode;
-				VDStringW resolvedPath = memoryProgram ? a.path :
-					ATResolveDiskMount(a.path.c_str(), mctx.mWriteMode);
-				const uint8 emptyStreamByte = 0;
-				VDMemoryStream memoryStream(memoryProgram ? a.payload.data() : &emptyStreamByte,
-					memoryProgram ? (uint32)a.payload.size() : 0);
-				mctx.mOriginalPath = resolvedPath;
-				mctx.mImageName = resolvedPath;
-				mctx.mpStream = memoryProgram ? &memoryStream : nullptr;
-				mctx.mbStopOnModeIncompatibility = true;
-				mctx.mbStopAfterImageLoaded = true;
-				mctx.mbStopOnMemoryConflictBasic = true;
-				mctx.mbStopOnIncompatibleDiskFormat = true;
-				mctx.mpImageLoadContext = &ctx;
-
-				bool storageUnloaded = false;
 				bool loadSuccess = false;
 				bool suppressColdReset = false;
 
 				// Retry loop matching Windows DoLoadStream (up to 10 retries)
-				int safetyCounter = 10;
+				int& safetyCounter = a.load->safetyCounter;
 				for (;;) {
-					if (g_sim.Load(mctx)) {
+					bool preflightConflict = false;
+					if (mctx.mpImage && !mctx.mbStopAfterImageLoaded) {
+						const auto type = mctx.mpImage->GetImageType();
+						if (type == kATImageType_SaveState || type == kATImageType_SaveState2) PreserveMediaLoad(a.load);
+						if (!a.discardConfirmed && (type == kATImageType_Cartridge
+							|| type == kATImageType_Disk || type == kATImageType_VDisk || type == kATImageType_Tape)) {
+							a.discardConfirmed = true;
+							const uint32 mask = type == kATImageType_Cartridge ? kATStorageTypeMask_Cartridge
+								: type == kATImageType_Tape ? kATStorageTypeMask_Tape : kATStorageTypeMask_Disk;
+							ATUIConfirmDiscardStorage(mask, [a] { QueueDeferred(a); }, std::max(0, ctx.mLoadIndex), [a] { RestoreMediaLoad(a.load); });
+							a.load->awaitingDecision = true;
+							break;
+						}
+						mctx.mbMemoryConflictBasic = false;
+						mctx.mbIncompatibleDiskFormat = false;
+						if (type == kATImageType_Program && mctx.mbStopOnMemoryConflictBasic
+							&& g_sim.IsBASICEnabled() && g_sim.SupportsInternalBasic()) {
+							auto* image = vdpoly_cast<IATBlobImage*>(mctx.mpImage.get());
+							vdfastvector<ATProgramBlock> blocks;
+							ATParseProgramImage(image->GetBuffer(), image->GetSize(), blocks);
+							preflightConflict = mctx.mbMemoryConflictBasic =
+								ATCheckProgramOverlap(0xA000, 0x2000, blocks);
+						} else if (type == kATImageType_Disk && mctx.mbStopOnIncompatibleDiskFormat) {
+							auto* image = vdpoly_cast<IATDiskImage*>(mctx.mpImage.get());
+							preflightConflict = mctx.mbIncompatibleDiskFormat =
+								!g_sim.GetDiskInterface(std::max(0, ctx.mLoadIndex)).IsImageSupported(*image);
+						}
+						if (preflightConflict) {
+							mctx.mbMode5200Required = mctx.mbModeComputerRequired = false;
+						} else if (boot && !storageUnloaded
+							&& type != kATImageType_SaveState && type != kATImageType_SaveState2) {
+							// Do not destroy the old media until validation and
+							// every user decision have completed. State loaders
+							// restore their own media and must validate ROMs first.
+							g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
+							storageUnloaded = true;
+						}
+					}
+					if (!preflightConflict && g_sim.Load(mctx)) {
+						if (mctx.mpImage) ctx.mLoadType = mctx.mpImage->GetImageType();
 						loadSuccess = true;
 						break;
 					}
 
-					// The first pass only parses (mbStopAfterImageLoaded).
-					// Keep existing media when parsing fails or a cartridge
-					// still needs mapper selection. Retain the parsed image
-					// for the retry, so validation and installation use the
-					// same bytes even for asynchronous URL downloads.
-					if (boot && mctx.mpImage && !storageUnloaded) {
-						g_sim.UnloadAll(ATUIGetBootUnloadStorageMask());
-						storageUnloaded = true;
-					}
 
 					if (!--safetyCounter)
 						break;
 
-					if (mctx.mbStopAfterImageLoaded)
-						mctx.mbStopAfterImageLoaded = false;
+					const bool parsedOnly = mctx.mbStopAfterImageLoaded;
+					if (parsedOnly) mctx.mbStopAfterImageLoaded = false;
 
 					if (mctx.mbMode5200Required) {
 						// Auto-switch to 5200 mode
 						mctx.mbMode5200Required = false;
 						if (g_sim.GetHardwareMode() != kATHardwareMode_5200) {
+							PreserveMediaLoad(a.load);
 							if (!ATUISwitchHardwareMode(nullptr, kATHardwareMode_5200, true))
 								break;
+							ATSettingsSetTemporaryProfileMode(true);
 						}
 						continue;
 					} else if (mctx.mbModeComputerRequired) {
@@ -509,35 +763,90 @@ void ATUIPollDeferredActions() {
 						// mbStopAfterImageLoaded is true for non-cart images)
 						mctx.mbModeComputerRequired = false;
 						if (g_sim.GetHardwareMode() == kATHardwareMode_5200) {
+							PreserveMediaLoad(a.load);
 							if (!ATUISwitchHardwareMode(nullptr, kATHardwareMode_800XL, true))
 								break;
+							ATSettingsSetTemporaryProfileMode(true);
 						}
 						continue;
 					} else if (mctx.mbMemoryConflictBasic) {
-						// Auto-disable BASIC on memory conflict (SDL3 can't show
-						// modal dialog, so auto-disable matching common user choice)
-						mctx.mbStopOnMemoryConflictBasic = false;
-						g_sim.SetBASICEnabled(false);
-						continue;
+						ATUIConfirmOptions opts;
+						opts.onCancel = [a] { RestoreMediaLoad(a.load); };
+						opts.title = "Memory Conflict";
+						opts.message = "The program being loaded overlaps internal BASIC and may not work with it enabled. Disable internal BASIC?";
+						opts.confirmLabel = "Yes";
+						opts.alternateLabel = "No";
+						opts.destructive = true;
+						opts.onConfirm = [a] {
+							a.load->disableBasic = true;
+							a.load->media.mbStopOnMemoryConflictBasic = false;
+							QueueDeferred(a);
+						};
+						opts.onAlternate = [a] {
+							a.load->media.mbStopOnMemoryConflictBasic = false;
+							QueueDeferred(a);
+						};
+						a.load->awaitingDecision = true;
+						ShowMediaConfirmation(std::move(opts));
+						break;
 					} else if (mctx.mbIncompatibleDiskFormat) {
-						// Allow incompatible disk format (SDL3 auto-accepts)
-						mctx.mbIncompatibleDiskFormat = false;
-						mctx.mbStopOnIncompatibleDiskFormat = false;
-						continue;
+						ATUIConfirmOptions opts;
+						opts.onCancel = [a] { RestoreMediaLoad(a.load); };
+						opts.title = "Incompatible Disk Format";
+						opts.message = "The current disk drive model can't read the type of disk being inserted into it. Mount the disk anyway?";
+						opts.destructive = true;
+						opts.onConfirm = [a] {
+							a.load->media.mbStopOnIncompatibleDiskFormat = false;
+							QueueDeferred(a);
+						};
+						a.load->awaitingDecision = true;
+						ShowMediaConfirmation(std::move(opts));
+						break;
+					} else if (stateCtx.mbKernelMismatchDetected && !stateCtx.mbAllowKernelMismatch) {
+						ATUIConfirmOptions opts;
+						opts.onCancel = [a] { RestoreMediaLoad(a.load); };
+						opts.title = "Kernel ROM Mismatch";
+						opts.message = "The currently loaded kernel ROM image doesn't match the one referenced by the saved state. This may cause the simulated program to fail when resumed. Proceed anyway?";
+						opts.destructive = true;
+						opts.onConfirm = [a] {
+							a.load->stateCtx.mbAllowKernelMismatch = true;
+							QueueDeferred(a);
+						};
+						a.load->awaitingDecision = true;
+						ShowMediaConfirmation(std::move(opts));
+						break;
 					}
 
-					// Unknown cart mapper — show selection dialog
+					// Preserve this transaction, parsed bytes and profile on mapper selection.
 					if (ctx.mLoadType == kATImageType_Cartridge) {
+						auto lifetime = std::make_shared<MediaConfirmationLifetime>();
+						a.load->awaitingDecision = true;
 						ATUIOpenCartridgeMapperDialog(a.type, a.path, 0,
-							(a.type == kATDeferred_BootImage),
-							captureBuffer, cartCtx.mCartSize);
-						break;  // mapper dialog will re-push deferred action
+							boot, captureBuffer, cartCtx.mCartSize,
+							[a, lifetime](int mode) mutable {
+								a.load->cartCtx.mbReturnOnUnknownMapper = false;
+								a.load->cartCtx.mCartMapper = mode;
+								a.load->cartCtx.mpCaptureBuffer = nullptr;
+								a.load->mapperSelected = true;
+								// The unknown-mapper parse produced no image.
+								// Parse the captured bytes with this mapper first,
+								// then apply normal boot-unload/validation policy.
+								a.load->media.mbStopAfterImageLoaded = true;
+								QueueDeferred(a);
+							}, [a, lifetime] { RestoreMediaLoad(a.load); });
+						break;
 					}
 
+					if (parsedOnly && mctx.mpImage) continue;
 					break;  // unknown failure
 				}
 
 				if (loadSuccess) {
+					if (a.load->backup) {
+						a.load->backup->Commit(a.mProfile != kATProfileId_Invalid
+							&& ATUIIsGameProfileSession());
+						a.load->backup.reset();
+					}
 					// Executables have no mounted-media object retaining their
 					// path. Keep UI loads consistent with command-line loads so
 					// per-game checkpoints can identify this session too.
@@ -552,7 +861,7 @@ void ATUIPollDeferredActions() {
 						g_mobileState.gameLoaded = true;
 						g_mobileState.currentScreen = ATMobileUIScreen::None;
 					}
-					if (!memoryProgram)
+					if (!memoryProgram && a.type != kATDeferred_LoadState)
 						ATAddMRU(a.path.c_str());
 
 					// Register the boot with the Game Library: record it
@@ -599,11 +908,48 @@ void ATUIPollDeferredActions() {
 					}
 					// Only resume for Boot Image (matches Windows — Open Image
 					// does not resume; user may be paused to inspect media)
-					if (!compatIssue && boot)
+					if (!compatIssue && (boot || a.type == kATDeferred_LoadState))
 						g_sim.Resume();
+					if (ctx.mLoadType == kATImageType_SaveState && !stateCtx.mbPrivateStateLoaded) {
+						ATUIShowWarning(nullptr, L"Altirra Warning", L"Detailed emulation state could not be loaded because it was produced by a different program version. Some glitches may appear in the simulation.");
+					}
 				}
+				if (!loadSuccess && !a.load->awaitingDecision) RestoreMediaLoad(a.load);
 				break;
 			}
+			case kATDeferred_NewCartridge:
+			case kATDeferred_BasicCartridge:
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (ATNetplayGlue::IsSessionEngaged()) break;
+#endif
+				if (a.type == kATDeferred_BasicCartridge) g_sim.LoadCartridgeBASIC();
+				else g_sim.LoadNewCartridge((ATCartridgeMode)a.mInt);
+				if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange)) g_sim.ColdReset();
+				g_sim.Resume();
+				break;
+			case kATDeferred_NewCassette:
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (ATNetplayGlue::IsSessionEngaged()) break;
+#endif
+				g_sim.GetCassette().LoadNew();
+				break;
+			case kATDeferred_DetachCartridge:
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (ATNetplayGlue::IsSessionEngaged()) break;
+#endif
+				if (a.mInt == 0 && g_sim.GetHardwareMode() == kATHardwareMode_5200)
+					g_sim.LoadCartridge5200Default();
+				else
+					g_sim.UnloadCartridge(a.mInt);
+				if (ATUIIsResetNeeded(kATUIResetFlag_CartridgeChange)) g_sim.ColdReset();
+				g_sim.Resume();
+				break;
+			case kATDeferred_UnloadCassette:
+#ifdef ALTIRRA_NETPLAY_ENABLED
+				if (ATNetplayGlue::IsSessionEngaged()) break;
+#endif
+				g_sim.GetCassette().Unload();
+				break;
 			case kATDeferred_AttachCartridge:
 			case kATDeferred_AttachSecondaryCartridge: {
 				int slot = (a.type == kATDeferred_AttachSecondaryCartridge) ? 1 : 0;
@@ -709,12 +1055,9 @@ void ATUIPollDeferredActions() {
 			case kATDeferred_SelectVirtualFolder:
 				ATUISetVirtualFolderPath(a.path.c_str(), a.mInt);
 				break;
-			case kATDeferred_LoadState: {
-				ATImageLoadContext ctx {};
-				if (g_sim.Load(a.path.c_str(), kATMediaWriteMode_RO, &ctx))
-					g_sim.Resume();
+			case kATDeferred_SetCustomEffectPath:
+				g_ATUIManager.SetCustomEffectPath(a.path.c_str(), false);
 				break;
-			}
 			case kATDeferred_SaveState:
 				g_sim.SaveState(a.path.c_str());
 				break;
@@ -1205,9 +1548,11 @@ void ATUIPollDeferredActions() {
 #endif
 			}
 		} catch (const MyError& e) {
+			RestoreMediaLoad(a.load);
 			g_toolsResultMessage = VDStringA("Error: ") + e.c_str();
 			g_showToolsResult = true;
 		} catch (...) {
+			RestoreMediaLoad(a.load);
 			VDStringA u8 = VDTextWToU8(a.path);
 			LOG_ERROR("UI", "Deferred action %d failed for: %s", a.type, u8.c_str());
 		}
@@ -1375,6 +1720,7 @@ static void ATUIPlatformSetImeData(ImGuiContext *,
 #endif
 
 bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
+	ATUIInitFileDialogs();
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 
@@ -1504,6 +1850,9 @@ bool ATUIInit(SDL_Window *window, IDisplayBackend *backend) {
 }
 
 void ATUIShutdown() {
+	ATUIShutdownFileDialogs();
+	ATUICancelPendingMediaLoads();
+	{ std::lock_guard<std::mutex> lock(g_deferredMutex); g_deferredActions.clear(); }
 	ATUIShutdownMediaURLDownload();
 	ATUIShutdownLibraryURLImport();
 	ATUIShutdownFujiNet();
@@ -2669,6 +3018,7 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	}
 	ATTouchRenderToasts();
 
+	ATInputSDL3_UpdatePointer(window);
 	ImGui::Render();
 	if (s_usingGLBackend) {
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

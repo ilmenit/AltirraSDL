@@ -198,3 +198,47 @@ def test_malformed_download_preserves_all_mounted_disks(
         after = fresh.query_state()['state']
         assert after['disks'] == before['disks']
         assert not after['sim']['running']
+
+
+def test_profile_url_download_preserves_session_until_success(emu, monkeypatch, tmp_path, image_server):
+    """Downloads retain the chosen profile without applying it on cancel/error."""
+    from .test_native_media_parity import program, profiles
+
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('SDL_VIDEODRIVER', 'dummy')
+    monkeypatch.setenv('SDL_AUDIODRIVER', 'dummy')
+    monkeypatch.setenv('ALTIRRA_DISPLAY_BACKEND', 'sdlrenderer')
+    with AltirraTestHarness(executable=emu.executable,
+                           extra_args=['--ui-mode', 'desktop']) as fresh:
+        fresh.close_dialog('SetupWizard')
+        fresh.send('boot_image ' + str(program(tmp_path / 'loop.xex')))
+        fresh.wait_frames(8)
+        fresh.pause()
+        target = fresh.send('profile_test create')['id']
+        fresh.send('set_speed 147')
+        original = profiles(fresh)
+        fresh.send('debugger_console e 4000 6A')
+
+        fresh.send(f'boot_profile {target} {image_server}/missing')
+        assert '404' in wait_download(fresh)['error']
+        assert profiles(fresh)['current'] == original['current']
+        assert not profiles(fresh)['temporary']
+        assert fresh.send('get_speed')['percent'] == pytest.approx(147)
+        assert fresh.mem_read(0x4000, 1) == [0x6A]
+
+        fresh.send(f'boot_profile {target} {image_server}/slow.atr')
+        fresh.wait_frames(3)
+        assert profiles(fresh)['current'] == original['current']
+        assert fresh.send('get_speed')['percent'] == pytest.approx(147)
+        click(fresh, 'Open Image from URL', 'Cancel Download')
+        wait_download(fresh)
+        assert profiles(fresh)['current'] == original['current']
+        assert not profiles(fresh)['temporary']
+        assert fresh.mem_read(0x4000, 1) == [0x6A]
+
+        fresh.send(f'boot_profile {target} {image_server}/disk.zip')
+        assert wait_download(fresh)['error'] == ''
+        assert profiles(fresh)['current'] == target
+        assert profiles(fresh)['temporary']
+        assert fresh.send('get_speed')['percent'] == pytest.approx(100)
+        assert fresh.query_state()['state']['disks'][0]['sectors'] == 720

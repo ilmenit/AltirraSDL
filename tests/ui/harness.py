@@ -276,39 +276,28 @@ class AltirraTestHarness:
                 f"Checkbox '{label}': expected checked={expected}, got {actual}"
             )
 
-    # Pages near the bottom of the sidebar that may need scrolling to be visible
-    _SYSCONFIG_BOTTOM_PAGES = {
-        "Compat DB", "Display", "Ease of Use", "Error Handling",
-        "Input", "Window Caption", "Workarounds",
-    }
-
     def navigate_system_config(self, page: str):
-        """Open SystemConfig and navigate to a specific page by clicking sidebar entries.
-
-        The sidebar is a flat list of Selectables (no tree nodes). Items near
-        the bottom ("Emulator" section) may be off-screen in the scrollable
-        child window. We scroll down by clicking a nearby visible item first,
-        then click the target.
-        """
+        """Navigate the real sidebar, scrolling it with keyboard navigation."""
         if not self.get_dialog_state("SystemConfig"):
             self.open_dialog("SystemConfig")
             self.wait_frames(5)
 
         win = "Configure System"
-
-        # If the target page might be off-screen, scroll down by clicking
-        # a visible item near the bottom of the visible area first
-        if page in self._SYSCONFIG_BOTTOM_PAGES:
-            item = self.find_item(win, page)
-            if item is None:
-                # "Flash" is the last item in the "Media" section and should
-                # be near the bottom of the visible area; clicking it scrolls
-                # the sidebar down, making "Emulator" section items visible
-                try:
-                    self.click(win, "Flash")
+        if self.find_item(win, page) is None:
+            # Click an actual visible sidebar entry to give navigation focus
+            # to its child, then move to either end of that scrollable list.
+            # A previous test may have left it scrolled in either direction.
+            entries = [item for item in self.list_items()
+                       if "##SysCfgTree" in item["window"]
+                       and item["type"] == "button" and not item.get("disabled")]
+            if entries:
+                self.click(entries[0]["window"], entries[0]["label"])
+                self.wait_frames(3)
+                for key in ("home", "end"):
+                    self.send("key " + key)
                     self.wait_frames(5)
-                except CommandError:
-                    pass
+                    if self.find_item(win, page) is not None:
+                        break
 
         self.click(win, page)
         self.wait_frames(8)

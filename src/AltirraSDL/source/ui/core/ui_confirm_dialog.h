@@ -23,11 +23,15 @@ struct ATUIConfirmOptions {
 	// dialogs in this build; pass Yes/No for question-style prompts.
 	const char *confirmLabel = "OK";
 	const char *cancelLabel  = "Cancel";
+	// Optional third choice, displayed between confirm and cancel.
+	const char *alternateLabel = nullptr;
+	ATUIConfirmCallback onAlternate;
 
 	// If true, the cancel button is the initially-focused / default
 	// button.  Use for destructive actions (discard unsaved work, delete
 	// files, etc.) to match Windows Altirra's safe-default convention.
 	bool destructive = false;
+	unsigned group = 0; // Allows an owner to cancel obsolete queued prompts.
 
 	// Invoked on confirm / cancel respectively.  Cancel callback is
 	// optional and is also fired when the user presses Escape, clicks
@@ -59,3 +63,5 @@ void ATUIRenderConfirmDialogs();
 // about to be shown).  Used by main loop to suppress hotkey handling
 // when a modal is active.
 bool ATUIIsConfirmDialogActive();
+
+void ATUICancelConfirmations(unsigned group);

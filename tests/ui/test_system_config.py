@@ -103,7 +103,6 @@ class TestSidebarNavigation:
         # If we got here without CommandError, navigation worked
 
     @pytest.mark.parametrize("page", EMULATOR_PAGES)
-    @pytest.mark.xfail(reason="Sidebar items clipped in 480px dialog — need scroll support in test mode")
     def test_emulator_page_navigable(self, emu: AltirraTestHarness, page: str):
         open_page(emu, page)
         # If we got here without CommandError, navigation worked
@@ -152,10 +151,14 @@ class TestCPUPage:
     @pytest.mark.parametrize("checkbox", EXPECTED_CHECKBOXES)
     def test_checkbox_toggle(self, emu: AltirraTestHarness, checkbox: str):
         open_page(emu, "CPU")
-        # Items near the bottom of the content area may be off-screen
-        item = emu.find_item(WIN, checkbox)
-        if item and item.get("y", 0) > 500:
-            pytest.skip("Item clipped at bottom of content area")
+        # Focus unused space at the content child's upper right, then scroll
+        # with End without selecting a CPU or changing any checkbox state.
+        content = next(window for window in emu.query_state()["state"]["windows"]
+                       if "##SysCfgContent_" in window["name"])
+        emu.send(f"click_at {content['x'] + content['w'] - 24} {content['y'] + 8}")
+        emu.wait_frames(2)
+        emu.send("key end")
+        emu.wait_frames(5)
         assert_checkbox_toggles(emu, checkbox)
 
 
@@ -320,17 +323,6 @@ class TestCassettePage:
 
 # ── Display (Emulator) Page ──────────────────────────────────────────────
 
-# ── Pages under "Emulator" section (off-screen in 480px dialog) ─────────
-# These pages can't be navigated via sidebar click because ImGui doesn't
-# render (and thus doesn't track) clipped items. Marked xfail until we add
-# a scroll_to or set_category command to the test protocol.
-
-XFAIL_SCROLL = pytest.mark.xfail(
-    reason="Sidebar item clipped in 480px dialog — needs scroll support in test mode"
-)
-
-
-@XFAIL_SCROLL
 class TestDisplayEmulatorPage:
 
     EXPECTED = [
@@ -345,7 +337,6 @@ class TestDisplayEmulatorPage:
         assert_labels_present(emu, self.EXPECTED)
 
 
-@XFAIL_SCROLL
 class TestInputEmulatorPage:
 
     EXPECTED = [
@@ -359,7 +350,6 @@ class TestInputEmulatorPage:
         assert_labels_present(emu, self.EXPECTED)
 
 
-@XFAIL_SCROLL
 class TestEaseOfUsePage:
 
     EXPECTED = [
@@ -373,7 +363,6 @@ class TestEaseOfUsePage:
         assert_labels_present(emu, self.EXPECTED)
 
 
-@XFAIL_SCROLL
 class TestWorkaroundsPage:
 
     EXPECTED = [
@@ -385,7 +374,6 @@ class TestWorkaroundsPage:
         assert_labels_present(emu, self.EXPECTED)
 
 
-@XFAIL_SCROLL
 class TestCompatDBPage:
 
     EXPECTED = [
@@ -398,10 +386,23 @@ class TestCompatDBPage:
 
     def test_widgets_exist(self, emu: AltirraTestHarness):
         open_page(emu, "Compat DB")
-        assert_labels_present(emu, self.EXPECTED)
+        assert_labels_present(emu, [label for label in self.EXPECTED
+                                    if label != "Browse..."])
+        external = emu.find_item(WIN, "Use external database")
+        enabled = external.get("checked", False)
+        try:
+            # The external path and Browse control are conditional on this
+            # existing option; do not require them while it is disabled.
+            if not enabled:
+                emu.click(WIN, "Use external database")
+                emu.wait_frames(3)
+            assert_labels_present(emu, self.EXPECTED)
+        finally:
+            if not enabled:
+                emu.click(WIN, "Use external database")
+                emu.wait_frames(2)
 
 
-@XFAIL_SCROLL
 class TestMediaDefaultsPage:
 
     def test_widgets_exist(self, emu: AltirraTestHarness):
@@ -411,7 +412,6 @@ class TestMediaDefaultsPage:
 
 # ── Window Caption Page ─────────────────────────────────────────────────
 
-@XFAIL_SCROLL
 class TestCaptionPage:
 
     def test_widgets_exist(self, emu: AltirraTestHarness):

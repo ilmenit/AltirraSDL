@@ -53,6 +53,7 @@ target_sources(AltirraSDL PRIVATE
     source/app/ui_file_dialog_sdl3.cpp
 
     # --- display/ : SDL display + GL backends + shaders ---
+    source/display/display_custom_effect.cpp
     source/display/display_sdl3.cpp
     source/display/video_output.cpp
     source/display/display_backend.cpp
@@ -63,6 +64,7 @@ target_sources(AltirraSDL PRIVATE
     source/input/input_selection.cpp
     source/input/input_capture.cpp
     source/input/input_sdl3.cpp
+    source/input/input_pointer_sdl3.cpp
     source/input/joystick_sdl3.cpp
     source/input/keyboard_keymap_sdl3.cpp
     source/input/touch_layout.cpp
@@ -88,7 +90,9 @@ target_sources(AltirraSDL PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Altirra/source/aviwriter.cpp
 
     # --- ui/core/ : ImGui hub, main render, indicators ---
+    source/ui/core/ui_media_session.cpp
     source/ui/core/ui_main.cpp
+    source/ui/core/ui_accessibility.cpp
     source/ui/core/ui_mode.cpp
     source/ui/core/ui_state_settings.cpp
     source/ui/core/ramcart_settings.cpp
@@ -1245,6 +1249,7 @@ if(APPLE)
 
     # macOS Objective-C++ files — compiled with Clang when GCC is the main
     # compiler; see altirra_add_objcxx_source() defined earlier in this file.
+    altirra_add_objcxx_source(source/ui/core/ui_accessibility_macos.mm)
     altirra_add_objcxx_source(source/os/macos_autorelease_pool.mm)
     altirra_add_objcxx_source(source/ui/menus/macos_menubar.mm)
     altirra_add_objcxx_source(source/os/midimate_coremidi.mm)
@@ -1641,4 +1646,15 @@ if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
         "${CMAKE_SOURCE_DIR}/src/Altirra/source/tracefileencoding.cpp"
         PROPERTIES COMPILE_FLAGS "-mssse3 -mpopcnt"
     )
+endif()
+
+# Native accessibility providers consume immutable emulator-thread snapshots.
+if(WIN32)
+    target_sources(AltirraSDL PRIVATE
+        source/ui/core/ui_accessibility_win32.cpp
+        ${CMAKE_SOURCE_DIR}/src/Altirra/source/uidisplayaccessibility.cpp
+        ${CMAKE_SOURCE_DIR}/src/Altirra/source/uidisplayaccessibility_win32.cpp)
+    target_link_libraries(AltirraSDL PRIVATE uiautomationcore propsys oleaut32 comctl32)
+elseif(UNIX AND NOT APPLE AND NOT ANDROID AND NOT EMSCRIPTEN)
+    target_sources(AltirraSDL PRIVATE source/ui/core/ui_accessibility_linux.cpp)
 endif()

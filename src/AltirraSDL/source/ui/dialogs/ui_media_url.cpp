@@ -23,6 +23,7 @@ struct DownloadJob {
 	ATMediaURL::Result result;
 	std::atomic<bool> done{false};
 	bool boot = false;
+	uint32 profile = kATProfileId_Invalid;
 	std::thread worker;
 	~DownloadJob() {
 		progress.cancel.store(true, std::memory_order_relaxed);
@@ -43,7 +44,7 @@ void SameLineIfFits(const char* label) {
 		ImGui::SameLine();
 }
 
-void Start(const std::string& url, bool boot) {
+void Start(const std::string& url, bool boot, uint32 profile = kATProfileId_Invalid) {
 	if (s_job)
 		return;
 	s_error.clear();
@@ -63,6 +64,7 @@ void Start(const std::string& url, bool boot) {
 	const std::string cache = std::string(config.c_str()) + "/downloads";
 	auto job = std::make_unique<DownloadJob>();
 	job->boot = boot;
+	job->profile = profile;
 	DownloadJob* raw = job.get();
 	try {
 		raw->worker = std::thread([raw, url, cache] {
@@ -83,14 +85,14 @@ void ATUIShowMediaURLDialog() {
 bool ATUIIsMediaURLDownloadPending() { return s_job != nullptr; }
 const char* ATUIGetMediaURLDownloadError() { return s_error.c_str(); }
 
-void ATUIStartMediaURLDownload(const char* url, bool boot) {
+void ATUIStartMediaURLDownload(const char* url, bool boot, uint32 profile) {
 	s_open = true;
 	if (s_job) {
 		s_error = "An image download is already in progress.";
 		return;
 	}
 	snprintf(s_url, sizeof s_url, "%s", url ? url : "");
-	Start(url ? url : "", boot);
+	Start(url ? url : "", boot, profile);
 }
 
 void ATUIPollMediaURLDownload() {
@@ -98,6 +100,7 @@ void ATUIPollMediaURLDownload() {
 		return;
 	const bool cancelled = s_job->progress.cancel.load(std::memory_order_relaxed);
 	const bool boot = s_job->boot;
+	const uint32 profile = s_job->profile;
 	ATMediaURL::Result result = std::move(s_job->result);
 	s_job.reset();
 	if (cancelled)
@@ -111,8 +114,11 @@ void ATUIPollMediaURLDownload() {
 	// Only the normal main-thread loader changes media/hardware/run state.
 	// Its compatibility, cartridge selection, writable-disk state and
 	// netplay checks apply equally to downloaded images.
-	ATUIPushDeferred(boot ? kATDeferred_BootImage : kATDeferred_OpenImage,
-		result.path.c_str());
+	if (boot && profile != kATProfileId_Invalid)
+		ATUIBootWithProfile(result.path.c_str(), profile);
+	else
+		ATUIPushDeferred(boot ? kATDeferred_BootImage : kATDeferred_OpenImage,
+			result.path.c_str());
 }
 
 void ATUIRenderMediaURLDialog() {

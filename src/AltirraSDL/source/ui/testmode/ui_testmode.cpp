@@ -21,6 +21,7 @@
 #include "testmode_ipc.h"
 #include "ui_testmode.h"
 #include "ui_main.h"
+#include "ui_profile_services.h"
 #include "ui/dialogs/ui_media_url.h"
 #include "ui/dialogs/ui_library_url.h"
 #include "ui/gamelibrary/game_library.h"
@@ -33,6 +34,8 @@ extern ATGameLibrary* GetGameLibrary();
 #include "macos_menubar.h"
 #include "ui_file_dialog_sdl3.h"
 #include "uiaccessors.h"
+#include <at/atui/uimanager.h>
+extern ATUIManager g_ATUIManager;
 #include "ui_frame_capture.h"
 #include "ui_mode.h"
 #include "ui/mobile/ui_mobile.h"
@@ -40,6 +43,7 @@ extern ATGameLibrary* GetGameLibrary();
 #include "media/metadata_settings.h"
 #include "simulator.h"
 #include "settings.h"
+#include "options.h"
 #include "cpu.h"
 #include "diskinterface.h"
 #include <at/atio/diskimage.h>
@@ -48,6 +52,7 @@ extern ATGameLibrary* GetGameLibrary();
 #include "gtia.h"
 #include "oshelper.h"
 #include "inputmanager.h"
+#include "input_pointer_sdl3.h"
 #include "inputdefs.h"
 #include "inputmap.h"
 #include "input_capture.h"
@@ -72,6 +77,9 @@ extern ATGameLibrary* GetGameLibrary();
 #include "video_output.h"
 #include "display_sdl3_impl.h"
 #include "display_backend.h"
+#include "display_custom_effect.h"
+#include "ui_accessibility.h"
+#include <at/atdebugger/target.h>
 extern VDVideoDisplaySDL3 *g_pDisplay;
 #include <at/atcore/devicevideo.h>
 #include <cmath>
@@ -433,6 +441,8 @@ static bool* FindDialogField(ATUIState &state, const std::string &name) {
 
 // Build the query_state JSON response
 extern bool ATIsAppSuspendedSDL3();
+extern bool ATInputSDL3_IsHoldingKeys();
+extern void ATSyncCPUHistoryState();
 
 static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	std::string json = "{\"ok\":true,\"state\":{";
@@ -470,6 +480,7 @@ static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	json += ",\"frameWidth\":" + std::to_string(g_pDisplay->GetFramePixelWidth());
 	json += ",\"frameHeight\":" + std::to_string(g_pDisplay->GetFramePixelHeight());
 	if (auto *backend = ATUIGetDisplayBackend()) {
+		json += ",\"backend\":\"" + std::string(ATDisplayBackendTypeName(backend->GetType())) + "\"";
 		json += ",\"textureWidth\":" + std::to_string(backend->GetTextureWidth());
 		json += ",\"textureHeight\":" + std::to_string(backend->GetTextureHeight());
 	}
@@ -492,6 +503,22 @@ static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	json += sim.IsRunning() ? "true" : "false";
 	json += ",\"paused\":";
 	json += sim.IsPaused() ? "true" : "false";
+	json += ",\"holdKeys\":";
+	json += ATInputSDL3_IsHoldingKeys() ? "true" : "false";
+	json += ",\"pendingHeldKey\":" + std::to_string(sim.GetPendingHeldKey());
+	json += ",\"pendingHeldSwitches\":" + std::to_string(sim.GetPendingHeldSwitches());
+	json += ",\"deviceHistory\":[";
+	bool firstHistory = true;
+	for (auto* device : sim.GetDeviceManager()->GetInterfaces<IATDeviceDebugTarget>(false, false, false)) {
+		for (uint32 index = 0; auto* target = device->GetDebugTarget(index++); ) {
+			if (auto* history = vdpoly_cast<IATDebugTargetHistory*>(target)) {
+				if (!firstHistory) json += ',';
+				firstHistory = false;
+				json += history->GetHistoryEnabled() ? "true" : "false";
+			}
+		}
+	}
+	json += "]";
 	json += ",\"turbo\":";
 	json += sim.IsTurboModeEnabled() ? "true" : "false";
 
@@ -2327,6 +2354,93 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 
 	// Physical-event regression helpers exercise SDL routing, not just ImGui
 	// navigation or direct emulated joystick injection.
+	if (verb == "pointer_overlay") {
+		const auto action = NextToken(cmd);
+		auto *im = sim.GetInputManager();
+		if (!im) return JsonError("no input manager");
+		if (action == "setup") {
+			for (uint32 i = 0; i < im->GetInputMapCount(); ++i) {
+				vdrefptr<ATInputMap> map;
+				if (im->GetInputMapByIndex(i, ~map)) im->ActivateInputMap(map, false);
+			}
+			vdrefptr<ATInputMap> map(new ATInputMap);
+			map->SetName(L"Pointer overlay regression tablet");
+			const uint32 controller = map->AddController(kATInputControllerType_PowerPad, 0);
+			map->AddMapping(kATInputCode_MousePadX, controller, kATInputTrigger_Axis0);
+			map->AddMapping(kATInputCode_MousePadY, controller, kATInputTrigger_Axis0 + 1);
+			im->AddInputMap(map);
+			im->ActivateInputMap(map, true);
+			im->SetMousePadPos(0, 0);
+			ATUISetDrawPadBoundsEnabled(false);
+			ATUISetDrawPadPointersEnabled(false);
+		} else if (action == "bounds" || action == "pointers") {
+			const auto value = NextToken(cmd);
+			if (value != "0" && value != "1") return JsonError("expected 0 or 1");
+			if (action == "bounds") ATUISetDrawPadBoundsEnabled(value == "1");
+			else ATUISetDrawPadPointersEnabled(value == "1");
+		} else if (action != "query")
+			return JsonError("usage: pointer_overlay <setup|bounds 0/1|pointers 0/1|query>");
+		vdfastvector<ATInputPointerInfo> pointers;
+		im->GetPointers(pointers);
+		float x = 0, y = 0, w = 0, h = 0;
+		ATInputSDL3_GetDisplayRect(x, y, w, h);
+		return "{\"ok\":true,\"pointers\":" + std::to_string(pointers.size())
+			+ ",\"nonBeam\":" + (im->HasNonBeamPointer() ? "true" : "false")
+			+ ",\"cursorVisible\":" + (SDL_CursorVisible() ? "true" : "false")
+			+ ",\"mouseGrab\":" + ((g_pWindow && SDL_GetWindowMouseGrab(g_pWindow)) ? "true" : "false")
+			+ ",\"displayRect\":[" + std::to_string(x) + "," + std::to_string(y)
+			+ "," + std::to_string(w) + "," + std::to_string(h) + "]}";
+	}
+	if (verb == "hold_keys") {
+		ATUIToggleHoldKeys();
+		return JsonOk();
+	}
+	if (verb == "history_enabled") {
+		const auto value = NextToken(cmd);
+		if (value != "0" && value != "1") return JsonError("usage: history_enabled <0|1>");
+		sim.GetCPU().SetHistoryEnabled(value == "1");
+		ATSyncCPUHistoryState();
+		return JsonOk();
+	}
+	if (verb == "accessibility") {
+		const auto value = NextToken(cmd);
+		if (value == "enabled" || value == "disabled") {
+			extern ATOptions g_ATOptions;
+			ATOptions previous(g_ATOptions);
+			g_ATOptions.mbAccEnabled = value == "enabled";
+			g_ATOptions.mbDirty = true;
+			ATOptionsRunUpdateCallbacks(&previous);
+			ATOptionsSave();
+		} else if (value != "status") return JsonError("usage: accessibility <enabled|disabled|status>");
+		const auto snapshot = ATSDLAccessibilityGetSnapshot();
+		const auto status = ATSDLAccessibilityGetStatus();
+		const char *provider = "disabled";
+		switch (status.state) {
+		case ATSDLAccessibilityState::Connecting: provider = "connecting"; break;
+		case ATSDLAccessibilityState::Active: provider = "active"; break;
+		case ATSDLAccessibilityState::Unavailable: provider = "unavailable"; break;
+		case ATSDLAccessibilityState::Disabled: break;
+		}
+		return std::string("{\"ok\":true,\"text\":\"") + JsonEscape(snapshot
+			? VDTextWToU8(snapshot->text.c_str(), -1).c_str() : "")
+			+ "\",\"focused\":" + (snapshot && snapshot->focused ? "true" : "false")
+			+ ",\"providerState\":\"" + provider + "\",\"providerMessage\":\""
+			+ JsonEscape(status.message) + "\"}";
+	}
+	if (verb == "screen_effects") {
+		const auto mode = NextToken(cmd);
+		if (mode != "none" && mode != "basic") return JsonError("usage: screen_effects <none|basic>");
+		state.screenEffectsMode = mode == "none" ? ATUIState::kSFXMode_None : ATUIState::kSFXMode_Basic;
+		return JsonOk();
+	}
+	if (verb == "custom_effect") {
+		const auto path = RestOfLine(cmd);
+		if (path == "reload") g_ATUIManager.SetCustomEffectPath(g_ATUIManager.GetCustomEffectPath(), true);
+		else if (path == "clear") g_ATUIManager.SetCustomEffectPath(L"", false);
+		else if (!path.empty()) g_ATUIManager.SetCustomEffectPath(VDTextU8ToW(path.c_str(), -1).c_str(), false);
+		return "{\"ok\":true,\"error\":\"" + JsonEscape(ATDisplayCustomEffectGetError())
+			+ "\",\"active\":\"" + JsonEscape(VDTextWToU8(ATDisplayCustomEffectGetActivePath().c_str(), -1).c_str()) + "\"}";
+	}
 	if (verb == "app_lifecycle") {
 		const auto direction = NextToken(cmd);
 		if (direction != "background" && direction != "foreground")
@@ -2882,6 +2996,47 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 	}
 
 
+#if defined(IMGUI_ENABLE_TEST_ENGINE) && !defined(__EMSCRIPTEN__)
+	if (verb == "file_dialog_worker") {
+		struct WorkerResult {
+			int count = 0, filter = -1;
+			bool mainThread = false, paused = false, shouldThrow = false;
+			std::vector<std::string> paths;
+		};
+		static WorkerResult result;
+		const auto action = NextToken(cmd);
+		if (action != "status") {
+			if (action != "success" && action != "cancel" && action != "throw"
+				&& action != "late" && action != "error")
+				return JsonError("usage: file_dialog_worker <success|cancel|throw|late|error|status> [notify]");
+			result = WorkerResult();
+			result.shouldThrow = action == "throw";
+			auto callback = [](void *userdata, const char *const *paths, int filter) {
+				auto& result = *static_cast<WorkerResult *>(userdata);
+				++result.count;
+				result.mainThread = SDL_IsMainThread();
+				result.paused = ATUIIsFileDialogPaused();
+				result.filter = filter;
+				for (const char *const *path = paths; path && *path; ++path)
+					result.paths.emplace_back(*path);
+				if (result.shouldThrow) throw MyError("Synthetic file dialog callback failure.");
+			};
+			ATUITestFileDialogWorkerCompletion(callback, &result, action.c_str(), NextToken(cmd) == "notify");
+		}
+		std::string json = "{\"ok\":true,\"callbacks\":" + std::to_string(result.count)
+			+ ",\"mainThread\":" + (result.mainThread ? "true" : "false")
+			+ ",\"leaseHeldInCallback\":" + (result.paused ? "true" : "false")
+			+ ",\"pickerPaused\":" + (ATUIIsFileDialogPaused() ? "true" : "false")
+			+ ",\"filter\":" + std::to_string(result.filter) + ",\"paths\":[";
+		bool first = true;
+		for (const auto& path : result.paths) {
+			if (!first) json += ',';
+			first = false;
+			json += '"' + JsonEscape(path) + '"';
+		}
+		return json + "]}";
+	}
+#endif
 	if (verb == "file_dialog_builtin") {
 		ATUISetForceBuiltinFileDialog(NextToken(cmd) == "on");
 		return JsonOk();
@@ -2906,6 +3061,23 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		else if (type == "xex") ATUIOpenXEXExplorerFile(path.c_str());
 		else if (type == "cartridge") ATUIOpenCartridgeExplorerFile(path.c_str());
 		else return JsonError("unknown explorer type");
+		return JsonOk();
+	}
+	if (verb == "boot_profile") {
+		const auto id = NextToken(cmd);
+		const auto path = RestOfLine(cmd);
+		if (id.empty() || path.empty()) return JsonError("usage: boot_profile <id> <path>");
+		ATUIBootWithProfile(path.c_str(), (uint32)strtoul(id.c_str(), nullptr, 0));
+		return JsonOk();
+	}
+	if (verb == "profile_test") {
+		const auto action = NextToken(cmd);
+		if (action == "create") return "{\"ok\":true,\"id\":" + std::to_string(ATUICreateProfileCopy(true)) + "}";
+		const auto id = NextToken(cmd);
+		if (id.empty()) return JsonError("usage: profile_test create|activate <id>|temporary <0|1>");
+		if (action == "activate") ATUISwitchProfile((uint32)strtoul(id.c_str(), nullptr, 0));
+		else if (action == "temporary" && (id == "0" || id == "1")) ATSettingsSetTemporaryProfileMode(id == "1");
+		else return JsonError("unknown profile_test action");
 		return JsonOk();
 	}
 	if (verb == "boot_image") {

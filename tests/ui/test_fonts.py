@@ -9,7 +9,7 @@ from xml.sax.saxutils import escape
 import pytest
 
 from .harness import AltirraTestHarness
-from .test_desktop_search_profiles import desktop, search
+from .test_desktop_search_profiles import desktop, search, search_input_window
 from .test_explorers import click, enter
 
 
@@ -107,6 +107,10 @@ def test_variable_named_styles_render_and_restart(desktop, tmp_path):
     click(desktop, "", "Light")
     light = desktop.send("query_fonts")
     click(desktop, "", "Style##ui")
+    # Reopening scrolls to Light; Black is the first sorted style and may
+    # sit above the visible rows in a catalog with many named instances.
+    desktop.send("key home")
+    desktop.wait_frames(3)
     click(desktop, "", "Black")
     black = desktop.send("query_fonts")
     assert light["uiFaceIndex"] >> 16 > 0
@@ -173,7 +177,7 @@ def test_search_at_font_sizes(request, monkeypatch, tmp_path, size, family, styl
         assert result["x"] + result["w"] <= 1280
         assert result["y"] + result["h"] <= 900
         emu.send("ui_screenshot " + str(tmp_path / f"search-{size}pt.png"))
-        click(emu, "Search actions and settings", "##search")
+        click(emu, search_input_window(), "##search")
         emu.send("key enter")
         emu.wait_frames(5)
         assert emu.get_dialog_state("SystemConfig")

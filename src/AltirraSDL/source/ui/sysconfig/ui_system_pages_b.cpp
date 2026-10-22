@@ -12,6 +12,7 @@
 #include <vd2/system/file.h>
 
 #include "ui_main.h"
+#include "ui_accessibility.h"
 #include "ui_system_internal.h"
 #include "simulator.h"
 #include "constants.h"
@@ -50,6 +51,7 @@
 #include <vector>
 #include <cstring>
 #include "logging.h"
+#include "display/display_custom_effect.h"
 
 extern ATSimulator g_sim;
 extern ATUIManager g_ATUIManager;
@@ -865,12 +867,28 @@ void RenderAccessibilityCategory(ATSimulator &) {
 	extern ATOptions g_ATOptions;
 	ImGui::SeparatorText("Screen reader");
 	bool acc = g_ATOptions.mbAccEnabled;
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+	ImGui::BeginDisabled();
+#endif
 	if (ImGui::Checkbox("Enable screen reader support", &acc)) {
 		ATOptions prev(g_ATOptions);
 		g_ATOptions.mbAccEnabled = acc;
 		if (g_ATOptions != prev) { g_ATOptions.mbDirty = true; ATOptionsRunUpdateCallbacks(&prev); ATOptionsSave(); }
 	}
-	ImGui::SetItemTooltip("Enable accessibility features for screen reader software.");
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+	ImGui::EndDisabled();
+	ImGui::TextWrapped("Emulated-screen accessibility is available in the "
+		"Windows, macOS, and Linux desktop applications.");
+#else
+	ImGui::SetItemTooltip("Expose emulated Atari text to the desktop screen reader.");
+	if (acc) {
+		// SDL desktops have optional native accessibility services. Keep the
+		// existing preference honest when a desktop service is unavailable.
+		const auto status = ATSDLAccessibilityGetStatus();
+		if (!status.message.empty())
+			ImGui::TextWrapped("%s", status.message.c_str());
+	}
+#endif
 }
 
 // =========================================================================
@@ -1106,17 +1124,44 @@ void RenderDisplay2Category(ATSimulator &) {
 	}
 
 	ImGui::SeparatorText("Screen effects");
-	static char effectPath[512] = {};
-	static bool effectInit = false;
-	if (!effectInit) {
-		const wchar_t *p = g_ATUIManager.GetCustomEffectPath();
-		if (p) { VDStringA u8 = VDTextWToU8(VDStringW(p)); strncpy(effectPath, u8.c_str(), sizeof(effectPath)-1); }
-		effectInit = true;
+	static char effectPath[4096] = {};
+	static std::wstring lastPath;
+	const auto& selectedPath = ATDisplayCustomEffectGetPath();
+	if (lastPath != selectedPath) {
+		const auto utf8 = VDTextWToU8(VDStringW(selectedPath.c_str()));
+		snprintf(effectPath, sizeof(effectPath), "%s", utf8.c_str());
+		lastPath = selectedPath;
 	}
-	if (ImGui::InputText("Effect file", effectPath, sizeof(effectPath))) {
-		VDStringW wp = VDTextU8ToW(VDStringA(effectPath));
-		g_ATUIManager.SetCustomEffectPath(wp.c_str(), false);
+	const bool entered = ImGui::InputText("Effect file", effectPath,
+		sizeof(effectPath), ImGuiInputTextFlags_EnterReturnsTrue);
+	if (entered || ImGui::IsItemDeactivatedAfterEdit()) {
+		const auto path = VDTextU8ToW(VDStringA(effectPath));
+		g_ATUIManager.SetCustomEffectPath(path.c_str(), false);
 	}
+	ImGui::SameLine();
+	if (ImGui::Button("Browse...##effect")) {
+		static const SDL_DialogFileFilter filter {
+			"Portable display effect", "altfx"
+		};
+		ATUIShowOpenFileDialog('ceff',
+			[](void *, const char * const *files, int) {
+				if (files && files[0])
+					ATUIPushDeferred(kATDeferred_SetCustomEffectPath, files[0]);
+			}, nullptr, g_pWindow, &filter, 1, false);
+	}
+	if (ImGui::Button("Reload##effect"))
+		g_ATUIManager.SetCustomEffectPath(selectedPath.c_str(), true);
+	ImGui::SameLine();
+	if (ImGui::Button("Clear##effect"))
+		g_ATUIManager.SetCustomEffectPath(L"", false);
+	ImGui::TextWrapped("Portable .altfx packages support SDL_GPU and OpenGL. Native .cgp/.fx files require porting.");
+	const auto& effectError = ATDisplayCustomEffectGetError();
+	if (!effectError.empty()) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ATUIColorDangerText());
+		ImGui::TextWrapped("%s", effectError.c_str());
+		ImGui::PopStyleColor();
+	}
+
 }
 
 // =========================================================================

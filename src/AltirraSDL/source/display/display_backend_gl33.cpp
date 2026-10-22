@@ -57,6 +57,7 @@ DisplayBackendGL::DisplayBackendGL(SDL_Window *window, SDL_GLContext glContext)
 
 DisplayBackendGL::~DisplayBackendGL() {
 	SDL_GL_MakeCurrent(mpWindow, mGLContext);
+	DestroyCustomEffect();
 
 	// Clean up textures
 	if (mEmuTexture) glDeleteTextures(1, &mEmuTexture);
@@ -237,7 +238,22 @@ void DisplayBackendGL::RenderFrame(float dstX, float dstY, float dstW, float dst
 		|| dstW <= 0.0f || dstH <= 0.0f)
 		return;
 
-	RenderFrameInner(dstX, dstY, dstW, dstH, srcW, srcH);
+	SyncCustomEffect(dstW, dstH, srcW, srcH);
+	const GLuint original = mEmuTexture;
+	int customW = srcW, customH = srcH;
+	const GLuint custom = RenderCustomEffect(dstW, dstH, customW, customH);
+	const int originalW = mTexW, originalH = mTexH;
+	if (custom) { mEmuTexture = custom; mTexW = customW; mTexH = customH; }
+	if (mCustomRenderW != mTexW || mCustomRenderH != mTexH) {
+		mScreenFXDirty = true;
+		mCustomRenderW = mTexW;
+		mCustomRenderH = mTexH;
+	}
+	RenderFrameInner(dstX, dstY, dstW, dstH, custom ? customW : srcW,
+		custom ? customH : srcH);
+	mEmuTexture = original;
+	mTexW = originalW;
+	mTexH = originalH;
 }
 
 void DisplayBackendGL::RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
@@ -1227,4 +1243,161 @@ void DisplayBackendGL::DrawFullscreen(GLuint program) {
 	GLDrawFullscreenTriangle();
 	glUseProgram(0);
 	glBindVertexArray(0);
+}
+
+void DisplayBackendGL::DestroyCustomEffect() {
+	for (auto& pass : mCustomPasses) {
+		pass.target.Destroy();
+		if (pass.program) glDeleteProgram(pass.program);
+	}
+	mCustomPasses.clear();
+}
+
+void DisplayBackendGL::SyncCustomEffect(float viewportW, float viewportH,
+	int sourceW, int sourceH) {
+	if (mCustomRevision == ATDisplayCustomEffectGetRevision()) return;
+	mCustomRevision = ATDisplayCustomEffectGetRevision();
+	mCustomLoadValid = false;
+	ATDisplayCustomEffectPackage package;
+	std::string error;
+	if (!ATDisplayCustomEffectLoad(ATDisplayCustomEffectGetPath().c_str(), package, error)) {
+		ATDisplayCustomEffectReportResult(error);
+		return;
+	}
+	std::vector<CustomPass> next;
+	for (auto& spec : package.passes) {
+		if (spec.glsl.empty()) {
+			error = "The effect pass has no GLSL representation for OpenGL/OpenGL ES.";
+			break;
+		}
+		// Compile with an actual driver diagnostic for the settings status.
+		auto compile = [&](GLenum type, const char *body) {
+			const GLuint shader = glCreateShader(type);
+			const char *sources[] = { GLGetShaderPreamble(type), body };
+			glShaderSource(shader, 2, sources, nullptr);
+			glCompileShader(shader);
+			GLint success = 0;
+			glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+			if (!success) {
+				char log[4096] {};
+				glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+				error = std::string("Effect shader compilation failed: ") + log;
+				glDeleteShader(shader);
+				return GLuint(0);
+			}
+			return shader;
+		};
+		const GLuint vs = compile(GL_VERTEX_SHADER, kGLSL_FullscreenTriangleVS_NoFlip);
+		const GLuint fs = vs ? compile(GL_FRAGMENT_SHADER, spec.glsl.c_str()) : 0;
+		if (!fs) { if (vs) glDeleteShader(vs); break; }
+		const GLuint program = glCreateProgram();
+		glAttachShader(program, vs);
+		glAttachShader(program, fs);
+		glLinkProgram(program);
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		GLint success = 0;
+		glGetProgramiv(program, GL_LINK_STATUS, &success);
+		if (!success) {
+			char log[4096] {};
+			glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+			error = std::string("Effect shader link failed: ") + log;
+			glDeleteProgram(program);
+			break;
+		}
+		CustomPass pass;
+		pass.spec = std::move(spec);
+		pass.program = program;
+		int w = 0, h = 0;
+		if (!ATDisplayCustomEffectSize(pass.spec, sourceW, sourceH, viewportW, viewportH, w, h)
+			|| !pass.target.Create(w, h, GL_RGBA8))
+		{
+			error = "Effect target exceeds limits or cannot be allocated (8192 per axis, 16 million pixels).";
+			glDeleteProgram(program);
+			break;
+		}
+		sourceW = w;
+		sourceH = h;
+		next.push_back(std::move(pass));
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, mRenderTargetFBO);
+	if (!error.empty()) {
+		for (auto& pass : next) {
+			pass.target.Destroy();
+			glDeleteProgram(pass.program);
+		}
+		ATDisplayCustomEffectReportResult(error);
+		return;
+	}
+	DestroyCustomEffect();
+	mCustomPasses = std::move(next);
+	mCustomFrame = 0;
+	mCustomLoadValid = true;
+	mCustomRuntimeFailed = false;
+	ATDisplayCustomEffectReportResult("");
+}
+
+GLuint DisplayBackendGL::RenderCustomEffect(float viewportW, float viewportH,
+	int& w, int& h)
+{
+	if (mCustomPasses.empty()) return 0;
+	GLuint source = mEmuTexture;
+	bool success = true;
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_BLEND);
+	GLSetFramebufferSRGB(false);
+	for (auto& pass : mCustomPasses) {
+		int tw = 0, th = 0;
+		if (!ATDisplayCustomEffectSize(pass.spec, w, h, viewportW, viewportH, tw, th)
+			|| ((pass.target.width != tw || pass.target.height != th)
+				&& !pass.target.Create(tw, th, GL_RGBA8)))
+		{
+			if (mCustomLoadValid) {
+				ATDisplayCustomEffectReportResult("Effect target exceeds limits or cannot be allocated (8192 per axis, 16 million pixels).");
+				mCustomRuntimeFailed = true;
+			}
+			success = false;
+			break;
+		}
+		pass.target.Bind();
+		glViewport(0, 0, tw, th);
+		glUseProgram(pass.program);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, source);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, pass.spec.linear ? GL_LINEAR : GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, pass.spec.linear ? GL_LINEAR : GL_NEAREST);
+		glUniform1i(glGetUniformLocation(pass.program, "sourceTexture"), 0);
+		const ATDisplayCustomEffectUniforms uniforms {
+			{(float)w, (float)h, 1.0f / w, 1.0f / h},
+			{(float)tw, (float)th, 1.0f / tw, 1.0f / th},
+			{(float)mCustomFrame, (float)(SDL_GetTicks() * 0.001), 0, mScreenFX.mbSignedRGBEncoding ? 1.0f : 0.0f}
+		};
+		glUniform4fv(glGetUniformLocation(pass.program, "sourceSize"), 1, uniforms.sourceSize);
+		glUniform4fv(glGetUniformLocation(pass.program, "outputSize"), 1, uniforms.outputSize);
+		glUniform4fv(glGetUniformLocation(pass.program, "frame"), 1, uniforms.frame);
+		glBindVertexArray(mEmptyVAO);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+		source = pass.target.tex;
+		w = tw;
+		h = th;
+	}
+	if (success && mCustomRuntimeFailed && mCustomLoadValid) {
+		ATDisplayCustomEffectReportResult("");
+		mCustomRuntimeFailed = false;
+	}
+	++mCustomFrame;
+	// Subsequent built-in effects see the same state and filtering as an
+	// uploaded emulator texture. Never leave an offscreen FBO/scissor active.
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, mEmuTexture);
+	const GLint filter = mFilterMode == kATDisplayFilterMode_Point
+		|| mFilterMode == kATDisplayFilterMode_Bicubic ? GL_NEAREST : GL_LINEAR;
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+	glBindTexture(GL_TEXTURE_2D, source);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+	glBindFramebuffer(GL_FRAMEBUFFER, mRenderTargetFBO);
+	ApplyOutputClip();
+	return success ? source : 0;
 }

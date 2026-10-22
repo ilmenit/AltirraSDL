@@ -235,42 +235,10 @@ static void DiskMountCallback(void *userdata, const char * const *filelist, int)
 	int driveIdx = (int)(intptr_t)userdata;
 	if (!filelist || !filelist[0] || driveIdx < 0 || driveIdx >= 15) return;
 
-	VDStringW widePath = VDTextU8ToW(filelist[0], -1);
-	try {
-		ATDiskInterface& diskIf = g_sim.GetDiskInterface(driveIdx);
-		ATDiskEmulator& disk = g_sim.GetDiskDrive(driveIdx);
-		ATMediaWriteMode wm = disk.IsEnabled() || diskIf.GetClientCount() > 1
-			? diskIf.GetWriteMode() : g_ATOptions.mDefaultWriteMode;
-
-		// Disk-state interception (see disk_state.h):  for Real R/W
-		// mounts, swap the source path for a per-image working copy
-		// under {configDir}/disk_state/<SHA256>/disk{ext}.  Solo
-		// writes (high scores, level edits) then persist to that
-		// working copy instead of mutating the user's original .atr —
-		// so file managers, netplay CRC32 checks, Game Library
-		// identity, and custom art keying all stay stable.  For RO /
-		// VRWSafe / VRW the helper is a no-op (returns widePath).
-		VDStringW mountPath = ATResolveDiskMount(widePath.c_str(), wm);
-
-		// Route through ATSimulator::Load to match Windows
-		// (uidisk.cpp:1060-1065).  See the note on the matching call in
-		// ui_main.cpp kATDeferred_AttachDisk for why the 1-arg
-		// ATDiskInterface::LoadDisk path silently flags images as
-		// non-updatable (every Flush then remounts VRW).
-		ATImageLoadContext ctx;
-		ctx.mLoadType  = kATImageType_Disk;
-		ctx.mLoadIndex = driveIdx;
-		g_sim.Load(mountPath.c_str(), wm, &ctx);
-
-		// MRU keeps the user's original path so re-opening from the
-		// Recent menu hits the same disk_state slot rather than a
-		// path inside the config directory that means nothing to the
-		// user.
-		ATAddMRU(widePath.c_str());
-		LOG_INFO("UI", "Mounted D%d: %s", driveIdx + 1, filelist[0]);
-	} catch (...) {
-		LOG_ERROR("UI", "Failed to mount D%d: %s", driveIdx + 1, filelist[0]);
-	}
+	// Native SDL dialogs may invoke this on a worker thread. The browser
+	// already confirmed discard before opening; defer mount mode, working
+	// copy resolution and MRU updates to the central main-thread action.
+	ATUIAttachDiskImage(filelist[0], driveIdx, true);
 }
 
 static void DiskSaveAsCallback(void *userdata, const char * const *filelist, int filter) {

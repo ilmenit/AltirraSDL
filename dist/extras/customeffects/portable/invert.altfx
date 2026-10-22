@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "passes": [
+    {
+      "glsl": "invert.frag.glsl",
+      "spirv": "invert.frag.spv",
+      "dxil": "invert.frag.dxil",
+      "msl": "invert.frag.msl",
+      "filter": "nearest",
+      "scale": "source"
+    }
+  ]
+}

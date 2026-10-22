@@ -283,10 +283,18 @@ class TestSetupWizard:
     def test_basic_shader_selection_is_live(self, emu: AltirraTestHarness,
                                             tmp_path, monkeypatch):
         """The wizard drives the per-frame display mode immediately."""
+        import os
+        import sys
+        if sys.platform.startswith("linux"):
+            monkeypatch.setenv("SDL_VIDEODRIVER", os.environ.get("ALTIRRA_EFFECT_TEST_VIDEO_DRIVER", "offscreen"))
+            monkeypatch.setenv("ALTIRRA_DISPLAY_BACKEND", "opengl")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         with AltirraTestHarness(
                 executable=emu.executable,
                 extra_args=["--ui-mode", "desktop"]) as fresh:
+            backend = fresh.query_state()["state"]["videoOutput"]["backend"]
+            if backend not in ("OpenGL", "SDL_GPU"):
+                pytest.skip(f"The shader wizard page requires a GPU backend; active backend is {backend}")
             fresh.open_dialog("SetupWizard")
             fresh.wait_frames(5)
 

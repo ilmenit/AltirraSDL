@@ -38,7 +38,11 @@ struct PendingConfirm {
 	std::string          message;
 	std::string          confirmLabel;
 	std::string          cancelLabel;
+	std::string          alternateLabel;
+	ATUIConfirmCallback  onAlternate;
 	bool                 destructive = false;
+	unsigned group = 0;
+	bool cancelled = false;
 	ATUIConfirmCallback  onConfirm;
 	ATUIConfirmCallback  onCancel;
 
@@ -57,7 +61,10 @@ void ATUIShowConfirm(ATUIConfirmOptions opts) {
 	pc.message      = opts.message      ? opts.message      : "";
 	pc.confirmLabel = opts.confirmLabel ? opts.confirmLabel : "OK";
 	pc.cancelLabel  = opts.cancelLabel  ? opts.cancelLabel  : "Cancel";
+	pc.alternateLabel = opts.alternateLabel ? opts.alternateLabel : "";
+	pc.onAlternate = std::move(opts.onAlternate);
 	pc.destructive  = opts.destructive;
+	pc.group = opts.group;
 	pc.onConfirm    = std::move(opts.onConfirm);
 	pc.onCancel     = std::move(opts.onCancel);
 	pc.selected     = pc.destructive ? 1 : 0;
@@ -73,6 +80,11 @@ void ATUIShowConfirm(const char *title, const char *message,
 	opts.onConfirm   = std::move(onConfirm);
 	opts.destructive = destructive;
 	ATUIShowConfirm(std::move(opts));
+}
+
+void ATUICancelConfirmations(unsigned group) {
+	for (auto& prompt : g_pending)
+		if (prompt.group == group) prompt.cancelled = true;
 }
 
 bool ATUIIsConfirmDialogActive() {
@@ -109,7 +121,9 @@ void ATUIRenderConfirmDialogs() {
 		ImVec2(600, FLT_MAX));
 
 	bool decisionConfirm = false;
-	bool decisionCancel  = false;
+	bool decisionCancel  = pc.cancelled;
+	bool decisionAlternate = false;
+	const int count = pc.alternateLabel.empty() ? 2 : 3;
 
 	// `&open` lets the user close via the title-bar X (or via ImGui's
 	// built-in ESC-to-close on modals, which sets *p_open = false).
@@ -142,12 +156,16 @@ void ATUIRenderConfirmDialogs() {
 		// helper is button-only today but this keeps it safe for future
 		// extension (e.g. an embedded "don't ask again" checkbox).
 		ImGuiIO &io = ImGui::GetIO();
-		if (!io.WantTextInput) {
+		if (!io.WantTextInput && !pc.cancelled) {
 			if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false)
 				|| ImGui::IsKeyPressed(ImGuiKey_RightArrow, false)
 				|| ImGui::IsKeyPressed(ImGuiKey_Tab, false))
 			{
-				pc.selected ^= 1;
+				const bool backwards = ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false)
+					|| (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && io.KeyShift);
+				int visual = pc.selected == 1 ? count - 1 : pc.selected == 2 ? 1 : 0;
+				visual = (visual + (backwards ? count - 1 : 1)) % count;
+				pc.selected = visual == count - 1 ? 1 : visual == 1 ? 2 : 0;
 				pc.focusInit = false;
 			}
 
@@ -159,14 +177,15 @@ void ATUIRenderConfirmDialogs() {
 				|| ImGui::IsKeyPressed(ImGuiKey_Space, false))
 			{
 				if (pc.selected == 0) decisionConfirm = true;
-				else                  decisionCancel  = true;
+				else if (pc.selected == 1) decisionCancel = true;
+				else decisionAlternate = true;
 			}
 		}
 
 		// --- Buttons ---
 		const float buttonWidth = 120.0f;
 		const float spacing     = ImGui::GetStyle().ItemSpacing.x;
-		const float total       = buttonWidth * 2 + spacing;
+		const float total = buttonWidth * count + spacing * (count - 1);
 		const float avail       = ImGui::GetContentRegionAvail().x;
 		if (avail > total)
 			ImGui::SetCursorPosX(ImGui::GetCursorPosX()
@@ -195,6 +214,18 @@ void ATUIRenderConfirmDialogs() {
 		ImVec2 confirmMin = ImGui::GetItemRectMin();
 		ImVec2 confirmMax = ImGui::GetItemRectMax();
 
+		ImVec2 alternateMin {}, alternateMax {};
+		if (count == 3) {
+			ImGui::SameLine();
+			if (!pc.focusInit && pc.selected == 2) {
+				ImGui::SetKeyboardFocusHere();
+				pc.focusInit = true;
+			}
+			if (ImGui::Button(pc.alternateLabel.c_str(), ImVec2(buttonWidth, 0)))
+				decisionAlternate = true;
+			alternateMin = ImGui::GetItemRectMin();
+			alternateMax = ImGui::GetItemRectMax();
+		}
 		ImGui::SameLine();
 
 		// Cancel button
@@ -210,31 +241,41 @@ void ATUIRenderConfirmDialogs() {
 		// Draw the highlight on whichever button is currently selected.
 		if (pc.selected == 0)
 			drawHighlight(confirmMin, confirmMax);
-		else
+		else if (pc.selected == 1)
 			drawHighlight(cancelMin, cancelMax);
+		else
+			drawHighlight(alternateMin, alternateMax);
 
-		if (decisionConfirm || decisionCancel)
+		if (decisionConfirm || decisionCancel || decisionAlternate)
 			ImGui::CloseCurrentPopup();
 
 		ImGui::EndPopup();
 	}
 
+	if (pc.cancelled) {
+		decisionConfirm = decisionAlternate = false;
+		decisionCancel = true;
+	}
+
 	// User closed via title-bar X or click-outside while the popup was
 	// still returning false from BeginPopupModal.  Treat as cancel.
-	if (!open && !decisionConfirm)
+	if (!open && !decisionConfirm && !decisionAlternate)
 		decisionCancel = true;
 
-	if (decisionConfirm || decisionCancel) {
+	if (decisionConfirm || decisionCancel || decisionAlternate) {
 		// Move the callbacks out of the entry before popping, so the
 		// front() reference is no longer needed when we mutate the
 		// deque, and so a callback that queues another confirmation
 		// doesn't observe a still-present "previous" entry.
 		ATUIConfirmCallback onConfirm = std::move(pc.onConfirm);
 		ATUIConfirmCallback onCancel  = std::move(pc.onCancel);
+		ATUIConfirmCallback onAlternate = std::move(pc.onAlternate);
 		g_pending.pop_front();
 
 		if (decisionConfirm) {
 			if (onConfirm) onConfirm();
+		} else if (decisionAlternate) {
+			if (onAlternate) onAlternate();
 		} else {
 			if (onCancel)  onCancel();
 		}

@@ -319,7 +319,7 @@ static void UpdateHighlightRects(const ImVec2& imagePos, const ImVec2& imageSize
 // (matches Windows ATUIVideoDisplayWindow::ReadText exactly)
 // ---------------------------------------------------------------------------
 
-static int ReadText(uint8 *dst, int yc, int startChar, int numChars, bool& intl) {
+int ATUITextReadAnticLine(uint8 *dst, int yc, int startChar, int numChars, bool& intl) {
 	ATAnticEmulator& antic = g_sim.GetAntic();
 	const ATAnticEmulator::DLHistoryEntry *dlhist = antic.GetDLHistory();
 	const ATAnticEmulator::DLHistoryEntry& dle = dlhist[yc];
@@ -416,7 +416,7 @@ void ATUITextCopy(ATTextCopyMode mode) {
 		int actual = output
 			? output->ReadRawText(data, ts.mCharX, ts.mAltRow,
 				std::min(ts.mCharWidth, (int)sizeof data))
-			: ReadText(data, ts.mY, ts.mCharX, ts.mCharWidth, intl);
+			: ATUITextReadAnticLine(data, ts.mY, ts.mCharX, ts.mCharWidth, intl);
 		if (!actual)
 			continue;
 

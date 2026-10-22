@@ -10,8 +10,12 @@
 #include <ctime>
 #include <mutex>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
+#if defined(IMGUI_ENABLE_TEST_ENGINE) && !defined(__EMSCRIPTEN__)
+#include <thread>
+#endif
 #include <imgui.h>
 #include <vd2/system/filesys.h>
 #include <vd2/system/text.h>
@@ -84,15 +88,45 @@ namespace {
 		return result;
 	}
 
-	// Only the main thread touches simulator state. Dialog threads release
-	// their lease after publishing the selected-file action.
+	// Only the main thread touches simulator state. A completion retains its
+	// pause lease until the main thread has invoked the client's callback.
 	std::atomic<unsigned> g_dialogCount {0};
 	bool g_dialogSuspended = false;
 	bool g_dialogWasRunning = false;
 	bool g_dialogCompletionSeen = false;
+	struct DialogContext;
+	std::mutex g_contextMutex;
+	std::set<DialogContext *> g_contexts;
+	std::mutex g_completionMutex;
+	DialogContext *g_completionHead = nullptr;
+	DialogContext *g_completionTail = nullptr;
+	std::atomic<uint64_t> g_dialogEpoch {1};
+	std::atomic<bool> g_dialogShutdown {false};
 
 	struct DialogContext {
-		~DialogContext() { --g_dialogCount; }
+		DialogContext() : epoch(g_dialogEpoch.load()) {
+			std::lock_guard lock(g_contextMutex);
+			g_contexts.insert(this);
+			++g_dialogCount;
+		}
+		~DialogContext() {
+			std::lock_guard lock(g_contextMutex);
+			ReleaseLeaseLocked();
+			g_contexts.erase(this);
+		}
+		void ReleaseLeaseLocked() {
+			if (leaseHeld) {
+				leaseHeld = false;
+				--g_dialogCount;
+			}
+		}
+		const uint64_t epoch;
+		bool leaseHeld = true; // protected by g_contextMutex
+		DialogContext *completionNext = nullptr;
+		std::vector<std::string> completedPaths;
+		std::string completionError;
+		int completedFilter = 0;
+		bool nativeError = false;
 		long					nKey;
 		SDL_DialogFileCallback	userCb;
 		void *					userUd;
@@ -123,9 +157,11 @@ namespace {
 	void SDLCALL DialogTrampoline(void *ud, const char * const *filelist, int filter);
 
 	std::mutex g_fallbackMutex;
-	std::vector<DialogContext *> g_pendingFallbacks;
 	DialogContext *g_fallbackCtx = nullptr;
 	bool g_fallbackOpenNextFrame = false;
+#if defined(__EMSCRIPTEN__)
+	DialogContext *g_pPendingWasmDialog = nullptr;
+#endif
 
 	std::string ParentPath(std::string path) {
 		auto isSeparator = [](char c) { return c == '/' || c == '\\'; };
@@ -240,7 +276,8 @@ namespace {
 			entry.selected = false;
 	}
 
-	void QueueFallback(DialogContext *ctx) {
+	void QueueFallback(std::unique_ptr<DialogContext> owned) {
+		DialogContext *ctx = owned.get();
 		if (ctx->currentDir.empty()) {
 			if (!ctx->defaultLocationUtf8.empty())
 				SetFallbackDirectory(*ctx, ctx->defaultLocationUtf8.c_str());
@@ -256,6 +293,7 @@ namespace {
 			old = g_fallbackCtx;
 			g_fallbackCtx = ctx;
 			g_fallbackOpenNextFrame = true;
+			owned.release();
 		}
 		// Cancellation callbacks can open another picker. Never invoke one
 		// while holding the fallback mutex; both contexts retain pause leases.
@@ -267,45 +305,41 @@ namespace {
 
 	void SDLCALL DialogTrampoline(void *ud, const char * const *filelist, int filter) {
 		DialogContext *ctx = static_cast<DialogContext *>(ud);
-
-		if (!filelist) {
-			const char *err = SDL_GetError();
-			fprintf(stderr,
-				"[AltirraSDL] Native SDL file dialog failed: %s; using ImGui fallback.\n",
-				err && *err ? err : "unknown error");
-			// The SDL callback may be on a worker thread. Install the UI
-			// fallback on the main thread, retaining this pause lease.
-			std::lock_guard<std::mutex> lock(g_fallbackMutex);
-			g_pendingFallbacks.push_back(ctx);
-			return;
-		}
-
 		std::unique_ptr<DialogContext> completed(ctx);
-
-		// filelist == nullptr means an SDL error.  An empty list or empty
-		// filename means cancel. Only lifecycle-aware callers opt into notification.
-		if (!filelist[0] || !*filelist[0]) {
-			if (ctx->notifyCancellation && ctx->userCb) {
-				const char *empty[] = {nullptr};
-				ctx->userCb(ctx->userUd, empty, filter);
+		try {
+			ctx->completedFilter = filter;
+			ctx->nativeError = !filelist;
+			if (!filelist) {
+				// SDL error strings are thread-local: copy on this thread.
+				const char *error = SDL_GetError();
+				ctx->completionError = error && *error ? error : "unknown error";
+			} else if (filelist[0] && *filelist[0]) {
+				for (const char *const *path = filelist; *path; ++path)
+					ctx->completedPaths.emplace_back(*path);
 			}
-			return;
+		} catch (...) {
+			// Never unwind through an SDL C callback. If copying fails,
+			// deliver cancellation on the main thread and release the lease.
+			ctx->nativeError = false;
+			ctx->completedPaths.clear();
+			ctx->completionError.clear();
+			fputs("[AltirraSDL] Could not copy file dialog result.\n", stderr);
 		}
-
-		// Remember the selected file's full path so the next time this
-		// dialog opens we can land in the same directory (matching
-		// Windows Altirra's behaviour).
-		VDStringW selected = VDTextU8ToW(VDStringSpanA(filelist[0]));
-		VDSetLastLoadSavePath(ctx->nKey, selected.c_str());
-
-		if (ctx->userCb)
-			ctx->userCb(ctx->userUd, filelist, filter);
-
+		{
+			std::lock_guard lock(g_completionMutex);
+			if (g_dialogShutdown || ctx->epoch != g_dialogEpoch.load())
+				return;
+			// Intrusive ownership transfer cannot allocate or fail after the
+			// result has been copied. SDL's temporary strings may now expire.
+			if (g_completionTail) g_completionTail->completionNext = ctx;
+			else g_completionHead = ctx;
+			g_completionTail = completed.release();
+		}
 	}
 
 	DialogContext *MakeContext(long nKey, SDL_DialogFileCallback cb, void *ud, const char *fallback) {
-		DialogContext *ctx = new DialogContext;
-		++g_dialogCount;
+		if (g_dialogShutdown) return nullptr;
+		auto ctx = std::make_unique<DialogContext>();
 		if (!g_dialogSuspended) {
 			g_dialogWasRunning = g_sim.IsRunning();
 			g_dialogSuspended = true;
@@ -338,9 +372,117 @@ namespace {
 			ctx->defaultLocationUtf8 = fallback;
 		}
 
-		return ctx;
+		return ctx.release();
 	}
 }
+
+void ATUIPollFileDialogCompletions() {
+	DialogContext *head;
+	{
+		std::lock_guard lock(g_completionMutex);
+		head = g_completionHead;
+		g_completionHead = g_completionTail = nullptr;
+	}
+	while (head) {
+		std::unique_ptr<DialogContext> ctx(head);
+		head = ctx->completionNext;
+		ctx->completionNext = nullptr;
+		if (g_dialogShutdown || ctx->epoch != g_dialogEpoch.load())
+			continue;
+		try {
+			if (ctx->nativeError) {
+				fprintf(stderr, "[AltirraSDL] Native SDL file dialog failed: %s; using ImGui fallback.\n",
+					ctx->completionError.c_str());
+				QueueFallback(std::move(ctx));
+				continue;
+			}
+			std::vector<const char *> paths;
+			paths.reserve(ctx->completedPaths.size() + 1);
+			for (const auto& path : ctx->completedPaths)
+				paths.push_back(path.c_str());
+			paths.push_back(nullptr);
+			if (!ctx->completedPaths.empty()) {
+				const VDStringW selected = VDTextU8ToW(VDStringSpanA(paths[0]));
+				VDSetLastLoadSavePath(ctx->nKey, selected.c_str());
+			}
+			if (ctx->userCb && (!ctx->completedPaths.empty() || ctx->notifyCancellation))
+				ctx->userCb(ctx->userUd, paths.data(), ctx->completedFilter);
+		} catch (const std::exception& error) {
+			fprintf(stderr, "[AltirraSDL] File dialog completion failed: %s\n", error.what());
+		} catch (...) {
+			fputs("[AltirraSDL] File dialog completion failed.\n", stderr);
+		}
+		// Destruction releases this lease after the callback and any new
+		// picker it opened have acquired their own lease. No callback runs
+		// under either queue/context mutex.
+	}
+}
+
+void ATUIShutdownFileDialogs() {
+	if (g_dialogShutdown.exchange(true))
+		return;
+	++g_dialogEpoch;
+	{
+		std::lock_guard lock(g_contextMutex);
+		for (auto *ctx : g_contexts)
+			ctx->ReleaseLeaseLocked();
+	}
+	DialogContext *head;
+	{
+		std::lock_guard lock(g_completionMutex);
+		head = g_completionHead;
+		g_completionHead = g_completionTail = nullptr;
+	}
+	while (head) {
+		std::unique_ptr<DialogContext> ctx(head);
+		head = ctx->completionNext;
+	}
+	DialogContext *fallback;
+	{
+		std::lock_guard lock(g_fallbackMutex);
+		fallback = g_fallbackCtx;
+		g_fallbackCtx = nullptr;
+		g_fallbackOpenNextFrame = false;
+	}
+	delete fallback;
+#if defined(__EMSCRIPTEN__)
+	delete g_pPendingWasmDialog;
+	g_pPendingWasmDialog = nullptr;
+#endif
+	// No simulator access: this also runs after the core has shut down.
+	g_dialogSuspended = false;
+	g_dialogWasRunning = false;
+	g_dialogCompletionSeen = false;
+}
+
+void ATUIInitFileDialogs() {
+	ATUIShutdownFileDialogs();
+	g_dialogShutdown = false;
+}
+
+#if defined(IMGUI_ENABLE_TEST_ENGINE) && !defined(__EMSCRIPTEN__)
+void ATUITestFileDialogWorkerCompletion(SDL_DialogFileCallback callback,
+	void *userdata, const char *mode, bool notifyCancellation) {
+	std::unique_ptr<DialogContext> owned(MakeContext('tDlg', callback, userdata, nullptr));
+	if (!owned) return;
+	owned->notifyCancellation = notifyCancellation;
+	const bool late = !strcmp(mode, "late");
+	const bool error = !strcmp(mode, "error");
+	const bool cancelled = !strcmp(mode, "cancel");
+	if (late) ATUIShutdownFileDialogs();
+	std::string first = "/tmp/dialog selection one.atr";
+	std::string second = "/tmp/dialog selection two.atr";
+	const char *paths[] {first.c_str(), second.c_str(), nullptr};
+	const char *empty[] {nullptr};
+	std::thread worker([&] {
+		if (error) SDL_SetError("Synthetic worker dialog error");
+		DialogTrampoline(owned.get(), error ? nullptr : cancelled ? empty : paths, 7);
+	});
+	worker.join();
+	owned.release(); // completion queue (or stale callback) owns the context
+	if (late) ATUIInitFileDialogs();
+}
+#endif
 
 static void ExpandFilters(DialogContext *ctx, const SDL_DialogFileFilter *filters, int nfilters) {
 	ctx->expandedPatterns.reserve(nfilters);
@@ -498,14 +640,6 @@ static void RenderShortcutButton(const char *label, const char *path,
 }
 
 void ATUIRenderFileDialogFallback() {
-	std::vector<DialogContext *> pending;
-	{
-		std::lock_guard<std::mutex> lock(g_fallbackMutex);
-		pending.swap(g_pendingFallbacks);
-	}
-	for (DialogContext *failed : pending)
-		QueueFallback(failed);
-
 	DialogContext *ctx = nullptr;
 	bool openNext = false;
 	{
@@ -932,8 +1066,6 @@ namespace {
 
 	// Single in-flight WASM dialog (SDL3 guarantees at most one open
 	// dialog at a time, and the JS picker is modal, so a global is safe).
-	DialogContext *g_pPendingWasmDialog = nullptr;
-
 	// Invoke the JS-side opener.  Declared with EM_JS so we can call it
 	// from C without a stringified Runtime_run_script hop.  kind=0 means
 	// open, kind=1 means save, and kind=2 means select a VFS folder.
@@ -1005,7 +1137,9 @@ void ATUIShowOpenFileDialog(
 	const char *fallbackLocation,
 	bool notifyCancellation)
 {
-	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	std::unique_ptr<DialogContext> owned(MakeContext(nKey, callback, userdata, fallbackLocation));
+	DialogContext *ctx = owned.get();
+	if (!ctx) return;
 	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFile;
 	ctx->allowMany = allow_many;
@@ -1022,7 +1156,7 @@ void ATUIShowOpenFileDialog(
 		DialogTrampoline(stale, noList, 0);
 	}
 
-	g_pPendingWasmDialog = ctx;
+	g_pPendingWasmDialog = owned.release();
 
 	const VDStringA exts = JoinFilterExtensions(
 		ctx->expandedFilters.data(),
@@ -1044,7 +1178,9 @@ void ATUIShowSaveFileDialog(
 	const char *fallbackLocation,
 	bool notifyCancellation)
 {
-	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	std::unique_ptr<DialogContext> owned(MakeContext(nKey, callback, userdata, fallbackLocation));
+	DialogContext *ctx = owned.get();
+	if (!ctx) return;
 	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::SaveFile;
 	ExpandFilters(ctx, filters, nfilters);
@@ -1056,7 +1192,7 @@ void ATUIShowSaveFileDialog(
 		DialogTrampoline(stale, noList, 0);
 	}
 
-	g_pPendingWasmDialog = ctx;
+	g_pPendingWasmDialog = owned.release();
 
 	const VDStringA exts = JoinFilterExtensions(
 		ctx->expandedFilters.data(),
@@ -1077,7 +1213,9 @@ void ATUIShowOpenFolderDialog(
 	bool allow_many,
 	bool notifyCancellation)
 {
-	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	std::unique_ptr<DialogContext> owned(MakeContext(nKey, callback, userdata, fallbackLocation));
+	DialogContext *ctx = owned.get();
+	if (!ctx) return;
 	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFolder;
 	ctx->allowMany = allow_many;
@@ -1089,7 +1227,7 @@ void ATUIShowOpenFolderDialog(
 		DialogTrampoline(stale, noList, 0);
 	}
 
-	g_pPendingWasmDialog = ctx;
+	g_pPendingWasmDialog = owned.release();
 	_altirra_wasm_open_picker(nKey,
 		WasmCategoryForDialogKey(nKey), "", 2);
 }
@@ -1107,7 +1245,9 @@ void ATUIShowOpenFileDialog(
 	const char *fallbackLocation,
 	bool notifyCancellation)
 {
-	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	std::unique_ptr<DialogContext> owned(MakeContext(nKey, callback, userdata, fallbackLocation));
+	DialogContext *ctx = owned.get();
+	if (!ctx) return;
 	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFile;
 	ctx->allowMany = allow_many;
@@ -1115,12 +1255,13 @@ void ATUIShowOpenFileDialog(
 	const char *defLoc = ctx->defaultLocationUtf8.empty() ? nullptr : ctx->defaultLocationUtf8.c_str();
 
 	if (ATUIGetForceBuiltinFileDialog()) {
-		QueueFallback(ctx);
+		QueueFallback(std::move(owned));
 		return;
 	}
 
 	SDL_ShowOpenFileDialog(DialogTrampoline, ctx, window,
 		ctx->expandedFilters.data(), nfilters, defLoc, allow_many);
+	owned.release();
 }
 
 void ATUIShowSaveFileDialog(
@@ -1133,19 +1274,22 @@ void ATUIShowSaveFileDialog(
 	const char *fallbackLocation,
 	bool notifyCancellation)
 {
-	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	std::unique_ptr<DialogContext> owned(MakeContext(nKey, callback, userdata, fallbackLocation));
+	DialogContext *ctx = owned.get();
+	if (!ctx) return;
 	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::SaveFile;
 	ExpandFilters(ctx, filters, nfilters);
 	const char *defLoc = ctx->defaultLocationUtf8.empty() ? nullptr : ctx->defaultLocationUtf8.c_str();
 
 	if (ATUIGetForceBuiltinFileDialog()) {
-		QueueFallback(ctx);
+		QueueFallback(std::move(owned));
 		return;
 	}
 
 	SDL_ShowSaveFileDialog(DialogTrampoline, ctx, window,
 		ctx->expandedFilters.data(), nfilters, defLoc);
+	owned.release();
 }
 
 void ATUIShowOpenFolderDialog(
@@ -1157,7 +1301,9 @@ void ATUIShowOpenFolderDialog(
 	bool allow_many,
 	bool notifyCancellation)
 {
-	DialogContext *ctx = MakeContext(nKey, callback, userdata, fallbackLocation);
+	std::unique_ptr<DialogContext> owned(MakeContext(nKey, callback, userdata, fallbackLocation));
+	DialogContext *ctx = owned.get();
+	if (!ctx) return;
 	ctx->notifyCancellation = notifyCancellation;
 	ctx->mode = DialogMode::OpenFolder;
 	ctx->allowMany = allow_many;
@@ -1165,18 +1311,24 @@ void ATUIShowOpenFolderDialog(
 		? nullptr : ctx->defaultLocationUtf8.c_str();
 
 	if (ATUIGetForceBuiltinFileDialog()) {
-		QueueFallback(ctx);
+		QueueFallback(std::move(owned));
 		return;
 	}
 
 	SDL_ShowOpenFolderDialog(DialogTrampoline, ctx, window, defLoc,
 		allow_many);
+	owned.release();
 }
 
 #endif // __EMSCRIPTEN__
 
 bool ATUIIsFileDialogPaused() {
 	return g_dialogSuspended;
+}
+
+bool ATUIIsFileDialogResumePending() {
+	return g_dialogSuspended && !g_sim.IsPaused()
+		&& (g_dialogWasRunning || g_sim.IsRunning());
 }
 
 // Called after deferred actions and debugger commands, before advancing.

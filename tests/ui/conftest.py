@@ -1,15 +1,16 @@
 """
 Pytest fixtures for AltirraSDL UI tests.
 
-The emulator is launched once per test session (session scope) to avoid
-the overhead of starting/stopping it for every test. Individual tests
-should clean up after themselves (close dialogs, reset state).
+Each module gets an emulator and private settings directory. Tests within a
+module share that instance and clean up dialogs; unrelated modules never
+inherit mounted media, stopped CPUs, or modified settings from earlier tests.
 
 Override the executable path with:
     pytest --emu-path=/path/to/AltirraSDL
 """
 
 import pytest
+import tempfile
 from .harness import AltirraTestHarness
 
 
@@ -27,29 +28,53 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def emu(request) -> AltirraTestHarness:
-    """Session-scoped fixture: one emulator instance for all tests."""
+    """Module-scoped emulator with settings isolated from the user's profile."""
     path = request.config.getoption("--emu-path")
     timeout = request.config.getoption("--emu-timeout")
 
     harness = AltirraTestHarness(executable=path, timeout=timeout)
-    harness.start()
-    yield harness
-    harness.stop()
+    with tempfile.TemporaryDirectory(prefix="altirra-ui-module-") as config:
+        with pytest.MonkeyPatch.context() as environment:
+            environment.setenv("XDG_CONFIG_HOME", config)
+            try:
+                harness.start()
+                # Child harnesses inherit module isolation; per-test
+                # monkeypatches can still override it and restore it safely.
+                # Native pickers are outside the ImGui automation surface.
+                harness.send("file_dialog_builtin on")
+                harness.close_dialog("SetupWizard")
+                harness.wait_frames(3)
+                yield harness
+            finally:
+                harness.stop()
 
 
 @pytest.fixture(autouse=True)
 def _cleanup_dialogs(emu: AltirraTestHarness):
     """Close all dialogs after each test to leave a clean slate."""
     yield
-    # After test: close any open dialogs
+    # A file-first Explorer owns its picker before it owns any document.
+    # Closing the Explorer alone cannot cancel that outstanding request.
     try:
+        def cancel_pickers():
+            for _ in range(8):
+                cancel = next((item for item in emu.list_items()
+                               if item["label"] == "Cancel"
+                               and "##ATFileDialogFallback" in item["window"]), None)
+                if cancel is None:
+                    return
+                emu.click(cancel["window"], "Cancel")
+                emu.wait_frames(6)
+
+        cancel_pickers()
         state = emu.query_state()
         dialogs = state.get("state", {}).get("dialogs", {})
         for name, is_open in dialogs.items():
             if is_open:
                 emu.close_dialog(name)
         emu.wait_frames(2)
+        cancel_pickers()
     except Exception:
         pass  # best-effort cleanup

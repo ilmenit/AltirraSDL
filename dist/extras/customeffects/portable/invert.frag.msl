@@ -1,0 +1,62 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_Context
+{
+    float4 sourceSize;
+    float4 outputSize;
+    float4 frame;
+};
+
+struct main0_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct main0_in
+{
+    float2 in_var_TEXCOORD1 [[user(locn1)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_Context& Context [[buffer(0)]], texture2d<float> sourceTexture [[texture(0)]], sampler sourceSampler [[sampler(0)]])
+{
+    main0_out out = {};
+    float4 _56 = sourceTexture.sample(sourceSampler, in.in_var_TEXCOORD1);
+    float4 _72;
+    if (Context.frame.z > 0.5)
+    {
+        float3 _62 = _56.xyz;
+        float3 _70 = mix(_62 * 12.9200000762939453125, (powr(precise::max(_62, float3(0.0)), float3(0.4166666567325592041015625)) * 1.05499994754791259765625) - float3(0.054999999701976776123046875), float3(_62 > float3(0.003130800090730190277099609375)));
+        _72 = float4(_70.x, _70.y, _70.z, _56.w);
+    }
+    else
+    {
+        _72 = _56;
+    }
+    bool _75 = Context.frame.w > 0.5;
+    float4 _82;
+    if (_75)
+    {
+        float3 _80 = (_72.xyz * 2.007874011993408203125) - float3(0.5039370059967041015625);
+        _82 = float4(_80.x, _80.y, _80.z, _72.w);
+    }
+    else
+    {
+        _82 = _72;
+    }
+    float3 _84 = float3(1.0) - _82.xyz;
+    float4 _93;
+    if (_75)
+    {
+        float3 _91 = ((_84.xyz * 127.0) + float3(64.0)) * float3(0.0039215688593685626983642578125);
+        _93 = float4(_91.x, _91.y, _91.z, _82.w);
+    }
+    else
+    {
+        _93 = float4(_84.x, _84.y, _84.z, _82.w);
+    }
+    out.out_var_SV_Target = _93;
+    return out;
+}
