@@ -3,6 +3,9 @@
 #include "ui_accessibility.h"
 #include <windows.h>
 #include <commctrl.h>
+// Like the native provider, declare COM interfaces before UI Automation.
+// WIN32_LEAN_AND_MEAN keeps these declarations out of windows.h.
+#include <combaseapi.h>
 #include <UIAutomation.h>
 #include <SDL3/SDL.h>
 #include <algorithm>
