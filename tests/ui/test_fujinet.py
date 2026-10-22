@@ -145,6 +145,7 @@ def test_managed_runtime_start_stop_and_preferences(fujinet_desktop, tmp_path):
     emu.send(f'fujinet runtime 18000 {executable}')
     emu.send('fujinet show')
     emu.wait_frames(3)
+    click(emu, 'FujiNet', 'Setup and full controls')
     click(emu, 'FujiNet', 'Start without booting')
     status = wait_status(emu, lambda s: s['running'] and 'child started' in s['logTail'])
     state = Path(status['stateDirectory'])

@@ -7,7 +7,17 @@ FujiNet** for connection, boot, runtime and diagnostic controls.
 
 ## Panel layout
 
-The panel has two tabs, explained on screen in plain language:
+The window follows setup first. A fresh installation shows **Set up FujiNet
+automatically** and the alternative connection routes; Lobby and BBS are
+hidden until the managed runtime is configured. Installation, dependency
+checks and connection/boot progress stay in the setup view. Once setup
+finishes, **Use FujiNet** leads with the activity buttons and **Setup and full
+controls** collapses the setup instructions. Expand it to change the
+runtime, connection, startup preference or use the other boot/file tools.
+On later visits the installed runtime can be stopped: choosing an activity
+starts it automatically, without repeating installation.
+
+The full controls have two tabs, explained on screen in plain language:
 
 - **This computer** (recommended) — AltirraSDL starts and stops the free
   FujiNet-PC program itself.
@@ -32,10 +42,11 @@ The **Use FujiNet** section in **Tools → FujiNet** offers:
   SELECT opens local controls; OPTION disconnects. No modem driver, baud
   configuration or manually typed dialing commands are required.
 
-On the first-use welcome page these buttons follow **Set up FujiNet
-automatically**, keeping that primary setup action visible with large fonts.
+These buttons appear after setup, rather than competing with the first-use
+setup action. During an activity launch they are replaced by progress and
+**Cancel activity**. Setup remains available under **Setup and full controls**.
 
-Either button installs FujiNet-PC if necessary, starts it, waits for its
+Either button starts the configured FujiNet-PC, waits for its
 connection, downloads the client, mounts it read-only on the private virtual
 SD card and boots through real SIO. Progress and **Cancel activity** stay in
 the tool window. The Atari restarts only after the client is prepared and

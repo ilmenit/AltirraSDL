@@ -162,18 +162,24 @@ def run_case(args, template, work, activity, label, basic):
         started = time.monotonic()
         deadline = started + args.timeout
         text = ""
+        startup_errors = []
         while time.monotonic() < deadline:
             status = emu.send("fujinet status")
             state_dir = Path(status["stateDirectory"])
-            if status["error"] and not status["activityPending"]:
-                raise AssertionError(label + ": " + status["error"])
+            if status["error"] and status["error"] not in startup_errors:
+                startup_errors.append(status["error"])
+            # Mount/reset completion precedes guest startup. An SIO timeout
+            # while the client loads its online directory can recover; the
+            # active guest screen is the success criterion, not one poll.
             text = emu.send("accessibility status")["text"]
             if screen_ready(activity, text):
                 break
             time.sleep(.1)
         else:
             (work / "last-screen.txt").write_text(text)
-            raise AssertionError(label + " did not reach its active guest prompt: " + repr(text))
+            (work / "startup-errors.json").write_text(json.dumps(startup_errors, indent=2) + "\n")
+            raise AssertionError(label + " did not reach its active guest prompt: "
+                                 + repr(text) + "; startup errors: " + repr(startup_errors))
         emu.pause()
         elapsed = time.monotonic() - started
         screenshot = work / "guest-screen.png"
@@ -197,6 +203,7 @@ def run_case(args, template, work, activity, label, basic):
         check(mounted.is_file(), "Downloaded client missing from private SD")
         result = {"activity": activity, "button": label, "basic": basic,
                   "seconds": round(elapsed, 2), "screen": str(screenshot),
+                  "startupErrors": startup_errors,
                   "localDiskSHA256": local_hash, "clientSHA256": digest(mounted),
                   "fujiNetD1": d1, "runtimeLog": str(state_dir / "fujinet-pc.log")}
         print("PASS", activity, "basic=" + str(basic), str(screenshot), flush=True)

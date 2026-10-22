@@ -85,6 +85,8 @@ def run_url_dialog(emu, url):
     emu.wait_frames(6)
     if emu.find_item("FujiNet", "Full controls"):
         click(emu, "FujiNet", "Full controls")
+    if not emu.find_item("FujiNet", "Run a file through FujiNet..."):
+        click(emu, "FujiNet", "Setup and full controls")
     click(emu, "FujiNet", "Run a file through FujiNet...")
     window = "Run a file through FujiNet"
     click(emu, window, "##FujiNet game URL")

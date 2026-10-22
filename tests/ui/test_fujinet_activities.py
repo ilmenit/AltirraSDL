@@ -7,13 +7,14 @@ cannot accidentally fetch the public Lobby or connect to a BBS.
 import http.server
 import importlib.util
 from pathlib import Path
+import shutil
 import socket
 import threading
 import time
 
 import pytest
 
-from .test_explorers import click
+from .test_explorers import click, enter
 from .harness import AltirraTestHarness
 from .test_fujinet import free_port, fujinet_desktop, wait_status
 from .test_fujinet_file import managed_mount
@@ -44,6 +45,63 @@ def hello(emu, peer):
     status = emu.send("fujinet status")
     peer.sendto(b"\xc1", ("127.0.0.1", status["port"]))
     return wait_status(emu, lambda s: s["connected"])
+
+
+def test_unconfigured_panel_offers_setup_before_activities(fujinet_desktop):
+    emu = fujinet_desktop
+    emu.send("fujinet show")
+    emu.wait_frames(5)
+    labels = emu.get_item_labels("FujiNet")
+    assert "Set up FujiNet automatically" in labels
+    assert all(label not in labels for _, label in ACTIVITIES)
+    assert "Setup and full controls" not in labels
+    assert "##Executable" not in labels and "##UDP port" not in labels
+    status = emu.send("fujinet status")
+    assert not status["running"] and not status["installing"]
+    assert not emu.query_state()["state"]["sim"]["running"]
+
+
+def test_configured_runtime_shows_activities_and_collapses_setup(managed_mount):
+    emu, _, _, _ = managed_mount
+    stopped_runtime(emu)
+    emu.send("fujinet show")
+    emu.wait_frames(5)
+    labels = emu.get_item_labels("FujiNet")
+    assert all(label in labels for _, label in ACTIVITIES)
+    assert "Setup and full controls" in labels
+    assert "FujiNet-PC program" not in labels
+    assert "Choose FujiNet-PC" not in labels
+    assert "##Executable" not in labels and "##UDP port" not in labels
+    click(emu, "FujiNet", "Setup and full controls")
+    assert "FujiNet-PC program" in emu.get_item_labels("FujiNet")
+    click(emu, "FujiNet", "FujiNet-PC program")
+    assert "##Executable" in emu.get_item_labels("FujiNet")
+    click(emu, "FujiNet", "Setup and full controls")
+    assert "##Executable" not in emu.get_item_labels("FujiNet")
+    assert all(label in emu.get_item_labels("FujiNet") for _, label in ACTIVITIES)
+    assert not emu.send("fujinet status")["running"]
+
+
+def test_external_peer_arrival_replaces_collapsed_local_setup(managed_mount):
+    emu, handler, _, _ = managed_mount
+    stopped_runtime(emu)
+    emu.send("fujinet show")
+    emu.wait_frames(5)
+    assert "Setup and full controls" in emu.get_item_labels("FujiNet")
+    assert "Boot Atari" not in emu.get_item_labels("FujiNet")
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
+        peer.bind(("127.0.0.1", 0))
+        hello(emu, peer)
+        emu.wait_frames(5)
+        labels = emu.get_item_labels("FujiNet")
+        assert all(label not in labels for _, label in ACTIVITIES)
+        assert "Setup and full controls" not in labels
+        assert "Boot Atari" in labels
+        assert not emu.find_item("FujiNet", "Boot Atari")["disabled"]
+        status = emu.send("fujinet status")
+        assert status["connected"] and not status["running"]
+        assert not status["bootPending"] and not handler.posts
+        assert not emu.query_state()["state"]["sim"]["running"]
 
 
 @pytest.mark.parametrize("activity,label", ACTIVITIES)
@@ -299,3 +357,65 @@ def test_fresh_activity_install_waits_for_connection_without_config_boot(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_failed_activity_then_manual_setup_still_boots_config(
+        emu, monkeypatch, tmp_path):
+    suffix = ".exe" if emu.executable.lower().endswith(".exe") else ""
+    fixture = Path(emu.executable).resolve().parents[2] / (
+        "src/AltirraSDL/source/media/tests/altirra-fujinet-pc-test" + suffix)
+    if not fixture.is_file():
+        pytest.skip("Build the self-hosted FujiNet process fixture")
+    runtime = tmp_path / "manual runtime"
+    (runtime / "data").mkdir(parents=True)
+    (runtime / "SD").mkdir()
+    executable = runtime / ("fujinet" + suffix)
+    shutil.copy2(fixture, executable)
+    (runtime / "fnconfig.ini").write_text(
+        "[BOIP]\nenabled=1\nhost=localhost\nport=9997\n")
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    monkeypatch.setenv("ALTIRRA_DISPLAY_BACKEND", "sdlrenderer")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "manual recovery config"))
+    monkeypatch.setenv("ALTIRRA_FUJINET_RELEASES_URL",
+                       f"http://127.0.0.1:{free_port()}/releases")
+    with AltirraTestHarness(executable=emu.executable,
+                           extra_args=["--ui-mode", "desktop"]) as fresh:
+        fresh.close_dialog("SetupWizard")
+        fresh.send("set_window_size 1280 1000")
+        fresh.pause()
+        fresh.send("file_dialog_builtin on")
+        fresh.send("fujinet show")
+        fresh.wait_frames(4)
+        fresh.send(f"fujinet listen {free_port()} 0 100")
+        fresh.send("fujinet local_d1")
+        click(fresh, "FujiNet", "Set up FujiNet automatically")
+        first = wait_status(fresh, lambda s: not s["installing"] and s["error"])
+        assert not first["running"] and not first["autoSetupPending"]
+        # An activity owns a setup-only continuation. Its failure must not
+        # leak that intent into the guide's normal manual-pick fallback.
+        # Activities stay hidden until setup succeeds. The controller path
+        # still accepts an explicit automation request while unconfigured.
+        fresh.send("fujinet activity lobby")
+        failed = activity_done(fresh)
+        assert failed["error"] and not failed["running"]
+        click(fresh, "FujiNet", "Download FujiNet-PC yourself instead")
+        click(fresh, "FujiNet", "Choose FujiNet-PC")
+        enter(fresh, "Open File", "##path", runtime, True)
+        enter(fresh, "Open File", "##filename", executable.name, True)
+        started = wait_status(fresh, lambda s: s["running"])
+        try:
+            assert started["bootPending"], (
+                "The guide's manual setup lost its CONFIG boot continuation")
+            assert not fresh.query_state()["state"]["sim"]["running"]
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
+                peer.bind(("127.0.0.1", 0))
+                hello(fresh, peer)
+                booted = wait_status(fresh, lambda s: not s["bootPending"])
+                assert not booted["activityPending"] and not booted["filePending"]
+                assert not booted["localD1Enabled"] and not booted["fastBoot"]
+                assert fresh.query_state()["state"]["sim"]["running"]
+        finally:
+            fresh.pause()
+            fresh.send("fujinet stop")
+            wait_status(fresh, lambda s: not s["running"])

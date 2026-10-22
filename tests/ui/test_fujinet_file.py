@@ -70,6 +70,7 @@ def test_url_button_mounts_read_only_and_boots_without_ejecting_local_disk(manag
     before = emu.query_state()['state']['disks']
     emu.send('fujinet show')
     emu.wait_frames(5)
+    click(emu, 'FujiNet', 'Setup and full controls')
     click(emu, 'FujiNet', 'Run a file through FujiNet...')
     enter(emu, TITLE, '##FujiNet game URL', url + '/game.xex')
     click(emu, TITLE, 'Download, mount and boot')

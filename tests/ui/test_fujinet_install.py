@@ -114,6 +114,9 @@ def test_one_click_setup_installs_moves_off_busy_port_and_boots(
             assert 'FujiNet-PC' in installed.parts
             assert not status['autoSetupPending'] and status['missingLibraries'] == 0
             fresh.wait_frames(3)
+            labels = fresh.get_item_labels('FujiNet')
+            assert 'Network games / Lobby' not in labels
+            assert 'BBS directory' not in labels
             fresh.send('ui_screenshot ' + str(tmp_path / 'fujinet-setting-up.png'))
             # The installed runtime's NetSIO HELLO completes the boot.
             peer.bind(('127.0.0.1', 0))
@@ -122,9 +125,13 @@ def test_one_click_setup_installs_moves_off_busy_port_and_boots(
             assert not booted['localD1Enabled']
             assert fresh.query_state()['state']['sim']['running']
             deadline = time.monotonic() + 5
-            while 'Read the CONFIG and XEX guide' not in fresh.get_item_labels('FujiNet'):
+            while 'Network games / Lobby' not in fresh.get_item_labels('FujiNet'):
                 assert time.monotonic() < deadline, fresh.get_item_labels('FujiNet')
                 fresh.wait_frames(2)
+            labels = fresh.get_item_labels('FujiNet')
+            assert 'BBS directory' in labels and 'Setup and full controls' in labels
+            assert 'FujiNet-PC program' not in labels
+            assert '##Executable' not in labels and '##UDP port' not in labels
             fresh.send('ui_screenshot ' + str(tmp_path / 'fujinet-ready.png'))
             fresh.send('fujinet stop')
             wait_status(fresh, lambda s: not s['running'])
@@ -216,6 +223,7 @@ def test_start_with_altirra_option_boots_unless_command_line_names_a_program(
         # The option is offered on the panel once a runtime is selected.
         fresh.send('fujinet show')
         fresh.wait_frames(5)
+        click(fresh, 'FujiNet', 'Setup and full controls')
         click(fresh, 'FujiNet', 'Start FujiNet when AltirraSDL starts')
         assert fresh.send('fujinet status')['autoStart']
         assert not fresh.send('fujinet status')['running']

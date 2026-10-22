@@ -112,6 +112,9 @@ bool s_guided = false;
 int s_guidedStep = 0;
 // Full controls chosen this session: stop opening on the welcome page.
 bool s_guideDismissed = false;
+// UI transition only: collapse setup once it finishes, while respecting a
+// subsequent explicit expansion until another setup/launch is performed.
+bool s_setupWasComplete = false;
 bool s_open = false;
 bool s_loaded = false;
 bool s_lan = false;
@@ -1253,7 +1256,12 @@ void RuntimeSetupSteps() {
 	ImGui::Indent(indent);
 	if (PrimaryAction("Choose FujiNet-PC")) {
 		// In the guide, picking the program finishes setup automatically.
-		if (s_guided) s_autoContinue = true;
+		if (s_guided) {
+			s_autoContinue = true;
+			// A failed activity may have left its start-without-boot
+			// intent behind. Manual setup explicitly boots CONFIG.
+			s_autoBoot = true;
+		}
 		Browse();
 	}
 	ImGui::Unindent(indent);
@@ -1566,9 +1574,8 @@ void RunFileButton(const ATFujiNetUIStatus& status) {
 	}
 }
 
-void Activities(const ATFujiNetUIStatus& status, bool compact = false) {
-	if (compact) Hint("Or launch directly:");
-	else Heading("Use FujiNet");
+void Activities(const ATFujiNetUIStatus& status) {
+	Heading("Use FujiNet");
 	const bool managed = status.processAvailable && !s_external &&
 		!(status.connected && !status.running);
 	if (status.activityPending) {
@@ -1580,6 +1587,9 @@ void Activities(const ATFujiNetUIStatus& status, bool compact = false) {
 		if (!status.running) MissingLibrariesBlock();
 		if (ActionButton("Cancel activity")) ATUIFujiNetCancelActivity();
 	} else {
+		Hint(status.connected ? "FujiNet is connected." :
+			status.running ? "FujiNet-PC is running; waiting for its connection." :
+			"FujiNet is set up. Choose what to open; it will start automatically.");
 		ImGui::BeginDisabled(!managed || Locked() || status.filePending ||
 			status.installing || status.bootPending || status.autoSetupPending || status.stopping);
 		for (const auto& activity : kActivities) {
@@ -1587,7 +1597,7 @@ void Activities(const ATFujiNetUIStatus& status, bool compact = false) {
 			Tooltip(activity.description);
 		}
 		ImGui::EndDisabled();
-		if (!compact) Hint(managed ? "Sets up FujiNet and restarts the Atari. Local disk images are kept."
+		Hint(managed ? "Restarts the Atari. Local disk images are kept."
 			: "With another FujiNet, use CONFIG: L for the lobby; current versions also offer G for BBS.");
 	}
 	if (s_guided && !status.error.empty()) ErrorText(status.error.c_str());
@@ -1647,8 +1657,8 @@ void RenderFileDialog() {
 // How a connected Atari loads software from FujiNet's CONFIG menu. Keys
 // follow fujinet-config's Atari input.c; OPTION's default binding is F4.
 void ConfigInstructions() {
-	ImGui::TextWrapped("The Atari screen now shows FujiNet's menu (CONFIG) with a list of "
-		"servers called HOST LIST. To load a game:");
+	ImGui::TextWrapped("In FujiNet's menu (CONFIG), the server list is called HOST LIST. "
+		"When that menu is on the Atari screen, you can load a game as follows:");
 	Step("1.", "Use the arrow keys to pick a server, for example fujinet.online or "
 		"apps.irata.online, and press Return.");
 	Step("2.", "Browse folders with the arrow keys and Return. Pick a game ending in .XEX "
@@ -1665,7 +1675,7 @@ void AutoStartOption() {
 	if (ImGui::Checkbox("Start FujiNet when AltirraSDL starts", &enabled))
 		ATUIFujiNetSetAutoStart(enabled);
 	Tooltip("Every time AltirraSDL starts, FujiNet-PC starts in the background and the Atari "
-		"boots into FujiNet's menu. Opening a program from the command line skips this. In "
+		"boots the Atari. Opening a program from the command line skips this. In "
 		"Gaming Mode FujiNet-PC starts without restarting the Atari.");
 }
 void GuidedWelcome(const ATFujiNetUIStatus& status) {
@@ -1681,9 +1691,8 @@ void GuidedWelcome(const ATFujiNetUIStatus& status) {
 		if (PrimaryAction("Set up FujiNet automatically") && ATUIFujiNetAutoSetup())
 			s_guidedStep = 2;
 		ImGui::EndDisabled();
-		Activities(status, true);
 		Hint(ready ? "FujiNet-PC is already installed. This starts it and restarts the Atari "
-			"into FujiNet's menu, where you choose a game." :
+			"using FujiNet's current boot configuration." :
 			("FujiNet is an add-on that connects the Atari to servers on the internet. This "
 			"button downloads the free FujiNet-PC program, which does the same job on this "
 			"computer, for " + package.system + " (a few megabytes) from FujiNet's official "
@@ -1764,7 +1773,7 @@ void GuidedProgress(const ATFujiNetUIStatus& status) {
 		status.running || status.bootPending ? Mark::Working :
 		(failed || missing) && ready ? Mark::Failed : Mark::Pending, "Start FujiNet-PC");
 	StatusLine(booted ? Mark::Done : status.bootPending ? Mark::Working : Mark::Pending,
-		"Restart the Atari into FujiNet's menu");
+		"Restart the Atari");
 	ImGui::Spacing();
 	if (missing) {
 		MissingLibrariesBlock();
@@ -1784,6 +1793,7 @@ void GuidedProgress(const ATFujiNetUIStatus& status) {
 			"the fujinet-pc-ATARI folder you extracted.");
 		if (PrimaryAction("Choose FujiNet-PC")) {
 			s_autoContinue = true;
+			s_autoBoot = true;
 			Browse();
 		}
 		if (!Package().assetSuffixes.empty()) {
@@ -1796,7 +1806,7 @@ void GuidedProgress(const ATFujiNetUIStatus& status) {
 	}
 }
 void GuidedReady(const ATFujiNetUIStatus& status) {
-	Heading("FujiNet is ready: pick a game");
+	Heading("FujiNet is connected");
 	if (status.bootPending) {
 		Hint("Waiting for FujiNet. The Atari will boot as soon as it connects.");
 		if (ActionButton("Cancel boot")) s_bootPending = false;
@@ -1806,7 +1816,7 @@ void GuidedReady(const ATFujiNetUIStatus& status) {
 		ConfigInstructions();
 		ImGui::Spacing();
 		if (PrimaryAction("Boot Atari")) ATUIFujiNetBoot();
-		Tooltip("Restarts the Atari into FujiNet's menu again.");
+		Tooltip("Restarts the Atari using FujiNet's current boot configuration and mounted disks.");
 		if (status.running || s_webURL[0]) {
 			SameLineIfFits("Open Web Interface");
 			WebInterfaceButton(status);
@@ -1886,7 +1896,7 @@ void LocalView(const ATFujiNetUIStatus& status, bool needsRuntime) {
 	ImGui::BeginDisabled(status.stopping || status.bootPending || status.installing);
 	if (status.connected) {
 		if (PrimaryAction("Boot Atari")) ATUIFujiNetBoot();
-		Tooltip("Restarts the Atari into FujiNet's menu (CONFIG). FujiNet-PC keeps running.");
+		Tooltip("Restarts the Atari using the current FujiNet disks. FujiNet-PC keeps running.");
 	} else if (PrimaryAction(status.running ? "Boot when connected" : "Start and Boot FujiNet")) {
 		ATUIFujiNetStartAndBoot();
 	}
@@ -1913,12 +1923,11 @@ void LocalView(const ATFujiNetUIStatus& status, bool needsRuntime) {
 	if (status.bootPending)
 		Hint("Starting FujiNet-PC. The Atari will boot as soon as it connects.");
 	else if (status.connected)
-		Hint("On the Atari, FujiNet's menu lists servers: pick one with the arrow keys and Return, "
+		Hint("When FujiNet's CONFIG menu is on the Atari, pick a server with the arrow keys and Return, "
 			"choose a game, put it in drive 1, then press OPTION (F4). The step-by-step guide "
 			"explains it in detail.");
 	else if (!status.running)
-		Hint("Start and Boot starts FujiNet-PC and restarts the Atari into FujiNet's menu, where "
-			"you choose a game from the internet.");
+		Hint("Start and Boot starts FujiNet-PC and restarts the Atari using its current boot configuration.");
 	BootNote();
 	RunFileButton(status);
 	AutoStartOption();
@@ -1927,7 +1936,7 @@ void ExternalView(const ATFujiNetUIStatus& status) {
 	if (status.connected) {
 		ImGui::TextWrapped("FujiNet is connected from %s.", status.peer.c_str());
 		if (PrimaryAction("Boot Atari")) ATUIFujiNetBoot();
-		Tooltip("Restarts the Atari into FujiNet's menu (CONFIG).");
+		Tooltip("Restarts the Atari using FujiNet's current boot configuration and mounted disks.");
 		SameLineIfFits(s_webURL[0] ? "Open Web Interface" : "Set web address");
 		if (s_webURL[0]) WebInterfaceButton(status);
 		else if (ActionButton("Set web address")) s_openConnection = true;
@@ -1954,15 +1963,137 @@ void ExternalView(const ATFujiNetUIStatus& status) {
 		Tooltip("Stops accepting FujiNet traffic. The Atari is not reset.");
 	}
 }
+void RenderSetupControls(const ATFujiNetUIStatus& status) {
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+#endif
+	const auto legacy = LegacyTransport();
+	if (s_guided) {
+		GuidedSetup(status, legacy);
+	} else if (legacy.recognizedLegacy) {
+		ManualConnection(status, legacy);
+	} else {
+		const bool unmanagedPeer = status.connected && !status.running;
+		if (unmanagedPeer && !s_external) { s_external = true; s_selectMode = true; }
+		const bool selectingMode = ImGui::IsWindowAppearing() || s_selectMode;
+		const bool requestedExternal = s_external;
+		bool selectedExternal = s_external;
+		if (status.processAvailable && ImGui::BeginTabBar("##FujiNetMode")) {
+			ImGui::BeginDisabled(unmanagedPeer);
+			const bool localTab = ImGui::BeginTabItem("This computer", nullptr, selectingMode && !requestedExternal ? ImGuiTabItemFlags_SetSelected : 0);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+			IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "This computer", 0);
+#endif
+			if (localTab) {
+				if (!selectingMode) selectedExternal = false;
+				ImGui::EndTabItem();
+			}
+			ImGui::EndDisabled();
+			if (unmanagedPeer && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("Close the other FujiNet's connection before starting FujiNet-PC here.");
+			else
+				Tooltip("AltirraSDL starts the free FujiNet-PC program on this computer.");
+			ImGui::BeginDisabled(status.running);
+			const bool externalTab = ImGui::BeginTabItem("Other FujiNet", nullptr, selectingMode && requestedExternal ? ImGuiTabItemFlags_SetSelected : 0);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+			IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "Other FujiNet", 0);
+#endif
+			if (externalTab) {
+				if (!selectingMode) selectedExternal = true;
+				ImGui::EndTabItem();
+			}
+			ImGui::EndDisabled();
+			if (status.running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("Stop FujiNet-PC on this computer first.");
+			else
+				Tooltip("A real FujiNet device, or a FujiNet-PC you start yourself.");
+			ImGui::EndTabBar();
+			s_selectMode = false;
+			if (selectedExternal != s_external) {
+				s_external = selectedExternal;
+				s_openConnection = s_external && !status.present;
+				Save();
+			}
+			Hint(s_external ?
+				"A real FujiNet device, or a FujiNet-PC you start yourself." :
+				"Recommended: AltirraSDL runs FujiNet-PC for you. No hardware needed.");
+		}
+		ImGui::Spacing();
+		// A wrong selection (often the device firmware) returns to the
+		// download steps; a running process is never second-guessed.
+		const bool needsRuntime = !s_external && !status.running &&
+			(!s_executable[0] || !RuntimeProblem().empty());
+		const char* title = status.stopping ? "Stopping FujiNet-PC" :
+			status.connected ? "Connected to FujiNet" : status.bootPending ? "Starting FujiNet" :
+			needsRuntime && s_executable[0] ? "Choose the FujiNet-PC program" :
+			needsRuntime ? "Get FujiNet-PC" : status.running ? "Waiting for FujiNet" :
+			status.listening && s_external ? "Waiting for FujiNet" : s_external ? "Connect your FujiNet" : "Ready to start";
+		Heading(title);
+		if (legacy.suspectedLegacy) {
+			Hint(legacy.label.c_str());
+			Hint("A custom device may already provide NetSIO. Check it before enabling a second SIO route.");
+		}
+		if (!status.error.empty()) ErrorText(status.error.c_str());
+		ImGui::Spacing();
+		ImGui::BeginDisabled(Locked());
+		if (!s_external) LocalView(status, needsRuntime);
+		else ExternalView(status);
+		ImGui::EndDisabled();
+		if (Locked()) Hint("FujiNet changes are disabled during netplay.");
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+		if (!s_external && DetailHeader("FujiNet-PC program")) {
+			ImGui::PushID("runtime");
+			ImGui::Indent();
+			Hint("The fujinet program inside the extracted fujinet-pc-ATARI folder. AltirraSDL "
+				"keeps FujiNet-PC's settings and virtual SD card in its own data folder.");
+			ImGui::BeginDisabled(Locked() || status.running);
+			FieldLabel("Program location");
+			ImGui::InputText("##Executable", s_executable, sizeof s_executable);
+			if (ImGui::IsItemDeactivatedAfterEdit()) Save();
+			FieldLabel("Web page port");
+			ImGui::InputInt("##Local web port", &s_webPort, 0, 0);
+			if (ImGui::IsItemDeactivatedAfterEdit()) {
+				s_webPort = std::clamp(s_webPort, 1, 65535);
+				Save();
+			}
+			Hint("Open Web Interface opens http://127.0.0.1 at this port. Change it only if "
+				"another program already uses it (default 8000).");
+			ImGui::EndDisabled();
+			if (!s_runtimeVersion.empty())
+				ImGui::TextWrapped("Installed by AltirraSDL: %s", s_runtimeVersion.c_str());
+			if (!needsRuntime) {
+				if (status.installing) {
+					InstallProgress();
+				} else {
+					ImGui::BeginDisabled(Locked() || status.running || Package().assetSuffixes.empty());
+					if (ActionButton("Install latest FujiNet-PC")) ATUIFujiNetInstallRuntime(false);
+					ImGui::EndDisabled();
+					Tooltip(status.running ? "Stop FujiNet-PC first." :
+						"Downloads the newest official FujiNet-PC and switches to it. Your FujiNet "
+						"settings, server list and SD card are kept.");
+				}
+			}
+			ImGui::Unindent();
+			ImGui::PopID();
+		}
+		ConnectionDetails(status);
+		LocalDiskDetails(status);
+		Diagnostics(status);
+	}
+	if (!s_guided) {
+		if (ActionButton("Step-by-step guide")) { s_guided = true; s_guidedStep = 0; }
+		Tooltip("Walks you through setting up FujiNet and loading your first game.");
+		SameLineIfFits("Help");
+	}
+}
 } // namespace
 
 void ATUIRenderFujiNetDialog() {
 	if (!s_open) { RenderFileDialog(); return; }
 	Load();
 	const auto status = ATUIGetFujiNetStatus();
-#ifdef IMGUI_ENABLE_TEST_ENGINE
-	ImGuiContext& g = *ImGui::GetCurrentContext();
-#endif
 	const float scale = ImGui::GetFontSize() / 13.0f;
 	const float spacingScale = std::min(scale, 1.4f);
 	const auto* viewport = ImGui::GetMainViewport();
@@ -1984,9 +2115,22 @@ void ATUIRenderFujiNetDialog() {
 		lastSize = size;
 		lastViewport = viewport->WorkSize;
 #ifndef __EMSCRIPTEN__
-		// Keep first-time setup visible even with large fonts. The welcome
-		// page places the same activity buttons just after its primary action.
-		if (!(s_guided && s_guidedStep == 0) || status.activityPending)
+		// Setup is a prerequisite in the visible flow. Once complete, keep
+		// activities in front and move all setup/connection controls below.
+		// Observe an external peer even when the full controls are collapsed.
+		if (status.connected && !status.running && !s_external) {
+			s_external = true;
+			s_selectMode = true;
+		}
+		if (s_guided && s_guidedStep == 2 && status.running && status.connected &&
+			!status.installing && !status.autoSetupPending && !status.bootPending)
+			s_guidedStep = 3;
+		const bool setupComplete = !s_external && status.processAvailable &&
+			(status.running || RuntimeReady()) && MissingLibraries().empty() &&
+			!LegacyTransport().recognizedLegacy &&
+			!status.installing && !status.autoSetupPending && !status.bootPending && !status.stopping &&
+			(!s_guided || s_guidedStep == 3);
+		if (setupComplete || status.activityPending)
 			Activities(status);
 #endif
 		ImGui::BeginDisabled(status.filePending || status.activityPending);
@@ -1994,137 +2138,24 @@ void ATUIRenderFujiNetDialog() {
 		Heading("FujiNet needs a native build");
 		Hint("Browsers cannot listen for UDP NetSIO. Use a native AltirraSDL build to connect FujiNet.");
 #else
-		const auto legacy = LegacyTransport();
-		if (status.activityPending) {
-			// Activities() owns progress and any dependency actions while
-			// the ordinary connection/setup controls are unavailable.
-		} else if (s_guided) {
-			GuidedSetup(status, legacy);
-		} else if (legacy.recognizedLegacy) {
-			ManualConnection(status, legacy);
-		} else {
-			const bool unmanagedPeer = status.connected && !status.running;
-			if (unmanagedPeer && !s_external) { s_external = true; s_selectMode = true; }
-			const bool selectingMode = ImGui::IsWindowAppearing() || s_selectMode;
-			const bool requestedExternal = s_external;
-			bool selectedExternal = s_external;
-			if (status.processAvailable && ImGui::BeginTabBar("##FujiNetMode")) {
-				ImGui::BeginDisabled(unmanagedPeer);
-				const bool localTab = ImGui::BeginTabItem("This computer", nullptr, selectingMode && !requestedExternal ? ImGuiTabItemFlags_SetSelected : 0);
-#ifdef IMGUI_ENABLE_TEST_ENGINE
-				IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "This computer", 0);
-#endif
-				if (localTab) {
-					if (!selectingMode) selectedExternal = false;
-					ImGui::EndTabItem();
-				}
-				ImGui::EndDisabled();
-				if (unmanagedPeer && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-					ImGui::SetTooltip("Close the other FujiNet's connection before starting FujiNet-PC here.");
-				else
-					Tooltip("AltirraSDL starts the free FujiNet-PC program on this computer.");
-				ImGui::BeginDisabled(status.running);
-				const bool externalTab = ImGui::BeginTabItem("Other FujiNet", nullptr, selectingMode && requestedExternal ? ImGuiTabItemFlags_SetSelected : 0);
-#ifdef IMGUI_ENABLE_TEST_ENGINE
-				IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "Other FujiNet", 0);
-#endif
-				if (externalTab) {
-					if (!selectingMode) selectedExternal = true;
-					ImGui::EndTabItem();
-				}
-				ImGui::EndDisabled();
-				if (status.running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-					ImGui::SetTooltip("Stop FujiNet-PC on this computer first.");
-				else
-					Tooltip("A real FujiNet device, or a FujiNet-PC you start yourself.");
-				ImGui::EndTabBar();
-				s_selectMode = false;
-				if (selectedExternal != s_external) {
-					s_external = selectedExternal;
-					s_openConnection = s_external && !status.present;
-					Save();
-				}
-				Hint(s_external ?
-					"A real FujiNet device, or a FujiNet-PC you start yourself." :
-					"Recommended: AltirraSDL runs FujiNet-PC for you. No hardware needed.");
+		if (!status.activityPending) {
+			bool showControls = true;
+			if (setupComplete) {
+				// Do not hide an executable field mid-edit merely because
+				// its current text has just become a valid runtime path.
+				if (!s_setupWasComplete) ImGui::SetNextItemOpen(ImGui::IsAnyItemActive());
+				showControls = DetailHeader("Setup and full controls");
+				if (!showControls && !status.error.empty()) ErrorText(status.error.c_str());
 			}
-			ImGui::Spacing();
-			// A wrong selection (often the device firmware) returns to the
-			// download steps; a running process is never second-guessed.
-			const bool needsRuntime = !s_external && !status.running &&
-				(!s_executable[0] || !RuntimeProblem().empty());
-			const char* title = status.stopping ? "Stopping FujiNet-PC" :
-				status.connected ? "Connected to FujiNet" : status.bootPending ? "Starting FujiNet" :
-				needsRuntime && s_executable[0] ? "Choose the FujiNet-PC program" :
-				needsRuntime ? "Get FujiNet-PC" : status.running ? "Waiting for FujiNet" :
-				status.listening && s_external ? "Waiting for FujiNet" : s_external ? "Connect your FujiNet" : "Ready to start";
-			Heading(title);
-			if (legacy.suspectedLegacy) {
-				Hint(legacy.label.c_str());
-				Hint("A custom device may already provide NetSIO. Check it before enabling a second SIO route.");
-			}
-			if (!status.error.empty()) ErrorText(status.error.c_str());
-			ImGui::Spacing();
-			ImGui::BeginDisabled(Locked());
-			if (!s_external) LocalView(status, needsRuntime);
-			else ExternalView(status);
-			ImGui::EndDisabled();
-			if (Locked()) Hint("FujiNet changes are disabled during netplay.");
-			ImGui::Spacing();
-			ImGui::Separator();
-			ImGui::Spacing();
-			if (!s_external && DetailHeader("FujiNet-PC program")) {
-				ImGui::PushID("runtime");
-				ImGui::Indent();
-				Hint("The fujinet program inside the extracted fujinet-pc-ATARI folder. AltirraSDL "
-					"keeps FujiNet-PC's settings and virtual SD card in its own data folder.");
-				ImGui::BeginDisabled(Locked() || status.running);
-				FieldLabel("Program location");
-				ImGui::InputText("##Executable", s_executable, sizeof s_executable);
-				if (ImGui::IsItemDeactivatedAfterEdit()) Save();
-				FieldLabel("Web page port");
-				ImGui::InputInt("##Local web port", &s_webPort, 0, 0);
-				if (ImGui::IsItemDeactivatedAfterEdit()) {
-					s_webPort = std::clamp(s_webPort, 1, 65535);
-					Save();
-				}
-				Hint("Open Web Interface opens http://127.0.0.1 at this port. Change it only if "
-					"another program already uses it (default 8000).");
-				ImGui::EndDisabled();
-				if (!s_runtimeVersion.empty())
-					ImGui::TextWrapped("Installed by AltirraSDL: %s", s_runtimeVersion.c_str());
-				if (!needsRuntime) {
-					if (status.installing) {
-						InstallProgress();
-					} else {
-						ImGui::BeginDisabled(Locked() || status.running || Package().assetSuffixes.empty());
-						if (ActionButton("Install latest FujiNet-PC")) ATUIFujiNetInstallRuntime(false);
-						ImGui::EndDisabled();
-						Tooltip(status.running ? "Stop FujiNet-PC first." :
-							"Downloads the newest official FujiNet-PC and switches to it. Your FujiNet "
-							"settings, server list and SD card are kept.");
-					}
-				}
-				ImGui::Unindent();
-				ImGui::PopID();
-			}
-			ConnectionDetails(status);
-			LocalDiskDetails(status);
-			Diagnostics(status);
+			if (showControls) RenderSetupControls(status);
 		}
+		s_setupWasComplete = setupComplete;
 #endif
 		ImGui::EndDisabled();
 		if (status.filePending && !status.activityPending) {
 			Hint("Preparing a game for FujiNet. The runtime stays connected until the operation finishes.");
 			if (ActionButton("Cancel file operation")) ATUIFujiNetCancelFile();
 		}
-#ifndef __EMSCRIPTEN__
-		if (!s_guided) {
-			if (ActionButton("Step-by-step guide")) { s_guided = true; s_guidedStep = 0; }
-			Tooltip("Walks you through setting up FujiNet and loading your first game.");
-			SameLineIfFits("Help");
-		}
-#endif
 		if (ImGui::Button("Help"))
 			ATUIShowHelpTopic("sdl-fujinet.html", nullptr);
 	}

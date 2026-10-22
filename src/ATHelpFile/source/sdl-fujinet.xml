@@ -5,12 +5,12 @@
   <p>FujiNet is an add-on for Atari 8-bit computers. A real FujiNet plugs into the Atari's disk drive (SIO) port and uses Wi-Fi to load games and programs from servers on the internet. It can also act as a printer, modem, clock and network adapter for software written to use it.</p>
   <p>You do not need to own a FujiNet. <b>FujiNet-PC</b> is a free program that does the same job on your computer, and AltirraSDL can start it for you. AltirraSDL talks to FujiNet over the network using a protocol called NetSIO, so FujiNet-PC, a real FujiNet device and AltirraSDL can all run on different machines if you want.</p>
   <h2>Network games and BBS</h2>
-  <p><b>Tools &gt; FujiNet</b> offers two shortcuts in the welcome page and the <b>Use FujiNet</b> section:</p>
+  <p>First complete setup in <b>Tools &gt; FujiNet</b>. The welcome page shows setup and connection choices. Once FujiNet-PC is configured, <b>Use FujiNet</b> offers two shortcuts, and <b>Setup and full controls</b> collapses the setup instructions. Expand it whenever you want to change setup or use the other boot and file tools.</p>
   <ul>
     <li><b>Network games / Lobby</b> opens the official FujiNet Game Lobby on the Atari. Enter a player name on first use, then choose a game and room. This uses FujiNet's multiplayer services; AltirraSDL's Netplay lobby is a separate feature.</li>
     <li><b>BBS directory</b> opens the official FujiNet Atari BBS Client, which loads an online directory of ATASCII boards. Choose a board and press Return. SELECT opens local controls; OPTION disconnects. You do not need to configure a modem driver or baud rate.</li>
   </ul>
-  <p>Each shortcut installs and starts FujiNet-PC if needed, waits for its connection, downloads the Atari client, mounts it read-only and boots it through FujiNet. Progress and <b>Cancel activity</b> remain in the window. BASIC is unchanged, and local disk images and unsaved disk changes are kept. The Atari restarts when the client is ready to boot.</p>
+  <p>Each shortcut starts the configured FujiNet-PC if needed, waits for its connection, downloads the Atari client, mounts it read-only and boots it through FujiNet. During launch the activity buttons are replaced by progress and <b>Cancel activity</b>. BASIC is unchanged, and local disk images and unsaved disk changes are kept. The Atari restarts when the client is ready to boot.</p>
   <p>These clients need an Atari computer with at least 48 KB RAM. Remove inserted cartridges and disable any full-drive emulator on D1 before launching. These shortcuts use the FujiNet-PC managed by AltirraSDL on <b>This computer</b>. For another FujiNet, use its CONFIG menu: <b>L</b> opens the game lobby; current CONFIG versions also offer <b>G</b> for BBS.</p>
   <h2>Set up FujiNet in one click</h2>
   <ol>
