@@ -318,6 +318,90 @@ static void testSnapshotSurvives30PctLoss() {
 	joiner.End();
 }
 
+// Drop the first ACK of the final chunk deterministically. Random loss
+// rarely exercises the receiver's transition out of ReceivingSnapshot.
+class DropFinalSnapshotAckTransport final : public INetTransport {
+public:
+	explicit DropFinalSnapshotAckTransport(uint32_t finalChunk)
+		: mFinalChunk(finalChunk) {}
+	bool Listen(uint16_t port) override { return mUdp.Listen(port); }
+	bool IsOpen() const override { return mUdp.IsOpen(); }
+	uint16_t BoundPort() const override { return mUdp.BoundPort(); }
+	void Close() override { mUdp.Close(); }
+	RecvResult RecvFrom(uint8_t* bytes, size_t capacity, size_t& length,
+		Endpoint& from) override {
+		return mUdp.RecvFrom(bytes, capacity, length, from);
+	}
+	bool SendTo(const uint8_t* bytes, size_t length, const Endpoint& to) override {
+		uint32_t magic = 0;
+		if (PeekMagic(bytes, length, magic) && magic == kMagicSession
+			&& length >= kWireSessionHeaderSize) {
+			NetSnapAck ack;
+			if (DecodeSnapAck(bytes + kWireSessionHeaderSize,
+				length - kWireSessionHeaderSize, ack) == DecodeResult::Ok
+				&& ack.chunkIdx == mFinalChunk) {
+				if (++finalAckAttempts == 1) return true;
+			}
+		}
+		return mUdp.SendTo(bytes, length, to);
+	}
+	unsigned finalAckAttempts = 0;
+private:
+	UdpTransport mUdp;
+	const uint32_t mFinalChunk;
+};
+
+static void testCompletedSnapshotStillAcknowledgesRetries(bool applyImmediately) {
+	Coordinator host, joiner;
+	auto snapshot = makeMockSnapshot(kSnapshotChunkSize * 2 + 17);
+	auto transport = std::make_unique<DropFinalSnapshotAckTransport>(2);
+	auto* loss = transport.get();
+	joiner.SetTransport(std::move(transport));
+	auto boot = makeDefaultBootConfig();
+	CHECK(host.BeginHost(0, "host", "final-ack", 1, 2, 0, 3, nullptr, boot));
+	host.SubmitSnapshotForUpload(snapshot.data(), snapshot.size());
+	char endpoint[48];
+	std::snprintf(endpoint, sizeof endpoint, "127.0.0.1:%u", host.BoundPort());
+	CHECK(joiner.BeginJoin(endpoint, "joiner", 1, 2, true, nullptr));
+	const bool ready = spinUntil(host, joiner, [&] {
+		return joiner.GetPhase() == Coordinator::Phase::SnapshotReady;
+	}, 3000);
+	CHECK(ready);
+	if (!ready) return;
+	CHECK(joiner.GetReceivedSnapshot() == snapshot);
+	CHECK(loss->finalAckAttempts == 1);
+	CHECK(host.GetPhase() == Coordinator::Phase::SendingSnapshot);
+	if (applyImmediately) joiner.AcknowledgeSnapshotApplied();
+	const auto expectedPhase = applyImmediately
+		? Coordinator::Phase::Lockstepping : Coordinator::Phase::SnapshotReady;
+	const auto frame = joiner.Loop().CurrentFrame();
+	const bool delivered = spinUntil(host, joiner, [&] {
+		return host.GetPhase() == Coordinator::Phase::Lockstepping;
+	}, 2000);
+	CHECK(delivered);
+	CHECK(loss->finalAckAttempts >= 2);
+	CHECK(joiner.GetPhase() == expectedPhase);
+	CHECK(joiner.Loop().CurrentFrame() == frame);
+	CHECK(joiner.GetReceivedSnapshot() == snapshot);
+	if (!delivered) return;
+	if (!applyImmediately) joiner.AcknowledgeSnapshotApplied();
+	// Retransmission must leave both peers able to play, with no second
+	// snapshot-apply request or reset of the joiner's lockstep state.
+	CHECK(spinUntil(host, joiner, [&] {
+		NetInput input {};
+		host.SubmitLocalInput(input);
+		joiner.SubmitLocalInput(input);
+		if (host.CanAdvance()) host.OnFrameAdvanced(0);
+		if (joiner.CanAdvance()) joiner.OnFrameAdvanced(0);
+		return host.Loop().CurrentFrame() >= 20
+			&& joiner.Loop().CurrentFrame() >= 20;
+	}, 2000));
+	CHECK(host.GetPhase() == Coordinator::Phase::Lockstepping);
+	CHECK(joiner.GetPhase() == Coordinator::Phase::Lockstepping);
+	host.End();
+	joiner.End();
+}
+
 // Item 6b regression: when the host stops sending entirely after
 // Welcome (simulating a host crash / network drop mid-snapshot), the
 // joiner's ReceivingSnapshot watchdog (Item 1) must fail the session
@@ -643,6 +727,8 @@ static void testFederatedRelayContexts() {
 }
 
 int main() {
+	testCompletedSnapshotStillAcknowledgesRetries(false);
+	testCompletedSnapshotStillAcknowledgesRetries(true);
 	testFederatedRelayContexts();
 	testDeferredUploadWithRetryAndUnrelatedSender();
 	testEndToEndSession();

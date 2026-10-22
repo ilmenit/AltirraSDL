@@ -33,6 +33,9 @@
   removes joystick-one capture. Each player's local joystick one reaches
   their assigned emulated port; input mappings survive rebuilds and return
   to normal when the session ends.
+- Fixed game transfer stalling when the final chunk acknowledgement is
+  lost. The receiver acknowledges valid retries after download/apply
+  without restarting the game or applying the same state twice.
 - Added bounded rollback with two frames of input delay, plus a delay-only
   compatibility mode selected before hosting. Corrected frames replay from
   native checkpoints without duplicate audio submission.

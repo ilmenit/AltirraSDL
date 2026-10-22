@@ -1946,7 +1946,13 @@ const char* SessionTerminationToLocalizedString(uint16_t reason) {
 void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 	const bool sessionStart = (mPhase == Phase::ReceivingSnapshot);
 	const bool midResync    = (mPhase == Phase::Resyncing && mRole == Role::Joiner);
-	if (!sessionStart && !midResync) return;
+	// The final ACK can be lost after we leave ReceivingSnapshot. Keep
+	// acknowledging valid duplicates while the app applies the snapshot
+	// and after play starts, or the host will exhaust its retry budget.
+	// Poll already authenticated the session nonce, peer and resync epoch.
+	const bool completedTransfer = mRole == Role::Joiner && mSnapRx.IsComplete()
+		&& (mPhase == Phase::SnapshotReady || mPhase == Phase::Lockstepping);
+	if (!sessionStart && !midResync && !completedTransfer) return;
 
 	++mDiag.chunksRecv;
 
@@ -1964,6 +1970,9 @@ void Coordinator::HandleSnapChunk(const NetSnapChunk& c, uint64_t nowMs) {
 			++mDiag.acksSent;
 		}
 	}
+	// The assembled bytes and gameplay state must remain unchanged. In
+	// particular, never request another apply or move back to SnapshotReady.
+	if (completedTransfer) return;
 
 	// Symmetric to the host's HandleSnapAck milestones — emit one
 	// log line at 25 / 50 / 75 % so a slow / stalled download is
