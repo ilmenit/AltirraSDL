@@ -559,6 +559,23 @@ bool ATUIFujiNetConfigureListener(bool allowLAN, unsigned port, unsigned timeout
 	}
 #endif
 }
+namespace {
+bool ConfigureManagedListener() {
+	// Try the preferred UDP port and nearby ports, keeping the actual
+	// device settings (including the bind address) in sync with the draft.
+	// A failed attempt restores the previous device/draft; retain the
+	// requested values so a port collision cannot undo a repair's defaults.
+	const bool allowLAN = s_lan;
+	const unsigned timeout = (unsigned)s_timeout;
+	for (unsigned port = (unsigned)s_port, tries = 0;
+		port <= 65535 && tries < 20; ++port, ++tries) {
+		if (ATUIFujiNetConfigureListener(allowLAN, port, timeout))
+			return true;
+		if (s_error.compare(0, 20, "Could not open port ")) return false;
+	}
+	return false;
+}
+} // namespace
 bool ATUIFujiNetStartRuntime() {
 	Load();
 	if (!CanChange() || !CanUseNative()) return false;
@@ -592,12 +609,7 @@ bool ATUIFujiNetStartRuntime() {
 	// Attach/reconnect before starting FujiNet so its initial HELLO is heard.
 	// The managed runtime is told its port, so when another program (often
 	// a second AltirraSDL) holds it, the next free port is used instead.
-	bool listening = false;
-	for (unsigned port = (unsigned)s_port, tries = 0; !listening && port <= 65535 && tries < 20; ++port, ++tries) {
-		listening = ATUIFujiNetConfigureListener(s_lan, port, (unsigned)s_timeout);
-		if (!listening && s_error.compare(0, 20, "Could not open port ")) return false;
-	}
-	if (!listening) return false;
+	if (!ConfigureManagedListener()) return false;
 	ATFujiNetPCOptions options;
 	options.executable = s_executable;
 	options.stateDirectory = StateDirectory();
@@ -1148,7 +1160,9 @@ void ATUIPollFujiNet() {
 			s_webPort = 8000;
 			s_error.clear();
 			Save();
-			ATUIFujiNetAutoSetup(false);
+			// Repair must normalize the device before ordinary startup's
+			// bind-address preflight, including broken/custom saved binds.
+			if (ConfigureManagedListener()) ATUIFujiNetAutoSetup(false);
 		}
 	}
 	if (bootPreparedFile && s_activity) {

@@ -1,5 +1,7 @@
 """Recover the managed connection without changing the user's Atari or SD."""
 from pathlib import Path
+import errno
+import os
 import shutil
 import socket
 import sys
@@ -159,3 +161,38 @@ def test_external_peer_is_not_reconfigured_by_repair(runtime_fixture):
         after = emu.send('fujinet status')
         assert after['connected'] and after['peer'] == before['peer']
         assert not after['running'] and not after['repairPending']
+
+
+@pytest.mark.parametrize('address', ['127.0.0.2', '0.0.0.0'])
+def test_repair_normalizes_saved_bind_address_and_avoids_busy_udp_port(runtime_fixture, address):
+    emu, executable, _ = runtime_fixture
+    emu.send(f'fujinet runtime 18000 {executable}')
+    emu.stop()
+    settings = Path(os.environ['XDG_CONFIG_HOME']) / 'altirra/settings.ini'
+    previous = settings.read_text()
+    old = r'\"bind_address\":\"0.0.0.0\"'
+    assert old in previous
+    settings.write_text(previous.replace(old, r'\"bind_address\":\"' + address + r'\"'))
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as occupied:
+        try:
+            occupied.bind(('127.0.0.1', 9997))
+        except OSError as error:
+            # A user's running emulator can already occupy the default.
+            if error.errno not in (errno.EADDRINUSE, 10048):
+                raise
+        with AltirraTestHarness(executable=emu.executable,
+                               extra_args=['--ui-mode', 'desktop']) as fresh:
+            fresh.close_dialog('SetupWizard')
+            fresh.pause()
+            fresh.send('debugger_console e 1000 5A')
+            tick = fresh.query_state()['state']['sim']['emulationTick']
+            fresh.send('fujinet repair')
+            repaired = wait_status(fresh, lambda s: s['running'] and not s['repairPending'])
+            assert not repaired['error'] and not repaired['bootPending']
+            assert 9998 <= repaired['port'] < 10017
+            assert repaired['listening']
+            assert fresh.mem_read(0x1000, 1) == [0x5A]
+            assert fresh.query_state()['state']['sim']['emulationTick'] == tick
+    updated = settings.read_text()
+    assert r'\"bind_address\":\"127.0.0.1\"' in updated
+    assert r'\"bind_address\":\"' + address + r'\"' not in updated
