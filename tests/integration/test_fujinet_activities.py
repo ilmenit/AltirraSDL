@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -125,6 +126,7 @@ def run_case(args, template, work, activity, label, basic):
     readers, drain_errors, cleanup_errors = [], [], []
     bridge = None
     state_dir = None
+    web_holder = None
     try:
         emu.start()
         readers, drain_errors = begin_draining(emu, work)
@@ -147,6 +149,11 @@ def run_case(args, template, work, activity, label, basic):
         emu.wait_frames(5)
         disk_before = emu.query_state()["state"]["disks"][0]
         udp, web = free_port(socket.SOCK_DGRAM), free_port(socket.SOCK_STREAM)
+        if args.busy_web_port:
+            web_holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            web_holder.bind(('127.0.0.1', 0))
+            web_holder.listen()
+            web = web_holder.getsockname()[1]
         emu.send(f"fujinet runtime {web} {template / 'fujinet'}")
         emu.send(f"fujinet listen {udp} 0 200")
         emu.send("fujinet show")
@@ -180,6 +187,9 @@ def run_case(args, template, work, activity, label, basic):
             (work / "startup-errors.json").write_text(json.dumps(startup_errors, indent=2) + "\n")
             raise AssertionError(label + " did not reach its active guest prompt: "
                                  + repr(text) + "; startup errors: " + repr(startup_errors))
+        # Let the guest finish presenting the prompt; accessibility text can
+        # become ready while ANTIC is still drawing its first screen frame.
+        emu.wait_frames(12)
         emu.pause()
         elapsed = time.monotonic() - started
         screenshot = work / "guest-screen.png"
@@ -195,20 +205,77 @@ def run_case(args, template, work, activity, label, basic):
         check(digest(local) == local_hash, "Launcher modified the local disk image")
         disk_after = emu.query_state()["state"]["disks"][0]
         check(disk_after == disk_before, "Launcher replaced/ejected the local disk image")
-        with urllib.request.urlopen(f"http://127.0.0.1:{web}/api/v1/drives", timeout=10) as response:
+        if args.busy_web_port:
+            check(status['webPort'] != web, 'Occupied web port was not avoided')
+            check(str(web) in status['notice'], 'Selected port notice is missing')
+        with urllib.request.urlopen(f"http://127.0.0.1:{status['webPort']}/api/v1/drives", timeout=10) as response:
             drives = json.load(response)
         d1 = next(item for item in drives if item["slot"] == 1)
         check(d1["mounted"] and d1["mode"] == "r", "FujiNet D1 is not mounted read-only")
         mounted = state_dir / "SD" / d1["path"].lstrip("/")
         check(mounted.is_file(), "Downloaded client missing from private SD")
+        repair = None
+        if args.repair_after_launch:
+            sentinel = state_dir / 'SD/repair-preserves-this-file.txt'
+            sentinel.write_text('keep my virtual SD file')
+            before_repair = emu.query_state()['state']
+            ram_before = emu.mem_read(0x1000, 32)
+            config = configparser.ConfigParser(interpolation=None)
+            config.read(state_dir / 'fnconfig.ini')
+            hosts_before = {section: dict(config[section]) for section in config.sections()
+                            if section.startswith('Host')}
+            emu.send('fujinet show')
+            emu.wait_frames(5)
+            emu.send('ui_screenshot ' + str(work / 'before-repair-ui.png'))
+            emu.click('FujiNet', 'Repair automatic setup')
+            repaired = wait_status(emu, lambda s: s['running'] and s['connected']
+                                   and not s['repairPending'] and not s['stopping']
+                                   and s['port'] != udp)
+            check(not repaired['error'] and not repaired['bootPending'], 'Repair failed or scheduled an Atari boot')
+            check(9997 <= repaired['port'] < 10017, 'Repair did not rebuild the default local connection')
+            check(sentinel.read_text() == 'keep my virtual SD file', 'Repair changed SD data')
+            # FujiNet sends downloads asynchronously. Match the production
+            # HTTP client's keep-alive rather than urllib's Connection: close,
+            # which this runtime closes before its file task sends the body.
+            connection = http.client.HTTPConnection('127.0.0.1', repaired['webPort'], timeout=10)
+            try:
+                connection.request('GET', f"/download?hostslot={d1['host_slot']}"
+                                   '&filename=/repair-preserves-this-file.txt')
+                response = connection.getresponse()
+                check(response.status == 200 and response.read() == b'keep my virtual SD file',
+                      'Repaired web server does not serve our SD')
+            finally:
+                connection.close()
+            config = configparser.ConfigParser(interpolation=None)
+            config.read(state_dir / 'fnconfig.ini')
+            check({section: dict(config[section]) for section in config.sections()
+                   if section.startswith('Host')} == hosts_before, 'Repair changed host slots')
+            after_repair = emu.query_state()['state']
+            check(after_repair['disks'] == before_repair['disks'], 'Repair changed emulator media')
+            check(not after_repair['sim']['running'] and
+                  after_repair['sim']['emulationTick'] == before_repair['sim']['emulationTick'],
+                  'Repair rebooted/resumed the Atari')
+            check(emu.mem_read(0x1000, 32) == ram_before, 'Repair changed Atari RAM')
+            after_screen = work / 'after-repair-guest.png'
+            emu.screenshot(str(after_screen))
+            check(digest(after_screen) == digest(screenshot), 'Repair changed the paused guest screen')
+            emu.send('ui_screenshot ' + str(work / 'repaired-ui.png'))
+            repair = {'port': repaired['port'], 'webPort': repaired['webPort'],
+                      'portNotice': repaired['notice'],
+                      'hostsPreserved': True, 'sdPreserved': True, 'machinePreserved': True}
         result = {"activity": activity, "button": label, "basic": basic,
                   "seconds": round(elapsed, 2), "screen": str(screenshot),
                   "startupErrors": startup_errors,
+                  "preferredWebPort": web, "selectedWebPort": status['webPort'],
+                  "portNotice": status['notice'],
+                  "repair": repair,
                   "localDiskSHA256": local_hash, "clientSHA256": digest(mounted),
                   "fujiNetD1": d1, "runtimeLog": str(state_dir / "fujinet-pc.log")}
         print("PASS", activity, "basic=" + str(basic), str(screenshot), flush=True)
         return result
     finally:
+        if web_holder:
+            web_holder.close()
         failure_active = sys.exc_info()[0] is not None
         if bridge:
             bridge.close()
@@ -250,6 +317,10 @@ def main():
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--work-dir", type=Path, help="New/empty directory, retained after success")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--busy-web-port", action="store_true",
+                        help="Occupy the preferred TCP port and require automatic fallback")
+    parser.add_argument("--repair-after-launch", action="store_true",
+                        help="Repair the connected runtime and verify host/SD/Atari preservation")
     parser.add_argument("--timeout", type=float, default=75, help="Seconds allowed per live launch")
     args = parser.parse_args()
     if args.work_dir:

@@ -4,6 +4,11 @@
 
 ### Desktop frontend and Android recovery
 
+- Added **Confirm on Exit** under **Configure System → Emulator → UI**
+  (also `ui.confirm_exit` in Advanced Configuration). It defaults to on;
+  disabling it lets IDE launches close without a confirmation, including
+  when unsaved changes exist. The preference survives restarts and applies
+  across machine profiles.
 - Added portable `.altfx` custom display effects on SDL_GPU and
   OpenGL/GLES, including multiple passes, scaling, reload and profile
   persistence. Invalid replacements retain the working effect. Native
@@ -131,6 +136,14 @@
 
 ### FujiNet and NetSIO
 
+- Automatically select and remember a free local web port when the preferred
+  port is occupied. Report web-server startup failures even if NetSIO still
+  connects, and include the actual URL in mount API errors instead of
+  treating every HTTP 404 as an outdated runtime.
+- Added **Repair automatic setup** to reconnect the managed runtime using
+  local defaults without deleting host slots, disk settings or virtual SD
+  files, reinstalling FujiNet-PC, or rebooting the current Atari game.
+  Pending repairs can be cancelled and cannot cross profile changes/netplay.
 - Added **Network games / Lobby** and **BBS directory** to Tools → FujiNet.
   They launch the official Atari clients through the managed FujiNet-PC
   runtime, starting it when needed, downloading and mounting the client

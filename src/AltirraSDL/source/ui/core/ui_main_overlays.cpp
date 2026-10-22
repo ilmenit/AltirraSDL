@@ -9,6 +9,7 @@
 #include <vd2/system/error.h>
 #include <vd2/system/file.h>
 #include <vd2/system/filesys.h>
+#include <at/atcore/configvar.h>
 #include "ui_main.h"
 #include "ui_main_internal.h"
 #include "ui_confirm_dialog.h"
@@ -36,6 +37,18 @@ extern ATSimulator g_sim;
 // Persistent message string — outlives the call stack of ATUIRenderExitConfirm
 // because the helper captures `.message` as a const char*.
 static VDStringA g_exitConfirmMsgUtf8;
+
+// Requested SDL extension: Windows always confirms. Use the existing global
+// config-var persistence so IDE users can disable every exit confirmation.
+static ATConfigVarBool g_confirmOnExit("ui.confirm_exit", true);
+
+bool ATUIGetConfirmOnExit() {
+	return g_confirmOnExit;
+}
+
+void ATUISetConfirmOnExit(bool enabled) {
+	g_confirmOnExit = enabled;
+}
 
 // Build the dirty-storage message, matching Windows ATUIConfirmDiscardAllStorageGetMessage().
 // Returns UTF-8 string ready for ImGui, using "  " indent instead of "\t" (tabs
@@ -113,6 +126,13 @@ void ATUIRenderExitConfirm(ATSimulator &sim, ATUIState &state) {
 		return;
 
 	state.showExitConfirm = false;
+	if (!ATUIGetConfirmOnExit()) {
+		state.exitConfirmed = true;
+		SDL_Event quit{};
+		quit.type = SDL_EVENT_QUIT;
+		SDL_PushEvent(&quit);
+		return;
+	}
 
 	// Guard against the user mashing Close while a confirmation is
 	// already up — don't stack duplicate exit prompts.

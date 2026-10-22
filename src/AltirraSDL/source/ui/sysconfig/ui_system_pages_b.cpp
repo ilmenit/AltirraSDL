@@ -1002,6 +1002,12 @@ void RenderUICategory(ATSimulator &) {
 	}
 
 	ImGui::SeparatorText("Dialogs");
+	// Requested SDL extension; native Windows always confirms on exit.
+	bool confirmExit = ATUIGetConfirmOnExit();
+	if (ImGui::Checkbox("Confirm on Exit", &confirmExit))
+		ATUISetConfirmOnExit(confirmExit);
+	ImGui::SetItemTooltip("Ask before closing AltirraSDL. Disable for IDE launches. "
+		"When disabled, unsaved changes are discarded without asking.");
 	if (ImGui::Button("Show all dialogs again"))
 		ATUIGenericDialogUndoAllIgnores();
 	ImGui::SetItemTooltip("Re-enable all dialogs dismissed with 'Don't ask again'.");

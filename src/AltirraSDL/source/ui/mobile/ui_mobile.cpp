@@ -413,20 +413,23 @@ void ATMobileUI_ShowExitEmulatorConfirm(ATSimulator &sim,
 		  "and restored next time you open the app."
 		: "Quit Altirra?  Any unsaved progress will be lost.";
 
-	ShowConfirmDialog("Exit Emulator", body,
-		[&sim, &uiState, &mobileState]() {
-			if (mobileState.saveStateOnExit)
-				ATMobileUI_SaveSuspendState(sim, mobileState);
-			else
-				ATMobileUI_ClearSuspendState();
+	auto quit = [&sim, &uiState, &mobileState]() {
+		if (mobileState.saveStateOnExit)
+			ATMobileUI_SaveSuspendState(sim, mobileState);
+		else
+			ATMobileUI_ClearSuspendState();
 
-			ATAndroid_RequestQuitAndRemoveTask();
+		ATAndroid_RequestQuitAndRemoveTask();
 
-			uiState.exitConfirmed = true;
-			SDL_Event q{};
-			q.type = SDL_EVENT_QUIT;
-			SDL_PushEvent(&q);
-		});
+		uiState.exitConfirmed = true;
+		SDL_Event q{};
+		q.type = SDL_EVENT_QUIT;
+		SDL_PushEvent(&q);
+	};
+	if (ATUIGetConfirmOnExit())
+		ShowConfirmDialog("Exit Emulator", body, std::move(quit));
+	else
+		quit();
 }
 
 // Hierarchical settings — definition lives in mobile_internal.h.

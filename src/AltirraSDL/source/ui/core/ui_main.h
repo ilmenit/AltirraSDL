@@ -96,6 +96,10 @@ void ATSetLastBootMediaPathSDL3(const VDStringW& path);
 void ATUIStateSettingsInit();
 void ATUIStateSettingsShutdown();
 
+// Machine-global exit preference, also exposed as ui.confirm_exit.
+bool ATUIGetConfirmOnExit();
+void ATUISetConfirmOnExit(bool enabled);
+
 // Theme management
 void ATUIApplyTheme();
 void ATUIUpdateSystemTheme();

@@ -46,6 +46,10 @@ int Child(int argc, char** argv) {
 		std::string(argv[2]) + "\n" + argv[4] + "\n" + argv[6] + "\n" + UTF8(fs::current_path()));
 	std::puts("FujiNet test child started");
 	std::fflush(stdout);
+	if (configuration.find("test-mode=web-error") != std::string::npos) {
+		std::puts("Error starting web server!");
+		std::fflush(stdout);
+	}
 	if (configuration.find("test-mode=exit42") != std::string::npos) return 42;
 	if (configuration.find("test-mode=missing-library") != std::string::npos) {
 		// Text printed by the glibc loader when OpenSSL 3 is absent.
@@ -109,6 +113,8 @@ int main(int argc, char** argv) {
 		options.stateDirectory = UTF8(root / "private data with spaces");
 		options.netsioPort = 29997;
 		options.webPort = 18000;
+		const bool busyWebPort = argc == 3 && !strcmp(argv[1], "--busy-web-port");
+		if (busyWebPort) options.webPort = (uint16_t)std::strtoul(argv[2], nullptr, 10);
 		// Download advice names the archive matching the official binaries'
 		// minimum OS/glibc versions; the panel shows it verbatim.
 		using Host = ATFujiNetPCHost;
@@ -172,13 +178,19 @@ int main(int argc, char** argv) {
 
 		ATFujiNetPC runtime;
 		Check(runtime.Start(options), "runtime start failed");
+		if (busyWebPort) {
+			Check(runtime.GetStatus().webPort && runtime.GetStatus().webPort != options.webPort,
+				"occupied web port was not avoided");
+			Check(runtime.GetStatus().notice.find(std::to_string(options.webPort)) != std::string::npos,
+				"web port fallback was not explained");
+		}
 		const auto state = fs::path(options.stateDirectory);
 		const auto received = state / "SD" / "received-arguments.txt";
 		Pump(runtime, [&] { return fs::exists(received); });
 		const auto arguments = Read(received);
 		Check(arguments.find(options.stateDirectory) != std::string::npos,
 			"private paths with spaces did not round trip");
-		Check(arguments.find("http://127.0.0.1:18000") != std::string::npos,
+		Check(arguments.find("http://127.0.0.1:" + std::to_string(runtime.GetStatus().webPort)) != std::string::npos,
 			"private web endpoint not passed");
 		Check(arguments.find(UTF8(runtimeDirectory)) != std::string::npos,
 			"runtime working directory not set");
@@ -216,6 +228,15 @@ int main(int argc, char** argv) {
 		Pump(runtime, [&] { return !runtime.GetStatus().running; });
 		Check(runtime.GetStatus().error.find("OpenSSL 3 (libcrypto.so.3)") != std::string::npos,
 			"missing runtime library was not explained");
+
+		Write(templateFile, ";test-mode=web-error\n" + base);
+		options.stateDirectory = UTF8(root / "web bind failure test");
+		Check(runtime.Start(options), "web-error fixture start failed");
+		Pump(runtime, [&] { return !runtime.GetStatus().error.empty(); });
+		Check(runtime.GetStatus().running &&
+			runtime.GetStatus().error.find("Repair automatic setup") != std::string::npos,
+			"a running child with a failed web server was reported as healthy");
+		runtime.Shutdown();
 
 		Write(templateFile, ";test-mode=restart\n" + base);
 		options.stateDirectory = UTF8(root / "restart test");

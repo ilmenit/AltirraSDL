@@ -34,6 +34,15 @@ runtime, connection, startup preference or use the other boot/file tools.
 On later visits the installed runtime can be stopped: choosing an activity
 starts it automatically, without repeating installation.
 
+**Repair automatic setup** remains available after setup, including when
+the details are collapsed. It stops the managed FujiNet-PC, restores a local
+NetSIO connection with the default timeout, selects free UDP/web ports and
+starts the installed runtime again. It keeps host slots, disk settings,
+virtual SD files, the installed program and the current Atari game. It does
+not reboot the Atari; choose an activity or **Boot Atari** when ready.
+**Cancel repair**, a profile change, or entering netplay cancels a pending
+repair. External FujiNet and custom-device bridge configurations are kept.
+
 The full controls have two tabs, explained on screen in plain language:
 
 - **This computer** (recommended) — AltirraSDL starts and stops the free
@@ -223,6 +232,12 @@ preserve the private host slots and other FujiNet settings. **Open Data
 Folder** opens this directory. The runtime executable and web port are
 machine-global preferences; the NetSIO device configuration belongs to
 the active emulator profile.
+
+The web port is a preference, initially 8000. Before each launch the manager
+checks whether it can listen on that loopback TCP port. If unavailable, the
+OS chooses a free port; the panel reports and remembers it, and both the
+mount API and **Open Web Interface** use it. A web-server startup failure is
+reported even when FujiNet-PC remains connected through NetSIO.
 
 FujiNet-PC's `-u` argument is its **web server URL**, not its SIO endpoint.
 The managed launcher sets the private configuration's `[BOIP]` host and
@@ -417,6 +432,13 @@ network connections and FujiNet's filesystem state cannot be rewound.
 
 ## Troubleshooting
 
+- **HTTP 404 when launching a file, Lobby or BBS:** the message includes the
+  exact local URL. Another application may own the web port, or the selected
+  runtime may lack the mount API. Use **Repair automatic setup** and inspect
+  **Diagnostics → Runtime log**. A 404 alone does not mean FujiNet-PC is old.
+- **"Error starting web server" in the runtime log:** another program may
+  have taken the port after the startup check. Repair setup to restart on
+  a free port. The automatic launch does not reboot the Atari after this error.
 - **Runtime does not start:** open **Diagnostics** and read the runtime log.
   Extract the complete official ATARI archive, choose the matching processor
   build, and install any runtime dependencies reported by the operating

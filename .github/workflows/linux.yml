@@ -150,6 +150,8 @@ jobs:
             tests/ui/test_fujinet.py tests/ui/test_fujinet_restart.py \
             tests/ui/test_fujinet_file.py tests/ui/test_fujinet_install.py \
             tests/ui/test_fujinet_activities.py \
+            tests/ui/test_fujinet_repair.py \
+            tests/ui/test_exit_confirmation.py \
             tests/ui/test_netplay_input.py tests/ui/test_netplay_teardown.py \
             tests/ui/test_netplay_joystick_ports.py \
             tests/ui/test_netplay_controller_layout.py \

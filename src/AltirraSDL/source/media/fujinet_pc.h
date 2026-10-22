@@ -10,7 +10,7 @@ struct ATFujiNetPCOptions {
 	std::string executable;
 	std::string stateDirectory;
 	uint16_t netsioPort = 9997;
-	uint16_t webPort = 8000;
+	uint16_t webPort = 8000; // preferred; GetStatus().webPort is the selected port
 };
 
 struct ATFujiNetPCStatus {
@@ -19,6 +19,8 @@ struct ATFujiNetPCStatus {
 	bool logTruncated = false;
 	int exitCode = 0;
 	unsigned restarts = 0;
+	uint16_t webPort = 0;
+	std::string notice;
 	std::string error;
 	std::string logTail;
 };

@@ -144,6 +144,9 @@ std::unique_ptr<InstallJob> s_installJob;
 // including after a later file pick or Homebrew library re-check.
 bool s_autoContinue = false;
 bool s_autoBoot = true;
+bool s_repairPending = false;
+uint32 s_repairProfile = 0;
+std::string s_repairEndpoint;
 std::string s_missingPath;
 std::vector<ATFujiNetInstall::MissingLibrary> s_missing;
 std::string s_error;
@@ -162,6 +165,10 @@ bool Locked() {
 #endif
 }
 bool CanChange() {
+	if (s_repairPending) {
+		s_error = "Wait for automatic setup repair, or cancel it first.";
+		return false;
+	}
 	if (s_fileJob) {
 		s_error = "Wait for the FujiNet file operation, or cancel it first.";
 		return false;
@@ -597,8 +604,12 @@ bool ATUIFujiNetStartRuntime() {
 	options.netsioPort = (uint16_t)s_port;
 	options.webPort = (uint16_t)s_webPort;
 	const bool started = s_runtime.Start(options);
-	if (started) s_runtimeEndpoint = ListenerEndpoint();
+	if (started) {
+		s_runtimeEndpoint = ListenerEndpoint();
+		s_webPort = s_runtime.GetStatus().webPort;
+	}
 	s_error = started ? std::string() : s_runtime.GetStatus().error;
+	if (started) Save();
 	return started;
 }
 bool ATUIFujiNetStartAndBoot() {
@@ -625,6 +636,7 @@ void ATUIFujiNetCancelFile() {
 	if (s_fileJob) s_fileJob->progress.cancel.store(true, std::memory_order_relaxed);
 }
 void ATUIFujiNetStopRuntime() {
+	s_repairPending = false;
 	ATUIFujiNetCancelActivity();
 	// Keep the runtime and its data lease alive until its worker stops.
 	s_fileJob.reset();
@@ -634,6 +646,7 @@ void ATUIFujiNetStopRuntime() {
 bool ATUIFujiNetRunFile(const char* pathOrURL) {
 	if (!CanChange() || !CanUseNative()) return false;
 	const auto& process = s_runtime.GetStatus();
+	if (!process.error.empty()) { s_error = process.error; return false; }
 	if (!process.running || process.stopping || s_bootPending ||
 		ListenerEndpoint() != s_runtimeEndpoint || !Control()
 		|| !Control()->GetNetSIOStatus().connected) {
@@ -794,6 +807,10 @@ bool ATUIFujiNetAutoSetup(bool boot) {
 		return false;
 	}
 	const auto& process = s_runtime.GetStatus();
+	if (process.running && !process.error.empty()) {
+		s_error = process.error;
+		return false;
+	}
 	const bool connected = Control() && Control()->GetNetSIOStatus().connected;
 	if (!process.running && connected) {
 		s_error = "Another FujiNet is already connected. Use Other FujiNet, or close its connection first.";
@@ -816,6 +833,40 @@ bool ATUIFujiNetAutoSetup(bool boot) {
 	s_autoContinue = true;
 	s_autoBoot = boot;
 	return ContinueAutoSetup();
+}
+bool ATUIFujiNetRepairSetup() {
+	Load();
+	if (!CanChange() || !CanUseNative()) return false;
+	if (!ATFujiNetPC::Available() || s_external) {
+		s_error = "Repair automatic setup is for FujiNet-PC managed on this computer. External FujiNet settings were kept.";
+		return false;
+	}
+	if (s_installJob || s_activity) {
+		s_error = "Cancel the current FujiNet installation or activity before repairing setup.";
+		return false;
+	}
+	if (s_runtime.GetStatus().running && ListenerEndpoint() != s_runtimeEndpoint) {
+		s_error = "The managed runtime belongs to another connection. Stop it before repairing this profile.";
+		return false;
+	}
+	if (!s_runtime.GetStatus().running && Control() && Control()->GetNetSIOStatus().connected) {
+		s_error = "Another FujiNet is connected. Close its connection before repairing managed setup.";
+		return false;
+	}
+	// Only connection defaults are rebuilt, after our child has stopped.
+	// Prepare() edits BOIP in the private INI, preserving host/disk settings.
+	s_autoContinue = false;
+	s_bootPending = false;
+	s_repairProfile = ATSettingsGetCurrentProfileId();
+	s_repairEndpoint = ListenerEndpoint();
+	s_repairPending = true;
+	s_error.clear();
+	s_runtime.Stop();
+	return true;
+}
+void ATUIFujiNetCancelRepair() {
+	s_repairPending = false;
+	s_error = "Automatic setup repair cancelled. No further restart will occur.";
 }
 bool ATUIFujiNetLaunchActivity(const char* id, const char* source) {
 	Load();
@@ -891,7 +942,7 @@ void PollActivity() {
 			: "Install the required libraries below, then choose Check again.";
 		return;
 	}
-	if (!process.running || process.stopping) {
+	if (!process.running || process.stopping || !process.error.empty()) {
 		if (s_error.empty()) s_error = !process.error.empty() ? process.error :
 			"FujiNet-PC stopped before the activity could launch. Try the activity again.";
 		s_activity.reset();
@@ -972,6 +1023,8 @@ ATFujiNetUIStatus ATUIGetFujiNetStatus() {
 		result.installTotal = s_installJob->progress.total.load(std::memory_order_relaxed);
 	}
 	result.autoSetupPending = s_autoContinue;
+	result.repairPending = s_repairPending;
+	result.notice = runtime.notice;
 	result.autoStart = s_autoStart;
 	result.activityPending = s_activity != nullptr;
 	result.activity = s_activity ? s_activity->activity->id : "";
@@ -1038,6 +1091,7 @@ void ATUIPollFujiNet() {
 	if (!game.empty()) ATUIFujiNetRunFile(game.c_str());
 	if (s_fileJob) {
 		const bool valid = !Locked() && s_runtime.GetStatus().running &&
+			s_runtime.GetStatus().error.empty() &&
 			!s_runtime.GetStatus().stopping && Control() &&
 			Control()->GetNetSIOStatus().connected &&
 			s_fileJob->profile == ATSettingsGetCurrentProfileId() &&
@@ -1045,7 +1099,8 @@ void ATUIPollFujiNet() {
 			ListenerEndpoint() == s_runtimeEndpoint && !LegacyTransport().recognizedLegacy;
 		if (!valid) {
 			s_fileJob.reset();
-			s_error = "FujiNet file operation cancelled because the connection or profile changed. No automatic boot was performed.";
+			s_error = !s_runtime.GetStatus().error.empty() ? s_runtime.GetStatus().error :
+				"FujiNet file operation cancelled because the connection or profile changed. No automatic boot was performed.";
 		} else if (s_fileJob->done.load(std::memory_order_acquire)) {
 			const bool cancelled = s_fileJob->progress.cancel.load(std::memory_order_relaxed);
 			auto result = std::move(s_fileJob->result);
@@ -1057,6 +1112,7 @@ void ATUIPollFujiNet() {
 	}
 	const bool wasRunning = s_runtime.GetStatus().running;
 	const auto restartsBefore = s_runtime.GetStatus().restarts;
+	const auto runtimeErrorBefore = s_runtime.GetStatus().error;
 	// A file worker uses private SD/config. Drain output while retaining
 	// the runtime lease; reaping/restarting resumes when that worker ends.
 	if (s_fileJob) s_runtime.PollOutput();
@@ -1070,6 +1126,31 @@ void ATUIPollFujiNet() {
 				throw std::runtime_error("Could not reconnect NetSIO before restarting FujiNet-PC.");
 		}
 	});
+	if (s_runtime.GetStatus().running && s_runtime.GetStatus().restarts != restartsBefore
+		&& s_runtime.GetStatus().error.empty() && s_error == runtimeErrorBefore)
+		s_error.clear();
+	if (s_runtime.GetStatus().running && s_runtime.GetStatus().webPort
+		&& s_webPort != s_runtime.GetStatus().webPort) {
+		s_webPort = s_runtime.GetStatus().webPort;
+		Save();
+	}
+	if (s_repairPending) {
+		if (Locked() || s_repairProfile != ATSettingsGetCurrentProfileId()
+			|| s_repairEndpoint != ListenerEndpoint() || s_external || LegacyTransport().recognizedLegacy) {
+			ATUIFujiNetCancelRepair();
+			s_error = "Automatic setup repair cancelled because the profile or connection changed.";
+		} else if (!s_runtime.GetStatus().running) {
+			s_repairPending = false;
+			if (Control()) Control()->Disconnect();
+			s_lan = false;
+			s_port = 9997;
+			s_timeout = 100;
+			s_webPort = 8000;
+			s_error.clear();
+			Save();
+			ATUIFujiNetAutoSetup(false);
+		}
+	}
 	if (bootPreparedFile && s_activity) {
 		// Hardware/media can change while a worker is downloading. Recheck
 		// before resetting the computer, not only at the original click.
@@ -1081,7 +1162,9 @@ void ATUIPollFujiNet() {
 		}
 	}
 	if (bootPreparedFile) {
-		if (!s_runtime.GetStatus().running ||
+		if (!s_runtime.GetStatus().error.empty())
+			s_error = s_runtime.GetStatus().error;
+		else if (!s_runtime.GetStatus().running ||
 			s_runtime.GetStatus().restarts != restartsBefore)
 			s_error = "FujiNet-PC restarted or exited while preparing the file. Run the file again after reconnecting; no automatic boot was performed.";
 		else if (ATUIFujiNetBoot()) {
@@ -1107,7 +1190,10 @@ void ATUIPollFujiNet() {
 		s_error = "The active profile's NetSIO listener changed. The managed runtime is stopping; restart it to use the new configuration.";
 	}
 	if (s_bootPending) {
-		if (Locked()) {
+		if (!s_runtime.GetStatus().error.empty()) {
+			s_bootPending = false;
+			s_error = s_runtime.GetStatus().error;
+		} else if (Locked()) {
 			s_bootPending = false;
 			s_error = "Pending FujiNet boot was cancelled because a netplay session started.";
 		} else if (!s_runtime.GetStatus().running) {
@@ -1126,6 +1212,7 @@ void ATUIPollFujiNet() {
 	PollActivity();
 }
 void ATUIShutdownFujiNet() {
+	s_repairPending = false;
 	s_activity.reset();
 	s_installJob.reset();
 	s_fileJob.reset();
@@ -1184,8 +1271,12 @@ void OpenWebInterface(const ATFujiNetUIStatus& status) {
 	else if (!SDL_OpenURL(url.c_str())) s_error = SDL_GetError();
 }
 void WebInterfaceButton(const ATFujiNetUIStatus& status) {
+	const bool failed = !s_external && status.running && !s_runtime.GetStatus().error.empty();
+	ImGui::BeginDisabled(failed);
 	if (ActionButton("Open Web Interface")) OpenWebInterface(status);
-	Tooltip("Opens FujiNet's own settings page in your web browser. There you can "
+	ImGui::EndDisabled();
+	Tooltip(failed ? "Repair automatic setup before opening the managed Web Interface."
+		: "Opens FujiNet's own settings page in your web browser. There you can "
 		"mount disks, edit the server list and change FujiNet options.");
 }
 void OpenFile(const std::string& path) {
@@ -2058,8 +2149,8 @@ void RenderSetupControls(const ATFujiNetUIStatus& status) {
 				s_webPort = std::clamp(s_webPort, 1, 65535);
 				Save();
 			}
-			Hint("Open Web Interface opens http://127.0.0.1 at this port. Change it only if "
-				"another program already uses it (default 8000).");
+			Hint("Preferred local web port (default 8000). If it is unavailable, AltirraSDL "
+				"automatically uses and remembers a free port. Open Web Interface uses the selected port.");
 			ImGui::EndDisabled();
 			if (!s_runtimeVersion.empty())
 				ImGui::TextWrapped("Installed by AltirraSDL: %s", s_runtimeVersion.c_str());
@@ -2123,17 +2214,23 @@ void ATUIRenderFujiNetDialog() {
 			s_selectMode = true;
 		}
 		if (s_guided && s_guidedStep == 2 && status.running && status.connected &&
-			!status.installing && !status.autoSetupPending && !status.bootPending)
+			!status.installing && !status.autoSetupPending && !status.bootPending && status.error.empty())
 			s_guidedStep = 3;
 		const bool setupComplete = !s_external && status.processAvailable &&
+			s_runtime.GetStatus().error.empty() &&
 			(status.running || RuntimeReady()) && MissingLibraries().empty() &&
 			!LegacyTransport().recognizedLegacy &&
-			!status.installing && !status.autoSetupPending && !status.bootPending && !status.stopping &&
+			!status.installing && !status.autoSetupPending && !status.bootPending && !status.stopping && !status.repairPending &&
 			(!s_guided || s_guidedStep == 3);
 		if (setupComplete || status.activityPending)
 			Activities(status);
 #endif
-		ImGui::BeginDisabled(status.filePending || status.activityPending);
+		if (!status.notice.empty()) Hint(status.notice.c_str());
+		if (status.repairPending) {
+			Hint("Repairing automatic setup: waiting for FujiNet-PC to stop before reconnecting.");
+			if (ActionButton("Cancel repair")) ATUIFujiNetCancelRepair();
+		}
+		ImGui::BeginDisabled(status.filePending || status.activityPending || status.repairPending);
 #ifdef __EMSCRIPTEN__
 		Heading("FujiNet needs a native build");
 		Hint("Browsers cannot listen for UDP NetSIO. Use a native AltirraSDL build to connect FujiNet.");
@@ -2148,6 +2245,15 @@ void ATUIRenderFujiNetDialog() {
 				if (!showControls && !status.error.empty()) ErrorText(status.error.c_str());
 			}
 			if (showControls) RenderSetupControls(status);
+			// Requested recovery action for the managed setup. It never
+			// deletes SD/config data or changes an external/legacy FujiNet.
+			if (!s_external && status.processAvailable && RuntimeReady()
+				&& !LegacyTransport().recognizedLegacy) {
+				ImGui::BeginDisabled(Locked() || status.installing);
+				if (ActionButton("Repair automatic setup")) ATUIFujiNetRepairSetup();
+				ImGui::EndDisabled();
+				Hint("Restarts FujiNet-PC and rebuilds local connection settings. Keeps your server list, SD files and current Atari game.");
+			}
 		}
 		s_setupWasComplete = setupComplete;
 #endif

@@ -15,6 +15,27 @@ from .test_explorers import make_disk, click, enter
 TITLE = 'Run a file through FujiNet'
 
 
+class ManagedAPI:
+    """Serve the child fixture's API only after it has selected its port."""
+    def __init__(self, handler):
+        self.handler = handler
+        self.server = None
+
+    def start(self, port):
+        if self.server and self.server.server_port == port:
+            return
+        self.stop()
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', port), self.handler)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+            self.server = None
+
+
 @pytest.fixture
 def managed_mount(fujinet_desktop, tmp_path):
     emu = fujinet_desktop
@@ -31,9 +52,8 @@ def managed_mount(fujinet_desktop, tmp_path):
     spec.loader.exec_module(module)
     handler = module.Handler
     handler.mode, handler.posts, handler.mounted = '', [], None
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    api = ManagedAPI(handler)
+    emu.fujinet_api = api
     runtime = tmp_path / 'owned test runtime'
     (runtime / 'data').mkdir(parents=True)
     (runtime / 'SD').mkdir()
@@ -42,10 +62,14 @@ def managed_mount(fujinet_desktop, tmp_path):
     (runtime / 'fnconfig.ini').write_text('[BOIP]\nenabled=1\nhost=127.0.0.1\nport=9997\n')
     port = free_port()
     emu.send(f'fujinet listen {port} 0 100')
-    emu.send(f'fujinet runtime {server.server_port} {executable}')
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as available:
+        available.bind(('127.0.0.1', 0))
+        web_port = available.getsockname()[1]
+    emu.send(f'fujinet runtime {web_port} {executable}')
     emu.send('fujinet start')
     status = wait_status(emu, lambda s: s['running'] and 'child started' in s['logTail'])
     handler.sd_root = Path(status['stateDirectory']) / 'SD'
+    api.start(status['webPort'])
     game = tmp_path / 'local game.xex'
     game.write_bytes(module.XEX)
     try:
@@ -53,13 +77,12 @@ def managed_mount(fujinet_desktop, tmp_path):
             peer.bind(('127.0.0.1', 0))
             peer.sendto(b'\xc1', ('127.0.0.1', port))
             wait_status(emu, lambda s: s['connected'])
-            yield emu, handler, game, f'http://127.0.0.1:{server.server_port}'
+            yield emu, handler, game, f'http://127.0.0.1:{api.server.server_port}'
     finally:
         emu.pause()
         emu.send('fujinet stop')
         wait_status(emu, lambda s: not s['running'])
-        server.shutdown()
-        server.server_close()
+        api.stop()
 
 
 def test_url_button_mounts_read_only_and_boots_without_ejecting_local_disk(managed_mount, tmp_path):

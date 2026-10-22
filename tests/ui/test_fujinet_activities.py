@@ -17,7 +17,7 @@ import pytest
 from .test_explorers import click, enter
 from .harness import AltirraTestHarness
 from .test_fujinet import free_port, fujinet_desktop, wait_status
-from .test_fujinet_file import managed_mount
+from .test_fujinet_file import managed_mount, ManagedAPI
 from .test_fujinet_install import mock_github
 
 
@@ -36,6 +36,8 @@ def stopped_runtime(emu):
     emu.pause()
     emu.send("fujinet stop")
     status = wait_status(emu, lambda s: not s["running"] and not s["stopping"])
+    if hasattr(emu, 'fujinet_api'):
+        emu.fujinet_api.stop()
     assert not status["connected"]
     emu.send("fujinet local_d1")
     return status
@@ -43,6 +45,8 @@ def stopped_runtime(emu):
 
 def hello(emu, peer):
     status = emu.send("fujinet status")
+    if status['running'] and hasattr(emu, 'fujinet_api'):
+        emu.fujinet_api.start(status['webPort'])
     peer.sendto(b"\xc1", ("127.0.0.1", status["port"]))
     return wait_status(emu, lambda s: s["connected"])
 
@@ -305,9 +309,10 @@ def test_fresh_activity_install_waits_for_connection_without_config_boot(
     spec.loader.exec_module(module)
     handler = module.Handler
     handler.mode, handler.posts, handler.mounted = "", [], None
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    api = ManagedAPI(handler)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as available:
+        available.bind(('127.0.0.1', 0))
+        web_port = available.getsockname()[1]
     game = tmp_path / "installed activity.xex"
     game.write_bytes(module.XEX)
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
@@ -319,11 +324,12 @@ def test_fresh_activity_install_waits_for_connection_without_config_boot(
         with AltirraTestHarness(executable=emu.executable,
                                extra_args=["--ui-mode", "desktop"]) as fresh:
             fresh.close_dialog("SetupWizard")
+            fresh.fujinet_api = api
             fresh.pause()
             # Set the local fixture's web port without supplying an installed
             # program. Automatic setup must replace this missing selection.
             missing = tmp_path / "not installed yet" / "fujinet"
-            fresh.send(f"fujinet runtime {server.server_port} {missing}")
+            fresh.send(f"fujinet runtime {web_port} {missing}")
             fresh.send(f"fujinet listen {free_port()} 0 100")
             fresh.send("fujinet local_d1")
             before = fresh.query_state()["state"]["sim"]
@@ -355,8 +361,7 @@ def test_fresh_activity_install_waits_for_connection_without_config_boot(
             fresh.send("fujinet stop")
             wait_status(fresh, lambda s: not s["running"])
     finally:
-        server.shutdown()
-        server.server_close()
+        api.stop()
 
 
 def test_failed_activity_then_manual_setup_still_boots_config(

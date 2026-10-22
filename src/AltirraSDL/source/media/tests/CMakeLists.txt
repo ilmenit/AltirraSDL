@@ -89,8 +89,16 @@ if(NOT ANDROID AND NOT EMSCRIPTEN)
         ${PROJECT_SOURCE_DIR}/src/h)
     target_compile_features(altirra-fujinet-pc-test PRIVATE cxx_std_17)
     target_link_libraries(altirra-fujinet-pc-test PRIVATE SDL3::SDL3)
+    if(WIN32)
+        target_link_libraries(altirra-fujinet-pc-test PRIVATE ws2_32)
+    endif()
     add_test(NAME fujinet-pc-process COMMAND altirra-fujinet-pc-test)
     set_tests_properties(fujinet-pc-process PROPERTIES TIMEOUT 30)
+    add_test(NAME fujinet-pc-port-collision
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/fujinet_pc_port_test.py
+            $<TARGET_FILE:altirra-fujinet-pc-test>)
+    set_tests_properties(fujinet-pc-port-collision PROPERTIES TIMEOUT 30
+        ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
 
 if(NOT ANDROID AND NOT EMSCRIPTEN)
@@ -162,7 +170,7 @@ if(NOT ANDROID AND NOT EMSCRIPTEN)
     target_link_libraries(altirra-fujinet-install-test PRIVATE
         ATCore system vdjson SDL3::SDL3 Threads::Threads ${CMAKE_DL_LIBS})
     if(WIN32)
-        target_link_libraries(altirra-fujinet-install-test PRIVATE winhttp)
+        target_link_libraries(altirra-fujinet-install-test PRIVATE winhttp ws2_32)
     endif()
     add_test(NAME fujinet-install-http COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/fujinet_install_test.py

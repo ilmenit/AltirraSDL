@@ -55,14 +55,19 @@ std::string JSONString(const std::string& text) {
 	}
 	return result + '"';
 }
-void Parse(const ATHttp::Response& response, VDJSONDocument& document) {
-	if (!response.error.empty()) throw std::runtime_error(response.error);
+void Parse(const ATHttp::Response& response, VDJSONDocument& document,
+	const ATHttp::Request& request) {
+	if (!response.error.empty()) throw std::runtime_error("Cannot contact FujiNet at "
+		+ request.url + ": " + response.error);
 	if (response.status != 200)
-		throw std::runtime_error("FujiNet mount API returned HTTP " + std::to_string(response.status) +
-			". Update FujiNet-PC or use its Web Interface.");
+		throw std::runtime_error("FujiNet request to " + request.url + " returned HTTP "
+			+ std::to_string(response.status) + (response.status == 404
+			? ". This may be another program's web server, or this runtime may lack the mount API. Try Repair automatic setup and check the runtime log."
+			: ". Check the FujiNet runtime log and Web Interface for details."));
 	VDJSONReader reader;
 	if (response.body.empty() || !reader.Parse((const char*)response.body.data(), response.body.size(), document))
-		throw std::runtime_error("FujiNet returned invalid mount API data. Use its Web Interface.");
+		throw std::runtime_error("The response from " + request.url
+			+ " is not valid FujiNet mount API data. Check the runtime log or use Repair automatic setup.");
 }
 ATHttp::Request Request(unsigned port, const char* path, const Progress& progress) {
 	ATHttp::Request request;
@@ -203,7 +208,7 @@ Result Run(const std::string& source, const std::string& stateDirectory,
 		auto request = Request(webPort, "/api/v1/hosts", progress);
 		ATHttp::Get(request, response);
 		VDJSONDocument hosts;
-		Parse(response, hosts);
+		Parse(response, hosts, request);
 		if (!hosts.Root().IsArray()) throw std::runtime_error("FujiNet returned an invalid host list.");
 		bool found = false;
 		for (const auto& host : hosts.Root().AsArray()) {
@@ -243,7 +248,8 @@ Result Run(const std::string& source, const std::string& stateDirectory,
 		CheckCancel(progress);
 		if (!response.error.empty() || response.status != 200 ||
 			std::string(response.body.begin(), response.body.end()) != proof)
-			throw std::runtime_error("The web port is not serving this managed runtime's SD card. Check for another FujiNet-PC using the port, or update FujiNet-PC and use its Web Interface.");
+			throw std::runtime_error("The web service at " + request.url
+				+ " is not serving this managed runtime's SD card. Another program or FujiNet-PC may own the port. Try Repair automatic setup. No mount request was sent.");
 		CheckCancel(progress);
 		progress.phase = Phase::Mounting;
 		request = Request(webPort, "/api/v1/drives/1/mount", progress);
@@ -253,7 +259,7 @@ Result Run(const std::string& source, const std::string& stateDirectory,
 		result.mountAttempted = true;
 		ATHttp::Post(request, response);
 		VDJSONDocument mounted;
-		Parse(response, mounted);
+		Parse(response, mounted, request);
 		if (!mounted.Root()[L"status"].IsString() || wcscmp(mounted.Root()[L"status"].AsString(), L"success"))
 			throw std::runtime_error("FujiNet did not confirm mounting D1. Check its Web Interface.");
 		CheckCancel(progress);
@@ -261,7 +267,7 @@ Result Run(const std::string& source, const std::string& stateDirectory,
 		request = Request(webPort, "/api/v1/drives/1", progress);
 		ATHttp::Get(request, response);
 		VDJSONDocument drive;
-		Parse(response, drive);
+		Parse(response, drive, request);
 		const auto actual = drive.Root();
 		const auto path = VDTextU8ToW(VDStringSpanA(result.path.c_str()));
 		if (!actual[L"mounted"].AsBool() || !actual[L"path"].IsString() ||

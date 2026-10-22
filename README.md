@@ -60,6 +60,10 @@ depends on the platform and build options.
   directories persist across launches.
 - **Window drag-and-drop** of disk, cassette, cartridge, and executable
   images directly onto the running window.
+- **Optional exit confirmation** under Configure System → Emulator → UI →
+  Confirm on Exit, also `ui.confirm_exit` in Advanced Configuration. It
+  defaults to on. Disable it for IDE launches to close immediately;
+  unsaved changes are discarded without asking.
 
 ### Rendering: SDL_GPU with OpenGL fallback
 
@@ -127,6 +131,10 @@ needed; progress and cancellation stay in the tool window. Setup moves
 under **Setup and full controls**, where the connection, runtime, web
 interface and local-file/URL boot tools remain available. Local disk
 images, unsaved disk changes and BASIC are preserved.
+
+The managed runtime automatically avoids occupied web ports. **Repair
+automatic setup** rebuilds its local connection and restarts FujiNet-PC
+while keeping the server list, SD files and current Atari game.
 
 FujiNet's Game Lobby is separate from AltirraSDL's **Online Play** below;
 its network games need software written for FujiNet. The shortcuts use

@@ -3433,6 +3433,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		else if (action == "boot") success = ATUIFujiNetBoot();
 		else if (action == "local_d1") success = ATUIFujiNetEnableLocalD1();
 		else if (action == "auto") success = ATUIFujiNetAutoSetup();
+		else if (action == "repair") success = ATUIFujiNetRepairSetup();
+		else if (action == "cancel_repair") ATUIFujiNetCancelRepair();
 		else if (action == "install") success = ATUIFujiNetInstallRuntime(false);
 		else if (action == "cancel_install") ATUIFujiNetCancelInstall();
 		else if (action == "recheck") success = ATUIFujiNetRecheckLibraries();
@@ -3459,6 +3461,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		flag("filePending", status.filePending);
 		flag("installing", status.installing);
 		flag("autoSetupPending", status.autoSetupPending);
+		flag("repairPending", status.repairPending);
+		string("notice", status.notice);
 		flag("autoStart", status.autoStart);
 		flag("activityPending", status.activityPending);
 		string("activity", status.activity);

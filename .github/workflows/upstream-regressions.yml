@@ -55,7 +55,7 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build/upstream-regressions -R '^(upstream-|video-output-routing$|instance-reuse$|frame-scheduler$|ramcart-regressions$|expansion-devices$|media-url-http$|netsio-protocol$|fujinet-compatibility$|fujinet-pc-process$|file-watcher-contract$|http-streaming$|library-url-http$|zip64-index$|fujinet-mount-http$|fujinet-install-http$)' --output-on-failure --no-tests=error
+        run: ctest --test-dir build/upstream-regressions -R '^(upstream-|video-output-routing$|instance-reuse$|frame-scheduler$|ramcart-regressions$|expansion-devices$|media-url-http$|netsio-protocol$|fujinet-compatibility$|fujinet-pc-(process|port-collision)$|file-watcher-contract$|http-streaming$|library-url-http$|zip64-index$|fujinet-mount-http$|fujinet-install-http$)' --output-on-failure --no-tests=error
 
   native:
     strategy:
@@ -84,4 +84,4 @@ jobs:
       # PDF validation is mandatory in both Linux jobs above. These jobs
       # specifically exercise native C++ code and platform libraries.
       - name: Run native C++ regressions
-        run: ctest --test-dir build/${{ matrix.preset }} -C Release -R '^(upstream-(regressions|vbxe|display|test22|test22-cpu|display-sampling)|video-output-routing|instance-reuse|frame-scheduler|ramcart-regressions|expansion-devices|media-url-http|netsio-protocol|fujinet-pc-process|fujinet-compatibility|file-watcher-contract|http-streaming|library-url-http|zip64-index|fujinet-mount-http|fujinet-install-http)$' --output-on-failure --no-tests=error
+        run: ctest --test-dir build/${{ matrix.preset }} -C Release -R '^(upstream-(regressions|vbxe|display|test22|test22-cpu|display-sampling)|video-output-routing|instance-reuse|frame-scheduler|ramcart-regressions|expansion-devices|media-url-http|netsio-protocol|fujinet-pc-(process|port-collision)|fujinet-compatibility|file-watcher-contract|http-streaming|library-url-http|zip64-index|fujinet-mount-http|fujinet-install-http)$' --output-on-failure --no-tests=error

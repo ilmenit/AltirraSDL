@@ -57,6 +57,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(XEX)
         elif self.path == '/api/v1/hosts':
             mode = Handler.mode
+            if mode == 'no-api':
+                self.reply(404, {'detail': 'Not Found'})
+                return
             if mode == 'cancel-host':
                 time.sleep(.4)
             self.reply(200, [{'slot': 1, 'type': 'TNFS', 'configured': True},
@@ -116,6 +119,11 @@ def main():
             first = run()
             assert first['MOUNTED'] == first['ATTEMPTED'] == '1' and not first['ERROR'], first
             assert first['HOST'] == '2', first  # SD is slot 3, never assume host 0.
+            missing = run(mode='no-api')
+            assert missing['ATTEMPTED'] == '0' and not Handler.posts, missing
+            assert 'HTTP 404' in missing['ERROR'] and '/api/v1/hosts' in missing['ERROR'], missing
+            assert 'Repair automatic setup' in missing['ERROR'] and 'another program' in missing['ERROR'], missing
+            first = run()
             path, body, content_type = Handler.posts[0]
             assert path == '/api/v1/drives/1/mount' and content_type == 'application/json'
             assert body == {'path': first['PATH'], 'host_slot': 2, 'mode': 'r'}

@@ -24,6 +24,10 @@ bool ATUIFujiNetBoot();
 bool ATUIFujiNetEnableLocalD1();
 // One click: install FujiNet-PC when needed, then start it and boot.
 bool ATUIFujiNetAutoSetup(bool boot = true);
+// Rebuild managed local connection settings and restart without booting
+// the Atari or removing the runtime, host slots, disk settings or SD files.
+bool ATUIFujiNetRepairSetup();
+void ATUIFujiNetCancelRepair();
 bool ATUIFujiNetInstallRuntime(bool thenStart, bool boot = true);
 void ATUIFujiNetCancelInstall();
 bool ATUIFujiNetRecheckLibraries();
@@ -52,6 +56,7 @@ struct ATFujiNetUIStatus {
 	bool filePending = false;
 	bool installing = false;
 	bool autoSetupPending = false;
+	bool repairPending = false;
 	bool autoStart = false;
 	bool activityPending = false;
 	uint64_t installReceived = 0;
@@ -70,6 +75,7 @@ struct ATFujiNetUIStatus {
 	std::string stateDirectory;
 	std::string peer;
 	std::string error;
+	std::string notice;
 	std::string logTail;
 	std::string runtimeVersion;
 	std::string activity;

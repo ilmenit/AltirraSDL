@@ -14,11 +14,18 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #elif !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #endif
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -30,6 +37,63 @@ namespace {
 namespace fs = std::filesystem;
 constexpr size_t kLogLimit = 8u * 1024u * 1024u;
 constexpr size_t kLogTailLimit = 32768;
+
+// Requested fork extension: the managed web port is a preference. Probe
+// with listen(), not only bind(): SO_REUSEADDR can otherwise let a second
+// socket bind an address already served by another application.
+uint16_t FreeWebPort(uint16_t preferred) {
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+#ifdef _WIN32
+	struct Network {
+		Network() {
+			WSADATA data;
+			if (WSAStartup(MAKEWORD(2, 2), &data))
+				throw std::runtime_error("Cannot initialize networking for FujiNet-PC.");
+		}
+		~Network() { WSACleanup(); }
+	} network;
+#endif
+	const auto probe = [](uint16_t port) -> uint16_t {
+		const auto socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#ifdef _WIN32
+		if (socket == INVALID_SOCKET)
+#else
+		if (socket < 0)
+#endif
+			throw std::runtime_error("Cannot check FujiNet-PC's local web port.");
+		const int enabled = 1;
+#ifdef _WIN32
+		setsockopt(socket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+			(const char*)&enabled, sizeof enabled);
+		int size = sizeof(sockaddr_in);
+#else
+		setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof enabled);
+		socklen_t size = sizeof(sockaddr_in);
+#endif
+		sockaddr_in address{};
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		address.sin_port = htons(port);
+		uint16_t result = 0;
+		if (!::bind(socket, (const sockaddr*)&address, sizeof address)
+			&& !::listen(socket, 1)
+			&& !::getsockname(socket, (sockaddr*)&address, &size))
+			result = ntohs(address.sin_port);
+#ifdef _WIN32
+		closesocket(socket);
+#else
+		close(socket);
+#endif
+		return result;
+	};
+	if (const auto port = probe(preferred)) return port;
+	// Let the OS choose instead of assuming another fixed port is free.
+	if (const auto port = probe(0)) return port;
+	throw std::runtime_error("No local web port is available for FujiNet-PC. Check this computer's networking permissions.");
+#else
+	return preferred;
+#endif
+}
 
 fs::path Path(const std::string& text) {
 #ifdef __cpp_char8_t
@@ -199,6 +263,8 @@ void Prepare(const ATFujiNetPCOptions& options) {
 struct ATFujiNetPC::Impl {
 	ATFujiNetPCStatus status;
 	ATFujiNetPCOptions options;
+	std::string webOutput;
+	bool webFailed = false;
 	SDL_Process* process = nullptr;
 	SDL_IOStream* log = nullptr;
 	size_t logBytes = 0;
@@ -252,6 +318,14 @@ struct ATFujiNetPC::Impl {
 			const auto n = SDL_ReadIO(output, buffer, sizeof buffer);
 			if (!n) break;
 			status.logTail.append(buffer, n);
+			webOutput.append(buffer, n);
+			if (!webFailed && webOutput.find("Error starting web server!") != std::string::npos) {
+				webFailed = true;
+				status.error = "FujiNet-PC could not open its web server at http://127.0.0.1:"
+					+ std::to_string(status.webPort)
+					+ ". Another program may have taken this port. Choose Repair automatic setup to find a free port and restart FujiNet-PC.";
+			}
+			if (webOutput.size() > 512) webOutput.erase(0, webOutput.size() - 512);
 			if (status.logTail.size() > kLogTailLimit)
 				status.logTail.erase(0, status.logTail.size() - kLogTailLimit);
 			if (log) {
@@ -268,6 +342,21 @@ struct ATFujiNetPC::Impl {
 	}
 
 	bool Spawn() {
+		// The child cannot inherit a listening socket. Release our probe
+		// before launch and report a later bind race from its output above.
+		try {
+			const auto port = FreeWebPort(options.webPort);
+			if (port != options.webPort)
+				status.notice = "Web port " + std::to_string(options.webPort)
+					+ " was unavailable. Selected free port " + std::to_string(port) + ".";
+			options.webPort = status.webPort = port;
+		} catch (const std::exception& error) {
+			status.error = error.what();
+			return false;
+		}
+		if (webFailed) status.error.clear();
+		webFailed = false;
+		webOutput.clear();
 		const auto runtime = Path(options.executable).parent_path();
 		const std::string config = UTF8(Path(options.stateDirectory) / "fnconfig.ini");
 		const std::string sd = UTF8(Path(options.stateDirectory) / "SD");
