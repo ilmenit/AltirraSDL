@@ -186,7 +186,14 @@ int main(int argc, char** argv) {
 		}
 		const auto state = fs::path(options.stateDirectory);
 		const auto received = state / "SD" / "received-arguments.txt";
-		Pump(runtime, [&] { return fs::exists(received); });
+		// File creation precedes the child's buffered write. Its ready log
+		// is emitted only after Write() closes the file, so wait for that
+		// handshake before reading (especially with sanitizer scheduling).
+		const auto childReady = [&] {
+			return runtime.GetStatus().logTail.find("FujiNet test child started")
+				!= std::string::npos;
+		};
+		Pump(runtime, childReady);
 		const auto arguments = Read(received);
 		Check(arguments.find(options.stateDirectory) != std::string::npos,
 			"private paths with spaces did not round trip");
@@ -290,7 +297,7 @@ int main(int argc, char** argv) {
 		Write(templateFile, ";test-mode=ignore\n" + base);
 		options.stateDirectory = UTF8(root / "force stop test");
 		Check(runtime.Start(options), "ignore fixture start failed");
-		Pump(runtime, [&] { return fs::exists(fs::path(options.stateDirectory) / "SD" / "received-arguments.txt"); });
+		Pump(runtime, childReady);
 		const auto start = SDL_GetTicks();
 		runtime.Shutdown();
 		Check(SDL_GetTicks() - start >= 1900 && SDL_GetTicks() - start < 4000 && !runtime.GetStatus().running,
@@ -304,7 +311,7 @@ int main(int argc, char** argv) {
 		const bool relativeStarted = runtime.Start(options);
 		fs::current_path(callerDirectory);
 		Check(relativeStarted, "relative state fixture start failed");
-		Pump(runtime, [&] { return fs::exists(relativeState / "SD" / "received-arguments.txt")
+		Pump(runtime, [&] { return childReady()
 			|| !runtime.GetStatus().running; });
 		Check(fs::exists(relativeState / "SD" / "received-arguments.txt"),
 			"relative state path was resolved against the child working directory");
@@ -314,7 +321,7 @@ int main(int argc, char** argv) {
 		const auto nestedState = runtimeDirectory / "SD" / "private state";
 		options.stateDirectory = UTF8(nestedState);
 		Check(runtime.Start(options), "private state below the supplied SD failed to start");
-		Pump(runtime, [&] { return fs::exists(nestedState / "SD" / "received-arguments.txt"); });
+		Pump(runtime, childReady);
 		Check(Read(nestedState / "SD" / "seed.txt") == "seeded SD contents",
 			"nested private SD did not receive the release seed");
 		Check(!fs::exists(nestedState / "SD" / "private state"),
