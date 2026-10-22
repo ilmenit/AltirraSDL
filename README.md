@@ -71,6 +71,10 @@ depends on the platform and build options.
 - **GPU-side screen effects** — scanlines, bloom, distortion, dot mask,
   and bicubic filtering run through native SDL_GPU shaders or the OpenGL
   fallback rather than CPU post-processing.
+- **Custom display effects** use portable `.altfx` shader packages on
+  SDL_GPU and OpenGL/GLES. Configure System → Display Effects supports
+  browsing, reloading and clearing effects. Native Windows `.cgp` presets
+  need conversion; see the [effect format and porting guide](docs/custom-display-effects.md).
 - The macOS loop drains an autorelease pool every frame to prevent unbounded
   memory growth in graphics and window-system calls.
 
@@ -96,8 +100,10 @@ toggled on desktop.
   picking an OS/BASIC/game ROM once, instead of diving straight into
   the full Configure System dialog.
 - **Automatic suspend / resume on Android** — the emulator snapshots
-  its state when the app goes to background and restores it on next
-  launch, so incoming calls or app switches don't lose your session.
+  its state when the app goes to background and can restore it on next
+  launch after process termination. An explicit boot image takes precedence.
+  See the [background-recovery notes](docs/android-background-recovery.md)
+  for tested behavior and remaining device checks.
 
 ### Game library
 
@@ -109,18 +115,41 @@ toggled on desktop.
   also be assigned reusable launch profiles, including shared profiles
   for multiple titles; temporary game sessions protect saved settings.
 
+### FujiNet: internet software, network games and BBS
+
+Open **Tools → FujiNet → Set up FujiNet automatically** on a desktop
+build. AltirraSDL downloads and verifies the official FujiNet-PC runtime,
+then starts it and boots the Atari. No physical FujiNet is required.
+
+After setup, choose **Network games / Lobby** or **BBS directory** to
+launch the official Atari clients. FujiNet-PC starts automatically when
+needed; progress and cancellation stay in the tool window. Setup moves
+under **Setup and full controls**, where the connection, runtime, web
+interface and local-file/URL boot tools remain available. Local disk
+images, unsaved disk changes and BASIC are preserved.
+
+FujiNet's Game Lobby is separate from AltirraSDL's **Online Play** below;
+its network games need software written for FujiNet. The shortcuts use
+the managed desktop runtime. Android can connect to an external FujiNet;
+browser builds cannot use NetSIO. See the [FujiNet guide](docs/fujinet.md)
+for prerequisites, manual connections, CONFIG browsing and troubleshooting.
+
 ### Online play (netplay)
 
-Two-player lockstep netplay over the internet or LAN — a fork-only
+Two-player netplay over the internet or LAN — a fork-only
 feature with no upstream equivalent. Peers boot with matching machine
 configuration and synchronize inputs frame by frame. Native clients
 use UDP with NAT traversal and a lobby relay fallback; browser clients
 use a WebSocket bridge to play with browser or native peers.
 
-- **Lockstep determinism** — both peers cold-boot the same game from
-  the same master seed and advance frame-by-frame, each waiting for
-  the other's input for frame N before committing it. Default input
-  delay is 4 frames (~66 ms).
+- **Rollback with deterministic replay** — both peers cold-boot the same
+  game from the same master seed. **Automatic** mode uses two frames of
+  input delay (~33 ms NTSC / 40 ms PAL), predicts up to eight missing
+  frames, and replays corrections when remote input arrives. **Delay only**
+  waits for both inputs. Choose the mode in Online Play → Preferences →
+  Hosting before hosting. Protocol 8 requires both peers to update.
+- **Local session restoration** — leaving online play restores the
+  original game, media, unsaved disk changes and paused/running state.
 - **Matchmaking via an HTTP lobby** — hosts advertise their games
   to a session directory. Native peers attempt a direct UDP connection
   and can fall back to the lobby relay. A public community lobby is
@@ -214,6 +243,10 @@ and [command reference](src/AltirraSDL/AltirraBridge/docs/COMMANDS.md).
   inspection, and running embedded executables.
 - **Native macOS menu bar** integrates desktop menus with the system
   menu bar.
+- **Emulated-screen accessibility** publishes Atari text to Windows UI
+  Automation, macOS VoiceOver and Linux AT-SPI. Enable it in Configure
+  System → Emulator → Accessibility. See the [screen-reader guide](docs/emulated-screen-accessibility.md)
+  for dependencies and coverage; this setting covers the Atari display.
 
 See [desktop search and profiles](docs/desktop-search-profiles.md) and
 [Explorer tools](docs/sdl-explorers.md) for usage and verification details.
@@ -315,6 +348,14 @@ Altirra is licensed under the **GNU General Public License v2 or later (GPLv2+)*
   game, point at a different lobby, and step-by-step instructions
   for running your own lobby server (localhost, Docker, VPS with
   systemd, and behind an HTTPS reverse proxy).
+- [FujiNet](docs/fujinet.md) — automatic setup, FujiNet Game Lobby,
+  BBS directory, local/URL software and external devices.
+- [Custom display effects](docs/custom-display-effects.md) — portable
+  shader packages and conversion from native Windows presets.
+- [Emulated-screen accessibility](docs/emulated-screen-accessibility.md) —
+  desktop screen-reader support, dependencies and limitations.
+- [Android background recovery](docs/android-background-recovery.md) —
+  suspend/resume behavior and GPU/device validation limits.
 - [server/lobby/README.md](server/lobby/README.md) — lobby server
   build / API reference / protocol coupling with the client.
 - [AltirraBridge](src/AltirraSDL/AltirraBridge/README.md) — scripting,

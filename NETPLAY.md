@@ -1,9 +1,9 @@
 # AltirraSDL netplay — user guide
 
-AltirraSDL ships a netplay feature that lets two players cold-boot
-the same Atari game in lockstep over the internet or a LAN, with
-input exchanged frame-by-frame for deterministic play. This document
-covers:
+AltirraSDL lets two players cold-boot the same Atari game over the internet
+or a LAN, with deterministic rollback or delay-only synchronization. This
+uses **Online Play**; the [FujiNet Game Lobby](docs/fujinet.md#network-games-and-bbs-in-one-click)
+is a separate service for FujiNet-aware Atari software. This document covers:
 
 1. [How netplay works](#how-netplay-works) — one-paragraph mental model.
 2. [Playing a game online](#playing-a-game-online) — host / join walkthrough.

@@ -193,9 +193,13 @@ profile/media rollback, reset-key collection and debugger pointer geometry.
 The test harness now isolates modules and cancels outstanding pickers during
 cleanup, so earlier tests cannot leave a stopped CPU or modal picker behind.
 
-Windows/macOS native builds, interactive screen-reader use, and physical
-Android foreground recovery still require CI or device validation. These
-checks do not establish exhaustive parity across every Windows feature.
+On 2026-10-22, all eight GitHub CI workflows passed at `7fa83300`, including
+Windows/macOS packages, Android APKs, normal/sanitized Linux and native
+Windows/macOS regressions. The Linux package job also passed the combined
+131-test UI suite covering FujiNet, media, netplay and mobile suspend.
+Interactive screen-reader use and physical Android foreground recovery still
+require device validation. These checks do not establish exhaustive parity
+across every Windows feature.
 
 ## Repeatable parity audit
 

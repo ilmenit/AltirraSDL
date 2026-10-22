@@ -5,6 +5,23 @@ FujiNet using the UDP NetSIO protocol. The connection does not need the
 Python hub or an Altirra custom-device descriptor. Open **Tools →
 FujiNet** for connection, boot, runtime and diagnostic controls.
 
+## Quick start on desktop
+
+1. Open **Tools → FujiNet** and select **Set up FujiNet automatically**.
+   Wait for the setup checklist; complete any dependency steps it reports.
+   You can also select an already downloaded FujiNet-PC or an external device.
+2. Once the managed runtime is configured, choose **Network games / Lobby**
+   or **BBS directory**. FujiNet-PC starts if needed, and the Atari restarts
+   when the client is ready. Enter a player name in the Lobby, or choose
+   a board from the BBS directory on the Atari screen.
+3. Expand **Setup and full controls** to change setup, open FujiNet's web
+   interface, browse CONFIG or run a local file/web link through FujiNet.
+
+The shortcuts need an Atari computer with at least 48 KB RAM, no inserted
+cartridge and no full-drive emulator on D1. They use the runtime managed by
+AltirraSDL; external FujiNet connections use CONFIG instead. FujiNet's
+Game Lobby and AltirraSDL's **Online Play** are separate multiplayer systems.
+
 ## Panel layout
 
 The window follows setup first. A fresh installation shows **Set up FujiNet
@@ -27,7 +44,8 @@ The full controls have two tabs, explained on screen in plain language:
 
 **Step-by-step guide** has four pages: a welcome page with one recommended
 button, an Other FujiNet connection page, a checklist for the automatic setup
-(get, start, boot), and a "pick a game" page with the CONFIG keys.
+(get, start, boot), and a connected page with the CONFIG keys. After managed
+setup, expand **Setup and full controls** to read the connected page.
 
 ## Network games and BBS in one click
 
@@ -123,8 +141,9 @@ attempts) before an error is reported; a 4xx response or checksum mismatch is
 reported at once.
 
 **Start FujiNet when AltirraSDL starts** (`FujiNet\StartWithAltirra`,
-machine-global, test-mode `fujinet autostart 0|1`) is offered on the guide's
-ready page and in the This computer view. `ATUIFujiNetLaunchStartup()` runs
+machine-global, test-mode `fujinet autostart 0|1`) is offered in **Setup and
+full controls**, on the guide's ready page and in the This computer view.
+`ATUIFujiNetLaunchStartup()` runs
 once after startup media is loaded: with a valid runtime it calls Start and
 Boot in Desktop Mode and only starts the runtime in Gaming Mode. It does
 nothing when the command line loaded a program, when Other FujiNet is
@@ -176,7 +195,8 @@ into the package or Homebrew formula to install.
 
 ## Local FujiNet-PC
 
-1. Select **This computer**. Use **Download FujiNet-PC** to open the official
+1. Open **Full controls** (or expand **Setup and full controls** after setup)
+   and select **This computer**. Use **Download FujiNet-PC** to open the official
    releases and download the file named in the panel, then extract the
    complete archive.
 2. Use **Choose FujiNet-PC** to select the extracted `fujinet` executable
@@ -188,10 +208,10 @@ into the package or Homebrew formula to install.
    to mount software, then **Boot Atari**. **Start without booting** starts
    only the runtime and leaves the Atari's state unchanged.
 
-The main view shows connection state, the selected runtime and the actions
-available now. **FujiNet-PC program**, **Connection settings**, **Emulator drives**
-and **Diagnostics** hold optional controls. Download steps for this computer
-appear in the main view until a valid runtime has been selected. The dialog
+The expanded full controls show connection state, the selected runtime and
+the actions available now. **FujiNet-PC program**, **Connection settings**,
+**Emulator drives** and **Diagnostics** hold optional controls. Download steps
+for this computer appear until a valid runtime has been selected. The dialog
 adapts its height to the current view, keeps its position inside the canvas,
 and wraps actions when using narrow windows or large fonts.
 
@@ -221,7 +241,7 @@ use the local runtime. Those instructions apply to a physical FujiNet.
 
 ### Browse a TNFS server
 
-After **Start and Boot FujiNet** reaches CONFIG's **HOST LIST**:
+When the Atari shows CONFIG's **HOST LIST**:
 
 1. Select an existing host with **1–8** or the arrow keys and press **Return**.
    `fujinet.online`, `apps.irata.online` and `fujinet.diller.org` were all
@@ -407,7 +427,19 @@ network connections and FujiNet's filesystem state cannot be rewound.
   and native listener must not bind the same UDP port.
 - **CONFIG does not boot:** first confirm the connection, resolve any full-drive
   D1 conflict, then use **Boot Atari**. Keep normal speed while using network
-  software. The retained local D1 image does not mean its drive is enabled.
+  software. **Boot Atari** restarts with FujiNet's current boot configuration
+  and mounted disks; it does not clear those disks or force CONFIG. If a
+  previously mounted program boots again, review the drives and boot settings
+  in **Open Web Interface**. The retained local D1 image does not mean its
+  emulator drive is enabled.
+- **Lobby/BBS buttons are missing:** finish managed-runtime setup first.
+  During installation or connection/boot setup, the window shows progress.
+  These shortcuts are not offered for **Other FujiNet** or a manual bridge;
+  use that FujiNet's CONFIG menu. Expand **Setup and full controls** for the
+  connection and runtime controls after setup.
+- **An activity was cancelled after mounting began:** cancellation prevents
+  the automatic Atari boot, but FujiNet may already have mounted the client.
+  Check its web interface before choosing what to boot next.
 - **HTTPS requests fail:** inspect FujiNet's log, keep certificate assets from
   the complete release, and check the computer's clock and network/proxy
   access. Certificate verification is not bypassed.
@@ -469,7 +501,9 @@ FujiNet D1 was read-only. The test never enters a username, joins a game,
 selects a board or sends a message. It retains screenshots and runtime logs
 with `--keep`, and always retains evidence on failure. The deterministic
 `tests/ui/test_fujinet_activities.py` suite uses local fixtures for launch,
-cancellation, profile changes, retry and media-preservation regressions.
+cancellation, profile changes, retry, setup ordering, collapsed controls,
+manual-setup recovery and media-preservation regressions. It runs in the
+Linux CI UI suite without depending on public FujiNet services.
 
 Add `--legacy-bridge /path/to/fujinet-emulator-bridge` to exercise the
 published custom descriptor and Python hub instead of native NetSIO. This

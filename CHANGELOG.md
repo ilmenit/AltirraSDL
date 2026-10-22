@@ -1,6 +1,30 @@
 # AltirraSDL changes
 
-## Unreleased — 2026-10-21
+## Unreleased — 2026-10-22
+
+### Desktop frontend and Android recovery
+
+- Added portable `.altfx` custom display effects on SDL_GPU and
+  OpenGL/GLES, including multiple passes, scaling, reload and profile
+  persistence. Invalid replacements retain the working effect. Native
+  Windows `.cgp` presets require conversion; see
+  [custom display effects](docs/custom-display-effects.md).
+- Added emulated-screen text publication through Windows UI Automation,
+  macOS accessibility and Linux AT-SPI, with provider status and Linux
+  reconnect handling. See [screen-reader support](docs/emulated-screen-accessibility.md)
+  for dependencies and platform limits. Fixed the Windows adapter's COM
+  header prerequisites so the release build compiles.
+- Restored unsaved-media, BASIC-overlap and incompatible-image decisions.
+  Cancelling preserves the original profile, live settings, media objects
+  and running/paused state. Native file-picker completions are processed
+  on the emulator thread, and failed URL loads preserve the current session.
+- Connected Hold Keys for Reset, pointer auto-hide/confinement and
+  tablet/light-pen overlays to runtime behavior. CPU-history changes reach
+  existing peripheral CPUs, and automation exit requests close the application.
+- Improved Android background/foreground recovery and preserved suspended
+  game sessions. Repaired Android's cached SDL revision checks; device
+  testing is still needed for the reported Pixel 7 black-screen scenario.
+  See the [background-recovery notes](docs/android-background-recovery.md).
 
 ### Online play
 
@@ -94,6 +118,25 @@
 
 ### FujiNet and NetSIO
 
+- Added **Network games / Lobby** and **BBS directory** to Tools → FujiNet.
+  They launch the official Atari clients through the managed FujiNet-PC
+  runtime, starting it when needed, downloading and mounting the client
+  read-only, then booting through real SIO. Local media, unsaved disk
+  changes and BASIC are preserved. FujiNet multiplayer is separate from
+  AltirraSDL's Online Play.
+- Added automatic download, published-checksum verification and private
+  installation of official FujiNet-PC packages, with dependency checks,
+  retry and manual-download recovery. Optional startup launches the
+  configured runtime; Gaming Mode leaves the running Atari unchanged.
+- Made setup the first-use action. Once configured, Lobby and BBS lead
+  the window and **Setup and full controls** collapses the setup options.
+  Launches show progress and cancellation. Fixed manual setup failing to
+  boot after an unsuccessful activity launch; existing external-device
+  and custom-bridge workflows remain available.
+- Added activity-flow regressions to Linux CI and live smoke tests with
+  the official runtime. The live checks reach the Lobby's player-name
+  prompt and populated BBS directory with BASIC on and off; they do not
+  join public games or connect to boards. See [FujiNet verification](docs/fujinet.md#verification-and-references).
 - Added a native UDP NetSIO device for FujiNet-PC and external FujiNet,
   with command/data synchronization, serial pacing, baud changes,
   PROCEED/INTERRUPT signals, packet credits, reset and reconnect handling.
@@ -128,9 +171,9 @@
   errors are prominent, and unavailable actions reflect the current state.
   The web-interface button uses the managed runtime's local port while it
   is running and restores the saved external URL when it stops.
-- Reorganized FujiNet into Local PC and External workflows, with a compact
-  state-dependent action area and expandable runtime, connection, drive and
-  diagnostic controls. Existing custom-device/Python-hub setups retain their
+- Reorganized FujiNet into **This computer** and **Other FujiNet** workflows,
+  with a compact state-dependent action area and expandable runtime,
+  connection, drive and diagnostic controls. Existing custom-device/Python-hub setups retain their
   own manual view. Native/legacy route conflicts and attempts to replace an
   existing external peer with a managed process are rejected before mutation.
   Mode preferences also persist when the configuration directory is new.
