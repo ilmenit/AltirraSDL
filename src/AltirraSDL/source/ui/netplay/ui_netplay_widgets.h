@@ -45,6 +45,9 @@ namespace ATNetplayUI {
 // in Desktop and Gaming Mode so both Add-Game flows expose the same
 // set of knobs through one DRY implementation.
 void RenderMachineConfigSection(MachineConfig& cfg);
+// Requested host-game controller-layout extension, shared by all editors.
+bool RenderControllerLayoutSection(MachineConfig& cfg);
+void RenderHostedGameControls(HostedGame& game);
 
 // Re-scan the installed firmware list.  Called after the user
 // installs/removes firmware via Settings → Firmware so the Add-Game

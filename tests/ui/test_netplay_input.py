@@ -148,6 +148,45 @@ def test_scan_zero_repeated_events_and_encoded_modifiers(emu):
     assert emu.mem_read(0xD209, 1) == [0x61]
 
 
+@pytest.mark.parametrize("restore", ["native", "serialized"])
+def test_shared_joystick_routes_both_players_to_port_one_and_restores_layout(emu, restore):
+    with bridge(emu) as control:
+        control.frame(180)
+        control.ping()
+    assert emu.send("netplay_input begin shared")["controllerLayout"] == 1
+    # First the host, then the guest can operate the same physical port.
+    emu.send("netplay_input apply 0 4 1 0 0 0 0")
+    assert emu.mem_read(0xD300, 1) == [0xFB]
+    assert emu.mem_read(0xD010, 2) == [0, 1]
+    emu.send("netplay_input apply 0 0 0 0 0 0 0")
+    emu.send("physical_key down Right")
+    emu.wait_frames(3)
+    poll_apply(emu, 1)
+    assert emu.mem_read(0xD300, 1) == [0xF7]
+    assert emu.mem_read(0xD010, 2) == [1, 1]
+    emu.send("physical_key down Left Ctrl")
+    emu.wait_frames(3)
+    poll_apply(emu, 1)
+    assert emu.mem_read(0xD010, 2) == [0, 1]
+    # Simultaneous input is deterministic wired-OR. Releasing one player
+    # must not release the other's held direction/fire.
+    emu.send("netplay_input apply 0 1 1 0 0 0 0")
+    assert emu.mem_read(0xD300, 1) == [0xF6]
+    operation = "netplay_checkpoint" if restore == "native" else "netplay_transfer"
+    emu.send(f"{operation} save shared")
+    emu.send("netplay_input apply 1 0 0 0 0 0 0")
+    assert emu.mem_read(0xD300, 1) == [0xFE]
+    emu.send(f"{operation} restore shared")
+    assert emu.send("netplay_input status")["controllerLayout"] == 1
+    assert emu.mem_read(0xD300, 1) == [0xF6]
+    assert emu.mem_read(0xD010, 2) == [0, 1]
+    emu.send("netplay_input end")
+    assert emu.send("netplay_input begin")["controllerLayout"] == 0
+    emu.send("netplay_input apply 1 8 1 0 0 0 0")
+    assert emu.mem_read(0xD300, 1) == [0x7F]
+    assert emu.mem_read(0xD010, 2) == [1, 0]
+
+
 def test_raw_key_chord_quick_taps_and_focus_release(emu):
     emu.send("netplay_input begin")
     emu.send("netplay_input press 0 0 1")
@@ -304,7 +343,8 @@ def test_5200_keypad_and_selected_controller_restore(emu):
         control.config("machine", "5200")
         control.cold_reset()
         control.pause()
-        emu.send("netplay_input begin")
+        # Shared digital joystick routing must never replace 5200 controls.
+        assert emu.send("netplay_input begin shared")["controllerLayout"] == 0
         # The keypad-0 matrix follows AT5200ControllerController::SetKeyState:
         # key index 2 sets doubled slots 4/5 and their +0x20 counterparts.
         keypad0 = (1 << 4) | (1 << 5) | (1 << 36) | (1 << 37)

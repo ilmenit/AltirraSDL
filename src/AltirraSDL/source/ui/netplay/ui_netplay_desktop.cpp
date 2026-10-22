@@ -14,6 +14,7 @@
 #include "ui_netplay_state.h"
 #include "ui_netplay.h"
 #include "ui_netplay_actions.h"
+#include "ui_netplay_widgets.h"
 #include "ui_netplay_deeplink.h"
 #include "netplay/netplay_glue.h"
 
@@ -472,7 +473,7 @@ void DesktopBrowser() {
 // -----------------------------------------------------------------------
 void DesktopHostSetup() {
 	State& st = GetState();
-	CenterNext(ImVec2(480, 320));
+	CenterNext(ImVec2(540, 440));
 	bool open = true;
 	if (!ImGui::Begin("Host a Game##netplay", &open,
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
@@ -515,6 +516,11 @@ void DesktopHostSetup() {
 	if (ImGui::SmallButton("Boot a Game...")) {
 		ATUIShowBootImageDialog(g_pWindow);
 	}
+
+	MachineConfig hostControls = CaptureCurrentMachineConfig();
+	hostControls.controllerLayout = st.session.hostingControllerLayout;
+	RenderControllerLayoutSection(hostControls);
+	st.session.hostingControllerLayout = hostControls.controllerLayout;
 
 	ImGui::Spacing();
 	ImGui::Text("Visibility:");
@@ -1390,6 +1396,8 @@ void DesktopMyHostedGames() {
 			// Games, so the two views align visually.  Host-side
 			// tokens are never "missing" (we own this firmware).
 			RenderSpecLine(BuildSpecLineFromConfig(o.config), cDim);
+			// Keep the per-game layout visible within the narrow game column.
+			ImGui::TextWrapped("%s", ControllerLayoutLabel(NormalizedControllerLayout(o.config)));
 			if (!o.lastError.empty()) {
 				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f),
 					"  %s", o.lastError.c_str());
@@ -1407,6 +1415,7 @@ void DesktopMyHostedGames() {
 			else             ImGui::TextDisabled("—");
 
 			ImGui::TableNextColumn();
+			RenderHostedGameControls(o);
 			if (ImGui::SmallButton("Remove")) {
 				pendingRemove = o.id;
 			}
@@ -1718,6 +1727,7 @@ void DesktopAddOffer() {
 		if (ImGui::Combo("Hardware", &hwIdx, kHWLabels, 7))
 			s_addConfig.hardwareMode = kHWVals[hwIdx];
 		ImGui::PopItemWidth();
+		RenderControllerLayoutSection(s_addConfig);
 
 		static const ATVideoStandard kVSVals[] = {
 			kATVideoStandard_NTSC, kATVideoStandard_PAL,
@@ -1755,7 +1765,7 @@ void DesktopAddOffer() {
 			&s_addConfig.basicCRC32);
 
 		if (ImGui::Button("Copy from current emulator")) {
-			s_addConfig = CaptureCurrentMachineConfig();
+			CopyCurrentMachineConfig(s_addConfig);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Refresh firmware list")) {

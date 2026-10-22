@@ -1,7 +1,7 @@
 # AltirraSDL netplay architecture
 
 The user guide is [NETPLAY.md](../NETPLAY.md). This document describes
-protocol **8** and its implementation in `source/netplay` and `server/lobby`.
+protocol **9** and its implementation in `source/netplay` and `server/lobby`.
 Older peers must update together: the handshake rejects incompatible versions.
 
 ## 1. Simulation and input
@@ -10,6 +10,15 @@ Two emulators run the same machine configuration and firmware with a locked
 random seed. The host transfers the selected game image; both peers cold-boot
 it under the temporary netplay profile. Firmware is checked by CRC and is
 never transferred. Each peer owns one of two controller slots.
+
+Local joystick 1 is captured on both peers. Port redirects are independent:
+discarding other local ports must not remove that capture. By default, the
+host's input drives Atari port 1 and the guest's drives port 2. The host can
+instead select **Shared joystick - take turns** for a game: both inputs are
+ORed onto digital port 1, with digital port 2 neutral. Turn ownership is left
+to the players; analog axes and 5200 controllers retain separate routing.
+The layout is negotiated in byte 28 of the 36-byte boot configuration and
+preserved in both rollback checkpoints and resynchronization input state.
 
 The host chooses a mode before a session starts:
 
@@ -71,7 +80,7 @@ restoring the original machine.
 `packets.h` and `protocol.cpp` define fixed, explicitly encoded little-endian
 packets; C++ struct layout is never sent directly.
 
-| Item | Protocol 8 size |
+| Item | Protocol 9 size |
 |---|---:|
 | One controller input | 22 bytes |
 | Input packet, including five redundant inputs | 132 bytes |

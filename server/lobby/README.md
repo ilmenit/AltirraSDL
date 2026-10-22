@@ -341,7 +341,7 @@ The WebSocket bridge was added in 2026 to let browser (WASM)
 builds participate in netplay sessions; the inner Altirra wire
 protocol is unchanged.
 
-## Authenticated relay and recovery (gameplay protocol 8)
+## Authenticated relay and recovery (gameplay protocol 9)
 
 Native clients use HTTPS for the official directory. Existing shipped HTTP
 entries for the two official hostnames migrate to HTTPS; custom HTTP URLs keep

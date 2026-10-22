@@ -32,9 +32,11 @@ void RestoreAppliedState(const AppliedState& state);
 
 // Begin/end tied to the aggregate IsLockstepping state in
 // netplay_glue.  Safe to call multiple times.
-void BeginSession();
+void BeginSession(ATNetplay::ControllerLayout layout =
+	ATNetplay::ControllerLayout::SeparateJoysticks);
 // Local automation may exercise input routing without a coordinator.
-void BeginTestSession();
+void BeginTestSession(ATNetplay::ControllerLayout layout =
+	ATNetplay::ControllerLayout::SeparateJoysticks);
 bool IsTestSession();
 void EndSession();
 bool IsActive();
@@ -82,6 +84,8 @@ ATNetplay::NetInput PollLocal();
 //   - GTIA console switches ← OR of p1 and p2 console bits
 //   - POKEY keyboard ← explicit cooked events or the held raw matrix
 //   - analog pot positions and 5200 keypad follow the same frame inputs
+// SharedJoystick merges digital direction/fire into port 0 and leaves
+// digital port 1 neutral; keyboard, console and analog routing stay intact.
 void ApplyFrameInputs(const ATNetplay::NetInput& p1,
                       const ATNetplay::NetInput& p2);
 

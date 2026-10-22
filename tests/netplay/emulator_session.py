@@ -195,8 +195,8 @@ def process_resources(app):
         return {}
 
 
-def check_joystick_routing(apps, start_key=None):
-    """Real local joystick-one keys must drive distinct ports on both peers."""
+def check_joystick_routing(apps, start_key=None, layout="separate"):
+    """Real local joystick-one keys must drive the negotiated ports on both peers."""
     deadline = time.monotonic() + 20
     while min(app.send("netplay_status")["frame"] for app in apps) < 300:
         assert time.monotonic() < deadline, "Boot did not reach joystick initialization"
@@ -205,6 +205,7 @@ def check_joystick_routing(apps, start_key=None):
         # Give the emulated display keyboard focus after the join dialogs.
         app.send("click_at 1200 850")
         app.wait_frames(5)
+        assert app.send("netplay_input status")["controllerLayout"] == (layout == "shared")
     if start_key:
         apps[0].send(f"physical_key down {start_key}")
         initial = [app.send("netplay_status")["frame"] for app in apps]
@@ -215,16 +216,17 @@ def check_joystick_routing(apps, start_key=None):
             time.sleep(0.025)
         apps[0].send(f"physical_key up {start_key}")
     observations = []
-    for peer, direction, key, porta, triggers in (
-        (0, "down", "Left", 0xFB, [1, 1]),
-        (1, "down", "Right", 0x7B, [1, 1]),
-        (0, "down", "Left Ctrl", 0x7B, [0, 1]),
-        (1, "down", "Left Ctrl", 0x7B, [0, 0]),
-        (0, "up", "Left", 0x7F, [0, 0]),
-        (0, "up", "Left Ctrl", 0x7F, [1, 0]),
-        (1, "up", "Right", 0xFF, [1, 0]),
-        (1, "up", "Left Ctrl", 0xFF, [1, 1]),
+    for peer, direction, key, separate, shared in (
+        (0, "down", "Left", (0xFB, [1, 1]), (0xFB, [1, 1])),
+        (1, "down", "Right", (0x7B, [1, 1]), (0xF3, [1, 1])),
+        (0, "down", "Left Ctrl", (0x7B, [0, 1]), (0xF3, [0, 1])),
+        (1, "down", "Left Ctrl", (0x7B, [0, 0]), (0xF3, [0, 1])),
+        (0, "up", "Left", (0x7F, [0, 0]), (0xF7, [0, 1])),
+        (0, "up", "Left Ctrl", (0x7F, [1, 0]), (0xF7, [0, 1])),
+        (1, "up", "Right", (0xFF, [1, 0]), (0xFF, [0, 1])),
+        (1, "up", "Left Ctrl", (0xFF, [1, 1]), (0xFF, [1, 1])),
     ):
+        porta, triggers = shared if layout == "shared" else separate
         apps[peer].send(f"physical_key {direction} {key}")
         initial = [app.send("netplay_status")["frame"] for app in apps]
         deadline = time.monotonic() + 10
@@ -256,6 +258,7 @@ def main():
     parser.add_argument("--joystick-test", action="store_true",
                         help="Verify real arrow/fire keys map host to port one and guest to port two")
     parser.add_argument("--start-key", help="Optional SDL key (e.g. F3) to enter gameplay before joystick checks")
+    parser.add_argument("--controller-layout", choices=("separate", "shared"), default="separate")
     parser.add_argument("--video", choices=("ntsc", "pal"), default="pal")
     parser.add_argument("--mode", choices=("automatic", "delay"), default="automatic")
     parser.add_argument("--rtt-ms", type=float, default=60)
@@ -315,6 +318,7 @@ def main():
             if name == "Host":
                 ini += ('"GameCount" = 1\n"Game0_id" = "test-offer"\n'
                         f'"Game0_path" = "{image}"\n"Game0_name" = "Input test"\n'
+                        f'"Game0_controllerLayout" = {int(args.controller_layout == "shared")}\n'
                         f'"Game0_videoStd" = {0 if args.video == "ntsc" else 1}\n')
             # View settings inherit from the base profile. Tabs are not
             # included in ImGui item hooks, so exercise the real settings
@@ -358,7 +362,7 @@ def main():
                 break
             time.sleep(0.1)
         assert all(item["active"] and item["frame"] > 30 for item in status), status
-        joystick = check_joystick_routing(apps, args.start_key) if args.joystick_test else None
+        joystick = check_joystick_routing(apps, args.start_key, args.controller_layout) if args.joystick_test else None
         if joystick is not None:
             for name, app in zip(("Host", "Joiner"), apps):
                 app.send(f"screenshot {work / (name + '-joystick.png')}")
@@ -410,20 +414,42 @@ def main():
                             "joiner: resync incoming (epoch=")]
 
             assert resync_counts() == [0, 0], "Unexpected resync before deliberate mismatch"
+            # Let prediction corrections settle before making an out-of-band
+            # RAM edit: an ordinary rollback would correctly undo that edit.
+            quiet = [app.send("netplay_status") for app in apps]
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                status = [app.send("netplay_status") for app in apps]
+                assert all(item["active"] and not item["desynced"]
+                           and not item["resyncing"] for item in status), status
+                if any(item["corrections"] != quiet[i]["corrections"]
+                       for i, item in enumerate(status)):
+                    quiet = status
+                if all(item["frame"] >= quiet[i]["frame"] + 100
+                       for i, item in enumerate(status)):
+                    break
+                time.sleep(0.05)
+            else:
+                raise AssertionError(("Input prediction did not settle before fault injection", status))
             with urllib.request.urlopen(base + "/v1/sessions", timeout=2) as response:
                 before_sessions = json.load(response)
             identity = [(row["sessionId"], row["hostEndpoint"]) for row in before_sessions]
             original_byte = host.send("mem_read 5000 1")["bytes"][0]
             assert host.send(f"debugger_console e 5000 {original_byte ^ 0xFF:02X}")["ok"]
+            assert host.send("mem_read 5000 1")["bytes"][0] == original_byte ^ 0xFF, \
+                "The game or a rollback erased the injected RAM mismatch"
             deadline = time.monotonic() + 75
             resumed = None
             recovery_samples = []
             while time.monotonic() < deadline:
-                scan = (sequence // 2) % 64
-                host.send(f"netplay_input press {scan} 0 1" if sequence % 2 == 0
-                          else f"netplay_input up {scan}")
-                joiner.send(f"netplay_input console 1 {sequence % 2}")
-                sequence += 1
+                # Keep inputs steady until the deliberate mismatch has been
+                # detected; resume churn to exercise input after recovery.
+                if resumed is not None:
+                    scan = (sequence // 2) % 64
+                    host.send(f"netplay_input press {scan} 0 1" if sequence % 2 == 0
+                              else f"netplay_input up {scan}")
+                    joiner.send(f"netplay_input console 1 {sequence % 2}")
+                    sequence += 1
                 status = [app.send("netplay_status") for app in apps]
                 recovery_samples.append(status)
                 check_disk_fixture()
@@ -445,8 +471,11 @@ def main():
             with urllib.request.urlopen(base + "/v1/sessions", timeout=2) as response:
                 after_sessions = json.load(response)
             assert [(row["sessionId"], row["hostEndpoint"]) for row in after_sessions] == identity
+            recovered_joystick = (check_joystick_routing(apps, layout=args.controller_layout)
+                                  if args.joystick_test else None)
             recovery = {"resumedFrames": resumed, "final": status,
-                        "samples": recovery_samples, "sessionIdentity": identity}
+                        "samples": recovery_samples, "sessionIdentity": identity,
+                        "joystick": recovered_joystick}
         resources_after = [process_resources(app) for app in apps]
         cpu_seconds = [after.get("cpuSeconds", 0) - before.get("cpuSeconds", 0)
                        for before, after in zip(resources_before, resources_after)]

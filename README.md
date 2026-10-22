@@ -147,9 +147,12 @@ use a WebSocket bridge to play with browser or native peers.
   input delay (~33 ms NTSC / 40 ms PAL), predicts up to eight missing
   frames, and replays corrections when remote input arrives. **Delay only**
   waits for both inputs. Choose the mode in Online Play → Preferences →
-  Hosting before hosting. Protocol 8 requires both peers to update.
+  Hosting before hosting. Protocol 9 requires both peers to update.
 - **Local session restoration** — leaving online play restores the
   original game, media, unsaved disk changes and paused/running state.
+- **Per-game controller layout** — separate joysticks by default,
+  or a shared joystick for games that use port 1 for both players' turns.
+  Each player uses their local joystick 1 controls in either layout.
 - **Matchmaking via an HTTP lobby** — hosts advertise their games
   to a session directory. Native peers attempt a direct UDP connection
   and can fall back to the lobby relay. A public community lobby is

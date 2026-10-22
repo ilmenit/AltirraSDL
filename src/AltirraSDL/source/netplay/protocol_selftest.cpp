@@ -41,7 +41,7 @@ static void testWireSizes() {
 	CHECK(kWireChunkHdrSize       == 16);
 	CHECK(kWireAckSize            == 8);
 	CHECK(kRedundancyR            == 5);
-	CHECK(kProtocolVersion        == 8);
+	CHECK(kProtocolVersion        == 9);
 	// v6 observability layer.
 	CHECK(kWireNetPhaseSize       == 12);
 	CHECK(kWireNetEventSize       == 8);
@@ -115,6 +115,7 @@ static void testWelcomeRoundTrip() {
 	in.boot.memoryMode      = 7;          // 64K
 	in.boot.videoStandard   = 0;          // NTSC
 	in.boot.basicEnabled    = 1;
+	in.boot.controllerLayout = ControllerLayout::SharedJoystick;
 	in.boot.kernelCRC32     = 0x1F9CD270u;
 	in.boot.basicCRC32      = 0x7D684184u;
 	in.boot.gameFileCRC32   = 0xCAFEBABEu;
@@ -140,10 +141,20 @@ static void testWelcomeRoundTrip() {
 	CHECK(out.boot.memoryMode      == 7);
 	CHECK(out.boot.videoStandard   == 0);
 	CHECK(out.boot.basicEnabled    == 1);
+	CHECK(out.boot.controllerLayout == ControllerLayout::SharedJoystick);
 	CHECK(out.boot.kernelCRC32     == 0x1F9CD270u);
 	CHECK(out.boot.basicCRC32      == 0x7D684184u);
 	CHECK(out.boot.gameFileCRC32   == 0xCAFEBABEu);
 	CHECK(std::memcmp(out.boot.gameExtension, ".atr\0\0\0\0", 8) == 0);
+	// Layout is deterministic session state, not an ignorable spare byte.
+	buf[92 + 28] = 2;
+	CHECK(DecodeWelcome(buf, n, out) != DecodeResult::Ok);
+	in.boot.controllerLayout = (ControllerLayout)255;
+	CHECK(EncodeWelcome(in, buf, sizeof buf) == 0);
+	in.boot.controllerLayout = ControllerLayout::SeparateJoysticks;
+	CHECK(EncodeWelcome(in, buf, sizeof buf) == kWireWelcomeSize);
+	CHECK(DecodeWelcome(buf, n, out) == DecodeResult::Ok);
+	CHECK(out.boot.controllerLayout == ControllerLayout::SeparateJoysticks);
 }
 
 static void testCrc32KnownVectors() {

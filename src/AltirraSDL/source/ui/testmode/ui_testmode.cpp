@@ -3137,7 +3137,11 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			return std::strtoull(token.c_str(), nullptr, 0);
 		};
 		if (action == "begin") {
-			ATNetplayInput::BeginTestSession();
+			const auto layout = NextToken(cmd);
+			if (!layout.empty() && layout != "separate" && layout != "shared")
+				return JsonError("netplay_input begin [separate|shared]");
+			ATNetplayInput::BeginTestSession(layout == "shared"
+				? ATNetplay::ControllerLayout::SharedJoystick : ATNetplay::ControllerLayout::SeparateJoysticks);
 			frameInputs[0] = frameInputs[1] = {};
 		} else if (action == "end") ATNetplayInput::EndSession();
 		else if (action == "physical") {
@@ -3198,6 +3202,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			+ (ATNetplayInput::IsActive() ? "true" : "false")
 			+ ",\"restricted\":" + (sim.GetInputManager()
 				&& sim.GetInputManager()->IsRestrictedMode() ? "true" : "false")
+			+ ",\"controllerLayout\":" + std::to_string((unsigned)applied.controllerLayout)
 			+ ",\"keyScan\":" + std::to_string(polled.keyScan)
 			+ ",\"keyFlags\":" + std::to_string(polled.keyFlags)
 			+ ",\"keyHeldMask\":" + std::to_string(polled.keyHeldMask)

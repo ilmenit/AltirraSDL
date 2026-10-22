@@ -28,6 +28,7 @@
 #include "netplay/lobby_protocol.h"   // ATLobby::kMaxHostedGamesPerHost
 #include "netplay/netplay_glue.h"     // ATNetplayGlue::PeerPath
 #include "netplay/platform_notify.h"
+#include "netplay/netplay_controller_layout.h"
 
 #include "constants.h"  // ATHardwareMode, ATMemoryMode, ATVideoStandard
 
@@ -91,8 +92,8 @@ enum class HostedGameState : uint8_t {
 	Failed,       // last attempt failed; held locally so user can retry
 };
 
-// Per-game machine configuration — the 6 variables a host can pick
-// per hosted game.  Everything else is pinned by the canonical
+// Per-game machine configuration and joystick wiring chosen by the host.
+// Everything else is pinned by the canonical
 // Netplay Session Profile (see ATNetplayProfile in
 // netplay/netplay_profile.h): both peers force a fixed
 // deterministic configuration for the duration of a session, so
@@ -109,6 +110,9 @@ struct MachineConfig {
 	ATMemoryMode    memoryMode      = kATMemoryMode_320K;
 	ATVideoStandard videoStandard   = kATVideoStandard_PAL;
 	bool            basicEnabled    = false;
+	// Requested fork extension: each hosted game chooses joystick wiring.
+	ATNetplay::ControllerLayout controllerLayout =
+		ATNetplay::ControllerLayout::SeparateJoysticks;
 
 	uint32_t        kernelCRC32     = 0;
 	uint32_t        basicCRC32      = 0;
@@ -244,6 +248,11 @@ struct HostedGame {
 // Host Games row subtitle.  Returns static storage; caller must copy
 // before calling again.  Format: "800XL · 320K · NTSC · BASIC off".
 const char *MachineConfigSummary(const MachineConfig& c);
+const char *ControllerLayoutLabel(ATNetplay::ControllerLayout layout);
+ATNetplay::ControllerLayout NormalizedControllerLayout(const MachineConfig& c);
+void NormalizeControllerLayout(MachineConfig& c);
+// Copy machine settings while retaining this hosted game's input choice.
+void CopyCurrentMachineConfig(MachineConfig& c);
 
 // Short wire-format labels for the three machine enums — also used on
 // the host side to populate the lobby's hardwareMode / videoStandard /
@@ -431,6 +440,8 @@ struct Session {
 
 	// Host visibility choice before BeginHost().
 	bool        hostingPrivate = false;
+	ATNetplay::ControllerLayout hostingControllerLayout =
+		ATNetplay::ControllerLayout::SeparateJoysticks;
 	std::string hostingEntryCode;  // user-typed; hashed before sending
 
 	// Join flow: the browser row the user clicked, copied out so the

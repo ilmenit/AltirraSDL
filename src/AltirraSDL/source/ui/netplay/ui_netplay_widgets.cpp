@@ -3,6 +3,7 @@
 #include <stdafx.h>
 
 #include "ui_netplay_widgets.h"
+#include "ui_netplay_actions.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -904,7 +905,7 @@ void FwCombo(const char *label,
 // Shared picker state.  At most one picker is active at a time; the
 // kind enum identifies which machine-config field is being picked.
 enum class MCPickerKind : uint8_t {
-	None, Hardware, Video, OSFw, BasicFw,
+	None, Hardware, Video, OSFw, BasicFw, ControllerLayout,
 };
 MCPickerKind s_mcPicker = MCPickerKind::None;
 // Target config for the picker's commit.  Retained across frames so
@@ -948,7 +949,12 @@ bool TouchOptionPicker(const char *title,
 			bool selected = (i == initialIdx);
 			if (i == 0 && selected) ImGui::SetItemDefaultFocus();
 			ImGui::PushID(i);
-			if (ATTouchListItem(items[i], nullptr, selected, false)) {
+			const bool pressed = ATTouchListItem(items[i], nullptr, selected, false);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+			ImGuiContext& g = *ImGui::GetCurrentContext();
+			IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), items[i], g.LastItemData.StatusFlags);
+#endif
+			if (pressed) {
 				*outIdx = i;
 				chosen = true;
 			}
@@ -995,6 +1001,10 @@ int TouchCardPicker(const char *title, const char * const *valueLabels,
 
 	if (disabled) ImGui::BeginDisabled();
 	bool tapped = ATTouchListItem(buf, nullptr, false, true);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+	IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), buf, g.LastItemData.StatusFlags);
+#endif
 	if (disabled) ImGui::EndDisabled();
 
 	if (tapped && !disabled) {
@@ -1049,7 +1059,94 @@ void ReloadMachineConfigFirmwareList() {
 	ReloadMachineConfigFirmwareChoices();
 }
 
+// Explicitly requested fork extension: one hosted game can wire both
+// players' digital controls to joystick one for manual turn-taking.
+bool RenderControllerLayoutSection(MachineConfig& cfg) {
+	NormalizeControllerLayout(cfg);
+	const auto previous = cfg.controllerLayout;
+	const bool is5200 = cfg.hardwareMode == kATHardwareMode_5200;
+	const char* labels[] = {
+		ControllerLayoutLabel(ATNetplay::ControllerLayout::SeparateJoysticks),
+		ControllerLayoutLabel(ATNetplay::ControllerLayout::SharedJoystick)
+	};
+	int selected = cfg.controllerLayout == ATNetplay::ControllerLayout::SharedJoystick;
+	if (ATUIIsGamingMode()) {
+		const int picked = TouchCardPicker("Controller layout", labels, 2,
+			selected, is5200, MCPickerKind::ControllerLayout);
+		if (picked >= 0) selected = picked;
+	} else {
+		ImGui::BeginDisabled(is5200);
+		ImGui::SetNextItemWidth(std::max(120.0f,
+			ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Controller layout").x
+			- ImGui::GetStyle().ItemInnerSpacing.x));
+		ImGui::Combo("Controller layout", &selected, labels, 2);
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+		IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), "Controller layout", 0);
+#endif
+		ImGui::EndDisabled();
+	}
+	cfg.controllerLayout = selected ? ATNetplay::ControllerLayout::SharedJoystick
+		: ATNetplay::ControllerLayout::SeparateJoysticks;
+	NormalizeControllerLayout(cfg);
+	const char* note = is5200
+		? "Atari 5200 uses separate analog controllers; shared digital joystick is unavailable."
+		: "Shared joystick sends both players' digital directions and fire to port 1; port 2 digital controls stay neutral. Players take turns themselves.";
+	if (ATUIIsGamingMode()) ATTouchMutedText(note);
+	else ImGui::TextWrapped("%s", note);
+	return cfg.controllerLayout != previous;
+}
+
+void RenderHostedGameControls(HostedGame& game) {
+	const bool locked = ATNetplayGlue::IsSessionEngaged()
+		|| game.state == HostedGameState::Handshaking
+		|| game.state == HostedGameState::Playing;
+	ImGui::BeginDisabled(locked);
+	const bool clicked = ATUIIsGamingMode()
+		? ATTouchButton("Controls...", ImVec2(Dp(130), Dp(ATTouch::kButtonHeightSmall)),
+			ATTouchButtonStyle::Neutral)
+		: ImGui::SmallButton("Controls...");
+	if (clicked) ImGui::OpenPopup("Hosted controller layout");
+	ImGui::EndDisabled();
+	if (!ImGui::IsPopupOpen("Hosted controller layout")) return;
+	ImGui::SetNextWindowSize(ImVec2(std::min(Dp(480),
+		ImGui::GetMainViewport()->WorkSize.x - 24.0f), 0), ImGuiCond_Appearing);
+	if (ImGui::BeginPopup("Hosted controller layout", ImGuiWindowFlags_NoSavedSettings)) {
+		ImGui::TextWrapped("%s", game.gameName.c_str());
+		ImGui::BeginDisabled(locked);
+		MachineConfig edited = game.config;
+		if (RenderControllerLayoutSection(edited)) {
+			const auto signature = HostedGameSignature(game.gamePath, edited);
+			const auto& games = GetState().hostedGames;
+			const bool duplicate = std::any_of(games.begin(), games.end(),
+				[&](const HostedGame& other) {
+					return other.id != game.id &&
+						HostedGameSignature(other.gamePath, other.config) == signature;
+				});
+			if (duplicate) {
+				game.lastError = "This game is already added with those controls and machine settings. The current offer was kept.";
+			} else {
+				// The existing disable path advances coordGen, deletes old
+				// registrations, and closes only this offer's coordinator.
+				const bool enabled = game.enabled;
+				if (enabled) DisableHostedGame(game.id);
+				game.config.controllerLayout = edited.controllerLayout;
+				game.lastError.clear();
+				SaveToRegistry();
+				if (enabled) EnableHostedGame(game.id);
+				ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::EndDisabled();
+		if (!game.lastError.empty()) ImGui::TextWrapped("%s", game.lastError.c_str());
+		if (locked) ImGui::TextWrapped("Leave the active session before changing controls.");
+		if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+}
+
 void RenderMachineConfigSection(MachineConfig& cfg) {
+	NormalizeControllerLayout(cfg);
 	if (!s_mcFwChoicesLoaded) ReloadMachineConfigFirmwareChoices();
 	s_mcPickerCfg = &cfg;  // for the popup callbacks
 
@@ -1078,7 +1175,7 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 	for (int i = 0; i < 7; ++i)
 		if (kHWVals[i] == cfg.hardwareMode) { hwIdx = i; break; }
 
-	const bool is5200 = (cfg.hardwareMode == kATHardwareMode_5200);
+	bool is5200 = (cfg.hardwareMode == kATHardwareMode_5200);
 	int vsIdx = 0;
 	for (int i = 0; i < 5; ++i)
 		if (kVSVals[i] == cfg.videoStandard) { vsIdx = i; break; }
@@ -1091,6 +1188,8 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 		int picked = TouchCardPicker("Hardware", kHWLabels, 7, hwIdx,
 			false, MCPickerKind::Hardware);
 		if (picked >= 0) cfg.hardwareMode = kHWVals[picked];
+		is5200 = cfg.hardwareMode == kATHardwareMode_5200;
+		RenderControllerLayoutSection(cfg);
 
 		picked = TouchCardPicker("Video standard", kVSLabels, 5, vsIdx,
 			is5200, MCPickerKind::Video);
@@ -1118,7 +1217,7 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 			ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightNormal)),
 			ATTouchButtonStyle::Neutral, ICON_MD_LAYERS))
 		{
-			cfg = CaptureCurrentMachineConfig();
+			CopyCurrentMachineConfig(cfg);
 		}
 		if (ATTouchButton("Refresh firmware list",
 			ImVec2(-FLT_MIN, Dp(ATTouch::kButtonHeightSmall)),
@@ -1135,6 +1234,8 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 	if (ImGui::Combo("Hardware", &hwIdx, kHWLabels, 7))
 		cfg.hardwareMode = kHWVals[hwIdx];
 	ImGui::PopItemWidth();
+	is5200 = cfg.hardwareMode == kATHardwareMode_5200;
+	RenderControllerLayoutSection(cfg);
 
 	ImGui::BeginDisabled(is5200);
 	ImGui::PushItemWidth(220.0f);
@@ -1159,7 +1260,7 @@ void RenderMachineConfigSection(MachineConfig& cfg) {
 	FwCombo("BASIC",     s_mcBasicChoices,  &cfg.basicCRC32);
 
 	if (ImGui::Button("Copy from current emulator")) {
-		cfg = CaptureCurrentMachineConfig();
+		CopyCurrentMachineConfig(cfg);
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Refresh firmware list")) {

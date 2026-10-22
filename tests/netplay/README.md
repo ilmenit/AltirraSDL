@@ -56,6 +56,13 @@ sector 4, reads it into another buffer, and compares every byte. Its
 marker and guest error counters must remain valid. No game download or
 external lobby is involved.
 
+Add `--joystick-test` to send real SDL arrow-key and Left Ctrl events on
+each peer and verify both machines' PIA joystick and GTIA fire registers.
+Repeat with `--controller-layout shared` to verify that both players drive
+digital port 1. The default `separate` layout verifies host port 1 and guest
+port 2. For a local game requiring SELECT to start two-player play, add
+`--start-key F3`; game-specific turn selection remains manual.
+
 Normal runs reject every desync or resync. `--resync-test` deliberately
 changes one host RAM byte after the normal interval, requires exactly one
 resync, and continues changing input for at least 1000 further frames.

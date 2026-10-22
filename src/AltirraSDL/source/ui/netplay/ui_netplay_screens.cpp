@@ -738,6 +738,11 @@ void RenderHostSetup() {
 
 	BeginScreenBody(ATTouch::kFooterReserveSingle);
 
+	MachineConfig hostControls = CaptureCurrentMachineConfig();
+	hostControls.controllerLayout = st.session.hostingControllerLayout;
+	RenderControllerLayoutSection(hostControls);
+	st.session.hostingControllerLayout = hostControls.controllerLayout;
+
 	ATTouchSection("Visibility");
 	int vis = st.session.hostingPrivate ? 1 : 0;
 	const char *visItems[] = { "Public", "Private" };
@@ -1627,6 +1632,7 @@ void RenderMyHostedGames() {
 			bool tapped = ATTouchListItem(o.gameName.c_str(), subtitle,
 				false, false);
 			(void)tapped;  // tile tap is currently a no-op; actions below
+			ATTouchMutedText(ControllerLayoutLabel(NormalizedControllerLayout(o.config)));
 
 			if (!o.lastError.empty()) {
 				ATTouchMutedText(o.lastError.c_str());
@@ -1655,6 +1661,7 @@ void RenderMyHostedGames() {
 				pendingRemove = o.id;
 			}
 
+			RenderHostedGameControls(o);
 			ImGui::Spacing();
 			ImGui::Separator();
 			ImGui::Spacing();

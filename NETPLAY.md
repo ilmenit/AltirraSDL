@@ -35,13 +35,29 @@ beyond the prediction limit still pauses gameplay.
 
 The lobby provides discovery and authenticated relay paths in addition to
 direct UDP. Browser peers use WebSocket relay transport. Both players need
-protocol 8 builds and matching OS/BASIC firmware; firmware is never sent.
+protocol 9 builds and matching OS/BASIC firmware; firmware is never sent.
 The host transfers the selected game image, so the joiner does not need it
 in their own library.
 
 Your running game and media are preserved before the session and restored
 when you leave, including unsaved disk changes and the paused/running state.
 Writes made during online play stay in the session's reversible disk overlay.
+
+Each player uses their own local **joystick 1** mapping, including keyboard,
+gamepad or touch controls. With **Two joysticks — one per player**, the host
+drives Atari port 1 and the guest drives port 2 on both machines. The guest
+does not need to change their local mapping to joystick 2.
+
+For digital joystick games that take turns on port 1, choose **Shared
+joystick — take turns** in the hosted game's **Controller layout** option.
+Both players then feed directions and fire to port 1; digital port 2 stays
+neutral. Players take turns themselves: the emulator does not detect whose
+turn the game is displaying, and either player's held input remains active.
+Keyboard and console keys remain shared in both layouts. Analog controllers
+and 5200 controllers retain their separate routing; shared mode is for
+ordinary Atari computer joystick games. Existing offers default to two joysticks.
+Taking turns does not always mean sharing a port: some games use a separate
+joystick for each player even during alternating play. Check the game's controls.
 
 ---
 

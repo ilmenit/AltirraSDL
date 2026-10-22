@@ -80,6 +80,8 @@ private:
 
 // Restored with a rollback checkpoint; live keyboard events stay queued.
 struct AppliedState {
+	ATNetplay::ControllerLayout controllerLayout =
+		ATNetplay::ControllerLayout::SeparateJoysticks;
 	uint64_t rawKeyMask = 0;
 	uint8_t consoleMask = 0;
 	ATNetplay::NetInput inputs[2]{};

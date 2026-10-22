@@ -143,6 +143,18 @@ void TestHealthz() {
 		"healthz body prefix");
 }
 
+void TestCapabilities() {
+	++g_testsRun;
+	Fixture f;
+	auto c = f.client();
+	auto r = c.Get("/v1/capabilities");
+	T_EXPECT(r && r->status == 200, "capabilities response");
+	const std::string supported = "\"gameplayProtocolVersions\":["
+		+ std::to_string(ATNetplay::kProtocolVersion) + "]";
+	T_EXPECT(r->body.find(supported) != std::string::npos,
+		"capabilities advertises the emulator gameplay protocol");
+}
+
 void TestCreateAndList() {
 	++g_testsRun;
 	Fixture f;
@@ -2044,6 +2056,7 @@ int RunAll() {
 	TestBrokerRelayRequiresApprovedIntentAfterSpawn();
 	TestLeaseBudgetSurvivesDiscoveryExhaustion();
 	TestHealthz();
+	TestCapabilities();
 	TestCreateAndList();
 	TestCreatePreservesOtherOwnersWithSameNickname();
 	TestListEchoesMachineFields();

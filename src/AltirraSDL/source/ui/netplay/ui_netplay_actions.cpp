@@ -558,6 +558,7 @@ ATNetplay::NetBootConfig BuildBootConfig(const HostedGame& o) {
 	bc.memoryMode      = (uint8_t)o.config.memoryMode;
 	bc.videoStandard   = (uint8_t)o.config.videoStandard;
 	bc.basicEnabled    = o.config.basicEnabled ? 1 : 0;
+	bc.controllerLayout = NormalizedControllerLayout(o.config);
 	bc.kernelCRC32     = o.config.kernelCRC32;
 	bc.basicCRC32      = o.config.basicCRC32;
 
@@ -1599,7 +1600,8 @@ void StartHostingAction() {
 	for (auto& o : st.hostedGames) {
 		if (o.gamePath == st.session.pendingCartPath
 		    && o.isPrivate == st.session.hostingPrivate
-		    && o.entryCode == st.session.hostingEntryCode) {
+		    && o.entryCode == st.session.hostingEntryCode
+		    && o.config.controllerLayout == st.session.hostingControllerLayout) {
 			existing = &o; break;
 		}
 	}
@@ -1632,6 +1634,8 @@ void StartHostingAction() {
 		o.cartArtHash  = st.session.pendingCartArtHash;
 		o.isPrivate    = st.session.hostingPrivate;
 		o.entryCode    = st.session.hostingEntryCode;
+		o.config.controllerLayout = st.session.hostingControllerLayout;
+		NormalizeControllerLayout(o.config);
 		// Start disabled; EnableHostedGame below applies the
 		// kMaxEnabledHostedGames cap and only flips it live if there's
 		// a free slot.  The user can rotate which 5 of their library

@@ -28,6 +28,11 @@
 
 ### Online play
 
+- Added per-hosted-game **Controller layout**: **Two joysticks — one per
+  player** (default), or **Shared joystick — take turns** for digital
+  joystick games using port 1 for both players. The host sends the layout
+  to the guest, and rollback/resync preserve it. Protocol 9 requires both
+  players to update; the web Lobby keeps its existing controls.
 - Fixed joystick directions and fire being suppressed during online play.
   Installing discard redirects for other local controllers no longer
   removes joystick-one capture. Each player's local joystick one reaches

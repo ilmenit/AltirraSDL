@@ -500,7 +500,7 @@ void Poll(uint64_t nowMs) {
 			m?m[8]:0, m?m[9]:0, m?m[10]:0, m?m[11]:0,
 			m?m[12]:0, m?m[13]:0, m?m[14]:0, m?m[15]:0);
 
-		ATNetplayInput::BeginSession();
+		ATNetplayInput::BeginSession(ActiveLockstep()->GetBootConfig().controllerLayout);
 		g_ATLCNetplay("input: BeginSession (sim running=%d paused=%d)",
 			g_sim.IsRunning() ? 1 : 0, g_sim.IsPaused() ? 1 : 0);
 

@@ -65,7 +65,7 @@ def main():
         assert capabilities['relayAuthVersion'] == 1 and capabilities['relayHeaderBytes'] == 56
         body = dict(cartName='Local relay regression', hostHandle='owner',
                     hostEndpoint='127.0.0.1:26000', playerCount=1,
-                    maxPlayers=2, protocolVersion=8)
+                    maxPlayers=2, protocolVersion=9)
         status, session = request('/v1/session', body)
         assert status == 201 and session['relayPort'] == udp_port
         sid = uuid.UUID(session['sessionId']).bytes

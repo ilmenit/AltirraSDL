@@ -13,6 +13,7 @@
 
 #include "lobby_protocol.h"
 #include "json_cursor.h"
+#include "packets.h"
 
 // cpp-httplib opts into OpenSSL iff CPPHTTPLIB_OPENSSL_SUPPORT is
 // *defined* (any value).  We don't want TLS in-tree — HTTP-only
@@ -2322,7 +2323,9 @@ void Install(httplib::Server& srv, Store& store) {
 
 	srv.Get("/v1/capabilities", [&store](const httplib::Request&, httplib::Response& res) {
 		JsonBuilder body;
-		body.raw("{\"relayAuthVersion\":1,\"relayHeaderBytes\":56,\"maxPlayers\":2,\"gameplayProtocolVersions\":[8],\"relayPort\":");
+		body.raw("{\"relayAuthVersion\":1,\"relayHeaderBytes\":56,\"maxPlayers\":2,\"gameplayProtocolVersions\":[");
+		body.num(ATNetplay::kProtocolVersion);
+		body.raw("],\"relayPort\":");
 		body.num(store.Cfg().reflectorPort);
 		body.raw(",\"webSocketPath\":\"/netplay\",\"pendingRoutesPerSession\":16,\"webSocketUrl\":");
 		body.str(store.Cfg().webSocketUrl); body.raw('}');

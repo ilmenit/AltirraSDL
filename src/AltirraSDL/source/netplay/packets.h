@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include "netplay_controller_layout.h"
 
 namespace ATNetplay {
 
@@ -159,7 +160,9 @@ constexpr uint32_t kMagicRelayRegister = 0x52475341u; // 'ASGR'
 // skew is detected by the existing NetWelcome.protocolVersion check.
 // v8 binds session traffic to nonce + resync epoch, adds repair ACKs,
 // full keyboard/analog state, negotiated rollback timing and bounded transfers.
-constexpr uint16_t kProtocolVersion   = 8;
+// v9 negotiates per-game separate/shared digital joystick wiring. Older
+// peers must not silently apply the same inputs to different Atari ports.
+constexpr uint16_t kProtocolVersion   = 9;
 constexpr int      kRedundancyR       = 5;       // sliding input-window length
 constexpr int      kFrameHz           = 60;      // simulated emulator frame rate
 constexpr uint32_t kSnapshotChunkSize = 1200;    // payload bytes per NetSnapChunk
@@ -283,12 +286,13 @@ struct NetHello {
 	uint8_t  entryCodeHash[kEntryCodeHashLen] = {};  // zeroed for public sessions
 };
 
-// NetBootConfig — v4 layout, 32 bytes on the wire.
+// NetBootConfig — 36 bytes on the wire; v9 uses one former spare byte
+// for the host-selected digital joystick layout.
 //
 // In v4 the host no longer ships an arbitrary subset of MachineConfig
 // fields.  Both peers force the canonical Netplay Session Profile
 // (see netplay_profile.h: ATNetplayProfile::kCanonicalProfileVersion);
-// only the 6 per-game variables below are negotiable per session.
+// machine variables and the controller layout below are negotiated.
 // Removed since v3:
 //   cpuMode         — locked to 6502 in canonical profile
 //   sioAcceleration — pinned ON in canonical profile
@@ -305,7 +309,8 @@ struct NetBootConfig {
 	uint32_t basicCRC32      = 0;  // 0 = canonical default
 	uint32_t gameFileCRC32   = 0;  // for joiner local-cache lookup
 	char     gameExtension[8] = {}; // ".xex" / ".atr" / ".car", NUL-pad
-	uint8_t  reserved1[8]    = {};
+	ControllerLayout controllerLayout = ControllerLayout::SeparateJoysticks;
+	uint8_t  reserved1[7]    = {};
 };
 
 // NetWelcome — host → joiner (accept).  128 bytes on the wire at v5
@@ -602,7 +607,8 @@ struct NetSimHashDiag {
 
 // Wire sizes.  Must match protocol.cpp.
 constexpr size_t kWireHelloSize     = 4 + 2 + 2 + kSessionNonceLen + 8 + 8 + kHandleLen + 2 + kEntryCodeHashLen;   // 90
-// v4 BootConfig: u16 canonical + u16 reserved0 + 4×u8 + 3×u32 + 8 bytes ext + 8 bytes reserved1 = 36
+// BootConfig: u16 canonical + u16 reserved0 + 4×u8 + 3×u32 +
+// 8 bytes extension + u8 controller layout + 7 spare bytes = 36.
 constexpr size_t kWireBootCfgSize   = 2 + 2 + 1 + 1 + 1 + 1 + 4 + 4 + 4 + 8 + 8;                                   // 36
 // v5: 4 magic + 2 delay + 2 slot + 64 cart + 4 bytes + 4 chunks +
 // 4 crc + 8 settings + 36 bootcfg = 128
@@ -680,7 +686,7 @@ static_assert(kWireNetEventSize     == 8,   "NetEvent wire drift");
 static_assert(kWireNetHeartbeatSize == 16,  "NetHeartbeat wire drift");
 static_assert(kWireInputSize    == 22,    "v8 NetInput wire drift");
 static_assert(kWireInputPktSize == 132,   "v8 NetInputPacket wire drift");
-static_assert(kProtocolVersion == 8,
+static_assert(kProtocolVersion == 9,
 	"bump kProtocolVersion when wire format changes");
 
 } // namespace ATNetplay

@@ -146,7 +146,7 @@ DecodeResult DecodeHello(const uint8_t* buf, size_t len, NetHello& out) {
 // ---------------------------------------------------------------------------
 
 size_t EncodeWelcome(const NetWelcome& w, uint8_t* buf, size_t bufSize) {
-	if (bufSize < kWireWelcomeSize) return 0;
+	if (bufSize < kWireWelcomeSize || !IsValidControllerLayout(w.boot.controllerLayout)) return 0;
 	put_u32(buf + 0, kMagicWelcome);
 	put_u16(buf + 4, w.inputDelayFrames);
 	put_u16(buf + 6, w.playerSlot);
@@ -167,7 +167,8 @@ size_t EncodeWelcome(const NetWelcome& w, uint8_t* buf, size_t bufSize) {
 	put_u32(b + 12, w.boot.basicCRC32);                             // 12..16
 	put_u32(b + 16, w.boot.gameFileCRC32);                          // 16..20
 	std::memcpy(b + 20, w.boot.gameExtension, 8);                   // 20..28
-	std::memcpy(b + 28, w.boot.reserved1, 8);                       // 28..36
+	b[28] = (uint8_t)w.boot.controllerLayout;                      // 28 (v9)
+	std::memcpy(b + 29, w.boot.reserved1, 7);                       // 29..36
 	put_u16(buf + 128, w.rollbackFrames);
 	put_u32(buf + 130, w.framePeriodUs);
 	return kWireWelcomeSize;
@@ -195,7 +196,9 @@ DecodeResult DecodeWelcome(const uint8_t* buf, size_t len, NetWelcome& out) {
 	out.boot.basicCRC32    = get_u32(b + 12);
 	out.boot.gameFileCRC32 = get_u32(b + 16);
 	std::memcpy(out.boot.gameExtension, b + 20, 8);
-	std::memcpy(out.boot.reserved1, b + 28, 8);
+	out.boot.controllerLayout = (ControllerLayout)b[28];
+	if (!IsValidControllerLayout(out.boot.controllerLayout)) return DecodeResult::BadSize;
+	std::memcpy(out.boot.reserved1, b + 29, 7);
 	out.rollbackFrames = get_u16(buf + 128);
 	out.framePeriodUs = get_u32(buf + 130);
 	return DecodeResult::Ok;

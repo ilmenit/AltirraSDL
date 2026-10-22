@@ -146,7 +146,7 @@ static void LoadOffers(VDRegistryAppKey& key) {
 	g_state.hostedGames.reserve(count);
 
 	for (int i = 0; i < count; ++i) {
-		char kn[24];
+		char kn[32];
 		HostedGame o;
 		VDStringA buf;
 
@@ -190,6 +190,11 @@ static void LoadOffers(VDRegistryAppKey& key) {
 		o.config.kernelCRC32 = (uint32_t)key.getInt(kn, 0);
 		std::snprintf(kn, sizeof kn, "Game%d_basicCRC", i);
 		o.config.basicCRC32 = (uint32_t)key.getInt(kn, 0);
+		std::snprintf(kn, sizeof kn, "Game%d_controllerLayout", i);
+		o.config.controllerLayout = key.getInt(kn, 0) == 1
+			? ATNetplay::ControllerLayout::SharedJoystick
+			: ATNetplay::ControllerLayout::SeparateJoysticks;
+		NormalizeControllerLayout(o.config);
 
 		// CRC cache — invalidated at use time if the outer file's
 		// mtime stamp no longer matches.  Stamp is 64 bits stored as
@@ -218,14 +223,14 @@ static void SaveOffers(VDRegistryAppKey& key) {
 		"_cpuMode",   // legacy (v3 MachineConfig) — scrub on save
 		"_sioPatch",  // legacy (v3 MachineConfig) — scrub on save
 		"_hwMode", "_memMode", "_videoStd",
-		"_basicEnabled", "_kernelCRC", "_basicCRC",
+		"_basicEnabled", "_kernelCRC", "_basicCRC", "_controllerLayout",
 		"_fileCRC", "_fileStampLo", "_fileStampHi",
 	};
 
 	// First, strip stale Game<N>_* keys left over from previous saves.
 	const int kScan = (int)State::kMaxHostedGames + 4;
 	for (int i = 0; i < kScan; ++i) {
-		char kn[24];
+		char kn[32];
 		for (const char *sfx : kSuffixes) {
 			std::snprintf(kn, sizeof kn, "Game%d%s", i, sfx);
 			key.removeValue(kn);
@@ -237,7 +242,7 @@ static void SaveOffers(VDRegistryAppKey& key) {
 	key.setInt("GameCount", n);
 	for (int i = 0; i < n; ++i) {
 		const HostedGame& o = g_state.hostedGames[i];
-		char kn[24];
+		char kn[32];
 		std::snprintf(kn, sizeof kn, "Game%d_id", i);
 		key.setString(kn, o.id.c_str());
 		std::snprintf(kn, sizeof kn, "Game%d_path", i);
@@ -264,6 +269,8 @@ static void SaveOffers(VDRegistryAppKey& key) {
 		key.setInt(kn, (int)o.config.kernelCRC32);
 		std::snprintf(kn, sizeof kn, "Game%d_basicCRC", i);
 		key.setInt(kn, (int)o.config.basicCRC32);
+		std::snprintf(kn, sizeof kn, "Game%d_controllerLayout", i);
+		key.setInt(kn, (int)NormalizedControllerLayout(o.config));
 		std::snprintf(kn, sizeof kn, "Game%d_fileCRC", i);
 		key.setInt(kn, (int)o.gameFileCRC32);
 		std::snprintf(kn, sizeof kn, "Game%d_fileStampLo", i);
@@ -316,13 +323,30 @@ const char *VideoStandardShort(ATVideoStandard v) {
 	}
 }
 
+ATNetplay::ControllerLayout NormalizedControllerLayout(const MachineConfig& c) {
+	if (c.hardwareMode == kATHardwareMode_5200 ||
+		!ATNetplay::IsValidControllerLayout(c.controllerLayout))
+		return ATNetplay::ControllerLayout::SeparateJoysticks;
+	return c.controllerLayout;
+}
+
+void NormalizeControllerLayout(MachineConfig& c) {
+	c.controllerLayout = NormalizedControllerLayout(c);
+}
+
+const char *ControllerLayoutLabel(ATNetplay::ControllerLayout layout) {
+	return layout == ATNetplay::ControllerLayout::SharedJoystick
+		? "Shared joystick - take turns" : "Two joysticks - one per player";
+}
+
 const char *MachineConfigSummary(const MachineConfig& c) {
-	static char buf[96];
-	std::snprintf(buf, sizeof buf, "%s | %s | %s | BASIC %s",
+	static char buf[160];
+	std::snprintf(buf, sizeof buf, "%s | %s | %s | BASIC %s | %s",
 		HardwareModeShort(c.hardwareMode),
 		MemoryModeShort(c.memoryMode),
 		VideoStandardShort(c.videoStandard),
-		c.basicEnabled ? "on" : "off");
+		c.basicEnabled ? "on" : "off",
+		ControllerLayoutLabel(NormalizedControllerLayout(c)));
 	return buf;
 }
 
@@ -537,15 +561,16 @@ std::string SpecLineJoin(const SpecLine& sl) {
 
 std::string HostedGameSignature(const std::string& path,
                                 const MachineConfig& c) {
-	char buf[384];
-	std::snprintf(buf, sizeof buf,
-		"%s|hw=%d|mem=%d|vs=%d|basic=%d|kc=%08X|bc=%08X",
-		path.c_str(),
+	// Paths can exceed any fixed buffer. Keep the complete path and append
+	// only the bounded numeric configuration suffix, including input wiring.
+	char suffix[160];
+	std::snprintf(suffix, sizeof suffix,
+		"|hw=%d|mem=%d|vs=%d|basic=%d|kc=%08X|bc=%08X|controls=%d",
 		(int)c.hardwareMode, (int)c.memoryMode,
 		(int)c.videoStandard,
 		c.basicEnabled ? 1 : 0,
-		c.kernelCRC32, c.basicCRC32);
-	return buf;
+		c.kernelCRC32, c.basicCRC32, (int)NormalizedControllerLayout(c));
+	return path + suffix;
 }
 
 MachineConfig CaptureCurrentMachineConfig() {
@@ -557,6 +582,13 @@ MachineConfig CaptureCurrentMachineConfig() {
 	c.kernelCRC32     = ComputeFirmwareCRC32(g_sim.GetKernelId());
 	c.basicCRC32      = ComputeFirmwareCRC32(g_sim.GetBasicId());
 	return c;
+}
+
+void CopyCurrentMachineConfig(MachineConfig& c) {
+	const auto layout = c.controllerLayout;
+	c = CaptureCurrentMachineConfig();
+	c.controllerLayout = layout;
+	NormalizeControllerLayout(c);
 }
 
 void PrefillHostMachineConfigDefaults(MachineConfig &cfg) {

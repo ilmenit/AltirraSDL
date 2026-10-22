@@ -191,8 +191,19 @@ void ApplyPorts() {
 	for (int i = 0; i < 2; ++i) {
 		if (!g_port[i]) continue;
 		const auto& input = g_applied.inputs[i];
-		g_port[i]->SetDirInput(uint8_t(~input.stickDir & 15));
-		g_port[i]->SetTriggerDown((input.buttons & kBtnTrigger) != 0);
+		uint8_t directions = input.stickDir;
+		bool fire = (input.buttons & kBtnTrigger) != 0;
+		if (g_applied.controllerLayout == ATNetplay::ControllerLayout::SharedJoystick) {
+			// Host-selected fork extension for games that take turns on
+			// one digital joystick. Both peers apply the same wired-OR
+			// input to port one; neither player drives digital port two.
+			directions = i == 0
+				? g_applied.inputs[0].stickDir | g_applied.inputs[1].stickDir : 0;
+			fire = i == 0 && ((g_applied.inputs[0].buttons
+				| g_applied.inputs[1].buttons) & kBtnTrigger);
+		}
+		g_port[i]->SetDirInput(uint8_t(~directions & 15));
+		g_port[i]->SetTriggerDown(fire);
 		for (unsigned pot = 0; pot < 2; ++pot) {
 			const uint32_t pos = input.pot[pot];
 			if (pos == ATPokeyEmulator::kPotHiPosUnconnected)
@@ -212,7 +223,7 @@ uint8_t g_localConsoleMask = 0;
 
 } // anonymous
 
-void BeginSession() {
+void BeginSession(ATNetplay::ControllerLayout layout) {
 	if (g_active) return;
 
 	// Zero out any currently-held local input so we don't leak a
@@ -296,6 +307,10 @@ void BeginSession() {
 
 	g_keyboard.Reset();
 	g_applied = {};
+	// Shared mode describes an ordinary digital joystick, not 5200
+	// analog sticks/keypads. Keep their existing per-player routing.
+	if (ATNetplay::IsValidControllerLayout(layout) && g_sim.GetHardwareMode() != kATHardwareMode_5200)
+		g_applied.controllerLayout = layout;
 	g_localConsoleMask = 0;
 
 	g_active = true;
@@ -355,7 +370,7 @@ void EndSession() {
 
 bool IsActive()                { return g_active; }
 bool IsTestSession()           { return g_testSession; }
-void BeginTestSession() { BeginSession(); g_testSession = true; }
+void BeginTestSession(ATNetplay::ControllerLayout layout) { BeginSession(layout); g_testSession = true; }
 bool IsSuppressingLocalInput() { return g_active; }
 
 // No-op stubs: the sim-event logger was removed (see comment above).

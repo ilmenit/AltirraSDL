@@ -66,7 +66,8 @@ bool CaptureSavestate(std::vector<uint8_t>& out) {
 		// field encoder as gameplay packets instead of struct padding.
 		const auto inputs = ATNetplayInput::CaptureAppliedState();
 		std::array<uint8, 17 + kWireInputPktSize> inputBytes{};
-		inputBytes[0] = 1;
+		inputBytes[0] = 2;
+		inputBytes[1] = (uint8)inputs.controllerLayout;
 		for (unsigned i = 0; i < 8; ++i)
 			inputBytes[4 + i] = (uint8)(inputs.rawKeyMask >> (i * 8));
 		inputBytes[12] = inputs.consoleMask;
@@ -137,10 +138,12 @@ bool ApplySavestate(const uint8_t* data, size_t len) {
 		inputStream->EnableCRC();
 		inputStream->Read(inputBytes.data(), (sint32)inputBytes.size());
 		inputStream->VerifyCRC();
-		if (inputBytes[0] != 1 || inputBytes[1] || inputBytes[2] || inputBytes[3]
+		if (inputBytes[0] != 2 || !IsValidControllerLayout((ControllerLayout)inputBytes[1])
+			|| inputBytes[2] || inputBytes[3]
 			|| inputBytes[12] > 7 || inputBytes[13] > 4
 			|| inputBytes[14] > 1 || inputBytes[15] > 1 || inputBytes[16] > 1)
 			throw MyError("Netplay savestate contains invalid held input state.");
+		inputs.controllerLayout = (ControllerLayout)inputBytes[1];
 		for (unsigned i = 0; i < 8; ++i)
 			inputs.rawKeyMask |= uint64(inputBytes[4 + i]) << (i * 8);
 		inputs.consoleMask = inputBytes[12];
