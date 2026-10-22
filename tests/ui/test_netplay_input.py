@@ -43,6 +43,96 @@ def bridge(emu):
     return AltirraBridge.from_token_file(str(token))
 
 
+@pytest.mark.parametrize("slot", [0, 1], ids=["host-port-one", "guest-port-two"])
+@pytest.mark.parametrize("key,stick,fire", [
+    ("Up", 1, 0), ("Down", 2, 0), ("Left", 4, 0), ("Right", 8, 0),
+    ("Left Ctrl", 0, 1),
+])
+def test_mapped_keyboard_joystick_is_captured_and_applied_to_player_port(
+        emu, slot, key, stick, fire):
+    # Boot the OS so PIA PORTA is configured for joystick input. Exercise
+    # real SDL key events and the default arrow/Left Ctrl mapping,
+    # rather than injecting already-encoded NetInput and bypassing capture.
+    with bridge(emu) as control:
+        control.frame(180)
+        control.ping()
+    emu.send("netplay_input begin")
+    assert emu.mem_read(0xD300, 1) == [0xFF]
+    assert emu.mem_read(0xD010, 2) == [1, 1]
+    emu.send(f"physical_key down {key}")
+    emu.wait_frames(3)
+    captured = emu.send("netplay_input poll")
+    assert captured["stick"] == stick, captured
+    assert captured["buttons"] & 1 == fire, captured
+    # Capture must not drive either hardware port before the delayed input
+    # is applied. Each peer uses its local port one; its network role
+    # determines whether that input becomes Atari joystick one or two.
+    assert emu.mem_read(0xD300, 1) == [0xFF]
+    assert emu.mem_read(0xD010, 2) == [1, 1]
+    emu.send(f"netplay_input apply_polled {slot}")
+    assert emu.mem_read(0xD300, 1) == [0xFF ^ (stick << (slot * 4))]
+    triggers = [1, 1]
+    triggers[slot] = 1 - fire
+    assert emu.mem_read(0xD010, 2) == triggers
+    # Holding a key survives successive polls. Release is also delayed.
+    held = emu.send("netplay_input poll")
+    assert held["stick"] == stick and held["buttons"] & 1 == fire
+    emu.send(f"physical_key up {key}")
+    emu.wait_frames(3)
+    released, _ = poll_apply(emu, slot)
+    assert released["stick"] == 0 and released["buttons"] & 1 == 0
+    assert emu.mem_read(0xD300, 1) == [0xFF]
+    assert emu.mem_read(0xD010, 2) == [1, 1]
+    emu.send("netplay_input end")
+    # Ending a session must restore ordinary local joystick mapping.
+    emu.send(f"physical_key down {key}")
+    emu.wait_frames(3)
+    assert emu.mem_read(0xD300, 1) == [0xFF ^ stick]
+    assert emu.mem_read(0xD010, 2) == ([0, 1] if fire else [1, 1])
+    emu.send(f"physical_key up {key}")
+    emu.wait_frames(3)
+
+
+def test_joystick_capture_survives_rebuilding_input_mappings(emu):
+    maps = emu.send("input_maps")["maps"]
+    index, arrow_map = next((i, m) for i, m in enumerate(maps)
+                            if m["enabled"] and m["name"] == "Arrow Keys -> Joystick (port 1)")
+    binding = arrow_map["bindings"][0]
+    emu.send("netplay_input begin")
+    # Editing a map rebuilds its controllers while all four independent
+    # redirects must remain installed. Add X with an existing direction.
+    emu.send(f"input_map_add_binding {index} 0 0x58 {binding['target']}")
+    emu.send("physical_key down Right")
+    emu.wait_frames(3)
+    assert emu.send("netplay_input poll")["stick"] == 8
+    emu.send("physical_key up Right")
+    emu.wait_frames(3)
+    assert emu.send("netplay_input poll")["stick"] == 0
+
+
+def test_inverted_joystick_mapping_initializes_capture_without_driving_hardware(emu):
+    with bridge(emu) as control:
+        control.frame(180)
+        control.ping()
+    maps = emu.send("input_maps")["maps"]
+    index, arrow_map = next((i, m) for i, m in enumerate(maps)
+                            if m["enabled"] and m["name"] == "Arrow Keys -> Joystick (port 1)")
+    right = next(b for b in arrow_map["bindings"] if b["input"] == 0x27)
+    emu.send("netplay_input begin")
+    # inputdefs.h: KeyX=0x58, TriggerMode_Inverted=0x00060000.
+    target = right["target"] | 0x00060000
+    emu.send(f"input_map_add_binding {index} 0 0x58 {target}")
+    assert emu.send("netplay_input poll")["stick"] == 8
+    assert emu.mem_read(0xD300, 1) == [0xFF]
+    emu.send("physical_key down X")
+    emu.wait_frames(3)
+    assert emu.send("netplay_input poll")["stick"] == 0
+    emu.send("physical_key up X")
+    emu.wait_frames(3)
+    assert emu.send("netplay_input poll")["stick"] == 8
+    assert emu.mem_read(0xD300, 1) == [0xFF]
+
+
 def test_scan_zero_repeated_events_and_encoded_modifiers(emu):
     emu.send("netplay_input begin")
     emu.send("debugger_console e D20F 03")  # POKEY scan/debounce enabled

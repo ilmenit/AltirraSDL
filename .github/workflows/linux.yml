@@ -151,6 +151,7 @@ jobs:
             tests/ui/test_fujinet_file.py tests/ui/test_fujinet_install.py \
             tests/ui/test_fujinet_activities.py \
             tests/ui/test_netplay_input.py tests/ui/test_netplay_teardown.py \
+            tests/ui/test_netplay_joystick_ports.py \
             tests/ui/test_mobile_suspend.py tests/test_android_sdl_setup.py \
             --emu-path=build/linux-release/src/AltirraSDL/AltirraSDL
 

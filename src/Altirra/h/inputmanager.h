@@ -271,6 +271,8 @@ public:
 	///
 	/// The redirect survives RebuildMappings(), so LoadMaps/ActivateInputMap
 	/// called while a netplay session is active still get captured.
+	/// Each source port has an independent redirect; changing or clearing
+	/// one port leaves the other ports' redirects intact.
 	void SetPortRedirect(int srcPortIdx, IATDeviceControllerPort *dstPort);
 
 	bool IsInputMapped(int unit, uint32 inputCode) const;
@@ -365,11 +367,9 @@ protected:
 	bool mbRestrictedMode = false;
 	bool mbConsoleCapture = false;
 	vdfunction<void(int)> mp5200ControllerOverride;
-	// Netplay port-capture state: when mPortRedirectSrc >= 0,
-	// controllers bound to that port index are redirected to
-	// mpPortRedirectDst. Re-applied after every RebuildMappings.
-	int mPortRedirectSrc = -1;
-	IATDeviceControllerPort *mpPortRedirectDst = nullptr;
+	// Fork-owned netplay capture/discard targets, indexed by Atari port.
+	// Re-applied independently after every RebuildMappings.
+	IATDeviceControllerPort *mpPortRedirects[4] {};
 	int m5200ControllerIndex;
 	bool mb5200PotsEnabled;
 	bool mb5200Mode;

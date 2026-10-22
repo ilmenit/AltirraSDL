@@ -28,6 +28,11 @@
 
 ### Online play
 
+- Fixed joystick directions and fire being suppressed during online play.
+  Installing discard redirects for other local controllers no longer
+  removes joystick-one capture. Each player's local joystick one reaches
+  their assigned emulated port; input mappings survive rebuilds and return
+  to normal when the session ends.
 - Added bounded rollback with two frames of input delay, plus a delay-only
   compatibility mode selected before hosting. Corrected frames replay from
   native checkpoints without duplicate audio submission.

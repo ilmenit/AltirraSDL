@@ -195,6 +195,57 @@ def process_resources(app):
         return {}
 
 
+def check_joystick_routing(apps, start_key=None):
+    """Real local joystick-one keys must drive distinct ports on both peers."""
+    deadline = time.monotonic() + 20
+    while min(app.send("netplay_status")["frame"] for app in apps) < 300:
+        assert time.monotonic() < deadline, "Boot did not reach joystick initialization"
+        time.sleep(0.05)
+    for app in apps:
+        # Give the emulated display keyboard focus after the join dialogs.
+        app.send("click_at 1200 850")
+        app.wait_frames(5)
+    if start_key:
+        apps[0].send(f"physical_key down {start_key}")
+        initial = [app.send("netplay_status")["frame"] for app in apps]
+        deadline = time.monotonic() + 10
+        while not all(app.send("netplay_status")["frame"] >= initial[i] + 20
+                      for i, app in enumerate(apps)):
+            assert time.monotonic() < deadline, "Start key did not advance on both peers"
+            time.sleep(0.025)
+        apps[0].send(f"physical_key up {start_key}")
+    observations = []
+    for peer, direction, key, porta, triggers in (
+        (0, "down", "Left", 0xFB, [1, 1]),
+        (1, "down", "Right", 0x7B, [1, 1]),
+        (0, "down", "Left Ctrl", 0x7B, [0, 1]),
+        (1, "down", "Left Ctrl", 0x7B, [0, 0]),
+        (0, "up", "Left", 0x7F, [0, 0]),
+        (0, "up", "Left Ctrl", 0x7F, [1, 0]),
+        (1, "up", "Right", 0xFF, [1, 0]),
+        (1, "up", "Left Ctrl", 0xFF, [1, 1]),
+    ):
+        apps[peer].send(f"physical_key {direction} {key}")
+        initial = [app.send("netplay_status")["frame"] for app in apps]
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            status = [app.send("netplay_status") for app in apps]
+            assert all(s["active"] and not s["desynced"] and not s["resyncing"]
+                       for s in status), status
+            registers = [{"porta": app.send("mem_read D300 1")["bytes"][0],
+                          "triggers": app.send("mem_read D010 2")["bytes"]}
+                         for app in apps]
+            if (all(s["frame"] >= initial[i] + 20 for i, s in enumerate(status))
+                    and all(r == {"porta": porta, "triggers": triggers} for r in registers)):
+                break
+            time.sleep(0.025)
+        else:
+            raise AssertionError((peer, direction, key, porta, triggers, registers, status))
+        observations.append({"peer": peer, "key": key, "direction": direction,
+                             "registers": registers, "frames": [s["frame"] for s in status]})
+    return observations
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--emu", type=Path, default=ROOT / "build/linux-release/src/AltirraSDL/AltirraSDL")
@@ -202,6 +253,9 @@ def main():
     parser.add_argument("--image", type=Path, help="Local boot image; default uses the built-in XEX fixture")
     parser.add_argument("--disk-rw", action="store_true",
                         help="Boot the built-in sector write/read/verify ATR fixture")
+    parser.add_argument("--joystick-test", action="store_true",
+                        help="Verify real arrow/fire keys map host to port one and guest to port two")
+    parser.add_argument("--start-key", help="Optional SDL key (e.g. F3) to enter gameplay before joystick checks")
     parser.add_argument("--video", choices=("ntsc", "pal"), default="pal")
     parser.add_argument("--mode", choices=("automatic", "delay"), default="automatic")
     parser.add_argument("--rtt-ms", type=float, default=60)
@@ -304,6 +358,10 @@ def main():
                 break
             time.sleep(0.1)
         assert all(item["active"] and item["frame"] > 30 for item in status), status
+        joystick = check_joystick_routing(apps, args.start_key) if args.joystick_test else None
+        if joystick is not None:
+            for name, app in zip(("Host", "Joiner"), apps):
+                app.send(f"screenshot {work / (name + '-joystick.png')}")
         fixture_booted = [False, False]
 
         def check_disk_fixture():
@@ -399,6 +457,7 @@ def main():
                        for item in memory), memory
         result = {"parameters": vars(args) | {"emu": str(args.emu), "lobby": str(args.lobby),
                   "image": str(args.image) if args.image else None},
+                  "joystickRouting": joystick,
                   "memory4000": memory, "processResources": resources_after,
                   "cpuSeconds": cpu_seconds,
                   "elapsedSeconds": time.monotonic() - start, "startFrames": start_frames,

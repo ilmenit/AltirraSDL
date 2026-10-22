@@ -353,25 +353,20 @@ void ATInputManager::SetRestrictedMode(bool restricted) {
 }
 
 void ATInputManager::SetPortRedirect(int srcPortIdx, IATDeviceControllerPort *dstPort) {
-	// Install / uninstall matches the semantics requested by the caller
-	// regardless of prior state: a null dstPort clears any existing
-	// redirect on matching controllers; a non-null dstPort installs
-	// (or swaps to) the new target.
+	if ((unsigned)srcPortIdx >= std::size(mpPortRedirects))
+		return;
+	if (mpPortRedirects[srcPortIdx] == dstPort)
+		return;
 
-	// First undo any prior redirect on controllers that match the old
-	// source but not the new one, or any that are currently redirected
-	// (so the new target replaces cleanly).
+	// Netplay captures port one while discarding the other local ports.
+	// Updating one target must not undo any of those independent redirects.
+	mpPortRedirects[srcPortIdx] = dstPort;
 	for (ControllerInfo& ci : mInputControllers) {
-		if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == mPortRedirectSrc)
+		if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == srcPortIdx) {
+			// The controller deliberately ignores a non-null replacement
+			// while redirected, so detach the old proxy before swapping.
 			ci.mpInputController->SetRedirectPort(nullptr);
-	}
-
-	mPortRedirectSrc = dstPort ? srcPortIdx : -1;
-	mpPortRedirectDst = dstPort;
-
-	if (dstPort) {
-		for (ControllerInfo& ci : mInputControllers) {
-			if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == srcPortIdx)
+			if (dstPort)
 				ci.mpInputController->SetRedirectPort(dstPort);
 		}
 	}
@@ -1769,6 +1764,16 @@ void ATInputManager::RebuildMappings() {
 		}
 	}
 
+	// Reapply capture/discard targets before inverted triggers write their
+	// initial state, so those writes also reach the proxy, not hardware.
+	for (ControllerInfo& ci : mInputControllers) {
+		if (!ci.mpInputController)
+			continue;
+		const int port = ci.mpInputController->GetAttachedPortIndex();
+		if ((unsigned)port < std::size(mpPortRedirects) && mpPortRedirects[port])
+			ci.mpInputController->SetRedirectPort(mpPortRedirects[port]);
+	}
+
 	Update5200Controller();
 
 	// Pre-activate all inverted triggers.
@@ -1783,15 +1788,6 @@ void ATInputManager::RebuildMappings() {
 		trigger.mpController->SetDigitalTrigger(id, true);
 	}
 
-	// If a port redirect is installed (netplay), re-apply it to the
-	// freshly-built controllers so newly-loaded input maps also have
-	// their port-1 output captured instead of driving the real port.
-	if (mPortRedirectSrc >= 0 && mpPortRedirectDst) {
-		for (ControllerInfo& ci : mInputControllers) {
-			if (ci.mpInputController && ci.mpInputController->GetAttachedPortIndex() == mPortRedirectSrc)
-				ci.mpInputController->SetRedirectPort(mpPortRedirectDst);
-		}
-	}
 }
 
 void ATInputManager::ActivateMappings(uint32 id, bool state) {
