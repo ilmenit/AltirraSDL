@@ -254,7 +254,14 @@ static std::string JsonEscape(const std::string &s) {
 			case '\n': out += "\\n"; break;
 			case '\r': out += "\\r"; break;
 			case '\t': out += "\\t"; break;
-			default:   out += c; break;
+			default:
+				if ((unsigned char)c < 0x20) {
+					constexpr char hex[] = "0123456789abcdef";
+					out += "\\u00";
+					out += hex[(unsigned char)c >> 4];
+					out += hex[(unsigned char)c & 15];
+				} else out += c;
+				break;
 		}
 	}
 	return out;
@@ -3410,6 +3417,11 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		else if (action == "start_boot") success = ATUIFujiNetStartAndBoot();
 		else if (action == "stop") ATUIFujiNetStopRuntime();
 		else if (action == "run") success = ATUIFujiNetRunFile(RestOfLine(cmd).c_str());
+		else if (action == "activity") {
+			const auto id = NextToken(cmd), source = RestOfLine(cmd);
+			success = ATUIFujiNetLaunchActivity(id.c_str(), source.empty() ? nullptr : source.c_str());
+		}
+		else if (action == "cancel_activity") ATUIFujiNetCancelActivity();
 		else if (action == "cancel_file") ATUIFujiNetCancelFile();
 		else if (action == "reconnect") success = ATUIFujiNetReconnect();
 		else if (action == "disconnect") success = ATUIFujiNetDisconnect();
@@ -3443,6 +3455,9 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		flag("installing", status.installing);
 		flag("autoSetupPending", status.autoSetupPending);
 		flag("autoStart", status.autoStart);
+		flag("activityPending", status.activityPending);
+		string("activity", status.activity);
+		string("activityMessage", status.activityMessage);
 		number("installReceived", status.installReceived);
 		number("installTotal", status.installTotal);
 		string("runtimeVersion", status.runtimeVersion);

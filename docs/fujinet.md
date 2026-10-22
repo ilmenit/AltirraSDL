@@ -19,6 +19,53 @@ The panel has two tabs, explained on screen in plain language:
 button, an Other FujiNet connection page, a checklist for the automatic setup
 (get, start, boot), and a "pick a game" page with the CONFIG keys.
 
+## Network games and BBS in one click
+
+The **Use FujiNet** section in **Tools → FujiNet** offers:
+
+- **Network games / Lobby** boots the current official FujiNet Game Lobby.
+  On first use, enter a player name on the Atari screen, then choose a game
+  and room. This is FujiNet multiplayer; AltirraSDL's Netplay lobby remains
+  a separate feature.
+- **BBS directory** boots the official FujiNet Atari BBS Client, which loads
+  an online directory of ATASCII boards. Choose a board and press Return.
+  SELECT opens local controls; OPTION disconnects. No modem driver, baud
+  configuration or manually typed dialing commands are required.
+
+On the first-use welcome page these buttons follow **Set up FujiNet
+automatically**, keeping that primary setup action visible with large fonts.
+
+Either button installs FujiNet-PC if necessary, starts it, waits for its
+connection, downloads the client, mounts it read-only on the private virtual
+SD card and boots through real SIO. Progress and **Cancel activity** stay in
+the tool window. The Atari restarts only after the client is prepared and
+the mount is verified. BASIC is left unchanged, and local disk images,
+including unsaved changes, are retained. The clients require an Atari
+computer with at least 48 KB of RAM; inserted cartridges and full-drive D1
+devices must be removed or disabled explicitly before launching.
+
+The launchers use the managed **This computer** runtime. For a separately
+managed or physical FujiNet, use its CONFIG menu: **L** opens the game lobby;
+current CONFIG versions also offer **G** for the BBS client. The window's
+existing external connection controls are unchanged.
+
+The catalog is deliberately small and can be expanded later. The Lobby
+comes from its current official distribution at
+`https://tnfs.fujinet.online/ATARI/_lobby.xex` (the old checked-in Atari
+`lobby.xex` in historical source trees is obsolete). The BBS client is
+downloaded from the official `FujiNetWIFI/fujinet-bbs-client` repository,
+pinned to `cc65a935ca28f8650fb41e0916ed748e61afd9b0/ataribbs.xex`.
+The BBS directory and the games/rooms are maintained by the clients' online
+services, rather than a duplicate hard-coded list in AltirraSDL. Choosing a
+game or board, entering a player name and logging in remain user actions.
+
+Activity startup reuses the existing managed-file worker and its runtime,
+profile and endpoint checks. Stopping/disconnecting FujiNet, cancellation,
+profile switches or netplay invalidate pending activity launches. Hardware
+and cartridge prerequisites are rechecked before boot. Test mode exposes
+`fujinet activity lobby|bbs [source]` (an optional local/HTTP test fixture),
+`fujinet cancel_activity`, and activity progress in `fujinet status`.
+
 ## One-click setup
 
 The first time **Tools → FujiNet** opens (no runtime selected, no NetSIO
@@ -393,6 +440,25 @@ then checks distinct 6502 memory markers, actual runtime SIO reads and the
 SD ownership probes. It uses isolated configuration and runtime copies,
 preserves an existing local D1 image, and stops the managed process on exit.
 Both cases passed on 2026-10-21 with the official runtime listed below.
+
+The activity launchers also have a public-service smoke test:
+
+```sh
+python3 tests/integration/test_fujinet_activities.py \
+  --emulator build/linux-release/src/AltirraSDL/AltirraSDL \
+  --runtime /path/to/fujinet-pc-ATARI --keep
+```
+
+It clicks the actual Lobby and BBS buttons, starts a stopped managed
+runtime, downloads the production clients, and checks the active Atari
+screen. All four cases (each client with BASIC on and off) passed on
+2026-10-22: the Lobby reached its empty username prompt and the BBS client
+loaded its online board directory. Local media and BASIC were preserved;
+FujiNet D1 was read-only. The test never enters a username, joins a game,
+selects a board or sends a message. It retains screenshots and runtime logs
+with `--keep`, and always retains evidence on failure. The deterministic
+`tests/ui/test_fujinet_activities.py` suite uses local fixtures for launch,
+cancellation, profile changes, retry and media-preservation regressions.
 
 Add `--legacy-bridge /path/to/fujinet-emulator-bridge` to exercise the
 published custom descriptor and Python hub instead of native NetSIO. This

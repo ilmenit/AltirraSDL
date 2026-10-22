@@ -72,6 +72,36 @@ struct FileJob {
 	}
 };
 std::unique_ptr<FileJob> s_fileJob;
+// Authorized fork extension: these launch real FujiNet guest clients. Keep
+// the small catalog together so more activities can be added independently
+// of runtime installation and the verified mount-and-boot implementation.
+struct Activity {
+	const char* id;
+	const char* label;
+	const char* description;
+	const char* url;
+};
+const Activity kActivities[] = {
+	{"lobby", "Network games / Lobby",
+		"Opens FujiNet's game lobby on the Atari. Enter a player name, then choose a game and room.",
+		"https://tnfs.fujinet.online/ATARI/_lobby.xex"},
+	{"bbs", "BBS directory",
+		"Opens FujiNet's Atari BBS directory. Choose a board and press Return. OPTION disconnects.",
+		"https://raw.githubusercontent.com/FujiNetWIFI/fujinet-bbs-client/"
+		"cc65a935ca28f8650fb41e0916ed748e61afd9b0/ataribbs.xex"}
+};
+struct ActivityLaunch {
+	enum class Stage { Setup, Connecting, Preparing };
+	const Activity* activity;
+	std::string source;
+	uint32 profile;
+	Stage stage = Stage::Setup;
+	uint64 deadline = 0;
+	unsigned restarts = 0;
+	std::string endpoint;
+};
+std::unique_ptr<ActivityLaunch> s_activity;
+std::string s_activityMessage;
 std::string s_pickedGame;
 std::string s_fileMessage;
 bool s_runFileOpen = false;
@@ -110,6 +140,7 @@ std::unique_ptr<InstallJob> s_installJob;
 // One-click setup continues to Start and Boot once FujiNet-PC is ready,
 // including after a later file pick or Homebrew library re-check.
 bool s_autoContinue = false;
+bool s_autoBoot = true;
 std::string s_missingPath;
 std::vector<ATFujiNetInstall::MissingLibrary> s_missing;
 std::string s_error;
@@ -382,6 +413,25 @@ const std::vector<ATFujiNetInstall::MissingLibrary>& MissingLibraries(bool refre
 bool RuntimeReady() {
 	return s_executable[0] && ATFujiNetPCCheckExecutable(s_executable).empty();
 }
+const char* ActivityConfigurationError() {
+	bool smallMemory = false;
+	switch (g_sim.GetMemoryMode()) {
+		case kATMemoryMode_8K: case kATMemoryMode_16K:
+		case kATMemoryMode_24K: case kATMemoryMode_32K:
+		case kATMemoryMode_40K: smallMemory = true; break;
+		default: break;
+	}
+	if (g_sim.GetHardwareMode() == kATHardwareMode_5200 || smallMemory)
+		return "These FujiNet clients need an Atari computer with at least 48 KB RAM. "
+			"Choose a computer configuration in Configure System, then try again.";
+	if (g_sim.GetCartridge(0) || g_sim.GetCartridge(1))
+		return "Remove the inserted cartridges before launching this disk-based FujiNet activity. "
+			"Your cartridges have been kept.";
+	if (g_sim.GetDiskInterface(0).GetClientCount() > 1)
+		return "D1 has a full-drive emulator attached. Disable that drive in Configure System "
+			"before launching the FujiNet activity.";
+	return nullptr;
+}
 } // namespace
 
 void ATUIShowFujiNetDialog() {
@@ -572,6 +622,7 @@ void ATUIFujiNetCancelFile() {
 	if (s_fileJob) s_fileJob->progress.cancel.store(true, std::memory_order_relaxed);
 }
 void ATUIFujiNetStopRuntime() {
+	ATUIFujiNetCancelActivity();
 	// Keep the runtime and its data lease alive until its worker stops.
 	s_fileJob.reset();
 	s_bootPending = false;
@@ -621,6 +672,7 @@ bool ATUIFujiNetReconnect() {
 	return status.listening;
 }
 bool ATUIFujiNetDisconnect() {
+	ATUIFujiNetCancelActivity();
 	s_bootPending = false;
 	IATDeviceNetSIOControl* control;
 	if (!RequireControl(control)) return false;
@@ -669,7 +721,7 @@ bool ATUIFujiNetEnableLocalD1() {
 	s_error.clear();
 	return true;
 }
-bool ATUIFujiNetInstallRuntime(bool thenStart) {
+bool ATUIFujiNetInstallRuntime(bool thenStart, bool boot) {
 	Load();
 	if (!CanChange()) return false;
 	if (s_installJob) {
@@ -706,6 +758,7 @@ bool ATUIFujiNetInstallRuntime(bool thenStart) {
 	}
 	s_installJob = std::move(job);
 	s_autoContinue = thenStart;
+	s_autoBoot = boot;
 	s_error.clear();
 	return true;
 }
@@ -719,7 +772,7 @@ namespace {
 bool ContinueAutoSetup() {
 	if (!MissingLibraries(true).empty()) return true;
 	s_autoContinue = false;
-	return ATUIFujiNetStartAndBoot();
+	return s_autoBoot ? ATUIFujiNetStartAndBoot() : ATUIFujiNetStartRuntime();
 }
 } // namespace
 bool ATUIFujiNetRecheckLibraries() {
@@ -730,7 +783,7 @@ bool ATUIFujiNetRecheckLibraries() {
 	s_error.clear();
 	return s_autoContinue ? ContinueAutoSetup() : true;
 }
-bool ATUIFujiNetAutoSetup() {
+bool ATUIFujiNetAutoSetup(bool boot) {
 	Load();
 	if (!CanChange() || !CanUseNative()) return false;
 	if (!ATFujiNetPC::Available()) {
@@ -748,12 +801,131 @@ bool ATUIFujiNetAutoSetup() {
 	Save();
 	if (process.running) {
 		s_autoContinue = false;
-		return connected ? ATUIFujiNetBoot() : ATUIFujiNetStartAndBoot();
+		if (boot) return connected ? ATUIFujiNetBoot() : ATUIFujiNetStartAndBoot();
+		if (process.stopping) {
+			s_error = "Wait for FujiNet-PC to stop before launching an activity.";
+			return false;
+		}
+		return Control() && Control()->GetNetSIOStatus().listening
+			? true : ATUIFujiNetReconnect();
 	}
-	if (!RuntimeReady()) return ATUIFujiNetInstallRuntime(true);
+	if (!RuntimeReady()) return ATUIFujiNetInstallRuntime(true, boot);
 	s_autoContinue = true;
+	s_autoBoot = boot;
 	return ContinueAutoSetup();
 }
+bool ATUIFujiNetLaunchActivity(const char* id, const char* source) {
+	Load();
+	if (!CanChange() || !CanUseNative()) return false;
+	if (s_activity || s_installJob || s_autoContinue || s_bootPending) {
+		s_error = "Wait for the current FujiNet operation, or cancel it first.";
+		return false;
+	}
+	const Activity* activity = nullptr;
+	for (const auto& entry : kActivities)
+		if (id && !strcmp(id, entry.id)) { activity = &entry; break; }
+	if (!activity) {
+		s_error = "Choose Network games / Lobby or BBS directory.";
+		return false;
+	}
+	const bool unmanaged = Control() && Control()->GetNetSIOStatus().connected &&
+		!s_runtime.GetStatus().running;
+	if (!ATFujiNetPC::Available() || s_external || unmanaged) {
+		s_error = "These shortcuts use FujiNet-PC managed by AltirraSDL. On another FujiNet, "
+			"use its CONFIG menu: L opens the game lobby; current CONFIG versions use G for BBS.";
+		return false;
+	}
+	if (const char* error = ActivityConfigurationError()) {
+		s_error = error;
+		return false;
+	}
+	auto launch = std::make_unique<ActivityLaunch>();
+	launch->activity = activity;
+	launch->source = source && *source ? source : activity->url;
+	launch->profile = ATSettingsGetCurrentProfileId();
+	s_activity = std::move(launch);
+	s_activityMessage = std::string("Preparing ") + activity->label + "...";
+	s_error.clear();
+	// Start without booting CONFIG: the current Atari session is untouched
+	// until the requested client has been downloaded, mounted and verified.
+	if (ATUIFujiNetAutoSetup(false)) return true;
+	s_activity.reset();
+	s_activityMessage.clear();
+	return false;
+}
+void ATUIFujiNetCancelActivity() {
+	if (!s_activity) return;
+	s_activity.reset();
+	s_autoContinue = false;
+	ATUIFujiNetCancelInstall();
+	ATUIFujiNetCancelFile();
+	s_activityMessage.clear();
+	s_error = "FujiNet activity cancelled. No further automatic launch will occur.";
+}
+
+namespace {
+void PollActivity() {
+	if (!s_activity) return;
+	const auto& process = s_runtime.GetStatus();
+	if (Locked() || s_external || s_activity->profile != ATSettingsGetCurrentProfileId() ||
+		LegacyTransport().recognizedLegacy || (s_activity->stage != ActivityLaunch::Stage::Setup &&
+		(s_activity->endpoint != ListenerEndpoint() || s_activity->restarts != process.restarts))) {
+		ATUIFujiNetCancelActivity();
+		s_error = "FujiNet activity cancelled because the profile or connection changed.";
+		return;
+	}
+	if (s_activity->stage == ActivityLaunch::Stage::Preparing) {
+		if (!s_fileJob) {
+			if (s_error.empty())
+				s_activityMessage = std::string("Launched ") + s_activity->activity->label + ".";
+			else s_activityMessage.clear();
+			s_activity.reset();
+		}
+		return;
+	}
+	if (s_installJob || s_autoContinue) {
+		s_activityMessage = MissingLibraries().empty() ? "Setting up FujiNet-PC..."
+			: "Install the required libraries below, then choose Check again.";
+		return;
+	}
+	if (!process.running || process.stopping) {
+		if (s_error.empty()) s_error = !process.error.empty() ? process.error :
+			"FujiNet-PC stopped before the activity could launch. Try the activity again.";
+		s_activity.reset();
+		s_activityMessage.clear();
+		return;
+	}
+	if (s_activity->stage == ActivityLaunch::Stage::Setup) {
+		s_activity->stage = ActivityLaunch::Stage::Connecting;
+		s_activity->endpoint = ListenerEndpoint();
+		s_activity->restarts = process.restarts;
+		s_activity->deadline = SDL_GetTicks() + 10000;
+	}
+	if (!Control() || !Control()->GetNetSIOStatus().connected) {
+		s_activityMessage = "Waiting for FujiNet to connect...";
+		if (SDL_GetTicks() >= s_activity->deadline) {
+			s_activity.reset();
+			s_activityMessage.clear();
+			s_error = "FujiNet did not connect within 10 seconds. Check Diagnostics, then try the activity again.";
+		}
+		return;
+	}
+	if (const char* error = ActivityConfigurationError()) {
+		s_error = error;
+		s_activity.reset();
+		s_activityMessage.clear();
+		return;
+	}
+	const auto source = s_activity->source;
+	if (!ATUIFujiNetRunFile(source.c_str())) {
+		s_activity.reset();
+		s_activityMessage.clear();
+		return;
+	}
+	s_activity->stage = ActivityLaunch::Stage::Preparing;
+	s_activityMessage = std::string("Downloading and preparing ") + s_activity->activity->label + "...";
+}
+} // namespace
 bool ATUIFujiNetSetAutoStart(bool enabled) {
 	Load();
 	s_autoStart = enabled;
@@ -798,6 +970,9 @@ ATFujiNetUIStatus ATUIGetFujiNetStatus() {
 	}
 	result.autoSetupPending = s_autoContinue;
 	result.autoStart = s_autoStart;
+	result.activityPending = s_activity != nullptr;
+	result.activity = s_activity ? s_activity->activity->id : "";
+	result.activityMessage = s_activityMessage;
 	result.runtimeVersion = s_runtimeVersion;
 	for (const auto& library : MissingLibraries()) result.missingLibraries.push_back(library.path);
 	if (s_fileJob) {
@@ -820,6 +995,10 @@ ATFujiNetUIStatus ATUIGetFujiNetStatus() {
 	return result;
 }
 void ATUIPollFujiNet() {
+	// Cancel before processing completed workers, so an invalidated activity
+	// can never boot on this frame merely because its download just finished.
+	if (s_activity && (Locked() || s_activity->profile != ATSettingsGetCurrentProfileId()))
+		ATUIFujiNetCancelActivity();
 	bool bootPreparedFile = false;
 	std::string picked, game;
 	{
@@ -888,6 +1067,16 @@ void ATUIPollFujiNet() {
 				throw std::runtime_error("Could not reconnect NetSIO before restarting FujiNet-PC.");
 		}
 	});
+	if (bootPreparedFile && s_activity) {
+		// Hardware/media can change while a worker is downloading. Recheck
+		// before resetting the computer, not only at the original click.
+		if (const char* error = ActivityConfigurationError()) {
+			s_error = std::string(error) + " FujiNet D1 may already contain the client; no automatic boot was performed.";
+			bootPreparedFile = false;
+			s_activity.reset();
+			s_activityMessage.clear();
+		}
+	}
 	if (bootPreparedFile) {
 		if (!s_runtime.GetStatus().running ||
 			s_runtime.GetStatus().restarts != restartsBefore)
@@ -931,8 +1120,10 @@ void ATUIPollFujiNet() {
 				"Runtime log for details, check Connection settings, then try again.";
 		}
 	}
+	PollActivity();
 }
 void ATUIShutdownFujiNet() {
+	s_activity.reset();
 	s_installJob.reset();
 	s_fileJob.reset();
 	s_bootPending = false;
@@ -1168,7 +1359,8 @@ void MissingLibrariesBlock() {
 	SameLineIfFits("Start anyway");
 	if (ActionButton("Start anyway")) {
 		s_autoContinue = false;
-		ATUIFujiNetStartAndBoot();
+		if (s_activity) ATUIFujiNetStartRuntime();
+		else ATUIFujiNetStartAndBoot();
 	}
 	Tooltip("Try to start FujiNet-PC even though the library was not found.");
 }
@@ -1373,6 +1565,34 @@ void RunFileButton(const ATFujiNetUIStatus& status) {
 		if (!s_fileMessage.empty()) Hint(s_fileMessage.c_str());
 	}
 }
+
+void Activities(const ATFujiNetUIStatus& status, bool compact = false) {
+	if (compact) Hint("Or launch directly:");
+	else Heading("Use FujiNet");
+	const bool managed = status.processAvailable && !s_external &&
+		!(status.connected && !status.running);
+	if (status.activityPending) {
+		ImGui::TextWrapped("%s", status.activityMessage.c_str());
+		if (status.installTotal)
+			ImGui::ProgressBar((float)status.installReceived / (float)status.installTotal);
+		else if (status.fileTotal)
+			ImGui::ProgressBar((float)status.fileReceived / (float)status.fileTotal);
+		if (!status.running) MissingLibrariesBlock();
+		if (ActionButton("Cancel activity")) ATUIFujiNetCancelActivity();
+	} else {
+		ImGui::BeginDisabled(!managed || Locked() || status.filePending ||
+			status.installing || status.bootPending || status.autoSetupPending || status.stopping);
+		for (const auto& activity : kActivities) {
+			if (ActionButton(activity.label)) ATUIFujiNetLaunchActivity(activity.id);
+			Tooltip(activity.description);
+		}
+		ImGui::EndDisabled();
+		if (!compact) Hint(managed ? "Sets up FujiNet and restarts the Atari. Local disk images are kept."
+			: "With another FujiNet, use CONFIG: L for the lobby; current versions also offer G for BBS.");
+	}
+	if (s_guided && !status.error.empty()) ErrorText(status.error.c_str());
+	ImGui::Separator();
+}
 void RenderFileDialog() {
 	if (!s_runFileOpen) return;
 	ATUIConstrainDialogSize();
@@ -1461,6 +1681,7 @@ void GuidedWelcome(const ATFujiNetUIStatus& status) {
 		if (PrimaryAction("Set up FujiNet automatically") && ATUIFujiNetAutoSetup())
 			s_guidedStep = 2;
 		ImGui::EndDisabled();
+		Activities(status, true);
 		Hint(ready ? "FujiNet-PC is already installed. This starts it and restarts the Atari "
 			"into FujiNet's menu, where you choose a game." :
 			("FujiNet is an add-on that connects the Atari to servers on the internet. This "
@@ -1481,6 +1702,7 @@ void GuidedWelcome(const ATFujiNetUIStatus& status) {
 		if (ActionButton("I already downloaded FujiNet-PC")) {
 			s_external = false;
 			s_autoContinue = true;
+			s_autoBoot = true;
 			Save();
 			Browse();
 			s_guidedStep = 2;
@@ -1761,13 +1983,22 @@ void ATUIRenderFujiNetDialog() {
 		} else ATUIClampDialogPosition();
 		lastSize = size;
 		lastViewport = viewport->WorkSize;
-		ImGui::BeginDisabled(status.filePending);
+#ifndef __EMSCRIPTEN__
+		// Keep first-time setup visible even with large fonts. The welcome
+		// page places the same activity buttons just after its primary action.
+		if (!(s_guided && s_guidedStep == 0) || status.activityPending)
+			Activities(status);
+#endif
+		ImGui::BeginDisabled(status.filePending || status.activityPending);
 #ifdef __EMSCRIPTEN__
 		Heading("FujiNet needs a native build");
 		Hint("Browsers cannot listen for UDP NetSIO. Use a native AltirraSDL build to connect FujiNet.");
 #else
 		const auto legacy = LegacyTransport();
-		if (s_guided) {
+		if (status.activityPending) {
+			// Activities() owns progress and any dependency actions while
+			// the ordinary connection/setup controls are unavailable.
+		} else if (s_guided) {
 			GuidedSetup(status, legacy);
 		} else if (legacy.recognizedLegacy) {
 			ManualConnection(status, legacy);
@@ -1883,7 +2114,7 @@ void ATUIRenderFujiNetDialog() {
 		}
 #endif
 		ImGui::EndDisabled();
-		if (status.filePending) {
+		if (status.filePending && !status.activityPending) {
 			Hint("Preparing a game for FujiNet. The runtime stays connected until the operation finishes.");
 			if (ActionButton("Cancel file operation")) ATUIFujiNetCancelFile();
 		}

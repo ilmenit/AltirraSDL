@@ -23,8 +23,8 @@ bool ATUIFujiNetDisconnect();
 bool ATUIFujiNetBoot();
 bool ATUIFujiNetEnableLocalD1();
 // One click: install FujiNet-PC when needed, then start it and boot.
-bool ATUIFujiNetAutoSetup();
-bool ATUIFujiNetInstallRuntime(bool thenStart);
+bool ATUIFujiNetAutoSetup(bool boot = true);
+bool ATUIFujiNetInstallRuntime(bool thenStart, bool boot = true);
 void ATUIFujiNetCancelInstall();
 bool ATUIFujiNetRecheckLibraries();
 // Called once after startup media is loaded. With the user's "start with
@@ -32,6 +32,11 @@ bool ATUIFujiNetRecheckLibraries();
 // unless the command line loaded a program.
 void ATUIFujiNetLaunchStartup(bool commandLineBootImage);
 bool ATUIFujiNetSetAutoStart(bool enabled);
+
+// Authorized activity shortcuts. The optional source is also used by the
+// automation harness to exercise the same launch path with local fixtures.
+bool ATUIFujiNetLaunchActivity(const char* id, const char* source = nullptr);
+void ATUIFujiNetCancelActivity();
 
 struct ATFujiNetUIStatus {
 	bool open = false;
@@ -48,6 +53,7 @@ struct ATFujiNetUIStatus {
 	bool installing = false;
 	bool autoSetupPending = false;
 	bool autoStart = false;
+	bool activityPending = false;
 	uint64_t installReceived = 0;
 	uint64_t installTotal = 0;
 	uint64_t fileReceived = 0;
@@ -66,6 +72,8 @@ struct ATFujiNetUIStatus {
 	std::string error;
 	std::string logTail;
 	std::string runtimeVersion;
+	std::string activity;
+	std::string activityMessage;
 	std::vector<std::string> missingLibraries;
 };
 ATFujiNetUIStatus ATUIGetFujiNetStatus();
