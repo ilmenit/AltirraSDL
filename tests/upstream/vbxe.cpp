@@ -8,6 +8,8 @@
 #include "vbxe.h"
 #include "vbxestate.h"
 #include "savestateio.h"
+#include <at/atcore/device.h>
+#include <at/atcore/propertyset.h>
 #include <vd2/system/file.h>
 #include <vd2/system/zip.h>
 #include "gtiatables.h"
@@ -65,8 +67,89 @@ static vdrefptr<ATSaveStateVbxe> RoundTripState(IATObjectState *state) {
 	return vdrefptr<ATSaveStateVbxe>(typed);
 }
 
+extern void ATCreateDeviceVBXE(const ATPropertySet&, IATDevice **);
+
 struct ATVBXERegressionTests {
+	static void TestTiming() {
+		ATVBXEEmulator v;
+		std::vector<uint8> memory(0x80000, 0);
+		v.SetMemory(memory.data());
+		// Costs follow the A-B-B-B timing tables in test25's LoadBCB.
+		// Check transformed zero sources, constants, X zoom, and the
+		// FX1.27 transition to collision-inactive overlay timing.
+		for (uint32 version : {126U, 127U}) {
+			v.SetVersion(version);
+			for (uint8 mode : {0, 1, 2, 3, 4, 5, 6, 0x12, 0x22}) {
+				if (version < 127 && mode > 6) continue;
+				for (uint8 zoom : {1, 2, 8}) {
+					for (uint8 andMask : {0, 255}) {
+						for (uint8 xorMask : {0, 1}) {
+							for (uint8 collision : {0, 255}) {
+								uint8 bcb[21] {};
+								bcb[1] = 0x10;
+								bcb[5] = bcb[11] = 1;
+								bcb[7] = 0x20;
+								bcb[12] = 3; // four source bytes
+								bcb[15] = andMask;
+								bcb[16] = xorMask;
+								bcb[17] = collision;
+								bcb[18] = zoom - 1;
+								bcb[20] = mode;
+								const uint8 source[] = {0, 0x24, 0, 0x56};
+								std::copy(std::begin(source), std::end(source), &memory[0x1000]);
+								std::fill_n(&memory[0x2000], 4 * zoom, 0xAB);
+								v.LoadBCB(bcb);
+								uint32 expected = 0;
+								bool collided = false;
+								for (uint8 raw : source) {
+									const bool nonzero = ((raw & andMask) ^ xorMask) != 0;
+									const uint8 op = mode & 7;
+									for (int i = 0; i < zoom; ++i) {
+										const bool fetch = andMask && i == 0;
+										if (op == 0)
+											expected += 1 + fetch;
+										else if (mode == 0x12)
+											expected += 2 + fetch;
+										else if (op == 4)
+											expected += 1 + nonzero + fetch;
+										else if (!nonzero)
+											++expected;
+										else if (op == 1) {
+											expected += 1 + fetch + (collision && !(version >= 127 && collided));
+											collided = collision != 0;
+										} else
+											expected += 2 + fetch;
+									}
+								}
+								const uint32 refund = v.RunBlitterRow();
+								Check(refund <= v.mBlitCyclesPerRow
+									&& v.mBlitCyclesPerRow - refund == expected,
+									"Blitter row timing disagrees with test25 timing tables");
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	static void Run() {
+		TestTiming();
+		// Device settings must enforce the restriction even when loaded
+		// from profiles or the bridge instead of the disabled UI checkbox.
+		vdrefptr<IATDevice> device;
+		ATPropertySet settings;
+		ATCreateDeviceVBXE(settings, ~device);
+		for (uint32 version : {126U, 127U, 124U, 127U}) {
+			settings.SetUint32("version", version);
+			settings.SetBool("shared_mem", true);
+			Check(device->SetSettings(settings), "VBXE settings rejected");
+			auto *emulator = static_cast<ATVBXEEmulator *>(device->AsInterface(ATVBXEEmulator::kTypeID));
+			Check(emulator && emulator->mbSharedMemory == (version < 127),
+				"FX1.27 accepted shared memory or older core lost it");
+		}
+
+		device->Shutdown();
 		using namespace ATGTIA;
 		ATVBXEEmulator v;
 		for (uint32 version : {120U, 124U, 126U, 127U}) {
@@ -173,6 +256,21 @@ struct ATVBXERegressionTests {
 		// below/at/above the historical 256-entry cap, including the upper limit.
 		std::vector<uint8> memory(0x80000, 8); // next-entry flag in every control byte
 		v.SetMemory(memory.data());
+		// HR+LR fetches one byte per color clock and repeats its two
+		// nibbles. Splitting a scanline must not change the source addresses.
+		v.mOvAddr = 0x7FFFE;
+		memory[0x7FFFE] = 0x12; memory[0x7FFFF] = 0x34;
+		memory[0] = 0x56; memory[1] = 0x78;
+		uint8 whole[16] {}, split[16] {};
+		v.RenderOverlayHRLR(whole, 0, 4);
+		v.RenderOverlayHRLR(split, 0, 2);
+		v.RenderOverlayHRLR(split + 8, 2, 2);
+		const uint8 expected[] = {1,2,1,2,3,4,3,4,5,6,5,6,7,8,7,8};
+		Check(std::equal(std::begin(whole), std::end(whole), expected),
+			"HRLR nibble repetition or memory wrap failed");
+		Check(std::equal(std::begin(whole), std::end(whole), split),
+			"HRLR changed source addresses at a partial scanline boundary");
+		std::fill(memory.begin(), memory.end(), 8);
 		for (uint32 limit : {1U, 256U, 300U, 65536U}) {
 			console.clear();
 			v.DumpBlitList(0, true, limit);
@@ -296,6 +394,7 @@ struct ATVBXERegressionTests {
 		v.mBlitRCSrcStepY = 0x207;
 		v.mBlitRCTexSizeBitsX = 5;
 		v.mBlitRCTexSizeBitsY = 6;
+		v.mOvMode = ATVBXEOverlayMode::HRLR;
 		v.mBlitCollisionMask = 0xFF;
 		v.mBlitActiveCollisionMask = 0;
 		auto textureState = RoundTripState(v.SaveState());
@@ -303,6 +402,7 @@ struct ATVBXERegressionTests {
 		v.mbBlitRCMode = false;
 		v.mBlitRCSrcX = v.mBlitRCSrcY = 0;
 		v.LoadState(textureState);
+		Check(v.mOvMode == ATVBXEOverlayMode::HRLR, "Snapshot lost HRLR overlay mode");
 		Check(v.mFeatureControl == 0x99 && v.mPfPaletteIndexInit == 1
 			&& v.mbExtendedColor1 && v.mbExtendedColor0
 			&& v.mpColorTable == v.mColorTableExt,
@@ -317,6 +417,17 @@ struct ATVBXERegressionTests {
 			&& v.mBlitRCSrcStepY == 0x207 && v.mBlitRCTexSizeBitsX == 5
 			&& v.mBlitRCTexSizeBitsY == 6,
 			"FX1.27 snapshot lost raycasting state");
+
+		// test25's Windows snapshot fields must load independently of the
+		// older fork extension. BCB preserves raycast Y step and texture size.
+		textureState->mbIntBlitRaycast = false;
+		v.LoadState(textureState);
+		Check(v.mbBlitRCMode && v.mBlitRCSrcX == 0x103
+			&& v.mBlitRCSrcY == 0x209 && v.mBlitRCSrcStepX == 0x102
+			&& v.mBlitRCSrcStepY == 0x207,
+			"Upstream test25 snapshot lost raycasting fields or BCB Y-step bits");
+		textureState->mbIntBlitRaycast = true;
+		v.LoadState(textureState);
 
 		// Continue the restored texture operation and compare a known sample.
 		memory[0x1000 | 1 | (2 << 5)] = 0xF0;
@@ -377,5 +488,5 @@ struct ATVBXERegressionTests {
 
 int main() {
 	ATVBXERegressionTests::Run();
-	puts("VBXE priority, hires, IRQ, FX1.27 blitter and attribute regressions passed");
+	puts("VBXE priority, hires, IRQ, FX1.27 blitter timing, HRLR, snapshots and attribute regressions passed");
 }

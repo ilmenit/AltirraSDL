@@ -426,8 +426,9 @@ public:
 				|| !mCyclesPerSIOBitCurrent || !mCyclesPerSIOByteCurrent))
 				throw ATInvalidSaveStateException();
 			// Allow for up to a ~10 minute idle time -- beyond that consider it broken.
-			if (mIdleTimer >= 0x40000000)
-				throw ATInvalidSaveStateException();
+			// Clamp to ~1m instead of throwing since previous versions wrote this incorrectly.
+			// Up to ~30s is reasonable disk drive behavior.
+			mIdleTimer = std::min<uint32>(mIdleTimer, 100'000'000);
 
 			// Disks can only have 65,535 logical sectors -- so they will never have that
 			// many tracks.

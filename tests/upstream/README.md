@@ -117,3 +117,18 @@ native Windows/macOS regression CI.
 Bridge tests additionally exercise complete firmware descriptions containing
 periods/slashes, relocated filename references, and a fast custom memory layer
 across a high-bank boundary. Run them with `ALTIRRA_BRIDGE_SERVER=ON`.
+
+Test25 extends the VBXE fixture with timing-table comparisons for memory and
+constant sources, transformed zero bytes, X zoom and collision-active/inactive
+paths on FX 1.26/1.27. HR+LR tests compare whole and split render spans across
+the 512K wrap and serialize the overlay mode. Both upstream and fork raycast
+snapshot fields load correctly; device settings enforce the FX 1.27
+shared-memory restriction. The existing RAM cartridge fixture now exercises
+SDX/Diamond/Express 64K CPU reads, non-mutating debugger reads, write banking,
+and disable/reenable behavior.
+
+`tests/ui/test_upstream_test25.py` checks the shared-memory control and loads
+legacy disk snapshots with normal, expired and invalid motor-off timers.
+`bridge-vbxe` runs real device configuration, bounded RAM transfers, an FX 1.27
+Add-Carry blit and a live blitter snapshot through the headless server and
+Python/C SDKs. Its package CI step also runs on native Windows/macOS.

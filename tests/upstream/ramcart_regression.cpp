@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <at/atcore/device.h>
+#include <at/atio/cartridgeimage.h>
 #include <at/atcore/snapshot.h>
 #include <vd2/system/file.h>
 #include <vd2/system/zip.h>
@@ -95,7 +96,47 @@ static vdrefptr<IATObjectState> RoundTrip(IATObjectState *state) {
 	return vdrefptr<IATObjectState>(static_cast<IATObjectState *>(restored.get()));
 }
 
+static void TestCCTLReads() {
+	for (auto mode : {kATCartridgeMode_SpartaDosX_64K,
+		kATCartridgeMode_Diamond_64K, kATCartridgeMode_Express_64K}) {
+		auto services = std::make_unique<Services>();
+		ATCartridgeEmulator cart(100, kATCartridgePriority_Default, false);
+		cart.SetManager(services.get());
+		cart.InitCartridge(services.get());
+		cart.Init();
+		cart.LoadNewCartridge(mode);
+		auto *rom = static_cast<uint8 *>(cart.GetImage()->GetBuffer());
+		for (int bank = 0; bank < 8; ++bank)
+			std::fill_n(rom + bank * 8192, 8192, uint8(bank + 0x40));
+		auto& mem = services->memory;
+		const uint16 base = mode == kATCartridgeMode_Diamond_64K ? 0xD5D0
+			: mode == kATCartridgeMode_Express_64K ? 0xD570 : 0xD5E0;
+		for (int bank = 0; bank < 8; ++bank) {
+			const uint16 select = base + (7 - bank);
+			mem.CPUWriteByte(select, 0);
+			Check(mem.CPUReadByte(0xA000) == bank + 0x40, "CCTL write failed");
+			Check(mem.CPUDebugReadByte(base + bank) == 0xFF,
+				"CCTL debugger read failed");
+			Check(mem.CPUReadByte(0xA000) == bank + 0x40,
+				"Debugger read changed cartridge bank");
+			Check(mem.CPUReadByte(base + bank) == 0xFF,
+				"CCTL read failed");
+			Check(mem.CPUReadByte(0xA000) == 7 - bank + 0x40,
+				"CCTL read did not switch cartridge bank");
+		}
+		mem.CPUReadByte(base + 8);
+		Check(!services->rd5, "CCTL read failed to disable cartridge");
+		mem.CPUReadByte(base);
+		Check(services->rd5, "CCTL read failed to reenable cartridge");
+		mem.CPUReadByte(base ^ 0x10);
+		Check(mem.CPUReadByte(0xA000) == 0x47,
+			"Unrelated CCTL read changed cartridge bank");
+		cart.Shutdown();
+	}
+}
+
 int main() {
+	TestCCTLReads();
 	const uint32 sizes[] = {64,128,256,1024,2048,4096,8192,16384,32768,32};
 	for (int mapper = 94; mapper <= 103; ++mapper) {
 		const auto mode = ATGetCartridgeModeForMapper(mapper);

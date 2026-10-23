@@ -24,7 +24,7 @@ bool ATUIConfDevVBXE(VDGUIHandle hParent, ATPropertySet& props) {
 		props,
 		L"VideoBoard XE Options",
 		[](IATUIConfigView& view) {
-			view.AddIntDropDown()
+			auto& ver = view.AddIntDropDown()
 				.SetLabel(L"&Core version")
 				.SetTag("version")
 				.AddChoice(127, L"FX 1.27")
@@ -47,7 +47,12 @@ bool ATUIConfDevVBXE(VDGUIHandle hParent, ATPropertySet& props) {
 			view.AddCheckbox()
 				.SetLabel(L"&Shared memory mode")
 				.SetTag("shared_mem")
-				.SetText(L"Use VBXE for PORTB extended memory");
+				.SetText(L"Use VBXE for PORTB extended memory")
+				.SetEnableExpr(
+					[&] {
+						return ver.GetValue() < 127;
+					}
+				);
 		}
 	);
 }

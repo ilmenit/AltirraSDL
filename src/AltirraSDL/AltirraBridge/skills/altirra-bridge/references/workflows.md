@@ -488,3 +488,21 @@ source of truth that drives it.
   the input slot when the client disconnects. But knowing this is
   important when debugging "why is my emulator behaving weirdly
   after the test crashed".
+
+
+## VBXE graphics and FX 1.27 blitter development
+
+Use `device_set("vbxe", True, version=127)` and `vbxe()` to verify the actual
+core, register base and feature bits. Core 1.27 has no shared-memory variant;
+select 126 explicitly to test that behavior. `vbxe_read(addr, length)` and
+`vbxe_write(addr, data)` access all 512K of local RAM without altering MEMAC.
+Split transfers into at most 16384 bytes, with no wrap at $80000.
+
+Upload BCBs/textures/XDLs using local writes, drive registers through
+`hwpoke(int(vbxe()["register_base"][1:], 16) + offset, value)`, and advance
+using `cycles` or `scanlines`. Inspect `vbxe()["blitter"]` for busy, current
+BCB/submode, pending containers, collisions and raycast coordinates. `hrlr`
+is the HR+LR erroneous overlay mode. Reads never acknowledge IRQs, consume
+collision latches, or run the blitter. Internal progress reflects the last
+processed emulation boundary; polling without advancing time cannot finish
+a blit. Use checkpoints to compare cores or restore a graphics experiment.

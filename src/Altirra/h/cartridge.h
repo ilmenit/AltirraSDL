@@ -199,6 +199,12 @@ protected:
 	static bool WriteByte_CCTL_Williams(void *thisptr0, uint32 address, uint8 value);
 
 	template<uint8 T_Address, bool T_PassThrough>
+	static sint32 DebugReadByte_CCTL_SDX64(void *thisptr0, uint32 address);
+
+	template<uint8 T_Address, bool T_PassThrough>
+	static sint32 ReadByte_CCTL_SDX64(void *thisptr0, uint32 address);
+
+	template<uint8 T_Address, bool T_PassThrough>
 	static bool WriteByte_CCTL_SDX64(void *thisptr0, uint32 address, uint8 value);
 
 	template<bool T_PassThrough>

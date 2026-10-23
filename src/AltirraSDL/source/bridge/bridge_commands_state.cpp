@@ -19,6 +19,9 @@
 #include "gtia.h"
 #include <at/ataudio/pokey.h>
 #include "pia.h"
+#include "vbxe.h"
+#include "vbxestate.h"
+#include "devicemanager.h"
 #include "palettesolver.h"      // ATCreateColorPaletteSolver — shared with Windows UI
 
 #include <cmath>
@@ -545,6 +548,120 @@ std::string CmdHwstate(ATSimulator& sim, const std::vector<std::string>& /*token
 	payload += "\"pokey\":{"; payload += BuildPokeyPayload(sim.GetPokey()); payload += "},";
 	payload += "\"pia\":{";   payload += BuildPiaPayload(sim);   payload += "}";
 	return JsonOk(payload);
+}
+
+// VBXE inspection uses the same snapshot and memory accessors as the
+// debugger. It neither advances the blitter nor touches CPU MEMAC mappings.
+std::string CmdVbxe(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() != 1)
+		return JsonError("VBXE: usage: VBXE");
+	auto *v = sim.GetVBXE();
+	if (!v)
+		return JsonOk("\"present\":false");
+
+	const auto snapshot = v->SaveState();
+	const auto& state = atser_cast<const ATSaveStateVbxe&>(*snapshot);
+	auto *device = sim.GetDeviceManager()->GetDeviceByTag("vbxe");
+	auto *vbxeDevice = static_cast<IATVBXEDevice *>(device->AsInterface(IATVBXEDevice::kTypeID));
+	std::string body = "\"present\":true,";
+	AddU32(body, "version", v->GetVersion());
+	AddField(body, "register_base", Hex16(uint32(v->GetRegisterBase()) << 8));
+	AddField(body, "shared_memory", vbxeDevice->GetSharedMemoryMode() ? "true" : "false");
+	AddField(body, "ntsc_vertical_offset", v->HasNTSCVerticalOffset() ? "true" : "false");
+	AddField(body, "video_control", Hex8(state.mVideoControl));
+	AddField(body, "feature_control", Hex8(state.mFeatureControl));
+	AddField(body, "xdl_base", Hex24(state.mXdlAddr));
+	AddField(body, "xdl_address", Hex24(state.mXdlAddrActive));
+	AddU32(body, "xdl_repeat", state.mXdlRepeat);
+	const uint8 mode = state.mIntOvMode;
+	const char *modeName = mode & 1 ? "text" : !(mode & 2) ? "disabled"
+		: mode & 0x10 ? (mode & 0x20 ? "hrlr" : "hr")
+		: mode & 0x20 ? "lr" : "sr";
+	AddField(body, "overlay_mode", std::string("\"") + modeName + "\"");
+	AddField(body, "overlay_address", Hex24(state.mIntOvAddr));
+	AddU32(body, "overlay_step", state.mIntOvStep);
+	AddField(body, "collision", Hex8(state.mArchColDetect));
+	AddField(body, "irq_enabled", state.mIrqControl ? "true" : "false");
+	AddField(body, "irq_pending", state.mArchIrqStatus ? "true" : "false");
+	AddField(body, "memac_control", Hex8(state.mMemacControl));
+	AddField(body, "memac_bank", Hex8(state.mMemacBankSel));
+	AddField(body, "memac_b_control", Hex8(state.mMemacBControl));
+	body += "\"blitter\":{";
+	AddField(body, "busy", state.mArchBlitterBusy ? "true" : "false");
+	AddField(body, "list_address", Hex24(state.mBlitListAddr));
+	AddField(body, "next_address", Hex24(state.mIntBlitListAddr));
+	AddU32(body, "mode", state.mIntBlitState[20] & 7);
+	AddField(body, "submode", Hex8(state.mIntBlitState[20] & 0x70));
+	AddField(body, "bcb", "\"" + HexBytes(state.mIntBlitState, 21) + "\"");
+	AddField(body, "cycles_pending",
+		std::to_string(static_cast<sint32>(state.mIntBlitCyclesPending)));
+	AddU32(body, "rows_remaining", state.mIntBlitHeightLeft);
+	AddU32(body, "stop_delay", state.mIntBlitStopDelay);
+	AddField(body, "containers_pending", state.mbIntBlitContainersPending ? "true" : "false");
+	AddField(body, "collision_latched", state.mbIntBlitCollisionLatched ? "true" : "false");
+	AddField(body, "collision_code", Hex8(state.mArchBltCollisionCode));
+	AddField(body, "raycast", state.mbIntBlitRayCast ? "true" : "false");
+	AddU32(body, "raycast_x", state.mIntBlitRayCastSrcX);
+	AddU32(body, "raycast_y", state.mIntBlitRayCastSrcY);
+	AddU32(body, "raycast_step_x", state.mIntBlitRayCastSrcStepX);
+	AddU32(body, "raycast_step_y", state.mIntBlitRaycastCoords[5] & 0x7FFF);
+	StripTrailingComma(body);
+	body += '}';
+	return JsonOk(body);
+}
+
+std::string CmdVbxeMemory(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	const bool write = tokens[0] == "VBXE_WRITE";
+	const std::string prefix = tokens[0] + ": ";
+	if (tokens.size() < 2 || tokens.size() > 3 || (write && tokens.size() != 3))
+		return JsonError(prefix + (write ? "usage: VBXE_WRITE addr hexbytes" : "usage: VBXE_READ addr [length]"));
+	uint32 addr = 0, length = 1;
+	if (!ParseUint(tokens[1], addr) || addr >= 0x80000)
+		return JsonError(prefix + "address must be 0..$7FFFF");
+	std::vector<uint8> data;
+	if (write) {
+		const auto& hex = tokens[2];
+		if (hex.empty() || hex.size() > 32768 || (hex.size() & 1))
+			return JsonError(prefix + "hexbytes must contain 1..16384 complete bytes");
+		data.reserve(hex.size() / 2);
+		auto digit = [](char c) -> int {
+			if (c >= '0' && c <= '9') return c - '0';
+			if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+			if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+			return -1;
+		};
+		for (size_t i = 0; i < hex.size(); i += 2) {
+			const int hi = digit(hex[i]), lo = digit(hex[i + 1]);
+			if (hi < 0 || lo < 0)
+				return JsonError(prefix + "invalid hexbytes");
+			data.push_back(uint8(hi * 16 + lo));
+		}
+		length = uint32(data.size());
+	} else if (tokens.size() == 3 && !ParseUint(tokens[2], length))
+		return JsonError(prefix + "invalid length");
+	if (!length || length > 16384 || length > 0x80000 - addr)
+		return JsonError(prefix + "length must be 1..16384 and fit in 512K RAM");
+	auto *vbxe = sim.GetVBXE();
+	if (!vbxe || !vbxe->GetMemoryBase())
+		return JsonError(prefix + "VBXE is not enabled");
+
+	// Validate the entire request before writing any byte. Debug global
+	// access is the Windows debugger's local-memory path and bypasses MEMAC.
+	if (write) {
+		for (uint32 i = 0; i < length; ++i)
+			sim.DebugGlobalWriteByte(kATAddressSpace_VBXE + addr + i, data[i]);
+	} else {
+		data.resize(length);
+		for (uint32 i = 0; i < length; ++i)
+			data[i] = sim.DebugGlobalReadByte(kATAddressSpace_VBXE + addr + i);
+	}
+	std::string body;
+	AddField(body, "addr", Hex24(addr));
+	AddU32(body, "length", length);
+	if (!write)
+		AddField(body, "data", "\"" + HexBytes(data.data(), data.size()) + "\"");
+	StripTrailingComma(body);
+	return JsonOk(body);
 }
 
 // ---------------------------------------------------------------------------

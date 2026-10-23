@@ -652,6 +652,47 @@ int atb_antic(atb_client_t* c)   { return atb_simple_cmd(c, "ANTIC"); }
 int atb_gtia(atb_client_t* c)    { return atb_simple_cmd(c, "GTIA"); }
 int atb_pokey(atb_client_t* c)   { return atb_simple_cmd(c, "POKEY"); }
 int atb_pia(atb_client_t* c)     { return atb_simple_cmd(c, "PIA"); }
+int atb_vbxe(atb_client_t* c) { return atb_simple_cmd(c, "VBXE"); }
+
+int atb_vbxe_read(atb_client_t* c, unsigned int addr,
+                  unsigned int length, unsigned char* out_buf) {
+	char cmd[64];
+	int rc;
+	const char* p;
+	if (!out_buf || !length || length > 16384 || addr >= 0x80000
+		|| length > 0x80000 - addr) return ATB_ERR_BAD_ARG;
+	snprintf(cmd, sizeof cmd, "VBXE_READ $%x %u", addr, length);
+	rc = atb_simple_cmd(c, cmd);
+	if (rc != ATB_OK) return rc;
+	p = strstr(c->response, "\"data\":\"");
+	if (!p || atb_unhex(p + 8, out_buf, length) != length) {
+		atb_set_error(c, "VBXE_READ response missing or short data field");
+		return ATB_ERR_PROTOCOL;
+	}
+	return ATB_OK;
+}
+
+int atb_vbxe_write(atb_client_t* c, unsigned int addr,
+                   const unsigned char* data, size_t length) {
+	static const char hex[] = "0123456789abcdef";
+	char* cmd;
+	int n, rc;
+	size_t i;
+	if (!data || !length || length > 16384 || addr >= 0x80000
+		|| length > 0x80000 - addr) return ATB_ERR_BAD_ARG;
+	cmd = (char*)malloc(64 + length * 2);
+	if (!cmd) { atb_set_error(c, "out of memory"); return ATB_ERR_NETWORK; }
+	n = snprintf(cmd, 64, "VBXE_WRITE $%x ", addr);
+	for (i = 0; i < length; ++i) {
+		cmd[n + i * 2] = hex[data[i] >> 4];
+		cmd[n + i * 2 + 1] = hex[data[i] & 15];
+	}
+	cmd[n + length * 2] = 0;
+	rc = atb_simple_cmd(c, cmd);
+	free(cmd);
+	return rc;
+}
+
 int atb_dlist(atb_client_t* c)   { return atb_simple_cmd(c, "DLIST"); }
 int atb_hwstate(atb_client_t* c) { return atb_simple_cmd(c, "HWSTATE"); }
 

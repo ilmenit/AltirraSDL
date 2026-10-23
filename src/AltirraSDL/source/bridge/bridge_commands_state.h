@@ -1,6 +1,6 @@
 // AltirraBridge - Phase 2 state-read commands
 //
-// All commands here are pure read operations: they snapshot CPU
+// All commands except the explicit VBXE_WRITE operation are pure reads: they snapshot CPU
 // registers, memory, and chip state without modifying anything and
 // without requiring the simulator to be paused. Each function takes
 // a tokenised command line (verb + args) and returns a JSON response
@@ -44,6 +44,12 @@ std::string CmdGtia(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 // POKEY — full POKEY register dump (32 bytes).
 std::string CmdPokey(ATSimulator& sim, const std::vector<std::string>& tokens);
+
+// VBXE — configuration, architectural registers and blitter snapshot.
+std::string CmdVbxe(ATSimulator& sim, const std::vector<std::string>& tokens);
+
+// VBXE_READ addr [length] / VBXE_WRITE addr hexbytes — local 512K RAM.
+std::string CmdVbxeMemory(ATSimulator& sim, const std::vector<std::string>& tokens);
 
 // PIA — six PIA registers (PORTA/B output, DDRA/B, CRA/B).
 std::string CmdPia(ATSimulator& sim, const std::vector<std::string>& tokens);

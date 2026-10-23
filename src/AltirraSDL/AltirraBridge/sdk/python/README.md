@@ -65,3 +65,11 @@ with AltirraBridge.from_token_file("/tmp/altirra-bridge-12345.token") as a:
 
 See `examples/` for runnable scripts and `docs/PROTOCOL.md` (in the
 parent AltirraBridge directory) for the full wire contract.
+
+
+VBXE development uses `a.vbxe()` for structured state and
+`a.vbxe_read(address, length)` / `a.vbxe_write(address, bytes)` for local
+512K RAM without MEMAC remapping. Transfers are 1..16384 bytes and cannot
+cross the memory boundary. The default core is FX 1.27, which has no shared
+memory mode; request FX 1.26 explicitly for shared-memory experiments.
+See the [VBXE workflow](../../docs/COMMANDS.md#vbxe-development).

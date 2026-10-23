@@ -66,6 +66,12 @@ void ATSaveStateVbxe::Exchange(T& ex) {
 
 	ex.Transfer("int_blit_list_addr", &mIntBlitListAddr);
 	ex.TransferArray("int_blit_state", mIntBlitState);
+
+	ex.Transfer("int_blit_raycast_enable", &mbIntBlitRayCast);
+	ex.Transfer("int_blit_raycast_srcx", &mIntBlitRayCastSrcX);
+	ex.Transfer("int_blit_raycast_srcy", &mIntBlitRayCastSrcY);
+	ex.Transfer("int_blit_raycast_srcstepx", &mIntBlitRayCastSrcStepX);
+
 	ex.Transfer("int_blit_cycles_pending", &mIntBlitCyclesPending);
 	ex.Transfer("int_blit_height_left", &mIntBlitHeightLeft);
 	ex.Transfer("int_blit_yzoom_counter", &mIntBlitYZoomCounter);

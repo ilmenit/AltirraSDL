@@ -175,6 +175,10 @@ type
     function  Gtia:  String;
     function  Pokey: String;
     function  Pia:   String;
+    function  VBXE: String;
+    { Local 512K RAM, without CPU MEMAC banking; count is 1..16384. }
+    function  VBXERead(Addr: Cardinal; Count: LongWord = 1): TBytes;
+    procedure VBXEWrite(Addr: Cardinal; const Data: TBytes);
 
     // ---- Phase 3 — state write & input ----------------------------
 
@@ -899,6 +903,49 @@ function TAltirraBridge.Pokey: String;
 begin
   Result := Rpc('POKEY');
   CheckOk(Result, 'POKEY');
+end;
+
+function TAltirraBridge.VBXE: String;
+begin
+  Result := Rpc('VBXE');
+  CheckOk(Result, 'VBXE');
+end;
+
+function TAltirraBridge.VBXERead(Addr: Cardinal; Count: LongWord): TBytes;
+var
+  Resp, HexData: String;
+  I: Integer;
+begin
+  if (Addr >= $80000) or (Count = 0) or (Count > 16384)
+    or (Count > $80000 - Addr) then
+    raise EBridgeError.Create('VBXERead: range must fit in 512K RAM (1..16384 bytes)');
+  Resp := Rpc(Format('VBXE_READ $%x %d', [Addr, Count]));
+  CheckOk(Resp, 'VBXE_READ');
+  HexData := GetStringField(Resp, 'data');
+  if System.Length(HexData) <> Count * 2 then
+    raise EBridgeError.Create('VBXERead: invalid response length');
+  SetLength(Result, Count);
+  for I := 0 to Integer(Count) - 1 do
+    Result[I] := StrToInt('$' + Copy(HexData, I * 2 + 1, 2));
+end;
+
+procedure TAltirraBridge.VBXEWrite(Addr: Cardinal; const Data: TBytes);
+var
+  HexData, HexByte: String;
+  I, Count: Integer;
+begin
+  Count := System.Length(Data);
+  if (Addr >= $80000) or (Count = 0) or (Count > 16384)
+    or (Cardinal(Count) > $80000 - Addr) then
+    raise EBridgeError.Create('VBXEWrite: range must fit in 512K RAM (1..16384 bytes)');
+  SetLength(HexData, Count * 2);
+  for I := 0 to Count - 1 do
+  begin
+    HexByte := IntToHex(Data[I], 2);
+    HexData[I * 2 + 1] := HexByte[1];
+    HexData[I * 2 + 2] := HexByte[2];
+  end;
+  CheckOk(Rpc(Format('VBXE_WRITE $%x %s', [Addr, HexData])), 'VBXE_WRITE');
 end;
 
 function TAltirraBridge.Pia: String;
