@@ -267,3 +267,12 @@ for the request/response shape of each.
   — design rationale for shipping native clients per language
   rather than a C ABI shared library, plus minimal
   proof-of-concept clients in Rust, Free Pascal, and Go.
+
+
+### VBXE
+
+`Bridge.VBXE` returns structured VBXE state as JSON.
+`Bridge.VBXERead(Addr, Count)` returns `TBytes` and
+`Bridge.VBXEWrite(Addr, Data)` writes local RAM. Transfers must contain
+1..16384 bytes and fit in 512K. See the
+[VBXE workflow](../../docs/COMMANDS.md#vbxe-development).

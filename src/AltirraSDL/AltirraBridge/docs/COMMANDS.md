@@ -438,3 +438,31 @@ Altirra core.
 For the wire-level details (exact JSON shapes, error formats,
 versioning rules, threat model), see [`PROTOCOL.md`](PROTOCOL.md).
 For getting-started, see [`GETTING_STARTED.md`](GETTING_STARTED.md).
+
+
+### VBXE development
+
+```python
+a.device_set("vbxe", True, version=127, base="d600")
+a.pause()
+s = a.vbxe()                         # actual core, overlay, MEMAC and blitter
+base = int(s["register_base"][1:], 16)
+a.vbxe_write(0x10000, texture_bytes)   # local RAM; no MEMAC remapping
+data = a.vbxe_read(0x10000, 256)
+a.vbxe_write(0x4000, bcb_bytes)        # 21-byte blit control block
+for offset, value in ((0x50, 0), (0x51, 0x40), (0x52, 0), (0x53, 1)):
+    a.hwpoke(base + offset, value)
+a.cycles(114 * 3)
+print(a.vbxe()["blitter"])
+```
+
+`VBXE` provides a structured snapshot, including FX 1.27 FEATURE_CONTROL,
+HR+LR overlay mode (`hrlr`), collision latch, submode, and raycast progress.
+Use bounded `VBXE_READ addr [length]` / `VBXE_WRITE addr hexbytes` for the
+512K local RAM. Requests are 1..16384 bytes and cannot cross $80000. Split
+larger uploads into chunks. Queries do not advance emulation or acknowledge
+IRQs. Internal blitter fields describe the last processed boundary and are
+valid while busy. See [the protocol](PROTOCOL.md#vbxe--vbxe_read--vbxe_write).
+
+C exposes `atb_vbxe`, `atb_vbxe_read`, `atb_vbxe_write`; Pascal exposes `VBXE`,
+`VBXERead`, `VBXEWrite`. All use the same ranges and command semantics.

@@ -157,6 +157,9 @@ jobs:
           ls -lh build/bridge-c-examples-linux/01_ping build/bridge-c-examples-linux/02_peek_regs \
                  build/bridge-c-examples-linux/03_input build/bridge-c-examples-linux/04_paint
 
+      - name: Test VBXE state, RAM and FX 1.27 blitter
+        run: python3 src/AltirraSDL/source/bridge/tests/bridge_vbxe_test.py build/bridge-package-linux/src/AltirraBridgeServer/AltirraBridgeServer src/AltirraSDL/AltirraBridge/sdk/python
+
       - name: Smoke test bridge + Python SDK + C example
         shell: bash
         timeout-minutes: 5
@@ -366,6 +369,9 @@ jobs:
           cmake --build build/bridge-c-examples-macos -j"$(sysctl -n hw.ncpu)"
           ls -lh build/bridge-c-examples-macos/01_ping build/bridge-c-examples-macos/02_peek_regs \
                  build/bridge-c-examples-macos/03_input build/bridge-c-examples-macos/04_paint
+
+      - name: Test VBXE state, RAM and FX 1.27 blitter
+        run: python3 src/AltirraSDL/source/bridge/tests/bridge_vbxe_test.py build/bridge-package-macos/src/AltirraBridgeServer/AltirraBridgeServer src/AltirraSDL/AltirraBridge/sdk/python
 
       - name: Smoke test
         shell: bash
@@ -647,6 +653,9 @@ jobs:
               "build/bridge-c-examples-windows\Release\03_input.exe",
               "build/bridge-c-examples-windows\Release\04_paint.exe"
           )
+
+      - name: Test VBXE state, RAM and FX 1.27 blitter
+        run: python src/AltirraSDL/source/bridge/tests/bridge_vbxe_test.py build/windows-sdl-release/src/AltirraBridgeServer/Release/AltirraBridgeServer.exe src/AltirraSDL/AltirraBridge/sdk/python
 
       - name: Smoke test
         shell: pwsh

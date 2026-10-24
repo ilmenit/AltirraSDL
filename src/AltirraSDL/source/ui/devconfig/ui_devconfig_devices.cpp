@@ -1250,7 +1250,10 @@ bool RenderVBXEConfig(ATPropertySet& props, ATDeviceConfigState& st) {
 
 	static const char *kBaseLabels[] = { "$D600 (standard)", "$D700 (alternate)" };
 	ImGui::Combo("Base address", &st.combo[1], kBaseLabels, 2);
+	// FX 1.27 has no shared-memory core (Windows VideoBoard XE Options).
+	ImGui::BeginDisabled(kVersionValues[st.combo[0]] >= 127);
 	ImGui::Checkbox("Enable shared memory", &st.check[0]);
+	ImGui::EndDisabled();
 
 	ImGui::Separator();
 	if (ImGui::Button("OK", ImVec2(120, 0))) {

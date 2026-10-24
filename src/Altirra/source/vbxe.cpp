@@ -93,7 +93,7 @@ const ATVBXEOverlayMode ATVBXEEmulator::kOvModeTable[3][4]={
 	/* 1000 */ ATVBXEOverlayMode::SR,
 	/* 1001 */ ATVBXEOverlayMode::HR,
 	/* 1010 */ ATVBXEOverlayMode::LR,
-	/* 1011 */ ATVBXEOverlayMode::Disabled,
+	/* 1011 */ ATVBXEOverlayMode::HRLR,
 	/* 1100 */ ATVBXEOverlayMode::Disabled,
 	/* 1101 */ ATVBXEOverlayMode::Disabled,
 	/* 1110 */ ATVBXEOverlayMode::Disabled,
@@ -487,6 +487,7 @@ void ATVBXEEmulator::DumpStatus() {
 		"Low resolution",
 		"Standard resolution",
 		"High resolution",
+		"HR with LR fetch",
 		"80-column text",
 	};
 	ATConsolePrintf("Overlay mode:      %s\n", kModeNames[(int)mOvMode]);
@@ -566,6 +567,7 @@ void ATVBXEEmulator::DumpXDL() {
 				"lr",
 				"sr",
 				"hr",
+				"hrlr",
 				"text"
 			};
 
@@ -753,6 +755,7 @@ void ATVBXEEmulator::DumpXDLHistory(ATConsoleOutput& output) {
 				"LR",
 				"SR",
 				"HR",
+				"HRLR",
 				"Tx",
 			};
 
@@ -1091,13 +1094,20 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 	mFeatureControl = 0;
 	mPfPaletteIndexInit = 0;
 	WriteControl(0x40, vstate.mVideoControl);
-	if (vstate.mbFeatureControlPresent)
-		WriteControl(0x4B, (uint8)vstate.mFeatureControl);
 	mXdlBaseAddr = vstate.mXdlAddr & kLocalAddrMask;
 	mXdlAddr = vstate.mXdlAddrActive & kLocalAddrMask;
 	WriteControl(0x44, vstate.mCsel);
 	WriteControl(0x45, vstate.mPsel);
 	WriteControl(0x49, vstate.mColMask);
+
+	// FEATURE_CONTROL[4] is the same as VIDEO_CONTROL[1], so copy the latter into the
+	// former for compatibility with older FX core saves. This allows FX1.26 saves to be
+	// loaded into FX1.27.
+	//
+	// This write must also be after VIDEO_CONTROL, since that write resets
+	// FEATURE_CONTROL[3].
+	uint8 featureControl = (vstate.mFeatureControl & 0xEF) + (vstate.mVideoControl & 0x02 ? 0x10 : 0x00);
+	WriteControl(0x4B, featureControl);
 
 	// need to restore IRQ_CONTROL directly as we don't want to whack the IRQ request state
 	mbIRQEnabled = (vstate.mIrqControl & 0x01) != 0;
@@ -1142,7 +1152,7 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 	else if (!(vstate.mIntOvMode & 0x02))
 		mOvMode = ATVBXEOverlayMode::Disabled;
 	else if (vstate.mIntOvMode & 0x10)
-		mOvMode = ATVBXEOverlayMode::HR;
+		mOvMode = vstate.mIntOvMode & 0x20 ? ATVBXEOverlayMode::HRLR : ATVBXEOverlayMode::HR;
 	else if (vstate.mIntOvMode & 0x20)
 		mOvMode = ATVBXEOverlayMode::LR;
 	else
@@ -1181,7 +1191,14 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 
 		LoadBCB(vstate.mIntBlitState);
 
-		// MERGE NOTE: LoadBCB reconstructs legacy parameters, but cannot
+		mbBlitRCMode = mbVersion127OrHigher && vstate.mbIntBlitRayCast;
+		mBlitRCSrcX = vstate.mIntBlitRayCastSrcX & 0x7FFF;
+		mBlitRCSrcY = vstate.mIntBlitRayCastSrcY & 0x7FFF;
+		mBlitRCSrcStepX = vstate.mIntBlitRayCastSrcStepX & 0x7FFF;
+
+		// MERGE NOTE: retain the more complete fork snapshot fields as well
+		// as test25's upstream raycast fields for compatibility with both.
+		// LoadBCB reconstructs legacy parameters, but cannot
 		// reconstruct a consumed raycasting container or its current coords.
 		if (mbVersion127OrHigher && vstate.mbIntBlitRaycast) {
 			mbBlitRCMode = true;
@@ -1328,6 +1345,9 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 		case ATVBXEOverlayMode::HR:
 			state->mIntOvMode = 0x12;
 			break;
+		case ATVBXEOverlayMode::HRLR:
+			state->mIntOvMode = 0x32;
+			break;
 		case ATVBXEOverlayMode::Text:
 			state->mIntOvMode = 0x01;
 			break;
@@ -1366,6 +1386,14 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 		state->mIntBlitCyclesPending = mBlitCyclesLeft;
 		state->mIntBlitYZoomCounter = mBlitZoomCounterY;
 		SaveBCB(state->mIntBlitState);
+
+		state->mbIntBlitRayCast = mbBlitRCMode;
+
+		if (mbBlitRCMode) {
+			state->mIntBlitRayCastSrcX = mBlitRCSrcX & 0x7FFF;
+			state->mIntBlitRayCastSrcY = mBlitRCSrcY & 0x7FFF;
+			state->mIntBlitRayCastSrcStepX = mBlitRCSrcStepX & 0x7FFF;
+		}
 
 		state->mbIntBlitCollisionLatched = (mBlitActiveCollisionMask != mBlitCollisionMask);
 
@@ -1407,7 +1435,7 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 }
 
 sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
-	switch(addrLo) {
+	switch(addrLo & 0xDF) {
 		case 0x40:	// CORE_VERSION
 			return 0x10;
 
@@ -1445,6 +1473,9 @@ sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
 			return mMemAcBankA;
 
 		default:
+			if (addrLo >= 0x40 && addrLo < 0x80)
+				return 0xFF;
+
 			if (addrLo >= 0xC0) {
 				// D0 = DATA0
 				// D1 = DCLK
@@ -1460,7 +1491,7 @@ sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
 }
 
 bool ATVBXEEmulator::WriteControl(uint8 addrLo, uint8 value) {
-	switch(addrLo) {
+	switch(addrLo & 0xDF) {
 		case 0x40:	// VIDEO_CONTROL
 			mbXdlEnabled = (value & 0x01) != 0;
 			mbExtendedColor1 = (value & 0x02) != 0;
@@ -1995,10 +2026,11 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 			mDMACyclesXDL = (mXdlAddr - xdlStart);
 
 			if (mpTraceChannelOverlay && mOvMode != ATVBXEOverlayMode::Disabled) {
-				static constexpr const wchar_t *kTraceOvModes[4][3]={
+				static constexpr const wchar_t *kTraceOvModes[5][3]={
 					{ L"LR128", L"LR160", L"LR168" },
 					{ L"SR256", L"SR320", L"SR336" },
 					{ L"HR512", L"HR640", L"HR672" },
+					{ L"HRLR512", L"HRLR640", L"HRLR672" },
 					{ L"Narrow Text", L"Normal Text", L"Wide Text" },
 				};
 
@@ -2010,7 +2042,7 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 
 	// update XDL history
 	if (y >= 8 && y < 248) {
-		mXDLLastHistoryEntry.mbXdlActive = mbXdlActive;
+		mXDLLastHistoryEntry.mbXdlActive = mbXdlActive || (sint32)mXdlRepeatCounter >= 0;
 		mXDLLastHistoryEntry.mOverlayAddr = mOvAddr;
 		mXDLLastHistoryEntry.mMapAddr = mAttrAddr;
 		mXDLHistory[y - 8] = mXDLLastHistoryEntry;
@@ -2041,11 +2073,12 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 	}
 
 	// deduct overlay map cycles
-	static constexpr uint32 kOvCyclesPerMode[5][3]={
+	static constexpr uint32 kOvCyclesPerMode[6][3]={
 		{ 0, 0, 0 },
 		{ 128, 160, 168 },
 		{ 256, 320, 336 },
 		{ 256, 320, 336 },
+		{ 128, 160, 168 },
 		{ 195, 243, 255 },
 	};
 
@@ -2946,6 +2979,10 @@ void ATVBXEEmulator::RenderOverlay(int x1, int x2) {
 				RenderOverlayHR(mOverlayDecode + x1f*4, x1f - xl, x2f - x1f);
 				break;
 
+			case ATVBXEOverlayMode::HRLR:
+				RenderOverlayHRLR(mOverlayDecode + x1f*4, x1f - xl, x2f - x1f);
+				break;
+
 			case ATVBXEOverlayMode::Text:
 				RenderOverlay80Text(mOverlayDecode + x1f*4, xl, x1f - xl, x2f - x1f);
 				break;
@@ -3179,6 +3216,22 @@ void ATVBXEEmulator::RenderOverlayHR(uint8 *dst, int x1, int w) {
 	} while(--w);
 }
 
+void ATVBXEEmulator::RenderOverlayHRLR(uint8 *dst, int x1, int w) {
+	// MERGE NOTE: like LR, this fetches one byte per color clock.
+	// Doubling the starting offset breaks partially rendered scanlines.
+
+	do {
+		uint8 b0 = VBXE_FETCH(mOvAddr + x1);
+
+		dst[0] = b0 >> 4;
+		dst[1] = b0 & 15;
+		dst[2] = b0 >> 4;
+		dst[3] = b0 & 15;
+		dst += 4;
+		x1++;
+	} while(--w);
+}
+
 void ATVBXEEmulator::RenderOverlay80Text(uint8 *dst, int rx1, int x1, int w) {
 	static const uint32 kExpand4[16]={
 		0x00000000,
@@ -3297,20 +3350,9 @@ void ATVBXEEmulator::RunBlitter() {
 			break;
 		}
 
-		uint32 zeroSourceBytes = RunBlitterRow();
+		uint32 cyclesRefunded = RunBlitterRow();
 
-		// Check how many cycles we should credit based on $00 source bytes.
-		//
-		//	Mode 0: None (no optimization)
-		//	Mode 1: 1/dest if coldetect off, 2/dest if coldetect on
-		//	Modes 2-6: 2/dest
-		//
-		// Note that there is a complication if X-zoom or constant mode are active, as
-		// we can't go below 1/dest.
-
-		if (mBlitterMode != 0 && mBlitAndMask != 0)
-			mBlitCyclesLeft += mBlitCyclesSavedPerZero * zeroSourceBytes;
-
+		mBlitCyclesLeft += cyclesRefunded;
 		mBlitCyclesLeft -= mBlitCyclesPerRow;
 
 		mBlitDstAddr += mBlitDstStepY;
@@ -3352,7 +3394,13 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 				}
 				break;
 
-			case 1:	return RunBlitterRow<BlitterMode::Overlay, true, true, rc>();
+			case 1:
+				if (mbVersion127OrHigher && mBlitCollisionMask)
+					return RunBlitterRow<BlitterMode::OverlayColl127, true, true, rc>();
+				else
+					return RunBlitterRow<BlitterMode::Overlay, true, true, rc>();
+				break;
+
 			case 2:
 				if (mbVersion127OrHigher) {
 					if (mBlitterSubMode & 0x10)
@@ -3421,6 +3469,8 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 	[[maybe_unused]] uint32 rcSrcMaskY = (UINT32_C(1) << mBlitRCTexSizeBitsY) - 1;
 
 	[[maybe_unused]] uint32 tableBaseAddr = ((uint32)mBlitterSubMode << (16-4)) + ((uint32)mBlitCollisionMask << 8);
+
+	[[maybe_unused]] uint32 overlayNoCollSourceNonZero = 0;
 
 	const uint8 andMask = mBlitAndMask;
 	const uint8 xorMask = mBlitXorMask;
@@ -3548,12 +3598,17 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 
 					VBXE_WRITE(dstRowAddr, dl + dh);
 				} else {
+					if constexpr (T_Mode == BlitterMode::OverlayColl127) {
+						if (!mBlitActiveCollisionMask)
+							++overlayNoCollSourceNonZero;
+					}
+
 					if (d && ((1 << (d >> 5)) & mBlitActiveCollisionMask)) {
 						mBlitCollisionCode = d;
 						mBlitActiveCollisionMask = 0;
 					}
 
-					if constexpr (T_Mode == BlitterMode::Overlay) {
+					if constexpr (T_Mode == BlitterMode::Overlay || T_Mode == BlitterMode::OverlayColl127) {
 						d = c;
 					} else if constexpr (T_Mode == BlitterMode::Add) {
 						d += c;
@@ -3604,7 +3659,25 @@ uint32 ATVBXEEmulator::RunBlitterRow() {
 		mBlitRCSrcY = rcSrcY;
 	}
 
-	return zeroSourceBytes;
+	// Refund cycles based on $00 source bytes and/or collision bytes.
+	uint32 cyclesRefunded = 0;
+
+	if (mBlitCyclesSavedPerZero)
+		cyclesRefunded = mBlitCyclesSavedPerZero * zeroSourceBytes;
+
+	// If doing overlay with collision on V1.27+, we must make a special
+	// adjustment if a collision has been detected. All zero bytes run
+	// a 1-1-1-1 pattern regardless of collision, so this only needs to
+	// happen for non-zero bytes. The necessary adjustment is:
+	//
+	//	3-2-2-2 -> 2-1-1-1 (mem)
+	//	2-2-2-2 -> 1-1-1-1 (const)
+	//
+	if constexpr (T_Mode == BlitterMode::OverlayColl127) {
+		cyclesRefunded += overlayNoCollSourceNonZero;
+	}
+
+	return cyclesRefunded;
 }
 
 uint64 ATVBXEEmulator::GetBlitTime() const {
@@ -3695,19 +3768,13 @@ bool ATVBXEEmulator::LoadNextBCBContainer() {
 	// process container
 	if (container[0] & 0x20) {
 		// raycasting container
-		mBlitRCSrcInitX = VDReadUnalignedLEU16(&container[1]) & 0x7FFF;
-		mBlitRCSrcInitY = VDReadUnalignedLEU16(&container[3]) & 0x7FFF;
+		mBlitRCSrcInitX = mBlitRCSrcX = VDReadUnalignedLEU16(&container[1]) & 0x7FFF;
+		mBlitRCSrcInitY = mBlitRCSrcY = VDReadUnalignedLEU16(&container[3]) & 0x7FFF;
 		mBlitRCSrcStepX = ((uint32)mBlitSrcStepX & 0xFF) + ((uint32)(container[5] & 0x7F) << 8);
 		// raycast source step Y already inited from BCB processing
+		// raycast texture size bits already inited from BCB processing
 
 		// enable raycasting
-		mBlitRCSrcX = mBlitRCSrcInitX;
-		mBlitRCSrcY = mBlitRCSrcInitY;
-
-		// invalid texture sizes are clamped instead of failing the BCB
-		mBlitRCTexSizeBitsX = std::min<int>((mBlitPatternMode & 7) + 3, 7);
-		mBlitRCTexSizeBitsY = std::min<int>(((mBlitPatternMode >> 3) & 7) + 3, 7);
-
 		mbBlitRCMode = true;
 	} else {
 		// jump container
@@ -3791,50 +3858,140 @@ void ATVBXEEmulator::LoadBCB(const uint8 (&bcb)[21]) {
 	// save off full Y step if raycasting container is later seen
 	mBlitRCSrcStepY = ((uint32)rawSrcStepY0 + ((uint32)rawSrcStepY1 << 8)) & 0x7FFF;
 
+	// set raycast texture sizes; invalid texture sizes are clamped instead of failing the BCB
+	mBlitRCTexSizeBitsX = std::min<int>((mBlitPatternMode & 7) + 3, 7);
+	mBlitRCTexSizeBitsY = std::min<int>(((mBlitPatternMode >> 3) & 7) + 3, 7);
+
 	// recompute derived parameters that are constant for the entire blit
 	// Compute memory cycles per row blitted.
 	const uint32 srcBytesPerRow = mBlitWidth;
 	const uint32 dstBytesPerRow = mBlitWidth * mBlitZoomX;
 
 	mBlitCyclesPerRow = dstBytesPerRow;
+
+	// Check how many cycles we should credit based on $00 source bytes or
+	// collision inactive cycles. This is officially documented as of FX 1.27+,
+	// with very minor differences from earlier cores. The optimizations are
+	// based on whether source bytes are $00, or repeated from X-zoom or
+	// AND mask $00. No optimizations apply for Y-zoom or pattern.
+	//
+	// The emulation works by computing a baseline cost and refunding cycles
+	// based on zero bytes encountered. If the AND mask is $00, then the max
+	// number of cycles is always saved and no dynamic adjustment for $00 bytes
+	// needs to be made.
+	//
+	// We can represent timing using DRAM-style syntax as A-B-B-B where A is
+	// the cycles for the first byte of an X-zoom group and B is the burst
+	// cycle for the remainder of the X-zoom group. We start by computing
+	// baseline timing:
+	//
+	//	2-1-1-1 pattern (source memory / copy)
+	//	1-1-1-1 pattern (source constant / fill)
+	//
+	// The baseline cost and per-zero refunds are then adjusted for the
+	// specific mode and constant.
+
 	mBlitCyclesSavedPerZero = 0;
 
 	if (mBlitAndMask)
 		mBlitCyclesPerRow += srcBytesPerRow;
 
-	if (mBlitAndMask || mBlitXorMask) {
-		switch(mBlitterMode) {
-			// Mode 0 is read-write.
-			case 0:
-				break;
+	// Modify based on mode.
+	switch(mBlitterMode) {
+		// Mode 0 Copy:
+		//	2-1-1-1 pattern (source memory)
+		//	1-1-1-1 pattern (source constant)
+		case 0:
+		default:
+			break;
 
-			// Mode 1 is read-modify-write if collision detection is enabled.
-			case 1:
-				if (mBlitCollisionMask) {
+		// Mode 1 Overlay, collision active:
+		//	3-2-2-2 pattern (source memory, non-zero)
+		//	1-1-1-1 pattern (source memory, zero)
+		//	2-2-2-2 pattern (source constant, non-zero)
+		//	1-1-1-1 pattern (source constant, zero)
+		//
+		// Mode 1 Overlay, collision inactive:
+		//	2-1-1-1 pattern (source memory, non-zero)
+		//	1-1-1-1 pattern (source memory, zero)
+		//	1-1-1-1 pattern (source constant, non-zero)
+		//	1-1-1-1 pattern (source constant, zero)
+		//
+		// For V1.27+, collision active timing is used by default if started
+		// with collision; the blit routine will then refund cycles after a
+		// collision is detected. This is done with special-case code.
+		//
+		case 1:
+			if (mBlitCollisionMask) {
+				if (mBlitAndMask) {
 					mBlitCyclesPerRow += dstBytesPerRow;
-
-					if (mBlitAndMask)
-						mBlitCyclesSavedPerZero = mBlitZoomX*2;
-					else
-						mBlitCyclesSavedPerZero = mBlitZoomX;
+					mBlitCyclesSavedPerZero = mBlitZoomX + 1;
 				} else {
-					if (mBlitAndMask)
-						mBlitCyclesSavedPerZero = mBlitZoomX;
-					else
-						mBlitCyclesSavedPerZero = 0;
+					if (mBlitXorMask)
+						mBlitCyclesPerRow += dstBytesPerRow;
 				}
-				break;
-
-			// Modes 2-6 are always read-modify-write.
-			default:
-				mBlitCyclesPerRow += dstBytesPerRow;
-
+			} else {
 				if (mBlitAndMask)
-					mBlitCyclesSavedPerZero = mBlitZoomX*2;
-				else
-					mBlitCyclesSavedPerZero = mBlitZoomX;
+					mBlitCyclesSavedPerZero = 1;
+			}
+			break;
+
+		// Mode 2 Add-Carry:
+		//	3-2-2-2 (source memory)
+		//	2-2-2-2 (source constant)
+		//
+		//	There are no savings for zero in this mode, because it must write
+		//	zero and the hardware can't optimize out the dest read.
+		case 2:
+			if ((mBlitterSubMode & 0x10) && mbVersion127OrHigher) {
+				// Run 3-2-2-2 for memory, 2-2-2-2 for constant
+				mBlitCyclesPerRow += dstBytesPerRow;
 				break;
-		}
+			}
+
+			[[fallthrough]];
+
+		// Mode 2 Add:
+		// Mode 2 Add-Saturate:
+		// Mode 3 Or:
+		// Mode 5 Xor:
+		// Mode 6 HR Overlay:
+		//	3-2-2-2 (source memory, non-zero)
+		//	1-1-1-1 (source memory, zero)
+		//	2-2-2-2 (source constant, non-zero)
+		//	1-1-1-1 (source constant, zero)
+		//
+		//	HR Overlay mode does not benefit from the collision optimization,
+		//	since it has to do a read-modify-write for non-zero bytes, the
+		//	hardware not being able to check for $0x or $x0.
+		case 3:
+		case 5:
+		case 6:
+			if (mBlitAndMask) {
+				// For each span, we can drop both the dest read/write on the
+				// source read cycle, but the remaining cycles must do a dest read
+				// since there is no source read cycle -- so we go from
+				// 3-2-2-2 to 1-1-1-1, it can't do 1-0-0-0.
+				mBlitCyclesPerRow += dstBytesPerRow;
+				mBlitCyclesSavedPerZero = mBlitZoomX+1;
+			} else {
+				if (mBlitXorMask)
+					mBlitCyclesPerRow += dstBytesPerRow;
+			}
+			break;
+
+		// Mode 4 And:
+		//	3-2-2-2 (source memory, non-zero)
+		//	2-1-1-1 (source memory, zero)
+		//	2-2-2-2 (source constant, non-zero)
+		//	1-1-1-1 (source constant, zero)
+		//
+		//	And mode differs from other read-modify-write modes since it must
+		//	write zero on source zero, so it saves less.
+		case 4:
+			mBlitCyclesPerRow += dstBytesPerRow;
+			mBlitCyclesSavedPerZero = mBlitZoomX;
+			break;
 	}
 }
 
@@ -3845,8 +4002,8 @@ void ATVBXEEmulator::SaveBCB(uint8 (&bcb)[21]) const {
 	bcb[ 0] = (uint8)(mBlitSrcAddr >>  0);
 	bcb[ 1] = (uint8)(mBlitSrcAddr >>  8);
 	bcb[ 2] = (uint8)(mBlitSrcAddr >> 16);
-	bcb[ 3] = (uint8)(mBlitSrcStepY >> 0);
-	bcb[ 4] = (uint8)(mBlitSrcStepY >> 8);
+	bcb[ 3] = (uint8)(mBlitRCSrcStepY >> 0);	// Use the raycast step Y to preserve extra bits.
+	bcb[ 4] = (uint8)(mBlitRCSrcStepY >> 8);
 	bcb[ 5] = (uint8)(mBlitSrcStepX     );
 	bcb[ 6] = (uint8)(mBlitDstAddr >>  0);
 	bcb[ 7] = (uint8)(mBlitDstAddr >>  8);
@@ -4198,9 +4355,14 @@ void ATVBXEDevice::GetSettings(ATPropertySet& settings) {
 }
 
 bool ATVBXEDevice::SetSettings(const ATPropertySet& settings) {
-	SetSharedMemoryMode(settings.GetBool("shared_mem", false));
+	const uint32 ver = settings.GetUint32("version");
+	const bool sharedMem = settings.GetBool("shared_mem", false);
+
+	// shared memory is only supported for FX 1.26-.
+	SetSharedMemoryMode(sharedMem && ver < 127);
+
 	SetAltPageEnabled(settings.GetBool("alt_page", false));
-	mEmulator.SetVersion(settings.GetUint32("version"));
+	mEmulator.SetVersion(ver);
 
 	return true;
 }

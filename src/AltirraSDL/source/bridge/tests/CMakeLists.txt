@@ -14,6 +14,23 @@ add_test(NAME bridge-pokey-audio
 
 if(TARGET AltirraBridgeServer)
 	find_package(Python3 REQUIRED COMPONENTS Interpreter)
+	add_executable(altirra-bridge-vbxe-sdk-test
+		bridge_vbxe_sdk_test.c
+		../../../AltirraBridge/sdk/c/altirra_bridge.c)
+	target_include_directories(altirra-bridge-vbxe-sdk-test PRIVATE
+		../../../AltirraBridge/sdk/c)
+	if(WIN32)
+		target_link_libraries(altirra-bridge-vbxe-sdk-test PRIVATE ws2_32)
+	endif()
+	add_test(NAME bridge-vbxe
+		COMMAND ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/bridge_vbxe_test.py
+			$<TARGET_FILE:AltirraBridgeServer>
+			${CMAKE_SOURCE_DIR}/src/AltirraSDL/AltirraBridge/sdk/python
+			$<TARGET_FILE:altirra-bridge-vbxe-sdk-test>)
+	set_tests_properties(bridge-vbxe PROPERTIES
+		TIMEOUT 30
+		ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 	add_test(NAME bridge-timing
 		COMMAND ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/bridge_timing_test.py

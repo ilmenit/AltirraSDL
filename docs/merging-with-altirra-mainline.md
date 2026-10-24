@@ -488,3 +488,71 @@ which is empty on MSVC, rather than unconditionally adding `src/compat`.
 Otherwise the non-MSVC `intrin.h` shim shadows the real Windows intrinsic
 header and `<future>` fails in `savestateio.cpp` with missing `_ReturnAddress`.
 The display test's FMA flag check is x86/x64-only, like the production path.
+
+## Test25 local merge notes
+
+The test24 → test25 sync changes nine upstream files, with no additions or
+removals. Snapshot input SHA-256 hashes:
+
+- test24: `7eea262b4d3fbcf382b56dc7f7623cb689d125ee277e36f7009586442f164a3d`
+- test25: `dfa61737181ff784e63e121417805ca13dba27f5cfadc3efec36e9050d5414f7`
+
+Preserve these differences when syncing again:
+
+- HR+LR fetches one byte per color clock. Upstream doubled the initial
+  source offset but incremented it by one per clock, making split render
+  spans read different pixels from an uninterrupted span. The fork removes
+  that initial doubling; the regression fails on unmodified test25 and also
+  checks the wrap at the end of 512K RAM.
+- Keep the existing BCD-safe NTSC offset check, named priority masks,
+  initialized RES pixels, older-core attribute wrap, color-table refresh,
+  and portable renderer noinline/constexpr code.
+- Adopt upstream's raycast snapshot fields as well as the fuller test24
+  fork fields. The latter preserve pending containers, the collision latch,
+  full coordinates and texture state. Load both snapshot formats, with the
+  fork extension taking precedence when present. Preserve full raycast
+  Y-step bits when serializing a BCB. FEATURE_CONTROL restores VIDEO_CONTROL's
+  shared bit after the VIDEO_CONTROL write, including for old snapshots.
+- The fork already computed disk deadlines relative to the current tick.
+  Adopt upstream's legacy idle-timer clamp while preserving exact-runtime
+  rollback fields and the separate buffered-command flag.
+- Disable shared memory for FX 1.27 in both native and ImGui configuration,
+  and enforce it in device settings for profiles and bridge clients.
+
+The constexpr audit found only tables in ordinary runtime functions, with no
+P2647-dependent locals. No aggregate `emplace_back` calls were added. New C++
+regressions retain `stdafx.h` first; the standalone C SDK fixture uses only C
+and SDK headers. No native path behavior or intrinsic guards changed.
+
+AltirraBridge adds `VBXE`, `VBXE_READ`, and `VBXE_WRITE` using the production
+snapshot and debugger local-memory APIs. Python, C and Pascal expose matching
+helpers. The LLM workflow documents BCB/texture uploads, actual core settings,
+blitter progress, collision/IRQ state and raycasting. Memory requests validate
+all bytes and bounds before writing; inspection does not advance the machine
+or acknowledge hardware state. Bridge package CI runs the real blitter test
+on Linux, macOS and Windows; the Linux desktop job runs the new UI tests.
+
+## Test26 local merge notes
+
+The test25 → test26 source delta contains only `vbxe.cpp` and `changes.txt`.
+Test26 archive SHA-256:
+`4b339a167a3080d9bc2cd27901f2bc8ceff805ef995f841cfaf3d84c53207e0f`.
+
+- Apply upstream's `addrLo & 0xDF` decode to both register reads and writes.
+  Register offsets $40-$5F are mirrored at $60-$7F. Unassigned read-side
+  slots in that window now drive $FF instead of passing through to lower
+  memory layers. Preserve the configuration latch at $C0-$FF, pass-through
+  outside the register/config windows, and existing core-version gating.
+- Keep all test25 fork corrections, particularly HR+LR split-span addressing
+  and the fuller snapshot/rollback state. The merge changes only the three
+  upstream decoding sites in production code; no renderer or bridge API
+  rewrite is required.
+- The VBXE fixture checks read aliases and unassigned slots on all supported
+  cores, mirrored write controls, and the surrounding address boundaries.
+  It fails on test25 before the production patch. The bridge fixture checks
+  the actual mapped window at both $D600 and $D700, and completes a blit
+  started via the mirrored BL_ADR/IRQ_CONTROL/BLITTER_START registers.
+
+No constexpr declarations, aggregate construction, headers, intrinsic guards,
+new sources or native path assumptions are introduced by this upstream delta.
+The shared core fix applies to SDL, bridge, libretro and native Windows.

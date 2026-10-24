@@ -543,6 +543,14 @@ delete that directory. The Windows-native `Altirra.sln` build is
 **completely untouched** by AltirraBridge — no `.vcxproj` references
 any bridge file.
 
+## VBXE development
+
+Use `VBXE` for structured core, overlay, MEMAC and blitter state, and
+`VBXE_READ` / `VBXE_WRITE` for bounded transfers anywhere in local 512K RAM.
+Python, C and Pascal helpers are available. The
+[VBXE workflow](docs/COMMANDS.md#vbxe-development) shows BCB uploads, register
+writes and cycle stepping with FX 1.27.
+
 ## License
 
 GPLv2+, matching Altirra. See [`LICENSE`](LICENSE).

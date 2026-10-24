@@ -171,6 +171,13 @@ int atb_antic(atb_client_t* c);
 int atb_gtia(atb_client_t* c);
 int atb_pokey(atb_client_t* c);
 int atb_pia(atb_client_t* c);
+/* VBXE state as JSON; local RAM access bypasses CPU MEMAC.
+ * Ranges must fit in 512K RAM, with length 1..16384. */
+int atb_vbxe(atb_client_t* c);
+int atb_vbxe_read(atb_client_t* c, unsigned int addr,
+                  unsigned int length, unsigned char* out_buf);
+int atb_vbxe_write(atb_client_t* c, unsigned int addr,
+                   const unsigned char* data, size_t length);
 int atb_dlist(atb_client_t* c);
 int atb_hwstate(atb_client_t* c);
 

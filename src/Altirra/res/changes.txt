@@ -51,6 +51,7 @@ This prerelease version:
    * AltirraOS: Fixed incorrect orientation byte from some line flushes in P: handler. (3.49)
    * AltirraOS: Fixed occasional bogus timeout errors in SIO routines. (3.49)
    * Cartridge: Added DCart to cartridge type autodetection list.
+   * Cartridge: Fixed SDX 64K derived cartridge types to allow bank switching by CCTL reads.
    * Command Line: Fixed 5200 cartridges not loading if passed on the command line without /cart.
    * CPU: 65C816 COP now resets program bank correctly in emulation mode.
    * CPU: Fixed spurious interrupts after SEI in 65C816 native mode.
@@ -81,6 +82,7 @@ This prerelease version:
    * Recorder: SAP recorder now uses prescribed text for unknown author/title.
    * SAP: Fixed converter causing player to swap channels when repeating a stereo type R file.
    * Save States: Fixed occasional invalid save state errors when loading a save state with 16-bit linked channels in use.
+   * Save States: Fixed invalid save state problem with disk idle timer.
    * UI: 65C816 linear memory setting is now disabled when Rapidus is enabled since Rapidus settings take precedence.
    * UI: An error is now reported interactively if a single instance launch fails because the existing instance is running elevated as admin.
    * UI: Reset Window Layout wasn't resetting undocked panes.
@@ -91,6 +93,8 @@ This prerelease version:
    * VBXE: Fixed interaction between GTIA priorities and overlay priorities.
    * VBXE: Blitter IRQ status bit is no longer set when blitter IRQ are disabled.
    * VBXE: Blitter HR collisions can now latch both low and high nibbles simultaneously.
+   * VBXE: Improved blitter timing accuracy.
+   * VBXE: Register decoding now ignores A5 and unassigned registers read $FF.
 
 Version 4.40 [December 31, 2025]
    [changes]

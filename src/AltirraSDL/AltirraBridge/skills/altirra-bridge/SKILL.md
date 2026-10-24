@@ -91,6 +91,10 @@ free(png);
 atb_close(c);
 ```
 
+For VBXE graphics or blitter work, read the
+[VBXE workflow](references/workflows.md#vbxe-graphics-and-fx-127-blitter-development).
+It covers local RAM access, structured state and FX 1.27 behavior.
+
 ## Key concepts
 
 - **Frame gate.** `frame(N)` resumes the simulator, lets it run

@@ -98,7 +98,7 @@ Commands are space-separated tokens: a verb in uppercase followed by
 zero or more arguments. Single or double quotes may surround all or part
 of a token. Inside double quotes, escape `"` and `\` as `\"` and `\\`;
 other backslashes are preserved so Windows paths work naturally. Binary
-payloads still use base64 rather than quoted tokens.
+payloads use command-specific encoding: normally base64; VBXE_WRITE uses hex.
 
 Numeric arguments accept three forms:
 
@@ -527,6 +527,57 @@ values for display, screenshot tools, or rendering.
 R1, G1, B1, ... in increasing color-index order. The palette is
 consistent across calls within a session (it depends only on the
 chosen color preset, which is settings-loaded at startup).
+
+### VBXE / VBXE_READ / VBXE_WRITE
+
+`VBXE` returns `{"ok":true,"present":false}` when absent. When enabled it
+returns `present`, decimal `version` (120/124/126/127), `register_base`
+(`"$d600"` or `"$d700"`), `shared_memory`, `ntsc_vertical_offset`,
+`video_control`, `feature_control`, `xdl_base`, `xdl_address`, `xdl_repeat`,
+`overlay_mode` (`disabled/lr/sr/hr/hrlr/text`), `overlay_address`,
+`overlay_step`, `collision`, `irq_enabled`, `irq_pending`, `memac_control`,
+`memac_bank`, and `memac_b_control`.
+
+The nested `blitter` object contains `busy`, `list_address`, `next_address`,
+`mode`, `submode`, `bcb` (21 bytes encoded as hex), `cycles_pending`,
+`rows_remaining`, `stop_delay`, `containers_pending`, `collision_latched`,
+`collision_code`, `raycast`, `raycast_x`, `raycast_y`, `raycast_step_x`, and
+`raycast_step_y`. BCB, mode, submode and internal progress fields are valid
+while busy; an idle snapshot reports their default values. Raycast coordinates
+and increments are raw 15-bit fixed-point values, with eight fractional bits.
+Addresses and register bytes are `$`-prefixed hex strings; counts, core version,
+mode and raycast values are JSON integers. `cycles_pending` is the signed
+blitter cycle balance (eight VBXE clocks per CPU tick); a negative value
+means work is ahead of the current boundary. `stop_delay` is in CPU ticks. Flags are
+booleans. `xdl_repeat` is the raw serialized repeat-minus-one value.
+
+This is a snapshot at the last processed emulation boundary. Reading it does
+not run the blitter, consume a collision latch, acknowledge IRQs, change
+registers, or pause/resume the machine. Use `CYCLES`/`SCANLINES`/`FRAME` to
+advance work, then inspect again. NTSC offset describes the selected core's
+behavior; it does not imply that the machine is currently in NTSC mode.
+
+```text
+VBXE_READ $10000 16
+{"ok":true,"addr":"$010000","length":16,"data":"...32 hex digits..."}
+VBXE_WRITE $10000 1234abcd
+{"ok":true,"addr":"$010000","length":4}
+```
+
+Both memory commands address **VBXE local RAM**, independently of CPU banking,
+MEMAC mappings or register base. Addresses are 0..$7FFFF; each request contains
+1..16384 bytes and must fit entirely within the 512K region. `VBXE_READ`
+defaults to one byte. `VBXE_WRITE` accepts an even-length hex string, validates
+the entire request before changing any bytes, and never starts a blit. Missing
+devices, invalid ranges, malformed hex and extra arguments produce errors.
+Shared memory on older cores uses the actual shared backing store.
+
+Configure the device with `DEVICE_SET`; write hardware registers with
+`HWPOKE` at `register_base + offset`. FX 1.27 disables shared memory even if
+an old profile or client requests it. Earlier core versions remain selectable.
+These commands do not change protocol framing or existing CPU `PEEK`/`POKE`
+semantics.
+
 
 ### Phase 3 commands — state write & input injection
 
@@ -988,7 +1039,8 @@ check and rejects devices that it cannot attach.
 Add, reconfigure, or remove a device. Common quick tags have the same
 defaults as Gaming Mode/Desktop device config:
 
-- `vbxe`: `version=126`, optional `base=d600|d700`, `shared_mem=true|false`
+- `vbxe`: `version=127` by default (also 120, 124, 126), optional
+  `base=d600|d700`, `shared_mem=true|false` (effective only before FX 1.27)
 - `covox`: `base=d600`, `size=100`, `channels=4`
 - `soundboard`: `version=120`, `base=d2c0`
 - `rapidus`, `slightsid`: no default properties

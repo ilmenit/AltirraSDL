@@ -145,6 +145,7 @@ jobs:
           test_config=$(mktemp -d)
           trap 'rm -rf "$test_config"' EXIT
           XDG_CONFIG_HOME="$test_config" python3 -m pytest -q \
+            tests/ui/test_upstream_test25.py \
             tests/ui/test_speed_menu_pause.py tests/ui/test_video_outputs.py \
             tests/ui/test_media_url.py tests/ui/test_library_url.py \
             tests/ui/test_fujinet.py tests/ui/test_fujinet_restart.py \

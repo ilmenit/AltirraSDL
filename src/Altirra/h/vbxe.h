@@ -37,6 +37,7 @@ enum class ATVBXEOverlayMode : uint8 {
 	LR,
 	SR,
 	HR,
+	HRLR,		// HR with LR fetch rate
 	Text
 };
 
@@ -191,6 +192,7 @@ private:
 	void RenderOverlayLR(uint8 *dst, int x1, int w);
 	void RenderOverlaySR(uint8 *dst, int x1, int w);
 	void RenderOverlayHR(uint8 *dst, int x1, int w);
+	void RenderOverlayHRLR(uint8 *dst, int x1, int w);
 	void RenderOverlay80Text(uint8 *dst, int rx1, int x1, int w);
 
 	void RunBlitter();
@@ -199,7 +201,8 @@ private:
 	enum class BlitterMode : uint8 {
 		Fill,			// mode 0, and mask == 0
 		Copy,			// mode 0, and mask != 0
-		Overlay,		// mode 1
+		Overlay,		// mode 1, collision mask == 0 or V1.26-
+		OverlayColl127,	// mode 1, collision mask != 0, V1.27+
 		Add,			// mode 2, submode %x00
 		AddCarry,		// mode 2, submode %xx1
 		AddSat,			// mode 2, submode %x10

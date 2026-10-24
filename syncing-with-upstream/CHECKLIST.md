@@ -38,5 +38,6 @@ Short form of `GUIDE.md`. Tick each box in the PR description.
 
 ## Record
 - [ ] Appended one-line entry to `HISTORY.md` only after the merge and validation are complete
+- [ ] Updated CMake, libretro info and Android Gradle version name/code together
 - [ ] Updated documented baseline/current OLD reference only after successful validation
 - [ ] PR description links to `SUMMARY.md` and lists the 3-way files touched

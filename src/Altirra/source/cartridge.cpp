@@ -1635,6 +1635,29 @@ bool ATCartridgeEmulator::WriteByte_CCTL_Williams(void *thisptr0, uint32 address
 }
 
 template<uint8 T_Address, bool T_PassThrough>
+sint32 ATCartridgeEmulator::DebugReadByte_CCTL_SDX64(void *thisptr0, uint32 address) {
+	if (((uint8)address & 0xF0) == T_Address) {
+		return 0xFF;
+	}
+
+	return -1;
+}
+
+template<uint8 T_Address, bool T_PassThrough>
+sint32 ATCartridgeEmulator::ReadByte_CCTL_SDX64(void *thisptr0, uint32 address) {
+	if (((uint8)address & 0xF0) == T_Address) {
+		((ATCartridgeEmulator *)thisptr0)->SetCartBank(
+			address & 8
+				? (address & 4) || !T_PassThrough ? -1 : 8
+				: ~address & 7
+		);
+		return 0xFF;
+	}
+
+	return -1;
+}
+
+template<uint8 T_Address, bool T_PassThrough>
 bool ATCartridgeEmulator::WriteByte_CCTL_SDX64(void *thisptr0, uint32 address, uint8 value) {
 	if (((uint8)address & 0xF0) == T_Address) {
 		((ATCartridgeEmulator *)thisptr0)->SetCartBank(
@@ -3112,8 +3135,10 @@ void ATCartridgeEmulator::InitMemoryLayers() {
 			bank1Base	= 0xA0;
 			bank1Size	= 0x20;
 			usecctl = true;
-			usecctlread = false;
+			usecctlread = true;
 			usecctlwrite = true;
+			cctlhd.mpDebugReadHandler = DebugReadByte_CCTL_SDX64<0xE0, true>;
+			cctlhd.mpReadHandler = ReadByte_CCTL_SDX64<0xE0, true>;
 			cctlhd.mpWriteHandler = WriteByte_CCTL_SDX64<0xE0, true>;
 			break;
 
@@ -3169,8 +3194,10 @@ void ATCartridgeEmulator::InitMemoryLayers() {
 			bank1Base	= 0xA0;
 			bank1Size	= 0x20;
 			usecctl = true;
-			usecctlread = false;
+			usecctlread = true;
 			usecctlwrite = true;
+			cctlhd.mpDebugReadHandler = DebugReadByte_CCTL_SDX64<0xD0, false>;
+			cctlhd.mpReadHandler = ReadByte_CCTL_SDX64<0xD0, false>;
 			cctlhd.mpWriteHandler = WriteByte_CCTL_SDX64<0xD0, false>;
 			break;
 
@@ -3178,8 +3205,10 @@ void ATCartridgeEmulator::InitMemoryLayers() {
 			bank1Base	= 0xA0;
 			bank1Size	= 0x20;
 			usecctl = true;
-			usecctlread = false;
+			usecctlread = true;
 			usecctlwrite = true;
+			cctlhd.mpDebugReadHandler = DebugReadByte_CCTL_SDX64<0x70, false>;
+			cctlhd.mpReadHandler = ReadByte_CCTL_SDX64<0x70, false>;
 			cctlhd.mpWriteHandler = WriteByte_CCTL_SDX64<0x70, false>;
 			break;
 

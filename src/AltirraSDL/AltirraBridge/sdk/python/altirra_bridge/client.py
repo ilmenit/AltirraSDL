@@ -388,6 +388,31 @@ class AltirraBridge:
             return self._cmd_ok("POKEY")
         return self._cmd_ok(f"POKEY {chip}")
 
+    def vbxe(self) -> dict:
+        """VBXE configuration, overlay, MEMAC and blitter snapshot.
+
+        Returns ``present=False`` when absent. Blitter internals describe
+        the last processed scanline; this read does not advance emulation.
+        """
+        return self._cmd_ok("VBXE")
+
+    def vbxe_read(self, addr: int, length: int = 1) -> bytes:
+        """Read 1..16384 bytes of local VBXE RAM, bypassing CPU MEMAC."""
+        if not 0 <= addr < 0x80000 or not 1 <= length <= 16384 or addr + length > 0x80000:
+            raise ValueError("VBXE range must fit in 512K RAM (1..16384 bytes)")
+        return bytes.fromhex(self._cmd_ok(f"VBXE_READ ${addr:x} {length}")["data"])
+
+    def vbxe_write(self, addr: int, data: bytes) -> dict:
+        """Write local VBXE RAM without changing MEMAC or starting a blit.
+
+        Use :meth:`hwpoke` at the returned ``register_base`` to configure
+        registers and start a blit; :meth:`cycles` advances its execution.
+        """
+        data = bytes(data)
+        if not 0 <= addr < 0x80000 or not 1 <= len(data) <= 16384 or addr + len(data) > 0x80000:
+            raise ValueError("VBXE range must fit in 512K RAM (1..16384 bytes)")
+        return self._cmd_ok(f"VBXE_WRITE ${addr:x} {data.hex()}")
+
     def pia(self) -> dict:
         """PIA register state — PORTA/B, DDRA/B, CRA/B, plus the
         currently driven port outputs (with DDR applied).

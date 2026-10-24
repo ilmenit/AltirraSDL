@@ -36,8 +36,8 @@ Every sync has three directories:
 
 | Alias | Role                         | Example path                          |
 |-------|------------------------------|---------------------------------------|
-| OLD   | Last upstream release already synced into the fork | `Altirra-4.50-test24-src` |
-| NEW   | Upstream release we're moving to                    | `Altirra-4.50-test25-src` |
+| OLD   | Last upstream release already synced into the fork | `Altirra-4.50-test26-src` |
+| NEW   | Upstream release we're moving to                    | `Altirra-4.50-test27-src` |
 | FORK  | This repo's current working tree                    | `AltirraSDL`              |
 
 Two assumptions the tooling relies on:
@@ -259,6 +259,10 @@ describes the new upstream baseline and packaged version:
 - `CMakeLists.txt` — bump `project(Altirra VERSION ...)` when the upstream
   version number changed. This drives the About dialog, package directory
   names, macOS bundle version, and generated build metadata.
+- `android/app/build.gradle` — update `versionName` and the monotonic base
+  `versionCode`. The ABI-specific codes derive from this base. Android CI
+  checks the packaged manifest against CMake; changing only CMake leaves
+  the APK manifest on the old version.
 - `src/AltirraLibretro/altirra_libretro.info` — keep `display_version` in
   sync with `CMakeLists.txt`; validate it with
   `scripts/validate-libretro-info.sh`.
@@ -271,7 +275,7 @@ Then scan for stale version references:
 
 ```bash
 rg -n "4\\.50|test13|test14|test15|4\\.40" \
-    BUILD.md CMakeLists.txt docs src/AltirraLibretro syncing-with-upstream
+    BUILD.md CMakeLists.txt android/app/build.gradle docs src/AltirraLibretro syncing-with-upstream
 ```
 
 Historical entries in `HISTORY.md` and merge-protection comments may still

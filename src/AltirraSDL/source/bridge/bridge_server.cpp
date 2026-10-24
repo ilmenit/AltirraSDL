@@ -208,7 +208,7 @@ bool ShouldLogCommand(const std::string& verb) {
 	return verb == "PAUSE" || verb == "RESUME" || verb == "FRAME"
 		|| verb == "CYCLES" || verb == "SCANLINES" || verb == "POKEY_TRACE"
 		|| verb == "QUIT" || verb == "POKE" || verb == "POKE16"
-		|| verb == "HWPOKE" || verb == "MEMLOAD" || verb == "JOY"
+		|| verb == "HWPOKE" || verb == "VBXE_WRITE" || verb == "MEMLOAD" || verb == "JOY"
 		|| verb == "KEY" || verb == "KEYRAW" || verb == "CONSOL" || verb == "BOOT"
 		|| verb == "BOOT_BARE" || verb == "MOUNT" || verb == "EJECT"
 		|| verb == "CART_EJECT" || verb == "COLD_RESET"
@@ -345,6 +345,8 @@ std::string DispatchCommand(const std::string& line, ATSimulator& sim) {
 	if (verb == "ANTIC")   return CmdAntic(sim, tokens);
 	if (verb == "GTIA")    return CmdGtia(sim, tokens);
 	if (verb == "POKEY")   return CmdPokey(sim, tokens);
+	if (verb == "VBXE") return CmdVbxe(sim, tokens);
+	if (verb == "VBXE_READ" || verb == "VBXE_WRITE") return CmdVbxeMemory(sim, tokens);
 	if (verb == "PIA")     return CmdPia(sim, tokens);
 	if (verb == "DLIST")   return CmdDlist(sim, tokens);
 	if (verb == "HWSTATE") return CmdHwstate(sim, tokens);
