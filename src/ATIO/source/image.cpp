@@ -205,10 +205,22 @@ bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, const AT
 
 	auto view = ATVFSOpenFileView(origPath, parsedPath, false, false);
 
+	// MERGE NOTE (AltirraSDL): report the file name only after the load.
+	// ATSimulator::Load passes imagePath as ctx.mImageName.c_str() and
+	// imagePathOut as &ctx.mImageName, so assigning first rewrites the string
+	// imagePath points into.  The disk then loads with imagePath "disk.atr"
+	// against origPath "/full/path/disk.atr", ATDiskImage::Load marks the
+	// format None, IsUpdatable() is false and the simulator drops auto-flush:
+	// a --bootrw or R/W-mounted disk never saves.  The SDL front end always
+	// fills mImageName, which is why this shows here and seldom on Windows.
+	// Upstream test20 assigned mImageName after the load too.
+	if (!ATImageLoadAuto(origPath, imagePath, *view, loadCtx, resultPath, canUpdate, ppImage))
+		return false;
+
 	if (imagePathOut)
 		*imagePathOut = view->GetFileName();
 
-	return ATImageLoadAuto(origPath, imagePath, *view, loadCtx, resultPath, canUpdate, ppImage);
+	return true;
 }
 
 bool ATImageLoadAuto(const wchar_t *origPath, const wchar_t *imagePath, IVDRandomAccessStream& stream, ATImageLoadContext *loadCtx, VDStringW *resultPath, bool *canUpdate, IATImage **ppImage) {
