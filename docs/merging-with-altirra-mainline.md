@@ -531,3 +531,28 @@ blitter progress, collision/IRQ state and raycasting. Memory requests validate
 all bytes and bounds before writing; inspection does not advance the machine
 or acknowledge hardware state. Bridge package CI runs the real blitter test
 on Linux, macOS and Windows; the Linux desktop job runs the new UI tests.
+
+## Test26 local merge notes
+
+The test25 → test26 source delta contains only `vbxe.cpp` and `changes.txt`.
+Test26 archive SHA-256:
+`4b339a167a3080d9bc2cd27901f2bc8ceff805ef995f841cfaf3d84c53207e0f`.
+
+- Apply upstream's `addrLo & 0xDF` decode to both register reads and writes.
+  Register offsets $40-$5F are mirrored at $60-$7F. Unassigned read-side
+  slots in that window now drive $FF instead of passing through to lower
+  memory layers. Preserve the configuration latch at $C0-$FF, pass-through
+  outside the register/config windows, and existing core-version gating.
+- Keep all test25 fork corrections, particularly HR+LR split-span addressing
+  and the fuller snapshot/rollback state. The merge changes only the three
+  upstream decoding sites in production code; no renderer or bridge API
+  rewrite is required.
+- The VBXE fixture checks read aliases and unassigned slots on all supported
+  cores, mirrored write controls, and the surrounding address boundaries.
+  It fails on test25 before the production patch. The bridge fixture checks
+  the actual mapped window at both $D600 and $D700, and completes a blit
+  started via the mirrored BL_ADR/IRQ_CONTROL/BLITTER_START registers.
+
+No constexpr declarations, aggregate construction, headers, intrinsic guards,
+new sources or native path assumptions are introduced by this upstream delta.
+The shared core fix applies to SDL, bridge, libretro and native Windows.

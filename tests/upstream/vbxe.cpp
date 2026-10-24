@@ -70,6 +70,61 @@ static vdrefptr<ATSaveStateVbxe> RoundTripState(IATObjectState *state) {
 extern void ATCreateDeviceVBXE(const ATPropertySet&, IATDevice **);
 
 struct ATVBXERegressionTests {
+	static void TestRegisterDecoding() {
+		ATVBXEEmulator v;
+		for (uint32 version : {120U, 124U, 126U, 127U}) {
+			v.SetVersion(version);
+			v.mConfigLatch = 5;
+			v.mMemAcControl = 0x12;
+			v.mMemAcBankA = 0x34;
+			v.mBlitCollisionCode = 0xA7;
+			v.mOvCollState = 0x12;
+			Check(v.ReadControl(0x60) == 0x10,
+				"VBXE CORE_VERSION did not ignore A5");
+			for (uint32 reg = 0x40; reg < 0x60; ++reg)
+				Check(v.ReadControl(uint8(reg)) == v.ReadControl(uint8(reg + 0x20)),
+					"VBXE register read aliases differ");
+			// Read-side holes include write-only registers. These must
+			// drive $FF instead of passing through to lower memory layers.
+			for (uint8 reg : {0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+				0x49, 0x4C, 0x4D, 0x4E, 0x4F, 0x51, 0x52, 0x55, 0x56,
+				0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D}) {
+				Check(v.ReadControl(reg) == 0xFF
+					&& v.ReadControl(reg + 0x20) == 0xFF,
+					"Unassigned VBXE register did not drive $FF");
+			}
+			for (int reg = 0; reg < 256; ++reg) {
+				if (reg < 0x40 || (reg >= 0x80 && reg < 0xC0))
+					Check(v.ReadControl(uint8(reg)) == -1,
+						"VBXE claimed an address outside its register/config windows");
+				else if (reg >= 0xC0)
+					Check(v.ReadControl(uint8(reg)) == 5,
+						"VBXE configuration latch read changed");
+			}
+			v.WriteControl(0x60, 2);
+			Check(v.mbExtendedColor1 && v.mFeatureControl == 0x10,
+				"VIDEO_CONTROL write alias was ignored");
+			v.WriteControl(0x61, 0x56);
+			v.WriteControl(0x62, 0x34);
+			v.WriteControl(0x63, 0x02);
+			Check(v.mXdlBaseAddr == 0x23456, "XDL address write aliases were ignored");
+			v.WriteControl(0x64, 0x73);
+			v.WriteControl(0x65, 2);
+			v.WriteControl(0x69, 0xA5);
+			Check(v.mCsel == 0x73 && v.mPsel == 2 && v.mOvCollMask == 0xA5,
+				"VBXE palette/collision write aliases were ignored");
+			v.WriteControl(0x6A, 0);
+			Check(v.mOvCollState == 0, "COLCLR write alias failed");
+			v.WriteControl(0x6B, 0x99);
+			if (version == 127)
+				Check(v.ReadControl(0x6B) == 0x99, "FEATURE_CONTROL alias failed");
+			// Configuration-latch aliases remain outside the register bank.
+			v.WriteControl(0xE0, 3);
+			Check(v.ReadControl(0xC0) == 3 && v.ReadControl(0xFF) == 3,
+				"VBXE configuration latch write changed");
+		}
+	}
+
 	static void TestTiming() {
 		ATVBXEEmulator v;
 		std::vector<uint8> memory(0x80000, 0);
@@ -134,6 +189,7 @@ struct ATVBXERegressionTests {
 	}
 
 	static void Run() {
+		TestRegisterDecoding();
 		TestTiming();
 		// Device settings must enforce the restriction even when loaded
 		// from profiles or the bridge instead of the disabled UI checkbox.

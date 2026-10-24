@@ -132,3 +132,9 @@ legacy disk snapshots with normal, expired and invalid motor-off timers.
 `bridge-vbxe` runs real device configuration, bounded RAM transfers, an FX 1.27
 Add-Carry blit and a live blitter snapshot through the headless server and
 Python/C SDKs. Its package CI step also runs on native Windows/macOS.
+
+Test26 adds register-decoding checks on cores 1.20/1.24/1.26/1.27: A5 read
+aliases, $FF for read-side holes, write aliases, surrounding pass-through
+addresses and the configuration latch. `bridge-vbxe` exercises both register
+bases and starts a real blit through the mirrored control addresses. The
+core regression fails on test25 before importing the test26 fix.

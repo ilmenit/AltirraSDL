@@ -94,6 +94,7 @@ This prerelease version:
    * VBXE: Blitter IRQ status bit is no longer set when blitter IRQ are disabled.
    * VBXE: Blitter HR collisions can now latch both low and high nibbles simultaneously.
    * VBXE: Improved blitter timing accuracy.
+   * VBXE: Register decoding now ignores A5 and unassigned registers read $FF.
 
 Version 4.40 [December 31, 2025]
    [changes]

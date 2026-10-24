@@ -1435,7 +1435,7 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 }
 
 sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
-	switch(addrLo) {
+	switch(addrLo & 0xDF) {
 		case 0x40:	// CORE_VERSION
 			return 0x10;
 
@@ -1473,6 +1473,9 @@ sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
 			return mMemAcBankA;
 
 		default:
+			if (addrLo >= 0x40 && addrLo < 0x80)
+				return 0xFF;
+
 			if (addrLo >= 0xC0) {
 				// D0 = DATA0
 				// D1 = DCLK
@@ -1488,7 +1491,7 @@ sint32 ATVBXEEmulator::ReadControl(uint8 addrLo) {
 }
 
 bool ATVBXEEmulator::WriteControl(uint8 addrLo, uint8 value) {
-	switch(addrLo) {
+	switch(addrLo & 0xDF) {
 		case 0x40:	// VIDEO_CONTROL
 			mbXdlEnabled = (value & 0x01) != 0;
 			mbExtendedColor1 = (value & 0x02) != 0;

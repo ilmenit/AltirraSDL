@@ -35,13 +35,29 @@ def main():
                 except RemoteError:
                     pass
                 for version in (120, 124, 126, 127):
-                    a.device_set("vbxe", True, version=version, base="d700", shared_mem=True)
-                    a.pause()
-                    state = a.vbxe()
-                    assert state["version"] == version and state["present"]
-                    assert state["register_base"] == "$d700"
-                    assert state["shared_memory"] == (version < 127)
-                    assert state["ntsc_vertical_offset"] == (version < 127)
+                    for register_base in (0xD600, 0xD700):
+                        a.device_set("vbxe", True, version=version,
+                                     base=f"{register_base:x}", shared_mem=True)
+                        a.pause()
+                        state = a.vbxe()
+                        assert state["version"] == version and state["present"]
+                        assert state["register_base"] == f"${register_base:x}"
+                        assert state["shared_memory"] == (version < 127)
+                        assert state["ntsc_vertical_offset"] == (version < 127)
+                        # Test26: the mapped CPU/debugger register window
+                        # aliases A5, and read-side holes actively drive $FF.
+                        registers = a.peek(register_base + 0x40, 64)
+                        assert registers[:32] == registers[32:]
+                        assert registers[0] == 0x10
+                        for offset in (2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15,
+                                       17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 29):
+                            assert registers[offset] == registers[offset + 32] == 0xFF
+                        a.hwpoke(register_base + 0x7F, 0x12)
+                        assert a.peek(register_base + 0x5F) == b"\x12"
+                        if version == 127:
+                            a.hwpoke(register_base + 0x6B, 0x99)
+                            assert a.peek(register_base + 0x4B) == b"\x99"
+                            assert a.vbxe()["feature_control"] == "$99"
                 a.boot_bare()
                 a.pause()
                 base = int(a.vbxe()["register_base"][1:], 16)
@@ -79,7 +95,8 @@ def main():
                 a.vbxe_write(0x1000, b"\x30")
                 a.vbxe_write(0x2000, b"\xe0\x10")
                 a.vbxe_write(0x4000, bcb)
-                for offset, value in ((0x50, 0), (0x51, 0x40), (0x52, 0), (0x54, 0), (0x53, 1)):
+                # Start through A5 aliases of BL_ADR, IRQ_CONTROL and BLITTER_START.
+                for offset, value in ((0x70, 0), (0x71, 0x40), (0x72, 0), (0x74, 0), (0x73, 1)):
                     a.hwpoke(base + offset, value)
                 a.cycles(114 * 3)
                 assert a.vbxe_read(0x2000, 2) == b"\xff\x00"
