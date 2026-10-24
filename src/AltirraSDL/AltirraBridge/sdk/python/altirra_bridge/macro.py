@@ -59,7 +59,7 @@ _SPECIAL_STEPS = frozenset({"wait_text", "wait_expr", "config"})
 # as a macro step, and a stray typo should read as "unknown step
 # type", not silently resolve to some unrelated attribute.
 _ALLOWED_PASSTHROUGH_STEPS = frozenset({
-    "ping", "pause", "resume", "frame", "quit",
+    "ping", "pause", "resume", "frame", "warp", "quit",
     "regs", "peek", "peek16", "antic", "gtia", "pokey", "pia", "dlist",
     "hwstate", "palette", "load_act_palette", "reset_palette", "screen_text",
     "poke", "poke16", "hwpoke", "memload", "memdump",

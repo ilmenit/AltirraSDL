@@ -5,6 +5,7 @@
 #include "simulator.h"
 #include "constants.h"
 #include "simeventmanager.h"
+#include "uiaccessors.h"
 #include <at/atcore/scheduler.h>
 #include <at/ataudio/pokey.h>
 #include <deque>
@@ -143,6 +144,30 @@ std::string CmdTiming(ATSimulator& sim,
 		return JsonOk("\"cycles\":" + std::to_string(g_gate.requested)
 			+ ",\"start_tick\":" + std::to_string(g_gate.start)
 			+ ",\"target_tick\":" + std::to_string(g_gate.start + g_gate.requested));
+	}
+	if (verb == "WARP") {
+		// Same toggle as System > Warp Speed (ATUISetTurbo), so the menu
+		// check mark and the F1 pulse combine with it exactly as in the UI.
+		if (tokens.size() > 2) return JsonError("WARP: [on|off|toggle]");
+		if (tokens.size() == 2) {
+			std::string mode;
+			for (char c : tokens[1])
+				mode += (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+			bool enable;
+			if (mode == "toggle")
+				enable = !ATUIGetTurbo();
+			else if (mode == "on" || mode == "1" || mode == "true")
+				enable = true;
+			else if (mode == "off" || mode == "0" || mode == "false")
+				enable = false;
+			else
+				return JsonError("WARP: [on|off|toggle]");
+			ATUISetTurbo(enable);
+			if (enable && !ATUIGetTurbo())
+				return JsonError("WARP: warp speed is unavailable during a netplay session");
+		}
+		return JsonOk("\"warp\":" + std::string(ATUIGetTurbo() ? "true" : "false")
+			+ ",\"active\":" + std::string(sim.IsTurboModeEnabled() ? "true" : "false"));
 	}
 	if (verb == "CLOCK") {
 		if (tokens.size() != 1) return JsonError("CLOCK: no arguments expected");

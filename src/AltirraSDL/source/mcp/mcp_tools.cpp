@@ -296,6 +296,7 @@ ToolOutcome ToolEmulatorStatus(const VDJSONValueRef&, ToolEnv& env) {
 	return Done(StructuredResult(JsonObject()
 		.Bool("paused", env.sim.IsPaused())
 		.Bool("running", env.sim.IsRunning())
+		.Bool("warp", env.sim.IsTurboModeEnabled())
 		.Raw("config", config.payload)
 		.Raw("cpu", regs.payload)
 		.Build()));
@@ -307,6 +308,17 @@ ToolOutcome ToolPause(const VDJSONValueRef&, ToolEnv& env) {
 
 ToolOutcome ToolResume(const VDJSONValueRef&, ToolEnv& env) {
 	return FromReply(RunBridge(env, { "RESUME" }));
+}
+
+ToolOutcome ToolWarpSpeed(const VDJSONValueRef& args, ToolEnv& env) {
+	if (Member(args, "enabled").IsNull())
+		return FromReply(RunBridge(env, { "WARP" }));
+
+	std::string err;
+	bool enabled = false;
+	if (!ArgBool(args, "enabled", false, enabled, err))
+		return Fail(err);
+	return FromReply(RunBridge(env, { "WARP", enabled ? "on" : "off" }));
 }
 
 ToolOutcome ToolAdvanceFrames(const VDJSONValueRef& args, ToolEnv& env) {
@@ -1242,9 +1254,9 @@ struct ToolDef {
 
 const ToolDef kTools[] = {
 	{ "emulator_status", "Emulator status",
-		"Report whether the emulator is paused, the machine configuration "
-		"(hardware model, video standard, memory, BASIC, kernel, attached "
-		"devices) and the CPU registers.",
+		"Report whether the emulator is paused or in warp speed, the machine "
+		"configuration (hardware model, video standard, memory, BASIC, "
+		"kernel, attached devices) and the CPU registers.",
 		MCP_NO_ARGS, true, false, true, ToolEmulatorStatus },
 
 	{ "pause", "Pause emulation",
@@ -1255,6 +1267,18 @@ const ToolDef kTools[] = {
 	{ "resume", "Resume emulation",
 		"Resume free-running emulation at normal speed.",
 		MCP_NO_ARGS, false, false, true, ToolResume },
+
+	{ "warp_speed", "Warp speed",
+		"Read or set warp speed (System > Warp Speed): run emulation as fast "
+		"as the host allows instead of at the PAL/NTSC rate. Emulated timing "
+		"is unchanged, so advance_frames and step just finish sooner. Omit "
+		"'enabled' to read. Returns 'warp' (the toggle) and 'active' (warp "
+		"in effect, including while the warp key is held). Unavailable "
+		"during netplay.",
+		"{\"type\":\"object\",\"properties\":{"
+			"\"enabled\":{\"type\":\"boolean\",\"description\":\"true to enable, false to disable; omit to read.\"}"
+		"},\"additionalProperties\":false}",
+		false, false, true, ToolWarpSpeed },
 
 	{ "advance_frames", "Advance frames",
 		"Run the emulator for a number of video frames (about 60 per second on "

@@ -874,9 +874,12 @@ int main(int argc, char** argv) {
 		//    In unlimited mode this happens immediately. In realtime
 		//    mode, keep an active frame gate armed during the sleep so
 		//    the next client command remains queued until the selected
-		//    PAL/NTSC frame duration has elapsed.
+		//    PAL/NTSC frame duration has elapsed. Warp speed (WARP
+		//    command / MCP warp_speed) skips the sleep, as the GUI
+		//    frame pacer does.
 		if (framePosted) {
-			if (args.pacing == PacingMode::Realtime) {
+			if (args.pacing == PacingMode::Realtime
+				&& !g_sim.IsTurboModeEnabled()) {
 				const bool frameGateWasActive = ATBridge::IsFrameGateActive();
 
 				if (!frameGateWasActive)

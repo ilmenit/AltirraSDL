@@ -229,6 +229,26 @@ latency and wall-clock pacing. Stepping across a frame still runs the
 normal video/audio pipeline; a sub-frame step does not force a new video
 frame or flush a host audio buffer.
 
+#### `WARP [on|off|toggle]`
+
+Reads or sets warp speed: the same toggle as the GUI's System > Warp
+Speed menu item. With no argument it only reads. While warp is active,
+frames are produced as fast as the host CPU allows; emulated PAL/NTSC
+timing inside the simulator is unchanged, so `FRAME`, `CYCLES` and
+`SCANLINES` gates simply release sooner in wall-clock time. In a
+headless target started with `--pacing=realtime`, warp skips the
+realtime frame sleep. `on`/`off` also accept `1`/`0` and `true`/`false`.
+
+```
+> WARP on
+< {"ok":true,"warp":true,"active":true}
+```
+
+`warp` is the toggle; `active` is whether turbo is actually in effect,
+which also covers the GUI's hold-to-warp key. Warp state is not reset
+when a client disconnects (like the running state). Enabling warp
+during a netplay session fails with an error.
+
 #### `POKEY_TRACE start [capacity] | stop | read [max] | status`
 
 Capture POKEY bus writes at their emulated cycle, preserving order and

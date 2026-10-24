@@ -150,6 +150,8 @@ type
     procedure Cycles(N: LongWord);
     procedure Scanlines(N: LongWord);
     function Clock: String;
+    function Warp: String;
+    function SetWarp(Enabled: Boolean): String;
     function PokeyTraceStart(Capacity: LongWord = 65536): String;
     function PokeyTraceRead(MaxEvents: LongWord = 4096): String;
     function PokeyTraceStop: String;
@@ -802,6 +804,21 @@ function TAltirraBridge.Clock: String;
 begin
   Result := Rpc('CLOCK');
   CheckOk(Result, 'CLOCK');
+end;
+
+function TAltirraBridge.Warp: String;
+begin
+  Result := Rpc('WARP');
+  CheckOk(Result, 'WARP');
+end;
+
+function TAltirraBridge.SetWarp(Enabled: Boolean): String;
+begin
+  if Enabled then
+    Result := Rpc('WARP on')
+  else
+    Result := Rpc('WARP off');
+  CheckOk(Result, 'WARP');
 end;
 
 function TAltirraBridge.PokeyTraceStart(Capacity: LongWord): String;

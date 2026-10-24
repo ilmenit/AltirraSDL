@@ -106,6 +106,9 @@ int atb_frame(atb_client_t* c, unsigned int n);
 int atb_cycles(atb_client_t* c, unsigned int n);
 int atb_scanlines(atb_client_t* c, unsigned int n);
 int atb_clock(atb_client_t* c);
+/* WARP: enabled > 0 turns warp speed on, 0 turns it off, < 0 only reads.
+ * The {"warp","active"} payload is available via atb_last_response(). */
+int atb_warp(atb_client_t* c, int enabled);
 int atb_pokey_trace_start(atb_client_t* c, unsigned int capacity);
 int atb_pokey_trace_read(atb_client_t* c, unsigned int max_events);
 int atb_pokey_trace_stop(atb_client_t* c);

@@ -426,6 +426,10 @@ int atb_scanlines(atb_client_t* c, unsigned int n) {
 	return atb_simple_cmd(c, cmd);
 }
 int atb_clock(atb_client_t* c) { return atb_simple_cmd(c, "CLOCK"); }
+int atb_warp(atb_client_t* c, int enabled) {
+	return atb_simple_cmd(c, enabled < 0 ? "WARP"
+		: enabled ? "WARP on" : "WARP off");
+}
 int atb_pokey_trace_start(atb_client_t* c, unsigned int capacity) {
 	char cmd[64];
 	snprintf(cmd, sizeof cmd, "POKEY_TRACE start %u", capacity);

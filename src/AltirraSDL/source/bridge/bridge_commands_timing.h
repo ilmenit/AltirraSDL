@@ -1,4 +1,4 @@
-// AltirraBridge - cycle stepping and POKEY bus-write capture.
+// AltirraBridge - cycle stepping, POKEY bus-write capture and warp speed.
 #ifndef ALTIRRASDL_BRIDGE_COMMANDS_TIMING_H
 #define ALTIRRASDL_BRIDGE_COMMANDS_TIMING_H
 #include <string>

@@ -209,7 +209,8 @@ claude mcp add --transport http altirra http://127.0.0.1:7750/mcp
   `audio_record` (the headless build has no audio writer), which is not
   listed. Screenshots use the headless frame buffer. Without
   `--pacing=realtime`, `advance_frames` completes as fast as the host
-  CPU allows.
+  CPU allows; with it, `warp_speed` lifts the realtime limit on demand
+  (in the GUI too).
 
 ## 5. What's next
 

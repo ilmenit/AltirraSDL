@@ -292,6 +292,16 @@ class AltirraBridge:
         """64-bit emulated tick and last cycle/scanline step result."""
         return self._cmd_ok("CLOCK")
 
+    def warp(self, enabled: Optional[bool] = None) -> dict:
+        """Read or set warp speed (System > Warp Speed).
+
+        With ``enabled=None`` only reads. Returns ``warp`` (the toggle)
+        and ``active`` (warp in effect, including a held warp key).
+        """
+        if enabled is None:
+            return self._cmd_ok("WARP")
+        return self._cmd_ok("WARP on" if enabled else "WARP off")
+
     def pokey_trace_start(self, capacity: int = 65536) -> dict:
         """Start/restart a bus-write trace. Returns initial register
         snapshots for all enabled chips. Require valid=True on each read;

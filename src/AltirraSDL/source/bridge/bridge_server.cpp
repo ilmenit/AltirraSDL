@@ -219,6 +219,7 @@ void OnClientDisconnected(ATSimulator& sim) {
 bool ShouldLogCommand(const std::string& verb) {
 	return verb == "PAUSE" || verb == "RESUME" || verb == "FRAME"
 		|| verb == "CYCLES" || verb == "SCANLINES" || verb == "POKEY_TRACE"
+		|| verb == "WARP"
 		|| verb == "QUIT" || verb == "POKE" || verb == "POKE16"
 		|| verb == "HWPOKE" || verb == "MEMLOAD" || verb == "JOY"
 		|| verb == "KEY" || verb == "KEYRAW" || verb == "TYPE" || verb == "CONSOL" || verb == "BOOT"
@@ -442,7 +443,7 @@ std::string Execute(const std::vector<std::string>& tokens, ATSimulator& sim,
 		return reply;
 	}
 
-	if (verb == "CLOCK" || verb == "POKEY_TRACE")
+	if (verb == "CLOCK" || verb == "POKEY_TRACE" || verb == "WARP")
 		return CmdTiming(sim, tokens);
 
 	if (verb == "QUIT") {
