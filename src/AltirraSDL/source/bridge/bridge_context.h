@@ -50,6 +50,9 @@ struct ClientContext {
 	bool        authenticated = false;
 	bool        attached = false;   // registered and PIA slot allocated
 	uint32_t    framesRemaining = 0;
+	// MCP retains the timeline until it captures its completion result,
+	// even after the scheduler/frame gate itself has stopped the CPU.
+	bool        completionPending = false;
 	// Frames of the last FRAME run that never ran because the emulator
 	// stopped first (breakpoint, user pause). Reset by the next FRAME.
 	uint32_t    framesInterrupted = 0;

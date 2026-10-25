@@ -316,6 +316,7 @@ void AttachContext(ClientContext& ctx, ATSimulator& sim) {
 }
 
 void ReleaseContext(ClientContext& ctx, ATSimulator& sim) {
+	ctx.completionPending = false;
 	ctx.framesRemaining = 0;
 	if (!ctx.attached)
 		return;
@@ -324,6 +325,7 @@ void ReleaseContext(ClientContext& ctx, ATSimulator& sim) {
 }
 
 void DetachContext(ClientContext& ctx, ATSimulator& sim) {
+	ctx.completionPending = false;
 	ctx.framesRemaining = 0;
 	if (!ctx.attached)
 		return;
@@ -381,8 +383,7 @@ void CancelAsync(ClientContext& ctx, ATSimulator& sim) {
 bool IsContextGated(const ClientContext& /*ctx*/) {
 	// Every frontend shares one simulator timeline. Queue commands behind
 	// any run so its owner observes a paused, exact frame boundary.
-	return IsFrameGateActive() || IsTimingGateActive()
-		|| IsBareBootGateActive();
+	return IsAutomationGateActive();
 }
 
 std::string Execute(const std::vector<std::string>& tokens, ATSimulator& sim,
@@ -397,7 +398,7 @@ std::string Execute(const std::vector<std::string>& tokens, ATSimulator& sim,
 	// simulator timeline. Socket and MCP dispatch normally queue these.
 	if (verb == "FRAME" || verb == "CYCLES" || verb == "SCANLINES" || verb == "BOOT_BARE") {
 		for (const ClientContext *other : g_contexts) {
-			if (other != &ctx && other->framesRemaining)
+			if (other != &ctx && (other->framesRemaining || other->completionPending))
 				return JsonError("another client is advancing the simulator");
 		}
 		if (IsAsyncBusy() && g_asyncOwner != &ctx)
@@ -843,6 +844,10 @@ bool IsFrameGateActive() {
 }
 
 bool IsAutomationGateActive() {
+	for (const ClientContext *ctx : g_contexts) {
+		if (ctx->completionPending)
+			return true;
+	}
 	return IsFrameGateActive() || IsTimingGateActive() || IsBareBootGateActive();
 }
 

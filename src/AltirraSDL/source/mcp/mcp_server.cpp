@@ -395,6 +395,10 @@ bool ExecuteToolCall(const CallInfo& info, const std::string& name,
 		return true;
 	}
 
+	// Keep other frontends queued through result capture: their Poll()
+	// may run before ours after the final frame or scheduler stop.
+	g_mcp.ctx.completionPending = true;
+
 	PendingCall call;
 	call.kind = outcome.async ? PendingCall::Kind::AsyncWait : PendingCall::Kind::FrameWait;
 	call.connId = info.connId;
@@ -457,6 +461,7 @@ void CompleteCall(const PendingCall& call, const std::string& result) {
 		g_mcp.http.FinishEventStream(call.connId, body);
 	else
 		g_mcp.http.CompleteParked(call.connId, JsonResponse(200, body));
+	g_mcp.ctx.completionPending = false;
 }
 
 // Send a notifications/progress event for a frame run when it is due.
