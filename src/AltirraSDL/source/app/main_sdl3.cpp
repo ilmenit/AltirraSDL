@@ -48,6 +48,7 @@ extern "C" bool ATWasmBrokerIsActive();
 #include "browser_frame_scheduler.h"
 #include "video_output.h"
 #include "ramcart_settings.h"
+#include "antonia2_settings.h"
 #include "ui_fujinet.h"
 #include "devicemanager.h"
 #include <at/atcore/devicevideo.h>
@@ -2346,6 +2347,7 @@ int main(int argc, char *argv[]) {
 	// initial ATLoadSettings pass below, so the saved values are restored.
 	ATUIStateSettingsInit();
 	ATUIRamCartSettingsInit();
+	ATUIAntonia2SettingsInit();
 
 	// Load default profiles and then restore the last active profile.
 	// Windows does this at main.cpp:3941-3979.  ATSettingsLoadLastProfile()
@@ -3615,6 +3617,7 @@ int main(int argc, char *argv[]) {
 	ATUIShutdown();
 	ATUIStateSettingsShutdown();
 	ATUIRamCartSettingsShutdown();
+	ATUIAntonia2SettingsShutdown();
 
 	delete g_pDisplay;
 	delete g_pBackend;  // destroys backend-owned textures, shaders, or GL context
