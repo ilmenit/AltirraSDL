@@ -67,3 +67,5 @@ licensing; the built-in fork code is GPL-2.0-or-later.
 The built-in option supports simulator save states; its transient operands
 and results are not stored in the profile. Enabling it initializes both
 banks to `$FF`; disabling removes its memory layer completely.
+As with other device save states, enable the block before loading a state
+that uses it; loading a state does not add a disabled device.

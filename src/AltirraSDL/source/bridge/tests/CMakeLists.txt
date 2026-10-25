@@ -73,7 +73,7 @@ if(TARGET AltirraBridgeServer)
 		ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
 
-if(TARGET AltirraSDL)
+if(TARGET AltirraSDL AND ALTIRRA_BRIDGE)
 	find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 	# Exercise the built-in CPU option with no custom-device descriptor.
