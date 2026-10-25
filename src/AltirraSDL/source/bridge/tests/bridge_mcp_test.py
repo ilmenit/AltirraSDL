@@ -97,7 +97,10 @@ def main():
                 "clientInfo": {"name": "regression", "version": "1"}, "capabilities": {}})
             assert legacy["protocolVersion"] == "2025-11-25"
             assert mcp.rpc("ping", legacy=True) == {}
-            assert any(t["name"] == "advance_frames" for t in mcp.rpc("tools/list")["tools"])
+            tools = {t["name"]: t for t in mcp.rpc("tools/list")["tools"]}
+            assert "advance_frames" in tools
+            assert tools["pokey_trace"]["inputSchema"]["properties"]["max_events"]["maximum"] == 4096
+            assert tools["raw_screen"]["annotations"]["readOnlyHint"] is False
             assert len(mcp.rpc("resources/read", {"uri": "altirra://memory/0/16"})["contents"]) == 1
             # Bounds failures are normal tool errors, followed by a working RPC.
             bad = mcp.rpc("tools/call", {"name": "read_memory", "arguments": {"address": 0xFFFFFF, "length": 2}})

@@ -1153,7 +1153,7 @@ ToolOutcome ToolPokeyTrace(const VDJSONValueRef& args, ToolEnv& env) {
 	uint32_t capacity = 65536, maxEvents = 4096;
 	if (!ArgString(args, "action", true, action, err)
 		|| !ArgUint(args, "capacity", false, 65536, 1, 1000000, capacity, err)
-		|| !ArgUint(args, "max_events", false, 4096, 1, 1000000, maxEvents, err))
+		|| !ArgUint(args, "max_events", false, 4096, 1, 4096, maxEvents, err))
 		return Fail(err);
 
 	if (action == "start")
@@ -1654,7 +1654,7 @@ const ToolDef kTools[] = {
 		"{\"type\":\"object\",\"properties\":{"
 			"\"action\":{\"type\":\"string\",\"enum\":[\"start\",\"read\",\"stop\",\"status\"]},"
 			"\"capacity\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1000000,\"default\":65536,\"description\":\"For start.\"},"
-			"\"max_events\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1000000,\"default\":4096,\"description\":\"For read.\"}"
+			"\"max_events\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":4096,\"default\":4096,\"description\":\"For read.\"}"
 		"},\"required\":[\"action\"],\"additionalProperties\":false}",
 		false, false, false, ToolPokeyTrace },
 
