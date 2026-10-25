@@ -134,6 +134,23 @@ def main():
                     assert result["paused"] and result["frames_run"] == 300, result
                 after = bridge.clock()["tick"]
                 assert after - before >= 301 * 262 * 114, (before, after)
+                # A queued socket step must not replace CLOCK history before
+                # MCP captures its own async completion result.
+                before = bridge.clock()["tick"]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(mcp.tool, "step", {"count": 2000000})
+                    deadline = time.monotonic() + 5
+                    while not future.done():
+                        status = mcp.rpc("resources/read", {"uri": "altirra://status"})
+                        if json.loads(status["contents"][0]["text"])["running"]:
+                            break
+                        assert time.monotonic() < deadline
+                    bridge.cycles(7)
+                    final = bridge.clock()
+                    result = future.result()
+                    assert not result["running"] and result["step_requested"] == 2000000, result
+                    assert result["step_elapsed"] == 2000000, result
+                    assert final["tick"] == before + 2000007, (before, final)
                 bridge.quit()
             assert proc.wait(timeout=10) == 0
         except Exception:
