@@ -151,6 +151,24 @@ def main():
                     assert not result["running"] and result["step_requested"] == 2000000, result
                     assert result["step_elapsed"] == 2000000, result
                     assert final["tick"] == before + 2000007, (before, final)
+                # Disconnecting a running request must release both its
+                # scheduler/frame gate and the completion reservation.
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+                params = {"name": "advance_frames", "arguments": {"count": 1000000},
+                    "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}}
+                conn.request("POST", "/mcp", body=json.dumps({"jsonrpc": "2.0",
+                    "id": "cancel-me", "method": "tools/call", "params": params}), headers={
+                    "Content-Type": "application/json", "Authorization": "Bearer test-token",
+                    "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call",
+                    "Mcp-Name": "advance_frames"})
+                deadline = time.monotonic() + 5
+                while True:
+                    status = mcp.rpc("resources/read", {"uri": "altirra://status"})
+                    if json.loads(status["contents"][0]["text"])["running"]:
+                        break
+                    assert time.monotonic() < deadline
+                conn.close()
+                assert mcp.tool("emulator_status")["paused"]
                 bridge.quit()
             assert proc.wait(timeout=10) == 0
         except Exception:
