@@ -397,6 +397,17 @@ clients (~80 lines each, stdlib only) in **Rust** and **Go**.
 Adapting them to Zig, Lua, Ruby, C#, Java, Nim, Swift, etc. is
 straightforward.
 
+## Using it from AI clients (MCP)
+
+`AltirraBridgeServer --mcp[=PORT] [--mcp-token=TOKEN]` also serves an
+MCP (Model Context Protocol) server at `http://127.0.0.1:PORT/mcp`
+(default port 7750), alongside the bridge socket, with typed tools for
+the whole command set (frame stepping, memory, input, media, save
+states, screenshots, debugger, profiler). Connect, for example, with
+`claude mcp add --transport http altirra http://127.0.0.1:7750/mcp`.
+The GUI build offers the same server under Configure System > Emulator >
+MCP Server. See `docs/GETTING_STARTED.md` for details.
+
 ## Running it with a GUI window (optional)
 
 If you'd like to **see** the emulator while a script drives it — for

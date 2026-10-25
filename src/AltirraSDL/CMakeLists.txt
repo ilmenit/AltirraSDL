@@ -42,6 +42,7 @@ target_sources(AltirraSDL PRIVATE
     source/app/main_pacer.cpp
     source/app/main_window.cpp
     source/app/window_caption_sdl3.cpp
+    source/app/mcp_server_settings.cpp
     source/app/main_android_bridge.cpp
     source/app/commandline_sdl3.cpp
     source/app/crash_report.cpp
@@ -67,6 +68,7 @@ target_sources(AltirraSDL PRIVATE
     source/input/input_pointer_sdl3.cpp
     source/input/joystick_sdl3.cpp
     source/input/keyboard_keymap_sdl3.cpp
+    source/input/paste_text.cpp
     source/input/touch_layout.cpp
     source/input/touch_controls.cpp
     source/input/touch_widgets.cpp
@@ -123,6 +125,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/sysconfig/ui_system_pages_computer.cpp
     source/ui/sysconfig/ui_system_pages_outputs.cpp
     source/ui/sysconfig/ui_system_pages_b.cpp
+    source/ui/sysconfig/ui_system_pages_mcp.cpp
 
     # --- ui/firmware/ : Firmware Manager + category ---
     source/ui/firmware/ui_firmware.cpp
@@ -341,6 +344,7 @@ if(ALTIRRA_BRIDGE)
         source/bridge/bridge_protocol.cpp
         source/bridge/bridge_transport.cpp
         source/bridge/bridge_commands_state.cpp
+        source/bridge/bridge_screentext.cpp
         source/bridge/bridge_commands_write.cpp
         source/bridge/bridge_commands_render.cpp
         source/bridge/bridge_commands_debug.cpp
@@ -359,6 +363,35 @@ if(ALTIRRA_BRIDGE)
         source/bridge/bridge_main_glue_sdl3.cpp
     )
     target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_BRIDGE_ENABLED=1 ALTIRRA_BRIDGE_AUDIO_REC=1)
+endif()
+
+# Embedded MCP (Model Context Protocol) server — SDL3-only feature driven by
+# Configure System > Emulator > MCP Server. A thin HTTP/JSON-RPC layer over
+# the AltirraBridge command set (so it requires ALTIRRA_BRIDGE) with no extra
+# dependencies. Desktop only for now: OFF on Android and WebAssembly.
+# See docs/mcp-server-design.md.
+if(ANDROID OR ALTIRRA_WASM)
+    set(_altirra_mcp_default OFF)
+else()
+    set(_altirra_mcp_default ON)
+endif()
+option(ALTIRRA_MCP "Build the embedded MCP server" ${_altirra_mcp_default})
+if(ALTIRRA_MCP AND NOT ALTIRRA_BRIDGE)
+    message(WARNING "ALTIRRA_MCP requires ALTIRRA_BRIDGE; forcing OFF.")
+    set(ALTIRRA_MCP OFF CACHE BOOL "Build the embedded MCP server" FORCE)
+endif()
+if(ALTIRRA_MCP AND (ANDROID OR ALTIRRA_WASM))
+    message(WARNING "ALTIRRA_MCP is not supported on this platform yet; forcing OFF.")
+    set(ALTIRRA_MCP OFF CACHE BOOL "Build the embedded MCP server" FORCE)
+endif()
+if(ALTIRRA_MCP)
+    target_sources(AltirraSDL PRIVATE
+        source/mcp/mcp_server.cpp
+        source/mcp/mcp_http.cpp
+        source/mcp/mcp_json.cpp
+        source/mcp/mcp_tools.cpp
+    )
+    target_compile_definitions(AltirraSDL PRIVATE ALTIRRA_MCP_ENABLED=1)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -1273,6 +1306,15 @@ endif()
 # this is harmless and ensures correctness if the target is ever split out)
 if(WIN32)
     target_compile_definitions(AltirraSDL PRIVATE VD_OS_WINDOWS=1)
+    # Link as a GUI application so launching AltirraSDL does not open a
+    # console window. main() stays the entry point (SDL_MAIN_HANDLED); MSVC
+    # needs it named explicitly, MinGW's -mwindows already calls main.
+    # console_win32.cpp re-attaches to a parent console for CLI output.
+    set_target_properties(AltirraSDL PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_sources(AltirraSDL PRIVATE source/app/console_win32.cpp)
+    if(MSVC)
+        target_link_options(AltirraSDL PRIVATE /ENTRY:mainCRTStartup)
+    endif()
     # Force-include POSIX compat header for strcasestr etc. (MSVC only).
     if(ALTIRRA_POSIX_COMPAT_HEADER)
         target_compile_options(AltirraSDL PRIVATE /FI${ALTIRRA_POSIX_COMPAT_HEADER})

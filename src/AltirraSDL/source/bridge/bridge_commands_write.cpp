@@ -28,6 +28,7 @@
 #include <stdafx.h>
 
 #include "bridge_commands_write.h"
+#include "bridge_context.h"
 #include "bridge_bare_stub.h"    // EnsureBareStubXexPath
 #include "bridge_main_glue.h"   // ATBridgeDispatch* — provided per-target
 #include "bridge_protocol.h"
@@ -43,6 +44,7 @@
 #include "pia.h"
 #include "diskinterface.h"   // ATDiskInterface::UnloadDisk (EJECT)
 #include "disk.h"            // ATDiskEmulationMode
+#include "uikeyboard.h"      // ATUIGetDefaultScanCodeForCharacter (TYPE)
 #include "firmwaremanager.h" // ATFirmwareManager, ATFirmwareInfo (CONFIG kernel/basicrom)
 #include "constants.h"       // ATHardwareMode, ATMemoryMode enums
 #include "debugger.h"        // ATGetDebugger() — break-on-EXE-run
@@ -82,14 +84,13 @@ namespace {
 // Module state.
 // ---------------------------------------------------------------------------
 
-struct WriteState {
-	int     piaInputSlot = -1;     // ATPIAEmulator::AllocInput() handle
-	uint8_t consol       = 0x07;   // active-low: bit 0=START, 1=SELECT, 2=OPTION, 1=released
-	bool    fireDown[4]  = {};
-	uint8_t dirNibble[4] = {};     // 4-bit per port: bit0=up, 1=down, 2=left, 3=right; 1=pressed
-};
-
-WriteState g_write;
+// Injected input belongs to the client context that issued the command
+// (see bridge_context.h). g_pWrite points at the selected context's
+// InputState; g_inputs lists every registered context so shared outputs
+// (fire buttons, console switches, raw keys) can be combined.
+InputState g_defaultInput;
+InputState *g_pWrite = &g_defaultInput;
+std::vector<InputState *> g_inputs;
 
 struct BareBootState {
 	bool active = false;
@@ -303,6 +304,12 @@ bool ParseDeviceSettingToken(const std::string& tok, ATPropertySet& pset, std::s
 	const std::string key = tok.substr(0, eq);
 	const std::string raw = tok.substr(eq + 1);
 	const std::string lowerKey = ToLower(key);
+
+	// string-valued settings whose value may look like a number (modem dial proxy service/port)
+	if (lowerKey == "dialsvc" || lowerKey == "dialaddr") {
+		pset.SetString(lowerKey.c_str(), VDTextU8ToW(VDStringSpanA(raw.c_str())).c_str());
+		return true;
+	}
 
 	bool bv = false;
 	if (ParseBoolLiteral(raw, bv)) {
@@ -695,7 +702,7 @@ std::string SetDeviceEnabled(ATSimulator& sim, const std::string& rawTag, bool e
 // PIA joystick encoding helpers.
 // ---------------------------------------------------------------------------
 
-// Apply g_write.dirNibble[] to the PIA input slot. Bit encoding (per
+// Apply g_pWrite->dirNibble[] to the PIA input slot. Bit encoding (per
 // the formula in src/Altirra/source/portmanager.cpp:269):
 //   - Each joystick port owns 4 bits in the 16-bit input value.
 //   - Port N occupies bits (N*4)..(N*4+3).
@@ -703,16 +710,57 @@ std::string SetDeviceEnabled(ATSimulator& sim, const std::string& rawTag, bool e
 //   - Bits 8-15 → SWCHB (joystick ports 3, 4)
 //   - Active-low: 0 = pressed, 1 = released.
 void RefreshJoystickInput(ATSimulator& sim) {
-	if (g_write.piaInputSlot < 0) return;
+	if (g_pWrite->piaInputSlot < 0) return;
 	uint32_t pressedMask = 0;
 	for (int port = 0; port < 4; ++port) {
-		pressedMask |= ((uint32_t)g_write.dirNibble[port] & 0x0F) << (port * 4);
+		pressedMask |= ((uint32_t)g_pWrite->dirNibble[port] & 0x0F) << (port * 4);
 	}
 	// Active-low: turn pressed-bits-set into the rval that has those
 	// bits CLEARED (and all other bits set so we don't fight other
 	// input sources at idle).
 	const uint32_t rval = ~pressedMask;
-	sim.GetPIA().SetInputBits(g_write.piaInputSlot, rval, 0xFFFF);
+	sim.GetPIA().SetInputBits(g_pWrite->piaInputSlot, rval, 0xFFFF);
+}
+
+bool IsRegisteredInput(const InputState *state) {
+	for (const InputState *s : g_inputs) {
+		if (s == state)
+			return true;
+	}
+	return false;
+}
+
+// Fire buttons are ORed across every client context, so one client
+// releasing its trigger never releases another client's.
+void ApplyControllerTrigger(ATSimulator& sim, int port) {
+	bool down = g_pWrite->fireDown[port];
+	for (const InputState *s : g_inputs)
+		down = down || s->fireDown[port];
+	sim.GetGTIA().SetControllerTrigger(port, down);
+}
+
+// Console switches are active-low, so held switches combine with AND.
+void ApplyConsoleSwitches(ATSimulator& sim) {
+	uint8_t mask = g_pWrite->consol;
+	for (const InputState *s : g_inputs)
+		mask &= s->consol;
+	sim.GetGTIA().SetForcedConsoleSwitches(mask);
+}
+
+bool IsRawKeyHeldByOther(int key) {
+	for (const InputState *s : g_inputs) {
+		if (s != g_pWrite && (s->rawKeysDown & ((uint64_t)1 << key)))
+			return true;
+	}
+	return false;
+}
+
+bool IsAnyRawInputHeldByOther() {
+	for (const InputState *s : g_inputs) {
+		if (s != g_pWrite && (s->rawKeysDown || s->rawShift || s->rawCtrl))
+			return true;
+	}
+	return false;
 }
 
 // Map a direction string to the 4-bit nibble encoding. Accepts the
@@ -1210,34 +1258,75 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+void SelectInputState(InputState *state) {
+	g_pWrite = state ? state : &g_defaultInput;
+}
+
 void InitWriteCommands(ATSimulator& sim) {
-	if (g_write.piaInputSlot >= 0) return;
-	g_write.piaInputSlot = sim.GetPIA().AllocInput();
-	g_write.consol = 0x07;
+	if (!IsRegisteredInput(g_pWrite))
+		g_inputs.push_back(g_pWrite);
+	if (g_pWrite->piaInputSlot >= 0) return;
+	g_pWrite->piaInputSlot = sim.GetPIA().AllocInput();
+	g_pWrite->consol = 0x07;
 	for (int i = 0; i < 4; ++i) {
-		g_write.dirNibble[i] = 0;
-		g_write.fireDown[i]  = false;
+		g_pWrite->dirNibble[i] = 0;
+		g_pWrite->fireDown[i]  = false;
 	}
+	g_pWrite->rawKeysDown = 0;
+	g_pWrite->rawShift = false;
+	g_pWrite->rawCtrl = false;
 }
 
 void ShutdownWriteCommands(ATSimulator& sim) {
 	CleanupInjectedInput(sim);
-	if (g_write.piaInputSlot >= 0) {
-		sim.GetPIA().FreeInput(g_write.piaInputSlot);
-		g_write.piaInputSlot = -1;
+	if (g_pWrite->piaInputSlot >= 0) {
+		sim.GetPIA().FreeInput(g_pWrite->piaInputSlot);
+		g_pWrite->piaInputSlot = -1;
+	}
+	for (auto it = g_inputs.begin(); it != g_inputs.end(); ++it) {
+		if (*it == g_pWrite) {
+			g_inputs.erase(it);
+			break;
+		}
 	}
 }
 
 void CleanupInjectedInput(ATSimulator& sim) {
 	for (int i = 0; i < 4; ++i) {
-		g_write.dirNibble[i] = 0;
-		g_write.fireDown[i]  = false;
-		sim.GetGTIA().SetControllerTrigger(i, false);
+		g_pWrite->dirNibble[i] = 0;
+		g_pWrite->fireDown[i]  = false;
+		ApplyControllerTrigger(sim, i);
 	}
-	g_write.consol = 0x07;
-	sim.GetGTIA().SetForcedConsoleSwitches(0x07);
+	g_pWrite->consol = 0x07;
+	ApplyConsoleSwitches(sim);
 	RefreshJoystickInput(sim);
-	sim.GetPokey().ReleaseAllRawKeys(true);
+
+	// With no other client holding raw keys this is the original
+	// release-everything path; otherwise release only this client's
+	// keys so the other client's held keys survive.
+	ATPokeyEmulator& pokey = sim.GetPokey();
+	if (!IsAnyRawInputHeldByOther()) {
+		pokey.ReleaseAllRawKeys(true);
+	} else {
+		for (int key = 0; key < 64; ++key) {
+			if ((g_pWrite->rawKeysDown & ((uint64_t)1 << key)) && !IsRawKeyHeldByOther(key))
+				pokey.ReleaseRawKey((uint8_t)key, false);
+		}
+		bool otherShift = false, otherCtrl = false;
+		for (const InputState *s : g_inputs) {
+			if (s != g_pWrite) {
+				otherShift = otherShift || s->rawShift;
+				otherCtrl = otherCtrl || s->rawCtrl;
+			}
+		}
+		if (g_pWrite->rawShift && !otherShift)
+			pokey.SetShiftKeyState(false, false);
+		if (g_pWrite->rawCtrl && !otherCtrl)
+			pokey.SetControlKeyState(false);
+	}
+	g_pWrite->rawKeysDown = 0;
+	g_pWrite->rawShift = false;
+	g_pWrite->rawCtrl = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1449,10 +1538,10 @@ std::string CmdJoy(ATSimulator& sim, const std::vector<std::string>& tokens) {
 		fire = (f == "fire" || f == "1" || f == "true" || f == "down" || f == "press");
 	}
 
-	g_write.dirNibble[port] = nibble;
-	g_write.fireDown[port]  = fire;
+	g_pWrite->dirNibble[port] = nibble;
+	g_pWrite->fireDown[port]  = fire;
 	RefreshJoystickInput(sim);
-	sim.GetGTIA().SetControllerTrigger((int)port, fire);
+	ApplyControllerTrigger(sim, (int)port);
 
 	std::string payload;
 	AddU32(payload, "port", port);
@@ -1538,6 +1627,14 @@ std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		pokey.ReleaseAllRawKeys(false);
 		pokey.SetShiftKeyState(false, false);
 		pokey.SetControlKeyState(false);
+		for (InputState *s : g_inputs) {
+			s->rawKeysDown = 0;
+			s->rawShift = false;
+			s->rawCtrl = false;
+		}
+		g_pWrite->rawKeysDown = 0;
+		g_pWrite->rawShift = false;
+		g_pWrite->rawCtrl = false;
 		return JsonOk("\"name\":\"all\",\"down\":false");
 	}
 
@@ -1554,10 +1651,16 @@ std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		if (shift) pokey.SetShiftKeyState(true, false);
 		if (ctrl)  pokey.SetControlKeyState(true);
 		pokey.PushRawKey(kb, false);
+		g_pWrite->rawKeysDown |= (uint64_t)1 << kb;
+		if (shift) g_pWrite->rawShift = true;
+		if (ctrl)  g_pWrite->rawCtrl = true;
 	} else {
 		pokey.ReleaseRawKey(kb, false);
 		if (shift) pokey.SetShiftKeyState(false, false);
 		if (ctrl)  pokey.SetControlKeyState(false);
+		g_pWrite->rawKeysDown &= ~((uint64_t)1 << kb);
+		if (shift) g_pWrite->rawShift = false;
+		if (ctrl)  g_pWrite->rawCtrl = false;
 	}
 
 	std::string payload;
@@ -1565,6 +1668,78 @@ std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	AddField(payload, "kbcode", Hex8(kb));
 	payload += "\"down\":"; payload += (down ? "true" : "false"); payload += ',';
 	StripTrailingComma(payload);
+	return JsonOk(payload);
+}
+
+// Re-join tokens start..N with single spaces to support paths containing
+// spaces. Phase 1 tokenisation doesn't support quoted strings; the
+// cleanest long-term fix is a quoted-string tokeniser added in
+// Phase 5. Until then this works for any path with single
+// space-separated components.
+namespace {
+std::string JoinPath(const std::vector<std::string>& tokens, size_t start) {
+	if (start >= tokens.size()) return std::string();
+	std::string out = tokens[start];
+	for (size_t i = start + 1; i < tokens.size(); ++i) {
+		out += ' ';
+		out += tokens[i];
+	}
+	return out;
+}
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// TYPE text
+//
+// Pushes one keystroke per character of `text` into POKEY's queue,
+// reusing ATUIGetDefaultScanCodeForCharacter() (uikeyboard.h) -- the
+// same character-to-KBCODE table Windows Altirra's "paste text as
+// keystrokes" feature (ATUIPaste/Paste(), src/Altirra/source/main.cpp)
+// already ships, ported verbatim to the SDL3 build in
+// source/input/keyboard_keymap_sdl3.cpp. Unlike KEY, no separate
+// shift/ctrl tokens are needed -- the table already encodes the
+// correct KBCODE (including shift/ctrl bits) for each character.
+// Characters with no mapping are collected into the response's
+// "skipped" array rather than silently dropped, so a caller can see
+// what didn't get typed instead of just a shorter string on screen
+// than expected. Like BOOT/MOUNT, `text` is the remainder of the line
+// joined with single spaces, since spaces are meaningful mid-string.
+// ---------------------------------------------------------------------------
+
+std::string CmdType(ATSimulator& sim, const std::vector<std::string>& tokens) {
+	if (tokens.size() < 2)
+		return JsonError("TYPE: usage: TYPE text");
+
+	const std::string text = JoinPath(tokens, 1);
+	const VDStringW wtext = VDTextU8ToW(text.c_str(), (int)text.size());
+
+	uint32_t typed = 0;
+	std::string skipped = "[";
+	bool firstSkipped = true;
+
+	for (wchar_t wc : wtext) {
+		const uint32 c32 = (uint32)(uint16_t)wc;
+		uint8 kbcode = 0;
+
+		if (ATUIGetDefaultScanCodeForCharacter(c32, kbcode)) {
+			// Same PushKey() flags as CmdKey: useCooldown=true,
+			// flushQueue=false, allowQueue=true.
+			sim.GetPokey().PushKey(kbcode, false, true, false, true);
+			++typed;
+		} else {
+			if (!firstSkipped) skipped += ',';
+			firstSkipped = false;
+			skipped += '"';
+			skipped += JsonEscape(std::string(VDTextWToU8(&wc, 1).c_str()));
+			skipped += '"';
+		}
+	}
+	skipped += ']';
+
+	std::string payload;
+	AddU32(payload, "typed", typed);
+	payload += "\"skipped\":";
+	payload += skipped;
 	return JsonOk(payload);
 }
 
@@ -1584,8 +1759,8 @@ std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		else if (tokens[i] == "option") mask &= ~0x04u;
 		else return JsonError("CONSOL: unknown switch (use: start, select, option)");
 	}
-	g_write.consol = mask;
-	sim.GetGTIA().SetForcedConsoleSwitches(mask);
+	g_pWrite->consol = mask;
+	ApplyConsoleSwitches(sim);
 
 	std::string payload;
 	AddField(payload, "consol", Hex8(mask));
@@ -1611,23 +1786,6 @@ std::string CmdConsol(ATSimulator& sim, const std::vector<std::string>& tokens) 
 //      had a chance to process the deferred action and emit a
 //      frame.
 // ---------------------------------------------------------------------------
-
-// Re-join tokens 2..N with single spaces to support paths containing
-// spaces. Phase 1 tokenisation doesn't support quoted strings; the
-// cleanest long-term fix is a quoted-string tokeniser added in
-// Phase 5. Until then this works for any path with single
-// space-separated components.
-namespace {
-std::string JoinPath(const std::vector<std::string>& tokens, size_t start) {
-	if (start >= tokens.size()) return std::string();
-	std::string out = tokens[start];
-	for (size_t i = start + 1; i < tokens.size(); ++i) {
-		out += ' ';
-		out += tokens[i];
-	}
-	return out;
-}
-}  // namespace
 
 std::string CmdBoot(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 2)
@@ -1732,18 +1890,62 @@ std::string PollBareBoot(ATSimulator& sim) {
 	return result;
 }
 
+// MOUNT drive path [mode=ro|rw|vrw|vrwsafe]
+//
+// `mode=` overrides the write mode this mount uses instead of falling
+// back to the drive's existing write mode (if already attached) or the
+// global default write mode (Configure System's disk page / -bootrw
+// etc.'s process-wide default otherwise). See docs/PROTOCOL.md MOUNT.
+//
+// Only the LAST token is ever considered for mode=, and only when
+// there's still at least one token left for the path -- "MOUNT 0
+// mode=rw" (nothing else) is a literal one-token filename called
+// "mode=rw", not a mode override with a missing path. This mirrors
+// EJECT/STATE_DROP's existing key=value handling in this file.
 std::string CmdMount(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 3)
-		return JsonError("MOUNT: usage: MOUNT drive path");
+		return JsonError("MOUNT: usage: MOUNT drive path [mode=ro|rw|vrw|vrwsafe]");
 	uint32_t drive = 0;
 	if (!ParseUint(tokens[1], drive) || drive > 14)
 		return JsonError("MOUNT: drive must be 0..14");
-	std::string path = JoinPath(tokens, 2);
-	if (!ATBridgeDispatchMount(sim, (int)drive, path))
+
+	static const ATMediaWriteMode kModeRO      = kATMediaWriteMode_RO;
+	static const ATMediaWriteMode kModeRW      = kATMediaWriteMode_RW;
+	static const ATMediaWriteMode kModeVRW     = kATMediaWriteMode_VRW;
+	static const ATMediaWriteMode kModeVRWSafe = kATMediaWriteMode_VRWSafe;
+
+	size_t pathEnd = tokens.size();
+	const ATMediaWriteMode* writeMode = nullptr;
+	const char* writeModeStr = nullptr;
+
+	if (tokens.size() > 3) {
+		std::string v;
+		if (MatchKey(tokens.back(), "mode", v)) {
+			const std::string lower = ToLower(v);
+			if (lower == "ro")           { writeMode = &kModeRO;      writeModeStr = "ro"; }
+			else if (lower == "rw")      { writeMode = &kModeRW;      writeModeStr = "rw"; }
+			else if (lower == "vrw")     { writeMode = &kModeVRW;     writeModeStr = "vrw"; }
+			else if (lower == "vrwsafe") { writeMode = &kModeVRWSafe; writeModeStr = "vrwsafe"; }
+			else
+				return JsonError("MOUNT: mode must be one of ro, rw, vrw, vrwsafe");
+			pathEnd = tokens.size() - 1;
+		}
+	}
+
+	std::string path;
+	for (size_t i = 2; i < pathEnd; ++i) {
+		if (!path.empty()) path += ' ';
+		path += tokens[i];
+	}
+	if (path.empty())
+		return JsonError("MOUNT: usage: MOUNT drive path [mode=ro|rw|vrw|vrwsafe]");
+
+	if (!ATBridgeDispatchMount(sim, (int)drive, path, writeMode))
 		return JsonError("MOUNT: dispatch failed");
 	std::string payload;
 	AddU32(payload, "drive", drive);
 	AddString(payload, "path", path);
+	if (writeModeStr) AddString(payload, "mode", writeModeStr);
 	StripTrailingComma(payload);
 	return JsonOk(payload);
 }
@@ -2642,13 +2844,75 @@ std::string CmdDeviceAdd(ATSimulator& sim, const std::vector<std::string>& token
 	return SetDeviceEnabled(sim, tokens[1], true, settings, 3, true, bus, true);
 }
 
+// DEVICE_SET <tag> on parent=<tag|bus-path> [key=value...] adds a child
+// device under a parent given by tag (e.g. parent=850) or by bus path
+// (parent=/850/serial). A parent tag picks that device's first bus that
+// accepts the child, which is what scripts written before DEVICE_ADD
+// expect; DEVICE_ADD remains the explicit form.
+static IATDeviceBus *FindParentBus(ATDeviceManager& dm, const ATDeviceDefinition& def, const std::string& parent) {
+	auto accepts = [&def](IATDeviceBus *bus) {
+		if (!bus)
+			return false;
+		for (uint32 i = 0; const char *type = bus->GetSupportedType(i); ++i) {
+			if (def.SupportsChildType(type))
+				return true;
+		}
+		return false;
+	};
+
+	if (!parent.empty() && parent.front() == '/') {
+		IATDeviceBus *bus = dm.ParsePath(parent.c_str()).mpDeviceBus;
+		return accepts(bus) ? bus : nullptr;
+	}
+
+	IATDeviceParent *parentDev = vdpoly_cast<IATDeviceParent *>(GetRootDeviceByTag(dm, ToLower(parent)));
+	if (!parentDev)
+		return nullptr;
+	for (uint32 bi = 0; ; ++bi) {
+		const sint32 busId = parentDev->GetDeviceBusIdByIndex(bi);
+		if (busId < 0)
+			break;
+		IATDeviceBus *bus = parentDev->GetDeviceBusById(busId);
+		if (accepts(bus))
+			return bus;
+	}
+	return nullptr;
+}
+
 std::string CmdDeviceSet(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	if (tokens.size() < 3)
-		return JsonError("DEVICE_SET: usage: DEVICE_SET <tag> on|off [key=value...]");
+		return JsonError("DEVICE_SET: usage: DEVICE_SET <tag> on|off [parent=<tag|bus-path>] [key=value...]");
 
 	bool enable = false;
 	if (!ParseBoolLiteral(tokens[2], enable))
 		return JsonError("DEVICE_SET: expected on/off after tag");
+
+	std::string parent;
+	std::vector<std::string> options(tokens.begin(), tokens.begin() + 3);
+	for (size_t i = 3; i < tokens.size(); ++i) {
+		if (ToLower(tokens[i]).rfind("parent=", 0) == 0) {
+			if (!parent.empty())
+				return JsonError("DEVICE_SET: parent may only be specified once");
+			parent = tokens[i].substr(7);
+		} else {
+			options.push_back(tokens[i]);
+		}
+	}
+
+	if (!parent.empty()) {
+		if (!enable)
+			return JsonError("DEVICE_SET: parent= is only valid with on");
+		ATDeviceManager *dm = sim.GetDeviceManager();
+		if (!dm)
+			return JsonError("DEVICE_SET: device manager unavailable");
+		const ATDeviceDefinition *def = dm->GetDeviceDefinition(ToLower(tokens[1]).c_str());
+		if (!def)
+			return JsonError("DEVICE_SET: unknown device '" + tokens[1] + "'");
+		IATDeviceBus *bus = FindParentBus(*dm, *def, parent);
+		if (!bus)
+			return JsonError("DEVICE_SET: parent '" + parent + "' is not present or has no bus that accepts '" + tokens[1] + "'");
+		return SetDeviceEnabled(sim, tokens[1], true, options, 3, true, bus);
+	}
 
 	if (!IsKnownQuickDevice(ToLower(tokens[1]))) {
 		for (size_t i = 3; i < tokens.size(); ++i) {

@@ -34,13 +34,20 @@
 
 #include <string>
 
+#include <at/atcore/media.h>
+
 class ATSimulator;
 
 // Boot a media file (XEX, ATR, CAS, CAR, BIN). Path is UTF-8.
 bool ATBridgeDispatchBoot(ATSimulator& sim, const std::string& path);
 
 // Mount a disk image into a drive slot (0..14, where 0 = D1:).
-bool ATBridgeDispatchMount(ATSimulator& sim, int drive, const std::string& path);
+// writeMode is the optional write-mode override from the MOUNT command's
+// `mode=ro|rw|vrw|vrwsafe` argument; pass nullptr for the default
+// resolution logic (matches the menu-driven File > Mount path / the
+// drive's existing write mode if already attached).
+bool ATBridgeDispatchMount(ATSimulator& sim, int drive, const std::string& path,
+	const ATMediaWriteMode* writeMode = nullptr);
 
 // Save the simulator snapshot to a file path. Runs synchronously.
 // Returns true on success; on false the caller should report a

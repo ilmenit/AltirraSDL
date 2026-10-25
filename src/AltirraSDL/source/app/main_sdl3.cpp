@@ -107,6 +107,12 @@ extern "C" bool ATWasmBrokerIsActive();
 #ifdef ALTIRRA_BRIDGE_ENABLED
 #include "bridge_server.h"
 #endif
+#ifdef _WIN32
+#include "console_win32.h"
+#endif
+#ifdef ALTIRRA_MCP_ENABLED
+#include "mcp/mcp_server.h"
+#endif
 
 // Netplay and emote headers are included unconditionally.  When their
 // modules are compiled in, the real namespace / functions are visible;
@@ -1566,6 +1572,12 @@ int main(int argc, char *argv[]) {
 	// tick has a nested pool below so temporary objects are reclaimed promptly.
 	ATMacAutoreleasePool appAutoreleasePool;
 
+#ifdef _WIN32
+	// GUI-subsystem build: no console window of its own. Reuse the parent's
+	// console (if any) so command-line output still shows up there.
+	ATAttachParentConsoleIfNeeded();
+#endif
+
 #ifdef __ANDROID__
 	// Must be installed before ANY fprintf(stderr, ...) / LOG_* macro call
 	// or SDL logging call, so every startup diagnostic reaches logcat.
@@ -2141,6 +2153,13 @@ int main(int argc, char *argv[]) {
 			LOG_ERROR("Main", "Failed to initialise AltirraBridge");
 		}
 	}
+#endif
+
+#ifdef ALTIRRA_MCP_ENABLED
+	// Embedded MCP server: follows Configure System > Emulator > MCP
+	// Server. The listener starts on the first main-loop poll when
+	// enabled; a bind failure is reported on that page, never fatal.
+	ATMCPServerApply();
 #endif
 
 	// Give the mouse capture system access to the window
@@ -3017,6 +3036,13 @@ int main(int argc, char *argv[]) {
 		ATBridge::Poll(g_sim, g_uiState);
 #endif
 
+#ifdef ALTIRRA_MCP_ENABLED
+		// Embedded MCP server (no-op while disabled). Same single-threaded
+		// model as the bridge: socket I/O and tool calls run here. Its
+		// frame gate is driven by ATBridge::OnFrameCompleted().
+		ATMCPServer::Poll(g_sim);
+#endif
+
 #ifdef ALTIRRA_NETPLAY_ENABLED
 		// Drive the netplay coordinator (no-op when no session exists).
 		// Drains the UDP socket, runs the handshake / snapshot transfer
@@ -3119,12 +3145,12 @@ int main(int argc, char *argv[]) {
 		// peers are connected.
 		bool pauseInactive = ATUIGetPauseWhenInactive() && !g_winActive;
 #ifdef ALTIRRA_BRIDGE_ENABLED
-		// A bridge FRAME command is an explicit automation step. Let it
-		// complete even if the visible window is inactive; otherwise the
-		// frame gate can remain armed forever until the user focuses the
-		// window again. Free-running bridge RESUME still follows the user's
-		// pause-when-inactive preference.
-		if (ATBridge::IsFrameGateActive())
+		// A bridge or MCP FRAME / CYCLES / SCANLINES / BOOT_BARE is an
+		// explicit automation step. Let it complete even if the visible
+		// window is inactive; otherwise the gate can remain armed forever
+		// until the user focuses the window again. Free-running RESUME
+		// still follows the user's pause-when-inactive preference.
+		if (ATBridge::IsAutomationGateActive())
 			pauseInactive = false;
 #endif
 #ifdef ALTIRRA_NETPLAY_ENABLED
@@ -3523,6 +3549,12 @@ int main(int argc, char *argv[]) {
 	while (g_running) {
 		tickBody();
 	}
+#endif
+
+#ifdef ALTIRRA_MCP_ENABLED
+	// Stop the MCP listener, fail waiting calls and release its input
+	// slot before the bridge core and the simulator go away.
+	ATMCPServer::Shutdown(g_sim);
 #endif
 
 #ifdef ALTIRRA_BRIDGE_ENABLED

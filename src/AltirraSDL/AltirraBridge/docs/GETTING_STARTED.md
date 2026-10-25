@@ -177,6 +177,41 @@ either binary work against the other. Differences:
 - The bridge server does not read user settings by default. Use
   `--settings=user` to opt into AltirraSDL's settings/profile data.
 
+#### MCP server for AI clients (`--mcp`)
+
+`AltirraBridgeServer` can also serve the embedded MCP (Model Context
+Protocol) server that AltirraSDL offers under Configure System >
+Emulator > MCP Server, so AI clients such as Claude Code can drive a
+headless emulator:
+
+```sh
+./AltirraBridgeServer --mcp --pacing=realtime          # http://127.0.0.1:7750/mcp
+./AltirraBridgeServer --mcp=7760 --mcp-token=SECRET    # custom port, token required
+claude mcp add --transport http altirra http://127.0.0.1:7750/mcp
+```
+
+- `--mcp[=PORT]` listens on `http://127.0.0.1:PORT/mcp` (default port
+  7750), loopback only, next to the bridge socket; both can be used at
+  the same time. The URL is printed on stderr
+  (`[MCP] listening on http://127.0.0.1:7750/mcp`). If the port is
+  already in use the server exits with an error.
+- `--mcp-token=TOKEN` requires `Authorization: Bearer TOKEN` on every
+  request. Without it no token is required.
+- Settings come only from these flags; AltirraSDL's saved MCP settings
+  are never read or changed.
+- Breakpoint notifications: subscribe to the resource
+  `altirra://debugger/last-stop` (`subscriptions/listen` on protocol
+  2026-07-28, `resources/subscribe` plus the session's GET event stream
+  on 2025-era clients, which also receive a `notifications/message` with
+  the details). It is updated whenever a breakpoint set by any client,
+  the bridge or the GUI debugger stops emulation.
+- Same tools, resources and protocol versions as the GUI, except
+  `audio_record` (the headless build has no audio writer), which is not
+  listed. Screenshots use the headless frame buffer. Without
+  `--pacing=realtime`, `advance_frames` completes as fast as the host
+  CPU allows; with it, `warp_speed` lifts the realtime limit on demand
+  (in the GUI too).
+
 ## 5. What's next
 
 Phase 1 covers `HELLO`, `PING`, `FRAME`, `PAUSE`, `RESUME`, `QUIT`.

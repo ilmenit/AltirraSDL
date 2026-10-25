@@ -59,6 +59,8 @@ add_executable(AltirraBridgeServer
     # against these symbols.  Self-contained, depends only on
     # vd2/system + uikeyboard.h.
     ${ALTIRRA_SDL_DIR}/source/input/keyboard_keymap_sdl3.cpp
+    # Paste Text (MCP type_text): UI-free, shared with AltirraSDL.
+    ${ALTIRRA_SDL_DIR}/source/input/paste_text.cpp
 
     # --- AltirraSDL platform glue that's UI-free ---
     # logging.h's LOG_INFO/LOG_ERROR are header-only macros, no .cpp.
@@ -107,6 +109,7 @@ add_executable(AltirraBridgeServer
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_protocol.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_transport.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_state.cpp
+    ${ALTIRRA_SDL_DIR}/source/bridge/bridge_screentext.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_write.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_render.cpp
     ${ALTIRRA_SDL_DIR}/source/bridge/bridge_commands_debug.cpp
@@ -117,6 +120,19 @@ add_executable(AltirraBridgeServer
     # provides its own ATBridgeDispatch* implementations that call the
     # simulator directly without the SDL3 deferred-action queue.
 )
+
+# Embedded MCP server (--mcp), same module as AltirraSDL's. Follows the
+# ALTIRRA_MCP option defined in src/AltirraSDL/CMakeLists.txt (OFF where
+# the GUI has it OFF). Configuration comes from command-line flags only.
+if(ALTIRRA_MCP)
+    target_sources(AltirraBridgeServer PRIVATE
+        ${ALTIRRA_SDL_DIR}/source/mcp/mcp_server.cpp
+        ${ALTIRRA_SDL_DIR}/source/mcp/mcp_http.cpp
+        ${ALTIRRA_SDL_DIR}/source/mcp/mcp_json.cpp
+        ${ALTIRRA_SDL_DIR}/source/mcp/mcp_tools.cpp
+    )
+    target_compile_definitions(AltirraBridgeServer PRIVATE ALTIRRA_MCP_ENABLED=1)
+endif()
 
 # Re-include Win32-specific support that the SDL3 build also re-includes.
 if(WIN32)

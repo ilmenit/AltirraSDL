@@ -292,6 +292,16 @@ class AltirraBridge:
         """64-bit emulated tick and last cycle/scanline step result."""
         return self._cmd_ok("CLOCK")
 
+    def warp(self, enabled: Optional[bool] = None) -> dict:
+        """Read or set warp speed (System > Warp Speed).
+
+        With ``enabled=None`` only reads. Returns ``warp`` (the toggle)
+        and ``active`` (warp in effect, including a held warp key).
+        """
+        if enabled is None:
+            return self._cmd_ok("WARP")
+        return self._cmd_ok("WARP on" if enabled else "WARP off")
+
     def pokey_trace_start(self, capacity: int = 65536) -> dict:
         """Start/restart a bus-write trace. Returns initial register
         snapshots for all enabled chips. Require valid=True on each read;
@@ -476,6 +486,21 @@ class AltirraBridge:
         """
         return self._cmd_ok("PALETTE_RESET")
 
+    def screen_text(self) -> list:
+        """Decode every currently-displayed ANTIC text-mode row
+        (modes 2/3/6/7) to text, top to bottom. Returns a list of
+        strings, one per row, leading/trailing spaces trimmed; blank
+        or graphics-mode rows are omitted, so a title screen with no
+        active text mode returns ``[]``.
+
+        Reads via ANTIC's own DMA memory view, so it stays correct
+        even when the playfield address is banked or ROM-shadowed —
+        the same decode logic backing the GUI's mouse click-drag
+        text selection / copy feature.
+        """
+        resp = self._cmd_ok("SCREEN_TEXT")
+        return resp.get("lines", [])
+
     # ------------------------------------------------------------------
     # Phase 3 commands — state write & input injection
     # ------------------------------------------------------------------
@@ -558,6 +583,27 @@ class AltirraBridge:
         if ctrl:  cmd += " ctrl"
         return self._cmd_ok(cmd)
 
+    def type(self, text: str) -> dict:
+        """Push one keystroke per character of ``text`` into POKEY's
+        queue in a single round trip.
+
+        Unlike :meth:`key`, this covers full punctuation (``!@#$%^&*
+        ()"':`` etc.) via the same character table Windows Altirra's
+        "paste text as keystrokes" feature uses — no need to look up
+        Atari's keyboard shift layout yourself.
+
+        Returns ``{"ok": True, "typed": N, "skipped": [...]}`` —
+        ``skipped`` lists any characters with no key mapping (e.g.
+        emoji) so the caller can see what didn't get typed, rather
+        than just a shorter string on screen than expected.
+
+        ``text`` must not contain a newline — the wire protocol is
+        line-delimited, so an embedded ``\\n`` would corrupt framing.
+        """
+        if "\n" in text or "\r" in text:
+            raise BridgeError("type: text must not contain a newline")
+        return self._cmd_ok(f"TYPE {text}")
+
     def key_raw(self, name: str, down: bool = True,
                 shift: bool = False, ctrl: bool = False) -> dict:
         """Hold a key down in POKEY's key matrix (``down=True``) or
@@ -631,9 +677,58 @@ class AltirraBridge:
         """
         return self._cmd_ok("BOOT_BARE")
 
-    def mount(self, drive: int, path: str) -> dict:
-        """Mount a disk image into ``drive`` (0..14, where 0=D1)."""
-        return self._cmd_ok(f"MOUNT {drive} {path}")
+    def mount(self, drive: int, path: str, mode: Optional[str] = None) -> dict:
+        """Mount a disk image into ``drive`` (0..14, where 0=D1).
+
+        ``mode`` overrides the write mode this mount uses instead of
+        falling back to the drive's existing write mode (if already
+        attached) or the global default write mode. One of ``"ro"``
+        (read-only), ``"rw"`` (Real R/W -- writes flush straight back to
+        the image file), ``"vrw"`` (Virtual R/W -- writes stay in
+        memory), or ``"vrwsafe"`` (Virtual R/W, no format support).
+        Omit it to keep the existing default-resolution behaviour.
+        Named to match the wire protocol's ``mode=`` argument, so macro
+        steps can pass it straight through as ``{"mount": {"drive": 0,
+        "path": "...", "mode": "rw"}}``.
+        """
+        cmd = f"MOUNT {drive} {path}"
+        if mode is not None:
+            lower_mode = mode.lower()
+            if lower_mode not in ("ro", "rw", "vrw", "vrwsafe"):
+                raise BridgeError(
+                    f"mount: mode must be one of ro, rw, vrw, vrwsafe (got {mode!r})")
+            cmd += f" mode={lower_mode}"
+        return self._cmd_ok(cmd)
+
+    def eject(self, drive: Optional[int] = None, all: bool = False) -> dict:
+        """Unmount the disk in ``drive`` (0..14). Pass ``all=True``
+        instead of ``drive`` to eject every drive at once.
+        """
+        if all:
+            if drive is not None:
+                raise BridgeError("eject: pass at most one of drive= / all=")
+            return self._cmd_ok("EJECT all=true")
+        return self._cmd_ok(f"EJECT drive={drive if drive is not None else 0}")
+
+    def cart_eject(self, slot: Optional[int] = None) -> dict:
+        """Remove the cartridge. Pass ``slot`` (0=primary, 1=secondary)
+        to eject just one slot; omit it to eject both. Cold-resets the
+        machine so the bus map reflects the change.
+        """
+        return self._cmd_ok("CART_EJECT" if slot is None else f"CART_EJECT slot={slot}")
+
+    def fresh(self, keep: Optional[str] = None) -> dict:
+        """One-shot "factory reset": clears every piece of
+        session-scope bridge state (breakpoints, watches, loaded
+        symbols, profiler, verifier, mounted media) and cold-resets.
+
+        ``keep`` is a comma-separated subset of ``bps``, ``symbols``,
+        ``profile``, ``verifier``, ``media``, ``reset`` (skip the
+        trailing cold reset) to preserve instead of clearing.
+        Intended for AI-agent loops doing many iterations, to prevent
+        state drift across runs.
+        """
+        return self._cmd_ok("FRESH" if keep is None else f"FRESH keep={keep}")
 
     def cold_reset(self) -> dict:
         """Cold-reset the simulator. Preserves pause state."""
@@ -871,6 +966,42 @@ class AltirraBridge:
         if value is None:
             return self._cmd_ok(f"CONFIG {key}")
         return self._cmd_ok(f"CONFIG {key} {value}")
+
+    def config_many(self, **settings: str) -> dict:
+        """Set several configuration keys in one call, e.g.
+        ``config_many(machine="800XL", basic="false", video="ntsc")``.
+        Convenience wrapper: the wire protocol only sets one key per
+        ``CONFIG`` call, so this issues one call per keyword argument,
+        in the order given, stopping at the first key that fails (so
+        a bad ``memory`` value doesn't leave ``machine``/``video``
+        applied around it).
+
+        Several keys (``machine``, ``video``, ``memory``, ...) each
+        independently trigger a cold reset (see :meth:`config`'s
+        table); setting more than one of them in a single call
+        cold-resets the simulator once per such key, in argument
+        order, not just once overall.
+
+        Returns ``{"ok": bool, "results": {key: response_or_error}}``.
+        """
+        results: Dict[str, Any] = {}
+        for key, value in settings.items():
+            try:
+                results[key] = self.config(key, str(value))
+            except RemoteError as e:
+                results[key] = {"ok": False, "error": str(e)}
+                break
+        return {"ok": all(r.get("ok", True) for r in results.values()), "results": results}
+
+    def macro(self, steps: List[Dict[str, Any]], stop_on_error: bool = True) -> dict:
+        """Run a whole sequence of Bridge calls in one call. See
+        :mod:`altirra_bridge.macro` for the step shape and semantics
+        (most steps are a passthrough to the identically-named method
+        on this class; ``wait_text``/``wait_expr`` are composite poll
+        loops; ``config`` fans out to :meth:`config_many`).
+        """
+        from .macro import run_macro
+        return run_macro(self, steps, stop_on_error=stop_on_error)
 
     def device_list(self) -> dict:
         """List installed devices and bridge quick-add device tags."""
@@ -1139,6 +1270,24 @@ class AltirraBridge:
         """
         resp = self._cmd_ok(f"SYM_LOAD {path}")
         return int(resp["module_id"])
+
+    def sym_unload(self, module_id: int) -> bool:
+        """Unload the symbol module returned by :meth:`sym_load`.
+        Returns whether that module id was one this client loaded
+        (a module Altirra loaded itself, e.g. kernel symbols, isn't
+        tracked here and reports ``False`` even though the debugger
+        still forgets it).
+        """
+        resp = self._cmd_ok(f"SYM_UNLOAD {module_id}")
+        return bool(resp.get("unloaded", False))
+
+    def sym_clear_all(self) -> int:
+        """Unload every symbol module loaded via :meth:`sym_load` in
+        this session (modules Altirra loaded itself are left alone).
+        Returns the number of modules removed.
+        """
+        resp = self._cmd_ok("SYM_CLEAR_ALL")
+        return int(resp.get("cleared", 0))
 
     def sym_resolve(self, name: str) -> int:
         """Resolve a symbol ``name`` to its address."""

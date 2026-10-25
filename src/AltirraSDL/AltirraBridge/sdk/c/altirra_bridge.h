@@ -106,6 +106,9 @@ int atb_frame(atb_client_t* c, unsigned int n);
 int atb_cycles(atb_client_t* c, unsigned int n);
 int atb_scanlines(atb_client_t* c, unsigned int n);
 int atb_clock(atb_client_t* c);
+/* WARP: enabled > 0 turns warp speed on, 0 turns it off, < 0 only reads.
+ * The {"warp","active"} payload is available via atb_last_response(). */
+int atb_warp(atb_client_t* c, int enabled);
 int atb_pokey_trace_start(atb_client_t* c, unsigned int capacity);
 int atb_pokey_trace_read(atb_client_t* c, unsigned int max_events);
 int atb_pokey_trace_stop(atb_client_t* c);
@@ -326,6 +329,15 @@ int atb_consol(atb_client_t* c, int start, int select, int option);
  */
 int atb_boot(atb_client_t* c, const char* path);
 int atb_mount(atb_client_t* c, unsigned int drive, const char* path);
+
+/*
+ * Mount a disk image with an explicit write-mode override instead of
+ * the drive's existing write mode (if already attached) or the global
+ * default. write_mode is one of "ro", "rw" (Real R/W -- writes flush
+ * back to the image file), "vrw", or "vrwsafe". Pass NULL for
+ * write_mode to get atb_mount()'s default-resolution behaviour.
+ */
+int atb_mount_mode(atb_client_t* c, unsigned int drive, const char* path, const char* write_mode);
 
 /*
  * Boot the embedded "bare-metal" stub: a 30-byte XEX shipped inside

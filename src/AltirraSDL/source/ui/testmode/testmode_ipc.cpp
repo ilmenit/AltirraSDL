@@ -59,39 +59,65 @@ std::string TestModeIPC::Init() {
 		return {};
 	}
 
+	mpConnectOverlapped = new OVERLAPPED {};
+
 	// Start async ConnectNamedPipe
-	OVERLAPPED ov = {};
-	ov.hEvent = mConnectEvent;
-	if (ConnectNamedPipe(mListenPipe, &ov)) {
-		// Client already connected (rare but possible)
-		mClientPipe = mListenPipe;
-		mConnectPending = false;
-	} else {
-		DWORD err = GetLastError();
-		if (err == ERROR_IO_PENDING) {
-			mConnectPending = true;
-		} else if (err == ERROR_PIPE_CONNECTED) {
-			// Client connected between Create and Connect
-			mClientPipe = mListenPipe;
-			mConnectPending = false;
-		} else {
-			LOG_ERROR("TestMode", "ConnectNamedPipe failed: %lu", err);
-			CloseHandle(mListenPipe);
-			mListenPipe = INVALID_HANDLE_VALUE;
-			CloseHandle(mConnectEvent);
-			mConnectEvent = nullptr;
-			return {};
-		}
+	if (!StartConnect()) {
+		CloseHandle(mListenPipe);
+		mListenPipe = INVALID_HANDLE_VALUE;
+		CloseHandle(mConnectEvent);
+		mConnectEvent = nullptr;
+		delete (OVERLAPPED *)mpConnectOverlapped;
+		mpConnectOverlapped = nullptr;
+		return {};
 	}
 
 	LOG_INFO("TestMode", "Listening on %s", mPipeName.c_str());
 	return mPipeName;
 }
 
+bool TestModeIPC::StartConnect() {
+	// The OVERLAPPED is a member, not a local: with ERROR_IO_PENDING the
+	// kernel completes the connect later by writing into it, after this
+	// function has returned.
+	OVERLAPPED& ov = *(OVERLAPPED *)mpConnectOverlapped;
+	ov = {};
+	ov.hEvent = mConnectEvent;
+	ResetEvent(mConnectEvent);
+
+	if (ConnectNamedPipe(mListenPipe, &ov)) {
+		// Client already connected (rare but possible)
+		mClientPipe = mListenPipe;
+		mConnectPending = false;
+		return true;
+	}
+
+	DWORD err = GetLastError();
+	if (err == ERROR_IO_PENDING) {
+		mConnectPending = true;
+		return true;
+	}
+
+	if (err == ERROR_PIPE_CONNECTED) {
+		// Client connected between Create and Connect
+		mClientPipe = mListenPipe;
+		mConnectPending = false;
+		return true;
+	}
+
+	LOG_ERROR("TestMode", "ConnectNamedPipe failed: %lu", err);
+	mConnectPending = false;
+	return false;
+}
+
 void TestModeIPC::Shutdown() {
 	if (mListenPipe != INVALID_HANDLE_VALUE) {
 		if (mConnectPending) {
+			// Wait for the cancellation to land before the OVERLAPPED is
+			// freed below.
 			CancelIo(mListenPipe);
+			DWORD unused = 0;
+			GetOverlappedResult(mListenPipe, (OVERLAPPED *)mpConnectOverlapped, &unused, TRUE);
 			mConnectPending = false;
 		}
 		DisconnectNamedPipe(mListenPipe);
@@ -104,6 +130,8 @@ void TestModeIPC::Shutdown() {
 		CloseHandle(mConnectEvent);
 		mConnectEvent = nullptr;
 	}
+	delete (OVERLAPPED *)mpConnectOverlapped;
+	mpConnectOverlapped = nullptr;
 	mPipeName.clear();
 }
 
@@ -135,24 +163,8 @@ void TestModeIPC::DisconnectClient() {
 	mClientPipe = nullptr;
 
 	// Re-start listening
-	OVERLAPPED ov = {};
-	ov.hEvent = mConnectEvent;
-	ResetEvent(mConnectEvent);
-
-	if (ConnectNamedPipe(mListenPipe, &ov)) {
-		mClientPipe = mListenPipe;
-		mConnectPending = false;
-	} else {
-		DWORD err = GetLastError();
-		if (err == ERROR_IO_PENDING) {
-			mConnectPending = true;
-		} else if (err == ERROR_PIPE_CONNECTED) {
-			mClientPipe = mListenPipe;
-			mConnectPending = false;
-		} else {
-			LOG_ERROR("TestMode", "Re-arm ConnectNamedPipe failed: %lu", err);
-		}
-	}
+	if (!StartConnect())
+		LOG_ERROR("TestMode", "Re-arm ConnectNamedPipe failed");
 }
 
 int TestModeIPC::Send(const void *data, size_t len) {

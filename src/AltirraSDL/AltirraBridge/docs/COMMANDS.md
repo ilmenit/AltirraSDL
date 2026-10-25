@@ -6,9 +6,9 @@ examples. For full request/response schemas and field semantics see
 
 | Group        | Commands |
 |--------------|----------|
-| [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `CYCLES`, `SCANLINES`, `CLOCK`, `POKEY_TRACE`, `QUIT` |
-| [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET` |
-| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `KEYRAW`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
+| [Lifecycle](#lifecycle)               | `HELLO`, `PING`, `PAUSE`, `RESUME`, `FRAME`, `CYCLES`, `SCANLINES`, `CLOCK`, `WARP`, `POKEY_TRACE`, `QUIT` |
+| [State read](#state-read)             | `REGS`, `PEEK`, `PEEK16`, `ANTIC`, `GTIA`, `POKEY`, `PIA`, `DLIST`, `HWSTATE`, `PALETTE`, `PALETTE_LOAD_ACT`, `PALETTE_RESET`, `SCREEN_TEXT` |
+| [State write & input](#state-write--input) | `POKE`, `POKE16`, `HWPOKE`, `MEMDUMP`, `MEMLOAD`, `JOY`, `KEY`, `KEYRAW`, `TYPE`, `CONSOL`, `BOOT`, `BOOT_BARE`, `MOUNT`, `COLD_RESET`, `WARM_RESET`, `CONFIG`, `DEVICE_LIST`, `DEVICE_GET`, `DEVICE_SET`, `DEVICE_REMOVE`, `DEVICE_CLEAR` |
 | [Save states](#save-states)           | `STATE_SAVE`, `STATE_LOAD`, `STATE_LIST`, `STATE_DROP` |
 | [Rendering](#rendering)               | `SCREENSHOT`, `RAWSCREEN`, `RENDER_FRAME` |
 | [Debugger introspection](#debugger-introspection) | `DISASM`, `HISTORY`, `EVAL`, `CALLSTACK`, `MEMMAP`, `BANK_INFO`, `CART_INFO`, `PMG`, `AUDIO_STATE` |
@@ -29,6 +29,7 @@ with AltirraBridge.from_token_file("/tmp/altirra-bridge-12345.token") as a:
     a.frame(60)        # run 60 frames then re-pause
     a.pause()
     a.resume()
+    a.warp(True)       # warp speed on (a.warp() just reads)
     a.quit()           # tells the server to exit
 ```
 
@@ -38,6 +39,7 @@ atb_client_t* c = atb_create();
 atb_connect_token_file(c, "/tmp/altirra-bridge-12345.token");
 atb_ping(c);
 atb_frame(c, 60);
+atb_warp(c, 1);        /* warp on; 0 = off, -1 = read */
 atb_quit(c);
 atb_close(c);
 ```

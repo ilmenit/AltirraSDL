@@ -240,6 +240,10 @@ and [command reference](src/AltirraSDL/AltirraBridge/docs/COMMANDS.md).
   at host CPU speed while preserving internal PAL/NTSC timing. Add
   `--pacing=realtime` to keep PAL/NTSC wall-clock speed in headless
   automation.
+- **MCP server** for AI clients (Model Context Protocol, Streamable
+  HTTP on `http://127.0.0.1:7750/mcp`): enable it under Configure
+  System > Emulator > MCP Server, or run the headless
+  `AltirraBridgeServer --mcp[=PORT] [--mcp-token=TOKEN]`.
 
 ### Desktop search, fonts, and Explorer tools
 
