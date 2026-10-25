@@ -4,6 +4,8 @@
 #include "bridge_transport.h"
 #include <stdexcept>
 #include <random>
+#include <chrono>
+#include <thread>
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -42,6 +44,20 @@ int main() {
 			Require(connect(client, (sockaddr *)&addr, sizeof addr) == 0, "connect failed");
 			return client;
 		};
+		// A successful send only queues bytes in the client kernel. Let
+		// loopback delivery finish before asserting server dispatch state;
+		// one immediate nonblocking poll is not sufficient on every OS.
+		auto pollUntil = [&](auto poll, auto ready, const char *message) {
+			const auto deadline = std::chrono::steady_clock::now()
+				+ std::chrono::seconds(5);
+			for (;;) {
+				poll();
+				if (ready())
+					return;
+				Require(std::chrono::steady_clock::now() < deadline, message);
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
+		};
 		const std::string request = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n";
 
 		// A pipelined client that never reads must stop dispatching tools
@@ -58,10 +74,18 @@ int main() {
 			out.body.assign(4 * 1024 * 1024, 'x');
 			return true;
 		};
+		pollUntil([&] { server.Poll(0, respond, {}); },
+			[&] { return connection != 0; }, "request was not dispatched");
 		for (int i = 0; i < 100; ++i) server.Poll(i, respond, {});
 		Require(calls > 0 && calls < 20, "unread replies did not apply backpressure");
-		server.Poll(ATMCP::HttpServer::kIdleTimeoutMs + 200, respond, {});
-		Require(!server.IsConnectionOpen(connection), "stalled response did not time out");
+		// A delayed ACK can make one final send progress before the stall.
+		// Continue advancing the fake timeout clock until that stops too.
+		uint64_t timeoutNow = ATMCP::HttpServer::kIdleTimeoutMs + 200;
+		pollUntil([&] {
+			server.Poll(timeoutNow, respond, {});
+			timeoutNow += ATMCP::HttpServer::kIdleTimeoutMs + 1;
+		}, [&] { return !server.IsConnectionOpen(connection); },
+			"stalled response did not time out");
 		CloseClient(client);
 
 		// Oversized SSE events must close their stream and report the
@@ -73,12 +97,13 @@ int main() {
 			connection = id;
 			return false;
 		};
-		server.Poll(70000, park, {});
+		pollUntil([&] { server.Poll(timeoutNow, park, {}); },
+			[&] { return connection != 0; }, "stream request was not dispatched");
 		Require(connection != 0 && server.StartEventStream(connection), "stream did not start");
 		Require(!server.SendEvent(connection, std::string(ATMCP::HttpServer::kMaxOutputBytes, 'x')),
 			"oversized stream event was accepted");
 		bool cancelled = false;
-		server.Poll(70001, park, [&](uint32_t id) { cancelled = id == connection; });
+		server.Poll(timeoutNow + 1, park, [&](uint32_t id) { cancelled = id == connection; });
 		Require(cancelled && !server.IsConnectionOpen(connection), "stream cancellation was lost");
 		CloseClient(client);
 		puts("MCP HTTP backpressure and cancellation passed");
