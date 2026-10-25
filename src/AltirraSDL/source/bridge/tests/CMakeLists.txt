@@ -89,3 +89,15 @@ if(TARGET AltirraSDL AND ALTIRRA_BRIDGE)
 	    SKIP_RETURN_CODE 77
 	    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1;SDL_VIDEODRIVER=dummy;ALTIRRA_DISPLAY_BACKEND=sdlrenderer")
 endif()
+
+if(TARGET AltirraBridgeServer AND ALTIRRA_MCP)
+    foreach(mcp_test IN ITEMS mcp input)
+        add_test(NAME bridge-${mcp_test}
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/bridge_${mcp_test}_test.py
+                $<TARGET_FILE:AltirraBridgeServer>
+                ${CMAKE_SOURCE_DIR}/src/AltirraSDL/AltirraBridge/sdk/python)
+        set_tests_properties(bridge-${mcp_test} PROPERTIES
+            TIMEOUT 60 ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+    endforeach()
+endif()
