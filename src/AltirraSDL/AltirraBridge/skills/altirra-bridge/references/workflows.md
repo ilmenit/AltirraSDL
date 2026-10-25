@@ -321,21 +321,31 @@ register shadows `$02C4-$02C8`.
 ## 10. Headless CI test — boot, screenshot, exit cleanly
 
 ```python
-import sys, subprocess, time, re
+import queue, re, subprocess, threading
 from altirra_bridge import AltirraBridge
 
 # Spawn the headless server (no GUI window)
 proc = subprocess.Popen(
     ["AltirraBridgeServer", "--bridge=tcp:127.0.0.1:0"],
+    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
     stderr=subprocess.PIPE, text=True)
+
+# Keep reading stderr for the whole session, not only until the token
+# line: the server keeps logging there, and once the pipe buffer is full
+# it blocks (see the note below).
+lines = queue.Queue()
+def drain():
+    for line in proc.stderr:
+        lines.put(line)          # or write it to a log file
+threading.Thread(target=drain, daemon=True).start()
 
 # Read the listen address + token-file path from stderr
 addr = None
 tokf = None
-for line in proc.stderr:
+while not (addr and tokf):
+    line = lines.get(timeout=10)
     if (m := re.search(r"listening on (\S+)", line)): addr = m.group(1)
     if (m := re.search(r"token-file: (\S+)", line)): tokf = m.group(1)
-    if addr and tokf: break
 
 a = AltirraBridge.from_token_file(tokf)
 try:
@@ -345,6 +355,16 @@ finally:
     a.quit()
     proc.wait(timeout=5)
 ```
+
+**Keep draining stderr.** If the server is started with
+`stderr=subprocess.PIPE` and the script stops reading after the
+token line, the OS pipe buffer (a few KB on Windows) eventually
+fills with the server's log lines. The server then blocks on its next
+write: `frame()` never returns, or the client gets "connection reset",
+and `memdump`, breakpoints or the chip-state commands look like they
+crash the server. It is not an emulation crash. Drain stderr in a
+thread as above, or redirect it to a file (`stderr=open("bridge.log",
+"w")`) and read the token-file line from that file.
 
 Use `AltirraBridgeServer` (not `AltirraSDL --bridge`) for CI: no
 window, no fonts, ~30% smaller binary. Same
