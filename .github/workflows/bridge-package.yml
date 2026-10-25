@@ -26,6 +26,8 @@ on:
     paths:
       - 'src/AltirraSDL/AltirraBridge/**'
       - 'src/AltirraSDL/source/bridge/**'
+      - 'src/AltirraSDL/source/mcp/**'
+      - 'src/AltirraSDL/source/input/paste_text.cpp'
       - 'src/AltirraSDL/cmake/altirra_core_sources.cmake'
       - 'src/AltirraBridgeServer/**'
       - '.github/workflows/bridge-package.yml'
