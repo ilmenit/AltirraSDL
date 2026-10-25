@@ -333,27 +333,39 @@ proc = subprocess.Popen(
 # Keep reading stderr for the whole session, not only until the token
 # line: the server keeps logging there, and once the pipe buffer is full
 # it blocks (see the note below).
-lines = queue.Queue()
+startup = queue.Queue(maxsize=1)
 def drain():
     for line in proc.stderr:
-        lines.put(line)          # or write it to a log file
+        # Only retain the startup token path; discard later diagnostics
+        # (or write them to a log file) instead of growing a queue forever.
+        if (m := re.search(r"token-file: (.+)", line)):
+            try:
+                startup.put_nowait(m.group(1).strip())
+            except queue.Full:
+                pass
 threading.Thread(target=drain, daemon=True).start()
 
-# Read the listen address + token-file path from stderr
-addr = None
-tokf = None
-while not (addr and tokf):
-    line = lines.get(timeout=10)
-    if (m := re.search(r"listening on (\S+)", line)): addr = m.group(1)
-    if (m := re.search(r"token-file: (\S+)", line)): tokf = m.group(1)
-
-a = AltirraBridge.from_token_file(tokf)
+a = None
 try:
+    # The token file includes the listen address. Paths may contain spaces.
+    tokf = startup.get(timeout=10)
+    a = AltirraBridge.from_token_file(tokf)
     a.boot("/path/to/game.xex"); a.frame(180)
-    open("ci-out.png", "wb").write(a.screenshot())
+    with open("ci-out.png", "wb") as output:
+        output.write(a.screenshot())
 finally:
-    a.quit()
-    proc.wait(timeout=5)
+    try:
+        if a is not None:
+            try:
+                a.quit()
+            finally:
+                a.close()
+    finally:
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 ```
 
 **Keep draining stderr.** If the server is started with
