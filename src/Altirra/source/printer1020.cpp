@@ -1023,8 +1023,9 @@ void ATDevicePrinter1020::DrawClippedLine(const vddouble2& oraw1, const vddouble
 			AddPenUpAction();
 		}
 
+		// MERGE NOTE: vddouble2 is an aggregate; use braces for Apple Clang 15.
 		if (raw2.y != oraw2.y)
-			AddMoveAction(ConvertPointFToMM(raw2.x, oraw2.y) - vddouble2(0, pt2.y));
+			AddMoveAction(ConvertPointFToMM(raw2.x, oraw2.y) - vddouble2{0, pt2.y});
 
 		return;
 	} while(false);
@@ -1179,13 +1180,14 @@ void ATDevicePrinter1020::ProcessNextDrawingAction() {
 					case DrawingActionType::Wait:
 						break;
 
+					// MERGE NOTE: keep vddouble2 aggregates brace-initialized for Clang 15.
 					case DrawingActionType::Move:
 					case DrawingActionType::Draw: {
 						if (!mbAccurateTimingEnabled) {
 							mLastDrawPosX += mDrawMoveVec.x;
 
 							if (mpPrinterGraphicalOutput)
-								mpPrinterGraphicalOutput->MoveVector(vddouble2(mLastDrawPosX, mDrawMoveVec.y));
+								mpPrinterGraphicalOutput->MoveVector(vddouble2{mLastDrawPosX, mDrawMoveVec.y});
 						} else {
 							// if there were span cycles, queue a move
 							if (mDrawCurrentSpanCycles > 0) {
@@ -1197,7 +1199,7 @@ void ATDevicePrinter1020::ProcessNextDrawingAction() {
 
 								// move head
 								if (mpPrinterGraphicalOutput)
-									mpPrinterGraphicalOutput->MoveVector(vddouble2(mLastDrawPosX, spanVec.y));
+									mpPrinterGraphicalOutput->MoveVector(vddouble2{mLastDrawPosX, spanVec.y});
 
 								// update cycle accounting
 								mDrawRemainingCycles -= mDrawCurrentSpanCycles;
@@ -1220,12 +1222,12 @@ void ATDevicePrinter1020::ProcessNextDrawingAction() {
 						mLastDrawPosX = action.mDstPoint.x;
 
 						if (mpPrinterGraphicalOutput) {
-							mpPrinterGraphicalOutput->MoveVector(vddouble2(mLastDrawPosX, 0.0f));
+							mpPrinterGraphicalOutput->MoveVector(vddouble2{mLastDrawPosX, 0.0f});
 
 							if (action.mType == DrawingActionType::Draw) {
 								mpPrinterGraphicalOutput->AddVector(
-									vddouble2(mLastDrawStartPosX, -mDrawMoveVec.y),
-									vddouble2(mLastDrawPosX, 0),
+									vddouble2{mLastDrawStartPosX, -mDrawMoveVec.y},
+									vddouble2{mLastDrawPosX, 0},
 									mPrintPenColors[action.mPenIndex]
 								);
 							}

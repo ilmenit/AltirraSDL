@@ -232,6 +232,12 @@ aggregate construction. Keep the `MERGE NOTE` in
 `src/ATCore/source/vfs.cpp`; `RenderDot` in `printerrasterizer.cpp` has the
 same compiler constraint.
 
+Direct construction has the same restriction: the plotter's `vddouble2`
+has no two-argument constructor. Use `vddouble2{x, y}` rather than
+`vddouble2(x, y)` in `printer1020.cpp`. Building the complete headless
+server in native regression CI catches these sites, which the smaller
+printer-export fixture does not compile.
+
 ## Issue 4 — Windows SDK intrinsics missing in standalone test sources
 
 Windows SDK 10.0.26100 `wchar.h` can report undeclared `__m128i`, `__m256i`
