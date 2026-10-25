@@ -111,31 +111,26 @@ void ReadScreenText(ATSimulator& sim, vdvector<VDStringA>& outLines) {
 
 		const auto& decodeTab = kATATASCIITables.mATASCIIToUnicode[intl];
 
-		// Decode first, then trim — matches ATUITextCopy(ASCII): trimming
-		// must run on the decoded bytes, not the raw ATASCII ones, so an
+		// Decode first, then trim: trimming must run on the decoded text,
+		// not the raw ATASCII bytes, so an
 		// inverse-video space (cursor block, $A0) — which decodes to a
 		// plain space — gets trimmed the same as a normal $20 space.
-		for (int i = 0; i < actual; ++i) {
-			uint16 wc = decodeTab[buf[i] & 0x7f];
-			buf[i] = wc < 0x100 ? (uint8)wc : 0x20;
-		}
+		VDStringW decoded;
+		for (int i = 0; i < actual; ++i)
+			decoded += (wchar_t)decodeTab[buf[i] & 0x7f];
 
 		int base = 0;
 		int end = actual;
 
-		while (base < end && buf[base] == 0x20)
+		while (base < end && decoded[base] == L' ')
 			++base;
-		while (end > base && buf[end - 1] == 0x20)
+		while (end > base && decoded[end - 1] == L' ')
 			--end;
 
 		if (base >= end)
 			continue;	// blank line — skip, don't append an empty string
 
-		VDStringW s;
-		for (int i = base; i < end; ++i)
-			s += (wchar_t)buf[i];
-
-		outLines.push_back(VDTextWToU8(s));
+		outLines.push_back(VDTextWToU8(VDStringSpanW(decoded.data() + base, decoded.data() + end)));
 	}
 }
 
