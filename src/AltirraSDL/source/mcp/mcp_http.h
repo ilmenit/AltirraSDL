@@ -55,6 +55,7 @@ public:
 	static constexpr size_t kMaxConnections = 8;
 	static constexpr size_t kMaxHeaderBytes = 16 * 1024;
 	static constexpr size_t kMaxBodyBytes = 1024 * 1024;
+	static constexpr size_t kMaxOutputBytes = 16 * 1024 * 1024;
 	static constexpr uint64_t kIdleTimeoutMs = 60 * 1000;
 
 	// Return true when out holds the response; false parks the request
@@ -116,6 +117,7 @@ private:
 
 	uintptr_t mListenSock;
 	uint32_t mNextConnId = 1;
+	uint64_t mNowMs = 0;
 	std::vector<Connection *> mConnections;
 };
 

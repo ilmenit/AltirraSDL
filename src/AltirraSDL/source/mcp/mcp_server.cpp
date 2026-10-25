@@ -16,6 +16,7 @@
 #include "mcp_tools.h"
 
 #include "bridge_context.h"
+#include "bridge_server.h"
 #include "logging.h"
 #include "simulator.h"
 #include "simeventmanager.h"
@@ -350,7 +351,7 @@ void ExpireSessions(uint64_t now) {
 ATSimulator *g_pSim = nullptr;   // valid only during Poll()
 
 bool IsGateBusy() {
-	return g_mcp.ctx.framesRemaining > 0;
+	return ATBridge::IsAutomationGateActive();
 }
 
 void CancelFrameGate(ATSimulator& sim) {
@@ -564,6 +565,12 @@ void ServicePending(uint64_t now) {
 			ReportProgress(front, now);
 			return;
 		}
+
+		// A different transport may own a frame/step gate. Defer all
+		// tool work until it finishes so reads see the requested stop
+		// point and mutations cannot disrupt another client's run.
+		if (IsGateBusy())
+			return;
 
 		// Deferred: run it now that the gate is clear.
 		PendingCall call = front;

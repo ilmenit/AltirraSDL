@@ -249,3 +249,26 @@ target_include_directories(altirra-display-custom-effect-test PRIVATE
     ${PROJECT_SOURCE_DIR}/src/Altirra/autobuild_default)
 target_link_libraries(altirra-display-custom-effect-test PRIVATE vdjson system SDL3::SDL3)
 add_test(NAME display-custom-effect COMMAND altirra-display-custom-effect-test)
+# The MCP HTTP layer is independent of the simulator; exercise the actual
+# transport under backpressure without starting the emulator or its UI.
+if(ALTIRRA_MCP)
+    add_executable(altirra-mcp-http-test
+        mcp_http.cpp
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/mcp/mcp_http.cpp
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/bridge/bridge_protocol.cpp
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/bridge/bridge_transport.cpp
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/bridge/bridge_logging.cpp)
+    target_include_directories(altirra-mcp-http-test PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/stubs
+        ${PROJECT_SOURCE_DIR}/src/Altirra/h
+        ${ALTIRRA_COMPAT_DIR}
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/app
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/mcp
+        ${PROJECT_SOURCE_DIR}/src/AltirraSDL/source/bridge)
+    target_link_libraries(altirra-mcp-http-test PRIVATE system SDL3::SDL3)
+    if(WIN32)
+        target_link_libraries(altirra-mcp-http-test PRIVATE ws2_32)
+    endif()
+    add_test(NAME mcp-http-transport COMMAND altirra-mcp-http-test)
+    set_tests_properties(mcp-http-transport PROPERTIES TIMEOUT 30)
+endif()

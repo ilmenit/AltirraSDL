@@ -57,6 +57,7 @@ constexpr uintptr_t kInvalidSock = ~(uintptr_t)0;
 // Requests handled per connection per Poll(), so a chatty client
 // cannot starve emulation.
 constexpr int kMaxRequestsPerPoll = 4;
+constexpr int kMaxAcceptsPerPoll = 16;
 
 bool SetNonBlocking(uintptr_t s) {
 #if defined(_WIN32)
@@ -203,6 +204,7 @@ struct HttpServer::Connection {
 	std::string in;
 	std::string out;
 	uint64_t    lastActivityMs = 0;
+	uint64_t    lastOutputProgressMs = 0;
 	bool        parked = false;
 	bool        closeAfterFlush = false;
 	bool        peerClosed = false;
@@ -300,7 +302,7 @@ bool HttpServer::IsConnectionOpen(uint32_t connId) const {
 }
 
 void HttpServer::AcceptPending(uint64_t nowMs) {
-	for (;;) {
+	for (int attempts = 0; attempts < kMaxAcceptsPerPoll; ++attempts) {
 #if defined(_WIN32)
 		SOCKET cs = accept((SOCKET)mListenSock, nullptr, nullptr);
 		if (cs == INVALID_SOCKET)
@@ -335,6 +337,7 @@ void HttpServer::AcceptPending(uint64_t nowMs) {
 		if (!mNextConnId)
 			mNextConnId = 1;
 		c->lastActivityMs = nowMs;
+		c->lastOutputProgressMs = nowMs;
 		mConnections.push_back(c);
 	}
 }
@@ -488,6 +491,14 @@ bool HttpServer::TryParseRequest(Connection& c, HttpRequest& req,
 }
 
 void HttpServer::QueueResponse(Connection& c, const HttpResponse& resp) {
+	// Bound replies too: tools can produce much larger output than their
+	// request, and a client may stop reading at any point.
+	if (resp.body.size() > kMaxOutputBytes || c.out.size() > kMaxOutputBytes - resp.body.size()) {
+		c.dead = true;
+		return;
+	}
+	if (c.out.empty())
+		c.lastOutputProgressMs = mNowMs;
 	const bool close = resp.closeConnection || c.closeAfterFlush;
 
 	char statusLine[64];
@@ -517,6 +528,10 @@ void HttpServer::QueueResponse(Connection& c, const HttpResponse& resp) {
 	out += "\r\n";
 	out += resp.body;
 
+	if (out.size() > kMaxOutputBytes || c.out.size() > kMaxOutputBytes - out.size()) {
+		c.dead = true;
+		return;
+	}
 	c.out += out;
 	if (close)
 		c.closeAfterFlush = true;
@@ -531,6 +546,7 @@ void HttpServer::FlushOutput(Connection& c) {
 #endif
 		if (n > 0) {
 			c.out.erase(0, (size_t)n);
+			c.lastOutputProgressMs = mNowMs;
 			continue;
 		}
 
@@ -595,7 +611,7 @@ void HttpServer::ServiceConnection(Connection& c, uint64_t nowMs,
 	}
 
 	// Handle complete requests in order, one in flight at a time.
-	for (int i = 0; i < kMaxRequestsPerPoll && !c.parked && !c.dead && !c.closeAfterFlush; ++i) {
+	for (int i = 0; i < kMaxRequestsPerPoll && c.out.empty() && !c.parked && !c.dead && !c.closeAfterFlush; ++i) {
 		HttpRequest req;
 		HttpResponse resp;
 		bool haveError = false;
@@ -607,10 +623,13 @@ void HttpServer::ServiceConnection(Connection& c, uint64_t nowMs,
 			break;
 		}
 
-		if (handler(c.id, req, resp))
+		if (handler(c.id, req, resp)) {
 			QueueResponse(c, resp);
-		else
+			if (!c.dead)
+				FlushOutput(c);
+		} else {
 			c.parked = true;
+		}
 	}
 
 	if (!c.dead)
@@ -619,6 +638,11 @@ void HttpServer::ServiceConnection(Connection& c, uint64_t nowMs,
 	// A peer that closed with no parked request and nothing left to
 	// send is done. (A parked request is reported by Poll().)
 	if (c.peerClosed && !c.parked && (c.out.empty() || c.dead))
+		c.dead = true;
+
+	// Backpressure must not retain an unresponsive reader indefinitely,
+	// including a parked SSE stream.
+	if (!c.out.empty() && nowMs - c.lastOutputProgressMs > kIdleTimeoutMs)
 		c.dead = true;
 
 	// Idle keep-alive connections are dropped after the timeout. A parked
@@ -633,6 +657,7 @@ void HttpServer::Poll(uint64_t nowMs, const RequestHandler& handler,
 	if (mListenSock == kInvalidSock)
 		return;
 
+	mNowMs = nowMs;
 	AcceptPending(nowMs);
 
 	// Iterate by index: the handler never adds connections, but parked
@@ -678,6 +703,9 @@ bool HttpServer::StartEventStream(uint32_t connId) {
 	if (c->streaming)
 		return true;
 
+	if (c->out.empty())
+		c->lastOutputProgressMs = mNowMs;
+
 	// The stream is delimited by closing the connection (no
 	// Content-Length), which every HTTP/1.1 client understands.
 	c->out +=
@@ -697,6 +725,14 @@ bool HttpServer::SendEvent(uint32_t connId, const std::string& json) {
 	if (!c || !c->streaming)
 		return false;
 
+	constexpr size_t overhead = 24;
+	if (json.size() > kMaxOutputBytes - overhead
+		|| c->out.size() > kMaxOutputBytes - overhead - json.size()) {
+		c->dead = true;
+		return false;
+	}
+	if (c->out.empty())
+		c->lastOutputProgressMs = mNowMs;
 	c->out += "event: message\ndata: ";
 	c->out += json;
 	c->out += "\n\n";
@@ -709,6 +745,12 @@ bool HttpServer::SendKeepAlive(uint32_t connId) {
 	if (!c || !c->streaming)
 		return false;
 
+	if (c->out.size() > kMaxOutputBytes - 3) {
+		c->dead = true;
+		return false;
+	}
+	if (c->out.empty())
+		c->lastOutputProgressMs = mNowMs;
 	c->out += ":\n\n";
 	FlushOutput(*c);
 	return !c->dead;
