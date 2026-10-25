@@ -89,7 +89,8 @@ def main():
             assert mcp.request(body="{}", headers={"Origin": "http://attacker.invalid"})[0] == 403
             assert MCP(port, "wrong-token").request(body="{}")[0] == 401
             # Recursive parser input must be rejected before stack exhaustion.
-            assert mcp.request(body='{"x":' + '[' * 10000 + '0' + ']' * 10000 + '}')[0] == 400
+            status, _, body = mcp.request(body='{"x":' + '[' * 10000 + '0' + ']' * 10000 + '}')
+            assert status == 400 and "nesting" in json.loads(body)["error"]["message"]
             discovery = mcp.rpc("server/discover")
             assert discovery["resultType"] == "complete"
             assert "2026-07-28" in discovery["supportedVersions"]
