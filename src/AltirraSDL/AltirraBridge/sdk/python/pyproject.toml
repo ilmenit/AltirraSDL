@@ -26,6 +26,9 @@ classifiers = [
 # No runtime dependencies — pure stdlib (socket, json).
 dependencies = []
 
+[project.scripts]
+altirra-macro = "altirra_bridge.cli_macro:main"
+
 [project.urls]
 Homepage = "https://github.com/anthropics/AltirraSDL"
 

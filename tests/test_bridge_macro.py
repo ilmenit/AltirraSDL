@@ -1,13 +1,21 @@
 """Regression checks for macro frame budgets and lossless TYPE framing."""
 import pathlib
+import base64
+from contextlib import redirect_stdout
+import io
+import json
 import socket
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] /
     "src/AltirraSDL/AltirraBridge/sdk/python"))
 from altirra_bridge import AltirraBridge, BridgeError
 from altirra_bridge.macro import run_macro
+from altirra_bridge import RawFrame
+from altirra_bridge.cli_macro import main as macro_main
 
 
 class FakeBridge:
@@ -28,6 +36,33 @@ class FakeBridge:
 
 
 class MacroTests(unittest.TestCase):
+    def test_cli_prints_lossless_memory_and_frame_results(self):
+        class CaptureBridge:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def macro(self, steps, stop_on_error=True):
+                return run_macro(self, steps, stop_on_error)
+            def peek(self, addr): return b"\x00\xff"
+            def rawscreen(self): return RawFrame(1, 1, 4, b"\x01\x02\x03\x00")
+
+        with tempfile.TemporaryDirectory() as directory:
+            macro = pathlib.Path(directory) / "capture.json"
+            macro.write_text(json.dumps([
+                {"peek": {"addr": 0}}, {"rawscreen": {}}]))
+            output = io.StringIO()
+            with patch.object(sys, "argv", ["altirra-macro", "token", str(macro)]), \
+                    patch.object(AltirraBridge, "from_token_file", return_value=CaptureBridge()), \
+                    redirect_stdout(output):
+                self.assertEqual(macro_main(), 0)
+            result = json.loads(output.getvalue())
+            self.assertTrue(result["ok"])
+            memory = result["results"][0]["result"]
+            self.assertEqual(memory["encoding"], "base64")
+            self.assertEqual(base64.b64decode(memory["data"]), b"\x00\xff")
+            frame = result["results"][1]["result"]
+            self.assertEqual((frame["width"], frame["height"], frame["stride"]), (1, 1, 4))
+            self.assertEqual(base64.b64decode(frame["pixels"]["data"]), b"\x01\x02\x03\x00")
+
     def test_wait_preserves_exact_frame_budget(self):
         for kind, condition in (("wait_text", {"text": "READY"}),
                                 ("wait_expr", {"expr": "$600"})):

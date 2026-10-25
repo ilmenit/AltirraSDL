@@ -18,6 +18,17 @@ cd AltirraBridge/sdk/python
 pip install .
 ```
 
+This also installs `altirra-macro TOKEN_FILE MACRO_FILE`, which runs a JSON
+list of macro steps and prints the results as JSON. Without installing,
+run `python3 sdk/python/altirra-macro TOKEN_FILE MACRO_FILE` from the bridge
+distribution directory.
+
+Binary results (memory reads, screenshots, rendered pixels) are represented
+as `{"encoding": "base64", "data": "..."}`. Raw screen results retain their
+`width`, `height`, `stride`, and `pixels` fields, with `pixels` encoded in
+the same form. The Python `bridge.macro()` API keeps its native bytes and
+`RawFrame` values.
+
 ## Quick start
 
 In one terminal, launch AltirraSDL with the bridge enabled:
