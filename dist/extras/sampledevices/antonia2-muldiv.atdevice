@@ -1,0 +1,80 @@
+// 65C816 high memory device that emulates the Antonia2 hardware
+// multiply/divide registers:
+//
+// $FF:F008-F00B: Divide registers
+// $FF:F008-F009 (W): Dividend (uint16)
+// $FF:F008-F009 (R): Quotient (uint16)
+// $FF:F00A-F00B (W): Divisor (uint16)
+// $FF:F00A-F00B (R): Remainder (uint16)
+//
+// $FF:F00C-F00F: Divide registers
+// $FF:F00C-F00D (W): Multiply input A (uint16)
+// $FF:F00E-F00F (W): Multiply input B (uint16)
+// $FF:F00C-F00F (R): Multiply result (uint32)
+
+option "name": "Antonia2 multiply/divide registers";
+
+Segment regread : {
+    size: 8,
+    init_pattern: $FF
+};
+
+Segment regwrite : {
+    size: 8,
+    init_pattern: $FF
+};
+
+function void update_div() {
+    int x = regwrite.read_word(0);
+    int y = regwrite.read_word(2);
+
+    if (y > 0) {
+        regread.write_word(0, x / y);
+        regread.write_word(2, x % y);
+    } else {
+        regread.write_word(0, 0xFFFF);
+        regread.write_word(2, x);
+    }
+}
+
+function void update_mul() {
+    int v = regwrite.read_word(4) * regwrite.read_word(6);
+
+    regread.write_word(4, v);
+    regread.write_word(6, v >> 16);
+}
+
+MemoryLayer reg_layer : {
+    name : "Antonia2 mul/div regs",
+    address : $FFF000,
+    size : 256,
+    fast : true,
+    control: [
+        {
+            address: $FFF008,
+            size: 4,
+            mode: "w",
+            script: function {
+                regwrite.write_byte($address & 7, $value);
+                update_div();
+            }
+        },
+        {
+            address: $FFF00C,
+            size: 4,
+            mode: "w",
+            script: function {
+                regwrite.write_byte($address & 7, $value);
+                update_mul();
+            }
+        },
+        {
+            address: $FFF008,
+            size: 8,
+            mode: "r",
+            script: function {
+                return regread.read_byte($address & 7);
+            }
+        },
+    ]
+};

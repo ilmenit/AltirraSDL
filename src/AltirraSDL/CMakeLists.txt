@@ -96,6 +96,7 @@ target_sources(AltirraSDL PRIVATE
     source/ui/core/ui_mode.cpp
     source/ui/core/ui_state_settings.cpp
     source/ui/core/ramcart_settings.cpp
+    source/ui/core/antonia2_settings.cpp
     source/ui/core/ui_main_aboutdialogs.cpp
     source/ui/core/ui_main_compat.cpp
     source/ui/core/ui_main_overlays.cpp

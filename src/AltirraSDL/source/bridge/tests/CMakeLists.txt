@@ -72,3 +72,20 @@ if(TARGET AltirraBridgeServer)
 		TIMEOUT 30
 		ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
+
+if(TARGET AltirraSDL)
+	find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+	# Exercise the built-in CPU option with no custom-device descriptor.
+	# SDL's dummy video + software renderer keep this test display-independent.
+	add_test(NAME bridge-antonia2
+	    COMMAND ${Python3_EXECUTABLE}
+	        ${CMAKE_CURRENT_SOURCE_DIR}/bridge_antonia2_test.py
+	        $<TARGET_FILE:AltirraSDL>
+	        ${CMAKE_SOURCE_DIR}/src/AltirraSDL/AltirraBridge/sdk/python
+	        --builtin)
+	set_tests_properties(bridge-antonia2 PROPERTIES
+	    TIMEOUT 60
+	    SKIP_RETURN_CODE 77
+	    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1;SDL_VIDEODRIVER=dummy;ALTIRRA_DISPLAY_BACKEND=sdlrenderer")
+endif()
