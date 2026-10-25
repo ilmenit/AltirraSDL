@@ -754,8 +754,10 @@ mapping table.
 Push one keystroke per character of `text` into POKEY's queue,
 unlike `KEY` this takes a whole string in one call, and covers full
 punctuation (`!@#$%^&*()"':` etc.), not just the small named-key set
-`KEY` documents above. `text` is the remainder of the line, so it may
-contain spaces (same tokenisation caveat as `MOUNT`/`BOOT`).
+`KEY` documents above. Quote `text` as a single token to preserve all
+spaces and punctuation; escape double quotes and backslashes inside a
+double-quoted token. For example, `TYPE "PRINT \"HELLO\""` queues
+`PRINT "HELLO"` exactly. The Python SDK quotes text automatically.
 
 Uses the same character-to-KBCODE table as Windows Altirra's "paste
 text as keystrokes" feature, ported to `source/input/

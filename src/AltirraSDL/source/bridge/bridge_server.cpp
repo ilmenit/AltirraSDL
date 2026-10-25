@@ -378,8 +378,10 @@ void CancelAsync(ClientContext& ctx, ATSimulator& sim) {
 	g_asyncOwner = nullptr;
 }
 
-bool IsContextGated(const ClientContext& ctx) {
-	return ctx.framesRemaining > 0 || IsTimingGateActive()
+bool IsContextGated(const ClientContext& /*ctx*/) {
+	// Every frontend shares one simulator timeline. Queue commands behind
+	// any run so its owner observes a paused, exact frame boundary.
+	return IsFrameGateActive() || IsTimingGateActive()
 		|| IsBareBootGateActive();
 }
 
@@ -390,6 +392,17 @@ std::string Execute(const std::vector<std::string>& tokens, ATSimulator& sim,
 		return JsonError("empty command");
 
 	const std::string& verb = tokens[0];
+
+	// Direct callers must not overlap independent runs on the shared
+	// simulator timeline. Socket and MCP dispatch normally queue these.
+	if (verb == "FRAME" || verb == "CYCLES" || verb == "SCANLINES" || verb == "BOOT_BARE") {
+		for (const ClientContext *other : g_contexts) {
+			if (other != &ctx && other->framesRemaining)
+				return JsonError("another client is advancing the simulator");
+		}
+		if (IsAsyncBusy() && g_asyncOwner != &ctx)
+			return JsonError("another client is advancing the simulator");
+	}
 
 	// Input commands act on this context's InputState.
 	AttachContext(ctx, sim);

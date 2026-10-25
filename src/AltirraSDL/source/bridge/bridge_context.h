@@ -35,6 +35,8 @@ struct InputState {
 	bool    fireDown[4]  = {};
 	uint8_t dirNibble[4] = {};     // 4-bit per port: bit0=up, 1=down, 2=left, 3=right; 1=pressed
 	uint64_t rawKeysDown = 0;      // bit n = matrix key n held via KEYRAW
+	uint64_t rawShiftKeys = 0;     // matrix keys that requested SHIFT
+	uint64_t rawCtrlKeys = 0;      // matrix keys that requested CONTROL
 	bool    rawShift     = false;  // SHIFT held via KEYRAW
 	bool    rawCtrl      = false;  // CONTROL held via KEYRAW
 };
@@ -77,7 +79,7 @@ std::string Execute(const std::vector<std::string>& tokens, ATSimulator& sim,
 	ClientContext& ctx);
 
 // True if any asynchronous gate that blocks further commands is armed:
-// this context's frame gate, a CYCLES/SCANLINES step, or a BOOT_BARE.
+// any context's frame gate, a CYCLES/SCANLINES step, or a BOOT_BARE.
 bool IsContextGated(const ClientContext& ctx);
 
 // CYCLES / SCANLINES steps and BOOT_BARE complete asynchronously and are

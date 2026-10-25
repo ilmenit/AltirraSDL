@@ -86,41 +86,43 @@ def _run_wait_text(bridge: "AltirraBridge", text: str, timeout_frames: int,
     """Poll SCREEN_TEXT every `poll_frames` frames until `text`
     appears as a substring of some line, or `timeout_frames` elapses.
     """
-    elapsed = 0
-    lines: List[str] = []
-    while elapsed < timeout_frames:
-        try:
-            bridge.frame(poll_frames)
-            lines = bridge.screen_text()
-        except BridgeError as e:
-            # A real Bridge error (bad frame count, disconnected, ...)
-            # is not "not yet visible" -- surface it immediately rather
-            # than retrying it until timeout_frames is exhausted.
-            return {"ok": False, "error": str(e)}
-        if any(text in line for line in lines):
-            return {"ok": True, "frames_waited": elapsed}
-        elapsed += poll_frames
-    return {"ok": False, "error": f"timeout waiting for {text!r}", "last_screen": lines}
+    return _run_wait(bridge, timeout_frames, poll_frames, text=text)
 
 
 def _run_wait_expr(bridge: "AltirraBridge", expr: str, timeout_frames: int,
                     poll_frames: int = 1) -> dict:
-    """Poll EVAL every `poll_frames` frames until `expr` is non-zero,
-    or `timeout_frames` elapses. `poll_frames` defaults lower than
-    `wait_text`'s (1 vs 10): an EVAL round trip is cheaper than a
-    SCREEN_TEXT one, and memory-flag conditions can flip within a
-    single frame.
-    """
+    return _run_wait(bridge, timeout_frames, poll_frames, expr=expr)
+
+
+def _run_wait(bridge: "AltirraBridge", timeout_frames: int, poll_frames: int,
+              *, text: Optional[str] = None, expr: Optional[str] = None) -> dict:
+    if type(timeout_frames) is not int or timeout_frames < 0:
+        raise BridgeError("macro: timeout_frames must be a non-negative integer")
+    if type(poll_frames) is not int or poll_frames <= 0:
+        raise BridgeError("macro: poll_frames must be a positive integer")
+
     elapsed = 0
-    while elapsed < timeout_frames:
+    lines: List[str] = []
+    while True:
         try:
-            bridge.frame(poll_frames)
-            if bridge.eval_expr(expr):
+            if text is not None:
+                lines = bridge.screen_text()
+                matched = any(text in line for line in lines)
+            else:
+                matched = bool(bridge.eval_expr(expr))
+            if matched:
                 return {"ok": True, "frames_waited": elapsed}
+            if elapsed >= timeout_frames:
+                break
+            count = min(poll_frames, timeout_frames - elapsed)
+            bridge.frame(count)
+            elapsed += count
         except BridgeError as e:
             return {"ok": False, "error": str(e)}
-        elapsed += poll_frames
-    return {"ok": False, "error": f"timeout waiting for {expr!r}"}
+    result = {"ok": False, "error": f"timeout waiting for {text if text is not None else expr!r}"}
+    if text is not None:
+        result["last_screen"] = lines
+    return result
 
 
 def _run_step(bridge: "AltirraBridge", step: Any) -> dict:
@@ -173,7 +175,7 @@ def run_macro(bridge: "AltirraBridge", steps: List[Dict[str, Any]],
     for step in steps:
         try:
             result = _run_step(bridge, step)
-        except BridgeError as e:
+        except (BridgeError, TypeError) as e:
             result = {"ok": False, "error": str(e)}
         kind = next(iter(step), "?") if isinstance(step, dict) else "?"
         results.append({"step": kind, **result})

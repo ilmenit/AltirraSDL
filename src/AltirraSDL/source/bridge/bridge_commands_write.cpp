@@ -755,12 +755,35 @@ bool IsRawKeyHeldByOther(int key) {
 	return false;
 }
 
-bool IsAnyRawInputHeldByOther() {
-	for (const InputState *s : g_inputs) {
-		if (s != g_pWrite && (s->rawKeysDown || s->rawShift || s->rawCtrl))
-			return true;
+// Release only the selected client's keys, preserving keys and modifiers
+// held by other command frontends (including on explicit KEYRAW all up).
+void ReleaseRawInput(ATSimulator& sim, bool immediate) {
+	ATPokeyEmulator& pokey = sim.GetPokey();
+	bool otherInput = false, otherShift = false, otherCtrl = false;
+	for (const InputState *state : g_inputs) {
+		if (state == g_pWrite)
+			continue;
+		otherInput = otherInput || state->rawKeysDown || state->rawShift || state->rawCtrl;
+		otherShift = otherShift || state->rawShift;
+		otherCtrl = otherCtrl || state->rawCtrl;
 	}
-	return false;
+	if (!otherInput) {
+		pokey.ReleaseAllRawKeys(immediate);
+	} else {
+		for (int key = 0; key < 64; ++key) {
+			if ((g_pWrite->rawKeysDown & (uint64_t(1) << key)) && !IsRawKeyHeldByOther(key))
+				pokey.ReleaseRawKey((uint8_t)key, false);
+		}
+	}
+	if (g_pWrite->rawShift && !otherShift)
+		pokey.SetShiftKeyState(false, false);
+	if (g_pWrite->rawCtrl && !otherCtrl)
+		pokey.SetControlKeyState(false);
+	g_pWrite->rawKeysDown = 0;
+	g_pWrite->rawShiftKeys = 0;
+	g_pWrite->rawCtrlKeys = 0;
+	g_pWrite->rawShift = false;
+	g_pWrite->rawCtrl = false;
 }
 
 // Map a direction string to the 4-bit nibble encoding. Accepts the
@@ -1273,6 +1296,8 @@ void InitWriteCommands(ATSimulator& sim) {
 		g_pWrite->fireDown[i]  = false;
 	}
 	g_pWrite->rawKeysDown = 0;
+	g_pWrite->rawShiftKeys = 0;
+	g_pWrite->rawCtrlKeys = 0;
 	g_pWrite->rawShift = false;
 	g_pWrite->rawCtrl = false;
 }
@@ -1301,32 +1326,7 @@ void CleanupInjectedInput(ATSimulator& sim) {
 	ApplyConsoleSwitches(sim);
 	RefreshJoystickInput(sim);
 
-	// With no other client holding raw keys this is the original
-	// release-everything path; otherwise release only this client's
-	// keys so the other client's held keys survive.
-	ATPokeyEmulator& pokey = sim.GetPokey();
-	if (!IsAnyRawInputHeldByOther()) {
-		pokey.ReleaseAllRawKeys(true);
-	} else {
-		for (int key = 0; key < 64; ++key) {
-			if ((g_pWrite->rawKeysDown & ((uint64_t)1 << key)) && !IsRawKeyHeldByOther(key))
-				pokey.ReleaseRawKey((uint8_t)key, false);
-		}
-		bool otherShift = false, otherCtrl = false;
-		for (const InputState *s : g_inputs) {
-			if (s != g_pWrite) {
-				otherShift = otherShift || s->rawShift;
-				otherCtrl = otherCtrl || s->rawCtrl;
-			}
-		}
-		if (g_pWrite->rawShift && !otherShift)
-			pokey.SetShiftKeyState(false, false);
-		if (g_pWrite->rawCtrl && !otherCtrl)
-			pokey.SetControlKeyState(false);
-	}
-	g_pWrite->rawKeysDown = 0;
-	g_pWrite->rawShift = false;
-	g_pWrite->rawCtrl = false;
+	ReleaseRawInput(sim, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1624,17 +1624,7 @@ std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	if (lower == "all") {
 		if (down)
 			return JsonError("KEYRAW: 'all' can only be released");
-		pokey.ReleaseAllRawKeys(false);
-		pokey.SetShiftKeyState(false, false);
-		pokey.SetControlKeyState(false);
-		for (InputState *s : g_inputs) {
-			s->rawKeysDown = 0;
-			s->rawShift = false;
-			s->rawCtrl = false;
-		}
-		g_pWrite->rawKeysDown = 0;
-		g_pWrite->rawShift = false;
-		g_pWrite->rawCtrl = false;
+		ReleaseRawInput(sim, false);
 		return JsonOk("\"name\":\"all\",\"down\":false");
 	}
 
@@ -1647,21 +1637,30 @@ std::string CmdKeyRaw(ATSimulator& sim, const std::vector<std::string>& tokens) 
 	if (kb & 0x80) ctrl  = true;
 	kb &= 0x3F;
 
+	const uint64_t bit = uint64_t(1) << kb;
 	if (down) {
+		g_pWrite->rawKeysDown |= bit;
+		if (shift) g_pWrite->rawShiftKeys |= bit;
+		if (ctrl) g_pWrite->rawCtrlKeys |= bit;
 		if (shift) pokey.SetShiftKeyState(true, false);
-		if (ctrl)  pokey.SetControlKeyState(true);
+		if (ctrl) pokey.SetControlKeyState(true);
 		pokey.PushRawKey(kb, false);
-		g_pWrite->rawKeysDown |= (uint64_t)1 << kb;
-		if (shift) g_pWrite->rawShift = true;
-		if (ctrl)  g_pWrite->rawCtrl = true;
 	} else {
-		pokey.ReleaseRawKey(kb, false);
-		if (shift) pokey.SetShiftKeyState(false, false);
-		if (ctrl)  pokey.SetControlKeyState(false);
-		g_pWrite->rawKeysDown &= ~((uint64_t)1 << kb);
-		if (shift) g_pWrite->rawShift = false;
-		if (ctrl)  g_pWrite->rawCtrl = false;
+		g_pWrite->rawKeysDown &= ~bit;
+		g_pWrite->rawShiftKeys &= ~bit;
+		g_pWrite->rawCtrlKeys &= ~bit;
+		if (!IsRawKeyHeldByOther(kb))
+			pokey.ReleaseRawKey(kb, false);
 	}
+	g_pWrite->rawShift = g_pWrite->rawShiftKeys != 0;
+	g_pWrite->rawCtrl = g_pWrite->rawCtrlKeys != 0;
+	bool anyShift = g_pWrite->rawShift, anyCtrl = g_pWrite->rawCtrl;
+	for (const InputState *state : g_inputs) {
+		anyShift = anyShift || state->rawShift;
+		anyCtrl = anyCtrl || state->rawCtrl;
+	}
+	pokey.SetShiftKeyState(anyShift, false);
+	pokey.SetControlKeyState(anyCtrl);
 
 	std::string payload;
 	AddString(payload, "name", tokens[1]);
@@ -1717,8 +1716,15 @@ std::string CmdType(ATSimulator& sim, const std::vector<std::string>& tokens) {
 	std::string skipped = "[";
 	bool firstSkipped = true;
 
-	for (wchar_t wc : wtext) {
-		const uint32 c32 = (uint32)(uint16_t)wc;
+	for (size_t i = 0; i < wtext.size(); ++i) {
+		const size_t start = i;
+		uint32 c32 = (uint32)wtext[i];
+		if constexpr (sizeof(wchar_t) == 2) {
+			if (c32 >= 0xD800 && c32 <= 0xDBFF && i + 1 < wtext.size()
+				&& wtext[i + 1] >= 0xDC00 && wtext[i + 1] <= 0xDFFF) {
+				c32 = 0x10000 + ((c32 - 0xD800) << 10) + (wtext[++i] - 0xDC00);
+			}
+		}
 		uint8 kbcode = 0;
 
 		if (ATUIGetDefaultScanCodeForCharacter(c32, kbcode)) {
@@ -1730,7 +1736,7 @@ std::string CmdType(ATSimulator& sim, const std::vector<std::string>& tokens) {
 			if (!firstSkipped) skipped += ',';
 			firstSkipped = false;
 			skipped += '"';
-			skipped += JsonEscape(std::string(VDTextWToU8(&wc, 1).c_str()));
+			skipped += JsonEscape(std::string(VDTextWToU8(wtext.data() + start, (int)(i - start + 1)).c_str()));
 			skipped += '"';
 		}
 	}

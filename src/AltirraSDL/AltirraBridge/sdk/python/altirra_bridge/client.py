@@ -602,7 +602,7 @@ class AltirraBridge:
         """
         if "\n" in text or "\r" in text:
             raise BridgeError("type: text must not contain a newline")
-        return self._cmd_ok(f"TYPE {text}")
+        return self._cmd_ok("TYPE " + _quote_token(text))
 
     def key_raw(self, name: str, down: bool = True,
                 shift: bool = False, ctrl: bool = False) -> dict:
