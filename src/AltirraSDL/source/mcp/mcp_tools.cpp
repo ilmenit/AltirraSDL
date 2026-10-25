@@ -1615,7 +1615,7 @@ const ToolDef kTools[] = {
 		"{\"type\":\"object\",\"properties\":{"
 			"\"path\":{\"type\":\"string\",\"description\":\"Write the pixels to this file instead of returning them.\"}"
 		"},\"additionalProperties\":false}",
-		true, false, true, ToolRawScreen },
+		false, true, true, ToolRawScreen },
 
 	{ "hold_key", "Hold key",
 		"Hold an Atari key down in the keyboard matrix, or release it, the way "
@@ -1766,6 +1766,9 @@ bool IsWriteCall(const std::string& name, const VDJSONValueRef& args) {
 
 	if (name == "symbols")
 		return action == "load" || action == "unload" || action == "clear_all";
+
+	if (name == "raw_screen")
+		return !ValueToU8(Member(args, "path")).empty();
 
 	if (name == "configure")
 		return !Member(args, "value").IsNull();

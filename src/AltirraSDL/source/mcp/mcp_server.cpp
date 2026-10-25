@@ -827,7 +827,40 @@ HttpResponse HeaderMismatch(const std::string& idJson, const std::string& messag
 	return JsonResponse(400, RpcError(idJson, kErrHeaderMismatch, "Header mismatch: " + message));
 }
 
+// VDJSONReader descends recursively and has no nesting guard. A short
+// request can otherwise exhaust the main thread stack before validation.
+bool HasSafeJsonNesting(const std::string& json) {
+	unsigned depth = 0;
+	bool quoted = false;
+	bool escaped = false;
+	for (char c : json) {
+		if (quoted) {
+			if (escaped)
+				escaped = false;
+			else if (c == '\\')
+				escaped = true;
+			else if (c == '"')
+				quoted = false;
+		} else if (c == '"') {
+			quoted = true;
+		} else if (c == '{' || c == '[') {
+			if (++depth > 64)
+				return false;
+		} else if (c == '}' || c == ']') {
+			if (!depth)
+				return false;
+			--depth;
+		}
+	}
+	return true; // The JSON reader checks syntax, pairing and string termination.
+}
+
 bool HandleRpc(uint32_t connId, const HttpRequest& req, HttpResponse& out) {
+	if (!HasSafeJsonNesting(req.body)) {
+		out = JsonResponse(400, RpcError("null", kErrParse, "JSON nesting exceeds limit or is malformed"));
+		return true;
+	}
+
 	VDJSONDocument doc;
 	VDJSONReader reader;
 	if (!reader.Parse(req.body.data(), req.body.size(), doc)) {
