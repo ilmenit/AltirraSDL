@@ -157,6 +157,41 @@ int main() {
 			fs->ReadFile(key, bytes);
 			Check(bytes.size() == content.size() && !memcmp(bytes.data(), content.data(), bytes.size()), "SpartaDOS file sector chain");
 		}
+		// The simulator passes a string's buffer as imagePath and the same
+		// string as imagePathOut. Reporting the basename before loading used
+		// to corrupt this input and silently disable disk write-back.
+		for (const auto format : {kATDiskImageFormat_ATR, kATDiskImageFormat_XFD}) {
+			const auto diskPath = VDMakePath(VDStringSpanW(path),
+				VDStringSpanW(format == kATDiskImageFormat_ATR ? L"disk.atr" : L"disk.xfd"));
+			vdrefptr<IATDiskImage> created;
+			ATCreateDiskImage(720, 3, 128, ~created);
+			created->Save(diskPath.c_str(), format);
+			created = nullptr;
+			VDStringW imageName(diskPath);
+			ATImageLoadContext ctx;
+			ctx.mLoadType = kATImageType_Disk;
+			vdrefptr<IATImage> loaded;
+			bool update = false;
+			Check(ATImageLoadAuto(diskPath.c_str(), imageName.c_str(),
+				ATParseVFSPath(diskPath.c_str()), &ctx, &imageName,
+				nullptr, &update, ~loaded), "Aliased disk image load failed");
+			Check(loaded && loaded->GetImageType() == kATImageType_Disk,
+				"Loaded image is not a disk");
+			auto *disk = static_cast<IATDiskImage *>(loaded.get());
+			Check(update && disk->IsUpdatable() && disk->GetImageFormat() == format,
+				"Aliased image name disabled disk write-back");
+			Check(imageName == VDFileSplitPath(diskPath.c_str()), "Disk basename not reported");
+			uint8 written[128];
+			memset(written, 0xA5, sizeof written);
+			Check(disk->WriteVirtualSector(3, written, sizeof written), "Disk sector write failed");
+			disk->Flush();
+			loaded = nullptr;
+			vdrefptr<IATDiskImage> reloaded;
+			ATLoadDiskImage(diskPath.c_str(), ~reloaded);
+			uint8 actual[128] = {};
+			Check(reloaded->ReadVirtualSector(3, actual, sizeof actual) == sizeof actual &&
+				!memcmp(actual, written, sizeof actual), "Disk flush did not reach the image file");
+		}
 		puts("Passed test22 Unicode, URL, persistence and geometry regressions");
 		return 0;
 	} catch (const VDException& e) {
