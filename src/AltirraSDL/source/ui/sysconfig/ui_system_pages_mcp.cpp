@@ -2,8 +2,7 @@
 //
 //	SDL3-only page (no Windows equivalent), added on explicit request.
 //	Settings are machine-global and owned by app/mcp_server_settings.cpp.
-//	The status line and access-token controls were approved with the MCP
-//	server design (docs/mcp-server-design.md, decisions 2 and 3).
+//	See docs/mcp-server-design.md for configuration and protocol details.
 
 #include <stdafx.h>
 #include <SDL3/SDL.h>

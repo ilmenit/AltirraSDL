@@ -168,7 +168,9 @@ static const TreeEntry kTreeEntries[] = {
 	{ "Display Effects", kCat_Display2, 1 },
 	{ "Settings",       kCat_SettingsCfg, 1 },
 	{ "Online Play",    kCat_OnlinePlay, 1 },
+#ifdef ALTIRRA_MCP_ENABLED
 	{ "MCP Server",     kCat_MCPServer, 1 },
+#endif
 };
 static const int kNumTreeEntries = sizeof(kTreeEntries) / sizeof(kTreeEntries[0]);
 
