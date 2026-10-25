@@ -91,6 +91,11 @@ if(TARGET AltirraSDL AND ALTIRRA_BRIDGE)
 endif()
 
 if(TARGET AltirraBridgeServer AND ALTIRRA_MCP)
+    add_test(NAME bridge-macro
+        COMMAND ${Python3_EXECUTABLE} -m unittest discover
+            -s ${CMAKE_SOURCE_DIR}/tests -p test_bridge_macro.py)
+    set_tests_properties(bridge-macro PROPERTIES
+        TIMEOUT 30 ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
     foreach(mcp_test IN ITEMS mcp input)
         add_test(NAME bridge-${mcp_test}
             COMMAND ${Python3_EXECUTABLE}
