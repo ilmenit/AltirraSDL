@@ -76,7 +76,7 @@ endif()
 if(TARGET AltirraSDL AND ALTIRRA_BRIDGE)
 	find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-	# Exercise the built-in CPU option with no custom-device descriptor.
+	# Exercise the built-in device with no custom-device descriptor.
 	# SDL's dummy video + software renderer keep this test display-independent.
 	add_test(NAME bridge-antonia2
 	    COMMAND ${Python3_EXECUTABLE}

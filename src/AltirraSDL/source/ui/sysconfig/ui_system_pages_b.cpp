@@ -104,6 +104,8 @@ static const DeviceCatalogEntry kCartridgeDevices[] = {
 };
 
 static const DeviceCatalogEntry kInternalDevices[] = {
+	// Fork extension: built-in arithmetic block from the upstream sample.
+	{ "antonia2-muldiv", "Antonia 2 MULDIV block", "Antonia 2 multiply/divide registers. Requires a 65C816 CPU; emulates the arithmetic block only." },
 	// Fork extensions: user-requested Atari800 hardware coverage.
 	{ "af80", "Austin Franklin 80 column board", "80x25 RGBI display board and right-slot firmware cartridge for the Atari 800." },
 	{ "mosaic", "Mosaic 64K Select", "Atari 400/800 RAM expansion with 4K banks at $C000-$CFFF. Configure the base machine for 48K RAM." },

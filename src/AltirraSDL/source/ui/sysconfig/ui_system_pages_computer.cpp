@@ -12,7 +12,6 @@
 
 #include "ui_main.h"
 #include "ui_system_internal.h"
-#include "antonia2_settings.h"
 #include "simulator.h"
 #include "mmu.h"
 
@@ -499,10 +498,6 @@ void RenderCPUCategory(ATSimulator &sim) {
 	}
 
 	ImGui::SeparatorText("Additional options");
-	bool antonia2 = ATUIGetAntonia2Enabled();
-	if (ImGui::Checkbox("Antonia2 MULDIV Block", &antonia2))
-		ATUISetAntonia2Enabled(antonia2);
-	ImGui::SetItemTooltip("Enable the Antonia 2 unsigned multiply/divide registers at $FF:F008-$FF:F00F. Requires a 65C816 CPU.");
 
 	bool illegals = sim.GetCPU().AreIllegalInsnsEnabled();
 	if (ImGui::Checkbox("Enable illegal instructions", &illegals))

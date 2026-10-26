@@ -36,7 +36,7 @@ def main() -> None:
                 '[User\\AltirraSDL\\Profiles]\n'
                 '"Defaults inited" = 1\n"Current profile" = 0\n'
                 '[User\\AltirraSDL\\Profiles\\00000000]\n'
-                '"CPU: Antonia2 MULDIV Block" = 1\n')
+                '"Devices" = "[{\\"tag\\":\\"antonia2-muldiv\\"}]"\n')
         proc = subprocess.Popen(
             [str(server), "--bridge=tcp:127.0.0.1:0",
              "--cpu", "65c816", "--highbanks", "63"],
