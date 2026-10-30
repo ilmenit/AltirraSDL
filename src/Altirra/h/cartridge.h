@@ -163,8 +163,8 @@ protected:
 	static bool WriteByte_Corina1M(void *thisptr0, uint32 address, uint8 value);
 	static bool WriteByte_Corina512K(void *thisptr0, uint32 address, uint8 value);
 
-	static sint32 ReadByte_TelelinkII(void *thisptr0, uint32 address);
-	static bool WriteByte_TelelinkII(void *thisptr0, uint32 address, uint8 value);
+	sint32 ReadByte_TelelinkII(uint32 address) const;
+	bool WriteByte_TelelinkII(uint32 address, uint8 value);
 
 	static sint32 ReadByte_Pronto(void *thisptr0, uint32 address);
 	static bool WriteByte_Pronto(void *thisptr0, uint32 address, uint8 value);

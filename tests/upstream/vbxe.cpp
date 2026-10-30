@@ -3,6 +3,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <vector>
 #include "vbxe.h"
@@ -16,6 +17,8 @@
 #include "gtiarenderer.h"
 #include "irqcontroller.h"
 #include "artifacting.h"
+#include "memorymanager.h"
+#include <at/atcore/address.h>
 
 static void Check(bool ok, const char *message) {
 	if (!ok) {
@@ -70,6 +73,85 @@ static vdrefptr<ATSaveStateVbxe> RoundTripState(IATObjectState *state) {
 extern void ATCreateDeviceVBXE(const ATPropertySet&, IATDevice **);
 
 struct ATVBXERegressionTests {
+	static void TestMEMAC() {
+		auto mem = std::make_unique<ATMemoryManager>();
+		mem->Init();
+		std::vector<uint8> ram(65536, 0x31), local(0x80000, 0);
+		auto *base = mem->CreateLayer(0, ram.data(), 0, 256, false);
+		mem->EnableLayer(base, true);
+		ATScheduler scheduler;
+		scheduler.RebaseTick64(0);
+		ATVBXEEmulator v;
+		v.SetMemory(local.data());
+		v.mpMemMan = mem.get();
+		v.mpScheduler = &scheduler;
+		v.InitMemoryMaps();
+		v.mMemAcBankA = 0;
+		v.mMemAcControl = 0;
+		v.mMemAcBankB = 0xC3;
+		v.UpdateMemoryMaps();
+		local[0xC123] = 0x57;
+		Check(mem->CPUDebugReadByte(0x4123) == 0x57
+			&& mem->DebugAnticReadByte(0x4123) == 0x57,
+			"MEMAC B debugger mapping changed");
+		Check(v.mMemAcCycles == 0, "Debugger reads consumed MEMAC cycles");
+		Check(mem->mpCPUReadAddressPageMap[0x41] + 0x4123
+			== kATAddressSpace_VBXE + 0xC123, "MEMAC B debugger address space mismatch");
+		Check(mem->CPUReadByte(0x4123) == 0x57, "MEMAC B CPU mapping changed");
+		Check(v.mMemAcCycles == 1, "First MEMAC access was not charged");
+		mem->CPUWriteByte(0x4123, 0x68);
+		Check(local[0xC123] == 0x68 && ram[0x4123] == 0x31,
+			"MEMAC B write reached underlying RAM");
+		Check(v.mMemAcCycles == 1, "Same-tick MEMAC accesses charged twice");
+		ATSCHEDULER_ADVANCE(&scheduler);
+		Check(mem->AnticReadByte(0x4123) == 0x68 && v.mMemAcCycles == 2,
+			"ANTIC MEMAC access was not charged");
+		// A overrides B, and changing only a bank must refresh debugger mapping.
+		for (uint8 bank : {0x85, 0x86}) {
+			v.mMemAcControl = 0x4C;
+			v.mMemAcBankA = bank;
+			v.UpdateMemoryMaps();
+			const uint32 addr = ((bank & 0x7F) << 12) + 0x123;
+			local[addr] = bank;
+			Check(mem->CPUDebugReadByte(0x4123) == bank,
+				"MEMAC A did not override B or switch banks");
+			Check(mem->mpCPUReadAddressPageMap[0x41] + 0x4123
+				== kATAddressSpace_VBXE + addr, "MEMAC A debugger address space mismatch");
+		}
+		// 5200's fixed A window wraps at the end of local RAM.
+		v.mMemAcBankA = 0x7F;
+		v.Set5200Mode(true);
+		local[0x7FFFF] = 0x92;
+		local[0] = 0xA3;
+		Check(mem->CPUDebugReadByte(0xE7FF) == 0x92,
+			"5200 MEMAC A end address mismatch");
+		v.mMemAcBankA = 0x80;
+		v.UpdateMemoryMaps();
+		Check(mem->CPUDebugReadByte(0xD800) == 0xA3,
+			"5200 MEMAC A did not wrap local RAM");
+		Check(mem->mpCPUReadAddressPageMap[0xD8] + 0xD800
+			== kATAddressSpace_VBXE, "5200 MEMAC debugger address did not wrap");
+		v.Set5200Mode(false);
+		v.mMemAcBankA = v.mMemAcBankB = v.mMemAcControl = 0;
+		v.UpdateMemoryMaps();
+		Check(mem->CPUReadByte(0x4123) == 0x31,
+			"Disabling MEMAC did not restore base RAM");
+		uint8 pixels[256] {};
+		v.BeginScanline(1, nullptr, pixels, pixels, false);
+		Check(v.mMemAcCycles == 0 && v.mBlitCyclesLeft == 912 - 2,
+			"MEMAC cycles were not deducted from blitter scanline budget");
+		// Reset must allow another first access even within the same tick.
+		v.mMemAcCycles = 10;
+		v.mMemAcLastCycle = scheduler.GetTick64();
+		v.WarmReset();
+		v.mMemAcBankB = 0x83;
+		v.UpdateMemoryMaps();
+		mem->CPUReadByte(0x4123);
+		Check(v.mMemAcCycles == 1, "Reset suppressed the first MEMAC access");
+		v.Shutdown();
+		mem->DeleteLayer(base);
+	}
+
 	static void TestRegisterDecoding() {
 		ATVBXEEmulator v;
 		for (uint32 version : {120U, 124U, 126U, 127U}) {
@@ -189,6 +271,7 @@ struct ATVBXERegressionTests {
 	}
 
 	static void Run() {
+		TestMEMAC();
 		TestRegisterDecoding();
 		TestTiming();
 		// Device settings must enforce the restriction even when loaded
@@ -453,11 +536,21 @@ struct ATVBXERegressionTests {
 		v.mOvMode = ATVBXEOverlayMode::HRLR;
 		v.mBlitCollisionMask = 0xFF;
 		v.mBlitActiveCollisionMask = 0;
+		v.mMemAcCycles = 17;
+		v.mMemAcLastCycle = scheduler.GetTick64();
 		auto textureState = RoundTripState(v.SaveState());
+		v.mMemAcCycles = 99;
+		v.mMemAcLastCycle = ~uint64(0);
 		v.WriteControl(0x4B, 0);
 		v.mbBlitRCMode = false;
 		v.mBlitRCSrcX = v.mBlitRCSrcY = 0;
 		v.LoadState(textureState);
+		Check(v.mMemAcCycles == 17, "Snapshot lost pending MEMAC contention");
+		v.AllocateMemAcCycle();
+		Check(v.mMemAcCycles == 17, "Snapshot charged the same MEMAC tick twice");
+		ATSCHEDULER_ADVANCE(&scheduler);
+		v.AllocateMemAcCycle();
+		Check(v.mMemAcCycles == 18, "Restored MEMAC stopped counting new ticks");
 		Check(v.mOvMode == ATVBXEOverlayMode::HRLR, "Snapshot lost HRLR overlay mode");
 		Check(v.mFeatureControl == 0x99 && v.mPfPaletteIndexInit == 1
 			&& v.mbExtendedColor1 && v.mbExtendedColor0
@@ -526,6 +619,9 @@ struct ATVBXERegressionTests {
 			&& !legacyState->mbIntBlitRaycast && !legacyState->mbIntBlitContainersPending,
 			"Legacy serialized snapshot did not default absent FX1.27 fields");
 		v.LoadState(legacyState);
+		Check(v.mMemAcCycles == 0, "Legacy snapshot inherited MEMAC contention");
+		v.AllocateMemAcCycle();
+		Check(v.mMemAcCycles == 1, "Legacy snapshot suppressed first MEMAC access");
 		Check(v.mbExtendedColor1 && !v.mbExtendedColor0
 			&& v.mFeatureControl == 0x10 && v.mPfPaletteIndexInit == 0,
 			"Legacy snapshot inherited FX1.27 feature bits");

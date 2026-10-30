@@ -71,6 +71,10 @@ public:
 	uint8 mIntMapHeight = 0;
 	uint8 mIntMapRow = 0;
 
+	// MERGE NOTE: test27 MEMAC contention must survive snapshots/rollback.
+	uint32 mIntMemacCycles = 0;
+	bool mbIntMemacAccessThisCycle = false;
+
 	uint32 mIntBlitListAddr = 0;			// next blit control block fetch address
 	uint32 mIntBlitCyclesPending = 0;		// number of cycles blitter is behind from current cycle
 	uint16 mIntBlitHeightLeft = 0;			// number of rows remaining for blitter to run, or 0 if next blit needs to be read in

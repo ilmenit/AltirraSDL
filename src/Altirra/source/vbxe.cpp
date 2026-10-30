@@ -16,6 +16,7 @@
 
 #include <stdafx.h>
 #include <vd2/system/binary.h>
+#include <at/atcore/address.h>
 #include <at/atcore/consoleoutput.h>
 #include <at/atcore/deviceimpl.h>
 #include <at/atcore/devicesnapshot.h>
@@ -327,6 +328,9 @@ void ATVBXEEmulator::WarmReset() {
 	// Nuke current XDL processing.
 	mOvWidth = kOvWidth_Normal;
 	mOvMode = ATVBXEOverlayMode::Disabled;
+
+	mMemAcCycles = 0;
+	mMemAcLastCycle = ~uint64(0);
 
 	UpdateMemoryMaps();
 }
@@ -1181,6 +1185,13 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 	mAttrHeight = (vstate.mIntMapHeight & 0x1F) + 1;
 	mAttrRow = vstate.mIntMapRow & 0x1F;
 
+	// MERGE NOTE: restore contention independently of blitter busy state.
+	// Store the timestamp relative to the restored scheduler, including whether
+	// the current tick has already been charged. Old snapshots default to zero.
+	mMemAcCycles = vstate.mIntMemacCycles;
+	mMemAcLastCycle = mpScheduler->GetTick64()
+		- (vstate.mbIntMemacAccessThisCycle ? 0 : 1);
+
 	// restore blitter internal state
 	mBlitState = BlitState::Stopped;
 	mpScheduler->UnsetEvent(mpEventBlitterIrq);
@@ -1369,6 +1380,8 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 	state->mIntMapWidth = mAttrWidth - 1;
 	state->mIntMapHeight = mAttrHeight - 1;
 	state->mIntMapRow = mAttrRow;
+	state->mIntMemacCycles = mMemAcCycles;
+	state->mbIntMemacAccessThisCycle = mMemAcLastCycle == mpScheduler->GetTick64();
 
 	// save blitter internal state
 	if (mBlitState != BlitState::Stopped) {
@@ -1675,6 +1688,50 @@ bool ATVBXEEmulator::WriteControl(uint8 addrLo, uint8 value) {
 	return false;
 }
 
+void ATVBXEEmulator::AllocateMemAcCycle() {
+	// Normally MEMAC can only receive one memory request per cycle. However,
+	// the debugger can issue multiple cycles. It's convenient to not require
+	// the master clock to advance to issue multiple write or non-debug read
+	// cycles, so we check the clock and only allocate distinct cycles.
+	const uint64 t64 = mpScheduler->GetTick64();
+
+	if (mMemAcLastCycle != t64) {
+		mMemAcLastCycle = t64;
+
+		++mMemAcCycles;
+	}
+}
+
+uint8 ATVBXEEmulator::DebugReadMEMACA(uint32 addr) const {
+	return mpMemory[(mMemAcBankAOffset + addr) & 0x7FFFF];
+}
+
+uint8 ATVBXEEmulator::ReadMEMACA(uint32 addr) {
+	AllocateMemAcCycle();
+	return mpMemory[(mMemAcBankAOffset + addr) & 0x7FFFF];
+}
+
+bool ATVBXEEmulator::WriteMEMACA(uint32 addr, uint8 value) {
+	AllocateMemAcCycle();
+	mpMemory[(mMemAcBankAOffset + addr) & 0x7FFFF] = value;
+	return false;
+}
+
+uint8 ATVBXEEmulator::DebugReadMEMACB(uint32 addr) const {
+	return mpMemory[(mMemAcBankBOffset + addr) & 0x7FFFF];
+}
+
+uint8 ATVBXEEmulator::ReadMEMACB(uint32 addr) {
+	AllocateMemAcCycle();
+	return mpMemory[(mMemAcBankBOffset + addr) & 0x7FFFF];
+}
+
+bool ATVBXEEmulator::WriteMEMACB(uint32 addr, uint8 value) {
+	AllocateMemAcCycle();
+	mpMemory[(mMemAcBankBOffset + addr) & 0x7FFFF] = value;
+	return false;
+}
+
 bool ATVBXEEmulator::StaticGTIAWrite(void *thisptr, uint32 reg, uint8 value) {
 	if ((uint8)reg >= 0x80)
 		((ATVBXEEmulator *)thisptr)->WarmReset();
@@ -1686,13 +1743,26 @@ void ATVBXEEmulator::InitMemoryMaps() {
 	ShutdownMemoryMaps();
 
 	// Window A has priority over window B
-	uint8 *dummyRam = &mPriorityTables[0][0].mMapColor;
-	mpMemLayerMEMACA = mpMemMan->CreateLayer(kATMemoryPri_Extsel+1, dummyRam, 0xD8, 0x10, false);
+	ATMemoryHandlerTable handler;
+	handler.mbPassReads = false;
+	handler.mbPassAnticReads = false;
+	handler.mbPassWrites = false;
+	handler.mpThis = this;
+	handler.BindDebugReadHandler<&ATVBXEEmulator::DebugReadMEMACA>();
+	handler.BindReadHandler<&ATVBXEEmulator::ReadMEMACA>();
+	handler.BindWriteHandler<&ATVBXEEmulator::WriteMEMACA>();
+
+	mpMemLayerMEMACA = mpMemMan->CreateLayer(kATMemoryPri_Extsel+1, handler, 0xD8, 0x10);
 	mpMemMan->SetLayerName(mpMemLayerMEMACA, "VBXE MEMAC A");
-	mpMemLayerMEMACB = mpMemMan->CreateLayer(kATMemoryPri_Extsel, dummyRam, 0x40, 0x40, false);
+
+	handler.BindDebugReadHandler<&ATVBXEEmulator::DebugReadMEMACB>();
+	handler.BindReadHandler<&ATVBXEEmulator::ReadMEMACB>();
+	handler.BindWriteHandler<&ATVBXEEmulator::WriteMEMACB>();
+
+	mpMemLayerMEMACB = mpMemMan->CreateLayer(kATMemoryPri_Extsel, handler, 0x40, 0x40);
 	mpMemMan->SetLayerName(mpMemLayerMEMACB, "VBXE MEMAC B");
 
-	ATMemoryHandlerTable handler;
+	handler = {};
 	handler.mbPassReads			= true;
 	handler.mbPassAnticReads	= true;
 	handler.mbPassWrites		= true;
@@ -1748,14 +1818,23 @@ void ATVBXEEmulator::ShutdownMemoryMaps() {
 void ATVBXEEmulator::UpdateMemoryMaps() {
 	if (mb5200Mode) {
 		// Window A ($D800-E7FF)
-		uint8 *winA = mpMemory + (((uint32)mMemAcBankA << 12) & 0x7F000);
-		mpMemMan->SetLayerMemory(mpMemLayerMEMACA, winA, 0xD8, 0x10);
+		// MERGE NOTE: retain the old mapping's 512K wrap for debugger
+		// addresses as well as the callback's actual memory accesses.
+		const uint32 baseA = ((uint32)mMemAcBankA << 12) & 0x7F000;
+		mMemAcBankAOffset = baseA - 0xD800;
+
+		mpMemMan->SetLayerAddressSpace(mpMemLayerMEMACA, kATAddressSpace_VBXE + baseA);
 		mpMemMan->EnableLayer(mpMemLayerMEMACA, true);
 	} else {
 		// Window B ($4000-7FFF)
 		if (mMemAcBankB & 0xC0) {
-			uint8 *winB = mpMemory + ((mMemAcBankB & 0x1F) << 14);
-			mpMemMan->SetLayerMemory(mpMemLayerMEMACB, winB, 0x40, 0x40);
+			const uint32 baseB = (mMemAcBankB & 0x1F) << 14;
+
+			mMemAcBankBOffset = baseB - 0x4000;
+
+			// MERGE NOTE: the memory manager subtracts the window base when
+			// constructing debugger addresses. Pass the local bank base here.
+			mpMemMan->SetLayerAddressRangeAndSpace(mpMemLayerMEMACB, 0x40, 0x40, kATAddressSpace_VBXE + baseB);
 
 			// MEMAC-B access - CPU
 			mpMemMan->EnableLayer(mpMemLayerMEMACB, kATMemoryAccessMode_CPURead, (mMemAcBankB & 0x80) != 0);
@@ -1767,6 +1846,7 @@ void ATVBXEEmulator::UpdateMemoryMaps() {
 			mpMemMan->EnableLayer(mpMemLayerMEMACB, false);
 		}
 
+		// Window A
 		if ((mMemAcBankA & 0x80) && (mMemAcControl & 0x0C)) {
 			static const int kPageCount[4]={
 				16,		// 00 - 4K window
@@ -1789,8 +1869,9 @@ void ATVBXEEmulator::UpdateMemoryMaps() {
 				0x78000
 			};
 
-			uint8 *winA = mpMemory + (((uint32)mMemAcBankA << 12) & kAddrMask[mMemAcControl & 3]);
-			mpMemMan->SetLayerMemory(mpMemLayerMEMACA, winA, pageBase, numPages);
+			const uint32 baseA = ((uint32)mMemAcBankA << 12) & kAddrMask[mMemAcControl & 3];
+			mMemAcBankAOffset = baseA - ((uint32)pageBase << 8);
+			mpMemMan->SetLayerAddressRangeAndSpace(mpMemLayerMEMACA, pageBase, numPages, kATAddressSpace_VBXE + baseA);
 
 			// MEMAC-A access - CPU
 			mpMemMan->EnableLayer(mpMemLayerMEMACA, kATMemoryAccessMode_CPURead, (mMemAcControl & 0x08) != 0);
@@ -2089,14 +2170,20 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 	mDMACyclesOverlay = kOvCyclesPerMode[(int)mOvMode][mOvWidth];
 	mDMACyclesOverlayStart = kOvDMAStart[mOvWidth];
 
-	VDASSERT(mDMACyclesXDL + mDMACyclesOverlay + mDMACyclesAttrMap < 114 * 8);
+	static constexpr uint32 kLocalCyclesPerLine = 8 * 114;
+	VDASSERT(mDMACyclesXDL + mDMACyclesOverlay + mDMACyclesAttrMap + mMemAcCycles < kLocalCyclesPerLine);
 
 	// Credit remaining cycles to the blitter and run it now so we can figure out when the
 	// blitter ends.
-	mBlitCyclesLeft += (8 * 114) - (mDMACyclesXDL + mDMACyclesAttrMap + mDMACyclesOverlay);
 
-	if (mBlitCyclesLeft > 8*114)
-		mBlitCyclesLeft = 8*114;
+	mBlitCyclesLeft += kLocalCyclesPerLine - std::min<uint32>(kLocalCyclesPerLine, mDMACyclesXDL + mDMACyclesAttrMap + mDMACyclesOverlay + mMemAcCycles);
+	mMemAcCycles = 0;
+
+	// Safety clamp the blitter budget.
+	static constexpr sint32 kBlitCycleUpperLimit = kLocalCyclesPerLine;
+
+	if (mBlitCyclesLeft > kBlitCycleUpperLimit)
+		mBlitCyclesLeft = kBlitCycleUpperLimit;
 
 	RunBlitter();
 }
