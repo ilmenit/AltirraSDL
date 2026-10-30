@@ -52,6 +52,9 @@ _RULES: Sequence[tuple[str, Classification]] = (
     # --- Kernel ROM (always port; will need rebuild) ---------------------
     ("src/Kernel/**",                 Classification("kernel-rom",       "port",          20)),
 
+    ("src/ATBasic/*.vcxproj*",        Classification("build-meta",       "inform-only",   90)),
+    ("src/ATBasic/**",                 Classification("basic-rom",        "port",          20, "BASIC ROM and relocatable executable; rebuild with MADS")),
+
     # --- Cross-platform core emulation -----------------------------------
     ("src/ATCPU/**",                  Classification("core-cpu",         "port",          10)),
     ("src/ATEmulation/**",            Classification("core-emulation",   "port",          10)),

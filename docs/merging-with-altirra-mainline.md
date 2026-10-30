@@ -562,3 +562,44 @@ Test26 archive SHA-256:
 No constexpr declarations, aggregate construction, headers, intrinsic guards,
 new sources or native path assumptions are introduced by this upstream delta.
 The shared core fix applies to SDL, bridge, libretro and native Windows.
+
+
+## Test27 local merge notes
+
+The test26 → test27 source delta changes 13 existing files and adds four
+BASIC assembly inputs; no files are removed. Test27 archive SHA-256:
+`500a645f460bb4da5cfe91b77659ecf66baada39d6247b4d13ceead7357be019`.
+The test26 input matches the checksum recorded above.
+
+- Import the relocatable low-memory BASIC loader, shared configuration,
+  interpreter variables and loader includes. Preserve both Windows build
+  projects/makefiles and add `atbasicr.com` to the Additions disk manifest.
+  All three BASIC variants assemble with MADS. The standard cartridge ROM
+  remains byte-identical to the embedded ROM; no embedded ROM update is
+  needed. No kernel ROM source or version changes require a kernel rebuild.
+- Telelink II reads expose floating bus at $8000-$8FFF and EEPROM low
+  nibbles at $9000-$9FFF, with floating high nibbles. Debug reads have the
+  same decoding. Only even CCTL writes store EEPROM. The cartridge fixture
+  checks the entire read window with three bus values, ROM boundaries and
+  odd/even store behavior. Preserve other cartridge/rollback corrections.
+- MEMAC A/B use memory-handler layers to charge one local memory cycle per
+  distinct scheduler tick; debugger reads never charge cycles. Keep all
+  earlier VBXE renderer, priority, timing and snapshot corrections.
+- MERGE NOTE: MEMAC B's debugger address-space base must be `baseB`, not
+  `mMemAcBankBOffset`: the memory manager already subtracts the CPU window
+  base. Otherwise debugger addresses are $4000 too low. The 5200 A base
+  must retain the old 512K mask for debugger addresses as well as reads.
+  Both upstream defects fail the new production memory-manager fixture.
+- Initialize/reset the last-access timestamp to an unused value, so a first
+  access at tick zero or immediately after reset is counted. Snapshot the
+  pending contention count and whether the current tick has been charged,
+  including when the blitter is idle. Restore relative to the scheduler's
+  restored tick; old snapshots default to no pending contention. Validate
+  the count before loading. This preserves the fork's rollback behavior.
+
+The added `static constexpr` locals are in the ordinary runtime function
+`BeginScanline`, so do not require P2647. No aggregate `emplace_back` calls,
+new C++ sources, intrinsic changes or platform-dependent path assertions are
+introduced. Regression sources retain `stdafx.h` first and allocate the large
+memory manager on the heap for Windows. No menu/dialog changes need SDL UI
+reflection. The classifier now recognizes ATBasic inputs explicitly.

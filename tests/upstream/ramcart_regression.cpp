@@ -135,7 +135,42 @@ static void TestCCTLReads() {
 	}
 }
 
+static void TestTelelinkII() {
+	auto services = std::make_unique<Services>();
+	ATCartridgeEmulator cart(100, kATCartridgePriority_Default, false);
+	cart.SetManager(services.get());
+	cart.InitCartridge(services.get());
+	cart.Init();
+	cart.LoadNewCartridge(kATCartridgeMode_TelelinkII);
+	auto& mem = services->memory;
+	auto *rom = static_cast<uint8 *>(cart.GetImage()->GetBuffer());
+	std::fill_n(rom, 8192, 0x73);
+	mem.SetFloatingDataBus(true);
+	for (int offset = 0; offset < 256; ++offset)
+		mem.CPUWriteByte(0x9000 + offset, uint8(offset));
+	for (uint8 bus : {0x00, 0xA5, 0xFF}) {
+		for (uint32 address = 0x8000; address < 0xA000; ++address) {
+			mem.mBusValue = bus;
+			const uint8 expected = address < 0x9000 ? bus
+				: uint8((bus & 0xF0) | (address & 0x0F));
+			Check(mem.CPUReadByte(address) == expected,
+				"Telelink II EEPROM decode/open bus mismatch");
+			Check(mem.CPUDebugReadByte(address) == expected,
+				"Telelink II debugger read changed bus semantics");
+		}
+	}
+	Check(mem.CPUReadByte(0xA000) == 0x73
+		&& mem.CPUReadByte(0xBFFF) == 0x73, "Telelink II ROM mapping changed");
+	const uint8 saved = rom[8192 + 7];
+	mem.CPUWriteByte(0xD501, 0);
+	Check(rom[8192 + 7] == saved, "Odd Telelink II CCTL write stored EEPROM");
+	mem.CPUWriteByte(0xD500, 0);
+	Check(rom[8192 + 7] == 0xF7, "Even Telelink II CCTL write did not store EEPROM");
+	cart.Shutdown();
+}
+
 int main() {
+	TestTelelinkII();
 	TestCCTLReads();
 	const uint32 sizes[] = {64,128,256,1024,2048,4096,8192,16384,32768,32};
 	for (int mapper = 94; mapper <= 103; ++mapper) {

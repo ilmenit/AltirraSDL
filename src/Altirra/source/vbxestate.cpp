@@ -63,6 +63,8 @@ void ATSaveStateVbxe::Exchange(T& ex) {
 	ex.Transfer("int_map_width", &mIntMapWidth);
 	ex.Transfer("int_map_height", &mIntMapHeight);
 	ex.Transfer("int_map_row", &mIntMapRow);
+	ex.Transfer("int_memac_cycles", &mIntMemacCycles);
+	ex.Transfer("int_memac_access_this_cycle", &mbIntMemacAccessThisCycle);
 
 	ex.Transfer("int_blit_list_addr", &mIntBlitListAddr);
 	ex.TransferArray("int_blit_state", mIntBlitState);
@@ -87,7 +89,8 @@ void ATSaveStateVbxe::Exchange(T& ex) {
 	ex.Transfer("int_gtia_changes", &mGtiaRegisterChanges);
 
 	if constexpr (T::IsReader) {
-		if ((mFeatureControl & ~0xBB)
+		if (mIntMemacCycles > 8 * 114
+			|| (mFeatureControl & ~0xBB)
 			|| (mbIntBlitRaycast
 				&& (mIntBlitRaycastTextureBits[0] < 3
 					|| mIntBlitRaycastTextureBits[0] > 7

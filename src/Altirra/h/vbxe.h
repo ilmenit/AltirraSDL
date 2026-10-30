@@ -162,6 +162,16 @@ private:
 	bool IsBlitterActive() const;
 	void AssertBlitterIrq();
 
+	void AllocateMemAcCycle();
+
+	uint8 DebugReadMEMACA(uint32 addr) const;
+	uint8 ReadMEMACA(uint32 addr);
+	bool WriteMEMACA(uint32 addr, uint8 value);
+
+	uint8 DebugReadMEMACB(uint32 addr) const;
+	uint8 ReadMEMACB(uint32 addr);
+	bool WriteMEMACB(uint32 addr, uint8 value);
+
 	static bool StaticGTIAWrite(void *thisptr, uint32 reg, uint8 value);
 	static sint32 StaticReadControl(void *thisptr, uint32 reg) { return ((ATVBXEEmulator *)thisptr)->ReadControl((uint8)reg); }
 	static bool StaticWriteControl(void *thisptr, uint32 reg, uint8 value) { return ((ATVBXEEmulator *)thisptr)->WriteControl((uint8)reg, value); }
@@ -238,6 +248,9 @@ private:
 	uint8	mMemAcControl;
 	uint8	mMemAcBankA;
 	uint8	mMemAcBankB;
+	uint32	mMemAcBankAOffset = 0;
+	uint32	mMemAcBankBOffset = 0;
+
 	bool	mb5200Mode;
 	bool	mbSharedMemory;
 	uint8	mVersion;			// MINOR_REVISION value, sans shared mem flag.
@@ -310,6 +323,9 @@ private:
 	uint32	mDMACyclesAttrMap = 0;			// VBXE cycles in scanline for attribute map DMA
 	uint32	mDMACyclesOverlay = 0;			// VBXE cycles in scanline for overlay DMA
 	uint32	mDMACyclesOverlayStart = 0;		// ANTIC X cycle at which overlay DMA starts.
+	uint32	mMemAcCycles = 0;
+	// MERGE NOTE: an unused timestamp must not suppress a first access at tick 0.
+	uint64	mMemAcLastCycle = ~uint64(0);
 
 	//==== blitter ====
 	enum class BlitState : uint8 {

@@ -170,7 +170,7 @@ $(INT)\additions-license.txt: source\Additions\license.txt
 
 $(OUT)\Additions.atr: $(INT)\dos.sys source\Additions\filelist.txt $(INT)\boot850.xex $(INT)\rhnd850.xex \
 		$(INT)\xep80.sys $(INT)\xep80u.sys $(INT)\xep80p.sys $(INT)\xep80up.sys $(INT)\xep80sdx.sys \
-		$(INT)\boot1030.xex $(INT)\thnd1030.xex $(INT)\autorun.sys $(INT)\atbasicx.xex $(INT)\sx212.xex \
+		$(INT)\boot1030.xex $(INT)\thnd1030.xex $(INT)\autorun.sys $(INT)\atbasicx.xex $(INT)\atbasicr.xex $(INT)\sx212.xex \
 		$(INT)\colormap.xex $(INT)\additions-license.txt $(INT)\loadexe.xex $(INT)\xepvhold.xex $(INT)\xepvhldp.xex \
 		$(INT)\atdebugx.sys $(INT)\phload.xex
 	@"$(ATCOMPILER)" mkfsdos2 source\Additions\filelist.txt "$(INT)\" "$(OUT)\Additions.atr"
@@ -362,6 +362,9 @@ $(INT)\thnd1030.xex: $(SHARED_SRCFILESINC) source\Additions\thnd1030.s $(INT)\10
 
 $(INT)\atbasicx.xex: $(OUT)\atbasicx.xex
 	copy "$(OUT)\atbasicx.xex" "$(INT)\atbasicx.xex" /y
+
+$(INT)\atbasicr.xex: $(OUT)\atbasicr.xex
+	copy "$(OUT)\atbasicr.xex" "$(INT)\atbasicr.xex" /y
 
 $(INT)\exeloader.bin: $(SHARED_SRCFILESINC) source\ExeLoader\exeloader.s
 	"$(MADS)"  -D:BASEADDR=1536 -s -p -i:source\Shared -i:"$(OUT)" -i:"$(INT)" -l:"$(INT)\exeloader.lst" -t:"$(INT)\exeloader.lab" -o:"$(INT)\exeloader.bin" source\ExeLoader\exeloader.s

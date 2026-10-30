@@ -138,3 +138,29 @@ aliases, $FF for read-side holes, write aliases, surrounding pass-through
 addresses and the configuration latch. `bridge-vbxe` exercises both register
 bases and starts a real blit through the mirrored control addresses. The
 core regression fails on test25 before importing the test26 fix.
+
+
+Test27 adds Telelink II floating-bus/EEPROM and even/odd CCTL store checks to
+`ramcart-regressions`. The VBXE fixture exercises production MEMAC A/B memory
+handlers, CPU/ANTIC access, debugger reads and local-address mapping, bank
+changes and A-over-B priority, 5200 wrapping, underlying RAM write isolation,
+per-tick cycle deduplication, scanline blitter budget, reset and serialized
+contention restoration (including old snapshots).
+
+Local MADS validation assembled the standard BASIC ROM, fixed executable and
+new relocatable executable. The standard ROM matches the embedded ROM exactly.
+Live bridge boots ran relocatable BASIC at $0700, $0800, $1300 and $2000,
+including upward page rounding for unaligned MEMLO, and evaluated
+`PRINT 17*29` to `493` in each instance. The fixed executable passed the same
+expression check. Build the artifacts on POSIX with MADS on PATH:
+
+```sh
+mkdir -p build/basic
+mads src/ATBasic/source/atbasic.s -c -s -d:CART=1 '-b:$a000' -o:build/basic/atbasic.bin
+mads src/ATBasic/source/atbasic.s -c -s -d:CART=1 -d:ATBASIC_LO=1 '-b:$2000' -o:build/basic/atbasic-lo.bin
+mads src/ATBasic/source/atbasic.s -c -s -d:CART=0 -o:build/basic/atbasicx.xex
+mads src/ATBasic/source/atbasicr.s -c -s -i:build/basic -l:build/basic/atbasicr.lst -o:build/basic/atbasicr.xex
+```
+
+The native Windows ATBasic makefile builds all variants and the Kernel
+makefile includes `atbasicr.com` in `Additions.atr`.

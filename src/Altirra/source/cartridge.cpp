@@ -1537,10 +1537,19 @@ bool ATCartridgeEmulator::WriteByte_Corina512K(void *thisptr0, uint32 address, u
 	return true;
 }
 
-bool ATCartridgeEmulator::WriteByte_TelelinkII(void *thisptr0, uint32 address, uint8 value) {
-	ATCartridgeEmulator *thisptr = (ATCartridgeEmulator *)thisptr0;
+sint32 ATCartridgeEmulator::ReadByte_TelelinkII(uint32 address) const {
+	// $8000-8FFF is open bus
+	// $9000-9FFF maps to 256 bytes of EEPROM in low nibble, high nibble is open bus
+	uint8 v = mpMemMan->ReadFloatingDataBus();
 
-	thisptr->mCARTRAM[address & 0xFF] = value | 0xF0;
+	if (address >= 0x9000)
+		v = (v & 0xF0) | (mCARTRAM[address & 0xFF] & 0x0F);
+
+	return v;
+}
+
+bool ATCartridgeEmulator::WriteByte_TelelinkII(uint32 address, uint8 value) {
+	mCARTRAM[address & 0xFF] = value | 0xF0;
 
 	return true;
 }
@@ -2037,13 +2046,15 @@ sint32 ATCartridgeEmulator::ReadByte_CCTL_TelelinkII(void *thisptr0, uint32 addr
 bool ATCartridgeEmulator::WriteByte_CCTL_TelelinkII(void *thisptr0, uint32 address, uint8 value) {
 	ATCartridgeEmulator *const thisptr = (ATCartridgeEmulator *)thisptr0;
 
-	// initiate NV store
-	memcpy(thisptr->mpROM + 8192, thisptr->mCARTRAM.data(), 256);
-	thisptr->mbDirty = true;
-	thisptr->mpImage->SetDirty();
+	// initiate NV store for even addresses
+	if (!(address & 1)) {
+		memcpy(thisptr->mpROM + 8192, thisptr->mCARTRAM.data(), 256);
+		thisptr->mbDirty = true;
+		thisptr->mpImage->SetDirty();
 
-	if (thisptr->mpUIRenderer)
-		thisptr->mpUIRenderer->SetFlashWriteActivity();
+		if (thisptr->mpUIRenderer)
+			thisptr->mpUIRenderer->SetFlashWriteActivity();
+	}
 
 	return true;
 }
@@ -3215,14 +3226,11 @@ void ATCartridgeEmulator::InitMemoryLayers() {
 		case kATCartridgeMode_TelelinkII:
 			fixedBase	= 0xA0;
 			fixedSize	= 0x20;
-			fixed2Base	= 0x80;
-			fixed2Size	= 0x20;
-			fixed2Offset = 0;
-			fixed2Mask	= 0;
-			fixed2RAM	= true;
-			spec1hd.mpWriteHandler = WriteByte_TelelinkII;
+			spec1hd.BindDualReadHandler<&ATCartridgeEmulator::ReadByte_TelelinkII>();
+			spec1hd.BindWriteHandler<&ATCartridgeEmulator::WriteByte_TelelinkII>();
 			spec1Base	= 0x80;
 			spec1Size	= 0x20;
+			spec1ReadEnabled = true;
 			spec1WriteEnabled = true;
 			usecctl = true;
 			usecctlread = true;

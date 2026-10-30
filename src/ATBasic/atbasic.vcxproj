@@ -41,6 +41,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="source\atbasic.s" />
+    <None Include="source\atbasicr.s" />
     <None Include="source\data.s" />
     <None Include="source\error.s" />
     <None Include="source\evaluator.s" />
@@ -49,6 +50,7 @@
     <None Include="source\io.s" />
     <None Include="source\list.s" />
     <None Include="makefile" />
+    <None Include="source\loader.inc" />
     <None Include="source\math.s" />
     <None Include="source\memory.s" />
     <None Include="source\parser.s" />
@@ -60,6 +62,8 @@
     <None Include="source\variables.s" />
     <None Include="doc\internals.html" />
     <None Include="doc\styles.css" />
+    <None Include="source\config.inc" />
+    <None Include="source\interpvars.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
