@@ -1,6 +1,7 @@
 dos.sys
 autorun.sys
 atbasicx.xex -> atbasicx.com
+atbasicr.xex -> atbasicr.com
 boot850.xex -> boot850.com
 boot1030.xex -> boot1030.com
 colormap.xex -> colormap.com

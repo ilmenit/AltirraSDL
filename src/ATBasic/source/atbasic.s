@@ -10,140 +10,11 @@
 
 		icl		'system.inc'
 		icl		'tokens.inc'
+		icl		'config.inc'
 
 ;===========================================================================
-.macro _MSG_BANNER
-		dta		c'Altirra 8K BASIC 1.59'
-.endm
+		icl		'interpvars.inc'
 
-;===========================================================================
-; Zero page variables
-;
-; We try to be sort of compatible with Atari BASIC here, supporting all
-; public variables and trying to support some unofficial usage as well.
-;
-; Test cases:
-;	QUADRATO.BAS
-;	- Uses $B0-B3 from USR() routine
-
-		org		$0080
-		opt		o-
-argstk	equ		*
-lomem	dta		a(0)		;$0080 (compat) from lomem; argument/operator stack
-vntp	dta		a(0)		;$0082 (compat - loaded) variable name table pointer
-vntd	dta		a(0)		;$0084 (compat - loaded) variable name table end
-vvtp	dta		a(0)		;$0086 (compat - loaded) variable value table pointer
-stmtab	dta		a(0)		;$0088 (compat - loaded) statement table pointer
-stmcur	dta		a(0)		;$008A (compat - loaded) current statement pointer
-starp	dta		a(0)		;$008C (compat - loaded) string and array table
-runstk	dta		a(0)		;$008E (compat) runtime stack pointer
-memtop2	dta		a(0)		;$0090 (compat) top of BASIC memory
-
-exLineOffset	dta		0		;offset within current line being executed
-exLineOffsetNxt	dta		0		;offset of next statement
-exLineEnd		dta		0		;offset of end of current line
-exTrapLine		dta		a(0)	;TRAP line
-exFloatStk		dta		0		;bit 7 set if stack is floating (line numbers)
-parPtrSav:					;[6 bytes] VNTD/VVTP/STMTAB save area for parser rollback
-opsp		dta		0		;operand stack pointer offset
-argsp		dta		0		;argument stack pointer offset
-expCommas	dta		0		;expression evaluator comma count
-expFCommas	dta		0
-expAsnCtx	dta		0		;flag - set if this is an assignment context for arrays
-expType		dta		0		;bit 7 = 0 for numeric, 1 for string
-varptr		dta		a(0)	;pointer to current variable
-lvarptr		dta		a(0)	;lvar pointer for array assignment
-parptr		dta		a(0)	;parsing state machine pointer
-parout		dta		0		;parsing output idx
-expCurPrec	dta		0		;expression evaluator current operator precedence
-iocbexec	dta		0		;current immediate/deferred mode IOCB
-iocbidx		dta		0		;current IOCB*16
-iocbidx2	dta		0		;current IOCB (used to distinguish #0 and #16)
-iterPtr		dta		a(0)	;pointer used for sequential name table indexing
-ioPrintCol	dta		0		;IO: current PRINT column
-ioTermSave	dta		0		;IO: String terminator byte save location
-ioTermOff	dta		0		;IO: String terminator byte offset
-argstk2		dta		a(0)	;Evaluator: Second argument stack pointer
-dataLnEnd	dta		0		;current DATA statement line end
-pmgbase		dta		0
-pmgmode		dta		0
-ioTermFlag	dta		0
-
-		.if grColor!=$c8
-		.error "Graphics color is at ",grColor," but must be at $C8 for PEEK(200) to work (see Space Station Multiplication.bas)"
-		.endif
-
-		.if *>$b7
-		.error "Zero page overflow: ",*
-		.endif
-
-			org		$b7
-dataln		dta		a(0)	;(compat - Mapping the Atari / ANALOG verifier) current DATA statement line
-
-
-stopln	= $ba				;(compat - Atari BASIC manual): line number of error
-		; $bb
-		
-;--------------------------------------------------------------------------
-; $BC-BF are reserved as scratch space for use by the currently executing
-; statement or by the parser. They must not be used by functions or library
-; code.
-;
-			org		$bc
-stScratch	dta		0
-stScratch2	dta		0
-stScratch3	dta		0
-stScratch4	dta		0
-
-printDngl	= stScratch		;set if the print statement is 'dangling' - no follow EOL
-parStrType	= prefr0		;parsing string type: set if string exp, clear if numeric
-parStBegin	= stScratch2	;parsing offset of statement begin (0 if none)
-
-;--------------------------------------------------------------------------
-; $C0-C1 are reserved as scratch space for use by the currently executing
-; function.
-;
-funScratch1	= $c0
-funScratch2	= $c1
-;--------------------------------------------------------------------------
-errno	= $c2
-errsave	= $c3				;(compat - Atari BASIC manual): error number
-
-			org		$c4
-dataptr		dta		a(0)	;current DATA statement pointer
-dataoff		dta		0		;current DATA statement offset
-			dta		0		;(unused)
-grColor		dta		0		;graphics color (must be at $C8 for Space Station Multiplication)
-ptabw		dta		0		;(compat - Atari BASIC manual): tab width
-
-.if ptabw != $C9
-			.error	"PTABW is wrong"
-.endif
-
-.if * > $CB
-.error "$CB-D1 are reserved"
-.endif
-
-;--------------------------------------------------------------------------
-; $CB-D1 are reserved for use by annoying people that read Mapping The
-; Atari.
-;--------------------------------------------------------------------------
-; Floating-point library vars
-;
-; $D2-D3 is used as an extension prefix to FR0; $D4-FF are used by the FP
-; library, but can be reused outside of it.
-;
-prefr0	= fr0-2
-a0		= fr0				;temporary pointer 0
-a1		= fr0+2				;temporary pointer 1
-a2		= fr0+4				;temporary pointer 2
-a3		= fr0+6				;temporary pointer 3
-a4		= fr0+8				;temporary pointer 4
-a5		= fr0+10			;temporary pointer 5
-
-degflg	= $fb				;(compat) degree/radian flag: 0 for radians, 6 for degrees
-
-lbuff	equ		$0580
 
 .macro _STATIC_ASSERT
 		.if :1
@@ -346,188 +217,8 @@ copy_loop:
 		dex
 		bne		copy_loop
 
-		;check if there is a command line to process
-		ldy		#0
-		sty		iocbidx				;!! - needed since we will be skipping it
-		lda		(dosvec),y
-		cmp		#$4c
-		bne		no_cmdline
-		ldy		#3
-		lda		(dosvec),y
-		cmp		#$4c
-		beq		have_cmdline
-no_cmdline:
-		lda		#0
-		jmp		no_filename
-
-have_cmdline:
-		;skip spaces
-		ldy		#10
-		lda		(dosvec),y
-		clc
-		adc		#63
-		tay
-space_loop:
-		lda		(dosvec),y
-		cmp		#$9b
-		beq		no_filename
-		iny
-		cmp		#' '
-		beq		space_loop
-
-		;stash filename base offset
-		dey
-		sty		fr0+3
-
-		;check if the first character is other than D and there is a colon
-		;afterward -- if so, we should skip DOS's parser and use it straight
-		;as it may be a CIO filename that DOS would munge
-		cmp		#'D'
-		beq		possibly_dos_file
-cio_file:
-		;copy filename to LBUFF
-		ldx		#0
-cio_copy_loop:
-		lda		(dosvec),y
-		sta		lbuff,x
-		inx
-		iny
-		cmp		#$9b
-		bne		cio_copy_loop
-
-		;stash length
-		stx		fr0+2
-
-		tya
-		jmp		have_filename_nz
-
-possibly_dos_file:
-		;scan for colon
-colon_loop:
-		lda		(dosvec),y
-		iny
-		cmp		#':'
-		beq		cio_file
-		cmp		#$9b
-		bne		colon_loop
-
-		;okay, assume it's a DOS file - clear the CIO filename flag
-		lda		#0
-		sta		fr0+2
-		
-		;try to parse out a filename
-		ldy		fr0+3
-		sec
-		sbc		#63
-		ldy		#10
-		sta		(dosvec),y
-
-		ldy		#4
-		mva		(dosvec),y fr0
-		iny
-		mva		(dosvec),y fr0+1
-		jsr		jump_fr0
-		
-no_filename:
-have_filename_nz:
-		;save off filename flag
-		php
-
-		;cold boot ATBasic
-		ldx		#0
-		stx		iocbidx
-		stx		iocbexec
-		inx
-		stx		errno
-
-		;print startup banner
-		mwa		#msg_banner_begin icbal
-		mwa		#msg_banner_end-msg_banner_begin icbll
-		mva		#CIOCmdPutChars iccmd
-		ldx		#0
-		jsr		ciov
-
-		jsr		_stNew.reset_entry
-		jsr		ExecReset
-
-		;read filename flag
-		plp
-		bne		explicit_fn
-
-		;no filename... try loading implicit file
-		ldx		#$70
-		stx		iocbidx
-		mwa		#default_fn_start icbal+$70
-		mwa		#default_fn_end-default_fn_start icbll+$70
-		mva		#CIOCmdOpen iccmd+$70
-		mva		#$04 icax1+$70
-		jsr		ciov
-		bmi		load_failed
-
-		;load and run
-		lsr		stLoadRun._loadflg
-		jmp		stLoadRun.with_open_iocb
-
-load_failed:
-		;failed... undo the EOL with an up arrow so the prompt is in the right place
-		mva		#0 iocbidx
-		lda		#$1c
-		jsr		putchar
-
-		;close IOCB and jump to prompt
-		ldx		#$70
-		mva		#CIOCmdClose iccmd+$70
-		jsr		ciov
-		jmp		immediateModeReset
-
-explicit_fn:
-		;move filename to line buffer
-		ldy		#33
-		ldx		#0
-		stx		fr0+3
-
-		;check if filename is already there
-		lda		fr0+2
-		bne		fncopy_skip
-fncopy_loop:
-		lda		(dosvec),y
-		sta		lbuff,x
-		cmp		#$9b
-		beq		fncopy_exit
-		iny
-		inx
-		bne		fncopy_loop
-fncopy_exit:
-		;finish length
-		stx		fr0+2
-
-fncopy_skip:
-		;set string pointer
-		mwa		#lbuff fr0
-
-		;set up for RUN statement
-		jsr		IoPutNewline
-		lsr		stLoadRun._loadflg
-		ldx		#$70
-		stx		iocbidx
-		jmp		stLoadRun.loader_entry
-
-wait_vbl:
-		sei
-		mwa		#1 cdtmv3
-		cli
-		lda:rne	cdtmv4
-		rts
-
-jump_fr0:
-		jmp		(fr0)
-
-editor:
-		dta		c'E',$9B
-
-default_fn_start:
-		dta		'D:AUTORUN.BAS',$9B
-default_fn_end:
+		;inline common loader
+		icl		'loader.inc'
 
 msg_banner_begin:
 		dta		$9c				;delete loading line
@@ -545,7 +236,13 @@ msg_banner_end:
 ; Cartridge start
 ;
 		opt		h-
+
+.ifdef ATBASIC_LO
+		org		$2000
+.else
 		org		$a000
+.endif
+
 		opt		o+f+
 
 ;==========================================================================
@@ -589,14 +286,19 @@ msg_banner:
 		dta		0
 		.endif
 
-		.if		msg_base != $A00D
+		.if		msg_base != (*&$E000)+$000D
 		.error	"msg_base misaligned: ",*
 		.endif
 
-		.if		* != $A023
+		.if		* != (*&$E000)+$0023
 		.error	"msg_ready misaligned: ",*
 		.endif
+
+		.ifdef ATBASIC_LO
+		org		$2023
+		.else
 		org		$A023
+		.endif
 
 msg_ready:
 		dta		$9B,c'Ready',$9B,0
@@ -693,9 +395,13 @@ pmgmode_tab:					;2 bytes ($00 80)
 
 ;==========================================================================
 
+.ifdef ATBASIC_LO
+const_table = $3ffa - 4 - 6*9 - 6 - 7
+		.echo	"Main program ends at ",*," (",[((((*-$2000)*100/8192)/10)*16+(((*-$2000)*100)/8192)%10)],"% full) (", const_table-*," bytes free)"
+.else
 const_table = $bffa - 4 - 6*9 - 6 - 7
-
 		.echo	"Main program ends at ",*," (",[((((*-$a000)*100/8192)/10)*16+(((*-$a000)*100)/8192)%10)],"% full) (", const_table-*," bytes free)"
+.endif
 
 		org		const_table
 		.echo	"Constant table begins at ",*
@@ -747,14 +453,26 @@ pmg_move_mask_tab:
 
 		.endpg
 
+.ifdef ATBASIC_LO
+		_STATIC_ASSERT *=$3ffa
+.else
 		_STATIC_ASSERT *=$bffa
+.endif
 		
 ;==========================================================================
 		
+.ifdef ATBASIC_LO
+		.echo	"Program ends at ",*," (",[((((*-$2000)*100/8192)/10)*16+(((*-$2000)*100)/8192)%10)],"% full)"
+
+		org		$3ffa
+		dta		a($2000)		;boot vector (not real, but for consistency)
+.else
 		.echo	"Program ends at ",*," (",[((((*-$a000)*100/8192)/10)*16+(((*-$a000)*100)/8192)%10)],"% full)"
 
 		org		$bffa
 		dta		a($a000)		;boot vector
+.endif
+
 		dta		$00				;do not init
 		dta		$05				;boot disk/tape, boot cart
 		dta		a(ExNop)		;init vector (no-op)
@@ -763,5 +481,21 @@ pmg_move_mask_tab:
 		opt		f-h+
 		run		__loader
 		.endif
+
+;==========================================================================
+; Internal pointers for relocatable version - only used during assembly
+;
+
+.ifdef ATBASIC_LO
+		dta		a(_stNew.reset_entry)
+		dta		a(ExecReset)
+		dta		a(stLoadRun._loadflg)
+		dta		a(stLoadRun.with_open_iocb)
+		dta		a(putchar)
+		dta		a(immediateModeReset)
+		dta		a(IoPutNewline)
+		dta		a(stLoadRun.loader_entry)
+		dta		a(IoConvNumToHex.print_digit_pair)
+.endif
 		
 		end

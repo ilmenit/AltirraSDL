@@ -61,12 +61,19 @@ struct ATMemoryHandlerTable {
 
 	template<auto T_Handler>
 	void BindDebugReadHandler() {
-		mpDebugReadHandler = [](void *thisptr0, uint32 address) -> sint32 { return (((decltype(ATGetMemoryHandlerBaseType(T_Handler)))thisptr0)->*T_Handler)(address); };
+		mpDebugReadHandler = [](void *thisptr0, uint32 address) -> sint32 { return (((const decltype(ATGetMemoryHandlerBaseType(T_Handler)))thisptr0)->*T_Handler)(address); };
 	}
 
 	template<auto T_Handler>
 	void BindReadHandler() {
 		mpReadHandler = [](void *thisptr0, uint32 address) -> sint32 { return (((decltype(ATGetMemoryHandlerBaseType(T_Handler)))thisptr0)->*T_Handler)(address); };
+	}
+
+	template<auto T_Handler>
+	void BindDualReadHandler() {
+		const auto handler = [](void *thisptr0, uint32 address) -> sint32 { return (((const decltype(ATGetMemoryHandlerBaseType(T_Handler)))thisptr0)->*T_Handler)(address); };
+		mpReadHandler = handler;
+		mpDebugReadHandler = handler;
 	}
 
 	template<auto T_Handler>
@@ -170,6 +177,7 @@ public:
 	void SetLayerMemoryAndAddressSpace(ATMemoryLayer *layer, const uint8 *base, uint32 pageOffset, uint32 pages, uint32 addressSpace, uint32 addrMask = 0xFFFFFFFFU, int readOnly = -1);
 	void SetLayerReadOnly(ATMemoryLayer *layer, bool readOnly);
 	void SetLayerAddressRange(ATMemoryLayer *layer0, uint32 pageOffset, uint32 pageCount);
+	void SetLayerAddressRangeAndSpace(ATMemoryLayer *layer0, uint32 pageOffset, uint32 pageCount, uint32 addressSpace);
 	void SetLayerName(ATMemoryLayer *layer, const char *name);
 	void SetLayerTag(ATMemoryLayer *layer, const void *tag);
 

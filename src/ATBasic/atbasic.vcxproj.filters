@@ -78,5 +78,17 @@
     <None Include="doc\styles.css">
       <Filter>Documentation</Filter>
     </None>
+    <None Include="source\atbasicr.s">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="source\config.inc">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="source\loader.inc">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="source\interpvars.inc">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

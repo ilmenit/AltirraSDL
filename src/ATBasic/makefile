@@ -4,12 +4,14 @@ SRC = source
 
 SRCFILES = \
 	source\atbasic.s \
+	source\config.inc \
 	source\data.s \
 	source\error.s \
 	source\evaluator.s \
 	source\exec.s \
 	source\functions.s \
 	source\io.s \
+	source\interpvars.inc \
 	source\list.s \
 	makefile \
 	source\math.s \
@@ -22,9 +24,13 @@ SRCFILES = \
 	source\util.s \
 	source\variables.s
 
+EXE_SRCFILES = \
+	source\interpvars.inc \
+	source\loader.inc
+
 .SUFFIXES: .s .xex .bin
 
-all: madscheck $(OUT)\atbasicx.xex $(OUT)\atbasic.bin
+all: madscheck $(OUT)\atbasicx.xex $(OUT)\atbasic.bin $(OUT)\atbasicr.xex
 
 clean:
 	del "$(OUT)\atbasicx.xex" "$(OUT)\atbasic.bin"
@@ -36,7 +42,7 @@ $(OBJ)\madscheck.bin: makefile
 	@if not exist "$(OBJ)" md "$(OBJ)"
 	@echo. >"$(OBJ)\madscheck.bin"
 
-$(OUT)\atbasicx.xex:	$(SRCFILES)
+$(OUT)\atbasicx.xex:	$(SRCFILES) $(EXE_SRCFILES)
 	@if not exist $(OUT) md $(OUT)
 	@for %x in (source\atbasic.s) do "$(MADS)" -c -s -d:CART=0 -o:$@ -l:$(@R).lst -t:$(@R).lab "%~fx"
 	
@@ -44,3 +50,10 @@ $(OUT)\atbasic.bin:		$(SRCFILES)
 	@if not exist $(OUT) md $(OUT)
 	@for %x in (source\atbasic.s) do "$(MADS)" -c -s -d:CART=1 -b:$$a000 -o:$@ -l:$(@R).lst -t:$(@R).lab "%~fx"
 
+$(OUT)\atbasic-lo.bin:	$(SRCFILES)
+	@if not exist $(OUT) md $(OUT)
+	@for %x in (source\atbasic.s) do "$(MADS)" -c -s -d:CART=1 -d:ATBASIC_LO=1 -b:$$2000 -o:$@ -l:$(@R).lst -t:$(@R).lab "%~fx"
+
+$(OUT)\atbasicr.xex:	source\atbasicr.s $(EXE_SRCFILES) $(OUT)\atbasic-lo.bin $(OUT)\atbasic.bin
+	@if not exist $(OUT) md $(OUT)
+	@for %x in (source\atbasicr.s) do "$(MADS)" -c -s -i:$(OUT) -o:$@ -l:$(@R).lst -t:$(@R).lab "%~fx"

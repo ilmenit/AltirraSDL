@@ -452,12 +452,19 @@ void ATMemoryManager::SetLayerReadOnly(ATMemoryLayer *layer0, bool readOnly) {
 void ATMemoryManager::SetLayerAddressRange(ATMemoryLayer *layer0, uint32 pageOffset, uint32 pageCount) {
 	MemoryLayer *const layer = static_cast<MemoryLayer *>(layer0);
 
-	if (layer->mPageOffset != pageOffset || layer->mPageCount != pageCount) {
+	SetLayerAddressRangeAndSpace(layer, pageOffset, pageCount, layer->mAddressSpace);
+}
+
+void ATMemoryManager::SetLayerAddressRangeAndSpace(ATMemoryLayer *layer0, uint32 pageOffset, uint32 pageCount, uint32 addressSpace) {
+	MemoryLayer *const layer = static_cast<MemoryLayer *>(layer0);
+
+	if (layer->mPageOffset != pageOffset || layer->mPageCount != pageCount || layer->mAddressSpace != addressSpace) {
 		uint32 oldBegin = layer->mEffectiveStart;
 		uint32 oldEnd = layer->mEffectiveEnd;
 
 		layer->mPageOffset = pageOffset;
 		layer->mPageCount = pageCount;
+		layer->mAddressSpace = addressSpace;
 		
 		layer->UpdateEffectiveRange();
 
