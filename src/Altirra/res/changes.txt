@@ -2,6 +2,7 @@ Altirra Change Log
 
 This prerelease version:
    [features added]
+   * Additions: Added a relocatable low-memory version of Altirra BASIC.
    * SDL3: Added an SDL_GPU display backend, preferred by default with OpenGL fallback and selectable from Desktop/Gaming settings or --renderer.
    * AltirraOS: Math pack rewritten to better match standard math pack results and for TurboBasic XL compatibility.
    * Cartridge: The CAR header checksum is now ignored if it is zero.
@@ -52,6 +53,7 @@ This prerelease version:
    * AltirraOS: Fixed occasional bogus timeout errors in SIO routines. (3.49)
    * Cartridge: Added DCart to cartridge type autodetection list.
    * Cartridge: Fixed SDX 64K derived cartridge types to allow bank switching by CCTL reads.
+   * Cartridge: Fixed Telelink II cartridge EEPROM to only respond at $9000-9FFF.
    * Command Line: Fixed 5200 cartridges not loading if passed on the command line without /cart.
    * CPU: 65C816 COP now resets program bank correctly in emulation mode.
    * CPU: Fixed spurious interrupts after SEI in 65C816 native mode.
@@ -95,6 +97,7 @@ This prerelease version:
    * VBXE: Blitter HR collisions can now latch both low and high nibbles simultaneously.
    * VBXE: Improved blitter timing accuracy.
    * VBXE: Register decoding now ignores A5 and unassigned registers read $FF.
+   * VBXE: MEMAC cycle usage is now tracked.
 
 Version 4.40 [December 31, 2025]
    [changes]
