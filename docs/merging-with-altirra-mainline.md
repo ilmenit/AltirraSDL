@@ -7,10 +7,14 @@ test12 → …) and how to fix them.
 Recurring causes include **toolchain divergence**, standalone-target
 header initialization and platform-specific test assumptions. Upstream
 Altirra is developed with MSVC on Windows; a successful build on a recent
-local compiler does not establish compatibility with our **CI floor**:
+local compiler does not establish compatibility with our supported
+compiler baseline:
 
-- **macOS CI** — Apple Clang 15 (Xcode 15 on the `macos-14` runner)
-- **Linux CI** — GCC 12 (from the `ubuntu:22.04` container)
+- **macOS CI** — the default Xcode/Apple Clang on `macos-15`, with the
+  selected versions printed in the job log. Apple Clang 15 remains the
+  supported source-compatibility baseline, but this hosted job no longer
+  tests it directly.
+- **Linux CI** — GCC 12 on the `ubuntu-22.04` runner
 - **Windows CI** — MSVC with Windows SDK 10.0.26100 UCRT headers;
   standalone test targets must initialize their own intrinsic headers
 
@@ -18,6 +22,16 @@ So code merged from mainline can build cleanly locally and break the
 moment it hits CI. The failures are mechanical to fix once you know the
 pattern. Read this list before pushing a mainline merge and again the
 moment CI turns red.
+
+The macOS regression runner moved from `macos-14` to `macos-15` because
+GitHub retires the former on November 2, 2026. This changes where tests
+execute, not the app's minimum supported macOS version: the macOS CMake
+presets retain deployment target 11.0. Desktop packaging already runs on
+`macos-26` and checks the minimum OS recorded in bundled Mach-O binaries;
+libretro builds use macOS 15 runners for ARM64 and Intel. Runtime coverage
+on older macOS versions still requires separate machines. Keep the
+portability corrections below even when the newer hosted compiler accepts
+the original upstream code.
 
 ---
 
@@ -58,7 +72,8 @@ variables in constexpr functions"* — accepted into C++23.
 
 - **MSVC 19.36+**, **Clang 17+**, **GCC 13.2+** implement P2647 →
   the upstream pattern just works.
-- **Apple Clang 15**, **GCC 12** (our CI) **do not** implement P2647 →
+- **Apple Clang 15**, **GCC 12** (our compatibility baseline; GCC 12 remains
+  exercised in CI) **do not** implement P2647 →
   hard error.
 
 ### Fix
