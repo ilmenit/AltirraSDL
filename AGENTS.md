@@ -404,8 +404,11 @@ When changing the display, update behaviour.
 Pulling code from upstream Altirra test branches (test10 / test11 /
 test12 / …) regularly trips a small set of CI-only build failures
 because the upstream toolchain (MSVC + bleeding-edge GCC) is more
-permissive than our CI floor (Apple Clang 15 on macos-14, GCC 12 on
-ubuntu:22.04).  Each of these failures is trivial to fix once you
+permissive than our supported compiler baseline (Apple Clang 15 and
+GCC 12). Native macOS regressions run on `macos-15` with the runner's
+default Xcode; Linux CI exercises GCC 12 on Ubuntu 22.04. The runner
+migration does not raise the supported compiler baseline or the macOS
+11.0 deployment target. Each of these failures is trivial to fix once you
 know the pattern.  See `docs/merging-with-altirra-mainline.md` for
 the catalogue, symptoms, fixes, and an audit recipe to run before
 pushing a merge.
