@@ -31,8 +31,9 @@
 	icl		'version.inc'
 	icl		'hardware.inc'
 	icl		'kerneldb.inc'
+	icl		'utils.inc'
 
-	opt		h-o+f+
+	opt		h-o+f+l+
 
 .ifdef _KERNEL_816
 	opt		c+

@@ -140,6 +140,7 @@ class ATPCLinkDevice final
 			, public IATDeviceSIO
 			, public IATDeviceIndicators
 			, public IATDeviceDiagnostics
+			, public IATDeviceButtons
 {
 	friend class ATPCLinkDeviceTest;
 
@@ -178,6 +179,11 @@ public:
 public:
 	void DumpStatus(ATConsoleOutput& output) override;
 
+public:	// IATDeviceButtons
+	uint32 GetSupportedButtons() const override;
+	bool IsButtonDepressed(ATDeviceButton idx) const override;
+	void ActivateButton(ATDeviceButton idx, bool state) override;
+
 protected:
 	enum Command {
 		kCommandNone,
@@ -186,6 +192,8 @@ protected:
 		kCommandPut,
 		kCommandRead
 	};
+
+	void CloseAllFiles();
 
 	void AbortCommand();
 	void BeginCommand(Command cmd);

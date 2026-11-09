@@ -28,6 +28,7 @@
 
 		icl		'kerneldb.inc'
 		icl		'hardware.inc'
+		icl		'utils.inc'
 
 coldsv = $E477
 
@@ -178,9 +179,9 @@ reset_OS:
 		;reset stack and copy stub to bottom of it
 		ldx		#$ff
 		txs
-		pea		#coldsv		;STZ $D1FF / JMP COLDSV
-		pea		#$4CD1
-		pea		#$FF9C
+		_PEA	coldsv		;STZ $D1FF / JMP COLDSV
+		_PEA	$4CD1
+		_PEA	$FF9C
 
 		;Run stub; note that NMIs and IRQs are already disabled. This will
 		;restart on the new OS and re-run us, but we won't repeat the

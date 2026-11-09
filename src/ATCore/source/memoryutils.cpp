@@ -20,7 +20,9 @@
 //	archive for details.
 
 #include <stdafx.h>
+#include <vd2/system/binary.h>
 #include <at/atcore/memoryutils.h>
+#include <at/atcore/randomization.h>
 
 uint32 ATRandomizeMemory8(uint8 *dst, size_t count, uint32 seed) {
 	while(count--) {
@@ -71,4 +73,22 @@ uint32 ATRandomizeMemory(void *dst0, size_t len, uint32 seed) {
 		seed = ATRandomizeMemory8(dst, remain, seed);
 
 	return seed;
+}
+
+void ATRandomizeMemoryCompressible(void *dst, size_t len, uint32 seed) {
+	if (!len)
+		return;
+
+	char rbuf[1024 + 32];
+	seed = ATRandomizeMemory(rbuf, sizeof rbuf, seed);
+
+	while(len) {
+		uint32 lineOffset = ATRandomizeAdvanceFast(seed) & 1023;
+		size_t tc = std::min<size_t>(len, 32);
+
+		memcpy(dst, &rbuf[lineOffset], tc);
+
+		dst = (char *)dst + tc;
+		len -= tc;
+	}
 }

@@ -74,6 +74,10 @@ public:
 
 	void ReceiveByte(uint32 baud, uint8 c);
 
+	IATDeviceButtons *GetDeviceButtonsInterface() {
+		return mpDevice;
+	}
+
 public:
 	void OnScheduledEvent(uint32 id) override;
 
@@ -593,6 +597,9 @@ void *ATDeviceSX212::AsInterface(uint32 id) {
 		case IATDeviceCIO::kTypeID:			return static_cast<IATDeviceCIO *>(this);
 		case IATDeviceSIO::kTypeID:			return static_cast<IATDeviceSIO *>(this);
 		case IATDeviceRawSIO::kTypeID:		return static_cast<IATDeviceRawSIO *>(this);
+
+		case IATDeviceButtons::kTypeID:
+			return mpChannel ? mpChannel->GetDeviceButtonsInterface() : nullptr;
 	}
 
 	return ATDevice::AsInterface(id);

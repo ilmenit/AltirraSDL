@@ -44,8 +44,8 @@
 		xce
 
 		;call the routine
-		pea		#xit-1
-		pea		#0
+		_PEA	xit-1
+		_PEA	0
 		pha
 		lda		16,s
 		sta		2,s

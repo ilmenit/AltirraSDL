@@ -410,6 +410,9 @@ void *AT1400XLDevice::AsInterface(uint32 iid) {
 	if (iid == AT1400XLDevice::kTypeID)
 		return this;
 
+	if (iid == IATDeviceButtons::kTypeID)
+		return static_cast<IATDeviceButtons *>(mpModemDevice);
+
 	return ATDeviceT::AsInterface(iid);
 }
 

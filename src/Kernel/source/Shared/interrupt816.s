@@ -82,7 +82,7 @@ not_dli:
 
 		;save and clear D
 		phd
-		pea		#0
+		_PEA	0
 		pld
 
 		;save flags, so we can restore X/Y
@@ -93,7 +93,7 @@ not_dli:
 		xce
 
 		;push fake interrupt frame, preserving original I flag
-		pea		#xit
+		_PEA	xit
 		pha
 
 		;Swap back to A and save A/X/Y.
@@ -156,7 +156,7 @@ xit:
 
 		;save D and switch to page zero
 		phd
-		pea		#0
+		_PEA	0
 		pld
 
 		;save B and switch to bank zero
@@ -169,7 +169,7 @@ xit:
 
 		;call regular IRQ handler
 		phk
-		pea		#xit
+		_PEA	xit
 		php
 
 .def :IntDispatchIrq
@@ -225,7 +225,7 @@ xit:
 .proc IntNativeCopHandler
 		;save and reset D
 		phd
-		pea		#0
+		_PEA	0
 		pld
 
 		;save and reset DBR
@@ -254,7 +254,7 @@ dispatch_0:
 		rep		#$20
 		pla
 		phk
-		pea		#xit-1
+		_PEA	xit-1
 		jmp		[vcop0]
 
 xit:
@@ -267,14 +267,14 @@ dispatch_u:
 		rep		#$20
 		pla
 		phk
-		pea		#xit-1
+		_PEA	xit-1
 		jmp		[vcopu]
 
 dispatch_c:
 		rep		#$20
 		pla
 		phk
-		pea		#xit-1
+		_PEA	xit-1
 		jmp		[vcopc]
 .endp
 
