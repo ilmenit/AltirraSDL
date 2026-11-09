@@ -12,6 +12,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include <stdafx.h>
+#include <at/atui/uicommandmanager.h>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -1209,22 +1210,22 @@ static void BuildSystemMenu(NSMenu *menu) {
 			});
 		}
 
-		static const struct { ATDeviceButton btn; const char *label; } kDevButtons[] = {
-			{ kATDeviceButton_BlackBoxDumpScreen, "BlackBox: Dump Screen" },
-			{ kATDeviceButton_BlackBoxMenu, "BlackBox: Menu" },
-			{ kATDeviceButton_IDEPlus2SwitchDisks, "IDE Plus 2.0: Switch Disks" },
-			{ kATDeviceButton_IDEPlus2WriteProtect, "IDE Plus 2.0: Write Protect" },
-			{ kATDeviceButton_IDEPlus2SDX, "IDE Plus 2.0: SDX Enable" },
-			{ kATDeviceButton_IndusGTError, "Indus GT: Error Button" },
-			{ kATDeviceButton_IndusGTTrack, "Indus GT: Track Button" },
-			{ kATDeviceButton_IndusGTId, "Indus GT: Drive Type Button" },
-			{ kATDeviceButton_IndusGTBootCPM, "Indus GT: Boot CP/M" },
-			{ kATDeviceButton_IndusGTChangeDensity, "Indus GT: Change Density" },
-			{ kATDeviceButton_HappySlow, "Happy: Slow Switch" },
-			{ kATDeviceButton_HappyWPEnable, "Happy 1050: Write protect disk" },
-			{ kATDeviceButton_HappyWPDisable, "Happy 1050: Write enable disk" },
-			{ kATDeviceButton_ATR8000Reset, "ATR8000: Reset" },
-			{ kATDeviceButton_XELCFSwap, "XEL-CF3: Swap" },
+		static const struct { ATDeviceButton btn; const char *label; const char *command; } kDevButtons[] = {
+			{ kATDeviceButton_BlackBoxDumpScreen, "BlackBox: Dump Screen", "Console.BlackBoxDumpScreen" },
+			{ kATDeviceButton_BlackBoxMenu, "BlackBox: Menu", "Console.BlackBoxMenu" },
+			{ kATDeviceButton_IDEPlus2SwitchDisks, "IDE Plus 2.0: Switch Disks", "Console.IDEPlus2SwitchDisks" },
+			{ kATDeviceButton_IDEPlus2WriteProtect, "IDE Plus 2.0: Write Protect", "Console.IDEPlus2WriteProtect" },
+			{ kATDeviceButton_IDEPlus2SDX, "IDE Plus 2.0: SDX Enable", "Console.IDEPlus2SDX" },
+			{ kATDeviceButton_IndusGTError, "Indus GT: Error Button", "Console.IndusGTError" },
+			{ kATDeviceButton_IndusGTTrack, "Indus GT: Track Button", "Console.IndusGTTrack" },
+			{ kATDeviceButton_IndusGTId, "Indus GT: Drive Type Button", "Console.IndusGTId" },
+			{ kATDeviceButton_IndusGTBootCPM, "Indus GT: Boot CP/M", "Console.IndusGTBootCPM" },
+			{ kATDeviceButton_IndusGTChangeDensity, "Indus GT: Change Density", "Console.IndusGTChangeDensity" },
+			{ kATDeviceButton_HappySlow, "Happy: Slow Switch", "Console.HappyToggleFastSlow" },
+			{ kATDeviceButton_HappyWPEnable, "Happy 1050: Write protect disk", "Console.HappyToggleWriteProtect" },
+			{ kATDeviceButton_HappyWPDisable, "Happy 1050: Write enable disk", "Console.HappyToggleWriteEnable" },
+			{ kATDeviceButton_ATR8000Reset, "ATR8000: Reset", "Console.ATR8000Reset" },
+			{ kATDeviceButton_XELCFSwap, "XEL-CF3: Swap", "Console.XELCFSwap" },
 		};
 		bool anyDevBtn = false;
 		for (auto& db : kDevButtons) {
@@ -1234,10 +1235,9 @@ static void BuildSystemMenu(NSMenu *menu) {
 					anyDevBtn = true;
 				}
 				bool dep = ATUIGetDeviceButtonDepressed((uint32)db.btn);
-				ATDeviceButton btn = db.btn;
+				const char *command = db.command;
 				AddItem(csMenu, [NSString stringWithUTF8String:db.label], dep, true, [=]{
-					ATUIActivateDeviceButton((uint32)btn,
-						!ATUIGetDeviceButtonDepressed((uint32)btn));
+					ATUIGetCommandManager().ExecuteCommandNT(command);
 				});
 			}
 		}
