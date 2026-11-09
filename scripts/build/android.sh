@@ -254,12 +254,6 @@ info "Debug keystore: $KEYSTORE"
 # Step 4: SDL3 source + Gradle wrapper
 # =========================================================================
 
-info "Checking SDL3 Android setup..."
-# Always verify the source pin: CI's fallback cache may contain an older
-# checkout even when both the directory and Java symlink already exist.
-(cd "$ANDROID_DIR" && bash setup_sdl3.sh)
-ok "SDL3 ready"
-
 # Gradle wrapper setup.
 #
 # We ALWAYS (re)write gradle-wrapper.properties so that bumping
@@ -351,6 +345,14 @@ GRADLEW
 fi
 
 ok "Gradle wrapper ready (v${GRADLE_VER})"
+
+# Prepare the pinned wrapper first so SDL setup does not bootstrap its
+# older standalone Gradle version on a clean checkout.
+info "Checking SDL3 Android setup..."
+# Always verify the source pin: CI's fallback cache may contain an older
+# checkout even when both the directory and Java symlink already exist.
+(cd "$ANDROID_DIR" && bash setup_sdl3.sh)
+ok "SDL3 ready"
 
 # =========================================================================
 # Step 5: Build
