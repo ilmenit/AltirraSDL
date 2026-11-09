@@ -164,3 +164,19 @@ mads src/ATBasic/source/atbasicr.s -c -s -i:build/basic -l:build/basic/atbasicr.
 
 The native Windows ATBasic makefile builds all variants and the Kernel
 makefile includes `atbasicr.com` in `Additions.atr`.
+
+
+Test28 adds `test28.cpp` to the existing exporter/core regression target,
+using the production RAM randomizer, Deflate encoder, registry provider and
+disk profiles. It checks deterministic compressible memory patterns and
+buffer boundaries, Generic-mode XF551 timing, and leaf-key deletion with
+ordered enumeration. The VBXE fixture covers all four MEMAC A sizes across
+$C000-$FFFF in CPU/ANTIC/debugger views, the unmapped $D000-$D7FF range,
+5200 physical/debugger mapping, immediate FEATURE_CONTROL palettes, XDL ATT
+palette ownership, frame reset and serialized ownership restoration.
+
+`tests/ui/test_upstream_test28.py` exercises actual device context-menu
+commands for H:, PCLink and the 1030, command availability across modem
+wrappers, an H: file opened/read from BASIC then force-closed, and 1400XL
+stereo internal-audio control toggles. The Linux desktop workflow runs these
+checks alongside the earlier upstream UI regressions.
