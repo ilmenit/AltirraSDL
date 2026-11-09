@@ -82,6 +82,7 @@ nmake /a /nologo "OUT=$(OutDir)\" "INT=$(IntDir)\" "MADS=$(ATMadsPath)" "ATCOMPI
     <None Include="source\Shared\screenext816.s" />
     <None Include="source\Shared\syscall816.s" />
     <None Include="source\Shared\sysdev816.s" />
+    <None Include="source\Shared\utils.inc" />
     <None Include="source\Shared\vbi816.s" />
     <None Include="source\Shared\version.inc" />
     <None Include="source\softkick.s" />

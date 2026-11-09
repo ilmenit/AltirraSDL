@@ -52,6 +52,7 @@ public:
 	uint32 mXdlAddrActive = 0;
 	uint8 mXdlRepeat = 0;				// XDLC_RPTL
 	uint8 mIntPfPalette = 0;
+	bool mbIntPfPaletteSetByXdl = false;
 	uint8 mIntOvPalette = 0;
 	uint32 mIntOvAddr = 0;
 	uint32 mIntOvStep = 0;

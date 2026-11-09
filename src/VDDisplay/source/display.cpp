@@ -635,7 +635,7 @@ void VDVideoDisplayWindow::SetCustomDesiredRefreshRate(float hz, float hzmin, fl
 
 void VDVideoDisplayWindow::SetDestRect(const vdrect32 *r, uint32 backgroundColor) {
 	if (!r)
-		SetDestRectF(nullptr, backgroundColor);
+		return SetDestRectF(nullptr, backgroundColor);
 
 	vdrect32f rf(
 		(float)r->left,

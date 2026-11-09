@@ -148,6 +148,9 @@ void *ATDevicePocketModem::AsInterface(uint32 id) {
 		case IATDeviceIndicators::kTypeID:	return static_cast<IATDeviceIndicators *>(this);
 		case IATDeviceSIO::kTypeID:			return static_cast<IATDeviceSIO *>(this);
 		case IATDeviceRawSIO::kTypeID:		return static_cast<IATDeviceRawSIO *>(this);
+
+		case IATDeviceButtons::kTypeID:
+			return static_cast<IATDeviceButtons *>(mpDevice);
 	}
 
 	return ATDevice::AsInterface(id);

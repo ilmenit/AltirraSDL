@@ -602,6 +602,21 @@ namespace {
 	}
 }
 
+// Match test28's device-button commands, retaining netplay guards.
+static void PressDeviceButton(ATDeviceButton button) {
+	ATUIActivateDeviceButton(button, true);
+}
+
+template<ATDeviceButton Button, void (*Action)(ATDeviceButton)>
+static ATUICommand DeviceButtonCommand(const char *name) {
+	return ATUICommand {
+		name,
+		[] { if (IsNetplaySessionNotEngaged()) Action(Button); },
+		[] { return IsNetplaySessionNotEngaged() && ATUIGetDeviceButtonSupported(Button); },
+		[] { return ToChecked(ATUIGetDeviceButtonDepressed(Button)); }
+	};
+}
+
 static const ATUICommand kSDL3CommandsExtra[] = {
 	// =====================================================================
 	// Audio (cmdaudio.cpp)
@@ -1219,6 +1234,23 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "Input.SelectQuickMapNone",      [] { CmdSelectQuickMap(kATInputControllerType_None); },     TestSelectQuickMapNone,     QuerySelectQuickMapNone,     nullptr },
 	{ "Input.SelectQuickMapJoystick",  [] { CmdSelectQuickMap(kATInputControllerType_Joystick); }, TestSelectQuickMapJoystick, QuerySelectQuickMapJoystick, nullptr },
 	{ "Input.SelectQuickMapPaddle",    [] { CmdSelectQuickMap(kATInputControllerType_Paddle); },   TestSelectQuickMapPaddle,   QuerySelectQuickMapPaddle,   nullptr },
+	DeviceButtonCommand<kATDeviceButton_BlackBoxDumpScreen, PressDeviceButton>("Console.BlackBoxDumpScreen"),
+	DeviceButtonCommand<kATDeviceButton_BlackBoxMenu, PressDeviceButton>("Console.BlackBoxMenu"),
+	DeviceButtonCommand<kATDeviceButton_IDEPlus2SwitchDisks, PressDeviceButton>("Console.IDEPlus2SwitchDisks"),
+	DeviceButtonCommand<kATDeviceButton_IDEPlus2WriteProtect, PressDeviceButton>("Console.IDEPlus2WriteProtect"),
+	DeviceButtonCommand<kATDeviceButton_IDEPlus2SDX, PressDeviceButton>("Console.IDEPlus2SDX"),
+	DeviceButtonCommand<kATDeviceButton_IndusGTError, ATUIPressReleaseDeviceButton>("Console.IndusGTError"),
+	DeviceButtonCommand<kATDeviceButton_IndusGTId, ATUIPressReleaseDeviceButton>("Console.IndusGTId"),
+	DeviceButtonCommand<kATDeviceButton_IndusGTTrack, ATUIPressReleaseDeviceButton>("Console.IndusGTTrack"),
+	DeviceButtonCommand<kATDeviceButton_IndusGTBootCPM, PressDeviceButton>("Console.IndusGTBootCPM"),
+	DeviceButtonCommand<kATDeviceButton_IndusGTChangeDensity, PressDeviceButton>("Console.IndusGTChangeDensity"),
+	DeviceButtonCommand<kATDeviceButton_HappySlow, ATUIToggleDeviceButton>("Console.HappyToggleFastSlow"),
+	DeviceButtonCommand<kATDeviceButton_HappyWPEnable, ATUIToggleDeviceButton>("Console.HappyToggleWriteProtect"),
+	DeviceButtonCommand<kATDeviceButton_HappyWPDisable, ATUIToggleDeviceButton>("Console.HappyToggleWriteEnable"),
+	DeviceButtonCommand<kATDeviceButton_ATR8000Reset, ATUIPressReleaseDeviceButton>("Console.ATR8000Reset"),
+	DeviceButtonCommand<kATDeviceButton_XELCFSwap, ATUIPressReleaseDeviceButton>("Console.XELCFSwap"),
+	DeviceButtonCommand<kATDeviceButton_CloseFiles, ATUIPressReleaseDeviceButton>("Console.CloseFiles"),
+	DeviceButtonCommand<kATDeviceButton_CloseNetworkConnections, ATUIPressReleaseDeviceButton>("Console.CloseNetworkConnections"),
 	{ "Console.HoldKeys",              CmdHoldKeys,             nullptr, nullptr, nullptr },
 	{ "System.WarmReset",              CmdWarmReset,             nullptr, nullptr, nullptr },
 	{ "System.ColdReset",              CmdColdReset,             nullptr, nullptr, nullptr },

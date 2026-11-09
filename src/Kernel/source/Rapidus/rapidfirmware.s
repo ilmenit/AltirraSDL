@@ -19,6 +19,7 @@
 
 		icl		'kerneldb.inc'
 		icl		'hardware.inc'
+		icl		'utils.inc'
 
 		org		0
 		opt		c+f+h-
@@ -1627,7 +1628,7 @@ loop:
 		tax
 		rep		#$30
 		lda.l	$F00000+menuopt_enatests,x
-		pea		#done-1
+		_PEA	done-1
 		pha
 		sep		#$31
 		rts
@@ -2001,7 +2002,7 @@ done:
 		rts
 
 is_special:
-		pea		#decode_loop-1
+		_PEA	decode_loop-1
 		asl
 		rep		#$20
 		phx

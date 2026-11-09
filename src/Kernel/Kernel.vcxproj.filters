@@ -343,6 +343,9 @@
     <None Include="source\VGMPlayer\playvgm.s">
       <Filter>Source Files\VGMPlayer</Filter>
     </None>
+    <None Include="source\Shared\utils.inc">
+      <Filter>Source Files\Shared</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\Placeholders\noblackbox.s">

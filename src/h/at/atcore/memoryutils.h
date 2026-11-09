@@ -24,10 +24,16 @@
 
 #include <vd2/system/vdtypes.h>
 
-// Fill memory with random data. Returns the state of the random number
+// Fill memory with pseudo-random data. Returns the state of the random number
 // generator. The initial seed may be an arbitrary non-zero number but must
 // not be zero. This is a quick-and-dirty RNG.
 //
 uint32 ATRandomizeMemory(void *dst, size_t len, uint32 seed);
+
+// Fill memory with pseudo-random data using an algorithm designed for
+// compressibility. This algorithm attempts to reuse patterns of data in ways
+// that are visually and programmatically close enough to random, but provide
+// opportunities for generic LZ-style compressors to compact the data.
+void ATRandomizeMemoryCompressible(void *dst, size_t len, uint32 seed);
 
 #endif	// f_AT_ATCORE_MEMORYUTILS_H

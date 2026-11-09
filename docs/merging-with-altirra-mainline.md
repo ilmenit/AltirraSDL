@@ -618,3 +618,55 @@ new C++ sources, intrinsic changes or platform-dependent path assertions are
 introduced. Regression sources retain `stdafx.h` first and allocate the large
 memory manager on the heap for Windows. No menu/dialog changes need SDL UI
 reflection. The classifier now recognizes ATBasic inputs explicitly.
+
+
+## Test28 local merge notes
+
+The test27 → test28 source delta modifies 43 files and adds two, with no
+removals. Archive SHA-256:
+`bf583e84aa1885bab0abf3b63421c9ff82093a731fa0fadc0148e180ed569fda`.
+The test27 input matches the checksum recorded above. The stable sync report
+is `syncing-with-upstream/reports/4.50-test27__to__4.50-test28/`.
+
+- Import native audio's blocked-stereo-buffer `memset` fix. The portable
+  audio backend already uses `memset` on both channels; retain it. The UI
+  regression selects actual 1400XL hardware with stereo POKEY and toggles
+  the modem's internal-audio control through the production memory map.
+- Adopt compressible static-RAM randomization for ordinary static RAM and
+  VBXE, preserving the fork's seed selection and netplay initialization.
+  Check determinism, seed differences, short/unaligned buffer boundaries and
+  actual Deflate compression. Generic XF551-style high-speed transfers must
+  retain a nonzero byte interval. Import the registry key-deletion ordering
+  correction, including the ordered-list enumeration regression.
+- MEMAC A now has separate layers below $D000 and at/above $D800. Preserve
+  test27's contention snapshots, first-tick/reset accounting and debugger
+  bank-base fixes. MERGE NOTE: enable A/2 in 5200 mode; A/1's mask excludes
+  the entire 5200 window. The previous production regression fails on the
+  uncorrected test28 mapping. Make `TryMapCPUAddressToLocal` match the actual
+  I/O exclusion and always-enabled 5200 window/bank selection.
+- Keep immediate FEATURE_CONTROL palette changes until XDL ATT selects a
+  palette, then retain the XDL selection until the next frame. Preserve the
+  fork's color-table refresh alongside upstream's new handler. MERGE NOTE:
+  serialize `mbIntPfPaletteSetByXdl`; upstream adds this state field but
+  omits its exchange entry. ZIP snapshot regressions preserve palette
+  ownership as well as pending MEMAC contention.
+- Register upstream's new `devxcmdclose.cpp`. The shared CMake source glob
+  picks it up after reconfiguration for desktop, bridge and libretro.
+  Host/PCLink devices and modem wrappers expose the new button interfaces;
+  the existing device context-menu implementation displays their extended
+  commands. Register both new Console commands and the refactored existing
+  device commands in SDL, preserving netplay guards. Existing ImGui and
+  macOS menu items dispatch through these commands, matching each device's
+  press, press/release or toggle behavior. Do not add new top-level menu
+  items: upstream adds command bindings and device context actions only.
+- Rebuild 800, XL/XE and 65C816 AltirraOS 3.50 ROMs with MADS. The embedded
+  800 ROM changes two ASCII version bytes; XL/XE changes four version bytes
+  (banner screen codes and internal ASCII). Retain the MADS 2.1.8/2.1.9 PEA
+  macro and regenerate the embedded ROM-set readme. No runtime OS routines
+  changed. Native disk-explorer, display and UI-proxy fixes are imported;
+  the SDL disk explorer already guards file/directory selection and bounds.
+
+The new constexpr command factories contain no static local declarations.
+No aggregate `emplace_back`, intrinsic guards or native path semantics change.
+The added standalone fixture includes `stdafx.h` first. Source snapshots
+remain untouched; generated ROMs and listings live under `build/_scratch`.

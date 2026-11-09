@@ -2404,91 +2404,6 @@ void OnCommandConsoleHoldKeys() {
 	ATUIToggleHoldKeys();
 }
 
-void OnCommandConsoleBlackBoxDumpScreen() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_BlackBoxDumpScreen, true);
-}
-
-void OnCommandConsoleBlackBoxMenu() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_BlackBoxMenu, true);
-}
-
-void OnCommandConsoleIDEPlus2SwitchDisks() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_IDEPlus2SwitchDisks, true);
-}
-
-void OnCommandConsoleIDEPlus2WriteProtect() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_IDEPlus2WriteProtect, true);
-}
-
-void OnCommandConsoleIDEPlus2SDX() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_IDEPlus2SDX, true);
-}
-
-void OnCommandConsoleIndusGTId() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
-		p->ActivateButton(kATDeviceButton_IndusGTId, true);
-		p->ActivateButton(kATDeviceButton_IndusGTId, false);
-	}
-}
-
-void OnCommandConsoleIndusGTError() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
-		p->ActivateButton(kATDeviceButton_IndusGTError, true);
-		p->ActivateButton(kATDeviceButton_IndusGTError, false);
-	}
-}
-
-void OnCommandConsoleIndusGTTrack() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
-		p->ActivateButton(kATDeviceButton_IndusGTTrack, true);
-		p->ActivateButton(kATDeviceButton_IndusGTTrack, false);
-	}
-}
-
-void OnCommandConsoleIndusGTBootCPM() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_IndusGTBootCPM, true);
-}
-
-void OnCommandConsoleIndusGTChangeDensity() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_IndusGTChangeDensity, true);
-}
-
-void OnCommandConsoleHappyToggleFastSlow() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_HappySlow, !p->IsButtonDepressed(kATDeviceButton_HappySlow));
-}
-
-void OnCommandConsoleHappyToggleWriteProtect() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_HappyWPEnable, !p->IsButtonDepressed(kATDeviceButton_HappyWPEnable));
-}
-
-void OnCommandConsoleHappyToggleWriteEnable() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
-		p->ActivateButton(kATDeviceButton_HappyWPDisable, !p->IsButtonDepressed(kATDeviceButton_HappyWPDisable));
-}
-
-void OnCommandConsoleATR8000Reset() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
-		p->ActivateButton(kATDeviceButton_ATR8000Reset, true);
-		p->ActivateButton(kATDeviceButton_ATR8000Reset, false);
-	}
-}
-
-void OnCommandConsoleXELCFSwap() {
-	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
-		p->ActivateButton(kATDeviceButton_XELCFSwap, true);
-		p->ActivateButton(kATDeviceButton_XELCFSwap, false);
-	}
-}
-
 ///////////////////////////////////////////////////////////////////////////
 
 void OnCommandDiskDrivesDialog() {
@@ -2908,6 +2823,24 @@ void ATUIActivateDeviceButton(uint32 idx, bool state) {
 	ATDeviceManager& dm = *g_sim.GetDeviceManager();
 	for(IATDeviceButtons *devbtns : dm.GetInterfaces<IATDeviceButtons>(false, false, false))
 		devbtns->ActivateButton((ATDeviceButton)idx, state);
+}
+
+void ATUIToggleDeviceButton(ATDeviceButton button) {
+	if (!(g_ATDeviceButtonMask & (1 << button)))
+		return;
+
+	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
+		p->ActivateButton(button, !p->IsButtonDepressed(button));
+}
+
+void ATUIPressReleaseDeviceButton(ATDeviceButton button) {
+	if (!(g_ATDeviceButtonMask & (1 << button)))
+		return;
+
+	for(IATDeviceButtons *p : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
+		p->ActivateButton(button, true);
+		p->ActivateButton(button, false);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////

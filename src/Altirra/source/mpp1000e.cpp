@@ -119,6 +119,9 @@ ATDeviceMPP1000E::~ATDeviceMPP1000E() {
 }
 
 void *ATDeviceMPP1000E::AsInterface(uint32 id) {
+	if (id == IATDeviceButtons::kTypeID)
+		return static_cast<IATDeviceButtons *>(mpDevice);
+
 	return ATDevice::AsInterface(id);
 }
 

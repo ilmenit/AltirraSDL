@@ -165,8 +165,8 @@ void ATMemoryManager::DumpStatus() {
 		std::sort(it1, it2,
 			[](const MemoryLayer *a, const MemoryLayer *b) {
 				// order by ending page descending
-				if (a->mPageOffset + a->mPageCount != b->mPageOffset + b->mPageCount)
-					return a->mPageOffset + a->mPageCount > b->mPageOffset + b->mPageCount;
+				if (a->mEffectiveEnd != b->mEffectiveEnd)
+					return a->mEffectiveEnd > b->mEffectiveEnd;
 
 				// order by priority descending
 				return a->mPriority > b->mPriority;
@@ -179,12 +179,18 @@ void ATMemoryManager::DumpStatus() {
 			const auto itCur = it1++;
 			const MemoryLayer& cur = **itCur;
 
+			if (cur.mEffectiveStart >= cur.mEffectiveEnd)
+				continue;
+
 			for(auto it3 = it1; it3 != it2; ++it3) {
 				const MemoryLayer& test = **it3;
 
+				if (test.mEffectiveStart >= test.mEffectiveEnd)
+					continue;
+
 				if (test.mPriority > cur.mPriority &&
-					test.mPageOffset < cur.mPageOffset + cur.mPageCount &&
-					cur.mPageOffset < test.mPageOffset + test.mPageCount)
+					test.mEffectiveStart < cur.mEffectiveEnd &&
+					cur.mEffectiveStart < test.mEffectiveEnd)
 				{
 					// ordering violation -- move this element up and recheck it
 					std::rotate(itCur, it3, it3 + 1);

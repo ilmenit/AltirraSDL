@@ -183,7 +183,8 @@ ATVBXEEmulator::ATVBXEEmulator()
 	, mpPriTable(0)
 	, mpPriTableHi(0)
 	, mpColorTable(0)
-	, mpMemLayerMEMACA(NULL)
+	, mpMemLayerMEMACA1(nullptr)
+	, mpMemLayerMEMACA2(nullptr)
 	, mpMemLayerMEMACB(NULL)
 	, mpMemLayerRegisters(NULL)
 	, mpMemLayerGTIAOverlay(NULL)
@@ -277,6 +278,7 @@ void ATVBXEEmulator::ColdReset() {
 
 	mConfigLatch	= 0;
 
+	mbPfPaletteSetByXdl = false;
 	mbExtendedColor1 = false;
 	mbExtendedColor0 = false;
 	mbAttrMapEnabled = false;
@@ -442,15 +444,17 @@ sint32 ATVBXEEmulator::TryMapCPUAddressToLocal(uint16 addr) const {
 	const bool memacAEnabled = (mMemAcBankA & 0x80) && (mMemAcControl & 0x08);
 
 	if (mb5200Mode) {
-		if (memacAEnabled && addr >= 0xD800 && addr < 0xE800) {
-			return (uint32)((mMemAcBankA & 0xF8) << 12) + (addr - 0xD800);
+		// MERGE NOTE: match the always-enabled 5200 hardware window and
+		// its actual 4K bank selection, including the 512K wrap.
+		if (addr >= 0xD800 && addr < 0xE800) {
+			return (uint32)((mMemAcBankA & 0x7F) << 12) + (addr - 0xD800);
 		}
 
 		// no MEMAC B on 5200
 		return -1;
 	}
 
-	if (memacAEnabled) {
+	if (memacAEnabled && (addr < 0xD000 || addr >= 0xD800)) {
 		const uint32 winABase = (mMemAcControl & 0xF0) << 8;
 		const uint32 winALimit = std::min<uint32>(0x10000, winABase + (0x1000 << (mMemAcControl & 3)));
 
@@ -1147,6 +1151,8 @@ void ATVBXEEmulator::LoadState(const IATObjectState *state) {
 	mPfPaletteIndex = vstate.mIntPfPalette & 3;
 	mpPfPalette = mPalette[mPfPaletteIndex];
 
+	mbPfPaletteSetByXdl = !mbVersion127OrHigher || vstate.mbIntPfPaletteSetByXdl;
+
 	mOvPaletteIndex = vstate.mIntOvPalette & 3;
 	mpOvPalette = mPalette[mOvPaletteIndex];
 
@@ -1338,6 +1344,7 @@ vdrefptr<IATObjectState> ATVBXEEmulator::SaveState() const {
 	// internal state
 	state->mXdlRepeat = (uint8)(mXdlRepeatCounter - 1);
 	state->mIntPfPalette = mPfPaletteIndex;
+	state->mbIntPfPaletteSetByXdl = mbPfPaletteSetByXdl;
 	state->mIntOvPalette = mOvPaletteIndex;
 
 	// convert overlay mode back to XDLC_* mode bits
@@ -1572,6 +1579,11 @@ bool ATVBXEEmulator::WriteControl(uint8 addrLo, uint8 value) {
 			mbExtendedColor1 = (value & 0x10) != 0;
 			mbExtendedColor0 = (value & 0x08) != 0;
 			mPfPaletteIndexInit = value & 0x03;
+
+			if (!mbPfPaletteSetByXdl) {
+				mPfPaletteIndex = mPfPaletteIndexInit;
+				mpPfPalette = mPalette[mPfPaletteIndexInit];
+			}
 			// MERGE NOTE: XCOLOR changes must also select the extended GTIA table.
 			UpdateColorTable();
 			break;
@@ -1752,8 +1764,13 @@ void ATVBXEEmulator::InitMemoryMaps() {
 	handler.BindReadHandler<&ATVBXEEmulator::ReadMEMACA>();
 	handler.BindWriteHandler<&ATVBXEEmulator::WriteMEMACA>();
 
-	mpMemLayerMEMACA = mpMemMan->CreateLayer(kATMemoryPri_Extsel+1, handler, 0xD8, 0x10);
-	mpMemMan->SetLayerName(mpMemLayerMEMACA, "VBXE MEMAC A");
+	mpMemLayerMEMACA1 = mpMemMan->CreateLayer(kATMemoryPri_Extsel+1, handler, 0xD8, 0x10);
+	mpMemMan->SetLayerName(mpMemLayerMEMACA1, "VBXE MEMAC A/1");
+	mpMemMan->SetLayerMaskRange(mpMemLayerMEMACA1, 0x00, 0xD0);
+
+	mpMemLayerMEMACA2 = mpMemMan->CreateLayer(kATMemoryPri_Extsel+1, handler, 0xD8, 0x10);
+	mpMemMan->SetLayerName(mpMemLayerMEMACA2, "VBXE MEMAC A/2");
+	mpMemMan->SetLayerMaskRange(mpMemLayerMEMACA2, 0xD8, 0x28);
 
 	handler.BindDebugReadHandler<&ATVBXEEmulator::DebugReadMEMACB>();
 	handler.BindReadHandler<&ATVBXEEmulator::ReadMEMACB>();
@@ -1804,9 +1821,14 @@ void ATVBXEEmulator::ShutdownMemoryMaps() {
 		mpMemLayerRegisters = NULL;
 	}
 
-	if (mpMemLayerMEMACA) {
-		mpMemMan->DeleteLayer(mpMemLayerMEMACA);
-		mpMemLayerMEMACA = NULL;
+	if (mpMemLayerMEMACA2) {
+		mpMemMan->DeleteLayer(mpMemLayerMEMACA2);
+		mpMemLayerMEMACA2 = nullptr;
+	}
+
+	if (mpMemLayerMEMACA1) {
+		mpMemMan->DeleteLayer(mpMemLayerMEMACA1);
+		mpMemLayerMEMACA1 = nullptr;
 	}
 
 	if (mpMemLayerMEMACB) {
@@ -1823,8 +1845,10 @@ void ATVBXEEmulator::UpdateMemoryMaps() {
 		const uint32 baseA = ((uint32)mMemAcBankA << 12) & 0x7F000;
 		mMemAcBankAOffset = baseA - 0xD800;
 
-		mpMemMan->SetLayerAddressSpace(mpMemLayerMEMACA, kATAddressSpace_VBXE + baseA);
-		mpMemMan->EnableLayer(mpMemLayerMEMACA, true);
+		// MERGE NOTE: only A/2's mask includes $D800-E7FF. A/1 ends at
+		// $CFFF, so enabling it here silently disables the 5200 window.
+		mpMemMan->SetLayerAddressSpace(mpMemLayerMEMACA2, kATAddressSpace_VBXE + baseA);
+		mpMemMan->EnableLayer(mpMemLayerMEMACA2, true);
 	} else {
 		// Window B ($4000-7FFF)
 		if (mMemAcBankB & 0xC0) {
@@ -1871,16 +1895,23 @@ void ATVBXEEmulator::UpdateMemoryMaps() {
 
 			const uint32 baseA = ((uint32)mMemAcBankA << 12) & kAddrMask[mMemAcControl & 3];
 			mMemAcBankAOffset = baseA - ((uint32)pageBase << 8);
-			mpMemMan->SetLayerAddressRangeAndSpace(mpMemLayerMEMACA, pageBase, numPages, kATAddressSpace_VBXE + baseA);
 
-			// MEMAC-A access - CPU
-			mpMemMan->EnableLayer(mpMemLayerMEMACA, kATMemoryAccessMode_CPURead, (mMemAcControl & 0x08) != 0);
-			mpMemMan->EnableLayer(mpMemLayerMEMACA, kATMemoryAccessMode_CPUWrite, (mMemAcControl & 0x08) != 0);
+			// MEMAC-A access - CPU/ANTIC
+			ATMemoryAccessMode accessMode = kATMemoryAccessMode_0;
 
-			// MEMAC-A access - ANTIC
-			mpMemMan->EnableLayer(mpMemLayerMEMACA, kATMemoryAccessMode_AnticRead, (mMemAcControl & 0x04) != 0);
+			if ((mMemAcControl & 0x08) != 0)
+				accessMode |= kATMemoryAccessMode_RW;
+
+			if ((mMemAcControl & 0x04) != 0)
+				accessMode |= kATMemoryAccessMode_A;
+
+			mpMemMan->SetLayerModes(mpMemLayerMEMACA1, accessMode);
+			mpMemMan->SetLayerModes(mpMemLayerMEMACA2, accessMode);
+			mpMemMan->SetLayerAddressRangeAndSpace(mpMemLayerMEMACA1, pageBase, numPages, kATAddressSpace_VBXE + baseA);
+			mpMemMan->SetLayerAddressRangeAndSpace(mpMemLayerMEMACA2, pageBase, numPages, kATAddressSpace_VBXE + baseA);
 		} else {
-			mpMemMan->EnableLayer(mpMemLayerMEMACA, false);
+			mpMemMan->EnableLayer(mpMemLayerMEMACA1, false);
+			mpMemMan->EnableLayer(mpMemLayerMEMACA2, false);
 		}
 	}
 }
@@ -1901,11 +1932,12 @@ void ATVBXEEmulator::BeginFrame(int correctionMode, bool signedPalette) {
 	mOvWidth = kOvWidth_Normal;
 	mOvMode = ATVBXEOverlayMode::Disabled;
 
-	mpPfPalette = mPalette[0];
-	mpOvPalette = mPalette[1];
 	mPfPaletteIndex = mPfPaletteIndexInit;
+	mpPfPalette = mPalette[mPfPaletteIndexInit];
+	mpOvPalette = mPalette[1];
 	mOvPaletteIndex = 1;
 
+	mbPfPaletteSetByXdl = false;
 	mbAttrMapEnabled = false;
 	mAttrWidth = 8;
 	mAttrHeight = 8;
@@ -2084,6 +2116,7 @@ void ATVBXEEmulator::BeginScanline(uint32 y, uint32 *dst, const uint8 *mergeBuff
 
 				mOvWidth = ((ctl & 3) == 3) ? kOvWidth_Narrow : (OvWidth)(ctl & 3);
 				mPfPaletteIndex = ctl >> 6;
+				mbPfPaletteSetByXdl = true;
 				mOvPaletteIndex = (ctl >> 4) & 3;
 				mpPfPalette = mPalette[mPfPaletteIndex];
 				mpOvPalette = mPalette[mOvPaletteIndex];

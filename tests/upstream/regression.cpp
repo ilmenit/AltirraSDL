@@ -90,7 +90,10 @@ static std::vector<ATPrinterGraphicalOutput::RenderDot> Print(
 	return result;
 }
 
+void ATTest28CoreRegressions();
+
 int main() {
+	ATTest28CoreRegressions();
 	// Empty containers/ranges legitimately have null iterators. These
 	// operations must not call the C memory functions with null arguments.
 	vdfastvector<int> empty;

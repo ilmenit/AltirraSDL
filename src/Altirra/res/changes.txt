@@ -39,11 +39,13 @@ This prerelease version:
    * Printer: Added Epson FX-80+ emulation.
    * Save States: Improved fuzzy matching of firmware references.
    * Simulator: Added option to write text files with LF line endings.
+   * Simulator: Static RAM modes now use a more compressible randomization algorithm.
    * UI: Removed inner edge on display window when there are no other docked panes visible.
    * UI: Files can now be dragged from folders mapped with the H: device to paste in the emulated path to the file.
    * UI: Added auto-suggest feature for H: paths and PEEK/POKE addresses.
    * UI: Added UI commands for cycling to quick maps with specific controller types.
    * UI: Added quick bar in lower right for shortcut access to common commands.
+   * UI: Added device and UI commands to close open files or network connections on external file/network devices.
    * VBXE: Added FX 1.27 core emulation.
 
    [bugs fixed]

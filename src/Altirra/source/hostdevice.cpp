@@ -501,6 +501,7 @@ class ATHostDeviceEmulator final
 			, public IATDeviceIndicators
 			, public IATDeviceNativePathMapping
 			, public IATDeviceAutoSuggest
+			, public IATDeviceButtons
 {
 	ATHostDeviceEmulator(const ATHostDeviceEmulator&) = delete;
 	ATHostDeviceEmulator& operator=(const ATHostDeviceEmulator&) = delete;
@@ -556,6 +557,11 @@ public:	// IATDeviceNativePathMapping
 public:	// IATDeviceAutoSuggest
 	void AutoSuggestCIOPaths(char cioDevice, uint8 unit, const VDStringA& path, IATDeviceAutoSuggestSink& sink) override;
 
+public:	// IATDeviceButtons
+	uint32 GetSupportedButtons() const override;
+	bool IsButtonDepressed(ATDeviceButton idx) const override;
+	void ActivateButton(ATDeviceButton idx, bool state) override;
+
 protected:
 	sint32 HandleCmd_Note(int channel, uint8 aux[6]);
 	sint32 HandleCmd_Point(int channel, uint8 aux[6]);
@@ -568,6 +574,8 @@ protected:
 	sint32 HandleCmd_SDX_Getcwd(uint16 bufadr, uint16 buflen);
 	sint32 HandleCmd_Mkdir(uint16 bufadr);
 	sint32 HandleCmd_SDX_Rmdir(uint16 bufadr);
+
+	void CloseAllChannels();
 
 	uint8 ReadFilename(uint16 bufadr, bool allowDir, bool allowWild);
 	uint8 ReadFilename(const uint8 *rawfn, bool allowDir, bool allowWild);
@@ -625,6 +633,8 @@ void *ATHostDeviceEmulator::AsInterface(uint32 id) {
 		return static_cast<IATDeviceNativePathMapping*>(this);
 	else if (id == IATDeviceAutoSuggest::kTypeID)
 		return static_cast<IATDeviceAutoSuggest*>(this);
+	else if (id == IATDeviceButtons::kTypeID)
+		return static_cast<IATDeviceButtons*>(this);
 
 	return ATDevice::AsInterface(id);
 }
@@ -708,11 +718,7 @@ bool ATHostDeviceEmulator::SetSettings(const ATPropertySet& settings) {
 }
 
 void ATHostDeviceEmulator::WarmReset() {
-	for(int i=0; i<8; ++i) {
-		Channel& ch = mChannels[i];
-
-		ch.Close();
-	}
+	CloseAllChannels();
 
 	for(auto& curDir : mNativeCurDir)
 		curDir.clear();
@@ -1254,6 +1260,21 @@ void ATHostDeviceEmulator::AutoSuggestCIOPaths(char cioDevice, uint8 unit, const
 	}
 }
 
+uint32 ATHostDeviceEmulator::GetSupportedButtons() const {
+	return UINT32_C(1) << kATDeviceButton_CloseFiles;
+}
+
+bool ATHostDeviceEmulator::IsButtonDepressed(ATDeviceButton idx) const {
+	return false;
+}
+
+void ATHostDeviceEmulator::ActivateButton(ATDeviceButton idx, bool state) {
+	if (idx == kATDeviceButton_CloseFiles) {
+		if (state)
+			CloseAllChannels();
+	}
+}
+
 sint32 ATHostDeviceEmulator::HandleCmd_Note(int channel, uint8 aux[6]) {
 	Channel& ch = mChannels[channel];
 
@@ -1580,6 +1601,11 @@ sint32 ATHostDeviceEmulator::HandleCmd_SDX_Rmdir(uint16 bufadr) {
 	}
 
 	return status;
+}
+
+void ATHostDeviceEmulator::CloseAllChannels() {
+	for(Channel& ch : mChannels)
+		ch.Close();
 }
 
 uint8 ATHostDeviceEmulator::ReadFilename(uint16 bufadr, bool allowDir, bool allowWild) {

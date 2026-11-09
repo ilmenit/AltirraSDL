@@ -1171,6 +1171,9 @@
     <ClCompile Include="source\uiconfdevprinterfx80.cpp">
       <Filter>Source Files - Device Configuration UI</Filter>
     </ClCompile>
+    <ClCompile Include="source\devxcmdclose.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="h\antic.h">

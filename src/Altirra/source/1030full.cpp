@@ -129,6 +129,9 @@ void *ATDevice1030Full::AsInterface(uint32 iid) {
 		case IATDeviceScheduling::kTypeID: return static_cast<IATDeviceScheduling *>(this);
 		case IATDeviceFirmware::kTypeID: return static_cast<IATDeviceFirmware *>(this);
 		case IATDeviceSIO::kTypeID: return static_cast<IATDeviceSIO *>(this);
+
+		case IATDeviceButtons::kTypeID:
+			return static_cast<IATDeviceButtons *>(mpModem);
 	}
 
 	void *p = ATDiskDriveDebugTargetControl::AsInterface(iid);

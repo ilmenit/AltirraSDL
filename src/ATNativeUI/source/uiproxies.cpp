@@ -3685,7 +3685,6 @@ HRESULT STDMETHODCALLTYPE VDUIProxyEditControl::AutoCompleteStringSource::Next(U
 	if (!strOut)
 		return E_POINTER;
 
-	*actual = 0;
 	std::fill(strOut, strOut + count, nullptr);
 
 	vdspan buf(mpBuffer->mFilteredStrings);

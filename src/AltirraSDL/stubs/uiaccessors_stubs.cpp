@@ -880,6 +880,22 @@ void ATUIActivateDeviceButton(uint32 idx, bool state) { UpdateDevBtnMask();
 	if (!(g_devBtnMask & (1 << idx))) return; ATDeviceManager& dm = *g_sim.GetDeviceManager();
 	for (IATDeviceButtons *db : dm.GetInterfaces<IATDeviceButtons>(false, false, false)) db->ActivateButton((ATDeviceButton)idx, state); }
 
+void ATUIToggleDeviceButton(ATDeviceButton button) {
+	if (!ATUIGetDeviceButtonSupported(button))
+		return;
+	for (IATDeviceButtons *db : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false))
+		db->ActivateButton(button, !db->IsButtonDepressed(button));
+}
+
+void ATUIPressReleaseDeviceButton(ATDeviceButton button) {
+	if (!ATUIGetDeviceButtonSupported(button))
+		return;
+	for (IATDeviceButtons *db : g_sim.GetDeviceManager()->GetInterfaces<IATDeviceButtons>(false, false, false)) {
+		db->ActivateButton(button, true);
+		db->ActivateButton(button, false);
+	}
+}
+
 // ATUIGetDefaultScanCodeForCharacter is provided by
 // source/input/keyboard_keymap_sdl3.cpp.
 

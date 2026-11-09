@@ -694,7 +694,7 @@ void ATAudioOutput::InternalWriteAudio(
 			memset(dstLeft + kPreFilterOffset, 0, sizeof(float) * count);
 
 			if (mbFilterStereo)
-				memcpy(dstRight + kPreFilterOffset, 0, sizeof(float) * count);
+				memset(dstRight + kPreFilterOffset, 0, sizeof(float) * count);
 		} else if (mbFilterStereo && pushStereoAsMono && right) {
 			float *VDRESTRICT mixDstLeft = dstLeft + kPreFilterOffset;
 			float *VDRESTRICT mixDstRight = dstRight + kPreFilterOffset;

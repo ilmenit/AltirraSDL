@@ -118,6 +118,25 @@ struct ATVBXERegressionTests {
 			Check(mem->mpCPUReadAddressPageMap[0x41] + 0x4123
 				== kATAddressSpace_VBXE + addr, "MEMAC A debugger address space mismatch");
 		}
+		// A must leave the I/O hole alone, even without hardware layers
+		// above it. Exercise every window size and both DMA/CPU views.
+		for (uint8 size = 0; size < 4; ++size) {
+			v.mMemAcBankA = 0x80;
+			v.mMemAcControl = 0xCC | size;
+			v.UpdateMemoryMaps();
+			for (uint32 addr = 0xC000; addr < 0x10000; ++addr) {
+				const bool mapped = addr < 0xD000
+					|| (size && addr >= 0xD800 && addr < std::min(0x10000U, 0xC000U + (0x1000U << size)));
+				Check(mem->CPUDebugReadByte(addr) == (mapped ? 0 : 0x31)
+					&& mem->DebugAnticReadByte(addr) == (mapped ? 0 : 0x31),
+					"MEMAC A claimed I/O pages or lost a valid page");
+				Check((v.TryMapCPUAddressToLocal(addr) >= 0) == mapped,
+					"MEMAC debugger translation disagrees with actual window");
+			}
+			mem->CPUWriteByte(0xD123, 0x31);
+			Check(local[0x1123] == 0, "MEMAC write escaped into I/O hole");
+		}
+		// Only the two earlier hardware reads consumed cycles.
 		// 5200's fixed A window wraps at the end of local RAM.
 		v.mMemAcBankA = 0x7F;
 		v.Set5200Mode(true);
@@ -125,6 +144,8 @@ struct ATVBXERegressionTests {
 		local[0] = 0xA3;
 		Check(mem->CPUDebugReadByte(0xE7FF) == 0x92,
 			"5200 MEMAC A end address mismatch");
+		Check(v.TryMapCPUAddressToLocal(0xE7FF) == 0x7FFFF,
+			"5200 debugger translation differs from physical bank");
 		v.mMemAcBankA = 0x80;
 		v.UpdateMemoryMaps();
 		Check(mem->CPUDebugReadByte(0xD800) == 0xA3,
@@ -150,6 +171,36 @@ struct ATVBXERegressionTests {
 		Check(v.mMemAcCycles == 1, "Reset suppressed the first MEMAC access");
 		v.Shutdown();
 		mem->DeleteLayer(base);
+	}
+
+	static void TestPaletteSelection() {
+		ATVBXEEmulator v;
+		ATScheduler scheduler;
+		std::vector<uint8> memory(0x80000, 0);
+		v.SetMemory(memory.data());
+		v.mpScheduler = &scheduler;
+		v.SetVersion(127);
+		v.WriteControl(0x40, 1);
+		v.WriteControl(0x4B, 2);
+		v.BeginFrame(0, false);
+		Check(v.mPfPaletteIndex == 2 && v.mpPfPalette == v.mPalette[2],
+			"Frame start ignored FEATURE_CONTROL palette");
+		v.WriteControl(0x4B, 1);
+		Check(v.mPfPaletteIndex == 1 && v.mpPfPalette == v.mPalette[1],
+			"FEATURE_CONTROL palette stayed latched until next frame");
+		memory[1] = 0x08; // XDLC_ATT
+		memory[2] = 0xC0; // GTIA palette 3
+		uint8 pixels[256] {};
+		v.BeginScanline(1, nullptr, pixels, pixels, false);
+		Check(v.mbPfPaletteSetByXdl && v.mPfPaletteIndex == 3,
+			"XDL ATT did not take palette ownership");
+		v.WriteControl(0x4B, 0);
+		Check(v.mPfPaletteIndex == 3 && v.mpPfPalette == v.mPalette[3],
+			"FEATURE_CONTROL overrode XDL ATT palette");
+		v.BeginFrame(0, false);
+		Check(!v.mbPfPaletteSetByXdl && v.mPfPaletteIndex == 0
+			&& v.mpPfPalette == v.mPalette[0], "Frame start did not release XDL palette");
+		v.mpScheduler = nullptr;
 	}
 
 	static void TestRegisterDecoding() {
@@ -272,6 +323,7 @@ struct ATVBXERegressionTests {
 
 	static void Run() {
 		TestMEMAC();
+		TestPaletteSelection();
 		TestRegisterDecoding();
 		TestTiming();
 		// Device settings must enforce the restriction even when loaded
@@ -536,15 +588,18 @@ struct ATVBXERegressionTests {
 		v.mOvMode = ATVBXEOverlayMode::HRLR;
 		v.mBlitCollisionMask = 0xFF;
 		v.mBlitActiveCollisionMask = 0;
+		v.mbPfPaletteSetByXdl = true;
 		v.mMemAcCycles = 17;
 		v.mMemAcLastCycle = scheduler.GetTick64();
 		auto textureState = RoundTripState(v.SaveState());
 		v.mMemAcCycles = 99;
 		v.mMemAcLastCycle = ~uint64(0);
+		v.mbPfPaletteSetByXdl = false;
 		v.WriteControl(0x4B, 0);
 		v.mbBlitRCMode = false;
 		v.mBlitRCSrcX = v.mBlitRCSrcY = 0;
 		v.LoadState(textureState);
+		Check(v.mbPfPaletteSetByXdl, "Snapshot lost XDL palette ownership");
 		Check(v.mMemAcCycles == 17, "Snapshot lost pending MEMAC contention");
 		v.AllocateMemAcCycle();
 		Check(v.mMemAcCycles == 17, "Snapshot charged the same MEMAC tick twice");

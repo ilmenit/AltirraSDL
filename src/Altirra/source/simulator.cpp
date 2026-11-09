@@ -2412,7 +2412,7 @@ void ATSimulator::InternalColdReset(bool computerOnly) {
 	for(ATVBXEEmulator *devvbxe : mpDeviceManager->GetInterfaces<ATVBXEEmulator>(false, false, false)) {
 		void *vbxeMem = devvbxe->GetMemoryBase();
 		if (mMemoryClearMode != kATMemoryClearMode_Zero)
-			ATRandomizeMemory((uint8 *)vbxeMem, 0x80000, g_ATRandomizationSeeds.mVBXEMemory);
+			ATRandomizeMemoryCompressible((uint8 *)vbxeMem, 0x80000, g_ATRandomizationSeeds.mVBXEMemory);
 		else
 			memset(vbxeMem, 0, 0x80000);
 	}
@@ -6300,7 +6300,7 @@ void ATSimulator::ResetMemoryBuffer(void *dst, size_t len, uint32 seed) {
 			break;
 
 		case kATMemoryClearMode_Random:
-			ATRandomizeMemory(dst, len, seed);
+			ATRandomizeMemoryCompressible(dst, len, seed);
 			break;
 
 		case kATMemoryClearMode_DRAM1:

@@ -166,7 +166,9 @@ enum ATDeviceButton : uint32 {
 	kATDeviceButton_HappyWPEnable,
 	kATDeviceButton_HappyWPDisable,
 	kATDeviceButton_ATR8000Reset,
-	kATDeviceButton_XELCFSwap
+	kATDeviceButton_XELCFSwap,
+	kATDeviceButton_CloseFiles,
+	kATDeviceButton_CloseNetworkConnections
 };
 
 class IATDeviceButtons {

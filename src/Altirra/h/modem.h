@@ -79,6 +79,7 @@ class ATModemEmulator final : public ATDevice
 					, public IATDeviceIndicators
 					, public IATDeviceSerial
 					, public IATDeviceDiagnostics
+					, public IATDeviceButtons
 {
 	ATModemEmulator(const ATModemEmulator&) = delete;
 	ATModemEmulator& operator=(const ATModemEmulator&) = delete;
@@ -112,6 +113,11 @@ public:
 
 public:	// IATDeviceDiagnostics
 	void DumpStatus(ATConsoleOutput& output) override;
+
+public:	// IATDeviceButtons
+	uint32 GetSupportedButtons() const override;
+	bool IsButtonDepressed(ATDeviceButton idx) const override;
+	void ActivateButton(ATDeviceButton idx, bool state) override;
 
 public:
 	void Init(ATScheduler *sched, ATScheduler *slowsched, IATDeviceIndicatorManager *uir, IATAudioMixer *mixer, IATAsyncDispatcher *asyncDispatcher);
@@ -180,6 +186,7 @@ protected:
 	void SendResponseF(const char *format, ...);
 	void ReportRegisters(const ATModemRegisters& reg, bool stored);
 
+	void DisconnectCall();
 	void TerminateCall();
 	void RestoreListeningState();
 	void UpdateConfig();

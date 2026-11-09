@@ -113,6 +113,15 @@ enum ATMemoryAccessMode : uint8 {
 	kATMemoryAccessMode_CPUWrite = kATMemoryAccessMode_W,
 };
 
+inline ATMemoryAccessMode operator|(ATMemoryAccessMode a, ATMemoryAccessMode b) {
+	return ATMemoryAccessMode((uint8)a | (uint8)b);
+}
+
+inline ATMemoryAccessMode& operator|=(ATMemoryAccessMode& a, ATMemoryAccessMode b) {
+	a = ATMemoryAccessMode((uint8)a | (uint8)b);
+	return a;
+}
+
 enum ATMemoryPriority {
 	kATMemoryPri_BaseRAM	= 0,
 	kATMemoryPri_ExtRAM		= 1,	// [+2]

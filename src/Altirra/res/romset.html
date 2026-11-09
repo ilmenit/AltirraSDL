@@ -161,6 +161,13 @@
       For newer versions listed below, the version of the emulator that the AltirraOS version first appeared in is also noted.
     </p>
     <ul class="verhistory">
+    <li>Version 3.50 (Altirra 4.50-test28)</li>
+    <ul>
+      <li>Fixed listing generated during assembling missing the low $C000-CFFF ROM routines.</li>
+      <li>65C816: Added workaround for PEA instruction assembly errors with MADS 2.1.9 while retaining compatibility with MADS 2.1.8.</li>
+      <li>There is no change in the binaries besides the version number, to keep the source and binary versions in sync.
+      </li>
+    </ul>
     <li>Version 3.49 (Altirra 4.50-test9)</li>
     <ul>
       <li>Fixed occasional issue with bogus SIO timeout due to race condition.</li>

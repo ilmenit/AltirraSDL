@@ -668,6 +668,9 @@ void *ATPCLinkDevice::AsInterface(uint32 id) {
 
 		case IATDeviceDiagnostics::kTypeID:
 			return static_cast<IATDeviceDiagnostics *>(this);
+
+		case IATDeviceButtons::kTypeID:
+			return static_cast<IATDeviceButtons *>(this);
 	}
 
 	return ATDevice::AsInterface(id);
@@ -735,8 +738,7 @@ void ATPCLinkDevice::Shutdown() {
 }
 
 void ATPCLinkDevice::ColdReset() {
-	for(auto& fh : mFileHandles)
-		fh.Close();
+	CloseAllFiles();
 }
 
 void ATPCLinkDevice::InitIndicators(IATDeviceIndicatorManager *uir) {
@@ -849,11 +851,32 @@ void ATPCLinkDevice::DumpStatus(ATConsoleOutput& output) {
 	}
 }
 
+uint32 ATPCLinkDevice::GetSupportedButtons() const {
+	return UINT32_C(1) << kATDeviceButton_CloseFiles;
+}
+
+bool ATPCLinkDevice::IsButtonDepressed(ATDeviceButton idx) const {
+	return false;
+}
+
+void ATPCLinkDevice::ActivateButton(ATDeviceButton idx, bool state) {
+	if (idx == kATDeviceButton_CloseFiles) {
+		if (state) {
+			CloseAllFiles();
+		}
+	}
+}
+
 void ATPCLinkDevice::BeginCommand(Command cmd) {
 	mCommand = cmd;
 	mCommandPhase = 0;
 
 	AdvanceCommand();
+}
+
+void ATPCLinkDevice::CloseAllFiles() {
+	for(auto& fh : mFileHandles)
+		fh.Close();
 }
 
 void ATPCLinkDevice::AbortCommand() {

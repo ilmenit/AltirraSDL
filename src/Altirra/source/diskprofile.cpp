@@ -201,7 +201,7 @@ constexpr ATDiskProfile::ATDiskProfile(ATDiskEmulationMode mode, ATDiskEmulation
 	setCyc(mCyclesPerSIOByte,					530us,		530us,		530us,		530us,		530us,		549us,		534us,		525us,		524us,		520us,		522us,		559.3us		);
 	setCyc(mCyclesPerSIOBit,					52us,		52us,		52us,		52us,		52us,		51us,		53us,		52us,		51us,		52us,		52.2us,		52.3us		);
 
-	setCyc(mCyclesPerSIOByteHighSpeedXF,		0us,		252us,		252us,		0us,		0us,		0us,		0us,		0us,		0us,		151us,		252us,		290.8us		);
+	setCyc(mCyclesPerSIOByteHighSpeedXF,		252us,		252us,		252us,		0us,		0us,		0us,		0us,		0us,		0us,		151us,		252us,		290.8us		);
 	setCyc(mCyclesPerSIOByteHighSpeedUSD,		0us,		173.6us,	78.2us,		0us,		220us,		0us,		220us,		214us,		220us,		151us,		0us,		290.8us		);
 
 	float	cyclesPerSIOBitHighSpeedXFF = 1;
