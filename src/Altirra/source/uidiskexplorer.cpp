@@ -1315,7 +1315,7 @@ bool ATUIDialogDiskExplorer::OnCommand(uint32 id, uint32 extcode) {
 			for(int idx : indices) {
 				FileListEntry *fle = GetFileListEntry(idx);
 
-				if (!fle && fle->mbIsDirectory)
+				if (!fle || fle->mbIsDirectory)
 					continue;
 
 				vdfastvector<uint8> buf;

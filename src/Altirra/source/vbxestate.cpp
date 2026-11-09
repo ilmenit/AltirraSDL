@@ -45,6 +45,8 @@ void ATSaveStateVbxe::Exchange(T& ex) {
 	ex.Transfer("int_xdl_addr", &mXdlAddrActive);
 	ex.Transfer("int_xdl_repeat", &mXdlRepeat);
 	ex.Transfer("int_pf_palette", &mIntPfPalette);
+	// MERGE NOTE: test28's XDL palette ownership must survive serialization.
+	ex.Transfer("int_pf_palette_set_by_xdl", &mbIntPfPaletteSetByXdl);
 	ex.Transfer("int_ov_palette", &mIntOvPalette);
 	ex.Transfer("int_ov_mode", &mIntOvMode);
 	ex.Transfer("int_ov_width", &mIntOvWidth);

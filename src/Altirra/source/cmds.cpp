@@ -188,21 +188,6 @@ void OnCommandSystemCPUToggleNMIBlocking();
 void OnCommandSystemCPUToggleShadowROM();
 void OnCommandSystemCPUToggleShadowCarts();
 void OnCommandConsoleHoldKeys();
-void OnCommandConsoleBlackBoxDumpScreen();
-void OnCommandConsoleBlackBoxMenu();
-void OnCommandConsoleIDEPlus2SwitchDisks();
-void OnCommandConsoleIDEPlus2WriteProtect();
-void OnCommandConsoleIDEPlus2SDX();
-void OnCommandConsoleIndusGTError();
-void OnCommandConsoleIndusGTId();
-void OnCommandConsoleIndusGTTrack();
-void OnCommandConsoleIndusGTBootCPM();
-void OnCommandConsoleIndusGTChangeDensity();
-void OnCommandConsoleHappyToggleFastSlow();
-void OnCommandConsoleHappyToggleWriteProtect();
-void OnCommandConsoleHappyToggleWriteEnable();
-void OnCommandConsoleATR8000Reset();
-void OnCommandConsoleXELCFSwap();
 void OnCommandSystemHardwareMode(ATHardwareMode mode);
 void OnCommandSystemKernel(ATFirmwareId id);
 void OnCommandSystemBasic(ATFirmwareId id);
@@ -650,6 +635,36 @@ namespace ATCommands {
 		}
 	}
 
+	template<ATDeviceButton T_Button>
+	constexpr ATUICommand DeviceButtonToggleCommand(const ATUICommandName& name) {
+		return ATUICommand {
+			name,
+			[] { ATUIToggleDeviceButton(T_Button); },
+			[] { return ATUIGetDeviceButtonSupported(T_Button); },
+			[] { return ATUIGetDeviceButtonDepressed(T_Button) ? kATUICmdState_Checked : kATUICmdState_None; }
+		};
+	}
+
+	template<ATDeviceButton T_Button>
+	constexpr ATUICommand DeviceButtonDownUpCommand(const ATUICommandName& name) {
+		return ATUICommand {
+			name,
+			[] { ATUIPressReleaseDeviceButton(T_Button); },
+			[] { return ATUIGetDeviceButtonSupported(T_Button); },
+			[] { return ATUIGetDeviceButtonDepressed(T_Button) ? kATUICmdState_Checked : kATUICmdState_None; }
+		};
+	}
+
+	template<ATDeviceButton T_Button>
+	constexpr ATUICommand DeviceButtonDownCommand(const ATUICommandName& name) {
+		return ATUICommand {
+			name,
+			[] { ATUIActivateDeviceButton(T_Button, true); },
+			[] { return ATUIGetDeviceButtonSupported(T_Button); },
+			[] { return ATUIGetDeviceButtonDepressed(T_Button) ? kATUICmdState_Checked : kATUICmdState_None; }
+		};
+	}
+
 	constexpr struct ATUICommand kATCommands[]={
 		{ "File.OpenImage", OnCommandOpenImage, NULL },
 		{ "File.BootImage", OnCommandBootImage, NULL },
@@ -814,67 +829,24 @@ namespace ATCommands {
 		{ "System.ToggleShadowCarts", OnCommandSystemCPUToggleShadowCarts, Is65C816Accel, [] { return g_sim.GetShadowCartridgeEnabled() ? kATUICmdState_Checked : kATUICmdState_None; } },
 
 		{ "Console.HoldKeys", OnCommandConsoleHoldKeys },
-		{ "Console.BlackBoxDumpScreen", OnCommandConsoleBlackBoxDumpScreen, []() { return ATUIGetDeviceButtonSupported(kATDeviceButton_BlackBoxDumpScreen); } },
-		{ "Console.BlackBoxMenu", OnCommandConsoleBlackBoxMenu, []() { return ATUIGetDeviceButtonSupported(kATDeviceButton_BlackBoxMenu); } },
-		{ "Console.IDEPlus2SwitchDisks",	OnCommandConsoleIDEPlus2SwitchDisks, []() { return ATUIGetDeviceButtonSupported(kATDeviceButton_IDEPlus2SwitchDisks); } },
-		{ "Console.IDEPlus2WriteProtect",
-			OnCommandConsoleIDEPlus2WriteProtect,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IDEPlus2WriteProtect); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IDEPlus2WriteProtect) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.IDEPlus2SDX",
-			OnCommandConsoleIDEPlus2SDX,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IDEPlus2SDX); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IDEPlus2SDX) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.IndusGTError",
-			OnCommandConsoleIndusGTError,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IndusGTError); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IndusGTError) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.IndusGTId",
-			OnCommandConsoleIndusGTId,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IndusGTId); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IndusGTId) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.IndusGTTrack",
-			OnCommandConsoleIndusGTTrack,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IndusGTTrack); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IndusGTTrack) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.IndusGTBootCPM",
-			OnCommandConsoleIndusGTBootCPM,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IndusGTBootCPM); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IndusGTBootCPM) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.IndusGTChangeDensity",
-			OnCommandConsoleIndusGTBootCPM,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_IndusGTChangeDensity); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_IndusGTChangeDensity) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.HappyToggleFastSlow",
-			OnCommandConsoleHappyToggleFastSlow,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_HappySlow); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_HappySlow) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.HappyToggleWriteProtect",
-			OnCommandConsoleHappyToggleWriteProtect,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_HappyWPEnable); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_HappyWPEnable) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.HappyToggleWriteEnable",
-			OnCommandConsoleHappyToggleWriteEnable,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_HappyWPDisable); },
-			[] { return ATUIGetDeviceButtonDepressed(kATDeviceButton_HappyWPDisable) ? kATUICmdState_Checked : kATUICmdState_None; }
-		},
-		{ "Console.ATR8000Reset",
-			OnCommandConsoleATR8000Reset,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_ATR8000Reset); }
-		},
-		{ "Console.XELCFSwap",
-			OnCommandConsoleXELCFSwap,
-			[] { return ATUIGetDeviceButtonSupported(kATDeviceButton_XELCFSwap); }
-		},
+
+		DeviceButtonDownCommand<kATDeviceButton_BlackBoxDumpScreen>("Console.BlackBoxDumpScreen"),
+		DeviceButtonDownCommand<kATDeviceButton_BlackBoxMenu>("Console.BlackBoxMenu"),
+		DeviceButtonDownCommand<kATDeviceButton_IDEPlus2SwitchDisks>("Console.IDEPlus2SwitchDisks"),
+		DeviceButtonDownCommand<kATDeviceButton_IDEPlus2WriteProtect>("Console.IDEPlus2WriteProtect"),
+		DeviceButtonDownCommand<kATDeviceButton_IDEPlus2SDX>("Console.IDEPlus2SDX"),
+		DeviceButtonDownUpCommand<kATDeviceButton_IndusGTError>("Console.IndusGTError"),
+		DeviceButtonDownUpCommand<kATDeviceButton_IndusGTId>("Console.IndusGTId"),
+		DeviceButtonDownUpCommand<kATDeviceButton_IndusGTTrack>("Console.IndusGTTrack"),
+		DeviceButtonDownCommand<kATDeviceButton_IndusGTBootCPM>("Console.IndusGTBootCPM"),
+		DeviceButtonDownCommand<kATDeviceButton_IndusGTChangeDensity>("Console.IndusGTChangeDensity"),
+		DeviceButtonToggleCommand<kATDeviceButton_HappySlow>("Console.HappyToggleFastSlow"),
+		DeviceButtonToggleCommand<kATDeviceButton_HappyWPEnable>("Console.HappyToggleWriteProtect"),
+		DeviceButtonToggleCommand<kATDeviceButton_HappyWPDisable>("Console.HappyToggleWriteEnable"),
+		DeviceButtonDownUpCommand<kATDeviceButton_ATR8000Reset>("Console.ATR8000Reset"),
+		DeviceButtonDownUpCommand<kATDeviceButton_XELCFSwap>("Console.XELCFSwap"),
+		DeviceButtonDownUpCommand<kATDeviceButton_CloseFiles>("Console.CloseFiles"),
+		DeviceButtonDownUpCommand<kATDeviceButton_CloseNetworkConnections>("Console.CloseNetworkConnections"),
 
 		{ "System.HardwareMode800",		[]() { OnCommandSystemHardwareMode(kATHardwareMode_800); }, NULL, RadioCheckedIf<HardwareModeIs<kATHardwareMode_800> > },
 		{ "System.HardwareMode800XL",	[]() { OnCommandSystemHardwareMode(kATHardwareMode_800XL); }, NULL, RadioCheckedIf<HardwareModeIs<kATHardwareMode_800XL> > },

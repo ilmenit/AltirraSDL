@@ -235,6 +235,8 @@ void ATUIExit(bool forceNoConfirm);
 void ATUISetWindowCaptionTemplate(const char *s);
 const char *ATUIGetWindowCaptionTemplate();
 
+void ATUIToggleDeviceButton(ATDeviceButton button);
+void ATUIPressReleaseDeviceButton(ATDeviceButton button);
 bool ATUIGetDeviceButtonSupported(uint32 idx);
 bool ATUIGetDeviceButtonDepressed(uint32 idx);
 void ATUIActivateDeviceButton(uint32 idx, bool state);

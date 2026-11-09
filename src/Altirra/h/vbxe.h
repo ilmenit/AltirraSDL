@@ -292,6 +292,7 @@ private:
 	uint8 mPfPaletteIndexInit = 0;	// initial GTIA playfield palette (1.27+)
 	uint8 mPfPaletteIndex;
 	uint8 mOvPaletteIndex;
+	bool mbPfPaletteSetByXdl = false;
 
 	bool mbExtendedColor1;			// XCOLOR[1]
 	bool mbExtendedColor0;			// XCOLOR[0]
@@ -414,7 +415,8 @@ private:
 	const PriorityInfo *mpPriTableHi;
 	const uint8 *mpColorTable;
 
-	ATMemoryLayer *mpMemLayerMEMACA;
+	ATMemoryLayer *mpMemLayerMEMACA1;
+	ATMemoryLayer *mpMemLayerMEMACA2;
 	ATMemoryLayer *mpMemLayerMEMACB;
 	ATMemoryLayer *mpMemLayerRegisters;
 	ATMemoryLayer *mpMemLayerGTIAOverlay;

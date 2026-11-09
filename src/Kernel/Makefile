@@ -10,19 +10,23 @@ source\Shared\cio.inc \
 source\Shared\sio.inc \
 source\Shared\hardware.inc \
 source\Shared\kernel.inc \
-source\Shared\kerneldb.inc
+source\Shared\kerneldb.inc \
+source\Shared\utils.inc
 
 SHARED_SRCFILES = \
 source\Shared\atarifont.bin \
-source\Shared\atariifont.bin \
 source\Shared\atarifont.inc \
+source\Shared\atariifont.bin \
 source\Shared\atariifont.inc \
+source\Shared\blackboard.s \
 source\Shared\boot.s \
 source\Shared\bootscreen.s \
-source\Shared\blackboard.s \
+source\Shared\bootscreen.s \
+source\Shared\cassette.s \
 source\Shared\cio.inc \
 source\Shared\cio.s \
 source\Shared\disk.s \
+source\Shared\driveimage.inc \
 source\Shared\editor.s \
 source\Shared\hardware.inc \
 source\Shared\init.s \
@@ -32,19 +36,17 @@ source\Shared\kerneldb.inc \
 source\Shared\keyboard.s \
 source\Shared\keytable.s \
 source\Shared\mathpack.s \
-source\Shared\screen.s \
-source\Shared\screenext.s \
-source\Shared\vbi.s \
-source\Shared\sio.inc \
-source\Shared\sio.s \
+source\Shared\misc.s \
 source\Shared\pbi.s \
 source\Shared\phandler.s \
-source\Shared\cassette.s \
-source\Shared\misc.s \
-source\Shared\bootscreen.s \
-source\Shared\driveimage.inc \
-source\Shared\selftestentry.s \
 source\Shared\printer.s \
+source\Shared\screen.s \
+source\Shared\screenext.s \
+source\Shared\selftestentry.s \
+source\Shared\sio.inc \
+source\Shared\sio.s \
+source\Shared\utils.inc \
+source\Shared\vbi.s \
 source\Shared\version.inc
 
 SHARED_SRCFILES816 = \

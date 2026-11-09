@@ -262,9 +262,11 @@ void ATRegisterDeviceXCmds(ATDeviceManager& dm) {
 	void ATDeviceInitXCmdExploreDisk(ATDeviceManager& dm);
 	void ATDeviceInitXCmdRescanDynamicDisk(ATDeviceManager& dm);
 	void ATDeviceInitXCmdCopyPaste(ATDeviceManager& dm);
+	void ATDeviceInitXCmdClose(ATDeviceManager& dm);
 
 	ATDeviceInitXCmdMountVHD(dm);
 	ATDeviceInitXCmdExploreDisk(dm);
 	ATDeviceInitXCmdRescanDynamicDisk(dm);
 	ATDeviceInitXCmdCopyPaste(dm);
+	ATDeviceInitXCmdClose(dm);
 }

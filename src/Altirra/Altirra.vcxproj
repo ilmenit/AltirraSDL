@@ -40,7 +40,6 @@
       <AdditionalDependencies>system.lib;riza.lib;dita.lib;kasumi.lib;tessa.lib;vddisplay.lib;atui.lib;atnativeui.lib;atnetwork.lib;atnetworksockets.lib;atcore.lib;vdjson.lib;atcpu.lib;atdebugger.lib;atio.lib;atappbase.lib;atdevices.lib;atuicontrols.lib;atemulation.lib;atvm.lib;ataudio.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(VDLibPath);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Windows</SubSystem>
-
       <AdditionalOptions Condition="'$(Configuration)'!='Release'">%(AdditionalOptions) /wholearchive:VDDisplay</AdditionalOptions>
     </Link>
     <Manifest>
@@ -247,6 +246,7 @@
     <ClCompile Include="source\decode_png.cpp" />
     <ClCompile Include="source\devicemanager.cpp" />
     <ClCompile Include="source\devices.cpp" />
+    <ClCompile Include="source\devxcmdclose.cpp" />
     <ClCompile Include="source\devxcmdcopypaste.cpp" />
     <ClCompile Include="source\devxcmdexploredisk.cpp" />
     <ClCompile Include="source\devxcmdmountvhd.cpp" />

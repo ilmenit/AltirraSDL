@@ -310,12 +310,11 @@ bool VDRegistryProviderMemory::Key::RemoveKey(const char *name) {
 	}
 
 	// delete the key
-	mKeyMap.erase(it);
-
 	KeyList::iterator it2(std::find(mKeyList.begin(), mKeyList.end(), &*it));
 	VDASSERT(it2 != mKeyList.end());
 
 	mKeyList.erase(it2);
+	mKeyMap.erase(it);
 	return true;
 }
 

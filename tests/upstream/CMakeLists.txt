@@ -2,6 +2,8 @@
 # would shadow the native header and hide _ReturnAddress from <future>.
 add_executable(altirra-upstream-regression-test
     regression.cpp
+    test28.cpp
+    ${PROJECT_SOURCE_DIR}/src/Altirra/source/diskprofile.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/printerfx80.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/printerfontfx80.cpp
     ${PROJECT_SOURCE_DIR}/src/Altirra/source/printeroutput.cpp

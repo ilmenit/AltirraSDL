@@ -148,6 +148,9 @@ void *ATModemEmulator::AsInterface(uint32 iid) {
 		case IATDeviceDiagnostics::kTypeID:
 			return static_cast<IATDeviceDiagnostics *>(this);
 
+		case IATDeviceButtons::kTypeID:
+			return static_cast<IATDeviceButtons *>(this);
+
 		default:
 			return ATDevice::AsInterface(iid);
 	}
@@ -225,6 +228,21 @@ void ATModemEmulator::InitScheduling(ATScheduler *sched, ATScheduler *slowsched)
 
 void ATModemEmulator::InitIndicators(IATDeviceIndicatorManager *r) {
 	mpUIRenderer = r;
+}
+
+uint32 ATModemEmulator::GetSupportedButtons() const {
+	return UINT32_C(1) << kATDeviceButton_CloseNetworkConnections;
+}
+
+bool ATModemEmulator::IsButtonDepressed(ATDeviceButton idx) const {
+	return false;
+}
+
+void ATModemEmulator::ActivateButton(ATDeviceButton idx, bool state) {
+	if (idx == kATDeviceButton_CloseNetworkConnections) {
+		if (state)
+			DisconnectCall();
+	}
 }
 
 void ATModemEmulator::Init(ATScheduler *sched, ATScheduler *slowsched, IATDeviceIndicatorManager *uir, IATAudioMixer *mixer, IATAsyncDispatcher *asyncDispatcher) {
@@ -1799,7 +1817,9 @@ void ATModemEmulator::ReportRegisters(const ATModemRegisters& reg, bool stored) 
 	}
 }
 
-void ATModemEmulator::TerminateCall() {
+// Disconnect any current connection, but do not change the rest of the modem
+// state, so the modem transitions naturally in response to a disconnect.
+void ATModemEmulator::DisconnectCall() {
 	if (mpDriver) {
 		mpDriver->Shutdown();
 		delete mpDriver;
@@ -1807,13 +1827,17 @@ void ATModemEmulator::TerminateCall() {
 	}
 
 	mDriverConnectionState = (int)DriverConnectionState::Disconnected;
-
-	mConnectionState = kConnectionState_NotConnected;
 	mbListening = false;
-	mbDeviceTransmitUnderflow = true;
 	mDeviceTransmitReadOffset = 0;
 	mDeviceTransmitWriteOffset = 0;
 	mDeviceTransmitLevel = 0;
+}
+
+void ATModemEmulator::TerminateCall() {
+	DisconnectCall();
+
+	mConnectionState = kConnectionState_NotConnected;
+	mbDeviceTransmitUnderflow = true;
 
 	UpdateUIStatus();
 	UpdateControlState();
