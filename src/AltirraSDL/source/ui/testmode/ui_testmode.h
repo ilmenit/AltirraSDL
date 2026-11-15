@@ -20,6 +20,8 @@ class ATSimulator;
 // Global enable flag — set by --test-mode command line argument.
 // When false, all test mode code is skipped (zero overhead).
 extern bool g_testModeEnabled;
+// Synthetic physical_focus events also drive focus-dependent diagnostics.
+bool ATTestModeWindowFocused(bool nativeFocus);
 
 // Records a blocking native/SDL message box for automation and returns true
 // when test mode consumed it. Normal UI paths should still show the dialog

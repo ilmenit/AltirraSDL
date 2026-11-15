@@ -407,7 +407,7 @@ void DisplayBackendGL::RenderFrameInner(float dstX, float dstY, float dstW, floa
 }
 
 void DisplayBackendGL::Present() {
-	SDL_GL_SwapWindow(mpWindow);
+	mPresentationHealthy = SDL_GL_SwapWindow(mpWindow);
 }
 
 bool DisplayBackendGL::ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) {

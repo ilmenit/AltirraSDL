@@ -70,6 +70,8 @@ extern "C" bool ATWasmBrokerIsActive();
 #include <imgui.h>
 #include "display_sdl3_impl.h"
 #include "display_backend.h"
+#include "display_recovery.h"
+#include "display_advisor.h"
 
 #if ALTIRRA_HAS_BAKED_ICON
 #include "altirra_icon_data.h"
@@ -504,6 +506,11 @@ void ATUIReleaseGameplayInputsSDL3() {
 }
 
 static void HandleEvents() {
+	static bool recoveryOwnedInput = false;
+	const bool recoveryActive = ATDisplayRecovery::Active() || ATDisplayAdvisor::Active();
+	if (recoveryActive && !recoveryOwnedInput)
+		ReleaseEmulatorInputsForUI();
+	recoveryOwnedInput = recoveryActive;
 	ATInputCapture::Update(static_cast<ATJoystickManagerSDL3 *>(
 		g_sim.GetJoystickManager()));
 	// ImGui reports keyboard capture for every focused debugger window,
@@ -513,6 +520,7 @@ static void HandleEvents() {
 	const uint32 debuggerKeyboardPane =
 		ATUIDebuggerGetKeyboardFocusPaneId();
 	const bool routeKeyboardToEmulator = !ATUIIsGuidedJoystickSetupOpen()
+		&& !recoveryActive
 		&& (debuggerKeyboardPane
 			? debuggerKeyboardPane == kATUIPaneId_Display
 			: !ATUIWantCaptureKeyboard());
@@ -565,6 +573,26 @@ static void HandleEvents() {
 		// Binding capture owns physical input before shortcuts or UI handlers.
 		if (ATInputCapture::HandleEvent(ev))
 			continue;
+
+		// Recovery owns controller/touch input, including reserved console
+		// buttons. All gameplay acquisitions were released when it opened.
+		if (recoveryActive && (ev.type == SDL_EVENT_KEY_DOWN
+			|| ev.type == SDL_EVENT_KEY_UP || ev.type == SDL_EVENT_TEXT_INPUT
+			|| ev.type == SDL_EVENT_MOUSE_MOTION || ev.type == SDL_EVENT_MOUSE_WHEEL
+			|| ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP
+			|| ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
+			|| ev.type == SDL_EVENT_GAMEPAD_BUTTON_UP
+			|| ev.type == SDL_EVENT_GAMEPAD_AXIS_MOTION
+			|| ev.type == SDL_EVENT_JOYSTICK_BUTTON_DOWN
+			|| ev.type == SDL_EVENT_JOYSTICK_BUTTON_UP
+			|| ev.type == SDL_EVENT_JOYSTICK_AXIS_MOTION
+			|| ev.type == SDL_EVENT_JOYSTICK_HAT_MOTION
+			|| ev.type == SDL_EVENT_FINGER_DOWN
+			|| ev.type == SDL_EVENT_FINGER_UP
+			|| ev.type == SDL_EVENT_FINGER_MOTION)) {
+			ATUIProcessEvent(&ev);
+			continue;
+		}
 
 		// Emote picker open-shortcut: R3 (right stick click) while a
 		// netplay lockstep session is live.  Runs before any other
@@ -1138,6 +1166,7 @@ static void HandleEvents() {
 		// or the app will SIGSEGV. Desktop minimize/restore events are
 		// handled independently and must not suspend emulation.
 		case SDL_EVENT_WILL_ENTER_BACKGROUND:
+			ATDisplayRecovery::Suspend();
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
 				"Altirra: WILL_ENTER_BACKGROUND — releasing input");
 			ReleaseEmulatorInputsForUI();
@@ -1414,7 +1443,7 @@ static void SyncScreenFXToBackend() {
 		return;
 
 	// Push filter mode and sharpness changes
-	ATDisplayFilterMode curFilter = ATUIGetDisplayFilterMode();
+	ATDisplayFilterMode curFilter = ATDisplayAdvisor::EffectiveFilter(ATUIGetDisplayFilterMode());
 	if (curFilter != s_lastAppliedFilter) {
 		g_pBackend->SetFilterMode(curFilter);
 		s_lastAppliedFilter = curFilter;
@@ -1439,7 +1468,8 @@ static void SyncScreenFXToBackend() {
 	// backend, so clearing all screen FX here would silently disable PAL
 	// artifacting only for VBXE.
 	const bool effectsDisabled =
-		(g_uiState.screenEffectsMode == ATUIState::kSFXMode_None);
+		!ATDisplayAdvisor::EffectiveEffects(
+			g_uiState.screenEffectsMode != ATUIState::kSFXMode_None);
 
 	if (!effectsDisabled && g_pDisplay->HasScreenFX()) {
 		g_pBackend->UpdateScreenFX(g_pDisplay->GetLastScreenFX());
@@ -1469,10 +1499,33 @@ static void RenderAndPresent() {
 	// crash.  On desktop, a minimized window hits the same path harmlessly.
 	// Must also be defensive if the window was never created (very early
 	// error paths).
-	if (g_appSuspended || !g_pWindow || !g_pBackend)
+	if (g_appSuspended || !g_pWindow || !g_pBackend
+		|| ATDisplayRecovery::ContextLost())
 		return;
+	ATDisplayAdvisor::Update();
 	ATMacLeakDebugOnRender();
 
+	const bool observeGraphics = !(SDL_GetWindowFlags(g_pWindow)
+		& (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN));
+	if (observeGraphics)
+		ATDisplayRecovery::BeforeFrame(g_pDisplay->GetFramePixels() != nullptr);
+	else
+		ATDisplayRecovery::Suspend();
+	const bool newAdvisorFrame = g_macLeakNewFrame;
+	const bool advisorFocused = g_testModeEnabled
+		? ATTestModeWindowFocused(SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_INPUT_FOCUS)
+		: (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_INPUT_FOCUS);
+	const bool advisorEligible = observeGraphics
+		&& advisorFocused
+		&& !g_sim.IsPaused() && !g_sim.IsTurboModeEnabled()
+		&& ATUIGetSpeedModifier() == 0 && !ATUIGetSlowMotion()
+		&& !ATUIWantCaptureKeyboard() && !ATUIIsMenuOpen()
+		&& !ATUIDebuggerIsOpen()
+		&& !ATDisplayRecovery::Active() && !ATDisplayAdvisor::Active()
+		&& (!ATUIIsGamingMode() || g_mobileState.currentScreen == ATMobileUIScreen::None);
+	const bool observeAdvisor = g_pBackend->SupportsScreenFX()
+		&& ATDisplayAdvisor::NeedsObservation();
+	const Uint64 advisorStart = observeAdvisor ? SDL_GetTicksNS() : 0;
 	g_pBackend->BeginFrame();
 	ATSDLVideoOutputUpdate();
 	static uint64 lastOutputRevision = 0;
@@ -1494,7 +1547,7 @@ static void RenderAndPresent() {
 	g_macLeakNewFrame = false;
 
 	// Update filter mode on texture if setting changed.
-	ATDisplayFilterMode curFilter = ATUIGetDisplayFilterMode();
+	ATDisplayFilterMode curFilter = ATDisplayAdvisor::EffectiveFilter(ATUIGetDisplayFilterMode());
 	if (curFilter != s_lastAppliedFilter) {
 		g_pBackend->SetFilterMode(curFilter);
 		s_lastAppliedFilter = curFilter;
@@ -1539,8 +1592,18 @@ static void RenderAndPresent() {
 	ATSDLAccessibilityUpdate(g_pWindow, g_sim, g_ATOptions.mbAccEnabled,
 		accessibilityFocused, accessibilityX, accessibilityY, accessibilityW, accessibilityH);
 
-	if (ATMacLeakDebugShouldPresent())
+	if (ATMacLeakDebugShouldPresent()) {
+		const Uint64 presentStart = observeAdvisor ? SDL_GetTicksNS() : 0;
 		g_pBackend->Present();
+		const Uint64 presentEnd = observeAdvisor ? SDL_GetTicksNS() : 0;
+		if (observeAdvisor && (newAdvisorFrame || !advisorEligible))
+			ATDisplayAdvisor::Observe(g_pWindow, g_pBackend,
+			(presentStart - advisorStart) / 1e6, (presentEnd - presentStart) / 1e6,
+			g_pacer.targetSecsPerFrame * 1000,
+			advisorEligible && newAdvisorFrame && g_pBackend->IsPresentationHealthy());
+		if (observeGraphics)
+			ATDisplayRecovery::AfterFrame(g_pBackend->IsPresentationHealthy());
+	}
 	ATMacLeakDebugTick();
 }
 
@@ -1895,6 +1958,7 @@ int main(int argc, char *argv[]) {
 	ATDisplayBackendPreference backendPreference =
 		ATDisplayBackendPreferenceLoad();
 	bool commandLineRenderer = false;
+	bool environmentRenderer = false;
 
 	// Renderer selection must be consumed before the SDL window and ImGui
 	// backend exist. The full command-line pass later consumes the same pair
@@ -1926,6 +1990,7 @@ int main(int argc, char *argv[]) {
 			ATDisplayBackendPreference parsed;
 			if (ATDisplayBackendPreferenceParse(backendOverride, parsed)) {
 				backendPreference = parsed;
+				environmentRenderer = true;
 				LOG_INFO("Main", "Environment renderer requested: %s",
 					ATDisplayBackendPreferenceName(parsed));
 			} else {
@@ -1935,16 +2000,40 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	// Load the global UI preference before recovery so controller-only
+	// Gaming Mode does not get trapped in a native message box.
+	ATUILoadMode();
+	bool gamingStartup = ATUIIsGamingMode();
+	for (int i = 1; i + 1 < argc; ++i) {
+		if (!SDL_strcasecmp(argv[i], "--ui-mode")) {
+			if (!SDL_strcasecmp(argv[i + 1], "gaming")) gamingStartup = true;
+			if (!SDL_strcasecmp(argv[i + 1], "desktop")) gamingStartup = false;
+		}
+	}
+#ifdef __ANDROID__
+	gamingStartup = true;
+#endif
+	ATDisplayRecovery::Begin(backendPreference,
+		commandLineRenderer || environmentRenderer, gamingStartup);
+
 	const bool tryGPU =
 		backendPreference == ATDisplayBackendPreference::SDLGPU;
 	const bool tryGL =
 		backendPreference != ATDisplayBackendPreference::SDLRenderer;
+	auto createGraphicsWindow = [](SDL_WindowFlags flags) {
+		ATDisplayRecovery::BeforeWindow();
+		SDL_Window *window = SDL_CreateWindow("AltirraSDL",
+			kDefaultWidth, kDefaultHeight, flags);
+		ATDisplayRecovery::AfterWindow(window != nullptr);
+		return window;
+	};
 
 #if !defined(__EMSCRIPTEN__)
 	if (tryGPU)
-		g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight,
+		g_pWindow = createGraphicsWindow(
 			SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 	if (g_pWindow) {
+		LOG_INFO("GraphicsRecovery", "Creating SDL_GPU renderer");
 		// Passing a null device asks SDL to create and own the platform's
 		// preferred GPU device (Metal on Apple platforms, Vulkan on Linux
 		// and supported Android devices).
@@ -1988,9 +2077,10 @@ int main(int argc, char *argv[]) {
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
 	if (!useGPU && tryGL)
-		g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight,
+		g_pWindow = createGraphicsWindow(
 			SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
 	if (!useGPU && tryGL && g_pWindow) {
+		LOG_INFO("GraphicsRecovery", "Creating GL context");
 		glContext = SDL_GL_CreateContext(g_pWindow);
 		if (glContext) {
 			SDL_GL_MakeCurrent(g_pWindow, glContext);
@@ -2018,7 +2108,7 @@ int main(int argc, char *argv[]) {
 	// Android, WebGL2 on Emscripten) but cannot run our screen FX pipeline.
 	if (!useGPU && !useGL) {
 		if (g_pWindow) SDL_DestroyWindow(g_pWindow);
-		g_pWindow = SDL_CreateWindow("AltirraSDL", kDefaultWidth, kDefaultHeight, SDL_WINDOW_RESIZABLE);
+		g_pWindow = createGraphicsWindow(SDL_WINDOW_RESIZABLE);
 		if (!g_pWindow) { LOG_INFO("Main", "CreateWindow: %s", SDL_GetError()); SDL_Quit(); return 1; }
 		if (backendPreference == ATDisplayBackendPreference::SDLRenderer)
 			LOG_INFO("Main", "SDL_Renderer compatibility backend selected "
@@ -2093,12 +2183,14 @@ int main(int argc, char *argv[]) {
 		SDL_GL_SetSwapInterval(0);
 	} else
 	{
+		LOG_INFO("GraphicsRecovery", "Creating compatibility renderer");
 		g_pRenderer = SDL_CreateRenderer(g_pWindow, nullptr);
 		if (!g_pRenderer) { LOG_INFO("Main", "CreateRenderer: %s", SDL_GetError()); SDL_DestroyWindow(g_pWindow); SDL_Quit(); return 1; }
 		// Same as GL path: start with VSync off, main loop manages it.
 		SDL_SetRenderVSync(g_pRenderer, 0);
 		g_pBackend = new DisplayBackendSDLRenderer(g_pWindow, g_pRenderer);
 	}
+	ATDisplayRecovery::Created(g_pBackend->GetType());
 	ATMacLeakDebugInit(g_pWindow,
 		useGPU ? "SDL_GPU" : (useGL ? "OpenGL" : "SDL_Renderer"));
 
@@ -3592,6 +3684,7 @@ int main(int argc, char *argv[]) {
 	// and forced-shutdown behaviour in lockstep.
 	ATUIShutdownFileDialogs();
 	ATUICancelPendingMediaLoads();
+	ATDisplayAdvisor::Cancel();
 	ATPersistAllForSuspend();
 
 	// Detach and destroy joystick manager before simulator shutdown

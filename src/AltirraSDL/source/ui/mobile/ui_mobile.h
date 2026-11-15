@@ -150,6 +150,9 @@ void ATMobileUI_ApplyVisualEffects(const ATMobileUIState &mobileState);
 // Quality).  Called on preset change and at startup after
 // LoadConfig.  Preset = 3 (Custom) is a no-op.
 void ATMobileUI_ApplyPerformancePreset(ATMobileUIState &mobileState);
+// Accepted graphics edits must survive a later Gaming Mode startup.
+// The caller persists the profile and flushes this registry edit together.
+void ATMobileUI_MarkGraphicsCustom(ATMobileUIState &mobileState);
 
 // Force the mobile file browser to re-enumerate its current
 // directory on the next render pass.  Called from the SDL3 event

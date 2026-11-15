@@ -31,6 +31,8 @@
 //	work identically on both platforms.
 
 #include <stdafx.h>
+#include "display_recovery.h"
+#include "display_advisor.h"
 #include <SDL3/SDL.h>
 #include <vd2/system/math.h>
 #include <vd2/system/vdtypes.h>
@@ -507,7 +509,8 @@ IATJoystickManager::PollResult ATJoystickManagerSDL3Impl::Poll() {
 	if (mbCaptureMode || mbBindingCapture || mControllers.empty())
 		return kPollResult_NoControllers;
 
-	if (ATUIIsGamingMode() && ATMobileGamepad_IsUIOwning()) {
+	if (ATDisplayRecovery::Active() || ATDisplayAdvisor::Active()
+		|| (ATUIIsGamingMode() && ATMobileGamepad_IsUIOwning())) {
 		for (auto *ctrl : mControllers) {
 			if (ctrl->mUnit < 0)
 				continue;

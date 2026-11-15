@@ -837,7 +837,8 @@ void DisplayBackendSDLGPU::RenderFrameClipped(float dstX, float dstY, float dstW
 }
 
 void DisplayBackendSDLGPU::Present() {
-	if (!SDL_RenderPresent(mpRenderer))
+	mPresentationHealthy = SDL_RenderPresent(mpRenderer);
+	if (!mPresentationHealthy)
 		LOG_ERROR("SDL_GPU", "Present failed: %s", SDL_GetError());
 }
 

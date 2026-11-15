@@ -4,6 +4,8 @@
 //	All sizing uses density-independent pixels (dp) scaled by contentScale.
 
 #include <stdafx.h>
+#include "display_recovery.h"
+#include "display_advisor.h"
 #include <cwctype>
 #include <vector>
 #include <algorithm>
@@ -69,6 +71,14 @@ extern IDisplayBackend *ATUIGetDisplayBackend();
 
 namespace {
 constexpr const char *kMobileKey = "Mobile";
+}
+
+void ATMobileUI_MarkGraphicsCustom(ATMobileUIState &mobileState) {
+	if (mobileState.performancePreset == 3) return;
+	mobileState.performancePreset = 3;
+	VDRegistryAppKey key(kMobileKey, true);
+	key.setInt("PerformancePreset", mobileState.performancePreset);
+	// The accepted-edit caller flushes this with the profile settings.
 }
 
 static void LoadMobileConfig(ATMobileUIState &mobileState) {
@@ -936,7 +946,7 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 	// pop up over the emulator (e.g. confirm/error) capture the gamepad.
 	bool uiOwns = (mobileState.currentScreen != ATMobileUIScreen::None)
 		|| s_infoModalOpen || s_confirmActive
-		|| ATUIIsEmuErrorDialogOpen();
+		|| ATUIIsEmuErrorDialogOpen() || ATDisplayRecovery::Active() || ATDisplayAdvisor::Active();
 #ifdef ALTIRRA_NETPLAY_ENABLED
 	if (ATNetplayUI_IsActive()) uiOwns = true;
 #endif

@@ -111,7 +111,7 @@ void DisplayBackendSDLRenderer::RenderFrameClipped(float dstX, float dstY, float
 }
 
 void DisplayBackendSDLRenderer::Present() {
-	SDL_RenderPresent(mpRenderer);
+	mPresentationHealthy = SDL_RenderPresent(mpRenderer);
 }
 
 bool DisplayBackendSDLRenderer::ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) {

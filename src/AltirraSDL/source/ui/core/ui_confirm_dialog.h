@@ -30,6 +30,9 @@ struct ATUIConfirmOptions {
 	// If true, the cancel button is the initially-focused / default
 	// button.  Use for destructive actions (discard unsaved work, delete
 	// files, etc.) to match Windows Altirra's safe-default convention.
+	// Fork recovery dialogs use full-width actions on small/touch displays.
+	bool stackedButtons = false;
+	float buttonHeight = 0;
 	bool destructive = false;
 	unsigned group = 0; // Allows an owner to cancel obsolete queued prompts.
 

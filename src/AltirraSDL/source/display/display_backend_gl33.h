@@ -70,6 +70,7 @@ public:
 	void RenderFrameClipped(float dstX, float dstY, float dstW, float dstH,
 		int srcW, int srcH, float clipX, float clipY, float clipW, float clipH) override;
 	void Present() override;
+	bool IsPresentationHealthy() const override { return mPresentationHealthy; }
 	bool ReadPixels(void *dst, int dstPitch, int x, int y, int w, int h) override;
 	void OnResize(int w, int h) override;
 
@@ -89,6 +90,7 @@ public:
 	SDL_GLContext GetGLContext() const { return mGLContext; }
 
 private:
+	bool mPresentationHealthy = true;
 	GLuint RenderCustomEffect(float viewportW, float viewportH, int& w, int& h);
 	struct CustomPass {
 		ATDisplayCustomEffectPass spec;
